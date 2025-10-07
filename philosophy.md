@@ -3,7 +3,7 @@
 ## General Goals
 1. Trust the programmar, but provide what they needs.
 2. As simple/minimal as it goes.
-3. Don't force thing what can be optional.
+3. Don't force things which can be optional.
 4. Performance is the ultimate goal.
 5. Simple, clean, distinguishable and pragmatic syntax.
 6. True to machine (less magic).
