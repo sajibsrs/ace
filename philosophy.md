@@ -15,6 +15,9 @@
 1. Assembly support.
 2. Way to work with C/C++ code. Though, it shouldn't depend on them.
 
+## Source
+1. The initially proposed file extensions are **.acx** , **.ax**, **.cx**. Where **.acx** has been confirmed. [?]
+
 ## Parsing
 1. Single lookahead parsing LL(1) with little or no backtracking.
 2. Recursive descent top-down parsing implementation.
