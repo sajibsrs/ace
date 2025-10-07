@@ -30,17 +30,15 @@
 ## Conditions
 1. Two (multi-way) comparisons. [?][!]
 
-## Functions
-1. Support muti-return (e.g. return value, memory size, error). [?]
-
 ## Iterations
 1. Memory size (or byte) based iteration.
 
-## Decisions
+## Functions
+1. Support muti-return (e.g. return value, memory size, error). [?]
 
+## Considerations
 
 ## Cautions
-
 
 ## Inspiration
 - Assembly
