@@ -1,4 +1,4 @@
-# Language Philosophy
+# Philosophy
 
 ## General Goals
 1. Trust the programmar, but provide what they needs.
