@@ -1,0 +1,4 @@
+fu(): int {
+    return 0
+}
+import fmt

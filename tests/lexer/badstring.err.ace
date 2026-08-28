@@ -1,0 +1,2 @@
+s: string = "unterminated
+t: string = "ok"

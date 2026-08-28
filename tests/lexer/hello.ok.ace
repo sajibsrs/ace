@@ -1,0 +1,65 @@
+// hello.ace — lexer fixture: must tokenize with zero errors.
+import fmt
+import m: math
+
+/* block comment
+   spanning lines — acts as a newline */
+Point: struct {
+    x: f32,
+    y: f32,
+}
+
+pub add(a: int, b: int): int {
+    return a + b
+}
+
+greet(name: string): string {
+    return "hello, " + name + "!\n"
+}
+
+sum(mut buf: []u8): int {
+    total: int = 0
+    for b: u8 in buf {
+        total += b
+    }
+    return total
+}
+
+in_range(lo: int, x: int, hi: int): bool {
+    return lo <= x <= hi
+}
+
+scale_it(mut p: *Point, k: f64) {
+    p.x = p.x * k
+    p.y = p.y * k
+}
+
+raw_read(fd: int, mut buf: []u8): (int, Err?) {
+    ret: i64
+    asm "svc #0" {
+        in:  x0 = fd, x16 = 3
+        out: x0 = ret
+        clobbers: x16, x17
+    }
+    return 0, null
+}
+
+find(buf: []u8, needle: u8): int {
+    scan: {
+        for i: int in 0 .. buf.len {
+            if buf[i] == needle {
+                break scan
+            }
+        }
+    }
+    switch needle {
+        0, 1 { return -1 }
+        else { }
+    }
+    return 0
+}
+
+main(): int {
+    fmt.print("hex", 0xFF, "bin", 0b1010_1100, 1_000_000)
+    return 0
+}

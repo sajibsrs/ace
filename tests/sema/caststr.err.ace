@@ -1,0 +1,5 @@
+main(): int {
+    s: string = "a"
+    n: int = i32(s)
+    return 0
+}

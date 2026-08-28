@@ -1,0 +1,118 @@
+// full.ok.ace — parser fixture: the carved surface, must parse clean.
+import fmt
+import m: math
+import util: "./util.ace"
+
+pub MAX_PATH: const int = 1024
+
+Color: enum {
+    red,
+    green,
+    blue,
+}
+
+pub Vec[T]: struct {
+    items: []T,
+    cap: int,
+}
+
+Point: struct { x: f32, y: f32 }
+
+StringList: type = []string
+
+Meters: distinct f64
+
+Shape: interface {
+    area(): f32
+    mut scale(k: f64)
+}
+
+circle_area(c: *Circle): f32 {
+    return 0.0
+}
+
+circle_scale(mut c: *Circle, k: f64) {
+    c.r = c.r * k
+}
+
+circle_shape: impl(Circle, Shape) {
+    area: circle_area,
+    mut scale: circle_scale,
+}
+
+extern "c" {
+    printf(format: string, ...): int
+    export abs(x: i32): i32
+}
+
+read(): (int, Err?) {
+    return 7, null
+}
+
+max[T](a: T, b: T): T {
+    if a < b {
+        return b
+    }
+    return a
+}
+
+write(fd: int, buf: []u8): int {
+    n: i64
+    asm "svc #0" {
+        in:  x0 = fd, x16 = 4
+        out: x0 = n
+        clobbers: x16, x17
+    }
+    return int(n)
+}
+
+main(): int {
+    n: int, err: Err? = read()
+    n, err = read()
+    n += 1
+    p: Point = Point{ x: 1.0, y: 2.0 }
+    q: Point = { x: 3.0, y: 4.0 }
+    ok: bool = 0 <= n <= 100
+    e: Err? = null
+    if e != null && n > 0 || false {
+        fmt.print("bad", n)
+    } else if n == 7 {
+        n |= 2
+    } else {
+        n &= 3
+    }
+    arr: [4]int = [1, 2, 3, 4]
+    s: []int = arr[1..3]
+    head: []int = arr[..2]
+    rest: []int = arr[2..]
+    one: int = arr[0]
+    cmp: (int, int): int = m.max[int]
+    total: int = 0
+    scan: {
+        for b: int in arr {
+            if b == 2 {
+                continue
+            }
+            if b == 3 {
+                break scan
+            }
+            total += b
+        }
+    }
+    for i: int in 0 .. 10 {
+        total += i
+    }
+    switch n {
+        0, 1 { return total }
+        7 { total <<= 1 }
+        else { total >>= 1 }
+    }
+    mut q.scale(2.0)
+    circle_scale(mut p, 0.5)
+    pp: *int = &one
+    nptr: *Point? = null
+    v: int = ~pp
+    neg: int = -v
+    flip: bool = !true
+    return total
+}

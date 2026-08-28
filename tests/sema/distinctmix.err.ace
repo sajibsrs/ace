@@ -1,0 +1,7 @@
+Meters: distinct f64
+
+main(): int {
+    m: Meters = 1.0
+    d: f64 = m
+    return 0
+}

@@ -1,0 +1,83 @@
+// ok.ace — semantic fixture: fully typed, must check clean.
+Point: struct { x: f32, y: f32 }
+
+Color: enum { red, green, blue }
+
+Meters: distinct f64
+
+Shape: interface {
+    area(): f32
+    mut scale(k: f32)
+}
+
+circle_area(c: *Point): f32 {
+    return c.x
+}
+
+circle_scale(mut c: *Point, k: f32) {
+    c.x = c.x * k
+}
+
+circle_shape: impl(Point, Shape) {
+    area: circle_area,
+    mut scale: circle_scale,
+}
+
+add(a: int, b: int): int {
+    return a + b
+}
+
+bigger[T](a: T, b: T): T {
+    if b < a {
+        return a
+    }
+    return b
+}
+
+read(): (int, bool) {
+    return 7, true
+}
+
+g: int = 40
+
+main(): int {
+    p: Point = Point{ x: 1.0, y: 2.0 }
+    c: Color = Color.green
+    m: Meters = Meters(3.5)
+    n: int, ok: bool = read()
+    n, ok = read()
+    n += add(g, 2)
+    s: Shape = circle_shape(&p)
+    v: f32 = s.area()
+    mut s.scale(2.0)
+    q: *Point = &p
+    w: f32 = q.x
+    z: usize = size_of(int)
+    arr: [4]int = [1, 2, add(3, 0), 4]
+    sl: []int = arr[1..3]
+    first: int = sl[0]
+    total: int = 0
+    scan: {
+        for b: int in arr {
+            if b == 2 {
+                continue
+            }
+            if b == 3 {
+                break scan
+            }
+            total += b
+        }
+    }
+    for i: int in 0 .. 10 {
+        total += i
+    }
+    if 0 <= n <= 100 {
+        total |= 1
+    }
+    switch c {
+        Color.red { total = 1 }
+        else { total = 0 }
+    }
+    hi: int = bigger[int](n, total)
+    return hi
+}

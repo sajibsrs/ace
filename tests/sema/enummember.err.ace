@@ -1,0 +1,6 @@
+Color: enum { red }
+
+main(): int {
+    c: Color = Color.purple
+    return 0
+}

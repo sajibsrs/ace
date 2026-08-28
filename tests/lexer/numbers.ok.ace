@@ -1,0 +1,19 @@
+// numeric, char, and string literal coverage
+a: u64 = 0xFF
+b: u64 = 0b1010_1100
+c: u64 = 1_000_000
+d: f64 = 3.14159
+e: f64 = 6.02e23
+f: f64 = 1.5e-3
+g: f64 = 2.5E+10
+h: u8 = 'A'
+i: u8 = '\n'
+j: u8 = '\x41'
+s: string = "tab\there \"quoted\" backslash\\ hex\x7f nul\0"
+utf: string = "héllo, 世界"
+r: []int = arr[1..n]
+neg: int = -42
+p: *Point? = null
+cond: bool = true && false || !true
+bits: u8 = 1 << 4 | 3 & !mask
+shr: u8 = 255 >> 4

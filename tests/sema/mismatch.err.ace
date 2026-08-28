@@ -1,0 +1,4 @@
+main(): int {
+    x: int = true
+    return 0
+}

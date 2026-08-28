@@ -1,0 +1,15 @@
+// expect-exit: 42
+bump(mut x: i32, by: i32) {
+    x += by
+}
+
+pair(): (i32, i32) {
+    return 7, 3
+}
+
+main(): i32 {
+    x: i32 = 40
+    bump(mut x, 2)
+    a: i32, b: i32 = pair()
+    return x + a - b - 4
+}

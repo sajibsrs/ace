@@ -1,0 +1,26 @@
+// expect-exit: 42
+main(): i32 {
+    total: i32 = 0
+    for i: i32 in 0 .. 10 {
+        total += i
+    }
+
+    values: [4]i32 = [1, 2, 3, 4]
+    scan: {
+        for value: i32 in values {
+            if value == 2 {
+                continue
+            }
+            if value == 4 {
+                break scan
+            }
+            total += value
+        }
+    }
+
+    switch total {
+        49 { total = 42 }
+        else { total = 1 }
+    }
+    return total
+}
