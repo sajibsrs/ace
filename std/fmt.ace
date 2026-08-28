@@ -20,3 +20,40 @@ pub print(text: string): int {
     }
     return total
 }
+
+pub print(value: int): int {
+    digits: [20]u8
+    at: int = 20
+    remaining: int = value
+    negative: bool = value < 0
+    for digit: int in 0 .. 20 {
+        at -= 1
+        remainder: int = remaining % 10
+        if negative {
+            digits[at] = u8(48 - remainder)
+        } else {
+            digits[at] = u8(48 + remainder)
+        }
+        remaining = remaining / 10
+        if remaining == 0 {
+            break
+        }
+    }
+    if negative {
+        at -= 1
+        digits[at] = u8(45)
+    }
+    size: usize = usize(20 - at)
+    total: int = 0
+    for attempt: int in 0 .. int(size) {
+        n: int = write(1, &digits[at + total], size - usize(total))
+        if n <= 0 {
+            return n
+        }
+        total += n
+        if usize(total) == size {
+            return total
+        }
+    }
+    return total
+}

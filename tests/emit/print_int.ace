@@ -1,0 +1,8 @@
+// expect-exit: 0
+// expect-output: 13
+import fmt
+
+main(): int {
+    written: int = fmt.print(13)
+    return written - 2
+}

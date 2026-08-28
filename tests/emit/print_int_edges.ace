@@ -1,0 +1,14 @@
+// expect-exit: 0
+// expect-output: 0 -13 9223372036854775807 -9223372036854775808
+import fmt
+
+main(): int {
+    fmt.print(0)
+    fmt.print(" ")
+    fmt.print(-13)
+    fmt.print(" ")
+    fmt.print(9223372036854775807)
+    fmt.print(" ")
+    fmt.print(-9223372036854775807 - 1)
+    return 0
+}

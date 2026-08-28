@@ -1,11 +1,11 @@
 // module.c — bootstrap import resolution.
 //
 // The first stdlib slice is intentionally narrow: bare `import fmt` loads
-// std/fmt.ace beside the compiler, lowers the public `fmt.print` member to a
-// private module-prefixed name, and merges that dependency before the root
-// declarations. This preserves the single-pass checker/emitter today while
-// leaving general dependency graphs, path imports, and separate incremental
-// objects as the next module-loader chunk.
+// std/fmt.ace beside the compiler, lowers the public `fmt.print` overload set
+// to one private module-prefixed overload set, and merges that dependency
+// before the root declarations. This preserves the single-pass checker/emitter
+// today while leaving general dependency graphs, path imports, and separate
+// incremental objects as the next module-loader chunk.
 #include "ace.h"
 
 #include <stdarg.h>
@@ -139,21 +139,27 @@ int resolve_imports(Node* file, Diag* d, const char* compiler_path) {
     if (!fmt) return d->errors;
 
     const char* lowered = arena_string("fmt$print");
-    Node* print_decl = NULL;
+    int nprint = 0;
     for (int i = 0; i < fmt->nkids; i++) {
         Node* n = fmt->kids[i];
-        if (n->kind == N_FUNC && name_is(n, "print") && (n->flags & F_PUB)) {
-            print_decl = n;
-            break;
+        if (n->kind == N_FUNC && name_is(n, "print")) {
+            if (n->flags & F_PUB) nprint++;
+            else import_err(d, n, "every standard fmt.print overload must be public");
         }
     }
-    if (!print_decl) {
+    if (d->errors) return d->errors;
+    if (!nprint) {
         import_err(d, fmt_imports[0], "standard module 'fmt' does not export print");
         return d->errors;
     }
     rewrite_ident(fmt, "print", lowered);
-    print_decl->str = lowered;
-    print_decl->len = (uint32_t)strlen(lowered);
+    for (int i = 0; i < fmt->nkids; i++) {
+        Node* n = fmt->kids[i];
+        if (n->kind == N_FUNC && name_is(n, "print")) {
+            n->str = lowered;
+            n->len = (uint32_t)strlen(lowered);
+        }
+    }
 
     for (int i = 0; i < file->nkids; i++)
         if (file->kids[i]->kind != N_IMPORT)

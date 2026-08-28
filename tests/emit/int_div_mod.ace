@@ -1,0 +1,7 @@
+// expect-exit: 42
+main(): int {
+    value: int = 13
+    ones: int = value % 10
+    tens: int = value / 10
+    return ones * 10 + tens + 11
+}

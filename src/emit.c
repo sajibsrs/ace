@@ -1042,9 +1042,9 @@ static void emit_arith(Em* e, TokKind op, int dst, int a, int b, SType* t) {
     }
     case T_PERCENT: {
         uint32_t div = ty_is_signed(t) ? (s | 0x1AC00C00u) : (s | 0x1AC00800u);
-        ins(e, div | (rb << 16) | (ra << 5) | rd);             // rd = a / b
-        ins(e, s | 0x1B008000u | (rb << 16) | (rd << 10) | (ra << 5) | rd);
-        return; // rd = a - rd*b
+        ins(e, div | (rb << 16) | (ra << 5) | 16u); // x16 = a / b
+        ins(e, s | 0x1B008000u | (rb << 16) | (ra << 10) | (16u << 5) | rd);
+        return; // rd = a - x16*b
     }
     case T_SHL: ins(e, s | 0x1AC02000u | (rb << 16) | (ra << 5) | rd); return;
     case T_SHR:
