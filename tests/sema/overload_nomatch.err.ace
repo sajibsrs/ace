@@ -1,0 +1,11 @@
+show(value: int): int {
+    return value
+}
+
+show(value: string): int {
+    return int(value.len)
+}
+
+main(): int {
+    return show(true)
+}

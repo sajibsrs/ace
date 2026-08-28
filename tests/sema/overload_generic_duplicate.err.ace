@@ -1,0 +1,7 @@
+identity[T](value: T): T {
+    return value
+}
+
+identity[U](value: U): U {
+    return value
+}

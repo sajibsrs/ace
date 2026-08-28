@@ -1,0 +1,7 @@
+convert(value: int): int {
+    return value
+}
+
+convert(value: int): bool {
+    return true
+}

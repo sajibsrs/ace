@@ -156,6 +156,7 @@ typedef struct Scope {
 
 typedef struct Pending {
     Node* call;
+    Scope* scope;
     struct Pending* next;
 } Pending;
 
@@ -272,6 +273,25 @@ static int same_type(SType* a, SType* b) {
         return a->name && b->name && strcmp(a->name, b->name) == 0;
     default: return 0;
     }
+}
+
+static int same_param_signature(SType* a, Node* ad, SType* b, Node* bd) {
+    if (!a || !b || a->kind != SK_FUNC || b->kind != SK_FUNC ||
+        a->nparams != b->nparams)
+        return 0;
+    for (int i = 0; i < a->nparams; i++) {
+        if (!same_type(a->params[i], b->params[i])) return 0;
+        int am = ad && i < ad->nkids && (ad->kids[i]->flags & F_MUT);
+        int bm = bd && i < bd->nkids && (bd->kids[i]->flags & F_MUT);
+        if (am != bm) return 0;
+    }
+    return 1;
+}
+
+static int overload_count(Sym* head) {
+    int n = 0;
+    for (Sym* s = head; s; s = s->overload) n++;
+    return n;
 }
 
 static int castable(SType* f, SType* t) {
@@ -446,6 +466,90 @@ static SType* build_type(Ck* k, Node* t) {
     }
 }
 
+// Build a function signature. Generic declarations use canonical type-parameter
+// placeholders when args is NULL, making alpha-equivalent declarations such as
+// f[T](T) and f[U](U) comparable for duplicate detection.
+static SType* build_func_type(Ck* k, Node* f, SType** args, int nargs) {
+    const char** saved_names = k->tnames;
+    SType** saved_types = k->ttypes;
+    int saved_nsub = k->nsub;
+    if (f->c) {
+        int nt = f->c->nkids;
+        k->tnames = (const char**)arena_alloc((size_t)(nt ? nt : 1) * sizeof(char*));
+        k->ttypes = (SType**)arena_alloc((size_t)(nt ? nt : 1) * sizeof(SType*));
+        k->nsub = nt;
+        for (int i = 0; i < nt; i++) {
+            k->tnames[i] = f->c->kids[i]->str;
+            if (args && i < nargs) {
+                k->ttypes[i] = args[i];
+            } else {
+                SType* p = st_new(SK_TYPEPARAM);
+                char name[32];
+                snprintf(name, sizeof name, "$%d", i);
+                size_t len = strlen(name);
+                char* stable = (char*)arena_alloc(len + 1);
+                memcpy(stable, name, len + 1);
+                p->name = stable;
+                k->ttypes[i] = p;
+            }
+        }
+    }
+    SType* ft = st_new(SK_FUNC);
+    ft->nparams = f->nkids;
+    ft->params = (SType**)arena_alloc(
+        (size_t)(f->nkids ? f->nkids : 1) * sizeof(SType*));
+    for (int i = 0; i < f->nkids; i++) ft->params[i] = build_type(k, f->kids[i]->a);
+    ft->ret = f->a ? build_type(k, f->a) : NULL;
+    k->tnames = saved_names;
+    k->ttypes = saved_types;
+    k->nsub = saved_nsub;
+    return ft;
+}
+
+static Sym* declare_func(Ck* k, Node* f, int is_extern) {
+    Sym* head = find_in(k->scope->values, f->str, f->len);
+    if (head && head->kind != SYM_FUNC) {
+        ck_err(k, f, "duplicate name '%.*s' in this scope", (int)f->len, f->str);
+        return NULL;
+    }
+    int old_c_boundary = 0;
+    for (Sym* old = head; old; old = old->overload)
+        old_c_boundary |= old->is_extern ||
+                          (old->decl && (old->decl->flags & F_EXPO));
+    if (head && (is_extern || old_c_boundary || (f->flags & F_EXPO))) {
+        ck_err(k, f, "C-boundary function '%.*s' cannot be overloaded",
+               (int)f->len, f->str);
+        return NULL;
+    }
+    SType* ft = build_func_type(k, f, NULL, 0);
+    for (Sym* old = head; old; old = old->overload) {
+        int old_nt = old->decl && old->decl->c ? old->decl->c->nkids : 0;
+        int new_nt = f->c ? f->c->nkids : 0;
+        if (old_nt == new_nt && same_param_signature(old->type, old->decl, ft, f)) {
+            ck_err(k, f,
+                   "duplicate overload '%.*s': parameter signatures must differ (return type is not considered)",
+                   (int)f->len, f->str);
+            return NULL;
+        }
+    }
+    Sym* s = sym_new(SYM_FUNC, f->str, f->len);
+    s->decl = f;
+    s->type = ft;
+    s->is_generic = f->c != NULL;
+    s->is_extern = is_extern;
+    s->is_pub = (f->flags & F_PUB) != 0;
+    f->sym = s;
+    if (!head) {
+        s->next = k->scope->values;
+        k->scope->values = s;
+    } else {
+        Sym* tail = head;
+        while (tail->overload) tail = tail->overload;
+        tail->overload = s;
+    }
+    return s;
+}
+
 // --- forward decls -------------------------------------------------------------------
 
 static SType* expr_type(Ck* k, Node* e);
@@ -489,6 +593,31 @@ over:
 }
 
 static int coerce(Ck* k, Node* e, SType* want) {
+    if (e->kind == N_IDENT && want && want->kind == SK_FUNC) {
+        Sym* head = lookup_val(k, e->str, e->len);
+        if (head && head->kind == SYM_FUNC && overload_count(head) > 1) {
+            Sym* found = NULL;
+            for (Sym* s = head; s; s = s->overload) {
+                if (s->is_generic || !same_type(s->type, want)) continue;
+                if (found) {
+                    ck_err(k, e, "ambiguous overloaded function value '%.*s'",
+                           (int)e->len, e->str);
+                    e->ty = T_ERR;
+                    return 0;
+                }
+                found = s;
+            }
+            if (!found) {
+                ck_err(k, e, "no overload of '%.*s' has the required function type",
+                       (int)e->len, e->str);
+                e->ty = T_ERR;
+                return 0;
+            }
+            e->sym = found;
+            e->ty = found->type;
+            return 1;
+        }
+    }
     SType* t = expr_type(k, e);
     if (same_type(t, want)) return 1;
     if (want->kind == SK_ERR || t->kind == SK_ERR) return 1;
@@ -686,6 +815,12 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         }
         if (s->kind == SYM_TYPE || (s->kind == SYM_FUNC && s->is_generic)) {
             ck_err(k, e, "'%.*s' is a type or generic — used bare here", (int)e->len, e->str);
+            return T_ERR;
+        }
+        if (s->kind == SYM_FUNC && overload_count(s) > 1) {
+            ck_err(k, e,
+                   "overloaded function '%.*s' needs a call or an explicit function-value type",
+                   (int)e->len, e->str);
             return T_ERR;
         }
         e->sym = s; // emitter: storage (slot / global / function)
@@ -974,11 +1109,7 @@ static SType* instantiate_generic_func(Ck* k, Sym* gs, Node* index_node) {
     k->ttypes = args;
     k->nsub = nargs;
     for (int i = 0; i < nargs; i++) k->tnames[i] = tp->kids[i]->str;
-    SType* ft = st_new(SK_FUNC);
-    ft->nparams = f->nkids;
-    ft->params = (SType**)arena_alloc((size_t)(f->nkids ? f->nkids : 1) * sizeof(SType*));
-    for (int i = 0; i < f->nkids; i++) ft->params[i] = build_type(k, f->kids[i]->a);
-    ft->ret = f->a ? build_type(k, f->a) : NULL;
+    SType* ft = build_func_type(k, f, args, nargs);
     STypeInst* inst = (STypeInst*)arena_alloc(sizeof(STypeInst));
     inst->args = args;
     inst->result = ft;
@@ -987,6 +1118,70 @@ static SType* instantiate_generic_func(Ck* k, Sym* gs, Node* index_node) {
     check_func_body(k, f); // stamping: body checked once per instantiation
     k->tnames = sn; k->ttypes = st; k->nsub = ns;
     return ft;
+}
+
+static SType* overload_arg_type(Ck* k, Node* arg) {
+    Node* raw = arg->kind == N_MUTARG ? arg->a : arg;
+    SType* t = expr_type(k, raw);
+    if (t == T_UT_INT) return st_prim(P_I64);   // overload-call default: int
+    if (t == T_UT_FLOAT) return st_prim(P_F64); // overload-call default: f64
+    return t;
+}
+
+static int call_exact_ft(Node* call, Node* decl, SType* ft, SType** actual) {
+    if (!ft || ft->kind != SK_FUNC || call->nkids != ft->nparams)
+        return 0;
+    for (int i = 0; i < call->nkids; i++) {
+        int am = call->kids[i]->kind == N_MUTARG;
+        int pm = decl && i < decl->nkids &&
+                 (decl->kids[i]->flags & F_MUT) != 0;
+        if (am != pm || !same_type(actual[i], ft->params[i])) return 0;
+    }
+    return 1;
+}
+
+static int call_exact_match(Node* call, Sym* s, SType** actual) {
+    return s && !s->is_generic && !s->is_extern &&
+           call_exact_ft(call, s->decl, s->type, actual);
+}
+
+// Select a non-generic direct-call overload. During the source walk, no match
+// is deferred because a later declaration may add the matching overload.
+// At EOF, a sole declaration retains Ace's ordinary expected-literal typing;
+// a real overload set uses exact types and int/f64 literal defaults.
+static Sym* select_call_overload(Ck* k, Node* call, Sym* head, int final,
+                                 int* ambiguous) {
+    *ambiguous = 0;
+    if (!head || head->kind != SYM_FUNC) return NULL;
+    int nactual = call->nkids;
+    SType** actual = (SType**)arena_alloc(
+        (size_t)(nactual ? nactual : 1) * sizeof(SType*));
+    for (int i = 0; i < nactual; i++) actual[i] = overload_arg_type(k, call->kids[i]);
+
+    Sym* found = NULL;
+    int nongeneric = 0;
+    for (Sym* s = head; s; s = s->overload) {
+        if (s->is_generic) continue;
+        nongeneric++;
+        if (!call_exact_match(call, s, actual)) continue;
+        if (found) {
+            *ambiguous = 1;
+            return NULL;
+        }
+        found = s;
+    }
+    if (!found && final && nongeneric == 1) {
+        for (Sym* s = head; s; s = s->overload)
+            if (!s->is_generic) return s;
+    }
+    return found;
+}
+
+static void finish_direct_call(Ck* k, Node* call, Sym* s) {
+    check_args(k, call, s->type, s->is_extern);
+    check_mut_args(k, call, s->decl);
+    call->sym = s;
+    call->ty = s->type->ret;
 }
 
 static SType* check_call(Ck* k, Node* call) {
@@ -1036,12 +1231,15 @@ static SType* check_call(Ck* k, Node* call) {
             // forward top-level call — deferred like an emitter fixup
             Pending* pd = (Pending*)arena_alloc(sizeof(Pending));
             pd->call = call;
+            pd->scope = k->scope;
             pd->next = k->pending;
             k->pending = pd;
             return T_ERR; // poison; existence + args verified at end of file
         }
         if (s->kind == SYM_VAR && s->type && s->type->kind == SK_FUNC) {
             check_args(k, call, s->type, 0);
+            callee->sym = s;
+            callee->ty = s->type;
             call->sym = s; // indirect call through a function value
             return s->type->ret;
         }
@@ -1054,24 +1252,76 @@ static SType* check_call(Ck* k, Node* call) {
             ck_err(k, call, "'%.*s' is not callable", (int)callee->len, callee->str);
             return T_ERR;
         }
-        if (s->is_generic) {
+        int has_plain = 0;
+        for (Sym* it = s; it; it = it->overload) has_plain |= !it->is_generic;
+        if (!has_plain) {
             ck_err(k, call, "generic function '%.*s' needs type arguments: %.*s[T](...)",
                    (int)callee->len, callee->str, (int)callee->len, callee->str);
             return T_ERR;
         }
-        check_args(k, call, s->type, s->is_extern);
-        check_mut_args(k, call, s->decl);
-        call->sym = s; // direct call target
-        return s->type->ret;
+        if (s->is_extern && !s->overload) {
+            finish_direct_call(k, call, s);
+            return s->type->ret;
+        }
+        int ambiguous = 0;
+        Sym* chosen = select_call_overload(k, call, s, 0, &ambiguous);
+        if (ambiguous) {
+            ck_err(k, call, "ambiguous call to overloaded function '%.*s'",
+                   (int)callee->len, callee->str);
+            return T_ERR;
+        }
+        if (chosen) {
+            finish_direct_call(k, call, chosen);
+            return chosen->type->ret;
+        }
+        Pending* pd = (Pending*)arena_alloc(sizeof(Pending));
+        pd->call = call;
+        pd->scope = k->scope;
+        pd->next = k->pending;
+        k->pending = pd;
+        return T_ERR; // a matching overload may be declared later
     }
     // generic instantiation call: max[int](3, 9)
     if (callee->kind == N_INDEX && callee->a->kind == N_IDENT) {
-        Sym* s = lookup_val(k, callee->a->str, callee->a->len);
-        if (s && s->kind == SYM_FUNC && s->is_generic) {
-            SType* ft = instantiate_generic_func(k, s, callee);
+        Sym* head = lookup_val(k, callee->a->str, callee->a->len);
+        if (head && head->kind == SYM_FUNC) {
+            int nargs = callee->b ? 1 : callee->nkids;
+            SType** targs = (SType**)arena_alloc(
+                (size_t)(nargs ? nargs : 1) * sizeof(SType*));
+            for (int i = 0; i < nargs; i++)
+                targs[i] = build_type(k, callee->b ? callee->b : callee->kids[i]);
+            SType** actual = (SType**)arena_alloc(
+                (size_t)(call->nkids ? call->nkids : 1) * sizeof(SType*));
+            for (int i = 0; i < call->nkids; i++)
+                actual[i] = overload_arg_type(k, call->kids[i]);
+            Sym* chosen = NULL;
+            Sym* sole = NULL;
+            int eligible = 0;
+            for (Sym* s = head; s; s = s->overload) {
+                if (!s->is_generic || !s->decl->c || s->decl->c->nkids != nargs)
+                    continue;
+                eligible++;
+                sole = s;
+                SType* candidate = build_func_type(k, s->decl, targs, nargs);
+                if (!call_exact_ft(call, s->decl, candidate, actual)) continue;
+                if (chosen) {
+                    ck_err(k, call, "ambiguous call to generic overload '%.*s'",
+                           (int)callee->a->len, callee->a->str);
+                    return T_ERR;
+                }
+                chosen = s;
+            }
+            if (!chosen && eligible == 1) chosen = sole;
+            if (!chosen) {
+                ck_err(k, call, "no matching generic overload '%.*s' for these arguments",
+                       (int)callee->a->len, callee->a->str);
+                return T_ERR;
+            }
+            SType* ft = instantiate_generic_func(k, chosen, callee);
             if (ft->kind == SK_ERR) return T_ERR;
             check_args(k, call, ft, 0);
-            callee->sym = s;  // the generic declaration
+            check_mut_args(k, call, chosen->decl);
+            callee->sym = chosen; // the selected generic declaration
             callee->ty = ft;  // the stamped signature — args recovered via the
             return ft->ret;   // instantiation memo on s->decl's tparams node
         }
@@ -1115,6 +1365,12 @@ static SType* check_call(Ck* k, Node* call) {
         }
         // method sugar: x.f() ≡ f(x)
         Sym* f = lookup_val(k, callee->str, callee->len);
+        if (f && f->kind == SYM_FUNC && overload_count(f) > 1) {
+            ck_err(k, call,
+                   "method-sugar lookup for overloaded '%.*s' is not defined yet; call it as a free function",
+                   (int)callee->len, callee->str);
+            return T_ERR;
+        }
         if (f && f->kind == SYM_FUNC && f->type && f->type->nparams >= 1 &&
             same_type(f->type->params[0], b)) {
             if (!f->decl || f->decl->nkids < 1) return T_ERR;
@@ -1593,6 +1849,12 @@ static void check_impl(Ck* k, Node* impl) {
                    (int)entry->a->len, entry->a->str);
             continue;
         }
+        if (overload_count(fn) > 1) {
+            ck_err(k, entry->a,
+                   "impl entries cannot select an overloaded function yet; use a uniquely named adapter");
+            continue;
+        }
+        entry->a->sym = fn; // emitter: resolved implementation function
         SType* ft = fn->type;
         if (ft->nparams != m->nkids + 1) {
             ck_err(k, entry, "'%.*s' takes %d parameters; method '%.*s' needs %d plus the receiver",
@@ -1701,24 +1963,17 @@ int sema_check(Node* file, Diag* d) {
             break;
         }
         case N_FUNC: {
-            Sym* s = declare_val(&k, n, SYM_FUNC, n->str, n->len);
+            Sym* s = declare_func(&k, n, 0);
             if (!s) break;
-            s->decl = n;
-            s->is_generic = n->c != NULL;
             if (n->len == 4 && memcmp(n->str, "main", 4) == 0) {
                 int spells_int = n->a && n->a->kind == N_NAMED &&
                     n->a->len == 3 && memcmp(n->a->str, "int", 3) == 0;
-                if (s->is_generic || n->nkids != 0 || !spells_int)
+                Sym* head = find_in(k.scope->values, n->str, n->len);
+                if (s->is_generic || n->nkids != 0 || !spells_int ||
+                    overload_count(head) != 1)
                     ck_err(&k, n, "entry function must be main(): int");
             }
             if (!s->is_generic) {
-                s->type = st_new(SK_FUNC);
-                s->type->nparams = n->nkids;
-                s->type->params = (SType**)arena_alloc(
-                    (size_t)(n->nkids ? n->nkids : 1) * sizeof(SType*));
-                for (int p = 0; p < n->nkids; p++)
-                    s->type->params[p] = build_type(&k, n->kids[p]->a);
-                s->type->ret = n->a ? build_type(&k, n->a) : NULL;
                 check_func_body(&k, n); // single pass: check now, in order
             }
             break;
@@ -1726,17 +1981,8 @@ int sema_check(Node* file, Diag* d) {
         case N_EXTERN: {
             for (int j = 0; j < n->nkids; j++) {
                 Node* f = n->kids[j];
-                Sym* s = declare_val(&k, f, SYM_FUNC, f->str, f->len);
+                Sym* s = declare_func(&k, f, 1);
                 if (!s) continue;
-                s->decl = f;
-                s->is_extern = 1;
-                s->type = st_new(SK_FUNC);
-                s->type->nparams = f->nkids;
-                s->type->params = (SType**)arena_alloc(
-                    (size_t)(f->nkids ? f->nkids : 1) * sizeof(SType*));
-                for (int p = 0; p < f->nkids; p++)
-                    s->type->params[p] = build_type(&k, f->kids[p]->a);
-                s->type->ret = f->a ? build_type(&k, f->a) : NULL;
             }
             break;
         }
@@ -1812,15 +2058,24 @@ int sema_check(Node* file, Diag* d) {
     for (Pending* pd = k.pending; pd; pd = pd->next) {
         Node* call = pd->call;
         Node* callee = call->a;
-        Sym* s = lookup_val(&k, callee->str, callee->len);
-        if (!s || s->kind != SYM_FUNC || s->is_generic)
+        k.scope = pd->scope;
+        Sym* head = lookup_val(&k, callee->str, callee->len);
+        if (!head || head->kind != SYM_FUNC) {
             ck_err(&k, call, "unknown function '%.*s'", (int)callee->len, callee->str);
-        else {
-            check_args(&k, call, s->type, s->is_extern);
-            check_mut_args(&k, call, s->decl);
-            call->sym = s;  // resolved now that the definition exists;
-            call->ty = s->type->ret; // the emitter emits this like any direct call
+        } else {
+            int ambiguous = 0;
+            Sym* chosen = select_call_overload(&k, call, head, 1, &ambiguous);
+            if (ambiguous) {
+                ck_err(&k, call, "ambiguous call to overloaded function '%.*s'",
+                       (int)callee->len, callee->str);
+            } else if (!chosen) {
+                ck_err(&k, call, "no matching overload '%.*s' for these argument types",
+                       (int)callee->len, callee->str);
+            } else {
+                finish_direct_call(&k, call, chosen);
+            }
         }
     }
+    k.scope = &file_scope;
     return d->errors;
 }

@@ -1,0 +1,55 @@
+// expect-exit: 42
+score(value: int): int {
+    return value + 1
+}
+
+score(value: string): int {
+    return int(value.len)
+}
+
+score(value: f64): int {
+    return int(value)
+}
+
+kind(value: i32): int {
+    return 1
+}
+
+kind(value: int): int {
+    return 2
+}
+
+kind(value: f32): int {
+    return 4
+}
+
+kind(value: f64): int {
+    return 8
+}
+
+touch(value: i32): i32 {
+    return value
+}
+
+touch(mut value: i32): i32 {
+    value += 1
+    return value
+}
+
+keep[T](value: T): T {
+    return value
+}
+
+keep[T](first: T, second: T): T {
+    return second
+}
+
+main(): int {
+    x: i32 = 5
+    plain: i32 = touch(x)
+    changed: i32 = touch(mut x)
+    selected: (int): int = score
+    return score(40) + score("ace") + score(1.0) + int(plain) +
+        int(changed) + selected(1) + keep[int](7) + keep[int](1, 2) +
+        kind(i32(1)) + kind(1) + kind(f32(1.0)) + kind(1.0) - 40
+}

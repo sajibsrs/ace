@@ -1,0 +1,7 @@
+export consume(value: int): int {
+    return value
+}
+
+consume(value: string): int {
+    return int(value.len)
+}

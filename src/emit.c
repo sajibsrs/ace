@@ -1357,8 +1357,15 @@ static void emit_bl_extern(Em* e, const char* p, uint32_t len) {
 
 // --- mangling ---------------------------------------------------------------------------
 
+static void mangle_name(Buf* b, const char* name) {
+    char tmp[32];
+    size_t len = strlen(name);
+    snprintf(tmp, sizeof tmp, "%zu_", len);
+    buf_write(b, tmp, strlen(tmp));
+    buf_write(b, name, len);
+}
+
 static void mangle_type(Buf* b, SType* t) {
-    t = unwrap(t);
     if (!t) { buf_put8(b, '?'); return; }
     switch (t->kind) {
     case SK_PRIM: {
@@ -1384,11 +1391,24 @@ static void mangle_type(Buf* b, SType* t) {
     }
     case SK_OPT: buf_put8(b, 'o'); mangle_type(b, t->base); return;
     case SK_STRUCT: case SK_ENUM: case SK_INTERFACE:
-        buf_write(b, t->name, strlen(t->name));
+        buf_put8(b, t->kind == SK_STRUCT ? 'S' : t->kind == SK_ENUM ? 'E' : 'I');
+        mangle_name(b, t->name);
+        return;
+    case SK_DISTINCT:
+        buf_put8(b, 'D');
+        mangle_name(b, t->name);
         return;
     case SK_TUPLE:
         buf_put8(b, 't');
         for (int i = 0; i < t->nfields; i++) mangle_type(b, t->fields[i].t);
+        buf_put8(b, '_');
+        return;
+    case SK_FUNC:
+        buf_put8(b, 'f');
+        for (int i = 0; i < t->nparams; i++) mangle_type(b, t->params[i]);
+        buf_put8(b, 'r');
+        mangle_type(b, t->ret);
+        buf_put8(b, '_');
         return;
     default:
         buf_put8(b, '?');
@@ -1397,10 +1417,21 @@ static void mangle_type(Buf* b, SType* t) {
 }
 
 static char fnname_buf[512];
-static const char* fn_mangle(const char* name, uint32_t len, SType** targs, int nt) {
+static const char* fn_mangle(const char* name, uint32_t len, SType* ft, Node* decl,
+                             SType** targs, int nt) {
     Buf b = {0};
-    buf_write(&b, "__ace$fn$", 8);
+    buf_write(&b, "__ace$fn$", strlen("__ace$fn$"));
     buf_write(&b, name, len);
+    buf_write(&b, "$p", 2);
+    if (ft && ft->kind == SK_FUNC) {
+        for (int i = 0; i < ft->nparams; i++) {
+            buf_put8(&b, decl && i < decl->nkids && (decl->kids[i]->flags & F_MUT)
+                            ? 'm' : 'r');
+            mangle_type(&b, ft->params[i]);
+            buf_put8(&b, '$');
+        }
+    }
+    if (nt) buf_put8(&b, 'g');
     for (int i = 0; i < nt; i++) {
         buf_put8(&b, '$');
         mangle_type(&b, targs[i]);
@@ -1732,7 +1763,8 @@ static int gen_addr(Em* e, Node* x) {
                 snprintf(nm, sizeof nm, "_%.*s", (int)s->len, s->name);
                 fs = sym_intern(&e->syms, nm, (uint32_t)strlen(nm));
             } else {
-                fs = sym_intern(&e->syms, fn_mangle(s->name, s->len, NULL, 0),
+                fs = sym_intern(&e->syms,
+                                fn_mangle(s->name, s->len, s->type, s->decl, NULL, 0),
                                 (uint32_t)strlen(fnname_buf));
             }
             addr_of_sym(e, xreg(t), fs);
@@ -1888,7 +1920,8 @@ static EV gen_call(Em* e, Node* call) {
         int nt = gs->decl->c ? gs->decl->c->nkids : 0;
         for (STypeInst* inst = sema_insts(gs->decl); inst; inst = inst->next) {
             if (inst->result != callee->ty) continue;
-            const char* mn = fn_mangle(gs->name, gs->len, inst->args, nt);
+            const char* mn = fn_mangle(gs->name, gs->len, inst->result,
+                                       gs->decl, inst->args, nt);
             CallTarget tgt = { TK_INTERNAL, arena_copy(mn, strlen(mn)),
                                (uint32_t)strlen(mn), 0 };
             SType* ft = callee->ty;
@@ -2042,7 +2075,8 @@ static EV gen_call(Em* e, Node* call) {
                 tgt.name = arena_copy(nm, strlen(nm));
                 tgt.nlen = (uint32_t)strlen(nm);
             } else {
-                const char* mn = fn_mangle(s->name, s->len, NULL, 0);
+                const char* mn = fn_mangle(s->name, s->len, s->type,
+                                           s->decl, NULL, 0);
                 tgt.kind = TK_INTERNAL;
                 tgt.name = arena_copy(mn, strlen(mn));
                 tgt.nlen = (uint32_t)strlen(mn);
@@ -3199,7 +3233,10 @@ static void emit_impl(Em* e, Node* impl) {
             buf_put64(&c->data, 0);
             continue;
         }
-        const char* fnm = fn_mangle(entry->a->str, entry->a->len, NULL, 0);
+        Sym* fsym = node_sym(entry->a);
+        const char* fnm = fn_mangle(entry->a->str, entry->a->len,
+                                    fsym ? fsym->type : NULL,
+                                    fsym ? fsym->decl : NULL, NULL, 0);
         ESym* fs = sym_intern(&e->syms, fnm, (uint32_t)strlen(fnm));
         buf_put64(&c->data, 0);
         reloc_add(c, off, fs, 0, 3, 1, RM_UNSIGNED);
@@ -3625,7 +3662,9 @@ int emit_object(Node* file, Diag* d, const char* out_path) {
                 int nt = n->c->nkids;
                 for (STypeInst* inst = sema_insts(n); inst; inst = inst->next) {
                     sema_stamp_body(n, inst->args, nt);
-                    const char* mn = fn_mangle(n->str, n->len, inst->args, nt);
+                    Sym* gs = node_sym(n);
+                    const char* mn = fn_mangle(n->str, n->len, inst->result,
+                                               gs ? gs->decl : n, inst->args, nt);
                     emit_func(&e, n, mn, (uint32_t)strlen(mn),
                               inst->result->ret, 0, 0);
                 }
@@ -3641,7 +3680,9 @@ int emit_object(Node* file, Diag* d, const char* out_path) {
                 snprintf(nm, sizeof nm, "_%.*s", (int)n->len, n->str);
                 emit_func(&e, n, nm, (uint32_t)strlen(nm), ret, 0, 1);
             } else {
-                const char* mn = fn_mangle(n->str, n->len, NULL, 0);
+                Sym* fs = node_sym(n);
+                const char* mn = fn_mangle(n->str, n->len,
+                                           fs ? fs->type : NULL, n, NULL, 0);
                 emit_func(&e, n, mn, (uint32_t)strlen(mn), ret, 0, 0);
             }
             break;

@@ -1,0 +1,11 @@
+pick[T](value: T): T {
+    return value
+}
+
+pick[T](value: int): int {
+    return value
+}
+
+main(): int {
+    return pick[int](1)
+}

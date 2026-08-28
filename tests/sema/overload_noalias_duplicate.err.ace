@@ -1,0 +1,7 @@
+process(noalias value: []u8): int {
+    return int(value.len)
+}
+
+process(value: []u8): int {
+    return int(value.len)
+}

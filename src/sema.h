@@ -56,6 +56,7 @@ struct Sym {
     SType*      type;
     Node*       decl;   // binder/declaration node (slot key for the emitter)
     Sym*        next;
+    Sym*        overload; // same-scope function overloads; not part of scope chain
 };
 
 // --- helpers used by the emitter --------------------------------------------------

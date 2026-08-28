@@ -1,0 +1,13 @@
+// expect-exit: 42
+main(): int {
+    value: int = 40
+    return later(value) + later("x")
+}
+
+later(value: int): int {
+    return value + 1
+}
+
+later(value: string): int {
+    return int(value.len)
+}
