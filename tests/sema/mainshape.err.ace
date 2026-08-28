@@ -1,0 +1,4 @@
+// The entry point uses Ace's platform-default integer spelling.
+main(): i32 {
+    return 0
+}

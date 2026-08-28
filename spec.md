@@ -195,7 +195,7 @@ Compiler-session decisions:
 - [x] `int`/`uint`: **platform word** — `int` = i64, `uint` = u64 on arm64 (each target picks its word; explicit widths always available).
 - [x] Compound assignment `+= -= *= /= %= &= |= ^= <<= >>=`: **included as pure sugar** — `x += y` ≡ `x = x + (y)`, left operand evaluated once.
 - [x] Enum: **yes** — `Name: enum { a, b }` as distinct-typed int constants; `enum` is a keyword; no tagged unions in v1 (interface values cover sums).
-- [x] `main` shape: **`main(): i32`** — entry returns a 32-bit exit code (`return 0` = success). No special case at the C boundary; scripts/CI get status for free.
+- [x] `main` shape: **`main(): int`** — the source-level entry uses Ace's platform-word integer (`i64` on arm64), like ordinary application code. The platform entry ABI consumes the low 32 bits as the process exit status (`return 0` = success); on AArch64 both travel in `x0`, so this needs no extra instruction. Owner-approved revision from the earlier `i32` shape.
 - [x] Linking: **emit Mach-O objects, link via the system toolchain** (`ld`/`clang` driver) for v1. libSystem externs work day one; direct executable emission stays additive later.
 - [x] Debug info: **yes, minimal DWARF line tables in v1** — `.debug_line` only (file + line per PC range); no variable/type DIEs, no unwind tables. lldb/atos resolve Ace source from day one.
 - [ ] Queued language additions (not v1-blocking): `volatile`/`packed`/`align` attributes for OS work.
@@ -254,7 +254,7 @@ Implementation phase — closed so far:
 - [x] Compound assignment operators included as pure sugar (`x += y` ≡ `x = x + (y)`, left operand evaluated once).
 - [x] Enum `Name: enum { a, b }` — distinct type + distinct-typed int constants; `enum` keyword; no tagged unions in v1.
 - [x] Semantic model (implementation): literals are untyped constants (fit-checked, never converting between kinds); enum layout = i32; interface values = 16 bytes (vtable + data); optionals free where a niche exists (pointer/slice/interface/string), value optionals carry a visible tail tag; mut-parameter write access extends through the reference even when the pointer type is unmarked.
-- [x] `main(): i32` — entry returns the exit code; rationale: zero special cases at the boundary, observable status for every program.
+- [x] `main(): int` — entry returns the platform-word integer; the target entry ABI takes its low 32 bits as the observable exit status. Rationale: ordinary Ace code uses the natural platform type, while the boundary mapping is localized and free on AArch64.
 - [x] Linking: Mach-O objects + system linker for v1 — rationale: extern "c" to libSystem works immediately, compile-time stays fast, direct executable emission remains an additive later step.
 - [x] DWARF: minimal `.debug_line` line tables in v1 — rationale: crash PCs resolve to Ace source from day one; everything richer (DIEs, unwind) is additive.
 

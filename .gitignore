@@ -1,4 +1,5 @@
 /ace
+.DS_Store
 *.o
 *.dSYM/
 .vscode/

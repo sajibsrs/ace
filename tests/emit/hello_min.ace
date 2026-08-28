@@ -1,4 +1,4 @@
 // expect-exit: 42
-main(): i32 {
+main(): int {
     return 42
 }

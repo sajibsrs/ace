@@ -1691,6 +1691,12 @@ int sema_check(Node* file, Diag* d) {
             if (!s) break;
             s->decl = n;
             s->is_generic = n->c != NULL;
+            if (n->len == 4 && memcmp(n->str, "main", 4) == 0) {
+                int spells_int = n->a && n->a->kind == N_NAMED &&
+                    n->a->len == 3 && memcmp(n->a->str, "int", 3) == 0;
+                if (s->is_generic || n->nkids != 0 || !spells_int)
+                    ck_err(&k, n, "entry function must be main(): int");
+            }
             if (!s->is_generic) {
                 s->type = st_new(SK_FUNC);
                 s->type->nparams = n->nkids;

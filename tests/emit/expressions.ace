@@ -1,5 +1,5 @@
 // expect-exit: 43
-main(): i32 {
+main(): int {
     x: i32 = 6
     x = x * 7
     x += 5
@@ -16,5 +16,5 @@ main(): i32 {
     if f == 4.0 {
         x += 1
     }
-    return x
+    return int(x)
 }

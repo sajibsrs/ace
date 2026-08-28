@@ -6,7 +6,7 @@ extern "c" {
 base: const i32 = 40
 extra: i32
 
-main(): i32 {
+main(): int {
     extra = 2
-    return abs(-base) + extra
+    return int(abs(-base) + extra)
 }

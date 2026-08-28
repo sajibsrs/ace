@@ -7,9 +7,9 @@ pair(): (i32, i32) {
     return 7, 3
 }
 
-main(): i32 {
+main(): int {
     x: i32 = 40
     bump(mut x, 2)
     a: i32, b: i32 = pair()
-    return x + a - b - 4
+    return int(x + a - b - 4)
 }
