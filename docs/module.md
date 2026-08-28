@@ -108,5 +108,5 @@ every function to the file it was written in.
   module member name. Rename one side.
 - Standard-library modules live beside the compiler binary (`std/` next to
   `ace`); there is no user-configurable search path yet.
-- Only `fmt` and the minimal `math` (`min[T]`, `max[T]`, `abs[T]`) exist in
-  the standard library today.
+- Only `fmt` and the minimal `math` exist in the standard library today — see
+  [Standard library](standard-library.md).
