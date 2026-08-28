@@ -1,6 +1,6 @@
 CC      = cc
 CFLAGS  = -std=c11 -O2 -g -Wall -Wextra
-SRC     := src/main.c src/lexer.c src/parser.c src/sema.c src/emit.c
+SRC     := src/main.c src/module.c src/lexer.c src/parser.c src/sema.c src/emit.c
 HDR     := src/ace.h src/sema.h
 
 ace: $(SRC) $(HDR)

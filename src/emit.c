@@ -283,7 +283,7 @@ typedef struct { // per-function stack slot (keyed by binder/loop node)
 } Slot;
 
 typedef struct { Sym* s; ESym* sym; } GVar; // global variable storage
-typedef struct { uint32_t addr; int line, col; } LineRow;
+typedef struct { uint32_t addr; int line, col; const char* path; } LineRow;
 typedef struct { uint32_t addr, size; const char* name; uint32_t nlen; } DebugFn;
 
 enum { CLS_INT, CLS_FP, CLS_ADDR };
@@ -343,7 +343,8 @@ typedef struct {
 
 static void em_err(Em* e, Node* n, const char* fmt, ...) {
     va_list ap;
-    fprintf(stderr, "%s:%d:%d: error: ", e->d->path,
+    fprintf(stderr, "%s:%d:%d: error: ",
+            n && n->path ? n->path : e->d->path,
             n ? n->line : 0, n ? n->col : 0);
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
@@ -376,8 +377,9 @@ static const char* arena_copy(const char* s, size_t n) {
 static void line_mark(Em* e, Node* n) {
     if (!n || n->line <= 0) return;
     uint32_t addr = (uint32_t)text(e)->len;
+    const char* path = n->path ? n->path : e->d->path;
     if (e->nlines && e->lines[e->nlines - 1].addr == addr) {
-        e->lines[e->nlines - 1] = (LineRow){ addr, n->line, n->col };
+        e->lines[e->nlines - 1] = (LineRow){ addr, n->line, n->col, path };
         return;
     }
     if (e->nlines == e->clines) {
@@ -385,7 +387,7 @@ static void line_mark(Em* e, Node* n) {
         e->lines = realloc(e->lines, (size_t)e->clines * sizeof(LineRow));
         if (!e->lines) oom();
     }
-    e->lines[e->nlines++] = (LineRow){ addr, n->line, n->col };
+    e->lines[e->nlines++] = (LineRow){ addr, n->line, n->col, path };
 }
 
 static void debug_fn_add(Em* e, Node* f, uint32_t addr, uint32_t size) {
@@ -1489,6 +1491,14 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
     for (int i = 0; i < n; i++) {
         EV v = args[i].val;
         int pass_addr = args[i].ptrval || args[i].val.cls == CLS_INT;
+        int aggregate_base = xreg(v.idx);
+        if (v.cls == CLS_ADDR && ty_size(eff[i]) <= 16) {
+            // A two-word aggregate commonly starts in x0. Preserve its address
+            // before loading word zero into x0, or word one's load would use
+            // the first word as its base (first exposed by a string argument).
+            mov_int(e, 1, 17, aggregate_base);
+            aggregate_base = 17;
+        }
         for (int w = 0; w < 2; w++) {
             TU* u = &units[i * 2 + w];
             if (u->kind == TU_XREG && u->reg < 0) continue;
@@ -1496,17 +1506,17 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
                 if (pass_addr)
                     mov_int(e, 1, u->reg, xreg(v.idx));
                 else if (v.cls == CLS_ADDR) // aggregate chunk
-                    ld_reg(e, u->reg, xreg(v.idx), (uint32_t)w * 8, 8, 0);
+                    ld_reg(e, u->reg, aggregate_base, (uint32_t)w * 8, 8, 0);
                 else
                     mov_int(e, 1, u->reg, xreg(v.idx));
             } else if (u->kind == TU_VREG) {
                 if (v.cls == CLS_FP)
                     mov_fp(e, 1, u->reg, v.idx);
                 else // aggregate chunk loaded as d
-                    ldrf_(e, u->reg, xreg(v.idx), (uint32_t)w * 8, 1);
+                    ldrf_(e, u->reg, aggregate_base, (uint32_t)w * 8, 1);
             } else if (u->kind == TU_STACK) {
                 if (v.cls == CLS_ADDR)
-                    ld_reg(e, 16, xreg(v.idx), (uint32_t)w * 8, 8, 0);
+                    ld_reg(e, 16, aggregate_base, (uint32_t)w * 8, 8, 0);
                 else
                     mov_int(e, 1, 16, xreg(v.idx));
                 uint32_t scale = u->size >= 4 ? u->size : 4;
@@ -1520,7 +1530,7 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
                     load_imm(e, 1, 15, u->soff);
                     ins(e, 0x8B000000u | (15u << 16) | (31u << 5) | 15u);
                 }
-                copy_mem(e, 15, 0, xreg(v.idx), 0, u->size);
+                copy_mem(e, 15, 0, aggregate_base, 0, u->size);
             }
         }
     }
@@ -1664,6 +1674,10 @@ static SType* lvalue_type(Em* e, Node* x) {
         b = unwrap(b);
         while (b->kind == SK_PTR) b = b->base;
         if (b->kind == SK_OPT) b = b->base;
+        if (x->len == 3 && memcmp(x->str, "len", 3) == 0 &&
+            (b->kind == SK_SLICE ||
+             (b->kind == SK_PRIM && b->prim == P_STRING)))
+            return node_ty(x);
         if (b->kind != SK_STRUCT) return NULL;
         int i = find_field(b, x->str, x->len);
         return i >= 0 ? b->fields[i].t : NULL;
@@ -1673,6 +1687,11 @@ static SType* lvalue_type(Em* e, Node* x) {
         if (!b) return node_ty(x->a);
         b = unwrap(b);
         while (b->kind == SK_PTR) b = b->base;
+        if (b->kind == SK_PRIM && b->prim == P_STRING) {
+            static SType byte = { .kind = SK_PRIM, .prim = P_U8,
+                                  .size = 1, .align = 1 };
+            return &byte;
+        }
         if (b->kind == SK_SLICE || b->kind == SK_ARRAY) return b->base;
         return NULL;
     }
@@ -1751,6 +1770,14 @@ static int gen_addr(Em* e, Node* x) {
             bt = bt->base;
         }
         if (bt->kind == SK_OPT) bt = bt->base;
+        if (x->len == 3 && memcmp(x->str, "len", 3) == 0 &&
+            (bt->kind == SK_SLICE ||
+             (bt->kind == SK_PRIM && bt->prim == P_STRING))) {
+            uint32_t off = 8;
+            ins(e, 0x91000000u | (off << 10) | ((uint32_t)xreg(ta) << 5) |
+                   (uint32_t)xreg(ta));
+            return ta;
+        }
         if (bt->kind != SK_STRUCT) {
             em_err(e, x, "field access on a non-struct");
             return ta;
@@ -1790,7 +1817,12 @@ static int gen_addr(Em* e, Node* x) {
             em_err(e, x, "no index base type");
             return ta;
         }
-        if (bt->kind == SK_SLICE) {
+        if (bt->kind == SK_PRIM && bt->prim == P_STRING) {
+            static SType byte = { .kind = SK_PRIM, .prim = P_U8,
+                                  .size = 1, .align = 1 };
+            ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
+            bt = &byte;
+        } else if (bt->kind == SK_SLICE) {
             ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
             bt = bt->base;
         } else if (bt->kind == SK_ARRAY) {
@@ -2385,7 +2417,7 @@ static void store_member(Em* e, int ra, SType* tup, int i, uint32_t off) {
 }
 
 static void emit_stmt(Em* e, Node* s) {
-    line_mark(e, s);
+    line_mark(e, s->kind == N_EXPRSTMT ? s->a : s);
     e->vti = 0; e->vtf = 0; // statement boundary
     switch (s->kind) {
     case N_VAR: {
@@ -2951,11 +2983,16 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
                 if (u->reg < 0) continue;
                 uint32_t bw = byref ? 8 : is_scalar(t)
                     ? (uint32_t)((scalar_bits(t) + 7) / 8) : 8;
-                store_frame(e, u->reg, slot + (byref ? 0u : (uint32_t)w * 8),
-                            bw);
+                if (byref) {
+                    store_frame(e, u->reg, slot, bw);
+                } else {
+                    frame_addr(e, 16, slot);
+                    st_reg(e, u->reg, 16, (uint32_t)w * 8, bw);
+                }
             } else if (u->kind == TU_VREG) {
                 int is64 = is_scalar(t) ? unwrap(t)->prim == P_F64 : 1;
-                store_frame_fp(e, u->reg, slot + (uint32_t)w * 8, is64);
+                frame_addr(e, 16, slot);
+                strf_(e, u->reg, 16, (uint32_t)w * 8, is64);
             } else if (u->kind == TU_STACK) {
                 incoming_addr(e, 16, u->soff);
                 if (is_floatt(t) && w == 0) {
@@ -2964,7 +3001,8 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
                 } else {
                     uint32_t bw = u->size < 8 ? u->size : 8;
                     ld_reg(e, 16, 16, 0, bw, 0);
-                    store_frame(e, 16, slot + (byref ? 0u : (uint32_t)w * 8), bw);
+                    frame_addr(e, 17, slot);
+                    st_reg(e, 16, 17, byref ? 0u : (uint32_t)w * 8, bw);
                 }
             } else { // TU_STACK_AGGR: by-value stack (extern/export C ABI)
                 incoming_addr(e, 17, u->soff);
@@ -3199,16 +3237,16 @@ static void patch_fixups(Em* e) {
 
 // --- DWARF line table -------------------------------------------------------------
 
-static void source_path(Em* e, char* out, size_t cap) {
-    if (e->d->path[0] == '/') {
-        snprintf(out, cap, "%s", e->d->path);
+static void source_path(const char* input, char* out, size_t cap) {
+    if (input[0] == '/') {
+        snprintf(out, cap, "%s", input);
         return;
     }
     char cwd[3072];
     if (getcwd(cwd, sizeof cwd))
-        snprintf(out, cap, "%s/%s", cwd, e->d->path);
+        snprintf(out, cap, "%s/%s", cwd, input);
     else
-        snprintf(out, cap, "%s", e->d->path);
+        snprintf(out, cap, "%s", input);
 }
 
 static void emit_debug_info(Em* e, ESym* text_anchor) {
@@ -3237,7 +3275,7 @@ static void emit_debug_info(Em* e, ESym* text_anchor) {
     buf_put8(ab, 0);    // abbreviation table terminator
 
     char path[4096], cwd[3072];
-    source_path(e, path, sizeof path);
+    source_path(e->d->path, path, sizeof path);
     if (!getcwd(cwd, sizeof cwd)) snprintf(cwd, sizeof cwd, ".");
     Buf* in = &e->secs[SEC_DEBUG_INFO].data;
     size_t unit = in->len;
@@ -3275,8 +3313,15 @@ static void emit_debug_line(Em* e, ESym* text_anchor) {
     if (!e->nlines) return;
     Buf* b = &e->secs[SEC_DEBUG_LINE].data;
 
-    char path[4096];
-    source_path(e, path, sizeof path);
+    const char** files = malloc((size_t)e->nlines * sizeof(char*));
+    if (!files) oom();
+    int nfiles = 0;
+    for (int i = 0; i < e->nlines; i++) {
+        int seen = 0;
+        for (int j = 0; j < nfiles; j++)
+            if (strcmp(files[j], e->lines[i].path) == 0) { seen = 1; break; }
+        if (!seen) files[nfiles++] = e->lines[i].path;
+    }
 
     size_t unit = b->len;
     buf_put32(b, 0);             // unit_length, patched below
@@ -3293,10 +3338,14 @@ static void emit_debug_line(Em* e, ESym* text_anchor) {
     static const uint8_t oplen[12] = { 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1 };
     buf_write(b, oplen, sizeof oplen);
     buf_put8(b, 0);              // include_directories terminator
-    buf_write(b, path, strlen(path) + 1);
-    buf_uleb(b, 0);              // directory index (full filename)
-    buf_uleb(b, 0);              // modification time
-    buf_uleb(b, 0);              // file size
+    for (int i = 0; i < nfiles; i++) {
+        char path[4096];
+        source_path(files[i], path, sizeof path);
+        buf_write(b, path, strlen(path) + 1);
+        buf_uleb(b, 0);          // directory index (full filename)
+        buf_uleb(b, 0);          // modification time
+        buf_uleb(b, 0);          // file size
+    }
     buf_put8(b, 0);              // file_names terminator
     buf_patch32(b, header_len, (uint32_t)(b->len - header));
 
@@ -3310,13 +3359,21 @@ static void emit_debug_line(Em* e, ESym* text_anchor) {
               0, 3, 0, RM_UNSIGNED);
 
     uint32_t addr = 0;
-    int line = 1, col = 0;
+    int line = 1, col = 0, file = 1;
     for (int i = 0; i < e->nlines; i++) {
         LineRow* r = &e->lines[i];
+        int want_file = 1;
+        for (int j = 0; j < nfiles; j++)
+            if (strcmp(files[j], r->path) == 0) { want_file = j + 1; break; }
         if (r->addr > addr) {
             buf_put8(b, 2);      // DW_LNS_advance_pc
             buf_uleb(b, r->addr - addr);
             addr = r->addr;
+        }
+        if (want_file != file) {
+            buf_put8(b, 4);      // DW_LNS_set_file
+            buf_uleb(b, (uint64_t)want_file);
+            file = want_file;
         }
         if (r->line != line) {
             buf_put8(b, 3);      // DW_LNS_advance_line
@@ -3339,6 +3396,7 @@ static void emit_debug_line(Em* e, ESym* text_anchor) {
     buf_uleb(b, 1);
     buf_put8(b, 1);              // DW_LNE_end_sequence
     buf_patch32(b, unit, (uint32_t)(b->len - unit - 4));
+    free(files);
 }
 
 // --- Mach-O object writing ----------------------------------------------------------

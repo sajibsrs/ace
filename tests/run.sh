@@ -50,10 +50,15 @@ if [ -d tests/emit ]; then
             continue
         fi
         cp "$f" "/tmp/ace_emit/$name.ace"
-        ( cd /tmp/ace_emit && "$ACE" -c "$name.ace" && cc "$name.o" -o "$name" && "./$name" )
+        out=$(cd /tmp/ace_emit && "$ACE" -c "$name.ace" && cc "$name.o" -o "$name" && "./$name")
         got=$?
         if [ "$got" -ne "$exp" ]; then
             echo "FAIL: $f exited $got, want $exp"
+            fail=1
+        fi
+        expout=$(sed -n 's/^.*expect-output:[[:space:]]*//p' "$f")
+        if [ -n "$expout" ] && [ "$out" != "$expout" ]; then
+            echo "FAIL: $f output '$out', want '$expout'"
             fail=1
         fi
     done
@@ -80,6 +85,14 @@ if [ -d tests/emit ]; then
             fail=1
         elif ! printf '%s\n' "$dwarf" | grep -Eq '^0x[0-9a-f]+[[:space:]]+3[[:space:]]+5'; then
             echo "FAIL: DWARF should map return to hello_min.ace:3:5"
+            fail=1
+        fi
+        multidwarf=$(dwarfdump --debug-line /tmp/ace_emit/welcome.o 2>/tmp/ace_test_errs)
+        if [ $? -ne 0 ] ||
+           ! printf '%s\n' "$multidwarf" | grep -q '/std/fmt.ace' ||
+           ! printf '%s\n' "$multidwarf" | grep -q '/welcome.ace'; then
+            echo "FAIL: imported and root sources should both appear in DWARF"
+            cat /tmp/ace_test_errs
             fail=1
         fi
     fi

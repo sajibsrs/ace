@@ -177,6 +177,7 @@ Decision: minimal, allocator-explicit, nothing ambient.
 6. Platform access: through the OS system library via `extern "c"` (macOS: libSystem) — the language does not depend on C; this is the OS front door.
 7. `string` is a distinct view over bytes (`[]u8`, UTF-8 by convention) — a slice, no new machinery.
 8. v1 contents — six modules: `mem` (Allocator, page/arena/gpa, typed sugar), `sys` (OS calls), `fmt` (print/format), `math` (sqrt, `abs[T]`, `min[T]`/`max[T]`, …), `str` (byte/string operations), `simd` (`f32x4`, `i8x16`, arithmetic and shuffles emitting NEON directly — explicit vectorization, zero compiler analysis).
+9. Initial output API: `fmt.print(text: string): int` writes the bytes exactly as supplied (no implicit newline) and returns the platform write result: bytes written, or `-1` from the current OS boundary. `fmt.println` and formatted `fmt.printf` are additive follow-ups. Owner-approved bootstrap shape; richer `Err` integration comes with the error layer rather than blocking first output.
 
 ## Pre-Implementation Checklist
 Semantics are complete; these are the implementation-level defaults (derived from every sample written so far) and the few remaining `[?]` decisions. Resolve `[?]` items in the first compiler session, then: lexer → recursive-descent parser → direct AArch64 emitter.

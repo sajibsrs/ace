@@ -1,0 +1,22 @@
+// fmt — allocation-free text output.
+extern "c" {
+    write(fd: i32, data: *u8, size: usize): int
+}
+
+pub print(text: string): int {
+    if text.len == 0 {
+        return 0
+    }
+    total: int = 0
+    for attempt: int in 0 .. int(text.len) {
+        n: int = write(1, &text[total], text.len - usize(total))
+        if n <= 0 {
+            return n
+        }
+        total += n
+        if usize(total) == text.len {
+            return total
+        }
+    }
+    return total
+}

@@ -1,0 +1,9 @@
+// expect-exit: 0
+// expect-output: Welcome Ace!
+import fmt
+
+main(): int {
+    fmt.print("")
+    written: int = fmt.print("Welcome to Ace!\n")
+    return written - 16
+}

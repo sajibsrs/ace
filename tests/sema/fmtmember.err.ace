@@ -1,0 +1,6 @@
+import fmt
+
+main(): int {
+    fmt.missing("nope")
+    return 0
+}

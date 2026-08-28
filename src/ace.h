@@ -127,6 +127,7 @@ struct Node {
     uint8_t     op;   // TokKind for binary/unary/assign/op nodes
     uint16_t    flags;
     int         line, col;
+    const char* path; // source file owning this node (for diagnostics/DWARF)
     const char* str; // name / string bytes (len in len)
     uint32_t    len;
     uint64_t    ival; // int/char/bool literals, array length; size_of result
@@ -154,6 +155,11 @@ void parse_dump(Node* file);
 // for the emitter; generic stamp bodies are re-annotated on demand via
 // sema.h's sema_stamp_body().
 int sema_check(Node* file, Diag* d);
+
+// Load supported imports and merge their declarations into the compilation
+// unit. Imported member references remain qualified in source but are lowered
+// to private module-prefixed names before semantic checking.
+int resolve_imports(Node* file, Diag* d, const char* compiler_path);
 
 // Direct AArch64 codegen (stage four): walks the sema-checked AST and writes
 // a Mach-O arm64 object. Returns 0 on success. Sets emit_has_main.

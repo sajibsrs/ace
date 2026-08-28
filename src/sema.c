@@ -34,7 +34,8 @@ static SType* st_new(uint8_t kind) {
 static SType* st_prim(int p) { return PRIMS[p]; }
 
 static int is_int(SType* t) {
-    return t->kind == SK_PRIM && t->prim >= P_I8 && t->prim <= P_U64;
+    return t->kind == SK_PRIM &&
+        ((t->prim >= P_I8 && t->prim <= P_U64) || t->prim == P_USIZE);
 }
 static int is_float(SType* t) {
     return t->kind == SK_PRIM && (t->prim == P_F32 || t->prim == P_F64);
@@ -170,7 +171,9 @@ typedef struct {
 
 static void ck_err(Ck* k, Node* n, const char* fmt, ...) {
     va_list ap;
-    fprintf(stderr, "%s:%d:%d: error: ", k->d->path, n->line, n->col);
+    fprintf(stderr, "%s:%d:%d: error: ",
+            n && n->path ? n->path : k->d->path,
+            n ? n->line : 0, n ? n->col : 0);
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
@@ -568,6 +571,10 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
             ck_err(k, e, "field access through an optional — check for null first");
             return T_ERR;
         }
+        if (!write && e->len == 3 && memcmp(e->str, "len", 3) == 0 &&
+            (b->kind == SK_SLICE ||
+             (b->kind == SK_PRIM && b->prim == P_STRING)))
+            return st_prim(P_USIZE);
         if (b->kind != SK_STRUCT) {
             ck_err(k, e, "type %s has no fields", type_name(b));
             return T_ERR;
@@ -585,6 +592,8 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
         if (ix->kind != SK_ERR && !is_int(ix) && ix != T_UT_INT)
             ck_err(k, e->b, "index must be an integer, not %s", type_name(ix));
         if (b->kind == SK_ERR) return T_ERR;
+        if (b->kind == SK_PRIM && b->prim == P_STRING)
+            return st_prim(P_U8);
         if (b->kind != SK_SLICE && b->kind != SK_ARRAY) {
             ck_err(k, e, "cannot index %s", type_name(b));
             return T_ERR;
@@ -857,6 +866,10 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             ck_err(k, e, "field access through an optional — check for null first");
             return T_ERR;
         }
+        if (e->len == 3 && memcmp(e->str, "len", 3) == 0 &&
+            (b->kind == SK_SLICE ||
+             (b->kind == SK_PRIM && b->prim == P_STRING)))
+            return st_prim(P_USIZE);
         if (b->kind == SK_INTERFACE) {
             Node* m = iface_method(b, e->str, e->len);
             if (!m) {
@@ -883,6 +896,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         if (b->kind == SK_ERR || ix->kind == SK_ERR) return T_ERR;
         if (!is_int(ix) && ix != T_UT_INT)
             ck_err(k, e->b, "index must be an integer, not %s", type_name(ix));
+        if (b->kind == SK_PRIM && b->prim == P_STRING) return st_prim(P_U8);
         if (b->kind == SK_SLICE || b->kind == SK_ARRAY) return b->base;
         ck_err(k, e, "cannot index %s", type_name(b));
         return T_ERR;

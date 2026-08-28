@@ -93,6 +93,8 @@ int main(int argc, char** argv) {
             parse_dump(file);
             return 0;
         }
+        resolve_imports(file, &d, argv[0]);
+        if (d.errors > 0) goto done;
         sema_check(file, &d); // default mode: full semantic check
         if (d.errors > 0) goto done;
 

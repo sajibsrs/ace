@@ -130,16 +130,17 @@ static Node* nd(P* p, NKind kind) {
     x->kind = (uint8_t)kind;
     x->line = tk(p)->line;
     x->col = tk(p)->col;
+    x->path = p->d->path;
     return x;
 }
 
 static Node* nd_tok(P* p, NKind kind, Token* t) {
-    (void)p;
     Node* x = (Node*)arena_alloc(sizeof(Node));
     memset(x, 0, sizeof *x);
     x->kind = (uint8_t)kind;
     x->line = t->line;
     x->col = t->col;
+    x->path = p->d->path;
     return x;
 }
 
@@ -1289,6 +1290,7 @@ Node* parse(Token* toks, size_t ntok, Diag* d) {
     file->kind = (uint8_t)N_FILE;
     file->line = 1;
     file->col = 1;
+    file->path = d->path;
     if (setjmp(p.jb)) return file; // syntax error: stop at the first one
     NV decls = {0};
     skipnl(&p);

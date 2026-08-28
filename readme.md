@@ -26,7 +26,19 @@ The build produces `./ace`. Useful modes are:
 ./ace -o program file.ace # emit, link with cc, and produce an executable
 ```
 
+The first standard-library call is available:
+
+```ace
+import fmt
+
+main(): int {
+    fmt.print("Welcome Ace!\n")
+    return 0
+}
+```
+
 The lexer, parser, semantic checker, and core-language emitter are operational,
-including minimal DWARF source-line information for LLDB. Checked-build runtime
-diagnostics, imports, and the standard library are the next major implementation
-milestones.
+including minimal DWARF source-line information for LLDB. Bare `import fmt` and
+exact string output through `fmt.print` form the first working stdlib slice. The
+general module loader, checked-build runtime diagnostics, formatting/input, and
+the remaining standard library are the next major implementation milestones.
