@@ -32,6 +32,7 @@ struct SType {
     uint64_t    count;
     SField*     fields; int nfields; // struct fields / tuple members
     SType**     params; int nparams; // function params
+    SType**     args; int nargs;     // nominal generic instantiation arguments
     SType*      ret;
     Node*       decl;
     struct STypeInst* insts; // instantiation memo (generic decls)
@@ -45,14 +46,14 @@ typedef struct STypeInst {
 
 // --- symbols --------------------------------------------------------------------
 
-enum { SYM_VAR, SYM_FUNC, SYM_TYPE, SYM_MODULE, SYM_IMPL };
+enum { SYM_VAR, SYM_FUNC, SYM_TYPE, SYM_MODULE };
 
 typedef struct Sym Sym;
 struct Sym {
     const char* name; uint32_t len;
     uint8_t     kind;
     uint8_t     is_const, is_mut, is_pub, is_noalias, is_generic, is_extern;
-    uint8_t     is_param;
+    uint8_t     is_param, is_const_backed;
     SType*      type;
     Node*       decl;   // binder/declaration node (slot key for the emitter)
     Sym*        next;

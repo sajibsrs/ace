@@ -268,7 +268,10 @@ static int same_type(SType* a, SType* b) {
             if (!same_type(a->params[i], b->params[i])) return 0;
         return same_type(a->ret, b->ret);
     case SK_STRUCT: case SK_ENUM: case SK_INTERFACE: case SK_DISTINCT:
-        return a->decl == b->decl; // nominal identity
+        if (a->decl != b->decl || a->nargs != b->nargs) return 0;
+        for (int i = 0; i < a->nargs; i++)
+            if (!same_type(a->args[i], b->args[i])) return 0;
+        return 1; // nominal identity plus exact generic arguments
     case SK_TYPEPARAM:
         return a->name && b->name && strcmp(a->name, b->name) == 0;
     default: return 0;
@@ -506,8 +509,23 @@ static SType* build_func_type(Ck* k, Node* f, SType** args, int nargs) {
     return ft;
 }
 
+static const char* method_key(Node* owner, const char* name, uint32_t len,
+                              uint32_t* out_len) {
+    size_t olen = owner ? owner->len : 0;
+    char* key = arena_alloc(olen + len + 2);
+    if (olen) memcpy(key, owner->str, olen);
+    key[olen] = '$';
+    memcpy(key + olen + 1, name, len);
+    key[olen + len + 1] = 0;
+    *out_len = (uint32_t)(olen + len + 1);
+    return key;
+}
+
 static Sym* declare_func(Ck* k, Node* f, int is_extern) {
-    Sym* head = find_in(k->scope->values, f->str, f->len);
+    uint32_t key_len = f->len;
+    const char* key = f->str;
+    if (f->flags & F_METHOD) key = method_key(f->d, f->str, f->len, &key_len);
+    Sym* head = find_in(k->scope->values, key, key_len);
     if (head && head->kind != SYM_FUNC) {
         ck_err(k, f, "duplicate name '%.*s' in this scope", (int)f->len, f->str);
         return NULL;
@@ -532,7 +550,7 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
             return NULL;
         }
     }
-    Sym* s = sym_new(SYM_FUNC, f->str, f->len);
+    Sym* s = sym_new(SYM_FUNC, key, key_len);
     s->decl = f;
     s->type = ft;
     s->is_generic = f->c != NULL;
@@ -764,6 +782,24 @@ static Node* iface_method(SType* iface, const char* name, uint32_t len) {
     return NULL;
 }
 
+static SType* iface_method_type(Ck* k, SType* iface, Node* m) {
+    const char** sn = k->tnames; SType** st = k->ttypes; int ns = k->nsub;
+    Node* tp = iface && iface->decl ? iface->decl->c : NULL;
+    if (tp && iface->nargs == tp->nkids) {
+        k->nsub = iface->nargs;
+        k->ttypes = iface->args;
+        k->tnames = (const char**)arena_alloc((size_t)k->nsub * sizeof(char*));
+        for (int i = 0; i < k->nsub; i++) k->tnames[i] = tp->kids[i]->str;
+    }
+    SType* ft = st_new(SK_FUNC);
+    ft->nparams = m->nkids;
+    ft->params = (SType**)arena_alloc((size_t)(m->nkids ? m->nkids : 1) * sizeof(SType*));
+    for (int i = 0; i < m->nkids; i++) ft->params[i] = build_type(k, m->kids[i]->a);
+    ft->ret = m->a ? build_type(k, m->a) : NULL;
+    k->tnames = sn; k->ttypes = st; k->nsub = ns;
+    return ft;
+}
+
 static void check_args(Ck* k, Node* call, SType* ft, int is_variadic) {
     int want = ft->nparams, got = call->nkids;
     if (is_variadic ? got < want : got != want) {
@@ -789,8 +825,15 @@ static void check_mut_args(Ck* k, Node* call, Node* fndecl) {
             ck_err(k, call->kids[i], "'mut' marks mut parameters; parameter %d is read-only", i + 1);
         else if (pm && !am)
             ck_err(k, call->kids[i], "mut parameter needs 'mut' at the call site");
-        else if (am) // mut passes the caller's address — the arg must have one
+        else if (am) { // mut passes the caller's address — the arg must have one
             check_lvalue(k, call->kids[i]->a, 0);
+            Node* raw = call->kids[i]->a;
+            if (raw->kind == N_IDENT) {
+                Sym* s = lookup_val(k, raw->str, raw->len);
+                if (s && s->is_const_backed)
+                    ck_err(k, raw, "const-backed interface cannot be passed to a mut parameter");
+            }
+        }
     }
 }
 
@@ -824,6 +867,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             return T_ERR;
         }
         e->sym = s; // emitter: storage (slot / global / function)
+        if (s->is_const_backed) e->flags |= F_CONST;
         return s->type ? s->type : T_ERR;
     }
     case N_TUPLE_E: {
@@ -1012,7 +1056,8 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                        (int)e->len, e->str);
                 return T_ERR;
             }
-            return m->a ? build_type(k, m->a) : T_ERR; // dispatch target
+            SType* ft = iface_method_type(k, b, m);
+            return ft->ret ? ft->ret : T_ERR; // dispatch target
         }
         if (b->kind == SK_STRUCT) {
             for (int i = 0; i < b->nfields; i++)
@@ -1083,19 +1128,15 @@ static SType* expr_type(Ck* k, Node* e) {
     return t;
 }
 
-static SType* instantiate_generic_func(Ck* k, Sym* gs, Node* index_node) {
+static SType* instantiate_generic_func_args(Ck* k, Sym* gs, SType** args,
+                                            int nargs, Node* at) {
     Node* f = gs->decl;
     Node* tp = f->c;
-    // type args: single index in b, or a comma list in kids (f[int, f64])
-    int nargs = index_node->b ? 1 : index_node->nkids;
     if (!tp || tp->nkids != nargs) {
-        ck_err(k, index_node, "generic function expects %d type arguments, got %d",
+        ck_err(k, at, "generic function expects %d type arguments, got %d",
                tp ? tp->nkids : 0, nargs);
         return T_ERR;
     }
-    SType** args = (SType**)arena_alloc((size_t)nargs * sizeof(SType*));
-    for (int i = 0; i < nargs; i++)
-        args[i] = build_type(k, index_node->b ? index_node->b : index_node->kids[i]);
     // memo (stored on the tparams node's spare pointer) before body check,
     // so self-recursive instantiations terminate
     STypeInst** head = (STypeInst**)&tp->b;
@@ -1118,6 +1159,14 @@ static SType* instantiate_generic_func(Ck* k, Sym* gs, Node* index_node) {
     check_func_body(k, f); // stamping: body checked once per instantiation
     k->tnames = sn; k->ttypes = st; k->nsub = ns;
     return ft;
+}
+
+static SType* instantiate_generic_func(Ck* k, Sym* gs, Node* index_node) {
+    int nargs = index_node->b ? 1 : index_node->nkids;
+    SType** args = (SType**)arena_alloc((size_t)nargs * sizeof(SType*));
+    for (int i = 0; i < nargs; i++)
+        args[i] = build_type(k, index_node->b ? index_node->b : index_node->kids[i]);
+    return instantiate_generic_func_args(k, gs, args, nargs, index_node);
 }
 
 static SType* overload_arg_type(Ck* k, Node* arg) {
@@ -1182,6 +1231,75 @@ static void finish_direct_call(Ck* k, Node* call, Sym* s) {
     check_mut_args(k, call, s->decl);
     call->sym = s;
     call->ty = s->type->ret;
+    if (s->decl && (s->decl->flags & F_CONST)) call->flags |= F_CONST;
+}
+
+static int const_lvalue(Ck* k, Node* e) {
+    while (e && (e->kind == N_FIELD_E || e->kind == N_INDEX)) e = e->a;
+    if (e && e->kind == N_IDENT) {
+        Sym* s = lookup_val(k, e->str, e->len);
+        return s && (s->is_const || s->is_const_backed);
+    }
+    return 0;
+}
+
+static Node* find_conformance(Ck* k, SType* conc, SType* iface) {
+    if (!conc || conc->kind != SK_STRUCT || !conc->decl || !conc->decl->d) return NULL;
+    Node* impl = conc->decl->d;
+    const char** sn = k->tnames; SType** st = k->ttypes; int ns = k->nsub;
+    if (impl->c && conc->nargs == impl->c->nkids) {
+        k->nsub = conc->nargs;
+        k->ttypes = conc->args;
+        k->tnames = (const char**)arena_alloc((size_t)k->nsub * sizeof(char*));
+        for (int i = 0; i < k->nsub; i++) k->tnames[i] = impl->c->kids[i]->str;
+    }
+    Node* found = NULL;
+    for (int i = 0; i < impl->nkids; i++) {
+        SType* it = build_type(k, impl->kids[i]->a);
+        if (same_type(it, iface)) { found = impl->kids[i]; break; }
+    }
+    k->tnames = sn; k->ttypes = st; k->nsub = ns;
+    return found;
+}
+
+static SType* check_interface_construct(Ck* k, Node* call, SType* iface) {
+    if (call->nkids != 1) {
+        ck_err(k, call, "interface construction takes exactly one pointer");
+        return T_ERR;
+    }
+    Node* arg = call->kids[0];
+    SType* from = expr_type(k, arg);
+    if (from->kind != SK_PTR || !from->base || from->base->kind != SK_STRUCT) {
+        ck_err(k, arg, "interface construction needs a pointer to a struct");
+        return T_ERR;
+    }
+    Node* conf = find_conformance(k, from->base, iface);
+    if (!conf) {
+        ck_err(k, call, "type %s has no declared contract for interface %s",
+               type_name(from->base), type_name(iface));
+        return T_ERR;
+    }
+    Node* impl = from->base->decl->d;
+    if (impl->path && call->path && strcmp(impl->path, call->path) != 0 &&
+        !(impl->flags & F_PUB)) {
+        ck_err(k, call, "implementation contract for %s is private",
+               type_name(from->base));
+        return T_ERR;
+    }
+    call->d = conf;
+    if (arg->kind == N_UNARY && arg->op == T_AMP && const_lvalue(k, arg->a))
+        call->flags |= F_CONST;
+    return iface;
+}
+
+static SType* indexed_named_type(Ck* k, Node* ix) {
+    if (!ix || ix->kind != N_INDEX || !ix->a || ix->a->kind != N_IDENT) return NULL;
+    Sym* ts = lookup_type(k, ix->a->str, ix->a->len);
+    if (!ts || !ts->is_generic || !ts->type || !ts->type->decl) return NULL;
+    int n = ix->b ? 1 : ix->nkids;
+    SType** args = (SType**)arena_alloc((size_t)(n ? n : 1) * sizeof(SType*));
+    for (int i = 0; i < n; i++) args[i] = build_type(k, ix->b ? ix->b : ix->kids[i]);
+    return instantiate_generic_type(k, ts->type->decl, args, n);
 }
 
 static SType* check_call(Ck* k, Node* call) {
@@ -1192,12 +1310,17 @@ static SType* check_call(Ck* k, Node* call) {
         if (!s) {
             SType* prim = prim_by_name(callee->str, callee->len);
             Sym* ts = lookup_type(k, callee->str, callee->len);
-            if (prim || ts) { // constructor-shaped cast: i32(x), Meters(x), Color(1)
+            if (prim || ts) { // constructor-shaped cast or interface construction
                 if (call->nkids != 1) {
                     ck_err(k, call, "a cast takes exactly one argument");
                     return T_ERR;
                 }
                 SType* want = prim ? prim : build_type(k, callee);
+                if (want->kind == SK_INTERFACE) {
+                    callee->sym = ts;
+                    callee->ty = want;
+                    return check_interface_construct(k, call, want);
+                }
                 SType* from = expr_type(k, call->kids[0]);
                 if (want->kind == SK_ERR || from->kind == SK_ERR) return T_ERR;
                 if (!castable(from, want)) {
@@ -1243,11 +1366,6 @@ static SType* check_call(Ck* k, Node* call) {
             call->sym = s; // indirect call through a function value
             return s->type->ret;
         }
-        if (s->kind == SYM_IMPL) { // interface constructor: circle_shape(&c)
-            check_args(k, call, s->type, 0);
-            call->sym = s;
-            return s->type->ret;
-        }
         if (s->kind != SYM_FUNC) {
             ck_err(k, call, "'%.*s' is not callable", (int)callee->len, callee->str);
             return T_ERR;
@@ -1283,6 +1401,11 @@ static SType* check_call(Ck* k, Node* call) {
     }
     // generic instantiation call: max[int](3, 9)
     if (callee->kind == N_INDEX && callee->a->kind == N_IDENT) {
+        SType* named = indexed_named_type(k, callee);
+        if (named && named->kind == SK_INTERFACE) {
+            callee->ty = named;
+            return check_interface_construct(k, call, named);
+        }
         Sym* head = lookup_val(k, callee->a->str, callee->a->len);
         if (head && head->kind == SYM_FUNC) {
             int nargs = callee->b ? 1 : callee->nkids;
@@ -1338,7 +1461,16 @@ static SType* check_call(Ck* k, Node* call) {
                 return T_ERR;
             }
         }
-        SType* b = expr_type(k, callee->a);
+        int qualified = 0;
+        SType* b = NULL;
+        if (callee->a->kind == N_IDENT && !lookup_val(k, callee->a->str, callee->a->len)) {
+            Sym* ts = lookup_type(k, callee->a->str, callee->a->len);
+            if (ts && ts->type && ts->type->kind == SK_STRUCT) {
+                b = ts->type;
+                qualified = 1;
+            }
+        }
+        if (!b) b = expr_type(k, callee->a);
         if (b->kind == SK_ERR) return T_ERR;
         if (b->kind == SK_INTERFACE) {
             Node* m = iface_method(b, callee->str, callee->len);
@@ -1355,51 +1487,77 @@ static SType* check_call(Ck* k, Node* call) {
             if (!mmut && cmut)
                 ck_err(k, call, "'mut' marks mutating methods; '%.*s' is read-only",
                        (int)callee->len, callee->str);
-            SType* ft = st_new(SK_FUNC);
-            ft->nparams = m->nkids;
-            ft->params = (SType**)arena_alloc((size_t)(m->nkids ? m->nkids : 1) * sizeof(SType*));
-            for (int i = 0; i < m->nkids; i++) ft->params[i] = build_type(k, m->kids[i]->a);
-            ft->ret = m->a ? build_type(k, m->a) : NULL;
+            if (mmut) {
+                check_lvalue(k, callee->a, 1);
+                if (callee->a->kind == N_IDENT) {
+                    Sym* iv = lookup_val(k, callee->a->str, callee->a->len);
+                    if (iv && iv->is_const_backed)
+                        ck_err(k, call, "cannot call a mutating interface method on const backing storage");
+                }
+            }
+            SType* ft = iface_method_type(k, b, m);
             check_args(k, call, ft, 0);
             return ft->ret;
         }
-        // method sugar: x.f() ≡ f(x)
-        Sym* f = lookup_val(k, callee->str, callee->len);
-        if (f && f->kind == SYM_FUNC && overload_count(f) > 1) {
-            ck_err(k, call,
-                   "method-sugar lookup for overloaded '%.*s' is not defined yet; call it as a free function",
-                   (int)callee->len, callee->str);
+        if (b->kind != SK_STRUCT) {
+            ck_err(k, call, "no method '%.*s' for %s", (int)callee->len, callee->str,
+                   type_name(b));
             return T_ERR;
         }
-        if (f && f->kind == SYM_FUNC && f->type && f->type->nparams >= 1 &&
-            same_type(f->type->params[0], b)) {
-            if (!f->decl || f->decl->nkids < 1) return T_ERR;
-            Node* p0 = f->decl->kids[0];
-            int rmut = (p0->flags & F_MUT) != 0;
-            int cmut = (call->flags & F_MUT) != 0;
-            if (rmut && !cmut)
-                ck_err(k, call, "mutating method needs 'mut' at the call site");
-            if (!rmut && cmut)
-                ck_err(k, call, "'mut' marks mutating methods; '%.*s' is read-only",
-                       (int)callee->len, callee->str);
-            if (call->nkids != f->type->nparams - 1) {
-                ck_err(k, call, "wrong number of arguments: %d given, %d expected",
-                       call->nkids, f->type->nparams - 1);
-                return f->type->ret;
-            }
-            for (int i = 0; i < call->nkids; i++) {
-                Node* arg = call->kids[i];
+        uint32_t key_len;
+        const char* key = method_key(b->decl, callee->str, callee->len, &key_len);
+        Sym* head = lookup_val(k, key, key_len);
+        int supplied = call->nkids + (qualified ? 0 : 1);
+        Sym* found = NULL;
+        for (Sym* f = head; f; f = f->overload) {
+            SType* ft = f->is_generic && b->nargs
+                ? build_func_type(k, f->decl, b->args, b->nargs)
+                : f->type;
+            if (!ft || (f->is_generic && !b->nargs) || ft->nparams != supplied ||
+                !same_type(ft->params[0], b)) continue;
+            int rmut = (f->decl->flags & F_MUT) != 0;
+            int cmut = qualified
+                ? (call->nkids > 0 && call->kids[0]->kind == N_MUTARG)
+                : ((call->flags & F_MUT) != 0);
+            if (rmut != cmut) continue;
+            int exact = 1;
+            for (int i = 1; i < ft->nparams; i++) {
+                Node* arg = call->kids[qualified ? i : i - 1];
+                SType* at = overload_arg_type(k, arg);
                 int am = arg->kind == N_MUTARG;
-                Node* pa = f->decl->kids[i + 1];
-                int pm = (pa->flags & F_MUT) != 0;
-                if (am && !pm)
-                    ck_err(k, arg, "'mut' marks mut parameters; parameter %d is read-only", i + 2);
-                else if (pm && !am)
-                    ck_err(k, arg, "mut parameter needs 'mut' at the call site");
-                coerce(k, am ? arg->a : arg, f->type->params[i + 1]);
+                int pm = (f->decl->kids[i]->flags & F_MUT) != 0;
+                if (am != pm || !same_type(at, ft->params[i])) exact = 0;
             }
-            call->sym = f; // method sugar: x.f() ≡ f(x) — receiver is arg 0
-            return f->type->ret;
+            if (!exact && overload_count(head) > 1) continue;
+            if (found) {
+                ck_err(k, call, "ambiguous method call '%.*s'", (int)callee->len, callee->str);
+                return T_ERR;
+            }
+            found = f;
+        }
+        if (found) {
+            SType* method_ft = found->is_generic
+                ? instantiate_generic_func_args(k, found, b->args, b->nargs, call)
+                : found->type;
+            int rmut = (found->decl->flags & F_MUT) != 0;
+            Node* recv = qualified
+                ? (call->kids[0]->kind == N_MUTARG ? call->kids[0]->a : call->kids[0])
+                : callee->a;
+            if (rmut) check_lvalue(k, recv, 1);
+            else coerce(k, recv, b);
+            int start = qualified ? 1 : 0;
+            for (int i = start; i < call->nkids; i++) {
+                Node* arg = call->kids[i];
+                int pi = i + (qualified ? 0 : 1);
+                coerce(k, arg->kind == N_MUTARG ? arg->a : arg, method_ft->params[pi]);
+            }
+            if (found->decl->path && call->path &&
+                strcmp(found->decl->path, call->path) != 0 && !found->is_pub)
+                ck_err(k, call, "method '%.*s' is private", (int)callee->len, callee->str);
+            call->sym = found;
+            callee->ty = method_ft;
+            if (qualified) call->flags |= F_METHOD; // emitter: receiver is argument zero
+            return method_ft->ret;
         }
         ck_err(k, call, "no method '%.*s' for %s", (int)callee->len, callee->str,
                type_name(b));
@@ -1423,6 +1581,7 @@ static void narrow(Ck* k, Node* cond, int taken) {
     ns->decl = s->decl;
     ns->is_mut = s->is_mut;
     ns->is_const = s->is_const;
+    ns->is_const_backed = s->is_const_backed;
     ns->next = k->scope->values;
     k->scope->values = ns;
 }
@@ -1458,6 +1617,9 @@ static void check_stmt(Ck* k, Node* s) {
                 check_arraylit(k, init, wants[0]);
             else
                 coerce(k, init, wants[0]);
+            Sym* v = lookup_val(k, s->kids[0]->str, s->kids[0]->len);
+            if (v && wants[0]->kind == SK_INTERFACE && (init->flags & F_CONST))
+                v->is_const_backed = 1;
             return;
         }
         SType* rt = expr_type(k, s->b);
@@ -1519,6 +1681,10 @@ static void check_stmt(Ck* k, Node* s) {
             return;
         }
         coerce(k, rhs, t); // compound ops check as x = x op y with same type
+        if (t->kind == SK_INTERFACE && s->kids[0]->kind == N_IDENT) {
+            Sym* target = lookup_val(k, s->kids[0]->str, s->kids[0]->len);
+            if (target) target->is_const_backed = (rhs->flags & F_CONST) != 0;
+        }
         return;
     }
     case N_EXPRSTMT: {
@@ -1621,6 +1787,8 @@ static void check_stmt(Ck* k, Node* s) {
             return;
         }
         coerce(k, s->a, rt);
+        if (rt->kind == SK_INTERFACE && (s->a->flags & F_CONST) && k->curfn)
+            k->curfn->flags |= F_CONST; // conservative return-capability summary
         return;
     }
     case N_BREAK: {
@@ -1749,6 +1917,8 @@ static void check_func_body(Ck* k, Node* f) {
             s->is_mut = (pa->flags & F_MUT) != 0;
             s->is_noalias = (pa->flags & F_NOALIAS) != 0;
             s->is_param = 1;
+            if (s->type && s->type->kind == SK_INTERFACE && !s->is_mut)
+                s->is_const_backed = 1; // a read-only interface param may wrap const
             s->decl = pa;
             pa->sym = s;
         }
@@ -1799,7 +1969,22 @@ static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int narg
     k->ttypes = args;
     k->nsub = nargs;
     for (int i = 0; i < nargs; i++) k->tnames[i] = tp->kids[i]->str;
-    SType* t = decl->kind == N_STRUCT ? build_struct_type(k, decl) : T_ERR;
+    SType* t;
+    if (decl->kind == N_STRUCT) {
+        t = build_struct_type(k, decl);
+    } else if (decl->kind == N_INTERFACE) {
+        t = st_new(SK_INTERFACE);
+        t->name = decl->str;
+        t->decl = decl;
+        layout(t);
+    } else {
+        t = T_ERR;
+    }
+    if (t != T_ERR) {
+        t->nargs = nargs;
+        t->args = (SType**)arena_alloc((size_t)(nargs ? nargs : 1) * sizeof(SType*));
+        for (int i = 0; i < nargs; i++) t->args[i] = args[i];
+    }
     k->tnames = sn; k->ttypes = st; k->nsub = ns;
     STypeInst* inst = (STypeInst*)arena_alloc(sizeof(STypeInst));
     inst->args = args;
@@ -1809,99 +1994,145 @@ static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int narg
     return t;
 }
 
-// impl conformance: every interface method present, signatures match
-static void check_impl(Ck* k, Node* impl) {
-    Sym* tsym = lookup_type(k, impl->b->str, impl->b->len);
-    if (!tsym || !tsym->type || tsym->type->kind != SK_INTERFACE) {
-        ck_err(k, impl->b, "'%.*s' is not an interface", (int)impl->b->len, impl->b->str);
+// A concrete type owns one canonical contract. Its methods may follow, so the
+// contract is registered during the source walk and validated at EOF.
+static void register_contract(Ck* k, Node* impl) {
+    Sym* cs = lookup_type(k, impl->a->str, impl->a->len);
+    if (!cs || !cs->type || cs->type->kind != SK_STRUCT) {
+        ck_err(k, impl->a, "impl owner '%.*s' is not a declared struct",
+               (int)impl->a->len, impl->a->str);
         return;
     }
-    SType* iface = tsym->type;
-    impl->b->sym = tsym; // emitter: interface type symbol for vtable layout
-    Sym* csym = lookup_type(k, impl->a->str, impl->a->len);
-    SType* conc = csym && csym->type ? csym->type : NULL;
-    if (!conc) {
-        ck_err(k, impl->a, "unknown type '%.*s' in impl", (int)impl->a->len, impl->a->str);
+    Node* decl = cs->type->decl;
+    if (decl->path && impl->path && strcmp(decl->path, impl->path) != 0) {
+        ck_err(k, impl, "an impl contract must be in the struct's defining module");
         return;
     }
-    SType* pconc = st_new(SK_PTR);
-    pconc->base = conc;
-    for (int i = 0; i < iface->decl->nkids; i++) {
-        Node* m = iface->decl->kids[i];
-        Node* entry = NULL;
-        for (int j = 0; j < impl->nkids; j++)
-            if (impl->kids[j]->len == m->len &&
-                memcmp(impl->kids[j]->str, m->str, m->len) == 0) { entry = impl->kids[j]; break; }
-        if (!entry) {
-            ck_err(k, impl, "impl misses interface method '%.*s'", (int)m->len, m->str);
+    if (decl->d) {
+        ck_err(k, impl, "implementation contract for %s was already declared once",
+               type_name(cs->type));
+        return;
+    }
+    for (Sym* v = k->scope->values; v; v = v->next)
+        for (Sym* f = v; f; f = f->overload)
+            if (f->kind == SYM_FUNC && f->decl && (f->decl->flags & F_METHOD) &&
+                f->decl->d && f->decl->d->len == impl->a->len &&
+                memcmp(f->decl->d->str, impl->a->str, impl->a->len) == 0)
+                ck_err(k, impl, "impl contract for %s must appear before its methods",
+                       type_name(cs->type));
+    int want = decl->c ? decl->c->nkids : 0;
+    int got = impl->c ? impl->c->nkids : 0;
+    if (want != got)
+        ck_err(k, impl, "impl owner must repeat the struct's %d type parameters", want);
+    else for (int i = 0; i < want; i++)
+        if (decl->c->kids[i]->len != impl->c->kids[i]->len ||
+            memcmp(decl->c->kids[i]->str, impl->c->kids[i]->str,
+                   decl->c->kids[i]->len) != 0)
+            ck_err(k, impl->c->kids[i], "impl owner must repeat type parameter '%.*s'",
+                   (int)decl->c->kids[i]->len, decl->c->kids[i]->str);
+    for (int i = 0; i < impl->nkids; i++) {
+        impl->kids[i]->d = impl;
+        Node* it = impl->kids[i]->a;
+        Sym* is = lookup_type(k, it->str, it->len);
+        if (!is || !is->type || is->type->kind != SK_INTERFACE)
+            ck_err(k, it, "implemented interface '%.*s' must be declared first",
+                   (int)it->len, it->str);
+    }
+    decl->d = impl;
+    impl->a->sym = cs;
+}
+
+static void canonical_substitution(Ck* k, Node* tp) {
+    int n = tp ? tp->nkids : 0;
+    k->tnames = (const char**)arena_alloc((size_t)(n ? n : 1) * sizeof(char*));
+    k->ttypes = (SType**)arena_alloc((size_t)(n ? n : 1) * sizeof(SType*));
+    k->nsub = n;
+    for (int i = 0; i < n; i++) {
+        k->tnames[i] = tp->kids[i]->str;
+        SType* p = st_new(SK_TYPEPARAM);
+        char buf[32];
+        snprintf(buf, sizeof buf, "$%d", i);
+        size_t len = strlen(buf);
+        char* stable = arena_alloc(len + 1);
+        memcpy(stable, buf, len + 1);
+        p->name = stable;
+        k->ttypes[i] = p;
+    }
+}
+
+static void check_contract(Ck* k, Node* impl) {
+    const char** sn = k->tnames; SType** st = k->ttypes; int ns = k->nsub;
+    canonical_substitution(k, impl->c);
+    SType* conc = build_type(k, impl->a);
+    for (int ci = 0; ci < impl->nkids; ci++) {
+        Node* conf = impl->kids[ci];
+        SType* iface = build_type(k, conf->a);
+        conf->a->ty = iface;
+        if (iface->kind != SK_INTERFACE) {
+            ck_err(k, conf->a, "%s is not an interface", type_name(iface));
             continue;
         }
-        int mmut = (m->flags & F_MUT) != 0;
-        int emut = (entry->flags & F_MUT) != 0;
-        if (mmut != emut) {
-            ck_err(k, entry, "method '%.*s' mut-ness does not match the interface",
-                   (int)m->len, m->str);
-            continue;
-        }
-        Sym* fn = lookup_val(k, entry->a->str, entry->a->len);
-        if (!fn || fn->kind != SYM_FUNC || !fn->type) {
-            ck_err(k, entry->a, "unknown function '%.*s' in impl entry",
-                   (int)entry->a->len, entry->a->str);
-            continue;
-        }
-        if (overload_count(fn) > 1) {
-            ck_err(k, entry->a,
-                   "impl entries cannot select an overloaded function yet; use a uniquely named adapter");
-            continue;
-        }
-        entry->a->sym = fn; // emitter: resolved implementation function
-        SType* ft = fn->type;
-        if (ft->nparams != m->nkids + 1) {
-            ck_err(k, entry, "'%.*s' takes %d parameters; method '%.*s' needs %d plus the receiver",
-                   (int)entry->a->len, entry->a->str, ft->nparams, (int)m->len, m->str, m->nkids);
-            continue;
-        }
-        if (!same_type(ft->params[0], pconc)) {
-            ck_err(k, entry, "receiver of '%.*s' must be %s", (int)entry->a->len,
-                   entry->a->str, type_name(pconc));
-            continue;
-        }
-        if (fn->decl && ((fn->decl->kids[0]->flags & F_MUT) != 0) != mmut) {
-            ck_err(k, entry, "receiver mut-ness of '%.*s' does not match the method",
-                   (int)entry->a->len, entry->a->str);
-            continue;
-        }
-        int bad = 0;
-        for (int p = 0; p < m->nkids; p++) {
-            SType* want = build_type(k, m->kids[p]->a);
-            if (!same_type(ft->params[p + 1], want)) {
-                ck_err(k, entry, "parameter %d of '%.*s' is %s; method wants %s",
-                       p + 2, (int)entry->a->len, entry->a->str,
-                       type_name(ft->params[p + 1]), type_name(want));
-                bad = 1;
+        for (int j = 0; j < ci; j++)
+            if (same_type(iface, node_ty(impl->kids[j]->a)))
+                ck_err(k, conf->a, "interface %s is repeated in this impl contract",
+                       type_name(iface));
+
+        Node** selected = (Node**)arena_alloc(
+            (size_t)(iface->decl->nkids ? iface->decl->nkids : 1) * sizeof(Node*));
+        conf->kids = selected;
+        conf->nkids = iface->decl->nkids;
+        for (int mi = 0; mi < iface->decl->nkids; mi++) {
+            Node* m = iface->decl->kids[mi];
+            SType* mft = iface_method_type(k, iface, m);
+            uint32_t klen;
+            const char* key = method_key(impl->a, m->str, m->len, &klen);
+            Sym* head = lookup_val(k, key, klen);
+            Sym* found = NULL;
+            for (Sym* fn = head; fn; fn = fn->overload) {
+                SType* ft = fn->is_generic
+                    ? build_func_type(k, fn->decl, k->ttypes, k->nsub)
+                    : fn->type;
+                if (!ft || ft->nparams != m->nkids + 1 ||
+                    !same_type(ft->params[0], conc)) continue;
+                int mut = fn->decl && (fn->decl->flags & F_MUT);
+                if (mut != ((m->flags & F_MUT) != 0)) continue;
+                int exact = 1;
+                for (int p = 0; p < m->nkids; p++)
+                    if (!same_type(ft->params[p + 1], mft->params[p]))
+                        exact = 0;
+                if (!same_type(ft->ret, mft->ret)) exact = 0;
+                if (!exact) continue;
+                if (found) {
+                    ck_err(k, impl, "ambiguous method '%.*s' for interface %s",
+                           (int)m->len, m->str, type_name(iface));
+                    found = NULL;
+                    break;
+                }
+                found = fn;
+            }
+            Node* ref = (Node*)arena_alloc(sizeof(Node));
+            memset(ref, 0, sizeof *ref);
+            ref->kind = N_IDENT;
+            ref->path = impl->path; ref->line = impl->line; ref->col = impl->col;
+            ref->str = m->str; ref->len = m->len;
+            ref->sym = found;
+            selected[mi] = ref;
+            if (!found) {
+                ck_err(k, impl, "type %s has no exact method '%.*s' required by %s",
+                       type_name(conc), (int)m->len, m->str, type_name(iface));
+            } else if (found->is_generic && conc->decl && conc->decl->c) {
+                for (STypeInst* it = (STypeInst*)conc->decl->c->b; it; it = it->next) {
+                    int concrete = 1;
+                    for (int a = 0; a < conc->decl->c->nkids; a++)
+                        if (it->args[a]->kind == SK_TYPEPARAM) concrete = 0;
+                    if (concrete)
+                        instantiate_generic_func_args(k, found, it->args,
+                                                      conc->decl->c->nkids, impl);
+                }
             }
         }
-        SType* mret = m->a ? build_type(k, m->a) : NULL;
-        if (!same_type(ft->ret, mret)) {
-            ck_err(k, entry, "'%.*s' returns %s; method returns %s",
-                   (int)entry->a->len, entry->a->str,
-                   ft->ret ? type_name(ft->ret) : "nothing",
-                   mret ? type_name(mret) : "nothing");
-            bad = 1;
-        }
-        (void)bad;
     }
-    // register the constructor: circle_shape(data: *Point): Shape
-    Sym* ctor = declare_val(k, impl, SYM_IMPL, impl->str, impl->len);
-    if (ctor) {
-        SType* ft = st_new(SK_FUNC);
-        ft->nparams = 1;
-        ft->params = (SType**)arena_alloc(sizeof(SType*));
-        ft->params[0] = pconc;
-        ft->ret = iface;
-        ctor->type = ft;
-        ctor->decl = impl;
-    }
+    k->tnames = sn; k->ttypes = st; k->nsub = ns;
 }
 
 // --- emitter support ---------------------------------------------------------------
@@ -1963,9 +2194,39 @@ int sema_check(Node* file, Diag* d) {
             break;
         }
         case N_FUNC: {
+            if (n->flags & F_METHOD) {
+                Sym* owner = lookup_type(&k, n->d->str, n->d->len);
+                if (!owner || !owner->type || owner->type->kind != SK_STRUCT) {
+                    ck_err(&k, n->d, "method owner '%.*s' is not a declared struct",
+                           (int)n->d->len, n->d->str);
+                    break;
+                }
+                if (owner->type->decl->path && n->path &&
+                    strcmp(owner->type->decl->path, n->path) != 0) {
+                    ck_err(&k, n, "methods must be declared in the struct's defining module");
+                    break;
+                }
+                int want = owner->type->decl->c ? owner->type->decl->c->nkids : 0;
+                int got = n->c ? n->c->nkids : 0;
+                if (want != got) {
+                    ck_err(&k, n, "method owner must repeat the struct's %d type parameters", want);
+                    break;
+                }
+                int mismatch = 0;
+                for (int ti = 0; ti < want; ti++)
+                    if (owner->type->decl->c->kids[ti]->len != n->c->kids[ti]->len ||
+                        memcmp(owner->type->decl->c->kids[ti]->str,
+                               n->c->kids[ti]->str, n->c->kids[ti]->len) != 0)
+                        mismatch = 1;
+                if (mismatch) {
+                    ck_err(&k, n, "method owner must repeat the struct's type parameter names");
+                    break;
+                }
+            }
             Sym* s = declare_func(&k, n, 0);
             if (!s) break;
-            if (n->len == 4 && memcmp(n->str, "main", 4) == 0) {
+            if (!(n->flags & F_METHOD) && n->len == 4 &&
+                memcmp(n->str, "main", 4) == 0) {
                 int spells_int = n->a && n->a->kind == N_NAMED &&
                     n->a->len == 3 && memcmp(n->a->str, "int", 3) == 0;
                 Sym* head = find_in(k.scope->values, n->str, n->len);
@@ -2004,6 +2265,8 @@ int sema_check(Node* file, Diag* d) {
                     check_arraylit(&k, n->b, t);
                 else
                     coerce(&k, n->b, t);
+                if (s && t->kind == SK_INTERFACE && (n->b->flags & F_CONST))
+                    s->is_const_backed = 1;
             } else if (n->flags & F_CONST) {
                 ck_err(&k, n, "const declaration requires an initializer");
             }
@@ -2046,12 +2309,17 @@ int sema_check(Node* file, Diag* d) {
             break;
         }
         case N_IMPL:
-            check_impl(&k, n);
+            register_contract(&k, n);
             break;
         default:
             break;
         }
     }
+
+    // Contracts precede their methods; validate their complete method sets now.
+    k.scope = &file_scope;
+    for (int i = 0; i < file->nkids; i++)
+        if (file->kids[i]->kind == N_IMPL) check_contract(&k, file->kids[i]);
 
     // forward top-level calls: verify existence and argument types
     k.scope = &file_scope;

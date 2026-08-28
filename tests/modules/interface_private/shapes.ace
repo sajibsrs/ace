@@ -1,0 +1,13 @@
+pub Shape: interface {
+    area(): int
+}
+
+pub Circle: struct {
+    radius: int,
+}
+
+Circle impl (Shape)
+
+Circle.area(): int {
+    return self.radius * self.radius
+}

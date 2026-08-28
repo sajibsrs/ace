@@ -1,0 +1,10 @@
+Thing: struct { value: int }
+Readable: interface { read(): int }
+
+read_thing(thing: *Thing): int {
+    return thing.value
+}
+
+thing_readable: impl(Thing, Readable) {
+    read: read_thing,
+}

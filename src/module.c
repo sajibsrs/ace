@@ -166,14 +166,12 @@ static void collect_members(Module* m) {
         Node* n = m->file->kids[i];
         switch (n->kind) {
         case N_FUNC:
-            add_member(m, n->str, n->len, 0, (n->flags & F_PUB) != 0);
+            if (!(n->flags & F_METHOD))
+                add_member(m, n->str, n->len, 0, (n->flags & F_PUB) != 0);
             break;
         case N_VAR:
             add_member(m, n->kids[0]->str, n->kids[0]->len, 0,
                        (n->flags & F_PUB) != 0);
-            break;
-        case N_IMPL:
-            add_member(m, n->str, n->len, 0, (n->flags & F_PUB) != 0);
             break;
         case N_STRUCT: case N_INTERFACE: case N_ENUM:
         case N_ALIAS: case N_DISTINCT:
@@ -401,7 +399,7 @@ static Node* prefixed_ident(Node* from, const char* qname) {
 }
 
 // `binding.member` in expression position: value member (function, overload
-// set, global, impl constructor, type constructor/cast) → plain prefixed
+// set, global, type constructor/cast) → plain prefixed
 // ident. Also the `binding.Type.member` enum-constant form: the inner
 // `binding.Type` becomes the prefixed type ident and the outer member access
 // is kept for the checker's enum path.
@@ -473,6 +471,7 @@ static void lower_qualified(Loader* L, Node* n, Binding* binds) {
     lower_qualified(L, n->a, binds);
     lower_qualified(L, n->b, binds);
     lower_qualified(L, n->c, binds);
+    lower_qualified(L, n->d, binds);
     for (int i = 0; i < n->nkids; i++) lower_qualified(L, n->kids[i], binds);
 }
 
@@ -517,8 +516,9 @@ static const char* arena_stringn(const char* s, uint32_t len) {
     return out;
 }
 
-// Collect every module-level declaration name (functions, globals, types,
-// impl constructors, extern C bindings) and rename the declaration nodes.
+// Collect every module-level declaration name (free functions, globals,
+// types, extern C bindings) and rename the declaration nodes. Methods derive
+// their private identity from their renamed owner type.
 // Externs and exported functions keep their linker spelling in Node.cname.
 static void rename_decls(Module* m, Renames* rs) {
     for (int i = 0; i < m->file->nkids; i++) {
@@ -535,7 +535,8 @@ static void rename_decls(Module* m, Renames* rs) {
             }
             continue;
         }
-        if (n->kind != N_FUNC && n->kind != N_VAR && n->kind != N_IMPL &&
+        if (n->kind == N_FUNC && (n->flags & F_METHOD)) continue;
+        if (n->kind != N_FUNC && n->kind != N_VAR &&
             n->kind != N_STRUCT && n->kind != N_INTERFACE && n->kind != N_ENUM &&
             n->kind != N_ALIAS && n->kind != N_DISTINCT)
             continue;
@@ -572,6 +573,7 @@ static void rename_refs(Node* n, Renames* rs) {
     rename_refs(n->a, rs);
     rename_refs(n->b, rs);
     rename_refs(n->c, rs);
+    rename_refs(n->d, rs);
     for (int i = 0; i < n->nkids; i++) rename_refs(n->kids[i], rs);
 }
 
@@ -597,7 +599,7 @@ static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root
                 Node* n = file->kids[i];
                 if (n->kind == N_IMPORT) continue;
                 Node* named = n->kind == N_VAR ? n->kids[0] : n;
-                if (n->kind == N_FUNC || n->kind == N_VAR || n->kind == N_IMPL ||
+                if (n->kind == N_FUNC || n->kind == N_VAR ||
                     n->kind == N_STRUCT || n->kind == N_INTERFACE ||
                     n->kind == N_ENUM || n->kind == N_ALIAS ||
                     n->kind == N_DISTINCT || n->kind == N_EXTERN) {
@@ -609,7 +611,8 @@ static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root
                                            (int)b->len, b->name);
                         continue;
                     }
-                    if (text_is(named->str, named->len, b->name))
+                    if (!(n->kind == N_FUNC && (n->flags & F_METHOD)) &&
+                        n->kind != N_IMPL && text_is(named->str, named->len, b->name))
                         import_err(L->d, b->node,
                                    "import binding '%.*s' collides with a declaration in this module",
                                    (int)b->len, b->name);

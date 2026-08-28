@@ -34,12 +34,14 @@ import_path   := string_lit                               // std bare, local by 
 top_decl      := "pub"? top_body
 top_body      := var_decl | const_decl | func_decl | struct_decl
                | interface_decl | enum_decl | alias_decl | distinct_decl
-               | impl_decl | extern_block
+               | method_func_decl | impl_decl | extern_block
 
 var_decl      := ident ":" type ("=" expr)?               // locals: same form inside blocks
 const_decl    := ident ":" "const" type "=" expr
 
 func_decl     := ident type_params? "(" params? ")" ret_clause? block
+method_func_decl := "mut"? owner_type "." ident "(" params? ")" ret_clause? block
+owner_type    := ident type_params?                         // declares owner T names
 type_params   := "[" ident ("," ident)* "]"               // max[T]
 params        := param ("," param)*
 param         := param_mod* ident ":" type
@@ -59,8 +61,7 @@ enum_decl     := ident ":" "enum" "{" ident ("," ident)* ","? "}"
 alias_decl    := ident type_params? ":" "type" "=" type
 distinct_decl := ident ":" "distinct" type
 
-impl_decl     := ident ":" "impl" "(" ident "," ident ")" "{" impl_entry ("," impl_entry)* ","? "}"
-impl_entry    := "mut"? ident ":" ident                   // method-name : function-name
+impl_decl     := owner_type "impl" "(" type_list ","? ")" // one canonical list per struct
 
 extern_block  := "extern" string_lit "{" extern_decl* "}"
 extern_decl   := "export"? ident "(" extern_params? ")" ret_clause?
@@ -171,7 +172,8 @@ ret_types     := type | "(" type ("," type)+ ")"
 5. **Comparison chaining is a distinct production** (`cmp_expr` with `+`): `a < b < c` is one grammar node, not nested binaries; each operand evaluates once.
 6. **`&mut q` / `mut &q`** (write-capable address-of) is still `[P]` — parked in spec.md (Names/Mutability).
 7. **Keywords reserved but unused in v1 grammar:** `noalias` appears only as a parameter modifier; `export` only in extern blocks and on declarations (`pub export`).
-8. **Trailing commas are allowed in every comma list** (params, fields, enum members, impl entries, call args, array/struct literals, type lists) — under the newline rule they are how lists span lines.
+8. **Trailing commas are allowed in every comma list** (params, fields, enum members, implemented-interface lists, call args, array/struct literals, type lists) — under the newline rule they are how lists span lines.
 9. **`?` binds loosest in types:** `*T?` is a nullable pointer, `[]T?` an optional slice (spec.md Memory #6 wins). Pointer-to-optional is written `*(T?)`.
 10. **Struct literals are suppressed where `{` would open a block** — statement starts and if/for/switch heads (Go's composite-literal rule); parenthesize to use a literal there. `Type{...}` postfix and bare `{...}` in expression contexts both parse.
 11. **Operator precedence is the C table**, including the bitwise/shift levels shown above; asm `in:` uses the `in` keyword as the binding kind, and asm register values may be immediates (`x16 = 3`).
+12. **Method declarations are type-owned.** `self` is inserted contextually as a read-only receiver; leading `mut` grants writes. A leading `pub` must precede `mut`. In expressions, `Type.method(...)` is a direct call, but bare `Type.method` is not a method value.

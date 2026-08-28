@@ -103,9 +103,10 @@ Overloads are resolved during compilation. The emitted call targets a
 signature-mangled function directly; overloads add no runtime dispatch, tag,
 boxing, or allocation.
 
-Current limitation: overload selection through method-call sugar and from an
-interface `impl` entry is not implemented. Call an overloaded function directly,
-and use a uniquely named adapter in an `impl`.
+Type-owned methods use the same exact overload rule. Receiver type and receiver
+`mut` participate in selection, parameters must match exactly, and the return
+type must match after selection. Return type alone never creates or selects an
+overload. Methods must be called; they are not first-class function values.
 
 ## Function values
 

@@ -408,6 +408,7 @@ static int is_lvalue_node(Node* x);
 static SType* lvalue_type(Em* e, Node* x);
 static void emit_asm(Em* e, Node* s);
 static void emit_epilogue(Em* e);
+static ESym* emit_vtable(Em* e, SType* conc, SType* iface, Node* conf);
 
 // --- type helpers -----------------------------------------------------------------
 
@@ -1393,6 +1394,13 @@ static void mangle_type(Buf* b, SType* t) {
     case SK_STRUCT: case SK_ENUM: case SK_INTERFACE:
         buf_put8(b, t->kind == SK_STRUCT ? 'S' : t->kind == SK_ENUM ? 'E' : 'I');
         mangle_name(b, t->name);
+        if (t->nargs) {
+            buf_put8(b, 'g');
+            for (int i = 0; i < t->nargs; i++) {
+                buf_put8(b, '$');
+                mangle_type(b, t->args[i]);
+            }
+        }
         return;
     case SK_DISTINCT:
         buf_put8(b, 'D');
@@ -1907,6 +1915,28 @@ static int gen_addr(Em* e, Node* x) {
 
 static EV gen_call(Em* e, Node* call) {
     Node* callee = call->a;
+    // Explicit interface construction: Shape(&value) / Shape[T](&value).
+    if (call->d && call->d->kind == N_CONFORMANCE) {
+        SType* pt = node_ty(call->kids[0]);
+        SType* conc = pt && pt->kind == SK_PTR ? pt->base : NULL;
+        SType* iface = node_ty(call);
+        ESym* vs = emit_vtable(e, conc, iface, call->d);
+        uint32_t off = temp_slot(e, 16, 8);
+        EV d = gen_expr(e, call->kids[0]);
+        int t = tmp_int(e);
+        addr_of_sym(e, xreg(t), vs);
+        frame_addr(e, 16, off);
+        st_reg(e, xreg(t), 16, 0, 8);
+        int dreg = xreg(d.idx);
+        if (d.cls == CLS_ADDR) {
+            ld_reg(e, 16, xreg(d.idx), 0, 8, 0);
+            dreg = 16;
+        }
+        frame_addr(e, 17, off);
+        st_reg(e, dreg, 17, 8, 8);
+        frame_addr(e, xreg(t), off);
+        return (EV){ CLS_ADDR, t };
+    }
 
     // cast: i32(x), Meters(x), Color(1) — callee resolves to a type symbol
     if (callee->kind == N_IDENT && !call->sym &&
@@ -1979,12 +2009,12 @@ static EV gen_call(Em* e, Node* call) {
             ld_reg(e, xreg(vt), xreg(iv.idx), 0, 8, 0);              // vtable
             ld_reg(e, xreg(fn), xreg(vt), (uint32_t)midx * 8, 8, 0); // fn slot
             ld_reg(e, xreg(data), xreg(iv.idx), 8, 8, 0);            // data ptr
-            Node* m = it->decl->kids[midx];
-            static SType* tptr; // receiver placeholder: one 8-byte INT unit
-            if (!tptr) {
-                tptr = (SType*)arena_alloc(sizeof(SType));
-                tptr->kind = SK_PTR;
-                tptr->size = tptr->align = 8;
+            static SType* trecv; // ABI-only receiver: always passed by address
+            if (!trecv) {
+                trecv = (SType*)arena_alloc(sizeof(SType));
+                trecv->kind = SK_PRIM;
+                trecv->prim = P_I64;
+                trecv->size = trecv->align = 8;
             }
             CallArg args[40];
             SType* pty[40];
@@ -1994,19 +2024,9 @@ static EV gen_call(Em* e, Node* call) {
             args[0].node = NULL;
             args[0].pre = 1;
             args[0].val = (EV){ CLS_INT, data };
-            args[0].ptrval = 0;
-            if (m->flags & F_MUT) {
-                // A `mut *T` implementation receives the address of a pointer
-                // value. Materialize the interface's data pointer as that value.
-                uint32_t ps = temp_slot(e, 8, 8);
-                store_frame(e, xreg(data), ps, 8);
-                int pa = tmp_int(e);
-                frame_addr(e, xreg(pa), ps);
-                args[0].val = (EV){ CLS_INT, pa };
-                args[0].ptrval = 1;
-            }
-            pty[0] = tptr;
-            muts[0] = (m->flags & F_MUT) != 0;
+            args[0].ptrval = 1;
+            pty[0] = trecv;
+            muts[0] = 1; // all method receivers use the uniform data-pointer ABI
             for (int i = 1; i < n; i++) {
                 Node* a = call->kids[i - 1];
                 args[i].node = a;
@@ -2018,38 +2038,16 @@ static EV gen_call(Em* e, Node* call) {
                     args[i].node = a->a;
                     muts[i] = 1;
                 }
-                pty[i] = sema_build_type(m->kids[i - 1]->a);
+                pty[i] = node_ty(args[i].node);
             }
-            SType* mret = m->a ? sema_build_type(m->a) : NULL;
+            SType* mret = node_ty(call);
             CallTarget tgt = { TK_REG, NULL, 0, fn };
             return emit_call(e, call, args, n, pty, muts, n, 1, tgt, mret);
         }
     }
-    // direct / method-sugar / indirect / impl-ctor
+    // direct / concrete-method / indirect
     if (call->sym) {
         Sym* s = node_sym(call);
-
-        if (s->kind == SYM_IMPL) { // circle_shape(&c) -> {vtable, data}
-            Node* impl = s->decl;
-            uint32_t off = temp_slot(e, 16, 8);
-            EV d = gen_expr(e, call->kids[0]);
-            char nm[512];
-            snprintf(nm, sizeof nm, "__ace$vt$%.*s", (int)impl->len, impl->str);
-            ESym* vs = sym_intern(&e->syms, nm, (uint32_t)strlen(nm));
-            int t = tmp_int(e);
-            addr_of_sym(e, xreg(t), vs);
-            frame_addr(e, 16, off);
-            st_reg(e, xreg(t), 16, 0, 8);
-            int dreg = xreg(d.idx);
-            if (d.cls == CLS_ADDR) {
-                ld_reg(e, 16, xreg(d.idx), 0, 8, 0);
-                dreg = 16;
-            }
-            frame_addr(e, 17, off);
-            st_reg(e, dreg, 17, 8, 8);
-            frame_addr(e, xreg(t), off);
-            return (EV){ CLS_ADDR, t };
-        }
 
         if (s->kind == SYM_VAR) { // indirect call through a function value
             SType* ft = s->type;
@@ -2084,19 +2082,30 @@ static EV gen_call(Em* e, Node* call) {
                 tgt.name = arena_copy(nm, strlen(nm));
                 tgt.nlen = (uint32_t)strlen(nm);
             } else {
-                const char* mn = fn_mangle(s->name, s->len, s->type,
-                                           s->decl, NULL, 0);
+                SType* cft = node_ty(callee);
+                if (!cft || cft->kind != SK_FUNC) cft = s->type;
+                SType** targs = NULL;
+                int ntargs = 0;
+                if (s->is_generic && cft && cft->nparams > 0) {
+                    SType* recv = cft->params[0];
+                    targs = recv->args;
+                    ntargs = recv->nargs;
+                }
+                const char* mn = fn_mangle(s->name, s->len, cft,
+                                           s->decl, targs, ntargs);
                 tgt.kind = TK_INTERNAL;
                 tgt.name = arena_copy(mn, strlen(mn));
                 tgt.nlen = (uint32_t)strlen(mn);
             }
-            SType* ft = s->type;
+            SType* ft = node_ty(callee);
+            if (!ft || ft->kind != SK_FUNC) ft = s->type;
             CallArg args[40];
             uint8_t muts[40];
             Node* argnodes[41];
             int n = 0;
             int recv_mut = 0;
-            if (callee->kind == N_FIELD_E && !s->is_extern) { // method sugar
+            if (callee->kind == N_FIELD_E && !s->is_extern &&
+                !(call->flags & F_METHOD)) { // instance method
                 argnodes[0] = callee->a;
                 recv_mut = (call->flags & F_MUT) != 0;
                 n = 1;
@@ -2119,6 +2128,8 @@ static EV gen_call(Em* e, Node* call) {
                 muts[0] = 1;
             for (int i = 0; i < n && s->decl && i < s->decl->nkids; i++)
                 muts[i] = (s->decl->kids[i]->flags & F_MUT) != 0;
+            if (s->decl && (s->decl->flags & F_METHOD) && n > 0)
+                muts[0] = 1; // uniform method receiver ABI; semantic mut is separate
             return emit_call(e, call, args, n, ft->params, muts,
                              ft->nparams, !s->is_extern, tgt, ft->ret);
         }
@@ -3011,6 +3022,8 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
         pt[i] = ps && ps->type ? ps->type : sema_build_type(f->kids[i]->a);
         muts[i] = (f->kids[i]->flags & F_MUT) != 0;
     }
+    if ((f->flags & F_METHOD) && np > 0)
+        muts[0] = 1; // every method receives self through the vtable data-pointer ABI
     TU units[80];
     assign_cc(pt, muts, np, !export_c, units);
     for (int i = 0; i < np; i++) {
@@ -3215,40 +3228,71 @@ static void emit_global(Em* e, Node* n) {
 
 // --- vtables ---------------------------------------------------------------------------
 
-static void emit_impl(Em* e, Node* impl) {
-    Sym* isym = node_sym(impl->b);
-    if (!isym || !isym->type || isym->type->kind != SK_INTERFACE) {
-        em_err(e, impl, "impl block has no interface type");
-        return;
+static const char* vtable_name(SType* conc, SType* iface) {
+    Buf b = {0};
+    buf_write(&b, "__ace$vt$", 9);
+    mangle_type(&b, conc);
+    buf_put8(&b, '$');
+    mangle_type(&b, iface);
+    buf_put8(&b, 0);
+    const char* out = arena_copy((const char*)b.d, b.len - 1);
+    free(b.d);
+    return out;
+}
+
+static ESym* emit_vtable(Em* e, SType* conc, SType* iface, Node* conf) {
+    if (!conc || !iface || !conf) {
+        em_err(e, conf, "invalid interface conformance in codegen");
+        return sym_intern(&e->syms, "__ace$vt$invalid", 16);
     }
-    SType* iface = isym->type;
+    const char* nm = vtable_name(conc, iface);
+    ESym* prior = sym_intern(&e->syms, nm, (uint32_t)strlen(nm));
+    if (prior->type) return prior;
     Sec* c = &e->secs[SEC_CONST];
     while (c->data.len % 8) buf_put8(&c->data, 0);
-    char nm[512];
-    snprintf(nm, sizeof nm, "__ace$vt$%.*s", (int)impl->len, impl->str);
-    sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, c);
+    ESym* out = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, c);
     for (int i = 0; i < iface->decl->nkids; i++) { // interface method order
-        Node* m = iface->decl->kids[i];
-        Node* entry = NULL;
-        for (int j = 0; j < impl->nkids; j++)
-            if (impl->kids[j]->len == m->len &&
-                memcmp(impl->kids[j]->str, m->str, m->len) == 0) {
-                entry = impl->kids[j];
-                break;
-            }
         uint32_t off = (uint32_t)c->data.len;
-        if (!entry) {
-            em_err(e, impl, "impl misses method '%.*s' (sema gap)", (int)m->len, m->str);
+        Node* ref = i < conf->nkids ? conf->kids[i] : NULL;
+        Sym* fsym = ref ? node_sym(ref) : NULL;
+        if (!fsym) {
+            Node* m = iface->decl->kids[i];
+            em_err(e, conf, "impl misses method '%.*s' (sema gap)", (int)m->len, m->str);
             buf_put64(&c->data, 0);
             continue;
         }
-        Sym* fsym = node_sym(entry->a);
-        const char* fnm = fn_mangle(entry->a->str, entry->a->len,
-                                    fsym ? fsym->type : NULL,
-                                    fsym ? fsym->decl : NULL, NULL, 0);
+        SType* ft = fsym->type;
+        SType** args = NULL;
+        int nargs = 0;
+        if (fsym->is_generic && conc->nargs) {
+            args = conc->args;
+            nargs = conc->nargs;
+            for (STypeInst* it = sema_insts(fsym->decl); it; it = it->next) {
+                int same = it->result && it->result->nparams &&
+                           it->result->params[0]->decl == conc->decl &&
+                           it->result->params[0]->nargs == conc->nargs;
+                for (int a = 0; a < conc->nargs && same; a++)
+                    same = it->args[a] == conc->args[a];
+                if (same) { ft = it->result; break; }
+            }
+        }
+        const char* fnm = fn_mangle(fsym->name, fsym->len, ft,
+                                    fsym->decl, args, nargs);
         ESym* fs = sym_intern(&e->syms, fnm, (uint32_t)strlen(fnm));
         buf_put64(&c->data, 0);
         reloc_add(c, off, fs, 0, 3, 1, RM_UNSIGNED);
+    }
+    return out;
+}
+
+static void emit_impl(Em* e, Node* impl) {
+    // Generic contracts are materialized per exact pair at construction sites.
+    if (impl->c) return;
+    SType* conc = sema_build_type(impl->a);
+    for (int i = 0; i < impl->nkids; i++) {
+        SType* iface = node_ty(impl->kids[i]->a);
+        if (!iface) iface = sema_build_type(impl->kids[i]->a);
+        emit_vtable(e, conc, iface, impl->kids[i]);
     }
 }
 
@@ -3672,14 +3716,16 @@ int emit_object(Node* file, Diag* d, const char* out_path) {
                 for (STypeInst* inst = sema_insts(n); inst; inst = inst->next) {
                     sema_stamp_body(n, inst->args, nt);
                     Sym* gs = node_sym(n);
-                    const char* mn = fn_mangle(n->str, n->len, inst->result,
+                    const char* mn = fn_mangle(gs ? gs->name : n->str,
+                                               gs ? gs->len : n->len, inst->result,
                                                gs ? gs->decl : n, inst->args, nt);
                     emit_func(&e, n, mn, (uint32_t)strlen(mn),
                               inst->result->ret, 0, 0);
                 }
                 break;
             }
-            int is_main = n->len == 4 && memcmp(n->str, "main", 4) == 0;
+            int is_main = !(n->flags & F_METHOD) && n->len == 4 &&
+                          memcmp(n->str, "main", 4) == 0;
             int export_c = (n->flags & F_EXPO) != 0;
             SType* ret = n->a ? sema_build_type(n->a) : NULL;
             if (is_main) {
@@ -3691,7 +3737,8 @@ int emit_object(Node* file, Diag* d, const char* out_path) {
                 emit_func(&e, n, nm, (uint32_t)strlen(nm), ret, 0, 1);
             } else {
                 Sym* fs = node_sym(n);
-                const char* mn = fn_mangle(n->str, n->len,
+                const char* mn = fn_mangle(fs ? fs->name : n->str,
+                                           fs ? fs->len : n->len,
                                            fs ? fs->type : NULL, n, NULL, 0);
                 emit_func(&e, n, mn, (uint32_t)strlen(mn), ret, 0, 0);
             }

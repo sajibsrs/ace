@@ -6,17 +6,14 @@ Shape: interface {
     mut scale(k: i32)
 }
 
-point_area(p: *Point): i32 {
-    return p.x
+Point impl (Shape)
+
+Point.area(): i32 {
+    return self.x
 }
 
-point_scale(mut p: *Point, k: i32) {
-    p.x = p.x * k
-}
-
-point_shape: impl(Point, Shape) {
-    area: point_area,
-    mut scale: point_scale,
+mut Point.scale(k: i32) {
+    self.x = self.x * k
 }
 
 bigger[T](a: T, b: T): T {
@@ -28,7 +25,7 @@ bigger[T](a: T, b: T): T {
 
 main(): int {
     p: Point = Point{ x: 21 }
-    shape: Shape = point_shape(&p)
+    shape: Shape = Shape(&p)
     mut shape.scale(2)
     return int(bigger[i32](shape.area(), 40))
 }

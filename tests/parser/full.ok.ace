@@ -17,6 +17,7 @@ pub Vec[T]: struct {
 }
 
 Point: struct { x: f32, y: f32 }
+Circle: struct { r: f32 }
 
 StringList: type = []string
 
@@ -27,17 +28,14 @@ Shape: interface {
     mut scale(k: f64)
 }
 
-circle_area(c: *Circle): f32 {
+Circle impl (Shape)
+
+Circle.area(): f32 {
     return 0.0
 }
 
-circle_scale(mut c: *Circle, k: f64) {
-    c.r = c.r * k
-}
-
-circle_shape: impl(Circle, Shape) {
-    area: circle_area,
-    mut scale: circle_scale,
+pub mut Circle.scale(k: f64) {
+    self.r = self.r * f32(k)
 }
 
 extern "c" {

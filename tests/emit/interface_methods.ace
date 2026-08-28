@@ -1,0 +1,49 @@
+// expect-exit: 42
+Circle: struct {
+    radius: i32,
+}
+
+Shape: interface {
+    area(): i32
+    mut scale(k: i32)
+}
+
+Metric: interface {
+    value(k: int): int
+}
+
+Circle impl (Shape, Metric)
+
+Circle.area(): i32 {
+    return self.radius * self.radius * 3
+}
+
+mut Circle.scale(k: i32) {
+    self.radius = self.radius * k
+}
+
+Circle.value(k: int): int {
+    return int(self.radius) + k
+}
+
+Circle.value(k: f64): f64 {
+    return k + 1.0
+}
+
+main(): int {
+    circle: Circle = Circle{ radius: 3 }
+    shape: Shape = Shape(&circle)
+    metric: Metric = Metric(&circle)
+    mut shape.scale(2)
+    Circle.scale(mut circle, 1)
+    direct: int = Circle.value(circle, 36)
+    measured: int = metric.value(36)
+    floating: f64 = circle.value(1.0)
+    if direct != 42 {
+        return 1
+    }
+    if int(floating) != 2 {
+        return 2
+    }
+    return measured
+}

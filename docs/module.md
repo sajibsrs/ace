@@ -42,7 +42,9 @@ A module exports any top-level declaration marked `pub`:
 - functions, including exact-signature overload sets,
 - globals (`x: int = 0` and `x: const int = 0`),
 - types: structs, interfaces, enums, aliases, and distinct types,
-- impl blocks, whose constructor becomes a qualified value.
+- type-owned methods and canonical interface contracts. Each is private by
+  default; `pub Type.method` permits direct external calls and
+  `pub Type impl (Interface)` permits external interface construction.
 
 Access is always qualified with the binding name:
 

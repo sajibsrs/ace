@@ -1,0 +1,12 @@
+Thing: struct { value: int }
+Readable: interface { read(): int }
+
+Thing.read(): int {
+    return self.value
+}
+
+main(): int {
+    thing: Thing = Thing{ value: 1 }
+    readable: Readable = Readable(&thing)
+    return readable.read()
+}

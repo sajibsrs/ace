@@ -1,0 +1,20 @@
+Thing: struct { value: int }
+Writable: interface { mut write(value: int) }
+
+Thing impl (Writable)
+
+mut Thing.write(value: int) {
+    self.value = value
+}
+
+identity(value: Writable): Writable {
+    return value
+}
+
+main(): int {
+    thing: const Thing = Thing{ value: 1 }
+    first: Writable = Writable(&thing)
+    second: Writable = identity(first)
+    mut second.write(2)
+    return 0
+}

@@ -4,7 +4,8 @@
 //   N_FILE      kids = imports + top decls
 //   N_IMPORT    str = binding name; b = module ident (alias form); a = N_STR path (path form)
 //   N_VAR       kids = binders (N_PARAM: str name, a type); b = init (or N_TUPLE_E); F_CONST
-//   N_FUNC      str = name; kids = params; a = ret type/N_TUPLE_T/NULL; b = body; c = N_TPARAMS; F_PUB/F_EXPO
+//   N_FUNC      str = name; kids = params; a = ret; b = body; c = N_TPARAMS;
+//               d = owner type for methods; F_PUB/F_EXPO/F_METHOD/F_MUT
 //   N_PARAM     str = name; a = type; F_MUT/F_NOALIAS (also used as var binder)
 //   N_STRUCT    str = name; kids = N_FIELD; c = N_TPARAMS; F_PUB
 //   N_FIELD     str = name; a = type
@@ -13,8 +14,8 @@
 //   N_ENUM      str = name; kids = N_IDENT members; F_PUB
 //   N_ALIAS     str = name; a = type; c = N_TPARAMS; F_PUB
 //   N_DISTINCT  str = name; a = base type; F_PUB
-//   N_IMPL      str = impl name; a = type ident; b = interface ident; kids = N_IMPLFN
-//   N_IMPLFN    str = method name; a = function ident; F_MUT
+//   N_IMPL      a = concrete type; c = owner N_TPARAMS; kids = N_CONFORMANCE
+//   N_CONFORMANCE a = interface type; kids = resolved method idents after sema
 //   N_EXTERN    str = abi string; kids = N_EXTERNFN
 //   N_EXTERNFN  str = name; kids = params; a = ret; F_EXPO/F_VARARGS
 //   N_BLOCK     kids = statements
@@ -1028,6 +1029,65 @@ static Node* parse_func_rest(P* p, Token* name, Node* tp, int pub, int expo) {
     return f;
 }
 
+static Node* owner_type(P* p, Token* name, Node* tp) {
+    Node* t = nd_tok(p, N_NAMED, name);
+    t->str = name->str;
+    t->len = name->len;
+    if (tp) {
+        NV args = {0};
+        for (int i = 0; i < tp->nkids; i++) {
+            Node* a = nd(p, N_NAMED);
+            a->str = tp->kids[i]->str;
+            a->len = tp->kids[i]->len;
+            nv_push(p, &args, a);
+        }
+        set_kids(t, &args);
+    }
+    return t;
+}
+
+static Node* parse_method_rest(P* p, Token* owner, Node* tp, int pub, int mut) {
+    expect(p, T_DOT, "'.' after method owner");
+    Token* name = expect(p, T_IDENT, "method name after '.'");
+    Node* f = parse_func_rest(p, name, tp, pub, 0);
+    f->flags |= F_METHOD;
+    if (mut) f->flags |= F_MUT;
+    f->d = owner_type(p, owner, tp);
+
+    Node* self = nd_tok(p, N_PARAM, owner);
+    self->str = "self";
+    self->len = 4;
+    if (mut) self->flags |= F_MUT;
+    self->a = f->d;
+    Node** params = (Node**)arena_alloc((size_t)(f->nkids + 1) * sizeof(Node*));
+    params[0] = self;
+    for (int i = 0; i < f->nkids; i++) params[i + 1] = f->kids[i];
+    f->kids = params;
+    f->nkids++;
+    return f;
+}
+
+static Node* parse_impl_contract(P* p, Token* owner, Node* tp, int pub) {
+    Node* n = nd_tok(p, N_IMPL, owner);
+    n->a = owner_type(p, owner, tp);
+    n->c = tp;
+    if (pub) n->flags |= F_PUB;
+    expect(p, T_IMPL, "'impl'");
+    expect(p, T_LPAREN, "'(' after 'impl'");
+    NV interfaces = {0};
+    if (at(p, T_RPAREN)) perr(p, "an impl contract needs at least one interface");
+    for (;;) {
+        Node* c = nd(p, N_CONFORMANCE);
+        c->a = parse_type(p);
+        nv_push(p, &interfaces, c);
+        if (!ate(p, T_COMMA)) break;
+        if (at(p, T_RPAREN)) break;
+    }
+    expect(p, T_RPAREN, "')' to close implemented interfaces");
+    set_kids(n, &interfaces);
+    return n;
+}
+
 // After `Name:` — kind word decides; otherwise it is a global var/const.
 static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
     p->i++; // ':'
@@ -1129,40 +1189,6 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
         n->a = parse_type(p);
         return n;
     }
-    case T_IMPL: {
-        p->i++;
-        n = nd_tok(p, N_IMPL, name);
-        n->str = name->str;
-        n->len = name->len;
-        if (pub) n->flags |= F_PUB;
-        expect(p, T_LPAREN, "'(' after 'impl'");
-        Node* t1 = ident_node(p, expect(p, T_IDENT, "type name in impl"));
-        expect(p, T_COMMA, "',' in impl");
-        Node* t2 = ident_node(p, expect(p, T_IDENT, "interface name in impl"));
-        expect(p, T_RPAREN, "')' to close impl");
-        n->a = t1;
-        n->b = t2;
-        expect(p, T_LBRACE, "'{' to open impl entries");
-        NV entries = {0};
-        skipnl(p);
-        while (!at(p, T_RBRACE)) { // comma-separated (spec sample); trailing ok
-            if (at(p, T_EOF)) perr(p, "unexpected end of file in impl");
-            Node* e = nd(p, N_IMPLFN);
-            if (ate(p, T_MUT)) e->flags |= F_MUT;
-            Token* mname = expect(p, T_IDENT, "method name in impl entry");
-            e->str = mname->str;
-            e->len = mname->len;
-            expect(p, T_COLON, "':' in impl entry");
-            e->a = ident_node(p, expect(p, T_IDENT, "function name in impl entry"));
-            nv_push(p, &entries, e);
-            if (!ate(p, T_COMMA)) break;
-            if (at(p, T_RBRACE)) break;
-            skipnl(p);
-        }
-        p->i++;
-        set_kids(n, &entries);
-        return n;
-    }
     default: { // global var / const
         n = nd_tok(p, N_VAR, name);
         if (pub) n->flags |= F_PUB;
@@ -1260,10 +1286,21 @@ static Node* parse_import(P* p) {
 
 static Node* parse_top(P* p) {
     if (at(p, T_IMPORT)) perr(p, "imports must precede declarations");
-    int pub = 0, expo = 0;
+    int pub = 0, expo = 0, mut = 0;
     for (;;) {
-        if (ate(p, T_PUB)) pub = 1;
-        else if (ate(p, T_EXPORT)) expo = 1;
+        if (at(p, T_PUB)) {
+            if (mut) perr(p, "visibility must come before 'mut'");
+            if (pub) perr(p, "duplicate 'pub' modifier");
+            p->i++; pub = 1;
+        }
+        else if (at(p, T_EXPORT)) {
+            if (expo) perr(p, "duplicate 'export' modifier");
+            p->i++; expo = 1;
+        }
+        else if (at(p, T_MUT)) {
+            if (mut) perr(p, "duplicate 'mut' modifier");
+            p->i++; mut = 1;
+        }
         else break;
     }
     if (at(p, T_EXTERN)) {
@@ -1274,6 +1311,15 @@ static Node* parse_top(P* p) {
     Token* name = tk(p);
     p->i++;
     Node* tp = try_tparams(p);
+    if (at(p, T_IMPL)) {
+        if (expo || mut) perr(p, "impl contracts accept only the optional leading 'pub'");
+        return parse_impl_contract(p, name, tp, pub);
+    }
+    if (at(p, T_DOT)) {
+        if (expo) perr(p, "methods cannot be exported at the C boundary");
+        return parse_method_rest(p, name, tp, pub, mut);
+    }
+    if (mut) perr(p, "'mut' before a top-level declaration requires a method owner");
     if (at(p, T_LPAREN)) return parse_func_rest(p, name, tp, pub, expo);
     if (at(p, T_COLON)) return parse_colon_decl(p, name, tp, pub);
     perr(p, "expected '(' or ':' after top-level name '%.*s'", (int)name->len, name->str);
@@ -1327,6 +1373,7 @@ static void pflags(Node* x) {
     if (x->flags & F_CONST) printf(" const");
     if (x->flags & F_ELSE) printf(" else");
     if (x->flags & F_VARARGS) printf(" varargs");
+    if (x->flags & F_METHOD) printf(" method");
 }
 
 static void pnode(Node* x, int ind) {
@@ -1346,7 +1393,7 @@ static void pnode(Node* x, int ind) {
         printf(" op='%s'", tok_disp((TokKind)x->op));
     pflags(x);
     printf(" @%d:%d", x->line, x->col);
-    if (!x->a && !x->b && !x->c && !x->kids) {
+    if (!x->a && !x->b && !x->c && !x->d && !x->kids) {
         printf(")\n");
         return;
     }
@@ -1354,6 +1401,7 @@ static void pnode(Node* x, int ind) {
     if (x->a) pnode(x->a, ind + 1);
     if (x->b) pnode(x->b, ind + 1);
     if (x->c) pnode(x->c, ind + 1);
+    if (x->d) pnode(x->d, ind + 1);
     for (int i = 0; i < x->nkids; i++) pnode(x->kids[i], ind + 1);
     for (int i = 0; i < ind; i++) putchar(' ');
     printf(")\n");

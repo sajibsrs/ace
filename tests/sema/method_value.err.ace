@@ -1,0 +1,10 @@
+Circle: struct { radius: int }
+
+Circle.area(): int {
+    return self.radius
+}
+
+main(): int {
+    Circle.area
+    return 0
+}

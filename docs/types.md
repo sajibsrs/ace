@@ -137,10 +137,10 @@ solving.
 
 ## Interfaces
 
-An interface value is two words: a const vtable pointer and a data pointer. An
-`impl` explicitly maps interface methods to functions, and construction names
-that implementation. There is no inheritance or automatic implementation
-selection.
+An interface value is two words: a const vtable pointer and a data pointer. A
+struct has one canonical contract listing every interface it implements, and
+construction explicitly names the target interface. There is no inheritance,
+runtime lookup, or trait solving.
 
 ```ace
 Value: interface {
@@ -149,23 +149,40 @@ Value: interface {
 
 Number: struct { value: int }
 
-number_get(number: *Number): int {
-    return number.value
-}
+Number impl (Value)
 
-number_value: impl(Number, Value) {
-    get: number_get,
+Number.get(): int {
+    return self.value
 }
 
 main(): int {
     number: Number = Number{ value: 13 }
-    value: Value = number_value(&number)
+    value: Value = Value(&number)
     return value.get()
 }
 ```
 
-Interface calls dispatch through the explicit vtable. This is runtime dispatch;
-ordinary function overloads remain compile-time direct calls.
+Methods are owned by their struct. `self` is read-only by default; a mutating
+method is declared and called with visible `mut`:
+
+```ace
+mut Number.set(value: int) {
+    self.value = value
+}
+
+mut number.set(21)
+```
+
+One contract may list multiple interfaces: `Number impl (Value, Printable)`.
+A second `Number impl` declaration is an error. Interface calls dispatch through
+the generated const vtable; concrete method overloads remain compile-time direct
+calls. `Type.method(...)` is available for a disambiguated direct call, but a
+bare `Type.method` is not a function value.
+
+Contracts and methods are private by default. Put visibility first:
+`pub Number impl (Value)` and `pub mut Number.set(value: int)`. An interface
+over const backing storage may be read, but mutating dispatch through it is a
+compile error.
 
 ## Current limits
 

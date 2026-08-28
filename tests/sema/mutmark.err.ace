@@ -5,17 +5,14 @@ Shape: interface {
     mut scale(k: f32)
 }
 
-circle_area(c: *Point): f32 {
-    return c.x
+Point impl (Shape)
+
+Point.area(): f32 {
+    return self.x
 }
 
-circle_scale(mut c: *Point, k: f32) {
-    c.x = c.x * k
-}
-
-circle_shape: impl(Point, Shape) {
-    area: circle_area,
-    mut scale: circle_scale,
+mut Point.scale(k: f32) {
+    self.x = self.x * k
 }
 
 f(s: Shape) {

@@ -1,0 +1,8 @@
+Thing: struct { value: int }
+Readable: interface { read(): int }
+
+Thing.read(): int {
+    return self.value
+}
+
+Thing impl (Readable)

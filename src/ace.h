@@ -91,7 +91,8 @@ char* arena_alloc(size_t n);
     X(N_PARAM, "param") X(N_STRUCT, "struct") X(N_FIELD, "field")              \
     X(N_INTERFACE, "interface") X(N_METHOD, "method") X(N_ENUM, "enum")        \
     X(N_ALIAS, "alias") X(N_DISTINCT, "distinct") X(N_IMPL, "impl")            \
-    X(N_IMPLFN, "implfn") X(N_EXTERN, "extern") X(N_EXTERNFN, "externfn")      \
+    X(N_CONFORMANCE, "conformance") X(N_EXTERN, "extern")                     \
+    X(N_EXTERNFN, "externfn")                                                  \
     /* statements */                                                           \
     X(N_BLOCK, "block") X(N_EXPRSTMT, "exprstmt") X(N_ASSIGN, "assign")        \
     X(N_IF, "if") X(N_FOR, "for") X(N_RANGE, "range") X(N_SWITCH, "switch")    \
@@ -118,7 +119,7 @@ const char* node_kind_name(NKind k);
 
 enum {
     F_PUB = 1, F_EXPO = 2, F_MUT = 4, F_NOALIAS = 8, F_CONST = 16,
-    F_ELSE = 32, F_VARARGS = 64,
+    F_ELSE = 32, F_VARARGS = 64, F_METHOD = 128,
 };
 
 typedef struct Node Node;
@@ -135,6 +136,7 @@ struct Node {
     Node*       a;
     Node*       b;
     Node*       c;
+    Node*       d; // method owner / interface-construction contract metadata
     Node**      kids;
     int         nkids;
     const char* cname; // original C-boundary name of a module-prefixed extern

@@ -21,12 +21,10 @@ Value: interface {
 
 Number: struct { value: int }
 
-number_get(number: *Number): int {
-    return number.value
-}
+Number impl (Value)
 
-number_value: impl(Number, Value) {
-    get: number_get,
+Number.get(): int {
+    return self.value
 }
 
 main(): int {
@@ -43,7 +41,7 @@ main(): int {
     box: Box[int]
     box.value = 13
     number: Number = Number{ value: 13 }
-    value: Value = number_value(&number)
+    value: Value = Value(&number)
     return count + int(raw) + read_x(pointer) + middle[0] + middle[1] +
         operation(1, 2) + int(state) + box.value + value.get()
 }

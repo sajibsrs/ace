@@ -167,6 +167,14 @@ if ! ast | grep -q "(enum 'Color'"; then
     echo "FAIL: enum Color should appear in the AST"
     fail=1
 fi
+if ! ast | grep -q "(func 'scale' pub mut method"; then
+    echo "FAIL: visibility-first mut type-owned method should appear in the AST"
+    fail=1
+fi
+if ! ast | grep -q "(conformance"; then
+    echo "FAIL: canonical interface contract should appear in the AST"
+    fail=1
+fi
 if ! ast | grep -qF "op='+='"; then
     echo "FAIL: compound assignment += should appear in the AST"
     fail=1

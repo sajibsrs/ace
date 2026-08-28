@@ -1,0 +1,21 @@
+// expect-exit: 42
+Value[T]: interface {
+    get(): T
+}
+
+Box[T]: struct {
+    value: T,
+}
+
+Box[T] impl (Value[T])
+
+Box[T].get(): T {
+    return self.value
+}
+
+main(): int {
+    box: Box[int]
+    box.value = 42
+    value: Value[int] = Value[int](&box)
+    return box.get() + value.get() - 42
+}
