@@ -64,6 +64,25 @@ if [ -d tests/emit ]; then
         echo "FAIL: -o mode exited $got, want 42"
         fail=1
     fi
+    # Darwin's DWARF reader must see both the source rows and the minimal
+    # compile-unit/function metadata used to preserve them through linking.
+    if command -v dwarfdump >/dev/null 2>&1; then
+        dwarf=$(dwarfdump --debug-info --debug-line /tmp/ace_emit/hello_min.o 2>/tmp/ace_test_errs)
+        if [ $? -ne 0 ]; then
+            echo "FAIL: dwarfdump rejected emitter debug info"
+            cat /tmp/ace_test_errs
+            fail=1
+        elif ! printf '%s\n' "$dwarf" | grep -q 'DW_AT_name.*("main")'; then
+            echo "FAIL: DWARF should describe the main function"
+            fail=1
+        elif ! printf '%s\n' "$dwarf" | grep -Eq '^0x[0-9a-f]+[[:space:]]+2[[:space:]]+1'; then
+            echo "FAIL: DWARF should map main to hello_min.ace:2:1"
+            fail=1
+        elif ! printf '%s\n' "$dwarf" | grep -Eq '^0x[0-9a-f]+[[:space:]]+3[[:space:]]+5'; then
+            echo "FAIL: DWARF should map return to hello_min.ace:3:5"
+            fail=1
+        fi
+    fi
 fi
 
 # lexer spot-checks

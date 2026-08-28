@@ -44,7 +44,7 @@
 //     LC_DYSYMTAB
 //
 // Relocations (r_word1 = symbolnum(24)|pcrel<<24|length<<25|extern<<27|type<<28;
-// BRANCH26=5, PAGE21=6, PAGEOFF12=7 (length 2), UNSIGNED=0 (length 3)):
+// BRANCH26=2, PAGE21=3, PAGEOFF12=4 (length 2), UNSIGNED=0 (length 3)):
 //   - adrp/add address pairs against local symbols (PAGE21 pcrel=1 / PAGEOFF12
 //     pcrel=0), 8-byte absolute words via UNSIGNED (vtable slots, string
 //     pointers in data), extern branches via BRANCH26 (extern=1). Entries are
@@ -91,6 +91,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 int emit_has_main = 0;
 
@@ -133,6 +134,27 @@ static void buf_put64(Buf* b, uint64_t v) {
     for (int i = 0; i < 8; i++) buf_put8(b, (uint8_t)(v >> (8 * i)));
 }
 
+static void buf_uleb(Buf* b, uint64_t v) {
+    do {
+        uint8_t byte = (uint8_t)(v & 0x7f);
+        v >>= 7;
+        if (v) byte |= 0x80;
+        buf_put8(b, byte);
+    } while (v);
+}
+
+static void buf_sleb(Buf* b, int64_t v) {
+    int more;
+    do {
+        uint8_t byte = (uint8_t)(v & 0x7f);
+        int sign = byte & 0x40;
+        v >>= 7;
+        more = !((v == 0 && !sign) || (v == -1 && sign));
+        if (more) byte |= 0x80;
+        buf_put8(b, byte);
+    } while (more);
+}
+
 static void buf_write(Buf* b, const void* p, size_t n) {
     buf_reserve(b, n);
     memcpy(b->d + b->len, p, n);
@@ -153,7 +175,8 @@ static void buf_putname(Buf* b, const char* name) { // 16-byte padded field
 // --- sections & symbols ------------------------------------------------------------
 
 enum {
-    SEC_TEXT, SEC_CONST, SEC_DATA, SEC_BSS, SEC_DEBUG_LINE, NSECS,
+    SEC_TEXT, SEC_CONST, SEC_DATA, SEC_BSS,
+    SEC_DEBUG_ABBREV, SEC_DEBUG_INFO, SEC_DEBUG_LINE, NSECS,
     // nlist_64 n_sect is 1-based: SEC_TEXT -> 1
 };
 
@@ -260,6 +283,8 @@ typedef struct { // per-function stack slot (keyed by binder/loop node)
 } Slot;
 
 typedef struct { Sym* s; ESym* sym; } GVar; // global variable storage
+typedef struct { uint32_t addr; int line, col; } LineRow;
+typedef struct { uint32_t addr, size; const char* name; uint32_t nlen; } DebugFn;
 
 enum { CLS_INT, CLS_FP, CLS_ADDR };
 typedef struct { uint8_t cls; int idx; } EV; // int temp / fp temp / address in int temp
@@ -306,6 +331,10 @@ typedef struct {
     int      ended_return;
     SType*   fnret;
     uint32_t sret_slot;
+    LineRow* lines;
+    int      nlines, clines;
+    DebugFn* debug_fns;
+    int      ndebug_fns, cdebug_fns;
 } Em;
 
 #define MAX_ITEMPS 14  // x0-x7, x9-x15
@@ -342,6 +371,32 @@ static const char* arena_copy(const char* s, size_t n) {
     memcpy(p, s, n);
     p[n] = 0;
     return p;
+}
+
+static void line_mark(Em* e, Node* n) {
+    if (!n || n->line <= 0) return;
+    uint32_t addr = (uint32_t)text(e)->len;
+    if (e->nlines && e->lines[e->nlines - 1].addr == addr) {
+        e->lines[e->nlines - 1] = (LineRow){ addr, n->line, n->col };
+        return;
+    }
+    if (e->nlines == e->clines) {
+        e->clines = e->clines ? e->clines * 2 : 64;
+        e->lines = realloc(e->lines, (size_t)e->clines * sizeof(LineRow));
+        if (!e->lines) oom();
+    }
+    e->lines[e->nlines++] = (LineRow){ addr, n->line, n->col };
+}
+
+static void debug_fn_add(Em* e, Node* f, uint32_t addr, uint32_t size) {
+    if (e->ndebug_fns == e->cdebug_fns) {
+        e->cdebug_fns = e->cdebug_fns ? e->cdebug_fns * 2 : 16;
+        e->debug_fns = realloc(e->debug_fns,
+                               (size_t)e->cdebug_fns * sizeof(DebugFn));
+        if (!e->debug_fns) oom();
+    }
+    e->debug_fns[e->ndebug_fns++] =
+        (DebugFn){ addr, size, f->str, f->len };
 }
 
 static EV gen_expr(Em* e, Node* x);
@@ -2330,6 +2385,7 @@ static void store_member(Em* e, int ra, SType* tup, int i, uint32_t off) {
 }
 
 static void emit_stmt(Em* e, Node* s) {
+    line_mark(e, s);
     e->vti = 0; e->vtf = 0; // statement boundary
     switch (s->kind) {
     case N_VAR: {
@@ -2843,6 +2899,8 @@ static void incoming_addr(Em* e, int rd, uint32_t soff) {
 
 static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
                       SType* ret, int is_main, int export_c) {
+    uint32_t debug_addr = (uint32_t)text(e)->len;
+    line_mark(e, f);
     e->frame = 0;
     e->spill_on = 0;
     e->out_max = 0;
@@ -2927,6 +2985,7 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
     }
     e->fix[e->subsp_fix].frame = align_up(e->frame + e->out_max, 16);
     patch_branches(e);
+    debug_fn_add(e, f, debug_addr, (uint32_t)text(e)->len - debug_addr);
 }
 
 // --- globals ---------------------------------------------------------------------------
@@ -3138,6 +3197,150 @@ static void patch_fixups(Em* e) {
     }
 }
 
+// --- DWARF line table -------------------------------------------------------------
+
+static void source_path(Em* e, char* out, size_t cap) {
+    if (e->d->path[0] == '/') {
+        snprintf(out, cap, "%s", e->d->path);
+        return;
+    }
+    char cwd[3072];
+    if (getcwd(cwd, sizeof cwd))
+        snprintf(out, cap, "%s/%s", cwd, e->d->path);
+    else
+        snprintf(out, cap, "%s", e->d->path);
+}
+
+static void emit_debug_info(Em* e, ESym* text_anchor) {
+    if (!e->nlines) return;
+    Buf* ab = &e->secs[SEC_DEBUG_ABBREV].data;
+    // Abbrev 1: compile unit. Function children let dsymutil select the text
+    // ranges while deliberately omitting types, variables, and frame data.
+    buf_uleb(ab, 1);
+    buf_uleb(ab, 0x11); // DW_TAG_compile_unit
+    buf_put8(ab, 1);    // DW_CHILDREN_yes
+    buf_uleb(ab, 0x25); buf_uleb(ab, 0x08); // DW_AT_producer, DW_FORM_string
+    buf_uleb(ab, 0x13); buf_uleb(ab, 0x05); // DW_AT_language, DW_FORM_data2
+    buf_uleb(ab, 0x03); buf_uleb(ab, 0x08); // DW_AT_name, DW_FORM_string
+    buf_uleb(ab, 0x10); buf_uleb(ab, 0x17); // DW_AT_stmt_list, DW_FORM_sec_offset
+    buf_uleb(ab, 0x1b); buf_uleb(ab, 0x08); // DW_AT_comp_dir, DW_FORM_string
+    buf_uleb(ab, 0x11); buf_uleb(ab, 0x01); // DW_AT_low_pc, DW_FORM_addr
+    buf_uleb(ab, 0x12); buf_uleb(ab, 0x06); // DW_AT_high_pc, DW_FORM_data4
+    buf_put8(ab, 0); buf_put8(ab, 0);
+    buf_uleb(ab, 2);
+    buf_uleb(ab, 0x2e); // DW_TAG_subprogram
+    buf_put8(ab, 0);    // DW_CHILDREN_no
+    buf_uleb(ab, 0x11); buf_uleb(ab, 0x01); // DW_AT_low_pc, DW_FORM_addr
+    buf_uleb(ab, 0x12); buf_uleb(ab, 0x06); // DW_AT_high_pc, DW_FORM_data4
+    buf_uleb(ab, 0x03); buf_uleb(ab, 0x08); // DW_AT_name, DW_FORM_string
+    buf_put8(ab, 0); buf_put8(ab, 0);
+    buf_put8(ab, 0);    // abbreviation table terminator
+
+    char path[4096], cwd[3072];
+    source_path(e, path, sizeof path);
+    if (!getcwd(cwd, sizeof cwd)) snprintf(cwd, sizeof cwd, ".");
+    Buf* in = &e->secs[SEC_DEBUG_INFO].data;
+    size_t unit = in->len;
+    buf_put32(in, 0);   // unit_length
+    buf_put16(in, 4);   // DWARF v4
+    buf_put32(in, 0);   // abbrev offset
+    buf_put8(in, 8);    // address size
+    buf_uleb(in, 1);    // abbrev code
+    buf_write(in, "Ace compiler", sizeof "Ace compiler");
+    buf_put16(in, 0x8000); // DW_LANG_lo_user: Ace has no assigned DWARF code
+    buf_write(in, path, strlen(path) + 1);
+    buf_put32(in, 0);   // stmt_list offset
+    buf_write(in, cwd, strlen(cwd) + 1);
+    uint32_t low_pc = (uint32_t)in->len;
+    buf_put64(in, 0);
+    reloc_add(&e->secs[SEC_DEBUG_INFO], low_pc, text_anchor,
+              0, 3, 0, RM_UNSIGNED);
+    buf_put32(in, (uint32_t)text(e)->len); // high_pc is a size in DWARF v4
+    for (int i = 0; i < e->ndebug_fns; i++) {
+        DebugFn* f = &e->debug_fns[i];
+        buf_uleb(in, 2);
+        uint32_t fn_pc = (uint32_t)in->len;
+        buf_put64(in, f->addr); // relocation addend within __text
+        reloc_add(&e->secs[SEC_DEBUG_INFO], fn_pc, text_anchor,
+                  0, 3, 0, RM_UNSIGNED);
+        buf_put32(in, f->size);
+        buf_write(in, f->name, f->nlen);
+        buf_put8(in, 0);
+    }
+    buf_put8(in, 0);    // end compile-unit children
+    buf_patch32(in, unit, (uint32_t)(in->len - unit - 4));
+}
+
+static void emit_debug_line(Em* e, ESym* text_anchor) {
+    if (!e->nlines) return;
+    Buf* b = &e->secs[SEC_DEBUG_LINE].data;
+
+    char path[4096];
+    source_path(e, path, sizeof path);
+
+    size_t unit = b->len;
+    buf_put32(b, 0);             // unit_length, patched below
+    buf_put16(b, 4);             // DWARF v4
+    size_t header_len = b->len;
+    buf_put32(b, 0);             // header_length, patched below
+    size_t header = b->len;
+    buf_put8(b, 1);              // minimum_instruction_length
+    buf_put8(b, 1);              // maximum_operations_per_instruction
+    buf_put8(b, 1);              // default_is_stmt
+    buf_put8(b, (uint8_t)-5);    // line_base
+    buf_put8(b, 14);             // line_range
+    buf_put8(b, 13);             // opcode_base
+    static const uint8_t oplen[12] = { 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1 };
+    buf_write(b, oplen, sizeof oplen);
+    buf_put8(b, 0);              // include_directories terminator
+    buf_write(b, path, strlen(path) + 1);
+    buf_uleb(b, 0);              // directory index (full filename)
+    buf_uleb(b, 0);              // modification time
+    buf_uleb(b, 0);              // file size
+    buf_put8(b, 0);              // file_names terminator
+    buf_patch32(b, header_len, (uint32_t)(b->len - header));
+
+    // DW_LNE_set_address. The object relocation supplies __text's final base.
+    buf_put8(b, 0);
+    buf_uleb(b, 9);
+    buf_put8(b, 2);
+    uint32_t address_off = (uint32_t)b->len;
+    buf_put64(b, 0);
+    reloc_add(&e->secs[SEC_DEBUG_LINE], address_off, text_anchor,
+              0, 3, 0, RM_UNSIGNED);
+
+    uint32_t addr = 0;
+    int line = 1, col = 0;
+    for (int i = 0; i < e->nlines; i++) {
+        LineRow* r = &e->lines[i];
+        if (r->addr > addr) {
+            buf_put8(b, 2);      // DW_LNS_advance_pc
+            buf_uleb(b, r->addr - addr);
+            addr = r->addr;
+        }
+        if (r->line != line) {
+            buf_put8(b, 3);      // DW_LNS_advance_line
+            buf_sleb(b, (int64_t)r->line - line);
+            line = r->line;
+        }
+        if (r->col != col) {
+            buf_put8(b, 5);      // DW_LNS_set_column
+            buf_uleb(b, (uint64_t)(r->col > 0 ? r->col : 0));
+            col = r->col;
+        }
+        buf_put8(b, 1);          // DW_LNS_copy
+    }
+    uint32_t end = (uint32_t)text(e)->len;
+    if (end > addr) {
+        buf_put8(b, 2);
+        buf_uleb(b, end - addr);
+    }
+    buf_put8(b, 0);
+    buf_uleb(b, 1);
+    buf_put8(b, 1);              // DW_LNE_end_sequence
+    buf_patch32(b, unit, (uint32_t)(b->len - unit - 4));
+}
+
 // --- Mach-O object writing ----------------------------------------------------------
 
 static void write_object(Em* e, const char* path) {
@@ -3337,6 +3540,10 @@ int emit_object(Node* file, Diag* d, const char* out_path) {
                              .align = 3 },
         [SEC_BSS]        = { .sect = "__bss",        .seg = "__DATA",
                              .flags = S_ZEROFILL, .align = 3 },
+        [SEC_DEBUG_ABBREV] = { .sect = "__debug_abbrev", .seg = "__DWARF",
+                               .flags = S_ATTR_DEBUG },
+        [SEC_DEBUG_INFO] = { .sect = "__debug_info", .seg = "__DWARF",
+                             .flags = S_ATTR_DEBUG },
         [SEC_DEBUG_LINE] = { .sect = "__debug_line", .seg = "__DWARF",
                              .flags = S_ATTR_DEBUG },
     };
@@ -3350,6 +3557,7 @@ int emit_object(Node* file, Diag* d, const char* out_path) {
         e.secs[i].flags = PROTO[i].flags;
         e.secs[i].align = PROTO[i].align;
     }
+    sym_define(&e.syms, e.secs, "__ace$text", 10, 0, &e.secs[SEC_TEXT]);
 
     for (int i = 0; i < file->nkids; i++) {
         Node* n = file->kids[i];
@@ -3392,6 +3600,9 @@ int emit_object(Node* file, Diag* d, const char* out_path) {
     }
     patch_fixups(&e);
     if (d->errors) return 1;
+    ESym* text_anchor = sym_intern(&e.syms, "__ace$text", 10);
+    emit_debug_info(&e, text_anchor);
+    emit_debug_line(&e, text_anchor);
     write_object(&e, out_path);
     return d->errors ? 1 : 0;
 }

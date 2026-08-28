@@ -197,7 +197,7 @@ Compiler-session decisions:
 - [x] Enum: **yes** — `Name: enum { a, b }` as distinct-typed int constants; `enum` is a keyword; no tagged unions in v1 (interface values cover sums).
 - [x] `main` shape: **`main(): int`** — the source-level entry uses Ace's platform-word integer (`i64` on arm64), like ordinary application code. The platform entry ABI consumes the low 32 bits as the process exit status (`return 0` = success); on AArch64 both travel in `x0`, so this needs no extra instruction. Owner-approved revision from the earlier `i32` shape.
 - [x] Linking: **emit Mach-O objects, link via the system toolchain** (`ld`/`clang` driver) for v1. libSystem externs work day one; direct executable emission stays additive later.
-- [x] Debug info: **yes, minimal DWARF line tables in v1** — `.debug_line` only (file + line per PC range); no variable/type DIEs, no unwind tables. lldb/atos resolve Ace source from day one.
+- [x] Debug info: **yes, minimal DWARF line tables in v1** — `.debug_line` provides file + line per PC range; only the structural compile-unit/function DIEs required for Darwin linker discovery accompany it. No variable/type DIEs, no unwind tables. lldb/atos resolve Ace source from day one.
 - [ ] Queued language additions (not v1-blocking): `volatile`/`packed`/`align` attributes for OS work.
 
 ## Conditions
