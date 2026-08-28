@@ -10,15 +10,17 @@ must be corrected.
 
 ## Language guide
 
-- [Primitive values](primitive.md) — implemented scalar types, literals, casts,
+- [Primitives](primitives.md) — implemented scalar types, literals, casts,
   platform words, and strings.
-- [Types and declarations](type.md) — explicit declarations, aliases, distinct
+- [Types and declarations](types.md) — explicit declarations, aliases, distinct
   types, pointers, optionals, arrays, slices, tuples, structs, enums, interfaces,
   and generic types.
 - [Functions](function.md) — declarations, parameters, returns, mutation,
   overloads, function values, generics, and the program entry point.
-- [Modules](modules.md) — imports (standard-library and relative local paths),
+- [Modules](module.md) — imports (standard-library and relative local paths),
   `pub` visibility, qualified access, dependency loading, and cycles.
+- [Standard library](standard-library.md) — the shipped `std/` modules and
+  their implemented APIs.
 
 Repository implementation status is intentionally kept in
 [`../AGENTS.md`](../AGENTS.md), outside this guide.
