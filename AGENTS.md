@@ -35,9 +35,16 @@ Ace is a systems programming language and its bootstrap compiler. The language d
 - Start strict, relax later: propose new convenience as opt-in additions, never as reductions of explicitness.
 - When design is contested, cite the relevant `philosophy.md` principle or priority — not general language-design folklore.
 
+## Human documentation
+- Human-facing language documentation lives in `docs/`. It describes only behavior that is implemented and available in the current compiler; future work, queues, and planned APIs belong in this file, not in the manual.
+- `spec.md` remains normative. Documentation explains the implemented rules with practical examples and explicit current limitations, and must never contradict the spec.
+- Every committed change to implemented syntax, semantics, compiler-visible behavior, command-line usage, or stdlib APIs must update the relevant `docs/` page in the same commit. Add a page only when its subject is implemented.
+- Keep documentation examples valid Ace. When practical, mirror substantive examples in `tests/sema/docs_*.ok.ace` or an executable fixture so later compiler changes cannot silently stale them.
+
 ## Current status
 - Philosophy phase: complete. Carving phase: complete — the full language surface is specified in `spec.md` (declarations, memory & allocators, errors, conditions & iteration, function ABI, generics, interfaces, imports/exports, names & scoping, inline assembly, stdlib).
 - Provisional spellings are inventoried at the bottom of the Decision Queue in `spec.md`; semantics are final.
+- Human documentation: `docs/README.md` indexes implemented-only guides for primitives, types/declarations, and functions. Substantive examples are compiler-checked by `tests/sema/docs_*.ok.ace`; expand the guide only alongside landed behavior per the rule above.
 - Compiler implementation: **started**. Bootstrap language: C11 (clang, no dependencies) — fastest path to a self-hosting cycle; tcc-style direct emission. v1 target: AArch64 (Apple arm64).
   - [x] Lexer (`src/lexer.c`) — Go-style newline rule (newline token only after ident/literal/`)`/`]`/`}`/`?`/`return`/`break`/`continue`), `//` and `/* */` comments, hex/binary/underscore int literals, float literals with mandatory `.` before exponents, char/string literals with `\xNN` escapes (UTF-8 pass-through), full operator set incl. compound-assignment spellings (parser acceptance still pending owner decision), `..`/`...`, friendly errors (multi-error recovery, no-semicolon message).
   - [x] Parser (`src/parser.c`) — full carved surface → AST, dump via `--ast`: declarations (struct/interface/enum/alias/distinct/impl/extern incl. variadics, generics `[T]`), typed destructuring (`n: int, err: Err? = read()`), compound assignment (accepted, desugars at typecheck), comparison chains as one node, C precedence incl. shifts/bitwise, `?` binds loosest (`*T?` = nullable pointer), labeled blocks, asm bindings (in/out/clobbers, immediates), struct-literal suppression at block heads (Go-style), trailing commas everywhere.

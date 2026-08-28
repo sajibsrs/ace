@@ -1,0 +1,49 @@
+limit: const int = 1024
+
+Count: type = int
+Meters: distinct f64
+
+Point: struct { x: int, y: int }
+State: enum { idle, running, stopped }
+Box[T]: struct { value: T }
+
+add(a: int, b: int): int {
+    return a + b
+}
+
+read_x(point: *Point): int {
+    return point.x
+}
+
+Value: interface {
+    get(): int
+}
+
+Number: struct { value: int }
+
+number_get(number: *Number): int {
+    return number.value
+}
+
+number_value: impl(Number, Value) {
+    get: number_get,
+}
+
+main(): int {
+    count: Count = 13
+    distance: Meters = Meters(12.5)
+    raw: f64 = f64(distance)
+    point: Point = Point{ x: 13, y: 29 }
+    pointer: *Point = &point
+    maybe: *Point? = null
+    values: [4]int = [10, 20, 30, 40]
+    middle: []int = values[1..3]
+    operation: (int, int): int = add
+    state: State = State.running
+    box: Box[int]
+    box.value = 13
+    number: Number = Number{ value: 13 }
+    value: Value = number_value(&number)
+    return count + int(raw) + read_x(pointer) + middle[0] + middle[1] +
+        operation(1, 2) + int(state) + box.value + value.get()
+}

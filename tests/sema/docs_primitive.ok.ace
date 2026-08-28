@@ -1,0 +1,23 @@
+main(): int {
+    signed_word: int = 13
+    unsigned_word: uint = 13
+    small: i8 = 13
+    byte_value: u8 = 255
+    wide: int = int(small)
+    unsigned: uint = uint(wide)
+    single: f32 = 1.5
+    double: f64 = 1.5
+    converted: f64 = f64(single)
+    ready: bool = true
+    stopped: bool = !ready
+    letter: u8 = 'A'
+    newline: u8 = '\n'
+    hex_escape: u8 = '\x41'
+    message: string = "Welcome Ace!\n"
+    length: usize = message.len
+    first: u8 = message[0]
+    id: typeid
+    return signed_word + int(unsigned_word) + int(byte_value) + wide +
+        int(unsigned) + int(double) + int(converted) + int(letter) +
+        int(newline) + int(hex_escape) + int(length) + int(first) + int(small)
+}

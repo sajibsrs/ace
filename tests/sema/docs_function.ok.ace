@@ -1,0 +1,47 @@
+add(a: int, b: int): int {
+    return a + b
+}
+
+log_ready() {
+}
+
+increment(mut value: int) {
+    value += 1
+}
+
+divide(value: int, by: int): (int, int) {
+    return value / by, value % by
+}
+
+render(value: string): int {
+    return int(value.len)
+}
+
+render(value: int): int {
+    return value
+}
+
+twice(value: int): int {
+    return value * 2
+}
+
+twice(value: f64): f64 {
+    return value * 2.0
+}
+
+choose[T](first: T, second: T): T {
+    return second
+}
+
+main(): int {
+    count: int = 12
+    increment(mut count)
+    quotient: int, remainder: int = divide(count, 5)
+    operation: (int): int = twice
+    return add(render("ace"), render(13)) + quotient + remainder +
+        operation(5) + choose[int](1, 2) + later(1) - 29
+}
+
+later(value: int): int {
+    return value
+}
