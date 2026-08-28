@@ -6,7 +6,7 @@ Shape: interface {
     mut scale(k: i32)
 }
 
-Point impl (Shape)
+Point impl Shape
 
 Point.area(): i32 {
     return self.x

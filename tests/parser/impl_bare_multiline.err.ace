@@ -1,0 +1,12 @@
+Shape: interface {
+    area(): int
+}
+
+Color: interface {
+    color(): int
+}
+
+Circle: struct {}
+
+Circle impl Shape,
+    Color

@@ -61,7 +61,8 @@ enum_decl     := ident ":" "enum" "{" ident ("," ident)* ","? "}"
 alias_decl    := ident type_params? ":" "type" "=" type
 distinct_decl := ident ":" "distinct" type
 
-impl_decl     := owner_type "impl" "(" type_list ","? ")" // one canonical list per struct
+impl_decl     := owner_type "impl" (type_list | "(" type_list ","? ")")
+                                                          // bare = one line; parens = multiline
 
 extern_block  := "extern" string_lit "{" extern_decl* "}"
 extern_decl   := "export"? ident "(" extern_params? ")" ret_clause?
@@ -163,7 +164,7 @@ ret_types     := type | "(" type ("," type)+ ")"
 
 ## 6. Notes for the implementer
 
-1. **Newlines terminate statements.** No semicolons. A statement ends at a newline unless the expression is syntactically incomplete (open paren/bracket continues). The BNF above abstracts this as statement separation. Implemented rule (lexer): a newline token is emitted only when the *previous* token can end an expression — identifier, any literal (`null`/`true`/`false` included), `)`, `]`, `}`, `?`, `return`, `break`, `continue` (Go-style semicolon insertion, made explicit). Consequences: parenthesized/bracketed groups continue across lines freely; `else` stays on the `}` line; multi-line comma lists carry trailing commas (`x: f32,`).
+1. **Newlines terminate statements.** No semicolons. A statement ends at a newline unless the expression is syntactically incomplete. The BNF above abstracts this as statement separation. Implemented rule (lexer): a newline token is emitted only when the *previous* token can end an expression — identifier, any literal (`null`/`true`/`false` included), `)`, `]`, `}`, `?`, `return`, `break`, `continue` (Go-style semicolon insertion, made explicit). The parser additionally rejects any bare comma-separated list that crosses a physical line: multiline lists must live inside `()`, `[]`, or `{}` and carry continuation/trailing commas as needed. `else` stays on the `}` line.
 2. **Statement-start disambiguation is bounded lookahead (LL(2)), not backtracking:**
    - `ident ":"` → declaration; `ident "="` or `ident ","` → assignment/destructuring; otherwise → expression statement.
    - `ident "(" … ")" ":"` or `… "{"` → function declaration; otherwise → call expression.
@@ -172,7 +173,7 @@ ret_types     := type | "(" type ("," type)+ ")"
 5. **Comparison chaining is a distinct production** (`cmp_expr` with `+`): `a < b < c` is one grammar node, not nested binaries; each operand evaluates once.
 6. **`&mut q` / `mut &q`** (write-capable address-of) is still `[P]` — parked in spec.md (Names/Mutability).
 7. **Keywords reserved but unused in v1 grammar:** `noalias` appears only as a parameter modifier; `export` only in extern blocks and on declarations (`pub export`).
-8. **Trailing commas are allowed in every comma list** (params, fields, enum members, implemented-interface lists, call args, array/struct literals, type lists) — under the newline rule they are how lists span lines.
+8. **Bare comma lists are single-line.** Delimited lists (params, fields, enum members, call args, array/struct literals, type lists) may span lines and allow trailing commas. Implemented-interface lists use the bare form on one line (`Circle impl Shape, Color`) and a parenthesized form across lines; single-line parentheses are rejected as redundant.
 9. **`?` binds loosest in types:** `*T?` is a nullable pointer, `[]T?` an optional slice (spec.md Memory #6 wins). Pointer-to-optional is written `*(T?)`.
 10. **Struct literals are suppressed where `{` would open a block** — statement starts and if/for/switch heads (Go's composite-literal rule); parenthesize to use a literal there. `Type{...}` postfix and bare `{...}` in expression contexts both parse.
 11. **Operator precedence is the C table**, including the bitwise/shift levels shown above; asm `in:` uses the `in` keyword as the binding kind, and asm register values may be immediates (`x16 = 3`).

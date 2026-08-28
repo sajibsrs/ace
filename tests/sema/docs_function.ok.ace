@@ -10,7 +10,10 @@ increment(mut value: int) {
 }
 
 divide(value: int, by: int): (int, int) {
-    return value / by, value % by
+    return (
+        value / by,
+        value % by,
+    )
 }
 
 render(value: string): int {

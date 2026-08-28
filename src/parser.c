@@ -117,6 +117,16 @@ static void perr(P* p, const char* fmt, ...) {
     longjmp(p->jb, 1);
 }
 
+static void bare_list_line(P* p, int line) {
+    if (tk(p)->line != line)
+        perr(p, "bare comma-separated lists must stay on one physical line");
+}
+
+static void impl_list_line(P* p, int line) {
+    if (tk(p)->line != line)
+        perr(p, "bare interface lists must stay on one line; use parentheses for a multiline list");
+}
+
 static Token* expect(P* p, TokKind k, const char* what) {
     if (!at(p, k))
         perr(p, "expected %s, got %s", what, gdesc(p));
@@ -627,7 +637,10 @@ static Node* expr_primary(P* p, int ctx) {
         p->i++;
         NV w = {0};
         nv_push(p, &w, expr(p, 0));
-        while (ate(p, T_COMMA)) nv_push(p, &w, expr(p, 0));
+        while (ate(p, T_COMMA)) {
+            if (at(p, T_RPAREN)) break; // trailing comma
+            nv_push(p, &w, expr(p, 0));
+        }
         expect(p, T_RPAREN, "')' to close expression");
         if (w.n == 1) return w.v[0];
         Node* tu = nd(p, N_TUPLE_E);
@@ -661,9 +674,12 @@ static Node* expr_primary(P* p, int ctx) {
 // expr_list: comma list; single expression returned bare, else N_TUPLE_E
 static Node* expr_list(P* p, int ctx) {
     NV w = {0};
+    int line = tk(p)->line;
     nv_push(p, &w, expr(p, ctx));
     while (at(p, T_COMMA)) {
+        bare_list_line(p, line);
         p->i++;
+        bare_list_line(p, line);
         nv_push(p, &w, expr(p, 0));
     }
     if (w.n == 1) return w.v[0];
@@ -732,8 +748,14 @@ static Node* parse_switch(P* p) {
             c->flags |= F_ELSE;
         } else {
             NV pats = {0};
+            int line = tk(p)->line;
             nv_push(p, &pats, expr(p, CTX_NOSLIT));
-            while (ate(p, T_COMMA)) nv_push(p, &pats, expr(p, CTX_NOSLIT));
+            while (at(p, T_COMMA)) {
+                bare_list_line(p, line);
+                p->i++;
+                bare_list_line(p, line);
+                nv_push(p, &pats, expr(p, CTX_NOSLIT));
+            }
             set_kids(c, &pats);
         }
         c->b = parse_block(p);
@@ -827,7 +849,9 @@ static Node* parse_decl_stmt(P* p, Token* first) {
         binder->a = parse_type(p);
         nv_push(p, &binders, binder);
         if (!at(p, T_COMMA)) break;
+        bare_list_line(p, first->line);
         p->i++;
+        bare_list_line(p, first->line);
         name = expect(p, T_IDENT, "binder name after ','");
         if (!at(p, T_COLON)) perr(p, "expected ':' in destructuring declaration");
     }
@@ -892,12 +916,18 @@ static Node* parse_stmt(P* p) {
         }
         // fall through: expression / assignment statement
     default: {
+        int line = tk(p)->line;
         Node* e = expr(p, CTX_NOSLIT);
         if (at(p, T_COMMA)) { // destructuring assignment: n, err = read()
             Node* a = nd(p, N_ASSIGN);
             NV targets = {0};
             nv_push(p, &targets, e);
-            while (ate(p, T_COMMA)) nv_push(p, &targets, expr(p, 0));
+            while (at(p, T_COMMA)) {
+                bare_list_line(p, line);
+                p->i++;
+                bare_list_line(p, line);
+                nv_push(p, &targets, expr(p, 0));
+            }
             Token* op = expect(p, T_ASSIGN, "'=' in assignment");
             a->op = (uint8_t)op->kind;
             set_kids(a, &targets);
@@ -1072,18 +1102,36 @@ static Node* parse_impl_contract(P* p, Token* owner, Node* tp, int pub) {
     n->a = owner_type(p, owner, tp);
     n->c = tp;
     if (pub) n->flags |= F_PUB;
-    expect(p, T_IMPL, "'impl'");
-    expect(p, T_LPAREN, "'(' after 'impl'");
+    Token* impl = expect(p, T_IMPL, "'impl'");
     NV interfaces = {0};
-    if (at(p, T_RPAREN)) perr(p, "an impl contract needs at least one interface");
-    for (;;) {
-        Node* c = nd(p, N_CONFORMANCE);
-        c->a = parse_type(p);
-        nv_push(p, &interfaces, c);
-        if (!ate(p, T_COMMA)) break;
-        if (at(p, T_RPAREN)) break;
+    if (ate(p, T_LPAREN)) {
+        if (at(p, T_RPAREN)) perr(p, "an impl contract needs at least one interface");
+        for (;;) {
+            Node* c = nd(p, N_CONFORMANCE);
+            c->a = parse_type(p);
+            nv_push(p, &interfaces, c);
+            if (!ate(p, T_COMMA)) break;
+            if (at(p, T_RPAREN)) break;
+        }
+        if (tk(p)->line == impl->line)
+            perr(p, "parentheses after 'impl' are only for multiline interface lists");
+        expect(p, T_RPAREN, "')' to close implemented interfaces");
+    } else {
+        if (at(p, T_NL) || at(p, T_EOF))
+            perr(p, "an impl contract needs at least one interface");
+        for (;;) {
+            impl_list_line(p, impl->line);
+            Node* c = nd(p, N_CONFORMANCE);
+            c->a = parse_type(p);
+            nv_push(p, &interfaces, c);
+            if (p->toks[p->i - 1].line != impl->line)
+                perr(p, "bare interface lists must stay on one line; use parentheses for a multiline list");
+            if (!at(p, T_COMMA)) break;
+            impl_list_line(p, impl->line);
+            p->i++;
+            impl_list_line(p, impl->line);
+        }
     }
-    expect(p, T_RPAREN, "')' to close implemented interfaces");
     set_kids(n, &interfaces);
     return n;
 }

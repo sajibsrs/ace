@@ -21,7 +21,7 @@ Value: interface {
 
 Number: struct { value: int }
 
-Number impl (Value)
+Number impl Value
 
 Number.get(): int {
     return self.value

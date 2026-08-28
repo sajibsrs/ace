@@ -12,7 +12,10 @@ Metric: interface {
     value(k: int): int
 }
 
-Circle impl (Shape, Metric)
+Circle impl (
+    Shape,
+    Metric,
+)
 
 Circle.area(): i32 {
     return self.radius * self.radius * 3

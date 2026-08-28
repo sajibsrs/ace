@@ -1,0 +1,9 @@
+pair(): (int, int) {
+    return 1, 2
+}
+
+main(): int {
+    first: int,
+    second: int = pair()
+    return first + second
+}

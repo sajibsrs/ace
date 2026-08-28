@@ -44,7 +44,7 @@ A module exports any top-level declaration marked `pub`:
 - types: structs, interfaces, enums, aliases, and distinct types,
 - type-owned methods and canonical interface contracts. Each is private by
   default; `pub Type.method` permits direct external calls and
-  `pub Type impl (Interface)` permits external interface construction.
+  `pub Type impl Interface` permits external interface construction.
 
 Access is always qualified with the binding name:
 

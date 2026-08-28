@@ -5,4 +5,4 @@ Thing.read(): int {
     return self.value
 }
 
-Thing impl (Readable)
+Thing impl Readable

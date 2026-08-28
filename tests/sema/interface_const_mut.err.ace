@@ -1,7 +1,7 @@
 Thing: struct { value: int }
 Writable: interface { mut write(value: int) }
 
-Thing impl (Writable)
+Thing impl Writable
 
 mut Thing.write(value: int) {
     self.value = value

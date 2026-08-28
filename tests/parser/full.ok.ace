@@ -28,7 +28,7 @@ Shape: interface {
     mut scale(k: f64)
 }
 
-Circle impl (Shape)
+Circle impl Shape
 
 Circle.area(): f32 {
     return 0.0

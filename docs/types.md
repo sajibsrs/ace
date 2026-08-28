@@ -149,7 +149,7 @@ Value: interface {
 
 Number: struct { value: int }
 
-Number impl (Value)
+Number impl Value
 
 Number.get(): int {
     return self.value
@@ -173,14 +173,31 @@ mut Number.set(value: int) {
 mut number.set(21)
 ```
 
-One contract may list multiple interfaces: `Number impl (Value, Printable)`.
+One contract may list multiple interfaces on one line:
+
+```ace
+Number impl Value, Printable
+```
+
+Bare comma-separated lists cannot cross a newline. Use parentheses when the
+contract list needs multiple lines:
+
+```ace
+Number impl (
+    Value,
+    Printable,
+)
+```
+
+Single-line contract lists omit the parentheses, giving each layout one
+canonical spelling.
 A second `Number impl` declaration is an error. Interface calls dispatch through
 the generated const vtable; concrete method overloads remain compile-time direct
 calls. `Type.method(...)` is available for a disambiguated direct call, but a
 bare `Type.method` is not a function value.
 
 Contracts and methods are private by default. Put visibility first:
-`pub Number impl (Value)` and `pub mut Number.set(value: int)`. An interface
+`pub Number impl Value` and `pub mut Number.set(value: int)`. An interface
 over const backing storage may be read, but mutating dispatch through it is a
 compile error.
 

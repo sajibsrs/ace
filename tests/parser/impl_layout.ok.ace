@@ -1,0 +1,23 @@
+Shape: interface {
+    area(): int
+}
+
+Color: interface {
+    color(): int
+}
+
+Circle: struct {
+    radius: int,
+}
+
+Circle impl (
+    Shape,
+    Color,
+)
+
+pair(): (int, int) {
+    return (
+        1,
+        2,
+    )
+}

@@ -47,7 +47,10 @@ parenthesized.
 
 ```ace
 divide(value: int, by: int): (int, int) {
-    return value / by, value % by
+    return (
+        value / by,
+        value % by,
+    )
 }
 
 main(): int {
@@ -57,7 +60,10 @@ main(): int {
 ```
 
 Multiple returns use the target platform's ordinary aggregate-return calling
-convention. Bindings at the call site remain explicitly typed.
+convention. Bindings at the call site remain explicitly typed. A bare list such
+as `return quotient, remainder` or a typed destructuring list must stay on one
+physical line. Parentheses provide the multiline return form shown above;
+delimited parameter and argument lists follow the same general layout rule.
 
 ## Overloads
 

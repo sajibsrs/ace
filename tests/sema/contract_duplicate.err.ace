@@ -2,8 +2,8 @@ Thing: struct { value: int }
 Readable: interface { read(): int }
 Writable: interface { mut write(value: int) }
 
-Thing impl (Readable)
-Thing impl (Writable)
+Thing impl Readable
+Thing impl Writable
 
 Thing.read(): int {
     return self.value
