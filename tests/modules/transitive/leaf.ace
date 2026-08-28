@@ -1,0 +1,3 @@
+pub leaf(): int {
+    return 7
+}

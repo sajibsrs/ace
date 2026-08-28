@@ -1,0 +1,9 @@
+// Transitive imports: main -> mid -> leaf, loaded in dependency order.
+import fmt
+import m: "./mid.ace"
+// expect-exit: 0
+// expect-output: 10
+main(): int {
+    fmt.print(m.mid())
+    return 0
+}

@@ -1,0 +1,4 @@
+import l: "./leaf.ace"
+pub mid(): int {
+    return l.leaf() + 3
+}

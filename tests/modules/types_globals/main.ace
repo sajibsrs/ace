@@ -1,0 +1,11 @@
+// Imported types (struct, enum), globals, and the enum-constant form.
+import fmt
+import util: "./util.ace"
+// expect-exit: 0
+// expect-output: 10
+main(): int {
+    p: util.Point = util.origin
+    util.zero = 5
+    fmt.print(p.x + p.y + util.zero + int(util.Color.blue))
+    return 0
+}

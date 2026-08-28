@@ -98,6 +98,47 @@ if [ -d tests/emit ]; then
     fi
 fi
 
+
+# module fixtures: one directory per case with a main.ace. A `// expect-exit:
+# N` line compiles + links + runs in place (companion modules stay beside it
+# so relative imports resolve); without one the case must fail to compile.
+if [ -d tests/modules ]; then
+    mkdir -p /tmp/ace_modules
+    for f in tests/modules/*/main.ace; do
+        name=$(basename "$(dirname "$f")")
+        exp=$(sed -n 's/^.*expect-exit:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$f")
+        if [ -z "$exp" ]; then
+            if ./ace "$f" >/dev/null 2>&1; then
+                echo "FAIL (should report errors): $f"
+                fail=1
+            fi
+            continue
+        fi
+        out=$(./ace -o "/tmp/ace_modules/$name" "$f" && "/tmp/ace_modules/$name")
+        got=$?
+        if [ "$got" -ne "$exp" ]; then
+            echo "FAIL: $f exited $got, want $exp"
+            fail=1
+        fi
+        expout=$(sed -n 's/^.*expect-output:[[:space:]]*//p' "$f")
+        if [ -n "$expout" ] && [ "$out" != "$expout" ]; then
+            echo "FAIL: $f output '$out', want '$expout'"
+            fail=1
+        fi
+    done
+    # multi-file DWARF across a local module, a stdlib module, and the root
+    if command -v dwarfdump >/dev/null 2>&1; then
+        moddwarf=$(dwarfdump --debug-line /tmp/ace_modules/diamond.o 2>/tmp/ace_test_errs)
+        if [ $? -ne 0 ] ||
+           ! printf '%s\n' "$moddwarf" | grep -q '/shared.ace' ||
+           ! printf '%s\n' "$moddwarf" | grep -q '/main.ace'; then
+            echo "FAIL: module and root sources should both appear in DWARF"
+            cat /tmp/ace_test_errs
+            fail=1
+        fi
+    fi
+fi
+
 # lexer spot-checks
 if ! ./ace --tokens tests/lexer/hello.ok.ace | grep -q "^2:1${tab}import$"; then
     echo "FAIL: first token of hello.ok.ace should be 'import'"

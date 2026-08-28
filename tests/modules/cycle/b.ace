@@ -1,0 +1,4 @@
+import a: "./a.ace"
+pub fb(): int {
+    return 2
+}

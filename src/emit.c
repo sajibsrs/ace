@@ -1442,6 +1442,13 @@ static const char* fn_mangle(const char* name, uint32_t len, SType* ft, Node* de
     return fnname_buf;
 }
 
+// The C-boundary spelling of an extern function: module-prefixed extern
+// declarations carry their original name in decl->cname (module.c).
+static const char* extern_c_name(Sym* s) {
+    if (s->decl && s->decl->cname) return s->decl->cname;
+    return s->name;
+}
+
 // --- the shared call sequence ----------------------------------------------------------
 
 enum { TK_INTERNAL, TK_EXTERN, TK_REG };
@@ -1759,8 +1766,9 @@ static int gen_addr(Em* e, Node* x) {
             int t = tmp_int(e);
             ESym* fs;
             if (s->is_extern) {
+                const char* cn = extern_c_name(s);
                 char nm[512];
-                snprintf(nm, sizeof nm, "_%.*s", (int)s->len, s->name);
+                snprintf(nm, sizeof nm, "_%s", cn);
                 fs = sym_intern(&e->syms, nm, (uint32_t)strlen(nm));
             } else {
                 fs = sym_intern(&e->syms,
@@ -2069,8 +2077,9 @@ static EV gen_call(Em* e, Node* call) {
         if (s->kind == SYM_FUNC) {
             CallTarget tgt = { 0, NULL, 0, 0 };
             if (s->is_extern) {
+                const char* cn = extern_c_name(s);
                 char nm[512];
-                snprintf(nm, sizeof nm, "_%.*s", (int)s->len, s->name);
+                snprintf(nm, sizeof nm, "_%s", cn);
                 tgt.kind = TK_EXTERN;
                 tgt.name = arena_copy(nm, strlen(nm));
                 tgt.nlen = (uint32_t)strlen(nm);
@@ -3676,8 +3685,9 @@ int emit_object(Node* file, Diag* d, const char* out_path) {
             if (is_main) {
                 emit_func(&e, n, "_main", 5, ret, 1, 0);
             } else if (export_c) {
+                const char* cn = n->cname ? n->cname : n->str;
                 char nm[512];
-                snprintf(nm, sizeof nm, "_%.*s", (int)n->len, n->str);
+                snprintf(nm, sizeof nm, "_%s", cn);
                 emit_func(&e, n, nm, (uint32_t)strlen(nm), ret, 0, 1);
             } else {
                 Sym* fs = node_sym(n);

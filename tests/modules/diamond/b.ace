@@ -1,0 +1,4 @@
+import s: "./shared.ace"
+pub g(): int {
+    return s.take(30)
+}

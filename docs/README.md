@@ -17,6 +17,8 @@ must be corrected.
   and generic types.
 - [Functions](function.md) — declarations, parameters, returns, mutation,
   overloads, function values, generics, and the program entry point.
+- [Modules](modules.md) — imports (standard-library and relative local paths),
+  `pub` visibility, qualified access, dependency loading, and cycles.
 
 Repository implementation status is intentionally kept in
 [`../AGENTS.md`](../AGENTS.md), outside this guide.

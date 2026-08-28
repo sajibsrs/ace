@@ -1,0 +1,11 @@
+// Identical private names in two modules: private identities must be
+// module-scoped and collision-free.
+import fmt
+import one: "./mod1.ace"
+import two: "./mod2.ace"
+// expect-exit: 0
+// expect-output: 30
+main(): int {
+    fmt.print(one.one() + two.two())
+    return 0
+}

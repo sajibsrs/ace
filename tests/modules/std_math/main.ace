@@ -1,0 +1,10 @@
+// Bare standard-library import other than fmt.
+import fmt
+import math
+// expect-exit: 0
+// expect-output: 97
+main(): int {
+    fmt.print(math.max[int](3, 9))
+    fmt.print(math.abs[int](0 - 7))
+    return 0
+}

@@ -1,0 +1,5 @@
+pub count: int = 100
+pub take(n: int): int {
+    count = count - n
+    return count
+}

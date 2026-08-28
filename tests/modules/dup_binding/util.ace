@@ -1,0 +1,3 @@
+pub ten(): int {
+    return 10
+}

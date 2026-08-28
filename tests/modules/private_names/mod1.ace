@@ -1,0 +1,6 @@
+helper(): int {
+    return 10
+}
+pub one(): int {
+    return helper()
+}

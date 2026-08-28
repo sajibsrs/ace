@@ -1,0 +1,3 @@
+pub tag(): int {
+    return 1
+}

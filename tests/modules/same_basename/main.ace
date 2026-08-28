@@ -1,0 +1,11 @@
+// Two distinct modules with the same basename: private identities must stay
+// unique (the second gets a disambiguated prefix).
+import fmt
+import au: "./a/util.ace"
+import bu: "./b/util.ace"
+// expect-exit: 0
+// expect-output: 3
+main(): int {
+    fmt.print(au.tag() + bu.tag())
+    return 0
+}

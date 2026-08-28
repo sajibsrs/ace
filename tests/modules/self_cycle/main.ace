@@ -1,0 +1,5 @@
+// A file importing itself is a one-module cycle.
+import m: "./main.ace"
+main(): int {
+    return 0
+}

@@ -1,0 +1,5 @@
+// Module paths must be relative and end in .ace.
+import u: "/util.ace"
+main(): int {
+    return 0
+}

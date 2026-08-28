@@ -1,0 +1,5 @@
+// Import cycles are compile errors; the diagnostic shows the chain.
+import a: "./a.ace"
+main(): int {
+    return a.fa()
+}
