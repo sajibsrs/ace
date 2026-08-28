@@ -95,6 +95,23 @@ points. A string does not carry a terminator as part of its value.
 `usize` is the unsigned type used for object sizes, lengths, and indexing-related
 machine quantities. It is 64 bits on the current target.
 
+`fmt.print` accepts `usize` directly, so runtime lengths need no signed
+conversion merely for output:
+
+```ace
+import fmt
+
+main(): int {
+    message: string = "Welcome Ace!\n"
+    fmt.print(message.len)
+    return 0
+}
+```
+
+The overload writes the complete unsigned decimal range without allocating or
+adding a newline. As with every numeric conversion, converting between `usize`
+and another primitive requires an explicit cast such as `int(message.len)`.
+
 `typeid` is an implemented opaque machine-word primitive type. Values can be
 stored and passed, but the current language surface does not expose runtime type
 reflection operations.

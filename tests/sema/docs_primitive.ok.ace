@@ -1,3 +1,5 @@
+import fmt
+
 main(): int {
     signed_word: int = 13
     unsigned_word: uint = 13
@@ -15,6 +17,7 @@ main(): int {
     hex_escape: u8 = '\x41'
     message: string = "Welcome Ace!\n"
     length: usize = message.len
+    fmt.print(length)
     first: u8 = message[0]
     id: typeid
     return signed_word + int(unsigned_word) + int(byte_value) + wide +
