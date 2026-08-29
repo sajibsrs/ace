@@ -239,8 +239,8 @@ if ! ast | grep -q "(externfn 'printf'.* varargs"; then
     echo "FAIL: variadic extern printf should carry the varargs flag"
     fail=1
 fi
-if ! ast | grep -q "(param 'err'"; then
-    echo "FAIL: destructuring binder 'err' should appear in the AST"
+if ! ast | grep -q "(param 'error'"; then
+    echo "FAIL: destructuring binder 'error' should appear in the AST"
     fail=1
 fi
 # `?` binds loosest: *Point? is an optional pointer (opt wrapping ptr)

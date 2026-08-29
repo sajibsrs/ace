@@ -1,0 +1,7 @@
+descriptor: ErrorDescriptor = ErrorDescriptor{
+    code: 1,
+    domain: null,
+    message: "mutable",
+}
+
+failure: const Error = Error(&descriptor)

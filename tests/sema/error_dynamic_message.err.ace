@@ -1,0 +1,9 @@
+make_message(): string {
+    return "runtime"
+}
+
+descriptor: const ErrorDescriptor = ErrorDescriptor{
+    code: 1,
+    domain: null,
+    message: make_message(),
+}

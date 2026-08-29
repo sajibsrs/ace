@@ -61,8 +61,9 @@ sequences.
 
 ## Optional types
 
-`T?` adds `null` to a type. Plain `T` is never null. Pointer, slice, string, and
-contract optionals use an existing null niche; other values carry a tag.
+`T?` adds `null` to a type. Plain `T` is never null. Pointer, slice, string,
+contract, `Error`, and `typeid` optionals use an existing null niche; other
+values carry a tag.
 
 ```ace
 maybe: *Point? = null

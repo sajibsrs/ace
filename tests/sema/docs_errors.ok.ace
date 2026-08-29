@@ -1,0 +1,84 @@
+// Mirror of docs/errors.md examples (compiler-checked).
+FileError: distinct i32
+
+not_found_code: const FileError = FileError(2)
+
+not_found_descriptor: const ErrorDescriptor = ErrorDescriptor{
+    code: i32(not_found_code),
+    domain: typeid(FileError),
+    message: "file not found",
+}
+
+not_found: const Error = Error(&not_found_descriptor)
+
+plain_descriptor: const ErrorDescriptor = ErrorDescriptor{
+    code: 7,
+    domain: null,
+    message: "plain failure",
+}
+
+plain: const Error = Error(&plain_descriptor)
+
+empty: [1]u8 = [0]
+
+fs_read(path: string): ([]u8, Error?) {
+    if path.len == 0 {
+        return empty[0..1], not_found
+    }
+    return empty[0..1], null
+}
+
+load(path: string): int {
+    data: []u8, error: Error? = fs_read(path)
+    if error != null {
+        if error == not_found {
+            return 1
+        }
+        if error.domain == typeid(FileError) && error.code == 2 {
+            return 2
+        }
+        return 3
+    }
+    return int(data.len)
+}
+
+fail(): Error? {
+    return not_found
+}
+
+main(): int {
+    if size_of(Error) != 8 {
+        return 1
+    }
+    if size_of(typeid) != 8 {
+        return 2
+    }
+    if size_of(ErrorDescriptor) != 32 {
+        return 3
+    }
+    if not_found.code != 2 {
+        return 4
+    }
+    if plain.domain != null {
+        return 5
+    }
+    error: Error? = fail()
+    if error == null {
+        return 6
+    }
+    if error != null {
+        if error != not_found {
+            return 7
+        }
+        if error.message.len != 14 {
+            return 8
+        }
+    }
+    if load("settings.ace") != 3 {
+        return 9
+    }
+    if load("") != 1 {
+        return 10
+    }
+    return 42
+}

@@ -80,10 +80,17 @@ Decision: errors are ordinary values; checking is always explicit.
 2. Errors are checked with branches the programmer writes — no hidden control flow, no exceptions, no propagate-operator that secretly returns.
 3. Panic exists only as unrecoverable abort for bugs — never a catchable error channel.
 4. Accepted cost: error checks add visible lines; nesting relief comes from early returns and explicit cleanup — no defer, no error sugar.
-5. The error value is a rich explicit contract value (code, message, context — exact method set carved with stdlib shape). Any type fulfilling the contract can be an error payload.
-6. Convention: error is the LAST return, as `Err?` — null means success; `if err != null` is the check. The `Err?` slot costs nothing on success (null = zero bits); the contract value materializes only on failure (cold path).
-7. Constructing an error never allocates implicitly — payloads are static/stack data (codes, static strings) unless the programmer explicitly allocates. Keeps the no-hidden-allocation invariant.
-8. Multi-return consumption is typed destructuring — `n: int, err: Err? = read()` — the `name: type` rule applied to multiple bindings; plain reassignment `n, err = read()` afterwards.
+5. `Error` is a predeclared opaque one-word handle to an immutable static `ErrorDescriptor`; it is not a contract value and carries no per-occurrence payload. `ErrorDescriptor` has exactly three public fields: `code: i32`, `domain: typeid?`, and `message: string`. Natural layout is 32 bytes on a 64-bit target; only the one-word handle travels through calls.
+6. Convention: the error is the LAST return, as `Error?`; null means success and `if error != null` is the explicit check. `Error?` uses the handle's zero value as its null niche, so `(usize, Error?)` is a two-word aggregate and normally register-returnable on 64-bit targets.
+7. An error descriptor is declared as a const global. Its code is a compile-time `i32`; its optional domain is `null` or `typeid(NamedType)`; its message has static backing, initially a string literal or a const global string with a compile-time-static initializer.
+8. `Error(&descriptor)` constructs a handle only when `descriptor` is a const global `ErrorDescriptor`. Construction from a local, mutable global, arbitrary pointer, cast, or runtime-created descriptor is a compile error. This strict rule makes every returned handle valid for the life of the program without allocation, escape analysis, a borrow checker, or a runtime check.
+9. `Error` exposes its descriptor through direct read-only field access: `error.code`, `error.domain`, and `error.message`. An `Error?` must first be narrowed by an explicit null check. No vtable or method call is involved.
+10. `Error == Error` compares descriptor addresses. Separately declared descriptors remain distinct even when their fields match. Codes are meaningful within a non-null domain; errors without a domain have no globally coordinated code namespace. Structured matching explicitly compares `domain` and `code`.
+11. Domain code types conventionally use `DomainError: distinct i32`: the distinct type provides compile-time separation and `typeid(DomainError)` provides runtime domain identity, while the descriptor stores the explicitly converted raw `i32` code.
+12. Multi-return consumption is typed destructuring — `n: int, error: Error? = read()` — the `name: type` rule applied to multiple bindings; plain reassignment `n, error = read()` afterwards.
+13. `Error`, `ErrorDescriptor`, and `typeid` are Ace-internal shapes and are rejected in `extern`/`export` signatures. C-facing wrappers translate explicitly to stable `i32` codes or another declared C-compatible shape; imported C failures are explicitly mapped to static Ace errors.
+14. Allocation-free inspection and printing need no special formatter: after narrowing, `fmt.print(error.message)` writes the static message. Automatic formatting, wrapping, causes, stacks, runtime context, and owned messages are additive later.
+15. Panic remains semantically separate from recoverable errors. Its exact callable surface and target abort mechanism are deferred for a dedicated decision; this error slice adds no panic syntax or implementation.
 
 ## Type System
 Decision: fully explicit types; no inference.
@@ -92,6 +99,7 @@ Decision: fully explicit types; no inference.
 3. Local inference could be added later if ever wanted (see philosophy.md, Considerations #1).
 4. Type aliases: `Name: type = Existing` — transparent, zero-cost notation; the alias IS the type, fully interchangeable. Generic aliases allowed: `Pair[T]: type = (T, T)`.
 5. Distinct types: `Name: distinct Existing` — same layout, new nominal type. `Name(value)` constructs (constructor position is free via the namespace split); distinct types do not mix with their base or each other without explicit conversion. Zero runtime cost — pure compile-time discipline for units, handles, and IDs.
+6. `typeid(T)` is a compile-time builtin for an exact named type. It produces a nonzero opaque machine-word identity: the same exact type compares equal throughout one linked program; different nominal types and exact generic instantiations compare unequal; transparent aliases share their target's identity. `typeid` values support storage, passing, `==`, and `!=`, but no ordering, arithmetic, reflection, integer conversion, runtime name, serialization, or cross-build/process stability. `typeid?` uses zero as a free null niche.
 
 ## Modules
 Decision: module = file; explicit imports; explicit exports.
@@ -138,7 +146,7 @@ Decision: explicit monomorphization.
 8. Each distinct type-argument tuple stamps a separate plain function/type — stamping is bounded by written instantiations.
 
 ## Functions & ABI
-1. Multi-return — decided (see: Errors). Returns are positional: types only, `(int, Err?)`; names appear at destructuring, never in signatures.
+1. Multi-return — decided (see: Errors). Returns are positional: types only, `(int, Error?)`; names appear at destructuring, never in signatures.
 2. Multi-returns are laid out as anonymous structs: small ones ride platform registers, larger ones use the hidden return pointer — plain platform struct-return rules.
 3. `mut` parameters pass the caller's actual address (writes visible to the caller); read-only parameters pass addresses too, but small ones may travel by value — identical observable behavior, legal codegen freedom (same class as copy elision).
 4. Internal calling convention: the platform convention (SysV, AArch64, …) — debuggers, profilers, tracers, and the C boundary work unchanged.
@@ -179,7 +187,7 @@ asm "svc #0" {
 
 ## Stdlib
 Decision: minimal, allocator-explicit, nothing ambient.
-1. `Err` method set: `code(): int`, `message(): string` — static strings only (no implicit allocation); richer context is additive later.
+1. Error inspection is the predeclared `Error` handle's direct read-only `code`, `domain`, and `message` fields (see: Errors). The initial `fmt` surface adds no `Error`/`Error?` overload: `fmt.print(error.message)` is already allocation-free and keeps null handling explicit.
 2. Allocator contract (raw, on byte slices): `alloc(size: int, align: int): []u8?`, `free(data: []u8)`, `resize(data: []u8, new_size: int): []u8?` — resize may grow in place or move; the returned slice is authoritative.
 3. Typed sugar — library code, not language: `create[T](a: Allocator): *T?`, `destroy[T](a: Allocator, p: *T)`, `make[T](a: Allocator, n: int): []T?`.
 4. Allocator implementations are values you construct — `page` (OS-page-backed), `arena` (bump), `gpa` (debug, leak-tracking; powers checked-build diagnostics). No global default exists anywhere.
@@ -187,14 +195,14 @@ Decision: minimal, allocator-explicit, nothing ambient.
 6. Platform access: through the OS system library via `extern "c"` (macOS: libSystem) — the language does not depend on C; this is the OS front door.
 7. `string` is a distinct view over bytes (`[]u8`, UTF-8 by convention) — a slice, no new machinery.
 8. v1 contents — six modules: `mem` (Allocator, page/arena/gpa, typed sugar), `sys` (OS calls), `fmt` (print/format), `math` (sqrt, `abs[T]`, `min[T]`/`max[T]`, …), `str` (byte/string operations), `simd` (`f32x4`, `i8x16`, arithmetic and shuffles emitting NEON directly — explicit vectorization, zero compiler analysis).
-9. Output API begins as an exact overload set. `fmt.print(text: string): int` writes the supplied bytes exactly; `fmt.print(value: int): int` and `fmt.print(value: usize): int` write signed platform integers and memory-sized unsigned values in base-10 ASCII. None adds a newline or allocates; numeric conversion uses a fixed 20-byte stack buffer and covers each type's complete range. Every overload retries partial writes and returns bytes written, or the non-positive result from the current OS boundary. Other numeric overloads, `fmt.println`, and formatted `fmt.printf` are additive follow-ups. Richer `Err` integration comes with the error layer rather than blocking output.
+9. Output API begins as an exact overload set. `fmt.print(text: string): int` writes the supplied bytes exactly; `fmt.print(value: int): int` and `fmt.print(value: usize): int` write signed platform integers and memory-sized unsigned values in base-10 ASCII. None adds a newline or allocates; numeric conversion uses a fixed 20-byte stack buffer and covers each type's complete range. Every overload retries partial writes and returns bytes written, or the non-positive result from the current OS boundary. Other numeric overloads, `fmt.println`, formatted `fmt.printf`, and an optional `Error` convenience overload are additive follow-ups.
 
 ## Pre-Implementation Checklist
 Semantics are complete; these are the implementation-level defaults (derived from every sample written so far) and the few remaining `[?]` decisions. Resolve `[?]` items in the first compiler session, then: lexer → recursive-descent parser → direct AArch64 emitter.
 
 Recorded defaults (from samples, now normative):
 1. Source files are UTF-8; newline terminates statements — no semicolons; `//` line comments and `/* … */` block comments (non-nesting; a newline inside a block comment acts as a statement terminator). [comment forms decided in implementation]
-2. Keyword inventory (v1): `import pub mut const if else for in switch return break continue asm extern export contract struct signs distinct type enum null true false` — plus builtin functions (`size_of`), not keywords. Primitive type names are predeclared identifiers, not keywords.
+2. Keyword inventory (v1): `import pub mut const if else for in switch return break continue asm extern export contract struct signs distinct type enum null true false` — plus builtin functions (`size_of`, `typeid`), not keywords. Primitive and predeclared type names are identifiers, not keywords.
 3. Primitive types: `bool`, `i8 i16 i32 i64`, `u8 u16 u32 u64`, `f32 f64`, `string`, `usize`, `typeid`, plus the platform words `int` (= i64 on arm64) and `uint` (= u64 on arm64); C-ABI aliases (`c_int` …) inside extern blocks only.
 4. Casts are explicit and constructor-shaped: `i32(x)`, `Meters(x)` — no implicit numeric conversions; `null` assigns to any `T?`. Literals are untyped constants: an integer/float/char literal takes the expected type at each use site and must fit (range-checked); no other implicit conversions exist. [literal rule decided in implementation]
 5. `if`/`switch`/`for` are statements, never expressions; conditions are `bool` only (no integer-as-bool).
@@ -214,7 +222,7 @@ Compiler-session decisions:
 ## Conditions
 1. Chained comparisons: `lo <= x <= hi` — each operand evaluated once; no boolean-coercion trap (C's `a < b < c` meaning `(a<b)<c` is dead); lowers to two compares and a branch.
 2. Multi-way branch: a `switch`-style construct — one value, many comparisons, no fallthrough. [spelling provisional]
-3. Flow narrowing: inside `if p != null` (or `== null`), `p` is usable as `T` — flow facts from checks the programmer wrote; declared types never change, so this is checking, not inference. Same for `*T?` and `Err?`.
+3. Flow narrowing: inside `if p != null` (or `== null`), `p` is usable as `T` — flow facts from checks the programmer wrote; declared types never change, so this is checking, not inference. Same for `*T?` and `Error?`.
 4. Cleanup jumps: blocks can be labeled, `break label` exits any enclosing block — structured single-exit cleanup on error paths. **goto does not exist.**
 
 ## Iterations
@@ -247,7 +255,7 @@ Closed (philosophy phase):
 Carving phase — closed so far:
 - Declarations & signatures: `name: type` everywhere, keywordless, trailing returns, signature-typed function values, no pointer-to-function syntax.
 - Memory & allocator API: `*T` pointers (`~` deref, auto-deref fields, `&` address-of), explicit allocator contract (no default), `*T?` on OOM, explicit frees (no defer), `size_of`.
-- Error conventions: `Err?` last in multi-return (null = success); rich explicit contract value, no implicit allocation on failure; typed destructuring `n: int, err: Err? = read()`.
+- Error conventions: `Error?` last in multi-return (null = success); one-word handle to a const static `{code: i32, domain: typeid?, message: string}` descriptor; typed destructuring `n: int, error: Error? = read()`; no implicit allocation or per-occurrence payload.
 - Conditions & iteration: chained comparisons `lo <= x <= hi`; `switch` multi-way branch (no fallthrough); flow narrowing from explicit checks; labeled `break`, no goto; `for-in` only, lowering to index loops over pointer+length; arrays `[N]T`, slices `[]T`.
 - Function ABI: multi-return = anonymous struct per platform struct-return rules; positional returns; platform calling convention; `mut` params pass real addresses, small read-only params may pass by value; no user variadics (extern C only).
 - Generics syntax: brackets `max[T](a: T, b: T): T`; instantiation always explicit `max[int](3, 9)`, never deduced; no constraint syntax — unbounded T, checked per instantiation.
@@ -255,9 +263,9 @@ Carving phase — closed so far:
 - Import/export: `pub` prefix on declarations; whole-module qualified imports (`import math` → `math.sqrt`); aliasing for collisions; `extern "c" { … }` blocks (variadics only there) and `export` modifier for the C boundary.
 - Names & scoping: qualification as namespacing; type/value namespaces split by grammar position (type + constructor may share a name); variables/imports remain unique while free functions may form exact-signature overload sets; nearest-binding shadowing; ambiguous embedding sugar is an error.
 - Inline assembly: `asm "…" { in/out/clobbers }` with registers named directly — no constraint language; statement only; never reordered; ISA implied by target (v1: AArch64/Apple arm64).
-- Stdlib: Err = {code, static message}; raw allocator contract on byte slices + typed sugar `create[T]`/`destroy[T]`/`make[T]`; page/arena/gpa as constructed values; bare import = std, path import = local; OS via extern "c" system library; v1 = mem, sys, fmt, math, str.
+- Stdlib: allocation-free Error inspection through direct descriptor fields; raw allocator contract on byte slices + typed sugar `create[T]`/`destroy[T]`/`make[T]`; page/arena/gpa as constructed values; bare import = std, path import = local; OS via extern "c" system library; v1 = mem, sys, fmt, math, str.
 
-**Carving phase: complete.** Open semantic items: none.
+**Carving phase: complete except for panic's exact callable surface and target abort mechanism.** Recoverable errors are fully carved; panic remains a separate queued discussion.
 
 Implementation phase — closed so far:
 - [x] Lexical/layout rules: `/* … */` block comments (non-nesting; a newline inside acts as a statement terminator); newline token emitted only after ident/literal/`)`/`]`/`}`/`?`/`return`/`break`/`continue` (Go-style, made explicit); bare comma lists are parser-restricted to one physical line, while delimited multiline lists use trailing commas; `else` stays on the `}` line.
@@ -275,15 +283,17 @@ Implementation phase — closed so far:
 - [x] Type-owned methods and canonical signings: implicit read-only/`mut self`, visibility-first modifiers, exact method overloads, direct qualified calls, no method values, one multi-contract signing per struct, compact single-line and parenthesized multiline contract lists, explicit contract construction, overload-aware EOF conformance, const-backing protection, cross-module visibility, and per-used-pair generic vtables.
 - [x] Compile report: `--report` prints successful whole-compilation source-file, source-byte, token, emitted-machine-code, object-file-size, and compiler-time statistics to stderr. Imported modules count once by canonical identity; compiler time excludes the external linker.
 - [x] Contract terminology: the method-set declaration keyword is `contract`, and a concrete type explicitly `signs` one canonical list of contracts. Value layout, conformance, dispatch, visibility, generics, and ABI are unchanged. Rationale: declarations name duties, while `Type signs Contract` states the concrete type's explicit promise to fulfill them.
+- [x] Minimal Error implementation: predeclared one-word `Error`, const static `ErrorDescriptor`, `typeid(T)` domain identity, free `Error?`/`typeid?` niches, direct read-only inspection, exact identity, domain/code matching, module export handling, and strict C-boundary rejection. Descriptors are validated as const-global named literals with compile-time code, null/typeid domain, and static message backing; handles lower to static descriptor relocations. Panic is deliberately excluded pending its separate decision. Normal and sanitizer suites pass.
+- [?] Panic surface and termination: decide the exact builtin/API shape and target abort behavior in a dedicated discussion; it remains separate from recoverable `Error` values.
 
 Provisional spellings (semantics fixed, spellings may be adjusted during implementation without a decision):
-- `const` keyword (locals/globals opt-in); `!` dual-role NOT; `T?` optional postfix; `mut` call-site token form; slicing expressions (`arr[1..n]`); range forms (`a .. b`, reverse, step); switch-case syntax; import alias/path forms; struct literal form; Err/vtable member spellings (`s.vt`).
+- `const` keyword (locals/globals opt-in); `!` dual-role NOT; `T?` optional postfix; `mut` call-site token form; slicing expressions (`arr[1..n]`); range forms (`a .. b`, reverse, step); switch-case syntax; import alias/path forms; struct literal form; contract/vtable member spellings (`s.vt`).
 
 Syntax details surfaced by the first code sample (decide during related topics):
 - Composition order of `mut` × `*T` × `T?` (`mut *Node?` — what exactly is mutable?).
 - Bitwise NOT spelling (`!` dual-role) — provisional under Memory #7.
 - Optional narrowing — decided: flow narrowing (Conditions #3).
 - Array/slice spellings — settled: `[N]T`, `[]T` (Iterations #5); slicing expression spelling provisional.
-- Multi-return destructuring — decided: typed destructuring `n: int, err: Err? = f()` (Errors #8).
+- Multi-return destructuring — decided: typed destructuring `n: int, error: Error? = f()` (Errors #12).
 - Generic instantiation spelling — decided: brackets `max[int](3, 9)` (Generics #4–5).
 - Call-site `mut` × method sugar — decided: `mut c.scale(2.0)`; contract methods mark mutating receivers on the method (Abstraction #9).

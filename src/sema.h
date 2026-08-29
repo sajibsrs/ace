@@ -9,7 +9,7 @@
 
 enum {
     SK_PRIM, SK_PTR, SK_SLICE, SK_ARRAY, SK_OPT, SK_TUPLE, SK_FUNC,
-    SK_STRUCT, SK_ENUM, SK_CONTRACT, SK_DISTINCT, SK_TYPEPARAM,
+    SK_STRUCT, SK_ENUM, SK_CONTRACT, SK_DISTINCT, SK_TYPEPARAM, SK_ERROR,
     SK_UT, SK_ERR
 };
 
@@ -35,6 +35,7 @@ struct SType {
     SType**     args; int nargs;     // nominal generic instantiation arguments
     SType*      ret;
     Node*       decl;
+    uint64_t    type_id; // nonzero identity assigned lazily by typeid(T)
     struct STypeInst* insts; // instantiation memo (generic decls)
 };
 
@@ -53,9 +54,10 @@ struct Sym {
     const char* name; uint32_t len;
     uint8_t     kind;
     uint8_t     is_const, is_mut, is_pub, is_noalias, is_generic, is_extern;
-    uint8_t     is_param, is_const_backed;
+    uint8_t     is_param, is_const_backed, is_global;
     SType*      type;
     Node*       decl;   // binder/declaration node (slot key for the emitter)
+    Node*       init;   // top-level initializer (static Error validation/emission)
     Sym*        next;
     Sym*        overload; // same-scope function overloads; not part of scope chain
 };

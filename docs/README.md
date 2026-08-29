@@ -17,6 +17,9 @@ must be corrected.
   and generic types.
 - [Functions](function.md) — declarations, parameters, returns, mutation,
   overloads, function values, generics, and the program entry point.
+- [Errors](errors.md) — the `Error` handle, static `ErrorDescriptor`
+  construction, `typeid` domains, exact identity matching, and module
+  boundaries.
 - [Modules](module.md) — imports (standard-library and relative local paths),
   `pub` visibility, qualified access, dependency loading, and cycles.
 - [Standard library](standard-library.md) — the shipped `std/` modules and

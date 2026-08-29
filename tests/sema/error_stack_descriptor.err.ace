@@ -1,0 +1,10 @@
+LocalError: distinct i32
+
+make_error(): Error {
+    descriptor: const ErrorDescriptor = ErrorDescriptor{
+        code: 1,
+        domain: typeid(LocalError),
+        message: "local",
+    }
+    return Error(&descriptor)
+}

@@ -34,7 +34,7 @@ scale_it(mut p: *Point, k: f64) {
     p.y = p.y * k
 }
 
-raw_read(fd: int, mut buf: []u8): (int, Err?) {
+raw_read(fd: int, mut buf: []u8): (int, Error?) {
     ret: i64
     asm "svc #0" {
         in:  x0 = fd, x16 = 3

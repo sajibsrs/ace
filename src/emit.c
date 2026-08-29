@@ -201,7 +201,7 @@ enum { // n_type bits
 };
 
 typedef struct { char* name; uint32_t strx, ord; uint8_t type, sect; uint64_t value; } ESym;
-typedef struct { ESym* v; size_t n, cap; } SymTab;
+typedef struct { ESym** v; size_t n, cap; } SymTab;
 
 // Structured relocation; serialized once symbol indices are known at write.
 typedef struct {
@@ -235,14 +235,16 @@ static void reloc_add(Sec* s, uint32_t off, ESym* sym, int pcrel, int len,
 
 static ESym* sym_intern(SymTab* t, const char* p, uint32_t len) {
     for (size_t i = 0; i < t->n; i++)
-        if (strlen(t->v[i].name) == len && memcmp(t->v[i].name, p, len) == 0)
-            return &t->v[i];
+        if (strlen(t->v[i]->name) == len && memcmp(t->v[i]->name, p, len) == 0)
+            return t->v[i];
     if (t->n == t->cap) {
         t->cap = t->cap ? t->cap * 2 : 16;
-        t->v = realloc(t->v, t->cap * sizeof(ESym));
+        t->v = realloc(t->v, t->cap * sizeof(ESym*));
         if (!t->v) oom();
     }
-    ESym* s = &t->v[t->n++];
+    ESym* s = malloc(sizeof(ESym));
+    if (!s) oom();
+    t->v[t->n++] = s;
     s->name = malloc((size_t)len + 1);
     if (!s->name) oom();
     memcpy(s->name, p, len);
@@ -282,7 +284,7 @@ typedef struct { // per-function stack slot (keyed by binder/loop node)
     uint8_t  byref; // slot holds a pointer to the value (mut/big params)
 } Slot;
 
-typedef struct { Sym* s; ESym* sym; } GVar; // global variable storage
+typedef struct { Sym* s; const char* name; uint32_t len; } GVar; // global storage
 typedef struct { uint32_t addr; int line, col; const char* path; } LineRow;
 typedef struct { uint32_t addr, size; const char* name; uint32_t nlen; } DebugFn;
 
@@ -435,7 +437,8 @@ static int is_intt(SType* t) {
     if (!t) return 0;
     return (t->kind == SK_PRIM && t->prim != P_BOOL && t->prim != P_F32 &&
             t->prim != P_F64 && t->prim != P_STRING) ||
-           t->kind == SK_PTR || t->kind == SK_FUNC || t->kind == SK_ENUM;
+           t->kind == SK_PTR || t->kind == SK_FUNC || t->kind == SK_ENUM ||
+           t->kind == SK_ERROR;
 }
 
 static int ty_is_signed(SType* t) {
@@ -457,7 +460,7 @@ static int is_scalar(SType* t) {
     if (!t || t->kind == SK_OPT) return 0;
     switch (t->kind) {
     case SK_PRIM: return t->prim != P_STRING;
-    case SK_PTR: case SK_FUNC: case SK_ENUM: return 1;
+    case SK_PTR: case SK_FUNC: case SK_ENUM: case SK_ERROR: return 1;
     default: return 0;
     }
 }
@@ -466,7 +469,7 @@ static int scalar_bits(SType* t) {
     t = unwrap(t);
     if (!t || t->kind == SK_UT) return 64;
     if (t->kind == SK_ENUM) return 32;
-    if (t->kind == SK_PTR || t->kind == SK_FUNC) return 64;
+    if (t->kind == SK_PTR || t->kind == SK_FUNC || t->kind == SK_ERROR) return 64;
     if (t->kind == SK_OPT) return scalar_bits(t->base);
     if (t->kind == SK_PRIM && t->prim != P_STRING) return (int)(t->size * 8);
     return 64;
@@ -516,7 +519,7 @@ static int word_is_float(SType* t, uint32_t woff) {
         return 1;
     }
     case SK_OPT: return word_is_float(t->base, woff);
-    default: return 0; // ptr/slice/contract/enum words are INT
+    default: return 0; // ptr/slice/contract/enum/Error words are INT
     }
 }
 
@@ -551,9 +554,30 @@ static int const_int(Node* v, uint64_t* out) {
         neg = 1;
         n = n->a;
     }
+    if (n->kind == N_CALL && !n->sym && n->nkids == 1 &&
+        n->a && n->a->kind == N_IDENT && node_ty(n->a)) {
+        uint64_t inner;
+        if (!const_int(n->kids[0], &inner)) return 0;
+        *out = neg ? (uint64_t)0 - inner : inner;
+        return 1;
+    }
+    if (n->kind == N_IDENT) {
+        Sym* s = node_sym(n);
+        if (s && s->is_global && s->is_const && s->init) {
+            uint64_t inner;
+            if (!const_int(s->init, &inner)) return 0;
+            *out = neg ? (uint64_t)0 - inner : inner;
+            return 1;
+        }
+    }
     if (n->kind != N_INT && n->kind != N_BOOL && n->kind != N_CHAR) return 0;
-    SType* t = node_ty(v);
-    if (!t || t->kind != SK_PRIM) return 0;
+    SType* t = unwrap(node_ty(v));
+    if (!t) return 0;
+    if (t->kind == SK_UT) {
+        *out = neg ? (uint64_t)0 - n->ival : n->ival;
+        return 1;
+    }
+    if (t->kind != SK_PRIM) return 0;
     switch (t->prim) {
     case P_BOOL: case P_I8: case P_I16: case P_I32: case P_I64:
     case P_U8: case P_U16: case P_U32: case P_U64: case P_USIZE:
@@ -1106,8 +1130,9 @@ static EV gen_binop(Em* e, Node* n) {
         int want = op == T_BANGEQ ? C_NE : C_EQ;
         if (ot && ot->kind == SK_OPT && base &&
             !(base->kind == SK_PTR || base->kind == SK_SLICE ||
-              base->kind == SK_CONTRACT ||
-              (base->kind == SK_PRIM && base->prim == P_STRING))) {
+              base->kind == SK_CONTRACT || base->kind == SK_ERROR ||
+              (base->kind == SK_PRIM &&
+               (base->prim == P_STRING || base->prim == P_TYPEID)))) {
             // value optional: tag byte at [addr + base_size]
             EV v = gen_expr(e, other);
             if (v.cls != CLS_ADDR) {
@@ -1192,16 +1217,16 @@ static EV gen_shortcircuit(Em* e, Node* n) {
     }
     int si = a.idx;
     int lf = new_label(e), lend = new_label(e);
-    cbz_(e, 0, xreg(si), !is_and, lf);
+    cbz_(e, 0, xreg(si), !is_and, lf); // AND: zero short-circuits false; OR: nonzero short-circuits true
     e->vti = si; // reuse the slot for b
     EV b = gen_expr(e, n->b);
     if (b.cls != CLS_INT || b.idx != si)
         em_err(e, n->b, "unexpected operand shape in short-circuit");
     cbz_(e, 0, xreg(si), !is_and, lf);
-    load_imm(e, 0, xreg(si), 1);
+    load_imm(e, 0, xreg(si), is_and);
     br_(e, lend);
     bind_label(e, lf);
-    load_imm(e, 0, xreg(si), 0);
+    load_imm(e, 0, xreg(si), !is_and);
     bind_label(e, lend);
     e->vti = si + 1;
     return (EV){ CLS_INT, si };
@@ -1391,6 +1416,7 @@ static void mangle_type(Buf* b, SType* t) {
         return;
     }
     case SK_OPT: buf_put8(b, 'o'); mangle_type(b, t->base); return;
+    case SK_ERROR: buf_write(b, "Error", 5); return;
     case SK_STRUCT: case SK_ENUM: case SK_CONTRACT:
         buf_put8(b, t->kind == SK_STRUCT ? 'S' : t->kind == SK_ENUM ? 'E' : 'I');
         mangle_name(b, t->name);
@@ -1625,7 +1651,7 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
         // <=16B aggregate or multi-chunk return: materialize into a frame slot
         uint32_t off = temp_slot(e, ty_size(ret), ty_align(ret));
         for (int w = 0; w < rc.nunits; w++) {
-            frame_addr(e, 16, off + (uint32_t)w * 8);
+            frame_addr(e, 16, off - (uint32_t)w * 8); // slots grow down from x29
             if (rc.units[w].kind == TU_XREG)
                 st_reg(e, rc.units[w].reg, 16, 0, 8);
             else
@@ -1661,7 +1687,8 @@ static ESym* intern_string(Em* e, Node* s) {
 
 static ESym* global_sym(Em* e, Sym* s) {
     for (int i = 0; i < e->nglobs; i++)
-        if (e->globs[i].s == s) return e->globs[i].sym;
+        if (e->globs[i].s == s)
+            return sym_intern(&e->syms, e->globs[i].name, e->globs[i].len);
     return NULL;
 }
 
@@ -1718,6 +1745,7 @@ static SType* lvalue_type(Em* e, Node* x) {
         SType* b = lvalue_type(e, x->a);
         if (!b) return node_ty(x->a);
         b = unwrap(b);
+        if (b->kind == SK_ERROR) b = b->base;
         while (b->kind == SK_PTR) b = b->base;
         if (b->kind == SK_OPT) b = b->base;
         if (x->len == 3 && memcmp(x->str, "len", 3) == 0 &&
@@ -1797,22 +1825,32 @@ static int gen_addr(Em* e, Node* x) {
         }
         break;
     case N_FIELD_E: {
+        SType* bt = lvalue_type(e, x->a);
+        if (!bt) bt = node_ty(x->a);
+        bt = unwrap(bt);
+        int error_handle = bt && bt->kind == SK_ERROR;
         int ta;
         if (is_lvalue_node(x->a)) ta = gen_addr(e, x->a);
         else {
             EV v = gen_expr(e, x->a);
-            if (v.cls != CLS_ADDR) {
+            if (error_handle && v.cls == CLS_INT) {
+                ta = v.idx;
+            } else if (v.cls != CLS_ADDR) {
                 em_err(e, x, "cannot address this value");
                 return tmp_int(e);
+            } else {
+                ta = v.idx;
             }
-            ta = v.idx;
         }
-        SType* bt = lvalue_type(e, x->a);
         if (!bt) {
             em_err(e, x, "no field base type");
             return ta;
         }
-        bt = unwrap(bt);
+        if (error_handle) {
+            if (is_lvalue_node(x->a))
+                ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
+            bt = bt->base;
+        }
         while (bt->kind == SK_PTR) { // auto-deref p.x
             ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
             bt = bt->base;
@@ -1936,6 +1974,20 @@ static EV gen_call(Em* e, Node* call) {
         st_reg(e, dreg, 17, 8, 8);
         frame_addr(e, xreg(t), off);
         return (EV){ CLS_ADDR, t };
+    }
+
+    // Compile-time type identity: a unique nonzero word, with no metadata.
+    if (callee->kind == N_IDENT && !call->sym && callee->len == 6 &&
+        memcmp(callee->str, "typeid", 6) == 0) {
+        int t = tmp_int(e);
+        load_imm(e, 1, xreg(t), call->ival);
+        return (EV){ CLS_INT, t };
+    }
+
+    // Error(&const_global_descriptor): the descriptor address is the handle.
+    if (callee->kind == N_IDENT && !call->sym && node_ty(callee) &&
+        node_ty(callee)->kind == SK_ERROR) {
+        return gen_expr(e, call->kids[0]);
     }
 
     // cast: i32(x), Meters(x), Color(1) — callee resolves to a type symbol
@@ -2182,7 +2234,8 @@ static EV gen_expr(Em* e, Node* x) {
         SType* t = node_ty(x);
         SType* base = t && t->kind == SK_OPT ? t->base : t;
         uint32_t size = t ? ty_size(t) : 8;
-        if (base && base->kind == SK_PTR) {
+        if (base && (base->kind == SK_PTR || base->kind == SK_ERROR ||
+                     (base->kind == SK_PRIM && base->prim == P_TYPEID))) {
             int it = tmp_int(e);
             load_imm(e, 1, xreg(it), 0);
             return (EV){ CLS_INT, it };
@@ -2782,12 +2835,19 @@ static void emit_stmt(Em* e, Node* s) {
                 em_err(e, s, "aggregate return value must be in memory");
                 return;
             }
+            int defer = -1; // unit loading into the base register must go last
             for (int w = 0; w < rc.nunits; w++) {
-                if (rc.units[w].kind == TU_XREG)
+                if (rc.units[w].kind == TU_XREG) {
+                    if (rc.units[w].reg == xreg(v.idx)) {
+                        defer = w;
+                        continue;
+                    }
                     ld_reg(e, rc.units[w].reg, xreg(v.idx), (uint32_t)w * 8, 8, 0);
-                else
+                } else
                     ldrf_(e, rc.units[w].reg, xreg(v.idx), (uint32_t)w * 8, 1);
             }
+            if (defer >= 0)
+                ld_reg(e, rc.units[defer].reg, xreg(v.idx), (uint32_t)defer * 8, 8, 0);
             emit_epilogue(e);
             return;
         }
@@ -3093,6 +3153,13 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
     t = unwrap(t);
     if (!t) return 0;
     switch (v->kind) {
+    case N_CALL:
+        if (v->a && v->a->kind == N_IDENT && v->a->len == 6 &&
+            memcmp(v->a->str, "typeid", 6) == 0 && v->ival) {
+            put_u(out, v->ival, 8);
+            return 1;
+        }
+        return 0;
     case N_INT: case N_BOOL: case N_CHAR: {
         uint64_t c;
         if (const_int(v, &c)) {
@@ -3180,7 +3247,92 @@ static void add_global(Em* e, Sym* s, ESym* sym) {
         e->globs = realloc(e->globs, (size_t)e->cglobs * sizeof(GVar));
         if (!e->globs) oom();
     }
-    e->globs[e->nglobs++] = (GVar){ s, sym };
+    e->globs[e->nglobs++] =
+        (GVar){ s, sym->name, (uint32_t)strlen(sym->name) };
+}
+
+static Node* init_field(Node* lit, const char* name) {
+    size_t len = strlen(name);
+    for (int i = 0; lit && i < lit->nkids; i++) {
+        Node* f = lit->kids[i];
+        if (f->str && f->len == len && memcmp(f->str, name, len) == 0)
+            return f->a;
+    }
+    return NULL;
+}
+
+static Node* static_string_node(Node* n) {
+    if (n && n->kind == N_STR) return n;
+    if (n && n->kind == N_IDENT) {
+        Sym* s = node_sym(n);
+        if (s && s->is_global && s->is_const && s->init)
+            return static_string_node(s->init);
+    }
+    return NULL;
+}
+
+static int is_error_descriptor_type(SType* t) {
+    return t && t->kind == SK_STRUCT && !t->decl && t->name &&
+           strcmp(t->name, "ErrorDescriptor") == 0;
+}
+
+static int emit_error_descriptor_global(Em* e, Node* n, Sym* vs,
+                                        const char* nm, SType* t) {
+    Node* code = init_field(n->b, "code");
+    Node* domain = init_field(n->b, "domain");
+    Node* message = static_string_node(init_field(n->b, "message"));
+    uint64_t cv = 0;
+    if (!code || !const_int(code, &cv) || !domain || !message) {
+        em_err(e, n, "invalid static ErrorDescriptor initializer");
+        return 0;
+    }
+    uint64_t dv = domain->kind == N_NULL ? 0 : domain->ival;
+    ESym* str = intern_string(e, message);
+    const char* str_name = str->name;
+    uint32_t str_len = (uint32_t)strlen(str_name);
+    Sec* d = (n->flags & F_CONST) ? &e->secs[SEC_CONST] : &e->secs[SEC_DATA];
+    while (d->data.len % 8) buf_put8(&d->data, 0);
+    size_t start = d->data.len;
+    ESym* g = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, d);
+    str = sym_intern(&e->syms, str_name, str_len);
+    buf_put32(&d->data, (uint32_t)cv); // code + natural padding
+    buf_put32(&d->data, 0);
+    buf_put64(&d->data, dv);
+    uint32_t off = (uint32_t)d->data.len;
+    buf_put64(&d->data, 0);
+    reloc_add(d, off, str, 0, 3, 1, RM_UNSIGNED);
+    buf_put64(&d->data, message->len);
+    if ((uint32_t)(d->data.len - start) != ty_size(t))
+        em_err(e, n, "ErrorDescriptor layout mismatch in codegen: wrote %u, expected %u",
+               (unsigned)(d->data.len - start), ty_size(t));
+    g = sym_intern(&e->syms, nm, (uint32_t)strlen(nm));
+    add_global(e, vs, g);
+    return 1;
+}
+
+static int emit_error_handle_global(Em* e, Node* n, Sym* vs,
+                                    const char* nm) {
+    Node* call = n->b;
+    Node* arg = call && call->kind == N_CALL && call->nkids == 1
+        ? call->kids[0] : NULL;
+    Node* target = arg && arg->kind == N_UNARY && arg->op == T_AMP ? arg->a : NULL;
+    Sym* ds = target && target->kind == N_IDENT ? node_sym(target) : NULL;
+    ESym* descriptor = ds ? global_sym(e, ds) : NULL;
+    if (!descriptor) {
+        em_err(e, n, "Error descriptor must be emitted before its handle");
+        return 0;
+    }
+    const char* descriptor_name = descriptor->name;
+    uint32_t descriptor_len = (uint32_t)strlen(descriptor_name);
+    Sec* d = (n->flags & F_CONST) ? &e->secs[SEC_CONST] : &e->secs[SEC_DATA];
+    while (d->data.len % 8) buf_put8(&d->data, 0);
+    ESym* g = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, d);
+    descriptor = sym_intern(&e->syms, descriptor_name, descriptor_len);
+    uint32_t off = (uint32_t)d->data.len;
+    buf_put64(&d->data, 0);
+    reloc_add(d, off, descriptor, 0, 3, 1, RM_UNSIGNED);
+    add_global(e, vs, g);
+    return 1;
 }
 
 static void emit_global(Em* e, Node* n) {
@@ -3199,15 +3351,23 @@ static void emit_global(Em* e, Node* n) {
         add_global(e, vs, s);
         return;
     }
+    if (is_error_descriptor_type(t)) {
+        emit_error_descriptor_global(e, n, vs, nm, t);
+        return;
+    }
+    if (t->kind == SK_ERROR) {
+        emit_error_handle_global(e, n, vs, nm);
+        return;
+    }
     // string global: {ptr into __const, len} — the pointer needs a reloc
     if (n->b->kind == N_STR && t->kind == SK_PRIM && t->prim == P_STRING) {
+        ESym* str = intern_string(e, n->b);
         Sec* d = (n->flags & F_CONST) ? &e->secs[SEC_CONST] : &e->secs[SEC_DATA];
         while (d->data.len % 8) buf_put8(&d->data, 0);
         ESym* g = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, d);
-        ESym* str = intern_string(e, n->b);
         uint32_t off = (uint32_t)d->data.len;
         buf_put64(&d->data, 0);
-        reloc_add(d, off, str, 0, 3, 0, RM_UNSIGNED);
+        reloc_add(d, off, str, 0, 3, 1, RM_UNSIGNED);
         buf_put64(&d->data, n->b->len);
         add_global(e, vs, g);
         return;
@@ -3527,7 +3687,7 @@ static size_t write_object(Em* e, const char* path) {
     size_t norder = 0, nloc = 0, next_ = 0, nund = 0;
     for (int pass = 0; pass < 3; pass++) {
         for (size_t i = 0; i < e->syms.n; i++) {
-            ESym* s = &e->syms.v[i];
+            ESym* s = e->syms.v[i];
             int want = pass == 0 ? (s->type && !(s->type & N_EXT_))
                     : pass == 1 ? (s->type && (s->type & N_EXT_))
                                 : !s->type;

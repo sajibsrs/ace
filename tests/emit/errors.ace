@@ -1,0 +1,68 @@
+// expect-exit: 42
+FileError: distinct i32
+NetworkError: distinct i32
+
+not_found_message: const string = "file not found"
+
+not_found_descriptor: const ErrorDescriptor = ErrorDescriptor{
+    code: i32(FileError(2)),
+    domain: typeid(FileError),
+    message: not_found_message,
+}
+
+not_found: const Error = Error(&not_found_descriptor)
+
+plain_descriptor: const ErrorDescriptor = ErrorDescriptor{
+    code: 7,
+    domain: null,
+    message: "plain failure",
+}
+
+plain: const Error = Error(&plain_descriptor)
+
+read(fail: bool): (usize, Error?) {
+    if fail {
+        return 0, not_found
+    }
+    return 42, null
+}
+
+main(): int {
+    if size_of(Error) != 8 {
+        return 1
+    }
+    if size_of(typeid) != 8 {
+        return 2
+    }
+    if size_of(ErrorDescriptor) != 32 {
+        return 3
+    }
+    if typeid(FileError) == typeid(NetworkError) {
+        return 4
+    }
+
+    count: usize, error: Error? = read(true)
+    if error == null {
+        return 5
+    }
+    if error != null {
+        if error != not_found {
+            return 6
+        }
+        if error.code != 2 || error.domain != typeid(FileError) {
+            return 7
+        }
+        if error.message.len != 14 {
+            return 8
+        }
+    }
+    if plain.domain != null || plain.code != 7 {
+        return 9
+    }
+
+    count, error = read(false)
+    if error != null {
+        return 10
+    }
+    return int(count)
+}

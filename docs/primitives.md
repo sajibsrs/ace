@@ -112,9 +112,11 @@ The overload writes the complete unsigned decimal range without allocating or
 adding a newline. As with every numeric conversion, converting between `usize`
 and another primitive requires an explicit cast such as `int(message.len)`.
 
-`typeid` is an implemented opaque machine-word primitive type. Values can be
-stored and passed, but the current language surface does not expose runtime type
-reflection operations.
+`typeid` is an implemented opaque machine-word primitive type. `typeid(T)`
+produces the nonzero identity of an exact named type at compile time (see
+[Errors](errors.md)). Values can be stored, passed, and compared with `==` and
+`!=`; the language exposes no ordering, arithmetic, or runtime type reflection.
+`typeid?` uses zero as its free null niche.
 
 `null` is not a primitive value of every type. It is the universal absence
 literal and materializes only as an optional `T?`; a plain `T` never contains
