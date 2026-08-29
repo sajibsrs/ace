@@ -192,8 +192,8 @@ static const struct {
     {"else", T_ELSE},         {"for", T_FOR},           {"in", T_IN},
     {"switch", T_SWITCH},     {"return", T_RETURN},     {"break", T_BREAK},
     {"continue", T_CONTINUE}, {"asm", T_ASM},           {"extern", T_EXTERN},
-    {"export", T_EXPORT},     {"interface", T_INTERFACE},
-    {"struct", T_STRUCT},     {"impl", T_IMPL},         {"distinct", T_DISTINCT},
+    {"export", T_EXPORT},     {"contract", T_CONTRACT},
+    {"struct", T_STRUCT},     {"signs", T_SIGNS},       {"distinct", T_DISTINCT},
     {"type", T_TYPE},         {"enum", T_ENUM},         {"null", T_NULL},
     {"true", T_TRUE},         {"false", T_FALSE},
 };

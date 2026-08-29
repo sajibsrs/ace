@@ -15,13 +15,13 @@ read_x(point: *Point): int {
     return point.x
 }
 
-Value: interface {
+Value: contract {
     get(): int
 }
 
 Number: struct { value: int }
 
-Number impl Value
+Number signs Value
 
 Number.get(): int {
     return self.value

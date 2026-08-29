@@ -201,7 +201,11 @@ if ! ast | grep -q "(func 'scale' pub mut method"; then
     fail=1
 fi
 if ! ast | grep -q "(conformance"; then
-    echo "FAIL: canonical interface contract should appear in the AST"
+    echo "FAIL: signed-contract conformance should appear in the AST"
+    fail=1
+fi
+if ! ast | grep -q "(signing"; then
+    echo "FAIL: canonical signing should appear in the AST"
     fail=1
 fi
 if ! ast | grep -qF "op='+='"; then

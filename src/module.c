@@ -26,7 +26,7 @@ typedef struct Member Member;
 struct Member {
     const char* name;
     uint32_t    len;
-    int         is_type; // lives in the type namespace (struct/interface/…)
+    int         is_type; // lives in the type namespace (struct/contract/…)
     int         pub;     // every declaration with this name is pub
     Member*     next;
 };
@@ -179,7 +179,7 @@ static void collect_members(Module* m) {
             add_member(m, n->kids[0]->str, n->kids[0]->len, 0,
                        (n->flags & F_PUB) != 0);
             break;
-        case N_STRUCT: case N_INTERFACE: case N_ENUM:
+        case N_STRUCT: case N_CONTRACT: case N_ENUM:
         case N_ALIAS: case N_DISTINCT:
             add_member(m, n->str, n->len, 1, (n->flags & F_PUB) != 0);
             break;
@@ -543,7 +543,7 @@ static void rename_decls(Module* m, Renames* rs) {
         }
         if (n->kind == N_FUNC && (n->flags & F_METHOD)) continue;
         if (n->kind != N_FUNC && n->kind != N_VAR &&
-            n->kind != N_STRUCT && n->kind != N_INTERFACE && n->kind != N_ENUM &&
+            n->kind != N_STRUCT && n->kind != N_CONTRACT && n->kind != N_ENUM &&
             n->kind != N_ALIAS && n->kind != N_DISTINCT)
             continue;
         if ((n->flags & F_EXPO) && !n->cname) // `export` keeps its C name
@@ -606,7 +606,7 @@ static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root
                 if (n->kind == N_IMPORT) continue;
                 Node* named = n->kind == N_VAR ? n->kids[0] : n;
                 if (n->kind == N_FUNC || n->kind == N_VAR ||
-                    n->kind == N_STRUCT || n->kind == N_INTERFACE ||
+                    n->kind == N_STRUCT || n->kind == N_CONTRACT ||
                     n->kind == N_ENUM || n->kind == N_ALIAS ||
                     n->kind == N_DISTINCT || n->kind == N_EXTERN) {
                     if (n->kind == N_EXTERN) {
@@ -618,7 +618,7 @@ static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root
                         continue;
                     }
                     if (!(n->kind == N_FUNC && (n->flags & F_METHOD)) &&
-                        n->kind != N_IMPL && text_is(named->str, named->len, b->name))
+                        n->kind != N_SIGNING && text_is(named->str, named->len, b->name))
                         import_err(L->d, b->node,
                                    "import binding '%.*s' collides with a declaration in this module",
                                    (int)b->len, b->name);

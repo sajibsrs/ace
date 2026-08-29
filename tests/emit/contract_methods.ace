@@ -3,16 +3,16 @@ Circle: struct {
     radius: i32,
 }
 
-Shape: interface {
+Shape: contract {
     area(): i32
     mut scale(k: i32)
 }
 
-Metric: interface {
+Metric: contract {
     value(k: int): int
 }
 
-Circle impl (
+Circle signs (
     Shape,
     Metric,
 )

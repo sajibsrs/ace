@@ -6,8 +6,8 @@
 // Type model (machine truth: size/align computed for every type):
 //   prims    bool i8..i64 u8..u64 f32 f64 string usize typeid
 //            (`int`/`uint` = i64/u64, the platform word on arm64)
-//   nominal  struct, enum (i32 layout), interface (16 bytes), distinct
-//   struct.  *T (8), []T (16), [N]T, T? (ptr/slice/interface niches are
+//   nominal  struct, enum (i32 layout), contract (16 bytes), distinct
+//   struct.  *T (8), []T (16), [N]T, T? (ptr/slice/contract niches are
 //            free; value optionals carry a visible tail tag), tuples
 //            (multi-return, laid out like anonymous structs), funcs
 // Literals are untyped constants: they take the expected type at use sites
@@ -65,7 +65,7 @@ static const char* type_name(SType* t) {
     case SK_FUNC: return "(func)";
     case SK_STRUCT: return t->name ? t->name : "struct";
     case SK_ENUM: return t->name ? t->name : "enum";
-    case SK_INTERFACE: return t->name ? t->name : "interface";
+    case SK_CONTRACT: return t->name ? t->name : "contract";
     case SK_DISTINCT: return t->name ? t->name : "distinct";
     case SK_UT: return t == T_UT_INT ? "integer literal" :
                     t == T_UT_FLOAT ? "float literal" : "null";
@@ -106,7 +106,7 @@ static void layout(SType* t) {
     case SK_OPT:
         layout(t->base);
         if (t->base->kind == SK_PTR || t->base->kind == SK_SLICE ||
-            t->base->kind == SK_INTERFACE ||
+            t->base->kind == SK_CONTRACT ||
             (t->base->kind == SK_PRIM && t->base->prim == P_STRING)) {
             t->size = t->base->size; t->align = t->base->align; // niche
         } else {
@@ -131,7 +131,7 @@ static void layout(SType* t) {
         return;
     }
     case SK_ENUM: t->size = t->align = 4; return; // int constants, i32 layout
-    case SK_INTERFACE: t->size = 16; t->align = 8; return; // vtable + data
+    case SK_CONTRACT: t->size = 16; t->align = 8; return; // vtable + data
     case SK_DISTINCT:
         layout(t->base);
         t->size = t->base->size;
@@ -267,7 +267,7 @@ static int same_type(SType* a, SType* b) {
         for (int i = 0; i < a->nparams; i++)
             if (!same_type(a->params[i], b->params[i])) return 0;
         return same_type(a->ret, b->ret);
-    case SK_STRUCT: case SK_ENUM: case SK_INTERFACE: case SK_DISTINCT:
+    case SK_STRUCT: case SK_ENUM: case SK_CONTRACT: case SK_DISTINCT:
         if (a->decl != b->decl || a->nargs != b->nargs) return 0;
         for (int i = 0; i < a->nargs; i++)
             if (!same_type(a->args[i], b->args[i])) return 0;
@@ -773,21 +773,21 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
 
 // --- helpers ------------------------------------------------------------------------
 
-static Node* iface_method(SType* iface, const char* name, uint32_t len) {
-    if (!iface || iface->kind != SK_INTERFACE || !iface->decl) return NULL;
-    for (int i = 0; i < iface->decl->nkids; i++) {
-        Node* m = iface->decl->kids[i];
+static Node* contract_method(SType* contract, const char* name, uint32_t len) {
+    if (!contract || contract->kind != SK_CONTRACT || !contract->decl) return NULL;
+    for (int i = 0; i < contract->decl->nkids; i++) {
+        Node* m = contract->decl->kids[i];
         if (m->len == len && memcmp(m->str, name, len) == 0) return m;
     }
     return NULL;
 }
 
-static SType* iface_method_type(Ck* k, SType* iface, Node* m) {
+static SType* contract_method_type(Ck* k, SType* contract, Node* m) {
     const char** sn = k->tnames; SType** st = k->ttypes; int ns = k->nsub;
-    Node* tp = iface && iface->decl ? iface->decl->c : NULL;
-    if (tp && iface->nargs == tp->nkids) {
-        k->nsub = iface->nargs;
-        k->ttypes = iface->args;
+    Node* tp = contract && contract->decl ? contract->decl->c : NULL;
+    if (tp && contract->nargs == tp->nkids) {
+        k->nsub = contract->nargs;
+        k->ttypes = contract->args;
         k->tnames = (const char**)arena_alloc((size_t)k->nsub * sizeof(char*));
         for (int i = 0; i < k->nsub; i++) k->tnames[i] = tp->kids[i]->str;
     }
@@ -831,7 +831,7 @@ static void check_mut_args(Ck* k, Node* call, Node* fndecl) {
             if (raw->kind == N_IDENT) {
                 Sym* s = lookup_val(k, raw->str, raw->len);
                 if (s && s->is_const_backed)
-                    ck_err(k, raw, "const-backed interface cannot be passed to a mut parameter");
+                    ck_err(k, raw, "const-backed contract cannot be passed to a mut parameter");
             }
         }
     }
@@ -946,7 +946,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                   op == T_LE || op == T_GT || op == T_GE;
         if (cmp) {
             if (same_type(a, b) && (is_num(a) || is_bool(a) || a->kind == SK_PTR ||
-                                    a->kind == SK_ENUM || a->kind == SK_INTERFACE ||
+                                    a->kind == SK_ENUM || a->kind == SK_CONTRACT ||
                                     a->kind == SK_DISTINCT ||
                                     (a->kind == SK_PRIM && a->prim == P_STRING)))
                 return st_prim(P_BOOL);
@@ -1049,14 +1049,14 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             (b->kind == SK_SLICE ||
              (b->kind == SK_PRIM && b->prim == P_STRING)))
             return st_prim(P_USIZE);
-        if (b->kind == SK_INTERFACE) {
-            Node* m = iface_method(b, e->str, e->len);
+        if (b->kind == SK_CONTRACT) {
+            Node* m = contract_method(b, e->str, e->len);
             if (!m) {
-                ck_err(k, e, "interface %s has no method '%.*s'", type_name(b),
+                ck_err(k, e, "contract %s has no method '%.*s'", type_name(b),
                        (int)e->len, e->str);
                 return T_ERR;
             }
-            SType* ft = iface_method_type(k, b, m);
+            SType* ft = contract_method_type(k, b, m);
             return ft->ret ? ft->ret : T_ERR; // dispatch target
         }
         if (b->kind == SK_STRUCT) {
@@ -1243,53 +1243,53 @@ static int const_lvalue(Ck* k, Node* e) {
     return 0;
 }
 
-static Node* find_conformance(Ck* k, SType* conc, SType* iface) {
+static Node* find_conformance(Ck* k, SType* conc, SType* contract) {
     if (!conc || conc->kind != SK_STRUCT || !conc->decl || !conc->decl->d) return NULL;
-    Node* impl = conc->decl->d;
+    Node* signing = conc->decl->d;
     const char** sn = k->tnames; SType** st = k->ttypes; int ns = k->nsub;
-    if (impl->c && conc->nargs == impl->c->nkids) {
+    if (signing->c && conc->nargs == signing->c->nkids) {
         k->nsub = conc->nargs;
         k->ttypes = conc->args;
         k->tnames = (const char**)arena_alloc((size_t)k->nsub * sizeof(char*));
-        for (int i = 0; i < k->nsub; i++) k->tnames[i] = impl->c->kids[i]->str;
+        for (int i = 0; i < k->nsub; i++) k->tnames[i] = signing->c->kids[i]->str;
     }
     Node* found = NULL;
-    for (int i = 0; i < impl->nkids; i++) {
-        SType* it = build_type(k, impl->kids[i]->a);
-        if (same_type(it, iface)) { found = impl->kids[i]; break; }
+    for (int i = 0; i < signing->nkids; i++) {
+        SType* it = build_type(k, signing->kids[i]->a);
+        if (same_type(it, contract)) { found = signing->kids[i]; break; }
     }
     k->tnames = sn; k->ttypes = st; k->nsub = ns;
     return found;
 }
 
-static SType* check_interface_construct(Ck* k, Node* call, SType* iface) {
+static SType* check_contract_construct(Ck* k, Node* call, SType* contract) {
     if (call->nkids != 1) {
-        ck_err(k, call, "interface construction takes exactly one pointer");
+        ck_err(k, call, "contract construction takes exactly one pointer");
         return T_ERR;
     }
     Node* arg = call->kids[0];
     SType* from = expr_type(k, arg);
     if (from->kind != SK_PTR || !from->base || from->base->kind != SK_STRUCT) {
-        ck_err(k, arg, "interface construction needs a pointer to a struct");
+        ck_err(k, arg, "contract construction needs a pointer to a struct");
         return T_ERR;
     }
-    Node* conf = find_conformance(k, from->base, iface);
+    Node* conf = find_conformance(k, from->base, contract);
     if (!conf) {
-        ck_err(k, call, "type %s has no declared contract for interface %s",
-               type_name(from->base), type_name(iface));
+        ck_err(k, call, "type %s has not signed contract %s",
+               type_name(from->base), type_name(contract));
         return T_ERR;
     }
-    Node* impl = from->base->decl->d;
-    if (impl->path && call->path && strcmp(impl->path, call->path) != 0 &&
-        !(impl->flags & F_PUB)) {
-        ck_err(k, call, "implementation contract for %s is private",
+    Node* signing = from->base->decl->d;
+    if (signing->path && call->path && strcmp(signing->path, call->path) != 0 &&
+        !(signing->flags & F_PUB)) {
+        ck_err(k, call, "signing for %s is private",
                type_name(from->base));
         return T_ERR;
     }
     call->d = conf;
     if (arg->kind == N_UNARY && arg->op == T_AMP && const_lvalue(k, arg->a))
         call->flags |= F_CONST;
-    return iface;
+    return contract;
 }
 
 static SType* indexed_named_type(Ck* k, Node* ix) {
@@ -1310,16 +1310,16 @@ static SType* check_call(Ck* k, Node* call) {
         if (!s) {
             SType* prim = prim_by_name(callee->str, callee->len);
             Sym* ts = lookup_type(k, callee->str, callee->len);
-            if (prim || ts) { // constructor-shaped cast or interface construction
+            if (prim || ts) { // constructor-shaped cast or contract construction
                 if (call->nkids != 1) {
                     ck_err(k, call, "a cast takes exactly one argument");
                     return T_ERR;
                 }
                 SType* want = prim ? prim : build_type(k, callee);
-                if (want->kind == SK_INTERFACE) {
+                if (want->kind == SK_CONTRACT) {
                     callee->sym = ts;
                     callee->ty = want;
-                    return check_interface_construct(k, call, want);
+                    return check_contract_construct(k, call, want);
                 }
                 SType* from = expr_type(k, call->kids[0]);
                 if (want->kind == SK_ERR || from->kind == SK_ERR) return T_ERR;
@@ -1402,9 +1402,9 @@ static SType* check_call(Ck* k, Node* call) {
     // generic instantiation call: max[int](3, 9)
     if (callee->kind == N_INDEX && callee->a->kind == N_IDENT) {
         SType* named = indexed_named_type(k, callee);
-        if (named && named->kind == SK_INTERFACE) {
+        if (named && named->kind == SK_CONTRACT) {
             callee->ty = named;
-            return check_interface_construct(k, call, named);
+            return check_contract_construct(k, call, named);
         }
         Sym* head = lookup_val(k, callee->a->str, callee->a->len);
         if (head && head->kind == SYM_FUNC) {
@@ -1451,7 +1451,7 @@ static SType* check_call(Ck* k, Node* call) {
         ck_err(k, call, "'%.*s' is not a generic function", (int)callee->a->len, callee->a->str);
         return T_ERR;
     }
-    // method / interface dispatch
+    // method / contract dispatch
     if (callee->kind == N_FIELD_E) {
         if (callee->a->kind == N_IDENT) {
             Sym* ms = lookup_val(k, callee->a->str, callee->a->len);
@@ -1472,10 +1472,10 @@ static SType* check_call(Ck* k, Node* call) {
         }
         if (!b) b = expr_type(k, callee->a);
         if (b->kind == SK_ERR) return T_ERR;
-        if (b->kind == SK_INTERFACE) {
-            Node* m = iface_method(b, callee->str, callee->len);
+        if (b->kind == SK_CONTRACT) {
+            Node* m = contract_method(b, callee->str, callee->len);
             if (!m) {
-                ck_err(k, call, "interface %s has no method '%.*s'", type_name(b),
+                ck_err(k, call, "contract %s has no method '%.*s'", type_name(b),
                        (int)callee->len, callee->str);
                 return T_ERR;
             }
@@ -1492,10 +1492,10 @@ static SType* check_call(Ck* k, Node* call) {
                 if (callee->a->kind == N_IDENT) {
                     Sym* iv = lookup_val(k, callee->a->str, callee->a->len);
                     if (iv && iv->is_const_backed)
-                        ck_err(k, call, "cannot call a mutating interface method on const backing storage");
+                        ck_err(k, call, "cannot call a mutating contract method on const backing storage");
                 }
             }
-            SType* ft = iface_method_type(k, b, m);
+            SType* ft = contract_method_type(k, b, m);
             check_args(k, call, ft, 0);
             return ft->ret;
         }
@@ -1618,7 +1618,7 @@ static void check_stmt(Ck* k, Node* s) {
             else
                 coerce(k, init, wants[0]);
             Sym* v = lookup_val(k, s->kids[0]->str, s->kids[0]->len);
-            if (v && wants[0]->kind == SK_INTERFACE && (init->flags & F_CONST))
+            if (v && wants[0]->kind == SK_CONTRACT && (init->flags & F_CONST))
                 v->is_const_backed = 1;
             return;
         }
@@ -1681,7 +1681,7 @@ static void check_stmt(Ck* k, Node* s) {
             return;
         }
         coerce(k, rhs, t); // compound ops check as x = x op y with same type
-        if (t->kind == SK_INTERFACE && s->kids[0]->kind == N_IDENT) {
+        if (t->kind == SK_CONTRACT && s->kids[0]->kind == N_IDENT) {
             Sym* target = lookup_val(k, s->kids[0]->str, s->kids[0]->len);
             if (target) target->is_const_backed = (rhs->flags & F_CONST) != 0;
         }
@@ -1787,7 +1787,7 @@ static void check_stmt(Ck* k, Node* s) {
             return;
         }
         coerce(k, s->a, rt);
-        if (rt->kind == SK_INTERFACE && (s->a->flags & F_CONST) && k->curfn)
+        if (rt->kind == SK_CONTRACT && (s->a->flags & F_CONST) && k->curfn)
             k->curfn->flags |= F_CONST; // conservative return-capability summary
         return;
     }
@@ -1917,8 +1917,8 @@ static void check_func_body(Ck* k, Node* f) {
             s->is_mut = (pa->flags & F_MUT) != 0;
             s->is_noalias = (pa->flags & F_NOALIAS) != 0;
             s->is_param = 1;
-            if (s->type && s->type->kind == SK_INTERFACE && !s->is_mut)
-                s->is_const_backed = 1; // a read-only interface param may wrap const
+            if (s->type && s->type->kind == SK_CONTRACT && !s->is_mut)
+                s->is_const_backed = 1; // a read-only contract param may wrap const
             s->decl = pa;
             pa->sym = s;
         }
@@ -1972,8 +1972,8 @@ static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int narg
     SType* t;
     if (decl->kind == N_STRUCT) {
         t = build_struct_type(k, decl);
-    } else if (decl->kind == N_INTERFACE) {
-        t = st_new(SK_INTERFACE);
+    } else if (decl->kind == N_CONTRACT) {
+        t = st_new(SK_CONTRACT);
         t->name = decl->str;
         t->decl = decl;
         layout(t);
@@ -1994,52 +1994,52 @@ static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int narg
     return t;
 }
 
-// A concrete type owns one canonical contract. Its methods may follow, so the
-// contract is registered during the source walk and validated at EOF.
-static void register_contract(Ck* k, Node* impl) {
-    Sym* cs = lookup_type(k, impl->a->str, impl->a->len);
+// A concrete type owns one canonical signing. Its methods may follow, so the
+// signing is registered during the source walk and validated at EOF.
+static void register_signing(Ck* k, Node* signing) {
+    Sym* cs = lookup_type(k, signing->a->str, signing->a->len);
     if (!cs || !cs->type || cs->type->kind != SK_STRUCT) {
-        ck_err(k, impl->a, "impl owner '%.*s' is not a declared struct",
-               (int)impl->a->len, impl->a->str);
+        ck_err(k, signing->a, "signing owner '%.*s' is not a declared struct",
+               (int)signing->a->len, signing->a->str);
         return;
     }
     Node* decl = cs->type->decl;
-    if (decl->path && impl->path && strcmp(decl->path, impl->path) != 0) {
-        ck_err(k, impl, "an impl contract must be in the struct's defining module");
+    if (decl->path && signing->path && strcmp(decl->path, signing->path) != 0) {
+        ck_err(k, signing, "a signing must be in the struct's defining module");
         return;
     }
     if (decl->d) {
-        ck_err(k, impl, "implementation contract for %s was already declared once",
+        ck_err(k, signing, "signing for %s was already declared once",
                type_name(cs->type));
         return;
     }
     for (Sym* v = k->scope->values; v; v = v->next)
         for (Sym* f = v; f; f = f->overload)
             if (f->kind == SYM_FUNC && f->decl && (f->decl->flags & F_METHOD) &&
-                f->decl->d && f->decl->d->len == impl->a->len &&
-                memcmp(f->decl->d->str, impl->a->str, impl->a->len) == 0)
-                ck_err(k, impl, "impl contract for %s must appear before its methods",
+                f->decl->d && f->decl->d->len == signing->a->len &&
+                memcmp(f->decl->d->str, signing->a->str, signing->a->len) == 0)
+                ck_err(k, signing, "signing for %s must appear before its methods",
                        type_name(cs->type));
     int want = decl->c ? decl->c->nkids : 0;
-    int got = impl->c ? impl->c->nkids : 0;
+    int got = signing->c ? signing->c->nkids : 0;
     if (want != got)
-        ck_err(k, impl, "impl owner must repeat the struct's %d type parameters", want);
+        ck_err(k, signing, "signing owner must repeat the struct's %d type parameters", want);
     else for (int i = 0; i < want; i++)
-        if (decl->c->kids[i]->len != impl->c->kids[i]->len ||
-            memcmp(decl->c->kids[i]->str, impl->c->kids[i]->str,
+        if (decl->c->kids[i]->len != signing->c->kids[i]->len ||
+            memcmp(decl->c->kids[i]->str, signing->c->kids[i]->str,
                    decl->c->kids[i]->len) != 0)
-            ck_err(k, impl->c->kids[i], "impl owner must repeat type parameter '%.*s'",
+            ck_err(k, signing->c->kids[i], "signing owner must repeat type parameter '%.*s'",
                    (int)decl->c->kids[i]->len, decl->c->kids[i]->str);
-    for (int i = 0; i < impl->nkids; i++) {
-        impl->kids[i]->d = impl;
-        Node* it = impl->kids[i]->a;
+    for (int i = 0; i < signing->nkids; i++) {
+        signing->kids[i]->d = signing;
+        Node* it = signing->kids[i]->a;
         Sym* is = lookup_type(k, it->str, it->len);
-        if (!is || !is->type || is->type->kind != SK_INTERFACE)
-            ck_err(k, it, "implemented interface '%.*s' must be declared first",
+        if (!is || !is->type || is->type->kind != SK_CONTRACT)
+            ck_err(k, it, "signed contract '%.*s' must be declared first",
                    (int)it->len, it->str);
     }
-    decl->d = impl;
-    impl->a->sym = cs;
+    decl->d = signing;
+    signing->a->sym = cs;
 }
 
 static void canonical_substitution(Ck* k, Node* tp) {
@@ -2060,32 +2060,32 @@ static void canonical_substitution(Ck* k, Node* tp) {
     }
 }
 
-static void check_contract(Ck* k, Node* impl) {
+static void check_signing(Ck* k, Node* signing) {
     const char** sn = k->tnames; SType** st = k->ttypes; int ns = k->nsub;
-    canonical_substitution(k, impl->c);
-    SType* conc = build_type(k, impl->a);
-    for (int ci = 0; ci < impl->nkids; ci++) {
-        Node* conf = impl->kids[ci];
-        SType* iface = build_type(k, conf->a);
-        conf->a->ty = iface;
-        if (iface->kind != SK_INTERFACE) {
-            ck_err(k, conf->a, "%s is not an interface", type_name(iface));
+    canonical_substitution(k, signing->c);
+    SType* conc = build_type(k, signing->a);
+    for (int ci = 0; ci < signing->nkids; ci++) {
+        Node* conf = signing->kids[ci];
+        SType* contract = build_type(k, conf->a);
+        conf->a->ty = contract;
+        if (contract->kind != SK_CONTRACT) {
+            ck_err(k, conf->a, "%s is not a contract", type_name(contract));
             continue;
         }
         for (int j = 0; j < ci; j++)
-            if (same_type(iface, node_ty(impl->kids[j]->a)))
-                ck_err(k, conf->a, "interface %s is repeated in this impl contract",
-                       type_name(iface));
+            if (same_type(contract, node_ty(signing->kids[j]->a)))
+                ck_err(k, conf->a, "contract %s is repeated in this signing",
+                       type_name(contract));
 
         Node** selected = (Node**)arena_alloc(
-            (size_t)(iface->decl->nkids ? iface->decl->nkids : 1) * sizeof(Node*));
+            (size_t)(contract->decl->nkids ? contract->decl->nkids : 1) * sizeof(Node*));
         conf->kids = selected;
-        conf->nkids = iface->decl->nkids;
-        for (int mi = 0; mi < iface->decl->nkids; mi++) {
-            Node* m = iface->decl->kids[mi];
-            SType* mft = iface_method_type(k, iface, m);
+        conf->nkids = contract->decl->nkids;
+        for (int mi = 0; mi < contract->decl->nkids; mi++) {
+            Node* m = contract->decl->kids[mi];
+            SType* mft = contract_method_type(k, contract, m);
             uint32_t klen;
-            const char* key = method_key(impl->a, m->str, m->len, &klen);
+            const char* key = method_key(signing->a, m->str, m->len, &klen);
             Sym* head = lookup_val(k, key, klen);
             Sym* found = NULL;
             for (Sym* fn = head; fn; fn = fn->overload) {
@@ -2103,8 +2103,8 @@ static void check_contract(Ck* k, Node* impl) {
                 if (!same_type(ft->ret, mft->ret)) exact = 0;
                 if (!exact) continue;
                 if (found) {
-                    ck_err(k, impl, "ambiguous method '%.*s' for interface %s",
-                           (int)m->len, m->str, type_name(iface));
+                    ck_err(k, signing, "ambiguous method '%.*s' for contract %s",
+                           (int)m->len, m->str, type_name(contract));
                     found = NULL;
                     break;
                 }
@@ -2113,13 +2113,13 @@ static void check_contract(Ck* k, Node* impl) {
             Node* ref = (Node*)arena_alloc(sizeof(Node));
             memset(ref, 0, sizeof *ref);
             ref->kind = N_IDENT;
-            ref->path = impl->path; ref->line = impl->line; ref->col = impl->col;
+            ref->path = signing->path; ref->line = signing->line; ref->col = signing->col;
             ref->str = m->str; ref->len = m->len;
             ref->sym = found;
             selected[mi] = ref;
             if (!found) {
-                ck_err(k, impl, "type %s has no exact method '%.*s' required by %s",
-                       type_name(conc), (int)m->len, m->str, type_name(iface));
+                ck_err(k, signing, "type %s has no exact method '%.*s' required by %s",
+                       type_name(conc), (int)m->len, m->str, type_name(contract));
             } else if (found->is_generic && conc->decl && conc->decl->c) {
                 for (STypeInst* it = (STypeInst*)conc->decl->c->b; it; it = it->next) {
                     int concrete = 1;
@@ -2127,7 +2127,7 @@ static void check_contract(Ck* k, Node* impl) {
                         if (it->args[a]->kind == SK_TYPEPARAM) concrete = 0;
                     if (concrete)
                         instantiate_generic_func_args(k, found, it->args,
-                                                      conc->decl->c->nkids, impl);
+                                                      conc->decl->c->nkids, signing);
                 }
             }
         }
@@ -2265,18 +2265,18 @@ int sema_check(Node* file, Diag* d) {
                     check_arraylit(&k, n->b, t);
                 else
                     coerce(&k, n->b, t);
-                if (s && t->kind == SK_INTERFACE && (n->b->flags & F_CONST))
+                if (s && t->kind == SK_CONTRACT && (n->b->flags & F_CONST))
                     s->is_const_backed = 1;
             } else if (n->flags & F_CONST) {
                 ck_err(&k, n, "const declaration requires an initializer");
             }
             break;
         }
-        case N_STRUCT: case N_INTERFACE: case N_ENUM: {
+        case N_STRUCT: case N_CONTRACT: case N_ENUM: {
             Sym* s = declare_type(&k, n, n->str, n->len);
             if (!s) break;
             SType* t = st_new(n->kind == N_STRUCT ? SK_STRUCT :
-                              n->kind == N_ENUM ? SK_ENUM : SK_INTERFACE);
+                              n->kind == N_ENUM ? SK_ENUM : SK_CONTRACT);
             t->name = n->str;
             t->decl = n;
             s->type = t;
@@ -2308,8 +2308,8 @@ int sema_check(Node* file, Diag* d) {
             layout(t);
             break;
         }
-        case N_IMPL:
-            register_contract(&k, n);
+        case N_SIGNING:
+            register_signing(&k, n);
             break;
         default:
             break;
@@ -2319,7 +2319,7 @@ int sema_check(Node* file, Diag* d) {
     // Contracts precede their methods; validate their complete method sets now.
     k.scope = &file_scope;
     for (int i = 0; i < file->nkids; i++)
-        if (file->kids[i]->kind == N_IMPL) check_contract(&k, file->kids[i]);
+        if (file->kids[i]->kind == N_SIGNING) check_signing(&k, file->kids[i]);
 
     // forward top-level calls: verify existence and argument types
     k.scope = &file_scope;

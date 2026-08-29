@@ -13,7 +13,7 @@ must be corrected.
 - [Primitives](primitives.md) — implemented scalar types, literals, casts,
   platform words, and strings.
 - [Types and declarations](types.md) — explicit declarations, aliases, distinct
-  types, pointers, optionals, arrays, slices, tuples, structs, enums, interfaces,
+  types, pointers, optionals, arrays, slices, tuples, structs, enums, contracts,
   and generic types.
 - [Functions](function.md) — declarations, parameters, returns, mutation,
   overloads, function values, generics, and the program entry point.

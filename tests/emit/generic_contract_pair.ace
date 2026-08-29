@@ -1,5 +1,5 @@
 // expect-exit: 42
-Value[T]: interface {
+Value[T]: contract {
     get(): T
 }
 
@@ -7,7 +7,7 @@ Box[T]: struct {
     value: T,
 }
 
-Box[T] impl Value[T]
+Box[T] signs Value[T]
 
 Box[T].get(): T {
     return self.value

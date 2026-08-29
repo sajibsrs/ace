@@ -1,7 +1,7 @@
 Thing: struct { value: int }
-Readable: interface { read(): int }
+Readable: contract { read(): int }
 
-Thing impl Readable, Readable
+Thing signs Readable, Readable
 
 Thing.read(): int {
     return self.value

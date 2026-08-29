@@ -1,7 +1,0 @@
-Shape: interface {
-    area(): int
-}
-
-Circle: struct {}
-
-Circle impl (Shape)

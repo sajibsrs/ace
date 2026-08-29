@@ -9,7 +9,7 @@
 
 enum {
     SK_PRIM, SK_PTR, SK_SLICE, SK_ARRAY, SK_OPT, SK_TUPLE, SK_FUNC,
-    SK_STRUCT, SK_ENUM, SK_INTERFACE, SK_DISTINCT, SK_TYPEPARAM,
+    SK_STRUCT, SK_ENUM, SK_CONTRACT, SK_DISTINCT, SK_TYPEPARAM,
     SK_UT, SK_ERR
 };
 
@@ -67,7 +67,7 @@ uint32_t sema_size(SType* t);
 uint32_t sema_align(SType* t);
 
 // Build a type from a syntax node against the checked file scope (e.g. for
-// interface-method signatures at dispatch sites).
+// contract-method signatures at dispatch sites).
 SType* sema_build_type(Node* t);
 
 // Re-check (and re-annotate) a generic function body under a type-argument

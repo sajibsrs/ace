@@ -9,13 +9,13 @@
 //   N_PARAM     str = name; a = type; F_MUT/F_NOALIAS (also used as var binder)
 //   N_STRUCT    str = name; kids = N_FIELD; c = N_TPARAMS; F_PUB
 //   N_FIELD     str = name; a = type
-//   N_INTERFACE str = name; kids = N_METHOD; c = N_TPARAMS; F_PUB
+//   N_CONTRACT str = name; kids = N_METHOD; c = N_TPARAMS; F_PUB
 //   N_METHOD    str = name; kids = params; a = ret; F_MUT (mutating receiver)
 //   N_ENUM      str = name; kids = N_IDENT members; F_PUB
 //   N_ALIAS     str = name; a = type; c = N_TPARAMS; F_PUB
 //   N_DISTINCT  str = name; a = base type; F_PUB
-//   N_IMPL      a = concrete type; c = owner N_TPARAMS; kids = N_CONFORMANCE
-//   N_CONFORMANCE a = interface type; kids = resolved method idents after sema
+//   N_SIGNING     a = concrete type; c = owner N_TPARAMS; kids = N_CONFORMANCE
+//   N_CONFORMANCE a = signed contract type; kids = resolved methods after sema
 //   N_EXTERN    str = abi string; kids = N_EXTERNFN
 //   N_EXTERNFN  str = name; kids = params; a = ret; F_EXPO/F_VARARGS
 //   N_BLOCK     kids = statements
@@ -122,9 +122,9 @@ static void bare_list_line(P* p, int line) {
         perr(p, "bare comma-separated lists must stay on one physical line");
 }
 
-static void impl_list_line(P* p, int line) {
+static void signing_list_line(P* p, int line) {
     if (tk(p)->line != line)
-        perr(p, "bare interface lists must stay on one line; use parentheses for a multiline list");
+        perr(p, "bare signed-contract lists must stay on one line; use parentheses for a multiline list");
 }
 
 static Token* expect(P* p, TokKind k, const char* what) {
@@ -1097,42 +1097,42 @@ static Node* parse_method_rest(P* p, Token* owner, Node* tp, int pub, int mut) {
     return f;
 }
 
-static Node* parse_impl_contract(P* p, Token* owner, Node* tp, int pub) {
-    Node* n = nd_tok(p, N_IMPL, owner);
+static Node* parse_signing(P* p, Token* owner, Node* tp, int pub) {
+    Node* n = nd_tok(p, N_SIGNING, owner);
     n->a = owner_type(p, owner, tp);
     n->c = tp;
     if (pub) n->flags |= F_PUB;
-    Token* impl = expect(p, T_IMPL, "'impl'");
-    NV interfaces = {0};
+    Token* signs = expect(p, T_SIGNS, "'signs'");
+    NV contracts = {0};
     if (ate(p, T_LPAREN)) {
-        if (at(p, T_RPAREN)) perr(p, "an impl contract needs at least one interface");
+        if (at(p, T_RPAREN)) perr(p, "a signing needs at least one contract");
         for (;;) {
             Node* c = nd(p, N_CONFORMANCE);
             c->a = parse_type(p);
-            nv_push(p, &interfaces, c);
+            nv_push(p, &contracts, c);
             if (!ate(p, T_COMMA)) break;
             if (at(p, T_RPAREN)) break;
         }
-        if (tk(p)->line == impl->line)
-            perr(p, "parentheses after 'impl' are only for multiline interface lists");
-        expect(p, T_RPAREN, "')' to close implemented interfaces");
+        if (tk(p)->line == signs->line)
+            perr(p, "parentheses after 'signs' are only for multiline contract lists");
+        expect(p, T_RPAREN, "')' to close signed contracts");
     } else {
         if (at(p, T_NL) || at(p, T_EOF))
-            perr(p, "an impl contract needs at least one interface");
+            perr(p, "a signing needs at least one contract");
         for (;;) {
-            impl_list_line(p, impl->line);
+            signing_list_line(p, signs->line);
             Node* c = nd(p, N_CONFORMANCE);
             c->a = parse_type(p);
-            nv_push(p, &interfaces, c);
-            if (p->toks[p->i - 1].line != impl->line)
-                perr(p, "bare interface lists must stay on one line; use parentheses for a multiline list");
+            nv_push(p, &contracts, c);
+            if (p->toks[p->i - 1].line != signs->line)
+                perr(p, "bare signed-contract lists must stay on one line; use parentheses for a multiline list");
             if (!at(p, T_COMMA)) break;
-            impl_list_line(p, impl->line);
+            signing_list_line(p, signs->line);
             p->i++;
-            impl_list_line(p, impl->line);
+            signing_list_line(p, signs->line);
         }
     }
-    set_kids(n, &interfaces);
+    set_kids(n, &contracts);
     return n;
 }
 
@@ -1167,18 +1167,18 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
         set_kids(n, &fields);
         return n;
     }
-    case T_INTERFACE: {
+    case T_CONTRACT: {
         p->i++;
-        n = nd_tok(p, N_INTERFACE, name);
+        n = nd_tok(p, N_CONTRACT, name);
         n->str = name->str;
         n->len = name->len;
         n->c = tp;
         if (pub) n->flags |= F_PUB;
-        expect(p, T_LBRACE, "'{' after 'interface'");
+        expect(p, T_LBRACE, "'{' after 'contract'");
         NV methods = {0};
         skipnl(p);
         while (!at(p, T_RBRACE)) {
-            if (at(p, T_EOF)) perr(p, "unexpected end of file in interface");
+            if (at(p, T_EOF)) perr(p, "unexpected end of file in contract");
             Node* m = nd(p, N_METHOD);
             if (ate(p, T_MUT)) m->flags |= F_MUT;
             Token* mname = expect(p, T_IDENT, "method name");
@@ -1359,9 +1359,9 @@ static Node* parse_top(P* p) {
     Token* name = tk(p);
     p->i++;
     Node* tp = try_tparams(p);
-    if (at(p, T_IMPL)) {
-        if (expo || mut) perr(p, "impl contracts accept only the optional leading 'pub'");
-        return parse_impl_contract(p, name, tp, pub);
+    if (at(p, T_SIGNS)) {
+        if (expo || mut) perr(p, "signings accept only the optional leading 'pub'");
+        return parse_signing(p, name, tp, pub);
     }
     if (at(p, T_DOT)) {
         if (expo) perr(p, "methods cannot be exported at the C boundary");

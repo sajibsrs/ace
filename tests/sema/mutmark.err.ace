@@ -1,11 +1,11 @@
 Point: struct { x: f32 }
 
-Shape: interface {
+Shape: contract {
     area(): f32
     mut scale(k: f32)
 }
 
-Point impl Shape
+Point signs Shape
 
 Point.area(): f32 {
     return self.x

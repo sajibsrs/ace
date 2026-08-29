@@ -1,12 +1,12 @@
-Shape: interface {
+Shape: contract {
     area(): int
 }
 
-Color: interface {
+Color: contract {
     color(): int
 }
 
 Circle: struct {}
 
-Circle impl Shape,
+Circle signs Shape,
     Color

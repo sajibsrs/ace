@@ -1,0 +1,7 @@
+Shape: contract {
+    area(): int
+}
+
+Circle: struct {}
+
+Circle signs (Shape)

@@ -1,9 +1,9 @@
 Thing: struct { value: int }
-Readable: interface { read(): int }
-Writable: interface { mut write(value: int) }
+Readable: contract { read(): int }
+Writable: contract { mut write(value: int) }
 
-Thing impl Readable
-Thing impl Writable
+Thing signs Readable
+Thing signs Writable
 
 Thing.read(): int {
     return self.value

@@ -15,8 +15,8 @@
     X(NOALIAS, "noalias") X(IF, "if") X(ELSE, "else") X(FOR, "for")            \
     X(IN, "in") X(SWITCH, "switch") X(RETURN, "return") X(BREAK, "break")      \
     X(CONTINUE, "continue") X(ASM, "asm") X(EXTERN, "extern")                  \
-    X(EXPORT, "export") X(INTERFACE, "interface") X(STRUCT, "struct")          \
-    X(IMPL, "impl") X(DISTINCT, "distinct") X(TYPE, "type")                    \
+    X(EXPORT, "export") X(CONTRACT, "contract") X(STRUCT, "struct")           \
+    X(SIGNS, "signs") X(DISTINCT, "distinct") X(TYPE, "type")                \
     X(ENUM, "enum")                                                            \
     X(NULL, "null") X(TRUE, "true") X(FALSE, "false")                          \
     /* literals */                                                             \
@@ -98,9 +98,9 @@ char* arena_alloc(size_t n);
     /* top-level declarations */                                               \
     X(N_IMPORT, "import") X(N_VAR, "var") X(N_FUNC, "func")                    \
     X(N_PARAM, "param") X(N_STRUCT, "struct") X(N_FIELD, "field")              \
-    X(N_INTERFACE, "interface") X(N_METHOD, "method") X(N_ENUM, "enum")        \
-    X(N_ALIAS, "alias") X(N_DISTINCT, "distinct") X(N_IMPL, "impl")            \
-    X(N_CONFORMANCE, "conformance") X(N_EXTERN, "extern")                     \
+    X(N_CONTRACT, "contract") X(N_METHOD, "method") X(N_ENUM, "enum")         \
+    X(N_ALIAS, "alias") X(N_DISTINCT, "distinct") X(N_SIGNING, "signing")     \
+    X(N_CONFORMANCE, "conformance") X(N_EXTERN, "extern")                      \
     X(N_EXTERNFN, "externfn")                                                  \
     /* statements */                                                           \
     X(N_BLOCK, "block") X(N_EXPRSTMT, "exprstmt") X(N_ASSIGN, "assign")        \
@@ -145,7 +145,7 @@ struct Node {
     Node*       a;
     Node*       b;
     Node*       c;
-    Node*       d; // method owner / interface-construction contract metadata
+    Node*       d; // method owner / contract-construction signing metadata
     Node**      kids;
     int         nkids;
     const char* cname; // original C-boundary name of a module-prefixed extern

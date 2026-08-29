@@ -23,12 +23,12 @@ StringList: type = []string
 
 Meters: distinct f64
 
-Shape: interface {
+Shape: contract {
     area(): f32
     mut scale(k: f64)
 }
 
-Circle impl Shape
+Circle signs Shape
 
 Circle.area(): f32 {
     return 0.0

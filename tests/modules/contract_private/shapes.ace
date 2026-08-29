@@ -1,4 +1,4 @@
-pub Shape: interface {
+pub Shape: contract {
     area(): int
 }
 
@@ -6,7 +6,7 @@ pub Circle: struct {
     radius: int,
 }
 
-Circle impl Shape
+Circle signs Shape
 
 Circle.area(): int {
     return self.radius * self.radius

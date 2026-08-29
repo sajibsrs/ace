@@ -408,7 +408,7 @@ static int is_lvalue_node(Node* x);
 static SType* lvalue_type(Em* e, Node* x);
 static void emit_asm(Em* e, Node* s);
 static void emit_epilogue(Em* e);
-static ESym* emit_vtable(Em* e, SType* conc, SType* iface, Node* conf);
+static ESym* emit_vtable(Em* e, SType* conc, SType* contract, Node* conf);
 
 // --- type helpers -----------------------------------------------------------------
 
@@ -516,7 +516,7 @@ static int word_is_float(SType* t, uint32_t woff) {
         return 1;
     }
     case SK_OPT: return word_is_float(t->base, woff);
-    default: return 0; // ptr/slice/interface/enum words are INT
+    default: return 0; // ptr/slice/contract/enum words are INT
     }
 }
 
@@ -1106,7 +1106,7 @@ static EV gen_binop(Em* e, Node* n) {
         int want = op == T_BANGEQ ? C_NE : C_EQ;
         if (ot && ot->kind == SK_OPT && base &&
             !(base->kind == SK_PTR || base->kind == SK_SLICE ||
-              base->kind == SK_INTERFACE ||
+              base->kind == SK_CONTRACT ||
               (base->kind == SK_PRIM && base->prim == P_STRING))) {
             // value optional: tag byte at [addr + base_size]
             EV v = gen_expr(e, other);
@@ -1135,7 +1135,7 @@ static EV gen_binop(Em* e, Node* n) {
     EV a = gen_expr(e, n->a);
     EV b = gen_expr(e, n->b);
 
-    // two-word identity compare (slices, strings, interfaces): == and !=
+    // two-word identity compare (slices, strings, contracts): == and !=
     if (a.cls == CLS_ADDR && b.cls == CLS_ADDR) {
         if (op == T_EQEQ || op == T_BANGEQ) {
             int eq = op == T_EQEQ;
@@ -1391,7 +1391,7 @@ static void mangle_type(Buf* b, SType* t) {
         return;
     }
     case SK_OPT: buf_put8(b, 'o'); mangle_type(b, t->base); return;
-    case SK_STRUCT: case SK_ENUM: case SK_INTERFACE:
+    case SK_STRUCT: case SK_ENUM: case SK_CONTRACT:
         buf_put8(b, t->kind == SK_STRUCT ? 'S' : t->kind == SK_ENUM ? 'E' : 'I');
         mangle_name(b, t->name);
         if (t->nargs) {
@@ -1915,12 +1915,12 @@ static int gen_addr(Em* e, Node* x) {
 
 static EV gen_call(Em* e, Node* call) {
     Node* callee = call->a;
-    // Explicit interface construction: Shape(&value) / Shape[T](&value).
+    // Explicit contract construction: Shape(&value) / Shape[T](&value).
     if (call->d && call->d->kind == N_CONFORMANCE) {
         SType* pt = node_ty(call->kids[0]);
         SType* conc = pt && pt->kind == SK_PTR ? pt->base : NULL;
-        SType* iface = node_ty(call);
-        ESym* vs = emit_vtable(e, conc, iface, call->d);
+        SType* contract = node_ty(call);
+        ESym* vs = emit_vtable(e, conc, contract, call->d);
         uint32_t off = temp_slot(e, 16, 8);
         EV d = gen_expr(e, call->kids[0]);
         int t = tmp_int(e);
@@ -1984,10 +1984,10 @@ static EV gen_call(Em* e, Node* call) {
         em_err(e, call, "generic stamp not found");
         return (EV){ CLS_INT, tmp_int(e) };
     }
-    // interface dispatch: s.area() / mut s.scale(2.0)
+    // contract dispatch: s.area() / mut s.scale(2.0)
     if (callee->kind == N_FIELD_E && !call->sym) {
         SType* it = node_ty(callee->a);
-        if (it && it->kind == SK_INTERFACE) {
+        if (it && it->kind == SK_CONTRACT) {
             int midx = -1;
             for (int i = 0; i < it->decl->nkids; i++) {
                 Node* m = it->decl->kids[i];
@@ -1998,11 +1998,11 @@ static EV gen_call(Em* e, Node* call) {
                 em_err(e, call, "no such method");
                 return (EV){ CLS_INT, tmp_int(e) };
             }
-            // evaluate the interface value, load fn + data (spill-safe temps)
+            // evaluate the contract value, load fn + data (spill-safe temps)
             spill_temps(e);
             EV iv = gen_expr(e, callee->a);
             if (iv.cls != CLS_ADDR) {
-                em_err(e, call, "interface value must be in memory");
+                em_err(e, call, "contract value must be in memory");
                 return iv;
             }
             int vt = tmp_int(e), fn = tmp_int(e), data = tmp_int(e);
@@ -2337,8 +2337,8 @@ static EV gen_expr(Em* e, Node* x) {
             return (EV){ CLS_INT, it };
         }
         SType* bt = node_ty(x->a);
-        if (bt && unwrap(bt) && unwrap(bt)->kind == SK_INTERFACE) {
-            em_err(e, x, "interface method values must be called");
+        if (bt && unwrap(bt) && unwrap(bt)->kind == SK_CONTRACT) {
+            em_err(e, x, "contract method values must be called");
             return (EV){ CLS_INT, tmp_int(e) };
         }
         SType* t = node_ty(x);
@@ -3228,36 +3228,36 @@ static void emit_global(Em* e, Node* n) {
 
 // --- vtables ---------------------------------------------------------------------------
 
-static const char* vtable_name(SType* conc, SType* iface) {
+static const char* vtable_name(SType* conc, SType* contract) {
     Buf b = {0};
     buf_write(&b, "__ace$vt$", 9);
     mangle_type(&b, conc);
     buf_put8(&b, '$');
-    mangle_type(&b, iface);
+    mangle_type(&b, contract);
     buf_put8(&b, 0);
     const char* out = arena_copy((const char*)b.d, b.len - 1);
     free(b.d);
     return out;
 }
 
-static ESym* emit_vtable(Em* e, SType* conc, SType* iface, Node* conf) {
-    if (!conc || !iface || !conf) {
-        em_err(e, conf, "invalid interface conformance in codegen");
+static ESym* emit_vtable(Em* e, SType* conc, SType* contract, Node* conf) {
+    if (!conc || !contract || !conf) {
+        em_err(e, conf, "invalid contract conformance in codegen");
         return sym_intern(&e->syms, "__ace$vt$invalid", 16);
     }
-    const char* nm = vtable_name(conc, iface);
+    const char* nm = vtable_name(conc, contract);
     ESym* prior = sym_intern(&e->syms, nm, (uint32_t)strlen(nm));
     if (prior->type) return prior;
     Sec* c = &e->secs[SEC_CONST];
     while (c->data.len % 8) buf_put8(&c->data, 0);
     ESym* out = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, c);
-    for (int i = 0; i < iface->decl->nkids; i++) { // interface method order
+    for (int i = 0; i < contract->decl->nkids; i++) { // contract method order
         uint32_t off = (uint32_t)c->data.len;
         Node* ref = i < conf->nkids ? conf->kids[i] : NULL;
         Sym* fsym = ref ? node_sym(ref) : NULL;
         if (!fsym) {
-            Node* m = iface->decl->kids[i];
-            em_err(e, conf, "impl misses method '%.*s' (sema gap)", (int)m->len, m->str);
+            Node* m = contract->decl->kids[i];
+            em_err(e, conf, "signing misses method '%.*s' (sema gap)", (int)m->len, m->str);
             buf_put64(&c->data, 0);
             continue;
         }
@@ -3285,14 +3285,14 @@ static ESym* emit_vtable(Em* e, SType* conc, SType* iface, Node* conf) {
     return out;
 }
 
-static void emit_impl(Em* e, Node* impl) {
+static void emit_signing(Em* e, Node* signing) {
     // Generic contracts are materialized per exact pair at construction sites.
-    if (impl->c) return;
-    SType* conc = sema_build_type(impl->a);
-    for (int i = 0; i < impl->nkids; i++) {
-        SType* iface = node_ty(impl->kids[i]->a);
-        if (!iface) iface = sema_build_type(impl->kids[i]->a);
-        emit_vtable(e, conc, iface, impl->kids[i]);
+    if (signing->c) return;
+    SType* conc = sema_build_type(signing->a);
+    for (int i = 0; i < signing->nkids; i++) {
+        SType* contract = node_ty(signing->kids[i]->a);
+        if (!contract) contract = sema_build_type(signing->kids[i]->a);
+        emit_vtable(e, conc, contract, signing->kids[i]);
     }
 }
 
@@ -3750,8 +3750,8 @@ int emit_object(Node* file, Diag* d, const char* out_path,
         case N_VAR:
             emit_global(&e, n);
             break;
-        case N_IMPL:
-            emit_impl(&e, n);
+        case N_SIGNING:
+            emit_signing(&e, n);
             break;
         default:
             break; // types/imports/externs: no code

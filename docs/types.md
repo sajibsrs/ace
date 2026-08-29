@@ -62,7 +62,7 @@ sequences.
 ## Optional types
 
 `T?` adds `null` to a type. Plain `T` is never null. Pointer, slice, string, and
-interface optionals use an existing null niche; other values carry a tag.
+contract optionals use an existing null niche; other values carry a tag.
 
 ```ace
 maybe: *Point? = null
@@ -135,21 +135,24 @@ box.value = 13
 Every used type tuple has a concrete layout. Ace performs no constraint or trait
 solving.
 
-## Interfaces
+## Contracts
 
-An interface value is two words: a const vtable pointer and a data pointer. A
-struct has one canonical contract listing every interface it implements, and
-construction explicitly names the target interface. There is no inheritance,
+A contract value is two words: a const vtable pointer and a data pointer. A
+struct has one canonical signing listing every contract it fulfills, and
+construction explicitly names the target contract. There is no inheritance,
 runtime lookup, or trait solving.
 
+An Ace contract is a required method set. It does not introduce preconditions,
+postconditions, assertions, or hidden runtime checking.
+
 ```ace
-Value: interface {
+Value: contract {
     get(): int
 }
 
 Number: struct { value: int }
 
-Number impl Value
+Number signs Value
 
 Number.get(): int {
     return self.value
@@ -173,17 +176,17 @@ mut Number.set(value: int) {
 mut number.set(21)
 ```
 
-One contract may list multiple interfaces on one line:
+One signing may list multiple contracts on one line:
 
 ```ace
-Number impl Value, Printable
+Number signs Value, Printable
 ```
 
 Bare comma-separated lists cannot cross a newline. Use parentheses when the
 contract list needs multiple lines:
 
 ```ace
-Number impl (
+Number signs (
     Value,
     Printable,
 )
@@ -191,13 +194,13 @@ Number impl (
 
 Single-line contract lists omit the parentheses, giving each layout one
 canonical spelling.
-A second `Number impl` declaration is an error. Interface calls dispatch through
+A second `Number signs` declaration is an error. Contract calls dispatch through
 the generated const vtable; concrete method overloads remain compile-time direct
 calls. `Type.method(...)` is available for a disambiguated direct call, but a
 bare `Type.method` is not a function value.
 
-Contracts and methods are private by default. Put visibility first:
-`pub Number impl Value` and `pub mut Number.set(value: int)`. An interface
+Signings and methods are private by default. Put visibility first:
+`pub Number signs Value` and `pub mut Number.set(value: int)`. A contract
 over const backing storage may be read, but mutating dispatch through it is a
 compile error.
 
