@@ -3491,7 +3491,7 @@ static void emit_debug_line(Em* e, ESym* text_anchor) {
 
 // --- Mach-O object writing ----------------------------------------------------------
 
-static void write_object(Em* e, const char* path) {
+static size_t write_object(Em* e, const char* path) {
     // Section size = data length for file-backed sections (bss is reserved).
     for (int i = 0; i < NSECS; i++)
         if (!(e->secs[i].flags & S_ZEROFILL))
@@ -3661,6 +3661,7 @@ static void write_object(Em* e, const char* path) {
     buf_patch32(&o, symcmd + 8, symoff);
     buf_patch32(&o, symcmd + 16, stroff);
 
+    size_t object_size = o.len;
     FILE* fp = fopen(path, "wb");
     if (!fp) {
         fprintf(stderr, "ace: cannot write '%s'\n", path);
@@ -3673,11 +3674,13 @@ static void write_object(Em* e, const char* path) {
     free(o.d);
     free(order);
     for (int i = 0; i < NSECS; i++) free(relocs[i].d);
+    return e->d->errors ? 0 : object_size;
 }
 
 // --- entry ---------------------------------------------------------------------------
 
-int emit_object(Node* file, Diag* d, const char* out_path) {
+int emit_object(Node* file, Diag* d, const char* out_path,
+                CompileReport* report) {
     static const Sec PROTO[NSECS] = {
         [SEC_TEXT]       = { .sect = "__text",       .seg = "__TEXT",
                              .flags = S_ATTR_PURE_INSTRUCTIONS |
@@ -3756,9 +3759,11 @@ int emit_object(Node* file, Diag* d, const char* out_path) {
     }
     patch_fixups(&e);
     if (d->errors) return 1;
+    if (report) report->machine_code = text(&e)->len;
     ESym* text_anchor = sym_intern(&e.syms, "__ace$text", 10);
     emit_debug_info(&e, text_anchor);
     emit_debug_line(&e, text_anchor);
-    write_object(&e, out_path);
+    size_t object_size = write_object(&e, out_path);
+    if (report) report->object_file = object_size;
     return d->errors ? 1 : 0;
 }

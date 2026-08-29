@@ -4,13 +4,47 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 static void usage(void) {
-    fprintf(stderr, "usage: ace [--tokens] [--ast] [-c] [-o NAME] <file.ace>\n"
+    fprintf(stderr, "usage: ace [--tokens] [--ast] [--report] [-c] [-o NAME] <file.ace>\n"
                     "  (default)  full semantic check, no codegen\n"
+                    "  --report   print compilation statistics to stderr\n"
                     "  -c         emit a Mach-O arm64 object <base>.o\n"
                     "  -o NAME    emit + link via the system cc: cc <obj> -o NAME\n");
     exit(2);
+}
+
+static uint64_t monotonic_ns(void) {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0;
+    return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
+
+static void print_grouped(uint64_t value) {
+    if (value >= 1000) {
+        print_grouped(value / 1000);
+        fprintf(stderr, ",%03llu", (unsigned long long)(value % 1000));
+    } else {
+        fprintf(stderr, "%llu", (unsigned long long)value);
+    }
+}
+
+static void report_count(const char* label, uint64_t value, const char* suffix) {
+    fprintf(stderr, "%-17s", label);
+    print_grouped(value);
+    fprintf(stderr, "%s\n", suffix);
+}
+
+static void print_report(CompileReport* report) {
+    fprintf(stderr, "Ace compile report:\n--------------------\n");
+    report_count("source files:", report->source_files, "");
+    report_count("source bytes:", report->source_bytes, "");
+    report_count("tokens:", report->tokens, "");
+    report_count("machine code:", report->machine_code, " bytes");
+    report_count("object file:", report->object_file, " bytes");
+    fprintf(stderr, "%-17s%.2f ms\n", "compile time:",
+            (double)report->compile_ns / 1000000.0);
 }
 
 static void dump_tokens(Token* toks, size_t n) {
@@ -55,12 +89,13 @@ static void obj_path(char* out, size_t cap, const char* src) {
 }
 
 int main(int argc, char** argv) {
-    int dump_tok = 0, dump_ast = 0, opt_c = 0, opt_link = 0;
+    int dump_tok = 0, dump_ast = 0, show_report = 0, opt_c = 0, opt_link = 0;
     const char* path = NULL;
     const char* out_name = NULL;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--tokens") == 0) dump_tok = 1;
         else if (strcmp(argv[i], "--ast") == 0) dump_ast = 1;
+        else if (strcmp(argv[i], "--report") == 0) show_report = 1;
         else if (strcmp(argv[i], "-c") == 0) opt_c = 1;
         else if (strcmp(argv[i], "-o") == 0) {
             if (i + 1 >= argc) usage();
@@ -73,15 +108,28 @@ int main(int argc, char** argv) {
     }
     if (!path) usage();
 
+    uint64_t started = show_report ? monotonic_ns() : 0;
+    CompileReport report = {0};
+
     Source s;
     if (source_load(&s, path) != 0) return 1;
+    if (show_report) {
+        report.source_files = 1;
+        report.source_bytes = s.len;
+    }
 
     Diag d = {path, 0};
     size_t ntok;
     Token* toks = lex(&s, &d, &ntok);
+    if (show_report && ntok) report.tokens = ntok - 1; // exclude EOF
     if (dump_tok) { // --tokens: lexing only
         dump_tokens(toks, ntok);
         if (d.errors > 0) goto done;
+        if (show_report) {
+            uint64_t ended = monotonic_ns();
+            report.compile_ns = ended >= started ? ended - started : 0;
+            print_report(&report);
+        }
         return 0;
     }
     if (d.errors > 0) goto done;
@@ -91,9 +139,14 @@ int main(int argc, char** argv) {
         if (d.errors > 0) goto done;
         if (dump_ast) { // --ast: through the parser only
             parse_dump(file);
+            if (show_report) {
+                uint64_t ended = monotonic_ns();
+                report.compile_ns = ended >= started ? ended - started : 0;
+                print_report(&report);
+            }
             return 0;
         }
-        resolve_imports(file, &d, argv[0]);
+        resolve_imports(file, &d, argv[0], show_report ? &report : NULL);
         if (d.errors > 0) goto done;
         sema_check(file, &d); // default mode: full semantic check
         if (d.errors > 0) goto done;
@@ -104,7 +157,10 @@ int main(int argc, char** argv) {
                 snprintf(obj, sizeof obj, "%s.o", out_name);
             else
                 obj_path(obj, sizeof obj, path);
-            if (emit_object(file, &d, obj) != 0 || d.errors > 0) return 1;
+            if (emit_object(file, &d, obj, show_report ? &report : NULL) != 0 ||
+                d.errors > 0)
+                return 1;
+            uint64_t compile_done = show_report ? monotonic_ns() : 0;
             if (opt_link) {
                 char cmd[8192];
                 snprintf(cmd, sizeof cmd, "cc '%s' -o '%s'", obj, out_name);
@@ -114,6 +170,14 @@ int main(int argc, char** argv) {
                     return 1;
                 }
             }
+            if (show_report) {
+                report.compile_ns = compile_done >= started ? compile_done - started : 0;
+                print_report(&report);
+            }
+        } else if (show_report) {
+            uint64_t ended = monotonic_ns();
+            report.compile_ns = ended >= started ? ended - started : 0;
+            print_report(&report);
         }
     }
 

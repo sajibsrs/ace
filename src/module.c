@@ -53,6 +53,7 @@ struct Module {
 typedef struct {
     Diag*       d;
     const char* compiler_path;
+    CompileReport* report;
     Module*     mods;    // completed modules, dependency order
     Module*     loading; // in-progress stack (cycle detection/chain)
     const char** prefixes; int nprefixes, cprefixes;
@@ -131,9 +132,14 @@ static Node* load_module(Loader* L, const char* path) {
     const char* stable = arena_string(path);
     Source src;
     if (source_load(&src, stable) != 0) return NULL; // message already printed
+    if (L->report) {
+        L->report->source_files++;
+        L->report->source_bytes += src.len;
+    }
     Diag d = { stable, 0 };
     size_t ntok = 0;
     Token* toks = lex(&src, &d, &ntok);
+    if (L->report && ntok) L->report->tokens += ntok - 1; // exclude EOF
     if (d.errors) { L->d->errors += d.errors; return NULL; }
     Node* file = parse(toks, ntok, &d);
     if (d.errors) { L->d->errors += d.errors; return NULL; }
@@ -653,10 +659,12 @@ static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root
 
 // --- entry -------------------------------------------------------------------------------
 
-int resolve_imports(Node* file, Diag* d, const char* compiler_path) {
+int resolve_imports(Node* file, Diag* d, const char* compiler_path,
+                    CompileReport* report) {
     Loader L = {0};
     L.d = d;
     L.compiler_path = compiler_path;
+    L.report = report;
 
     const char* root_canon = canonicalize(d->path);
     if (!root_canon) root_canon = arena_string(d->path);

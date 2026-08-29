@@ -69,6 +69,35 @@ if [ -d tests/emit ]; then
         echo "FAIL: -o mode exited $got, want 42"
         fail=1
     fi
+    # --report writes whole-compilation statistics to stderr. welcome imports
+    # fmt, so the source-file count also verifies imported-module accounting.
+    report=$(cd /tmp/ace_emit && "$ACE" --report -c welcome.ace 2>&1 >/dev/null)
+    if ! printf '%s\n' "$report" | grep -q '^Ace compile report:$'; then
+        echo "FAIL: --report heading missing"
+        fail=1
+    fi
+    if ! printf '%s\n' "$report" | grep -q '^--------------------$'; then
+        echo "FAIL: --report separator missing"
+        fail=1
+    fi
+    if ! printf '%s\n' "$report" | grep -q 'source files:.*2$'; then
+        echo "FAIL: --report should count root + imported fmt source"
+        fail=1
+    fi
+    for label in 'source bytes:' 'tokens:' 'machine code:' 'object file:' 'compile time:'; do
+        if ! printf '%s\n' "$report" | grep -q "$label"; then
+            echo "FAIL: --report missing '$label'"
+            fail=1
+        fi
+    done
+    if ! printf '%s\n' "$report" | grep -q 'machine code:.*[1-9][0-9,]* bytes$'; then
+        echo "FAIL: --report machine-code size should be nonzero"
+        fail=1
+    fi
+    if ! printf '%s\n' "$report" | grep -q 'object file:.*[1-9][0-9,]* bytes$'; then
+        echo "FAIL: --report object-file size should be nonzero"
+        fail=1
+    fi
     # Darwin's DWARF reader must see both the source rows and the minimal
     # compile-unit/function metadata used to preserve them through linking.
     if command -v dwarfdump >/dev/null 2>&1; then

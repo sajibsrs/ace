@@ -21,6 +21,8 @@ must be corrected.
   `pub` visibility, qualified access, dependency loading, and cycles.
 - [Standard library](standard-library.md) — the shipped `std/` modules and
   their implemented APIs.
+- [Compiler usage](compiler.md) — checking, object emission, linking, and the
+  optional compile report.
 
 Repository implementation status is intentionally kept in
 [`../AGENTS.md`](../AGENTS.md), outside this guide.

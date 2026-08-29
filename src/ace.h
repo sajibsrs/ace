@@ -68,6 +68,15 @@ typedef struct {
     size_t      len;
 } Source;
 
+typedef struct {
+    uint64_t source_files;
+    uint64_t source_bytes;
+    uint64_t tokens;
+    uint64_t machine_code;
+    uint64_t object_file;
+    uint64_t compile_ns;
+} CompileReport;
+
 int source_load(Source* s, const char* path);
 
 // Lex the whole source; returns a malloc'd token array terminated by T_EOF.
@@ -163,11 +172,13 @@ int sema_check(Node* file, Diag* d);
 // Load supported imports and merge their declarations into the compilation
 // unit. Imported member references remain qualified in source but are lowered
 // to private module-prefixed names before semantic checking.
-int resolve_imports(Node* file, Diag* d, const char* compiler_path);
+int resolve_imports(Node* file, Diag* d, const char* compiler_path,
+                    CompileReport* report);
 
 // Direct AArch64 codegen (stage four): walks the sema-checked AST and writes
 // a Mach-O arm64 object. Returns 0 on success. Sets emit_has_main.
-int emit_object(Node* file, Diag* d, const char* out_path);
+int emit_object(Node* file, Diag* d, const char* out_path,
+                CompileReport* report);
 extern int emit_has_main;
 
 #endif
