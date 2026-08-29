@@ -259,6 +259,7 @@ if ! ./ace --ast tests/lexer/numbers.ok.ace | grep -qF "op='>>'"; then
 fi
 
 if [ $fail -eq 0 ]; then
+    echo "\n--------------------"
     echo "all tests passed"
 fi
 exit $fail
