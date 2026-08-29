@@ -21,6 +21,13 @@ for f in tests/lexer/*.err.ace tests/parser/*.err.ace; do
     fi
 done
 
+unknown_decl=$(./ace tests/parser/unknown_decl_type.err.ace 2>&1)
+if ! printf '%s\n' "$unknown_decl" | grep -qF \
+    "tests/parser/unknown_decl_type.err.ace:1:8: error: unknown declaration type 'protocol'"; then
+    echo "FAIL: unknown declaration type should point at the type name"
+    fail=1
+fi
+
 for f in tests/sema/*.ok.ace; do
     if ! ./ace "$f" >/dev/null 2>/tmp/ace_test_errs; then
         echo "FAIL (should check clean): $f"

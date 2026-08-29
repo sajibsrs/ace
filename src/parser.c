@@ -1245,6 +1245,8 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
             is_const = 1;
             p->i++;
         }
+        if (at(p, T_IDENT) && kth(p, 1) == T_LBRACE)
+            perr(p, "unknown declaration type '%.*s'", (int)tk(p)->len, tk(p)->str);
         Node* binder = nd_tok(p, N_PARAM, name);
         binder->str = name->str;
         binder->len = name->len;
