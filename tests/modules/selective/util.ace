@@ -1,0 +1,42 @@
+pub Point: struct {
+    x: int,
+    y: int,
+}
+
+pub Color: enum { red, blue }
+
+pub origin: Point = Point { x: 10, y: 20 }
+
+pub score(value: int): int {
+    return value + 1
+}
+
+pub score(value: usize): int {
+    return int(value) + 2
+}
+
+pub Thing: struct {
+    value: int,
+}
+
+pub Thing(value: int): int {
+    return value + 3
+}
+
+pub TypeOnly: struct {
+    value: int,
+}
+
+TypeOnly(value: int): int {
+    return value
+}
+
+ValueOnly: struct {
+    value: int,
+}
+
+pub ValueOnly(value: int): int {
+    return value
+}
+
+private_value: int = 7

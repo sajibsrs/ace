@@ -1,0 +1,6 @@
+import one,
+    two from alpha
+
+main(): int {
+    return 0
+}

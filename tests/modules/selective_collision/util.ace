@@ -1,0 +1,3 @@
+pub work(): int {
+    return 1
+}

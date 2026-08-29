@@ -2129,14 +2129,15 @@ static EV gen_call(Em* e, Node* call) {
         load_imm(e, 1, xreg(t), call->ival);
         return (EV){ CLS_INT, t };
     }
-    if (callee->kind == N_IDENT && !call->sym && call->ival == 2 &&
-        callee->len == 5 && memcmp(callee->str, "alloc", 5) == 0)
+    Sym* intrinsic = call->sym ? node_sym(call) : NULL;
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival == BI_MEM_ALLOC && call->ival == BI_MEM_ALLOC)
         return gen_alloc_builtin(e, call);
-    if (callee->kind == N_IDENT && !call->sym && call->ival == 3 &&
-        callee->len == 7 && memcmp(callee->str, "realloc", 7) == 0)
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival == BI_MEM_REALLOC && call->ival == BI_MEM_REALLOC)
         return gen_realloc_builtin(e, call);
-    if (callee->kind == N_IDENT && !call->sym && call->ival == 4 &&
-        callee->len == 7 && memcmp(callee->str, "release", 7) == 0)
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival == BI_MEM_RELEASE && call->ival == BI_MEM_RELEASE)
         return gen_release_builtin(e, call);
     // panic(message): write the bytes to stderr best-effort, then abort —
     // both undefined externals resolved by the system linker (spec Errors #15).
@@ -4036,6 +4037,9 @@ int emit_object(Node* file, Diag* d, const char* out_path,
         Node* n = file->kids[i];
         switch (n->kind) {
         case N_FUNC: {
+            if (n->ival == BI_MEM_ALLOC || n->ival == BI_MEM_REALLOC ||
+                n->ival == BI_MEM_RELEASE)
+                break; // compiler-backed std/mem declarations have no body symbol
             if (n->c) { // generic: one function per instantiation memo entry
                 int nt = n->c->nkids;
                 for (STypeInst* inst = sema_insts(n); inst; inst = inst->next) {

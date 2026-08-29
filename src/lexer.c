@@ -187,7 +187,8 @@ static const struct {
     const char* s;
     TokKind     k;
 } KEYWORDS[] = {
-    {"import", T_IMPORT},     {"pub", T_PUB},           {"mut", T_MUT},
+    {"import", T_IMPORT},     {"from", T_FROM},         {"pub", T_PUB},
+    {"mut", T_MUT},
     {"const", T_CONST},       {"noalias", T_NOALIAS},   {"if", T_IF},
     {"else", T_ELSE},         {"for", T_FOR},           {"in", T_IN},
     {"switch", T_SWITCH},     {"return", T_RETURN},     {"break", T_BREAK},

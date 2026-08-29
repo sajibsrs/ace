@@ -1,0 +1,22 @@
+import Point, Color, origin, score, Thing, TypeOnly, ValueOnly from "./util.ace"
+// expect-exit: 42
+
+keep(score: int): int {
+    return score
+}
+
+keep_type[Point](value: Point): Point {
+    return value
+}
+
+main(): int {
+    p: Point = origin
+    boxed: Thing = {value: p.x}
+    type_only: TypeOnly = {value: 0}
+    if sizeof(Point) == 0 || typeid(Point) != typeid(Point) {
+        return 1
+    }
+    answer: int = score(p.x) + score(usize(p.y)) + keep(5) +
+        int(Color.blue) + keep_type[int](0) + type_only.value + ValueOnly(0)
+    return Thing(answer + boxed.value - p.x)
+}

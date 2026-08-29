@@ -15,15 +15,15 @@ must be corrected.
 - [Types and declarations](types.md) — explicit declarations, aliases, distinct
   types, pointers, optionals, arrays, slices, tuples, structs, enums, contracts,
   and generic types.
-- [Memory](memory.md) — `sizeof`, sequence lengths, global allocation,
+- [Memory](memory.md) — `sizeof`, sequence lengths, `mem` allocation,
   reallocation, explicit release, slice aliasing, and current diagnostics.
 - [Functions](function.md) — declarations, parameters, returns, mutation,
   overloads, function values, generics, and the program entry point.
 - [Errors](errors.md) — the `Error` handle, static `ErrorDescriptor`
   construction, `typeid` domains, exact identity matching, module boundaries,
   and the reserved `panic(message)` builtin.
-- [Modules](module.md) — imports (standard-library and relative local paths),
-  `pub` visibility, qualified access, dependency loading, and cycles.
+- [Modules](module.md) — qualified and selective imports, standard-library and
+  relative local sources, `pub` visibility, dependency loading, and cycles.
 - [Standard library](standard-library.md) — the shipped `std/` modules and
   their implemented APIs.
 - [Compiler usage](compiler.md) — checking, object emission, linking, and the

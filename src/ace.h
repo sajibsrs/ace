@@ -11,7 +11,8 @@
     X(NL, "newline")                                                           \
     X(IDENT, "ident")                                                          \
     /* keywords (v1 inventory, spec.md Pre-Implementation Checklist #2) */     \
-    X(IMPORT, "import") X(PUB, "pub") X(MUT, "mut") X(CONST, "const")          \
+    X(IMPORT, "import") X(FROM, "from") X(PUB, "pub") X(MUT, "mut")           \
+    X(CONST, "const")                                                          \
     X(NOALIAS, "noalias") X(IF, "if") X(ELSE, "else") X(FOR, "for")            \
     X(IN, "in") X(SWITCH, "switch") X(RETURN, "return") X(BREAK, "break")      \
     X(CONTINUE, "continue") X(ASM, "asm") X(EXTERN, "extern")                  \
@@ -128,7 +129,16 @@ const char* node_kind_name(NKind k);
 
 enum {
     F_PUB = 1, F_EXPO = 2, F_MUT = 4, F_NOALIAS = 8, F_CONST = 16,
-    F_ELSE = 32, F_VARARGS = 64, F_METHOD = 128,
+    F_ELSE = 32, F_VARARGS = 64, F_METHOD = 128, F_SELECT = 256,
+};
+
+// Compiler-backed functions declared by std/mem.ace. These markers live only
+// on that module's declaration/call nodes; the names themselves are ordinary
+// imported names and are never predeclared globally.
+enum {
+    BI_MEM_ALLOC = 2,
+    BI_MEM_REALLOC = 3,
+    BI_MEM_RELEASE = 4,
 };
 
 typedef struct Node Node;
@@ -170,8 +180,8 @@ void parse_dump(Node* file);
 int sema_check(Node* file, Diag* d);
 
 // Load supported imports and merge their declarations into the compilation
-// unit. Imported member references remain qualified in source but are lowered
-// to private module-prefixed names before semantic checking.
+// unit. Qualified and selectively imported references are lowered to private
+// module-prefixed names before semantic checking.
 int resolve_imports(Node* file, Diag* d, const char* compiler_path,
                     CompileReport* report);
 

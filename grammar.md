@@ -10,7 +10,7 @@ line_comment  := "//" (any – newline) newline
 block_comment := "/*" (any – "*/")* "*/"       // non-nesting; a newline inside acts as a newline
 newline       := significant — terminates statements (see §6 Notes)
 
-keyword       := "import" | "pub" | "mut" | "const" | "noalias" | "if" | "else"
+keyword       := "import" | "from" | "pub" | "mut" | "const" | "noalias" | "if" | "else"
                | "for" | "in" | "switch" | "return" | "break" | "continue"
                | "asm" | "extern" | "export" | "contract" | "struct" | "signs"
                | "distinct" | "type" | "enum" | "null" | "true" | "false"
@@ -28,8 +28,15 @@ char_lit      := "'" (char – "'" | '\' escape) "'"
 ```ebnf
 file          := import_decl* top_decl*
 
-import_decl   := "import" ident (":" import_path)?        // alias: import m: math
-import_path   := string_lit                               // std bare, local by path
+import_decl   := module_import | selective_import
+module_import := "import" ident (":" (ident | import_path))?
+                                                          // import math; import m: math
+                                                          // import util: "./util.ace"
+selective_import := "import" import_names "from" import_source
+import_names  := ident ("," ident)*
+               | "(" ident ("," ident)* ","? ")"        // parenthesized = multiline
+import_source := ident | import_path                       // std name or local path
+import_path   := string_lit
 
 top_decl      := "pub"? top_body
 top_body      := var_decl | const_decl | func_decl | struct_decl
@@ -173,9 +180,10 @@ ret_types     := type | "(" type ("," type)+ ")"
 5. **Comparison chaining is a distinct production** (`cmp_expr` with `+`): `a < b < c` is one grammar node, not nested binaries; each operand evaluates once.
 6. **`&mut q` / `mut &q`** (write-capable address-of) is still `[P]` — parked in spec.md (Names/Mutability).
 7. **Keywords reserved but unused in v1 grammar:** `noalias` appears only as a parameter modifier; `export` only in extern blocks and on declarations (`pub export`).
-8. **Bare comma lists are single-line.** Delimited lists (params, fields, enum members, call args, array/struct literals, type lists) may span lines and allow trailing commas. Signing lists use the bare form on one line (`Circle signs Shape, Color`) and a parenthesized form across lines; single-line parentheses are rejected as redundant.
+8. **Bare comma lists are single-line.** Delimited lists (params, fields, enum members, call args, array/struct literals, type lists) may span lines and allow trailing commas. Signing and selective-import lists use their bare forms on one line (`Circle signs Shape, Color`; `import min, max from math`) and parenthesized forms across lines; single-line parentheses are rejected as redundant.
 9. **`?` binds loosest in types:** `*T?` is a nullable pointer, `[]T?` an optional slice (spec.md Memory #6 wins). Pointer-to-optional is written `*(T?)`.
 10. **Struct literals are suppressed where `{` would open a block** — statement starts and if/for/switch heads (Go's composite-literal rule); parenthesize to use a literal there. `Type{...}` postfix and bare `{...}` in expression contexts both parse.
 11. **Operator precedence is the C table**, including the bitwise/shift levels shown above; asm `in:` uses the `in` keyword as the binding kind, and asm register values may be immediates (`x16 = 3`).
 12. **Method declarations are type-owned.** `self` is inserted contextually as a read-only receiver; leading `mut` grants writes. A leading `pub` must precede `mut`. In expressions, `Type.method(...)` is a direct call, but bare `Type.method` is not a method value.
 13. **Intrinsic `.len` is sequence-only.** The ordinary `"." ident` postfix carries it syntactically, while semantics admit the intrinsic only for arrays (constant element count), slices (stored element count), and strings (stored byte count). Other types have no intrinsic `.len`; a struct may independently declare an ordinary field with that name.
+14. **Selective imports preserve the namespaces.** Each selected spelling imports every public declaration of that name from its source module: a function's complete public overload set enters the value namespace, while types enter the type namespace. Same-namespace import/declaration collisions are errors; nested lexical bindings may shadow selected values normally.

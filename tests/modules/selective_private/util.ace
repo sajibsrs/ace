@@ -1,0 +1,3 @@
+hidden(): int {
+    return 1
+}

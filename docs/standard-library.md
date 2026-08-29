@@ -9,13 +9,26 @@ Today's modules:
 
 - `fmt` — allocation-free text output
 - `math` — minimal generic helpers
+- `mem` — the fixed raw allocation layer
 
-Everything else in the planned v1 set (`mem`, `sys`, `str`, `simd`) does not
+Everything else in the planned v1 set (`sys`, `str`, `simd`) does not
 exist yet.
 
-Raw allocation is already implemented as the predeclared global
-`alloc`/`realloc`/`release` layer, not as an imported module or allocator
-object. See [Memory](memory.md).
+`mem` exports `alloc`, `realloc`, and `release`. Import it qualified or select
+those names explicitly; there are no unimported global allocation functions.
+The current bootstrap compiler lowers these exact standard-module functions
+directly to the platform allocator, with no extra call, allocation header, or
+registry. See [Memory](memory.md).
+
+```ace
+import alloc, release from mem
+
+main(): int {
+    data: []u8? = alloc(64, 8)
+    release(mut data)
+    return 0
+}
+```
 
 ## fmt
 

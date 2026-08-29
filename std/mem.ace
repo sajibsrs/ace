@@ -1,0 +1,16 @@
+// mem — the fixed process-wide raw allocation boundary.
+//
+// These declarations define the public Ace surface. The bootstrap compiler
+// recognizes this exact standard module and lowers calls directly to the
+// platform allocator; the fallback bodies are never emitted.
+pub alloc(size: int, align: int): []u8? {
+    return null
+}
+
+pub realloc(data: []u8, new_size: int): []u8? {
+    return null
+}
+
+pub release(mut data: []u8?) {
+    data = null
+}

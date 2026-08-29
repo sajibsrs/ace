@@ -1,4 +1,4 @@
-import l: "./leaf.ace"
+import leaf from "./leaf.ace"
 pub mid(): int {
-    return l.leaf() + 3
+    return leaf() + 3
 }

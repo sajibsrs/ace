@@ -1,4 +1,6 @@
 // expect-exit: 42
+import alloc, realloc, release from mem
+
 main(): int {
     fixed: [3]u8 = [1, 2, 3]
     if fixed.len != 3 {

@@ -1,0 +1,10 @@
+import one from alpha
+import two, three from beta
+import (
+    four,
+    five,
+) from "./local.ace"
+
+main(): int {
+    return 0
+}

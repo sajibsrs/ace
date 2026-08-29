@@ -1,0 +1,9 @@
+import work from "./util.ace"
+
+work(): int {
+    return 2
+}
+
+main(): int {
+    return work()
+}

@@ -7,8 +7,9 @@
 // and diagnoses cycles with the full chain. Each loaded module's surface is
 // lowered into one private module-prefixed namespace (`name$member`; `$`
 // cannot appear in source identifiers): declaration names and their in-module
-// references are renamed together, qualified references in the importing file
-// are rewritten to the prefixed names after a `pub` check, and extern
+// references are renamed together; qualified and selectively imported
+// references in the importing file are rewritten to prefixed names after a
+// `pub` check, and extern
 // declarations keep their C-boundary name in Node.cname for the linker.
 // The merged unit is ordered dependencies-first, so the single-pass checker
 // and emitter still see every name declared before use. Separate per-module
@@ -38,6 +39,16 @@ struct Binding {
     struct Module* mod;
     Node*       node; // the import declaration (diagnostics)
     Binding*    next;
+};
+
+typedef struct Select Select;
+struct Select {
+    const char* name;
+    uint32_t    len;
+    const char* value_name; // target module-private value identity, if any
+    const char* type_name;  // target module-private type identity, if any
+    Node*       node;       // selected member node (diagnostics)
+    Select*     next;
 };
 
 typedef struct Module Module;
@@ -215,6 +226,27 @@ static Member* find_member(Module* m, const char* name, uint32_t len, int is_typ
     return NULL;
 }
 
+static int is_std_mem_module(Loader* L, const char* canon) {
+    char dir[4096];
+    compiler_dir(dir, sizeof dir, L->compiler_path);
+    char path[4608];
+    if (strcmp(dir, ".") == 0) snprintf(path, sizeof path, "std/mem.ace");
+    else snprintf(path, sizeof path, "%s/std/mem.ace", dir);
+    const char* expected = canonicalize(path);
+    return expected && strcmp(expected, canon) == 0;
+}
+
+static void mark_mem_intrinsics(Loader* L, Module* m) {
+    if (!is_std_mem_module(L, m->canon)) return;
+    for (int i = 0; i < m->file->nkids; i++) {
+        Node* n = m->file->kids[i];
+        if (n->kind != N_FUNC || !(n->flags & F_PUB)) continue;
+        if (text_is(n->str, n->len, "alloc")) n->ival = BI_MEM_ALLOC;
+        else if (text_is(n->str, n->len, "realloc")) n->ival = BI_MEM_REALLOC;
+        else if (text_is(n->str, n->len, "release")) n->ival = BI_MEM_RELEASE;
+    }
+}
+
 // Unique `name$` prefix per module; `$` never occurs in source identifiers,
 // so prefixed names cannot collide with root declarations, and distinct
 // modules can never share a prefixed member name.
@@ -269,8 +301,8 @@ static void report_cycle(Loader* L, Node* at, const char* canon) {
 }
 
 // Resolve one import declaration to its target path (arena storage).
-// Bare and ident-aliased imports come from the stdlib beside the compiler;
-// string paths are local and relative to the importing source file.
+// Bare, ident-aliased, and selective `from name` imports come from the stdlib
+// beside the compiler; string paths are local to the importing source file.
 static const char* import_target(Loader* L, Node* imp, const char* src_path) {
     if (imp->a) { // import util: "./util.ace" — path form
         Node* p = imp->a;
@@ -294,7 +326,7 @@ static const char* import_target(Loader* L, Node* imp, const char* src_path) {
         path_dir(dir, sizeof dir, src_path);
         return join_path(dir, raw);
     }
-    // bare `import fmt` or alias `import f: fmt` — stdlib only
+    // bare/alias import, or selective `from mem` — stdlib only
     Node* name = imp->b ? imp->b : imp;
     char stdname[512];
     if (name->len >= sizeof stdname) {
@@ -316,9 +348,17 @@ static const char* import_target(Loader* L, Node* imp, const char* src_path) {
     return arena_string(path);
 }
 
-static void bind(Loader* L, Node* imp, Module* mod, Binding** binds) {
+static void bind(Loader* L, Node* imp, Module* mod, Binding** binds, Select* sels) {
     for (Binding* b = *binds; b; b = b->next) {
         if (b->len == imp->len && memcmp(b->name, imp->str, imp->len) == 0) {
+            import_err(L->d, imp, "duplicate import binding '%.*s'",
+                       (int)imp->len, imp->str);
+            return;
+        }
+    }
+    for (Select* s = sels; s; s = s->next) {
+        if (s->value_name && s->len == imp->len &&
+            memcmp(s->name, imp->str, imp->len) == 0) {
             import_err(L->d, imp, "duplicate import binding '%.*s'",
                        (int)imp->len, imp->str);
             return;
@@ -332,6 +372,62 @@ static void bind(Loader* L, Node* imp, Module* mod, Binding** binds) {
     b->node = imp;
     b->next = *binds;
     *binds = b;
+}
+
+static const char* member_identity(Module* mod, const char* name, uint32_t len) {
+    size_t plen = strlen(mod->prefix);
+    char* out = arena_alloc(plen + len + 1);
+    memcpy(out, mod->prefix, plen);
+    memcpy(out + plen, name, len);
+    out[plen + len] = 0;
+    return out;
+}
+
+static void select_members(Loader* L, Node* imp, Module* mod,
+                           Binding* binds, Select** sels) {
+    for (int i = 0; i < imp->nkids; i++) {
+        Node* name = imp->kids[i];
+        Member* vm = find_member(mod, name->str, name->len, 0);
+        Member* tm = find_member(mod, name->str, name->len, 1);
+        if (!vm && !tm) {
+            import_err(L->d, name, "module has no public member '%.*s'",
+                       (int)name->len, name->str);
+            continue;
+        }
+        int value_public = vm && vm->pub;
+        int type_public = tm && tm->pub;
+        if (!value_public && !type_public) {
+            import_err(L->d, name, "member '%.*s' is not public",
+                       (int)name->len, name->str);
+            continue;
+        }
+        if (!value_public) vm = NULL;
+        if (!type_public) tm = NULL;
+        int dup_value = 0, dup_type = 0;
+        for (Select* s = *sels; s; s = s->next) {
+            if (s->len != name->len || memcmp(s->name, name->str, name->len) != 0)
+                continue;
+            dup_value |= vm && s->value_name;
+            dup_type |= tm && s->type_name;
+        }
+        for (Binding* b = binds; b; b = b->next)
+            if (vm && b->len == name->len &&
+                memcmp(b->name, name->str, name->len) == 0) dup_value = 1;
+        if (dup_value || dup_type) {
+            import_err(L->d, name, "duplicate import binding '%.*s'",
+                       (int)name->len, name->str);
+            continue;
+        }
+        Select* s = (Select*)arena_alloc(sizeof(Select));
+        memset(s, 0, sizeof *s);
+        s->name = name->str;
+        s->len = name->len;
+        if (vm) s->value_name = member_identity(mod, name->str, name->len);
+        if (tm) s->type_name = member_identity(mod, name->str, name->len);
+        s->node = name;
+        s->next = *sels;
+        *sels = s;
+    }
 }
 
 // Load (once) the module an import refers to and return it.
@@ -355,6 +451,7 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
     if (!file) return NULL;
     Module* m = module_new(L, canon, file);
     collect_members(L, m); // original names + pub-ness, before any renaming
+    mark_mem_intrinsics(L, m);
     m->next = L->loading; // push
     L->loading = m;
     resolve_file(L, file, canon, 0);
@@ -496,6 +593,269 @@ static void lower_qualified(Loader* L, Node* n, Binding* binds) {
     for (int i = 0; i < n->nkids; i++) lower_qualified(L, n->kids[i], binds);
 }
 
+// --- selective import lowering ------------------------------------------------------
+// Selected names are lowered with lexical-scope awareness. This is intentionally
+// separate from rename_refs: a parameter/local may shadow a selected value, while
+// a generic type parameter may shadow a selected type.
+
+typedef struct LocalName LocalName;
+struct LocalName {
+    const char* name;
+    uint32_t len;
+    int depth;
+    int is_type;
+    LocalName* next;
+};
+
+typedef struct {
+    Select* sels;
+    LocalName* locals;
+    int depth;
+} SelectLower;
+
+static Select* find_select(Select* sels, const char* name, uint32_t len, int is_type) {
+    for (Select* s = sels; s; s = s->next)
+        if (s->len == len && memcmp(s->name, name, len) == 0 &&
+            (is_type ? s->type_name != NULL : s->value_name != NULL))
+            return s;
+    return NULL;
+}
+
+static int local_name(SelectLower* c, const char* name, uint32_t len, int is_type) {
+    for (LocalName* n = c->locals; n; n = n->next)
+        if (n->is_type == is_type && n->len == len &&
+            memcmp(n->name, name, len) == 0) return 1;
+    return 0;
+}
+
+static void bind_local(SelectLower* c, const char* name, uint32_t len, int is_type) {
+    LocalName* n = (LocalName*)arena_alloc(sizeof(LocalName));
+    n->name = name;
+    n->len = len;
+    n->depth = c->depth;
+    n->is_type = is_type;
+    n->next = c->locals;
+    c->locals = n;
+}
+
+static void select_scope_push(SelectLower* c) { c->depth++; }
+
+static void select_scope_pop(SelectLower* c) {
+    while (c->locals && c->locals->depth == c->depth) c->locals = c->locals->next;
+    c->depth--;
+}
+
+static void replace_name(Node* n, const char* name) {
+    n->str = name;
+    n->len = (uint32_t)strlen(name);
+}
+
+static void lower_selected_node(Node* n, SelectLower* c);
+
+static void lower_selected_type(Node* t, SelectLower* c) {
+    if (!t) return;
+    if (t->kind == N_NAMED && !t->a &&
+        !local_name(c, t->str, t->len, 1)) {
+        Select* s = find_select(c->sels, t->str, t->len, 1);
+        if (s) replace_name(t, s->type_name);
+    }
+    lower_selected_type(t->a, c);
+    for (int i = 0; i < t->nkids; i++) lower_selected_type(t->kids[i], c);
+}
+
+static void lower_selected_type_ref(Node* n, SelectLower* c) {
+    if (!n) return;
+    if (n->kind == N_NAMED) {
+        lower_selected_type(n, c);
+        return;
+    }
+    Node* name = n->kind == N_INDEX ? n->a : n;
+    if (name && name->kind == N_IDENT &&
+        !local_name(c, name->str, name->len, 1)) {
+        Select* s = find_select(c->sels, name->str, name->len, 1);
+        if (s) replace_name(name, s->type_name);
+    }
+    if (n->kind == N_INDEX) {
+        lower_selected_type_ref(n->b, c);
+        for (int i = 0; i < n->nkids; i++) lower_selected_type_ref(n->kids[i], c);
+    }
+}
+
+static void lower_selected_block(Node* b, SelectLower* c) {
+    select_scope_push(c);
+    for (int i = 0; i < b->nkids; i++) lower_selected_node(b->kids[i], c);
+    select_scope_pop(c);
+}
+
+static void lower_selected_func(Node* f, SelectLower* c) {
+    select_scope_push(c);
+    if (f->c) {
+        for (int i = 0; i < f->c->nkids; i++)
+            bind_local(c, f->c->kids[i]->str, f->c->kids[i]->len, 1);
+    }
+    if (f->d) lower_selected_type(f->d, c);
+    for (int i = 0; i < f->nkids; i++) lower_selected_type(f->kids[i]->a, c);
+    lower_selected_type(f->a, c);
+    select_scope_push(c);
+    if (f->flags & F_METHOD) bind_local(c, "self", 4, 0);
+    for (int i = 0; i < f->nkids; i++)
+        bind_local(c, f->kids[i]->str, f->kids[i]->len, 0);
+    if (f->b) lower_selected_block(f->b, c);
+    select_scope_pop(c);
+    select_scope_pop(c);
+}
+
+static void lower_selected_node(Node* n, SelectLower* c) {
+    if (!n) return;
+    switch (n->kind) {
+    case N_IMPORT:
+        return;
+    case N_IDENT:
+        if (!local_name(c, n->str, n->len, 0)) {
+            Select* s = find_select(c->sels, n->str, n->len, 0);
+            if (!s) s = find_select(c->sels, n->str, n->len, 1);
+            if (s) replace_name(n, s->value_name ? s->value_name : s->type_name);
+        }
+        return;
+    case N_NAMED:
+        lower_selected_type(n, c);
+        return;
+    case N_FUNC:
+        lower_selected_func(n, c);
+        return;
+    case N_BLOCK:
+        lower_selected_block(n, c);
+        return;
+    case N_VAR:
+        for (int i = 0; i < n->nkids; i++) lower_selected_type(n->kids[i]->a, c);
+        lower_selected_node(n->b, c); // initializer precedes the new bindings
+        for (int i = 0; i < n->nkids; i++)
+            bind_local(c, n->kids[i]->str, n->kids[i]->len, 0);
+        return;
+    case N_FOR:
+        lower_selected_type(n->a, c);
+        lower_selected_node(n->b, c);
+        select_scope_push(c);
+        bind_local(c, n->str, n->len, 0);
+        lower_selected_node(n->c, c);
+        select_scope_pop(c);
+        return;
+    case N_STRUCT: case N_CONTRACT: case N_ALIAS:
+        select_scope_push(c);
+        if (n->c)
+            for (int i = 0; i < n->c->nkids; i++)
+                bind_local(c, n->c->kids[i]->str, n->c->kids[i]->len, 1);
+        if (n->kind == N_ALIAS) lower_selected_type(n->a, c);
+        else for (int i = 0; i < n->nkids; i++) {
+            Node* member = n->kids[i];
+            for (int j = 0; j < member->nkids; j++)
+                lower_selected_type(member->kids[j]->a, c);
+            lower_selected_type(member->a, c);
+        }
+        select_scope_pop(c);
+        return;
+    case N_DISTINCT:
+        lower_selected_type(n->a, c);
+        return;
+    case N_ENUM:
+        return; // enum member names are declarations, not references
+    case N_SIGNING:
+        select_scope_push(c);
+        if (n->c)
+            for (int i = 0; i < n->c->nkids; i++)
+                bind_local(c, n->c->kids[i]->str, n->c->kids[i]->len, 1);
+        lower_selected_type(n->a, c);
+        for (int i = 0; i < n->nkids; i++) lower_selected_type(n->kids[i]->a, c);
+        select_scope_pop(c);
+        return;
+    case N_EXTERN:
+        for (int i = 0; i < n->nkids; i++) {
+            Node* f = n->kids[i];
+            for (int j = 0; j < f->nkids; j++) lower_selected_type(f->kids[j]->a, c);
+            lower_selected_type(f->a, c);
+        }
+        return;
+    case N_FIELD_E:
+        lower_selected_node(n->a, c); // field spelling is member-local
+        return;
+    case N_FIELDINIT:
+        lower_selected_node(n->a, c); // initializer name is struct-local
+        return;
+    case N_STRUCTLIT:
+        lower_selected_type_ref(n->a, c);
+        for (int i = 0; i < n->nkids; i++) lower_selected_node(n->kids[i], c);
+        return;
+    case N_CALL:
+        if (n->a && n->a->kind == N_IDENT &&
+            !local_name(c, n->a->str, n->a->len, 0) &&
+            !find_select(c->sels, n->a->str, n->a->len, 0) &&
+            (text_is(n->a->str, n->a->len, "sizeof") ||
+             text_is(n->a->str, n->a->len, "typeid"))) {
+            for (int i = 0; i < n->nkids; i++) lower_selected_type_ref(n->kids[i], c);
+            return;
+        }
+        break;
+    case N_ASM:
+        for (int i = 0; i < n->nkids; i++) {
+            Node* b = n->kids[i];
+            int clob = b->len == 8 && memcmp(b->str, "clobbers", 8) == 0;
+            if (!clob)
+                for (int j = 1; j < b->nkids; j += 2)
+                    lower_selected_node(b->kids[j], c);
+        }
+        return;
+    default:
+        break;
+    }
+    lower_selected_node(n->a, c);
+    lower_selected_node(n->b, c);
+    lower_selected_node(n->c, c);
+    lower_selected_node(n->d, c);
+    for (int i = 0; i < n->nkids; i++) lower_selected_node(n->kids[i], c);
+}
+
+static int decl_namespace(Node* n) {
+    if (n->kind == N_FUNC && !(n->flags & F_METHOD)) return 1;
+    if (n->kind == N_VAR || n->kind == N_EXTERN) return 1;
+    if (n->kind == N_STRUCT || n->kind == N_CONTRACT || n->kind == N_ENUM ||
+        n->kind == N_ALIAS || n->kind == N_DISTINCT) return 2;
+    return 0;
+}
+
+static void check_select_collisions(Loader* L, Node* file, Binding* binds,
+                                    Select* sels) {
+    for (Select* s = sels; s; s = s->next) {
+        for (Binding* b = binds; b; b = b->next)
+            if (s->value_name && b->len == s->len &&
+                memcmp(b->name, s->name, s->len) == 0)
+                import_err(L->d, s->node,
+                           "import binding '%.*s' collides with another import",
+                           (int)s->len, s->name);
+        for (int i = 0; i < file->nkids; i++) {
+            Node* n = file->kids[i];
+            int ns = decl_namespace(n);
+            if (!ns || n->kind == N_IMPORT) continue;
+            if (n->kind == N_EXTERN) {
+                if (!s->value_name) continue;
+                for (int j = 0; j < n->nkids; j++)
+                    if (n->kids[j]->len == s->len &&
+                        memcmp(n->kids[j]->str, s->name, s->len) == 0)
+                        import_err(L->d, s->node,
+                                   "imported name '%.*s' collides with a declaration",
+                                   (int)s->len, s->name);
+                continue;
+            }
+            Node* named = n->kind == N_VAR ? n->kids[0] : n;
+            int conflicts = (ns == 1 && s->value_name) || (ns == 2 && s->type_name);
+            if (conflicts && named->len == s->len &&
+                memcmp(named->str, s->name, s->len) == 0)
+                import_err(L->d, s->node,
+                           "imported name '%.*s' collides with a declaration",
+                           (int)s->len, s->name);
+        }
+    }
+}
+
 // --- module-private identities ---------------------------------------------------------
 
 typedef struct {
@@ -602,13 +962,18 @@ static void rename_refs(Node* n, Renames* rs) {
 
 static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root) {
     Binding* binds = NULL;
+    Select* sels = NULL;
     for (int i = 0; i < file->nkids; i++) {
         Node* n = file->kids[i];
         if (n->kind != N_IMPORT) break; // imports precede declarations (parser)
         Module* mod = ensure_module(L, n, src_path);
         if (!mod) continue;
-        bind(L, n, mod, &binds);
+        if (n->flags & F_SELECT) select_members(L, n, mod, binds, &sels);
+        else bind(L, n, mod, &binds, sels);
     }
+    if (L->d->errors) return L->d->errors;
+
+    check_select_collisions(L, file, binds, sels);
     if (L->d->errors) return L->d->errors;
 
     if (!is_root) {
@@ -649,6 +1014,13 @@ static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root
             lower_qualified(L, file->kids[i], binds);
     if (L->d->errors) return L->d->errors;
 
+    for (int i = 0; i < file->nkids; i++) {
+        if (file->kids[i]->kind == N_IMPORT) continue;
+        SelectLower c = {0};
+        c.sels = sels;
+        lower_selected_node(file->kids[i], &c);
+    }
+
     if (!is_root) {
         Module* self = L->loading; // the module being resolved is stack top
         Renames rs = {0};
@@ -656,8 +1028,8 @@ static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root
         for (int i = 0; i < file->nkids; i++)
             rename_refs(file->kids[i], &rs);
         free(rs.v);
-        // drop the module's import nodes: the bindings never enter the
-        // merged namespace
+        // Drop this module's import nodes: qualified bindings and selected
+        // aliases have both been lowered to private target identities.
         int ndecls = 0;
         for (int i = 0; i < file->nkids; i++)
             if (file->kids[i]->kind != N_IMPORT) ndecls++;
@@ -705,19 +1077,22 @@ int resolve_imports(Node* file, Diag* d, const char* compiler_path,
         L.mods = L.mods->next;
     }
 
-    // merge: root imports, then every module's declarations in dependency
-    // order, then the root declarations
+    // Merge: root whole-module bindings, then dependency declarations, then
+    // root declarations. Selective root imports were already lowered and do
+    // not create module bindings for semantic checking.
     int nroot_imports = 0, nroot_decls = 0, nmod_decls = 0;
     for (int i = 0; i < file->nkids; i++)
-        if (file->kids[i]->kind == N_IMPORT) nroot_imports++;
-        else nroot_decls++;
+        if (file->kids[i]->kind == N_IMPORT) {
+            if (!(file->kids[i]->flags & F_SELECT)) nroot_imports++;
+        } else nroot_decls++;
     for (int i = 0; i < nmods; i++) nmod_decls += order[i]->file->nkids;
 
     int total = nroot_imports + nmod_decls + nroot_decls;
     Node** kids = (Node**)arena_alloc((size_t)total * sizeof(Node*));
     int at = 0;
     for (int i = 0; i < file->nkids; i++)
-        if (file->kids[i]->kind == N_IMPORT) kids[at++] = file->kids[i];
+        if (file->kids[i]->kind == N_IMPORT &&
+            !(file->kids[i]->flags & F_SELECT)) kids[at++] = file->kids[i];
     for (int i = 0; i < nmods; i++)
         for (int j = 0; j < order[i]->file->nkids; j++)
             kids[at++] = order[i]->file->kids[j];

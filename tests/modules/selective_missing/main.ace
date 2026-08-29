@@ -1,0 +1,5 @@
+import absent from "./util.ace"
+
+main(): int {
+    return absent()
+}

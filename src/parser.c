@@ -2,7 +2,9 @@
 //
 // Node layout (a/b/c plus kids where lists are needed):
 //   N_FILE      kids = imports + top decls
-//   N_IMPORT    str = binding name; b = module ident (alias form); a = N_STR path (path form)
+//   N_IMPORT    whole: str = binding; b = module ident (alias); a = N_STR path
+//               selective (F_SELECT): kids = imported N_IDENT names;
+//               b = std module ident or a = local N_STR path
 //   N_VAR       kids = binders (N_PARAM: str name, a type); b = init (or N_TUPLE_E); F_CONST
 //   N_FUNC      str = name; kids = params; a = ret; b = body; c = N_TPARAMS;
 //               d = owner type for methods; F_PUB/F_EXPO/F_METHOD/F_MUT
@@ -1313,10 +1315,54 @@ static Node* parse_extern(P* p) {
 static Node* parse_import(P* p) {
     Node* n = nd(p, N_IMPORT);
     expect(p, T_IMPORT, "'import'");
-    Token* name = expect(p, T_IDENT, "module name after 'import'");
-    n->str = name->str;
-    n->len = name->len;
+
+    NV selected = {0};
+    int parenthesized = ate(p, T_LPAREN);
+    Token* first = expect(p, T_IDENT,
+                          parenthesized ? "imported member name" : "module or member name after 'import'");
+    if (parenthesized || at(p, T_COMMA) || at(p, T_FROM)) {
+        n->flags |= F_SELECT;
+        nv_push(p, &selected, ident_node(p, first));
+        if (parenthesized) {
+            for (;;) {
+                if (!ate(p, T_COMMA)) break;
+                if (at(p, T_RPAREN)) break;
+                Token* member = expect(p, T_IDENT, "imported member name");
+                nv_push(p, &selected, ident_node(p, member));
+            }
+            expect(p, T_RPAREN, "')' after imported member list");
+            if (p->toks[p->i - 1].line == n->line)
+                perr(p, "parentheses in a selective import are only for a multiline member list");
+        } else {
+            int line = first->line;
+            while (at(p, T_COMMA)) {
+                bare_list_line(p, line);
+                p->i++;
+                bare_list_line(p, line);
+                Token* member = expect(p, T_IDENT, "imported member name");
+                nv_push(p, &selected, ident_node(p, member));
+            }
+        }
+        set_kids(n, &selected);
+        expect(p, T_FROM, "'from' after imported member list");
+        if (at(p, T_IDENT)) {
+            n->b = ident_node(p, tk(p));
+            p->i++;
+        } else if (at(p, T_STR)) {
+            n->a = nd(p, N_STR);
+            n->a->str = tk(p)->str;
+            n->a->len = tk(p)->len;
+            p->i++;
+        } else {
+            perr(p, "expected module name or path after 'from'");
+        }
+    } else {
+        n->str = first->str;
+        n->len = first->len;
+    }
     if (ate(p, T_COLON)) {
+        if (n->flags & F_SELECT)
+            perr(p, "selective imports use 'from', not ':'");
         if (at(p, T_IDENT)) { // import m: math — alias binding
             n->b = ident_node(p, tk(p));
             p->i++;
@@ -1424,6 +1470,7 @@ static void pflags(Node* x) {
     if (x->flags & F_ELSE) printf(" else");
     if (x->flags & F_VARARGS) printf(" varargs");
     if (x->flags & F_METHOD) printf(" method");
+    if (x->flags & F_SELECT) printf(" select");
 }
 
 static void pnode(Node* x, int ind) {
