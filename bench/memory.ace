@@ -1,0 +1,165 @@
+// Manual-memory v1 benchmark and smoke test.
+// Run with: ./bench/run-memory.sh
+import fmt
+import mem
+
+extern "c" {
+    clock_gettime_nsec_np(clock_id: i32): u64
+    malloc_size(ptr: *u8): usize
+}
+
+main(): int {
+    // CLOCK_UPTIME_RAW on Darwin. Keep the timed workload large enough to
+    // dominate clock and loop overhead while keeping peak memory modest.
+    clock_id: i32 = 8
+    slots: int = 128
+    rounds: int = 1600
+    initial_size: int = 64
+    grown_size: int = 100
+    operations: usize = usize(slots * rounds)
+    blocks: [128]([]u8?)
+    failures: usize = 0
+    checksum: usize = 0
+
+    alloc_elapsed: usize = 0
+    release_elapsed: usize = 0
+    for round: int in 0 .. rounds {
+        alloc_started: u64 = clock_gettime_nsec_np(clock_id)
+        for i: int in 0 .. slots {
+            block: []u8? = mem.alloc(initial_size, 16)
+            if block != null {
+                block[0] = u8((round + i) % 251)
+                block[initial_size - 1] = u8((round + i + 1) % 251)
+            } else {
+                failures += 1
+            }
+            blocks[i] = block
+        }
+        alloc_elapsed += usize(clock_gettime_nsec_np(clock_id) - alloc_started)
+
+        release_started: u64 = clock_gettime_nsec_np(clock_id)
+        for i: int in 0 .. slots {
+            block: []u8? = blocks[i]
+            mem.release(mut block)
+            if block != null {
+                failures += 1
+            }
+            blocks[i] = block
+        }
+        release_elapsed += usize(clock_gettime_nsec_np(clock_id) - release_started)
+    }
+
+    // Time realloc separately. Successful growth must preserve both sentinel
+    // bytes from the original allocation.
+    realloc_elapsed: usize = 0
+    for round: int in 0 .. rounds {
+        for i: int in 0 .. slots {
+            block: []u8? = mem.alloc(initial_size, 16)
+            if block != null {
+                block[0] = u8((round + i) % 251)
+                block[initial_size - 1] = u8((round + i + 1) % 251)
+            } else {
+                failures += 1
+            }
+            blocks[i] = block
+        }
+
+        realloc_started: u64 = clock_gettime_nsec_np(clock_id)
+        for i: int in 0 .. slots {
+            block: []u8? = blocks[i]
+            if block != null {
+                grown: []u8? = mem.realloc(block, grown_size)
+                if grown != null {
+                    if grown[0] != u8((round + i) % 251) {
+                        failures += 1
+                    }
+                    if grown[initial_size - 1] != u8((round + i + 1) % 251) {
+                        failures += 1
+                    }
+                    block = grown
+                } else {
+                    failures += 1
+                }
+            }
+            blocks[i] = block
+        }
+        realloc_elapsed += usize(clock_gettime_nsec_np(clock_id) - realloc_started)
+
+        for i: int in 0 .. slots {
+            block: []u8? = blocks[i]
+            mem.release(mut block)
+            blocks[i] = block
+        }
+    }
+
+    // Probe live allocator usage outside the timed loops. malloc_size reports
+    // the usable size supplied by Darwin's allocator for each allocation.
+    requested_live: usize = 0
+    usable_live: usize = 0
+    for i: int in 0 .. slots {
+        block: []u8? = mem.alloc(grown_size, 16)
+        if block != null {
+            block[0] = u8(i % 251)
+            block[grown_size - 1] = u8((i + 1) % 251)
+            requested_live += block.len
+            usable_live += malloc_size(&block[0])
+        } else {
+            failures += 1
+        }
+        blocks[i] = block
+    }
+
+    for i: int in 0 .. slots {
+        block: []u8? = blocks[i]
+        if block != null {
+            checksum += usize(block[0])
+            checksum += usize(block[grown_size - 1])
+        }
+        mem.release(mut block)
+        if block != null {
+            failures += 1
+        }
+        blocks[i] = block
+    }
+
+    fmt.print("Ace memory v1 report\n")
+    fmt.print("--------------------\n")
+    fmt.print("slots:                    ")
+    fmt.print(usize(slots))
+    fmt.print("\nrounds:                   ")
+    fmt.print(usize(rounds))
+    fmt.print("\ntimed operations:         ")
+    fmt.print(operations)
+    fmt.print("\ninitial bytes/allocation: ")
+    fmt.print(usize(initial_size))
+    fmt.print("\ngrown bytes/allocation:   ")
+    fmt.print(usize(grown_size))
+    fmt.print("\nalloc total ns:           ")
+    fmt.print(alloc_elapsed)
+    fmt.print("\nalloc ns/item:            ")
+    fmt.print(alloc_elapsed / operations)
+    fmt.print("\nrealloc total ns:         ")
+    fmt.print(realloc_elapsed)
+    fmt.print("\nrealloc ns/item:          ")
+    fmt.print(realloc_elapsed / operations)
+    fmt.print("\nrelease-only total ns:    ")
+    fmt.print(release_elapsed)
+    fmt.print("\nrelease-only ns/item:     ")
+    fmt.print(release_elapsed / operations)
+    fmt.print("\nrequested live bytes:     ")
+    fmt.print(requested_live)
+    fmt.print("\nallocator usable bytes:   ")
+    fmt.print(usable_live)
+    fmt.print("\nallocator overhead bytes: ")
+    fmt.print(usable_live - requested_live)
+    fmt.print("\nchecksum:                  ")
+    fmt.print(checksum)
+    fmt.print("\nfailures:                  ")
+    fmt.print(failures)
+    fmt.print("\n")
+
+    if failures != 0 {
+        return 1
+    }
+    return 0
+}

@@ -101,4 +101,8 @@ memory-access instrumentation have not landed yet.
 
 The examples on this page are checked by
 `tests/sema/docs_memory.ok.ace`; executable allocation behavior is covered by
-`tests/emit/allocation.ace`.
+`tests/emit/allocation.ace`. For manual performance and process-memory
+measurement on Apple arm64, run `./bench/run-memory.sh`; it reports allocator
+timings and usable bytes, compiler statistics, peak resident size, and related
+macOS process counters without turning variable benchmark numbers into test
+thresholds.
