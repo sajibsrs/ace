@@ -1505,36 +1505,71 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         return T_BYTE_SLICE_OPT;
     }
 
-    if (call->nkids != 1) {
+    if (intrinsic == BI_MEM_RELEASE && call->nkids != 1) {
         ck_err(k, call, "mem.release takes exactly one mut allocation slice");
         return T_ERR;
     }
-    Node* arg = call->kids[0];
-    if (arg->kind != N_MUTARG) {
-        ck_err(k, arg,
-               "mem.release needs 'mut' at the call site: release(mut data)");
+    if (intrinsic == BI_MEM_RELEASE) {
+        Node* arg = call->kids[0];
+        if (arg->kind != N_MUTARG) {
+            ck_err(k, arg,
+                   "mem.release needs 'mut' at the call site: release(mut data)");
+            return T_ERR;
+        }
+        Node* raw = arg->a;
+        SType* visible = check_lvalue(k, raw, 1);
+        SType* declared = visible;
+        Sym* current = raw->kind == N_IDENT ? node_sym(raw) : NULL;
+        Sym* original = current && current->decl ? node_sym(current->decl) : NULL;
+        if (original && original->type) declared = original->type;
+        if (!same_type(declared, T_BYTE_SLICE_OPT)) {
+            ck_err(k, raw, "mem.release requires a mutable []u8? allocation variable");
+            return T_ERR;
+        }
+        // Nulling ends an identifier's flow narrowing. Add a new post-call fact
+        // without changing symbols already attached to earlier expressions.
+        if (current && same_type(visible, T_BYTE_SLICE)) {
+            Sym* post = sym_new(SYM_VAR, current->name, current->len);
+            *post = *current;
+            post->type = T_BYTE_SLICE_OPT;
+            post->next = k->scope->values;
+            k->scope->values = post;
+        }
+        return T_VOID;
+    }
+
+    const char* name = intrinsic == BI_MEM_COPY ? "copy" :
+                       intrinsic == BI_MEM_MOVE ? "move" :
+                       intrinsic == BI_MEM_FILL ? "fill" :
+                       intrinsic == BI_MEM_ZERO ? "zero" : "compare";
+    int want = intrinsic == BI_MEM_ZERO ? 1 : 2;
+    if (call->nkids != want) {
+        ck_err(k, call, "mem.%s takes exactly %d argument%s", name, want,
+               want == 1 ? "" : "s");
         return T_ERR;
     }
-    Node* raw = arg->a;
-    SType* visible = check_lvalue(k, raw, 1);
-    SType* declared = visible;
-    Sym* current = raw->kind == N_IDENT ? node_sym(raw) : NULL;
-    Sym* original = current && current->decl ? node_sym(current->decl) : NULL;
-    if (original && original->type) declared = original->type;
-    if (!same_type(declared, T_BYTE_SLICE_OPT)) {
-        ck_err(k, raw, "mem.release requires a mutable []u8? allocation variable");
-        return T_ERR;
+
+    int writes = intrinsic != BI_MEM_COMPARE;
+    for (int i = 0; i < call->nkids; i++) {
+        Node* arg = call->kids[i];
+        int should_mut = writes && i == 0;
+        if (should_mut && arg->kind != N_MUTARG) {
+            ck_err(k, arg, "mem.%s needs 'mut' on its destination", name);
+            continue;
+        }
+        if (!should_mut && arg->kind == N_MUTARG) {
+            ck_err(k, arg, "'mut' marks mut parameters; mem.%s parameter %d is read-only",
+                   name, i + 1);
+            arg = arg->a;
+        } else if (should_mut) {
+            arg = arg->a;
+            (void)check_lvalue(k, arg, 1);
+        }
+        SType* want_type = intrinsic == BI_MEM_FILL && i == 1
+                         ? st_prim(P_U8) : T_BYTE_SLICE;
+        coerce(k, arg, want_type);
     }
-    // Nulling ends an identifier's flow narrowing. Add a new post-call fact
-    // without changing symbols already attached to earlier expressions.
-    if (current && same_type(visible, T_BYTE_SLICE)) {
-        Sym* post = sym_new(SYM_VAR, current->name, current->len);
-        *post = *current;
-        post->type = T_BYTE_SLICE_OPT;
-        post->next = k->scope->values;
-        k->scope->values = post;
-    }
-    return T_VOID;
+    return intrinsic == BI_MEM_COMPARE ? st_prim(P_I64) : T_VOID;
 }
 
 static SType* check_call(Ck* k, Node* call) {
@@ -1627,7 +1662,12 @@ static SType* check_call(Ck* k, Node* call) {
         if (s->kind == SYM_FUNC && s->decl &&
             (s->decl->ival == BI_MEM_ALLOC ||
              s->decl->ival == BI_MEM_REALLOC ||
-             s->decl->ival == BI_MEM_RELEASE))
+             s->decl->ival == BI_MEM_RELEASE ||
+             s->decl->ival == BI_MEM_COPY ||
+             s->decl->ival == BI_MEM_MOVE ||
+             s->decl->ival == BI_MEM_FILL ||
+             s->decl->ival == BI_MEM_ZERO ||
+             s->decl->ival == BI_MEM_COMPARE))
             return check_memory_call(k, call, s, (int)s->decl->ival);
         if (s->kind == SYM_VAR && s->type && s->type->kind == SK_FUNC) {
             check_args(k, call, s->type, 0);

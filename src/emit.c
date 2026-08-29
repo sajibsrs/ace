@@ -709,8 +709,9 @@ static void frame_addr(Em* e, int rd, uint32_t off) {
     if (d <= 4095)
         ins(e, 0xD1000000u | (d << 10) | (29u << 5) | ((uint32_t)rd & 31u));
     else {
-        load_imm(e, 1, 16, d);
-        ins(e, 0xCB0003E0u | (16u << 16) | (29u << 5) | ((uint32_t)rd & 31u));
+        load_imm(e, 1, rd, d);
+        ins(e, 0xCB0003E0u | ((uint32_t)rd << 16) | (29u << 5) |
+               ((uint32_t)rd & 31u));
     }
 }
 
@@ -758,10 +759,11 @@ static void store_frame(Em* e, int rt, uint32_t off, uint32_t w) {
                (29u << 5) | ((uint32_t)rt & 31u));
         return;
     }
-    frame_addr(e, 16, off);
+    int base = rt == 16 ? 17 : 16;
+    frame_addr(e, base, off);
     uint32_t b = w == 1 ? 0x39000000u : w == 2 ? 0x79000000u :
                  w == 4 ? 0xB9000000u : 0xF9000000u;
-    ins(e, b | (16u << 5) | ((uint32_t)rt & 31u));
+    ins(e, b | ((uint32_t)base << 5) | ((uint32_t)rt & 31u));
 }
 
 static void load_frame(Em* e, int rt, uint32_t off, uint32_t w, int signext) {
@@ -771,7 +773,11 @@ static void load_frame(Em* e, int rt, uint32_t off, uint32_t w, int signext) {
                (29u << 5) | ((uint32_t)rt & 31u));
         return;
     }
-    frame_addr(e, 16, off);
+    // The destination can also hold the computed address: `ldr rt, [rt]`.
+    // This avoids clobbering the other reserved scratch register when callers
+    // deliberately load a pair into x16/x17 from deep frame slots.
+    int base = rt;
+    frame_addr(e, base, off);
     uint32_t b;
     if (!signext)
         b = w == 1 ? 0x39400000u : w == 2 ? 0x79400000u :
@@ -779,7 +785,7 @@ static void load_frame(Em* e, int rt, uint32_t off, uint32_t w, int signext) {
     else
         b = w == 1 ? 0x39C00000u : w == 2 ? 0x79C00000u :
             w == 4 ? 0xB9400000u : 0xF8400000u;
-    ins(e, b | (16u << 5) | ((uint32_t)rt & 31u));
+    ins(e, b | ((uint32_t)base << 5) | ((uint32_t)rt & 31u));
 }
 
 static void store_frame_fp(Em* e, int vr, uint32_t off, int is64) {
@@ -2076,6 +2082,121 @@ static EV gen_release_builtin(Em* e, Node* call) {
     return (EV){ CLS_INT, 0 }; // release has no value; expression statements discard it
 }
 
+static int gen_slice_parts(Em* e, Node* value, int* ptr, int* len) {
+    EV slice = gen_expr(e, value);
+    *ptr = tmp_int(e);
+    *len = tmp_int(e);
+    if (slice.cls != CLS_ADDR) {
+        em_err(e, value, "byte operation argument must materialize as a slice");
+        load_imm(e, 1, xreg(*ptr), 0);
+        load_imm(e, 1, xreg(*len), 0);
+        return 0;
+    }
+    ld_reg(e, xreg(*ptr), xreg(slice.idx), 0, 8, 0);
+    ld_reg(e, xreg(*len), xreg(slice.idx), 8, 8, 0);
+    return 1;
+}
+
+static EV gen_byte_write_builtin(Em* e, Node* call, int intrinsic) {
+    int si = e->vti, sf = e->vtf;
+    Node* dst_node = call->kids[0]->a; // sema requires a mut destination lvalue
+    int dst, dlen;
+    gen_slice_parts(e, dst_node, &dst, &dlen);
+
+    int done = new_label(e);
+    if (intrinsic == BI_MEM_COPY || intrinsic == BI_MEM_MOVE) {
+        int src, slen;
+        gen_slice_parts(e, call->kids[1], &src, &slen);
+        cbz_(e, 1, xreg(slen), 0, done); // empty slices may carry null pointers
+        CallArg args[3] = {
+            { NULL, { CLS_INT, dst }, 1, 0 },
+            { NULL, { CLS_INT, src }, 1, 0 },
+            { NULL, { CLS_INT, slen }, 1, 0 },
+        };
+        SType* params[3] = { raw_pointer_type(), raw_pointer_type(), default_i64() };
+        uint8_t muts[3] = { 0, 0, 0 };
+        const char* name = intrinsic == BI_MEM_COPY ? "_memcpy" : "_memmove";
+        uint32_t nlen = intrinsic == BI_MEM_COPY ? 7 : 8;
+        CallTarget tgt = { TK_EXTERN, name, nlen, 0 };
+        (void)emit_call(e, call, args, 3, params, muts, 3, 0, tgt, NULL);
+    } else {
+        int byte = tmp_int(e);
+        if (intrinsic == BI_MEM_FILL) {
+            EV value = gen_expr(e, call->kids[1]);
+            mov_int(e, 1, xreg(byte), xreg(value.idx));
+        } else {
+            load_imm(e, 1, xreg(byte), 0);
+        }
+        cbz_(e, 1, xreg(dlen), 0, done);
+        CallArg args[3] = {
+            { NULL, { CLS_INT, dst }, 1, 0 },
+            { NULL, { CLS_INT, byte }, 1, 0 },
+            { NULL, { CLS_INT, dlen }, 1, 0 },
+        };
+        SType* params[3] = { raw_pointer_type(), default_i64(), default_i64() };
+        uint8_t muts[3] = { 0, 0, 0 };
+        CallTarget tgt = { TK_EXTERN, "_memset", 7, 0 };
+        (void)emit_call(e, call, args, 3, params, muts, 3, 0, tgt, NULL);
+    }
+    bind_label(e, done);
+    e->vti = si;
+    e->vtf = sf;
+    return (EV){ CLS_INT, 0 };
+}
+
+static EV gen_compare_builtin(Em* e, Node* call) {
+    int si = e->vti, sf = e->vtf;
+    int aptr, alen, bptr, blen;
+    gen_slice_parts(e, call->kids[0], &aptr, &alen);
+    gen_slice_parts(e, call->kids[1], &bptr, &blen);
+
+    int count = tmp_int(e);
+    mov_int(e, 1, xreg(count), xreg(alen));
+    ins(e, 0xEB00001Fu | ((uint32_t)xreg(blen) << 16) |
+           ((uint32_t)xreg(alen) << 5)); // cmp alen, blen
+    int have_count = new_label(e);
+    bcond_(e, C_LS, have_count);
+    mov_int(e, 1, xreg(count), xreg(blen));
+    bind_label(e, have_count);
+
+    int out = tmp_int(e);
+    load_imm(e, 1, xreg(out), 0);
+    int by_length = new_label(e), negative = new_label(e), done = new_label(e);
+    cbz_(e, 1, xreg(count), 0, by_length);
+
+    CallArg args[3] = {
+        { NULL, { CLS_INT, aptr }, 1, 0 },
+        { NULL, { CLS_INT, bptr }, 1, 0 },
+        { NULL, { CLS_INT, count }, 1, 0 },
+    };
+    SType* params[3] = { raw_pointer_type(), raw_pointer_type(), default_i64() };
+    uint8_t muts[3] = { 0, 0, 0 };
+    CallTarget tgt = { TK_EXTERN, "_memcmp", 7, 0 };
+    EV cmp = emit_call(e, call, args, 3, params, muts, 3, 0, tgt, default_i64());
+    ins(e, 0x7100001Fu | ((uint32_t)xreg(cmp.idx) << 5)); // cmp wresult, #0
+    bcond_(e, C_EQ, by_length);
+    bcond_(e, C_LT, negative);
+    load_imm(e, 1, xreg(out), 1);
+    br_(e, done);
+
+    bind_label(e, by_length);
+    ins(e, 0xEB00001Fu | ((uint32_t)xreg(blen) << 16) |
+           ((uint32_t)xreg(alen) << 5)); // equal prefix: shorter slice sorts first
+    bcond_(e, C_EQ, done);
+    bcond_(e, C_LO, negative);
+    load_imm(e, 1, xreg(out), 1);
+    br_(e, done);
+
+    bind_label(e, negative);
+    load_imm(e, 1, xreg(out), UINT64_MAX);
+    bind_label(e, done);
+
+    if (out != si) mov_int(e, 1, xreg(si), xreg(out));
+    e->vti = si + 1;
+    e->vtf = sf;
+    return (EV){ CLS_INT, si };
+}
+
 static EV gen_call(Em* e, Node* call) {
     Node* callee = call->a;
     // Explicit contract construction: Shape(&value) / Shape[T](&value).
@@ -2139,6 +2260,21 @@ static EV gen_call(Em* e, Node* call) {
     if (intrinsic && intrinsic->decl &&
         intrinsic->decl->ival == BI_MEM_RELEASE && call->ival == BI_MEM_RELEASE)
         return gen_release_builtin(e, call);
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival == BI_MEM_COPY && call->ival == BI_MEM_COPY)
+        return gen_byte_write_builtin(e, call, BI_MEM_COPY);
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival == BI_MEM_MOVE && call->ival == BI_MEM_MOVE)
+        return gen_byte_write_builtin(e, call, BI_MEM_MOVE);
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival == BI_MEM_FILL && call->ival == BI_MEM_FILL)
+        return gen_byte_write_builtin(e, call, BI_MEM_FILL);
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival == BI_MEM_ZERO && call->ival == BI_MEM_ZERO)
+        return gen_byte_write_builtin(e, call, BI_MEM_ZERO);
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival == BI_MEM_COMPARE && call->ival == BI_MEM_COMPARE)
+        return gen_compare_builtin(e, call);
     // panic(message): write the bytes to stderr best-effort, then abort —
     // both undefined externals resolved by the system linker (spec Errors #15).
     // The write result is ignored: a failed or partial write never blocks the
@@ -4038,7 +4174,9 @@ int emit_object(Node* file, Diag* d, const char* out_path,
         switch (n->kind) {
         case N_FUNC: {
             if (n->ival == BI_MEM_ALLOC || n->ival == BI_MEM_REALLOC ||
-                n->ival == BI_MEM_RELEASE)
+                n->ival == BI_MEM_RELEASE || n->ival == BI_MEM_COPY ||
+                n->ival == BI_MEM_MOVE || n->ival == BI_MEM_FILL ||
+                n->ival == BI_MEM_ZERO || n->ival == BI_MEM_COMPARE)
                 break; // compiler-backed std/mem declarations have no body symbol
             if (n->c) { // generic: one function per instantiation memo entry
                 int nt = n->c->nkids;

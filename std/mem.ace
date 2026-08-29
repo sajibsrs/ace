@@ -14,3 +14,21 @@ pub realloc(data: []u8, new_size: int): []u8? {
 pub release(mut data: []u8?) {
     data = null
 }
+
+// Byte operations use complete slice views as their ranges. The bootstrap
+// compiler lowers them directly to the platform's optimized memory routines.
+pub copy(noalias mut dst: []u8, src: []u8) {
+}
+
+pub move(mut dst: []u8, src: []u8) {
+}
+
+pub fill(mut data: []u8, value: u8) {
+}
+
+pub zero(mut data: []u8) {
+}
+
+pub compare(a: []u8, b: []u8): int {
+    return 0
+}

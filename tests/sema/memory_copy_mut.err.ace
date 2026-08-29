@@ -1,0 +1,10 @@
+import copy from mem
+
+main(): int {
+    a: [1]u8 = [1]
+    b: [1]u8 = [2]
+    dst: []u8 = a[0..1]
+    src: []u8 = b[0..1]
+    copy(dst, src)
+    return 0
+}

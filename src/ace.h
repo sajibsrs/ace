@@ -139,6 +139,11 @@ enum {
     BI_MEM_ALLOC = 2,
     BI_MEM_REALLOC = 3,
     BI_MEM_RELEASE = 4,
+    BI_MEM_COPY = 5,
+    BI_MEM_MOVE = 6,
+    BI_MEM_FILL = 7,
+    BI_MEM_ZERO = 8,
+    BI_MEM_COMPARE = 9,
 };
 
 typedef struct Node Node;

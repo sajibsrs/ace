@@ -9,16 +9,16 @@ Today's modules:
 
 - `fmt` — allocation-free text output
 - `math` — minimal generic helpers
-- `mem` — the fixed raw allocation layer
+- `mem` — raw allocation and allocation-free byte operations
 
 Everything else in the planned v1 set (`sys`, `str`, `simd`) does not
 exist yet.
 
-`mem` exports `alloc`, `realloc`, and `release`. Import it qualified or select
-those names explicitly; there are no unimported global allocation functions.
-The current bootstrap compiler lowers these exact standard-module functions
-directly to the platform allocator, with no extra call, allocation header, or
-registry. See [Memory](memory.md).
+`mem` exports `alloc`, `realloc`, `release`, `copy`, `move`, `fill`, `zero`, and
+`compare`. Import it qualified or select those names explicitly; there are no
+unimported global memory functions. The current bootstrap compiler lowers
+these exact standard-module functions directly to the platform boundary, with
+no extra Ace call, allocation header, or registry. See [Memory](memory.md).
 
 ```ace
 import alloc, release from mem

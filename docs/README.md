@@ -16,7 +16,7 @@ must be corrected.
   types, pointers, optionals, arrays, slices, tuples, structs, enums, contracts,
   and generic types.
 - [Memory](memory.md) — `sizeof`, sequence lengths, `mem` allocation,
-  reallocation, explicit release, slice aliasing, and current diagnostics.
+  byte operations, explicit release, slice aliasing, and current diagnostics.
 - [Functions](function.md) — declarations, parameters, returns, mutation,
   overloads, function values, generics, and the program entry point.
 - [Errors](errors.md) — the `Error` handle, static `ErrorDescriptor`
