@@ -1,0 +1,9 @@
+Point: struct { x: int }
+
+change(point: mut *Point, replacement: mut *Point) {
+    point = replacement
+}
+
+main(): int {
+    return 0
+}

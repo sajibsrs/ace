@@ -18,9 +18,9 @@ Semicolons are not used. A newline terminates a complete statement.
 
 ## Parameters and mutation
 
-Parameters are read-only by default. Ace gives them reference semantics, while
-allowing the compiler to pass small read-only values in registers when that is
-observably equivalent.
+Parameter bindings are read-only by default. Ace gives them reference
+semantics, while allowing the compiler to pass small read-only values in
+registers when that is observably equivalent.
 
 A function that changes an argument marks the parameter `mut`; its caller must
 repeat `mut`, and the argument must be an lvalue.
@@ -37,8 +37,11 @@ main(): int {
 }
 ```
 
-An unmarked call cannot modify anything passed by the caller. Assigning to an
-unmarked parameter is a compile error.
+An unmarked call cannot replace the caller's argument value. Assigning to an
+unmarked parameter is a compile error. This is independent from pointer
+reachability: a parameter of type `mut *T` may write its pointee without
+replacing the pointer value, so that call does not use an argument-level `mut`.
+See [Types and declarations](types.md#pointers).
 
 ## Returns and multiple values
 

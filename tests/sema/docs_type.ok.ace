@@ -15,6 +15,14 @@ read_x(point: *Point): int {
     return point.x
 }
 
+set_x(point: mut *Point, value: int) {
+    point.x = value
+}
+
+retarget(mut point: *Point, replacement: *Point) {
+    point = replacement
+}
+
 Value: contract {
     get(): int
 }
@@ -33,6 +41,12 @@ main(): int {
     raw: f64 = f64(distance)
     point: Point = Point{ x: 13, y: 29 }
     pointer: *Point = &point
+    writable: mut *Point = mut &point
+    set_x(writable, 14)
+    other: Point = Point{ x: 15, y: 31 }
+    retarget(mut pointer, &other)
+    outer: *mut *Point = &writable
+    outer.x = 16
     maybe: *Point? = null
     values: [4]int = [10, 20, 30, 40]
     middle: []int = values[1..3]

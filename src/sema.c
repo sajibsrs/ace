@@ -752,14 +752,6 @@ static int coerce(Ck* k, Node* e, SType* want) {
 
 // --- lvalues ------------------------------------------------------------------------
 
-// A mut parameter grants writes through its reference even when the pointer
-// type itself is unmarked (spec Mutability #2): mut lives on the binding.
-static int ref_writable(Ck* k, Node* base) {
-    if (base->kind != N_IDENT) return 0;
-    Sym* s = lookup_val(k, base->str, base->len);
-    return s && s->kind == SYM_VAR && s->is_param && s->is_mut;
-}
-
 static SType* check_lvalue(Ck* k, Node* e, int write) {
     switch (e->kind) {
     case N_IDENT: {
@@ -787,10 +779,26 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
         return s->type;
     }
     case N_FIELD_E: {
-        SType* b = check_lvalue(k, e->a, write);
-        while (b->kind == SK_PTR) { // auto-deref; writes need mut pointers
-            if (write && !b->is_mut && !ref_writable(k, e->a))
-                ck_err(k, e, "write through read-only pointer — use 'mut *T' or a mut parameter");
+        // Reading a pointer value never needs write access to the storage that
+        // holds it. For auto-deref writes, only the innermost pointer edge used
+        // to reach the final object must be writable: `*mut *T` may write T,
+        // while `mut **T` may replace the inner pointer but not write T.
+        SType* b = check_lvalue(k, e->a, 0);
+        SType* last_ptr = NULL;
+        for (SType* q = b; q && q->kind == SK_PTR; q = q->base)
+            last_ptr = q;
+        if (write) {
+            if (last_ptr) {
+                if (!last_ptr->is_mut)
+                    ck_err(k, e,
+                           "write through read-only pointer — use 'mut *T' and 'mut &value'");
+            } else {
+                // An ordinary aggregate field is part of its base storage.
+                // Re-check that base as a write so const/read-only params fail.
+                (void)check_lvalue(k, e->a, 1);
+            }
+        }
+        while (b->kind == SK_PTR) {
             b = b->base;
         }
         if (b->kind == SK_ERR) return T_ERR;
@@ -846,8 +854,9 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
                 ck_err(k, e, "'~' dereferences pointers, not %s", type_name(p));
                 return T_ERR;
             }
-            if (write && !p->is_mut && !ref_writable(k, e->a))
-                ck_err(k, e, "write through read-only pointer — use 'mut *T' or a mut parameter");
+            if (write && !p->is_mut)
+                ck_err(k, e,
+                       "write through read-only pointer — use 'mut *T' and 'mut &value'");
             return p->base;
         }
         break;
@@ -972,9 +981,11 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         return tu;
     }
     case N_UNARY: {
-        if (e->op == T_AMP) { // &lvalue -> read-only *T
-            SType* t = check_lvalue(k, e->a, 0);
+        if (e->op == T_AMP) { // &lvalue -> *T; mut &lvalue -> mut *T
+            int writable = (e->flags & F_MUT) != 0;
+            SType* t = check_lvalue(k, e->a, writable);
             SType* p = st_new(SK_PTR);
+            p->is_mut = writable;
             p->base = t;
             return p;
         }

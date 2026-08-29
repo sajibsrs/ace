@@ -29,7 +29,7 @@ in_range(lo: int, x: int, hi: int): bool {
     return lo <= x <= hi
 }
 
-scale_it(mut p: *Point, k: f64) {
+scale_it(p: mut *Point, k: f64) {
     p.x = p.x * k
     p.y = p.y * k
 }

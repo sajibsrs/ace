@@ -125,9 +125,10 @@ shift_expr    := add_expr (("<<" | ">>") add_expr)*
 add_expr      := mul_expr (("+" | "-") mul_expr)*
 mul_expr      := unary (("*" | "/" | "%") unary)*
 
-unary         := ("!" | "~" | "-") unary | "&" lvalue | postfix
+unary         := ("!" | "~" | "-") unary | "&" lvalue | "mut" "&" lvalue | postfix
 //  "!"  logical/bitwise NOT (dual role)     "~"  dereference
-//  "&"  address-of (lvalues only)           unary "-" negation
+//  "&"  read-only address-of                "mut &" writable address-of
+//  both address forms require lvalues        unary "-" negation
 
 postfix       := primary postfix_part*
 postfix_part  := "(" arg_list? ")"                        // call; "mut"? expr args
@@ -178,7 +179,7 @@ ret_types     := type | "(" type ("," type)+ ")"
 3. **`foo[bar]` index vs instantiation:** index arguments are expressions, instantiation arguments are types. Both start with `ident`. Resolve by the name's namespace (generics live in the type/value namespace as declared) — one symbol-table lookup, no backtracking. Where truly ambiguous at parse time, parse as expression and re-check in semantic pass. [P]
 4. **Tuple vs function type:** in type position, `"(" … ")"` followed by `":"` is a function type; otherwise a tuple.
 5. **Comparison chaining is a distinct production** (`cmp_expr` with `+`): `a < b < c` is one grammar node, not nested binaries; each operand evaluates once.
-6. **`&mut q` / `mut &q`** (write-capable address-of) is still `[P]` — parked in spec.md (Names/Mutability).
+6. **Writable address-of is `mut &q`.** It produces `mut *T` from a writable lvalue; `&q` produces read-only `*T`. In a call argument, `mut &q` is the unary address expression, not an `N_MUTARG` wrapper; an address expression is not itself a valid mut argument. Each pointer level owns its `mut`: `mut **T`, `*mut *T`, and `mut *mut *T` grant different immediate writes.
 7. **Keywords reserved but unused in v1 grammar:** `noalias` appears only as a parameter modifier; `export` only in extern blocks and on declarations (`pub export`).
 8. **Bare comma lists are single-line.** Delimited lists (params, fields, enum members, call args, array/struct literals, type lists) may span lines and allow trailing commas. Signing and selective-import lists use their bare forms on one line (`Circle signs Shape, Color`; `import min, max from math`) and parenthesized forms across lines; single-line parentheses are rejected as redundant.
 9. **`?` binds loosest in types:** `*T?` is a nullable pointer, `[]T?` an optional slice (spec.md Memory #6 wins). Pointer-to-optional is written `*(T?)`.

@@ -42,7 +42,7 @@
 //   N_CONST_T   a = inner
 //   N_TPARAMS   kids = N_IDENT
 //   N_BINARY    op; a; b      N_CMPCHAIN kids = operands; a = N_OPS{kids = N_OP}
-//   N_UNARY     op (T_AMP = address-of); a
+//   N_UNARY     op (T_AMP = address-of); a; F_MUT = writable `mut &`
 //   N_CALL      a = callee; kids = args (N_MUTARG wraps mut-marked args); F_MUT = receiver mark
 //   N_INDEX     a = base; b = index
 //   N_SLICE_E   a = base; b = lo (nullable); c = hi (nullable)
@@ -468,6 +468,14 @@ static Node* expr_unary(P* p, int ctx) {
         u->a = expr_unary(p, ctx);
         return u;
     }
+    if (at(p, T_MUT) && kth(p, 1) == T_AMP) { // mut &lvalue -> writable pointer
+        Node* u = nd(p, N_UNARY);
+        u->op = (uint8_t)T_AMP;
+        u->flags |= F_MUT;
+        p->i += 2;
+        u->a = expr_postfix(p, ctx);
+        return u;
+    }
     if (at(p, T_AMP)) { // address-of; lvalue-ness checked in semantic pass
         Node* u = nd(p, N_UNARY);
         u->op = (uint8_t)T_AMP;
@@ -513,7 +521,10 @@ static Node* expr_postfix(P* p, int ctx) {
             NV args = {0};
             if (!at(p, T_RPAREN)) {
                 for (;;) {
-                    if (at(p, T_MUT)) {
+                    // `mut &value` is one writable-address expression, not a
+                    // mut call argument. `mut &value` could not be a valid mut
+                    // argument anyway because an address expression is not an lvalue.
+                    if (at(p, T_MUT) && kth(p, 1) != T_AMP) {
                         Node* ma = nd(p, N_MUTARG);
                         p->i++;
                         ma->a = expr(p, 0);

@@ -1,0 +1,9 @@
+Point: struct { x: int }
+
+change(mut point: *Point) {
+    point.x = 42
+}
+
+main(): int {
+    return 0
+}

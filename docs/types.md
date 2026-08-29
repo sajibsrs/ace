@@ -38,9 +38,12 @@ raw: f64 = f64(distance)
 
 ## Pointers
 
-`*T` is a read-only, non-null pointer. `mut *T` grants writes through the pointer.
-Address-of `&value` requires an lvalue, and `~pointer` explicitly dereferences.
-Field access automatically dereferences pointers.
+`*T` is a read-only, non-null pointer. `mut *T` grants writes through that
+pointer level. Address-of requires an lvalue: `&value` produces `*T`, while
+`mut &value` produces `mut *T` and is rejected for const or otherwise
+read-only storage. Both forms emit the same machine address; `mut` is a
+compile-time permission. `~pointer` explicitly dereferences, while field
+access automatically dereferences pointers.
 
 ```ace
 Point: struct { x: int, y: int }
@@ -55,6 +58,36 @@ main(): int {
     return read_x(pointer)
 }
 ```
+
+Parameter mutation and pointee mutation are independent. A `mut` parameter
+may replace the value stored in the caller; a `mut *T` may write its pointee:
+
+```ace
+set_x(point: mut *Point, value: int) {
+    point.x = value       // pointee writable; parameter itself read-only
+}
+
+retarget(mut point: *Point, replacement: *Point) {
+    point = replacement   // caller's pointer writable; pointee read-only
+}
+
+main(): int {
+    first: Point = Point{ x: 13, y: 29 }
+    second: Point = Point{ x: 42, y: 50 }
+
+    writable: mut *Point = mut &first
+    set_x(writable, 21)
+
+    current: *Point = &first
+    retarget(mut current, &second)
+    return current.x
+}
+```
+
+`mut point: mut *Point` combines both permissions. Multiple pointer levels
+retain them independently: `mut **T` may replace the stored inner pointer,
+`*mut *T` may read that inner pointer and write `T`, and `mut *mut *T` permits
+both. Only the level performing a write needs `mut`.
 
 Pointer arithmetic is not implemented. Use arrays or slices for bounded
 sequences.
