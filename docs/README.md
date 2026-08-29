@@ -15,6 +15,8 @@ must be corrected.
 - [Types and declarations](types.md) — explicit declarations, aliases, distinct
   types, pointers, optionals, arrays, slices, tuples, structs, enums, contracts,
   and generic types.
+- [Memory](memory.md) — `sizeof`, sequence lengths, global allocation,
+  reallocation, explicit release, slice aliasing, and current diagnostics.
 - [Functions](function.md) — declarations, parameters, returns, mutation,
   overloads, function values, generics, and the program entry point.
 - [Errors](errors.md) — the `Error` handle, static `ErrorDescriptor`

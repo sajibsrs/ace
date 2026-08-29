@@ -979,8 +979,8 @@ static uint32_t sxtw_of(int bits) {
 
 static uint32_t uxtw_of(int bits) {
     switch (bits) {
-    case 8: return 0x53401C00u;
-    case 16: return 0x53403C00u;
+    case 8: return 0xD3401C00u;
+    case 16: return 0xD3403C00u;
     default: return 0xD3407C00u;
     }
 }
@@ -1516,6 +1516,17 @@ static SType* default_f64(void) {
     return t;
 }
 
+static SType* raw_pointer_type(void) {
+    static SType* t;
+    if (!t) {
+        t = (SType*)arena_alloc(sizeof(SType));
+        memset(t, 0, sizeof *t);
+        t->kind = SK_PTR;
+        t->size = t->align = 8;
+    }
+    return t;
+}
+
 static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
                     SType** params, uint8_t* muts, int nparams, int internal,
                     CallTarget tgt, SType* ret) {
@@ -1951,6 +1962,120 @@ static int gen_addr(Em* e, Node* x) {
 
 // --- call dispatch --------------------------------------------------------------------
 
+// The v1 allocator is deliberately the platform fast path: malloc/realloc/free
+// with the language-visible requested length carried by the returned []u8.
+// Apple arm64 malloc supplies the target's fundamental 16-byte alignment, so
+// larger alignments are rejected without adding an Ace allocation header.
+static void zero_slice_slot(Em* e, uint32_t off) {
+    frame_addr(e, 16, off);
+    st_reg(e, 31, 16, 0, 8);
+    st_reg(e, 31, 16, 8, 8);
+}
+
+static EV finish_slice_builtin(Em* e, int si, int sf, uint32_t off) {
+    e->vti = si;
+    e->vtf = sf;
+    int out = tmp_int(e);
+    frame_addr(e, xreg(out), off);
+    return (EV){ CLS_ADDR, out };
+}
+
+static EV gen_alloc_builtin(Em* e, Node* call) {
+    int si = e->vti, sf = e->vtf;
+    uint32_t off = temp_slot(e, 16, 8);
+    zero_slice_slot(e, off); // invalid request and OOM both produce null
+
+    EV size = gen_expr(e, call->kids[0]);
+    EV align = gen_expr(e, call->kids[1]);
+    int done = new_label(e);
+
+    // size > 0
+    ins(e, 0xF100001Fu | ((uint32_t)xreg(size.idx) << 5));
+    bcond_(e, C_LE, done);
+    // align is a positive power of two no greater than 16
+    ins(e, 0xF100001Fu | ((uint32_t)xreg(align.idx) << 5));
+    bcond_(e, C_LE, done);
+    ins(e, 0xF100001Fu | (16u << 10) | ((uint32_t)xreg(align.idx) << 5));
+    bcond_(e, C_GT, done);
+    ins(e, 0xD1000000u | (1u << 10) |
+           ((uint32_t)xreg(align.idx) << 5) | 16u); // x16 = align - 1
+    ins(e, 0xEA00001Fu | (16u << 16) |
+           ((uint32_t)xreg(align.idx) << 5));       // tst align, align - 1
+    bcond_(e, C_NE, done);
+
+    CallArg arg = { NULL, size, 1, 0 };
+    SType* param = default_i64();
+    uint8_t mut = 0;
+    CallTarget tgt = { TK_EXTERN, "_malloc", 7, 0 };
+    EV ptr = emit_call(e, call, &arg, 1, &param, &mut, 1, 0, tgt,
+                       raw_pointer_type());
+    cbz_(e, 1, xreg(ptr.idx), 0, done);
+    frame_addr(e, 16, off);
+    st_reg(e, xreg(ptr.idx), 16, 0, 8);
+    st_reg(e, xreg(size.idx), 16, 8, 8);
+
+    bind_label(e, done);
+    return finish_slice_builtin(e, si, sf, off);
+}
+
+static EV gen_realloc_builtin(Em* e, Node* call) {
+    int si = e->vti, sf = e->vtf;
+    uint32_t off = temp_slot(e, 16, 8);
+    zero_slice_slot(e, off);
+
+    EV data = gen_expr(e, call->kids[0]);
+    if (data.cls != CLS_ADDR) {
+        em_err(e, call->kids[0], "realloc data must materialize as a slice");
+        return finish_slice_builtin(e, si, sf, off);
+    }
+    int ptemp = tmp_int(e);
+    ld_reg(e, xreg(ptemp), xreg(data.idx), 0, 8, 0);
+    EV size = gen_expr(e, call->kids[1]);
+    int done = new_label(e);
+    ins(e, 0xF100001Fu | ((uint32_t)xreg(size.idx) << 5));
+    bcond_(e, C_LE, done);
+
+    CallArg args[2] = {
+        { NULL, { CLS_INT, ptemp }, 1, 0 },
+        { NULL, size, 1, 0 },
+    };
+    SType* params[2] = { raw_pointer_type(), default_i64() };
+    uint8_t muts[2] = { 0, 0 };
+    CallTarget tgt = { TK_EXTERN, "_realloc", 8, 0 };
+    EV ptr = emit_call(e, call, args, 2, params, muts, 2, 0, tgt,
+                       raw_pointer_type());
+    cbz_(e, 1, xreg(ptr.idx), 0, done);
+    frame_addr(e, 16, off);
+    st_reg(e, xreg(ptr.idx), 16, 0, 8);
+    st_reg(e, xreg(size.idx), 16, 8, 8);
+
+    bind_label(e, done);
+    return finish_slice_builtin(e, si, sf, off);
+}
+
+static EV gen_release_builtin(Em* e, Node* call) {
+    int si = e->vti, sf = e->vtf;
+    Node* raw = call->kids[0]->a; // sema requires N_MUTARG + mutable lvalue
+    int addr = gen_addr(e, raw);
+    int ptr = tmp_int(e);
+    ld_reg(e, xreg(ptr), xreg(addr), 0, 8, 0);
+    int clear = new_label(e);
+    cbz_(e, 1, xreg(ptr), 0, clear); // release(null) is a no-op
+
+    CallArg arg = { NULL, { CLS_INT, ptr }, 1, 0 };
+    SType* param = raw_pointer_type();
+    uint8_t mut = 0;
+    CallTarget tgt = { TK_EXTERN, "_free", 5, 0 };
+    (void)emit_call(e, call, &arg, 1, &param, &mut, 1, 0, tgt, NULL);
+
+    bind_label(e, clear);
+    st_reg(e, 31, xreg(addr), 0, 8);
+    st_reg(e, 31, xreg(addr), 8, 8);
+    e->vti = si;
+    e->vtf = sf;
+    return (EV){ CLS_INT, 0 }; // release has no value; expression statements discard it
+}
+
 static EV gen_call(Em* e, Node* call) {
     Node* callee = call->a;
     // Explicit contract construction: Shape(&value) / Shape[T](&value).
@@ -2004,6 +2129,15 @@ static EV gen_call(Em* e, Node* call) {
         load_imm(e, 1, xreg(t), call->ival);
         return (EV){ CLS_INT, t };
     }
+    if (callee->kind == N_IDENT && !call->sym && call->ival == 2 &&
+        callee->len == 5 && memcmp(callee->str, "alloc", 5) == 0)
+        return gen_alloc_builtin(e, call);
+    if (callee->kind == N_IDENT && !call->sym && call->ival == 3 &&
+        callee->len == 7 && memcmp(callee->str, "realloc", 7) == 0)
+        return gen_realloc_builtin(e, call);
+    if (callee->kind == N_IDENT && !call->sym && call->ival == 4 &&
+        callee->len == 7 && memcmp(callee->str, "release", 7) == 0)
+        return gen_release_builtin(e, call);
     // panic(message): write the bytes to stderr best-effort, then abort —
     // both undefined externals resolved by the system linker (spec Errors #15).
     // The write result is ignored: a failed or partial write never blocks the
@@ -2407,6 +2541,14 @@ static EV gen_expr(Em* e, Node* x) {
         if (ts && ts->kind == SYM_TYPE && ts->type && ts->type->kind == SK_ENUM) {
             int it = tmp_int(e);
             load_imm(e, 0, xreg(it), x->ival);
+            return (EV){ CLS_INT, it };
+        }
+        SType* seq = unwrap(node_ty(x->a));
+        while (seq && seq->kind == SK_PTR) seq = unwrap(seq->base);
+        if (seq && seq->kind == SK_ARRAY && x->len == 3 &&
+            memcmp(x->str, "len", 3) == 0) {
+            int it = tmp_int(e);
+            load_imm(e, 1, xreg(it), x->ival);
             return (EV){ CLS_INT, it };
         }
         SType* bt = node_ty(x->a);

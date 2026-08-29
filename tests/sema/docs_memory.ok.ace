@@ -1,0 +1,21 @@
+main(): int {
+    values: [4]u8 = [10, 20, 30, 40]
+    count: usize = values.len
+    if count != 4 {
+        return 1
+    }
+
+    storage: []u8? = alloc(16, 8)
+    if storage != null {
+        bytes: usize = storage.len
+        if bytes != 16 {
+            release(mut storage)
+            return 2
+        }
+        release(mut storage)
+        if storage != null {
+            return 3
+        }
+    }
+    return 0
+}

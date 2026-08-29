@@ -13,6 +13,10 @@ Today's modules:
 Everything else in the planned v1 set (`mem`, `sys`, `str`, `simd`) does not
 exist yet.
 
+Raw allocation is already implemented as the predeclared global
+`alloc`/`realloc`/`release` layer, not as an imported module or allocator
+object. See [Memory](memory.md).
+
 ## fmt
 
 `fmt.print` writes bytes to standard output (file descriptor 1). It never adds

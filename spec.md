@@ -27,24 +27,25 @@ Concrete rules and syntax. The why behind every rule lives in philosophy.md (clo
    - Vectorization path: `noalias` facts (Mutability #8) plus the `simd` stdlib module; auto-vectorization belongs only to a future release backend if ever added.
 
 ## Memory
-Decision: manual management with explicit allocators (Zig/Odin school).
+Decision: manual management through one fixed global allocator strategy (C school, with explicit failure).
 1. Explicit allocation/deallocation; no GC, no hidden runtime memory management.
-2. Allocators are first-class and explicit — functions that allocate take an allocator parameter.
-3. Safety comes from tooling, not language rules: checked/debug builds detect leaks, double-free, use-after-free.
+2. The allocator is not a value, contract, parameter, or selectable policy. Allocation is requested only through the global `alloc`/`realloc` functions and storage is returned only through `release`; there is no `Allocator` abstraction or implicit allocation.
+3. The release-mode implementation stays at C cost: it uses the platform allocation boundary and carries no Ace header, guards, registry, quarantine, or other per-allocation diagnostic metadata. Checked builds add a live-allocation registry for invalid/double release and leak diagnostics; detecting arbitrary reads or writes through a dangling alias requires separate access instrumentation and is not promised by the allocator alone.
 4. Machine-true: sizes and layout stay visible to the programmer (see: Iterations, Errors).
 5. A value lives on the stack unless explicitly allocated; allocation is the only path to heap memory, so stack vs heap is always statically known.
 6. Pointer type is `*T` (`p: *Point`); field access auto-derefs (`p.x` ≡ `(~p).x`); full dereference is `~p`; `->` never exists. `*T?` is a nullable pointer — free (zero bits).
 7. `~` is dereference, so NOT is `!` — logical on bools, bitwise on integers (Rust-style dual role). [provisional]
 8. Address-of `&expr` exists for lvalues only (variables, `arr[i]`, `s.field`) and yields a read-only `*T` by default — unmarked reference = read-only, same rule as params; a write-capable form exists [spelling queued: `&mut q` vs `mut &q`]. Its C jobs are gone: out-params died to by-reference parameters and multi-return; call-site `&x` for mutation died to `mut` marks. What remains: aliasing stack values, interior/field pointers, and bridging stack values into `*T` signatures.
 9. No pointer arithmetic on `*T` — use slices `[]T` (pointer + length) or an explicit raw-byte pointer type from the stdlib. [slice details carved with iteration]
-10. Allocator is an explicit contract value: allocating functions take `a: Allocator`; no global default, no implicit allocation anywhere; arena/page/general-purpose are library types that sign the contract.
-11. Allocation returns `*T?` — null is failure, checked by hand like every error. No abort-on-OOM.
-12. Cleanup is explicit frees only — no defer (additive later per philosophy.md Considerations #1); the goto-for-cleanup question is parked under conditions & iteration.
-13. `sizeof(T)` builtin returns the static size — memory size visible in code (Compiler #1).
+10. Raw surface: `alloc(size: int, align: int): []u8?`, `realloc(data: []u8, new_size: int): []u8?`, and `release(mut data: []u8?)`. Invalid requests and OOM return null, never abort. Sizes must be positive. v1 Apple arm64 alignment must be a positive power of two no greater than the platform heap's fundamental 16-byte alignment; larger over-aligned allocation is additive later. `realloc` requires the complete authoritative non-null slice, may move, and requires a positive new size; on invalid size or OOM the original slice remains live and unchanged, and on success only the returned slice is authoritative.
+11. `release` accepts an optional allocation slice so cleanup may be unconditional. Null is a no-op; otherwise it releases the storage and sets that caller variable to canonical null (zero pointer and zero length). The `mut` signature and call-site mark make this mutation visible.
+12. Slices are copyable views, not owners. Copying a slice copies only its pointer and length; all copies address the same storage. `release(mut a)` nulls only `a`: copied slices remain non-null dangling aliases and must not be used or released. Ace performs no alias search and adds no ownership or move analysis.
+13. Cleanup is explicit release only — no defer (additive later per philosophy.md Considerations #1); the goto-for-cleanup question is parked under conditions & iteration.
+14. `sizeof(T)` is always the compile-time storage size of one `T`; dynamic allocation does not affect it. Intrinsic `.len` exists only on sequences: `[N]T` (constant element count), `[]T` (stored runtime element count), and `string` (stored runtime byte count). Pointers, structs, tuples, contracts, scalars, and optionals gain no intrinsic `.len`; a declared struct field named `len` remains an ordinary field.
 
 ## Values & Passing
 Decision: value semantics with explicit copies; references only at call boundaries.
-1. Assignment copies — `q = p` gives `q` its own storage; mutating `q` never touches `p`.
+1. Assignment copies — `q = p` gives `q` its own value storage; mutating that copied value never changes `p`. For a slice this copies only its pointer and length: reassigning/reslicing `q` does not change `p`, while element writes through either view reach their shared backing storage (Memory #12).
 2. Function/method parameters are passed by reference (unlike C) — no hidden copies at call boundaries; mutations are visible to the caller. To pass a protected copy, assign to a new variable first.
 3. Plain declarations are stack storage; heap memory exists only via explicit allocation (see: Memory #5).
 4. Copy-on-write is not a language semantic — assignment is a plain copy. COW, where wanted, is an explicit opt-in library type.
@@ -70,7 +71,7 @@ Decision: nullability is tracked in the type; `null` is the universal literal. [
 
 ## Safety & Checked Builds
 Decision: checks are a development tool; release trusts the developer.
-1. Checked builds (debug): array bounds, integer overflow, allocator diagnostics (leaks, double-free, use-after-free) — all on.
+1. Checked builds (debug): array bounds and integer overflow are on. Allocator tracking diagnoses invalid/double release and leaks; arbitrary use-after-free access requires separate memory-access instrumentation and is not implied by allocation tracking.
 2. Release builds: checks stripped; the programmer and the tests own correctness.
 3. No Rust-style full safety: no borrow checker, no whole-program analysis — the compile-time priority forbids it.
 
@@ -186,15 +187,15 @@ asm "svc #0" {
 ```
 
 ## Stdlib
-Decision: minimal, allocator-explicit, nothing ambient.
+Decision: minimal, allocation-explicit, one fixed global strategy.
 1. Error inspection is the predeclared `Error` handle's direct read-only `code`, `domain`, and `message` fields (see: Errors). The initial `fmt` surface adds no `Error`/`Error?` overload: `fmt.print(error.message)` is already allocation-free and keeps null handling explicit.
-2. Allocator contract (raw, on byte slices): `alloc(size: int, align: int): []u8?`, `free(data: []u8)`, `resize(data: []u8, new_size: int): []u8?` — resize may grow in place or move; the returned slice is authoritative.
-3. Typed sugar — library code, not language: `create[T](a: Allocator): *T?`, `destroy[T](a: Allocator, p: *T)`, `make[T](a: Allocator, n: int): []T?`.
-4. Allocator implementations are values you construct — `page` (OS-page-backed), `arena` (bump), `gpa` (debug, leak-tracking; powers checked-build diagnostics). No global default exists anywhere.
+2. The raw allocation layer is the three global functions from Memory #10: `alloc`, `realloc`, and `release`. They are not methods on a value and take no allocator argument.
+3. v1 uses the platform general-purpose allocation boundary directly and adds no release-mode Ace metadata. `[]u8` already carries the only language-visible allocation facts needed by the raw API: pointer and requested byte length. Alignment is supplied explicitly to `alloc`; unsupported alignment is an invalid request and returns null rather than being silently weakened.
+4. Checked-build allocation tracking is tooling, not another allocator strategy or a release-mode representation change.
 5. Import resolution: bare name = stdlib only (`import math`); local files always by path (`import util: "./util.ace"`). Shadowing is impossible by construction.
 6. Platform access: through the OS system library via `extern "c"` (macOS: libSystem) — the language does not depend on C; this is the OS front door.
 7. `string` is a distinct view over bytes (`[]u8`, UTF-8 by convention) — a slice, no new machinery.
-8. v1 contents — six modules: `mem` (Allocator, page/arena/gpa, typed sugar), `sys` (OS calls), `fmt` (print/format), `math` (sqrt, `abs[T]`, `min[T]`/`max[T]`, …), `str` (byte/string operations), `simd` (`f32x4`, `i8x16`, arithmetic and shuffles emitting NEON directly — explicit vectorization, zero compiler analysis).
+8. v1 contents — six modules: `mem` (explicit byte/memory operations beyond the global raw allocation layer), `sys` (OS calls), `fmt` (print/format), `math` (sqrt, `abs[T]`, `min[T]`/`max[T]`, …), `str` (byte/string operations), `simd` (`f32x4`, `i8x16`, arithmetic and shuffles emitting NEON directly — explicit vectorization, zero compiler analysis).
 9. Output API begins as an exact overload set. `fmt.print(text: string): int` writes the supplied bytes exactly; `fmt.print(value: int): int` and `fmt.print(value: usize): int` write signed platform integers and memory-sized unsigned values in base-10 ASCII. None adds a newline or allocates; numeric conversion uses a fixed 20-byte stack buffer and covers each type's complete range. Every overload retries partial writes and returns bytes written, or the non-positive result from the current OS boundary. Other numeric overloads, `fmt.println`, formatted `fmt.printf`, and an optional `Error` convenience overload are additive follow-ups.
 
 ## Pre-Implementation Checklist
@@ -230,7 +231,7 @@ Compiler-session decisions:
 2. `for-in` is the only loop form; it lowers to a plain index loop — no iterator contract, no hidden machinery, zero cost.
 3. Element types are stated explicitly: `for i: int in 0 .. n` (ranges), `for b: u8 in buf` (slices/arrays).
 4. Ranges: `a .. b` exclusive by default; reverse and step forms available. [spelling provisional]
-5. Arrays `[N]T` are inline values; slices `[]T` are pointer + length; slicing expressions like `arr[1..n]` produce slices. [expression spelling provisional]
+5. Arrays `[N]T` are inline values; slices `[]T` are copyable pointer + element-count views; slicing expressions like `arr[1..n]` produce slices over the same storage. Intrinsic `.len` is the constant element count on arrays, stored element count on slices, and stored byte count on strings; allocation and ownership do not affect its availability. [expression spelling provisional]
 6. `break`/`continue` as usual; labeled `break` exits outer loops — the structured early-exit path.
 7. A `for-in` loop fixes its pointer and length at loop entry — mutations to the slice variable inside the body do not affect the running loop (element mutation through the loop is fine). Consequence: the compiler provably controls every index, so checked builds need no per-iteration bounds checks inside `for-in`.
 8. Implementation guidance: emit `for-in` as a pointer-bump loop (pointer + precomputed end, post-increment addressing) — the closed loop form is the optimization contract; straight loops should reach C-parity in v1.
@@ -238,7 +239,7 @@ Compiler-session decisions:
 ## Decision Queue
 Closed (philosophy phase):
 - [x] Why Ace exists; priority stack: performance > compile time > safety > simplicity.
-- [x] Memory management: manual + explicit allocators; safety via checked builds, not language rules.
+- [x] Memory management: manual + one explicit global allocation API; no allocator values/arguments, GC, ownership analysis, or hidden allocation; safety via checked builds, not language rules.
 - [x] Value semantics: assignment copies; parameters by reference; plain declarations are stack; COW is library-only.
 - [x] Null: tracked in the type (`T?`), `null` is the universal literal, non-nullable `T` costs nothing.
 - [x] Mutability: locals mutable by default (`const` opt-in); params read-only by default (`mut` grants write — visible in signature and call site).
@@ -254,7 +255,7 @@ Closed (philosophy phase):
 
 Carving phase — closed so far:
 - Declarations & signatures: `name: type` everywhere, keywordless, trailing returns, signature-typed function values, no pointer-to-function syntax.
-- Memory & allocator API: `*T` pointers (`~` deref, auto-deref fields, `&` address-of), explicit allocator contract (no default), `*T?` on OOM, explicit frees (no defer), `sizeof`.
+- Memory & allocation API: `*T` pointers (`~` deref, auto-deref fields, `&` address-of); fixed global `alloc`/`realloc`/`release` over byte slices with null failure and no allocator value; `release(mut data)` nulls only that variable while copied views may dangle; no defer; `sizeof(T)` is static and intrinsic `.len` belongs only to arrays, slices, and strings.
 - Error conventions: `Error?` last in multi-return (null = success); one-word handle to a const static `{code: i32, domain: typeid?, message: string}` descriptor; typed destructuring `n: int, error: Error? = read()`; no implicit allocation or per-occurrence payload.
 - Conditions & iteration: chained comparisons `lo <= x <= hi`; `switch` multi-way branch (no fallthrough); flow narrowing from explicit checks; labeled `break`, no goto; `for-in` only, lowering to index loops over pointer+length; arrays `[N]T`, slices `[]T`.
 - Function ABI: multi-return = anonymous struct per platform struct-return rules; positional returns; platform calling convention; `mut` params pass real addresses, small read-only params may pass by value; no user variadics (extern C only).
@@ -263,7 +264,7 @@ Carving phase — closed so far:
 - Import/export: `pub` prefix on declarations; whole-module qualified imports (`import math` → `math.sqrt`); aliasing for collisions; `extern "c" { … }` blocks (variadics only there) and `export` modifier for the C boundary.
 - Names & scoping: qualification as namespacing; type/value namespaces split by grammar position (type + constructor may share a name); variables/imports remain unique while free functions may form exact-signature overload sets; nearest-binding shadowing; ambiguous embedding sugar is an error.
 - Inline assembly: `asm "…" { in/out/clobbers }` with registers named directly — no constraint language; statement only; never reordered; ISA implied by target (v1: AArch64/Apple arm64).
-- Stdlib: allocation-free Error inspection through direct descriptor fields; raw allocator contract on byte slices + typed sugar `create[T]`/`destroy[T]`/`make[T]`; page/arena/gpa as constructed values; bare import = std, path import = local; OS via extern "c" system library; v1 = mem, sys, fmt, math, str.
+- Stdlib: allocation-free Error inspection through direct descriptor fields; one global raw allocation layer backed initially by the platform allocator with no release-mode Ace metadata; bare import = std, path import = local; OS via extern "c" system library; v1 = mem, sys, fmt, math, str.
 
 **Carving phase: complete.** The full language surface is carved, including panic (`panic(message: string)` reserved builtin with `write`+`abort` termination); implementation proceeds by chunks.
 
@@ -286,7 +287,8 @@ Implementation phase — closed so far:
 - [x] Minimal Error implementation: predeclared one-word `Error`, const static `ErrorDescriptor`, `typeid(T)` domain identity, free `Error?`/`typeid?` niches, direct read-only inspection, exact identity, domain/code matching, module export handling, and strict C-boundary rejection. Descriptors are validated as const-global named literals with compile-time code, null/typeid domain, and static message backing; handles lower to static descriptor relocations. Panic is deliberately excluded pending its separate decision. Normal and sanitizer suites pass.
 - [x] Panic surface: `panic` is a reserved builtin — no declaration in any scope may bind, shadow, or redefine the name — and its only use is the call `panic(message: string)`: exactly one message argument, any string expression. The call never returns; `panic` cannot be caught, recovered, or referenced as a value. Rationale: the language owns the mechanism end to end (philosophy #6, Errors #15); user code only triggers it, which keeps the channel unforgeable and frees the name from the shadowable-identifier rule that applies to other predeclared names.
 - [x] Panic termination: the message goes best-effort to stderr via `write(2)` exactly as supplied (no prefix, no forced newline; failed or partial writes never block termination), then `abort()` raises `SIGABRT`; both are undefined externals resolved by the system linker, keeping the emitter free of raw syscall plumbing. Checked and release builds are identical. Rationale: against `brk #0`, the trap stops the debugger at the exact panic PC but loses universal crash semantics (`SIGTRAP` is ambiguous in automation, no core dumps by convention); against an exit syscall, a graceful exit hides the bug entirely. `SIGABRT` is the conventional, tooling-recognized crash signal, and the extern-call path reuses existing emitter machinery. Panic fixtures observe exit status 134 via `// expect-exit:` lines.
-- [x] `size_of` → `sizeof` spelling: the size builtin reads as one word. `size` alone was considered and rejected — too confusable with slice/string `.len` and generic size talk. Semantics unchanged: compile-time static size of the named type in bytes (Memory #13).
+- [x] `size_of` → `sizeof` spelling: the size builtin reads as one word. `size` alone was considered and rejected — too confusable with slice/string `.len` and generic size talk. Semantics unchanged: compile-time static size of the named type in bytes (Memory #14).
+- [x] Global raw allocation layer (chunk 17) — predeclared calls `alloc(size: int, align: int): []u8?`, `realloc(data: []u8, new_size: int): []u8?`, and `release(mut data: []u8?)`; direct platform `malloc`/`realloc`/`free` lowering with no release-mode Ace header or registry; positive sizes, power-of-two alignment through 16 bytes on Apple arm64, null on invalid request/OOM, failed reallocation preserving the original, successful reallocation making only its returned slice authoritative, and release nulling the passed optional lvalue while copied views may dangle. Arrays now expose constant `.len`; slices expose stored element count and strings stored byte count, with other types rejected. `tests/emit/allocation.ace` covers allocation, invalid requests, resize preservation/movement semantics, sequence lengths, nulling, and null re-release; `tests/sema/docs_memory.ok.ace` mirrors the manual, with focused rejection fixtures. This slice also fixed latent unsigned 8/16-to-64 extension encodings (`UBFM X`, not the reserved 32-bit `sf=0,N=1` form) exposed by returning an allocated byte as `int`. Checked live-allocation tracking remains a separate instrumentation follow-up; the current emitter is the C-cost path.
 
 Provisional spellings (semantics fixed, spellings may be adjusted during implementation without a decision):
 - `const` keyword (locals/globals opt-in); `!` dual-role NOT; `T?` optional postfix; `mut` call-site token form; slicing expressions (`arr[1..n]`); range forms (`a .. b`, reverse, step); switch-case syntax; import alias/path forms; struct literal form; contract/vtable member spellings (`s.vt`).

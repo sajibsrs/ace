@@ -1,0 +1,62 @@
+// expect-exit: 42
+main(): int {
+    fixed: [3]u8 = [1, 2, 3]
+    if fixed.len != 3 {
+        return 1
+    }
+    text: string = "ace"
+    if text.len != 3 {
+        return 2
+    }
+
+    invalid: []u8? = alloc(4, 3)
+    if invalid != null {
+        release(mut invalid)
+        return 3
+    }
+
+    data: []u8? = alloc(4, 8)
+    if data != null {
+        if data.len != 4 {
+            release(mut data)
+            return 4
+        }
+        data[0] = 40
+        data[1] = 2
+
+        alias: []u8 = data
+        if alias.len != 4 {
+            release(mut data)
+            return 5
+        }
+
+        failed: []u8? = realloc(data, 0)
+        if failed != null {
+            release(mut failed)
+            release(mut data)
+            return 6
+        }
+        if data[0] != 40 {
+            release(mut data)
+            return 7
+        }
+
+        grown: []u8? = realloc(data, 8)
+        if grown != null {
+            data = grown
+            if data.len != 8 {
+                release(mut data)
+                return 8
+            }
+            answer: u8 = data[0] + data[1]
+            release(mut data)
+            if data != null {
+                return 9
+            }
+            release(mut data)
+            return int(answer)
+        }
+        release(mut data)
+    }
+    return 10
+}

@@ -1,0 +1,5 @@
+main(): int {
+    data: []u8? = alloc(8, 8)
+    grown: []u8? = realloc(data, 16)
+    return 0
+}

@@ -83,9 +83,16 @@ middle: []int = values[1..3]
 answer: int = middle[0] + middle[1]
 ```
 
-Array assignment copies all elements. Slicing does not allocate. The current
-compiler does not insert runtime index or slice-bound checks; out-of-range access
-is unchecked.
+Intrinsic `.len` is available on arrays (constant element count), slices
+(stored element count), and strings (stored byte count). It is not added to a
+struct, pointer, tuple, contract, scalar, or unchecked optional. A struct can
+still declare an ordinary field named `len`.
+
+Array assignment copies all elements. Slice assignment copies only its pointer
+and length, so both values view the same backing storage; it never copies the
+elements. Slicing does not allocate. See [Memory](memory.md) for allocation and
+lifetime rules. The current compiler does not insert runtime index or
+slice-bound checks; out-of-range access is unchecked.
 
 ## Multiple-return and function types
 

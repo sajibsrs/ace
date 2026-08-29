@@ -22,8 +22,9 @@
 
 // --- type kinds (definitions shared via sema.h) ---------------------------------
 
-static SType *T_ERR, *T_UT_INT, *T_UT_FLOAT, *T_UT_NULL;
+static SType *T_ERR, *T_VOID, *T_UT_INT, *T_UT_FLOAT, *T_UT_NULL;
 static SType *T_ERROR, *T_ERROR_DESC;
+static SType *T_BYTE_SLICE, *T_BYTE_SLICE_OPT;
 static SType* PRIMS[14];
 static uint64_t next_type_id = 1;
 
@@ -71,6 +72,7 @@ static const char* type_name(SType* t) {
     case SK_CONTRACT: return t->name ? t->name : "contract";
     case SK_DISTINCT: return t->name ? t->name : "distinct";
     case SK_ERROR: return "Error";
+    case SK_VOID: return "no value";
     case SK_UT: return t == T_UT_INT ? "integer literal" :
                     t == T_UT_FLOAT ? "float literal" : "null";
     default: return "?";
@@ -194,6 +196,27 @@ static void ck_err(Ck* k, Node* n, const char* fmt, ...) {
 // ordinary shadowable identifiers.
 static int is_panic_name(const char* name, uint32_t len) {
     return len == 5 && memcmp(name, "panic", 5) == 0;
+}
+
+static int memory_builtin(const char* name, uint32_t len) {
+    if (len == 5 && memcmp(name, "alloc", 5) == 0) return 1;
+    if (len == 7 && memcmp(name, "realloc", 7) == 0) return 2;
+    if (len == 7 && memcmp(name, "release", 7) == 0) return 3;
+    return 0;
+}
+
+static void ensure_memory_types(void) {
+    if (T_BYTE_SLICE) return;
+    if (!T_VOID) {
+        T_VOID = st_new(SK_VOID);
+        T_VOID->size = T_VOID->align = 1;
+    }
+    T_BYTE_SLICE = st_new(SK_SLICE);
+    T_BYTE_SLICE->base = st_prim(P_U8);
+    layout(T_BYTE_SLICE);
+    T_BYTE_SLICE_OPT = st_new(SK_OPT);
+    T_BYTE_SLICE_OPT->base = T_BYTE_SLICE;
+    layout(T_BYTE_SLICE_OPT);
 }
 
 static Sym* sym_new(uint8_t kind, const char* name, uint32_t len) {
@@ -788,9 +811,11 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
             b = b->base;
         }
         if (!write && e->len == 3 && memcmp(e->str, "len", 3) == 0 &&
-            (b->kind == SK_SLICE ||
-             (b->kind == SK_PRIM && b->prim == P_STRING)))
+            (b->kind == SK_SLICE || b->kind == SK_ARRAY ||
+             (b->kind == SK_PRIM && b->prim == P_STRING))) {
+            if (b->kind == SK_ARRAY) e->ival = b->count;
             return st_prim(P_USIZE);
+        }
         if (b->kind != SK_STRUCT) {
             ck_err(k, e, "type %s has no fields", type_name(b));
             return T_ERR;
@@ -1135,9 +1160,11 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         }
         if (b->kind == SK_ERROR) b = b->base;
         if (e->len == 3 && memcmp(e->str, "len", 3) == 0 &&
-            (b->kind == SK_SLICE ||
-             (b->kind == SK_PRIM && b->prim == P_STRING)))
+            (b->kind == SK_SLICE || b->kind == SK_ARRAY ||
+             (b->kind == SK_PRIM && b->prim == P_STRING))) {
+            if (b->kind == SK_ARRAY) e->ival = b->count;
             return st_prim(P_USIZE);
+        }
         if (b->kind == SK_CONTRACT) {
             Node* m = contract_method(b, e->str, e->len);
             if (!m) {
@@ -1434,6 +1461,83 @@ static SType* check_call(Ck* k, Node* call) {
     if (callee->kind == N_IDENT) {
         Sym* s = lookup_val(k, callee->str, callee->len);
         if (!s) {
+            int mb = memory_builtin(callee->str, callee->len);
+            if (mb == 1) { // alloc(size: int, align: int): []u8?
+                ensure_memory_types();
+                if (call->nkids != 2) {
+                    ck_err(k, call, "alloc takes exactly size and alignment");
+                    return T_ERR;
+                }
+                for (int i = 0; i < 2; i++) {
+                    Node* arg = call->kids[i];
+                    if (arg->kind == N_MUTARG) {
+                        ck_err(k, arg,
+                               "'mut' marks mut parameters; alloc arguments are read-only");
+                        arg = arg->a;
+                    }
+                    coerce(k, arg, st_prim(P_I64));
+                }
+                call->ival = 2; // emitter builtin marker
+                return T_BYTE_SLICE_OPT;
+            }
+            if (mb == 2) { // realloc(data: []u8, new_size: int): []u8?
+                ensure_memory_types();
+                if (call->nkids != 2) {
+                    ck_err(k, call, "realloc takes exactly data and new size");
+                    return T_ERR;
+                }
+                Node* data = call->kids[0];
+                Node* size = call->kids[1];
+                if (data->kind == N_MUTARG) {
+                    ck_err(k, data,
+                           "'mut' marks mut parameters; realloc arguments are read-only");
+                    data = data->a;
+                }
+                if (size->kind == N_MUTARG) {
+                    ck_err(k, size,
+                           "'mut' marks mut parameters; realloc arguments are read-only");
+                    size = size->a;
+                }
+                coerce(k, data, T_BYTE_SLICE);
+                coerce(k, size, st_prim(P_I64));
+                call->ival = 3;
+                return T_BYTE_SLICE_OPT;
+            }
+            if (mb == 3) { // release(mut data: []u8?)
+                ensure_memory_types();
+                if (call->nkids != 1) {
+                    ck_err(k, call, "release takes exactly one mut allocation slice");
+                    return T_ERR;
+                }
+                Node* arg = call->kids[0];
+                if (arg->kind != N_MUTARG) {
+                    ck_err(k, arg,
+                           "release needs 'mut' at the call site: release(mut data)");
+                    return T_ERR;
+                }
+                Node* raw = arg->a;
+                SType* visible = check_lvalue(k, raw, 1);
+                SType* declared = visible;
+                Sym* current = raw->kind == N_IDENT ? node_sym(raw) : NULL;
+                Sym* original = current && current->decl ? node_sym(current->decl) : NULL;
+                if (original && original->type) declared = original->type;
+                if (!same_type(declared, T_BYTE_SLICE_OPT)) {
+                    ck_err(k, raw, "release requires a mutable []u8? allocation variable");
+                    return T_ERR;
+                }
+                // Nulling ends an identifier's flow narrowing. Add a new
+                // post-call fact without changing symbols already attached to
+                // earlier expressions in the block.
+                if (current && same_type(visible, T_BYTE_SLICE)) {
+                    Sym* post = sym_new(SYM_VAR, current->name, current->len);
+                    *post = *current;
+                    post->type = T_BYTE_SLICE_OPT;
+                    post->next = k->scope->values;
+                    k->scope->values = post;
+                }
+                call->ival = 4;
+                return T_VOID;
+            }
             if (callee->len == 6 && memcmp(callee->str, "typeid", 6) == 0) {
                 if (call->nkids != 1) {
                     ck_err(k, call, "typeid takes one exact named type");
@@ -1737,6 +1841,9 @@ static void narrow(Ck* k, Node* cond, int taken) {
     ns->decl = s->decl;
     ns->is_mut = s->is_mut;
     ns->is_const = s->is_const;
+    ns->is_param = s->is_param;
+    ns->is_global = s->is_global;
+    ns->is_noalias = s->is_noalias;
     ns->is_const_backed = s->is_const_backed;
     ns->next = k->scope->values;
     k->scope->values = ns;
