@@ -1,0 +1,4 @@
+main(): int {
+    panic: int = 3
+    return panic
+}

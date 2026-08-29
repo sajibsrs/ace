@@ -1,0 +1,7 @@
+read(panic: string): int {
+    return 0
+}
+
+main(): int {
+    return read("x")
+}

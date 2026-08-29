@@ -189,6 +189,13 @@ static void ck_err(Ck* k, Node* n, const char* fmt, ...) {
     k->d->errors++;
 }
 
+// `panic` is the one reserved builtin name: no binding may take it in any
+// scope (spec Errors #15, Names #2) — unlike sizeof/typeid, which are
+// ordinary shadowable identifiers.
+static int is_panic_name(const char* name, uint32_t len) {
+    return len == 5 && memcmp(name, "panic", 5) == 0;
+}
+
 static Sym* sym_new(uint8_t kind, const char* name, uint32_t len) {
     Sym* s = (Sym*)arena_alloc(sizeof(Sym));
     memset(s, 0, sizeof *s);
@@ -230,6 +237,10 @@ static Sym* lookup_type(Ck* k, const char* name, uint32_t len) {
 }
 
 static Sym* declare_val(Ck* k, Node* at, uint8_t kind, const char* name, uint32_t len) {
+    if (is_panic_name(name, len)) {
+        ck_err(k, at, "'panic' is a reserved builtin name — no declaration may take it");
+        return NULL;
+    }
     if (find_in(k->scope->values, name, len)) {
         ck_err(k, at, "duplicate name '%.*s' in this scope", (int)len, name);
         return NULL;
@@ -241,6 +252,10 @@ static Sym* declare_val(Ck* k, Node* at, uint8_t kind, const char* name, uint32_
 }
 
 static Sym* declare_type(Ck* k, Node* at, const char* name, uint32_t len) {
+    if (is_panic_name(name, len)) {
+        ck_err(k, at, "'panic' is a reserved builtin name — no declaration may take it");
+        return NULL;
+    }
     if (find_in(k->scope->types, name, len)) {
         ck_err(k, at, "duplicate type '%.*s'", (int)len, name);
         return NULL;
@@ -547,6 +562,10 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
     uint32_t key_len = f->len;
     const char* key = f->str;
     if (f->flags & F_METHOD) key = method_key(f->d, f->str, f->len, &key_len);
+    else if (is_panic_name(f->str, f->len)) { // methods bind a qualified name
+        ck_err(k, f, "'panic' is a reserved builtin name — no declaration may take it");
+        return NULL;
+    }
     Sym* head = find_in(k->scope->values, key, key_len);
     if (head && head->kind != SYM_FUNC) {
         ck_err(k, f, "duplicate name '%.*s' in this scope", (int)f->len, f->str);
@@ -730,6 +749,10 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
     case N_IDENT: {
         Sym* s = lookup_val(k, e->str, e->len);
         if (!s) {
+            if (is_panic_name(e->str, e->len)) {
+                ck_err(k, e, "'panic' is a builtin call, not a value");
+                return T_ERR;
+            }
             ck_err(k, e, "unknown name '%.*s'", (int)e->len, e->str);
             return T_ERR;
         }
@@ -895,6 +918,10 @@ static SType* expr_type_raw(Ck* k, Node* e) {
     case N_IDENT: {
         Sym* s = lookup_val(k, e->str, e->len);
         if (!s) {
+            if (is_panic_name(e->str, e->len)) {
+                ck_err(k, e, "'panic' is a builtin call, not a value");
+                return T_ERR;
+            }
             ck_err(k, e, "unknown name '%.*s'", (int)e->len, e->str);
             return T_ERR;
         }
@@ -1446,7 +1473,7 @@ static SType* check_call(Ck* k, Node* call) {
                     return T_ERR;
                 return want;
             }
-            if (callee->len == 7 && memcmp(callee->str, "size_of", 7) == 0) {
+            if (callee->len == 6 && memcmp(callee->str, "sizeof", 6) == 0) {
                 if (call->nkids == 1 && call->kids[0]->kind == N_IDENT) {
                     Node* arg = call->kids[0];
                     SType* t = prim_by_name(arg->str, arg->len);
@@ -1460,8 +1487,25 @@ static SType* check_call(Ck* k, Node* call) {
                         return st_prim(P_USIZE);
                     }
                 }
-                ck_err(k, call, "size_of takes one type name");
+                ck_err(k, call, "sizeof takes one type name");
                 return T_ERR;
+            }
+            // reserved builtin: panic(message: string) — never returns
+            if (is_panic_name(callee->str, callee->len)) {
+                if (call->nkids != 1) {
+                    ck_err(k, call,
+                           "panic takes exactly one string message, got %d arguments",
+                           call->nkids);
+                    return T_ERR;
+                }
+                if (call->kids[0]->kind == N_MUTARG) {
+                    ck_err(k, call->kids[0],
+                           "'mut' marks mut parameters; panic's message is read-only");
+                    return T_ERR;
+                }
+                if (!coerce(k, call->kids[0], st_prim(P_STRING))) return T_ERR;
+                call->ival = 1; // emitter: sema-approved panic call marker
+                return T_ERR;   // never returns; poison keeps enclosing uses quiet
             }
             // forward top-level call — deferred like an emitter fixup
             Pending* pd = (Pending*)arena_alloc(sizeof(Pending));

@@ -146,6 +146,15 @@ static Node* load_module(Loader* L, const char* path) {
     return file;
 }
 
+// Module-level declaration names are checked before prefixing: `m$panic`
+// would pass sema's reservation and silently shadow the builtin for this
+// module's own calls (rename_refs rewrites them to the declaration).
+static void check_reserved_name(Loader* L, Node* at, const char* name, uint32_t len) {
+    if (len == 5 && memcmp(name, "panic", 5) == 0)
+        import_err(L->d, at,
+                   "'panic' is a reserved builtin name — no declaration may take it");
+}
+
 // The member surface of a module: name + namespace + pub-ness. Names are
 // unique per namespace inside a module (the checker enforces it after the
 // merge), so overloads of one name fold into a single member entry whose
@@ -167,25 +176,31 @@ static void add_member(Module* m, const char* name, uint32_t len, int is_type, i
     m->members = x;
 }
 
-static void collect_members(Module* m) {
+static void collect_members(Loader* L, Module* m) {
     for (int i = 0; i < m->file->nkids; i++) {
         Node* n = m->file->kids[i];
         switch (n->kind) {
         case N_FUNC:
-            if (!(n->flags & F_METHOD))
+            if (!(n->flags & F_METHOD)) { // methods bind a qualified name
+                check_reserved_name(L, n, n->str, n->len);
                 add_member(m, n->str, n->len, 0, (n->flags & F_PUB) != 0);
+            }
             break;
         case N_VAR:
+            check_reserved_name(L, n, n->kids[0]->str, n->kids[0]->len);
             add_member(m, n->kids[0]->str, n->kids[0]->len, 0,
                        (n->flags & F_PUB) != 0);
             break;
         case N_STRUCT: case N_CONTRACT: case N_ENUM:
         case N_ALIAS: case N_DISTINCT:
+            check_reserved_name(L, n, n->str, n->len);
             add_member(m, n->str, n->len, 1, (n->flags & F_PUB) != 0);
             break;
         case N_EXTERN: // C bindings are module-private
-            for (int j = 0; j < n->nkids; j++)
+            for (int j = 0; j < n->nkids; j++) {
+                check_reserved_name(L, n->kids[j], n->kids[j]->str, n->kids[j]->len);
                 add_member(m, n->kids[j]->str, n->kids[j]->len, 0, 0);
+            }
             break;
         default:
             break;
@@ -339,7 +354,7 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
     Node* file = load_module(L, canon);
     if (!file) return NULL;
     Module* m = module_new(L, canon, file);
-    collect_members(m); // original names + pub-ness, before any renaming
+    collect_members(L, m); // original names + pub-ness, before any renaming
     m->next = L->loading; // push
     L->loading = m;
     resolve_file(L, file, canon, 0);

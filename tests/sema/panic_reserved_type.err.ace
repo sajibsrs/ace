@@ -1,0 +1,5 @@
+panic: struct { message: string }
+
+main(): int {
+    return 0
+}

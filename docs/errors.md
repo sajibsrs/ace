@@ -158,6 +158,51 @@ whether domain and code should also appear. Print them explicitly when wanted.
 Occurrence-specific context, such as a failure offset, is returned separately
 alongside the error rather than stored inside it.
 
+## Panic
+
+`panic` terminates the process for broken invariants. It is a channel
+completely separate from recoverable errors: it is never catchable,
+recoverable, or convertible into an `Error`, and an `Error` can never become a
+panic. Users trigger it; the language owns everything that happens next.
+
+`panic` is a reserved builtin name — the one identifier no declaration may
+bind, shadow, or redefine in any scope. Declaring it as a variable, const,
+parameter, function, global, or type is a compile error, so the call can never
+be forged or intercepted. `panic` is not a first-class value: referencing it
+without calling it is an error, and it cannot be assigned or passed around.
+
+Its only use is the call:
+
+```ace
+panic(message: string)
+```
+
+- Exactly one argument, any string expression — a static literal or a runtime
+  value, coerced to `string` with no implicit conversions.
+- The call never returns.
+
+A common bridge from the error world prints the checked error's static message
+on the way out:
+
+```ace
+load(path: string): int {
+    data: []u8, error: Error? = fs_read(path)
+    if error != null {
+        panic(error.message)
+    }
+    return int(data.len)
+}
+```
+
+Termination behavior, identical in checked and release builds:
+
+- The message is delivered best-effort to standard error (file descriptor 2)
+  exactly as supplied: no prefix, no added newline, no retry.
+- A failed or partial write never blocks termination; the write's result is
+  discarded.
+- The process then aborts via `abort()` — `SIGABRT`, which shells report as
+  exit status 134.
+
 ## Current limits
 
 - Error messages are static strings; owned or formatted messages, runtime
@@ -166,8 +211,7 @@ alongside the error rather than stored inside it.
 - There is no automatic propagation; every check is written by the programmer.
 - Domain identity values must never be serialized or exposed as stable
   identifiers outside one linked program.
-- `panic` is not implemented; an unrecoverable-invariant story remains a
-  separate queued decision.
 
 The examples are covered by `tests/sema/docs_errors.ok.ace` and the runnable
-fixtures in `tests/emit/errors.ace` and `tests/modules/error_export/`.
+fixtures in `tests/emit/errors.ace`, `tests/emit/panic.ace`, and
+`tests/modules/error_export/`.

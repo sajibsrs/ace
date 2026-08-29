@@ -28,13 +28,13 @@ read(fail: bool): (usize, Error?) {
 }
 
 main(): int {
-    if size_of(Error) != 8 {
+    if sizeof(Error) != 8 {
         return 1
     }
-    if size_of(typeid) != 8 {
+    if sizeof(typeid) != 8 {
         return 2
     }
-    if size_of(ErrorDescriptor) != 32 {
+    if sizeof(ErrorDescriptor) != 32 {
         return 3
     }
     if typeid(FileError) == typeid(NetworkError) {

@@ -1997,12 +1997,32 @@ static EV gen_call(Em* e, Node* call) {
         EV v = gen_expr(e, call->kids[0]);
         return gen_cast(e, v, node_ty(call->kids[0]), node_ty(call));
     }
-    // size_of builtin (constant folded by sema)
-    if (callee->kind == N_IDENT && !call->sym && callee->len == 7 &&
-        memcmp(callee->str, "size_of", 7) == 0) {
+    // sizeof builtin (constant folded by sema)
+    if (callee->kind == N_IDENT && !call->sym && callee->len == 6 &&
+        memcmp(callee->str, "sizeof", 6) == 0) {
         int t = tmp_int(e);
         load_imm(e, 1, xreg(t), call->ival);
         return (EV){ CLS_INT, t };
+    }
+    // panic(message): write the bytes to stderr best-effort, then abort —
+    // both undefined externals resolved by the system linker (spec Errors #15).
+    // The write result is ignored: a failed or partial write never blocks the
+    // abort, and nothing after it ever runs.
+    if (callee->kind == N_IDENT && !call->sym && call->ival &&
+        callee->len == 5 && memcmp(callee->str, "panic", 5) == 0) {
+        EV v = gen_expr(e, call->kids[0]);
+        if (v.cls != CLS_ADDR) {
+            em_err(e, call, "panic message must be a string in memory");
+            return v;
+        }
+        ld_reg(e, 16, xreg(v.idx), 0, 8, 0); // x16 = message bytes
+        ld_reg(e, 17, xreg(v.idx), 8, 8, 0); // x17 = message length
+        mov_int(e, 1, 1, 16);
+        mov_int(e, 1, 2, 17);
+        load_imm(e, 0, 0, 2); // w0 = 2 (stderr)
+        emit_bl_extern(e, "_write", 6);
+        emit_bl_extern(e, "_abort", 6); // noreturn
+        return (EV){ CLS_INT, tmp_int(e) };
     }
     // generic instantiation call: bigger[int](3, 9) — find the stamp by signature
     if (callee->kind == N_INDEX && callee->sym) {

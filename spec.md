@@ -40,7 +40,7 @@ Decision: manual management with explicit allocators (Zig/Odin school).
 10. Allocator is an explicit contract value: allocating functions take `a: Allocator`; no global default, no implicit allocation anywhere; arena/page/general-purpose are library types that sign the contract.
 11. Allocation returns `*T?` — null is failure, checked by hand like every error. No abort-on-OOM.
 12. Cleanup is explicit frees only — no defer (additive later per philosophy.md Considerations #1); the goto-for-cleanup question is parked under conditions & iteration.
-13. `size_of(T)` builtin returns the static size — memory size visible in code (Compiler #1).
+13. `sizeof(T)` builtin returns the static size — memory size visible in code (Compiler #1).
 
 ## Values & Passing
 Decision: value semantics with explicit copies; references only at call boundaries.
@@ -202,7 +202,7 @@ Semantics are complete; these are the implementation-level defaults (derived fro
 
 Recorded defaults (from samples, now normative):
 1. Source files are UTF-8; newline terminates statements — no semicolons; `//` line comments and `/* … */` block comments (non-nesting; a newline inside a block comment acts as a statement terminator). [comment forms decided in implementation]
-2. Keyword inventory (v1): `import pub mut const if else for in switch return break continue asm extern export contract struct signs distinct type enum null true false` — plus builtin functions (`size_of`, `typeid`), not keywords. Primitive and predeclared type names are identifiers, not keywords. The one exception is `panic`: reserved in every scope, no binding may take the name (Errors #15).
+2. Keyword inventory (v1): `import pub mut const if else for in switch return break continue asm extern export contract struct signs distinct type enum null true false` — plus builtin functions (`sizeof`, `typeid`), not keywords. Primitive and predeclared type names are identifiers, not keywords. The one exception is `panic`: reserved in every scope, no binding may take the name (Errors #15).
 3. Primitive types: `bool`, `i8 i16 i32 i64`, `u8 u16 u32 u64`, `f32 f64`, `string`, `usize`, `typeid`, plus the platform words `int` (= i64 on arm64) and `uint` (= u64 on arm64); C-ABI aliases (`c_int` …) inside extern blocks only.
 4. Casts are explicit and constructor-shaped: `i32(x)`, `Meters(x)` — no implicit numeric conversions; `null` assigns to any `T?`. Literals are untyped constants: an integer/float/char literal takes the expected type at each use site and must fit (range-checked); no other implicit conversions exist. [literal rule decided in implementation]
 5. `if`/`switch`/`for` are statements, never expressions; conditions are `bool` only (no integer-as-bool).
@@ -254,7 +254,7 @@ Closed (philosophy phase):
 
 Carving phase — closed so far:
 - Declarations & signatures: `name: type` everywhere, keywordless, trailing returns, signature-typed function values, no pointer-to-function syntax.
-- Memory & allocator API: `*T` pointers (`~` deref, auto-deref fields, `&` address-of), explicit allocator contract (no default), `*T?` on OOM, explicit frees (no defer), `size_of`.
+- Memory & allocator API: `*T` pointers (`~` deref, auto-deref fields, `&` address-of), explicit allocator contract (no default), `*T?` on OOM, explicit frees (no defer), `sizeof`.
 - Error conventions: `Error?` last in multi-return (null = success); one-word handle to a const static `{code: i32, domain: typeid?, message: string}` descriptor; typed destructuring `n: int, error: Error? = read()`; no implicit allocation or per-occurrence payload.
 - Conditions & iteration: chained comparisons `lo <= x <= hi`; `switch` multi-way branch (no fallthrough); flow narrowing from explicit checks; labeled `break`, no goto; `for-in` only, lowering to index loops over pointer+length; arrays `[N]T`, slices `[]T`.
 - Function ABI: multi-return = anonymous struct per platform struct-return rules; positional returns; platform calling convention; `mut` params pass real addresses, small read-only params may pass by value; no user variadics (extern C only).
@@ -286,6 +286,7 @@ Implementation phase — closed so far:
 - [x] Minimal Error implementation: predeclared one-word `Error`, const static `ErrorDescriptor`, `typeid(T)` domain identity, free `Error?`/`typeid?` niches, direct read-only inspection, exact identity, domain/code matching, module export handling, and strict C-boundary rejection. Descriptors are validated as const-global named literals with compile-time code, null/typeid domain, and static message backing; handles lower to static descriptor relocations. Panic is deliberately excluded pending its separate decision. Normal and sanitizer suites pass.
 - [x] Panic surface: `panic` is a reserved builtin — no declaration in any scope may bind, shadow, or redefine the name — and its only use is the call `panic(message: string)`: exactly one message argument, any string expression. The call never returns; `panic` cannot be caught, recovered, or referenced as a value. Rationale: the language owns the mechanism end to end (philosophy #6, Errors #15); user code only triggers it, which keeps the channel unforgeable and frees the name from the shadowable-identifier rule that applies to other predeclared names.
 - [x] Panic termination: the message goes best-effort to stderr via `write(2)` exactly as supplied (no prefix, no forced newline; failed or partial writes never block termination), then `abort()` raises `SIGABRT`; both are undefined externals resolved by the system linker, keeping the emitter free of raw syscall plumbing. Checked and release builds are identical. Rationale: against `brk #0`, the trap stops the debugger at the exact panic PC but loses universal crash semantics (`SIGTRAP` is ambiguous in automation, no core dumps by convention); against an exit syscall, a graceful exit hides the bug entirely. `SIGABRT` is the conventional, tooling-recognized crash signal, and the extern-call path reuses existing emitter machinery. Panic fixtures observe exit status 134 via `// expect-exit:` lines.
+- [x] `size_of` → `sizeof` spelling: the size builtin reads as one word. `size` alone was considered and rejected — too confusable with slice/string `.len` and generic size talk. Semantics unchanged: compile-time static size of the named type in bytes (Memory #13).
 
 Provisional spellings (semantics fixed, spellings may be adjusted during implementation without a decision):
 - `const` keyword (locals/globals opt-in); `!` dual-role NOT; `T?` optional postfix; `mut` call-site token form; slicing expressions (`arr[1..n]`); range forms (`a .. b`, reverse, step); switch-case syntax; import alias/path forms; struct literal form; contract/vtable member spellings (`s.vt`).

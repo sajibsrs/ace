@@ -1,0 +1,4 @@
+main(): int {
+    panic("first", "second")
+    return 0
+}

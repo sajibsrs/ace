@@ -1,0 +1,7 @@
+panic(message: string): void {
+}
+
+main(): int {
+    panic("hello")
+    return 0
+}

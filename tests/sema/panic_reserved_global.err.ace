@@ -1,0 +1,5 @@
+panic: const string = "reserved"
+
+main(): int {
+    return 0
+}

@@ -46,14 +46,22 @@ fail(): Error? {
     return not_found
 }
 
+load_or_panic(path: string): int {
+    data: []u8, error: Error? = fs_read(path)
+    if error != null {
+        panic(error.message)
+    }
+    return int(data.len)
+}
+
 main(): int {
-    if size_of(Error) != 8 {
+    if sizeof(Error) != 8 {
         return 1
     }
-    if size_of(typeid) != 8 {
+    if sizeof(typeid) != 8 {
         return 2
     }
-    if size_of(ErrorDescriptor) != 32 {
+    if sizeof(ErrorDescriptor) != 32 {
         return 3
     }
     if not_found.code != 2 {
@@ -79,6 +87,9 @@ main(): int {
     }
     if load("") != 1 {
         return 10
+    }
+    if load_or_panic("ok") != 1 {
+        return 11
     }
     return 42
 }
