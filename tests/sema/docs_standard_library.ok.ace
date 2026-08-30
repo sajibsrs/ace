@@ -1,5 +1,5 @@
 // Mirrors docs/standard-library.md sys examples (sema check only; runtime
-// coverage lives in tests/emit/sys.ace).
+// coverage lives in tests/emit/sys.ace and tests/emit/sys_time.ace).
 import sys
 
 write_note(): int {
@@ -29,10 +29,27 @@ check_missing(): int {
     return 0
 }
 
+time_mono_example(): int {
+    start: u64 = sys.time_mono(false)
+    sum: int = 0
+    for i: int in 0 .. 1_000_000 {
+        sum += i
+    }
+    elapsed_ns: u64 = sys.time_mono(false) - start
+    if elapsed_ns == 0 {
+        return 1
+    }
+    return 0
+}
+
 main(): int {
     code: int = write_note()
     if code != 0 {
         return code
     }
-    return check_missing()
+    code = check_missing()
+    if code != 0 {
+        return 10 + code
+    }
+    return time_mono_example()
 }

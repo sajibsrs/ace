@@ -1,4 +1,5 @@
-// sys — the thin OS boundary: file descriptors and byte I/O (Apple arm64).
+// sys — the thin OS boundary: file descriptors, byte I/O, and monotonic
+// time (Apple arm64).
 //
 // Pure Ace over the system library through extern "c"; the link-name syntax
 // keeps the raw C bindings private. Every public function is allocation-free;
@@ -12,6 +13,7 @@ extern "c" {
     c_read(fd: i32, buf: mut *u8, size: usize): i64 = "read"
     c_write(fd: i32, buf: *u8, size: usize): i64 = "write"
     c_errno(): mut *i32 = "__error"
+    c_clock_gettime_nsec_np(clk_id: i32): u64 = "clock_gettime_nsec_np"
 }
 
 // Descriptor handle. Canonical zero is fd 0 (stdin, valid); -1 marks a
@@ -124,4 +126,26 @@ pub open(path: string, flags: i32, mode: u32): (Fd, Error) {
         return Fd(-1), Error(&open_error)
     }
     return Fd(fd), null
+}
+
+// Monotonic time. Darwin clock ids from mach/clock_types.h:
+// CLOCK_MONOTONIC_RAW runs on mach_continuous_time and keeps advancing while
+// the system is asleep; CLOCK_UPTIME_RAW runs on mach_absolute_time and
+// pauses while the system is asleep. Both are tick-based, so setting the
+// calendar clock moves neither.
+CLOCK_MONOTONIC_RAW: const i32 = 4
+CLOCK_UPTIME_RAW: const i32 = 8
+
+// Monotonic clock reading in nanoseconds from an unspecified origin.
+// sleep == true selects the clock that continues while the system is
+// asleep; sleep == false selects the clock that pauses during system sleep
+// but advances whenever the system is awake, including while this process
+// is idle or blocked — it is never process CPU time. Neither mode is
+// affected by calendar-clock changes, and readings may only be subtracted
+// when they were taken with the same sleep argument.
+pub time_mono(sleep: bool): u64 {
+    if sleep {
+        return c_clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)
+    }
+    return c_clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
 }

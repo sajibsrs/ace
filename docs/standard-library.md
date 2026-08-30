@@ -10,7 +10,7 @@ Today's modules:
 - `fmt` — allocation-free text output
 - `math` — minimal generic helpers
 - `mem` — raw allocation and allocation-free byte operations
-- `sys` — file descriptors, byte I/O, and the errno companion
+- `sys` — file descriptors, byte I/O, errno, and monotonic time
 
 Everything else in the planned v1 set (`str`, `simd`) does not
 exist yet.
@@ -86,7 +86,7 @@ arithmetic used by the function.
 
 ## sys
 
-`sys` is the thin file-I/O boundary over the operating system. It never
+`sys` is the thin operating-system boundary: file I/O and monotonic time. It
 allocates — only callers allocate — and every failure is an ordinary `Error`
 value checked with a branch.
 
@@ -147,7 +147,38 @@ if err != null {
 }
 ```
 
-Time and other operating-system surfaces are not implemented yet.
+`time_mono(sleep: bool): u64` reads a monotonic clock in nanoseconds from an
+unspecified origin. The flag chooses between the two flavors of monotonic
+time:
+
+- `sleep == true` — the clock keeps advancing while the system is asleep.
+- `sleep == false` — the clock pauses while the system is asleep and advances
+  whenever the system is awake, including while this process is idle or
+  blocked. It is not process CPU time.
+
+Both modes are immune to calendar-clock changes. Subtract only readings taken
+with the same `sleep` argument — cross-mode differences are meaningless. The
+call allocates nothing and cannot fail.
+
+```ace
+import sys
+
+main(): int {
+    start: u64 = sys.time_mono(false)
+    sum: int = 0
+    for i: int in 0 .. 1_000_000 {
+        sum += i
+    }
+    elapsed_ns: u64 = sys.time_mono(false) - start
+    if elapsed_ns == 0 {
+        return 1
+    }
+    return 0
+}
+```
+
+Other operating-system surfaces (directory operations, sockets, calendar
+time, CPU time) are not implemented yet.
 
 ## Current limitations
 
@@ -157,8 +188,8 @@ Time and other operating-system surfaces are not implemented yet.
   explicit cast selects between the existing `int` and `usize` overloads.
 - `math` has no `sqrt`, floats, or libm binding.
 - There is no user-configurable search path for `std/`.
-- `sys` has no time, directory, or socket surface, and no `unlink`; tests
-  that create files leave them behind.
+- `sys` has no directory or socket surface, no calendar-time or CPU-time
+  clock, and no `unlink`; tests that create files leave them behind.
 - Extern C variadics declared with `...` are not callable with the stack
   argument convention Apple arm64 requires, so `sys` binds fixed-arity
   exports like `__open` instead.
