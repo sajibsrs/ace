@@ -45,8 +45,28 @@ for i: int in 4 .. 0 {
 
 Equal endpoints produce an empty range. The first endpoint is evaluated once,
 then the second endpoint once, before the loop. Assigning to the loop variable
-does not alter the internal cursor. Explicit stepped ranges are not yet
-implemented.
+does not alter the internal cursor.
+
+An optional positive step follows the second endpoint. `step` is contextual,
+not reserved, so it remains available as an ordinary identifier:
+
+```ace
+step: int = 3
+
+for i: int in 0 .. 9 step step {
+    // 0, 3, 6
+}
+
+for i: int in 9 .. 0 step step {
+    // 6, 3, 0
+}
+```
+
+The step has exactly the bounds' integer type and may be an arbitrary
+expression. It is evaluated once after both endpoints, including for an empty
+range. A statically known zero or negative step is rejected. Runtime-computed
+steps must also be positive; the current compiler has no checked-build mode and
+therefore assumes that precondition without inserting validation.
 
 ## Arrays and slices
 
@@ -101,5 +121,21 @@ work: {
 }
 ```
 
-`break label` may target only an enclosing labeled block. `continue` has no
-labeled form. Ace has no `goto` and switch cases do not fall through.
+`break label` may target only an enclosing labeled block. `continue label`
+restarts one from its beginning, making indefinite repetition explicit without
+a separate loop construct:
+
+```ace
+forever: {
+    if finished {
+        break forever
+    }
+
+    do_work()
+    continue forever
+}
+```
+
+Reaching the closing brace still exits normally. Plain `continue` advances the
+nearest `for-in` loop; only its labeled form restarts a block. Ace has no `goto`
+and switch cases do not fall through.

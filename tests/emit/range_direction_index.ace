@@ -1,8 +1,14 @@
 // expect-exit: 42
 calls: int = 0
+step_calls: int = 0
 
 bound(value: i32): i32 {
     calls += 1
+    return value
+}
+
+stride(value: int): int {
+    step_calls += 1
     return value
 }
 
@@ -24,11 +30,31 @@ main(): int {
         return 2
     }
 
+    step: int = 3
+    stepped: i32 = 0
+    for i: i32 in 0 .. 9 step step {
+        stepped = stepped * 10 + i
+    }
+    if stepped != 36 {
+        return 10
+    }
+
+    stepped_reverse: i32 = 0
+    for i: i32 in 9 .. 0 step stride(step) {
+        stepped_reverse = stepped_reverse * 10 + i
+    }
+    if stepped_reverse != 630 || step_calls != 1 {
+        return 11
+    }
+
     empty: i32 = 7
     for i: i32 in 2 .. 2 {
         empty = i
     }
-    if empty != 7 {
+    for i: i32 in 2 .. 2 step stride(2) {
+        empty = i
+    }
+    if empty != 7 || step_calls != 2 {
         return 3
     }
 
@@ -70,6 +96,15 @@ main(): int {
         return 9
     }
 
+    cross_step_count: int = 0
+    for item: i8 in cross_low .. cross_high step i8(2) {
+        cross_step_count += 1
+        cross_sum += int(item)
+    }
+    if cross_step_count != 3 || cross_sum != 0 {
+        return 12
+    }
+
     unsigned_low: u8 = 250
     unsigned_high: u8 = 255
     unsigned_sum: int = 0
@@ -80,6 +115,15 @@ main(): int {
         return 7
     }
 
+    unsigned_step: u8 = 2
+    unsigned_step_sum: int = 0
+    for item: u8 in unsigned_high .. unsigned_low step unsigned_step {
+        unsigned_step_sum += int(item)
+    }
+    if unsigned_step_sum != 756 {
+        return 13
+    }
+
     view: []i32 = values[1..4]
     view_score: i32 = 0
     for index: usize, item: i32 in view {
@@ -87,6 +131,42 @@ main(): int {
     }
     if view_score != 39 {
         return 8
+    }
+
+    restarts: int = 0
+    repeat: {
+        restarts += 1
+        if restarts < 3 {
+            continue repeat
+        }
+    }
+    if restarts != 3 {
+        return 14
+    }
+
+    nested_restarts: int = 0
+    again: {
+        nested_restarts += 1
+        for item: i32 in values {
+            if item == 2 && nested_restarts < 3 {
+                continue again
+            }
+        }
+    }
+    if nested_restarts != 3 {
+        return 15
+    }
+
+    cycles: int = 0
+    forever: {
+        cycles += 1
+        if cycles == 4 {
+            break forever
+        }
+        continue forever
+    }
+    if cycles != 4 {
+        return 16
     }
     return 42
 }

@@ -18,6 +18,10 @@ main(): int {
     for i: int in 4 .. 0 {
         i = 0
     }
+    step: int = 2
+    for i: int in 0 .. 4 step step {
+        i = 0
+    }
     for item: i32 in values {
         value = item
     }
@@ -33,6 +37,13 @@ main(): int {
             if item < 0 {
                 break work
             }
+        }
+    }
+    repeats: int = 0
+    retry: {
+        repeats += 1
+        if repeats < 2 {
+            continue retry
         }
     }
     if inside && category == 1 {

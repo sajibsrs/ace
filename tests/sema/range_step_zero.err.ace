@@ -1,0 +1,6 @@
+main(): int {
+    for value: int in 0 .. 10 step 0 {
+        return value
+    }
+    return 0
+}

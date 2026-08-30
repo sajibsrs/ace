@@ -1,0 +1,6 @@
+main(): int {
+    block: {
+        continue missing
+    }
+    return 0
+}

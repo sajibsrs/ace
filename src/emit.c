@@ -2925,14 +2925,22 @@ static void emit_stmt(Em* e, Node* s) {
             int rbits = scalar_bits(rt);
             uint32_t islot = temp_slot(e, rsz, 8), hslot = temp_slot(e, rsz, 8);
             uint32_t cslot = temp_slot(e, 8, 8), dslot = temp_slot(e, 8, 8);
+            uint32_t sslot = temp_slot(e, 8, 8);
             int svi = e->vti;
             EV lo = gen_expr(e, s->b->a);
             store_frame(e, xreg(lo.idx), islot, rsz);
             EV hi = gen_expr(e, s->b->b);
             store_frame(e, xreg(hi.idx), hslot, rsz);
+            if (s->b->c) {
+                EV step = gen_expr(e, s->b->c);
+                store_frame(e, xreg(step.idx), sslot, 8);
+            } else {
+                load_imm(e, 1, 16, 1);
+                store_frame(e, 16, sslot, 8);
+            }
             e->vti = svi;
             int unsig = !ty_is_signed(rt);
-            int ldesc = new_label(e), lsetup = new_label(e);
+            int ldesc = new_label(e), lempty = new_label(e), lsetup = new_label(e);
             load_frame(e, 16, islot, rsz, ty_is_signed(rt) && rsz < 8);
             load_frame(e, 17, hslot, rsz, ty_is_signed(rt) && rsz < 8);
             if (!unsig && rbits < 64) {
@@ -2941,16 +2949,19 @@ static void emit_stmt(Em* e, Node* s) {
                 ins(e, sx | (17u << 5) | 17u);
             }
             ins(e, 0xEB00001Fu | (17u << 16) | (16u << 5)); // cmp first, second
+            bcond_(e, C_EQ, lempty);
             bcond_(e, unsig ? C_HI : C_GT, ldesc);
-            // Ascending (or empty): cursor = first, count = second - first.
-            ins(e, 0xCB000000u | (16u << 16) | (17u << 5) | 17u);
-            store_frame(e, 17, cslot, 8);
-            load_imm(e, 1, 17, 1);
+            // Ascending: cursor = lower; count = ceil((upper-lower)/step).
+            ins(e, 0xCB000000u | (16u << 16) | (17u << 5) | 15u);
+            load_frame(e, 17, sslot, 8, 0);
+            ins(e, 0xD1000000u | (1u << 10) | (15u << 5) | 15u);
+            ins(e, 0x9AC00800u | (17u << 16) | (15u << 5) | 15u);
+            ins(e, 0x91000000u | (1u << 10) | (15u << 5) | 15u);
+            store_frame(e, 15, cslot, 8);
             store_frame(e, 17, dslot, 8);
             br_(e, lsetup);
             bind_label(e, ldesc);
-            // Descending: exclude the larger first endpoint, then walk to the
-            // included smaller endpoint. Count is the interval width.
+            // Descending selects the same lower-anchored values in reverse.
             load_frame(e, 16, islot, rsz, ty_is_signed(rt) && rsz < 8);
             load_frame(e, 17, hslot, rsz, ty_is_signed(rt) && rsz < 8);
             if (!unsig && rbits < 64) {
@@ -2959,10 +2970,27 @@ static void emit_stmt(Em* e, Node* s) {
                 ins(e, sx | (17u << 5) | 17u);
             }
             ins(e, 0xCB000000u | (17u << 16) | (16u << 5) | 15u);
-            ins(e, 0xD1000000u | (1u << 10) | (16u << 5) | 16u);
+            load_frame(e, 17, sslot, 8, 0);
+            ins(e, 0xD1000000u | (1u << 10) | (15u << 5) | 15u);
+            ins(e, 0x9AC00800u | (17u << 16) | (15u << 5) | 15u);
+            ins(e, 0x9B007C00u | (17u << 16) | (15u << 5) | 16u);
+            load_frame(e, 17, hslot, rsz, ty_is_signed(rt) && rsz < 8);
+            if (!unsig && rbits < 64) {
+                uint32_t sx = sxtw_of(rbits);
+                ins(e, sx | (17u << 5) | 17u);
+            }
+            ins(e, 0x8B000000u | (17u << 16) | (16u << 5) | 16u);
             store_frame(e, 16, islot, rsz);
+            ins(e, 0x91000000u | (1u << 10) | (15u << 5) | 15u);
             store_frame(e, 15, cslot, 8);
-            load_imm(e, 1, 17, UINT64_MAX);
+            load_frame(e, 17, sslot, 8, 0);
+            ins(e, 0xCB000000u | (17u << 16) | (31u << 5) | 17u);
+            store_frame(e, 17, dslot, 8);
+            br_(e, lsetup);
+            bind_label(e, lempty);
+            load_imm(e, 1, 16, 0);
+            store_frame(e, 16, cslot, 8);
+            load_frame(e, 17, sslot, 8, 0);
             store_frame(e, 17, dslot, 8);
             bind_label(e, lsetup);
             bind_label(e, lcond);
@@ -3208,13 +3236,21 @@ static void emit_stmt(Em* e, Node* s) {
     }
     case N_CONTINUE: {
         Ctx* c = NULL;
-        for (int i = e->nctx - 1; i >= 0; i--)
-            if (e->ctx[i].is_loop) {
+        for (int i = e->nctx - 1; i >= 0; i--) {
+            if (s->str) {
+                if (e->ctx[i].label &&
+                    (uint32_t)strlen(e->ctx[i].label) == s->len &&
+                    memcmp(e->ctx[i].label, s->str, s->len) == 0) {
+                    c = &e->ctx[i];
+                    break;
+                }
+            } else if (e->ctx[i].is_loop) {
                 c = &e->ctx[i];
                 break;
             }
+        }
         if (!c) {
-            em_err(e, s, "continue outside a loop");
+            em_err(e, s, "no target for continue");
             return;
         }
         br_(e, c->cont);
@@ -3225,10 +3261,11 @@ static void emit_stmt(Em* e, Node* s) {
             em_err(e, s, "control flow nested too deeply");
             return;
         }
-        int l = new_label(e);
-        e->ctx[e->nctx++] = (Ctx){ l, -1, s->str, s->len, 0 };
+        int lstart = new_label(e), lend = new_label(e);
+        bind_label(e, lstart);
+        e->ctx[e->nctx++] = (Ctx){ lend, lstart, s->str, s->len, 0 };
         emit_block(e, s->a);
-        bind_label(e, l);
+        bind_label(e, lend);
         e->nctx--;
         return;
     }

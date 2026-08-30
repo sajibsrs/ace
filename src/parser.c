@@ -26,7 +26,7 @@
 //   N_IF        a = cond; b = then-block; c = else (N_BLOCK or N_IF)
 //   N_FOR       kids = one value binder, or index + value binders (N_PARAM);
 //               b = iterable (expr) or N_RANGE; c = body
-//   N_RANGE     a = lo; b = hi
+//   N_RANGE     a = first; b = second; c = optional contextual `step` expression
 //   N_SWITCH    a = scrutinee; kids = N_CASE (kids = patterns; b = block; F_ELSE)
 //   N_RETURN    a = expr / N_TUPLE_E / NULL
 //   N_BREAK     str = label or NULL
@@ -79,6 +79,11 @@ static TokKind kth(P* p, int k) {
 }
 
 static int at(P* p, TokKind k) { return tk(p)->kind == k; }
+
+static int ident_at(P* p, const char* s) {
+    return at(p, T_IDENT) && tk(p)->len == strlen(s) &&
+           memcmp(tk(p)->str, s, tk(p)->len) == 0;
+}
 
 static int ate(P* p, TokKind k) {
     if (at(p, k)) {
@@ -742,6 +747,10 @@ static Node* parse_for(P* p) {
         Node* r = nd(p, N_RANGE);
         r->a = it;
         r->b = expr(p, CTX_NOSLIT);
+        if (ident_at(p, "step")) {
+            p->i++;
+            r->c = expr(p, CTX_NOSLIT);
+        }
         it = r;
     }
     n->b = it;
@@ -904,9 +913,16 @@ static Node* parse_stmt(P* p) {
         }
         return n;
     }
-    case T_CONTINUE:
+    case T_CONTINUE: {
+        Node* n = nd(p, N_CONTINUE);
         p->i++;
-        return nd(p, N_CONTINUE);
+        if (at(p, T_IDENT)) {
+            n->str = tk(p)->str;
+            n->len = tk(p)->len;
+            p->i++;
+        }
+        return n;
+    }
     case T_MUT: { // `mut c.scale(2.0)` — receiver-marked call statement
         p->i++;
         Node* e = expr(p, CTX_NOSLIT);

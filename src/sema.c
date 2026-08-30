@@ -1056,11 +1056,28 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             hi = lo;
             e->b->ty = hi;
         }
-        if (lo == T_UT_INT && hi == T_UT_INT) return st_prim(P_I64);
-        if (is_int(lo) && same_type(lo, hi)) return lo;
-        ck_err(k, e, "range bounds must be one integer type, got %s and %s",
-               type_name(lo), type_name(hi));
-        return T_ERR;
+        SType* range = NULL;
+        if (lo == T_UT_INT && hi == T_UT_INT) {
+            range = st_prim(P_I64);
+            e->a->ty = range;
+            e->b->ty = range;
+        } else if (is_int(lo) && same_type(lo, hi)) {
+            range = lo;
+        } else {
+            ck_err(k, e, "range bounds must be one integer type, got %s and %s",
+                   type_name(lo), type_name(hi));
+            return T_ERR;
+        }
+        if (e->c) {
+            if (!coerce(k, e->c, range)) return T_ERR;
+            int64_t step;
+            if (ut_const(e->c, &step) && step <= 0) {
+                ck_err(k, e->c, "range step must be positive, got %lld",
+                       (long long)step);
+                return T_ERR;
+            }
+        }
+        return range;
     }
     case N_CMPCHAIN: {
         SType* t = expr_type(k, e->kids[0]);
@@ -2052,9 +2069,16 @@ static void check_stmt(Ck* k, Node* s) {
         return;
     }
     case N_CONTINUE: {
-        int loop = 0;
-        for (Scope* sc = k->scope; sc; sc = sc->parent) loop |= sc->is_loop;
-        if (!loop) ck_err(k, s, "continue outside a loop");
+        if (s->str) {
+            for (Scope* sc = k->scope; sc; sc = sc->parent)
+                if (sc->label && (uint32_t)strlen(sc->label) == s->len &&
+                    memcmp(sc->label, s->str, s->len) == 0) return;
+            ck_err(k, s, "no enclosing block labeled '%.*s'", (int)s->len, s->str);
+        } else {
+            int loop = 0;
+            for (Scope* sc = k->scope; sc; sc = sc->parent) loop |= sc->is_loop;
+            if (!loop) ck_err(k, s, "continue outside a loop");
+        }
         return;
     }
     case N_LABEL: {
@@ -2525,6 +2549,8 @@ static void init_expr(InitCk* k, Node* e) {
         return;
     case N_BINARY:
         init_expr(k, e->a); init_expr(k, e->b); return;
+    case N_RANGE:
+        init_expr(k, e->a); init_expr(k, e->b); init_expr(k, e->c); return;
     case N_CMPCHAIN: case N_TUPLE_E: case N_ARRAYLIT:
         for (int i = 0; i < e->nkids; i++) init_expr(k, e->kids[i]);
         return;
