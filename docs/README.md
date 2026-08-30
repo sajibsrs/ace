@@ -19,6 +19,8 @@ must be corrected.
   byte operations, explicit release, slice aliasing, and current diagnostics.
 - [Functions](function.md) — declarations, parameters, returns, mutation,
   overloads, function values, generics, and the program entry point.
+- [Control flow](control-flow.md) — conditions, switches, ranges, sequence
+  iteration, indices, loop exits, and labeled blocks.
 - [Errors](errors.md) — the `Error` handle, static `ErrorDescriptor`
   construction, `typeid` domains, exact identity matching, module boundaries,
   and the reserved `panic(message)` builtin.

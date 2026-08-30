@@ -1,0 +1,105 @@
+# Control flow
+
+Ace control flow is statement-based. Conditions require `bool`; `if`, `switch`,
+and `for` do not produce values.
+
+## Conditions
+
+`if`, `else if`, and `else` use blocks. `else` must remain on the same physical
+line as the preceding `}`.
+
+```ace
+if value < 0 {
+    category = -1
+} else if value == 0 {
+    category = 0
+} else {
+    category = 1
+}
+```
+
+Comparisons may be chained. Each operand is evaluated once:
+
+```ace
+inside: bool = 0 <= value < limit
+```
+
+`switch` compares one scalar value against cases, has no fallthrough, and uses
+`else` for the default case.
+
+## Ranges
+
+`a .. b` is half-open and endpoint-ordered. The endpoints select the same
+numeric interval regardless of order, while their written order selects the
+traversal direction:
+
+```ace
+for i: int in 0 .. 4 {
+    // 0, 1, 2, 3
+}
+
+for i: int in 4 .. 0 {
+    // 3, 2, 1, 0
+}
+```
+
+Equal endpoints produce an empty range. The first endpoint is evaluated once,
+then the second endpoint once, before the loop. Assigning to the loop variable
+does not alter the internal cursor. Explicit stepped ranges are not yet
+implemented.
+
+## Arrays and slices
+
+A one-binder sequence loop exposes each element value:
+
+```ace
+values: [4]i32 = [10, 20, 30, 40]
+for value: i32 in values {
+    // value is a per-iteration copy
+}
+```
+
+A two-binder loop exposes the original zero-based index followed by the value:
+
+```ace
+for index: usize, value: i32 in values {
+    values[index] = value + 1
+}
+```
+
+The first binder must be `usize`, and the second binder must exactly match the
+element type. Assigning to either binder does not affect loop progress or the
+backing sequence. There is no `_` discard binder; use the one-binder form when
+the index is unwanted. To iterate only indices, use a range:
+
+```ace
+for index: usize in 0 .. values.len {
+}
+```
+
+Range bounds are ordinary captured values, not aliases to expressions used to
+produce them. If a slice variable is resliced or reassigned inside an index
+range loop, the captured endpoint does not change, while later indexing uses
+the slice's current descriptor. The current compiler does not insert runtime
+bounds checks, so such code must keep the current slice large enough.
+
+Direct array or slice iteration captures its pointer and length at loop entry.
+Reassigning the slice variable does not change that running loop.
+
+## Exits and labeled blocks
+
+`continue` starts the next iteration and `break` exits the nearest loop. A
+labeled block permits a structured exit across nested control flow:
+
+```ace
+work: {
+    for value: i32 in values {
+        if value < 0 {
+            break work
+        }
+    }
+}
+```
+
+`break label` may target only an enclosing labeled block. `continue` has no
+labeled form. Ace has no `goto` and switch cases do not fall through.

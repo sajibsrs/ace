@@ -1945,28 +1945,40 @@ static void check_stmt(Ck* k, Node* s) {
         return;
     }
     case N_FOR: {
-        SType* elem = build_type(k, s->a);
-        scope_push(k);
-        k->scope->is_loop = 1;
-        Sym* v = declare_val(k, s, SYM_VAR, s->str, s->len);
-        if (v) {
-            v->type = elem;
-            v->decl = s; // emitter: the loop variable's slot key
-            s->sym = v; // loop variable: its slot key is the N_FOR node
-        }
+        SType* binds[2] = {0};
+        for (int i = 0; i < s->nkids && i < 2; i++)
+            binds[i] = build_type(k, s->kids[i]->a);
         SType* it = expr_type(k, s->b);
         if (it->kind != SK_ERR) {
             if (s->b->kind == N_RANGE) {
-                if (!is_int(elem))
+                if (s->nkids != 1)
+                    ck_err(k, s, "range iteration accepts one value binder, not %d",
+                           s->nkids);
+                if (s->nkids > 0 && !is_int(binds[0]))
                     ck_err(k, s, "range loop variable must be an integer type, not %s",
-                           type_name(elem));
+                           type_name(binds[0]));
             } else if (it->kind == SK_SLICE || it->kind == SK_ARRAY) {
-                if (!same_type(it->base, elem))
-                    ck_err(k, s, "loop variable is %s but elements are %s",
-                           type_name(elem), type_name(it->base));
+                int value = s->nkids == 2 ? 1 : 0;
+                if (s->nkids == 2 && !same_type(binds[0], st_prim(P_USIZE)))
+                    ck_err(k, s->kids[0], "sequence index binder must be usize, not %s",
+                           type_name(binds[0]));
+                if (s->nkids > 0 && !same_type(it->base, binds[value]))
+                    ck_err(k, s->kids[value], "loop value binder is %s but elements are %s",
+                           type_name(binds[value]), type_name(it->base));
             } else {
                 ck_err(k, s->b, "for-in iterates slices, arrays, or ranges — not %s",
                        type_name(it));
+            }
+        }
+        scope_push(k);
+        k->scope->is_loop = 1;
+        for (int i = 0; i < s->nkids; i++) {
+            Node* binder = s->kids[i];
+            Sym* v = declare_val(k, binder, SYM_VAR, binder->str, binder->len);
+            if (v) {
+                v->type = binds[i];
+                v->decl = binder;
+                binder->sym = v;
             }
         }
         check_block(k, s->c);
@@ -2632,9 +2644,10 @@ static int init_stmt(InitCk* k, Node* s) {
     case N_FOR: {
         init_expr(k, s->b);
         InitSnap base = init_snapshot(k);
-        Sym* sym = node_sym(s);
-        InitVar* v = init_var(k, sym, 1);
-        if (v) v->state.full = 1;
+        for (int i = 0; i < s->nkids; i++) {
+            InitVar* v = init_var(k, node_sym(s->kids[i]), 1);
+            if (v) v->state.full = 1;
+        }
         (void)init_block(k, s->c);
         init_restore(&base); // loop may execute zero times
         return 1;

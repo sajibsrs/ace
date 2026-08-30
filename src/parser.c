@@ -24,7 +24,8 @@
 //   N_EXPRSTMT  a = expr
 //   N_ASSIGN    kids = targets; a = rhs; op = T_ASSIGN or compound token
 //   N_IF        a = cond; b = then-block; c = else (N_BLOCK or N_IF)
-//   N_FOR       str = elem name; a = elem type; b = iterable (expr) or N_RANGE; c = body
+//   N_FOR       kids = one value binder, or index + value binders (N_PARAM);
+//               b = iterable (expr) or N_RANGE; c = body
 //   N_RANGE     a = lo; b = hi
 //   N_SWITCH    a = scrutinee; kids = N_CASE (kids = patterns; b = block; F_ELSE)
 //   N_RETURN    a = expr / N_TUPLE_E / NULL
@@ -716,11 +717,24 @@ static Node* parse_if(P* p) {
 static Node* parse_for(P* p) {
     Node* n = nd(p, N_FOR);
     expect(p, T_FOR, "'for'");
-    Token* v = expect(p, T_IDENT, "loop variable name");
-    n->str = v->str;
-    n->len = v->len;
-    expect(p, T_COLON, "':' after loop variable");
-    n->a = parse_type(p);
+    NV binders = {0};
+    int line = tk(p)->line;
+    for (;;) {
+        Token* v = expect(p, T_IDENT, "loop variable name");
+        Node* binder = nd_tok(p, N_PARAM, v);
+        binder->str = v->str;
+        binder->len = v->len;
+        expect(p, T_COLON, "':' after loop variable");
+        binder->a = parse_type(p);
+        nv_push(p, &binders, binder);
+        if (!at(p, T_COMMA)) break;
+        bare_list_line(p, line);
+        p->i++;
+        bare_list_line(p, line);
+        if (binders.n == 2)
+            perr(p, "for-in accepts at most index and value binders");
+    }
+    set_kids(n, &binders);
     expect(p, T_IN, "'in'");
     Node* it = expr(p, CTX_NOSLIT);
     if (at(p, T_DOTDOT)) {

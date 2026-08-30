@@ -1,0 +1,7 @@
+main(): int {
+    values: [1]int = [1]
+    for first: usize, second: int, third: int in values {
+        return second + third + int(first)
+    }
+    return 0
+}

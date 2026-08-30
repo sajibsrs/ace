@@ -738,10 +738,12 @@ static void lower_selected_node(Node* n, SelectLower* c) {
             bind_local(c, n->kids[i]->str, n->kids[i]->len, 0);
         return;
     case N_FOR:
-        lower_selected_type(n->a, c);
+        for (int i = 0; i < n->nkids; i++)
+            lower_selected_type(n->kids[i]->a, c);
         lower_selected_node(n->b, c);
         select_scope_push(c);
-        bind_local(c, n->str, n->len, 0);
+        for (int i = 0; i < n->nkids; i++)
+            bind_local(c, n->kids[i]->str, n->kids[i]->len, 0);
         lower_selected_node(n->c, c);
         select_scope_pop(c);
         return;
