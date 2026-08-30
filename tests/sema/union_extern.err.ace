@@ -1,0 +1,13 @@
+/*
+ * Unions have no C-compatible representation yet and are rejected at the
+ * extern/export boundary.
+ */
+Event: union { none, key: u32 }
+
+extern "c" {
+    use_event(e: Event): i32
+}
+
+main(): int {
+    return 0
+}

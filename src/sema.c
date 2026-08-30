@@ -6,7 +6,8 @@
 // Type model (machine truth: size/align computed for every type):
 //   prims    bool i8..i64 u8..u64 f32 f64 string usize typeid
 //            (`int`/`uint` = i64/u64, the platform word on arm64)
-//   nominal  struct, enum (i32 layout), contract (16 bytes), distinct, Error
+//   nominal  struct, enum (i32 layout), contract (16 bytes), distinct, Error,
+//            union (i32 tag + largest payload inline)
 //   struct.  *T (8), []T (16), [N]T, tuples
 //            (multi-return, laid out like anonymous structs), funcs
 // Literals are untyped constants: they take the expected type at use sites
@@ -68,6 +69,7 @@ static const char* type_name(SType* t) {
     case SK_STRUCT: return t->name ? t->name : "struct";
     case SK_ENUM: return t->name ? t->name : "enum";
     case SK_CONTRACT: return t->name ? t->name : "contract";
+    case SK_UNION: return t->name ? t->name : "union";
     case SK_DISTINCT: return t->name ? t->name : "distinct";
     case SK_ERROR: return "Error";
     case SK_VOID: return "no value";
@@ -126,6 +128,28 @@ static void layout(SType* t) {
     case SK_ENUM: t->size = t->align = 4; return; // int constants, i32 layout
     case SK_CONTRACT: t->size = 16; t->align = 8; return; // vtable + data
     case SK_ERROR: t->size = t->align = 8; return; // static descriptor handle
+    case SK_UNION: {
+        /*
+         * i32 tag at offset 0, then inline storage for the largest payload.
+         * Declaration order fixes tag values from zero; the first variant is
+         * the canonical all-bits-zero value (BSS globals get it for free).
+         */
+        if (t->calc) { t->size = 1; return; }
+        t->calc = 1;
+        uint32_t maxs = 0, maxa = 1;
+        for (int i = 0; i < t->nfields; i++) {
+            if (!t->fields[i].t) continue; // payloadless variant
+            if (t->fields[i].t->kind == SK_ERR) { t->calc = 0; t->size = 1; return; }
+            layout(t->fields[i].t);
+            if (maxs < t->fields[i].t->size) maxs = t->fields[i].t->size;
+            if (maxa < t->fields[i].t->align) maxa = t->fields[i].t->align;
+        }
+        t->align = maxa > 4 ? maxa : 4;
+        uint32_t off = align_to(4, maxa);
+        t->size = align_to(off + maxs, t->align);
+        t->calc = 0;
+        return;
+    }
     case SK_DISTINCT:
         layout(t->base);
         t->size = t->base->size;
@@ -287,6 +311,7 @@ static int same_type(SType* a, SType* b) {
             if (!same_type(a->params[i], b->params[i])) return 0;
         return same_type(a->ret, b->ret);
     case SK_STRUCT: case SK_ENUM: case SK_CONTRACT: case SK_DISTINCT:
+    case SK_UNION:
         if (a->decl != b->decl || a->nargs != b->nargs) return 0;
         for (int i = 0; i < a->nargs; i++)
             if (!same_type(a->args[i], b->args[i])) return 0;
@@ -332,6 +357,115 @@ static int castable(SType* f, SType* t) {
     if (f->kind == SK_PTR && t->kind == SK_PTR) return 1;
     return is_num(f) && is_num(t);
 }
+
+// --- forward decls -------------------------------------------------------------------
+
+static SType* expr_type(Ck* k, Node* e);
+static int coerce(Ck* k, Node* e, SType* want);
+static SType* check_call(Ck* k, Node* call);
+static void check_stmt(Ck* k, Node* s);
+static void check_block(Ck* k, Node* b);
+static void check_structlit(Ck* k, Node* lit, SType* want);
+static void check_arraylit(Ck* k, Node* lit, SType* want);
+static SType* check_lvalue(Ck* k, Node* e, int write);
+static void check_func_body(Ck* k, Node* f);
+static void check_mut_args(Ck* k, Node* call, Node* fndecl);
+
+// --- tagged unions -----------------------------------------------------------------
+/*
+ * A union is a closed inline sum: i32 tag at offset 0, inline storage for the
+ * largest payload. Construction names the union and variant; inspection uses
+ * the existing no-fallthrough switch; payload access exists only as an arm
+ * binder (a fresh local copy). The numeric tag is not exposed.
+ */
+
+static SType* build_union_type(Ck* k, Node* decl);
+static SType* indexed_named_type(Ck* k, Node* ix);
+
+/*
+ * Union equality compares the tag and active payload. It exists only when
+ * every payload type supports equality; structs, tuples, and arrays do not.
+ */
+static int union_supports_equality(SType* t) {
+    while (t && t->kind == SK_DISTINCT) t = t->base;
+    if (!t) return 0;
+    switch (t->kind) {
+    case SK_PRIM: case SK_PTR: case SK_FUNC: case SK_ENUM:
+    case SK_CONTRACT: case SK_ERROR: case SK_SLICE:
+        return 1;
+    case SK_UNION:
+        for (int i = 0; i < t->nfields; i++)
+            if (t->fields[i].t && !union_supports_equality(t->fields[i].t))
+                return 0;
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+/*
+ * The union type named by a construction or pattern base — `Event` or
+ * `Pair[int]` — or NULL when the base is not a union type. T_ERR means the
+ * base names a generic union without its explicit type arguments.
+ */
+static SType* union_base_type(Ck* k, Node* base) {
+    SType* t = NULL;
+    if (base->kind == N_IDENT ||
+        (base->kind == N_FIELD_E && !base->a)) { // pattern parser's plain base
+        if (lookup_val(k, base->str, base->len)) return NULL; // a value shadows
+        Sym* ts = lookup_type(k, base->str, base->len);
+        if (!ts || !ts->type) return NULL;
+        if (ts->is_generic) {
+            ck_err(k, base, "generic type '%.*s' needs explicit type arguments",
+                   (int)base->len, base->str);
+            return T_ERR;
+        }
+        t = ts->type;
+        base->sym = ts; // emitter: union type symbol on the base
+    } else if (base->kind == N_INDEX) {
+        t = indexed_named_type(k, base);
+        if (!t || t->kind == SK_ERR) return NULL;
+    }
+    if (!t) return NULL;
+    base->ty = t;
+    return t->kind == SK_UNION ? t : NULL;
+}
+
+static int union_variant_index(Ck* k, Node* at, SType* u, Node* name) {
+    for (int i = 0; i < u->nfields; i++)
+        if ((uint32_t)strlen(u->fields[i].name) == name->len &&
+            memcmp(u->fields[i].name, name->str, name->len) == 0)
+            return i;
+    ck_err(k, at, "union %s has no variant '%.*s'", type_name(u),
+           (int)name->len, name->str);
+    return -1;
+}
+
+/*
+ * Coerce a variant payload argument. Composite payloads take their shape
+ * from the payload type exactly like variable initializers: tuple literals
+ * coerce element-wise (materializing untyped literals), bare struct and
+ * array literals type from the payload.
+ */
+static void coerce_payload(Ck* k, Node* arg, SType* pt) {
+    if (pt->kind == SK_TUPLE && arg->kind == N_TUPLE_E &&
+        arg->nkids == pt->nfields) {
+        for (int i = 0; i < arg->nkids; i++)
+            coerce(k, arg->kids[i], pt->fields[i].t);
+        arg->ty = pt; // emitter stores members at these widths
+        return;
+    }
+    if (arg->kind == N_STRUCTLIT && !arg->a && pt->kind == SK_STRUCT) {
+        check_structlit(k, arg, pt);
+        return;
+    }
+    if (arg->kind == N_ARRAYLIT && pt->kind == SK_ARRAY) {
+        check_arraylit(k, arg, pt);
+        return;
+    }
+    coerce(k, arg, pt);
+}
+
 
 // --- untyped int constant evaluation ----------------------------------------------
 
@@ -384,6 +518,7 @@ static SType* prim_by_name(const char* s, uint32_t len) {
 }
 
 static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int nargs);
+static SType* indexed_named_type(Ck* k, Node* ix);
 
 static SType* build_named(Ck* k, Node* t) {
     if (t->a) {
@@ -536,6 +671,7 @@ static int has_internal_abi_type(SType* t, int depth) {
     if (!t || depth > 32) return 0;
     if (t == T_ERROR || t == T_ERROR_DESC || t->kind == SK_ERROR) return 1;
     if (t->kind == SK_PRIM) return t->prim == P_TYPEID;
+    if (t->kind == SK_UNION) return 1; // no C-compatible representation yet
     if (t->kind == SK_PTR || t->kind == SK_SLICE || t->kind == SK_ARRAY ||
         t->kind == SK_DISTINCT)
         return has_internal_abi_type(t->base, depth + 1);
@@ -575,7 +711,7 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
             bad |= has_internal_abi_type(ft->params[i], 0);
         if (bad)
             ck_err(k, f,
-                   "C-boundary signatures cannot use Error, ErrorDescriptor, or typeid");
+                   "C-boundary signatures cannot use tagged unions, Error, ErrorDescriptor, or typeid");
     }
     for (Sym* old = head; old; old = old->overload) {
         int old_nt = old->decl && old->decl->c ? old->decl->c->nkids : 0;
@@ -604,19 +740,6 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
     }
     return s;
 }
-
-// --- forward decls -------------------------------------------------------------------
-
-static SType* expr_type(Ck* k, Node* e);
-static int coerce(Ck* k, Node* e, SType* want);
-static SType* check_call(Ck* k, Node* call);
-static void check_stmt(Ck* k, Node* s);
-static void check_block(Ck* k, Node* b);
-static void check_structlit(Ck* k, Node* lit, SType* want);
-static void check_arraylit(Ck* k, Node* lit, SType* want);
-static SType* check_lvalue(Ck* k, Node* e, int write);
-static void check_func_body(Ck* k, Node* f);
-static void check_mut_args(Ck* k, Node* call, Node* fndecl);
 
 // --- literal fit -------------------------------------------------------------------
 
@@ -1013,6 +1136,12 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                 (a->kind == SK_ERROR ||
                  (a->kind == SK_PRIM && a->prim == P_TYPEID)))
                 return st_prim(P_BOOL);
+            // union equality: tag + active payload, when every payload supports it
+            if (equality && same_type(a, b) && union_supports_equality(a)) {
+                SType* ua = a;
+                while (ua && ua->kind == SK_DISTINCT) ua = ua->base;
+                if (ua && ua->kind == SK_UNION) return st_prim(P_BOOL);
+            }
             if (same_type(a, b) && (is_num(a) || is_bool(a) || a->kind == SK_PTR ||
                                     a->kind == SK_FUNC || a->kind == SK_ENUM ||
                                     a->kind == SK_CONTRACT || a->kind == SK_SLICE ||
@@ -1118,6 +1247,41 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                 ck_err(k, e, "enum %s has no member '%.*s'", type_name(ts->type),
                        (int)e->len, e->str);
                 return T_ERR;
+            }
+            // union variant value (payloadless): Event.quit
+            if (ts && ts->type && ts->type->kind == SK_UNION) {
+                int vi = union_variant_index(k, e, ts->type, e);
+                if (vi < 0) return T_ERR;
+                if (ts->type->fields[vi].t) {
+                    ck_err(k, e,
+                           "variant '%.*s' carries a payload — construct it: %.*s.%.*s(...)",
+                           (int)e->len, e->str, (int)e->a->len, e->a->str,
+                           (int)e->len, e->str);
+                    return T_ERR;
+                }
+                e->a->sym = ts;        // emitter: union type symbol on the base
+                e->a->ty = ts->type;
+                e->sym = ts;
+                e->ival = (uint64_t)vi; // variant index (the tag value)
+                return ts->type;
+            }
+        }
+        // union variant value on a generic base: Pair[int].none
+        if (e->a->kind == N_INDEX) {
+            SType* ub = union_base_type(k, e->a);
+            if (ub == T_ERR) return T_ERR;
+            if (ub) {
+                int vi = union_variant_index(k, e, ub, e);
+                if (vi < 0) return T_ERR;
+                if (ub->fields[vi].t) {
+                    ck_err(k, e,
+                           "variant '%.*s' carries a payload — construct it with a payload argument",
+                           (int)e->len, e->str);
+                    return T_ERR;
+                }
+                e->sym = node_sym(e->a->a); // N_IDENT base carries the type sym
+                e->ival = (uint64_t)vi;
+                return ub;
             }
         }
         // module member: fmt.print (needs the stdlib; nothing to resolve yet)
@@ -1565,6 +1729,12 @@ static SType* check_call(Ck* k, Node* call) {
                     callee->ty = want;
                     return check_contract_construct(k, call, want);
                 }
+                if (want->kind == SK_UNION) {
+                    ck_err(k, call,
+                           "unions have no constructor call — construct a variant: %s.<variant>(...)",
+                           type_name(want));
+                    return T_ERR;
+                }
                 SType* from = expr_type(k, call->kids[0]);
                 if (want->kind == SK_ERR || from->kind == SK_ERR) return T_ERR;
                 if (!castable(from, want)) {
@@ -1724,6 +1894,39 @@ static SType* check_call(Ck* k, Node* call) {
     }
     // method / contract dispatch
     if (callee->kind == N_FIELD_E) {
+        // union variant construction: Event.key(42), Pair[int].ok(v)
+        if ((callee->a->kind == N_IDENT &&
+             !lookup_val(k, callee->a->str, callee->a->len)) ||
+            callee->a->kind == N_INDEX) {
+            SType* ub = union_base_type(k, callee->a);
+            if (ub == T_ERR) return T_ERR;
+            if (ub) {
+                int vi = union_variant_index(k, call, ub, callee);
+                if (vi < 0) return T_ERR;
+                SType* pt = ub->fields[vi].t;
+                if (!pt) {
+                    ck_err(k, call,
+                           "variant '%.*s' carries no payload — use the plain value %.*s.%.*s",
+                           (int)callee->len, callee->str, (int)callee->a->len,
+                           callee->a->kind == N_IDENT ? callee->a->str : callee->a->a->str,
+                           (int)callee->len, callee->str);
+                    return T_ERR;
+                }
+                if (call->nkids != 1) {
+                    ck_err(k, call, "variant construction takes exactly one payload value");
+                    return T_ERR;
+                }
+                if (call->kids[0]->kind == N_MUTARG) {
+                    ck_err(k, call->kids[0],
+                           "'mut' marks mut parameters; variant payloads are read-only");
+                    return T_ERR;
+                }
+                coerce_payload(k, call->kids[0], pt);
+                callee->ty = ub;
+                callee->ival = (uint64_t)vi; // emitter: variant index (the tag)
+                return ub;
+            }
+        }
         if (callee->a->kind == N_IDENT) {
             Sym* ms = lookup_val(k, callee->a->str, callee->a->len);
             if (ms && ms->kind == SYM_MODULE) {
@@ -1839,6 +2042,103 @@ static SType* check_call(Ck* k, Node* call) {
 }
 
 // --- statements ------------------------------------------------------------------------
+
+/*
+ * Union switch: arms name variants (Type.variant, optionally with an explicit
+ * payload binder), or else. Every variant must be covered once. Binders are
+ * fresh locals in the arm scope; payload access is impossible outside them.
+ */
+static void check_union_switch(Ck* k, Node* s, SType* u) {
+    uint8_t* covered = (uint8_t*)arena_alloc((size_t)(u->nfields ? u->nfields : 1));
+    memset(covered, 0, (size_t)(u->nfields ? u->nfields : 1));
+    int has_else = 0;
+    for (int i = 0; i < s->nkids; i++) {
+        Node* c = s->kids[i];
+        if (c->flags & F_ELSE) {
+            if (has_else) ck_err(k, c, "duplicate else case");
+            has_else = 1;
+        } else {
+            if (c->nkids != 1)
+                ck_err(k, c, "union switch cases name exactly one variant");
+            for (int j = 0; j < c->nkids; j++) {
+                Node* pat = c->kids[j];
+                if (pat->kind == N_CALL) {
+                    ck_err(k, pat,
+                           "match the union variant, not a payload value: Type.variant(binder: type)");
+                    continue;
+                }
+                Node* ref = pat->kind == N_VARPAT ? pat->a : pat;
+                if (ref->kind != N_FIELD_E ||
+                    (ref->a->kind != N_IDENT && ref->a->kind != N_INDEX)) {
+                    ck_err(k, pat,
+                           "union switch cases must name %s variants (Type.variant)", type_name(u));
+                    continue;
+                }
+                SType* ub = union_base_type(k, ref->a);
+                if (ub == T_ERR) return;
+                if (!ub || !same_type(ub, u)) {
+                    ck_err(k, pat, "case pattern is not a variant of %s", type_name(u));
+                    continue;
+                }
+                int vi = union_variant_index(k, pat, u, ref);
+                if (vi < 0) continue;
+                if (covered[vi]) {
+                    ck_err(k, pat, "duplicate case for variant '%s'", u->fields[vi].name);
+                    continue;
+                }
+                covered[vi] = 1;
+                ref->ival = (uint64_t)vi;      // emitter: tag compare constant
+                if (pat->kind != N_VARPAT && u->fields[vi].t) {
+                    ck_err(k, pat,
+                           "variant '%s' carries %s and needs a payload binder",
+                           u->fields[vi].name, type_name(u->fields[vi].t));
+                } else if (pat->kind == N_VARPAT) {
+                    pat->ival = (uint64_t)vi;  // emitter reads the index here
+                    Node* binder = pat->b;
+                    SType* want = u->fields[vi].t;
+                    if (binder && !binder->a) {
+                        ck_err(k, binder,
+                               "variant pattern binder '%.*s' needs an explicit type: %s.%.*s(%.*s: type)",
+                               (int)binder->len, binder->str, type_name(u),
+                               (int)ref->len, ref->str,
+                               (int)binder->len, binder->str);
+                    } else if (binder) {
+                        SType* bt = build_type(k, binder->a);
+                        if (!want) {
+                            ck_err(k, binder, "variant '%s' carries no payload",
+                                   u->fields[vi].name);
+                        } else if (!same_type(bt, want)) {
+                            ck_err(k, binder,
+                                   "variant '%s' payload is %s, binder is %s",
+                                   u->fields[vi].name, type_name(want), type_name(bt));
+                        }
+                    }
+                }
+            }
+        }
+        scope_push(k);
+        if (!(c->flags & F_ELSE)) {
+            for (int j = 0; j < c->nkids; j++) {
+                Node* pat = c->kids[j];
+                if (pat->kind != N_VARPAT || !pat->b || !pat->b->a) continue;
+                Sym* v = declare_val(k, pat->b, SYM_VAR, pat->b->str, pat->b->len);
+                if (v) {
+                    v->type = build_type(k, pat->b->a);
+                    v->decl = pat->b;
+                    pat->b->sym = v; // emitter: binder slot key
+                }
+            }
+        }
+        check_block(k, c->b);
+        scope_pop(k);
+    }
+    if (!has_else) {
+        for (int i = 0; i < u->nfields; i++)
+            if (!covered[i])
+                ck_err(k, s, "switch on %s is missing variant '%s' (or add else)",
+                       type_name(u), u->fields[i].name);
+    }
+}
 
 static void check_stmt(Ck* k, Node* s) {
     switch (s->kind) {
@@ -2004,6 +2304,10 @@ static void check_stmt(Ck* k, Node* s) {
     }
     case N_SWITCH: {
         SType* t = expr_type(k, s->a);
+        if (t->kind == SK_UNION) {
+            check_union_switch(k, s, t);
+            return;
+        }
         int has_else = 0;
         for (int i = 0; i < s->nkids; i++) {
             Node* c = s->kids[i];
@@ -2687,7 +2991,16 @@ static int init_stmt(InitCk* k, Node* s) {
             Node* c = s->kids[i];
             if (c->flags & F_ELSE) has_else = 1;
             init_restore(&base);
-            for (int j = 0; j < c->nkids; j++) init_expr(k, c->kids[j]);
+            for (int j = 0; j < c->nkids; j++) {
+                Node* pat = c->kids[j];
+                if (pat->kind == N_VARPAT && pat->b) {
+                    // an arm binder is a fresh copy, always initialized
+                    InitVar* bv = init_var(k, node_sym(pat->b), 1);
+                    if (bv) { bv->state.full = 1; bv->state.parts = NULL; }
+                } else {
+                    init_expr(k, pat);
+                }
+            }
             int falls = init_block(k, c->b);
             if (!falls) continue;
             InitSnap cs = init_snapshot(k);
@@ -2889,6 +3202,27 @@ static SType* build_struct_type(Ck* k, Node* decl) {
     return t;
 }
 
+static SType* build_union_type(Ck* k, Node* decl) {
+    if (decl->nkids == 0)
+        ck_err(k, decl, "a union needs at least one variant");
+    SType* t = st_new(SK_UNION);
+    t->name = decl->str;
+    t->decl = decl;
+    t->nfields = decl->nkids;
+    t->fields = (SField*)arena_alloc((size_t)(decl->nkids ? decl->nkids : 1) * sizeof(SField));
+    for (int i = 0; i < decl->nkids; i++) {
+        t->fields[i].name = decl->kids[i]->str;
+        t->fields[i].t = decl->kids[i]->a ? build_type(k, decl->kids[i]->a) : NULL;
+    }
+    for (int i = 0; i < t->nfields; i++)
+        for (int j = i + 1; j < t->nfields; j++)
+            if (strcmp(t->fields[i].name, t->fields[j].name) == 0)
+                ck_err(k, decl, "duplicate variant '%s' in union %s",
+                       t->fields[i].name, decl->str);
+    layout(t);
+    return t;
+}
+
 static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int nargs) {
     if (!decl || !decl->c) return T_ERR;
     Node* tp = decl->c;
@@ -2916,6 +3250,8 @@ static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int narg
         t->name = decl->str;
         t->decl = decl;
         layout(t);
+    } else if (decl->kind == N_UNION) {
+        t = build_union_type(k, decl);
     } else {
         t = T_ERR;
     }
@@ -3082,6 +3418,16 @@ static Diag g_dummy_diag = {"(stamp)", 0}; // re-stamps are pre-checked: silent
 uint32_t sema_size(SType* t) { layout(t); return t->size; }
 uint32_t sema_align(SType* t) { layout(t); return t->align; }
 
+uint32_t sema_union_payload_off(SType* t) {
+    layout(t);
+    if (t->kind != SK_UNION) return 0;
+    uint32_t maxa = 1;
+    for (int i = 0; i < t->nfields; i++)
+        if (t->fields[i].t && maxa < sema_align(t->fields[i].t))
+            maxa = sema_align(t->fields[i].t);
+    return align_to(4, maxa);
+}
+
 SType* sema_build_type(Node* t) {
     Ck k = {0};
     k.d = &g_dummy_diag;
@@ -3242,11 +3588,12 @@ int sema_check(Node* file, Diag* d) {
             }
             break;
         }
-        case N_STRUCT: case N_CONTRACT: case N_ENUM: {
+        case N_STRUCT: case N_CONTRACT: case N_ENUM: case N_UNION: {
             Sym* s = declare_type(&k, n, n->str, n->len);
             if (!s) break;
             SType* t = st_new(n->kind == N_STRUCT ? SK_STRUCT :
-                              n->kind == N_ENUM ? SK_ENUM : SK_CONTRACT);
+                              n->kind == N_ENUM ? SK_ENUM :
+                              n->kind == N_UNION ? SK_UNION : SK_CONTRACT);
             t->name = n->str;
             t->decl = n;
             s->type = t;
@@ -3254,6 +3601,9 @@ int sema_check(Node* file, Diag* d) {
             if (!s->is_generic && n->kind == N_STRUCT) {
                 // register first (self-reference via pointer), then build fields
                 SType* built = build_struct_type(&k, n);
+                s->type = built;
+            } else if (!s->is_generic && n->kind == N_UNION) {
+                SType* built = build_union_type(&k, n);
                 s->type = built;
             } else if (n->kind == N_ENUM) {
                 layout(t);

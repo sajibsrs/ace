@@ -1,0 +1,38 @@
+/*
+ * Union declarations parse payloadless variants, typed payloads, trailing
+ * commas, and generics.
+ */
+Event: union {
+    none,
+    quit,
+    key: u32,
+    cursor: Point,
+}
+
+Point: struct { x: i32, y: i32 }
+
+Pair[T]: union { empty, some: T }
+
+Numbers: union { one: i32, two: f64, three: string, }
+
+main(): int {
+    e: Event = Event.quit
+    switch e {
+        Event.none {}
+        Event.quit {}
+        Event.key(code: u32) {}
+        Event.cursor(position: Point) {}
+    }
+    p: Pair[int] = Pair[int].some(1)
+    switch p {
+        Pair[int].empty {}
+        Pair[int].some(v: int) {}
+    }
+    n: Numbers = Numbers.one(1)
+    switch n {
+        Numbers.one(a: i32) {}
+        Numbers.two(b: f64) {}
+        Numbers.three(c: string) {}
+    }
+    return 0
+}

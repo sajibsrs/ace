@@ -1,0 +1,10 @@
+// Union switch cases name one variant so each payload scope is unambiguous.
+Event: union { none, quit }
+
+main(): int {
+    event: Event = Event.none
+    switch event {
+        Event.none, Event.quit {}
+    }
+    return 0
+}

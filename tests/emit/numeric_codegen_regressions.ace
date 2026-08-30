@@ -1,0 +1,19 @@
+// expect-exit: 0
+
+main(): int {
+    ratio: f64 = 1.5
+    if ratio * 100 != 150.0 {
+        return 1
+    }
+    narrowed: int = int(ratio)
+    widened: f64 = f64(narrowed)
+    if narrowed != 1 || widened != 1.0 {
+        return 2
+    }
+    small: f32 = f32(2)
+    converted: int = int(small)
+    if converted != 2 {
+        return 3
+    }
+    return 0
+}

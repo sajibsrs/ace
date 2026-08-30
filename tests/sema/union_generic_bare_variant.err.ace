@@ -1,0 +1,7 @@
+// Generic unions instantiate explicitly, variants included.
+Result[T]: union { fail, ok: T }
+
+main(): int {
+    r: Result[int] = Result.fail
+    return 0
+}

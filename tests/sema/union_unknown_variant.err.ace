@@ -1,0 +1,7 @@
+// Only declared variants exist.
+Event: union { none, quit }
+
+main(): int {
+    e: Event = Event.stop
+    return 0
+}

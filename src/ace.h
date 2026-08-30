@@ -18,7 +18,7 @@
     X(CONTINUE, "continue") X(ASM, "asm") X(EXTERN, "extern")                  \
     X(EXPORT, "export") X(CONTRACT, "contract") X(STRUCT, "struct")           \
     X(SIGNS, "signs") X(DISTINCT, "distinct") X(TYPE, "type")                \
-    X(ENUM, "enum")                                                            \
+    X(ENUM, "enum") X(UNION, "union")                                          \
     X(NULL, "null") X(TRUE, "true") X(FALSE, "false")                          \
     /* literals */                                                             \
     X(INT, "int") X(FLOAT, "float") X(STR, "string") X(CHARLIT, "char")        \
@@ -99,6 +99,7 @@ char* arena_alloc(size_t n);
     /* top-level declarations */                                               \
     X(N_IMPORT, "import") X(N_VAR, "var") X(N_FUNC, "func")                    \
     X(N_PARAM, "param") X(N_STRUCT, "struct") X(N_FIELD, "field")              \
+    X(N_UNION, "union") X(N_VARIANT, "variant")                                \
     X(N_CONTRACT, "contract") X(N_METHOD, "method") X(N_ENUM, "enum")         \
     X(N_ALIAS, "alias") X(N_DISTINCT, "distinct") X(N_SIGNING, "signing")     \
     X(N_CONFORMANCE, "conformance") X(N_EXTERN, "extern")                      \
@@ -106,8 +107,8 @@ char* arena_alloc(size_t n);
     /* statements */                                                           \
     X(N_BLOCK, "block") X(N_EXPRSTMT, "exprstmt") X(N_ASSIGN, "assign")        \
     X(N_IF, "if") X(N_FOR, "for") X(N_RANGE, "range") X(N_SWITCH, "switch")    \
-    X(N_CASE, "case") X(N_RETURN, "return") X(N_BREAK, "break")                \
-    X(N_CONTINUE, "continue") X(N_ASM, "asm") X(N_ASMBIND, "asmbind")          \
+    X(N_CASE, "case") X(N_VARPAT, "varpat") X(N_RETURN, "return")             \
+    X(N_BREAK, "break") X(N_CONTINUE, "continue") X(N_ASM, "asm") X(N_ASMBIND, "asmbind")   \
     X(N_LABEL, "label")                                                        \
     /* expressions */                                                          \
     X(N_INT, "int_lit") X(N_FLOAT, "float_lit") X(N_STR, "str_lit")            \

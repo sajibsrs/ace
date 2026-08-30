@@ -848,9 +848,10 @@ static void st_reg(Em* e, int rt, int base, uint32_t off, uint32_t w) {
 }
 
 static void ldrf_(Em* e, int vr, int base, uint32_t off, int is64) {
+    uint32_t scale = is64 ? 8u : 4u; // unsigned-offset imm12 unit
     uint32_t b = is64 ? 0xFD400000u : 0xBD400000u;
-    if (off / 4 < 4096)
-        ins(e, b | ((off / 4) << 10) | ((uint32_t)base << 5) | (uint32_t)vr);
+    if (off % scale == 0 && off / scale < 4096)
+        ins(e, b | ((off / scale) << 10) | ((uint32_t)base << 5) | (uint32_t)vr);
     else {
         load_imm(e, 1, 16, off);
         ins(e, (is64 ? 0xFD600000u : 0xBD600000u) | (16u << 16) |
@@ -859,9 +860,10 @@ static void ldrf_(Em* e, int vr, int base, uint32_t off, int is64) {
 }
 
 static void strf_(Em* e, int vr, int base, uint32_t off, int is64) {
+    uint32_t scale = is64 ? 8u : 4u;
     uint32_t b = is64 ? 0xFD000000u : 0xBD000000u;
-    if (off / 4 < 4096)
-        ins(e, b | ((off / 4) << 10) | ((uint32_t)base << 5) | (uint32_t)vr);
+    if (off % scale == 0 && off / scale < 4096)
+        ins(e, b | ((off / scale) << 10) | ((uint32_t)base << 5) | (uint32_t)vr);
     else {
         load_imm(e, 1, 16, off);
         ins(e, (is64 ? 0xFD200000u : 0xBD200000u) | (16u << 16) |
@@ -871,18 +873,23 @@ static void strf_(Em* e, int vr, int base, uint32_t off, int is64) {
 
 // byte copy [dst+doff, +size) <- [src+soff, +size); uses x16/x17 only
 static void copy_mem(Em* e, int dst, uint32_t doff, int src, uint32_t soff, uint32_t size) {
-    if (size <= 8) {
-        if (!size) return;
-        uint32_t w = size == 1 ? 1 : size == 2 ? 2 : size <= 4 ? 4 : 8;
-        ld_reg(e, 16, src, soff, w, 0);
-        st_reg(e, 16, dst, doff, w);
-        return;
-    }
+    if (!size) return;
     if (size <= 16) {
-        for (uint32_t o = 0; o < size; o += 8) {
-            uint32_t w = size - o < 8 ? size - o : 8;
+        /*
+         * Chunk widths respect both offsets' alignment: scaled unsigned
+         * offsets cannot express, say, an 8-byte word at +4 (union payloads
+         * sit right behind the 4-byte tag).
+         */
+        uint32_t o = 0;
+        while (o < size) {
+            uint32_t align = 8;
+            while (align > 1 && (((doff + o) | (soff + o)) & (align - 1)))
+                align >>= 1;
+            uint32_t chunk = size - o < align ? size - o : align;
+            uint32_t w = chunk >= 8 ? 8 : chunk >= 4 ? 4 : chunk >= 2 ? 2 : 1;
             ld_reg(e, 16, src, soff + o, w, 0);
             st_reg(e, 16, dst, doff + o, w);
+            o += w;
         }
         return;
     }
@@ -1004,8 +1011,15 @@ static EV gen_cast(Em* e, EV v, SType* from, SType* to) {
             ? (dst64 ? 0x9E620000u : 0x9E220000u)
             : (dst64 ? 0x1E620000u : 0x1E220000u);
         if (!ty_is_signed(from)) base |= 0x10000u;
-        ins(e, base | ((uint32_t)xreg(v.idx) << 5) | (uint32_t)vreg(v.idx));
-        return (EV){ CLS_FP, v.idx };
+        /*
+         * The result lands in a fresh fp temp: reusing the int temp's index
+         * would alias a live value in the other pool (the two pools number
+         * their registers independently).
+         */
+        int t = tmp_fp(e);
+        ins(e, base | ((uint32_t)xreg(v.idx) << 5) | (uint32_t)vreg(t));
+        e->vti = v.idx; // the int temp is consumed
+        return (EV){ CLS_FP, t };
     }
     if (is_floatt(from) && (is_intt(to) || is_boolt(to))) { // fcvtzs/fcvtzu
         int src64 = unwrap(from)->prim == P_F64;
@@ -1014,8 +1028,10 @@ static EV gen_cast(Em* e, EV v, SType* from, SType* to) {
             ? (dst64 ? 0x9E780000u : 0x1E780000u)
             : (dst64 ? 0x9E380000u : 0x1E380000u);
         if (!ty_is_signed(to)) base |= 0x10000u;
-        ins(e, base | ((uint32_t)vreg(v.idx) << 5) | (uint32_t)xreg(v.idx));
-        return (EV){ CLS_INT, v.idx };
+        int t = tmp_int(e);
+        ins(e, base | ((uint32_t)vreg(v.idx) << 5) | (uint32_t)xreg(t));
+        e->vtf = v.idx; // the fp temp is consumed
+        return (EV){ CLS_INT, t };
     }
     // int <-> int widths, enum, distinct, ptr <-> ptr
     int fa = scalar_bits(from), ta = scalar_bits(to);
@@ -1116,6 +1132,134 @@ static void emit_fcmp(Em* e, int a, int b, int is64) {
            (vreg(b) << 16) | (vreg(a) << 5));
 }
 
+// --- tagged unions -----------------------------------------------------------------
+
+// The union type a construction/pattern base names, or NULL (sema annotated).
+static SType* union_type_of_base(Node* base) {
+    if (!base) return NULL;
+    if (base->kind == N_IDENT) {
+        Sym* ts = node_sym(base);
+        return ts && ts->kind == SYM_TYPE && ts->type &&
+               ts->type->kind == SK_UNION ? ts->type : NULL;
+    }
+    if (base->kind == N_INDEX) {
+        SType* t = node_ty(base);
+        return t && t->kind == SK_UNION ? t : NULL;
+    }
+    return NULL;
+}
+
+/*
+ * Materialize a union value: i32 tag, then the payload (when the variant
+ * carries one) in the aligned inline storage. Inactive bytes are untouched —
+ * they are unreachable through the language, so nothing initializes them.
+ */
+static EV gen_union_construct(Em* e, Node* at, SType* ut, int variant, EV payload) {
+    (void)at;
+    SType* pt = variant < ut->nfields ? ut->fields[variant].t : NULL;
+    uint32_t off = temp_slot(e, ty_size(ut), ty_align(ut));
+    load_imm(e, 0, 16, (uint64_t)variant);
+    frame_addr(e, 17, off);
+    st_reg(e, 16, 17, 0, 4);
+    if (pt) {
+        int svi = e->vti, svf = e->vtf;
+        store_value(e, payload, 17, sema_union_payload_off(ut), pt);
+        e->vti = svi;
+        e->vtf = svf;
+    }
+    int t = tmp_int(e);
+    frame_addr(e, xreg(t), off);
+    return (EV){ CLS_ADDR, t };
+}
+
+/*
+ * Compare union tags and, when they match, the active payload. Sema guarantees
+ * both sides are the same union type and that every payload supports equality.
+ */
+static EV gen_union_eq(Em* e, Node* n, EV a, EV b, SType* ut, int eq) {
+    (void)n;
+    int result = tmp_int(e);
+    int ldiff = new_label(e), ldone = new_label(e);
+    ld_reg(e, 16, xreg(a.idx), 0, 4, 0);
+    ld_reg(e, 17, xreg(b.idx), 0, 4, 0);
+    ins(e, 0x6B00001Fu | (17u << 16) | (16u << 5)); // cmp w16, w17
+    bcond_(e, C_NE, ldiff);
+    load_imm(e, 0, xreg(result), 1); // tags equal: payloadless variants are equal
+    int* variants = (int*)arena_alloc((size_t)(ut->nfields ? ut->nfields : 1) *
+                                      sizeof(int));
+    int* labs = (int*)arena_alloc((size_t)(ut->nfields ? ut->nfields : 1) *
+                                  sizeof(int));
+    int nvar = 0;
+    for (int i = 0; i < ut->nfields; i++) {
+        if (!ut->fields[i].t) continue;
+        ins(e, 0x7100001Fu | ((uint32_t)i << 10) | (16u << 5)); // cmp w16, #i
+        labs[nvar] = new_label(e);
+        variants[nvar++] = i;
+        bcond_(e, C_EQ, labs[nvar - 1]);
+    }
+    br_(e, ldone); // no payload variant matched the tag
+    uint32_t poff = sema_union_payload_off(ut);
+    int branch_i = e->vti, branch_f = e->vtf;
+    for (int k = 0; k < nvar; k++) {
+        e->vti = branch_i;
+        e->vtf = branch_f;
+        bind_label(e, labs[k]);
+        SType* pt = ut->fields[variants[k]].t;
+        uint32_t psz = ty_size(pt);
+        int t2;
+        if (unwrap(pt)->kind == SK_UNION) {
+            int pa = tmp_int(e), pb = tmp_int(e);
+            ins(e, 0x91000000u | (poff << 10) |
+                   ((uint32_t)xreg(a.idx) << 5) | (uint32_t)xreg(pa));
+            ins(e, 0x91000000u | (poff << 10) |
+                   ((uint32_t)xreg(b.idx) << 5) | (uint32_t)xreg(pb));
+            EV nested = gen_union_eq(e, n, (EV){ CLS_ADDR, pa },
+                                     (EV){ CLS_ADDR, pb }, unwrap(pt), 1);
+            t2 = nested.idx;
+        } else if (is_floatt(pt)) {
+            t2 = tmp_int(e);
+            int is64 = unwrap(pt)->prim == P_F64;
+            int v0 = tmp_fp(e), v1 = tmp_fp(e);
+            ldrf_(e, vreg(v0), xreg(a.idx), poff, is64);
+            ldrf_(e, vreg(v1), xreg(b.idx), poff, is64);
+            emit_fcmp(e, v0, v1, is64);
+            cset_(e, 0, C_EQ, xreg(t2));
+        } else {
+            t2 = tmp_int(e);
+            load_imm(e, 0, xreg(t2), 1);
+            for (uint32_t w = 0; w * 8 < psz; w++) {
+                /*
+                 * Tail words compare at their exact width: the bytes past a
+                 * payload's size are unspecified storage, never data.
+                 */
+                uint32_t rem = psz - w * 8;
+                uint32_t bw = rem >= 8 ? 8 : rem >= 4 ? 4 : rem;
+                ld_reg(e, 16, xreg(a.idx), poff + w * 8, bw, 0);
+                ld_reg(e, 17, xreg(b.idx), poff + w * 8, bw, 0);
+                ins(e, (bw == 8 ? 0xEB00001Fu : 0x6B00001Fu) |
+                       (17u << 16) | (16u << 5));
+                int t3 = tmp_int(e);
+                cset_(e, 0, C_EQ, xreg(t3));
+                ins(e, 0x0A000000u | (xreg(t3) << 16) | (xreg(t2) << 5) |
+                       xreg(t2)); // t2 &= word equal
+            }
+        }
+        ins(e, 0x0A000000u | (xreg(t2) << 16) | (xreg(result) << 5) |
+               xreg(result)); // result &= payload equal
+        br_(e, ldone);
+    }
+    e->vti = branch_i;
+    e->vtf = branch_f;
+    bind_label(e, ldiff);
+    load_imm(e, 0, xreg(result), 0); // differing tags are never equal
+    bind_label(e, ldone);
+    if (!eq) // the arms computed plain equality; != inverts it once here
+        ins(e, 0x52000000u | (xreg(result) << 5) | xreg(result)); // eor w, w, #1
+    if (result != a.idx) mov_int(e, 0, xreg(a.idx), xreg(result));
+    e->vti = a.idx + 1;
+    return (EV){ CLS_INT, a.idx };
+}
+
 static EV gen_binop(Em* e, Node* n) {
     TokKind op = (TokKind)n->op;
     SType* t = node_ty(n->a);
@@ -1139,6 +1283,20 @@ static EV gen_binop(Em* e, Node* n) {
         cset_(e, 0, want, xreg(v.idx));
         e->vti = v.idx + 1; // replace scalar/address temporary with the bool
         return (EV){ CLS_INT, v.idx };
+    }
+
+    // union equality: tag, then the active payload when the tags match
+    {
+        SType* ut = unwrap(node_ty(n->a));
+        if ((op == T_EQEQ || op == T_BANGEQ) && ut && ut->kind == SK_UNION) {
+            EV a = gen_expr(e, n->a);
+            EV b = gen_expr(e, n->b);
+            if (a.cls != CLS_ADDR || b.cls != CLS_ADDR) {
+                em_err(e, n, "union values must materialize in memory");
+                return a;
+            }
+            return gen_union_eq(e, n, a, b, ut, op == T_EQEQ);
+        }
     }
 
     EV a = gen_expr(e, n->a);
@@ -1203,8 +1361,12 @@ static EV gen_shortcircuit(Em* e, Node* n) {
     cbz_(e, 0, xreg(si), !is_and, lf); // AND: zero short-circuits false; OR: nonzero short-circuits true
     e->vti = si; // reuse the slot for b
     EV b = gen_expr(e, n->b);
-    if (b.cls != CLS_INT || b.idx != si)
+    if (b.cls != CLS_INT) {
         em_err(e, n->b, "unexpected operand shape in short-circuit");
+    } else if (b.idx != si) {
+        mov_int(e, 0, xreg(si), xreg(b.idx));
+    }
+    e->vti = si + 1;
     cbz_(e, 0, xreg(si), !is_and, lf);
     load_imm(e, 0, xreg(si), is_and);
     br_(e, lend);
@@ -1399,8 +1561,9 @@ static void mangle_type(Buf* b, SType* t) {
         return;
     }
     case SK_ERROR: buf_write(b, "Error", 5); return;
-    case SK_STRUCT: case SK_ENUM: case SK_CONTRACT:
-        buf_put8(b, t->kind == SK_STRUCT ? 'S' : t->kind == SK_ENUM ? 'E' : 'I');
+    case SK_STRUCT: case SK_ENUM: case SK_CONTRACT: case SK_UNION:
+        buf_put8(b, t->kind == SK_STRUCT ? 'S' : t->kind == SK_ENUM ? 'E' :
+                   t->kind == SK_UNION ? 'U' : 'I');
         mangle_name(b, t->name);
         if (t->nargs) {
             buf_put8(b, 'g');
@@ -1539,6 +1702,7 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
                 if (v.cls != CLS_ADDR)
                     em_err(e, a, "aggregate argument must materialize in memory");
                 args[i].val = v;
+                args[i].ptrval = 1; // the materialized address is what travels
             }
             continue;
         }
@@ -1716,7 +1880,20 @@ static int gen_var_addr(Em* e, Sym* s, Node* at) {
 
 static int is_lvalue_node(Node* x) {
     switch (x->kind) {
-    case N_IDENT: case N_FIELD_E: case N_INDEX:
+    case N_IDENT: case N_INDEX:
+        return 1;
+    case N_FIELD_E:
+        /*
+         * `Type.variant` union constructions are rvalues that materialize in
+         * memory; gen_expr lowers them, so they must not take the gen_addr
+         * path (there is no storage behind a type name).
+         */
+        if (x->a && x->a->kind == N_IDENT && node_sym(x->a) &&
+            node_sym(x->a)->kind == SYM_TYPE)
+            return 0;
+        if (x->a && x->a->kind == N_INDEX && node_ty(x->a) &&
+            node_ty(x->a)->kind == SK_UNION)
+            return 0;
         return 1;
     case N_UNARY:
         return x->op == T_TILDE || x->op == T_AMP;
@@ -2194,6 +2371,26 @@ static EV gen_call(Em* e, Node* call) {
         return (EV){ CLS_ADDR, t };
     }
 
+    // union variant construction: Event.key(42) / Pair[int].ok(v)
+    if (callee->kind == N_FIELD_E && !call->sym) {
+        SType* ut = union_type_of_base(callee->a);
+        if (ut) {
+            int variant = (int)callee->ival;
+            if (variant >= ut->nfields || !ut->fields[variant].t) {
+                em_err(e, call, "payloadless variant is a plain value, not a call");
+                return (EV){ CLS_INT, tmp_int(e) };
+            }
+            if (call->nkids != 1) {
+                em_err(e, call, "variant construction takes exactly one payload value");
+                return (EV){ CLS_INT, tmp_int(e) };
+            }
+            Node* arg = call->kids[0]->kind == N_MUTARG ? call->kids[0]->a
+                                                       : call->kids[0];
+            EV pv = gen_expr(e, arg);
+            return gen_union_construct(e, call, ut, variant, pv);
+        }
+    }
+
     // Compile-time type identity: a unique nonzero word, with no metadata.
     if (callee->kind == N_IDENT && !call->sym && callee->len == 6 &&
         memcmp(callee->str, "typeid", 6) == 0) {
@@ -2479,6 +2676,16 @@ static EV gen_expr(Em* e, Node* x) {
     switch (x->kind) {
     case N_INT: case N_CHAR: {
         SType* t = node_ty(x);
+        /*
+         * An untyped integer literal that sema materialized as a float
+         * operand (e.g. `r * 100` with r: f64) is a float value, not an
+         * integer bit pattern.
+         */
+        if (t && t->kind != SK_UT && is_floatt(t)) {
+            int vt = tmp_fp(e);
+            load_f64(e, unwrap(t)->prim == P_F64, vreg(vt), (double)x->ival);
+            return (EV){ CLS_FP, vt };
+        }
         int sf = !t || t->kind == SK_UT || t->size == 8;
         int it = tmp_int(e);
         load_imm(e, sf, xreg(it), x->ival);
@@ -2668,6 +2875,18 @@ static EV gen_expr(Em* e, Node* x) {
             load_imm(e, 0, xreg(it), x->ival);
             return (EV){ CLS_INT, it };
         }
+        // union variant value (payloadless): Event.quit / Pair[int].none
+        {
+            SType* ut = union_type_of_base(x->a);
+            if (ut) {
+                int vi = (int)x->ival;
+                if (vi >= ut->nfields || ut->fields[vi].t) {
+                    em_err(e, x, "payload variant needs a constructor call");
+                    return (EV){ CLS_INT, tmp_int(e) };
+                }
+                return gen_union_construct(e, x, ut, vi, (EV){ CLS_INT, 0 });
+            }
+        }
         SType* seq = unwrap(node_ty(x->a));
         while (seq && seq->kind == SK_PTR) seq = unwrap(seq->base);
         if (seq && seq->kind == SK_ARRAY && x->len == 3 &&
@@ -2808,6 +3027,67 @@ static void store_member(Em* e, int ra, SType* tup, int i, uint32_t off) {
         frame_addr(e, 15, off);
         copy_mem(e, 15, 0, ra, mo, ty_size(ft));
     }
+}
+
+/*
+ * Union switch: the scrutinee's address is parked in a stack slot (arm bodies
+ * reuse the temp registers), each pattern compares the i32 tag, and matching
+ * arms copy their payload binder before running the body. No else means no
+ * arm runs when nothing matches.
+ */
+static void emit_union_switch(Em* e, Node* s, SType* ut) {
+    EV v = gen_expr(e, s->a);
+    if (v.cls != CLS_ADDR) {
+        em_err(e, s, "union scrutinee must materialize in memory");
+        return;
+    }
+    uint32_t sslot = temp_slot(e, 8, 8);
+    store_frame(e, xreg(v.idx), sslot, 8);
+    uint32_t poff = sema_union_payload_off(ut);
+    if (s->nkids > 64) {
+        em_err(e, s, "too many switch cases (max 64)");
+        return;
+    }
+    int lcase[64], lend = new_label(e);
+    int has_else = 0;
+    for (int i = 0; i < s->nkids; i++) {
+        lcase[i] = new_label(e);
+        if (s->kids[i]->flags & F_ELSE) {
+            has_else = 1;
+            continue;
+        }
+        for (int j = 0; j < s->kids[i]->nkids; j++) {
+            Node* pat = s->kids[i]->kids[j];
+            uint32_t vi = (uint32_t)pat->ival;
+            load_frame(e, 16, sslot, 8, 0);
+            ld_reg(e, 17, 16, 0, 4, 0); // tag
+            ins(e, 0x7100001Fu | ((vi & 0xFFFu) << 10) | (17u << 5)); // cmp w17, #vi
+            bcond_(e, C_EQ, lcase[i]);
+        }
+    }
+    if (!has_else) br_(e, lend);
+    for (int i = 0; i < s->nkids; i++) {
+        Node* c = s->kids[i];
+        bind_label(e, lcase[i]);
+        if (!(c->flags & F_ELSE)) {
+            for (int j = 0; j < c->nkids; j++) {
+                Node* pat = c->kids[j];
+                if (pat->kind != N_VARPAT || !pat->b) continue;
+                int vi = (int)pat->ival;
+                SType* pt = vi < ut->nfields ? ut->fields[vi].t : NULL;
+                if (!pt) continue;
+                Sym* bs = node_sym(pat->b);
+                uint32_t bslot = slot_alloc(e, bs && bs->decl ? bs->decl : pat->b,
+                                            ty_size(pt), ty_align(pt));
+                load_frame(e, 14, sslot, 8, 0); // scrutinee (x14: copy_mem-safe)
+                frame_addr(e, 15, bslot);
+                copy_mem(e, 15, 0, 14, poff, ty_size(pt)); // binder = payload copy
+            }
+        }
+        emit_block(e, c->b);
+        if (i != s->nkids - 1) br_(e, lend);
+    }
+    bind_label(e, lend);
 }
 
 static void emit_stmt(Em* e, Node* s) {
@@ -3130,6 +3410,14 @@ static void emit_stmt(Em* e, Node* s) {
         return;
     }
     case N_SWITCH: {
+        {
+            SType* scrut = node_ty(s->a);
+            SType* ut = scrut ? unwrap(scrut) : NULL;
+            if (ut && ut->kind == SK_UNION) {
+                emit_union_switch(e, s, ut);
+                return;
+            }
+        }
         SType* t = node_ty(s->a);
         if (!t || !is_scalar(t)) {
             em_err(e, s, "switch scrutinee must be a scalar (strings: chunk 7)");
@@ -3533,13 +3821,29 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
     t = unwrap(t);
     if (!t) return 0;
     switch (v->kind) {
-    case N_CALL:
+    case N_CALL: {
+        // union variant construction with a compile-time payload
+        Node* callee = v->a;
+        SType* ut = callee && callee->kind == N_FIELD_E && !v->sym
+            ? union_type_of_base(callee->a) : NULL;
+        if (ut) {
+            int vi = (int)callee->ival;
+            if (vi >= ut->nfields || !ut->fields[vi].t) return 0;
+            uint32_t poff = sema_union_payload_off(ut);
+            size_t start = out->len;
+            put_u(out, (uint64_t)vi, 4);
+            while (out->len - start < poff) buf_put8(out, 0);
+            if (!eval_const(e, v->kids[0], ut->fields[vi].t, out)) return 0;
+            while (out->len - start < ty_size(t)) buf_put8(out, 0);
+            return 1;
+        }
         if (v->a && v->a->kind == N_IDENT && v->a->len == 6 &&
             memcmp(v->a->str, "typeid", 6) == 0 && v->ival) {
             put_u(out, v->ival, 8);
             return 1;
         }
         return 0;
+    }
     case N_INT: case N_BOOL: case N_CHAR: {
         uint64_t c;
         if (const_int(v, &c)) {
@@ -3566,6 +3870,15 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
             put_u(out, v->ival, 4);
             return 1;
         }
+        { // union variant value (payloadless): tag, then canonical zero payload
+            SType* ut = union_type_of_base(v->a);
+            if (ut) {
+                size_t start = out->len;
+                put_u(out, v->ival, 4);
+                while (out->len - start < ty_size(t)) buf_put8(out, 0);
+                return 1;
+            }
+        }
         return 0;
     }
     case N_NULL: {
@@ -3585,6 +3898,7 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
         if (v->kind == N_STRUCTLIT && t->kind != SK_STRUCT) return 0;
         if (v->kind == N_ARRAYLIT && t->kind != SK_ARRAY) return 0;
         int positional = v->nkids > 0 && v->kids[0]->str == NULL;
+        size_t start = out->len;
         uint32_t cursor = 0;
         for (int i = 0; i < v->nkids; i++) {
             Node* fi = v->kids[i];
@@ -3608,7 +3922,7 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
                 cursor++;
             }
             if (!eval_const(e, value, ft, out)) return 0;
-            cursor = out->len;
+            cursor = (uint32_t)(out->len - start);
         }
         while (cursor < ty_size(t)) { // tail padding
             buf_put8(out, 0);
@@ -3619,6 +3933,65 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
     default:
         return 0;
     }
+}
+
+static void add_global(Em* e, Sym* s, ESym* sym);
+static Node* static_string_node(Node* n);
+
+/*
+ * Emit a compile-time union value. Most payloads use the ordinary constant
+ * folder; a static string needs a section relocation for its pointer word.
+ */
+static int emit_union_global(Em* e, Node* n, Sym* vs, const char* nm, SType* t) {
+    Node* ref = n->b;
+    Node* payload = NULL;
+    if (ref && ref->kind == N_CALL) {
+        payload = ref->nkids == 1 ? ref->kids[0] : NULL;
+        ref = ref->a;
+    }
+    if (!ref || ref->kind != N_FIELD_E) return 0;
+    SType* ut = union_type_of_base(ref->a);
+    int vi = (int)ref->ival;
+    if (!ut || ut != t || vi < 0 || vi >= ut->nfields) return 0;
+    SType* pt = ut->fields[vi].t;
+    if ((pt != NULL) != (payload != NULL)) return 0;
+
+    Node* text = pt && unwrap(pt)->kind == SK_PRIM &&
+                 unwrap(pt)->prim == P_STRING ? static_string_node(payload) : NULL;
+    Buf payload_bytes = {0};
+    if (pt && !text && !eval_const(e, payload, pt, &payload_bytes)) {
+        free(payload_bytes.d);
+        return 0;
+    }
+
+    const char* str_name = NULL;
+    uint32_t str_name_len = 0;
+    if (text) {
+        ESym* str = intern_string(e, text);
+        str_name = str->name;
+        str_name_len = (uint32_t)strlen(str_name);
+    }
+
+    uint32_t align = ty_align(t) > 8 ? 8 : ty_align(t);
+    Sec* d = (n->flags & F_CONST) ? &e->secs[SEC_CONST] : &e->secs[SEC_DATA];
+    while (d->data.len % align) buf_put8(&d->data, 0);
+    size_t start = d->data.len;
+    ESym* g = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, d);
+    put_u(&d->data, (uint64_t)vi, 4);
+    while (d->data.len - start < sema_union_payload_off(t)) buf_put8(&d->data, 0);
+    if (text) {
+        ESym* str = sym_intern(&e->syms, str_name, str_name_len);
+        uint32_t off = (uint32_t)d->data.len;
+        buf_put64(&d->data, 0);
+        reloc_add(d, off, str, 0, 3, 1, RM_UNSIGNED);
+        buf_put64(&d->data, text->len);
+    } else if (pt) {
+        buf_write(&d->data, payload_bytes.d, payload_bytes.len);
+    }
+    while (d->data.len - start < ty_size(t)) buf_put8(&d->data, 0);
+    free(payload_bytes.d);
+    add_global(e, vs, g);
+    return 1;
 }
 
 static void add_global(Em* e, Sym* s, ESym* sym) {
@@ -3737,6 +4110,11 @@ static void emit_global(Em* e, Node* n) {
     }
     if (t->kind == SK_ERROR) {
         emit_error_handle_global(e, n, vs, nm);
+        return;
+    }
+    if (t->kind == SK_UNION) {
+        if (!emit_union_global(e, n, vs, nm, t))
+            em_err(e, n, "global union initializer must be a compile-time variant value");
         return;
     }
     // string global: {ptr into __const, len} — the pointer needs a reloc

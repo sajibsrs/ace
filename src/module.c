@@ -203,7 +203,7 @@ static void collect_members(Loader* L, Module* m) {
                        (n->flags & F_PUB) != 0);
             break;
         case N_STRUCT: case N_CONTRACT: case N_ENUM:
-        case N_ALIAS: case N_DISTINCT:
+        case N_ALIAS: case N_DISTINCT: case N_UNION:
             check_reserved_name(L, n, n->str, n->len);
             add_member(m, n->str, n->len, 1, (n->flags & F_PUB) != 0);
             break;
@@ -747,12 +747,16 @@ static void lower_selected_node(Node* n, SelectLower* c) {
         lower_selected_node(n->c, c);
         select_scope_pop(c);
         return;
-    case N_STRUCT: case N_CONTRACT: case N_ALIAS:
+    case N_STRUCT: case N_CONTRACT: case N_ALIAS: case N_UNION:
         select_scope_push(c);
         if (n->c)
             for (int i = 0; i < n->c->nkids; i++)
                 bind_local(c, n->c->kids[i]->str, n->c->kids[i]->len, 1);
         if (n->kind == N_ALIAS) lower_selected_type(n->a, c);
+        else if (n->kind == N_UNION) {
+            for (int i = 0; i < n->nkids; i++)
+                lower_selected_type(n->kids[i]->a, c); // variant payload types
+        }
         else for (int i = 0; i < n->nkids; i++) {
             Node* member = n->kids[i];
             for (int j = 0; j < member->nkids; j++)
@@ -825,7 +829,8 @@ static int decl_namespace(Node* n) {
     if (n->kind == N_FUNC && !(n->flags & F_METHOD)) return 1;
     if (n->kind == N_VAR || n->kind == N_EXTERN) return 1;
     if (n->kind == N_STRUCT || n->kind == N_CONTRACT || n->kind == N_ENUM ||
-        n->kind == N_ALIAS || n->kind == N_DISTINCT) return 2;
+        n->kind == N_ALIAS || n->kind == N_DISTINCT || n->kind == N_UNION)
+        return 2;
     return 0;
 }
 
@@ -927,7 +932,7 @@ static void rename_decls(Module* m, Renames* rs) {
         if (n->kind == N_FUNC && (n->flags & F_METHOD)) continue;
         if (n->kind != N_FUNC && n->kind != N_VAR &&
             n->kind != N_STRUCT && n->kind != N_CONTRACT && n->kind != N_ENUM &&
-            n->kind != N_ALIAS && n->kind != N_DISTINCT)
+            n->kind != N_ALIAS && n->kind != N_DISTINCT && n->kind != N_UNION)
             continue;
         if ((n->flags & F_EXPO) && !n->cname) // `export` keeps its C name
             n->cname = arena_stringn(named->str, named->len);
@@ -996,7 +1001,8 @@ static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root
                 if (n->kind == N_FUNC || n->kind == N_VAR ||
                     n->kind == N_STRUCT || n->kind == N_CONTRACT ||
                     n->kind == N_ENUM || n->kind == N_ALIAS ||
-                    n->kind == N_DISTINCT || n->kind == N_EXTERN) {
+                    n->kind == N_DISTINCT || n->kind == N_EXTERN ||
+                    n->kind == N_UNION) {
                     if (n->kind == N_EXTERN) {
                         for (int j = 0; j < n->nkids; j++)
                             if (text_is(n->kids[j]->str, n->kids[j]->len, b->name))

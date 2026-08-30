@@ -11,6 +11,8 @@
 //   N_PARAM     str = name; a = type; F_MUT/F_NOALIAS (also used as var binder)
 //   N_STRUCT    str = name; kids = N_FIELD; c = N_TPARAMS; F_PUB
 //   N_FIELD     str = name; a = type
+//   N_UNION     str = name; kids = N_VARIANT; c = N_TPARAMS; F_PUB
+//   N_VARIANT   str = name; a = payload type or NULL (payloadless variant)
 //   N_CONTRACT str = name; kids = N_METHOD; c = N_TPARAMS; F_PUB
 //   N_METHOD    str = name; kids = params; a = ret; F_MUT (mutating receiver)
 //   N_ENUM      str = name; kids = N_IDENT members; F_PUB
@@ -28,6 +30,8 @@
 //               b = iterable (expr) or N_RANGE; c = body
 //   N_RANGE     a = first; b = second; c = optional contextual `step` expression
 //   N_SWITCH    a = scrutinee; kids = N_CASE (kids = patterns; b = block; F_ELSE)
+//   N_VARPAT    union-variant case pattern: a = Type.variant (N_FIELD_E);
+//               b = binder N_PARAM (str, a = payload type) or NULL; ival = variant
 //   N_RETURN    a = expr / N_TUPLE_E / NULL
 //   N_BREAK     str = label or NULL
 //   N_ASM       str = instruction text; kids = N_ASMBIND (str = in/out/clobbers;
@@ -758,6 +762,105 @@ static Node* parse_for(P* p) {
     return n;
 }
 
+/*
+ * Scan a union-variant case pattern `Type.variant(binder: T)` — qualified
+ * (`ev.Event.key(k: u32)`) and generic (`Result[int].ok(v: T)`) bases
+ * included. Returns the token offset of the '(' that opens the binder list,
+ * or 0. The `ident ':'` binder shape cannot be an expression, so this stays
+ * a bounded scan, never backtracking.
+ */
+static size_t variant_binder_at(P* p) {
+    size_t j = p->i;
+    if (j >= p->n || p->toks[j].kind != T_IDENT) return 0;
+    j++;
+    int segments = 1;
+    for (;;) {
+        while (j < p->n && p->toks[j].kind == T_LBRACK) { // generic arguments
+            int depth = 0;
+            for (; j < p->n; j++) {
+                if (p->toks[j].kind == T_LBRACK) depth++;
+                else if (p->toks[j].kind == T_RBRACK) {
+                    depth--;
+                    j++;
+                    if (!depth) break;
+                }
+            }
+        }
+        if (j + 1 < p->n && p->toks[j].kind == T_DOT &&
+            p->toks[j + 1].kind == T_IDENT) {
+            j += 2;
+            segments++;
+            continue;
+        }
+        break;
+    }
+    if (segments < 2) return 0;
+    if (j + 2 < p->n && p->toks[j].kind == T_LPAREN &&
+        p->toks[j + 1].kind == T_IDENT &&
+        (p->toks[j + 2].kind == T_COLON || p->toks[j + 2].kind == T_RPAREN))
+        return j;
+    return 0;
+}
+
+/*
+ * Type.variant(binder: T) — union-variant case pattern with a payload
+ * binder. The variant reference keeps the N_FIELD_E shape sema resolves for
+ * construction; the binder rides in b. Sema stores the variant index in ival.
+ */
+static Node* parse_variant_pattern(P* p, size_t lparen) {
+    (void)lparen;
+    Node* base = NULL; // qualified chain of the segments before the variant
+    Token* seg = NULL;
+    for (;;) {
+        if (at(p, T_DOT)) p->i++; // separator before the next segment
+        seg = expect(p, T_IDENT, "type or variant name");
+        if (at(p, T_LPAREN)) break; // the variant name (no generics on it)
+        Node* node = ident_node(p, seg);
+        if (base) {
+            Node* q = nd_tok(p, N_FIELD_E, seg);
+            q->a = base;
+            q->str = seg->str;
+            q->len = seg->len;
+            base = q;
+        } else {
+            base = node;
+        }
+        if (at(p, T_LBRACK)) { // generic arguments on this segment
+            p->i++;
+            Node* ix = nd(p, N_INDEX);
+            ix->a = base;
+            NV w = {0};
+            for (;;) {
+                nv_push(p, &w, parse_type(p));
+                if (!ate(p, T_COMMA)) break;
+                if (at(p, T_RBRACK)) break;
+            }
+            expect(p, T_RBRACK, "']' to close type arguments");
+            set_kids(ix, &w);
+            base = ix;
+        }
+    }
+    Node* vp = nd_tok(p, N_VARPAT, seg);
+    Node* ref = nd_tok(p, N_FIELD_E, seg);
+    ref->a = base;
+    ref->str = seg->str;
+    ref->len = seg->len;
+    vp->a = ref;
+    p->i++; // '('
+    Token* bname = expect(p, T_IDENT, "binder name");
+    Node* binder = nd_tok(p, N_PARAM, bname);
+    binder->str = bname->str;
+    binder->len = bname->len;
+    if (ate(p, T_COLON)) {
+        binder->a = parse_type(p);
+    } else { // `Variant(k)` — a typeless binder; sema diagnoses it
+        binder->a = NULL;
+    }
+    vp->b = binder;
+    expect(p, T_RPAREN, "')' to close variant pattern");
+    return vp;
+}
+
 static Node* parse_switch(P* p) {
     Node* n = nd(p, N_SWITCH);
     expect(p, T_SWITCH, "'switch'");
@@ -774,12 +877,17 @@ static Node* parse_switch(P* p) {
         } else {
             NV pats = {0};
             int line = tk(p)->line;
-            nv_push(p, &pats, expr(p, CTX_NOSLIT));
-            while (at(p, T_COMMA)) {
+            for (;;) {
+                size_t dot = variant_binder_at(p);
+                if (dot) {
+                    nv_push(p, &pats, parse_variant_pattern(p, dot));
+                } else {
+                    nv_push(p, &pats, expr(p, CTX_NOSLIT));
+                }
+                if (!at(p, T_COMMA)) break;
                 bare_list_line(p, line);
                 p->i++;
                 bare_list_line(p, line);
-                nv_push(p, &pats, expr(p, CTX_NOSLIT));
             }
             set_kids(c, &pats);
         }
@@ -1247,6 +1355,32 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
         }
         expect(p, T_RBRACE, "'}' to close enum");
         set_kids(n, &members);
+        return n;
+    }
+    case T_UNION: {
+        p->i++;
+        n = nd_tok(p, N_UNION, name);
+        n->str = name->str;
+        n->len = name->len;
+        n->c = tp;
+        if (pub) n->flags |= F_PUB;
+        expect(p, T_LBRACE, "'{' after 'union'");
+        NV variants = {0};
+        if (!at(p, T_RBRACE)) {
+            for (;;) {
+                Token* vname = expect(p, T_IDENT, "variant name");
+                Node* v = nd_tok(p, N_VARIANT, vname);
+                v->str = vname->str;
+                v->len = vname->len;
+                if (ate(p, T_COLON)) // variant payload: exactly one explicit type
+                    v->a = parse_type(p);
+                nv_push(p, &variants, v);
+                if (!ate(p, T_COMMA)) break;
+                if (at(p, T_RBRACE)) break; // trailing comma
+            }
+        }
+        expect(p, T_RBRACE, "'}' to close union");
+        set_kids(n, &variants);
         return n;
     }
     case T_DISTINCT: {

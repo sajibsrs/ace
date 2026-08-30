@@ -1,0 +1,11 @@
+// A variant pattern binder must name the exact payload type.
+Event: union { none, key: u32 }
+
+main(): int {
+    e: Event = Event.key(7)
+    switch e {
+        Event.key(k: i64) { }
+        Event.none { }
+    }
+    return 0
+}

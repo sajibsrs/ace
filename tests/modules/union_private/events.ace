@@ -1,0 +1,8 @@
+Hidden: union {
+    none,
+    value: int,
+}
+
+pub make(): Hidden {
+    return Hidden.value(1)
+}

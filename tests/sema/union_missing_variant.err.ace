@@ -1,0 +1,14 @@
+// Switching on a union without else must cover every variant.
+Event: union { none, quit, key: u32 }
+
+handle(e: Event): int {
+    switch e {
+        Event.none { return 0 }
+        Event.quit { return 1 }
+    }
+    return -1
+}
+
+main(): int {
+    return handle(Event.none)
+}

@@ -1,0 +1,6 @@
+// A union needs at least one variant.
+Empty: union {}
+
+main(): int {
+    return 0
+}

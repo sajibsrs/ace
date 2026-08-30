@@ -10,7 +10,7 @@
 enum {
     SK_PRIM, SK_PTR, SK_SLICE, SK_ARRAY, SK_TUPLE, SK_FUNC,
     SK_STRUCT, SK_ENUM, SK_CONTRACT, SK_DISTINCT, SK_TYPEPARAM, SK_ERROR,
-    SK_VOID, SK_UT, SK_ERR
+    SK_UNION, SK_VOID, SK_UT, SK_ERR
 };
 
 enum {
@@ -30,7 +30,7 @@ struct SType {
     const char* name;
     SType*      base;
     uint64_t    count;
-    SField*     fields; int nfields; // struct fields / tuple members
+    SField*     fields; int nfields; // struct/tuple fields or union variants
     SType**     params; int nparams; // function params
     SType**     args; int nargs;     // nominal generic instantiation arguments
     SType*      ret;
@@ -67,6 +67,12 @@ struct Sym {
 // Size of a type (layout computed on demand).
 uint32_t sema_size(SType* t);
 uint32_t sema_align(SType* t);
+
+/*
+ * Byte offset of a tagged union's inline payload storage after the i32 tag,
+ * aligned to the largest payload alignment. Defined for SK_UNION types.
+ */
+uint32_t sema_union_payload_off(SType* t);
 
 // Build a type from a syntax node against the checked file scope (e.g. for
 // contract-method signatures at dispatch sites).

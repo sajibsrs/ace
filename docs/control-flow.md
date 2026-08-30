@@ -27,6 +27,21 @@ inside: bool = 0 <= value < limit
 `switch` compares one scalar value against cases, has no fallthrough, and uses
 `else` for the default case.
 
+For a tagged union, cases name variants and payload variants bind an explicitly
+typed local copy. The switch must cover every variant or include `else`:
+
+```ace
+switch event {
+    Event.quit {
+        return
+    }
+    Event.key(code: u32) {
+        code += 1
+    }
+    else {}
+}
+```
+
 ## Ranges
 
 `a .. b` is half-open and endpoint-ordered. The endpoints select the same

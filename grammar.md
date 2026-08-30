@@ -13,7 +13,7 @@ newline       := significant — terminates statements (see §6 Notes)
 keyword       := "import" | "from" | "pub" | "mut" | "const" | "noalias" | "if" | "else"
                | "for" | "in" | "switch" | "return" | "break" | "continue"
                | "asm" | "extern" | "export" | "contract" | "struct" | "signs"
-               | "distinct" | "type" | "enum" | "null" | "true" | "false"
+               | "distinct" | "type" | "enum" | "union" | "null" | "true" | "false"
 
 ident         := letter ("letter" | digit | "_")*        [P: exact ident charset]
 literal       := int_lit | float_lit | string_lit | char_lit | "null" | "true" | "false"
@@ -40,7 +40,7 @@ import_path   := string_lit
 
 top_decl      := ["pub"] top_body
 top_body      := var_decl | const_decl | func_decl | struct_decl
-               | contract_decl | enum_decl | alias_decl | distinct_decl
+               | contract_decl | enum_decl | union_decl | alias_decl | distinct_decl
                | method_func_decl | signing_decl | extern_block
 
 var_decl      := ident ":" type ["=" expr]                // locals: same form inside blocks
@@ -64,6 +64,9 @@ contract_decl := ident [type_params] ":" "contract" "{" method_decl* "}"
 method_decl   := ["mut"] ident "(" [params] ")" [ret_clause]  // receiver implied
 
 enum_decl     := ident ":" "enum" "{" ident ("," ident)* [","] "}"
+union_decl    := ident [type_params] ":" "union" "{" union_variants "}"
+union_variants := union_variant ("," union_variant)* [","]
+union_variant := ident [":" type]                    // zero or one payload
 
 alias_decl    := ident [type_params] ":" "type" "=" type
 distinct_decl := ident ":" "distinct" type
@@ -100,7 +103,9 @@ range_expr    := expr ".." expr [contextual_step expr]
 contextual_step := ident                                  // exact text "step"; not reserved
 switch_stmt   := "switch" expr "{" switch_case* "}"
 switch_case   := case_pat block
-case_pat      := expr ("," expr)* | "else"                [P]
+case_pat      := union_pattern | expr ("," expr)* | "else" [P]
+union_pattern := named_type "." ident
+               | named_type "." ident "(" ident ":" type ")"
 return_stmt   := "return" [expr_list]
 break_stmt    := "break" [ident]                         // labeled break
 continue_stmt := "continue" [ident]                      // optional enclosing block label
@@ -193,3 +198,4 @@ ret_types     := type | "(" type ("," type)+ ")"
 14. **Range endpoint order selects direction.** `a .. b` captures `a` then `b` once and traverses `[min(a,b), max(a,b))` in their written direction: `0 .. 4` yields `0,1,2,3`, while `4 .. 0` yields `3,2,1,0`. Equal endpoints are empty. After the second endpoint, an identifier token whose exact text is `step` introduces the once-evaluated positive step expression; `step` remains bindable everywhere, including as that expression.
 15. **Sequence binders are arity-directed.** One binder is the element value. Two binders are index then element value; the index must be `usize`, and both are fresh per-iteration locals whose mutation cannot change loop progress. Ranges accept exactly one binder. There is no discard binder: use the one-binder form when no index is wanted.
 16. **Labeled continue restarts blocks.** Plain `continue` targets the nearest loop. `continue name` targets only an enclosing labeled block and branches to its beginning; `break name` branches after it. Falling through the block still exits normally. These enclosing-only transfers provide structured repetition without `goto`.
+17. **Tagged-union cases are patterns, not calls.** `Event.key(code: u32)` in a union switch binds an explicitly typed copy of the active payload; the same shape in expression position constructs a value. The scrutinee's union type selects pattern parsing/semantic checking, every variant must appear once unless `else` exists, and inactive payload access has no expression form.

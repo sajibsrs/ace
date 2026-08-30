@@ -1,0 +1,6 @@
+import events: "./events.ace"
+
+main(): int {
+    hidden: events.Hidden = events.make()
+    return 0
+}

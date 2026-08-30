@@ -6,6 +6,8 @@ Meters: distinct f64
 Point: struct { x: int, y: int }
 State: enum { idle, running, stopped }
 Box[T]: struct { value: T }
+Event: union { none, quit, point: Point }
+Result[T]: union { empty, value: T }
 
 add(a: int, b: int): int {
     return a + b
@@ -52,6 +54,20 @@ main(): int {
     middle: []int = values[1..3]
     operation: (int, int): int = add
     state: State = State.running
+    event: Event = Event.point({ x: 3, y: 4 })
+    switch event {
+        Event.point(payload: Point) {
+            point.x = payload.x
+        }
+        else {}
+    }
+    result: Result[int] = Result[int].value(7)
+    switch result {
+        Result[int].value(payload: int) {
+            count += payload
+        }
+        else {}
+    }
     box: Box[int]
     box.value = 13
     partial: Point

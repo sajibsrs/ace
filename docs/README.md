@@ -14,7 +14,7 @@ must be corrected.
   platform words, and strings.
 - [Types and declarations](types.md) — explicit declarations, aliases, distinct
   types, pointers, zero values, definite initialization, arrays, slices, tuples,
-  structs, enums, contracts, and generic types.
+  structs, enums, tagged unions, contracts, and generic types.
 - [Memory](memory.md) — `sizeof`, sequence lengths, `mem` allocation,
   byte operations, explicit release, slice aliasing, and current diagnostics.
 - [Functions](function.md) — declarations, parameters, returns, mutation,

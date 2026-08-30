@@ -1,0 +1,14 @@
+/*
+ * Union equality requires every payload type to support equality; structs
+ * have no equality.
+ */
+Point: struct { x: i32, y: i32 }
+
+Event: union { none, cursor: Point }
+
+main(): int {
+    a: Event = Event.none
+    b: Event = Event.none
+    eq: bool = a == b
+    return 0
+}

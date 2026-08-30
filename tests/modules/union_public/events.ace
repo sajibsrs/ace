@@ -1,0 +1,24 @@
+pub Point: struct {
+    x: int,
+    y: int,
+}
+
+pub Event: union {
+    none,
+    cursor: Point,
+}
+
+pub Status: union {
+    idle,
+    answer: u32,
+    text: string,
+}
+
+pub idle: const Status = Status.idle
+pub answer: const Status = Status.answer(42)
+pub greeting: const Status = Status.text("hello")
+pub origin: const Event = Event.cursor({ x: 3, y: 4 })
+
+pub cursor(x: int, y: int): Event {
+    return Event.cursor({ x: x, y: y })
+}

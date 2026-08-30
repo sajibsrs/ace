@@ -1,0 +1,7 @@
+// A payloadless variant is a plain value, not a call.
+Event: union { none, key: u32 }
+
+main(): int {
+    e: Event = Event.none()
+    return 0
+}

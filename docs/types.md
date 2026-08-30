@@ -169,7 +169,7 @@ Multiple-return values use the platform aggregate ABI and are consumed through
 typed destructuring. Context-typing a standalone tuple literal into a tuple
 variable is not implemented by the current checker.
 
-## Structs and enums
+## Structs, enums, and tagged unions
 
 Struct fields retain declaration order and natural alignment. Struct values have
 copy semantics.
@@ -188,7 +188,76 @@ State: enum { idle, running, stopped }
 state: State = State.running
 ```
 
-Tagged unions are not implemented.
+A tagged union is a closed set of named alternatives stored inline. Variants
+may carry no data or one explicitly typed payload:
+
+```ace
+Event: union {
+    none,
+    quit,
+    key: u32,
+    cursor: Point,
+}
+```
+
+Variant names are chosen by the programmer. `none` and `quit` are not
+keywords. Construct a payloadless variant as a qualified value and a payload
+variant with one argument:
+
+```ace
+event: Event = Event.quit
+event = Event.key(42)
+event = Event.cursor({ x: 10, y: 20 })
+```
+
+Inspect a union with `switch`. A payload binder is an explicitly typed local
+copy, so changing it does not change the union:
+
+```ace
+switch event {
+    Event.none {}
+    Event.quit {}
+    Event.key(code: u32) {
+        code += 1
+    }
+    Event.cursor(point: Point) {
+        point.x = 0
+    }
+}
+```
+
+Every variant must appear once unless the switch contains `else`. Payloads
+cannot be accessed outside their matching arm. Replacing a payload or variant
+uses whole-value assignment.
+
+The representation is an `i32` tag followed by aligned storage for the largest
+payload. Declaration order assigns tags from zero, but numeric tags are not
+exposed. The first variant is the canonical all-bits-zero value, including for
+a global without an initializer. There is no allocation, boxing, reflection,
+`any`, or niche optimization.
+
+Payloadless variants are complete values and can be compared directly when all
+of the union's payload types support equality:
+
+```ace
+Status: union { none, quit, key: u32 }
+status: Status = Status.quit
+
+if status == Status.quit {
+    return
+}
+```
+
+Whole-union `==` and `!=` compare the tag and then the active payload, never
+inactive storage or padding. Generic unions use explicit instantiation just
+like generic structs:
+
+```ace
+Result[T]: union { empty, value: T }
+result: Result[int] = Result[int].value(42)
+```
+
+Tagged unions are not currently permitted in `extern` or `export` signatures.
 
 ## Generic types
 
@@ -277,8 +346,8 @@ compile error.
 ## Current limits
 
 - Type inference and implicit generic instantiation are not implemented.
-- Packed structs, explicit alignment attributes, volatile access, and tagged
-  unions are not implemented.
+- Packed structs, explicit alignment attributes, and volatile access are not
+  implemented.
 - Pointer arithmetic is not implemented.
 - Generic aliases are not implemented by the current compiler; generic structs
   are supported.
