@@ -1,7 +1,6 @@
 /ace
 /ace-sanitize
 /sandbox.ace
-/.remote-agent/
 .DS_Store
 *.o
 *.dSYM/
