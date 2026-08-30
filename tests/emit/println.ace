@@ -1,0 +1,39 @@
+// expect-exit: 0
+import fmt
+
+main(): int {
+    // Every overload returns the value bytes plus exactly one newline.
+    if fmt.println("hi") != 3 {
+        return 1
+    }
+    if fmt.println(42) != 3 {
+        return 2
+    }
+    if fmt.println(uint(7)) != 2 {
+        return 3
+    }
+    if fmt.println(usize(1234)) != 5 {
+        return 4
+    }
+    if fmt.println(0.5) != 4 {
+        return 5
+    }
+    if fmt.println(1.0e21) != 5 {
+        return 6
+    }
+    if fmt.println(f32(0.1)) != 4 {
+        return 7
+    }
+    // The empty string writes zero value bytes and still emits the newline.
+    if fmt.println("") != 1 {
+        return 8
+    }
+    // The signed extreme and float specials keep their print spelling first.
+    if fmt.println(0 - 2147483648) != 12 {
+        return 9
+    }
+    if fmt.println(0.0 - 1.5e300) != 9 {
+        return 10
+    }
+    return 0
+}

@@ -2213,8 +2213,8 @@ static EV gen_call(Em* e, Node* call) {
         ((node_sym(callee) && node_sym(callee)->kind == SYM_TYPE) ||
          (node_ty(callee) && node_ty(callee)->kind != SK_FUNC))) {
         Node* arg = call->kids[0];
-        // An untyped literal under a float cast materializes directly at the
-        // target width: its own untyped bit pattern is not a value.
+        /* An untyped literal under a float cast materializes directly at the
+           target width: its own untyped bit pattern is not a value. */
         if (node_ty(arg) && node_ty(arg)->kind == SK_UT && is_floatt(node_ty(call)) &&
             (arg->kind == N_INT || arg->kind == N_FLOAT)) {
             int vt = tmp_fp(e);

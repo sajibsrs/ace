@@ -79,6 +79,29 @@ Integer widths narrower than the platform word have no overload; convert
 explicitly at the call site — `fmt.print(int(my_i32))`,
 `fmt.print(uint(my_u16))` — so the printed type is always visible.
 
+`fmt.println` writes exactly the representation of the matching `fmt.print`
+overload followed by one newline. It allocates nothing and returns the total
+bytes written, including the newline. If writing the value fails, that
+failure is returned and no newline is attempted; if the value is written but
+the newline write fails, the newline's failure result is returned. An empty
+string still emits the newline, so `fmt.println("")` returns `1`. There is
+no zero-argument form — `fmt.print("\n")` already writes a bare newline.
+
+The same six overload types are available (`string`, `int`, `uint`,
+`usize`, `f32`, `f64`), selected exactly like `print`; narrower integer
+widths convert explicitly (`fmt.println(int(my_i32))`).
+
+```ace
+import fmt
+
+main(): int {
+    fmt.println("ready")  // the bytes `ready` plus one newline
+    fmt.println(42)       // the bytes `42` plus one newline
+    fmt.println(0.5)      // the bytes `0.5` plus one newline
+    return 0
+}
+```
+
 ## math
 
 Minimal, pure-Ace, no floating-point functions yet. All three are generic and
@@ -201,10 +224,10 @@ time, CPU time) are not implemented yet.
 
 ## Current limitations
 
-- No `fmt.println` or formatted printing yet; end lines by printing your own
-  bytes.
+- No formatted (`printf`-style) printing yet; compose output from `print`
+  and `println` calls.
 - No output overloads for narrower integer widths; an explicit cast selects
-  between the `int` and `usize` overloads.
+  between the `int`, `uint`, and `usize` overloads.
 - `math` has no `sqrt`, floats, or libm binding.
 - There is no user-configurable search path for `std/`.
 - `sys` has no directory or socket surface, no calendar-time or CPU-time

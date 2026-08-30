@@ -134,9 +134,11 @@ write_bytes(data: []u8): int {
     return total
 }
 
-// Formats the shortest round-trip digits in the canonical notation: decimal
-// for scientific exponents -6 through 20, otherwise scientific like 1.5e-7.
-// The sign comes first; no trailing zeros are added.
+/*
+Formats the shortest round-trip digits in the canonical notation: decimal
+for scientific exponents -6 through 20, otherwise scientific like 1.5e-7.
+The sign comes first; no trailing zeros are added.
+*/
 format_float(negative: bool, digits: []u8, count: int, decpt: i32): int {
     out: [48]u8
     at: int = 0
@@ -219,12 +221,14 @@ format_float(negative: bool, digits: []u8, count: int, decpt: i32): int {
     return write_bytes(out[0..at])
 }
 
-// The shortest digit count whose correctly rounded decimal form parses back
-// to the exact value, through libSystem ecvt (correctly rounded digits) and
-// strtod/strtof (the round-trip check; strtof parses f32 directly, with no
-// double-rounding detour). ecvt's buffer is thread-local static, so the
-// digits are copied out immediately. The digits are the integer form: value
-// equals digits x 10^(decpt - count).
+/*
+The shortest digit count whose correctly rounded decimal form parses back
+to the exact value, through libSystem ecvt (correctly rounded digits) and
+strtod/strtof (the round-trip check; strtof parses f32 directly, with no
+double-rounding detour). ecvt returns internal storage that a later call may
+overwrite, so the digits are copied out immediately. The digits are the
+integer form: value equals digits x 10^(decpt - count).
+*/
 shortest_digits(mag: f64, max: int, narrow: bool, mut digits: []u8, mut probe: []u8): (int, i32) {
     decpt: i32 = 0
     unused: i32 = 0
@@ -294,8 +298,10 @@ pub print(value: f64): int {
         mag = zero - value
     }
     if mag == zero {
-        // The comparison operators cannot see the sign of a zero, so the
-        // sign bit is read through the reciprocal: 1/-0 is -inf.
+        /*
+        The comparison operators cannot see the sign of a zero, so the sign
+        bit is read through the reciprocal: 1/-0 is -inf.
+        */
         if one / value < zero {
             return print("-0")
         }
@@ -327,8 +333,10 @@ pub print(value: f32): int {
         mag = zero - value
     }
     if mag == zero {
-        // The comparison operators cannot see the sign of a zero, so the
-        // sign bit is read through the reciprocal: 1/-0 is -inf.
+        /*
+        The comparison operators cannot see the sign of a zero, so the sign
+        bit is read through the reciprocal: 1/-0 is -inf.
+        */
         if pone / value < zero {
             return print("-0")
         }
@@ -338,9 +346,55 @@ pub print(value: f32): int {
     probe: [32]u8
     dv: []u8 = digits[0..9]
     pv: []u8 = probe[0..32]
-    // f32 -> f64 is exact, so correctly rounded digits of the widened value
-    // are correctly rounded digits of the f32 itself; the round trip is
-    // checked against the narrow type through strtof.
+    /*
+    f32 -> f64 is exact, so correctly rounded digits of the widened value are
+    correctly rounded digits of the f32 itself; the round trip is checked
+    against the narrow type through strtof.
+    */
     count: int, decpt: i32 = shortest_digits(f64(mag), 9, true, mut dv, mut pv)
     return format_float(negative, dv, count, decpt)
+}
+
+/*
+Closes a println after a nonempty value write: a non-positive result is
+returned with no newline attempted; the newline's own failure is returned
+unchanged; full success returns the combined byte count including the newline.
+The string overload handles its empty success before calling this helper.
+*/
+finish_line(written: int): int {
+    if written <= 0 {
+        return written
+    }
+    n: int = print("\n")
+    if n < 0 {
+        return n
+    }
+    return written + n
+}
+
+pub println(text: string): int {
+    if text.len == 0 {
+        return print("\n")
+    }
+    return finish_line(print(text))
+}
+
+pub println(value: int): int {
+    return finish_line(print(value))
+}
+
+pub println(value: uint): int {
+    return finish_line(print(value))
+}
+
+pub println(value: usize): int {
+    return finish_line(print(value))
+}
+
+pub println(value: f32): int {
+    return finish_line(print(value))
+}
+
+pub println(value: f64): int {
+    return finish_line(print(value))
 }
