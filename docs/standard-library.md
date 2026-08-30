@@ -38,7 +38,7 @@ a newline, never allocates, and returns the number of bytes written, or the
 non-positive result reported by the OS on failure. Partial writes are retried
 until done or error.
 
-Four overloads exist, selected exactly like any other overload set:
+Six overloads exist, selected exactly like any other overload set:
 
 ```ace
 import fmt
@@ -48,6 +48,8 @@ main(): int {
     fmt.print(42)                // prints: 42
     fmt.print(uint(7))           // prints: 7
     fmt.print(usize(7))          // prints: 7
+    fmt.print(0.5)               // prints: 0.5
+    fmt.print(1.0e21)            // prints: 1e21
     return 0
 }
 ```
@@ -59,6 +61,16 @@ main(): int {
   `UINT_MAX`. Values typed `u64` select it directly.
 - `print(value: usize): int` — unsigned decimal for lengths, sizes, and
   indices, zero through `USIZE_MAX`.
+- `print(value: f32): int` and `print(value: f64): int` — shortest
+  round-trip decimal: the fewest significant digits that read back as the
+  exact original value.
+
+Float output spells the special values `nan`, `inf`, and `-inf`, and keeps
+the sign of a negative zero (`-0`). Values print in decimal notation when
+the scientific exponent is between -6 and 20; anything larger or smaller
+uses scientific spelling like `1e21`, `1.5e-7`, or `3.4028235e38` — no `+`,
+no exponent padding. Whole-valued floats print without `.0` (`3.0` prints
+as `3`).
 
 Numeric output is ASCII with a `-` only for negative signed values. There is
 no padding, no base selection, and no formatting language.
@@ -191,8 +203,8 @@ time, CPU time) are not implemented yet.
 
 - No `fmt.println` or formatted printing yet; end lines by printing your own
   bytes.
-- No output overloads for floats or narrower integer widths; an explicit cast
-  selects between the `int`, `uint`, and `usize` overloads.
+- No output overloads for narrower integer widths; an explicit cast selects
+  between the `int` and `usize` overloads.
 - `math` has no `sqrt`, floats, or libm binding.
 - There is no user-configurable search path for `std/`.
 - `sys` has no directory or socket surface, no calendar-time or CPU-time

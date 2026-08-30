@@ -36,6 +36,8 @@ print_examples(): int {
     fmt.print(42)
     fmt.print(uint(7))
     fmt.print(usize(7))
+    fmt.print(0.5)
+    fmt.print(1.0e21)
     narrow: u16 = 7
     return int(fmt.print(uint(narrow)) - 1)
 }

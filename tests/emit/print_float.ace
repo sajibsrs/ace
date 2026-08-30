@@ -1,0 +1,55 @@
+// expect-exit: 0
+// expect-output: 030.50.10.33333333333333333.1415926535897931e211e-70.0000011000000000000000000001e3081e-3085e-3241.7976931348623157e308infnan-inf-0-2.5-1.5e3000.10.53.4028235e381e-457infnan0.5
+import fmt
+
+id(x: f64): f64 {
+    return x
+}
+
+id32(x: f32): f32 {
+    return x
+}
+
+main(): int {
+    one: f64 = 1.0
+    three: f64 = 3.0
+    zero: f64 = 0.0
+    pone: f32 = 1.0
+    pzero: f32 = 0.0
+    fmt.print(0.0)
+    fmt.print(3.0)
+    fmt.print(0.5)
+    fmt.print(0.1)
+    fmt.print(one / three)
+    fmt.print(3.141592653589793)
+    fmt.print(1.0e21)
+    fmt.print(1.0e-7)
+    fmt.print(1.0e-6)
+    fmt.print(1.0e20)
+    fmt.print(1.0e308)
+    fmt.print(1.0e-308)
+    fmt.print(4.9e-324)
+    fmt.print(1.7976931348623157e308)
+    fmt.print(one / zero)
+    fmt.print(zero / zero)
+    fmt.print(zero - one / zero)
+    // -0 through runtime values: literal folding gives +0.
+    neg_one: f64 = id(0.0) - id(1.0)
+    fmt.print(zero * neg_one)
+    fmt.print(0.0 - 2.5)
+    fmt.print(0.0 - 1.5e300)
+    v1: f32 = id32(0.1)
+    v2: f32 = id32(0.5)
+    fmt.print(v1)
+    fmt.print(v2)
+    fmt.print(f32(3.4028235e38))
+    fmt.print(f32(1.0e-45))
+    fmt.print(f32(7))
+    fmt.print(pone / pzero)
+    fmt.print(pzero / pzero)
+    // bytes-written contract: 0.5 writes three bytes
+    if fmt.print(0.5) != 3 {
+        return 1
+    }
+    return 0
+}

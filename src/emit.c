@@ -2212,6 +2212,22 @@ static EV gen_call(Em* e, Node* call) {
     if (callee->kind == N_IDENT && !call->sym &&
         ((node_sym(callee) && node_sym(callee)->kind == SYM_TYPE) ||
          (node_ty(callee) && node_ty(callee)->kind != SK_FUNC))) {
+        Node* arg = call->kids[0];
+        // An untyped literal under a float cast materializes directly at the
+        // target width: its own untyped bit pattern is not a value.
+        if (node_ty(arg) && node_ty(arg)->kind == SK_UT && is_floatt(node_ty(call)) &&
+            (arg->kind == N_INT || arg->kind == N_FLOAT)) {
+            int vt = tmp_fp(e);
+            if (arg->kind == N_FLOAT) {
+                load_f64(e, unwrap(node_ty(call))->prim == P_F64, vreg(vt), arg->fval);
+            } else {
+                load_imm(e, 1, 16, (uint64_t)arg->ival);
+                uint32_t scvtf = unwrap(node_ty(call))->prim == P_F64
+                    ? 0x9E620000u : 0x9E220000u;
+                ins(e, scvtf | (16u << 5) | (uint32_t)vreg(vt));
+            }
+            return (EV){ CLS_FP, vt };
+        }
         EV v = gen_expr(e, call->kids[0]);
         return gen_cast(e, v, node_ty(call->kids[0]), node_ty(call));
     }
