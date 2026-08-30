@@ -20,7 +20,7 @@ plain_descriptor: const ErrorDescriptor = ErrorDescriptor{
 
 plain: const Error = Error(&plain_descriptor)
 
-read(fail: bool): (usize, Error?) {
+read(fail: bool): (usize, Error) {
     if fail {
         return 0, not_found
     }
@@ -41,7 +41,7 @@ main(): int {
         return 4
     }
 
-    count: usize, error: Error? = read(true)
+    count: usize, error: Error = read(true)
     if error == null {
         return 5
     }

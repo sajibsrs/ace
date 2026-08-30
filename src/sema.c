@@ -7,12 +7,11 @@
 //   prims    bool i8..i64 u8..u64 f32 f64 string usize typeid
 //            (`int`/`uint` = i64/u64, the platform word on arm64)
 //   nominal  struct, enum (i32 layout), contract (16 bytes), distinct, Error
-//   struct.  *T (8), []T (16), [N]T, T? (ptr/slice/contract niches are
-//            free; Error/typeid use zero; value optionals carry a visible
-//            tail tag), tuples
+//   struct.  *T (8), []T (16), [N]T, tuples
 //            (multi-return, laid out like anonymous structs), funcs
 // Literals are untyped constants: they take the expected type at use sites
-// and must fit; null assigns to any T?. Everything else casts explicitly.
+// and must fit; null materializes pointer-like/handle-like zero. Everything
+// else casts explicitly.
 #include "ace.h"
 #include "sema.h"
 
@@ -24,7 +23,7 @@
 
 static SType *T_ERR, *T_VOID, *T_UT_INT, *T_UT_FLOAT, *T_UT_NULL;
 static SType *T_ERROR, *T_ERROR_DESC;
-static SType *T_BYTE_SLICE, *T_BYTE_SLICE_OPT;
+static SType* T_BYTE_SLICE;
 static SType* PRIMS[14];
 static uint64_t next_type_id = 1;
 
@@ -64,7 +63,6 @@ static const char* type_name(SType* t) {
     case SK_PTR: return t->is_mut ? "mut *T" : "*T";
     case SK_SLICE: return "[]T";
     case SK_ARRAY: return "[N]T";
-    case SK_OPT: return "T?";
     case SK_TUPLE: return "(tuple)";
     case SK_FUNC: return "(func)";
     case SK_STRUCT: return t->name ? t->name : "struct";
@@ -108,19 +106,6 @@ static void layout(SType* t) {
         layout(t->base);
         t->align = t->base->align;
         t->size = (uint32_t)(t->base->size * t->count);
-        return;
-    case SK_OPT:
-        layout(t->base);
-        if (t->base->kind == SK_PTR || t->base->kind == SK_SLICE ||
-            t->base->kind == SK_CONTRACT ||
-            t->base->kind == SK_ERROR ||
-            (t->base->kind == SK_PRIM && t->base->prim == P_TYPEID) ||
-            (t->base->kind == SK_PRIM && t->base->prim == P_STRING)) {
-            t->size = t->base->size; t->align = t->base->align; // niche
-        } else {
-            t->align = t->base->align ? t->base->align : 1;
-            t->size = align_to(t->base->size + 1, t->align); // tail tag
-        }
         return;
     case SK_STRUCT: case SK_TUPLE: {
         if (t->calc) { t->size = 1; return; }
@@ -207,9 +192,6 @@ static void ensure_memory_types(void) {
     T_BYTE_SLICE = st_new(SK_SLICE);
     T_BYTE_SLICE->base = st_prim(P_U8);
     layout(T_BYTE_SLICE);
-    T_BYTE_SLICE_OPT = st_new(SK_OPT);
-    T_BYTE_SLICE_OPT->base = T_BYTE_SLICE;
-    layout(T_BYTE_SLICE_OPT);
 }
 
 static Sym* sym_new(uint8_t kind, const char* name, uint32_t len) {
@@ -294,7 +276,6 @@ static int same_type(SType* a, SType* b) {
     case SK_PTR: return a->is_mut == b->is_mut && same_type(a->base, b->base);
     case SK_SLICE: return same_type(a->base, b->base);
     case SK_ARRAY: return a->count == b->count && same_type(a->base, b->base);
-    case SK_OPT: return same_type(a->base, b->base);
     case SK_TUPLE:
         if (a->nfields != b->nfields) return 0;
         for (int i = 0; i < a->nfields; i++)
@@ -474,15 +455,6 @@ static SType* build_type(Ck* k, Node* t) {
         a->base = build_type(k, t->a);
         return a;
     }
-    case N_OPT: {
-        SType* o = st_new(SK_OPT);
-        o->base = build_type(k, t->a);
-        if (o->base->kind == SK_OPT) {
-            ck_err(k, t, "optional of optional is not a type");
-            return T_ERR;
-        }
-        return o;
-    }
     case N_CONST_T: return build_type(k, t->a);
     case N_TUPLE_T: {
         SType* tu = st_new(SK_TUPLE);
@@ -565,7 +537,7 @@ static int has_internal_abi_type(SType* t, int depth) {
     if (t == T_ERROR || t == T_ERROR_DESC || t->kind == SK_ERROR) return 1;
     if (t->kind == SK_PRIM) return t->prim == P_TYPEID;
     if (t->kind == SK_PTR || t->kind == SK_SLICE || t->kind == SK_ARRAY ||
-        t->kind == SK_OPT || t->kind == SK_DISTINCT)
+        t->kind == SK_DISTINCT)
         return has_internal_abi_type(t->base, depth + 1);
     if (t->kind == SK_STRUCT || t->kind == SK_TUPLE) {
         for (int i = 0; i < t->nfields; i++)
@@ -675,9 +647,10 @@ over:
     return 0;
 }
 
-static int has_zero_niche(SType* t) {
+static int accepts_null(SType* t) {
     return t && (t->kind == SK_PTR || t->kind == SK_SLICE ||
-                 t->kind == SK_CONTRACT || t->kind == SK_ERROR ||
+                 t->kind == SK_FUNC || t->kind == SK_CONTRACT ||
+                 t->kind == SK_ERROR ||
                  (t->kind == SK_PRIM &&
                   (t->prim == P_STRING || t->prim == P_TYPEID)));
 }
@@ -711,13 +684,9 @@ static int coerce(Ck* k, Node* e, SType* want) {
     SType* t = expr_type(k, e);
     if (same_type(t, want)) return 1;
     if (want->kind == SK_ERR || t->kind == SK_ERR) return 1;
-    if (want->kind == SK_OPT && same_type(t, want->base) && has_zero_niche(t)) {
-        e->ty = want; // same bits: the base value occupies the optional's nonzero niche
-        return 1;
-    }
     if (t == T_UT_NULL) {
-        if (want->kind == SK_OPT) { e->ty = want; return 1; } // null materializes
-        ck_err(k, e, "null needs an optional type, not %s", type_name(want));
+        if (accepts_null(want)) { e->ty = want; return 1; }
+        ck_err(k, e, "null is not a value of %s", type_name(want));
         return 0;
     }
     if (t == T_UT_INT &&
@@ -802,10 +771,6 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
             b = b->base;
         }
         if (b->kind == SK_ERR) return T_ERR;
-        if (b->kind == SK_OPT) {
-            ck_err(k, e, "field access through an optional — check for null first");
-            return T_ERR;
-        }
         if (b->kind == SK_ERROR) {
             if (write)
                 ck_err(k, e, "Error descriptor fields are read-only");
@@ -846,10 +811,6 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
         if (e->op == T_TILDE) {
             SType* p = expr_type(k, e->a);
             if (p->kind == SK_ERR) return T_ERR;
-            if (p->kind == SK_OPT) {
-                ck_err(k, e, "dereference of an optional pointer — check for null first");
-                return T_ERR;
-            }
             if (p->kind != SK_PTR) {
                 ck_err(k, e, "'~' dereferences pointers, not %s", type_name(p));
                 return T_ERR;
@@ -1048,28 +1009,24 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                   op == T_LE || op == T_GT || op == T_GE;
         if (cmp) {
             int equality = op == T_EQEQ || op == T_BANGEQ;
-            if (equality && a->kind == SK_OPT && same_type(a->base, b) &&
-                has_zero_niche(b)) {
-                e->b->ty = a;
-                b = a;
-            } else if (equality && b->kind == SK_OPT && same_type(b->base, a) &&
-                       has_zero_niche(a)) {
-                e->a->ty = b;
-                a = b;
-            }
             if (equality && same_type(a, b) &&
                 (a->kind == SK_ERROR ||
-                 (a->kind == SK_OPT && has_zero_niche(a->base)) ||
                  (a->kind == SK_PRIM && a->prim == P_TYPEID)))
                 return st_prim(P_BOOL);
             if (same_type(a, b) && (is_num(a) || is_bool(a) || a->kind == SK_PTR ||
-                                    a->kind == SK_ENUM || a->kind == SK_CONTRACT ||
+                                    a->kind == SK_FUNC || a->kind == SK_ENUM ||
+                                    a->kind == SK_CONTRACT || a->kind == SK_SLICE ||
                                     a->kind == SK_DISTINCT ||
                                     (a->kind == SK_PRIM && a->prim == P_STRING)))
                 return st_prim(P_BOOL);
-            if ((a == T_UT_NULL && b->kind == SK_OPT) ||
-                (b == T_UT_NULL && a->kind == SK_OPT))
+            if (equality && a == T_UT_NULL && accepts_null(b)) {
+                e->a->ty = b;
                 return st_prim(P_BOOL);
+            }
+            if (equality && b == T_UT_NULL && accepts_null(a)) {
+                e->b->ty = a;
+                return st_prim(P_BOOL);
+            }
             ck_err(k, e, "cannot compare %s and %s", type_name(a), type_name(b));
             return T_ERR;
         }
@@ -1158,10 +1115,6 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         SType* b = expr_type(k, e->a);
         if (b->kind == SK_ERR) return T_ERR;
         while (b->kind == SK_PTR) b = b->base; // p.x auto-derefs
-        if (b->kind == SK_OPT) {
-            ck_err(k, e, "field access through an optional — check for null first");
-            return T_ERR;
-        }
         if (b->kind == SK_ERROR) b = b->base;
         if (e->len == 3 && memcmp(e->str, "len", 3) == 0 &&
             (b->kind == SK_SLICE || b->kind == SK_ARRAY ||
@@ -1481,7 +1434,7 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
             }
             coerce(k, arg, st_prim(P_I64));
         }
-        return T_BYTE_SLICE_OPT;
+        return T_BYTE_SLICE;
     }
     if (intrinsic == BI_MEM_REALLOC) {
         if (call->nkids != 2) {
@@ -1502,7 +1455,7 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         }
         coerce(k, data, T_BYTE_SLICE);
         coerce(k, size, st_prim(P_I64));
-        return T_BYTE_SLICE_OPT;
+        return T_BYTE_SLICE;
     }
 
     if (intrinsic == BI_MEM_RELEASE && call->nkids != 1) {
@@ -1522,18 +1475,9 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         Sym* current = raw->kind == N_IDENT ? node_sym(raw) : NULL;
         Sym* original = current && current->decl ? node_sym(current->decl) : NULL;
         if (original && original->type) declared = original->type;
-        if (!same_type(declared, T_BYTE_SLICE_OPT)) {
-            ck_err(k, raw, "mem.release requires a mutable []u8? allocation variable");
+        if (!same_type(declared, T_BYTE_SLICE)) {
+            ck_err(k, raw, "mem.release requires a mutable []u8 allocation variable");
             return T_ERR;
-        }
-        // Nulling ends an identifier's flow narrowing. Add a new post-call fact
-        // without changing symbols already attached to earlier expressions.
-        if (current && same_type(visible, T_BYTE_SLICE)) {
-            Sym* post = sym_new(SYM_VAR, current->name, current->len);
-            *post = *current;
-            post->type = T_BYTE_SLICE_OPT;
-            post->next = k->scope->values;
-            k->scope->values = post;
         }
         return T_VOID;
     }
@@ -1879,26 +1823,6 @@ static SType* check_call(Ck* k, Node* call) {
 
 // --- statements ------------------------------------------------------------------------
 
-static void narrow(Ck* k, Node* cond, int taken) {
-    if (!cond || cond->kind != N_BINARY) return;
-    int neq = ((TokKind)cond->op == T_BANGEQ) == taken;
-    if (!neq) return;
-    if (cond->b->kind != N_NULL || cond->a->kind != N_IDENT) return;
-    Sym* s = lookup_val(k, cond->a->str, cond->a->len);
-    if (!s || !s->type || s->type->kind != SK_OPT) return;
-    Sym* ns = sym_new(SYM_VAR, s->name, s->len);
-    ns->type = s->type->base;
-    ns->decl = s->decl;
-    ns->is_mut = s->is_mut;
-    ns->is_const = s->is_const;
-    ns->is_param = s->is_param;
-    ns->is_global = s->is_global;
-    ns->is_noalias = s->is_noalias;
-    ns->is_const_backed = s->is_const_backed;
-    ns->next = k->scope->values;
-    k->scope->values = ns;
-}
-
 static void check_stmt(Ck* k, Node* s) {
     switch (s->kind) {
     case N_VAR: {
@@ -2011,12 +1935,10 @@ static void check_stmt(Ck* k, Node* s) {
         if (c->kind != SK_ERR && !is_bool(c))
             ck_err(k, s->a, "if condition must be bool, not %s", type_name(c));
         scope_push(k);
-        narrow(k, s->a, 1);
         check_block(k, s->b);
         scope_pop(k);
         if (s->c) {
             scope_push(k);
-            narrow(k, s->a, 0);
             check_stmt(k, s->c); // else-if chains are N_IF; blocks self-scope
             scope_pop(k);
         }
@@ -2174,6 +2096,8 @@ static void check_structlit(Ck* k, Node* lit, SType* want) {
     }
     int n = lit->nkids;
     int positional = n > 0 && lit->kids[0]->str == NULL;
+    uint8_t* seen = (uint8_t*)arena_alloc((size_t)(want->nfields ? want->nfields : 1));
+    memset(seen, 0, (size_t)(want->nfields ? want->nfields : 1));
     for (int i = 0; i < n; i++) {
         Node* fi = lit->kids[i];
         if (positional) {
@@ -2194,12 +2118,24 @@ static void check_structlit(Ck* k, Node* lit, SType* want) {
                        (int)fi->len, fi->str);
                 continue;
             }
+            if (seen[found]) {
+                ck_err(k, fi, "duplicate field '%.*s' in %s literal",
+                       (int)fi->len, fi->str, type_name(want));
+                continue;
+            }
+            seen[found] = 1;
             coerce(k, fi->a, want->fields[found].t);
         }
     }
     if (positional && n < want->nfields)
         ck_err(k, lit, "missing fields: %s has %d, literal has %d",
                type_name(want), want->nfields, n);
+    if (!positional) {
+        for (int i = 0; i < want->nfields; i++)
+            if (!seen[i])
+                ck_err(k, lit, "missing field '%s' in %s literal",
+                       want->fields[i].name, type_name(want));
+    }
 }
 
 static void check_arraylit(Ck* k, Node* lit, SType* want) {
@@ -2214,6 +2150,587 @@ static void check_arraylit(Ck* k, Node* lit, SType* want) {
         return;
     }
     for (int i = 0; i < lit->nkids; i++) coerce(k, lit->kids[i], want->base);
+}
+
+// --- definite initialization ---------------------------------------------------------
+
+// This is deliberately a separate post-typecheck walk. It tracks direct Ace
+// storage paths without changing runtime representation. Pointer aliases,
+// address-taking, asm, and extern code remain explicit trust boundaries.
+typedef struct InitPart InitPart;
+typedef struct InitState InitState;
+typedef struct InitVar InitVar;
+typedef struct InitExit InitExit;
+
+struct InitState {
+    uint8_t full;
+    InitPart* parts; // initialized struct fields / constant array elements
+};
+
+struct InitPart {
+    uint64_t key;
+    InitState state;
+    InitPart* next;
+};
+
+struct InitVar {
+    Sym* sym;
+    InitState state;
+    InitVar* next;
+};
+
+typedef struct {
+    Diag* d;
+    InitVar* vars;
+    InitExit* exits;
+} InitCk;
+
+typedef struct {
+    InitVar* var;
+    InitState state;
+} InitSnapEntry;
+
+typedef struct {
+    InitSnapEntry* v;
+    int n;
+} InitSnap;
+
+struct InitExit {
+    const char* name;
+    uint32_t len;
+    InitSnap base;
+    InitSnap merged;
+    int have;
+    InitExit* next;
+};
+
+typedef struct {
+    Sym* root;
+    uint64_t key[64];
+    SType* type[65];
+    int n;
+    int dynamic_index;
+} InitPath;
+
+static SType* init_shape(SType* t) {
+    while (t && t->kind == SK_DISTINCT) t = t->base;
+    return t;
+}
+
+static int init_aggregate(SType* t) {
+    t = init_shape(t);
+    return t && (t->kind == SK_STRUCT || t->kind == SK_ARRAY ||
+                 t->kind == SK_TUPLE);
+}
+
+static InitPart* init_part(InitState* s, uint64_t key, int create) {
+    for (InitPart* p = s->parts; p; p = p->next)
+        if (p->key == key) return p;
+    if (!create) return NULL;
+    InitPart* p = (InitPart*)arena_alloc(sizeof(InitPart));
+    memset(p, 0, sizeof *p);
+    p->key = key;
+    p->next = s->parts;
+    s->parts = p;
+    return p;
+}
+
+static int init_state_full(InitState* s, SType* t);
+
+static uint64_t init_part_count(SType* t) {
+    t = init_shape(t);
+    if (!t) return 0;
+    if (t->kind == SK_STRUCT || t->kind == SK_TUPLE) return (uint64_t)t->nfields;
+    if (t->kind == SK_ARRAY) return t->count;
+    return 0;
+}
+
+static SType* init_part_type(SType* t, uint64_t key) {
+    t = init_shape(t);
+    if (!t) return NULL;
+    if ((t->kind == SK_STRUCT || t->kind == SK_TUPLE) && key < (uint64_t)t->nfields)
+        return t->fields[key].t;
+    if (t->kind == SK_ARRAY && key < t->count) return t->base;
+    return NULL;
+}
+
+static int init_state_full(InitState* s, SType* t) {
+    if (s->full) return 1;
+    if (!init_aggregate(t)) return 0;
+    uint64_t count = init_part_count(t), have = 0;
+    for (InitPart* p = s->parts; p; p = p->next) {
+        SType* pt = init_part_type(t, p->key);
+        if (pt && init_state_full(&p->state, pt)) have++;
+    }
+    if (have == count) {
+        s->full = 1;
+        s->parts = NULL;
+        return 1;
+    }
+    return 0;
+}
+
+static InitState init_clone(InitState* s) {
+    InitState out = { s->full, NULL };
+    InitPart** tail = &out.parts;
+    for (InitPart* p = s->parts; p; p = p->next) {
+        InitPart* q = (InitPart*)arena_alloc(sizeof(InitPart));
+        q->key = p->key;
+        q->state = init_clone(&p->state);
+        q->next = NULL;
+        *tail = q;
+        tail = &q->next;
+    }
+    return out;
+}
+
+static InitState init_intersect(InitState* a, InitState* b, SType* t) {
+    if (a->full) return init_clone(b);
+    if (b->full) return init_clone(a);
+    InitState out = {0};
+    for (InitPart* p = a->parts; p; p = p->next) {
+        InitPart* q = init_part(b, p->key, 0);
+        if (!q) continue;
+        InitPart* r = init_part(&out, p->key, 1);
+        r->state = init_intersect(&p->state, &q->state,
+                                  init_part_type(t, p->key));
+    }
+    (void)init_state_full(&out, t);
+    return out;
+}
+
+static InitVar* init_var(InitCk* k, Sym* sym, int create) {
+    if (!sym || sym->kind != SYM_VAR || sym->is_global) return NULL;
+    for (InitVar* v = k->vars; v; v = v->next)
+        if (v->sym == sym) return v;
+    if (!create) return NULL;
+    InitVar* v = (InitVar*)arena_alloc(sizeof(InitVar));
+    memset(v, 0, sizeof *v);
+    v->sym = sym;
+    v->next = k->vars;
+    k->vars = v;
+    return v;
+}
+
+static InitSnap init_snapshot(InitCk* k) {
+    int n = 0;
+    for (InitVar* v = k->vars; v; v = v->next) n++;
+    InitSnap s = {0};
+    s.n = n;
+    s.v = (InitSnapEntry*)arena_alloc((size_t)(n ? n : 1) * sizeof(InitSnapEntry));
+    int i = 0;
+    for (InitVar* v = k->vars; v; v = v->next) {
+        s.v[i].var = v;
+        s.v[i].state = init_clone(&v->state);
+        i++;
+    }
+    return s;
+}
+
+static void init_restore(InitSnap* s) {
+    for (int i = 0; i < s->n; i++) s->v[i].var->state = init_clone(&s->v[i].state);
+}
+
+static InitState* init_snap_state(InitSnap* s, InitVar* v) {
+    for (int i = 0; i < s->n; i++) if (s->v[i].var == v) return &s->v[i].state;
+    return NULL;
+}
+
+static int init_field_index(SType* t, Node* e) {
+    t = init_shape(t);
+    if (!t || t->kind != SK_STRUCT) return -1;
+    for (int i = 0; i < t->nfields; i++)
+        if (strlen(t->fields[i].name) == e->len &&
+            memcmp(t->fields[i].name, e->str, e->len) == 0) return i;
+    return -1;
+}
+
+static int init_const_index(Node* e, uint64_t* out) {
+    int64_t v;
+    if (!ut_const(e, &v) || v < 0) return 0;
+    *out = (uint64_t)v;
+    return 1;
+}
+
+static int init_path(Node* e, InitPath* p) {
+    if (!e || p->n >= 64) return 0;
+    if (e->kind == N_IDENT) {
+        Sym* s = node_sym(e);
+        if (!s || s->kind != SYM_VAR || s->is_global) return 0;
+        p->root = s;
+        p->type[0] = s->type;
+        return 1;
+    }
+    if (e->kind == N_FIELD_E) {
+        if (!init_path(e->a, p)) return 0;
+        SType* bt = init_shape(p->type[p->n]);
+        int fi = init_field_index(bt, e);
+        if (fi < 0) return 0; // pointer auto-deref, Error, method, or intrinsic .len
+        p->key[p->n] = (uint64_t)fi;
+        p->type[p->n + 1] = bt->fields[fi].t;
+        p->n++;
+        return 1;
+    }
+    if (e->kind == N_INDEX) {
+        if (!init_path(e->a, p)) return 0;
+        SType* bt = init_shape(p->type[p->n]);
+        if (!bt || bt->kind != SK_ARRAY) return 0;
+        uint64_t ix;
+        if (!init_const_index(e->b, &ix) || ix >= bt->count) {
+            p->dynamic_index = 1;
+            return 1;
+        }
+        p->key[p->n] = ix;
+        p->type[p->n + 1] = bt->base;
+        p->n++;
+        return 1;
+    }
+    return 0;
+}
+
+static InitState* init_path_state(InitVar* v, InitPath* p, int create) {
+    InitState* s = &v->state;
+    if (s->full) return s;
+    for (int i = 0; i < p->n; i++) {
+        InitPart* part = init_part(s, p->key[i], create);
+        if (!part) return NULL;
+        s = &part->state;
+        if (s->full) return s;
+    }
+    return s;
+}
+
+static void init_diag(InitCk* k, Node* at, InitPath* p, SType* want) {
+    const char* path = at && at->path ? at->path : k->d->path;
+    fprintf(stderr, "%s:%d:%d: error: '%.*s' was not %sinitialized before use\n",
+            path, at ? at->line : 0, at ? at->col : 0,
+            p->root ? (int)p->root->len : 1,
+            p->root ? p->root->name : "?",
+            init_aggregate(want) || (p->n == 0 && init_aggregate(p->root->type))
+                ? "fully " : "");
+    k->d->errors++;
+}
+
+static int init_require_path(InitCk* k, Node* e) {
+    InitPath p = {0};
+    if (!init_path(e, &p)) return 0;
+    InitVar* v = init_var(k, p.root, 0);
+    if (!v) return 1;
+    if (p.dynamic_index) {
+        if (!init_state_full(&v->state, p.root->type))
+            init_diag(k, e, &p, p.root->type);
+        return 1;
+    }
+    InitState* s = init_path_state(v, &p, 0);
+    SType* want = p.type[p.n];
+    if (!s || !init_state_full(s, want)) init_diag(k, e, &p, want);
+    return 1;
+}
+
+static void init_mark_path(InitCk* k, Node* e) {
+    InitPath p = {0};
+    if (!init_path(e, &p) || p.dynamic_index) return;
+    InitVar* v = init_var(k, p.root, 1);
+    if (!v) return;
+    InitState* s = init_path_state(v, &p, 1);
+    s->full = 1;
+    s->parts = NULL;
+    for (int i = p.n - 1; i >= 0; i--) {
+        InitPath prefix = p;
+        prefix.n = i;
+        InitState* parent = init_path_state(v, &prefix, 0);
+        (void)init_state_full(parent, p.type[i]);
+    }
+}
+
+static void init_expr(InitCk* k, Node* e);
+static int init_stmt(InitCk* k, Node* s);
+
+static void init_addr_parts(InitCk* k, Node* e) {
+    if (!e) return;
+    if (e->kind == N_INDEX) {
+        init_expr(k, e->b); // computing the address reads the index
+        SType* bt = init_shape(node_ty(e->a));
+        if (bt && bt->kind != SK_ARRAY) init_expr(k, e->a); // slice descriptor/pointer
+        return;
+    }
+    if (e->kind == N_FIELD_E) {
+        SType* bt = init_shape(node_ty(e->a));
+        if (bt && bt->kind == SK_PTR) init_expr(k, e->a); // auto-deref reads pointer
+        else init_addr_parts(k, e->a);
+        return;
+    }
+    if (e->kind == N_UNARY && e->op == T_TILDE) {
+        init_expr(k, e->a);
+        return;
+    }
+}
+
+static void init_expr(InitCk* k, Node* e) {
+    if (!e) return;
+    switch (e->kind) {
+    case N_INT: case N_FLOAT: case N_STR: case N_CHAR: case N_BOOL: case N_NULL:
+        return;
+    case N_IDENT: {
+        Sym* s = node_sym(e);
+        if (s && s->kind == SYM_VAR && !s->is_global) (void)init_require_path(k, e);
+        return;
+    }
+    case N_FIELD_E: {
+        SType* bt = init_shape(node_ty(e->a));
+        if (e->len == 3 && memcmp(e->str, "len", 3) == 0 && bt &&
+            bt->kind == SK_ARRAY) return; // constant metadata, no element read
+        InitPath p = {0};
+        if (init_path(e, &p)) {
+            (void)init_require_path(k, e);
+            init_addr_parts(k, e);
+        } else {
+            init_expr(k, e->a);
+        }
+        return;
+    }
+    case N_INDEX: {
+        InitPath p = {0};
+        if (init_path(e, &p)) {
+            (void)init_require_path(k, e);
+            init_expr(k, e->b);
+        } else {
+            init_expr(k, e->a);
+            init_expr(k, e->b);
+        }
+        return;
+    }
+    case N_SLICE_E: {
+        SType* bt = init_shape(node_ty(e->a));
+        if (!bt || bt->kind != SK_ARRAY) init_expr(k, e->a);
+        init_expr(k, e->b);
+        init_expr(k, e->c);
+        return;
+    }
+    case N_UNARY:
+        if (e->op == T_AMP) init_addr_parts(k, e->a);
+        else init_expr(k, e->a);
+        return;
+    case N_BINARY:
+        init_expr(k, e->a); init_expr(k, e->b); return;
+    case N_CMPCHAIN: case N_TUPLE_E: case N_ARRAYLIT:
+        for (int i = 0; i < e->nkids; i++) init_expr(k, e->kids[i]);
+        return;
+    case N_STRUCTLIT:
+        for (int i = 0; i < e->nkids; i++) init_expr(k, e->kids[i]->a);
+        return;
+    case N_MUTARG:
+        init_expr(k, e->a); return;
+    case N_CALL:
+        if (e->a && e->a->kind == N_IDENT) {
+            Sym* s = node_sym(e->a);
+            if (s && s->kind == SYM_VAR) init_expr(k, e->a); // function variable
+        } else if (e->a && e->a->kind == N_FIELD_E) {
+            init_expr(k, e->a->a); // receiver
+        } else if (e->a) {
+            init_expr(k, e->a);
+        }
+        for (int i = 0; i < e->nkids; i++) init_expr(k, e->kids[i]);
+        return;
+    default:
+        return;
+    }
+}
+
+static void init_merge_snapshots(InitSnap* base, InitSnap* a, InitSnap* b) {
+    for (int i = 0; i < base->n; i++) {
+        InitVar* v = base->v[i].var;
+        InitState* as = init_snap_state(a, v);
+        InitState* bs = init_snap_state(b, v);
+        if (as && bs) v->state = init_intersect(as, bs, v->sym->type);
+    }
+}
+
+static InitSnap init_intersect_snapshots(InitSnap* base, InitSnap* a, InitSnap* b) {
+    InitSnap out = {0};
+    out.n = base->n;
+    out.v = (InitSnapEntry*)arena_alloc(
+        (size_t)(out.n ? out.n : 1) * sizeof(InitSnapEntry));
+    for (int i = 0; i < out.n; i++) {
+        InitVar* v = base->v[i].var;
+        InitState* as = init_snap_state(a, v);
+        InitState* bs = init_snap_state(b, v);
+        out.v[i].var = v;
+        out.v[i].state = as && bs
+            ? init_intersect(as, bs, v->sym->type)
+            : (InitState){0};
+    }
+    return out;
+}
+
+static void init_exit_add(InitExit* x) {
+    InitSnap now = {0};
+    now.n = x->base.n;
+    now.v = (InitSnapEntry*)arena_alloc(
+        (size_t)(now.n ? now.n : 1) * sizeof(InitSnapEntry));
+    for (int i = 0; i < now.n; i++) {
+        now.v[i].var = x->base.v[i].var;
+        now.v[i].state = init_clone(&now.v[i].var->state);
+    }
+    if (!x->have) {
+        x->merged = now;
+        x->have = 1;
+    } else {
+        x->merged = init_intersect_snapshots(&x->base, &x->merged, &now);
+    }
+}
+
+static int init_block(InitCk* k, Node* b) {
+    int falls = 1;
+    for (int i = 0; b && i < b->nkids; i++) {
+        if (falls) falls = init_stmt(k, b->kids[i]);
+    }
+    return falls;
+}
+
+static int init_stmt(InitCk* k, Node* s) {
+    if (!s) return 1;
+    switch (s->kind) {
+    case N_VAR:
+        for (int i = 0; i < s->nkids; i++) {
+            Sym* sym = node_sym(s->kids[i]);
+            InitVar* v = init_var(k, sym, 1);
+            if (v) memset(&v->state, 0, sizeof v->state);
+        }
+        if (s->b) {
+            init_expr(k, s->b);
+            for (int i = 0; i < s->nkids; i++) {
+                InitVar* v = init_var(k, node_sym(s->kids[i]), 1);
+                if (v) { v->state.full = 1; v->state.parts = NULL; }
+            }
+        }
+        return 1;
+    case N_ASSIGN:
+        init_expr(k, s->a);
+        for (int i = 0; i < s->nkids; i++) {
+            if (s->op != T_ASSIGN) init_expr(k, s->kids[i]);
+            init_addr_parts(k, s->kids[i]);
+            init_mark_path(k, s->kids[i]);
+        }
+        return 1;
+    case N_EXPRSTMT:
+        init_expr(k, s->a); return 1;
+    case N_IF: {
+        init_expr(k, s->a);
+        InitSnap base = init_snapshot(k);
+        int tf = init_block(k, s->b);
+        InitSnap then_s = init_snapshot(k);
+        init_restore(&base);
+        int ef = s->c ? init_stmt(k, s->c) : 1;
+        InitSnap else_s = init_snapshot(k);
+        if (tf && ef) init_merge_snapshots(&base, &then_s, &else_s);
+        else if (tf) init_restore(&then_s);
+        else if (ef) init_restore(&else_s);
+        else init_restore(&base);
+        return tf || ef;
+    }
+    case N_FOR: {
+        init_expr(k, s->b);
+        InitSnap base = init_snapshot(k);
+        Sym* sym = node_sym(s);
+        InitVar* v = init_var(k, sym, 1);
+        if (v) v->state.full = 1;
+        (void)init_block(k, s->c);
+        init_restore(&base); // loop may execute zero times
+        return 1;
+    }
+    case N_SWITCH: {
+        init_expr(k, s->a);
+        InitSnap base = init_snapshot(k);
+        InitSnap merged = base;
+        int have = 0, has_else = 0;
+        for (int i = 0; i < s->nkids; i++) {
+            Node* c = s->kids[i];
+            if (c->flags & F_ELSE) has_else = 1;
+            init_restore(&base);
+            for (int j = 0; j < c->nkids; j++) init_expr(k, c->kids[j]);
+            int falls = init_block(k, c->b);
+            if (!falls) continue;
+            InitSnap cs = init_snapshot(k);
+            if (!have) { merged = cs; have = 1; }
+            else {
+                init_restore(&merged);
+                InitSnap cur = init_snapshot(k);
+                init_merge_snapshots(&base, &cur, &cs);
+                merged = init_snapshot(k);
+            }
+        }
+        if (!has_else) {
+            if (!have) merged = base;
+            else {
+                init_restore(&merged);
+                InitSnap cur = init_snapshot(k);
+                init_merge_snapshots(&base, &cur, &base);
+                merged = init_snapshot(k);
+            }
+        }
+        init_restore(have || !has_else ? &merged : &base);
+        return !has_else || have;
+    }
+    case N_RETURN:
+        init_expr(k, s->a); return 0;
+    case N_ASM:
+        for (int i = 0; i < s->nkids; i++) {
+            Node* b = s->kids[i];
+            int is_in = b->len == 2 && memcmp(b->str, "in", 2) == 0;
+            int is_out = b->len == 3 && memcmp(b->str, "out", 3) == 0;
+            if (!is_in && !is_out) continue;
+            for (int j = 1; j < b->nkids; j += 2) {
+                if (is_in) init_expr(k, b->kids[j]);
+                else init_mark_path(k, b->kids[j]);
+            }
+        }
+        return 1;
+    case N_BLOCK:
+        return init_block(k, s);
+    case N_LABEL: {
+        InitExit x = {0};
+        x.name = s->str;
+        x.len = s->len;
+        x.base = init_snapshot(k);
+        x.next = k->exits;
+        k->exits = &x;
+        int falls = init_block(k, s->a);
+        if (falls) init_exit_add(&x);
+        k->exits = x.next;
+        if (x.have) init_restore(&x.merged);
+        else init_restore(&x.base);
+        return x.have;
+    }
+    case N_BREAK:
+        if (s->str) {
+            for (InitExit* x = k->exits; x; x = x->next) {
+                if (x->len == s->len && memcmp(x->name, s->str, s->len) == 0) {
+                    init_exit_add(x);
+                    break;
+                }
+            }
+        }
+        return 0;
+    case N_CONTINUE:
+        return 0;
+    default:
+        return 1;
+    }
+}
+
+static void check_definite_initialization(Node* file, Diag* d) {
+    for (int i = 0; i < file->nkids; i++) {
+        Node* f = file->kids[i];
+        if (f->kind != N_FUNC || !f->b || (f->c && !sema_insts(f))) continue;
+        InitCk k = { .d = d };
+        for (int p = 0; p < f->nkids; p++) {
+            Sym* sym = node_sym(f->kids[p]);
+            InitVar* v = init_var(&k, sym, 1);
+            if (v) v->state.full = 1;
+        }
+        (void)init_block(&k, f->b);
+    }
 }
 
 static Node* named_field_value(Node* lit, const char* name, int* count) {
@@ -2552,16 +3069,12 @@ void sema_stamp_body(Node* f, SType** args, int nargs) {
 
 static void install_predeclared_error_types(Scope* file_scope) {
     if (!T_ERROR_DESC) {
-        SType* domain = st_new(SK_OPT);
-        domain->base = st_prim(P_TYPEID);
-        layout(domain);
-
         T_ERROR_DESC = st_new(SK_STRUCT);
         T_ERROR_DESC->name = "ErrorDescriptor";
         T_ERROR_DESC->nfields = 3;
         T_ERROR_DESC->fields = (SField*)arena_alloc(3 * sizeof(SField));
         T_ERROR_DESC->fields[0] = (SField){ "code", st_prim(P_I32) };
-        T_ERROR_DESC->fields[1] = (SField){ "domain", domain };
+        T_ERROR_DESC->fields[1] = (SField){ "domain", st_prim(P_TYPEID) };
         T_ERROR_DESC->fields[2] = (SField){ "message", st_prim(P_STRING) };
         layout(T_ERROR_DESC);
 
@@ -2763,5 +3276,6 @@ int sema_check(Node* file, Diag* d) {
         }
     }
     k.scope = &file_scope;
+    if (d->errors == 0) check_definite_initialization(file, d);
     return d->errors;
 }

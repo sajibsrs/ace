@@ -1,0 +1,9 @@
+// expect-exit: 42
+Point: struct { x: int, y: int }
+
+main(): int {
+    count: int
+    point: Point
+    bytes: [5000]u8
+    return 42
+}

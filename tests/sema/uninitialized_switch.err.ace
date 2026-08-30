@@ -1,0 +1,7 @@
+main(): int {
+    answer: int
+    switch 0 {
+        0 { answer = 42 }
+    }
+    return answer
+}

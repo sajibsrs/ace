@@ -132,6 +132,15 @@ if [ -d tests/emit ]; then
             fail=1
         fi
     fi
+    # Bare locals reserve stack storage but emit no initialization stores,
+    # including a large array. The frame adjustment itself is expected.
+    if command -v otool >/dev/null 2>&1; then
+        nozero=$(otool -tvV /tmp/ace_emit/no_implicit_zeroing.o)
+        if printf '%s\n' "$nozero" | grep -Eq '[[:space:]]str[^a-z]|_memset'; then
+            echo "FAIL: bare locals should not emit zeroing stores"
+            fail=1
+        fi
+    fi
 fi
 
 
@@ -243,9 +252,16 @@ if ! ast | grep -q "(param 'error'"; then
     echo "FAIL: destructuring binder 'error' should appear in the AST"
     fail=1
 fi
-# `?` binds loosest: *Point? is an optional pointer (opt wrapping ptr)
-if ! ast | grep -A2 "(opt " | grep -q "(ptr "; then
-    echo "FAIL: *T? should parse as opt(ptr)"
+uninitialized_scalar=$(./ace tests/sema/uninitialized_scalar.err.ace 2>&1)
+if ! printf '%s\n' "$uninitialized_scalar" | grep -qF \
+    "error: 'answer' was not initialized before use"; then
+    echo "FAIL: scalar definite-initialization diagnostic"
+    fail=1
+fi
+uninitialized_struct=$(./ace tests/sema/uninitialized_struct.err.ace 2>&1)
+if ! printf '%s\n' "$uninitialized_struct" | grep -qF \
+    "error: 'point' was not fully initialized before use"; then
+    echo "FAIL: aggregate definite-initialization diagnostic"
     fail=1
 fi
 # shifts/bitwise parse with C precedence

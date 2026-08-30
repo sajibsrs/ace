@@ -1,12 +1,12 @@
 // expect-exit: 42
 import errors: "./error_lib.ace"
 
-fail(): Error? {
+fail(): Error {
     return errors.not_found
 }
 
 main(): int {
-    error: Error? = fail()
+    error: Error = fail()
     if error == null {
         return 1
     }

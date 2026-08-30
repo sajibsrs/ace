@@ -116,11 +116,13 @@ and another primitive requires an explicit cast such as `int(message.len)`.
 produces the nonzero identity of an exact named type at compile time (see
 [Errors](errors.md)). Values can be stored, passed, and compared with `==` and
 `!=`; the language exposes no ordering, arithmetic, or runtime type reflection.
-`typeid?` uses zero as its free null niche.
+The all-bits-zero `typeid` value is `null`, meaning no type identity.
 
-`null` is not a primitive value of every type. It is the universal absence
-literal and materializes only as an optional `T?`; a plain `T` never contains
-null.
+`null` materializes the all-bits-zero value of pointers, function values,
+contracts, slices, strings, `Error`, and `typeid`. Numeric zero uses `0` or
+`0.0`, and boolean zero is `false`. Ace has no optional type constructor; use
+an explicit `present: bool` field when an application must distinguish absence
+from an ordinary zero value.
 
 ## Current limits
 

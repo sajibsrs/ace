@@ -1,0 +1,5 @@
+main(): int {
+    values: [2]int
+    values[0] = 40
+    return values[1]
+}

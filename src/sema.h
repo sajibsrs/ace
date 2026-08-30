@@ -8,7 +8,7 @@
 // --- type kinds ---------------------------------------------------------------
 
 enum {
-    SK_PRIM, SK_PTR, SK_SLICE, SK_ARRAY, SK_OPT, SK_TUPLE, SK_FUNC,
+    SK_PRIM, SK_PTR, SK_SLICE, SK_ARRAY, SK_TUPLE, SK_FUNC,
     SK_STRUCT, SK_ENUM, SK_CONTRACT, SK_DISTINCT, SK_TYPEPARAM, SK_ERROR,
     SK_VOID, SK_UT, SK_ERR
 };

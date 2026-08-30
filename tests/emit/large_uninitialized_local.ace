@@ -1,0 +1,6 @@
+// expect-exit: 42
+main(): int {
+    bytes: [5000]u8
+    bytes[4999] = 42
+    return int(bytes[4999])
+}

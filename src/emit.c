@@ -53,6 +53,7 @@
 // Instruction encodings verified against `as` + objdump (scratch /tmp/ace_ref):
 //   stp x29,x30,[sp,#-16]! = 0xA9BF7BFD   mov x29,sp = 0x910003FD
 //   sub sp,sp,#imm12       = 0xD10003FF|imm<<10 (placeholder, patched at end)
+//   sub sp,sp,#imm12,lsl#12 = previous encoding | 1<<22 (large frames round up)
 //   mov sp,x29 = 0x910003BF   ldp x29,x30,[sp],#16 = 0xA8C17BFD
 //   ret = 0xD65F03C0    bl = 0x94000000|imm26    b = 0x14000000|imm26
 //   b.cond = 0x54000000|imm19<<5|cond (eq0 ne1 hs2 lo3 hi8 ls9 ge10 lt11
@@ -456,8 +457,6 @@ static int ty_is_signed(SType* t) {
 static int is_scalar(SType* t) {
     t = unwrap(t);
     if (!t) return 0;
-    if (t->kind == SK_OPT) t = t->base;
-    if (!t || t->kind == SK_OPT) return 0;
     switch (t->kind) {
     case SK_PRIM: return t->prim != P_STRING;
     case SK_PTR: case SK_FUNC: case SK_ENUM: case SK_ERROR: return 1;
@@ -470,7 +469,6 @@ static int scalar_bits(SType* t) {
     if (!t || t->kind == SK_UT) return 64;
     if (t->kind == SK_ENUM) return 32;
     if (t->kind == SK_PTR || t->kind == SK_FUNC || t->kind == SK_ERROR) return 64;
-    if (t->kind == SK_OPT) return scalar_bits(t->base);
     if (t->kind == SK_PRIM && t->prim != P_STRING) return (int)(t->size * 8);
     return 64;
 }
@@ -518,7 +516,6 @@ static int word_is_float(SType* t, uint32_t woff) {
         }
         return 1;
     }
-    case SK_OPT: return word_is_float(t->base, woff);
     default: return 0; // ptr/slice/contract/enum/Error words are INT
     }
 }
@@ -710,7 +707,7 @@ static void frame_addr(Em* e, int rd, uint32_t off) {
         ins(e, 0xD1000000u | (d << 10) | (29u << 5) | ((uint32_t)rd & 31u));
     else {
         load_imm(e, 1, rd, d);
-        ins(e, 0xCB0003E0u | ((uint32_t)rd << 16) | (29u << 5) |
+        ins(e, 0xCB000000u | ((uint32_t)rd << 16) | (29u << 5) |
                ((uint32_t)rd & 31u));
     }
 }
@@ -1131,26 +1128,7 @@ static EV gen_binop(Em* e, Node* n) {
     if ((op == T_EQEQ || op == T_BANGEQ) &&
         ((n->b->kind == N_NULL) != (n->a->kind == N_NULL))) {
         Node* other = n->b->kind == N_NULL ? n->a : n->b;
-        SType* ot = node_ty(other);
-        SType* base = ot && ot->kind == SK_OPT ? ot->base : ot;
         int want = op == T_BANGEQ ? C_NE : C_EQ;
-        if (ot && ot->kind == SK_OPT && base &&
-            !(base->kind == SK_PTR || base->kind == SK_SLICE ||
-              base->kind == SK_CONTRACT || base->kind == SK_ERROR ||
-              (base->kind == SK_PRIM &&
-               (base->prim == P_STRING || base->prim == P_TYPEID)))) {
-            // value optional: tag byte at [addr + base_size]
-            EV v = gen_expr(e, other);
-            if (v.cls != CLS_ADDR) {
-                em_err(e, other, "value optional must be in memory");
-                return v;
-            }
-            ld_reg(e, 16, xreg(v.idx), ty_size(base), 1, 0);
-            ins(e, 0x7100001Fu | (16u << 5)); // cmp w16, #0
-            int r = tmp_int(e);
-            cset_(e, 0, want, xreg(r));
-            return (EV){ CLS_INT, r };
-        }
         EV v = gen_expr(e, other);
         int rt = xreg(v.idx);
         if (v.cls == CLS_ADDR) { // 16-byte niche: first word vs 0
@@ -1158,9 +1136,9 @@ static EV gen_binop(Em* e, Node* n) {
             rt = 16;
         }
         ins(e, 0xF100001Fu | ((uint32_t)rt << 5)); // cmp rt, #0
-        int r = tmp_int(e);
-        cset_(e, 0, want, xreg(r));
-        return (EV){ CLS_INT, r };
+        cset_(e, 0, want, xreg(v.idx));
+        e->vti = v.idx + 1; // replace scalar/address temporary with the bool
+        return (EV){ CLS_INT, v.idx };
     }
 
     EV a = gen_expr(e, n->a);
@@ -1170,19 +1148,18 @@ static EV gen_binop(Em* e, Node* n) {
     if (a.cls == CLS_ADDR && b.cls == CLS_ADDR) {
         if (op == T_EQEQ || op == T_BANGEQ) {
             int eq = op == T_EQEQ;
-            int r1 = tmp_int(e), r2 = tmp_int(e);
             ld_reg(e, 16, xreg(a.idx), 0, 8, 0);
             ld_reg(e, 17, xreg(b.idx), 0, 8, 0);
             ins(e, 0xEB00001Fu | (17u << 16) | (16u << 5)); // cmp x16, x17
-            cset_(e, 0, eq ? C_EQ : C_NE, xreg(r1));
             ld_reg(e, 16, xreg(a.idx), 8, 8, 0);
             ld_reg(e, 17, xreg(b.idx), 8, 8, 0);
+            cset_(e, 0, eq ? C_EQ : C_NE, xreg(a.idx));
             ins(e, 0xEB00001Fu | (17u << 16) | (16u << 5));
-            cset_(e, 0, eq ? C_EQ : C_NE, xreg(r2));
-            ins(e, (eq ? 0x0A000000u : 0x2A000000u) | (xreg(r2) << 16) |
-                   (xreg(r1) << 5) | (uint32_t)xreg(r1));
-            e->vti--;
-            return (EV){ CLS_INT, r1 };
+            cset_(e, 0, eq ? C_EQ : C_NE, xreg(b.idx));
+            ins(e, (eq ? 0x0A000000u : 0x2A000000u) | (xreg(b.idx) << 16) |
+                   (xreg(a.idx) << 5) | (uint32_t)xreg(a.idx));
+            e->vti = a.idx + 1;
+            return (EV){ CLS_INT, a.idx };
         }
         em_err(e, n, "ordering comparisons on two-word values come with str (chunk 7)");
         return a;
@@ -1421,7 +1398,6 @@ static void mangle_type(Buf* b, SType* t) {
         mangle_type(b, t->base);
         return;
     }
-    case SK_OPT: buf_put8(b, 'o'); mangle_type(b, t->base); return;
     case SK_ERROR: buf_write(b, "Error", 5); return;
     case SK_STRUCT: case SK_ENUM: case SK_CONTRACT:
         buf_put8(b, t->kind == SK_STRUCT ? 'S' : t->kind == SK_ENUM ? 'E' : 'I');
@@ -1764,7 +1740,6 @@ static SType* lvalue_type(Em* e, Node* x) {
         b = unwrap(b);
         if (b->kind == SK_ERROR) b = b->base;
         while (b->kind == SK_PTR) b = b->base;
-        if (b->kind == SK_OPT) b = b->base;
         if (x->len == 3 && memcmp(x->str, "len", 3) == 0 &&
             (b->kind == SK_SLICE ||
              (b->kind == SK_PRIM && b->prim == P_STRING)))
@@ -1872,7 +1847,6 @@ static int gen_addr(Em* e, Node* x) {
             ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
             bt = bt->base;
         }
-        if (bt->kind == SK_OPT) bt = bt->base;
         if (x->len == 3 && memcmp(x->str, "len", 3) == 0 &&
             (bt->kind == SK_SLICE ||
              (bt->kind == SK_PRIM && bt->prim == P_STRING))) {
@@ -2523,7 +2497,7 @@ static EV gen_expr(Em* e, Node* x) {
     }
     case N_NULL: {
         SType* t = node_ty(x);
-        SType* base = t && t->kind == SK_OPT ? t->base : t;
+        SType* base = t;
         uint32_t size = t ? ty_size(t) : 8;
         if (base && (base->kind == SK_PTR || base->kind == SK_ERROR ||
                      (base->kind == SK_PRIM && base->prim == P_TYPEID))) {
@@ -3763,7 +3737,17 @@ static void patch_fixups(Em* e) {
         Fixup* f = &e->fix[i];
         if (f->kind == FK_SUBSP) {
             uint32_t frame = (f->frame + 15u) & ~15u;
-            buf_patch32(t, f->site, 0xD10003FFu | (frame << 10));
+            if (frame <= 0xFFFu) {
+                buf_patch32(t, f->site, 0xD10003FFu | (frame << 10));
+                continue;
+            }
+            uint32_t pages = (frame + 0xFFFu) >> 12;
+            if (pages > 0xFFFu) {
+                fprintf(stderr, "ace: function stack frame exceeds AArch64 immediate range\n");
+                e->d->errors++;
+                continue;
+            }
+            buf_patch32(t, f->site, 0xD14003FFu | (pages << 10));
             continue;
         }
         if (!f->target->type || f->target->sect != 1 + SEC_TEXT) {

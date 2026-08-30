@@ -19,7 +19,7 @@ main(): int {
     length: usize = message.len
     fmt.print(length)
     first: u8 = message[0]
-    id: typeid
+    id: typeid = null
     return signed_word + int(unsigned_word) + int(byte_value) + wide +
         int(unsigned) + int(double) + int(converted) + int(letter) +
         int(newline) + int(hex_escape) + int(length) + int(first) + int(small)

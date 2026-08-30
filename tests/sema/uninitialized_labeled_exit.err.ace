@@ -1,0 +1,10 @@
+main(): int {
+    answer: int
+    done: {
+        if true {
+            break done
+        }
+        answer = 42
+    }
+    return answer
+}

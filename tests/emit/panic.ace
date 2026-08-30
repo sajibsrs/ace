@@ -7,7 +7,7 @@ io_descriptor: const ErrorDescriptor = ErrorDescriptor{
     message: "disk unreachable",
 }
 
-read(fail: bool): (int, Error?) {
+read(fail: bool): (int, Error) {
     if fail {
         return 0, Error(&io_descriptor)
     }
@@ -25,7 +25,7 @@ main(): int {
     if guard(1) != 1 {
         return 1
     }
-    value: int, error: Error? = read(true)
+    value: int, error: Error = read(true)
     if error != null {
         panic(error.message)
     }

@@ -11,13 +11,13 @@ main(): int {
         return 2
     }
 
-    invalid: []u8? = alloc(4, 3)
+    invalid: []u8 = alloc(4, 3)
     if invalid != null {
         release(mut invalid)
         return 3
     }
 
-    data: []u8? = alloc(4, 8)
+    data: []u8 = alloc(4, 8)
     if data != null {
         if data.len != 4 {
             release(mut data)
@@ -32,7 +32,7 @@ main(): int {
             return 5
         }
 
-        failed: []u8? = realloc(data, 0)
+        failed: []u8 = realloc(data, 0)
         if failed != null {
             release(mut failed)
             release(mut data)
@@ -43,7 +43,7 @@ main(): int {
             return 7
         }
 
-        grown: []u8? = realloc(data, 8)
+        grown: []u8 = realloc(data, 8)
         if grown != null {
             data = grown
             if data.len != 8 {

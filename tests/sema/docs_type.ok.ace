@@ -47,15 +47,19 @@ main(): int {
     retarget(mut pointer, &other)
     outer: *mut *Point = &writable
     outer.x = 16
-    maybe: *Point? = null
+    maybe: *Point = null
     values: [4]int = [10, 20, 30, 40]
     middle: []int = values[1..3]
     operation: (int, int): int = add
     state: State = State.running
     box: Box[int]
     box.value = 13
+    partial: Point
+    partial.x = 40
+    partial.y = 2
     number: Number = Number{ value: 13 }
     value: Value = Value(&number)
     return count + int(raw) + read_x(pointer) + middle[0] + middle[1] +
-        operation(1, 2) + int(state) + box.value + value.get()
+        operation(1, 2) + int(state) + box.value + value.get() +
+        partial.x + partial.y
 }

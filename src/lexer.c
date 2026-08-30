@@ -173,7 +173,7 @@ static int ends_expr(TokKind k) {
     switch (k) {
     case T_IDENT: case T_INT: case T_FLOAT: case T_STR: case T_CHARLIT:
     case T_NULL: case T_TRUE: case T_FALSE:
-    case T_RPAREN: case T_RBRACK: case T_RBRACE: case T_QUESTION:
+    case T_RPAREN: case T_RBRACK: case T_RBRACE:
     case T_RETURN: case T_BREAK: case T_CONTINUE:
         return 1;
     default:
@@ -437,7 +437,6 @@ static void scan_punct(Lex* L, char c) {
     case ',': adv(L); k = T_COMMA; break;
     case ':': adv(L); k = T_COLON; break;
     case '~': adv(L); k = T_TILDE; break;
-    case '?': adv(L); k = T_QUESTION; break;
     case '+': adv(L); k = cur(L) == '=' ? (adv(L), T_ADDEQ) : T_PLUS; break;
     case '-': adv(L); k = cur(L) == '=' ? (adv(L), T_SUBEQ) : T_MINUS; break;
     case '*': adv(L); k = cur(L) == '=' ? (adv(L), T_MULEQ) : T_STAR; break;

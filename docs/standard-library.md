@@ -24,7 +24,7 @@ no extra Ace call, allocation header, or registry. See [Memory](memory.md).
 import alloc, release from mem
 
 main(): int {
-    data: []u8? = alloc(64, 8)
+    data: []u8 = alloc(64, 8)
     release(mut data)
     return 0
 }

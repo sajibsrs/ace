@@ -1,0 +1,7 @@
+main(): int {
+    answer: int
+    if true {
+        answer = 42
+    }
+    return answer
+}

@@ -1,8 +1,0 @@
-import release from mem
-
-main(): int {
-    bytes: [2]u8 = [1, 2]
-    view: []u8 = bytes[0..2]
-    release(mut view)
-    return 0
-}

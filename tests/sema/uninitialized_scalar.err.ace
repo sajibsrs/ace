@@ -1,0 +1,4 @@
+main(): int {
+    answer: int
+    return answer
+}

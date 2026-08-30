@@ -1,0 +1,28 @@
+// expect-exit: 42
+Point: struct { x: int, y: int }
+
+choose(flag: bool): int {
+    answer: int
+    if flag {
+        answer = 40
+    } else {
+        answer = 2
+    }
+    return answer
+}
+
+sum(point: Point): int {
+    return point.x + point.y
+}
+
+main(): int {
+    point: Point
+    point.x = choose(true)
+    point.y = choose(false)
+
+    values: [2]int
+    values[0] = point.x
+    values[1] = point.y
+    index: int = 1
+    return sum(point) + values[index] - point.y
+}

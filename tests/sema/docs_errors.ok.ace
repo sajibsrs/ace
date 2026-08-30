@@ -21,7 +21,7 @@ plain: const Error = Error(&plain_descriptor)
 
 empty: [1]u8 = [0]
 
-fs_read(path: string): ([]u8, Error?) {
+fs_read(path: string): ([]u8, Error) {
     if path.len == 0 {
         return empty[0..1], not_found
     }
@@ -29,7 +29,7 @@ fs_read(path: string): ([]u8, Error?) {
 }
 
 load(path: string): int {
-    data: []u8, error: Error? = fs_read(path)
+    data: []u8, error: Error = fs_read(path)
     if error != null {
         if error == not_found {
             return 1
@@ -42,12 +42,12 @@ load(path: string): int {
     return int(data.len)
 }
 
-fail(): Error? {
+fail(): Error {
     return not_found
 }
 
 load_or_panic(path: string): int {
-    data: []u8, error: Error? = fs_read(path)
+    data: []u8, error: Error = fs_read(path)
     if error != null {
         panic(error.message)
     }
@@ -70,7 +70,7 @@ main(): int {
     if plain.domain != null {
         return 5
     }
-    error: Error? = fail()
+    error: Error = fail()
     if error == null {
         return 6
     }

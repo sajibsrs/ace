@@ -1,0 +1,46 @@
+// expect-exit: 42
+State: enum { idle, running }
+Point: struct { x: int, y: int }
+
+Value: contract {
+    get(): int
+}
+
+number: int
+ratio: f64
+ready: bool
+state: State
+point: Point
+values: [2]int
+pointer: *Point
+view: []u8
+text: string
+callback: (int): int
+contract_value: Value
+error: Error
+domain: typeid
+
+main(): int {
+    if number != 0 { return 1 }
+    if ratio != 0.0 { return 2 }
+    if ready { return 3 }
+    if state != State.idle {
+        return 4
+    }
+    if point.x != 0 || point.y != 0 || values[0] != 0 || values[1] != 0 {
+        return 5
+    }
+    if pointer != null { return 6 }
+    if view != null { return 7 }
+    if text != null { return 8 }
+    if callback != null { return 9 }
+    if contract_value != null { return 10 }
+    if error != null { return 11 }
+    if domain != null {
+        return 12
+    }
+    if view != null || text != null || contract_value != null || error != null {
+        return 13
+    }
+    return 42
+}

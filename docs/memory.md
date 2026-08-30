@@ -17,17 +17,18 @@ Intrinsic `.len` belongs only to sequences:
 - `[]T.len` is the runtime element count stored in the slice.
 - `string.len` is the runtime byte count stored in the string view.
 
-An optional sequence must first be checked against null. Other types have no
-intrinsic `.len`; a struct field with that name is an ordinary declared field.
+A zero slice or string has length zero, so querying `.len` is valid. Other types
+have no intrinsic `.len`; a struct field with that name is an ordinary declared
+field.
 
 ## Raw allocation
 
 The `mem` standard-library module exports:
 
 ```ace
-mem.alloc(size: int, align: int): []u8?
-mem.realloc(data: []u8, new_size: int): []u8?
-mem.release(mut data: []u8?)
+mem.alloc(size: int, align: int): []u8
+mem.realloc(data: []u8, new_size: int): []u8
+mem.release(mut data: []u8)
 ```
 
 Import the module for qualified calls, or explicitly select the names:
@@ -41,12 +42,12 @@ import mem
 alignment must be a positive power of two no greater than 16. Invalid requests
 and allocation failure return null; memory is uninitialized.
 
-After narrowing a successful result, `.len` is exactly the requested byte size:
+After a successful non-null check, `.len` is exactly the requested byte size:
 
 ```ace
 import mem
 
-data: []u8? = mem.alloc(16, 8)
+data: []u8 = mem.alloc(16, 8)
 if data != null {
     bytes: usize = data.len
     data[0] = 42
@@ -61,7 +62,7 @@ Null means the request failed and the original allocation remains live and
 unchanged. On success, only the returned slice is authoritative and its `.len`
 is the new requested byte size.
 
-`mem.release` requires a mutable `[]u8?` lvalue. Passing null is a no-op.
+`mem.release` requires a mutable `[]u8` lvalue. Passing null is a no-op.
 Otherwise it frees the storage and writes canonical null—zero pointer and zero
 length—back to that lvalue. The `mut` mark makes the mutation visible:
 
@@ -120,7 +121,7 @@ Copying a slice copies its pointer and length, not its backing bytes:
 ```ace
 import alloc, release from mem
 
-a: []u8? = alloc(100, 8)
+a: []u8 = alloc(100, 8)
 if a != null {
     b: []u8 = a
     release(mut a)

@@ -1,0 +1,11 @@
+Point: struct { x: int, y: int }
+
+sum(point: Point): int {
+    return point.x + point.y
+}
+
+main(): int {
+    point: Point
+    point.x = 42
+    return sum(point)
+}

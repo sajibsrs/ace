@@ -14,7 +14,9 @@ main(): int {
 ```
 
 Locals are mutable by default. `const` is an explicit type modifier and requires
-an initializer. Assignment copies the value.
+an initializer. Assignment copies the value. A bare local declaration reserves
+uninitialized stack storage; it does not emit a zero fill. The compiler rejects
+every direct read until the local is definitely initialized.
 
 ## Aliases and distinct types
 
@@ -38,7 +40,7 @@ raw: f64 = f64(distance)
 
 ## Pointers
 
-`*T` is a read-only, non-null pointer. `mut *T` grants writes through that
+`*T` is a read-only pointer and may be null. `mut *T` grants writes through that
 pointer level. Address-of requires an lvalue: `&value` produces `*T`, while
 `mut &value` produces `mut *T` and is rejected for const or otherwise
 read-only storage. Both forms emit the same machine address; `mut` is a
@@ -92,18 +94,46 @@ both. Only the level performing a write needs `mut`.
 Pointer arithmetic is not implemented. Use arrays or slices for bounded
 sequences.
 
-## Optional types
+## Zero and absence
 
-`T?` adds `null` to a type. Plain `T` is never null. Pointer, slice, string,
-contract, `Error`, and `typeid` optionals use an existing null niche; other
-values carry a tag.
+Every type has an all-bits-zero representation. Pointer, slice, string,
+function, contract, `Error`, and `typeid` values spell that representation
+`null`; no optional type constructor or hidden presence tag exists.
 
 ```ace
-maybe: *Point? = null
+maybe: *Point = null
 ```
 
-After an explicit `value != null` check, the compiler narrows the value inside
-the taken branch.
+Zero-capable values may be compared directly with `null`. Dereferencing a zero
+pointer, calling a zero function, dispatching through a zero contract, or
+inspecting a zero `Error` is invalid. When zero is ordinary application data,
+represent presence explicitly with a struct containing a `present: bool` field.
+The current bootstrap has no checked/release mode yet and inserts no runtime
+null checks; invalid zero operations therefore follow the unchecked path.
+
+## Definite initialization
+
+A local without `= value` is uninitialized storage, not an implicitly zeroed
+value. Whole assignment initializes it. Struct fields and constant array
+indexes can be initialized separately; using the whole aggregate requires all
+of its parts to be initialized.
+
+```ace
+Point: struct { x: int, y: int }
+
+main(): int {
+    point: Point
+    point.x = 40
+    point.y = 2
+    return point.x + point.y
+}
+```
+
+After a branch, an initialization fact survives only if every continuing path
+establishes it. A loop alone cannot establish initialization after the loop,
+because it may execute zero times. Taking an address does not read the value;
+pointer aliases, inline assembly, and extern code are programmer-trusted
+boundaries with no hidden alias analysis.
 
 ## Arrays and slices
 
@@ -117,9 +147,8 @@ answer: int = middle[0] + middle[1]
 ```
 
 Intrinsic `.len` is available on arrays (constant element count), slices
-(stored element count), and strings (stored byte count). It is not added to a
-struct, pointer, tuple, contract, scalar, or unchecked optional. A struct can
-still declare an ordinary field named `len`.
+(stored element count), and strings (stored byte count). It is not added to any
+other type. A struct can still declare an ordinary field named `len`.
 
 Array assignment copies all elements. Slice assignment copies only its pointer
 and length, so both values view the same backing storage; it never copies the

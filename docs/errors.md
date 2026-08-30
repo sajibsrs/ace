@@ -6,23 +6,23 @@ function returns an error as its last return, and the caller checks it with
 `if error != null`.
 
 ```ace
-read(path: string): ([]u8, Error?)
+read(path: string): ([]u8, Error)
 ```
 
-`null` means success. `Error?` uses the handle's zero value as its null niche,
-so a success return costs no extra bits.
+`null` means success. It is the zero value of plain `Error`, so a success return
+costs no extra bits and needs no wrapper or presence tag.
 
 ## Error and ErrorDescriptor
 
 `Error` and `ErrorDescriptor` are predeclared types, not keywords.
 
-`Error` is an opaque, one-word handle to immutable static data. It is never
-null on its own; only `Error?` can hold `null`.
+`Error` is an opaque, one-word handle to immutable static data. Its all-bits-zero
+value is `null`.
 
 `ErrorDescriptor` has exactly three fields:
 
 - `code: i32` — a compile-time integer code, unique within the domain.
-- `domain: typeid?` — `null` or the identity of a named type.
+- `domain: typeid` — `null` or the identity of a named type.
 - `message: string` — a static string.
 
 The descriptor is 32 bytes on the current 64-bit target. Only the one-word
@@ -70,7 +70,7 @@ keyword; the `typeid` type is a predeclared identifier.
 - Different nominal types compare unequal even with identical layouts.
 - Transparent aliases share their target's identity; distinct types have
   separate identities; exact generic instantiations have separate identities.
-- `typeid?` uses zero as its free null niche.
+- Zero `typeid` is `null` and means no type identity.
 - Supported operations are storage, passing, `==`, and `!=`. There is no
   ordering, arithmetic, integer conversion, reflection, or runtime type name.
 - The numeric value is not stable across builds or processes.
@@ -87,7 +87,7 @@ same handle compare equal.
 
 ```ace
 load(path: string): int {
-    data: []u8, error: Error? = fs_read(path)
+    data: []u8, error: Error = fs_read(path)
     if error != null {
         if error == not_found {
             return 1
@@ -101,9 +101,9 @@ load(path: string): int {
 }
 ```
 
-After an explicit `error != null` check, the handle narrows to `Error` and its
-descriptor fields can be read directly. Fields are read-only through an
-`Error`; writing `error.code` is a compile error.
+After an explicit `error != null` check, its descriptor fields can be read
+directly. Fields are read-only through an `Error`; writing `error.code` is a
+compile error.
 
 Codes are meaningful only within a non-null domain. Errors declared with
 `domain: null` have no globally coordinated code namespace.
@@ -131,7 +131,7 @@ pub not_found: const Error = Error(&not_found_descriptor)
 # main.ace
 import errors: "./errors.ace"
 
-fail(): Error? {
+fail(): Error {
     return errors.not_found
 }
 ```
@@ -186,7 +186,7 @@ on the way out:
 
 ```ace
 load(path: string): int {
-    data: []u8, error: Error? = fs_read(path)
+    data: []u8, error: Error = fs_read(path)
     if error != null {
         panic(error.message)
     }

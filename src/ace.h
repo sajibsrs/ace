@@ -34,7 +34,7 @@
     X(LT, "<") X(LE, "<=") X(GT, ">") X(GE, ">=")                              \
     X(ANDAND, "&&") X(OROR, "||")                                              \
     X(AMP, "&") X(PIPE, "|") X(CARET, "^") X(SHL, "<<") X(SHR, ">>")           \
-    X(TILDE, "~") X(BANG, "!") X(QUESTION, "?")                                \
+    X(TILDE, "~") X(BANG, "!")                                                \
     /* punctuation */                                                          \
     X(LPAREN, "(") X(RPAREN, ")") X(LBRACK, "[") X(RBRACK, "]")                \
     X(LBRACE, "{") X(RBRACE, "}") X(COMMA, ",") X(COLON, ":")                  \
@@ -95,7 +95,7 @@ char* arena_alloc(size_t n);
     /* types */                                                                \
     X(N_NAMED, "named") X(N_PTR, "ptr") X(N_SLICE_T, "slice_t")                \
     X(N_ARRAY_T, "array_t") X(N_TUPLE_T, "tuple_t") X(N_FUNC_T, "func_t")      \
-    X(N_OPT, "opt") X(N_CONST_T, "const_t") X(N_TPARAMS, "tparams")            \
+    X(N_CONST_T, "const_t") X(N_TPARAMS, "tparams")                            \
     /* top-level declarations */                                               \
     X(N_IMPORT, "import") X(N_VAR, "var") X(N_FUNC, "func")                    \
     X(N_PARAM, "param") X(N_STRUCT, "struct") X(N_FIELD, "field")              \

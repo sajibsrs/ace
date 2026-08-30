@@ -43,7 +43,7 @@ extern "c" {
     export abs(x: i32): i32
 }
 
-read(): (int, Error?) {
+read(): (int, Error) {
     return 7, null
 }
 
@@ -65,13 +65,13 @@ write(fd: int, buf: []u8): int {
 }
 
 main(): int {
-    n: int, error: Error? = read()
+    n: int, error: Error = read()
     n, error = read()
     n += 1
     p: Point = Point{ x: 1.0, y: 2.0 }
     q: Point = { x: 3.0, y: 4.0 }
     ok: bool = 0 <= n <= 100
-    e: Error? = null
+    e: Error = null
     if e != null && n > 0 || false {
         fmt.print("bad", n)
     } else if n == 7 {
@@ -108,7 +108,7 @@ main(): int {
     mut q.scale(2.0)
     circle_scale(mut p, 0.5)
     pp: *int = &one
-    nptr: *Point? = null
+    nptr: *Point = null
     v: int = ~pp
     neg: int = -v
     flip: bool = !true

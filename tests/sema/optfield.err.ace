@@ -1,5 +1,0 @@
-Point: struct { x: f32 }
-
-f(p: *Point?): f32 {
-    return p.x
-}

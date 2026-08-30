@@ -7,7 +7,7 @@ main(): int {
         return 1
     }
 
-    storage: []u8? = mem.alloc(16, 8)
+    storage: []u8 = mem.alloc(16, 8)
     if storage != null {
         bytes: usize = storage.len
         if bytes != 16 {

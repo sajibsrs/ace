@@ -38,7 +38,6 @@
 //   N_ARRAY_T   a = element; ival = length
 //   N_TUPLE_T   kids = types
 //   N_FUNC_T    kids = param types; a = ret
-//   N_OPT       a = inner (the `?` binds loosest: `*T?` is a nullable pointer)
 //   N_CONST_T   a = inner
 //   N_TPARAMS   kids = N_IDENT
 //   N_BINARY    op; a; b      N_CMPCHAIN kids = operands; a = N_OPS{kids = N_OP}
@@ -203,7 +202,7 @@ static Node* type_atom(P* p) {
         t->flags |= F_MUT;
         p->i++;
         expect(p, T_STAR, "'*' after 'mut'");
-        t->a = type_atom(p); // `?` binds to the whole pointer, not the pointee
+        t->a = type_atom(p);
         return t;
     }
     if (at(p, T_STAR)) {
@@ -294,17 +293,7 @@ static Node* type_atom(P* p) {
     return NULL;
 }
 
-// type := atom, then `?` suffixes binding loosest (spec: `*T?` = nullable ptr)
-static Node* parse_type(P* p) {
-    Node* t = type_atom(p);
-    while (at(p, T_QUESTION)) {
-        Node* o = nd(p, N_OPT);
-        p->i++;
-        o->a = t;
-        t = o;
-    }
-    return t;
-}
+static Node* parse_type(P* p) { return type_atom(p); }
 
 // --- expressions ----------------------------------------------------------------
 

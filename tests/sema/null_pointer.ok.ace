@@ -1,14 +1,14 @@
-// flow narrowing: p is usable as *Point inside the null check
+// Plain pointer values carry null directly; the branch is an explicit runtime check.
 Point: struct { x: f32 }
 
-maybe(p: *Point?): f32 {
+maybe(p: *Point): f32 {
     if p != null {
         return p.x
     }
     return 0.0
 }
 
-later(p: *Point?): f32 {
+later(p: *Point): f32 {
     if p == null {
         return 0.0
     } else {
