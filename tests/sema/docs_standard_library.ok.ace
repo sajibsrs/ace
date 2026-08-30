@@ -1,5 +1,7 @@
-// Mirrors docs/standard-library.md sys examples (sema check only; runtime
-// coverage lives in tests/emit/sys.ace and tests/emit/sys_time.ace).
+// Mirrors docs/standard-library.md fmt and sys examples (sema check only;
+// runtime coverage lives in tests/emit/print_*.ace, tests/emit/sys.ace, and
+// tests/emit/sys_time.ace).
+import fmt
 import sys
 
 write_note(): int {
@@ -29,6 +31,15 @@ check_missing(): int {
     return 0
 }
 
+print_examples(): int {
+    fmt.print("ready")
+    fmt.print(42)
+    fmt.print(uint(7))
+    fmt.print(usize(7))
+    narrow: u16 = 7
+    return int(fmt.print(uint(narrow)) - 1)
+}
+
 time_mono_example(): int {
     start: u64 = sys.time_mono(false)
     sum: int = 0
@@ -50,6 +61,10 @@ main(): int {
     code = check_missing()
     if code != 0 {
         return 10 + code
+    }
+    code = print_examples()
+    if code != 0 {
+        return 20 + code
     }
     return time_mono_example()
 }

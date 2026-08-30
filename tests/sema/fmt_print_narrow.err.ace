@@ -1,0 +1,11 @@
+// fmt.print has no overloads for integer widths narrower than the platform
+// word; conversion is explicit at the call site (fmt.print(uint(n))).
+import fmt
+
+main(): int {
+    small: u16 = 4660
+    medium: i32 = 70
+    fmt.print(small)
+    fmt.print(medium)
+    return 0
+}

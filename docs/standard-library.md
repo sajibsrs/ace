@@ -38,7 +38,7 @@ a newline, never allocates, and returns the number of bytes written, or the
 non-positive result reported by the OS on failure. Partial writes are retried
 until done or error.
 
-Three overloads exist, selected exactly like any other overload set:
+Four overloads exist, selected exactly like any other overload set:
 
 ```ace
 import fmt
@@ -46,6 +46,7 @@ import fmt
 main(): int {
     fmt.print("ready")           // prints: ready
     fmt.print(42)                // prints: 42
+    fmt.print(uint(7))           // prints: 7
     fmt.print(usize(7))          // prints: 7
     return 0
 }
@@ -54,11 +55,17 @@ main(): int {
 - `print(text: string): int` — writes the bytes exactly.
 - `print(value: int): int` — signed decimal, complete `int` range including
   `INT_MIN`, formatted through a fixed 20-byte stack buffer.
+- `print(value: uint): int` — unsigned platform-word decimal, zero through
+  `UINT_MAX`. Values typed `u64` select it directly.
 - `print(value: usize): int` — unsigned decimal for lengths, sizes, and
   indices, zero through `USIZE_MAX`.
 
 Numeric output is ASCII with a `-` only for negative signed values. There is
 no padding, no base selection, and no formatting language.
+
+Integer widths narrower than the platform word have no overload; convert
+explicitly at the call site — `fmt.print(int(my_i32))`,
+`fmt.print(uint(my_u16))` — so the printed type is always visible.
 
 ## math
 
@@ -184,8 +191,8 @@ time, CPU time) are not implemented yet.
 
 - No `fmt.println` or formatted printing yet; end lines by printing your own
   bytes.
-- No output overloads for `uint`, floats, or narrower integer widths; an
-  explicit cast selects between the existing `int` and `usize` overloads.
+- No output overloads for floats or narrower integer widths; an explicit cast
+  selects between the `int`, `uint`, and `usize` overloads.
 - `math` has no `sqrt`, floats, or libm binding.
 - There is no user-configurable search path for `std/`.
 - `sys` has no directory or socket surface, no calendar-time or CPU-time

@@ -58,6 +58,34 @@ pub print(value: int): int {
     return total
 }
 
+pub print(value: uint): int {
+    digits: [20]u8
+    at: int = 20
+    remaining: uint = value
+    for digit: int in 0 .. 20 {
+        at -= 1
+        remainder: uint = remaining % 10
+        digits[at] = u8(48 + remainder)
+        remaining = remaining / 10
+        if remaining == 0 {
+            break
+        }
+    }
+    size: usize = usize(20 - at)
+    total: int = 0
+    for attempt: int in 0 .. int(size) {
+        n: int = write(1, &digits[at + total], size - usize(total))
+        if n <= 0 {
+            return n
+        }
+        total += n
+        if usize(total) == size {
+            return total
+        }
+    }
+    return total
+}
+
 pub print(value: usize): int {
     digits: [20]u8
     at: int = 20
