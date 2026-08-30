@@ -1332,6 +1332,18 @@ static Node* parse_extern(P* p) {
         }
         expect(p, T_RPAREN, "')' to close extern parameters");
         f->a = parse_ret(p);
+        if (ate(p, T_ASSIGN)) { // optional link name: Ace binding != C symbol
+            Token* link = expect(p, T_STR, "link name string after '='");
+            if (link->len == 0)
+                perr(p, "extern link name cannot be empty");
+            if (memchr(link->str, 0, link->len))
+                perr(p, "extern link name cannot contain NUL");
+            // emit.c prefixes the Mach-O underscore in a 512-byte buffer.
+            if (link->len > 510)
+                perr(p, "extern link name cannot exceed 510 bytes");
+            f->cname = link->str; // STR tokens are NUL-terminated arena copies
+        } else if (name->len > 510)
+            perr(p, "extern link name cannot exceed 510 bytes");
         nv_push(p, &fns, f);
         if (!ate(p, T_NL) && !at(p, T_RBRACE))
             perr(p, "expected newline or '}' after extern declaration");

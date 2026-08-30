@@ -917,7 +917,8 @@ static void rename_decls(Module* m, Renames* rs) {
             for (int j = 0; j < n->nkids; j++) {
                 Node* f = n->kids[j];
                 renames_add(rs, f->str, f->len, prefixed(m, f->str, f->len));
-                f->cname = arena_stringn(f->str, f->len);
+                if (!f->cname) // an explicit `= "symbol"` link name wins
+                    f->cname = arena_stringn(f->str, f->len);
                 f->str = rs->v[rs->n - 1].to;
                 f->len = (uint32_t)strlen(f->str);
             }

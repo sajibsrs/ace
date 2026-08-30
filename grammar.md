@@ -73,6 +73,7 @@ signing_decl  := owner_type "signs" (type_list | "(" type_list [","] ")")
 
 extern_block  := "extern" string_lit "{" extern_decl* "}"
 extern_decl   := ["export"] ident "(" [extern_params] ")" [ret_clause]
+                 ["=" string_lit]                        // nonempty, NUL-free link name; v1 max 510 bytes
 extern_params := extern_param ("," extern_param)* ["," "..."]
 extern_param  := ident ":" type
 ```

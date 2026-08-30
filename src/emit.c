@@ -1552,50 +1552,48 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
     RetCls rc;
     classify_ret(ret, &rc);
 
-    // marshal
+    // marshal. Argument values are read exclusively from their spill slots:
+    // argument registers overlap the temp pool, so placing one argument (a
+    // two-word aggregate load into x1, say) must not read a later argument's
+    // still-unplaced temp register directly.
+    spill_temps(e);
     for (int i = 0; i < n; i++) {
         EV v = args[i].val;
         int pass_addr = args[i].ptrval || args[i].val.cls == CLS_INT;
-        int aggregate_base = xreg(v.idx);
-        if (v.cls == CLS_ADDR && ty_size(eff[i]) <= 16) {
-            // A two-word aggregate commonly starts in x0. Preserve its address
-            // before loading word zero into x0, or word one's load would use
-            // the first word as its base (first exposed by a string argument).
-            mov_int(e, 1, 17, aggregate_base);
-            aggregate_base = 17;
-        }
+        int is_agg = v.cls == CLS_ADDR && !pass_addr;
+        uint32_t aslot = spill_slot_int(e, v.idx);
+        if (is_agg) load_frame(e, 17, aslot, 8, 0); // aggregate base
         for (int w = 0; w < 2; w++) {
             TU* u = &units[i * 2 + w];
             if (u->kind == TU_XREG && u->reg < 0) continue;
             if (u->kind == TU_XREG) {
-                if (pass_addr)
-                    mov_int(e, 1, u->reg, xreg(v.idx));
-                else if (v.cls == CLS_ADDR) // aggregate chunk
-                    ld_reg(e, u->reg, aggregate_base, (uint32_t)w * 8, 8, 0);
-                else
-                    mov_int(e, 1, u->reg, xreg(v.idx));
+                if (is_agg) // aggregate chunk
+                    ld_reg(e, u->reg, 17, (uint32_t)w * 8, 8, 0);
+                else // scalar or by-address value from its spill slot
+                    load_frame(e, u->reg, aslot, 8, 0);
             } else if (u->kind == TU_VREG) {
                 if (v.cls == CLS_FP)
-                    mov_fp(e, 1, u->reg, v.idx);
+                    load_frame_fp(e, u->reg, spill_slot_fp(e, v.idx), 1);
                 else // aggregate chunk loaded as d
-                    ldrf_(e, u->reg, aggregate_base, (uint32_t)w * 8, 1);
+                    ldrf_(e, u->reg, 17, (uint32_t)w * 8, 1);
             } else if (u->kind == TU_STACK) {
-                if (v.cls == CLS_ADDR)
-                    ld_reg(e, 16, aggregate_base, (uint32_t)w * 8, 8, 0);
+                if (is_agg)
+                    ld_reg(e, 16, 17, (uint32_t)w * 8, 8, 0);
                 else
-                    mov_int(e, 1, 16, xreg(v.idx));
+                    load_frame(e, 16, aslot, 8, 0);
                 uint32_t scale = u->size >= 4 ? u->size : 4;
                 ins(e, (u->size == 8 ? 0xF9000000u : u->size == 4 ? 0xB9000000u :
                        0x39000000u) |
                        ((u->soff / scale) << 10) | (31u << 5) | 16u);
             } else { // TU_STACK_AGGR: >16B by value (extern only)
+                load_frame(e, 14, aslot, 8, 0); // base outside copy_mem's x15-x17
                 if (u->soff <= 4095)
                     ins(e, 0x91000000u | (u->soff << 10) | (31u << 5) | 15u);
                 else {
                     load_imm(e, 1, 15, u->soff);
                     ins(e, 0x8B000000u | (15u << 16) | (31u << 5) | 15u);
                 }
-                copy_mem(e, 15, 0, aggregate_base, 0, u->size);
+                copy_mem(e, 15, 0, 14, 0, u->size);
             }
         }
     }

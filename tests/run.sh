@@ -5,9 +5,12 @@
 set -u
 fail=0
 tab=$(printf '\t')
+ACE_BIN=${ACE_BIN:-./ace}
+ACE_DIR=$(dirname "$ACE_BIN")
+ACE=$(cd "$ACE_DIR" && pwd)/$(basename "$ACE_BIN")
 
 for f in tests/lexer/*.ok.ace tests/parser/*.ok.ace; do
-    if ! ./ace --ast "$f" >/dev/null 2>/tmp/ace_test_errs; then
+    if ! "$ACE" --ast "$f" >/dev/null 2>/tmp/ace_test_errs; then
         echo "FAIL (should parse clean): $f"
         cat /tmp/ace_test_errs
         fail=1
@@ -15,21 +18,43 @@ for f in tests/lexer/*.ok.ace tests/parser/*.ok.ace; do
 done
 
 for f in tests/lexer/*.err.ace tests/parser/*.err.ace; do
-    if ./ace "$f" >/dev/null 2>&1; then
+    if "$ACE" "$f" >/dev/null 2>&1; then
         echo "FAIL (should report errors): $f"
         fail=1
     fi
 done
 
-unknown_decl=$(./ace tests/parser/unknown_decl_type.err.ace 2>&1)
+unknown_decl=$("$ACE" tests/parser/unknown_decl_type.err.ace 2>&1)
 if ! printf '%s\n' "$unknown_decl" | grep -qF \
     "tests/parser/unknown_decl_type.err.ace:1:8: error: unknown declaration type 'protocol'"; then
     echo "FAIL: unknown declaration type should point at the type name"
     fail=1
 fi
 
+for case in empty NUL long; do
+    case "$case" in
+        empty) file=extern_link_name_empty.err.ace
+               want="extern link name cannot be empty" ;;
+        NUL)   file=extern_link_name_nul.err.ace
+               want="extern link name cannot contain NUL" ;;
+        long)  file=extern_link_name_long.err.ace
+               want="extern link name cannot exceed 510 bytes" ;;
+    esac
+    link_name_error=$("$ACE" "tests/parser/$file" 2>&1)
+    if ! printf '%s\n' "$link_name_error" | grep -qF "$want"; then
+        echo "FAIL: extern link-name $case diagnostic"
+        fail=1
+    fi
+done
+default_link_name_error=$("$ACE" tests/parser/extern_default_link_name_long.err.ace 2>&1)
+if ! printf '%s\n' "$default_link_name_error" | grep -qF \
+    "extern link name cannot exceed 510 bytes"; then
+    echo "FAIL: default extern link-name length diagnostic"
+    fail=1
+fi
+
 for f in tests/sema/*.ok.ace; do
-    if ! ./ace "$f" >/dev/null 2>/tmp/ace_test_errs; then
+    if ! "$ACE" "$f" >/dev/null 2>/tmp/ace_test_errs; then
         echo "FAIL (should check clean): $f"
         cat /tmp/ace_test_errs
         fail=1
@@ -37,7 +62,7 @@ for f in tests/sema/*.ok.ace; do
 done
 
 for f in tests/sema/*.err.ace; do
-    if ./ace "$f" >/dev/null 2>&1; then
+    if "$ACE" "$f" >/dev/null 2>&1; then
         echo "FAIL (should report errors): $f"
         fail=1
     fi
@@ -46,7 +71,6 @@ done
 # emit fixtures: compile to an object, link with the system cc, run, and
 # check the exit code. The expected code rides in a `// expect-exit: N` line.
 if [ -d tests/emit ]; then
-    ACE=$(cd . && pwd)/ace
     mkdir -p /tmp/ace_emit
     for f in tests/emit/*.ace; do
         name=$(basename "$f" .ace)
@@ -153,13 +177,13 @@ if [ -d tests/modules ]; then
         name=$(basename "$(dirname "$f")")
         exp=$(sed -n 's/^.*expect-exit:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$f")
         if [ -z "$exp" ]; then
-            if ./ace "$f" >/dev/null 2>&1; then
+            if "$ACE" "$f" >/dev/null 2>&1; then
                 echo "FAIL (should report errors): $f"
                 fail=1
             fi
             continue
         fi
-        out=$(./ace -o "/tmp/ace_modules/$name" "$f" && "/tmp/ace_modules/$name")
+        out=$("$ACE" -o "/tmp/ace_modules/$name" "$f" && "/tmp/ace_modules/$name")
         got=$?
         if [ "$got" -ne "$exp" ]; then
             echo "FAIL: $f exited $got, want $exp"
@@ -185,29 +209,29 @@ if [ -d tests/modules ]; then
 fi
 
 # lexer spot-checks
-if ! ./ace --tokens tests/lexer/hello.ok.ace | grep -q "^2:1${tab}import$"; then
+if ! "$ACE" --tokens tests/lexer/hello.ok.ace | grep -q "^2:1${tab}import$"; then
     echo "FAIL: first token of hello.ok.ace should be 'import'"
     fail=1
 fi
-if ! ./ace --tokens tests/lexer/numbers.ok.ace | grep -q "${tab}int${tab}255$"; then
+if ! "$ACE" --tokens tests/lexer/numbers.ok.ace | grep -q "${tab}int${tab}255$"; then
     echo "FAIL: 0xFF should lex as int 255"
     fail=1
 fi
-if ! ./ace --tokens tests/lexer/numbers.ok.ace | grep -q "${tab}int${tab}172$"; then
+if ! "$ACE" --tokens tests/lexer/numbers.ok.ace | grep -q "${tab}int${tab}172$"; then
     echo "FAIL: 0b1010_1100 should lex as int 172"
     fail=1
 fi
-if ! ./ace --tokens tests/lexer/numbers.ok.ace | grep -q "${tab}float${tab}0.0015$"; then
+if ! "$ACE" --tokens tests/lexer/numbers.ok.ace | grep -q "${tab}float${tab}0.0015$"; then
     echo "FAIL: 1.5e-3 should lex as float 0.0015"
     fail=1
 fi
-if ! ./ace --tokens tests/lexer/numbers.ok.ace | grep -q "${tab}char${tab}'A'$"; then
+if ! "$ACE" --tokens tests/lexer/numbers.ok.ace | grep -q "${tab}char${tab}'A'$"; then
     echo "FAIL: 'A' should lex as char 'A'"
     fail=1
 fi
 
 # parser spot-checks on the full-surface fixture
-ast() { ./ace --ast tests/parser/full.ok.ace; }
+ast() { "$ACE" --ast tests/parser/full.ok.ace; }
 if ! ast | grep -q "(enum 'Color'"; then
     echo "FAIL: enum Color should appear in the AST"
     fail=1
@@ -252,24 +276,24 @@ if ! ast | grep -q "(param 'error'"; then
     echo "FAIL: destructuring binder 'error' should appear in the AST"
     fail=1
 fi
-uninitialized_scalar=$(./ace tests/sema/uninitialized_scalar.err.ace 2>&1)
+uninitialized_scalar=$("$ACE" tests/sema/uninitialized_scalar.err.ace 2>&1)
 if ! printf '%s\n' "$uninitialized_scalar" | grep -qF \
     "error: 'answer' was not initialized before use"; then
     echo "FAIL: scalar definite-initialization diagnostic"
     fail=1
 fi
-uninitialized_struct=$(./ace tests/sema/uninitialized_struct.err.ace 2>&1)
+uninitialized_struct=$("$ACE" tests/sema/uninitialized_struct.err.ace 2>&1)
 if ! printf '%s\n' "$uninitialized_struct" | grep -qF \
     "error: 'point' was not fully initialized before use"; then
     echo "FAIL: aggregate definite-initialization diagnostic"
     fail=1
 fi
 # shifts/bitwise parse with C precedence
-if ! ./ace --ast tests/lexer/numbers.ok.ace | grep -qF "op='<<'"; then
+if ! "$ACE" --ast tests/lexer/numbers.ok.ace | grep -qF "op='<<'"; then
     echo "FAIL: << operator should parse"
     fail=1
 fi
-if ! ./ace --ast tests/lexer/numbers.ok.ace | grep -qF "op='>>'"; then
+if ! "$ACE" --ast tests/lexer/numbers.ok.ace | grep -qF "op='>>'"; then
     echo "FAIL: >> operator should parse"
     fail=1
 fi

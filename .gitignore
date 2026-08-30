@@ -1,4 +1,5 @@
 /ace
+/ace-sanitize
 /sandbox.ace
 .DS_Store
 *.o
