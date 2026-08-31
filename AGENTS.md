@@ -91,6 +91,13 @@ Ace is a systems programming language and its bootstrap compiler. The language d
        final statement only, transfers to the immediately following case, takes
        no target or condition, and is rejected in the final case. There is still
        no implicit fallthrough.
+     - [ ] Recursive-layout diagnostics and pointer-only type fixups — reject
+       direct or indirect all-inline value cycles instead of assigning placeholder
+       sizes; keep self-pointers valid; permit an unknown same-module type only
+       behind one or more pointer levels, resolve it later in the file, and reject
+       unresolved or layout-dependent early uses. Simultaneous heterogeneous
+       multi-assignment is already implemented; its RHS-before-target ordering is
+       now explicit in `spec.md` and `docs/types.md`.
      - [x] Type-owned methods and canonical signings (chunk 12) — `Circle.area()` / `pub mut Circle.scale`, implicit read-only-or-mut `self`, exact overloads, direct qualified calls, no method values, one `Circle signs Shape, Color` declaration per struct (parenthesized when multiline), explicit `Shape(&c)` construction, overload-aware EOF conformance, const-backing protection, defining-module coherence, public/private cross-module signings, and per-used-pair generic vtables. Normal and sanitizer suites pass.
      - [x] Compile report (chunk 13) — `--report` writes compact successful-build statistics to stderr: unique source files, aggregate source bytes/tokens, emitted `__text` bytes, complete object bytes, and Ace compile time excluding the external linker. Check/token/AST-only runs report zero emission sizes. Imported modules are included once by canonical identity.
       - [x] Contract terminology (chunk 14) — source declarations use `Shape: contract`, and concrete types use one canonical `Circle signs Shape, Metric` signing. Compiler tokens, AST/type kinds, diagnostics, docs, and fixtures use the contract/signing model. Semantics and ABI are unchanged. Normal and sanitizer suites pass.

@@ -18,6 +18,23 @@ an initializer. Assignment copies the value. A bare local declaration reserves
 uninitialized stack storage; it does not emit a zero fill. The compiler rejects
 every direct read until the local is definitely initialized.
 
+Multi-assignment evaluates and preserves every value on the right before it
+writes any target. Values are matched to targets by position, so their types do
+not need to match each other:
+
+```ace
+number: int = 1
+message: string = "old"
+
+number, message = 2, "new"
+```
+
+This also provides a direct swap without a user-declared temporary:
+
+```ace
+a, b = b, a
+```
+
 ## Aliases and distinct types
 
 A type alias is transparent; both names denote the same type.
