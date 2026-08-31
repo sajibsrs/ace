@@ -10,6 +10,7 @@ Today's modules:
 - `fmt` — allocation-free text output
 - `math` — minimal generic helpers
 - `mem` — raw allocation and allocation-free byte operations
+- `net` — allocation-free IPv4 TCP sockets
 - `sys` — file descriptors, byte I/O, errno, and monotonic time
 
 Everything else in the planned v1 set (`str`, `simd`) does not
@@ -184,8 +185,8 @@ arithmetic used by the function.
 ## sys
 
 `sys` is the thin operating-system boundary: file I/O and monotonic time. It
-allocates — only callers allocate — and every failure is an ordinary `Error`
-value checked with a branch.
+never allocates — only callers allocate — and every failure is an ordinary
+`Error` value checked with a branch.
 
 ```ace
 import sys
@@ -274,8 +275,78 @@ main(): int {
 }
 ```
 
-Other operating-system surfaces (directory operations, sockets, calendar
-time, CPU time) are not implemented yet.
+Other operating-system surfaces (directory operations, calendar time, CPU
+time) are not implemented yet.
+
+## net
+
+`net` provides a thin, allocation-free IPv4 TCP layer. Its public values and
+operations are platform-neutral; Darwin socket structures, constants, byte
+order, and C bindings stay private inside the module. `net.Socket` is a
+transparent alias of `sys.Fd`, so close sockets with `sys.close`.
+
+```ace
+import net
+import sys
+
+main(): int {
+    sock: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
+    if err != null {
+        return 1
+    }
+    ip: [4]u8 = [u8(127), u8(0), u8(0), u8(1)]
+    address: net.Address4 = net.Address4{ip: ip, port: u16(8080)}
+    if net.set_reuse_address(sock, true) != null ||
+       net.bind(sock, address) != null ||
+       net.listen(sock, usize(128)) != null {
+        sys.close(sock)
+        return 2
+    }
+    if sys.close(sock) != null {
+        return 3
+    }
+    return 0
+}
+```
+
+`Address4: struct { ip: [4]u8, port: u16 }` stores IP octets in ordinary
+textual order and the port in host order. Its canonical zero is
+`0.0.0.0:0`, usable as the wildcard address with an OS-selected port.
+Parsing, formatting, DNS, IPv6, and local/peer address queries are not part of
+this initial surface.
+
+The core operations each perform one explicit socket operation and never
+allocate, buffer, retry, close, or replace a socket on failure:
+
+- `socket(SocketKind.tcp): (Socket, Error)` creates an IPv4 TCP socket.
+- `set_reuse_address` and `set_reuse_port` reversibly set their named option.
+- `set_nonblocking(socket, enabled): Error` reversibly changes blocking mode.
+- `bind(socket, Address4): Error` binds without enabling options implicitly.
+- `listen(socket, backlog: usize): Error` starts listening. The OS may cap the
+  backlog; a value too large for the platform call fails instead of truncating.
+- `accept(listener): (Socket, Address4, Error)` makes one blocking acceptance
+  attempt. It returns the peer address and does not configure the accepted
+  socket. Failure returns `Socket(-1)` and canonical-zero `Address4`.
+- `connect(socket, Address4): Error` makes one connection attempt without
+  retry, cleanup, or configuration.
+- `receive(socket, mut buffer: []u8): (int, Error)` performs one receive.
+  Partial counts are returned as-is; zero with null error is orderly peer
+  shutdown.
+- `send(socket, []u8)` and `send(socket, string)` each perform one send and
+  return partial counts as-is. A closed peer becomes an ordinary send error
+  rather than terminating the process with `SIGPIPE`.
+
+Every error is last and null on success. The operation-specific public domains
+are `SocketErr`, `SetReuseAddressErr`, `SetReusePortErr`,
+`SetNonblockingErr`, `BindErr`, `ListenErr`, `AcceptErr`, `ConnectErr`,
+`ReceiveErr`, and `SendErr`. Compare `error.domain` with the corresponding
+`typeid(net.*Err)`; query `sys.errno()` immediately to learn the OS reason.
+Closing uses `sys.close` and therefore retains `sys.CloseErr`.
+
+No retry policy is hidden. In particular, interrupted, aborted, would-block,
+and resource failures from `accept` remain caller-visible. Nonblocking
+connection completion, readiness queues, half-close, additional TCP options,
+UDP, and higher-level server/client convenience remain future additions.
 
 ## Current limitations
 
@@ -286,8 +357,8 @@ time, CPU time) are not implemented yet.
   between the `int`, `uint`, and `usize` overloads.
 - `math` has no `sqrt`, floats, or libm binding.
 - There is no user-configurable search path for `std/`.
-- `sys` has no directory or socket surface, no calendar-time or CPU-time
-  clock, and no `unlink`; tests that create files leave them behind.
-- Extern C variadics declared with `...` are not callable with the stack
-  argument convention Apple arm64 requires, so `sys` binds fixed-arity
-  exports like `__open` instead.
+- `sys` has no directory surface, calendar-time or CPU-time clock, or
+  `unlink`; tests that create files leave them behind.
+- Apple-arm64 extern C variadic calls use the platform's stack convention for
+  unnamed arguments. `sys` still binds fixed-arity `__open` because its public
+  wrapper has a fixed signature and needs no variadic boundary.

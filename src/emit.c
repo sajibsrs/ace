@@ -17,7 +17,8 @@
 //     args share 8 bytes) — verified against clang caller+callee dumps. The
 //     outgoing area sits at [sp, #0..] at the bl; the callee reads incoming
 //     stack args at [x29 + 24 + off].
-//   - variadic (extern "c") args continue the normal register classification.
+//   - Apple arm64 variadic extras use 8-byte stack slots from [sp, #0], while
+//     the fixed parameters retain ordinary register/stack classification.
 //   - internal-only freedom (spec Functions & ABI #3): `mut` params and >16B
 //     read-only params pass the caller's ADDRESS in an x reg.
 //   - indirect calls jump through blr x16 (target reloaded from its spill
@@ -1455,7 +1456,7 @@ typedef struct {
 // Ace-only byref forms (mut params, >16B read-only by address). Units are four
 // per parameter (an HFA uses up to four FP registers, one per leaf).
 static uint32_t assign_cc(SType** params, uint8_t* muts, int nparams, int internal,
-                          TU* units /* 4 per param */) {
+                          int varargs_from, TU* units /* 4 per param */) {
     int xn = 0, vn = 0;
     uint32_t soff = 0;
     for (int i = 0; i < nparams; i++) {
@@ -1465,6 +1466,17 @@ static uint32_t assign_cc(SType** params, uint8_t* muts, int nparams, int intern
         for (int w = 0; w < 4; w++) {
             u[w].kind = TU_XREG; u[w].reg = -1;
             u[w].soff = 0; u[w].size = 0; u[w].off = 0;
+        }
+        if (varargs_from >= 0 && i >= varargs_from) {
+            // Darwin's arm64 PCS places every unnamed variadic argument on
+            // the stack, independently of the remaining argument registers.
+            // Default promotions have already materialized it as i64/f64.
+            soff = align_up(soff, 8);
+            u[0].kind = TU_STACK;
+            u[0].soff = soff;
+            u[0].size = 8;
+            soff += 8;
+            continue;
         }
         if (internal && muts && muts[i]) { // Ace mut parameter: original address
             if (xn < 8) { u[0].kind = TU_XREG; u[0].reg = (int8_t)(xn++); u[0].size = 8; }
@@ -1763,7 +1775,7 @@ static SType* raw_pointer_type(void) {
 
 static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
                     SType** params, uint8_t* muts, int nparams, int internal,
-                    CallTarget tgt, SType* ret) {
+                    int varargs_from, CallTarget tgt, SType* ret) {
     int si = e->vti, sf = e->vtf;
     spill_temps(e);
 
@@ -1818,10 +1830,13 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
             continue;
         }
         args[i].val = gen_expr(e, a);
+        if (varargs_from >= 0 && i >= varargs_from &&
+            is_floatt(node_ty(a)) && unwrap(node_ty(a))->prim == P_F32)
+            args[i].val = gen_cast(e, args[i].val, node_ty(a), default_f64());
     }
 
     TU units[160];
-    uint32_t sbytes = assign_cc(eff, muts, n, internal, units);
+    uint32_t sbytes = assign_cc(eff, muts, n, internal, varargs_from, units);
     if (sbytes > e->out_max) e->out_max = sbytes;
 
     RetCls rc;
@@ -2287,7 +2302,7 @@ static EV gen_alloc_builtin(Em* e, Node* call) {
     SType* param = default_i64();
     uint8_t mut = 0;
     CallTarget tgt = { TK_EXTERN, "_malloc", 7, 0 };
-    EV ptr = emit_call(e, call, &arg, 1, &param, &mut, 1, 0, tgt,
+    EV ptr = emit_call(e, call, &arg, 1, &param, &mut, 1, 0, -1, tgt,
                        raw_pointer_type());
     cbz_(e, 1, xreg(ptr.idx), 0, done);
     frame_addr(e, 16, off);
@@ -2322,7 +2337,7 @@ static EV gen_realloc_builtin(Em* e, Node* call) {
     SType* params[2] = { raw_pointer_type(), default_i64() };
     uint8_t muts[2] = { 0, 0 };
     CallTarget tgt = { TK_EXTERN, "_realloc", 8, 0 };
-    EV ptr = emit_call(e, call, args, 2, params, muts, 2, 0, tgt,
+    EV ptr = emit_call(e, call, args, 2, params, muts, 2, 0, -1, tgt,
                        raw_pointer_type());
     cbz_(e, 1, xreg(ptr.idx), 0, done);
     frame_addr(e, 16, off);
@@ -2346,7 +2361,7 @@ static EV gen_release_builtin(Em* e, Node* call) {
     SType* param = raw_pointer_type();
     uint8_t mut = 0;
     CallTarget tgt = { TK_EXTERN, "_free", 5, 0 };
-    (void)emit_call(e, call, &arg, 1, &param, &mut, 1, 0, tgt, NULL);
+    (void)emit_call(e, call, &arg, 1, &param, &mut, 1, 0, -1, tgt, NULL);
 
     bind_label(e, clear);
     st_reg(e, 31, xreg(addr), 0, 8);
@@ -2392,7 +2407,7 @@ static EV gen_byte_write_builtin(Em* e, Node* call, int intrinsic) {
         const char* name = intrinsic == BI_MEM_COPY ? "_memcpy" : "_memmove";
         uint32_t nlen = intrinsic == BI_MEM_COPY ? 7 : 8;
         CallTarget tgt = { TK_EXTERN, name, nlen, 0 };
-        (void)emit_call(e, call, args, 3, params, muts, 3, 0, tgt, NULL);
+        (void)emit_call(e, call, args, 3, params, muts, 3, 0, -1, tgt, NULL);
     } else {
         int byte = tmp_int(e);
         if (intrinsic == BI_MEM_FILL) {
@@ -2410,7 +2425,7 @@ static EV gen_byte_write_builtin(Em* e, Node* call, int intrinsic) {
         SType* params[3] = { raw_pointer_type(), default_i64(), default_i64() };
         uint8_t muts[3] = { 0, 0, 0 };
         CallTarget tgt = { TK_EXTERN, "_memset", 7, 0 };
-        (void)emit_call(e, call, args, 3, params, muts, 3, 0, tgt, NULL);
+        (void)emit_call(e, call, args, 3, params, muts, 3, 0, -1, tgt, NULL);
     }
     bind_label(e, done);
     e->vti = si;
@@ -2446,7 +2461,8 @@ static EV gen_compare_builtin(Em* e, Node* call) {
     SType* params[3] = { raw_pointer_type(), raw_pointer_type(), default_i64() };
     uint8_t muts[3] = { 0, 0, 0 };
     CallTarget tgt = { TK_EXTERN, "_memcmp", 7, 0 };
-    EV cmp = emit_call(e, call, args, 3, params, muts, 3, 0, tgt, default_i64());
+    EV cmp = emit_call(e, call, args, 3, params, muts, 3, 0, -1, tgt,
+                       default_i64());
     ins(e, 0x7100001Fu | ((uint32_t)xreg(cmp.idx) << 5)); // cmp wresult, #0
     bcond_(e, C_EQ, by_length);
     bcond_(e, C_LT, negative);
@@ -2502,7 +2518,7 @@ static EV emit_printf_helper(Em* e, Node* at, Sym* helper, EV* values, int n) {
     CallTarget tgt = { TK_INTERNAL, arena_copy(mn, strlen(mn)),
                        (uint32_t)strlen(mn), 0 };
     return emit_call(e, at, args, n, ft->params, muts, ft->nparams,
-                     1, tgt, ft->ret);
+                     1, -1, tgt, ft->ret);
 }
 
 static EV gen_printf_builtin(Em* e, Node* call) {
@@ -2765,7 +2781,7 @@ static EV gen_call(Em* e, Node* call) {
             for (int i = 0; i < n && i < gs->decl->nkids; i++)
                 muts[i] = (gs->decl->kids[i]->flags & F_MUT) != 0;
             return emit_call(e, call, args, call->nkids, ft->params, muts,
-                             ft->nparams, 1, tgt, ft->ret);
+                             ft->nparams, 1, -1, tgt, ft->ret);
         }
         em_err(e, call, "generic stamp not found");
         return (EV){ CLS_INT, tmp_int(e) };
@@ -2828,7 +2844,7 @@ static EV gen_call(Em* e, Node* call) {
             }
             SType* mret = node_ty(call);
             CallTarget tgt = { TK_REG, NULL, 0, fn };
-            return emit_call(e, call, args, n, pty, muts, n, 1, tgt, mret);
+            return emit_call(e, call, args, n, pty, muts, n, 1, -1, tgt, mret);
         }
     }
     // direct / concrete-method / indirect
@@ -2855,7 +2871,7 @@ static EV gen_call(Em* e, Node* call) {
             }
             CallTarget tgt = { TK_REG, NULL, 0, f.idx };
             return emit_call(e, call, args, call->nkids, ft->params, muts,
-                             ft->nparams, 1, tgt, ft->ret);
+                             ft->nparams, 1, -1, tgt, ft->ret);
         }
 
         if (s->kind == SYM_FUNC) {
@@ -2927,8 +2943,12 @@ static EV gen_call(Em* e, Node* call) {
                 muts[i] = (s->decl->kids[i]->flags & F_MUT) != 0;
             if (s->decl && (s->decl->flags & F_METHOD) && n > 0)
                 muts[0] = 1; // uniform method receiver ABI; semantic mut is separate
+            int varargs_from = s->is_extern && s->decl &&
+                               (s->decl->flags & F_VARARGS)
+                ? ft->nparams : -1;
             return emit_call(e, call, args, n, ft->params, muts,
-                             ft->nparams, !c_boundary, tgt, ft->ret);
+                             ft->nparams, !c_boundary, varargs_from, tgt,
+                             ft->ret);
         }
     }
     em_err(e, call, "unsupported callee in codegen");
@@ -4033,7 +4053,7 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
     if ((f->flags & F_METHOD) && np > 0)
         muts[0] = 1; // every method receives self through the vtable data-pointer ABI
     TU units[160];
-    assign_cc(pt, muts, np, !export_c, units);
+    assign_cc(pt, muts, np, !export_c, -1, units);
     for (int i = 0; i < np; i++) {
         SType* t = pt[i];
         uint32_t size = ty_size(t);

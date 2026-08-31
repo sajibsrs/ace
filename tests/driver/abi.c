@@ -1,4 +1,5 @@
 #include <stddef.h>
+#include <stdarg.h>
 #include <stdint.h>
 
 typedef struct { int32_t a; float b; } Mixed;
@@ -116,6 +117,18 @@ int32_t c_fpstack_check(double a, double b, double c, double d, double e,
 double c_fp_align(double a, double b, double c, double d, double e, double f,
                   double g, double h, float narrow, double wide) {
     return a + b + c + d + e + f + g + h + narrow + wide;
+}
+
+int32_t c_varargs(int32_t fixed, ...) {
+    va_list args;
+    va_start(args, fixed);
+    int32_t integer = va_arg(args, int32_t);
+    double floating = va_arg(args, double);
+    int32_t* pointer = va_arg(args, int32_t*);
+    va_end(args);
+    if (fixed != 7 || integer != 9 || floating != 1.25 || !pointer)
+        return 1;
+    return *pointer == 11 ? 0 : 2;
 }
 
 int32_t c_run_ace(void) {

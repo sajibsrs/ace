@@ -1,0 +1,7 @@
+extern "c" {
+    variadic(tag: i32, ...): i32
+}
+
+main(): int {
+    return int(variadic(0, "Ace"))
+}

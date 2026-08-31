@@ -53,9 +53,15 @@ Point: struct { x: f32, y: f32 }
 
 extern "c" {
     translate(point: Point, dx: f32, dy: f32): Point
+    c_variadic(tag: i32, ...): i32
 }
 
 export increment_c(value: mut *i32): i32 {
     ~value += 1
     return ~value
+}
+
+check_c_variadic(): i32 {
+    value: i32 = 11
+    return c_variadic(0, i32(9), f32(1.25), &value)
 }

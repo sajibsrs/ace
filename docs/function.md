@@ -207,9 +207,26 @@ slices, contracts, tagged unions, errors, tuples, function values, and generic
 shapes are currently rejected at the boundary. Wrappers must translate those
 values to an allowed representation explicitly.
 
+C variadic imports use `...` after at least one fixed parameter. Unnamed
+arguments currently accept the verified C-compatible scalar and pointer set;
+aggregate and Ace-specific values are rejected. Untyped numeric literals take
+their `int`/`f64` defaults and `f32` is promoted to `f64`. On Apple arm64 the
+unnamed values use the platform's 8-byte caller-stack slots rather than the
+remaining argument registers.
+
+```ace
+extern "c" {
+    c_variadic(tag: i32, ...): i32
+}
+
+value: i32 = 11
+result: i32 = c_variadic(0, i32(9), f32(1.25), &value)
+```
+
 ## Current limits
 
-- User-defined functions are not variadic. Pass a slice instead.
+- Ace-defined functions are not variadic. Pass a slice instead; only imported
+  C functions may declare `...`.
 - Default and named arguments are not implemented.
 - C-boundary `extern` and `export` functions cannot overload because their
   external names are unmangled.

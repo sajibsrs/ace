@@ -218,6 +218,19 @@ if [ -d tests/emit ]; then
             echo "FAIL: checked fmt.printf calls must not emit a runtime printf body"
             fail=1
         fi
+        net_undef=$(nm -u /tmp/ace_emit/net.o 2>/dev/null)
+        if printf '%s\n' "$net_undef" |
+           grep -Eq '_(malloc|calloc|realloc|free|printf|snprintf)$'; then
+            echo "FAIL: net must not depend on allocation or C formatting"
+            fail=1
+        fi
+        for symbol in _socket _setsockopt _fcntl _bind _listen _accept \
+                      _connect _recv _send _close ___error; do
+            if ! printf '%s\n' "$net_undef" | grep -q "^$symbol$"; then
+                echo "FAIL: net object is missing Darwin boundary '$symbol'"
+                fail=1
+            fi
+        done
     fi
     # -o mode drives the same pipeline through the cc link step
     "$ACE" -o /tmp/ace_emit/direct tests/emit/hello_min.ace && /tmp/ace_emit/direct

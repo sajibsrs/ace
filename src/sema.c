@@ -1172,6 +1172,21 @@ static SType* contract_method_type(Ck* k, SType* contract, Node* m) {
     return ft;
 }
 
+static int is_c_variadic_scalar(SType* t) {
+    while (t && t->kind == SK_DISTINCT) t = t->base;
+    if (!t) return 0;
+    if (t->kind == SK_PTR) return 1;
+    if (t->kind != SK_PRIM) return 0;
+    switch (t->prim) {
+    case P_I8: case P_I16: case P_I32: case P_I64:
+    case P_U8: case P_U16: case P_U32: case P_U64:
+    case P_F32: case P_F64: case P_USIZE:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static void check_args(Ck* k, Node* call, SType* ft, int is_variadic) {
     int want = ft->nparams, got = call->nkids;
     if (is_variadic ? got < want : got != want) {
@@ -1183,8 +1198,25 @@ static void check_args(Ck* k, Node* call, SType* ft, int is_variadic) {
         Node* arg = call->kids[i];
         int am = arg->kind == N_MUTARG;
         Node* raw = am ? arg->a : arg;
-        if (i < want) coerce(k, raw, ft->params[i]);
-        else if (am) ck_err(k, arg, "'mut' marks declared parameters, not variadics");
+        if (i < want) {
+            coerce(k, raw, ft->params[i]);
+        } else {
+            // Variadic extras have no declared expected type, but they still
+            // need the ordinary expression walk so identifiers resolve and
+            // codegen receives complete type/symbol annotations.
+            SType* t = expr_type(k, raw);
+            if (t == T_UT_FLOAT)
+                coerce(k, raw, st_prim(P_F64));
+            else if (t == T_UT_INT)
+                coerce(k, raw, st_prim(P_I64));
+            t = node_ty(raw);
+            if (!is_c_variadic_scalar(t))
+                ck_err(k, raw,
+                       "variadic argument has type %s, which is not supported at the C boundary",
+                       type_name(t));
+            if (am)
+                ck_err(k, arg, "'mut' marks declared parameters, not variadics");
+        }
     }
 }
 
@@ -1683,7 +1715,9 @@ static Sym* select_call_overload(Ck* k, Node* call, Sym* head, int final,
 }
 
 static void finish_direct_call(Ck* k, Node* call, Sym* s) {
-    check_args(k, call, s->type, s->is_extern);
+    int variadic = s->is_extern && s->decl &&
+                   (s->decl->flags & F_VARARGS) != 0;
+    check_args(k, call, s->type, variadic);
     check_mut_args(k, call, s->decl);
     call->sym = s;
     call->ty = s->type->ret;

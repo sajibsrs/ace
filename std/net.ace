@@ -1,0 +1,317 @@
+// net — allocation-free IPv4 TCP sockets (Darwin/Apple arm64).
+//
+// The public declarations form the stable Ace networking surface. The
+// private section below them owns Darwin's constants, structures, C link
+// names, byte order, and conversion details.
+
+import sys
+
+pub Socket: type = sys.Fd
+
+pub SocketKind: enum { tcp }
+
+pub Address4: struct {
+    ip: [4]u8,
+    port: u16,
+}
+
+// Every operation has a distinct public error domain. The raw OS error is
+// available through sys.errno() and must be queried immediately on failure.
+pub SocketErr: distinct i32
+pub SetReuseAddressErr: distinct i32
+pub SetReusePortErr: distinct i32
+pub SetNonblockingErr: distinct i32
+pub BindErr: distinct i32
+pub ListenErr: distinct i32
+pub AcceptErr: distinct i32
+pub ConnectErr: distinct i32
+pub ReceiveErr: distinct i32
+pub SendErr: distinct i32
+
+pub socket(kind: SocketKind): (Socket, Error) {
+    result: Socket, err: Error = socket_darwin(kind)
+    return result, err
+}
+
+pub set_reuse_address(sock: Socket, enabled: bool): Error {
+    return set_reuse_address_darwin(sock, enabled)
+}
+
+pub set_reuse_port(sock: Socket, enabled: bool): Error {
+    return set_reuse_port_darwin(sock, enabled)
+}
+
+pub set_nonblocking(sock: Socket, enabled: bool): Error {
+    return set_nonblocking_darwin(sock, enabled)
+}
+
+pub bind(sock: Socket, address: Address4): Error {
+    return bind_darwin(sock, address)
+}
+
+pub listen(sock: Socket, backlog: usize): Error {
+    return listen_darwin(sock, backlog)
+}
+
+pub accept(listener: Socket): (Socket, Address4, Error) {
+    address: Address4 = zero_address4()
+    accepted: Socket, err: Error = accept_darwin(listener, mut address)
+    return accepted, address, err
+}
+
+pub connect(sock: Socket, address: Address4): Error {
+    return connect_darwin(sock, address)
+}
+
+pub receive(sock: Socket, mut buffer: []u8): (int, Error) {
+    count: int, err: Error = receive_darwin(sock, mut buffer)
+    return count, err
+}
+
+pub send(sock: Socket, data: []u8): (int, Error) {
+    count: int, err: Error = send_bytes_darwin(sock, data)
+    return count, err
+}
+
+pub send(sock: Socket, data: string): (int, Error) {
+    count: int, err: Error = send_string_darwin(sock, data)
+    return count, err
+}
+
+// --- private Darwin implementation ---------------------------------------
+
+// Darwin's sockaddr_in layout: length/family bytes, network-order port,
+// four address bytes, then eight zero bytes. Keeping the byte fields explicit
+// prevents platform byte order from leaking into Address4.
+DarwinAddress4: struct {
+    length: u8,
+    family: u8,
+    port: [2]u8,
+    ip: [4]u8,
+    zero: [8]u8,
+}
+
+AF_INET: const i32 = 2
+SOCK_STREAM: const i32 = 1
+SOL_SOCKET: const i32 = 0xffff
+SO_REUSEADDR: const i32 = 0x0004
+SO_REUSEPORT: const i32 = 0x0200
+MSG_NOSIGNAL: const i32 = 0x00080000
+F_GETFL: const i32 = 3
+F_SETFL: const i32 = 4
+O_NONBLOCK: const i32 = 0x0004
+EINVAL: const i32 = 22
+SOCKADDR4_SIZE: const u32 = 16
+I32_MAX_USIZE: const usize = 0x7fffffff
+
+socket_error: const ErrorDescriptor = ErrorDescriptor{
+    code: 0, domain: typeid(SocketErr), message: "socket failed",
+}
+set_reuse_address_error: const ErrorDescriptor = ErrorDescriptor{
+    code: 0, domain: typeid(SetReuseAddressErr),
+    message: "set reuse address failed",
+}
+set_reuse_port_error: const ErrorDescriptor = ErrorDescriptor{
+    code: 0, domain: typeid(SetReusePortErr),
+    message: "set reuse port failed",
+}
+set_nonblocking_error: const ErrorDescriptor = ErrorDescriptor{
+    code: 0, domain: typeid(SetNonblockingErr),
+    message: "set nonblocking failed",
+}
+bind_error: const ErrorDescriptor = ErrorDescriptor{
+    code: 0, domain: typeid(BindErr), message: "bind failed",
+}
+listen_error: const ErrorDescriptor = ErrorDescriptor{
+    code: 0, domain: typeid(ListenErr), message: "listen failed",
+}
+accept_error: const ErrorDescriptor = ErrorDescriptor{
+    code: 0, domain: typeid(AcceptErr), message: "accept failed",
+}
+connect_error: const ErrorDescriptor = ErrorDescriptor{
+    code: 0, domain: typeid(ConnectErr), message: "connect failed",
+}
+receive_error: const ErrorDescriptor = ErrorDescriptor{
+    code: 0, domain: typeid(ReceiveErr), message: "receive failed",
+}
+send_error: const ErrorDescriptor = ErrorDescriptor{
+    code: 0, domain: typeid(SendErr), message: "send failed",
+}
+
+extern "c" {
+    c_socket(domain: i32, kind: i32, protocol: i32): i32 = "socket"
+    c_setsockopt(socket: i32, level: i32, option: i32,
+                 value: *i32, length: u32): i32 = "setsockopt"
+    c_bind(socket: i32, address: *DarwinAddress4, length: u32): i32 = "bind"
+    c_listen(socket: i32, backlog: i32): i32 = "listen"
+    c_accept(socket: i32, address: mut *DarwinAddress4,
+             length: mut *u32): i32 = "accept"
+    c_connect(socket: i32, address: *DarwinAddress4,
+              length: u32): i32 = "connect"
+    c_recv(socket: i32, buffer: mut *u8, length: usize, flags: i32): i64 = "recv"
+    c_send(socket: i32, data: *u8, length: usize, flags: i32): i64 = "send"
+    c_fcntl(socket: i32, command: i32, ...): i32 = "fcntl"
+    c_errno(): mut *i32 = "__error"
+}
+
+errno_set(value: i32) {
+    slot: mut *i32 = c_errno()
+    ~slot = value
+}
+
+to_darwin(address: Address4): DarwinAddress4 {
+    port: [2]u8 = [u8(address.port >> 8), u8(address.port)]
+    ip: [4]u8 = [address.ip[0], address.ip[1], address.ip[2], address.ip[3]]
+    zero: [8]u8 = [u8(0), u8(0), u8(0), u8(0),
+                    u8(0), u8(0), u8(0), u8(0)]
+    return DarwinAddress4{
+        length: u8(SOCKADDR4_SIZE),
+        family: u8(AF_INET),
+        port: port,
+        ip: ip,
+        zero: zero,
+    }
+}
+
+from_darwin(address: DarwinAddress4): Address4 {
+    ip: [4]u8 = [address.ip[0], address.ip[1], address.ip[2], address.ip[3]]
+    return Address4{
+        ip: ip,
+        port: (u16(address.port[0]) << 8) | u16(address.port[1]),
+    }
+}
+
+zero_address4(): Address4 {
+    ip: [4]u8 = [u8(0), u8(0), u8(0), u8(0)]
+    return Address4{ip: ip, port: u16(0)}
+}
+
+socket_darwin(kind: SocketKind): (Socket, Error) {
+    // tcp is the only initial kind; its enum zero maps to SOCK_STREAM.
+    if kind != SocketKind.tcp {
+        errno_set(EINVAL)
+        return Socket(-1), Error(&socket_error)
+    }
+    raw: i32 = c_socket(AF_INET, SOCK_STREAM, 0)
+    if raw == -1 {
+        return Socket(-1), Error(&socket_error)
+    }
+    return Socket(raw), null
+}
+
+set_socket_option_darwin(sock: Socket, option: i32, enabled: bool,
+                         error: Error): Error {
+    value: i32 = 0
+    if enabled {
+        value = 1
+    }
+    if c_setsockopt(i32(sock), SOL_SOCKET, option, &value,
+                    u32(sizeof(i32))) == -1 {
+        return error
+    }
+    return null
+}
+
+set_reuse_address_darwin(sock: Socket, enabled: bool): Error {
+    return set_socket_option_darwin(sock, SO_REUSEADDR, enabled,
+                                    Error(&set_reuse_address_error))
+}
+
+set_reuse_port_darwin(sock: Socket, enabled: bool): Error {
+    return set_socket_option_darwin(sock, SO_REUSEPORT, enabled,
+                                    Error(&set_reuse_port_error))
+}
+
+set_nonblocking_darwin(sock: Socket, enabled: bool): Error {
+    flags: i32 = c_fcntl(i32(sock), F_GETFL)
+    if flags == -1 {
+        return Error(&set_nonblocking_error)
+    }
+    if enabled {
+        flags = flags | O_NONBLOCK
+    } else {
+        flags = flags & !O_NONBLOCK
+    }
+    if c_fcntl(i32(sock), F_SETFL, flags) == -1 {
+        return Error(&set_nonblocking_error)
+    }
+    return null
+}
+
+bind_darwin(sock: Socket, address: Address4): Error {
+    raw: DarwinAddress4 = to_darwin(address)
+    if c_bind(i32(sock), &raw, SOCKADDR4_SIZE) == -1 {
+        return Error(&bind_error)
+    }
+    return null
+}
+
+listen_darwin(sock: Socket, backlog: usize): Error {
+    if backlog > I32_MAX_USIZE {
+        errno_set(EINVAL)
+        return Error(&listen_error)
+    }
+    if c_listen(i32(sock), i32(backlog)) == -1 {
+        return Error(&listen_error)
+    }
+    return null
+}
+
+accept_darwin(listener: Socket, mut address: Address4): (Socket, Error) {
+    port: [2]u8 = [u8(0), u8(0)]
+    ip: [4]u8 = [u8(0), u8(0), u8(0), u8(0)]
+    zero: [8]u8 = [u8(0), u8(0), u8(0), u8(0),
+                    u8(0), u8(0), u8(0), u8(0)]
+    raw: DarwinAddress4 = DarwinAddress4{
+        length: u8(0), family: u8(0), port: port, ip: ip, zero: zero,
+    }
+    length: u32 = SOCKADDR4_SIZE
+    accepted: i32 = c_accept(i32(listener), mut &raw, mut &length)
+    if accepted == -1 {
+        address = zero_address4()
+        return Socket(-1), Error(&accept_error)
+    }
+    address = from_darwin(raw)
+    return Socket(accepted), null
+}
+
+connect_darwin(sock: Socket, address: Address4): Error {
+    raw: DarwinAddress4 = to_darwin(address)
+    if c_connect(i32(sock), &raw, SOCKADDR4_SIZE) == -1 {
+        return Error(&connect_error)
+    }
+    return null
+}
+
+receive_darwin(sock: Socket, mut buffer: []u8): (int, Error) {
+    if buffer.len == 0 {
+        return 0, null
+    }
+    count: i64 = c_recv(i32(sock), mut &buffer[0], buffer.len, 0)
+    if count < 0 {
+        return 0, Error(&receive_error)
+    }
+    return int(count), null
+}
+
+send_bytes_darwin(sock: Socket, data: []u8): (int, Error) {
+    if data.len == 0 {
+        return 0, null
+    }
+    count: i64 = c_send(i32(sock), &data[0], data.len, MSG_NOSIGNAL)
+    if count < 0 {
+        return 0, Error(&send_error)
+    }
+    return int(count), null
+}
+
+send_string_darwin(sock: Socket, data: string): (int, Error) {
+    if data.len == 0 {
+        return 0, null
+    }
+    count: i64 = c_send(i32(sock), &data[0], data.len, MSG_NOSIGNAL)
+    if count < 0 {
+        return 0, Error(&send_error)
+    }
+    return int(count), null
+}

@@ -1,0 +1,25 @@
+import Address4, Socket, SocketKind, socket, send from net
+
+check(address: Address4, socket_value: Socket): int {
+    if address.port == 0 {
+        return 0
+    }
+    sent: int, err: Error = send(socket_value, "")
+    if err != null {
+        return 1
+    }
+    return sent
+}
+
+main(): int {
+    ip: [4]u8 = [u8(127), u8(0), u8(0), u8(1)]
+    address: Address4 = Address4{
+        ip: ip,
+        port: u16(80),
+    }
+    value: Socket, err: Error = socket(SocketKind.tcp)
+    if err != null {
+        return 1
+    }
+    return check(address, value)
+}
