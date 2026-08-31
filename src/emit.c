@@ -305,6 +305,7 @@ typedef struct {
     int8_t  reg;     // x/v register number
     uint32_t soff;   // stack offset (TU_STACK*)
     uint32_t size;   // bytes to move
+    uint32_t off;    // byte offset within the value (register units)
 } TU;
 
 typedef struct {
@@ -491,33 +492,58 @@ static int find_field(SType* t, const char* name, uint32_t len) {
     return -1;
 }
 
-// is the 8-byte word at `woff` FLOAT class (all overlapping members floats)?
-static int word_is_float(SType* t, uint32_t woff) {
+static uint32_t align_up(uint32_t v, uint32_t a);
+
+/*
+ * AAPCS64 aggregate classification: flatten an aggregate into leaf members.
+ * A homogeneous floating aggregate (HFA) is 1..4 leaves, every leaf f32/f64;
+ * it rides FP registers one-per-leaf (up to v0..v3, even past 16 bytes).
+ * Any other composite is INTEGER-class chunks: every 8-byte word goes to an
+ * x register, float bits included. Returns the leaf count (offs/dbl filled),
+ * or -1 when any leaf is not a float. `max` caps the flattening (callers
+ * pass 5: five or more leaves is simply not an HFA).
+ */
+static int hfa_leaves(SType* t, uint32_t off, uint32_t* offs, uint8_t* dbl,
+                      int n, int max) {
     t = unwrap(t);
-    if (!t) return 0;
-    uint32_t lo = woff, hi = woff + 8;
+    if (!t) return -1;
+    if (t->kind == SK_PRIM && (t->prim == P_F32 || t->prim == P_F64)) {
+        if (n >= max) return -1;
+        offs[n] = off;
+        dbl[n] = t->prim == P_F64;
+        return n + 1;
+    }
     switch (t->kind) {
-    case SK_PRIM: return t->prim == P_F32 || t->prim == P_F64;
     case SK_ARRAY: {
         uint32_t es = ty_size(t->base);
-        for (uint64_t o = lo - lo % es; o < hi && o < t->size; o += es)
-            if (!word_is_float(t->base, 0)) return 0;
-        return 1;
+        for (uint64_t i = 0; i < t->count; i++) {
+            n = hfa_leaves(t->base, off + (uint32_t)i * es, offs, dbl, n, max);
+            if (n < 0) return -1;
+        }
+        return n;
     }
     case SK_STRUCT: case SK_TUPLE: {
         uint32_t o = 0;
         for (int i = 0; i < t->nfields; i++) {
             uint32_t a = ty_align(t->fields[i].t);
-            o = (o + a - 1) / a * a;
-            uint32_t fs = ty_size(t->fields[i].t);
-            if (o < hi && o + fs > lo && !word_is_float(t->fields[i].t, 0))
-                return 0;
-            o += fs;
+            o = align_up(o, a);
+            n = hfa_leaves(t->fields[i].t, off + o, offs, dbl, n, max);
+            if (n < 0) return -1;
+            o += ty_size(t->fields[i].t);
         }
-        return 1;
+        return n;
     }
-    default: return 0; // ptr/slice/contract/enum/Error words are INT
+    default:
+        return -1; // ptr/slice/contract/enum/Error member breaks homogeneity
     }
+}
+
+static int classify_hfa(SType* t, uint32_t* offs, uint8_t* dbl) {
+    int n = hfa_leaves(t, 0, offs, dbl, 0, 5);
+    if (n < 1 || n > 4) return -1;
+    for (int i = 1; i < n; i++)
+        if (dbl[i] != dbl[0]) return -1; // homogeneous means one FP base type
+    return n;
 }
 
 // --- constant loaders ----------------------------------------------------------------
@@ -1426,61 +1452,108 @@ typedef struct {
 } CallArg;
 
 // transfer-unit assignment shared by caller and callee. internal=1 allows the
-// Ace-only byref forms (mut params, >16B read-only by address).
+// Ace-only byref forms (mut params, >16B read-only by address). Units are four
+// per parameter (an HFA uses up to four FP registers, one per leaf).
 static uint32_t assign_cc(SType** params, uint8_t* muts, int nparams, int internal,
-                          TU* units /* 2 per param */) {
+                          TU* units /* 4 per param */) {
     int xn = 0, vn = 0;
     uint32_t soff = 0;
     for (int i = 0; i < nparams; i++) {
         SType* t = params[i];
         uint32_t size = ty_size(t);
-        TU* u = &units[i * 2];
-        u[0].kind = TU_XREG; u[0].reg = -1; u[0].soff = 0; u[0].size = 0;
-        u[1] = u[0];
-        if (internal && ((muts && muts[i]) || size > 16)) { // byref
+        TU* u = &units[i * 4];
+        for (int w = 0; w < 4; w++) {
+            u[w].kind = TU_XREG; u[w].reg = -1;
+            u[w].soff = 0; u[w].size = 0; u[w].off = 0;
+        }
+        if (internal && muts && muts[i]) { // Ace mut parameter: original address
             if (xn < 8) { u[0].kind = TU_XREG; u[0].reg = (int8_t)(xn++); u[0].size = 8; }
-            else { u[0].kind = TU_STACK; u[0].soff = soff; u[0].size = 8; soff += 8; }
+            else {
+                soff = align_up(soff, 8);
+                u[0].kind = TU_STACK; u[0].soff = soff; u[0].size = 8; soff += 8;
+            }
             continue;
         }
         if (is_scalar(t)) {
             uint32_t w = (uint32_t)((scalar_bits(t) + 7) / 8);
             if (w < 4) w = 4; // Darwin PCS: stack slots are at least 4 bytes
             if (is_floatt(t)) {
-                if (vn < 8) { u[0].kind = TU_VREG; u[0].reg = (int8_t)(vn++); u[0].size = 8; }
-                else { u[0].kind = TU_STACK; u[0].soff = soff; u[0].size = w; soff += w; }
+                if (vn < 8) { u[0].kind = TU_VREG; u[0].reg = (int8_t)(vn++); u[0].size = w; }
+                else {
+                    soff = align_up(soff, w > 8 ? 8 : w);
+                    u[0].kind = TU_STACK; u[0].soff = soff; u[0].size = w; soff += w;
+                }
             } else {
                 if (xn < 8) { u[0].kind = TU_XREG; u[0].reg = (int8_t)(xn++); u[0].size = 8; }
-                else { u[0].kind = TU_STACK; u[0].soff = soff; u[0].size = w; soff += w; }
-            }
-            continue;
-        }
-        if (size <= 16) { // chunk pair
-            for (int w = 0; w < 2; w++) {
-                uint32_t off = (uint32_t)w * 8;
-                if (off >= size) break;
-                int fl = word_is_float(t, off);
-                int reg = fl ? (vn < 8 ? vn++ : -1) : (xn < 8 ? xn++ : -1);
-                if (reg >= 0) {
-                    u[w].kind = fl ? TU_VREG : TU_XREG;
-                    u[w].reg = (int8_t)reg;
-                    u[w].size = 8;
-                } else {
-                    u[w].kind = TU_STACK;
-                    u[w].soff = soff;
-                    u[w].size = 8;
-                    soff += 8;
+                else {
+                    soff = align_up(soff, w > 8 ? 8 : w);
+                    u[0].kind = TU_STACK; u[0].soff = soff; u[0].size = w; soff += w;
                 }
             }
             continue;
         }
-        // >16B by value (extern/C ABI): packed stack slot
-        uint32_t a = ty_align(t);
-        if (a > 8) a = 8;
-        soff = align_up(soff, a);
-        u[0].kind = TU_STACK_AGGR;
-        u[0].soff = soff;
-        u[0].size = size;
-        soff += size;
+        uint32_t offs[5];
+        uint8_t dbl[5];
+        int nl = classify_hfa(t, offs, dbl);
+        if (nl >= 1 && nl <= 4) {
+            if (vn + nl <= 8) { // HFA: one FP register per leaf
+                for (int w = 0; w < nl; w++) {
+                    u[w].kind = TU_VREG;
+                    u[w].reg = (int8_t)(vn + w);
+                    u[w].off = offs[w];
+                    u[w].size = dbl[w] ? 8 : 4;
+                }
+                vn += nl;
+                continue;
+            }
+            // FP registers cannot hold the whole HFA: it goes on the stack
+            uint32_t a = ty_align(t);
+            if (a > 8) a = 8;
+            soff = align_up(soff, a);
+            u[0].kind = TU_STACK_AGGR;
+            u[0].soff = soff;
+            u[0].size = size;
+            soff += align_up(size, 8);
+            vn = 8;
+            continue;
+        }
+        if (size > 16) { // non-HFA composite: pointer to a caller-owned copy
+            if (xn < 8) {
+                u[0].kind = TU_XREG;
+                u[0].reg = (int8_t)(xn++);
+                u[0].size = 8;
+            } else {
+                soff = align_up(soff, 8);
+                u[0].kind = TU_STACK;
+                u[0].soff = soff;
+                u[0].size = 8;
+                soff += 8;
+            }
+            continue;
+        }
+        if (size <= 16) { // non-HFA chunks are INTEGER-class, floats included
+            int nw = (int)((size + 7) / 8);
+            if (xn + nw > 8) {
+                uint32_t a = ty_align(t);
+                if (a > 8) a = 8;
+                soff = align_up(soff, a);
+                u[0].kind = TU_STACK_AGGR;
+                u[0].soff = soff;
+                u[0].size = size;
+                soff += align_up(size, 8);
+                xn = 8;
+                continue;
+            }
+            for (int w = 0; w < 2; w++) {
+                uint32_t off = (uint32_t)w * 8;
+                if (off >= size) break;
+                u[w].kind = TU_XREG;
+                u[w].reg = (int8_t)(xn++);
+                u[w].size = 8;
+                u[w].off = off;
+            }
+            continue;
+        }
     }
     return soff;
 }
@@ -1488,29 +1561,45 @@ static uint32_t assign_cc(SType** params, uint8_t* muts, int nparams, int intern
 typedef struct {
     int sret;
     int nunits;
-    TU units[2];
+    TU units[4];
 } RetCls;
 
 static void classify_ret(SType* t, RetCls* r) {
     memset(r, 0, sizeof *r);
     if (!t) return;
     uint32_t size = ty_size(t);
-    if (size > 16) { r->sret = 1; return; }
     if (is_scalar(t)) {
         r->units[0].kind = is_floatt(t) ? TU_VREG : TU_XREG;
         r->units[0].reg = 0;
-        r->units[0].size = 8;
+        r->units[0].size = is_floatt(t) && unwrap(t)->prim == P_F32 ? 4 : 8;
         r->nunits = 1;
         return;
     }
-    for (int w = 0; w < 2; w++) {
-        if ((uint32_t)w * 8 >= size) break;
-        int fl = word_is_float(t, (uint32_t)w * 8);
-        r->units[w].kind = fl ? TU_VREG : TU_XREG;
-        r->units[w].reg = (int8_t)w;
-        r->units[w].size = 8;
-        r->nunits++;
+    uint32_t offs[5];
+    uint8_t dbl[5];
+    int nl = classify_hfa(t, offs, dbl);
+    if (nl >= 1 && nl <= 4) { // HFA returns in v0..v3, one register per leaf
+        for (int w = 0; w < nl; w++) {
+            r->units[w].kind = TU_VREG;
+            r->units[w].reg = (int8_t)w;
+            r->units[w].off = offs[w];
+            r->units[w].size = dbl[w] ? 8 : 4;
+        }
+        r->nunits = nl;
+        return;
     }
+    if (size <= 16) { // non-HFA: INTEGER chunks, float bits included
+        for (int w = 0; w < 2; w++) {
+            if ((uint32_t)w * 8 >= size) break;
+            r->units[w].kind = TU_XREG;
+            r->units[w].reg = (int8_t)w;
+            r->units[w].size = 8;
+            r->units[w].off = (uint32_t)w * 8;
+            r->nunits++;
+        }
+        return;
+    }
+    r->sret = 1;
 }
 
 static void emit_bl_internal(Em* e, const char* p, uint32_t len) {
@@ -1691,9 +1780,31 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
     for (int i = 0; i < n; i++) {
         if (args[i].pre) continue;
         Node* a = args[i].node;
-        int byref = internal && ((muts && i < nparams && muts[i]) ||
-                                 ty_size(eff[i]) > 16);
+        uint32_t arg_size = ty_size(eff[i]);
+        uint32_t hfa_offs[5];
+        uint8_t hfa_dbl[5];
+        int is_hfa = classify_hfa(eff[i], hfa_offs, hfa_dbl) >= 0;
+        int byref = (internal && muts && i < nparams && muts[i]) ||
+                    (arg_size > 16 && !is_hfa);
         if (byref) { // the argument's address travels in an int temp
+            if (!internal && arg_size > 16) {
+                // AAPCS64 passes a >16-byte composite indirectly, but C value
+                // semantics require a caller-owned copy rather than exposing
+                // the Ace argument's original storage to the foreign callee.
+                EV v = gen_expr(e, a);
+                if (v.cls != CLS_ADDR) {
+                    em_err(e, a, "large C aggregate argument must materialize in memory");
+                    args[i].val = v;
+                    continue;
+                }
+                uint32_t copy = temp_slot(e, arg_size, ty_align(eff[i]));
+                frame_addr(e, 15, copy);
+                copy_mem(e, 15, 0, xreg(v.idx), 0, arg_size);
+                int p = tmp_int(e);
+                frame_addr(e, xreg(p), copy);
+                args[i].val = (EV){ CLS_INT, p };
+                continue;
+            }
             if (is_lvalue_node(a)) {
                 args[i].val.cls = CLS_INT;
                 args[i].val.idx = gen_addr(e, a);
@@ -1709,7 +1820,7 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
         args[i].val = gen_expr(e, a);
     }
 
-    TU units[80];
+    TU units[160];
     uint32_t sbytes = assign_cc(eff, muts, n, internal, units);
     if (sbytes > e->out_max) e->out_max = sbytes;
 
@@ -1727,29 +1838,36 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
         int is_agg = v.cls == CLS_ADDR && !pass_addr;
         uint32_t aslot = spill_slot_int(e, v.idx);
         if (is_agg) load_frame(e, 17, aslot, 8, 0); // aggregate base
-        for (int w = 0; w < 2; w++) {
-            TU* u = &units[i * 2 + w];
+        for (int w = 0; w < 4; w++) {
+            TU* u = &units[i * 4 + w];
             if (u->kind == TU_XREG && u->reg < 0) continue;
             if (u->kind == TU_XREG) {
                 if (is_agg) // aggregate chunk
-                    ld_reg(e, u->reg, 17, (uint32_t)w * 8, 8, 0);
+                    ld_reg(e, u->reg, 17, u->off, 8, 0);
                 else // scalar or by-address value from its spill slot
                     load_frame(e, u->reg, aslot, 8, 0);
             } else if (u->kind == TU_VREG) {
                 if (v.cls == CLS_FP)
-                    load_frame_fp(e, u->reg, spill_slot_fp(e, v.idx), 1);
-                else // aggregate chunk loaded as d
-                    ldrf_(e, u->reg, 17, (uint32_t)w * 8, 1);
+                    load_frame_fp(e, u->reg, spill_slot_fp(e, v.idx),
+                                  u->size == 8);
+                else // HFA leaf
+                    ldrf_(e, u->reg, 17, u->off, u->size == 8);
             } else if (u->kind == TU_STACK) {
-                if (is_agg)
-                    ld_reg(e, 16, 17, (uint32_t)w * 8, 8, 0);
+                if (v.cls == CLS_FP) {
+                    // v0-v7 may already hold earlier arguments; use a
+                    // non-argument scratch register for a spilled FP value.
+                    load_frame_fp(e, 16, spill_slot_fp(e, v.idx), 1);
+                    strf_(e, 16, 31, u->soff, u->size == 8);
+                    continue;
+                } else if (is_agg)
+                    ld_reg(e, 16, 17, u->off, 8, 0);
                 else
                     load_frame(e, 16, aslot, 8, 0);
                 uint32_t scale = u->size >= 4 ? u->size : 4;
                 ins(e, (u->size == 8 ? 0xF9000000u : u->size == 4 ? 0xB9000000u :
                        0x39000000u) |
                        ((u->soff / scale) << 10) | (31u << 5) | 16u);
-            } else { // TU_STACK_AGGR: >16B by value (extern only)
+            } else { // TU_STACK_AGGR: small composite/HFA passed on stack
                 load_frame(e, 14, aslot, 8, 0); // base outside copy_mem's x15-x17
                 if (u->soff <= 4095)
                     ins(e, 0x91000000u | (u->soff << 10) | (31u << 5) | 15u);
@@ -1788,11 +1906,12 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
     } else if (rc.nunits == 1 && is_scalar(ret)) {
         // single scalar: stage through the result temp's spill slot
         if (is_floatt(ret)) {
-            store_frame_fp(e, 0, spill_slot_fp(e, sf), 1); // v0
+            int is64 = rc.units[0].size == 8;
+            store_frame_fp(e, 0, spill_slot_fp(e, sf), is64); // v0/s0
             reload_temps(e, si, sf);
             e->vti = si; e->vtf = sf;
             int t = tmp_fp(e);
-            load_frame_fp(e, vreg(t), spill_slot_fp(e, sf), 1);
+            load_frame_fp(e, vreg(t), spill_slot_fp(e, sf), is64);
             out = (EV){ CLS_FP, t };
         } else {
             store_frame(e, 0, spill_slot_int(e, si), 8); // x0
@@ -1804,13 +1923,14 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
         }
     } else if (rc.nunits >= 1) {
         // <=16B aggregate or multi-chunk return: materialize into a frame slot
-        uint32_t off = temp_slot(e, ty_size(ret), ty_align(ret));
+        uint32_t off = temp_slot(e, align_up(ty_size(ret), 8), ty_align(ret));
         for (int w = 0; w < rc.nunits; w++) {
-            frame_addr(e, 16, off - (uint32_t)w * 8); // slots grow down from x29
+            // Slots grow down from x29, while aggregate offsets grow upward.
+            frame_addr(e, 16, off - rc.units[w].off);
             if (rc.units[w].kind == TU_XREG)
                 st_reg(e, rc.units[w].reg, 16, 0, 8);
             else
-                strf_(e, rc.units[w].reg, 16, 0, 1);
+                strf_(e, rc.units[w].reg, 16, 0, rc.units[w].size == 8);
         }
         reload_temps(e, si, sf);
         e->vti = si; e->vtf = sf;
@@ -1969,8 +2089,12 @@ static int gen_addr(Em* e, Node* x) {
         if (s->kind == SYM_FUNC) { // function value: address of the function
             int t = tmp_int(e);
             ESym* fs;
-            if (s->is_extern) {
-                const char* cn = extern_c_name(s);
+            if (s->is_extern || (s->decl && (s->decl->flags & F_EXPO))) {
+                // C-boundary symbol: externs and exports carry their unmangled
+                // linker spelling (the export body is emitted under it)
+                const char* cn = s->is_extern ? extern_c_name(s)
+                                              : (s->decl->cname ? s->decl->cname
+                                                                : s->name);
                 char nm[512];
                 snprintf(nm, sizeof nm, "_%s", cn);
                 fs = sym_intern(&e->syms, nm, (uint32_t)strlen(nm));
@@ -2736,6 +2860,7 @@ static EV gen_call(Em* e, Node* call) {
 
         if (s->kind == SYM_FUNC) {
             CallTarget tgt = { 0, NULL, 0, 0 };
+            int c_boundary = s->is_extern;
             if (s->is_extern) {
                 const char* cn = extern_c_name(s);
                 char nm[512];
@@ -2743,6 +2868,16 @@ static EV gen_call(Em* e, Node* call) {
                 tgt.kind = TK_EXTERN;
                 tgt.name = arena_copy(nm, strlen(nm));
                 tgt.nlen = (uint32_t)strlen(nm);
+            } else if (s->decl && (s->decl->flags & F_EXPO)) {
+                // exported body: emitted under its unmangled C name with the C
+                // convention — internal callers target the same symbol/ABI
+                const char* cn = s->decl->cname ? s->decl->cname : s->name;
+                char nm[512];
+                snprintf(nm, sizeof nm, "_%s", cn);
+                tgt.kind = TK_INTERNAL;
+                tgt.name = arena_copy(nm, strlen(nm));
+                tgt.nlen = (uint32_t)strlen(nm);
+                c_boundary = 1;
             } else {
                 SType* cft = node_ty(callee);
                 if (!cft || cft->kind != SK_FUNC) cft = s->type;
@@ -2793,7 +2928,7 @@ static EV gen_call(Em* e, Node* call) {
             if (s->decl && (s->decl->flags & F_METHOD) && n > 0)
                 muts[0] = 1; // uniform method receiver ABI; semantic mut is separate
             return emit_call(e, call, args, n, ft->params, muts,
-                             ft->nparams, !s->is_extern, tgt, ft->ret);
+                             ft->nparams, !c_boundary, tgt, ft->ret);
         }
     }
     em_err(e, call, "unsupported callee in codegen");
@@ -3635,12 +3770,14 @@ static void emit_stmt(Em* e, Node* s) {
                         defer = w;
                         continue;
                     }
-                    ld_reg(e, rc.units[w].reg, xreg(v.idx), (uint32_t)w * 8, 8, 0);
+                    ld_reg(e, rc.units[w].reg, xreg(v.idx), rc.units[w].off, 8, 0);
                 } else
-                    ldrf_(e, rc.units[w].reg, xreg(v.idx), (uint32_t)w * 8, 1);
+                    ldrf_(e, rc.units[w].reg, xreg(v.idx), rc.units[w].off,
+                          rc.units[w].size == 8);
             }
             if (defer >= 0)
-                ld_reg(e, rc.units[defer].reg, xreg(v.idx), (uint32_t)defer * 8, 8, 0);
+                ld_reg(e, rc.units[defer].reg, xreg(v.idx),
+                       rc.units[defer].off, 8, 0);
             emit_epilogue(e);
             return;
         }
@@ -3836,7 +3973,9 @@ static void emit_epilogue(Em* e) {
 }
 
 static void incoming_addr(Em* e, int rd, uint32_t soff) {
-    uint32_t d = 24 + soff;
+    // x29 is the stack pointer after saving x29/x30. Incoming stack
+    // arguments begin at the caller's SP, exactly 16 bytes above it.
+    uint32_t d = 16 + soff;
     if (d <= 4095)
         ins(e, 0x91000000u | (d << 10) | (29u << 5) | ((uint32_t)rd & 31u));
     else {
@@ -3886,17 +4025,21 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
     }
     if ((f->flags & F_METHOD) && np > 0)
         muts[0] = 1; // every method receives self through the vtable data-pointer ABI
-    TU units[80];
+    TU units[160];
     assign_cc(pt, muts, np, !export_c, units);
     for (int i = 0; i < np; i++) {
         SType* t = pt[i];
         uint32_t size = ty_size(t);
-        int byref = !export_c && (muts[i] || size > 16);
-        uint32_t slot = slot_alloc(e, f->kids[i], byref ? 8 : size,
+        uint32_t hfa_offs[5];
+        uint8_t hfa_dbl[5];
+        int is_hfa = classify_hfa(t, hfa_offs, hfa_dbl) >= 0;
+        int byref = (!export_c && muts[i]) || (size > 16 && !is_hfa);
+        uint32_t storage = byref ? 8 : is_scalar(t) ? size : align_up(size, 8);
+        uint32_t slot = slot_alloc(e, f->kids[i], storage,
                                    byref ? 8 : ty_align(t));
         if (byref) e->slots[e->nslots - 1].byref = 1;
-        for (int w = 0; w < 2; w++) {
-            TU* u = &units[i * 2 + w];
+        for (int w = 0; w < 4; w++) {
+            TU* u = &units[i * 4 + w];
             if (u->kind == TU_XREG) {
                 if (u->reg < 0) continue;
                 uint32_t bw = byref ? 8 : is_scalar(t)
@@ -3905,22 +4048,21 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
                     store_frame(e, u->reg, slot, bw);
                 } else {
                     frame_addr(e, 16, slot);
-                    st_reg(e, u->reg, 16, (uint32_t)w * 8, bw);
+                    st_reg(e, u->reg, 16, u->off, bw);
                 }
             } else if (u->kind == TU_VREG) {
-                int is64 = is_scalar(t) ? unwrap(t)->prim == P_F64 : 1;
                 frame_addr(e, 16, slot);
-                strf_(e, u->reg, 16, (uint32_t)w * 8, is64);
+                strf_(e, u->reg, 16, u->off, u->size == 8);
             } else if (u->kind == TU_STACK) {
                 incoming_addr(e, 16, u->soff);
-                if (is_floatt(t) && w == 0) {
+                if (is_floatt(t)) {
                     ldrf_(e, 0, 16, 0, u->size == 8);
                     store_frame_fp(e, 0, slot, u->size == 8);
                 } else {
                     uint32_t bw = u->size < 8 ? u->size : 8;
                     ld_reg(e, 16, 16, 0, bw, 0);
                     frame_addr(e, 17, slot);
-                    st_reg(e, 16, 17, byref ? 0u : (uint32_t)w * 8, bw);
+                    st_reg(e, 16, 17, byref ? 0u : u->off, bw);
                 }
             } else { // TU_STACK_AGGR: by-value stack (extern/export C ABI)
                 incoming_addr(e, 17, u->soff);
@@ -3935,8 +4077,15 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
     if (!e->ended_return) { // fall-off end: zero the result registers
         if (rc.nunits == 1 && is_scalar(ret) && is_floatt(ret))
             ins(e, unwrap(ret)->prim == P_F64 ? 0x9E6703E0u : 0x1E2703E0u);
-        else if (rc.nunits >= 1)
-            load_imm(e, 0, 0, 0);
+        else if (rc.nunits >= 1) {
+            for (int w = 0; w < rc.nunits; w++) {
+                if (rc.units[w].kind == TU_XREG)
+                    load_imm(e, 1, rc.units[w].reg, 0);
+                else
+                    ins(e, (rc.units[w].size == 8 ? 0x9E6703E0u : 0x1E2703E0u) |
+                           (uint32_t)rc.units[w].reg);
+            }
+        }
         emit_epilogue(e);
     }
     e->fix[e->subsp_fix].frame = align_up(e->frame + e->out_max, 16);

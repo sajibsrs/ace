@@ -1,0 +1,187 @@
+// expect-exit: 0
+// Bidirectional Apple-arm64 C ABI oracle. The companion C file is compiled by
+// clang; calls cross both ways for scalars, pointers, small/mixed aggregates,
+// HFAs, large indirect aggregates, and exhausted register banks.
+
+Mixed: struct { a: i32, b: f32 }
+Pair: struct { a: i64, b: i32 }
+Hfa3: struct { a: f32, b: f32, c: f32 }
+Hfa4: struct { a: f64, b: f64, c: f64, d: f64 }
+Arr3: struct { v: [3]f32 }
+Large: struct { a: i64, b: i64, c: i64 }
+Code: distinct i32
+
+extern "c" {
+    c_scalars(a: i8, b: i16, c: i32, d: i64, e: u8, f: u16,
+              g: u32, h: u64, i: usize): i64
+    c_floats(a: f32, b: f64): f64
+    c_f32(value: f32): f32
+    c_bump(value: mut *i32)
+    c_code(value: Code): Code
+    c_mixed(value: Mixed): Mixed
+    c_pair(value: Pair): Pair
+    c_hfa3(value: Hfa3): Hfa3
+    c_hfa4(value: Hfa4): Hfa4
+    c_arr3(value: Arr3): Arr3
+    c_large(value: Large): Large
+    c_large_copy(value: Large): i64
+    c_stack(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64,
+            g: i64, pair: Pair, tail: i32): i64
+    c_stack_align(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64,
+                  g: i64, h: i64, narrow: i32, wide: i64): i64
+    c_fpstack(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64,
+              g: f64, h: Hfa3, tail: f64): f64
+    c_fpstack_check(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64,
+                    g: f64, h: Hfa3, tail: f64): i32
+    c_fp_align(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64,
+               g: f64, h: f64, narrow: f32, wide: f64): f64
+    c_run_ace(): i32
+}
+
+export ace_scalars(a: i8, b: i16, c: i32, d: i64, e: u8, f: u16,
+                   g: u32, h: u64, i: usize): i64 {
+    return i64(a) + i64(b) + i64(c) + d + i64(e) + i64(f) +
+           i64(g) + i64(h) + i64(i)
+}
+
+export ace_floats(a: f32, b: f64): f64 {
+    return f64(a) + b
+}
+
+export ace_f32(value: f32): f32 {
+    return value + 0.75
+}
+
+export ace_bump(value: mut *i32) {
+    ~value = ~value + 7
+}
+
+export ace_code(value: Code): Code {
+    return Code(i32(value) + 1)
+}
+
+export ace_mixed(value: Mixed): Mixed {
+    return Mixed{ a: value.a + 2, b: value.b + 3.0 }
+}
+
+export ace_pair(value: Pair): Pair {
+    return Pair{ a: value.a + 3, b: value.b + 4 }
+}
+
+export ace_hfa3(value: Hfa3): Hfa3 {
+    return Hfa3{ a: value.a + 1.0, b: value.b + 2.0, c: value.c + 3.0 }
+}
+
+export ace_hfa4(value: Hfa4): Hfa4 {
+    return Hfa4{
+        a: value.a + 1.0,
+        b: value.b + 2.0,
+        c: value.c + 3.0,
+        d: value.d + 4.0,
+    }
+}
+
+export ace_arr3(value: Arr3): Arr3 {
+    out: [3]f32 = [value.v[0] + 2.0, value.v[1] + 3.0, value.v[2] + 4.0]
+    return Arr3{ v: out }
+}
+
+export ace_large(value: Large): Large {
+    return Large{ a: value.a + 4, b: value.b + 5, c: value.c + 6 }
+}
+
+export ace_stack(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64,
+                 g: i64, pair: Pair, tail: i32): i64 {
+    return a + b + c + d + e + f + g + pair.a + i64(pair.b) + i64(tail)
+}
+
+export ace_fpstack(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64,
+                   g: f64, h: Hfa3, tail: f64): f64 {
+    return a + b + c + d + e + f + g + f64(h.a) + f64(h.b) + f64(h.c) + tail
+}
+
+export ace_stack_align(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64,
+                       g: i64, h: i64, narrow: i32, wide: i64): i64 {
+    return a + b + c + d + e + f + g + h + i64(narrow) + wide
+}
+
+export ace_fp_align(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64,
+                    g: f64, h: f64, narrow: f32, wide: f64): f64 {
+    return a + b + c + d + e + f + g + h + f64(narrow) + wide
+}
+
+main(): int {
+    if c_scalars(-1, 2, 3, 4, 5, 6, 7, 8, 9) != 43 {
+        return 1
+    }
+    if c_floats(1.25, 2.5) != 3.75 {
+        return 2
+    }
+    if c_f32(1.25) != 1.75 {
+        return 14
+    }
+    x: i32 = 10
+    c_bump(mut &x)
+    if x != 17 || c_code(Code(41)) != Code(42) {
+        return 3
+    }
+
+    mixed: Mixed = c_mixed(Mixed{ a: 10, b: 1.5 })
+    if mixed.a != 12 || mixed.b != 4.5 {
+        return 4
+    }
+    pair: Pair = c_pair(Pair{ a: 20, b: 3 })
+    if pair.a != 23 || pair.b != 7 {
+        return 5
+    }
+    h3: Hfa3 = c_hfa3(Hfa3{ a: 1.0, b: 2.0, c: 3.0 })
+    if h3.a != 2.0 || h3.b != 4.0 || h3.c != 6.0 {
+        return 6
+    }
+    h4: Hfa4 = c_hfa4(Hfa4{ a: 1.0, b: 2.0, c: 3.0, d: 4.0 })
+    if h4.a != 2.0 || h4.b != 4.0 || h4.c != 6.0 || h4.d != 8.0 {
+        return 7
+    }
+    arr_values: [3]f32 = [1.0, 2.0, 3.0]
+    arr: Arr3 = c_arr3(Arr3{ v: arr_values })
+    if arr.v[0] != 3.0 || arr.v[1] != 5.0 || arr.v[2] != 7.0 {
+        return 8
+    }
+    large: Large = Large{ a: 1, b: 2, c: 3 }
+    changed: Large = c_large(large)
+    if changed.a != 5 || changed.b != 7 || changed.c != 9 {
+        return 9
+    }
+    if c_large_copy(large) != 104 || large.a != 1 {
+        return 10
+    }
+    if c_stack(1, 2, 3, 4, 5, 6, 7, Pair{ a: 8, b: 9 }, 10) != 55 {
+        return 11
+    }
+    if c_stack_align(1, 2, 3, 4, 5, 6, 7, 8, 4, 7) != 47 {
+        return 15
+    }
+    fpcheck: i32 = c_fpstack_check(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+                                   Hfa3{ a: 8.0, b: 9.0, c: 10.0 }, 11.0)
+    if fpcheck != 0 {
+        return int(40 + fpcheck)
+    }
+    if c_fpstack(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+                 Hfa3{ a: 8.0, b: 9.0, c: 10.0 }, 11.0) != 66.0 {
+        return 12
+    }
+    if c_fp_align(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0,
+                  4.0, 7.0) != 47.0 {
+        return 16
+    }
+    // Direct Ace calls to exported bodies use that body's C ABI too.
+    direct: Large = ace_large(large)
+    if direct.a != 5 || direct.b != 7 || direct.c != 9 {
+        return 13
+    }
+    from_c: i32 = c_run_ace()
+    if from_c != 0 {
+        return int(20 + from_c)
+    }
+    return 0
+}

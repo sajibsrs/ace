@@ -48,3 +48,14 @@ main(): int {
 later(value: int): int {
     return value
 }
+
+Point: struct { x: f32, y: f32 }
+
+extern "c" {
+    translate(point: Point, dx: f32, dy: f32): Point
+}
+
+export increment_c(value: mut *i32): i32 {
+    ~value += 1
+    return ~value
+}

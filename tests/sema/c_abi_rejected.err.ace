@@ -1,0 +1,31 @@
+Flag: enum { off, on }
+Shape: contract { area(): f64 }
+Event: union { none, value: i32 }
+BadDistinct: distinct string
+BadField: struct { text: string }
+Box[T]: struct { value: T }
+
+extern "c" {
+    bad_bool(value: bool)
+    bad_enum(value: Flag)
+    bad_string(value: string)
+    bad_slice(value: []u8)
+    bad_contract(value: Shape)
+    bad_union(value: Event)
+    bad_error(value: Error)
+    bad_descriptor(value: ErrorDescriptor)
+    bad_typeid(value: typeid)
+    bad_tuple(): (i32, i32)
+    bad_function(value: (i32): i32)
+    bad_array(value: [4]i32): [4]i32
+    bad_pointer(value: *string)
+    bad_distinct(value: BadDistinct)
+    bad_field(value: BadField)
+    bad_stamp(value: Box[i32])
+}
+
+export bad_mut(mut value: i32) {
+}
+
+export bad_generic[T](value: T) {
+}

@@ -68,6 +68,23 @@ for f in tests/sema/*.err.ace; do
     fi
 done
 
+c_abi_errors=$("$ACE" tests/sema/c_abi_rejected.err.ace 2>&1)
+for want in \
+    "parameter 'value' has type bool, which is not C-ABI compatible" \
+    "parameter 'value' has type string, which is not C-ABI compatible" \
+    "return type (tuple) is not C-ABI compatible" \
+    "return type [N]T is not C-ABI compatible" \
+    "parameter 'value' has type *T, which is not C-ABI compatible" \
+    "parameter 'value' has type BadField, which is not C-ABI compatible" \
+    "parameter 'value' has type Box, which is not C-ABI compatible" \
+    "parameter 'value' is 'mut' — mut parameters stay internal; pass a mut *T instead" \
+    "function 'bad_generic' cannot be generic"; do
+    if ! printf '%s\n' "$c_abi_errors" | grep -qF "$want"; then
+        echo "FAIL: missing C ABI diagnostic '$want'"
+        fail=1
+    fi
+done
+
 printf_format_errors=$("$ACE" tests/sema/printf_formats.err.ace 2>&1)
 for want in \
     "format must be a string literal or static-literal const global" \
@@ -274,6 +291,7 @@ fi
 if [ -d tests/driver ]; then
     mkdir -p "/tmp/ace_driver/lib dir" "/tmp/ace_driver/space dir"
     cc -c tests/driver/helper.c -o /tmp/ace_driver/helper_raw.o
+    cc -c tests/driver/abi.c -o /tmp/ace_driver/abi_c.o
     ar rcs "/tmp/ace_driver/lib dir/libhelper.a" /tmp/ace_driver/helper_raw.o
     cp /tmp/ace_driver/helper_raw.o '/tmp/ace_driver/evil;$(echo pwn)`id`.o'
     cp /tmp/ace_driver/helper_raw.o "/tmp/ace_driver/space dir/help lib.o"
@@ -313,6 +331,21 @@ if [ -d tests/driver ]; then
     if [ "$got" -ne 7 ]; then
         echo "FAIL: shell metacharacters in names exited $got, want 7"
         fail=1
+    fi
+    # Bidirectional C ABI oracle: clang owns the foreign half and calls Ace
+    # exports; Ace calls the same C object through extern declarations.
+    if ! "$ACE" -o /tmp/ace_driver/app_abi tests/driver/abi.ace \
+         /tmp/ace_driver/abi_c.o >/dev/null 2>/tmp/ace_test_errs; then
+        echo "FAIL: C ABI oracle did not compile/link"
+        cat /tmp/ace_test_errs
+        fail=1
+    else
+        /tmp/ace_driver/app_abi
+        got=$?
+        if [ "$got" -ne 0 ]; then
+            echo "FAIL: bidirectional C ABI oracle exited $got, want 0"
+            fail=1
+        fi
     fi
 
     driver_diag() {

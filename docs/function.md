@@ -179,6 +179,34 @@ main(): int {
 AArch64 target, its `int` result travels in `x0`; the process observes the low
 32 bits as its exit status.
 
+## C-compatible functions
+
+`extern "c"` declarations and `export` definitions use the platform C ABI.
+Their parameter and return types are restricted to representations the compiler
+has verified: fixed-width integers, `int`, `uint`, `usize`, `f32`, `f64`,
+compatible pointers and distinct types, and structs composed recursively from
+those types. Arrays are allowed as struct fields or behind pointers, but not as
+direct parameters or returns.
+
+```ace
+Point: struct { x: f32, y: f32 }
+
+extern "c" {
+    translate(point: Point, dx: f32, dy: f32): Point
+}
+
+export increment(value: mut *i32): i32 {
+    ~value += 1
+    return ~value
+}
+```
+
+Boundary parameters cannot use Ace's `mut parameter` convention. Pass an
+explicit `mut *T` when C receives writable storage. `bool`, enums, strings,
+slices, contracts, tagged unions, errors, tuples, function values, and generic
+shapes are currently rejected at the boundary. Wrappers must translate those
+values to an allowed representation explicitly.
+
 ## Current limits
 
 - User-defined functions are not variadic. Pass a slice instead.

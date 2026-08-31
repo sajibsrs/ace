@@ -668,19 +668,53 @@ static const char* method_key(Node* owner, const char* name, uint32_t len,
     return key;
 }
 
-static int has_internal_abi_type(SType* t, int depth) {
-    if (!t || depth > 32) return 0;
-    if (t == T_ERROR || t == T_ERROR_DESC || t->kind == SK_ERROR) return 1;
-    if (t->kind == SK_PRIM) return t->prim == P_TYPEID;
-    if (t->kind == SK_UNION) return 1; // no C-compatible representation yet
-    if (t->kind == SK_PTR || t->kind == SK_SLICE || t->kind == SK_ARRAY ||
-        t->kind == SK_DISTINCT)
-        return has_internal_abi_type(t->base, depth + 1);
-    if (t->kind == SK_STRUCT || t->kind == SK_TUPLE) {
+/*
+ * C-ABI whitelist (C Interop #3, chunk 1B decision): positive and
+ * position-aware. CABI_DIRECT governs boundary parameters and returns;
+ * CABI_FIELD governs struct members; CABI_POINTEE governs pointer targets.
+ * Arrays are legal only nested in aggregates or behind pointers. The stack
+ * carries the in-progress nominal structs: a repeat hit is a cycle, which can
+ * only arise through a pointer, so it is compatible and recursion terminates.
+ */
+enum { CABI_DIRECT, CABI_FIELD, CABI_POINTEE };
+
+static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
+    if (!t) return 1; // no-value shape: legal only as a return
+    switch (t->kind) {
+    case SK_ERR:
+        return 1; // already-diagnosed type; do not cascade
+    case SK_PRIM:
+        switch (t->prim) {
+        case P_I8: case P_I16: case P_I32: case P_I64:
+        case P_U8: case P_U16: case P_U32: case P_U64:
+        case P_F32: case P_F64: case P_USIZE:
+            return 1;
+        default:
+            return 0; // bool, string, typeid
+        }
+    case SK_PTR:
+        return is_c_abi_type(t->base, CABI_POINTEE, stack, nstack);
+    case SK_DISTINCT:
+        return is_c_abi_type(t->base, pos, stack, nstack);
+    case SK_ARRAY:
+        return pos != CABI_DIRECT &&
+               is_c_abi_type(t->base, pos, stack, nstack);
+    case SK_STRUCT: {
+        if (t->nargs || (t->decl && t->decl->c)) return 0; // generic shapes
+        for (int i = 0; i < nstack; i++)
+            if (stack[i] == t) return 1; // cycle through a pointer
+        if (nstack >= 512) return 0;
+        stack[nstack] = t;
         for (int i = 0; i < t->nfields; i++)
-            if (has_internal_abi_type(t->fields[i].t, depth + 1)) return 1;
+            if (!is_c_abi_type(t->fields[i].t, CABI_FIELD, stack, nstack + 1))
+                return 0;
+        return 1;
     }
-    return 0;
+    default:
+        // slices, tuples (multi-return), function values, enums, contracts,
+        // tagged unions, Error/ErrorDescriptor, type parameters, void/ut
+        return 0;
+    }
 }
 
 static Sym* declare_func(Ck* k, Node* f, int is_extern) {
@@ -707,12 +741,31 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
     }
     SType* ft = build_func_type(k, f, NULL, 0);
     if (is_extern || (f->flags & F_EXPO)) {
-        int bad = has_internal_abi_type(ft->ret, 0);
-        for (int i = 0; i < ft->nparams; i++)
-            bad |= has_internal_abi_type(ft->params[i], 0);
-        if (bad)
-            ck_err(k, f,
-                   "C-boundary signatures cannot use tagged unions, Error, ErrorDescriptor, or typeid");
+        if (f->c) {
+            ck_err(k, f, "C-boundary function '%.*s' cannot be generic",
+                   (int)f->len, f->str);
+        } else {
+            SType* stack[512];
+            if (ft->ret && ft->ret->kind != SK_ERR &&
+                !is_c_abi_type(ft->ret, CABI_DIRECT, stack, 0))
+                ck_err(k, f->a ? f->a : f,
+                       "C-boundary return type %s is not C-ABI compatible",
+                       type_name(ft->ret));
+            for (int i = 0; i < ft->nparams; i++) {
+                if (f->kids[i]->flags & F_MUT) {
+                    ck_err(k, f->kids[i],
+                           "C-boundary parameter '%.*s' is 'mut' — mut parameters stay internal; pass a mut *T instead",
+                           (int)f->kids[i]->len, f->kids[i]->str);
+                    continue;
+                }
+                if (ft->params[i]->kind != SK_ERR &&
+                    !is_c_abi_type(ft->params[i], CABI_DIRECT, stack, 0))
+                    ck_err(k, f->kids[i]->a ? f->kids[i]->a : f->kids[i],
+                           "C-boundary parameter '%.*s' has type %s, which is not C-ABI compatible",
+                           (int)f->kids[i]->len, f->kids[i]->str,
+                           type_name(ft->params[i]));
+            }
+        }
     }
     for (Sym* old = head; old; old = old->overload) {
         int old_nt = old->decl && old->decl->c ? old->decl->c->nkids : 0;
