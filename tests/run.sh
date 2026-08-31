@@ -221,11 +221,12 @@ if [ -d tests/emit ]; then
         net_undef=$(nm -u /tmp/ace_emit/net.o 2>/dev/null)
         if printf '%s\n' "$net_undef" |
            grep -Eq '_(malloc|calloc|realloc|free|printf|snprintf)$'; then
-            echo "FAIL: net must not depend on allocation or C formatting"
+            echo "FAIL: net must not call a general-purpose allocator or C formatting"
             fail=1
         fi
         for symbol in _socket _setsockopt _fcntl _bind _listen _accept \
-                      _connect _recv _send _close ___error; do
+                      _connect _recv _send _getaddrinfo _freeaddrinfo \
+                      _close ___error; do
             if ! printf '%s\n' "$net_undef" | grep -q "^$symbol$"; then
                 echo "FAIL: net object is missing Darwin boundary '$symbol'"
                 fail=1

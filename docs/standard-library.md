@@ -280,10 +280,11 @@ time) are not implemented yet.
 
 ## net
 
-`net` provides a thin, allocation-free IPv4 TCP layer. Its public values and
-operations are platform-neutral; Darwin socket structures, constants, byte
-order, and C bindings stay private inside the module. `net.Socket` is a
-transparent alias of `sys.Fd`, so close sockets with `sys.close`.
+`net` provides a thin IPv4 TCP layer with allocation-free core socket
+operations. Its public values and operations are platform-neutral; Darwin
+socket structures, constants, byte order, and C bindings stay private inside
+the module. `net.Socket` is a transparent alias of `sys.Fd`, so close sockets
+with `sys.close`.
 
 ```ace
 import net
@@ -312,10 +313,10 @@ main(): int {
 `Address4: struct { ip: [4]u8, port: u16 }` stores IP octets in ordinary
 textual order and the port in host order. Its canonical zero is
 `0.0.0.0:0`, usable as the wildcard address with an OS-selected port.
-Parsing, formatting, DNS, IPv6, and local/peer address queries are not part of
-this initial surface.
+Parsing, formatting, IPv6, and local/peer address queries are not part of this
+initial surface.
 
-The core operations each perform one explicit socket operation and never
+The core socket operations each perform one explicit operation and never
 allocate, buffer, retry, close, or replace a socket on failure:
 
 - `socket(SocketKind.tcp): (Socket, Error)` creates an IPv4 TCP socket.
@@ -335,13 +336,41 @@ allocate, buffer, retry, close, or replace a socket on failure:
 - `send(socket, []u8)` and `send(socket, string)` each perform one send and
   return partial counts as-is. A closed peer becomes an ordinary send error
   rather than terminating the process with `SIGPIPE`.
+- `resolve4(host, port, mut addresses): (usize, Error)` performs one blocking
+  hostname lookup and writes IPv4 TCP endpoints into caller-owned storage in
+  resolver order. The returned count is the number written; each address uses
+  the supplied host-order port. Empty storage, invalid hostname bytes, lookup
+  failure, or no IPv4 result returns zero with `ResolveErr`.
+
+```ace
+storage: [8]net.Address4
+addresses: []net.Address4 = storage[0..8]
+count: usize, err: Error = net.resolve4("example.com", u16(80), mut addresses)
+if err == null && count != 0 {
+    sock: net.Socket, socket_err: Error = net.socket(net.SocketKind.tcp)
+    if socket_err == null {
+        socket_err = net.connect(sock, addresses[0])
+        sys.close(sock)
+    }
+}
+```
+
+The Darwin resolver temporarily allocates its private result list and frees it
+before `resolve4` returns. This is a narrow resolver-boundary exception: no
+resolver-owned pointer escapes and the application owns all returned storage.
+The initial API does not indicate that additional results were truncated or
+expose the platform resolver's detailed status. A native caller-buffer DNS
+implementation, richer diagnostics, truncation discovery, IPv6, asynchronous
+resolution, caching, and resolver-policy controls remain future improvements.
 
 Every error is last and null on success. The operation-specific public domains
 are `SocketErr`, `SetReuseAddressErr`, `SetReusePortErr`,
 `SetNonblockingErr`, `BindErr`, `ListenErr`, `AcceptErr`, `ConnectErr`,
-`ReceiveErr`, and `SendErr`. Compare `error.domain` with the corresponding
-`typeid(net.*Err)`; query `sys.errno()` immediately to learn the OS reason.
-Closing uses `sys.close` and therefore retains `sys.CloseErr`.
+`ReceiveErr`, `SendErr`, and `ResolveErr`. Compare `error.domain` with the
+corresponding `typeid(net.*Err)`. For socket-operation errors, query
+`sys.errno()` immediately to learn the OS reason. Detailed resolver status is
+not exposed by the initial `resolve4`. Closing uses `sys.close` and therefore
+retains `sys.CloseErr`.
 
 No retry policy is hidden. In particular, interrupted, aborted, would-block,
 and resource failures from `accept` remain caller-visible. Nonblocking

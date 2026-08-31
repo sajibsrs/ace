@@ -103,6 +103,17 @@ net_example(): int {
     if sys.close(sock) != null {
         return 3
     }
+
+    storage: [8]net.Address4
+    addresses: []net.Address4 = storage[0..8]
+    count: usize, resolve_err: Error = net.resolve4("example.com", u16(80), mut addresses)
+    if resolve_err == null && count != 0 {
+        client: net.Socket, socket_err: Error = net.socket(net.SocketKind.tcp)
+        if socket_err == null {
+            socket_err = net.connect(client, addresses[0])
+            sys.close(client)
+        }
+    }
     return 0
 }
 

@@ -84,6 +84,38 @@ check_failures(): int {
     return 0
 }
 
+check_resolution(): int {
+    storage: [2]net.Address4
+    storage[0] = loopback(u16(1))
+    storage[1] = loopback(u16(54321))
+    first: []net.Address4 = storage[0..1]
+
+    count: usize, err: Error = net.resolve4("localhost", u16(8080), mut first)
+    if err != null || count != 1 {
+        return 1
+    }
+    if storage[0].ip[0] != 127 || storage[0].ip[1] != 0 ||
+       storage[0].ip[2] != 0 || storage[0].ip[3] != 1 ||
+       storage[0].port != 8080 {
+        return 2
+    }
+    if storage[1].port != 54321 {
+        return 3
+    }
+
+    empty: []net.Address4 = null
+    count, err = net.resolve4("localhost", u16(80), mut empty)
+    if count != 0 || !check_error(err, typeid(net.ResolveErr)) {
+        return 4
+    }
+
+    count, err = net.resolve4("local\x00host", u16(80), mut first)
+    if count != 0 || !check_error(err, typeid(net.ResolveErr)) {
+        return 5
+    }
+    return 0
+}
+
 child(port: u16): int {
     sock: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
     if err != null {
@@ -117,6 +149,10 @@ main(): int {
     failure: int = check_failures()
     if failure != 0 {
         return failure
+    }
+    failure = check_resolution()
+    if failure != 0 {
+        return 40 + failure
     }
 
     listener: net.Socket = net.Socket(-1)

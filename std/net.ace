@@ -30,6 +30,7 @@ pub AcceptErr: distinct i32
 pub ConnectErr: distinct i32
 pub ReceiveErr: distinct i32
 pub SendErr: distinct i32
+pub ResolveErr: distinct i32
 
 pub socket(kind: SocketKind): (Socket, Error) {
     result: Socket, err: Error = socket_darwin(kind)
@@ -81,6 +82,11 @@ pub send(sock: Socket, data: string): (int, Error) {
     return count, err
 }
 
+pub resolve4(host: string, port: u16, mut addresses: []Address4): (usize, Error) {
+    count: usize, err: Error = resolve4_darwin(host, port, mut addresses)
+    return count, err
+}
+
 // --- private Darwin implementation ---------------------------------------
 
 /* Darwin's sockaddr_in layout: length/family bytes, network-order port,
@@ -95,6 +101,17 @@ DarwinAddress4: struct {
     zero: [8]u8,
 }
 
+DarwinAddrInfo: struct {
+    flags: i32,
+    family: i32,
+    kind: i32,
+    protocol: i32,
+    address_length: u32,
+    canonical_name: *u8,
+    address: *DarwinAddress4,
+    next: *DarwinAddrInfo,
+}
+
 AF_INET: const i32 = 2
 SOCK_STREAM: const i32 = 1
 SOL_SOCKET: const i32 = 0xffff
@@ -107,6 +124,7 @@ O_NONBLOCK: const i32 = 0x0004
 EINVAL: const i32 = 22
 SOCKADDR4_SIZE: const u32 = 16
 I32_MAX_USIZE: const usize = 0x7fffffff
+HOST_NAME_MAX: const usize = 253
 
 socket_error: const ErrorDescriptor = ErrorDescriptor {
     code: 0, domain: typeid(SocketErr), message: "socket failed",
@@ -148,6 +166,10 @@ send_error: const ErrorDescriptor = ErrorDescriptor {
     code: 0, domain: typeid(SendErr), message: "send failed",
 }
 
+resolve_error: const ErrorDescriptor = ErrorDescriptor {
+    code: 0, domain: typeid(ResolveErr), message: "resolve failed",
+}
+
 extern "c" {
     c_socket(domain: i32, kind: i32, protocol: i32): i32 = "socket"
     c_setsockopt(socket: i32, level: i32, option: i32, value: *i32, length: u32): i32 = "setsockopt"
@@ -158,6 +180,9 @@ extern "c" {
     c_recv(socket: i32, buffer: mut *u8, length: usize, flags: i32): i64 = "recv"
     c_send(socket: i32, data: *u8, length: usize, flags: i32): i64 = "send"
     c_fcntl(socket: i32, command: i32, ...): i32 = "fcntl"
+    c_getaddrinfo(host: *u8, service: *u8, hints: *DarwinAddrInfo,
+                  result: mut **DarwinAddrInfo): i32 = "getaddrinfo"
+    c_freeaddrinfo(result: *DarwinAddrInfo) = "freeaddrinfo"
     c_errno(): mut *i32 = "__error"
 }
 
@@ -332,4 +357,62 @@ send_string_darwin(sock: Socket, data: string): (int, Error) {
         return 0, Error(&send_error)
     }
     return int(count), null
+}
+
+resolve4_darwin(host: string, port: u16, mut addresses: []Address4): (usize, Error) {
+    if host.len > HOST_NAME_MAX || addresses.len == 0 {
+        return usize(0), Error(&resolve_error)
+    }
+
+    name: [254]u8
+    for index: usize in usize(0) .. host.len {
+        byte: u8 = host[index]
+
+        if byte == 0 {
+            return usize(0), Error(&resolve_error)
+        }
+        name[index] = byte
+    }
+    name[host.len] = u8(0)
+
+    hints: DarwinAddrInfo = DarwinAddrInfo {
+        flags: 0,
+        family: AF_INET,
+        kind: SOCK_STREAM,
+        protocol: 0,
+        address_length: u32(0),
+        canonical_name: null,
+        address: null,
+        next: null,
+    }
+    result: *DarwinAddrInfo = null
+
+    if c_getaddrinfo(&name[0], null, &hints, mut &result) != 0 || result == null {
+        return usize(0), Error(&resolve_error)
+    }
+
+    written: usize = 0
+    current: *DarwinAddrInfo = result
+
+    scan: {
+        if current == null || written == addresses.len {
+            break scan
+        }
+
+        if current.family == AF_INET && current.address != null &&
+           current.address_length >= SOCKADDR4_SIZE {
+            address: Address4 = from_darwin(~current.address)
+            address.port = port
+            addresses[written] = address
+            written += usize(1)
+        }
+        current = current.next
+        continue scan
+    }
+
+    c_freeaddrinfo(result)
+    if written == 0 {
+        return usize(0), Error(&resolve_error)
+    }
+    return written, null
 }

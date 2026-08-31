@@ -1,4 +1,4 @@
-import Address4, Socket, SocketKind, socket, send from net
+import Address4, ResolveErr, Socket, SocketKind, resolve4, socket, send from net
 
 check(address: Address4, socket_value: Socket): int {
     if address.port == 0 {
@@ -20,6 +20,12 @@ main(): int {
     value: Socket, err: Error = socket(SocketKind.tcp)
     if err != null {
         return 1
+    }
+    storage: [1]Address4 = [address]
+    addresses: []Address4 = storage[0..1]
+    count: usize, resolve_err: Error = resolve4("localhost", u16(80), mut addresses)
+    if count == 0 && resolve_err != null && resolve_err.domain != typeid(ResolveErr) {
+        return 2
     }
     return check(address, value)
 }
