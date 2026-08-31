@@ -29,19 +29,30 @@ Ace is a systems programming language and its bootstrap compiler. The language d
 - Declarations are `name: type`; functions are keywordless with trailing returns; function values are typed by signature; no C pointer-to-function syntax.
 - Single-pass compilation, recursive descent parsing, direct machine-code emission; no whole-program analysis.
 - Safety is deliberately minimal: cheap local compile-time rules plus checked-build bounds, overflow, and allocator diagnostics; release strips runtime checks. No ownership, lifetime, borrow, or whole-program safety analysis.
-- Control flow: no goto — labeled blocks with `break label`; `for-in` loops only (lowering to index loops over pointer+length); no fallthrough in switch.
+- Control flow: no goto — labeled blocks with `break label`; `for-in` loops only
+  (lowering to index loops over pointer+length); switch cases do not fall through
+  implicitly, and explicit `fallthrough` is specified but not yet implemented.
 
 ## Conventions
 - `[open]` marks undecided items and `[controversial]` contested ones. Never resolve these markers yourself — only the owner resolves them.
 - Spellings marked *provisional* may change during carving; their semantics may not.
 - Start strict, relax later: propose new convenience as opt-in additions, never as reductions of explicitness.
 - When design is contested, cite the relevant `philosophy.md` principle or priority — not general language-design folklore.
-- Use `//` for single-line comments. Format comments spanning multiple lines as documentation-style blocks, with `/*` and `*/` on their own lines and each content line prefixed by ` *`:
+- Use `//` for single-line comments.
+- For a multiline documentation block attached to a function, struct, union, or
+  other declaration, put `/*` before the first content line, prefix continuation
+  lines with ` *`, and put `*/` on its own final line:
   ```c
-  /*
-   * First line.
+  /* First line.
    * Second line.
    */
+  ```
+- For a multiline block comment inside code or otherwise not attached to a
+  declaration, use the same continuation prefix but put `*/` after the final
+  content line:
+  ```c
+  /* First line.
+   * Second line. */
   ```
 - Never create a Git commit unless the owner explicitly asks for that commit. Completing an implementation does not imply permission to commit it.
 
@@ -76,6 +87,10 @@ Ace is a systems programming language and its bootstrap compiler. The language d
       - [x] **Driver linker controls (chunk 1A)** — `ace` accepts ordered extra `.o`/`.a` inputs, `-L <dir>`, `-l <name>`, and `-framework <name>` beside the single root `.ace` source; the system `cc` is launched through an argument vector (`posix_spawnp`, no shell), preserving the written order after Ace's own object, and linking still requires `-o`. Validation rejects multiple root sources, link inputs under `-c`, link inputs without `-o`, missing option values, unknown options, unrecognized positionals, and output/intermediate paths that would overwrite the source or a linker input (including existing symlink/hard-link aliases) with exact `ace:` diagnostics; linker exit status and signals are reported precisely with cc's own diagnostics passed through. `--report` still counts only Ace's object and excludes linker time. No raw linker escape (`-Wl,...`, arbitrary flags, source-embedded directives, dependency discovery) exists; each stays additive later. Driver fixtures (`tests/driver/`) cover object/archive/framework linking, spaces and shell metacharacters in paths, input-collision protection, every diagnostic, and failure propagation. Normal and sanitizer suites pass.
       - [x] **C ABI compatibility whitelist (chunk 1B)** — `extern "c"` and `export` signatures now pass a positive, position-aware compatibility predicate: fixed-width and platform-word integers, `usize`, `f32`/`f64`, recursively compatible pointers/distinct types/structs, and nested arrays are allowed; direct arrays and every unverified Ace-specific shape are rejected. Exported `mut` parameters are rejected; writable C storage is spelled explicitly as `mut *T`. The Apple-arm64 C calling convention now handles homogeneous floating aggregates, mixed/small aggregates, large indirect values with caller-owned copies, result registers/sret, and exhausted integer/FP register banks. A clang-compiled bidirectional fixture is the ABI oracle. Normal and sanitizer suites pass.
       - [ ] Stdlib follow-up — optional `fmt.print(Error)` convenience remains deferred by design (see spec.md Stdlib #9). Input remains lower priority than output. `mem` contains the raw allocator and byte operations; `sys` has file I/O and monotonic time only; `str`/`simd` are not implemented; `math` is minimal (no floats/libm yet). The next stdlib design topic is unsequenced.
+     - [ ] Explicit switch `fallthrough` — contextual only inside a switch case,
+       final statement only, transfers to the immediately following case, takes
+       no target or condition, and is rejected in the final case. There is still
+       no implicit fallthrough.
      - [x] Type-owned methods and canonical signings (chunk 12) — `Circle.area()` / `pub mut Circle.scale`, implicit read-only-or-mut `self`, exact overloads, direct qualified calls, no method values, one `Circle signs Shape, Color` declaration per struct (parenthesized when multiline), explicit `Shape(&c)` construction, overload-aware EOF conformance, const-backing protection, defining-module coherence, public/private cross-module signings, and per-used-pair generic vtables. Normal and sanitizer suites pass.
      - [x] Compile report (chunk 13) — `--report` writes compact successful-build statistics to stderr: unique source files, aggregate source bytes/tokens, emitted `__text` bytes, complete object bytes, and Ace compile time excluding the external linker. Check/token/AST-only runs report zero emission sizes. Imported modules are included once by canonical identity.
       - [x] Contract terminology (chunk 14) — source declarations use `Shape: contract`, and concrete types use one canonical `Circle signs Shape, Metric` signing. Compiler tokens, AST/type kinds, diagnostics, docs, and fixtures use the contract/signing model. Semantics and ABI are unchanged. Normal and sanitizer suites pass.

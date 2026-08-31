@@ -86,7 +86,7 @@ extern_param  := ident ":" type
 ```ebnf
 stmt          := var_decl | const_decl | assignment | expr_stmt
                | if_stmt | for_stmt | switch_stmt | return_stmt
-               | break_stmt | continue_stmt | asm_stmt | labeled_block
+               | break_stmt | continue_stmt | fallthrough_stmt | asm_stmt | labeled_block
 
 assignment    := target ("," target)* "=" expr_list       // n, err = read()
                 | target compound_op expr                 // x += y (pure sugar)
@@ -109,6 +109,8 @@ union_pattern := named_type "." ident
 return_stmt   := "return" [expr_list]
 break_stmt    := "break" [ident]                         // labeled break
 continue_stmt := "continue" [ident]                      // optional enclosing block label
+fallthrough_stmt := contextual_fallthrough                // only as final statement of a non-final switch case
+contextual_fallthrough := ident                            // exact text "fallthrough"; not reserved
 
 labeled_block := ident ":" block                          // scan: { … break scan }
 
