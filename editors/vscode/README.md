@@ -15,9 +15,7 @@ It does not yet provide completion, diagnostics, formatting, navigation, or a la
 
 Language changes that affect syntax highlighting or basic editor behavior must update this extension when practical. Any editor support that cannot land with the language change is tracked here.
 
-Current TODO:
-
-- Add contextual `fallthrough` highlighting. It should be recognized only as the final statement of a non-final `switch` case, matching `spec.md`; it is not a globally reserved keyword.
+The highlighter recognizes case-final `fallthrough` as a control keyword without reserving the same spelling in functions, variables, or calls elsewhere.
 
 The highlighter exposes distinct, stable TextMate categories:
 

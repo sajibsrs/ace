@@ -31,7 +31,7 @@ Ace is a systems programming language and its bootstrap compiler. The language d
 - Safety is deliberately minimal: cheap local compile-time rules plus checked-build bounds, overflow, and allocator diagnostics; release strips runtime checks. No ownership, lifetime, borrow, or whole-program safety analysis.
 - Control flow: no goto — labeled blocks with `break label`; `for-in` loops only
   (lowering to index loops over pointer+length); switch cases do not fall through
-  implicitly, and explicit `fallthrough` is specified but not yet implemented.
+  implicitly, and explicit contextual `fallthrough` is implemented.
 
 ## Conventions
 - `[open]` marks undecided items and `[controversial]` contested ones. Never resolve these markers yourself — only the owner resolves them.
@@ -97,11 +97,11 @@ Ace is a systems programming language and its bootstrap compiler. The language d
       - [x] **Driver linker controls (chunk 1A)** — `ace` accepts ordered extra `.o`/`.a` inputs, `-L <dir>`, `-l <name>`, and `-framework <name>` beside the single root `.ace` source; the system `cc` is launched through an argument vector (`posix_spawnp`, no shell), preserving the written order after Ace's own object, and linking still requires `-o`. Validation rejects multiple root sources, link inputs under `-c`, link inputs without `-o`, missing option values, unknown options, unrecognized positionals, and output/intermediate paths that would overwrite the source or a linker input (including existing symlink/hard-link aliases) with exact `ace:` diagnostics; linker exit status and signals are reported precisely with cc's own diagnostics passed through. `--report` still counts only Ace's object and excludes linker time. No raw linker escape (`-Wl,...`, arbitrary flags, source-embedded directives, dependency discovery) exists; each stays additive later. Driver fixtures (`tests/driver/`) cover object/archive/framework linking, spaces and shell metacharacters in paths, input-collision protection, every diagnostic, and failure propagation. Normal and sanitizer suites pass.
       - [x] **C ABI compatibility whitelist (chunk 1B)** — `extern "c"` and `export` signatures now pass a positive, position-aware compatibility predicate: fixed-width and platform-word integers, `usize`, `f32`/`f64`, recursively compatible pointers/distinct types/structs, and nested arrays are allowed; direct arrays and every unverified Ace-specific shape are rejected. Exported `mut` parameters are rejected; writable C storage is spelled explicitly as `mut *T`. The Apple-arm64 C calling convention now handles homogeneous floating aggregates, mixed/small aggregates, large indirect values with caller-owned copies, result registers/sret, and exhausted integer/FP register banks. A clang-compiled bidirectional fixture is the ABI oracle. Normal and sanitizer suites pass.
       - [ ] Stdlib follow-up — optional `fmt.print(Error)` convenience remains deferred by design (see spec.md Stdlib #9). Input remains lower priority than output. `mem` contains the raw allocator and byte operations; `sys` has file I/O and monotonic time only; `str`/`simd` are not implemented; `math` is minimal (no floats/libm yet). The next stdlib design topic is unsequenced.
-     - [ ] Explicit switch `fallthrough` — contextual only inside a switch case,
+     - [x] Explicit switch `fallthrough` — contextual only inside a switch case,
        final statement only, transfers to the immediately following case, takes
        no target or condition, and is rejected in the final case. There is still
        no implicit fallthrough.
-     - [ ] Recursive-layout diagnostics and pointer-only type fixups — reject
+     - [x] Recursive-layout diagnostics and pointer-only type fixups — reject
        direct or indirect all-inline value cycles instead of assigning placeholder
        sizes; keep self-pointers valid; permit an unknown same-module type only
        behind one or more pointer levels, resolve it later in the file, and reject

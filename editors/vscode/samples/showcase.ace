@@ -122,6 +122,11 @@ read_pair(): (int, string) {
     return 7, "seven"
 }
 
+fallthrough(): int {
+    fallthrough: int = 1
+    return fallthrough
+}
+
 asm_example(value: int): int {
     result: int
     asm "svc #0" {
@@ -153,6 +158,7 @@ main(): int {
     bounded: int = clamp[int](boxed.value, 0, 100)
     operation: (int, int): int = add
     selected: int = operation(bounded, 10)
+    ordinary_fallthrough: int = fallthrough()
     direct_area: f64 = Point.area(explicit_point)
 
     // Package names are distinct from variables and fields.
@@ -178,7 +184,7 @@ main(): int {
         if index == 0 {
             continue
         }
-        total += value + int(index)
+        total += value + int(index) + ordinary_fallthrough
         if total > local_limit {
             break
         }
@@ -206,7 +212,10 @@ main(): int {
     }
 
     switch number {
-        0, 1 { total += 1 }
+        0, 1 {
+            total += 1
+            fallthrough
+        }
         2 { total += 2 }
         else { total += 3 }
     }

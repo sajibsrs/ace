@@ -13,6 +13,7 @@
     { "include": "#type-declarations" },
     { "include": "#method-declarations" },
     { "include": "#function-declarations" },
+    { "include": "#contextual-keywords" },
     { "include": "#keywords" },
     { "include": "#builtins" },
     { "include": "#primitive-types" },
@@ -308,6 +309,22 @@
         }
       ]
     },
+    "contextual-keywords": {
+      "patterns": [
+        {
+          "match": "^(\\s*)(fallthrough)\\b(?=\\s*\\}\\s*(?:else\\b|[^{}\\n]+)\\s*\\{)",
+          "captures": {
+            "2": { "name": "keyword.control.ace" }
+          }
+        },
+        {
+          "match": "(?<=\\{)(\\s*)(fallthrough)\\b(?=\\s*\\}\\s*(?:else\\b|[^{}\\n]+)\\s*\\{)",
+          "captures": {
+            "2": { "name": "keyword.control.ace" }
+          }
+        }
+      ]
+    },
     "keywords": {
       "patterns": [
         {
@@ -316,7 +333,7 @@
         },
         {
           "name": "keyword.control.ace",
-          "match": "\\b(?:import|from|pub|mut|const|noalias|if|else|for|in|switch|return|break|continue|fallthrough|asm|extern|export|contract|struct|union|signs|distinct|type|enum)\\b"
+          "match": "\\b(?:import|from|pub|mut|const|noalias|if|else|for|in|switch|return|break|continue|asm|extern|export|contract|struct|union|signs|distinct|type|enum)\\b"
         }
       ]
     },
