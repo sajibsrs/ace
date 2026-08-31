@@ -1,0 +1,19 @@
+import fmt
+
+static_format: const string = "%d %u %x %X %f %s %c %%"
+Signed: type = int
+Unsigned: type = uint
+Size: type = usize
+
+check(): int {
+    signed: Signed = -1
+    unsigned: Unsigned = 2
+    size: Size = 3
+    narrow: f32 = 1.25
+    text: string = "ok"
+    byte: u8 = u8(65)
+    a: int = fmt.printf(static_format, signed, unsigned, size, unsigned,
+                        narrow, text, byte)
+    b: int = fmt.printf("%d %u %f %c", 1, 2, 3.0, 'A')
+    return a + b
+}

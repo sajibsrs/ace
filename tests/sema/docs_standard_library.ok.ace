@@ -58,6 +58,21 @@ println_examples(): int {
     return 0
 }
 
+printf_examples(): int {
+    name: string = "Ace"
+    count: int = 3
+    ratio: f64 = 1.25
+    written: int = fmt.printf("name=%s count=%d ratio=%.2f\n",
+                              name, count, ratio)
+    if written != 28 {
+        return 1
+    }
+    byte: u8 = u8(65)
+    fmt.printf("%u %x %X %f %c %%", uint(7), usize(15), uint(15),
+               f32(0.5), byte)
+    return 0
+}
+
 time_mono_example(): int {
     start: u64 = sys.time_mono(false)
     sum: int = 0
@@ -87,6 +102,10 @@ main(): int {
     code = println_examples()
     if code != 0 {
         return 30 + code
+    }
+    code = printf_examples()
+    if code != 0 {
+        return 40 + code
     }
     return time_mono_example()
 }

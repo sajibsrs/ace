@@ -1,0 +1,11 @@
+// expect-exit: 0
+import fmt
+
+main(): int {
+    smallest: f64 = 4.9406564584124654e-324
+    written: int = fmt.printf("%.324f", smallest)
+    if written != 326 {
+        return 1
+    }
+    return 0
+}

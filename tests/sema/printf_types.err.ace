@@ -1,0 +1,17 @@
+import fmt
+
+Meters: distinct int
+
+bad(): int {
+    narrow_signed: i32 = 1
+    narrow_unsigned: u16 = 2
+    measure: Meters = Meters(3)
+    a: int = fmt.printf("%d", narrow_signed)
+    b: int = fmt.printf("%u", narrow_unsigned)
+    c: int = fmt.printf("%x", measure)
+    d: int = fmt.printf("%f", 1)
+    e: int = fmt.printf("%s", u8(65))
+    f: int = fmt.printf("%c", "A")
+    value: (string): int = fmt.printf
+    return a + b + c + d + e + f
+}

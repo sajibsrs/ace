@@ -68,6 +68,38 @@ for f in tests/sema/*.err.ace; do
     fi
 done
 
+printf_format_errors=$("$ACE" tests/sema/printf_formats.err.ace 2>&1)
+for want in \
+    "format must be a string literal or static-literal const global" \
+    "incomplete fmt.printf conversion" \
+    "unsupported fmt.printf conversion '%q'" \
+    "width, flags, '*', and positional arguments are not supported" \
+    "precision needs decimal digits" \
+    "dynamic '*' precision is not supported" \
+    "precision is supported only for %f" \
+    "precision 325 exceeds the fixed-buffer limit 324" \
+    "format requires 1 value argument" \
+    "extra fmt.printf argument 1"; do
+    if ! printf '%s\n' "$printf_format_errors" | grep -qF "$want"; then
+        echo "FAIL: missing printf format diagnostic '$want'"
+        fail=1
+    fi
+done
+printf_type_errors=$("$ACE" tests/sema/printf_types.err.ace 2>&1)
+for want in \
+    "requires int, got i32" \
+    "requires uint or usize, got u16" \
+    "requires uint or usize, got Meters" \
+    "requires f32 or f64, got integer literal" \
+    "requires string, got u8" \
+    "requires u8, got string" \
+    "fmt.printf is direct-call-only"; do
+    if ! printf '%s\n' "$printf_type_errors" | grep -qF "$want"; then
+        echo "FAIL: missing printf type diagnostic '$want'"
+        fail=1
+    fi
+done
+
 # emit fixtures: compile to an object, link with the system cc, run, and
 # check the exit code. The expected code rides in a `// expect-exit: N` line.
 if [ -d tests/emit ]; then
@@ -93,6 +125,33 @@ if [ -d tests/emit ]; then
             fail=1
         fi
     done
+    precision_out=$(/tmp/ace_emit/printf_precision)
+    if [ "${#precision_out}" -ne 326 ] ||
+       [ "${precision_out#0.}" = "$precision_out" ] ||
+       [ "${precision_out#${precision_out%?}}" != "5" ]; then
+        echo "FAIL: %.324f should emit 0., 323 zero bytes, and a final 5"
+        fail=1
+    fi
+    precision_max_out=$(/tmp/ace_emit/printf_precision_max)
+    if [ "${#precision_max_out}" -ne 635 ] ||
+       [ "${precision_max_out#-17976931348623157}" = "$precision_max_out" ] ||
+       [ "${precision_max_out#${precision_max_out%?}}" != "0" ]; then
+        echo "FAIL: maximum negative f64 with %.324f must fit the 640-byte buffer"
+        fail=1
+    fi
+    if command -v nm >/dev/null 2>&1; then
+        printf_undef=$(nm -u /tmp/ace_emit/printf.o 2>/dev/null)
+        if printf '%s\n' "$printf_undef" |
+           grep -Eq '_(printf|snprintf|vprintf|malloc|calloc|realloc|free)$'; then
+            echo "FAIL: fmt.printf must not depend on C formatting, variadics, or allocation"
+            fail=1
+        fi
+        if nm /tmp/ace_emit/printf.o 2>/dev/null |
+           grep -qF '__ace$fn$fmt$printf$prstring$'; then
+            echo "FAIL: checked fmt.printf calls must not emit a runtime printf body"
+            fail=1
+        fi
+    fi
     # -o mode drives the same pipeline through the cc link step
     "$ACE" -o /tmp/ace_emit/direct tests/emit/hello_min.ace && /tmp/ace_emit/direct
     got=$?

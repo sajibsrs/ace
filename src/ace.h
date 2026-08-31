@@ -133,9 +133,9 @@ enum {
     F_ELSE = 32, F_VARARGS = 64, F_METHOD = 128, F_SELECT = 256,
 };
 
-// Compiler-backed functions declared by std/mem.ace. These markers live only
-// on that module's declaration/call nodes; the names themselves are ordinary
-// imported names and are never predeclared globally.
+// Compiler-backed standard-module functions. These markers live only on the
+// canonical module's declaration/call nodes; names remain ordinary imports
+// and are never predeclared globally.
 enum {
     BI_MEM_ALLOC = 2,
     BI_MEM_REALLOC = 3,
@@ -145,9 +145,30 @@ enum {
     BI_MEM_FILL = 7,
     BI_MEM_ZERO = 8,
     BI_MEM_COMPARE = 9,
+    BI_FMT_PRINTF = 10,
+};
+
+enum {
+    PF_TEXT, PF_SIGNED, PF_UNSIGNED, PF_HEX_LOWER, PF_HEX_UPPER,
+    PF_FIXED, PF_STRING, PF_BYTE, PF_PERCENT,
 };
 
 typedef struct Node Node;
+
+typedef struct {
+    uint8_t  kind;
+    uint16_t precision;
+    uint32_t off, len;   // decoded static-format byte span for PF_TEXT
+    int      arg;        // call->kids index; zero for text/percent
+    void*    helper;     // Sym* selected by sema, consumed by the emitter
+} PrintfPart;
+
+typedef struct {
+    Node*       format;  // resolved static string literal
+    PrintfPart* parts;
+    int         nparts;
+} PrintfPlan;
+
 struct Node {
     uint8_t     kind; // NKind
     uint8_t     op;   // TokKind for binary/unary/assign/op nodes
@@ -170,6 +191,7 @@ struct Node {
     void*       ty;  // SType* — computed type of this expression
     void*       sym; // Sym* — resolved symbol (idents, call targets, binders;
                      //  for enum members `Color.red`: the TYPE sym on the base)
+    void*       aux; // feature-specific checked metadata (currently PrintfPlan*)
 };
 
 // Parse a token stream into an N_FILE node. Aborts at the first syntax error

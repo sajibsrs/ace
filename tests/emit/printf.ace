@@ -1,0 +1,25 @@
+// expect-exit: 0
+// expect-output: name=Ace count=-42 unsigned=42 hex=2a/2A ratio=1.25 byte=A percent=%
+import fmt
+
+main(): int {
+    name: string = "Ace"
+    count: int = -42
+    unsigned: uint = 42
+    ratio: f64 = 1.25
+    byte: u8 = u8(65)
+    written: int = fmt.printf(
+        "name=%s count=%d unsigned=%u hex=%x/%X ratio=%.2f byte=%c percent=%%",
+        name,
+        count,
+        unsigned,
+        unsigned,
+        unsigned,
+        ratio,
+        byte,
+    )
+    if written != 68 {
+        return 1
+    }
+    return 0
+}

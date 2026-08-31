@@ -236,6 +236,16 @@ static int is_std_mem_module(Loader* L, const char* canon) {
     return expected && strcmp(expected, canon) == 0;
 }
 
+static int is_std_fmt_module(Loader* L, const char* canon) {
+    char dir[4096];
+    compiler_dir(dir, sizeof dir, L->compiler_path);
+    char path[4608];
+    if (strcmp(dir, ".") == 0) snprintf(path, sizeof path, "std/fmt.ace");
+    else snprintf(path, sizeof path, "%s/std/fmt.ace", dir);
+    const char* expected = canonicalize(path);
+    return expected && strcmp(expected, canon) == 0;
+}
+
 static void mark_mem_intrinsics(Loader* L, Module* m) {
     if (!is_std_mem_module(L, m->canon)) return;
     for (int i = 0; i < m->file->nkids; i++) {
@@ -249,6 +259,16 @@ static void mark_mem_intrinsics(Loader* L, Module* m) {
         else if (text_is(n->str, n->len, "fill")) n->ival = BI_MEM_FILL;
         else if (text_is(n->str, n->len, "zero")) n->ival = BI_MEM_ZERO;
         else if (text_is(n->str, n->len, "compare")) n->ival = BI_MEM_COMPARE;
+    }
+}
+
+static void mark_fmt_intrinsics(Loader* L, Module* m) {
+    if (!is_std_fmt_module(L, m->canon)) return;
+    for (int i = 0; i < m->file->nkids; i++) {
+        Node* n = m->file->kids[i];
+        if (n->kind == N_FUNC && (n->flags & F_PUB) &&
+            text_is(n->str, n->len, "printf"))
+            n->ival = BI_FMT_PRINTF;
     }
 }
 
@@ -457,6 +477,7 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
     Module* m = module_new(L, canon, file);
     collect_members(L, m); // original names + pub-ness, before any renaming
     mark_mem_intrinsics(L, m);
+    mark_fmt_intrinsics(L, m);
     m->next = L->loading; // push
     L->loading = m;
     resolve_file(L, file, canon, 0);

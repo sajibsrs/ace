@@ -1,0 +1,8 @@
+printf(value: int): int {
+    return value
+}
+
+check(): int {
+    fn: (int): int = printf
+    return fn(7)
+}

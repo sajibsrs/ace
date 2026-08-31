@@ -1825,6 +1825,7 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
 }
 
 static EV gen_call(Em* e, Node* call);
+static void store_to_slot(Em* e, EV v, uint32_t off, SType* t);
 
 // --- string literals --------------------------------------------------------------------
 
@@ -2346,6 +2347,136 @@ static EV gen_compare_builtin(Em* e, Node* call) {
     return (EV){ CLS_INT, si };
 }
 
+static EV load_printf_capture(Em* e, uint32_t off, SType* t) {
+    if (!is_scalar(t)) {
+        int a = tmp_int(e);
+        frame_addr(e, xreg(a), off);
+        return (EV){ CLS_ADDR, a };
+    }
+    int a = tmp_int(e);
+    frame_addr(e, xreg(a), off);
+    EV v = load_scalar(e, xreg(a), 0, t);
+    return collapse(e, a, v);
+}
+
+static EV emit_printf_helper(Em* e, Node* at, Sym* helper, EV* values, int n) {
+    if (!helper || !helper->type || helper->type->kind != SK_FUNC) {
+        em_err(e, at, "missing checked fmt.printf helper");
+        return (EV){ CLS_INT, tmp_int(e) };
+    }
+    CallArg args[3];
+    uint8_t muts[3] = { 0, 0, 0 };
+    for (int i = 0; i < n; i++) {
+        args[i].node = NULL;
+        args[i].val = values[i];
+        args[i].pre = 1;
+        args[i].ptrval = 0;
+    }
+    SType* ft = helper->type;
+    const char* mn = fn_mangle(helper->name, helper->len, ft,
+                               helper->decl, NULL, 0);
+    CallTarget tgt = { TK_INTERNAL, arena_copy(mn, strlen(mn)),
+                       (uint32_t)strlen(mn), 0 };
+    return emit_call(e, at, args, n, ft->params, muts, ft->nparams,
+                     1, tgt, ft->ret);
+}
+
+static EV gen_printf_builtin(Em* e, Node* call) {
+    PrintfPlan* plan = (PrintfPlan*)call->aux;
+    if (!plan) {
+        em_err(e, call, "fmt.printf call has no checked format plan");
+        return (EV){ CLS_INT, tmp_int(e) };
+    }
+    int si = e->vti, sf = e->vtf;
+    int nargs = call->nkids - 1;
+    uint32_t* slots = (uint32_t*)arena_alloc(
+        (size_t)(nargs ? nargs : 1) * sizeof(uint32_t));
+
+    // A printf call observes ordinary call evaluation: all runtime arguments
+    // are captured once, left-to-right, before the first output operation.
+    for (int i = 0; i < nargs; i++) {
+        Node* arg = call->kids[i + 1];
+        if (arg->kind == N_MUTARG) arg = arg->a;
+        SType* t = node_ty(arg);
+        slots[i] = temp_slot(e, ty_size(t), ty_align(t));
+        EV v = gen_expr(e, arg);
+        store_to_slot(e, v, slots[i], t);
+        e->vti = si;
+        e->vtf = sf;
+    }
+
+    uint32_t total_slot = temp_slot(e, 8, 8);
+    store_frame(e, 31, total_slot, 8);
+    int done = new_label(e);
+
+    for (int i = 0; i < plan->nparts; i++) {
+        PrintfPart* part = &plan->parts[i];
+        Sym* helper = (Sym*)part->helper;
+        EV values[3];
+        int nv = 0;
+        int empty_success = -1;
+
+        if (part->kind == PF_TEXT) {
+            Node text_node;
+            memset(&text_node, 0, sizeof text_node);
+            text_node.kind = N_STR;
+            text_node.path = call->path;
+            text_node.line = call->line;
+            text_node.col = call->col;
+            text_node.str = plan->format->str + part->off;
+            text_node.len = part->len;
+            text_node.ty = node_ty(call->kids[0]);
+            values[nv++] = gen_expr(e, &text_node);
+        } else if (part->kind == PF_PERCENT) {
+            int t = tmp_int(e);
+            load_imm(e, 0, xreg(t), 37);
+            values[nv++] = (EV){ CLS_INT, t };
+        } else {
+            Node* arg = call->kids[part->arg];
+            if (arg->kind == N_MUTARG) arg = arg->a;
+            SType* t = node_ty(arg);
+            values[nv++] = load_printf_capture(e, slots[part->arg - 1], t);
+            if (part->kind == PF_STRING) {
+                empty_success = new_label(e);
+                int len = tmp_int(e);
+                ld_reg(e, xreg(len), xreg(values[0].idx), 8, 8, 0);
+                cbz_(e, 1, xreg(len), 0, empty_success);
+            }
+            if (part->kind == PF_HEX_LOWER || part->kind == PF_HEX_UPPER) {
+                int upper = tmp_int(e);
+                load_imm(e, 0, xreg(upper), part->kind == PF_HEX_UPPER);
+                values[nv++] = (EV){ CLS_INT, upper };
+            } else if (part->kind == PF_FIXED) {
+                int precision = tmp_int(e);
+                load_imm(e, 1, xreg(precision), part->precision);
+                values[nv++] = (EV){ CLS_INT, precision };
+            }
+        }
+
+        EV written = emit_printf_helper(e, call, helper, values, nv);
+        ins(e, 0xF100001Fu | ((uint32_t)xreg(written.idx) << 5)); // cmp n, #0
+        int success = new_label(e);
+        bcond_(e, C_GT, success);
+        store_frame(e, xreg(written.idx), total_slot, 8);
+        br_(e, done);
+        bind_label(e, success);
+        load_frame(e, 16, total_slot, 8, 0);
+        ins(e, 0x8B000000u | ((uint32_t)xreg(written.idx) << 16) |
+               (16u << 5) | 16u); // total += written
+        store_frame(e, 16, total_slot, 8);
+        if (empty_success >= 0) bind_label(e, empty_success);
+        e->vti = si;
+        e->vtf = sf;
+    }
+
+    bind_label(e, done);
+    e->vti = si;
+    e->vtf = sf;
+    int out = tmp_int(e);
+    load_frame(e, xreg(out), total_slot, 8, 0);
+    return (EV){ CLS_INT, out };
+}
+
 static EV gen_call(Em* e, Node* call) {
     Node* callee = call->a;
     // Explicit contract construction: Shape(&value) / Shape[T](&value).
@@ -2436,6 +2567,9 @@ static EV gen_call(Em* e, Node* call) {
         return (EV){ CLS_INT, t };
     }
     Sym* intrinsic = call->sym ? node_sym(call) : NULL;
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival == BI_FMT_PRINTF && call->ival == BI_FMT_PRINTF)
+        return gen_printf_builtin(e, call);
     if (intrinsic && intrinsic->decl &&
         intrinsic->decl->ival == BI_MEM_ALLOC && call->ival == BI_MEM_ALLOC)
         return gen_alloc_builtin(e, call);
@@ -4647,6 +4781,8 @@ int emit_object(Node* file, Diag* d, const char* out_path,
                 n->ival == BI_MEM_MOVE || n->ival == BI_MEM_FILL ||
                 n->ival == BI_MEM_ZERO || n->ival == BI_MEM_COMPARE)
                 break; // compiler-backed std/mem declarations have no body symbol
+            if (n->ival == BI_FMT_PRINTF)
+                break; // format-dependent calls lower directly; no runtime printf symbol
             if (n->c) { // generic: one function per instantiation memo entry
                 int nt = n->c->nkids;
                 for (STypeInst* inst = sema_insts(n); inst; inst = inst->next) {

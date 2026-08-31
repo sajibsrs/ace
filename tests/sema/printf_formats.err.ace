@@ -1,0 +1,18 @@
+import fmt
+
+runtime(format: string): int {
+    return fmt.printf(format)
+}
+
+bad(): int {
+    a: int = fmt.printf("trailing %")
+    b: int = fmt.printf("%q", 1)
+    c: int = fmt.printf("%05d", 1)
+    d: int = fmt.printf("%.f", 1.0)
+    e: int = fmt.printf("%.2d", 1)
+    f: int = fmt.printf("%.325f", 1.0)
+    g: int = fmt.printf("%d")
+    h: int = fmt.printf("plain", 1)
+    i: int = fmt.printf("%.*f", 2, 1.0)
+    return a + b + c + d + e + f + g + h + i
+}

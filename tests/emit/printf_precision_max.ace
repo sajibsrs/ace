@@ -1,0 +1,13 @@
+// expect-exit: 0
+import fmt
+
+main(): int {
+    zero: f64 = 0.0
+    largest: f64 = 1.7976931348623157e308
+    negative: f64 = zero - largest
+    written: int = fmt.printf("%.324f", negative)
+    if written != 635 {
+        return 1
+    }
+    return 0
+}

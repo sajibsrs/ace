@@ -2,7 +2,12 @@
 extern "c" {
     write(fd: i32, data: *u8, size: usize): int
     ecvt(value: f64, ndigit: i32, decpt: mut *i32, sign: mut *i32): *u8
+    fcvt(value: f64, ndigit: i32, decpt: mut *i32, sign: mut *i32): *u8
+    floor(value: f64): f64
+    fegetround(): i32
+    fesetround(mode: i32): i32
     memcpy(dst: *u8, src: *u8, size: usize): *u8
+    memmove(dst: *u8, src: *u8, size: usize): *u8
     strtod(text: *u8, end: *u8): f64
     strtof(text: *u8, end: *u8): f32
 }
@@ -353,6 +358,189 @@ pub print(value: f32): int {
      */
     count: int, decpt: i32 = shortest_digits(f64(mag), 9, true, mut dv, mut pv)
     return format_float(negative, dv, count, decpt)
+}
+
+// Private direct targets selected by the compiler's checked printf lowering.
+printf_text(text: string): int {
+    return print(text)
+}
+
+printf_signed(value: int): int {
+    return print(value)
+}
+
+printf_unsigned(value: uint): int {
+    return print(value)
+}
+
+printf_usize(value: usize): int {
+    return print(value)
+}
+
+printf_byte(value: u8): int {
+    out: [1]u8 = [value]
+    return write_bytes(out[0..1])
+}
+
+printf_hex_unsigned(value: uint, uppercase: bool): int {
+    out: [16]u8
+    at: int = 16
+    remaining: uint = value
+    for digit: int in 0 .. 16 {
+        at -= 1
+        d: uint = remaining % 16
+        if d < 10 {
+            out[at] = u8(48 + d)
+        } else if uppercase {
+            out[at] = u8(55 + d)
+        } else {
+            out[at] = u8(87 + d)
+        }
+        remaining = remaining / 16
+        if remaining == 0 {
+            break
+        }
+    }
+    return write_bytes(out[at..16])
+}
+
+printf_hex_usize(value: usize, uppercase: bool): int {
+    out: [16]u8
+    at: int = 16
+    remaining: usize = value
+    for digit: int in 0 .. 16 {
+        at -= 1
+        d: usize = remaining % 16
+        if d < 10 {
+            out[at] = u8(48 + d)
+        } else if uppercase {
+            out[at] = u8(55 + d)
+        } else {
+            out[at] = u8(87 + d)
+        }
+        remaining = remaining / 16
+        if remaining == 0 {
+            break
+        }
+    }
+    return write_bytes(out[at..16])
+}
+
+/*
+ * Fixed decimal through libSystem fcvt. The returned digits are copied into
+ * the declared output buffer before any later conversion can reuse fcvt's
+ * internal storage. Precision zero is rounded explicitly to nearest/even
+ * because Darwin fcvt deliberately returns no digits for ndigit == 0.
+ */
+printf_fixed_f64(value: f64, precision: usize): int {
+    zero: f64 = 0.0
+    one: f64 = 1.0
+    if value != value {
+        return printf_text("nan")
+    }
+    if value - value != zero {
+        if value < zero {
+            return printf_text("-inf")
+        }
+        return printf_text("inf")
+    }
+
+    negative: bool = value < zero
+    if value == zero {
+        if one / value < zero {
+            negative = true
+        }
+    }
+    mag: f64 = value
+    if negative {
+        mag = zero - value
+    }
+
+    out: [640]u8
+    at: int = 0
+    if negative {
+        out[at] = u8(45)
+        at += 1
+    }
+    places: int = int(precision)
+    decpt: i32 = 0
+    unused_sign: i32 = 0
+    src: *u8
+
+    if places == 0 {
+        whole: f64 = floor(mag)
+        fraction: f64 = mag - whole
+        half: f64 = 0.5
+        if fraction > half {
+            whole += 1.0
+        } else if fraction == half {
+            parity: uint = uint(whole) % 2
+            if parity != 0 {
+                whole += 1.0
+            }
+        }
+        src = fcvt(whole, 1, mut &decpt, mut &unused_sign)
+        if whole == zero {
+            out[at] = u8(48)
+            at += 1
+        } else {
+            digits: int = int(decpt)
+            memcpy(&out[at], src, usize(digits))
+            at += digits
+        }
+        return write_bytes(out[0..at])
+    }
+
+    rounding: i32 = fegetround()
+    if rounding != 0 {
+        fesetround(0) // Darwin FE_TONEAREST: nearest, exact ties to even
+    }
+    src = fcvt(mag, i32(places), mut &decpt, mut &unused_sign)
+    if rounding != 0 {
+        fesetround(rounding)
+    }
+    point: int = int(decpt)
+    available: int = places + point
+    if point <= 0 && available < 0 {
+        available = 0
+    }
+    if point <= 0 {
+        out[at] = u8(48)
+        out[at + 1] = u8(46)
+        at += 2
+        zeros: int = 0 - point
+        if zeros > places {
+            zeros = places
+        }
+        for i: int in 0 .. zeros {
+            out[at] = u8(48)
+            at += 1
+        }
+        digits: int = places - zeros
+        if digits > 0 {
+            memcpy(&out[at], src, usize(digits))
+            at += digits
+        }
+    } else {
+        memcpy(&out[at], src, usize(available))
+        memmove(&out[at + point + 1], &out[at + point], usize(places))
+        out[at + point] = u8(46)
+        at += point + places + 1
+    }
+    return write_bytes(out[0..at])
+}
+
+printf_fixed_f32(value: f32, precision: usize): int {
+    return printf_fixed_f64(f64(value), precision)
+}
+
+/*
+ * This body serves the zero-conversion case and gives the public name an
+ * ordinary declaration. Calls are otherwise validated and lowered directly
+ * by the compiler; this format-dependent function is never a first-class value.
+ */
+pub printf(format: string): int {
+    return printf_text(format)
 }
 
 /*

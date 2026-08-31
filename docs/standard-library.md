@@ -102,6 +102,61 @@ main(): int {
 }
 ```
 
+`fmt.printf` combines static text and runtime values while keeping the runtime
+as direct as separate typed `print` calls:
+
+```ace
+import fmt
+
+main(): int {
+    name: string = "Ace"
+    count: int = 3
+    ratio: f64 = 1.25
+    return fmt.printf("name=%s count=%d ratio=%.2f\n", name, count, ratio)
+}
+```
+
+The format must be a string literal or a const-global `string` initialized
+from a static literal. The compiler parses it, checks the argument count and
+exact types, and emits direct typed formatting calls. Runtime-created or
+runtime-selected formats are rejected. There is no runtime parser, argument
+pack, type tag, reflection, allocation, or C variadic call.
+
+The initial conversions are deliberately small:
+
+- `%d` accepts `int` and writes signed decimal.
+- `%u` accepts `uint` or `usize` and writes unsigned decimal.
+- `%x` and `%X` accept `uint` or `usize` and write hexadecimal digits in the
+  selected case, without a prefix.
+- `%f` accepts `f32` or `f64` and writes fixed decimal with six fractional
+  digits by default. `%.Nf` writes exactly `N` fractional digits for
+  `N` from 0 through 324. Rounding is nearest with exact ties going to an
+  even final digit, independent of the caller's floating-point rounding mode;
+  that mode is restored before `printf` returns. Negative zero and negative
+  values rounded to zero keep their sign; special values are `nan`, `inf`,
+  and `-inf`.
+- `%s` accepts `string` and writes every byte exactly, including embedded NUL.
+- `%c` accepts `u8` and writes exactly one byte. Wider Unicode characters use
+  their UTF-8 bytes through `%s`; a future character facility may add more.
+- `%%` writes one percent sign and consumes no argument.
+
+Transparent aliases work as their target type. Distinct types and narrower
+integers must be converted explicitly. A literal receives the conversion's
+natural type: `int`, `uint`, `f64`, or `u8`; write `usize(...)` when that is
+the intended unsigned type.
+
+Width, padding, alignment, sign and alternate-form flags, dynamic `*`, and
+positional arguments are not implemented. The only modifier is the literal
+precision on `%f`.
+
+All runtime arguments are evaluated exactly once, in source order, before
+output begins. On success `printf` returns the complete byte count. Positive
+partial writes are retried; a zero or negative OS result stops later output
+and is returned unchanged, matching `print` and `println`. Formatting uses a
+fixed 640-byte stack buffer and never allocates. `fmt.printf` is direct-call
+only and cannot be stored as a function value because its checked argument
+shape depends on the static format.
+
 ## math
 
 Minimal, pure-Ace, no floating-point functions yet. All three are generic and
@@ -224,8 +279,9 @@ time, CPU time) are not implemented yet.
 
 ## Current limitations
 
-- No formatted (`printf`-style) printing yet; compose output from `print`
-  and `println` calls.
+- `fmt.printf` supports only its documented initial conversions and literal
+  float precision; runtime formats, width/flags, dynamic precision, and
+  positional arguments are not implemented.
 - No output overloads for narrower integer widths; an explicit cast selects
   between the `int`, `uint`, and `usize` overloads.
 - `math` has no `sqrt`, floats, or libm binding.
