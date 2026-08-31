@@ -12,6 +12,17 @@ main(): int {
     }
     inside: bool = 0 <= value < limit
 
+    switch value {
+        3 {
+            category += 1
+            fallthrough
+        }
+        4 {
+            category += 1
+        }
+        else {}
+    }
+
     for i: int in 0 .. 4 {
         i = 0
     }
@@ -46,7 +57,7 @@ main(): int {
             continue retry
         }
     }
-    if inside && category == 1 {
+    if inside && category == 3 {
         return 0
     }
     return 1

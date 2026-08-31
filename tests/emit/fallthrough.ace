@@ -1,0 +1,32 @@
+// expect-exit: 49
+
+main(): int {
+    total: int = 0
+    selected: int = 1
+    switch selected {
+        1 {
+            total += 1
+            fallthrough
+        }
+        99 {
+            total *= 10
+            fallthrough
+        }
+        2 {
+            total += 32
+        }
+        else {
+            total = 100
+        }
+    }
+
+    selected = 7
+    switch selected {
+        7 { total += 0 }
+        8 { total = 100 }
+        else { total = 100 }
+    }
+
+    total += 7
+    return total
+}

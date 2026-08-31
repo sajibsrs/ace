@@ -3298,6 +3298,11 @@ static void store_member(Em* e, int ra, SType* tup, int i, uint32_t off) {
     }
 }
 
+static int case_falls_through(Node* c) {
+    Node* b = c ? c->b : NULL;
+    return b && b->nkids > 0 && b->kids[b->nkids - 1]->kind == N_FALLTHROUGH;
+}
+
 /*
  * Union switch: the scrutinee's address is parked in a stack slot (arm bodies
  * reuse the temp registers), each pattern compares the i32 tag, and matching
@@ -3354,7 +3359,7 @@ static void emit_union_switch(Em* e, Node* s, SType* ut) {
             }
         }
         emit_block(e, c->b);
-        if (i != s->nkids - 1) br_(e, lend);
+        if (i != s->nkids - 1 && !case_falls_through(c)) br_(e, lend);
     }
     bind_label(e, lend);
 }
@@ -3727,7 +3732,7 @@ static void emit_stmt(Em* e, Node* s) {
         for (int i = 0; i < s->nkids; i++) {
             bind_label(e, lcase[i]);
             emit_block(e, s->kids[i]->b);
-            if (i != s->nkids - 1) br_(e, lend);
+            if (i != s->nkids - 1 && !case_falls_through(s->kids[i])) br_(e, lend);
         }
         bind_label(e, lend);
         (void)ielse;
@@ -3829,6 +3834,8 @@ static void emit_stmt(Em* e, Node* s) {
         br_(e, c->cont);
         return;
     }
+    case N_FALLTHROUGH:
+        return; // the enclosing switch omits its normal end branch
     case N_LABEL: {
         if (e->nctx >= 64) {
             em_err(e, s, "control flow nested too deeply");

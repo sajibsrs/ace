@@ -108,7 +108,8 @@ char* arena_alloc(size_t n);
     X(N_BLOCK, "block") X(N_EXPRSTMT, "exprstmt") X(N_ASSIGN, "assign")        \
     X(N_IF, "if") X(N_FOR, "for") X(N_RANGE, "range") X(N_SWITCH, "switch")    \
     X(N_CASE, "case") X(N_VARPAT, "varpat") X(N_RETURN, "return")             \
-    X(N_BREAK, "break") X(N_CONTINUE, "continue") X(N_ASM, "asm") X(N_ASMBIND, "asmbind")   \
+    X(N_BREAK, "break") X(N_CONTINUE, "continue")                               \
+    X(N_FALLTHROUGH, "fallthrough") X(N_ASM, "asm") X(N_ASMBIND, "asmbind")   \
     X(N_LABEL, "label")                                                        \
     /* expressions */                                                          \
     X(N_INT, "int_lit") X(N_FLOAT, "float_lit") X(N_STR, "str_lit")            \

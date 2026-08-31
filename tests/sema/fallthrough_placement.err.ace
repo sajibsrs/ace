@@ -1,0 +1,13 @@
+main(): int {
+    value: int = 0
+    switch value {
+        0 {
+            fallthrough
+            value = 1
+        }
+        else {
+            fallthrough
+        }
+    }
+    return value
+}

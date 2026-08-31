@@ -34,6 +34,7 @@
 //               b = binder N_PARAM (str, a = payload type) or NULL; ival = variant
 //   N_RETURN    a = expr / N_TUPLE_E / NULL
 //   N_BREAK     str = label or NULL
+//   N_FALLTHROUGH contextual bare statement in a switch case block
 //   N_ASM       str = instruction text; kids = N_ASMBIND (str = in/out/clobbers;
 //               kids = [reg, val, reg, val, ...] for in/out, [reg, ...] for clobbers)
 //   N_LABEL     str = label; a = block
@@ -892,6 +893,21 @@ static Node* parse_switch(P* p) {
             set_kids(c, &pats);
         }
         c->b = parse_block(p);
+        /* `fallthrough` is contextual only for a bare statement directly in
+         * a case block. Calls, assignments, declarations, and nested uses keep
+         * the ordinary identifier meaning. Position is checked by sema. */
+        for (int i = 0; i < c->b->nkids; i++) {
+            Node* st = c->b->kids[i];
+            if (st->kind != N_EXPRSTMT || !st->a || st->a->kind != N_IDENT)
+                continue;
+            Node* id = st->a;
+            if (id->len != 11 || memcmp(id->str, "fallthrough", 11) != 0)
+                continue;
+            st->kind = (uint8_t)N_FALLTHROUGH;
+            st->a = NULL;
+            st->str = id->str;
+            st->len = id->len;
+        }
         nv_push(p, &cases, c);
         skipnl(p);
     }

@@ -2455,6 +2455,22 @@ static void check_union_switch(Ck* k, Node* s, SType* u) {
     }
 }
 
+static void check_switch_fallthrough(Ck* k, Node* s, SType* t) {
+    for (int i = 0; i < s->nkids; i++) {
+        Node* b = s->kids[i]->b;
+        for (int j = 0; b && j < b->nkids; j++) {
+            Node* st = b->kids[j];
+            if (st->kind != N_FALLTHROUGH) continue;
+            if (j != b->nkids - 1)
+                ck_err(k, st, "fallthrough must be the final statement of a switch case");
+            if (i == s->nkids - 1)
+                ck_err(k, st, "fallthrough is not allowed in the final switch case");
+            if (t && t->kind == SK_UNION)
+                ck_err(k, st, "fallthrough is not allowed in a tagged-union switch");
+        }
+    }
+}
+
 static void check_stmt(Ck* k, Node* s) {
     switch (s->kind) {
     case N_VAR: {
@@ -2619,6 +2635,7 @@ static void check_stmt(Ck* k, Node* s) {
     }
     case N_SWITCH: {
         SType* t = expr_type(k, s->a);
+        check_switch_fallthrough(k, s, t);
         if (t->kind == SK_UNION) {
             check_union_switch(k, s, t);
             return;
@@ -2638,6 +2655,8 @@ static void check_stmt(Ck* k, Node* s) {
         }
         return;
     }
+    case N_FALLTHROUGH:
+        return; // placement was validated by the enclosing switch
     case N_RETURN: {
         SType* rt = k->ret;
         int nret = rt ? (rt->kind == SK_TUPLE ? rt->nfields : 1) : 0;
@@ -3341,6 +3360,8 @@ static int init_stmt(InitCk* k, Node* s) {
     }
     case N_RETURN:
         init_expr(k, s->a); return 0;
+    case N_FALLTHROUGH:
+        return 0;
     case N_ASM:
         for (int i = 0; i < s->nkids; i++) {
             Node* b = s->kids[i];

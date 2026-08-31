@@ -345,7 +345,7 @@ Carving phase — closed so far:
 Explicit switch fallthrough — closed, implementation queued:
 - [x] The spelling is `fallthrough` (not the vague `fall`), recognized contextually only as a statement inside a switch case; it remains an ordinary identifier elsewhere.
 - [x] There is no implicit fallthrough. Explicit `fallthrough` must be the final statement of a non-final case, takes no target or condition, and transfers only to the immediately following case.
-- [ ] Parser, semantic checks, emitter lowering, diagnostics, runtime coverage, and implemented-behavior documentation.
+- [x] Parser, semantic checks, emitter lowering, diagnostics, runtime coverage, and implemented-behavior documentation. `fallthrough` is rejected for tagged-union switches: bypassing the following pattern would contradict its active-variant meaning, while retesting a different variant could never match.
 
 Recursive layouts and pointer-only type fixups — closed, implementation queued:
 - [x] Every inline layout must be finite; direct or indirect all-inline recursion is rejected with a recursive-value-layout diagnostic.
@@ -369,6 +369,7 @@ Formatted-output carving and implementation — closed:
 - [x] `fmt.printf` is implemented exactly as carved in Stdlib #12, with normal and ASan/UBSan suites passing.
 
 Implementation phase — closed so far:
+- [x] Explicit switch fallthrough — contextual bare `fallthrough` only as the final statement of a non-final ordinary scalar case; direct transfer to the immediately following case with no pattern retest; no implicit fallthrough; ordinary identifier behavior elsewhere; tagged-union switches reject it because their cases are active-variant patterns.
 - [x] Lexical/layout rules: `/* … */` block comments (non-nesting; a newline inside acts as a statement terminator); newline token emitted only after ident/literal/`)`/`]`/`}`/`return`/`break`/`continue` (Go-style, made explicit); bare comma lists are parser-restricted to one physical line, while delimited multiline lists use trailing commas; `else` stays on the `}` line.
 - [x] `int`/`uint` = platform word (i64/u64 on arm64), kept alongside explicit widths.
 - [x] Compound assignment operators included as pure sugar (`x += y` ≡ `x = x + (y)`, left operand evaluated once).

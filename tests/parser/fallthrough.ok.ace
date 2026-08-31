@@ -1,0 +1,17 @@
+fallthrough(): int {
+    return 1
+}
+
+main(): int {
+    fallthrough: int = 0
+    fallthrough = fallthrough()
+    switch fallthrough {
+        0 {
+            fallthrough
+        }
+        else {
+            fallthrough()
+        }
+    }
+    return fallthrough
+}

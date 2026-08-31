@@ -24,8 +24,31 @@ Comparisons may be chained. Each operand is evaluated once:
 inside: bool = 0 <= value < limit
 ```
 
-`switch` compares one scalar value against cases, has no fallthrough, and uses
-`else` for the default case.
+`switch` compares one scalar value against cases and uses `else` for the default
+case. Cases do not fall through implicitly. A non-final case may end with the
+contextual statement `fallthrough` to continue directly into the immediately
+following case without testing that case's pattern:
+
+```ace
+switch value {
+    1 {
+        count += 1
+        fallthrough
+    }
+    2 {
+        count += 2
+    }
+    else {}
+}
+```
+
+`fallthrough` takes no target or condition and must be the case's final
+statement. It is rejected in the final case. The spelling remains an ordinary
+identifier outside this exact statement position.
+
+`fallthrough` is rejected in tagged-union switches. A union case is an active
+variant pattern, so entering the next case without a match would contradict its
+pattern; retesting it would never match a different active variant.
 
 For a tagged union, cases name variants and payload variants bind an explicitly
 typed local copy. The switch must cover every variant or include `else`:
@@ -152,5 +175,4 @@ forever: {
 ```
 
 Reaching the closing brace still exits normally. Plain `continue` advances the
-nearest `for-in` loop; only its labeled form restarts a block. Ace has no `goto`
-and switch cases do not fall through.
+nearest `for-in` loop; only its labeled form restarts a block. Ace has no `goto`.

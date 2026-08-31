@@ -68,6 +68,22 @@ for f in tests/sema/*.err.ace; do
     fi
 done
 
+fallthrough_errors=$("$ACE" tests/sema/fallthrough_placement.err.ace 2>&1)
+for want in \
+    "fallthrough must be the final statement of a switch case" \
+    "fallthrough is not allowed in the final switch case"; do
+    if ! printf '%s\n' "$fallthrough_errors" | grep -qF "$want"; then
+        echo "FAIL: missing fallthrough diagnostic '$want'"
+        fail=1
+    fi
+done
+fallthrough_union_error=$("$ACE" tests/sema/fallthrough_union_payload.err.ace 2>&1)
+if ! printf '%s\n' "$fallthrough_union_error" | grep -qF \
+    "fallthrough is not allowed in a tagged-union switch"; then
+    echo "FAIL: missing tagged-union fallthrough diagnostic"
+    fail=1
+fi
+
 c_abi_errors=$("$ACE" tests/sema/c_abi_rejected.err.ace 2>&1)
 for want in \
     "parameter 'value' has type bool, which is not C-ABI compatible" \
