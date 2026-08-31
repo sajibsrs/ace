@@ -1,5 +1,7 @@
-// math — minimal v1 math helpers. Pure Ace, no libm yet; floats and richer
-// functions (sqrt, …) are follow-up work.
+/* math — minimal v1 math helpers. Pure Ace, no libm yet; floats and richer
+ * functions (sqrt, …) are follow-up work.
+ */
+
 pub min[T](a: T, b: T): T {
     if a < b {
         return a

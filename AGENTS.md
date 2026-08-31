@@ -38,6 +38,29 @@ Ace is a systems programming language and its bootstrap compiler. The language d
 - Spellings marked *provisional* may change during carving; their semantics may not.
 - Start strict, relax later: propose new convenience as opt-in additions, never as reductions of explicitness.
 - When design is contested, cite the relevant `philosophy.md` principle or priority — not general language-design folklore.
+- When writing Ace source, keep a line intact while it is at most 120 characters;
+  wrap it only when it would exceed 120 characters. No Ace source line may exceed
+  120 characters.
+- In Ace source, put one blank line before every construct with a `{ ... }`
+  body. Do not add a blank line after its closing brace unless that blank line
+  is required before the next body-bearing construct. If the construct is the
+  first element inside another body, do not put a blank line before it.
+- Put one space before the opening `{` of every Ace body-bearing construct,
+  including aggregate literals (`Value {`, never `Value{`). Write a genuinely
+  empty body on one line as `{}`.
+- Start every Ace source file with a block-comment header and put one blank line
+  after that header. Write comments spanning multiple source lines as `/* ... */`
+  blocks, not as runs of `//` comments; reserve `//` for a single source line.
+- A comment attached to a body-bearing Ace construct belongs to that construct:
+  put the separating blank line before the comment and no blank line between the
+  comment and the construct.
+- Keep a documentation comment directly adjacent to the declaration it
+  documents. Put one blank line after an unrelated, section-level, or group
+  comment so it cannot be mistaken for documentation of the next declaration.
+- Treat a complete Ace `if` / `else if` / `else` chain as one body-bearing
+  construct. Keep `else if` and `else` attached to the preceding closing brace,
+  with no blank lines inside the chain; add separation only before the complete
+  chain. A later independent `if` starts a new construct.
 - Use `//` for single-line comments.
 - For a multiline documentation block attached to a function, struct, union, or
   other declaration, put `/*` before the first content line, prefix continuation

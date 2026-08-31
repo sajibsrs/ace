@@ -1,4 +1,5 @@
-// fmt — allocation-free text output.
+/* fmt — allocation-free text output. */
+
 extern "c" {
     write(fd: i32, data: *u8, size: usize): int
     ecvt(value: f64, ndigit: i32, decpt: mut *i32, sign: mut *i32): *u8
@@ -17,12 +18,15 @@ pub print(text: string): int {
         return 0
     }
     total: int = 0
+
     for attempt: int in 0 .. int(text.len) {
         n: int = write(1, &text[total], text.len - usize(total))
+
         if n <= 0 {
             return n
         }
         total += n
+
         if usize(total) == text.len {
             return total
         }
@@ -35,31 +39,38 @@ pub print(value: int): int {
     at: int = 20
     remaining: int = value
     negative: bool = value < 0
+
     for digit: int in 0 .. 20 {
         at -= 1
         remainder: int = remaining % 10
+
         if negative {
             digits[at] = u8(48 - remainder)
         } else {
             digits[at] = u8(48 + remainder)
         }
         remaining = remaining / 10
+
         if remaining == 0 {
             break
         }
     }
+
     if negative {
         at -= 1
         digits[at] = u8(45)
     }
     size: usize = usize(20 - at)
     total: int = 0
+
     for attempt: int in 0 .. int(size) {
         n: int = write(1, &digits[at + total], size - usize(total))
+
         if n <= 0 {
             return n
         }
         total += n
+
         if usize(total) == size {
             return total
         }
@@ -71,23 +82,28 @@ pub print(value: uint): int {
     digits: [20]u8
     at: int = 20
     remaining: uint = value
+
     for digit: int in 0 .. 20 {
         at -= 1
         remainder: uint = remaining % 10
         digits[at] = u8(48 + remainder)
         remaining = remaining / 10
+
         if remaining == 0 {
             break
         }
     }
     size: usize = usize(20 - at)
     total: int = 0
+
     for attempt: int in 0 .. int(size) {
         n: int = write(1, &digits[at + total], size - usize(total))
+
         if n <= 0 {
             return n
         }
         total += n
+
         if usize(total) == size {
             return total
         }
@@ -99,23 +115,28 @@ pub print(value: usize): int {
     digits: [20]u8
     at: int = 20
     remaining: usize = value
+
     for digit: int in 0 .. 20 {
         at -= 1
         remainder: usize = remaining % 10
         digits[at] = u8(48 + remainder)
         remaining = remaining / 10
+
         if remaining == 0 {
             break
         }
     }
     size: usize = usize(20 - at)
     total: int = 0
+
     for attempt: int in 0 .. int(size) {
         n: int = write(1, &digits[at + total], size - usize(total))
+
         if n <= 0 {
             return n
         }
         total += n
+
         if usize(total) == size {
             return total
         }
@@ -126,12 +147,15 @@ pub print(value: usize): int {
 // Byte flush with partial-write retry, shared by the numeric overloads.
 write_bytes(data: []u8): int {
     total: int = 0
+
     for attempt: int in 0 .. int(data.len) {
         n: int = write(1, &data[total], data.len - usize(total))
+
         if n <= 0 {
             return n
         }
         total += n
+
         if usize(total) == data.len {
             return total
         }
@@ -147,22 +171,26 @@ write_bytes(data: []u8): int {
 format_float(negative: bool, digits: []u8, count: int, decpt: i32): int {
     out: [48]u8
     at: int = 0
+
     if negative {
         out[0] = u8(45)
         at = 1
     }
     exp: i32 = decpt - 1
     dp: int = int(decpt)
+
     if exp >= -6 && exp <= 20 {
         if dp <= 0 {
             out[at] = u8(48)
             out[at + 1] = u8(46)
             at += 2
             zeros: int = 0 - dp
+
             for z: int in 0 .. zeros {
                 out[at] = u8(48)
                 at += 1
             }
+
             for d: int in 0 .. count {
                 out[at] = digits[d]
                 at += 1
@@ -173,6 +201,7 @@ format_float(negative: bool, digits: []u8, count: int, decpt: i32): int {
                 at += 1
             }
             pad: int = dp - count
+
             for z: int in 0 .. pad {
                 out[at] = u8(48)
                 at += 1
@@ -184,6 +213,7 @@ format_float(negative: bool, digits: []u8, count: int, decpt: i32): int {
             }
             out[at] = u8(46)
             at += 1
+
             for d: int in dp .. count {
                 out[at] = digits[d]
                 at += 1
@@ -192,9 +222,11 @@ format_float(negative: bool, digits: []u8, count: int, decpt: i32): int {
     } else {
         out[at] = digits[0]
         at += 1
+
         if count > 1 {
             out[at] = u8(46)
             at += 1
+
             for d: int in 1 .. count {
                 out[at] = digits[d]
                 at += 1
@@ -203,6 +235,7 @@ format_float(negative: bool, digits: []u8, count: int, decpt: i32): int {
         out[at] = u8(101)
         at += 1
         e: i32 = exp
+
         if e < 0 {
             out[at] = u8(45)
             at += 1
@@ -211,6 +244,7 @@ format_float(negative: bool, digits: []u8, count: int, decpt: i32): int {
         hi: i32 = e / 100
         mid: i32 = (e / 10) % 10
         lo: i32 = e % 10
+
         if hi != 0 {
             out[at] = u8(48 + hi)
             at += 1
@@ -239,9 +273,11 @@ shortest_digits(mag: f64, max: int, narrow: bool, mut digits: []u8, mut probe: [
     unused: i32 = 0
     count: int = max
     limit: int = max + 1
+
     for p: int in 1 .. limit {
         src: *u8 = ecvt(mag, i32(p), mut &decpt, mut &unused)
         memcpy(&digits[0], src, usize(p))
+
         for i: int in 0 .. p {
             probe[i] = digits[i]
         }
@@ -250,6 +286,7 @@ shortest_digits(mag: f64, max: int, narrow: bool, mut digits: []u8, mut probe: [
         probe[p] = u8(101)
         q += 1
         e: i32 = exp
+
         if e < 0 {
             probe[q] = u8(45)
             q += 1
@@ -258,6 +295,7 @@ shortest_digits(mag: f64, max: int, narrow: bool, mut digits: []u8, mut probe: [
         hi: i32 = e / 100
         mid: i32 = (e / 10) % 10
         lo: i32 = e % 10
+
         if hi != 0 {
             probe[q] = u8(48 + hi)
             q += 1
@@ -270,6 +308,7 @@ shortest_digits(mag: f64, max: int, narrow: bool, mut digits: []u8, mut probe: [
         probe[q] = u8(48 + lo)
         q += 1
         probe[q] = u8(0)
+
         if narrow {
             if strtof(&probe[0], null) == f32(mag) {
                 count = p
@@ -288,9 +327,11 @@ shortest_digits(mag: f64, max: int, narrow: bool, mut digits: []u8, mut probe: [
 pub print(value: f64): int {
     one: f64 = 1.0
     zero: f64 = 0.0
+
     if value != value {
         return print("nan")
     }
+
     if value - value != zero {
         if value < zero {
             return print("-inf")
@@ -299,9 +340,11 @@ pub print(value: f64): int {
     }
     negative: bool = value < zero
     mag: f64 = value
+
     if negative {
         mag = zero - value
     }
+
     if mag == zero {
         /*
          * The comparison operators cannot see the sign of a zero, so the sign
@@ -323,9 +366,11 @@ pub print(value: f64): int {
 pub print(value: f32): int {
     pone: f32 = 1.0
     zero: f32 = 0.0
+
     if value != value {
         return print("nan")
     }
+
     if value - value != zero {
         if value < zero {
             return print("-inf")
@@ -334,9 +379,11 @@ pub print(value: f32): int {
     }
     negative: bool = value < zero
     mag: f32 = value
+
     if negative {
         mag = zero - value
     }
+
     if mag == zero {
         /*
          * The comparison operators cannot see the sign of a zero, so the sign
@@ -386,9 +433,11 @@ printf_hex_unsigned(value: uint, uppercase: bool): int {
     out: [16]u8
     at: int = 16
     remaining: uint = value
+
     for digit: int in 0 .. 16 {
         at -= 1
         d: uint = remaining % 16
+
         if d < 10 {
             out[at] = u8(48 + d)
         } else if uppercase {
@@ -397,6 +446,7 @@ printf_hex_unsigned(value: uint, uppercase: bool): int {
             out[at] = u8(87 + d)
         }
         remaining = remaining / 16
+
         if remaining == 0 {
             break
         }
@@ -408,9 +458,11 @@ printf_hex_usize(value: usize, uppercase: bool): int {
     out: [16]u8
     at: int = 16
     remaining: usize = value
+
     for digit: int in 0 .. 16 {
         at -= 1
         d: usize = remaining % 16
+
         if d < 10 {
             out[at] = u8(48 + d)
         } else if uppercase {
@@ -419,6 +471,7 @@ printf_hex_usize(value: usize, uppercase: bool): int {
             out[at] = u8(87 + d)
         }
         remaining = remaining / 16
+
         if remaining == 0 {
             break
         }
@@ -435,9 +488,11 @@ printf_hex_usize(value: usize, uppercase: bool): int {
 printf_fixed_f64(value: f64, precision: usize): int {
     zero: f64 = 0.0
     one: f64 = 1.0
+
     if value != value {
         return printf_text("nan")
     }
+
     if value - value != zero {
         if value < zero {
             return printf_text("-inf")
@@ -446,18 +501,21 @@ printf_fixed_f64(value: f64, precision: usize): int {
     }
 
     negative: bool = value < zero
+
     if value == zero {
         if one / value < zero {
             negative = true
         }
     }
     mag: f64 = value
+
     if negative {
         mag = zero - value
     }
 
     out: [640]u8
     at: int = 0
+
     if negative {
         out[at] = u8(45)
         at += 1
@@ -471,15 +529,18 @@ printf_fixed_f64(value: f64, precision: usize): int {
         whole: f64 = floor(mag)
         fraction: f64 = mag - whole
         half: f64 = 0.5
+
         if fraction > half {
             whole += 1.0
         } else if fraction == half {
             parity: uint = uint(whole) % 2
+
             if parity != 0 {
                 whole += 1.0
             }
         }
         src = fcvt(whole, 1, mut &decpt, mut &unused_sign)
+
         if whole == zero {
             out[at] = u8(48)
             at += 1
@@ -492,31 +553,38 @@ printf_fixed_f64(value: f64, precision: usize): int {
     }
 
     rounding: i32 = fegetround()
+
     if rounding != 0 {
         fesetround(0) // Darwin FE_TONEAREST: nearest, exact ties to even
     }
     src = fcvt(mag, i32(places), mut &decpt, mut &unused_sign)
+
     if rounding != 0 {
         fesetround(rounding)
     }
     point: int = int(decpt)
     available: int = places + point
+
     if point <= 0 && available < 0 {
         available = 0
     }
+
     if point <= 0 {
         out[at] = u8(48)
         out[at + 1] = u8(46)
         at += 2
         zeros: int = 0 - point
+
         if zeros > places {
             zeros = places
         }
+
         for i: int in 0 .. zeros {
             out[at] = u8(48)
             at += 1
         }
         digits: int = places - zeros
+
         if digits > 0 {
             memcpy(&out[at], src, usize(digits))
             at += digits
@@ -554,6 +622,7 @@ finish_line(written: int): int {
         return written
     }
     n: int = print("\n")
+
     if n < 0 {
         return n
     }

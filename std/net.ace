@@ -1,8 +1,9 @@
-// net — allocation-free IPv4 TCP sockets (Darwin/Apple arm64).
-//
-// The public declarations form the stable Ace networking surface. The
-// private section below them owns Darwin's constants, structures, C link
-// names, byte order, and conversion details.
+/* net — allocation-free IPv4 TCP sockets (Darwin/Apple arm64).
+ *
+ * The public declarations form the stable Ace networking surface. The
+ * private section below them owns Darwin's constants, structures, C link
+ * names, byte order, and conversion details.
+ */
 
 import sys
 
@@ -15,8 +16,10 @@ pub Address4: struct {
     port: u16,
 }
 
-// Every operation has a distinct public error domain. The raw OS error is
-// available through sys.errno() and must be queried immediately on failure.
+/* Every operation has a distinct public error domain. The raw OS error is
+ * available through sys.errno() and must be queried immediately on failure.
+ */
+
 pub SocketErr: distinct i32
 pub SetReuseAddressErr: distinct i32
 pub SetReusePortErr: distinct i32
@@ -80,9 +83,10 @@ pub send(sock: Socket, data: string): (int, Error) {
 
 // --- private Darwin implementation ---------------------------------------
 
-// Darwin's sockaddr_in layout: length/family bytes, network-order port,
-// four address bytes, then eight zero bytes. Keeping the byte fields explicit
-// prevents platform byte order from leaking into Address4.
+/* Darwin's sockaddr_in layout: length/family bytes, network-order port,
+ * four address bytes, then eight zero bytes. Keeping the byte fields explicit
+ * prevents platform byte order from leaking into Address4.
+ */
 DarwinAddress4: struct {
     length: u8,
     family: u8,
@@ -104,50 +108,53 @@ EINVAL: const i32 = 22
 SOCKADDR4_SIZE: const u32 = 16
 I32_MAX_USIZE: const usize = 0x7fffffff
 
-socket_error: const ErrorDescriptor = ErrorDescriptor{
+socket_error: const ErrorDescriptor = ErrorDescriptor {
     code: 0, domain: typeid(SocketErr), message: "socket failed",
 }
-set_reuse_address_error: const ErrorDescriptor = ErrorDescriptor{
-    code: 0, domain: typeid(SetReuseAddressErr),
-    message: "set reuse address failed",
+
+set_reuse_address_error: const ErrorDescriptor = ErrorDescriptor {
+    code: 0, domain: typeid(SetReuseAddressErr), message: "set reuse address failed",
 }
-set_reuse_port_error: const ErrorDescriptor = ErrorDescriptor{
-    code: 0, domain: typeid(SetReusePortErr),
-    message: "set reuse port failed",
+
+set_reuse_port_error: const ErrorDescriptor = ErrorDescriptor {
+    code: 0, domain: typeid(SetReusePortErr), message: "set reuse port failed",
 }
-set_nonblocking_error: const ErrorDescriptor = ErrorDescriptor{
-    code: 0, domain: typeid(SetNonblockingErr),
-    message: "set nonblocking failed",
+
+set_nonblocking_error: const ErrorDescriptor = ErrorDescriptor {
+    code: 0, domain: typeid(SetNonblockingErr), message: "set nonblocking failed",
 }
-bind_error: const ErrorDescriptor = ErrorDescriptor{
+
+bind_error: const ErrorDescriptor = ErrorDescriptor {
     code: 0, domain: typeid(BindErr), message: "bind failed",
 }
-listen_error: const ErrorDescriptor = ErrorDescriptor{
+
+listen_error: const ErrorDescriptor = ErrorDescriptor {
     code: 0, domain: typeid(ListenErr), message: "listen failed",
 }
-accept_error: const ErrorDescriptor = ErrorDescriptor{
+
+accept_error: const ErrorDescriptor = ErrorDescriptor {
     code: 0, domain: typeid(AcceptErr), message: "accept failed",
 }
-connect_error: const ErrorDescriptor = ErrorDescriptor{
+
+connect_error: const ErrorDescriptor = ErrorDescriptor {
     code: 0, domain: typeid(ConnectErr), message: "connect failed",
 }
-receive_error: const ErrorDescriptor = ErrorDescriptor{
+
+receive_error: const ErrorDescriptor = ErrorDescriptor {
     code: 0, domain: typeid(ReceiveErr), message: "receive failed",
 }
-send_error: const ErrorDescriptor = ErrorDescriptor{
+
+send_error: const ErrorDescriptor = ErrorDescriptor {
     code: 0, domain: typeid(SendErr), message: "send failed",
 }
 
 extern "c" {
     c_socket(domain: i32, kind: i32, protocol: i32): i32 = "socket"
-    c_setsockopt(socket: i32, level: i32, option: i32,
-                 value: *i32, length: u32): i32 = "setsockopt"
+    c_setsockopt(socket: i32, level: i32, option: i32, value: *i32, length: u32): i32 = "setsockopt"
     c_bind(socket: i32, address: *DarwinAddress4, length: u32): i32 = "bind"
     c_listen(socket: i32, backlog: i32): i32 = "listen"
-    c_accept(socket: i32, address: mut *DarwinAddress4,
-             length: mut *u32): i32 = "accept"
-    c_connect(socket: i32, address: *DarwinAddress4,
-              length: u32): i32 = "connect"
+    c_accept(socket: i32, address: mut *DarwinAddress4, length: mut *u32): i32 = "accept"
+    c_connect(socket: i32, address: *DarwinAddress4, length: u32): i32 = "connect"
     c_recv(socket: i32, buffer: mut *u8, length: usize, flags: i32): i64 = "recv"
     c_send(socket: i32, data: *u8, length: usize, flags: i32): i64 = "send"
     c_fcntl(socket: i32, command: i32, ...): i32 = "fcntl"
@@ -162,9 +169,9 @@ errno_set(value: i32) {
 to_darwin(address: Address4): DarwinAddress4 {
     port: [2]u8 = [u8(address.port >> 8), u8(address.port)]
     ip: [4]u8 = [address.ip[0], address.ip[1], address.ip[2], address.ip[3]]
-    zero: [8]u8 = [u8(0), u8(0), u8(0), u8(0),
-                    u8(0), u8(0), u8(0), u8(0)]
-    return DarwinAddress4{
+    zero: [8]u8 = [u8(0), u8(0), u8(0), u8(0), u8(0), u8(0), u8(0), u8(0)]
+
+    return DarwinAddress4 {
         length: u8(SOCKADDR4_SIZE),
         family: u8(AF_INET),
         port: port,
@@ -175,7 +182,8 @@ to_darwin(address: Address4): DarwinAddress4 {
 
 from_darwin(address: DarwinAddress4): Address4 {
     ip: [4]u8 = [address.ip[0], address.ip[1], address.ip[2], address.ip[3]]
-    return Address4{
+
+    return Address4 {
         ip: ip,
         port: (u16(address.port[0]) << 8) | u16(address.port[1]),
     }
@@ -183,7 +191,8 @@ from_darwin(address: DarwinAddress4): Address4 {
 
 zero_address4(): Address4 {
     ip: [4]u8 = [u8(0), u8(0), u8(0), u8(0)]
-    return Address4{ip: ip, port: u16(0)}
+
+    return Address4 {ip: ip, port: u16(0)}
 }
 
 socket_darwin(kind: SocketKind): (Socket, Error) {
@@ -193,45 +202,47 @@ socket_darwin(kind: SocketKind): (Socket, Error) {
         return Socket(-1), Error(&socket_error)
     }
     raw: i32 = c_socket(AF_INET, SOCK_STREAM, 0)
+
     if raw == -1 {
         return Socket(-1), Error(&socket_error)
     }
     return Socket(raw), null
 }
 
-set_socket_option_darwin(sock: Socket, option: i32, enabled: bool,
-                         error: Error): Error {
+set_socket_option_darwin(sock: Socket, option: i32, enabled: bool, error: Error): Error {
     value: i32 = 0
+
     if enabled {
         value = 1
     }
-    if c_setsockopt(i32(sock), SOL_SOCKET, option, &value,
-                    u32(sizeof(i32))) == -1 {
+
+    if c_setsockopt(i32(sock), SOL_SOCKET, option, &value, u32(sizeof(i32))) == -1 {
         return error
     }
     return null
 }
 
 set_reuse_address_darwin(sock: Socket, enabled: bool): Error {
-    return set_socket_option_darwin(sock, SO_REUSEADDR, enabled,
-                                    Error(&set_reuse_address_error))
+    return set_socket_option_darwin(sock, SO_REUSEADDR, enabled, Error(&set_reuse_address_error))
 }
 
 set_reuse_port_darwin(sock: Socket, enabled: bool): Error {
-    return set_socket_option_darwin(sock, SO_REUSEPORT, enabled,
-                                    Error(&set_reuse_port_error))
+    return set_socket_option_darwin(sock, SO_REUSEPORT, enabled, Error(&set_reuse_port_error))
 }
 
 set_nonblocking_darwin(sock: Socket, enabled: bool): Error {
     flags: i32 = c_fcntl(i32(sock), F_GETFL)
+
     if flags == -1 {
         return Error(&set_nonblocking_error)
     }
+
     if enabled {
         flags = flags | O_NONBLOCK
     } else {
         flags = flags & !O_NONBLOCK
     }
+
     if c_fcntl(i32(sock), F_SETFL, flags) == -1 {
         return Error(&set_nonblocking_error)
     }
@@ -240,6 +251,7 @@ set_nonblocking_darwin(sock: Socket, enabled: bool): Error {
 
 bind_darwin(sock: Socket, address: Address4): Error {
     raw: DarwinAddress4 = to_darwin(address)
+
     if c_bind(i32(sock), &raw, SOCKADDR4_SIZE) == -1 {
         return Error(&bind_error)
     }
@@ -251,6 +263,7 @@ listen_darwin(sock: Socket, backlog: usize): Error {
         errno_set(EINVAL)
         return Error(&listen_error)
     }
+
     if c_listen(i32(sock), i32(backlog)) == -1 {
         return Error(&listen_error)
     }
@@ -260,13 +273,14 @@ listen_darwin(sock: Socket, backlog: usize): Error {
 accept_darwin(listener: Socket, mut address: Address4): (Socket, Error) {
     port: [2]u8 = [u8(0), u8(0)]
     ip: [4]u8 = [u8(0), u8(0), u8(0), u8(0)]
-    zero: [8]u8 = [u8(0), u8(0), u8(0), u8(0),
-                    u8(0), u8(0), u8(0), u8(0)]
-    raw: DarwinAddress4 = DarwinAddress4{
+    zero: [8]u8 = [u8(0), u8(0), u8(0), u8(0), u8(0), u8(0), u8(0), u8(0)]
+
+    raw: DarwinAddress4 = DarwinAddress4 {
         length: u8(0), family: u8(0), port: port, ip: ip, zero: zero,
     }
     length: u32 = SOCKADDR4_SIZE
     accepted: i32 = c_accept(i32(listener), mut &raw, mut &length)
+
     if accepted == -1 {
         address = zero_address4()
         return Socket(-1), Error(&accept_error)
@@ -277,6 +291,7 @@ accept_darwin(listener: Socket, mut address: Address4): (Socket, Error) {
 
 connect_darwin(sock: Socket, address: Address4): Error {
     raw: DarwinAddress4 = to_darwin(address)
+
     if c_connect(i32(sock), &raw, SOCKADDR4_SIZE) == -1 {
         return Error(&connect_error)
     }
@@ -288,6 +303,7 @@ receive_darwin(sock: Socket, mut buffer: []u8): (int, Error) {
         return 0, null
     }
     count: i64 = c_recv(i32(sock), mut &buffer[0], buffer.len, 0)
+
     if count < 0 {
         return 0, Error(&receive_error)
     }
@@ -299,6 +315,7 @@ send_bytes_darwin(sock: Socket, data: []u8): (int, Error) {
         return 0, null
     }
     count: i64 = c_send(i32(sock), &data[0], data.len, MSG_NOSIGNAL)
+
     if count < 0 {
         return 0, Error(&send_error)
     }
@@ -310,6 +327,7 @@ send_string_darwin(sock: Socket, data: string): (int, Error) {
         return 0, null
     }
     count: i64 = c_send(i32(sock), &data[0], data.len, MSG_NOSIGNAL)
+
     if count < 0 {
         return 0, Error(&send_error)
     }

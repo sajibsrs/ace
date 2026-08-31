@@ -1,8 +1,10 @@
-// mem — the fixed process-wide raw allocation boundary.
-//
-// These declarations define the public Ace surface. The bootstrap compiler
-// recognizes this exact standard module and lowers calls directly to the
-// platform allocator; the fallback bodies are never emitted.
+/* mem — the fixed process-wide raw allocation boundary.
+ *
+ * These declarations define the public Ace surface. The bootstrap compiler
+ * recognizes this exact standard module and lowers calls directly to the
+ * platform allocator; the fallback bodies are never emitted.
+ */
+
 pub alloc(size: int, align: int): []u8 {
     return null
 }
@@ -15,19 +17,17 @@ pub release(mut data: []u8) {
     data = null
 }
 
-// Byte operations use complete slice views as their ranges. The bootstrap
-// compiler lowers them directly to the platform's optimized memory routines.
-pub copy(noalias mut dst: []u8, src: []u8) {
-}
+/* Byte operations use complete slice views as their ranges. The bootstrap
+ * compiler lowers them directly to the platform's optimized memory routines.
+ */
 
-pub move(mut dst: []u8, src: []u8) {
-}
+pub copy(noalias mut dst: []u8, src: []u8) {}
 
-pub fill(mut data: []u8, value: u8) {
-}
+pub move(mut dst: []u8, src: []u8) {}
 
-pub zero(mut data: []u8) {
-}
+pub fill(mut data: []u8, value: u8) {}
+
+pub zero(mut data: []u8) {}
 
 pub compare(a: []u8, b: []u8): int {
     return 0
