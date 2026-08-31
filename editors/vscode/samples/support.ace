@@ -1,0 +1,2 @@
+// Local-path import fixture for the syntax showcase.
+pub SAMPLE_MARKER: const int = 1

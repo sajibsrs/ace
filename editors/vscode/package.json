@@ -1,0 +1,36 @@
+{
+  "name": "ace-language",
+  "displayName": "Ace Language",
+  "description": "Ace language syntax highlighting and editor configuration.",
+  "version": "0.0.1",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "ace",
+        "aliases": [
+          "Ace",
+          "ace"
+        ],
+        "extensions": [
+          ".ace"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "ace",
+        "scopeName": "source.ace",
+        "path": "./syntaxes/ace.tmLanguage.json"
+      }
+    ]
+  }
+}

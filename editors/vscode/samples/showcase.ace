@@ -1,0 +1,275 @@
+// Ace Language syntax-highlighting showcase.
+// Use Developer: Inspect Editor Tokens and Scopes on the examples below.
+import fmt
+import mem
+import arithmetic: math
+import sample: "./support.ace"
+import min, max from math
+import (
+    time_mono,
+) from sys
+
+/* Declarations: built-in types, user-defined types, generics, and constants. */
+MAX_ITEMS: const int = 1_024
+visits: uint
+
+Color: enum {
+    red,
+    green,
+    blue,
+}
+
+Point: struct {
+    x: f64,
+    y: f64,
+}
+
+Primitives: struct {
+    signed8: i8,
+    signed16: i16,
+    signed32: i32,
+    signed64: i64,
+    unsigned8: u8,
+    unsigned16: u16,
+    unsigned32: u32,
+    unsigned64: u64,
+    float32: f32,
+    float64: f64,
+    boolean: bool,
+    text: string,
+    size: usize,
+}
+
+pub Box[T]: struct {
+    value: T,
+}
+
+Pair[T, U]: struct {
+    left: T,
+    right: U,
+}
+
+StringList: type = []string
+Meters: distinct f64
+
+Shape: contract {
+    area(): f64
+    mut scale(factor: f64)
+}
+
+Point signs (
+    Shape,
+)
+
+Event: union {
+    none,
+    key: u32,
+    message: string,
+}
+
+Result[T]: union {
+    failed: Error,
+    succeeded: T,
+}
+
+extern "c" {
+    c_abs(value: i32): i32 = "abs"
+    c_log(format: *u8, ...)
+}
+
+Point.area(): f64 {
+    return self.x * self.y
+}
+
+mut Point.scale(factor: f64) {
+    self.x = self.x * factor
+    self.y = self.y * factor
+}
+
+pub clamp[T](value: T, low: T, high: T): T {
+    if value < low {
+        return low
+    } else if value > high {
+        return high
+    }
+    return value
+}
+
+choose_max[T](left: T, right: T): T {
+    if left > right {
+        return left
+    }
+    return right
+}
+
+add(left: int, right: int): int {
+    return left + right
+}
+
+inspect(noalias values: []int): usize {
+    return values.len
+}
+
+increment(mut value: int) {
+    value += 1
+}
+
+export ace_showcase_identity(value: i32): i32 {
+    return value
+}
+
+read_pair(): (int, string) {
+    return 7, "seven"
+}
+
+asm_example(value: int): int {
+    result: int
+    asm "svc #0" {
+        in: x0 = value, x16 = 4
+        out: x0 = result
+        clobbers: x1, x2
+    }
+    return result
+}
+
+main(): int {
+    // Literals and built-in constructor-shaped casts.
+    decimal: int = 42
+    hexadecimal: uint = 0xFF_A0
+    binary: u8 = 0b1010_0101
+    fraction: f64 = 6.022e23
+    letter: u8 = 'A'
+    escaped: string = "line one\nline two\x21"
+    empty: string = null
+    enabled: bool = true
+    local_limit: const int = 100
+
+    // Variables, user-defined types, literals, and generic instantiations.
+    point: Point = {x: 3.0, y: 4.0}
+    explicit_point: Point = Point{x: 1.0, y: 2.0}
+    boxed: Box[int] = {value: decimal}
+    pair: Pair[int, string] = {left: boxed.value, right: "Ace"}
+    result: Result[int] = Result[int].succeeded(pair.left)
+    bounded: int = clamp[int](boxed.value, 0, 100)
+    operation: (int, int): int = add
+    selected: int = operation(bounded, 10)
+    direct_area: f64 = Point.area(explicit_point)
+
+    // Package names are distinct from variables and fields.
+    lower: int = min[int](selected, 50)
+    upper: int = max[int](lower, 10)
+    fmt.printf("value=%d hex=%x text=%s\n", upper, hexadecimal, pair.right)
+
+    // Multi-return, simultaneous assignment, and compound assignment.
+    number: int, label: string = read_pair()
+    number, selected = selected, number
+    increment(mut number)
+    number += 1
+    number <<= 1
+    number |= 2
+
+    // Arrays, slices, indexing, ranges, and two-binder sequence iteration.
+    values: [5]int = [1, 2, 3, 4, 5]
+    middle: []int = values[1..4]
+    head: []int = values[..2]
+    tail: []int = values[2..]
+    total: int = 0
+    for index: usize, value: int in middle {
+        if index == 0 {
+            continue
+        }
+        total += value + int(index)
+        if total > local_limit {
+            break
+        }
+    }
+    for step_value: int in 10 .. 0 step 2 {
+        total += step_value
+    }
+
+    // Structured repetition and labeled control flow.
+    passes: int = 0
+    retry: {
+        passes += 1
+        if passes < 2 {
+            continue retry
+        }
+        break retry
+    }
+
+    // Enum and tagged-union switches.
+    color: Color = Color.green
+    switch color {
+        Color.red { total += 1 }
+        Color.green { total += 2 }
+        Color.blue { total += 3 }
+    }
+
+    switch number {
+        0, 1 { total += 1 }
+        2 { total += 2 }
+        else { total += 3 }
+    }
+
+    event: Event = Event.message("ready")
+    switch event {
+        Event.none {
+            total += 0
+        }
+        Event.key(code: u32) {
+            total += int(code)
+        }
+        Event.message(text: string) {
+            fmt.println(text)
+        }
+    }
+
+    switch result {
+        Result[int].failed(error: Error) {
+            fmt.println(error.message)
+        }
+        Result[int].succeeded(payload: int) {
+            total += payload
+        }
+    }
+
+    // Pointers, writable address-of, contracts, null, and built-ins.
+    pointer: *int = &number
+    writable: mut *int = mut &number
+    copied: int = ~pointer
+    shape: Shape = Shape(&point)
+    mut point.scale(0.5)
+    size: usize = sizeof(Point)
+    viewed: usize = inspect(middle)
+    identity: typeid = typeid(Point)
+    no_shape: Shape = null
+
+    // Allocation and package-qualified calls.
+    bytes: []u8 = mem.alloc(16, 8)
+    mem.fill(mut bytes, letter)
+    mem.release(mut bytes)
+
+    // Operators, comparison chains, short-circuiting, and constants.
+    in_range: bool = 0 <= copied <= MAX_ITEMS
+    flags: uint = (hexadecimal & 0xFF) | 0b1000
+    arithmetic_result: int = ((number + 2) * 3 - 1) / 2 % 5
+    arithmetic_result -= 1
+    arithmetic_result *= 2
+    arithmetic_result /= 2
+    arithmetic_result %= 3
+    flags ^= 0x10
+    flags &= 0xFF
+    shifted: uint = flags << 2
+    shifted >>= 1
+    inverted: uint = !shifted
+    valid: bool = enabled && in_range || no_shape == null
+
+    if valid && empty == null && writable != null && shape != null &&
+       identity != null && size > 0 && viewed > 0 && inverted != 0 &&
+       head.len < tail.len {
+        visits += 1
+        return 0
+    }
+
+    panic(escaped)
+}
