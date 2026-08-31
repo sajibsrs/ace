@@ -1,0 +1,16 @@
+// expect-exit: 0
+// Links a real Apple framework through -framework CoreFoundation and calls a
+// framework symbol through a link-named extern. CFNullGetTypeID returns a
+// nonzero type id; a linked-but-wrong answer exits 9 instead.
+
+extern "c" {
+    cf_null_type_id(): u64 = "CFNullGetTypeID"
+}
+
+main(): int {
+    type_id: u64 = cf_null_type_id()
+    if type_id == 0 {
+        return 9
+    }
+    return 0
+}

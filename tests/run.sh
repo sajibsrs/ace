@@ -267,6 +267,132 @@ if [ -d tests/modules ]; then
     fi
 fi
 
+# driver fixtures: external link inputs and options through the -o pipeline.
+# The cc launch is an argument vector with no shell, so paths with spaces and
+# shell metacharacters link exactly as written; -L/-l and -framework cover
+# archives and Apple frameworks; validation and linker failures are checked.
+if [ -d tests/driver ]; then
+    mkdir -p "/tmp/ace_driver/lib dir" "/tmp/ace_driver/space dir"
+    cc -c tests/driver/helper.c -o /tmp/ace_driver/helper_raw.o
+    ar rcs "/tmp/ace_driver/lib dir/libhelper.a" /tmp/ace_driver/helper_raw.o
+    cp /tmp/ace_driver/helper_raw.o '/tmp/ace_driver/evil;$(echo pwn)`id`.o'
+    cp /tmp/ace_driver/helper_raw.o "/tmp/ace_driver/space dir/help lib.o"
+
+    out=$("$ACE" -o /tmp/ace_driver/app_obj tests/driver/main_obj.ace \
+          /tmp/ace_driver/helper_raw.o && /tmp/ace_driver/app_obj)
+    got=$?
+    if [ "$got" -ne 7 ]; then
+        echo "FAIL: linking an extra .o exited $got, want 7"
+        fail=1
+    fi
+    out=$("$ACE" -o /tmp/ace_driver/app_lib tests/driver/main_obj.ace \
+          -L "/tmp/ace_driver/lib dir" -l helper && /tmp/ace_driver/app_lib)
+    got=$?
+    if [ "$got" -ne 7 ]; then
+        echo "FAIL: -L/-l archive link exited $got, want 7"
+        fail=1
+    fi
+    out=$("$ACE" -o /tmp/ace_driver/app_fw tests/driver/main_fw.ace \
+          -framework CoreFoundation && /tmp/ace_driver/app_fw)
+    got=$?
+    if [ "$got" -ne 0 ]; then
+        echo "FAIL: -framework link exited $got, want 0"
+        fail=1
+    fi
+    # spaces and shell metacharacters must travel as plain argument bytes
+    out=$("$ACE" -o "/tmp/ace_driver/space dir/my app" tests/driver/main_obj.ace \
+          "/tmp/ace_driver/space dir/help lib.o" && "/tmp/ace_driver/space dir/my app")
+    got=$?
+    if [ "$got" -ne 7 ]; then
+        echo "FAIL: paths with spaces exited $got, want 7"
+        fail=1
+    fi
+    out=$("$ACE" -o /tmp/ace_driver/app_evil tests/driver/main_obj.ace \
+          '/tmp/ace_driver/evil;$(echo pwn)`id`.o' && /tmp/ace_driver/app_evil)
+    got=$?
+    if [ "$got" -ne 7 ]; then
+        echo "FAIL: shell metacharacters in names exited $got, want 7"
+        fail=1
+    fi
+
+    driver_diag() {
+        want=$1; shift
+        if "$ACE" "$@" >/dev/null 2>/tmp/ace_test_errs; then
+            echo "FAIL: expected driver rejection: $*"
+            fail=1
+        elif ! grep -qF "$want" /tmp/ace_test_errs; then
+            echo "FAIL: expected diagnostic '$want' from: $*"
+            cat /tmp/ace_test_errs
+            fail=1
+        fi
+    }
+    driver_diag "ace: -framework requires a framework name" \
+        -o x tests/driver/main_obj.ace -framework
+    driver_diag "ace: -l requires a library name" \
+        -o x tests/driver/main_obj.ace -l
+    driver_diag "ace: -L requires a directory" \
+        -o x tests/driver/main_obj.ace -L
+    driver_diag "ace: -o requires an output name" \
+        tests/driver/main_obj.ace -o
+    driver_diag "ace: -framework requires a framework name" \
+        -o x tests/driver/main_obj.ace -framework -l helper
+    driver_diag "ace: -l requires a library name" \
+        -o x tests/driver/main_obj.ace -l -framework CoreFoundation
+    driver_diag "ace: -L requires a directory" \
+        -o x tests/driver/main_obj.ace -L -l helper
+    driver_diag "ace: -o requires an output name" \
+        tests/driver/main_obj.ace -o -l helper
+    driver_diag "ace: only one root .ace source may be compiled" \
+        -o x tests/driver/main_obj.ace tests/driver/main_fw.ace
+    driver_diag "ace: additional link inputs cannot be used with -c" \
+        -c tests/driver/main_obj.ace /tmp/ace_driver/helper_raw.o
+    driver_diag "ace: additional link inputs cannot be used with -c" \
+        -c tests/driver/main_obj.ace -l helper
+    driver_diag "ace: unknown option '--wat'" \
+        -o x --wat tests/driver/main_obj.ace
+    driver_diag "ace: unrecognized input 'notes.txt' (expected .ace, .o, or .a)" \
+        -o x tests/driver/main_obj.ace notes.txt
+    driver_diag "ace: link inputs require -o" \
+        tests/driver/main_obj.ace /tmp/ace_driver/helper_raw.o
+    # Neither the generated intermediate object nor the linked output may
+    # overwrite an input, including aliases of the same existing file.
+    cp /tmp/ace_driver/helper_raw.o /tmp/ace_driver/collision.o
+    driver_diag "ace: generated object '/tmp/ace_driver/collision.o' would overwrite input '/tmp/ace_driver/collision.o'" \
+        tests/driver/main_obj.ace /tmp/ace_driver/collision.o \
+        -o /tmp/ace_driver/collision
+    if ! cmp -s /tmp/ace_driver/helper_raw.o /tmp/ace_driver/collision.o; then
+        echo "FAIL: generated-object collision changed the input"
+        fail=1
+    fi
+    cp /tmp/ace_driver/helper_raw.o /tmp/ace_driver/alias_target.o
+    ln -f /tmp/ace_driver/alias_target.o /tmp/ace_driver/alias_input.o
+    driver_diag "ace: generated object '/tmp/ace_driver/alias_target.o' would overwrite input '/tmp/ace_driver/alias_input.o'" \
+        tests/driver/main_obj.ace /tmp/ace_driver/alias_input.o \
+        -o /tmp/ace_driver/alias_target
+    if ! cmp -s /tmp/ace_driver/helper_raw.o /tmp/ace_driver/alias_target.o; then
+        echo "FAIL: hard-link collision changed the input"
+        fail=1
+    fi
+    cp /tmp/ace_driver/helper_raw.o /tmp/ace_driver/final_collision.o
+    driver_diag "ace: linked output '/tmp/ace_driver/final_collision.o' would overwrite input '/tmp/ace_driver/final_collision.o'" \
+        tests/driver/main_obj.ace /tmp/ace_driver/final_collision.o \
+        -o /tmp/ace_driver/final_collision.o
+    if ! cmp -s /tmp/ace_driver/helper_raw.o /tmp/ace_driver/final_collision.o; then
+        echo "FAIL: linked-output collision changed the input"
+        fail=1
+    fi
+    # cc's own diagnostics pass through; ace reports the exit status and fails
+    if "$ACE" -o /tmp/ace_driver/app_bad tests/driver/main_obj.ace \
+       -l ace_missing_lib_zz >/dev/null 2>/tmp/ace_test_errs; then
+        echo "FAIL: missing library should fail to link"
+        fail=1
+    elif ! grep -qF "ace: linker exited with status" /tmp/ace_test_errs; then
+        echo "FAIL: linker failure should report the exit status"
+        cat /tmp/ace_test_errs
+        fail=1
+    fi
+fi
+
 # lexer spot-checks
 if ! "$ACE" --tokens tests/lexer/hello.ok.ace | grep -q "^2:1${tab}import$"; then
     echo "FAIL: first token of hello.ok.ace should be 'import'"

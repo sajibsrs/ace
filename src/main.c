@@ -1,18 +1,113 @@
-// main.c — compiler driver. Stages: lex → parse → sema (→ emit).
+// main.c — compiler driver. Stages: lex → parse → sema (→ emit → link).
 #include "ace.h"
 
+#include <errno.h>
+#include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
 #include <time.h>
+
+extern char** environ;
 
 static void usage(void) {
     fprintf(stderr, "usage: ace [--tokens] [--ast] [--report] [-c] [-o NAME] <file.ace>\n"
-                    "  (default)  full semantic check, no codegen\n"
-                    "  --report   print compilation statistics to stderr\n"
-                    "  -c         emit a Mach-O arm64 object <base>.o\n"
-                    "  -o NAME    emit + link via the system cc: cc <obj> -o NAME\n");
+                    "           [<file.o> | <file.a> | -L DIR | -l NAME | -framework NAME]...\n"
+                    "  (default)       full semantic check, no codegen\n"
+                    "  --report        print compilation statistics to stderr\n"
+                    "  -c              emit a Mach-O arm64 object <base>.o\n"
+                    "  -o NAME         emit + link via the system cc\n"
+                    "  <file>.o/.a     extra linker inputs, passed to cc in order\n"
+                    "  -L DIR          linker library search path\n"
+                    "  -l NAME         linker named library\n"
+                    "  -framework NAME linker Apple framework\n");
     exit(2);
+}
+
+typedef struct {
+    char** items;
+    size_t len;
+    size_t cap;
+} ArgList;
+
+static void arg_push(ArgList* list, char* item) {
+    if (list->len == list->cap) {
+        size_t cap = list->cap ? list->cap * 2 : 8;
+        char** items = realloc(list->items, cap * sizeof *items);
+        if (!items) {
+            fprintf(stderr, "ace: out of memory\n");
+            exit(1);
+        }
+        list->items = items;
+        list->cap = cap;
+    }
+    list->items[list->len++] = item;
+}
+
+static void cli_error(const char* message) {
+    fprintf(stderr, "ace: %s\n", message);
+    exit(2);
+}
+
+static char* opt_value(int* i, int argc, char** argv, const char* option,
+                       const char* what) {
+    if (*i + 1 >= argc ||
+        (argv[*i + 1][0] == '-' && argv[*i + 1][1] != 0)) {
+        fprintf(stderr, "ace: %s requires %s\n", option, what);
+        exit(2);
+    }
+    return argv[++*i];
+}
+
+static int has_suffix(const char* s, const char* suffix) {
+    size_t n = strlen(s), m = strlen(suffix);
+    return n >= m && strcmp(s + n - m, suffix) == 0;
+}
+
+// Existing aliases (relative paths, symlinks, hard links) compare by identity;
+// exact text also catches a target that does not exist yet.
+static int same_path(const char* a, const char* b) {
+    if (strcmp(a, b) == 0) return 1;
+    struct stat sa, sb;
+    return stat(a, &sa) == 0 && stat(b, &sb) == 0 &&
+           sa.st_dev == sb.st_dev && sa.st_ino == sb.st_ino;
+}
+
+static void reject_output_collision(const char* output, const char* input,
+                                    const char* kind) {
+    if (!same_path(output, input)) return;
+    fprintf(stderr, "ace: %s '%s' would overwrite input '%s'\n",
+            kind, output, input);
+    exit(2);
+}
+
+// Launch the linker as an argument vector — no shell between ace and cc.
+static int run_linker(ArgList* cc) {
+    pid_t pid;
+    int rc = posix_spawnp(&pid, cc->items[0], NULL, NULL, cc->items, environ);
+    if (rc != 0) {
+        fprintf(stderr, "ace: cannot launch cc: %s\n", strerror(rc));
+        return -1;
+    }
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) {
+            fprintf(stderr, "ace: cannot wait for cc: %s\n", strerror(errno));
+            return -1;
+        }
+    }
+    if (WIFEXITED(status)) {
+        int code = WEXITSTATUS(status);
+        if (code != 0) {
+            fprintf(stderr, "ace: linker exited with status %d\n", code);
+            return -1;
+        }
+        return 0;
+    }
+    fprintf(stderr, "ace: linker terminated by signal %d\n", WTERMSIG(status));
+    return -1;
 }
 
 static uint64_t monotonic_ns(void) {
@@ -91,22 +186,57 @@ static void obj_path(char* out, size_t cap, const char* src) {
 int main(int argc, char** argv) {
     int dump_tok = 0, dump_ast = 0, show_report = 0, opt_c = 0, opt_link = 0;
     const char* path = NULL;
-    const char* out_name = NULL;
+    char* out_name = NULL;
+    ArgList link_args = {0}; // .o/.a inputs and -L/-l/-framework, written order
+    ArgList link_files = {0}; // only positional .o/.a inputs, for collision checks
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--tokens") == 0) dump_tok = 1;
-        else if (strcmp(argv[i], "--ast") == 0) dump_ast = 1;
-        else if (strcmp(argv[i], "--report") == 0) show_report = 1;
-        else if (strcmp(argv[i], "-c") == 0) opt_c = 1;
-        else if (strcmp(argv[i], "-o") == 0) {
-            if (i + 1 >= argc) usage();
-            out_name = argv[++i];
+        char* a = argv[i];
+        if (strcmp(a, "--tokens") == 0) dump_tok = 1;
+        else if (strcmp(a, "--ast") == 0) dump_ast = 1;
+        else if (strcmp(a, "--report") == 0) show_report = 1;
+        else if (strcmp(a, "-c") == 0) opt_c = 1;
+        else if (strcmp(a, "-o") == 0) {
+            out_name = opt_value(&i, argc, argv, "-o", "an output name");
             opt_link = 1;
         }
-        else if (argv[i][0] == '-' && argv[i][1] != 0) usage();
-        else if (!path) path = argv[i];
-        else usage();
+        else if (strcmp(a, "-L") == 0) {
+            char* dir = opt_value(&i, argc, argv, "-L", "a directory");
+            arg_push(&link_args, a);
+            arg_push(&link_args, dir);
+        }
+        else if (strcmp(a, "-l") == 0) {
+            char* name = opt_value(&i, argc, argv, "-l", "a library name");
+            arg_push(&link_args, a);
+            arg_push(&link_args, name);
+        }
+        else if (strcmp(a, "-framework") == 0) {
+            char* name = opt_value(&i, argc, argv, "-framework",
+                                   "a framework name");
+            arg_push(&link_args, a);
+            arg_push(&link_args, name);
+        }
+        else if (a[0] == '-' && a[1] != 0) {
+            fprintf(stderr, "ace: unknown option '%s'\n", a);
+            exit(2);
+        }
+        else if (has_suffix(a, ".ace")) {
+            if (path) cli_error("only one root .ace source may be compiled");
+            path = a;
+        }
+        else if (has_suffix(a, ".o") || has_suffix(a, ".a")) {
+            arg_push(&link_args, a);
+            arg_push(&link_files, a);
+        }
+        else {
+            fprintf(stderr, "ace: unrecognized input '%s' (expected .ace, .o, or .a)\n", a);
+            exit(2);
+        }
     }
     if (!path) usage();
+    if (link_args.len > 0 && opt_c)
+        cli_error("additional link inputs cannot be used with -c");
+    if (link_args.len > 0 && !out_name)
+        cli_error("link inputs require -o");
 
     uint64_t started = show_report ? monotonic_ns() : 0;
     CompileReport report = {0};
@@ -157,18 +287,31 @@ int main(int argc, char** argv) {
                 snprintf(obj, sizeof obj, "%s.o", out_name);
             else
                 obj_path(obj, sizeof obj, path);
+            if (opt_link) {
+                reject_output_collision(obj, path, "generated object");
+                reject_output_collision(out_name, path, "linked output");
+                for (size_t k = 0; k < link_files.len; k++) {
+                    char* input = link_files.items[k];
+                    reject_output_collision(obj, input, "generated object");
+                    reject_output_collision(out_name, input, "linked output");
+                }
+            }
             if (emit_object(file, &d, obj, show_report ? &report : NULL) != 0 ||
                 d.errors > 0)
                 return 1;
             uint64_t compile_done = show_report ? monotonic_ns() : 0;
             if (opt_link) {
-                char cmd[8192];
-                snprintf(cmd, sizeof cmd, "cc '%s' -o '%s'", obj, out_name);
-                int rc = system(cmd);
-                if (rc != 0) {
-                    fprintf(stderr, "ace: link failed: %s\n", cmd);
-                    return 1;
-                }
+                ArgList cc = {0};
+                arg_push(&cc, "cc");
+                arg_push(&cc, obj);
+                for (size_t k = 0; k < link_args.len; k++)
+                    arg_push(&cc, link_args.items[k]);
+                arg_push(&cc, "-o");
+                arg_push(&cc, out_name);
+                arg_push(&cc, NULL);
+                int rc = run_linker(&cc);
+                free(cc.items);
+                if (rc != 0) return 1;
             }
             if (show_report) {
                 report.compile_ns = compile_done >= started ? compile_done - started : 0;
