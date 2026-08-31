@@ -44,3 +44,13 @@ including minimal DWARF source-line information for LLDB. Bare `import fmt` and
 allocation-free `fmt.print(string)` / `fmt.print(int)` form the first working
 stdlib slice. Current implementation status and remaining work are tracked in
 `AGENTS.md` rather than the human manual.
+
+## Editor support
+
+The repository includes the dependency-free
+[Ace Language VS Code extension](editors/vscode/README.md). It recognizes
+`.ace` files, supplies theme-compatible TextMate syntax scopes, and configures
+comments, brackets, automatic closing pairs, and indentation. Open the
+repository in Visual Studio Code and run **Run Ace Language Extension** with
+**F5** to launch an Extension Development Host; no build or installation step
+is required.

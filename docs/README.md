@@ -28,8 +28,13 @@ must be corrected.
   relative local sources, `pub` visibility, dependency loading, and cycles.
 - [Standard library](standard-library.md) — the shipped `std/` modules and
   their implemented APIs.
+
+## Tooling
+
 - [Compiler usage](compiler.md) — checking, object emission, linking, and the
   optional compile report.
+- [Editor support](../editors/vscode/README.md) — local use and scope behavior
+  for the dependency-free Ace Language VS Code extension.
 
 Repository implementation status is intentionally kept in
 [`../AGENTS.md`](../AGENTS.md), outside this guide.
