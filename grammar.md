@@ -43,7 +43,9 @@ top_body      := var_decl | const_decl | func_decl | struct_decl
                | contract_decl | enum_decl | union_decl | alias_decl | distinct_decl
                | method_func_decl | signing_decl | extern_block
 
-var_decl      := ident ":" type ["=" expr]                // locals: same form inside blocks
+binding       := ident ":" type
+var_decl      := binding ["=" expr]                       // global or local single binding
+multi_decl    := binding ("," binding)+ "=" expr_list      // local typed multi-declaration; one line
 const_decl    := ident ":" "const" type "=" expr
 
 func_decl     := ident [type_params] "(" [params] ")" [ret_clause] block
@@ -84,7 +86,7 @@ extern_param  := ident ":" type
 ## 3. Statements
 
 ```ebnf
-stmt          := var_decl | const_decl | assignment | expr_stmt
+stmt          := var_decl | multi_decl | const_decl | assignment | expr_stmt
                | if_stmt | for_stmt | switch_stmt | return_stmt
                | break_stmt | continue_stmt | fallthrough_stmt | asm_stmt | labeled_block
 
@@ -192,6 +194,8 @@ ret_types     := type | "(" type ("," type)+ ")"
 6. **Writable address-of is `mut &q`.** It produces `mut *T` from a writable lvalue; `&q` produces read-only `*T`. In a call argument, `mut &q` is the unary address expression, not an `N_MUTARG` wrapper; an address expression is not itself a valid mut argument. Each pointer level owns its `mut`: `mut **T`, `*mut *T`, and `mut *mut *T` grant different immediate writes.
 7. **Keywords reserved but unused in v1 grammar:** `noalias` appears only as a parameter modifier; `export` only in extern blocks and on declarations (`pub export`).
 8. **Bare comma lists are single-line.** Delimited lists (params, fields, enum members, call args, array/struct literals, type lists) may span lines and allow trailing commas. Signing and selective-import lists use their bare forms on one line (`Circle signs Shape, Color`; `import min, max from math`) and parenthesized forms across lines; single-line parentheses are rejected as redundant.
+   Typed multi-declarations are also bare lists and stay on one physical line:
+   `number: int, message: string = 1, "old"`.
 9. **Struct literals are suppressed where `{` would open a block** — statement starts and if/for/switch heads (Go's composite-literal rule); parenthesize to use a literal there. `Type{...}` postfix and bare `{...}` in expression contexts both parse.
 10. **Operator precedence is the C table**, including the bitwise/shift levels shown above; asm `in:` uses the `in` keyword as the binding kind, and asm register values may be immediates (`x16 = 3`).
 11. **Method declarations are type-owned.** `self` is inserted contextually as a read-only receiver; leading `mut` grants writes. A leading `pub` must precede `mut`. In expressions, `Type.method(...)` is a direct call, but bare `Type.method` is not a method value.

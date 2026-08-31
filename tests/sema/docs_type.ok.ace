@@ -38,8 +38,7 @@ Number.get(): int {
 }
 
 main(): int {
-    number: int = 1
-    message: string = "old"
+    number: int, message: string = 1, "old"
     number, message = 2, "new"
     a: int = number
     b: int = 3

@@ -54,6 +54,10 @@ Ace is a systems programming language and its bootstrap compiler. The language d
   /* First line.
    * Second line. */
   ```
+- Documentation-only changes do not run the test suite. Review the diff and run
+  `git diff --check`; only when the documentation exposes genuine uncertainty
+  about compiler behavior, run the smallest targeted check needed to resolve it,
+  never the full suite by default.
 - Never create a Git commit unless the owner explicitly asks for that commit. Completing an implementation does not imply permission to commit it.
 
 ## Human documentation
