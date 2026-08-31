@@ -1,0 +1,27 @@
+A: struct {
+    b: B,
+}
+
+B: struct {
+    value: int,
+}
+
+C: struct {
+    d: [1]*D,
+}
+
+D: struct {
+    value: int,
+}
+
+E: struct {
+    f: *[1]F,
+}
+
+F: struct {
+    value: int,
+}
+
+main(): int {
+    return 0
+}

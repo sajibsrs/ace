@@ -1,0 +1,17 @@
+Direct: struct {
+    self: Direct,
+}
+
+ArrayCycle: struct {
+    items: [1]ArrayCycle,
+}
+
+UnionCycle: union {
+    loop: UnionCycle,
+}
+
+DistinctCycle: distinct DistinctCycle
+
+main(): int {
+    return 0
+}

@@ -1,0 +1,56 @@
+Node: struct {
+    next: *Node,
+    value: int,
+}
+
+A: struct {
+    b: *B,
+}
+
+B: struct {
+    a: *A,
+    value: int,
+}
+
+Box[T]: struct {
+    next: *Box[T],
+    value: T,
+}
+
+RecursiveUnion: union {
+    none,
+    next: *RecursiveUnion,
+}
+
+Holder: union {
+    none,
+    later: **Later,
+}
+
+Later: struct {
+    value: int,
+}
+
+GenericHolder: struct {
+    future: *Future[int],
+}
+
+Future[T]: struct {
+    value: T,
+}
+
+main(): int {
+    node: Node = { next: null, value: 1 }
+    b: B = { a: null, value: 40 }
+    a: A = { b: &b }
+    box: Box[int] = { next: null, value: 2 }
+    recursive_union: RecursiveUnion = RecursiveUnion.next(null)
+    holder: Holder = Holder.later(null)
+    generic_holder: GenericHolder = { future: null }
+    node.next = &node
+    if recursive_union == RecursiveUnion.none || holder == Holder.none {
+        return 0
+    }
+    generic_holder.future = null
+    return a.b.value + box.value
+}

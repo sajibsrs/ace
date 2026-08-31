@@ -84,6 +84,40 @@ if ! printf '%s\n' "$fallthrough_union_error" | grep -qF \
     fail=1
 fi
 
+recursive_layout_errors=$("$ACE" tests/sema/recursive_value_layout.err.ace 2>&1)
+for name in Direct ArrayCycle UnionCycle DistinctCycle; do
+    if ! printf '%s\n' "$recursive_layout_errors" | grep -qF \
+        "type '$name' has a recursive value layout"; then
+        echo "FAIL: missing recursive value-layout diagnostic for $name"
+        fail=1
+    fi
+done
+generic_layout_error=$("$ACE" tests/sema/generic_recursive_value_layout.err.ace 2>&1)
+if ! printf '%s\n' "$generic_layout_error" | grep -qF \
+    "recursive value layout"; then
+    echo "FAIL: missing recursive generic value-layout diagnostic"
+    fail=1
+fi
+inline_forward_errors=$("$ACE" tests/sema/inline_forward_type.err.ace 2>&1)
+for name in B D F; do
+    if ! printf '%s\n' "$inline_forward_errors" | grep -qF "unknown type '$name'"; then
+        echo "FAIL: inline forward type $name should be rejected"
+        fail=1
+    fi
+done
+unresolved_forward_error=$("$ACE" tests/sema/unresolved_forward_type.err.ace 2>&1)
+if ! printf '%s\n' "$unresolved_forward_error" | grep -qF \
+    "pointer-only forward type 'Missing' was never declared in this module"; then
+    echo "FAIL: missing unresolved pointer-only forward-type diagnostic"
+    fail=1
+fi
+premature_member_error=$("$ACE" tests/sema/premature_forward_member.err.ace 2>&1)
+if ! printf '%s\n' "$premature_member_error" | grep -qF \
+    "type 'B' is not declared yet; member access requires its declaration"; then
+    echo "FAIL: missing premature forward-type member diagnostic"
+    fail=1
+fi
+
 c_abi_errors=$("$ACE" tests/sema/c_abi_rejected.err.ace 2>&1)
 for want in \
     "parameter 'value' has type bool, which is not C-ABI compatible" \

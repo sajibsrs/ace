@@ -9,6 +9,10 @@ Box[T]: struct { value: T }
 Event: union { none, quit, point: Point }
 Result[T]: union { empty, value: T }
 
+Node: struct { next: *Node }
+Left: struct { right: *Right }
+Right: struct { left: *Left }
+
 add(a: int, b: int): int {
     return a + b
 }
@@ -56,6 +60,11 @@ main(): int {
     outer: *mut *Point = &writable
     outer.x = 16
     maybe: *Point = null
+    node: Node = { next: null }
+    left: Left = { right: null }
+    right: Right = { left: &left }
+    node.next = &node
+    left.right = &right
     values: [4]int = [10, 20, 30, 40]
     middle: []int = values[1..3]
     operation: (int, int): int = add

@@ -10,7 +10,7 @@
 enum {
     SK_PRIM, SK_PTR, SK_SLICE, SK_ARRAY, SK_TUPLE, SK_FUNC,
     SK_STRUCT, SK_ENUM, SK_CONTRACT, SK_DISTINCT, SK_TYPEPARAM, SK_ERROR,
-    SK_UNION, SK_VOID, SK_UT, SK_ERR
+    SK_UNION, SK_VOID, SK_UT, SK_FORWARD, SK_ERR
 };
 
 enum {
@@ -26,6 +26,8 @@ struct SType {
     uint8_t     prim;
     uint8_t     is_mut;
     uint8_t     calc; // layout in progress (cycle guard)
+    uint8_t     building; // aggregate fields are currently being constructed
+    uint8_t     invalid_layout;
     uint32_t    size, align;
     const char* name;
     SType*      base;
@@ -54,7 +56,7 @@ struct Sym {
     const char* name; uint32_t len;
     uint8_t     kind;
     uint8_t     is_const, is_mut, is_pub, is_noalias, is_generic, is_extern;
-    uint8_t     is_param, is_const_backed, is_global;
+    uint8_t     is_param, is_const_backed, is_global, is_forward;
     SType*      type;
     Node*       decl;   // binder/declaration node (slot key for the emitter)
     Node*       init;   // top-level initializer (static Error validation/emission)

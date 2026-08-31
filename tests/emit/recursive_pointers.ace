@@ -1,0 +1,24 @@
+// expect-exit: 42
+
+Node: struct {
+    next: *Node,
+    value: int,
+}
+
+A: struct {
+    b: *B,
+}
+
+B: struct {
+    a: *A,
+    value: int,
+}
+
+main(): int {
+    node: Node = { next: null, value: 2 }
+    node.next = &node
+    b: B = { a: null, value: 40 }
+    a: A = { b: &b }
+    b.a = &a
+    return node.next.value + b.a.b.value
+}

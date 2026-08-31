@@ -342,15 +342,15 @@ Carving phase — closed so far:
 
 **Carving phase: complete.** The original surface and additive topics are closed; implementation proceeds by chunks.
 
-Explicit switch fallthrough — closed, implementation queued:
+Explicit switch fallthrough — implemented:
 - [x] The spelling is `fallthrough` (not the vague `fall`), recognized contextually only as a statement inside a switch case; it remains an ordinary identifier elsewhere.
 - [x] There is no implicit fallthrough. Explicit `fallthrough` must be the final statement of a non-final case, takes no target or condition, and transfers only to the immediately following case.
 - [x] Parser, semantic checks, emitter lowering, diagnostics, runtime coverage, and implemented-behavior documentation. `fallthrough` is rejected for tagged-union switches: bypassing the following pattern would contradict its active-variant meaning, while retesting a different variant could never match.
 
-Recursive layouts and pointer-only type fixups — closed, implementation queued:
+Recursive layouts and pointer-only type fixups — implemented:
 - [x] Every inline layout must be finite; direct or indirect all-inline recursion is rejected with a recursive-value-layout diagnostic.
 - [x] Pointer edges break layout recursion. Self-pointers remain valid, and an unknown same-module type may be named ahead of its declaration only through a path made entirely of one or more pointer levels. It must resolve later in the file; no layout-dependent use is permitted before then.
-- [ ] Replace the current layout cycle guard's placeholder sizing with a diagnostic, add pointer-only type fixups and EOF resolution, and cover direct/indirect cycles, self-pointers, mutual pointer recursion, illegal inline forward references, unresolved names, and premature member use.
+- [x] The layout walk reports recursive value layouts instead of fabricating a placeholder size. Same-module field and union-payload names receive fixups only through uninterrupted pointer paths; declarations patch the exact pointer slots, unresolved names diagnose at EOF, and layout-dependent premature uses remain declaration-before-use. Coverage includes direct/indirect and generic cycles, self-pointers, mutual pointer recursion, illegal inline forward paths, unresolved names, premature member use, runtime field access, and sanitizer runs.
 
 Additive tagged-union carving — closed:
 - [x] Tagged unions are required as a closed, inline sum type and are sequenced before `fmt.printf`. They are not a universal `any` type, do not imply reflection, boxing, allocation, inheritance, or open-ended membership, and do not replace explicit contract values. Rationale: a union represents one of a declaration-fixed set of data shapes inline; contracts represent open-ended behavior through explicit vtable/data values.
@@ -369,6 +369,7 @@ Formatted-output carving and implementation — closed:
 - [x] `fmt.printf` is implemented exactly as carved in Stdlib #12, with normal and ASan/UBSan suites passing.
 
 Implementation phase — closed so far:
+- [x] Recursive layouts and pointer-only type fixups — layout computation now fails explicitly on all-inline cycles; valid self-pointers bind the completed nominal type; unknown same-module types are admitted only behind uninterrupted pointer paths in aggregate members, patched to the later exact declaration, and diagnosed if unresolved. Premature layout/member use and inline forward references remain errors.
 - [x] Explicit switch fallthrough — contextual bare `fallthrough` only as the final statement of a non-final ordinary scalar case; direct transfer to the immediately following case with no pattern retest; no implicit fallthrough; ordinary identifier behavior elsewhere; tagged-union switches reject it because their cases are active-variant patterns.
 - [x] Lexical/layout rules: `/* … */` block comments (non-nesting; a newline inside acts as a statement terminator); newline token emitted only after ident/literal/`)`/`]`/`}`/`return`/`break`/`continue` (Go-style, made explicit); bare comma lists are parser-restricted to one physical line, while delimited multiline lists use trailing commas; `else` stays on the `}` line.
 - [x] `int`/`uint` = platform word (i64/u64 on arm64), kept alongside explicit widths.

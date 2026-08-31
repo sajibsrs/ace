@@ -118,6 +118,41 @@ both. Only the level performing a write needs `mut`.
 Pointer arithmetic is not implemented. Use arrays or slices for bounded
 sequences.
 
+Every inline value layout must be finite. A pointer breaks a layout cycle, so
+self-pointers and mutually pointer-linked structs are valid:
+
+```ace
+Node: struct {
+    next: *Node,
+}
+
+Left: struct {
+    right: *Right,
+}
+
+Right: struct {
+    left: *Left,
+}
+```
+
+The later name in a same-module field is permitted only when every type edge
+from the field is a pointer (`*Later`, `**Later`); the same rule applies to a
+tagged-union payload type. The declaration must appear later in the file.
+Arrays, tuples, aliases, and distinct wrappers do not extend the pointer-only
+path, so `[1]*Later` and `*[1]Later` still require `Later` to be declared first.
+Before the declaration, member access, dereference, `sizeof`, and other
+operations requiring the exact layout are rejected. An unresolved pointer-only
+name is diagnosed at the end of the file.
+
+Direct or indirect inline recursion is rejected instead of receiving a
+placeholder size:
+
+```ace
+Invalid: struct {
+    nested: Invalid // recursive value layout
+}
+```
+
 ## Zero and absence
 
 Every type has an all-bits-zero representation. Pointer, slice, string,

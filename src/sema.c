@@ -1,7 +1,8 @@
 // sema.c — semantic checking (stage three): types, names, expression typing.
 // Walks the AST in declaration order — single-pass semantics: declaration
-// before use; forward top-level calls are deferred (like emitter fixups) and
-// verified at end of file.
+// before use; forward top-level calls are deferred (like emitter fixups), and
+// aggregate fields admit a second narrow fixup only for uninterrupted pointer
+// paths to a later same-module type. Both are verified at end of file.
 //
 // Type model (machine truth: size/align computed for every type):
 //   prims    bool i8..i64 u8..u64 f32 f64 string usize typeid
@@ -75,6 +76,7 @@ static const char* type_name(SType* t) {
     case SK_VOID: return "no value";
     case SK_UT: return t == T_UT_INT ? "integer literal" :
                     t == T_UT_FLOAT ? "float literal" : "null";
+    case SK_FORWARD: return t->name ? t->name : "forward type";
     default: return "?";
     }
 }
@@ -83,8 +85,11 @@ static const char* type_name(SType* t) {
 
 static uint32_t align_to(uint32_t v, uint32_t a) { return a ? (v + a - 1) / a * a : v; }
 
-static void layout(SType* t) {
-    if (t->size || t->calc) return;
+static int layout(SType* t) {
+    if (t->invalid_layout) return 0;
+    if (t->size) return 1;
+    if (t->calc || t->building || t->kind == SK_FORWARD)
+        return 0;
     switch (t->kind) {
     case SK_PRIM:
         switch (t->prim) {
@@ -97,25 +102,28 @@ static void layout(SType* t) {
         default: t->size = 1; break;
         }
         t->align = t->size > 8 ? 8 : t->size;
-        return;
+        return 1;
     case SK_PTR: case SK_FUNC: case SK_TYPEPARAM:
         t->size = t->align = 8;
-        return;
+        return 1;
     case SK_SLICE:
         t->size = 16; t->align = 8;
-        return;
+        return 1;
     case SK_ARRAY:
-        layout(t->base);
+        t->calc = 1;
+        if (!layout(t->base)) { t->calc = 0; return 0; }
         t->align = t->base->align;
         t->size = (uint32_t)(t->base->size * t->count);
-        return;
+        t->calc = 0;
+        return 1;
     case SK_STRUCT: case SK_TUPLE: {
-        if (t->calc) { t->size = 1; return; }
         t->calc = 1;
         uint32_t off = 0, maxa = 1;
         for (int i = 0; i < t->nfields; i++) {
-            if (t->fields[i].t->kind == SK_ERR) { t->calc = 0; t->size = 1; return; }
-            layout(t->fields[i].t);
+            if (t->fields[i].t->kind == SK_ERR) {
+                t->calc = 0; t->size = t->align = 1; return 1;
+            }
+            if (!layout(t->fields[i].t)) { t->calc = 0; return 0; }
             if (maxa < t->fields[i].t->align) maxa = t->fields[i].t->align;
             off = align_to(off, t->fields[i].t->align);
             off += t->fields[i].t->size;
@@ -123,24 +131,25 @@ static void layout(SType* t) {
         t->align = maxa;
         t->size = align_to(off, maxa);
         t->calc = 0;
-        return;
+        return 1;
     }
-    case SK_ENUM: t->size = t->align = 4; return; // int constants, i32 layout
-    case SK_CONTRACT: t->size = 16; t->align = 8; return; // vtable + data
-    case SK_ERROR: t->size = t->align = 8; return; // static descriptor handle
+    case SK_ENUM: t->size = t->align = 4; return 1; // int constants, i32 layout
+    case SK_CONTRACT: t->size = 16; t->align = 8; return 1; // vtable + data
+    case SK_ERROR: t->size = t->align = 8; return 1; // static descriptor handle
     case SK_UNION: {
         /*
          * i32 tag at offset 0, then inline storage for the largest payload.
          * Declaration order fixes tag values from zero; the first variant is
          * the canonical all-bits-zero value (BSS globals get it for free).
          */
-        if (t->calc) { t->size = 1; return; }
         t->calc = 1;
         uint32_t maxs = 0, maxa = 1;
         for (int i = 0; i < t->nfields; i++) {
             if (!t->fields[i].t) continue; // payloadless variant
-            if (t->fields[i].t->kind == SK_ERR) { t->calc = 0; t->size = 1; return; }
-            layout(t->fields[i].t);
+            if (t->fields[i].t->kind == SK_ERR) {
+                t->calc = 0; t->size = t->align = 1; return 1;
+            }
+            if (!layout(t->fields[i].t)) { t->calc = 0; return 0; }
             if (maxs < t->fields[i].t->size) maxs = t->fields[i].t->size;
             if (maxa < t->fields[i].t->align) maxa = t->fields[i].t->align;
         }
@@ -148,16 +157,18 @@ static void layout(SType* t) {
         uint32_t off = align_to(4, maxa);
         t->size = align_to(off + maxs, t->align);
         t->calc = 0;
-        return;
+        return 1;
     }
     case SK_DISTINCT:
-        layout(t->base);
+        t->calc = 1;
+        if (!layout(t->base)) { t->calc = 0; return 0; }
         t->size = t->base->size;
         t->align = t->base->align;
-        return;
+        t->calc = 0;
+        return 1;
     default:
         t->size = t->align = 1;
-        return;
+        return 1;
     }
 }
 
@@ -178,6 +189,14 @@ typedef struct Pending {
     struct Pending* next;
 } Pending;
 
+typedef struct TypeFix TypeFix;
+struct TypeFix {
+    Sym* sym;
+    SType** slot;
+    Node* ref;
+    TypeFix* next;
+};
+
 typedef struct {
     Diag*   d;
     Scope*  scope;
@@ -186,7 +205,13 @@ typedef struct {
     // generic substitution environment (names -> types)
     const char** tnames; SType** ttypes; int nsub;
     Pending* pending;
+    TypeFix* typefix;
+    int type_build_depth;
 } Ck;
+
+static SType* build_type(Ck* k, Node* t);
+static SType* instantiate_generic_type(Ck* k, Node* decl,
+                                       SType** args, int nargs);
 
 static void ck_err(Ck* k, Node* n, const char* fmt, ...) {
     va_list ap;
@@ -278,7 +303,19 @@ static Sym* declare_type(Ck* k, Node* at, const char* name, uint32_t len) {
         ck_err(k, at, "'panic' is a reserved builtin name — no declaration may take it");
         return NULL;
     }
-    if (find_in(k->scope->types, name, len)) {
+    Sym* old = find_in(k->scope->types, name, len);
+    if (old && old->is_forward) {
+        if (old->decl && old->decl->path && at->path &&
+            strcmp(old->decl->path, at->path) != 0) {
+            ck_err(k, at,
+                   "forward type '%.*s' must be declared in the same module",
+                   (int)len, name);
+            return NULL;
+        }
+        old->is_forward = 0;
+        return old;
+    }
+    if (old) {
         ck_err(k, at, "duplicate type '%.*s'", (int)len, name);
         return NULL;
     }
@@ -286,6 +323,62 @@ static Sym* declare_type(Ck* k, Node* at, const char* name, uint32_t len) {
     s->next = k->scope->types;
     k->scope->types = s;
     return s;
+}
+
+static Scope* file_scope(Ck* k) {
+    Scope* s = k->scope;
+    while (s && s->parent) s = s->parent;
+    return s;
+}
+
+static Sym* forward_type(Ck* k, Node* ref) {
+    Scope* fs = file_scope(k);
+    Sym* s = find_in(fs->types, ref->str, ref->len);
+    if (s) return s;
+    s = sym_new(SYM_TYPE, ref->str, ref->len);
+    s->is_forward = 1;
+    s->decl = ref; // first use: unresolved EOF diagnostic and module identity
+    s->type = st_new(SK_FORWARD);
+    s->type->name = ref->str;
+    s->type->decl = ref;
+    s->next = fs->types;
+    fs->types = s;
+    return s;
+}
+
+static void record_type_fix(Ck* k, Sym* s, SType** slot, Node* ref) {
+    TypeFix* f = (TypeFix*)arena_alloc(sizeof(TypeFix));
+    f->sym = s;
+    f->slot = slot;
+    f->ref = ref;
+    f->next = k->typefix;
+    k->typefix = f;
+}
+
+static void resolve_type_fixes(Ck* k, Sym* s, SType* actual, Node* decl) {
+    s->type = actual;
+    s->decl = decl;
+    for (TypeFix* f = k->typefix; f; f = f->next) {
+        if (f->sym != s) continue;
+        int nargs = f->ref ? f->ref->nkids : 0;
+        if (!s->is_generic) {
+            if (nargs)
+                ck_err(k, f->ref, "type '%.*s' is not generic",
+                       (int)s->len, s->name);
+            *f->slot = actual;
+            continue;
+        }
+        if (!nargs) {
+            ck_err(k, f->ref,
+                   "generic type '%.*s' needs explicit type arguments",
+                   (int)s->len, s->name);
+            *f->slot = T_ERR;
+            continue;
+        }
+        SType** args = (SType**)arena_alloc((size_t)nargs * sizeof(SType*));
+        for (int i = 0; i < nargs; i++) args[i] = build_type(k, f->ref->kids[i]);
+        *f->slot = instantiate_generic_type(k, decl, args, nargs);
+    }
 }
 
 // --- same_type / castable ----------------------------------------------------------
@@ -380,7 +473,6 @@ static Node* static_string_expr(Ck* k, Node* e);
  * binder (a fresh local copy). The numeric tag is not exposed.
  */
 
-static SType* build_union_type(Ck* k, Node* decl);
 static SType* indexed_named_type(Ck* k, Node* ix);
 
 /*
@@ -503,6 +595,7 @@ static int ut_const(Node* e, int64_t* out) {
 // --- type building ------------------------------------------------------------------
 
 static SType* build_type(Ck* k, Node* t);
+static SType* build_type_ctx(Ck* k, Node* t, int path);
 
 static SType* prim_by_name(const char* s, uint32_t len) {
     struct { const char* n; int p; } M[] = {
@@ -521,7 +614,7 @@ static SType* prim_by_name(const char* s, uint32_t len) {
 static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int nargs);
 static SType* indexed_named_type(Ck* k, Node* ix);
 
-static SType* build_named(Ck* k, Node* t) {
+static SType* build_named_ctx(Ck* k, Node* t, int path) {
     if (t->a) {
         ck_err(k, t, "module-qualified types need the stdlib (not yet linked)");
         return T_ERR;
@@ -536,7 +629,18 @@ static SType* build_named(Ck* k, Node* t) {
     if (p) return p;
     Sym* s = lookup_type(k, t->str, t->len);
     if (!s || !s->type) {
+        if (path == 1) {
+            s = forward_type(k, t);
+            return s->type;
+        }
         ck_err(k, t, "unknown type '%.*s'", (int)t->len, t->str);
+        return T_ERR;
+    }
+    if (s->is_forward) {
+        if (path == 1) return s->type;
+        ck_err(k, t,
+               "type '%.*s' is not declared yet; only pointer-only field references may be fixed up",
+               (int)t->len, t->str);
         return T_ERR;
     }
     if (t->nkids > 0) { // generic instantiation in type position: Vec[int]
@@ -552,15 +656,28 @@ static SType* build_named(Ck* k, Node* t) {
     return s->type;
 }
 
-static SType* build_type(Ck* k, Node* t) {
+/* path: 0 = ordinary/layout-dependent, 2 = aggregate field root,
+ * 1 = every edge from that root so far is a pointer. */
+static SType* build_type_ctx(Ck* k, Node* t, int path) {
     switch (t->kind) {
-    case N_NAMED: return build_named(k, t);
+    case N_NAMED: return build_named_ctx(k, t, path);
     case N_IDENT: { // typed struct-literal bases arrive as expression nodes
         SType* p = prim_by_name(t->str, t->len);
         if (p) return p;
         Sym* s = lookup_type(k, t->str, t->len);
         if (!s || !s->type) {
+            if (path == 1) {
+                s = forward_type(k, t);
+                return s->type;
+            }
             ck_err(k, t, "unknown type '%.*s'", (int)t->len, t->str);
+            return T_ERR;
+        }
+        if (s->is_forward) {
+            if (path == 1) return s->type;
+            ck_err(k, t,
+                   "type '%.*s' is not declared yet; only pointer-only field references may be fixed up",
+                   (int)t->len, t->str);
             return T_ERR;
         }
         if (s->is_generic) {
@@ -573,12 +690,18 @@ static SType* build_type(Ck* k, Node* t) {
     case N_PTR: {
         SType* p = st_new(SK_PTR);
         p->is_mut = (t->flags & F_MUT) != 0;
-        p->base = build_type(k, t->a);
+        int child_path = (path == 1 || path == 2) ? 1 : 0;
+        p->base = build_type_ctx(k, t->a, child_path);
+        if (p->base && p->base->kind == SK_FORWARD) {
+            Sym* s = lookup_type(k, p->base->name,
+                                 (uint32_t)strlen(p->base->name));
+            if (s && s->is_forward) record_type_fix(k, s, &p->base, t->a);
+        }
         return p;
     }
     case N_SLICE_T: {
         SType* s = st_new(SK_SLICE);
-        s->base = build_type(k, t->a);
+        s->base = build_type_ctx(k, t->a, 0);
         return s;
     }
     case N_ARRAY_T: {
@@ -588,17 +711,17 @@ static SType* build_type(Ck* k, Node* t) {
         }
         SType* a = st_new(SK_ARRAY);
         a->count = t->ival;
-        a->base = build_type(k, t->a);
+        a->base = build_type_ctx(k, t->a, 0);
         return a;
     }
-    case N_CONST_T: return build_type(k, t->a);
+    case N_CONST_T: return build_type_ctx(k, t->a, 0);
     case N_TUPLE_T: {
         SType* tu = st_new(SK_TUPLE);
         tu->nfields = t->nkids;
         tu->fields = (SField*)arena_alloc((size_t)(t->nkids ? t->nkids : 1) * sizeof(SField));
         for (int i = 0; i < t->nkids; i++) {
             tu->fields[i].name = NULL;
-            tu->fields[i].t = build_type(k, t->kids[i]);
+            tu->fields[i].t = build_type_ctx(k, t->kids[i], 0);
         }
         return tu;
     }
@@ -606,8 +729,9 @@ static SType* build_type(Ck* k, Node* t) {
         SType* f = st_new(SK_FUNC);
         f->nparams = t->nkids;
         f->params = (SType**)arena_alloc((size_t)(t->nkids ? t->nkids : 1) * sizeof(SType*));
-        for (int i = 0; i < t->nkids; i++) f->params[i] = build_type(k, t->kids[i]);
-        f->ret = t->a ? build_type(k, t->a) : NULL;
+        for (int i = 0; i < t->nkids; i++)
+            f->params[i] = build_type_ctx(k, t->kids[i], 0);
+        f->ret = t->a ? build_type_ctx(k, t->a, 0) : NULL;
         return f;
     }
     default:
@@ -615,6 +739,8 @@ static SType* build_type(Ck* k, Node* t) {
         return T_ERR;
     }
 }
+
+static SType* build_type(Ck* k, Node* t) { return build_type_ctx(k, t, 0); }
 
 // Build a function signature. Generic declarations use canonical type-parameter
 // placeholders when args is NULL, making alpha-equivalent declarations such as
@@ -948,6 +1074,12 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
             b = b->base;
         }
         if (b->kind == SK_ERR) return T_ERR;
+        if (b->kind == SK_FORWARD) {
+            ck_err(k, e,
+                   "type '%s' is not declared yet; member access requires its declaration",
+                   type_name(b));
+            return T_ERR;
+        }
         if (b->kind == SK_ERROR) {
             if (write)
                 ck_err(k, e, "Error descriptor fields are read-only");
@@ -995,6 +1127,12 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
             if (write && !p->is_mut)
                 ck_err(k, e,
                        "write through read-only pointer — use 'mut *T' and 'mut &value'");
+            if (p->base->kind == SK_FORWARD) {
+                ck_err(k, e,
+                       "type '%s' is not declared yet; dereference requires its declaration",
+                       type_name(p->base));
+                return T_ERR;
+            }
             return p->base;
         }
         break;
@@ -1354,6 +1492,12 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         SType* b = expr_type(k, e->a);
         if (b->kind == SK_ERR) return T_ERR;
         while (b->kind == SK_PTR) b = b->base; // p.x auto-derefs
+        if (b->kind == SK_FORWARD) {
+            ck_err(k, e,
+                   "type '%s' is not declared yet; member access requires its declaration",
+                   type_name(b));
+            return T_ERR;
+        }
         if (b->kind == SK_ERROR) b = b->base;
         if (e->len == 3 && memcmp(e->str, "len", 3) == 0 &&
             (b->kind == SK_SLICE || b->kind == SK_ARRAY ||
@@ -2069,8 +2213,14 @@ static SType* check_call(Ck* k, Node* call) {
                         Sym* s2 = lookup_type(k, arg->str, arg->len);
                         if (s2) t = s2->type;
                     }
+                    if (t && t->kind == SK_FORWARD) {
+                        ck_err(k, arg,
+                               "type '%s' is not declared yet; sizeof requires its layout",
+                               type_name(t));
+                        return T_ERR;
+                    }
                     if (t && t->kind != SK_ERR) {
-                        layout(t);
+                        if (!layout(t)) return T_ERR;
                         call->ival = t->size; // constant for the emitter
                         return st_prim(P_USIZE);
                     }
@@ -3519,43 +3669,74 @@ static void check_func_body(Ck* k, Node* f) {
     k->curfn = saved_fn;
 }
 
-static SType* build_struct_type(Ck* k, Node* decl) {
-    SType* t = st_new(SK_STRUCT);
+static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
+    k->type_build_depth++;
+    t->kind = SK_STRUCT;
     t->name = decl->str;
     t->decl = decl;
+    t->size = t->align = 0;
+    t->calc = 0;
+    t->invalid_layout = 0;
+    t->building = 1;
     t->nfields = decl->nkids;
     t->fields = (SField*)arena_alloc((size_t)(decl->nkids ? decl->nkids : 1) * sizeof(SField));
     for (int i = 0; i < decl->nkids; i++) {
         t->fields[i].name = decl->kids[i]->str;
-        t->fields[i].t = build_type(k, decl->kids[i]->a);
+        t->fields[i].t = build_type_ctx(k, decl->kids[i]->a, 2);
     }
     for (int i = 0; i < t->nfields; i++)
         for (int j = i + 1; j < t->nfields; j++)
             if (strcmp(t->fields[i].name, t->fields[j].name) == 0)
                 ck_err(k, decl, "duplicate field '%s' in struct %s",
                        t->fields[i].name, decl->str);
-    layout(t);
+    t->building = 0;
+    if (!layout(t)) {
+        if (k->type_build_depth == 1)
+            ck_err(k, decl,
+                   "type '%s' has a recursive value layout; use a pointer to break the cycle",
+                   decl->str);
+        t->invalid_layout = 1;
+        t->size = t->align = 1; // poison recovery after the required diagnostic
+        t->calc = 0;
+    }
+    k->type_build_depth--;
     return t;
 }
 
-static SType* build_union_type(Ck* k, Node* decl) {
+static SType* fill_union_type(Ck* k, Node* decl, SType* t) {
+    k->type_build_depth++;
     if (decl->nkids == 0)
         ck_err(k, decl, "a union needs at least one variant");
-    SType* t = st_new(SK_UNION);
+    t->kind = SK_UNION;
     t->name = decl->str;
     t->decl = decl;
+    t->size = t->align = 0;
+    t->calc = 0;
+    t->invalid_layout = 0;
+    t->building = 1;
     t->nfields = decl->nkids;
     t->fields = (SField*)arena_alloc((size_t)(decl->nkids ? decl->nkids : 1) * sizeof(SField));
     for (int i = 0; i < decl->nkids; i++) {
         t->fields[i].name = decl->kids[i]->str;
-        t->fields[i].t = decl->kids[i]->a ? build_type(k, decl->kids[i]->a) : NULL;
+        t->fields[i].t = decl->kids[i]->a
+            ? build_type_ctx(k, decl->kids[i]->a, 2) : NULL;
     }
     for (int i = 0; i < t->nfields; i++)
         for (int j = i + 1; j < t->nfields; j++)
             if (strcmp(t->fields[i].name, t->fields[j].name) == 0)
                 ck_err(k, decl, "duplicate variant '%s' in union %s",
                        t->fields[i].name, decl->str);
-    layout(t);
+    t->building = 0;
+    if (!layout(t)) {
+        if (k->type_build_depth == 1)
+            ck_err(k, decl,
+                   "type '%s' has a recursive value layout; use a pointer to break the cycle",
+                   decl->str);
+        t->invalid_layout = 1;
+        t->size = t->align = 1;
+        t->calc = 0;
+    }
+    k->type_build_depth--;
     return t;
 }
 
@@ -3573,35 +3754,36 @@ static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int narg
         for (int i = 0; i < nargs && same; i++) same = same_type(it->args[i], args[i]);
         if (same) return it->result;
     }
-    const char** sn = k->tnames; SType** st = k->ttypes; int ns = k->nsub;
-    k->tnames = (const char**)arena_alloc((size_t)nargs * sizeof(char*));
-    k->ttypes = args;
-    k->nsub = nargs;
-    for (int i = 0; i < nargs; i++) k->tnames[i] = tp->kids[i]->str;
-    SType* t;
-    if (decl->kind == N_STRUCT) {
-        t = build_struct_type(k, decl);
-    } else if (decl->kind == N_CONTRACT) {
-        t = st_new(SK_CONTRACT);
-        t->name = decl->str;
-        t->decl = decl;
-        layout(t);
-    } else if (decl->kind == N_UNION) {
-        t = build_union_type(k, decl);
-    } else {
-        t = T_ERR;
-    }
-    if (t != T_ERR) {
-        t->nargs = nargs;
-        t->args = (SType**)arena_alloc((size_t)(nargs ? nargs : 1) * sizeof(SType*));
-        for (int i = 0; i < nargs; i++) t->args[i] = args[i];
-    }
-    k->tnames = sn; k->ttypes = st; k->nsub = ns;
+    SType* t = st_new(decl->kind == N_STRUCT ? SK_STRUCT :
+                      decl->kind == N_UNION ? SK_UNION : SK_CONTRACT);
+    t->name = decl->str;
+    t->decl = decl;
+    t->nargs = nargs;
+    t->args = (SType**)arena_alloc((size_t)(nargs ? nargs : 1) * sizeof(SType*));
+    for (int i = 0; i < nargs; i++) t->args[i] = args[i];
+    /* Memoize the nominal shell before its fields are built. Self-recursive
+     * generic pointers then resolve to this exact instantiation. */
     STypeInst* inst = (STypeInst*)arena_alloc(sizeof(STypeInst));
     inst->args = args;
     inst->result = t;
     inst->next = *head;
     *head = inst;
+
+    const char** sn = k->tnames; SType** st = k->ttypes; int ns = k->nsub;
+    k->tnames = (const char**)arena_alloc((size_t)nargs * sizeof(char*));
+    k->ttypes = args;
+    k->nsub = nargs;
+    for (int i = 0; i < nargs; i++) k->tnames[i] = tp->kids[i]->str;
+    if (decl->kind == N_STRUCT) {
+        fill_struct_type(k, decl, t);
+    } else if (decl->kind == N_CONTRACT) {
+        layout(t);
+    } else if (decl->kind == N_UNION) {
+        fill_union_type(k, decl, t);
+    } else {
+        t = T_ERR;
+    }
+    k->tnames = sn; k->ttypes = st; k->nsub = ns;
     return t;
 }
 
@@ -3932,15 +4114,13 @@ int sema_check(Node* file, Diag* d) {
                               n->kind == N_UNION ? SK_UNION : SK_CONTRACT);
             t->name = n->str;
             t->decl = n;
-            s->type = t;
             s->is_generic = n->c != NULL;
+            resolve_type_fixes(&k, s, t, n);
             if (!s->is_generic && n->kind == N_STRUCT) {
                 // register first (self-reference via pointer), then build fields
-                SType* built = build_struct_type(&k, n);
-                s->type = built;
+                fill_struct_type(&k, n, t);
             } else if (!s->is_generic && n->kind == N_UNION) {
-                SType* built = build_union_type(&k, n);
-                s->type = built;
+                fill_union_type(&k, n, t);
             } else if (n->kind == N_ENUM) {
                 layout(t);
             }
@@ -3949,8 +4129,19 @@ int sema_check(Node* file, Diag* d) {
         case N_ALIAS: {
             Sym* s = declare_type(&k, n, n->str, n->len);
             if (!s) break;
+            int was_forward = s->type && s->type->kind == SK_FORWARD;
+            Node* forward_ref = was_forward ? s->decl : NULL;
             s->is_generic = n->c != NULL;
-            if (!s->is_generic) s->type = build_type(&k, n->a);
+            if (s->is_generic) {
+                if (was_forward)
+                    ck_err(&k, forward_ref,
+                           "forward generic type '%.*s' must be declared before use with explicit arguments",
+                           (int)forward_ref->len, forward_ref->str);
+            } else {
+                s->type = NULL; // the alias name is not visible in its own expansion
+                SType* actual = build_type(&k, n->a);
+                resolve_type_fixes(&k, s, actual, n);
+            }
             break;
         }
         case N_DISTINCT: {
@@ -3959,9 +4150,15 @@ int sema_check(Node* file, Diag* d) {
             SType* t = st_new(SK_DISTINCT);
             t->name = n->str;
             t->decl = n;
+            resolve_type_fixes(&k, s, t, n);
             t->base = build_type(&k, n->a);
-            s->type = t;
-            layout(t);
+            if (!layout(t)) {
+                ck_err(&k, n,
+                       "type '%s' has a recursive value layout; use a pointer to break the cycle",
+                       n->str);
+                t->size = t->align = 1;
+                t->calc = 0;
+            }
             break;
         }
         case N_SIGNING:
@@ -3971,6 +4168,12 @@ int sema_check(Node* file, Diag* d) {
             break;
         }
     }
+
+    for (Sym* s = file_scope.types; s; s = s->next)
+        if (s->is_forward)
+            ck_err(&k, s->decl,
+                   "pointer-only forward type '%.*s' was never declared in this module",
+                   (int)s->len, s->name);
 
     // Contracts precede their methods; validate their complete method sets now.
     k.scope = &file_scope;

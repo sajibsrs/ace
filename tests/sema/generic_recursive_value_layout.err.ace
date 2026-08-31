@@ -1,0 +1,11 @@
+Wrap[T]: struct {
+    value: T,
+}
+
+GenericCycle: struct {
+    wrapped: Wrap[GenericCycle],
+}
+
+main(): int {
+    return 0
+}
