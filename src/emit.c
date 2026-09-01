@@ -422,6 +422,13 @@ static SType* unwrap(SType* t) {
     return t;
 }
 
+static int is_byte_sequence_type(SType* t) {
+    if (!t) return 0;
+    if (t->kind == SK_PRIM) return t->prim == P_STRING;
+    return (t->kind == SK_ARRAY || t->kind == SK_SLICE) && t->base &&
+           t->base->kind == SK_PRIM && t->base->prim == P_U8;
+}
+
 static uint32_t ty_size(SType* t) { return sema_size(t); }
 static uint32_t ty_align(SType* t) { return sema_align(t); }
 
@@ -1199,6 +1206,9 @@ static EV gen_union_construct(Em* e, Node* at, SType* ut, int variant, EV payloa
     return (EV){ CLS_ADDR, t };
 }
 
+static EV gen_byte_sequence_eq(Em* e, Node* n, EV a, SType* at,
+                               EV b, SType* bt, int eq);
+
 /*
  * Compare union tags and, when they match, the active payload. Sema guarantees
  * both sides are the same union type and that every payload supports equality.
@@ -1243,6 +1253,15 @@ static EV gen_union_eq(Em* e, Node* n, EV a, EV b, SType* ut, int eq) {
             EV nested = gen_union_eq(e, n, (EV){ CLS_ADDR, pa },
                                      (EV){ CLS_ADDR, pb }, unwrap(pt), 1);
             t2 = nested.idx;
+        } else if (is_byte_sequence_type(pt)) {
+            int pa = tmp_int(e), pb = tmp_int(e);
+            ins(e, 0x91000000u | (poff << 10) |
+                   ((uint32_t)xreg(a.idx) << 5) | (uint32_t)xreg(pa));
+            ins(e, 0x91000000u | (poff << 10) |
+                   ((uint32_t)xreg(b.idx) << 5) | (uint32_t)xreg(pb));
+            EV bytes = gen_byte_sequence_eq(e, n, (EV){ CLS_ADDR, pa }, pt,
+                                            (EV){ CLS_ADDR, pb }, pt, 1);
+            t2 = bytes.idx;
         } else if (is_floatt(pt)) {
             t2 = tmp_int(e);
             int is64 = unwrap(pt)->prim == P_F64;
@@ -1324,6 +1343,15 @@ static EV gen_binop(Em* e, Node* n) {
             }
             return gen_union_eq(e, n, a, b, ut, op == T_EQEQ);
         }
+    }
+
+    if ((op == T_EQEQ || op == T_BANGEQ) &&
+        is_byte_sequence_type(node_ty(n->a)) &&
+        is_byte_sequence_type(node_ty(n->b))) {
+        EV a = gen_expr(e, n->a);
+        EV b = gen_expr(e, n->b);
+        return gen_byte_sequence_eq(e, n, a, node_ty(n->a), b,
+                                    node_ty(n->b), op == T_EQEQ);
     }
 
     EV a = gen_expr(e, n->a);
@@ -1957,6 +1985,68 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
         e->vti = si; e->vtf = sf;
     }
     return out;
+}
+
+static int byte_sequence_parts(Em* e, Node* at, EV value, SType* t,
+                               int* ptr, int* len) {
+    *ptr = tmp_int(e);
+    *len = tmp_int(e);
+    if (value.cls != CLS_ADDR) {
+        em_err(e, at, "byte sequence must materialize in memory");
+        load_imm(e, 1, xreg(*ptr), 0);
+        load_imm(e, 1, xreg(*len), 0);
+        return 0;
+    }
+    if (t->kind == SK_ARRAY) {
+        mov_int(e, 1, xreg(*ptr), xreg(value.idx));
+        load_imm(e, 1, xreg(*len), t->count);
+        return 1;
+    }
+    ld_reg(e, xreg(*ptr), xreg(value.idx), 0, 8, 0);
+    ld_reg(e, xreg(*len), xreg(value.idx), 8, 8, 0);
+    return 1;
+}
+
+/*
+ * Compare the complete byte sequences represented by [N]u8, []u8, or
+ * string.  Both values have already been evaluated in source order.  A
+ * length mismatch touches no element storage; equal nonzero lengths use the
+ * platform byte comparator directly and introduce no converted view.
+ */
+static EV gen_byte_sequence_eq(Em* e, Node* n, EV a, SType* at,
+                               EV b, SType* bt, int eq) {
+    int aptr, alen, bptr, blen;
+    byte_sequence_parts(e, n->a ? n->a : n, a, at, &aptr, &alen);
+    byte_sequence_parts(e, n->b ? n->b : n, b, bt, &bptr, &blen);
+
+    int out = tmp_int(e);
+    load_imm(e, 0, xreg(out), 0);
+    int done = new_label(e);
+    ins(e, 0xEB00001Fu | ((uint32_t)xreg(blen) << 16) |
+           ((uint32_t)xreg(alen) << 5)); // cmp alen, blen
+    bcond_(e, C_NE, done);
+    load_imm(e, 0, xreg(out), 1);
+    cbz_(e, 1, xreg(alen), 0, done);
+
+    CallArg args[3] = {
+        { NULL, { CLS_INT, aptr }, 1, 0 },
+        { NULL, { CLS_INT, bptr }, 1, 0 },
+        { NULL, { CLS_INT, alen }, 1, 0 },
+    };
+    SType* params[3] = { raw_pointer_type(), raw_pointer_type(), default_i64() };
+    uint8_t muts[3] = { 0, 0, 0 };
+    CallTarget tgt = { TK_EXTERN, "_memcmp", 7, 0 };
+    EV cmp = emit_call(e, n, args, 3, params, muts, 3, 0, -1, tgt,
+                       default_i64());
+    ins(e, 0x7100001Fu | ((uint32_t)xreg(cmp.idx) << 5)); // cmp wresult, #0
+    cset_(e, 0, C_EQ, xreg(out));
+
+    bind_label(e, done);
+    if (!eq)
+        ins(e, 0x52000000u | (xreg(out) << 5) | xreg(out)); // eor w, w, #1
+    if (out != a.idx) mov_int(e, 0, xreg(a.idx), xreg(out));
+    e->vti = a.idx + 1;
+    return (EV){ CLS_INT, a.idx };
 }
 
 static EV gen_call(Em* e, Node* call);

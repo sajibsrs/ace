@@ -1,0 +1,82 @@
+/* Complete pairwise byte-sequence equality across arrays, slices, and strings. */
+
+// expect-exit: 42
+left_calls: int
+right_calls: int
+
+Bytes: union { none, array: [4]u8, slice: []u8, text: string }
+
+make_array(): [4]u8 {
+    left_calls += 1
+    return [65, 99, 101, 0]
+}
+
+make_string(): string {
+    right_calls += 1
+    return "Ace\x00"
+}
+
+main(): int {
+    first: [4]u8 = [65, 99, 101, 0]
+    second: [4]u8 = [65, 99, 101, 0]
+    other: [4]u8 = [65, 99, 101, 255]
+    longer: [5]u8 = [65, 99, 101, 0, 0]
+    first_view: []u8 = first[0..4]
+    second_view: []u8 = second[0..4]
+    short_view: []u8 = first[0..3]
+    text: string = "Ace\x00"
+    empty_slice: []u8 = first[0..0]
+    other_empty_slice: []u8 = null
+    empty_text: string = null
+
+    if !(first == second) || first != second || first == other || !(first != other) {
+        return 1
+    }
+    if first == longer || !(first != longer) || longer == first || !(longer != first) {
+        return 2
+    }
+    if !(first == second_view) || !(second_view == first) || first != second_view || second_view != first {
+        return 3
+    }
+    if !(first == text) || !(text == first) || first != text || text != first {
+        return 4
+    }
+    if !(first_view == second_view) || first_view != second_view || first_view == short_view {
+        return 5
+    }
+    if !(first_view == text) || !(text == first_view) || first_view != text || text != first_view {
+        return 6
+    }
+    if !(text == "Ace\x00") || text != "Ace\x00" || text == "Ace\xFF" {
+        return 7
+    }
+    if !(other == "Ace\xFF") || !("Ace\xFF" == other) {
+        return 8
+    }
+    if !(empty_slice == other_empty_slice) || !(empty_slice == empty_text) || empty_text != other_empty_slice {
+        return 9
+    }
+    if empty_slice == first || first == empty_slice || empty_text == first {
+        return 10
+    }
+    if make_array() != make_string() || left_calls != 1 || right_calls != 1 {
+        return 11
+    }
+
+    array_union: Bytes = Bytes.array(first)
+    other_array_union: Bytes = Bytes.array(second)
+    if array_union != other_array_union {
+        return 12
+    }
+    slice_union: Bytes = Bytes.slice(first_view)
+    other_slice_union: Bytes = Bytes.slice(second_view)
+    if slice_union != other_slice_union {
+        return 13
+    }
+    text_union: Bytes = Bytes.text(text)
+    other_text_union: Bytes = Bytes.text("Ace\x00")
+    if text_union != other_text_union {
+        return 14
+    }
+    return 42
+}

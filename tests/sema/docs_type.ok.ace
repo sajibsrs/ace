@@ -1,3 +1,5 @@
+/* Compiler-checked examples from docs/types.md. */
+
 limit: const int = 1024
 
 Count: type = int
@@ -68,6 +70,13 @@ main(): int {
     values: [4]int = [10, 20, 30, 40]
     zeros: [4]int = [0 : 4]
     middle: []int = values[1..3]
+    bytes: [4]u8 = [65, 99, 101, 33]
+    byte_view: []u8 = bytes[0..4]
+    byte_match: bool = bytes == "Ace!" && "Ace!" == byte_view
+
+    if byte_match {
+        count += 1
+    }
     operation: (int, int): int = add
     state: State = State.running
     event: Event = Event.point({ x: 3, y: 4 })

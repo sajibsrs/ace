@@ -465,6 +465,18 @@ static void check_func_body(Ck* k, Node* f);
 static void check_mut_args(Ck* k, Node* call, Node* fndecl);
 static Node* static_string_expr(Ck* k, Node* e);
 
+/*
+ * The three byte-sequence representations participate in one symmetric
+ * equality rule.  Transparent aliases already resolve to the same SType;
+ * distinct wrappers deliberately do not enter this structural category.
+ */
+static int is_byte_sequence(SType* t) {
+    if (!t) return 0;
+    if (t->kind == SK_PRIM) return t->prim == P_STRING;
+    return (t->kind == SK_ARRAY || t->kind == SK_SLICE) && t->base &&
+           t->base->kind == SK_PRIM && t->base->prim == P_U8;
+}
+
 // --- tagged unions -----------------------------------------------------------------
 /*
  * A union is a closed inline sum: i32 tag at offset 0, inline storage for the
@@ -477,7 +489,8 @@ static SType* indexed_named_type(Ck* k, Node* ix);
 
 /*
  * Union equality compares the tag and active payload. It exists only when
- * every payload type supports equality; structs, tuples, and arrays do not.
+ * every payload type supports equality; structs and tuples do not.  Fixed
+ * byte arrays are the one array category with language equality.
  */
 static int union_supports_equality(SType* t) {
     while (t && t->kind == SK_DISTINCT) t = t->base;
@@ -486,6 +499,8 @@ static int union_supports_equality(SType* t) {
     case SK_PRIM: case SK_PTR: case SK_FUNC: case SK_ENUM:
     case SK_CONTRACT: case SK_ERROR: case SK_SLICE:
         return 1;
+    case SK_ARRAY:
+        return is_byte_sequence(t);
     case SK_UNION:
         for (int i = 0; i < t->nfields; i++)
             if (t->fields[i].t && !union_supports_equality(t->fields[i].t))
@@ -1364,6 +1379,8 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                   op == T_LE || op == T_GT || op == T_GE;
         if (cmp) {
             int equality = op == T_EQEQ || op == T_BANGEQ;
+            if (equality && is_byte_sequence(a) && is_byte_sequence(b))
+                return st_prim(P_BOOL);
             if (equality && same_type(a, b) &&
                 (a->kind == SK_ERROR ||
                  (a->kind == SK_PRIM && a->prim == P_TYPEID)))

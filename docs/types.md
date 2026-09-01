@@ -222,6 +222,24 @@ elements. Slicing does not allocate. See [Memory](memory.md) for allocation and
 lifetime rules. The current compiler does not insert runtime index or
 slice-bound checks; out-of-range access is unchecked.
 
+Fixed byte arrays `[N]u8`, byte slices `[]u8`, and strings compare as complete
+byte sequences with `==` and `!=`. Every pair and either operand order is
+accepted, including fixed arrays with different lengths. Lengths must match,
+then every stored byte must match exactly:
+
+```ace
+prefix: [12]u8 = [72, 84, 84, 80, 47, 49, 46, 49, 32, 50, 48, 48]
+view: []u8 = prefix[0..12]
+
+array_match: bool = prefix == "HTTP/1.1 200"
+slice_match: bool = "HTTP/1.1 200" == view
+```
+
+Comparison does not allocate or convert either value. Strings are UTF-8 by
+convention, but equality compares their exact stored encoding without Unicode
+decoding or normalization. Arrays and slices with another element type do not
+receive this mixed-type rule.
+
 ## Multiple-return and function types
 
 Multiple-return signatures use positional tuple layout. Function types use
