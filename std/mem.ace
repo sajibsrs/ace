@@ -17,6 +17,24 @@ pub release(mut data: []u8) {
     data = null
 }
 
+/* Typed allocation over the same fixed allocator: the element type is stated
+ * at the explicit instantiation, and the byte size and alignment derive from
+ * it. The bootstrap compiler lowers these exact declarations directly, like
+ * the raw forms above.
+ */
+
+pub alloc[T](count: usize): []T {
+    return null
+}
+
+pub realloc[T](data: []T, new_count: usize): []T {
+    return null
+}
+
+pub release[T](mut data: []T) {
+    data = null
+}
+
 /* Byte operations use complete slice views as their ranges. The bootstrap
  * compiler lowers them directly to the platform's optimized memory routines.
  */

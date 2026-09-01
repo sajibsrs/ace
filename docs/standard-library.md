@@ -9,7 +9,7 @@ Today's modules:
 
 - `fmt` — allocation-free text output
 - `math` — minimal generic helpers
-- `mem` — raw allocation and allocation-free byte operations
+- `mem` — raw and typed allocation plus allocation-free byte operations
 - `net` — allocation-free IPv4 TCP sockets
 - `poll` — allocation-free readiness queues for general file descriptors
 - `sys` — file descriptors, byte I/O, errno, and monotonic time
@@ -18,10 +18,12 @@ Everything else in the planned v1 set (`str`, `simd`) does not
 exist yet.
 
 `mem` exports `alloc`, `realloc`, `release`, `copy`, `move`, `fill`, `zero`, and
-`compare`. Import it qualified or select those names explicitly; there are no
-unimported global memory functions. The current bootstrap compiler lowers
-these exact standard-module functions directly to the platform boundary, with
-no extra Ace call, allocation header, or registry. See [Memory](memory.md).
+`compare`. Each allocation name is one overload set with a raw byte form and an
+explicitly instantiated typed form. Import the module qualified or select those
+names explicitly; there are no unimported global memory functions. The current
+bootstrap compiler lowers these exact standard-module functions directly to the
+platform boundary, with no extra Ace call, allocation header, or registry. See
+[Memory](memory.md).
 
 ```ace
 import alloc, release from mem
@@ -29,9 +31,29 @@ import alloc, release from mem
 main(): int {
     data: []u8 = alloc(64, 8)
     release(mut data)
+
+    numbers: []usize = alloc[usize](4)
+    if numbers == null {
+        return 1
+    }
+
+    numbers[0] = 42
+    release[usize](mut numbers)
     return 0
 }
 ```
+
+- `alloc(size: int, align: int): []u8` — raw bytes with an explicit size and
+  power-of-two alignment.
+- `alloc[T](count: usize): []T` — typed: `count * sizeof(T)` bytes, alignment
+  taken from `T`, element length `count`, uninitialized storage, null on
+  overflow/zero-size/failure.
+- `realloc(data: []u8, new_size: int): []u8` — raw growth; failure leaves the
+  original live.
+- `realloc[T](data: []T, new_count: usize): []T` — typed growth with the same
+  failure contract; the result is the only authoritative slice.
+- `release(mut data: []u8)` and `release[T](mut data: []T)` — free the complete
+  authoritative allocation and null only the passed variable; null is a no-op.
 
 ## fmt
 

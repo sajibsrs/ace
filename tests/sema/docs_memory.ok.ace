@@ -34,5 +34,27 @@ main(): int {
     overlap_src: []u8 = target_array[0..2]
     overlap_dst: []u8 = target_array[1..3]
     mem.move(mut overlap_dst, overlap_src)
+
+    numbers: []usize = mem.alloc[usize](4)
+    if numbers != null {
+        if numbers.len != 4 {
+            mem.release[usize](mut numbers)
+            return 5
+        }
+        numbers[0] = 42
+        if numbers[0] != 42 {
+            mem.release[usize](mut numbers)
+            return 6
+        }
+        mem.release[usize](mut numbers)
+        if numbers != null {
+            return 7
+        }
+    }
+
+    empty: []usize = mem.alloc[usize](0)
+    if empty != null {
+        return 8
+    }
     return 0
 }

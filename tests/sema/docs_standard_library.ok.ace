@@ -1,13 +1,31 @@
 /*
-Mirrors docs/standard-library.md fmt, sys, and net examples (sema check only;
-runtime coverage lives in tests/emit/print_*.ace, tests/emit/sys.ace,
-tests/emit/sys_time.ace, tests/emit/net.ace, and
-tests/emit/poll.ace).
+Mirrors docs/standard-library.md mem, fmt, sys, and net examples (sema check
+only; runtime coverage lives in tests/emit/print_*.ace, tests/emit/sys.ace,
+tests/emit/sys_time.ace, tests/emit/net.ace, tests/emit/poll.ace, and
+tests/emit/typed_allocation.ace).
 */
 import fmt
+import mem
 import net
 import poll
 import sys
+
+mem_examples(): int {
+    data: []u8 = mem.alloc(64, 8)
+    if data == null {
+        return 1
+    }
+    mem.release(mut data)
+
+    numbers: []usize = mem.alloc[usize](4)
+    if numbers == null {
+        return 2
+    }
+
+    numbers[0] = 42
+    mem.release[usize](mut numbers)
+    return 0
+}
 
 write_note(): int {
     fd: sys.Fd, err: Error = sys.open("/tmp/notes.txt",
@@ -153,7 +171,11 @@ readiness_example(fd: sys.Fd): int {
 }
 
 main(): int {
-    code: int = write_note()
+    code: int = mem_examples()
+    if code != 0 {
+        return code
+    }
+    code = write_note()
     if code != 0 {
         return code
     }

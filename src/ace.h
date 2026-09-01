@@ -149,6 +149,9 @@ enum {
     BI_MEM_ZERO = 8,
     BI_MEM_COMPARE = 9,
     BI_FMT_PRINTF = 10,
+    BI_MEM_ALLOC_T = 11,   // mem.alloc[T](count: usize): []T
+    BI_MEM_REALLOC_T = 12, // mem.realloc[T](data: []T, new_count: usize): []T
+    BI_MEM_RELEASE_T = 13, // mem.release[T](mut data: []T)
 };
 
 enum {

@@ -199,6 +199,76 @@ offset before calling the base method. Runtime and diagnostic fixtures cover
 read-only and mutating dispatch, direct promotion, ambiguity, invalid embedded
 types, and the rejected reverse-contract direction.
 
+### Memory representation carved normative
+
+No code change: the carving records the bootstrap's existing layouts as normative
+language rules (spec.md Memory #17–21 and the Decision Queue's "Memory
+representation carving"). Slices and strings are exactly two-word descriptors —
+data pointer at offset 0, count at offset 8, size 16, alignment 8 — with no
+capacity word or hidden fields ever; a string is a read-only view over bytes that
+is never NUL-terminated; string literals live in static read-only storage as
+exactly their written bytes, with the empty literal a valid non-null string;
+arrays are contiguous index-order elements with the element's alignment and no
+padding. Programmer code may rely on these facts (inline asm, descriptor
+inspection, `sizeof` reasoning). Documentation mirrors the pinned facts in
+`docs/types.md`, `docs/memory.md`, and `docs/primitives.md`.
+
+### Sequence-overlap carving closed (implementation pending)
+
+No code change: the carve fixes the cross-type rules for `[N]T`, `[]T`, and
+`string` (spec.md new "Sequences" section, Decision Queue "Sequence-overlap
+carving"). Slicing is uniform with half-open bounds and 0/len defaults; string
+slicing will yield `string` and never widen permission; slice re-basing stays
+inside the current window; empty views keep their computed pointer and are never
+canonicalized to null; `string([]u8)` will be an explicit zero-cost view that
+preserves the descriptor exactly while the original slice may still write the
+shared bytes; no `string` → `[]u8` conversion and no implicit array/slice
+conversion exist. Equality: content for byte sequences, a nullness test when
+either operand is the literal `null` (previously implicit behavior, now the
+stated rule), constant-time descriptor identity for same-type non-byte slices,
+and no `==` for fixed non-byte arrays; `mem.compare` is byte-slices-only, so
+non-byte content comparison is an explicit loop or a type-specific library
+function. Strings will iterate as stored UTF-8 bytes. The string-side
+operations — string slicing, the `string([]u8)` view conversion, string
+iteration, and the constant-provable slice-bounds compile check — remain
+unimplemented until a dedicated chunk. Documentation records only the
+already-implemented facts (descriptor identity, null-literal nullness,
+no implicit conversions, empty-view pointers) in `docs/types.md` and
+`docs/memory.md`.
+
+### Typed `mem` allocation
+
+The owner-approved typed overloads land in `std/mem.ace` beside the unchanged
+raw byte forms: `alloc[T](count: usize): []T`, `realloc[T](data: []T,
+new_count: usize): []T`, and `release[T](mut data: []T)`, all explicitly
+instantiated generic declarations that the loader marks compiler-backed like
+their raw siblings. Sema checks them through the ordinary generic-call path —
+the typed intrinsics are intercepted before stamping, so no fallback body is
+ever checked or emitted — with exact-`[]T` release matching, `mut` call-site
+enforcement, `usize` count coercion, and source-positioned diagnostics;
+calling `mem.release(mut typed)` now points at the `mem.release[T](mut data)`
+spelling instead of demanding a `[]u8`. The emitter lowers typed alloc/realloc
+to the platform allocator with `count * sizeof(T)` computed as a constant
+multiply guarded by an `UINT64_MAX / sizeof(T)` overflow compare (overflow and
+zero byte size return null without calling the allocator), alignment derived
+from `T`, and the element count — not bytes — stored as the returned
+descriptor length; typed release shares the raw free-and-null lowering.
+Slice/array type names now render exact element types (`[]usize`) instead of
+the `[]T` placeholder, sharpening every mismatch diagnostic. The slice also
+fixed a latent sema gap: expression-position type arguments such as
+`f[Vec[int]](...)` or `f[T](...)` inside a generic body did not resolve
+through `build_type` (N_IDENT lacked generic substitution and N_INDEX was
+rejected), which makes generic struct literals and nested generic type
+arguments work in call brackets. Coverage: `tests/emit/typed_allocation.ace`
+(usized and 24-byte struct elements, exact lengths, aliasing, release nulling,
+null no-op, zero-count and overflow nulls, realloc preserve/new-length/failed
+paths, raw interop), `tests/sema/mem_typed*.ok.ace` (qualified + selective
+imports, generic wrappers, string/`Pair[i32]` elements),
+`tests/sema/mem_typed.err.ace` with run.sh diagnostic greps, a parser
+fixture, `tests/modules/mem_typed_module/`, and compiler-checked docs
+examples; `sandbox.ace` drops its little-endian byte packing for
+`mem.alloc[usize]`/`mem.release[usize]`. Normal and sanitizer suites pass.
+
 ## Still open after these chunks
 
 Checked/release build modes, then checked allocation tracking; nonblocking echo and multi-client chat are the next networking proofs over the implemented `poll` readiness queue (see the `spec.md` Decision Queue).

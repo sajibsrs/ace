@@ -1,0 +1,27 @@
+/* Typed mem instantiation spellings parse in every expression position. */
+import mem
+
+Item: struct { tag: u32, weight: u64 }
+
+Pair[T]: struct { first: T, second: T }
+
+make(count: usize): []usize {
+    values: []usize = mem.alloc[usize](count)
+    if values == null {
+        return null
+    }
+    mem.release[usize](mut values)
+    return values
+}
+
+main(): int {
+    a: []Item = mem.alloc[Item](3)
+    b: []Pair[i32] = mem.alloc[Pair[i32]](2)
+    c: []usize = mem.realloc[usize](a.len, 4)
+    d: []Pair[Pair[i32]] = mem.realloc[Pair[Pair[i32]]](b, 4)
+    e: bool = mem.alloc[usize](0) == null
+    mem.release[Item](mut a)
+    mem.release[Pair[i32]](mut b)
+    mem.release[Pair[Pair[i32]]](mut d)
+    return make(2).len
+}

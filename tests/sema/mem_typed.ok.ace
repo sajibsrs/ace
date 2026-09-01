@@ -1,0 +1,57 @@
+import mem
+
+Point: struct { x: i32, y: i32 }
+
+Pair[T]: struct { first: T, second: T }
+
+/* A generic wrapper states its own T; the typed allocation instantiates it. */
+clone[T](values: []T): []T {
+    copy_values: []T = mem.alloc[T](values.len)
+    return copy_values
+}
+
+main(): int {
+    numbers: []usize = mem.alloc[usize](4)
+    if numbers == null {
+        return 1
+    }
+
+    points: []Point = mem.alloc[Point](2)
+    if points == null {
+        return 2
+    }
+    points[1] = Point { x: 3, y: 4 }
+    grown: []Point = mem.realloc[Point](points, 4)
+    if grown == null || grown.len != 4 {
+        return 3
+    }
+    if grown[1].x + grown[1].y != 7 {
+        return 4
+    }
+    mem.release[Point](mut grown)
+
+    pairs: []Pair[i32] = mem.alloc[Pair[i32]](2)
+    if pairs == null {
+        return 5
+    }
+    pairs[0] = Pair[i32] { first: 1, second: 2 }
+    mem.release[Pair[i32]](mut pairs)
+
+    words: []string = mem.alloc[string](2)
+    if words == null {
+        return 6
+    }
+    words[0] = "typed"
+    mem.release[string](mut words)
+
+    copied: []usize = clone[usize](numbers)
+    if copied == null {
+        return 7
+    }
+    mem.release[usize](mut copied)
+    mem.release[usize](mut numbers)
+
+    nulled: []Point = null
+    mem.release[Point](mut nulled)
+    return 0
+}

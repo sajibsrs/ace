@@ -1,0 +1,19 @@
+import mem
+
+main(): int {
+    a: []usize = mem.alloc[usize](4)
+    b: []i32 = mem.alloc[usize](4)
+    c: []usize = mem.alloc[int](4)
+    d: []usize = mem.alloc[usize](int(4))
+    e: []usize = mem.alloc[usize](mut a)
+    f: []usize = mem.alloc[Missing](4)
+    mem.release[usize](a)
+    g: []u8 = mem.alloc(4, 8)
+    mem.release[usize](mut g)
+    mem.release(mut a)
+    h: []usize = mem.realloc[u8](a, 8)
+    i: []usize = mem.alloc[usize](4, 8)
+    j: []usize = mem.alloc[usize]()
+    k: []usize = mem.alloc(4)
+    return 0
+}

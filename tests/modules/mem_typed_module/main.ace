@@ -1,0 +1,24 @@
+// expect-exit: 0
+import Point, make_points, drop_points from "./helper.ace"
+
+main(): int {
+    points: []Point = make_points(3)
+    if points == null {
+        return 1
+    }
+    if points.len != 3 {
+        drop_points(mut points)
+        return 2
+    }
+    points[0] = Point { x: 1, y: 2 }
+    points[2] = Point { x: 3, y: 4 }
+    if points[0].x + points[2].x != 4 {
+        drop_points(mut points)
+        return 3
+    }
+    drop_points(mut points)
+    if points != null {
+        return 4
+    }
+    return 0
+}

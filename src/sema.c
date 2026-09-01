@@ -49,6 +49,11 @@ static int is_num(SType* t) { return is_int(t) || is_float(t); }
 static int is_bool(SType* t) { return t->kind == SK_PRIM && t->prim == P_BOOL; }
 
 static const char* type_name(SType* t) {
+    /* slice/array names render their element type: diagnostics must name the
+       exact mismatched type, not a placeholder. A small ring of static
+       buffers bounds nested compositions. */
+    static char bufs[8][128];
+    static int bi;
     switch (t->kind) {
     case SK_PRIM:
         switch (t->prim) {
@@ -63,8 +68,17 @@ static const char* type_name(SType* t) {
         }
         return "?";
     case SK_PTR: return t->is_mut ? "mut *T" : "*T";
-    case SK_SLICE: return "[]T";
-    case SK_ARRAY: return "[N]T";
+    case SK_SLICE: {
+        char* out = bufs[bi = (bi + 1) & 7];
+        snprintf(out, sizeof bufs[0], "[]%s", t->base ? type_name(t->base) : "?");
+        return out;
+    }
+    case SK_ARRAY: {
+        char* out = bufs[bi = (bi + 1) & 7];
+        snprintf(out, sizeof bufs[0], "[%llu]%s",
+                 (unsigned long long)t->count, t->base ? type_name(t->base) : "?");
+        return out;
+    }
     case SK_TUPLE: return "(tuple)";
     case SK_FUNC: return "(func)";
     case SK_STRUCT: return t->name ? t->name : "struct";
@@ -676,7 +690,13 @@ static SType* build_named_ctx(Ck* k, Node* t, int path) {
 static SType* build_type_ctx(Ck* k, Node* t, int path) {
     switch (t->kind) {
     case N_NAMED: return build_named_ctx(k, t, path);
-    case N_IDENT: { // typed struct-literal bases arrive as expression nodes
+    case N_IDENT: { // typed struct-literal bases and call type arguments
+        if (k->nsub) { // expression-position type name: substitute like N_NAMED
+            for (int i = 0; i < k->nsub; i++)
+                if ((uint32_t)strlen(k->tnames[i]) == t->len &&
+                    memcmp(k->tnames[i], t->str, t->len) == 0)
+                    return k->ttypes[i];
+        }
         SType* p = prim_by_name(t->str, t->len);
         if (p) return p;
         Sym* s = lookup_type(k, t->str, t->len);
@@ -701,6 +721,26 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
             return T_ERR;
         }
         return s->type;
+    }
+    case N_INDEX: { // expression-position generic instantiation: Vec[int]
+        if (!t->a || t->a->kind != N_IDENT) {
+            ck_err(k, t, "expected a type");
+            return T_ERR;
+        }
+        SType* it = indexed_named_type(k, t);
+        if (it) return it;
+        Sym* ts = lookup_type(k, t->a->str, t->a->len);
+        if (!ts || !ts->type)
+            ck_err(k, t->a, "unknown type '%.*s'", (int)t->a->len, t->a->str);
+        else if (ts->is_generic)
+            ck_err(k, t, "generic type '%.*s' expects %d type argument%s",
+                   (int)t->a->len, t->a->str,
+                   ts->type->decl && ts->type->decl->c ? ts->type->decl->c->nkids : 0,
+                   ts->type->decl && ts->type->decl->c &&
+                   ts->type->decl->c->nkids == 1 ? "" : "s");
+        else
+            ck_err(k, t->a, "type '%.*s' is not generic", (int)t->a->len, t->a->str);
+        return T_ERR;
     }
     case N_PTR: {
         SType* p = st_new(SK_PTR);
@@ -1926,7 +1966,12 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         Sym* original = current && current->decl ? node_sym(current->decl) : NULL;
         if (original && original->type) declared = original->type;
         if (!same_type(declared, T_BYTE_SLICE)) {
-            ck_err(k, raw, "mem.release requires a mutable []u8 allocation variable");
+            if (declared->kind == SK_SLICE)
+                ck_err(k, raw,
+                       "mem.release requires a mutable []u8 allocation variable — a typed slice "
+                       "states its element type: mem.release[T](mut data)");
+            else
+                ck_err(k, raw, "mem.release requires a mutable []u8 allocation variable");
             return T_ERR;
         }
         return T_VOID;
@@ -1964,6 +2009,97 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         coerce(k, arg, want_type);
     }
     return intrinsic == BI_MEM_COMPARE ? st_prim(P_I64) : T_VOID;
+}
+
+/*
+ * Typed allocation intrinsics: mem.alloc[T](count): []T,
+ * mem.realloc[T](data, new_count): []T, and mem.release[T](mut data).
+ * They ride the ordinary explicit generic-instantiation path, never stamp a
+ * body, and are lowered directly by the emitter. The instantiation must name
+ * exactly one element type whose layout the compiler can size.
+ */
+static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn,
+                                        SType* elem, int intrinsic) {
+    ensure_memory_types();
+    Node* callee = call->a;
+    callee->sym = fn;
+    callee->a->sym = fn;
+    call->sym = fn;
+    call->ival = (uint64_t)intrinsic;
+
+    const char* what = intrinsic == BI_MEM_ALLOC_T ? "mem.alloc[T]" :
+                       intrinsic == BI_MEM_REALLOC_T ? "mem.realloc[T]" :
+                                                       "mem.release[T]";
+    if (!elem || elem->kind == SK_ERR) return T_ERR;
+    if (elem->kind == SK_TYPEPARAM) {
+        ck_err(k, callee, "%s needs a concrete element type at the instantiation", what);
+        return T_ERR;
+    }
+    if (!layout(elem)) return T_ERR;
+    SType* slice = st_new(SK_SLICE);
+    slice->base = elem;
+    layout(slice);
+    callee->ty = slice; // the emitter derives sizeof(T)/alignof(T) from the result
+
+    if (intrinsic == BI_MEM_ALLOC_T) {
+        if (call->nkids != 1) {
+            ck_err(k, call, "%s takes exactly one element count", what);
+            return T_ERR;
+        }
+        Node* count = call->kids[0];
+        if (count->kind == N_MUTARG) {
+            ck_err(k, count,
+                   "'mut' marks mut parameters; %s arguments are read-only", what);
+            count = count->a;
+        }
+        coerce(k, count, st_prim(P_USIZE));
+        return slice;
+    }
+    if (intrinsic == BI_MEM_REALLOC_T) {
+        if (call->nkids != 2) {
+            ck_err(k, call, "%s takes exactly data and a new element count", what);
+            return T_ERR;
+        }
+        Node* data = call->kids[0];
+        Node* count = call->kids[1];
+        if (data->kind == N_MUTARG) {
+            ck_err(k, data,
+                   "'mut' marks mut parameters; %s data is read-only", what);
+            data = data->a;
+        }
+        if (count->kind == N_MUTARG) {
+            ck_err(k, count,
+                   "'mut' marks mut parameters; %s arguments are read-only", what);
+            count = count->a;
+        }
+        coerce(k, data, slice);
+        coerce(k, count, st_prim(P_USIZE));
+        return slice;
+    }
+
+    if (call->nkids != 1) {
+        ck_err(k, call, "%s takes exactly one mut typed allocation slice", what);
+        return T_ERR;
+    }
+    Node* arg = call->kids[0];
+    if (arg->kind != N_MUTARG) {
+        ck_err(k, arg, "%s needs 'mut' at the call site: mem.release[T](mut data)", what);
+        return T_ERR;
+    }
+    Node* raw = arg->a;
+    SType* visible = check_lvalue(k, raw, 1);
+    (void)visible;
+    SType* declared = visible;
+    Sym* current = raw->kind == N_IDENT ? node_sym(raw) : NULL;
+    Sym* original = current && current->decl ? node_sym(current->decl) : NULL;
+    if (original && original->type) declared = original->type;
+    if (!same_type(declared, slice)) {
+        ck_err(k, raw, "%s requires a mutable []%s allocation variable — the "
+                       "instantiation must match the slice's element type exactly",
+               what, type_name(elem));
+        return T_ERR;
+    }
+    return T_VOID;
 }
 
 static Sym* printf_helper(Ck* k, Sym* printf_fn, const char* suffix, Node* at) {
@@ -2320,16 +2456,18 @@ static SType* check_call(Ck* k, Node* call) {
             k->pending = pd;
             return T_ERR; // poison; existence + args verified at end of file
         }
-        if (s->kind == SYM_FUNC && s->decl &&
-            (s->decl->ival == BI_MEM_ALLOC ||
-             s->decl->ival == BI_MEM_REALLOC ||
-             s->decl->ival == BI_MEM_RELEASE ||
-             s->decl->ival == BI_MEM_COPY ||
-             s->decl->ival == BI_MEM_MOVE ||
-             s->decl->ival == BI_MEM_FILL ||
-             s->decl->ival == BI_MEM_ZERO ||
-             s->decl->ival == BI_MEM_COMPARE))
-            return check_memory_call(k, call, s, (int)s->decl->ival);
+        if (s->kind == SYM_FUNC) {
+            // raw byte-form intrinsics only; typed forms need [T] and are
+            // checked in the generic-instantiation path below
+            Sym* mi = NULL;
+            for (Sym* it = s; it; it = it->overload)
+                if (it->decl && it->decl->ival >= BI_MEM_ALLOC &&
+                    it->decl->ival <= BI_MEM_COMPARE) {
+                    mi = it;
+                    break;
+                }
+            if (mi) return check_memory_call(k, call, mi, (int)mi->decl->ival);
+        }
         if (s->kind == SYM_FUNC && s->decl && s->decl->ival == BI_FMT_PRINTF)
             return check_printf_call(k, call, s);
         if (s->kind == SYM_VAR && s->type && s->type->kind == SK_FUNC) {
@@ -2413,6 +2551,12 @@ static SType* check_call(Ck* k, Node* call) {
                        (int)callee->a->len, callee->a->str);
                 return T_ERR;
             }
+            // typed allocation intrinsics: checked and lowered directly, no stamp
+            if (chosen->decl->ival == BI_MEM_ALLOC_T ||
+                chosen->decl->ival == BI_MEM_REALLOC_T ||
+                chosen->decl->ival == BI_MEM_RELEASE_T)
+                return check_memory_generic_call(k, call, chosen, targs[0],
+                                                 (int)chosen->decl->ival);
             SType* ft = instantiate_generic_func(k, chosen, callee);
             if (ft->kind == SK_ERR) return T_ERR;
             check_args(k, call, ft, 0);

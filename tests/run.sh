@@ -123,7 +123,7 @@ for want in \
     "parameter 'value' has type bool, which is not C-ABI compatible" \
     "parameter 'value' has type string, which is not C-ABI compatible" \
     "return type (tuple) is not C-ABI compatible" \
-    "return type [N]T is not C-ABI compatible" \
+    "return type [4]i32 is not C-ABI compatible" \
     "parameter 'value' has type *T, which is not C-ABI compatible" \
     "parameter 'value' has type BadField, which is not C-ABI compatible" \
     "parameter 'value' has type Box, which is not C-ABI compatible" \
@@ -169,11 +169,29 @@ done
 
 array_repeat_errors=$("$ACE" tests/sema/array_repeat_errors.err.ace 2>&1)
 for want in \
-    "array repetition count is 3, expected 4 for [N]T" \
+    "array repetition count is 3, expected 4 for [4]i32" \
     "type mismatch: float literal given where i32 expected" \
     "array literal needs its array type from context"; do
     if ! printf '%s\n' "$array_repeat_errors" | grep -qF "$want"; then
         echo "FAIL: missing array repetition diagnostic '$want'"
+        fail=1
+    fi
+done
+
+mem_typed_errors=$("$ACE" tests/sema/mem_typed.err.ace 2>&1)
+for want in \
+    "type mismatch: []usize given where []i32 expected" \
+    "type mismatch: i64 given where usize expected" \
+    "'mut' marks mut parameters; mem.alloc[T] arguments are read-only" \
+    "unknown type 'Missing'" \
+    "mem.release[T] needs 'mut' at the call site: mem.release[T](mut data)" \
+    "mem.release[T] requires a mutable []usize allocation variable" \
+    "mem.release requires a mutable []u8 allocation variable — a typed slice states its element type: mem.release[T](mut data)" \
+    "type mismatch: []u8 given where []usize expected" \
+    "mem.alloc[T] takes exactly one element count" \
+    "mem.alloc takes exactly size and alignment"; do
+    if ! printf '%s\n' "$mem_typed_errors" | grep -qF "$want"; then
+        echo "FAIL: missing typed allocation diagnostic '$want'"
         fail=1
     fi
 done

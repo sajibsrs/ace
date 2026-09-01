@@ -2442,6 +2442,115 @@ static EV gen_realloc_builtin(Em* e, Node* call) {
     return finish_slice_builtin(e, si, sf, off);
 }
 
+/*
+ * Typed allocation: the request is count * sizeof(T) bytes with alignment
+ * taken from T (always within the platform heap's fundamental 16-byte
+ * alignment for Ace layouts). The returned descriptor carries the ELEMENT
+ * count. A multiplication overflow, zero byte size (sizeof(T) == 0 or a zero
+ * count), unsupported alignment, or OOM produces the null slice without
+ * aborting and without calling the allocator on the overflow paths.
+ */
+static EV gen_alloc_typed_builtin(Em* e, Node* call) {
+    int si = e->vti, sf = e->vtf;
+    uint32_t off = temp_slot(e, 16, 8);
+    zero_slice_slot(e, off);
+
+    SType* elem = node_ty(call)->base;
+    uint64_t esz = ty_size(elem);
+    uint64_t eal = ty_align(elem);
+    EV count = gen_expr(e, call->kids[0]);
+    int done = new_label(e);
+
+    if (esz == 0 || eal > 16) { // zero byte size / unsupported alignment
+        bind_label(e, done);
+        return finish_slice_builtin(e, si, sf, off);
+    }
+
+    cbz_(e, 1, xreg(count.idx), 0, done); // zero count is a zero byte-size request
+    int limit = tmp_int(e);
+    load_imm(e, 1, xreg(limit), UINT64_MAX / esz);
+    ins(e, 0xEB00001Fu | ((uint32_t)xreg(limit) << 16) |
+            ((uint32_t)xreg(count.idx) << 5)); // cmp count, limit
+    bcond_(e, C_HI, done); // count * sizeof(T) would overflow usize
+
+    int bytes = tmp_int(e);
+    int scale = tmp_int(e);
+    load_imm(e, 1, xreg(scale), esz);
+    ins(e, 0x9B007C00u | ((uint32_t)xreg(scale) << 16) |
+            ((uint32_t)xreg(count.idx) << 5) | (uint32_t)xreg(bytes)); // mul
+
+    CallArg arg = { NULL, { CLS_INT, bytes }, 1, 0 };
+    SType* param = default_i64();
+    uint8_t mut = 0;
+    CallTarget tgt = { TK_EXTERN, "_malloc", 7, 0 };
+    EV ptr = emit_call(e, call, &arg, 1, &param, &mut, 1, 0, -1, tgt,
+                       raw_pointer_type());
+    cbz_(e, 1, xreg(ptr.idx), 0, done);
+    frame_addr(e, 16, off);
+    st_reg(e, xreg(ptr.idx), 16, 0, 8);
+    st_reg(e, xreg(count.idx), 16, 8, 8); // descriptor length: element count
+
+    bind_label(e, done);
+    return finish_slice_builtin(e, si, sf, off);
+}
+
+/* Typed reallocation over the same rules: failure leaves the original
+ * allocation live and unchanged; success makes only the result authoritative
+ * with the new element count. */
+static EV gen_realloc_typed_builtin(Em* e, Node* call) {
+    int si = e->vti, sf = e->vtf;
+    uint32_t off = temp_slot(e, 16, 8);
+    zero_slice_slot(e, off);
+
+    SType* elem = node_ty(call)->base;
+    uint64_t esz = ty_size(elem);
+    uint64_t eal = ty_align(elem);
+    EV data = gen_expr(e, call->kids[0]);
+    if (data.cls != CLS_ADDR) {
+        em_err(e, call->kids[0], "mem.realloc[T] data must materialize as a slice");
+        return finish_slice_builtin(e, si, sf, off);
+    }
+    int ptemp = tmp_int(e);
+    ld_reg(e, xreg(ptemp), xreg(data.idx), 0, 8, 0);
+    EV count = gen_expr(e, call->kids[1]);
+    int done = new_label(e);
+
+    if (esz == 0 || eal > 16) { // zero byte size / unsupported alignment
+        bind_label(e, done);
+        return finish_slice_builtin(e, si, sf, off);
+    }
+
+    cbz_(e, 1, xreg(count.idx), 0, done); // zero count fails, original stays live
+    int limit = tmp_int(e);
+    load_imm(e, 1, xreg(limit), UINT64_MAX / esz);
+    ins(e, 0xEB00001Fu | ((uint32_t)xreg(limit) << 16) |
+            ((uint32_t)xreg(count.idx) << 5)); // cmp count, limit
+    bcond_(e, C_HI, done); // overflow fails without calling the allocator
+
+    int bytes = tmp_int(e);
+    int scale = tmp_int(e);
+    load_imm(e, 1, xreg(scale), esz);
+    ins(e, 0x9B007C00u | ((uint32_t)xreg(scale) << 16) |
+            ((uint32_t)xreg(count.idx) << 5) | (uint32_t)xreg(bytes)); // mul
+
+    CallArg args[2] = {
+        { NULL, { CLS_INT, ptemp }, 1, 0 },
+        { NULL, { CLS_INT, bytes }, 1, 0 },
+    };
+    SType* params[2] = { raw_pointer_type(), default_i64() };
+    uint8_t muts[2] = { 0, 0 };
+    CallTarget tgt = { TK_EXTERN, "_realloc", 8, 0 };
+    EV ptr = emit_call(e, call, args, 2, params, muts, 2, 0, -1, tgt,
+                       raw_pointer_type());
+    cbz_(e, 1, xreg(ptr.idx), 0, done);
+    frame_addr(e, 16, off);
+    st_reg(e, xreg(ptr.idx), 16, 0, 8);
+    st_reg(e, xreg(count.idx), 16, 8, 8); // descriptor length: element count
+
+    bind_label(e, done);
+    return finish_slice_builtin(e, si, sf, off);
+}
+
 static EV gen_release_builtin(Em* e, Node* call) {
     int si = e->vti, sf = e->vtf;
     Node* raw = call->kids[0]->a; // sema requires N_MUTARG + mutable lvalue
@@ -2813,6 +2922,15 @@ static EV gen_call(Em* e, Node* call) {
     if (intrinsic && intrinsic->decl &&
         intrinsic->decl->ival == BI_MEM_RELEASE && call->ival == BI_MEM_RELEASE)
         return gen_release_builtin(e, call);
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival == BI_MEM_ALLOC_T && call->ival == BI_MEM_ALLOC_T)
+        return gen_alloc_typed_builtin(e, call);
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival == BI_MEM_REALLOC_T && call->ival == BI_MEM_REALLOC_T)
+        return gen_realloc_typed_builtin(e, call);
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival == BI_MEM_RELEASE_T && call->ival == BI_MEM_RELEASE_T)
+        return gen_release_builtin(e, call); // same lowering: free + null the lvalue
     if (intrinsic && intrinsic->decl &&
         intrinsic->decl->ival == BI_MEM_COPY && call->ival == BI_MEM_COPY)
         return gen_byte_write_builtin(e, call, BI_MEM_COPY);
@@ -5120,7 +5238,9 @@ int emit_object(Node* file, Diag* d, const char* out_path,
             if (n->ival == BI_MEM_ALLOC || n->ival == BI_MEM_REALLOC ||
                 n->ival == BI_MEM_RELEASE || n->ival == BI_MEM_COPY ||
                 n->ival == BI_MEM_MOVE || n->ival == BI_MEM_FILL ||
-                n->ival == BI_MEM_ZERO || n->ival == BI_MEM_COMPARE)
+                n->ival == BI_MEM_ZERO || n->ival == BI_MEM_COMPARE ||
+                n->ival == BI_MEM_ALLOC_T || n->ival == BI_MEM_REALLOC_T ||
+                n->ival == BI_MEM_RELEASE_T)
                 break; // compiler-backed std/mem declarations have no body symbol
             if (n->ival == BI_FMT_PRINTF)
                 break; // format-dependent calls lower directly; no runtime printf symbol

@@ -250,9 +250,14 @@ static void mark_mem_intrinsics(Loader* L, Module* m) {
     for (int i = 0; i < m->file->nkids; i++) {
         Node* n = m->file->kids[i];
         if (n->kind != N_FUNC || !(n->flags & F_PUB)) continue;
-        if (text_is(n->str, n->len, "alloc")) n->ival = BI_MEM_ALLOC;
-        else if (text_is(n->str, n->len, "realloc")) n->ival = BI_MEM_REALLOC;
-        else if (text_is(n->str, n->len, "release")) n->ival = BI_MEM_RELEASE;
+        // The bracket parameter separates the typed generic overloads from
+        // the raw byte forms; both stay compiler-backed with no emitted body.
+        if (text_is(n->str, n->len, "alloc"))
+            n->ival = n->c ? BI_MEM_ALLOC_T : BI_MEM_ALLOC;
+        else if (text_is(n->str, n->len, "realloc"))
+            n->ival = n->c ? BI_MEM_REALLOC_T : BI_MEM_REALLOC;
+        else if (text_is(n->str, n->len, "release"))
+            n->ival = n->c ? BI_MEM_RELEASE_T : BI_MEM_RELEASE;
         else if (text_is(n->str, n->len, "copy")) n->ival = BI_MEM_COPY;
         else if (text_is(n->str, n->len, "move")) n->ival = BI_MEM_MOVE;
         else if (text_is(n->str, n->len, "fill")) n->ival = BI_MEM_FILL;

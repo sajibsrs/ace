@@ -78,8 +78,13 @@ single-byte values.
 
 ## Strings
 
-`string` is a two-word byte view: a pointer and a length. String literals have
-static storage, do not allocate, and contain exactly their encoded bytes.
+`string` is a two-word byte view with the same descriptor as `[]u8`: a byte
+pointer and a byte count, so `sizeof(string)` is 16. String literals have static
+read-only storage, do not allocate, and contain exactly their encoded bytes; the
+language appends no terminator. A string is read-only — there is no `mut string`
+form and no syntax writes through a string's bytes. The empty literal `""` is a
+valid non-null string (pointer, length 0); only the all-bits-zero string is
+`null`.
 
 ```ace
 message: string = "Welcome Ace!\n"

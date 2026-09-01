@@ -222,6 +222,15 @@ elements. Slicing does not allocate. See [Memory](memory.md) for allocation and
 lifetime rules. The current compiler does not insert runtime index or
 slice-bound checks; out-of-range access is unchecked.
 
+These layout facts are normative — code may rely on them. A slice is exactly two
+words: the element pointer at offset 0 and the element count at offset 8, giving
+`sizeof([]T)` = 16 with alignment 8; there is no capacity word and no hidden
+field. An array stores `N` contiguous elements in index order with no metadata
+and no inter-element padding, so `sizeof([N]T)` = `N * sizeof(T)` and array
+alignment is the element's alignment. A string uses the identical two-word
+descriptor over bytes (pointer, byte count; `sizeof(string)` = 16), is never
+NUL-terminated, and is read-only: no syntax writes through a string's bytes.
+
 Fixed byte arrays `[N]u8`, byte slices `[]u8`, and strings compare as complete
 byte sequences with `==` and `!=`. Every pair and either operand order is
 accepted, including fixed arrays with different lengths. Lengths must match,
@@ -237,8 +246,22 @@ slice_match: bool = "HTTP/1.1 200" == view
 
 Comparison does not allocate or convert either value. Strings are UTF-8 by
 convention, but equality compares their exact stored encoding without Unicode
-decoding or normalization. Arrays and slices with another element type do not
-receive this mixed-type rule.
+decoding or normalization.
+
+A comparison whose other operand is the literal `null` is a nullness test, not a
+content comparison: it is true only when both descriptor words are zero. An
+empty but non-null slice therefore equals another empty slice by content, while
+it does not equal `null`.
+
+Slices of any other element type compare with `==` and `!=` only against the
+same slice type, and the comparison is descriptor identity: equal when both the
+stored pointer and the length are equal, in constant time with no element loop.
+Use `mem.compare` (byte slices) or an explicit loop to compare contents. Fixed
+arrays of a non-byte element type have no `==` at all.
+
+Arrays and slices do not convert implicitly in either direction. Slicing is the
+explicit bridge from an array to a view, and `mem.copy(mut arr[0..N], view)`
+writes a view's bytes into array storage.
 
 ## Multiple-return and function types
 
