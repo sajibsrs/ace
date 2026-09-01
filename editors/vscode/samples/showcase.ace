@@ -24,6 +24,10 @@ Point: struct {
     y: f64,
 }
 
+PlotPoint: struct {
+    embed point: Point,
+}
+
 Primitives: struct {
     signed8: i8,
     signed16: i16,

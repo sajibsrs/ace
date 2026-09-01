@@ -17,6 +17,7 @@
     X(IN, "in") X(SWITCH, "switch") X(RETURN, "return") X(BREAK, "break")      \
     X(CONTINUE, "continue") X(ASM, "asm") X(EXTERN, "extern")                  \
     X(EXPORT, "export") X(CONTRACT, "contract") X(STRUCT, "struct")           \
+    X(EMBED, "embed")                                                         \
     X(SIGNS, "signs") X(DISTINCT, "distinct") X(TYPE, "type")                \
     X(ENUM, "enum") X(UNION, "union")                                          \
     X(NULL, "null") X(TRUE, "true") X(FALSE, "false")                          \
@@ -132,6 +133,7 @@ const char* node_kind_name(NKind k);
 enum {
     F_PUB = 1, F_EXPO = 2, F_MUT = 4, F_NOALIAS = 8, F_CONST = 16,
     F_ELSE = 32, F_VARARGS = 64, F_METHOD = 128, F_SELECT = 256,
+    F_EMBED = 512,
 };
 
 // Compiler-backed standard-module functions. These markers live only on the

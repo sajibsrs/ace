@@ -12,7 +12,7 @@ newline       := significant — terminates statements (see §6 Notes)
 
 keyword       := "import" | "from" | "pub" | "mut" | "const" | "noalias" | "if" | "else"
                | "for" | "in" | "switch" | "return" | "break" | "continue"
-               | "asm" | "extern" | "export" | "contract" | "struct" | "signs"
+               | "asm" | "extern" | "export" | "contract" | "struct" | "embed" | "signs"
                | "distinct" | "type" | "enum" | "union" | "null" | "true" | "false"
 
 ident         := letter ("letter" | digit | "_")*        [P: exact ident charset]
@@ -60,7 +60,7 @@ block         := "{" stmt* "}"
 
 struct_decl   := ident [type_params] ":" "struct" "{" field_list "}"
 field_list    := field ("," field)*
-field         := ident ":" type
+field         := ["embed"] ident ":" type
 
 contract_decl := ident [type_params] ":" "contract" "{" method_decl* "}"
 method_decl   := ["mut"] ident "(" [params] ")" [ret_clause]  // receiver implied
@@ -208,3 +208,4 @@ ret_types     := type | "(" type ("," type)+ ")"
 17. **Tagged-union cases are patterns, not calls.** `Event.key(code: u32)` in a union switch binds an explicitly typed copy of the active payload; the same shape in expression position constructs a value. The scrutinee's union type selects pattern parsing/semantic checking, every variant must appear once unless `else` exists, and inactive payload access has no expression form.
 18. **Array repetition remains explicitly typed by context.** `[value : count]` is an array literal only; `count` is a nonnegative integer literal equal to the expected `[N]T` length. `value` is checked as `T`, evaluated once, then copied to all `N` elements. The form neither infers a declaration type nor allocates.
 19. **Byte sequences compare pairwise.** `==` and `!=` admit every combination of `[N]u8`, `[]u8`, and `string` in either operand order, including `[N]u8` against `[M]u8`. They compare complete lengths and exact stored bytes without conversion, allocation, decoding, or normalization. Arrays and slices of another element type do not receive this mixed-type rule.
+20. **Embedding is explicit and one-level.** `embed name: Base` is an ordinary named struct field whose owned methods may be promoted to the containing struct. Direct outer methods win, multiple exact promoted matches are ambiguous, and fields are not promoted. Contract conformance may flow from a directly embedded base to its embedder, never in reverse.

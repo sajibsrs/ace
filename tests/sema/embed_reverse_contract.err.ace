@@ -1,0 +1,23 @@
+/* An embedder's signing never flows back into its embedded base. */
+Value: contract {
+    value(): int
+}
+
+Base: struct {
+    n: int,
+}
+
+Outer: struct {
+    embed base: Base,
+}
+
+Outer signs Value
+
+Outer.value(): int {
+    return self.base.n
+}
+
+bad(): Value {
+    base: Base = Base { n: 1 }
+    return Value(&base)
+}

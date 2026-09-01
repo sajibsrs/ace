@@ -4,7 +4,7 @@ DiskError: distinct i32
 io_descriptor: const ErrorDescriptor = ErrorDescriptor{
     code: 1,
     domain: typeid(DiskError),
-    message: "disk unreachable",
+    message: "should trigger panic",
 }
 
 read(fail: bool): (int, Error) {

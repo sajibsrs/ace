@@ -2541,6 +2541,67 @@ static SType* check_call(Ck* k, Node* call) {
             }
             found = f;
         }
+        /* A directly owned method wins. Otherwise, one explicitly embedded
+         * field may promote an exact method by rewriting the receiver to the
+         * ordinary field expression that codegen already understands. */
+        if (!found && !qualified && b->decl) {
+            Sym* promoted = NULL;
+            SType* promoted_ft = NULL;
+            Node* promoted_field = NULL;
+            for (int fi = 0; fi < b->nfields; fi++) {
+                Node* fd = b->decl->kids[fi];
+                SType* eb = b->fields[fi].t;
+                if (!(fd->flags & F_EMBED) || !eb || eb->kind != SK_STRUCT)
+                    continue;
+                uint32_t ekey_len;
+                const char* ekey = method_key(eb->decl, callee->str, callee->len,
+                                              &ekey_len);
+                Sym* ehead = lookup_val(k, ekey, ekey_len);
+                for (Sym* f = ehead; f; f = f->overload) {
+                    SType* ft = f->is_generic && eb->nargs
+                        ? build_func_type(k, f->decl, eb->args, eb->nargs)
+                        : f->type;
+                    if (!ft || (f->is_generic && !eb->nargs) ||
+                        ft->nparams != call->nkids + 1 ||
+                        !same_type(ft->params[0], eb)) continue;
+                    int rmut = (f->decl->flags & F_MUT) != 0;
+                    int cmut = (call->flags & F_MUT) != 0;
+                    if (rmut != cmut) continue;
+                    int exact = 1;
+                    for (int i = 1; i < ft->nparams; i++) {
+                        Node* arg = call->kids[i - 1];
+                        SType* at = overload_arg_type(k, arg);
+                        int am = arg->kind == N_MUTARG;
+                        int pm = (f->decl->kids[i]->flags & F_MUT) != 0;
+                        if (am != pm || !exact_arg_type(arg, at, ft->params[i]))
+                            exact = 0;
+                    }
+                    if (!exact && overload_count(ehead) > 1) continue;
+                    if (promoted) {
+                        ck_err(k, call, "ambiguous promoted method call '%.*s'",
+                               (int)callee->len, callee->str);
+                        return T_ERR;
+                    }
+                    promoted = f;
+                    promoted_ft = ft;
+                    promoted_field = fd;
+                }
+            }
+            if (promoted) {
+                Node* recv = (Node*)arena_alloc(sizeof(Node));
+                memset(recv, 0, sizeof *recv);
+                recv->kind = N_FIELD_E;
+                recv->path = callee->path; recv->line = callee->line;
+                recv->col = callee->col;
+                recv->a = callee->a;
+                recv->str = promoted_field->str;
+                recv->len = promoted_field->len;
+                recv->ty = promoted_ft->params[0];
+                callee->a = recv;
+                found = promoted;
+                b = promoted_ft->params[0];
+            }
+        }
         if (found) {
             SType* method_ft = found->is_generic
                 ? instantiate_generic_func_args(k, found, b->args, b->nargs, call)
@@ -3764,6 +3825,11 @@ static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
     for (int i = 0; i < decl->nkids; i++) {
         t->fields[i].name = decl->kids[i]->str;
         t->fields[i].t = build_type_ctx(k, decl->kids[i]->a, 2);
+        if ((decl->kids[i]->flags & F_EMBED) &&
+            t->fields[i].t->kind != SK_STRUCT &&
+            t->fields[i].t->kind != SK_ERR)
+            ck_err(k, decl->kids[i], "embedded field '%s' must have a struct type",
+                   t->fields[i].name);
     }
     for (int i = 0; i < t->nfields; i++)
         for (int j = i + 1; j < t->nfields; j++)
@@ -3962,6 +4028,8 @@ static void check_signing(Ck* k, Node* signing) {
             const char* key = method_key(signing->a, m->str, m->len, &klen);
             Sym* head = lookup_val(k, key, klen);
             Sym* found = NULL;
+            Node* embedded_field = NULL;
+            int promoted_ambiguous = 0;
             for (Sym* fn = head; fn; fn = fn->overload) {
                 SType* ft = fn->is_generic
                     ? build_func_type(k, fn->decl, k->ttypes, k->nsub)
@@ -3984,17 +4052,61 @@ static void check_signing(Ck* k, Node* signing) {
                 }
                 found = fn;
             }
+            if (!found && conc->decl) {
+                for (int fi = 0; fi < conc->nfields; fi++) {
+                    Node* fd = conc->decl->kids[fi];
+                    SType* eb = conc->fields[fi].t;
+                    if (!(fd->flags & F_EMBED) || !eb || eb->kind != SK_STRUCT ||
+                        !eb->decl || !eb->decl->d) continue;
+                    int base_signs = 0;
+                    Node* bs = eb->decl->d;
+                    if (bs->path && signing->path &&
+                        strcmp(bs->path, signing->path) != 0 &&
+                        !(bs->flags & F_PUB)) continue;
+                    for (int bi = 0; bi < bs->nkids; bi++) {
+                        SType* bc = build_type(k, bs->kids[bi]->a);
+                        if (same_type(bc, contract)) base_signs = 1;
+                    }
+                    if (!base_signs) continue;
+                    uint32_t eklen;
+                    const char* ekey = method_key(eb->decl, m->str, m->len, &eklen);
+                    for (Sym* fn = lookup_val(k, ekey, eklen); fn; fn = fn->overload) {
+                        SType* ft = fn->type;
+                        if (!ft || ft->nparams != m->nkids + 1 ||
+                            !same_type(ft->params[0], eb)) continue;
+                        int mut = fn->decl && (fn->decl->flags & F_MUT);
+                        if (mut != ((m->flags & F_MUT) != 0)) continue;
+                        int exact = same_type(ft->ret, mft->ret);
+                        for (int p = 0; p < m->nkids; p++)
+                            if (!same_type(ft->params[p + 1], mft->params[p])) exact = 0;
+                        if (!exact) continue;
+                        if (found) {
+                            ck_err(k, signing,
+                                   "ambiguous promoted method '%.*s' for contract %s",
+                                   (int)m->len, m->str, type_name(contract));
+                            found = NULL;
+                            embedded_field = NULL;
+                            promoted_ambiguous = 1;
+                            break;
+                        }
+                        found = fn;
+                        embedded_field = fd;
+                    }
+                    if (promoted_ambiguous) break;
+                }
+            }
             Node* ref = (Node*)arena_alloc(sizeof(Node));
             memset(ref, 0, sizeof *ref);
             ref->kind = N_IDENT;
             ref->path = signing->path; ref->line = signing->line; ref->col = signing->col;
             ref->str = m->str; ref->len = m->len;
             ref->sym = found;
+            ref->a = embedded_field; // non-null means vtable needs an offset thunk
             selected[mi] = ref;
-            if (!found) {
+            if (!found && !promoted_ambiguous) {
                 ck_err(k, signing, "type %s has no exact method '%.*s' required by %s",
                        type_name(conc), (int)m->len, m->str, type_name(contract));
-            } else if (found->is_generic && conc->decl && conc->decl->c) {
+            } else if (found && found->is_generic && conc->decl && conc->decl->c) {
                 for (STypeInst* it = (STypeInst*)conc->decl->c->b; it; it = it->next) {
                     int concrete = 1;
                     for (int a = 0; a < conc->decl->c->nkids; a++)

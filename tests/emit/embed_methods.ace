@@ -1,0 +1,44 @@
+/* Explicit embedding promotes methods and one-way contract conformance. */
+
+// expect-exit: 42
+
+Value: contract {
+    get(): int
+    mut add(amount: int)
+}
+
+Base: struct {
+    value: int,
+}
+
+Base signs Value
+
+Base.get(): int {
+    return self.value
+}
+
+mut Base.add(amount: int) {
+    self.value = self.value + amount
+}
+
+Outer: struct {
+    prefix: int,
+    embed base: Base,
+}
+
+Outer signs Value
+
+main(): int {
+    outer: Outer
+    outer.prefix = 2
+    outer.base.value = 10
+    if outer.base.value != 10 {
+        return 1
+    }
+    value: Value = Value(&outer)
+    mut value.add(30)
+    if outer.get() != 40 {
+        return 2
+    }
+    return outer.prefix + outer.base.value
+}

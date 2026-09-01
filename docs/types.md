@@ -427,6 +427,36 @@ Signings and methods are private by default. Put visibility first:
 over const backing storage may be read, but mutating dispatch through it is a
 compile error.
 
+### Explicit embedding
+
+An `embed` field is ordinary named inline composition whose methods are promoted
+one level:
+
+```ace
+Named: struct { name: string }
+
+Named.name(): string {
+    return self.name
+}
+
+Human: struct {
+    embed named: Named,
+}
+
+human: Human = Human { named: Named { name: "Ada" } }
+name: string = human.name()       // same method as human.named.name()
+```
+
+Fields are not promoted: the stored name remains `human.named.name`. A method
+owned directly by `Human` takes precedence over a promoted method; two matching
+methods from separate embedded fields are an ambiguity error. Promotion does
+not recurse through another embedded field.
+
+Contracts flow only from the base to the embedder. If `Named signs Value`, a
+promoted exact method may satisfy an explicit `Human signs Value`; the reverse
+never happens. The compiler dispatches through a fixed-offset receiver thunk,
+with no allocation, object metadata, subtype relation, or runtime search.
+
 ## Current limits
 
 - Type inference and implicit generic instantiation are not implemented.

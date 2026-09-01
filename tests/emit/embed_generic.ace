@@ -1,0 +1,29 @@
+/* Generic embedded bases promote their exact contract methods. */
+
+// expect-exit: 42
+Value[T]: contract {
+    get(): T
+}
+
+Base[T]: struct {
+    value: T,
+}
+
+Base[T] signs Value[T]
+
+Base[T].get(): T {
+    return self.value
+}
+
+Outer[T]: struct {
+    embed base: Base[T],
+}
+
+Outer[T] signs Value[T]
+
+main(): int {
+    outer: Outer[int]
+    outer.base.value = 42
+    value: Value[int] = Value[int](&outer)
+    return value.get()
+}

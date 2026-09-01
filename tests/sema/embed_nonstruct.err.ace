@@ -1,0 +1,4 @@
+/* Only a struct field can promote methods and contracts. */
+Bad: struct {
+    embed number: int,
+}

@@ -1,0 +1,27 @@
+/* Two embedded contract providers cannot choose a receiver adjustment. */
+Value: contract {
+    value(): int
+}
+
+A: struct {}
+
+A signs Value
+
+A.value(): int {
+    return 1
+}
+
+B: struct {}
+
+B signs Value
+
+B.value(): int {
+    return 2
+}
+
+Both: struct {
+    embed a: A,
+    embed b: B,
+}
+
+Both signs Value

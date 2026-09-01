@@ -1315,10 +1315,12 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
         NV fields = {0};
         if (!at(p, T_RBRACE)) {
             for (;;) {
+                int embed = ate(p, T_EMBED);
                 Token* fname = expect(p, T_IDENT, "field name");
                 Node* fl = nd_tok(p, N_FIELD, fname);
                 fl->str = fname->str;
                 fl->len = fname->len;
+                if (embed) fl->flags |= F_EMBED;
                 expect(p, T_COLON, "':' after field name");
                 fl->a = parse_type(p);
                 nv_push(p, &fields, fl);
@@ -1670,6 +1672,7 @@ static void pflags(Node* x) {
     if (x->flags & F_VARARGS) printf(" varargs");
     if (x->flags & F_METHOD) printf(" method");
     if (x->flags & F_SELECT) printf(" select");
+    if (x->flags & F_EMBED) printf(" embed");
 }
 
 static void pnode(Node* x, int ind) {

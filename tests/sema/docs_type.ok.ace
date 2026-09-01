@@ -43,6 +43,16 @@ Number.get(): int {
     return self.value
 }
 
+Named: struct { name: string }
+
+Named.name(): string {
+    return self.name
+}
+
+Human: struct {
+    embed named: Named,
+}
+
 main(): int {
     number: int, message: string = 1, "old"
     number, message = 2, "new"
@@ -100,6 +110,8 @@ main(): int {
     partial.y = 2
     number_object: Number = Number{ value: 13 }
     value: Value = Value(&number_object)
+    human: Human = Human { named: Named { name: "Ada" } }
+    promoted_name: string = human.name()
     return count + int(raw) + read_x(pointer) + middle[0] + middle[1] +
         operation(1, 2) + int(state) + box.value + value.get() +
         partial.x + partial.y

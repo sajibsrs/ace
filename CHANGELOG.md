@@ -187,6 +187,18 @@ also use `[x8]` rather than accidentally indexing the address by itself. Runtime
 coverage exercises 17-byte and 24-byte local union payloads plus a 24-byte const
 global payload and a large non-union tuple member at a nonzero source offset.
 
+### Explicit field embedding and one-way contract promotion
+
+`embed name: Base` marks an ordinary named inline struct field for one-level
+method promotion. Direct outer methods win, same-level promoted matches are
+ambiguous, fields do not promote, and non-struct embedded fields are rejected.
+An embedded base that signs a contract may provide exact promoted methods for
+the embedder's own explicit signing, never the reverse. Contract vtables use
+allocation-free AArch64 thunks that adjust the receiver by the field's static
+offset before calling the base method. Runtime and diagnostic fixtures cover
+read-only and mutating dispatch, direct promotion, ambiguity, invalid embedded
+types, and the rejected reverse-contract direction.
+
 ## Still open after these chunks
 
 Checked/release build modes, then checked allocation tracking; nonblocking echo and multi-client chat are the next networking proofs over the implemented `poll` readiness queue (see the `spec.md` Decision Queue).

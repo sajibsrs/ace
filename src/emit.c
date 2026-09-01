@@ -5,9 +5,7 @@
 // evaluate into a virtual-register stack (int temps = x0-x7,x9-x15, fp temps =
 // v0-v7,v16-v23) that is spilled to a per-function spill area around calls.
 // x16/x17 are scratch OUTSIDE the temp pool (never live across a call), used
-// by copy/addressing helpers. copy_mem also uses x8 before any outgoing sret
-// assignment; an incoming sret pointer is saved in the prologue. Frame:
-// [x29,x30][locals][spill][out-args][sp];
+// by copy/addressing helpers. Frame: [x29,x30][locals][spill][out-args][sp];
 // the `sub sp` placeholder is patched with the final frame size at fn end.
 //
 // ABI (pinned against clang on this machine):
@@ -4595,6 +4593,35 @@ static const char* vtable_name(SType* conc, SType* contract) {
     return out;
 }
 
+static ESym* emit_embed_thunk(Em* e, const char* vtname, int slot,
+                              const char* target, uint32_t off) {
+    char name[1024];
+    snprintf(name, sizeof name, "%s$embed$%d", vtname, slot);
+    ESym* prior = sym_intern(&e->syms, name, (uint32_t)strlen(name));
+    if (prior->type) return prior;
+    int skip = -1;
+    if (e->frame) {
+        skip = new_label(e);
+        br_(e, skip); // a generic vtable may be materialized inside a function
+    }
+    ESym* out = sym_define(&e->syms, e->secs, name, (uint32_t)strlen(name), 0,
+                           &e->secs[SEC_TEXT]);
+    ins(e, 0xA9BF7BFD); // stp x29, x30, [sp, #-16]!
+    if (off <= 4095) {
+        ins(e, 0x91000000u | (off << 10)); // add x0, x0, #field-offset
+    } else {
+        load_imm(e, 1, 16, off);
+        ins(e, 0x8B000000u | (16u << 16)); // add x0, x0, x16
+    }
+    ins(e, 0x94000000u);
+    ESym* fn = sym_intern(&e->syms, target, (uint32_t)strlen(target));
+    fix_add(e, FK_BRANCH, (uint32_t)(text(e)->len - 4), fn);
+    ins(e, 0xA8C17BFD); // ldp x29, x30, [sp], #16
+    ins(e, 0xD65F03C0); // ret
+    if (skip >= 0) bind_label(e, skip);
+    return out;
+}
+
 static ESym* emit_vtable(Em* e, SType* conc, SType* contract, Node* conf) {
     if (!conc || !contract || !conf) {
         em_err(e, conf, "invalid contract conformance in codegen");
@@ -4619,21 +4646,32 @@ static ESym* emit_vtable(Em* e, SType* conc, SType* contract, Node* conf) {
         SType* ft = fsym->type;
         SType** args = NULL;
         int nargs = 0;
-        if (fsym->is_generic && conc->nargs) {
-            args = conc->args;
-            nargs = conc->nargs;
+        SType* method_owner = conc;
+        int embed_fi = -1;
+        if (ref->a) {
+            embed_fi = find_field(conc, ref->a->str, ref->a->len);
+            if (embed_fi >= 0) method_owner = conc->fields[embed_fi].t;
+        }
+        if (fsym->is_generic && method_owner->nargs) {
+            args = method_owner->args;
+            nargs = method_owner->nargs;
             for (STypeInst* it = sema_insts(fsym->decl); it; it = it->next) {
                 int same = it->result && it->result->nparams &&
-                           it->result->params[0]->decl == conc->decl &&
-                           it->result->params[0]->nargs == conc->nargs;
-                for (int a = 0; a < conc->nargs && same; a++)
-                    same = it->args[a] == conc->args[a];
+                           it->result->params[0]->decl == method_owner->decl &&
+                           it->result->params[0]->nargs == method_owner->nargs;
+                for (int a = 0; a < method_owner->nargs && same; a++)
+                    same = it->args[a] == method_owner->args[a];
                 if (same) { ft = it->result; break; }
             }
         }
         const char* fnm = fn_mangle(fsym->name, fsym->len, ft,
                                     fsym->decl, args, nargs);
-        ESym* fs = sym_intern(&e->syms, fnm, (uint32_t)strlen(fnm));
+        ESym* fs;
+        if (ref->a) {
+            fs = emit_embed_thunk(e, nm, i, fnm, field_off(conc, embed_fi));
+        } else {
+            fs = sym_intern(&e->syms, fnm, (uint32_t)strlen(fnm));
+        }
         buf_put64(&c->data, 0);
         reloc_add(c, off, fs, 0, 3, 1, RM_UNSIGNED);
     }
