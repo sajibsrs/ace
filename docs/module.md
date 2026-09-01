@@ -108,6 +108,22 @@ contract type; they are not separate unqualified bindings.
 for qualified and selective imports: an unmarked selected member is reported
 as private rather than entering the importing namespace.
 
+Imports never re-export. An import gives the importing file the right to use
+the imported names; it adds nothing to the importing module's public surface.
+A module's exports are exactly its own `pub` declarations, so a consumer
+cannot reach a dependency's members through its importer. If `middle.ace`
+imports `inner.ace` and calls `inner.ping()` inside its own `pub twice()`,
+then for a consumer importing `middle`:
+
+- `middle.twice()` works — it is `middle`'s own public declaration.
+- `middle.ping()` fails with `module 'middle' has no member 'ping'`.
+- `middle.inner.ping()` fails with `module 'middle' has no type 'inner'` —
+  imports are not members.
+- `import ping from "./middle.ace"` fails with
+  `module has no public member 'ping'`.
+
+Whoever needs `ping` imports `./inner.ace` through their own explicit line.
+
 Visibility is decided per member **name and namespace**. Mark every overload
 `pub` to export a value overload set. A type and value sharing a spelling are
 considered independently, so selecting the spelling may import either or both,
