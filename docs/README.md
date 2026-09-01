@@ -36,5 +36,6 @@ must be corrected.
 - [Editor support](../editors/vscode/README.md) — local use and scope behavior
   for the dependency-free Ace Language VS Code extension.
 
-Repository implementation status is intentionally kept in
-[`../AGENTS.md`](../AGENTS.md), outside this guide.
+Repository implementation status is summarized in
+[`../AGENTS.md`](../AGENTS.md), with chunk-by-chunk history in
+[`../CHANGELOG.md`](../CHANGELOG.md), outside this guide.

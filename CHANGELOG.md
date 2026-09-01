@@ -1,0 +1,173 @@
+# Ace — Implementation Changelog
+
+Historical record of the bootstrap compiler's implementation: what was built, changed, and fixed, in the order the work was recorded. Chunk labels are preserved from the original log. This file is history only: normative language rules and decision records (rule + rationale) live in `spec.md`, and current stage plus open work are summarized in `AGENTS.md`. It never overrides the spec.
+
+## Front end (C11 bootstrap)
+
+### Lexer (`src/lexer.c`)
+
+Go-style newline rule (newline token only after ident/literal/`)`/`]`/`}`/`return`/`break`/`continue`), `//` and `/* */` comments, hex/binary/underscore int literals, float literals with mandatory `.` before exponents, char/string literals with `\xNN` escapes (UTF-8 pass-through), full operator set incl. compound assignment, `..`/`...`, friendly errors (multi-error recovery, no-semicolon message).
+
+### Parser (`src/parser.c`)
+
+Full carved surface → AST, dump via `--ast`: declarations (struct/contract/enum/alias/distinct/signs/extern incl. variadics, generics `[T]`), typed destructuring (`n: int, err: Error = read()`), compound assignment (accepted, desugars at typecheck), comparison chains as one node, C precedence incl. shifts/bitwise, labeled blocks, asm bindings (in/out/clobbers, immediates), struct-literal suppression at block heads (Go-style), bare comma lists restricted to one physical line and delimited lists supporting multiline trailing commas, and brace-headed unknown declaration types diagnosed at their type name.
+
+### Typecheck (`src/sema.c`)
+
+Single-pass semantic walk in declaration order: two-namespace scopes (types/values), declaration-before-use with forward top-level calls resolved at EOF (fixup semantics), full type computation + layout for every type (size/align; enum=i32, contract=16B), untyped literals with range checks, explicit casts only, exact free-function and type-owned method overload sets, separated mut discipline (parameter `mut` controls caller storage; `mut *T` controls one pointee level; `mut &value` constructs writable pointers), canonical multi-contract signings + explicit contract construction/dispatch, generic stamping per explicit instantiation (`bigger[int]` — body checked once per type tuple), destructuring vs multi-return, `sizeof` builtin, and definite initialization before local reads.
+
+## Emitter groundwork
+
+### Pre-emitter decisions
+
+Recorded in spec.md: `main(): int`; Mach-O objects + system linker (`cc` driver); minimal DWARF line tables.
+
+### Mach-O format pinning
+
+Pinned against clang reference objects (otool dumps): one nameless segment holding all sections, `r_length=2` for BRANCH26/PAGE21/PAGEOFF12 pairs (PAGEOFF12 pcrel=0), UNSIGNED `r_length=3`, locals/extdefs/undefs symbol order, section addrs continuous from 0; full AArch64 encoder set verified against `as` disassembly.
+
+### Sema annotations for codegen
+
+`Node.ty`/`Node.sym` (SType*/Sym* via `src/sema.h`) — expression types on every node (literals materialize at coercion), resolved symbols on idents/call targets/binders, enum-member indices, `sizeof` constant, forward-call syms at EOF, `sema_stamp_body()` for per-stamp re-annotation, mut args must be lvalues. All existing tests green.
+
+## Implementation log
+
+The direct AArch64 emitter (`src/emit.c`) and the standard library (`mem`, `sys`, `fmt`, `math`, `str`, `simd`) are the implementation surface. Core language codegen and source-level debugging work; checked diagnostics and parts of the stdlib remain.
+
+### Chunk 4 — Mach-O writer + initial codegen
+
+One nameless `LC_SEGMENT_64`, `__TEXT,__text`, relocatable `__DATA_CONST,__const`, `__DATA,__data`/`__bss`, symbol/relocation tables, `_main`, constant loading, internal-call fixups, and `-c`/`-o` driver modes. **Landmark one: hello world compiled and run** (`tests/emit/hello_min.ace` → exit 42).
+
+### Chunk 5 — Full carved-surface codegen
+
+Integer/floating expressions, casts, comparisons and short-circuiting, calls and internal CC (mut pointers, register aggregates, sret), locals/globals, multi-return, arrays/structs/slices, range and sequence loops, switch, labeled exits, generic stamps, contract vtables/dispatch, extern calls, and initial asm (`nop`/`svc`/`brk`). Covered by focused `tests/emit` executables; the normal and ASan/UBSan suites pass.
+
+### Chunk 6 — Minimal DWARF line tables
+
+DWARF v4 `__debug_line` rows for function and statement PCs, plus the minimal compile-unit/function discovery metadata Darwin needs to retain them through linking. Local relocations track final text addresses; `dwarfdump`, `dsymutil`, and LLDB resolve `hello_min.ace` source. No variable/type DIEs or unwind data.
+
+### Chunk 7 — First stdlib output slice (`fmt.print(string)`)
+
+`std/fmt.ace` exports allocation-free `fmt.print(string): int`: exact bytes, no implicit newline, bytes-written/`-1` result (owner approved). Bare `import fmt` is resolved from beside the compiler and merged ahead of the root module under a private prefix; multi-file DWARF rows retain the correct source file. `tests/emit/welcome.ace` compiles and prints exactly `Welcome Ace!\n`. This exposed and fixed two-word aggregate call-address clobbering and reversed incoming aggregate frame layout.
+
+### Chunk 8 — Exact free-function overloading
+
+Same-name functions form an overload set when parameter count/types or `mut` positions differ; return types and `noalias` do not distinguish declarations. Calls select one exact candidate statically with no conversions/ranking and zero runtime dispatch; overload literals use `int`/`f64`, generic overloads remain explicitly instantiated, explicitly typed function values can select an overload, forward calls retain their lexical scope, and internal symbols include the parameter signature. C-boundary overloads are rejected. Type-owned method overloading and contract participation landed in chunk 12. Normal and sanitizer suites pass.
+
+### Chunk 9 — Integer output overload (`fmt.print(int)`)
+
+`fmt.print(int): int` formats decimal into a fixed 20-byte stack buffer, allocates nothing, adds no newline, retries partial writes, returns bytes written/non-positive OS results, and handles zero, negatives, `INT_MAX`, and `INT_MIN`. The narrow `fmt` loader now lowers the complete public `print` overload set. This slice exposed and fixed AArch64 `%`: quotient generation now preserves the original dividend for `msub`; focused division/remainder and output executables cover it. Normal and sanitizer suites pass.
+
+### Chunk 10 — Memory-size output overload (`fmt.print(usize)`)
+
+`fmt.print(usize): int` formats lengths, sizes, and indices as allocation-free unsigned decimal through a fixed 20-byte stack buffer. It adds no newline, retries partial writes, returns bytes written/non-positive OS results, and covers zero through `USIZE_MAX`; `message.len` now selects it directly. Focused executable coverage includes runtime string length and both unsigned boundaries. Normal and ASan/UBSan suites pass.
+
+### Chunk 11 — General module loader
+
+General merged-unit loader: arbitrary bare/aliased std imports beside the compiler, explicit relative local-path imports resolved from the importing source, canonical-path identity loading each file exactly once, depth-first dependency-order loading, cycle diagnostics with the full chain, qualified functions/overloads/types/globals/enum constants lowered to module-prefixed private identities (`name$`), strict per-name `pub` enforcement at the use site, extern/`export` C spellings preserved across prefixing, and multi-file DWARF preserved. Merged compilation unit only — separate per-module objects and incremental rebuilds stay deferred. `std/math.ace` (minimal pure-Ace `min[T]`/`max[T]`/`abs[T]`) is the second std module; `tests/modules/` covers local/aliased/transitive/diamond/imports of types+globals, private-name collisions, private access, cycles, and missing/invalid/duplicate imports. Normal and sanitizer suites pass.
+
+Known limits (current): a local shadowing a whole-module import binding cannot use `.member` syntax (rejected as an unknown prefixed member; qualified lowering happens before scopes exist); selectively imported values do preserve lexical shadowing. There is no user-configurable std search path, directory/wildcard import, or per-module object yet.
+
+### Chunk 28 — Tagged unions
+
+Closed inline sums with an `i32` declaration-order tag and aligned maximum-sized payload; first variant is canonical zero; qualified payloadless/payload construction; exhaustive no-fallthrough union switches with explicitly typed copy binders; active tag/payload equality when all variants are comparable; plain copies and whole-value reassignment; definite initialization, explicit generic stamping, module visibility, const/global emission including relocation-backed strings, and initial `extern`/`export` rejection. No `any`, reflection, boxing, allocation, numeric tag access, or niche optimization. Focused parser/sema/runtime/module/docs coverage includes three-byte payload copies, large aggregate returns, public/private cross-module use, and const primitive/aggregate/string variants. This work also fixed latent emitter issues in FP load/store scaling, cross-class cast temporaries, and integer literals materialized in float expressions; follow-up testing fixed short-circuit result normalization after those temp pools were separated. Normal and ASan/UBSan suites pass.
+
+### Chunk 29 — `fmt.printf`
+
+One compiler-recognized direct-call standard-module name with literal/static-const formats and runtime arguments captured once before output; `%d`/`%u`/`%x`/`%X`/`%f`/`%s`/byte `%c`/`%%` with exact types; fixed `%f` default 6 and `%.Nf` through 324 with ties-to-even, signed rounded zero, and stable specials; no width/flags/`*`/positions; the uniform `print`/`println` result contract. Sema builds a checked format plan with targeted diagnostics, and the emitter calls direct private typed helpers. Fixed floats use Darwin `fcvt`, temporarily select/restore `FE_TONEAREST` so ambient rounding cannot change output, handle precision-zero nearest/even explicitly, and use one declared 640-byte buffer; decimal-point insertion is an in-buffer `memmove`. There is no runtime parser, tag, pack, `any`, reflection, Ace allocation, C variadic call, or C formatter. Coverage includes changing runtime values, exact mixed bytes/counts, integer/hex boundaries, f32/f64 ties/specials/signed zero and ambient-rounding independence, both precision-324 f64 magnitude boundaries, embedded NUL/high byte, static/selective imports, user-name noninterference, direct-call rejection, evaluate-before-failure behavior, diagnostic text, and undefined-symbol inspection; implemented docs and compiler-checked examples landed. Normal and ASan/UBSan suites pass.
+
+### Chunk 1A — Driver linker controls
+
+`ace` accepts ordered extra `.o`/`.a` inputs, `-L <dir>`, `-l <name>`, and `-framework <name>` beside the single root `.ace` source; the system `cc` is launched through an argument vector (`posix_spawnp`, no shell), preserving the written order after Ace's own object, and linking still requires `-o`. Validation rejects multiple root sources, link inputs under `-c`, link inputs without `-o`, missing option values, unknown options, unrecognized positionals, and output/intermediate paths that would overwrite the source or a linker input (including existing symlink/hard-link aliases) with exact `ace:` diagnostics; linker exit status and signals are reported precisely with cc's own diagnostics passed through. `--report` still counts only Ace's object and excludes linker time. No raw linker escape (`-Wl,...`, arbitrary flags, source-embedded directives, dependency discovery) exists; each stays additive later. Driver fixtures (`tests/driver/`) cover object/archive/framework linking, spaces and shell metacharacters in paths, input-collision protection, every diagnostic, and failure propagation. Normal and sanitizer suites pass.
+
+### Chunk 1B — C ABI compatibility whitelist
+
+`extern "c"` and `export` signatures now pass a positive, position-aware compatibility predicate: fixed-width and platform-word integers, `usize`, `f32`/`f64`, recursively compatible pointers/distinct types/structs, and nested arrays are allowed; direct arrays and every unverified Ace-specific shape are rejected. Exported `mut` parameters are rejected; writable C storage is spelled explicitly as `mut *T`. The Apple-arm64 C calling convention now handles homogeneous floating aggregates, mixed/small aggregates, large indirect values with caller-owned copies, result registers/sret, and exhausted integer/FP register banks. A clang-compiled bidirectional fixture is the ABI oracle. Normal and sanitizer suites pass.
+
+### Initial IPv4 TCP networking
+
+`std/net.ace` exposes the closed allocation-free blocking surface over private Darwin bindings in the same file: `Socket` aliases `sys.Fd`; `Address4` keeps text-order octets and a host-order port; socket creation, explicit reuse/nonblocking options, bind/listen, one-attempt accept/connect, and partial-count receive/send are implemented with operation-specific public error domains, `sys.errno()`, `sys.close`, and per-send `MSG_NOSIGNAL`. Apple-arm64 extern variadic extras now use 8-byte outgoing stack slots, enabling `fcntl(F_SETFL, flags)` without a C shim. Loopback runtime coverage proves failure values/domains, option toggles, peer-address conversion, both send overloads, receive, and cleanup; selective-import and compiler-checked docs coverage landed. Normal and ASan/UBSan suites pass.
+
+### Explicit switch `fallthrough`
+
+Contextual only inside a switch case, final statement only, transfers to the immediately following case, takes no target or condition, and is rejected in the final case. There is still no implicit fallthrough.
+
+### Recursive-layout diagnostics and pointer-only type fixups
+
+Reject direct or indirect all-inline value cycles instead of assigning placeholder sizes; keep self-pointers valid; permit an unknown same-module type only behind one or more pointer levels, resolve it later in the file, and reject unresolved or layout-dependent early uses. Simultaneous heterogeneous multi-assignment is already implemented; its RHS-before-target ordering is now explicit in `spec.md` and `docs/types.md`.
+
+### Chunk 12 — Type-owned methods and canonical signings
+
+`Circle.area()` / `pub mut Circle.scale`, implicit read-only-or-mut `self`, exact overloads, direct qualified calls, no method values, one `Circle signs Shape, Color` declaration per struct (parenthesized when multiline), explicit `Shape(&c)` construction, overload-aware EOF conformance, const-backing protection, defining-module coherence, public/private cross-module signings, and per-used-pair generic vtables. Normal and sanitizer suites pass.
+
+### Chunk 13 — Compile report
+
+`--report` writes compact successful-build statistics to stderr: unique source files, aggregate source bytes/tokens, emitted `__text` bytes, complete object bytes, and Ace compile time excluding the external linker. Check/token/AST-only runs report zero emission sizes. Imported modules are included once by canonical identity.
+
+### Chunk 14 — Contract terminology
+
+Source declarations use `Shape: contract`, and concrete types use one canonical `Circle signs Shape, Metric` signing. Compiler tokens, AST/type kinds, diagnostics, docs, and fixtures use the contract/signing model. Semantics and ABI are unchanged. Normal and sanitizer suites pass.
+
+### Chunk 15 — Minimal Error layer
+
+Predeclared one-word `Error` handle and 32-byte const-static `ErrorDescriptor` (`code: i32`, `domain: typeid`, `message: string`); compile-time `typeid(T)` builtin with per-exact-type nonzero identity, alias sharing, distinct/instantiation separation, and `==`/`!=` only; zero `Error`/`typeid` sentinels; `Error(&const_global_descriptor)` construction validated as a named literal with compile-time code, null/typeid domain, and static message backing (locals, mutable globals, and arbitrary casts rejected in all build modes); direct read-only `code`/`domain`/`message` inspection; exact descriptor-address identity; module-exported handles with private descriptors; strict `extern`/`export` rejection for `Error`/`ErrorDescriptor`/`typeid`. Panic was deliberately excluded pending its separate decision. Coverage: `tests/emit/errors.ace`, `tests/modules/error_export/`, five `tests/sema/error_*.err.ace` diagnostics, and `docs/errors.md` mirrored by `tests/sema/docs_errors.ok.ace`. The slice also fixed two latent emitter bugs the new tests exposed: short-circuit `||` computed NOR (result arms swapped), and multi-register aggregate call receives stored unit words below their frame slot (`off + w*8` instead of `off - w*8`); plus return-side loads deferred when the destination register aliases the slot base. Normal and sanitizer suites pass.
+
+### Chunk 16 — Panic builtin
+
+`panic` is a reserved name in every scope: sema rejects binding it as a local, global, param, destructuring binder, loop variable, import binding, free-function name, or type name (`panic` stays a plain identifier to the lexer; type-owned methods keep their qualified binding), and the loader rejects module-level `panic` declarations before `name$` prefixing, which would otherwise shadow the builtin for that module's own calls. The only use is the checked call `panic(message: string)` (typeid-style name case): exactly one argument coerced to `string` (static literal or runtime expression), never returns (poison-typed; no never-type work while sema has no return-completeness enforcement), not a first-class value (bare reference has its own diagnostic). Codegen evaluates the string (ptr/len in two registers) and emits a best-effort `write(2, ptr, len)` with the exact message bytes — no prefix, no added newline, result ignored — then `abort()`, both undefined externs through the existing BRANCH26 machinery; checked and release are identical; a failed or partial write never blocks the abort. Coverage: eight `tests/sema/panic_*.err.ace` diagnostics, `tests/emit/panic.ace` (`// expect-exit: 134`, runtime `panic(error.message)` bridge plus a not-taken static-literal path), and the `docs/errors.md` Panic section mirrored by `tests/sema/docs_errors.ok.ace`. Normal and sanitizer suites pass.
+
+### Chunk 17 — Global raw allocation machinery
+
+The process allocator is used directly with no Ace allocation header or registry; size/alignment requests are validated, failure returns a zero slice, reallocation preserves the original slice on failure, and release zeros only its passed slice lvalue. Arrays expose compile-time `.len`; slice `.len` remains a runtime element count and string `.len` a runtime byte count. Slice assignment is a two-word copy with no ownership transfer or alias search, so aliases may dangle after release. The implementation also corrected AArch64 unsigned byte/halfword extension encodings exposed by allocation-backed byte access. Checked-build allocation tracking remains a separate follow-up because the compiler does not yet expose checked/release build modes. The original predeclared public spellings were superseded by chunk 18.
+
+### Chunk 18 — Selective imports and `mem` surface
+
+`import one, two from module` and the parenthesized multiline form work for standard or relative-path modules. Selected public functions carry their complete overload set; types and values retain separate namespaces; same-namespace imports/declarations collide instead of merging; nested values and generic type parameters shadow lexically. `std/mem.ace` now owns the public `alloc`/`realloc`/`release` declarations, compiler-backed to the same direct platform lowering with no extra call; no unqualified allocation name exists without an import. Parser/module/sema/runtime/docs fixtures cover qualified and selective memory use, transitive selection, type/value twin names, overloads, shadowing, collisions, privacy, and missing members. Normal and sanitizer suites pass.
+
+### Writable address-of and per-level pointer permissions
+
+`mut &value` constructs a zero-cost `mut *T` from writable lvalue storage; `mut p: *T` retargets caller storage without granting pointee writes, `p: mut *T` writes the pointee without retargeting the caller, and the combined form grants both. Nested pointers retain independent permissions (`mut **T`, `*mut *T`, `mut *mut *T`); automatic and explicit dereference check only the pointer level performing each write. Parser/sema/runtime/diagnostic/docs fixtures cover direct call expressions, const rejection, retargeting, and multi-level access.
+
+### Chunk 19 — `mem` byte operations
+
+`copy(noalias mut dst: []u8, src: []u8)` and overlap-safe `move` copy complete equal-length views without changing their descriptors; callers slice larger storage explicitly. `fill` and `zero` write complete views; `compare` performs normalized `-1`/`0`/`1` unsigned-byte lexicographic ordering across arbitrary lengths. Empty views are valid, write operations return nothing, and every path is allocation-free. The bootstrap lowers the exact standard-module declarations directly to libSystem `memcpy`/`memmove`/`memset`/`memcmp`, skipping calls for zero-length views; current release behavior adds no length/overlap check, while the specified checked build will diagnose false contracts. Qualified/selective import, sema diagnostics, compiler-checked docs, and runtime fixtures cover the surface. This slice also fixed a latent deep-frame emitter bug: frame loads into x16/x17 now compute their address in the destination register, preventing the second load from clobbering the first. Normal and ASan/UBSan suites pass.
+
+### Byte-sequence equality
+
+`==`/`!=` compare complete contents for every pair of `[N]u8`, `[]u8`, and `string`, symmetrically and without conversion or allocation. Both operands are evaluated once in source order; unequal lengths read no element storage, empty equal values skip `memcmp`, and equal nonempty lengths compare exact bytes. The same content rule applies when a tagged union's active payload is a byte sequence. Other array/slice element types retain their existing rules. Focused semantic, runtime, union-payload, evaluation-order, embedded-NUL/high-byte, and compiler-checked docs coverage landed.
+
+### Chunk 20 — Canonical zero and definite initialization
+
+Every type has an all-bits-zero representation; plain pointers, slices, strings, function values, contracts, `Error`, and `typeid` accept `null`, and the optional-type syntax/layout is removed. Globals retain BSS zero initialization. Bare locals reserve uninitialized storage with no fill; a post-sema control-flow pass rejects direct reads before whole or per-subobject initialization, intersecting facts at branches and treating loops conservatively. Address-taking, pointer aliases, asm, and extern code are trust boundaries. Large-frame allocation now uses both AArch64 immediate tiers and correct x29-relative addressing. Normal, runtime, diagnostic, and sanitizer coverage is included.
+
+### Chunk 21 — Endpoint-ordered ranges and indexed sequence iteration
+
+`a .. b` captures both endpoints once and traverses `[min(a,b), max(a,b))` in their written direction, so `4 .. 0` yields `3,2,1,0` and equal endpoints are empty. Array/slice loops accept either one value binder or explicit `index: usize, value: T` binders; both are per-iteration copies independent of the internal cursor, and direct sequence iteration retains its entry-captured pointer/length. Focused runtime, semantic, parser, grammar, and compiler-checked documentation coverage is included. Explicit stepped ranges remain specified but unimplemented.
+
+### Chunk 22 — Contextual range steps and labeled-block continuation
+
+`step` remains an ordinary identifier except contextually after a range's second endpoint; its positive same-typed value/expression is evaluated once after both bounds, and descending setup aligns once so swapped endpoints exactly reverse the selected sequence. Static zero/negative steps are rejected; runtime validation awaits checked-build mode while the current release path assumes the precondition. `continue label` restarts an enclosing labeled block, plain `continue` still advances the nearest `for-in`, fallthrough exits normally, and `break label` remains the structured exit. Range bounds/steps now participate in definite-initialization reads. Focused runtime, diagnostic, grammar, and compiler-checked documentation coverage is included.
+
+### Chunk 23 — `sys` file I/O
+
+Pure-Ace `std/sys.ace` over `extern "c"` with the new optional extern link name (`c_open(...): i32 = "__open"`), added to keep raw C bindings privately named inside modules; the emitter already honored `Node.cname`. Link names are nonempty, NUL-free, and capped at the v1 emitter's 510-byte limit, with parser diagnostics for each invalid form. Surface as carved in spec.md Stdlib #10: `Fd: distinct i32` (`-1` failed open, zero is stdin), `read(fd, mut buf: []u8): (int, Error)` (0 = EOF), `write(fd, []u8)`/`write(fd, string)` (partial counts as-is, no retry; the string overload exists because no string→`[]u8` view exists yet), `close(fd): Error`, two `open` overloads with the fixed `[1024]u8` path buffer and `ENAMETOOLONG` passthrough, per-operation error domains with `errno(): i32` reading Darwin `__error()`, and raw Darwin flag constants with OS spellings. Two latent bugs surfaced and fixed: call marshaling read later arguments' temps from registers that earlier aggregate word-loads clobbered (flags arrived holding the path length — marshaling now spills all argument values and reads them exclusively from their spill slots), and Apple arm64 passes C variadic arguments on the caller's stack (libSystem `open` reads mode from the stack slot), so the module binds the fixed-arity `__open` export. General extern-varargs stack marshaling landed later with networking; `sys` keeps the fixed binding because its wrapper needs no variadic surface. `tests/emit/sys.ace` covers ENOENT/roundtrip/EOF/EBADF/EEXIST/long-path at runtime; parser fixtures cover the link-name grammar and validation. The test runner accepts an alternate compiler binary, and `make test-sanitize` repeats the full suite under ASan/UBSan. Normal and sanitizer suites pass.
+
+### Chunk 24 — `sys` monotonic time
+
+The owner-approved initial time surface in `std/sys.ace`: `pub time_mono(sleep: bool): u64` returns a monotonic clock reading in nanoseconds from an unspecified origin. `sleep == true` reads Darwin `CLOCK_MONOTONIC_RAW` (`mach_continuous_time`) and keeps advancing while the system is asleep; `sleep == false` reads `CLOCK_UPTIME_RAW` (`mach_absolute_time`) and pauses while the system is asleep but advances whenever the system is awake, including while this process is idle or blocked — never process CPU time. Both modes are immune to calendar-clock changes, readings subtract meaningfully only within the same `sleep` mode, and the call is allocation-free with no `Error` return; the clock-id constants stay private. The implementation stays pure Ace over a private link-named `clock_gettime_nsec_np` extern — the nanoseconds-returning entry point `bench/memory.ace` already binds directly — so no compiler intrinsic was needed. Calendar time, CPU time, duration conversion, and process-sleep APIs are deliberately excluded. Coverage: `tests/emit/sys_time.ace` (both modes nondecreasing, both advance across a short harness-only `usleep` with loaded-CI-tolerant bounds, selective-import call), `tests/sema/sys_time_selective.ok.ace` (selective import, exact `(bool): u64` signature typing), and the docs example mirrored in `tests/sema/docs_standard_library.ok.ace`. Normal and sanitizer suites pass.
+
+### Chunk 25 — `fmt.print(uint)` platform-word output
+
+First slice of the owner-decided overload policy (spec.md Stdlib #9): `pub print(value: uint): int` in `std/fmt.ace` formats unsigned platform-word decimal through the same fixed 20-byte stack buffer as the `usize` overload — zero through `UINT_MAX`, no implicit newline, partial-write retry, and the bytes-written/non-positive-result contract. `uint` is the `P_U64` platform-word primitive, so `u64`-typed values select the overload directly with no cast while `usize` remains a distinct exact overload. Narrower integer widths get no overload: callers convert explicitly (`fmt.print(int(my_i32))`, `fmt.print(uint(my_u16))`), and direct narrower prints diagnose `no matching overload`. Coverage: `tests/emit/print_uint.ace` (zero, `u64`-typed `UINT_MAX`, explicit `u16` cast; output and exit checked), `tests/sema/fmt_print_narrow.err.ace` (direct `u16`/`i32` prints rejected), and the four-overload docs example mirrored in `tests/sema/docs_standard_library.ok.ace`. Normal and sanitizer suites pass.
+
+### Chunk 26 — `fmt.print` float overloads
+
+Owner-decided representation (spec.md Stdlib #9): shortest round-trip decimal in pure-Ace `std/fmt.ace` over three fixed-arity libSystem externs — `ecvt` supplies correctly rounded digit strings (the variadic `snprintf` path stays unavailable), `strtod`/`strtof` verify the round trip (strtof parses f32 directly, no double-rounding detour), and `memcpy` immediately copies ecvt's internal buffer before a later call can overwrite it. The search takes the first correctly rounded digit count in 1..17 (f64) / 1..9 (f32) whose decimal form parses back to the exact value; notation is decimal for scientific exponents -6..20, otherwise scientific like `1e21`/`1.5e-7` (no `+`, no padding); specials are spelled `nan`, `inf`, `-inf`; negative zero keeps its sign (read through the reciprocal, since comparisons cannot see a zero's sign bit); no trailing `.0`. ecvt's digits are the integer form (value = digits x 10^(decpt-count)) — the probe exponent is decpt-count while the notation exponent is decpt-1. This slice exposed and fixed a latent emitter bug: an untyped literal under a float cast (`f32(0.1)`, `f64(3)`) loaded its f64 bit pattern and was viewed at the narrow width (low 32 bits — garbage); the cast path in `gen_call` now materializes untyped literals directly at the target float width. A pre-existing sema wrinkle surfaced, deliberately unfixed: a pending call with an untyped-literal argument (`fmt.print(id32(0.1))`) reads as poison in overload matching, which matches every overload and reports `ambiguous` — printing a local avoids it. Coverage: `tests/emit/print_float.ace` (zero, shortest digits `0.1`/`1/3`/pi, notation thresholds 1e-6/1e-7 and 1e20/1e21, denormals `5e-324`/`1e-45`, `DBL_MAX`, `FLT_MAX`, specials, signed zero, negative scientific, bytes-written count; output and exit checked) and the six-overload docs example mirrored in `tests/sema/docs_standard_library.ok.ace`. Normal and sanitizer suites pass.
+
+### Chunk 27 — `fmt.println`
+
+Owner-approved newline layer over the landed `print` overload set (spec.md Stdlib #9): six overloads in `std/fmt.ace` (`string`, `int`, `uint`, `usize`, `f32`, `f64`), each a one-line call through a private `finish_line` helper that orders the two writes. Semantics: exactly the corresponding `print` representation followed by one `\n`; allocation-free; returns the total bytes written including the newline. A non-positive result from a nonempty value write returns immediately with no newline attempt; `println("")` handles its successful empty value directly by writing the newline and returning `1`; a newline failure after a written value returns the newline's negative result unchanged. No zero-argument form (`fmt.print("\n")` covers it); narrower integer widths stay rejected per the overload policy. Coverage: `tests/emit/println.ace` (byte-count contract across all six overloads, empty string, `INT_MIN`, negative scientific; output bytes verified via `od`), `tests/sema/fmt_println_narrow.err.ace` (direct `u16`/`i32` printlns rejected), and the docs examples mirrored in `tests/sema/docs_standard_library.ok.ace`. Normal and sanitizer suites pass.
+
+## Still open after these chunks
+
+Checked/release build modes, then checked allocation tracking; the backend-neutral readiness queue must be carved before further networking implementation (see the `spec.md` Decision Queue).

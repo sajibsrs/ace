@@ -1,6 +1,6 @@
 # Ace — Language Specification
 
-Concrete rules and syntax. The why behind every rule lives in philosophy.md (closed). The formal grammar for this surface lives in grammar.md. This file is carved topic by topic.
+Concrete rules and syntax. The why behind every rule lives in philosophy.md (closed). The formal grammar for this surface lives in grammar.md. This file is carved topic by topic and is the single ledger of language rules and decision records (rule + rationale); implementation history lives in CHANGELOG.md.
 
 ## Source
 1. File extension: **.ace** (decided — `.ac` rejected: autoconf collision).
@@ -321,7 +321,8 @@ Compiler-session decisions:
 12. Fixed byte arrays `[N]u8`, byte slices `[]u8`, and strings compare pairwise as complete byte sequences with `==` and `!=`, in either operand order; fixed arrays of different lengths are also comparable. A length mismatch is unequal, while equal lengths compare exact stored bytes. The operation is symmetric, allocation-free, and creates no converted string, array, or slice view. Unicode-aware facilities remain layered over UTF-8 strings; equality matches their exact encoding without hidden decoding or normalization.
 
 ## Decision Queue
-Closed (philosophy phase):
+
+### Closed: philosophy phase
 - [x] Why Ace exists; priority stack: performance > simplicity > modularity > compile time > safety. Safety means small local improvements over C, not movement toward Rust's ownership model.
 - [x] Memory management: manual + one explicit process-wide allocation strategy exposed by `mem`; no allocator values/arguments, GC, ownership analysis, or hidden allocation; safety via checked builds, not language rules.
 - [x] Value semantics: assignment copies; parameters by reference; plain declarations are stack; COW is library-only.
@@ -338,7 +339,7 @@ Closed (philosophy phase):
 - [x] Backend: direct machine-code emission, single-pass; optimization ceiling accepted.
 - [x] File extension: .ace.
 
-Carving phase — closed so far:
+### Closed: carving phase
 - Declarations & signatures: `name: type` everywhere, keywordless, trailing returns, signature-typed function values, no pointer-to-function syntax.
 - Array convenience and byte-sequence matching: `[value : count]` repeats one once-evaluated value into a context-supplied fixed array whose length equals the literal count; `[N]u8`, `[]u8`, and `string` support symmetric pairwise exact-byte `==`/`!=`, including differently sized fixed arrays and complete matches such as `prefix == "HTTP/1.0 200"`, with no conversion, allocation, decoding, or normalization.
 - Memory & allocation API: per-level `*T`/`mut *T` pointer permissions (`~` deref, auto-deref fields, `&` read-only and `mut &` writable address-of); fixed `mem.alloc`/`mem.realloc`/`mem.release` over byte slices with null failure and no allocator value; `mem.release(mut data)` nulls only that variable while copied views may dangle; no defer; `sizeof(T)` is static and intrinsic `.len` belongs only to arrays, slices, and strings.
@@ -354,17 +355,17 @@ Carving phase — closed so far:
 
 **Carving phase: complete.** The original surface and additive topics are closed; implementation proceeds by chunks.
 
-Explicit switch fallthrough — implemented:
+### Explicit switch fallthrough (implemented)
 - [x] The spelling is `fallthrough` (not the vague `fall`), recognized contextually only as a statement inside a switch case; it remains an ordinary identifier elsewhere.
 - [x] There is no implicit fallthrough. Explicit `fallthrough` must be the final statement of a non-final case, takes no target or condition, and transfers only to the immediately following case.
 - [x] Parser, semantic checks, emitter lowering, diagnostics, runtime coverage, and implemented-behavior documentation. `fallthrough` is rejected for tagged-union switches: bypassing the following pattern would contradict its active-variant meaning, while retesting a different variant could never match.
 
-Recursive layouts and pointer-only type fixups — implemented:
+### Recursive layouts and pointer-only type fixups (implemented)
 - [x] Every inline layout must be finite; direct or indirect all-inline recursion is rejected with a recursive-value-layout diagnostic.
 - [x] Pointer edges break layout recursion. Self-pointers remain valid, and an unknown same-module type may be named ahead of its declaration only through a path made entirely of one or more pointer levels. It must resolve later in the file; no layout-dependent use is permitted before then.
 - [x] The layout walk reports recursive value layouts instead of fabricating a placeholder size. Same-module field and union-payload names receive fixups only through uninterrupted pointer paths; declarations patch the exact pointer slots, unresolved names diagnose at EOF, and layout-dependent premature uses remain declaration-before-use. Coverage includes direct/indirect and generic cycles, self-pointers, mutual pointer recursion, illegal inline forward paths, unresolved names, premature member use, runtime field access, and sanitizer runs.
 
-Additive tagged-union carving — closed:
+### Additive tagged-union carving (closed)
 - [x] Tagged unions are required as a closed, inline sum type and are sequenced before `fmt.printf`. They are not a universal `any` type, do not imply reflection, boxing, allocation, inheritance, or open-ended membership, and do not replace explicit contract values. Rationale: a union represents one of a declaration-fixed set of data shapes inline; contracts represent open-ended behavior through explicit vtable/data values.
 - [x] Representation and canonical zero: `i32` discriminant plus aligned maximum-sized inline payload; declaration-order tags from zero; the first variant defines all-bits-zero; no initial niche optimization.
 - [x] Variant shape: a unique name with zero or one explicitly typed payload; existing structs/tuples group multiple values.
@@ -372,7 +373,7 @@ Additive tagged-union carving — closed:
 - [x] Equality, copying, mutation, and initialization: active tag/payload equality when every payload is comparable; plain whole-value copies and reassignment; binder mutation affects only its copy; ordinary definite initialization.
 - [x] Generics, identity, layout, visibility, and boundaries: explicit stamping, nominal identity, ordinary module visibility, `sizeof` includes tag/payload/padding, and initial C-boundary rejection.
 
-Formatted-output carving and implementation — closed:
+### Formatted-output carving and implementation (closed)
 - [x] `fmt.printf` is one compiler-recognized, direct-call-only standard-module name. Its format is a string literal or static-literal const global; runtime values are captured once in source order before output, while runtime-created/selected formats, argument packs, type tags, `any`, reflection, allocation, C variadics, and runtime parsing are excluded.
 - [x] Initial conversions and exact types: `%d` = `int`; `%u`/`%x`/`%X` = `uint` or `usize`; `%f` = `f32` or `f64`; `%s` = exact `string` bytes; `%c` = one `u8` byte; `%%` = literal percent. Other narrow integers and distinct types convert explicitly; omitted conversions remain additive.
 - [x] Fixed floats: six fractional digits by default, literal `%.Nf` for `N` in `0...324`, nearest/ties-to-even rounding, preserved negative zero/rounded-zero sign, stable `nan`/`inf`/`-inf`, and no scientific fallback. Width, padding, alignment, sign/alternate flags, `*`, and positional arguments are initially rejected.
@@ -380,7 +381,7 @@ Formatted-output carving and implementation — closed:
 - [x] Diagnostics, runtime/semantic/object-level tests, sanitizer coverage, and implementation-time standard-library documentation requirements are fixed in Stdlib #12.
 - [x] `fmt.printf` is implemented exactly as carved in Stdlib #12, with normal and ASan/UBSan suites passing.
 
-Initial blocking-TCP networking carving — closed:
+### Initial blocking-TCP networking carving (closed)
 - [x] Module and boundary: networking lives in `std/net.ace`; its public API is a thin, stable, allocation-free Ace wrapper over private platform bindings rather than a raw Darwin-shaped surface.
 - [x] Initial address-family scope: IPv4 only; IPv6 is an additive future improvement.
 - [x] Socket handle: `net.Socket` is a public transparent alias of `sys.Fd`; `net` reuses the stdlib descriptor implementation and existing operations wherever their socket semantics match.
@@ -399,16 +400,10 @@ Initial blocking-TCP networking carving — closed:
 - [ ] Future networking improvement: carve a backend-neutral readiness queue with explicit events, caller-owned storage, and timeouts (`kqueue` private on Darwin, `epoll` private on Linux), then prove nonblocking echo and multi-client chat. Threads and atomics remain after that event-driven proof.
 - [open] Standard-library target factoring: decide whether a future public facade may import non-user-importable, target-selected internal modules (for example Darwin/Linux backends). This requires explicit internal visibility and target-selection rules; ordinary modules currently expose imported cross-file declarations only through `pub`. Apply the same public/private organization cleanup to `std/sys.ace` when this mechanism is decided; do not grow `sys` into a store for domain-specific raw bindings meanwhile.
 
-Implementation phase — closed so far:
+### Implementation phase: closed so far
 - [x] Initial IPv4 TCP networking — `std/net.ace` implements the complete closed blocking surface over private Darwin bindings in the same file: socket creation, reversible reuse/nonblocking options, bind/listen, one-attempt accept/connect, partial-count receive/send with per-send `MSG_NOSIGNAL`, host/text-order `Address4` conversion, operation-specific public error domains, and `sys.errno()`/`sys.close` interoperability. Apple-arm64 extern variadic extras now use the required 8-byte outgoing stack slots, enabling `fcntl(F_SETFL, flags)` without a C shim. Runtime coverage proves failure domains/canonical acceptance failure, option toggles, loopback client/server addressing, both send overloads, receive count/error results, and descriptor cleanup; semantic/selective-import and implemented-only documentation coverage accompany it.
 - [x] Blocking IPv4 DNS resolution — `std/net.ace` exposes `resolve4` with caller-owned result storage over a private Darwin `getaddrinfo`/`freeaddrinfo` seam. Focused runtime coverage resolves the local host name, proves port assignment and bounded writes, and checks deterministic invalid-input errors; semantic/selective-import and implemented-only documentation coverage accompany it.
-- [x] Recursive layouts and pointer-only type fixups — layout computation now fails explicitly on all-inline cycles; valid self-pointers bind the completed nominal type; unknown same-module types are admitted only behind uninterrupted pointer paths in aggregate members, patched to the later exact declaration, and diagnosed if unresolved. Premature layout/member use and inline forward references remain errors.
-- [x] Explicit switch fallthrough — contextual bare `fallthrough` only as the final statement of a non-final ordinary scalar case; direct transfer to the immediately following case with no pattern retest; no implicit fallthrough; ordinary identifier behavior elsewhere; tagged-union switches reject it because their cases are active-variant patterns.
 - [x] Lexical/layout rules: `/* … */` block comments (non-nesting; a newline inside acts as a statement terminator); newline token emitted only after ident/literal/`)`/`]`/`}`/`return`/`break`/`continue` (Go-style, made explicit); bare comma lists are parser-restricted to one physical line, while delimited multiline lists use trailing commas; `else` stays on the `}` line.
-- [x] `int`/`uint` = platform word (i64/u64 on arm64), kept alongside explicit widths.
-- [x] Compound assignment operators included as pure sugar (`x += y` ≡ `x = x + (y)`, left operand evaluated once).
-- [x] Enum `Name: enum { a, b }` — distinct type + distinct-typed int constants; `enum` keyword. The former tagged-union exclusion is superseded by the additive queue above.
-- [x] Tagged unions — closed inline variants with an `i32` tag, maximum-sized aligned payload, canonical-zero first variant, qualified construction, exhaustive switch patterns with explicit copy binders, conditional active-payload equality, explicit generic stamping, module visibility, const/global support, and initial C-boundary rejection. No `any`, reflection, allocation, boxing, or niche optimization.
 - [x] Semantic model (implementation): literals are untyped constants (fit-checked, never converting between kinds); enum layout = i32; contract values = 16 bytes (vtable + data); parameter mutation and per-pointer-level pointee mutation are independently checked.
 - [x] `main(): int` — entry returns the platform-word integer; the target entry ABI takes its low 32 bits as the observable exit status. Rationale: ordinary Ace code uses the natural platform type, while the boundary mapping is localized and free on AArch64.
 - [x] Linking: Mach-O objects + system linker for v1 — rationale: extern "c" to libSystem works immediately, compile-time stays fast, direct executable emission remains an additive later step.
@@ -436,10 +431,12 @@ Implementation phase — closed so far:
 - [x] Driver linker controls (chunk 1A) — beside one root `.ace` source, `ace` accepts ordered extra `.o`/`.a` inputs, `-L DIR`, `-l NAME`, and `-framework NAME`; linking requires `-o` and launches the system `cc` through an argument vector (`posix_spawnp`, no shell), preserving the user's written order after Ace's own object. Multiple root sources, link inputs under `-c` or without `-o`, missing option values, unknown options, unrecognized positionals, and output/intermediate paths that would overwrite a source or linker input are rejected with exact `ace:` diagnostics; existing symlink/hard-link aliases count as the same input. Linker failures report the exit status or signal precisely while cc's own diagnostics pass through. There is no raw linker escape (`-Wl,...`, arbitrary flags, source-embedded link directives, dependency discovery, package-manager behavior); each remains additive later without changing this surface. `--report` continues to measure only Ace's own object and excludes external linker time; external inputs are not Ace output. Rationale: external libraries and Apple frameworks become linkable through one explicit, shell-safe, order-exact surface — performance and simplicity first — before any C-ABI widening; argument order stays under programmer control exactly as `cc` sees it, and the tiny validated surface keeps injection and accidental input destruction impossible while the escape hatches wait their turn.
 - [x] C ABI compatibility whitelist (chunk 1B, Priority #1 Decision #2) — the negative C-boundary rejection is replaced by a positive, position-aware `is_c_abi_type` predicate. Allowed: fixed-width integers, the platform words `int`/`uint`, `usize`, `f32`/`f64`; plain and writable pointers over recursively compatible pointees; distinct types over same-position allowed bases; recursively compatible structs; and arrays only when nested in a compatible aggregate or behind a pointer. Void is allowed only as a function return; direct array parameters and returns are rejected. Rejected: `bool`, enums, `string`, slices, contracts, tagged unions, `Error`, `ErrorDescriptor`, `typeid`, every tuple shape, ordinary Ace function values, type parameters, generic declarations, and generic instantiations. `mut` parameters are rejected at the boundary — writable storage crosses as an explicit `mut *T`, and the former `mut p` → `T*` export mapping in Functions & ABI #6 is struck. Recursion is cycle-guarded so self-referential structs through pointers terminate. Every rejected category is additive later, each only after an exact C representation is separately approved. Rationale: a positive whitelist states what the compiler has verified against the platform ABI (clang-compiled C harnesses are the oracle); anything absent is unverified, and an explicit opt-in beats accidental shape coincidence.
 
-Provisional spellings (semantics fixed, spellings may be adjusted during implementation without a decision):
+### Provisional spellings
+Semantics are fixed; spellings may be adjusted during implementation without a decision.
 - `const` keyword (locals/globals opt-in); `!` dual-role NOT; `mut` call-site token form; slicing expressions (`arr[1..n]`); range spelling; switch-case syntax; import alias/path forms; struct literal form; contract/vtable member spellings (`s.vt`).
 
-Syntax details surfaced by the first code sample (decide during related topics):
+### Syntax details surfaced by the first code sample
+Decide during related topics:
 - Composition order of `mut` × `*T` — decided per pointer level; writable address-of is `mut &value`.
 - Bitwise NOT spelling (`!` dual-role) — provisional under Memory #7.
 - Array/slice spellings — settled: `[N]T`, `[]T` (Iterations #5); slicing expression spelling provisional.

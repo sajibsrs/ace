@@ -6,9 +6,10 @@ The design is complete; the bootstrap compiler is implemented in dependency-free
 C11 and currently targets AArch64 Mach-O on Apple Silicon.
 
 The human-facing guide starts at [`docs/README.md`](docs/README.md). Normative
-language rules live in `spec.md`, their rationale in `philosophy.md`, and the
-formal surface grammar in `grammar.md`. `AGENTS.md` records implementation
-status and repository workflow.
+language rules and decision records live in `spec.md`, their rationale in
+`philosophy.md`, and the formal surface grammar in `grammar.md`. `AGENTS.md`
+records repository workflow and indexes `spec.md`; implementation history is
+kept in `CHANGELOG.md`.
 
 ## Build and test
 
@@ -42,8 +43,8 @@ main(): int {
 The lexer, parser, semantic checker, and core-language emitter are operational,
 including minimal DWARF source-line information for LLDB. Bare `import fmt` and
 allocation-free `fmt.print(string)` / `fmt.print(int)` form the first working
-stdlib slice. Current implementation status and remaining work are tracked in
-`AGENTS.md` rather than the human manual.
+stdlib slice. Current implementation status is summarized in `AGENTS.md`, with
+chunk-by-chunk history in `CHANGELOG.md`, rather than the human manual.
 
 ## Editor support
 
