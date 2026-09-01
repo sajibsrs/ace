@@ -268,29 +268,28 @@ if err != null {
 }
 ```
 
-`time_mono(sleep: bool): u64` reads a monotonic clock in nanoseconds from an
-unspecified origin. The flag chooses between the two flavors of monotonic
-time:
+`time_continuous(): u64` and `time_awake(): u64` read separate monotonic
+clocks in nanoseconds from unspecified origins:
 
-- `sleep == true` — the clock keeps advancing while the system is asleep.
-- `sleep == false` — the clock pauses while the system is asleep and advances
-  whenever the system is awake, including while this process is idle or
-  blocked. It is not process CPU time.
+- `time_continuous()` keeps advancing while the system is asleep.
+- `time_awake()` pauses while the system is asleep and advances whenever the
+  system is awake, including while this process is idle or blocked. It is not
+  process CPU time.
 
-Both modes are immune to calendar-clock changes. Subtract only readings taken
-with the same `sleep` argument — cross-mode differences are meaningless. The
-call allocates nothing and cannot fail.
+Both clocks are immune to calendar-clock changes. Subtract only readings from
+the same operation — cross-clock differences are meaningless. Neither call
+allocates or can fail.
 
 ```ace
 import sys
 
 main(): int {
-    start: u64 = sys.time_mono(false)
+    start: u64 = sys.time_awake()
     sum: int = 0
     for i: int in 0 .. 1_000_000 {
         sum += i
     }
-    elapsed_ns: u64 = sys.time_mono(false) - start
+    elapsed_ns: u64 = sys.time_awake() - start
     if elapsed_ns == 0 {
         return 1
     }

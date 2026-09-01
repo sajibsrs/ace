@@ -1,6 +1,6 @@
 // expect-exit: 42
 import sys
-import time_mono from sys
+import time_awake from sys
 
 // Harness-only wait: an ordinary process sleep proving the clocks advance
 // while this process sits idle. usleep is not part of the tested surface.
@@ -13,24 +13,44 @@ wait_us(micros: u32) {
 }
 
 check_nondecreasing(): int {
-    asleep1: u64 = sys.time_mono(true)
-    asleep2: u64 = sys.time_mono(true)
+    asleep1: u64 = sys.time_continuous()
+    asleep2: u64 = sys.time_continuous()
+
     if asleep2 < asleep1 {
         return 1
     }
-    awake1: u64 = sys.time_mono(false)
-    awake2: u64 = sys.time_mono(false)
+    awake1: u64 = sys.time_awake()
+    awake2: u64 = sys.time_awake()
+
     if awake2 < awake1 {
         return 2
     }
     return 0
 }
 
-check_advance(sleep: bool): int {
-    before: u64 = sys.time_mono(sleep)
+check_continuous_advance(): int {
+    before: u64 = sys.time_continuous()
     wait_us(150_000)
-    after: u64 = sys.time_mono(sleep)
+    after: u64 = sys.time_continuous()
     elapsed: u64 = after - before
+
+    // The 150 ms wait must move the clock; the bounds stay generous for
+    // loaded CI machines.
+    if elapsed < 100_000_000 {
+        return 1
+    }
+    if elapsed > 5_000_000_000 {
+        return 2
+    }
+    return 0
+}
+
+check_awake_advance(): int {
+    before: u64 = time_awake()
+    wait_us(150_000)
+    after: u64 = time_awake()
+    elapsed: u64 = after - before
+
     // The 150 ms wait must move the clock; the bounds stay generous for
     // loaded CI machines.
     if elapsed < 100_000_000 {
@@ -43,8 +63,9 @@ check_advance(sleep: bool): int {
 }
 
 check_selective(): int {
-    start: u64 = time_mono(false)
-    end: u64 = time_mono(false)
+    start: u64 = time_awake()
+    end: u64 = time_awake()
+
     if end < start {
         return 1
     }
@@ -56,11 +77,11 @@ main(): int {
     if code != 0 {
         return code
     }
-    code = check_advance(true)
+    code = check_continuous_advance()
     if code != 0 {
         return 100 + code
     }
-    code = check_advance(false)
+    code = check_awake_advance()
     if code != 0 {
         return 200 + code
     }

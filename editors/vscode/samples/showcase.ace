@@ -6,7 +6,8 @@ import arithmetic: math
 import sample: "./support.ace"
 import min, max from math
 import (
-    time_mono,
+    time_awake,
+    time_continuous,
 ) from sys
 
 /* Declarations: built-in types, user-defined types, generics, and constants. */

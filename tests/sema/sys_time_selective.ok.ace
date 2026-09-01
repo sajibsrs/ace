@@ -1,10 +1,11 @@
 // sys time — selective import and exact signature typing (sema check only;
 // runtime coverage lives in tests/emit/sys_time.ace).
-import time_mono from sys
+import time_awake, time_continuous from sys
 
 same_mode_difference(): int {
-    start: u64 = time_mono(false)
-    end: u64 = time_mono(false)
+    start: u64 = time_awake()
+    end: u64 = time_awake()
+
     if end < start {
         return 1
     }
@@ -12,11 +13,10 @@ same_mode_difference(): int {
 }
 
 main(): int {
-    // time_mono binds as a (bool): u64 function value.
-    clock: (bool): u64 = time_mono
-    wake: u64 = clock(true)
-    sleep_free: u64 = clock(false)
-    if wake == sleep_free {
+    continuous: u64 = time_continuous()
+    awake: u64 = time_awake()
+
+    if continuous == 0 || awake == 0 {
         return 2
     }
     return same_mode_difference()

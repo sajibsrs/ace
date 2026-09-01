@@ -154,17 +154,16 @@ pub open(path: string, flags: i32, mode: u32): (Fd, Error) {
 CLOCK_MONOTONIC_RAW: const i32 = 4
 CLOCK_UPTIME_RAW: const i32 = 8
 
-/* Monotonic clock reading in nanoseconds from an unspecified origin.
- * sleep == true selects the clock that continues while the system is
- * asleep; sleep == false selects the clock that pauses during system sleep
- * but advances whenever the system is awake, including while this process
- * is idle or blocked — it is never process CPU time. Neither mode is
- * affected by calendar-clock changes, and readings may only be subtracted
- * when they were taken with the same sleep argument.
- */
-pub time_mono(sleep: bool): u64 {
-    if sleep {
-        return c_clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)
-    }
+/* Monotonic nanoseconds from an unspecified origin, including time while the
+ * system is asleep. Calendar-clock changes do not affect the reading. */
+pub time_continuous(): u64 {
+    return c_clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)
+}
+
+/* Monotonic nanoseconds from an unspecified origin while the system is awake.
+ * This pauses during system sleep but advances while this process is idle or
+ * blocked, so it is never process CPU time. Calendar-clock changes do not
+ * affect the reading. */
+pub time_awake(): u64 {
     return c_clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
 }

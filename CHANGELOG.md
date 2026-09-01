@@ -269,6 +269,18 @@ fixture, `tests/modules/mem_typed_module/`, and compiler-checked docs
 examples; `sandbox.ace` drops its little-endian byte packing for
 `mem.alloc[usize]`/`mem.release[usize]`. Normal and sanitizer suites pass.
 
+### Separate continuous and awake monotonic clocks
+
+The boolean-selected `sys.time_mono(sleep)` surface is replaced by two
+parameterless operations whose names state their distinct time domains:
+`time_continuous()` reads Darwin `CLOCK_MONOTONIC_RAW` and advances through
+system sleep, while `time_awake()` reads `CLOCK_UPTIME_RAW` and pauses during
+system sleep. Both retain the allocation-free `u64` nanosecond result, immunity
+to calendar-clock changes, unspecified origin, no-error contract, and the rule
+that only readings from the same operation subtract meaningfully. The runtime,
+selective-import, compiler-checked documentation, human documentation, and
+editor showcase coverage now use and type-check both parameterless functions.
+
 ## Still open after these chunks
 
 Checked/release build modes, then checked allocation tracking; nonblocking echo and multi-client chat are the next networking proofs over the implemented `poll` readiness queue (see the `spec.md` Decision Queue).

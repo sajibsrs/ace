@@ -94,13 +94,13 @@ printf_examples(): int {
     return 0
 }
 
-time_mono_example(): int {
-    start: u64 = sys.time_mono(false)
+time_awake_example(): int {
+    start: u64 = sys.time_awake()
     sum: int = 0
     for i: int in 0 .. 1_000_000 {
         sum += i
     }
-    elapsed_ns: u64 = sys.time_mono(false) - start
+    elapsed_ns: u64 = sys.time_awake() - start
     if elapsed_ns == 0 {
         return 1
     }
@@ -195,5 +195,5 @@ main(): int {
     if code != 0 {
         return 40 + code
     }
-    return time_mono_example()
+    return time_awake_example()
 }
