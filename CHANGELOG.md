@@ -176,6 +176,17 @@ Owner-approved newline layer over the landed `print` overload set (spec.md Stdli
 
 Driver convenience over the existing `-o` pipeline: when the `-o` value ends in `.ace`, it names the root source itself — that file is compiled, and the executable and the intermediate object take the file's name minus the suffix (`./ace -o program.ace` behaves exactly like `./ace -o program program.ace`, producing `program` and `program.o`; a directory-qualified value keeps its path). A stemless value (`-o .ace`) is rejected, and the form combined with a different positional root source still diagnoses `only one root .ace source may be compiled`; spelling the same file in both places collapses to the in-place form. The derivation runs before the missing-source `usage()` exit, so `-o FILE.ace` alone works, and all existing collision checks apply to the derived executable and object names unchanged. Coverage: `tests/run.sh` driver cases (in-place compile of a copied fixture produces and runs the stem executable plus the stem object; the two-sources conflict and the stemless-value diagnostics). `docs/compiler.md` and the usage text document the form. Normal and sanitizer suites pass.
 
+### Large aggregate copies at subobject offsets
+
+The AArch64 emitter's downward `copy_mem` loop now keeps its byte counter in
+`x17` and uses the non-temp `x8` as a separate effective-address scratch when
+either source or destination has a nonzero offset. This fixes nonterminating,
+out-of-bounds copies of aggregates larger than 16 bytes, including tagged-union
+construction and payload binders. The corrected bare-base load/store encodings
+also use `[x8]` rather than accidentally indexing the address by itself. Runtime
+coverage exercises 17-byte and 24-byte local union payloads plus a 24-byte const
+global payload and a large non-union tuple member at a nonzero source offset.
+
 ## Still open after these chunks
 
 Checked/release build modes, then checked allocation tracking; nonblocking echo and multi-client chat are the next networking proofs over the implemented `poll` readiness queue (see the `spec.md` Decision Queue).

@@ -5,7 +5,9 @@
 // evaluate into a virtual-register stack (int temps = x0-x7,x9-x15, fp temps =
 // v0-v7,v16-v23) that is spilled to a per-function spill area around calls.
 // x16/x17 are scratch OUTSIDE the temp pool (never live across a call), used
-// by copy/addressing helpers. Frame: [x29,x30][locals][spill][out-args][sp];
+// by copy/addressing helpers. copy_mem also uses x8 before any outgoing sret
+// assignment; an incoming sret pointer is saved in the prologue. Frame:
+// [x29,x30][locals][spill][out-args][sp];
 // the `sub sp` placeholder is patched with the final frame size at fn end.
 //
 // ABI (pinned against clang on this machine):
@@ -905,7 +907,7 @@ static void strf_(Em* e, int vr, int base, uint32_t off, int is64) {
     }
 }
 
-// byte copy [dst+doff, +size) <- [src+soff, +size); uses x16/x17 only
+// byte copy [dst+doff, +size) <- [src+soff, +size); uses x8/x16/x17
 static void copy_mem(Em* e, int dst, uint32_t doff, int src, uint32_t soff, uint32_t size) {
     if (!size) return;
     if (size <= 16) {
@@ -934,14 +936,18 @@ static void copy_mem(Em* e, int dst, uint32_t doff, int src, uint32_t soff, uint
     ins(e, 0xD1002231u); // sub x17, x17, #8
     // downward offsets: [src + soff + x17] -> x16 -> [dst + doff + x17]
     if (soff) {
-        ins(e, 0x8B000000u | (17u << 16) | ((uint32_t)src << 5) | 17u); // x17 = src + x17
-        ins(e, 0xF8606800u | (17u << 16) | (17u << 5) | 16u);           // ldr x16, [x17]
+        load_imm(e, 1, 8, soff);
+        ins(e, 0x8B000000u | (8u << 16) | ((uint32_t)src << 5) | 8u); // x8 = src + soff
+        ins(e, 0x8B000000u | (17u << 16) | (8u << 5) | 8u);           // x8 += x17
+        ins(e, 0xF9400000u | (8u << 5) | 16u);                        // ldr x16, [x8]
     } else {
         ins(e, 0xF8606800u | (17u << 16) | ((uint32_t)src << 5) | 16u);
     }
     if (doff) {
-        ins(e, 0x8B000000u | (17u << 16) | ((uint32_t)dst << 5) | 17u); // x17 = dst + x17
-        ins(e, 0xF8206800u | (17u << 16) | (17u << 5) | 16u);           // str x16, [x17]
+        load_imm(e, 1, 8, doff);
+        ins(e, 0x8B000000u | (8u << 16) | ((uint32_t)dst << 5) | 8u); // x8 = dst + doff
+        ins(e, 0x8B000000u | (17u << 16) | (8u << 5) | 8u);           // x8 += x17
+        ins(e, 0xF9000000u | (8u << 5) | 16u);                        // str x16, [x8]
     } else {
         ins(e, 0xF8206800u | (17u << 16) | ((uint32_t)dst << 5) | 16u);
     }
