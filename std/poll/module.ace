@@ -1,0 +1,31 @@
+/* poll — backend-neutral allocation-free descriptor readiness. */
+
+import sys
+import backend: "./backend/darwin-arm64.ace"
+
+pub Queue: type = backend.Queue
+pub Event: type = backend.Event
+pub QueueErr: type = backend.QueueErr
+pub WatchErr: type = backend.WatchErr
+pub UnwatchErr: type = backend.UnwatchErr
+pub WaitErr: type = backend.WaitErr
+
+pub wait_forever: const u64 = 0xffffffffffffffff
+
+pub queue(): (Queue, Error) {
+    result: Queue, err: Error = backend.queue()
+    return result, err
+}
+
+pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool): Error {
+    return backend.watch(q, fd, readable, writable)
+}
+
+pub unwatch(q: Queue, fd: sys.Fd): Error {
+    return backend.unwatch(q, fd)
+}
+
+pub wait(q: Queue, mut events: []Event, timeout_ns: u64): (usize, Error) {
+    count: usize, err: Error = backend.wait(q, mut events, timeout_ns)
+    return count, err
+}

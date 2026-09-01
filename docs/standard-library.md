@@ -11,6 +11,7 @@ Today's modules:
 - `math` — minimal generic helpers
 - `mem` — raw allocation and allocation-free byte operations
 - `net` — allocation-free IPv4 TCP sockets
+- `poll` — allocation-free readiness queues for general file descriptors
 - `sys` — file descriptors, byte I/O, errno, and monotonic time
 
 Everything else in the planned v1 set (`str`, `simd`) does not
@@ -281,10 +282,11 @@ time) are not implemented yet.
 ## net
 
 `net` provides a thin IPv4 TCP layer with allocation-free core socket
-operations. Its public values and operations are platform-neutral; Darwin
-socket structures, constants, byte order, and C bindings stay private inside
-the module. `net.Socket` is a transparent alias of `sys.Fd`, so close sockets
-with `sys.close`.
+operations. Its public values and operations are
+backend-neutral; `std/net/module.ace` explicitly imports the supported
+Darwin/Apple-arm64 backend. Platform structures, constants, byte order, and C
+bindings stay in that private-by-convention file. `net.Socket` is a transparent
+alias of `sys.Fd`, so close sockets with `sys.close`.
 
 ```ace
 import net
@@ -363,8 +365,8 @@ expose the platform resolver's detailed status. A native caller-buffer DNS
 implementation, richer diagnostics, truncation discovery, IPv6, asynchronous
 resolution, caching, and resolver-policy controls remain future improvements.
 
-Every error is last and null on success. The operation-specific public domains
-are `SocketErr`, `SetReuseAddressErr`, `SetReusePortErr`,
+Every network error is last and null on success. The operation-specific public
+domains are `SocketErr`, `SetReuseAddressErr`, `SetReusePortErr`,
 `SetNonblockingErr`, `BindErr`, `ListenErr`, `AcceptErr`, `ConnectErr`,
 `ReceiveErr`, `SendErr`, and `ResolveErr`. Compare `error.domain` with the
 corresponding `typeid(net.*Err)`. For socket-operation errors, query
@@ -374,8 +376,95 @@ retains `sys.CloseErr`.
 
 No retry policy is hidden. In particular, interrupted, aborted, would-block,
 and resource failures from `accept` remain caller-visible. Nonblocking
-connection completion, readiness queues, half-close, additional TCP options,
-UDP, and higher-level server/client convenience remain future additions.
+connection completion, half-close, additional TCP options, UDP, and
+higher-level server/client convenience remain future additions.
+
+## poll
+
+`poll` provides allocation-free, level-triggered readiness for general
+`sys.Fd` values. Sockets are one consumer; pipes, TTYs, and other supported
+descriptors use the same queue without depending on `net`.
+
+`queue` creates a level-triggered readiness queue. `watch` establishes or
+replaces the queue's relationship with a descriptor, while `unwatch` reverses
+that relationship. Neither operation closes the descriptor, and closing the
+queue closes none of the descriptors it watches.
+
+The paired spelling is deliberate stdlib practice: operations that establish
+and reverse the same relationship use a recognizable lexical pair when an
+accurate pair exists. Semantic accuracy takes priority over superficial
+symmetry; unrelated operations are not named as a pair merely to make an API
+look balanced.
+
+```ace
+import poll
+import sys
+
+main(): int {
+    q: poll.Queue, err: Error = poll.queue()
+    if err != null {
+        return 1
+    }
+    fd: sys.Fd = sys.Fd(0)
+
+    if poll.watch(q, fd, true, false) != null { // readable only
+        sys.close(sys.Fd(q))
+        return 2
+    }
+
+    zero: poll.Event = poll.Event {
+        fd: sys.Fd(0), readable: false, writable: false,
+        error: false, hangup: false,
+    }
+    storage: [16]poll.Event = [zero : 16]
+    events: []poll.Event = storage[0..16]
+    count: usize, wait_err: Error = poll.wait(q, mut events, poll.wait_forever)
+
+    if wait_err == null {
+        for index: usize in 0 .. count {
+            if events[index].readable {
+                // One receive attempt can make progress, or observe EOF.
+            }
+        }
+    }
+
+    poll.unwatch(q, fd)
+    sys.close(sys.Fd(q))
+    return 0
+}
+```
+
+The readiness surface is:
+
+- `Queue: distinct sys.Fd`; failed creation returns `Queue(-1)`. Close it with
+  `sys.close(sys.Fd(q))`.
+- `watch(q, fd, readable, writable): Error` registers a descriptor or replaces
+  its complete readable/writable interest. At least one interest must be true.
+  A failed update may leave partial kqueue state; call `watch` or `unwatch`
+  again before relying on that registration.
+- `unwatch(q, fd): Error` removes an existing registration. Removing an
+  unwatched descriptor is an error.
+- `wait(q, mut events, timeout_ns): (usize, Error)` writes a fully initialized
+  prefix of caller-owned storage. The suffix remains unchanged. An empty slice
+  is an error. The backend uses bounded stack storage, allocates nothing, and
+  may return fewer events than the supplied capacity.
+
+An `Event` contains `fd`, `readable`, `writable`, `error`, and `hangup`. At
+most one returned event represents each fd; simultaneous conditions are
+combined. Readable may mean that a read will report EOF rather than positive
+bytes. Hangup may coexist with readable buffered data. Error supplies no
+errno value and may coexist with every other condition. Error and hangup need
+no registered interest.
+
+A timeout of `0` polls without blocking. `poll.wait_forever` waits without a
+timeout; every other value is a finite nanosecond duration. An interrupted
+wait returns `WaitErr`; it is never restarted privately. A successful zero
+count means that the timeout expired or a poll found no readiness.
+
+The public domains are `QueueErr`, `WatchErr`, `UnwatchErr`, and `WaitErr`.
+Compare `error.domain` with the corresponding `typeid(poll.*Err)` and query
+`sys.errno()` immediately for the OS reason. Closing a poll queue uses
+`sys.close` and therefore retains `sys.CloseErr`.
 
 ## Current limitations
 

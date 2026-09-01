@@ -1,4 +1,5 @@
-/* net — allocation-free IPv4 TCP sockets (Darwin/Apple arm64).
+/* Darwin net backend — allocation-free IPv4 TCP sockets
+ * (Darwin/Apple arm64).
  *
  * The public declarations form the stable Ace networking surface. The
  * private section below them owns Darwin's constants, structures, C link
@@ -363,8 +364,8 @@ resolve4_darwin(host: string, port: u16, mut addresses: []Address4): (usize, Err
     if host.len > HOST_NAME_MAX || addresses.len == 0 {
         return usize(0), Error(&resolve_error)
     }
-
     name: [254]u8
+
     for index: usize in usize(0) .. host.len {
         byte: u8 = host[index]
 
@@ -409,8 +410,8 @@ resolve4_darwin(host: string, port: u16, mut addresses: []Address4): (usize, Err
         current = current.next
         continue scan
     }
-
     c_freeaddrinfo(result)
+
     if written == 0 {
         return usize(0), Error(&resolve_error)
     }

@@ -88,6 +88,10 @@ One compiler-recognized direct-call standard-module name with literal/static-con
 
 `std/net.ace` exposes the closed allocation-free blocking surface over private Darwin bindings in the same file: `Socket` aliases `sys.Fd`; `Address4` keeps text-order octets and a host-order port; socket creation, explicit reuse/nonblocking options, bind/listen, one-attempt accept/connect, and partial-count receive/send are implemented with operation-specific public error domains, `sys.errno()`, `sys.close`, and per-send `MSG_NOSIGNAL`. Apple-arm64 extern variadic extras now use 8-byte outgoing stack slots, enabling `fcntl(F_SETFL, flags)` without a C shim. Loopback runtime coverage proves failure values/domains, option toggles, peer-address conversion, both send overloads, receive, and cleanup; selective-import and compiler-checked docs coverage landed. Normal and ASan/UBSan suites pass.
 
+### Std directory modules and backend-neutral readiness queues
+
+Bare standard-library imports now accept either the existing `std/name.ace` single-file form or `std/name/module.ace` for a multi-file module, diagnose both definitions as ambiguous, and name both attempted paths when neither exists; explicit local `.ace` imports remain unchanged. `std/net/module.ace` is the stable socket facade over its grouped Darwin backend, while the separate `std/poll/module.ace` owns readiness for general `sys.Fd` values and explicitly imports its own Darwin backend. Darwin/Apple arm64 remains the only supported target, with multi-target selection deferred until a second real target lands. Private kqueue implements allocation-free `Queue`, combined level-triggered `Event` results, paired `watch`/`unwatch`, caller-owned bounded wait storage, nanosecond poll/finite/infinite timeouts, deterministic local errno, and caller-visible interruption. Runtime pipe coverage proves creation, interest replacement, read/write/hangup readiness, deterministic invalid-interest/empty-wait/missing-unwatch errors, cleanup, and the public error domains; directory-module resolution, ambiguity/missing diagnostics, selective imports, and compiler-checked documentation accompany it.
+
 ### Explicit switch `fallthrough`
 
 Contextual only inside a switch case, final statement only, transfers to the immediately following case, takes no target or condition, and is rejected in the final case. There is still no implicit fallthrough.
@@ -170,4 +174,4 @@ Owner-approved newline layer over the landed `print` overload set (spec.md Stdli
 
 ## Still open after these chunks
 
-Checked/release build modes, then checked allocation tracking; the backend-neutral readiness queue must be carved before further networking implementation (see the `spec.md` Decision Queue).
+Checked/release build modes, then checked allocation tracking; nonblocking echo and multi-client chat are the next networking proofs over the implemented `poll` readiness queue (see the `spec.md` Decision Queue).

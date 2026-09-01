@@ -1,0 +1,73 @@
+/* net — target-neutral allocation-free networking facade. */
+
+import backend: "./backend/darwin-arm64.ace"
+
+pub Socket: type = backend.Socket
+pub SocketKind: type = backend.SocketKind
+pub Address4: type = backend.Address4
+
+pub SocketErr: type = backend.SocketErr
+pub SetReuseAddressErr: type = backend.SetReuseAddressErr
+pub SetReusePortErr: type = backend.SetReusePortErr
+pub SetNonblockingErr: type = backend.SetNonblockingErr
+pub BindErr: type = backend.BindErr
+pub ListenErr: type = backend.ListenErr
+pub AcceptErr: type = backend.AcceptErr
+pub ConnectErr: type = backend.ConnectErr
+pub ReceiveErr: type = backend.ReceiveErr
+pub SendErr: type = backend.SendErr
+pub ResolveErr: type = backend.ResolveErr
+
+pub socket(kind: SocketKind): (Socket, Error) {
+    result: Socket, err: Error = backend.socket(kind)
+    return result, err
+}
+
+pub set_reuse_address(sock: Socket, enabled: bool): Error {
+    return backend.set_reuse_address(sock, enabled)
+}
+
+pub set_reuse_port(sock: Socket, enabled: bool): Error {
+    return backend.set_reuse_port(sock, enabled)
+}
+
+pub set_nonblocking(sock: Socket, enabled: bool): Error {
+    return backend.set_nonblocking(sock, enabled)
+}
+
+pub bind(sock: Socket, address: Address4): Error {
+    return backend.bind(sock, address)
+}
+
+pub listen(sock: Socket, backlog: usize): Error {
+    return backend.listen(sock, backlog)
+}
+
+pub accept(listener: Socket): (Socket, Address4, Error) {
+    accepted: Socket, address: Address4, err: Error = backend.accept(listener)
+    return accepted, address, err
+}
+
+pub connect(sock: Socket, address: Address4): Error {
+    return backend.connect(sock, address)
+}
+
+pub receive(sock: Socket, mut buffer: []u8): (int, Error) {
+    count: int, err: Error = backend.receive(sock, mut buffer)
+    return count, err
+}
+
+pub send(sock: Socket, data: []u8): (int, Error) {
+    count: int, err: Error = backend.send(sock, data)
+    return count, err
+}
+
+pub send(sock: Socket, data: string): (int, Error) {
+    count: int, err: Error = backend.send(sock, data)
+    return count, err
+}
+
+pub resolve4(host: string, port: u16, mut addresses: []Address4): (usize, Error) {
+    count: usize, err: Error = backend.resolve4(host, port, mut addresses)
+    return count, err
+}

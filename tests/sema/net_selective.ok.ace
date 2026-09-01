@@ -1,4 +1,4 @@
-import Address4, ResolveErr, Socket, SocketKind, resolve4, socket, send from net
+import Address4, ResolveErr, Socket, SocketKind, resolve4, send, socket from net
 
 check(address: Address4, socket_value: Socket): int {
     if address.port == 0 {

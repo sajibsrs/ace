@@ -1,0 +1,7 @@
+/* Directory std module fixture. */
+
+import directory_probe
+
+main(): int {
+    return directory_probe.value - 2
+}

@@ -1,0 +1,232 @@
+/* Darwin poll backend — allocation-free kqueue readiness. */
+
+import sys
+
+pub Queue: distinct sys.Fd
+
+pub Event: struct {
+    fd: sys.Fd,
+    readable: bool,
+    writable: bool,
+    error: bool,
+    hangup: bool,
+}
+
+pub QueueErr: distinct i32
+pub WatchErr: distinct i32
+pub UnwatchErr: distinct i32
+pub WaitErr: distinct i32
+
+pub wait_forever: const u64 = 0xffffffffffffffff
+
+DarwinKevent: struct {
+    ident: usize,
+    filter: i16,
+    flags: u16,
+    fflags: u32,
+    data: i64,
+    udata: *u8,
+}
+
+DarwinTimespec: struct {
+    seconds: i64,
+    nanoseconds: i64,
+}
+
+EVFILT_READ: const i16 = -1
+EVFILT_WRITE: const i16 = -2
+EV_ADD: const u16 = 0x0001
+EV_DELETE: const u16 = 0x0002
+EV_ENABLE: const u16 = 0x0004
+EV_ERROR: const u16 = 0x4000
+EV_EOF: const u16 = 0x8000
+EINVAL: const i32 = 22
+ENOENT: const i32 = 2
+NSEC_PER_SEC: const u64 = 1000000000
+MAX_WAIT_EVENTS: const usize = 64
+
+queue_error: const ErrorDescriptor = ErrorDescriptor {
+    code: 0, domain: typeid(QueueErr), message: "queue failed",
+}
+
+watch_error: const ErrorDescriptor = ErrorDescriptor {
+    code: 0, domain: typeid(WatchErr), message: "watch failed",
+}
+
+unwatch_error: const ErrorDescriptor = ErrorDescriptor {
+    code: 0, domain: typeid(UnwatchErr), message: "unwatch failed",
+}
+
+wait_error: const ErrorDescriptor = ErrorDescriptor {
+    code: 0, domain: typeid(WaitErr), message: "wait failed",
+}
+
+extern "c" {
+    c_kqueue(): i32 = "kqueue"
+    c_kevent(queue: i32, changes: *DarwinKevent, change_count: i32,
+             events: mut *DarwinKevent, event_count: i32,
+             timeout: *DarwinTimespec): i32 = "kevent"
+    c_errno(): mut *i32 = "__error"
+}
+
+errno_set(value: i32) {
+    slot: mut *i32 = c_errno()
+    ~slot = value
+}
+
+kevent_change(fd: sys.Fd, filter: i16, flags: u16): DarwinKevent {
+    return DarwinKevent {
+        ident: usize(i32(fd)),
+        filter: filter,
+        flags: flags,
+        fflags: u32(0),
+        data: i64(0),
+        udata: null,
+    }
+}
+
+zero_kevent(): DarwinKevent {
+    return DarwinKevent {
+        ident: usize(0),
+        filter: i16(0),
+        flags: u16(0),
+        fflags: u32(0),
+        data: i64(0),
+        udata: null,
+    }
+}
+
+pub queue(): (Queue, Error) {
+    fd: i32 = c_kqueue()
+
+    if fd == -1 {
+        return Queue(sys.Fd(-1)), Error(&queue_error)
+    }
+    return Queue(sys.Fd(fd)), null
+}
+
+pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool): Error {
+    if !readable && !writable {
+        errno_set(EINVAL)
+        return Error(&watch_error)
+    }
+    read_flags: u16 = EV_DELETE
+    write_flags: u16 = EV_DELETE
+
+    if readable {
+        read_flags = EV_ADD | EV_ENABLE
+    }
+
+    if writable {
+        write_flags = EV_ADD | EV_ENABLE
+    }
+
+    if change_filter(q, fd, EVFILT_READ, read_flags) == -1 &&
+       !(read_flags == EV_DELETE && sys.errno() == ENOENT) {
+        return Error(&watch_error)
+    }
+
+    if change_filter(q, fd, EVFILT_WRITE, write_flags) == -1 &&
+       !(write_flags == EV_DELETE && sys.errno() == ENOENT) {
+        return Error(&watch_error)
+    }
+    return null
+}
+
+pub unwatch(q: Queue, fd: sys.Fd): Error {
+    removed: bool = false
+    result: i32 = change_filter(q, fd, EVFILT_READ, EV_DELETE)
+
+    if result == 0 {
+        removed = true
+    } else if sys.errno() != ENOENT {
+        return Error(&unwatch_error)
+    }
+
+    result = change_filter(q, fd, EVFILT_WRITE, EV_DELETE)
+
+    if result == 0 {
+        removed = true
+    } else if sys.errno() != ENOENT {
+        return Error(&unwatch_error)
+    }
+
+    if !removed {
+        errno_set(ENOENT)
+        return Error(&unwatch_error)
+    }
+    return null
+}
+
+change_filter(q: Queue, fd: sys.Fd, filter: i16, flags: u16): i32 {
+    change: DarwinKevent = kevent_change(fd, filter, flags)
+    return c_kevent(i32(sys.Fd(q)), &change, 1, null, 0, null)
+}
+
+pub wait(q: Queue, mut events: []Event, timeout_ns: u64): (usize, Error) {
+    if events.len == 0 {
+        errno_set(EINVAL)
+        return usize(0), Error(&wait_error)
+    }
+    capacity: usize = events.len
+
+    if capacity > MAX_WAIT_EVENTS {
+        capacity = MAX_WAIT_EVENTS
+    }
+
+    timeout: DarwinTimespec = DarwinTimespec {seconds: i64(0), nanoseconds: i64(0)}
+    timeout_pointer: *DarwinTimespec = null
+
+    if timeout_ns != wait_forever {
+        timeout.seconds = i64(timeout_ns / NSEC_PER_SEC)
+        timeout.nanoseconds = i64(timeout_ns % NSEC_PER_SEC)
+        timeout_pointer = &timeout
+    }
+    raw: [64]DarwinKevent = [zero_kevent() : 64]
+    ready: i32 = c_kevent(i32(sys.Fd(q)), null, 0, mut &raw[0], i32(capacity), timeout_pointer)
+
+    if ready == -1 {
+        return usize(0), Error(&wait_error)
+    }
+
+    written: usize = 0
+
+    for index: usize in 0 .. usize(ready) {
+        fd: sys.Fd = sys.Fd(i32(raw[index].ident))
+        slot: usize = written
+
+        for candidate: usize in 0 .. written {
+            if events[candidate].fd == fd {
+                slot = candidate
+            }
+        }
+
+        if slot == written {
+            events[slot] = Event {
+                fd: fd,
+                readable: false,
+                writable: false,
+                error: false,
+                hangup: false,
+            }
+            written += usize(1)
+        }
+
+        if raw[index].filter == EVFILT_READ {
+            events[slot].readable = true
+        }
+
+        if raw[index].filter == EVFILT_WRITE {
+            events[slot].writable = true
+        }
+
+        if (raw[index].flags & EV_ERROR) != 0 {
+            events[slot].error = true
+        }
+
+        if (raw[index].flags & EV_EOF) != 0 {
+            events[slot].hangup = true
+        }
+    }
+    return written, null
+}

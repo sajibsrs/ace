@@ -1,8 +1,9 @@
 // module.c — general import resolution for the merged compilation unit.
 //
 // Modules are files. The loader recursively loads what each file imports —
-// bare names from the stdlib beside the compiler, local files by a path
-// relative to the importing source — canonicalizes identity by realpath so
+// bare names from the stdlib beside the compiler (a flat file or a directory
+// with module.ace), local files by a path relative to the importing source —
+// canonicalizes identity by realpath so
 // every file loads exactly once through any number of imports or aliases,
 // and diagnoses cycles with the full chain. Each loaded module's surface is
 // lowered into one private module-prefixed namespace (`name$member`; `$`
@@ -226,28 +227,26 @@ static Member* find_member(Module* m, const char* name, uint32_t len, int is_typ
     return NULL;
 }
 
-static int is_std_mem_module(Loader* L, const char* canon) {
+static int is_std_named_module(Loader* L, const char* canon, const char* name) {
     char dir[4096];
     compiler_dir(dir, sizeof dir, L->compiler_path);
-    char path[4608];
-    if (strcmp(dir, ".") == 0) snprintf(path, sizeof path, "std/mem.ace");
-    else snprintf(path, sizeof path, "%s/std/mem.ace", dir);
-    const char* expected = canonicalize(path);
-    return expected && strcmp(expected, canon) == 0;
-}
-
-static int is_std_fmt_module(Loader* L, const char* canon) {
-    char dir[4096];
-    compiler_dir(dir, sizeof dir, L->compiler_path);
-    char path[4608];
-    if (strcmp(dir, ".") == 0) snprintf(path, sizeof path, "std/fmt.ace");
-    else snprintf(path, sizeof path, "%s/std/fmt.ace", dir);
-    const char* expected = canonicalize(path);
+    char flat[4608];
+    char directory[4608];
+    if (strcmp(dir, ".") == 0) {
+        snprintf(flat, sizeof flat, "std/%s.ace", name);
+        snprintf(directory, sizeof directory, "std/%s/module.ace", name);
+    } else {
+        snprintf(flat, sizeof flat, "%s/std/%s.ace", dir, name);
+        snprintf(directory, sizeof directory, "%s/std/%s/module.ace", dir, name);
+    }
+    const char* expected = canonicalize(flat);
+    if (expected && strcmp(expected, canon) == 0) return 1;
+    expected = canonicalize(directory);
     return expected && strcmp(expected, canon) == 0;
 }
 
 static void mark_mem_intrinsics(Loader* L, Module* m) {
-    if (!is_std_mem_module(L, m->canon)) return;
+    if (!is_std_named_module(L, m->canon, "mem")) return;
     for (int i = 0; i < m->file->nkids; i++) {
         Node* n = m->file->kids[i];
         if (n->kind != N_FUNC || !(n->flags & F_PUB)) continue;
@@ -263,7 +262,7 @@ static void mark_mem_intrinsics(Loader* L, Module* m) {
 }
 
 static void mark_fmt_intrinsics(Loader* L, Module* m) {
-    if (!is_std_fmt_module(L, m->canon)) return;
+    if (!is_std_named_module(L, m->canon, "fmt")) return;
     for (int i = 0; i < m->file->nkids; i++) {
         Node* n = m->file->kids[i];
         if (n->kind == N_FUNC && (n->flags & F_PUB) &&
@@ -362,15 +361,28 @@ static const char* import_target(Loader* L, Node* imp, const char* src_path) {
     stdname[name->len] = 0;
     char dir[4096];
     compiler_dir(dir, sizeof dir, L->compiler_path);
-    char path[4608];
-    if (strcmp(dir, ".") == 0) snprintf(path, sizeof path, "std/%s.ace", stdname);
-    else snprintf(path, sizeof path, "%s/std/%s.ace", dir, stdname);
-    if (!canonicalize(path)) {
-        import_err(L->d, imp, "standard library module '%s' not found (expected %s)",
-                   stdname, path);
+    char flat[4608];
+    char directory[4608];
+    if (strcmp(dir, ".") == 0) {
+        snprintf(flat, sizeof flat, "std/%s.ace", stdname);
+        snprintf(directory, sizeof directory, "std/%s/module.ace", stdname);
+    } else {
+        snprintf(flat, sizeof flat, "%s/std/%s.ace", dir, stdname);
+        snprintf(directory, sizeof directory, "%s/std/%s/module.ace", dir, stdname);
+    }
+    const char* flat_canon = canonicalize(flat);
+    const char* directory_canon = canonicalize(directory);
+    if (flat_canon && directory_canon) {
+        import_err(L->d, imp,
+                   "standard library module '%s' is ambiguous (found %s and %s)",
+                   stdname, flat, directory);
         return NULL;
     }
-    return arena_string(path);
+    if (directory_canon) return directory_canon;
+    if (flat_canon) return flat_canon;
+    import_err(L->d, imp, "standard library module '%s' not found (tried %s and %s)",
+               stdname, flat, directory);
+    return NULL;
 }
 
 static void bind(Loader* L, Node* imp, Module* mod, Binding** binds, Select* sels) {

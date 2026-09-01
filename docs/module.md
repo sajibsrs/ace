@@ -27,7 +27,10 @@ import one from "relative/path.ace"
 
 - A **bare** name (`import fmt`, `import math`) resolves only inside the
   standard library directory `std/` that ships beside the compiler. A local
-  file can never shadow a standard module.
+  file can never shadow a standard module. A single-file std module is
+  `std/<name>.ace`; a multi-file std module is `std/<name>/module.ace` with
+  its other files grouped beside that entry. Defining both forms for one std
+  name is an ambiguity error. A missing-module diagnostic names both paths.
 - The **alias** form binds a different local name to a standard module
   (`import f: fmt`); the module is still the standard one.
 - The **path** form loads a local file. The path must be relative (no leading
@@ -136,6 +139,12 @@ Modules are loaded depth-first in declaration order, and each dependency is
 fully loaded before its importer. Module identity is the file's canonical
 path, so a module reached through several paths or aliases is loaded exactly
 once — a diamond dependency shares one set of globals, not copies.
+
+The selected std entry is an ordinary module and its resolved canonical path
+is its identity. Other files inside a multi-file std module are imported by
+explicit relative `.ace` path. Internal backend files may therefore remain
+directly importable, but carry no public compatibility promise; there is no
+special visibility mechanism for them.
 
 Import cycles are compile errors, reported with the full chain:
 

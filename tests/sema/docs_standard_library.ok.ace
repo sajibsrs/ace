@@ -1,10 +1,12 @@
 /*
 Mirrors docs/standard-library.md fmt, sys, and net examples (sema check only;
-runtime coverage lives in tests/emit/print_*.ace, tests/emit/sys.ace, and
-tests/emit/sys_time.ace, and tests/emit/net.ace).
+runtime coverage lives in tests/emit/print_*.ace, tests/emit/sys.ace,
+tests/emit/sys_time.ace, tests/emit/net.ace, and
+tests/emit/poll.ace).
 */
 import fmt
 import net
+import poll
 import sys
 
 write_note(): int {
@@ -114,6 +116,39 @@ net_example(): int {
             sys.close(client)
         }
     }
+    return 0
+}
+
+readiness_example(fd: sys.Fd): int {
+    q: poll.Queue, err: Error = poll.queue()
+    if err != null {
+        return 1
+    }
+    if poll.watch(q, fd, true, false) != null {
+        sys.close(sys.Fd(q))
+        return 2
+    }
+
+    zero: poll.Event = poll.Event {
+        fd: sys.Fd(0),
+        readable: false,
+        writable: false,
+        error: false,
+        hangup: false,
+    }
+    storage: [16]poll.Event = [zero : 16]
+    events: []poll.Event = storage[0..16]
+    count: usize, wait_err: Error = poll.wait(q, mut events, poll.wait_forever)
+    if wait_err == null {
+        for index: usize in 0 .. count {
+            if events[index].readable {
+                count = index
+            }
+        }
+    }
+
+    poll.unwatch(q, fd)
+    sys.close(sys.Fd(q))
     return 0
 }
 

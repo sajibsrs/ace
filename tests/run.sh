@@ -178,6 +178,38 @@ for want in \
     fi
 done
 
+# A bare std import accepts either std/name.ace or std/name/module.ace, but
+# diagnoses the std name when both definitions exist.
+mkdir -p /tmp/ace_std_module/normal/std/directory_probe
+mkdir -p /tmp/ace_std_module/ambiguous/std/ambiguous_probe
+cp "$ACE" /tmp/ace_std_module/normal/ace
+cp "$ACE" /tmp/ace_std_module/ambiguous/ace
+cp tests/stdlib_module/module.ace \
+   /tmp/ace_std_module/normal/std/directory_probe/module.ace
+cp tests/stdlib_module/flat.ace \
+   /tmp/ace_std_module/ambiguous/std/ambiguous_probe.ace
+cp tests/stdlib_module/module.ace \
+   /tmp/ace_std_module/ambiguous/std/ambiguous_probe/module.ace
+if ! /tmp/ace_std_module/normal/ace -o /tmp/ace_std_module/normal/out \
+     tests/stdlib_module/main.ace || ! /tmp/ace_std_module/normal/out; then
+    echo "FAIL: std directory module should resolve through module.ace"
+    fail=1
+fi
+ambiguous_std=$(/tmp/ace_std_module/ambiguous/ace tests/stdlib_module/ambiguous.ace 2>&1)
+for want in "ambiguous_probe.ace" "ambiguous_probe/module.ace"; do
+    if ! printf '%s\n' "$ambiguous_std" | grep -qF "$want"; then
+        echo "FAIL: ambiguous std diagnostic should name '$want'"
+        fail=1
+    fi
+done
+missing_std=$(/tmp/ace_std_module/normal/ace tests/stdlib_module/missing.ace 2>&1)
+for want in "absent_module_probe.ace" "absent_module_probe/module.ace"; do
+    if ! printf '%s\n' "$missing_std" | grep -qF "$want"; then
+        echo "FAIL: missing std diagnostic should name '$want'"
+        fail=1
+    fi
+done
+
 # emit fixtures: compile to an object, link with the system cc, run, and
 # check the exit code. The expected code rides in a `// expect-exit: N` line.
 if [ -d tests/emit ]; then
