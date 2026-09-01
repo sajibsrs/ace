@@ -1,6 +1,6 @@
 // sys time — selective import and exact signature typing (sema check only;
 // runtime coverage lives in tests/emit/sys_time.ace).
-import time_awake, time_continuous from sys
+import time_awake, time_elapsed from sys
 
 same_mode_difference(): int {
     start: u64 = time_awake()
@@ -13,10 +13,10 @@ same_mode_difference(): int {
 }
 
 main(): int {
-    continuous: u64 = time_continuous()
+    elapsed: u64 = time_elapsed()
     awake: u64 = time_awake()
 
-    if continuous == 0 || awake == 0 {
+    if elapsed == 0 || awake == 0 {
         return 2
     }
     return same_mode_difference()

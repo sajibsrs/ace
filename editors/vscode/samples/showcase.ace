@@ -7,7 +7,7 @@ import sample: "./support.ace"
 import min, max from math
 import (
     time_awake,
-    time_continuous,
+    time_elapsed,
 ) from sys
 
 /* Declarations: built-in types, user-defined types, generics, and constants. */

@@ -13,8 +13,8 @@ wait_us(micros: u32) {
 }
 
 check_nondecreasing(): int {
-    asleep1: u64 = sys.time_continuous()
-    asleep2: u64 = sys.time_continuous()
+    asleep1: u64 = sys.time_elapsed()
+    asleep2: u64 = sys.time_elapsed()
 
     if asleep2 < asleep1 {
         return 1
@@ -28,10 +28,10 @@ check_nondecreasing(): int {
     return 0
 }
 
-check_continuous_advance(): int {
-    before: u64 = sys.time_continuous()
+check_elapsed_advance(): int {
+    before: u64 = sys.time_elapsed()
     wait_us(150_000)
-    after: u64 = sys.time_continuous()
+    after: u64 = sys.time_elapsed()
     elapsed: u64 = after - before
 
     // The 150 ms wait must move the clock; the bounds stay generous for
@@ -77,7 +77,7 @@ main(): int {
     if code != 0 {
         return code
     }
-    code = check_continuous_advance()
+    code = check_elapsed_advance()
     if code != 0 {
         return 100 + code
     }

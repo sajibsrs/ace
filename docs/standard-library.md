@@ -268,17 +268,19 @@ if err != null {
 }
 ```
 
-`time_continuous(): u64` and `time_awake(): u64` read separate monotonic
-clocks in nanoseconds from unspecified origins:
+`time_elapsed(): u64` and `time_awake(): u64` read separate system-wide
+monotonic clocks in nanoseconds. Their origins reset at every boot:
 
-- `time_continuous()` keeps advancing while the system is asleep.
-- `time_awake()` pauses while the system is asleep and advances whenever the
-  system is awake, including while this process is idle or blocked. It is not
-  process CPU time.
+- `time_elapsed()` keeps advancing during system sleep, so differences between
+  its readings measure real elapsed time across sleep and wake cycles.
+- `time_awake()` pauses during system sleep and resumes when the system wakes.
+  It advances whenever the system is awake, regardless of whether this or any
+  other process is running, scheduled, or blocked. It is not process CPU time.
 
-Both clocks are immune to calendar-clock changes. Subtract only readings from
-the same operation — cross-clock differences are meaningless. Neither call
-allocates or can fail.
+Both clocks are immune to calendar-clock changes. Each returned value is a
+clock reading, not a duration by itself; subtract two readings from the same
+operation to obtain elapsed nanoseconds. Cross-clock differences are
+meaningless. Neither call allocates or can fail.
 
 ```ace
 import sys

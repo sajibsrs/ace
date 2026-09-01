@@ -273,7 +273,7 @@ examples; `sandbox.ace` drops its little-endian byte packing for
 
 The boolean-selected `sys.time_mono(sleep)` surface is replaced by two
 parameterless operations whose names state their distinct time domains:
-`time_continuous()` reads Darwin `CLOCK_MONOTONIC_RAW` and advances through
+`time_elapsed()` reads Darwin `CLOCK_MONOTONIC_RAW` and advances through
 system sleep, while `time_awake()` reads `CLOCK_UPTIME_RAW` and pauses during
 system sleep. Both retain the allocation-free `u64` nanosecond result, immunity
 to calendar-clock changes, unspecified origin, no-error contract, and the rule
