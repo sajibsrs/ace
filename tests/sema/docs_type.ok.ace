@@ -66,6 +66,7 @@ main(): int {
     node.next = &node
     left.right = &right
     values: [4]int = [10, 20, 30, 40]
+    zeros: [4]int = [0 : 4]
     middle: []int = values[1..3]
     operation: (int, int): int = add
     state: State = State.running

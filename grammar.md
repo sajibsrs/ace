@@ -154,7 +154,8 @@ arg_list      := arg ("," arg)*
 arg           := ["mut"] expr                             // call-site mutation mark
 
 primary       := literal | ident | "(" expr_list ")" | array_lit | struct_lit
-array_lit     := "[" [expr_list] "]"
+array_lit     := "[" [expr_list | array_repeat] "]"
+array_repeat  := expr ":" int_lit                       // [u8(0) : 12]; exact contextual array length
 struct_lit    := "{" field_init ("," field_init)* "}"     [P]
 field_init    := ident ":" expr
 
@@ -205,3 +206,5 @@ ret_types     := type | "(" type ("," type)+ ")"
 15. **Sequence binders are arity-directed.** One binder is the element value. Two binders are index then element value; the index must be `usize`, and both are fresh per-iteration locals whose mutation cannot change loop progress. Ranges accept exactly one binder. There is no discard binder: use the one-binder form when no index is wanted.
 16. **Labeled continue restarts blocks.** Plain `continue` targets the nearest loop. `continue name` targets only an enclosing labeled block and branches to its beginning; `break name` branches after it. Falling through the block still exits normally. These enclosing-only transfers provide structured repetition without `goto`.
 17. **Tagged-union cases are patterns, not calls.** `Event.key(code: u32)` in a union switch binds an explicitly typed copy of the active payload; the same shape in expression position constructs a value. The scrutinee's union type selects pattern parsing/semantic checking, every variant must appear once unless `else` exists, and inactive payload access has no expression form.
+18. **Array repetition remains explicitly typed by context.** `[value : count]` is an array literal only; `count` is a nonnegative integer literal equal to the expected `[N]T` length. `value` is checked as `T`, evaluated once, then copied to all `N` elements. The form neither infers a declaration type nor allocates.
+19. **Byte sequences compare pairwise.** `==` and `!=` admit every combination of `[N]u8`, `[]u8`, and `string` in either operand order, including `[N]u8` against `[M]u8`. They compare complete lengths and exact stored bytes without conversion, allocation, decoding, or normalization. Arrays and slices of another element type do not receive this mixed-type rule.

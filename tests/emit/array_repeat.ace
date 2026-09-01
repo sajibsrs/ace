@@ -1,0 +1,37 @@
+/* expect-exit: 77 */
+
+Big: struct { a: i64, b: i64, c: i64 }
+
+calls: int
+big_calls: int
+global_numbers: [3]i32 = [5 : 3]
+
+next(): i32 {
+    calls += 1
+    return 7
+}
+
+make_big(): Big {
+    big_calls += 1
+    return Big{ a: 1, b: 2, c: 3 }
+}
+
+take(values: [3]i32): i32 {
+    return values[0] + values[1] + values[2]
+}
+
+make_values(): [3]i32 {
+    return [next() : 3]
+}
+
+main(): int {
+    values: [3]i32 = make_values()
+    values = [next() : 3]
+    bigs: [2]Big = [make_big() : 2]
+    strings: [2]string = ["xy" : 2]
+    argument_sum: i32 = take([next() : 3])
+    return calls + big_calls + int(values[0] + values[1] + values[2]) +
+        int(bigs[0].a + bigs[0].b + bigs[0].c + bigs[1].a + bigs[1].b + bigs[1].c) +
+        int(argument_sum + global_numbers[0] + global_numbers[1] + global_numbers[2]) +
+        int(strings[0].len + strings[1].len)
+}

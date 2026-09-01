@@ -201,9 +201,16 @@ view containing a pointer and length.
 
 ```ace
 values: [4]int = [10, 20, 30, 40]
+zeros: [4]int = [0 : 4]
 middle: []int = values[1..3]
 answer: int = middle[0] + middle[1]
 ```
+
+An array repetition literal `[value : count]` takes its exact array type from
+the surrounding declaration, assignment, return, or parameter. `count` must be
+a nonnegative integer literal equal to the array type's length. `value` is
+evaluated once and copied into every element in index order; no allocation or
+shared element storage is introduced.
 
 Intrinsic `.len` is available on arrays (constant element count), slices
 (stored element count), and strings (stored byte count). It is not added to any

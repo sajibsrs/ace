@@ -167,6 +167,17 @@ for want in \
     fi
 done
 
+array_repeat_errors=$("$ACE" tests/sema/array_repeat_errors.err.ace 2>&1)
+for want in \
+    "array repetition count is 3, expected 4 for [N]T" \
+    "type mismatch: float literal given where i32 expected" \
+    "array literal needs its array type from context"; do
+    if ! printf '%s\n' "$array_repeat_errors" | grep -qF "$want"; then
+        echo "FAIL: missing array repetition diagnostic '$want'"
+        fail=1
+    fi
+done
+
 # emit fixtures: compile to an object, link with the system cc, run, and
 # check the exit code. The expected code rides in a `// expect-exit: N` line.
 if [ -d tests/emit ]; then

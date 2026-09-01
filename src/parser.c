@@ -52,7 +52,7 @@
 //   N_INDEX     a = base; b = index
 //   N_SLICE_E   a = base; b = lo (nullable); c = hi (nullable)
 //   N_FIELD_E   a = base; str = field
-//   N_ARRAYLIT  kids = elements
+//   N_ARRAYLIT  kids = elements; repetition: a = value, ival = count
 //   N_STRUCTLIT a = type expr or NULL (bare literal); kids = N_FIELDINIT (str or NULL; a = value)
 //
 // Contexts: struct literals are not parsed where a `{` would open a block
@@ -665,10 +665,17 @@ static Node* expr_primary(P* p, int ctx) {
         Node* al = nd(p, N_ARRAYLIT);
         NV w = {0};
         if (!at(p, T_RBRACK)) {
-            for (;;) {
-                nv_push(p, &w, expr(p, 0));
-                if (!ate(p, T_COMMA)) break;
-                if (at(p, T_RBRACK)) break;
+            Node* first = expr(p, 0);
+            if (ate(p, T_COLON)) {
+                Token* count = expect(p, T_INT, "nonnegative integer literal repetition count");
+                al->a = first;
+                al->ival = count->ival;
+            } else {
+                nv_push(p, &w, first);
+                while (ate(p, T_COMMA)) {
+                    if (at(p, T_RBRACK)) break;
+                    nv_push(p, &w, expr(p, 0));
+                }
             }
         }
         expect(p, T_RBRACK, "']' to close array literal");
@@ -1674,7 +1681,7 @@ static void pnode(Node* x, int ind) {
     printf("(%s", node_kind_name((NKind)x->kind));
     if (x->str) printf(" '%.*s'", (int)x->len, x->str);
     if (x->kind == N_INT || x->kind == N_CHAR || x->kind == N_BOOL ||
-        x->kind == N_ARRAY_T)
+        x->kind == N_ARRAY_T || (x->kind == N_ARRAYLIT && x->a))
         printf(" %llu", (unsigned long long)x->ival);
     if (x->kind == N_FLOAT) printf(" %g", x->fval);
     if (x->kind == N_BINARY || x->kind == N_UNARY || x->kind == N_ASSIGN ||

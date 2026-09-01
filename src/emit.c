@@ -3074,6 +3074,31 @@ static EV gen_expr(Em* e, Node* x) {
             return (EV){ CLS_INT, tmp_int(e) };
         }
         uint32_t off = temp_slot(e, ty_size(t), ty_align(t));
+        if (x->kind == N_ARRAYLIT && x->a) {
+            int svi = e->vti, svf = e->vtf;
+            EV v = gen_expr(e, x->a);
+            if (t->count > 0) {
+                int dst = 15;
+                if (v.cls != CLS_FP && xreg(v.idx) == dst) dst = 14;
+                frame_addr(e, dst, off);
+                store_value(e, v, dst, 0, t->base);
+                for (uint64_t i = 1; i < t->count; i++) {
+                    frame_addr(e, 15, off);
+                    uint32_t elem_off = (uint32_t)i * ty_size(t->base);
+                    if (elem_off <= 4095) {
+                        ins(e, 0x91000000u | (elem_off << 10) | (15u << 5) | 14u);
+                    } else {
+                        load_imm(e, 1, 14, elem_off);
+                        ins(e, 0x8B000000u | (14u << 16) | (15u << 5) | 14u);
+                    }
+                    copy_mem(e, 14, 0, 15, 0, ty_size(t->base));
+                }
+            }
+            e->vti = svi; e->vtf = svf;
+            int r = tmp_int(e);
+            frame_addr(e, xreg(r), off);
+            return (EV){ CLS_ADDR, r };
+        }
         frame_addr(e, 15, off);
         int positional = x->nkids > 0 && x->kids[0]->str == NULL;
         for (int i = 0; i < x->nkids; i++) {
@@ -4210,6 +4235,12 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
         int positional = v->nkids > 0 && v->kids[0]->str == NULL;
         size_t start = out->len;
         uint32_t cursor = 0;
+        if (v->kind == N_ARRAYLIT && v->a) {
+            for (uint64_t i = 0; i < t->count; i++) {
+                if (!eval_const(e, v->a, t->base, out)) return 0;
+            }
+            return 1;
+        }
         for (int i = 0; i < v->nkids; i++) {
             Node* fi = v->kids[i];
             Node* value = v->kind == N_ARRAYLIT ? fi : fi->a;

@@ -959,6 +959,10 @@ static int accepts_null(SType* t) {
 }
 
 static int coerce(Ck* k, Node* e, SType* want) {
+    if (e->kind == N_ARRAYLIT && want && want->kind == SK_ARRAY) {
+        check_arraylit(k, e, want);
+        return node_ty(e) != T_ERR;
+    }
     if (e->kind == N_IDENT && want && want->kind == SK_FUNC) {
         Sym* head = lookup_val(k, e->str, e->len);
         if (head && head->kind == SYM_FUNC && overload_count(head) > 1) {
@@ -1659,10 +1663,21 @@ static SType* instantiate_generic_func(Ck* k, Sym* gs, Node* index_node) {
 
 static SType* overload_arg_type(Ck* k, Node* arg) {
     Node* raw = arg->kind == N_MUTARG ? arg->a : arg;
+    if (raw->kind == N_ARRAYLIT) return NULL; // candidate parameter supplies its type
     SType* t = expr_type(k, raw);
     if (t == T_UT_INT) return st_prim(P_I64);   // overload-call default: int
     if (t == T_UT_FLOAT) return st_prim(P_F64); // overload-call default: f64
     return t;
+}
+
+static int exact_arg_type(Node* arg, SType* actual, SType* param) {
+    Node* raw = arg->kind == N_MUTARG ? arg->a : arg;
+    if (raw->kind == N_ARRAYLIT) {
+        if (!param || param->kind != SK_ARRAY) return 0;
+        return raw->a ? raw->ival == param->count
+                      : (uint64_t)raw->nkids == param->count;
+    }
+    return same_type(actual, param);
 }
 
 static int call_exact_ft(Node* call, Node* decl, SType* ft, SType** actual) {
@@ -1672,7 +1687,8 @@ static int call_exact_ft(Node* call, Node* decl, SType* ft, SType** actual) {
         int am = call->kids[i]->kind == N_MUTARG;
         int pm = decl && i < decl->nkids &&
                  (decl->kids[i]->flags & F_MUT) != 0;
-        if (am != pm || !same_type(actual[i], ft->params[i])) return 0;
+        if (am != pm || !exact_arg_type(call->kids[i], actual[i], ft->params[i]))
+            return 0;
     }
     return 1;
 }
@@ -2499,7 +2515,7 @@ static SType* check_call(Ck* k, Node* call) {
                 SType* at = overload_arg_type(k, arg);
                 int am = arg->kind == N_MUTARG;
                 int pm = (f->decl->kids[i]->flags & F_MUT) != 0;
-                if (am != pm || !same_type(at, ft->params[i])) exact = 0;
+                if (am != pm || !exact_arg_type(arg, at, ft->params[i])) exact = 0;
             }
             if (!exact && overload_count(head) > 1) continue;
             if (found) {
@@ -3002,6 +3018,16 @@ static void check_arraylit(Ck* k, Node* lit, SType* want) {
         ck_err(k, lit, "array literal used where %s expected", type_name(want));
         return;
     }
+    if (lit->a) {
+        if (lit->ival != want->count) {
+            ck_err(k, lit, "array repetition count is %llu, expected %llu for %s",
+                   (unsigned long long)lit->ival,
+                   (unsigned long long)want->count, type_name(want));
+            return;
+        }
+        coerce(k, lit->a, want->base);
+        return;
+    }
     if ((uint64_t)lit->nkids != want->count) {
         ck_err(k, lit, "array length is %llu, literal has %d elements",
                (unsigned long long)want->count, lit->nkids);
@@ -3373,8 +3399,12 @@ static void init_expr(InitCk* k, Node* e) {
         init_expr(k, e->a); init_expr(k, e->b); return;
     case N_RANGE:
         init_expr(k, e->a); init_expr(k, e->b); init_expr(k, e->c); return;
-    case N_CMPCHAIN: case N_TUPLE_E: case N_ARRAYLIT:
+    case N_CMPCHAIN: case N_TUPLE_E:
         for (int i = 0; i < e->nkids; i++) init_expr(k, e->kids[i]);
+        return;
+    case N_ARRAYLIT:
+        if (e->a) init_expr(k, e->a);
+        else for (int i = 0; i < e->nkids; i++) init_expr(k, e->kids[i]);
         return;
     case N_STRUCTLIT:
         for (int i = 0; i < e->nkids; i++) init_expr(k, e->kids[i]->a);
