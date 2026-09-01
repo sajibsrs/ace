@@ -194,7 +194,7 @@ errno_set(value: i32) {
 to_darwin(address: Address4): DarwinAddress4 {
     port: [2]u8 = [u8(address.port >> 8), u8(address.port)]
     ip: [4]u8 = [address.ip[0], address.ip[1], address.ip[2], address.ip[3]]
-    zero: [8]u8 = [u8(0), u8(0), u8(0), u8(0), u8(0), u8(0), u8(0), u8(0)]
+    zero: [8]u8 = [u8(0) : 8]
 
     return DarwinAddress4 {
         length: u8(SOCKADDR4_SIZE),
@@ -215,7 +215,7 @@ from_darwin(address: DarwinAddress4): Address4 {
 }
 
 zero_address4(): Address4 {
-    ip: [4]u8 = [u8(0), u8(0), u8(0), u8(0)]
+    ip: [4]u8 = [u8(0) : 4]
 
     return Address4 {ip: ip, port: u16(0)}
 }
@@ -296,9 +296,9 @@ listen_darwin(sock: Socket, backlog: usize): Error {
 }
 
 accept_darwin(listener: Socket, mut address: Address4): (Socket, Error) {
-    port: [2]u8 = [u8(0), u8(0)]
-    ip: [4]u8 = [u8(0), u8(0), u8(0), u8(0)]
-    zero: [8]u8 = [u8(0), u8(0), u8(0), u8(0), u8(0), u8(0), u8(0), u8(0)]
+    port: [2]u8 = [u8(0) : 2]
+    ip: [4]u8 = [u8(0) : 4]
+    zero: [8]u8 = [u8(0) : 8]
 
     raw: DarwinAddress4 = DarwinAddress4 {
         length: u8(0), family: u8(0), port: port, ip: ip, zero: zero,
