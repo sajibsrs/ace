@@ -18,7 +18,8 @@ static void usage(void) {
                     "  (default)       full semantic check, no codegen\n"
                     "  --report        print compilation statistics to stderr\n"
                     "  -c              emit a Mach-O arm64 object <base>.o\n"
-                    "  -o NAME         emit + link via the system cc\n"
+                    "  -o NAME         emit + link via the system cc; NAME ending in\n"
+                    "                  .ace compiles that file, naming the output after it\n"
                     "  <file>.o/.a     extra linker inputs, passed to cc in order\n"
                     "  -L DIR          linker library search path\n"
                     "  -l NAME         linker named library\n"
@@ -231,6 +232,23 @@ int main(int argc, char** argv) {
             fprintf(stderr, "ace: unrecognized input '%s' (expected .ace, .o, or .a)\n", a);
             exit(2);
         }
+    }
+    // `-o <file>.ace` compiles that file in place: the executable is the stem.
+    if (out_name && has_suffix(out_name, ".ace")) {
+        size_t stem_len = strlen(out_name) - 4;
+        if (stem_len == 0)
+            cli_error("-o <file.ace> requires a name before '.ace'");
+        char* stem = malloc(stem_len + 1);
+        if (!stem) {
+            fprintf(stderr, "ace: out of memory\n");
+            exit(1);
+        }
+        memcpy(stem, out_name, stem_len);
+        stem[stem_len] = 0;
+        if (path && strcmp(path, out_name) != 0)
+            cli_error("only one root .ace source may be compiled");
+        path = out_name;
+        out_name = stem;
     }
     if (!path) usage();
     if (link_args.len > 0 && opt_c)

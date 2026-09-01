@@ -439,6 +439,23 @@ if [ -d tests/driver ]; then
         echo "FAIL: shell metacharacters in names exited $got, want 7"
         fail=1
     fi
+    # -o FILE.ace compiles that file in place: executable and object take the stem
+    printf 'main(): int {\n    return 5\n}\n' > /tmp/ace_driver/stem_test.ace
+    if ! "$ACE" -o /tmp/ace_driver/stem_test.ace >/dev/null 2>/tmp/ace_test_errs; then
+        echo "FAIL: -o FILE.ace in-place compile failed"
+        cat /tmp/ace_test_errs
+        fail=1
+    elif ! [ -x /tmp/ace_driver/stem_test ] || ! [ -f /tmp/ace_driver/stem_test.o ]; then
+        echo "FAIL: -o FILE.ace did not produce the stem executable and object"
+        fail=1
+    else
+        /tmp/ace_driver/stem_test
+        got=$?
+        if [ "$got" -ne 5 ]; then
+            echo "FAIL: -o FILE.ace executable exited $got, want 5"
+            fail=1
+        fi
+    fi
     # Bidirectional C ABI oracle: clang owns the foreign half and calls Ace
     # exports; Ace calls the same C object through extern declarations.
     if ! "$ACE" -o /tmp/ace_driver/app_abi tests/driver/abi.ace \
@@ -484,6 +501,10 @@ if [ -d tests/driver ]; then
         tests/driver/main_obj.ace -o -l helper
     driver_diag "ace: only one root .ace source may be compiled" \
         -o x tests/driver/main_obj.ace tests/driver/main_fw.ace
+    driver_diag "ace: only one root .ace source may be compiled" \
+        -o tests/driver/main_obj.ace tests/driver/main_fw.ace
+    driver_diag "ace: -o <file.ace> requires a name before '.ace'" \
+        -o .ace
     driver_diag "ace: additional link inputs cannot be used with -c" \
         -c tests/driver/main_obj.ace /tmp/ace_driver/helper_raw.o
     driver_diag "ace: additional link inputs cannot be used with -c" \

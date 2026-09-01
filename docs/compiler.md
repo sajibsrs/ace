@@ -6,12 +6,16 @@ The Ace compiler checks one root source file and recursively loads its imports.
 ace program.ace
 ace -c program.ace
 ace -o program program.ace
+ace -o program.ace
 ```
 
 The default mode performs parsing, import resolution, and semantic checking
 without emitting code. `-c` writes a Mach-O arm64 object beside the root source.
 `-o NAME` emits an intermediate object and invokes the system C compiler driver
-to link `NAME`.
+to link `NAME`. When `NAME` ends in `.ace`, it names the root source itself:
+that file is compiled and the executable and intermediate object are named after
+the file without the suffix, so `-o program.ace` links `program` and leaves
+`program.o` beside it.
 
 ## Linking external code
 
