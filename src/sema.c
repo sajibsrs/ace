@@ -977,6 +977,119 @@ static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
     }
 }
 
+/*
+ * "f[int, string]" for diagnostics — bounded ring like type_name.
+ */
+static const char* spec_tuple_name(SType** args, int nargs) {
+    static char bufs[4][256];
+    static int bi;
+    char* b = bufs[bi = (bi + 1) & 3];
+    size_t o = 0;
+    b[o++] = '[';
+    for (int i = 0; i < nargs; i++) {
+        if (o + 2 >= sizeof bufs[0] - 1) break;
+        if (i) {
+            b[o++] = ',';
+            b[o++] = ' ';
+        }
+        const char* tn = type_name(args[i]);
+        size_t n = strlen(tn);
+        if (o + n + 2 >= sizeof bufs[0] - 1) {
+            b[o++] = '.';
+            b[o++] = '.';
+            b[o++] = '.';
+            break;
+        }
+        memcpy(b + o, tn, n);
+        o += n;
+    }
+    b[o++] = ']';
+    b[o] = 0;
+    return b;
+}
+
+// Generics #10: a specialization's parameters, 'mut' positions, and return
+// must equal the substituted generic signature — checked at declaration
+// against the expected signature, never discovered at a call.
+static int spec_conforms(SType* sub, Node* gdecl, SType* ft, Node* fdecl) {
+    if (!sub || sub->kind != SK_FUNC || !ft || ft->kind != SK_FUNC) return 0;
+    if (sub->nparams != ft->nparams) return 0;
+    if (!same_param_signature(sub, gdecl, ft, fdecl)) return 0;
+    if ((sub->ret == NULL) != (ft->ret == NULL)) return 0;
+    return !sub->ret || same_type(sub->ret, ft->ret);
+}
+
+/*
+ * Specialization registration (Generics #9–12). The name already declares a
+ * generic, so these brackets are specialization type arguments: bare named
+ * types, supplied positionally. The specialization is an ordinary, indepen-
+ * dently checked function binding to exactly one generic overload by substi-
+ * tuted-signature conformance; duplicates for one exact tuple on one overload
+ * are errors.
+ */
+static Sym* declare_specialization(Ck* k, Node* f, Sym* head) {
+    if (f->flags & F_SPECIALIZED) {
+        ck_err(k, f,
+               "a specialization provides its own body — 'specialized' marks only a generic template");
+        return NULL;
+    }
+    int nargs = f->c->nkids;
+    SType** targs = (SType**)arena_alloc(
+        (size_t)(nargs ? nargs : 1) * sizeof(SType*));
+    for (int i = 0; i < nargs; i++)
+        targs[i] = build_type(k, f->c->kids[i]);
+    SType* ft = build_func_type(k, f, targs, nargs);
+    Sym* bind = NULL;
+    int nbind = 0;
+    for (Sym* old = head; old; old = old->overload) {
+        if (!old->is_generic || !old->decl->c || old->decl->c->nkids != nargs)
+            continue;
+        SType* sub = build_func_type(k, old->decl, targs, nargs);
+        if (!spec_conforms(sub, old->decl, ft, f)) continue;
+        nbind++;
+        bind = old;
+    }
+    if (!bind) {
+        ck_err(k, f,
+               "specialization '%.*s%s' does not conform to any generic overload of '%.*s' — parameters, 'mut' positions, and return type must equal the substituted generic signature with every type parameter supplied",
+               (int)f->len, f->str, spec_tuple_name(targs, nargs),
+               (int)f->len, f->str);
+        return NULL;
+    }
+    if (nbind > 1) {
+        ck_err(k, f,
+               "specialization '%.*s%s' conforms to more than one generic overload of '%.*s'",
+               (int)f->len, f->str, spec_tuple_name(targs, nargs),
+               (int)f->len, f->str);
+        return NULL;
+    }
+    for (Sym* sp = bind->specs; sp; sp = sp->spec_next) {
+        int same = sp->spec_nargs == nargs;
+        for (int i = 0; i < nargs && same; i++)
+            same = same_type(sp->spec_args[i], targs[i]);
+        if (same) {
+            ck_err(k, f,
+                   "duplicate specialization '%.*s%s' — one exact type-argument tuple per generic overload (first declared at line %d)",
+                   (int)f->len, f->str, spec_tuple_name(targs, nargs),
+                   sp->decl->line);
+            return NULL;
+        }
+    }
+    Sym* s = sym_new(SYM_FUNC, f->str, f->len);
+    s->decl = f;
+    s->type = ft;
+    s->is_pub = (f->flags & F_PUB) != 0;
+    s->spec_args = targs;
+    s->spec_nargs = nargs;
+    s->spec_next = bind->specs;
+    bind->specs = s;
+    f->sym = s;
+    Sym* tail = head;
+    while (tail->overload) tail = tail->overload;
+    tail->overload = s;
+    return s;
+}
+
 static Sym* declare_func(Ck* k, Node* f, int is_extern) {
     uint32_t key_len = f->len;
     const char* key = f->str;
@@ -996,6 +1109,44 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
                           (old->decl && (old->decl->flags & F_EXPO));
     if (head && (is_extern || old_c_boundary || (f->flags & F_EXPO))) {
         ck_err(k, f, "C-boundary function '%.*s' cannot be overloaded",
+               (int)f->len, f->str);
+        return NULL;
+    }
+    /*
+     * Ordered bracket interpretation (Generics #12): brackets whose iden-
+     * tifiers name existing types are specialization type arguments and must
+     * follow a generic declaration of this name; identifiers naming no
+     * existing type start a fresh type-parameter list (a further generic
+     * overload). Existing-type names with no preceding generic are a compile
+     * error — never a silent new generic. Type-owned methods keep their
+     * owner-parameter shape and never specialize here.
+     */
+    if (!is_extern && !(f->flags & (F_EXPO | F_METHOD)) && f->c) {
+        Node* typed_ident = NULL;
+        for (int i = 0; i < f->c->nkids && !typed_ident; i++) {
+            Node* id = f->c->kids[i];
+            if (prim_by_name(id->str, id->len) ||
+                lookup_type(k, id->str, id->len))
+                typed_ident = id;
+        }
+        if (typed_ident) {
+            int has_generic = 0;
+            for (Sym* old = head; old; old = old->overload)
+                if (old->is_generic) {
+                    has_generic = 1;
+                    break;
+                }
+            if (has_generic) return declare_specialization(k, f, head);
+            ck_err(k, f,
+                   "brackets after '%.*s' name the existing type '%.*s' — a specialization must follow a generic declaration of '%.*s'",
+                   (int)f->len, f->str, (int)typed_ident->len, typed_ident->str,
+                   (int)f->len, f->str);
+            return NULL;
+        }
+    }
+    if ((f->flags & F_SPECIALIZED) && !f->c) {
+        ck_err(k, f,
+               "'specialized' marks a generic template; '%.*s' declares no type parameters",
                (int)f->len, f->str);
         return NULL;
     }
@@ -1789,6 +1940,11 @@ static SType* instantiate_generic_func_args(Ck* k, Sym* gs, SType** args,
     inst->result = ft;
     inst->next = *head;
     *head = inst;
+    if (f->flags & F_SPECIALIZED) {
+        // no default body: the no-default call-site check has already fired
+        k->tnames = sn; k->ttypes = st; k->nsub = ns;
+        return ft;
+    }
     check_func_body(k, f); // stamping: body checked once per instantiation
     k->tnames = sn; k->ttypes = st; k->nsub = ns;
     return ft;
@@ -2101,90 +2257,6 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
 }
 
 /*
- * The concrete private str helper behind a parse[T] instantiation: the
- * canonical module prefix before "parse" plus the per-type suffix, mirroring
- * the fmt.printf helper lookup.
- */
-static Sym* parse_helper(Ck* k, Sym* parse_fn, const char* suffix, Node* at) {
-    if (!parse_fn || parse_fn->len < 5) return NULL;
-    uint32_t prefix = parse_fn->len - 5; // canonical module prefix before "parse"
-    char name[512];
-    snprintf(name, sizeof name, "%.*sparse_%s", (int)prefix,
-             parse_fn->name, suffix);
-    Sym* s = lookup_val(k, name, (uint32_t)strlen(name));
-    if (!s || s->kind != SYM_FUNC) {
-        ck_err(k, at, "internal str.parse helper '%s' is missing", suffix);
-        return NULL;
-    }
-    return s;
-}
-
-/*
- * str.parse[T] is compiler-backed like mem's typed allocation: the
- * instantiation is checked here against the carved type set and lowered by
- * the emitter onto the concrete helper named in call->aux. The default form
- * admits exactly int, uint, usize, f32, and f64; the radix form exactly the
- * three integer types.
- */
-static SType* check_str_parse_call(Ck* k, Node* call, Sym* fn,
-                                   SType* elem, int intrinsic) {
-    Node* callee = call->a;
-    callee->sym = fn;
-    callee->a->sym = fn;
-    call->sym = fn;
-    call->ival = (uint64_t)intrinsic;
-    const char* what = intrinsic == BI_STR_PARSE ? "str.parse[T]" :
-                                                   "str.parse[T](text, radix)";
-    if (!elem || elem->kind == SK_ERR) return T_ERR;
-    if (elem->kind == SK_TYPEPARAM) {
-        ck_err(k, callee, "%s needs a concrete element type at the instantiation", what);
-        return T_ERR;
-    }
-    int form = -1;
-    if (elem == st_prim(P_I64)) form = 0;
-    else if (elem == st_prim(P_U64)) form = 1;
-    else if (elem == st_prim(P_USIZE)) form = 2;
-    else if (intrinsic == BI_STR_PARSE && elem == st_prim(P_F32)) form = 3;
-    else if (intrinsic == BI_STR_PARSE && elem == st_prim(P_F64)) form = 4;
-    static const char* SUFFIX[5] = {
-        "int_result", "uint_result", "usize_result", "f32_result", "f64_result",
-    };
-    if (form < 0) {
-        ck_err(k, callee, "%s supports exactly int, uint, usize%s — not %s",
-               what, intrinsic == BI_STR_PARSE ? ", f32, and f64" : "",
-               type_name(elem));
-        return T_ERR;
-    }
-    Sym* helper = parse_helper(k, fn, SUFFIX[form], call);
-    if (!helper) return T_ERR;
-    int want = intrinsic == BI_STR_PARSE ? 1 : 2;
-    if (call->nkids != want) {
-        ck_err(k, call, "%s takes %s", what,
-               want == 1 ? "exactly the text" : "exactly the text and a radix");
-        return T_ERR;
-    }
-    for (int i = 0; i < call->nkids; i++) {
-        Node* arg = call->kids[i];
-        if (arg->kind == N_MUTARG) {
-            ck_err(k, arg, "'mut' marks mut parameters; %s arguments are read-only", what);
-            return T_ERR;
-        }
-    }
-    coerce(k, call->kids[0], st_prim(P_STRING));
-    if (want == 2) coerce(k, call->kids[1], st_prim(P_U8));
-    SType* tup = st_new(SK_TUPLE);
-    tup->nfields = 2;
-    tup->fields = (SField*)arena_alloc(2 * sizeof(SField));
-    tup->fields[0].name = NULL;
-    tup->fields[0].t = elem;
-    tup->fields[1].name = NULL;
-    tup->fields[1].t = st_prim(P_BOOL);
-    layout(tup);
-    call->aux = helper; // emitter: the concrete lowering target
-    return tup;
-}
-
-/*
  * Typed allocation intrinsics: mem.alloc[T](count): []T,
  * mem.realloc[T](data, new_count): []T, and mem.release[T](mut data).
  * They ride the ordinary explicit generic-instantiation path, never stamp a
@@ -2275,18 +2347,31 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn,
     return T_VOID;
 }
 
-static Sym* printf_helper(Ck* k, Sym* printf_fn, const char* suffix, Node* at) {
+/*
+ * The checked printf lowering resolves each plan part's helper through exact-
+ * type specialization lookup (Generics #10): the helper shapes are 'special-
+ * ized' generics in std fmt — print_counted[T](value: T): int, print_preci-
+ * sion[T](value: T, precision: usize): int, and print_hex[T](value: T, upper-
+ * case: bool): int — and the format interpreter's concrete argument type
+ * selects the specialization whose type-argument tuple equals it. No name
+ * composition remains.
+ */
+static Sym* printf_helper(Ck* k, Sym* printf_fn, const char* generic,
+                          SType** targs, int nargs, Node* at) {
     if (!printf_fn || printf_fn->len < 6) return NULL;
     uint32_t prefix = printf_fn->len - 6; // canonical module prefix before "printf"
     char name[512];
-    snprintf(name, sizeof name, "%.*sprintf_%s", (int)prefix,
-             printf_fn->name, suffix);
-    Sym* s = lookup_val(k, name, (uint32_t)strlen(name));
-    if (!s || s->kind != SYM_FUNC) {
-        ck_err(k, at, "internal fmt.printf helper '%s' is missing", suffix);
-        return NULL;
+    snprintf(name, sizeof name, "%.*s%s", (int)prefix, printf_fn->name, generic);
+    for (Sym* s = lookup_val(k, name, (uint32_t)strlen(name)); s; s = s->overload) {
+        if (!s->spec_args || s->spec_nargs != nargs) continue;
+        int same = 1;
+        for (int i = 0; i < nargs && same; i++)
+            same = same_type(s->spec_args[i], targs[i]);
+        if (same) return s;
     }
-    return s;
+    ck_err(k, at, "internal fmt.printf helper '%s%s' has no specialization",
+           name, spec_tuple_name(targs, nargs));
+    return NULL;
 }
 
 static void printf_add_part(PrintfPlan* plan, int* cap, PrintfPart part) {
@@ -2487,8 +2572,11 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
                "extra fmt.printf argument %d is not consumed by the format",
                expected_count + 1);
 
-    Sym* text_helper = printf_helper(k, fn, "text", call);
-    Sym* byte_helper = printf_helper(k, fn, "byte", call);
+    SType* counted_arg[1];
+    counted_arg[0] = st_prim(P_STRING);
+    Sym* text_helper = printf_helper(k, fn, "print_counted", counted_arg, 1, call);
+    counted_arg[0] = st_prim(P_U8);
+    Sym* byte_helper = printf_helper(k, fn, "print_counted", counted_arg, 1, call);
     for (int i = 0; i < plan->nparts; i++) {
         PrintfPart* part = &plan->parts[i];
         if (part->kind == PF_TEXT) { part->helper = text_helper; continue; }
@@ -2508,18 +2596,18 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
                    got ? type_name(got) : "unknown");
             continue;
         }
-        const char* helper = NULL;
+        const char* generic = "print_counted";
+        SType* helper_arg[1] = { actual };
         switch (part->kind) {
-        case PF_SIGNED: helper = "signed"; break;
-        case PF_UNSIGNED: helper = actual->prim == P_USIZE ? "usize" : "unsigned"; break;
         case PF_HEX_LOWER: case PF_HEX_UPPER:
-            helper = actual->prim == P_USIZE ? "hex_usize" : "hex_unsigned"; break;
-        case PF_FIXED: helper = actual->prim == P_F32 ? "fixed_f32" : "fixed_f64"; break;
-        case PF_STRING: helper = "text"; break;
-        case PF_BYTE: helper = "byte"; break;
+            generic = "print_hex";
+            break;
+        case PF_FIXED:
+            generic = "print_precision";
+            break;
         default: break;
         }
-        part->helper = printf_helper(k, fn, helper, call);
+        part->helper = printf_helper(k, fn, generic, helper_arg, 1, call);
     }
     for (int i = expected_count + 1; i < call->nkids; i++) {
         Node* arg = call->kids[i]->kind == N_MUTARG ? call->kids[i]->a : call->kids[i];
@@ -2707,6 +2795,36 @@ static SType* check_call(Ck* k, Node* call) {
                 (size_t)(call->nkids ? call->nkids : 1) * sizeof(SType*));
             for (int i = 0; i < call->nkids; i++)
                 actual[i] = overload_arg_type(k, call->kids[i]);
+            // Generics #10: selection is exact — an instantiation resolves to
+            // the specialization whose type-argument tuple equals the written
+            // arguments, ahead of template stamping.
+            Sym* spec = NULL;
+            Sym* sole_spec = NULL;
+            int nspec = 0;
+            for (Sym* s = head; s; s = s->overload) {
+                if (!s->spec_args || s->spec_nargs != nargs) continue;
+                int same = 1;
+                for (int i = 0; i < nargs && same; i++)
+                    same = same_type(s->spec_args[i], targs[i]);
+                if (!same) continue;
+                nspec++;
+                sole_spec = s;
+                if (!call_exact_ft(call, s->decl, s->type, actual)) continue;
+                if (spec) {
+                    ck_err(k, call,
+                           "ambiguous call to specialized overload '%.*s'",
+                           (int)callee->a->len, callee->a->str);
+                    return T_ERR;
+                }
+                spec = s;
+            }
+            if (!spec && nspec == 1 &&
+                sole_spec->type->nparams == call->nkids)
+                spec = sole_spec; // sole tuple match: literals coerce below
+            if (spec) {
+                finish_direct_call(k, call, spec);
+                return spec->type->ret;
+            }
             Sym* chosen = NULL;
             Sym* sole = NULL;
             int eligible = 0;
@@ -2730,18 +2848,24 @@ static SType* check_call(Ck* k, Node* call) {
                        (int)callee->a->len, callee->a->str);
                 return T_ERR;
             }
+            // Generics #13: a 'specialized' template has no default body, so
+            // an unmatched type tuple errors at the call site naming the
+            // missing type tuple and the declaration.
+            if (chosen->decl->flags & F_SPECIALIZED) {
+                ck_err(k, call,
+                       "call '%.*s%s' matches no specialization — '%.*s' is declared 'specialized' (no default body) at line %d",
+                       (int)callee->a->len, callee->a->str,
+                       spec_tuple_name(targs, nargs),
+                       (int)callee->a->len, callee->a->str,
+                       chosen->decl->line);
+                return T_ERR;
+            }
             // typed allocation intrinsics: checked and lowered directly, no stamp
             if (chosen->decl->ival == BI_MEM_ALLOC_T ||
                 chosen->decl->ival == BI_MEM_REALLOC_T ||
                 chosen->decl->ival == BI_MEM_RELEASE_T)
                 return check_memory_generic_call(k, call, chosen, targs[0],
                                                  (int)chosen->decl->ival);
-            // str.parse[T]: checked against the carved type set here, lowered
-            // by the emitter onto the concrete per-type helper
-            if (chosen->decl->ival == BI_STR_PARSE ||
-                chosen->decl->ival == BI_STR_PARSE_RADIX)
-                return check_str_parse_call(k, call, chosen, targs[0],
-                                            (int)chosen->decl->ival);
             SType* ft = instantiate_generic_func(k, chosen, callee);
             if (ft->kind == SK_ERR) return T_ERR;
             check_args(k, call, ft, 0);
@@ -4490,6 +4614,7 @@ STypeInst* sema_insts(Node* generic_decl) {
 void sema_stamp_body(Node* f, SType** args, int nargs) {
     Node* tp = f->c;
     if (!tp || tp->nkids != nargs) return;
+    if (f->flags & F_SPECIALIZED) return; // no default body: nothing to stamp
     Ck k = {0};
     k.d = &g_dummy_diag;
     k.scope = g_file_scope;
@@ -4697,6 +4822,18 @@ int sema_check(Node* file, Diag* d) {
         default:
             break;
         }
+    }
+
+    // Generics #13: a 'specialized' template with zero specializations in the
+    // compiled program is a declaration error.
+    for (int i = 0; i < file->nkids; i++) {
+        Node* n = file->kids[i];
+        if (n->kind != N_FUNC || !(n->flags & F_SPECIALIZED)) continue;
+        Sym* s = node_sym(n);
+        if (s && s->is_generic && !s->specs)
+            ck_err(&k, n,
+                   "generic '%.*s' is marked 'specialized' but no specialization is declared in this program",
+                   (int)n->len, n->str);
     }
 
     for (Sym* s = file_scope.types; s; s = s->next)

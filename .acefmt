@@ -30,6 +30,11 @@ continuation-alignment = open-delimiter
 # an extern block may precede the public surface because it declares the
 # platform boundary rather than an Ace module member. Keep overloads together.
 public-before-private = always
+# The generic specialization marker terminates its declaration on the
+# signature line — `pub parse[T](text: string): (T, bool) specialized` — with
+# no body braces to follow; it never sits on its own line (spec.md Generics
+# #13). Specializations themselves carry ordinary bodies.
+specialized-marker = line-final
 
 [blank-lines]
 # One blank line before every construct with a { ... } body, at every nesting

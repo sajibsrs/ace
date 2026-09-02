@@ -1,0 +1,10 @@
+/* Brackets naming existing types with no preceding generic are an error —
+ * never a silent fresh type-parameter list (Generics #12). */
+
+main(): int {
+    return 0
+}
+
+pick[int](a: int, b: int): int {
+    return b
+}

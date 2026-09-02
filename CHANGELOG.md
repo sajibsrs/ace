@@ -333,6 +333,99 @@ with overloads kept together. `std/str.ace` is organized accordingly, and its
 runtime fixture retains the long conversion cases through in-program checks
 without an overlong expected-output directive.
 
+### First-class generic function specialization
+
+Generic specialization (Generics #9–14) lands as an ordinary user feature —
+nothing migrates yet. The lexer gains the `specialized` keyword; the parser
+gains no new bracket production (`try_tparams` already captures idents-only
+brackets on `func_decl`), and `specialized` after the return clause sets a
+no-body template flag (the lexer's newline rule treats the keyword as
+statement-ending). Sema interprets the shared bracket production by type shape:
+brackets whose identifiers resolve to declared types are specialization
+arguments and must follow a declared generic of that name (clean error
+otherwise, never a silent fresh parameter list); identifiers resolving to no
+declared type start a fresh type-parameter list, so one name keeps the ability
+to declare several generic overloads before any specialization (`str.parse`
+does). A specialization registers as an ordinary independently checked
+function — concrete substituted signature, non-generic symbol — bound to
+exactly one generic overload by substituted-signature conformance (parameters,
+`mut` positions, return; all type parameters positional); duplicates for one
+exact tuple on one overload are declaration errors, as is `specialized` on a
+specialization or a bracketless function. Bracketed calls exact-match a bound
+specialization's type-argument tuple ahead of template stamping and lower as
+ordinary direct calls; a chosen template marked `specialized` with no matching
+tuple errors at the call site naming the missing type tuple and the
+declaration, and end-of-file rejects a `specialized` generic with zero
+specializations in the compiled program. The emitter routes specialization
+declarations through ordinary function emission and tags their symbol mangling
+with the exact type-argument tuple under an `s` marker (template stamps keep
+`g`), so a specialization can never collide with a same-params overload or a
+template stamp of the same tuple. Coverage: `tests/emit/spec_wins_over_template.ace`
+and `tests/emit/specialized_template.ace` (runtime selection, template
+fallback, no-default dispatch) plus `tests/emit/spec_stamp_before_spec.ace`
+(a stamp created before its specialization is declared keeps the template
+body; the `g`/`s` symbols coexist and later calls resolve to the spec),
+`tests/sema/spec_*.err.ace` with run.sh
+diagnostic greps (conformance, duplicate, missing-generic, unspecialized call,
+zero specializations), a parser fixture, and compiler-checked documentation
+examples. `docs/function.md` documents the feature, `docs/standard-library.md`
+points at it from the compiler-backed `str.parse[T]` surface, and grammar
+note 23 records the implemented bracket interpretation. Normal and sanitizer
+suites pass.
+
+### `str.parse[T]` migrated onto generic specialization
+
+Both `std/str.ace` `parse[T]` overloads are now declared `specialized`, and the
+private `parse_*_result` helpers became their complete callable surface: eight
+ordinary `pub` specializations — `parse[int]`, `parse[uint]`, and
+`parse[usize]` on the radix overload (the `usize` form delegating to the
+`uint` body as before), the three default integer forms forwarding at decimal
+radix 10, and the `f32`/`f64` forms — selected by exact type-argument match
+with no compiler involvement beyond the generic machinery. The composed-lookup
+path is deleted outright: `check_str_parse_call`, `parse_helper`, and the
+per-type `SUFFIX` table with its call-site arm in sema, `mark_str_intrinsics`
+in the module loader, `gen_str_parse_builtin` and its dispatch arm in the
+emitter, and the `BI_STR_PARSE`/`BI_STR_PARSE_RADIX` markers. Caller-visible
+parse behavior is unchanged — every `tests/emit/str_parse.ace` case passes
+unmodified — and unsupported type arguments now reject through the Generics
+#13 call-site diagnostic naming the missing tuple and the declaration
+(`run.sh` greps updated to the new text). One selection refinement the
+migration forced: the sole-type-tuple-match fallback at calls now requires the
+candidate's arity to match the call, so a wrong-arity call on a matched tuple
+falls through to the template path instead of short-circuiting Generics #13
+with a bare arity error; the fallback's literal-coercion purpose (matching
+arity, non-exact literal types) is preserved. `docs/standard-library.md` and
+`docs/function.md` record that the parse surface is specialization-implemented.
+Normal and sanitizer suites pass.
+
+### `fmt.printf` dispatch migrated onto generic specialization
+
+The nine private `printf_*` helpers in `std/fmt.ace` are now the complete
+specialization surface of three private per-shape generics declared
+`specialized` — `print_counted[T](value: T): int` (`string`, `u8`, `int`,
+`uint`, `usize`), `print_precision[T](value: T, precision: usize): int`
+(`f32`, `f64`), and `print_hex[T](value: T, uppercase: bool): int` (`uint`,
+`usize`) — each an ordinary independently checked body, with the bodies
+unchanged byte-for-byte apart from the internal calls that now go through
+bracketed specializations (`print_counted[string]("nan")` and the `f32` →
+`f64` precision delegation). Sema's `printf_helper` no longer splices helper
+names off the canonical `fmt.printf` spelling: it composes only the module
+prefix plus the generic name, then walks the overload chain for the
+specialization whose type-argument tuple exactly equals the format
+interpreter's concrete argument type (Generics #10), erroring if a shape's
+specialization is absent. `check_printf_call`'s format interpreter is
+untouched — the same parts, precision handling, counts, and diagnostics — and
+`emit_printf_helper`'s call sequence is untouched; the one mechanical
+adjustment is its `fn_mangle` invocation, which now passes the helper
+symbol's `spec_args` so the call target spelling carries the same `s`-tagged
+type-argument tuple as the emitted specialization definition (the identical
+pattern the ordinary specialization call path already used). Caller-visible
+printf behavior is unchanged: the full printf battery (`tests/emit/printf*.ace`,
+`tests/sema/printf*.ace`, the docs fixture) passes unmodified, and object
+inspection shows the helpers emitted under exact-tuple `s` symbols with no C
+`printf`, variadic call, or allocator. `docs/standard-library.md` records the
+specialization-implemented lowering. Normal and sanitizer suites pass.
+
 ## Still open after these chunks
 
 Checked/release build modes, then checked allocation tracking; nonblocking echo and multi-client chat are the next networking proofs over the implemented `poll` readiness queue (see the `spec.md` Decision Queue).

@@ -1,0 +1,17 @@
+/* Duplicate specializations for one exact tuple on one generic overload. */
+
+pick[T](a: T, b: T): T {
+    return a
+}
+
+pick[int](a: int, b: int): int {
+    return b
+}
+
+pick[int](a: int, b: int): int {
+    return a
+}
+
+main(): int {
+    return pick[int](1, 2)
+}

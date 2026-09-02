@@ -1,0 +1,13 @@
+/* Calling a 'specialized' template with an unmatched type tuple errors at the
+ * call site, naming the missing type and the declaration. */
+
+load[T](text: string): (T, bool) specialized
+
+load[int](text: string): (int, bool) {
+    return (7, true)
+}
+
+main(): int {
+    x: (f64, bool) = load[f64]("2.5")
+    return 0
+}

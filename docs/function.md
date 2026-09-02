@@ -159,6 +159,68 @@ Generic functions may be overloaded. The written type arguments are substituted
 first, followed by the same exact argument matching used for ordinary overloads.
 Each used type tuple emits a specialized function body.
 
+## Generic specialization
+
+A generic function may be followed by same-name specializations whose brackets
+name concrete types. A specialization is an ordinary, independently checked
+function — not a template instance — and a call whose written type-argument
+tuple exactly equals a specialization's tuple resolves to it ahead of the
+template stamp.
+
+```ace
+pick[T](a: T, b: T): T {
+    return a
+}
+
+pick[int](a: int, b: int): int {
+    return b
+}
+
+main(): int {
+    if pick[int](1, 2) != 2 {
+        return 1 // the specialization body runs for [int]
+    }
+    if pick[string]("a", "b")[0] != 'a' {
+        return 2 // every other tuple stamps the template
+    }
+    return 0
+}
+```
+
+Specialization brackets hold bare named types only, supplied positionally — all
+of them, with no partial specialization. A specialization must appear after its
+generic: brackets naming existing types with no preceding generic of that name
+are a compile error, never a silent new generic. Each generic overload of a
+name specializes independently.
+
+The declaration is checked against the generic at declaration time: the
+specialization's parameters, `mut` positions, and return type must equal the
+substituted generic signature. Duplicate specializations for one exact tuple on
+one generic overload are a declaration error.
+
+The word `specialized` after the return clause marks a template with no default
+body. Calling it with an unmatched type tuple is a call-site error naming the
+missing type and the declaration, and a `specialized` generic with zero
+specializations in the compiled program is a declaration error.
+
+```ace
+count_of[T](v: T): int specialized
+
+count_of[int](v: int): int {
+    return 8
+}
+
+count_of[f64](v: f64): int {
+    return 4
+}
+```
+
+Specializations currently live in the generic's module and apply to free
+functions. Struct generics are untouched, and type-owned generic methods do not
+specialize yet. The standard library uses the feature directly: both `str`
+`parse[T]` overloads are `specialized` templates whose entire callable surface
+is per-type specializations (see [str](standard-library.md#str)).
+
 ## Declaration order and forward calls
 
 Names normally follow declaration-before-use. Top-level function calls are the

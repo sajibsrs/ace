@@ -407,29 +407,41 @@ pub print(value: f32): int {
     return format_float(negative, dv, count, decpt)
 }
 
-// Private direct targets selected by the compiler's checked printf lowering.
-printf_text(text: string): int {
+/*
+ * The compiler's checked printf lowering resolves its helpers through exact-
+ * type specialization lookup: each shape below is a specialized template, and
+ * the format interpreter's concrete argument type selects the specialization
+ * with the equal type-argument tuple. Helpers use fixed stack storage and the
+ * shared partial-write retry path; no runtime dispatch or metadata exists.
+ */
+print_counted[T](value: T): int specialized
+
+print_precision[T](value: T, precision: usize): int specialized
+
+print_hex[T](value: T, uppercase: bool): int specialized
+
+print_counted[string](text: string): int {
     return print(text)
 }
 
-printf_signed(value: int): int {
+print_counted[int](value: int): int {
     return print(value)
 }
 
-printf_unsigned(value: uint): int {
+print_counted[uint](value: uint): int {
     return print(value)
 }
 
-printf_usize(value: usize): int {
+print_counted[usize](value: usize): int {
     return print(value)
 }
 
-printf_byte(value: u8): int {
+print_counted[u8](value: u8): int {
     out: [1]u8 = [value]
     return write_bytes(out[0..1])
 }
 
-printf_hex_unsigned(value: uint, uppercase: bool): int {
+print_hex[uint](value: uint, uppercase: bool): int {
     out: [16]u8
     at: int = 16
     remaining: uint = value
@@ -454,7 +466,7 @@ printf_hex_unsigned(value: uint, uppercase: bool): int {
     return write_bytes(out[at..16])
 }
 
-printf_hex_usize(value: usize, uppercase: bool): int {
+print_hex[usize](value: usize, uppercase: bool): int {
     out: [16]u8
     at: int = 16
     remaining: usize = value
@@ -485,19 +497,19 @@ printf_hex_usize(value: usize, uppercase: bool): int {
  * internal storage. Precision zero is rounded explicitly to nearest/even
  * because Darwin fcvt deliberately returns no digits for ndigit == 0.
  */
-printf_fixed_f64(value: f64, precision: usize): int {
+print_precision[f64](value: f64, precision: usize): int {
     zero: f64 = 0.0
     one: f64 = 1.0
 
     if value != value {
-        return printf_text("nan")
+        return print_counted[string]("nan")
     }
 
     if value - value != zero {
         if value < zero {
-            return printf_text("-inf")
+            return print_counted[string]("-inf")
         }
-        return printf_text("inf")
+        return print_counted[string]("inf")
     }
 
     negative: bool = value < zero
@@ -598,8 +610,8 @@ printf_fixed_f64(value: f64, precision: usize): int {
     return write_bytes(out[0..at])
 }
 
-printf_fixed_f32(value: f32, precision: usize): int {
-    return printf_fixed_f64(f64(value), precision)
+print_precision[f32](value: f32, precision: usize): int {
+    return print_precision[f64](f64(value), precision)
 }
 
 /*
@@ -608,7 +620,7 @@ printf_fixed_f32(value: f32, precision: usize): int {
  * by the compiler; this format-dependent function is never a first-class value.
  */
 pub printf(format: string): int {
-    return printf_text(format)
+    return print_counted[string](format)
 }
 
 /*

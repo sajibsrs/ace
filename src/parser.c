@@ -1229,6 +1229,10 @@ static Node* parse_func_rest(P* p, Token* name, Node* tp, int pub, int expo) {
     f->kids = ph->kids;
     f->nkids = ph->nkids;
     f->a = parse_ret(p);
+    if (ate(p, T_SPECIALIZED)) {
+        f->flags |= F_SPECIALIZED; // no-default template: no body follows
+        return f;
+    }
     f->b = parse_block(p);
     return f;
 }
@@ -1684,6 +1688,7 @@ static void pflags(Node* x) {
     if (x->flags & F_METHOD) printf(" method");
     if (x->flags & F_SELECT) printf(" select");
     if (x->flags & F_EMBED) printf(" embed");
+    if (x->flags & F_SPECIALIZED) printf(" specialized");
 }
 
 static void pnode(Node* x, int ind) {

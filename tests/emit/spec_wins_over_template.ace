@@ -1,0 +1,28 @@
+/* Generic specialization: the exact-match specialization replaces the
+ * template stamp for its type tuple; every other tuple stamps the template. */
+
+// expect-exit: 42
+
+pick[T](a: T, b: T): T {
+    return a
+}
+
+pick[int](a: int, b: int): int {
+    return b
+}
+
+main(): int {
+    if pick[int](1, 2) != 2 {
+        return 1 // the specialization body runs for [int]
+    }
+    if pick[string]("a", "b")[0] != 'a' {
+        return 2 // [string] stamps the template
+    }
+    if pick[f64](0.5, 1.5) != 0.5 {
+        return 3 // [f64] stamps the template
+    }
+    if pick[int](9, 7) != 7 {
+        return 4
+    }
+    return 42
+}

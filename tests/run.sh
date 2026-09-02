@@ -218,14 +218,45 @@ if ! printf '%s\n' "$bounds_neg" | grep -qF "slice upper bound -2 is negative"; 
 fi
 parse_unsupported=$("$ACE" tests/sema/str_parse_unsupported.err.ace 2>&1)
 for want in \
-    "str.parse[T] supports exactly int, uint, usize, f32, and f64 — not bool" \
-    "str.parse[T](text, radix) supports exactly int, uint, usize — not f64" \
-    "str.parse[T] supports exactly int, uint, usize, f32, and f64 — not u8"; do
+    "call 'str\$parse[bool]' matches no specialization" \
+    "call 'str\$parse[f64]' matches no specialization" \
+    "call 'str\$parse[u8]' matches no specialization"; do
     if ! printf '%s\n' "$parse_unsupported" | grep -qF "$want"; then
         echo "FAIL: missing str.parse diagnostic '$want'"
         fail=1
     fi
 done
+
+spec_mismatch_error=$("$ACE" tests/sema/spec_signature_mismatch.err.ace 2>&1)
+if ! printf '%s\n' "$spec_mismatch_error" | grep -qF \
+    "does not conform to any generic overload of 'pick'"; then
+    echo "FAIL: missing specialization conformance diagnostic"
+    fail=1
+fi
+duplicate_spec_error=$("$ACE" tests/sema/spec_duplicate.err.ace 2>&1)
+if ! printf '%s\n' "$duplicate_spec_error" | grep -qF \
+    "duplicate specialization 'pick[i64]' — one exact type-argument tuple per generic overload"; then
+    echo "FAIL: missing duplicate-specialization diagnostic"
+    fail=1
+fi
+missing_generic_error=$("$ACE" tests/sema/spec_missing_generic.err.ace 2>&1)
+if ! printf '%s\n' "$missing_generic_error" | grep -qF \
+    "a specialization must follow a generic declaration of 'pick'"; then
+    echo "FAIL: missing missing-generic diagnostic"
+    fail=1
+fi
+unspecialized_call_error=$("$ACE" tests/sema/spec_unspecialized_call.err.ace 2>&1)
+if ! printf '%s\n' "$unspecialized_call_error" | grep -qF \
+    "matches no specialization — 'load' is declared 'specialized' (no default body) at line 4"; then
+    echo "FAIL: missing no-default call-site diagnostic"
+    fail=1
+fi
+zero_spec_error=$("$ACE" tests/sema/spec_zero_specializations.err.ace 2>&1)
+if ! printf '%s\n' "$zero_spec_error" | grep -qF \
+    "is marked 'specialized' but no specialization is declared"; then
+    echo "FAIL: missing zero-specialization declaration diagnostic"
+    fail=1
+fi
 
 # A bare std import accepts either std/name.ace or std/name/module.ace, but
 # diagnoses the std name when both definitions exist.

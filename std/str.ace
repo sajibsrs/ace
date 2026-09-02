@@ -206,15 +206,14 @@ pub trim(text: string): string {
  * minus signs outside the signed forms are rejected; leading zeroes are
  * accepted. Invalid text, an unsupported radix, or overflow returns
  * canonical-zero T and false; finite float underflow rounded to signed zero
- * succeeds. Like mem's typed allocation, these declarations are the public
- * surface: the bootstrap compiler checks the instantiation and lowers the
- * call directly onto the concrete private helpers below, so no generic body
- * is emitted.
+ * succeeds. Both forms are specialized templates with no default body, so
+ * the callable surface is exactly the per-type specializations below; any
+ * other type argument is a compile-time error at the call.
  */
 
-pub parse[T](text: string): (T, bool) {}
+pub parse[T](text: string): (T, bool) specialized
 
-pub parse[T](text: string, radix: u8): (T, bool) {}
+pub parse[T](text: string, radix: u8): (T, bool) specialized
 
 /* Writes the complete representation of value into destination or nothing
  * at all, returning the byte count and whether it fit. Integer radix forms
@@ -563,10 +562,9 @@ accumulate(mag: u64, d: u64, radix: u8, limit: u64): (u64, bool) {
 
 /* Parses the complete text as a signed integer in the given radix. The
  * magnitude accumulates in u64, so the signed limit also covers the negative
- * minimum; the unsigned forms reject the leading minus outright. These
- * concrete helpers are the private targets of the compiler's parse lowering.
+ * minimum; the unsigned forms reject the leading minus outright.
  */
-parse_int_result(text: string, radix: u8): (int, bool) {
+pub parse[int](text: string, radix: u8): (int, bool) {
     if radix < 2 || radix > 36 {
         return 0, false
     }
@@ -610,7 +608,7 @@ parse_int_result(text: string, radix: u8): (int, bool) {
     return int(mag), true
 }
 
-parse_uint_result(text: string, radix: u8): (uint, bool) {
+pub parse[uint](text: string, radix: u8): (uint, bool) {
     if radix < 2 || radix > 36 {
         return 0, false
     }
@@ -640,13 +638,30 @@ parse_uint_result(text: string, radix: u8): (uint, bool) {
 }
 
 /* usize is u64-wide on the v1 target, so its range matches uint exactly. */
-parse_usize_result(text: string, radix: u8): (usize, bool) {
-    v: uint, ok: bool = parse_uint_result(text, radix)
+pub parse[usize](text: string, radix: u8): (usize, bool) {
+    v: uint, ok: bool = parse[uint](text, radix)
 
     if !ok {
         return 0, false
     }
     return usize(v), true
+}
+
+/* The default integer forms forward to their radix specializations at the
+ * ordinary decimal radix. */
+pub parse[int](text: string): (int, bool) {
+    v: int, ok: bool = parse[int](text, u8(10))
+    return v, ok
+}
+
+pub parse[uint](text: string): (uint, bool) {
+    v: uint, ok: bool = parse[uint](text, u8(10))
+    return v, ok
+}
+
+pub parse[usize](text: string): (usize, bool) {
+    v: usize, ok: bool = parse[usize](text, u8(10))
+    return v, ok
 }
 
 /* The exponent tail of a decimal/scientific spelling: an optional sign and
@@ -737,7 +752,7 @@ terminate(text: string, mut buf: []u8): bool {
     return true
 }
 
-parse_f64_result(text: string): (f64, bool) {
+pub parse[f64](text: string): (f64, bool) {
     zero: f64 = 0.0
 
     if !float_literal_shape(text) {
@@ -759,7 +774,7 @@ parse_f64_result(text: string): (f64, bool) {
     return value, true
 }
 
-parse_f32_result(text: string): (f32, bool) {
+pub parse[f32](text: string): (f32, bool) {
     zero: f32 = 0.0
 
     if !float_literal_shape(text) {

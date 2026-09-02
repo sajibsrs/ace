@@ -1729,8 +1729,12 @@ static void mangle_type(Buf* b, SType* t) {
 }
 
 static char fnname_buf[512];
+
+// `spec` marks a generic specialization: its exact type-argument tuple rides
+// an 's' tag so the symbol can never collide with a template stamp ('g' tag)
+// or an ordinary same-params overload (no tag).
 static const char* fn_mangle(const char* name, uint32_t len, SType* ft, Node* decl,
-                             SType** targs, int nt) {
+                             SType** targs, int nt, int spec) {
     Buf b = {0};
     buf_write(&b, "__ace$fn$", strlen("__ace$fn$"));
     buf_write(&b, name, len);
@@ -1743,7 +1747,7 @@ static const char* fn_mangle(const char* name, uint32_t len, SType* ft, Node* de
             buf_put8(&b, '$');
         }
     }
-    if (nt) buf_put8(&b, 'g');
+    if (nt) buf_put8(&b, spec ? 's' : 'g');
     for (int i = 0; i < nt; i++) {
         buf_put8(&b, '$');
         mangle_type(&b, targs[i]);
@@ -2209,7 +2213,10 @@ static int gen_addr(Em* e, Node* x) {
                 fs = sym_intern(&e->syms, nm, (uint32_t)strlen(nm));
             } else {
                 fs = sym_intern(&e->syms,
-                                fn_mangle(s->name, s->len, s->type, s->decl, NULL, 0),
+                                fn_mangle(s->name, s->len, s->type, s->decl,
+                                          s->spec_args,
+                                          s->spec_args ? s->spec_nargs : 0,
+                                          s->spec_args != NULL),
                                 (uint32_t)strlen(fnname_buf));
             }
             addr_of_sym(e, xreg(t), fs);
@@ -2716,53 +2723,14 @@ static EV emit_printf_helper(Em* e, Node* at, Sym* helper, EV* values, int n) {
         args[i].ptrval = 0;
     }
     SType* ft = helper->type;
+    SType** targs = helper->spec_args;
+    int ntargs = helper->spec_args ? helper->spec_nargs : 0;
     const char* mn = fn_mangle(helper->name, helper->len, ft,
-                               helper->decl, NULL, 0);
+                               helper->decl, targs, ntargs, targs != NULL);
     CallTarget tgt = { TK_INTERNAL, arena_copy(mn, strlen(mn)),
                        (uint32_t)strlen(mn), 0 };
     return emit_call(e, at, args, n, ft->params, muts, ft->nparams,
                      1, -1, tgt, ft->ret);
-}
-
-/*
- * str.parse[T] lowering: sema chose the concrete per-type helper in call->aux
- * and checked the arguments, so the call lowers as an ordinary internal call
- * forwarding the parse arguments in order. The helper returns the complete
- * (T, bool) result tuple.
- */
-static EV gen_str_parse_builtin(Em* e, Node* call) {
-    Sym* helper = call->aux;
-    if (!helper || !helper->type || helper->type->kind != SK_FUNC) {
-        em_err(e, call, "missing checked str.parse helper");
-        return (EV){ CLS_INT, tmp_int(e) };
-    }
-    SType* ft = helper->type;
-    if (call->nkids > ft->nparams) {
-        em_err(e, call, "str.parse helper arity mismatch");
-        return (EV){ CLS_INT, tmp_int(e) };
-    }
-    CallArg args[2];
-    uint8_t muts[2] = { 0, 0 };
-    for (int i = 0; i < call->nkids; i++) {
-        args[i].node = call->kids[i];
-        args[i].val = (EV){ 0, 0 };
-        args[i].pre = 0;
-        args[i].ptrval = 0;
-    }
-    int nargs = call->nkids;
-    if (ft->nparams == 2 && nargs == 1) { // default integer form: radix 10
-        int t = tmp_int(e);
-        load_imm(e, 0, xreg(t), 10);
-        args[1].val = (EV){ CLS_INT, t };
-        args[1].pre = 1;
-        nargs = 2;
-    }
-    const char* mn = fn_mangle(helper->name, helper->len, ft,
-                               helper->decl, NULL, 0);
-    CallTarget tgt = { TK_INTERNAL, arena_copy(mn, strlen(mn)),
-                       (uint32_t)strlen(mn), 0 };
-    return emit_call(e, call, args, nargs, ft->params, muts,
-                     ft->nparams, 1, -1, tgt, ft->ret);
 }
 
 static EV gen_printf_builtin(Em* e, Node* call) {
@@ -2987,11 +2955,6 @@ static EV gen_call(Em* e, Node* call) {
     if (intrinsic && intrinsic->decl &&
         intrinsic->decl->ival == BI_MEM_COMPARE && call->ival == BI_MEM_COMPARE)
         return gen_compare_builtin(e, call);
-    if (intrinsic && intrinsic->decl &&
-        ((intrinsic->decl->ival == BI_STR_PARSE && call->ival == BI_STR_PARSE) ||
-         (intrinsic->decl->ival == BI_STR_PARSE_RADIX &&
-          call->ival == BI_STR_PARSE_RADIX)))
-        return gen_str_parse_builtin(e, call);
     // panic(message): write the bytes to stderr best-effort, then abort —
     // both undefined externals resolved by the system linker (spec Errors #15).
     // The write result is ignored: a failed or partial write never blocks the
@@ -3019,7 +2982,7 @@ static EV gen_call(Em* e, Node* call) {
         for (STypeInst* inst = sema_insts(gs->decl); inst; inst = inst->next) {
             if (inst->result != callee->ty) continue;
             const char* mn = fn_mangle(gs->name, gs->len, inst->result,
-                                       gs->decl, inst->args, nt);
+                                       gs->decl, inst->args, nt, 0);
             CallTarget tgt = { TK_INTERNAL, arena_copy(mn, strlen(mn)),
                                (uint32_t)strlen(mn), 0 };
             SType* ft = callee->ty;
@@ -3161,9 +3124,13 @@ static EV gen_call(Em* e, Node* call) {
                     SType* recv = cft->params[0];
                     targs = recv->args;
                     ntargs = recv->nargs;
+                } else if (s->spec_args) {
+                    targs = s->spec_args;
+                    ntargs = s->spec_nargs;
                 }
                 const char* mn = fn_mangle(s->name, s->len, cft,
-                                           s->decl, targs, ntargs);
+                                           s->decl, targs, ntargs,
+                                           s->spec_args != NULL);
                 tgt.kind = TK_INTERNAL;
                 tgt.name = arena_copy(mn, strlen(mn));
                 tgt.nlen = (uint32_t)strlen(mn);
@@ -4831,7 +4798,7 @@ static ESym* emit_vtable(Em* e, SType* conc, SType* contract, Node* conf) {
             }
         }
         const char* fnm = fn_mangle(fsym->name, fsym->len, ft,
-                                    fsym->decl, args, nargs);
+                                    fsym->decl, args, nargs, 0);
         ESym* fs;
         if (ref->a) {
             fs = emit_embed_thunk(e, nm, i, fnm, field_off(conc, embed_fi));
@@ -5292,14 +5259,16 @@ int emit_object(Node* file, Diag* d, const char* out_path,
                 break; // compiler-backed std/mem declarations have no body symbol
             if (n->ival == BI_FMT_PRINTF)
                 break; // format-dependent calls lower directly; no runtime printf symbol
-            if (n->c) { // generic: one function per instantiation memo entry
+            Sym* decl_sym = node_sym(n);
+            if (n->c && !(decl_sym && decl_sym->spec_args)) {
+                // generic template: one function per instantiation memo entry
                 int nt = n->c->nkids;
                 for (STypeInst* inst = sema_insts(n); inst; inst = inst->next) {
                     sema_stamp_body(n, inst->args, nt);
                     Sym* gs = node_sym(n);
                     const char* mn = fn_mangle(gs ? gs->name : n->str,
                                                gs ? gs->len : n->len, inst->result,
-                                               gs ? gs->decl : n, inst->args, nt);
+                                               gs ? gs->decl : n, inst->args, nt, 0);
                     emit_func(&e, n, mn, (uint32_t)strlen(mn),
                               inst->result->ret, 0, 0);
                 }
@@ -5320,7 +5289,10 @@ int emit_object(Node* file, Diag* d, const char* out_path,
                 Sym* fs = node_sym(n);
                 const char* mn = fn_mangle(fs ? fs->name : n->str,
                                            fs ? fs->len : n->len,
-                                           fs ? fs->type : NULL, n, NULL, 0);
+                                           fs ? fs->type : NULL, n,
+                                           fs ? fs->spec_args : NULL,
+                                           fs && fs->spec_args ? fs->spec_nargs : 0,
+                                           fs && fs->spec_args != NULL);
                 emit_func(&e, n, mn, (uint32_t)strlen(mn), ret, 0, 0);
             }
             break;

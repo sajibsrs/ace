@@ -1,0 +1,20 @@
+/* Specialization spellings parse: brackets on a same-name declaration after
+ * a generic, and 'specialized' replacing the body of a no-default template. */
+
+pick[T](a: T, b: T): T {
+    return a
+}
+
+pick[int](a: int, b: int): int {
+    return b
+}
+
+load[T](text: string): (T, bool) specialized
+
+load[int](text: string): (int, bool) {
+    return (0, true)
+}
+
+main(): int {
+    return 0
+}

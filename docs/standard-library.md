@@ -143,7 +143,13 @@ main(): int {
 
 The format must be a string literal or a const-global `string` initialized
 from a static literal. The compiler parses it, checks the argument count and
-exact types, and emits direct typed formatting calls. Runtime-created or
+exact types, and emits direct typed formatting calls. Those calls are
+exact-type specializations of the private per-shape generics in `std/fmt.ace`
+— `print_counted[T](value: T): int` for text, bytes, and decimal integers,
+`print_precision[T](value: T, precision: usize): int` for fixed floats, and
+`print_hex[T](value: T, uppercase: bool): int` for hexadecimal — selected by
+the format interpreter's concrete argument type (see
+[Functions](function.md#generic-specialization)). Runtime-created or
 runtime-selected formats are rejected. There is no runtime parser, argument
 pack, type tag, reflection, allocation, or C variadic call.
 
@@ -267,7 +273,11 @@ Caller storage and views:
   whitespace processing.
 
 Numeric conversion — the explicitly instantiated `parse[T]` overloads and the
-ordinary `stringify` overloads:
+ordinary `stringify` overloads. The `parse[T]` templates are declared
+`specialized` and are implemented entirely as generic specializations (see
+[Functions](function.md#generic-specialization)): the callable surface is the
+per-type specializations for `int`, `uint`, `usize`, `f32`, and `f64`, so any
+other type argument is a call-site compile error naming the missing tuple:
 
 ```ace
 import str
@@ -303,7 +313,7 @@ main(): int {
   canonical-zero `T` and `false`; finite float underflow rounded to signed
   zero succeeds. Decimal floats accept ordinary decimal/scientific forms plus
   the exact non-finite spellings `fmt` produces (`nan`, `inf`, `-inf`).
-  Naming any other `T` is a compile-time error at the instantiation.
+  Naming any other `T` is a compile-time error at the call.
 - `stringify(mut destination: []u8, value): (usize, bool)` — overloads for
   `int`, `uint`, `usize`, `f32`, and `f64`, plus radix-taking overloads for
   the three integer types. The complete representation is written or, when

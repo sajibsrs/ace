@@ -1,0 +1,8 @@
+/* A 'specialized' generic with zero specializations in the compiled program
+ * is a declaration error. */
+
+lonely[T](v: T): T specialized
+
+main(): int {
+    return 0
+}

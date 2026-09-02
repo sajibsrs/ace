@@ -62,6 +62,13 @@ struct Sym {
     Node*       init;   // top-level initializer (static Error validation/emission)
     Sym*        next;
     Sym*        overload; // same-scope function overloads; not part of scope chain
+    // generic specialization (Generics #9–14): a template chains the
+    // specializations bound to it; a specialization records its exact
+    // type-argument tuple (spec_args != NULL marks a specialization)
+    Sym*        specs;     // template: head of its bound specializations
+    Sym*        spec_next; // specialization: next bound to the same template
+    SType**     spec_args; // specialization: exact type-argument tuple
+    int         spec_nargs;
 };
 
 // --- helpers used by the emitter --------------------------------------------------

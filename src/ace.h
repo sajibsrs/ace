@@ -19,7 +19,7 @@
     X(EXPORT, "export") X(CONTRACT, "contract") X(STRUCT, "struct")           \
     X(EMBED, "embed")                                                         \
     X(SIGNS, "signs") X(DISTINCT, "distinct") X(TYPE, "type")                \
-    X(ENUM, "enum") X(UNION, "union")                                          \
+    X(ENUM, "enum") X(UNION, "union") X(SPECIALIZED, "specialized")            \
     X(NULL, "null") X(TRUE, "true") X(FALSE, "false")                          \
     /* literals */                                                             \
     X(INT, "int") X(FLOAT, "float") X(STR, "string") X(CHARLIT, "char")        \
@@ -133,7 +133,7 @@ const char* node_kind_name(NKind k);
 enum {
     F_PUB = 1, F_EXPO = 2, F_MUT = 4, F_NOALIAS = 8, F_CONST = 16,
     F_ELSE = 32, F_VARARGS = 64, F_METHOD = 128, F_SELECT = 256,
-    F_EMBED = 512,
+    F_EMBED = 512, F_SPECIALIZED = 1024,
 };
 
 // Compiler-backed standard-module functions. These markers live only on the
@@ -152,8 +152,6 @@ enum {
     BI_MEM_ALLOC_T = 11,   // mem.alloc[T](count: usize): []T
     BI_MEM_REALLOC_T = 12, // mem.realloc[T](data: []T, new_count: usize): []T
     BI_MEM_RELEASE_T = 13, // mem.release[T](mut data: []T)
-    BI_STR_PARSE = 14,     // str.parse[T](text: string): (T, bool)
-    BI_STR_PARSE_RADIX = 15, // str.parse[T](text: string, radix: u8): (T, bool)
 };
 
 enum {

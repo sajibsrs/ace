@@ -38,13 +38,33 @@ choose[T](first: T, second: T): T {
     return second
 }
 
+pick[T](a: T, b: T): T {
+    return a
+}
+
+pick[int](a: int, b: int): int {
+    return b
+}
+
+count_of[T](v: T): int specialized
+
+count_of[int](v: int): int {
+    return 8
+}
+
+count_of[f64](v: f64): int {
+    return 4
+}
+
 main(): int {
     count: int = 12
     increment(mut count)
     quotient: int, remainder: int = divide(count, 5)
     operation: (int): int = twice
+    counted: int = count_of[int](0) + count_of[f64](0.5)
     return add(render("ace"), render(13)) + quotient + remainder +
-        operation(5) + choose[int](1, 2) + later(1) - 29
+        operation(5) + choose[int](1, 2) + pick[int](3, 4) +
+        int(pick[string]("a", "b")[0] - 'a') + later(1) - 29 + counted - 12
 }
 
 later(value: int): int {

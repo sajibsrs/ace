@@ -11,9 +11,9 @@ block_comment := "/*" (any – "*/")* "*/"       // non-nesting; a newline insid
 newline       := significant — terminates statements (see §6 Notes)
 
 keyword       := "import" | "from" | "pub" | "mut" | "const" | "noalias" | "if" | "else"
-               | "for" | "in" | "switch" | "return" | "break" | "continue"
-               | "asm" | "extern" | "export" | "contract" | "struct" | "embed" | "signs"
-               | "distinct" | "type" | "enum" | "union" | "null" | "true" | "false"
+                | "for" | "in" | "switch" | "return" | "break" | "continue"
+                | "asm" | "extern" | "export" | "contract" | "struct" | "embed" | "signs"
+                | "specialized" | "distinct" | "type" | "enum" | "union" | "null" | "true" | "false"
 
 ident         := letter ("letter" | digit | "_")*        [P: exact ident charset]
 literal       := int_lit | float_lit | string_lit | char_lit | "null" | "true" | "false"
@@ -48,10 +48,11 @@ var_decl      := binding ["=" expr]                       // global or local sin
 multi_decl    := binding ("," binding)+ "=" expr_list      // local typed multi-declaration; one line
 const_decl    := ident ":" "const" type "=" expr
 
-func_decl     := ident [type_params] "(" [params] ")" [ret_clause] block
+func_decl     := ident [bracket_args] "(" [params] ")" [ret_clause] (block | "specialized")
+                                                          // brackets = type params or specialization args — Notes #23
 method_func_decl := ["mut"] owner_type "." ident "(" [params] ")" [ret_clause] block
 owner_type    := ident [type_params]                        // declares owner T names
-type_params   := "[" ident ("," ident)* "]"               // max[T]
+type_params   := "[" ident ("," ident)* "]"               // max[T] — type declarations always declare params
 params        := param ("," param)*
 param         := param_mod* ident ":" type
 param_mod     := "mut" | "noalias"
@@ -211,3 +212,4 @@ ret_types     := type | "(" type ("," type)+ ")"
 20. **Embedding is explicit and one-level.** `embed name: Base` is an ordinary named struct field whose owned methods may be promoted to the containing struct. Direct outer methods win, multiple exact promoted matches are ambiguous, and fields are not promoted. Contract conformance may flow from a directly embedded base to its embedder, never in reverse.
 21. **`char` is byte-sized.** It is a predeclared transparent alias of `u8`, not a decoded Unicode scalar. Character literals contain exactly one byte; strings carry UTF-8 bytes and retain byte indexing and iteration. A future `rune` and explicit UTF-8 conversion are outside this grammar.
 22. **`sizeof` accepts the full type grammar.** Its parenthesized operand may be an inline slice or array type (`sizeof([]u8)`, `sizeof([3]char)`) as well as a named or primitive type. The result is compile-time-only.
+23. **Function brackets are interpreted, not parsed.** Brackets after a function name hold bare identifiers only (`bracket_args`), so parsing never decides their meaning. Brackets whose identifiers resolve to declared types are specialization arguments and must follow a declared generic of that name; identifiers resolving to no declared type start a fresh type-parameter list, so one name may declare several generic overloads (as `str.parse[T]` does) before any specialization. A specialization's parameter and return types must equal the substituted generic signature with all type parameters supplied positionally, and it must appear after its generic — type-naming brackets with no preceding generic are an error, never a silent new parameter list. Compound type arguments (`[]u8`, `*Node`, `Pair[int, string]`) are an additive relaxation; v1 specializes over bare named types only. `specialized` replaces the body of a template that admits no call without an exact specialization; a specialization always carries a real body.
