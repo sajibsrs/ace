@@ -1,3 +1,5 @@
+/* Pointer writable param rebind fixture. */
+
 Point: struct { x: int }
 
 change(point: mut *Point, replacement: mut *Point) {

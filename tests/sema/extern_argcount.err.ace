@@ -1,3 +1,5 @@
+/* Extern argcount fixture. */
+
 extern "c" {
     fixed(value: i32): i32
 }

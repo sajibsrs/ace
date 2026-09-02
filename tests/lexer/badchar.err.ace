@@ -1,3 +1,5 @@
+/* A malformed char literal is rejected. */
+
 a: u8 = ''
 b: u8 = 'ab'
 c: u8 = 'x

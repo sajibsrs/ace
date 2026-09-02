@@ -1,4 +1,7 @@
+/* Sys file I/O, long paths, and error-path coverage. */
+
 // expect-exit: 42
+
 import sys
 
 PATH: string = "/tmp/ace_sys_io_test.txt"
@@ -6,12 +9,15 @@ LONG: string = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 
 check_missing(): int {
     fd: sys.Fd, err: Error = sys.open("/tmp/ace_sys_io_missing", sys.O_RDONLY)
+
     if err == null {
         return 1
     }
+
     if err.domain != typeid(sys.OpenErr) {
         return 2
     }
+
     if sys.errno() != 2 {
         return 3
     }
@@ -20,49 +26,59 @@ check_missing(): int {
 
 check_roundtrip(): int {
     wfd: sys.Fd, werr: Error = sys.open(PATH, sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC, u32(0x1A4))
+
     if werr != null {
         return 1
     }
     payload: string = "hello sys"
     n: int, werr2: Error = sys.write(wfd, payload)
+
     if werr2 != null || n != 9 {
         return 2
     }
+
     if sys.close(wfd) != null {
         return 3
     }
 
     rfd: sys.Fd, rerr: Error = sys.open(PATH, sys.O_RDONLY)
+
     if rerr != null {
         return 4
     }
     buf: [64]u8
     view: []u8 = buf[0..64]
     got: int, rerr2: Error = sys.read(rfd, mut view)
+
     if rerr2 != null || got != 9 {
         return 5
     }
+
     for i: usize in 0 .. 9 {
         if view[i] != payload[i] {
             return 6
         }
     }
     more: int, rerr3: Error = sys.read(rfd, mut view)
+
     if rerr3 != null || more != 0 {
         return 7
     }
+
     if sys.close(rfd) != null {
         return 8
     }
 
     // Reading through a closed descriptor reports ReadErr with EBADF.
     bad: int, baderr: Error = sys.read(rfd, mut view)
+
     if baderr == null || baderr.domain != typeid(sys.ReadErr) || sys.errno() != 9 {
         return 9
     }
 
     // The O_EXCL|O_CREAT pair fails on the existing file with EEXIST (17).
     xfd: sys.Fd, xerr: Error = sys.open(PATH, sys.O_WRONLY | sys.O_CREAT | sys.O_EXCL, u32(0x1A4))
+
     if xerr == null || xerr.domain != typeid(sys.OpenErr) || sys.errno() != 17 {
         return 10
     }
@@ -71,9 +87,11 @@ check_roundtrip(): int {
 
 check_long_path(): int {
     fd: sys.Fd, err: Error = sys.open(LONG, sys.O_RDONLY)
+
     if err == null || err.domain != typeid(sys.OpenErr) {
         return 1
     }
+
     if sys.errno() != 63 {
         return 2
     }
@@ -82,14 +100,17 @@ check_long_path(): int {
 
 main(): int {
     code: int = check_missing()
+
     if code != 0 {
         return code
     }
     code = check_roundtrip()
+
     if code != 0 {
         return 100 + code
     }
     code = check_long_path()
+
     if code != 0 {
         return 200 + code
     }

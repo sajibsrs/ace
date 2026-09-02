@@ -1,3 +1,5 @@
+/* Extern vararg type fixture. */
+
 extern "c" {
     variadic(tag: i32, ...): i32
 }

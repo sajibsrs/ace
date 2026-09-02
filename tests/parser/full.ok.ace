@@ -1,4 +1,5 @@
-// full.ok.ace — parser fixture: the carved surface, must parse clean.
+/* full.ok.ace — parser fixture: the carved surface, must parse clean. */
+
 import fmt
 import m: math
 import util: "./util.ace"
@@ -58,6 +59,7 @@ max[T](a: T, b: T): T {
 
 write(fd: int, buf: []u8): int {
     n: i64
+
     asm "svc #0" {
         in:  x0 = fd, x16 = 4
         out: x0 = n
@@ -70,10 +72,11 @@ main(): int {
     n: int, error: Error = read()
     n, error = read()
     n += 1
-    p: Point = Point{ x: 1.0, y: 2.0 }
+    p: Point = Point { x: 1.0, y: 2.0 }
     q: Point = { x: 3.0, y: 4.0 }
     ok: bool = 0 <= n <= 100
     e: Error = null
+
     if e != null && n > 0 || false {
         fmt.print("bad", n)
     } else if n == 7 {
@@ -88,20 +91,24 @@ main(): int {
     one: int = arr[0]
     cmp: (int, int): int = m.max[int]
     total: int = 0
+
     scan: {
         for b: int in arr {
             if b == 2 {
                 continue
             }
+
             if b == 3 {
                 break scan
             }
             total += b
         }
     }
+
     for i: int in 0 .. 10 {
         total += i
     }
+
     switch n {
         0, 1 { return total }
         7 { total <<= 1 }

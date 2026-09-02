@@ -1,3 +1,5 @@
+/* Recursive pointers fixture. */
+
 Node: struct {
     next: *Node,
     value: int,
@@ -48,6 +50,7 @@ main(): int {
     holder: Holder = Holder.later(null)
     generic_holder: GenericHolder = { future: null }
     node.next = &node
+
     if recursive_union == RecursiveUnion.none || holder == Holder.none {
         return 0
     }

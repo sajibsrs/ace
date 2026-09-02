@@ -1,3 +1,5 @@
+/* Overload extern fixture. */
+
 extern "c" {
     read_value(value: int): int
     read_value(value: string): int

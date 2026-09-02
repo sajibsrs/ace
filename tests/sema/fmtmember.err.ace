@@ -1,3 +1,5 @@
+/* Fmtmember fixture. */
+
 import fmt
 
 main(): int {

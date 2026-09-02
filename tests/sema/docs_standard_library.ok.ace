@@ -1,9 +1,10 @@
 /*
-Mirrors docs/standard-library.md mem, fmt, sys, and net examples (sema check
-only; runtime coverage lives in tests/emit/print_*.ace, tests/emit/sys.ace,
-tests/emit/sys_time.ace, tests/emit/net.ace, tests/emit/poll.ace, and
-tests/emit/typed_allocation.ace).
-*/
+ * Mirrors docs/standard-library.md mem, fmt, sys, and net examples (sema
+ * check only; runtime coverage lives in tests/emit/print_*.ace,
+ * tests/emit/sys.ace, tests/emit/sys_time.ace, tests/emit/net.ace,
+ * tests/emit/poll.ace, and tests/emit/typed_allocation.ace).
+ */
+
 import fmt
 import mem
 import net
@@ -12,12 +13,14 @@ import sys
 
 mem_examples(): int {
     data: []u8 = mem.alloc(64, 8)
+
     if data == null {
         return 1
     }
     mem.release(mut data)
 
     numbers: []usize = mem.alloc[usize](4)
+
     if numbers == null {
         return 2
     }
@@ -31,13 +34,16 @@ write_note(): int {
     fd: sys.Fd, err: Error = sys.open("/tmp/notes.txt",
                                       sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC,
                                       u32(0x1A4))
+
     if err != null {
         return 1
     }
     n: int, werr: Error = sys.write(fd, "hello sys")
+
     if werr != null {
         return 2
     }
+
     if sys.close(fd) != null {
         return 3
     }
@@ -46,6 +52,7 @@ write_note(): int {
 
 check_missing(): int {
     fd: sys.Fd, err: Error = sys.open("/tmp/missing", sys.O_RDONLY)
+
     if err != null {
         if sys.errno() == 2 {
             return 1
@@ -69,10 +76,12 @@ println_examples(): int {
     fmt.println("ready")
     fmt.println(42)
     fmt.println(0.5)
+
     if fmt.println("") != 1 {
         return 1
     }
     narrow: u16 = 7
+
     if fmt.println(int(narrow)) != 3 {
         return 2
     }
@@ -85,6 +94,7 @@ printf_examples(): int {
     ratio: f64 = 1.25
     written: int = fmt.printf("name=%s count=%d ratio=%.2f\n",
                               name, count, ratio)
+
     if written != 28 {
         return 1
     }
@@ -97,10 +107,12 @@ printf_examples(): int {
 time_awake_example(): int {
     start: u64 = sys.time_awake()
     sum: int = 0
+
     for i: int in 0 .. 1_000_000 {
         sum += i
     }
     elapsed_ns: u64 = sys.time_awake() - start
+
     if elapsed_ns == 0 {
         return 1
     }
@@ -109,17 +121,20 @@ time_awake_example(): int {
 
 net_example(): int {
     sock: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
+
     if err != null {
         return 1
     }
     ip: [4]u8 = [u8(127), u8(0), u8(0), u8(1)]
-    address: net.Address4 = net.Address4{ip: ip, port: u16(8080)}
+    address: net.Address4 = net.Address4 {ip: ip, port: u16(8080)}
+
     if net.set_reuse_address(sock, true) != null ||
        net.bind(sock, address) != null ||
        net.listen(sock, usize(128)) != null {
         sys.close(sock)
         return 2
     }
+
     if sys.close(sock) != null {
         return 3
     }
@@ -127,8 +142,10 @@ net_example(): int {
     storage: [8]net.Address4
     addresses: []net.Address4 = storage[0..8]
     count: usize, resolve_err: Error = net.resolve4("example.com", u16(80), mut addresses)
+
     if resolve_err == null && count != 0 {
         client: net.Socket, socket_err: Error = net.socket(net.SocketKind.tcp)
+
         if socket_err == null {
             socket_err = net.connect(client, addresses[0])
             sys.close(client)
@@ -139,9 +156,11 @@ net_example(): int {
 
 readiness_example(fd: sys.Fd): int {
     q: poll.Queue, err: Error = poll.queue()
+
     if err != null {
         return 1
     }
+
     if poll.watch(q, fd, true, false) != null {
         sys.close(sys.Fd(q))
         return 2
@@ -157,6 +176,7 @@ readiness_example(fd: sys.Fd): int {
     storage: [16]poll.Event = [zero : 16]
     events: []poll.Event = storage[0..16]
     count: usize, wait_err: Error = poll.wait(q, mut events, poll.wait_forever)
+
     if wait_err == null {
         for index: usize in 0 .. count {
             if events[index].readable {
@@ -172,26 +192,32 @@ readiness_example(fd: sys.Fd): int {
 
 main(): int {
     code: int = mem_examples()
+
     if code != 0 {
         return code
     }
     code = write_note()
+
     if code != 0 {
         return code
     }
     code = check_missing()
+
     if code != 0 {
         return 10 + code
     }
     code = print_examples()
+
     if code != 0 {
         return 20 + code
     }
     code = println_examples()
+
     if code != 0 {
         return 30 + code
     }
     code = printf_examples()
+
     if code != 0 {
         return 40 + code
     }

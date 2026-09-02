@@ -1,7 +1,10 @@
+/* Panic fixture. */
+
 // expect-exit: 134
+
 DiskError: distinct i32
 
-io_descriptor: const ErrorDescriptor = ErrorDescriptor{
+io_descriptor: const ErrorDescriptor = ErrorDescriptor {
     code: 1,
     domain: typeid(DiskError),
     message: "should trigger panic",
@@ -26,6 +29,7 @@ main(): int {
         return 1
     }
     value: int, error: Error = read(true)
+
     if error != null {
         panic(error.message)
     }

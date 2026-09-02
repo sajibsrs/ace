@@ -1,3 +1,5 @@
+/* Mismatch fixture. */
+
 main(): int {
     x: int = true
     return 0

@@ -1,4 +1,7 @@
+/* Expressions fixture. */
+
 // expect-exit: 43
+
 main(): int {
     x: i32 = 6
     x = x * 7
@@ -9,10 +12,12 @@ main(): int {
     x |= 2
     x &= 63
     x ^= 7
+
     if 0 <= x <= 40 && !false {
         x += 2
     }
     f: f64 = 1.5 + 2.5
+
     if f == 4.0 {
         x += 1
     }

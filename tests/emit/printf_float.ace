@@ -1,5 +1,8 @@
-// expect-exit: 0
+/* Printf float fixture. */
+
+/* expect-exit: 0 */
 // expect-output: 2 4 -0 -0.00 1.12 1.38 -0.000000 nan inf -inf 1.25
+
 import fmt
 
 extern "c" {
@@ -34,6 +37,7 @@ main(): int {
         narrow,
     )
     fesetround(original_rounding)
+
     if written != 50 {
         return 1
     }

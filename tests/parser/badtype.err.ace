@@ -1,2 +1,4 @@
+/* An unknown type spelling is rejected. */
+
 fu(a: ) {
 }

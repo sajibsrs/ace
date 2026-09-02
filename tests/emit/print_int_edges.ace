@@ -1,5 +1,8 @@
-// expect-exit: 0
+/* Print int edges fixture. */
+
+/* expect-exit: 0 */
 // expect-output: 0 -13 9223372036854775807 -9223372036854775808
+
 import fmt
 
 main(): int {

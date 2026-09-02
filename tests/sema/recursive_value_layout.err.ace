@@ -1,3 +1,5 @@
+/* Recursive value layout fixture. */
+
 Direct: struct {
     self: Direct,
 }

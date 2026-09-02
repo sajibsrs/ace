@@ -1,4 +1,5 @@
-// Only declared variants exist.
+/* Only declared variants exist. */
+
 Event: union { none, quit }
 
 main(): int {

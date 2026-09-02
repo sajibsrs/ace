@@ -1,4 +1,5 @@
-// A payload variant is constructed by call, not as a plain value.
+/* A payload variant is constructed by call, not as a plain value. */
+
 Event: union { none, key: u32 }
 
 main(): int {

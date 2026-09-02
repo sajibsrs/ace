@@ -1,3 +1,5 @@
+/* Memory compare mut fixture. */
+
 import compare from mem
 
 main(): int {

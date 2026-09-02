@@ -1,3 +1,5 @@
+/* Signing single line parens fixture. */
+
 Shape: contract {
     area(): int
 }

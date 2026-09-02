@@ -1,2 +1,4 @@
+/* A malformed string literal is rejected. */
+
 s: string = "unterminated
 t: string = "ok"

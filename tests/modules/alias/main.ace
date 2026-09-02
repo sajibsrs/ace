@@ -1,8 +1,11 @@
-// Aliased imports and an imported overload set.
+/* Aliased imports and an imported overload set. */
+
+/* expect-exit: 0 */
+// expect-output: 12103
+
 import f: fmt
 import u: "./util.ace"
-// expect-exit: 0
-// expect-output: 12103
+
 main(): int {
     f.print(u.over(5))
     f.print(u.over(i32(5)))

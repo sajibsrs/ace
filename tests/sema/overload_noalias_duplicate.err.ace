@@ -1,3 +1,5 @@
+/* Overload noalias duplicate fixture. */
+
 process(noalias value: []u8): int {
     return int(value.len)
 }

@@ -1,5 +1,8 @@
-import fmt
+/* Unions fixture. */
+
 // expect-exit: 0
+
+import fmt
 
 Point: struct {
     x: int,
@@ -65,13 +68,16 @@ main(): int {
     if default_status != Status.none {
         return 1
     }
+
     if quit_status != Status.quit {
         return 2
     }
+
     if key_status == Status.quit {
         return 3
     }
     key: u32 = 0
+
     switch key_status {
         Status.key(code: u32) {
             key = code
@@ -80,12 +86,14 @@ main(): int {
             return 4
         }
     }
+
     if key != 42 {
         return 5
     }
 
     event: Event = Event.cursor({ x: 10, y: 20 })
     event = round_trip(event)
+
     switch event {
         Event.cursor(point: Point) {
             if point.x + point.y != 30 {
@@ -97,6 +105,7 @@ main(): int {
             return 7
         }
     }
+
     switch event {
         Event.cursor(point: Point) {
             if point.x != 10 {
@@ -110,12 +119,15 @@ main(): int {
 
     a: Scalar = Scalar.integer(7)
     b: Scalar = Scalar.integer(7)
+
     if a != b || a == Scalar.decimal(7.0) {
         return 10
     }
+
     if text_value != text_value {
         return 11
     }
+
     switch text_value {
         Scalar.text(text: string) {
             if text.len != 5 || text[0] != u8(117) || text[4] != u8(110) {
@@ -128,6 +140,7 @@ main(): int {
     }
 
     small: Small = Small.bytes({ a: 1, b: 2, c: 3 })
+
     switch small {
         Small.bytes(bytes: Tiny) {
             if bytes.a != 1 || bytes.b != 2 || bytes.c != 3 {
@@ -140,6 +153,7 @@ main(): int {
     }
 
     result: Result[int] = Result[int].value(9)
+
     switch result {
         Result[int].value(value: int) {
             if value != 9 {
@@ -158,6 +172,7 @@ main(): int {
     left = Outer.inner(Inner.none)
     right: Outer = Outer.inner(Inner.value(2))
     right = Outer.inner(Inner.none)
+
     if left != right {
         return 19
     }

@@ -4,8 +4,11 @@ main(): int {
     words: [2]u16 = [65, 66]
     word_view: []u16 = words[0..2]
     bytes: [2]u8 = [65, 66]
+
     if words == "AB" {}
+
     if "AB" == word_view {}
+
     if bytes == word_view {}
     return 0
 }

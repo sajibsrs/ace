@@ -1,11 +1,14 @@
-// expect-exit: 0
+/* Print uint fixture. */
+
+/* expect-exit: 0 */
 // expect-output: 0184467440737095516154660
+
 import fmt
 
 main(): int {
     zero_written: int = fmt.print(uint(0))
-    // u64 carries the platform-word unsigned type, so it selects this
-    // overload directly without a cast.
+    /* u64 carries the platform-word unsigned type, so it selects this
+     * overload directly without a cast. */
     big: u64 = 18446744073709551615
     max_written: int = fmt.print(big)
     // Narrower integers have no overload; conversion stays explicit.

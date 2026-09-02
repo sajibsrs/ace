@@ -1,3 +1,5 @@
+/* Overload export fixture. */
+
 export consume(value: int): int {
     return value
 }

@@ -1,3 +1,5 @@
+/* Panic not string fixture. */
+
 main(): int {
     panic(42)
     return 0

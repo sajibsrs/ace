@@ -1,6 +1,7 @@
 /* Generic embedded bases promote their exact contract methods. */
 
 // expect-exit: 42
+
 Value[T]: contract {
     get(): T
 }

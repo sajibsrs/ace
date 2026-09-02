@@ -1,5 +1,7 @@
-// Bare names resolve only inside the standard library.
+/* Bare names resolve only inside the standard library. */
+
 import nosuch
+
 main(): int {
     return 0
 }

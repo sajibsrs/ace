@@ -1,4 +1,5 @@
 /* Typed mem instantiation spellings parse in every expression position. */
+
 import mem
 
 Item: struct { tag: u32, weight: u64 }
@@ -7,6 +8,7 @@ Pair[T]: struct { first: T, second: T }
 
 make(count: usize): []usize {
     values: []usize = mem.alloc[usize](count)
+
     if values == null {
         return null
     }

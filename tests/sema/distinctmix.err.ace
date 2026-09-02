@@ -1,3 +1,5 @@
+/* Distinct types do not mix with their base types. */
+
 Meters: distinct f64
 
 main(): int {

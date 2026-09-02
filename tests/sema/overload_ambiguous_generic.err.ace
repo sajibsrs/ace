@@ -1,3 +1,5 @@
+/* Overload ambiguous generic fixture. */
+
 pick[T](value: T): T {
     return value
 }

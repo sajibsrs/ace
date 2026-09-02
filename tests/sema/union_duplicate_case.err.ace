@@ -1,8 +1,10 @@
-// The same variant may not appear twice in one switch.
+/* The same variant may not appear twice in one switch. */
+
 Event: union { none, quit }
 
 main(): int {
     e: Event = Event.none
+
     switch e {
         Event.none {}
         Event.none {}

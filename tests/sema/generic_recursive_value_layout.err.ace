@@ -1,3 +1,5 @@
+/* Generic recursive value layout fixture. */
+
 Wrap[T]: struct {
     value: T,
 }

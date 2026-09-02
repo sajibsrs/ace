@@ -1,7 +1,9 @@
+/* Error stack descriptor fixture. */
+
 LocalError: distinct i32
 
 make_error(): Error {
-    descriptor: const ErrorDescriptor = ErrorDescriptor{
+    descriptor: const ErrorDescriptor = ErrorDescriptor {
         code: 1,
         domain: typeid(LocalError),
         message: "local",

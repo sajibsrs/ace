@@ -1,3 +1,5 @@
+/* Printf formats fixture. */
+
 import fmt
 
 runtime(format: string): int {

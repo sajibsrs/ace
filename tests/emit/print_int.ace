@@ -1,5 +1,8 @@
-// expect-exit: 0
+/* Print int fixture. */
+
+/* expect-exit: 0 */
 // expect-output: 13
+
 import fmt
 
 main(): int {

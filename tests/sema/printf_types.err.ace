@@ -1,3 +1,5 @@
+/* Printf types fixture. */
+
 import fmt
 
 Meters: distinct int

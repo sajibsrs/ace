@@ -1,3 +1,5 @@
+/* Selective import multiline fixture. */
+
 import one,
     two from alpha
 

@@ -1,3 +1,5 @@
+/* Panic reserved type fixture. */
+
 panic: struct { message: string }
 
 main(): int {

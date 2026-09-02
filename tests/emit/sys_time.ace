@@ -1,9 +1,13 @@
+/* sys time — elapsed and awake clocks with runtime advancement checks. */
+
 // expect-exit: 42
+
 import sys
 import time_awake from sys
 
-// Harness-only wait: an ordinary process sleep proving the clocks advance
-// while this process sits idle. usleep is not part of the tested surface.
+/* Harness-only wait: an ordinary process sleep proving the clocks advance
+ * while this process sits idle. usleep is not part of the tested surface.
+ */
 extern "c" {
     c_usleep(micros: u32): i32 = "usleep"
 }
@@ -34,11 +38,12 @@ check_elapsed_advance(): int {
     after: u64 = sys.time_elapsed()
     elapsed: u64 = after - before
 
-    // The 150 ms wait must move the clock; the bounds stay generous for
-    // loaded CI machines.
+    /* The 150 ms wait must move the clock; the bounds stay generous for
+     * loaded CI machines. */
     if elapsed < 100_000_000 {
         return 1
     }
+
     if elapsed > 5_000_000_000 {
         return 2
     }
@@ -51,11 +56,12 @@ check_awake_advance(): int {
     after: u64 = time_awake()
     elapsed: u64 = after - before
 
-    // The 150 ms wait must move the clock; the bounds stay generous for
-    // loaded CI machines.
+    /* The 150 ms wait must move the clock; the bounds stay generous for
+     * loaded CI machines. */
     if elapsed < 100_000_000 {
         return 1
     }
+
     if elapsed > 5_000_000_000 {
         return 2
     }
@@ -74,18 +80,22 @@ check_selective(): int {
 
 main(): int {
     code: int = check_nondecreasing()
+
     if code != 0 {
         return code
     }
     code = check_elapsed_advance()
+
     if code != 0 {
         return 100 + code
     }
     code = check_awake_advance()
+
     if code != 0 {
         return 200 + code
     }
     code = check_selective()
+
     if code != 0 {
         return 300 + code
     }

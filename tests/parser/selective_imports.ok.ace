@@ -1,3 +1,5 @@
+/* Selective imports fixture. */
+
 import one from alpha
 import two, three from beta
 import (

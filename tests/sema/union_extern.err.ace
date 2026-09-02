@@ -2,6 +2,7 @@
  * Unions have no C-compatible representation yet and are rejected at the
  * extern/export boundary.
  */
+
 Event: union { none, key: u32 }
 
 extern "c" {

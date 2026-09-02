@@ -25,7 +25,15 @@ indent-width = 4
 continuation-alignment = open-delimiter
 
 [blank-lines]
-# One blank line before every construct with a { ... } body.
+# One blank line before every construct with a { ... } body, at every nesting
+# level: declarations and statement-level if / for / switch / asm / labeled
+# blocks alike. A comment attached to the construct moves with it — the
+# separating blank line goes before the comment, never between the comment
+# and its construct. Plain statements (bindings, assignments, calls,
+# returns) take no blank line; when one precedes a body-bearing construct,
+# the blank goes directly before that construct. Exemptions: the first
+# element inside a body (nested-first-body) and a continuation of an
+# if / else if / else chain (inside-if-chain).
 before-body = always
 # No blank line after a closing brace unless one is required before the next
 # body-bearing construct.
@@ -37,7 +45,7 @@ after-file-header = always
 # if / else if / else is one construct: keep else if and else attached to the
 # preceding closing brace, with no blank lines inside the chain; add
 # separation only before the complete chain. A later independent if starts a
-# new construct.
+# new construct and takes its own separating blank line.
 inside-if-chain = never
 
 [braces]

@@ -1,4 +1,5 @@
-// Generic unions instantiate explicitly, variants included.
+/* Generic unions instantiate explicitly, variants included. */
+
 Result[T]: union { fail, ok: T }
 
 main(): int {

@@ -1,20 +1,26 @@
+/* Compiler-checked examples from docs/memory.md. */
+
 import mem
 
 main(): int {
     values: [4]u8 = [10, 20, 30, 40]
     count: usize = values.len
+
     if count != 4 {
         return 1
     }
 
     storage: []u8 = mem.alloc(16, 8)
+
     if storage != null {
         bytes: usize = storage.len
+
         if bytes != 16 {
             mem.release(mut storage)
             return 2
         }
         mem.release(mut storage)
+
         if storage != null {
             return 3
         }
@@ -25,6 +31,7 @@ main(): int {
     source: []u8 = source_array[0..3]
     target: []u8 = target_array[0..3]
     mem.copy(mut target, source)
+
     if mem.compare(target, source) != 0 {
         return 4
     }
@@ -36,23 +43,27 @@ main(): int {
     mem.move(mut overlap_dst, overlap_src)
 
     numbers: []usize = mem.alloc[usize](4)
+
     if numbers != null {
         if numbers.len != 4 {
             mem.release[usize](mut numbers)
             return 5
         }
         numbers[0] = 42
+
         if numbers[0] != 42 {
             mem.release[usize](mut numbers)
             return 6
         }
         mem.release[usize](mut numbers)
+
         if numbers != null {
             return 7
         }
     }
 
     empty: []usize = mem.alloc[usize](0)
+
     if empty != null {
         return 8
     }

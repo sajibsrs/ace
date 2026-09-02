@@ -1,3 +1,5 @@
+/* Overload generic duplicate fixture. */
+
 identity[T](value: T): T {
     return value
 }

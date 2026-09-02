@@ -1,3 +1,5 @@
+/* Compiler-checked examples from docs/primitives.md. */
+
 import fmt
 
 main(): int {

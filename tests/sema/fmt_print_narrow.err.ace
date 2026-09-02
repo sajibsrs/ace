@@ -1,5 +1,7 @@
-// fmt.print has no overloads for integer widths narrower than the platform
-// word; conversion is explicit at the call site (fmt.print(uint(n))).
+/* fmt.print has no overloads for integer widths narrower than the platform
+ * word; conversion is explicit at the call site (fmt.print(uint(n))).
+ */
+
 import fmt
 
 main(): int {

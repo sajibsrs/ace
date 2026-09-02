@@ -1,4 +1,7 @@
+/* Contract methods fixture. */
+
 // expect-exit: 42
+
 Circle: struct {
     radius: i32,
 }
@@ -34,7 +37,7 @@ Circle.value(k: f64): f64 {
 }
 
 main(): int {
-    circle: Circle = Circle{ radius: 3 }
+    circle: Circle = Circle { radius: 3 }
     shape: Shape = Shape(&circle)
     metric: Metric = Metric(&circle)
     mut shape.scale(2)
@@ -42,9 +45,11 @@ main(): int {
     direct: int = Circle.value(circle, 36)
     measured: int = metric.value(36)
     floating: f64 = circle.value(1.0)
+
     if direct != 42 {
         return 1
     }
+
     if int(floating) != 2 {
         return 2
     }

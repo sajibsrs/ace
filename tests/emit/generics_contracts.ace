@@ -1,4 +1,7 @@
+/* Generics contracts fixture. */
+
 // expect-exit: 42
+
 Point: struct { x: i32 }
 
 Shape: contract {
@@ -24,7 +27,7 @@ bigger[T](a: T, b: T): T {
 }
 
 main(): int {
-    p: Point = Point{ x: 21 }
+    p: Point = Point { x: 21 }
     shape: Shape = Shape(&p)
     mut shape.scale(2)
     return int(bigger[i32](shape.area(), 40))

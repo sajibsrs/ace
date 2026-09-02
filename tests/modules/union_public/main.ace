@@ -1,16 +1,22 @@
-import events: "./events.ace"
+/* Union public module fixture. */
+
 // expect-exit: 0
+
+import events: "./events.ace"
 
 main(): int {
     if events.idle != events.Status.idle {
         return 1
     }
+
     if events.answer != events.Status.answer(42) {
         return 2
     }
+
     if events.greeting != events.greeting {
         return 3
     }
+
     switch events.greeting {
         events.Status.text(text: string) {
             if text.len != 5 || text[0] != u8(104) || text[4] != u8(111) {
@@ -21,6 +27,7 @@ main(): int {
             return 7
         }
     }
+
     switch events.origin {
         events.Event.cursor(point: events.Point) {
             if point.x != 3 || point.y != 4 {
@@ -32,6 +39,7 @@ main(): int {
         }
     }
     event: events.Event = events.cursor(10, 20)
+
     switch event {
         events.Event.cursor(point: events.Point) {
             if point.x + point.y != 30 {

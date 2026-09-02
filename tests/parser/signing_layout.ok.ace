@@ -1,3 +1,5 @@
+/* Signing layout fixture. */
+
 Shape: contract {
     area(): int
 }

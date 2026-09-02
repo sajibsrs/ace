@@ -1,8 +1,9 @@
 /*
-fmt.println mirrors the print overload policy: integer widths narrower than
-the platform word have no overload; conversion is explicit at the call site
-(fmt.println(uint(n))).
-*/
+ * fmt.println mirrors the print overload policy: integer widths narrower than
+ * the platform word have no overload; conversion is explicit at the call site
+ * (fmt.println(uint(n))).
+ */
+
 import fmt
 
 main(): int {

@@ -1,4 +1,7 @@
+/* Printf bytes fixture. */
+
 // expect-exit: 0
+
 import fmt
 import sys
 
@@ -10,39 +13,48 @@ main(): int {
     path: string = "/tmp/ace_printf_bytes"
     fd: sys.Fd, err: Error = sys.open(path,
         sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC, u32(0x180))
+
     if err != null {
         return 1
     }
+
     if dup2(i32(fd), 1) != 1 {
         return 2
     }
+
     if sys.close(fd) != null {
         return 3
     }
     text: string = "A\x00B"
+
     if fmt.printf("%s%c%c", text, u8(0), u8(255)) != 5 {
         return 4
     }
     stdout: sys.Fd = sys.Fd(1)
+
     if sys.close(stdout) != null {
         return 5
     }
 
     fd, err = sys.open(path, sys.O_RDONLY)
+
     if err != null {
         return 6
     }
     storage: [5]u8 = [u8(0), u8(0), u8(0), u8(0), u8(0)]
     data: []u8 = storage[0..5]
     count: int, read_err: Error = sys.read(fd, mut data)
+
     if read_err != null || count != 5 {
         return 7
     }
+
     if storage[0] != u8(65) || storage[1] != u8(0) ||
        storage[2] != u8(66) || storage[3] != u8(0) ||
        storage[4] != u8(255) {
         return 8
     }
+
     if sys.close(fd) != null {
         return 9
     }

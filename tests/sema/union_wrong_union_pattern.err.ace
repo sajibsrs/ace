@@ -1,9 +1,11 @@
-// Case patterns must name variants of the scrutinee's union.
+/* Case patterns must name variants of the scrutinee's union. */
+
 Other: union { x, y }
 Event: union { none, quit }
 
 main(): int {
     e: Event = Event.none
+
     switch e {
         Other.x {}
         Event.none {}

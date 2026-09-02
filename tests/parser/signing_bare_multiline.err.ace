@@ -1,3 +1,5 @@
+/* Signing bare multiline fixture. */
+
 Shape: contract {
     area(): int
 }

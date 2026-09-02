@@ -1,3 +1,5 @@
+/* Mut markers are checked at signatures and call sites. */
+
 Point: struct { x: f32 }
 
 Shape: contract {

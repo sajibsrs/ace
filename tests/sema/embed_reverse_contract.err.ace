@@ -1,4 +1,5 @@
 /* An embedder's signing never flows back into its embedded base. */
+
 Value: contract {
     value(): int
 }

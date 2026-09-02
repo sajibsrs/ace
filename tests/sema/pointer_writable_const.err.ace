@@ -1,7 +1,9 @@
+/* Pointer writable const fixture. */
+
 Point: struct { x: int }
 
 main(): int {
-    point: const Point = Point{ x: 1 }
+    point: const Point = Point { x: 1 }
     pointer: mut *Point = mut &point
     return pointer.x
 }

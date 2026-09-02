@@ -1,3 +1,5 @@
+/* C ABI rejected fixture. */
+
 Flag: enum { off, on }
 Shape: contract { area(): f64 }
 Event: union { none, value: i32 }

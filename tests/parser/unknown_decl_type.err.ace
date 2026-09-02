@@ -1,2 +1,4 @@
+/* Unknown decl type fixture. */
+
 Shape: protocol {
 }

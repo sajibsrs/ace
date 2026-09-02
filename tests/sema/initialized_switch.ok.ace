@@ -1,5 +1,8 @@
+/* Initialized switch fixture. */
+
 choose(value: int): int {
     answer: int
+
     switch value {
         0 { answer = 40 }
         else { answer = 2 }

@@ -1,5 +1,8 @@
+/* Uninitialized branch fixture. */
+
 main(): int {
     answer: int
+
     if true {
         answer = 42
     }

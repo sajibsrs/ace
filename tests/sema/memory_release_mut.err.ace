@@ -1,3 +1,5 @@
+/* Memory release mut fixture. */
+
 import alloc, release from mem
 
 main(): int {

@@ -1,3 +1,5 @@
+/* An import may not follow other declarations. */
+
 fu(): int {
     return 0
 }

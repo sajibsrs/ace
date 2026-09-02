@@ -1,5 +1,8 @@
+/* Range step uninitialized fixture. */
+
 main(): int {
     step: int
+
     for value: int in 0 .. 10 step step {
         return value
     }

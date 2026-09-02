@@ -1,4 +1,7 @@
+/* Overloads fixture. */
+
 // expect-exit: 42
+
 score(value: int): int {
     return value + 1
 }

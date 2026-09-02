@@ -1,4 +1,7 @@
+/* No implicit zeroing fixture. */
+
 // expect-exit: 42
+
 Point: struct { x: int, y: int }
 
 main(): int {

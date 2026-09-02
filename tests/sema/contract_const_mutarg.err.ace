@@ -1,3 +1,5 @@
+/* Contract const mutarg fixture. */
+
 Thing: struct { value: int }
 Writable: contract { mut write(value: int) }
 
@@ -12,7 +14,7 @@ change(mut value: Writable) {
 }
 
 main(): int {
-    thing: const Thing = Thing{ value: 1 }
+    thing: const Thing = Thing { value: 1 }
     writable: Writable = Writable(&thing)
     change(mut writable)
     return 0

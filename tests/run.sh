@@ -26,7 +26,7 @@ done
 
 unknown_decl=$("$ACE" tests/parser/unknown_decl_type.err.ace 2>&1)
 if ! printf '%s\n' "$unknown_decl" | grep -qF \
-    "tests/parser/unknown_decl_type.err.ace:1:8: error: unknown declaration type 'protocol'"; then
+    "tests/parser/unknown_decl_type.err.ace:3:8: error: unknown declaration type 'protocol'"; then
     echo "FAIL: unknown declaration type should point at the type name"
     fail=1
 fi
@@ -341,11 +341,11 @@ if [ -d tests/emit ]; then
         elif ! printf '%s\n' "$dwarf" | grep -q 'DW_AT_name.*("main")'; then
             echo "FAIL: DWARF should describe the main function"
             fail=1
-        elif ! printf '%s\n' "$dwarf" | grep -Eq '^0x[0-9a-f]+[[:space:]]+2[[:space:]]+1'; then
-            echo "FAIL: DWARF should map main to hello_min.ace:2:1"
+        elif ! printf '%s\n' "$dwarf" | grep -Eq '^0x[0-9a-f]+[[:space:]]+5[[:space:]]+1'; then
+            echo "FAIL: DWARF should map main to hello_min.ace:5:1"
             fail=1
-        elif ! printf '%s\n' "$dwarf" | grep -Eq '^0x[0-9a-f]+[[:space:]]+3[[:space:]]+5'; then
-            echo "FAIL: DWARF should map return to hello_min.ace:3:5"
+        elif ! printf '%s\n' "$dwarf" | grep -Eq '^0x[0-9a-f]+[[:space:]]+6[[:space:]]+5'; then
+            echo "FAIL: DWARF should map return to hello_min.ace:6:5"
             fail=1
         fi
         multidwarf=$(dwarfdump --debug-line /tmp/ace_emit/welcome.o 2>/tmp/ace_test_errs)
@@ -573,7 +573,7 @@ if [ -d tests/driver ]; then
 fi
 
 # lexer spot-checks
-if ! "$ACE" --tokens tests/lexer/hello.ok.ace | grep -q "^2:1${tab}import$"; then
+if ! "$ACE" --tokens tests/lexer/hello.ok.ace | grep -q "^3:1${tab}import$"; then
     echo "FAIL: first token of hello.ok.ace should be 'import'"
     fail=1
 fi

@@ -1,8 +1,11 @@
-// Local module exporting a function, imported by relative path.
+/* Local module exporting a function, imported by relative path. */
+
+/* expect-exit: 0 */
+// expect-output: 42
+
 import fmt
 import util: "./util.ace"
-// expect-exit: 0
-// expect-output: 42
+
 main(): int {
     fmt.print(util.twice(21))
     return 0

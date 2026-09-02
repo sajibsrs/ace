@@ -1,4 +1,7 @@
+/* Int div mod fixture. */
+
 // expect-exit: 42
+
 main(): int {
     value: int = 13
     ones: int = value % 10

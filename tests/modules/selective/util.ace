@@ -1,3 +1,5 @@
+/* Companion module for the Selective fixture. */
+
 pub Point: struct {
     x: int,
     y: int,

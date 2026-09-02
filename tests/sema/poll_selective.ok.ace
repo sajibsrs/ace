@@ -14,10 +14,12 @@ import (
 
 check(fd: sys.Fd): int {
     q: Queue, queue_err: Error = queue()
+
     if queue_err != null {
         return 1
     }
     watch_err: Error = watch(q, fd, true, false)
+
     if watch_err != null && watch_err.domain != typeid(WatchErr) {
         return 2
     }
@@ -31,6 +33,7 @@ check(fd: sys.Fd): int {
     storage: [1]Event = [zero]
     events: []Event = storage[0..1]
     count: usize, wait_err: Error = wait(q, mut events, wait_forever)
+
     if count == 0 && wait_err != null && wait_err.domain != typeid(WaitErr) {
         return 3
     }

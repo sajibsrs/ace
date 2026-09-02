@@ -1,3 +1,5 @@
+/* Uninitialized scalar fixture. */
+
 main(): int {
     answer: int
     return answer

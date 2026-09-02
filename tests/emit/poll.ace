@@ -15,6 +15,7 @@ has_error(err: Error, domain: typeid): bool {
 
 main(): int {
     q: poll.Queue, err: Error = poll.queue()
+
     if err != null || q == -1 {
         return 1
     }
@@ -26,6 +27,7 @@ main(): int {
     }
 
     raw_fds: [2]i32 = [i32(0) : 2]
+
     if c_pipe(mut &raw_fds[0]) == -1 {
         sys.close(sys.Fd(q))
         return 3
@@ -52,6 +54,7 @@ main(): int {
     storage: [4]poll.Event = [zero : 4]
     events: []poll.Event = storage[0..4]
     count: usize, wait_err: Error = poll.wait(q, mut events, u64(0))
+
     if wait_err != null || count == 0 {
         sys.close(read_fd)
         sys.close(write_fd)
@@ -59,11 +62,13 @@ main(): int {
         return 5
     }
     writable: bool = false
+
     for index: usize in 0 .. count {
         if events[index].fd == write_fd && events[index].writable {
             writable = true
         }
     }
+
     if !writable {
         sys.close(read_fd)
         sys.close(write_fd)
@@ -73,6 +78,7 @@ main(): int {
 
     byte: [1]u8 = [u8(7)]
     written: int, write_err: Error = sys.write(write_fd, byte[0..1])
+
     if write_err != null || written != 1 {
         sys.close(read_fd)
         sys.close(write_fd)
@@ -81,6 +87,7 @@ main(): int {
     }
 
     count, wait_err = poll.wait(q, mut events, u64(1000000000))
+
     if wait_err != null || count == 0 {
         sys.close(read_fd)
         sys.close(write_fd)
@@ -88,11 +95,13 @@ main(): int {
         return 7
     }
     readable: bool = false
+
     for index: usize in 0 .. count {
         if events[index].fd == read_fd && events[index].readable {
             readable = true
         }
     }
+
     if !readable {
         sys.close(read_fd)
         sys.close(write_fd)
@@ -102,6 +111,7 @@ main(): int {
 
     byte_view: []u8 = byte[0..1]
     received: int, read_err: Error = sys.read(read_fd, mut byte_view)
+
     if read_err != null || received != 1 {
         sys.close(read_fd)
         sys.close(write_fd)
@@ -118,18 +128,21 @@ main(): int {
     sys.close(write_fd)
 
     count, wait_err = poll.wait(q, mut events, u64(1000000000))
+
     if wait_err != null || count == 0 {
         sys.close(read_fd)
         sys.close(sys.Fd(q))
         return 11
     }
     hung_up: bool = false
+
     for index: usize in 0 .. count {
         if events[index].fd == read_fd && events[index].readable &&
            events[index].hangup {
             hung_up = true
         }
     }
+
     if !hung_up {
         sys.close(read_fd)
         sys.close(sys.Fd(q))
@@ -141,6 +154,7 @@ main(): int {
         sys.close(sys.Fd(q))
         return 13
     }
+
     if !has_error(poll.unwatch(q, read_fd), typeid(poll.UnwatchErr)) ||
        sys.errno() != 2 {
         sys.close(read_fd)
@@ -150,6 +164,7 @@ main(): int {
 
     empty: []poll.Event = null
     count, wait_err = poll.wait(q, mut empty, u64(0))
+
     if count != 0 || !has_error(wait_err, typeid(poll.WaitErr)) ||
        sys.errno() != 22 {
         sys.close(read_fd)

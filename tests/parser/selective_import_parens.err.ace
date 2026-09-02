@@ -1,3 +1,5 @@
+/* Selective import parens fixture. */
+
 import (one, two) from alpha
 
 main(): int {

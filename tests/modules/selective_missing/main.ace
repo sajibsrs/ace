@@ -1,3 +1,5 @@
+/* Selective missing module fixture. */
+
 import absent from "./util.ace"
 
 main(): int {

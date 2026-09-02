@@ -1,3 +1,5 @@
+/* Companion module for the Contract private fixture. */
+
 pub Shape: contract {
     area(): int
 }

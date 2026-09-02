@@ -1,3 +1,5 @@
+/* A string cast must go through an explicit conversion. */
+
 main(): int {
     s: string = "a"
     n: int = i32(s)

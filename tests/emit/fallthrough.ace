@@ -1,8 +1,11 @@
+/* Fallthrough fixture. */
+
 // expect-exit: 49
 
 main(): int {
     total: int = 0
     selected: int = 1
+
     switch selected {
         1 {
             total += 1
@@ -21,6 +24,7 @@ main(): int {
     }
 
     selected = 7
+
     switch selected {
         7 { total += 0 }
         8 { total = 100 }

@@ -1,3 +1,5 @@
+/* Enum member access checks. */
+
 Color: enum { red }
 
 main(): int {

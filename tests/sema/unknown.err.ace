@@ -1,3 +1,5 @@
+/* An unknown name is rejected with a pointing diagnostic. */
+
 main(): int {
     x: int = y
     return 0

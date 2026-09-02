@@ -1,4 +1,7 @@
+/* Overload forward fixture. */
+
 // expect-exit: 42
+
 main(): int {
     value: int = 40
     return later(value) + later("x")

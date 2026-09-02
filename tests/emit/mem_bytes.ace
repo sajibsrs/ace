@@ -1,4 +1,7 @@
+/* mem byte-operation runtime coverage. */
+
 // expect-exit: 42
+
 import copy, move, fill, zero, compare from mem
 
 main(): int {
@@ -7,19 +10,23 @@ main(): int {
     source: []u8 = source_array[0..6]
     target: []u8 = target_array[0..6]
     copy(mut target, source)
+
     if compare(target, source) != 0 {
         return 1
     }
+
     if target_array[6] != 77 || target_array[7] != 88 {
         return 2
     }
 
     first_five: []u8 = target_array[0..5]
     fill(mut first_five, 42)
+
     if target_array[0] != 42 || target_array[4] != 42 || target_array[5] != 255 {
         return 3
     }
     zero(mut first_five)
+
     if target_array[0] != 0 || target_array[4] != 0 || target_array[5] != 255 {
         return 4
     }
@@ -28,6 +35,7 @@ main(): int {
     forward_src: []u8 = overlap[0..5]
     forward_dst: []u8 = overlap[1..6]
     move(mut forward_dst, forward_src)
+
     if overlap[0] != 1 || overlap[1] != 1 || overlap[5] != 5 {
         return 5
     }
@@ -41,6 +49,7 @@ main(): int {
     backward_src: []u8 = overlap[1..6]
     backward_dst: []u8 = overlap[0..5]
     move(mut backward_dst, backward_src)
+
     if overlap[0] != 2 || overlap[4] != 6 || overlap[5] != 6 {
         return 6
     }
@@ -54,6 +63,7 @@ main(): int {
 
     prefix: []u8 = source_array[0..3]
     longer: []u8 = source_array[0..4]
+
     if compare(prefix, longer) != -1 || compare(longer, prefix) != 1 {
         return 7
     }
@@ -61,6 +71,7 @@ main(): int {
     higher: [3]u8 = [1, 2, 255]
     lower_view: []u8 = lower[0..3]
     higher_view: []u8 = higher[0..3]
+
     if compare(lower_view, higher_view) != -1 || compare(higher_view, lower_view) != 1 {
         return 8
     }

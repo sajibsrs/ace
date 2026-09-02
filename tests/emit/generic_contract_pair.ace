@@ -1,4 +1,7 @@
+/* Generic contract pair fixture. */
+
 // expect-exit: 42
+
 Value[T]: contract {
     get(): T
 }

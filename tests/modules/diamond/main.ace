@@ -1,10 +1,14 @@
-// Diamond dependency: a and b both import shared; the module (and its
-// global) must be loaded and emitted exactly once.
+/* Diamond dependency: a and b both import shared; the module (and its
+ * global) must be loaded and emitted exactly once.
+ */
+
+/* expect-exit: 0 */
+// expect-output: 9363
+
 import fmt
 import a: "./a.ace"
 import b: "./b.ace"
-// expect-exit: 0
-// expect-output: 9363
+
 main(): int {
     x: int = a.f()
     y: int = b.g()

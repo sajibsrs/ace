@@ -1,3 +1,5 @@
+/* Inline forward type fixture. */
+
 A: struct {
     b: B,
 }

@@ -1,3 +1,5 @@
+/* Selective private module fixture. */
+
 import hidden from "./util.ace"
 
 main(): int {

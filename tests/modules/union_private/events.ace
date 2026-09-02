@@ -1,3 +1,5 @@
+/* Companion module for the Union private fixture. */
+
 Hidden: union {
     none,
     value: int,

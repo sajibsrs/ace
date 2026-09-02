@@ -2,6 +2,7 @@
  * Union declarations parse payloadless variants, typed payloads, trailing
  * commas, and generics.
  */
+
 Event: union {
     none,
     quit,
@@ -17,6 +18,7 @@ Numbers: union { one: i32, two: f64, three: string, }
 
 main(): int {
     e: Event = Event.quit
+
     switch e {
         Event.none {}
         Event.quit {}
@@ -24,11 +26,13 @@ main(): int {
         Event.cursor(position: Point) {}
     }
     p: Pair[int] = Pair[int].some(1)
+
     switch p {
         Pair[int].empty {}
         Pair[int].some(v: int) {}
     }
     n: Numbers = Numbers.one(1)
+
     switch n {
         Numbers.one(a: i32) {}
         Numbers.two(b: f64) {}

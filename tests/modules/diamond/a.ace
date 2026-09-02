@@ -1,4 +1,7 @@
+/* Companion module for the Diamond fixture. */
+
 import s: "./shared.ace"
+
 pub f(): int {
     return s.take(7)
 }

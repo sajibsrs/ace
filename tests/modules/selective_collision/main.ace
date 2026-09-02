@@ -1,3 +1,5 @@
+/* Selective collision module fixture. */
+
 import work from "./util.ace"
 
 work(): int {

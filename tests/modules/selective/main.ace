@@ -1,5 +1,8 @@
-import Point, Color, origin, score, Thing, TypeOnly, ValueOnly from "./util.ace"
+/* Selective module fixture. */
+
 // expect-exit: 42
+
+import Point, Color, origin, score, Thing, TypeOnly, ValueOnly from "./util.ace"
 
 keep(score: int): int {
     return score
@@ -13,6 +16,7 @@ main(): int {
     p: Point = origin
     boxed: Thing = {value: p.x}
     type_only: TypeOnly = {value: 0}
+
     if sizeof(Point) == 0 || typeid(Point) != typeid(Point) {
         return 1
     }

@@ -1,4 +1,7 @@
+/* Calls fixture. */
+
 // expect-exit: 42
+
 bump(mut x: i32, by: i32) {
     x += by
 }

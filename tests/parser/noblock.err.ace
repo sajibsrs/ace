@@ -1,3 +1,5 @@
+/* A control construct body requires braces. */
+
 main(): int {
     if true
     return 0

@@ -1,3 +1,5 @@
+/* Memory release value fixture. */
+
 import alloc, release from mem
 
 main(): int {

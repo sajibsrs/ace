@@ -1,5 +1,8 @@
-// expect-exit: 0
+/* Print float fixture. */
+
+/* expect-exit: 0 */
 // expect-output: 030.50.10.33333333333333333.1415926535897931e211e-70.0000011000000000000000000001e3081e-3085e-3241.7976931348623157e308infnan-inf-0-2.5-1.5e3000.10.53.4028235e381e-457infnan0.5
+
 import fmt
 
 id(x: f64): f64 {
@@ -47,6 +50,7 @@ main(): int {
     fmt.print(f32(7))
     fmt.print(pone / pzero)
     fmt.print(pzero / pzero)
+
     // bytes-written contract: 0.5 writes three bytes
     if fmt.print(0.5) != 3 {
         return 1

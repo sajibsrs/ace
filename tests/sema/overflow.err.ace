@@ -1,3 +1,5 @@
+/* Overflow fixture. */
+
 main(): int {
     x: u8 = 300
     return 0

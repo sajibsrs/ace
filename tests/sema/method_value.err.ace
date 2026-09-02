@@ -1,3 +1,5 @@
+/* Method value fixture. */
+
 Circle: struct { radius: int }
 
 Circle.area(): int {

@@ -1,4 +1,7 @@
+/* Large uninitialized local fixture. */
+
 // expect-exit: 42
+
 main(): int {
     bytes: [5000]u8
     bytes[4999] = 42

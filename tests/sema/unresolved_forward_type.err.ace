@@ -1,3 +1,5 @@
+/* Unresolved forward type fixture. */
+
 A: struct {
     missing: **Missing,
 }

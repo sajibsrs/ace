@@ -1,5 +1,7 @@
 /* Large aggregate copies must preserve the loop counter when either side has
- * a nonzero subobject offset. */
+ * a nonzero subobject offset.
+ */
+
 // expect-exit: 0
 
 Triple: struct {
@@ -27,6 +29,7 @@ pair(value: Triple): (int, Triple) {
 main(): int {
     bytes: [17]u8 = [u8(3) : 17]
     u17: U17 = U17.bytes(bytes)
+
     switch u17 {
         U17.bytes(value: [17]u8) {
             if value[0] != 3 || value[16] != 3 {
@@ -40,6 +43,7 @@ main(): int {
 
     triple: Triple = { first: 1.0, second: 2.0, third: 3.0 }
     u24: U24 = U24.triple(triple)
+
     switch u24 {
         U24.triple(value: Triple) {
             if value.first != 1.0 || value.second != 2.0 || value.third != 3.0 {
@@ -63,6 +67,7 @@ main(): int {
     }
 
     marker: int, copied: Triple = pair(triple)
+
     if marker != 11 || copied.first != 1.0 || copied.second != 2.0 || copied.third != 3.0 {
         return 7
     }

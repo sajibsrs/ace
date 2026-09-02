@@ -1,4 +1,7 @@
+/* Companion module for the Diamond fixture. */
+
 pub count: int = 100
+
 pub take(n: int): int {
     count = count - n
     return count

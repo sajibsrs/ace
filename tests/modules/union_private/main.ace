@@ -1,3 +1,5 @@
+/* Union private module fixture. */
+
 import events: "./events.ace"
 
 main(): int {

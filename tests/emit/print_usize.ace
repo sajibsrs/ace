@@ -1,5 +1,8 @@
-// expect-exit: 0
+/* Print usize fixture. */
+
+/* expect-exit: 0 */
 // expect-output: 01318446744073709551615
+
 import fmt
 
 main(): int {

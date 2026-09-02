@@ -1,3 +1,5 @@
+/* Companion module for the Union public fixture. */
+
 pub Point: struct {
     x: int,
     y: int,

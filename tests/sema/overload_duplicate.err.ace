@@ -1,3 +1,5 @@
+/* Overload duplicate fixture. */
+
 convert(value: int): int {
     return value
 }

@@ -1,5 +1,8 @@
+/* Fallthrough placement fixture. */
+
 main(): int {
     value: int = 0
+
     switch value {
         0 {
             fallthrough

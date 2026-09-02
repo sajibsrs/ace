@@ -1,6 +1,8 @@
-// One binding name can be declared only once per file.
+/* One binding name can be declared only once per file. */
+
 import fmt: fmt
 import fmt: "./util.ace"
+
 main(): int {
     return fmt.ten()
 }

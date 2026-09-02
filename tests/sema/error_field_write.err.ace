@@ -1,4 +1,6 @@
-descriptor: const ErrorDescriptor = ErrorDescriptor{
+/* Error field write fixture. */
+
+descriptor: const ErrorDescriptor = ErrorDescriptor {
     code: 1,
     domain: null,
     message: "read only",

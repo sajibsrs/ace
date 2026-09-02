@@ -1,5 +1,8 @@
-// expect-exit: 0
+/* fmt.print through an imported module with output comparison. */
+
+/* expect-exit: 0 */
 // expect-output: Welcome Ace!
+
 import fmt
 
 main(): int {

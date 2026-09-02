@@ -1,4 +1,7 @@
+/* Companion module for the Transitive fixture. */
+
 import leaf from "./leaf.ace"
+
 pub mid(): int {
     return leaf() + 3
 }

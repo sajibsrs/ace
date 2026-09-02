@@ -1,3 +1,5 @@
+/* Panic zero args fixture. */
+
 main(): int {
     panic()
     return 0

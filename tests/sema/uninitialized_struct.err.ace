@@ -1,3 +1,5 @@
+/* Uninitialized struct fixture. */
+
 Point: struct { x: int, y: int }
 
 sum(point: Point): int {

@@ -1,3 +1,5 @@
+/* Uninitialized address fixture. */
+
 main(): int {
     answer: int
     pointer: mut *int = mut &answer

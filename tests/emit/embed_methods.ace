@@ -32,11 +32,13 @@ main(): int {
     outer: Outer
     outer.prefix = 2
     outer.base.value = 10
+
     if outer.base.value != 10 {
         return 1
     }
     value: Value = Value(&outer)
     mut value.add(30)
+
     if outer.get() != 40 {
         return 2
     }

@@ -1,4 +1,5 @@
-// numeric, char, and string literal coverage
+/* Numeric, char, and string literal coverage. */
+
 a: u64 = 0xFF
 b: u64 = 0b1010_1100
 c: u64 = 1_000_000

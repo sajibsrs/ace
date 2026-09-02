@@ -1,4 +1,7 @@
+/* Globals extern fixture. */
+
 // expect-exit: 42
+
 extern "c" {
     abs(x: i32): i32
 }

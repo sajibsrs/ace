@@ -1,5 +1,7 @@
-// sys time — selective import and exact signature typing (sema check only;
-// runtime coverage lives in tests/emit/sys_time.ace).
+/* sys time — selective import and exact signature typing (sema check only;
+ * runtime coverage lives in tests/emit/sys_time.ace).
+ */
+
 import time_awake, time_elapsed from sys
 
 same_mode_difference(): int {

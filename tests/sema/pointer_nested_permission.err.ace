@@ -1,3 +1,5 @@
+/* Pointer nested permission fixture. */
+
 Point: struct { x: int }
 
 change(points: mut **Point) {

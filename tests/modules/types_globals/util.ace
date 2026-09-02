@@ -1,3 +1,5 @@
+/* Companion module for the Types globals fixture. */
+
 pub Point: struct {
     x: int,
     y: int,

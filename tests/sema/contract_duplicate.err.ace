@@ -1,3 +1,5 @@
+/* Contract duplicate fixture. */
+
 Thing: struct { value: int }
 Readable: contract { read(): int }
 Writable: contract { mut write(value: int) }

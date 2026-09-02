@@ -1,3 +1,5 @@
+/* Range step negative fixture. */
+
 main(): int {
     for value: i32 in i32(0) .. i32(10) step -1 {
         return int(value)

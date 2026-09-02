@@ -1,3 +1,5 @@
+/* Memory fill value fixture. */
+
 import fill from mem
 
 main(): int {

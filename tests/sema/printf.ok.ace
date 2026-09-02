@@ -1,3 +1,5 @@
+/* Printf fixture. */
+
 import fmt
 
 static_format: const string = "%d %u %x %X %f %s %c %%"

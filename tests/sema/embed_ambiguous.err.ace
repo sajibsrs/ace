@@ -1,4 +1,5 @@
 /* Two embedded providers at the same level are ambiguous. */
+
 A: struct {}
 B: struct {}
 

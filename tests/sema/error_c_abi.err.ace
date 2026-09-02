@@ -1,3 +1,5 @@
+/* Error c abi fixture. */
+
 extern "c" {
     foreign_error(): Error
 }

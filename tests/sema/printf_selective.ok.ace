@@ -1,3 +1,5 @@
+/* Printf selective fixture. */
+
 import printf from fmt
 
 format: const string = "%s=%d"

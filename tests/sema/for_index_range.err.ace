@@ -1,3 +1,5 @@
+/* For index range fixture. */
+
 main(): int {
     for index: usize, value: int in 0 .. 3 {
         return value + int(index)

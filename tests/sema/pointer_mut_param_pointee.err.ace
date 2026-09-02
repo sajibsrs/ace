@@ -1,3 +1,5 @@
+/* Pointer mut param pointee fixture. */
+
 Point: struct { x: int }
 
 change(mut point: *Point) {

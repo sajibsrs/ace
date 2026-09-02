@@ -1,11 +1,13 @@
-// A payloadless variant has no payload to bind.
+/* A payloadless variant has no payload to bind. */
+
 Event: union { none, key: u32 }
 
 main(): int {
     e: Event = Event.none
+
     switch e {
-        Event.none(x: u32) { }
-        Event.key(k: u32) { }
+        Event.none(x: u32) {}
+        Event.key(k: u32) {}
     }
     return 0
 }

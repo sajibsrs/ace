@@ -1,3 +1,5 @@
+/* Companion module for the Dup binding fixture. */
+
 pub ten(): int {
     return 10
 }

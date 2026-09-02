@@ -1,3 +1,5 @@
+/* Panic reserved func fixture. */
+
 panic(message: string): void {
 }
 

@@ -1,3 +1,5 @@
+/* Memory copy mut fixture. */
+
 import copy from mem
 
 main(): int {

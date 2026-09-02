@@ -1,8 +1,10 @@
-// A payload-bearing variant pattern must bind its payload explicitly.
+/* A payload-bearing variant pattern must bind its payload explicitly. */
+
 Event: union { none, key: u32 }
 
 main(): int {
     event: Event = Event.key(1)
+
     switch event {
         Event.none {}
         Event.key {}

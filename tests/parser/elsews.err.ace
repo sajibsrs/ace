@@ -1,3 +1,5 @@
+/* Else must hug the closing brace of its if. */
+
 main(): int {
     if true {
         n |= 2

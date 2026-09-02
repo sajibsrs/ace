@@ -1,3 +1,5 @@
+/* Fallthrough fixture. */
+
 fallthrough(): int {
     return 1
 }
@@ -5,6 +7,7 @@ fallthrough(): int {
 main(): int {
     fallthrough: int = 0
     fallthrough = fallthrough()
+
     switch fallthrough {
         0 {
             fallthrough

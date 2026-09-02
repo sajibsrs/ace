@@ -1,8 +1,10 @@
-// A variant pattern requires a named binder with an explicit type.
+/* A variant pattern requires a named binder with an explicit type. */
+
 Event: union { none, key: u32 }
 
 main(): int {
     event: Event = Event.key(1)
+
     switch event {
         Event.key(key) {}
         Event.none {}

@@ -1,4 +1,7 @@
+/* Blocking TCP failure paths, localhost resolution, and a forked echo round trip. */
+
 // expect-exit: 0
+
 import net
 import sys
 
@@ -11,7 +14,7 @@ extern "c" {
 
 loopback(port: u16): net.Address4 {
     ip: [4]u8 = [127, 0, 0, 1]
-    return net.Address4{ip: ip, port: port}
+    return net.Address4 {ip: ip, port: port}
 }
 
 check_error(err: Error, domain: typeid): bool {
@@ -25,37 +28,47 @@ check_failures(): int {
                     typeid(net.SetReuseAddressErr)) {
         return 1
     }
+
     if !check_error(net.set_reuse_port(invalid, true),
                     typeid(net.SetReusePortErr)) {
         return 2
     }
+
     if !check_error(net.set_nonblocking(invalid, true),
                     typeid(net.SetNonblockingErr)) {
         return 3
     }
+
     if !check_error(net.bind(invalid, loopback(u16(1))), typeid(net.BindErr)) {
         return 4
     }
+
     if !check_error(net.listen(invalid, usize(1)), typeid(net.ListenErr)) {
         return 5
     }
     accepted: net.Socket, address: net.Address4, aerr: Error = net.accept(invalid)
+
     if accepted != -1 {
         return 6
     }
+
     if aerr == null {
         return 14
     }
+
     if aerr.message.len != 13 {
         return 15
     }
+
     if !check_error(aerr, typeid(net.AcceptErr)) {
         return 13
     }
+
     if address.ip[0] != 0 || address.ip[1] != 0 || address.ip[2] != 0 ||
        address.ip[3] != 0 || address.port != 0 {
         return 7
     }
+
     if !check_error(net.connect(invalid, loopback(u16(1))),
                     typeid(net.ConnectErr)) {
         return 8
@@ -64,19 +77,23 @@ check_failures(): int {
     bytes: [1]u8 = [0]
     view: []u8 = bytes[0..1]
     count: int, rerr: Error = net.receive(invalid, mut view)
+
     if count != 0 || !check_error(rerr, typeid(net.ReceiveErr)) {
         return 9
     }
     count, rerr = net.send(invalid, "x")
+
     if count != 0 || !check_error(rerr, typeid(net.SendErr)) {
         return 10
     }
     count, rerr = net.send(invalid, view)
+
     if count != 0 || !check_error(rerr, typeid(net.SendErr)) {
         return 11
     }
 
     bad: net.Socket, serr: Error = net.socket(net.SocketKind(1))
+
     if bad != -1 || !check_error(serr, typeid(net.SocketErr)) ||
        sys.errno() != 22 {
         return 12
@@ -91,25 +108,30 @@ check_resolution(): int {
     first: []net.Address4 = storage[0..1]
 
     count: usize, err: Error = net.resolve4("localhost", u16(8080), mut first)
+
     if err != null || count != 1 {
         return 1
     }
+
     if storage[0].ip[0] != 127 || storage[0].ip[1] != 0 ||
        storage[0].ip[2] != 0 || storage[0].ip[3] != 1 ||
        storage[0].port != 8080 {
         return 2
     }
+
     if storage[1].port != 54321 {
         return 3
     }
 
     empty: []net.Address4 = null
     count, err = net.resolve4("localhost", u16(80), mut empty)
+
     if count != 0 || !check_error(err, typeid(net.ResolveErr)) {
         return 4
     }
 
     count, err = net.resolve4("local\x00host", u16(80), mut first)
+
     if count != 0 || !check_error(err, typeid(net.ResolveErr)) {
         return 5
     }
@@ -118,15 +140,18 @@ check_resolution(): int {
 
 child(port: u16): int {
     sock: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
+
     if err != null {
         return 1
     }
     err = net.connect(sock, loopback(port))
+
     if err != null {
         sys.close(sock)
         return 2
     }
     count: int, ioerr: Error = net.send(sock, "ping")
+
     if ioerr != null || count != 4 {
         sys.close(sock)
         return 3
@@ -134,11 +159,13 @@ child(port: u16): int {
     storage: [4]u8 = [0 : 4]
     reply: []u8 = storage[0..4]
     count, ioerr = net.receive(sock, mut reply)
+
     if ioerr != null || count != 4 || storage[0] != 'p' ||
        storage[1] != 'o' || storage[2] != 'n' || storage[3] != 'g' {
         sys.close(sock)
         return 4
     }
+
     if sys.close(sock) != null {
         return 5
     }
@@ -147,10 +174,12 @@ child(port: u16): int {
 
 main(): int {
     failure: int = check_failures()
+
     if failure != 0 {
         return failure
     }
     failure = check_resolution()
+
     if failure != 0 {
         return 40 + failure
     }
@@ -158,11 +187,14 @@ main(): int {
     listener: net.Socket = net.Socket(-1)
     selected: u16 = 0
     start: int = 40000 + int(c_getpid()) % 20000
+
     for candidate: int in start .. start + 128 {
         current: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
+
         if err != null {
             return 20
         }
+
         if net.set_reuse_address(current, true) != null ||
            net.set_reuse_address(current, false) != null ||
            net.set_reuse_address(current, true) != null ||
@@ -173,12 +205,14 @@ main(): int {
         }
         selected = u16(candidate)
         err = net.bind(current, loopback(selected))
+
         if err == null {
             listener = current
             break
         }
         sys.close(current)
     }
+
     if listener == -1 {
         return 22
     }
@@ -188,10 +222,12 @@ main(): int {
         sys.close(listener)
         return 23
     }
+
     if net.listen(listener, usize(8)) != null {
         sys.close(listener)
         return 24
     }
+
     if !check_error(net.listen(listener, usize(0x80000000)),
                     typeid(net.ListenErr)) || sys.errno() != 22 {
         sys.close(listener)
@@ -199,10 +235,12 @@ main(): int {
     }
 
     pid: i32 = c_fork()
+
     if pid == -1 {
         sys.close(listener)
         return 26
     }
+
     if pid == 0 {
         code: int = child(selected)
         c_exit(i32(code))
@@ -210,10 +248,12 @@ main(): int {
     }
 
     peer: net.Socket, peer_address: net.Address4, err: Error = net.accept(listener)
+
     if err != null || peer == -1 {
         sys.close(listener)
         return 27
     }
+
     if peer_address.ip[0] != 127 || peer_address.ip[1] != 0 ||
        peer_address.ip[2] != 0 || peer_address.ip[3] != 1 ||
        peer_address.port == 0 {
@@ -225,6 +265,7 @@ main(): int {
     storage: [4]u8 = [0 : 4]
     request: []u8 = storage[0..4]
     count: int, ioerr: Error = net.receive(peer, mut request)
+
     if ioerr != null || count != 4 || storage[0] != 'p' ||
        storage[1] != 'i' || storage[2] != 'n' || storage[3] != 'g' {
         sys.close(peer)
@@ -234,16 +275,19 @@ main(): int {
     response_bytes: [4]u8 = ['p', 'o', 'n', 'g']
     response: []u8 = response_bytes[0..4]
     count, ioerr = net.send(peer, response)
+
     if ioerr != null || count != 4 {
         sys.close(peer)
         sys.close(listener)
         return 30
     }
+
     if sys.close(peer) != null || sys.close(listener) != null {
         return 31
     }
 
     status: i32 = 0
+
     if c_waitpid(pid, mut &status, 0) != pid || status != 0 {
         return 32
     }

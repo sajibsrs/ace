@@ -1,7 +1,10 @@
+/* Fallthrough union payload fixture. */
+
 Event: union { none, ready }
 
 main(): int {
     event: Event = Event.none
+
     switch event {
         Event.none { fallthrough }
         Event.ready {}

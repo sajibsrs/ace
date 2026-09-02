@@ -1,4 +1,5 @@
-// Plain pointer values carry null directly; the branch is an explicit runtime check.
+/* Plain pointer values carry null directly; the branch is an explicit runtime check. */
+
 Point: struct { x: f32 }
 
 maybe(p: *Point): f32 {

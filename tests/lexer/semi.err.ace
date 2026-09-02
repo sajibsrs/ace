@@ -1,2 +1,4 @@
+/* A stray semicolon is rejected. */
+
 x: int = 1;
 y: int = 2

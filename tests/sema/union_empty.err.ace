@@ -1,4 +1,5 @@
-// A union needs at least one variant.
+/* A union needs at least one variant. */
+
 Empty: union {}
 
 main(): int {

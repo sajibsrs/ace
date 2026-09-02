@@ -1,5 +1,7 @@
-// Private declarations are rejected across module boundaries.
+/* Private declarations are rejected across module boundaries. */
+
 import util: "./util.ace"
+
 main(): int {
     return util.secret()
 }

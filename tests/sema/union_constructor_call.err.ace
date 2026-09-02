@@ -1,4 +1,5 @@
-// A union itself has no constructor call; variants construct it.
+/* A union itself has no constructor call; variants construct it. */
+
 Event: union { none, quit }
 
 main(): int {

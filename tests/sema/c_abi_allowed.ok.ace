@@ -1,3 +1,5 @@
+/* C ABI allowed fixture. */
+
 Leaf: struct { x: i16, y: u32 }
 Packet: struct { values: [3]f32, leaf: Leaf, next: *Packet }
 Code: distinct i32

@@ -1,3 +1,5 @@
+/* Bare return multiline fixture. */
+
 pair(): (int, int) {
     return 1,
         2

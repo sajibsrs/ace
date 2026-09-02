@@ -1,3 +1,5 @@
+/* Premature forward member fixture. */
+
 A: struct {
     b: *B,
 }

@@ -1,5 +1,7 @@
-// Missing local module files are diagnosed with the importing file.
+/* Missing local module files are diagnosed with the importing file. */
+
 import u: "./nope.ace"
+
 main(): int {
     return 0
 }

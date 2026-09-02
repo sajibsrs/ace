@@ -1,5 +1,8 @@
+/* Initialized labeled exit fixture. */
+
 main(): int {
     answer: int
+
     done: {
         answer = 42
         break done

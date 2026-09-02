@@ -1,4 +1,7 @@
+/* Error export module fixture. */
+
 // expect-exit: 42
+
 import errors: "./error_lib.ace"
 
 fail(): Error {
@@ -7,13 +10,16 @@ fail(): Error {
 
 main(): int {
     error: Error = fail()
+
     if error == null {
         return 1
     }
+
     if error != null {
         if error != errors.not_found || error.code != 2 {
             return 2
         }
+
         if error.message.len != 12 {
             return 3
         }

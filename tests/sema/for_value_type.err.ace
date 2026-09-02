@@ -1,5 +1,8 @@
+/* For value type fixture. */
+
 main(): int {
     values: [2]i32 = [1, 2]
+
     for index: usize, value: i64 in values {
         return int(index) + value
     }

@@ -1,3 +1,5 @@
+/* Panic reserved global fixture. */
+
 panic: const string = "reserved"
 
 main(): int {

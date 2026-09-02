@@ -1,13 +1,18 @@
+/* Typed allocation fixture. */
+
 // expect-exit: 0
+
 import mem
 
 Item: struct { tag: u32, weight: u64, live: bool }
 
 main(): int {
     numbers: []usize = mem.alloc[usize](4)
+
     if numbers == null {
         return 1
     }
+
     if numbers.len != 4 {
         mem.release[usize](mut numbers)
         return 2
@@ -15,6 +20,7 @@ main(): int {
 
     numbers[0] = 40
     numbers[1] = 2
+
     if numbers[0] + numbers[1] != 42 {
         mem.release[usize](mut numbers)
         return 3
@@ -22,45 +28,55 @@ main(): int {
 
     alias: []usize = numbers
     alias[2] = 9
+
     if numbers[2] != 9 {
         mem.release[usize](mut numbers)
         return 4
     }
 
     grown: []usize = mem.realloc[usize](numbers, 8)
+
     if grown == null {
         return 5
     }
+
     if grown.len != 8 {
         return 6
     }
+
     if grown[0] + grown[1] != 42 || grown[2] != 9 {
         return 7
     }
     grown[7] = 70
+
     if grown[7] != 70 {
         return 8
     }
 
     failed: []usize = mem.realloc[usize](grown, 0)
+
     if failed != null {
         return 9
     }
     overflow: []usize = mem.realloc[usize](grown, usize(0x2000000000000001))
+
     if overflow != null {
         return 10
     }
+
     if grown[0] + grown[1] != 42 || grown[7] != 70 {
         return 11
     }
 
     mem.release[usize](mut grown)
+
     if grown != null {
         return 12
     }
     mem.release[usize](mut grown)
 
     dangling: bool = alias != null
+
     if !dangling {
         return 13
     }
@@ -69,64 +85,79 @@ main(): int {
         return 14
     }
     items: []Item = mem.alloc[Item](3)
+
     if items == null {
         return 15
     }
+
     if items.len != 3 {
         return 16
     }
     items[0] = Item { tag: 1, weight: 10, live: true }
     items[1] = Item { tag: 2, weight: 20, live: false }
     items[2] = Item { tag: 3, weight: 30, live: true }
+
     if items[1].tag != 2 || items[1].weight != 20 || items[1].live {
         return 17
     }
     total: u64 = items[0].weight + items[1].weight + items[2].weight
+
     if total != 60 {
         return 18
     }
     more: []Item = mem.realloc[Item](items, 6)
+
     if more == null {
         return 19
     }
+
     if more.len != 6 {
         return 20
     }
+
     if more[2].tag != 3 || more[2].weight != 30 || !more[2].live {
         return 21
     }
     more[5] = Item { tag: 6, weight: 60, live: true }
+
     if more[5].weight != 60 {
         return 22
     }
     mem.release[Item](mut more)
 
     empty: []usize = mem.alloc[usize](0)
+
     if empty != null {
         return 23
     }
     over: []usize = mem.alloc[usize](usize(0x2000000000000001))
+
     if over != null {
         return 24
     }
     big: []Item = mem.alloc[Item](usize(0x4000000000000001))
+
     if big != null {
         return 25
     }
 
     raw: []u8 = mem.alloc(8, 8)
+
     if raw == null {
         return 26
     }
     raw[0] = 7
     raw_grown: []u8 = mem.realloc(raw, 16)
+
     if raw_grown == null {
         return 27
     }
+
     if raw_grown[0] != 7 || raw_grown.len != 16 {
         return 28
     }
     mem.release(mut raw_grown)
+
     if raw_grown != null {
         return 29
     }

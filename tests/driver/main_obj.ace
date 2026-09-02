@@ -1,6 +1,8 @@
+/* Links against foreign C code: helper_value lives in an extra .o (or an
+ * archive found through -L/-l) supplied on the ace command line.
+ */
+
 // expect-exit: 7
-// Links against foreign C code: helper_value lives in an extra .o (or an
-// archive found through -L/-l) supplied on the ace command line.
 
 extern "c" {
     helper_value(): int

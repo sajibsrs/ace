@@ -1,3 +1,5 @@
+/* Mem typed fixture. */
+
 import mem
 
 main(): int {

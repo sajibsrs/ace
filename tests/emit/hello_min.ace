@@ -1,4 +1,7 @@
+/* Minimal executable for -o mode and DWARF line-table checks. */
+
 // expect-exit: 42
+
 main(): int {
     return 42
 }

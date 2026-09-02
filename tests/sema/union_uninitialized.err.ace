@@ -1,8 +1,10 @@
-// A bare union local is uninitialized storage like any other aggregate.
+/* A bare union local is uninitialized storage like any other aggregate. */
+
 Event: union { none, quit }
 
 main(): int {
     e: Event
+
     if e == Event.none { return 1 }
     return 0
 }

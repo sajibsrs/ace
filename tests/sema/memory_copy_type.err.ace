@@ -1,3 +1,5 @@
+/* Memory copy type fixture. */
+
 import copy from mem
 
 main(): int {

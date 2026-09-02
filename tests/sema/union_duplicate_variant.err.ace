@@ -1,4 +1,5 @@
-// Variant names must be unique within a union.
+/* Variant names must be unique within a union. */
+
 Event: union { none, quit, none }
 
 main(): int {

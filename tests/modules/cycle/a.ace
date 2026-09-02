@@ -1,4 +1,7 @@
+/* Companion module for the Cycle fixture. */
+
 import b: "./b.ace"
+
 pub fa(): int {
     return 1
 }

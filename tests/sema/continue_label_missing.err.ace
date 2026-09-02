@@ -1,3 +1,5 @@
+/* Continue label missing fixture. */
+
 main(): int {
     block: {
         continue missing

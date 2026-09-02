@@ -1,4 +1,5 @@
-// Union variants require commas and payload types after `:`.
+/* Union variants require commas and payload types after `:`. */
+
 Broken: union { none key: }
 
 main(): int {

@@ -1,11 +1,15 @@
-// expect-exit: 0
+/* Printf hex fixture. */
+
+/* expect-exit: 0 */
 // expect-output: ffffffffffffffff FFFFFFFFFFFFFFFF 18446744073709551615
+
 import fmt
 
 main(): int {
     unsigned: uint = uint(0xFFFFFFFFFFFFFFFF)
     size: usize = usize(0xFFFFFFFFFFFFFFFF)
     written: int = fmt.printf("%x %X %u", unsigned, size, size)
+
     if written != 54 {
         return 1
     }

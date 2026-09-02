@@ -1,8 +1,11 @@
+/* Contract public module fixture. */
+
 // expect-exit: 42
+
 import shapes: "./shapes.ace"
 
 main(): int {
-    circle: shapes.Circle = shapes.Circle{ radius: 21 }
+    circle: shapes.Circle = shapes.Circle { radius: 21 }
     shape: shapes.Shape = shapes.Shape(&circle)
     return shape.area() + circle.area()
 }

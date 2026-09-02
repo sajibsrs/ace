@@ -1,6 +1,9 @@
+/* Uninitialized loop fixture. */
+
 main(): int {
     answer: int
-    for item: int in 0..1 {
+
+    for item: int in 0 .. 1 {
         answer = item
     }
     return answer

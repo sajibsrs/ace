@@ -1,4 +1,7 @@
+/* Writable pointer permission levels. */
+
 // expect-exit: 42
+
 Point: struct { x: int }
 
 set_x(point: mut *Point, value: int) {
@@ -16,12 +19,13 @@ modify_and_retarget(mut point: mut *Point, replacement: mut *Point) {
 }
 
 main(): int {
-    first: Point = Point{ x: 1 }
-    second: Point = Point{ x: 10 }
+    first: Point = Point { x: 1 }
+    second: Point = Point { x: 10 }
 
-    // A writable address may be passed directly; in a call `mut &first` is
-    // one address expression, not a mut-argument wrapper.
+    /* A writable address may be passed directly; in a call `mut &first` is
+     * one address expression, not a mut-argument wrapper. */
     set_x(mut &first, 20)
+
     if first.x != 20 {
         return 1
     }
@@ -29,35 +33,40 @@ main(): int {
     writable: mut *Point = mut &first
     set_x(writable, 21)
 
-    // The outer pointer is read-only, but the inner pointer it exposes is
-    // writable. Both automatic and explicit dereference honor only the level
-    // that performs the final write.
+    /* The outer pointer is read-only, but the inner pointer it exposes is
+     * writable. Both automatic and explicit dereference honor only the level
+     * that performs the final write. */
     read_outer: *mut *Point = &writable
     read_outer.x += 1
-    ~~read_outer = Point{ x: 23 }
+    ~~read_outer = Point { x: 23 }
+
     if first.x != 23 {
         return 2
     }
 
-    // Here only the outer level is writable: it may replace the stored
-    // read-only pointer without gaining permission to write the Point.
+    /* Here only the outer level is writable: it may replace the stored
+     * read-only pointer without gaining permission to write the Point. */
     readonly: *Point = &first
     write_outer: mut **Point = mut &readonly
     ~write_outer = &second
+
     if readonly.x != 10 {
         return 3
     }
 
     retarget(mut readonly, &first)
+
     if readonly.x != 23 {
         return 4
     }
 
     replacement: mut *Point = mut &second
     modify_and_retarget(mut writable, replacement)
+
     if first.x != 24 {
         return 5
     }
+
     if writable.x != 12 {
         return 6
     }

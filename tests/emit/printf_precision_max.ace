@@ -1,4 +1,7 @@
+/* Printf precision max fixture. */
+
 // expect-exit: 0
+
 import fmt
 
 main(): int {
@@ -6,6 +9,7 @@ main(): int {
     largest: f64 = 1.7976931348623157e308
     negative: f64 = zero - largest
     written: int = fmt.printf("%.324f", negative)
+
     if written != 635 {
         return 1
     }

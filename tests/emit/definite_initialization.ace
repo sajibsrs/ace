@@ -1,8 +1,12 @@
+/* Definite initialization fixture. */
+
 // expect-exit: 42
+
 Point: struct { x: int, y: int }
 
 choose(flag: bool): int {
     answer: int
+
     if flag {
         answer = 40
     } else {

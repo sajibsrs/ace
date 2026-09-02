@@ -1,3 +1,5 @@
+/* A user declaration named printf coexists with fmt.printf. */
+
 printf(value: int): int {
     return value
 }

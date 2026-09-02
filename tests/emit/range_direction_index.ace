@@ -1,4 +1,7 @@
+/* Range direction index fixture. */
+
 // expect-exit: 42
+
 calls: int = 0
 step_calls: int = 0
 
@@ -14,46 +17,57 @@ stride(value: int): int {
 
 main(): int {
     forward: i32 = 0
+
     for i: i32 in 0 .. 4 {
         forward = forward * 10 + i
         i = 99
     }
+
     if forward != 123 {
         return 1
     }
 
     reverse: i32 = 0
+
     for i: i32 in bound(4) .. bound(0) {
         reverse = reverse * 10 + i
     }
+
     if reverse != 3210 || calls != 2 {
         return 2
     }
 
     step: int = 3
     stepped: i32 = 0
+
     for i: i32 in 0 .. 9 step step {
         stepped = stepped * 10 + i
     }
+
     if stepped != 36 {
         return 10
     }
 
     stepped_reverse: i32 = 0
+
     for i: i32 in 9 .. 0 step stride(step) {
         stepped_reverse = stepped_reverse * 10 + i
     }
+
     if stepped_reverse != 630 || step_calls != 1 {
         return 11
     }
 
     empty: i32 = 7
+
     for i: i32 in 2 .. 2 {
         empty = i
     }
+
     for i: i32 in 2 .. 2 step stride(2) {
         empty = i
     }
+
     if empty != 7 || step_calls != 2 {
         return 3
     }
@@ -61,15 +75,18 @@ main(): int {
     values: [4]i32 = [1, 2, 3, 4]
     indices: usize = 0
     weighted: i32 = 0
+
     for index: usize, value: i32 in values {
         indices = indices * 10 + index
         weighted += i32(index) * value
         index = 99
         value = 99
     }
+
     if indices != 123 || weighted != 20 {
         return 4
     }
+
     if values[0] != 1 || values[3] != 4 {
         return 5
     }
@@ -77,9 +94,11 @@ main(): int {
     signed_low: i8 = -128
     signed_high: i8 = -123
     signed_sum: int = 0
+
     for item: i8 in signed_high .. signed_low {
         signed_sum += int(item)
     }
+
     if signed_sum != -630 {
         return 6
     }
@@ -88,19 +107,23 @@ main(): int {
     cross_high: i8 = 3
     cross_count: int = 0
     cross_sum: int = 0
+
     for item: i8 in cross_low .. cross_high {
         cross_count += 1
         cross_sum += int(item)
     }
+
     if cross_count != 5 || cross_sum != 0 {
         return 9
     }
 
     cross_step_count: int = 0
+
     for item: i8 in cross_low .. cross_high step i8(2) {
         cross_step_count += 1
         cross_sum += int(item)
     }
+
     if cross_step_count != 3 || cross_sum != 0 {
         return 12
     }
@@ -108,63 +131,78 @@ main(): int {
     unsigned_low: u8 = 250
     unsigned_high: u8 = 255
     unsigned_sum: int = 0
+
     for item: u8 in unsigned_high .. unsigned_low {
         unsigned_sum += int(item)
     }
+
     if unsigned_sum != 1260 {
         return 7
     }
 
     unsigned_step: u8 = 2
     unsigned_step_sum: int = 0
+
     for item: u8 in unsigned_high .. unsigned_low step unsigned_step {
         unsigned_step_sum += int(item)
     }
+
     if unsigned_step_sum != 756 {
         return 13
     }
 
     view: []i32 = values[1..4]
     view_score: i32 = 0
+
     for index: usize, item: i32 in view {
         view_score += i32(index) * 10 + item
     }
+
     if view_score != 39 {
         return 8
     }
 
     restarts: int = 0
+
     repeat: {
         restarts += 1
+
         if restarts < 3 {
             continue repeat
         }
     }
+
     if restarts != 3 {
         return 14
     }
 
     nested_restarts: int = 0
+
     again: {
         nested_restarts += 1
+
         for item: i32 in values {
             if item == 2 && nested_restarts < 3 {
                 continue again
             }
         }
     }
+
     if nested_restarts != 3 {
         return 15
     }
 
     cycles: int = 0
+
     forever: {
         cycles += 1
+
         if cycles == 4 {
             break forever
         }
         continue forever
     }
+
     if cycles != 4 {
         return 16
     }

@@ -1,9 +1,11 @@
-// hello.ace — lexer fixture: must tokenize with zero errors.
+/* hello.ace — lexer fixture: must tokenize with zero errors. */
+
 import fmt
 import m: math
 
 /* block comment
    spanning lines — acts as a newline */
+
 Point: struct {
     x: f32,
     y: f32,
@@ -19,6 +21,7 @@ greet(name: string): string {
 
 sum(mut buf: []u8): int {
     total: int = 0
+
     for b: u8 in buf {
         total += b
     }
@@ -36,6 +39,7 @@ scale_it(p: mut *Point, k: f64) {
 
 raw_read(fd: int, mut buf: []u8): (int, Error) {
     ret: i64
+
     asm "svc #0" {
         in:  x0 = fd, x16 = 3
         out: x0 = ret
@@ -52,9 +56,10 @@ find(buf: []u8, needle: u8): int {
             }
         }
     }
+
     switch needle {
         0, 1 { return -1 }
-        else { }
+        else {}
     }
     return 0
 }

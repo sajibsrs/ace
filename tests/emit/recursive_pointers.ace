@@ -1,3 +1,5 @@
+/* Recursive pointers fixture. */
+
 // expect-exit: 42
 
 Node: struct {

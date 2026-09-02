@@ -1,2 +1,4 @@
+/* An unrecognized character is rejected. */
+
 x: int = 1 $ y
 héllo: int = 2

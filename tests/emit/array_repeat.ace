@@ -13,7 +13,7 @@ next(): i32 {
 
 make_big(): Big {
     big_calls += 1
-    return Big{ a: 1, b: 2, c: 3 }
+    return Big { a: 1, b: 2, c: 3 }
 }
 
 take(values: [3]i32): i32 {
