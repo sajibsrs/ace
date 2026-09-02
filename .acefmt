@@ -1,0 +1,85 @@
+# acefmt — strict formatting rules for Ace source, in a standard INI form.
+# Normative: AGENTS.md points here instead of restating the rules. This file
+# is what the future formatter reads and what agents follow; reviewers treat
+# it as the enforced rule set. One file at the repo root; nested trees inherit
+# the nearest one. Kebab-case keys; each key carves one documented convention
+# and its comment carries the rule text.
+
+[file]
+# Byte-level facts about an Ace source file, so nothing is defined elsewhere.
+# Mimicking these in an editor's own config (e.g. .editorconfig) is the
+# reader's responsibility.
+charset = utf-8
+line-end = lf
+final-newline = always
+trailing-whitespace = trimmed
+
+[layout]
+# A line stays intact while it is at most 120 characters; wrap only when it
+# would exceed 120. No Ace source line may exceed 120 characters.
+line-length = 120
+indent-style = space
+indent-width = 4
+# A wrapped line aligns to the column just inside the opening delimiter it
+# continues. Canonical practice (tests/emit/net.ace, std/).
+continuation-alignment = open-delimiter
+
+[blank-lines]
+# One blank line before every construct with a { ... } body.
+before-body = always
+# No blank line after a closing brace unless one is required before the next
+# body-bearing construct.
+after-closing-brace = only-before-next-body
+# The first element inside another body takes no blank line before it.
+nested-first-body = never
+# The block-comment file header is followed by exactly one blank line.
+after-file-header = always
+# if / else if / else is one construct: keep else if and else attached to the
+# preceding closing brace, with no blank lines inside the chain; add
+# separation only before the complete chain. A later independent if starts a
+# new construct.
+inside-if-chain = never
+
+[braces]
+# One space before the opening { of every body-bearing construct, aggregate
+# literals included: "Value {", never "Value{".
+space-before-open = always
+# A genuinely empty body is {} on one line.
+empty-body = same-line
+
+[comments]
+# Every Ace source file starts with a block-comment header.
+file-header = block
+# Comments spanning multiple source lines are /* ... */ blocks, never runs of
+# // comments.
+multi-line = block
+# // is reserved for a single source line.
+single-line = slash-slash
+# Attached to a function, struct, union, or other declaration: /* before the
+# first content line, continuation lines prefixed with " *", and */ on its
+# own final line:
+#   /* First line.
+#    * Second line.
+#    */
+doc-multiline = star-own-close
+# Inside code or otherwise not attached to a declaration: same continuation
+# prefix, with */ after the final content line:
+#   /* First line.
+#    * Second line. */
+inline-multiline = star-same-close
+# A comment attached to a body-bearing construct belongs to that construct:
+# put the separating blank line before the comment and no blank line between
+# the comment and the construct. A documentation comment sits directly
+# adjacent to the declaration it documents; an unrelated, section-level, or
+# group comment takes one blank line after it so it cannot be mistaken for
+# documentation of the next declaration.
+doc-adjacency = strict
+
+[tokens]
+# Canonical practice, recorded here for enforcement: for-in bounds are spaced
+# (std/: "for i: usize in 0 .. n"), slice subscripts are tight (net.ace:
+# "bytes[0..1]").
+range-in-for = spaced
+slice-range = tight
+# spec.md Syntax & Parsing #8: the array-repeat form is [value : count].
+array-repeat = spaced
