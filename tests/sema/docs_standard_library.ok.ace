@@ -14,24 +14,29 @@ import sys
 
 str_examples(): int {
     at: usize, found: bool = str.find("hello world", "world")
+
     if !found {
         return 1
     }
     trimmed: string, hit: bool = str.trim("hello world", "world", true)
+
     if !hit || trimmed != "hello " {
         return 2
     }
     n: int, ok: bool = str.parse[int]("-42")
+
     if !ok || n != -42 {
         return 3
     }
     r: usize, radix_ok: bool = str.parse[usize]("ff", u8(16))
+
     if !radix_ok || r != 255 {
         return 4
     }
     buf: [32]u8 = [0 : 32]
     dst: []u8 = buf[0..32]
     count: usize, fit: bool = str.stringify(mut dst, n)
+
     if !fit || count != 4 {
         return 5
     }

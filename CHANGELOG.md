@@ -323,6 +323,16 @@ call, and untyped-constant negation avoids i64-min UB. Coverage spans parser,
 sema, emit, runtime module fixtures, implemented-only documentation, and
 sanitizer runs.
 
+### Ace formatting conformance and module declaration order
+
+The character/string chunk's Ace sources now follow the repository's normative
+blank-line, indentation, and 120-column rules. `.acefmt` also records the
+owner-decided module organization rule: after imports and any platform `extern`
+boundary, public Ace declarations precede private implementation declarations,
+with overloads kept together. `std/str.ace` is organized accordingly, and its
+runtime fixture retains the long conversion cases through in-program checks
+without an overlong expected-output directive.
+
 ## Still open after these chunks
 
 Checked/release build modes, then checked allocation tracking; nonblocking echo and multi-client chat are the next networking proofs over the implemented `poll` readiness queue (see the `spec.md` Decision Queue).

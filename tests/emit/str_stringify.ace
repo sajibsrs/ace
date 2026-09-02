@@ -2,7 +2,7 @@
  * capacity behavior, and float representations identical to fmt.print.
  */
 // expect-exit: 0
-// expect-output: 42|-17|-9223372036854775808|4294967295|18446744073709551615|ff|-ff|0|2.5|-2.5|1|0|0.3333333333333333|100000000000000000000|1.5e-7|1.5|3.5|
+// expect-output: 42|-17|4294967295|ff|-ff|0|2.5|-2.5|1|0|1.5e-7|1.5|3.5|
 
 import str
 import fmt
@@ -23,16 +23,20 @@ main(): int {
     show(mut dst, n, ok)
     fmt.print("|")
     n, ok = str.stringify(mut dst, -9223372036854775807 - 1)
-    show(mut dst, n, ok)
-    fmt.print("|")
+
+    if !ok || string(dst[0..n]) != "-9223372036854775808" {
+        return 4
+    }
     u: uint = 4294967295
     n, ok = str.stringify(mut dst, u)
     show(mut dst, n, ok)
     fmt.print("|")
     z: usize = 18446744073709551615
     n, ok = str.stringify(mut dst, z)
-    show(mut dst, n, ok)
-    fmt.print("|")
+
+    if !ok || string(dst[0..n]) != "18446744073709551615" {
+        return 5
+    }
     n, ok = str.stringify(mut dst, 255, u8(16))
     show(mut dst, n, ok)
     fmt.print("|")
@@ -60,12 +64,16 @@ main(): int {
     fmt.print("|")
     f = 1.0 / 3.0
     n, ok = str.stringify(mut dst, f)
-    show(mut dst, n, ok)
-    fmt.print("|")
+
+    if !ok || string(dst[0..n]) != "0.3333333333333333" {
+        return 6
+    }
     f = 100000000000000000000.0
     n, ok = str.stringify(mut dst, f)
-    show(mut dst, n, ok)
-    fmt.print("|")
+
+    if !ok || string(dst[0..n]) != "100000000000000000000" {
+        return 7
+    }
     f = 1.5e-7
     n, ok = str.stringify(mut dst, f)
     show(mut dst, n, ok)
@@ -81,14 +89,17 @@ main(): int {
     small: [2]u8 = [0 : 2]
     sdst: []u8 = small[0..2]
     n, ok = str.stringify(mut sdst, 12345)
+
     if ok || n != 0 || small[0] != 0 || small[1] != 0 {
         return 1
     }
     n, ok = str.stringify(mut dst, 1, u8(1))
+
     if ok || n != 0 {
         return 2
     }
     n, ok = str.stringify(mut dst, 1, u8(37))
+
     if ok || n != 0 {
         return 3
     }

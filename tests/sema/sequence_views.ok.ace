@@ -6,6 +6,7 @@ greeting: const string = "hello"
 
 sum(text: string): int {
     total: int = 0
+
     for c: u8 in text {
         total += int(c)
     }
@@ -14,45 +15,56 @@ sum(text: string): int {
 
 main(): int {
     a: string = greeting[0..5]
+
     if a != "hello" {
         return 1
     }
+
     if a.len != 5 || a[0] != 'h' || a[4] != 'o' {
         return 2
     }
+
     if greeting[..] != "hello" || greeting[1..] != "ello" ||
        greeting[..4] != "hell" || greeting[2..2].len != 0 {
         return 3
     }
+
     if sum("abc") != int('a') + int('b') + int('c') {
         return 4
     }
     total: int = 0
     at: usize = 0
+
     for i: usize, c: char in greeting[1..3] {
         total += int(c) + int(i)
         at += i
     }
+
     if total != int('e') + int('l') + 1 {
         return 5
     }
     arr: [3]u8 = [u8('o'), u8('k'), u8('!')]
     view: string = string(arr[0..3])
+
     if view != "ok!" {
         return 6
     }
     arr[0] = u8('n')
+
     if view != "nk!" {
         return 7
     }
+
     if arr[0..1][0] != u8('n') {
         return 8
     }
+
     if "hello"[1..3] != "el" || "hello".len != 5 {
         return 9
     }
     base: string = "hello"
     re: string = base[1..4]
+
     if re[1..] != "ll" {
         return 10
     }

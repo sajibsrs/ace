@@ -16,268 +16,6 @@ extern "c" {
     strtof(text: *u8, end: *u8): f32
 }
 
-/* Writes the complete byte sequence into destination or nothing at all. */
-store_bytes(mut destination: []u8, source: []u8): (usize, bool) {
-    if source.len > destination.len {
-        return 0, false
-    }
-    for i: usize in 0 .. source.len {
-        destination[i] = source[i]
-    }
-    return source.len, true
-}
-
-/* Writes the complete text into destination or nothing at all. */
-store_text(mut destination: []u8, text: string): (usize, bool) {
-    if text.len > destination.len {
-        return 0, false
-    }
-    for i: usize in 0 .. text.len {
-        destination[i] = text[i]
-    }
-    return text.len, true
-}
-
-/* First occurrence of needle at or after from: the index and whether the
- * needle was found. An empty needle is found at every position. */
-index_from(text: string, needle: string, after: usize): (usize, bool) {
-    if needle.len == 0 {
-        return after, true
-    }
-    if needle.len > text.len {
-        return 0, false
-    }
-    for scan: usize in after .. text.len + 1 - needle.len {
-        match: bool = true
-        for j: usize in 0 .. needle.len {
-            if text[scan + j] != needle[j] {
-                match = false
-                break
-            }
-        }
-        if match {
-            return scan, true
-        }
-    }
-    return 0, false
-}
-
-/* First occurrence of one byte at or after from. */
-index_byte_from(text: string, byte: char, after: usize): (usize, bool) {
-    for i: usize in after .. text.len {
-        if text[i] == byte {
-            return i, true
-        }
-    }
-    return 0, false
-}
-
-/* The value of one ASCII digit and whether it is a digit at all. */
-digit_value(c: u8): (u64, bool) {
-    if c >= 48 && c <= 57 {
-        return u64(c - 48), true
-    }
-    if c >= 97 && c <= 122 {
-        return u64(c - 87), true
-    }
-    if c >= 65 && c <= 90 {
-        return u64(c - 55), true
-    }
-    return 0, false
-}
-
-/* Accumulates one digit with the overflow-before-multiply check. */
-accumulate(mag: u64, d: u64, radix: u8, limit: u64): (u64, bool) {
-    if mag > (limit - d) / u64(radix) {
-        return 0, false
-    }
-    return mag * u64(radix) + d, true
-}
-
-/* Parses the complete text as a signed integer in the given radix. The
- * magnitude accumulates in u64, so the signed limit also covers the negative
- * minimum; the unsigned forms reject the leading minus outright. These
- * concrete helpers are the private targets of the compiler's parse lowering.
- */
-parse_int_result(text: string, radix: u8): (int, bool) {
-    if radix < 2 || radix > 36 {
-        return 0, false
-    }
-    if text.len == 0 {
-        return 0, false
-    }
-    negative: bool = text[0] == 45
-    at: usize = 0
-    if negative {
-        at = 1
-    }
-    if at == text.len {
-        return 0, false
-    }
-    limit: u64 = 9223372036854775807
-    if negative {
-        limit = 9223372036854775808
-    }
-    mag: u64 = 0
-    for i: usize in at .. text.len {
-        d: u64, ok: bool = digit_value(text[i])
-        if !ok || d >= u64(radix) {
-            return 0, false
-        }
-        mag, ok = accumulate(mag, d, radix, limit)
-        if !ok {
-            return 0, false
-        }
-    }
-    if negative {
-        return int(0 - mag), true
-    }
-    return int(mag), true
-}
-
-parse_uint_result(text: string, radix: u8): (uint, bool) {
-    if radix < 2 || radix > 36 {
-        return 0, false
-    }
-    if text.len == 0 {
-        return 0, false
-    }
-    if text[0] == 45 {
-        return 0, false
-    }
-    mag: u64 = 0
-    for i: usize in 0 .. text.len {
-        d: u64, ok: bool = digit_value(text[i])
-        if !ok || d >= u64(radix) {
-            return 0, false
-        }
-        mag, ok = accumulate(mag, d, radix, 18446744073709551615)
-        if !ok {
-            return 0, false
-        }
-    }
-    return uint(mag), true
-}
-
-/* usize is u64-wide on the v1 target, so its range matches uint exactly. */
-parse_usize_result(text: string, radix: u8): (usize, bool) {
-    v: uint, ok: bool = parse_uint_result(text, radix)
-    if !ok {
-        return 0, false
-    }
-    return usize(v), true
-}
-
-/* The exponent tail of a decimal/scientific spelling: an optional sign and
- * at least one digit, with nothing else. */
-exponent_shape(text: string, at: usize): bool {
-    n: usize = text.len
-    cur: usize = at
-    if cur >= n {
-        return false
-    }
-    if text[cur] == 43 || text[cur] == 45 {
-        cur += 1
-    }
-    if cur >= n {
-        return false
-    }
-    for i: usize in cur .. n {
-        c: u8 = text[i]
-        if c < 48 || c > 57 {
-            return false
-        }
-    }
-    return true
-}
-
-/* Admits exactly the ordinary decimal/scientific spellings plus the exact
- * non-finite words fmt writes — no whitespace, plus sign, hex form, or
- * extended names — so the C scanner behind the float helpers can never
- * accept anything this language surface rejects. */
-float_literal_shape(text: string): bool {
-    n: usize = text.len
-    if n == 0 {
-        return false
-    }
-    at: usize = 0
-    if text[0] == 45 {
-        at = 1
-    }
-    if at == n {
-        return false
-    }
-    if text == "nan" || text == "inf" || text == "-inf" {
-        return true
-    }
-    digits: usize = 0
-    seen_dot: bool = false
-    for i: usize in at .. n {
-        c: u8 = text[i]
-        if c >= 48 && c <= 57 {
-            digits += 1
-            continue
-        }
-        if c == 46 && !seen_dot {
-            seen_dot = true
-            continue
-        }
-        if (c == 101 || c == 69) && digits > 0 {
-            return exponent_shape(text, i + 1)
-        }
-        return false
-    }
-    return digits > 0
-}
-
-/* Copies the text into a NUL-terminated scratch buffer for the C scanner. */
-terminate(text: string, mut buf: []u8): bool {
-    if text.len + 1 > buf.len {
-        return false
-    }
-    for i: usize in 0 .. text.len {
-        buf[i] = text[i]
-    }
-    buf[text.len] = 0
-    return true
-}
-
-parse_f64_result(text: string): (f64, bool) {
-    zero: f64 = 0.0
-    if !float_literal_shape(text) {
-        return 0.0, false
-    }
-    buf: [512]u8 = [0 : 512]
-    scratch: []u8 = buf[0..512]
-    if !terminate(text, mut scratch) {
-        return 0.0, false
-    }
-    value: f64 = strtod(&buf[0], null)
-    /* Overflow reaches the scanner as infinity; only a spelled infinity may
-     * come back as one. Underflow to signed zero succeeds. */
-    if value == value && value - value != zero && text != "inf" && text != "-inf" {
-        return 0.0, false
-    }
-    return value, true
-}
-
-parse_f32_result(text: string): (f32, bool) {
-    zero: f32 = 0.0
-    if !float_literal_shape(text) {
-        return 0.0, false
-    }
-    buf: [512]u8 = [0 : 512]
-    scratch: []u8 = buf[0..512]
-    if !terminate(text, mut scratch) {
-        return 0.0, false
-    }
-    value: f32 = strtof(&buf[0], null)
-    if value == value && f64(value) - f64(value) != f64(zero) && text != "inf" && text != "-inf" {
-        return 0.0, false
-    }
-    return value, true
-}
-
 /* First occurrence of needle: the byte index and whether it was found; an
  * empty string needle is found at zero, and absence returns canonical zero. */
 pub find(text: string, needle: string): (usize, bool) {
@@ -307,6 +45,7 @@ pub has(text: string, part: string, suffix: bool): bool {
     if part.len > text.len {
         return false
     }
+
     if !suffix {
         return text[..part.len] == part
     }
@@ -317,9 +56,11 @@ pub has(text: string, part: string, suffix: bool): bool {
  * equal prefix the shorter string sorts first. */
 pub compare(a: string, b: string): int {
     n: usize = a.len
+
     if b.len < n {
         n = b.len
     }
+
     for i: usize in 0 .. n {
         if a[i] != b[i] {
             if a[i] < b[i] {
@@ -328,9 +69,11 @@ pub compare(a: string, b: string): int {
             return 1
         }
     }
+
     if a.len < b.len {
         return -1
     }
+
     if a.len > b.len {
         return 1
     }
@@ -343,6 +86,7 @@ pub copy(text: string, noalias mut destination: []u8): bool {
     if text.len > destination.len {
         return false
     }
+
     for i: usize in 0 .. text.len {
         destination[i] = text[i]
     }
@@ -361,11 +105,14 @@ pub split(text: string, separator: string, mut parts: []string): (usize, bool) {
     written: usize = 0
     start: usize = 0
     cursor: usize = 0
+
     for guard: usize in 0 .. text.len + 1 {
         at: usize, found: bool = index_from(text, separator, cursor)
+
         if !found {
             break
         }
+
         if written < parts.len {
             parts[written] = text[start..at]
             written += 1
@@ -374,6 +121,7 @@ pub split(text: string, separator: string, mut parts: []string): (usize, bool) {
         cursor = start
     }
     complete: bool = false
+
     if written < parts.len {
         parts[written] = text[start..]
         written += 1
@@ -396,12 +144,14 @@ pub trim(text: string, part: string, suffix: bool): (string, bool) {
     if part.len == 0 {
         return text, true
     }
+
     if !suffix {
         if part.len <= text.len && text[..part.len] == part {
             return text[part.len..], true
         }
         return text, false
     }
+
     if part.len <= text.len && text[text.len - part.len..] == part {
         return text[..text.len - part.len], true
     }
@@ -412,27 +162,25 @@ pub trim(text: string, part: char, suffix: bool): (string, bool) {
     if text.len == 0 {
         return text, false
     }
+
     if !suffix {
         if text[0] == part {
             return text[1..], true
         }
         return text, false
     }
+
     if text[text.len - 1] == part {
         return text[..text.len - 1], true
     }
     return text, false
 }
 
-/* True for exactly the ASCII whitespace bytes 0x09..0x0D and 0x20. */
-space_byte(c: u8): bool {
-    return (c >= 9 && c <= 13) || c == 32
-}
-
 /* Removes all leading and trailing ASCII whitespace bytes and returns the
  * zero-copy view; no Unicode whitespace processing happens. */
 pub trim(text: string): string {
     start: usize = text.len
+
     for i: usize in 0 .. text.len {
         if !space_byte(text[i]) {
             start = i
@@ -440,6 +188,7 @@ pub trim(text: string): string {
         }
     }
     end: usize = text.len
+
     if start < text.len {
         for i: usize in 0 .. text.len - start {
             if !space_byte(text[text.len - 1 - i]) {
@@ -459,154 +208,13 @@ pub trim(text: string): string {
  * canonical-zero T and false; finite float underflow rounded to signed zero
  * succeeds. Like mem's typed allocation, these declarations are the public
  * surface: the bootstrap compiler checks the instantiation and lowers the
- * call directly onto the concrete private helpers above, so no generic body
+ * call directly onto the concrete private helpers below, so no generic body
  * is emitted.
  */
 
 pub parse[T](text: string): (T, bool) {}
 
 pub parse[T](text: string, radix: u8): (T, bool) {}
-
-/* The shortest digit count whose correctly rounded decimal form parses back
- * to the exact value, through libSystem ecvt (correctly rounded digits) and
- * strtod/strtof (the round-trip check; strtof parses f32 directly, with no
- * double-rounding detour). ecvt returns internal storage that a later call
- * may overwrite, so the digits are copied out immediately. The digits are
- * the integer form: value equals digits x 10^(decpt - count). */
-shortest_digits(mag: f64, max: int, narrow: bool, mut digits: []u8, mut probe: []u8): (int, i32) {
-    decpt: i32 = 0
-    unused: i32 = 0
-    count: int = max
-    limit: int = max + 1
-    for p: int in 1 .. limit {
-        src: *u8 = ecvt(mag, i32(p), mut &decpt, mut &unused)
-        memcpy(&digits[0], src, usize(p))
-        for i: int in 0 .. p {
-            probe[i] = digits[i]
-        }
-        exp: i32 = decpt - i32(p)
-        q: int = p
-        probe[p] = u8(101)
-        q += 1
-        e: i32 = exp
-        if e < 0 {
-            probe[q] = u8(45)
-            q += 1
-            e = 0 - e
-        }
-        hi: i32 = e / 100
-        mid: i32 = (e / 10) % 10
-        lo: i32 = e % 10
-        if hi != 0 {
-            probe[q] = u8(48 + hi)
-            q += 1
-            probe[q] = u8(48 + mid)
-            q += 1
-        } else if mid != 0 {
-            probe[q] = u8(48 + mid)
-            q += 1
-        }
-        probe[q] = u8(48 + lo)
-        q += 1
-        probe[q] = u8(0)
-        if narrow {
-            if strtof(&probe[0], null) == f32(mag) {
-                count = p
-                break
-            }
-        } else {
-            if strtod(&probe[0], null) == mag {
-                count = p
-                break
-            }
-        }
-    }
-    return count, decpt
-}
-
-/* Renders the canonical notation into out: decimal for scientific exponents
- * -6 through 20, otherwise scientific like 1.5e-7. The sign comes first and
- * no trailing zeros are added. Returns the byte count. */
-render_float(negative: bool, digits: []u8, count: int, decpt: i32, mut out: []u8): usize {
-    at: int = 0
-    if negative {
-        out[at] = u8(45)
-        at += 1
-    }
-    exp: i32 = decpt - 1
-    dp: int = int(decpt)
-    if exp >= -6 && exp <= 20 {
-        if dp <= 0 {
-            out[at] = u8(48)
-            out[at + 1] = u8(46)
-            at += 2
-            zeros: int = 0 - dp
-            for z: int in 0 .. zeros {
-                out[at] = u8(48)
-                at += 1
-            }
-            for d: int in 0 .. count {
-                out[at] = digits[d]
-                at += 1
-            }
-        } else if dp >= count {
-            for d: int in 0 .. count {
-                out[at] = digits[d]
-                at += 1
-            }
-            pad: int = dp - count
-            for z: int in 0 .. pad {
-                out[at] = u8(48)
-                at += 1
-            }
-        } else {
-            for d: int in 0 .. dp {
-                out[at] = digits[d]
-                at += 1
-            }
-            out[at] = u8(46)
-            at += 1
-            for d: int in dp .. count {
-                out[at] = digits[d]
-                at += 1
-            }
-        }
-    } else {
-        out[at] = digits[0]
-        at += 1
-        if count > 1 {
-            out[at] = u8(46)
-            at += 1
-            for d: int in 1 .. count {
-                out[at] = digits[d]
-                at += 1
-            }
-        }
-        out[at] = u8(101)
-        at += 1
-        e: i32 = exp
-        if e < 0 {
-            out[at] = u8(45)
-            at += 1
-            e = 0 - e
-        }
-        hi: i32 = e / 100
-        mid: i32 = (e / 10) % 10
-        lo: i32 = e % 10
-        if hi != 0 {
-            out[at] = u8(48 + hi)
-            at += 1
-            out[at] = u8(48 + mid)
-            at += 1
-        } else if mid != 0 {
-            out[at] = u8(48 + mid)
-            at += 1
-        }
-        out[at] = u8(48 + lo)
-        at += 1
-    }
-    return usize(at)
-}
 
 /* Writes the complete representation of value into destination or nothing
  * at all, returning the byte count and whether it fit. Integer radix forms
@@ -618,19 +226,23 @@ pub stringify(mut destination: []u8, value: int): (usize, bool) {
     at: int = 20
     remaining: int = value
     negative: bool = value < 0
+
     for d: int in 0 .. 20 {
         at -= 1
         remainder: int = remaining % 10
+
         if negative {
             digits[at] = u8(48 - remainder)
         } else {
             digits[at] = u8(48 + remainder)
         }
         remaining = remaining / 10
+
         if remaining == 0 {
             break
         }
     }
+
     if negative {
         at -= 1
         digits[at] = u8(45)
@@ -643,10 +255,12 @@ pub stringify(mut destination: []u8, value: uint): (usize, bool) {
     digits: [20]u8
     at: int = 20
     remaining: uint = value
+
     for d: int in 0 .. 20 {
         at -= 1
         digits[at] = u8(48 + remaining % 10)
         remaining = remaining / 10
+
         if remaining == 0 {
             break
         }
@@ -659,10 +273,12 @@ pub stringify(mut destination: []u8, value: usize): (usize, bool) {
     digits: [20]u8
     at: int = 20
     remaining: usize = value
+
     for d: int in 0 .. 20 {
         at -= 1
         digits[at] = u8(48 + remaining % 10)
         remaining = remaining / 10
+
         if remaining == 0 {
             break
         }
@@ -674,32 +290,36 @@ pub stringify(mut destination: []u8, value: usize): (usize, bool) {
 pub stringify(mut destination: []u8, value: f64): (usize, bool) {
     one: f64 = 1.0
     zero: f64 = 0.0
+
     if value != value {
         n: usize, ok: bool = store_text(mut destination, "nan")
-    return n, ok
+        return n, ok
     }
+
     if value - value != zero {
         if value < zero {
             n: usize, ok: bool = store_text(mut destination, "-inf")
-    return n, ok
+            return n, ok
         }
         n: usize, ok: bool = store_text(mut destination, "inf")
-    return n, ok
+        return n, ok
     }
     negative: bool = value < zero
     mag: f64 = value
+
     if negative {
         mag = zero - value
     }
+
     if mag == zero {
         /* The comparison operators cannot see the sign of a zero, so the
          * sign bit is read through the reciprocal: 1/-0 is -inf. */
         if one / value < zero {
             n: usize, ok: bool = store_text(mut destination, "-0")
-    return n, ok
+            return n, ok
         }
         n: usize, ok: bool = store_text(mut destination, "0")
-    return n, ok
+        return n, ok
     }
     digits: [24]u8
     probe: [32]u8
@@ -716,32 +336,36 @@ pub stringify(mut destination: []u8, value: f64): (usize, bool) {
 pub stringify(mut destination: []u8, value: f32): (usize, bool) {
     pone: f32 = 1.0
     zero: f32 = 0.0
+
     if value != value {
         n: usize, ok: bool = store_text(mut destination, "nan")
-    return n, ok
+        return n, ok
     }
+
     if value - value != zero {
         if value < zero {
             n: usize, ok: bool = store_text(mut destination, "-inf")
-    return n, ok
+            return n, ok
         }
         n: usize, ok: bool = store_text(mut destination, "inf")
-    return n, ok
+        return n, ok
     }
     negative: bool = value < zero
     mag: f32 = value
+
     if negative {
         mag = zero - value
     }
+
     if mag == zero {
         /* The comparison operators cannot see the sign of a zero, so the
          * sign bit is read through the reciprocal: 1/-0 is -inf. */
         if pone / value < zero {
             n: usize, ok: bool = store_text(mut destination, "-0")
-    return n, ok
+            return n, ok
         }
         n: usize, ok: bool = store_text(mut destination, "0")
-    return n, ok
+        return n, ok
     }
     digits: [24]u8
     probe: [32]u8
@@ -766,24 +390,29 @@ pub stringify(mut destination: []u8, value: int, radix: u8): (usize, bool) {
     at: int = 65
     remaining: u64 = 0
     negative: bool = value < 0
+
     if negative {
         remaining = 0 - u64(value)
     } else {
         remaining = u64(value)
     }
+
     for d: int in 0 .. 65 {
         at -= 1
         r: u64 = remaining % u64(radix)
+
         if r < 10 {
             digits[at] = u8(48 + r)
         } else {
             digits[at] = u8(87 + r)
         }
         remaining = remaining / u64(radix)
+
         if remaining == 0 {
             break
         }
     }
+
     if negative {
         at -= 1
         digits[at] = u8(45)
@@ -799,15 +428,18 @@ pub stringify(mut destination: []u8, value: uint, radix: u8): (usize, bool) {
     digits: [64]u8
     at: int = 64
     remaining: uint = value
+
     for d: int in 0 .. 64 {
         at -= 1
         r: uint = remaining % uint(radix)
+
         if r < 10 {
             digits[at] = u8(48 + r)
         } else {
             digits[at] = u8(87 + r)
         }
         remaining = remaining / uint(radix)
+
         if remaining == 0 {
             break
         }
@@ -823,19 +455,487 @@ pub stringify(mut destination: []u8, value: usize, radix: u8): (usize, bool) {
     digits: [64]u8
     at: int = 64
     remaining: usize = value
+
     for d: int in 0 .. 64 {
         at -= 1
         r: usize = remaining % usize(radix)
+
         if r < 10 {
             digits[at] = u8(48 + r)
         } else {
             digits[at] = u8(87 + r)
         }
         remaining = remaining / usize(radix)
+
         if remaining == 0 {
             break
         }
     }
     n2: usize, ok: bool = store_bytes(mut destination, digits[at..64])
     return n2, ok
+}
+
+/* Writes the complete byte sequence into destination or nothing at all. */
+store_bytes(mut destination: []u8, source: []u8): (usize, bool) {
+    if source.len > destination.len {
+        return 0, false
+    }
+
+    for i: usize in 0 .. source.len {
+        destination[i] = source[i]
+    }
+    return source.len, true
+}
+
+/* Writes the complete text into destination or nothing at all. */
+store_text(mut destination: []u8, text: string): (usize, bool) {
+    if text.len > destination.len {
+        return 0, false
+    }
+
+    for i: usize in 0 .. text.len {
+        destination[i] = text[i]
+    }
+    return text.len, true
+}
+
+/* First occurrence of needle at or after from: the index and whether the
+ * needle was found. An empty needle is found at every position. */
+index_from(text: string, needle: string, after: usize): (usize, bool) {
+    if needle.len == 0 {
+        return after, true
+    }
+
+    if needle.len > text.len {
+        return 0, false
+    }
+
+    for scan: usize in after .. text.len + 1 - needle.len {
+        match: bool = true
+
+        for j: usize in 0 .. needle.len {
+            if text[scan + j] != needle[j] {
+                match = false
+                break
+            }
+        }
+
+        if match {
+            return scan, true
+        }
+    }
+    return 0, false
+}
+
+/* First occurrence of one byte at or after from. */
+index_byte_from(text: string, byte: char, after: usize): (usize, bool) {
+    for i: usize in after .. text.len {
+        if text[i] == byte {
+            return i, true
+        }
+    }
+    return 0, false
+}
+
+/* The value of one ASCII digit and whether it is a digit at all. */
+digit_value(c: u8): (u64, bool) {
+    if c >= 48 && c <= 57 {
+        return u64(c - 48), true
+    }
+
+    if c >= 97 && c <= 122 {
+        return u64(c - 87), true
+    }
+
+    if c >= 65 && c <= 90 {
+        return u64(c - 55), true
+    }
+    return 0, false
+}
+
+/* Accumulates one digit with the overflow-before-multiply check. */
+accumulate(mag: u64, d: u64, radix: u8, limit: u64): (u64, bool) {
+    if mag > (limit - d) / u64(radix) {
+        return 0, false
+    }
+    return mag * u64(radix) + d, true
+}
+
+/* Parses the complete text as a signed integer in the given radix. The
+ * magnitude accumulates in u64, so the signed limit also covers the negative
+ * minimum; the unsigned forms reject the leading minus outright. These
+ * concrete helpers are the private targets of the compiler's parse lowering.
+ */
+parse_int_result(text: string, radix: u8): (int, bool) {
+    if radix < 2 || radix > 36 {
+        return 0, false
+    }
+
+    if text.len == 0 {
+        return 0, false
+    }
+    negative: bool = text[0] == 45
+    at: usize = 0
+
+    if negative {
+        at = 1
+    }
+
+    if at == text.len {
+        return 0, false
+    }
+    limit: u64 = 9223372036854775807
+
+    if negative {
+        limit = 9223372036854775808
+    }
+    mag: u64 = 0
+
+    for i: usize in at .. text.len {
+        d: u64, ok: bool = digit_value(text[i])
+
+        if !ok || d >= u64(radix) {
+            return 0, false
+        }
+        mag, ok = accumulate(mag, d, radix, limit)
+
+        if !ok {
+            return 0, false
+        }
+    }
+
+    if negative {
+        return int(0 - mag), true
+    }
+    return int(mag), true
+}
+
+parse_uint_result(text: string, radix: u8): (uint, bool) {
+    if radix < 2 || radix > 36 {
+        return 0, false
+    }
+
+    if text.len == 0 {
+        return 0, false
+    }
+
+    if text[0] == 45 {
+        return 0, false
+    }
+    mag: u64 = 0
+
+    for i: usize in 0 .. text.len {
+        d: u64, ok: bool = digit_value(text[i])
+
+        if !ok || d >= u64(radix) {
+            return 0, false
+        }
+        mag, ok = accumulate(mag, d, radix, 18446744073709551615)
+
+        if !ok {
+            return 0, false
+        }
+    }
+    return uint(mag), true
+}
+
+/* usize is u64-wide on the v1 target, so its range matches uint exactly. */
+parse_usize_result(text: string, radix: u8): (usize, bool) {
+    v: uint, ok: bool = parse_uint_result(text, radix)
+
+    if !ok {
+        return 0, false
+    }
+    return usize(v), true
+}
+
+/* The exponent tail of a decimal/scientific spelling: an optional sign and
+ * at least one digit, with nothing else. */
+exponent_shape(text: string, at: usize): bool {
+    n: usize = text.len
+    cur: usize = at
+
+    if cur >= n {
+        return false
+    }
+
+    if text[cur] == 43 || text[cur] == 45 {
+        cur += 1
+    }
+
+    if cur >= n {
+        return false
+    }
+
+    for i: usize in cur .. n {
+        c: u8 = text[i]
+
+        if c < 48 || c > 57 {
+            return false
+        }
+    }
+    return true
+}
+
+/* Admits exactly the ordinary decimal/scientific spellings plus the exact
+ * non-finite words fmt writes — no whitespace, plus sign, hex form, or
+ * extended names — so the C scanner behind the float helpers can never
+ * accept anything this language surface rejects. */
+float_literal_shape(text: string): bool {
+    n: usize = text.len
+
+    if n == 0 {
+        return false
+    }
+    at: usize = 0
+
+    if text[0] == 45 {
+        at = 1
+    }
+
+    if at == n {
+        return false
+    }
+
+    if text == "nan" || text == "inf" || text == "-inf" {
+        return true
+    }
+    digits: usize = 0
+    seen_dot: bool = false
+
+    for i: usize in at .. n {
+        c: u8 = text[i]
+
+        if c >= 48 && c <= 57 {
+            digits += 1
+            continue
+        }
+
+        if c == 46 && !seen_dot {
+            seen_dot = true
+            continue
+        }
+
+        if (c == 101 || c == 69) && digits > 0 {
+            return exponent_shape(text, i + 1)
+        }
+        return false
+    }
+    return digits > 0
+}
+
+/* Copies the text into a NUL-terminated scratch buffer for the C scanner. */
+terminate(text: string, mut buf: []u8): bool {
+    if text.len + 1 > buf.len {
+        return false
+    }
+
+    for i: usize in 0 .. text.len {
+        buf[i] = text[i]
+    }
+    buf[text.len] = 0
+    return true
+}
+
+parse_f64_result(text: string): (f64, bool) {
+    zero: f64 = 0.0
+
+    if !float_literal_shape(text) {
+        return 0.0, false
+    }
+    buf: [512]u8 = [0 : 512]
+    scratch: []u8 = buf[0..512]
+
+    if !terminate(text, mut scratch) {
+        return 0.0, false
+    }
+    value: f64 = strtod(&buf[0], null)
+
+    /* Overflow reaches the scanner as infinity; only a spelled infinity may
+     * come back as one. Underflow to signed zero succeeds. */
+    if value == value && value - value != zero && text != "inf" && text != "-inf" {
+        return 0.0, false
+    }
+    return value, true
+}
+
+parse_f32_result(text: string): (f32, bool) {
+    zero: f32 = 0.0
+
+    if !float_literal_shape(text) {
+        return 0.0, false
+    }
+    buf: [512]u8 = [0 : 512]
+    scratch: []u8 = buf[0..512]
+
+    if !terminate(text, mut scratch) {
+        return 0.0, false
+    }
+    value: f32 = strtof(&buf[0], null)
+
+    if value == value && f64(value) - f64(value) != f64(zero) && text != "inf" && text != "-inf" {
+        return 0.0, false
+    }
+    return value, true
+}
+
+/* True for exactly the ASCII whitespace bytes 0x09..0x0D and 0x20. */
+space_byte(c: u8): bool {
+    return (c >= 9 && c <= 13) || c == 32
+}
+
+/* The shortest digit count whose correctly rounded decimal form parses back
+ * to the exact value, through libSystem ecvt (correctly rounded digits) and
+ * strtod/strtof (the round-trip check; strtof parses f32 directly, with no
+ * double-rounding detour). ecvt returns internal storage that a later call
+ * may overwrite, so the digits are copied out immediately. The digits are
+ * the integer form: value equals digits x 10^(decpt - count). */
+shortest_digits(mag: f64, max: int, narrow: bool, mut digits: []u8, mut probe: []u8): (int, i32) {
+    decpt: i32 = 0
+    unused: i32 = 0
+    count: int = max
+    limit: int = max + 1
+
+    for p: int in 1 .. limit {
+        src: *u8 = ecvt(mag, i32(p), mut &decpt, mut &unused)
+        memcpy(&digits[0], src, usize(p))
+
+        for i: int in 0 .. p {
+            probe[i] = digits[i]
+        }
+        exp: i32 = decpt - i32(p)
+        q: int = p
+        probe[p] = u8(101)
+        q += 1
+        e: i32 = exp
+
+        if e < 0 {
+            probe[q] = u8(45)
+            q += 1
+            e = 0 - e
+        }
+        hi: i32 = e / 100
+        mid: i32 = (e / 10) % 10
+        lo: i32 = e % 10
+
+        if hi != 0 {
+            probe[q] = u8(48 + hi)
+            q += 1
+            probe[q] = u8(48 + mid)
+            q += 1
+        } else if mid != 0 {
+            probe[q] = u8(48 + mid)
+            q += 1
+        }
+        probe[q] = u8(48 + lo)
+        q += 1
+        probe[q] = u8(0)
+
+        if narrow {
+            if strtof(&probe[0], null) == f32(mag) {
+                count = p
+                break
+            }
+        } else {
+            if strtod(&probe[0], null) == mag {
+                count = p
+                break
+            }
+        }
+    }
+    return count, decpt
+}
+
+/* Renders the canonical notation into out: decimal for scientific exponents
+ * -6 through 20, otherwise scientific like 1.5e-7. The sign comes first and
+ * no trailing zeros are added. Returns the byte count. */
+render_float(negative: bool, digits: []u8, count: int, decpt: i32, mut out: []u8): usize {
+    at: int = 0
+
+    if negative {
+        out[at] = u8(45)
+        at += 1
+    }
+    exp: i32 = decpt - 1
+    dp: int = int(decpt)
+
+    if exp >= -6 && exp <= 20 {
+        if dp <= 0 {
+            out[at] = u8(48)
+            out[at + 1] = u8(46)
+            at += 2
+            zeros: int = 0 - dp
+
+            for z: int in 0 .. zeros {
+                out[at] = u8(48)
+                at += 1
+            }
+
+            for d: int in 0 .. count {
+                out[at] = digits[d]
+                at += 1
+            }
+        } else if dp >= count {
+            for d: int in 0 .. count {
+                out[at] = digits[d]
+                at += 1
+            }
+            pad: int = dp - count
+
+            for z: int in 0 .. pad {
+                out[at] = u8(48)
+                at += 1
+            }
+        } else {
+            for d: int in 0 .. dp {
+                out[at] = digits[d]
+                at += 1
+            }
+            out[at] = u8(46)
+            at += 1
+
+            for d: int in dp .. count {
+                out[at] = digits[d]
+                at += 1
+            }
+        }
+    } else {
+        out[at] = digits[0]
+        at += 1
+
+        if count > 1 {
+            out[at] = u8(46)
+            at += 1
+
+            for d: int in 1 .. count {
+                out[at] = digits[d]
+                at += 1
+            }
+        }
+        out[at] = u8(101)
+        at += 1
+        e: i32 = exp
+
+        if e < 0 {
+            out[at] = u8(45)
+            at += 1
+            e = 0 - e
+        }
+        hi: i32 = e / 100
+        mid: i32 = (e / 10) % 10
+        lo: i32 = e % 10
+
+        if hi != 0 {
+            out[at] = u8(48 + hi)
+            at += 1
+            out[at] = u8(48 + mid)
+            at += 1
+        } else if mid != 0 {
+            out[at] = u8(48 + mid)
+            at += 1
+        }
+        out[at] = u8(48 + lo)
+        at += 1
+    }
+    return usize(at)
 }

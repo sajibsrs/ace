@@ -24,6 +24,13 @@ indent-width = 4
 # continues. Canonical practice (tests/emit/net.ace, std/).
 continuation-alignment = open-delimiter
 
+[declarations]
+# Within a module, state its public Ace surface before private Ace
+# implementation declarations. Imports remain first as required by spec.md;
+# an extern block may precede the public surface because it declares the
+# platform boundary rather than an Ace module member. Keep overloads together.
+public-before-private = always
+
 [blank-lines]
 # One blank line before every construct with a { ... } body, at every nesting
 # level: declarations and statement-level if / for / switch / asm / labeled
