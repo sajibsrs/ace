@@ -10,7 +10,7 @@ extern "c" {
 }
 
 loopback(port: u16): net.Address4 {
-    ip: [4]u8 = [u8(127), u8(0), u8(0), u8(1)]
+    ip: [4]u8 = [127, 0, 0, 1]
     return net.Address4{ip: ip, port: port}
 }
 
@@ -61,7 +61,7 @@ check_failures(): int {
         return 8
     }
 
-    bytes: [1]u8 = [u8(0)]
+    bytes: [1]u8 = [0]
     view: []u8 = bytes[0..1]
     count: int, rerr: Error = net.receive(invalid, mut view)
     if count != 0 || !check_error(rerr, typeid(net.ReceiveErr)) {
@@ -131,7 +131,7 @@ child(port: u16): int {
         sys.close(sock)
         return 3
     }
-    storage: [4]u8 = [u8(0), u8(0), u8(0), u8(0)]
+    storage: [4]u8 = [0 : 4]
     reply: []u8 = storage[0..4]
     count, ioerr = net.receive(sock, mut reply)
     if ioerr != null || count != 4 || storage[0] != 'p' ||
@@ -222,7 +222,7 @@ main(): int {
         return 28
     }
 
-    storage: [4]u8 = [u8(0), u8(0), u8(0), u8(0)]
+    storage: [4]u8 = [0 : 4]
     request: []u8 = storage[0..4]
     count: int, ioerr: Error = net.receive(peer, mut request)
     if ioerr != null || count != 4 || storage[0] != 'p' ||
@@ -231,7 +231,7 @@ main(): int {
         sys.close(listener)
         return 29
     }
-    response_bytes: [4]u8 = [u8('p'), u8('o'), u8('n'), u8('g')]
+    response_bytes: [4]u8 = ['p', 'o', 'n', 'g']
     response: []u8 = response_bytes[0..4]
     count, ioerr = net.send(peer, response)
     if ioerr != null || count != 4 {
