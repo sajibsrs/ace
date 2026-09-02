@@ -61,16 +61,23 @@ Conditions require `bool`; integers are not implicitly treated as conditions.
 Logical operators are `&&`, `||`, and `!`, with short-circuit evaluation for
 `&&` and `||`.
 
-## Character literals
+## Characters: the `char` alias
 
-Ace currently has no separate `char` primitive type. A character literal is an
-untyped integer constant representing one byte and can materialize into a fitting
-integer type.
+`char` is a predeclared transparent alias of `u8` with shared identity,
+representation, conversions, and overload behavior: `sizeof(char)` is 1, a
+`[]char` is a `[]u8`, and an overload taking `char` also accepts `u8` values. It
+names one byte used as character data, not a decoded Unicode character.
+
+A character literal is an untyped constant holding exactly one byte and can
+materialize into a fitting integer type. The escapes are `\n`, `\t`, `\r`, `\0`,
+`\\`, `\"`, `\'`, and `\xNN`; a direct multibyte source character in a character
+literal is invalid.
 
 ```ace
-letter: u8 = 'A'
+letter: char = 'A'
 newline: u8 = '\n'
 hex_escape: u8 = '\x41'
+bytes: [2]char = [letter, newline]
 ```
 
 UTF-8 source bytes pass through string literals, but character literals remain
@@ -94,6 +101,13 @@ first: u8 = message[0]
 
 Strings are UTF-8 by convention. Indexing addresses bytes, not Unicode code
 points. A string does not carry a terminator as part of its value.
+
+Slicing a string yields a `string`: `message[1..4]` is a zero-copy view with
+bounds defaulting to `0` and `len(source)`, exactly like array and slice
+slicing ([Types](types.md)). Where the bounds are compile-time constants that
+violate `0 <= lo <= hi <= len(source)`, the compiler rejects the program.
+`for-in` walks the stored bytes, and `string(bytes)` converts a `[]u8` view
+zero-copy ([Types](types.md), [Control flow](control-flow.md)).
 
 ## Other primitives
 
@@ -131,11 +145,13 @@ from an ordinary zero value.
 
 ## Current limits
 
-- `f16`, complex numbers, Unicode scalar/rune types, and separate `byte` or
-  `char` aliases are not implemented.
+- `f16`, complex numbers, and Unicode scalar/`rune` types are not implemented;
+  an explicit UTF-8 decode/encode layer remains additive future work.
 - Numeric suffixes on literals are not implemented; use explicit casts or a
   typed declaration.
-- Strings provide byte storage and indexing, but higher-level Unicode operations
-  are not implemented in the standard library yet.
+- Strings provide byte storage, indexing, and slicing, but higher-level Unicode
+  operations are not implemented in the standard library yet.
+- A character literal cannot yet initialize a `float` target, and untyped
+  literals materialize only where the existing coercion rules admit them.
 
 The examples are covered by `tests/sema/docs_primitive.ok.ace`.

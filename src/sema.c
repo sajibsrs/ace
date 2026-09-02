@@ -397,6 +397,8 @@ static void resolve_type_fixes(Ck* k, Sym* s, SType* actual, Node* decl) {
 
 // --- same_type / castable ----------------------------------------------------------
 
+static int ut_const(Node* e, int64_t* out);
+
 static int same_type(SType* a, SType* b) {
     if (a == b) return 1;
     if (!a || !b) return 0;
@@ -462,7 +464,81 @@ static int castable(SType* f, SType* t) {
     if (f->kind == SK_ENUM) return is_int(t);
     if (t->kind == SK_ENUM) return is_int(f);
     if (f->kind == SK_PTR && t->kind == SK_PTR) return 1;
+    // string(view): the zero-copy []u8 descriptor conversion (Sequences #4-5);
+    // fixed byte arrays convert only through explicit slicing first (#5)
+    if (t->kind == SK_PRIM && t->prim == P_STRING &&
+        f->kind == SK_SLICE && f->base == st_prim(P_U8))
+        return 1;
     return is_num(f) && is_num(t);
+}
+
+// --- sequence constant bounds ---------------------------------------------------------
+
+/*
+ * Length of a sliced sequence when constant-provable: string literals, array
+ * literals, array-typed bases, and const globals initialized directly from a
+ * string literal; -1 when the length is a runtime value.
+ */
+static int64_t seq_const_len(Ck* k, Node* base, SType* t) {
+    if (base->kind == N_STR) return (int64_t)base->len;
+    if (base->kind == N_ARRAYLIT)
+        return base->a ? (int64_t)base->ival : (int64_t)base->nkids;
+    if (t->kind == SK_ARRAY) return (int64_t)t->count;
+    if (base->kind == N_IDENT) {
+        Sym* s = lookup_val(k, base->str, base->len);
+        if (s && s->is_const && s->is_global && s->type == st_prim(P_STRING) &&
+            s->init && s->init->kind == N_STR)
+            return (int64_t)s->init->len;
+    }
+    return -1;
+}
+
+/*
+ * One slice bound's compile-time value when constant-provable: untyped
+ * constant expressions and the constant `.len` of a sequence whose length is
+ * itself provable. Returns 0 when the bound cannot be known at compile time.
+ */
+static int bound_const(Node* n, int64_t* out) {
+    if (n->kind == N_FIELD_E && n->len == 3 &&
+        memcmp(n->str, "len", 3) == 0 && n->a) {
+        if (n->a->kind == N_STR) { *out = (int64_t)n->a->len; return 1; }
+        if (n->ival) { *out = (int64_t)n->ival; return 1; }
+        return 0;
+    }
+    return ut_const(n, out);
+}
+
+/*
+ * Sequences #2: the bounds precondition 0 <= lo <= hi <= len(source) is a
+ * compile-time error when constants prove a violation. Unknown lengths and
+ * runtime bounds are left to checked builds.
+ */
+static void check_slice_bounds(Ck* k, Node* e, Node* base, SType* bt) {
+    int64_t slen = seq_const_len(k, base, bt);
+    int64_t lo = 0, hi = 0;
+    int klo = e->b ? bound_const(e->b, &lo) : 1;
+    int khi;
+    if (e->c) khi = bound_const(e->c, &hi);
+    else { khi = slen >= 0; hi = khi ? slen : 0; } // omitted hi is len(source)
+    if (klo && lo < 0) {
+        ck_err(k, e->b, "slice lower bound %lld is negative", (long long)lo);
+        klo = 0; // the negative bound already explains any ordering violation
+    }
+    if (khi && hi < 0) {
+        ck_err(k, e->c, "slice upper bound %lld is negative", (long long)hi);
+        khi = 0;
+    }
+    if (klo && khi && lo > hi)
+        ck_err(k, e, "slice lower bound %lld exceeds upper bound %lld",
+               (long long)lo, (long long)hi);
+    if (slen >= 0) {
+        if (khi && hi > slen)
+            ck_err(k, e->c, "slice upper bound %lld exceeds source length %lld",
+                   (long long)hi, (long long)slen);
+        else if (klo && lo > slen)
+            ck_err(k, e->b, "slice lower bound %lld exceeds source length %lld",
+                   (long long)lo, (long long)slen);
+    }
 }
 
 // --- forward decls -------------------------------------------------------------------
@@ -597,7 +673,9 @@ static int ut_const(Node* e, int64_t* out) {
     case N_UNARY:
         if (e->op == T_MINUS) {
             int64_t v;
-            return ut_const(e->a, &v) && (*out = -v, 1);
+            if (!ut_const(e->a, &v)) return 0;
+            *out = (int64_t)(0 - (uint64_t)v); // unsigned negate: defined at i64 min
+            return 1;
         }
         return 0;
     case N_BINARY: {
@@ -633,6 +711,7 @@ static SType* prim_by_name(const char* s, uint32_t len) {
         {"u64", P_U64}, {"f32", P_F32}, {"f64", P_F64}, {"string", P_STRING},
         {"usize", P_USIZE}, {"typeid", P_TYPEID},
         {"int", P_I64}, {"uint", P_U64}, // platform word on arm64
+        {"char", P_U8}, // transparent alias: shared identity with u8 (Stdlib #15)
     };
     for (size_t i = 0; i < sizeof M / sizeof M[0]; i++)
         if ((uint32_t)strlen(M[i].n) == len && memcmp(M[i].n, s, len) == 0)
@@ -1596,6 +1675,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             (b->kind == SK_SLICE || b->kind == SK_ARRAY ||
              (b->kind == SK_PRIM && b->prim == P_STRING))) {
             if (b->kind == SK_ARRAY) e->ival = b->count;
+            else if (e->a->kind == N_STR) e->ival = e->a->len; // constant len
             return st_prim(P_USIZE);
         }
         if (b->kind == SK_CONTRACT) {
@@ -1633,14 +1713,18 @@ static SType* expr_type_raw(Ck* k, Node* e) {
     case N_SLICE_E: {
         SType* b = expr_type(k, e->a);
         if (b->kind == SK_ERR) return T_ERR;
-        if (b->kind != SK_SLICE && b->kind != SK_ARRAY) {
-            ck_err(k, e, "can only slice arrays and slices, not %s", type_name(b));
+        int is_string = b->kind == SK_PRIM && b->prim == P_STRING;
+        if (b->kind != SK_SLICE && b->kind != SK_ARRAY && !is_string) {
+            ck_err(k, e, "can only slice arrays, slices, and strings, not %s",
+                   type_name(b));
             return T_ERR;
         }
         if (e->b) { SType* lo = expr_type(k, e->b);
             if (!is_int(lo) && lo != T_UT_INT) ck_err(k, e->b, "slice bound must be an integer"); }
         if (e->c) { SType* hi = expr_type(k, e->c);
             if (!is_int(hi) && hi != T_UT_INT) ck_err(k, e->c, "slice bound must be an integer"); }
+        check_slice_bounds(k, e, e->a, b);
+        if (is_string) return st_prim(P_STRING); // slicing never widens (#1)
         SType* s = st_new(SK_SLICE);
         s->base = b->base;
         return s;
@@ -1722,8 +1806,13 @@ static SType* overload_arg_type(Ck* k, Node* arg) {
     Node* raw = arg->kind == N_MUTARG ? arg->a : arg;
     if (raw->kind == N_ARRAYLIT) return NULL; // candidate parameter supplies its type
     SType* t = expr_type(k, raw);
-    if (t == T_UT_INT) return st_prim(P_I64);   // overload-call default: int
-    if (t == T_UT_FLOAT) return st_prim(P_F64); // overload-call default: f64
+    if (t == T_UT_INT) {
+        /* A character literal is a one-byte constant, so its overload-call
+         * default is the byte type (Stdlib #15), not int. */
+        if (raw->kind == N_CHAR) return st_prim(P_U8);
+        return st_prim(P_I64); // integer-literal default: int
+    }
+    if (t == T_UT_FLOAT) return st_prim(P_F64); // float-literal default: f64
     return t;
 }
 
@@ -2009,6 +2098,90 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         coerce(k, arg, want_type);
     }
     return intrinsic == BI_MEM_COMPARE ? st_prim(P_I64) : T_VOID;
+}
+
+/*
+ * The concrete private str helper behind a parse[T] instantiation: the
+ * canonical module prefix before "parse" plus the per-type suffix, mirroring
+ * the fmt.printf helper lookup.
+ */
+static Sym* parse_helper(Ck* k, Sym* parse_fn, const char* suffix, Node* at) {
+    if (!parse_fn || parse_fn->len < 5) return NULL;
+    uint32_t prefix = parse_fn->len - 5; // canonical module prefix before "parse"
+    char name[512];
+    snprintf(name, sizeof name, "%.*sparse_%s", (int)prefix,
+             parse_fn->name, suffix);
+    Sym* s = lookup_val(k, name, (uint32_t)strlen(name));
+    if (!s || s->kind != SYM_FUNC) {
+        ck_err(k, at, "internal str.parse helper '%s' is missing", suffix);
+        return NULL;
+    }
+    return s;
+}
+
+/*
+ * str.parse[T] is compiler-backed like mem's typed allocation: the
+ * instantiation is checked here against the carved type set and lowered by
+ * the emitter onto the concrete helper named in call->aux. The default form
+ * admits exactly int, uint, usize, f32, and f64; the radix form exactly the
+ * three integer types.
+ */
+static SType* check_str_parse_call(Ck* k, Node* call, Sym* fn,
+                                   SType* elem, int intrinsic) {
+    Node* callee = call->a;
+    callee->sym = fn;
+    callee->a->sym = fn;
+    call->sym = fn;
+    call->ival = (uint64_t)intrinsic;
+    const char* what = intrinsic == BI_STR_PARSE ? "str.parse[T]" :
+                                                   "str.parse[T](text, radix)";
+    if (!elem || elem->kind == SK_ERR) return T_ERR;
+    if (elem->kind == SK_TYPEPARAM) {
+        ck_err(k, callee, "%s needs a concrete element type at the instantiation", what);
+        return T_ERR;
+    }
+    int form = -1;
+    if (elem == st_prim(P_I64)) form = 0;
+    else if (elem == st_prim(P_U64)) form = 1;
+    else if (elem == st_prim(P_USIZE)) form = 2;
+    else if (intrinsic == BI_STR_PARSE && elem == st_prim(P_F32)) form = 3;
+    else if (intrinsic == BI_STR_PARSE && elem == st_prim(P_F64)) form = 4;
+    static const char* SUFFIX[5] = {
+        "int_result", "uint_result", "usize_result", "f32_result", "f64_result",
+    };
+    if (form < 0) {
+        ck_err(k, callee, "%s supports exactly int, uint, usize%s — not %s",
+               what, intrinsic == BI_STR_PARSE ? ", f32, and f64" : "",
+               type_name(elem));
+        return T_ERR;
+    }
+    Sym* helper = parse_helper(k, fn, SUFFIX[form], call);
+    if (!helper) return T_ERR;
+    int want = intrinsic == BI_STR_PARSE ? 1 : 2;
+    if (call->nkids != want) {
+        ck_err(k, call, "%s takes %s", what,
+               want == 1 ? "exactly the text" : "exactly the text and a radix");
+        return T_ERR;
+    }
+    for (int i = 0; i < call->nkids; i++) {
+        Node* arg = call->kids[i];
+        if (arg->kind == N_MUTARG) {
+            ck_err(k, arg, "'mut' marks mut parameters; %s arguments are read-only", what);
+            return T_ERR;
+        }
+    }
+    coerce(k, call->kids[0], st_prim(P_STRING));
+    if (want == 2) coerce(k, call->kids[1], st_prim(P_U8));
+    SType* tup = st_new(SK_TUPLE);
+    tup->nfields = 2;
+    tup->fields = (SField*)arena_alloc(2 * sizeof(SField));
+    tup->fields[0].name = NULL;
+    tup->fields[0].t = elem;
+    tup->fields[1].name = NULL;
+    tup->fields[1].t = st_prim(P_BOOL);
+    layout(tup);
+    call->aux = helper; // emitter: the concrete lowering target
+    return tup;
 }
 
 /*
@@ -2409,12 +2582,18 @@ static SType* check_call(Ck* k, Node* call) {
                 return want;
             }
             if (callee->len == 6 && memcmp(callee->str, "sizeof", 6) == 0) {
-                if (call->nkids == 1 && call->kids[0]->kind == N_IDENT) {
+                if (call->nkids == 1) {
                     Node* arg = call->kids[0];
-                    SType* t = prim_by_name(arg->str, arg->len);
-                    if (!t) {
-                        Sym* s2 = lookup_type(k, arg->str, arg->len);
-                        if (s2) t = s2->type;
+                    SType* t = NULL;
+                    if (arg->kind == N_IDENT) {
+                        t = prim_by_name(arg->str, arg->len);
+                        if (!t) {
+                            Sym* s2 = lookup_type(k, arg->str, arg->len);
+                            if (s2) t = s2->type;
+                        }
+                    } else { // inline type: []T, [N]T, *T, ...
+                        t = build_type(k, arg);
+                        if (t->kind == SK_ERR) return T_ERR;
                     }
                     if (t && t->kind == SK_FORWARD) {
                         ck_err(k, arg,
@@ -2557,6 +2736,12 @@ static SType* check_call(Ck* k, Node* call) {
                 chosen->decl->ival == BI_MEM_RELEASE_T)
                 return check_memory_generic_call(k, call, chosen, targs[0],
                                                  (int)chosen->decl->ival);
+            // str.parse[T]: checked against the carved type set here, lowered
+            // by the emitter onto the concrete per-type helper
+            if (chosen->decl->ival == BI_STR_PARSE ||
+                chosen->decl->ival == BI_STR_PARSE_RADIX)
+                return check_str_parse_call(k, call, chosen, targs[0],
+                                            (int)chosen->decl->ival);
             SType* ft = instantiate_generic_func(k, chosen, callee);
             if (ft->kind == SK_ERR) return T_ERR;
             check_args(k, call, ft, 0);
@@ -2954,7 +3139,13 @@ static void check_stmt(Ck* k, Node* s) {
         if (s->nkids > 1) {
             if (compound) { ck_err(k, s, "compound assignment takes one target"); return; }
             SType* rt = expr_type(k, s->a);
-            if (rt->kind == SK_ERR) return;
+            if (rt->kind == SK_ERR) {
+                /* The right side may still be a deferred (pending) call that
+                 * resolves at end of file. Key the targets now so the emitter
+                 * finds their storage whichever way resolution lands. */
+                for (int i = 0; i < s->nkids; i++) (void)check_lvalue(k, s->kids[i], 1);
+                return;
+            }
             if (rt->kind != SK_TUPLE || rt->nfields != s->nkids) {
                 ck_err(k, s, "assignment binds %d names but the right side has %d values",
                        s->nkids, rt->kind == SK_TUPLE ? rt->nfields : 1);
@@ -3027,16 +3218,18 @@ static void check_stmt(Ck* k, Node* s) {
                 if (s->nkids > 0 && !is_int(binds[0]))
                     ck_err(k, s, "range loop variable must be an integer type, not %s",
                            type_name(binds[0]));
-            } else if (it->kind == SK_SLICE || it->kind == SK_ARRAY) {
+            } else if (it->kind == SK_SLICE || it->kind == SK_ARRAY ||
+                       (it->kind == SK_PRIM && it->prim == P_STRING)) {
+                SType* elem = it->kind == SK_PRIM ? st_prim(P_U8) : it->base;
                 int value = s->nkids == 2 ? 1 : 0;
                 if (s->nkids == 2 && !same_type(binds[0], st_prim(P_USIZE)))
                     ck_err(k, s->kids[0], "sequence index binder must be usize, not %s",
                            type_name(binds[0]));
-                if (s->nkids > 0 && !same_type(it->base, binds[value]))
+                if (s->nkids > 0 && !same_type(elem, binds[value]))
                     ck_err(k, s->kids[value], "loop value binder is %s but elements are %s",
-                           type_name(binds[value]), type_name(it->base));
+                           type_name(binds[value]), type_name(elem));
             } else {
-                ck_err(k, s->b, "for-in iterates slices, arrays, or ranges — not %s",
+                ck_err(k, s->b, "for-in iterates slices, arrays, strings, or ranges — not %s",
                        type_name(it));
             }
         }

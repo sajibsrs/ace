@@ -281,6 +281,48 @@ that only readings from the same operation subtract meaningfully. The runtime,
 selective-import, compiler-checked documentation, human documentation, and
 editor showcase coverage now use and type-check both parameterless functions.
 
+### Character and string-library carving closed (implementation pending)
+
+No code change: `char` is fixed as a predeclared transparent `u8` alias while
+strings remain read-only UTF-8 byte views; decoded `rune` support stays an
+explicit additive Unicode layer. The closed `str` surface uses ordinary free
+functions rather than methods: byte-exact `find`/`has`/`compare`, caller-buffer
+`copy`, zero-copy bounded `split`, exact-boundary and ASCII-whitespace `trim`,
+explicitly instantiated `parse[T]`, and overloaded caller-buffer `stringify`.
+Every operation is allocation-free, decoding-free, and reports capacity or
+conversion failure explicitly. The carve also admits inline slice and array
+types in `sizeof`, so the already normative descriptor layouts can be stated
+directly. Implementation, tests, and implemented-only human documentation are
+a later chunk; the full rules and rationale are in spec.md Stdlib #15 and the
+Decision Queue.
+
+### Character, string sequences, and the str module implemented
+
+The carved surface is implemented end to end. `char` is the predeclared
+transparent `u8` alias (shared identity, representation, and overload
+behavior; character literals keep their untyped one-byte status and now
+default to the byte type in overload calls), and `sizeof` accepts the full
+inline type grammar (`sizeof([]u8)`, `sizeof([3]char)`). The sequence-overlap
+carve landed: string slicing yields a `string` with the ordinary half-open
+defaults, `string(bytes)` is a zero-copy descriptor conversion that accepts
+exactly `[]u8` (fixed arrays must slice first, and no `string` → `[]u8`
+direction exists), `for-in` walks string bytes with the ordinary one- and
+two-binder rules, and constant-provable slice bounds that violate
+`0 <= lo <= hi <= len(source)` are compile errors. `std/str.ace` implements
+the closed free-function surface in pure Ace — `find`, `has`, `compare`,
+`copy`, zero-copy `split`, exact-boundary and ASCII-whitespace `trim`, and
+overloaded `stringify` whose float forms are digit-for-digit identical to
+`fmt.print`. `str.parse[T]` follows the mem typed-allocation precedent: the
+public generic declarations are compiler-backed, each instantiation is checked
+against the carved type set with a precise diagnostic, and the emitter lowers
+onto concrete private helpers (`strtod`/`strtof` only behind a strict
+character-set validator that admits exactly the decimal/scientific spellings
+plus `nan`, `inf`, and `-inf`). Along the way: multi-assignment targets are
+now keyed for the emitter even when the right side is a still-pending overload
+call, and untyped-constant negation avoids i64-min UB. Coverage spans parser,
+sema, emit, runtime module fixtures, implemented-only documentation, and
+sanitizer runs.
+
 ## Still open after these chunks
 
 Checked/release build modes, then checked allocation tracking; nonblocking echo and multi-client chat are the next networking proofs over the implemented `poll` readiness queue (see the `spec.md` Decision Queue).

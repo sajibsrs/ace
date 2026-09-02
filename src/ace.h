@@ -152,6 +152,8 @@ enum {
     BI_MEM_ALLOC_T = 11,   // mem.alloc[T](count: usize): []T
     BI_MEM_REALLOC_T = 12, // mem.realloc[T](data: []T, new_count: usize): []T
     BI_MEM_RELEASE_T = 13, // mem.release[T](mut data: []T)
+    BI_STR_PARSE = 14,     // str.parse[T](text: string): (T, bool)
+    BI_STR_PARSE_RADIX = 15, // str.parse[T](text: string, radix: u8): (T, bool)
 };
 
 enum {

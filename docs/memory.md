@@ -11,6 +11,10 @@ hidden allocation, or automatic cleanup.
 allocation never changes it. For example, `sizeof([]u8)` is the size of the
 two-word slice descriptor, not the number of bytes it views.
 
+The operand uses the full type grammar, so inline sequence types need no named
+alias: `sizeof([]u8)` and `sizeof([]char)` are 16, `sizeof([3]char)` is 3, and
+`sizeof(char)` is 1 (`char` is the transparent `u8` alias).
+
 Intrinsic `.len` belongs only to sequences:
 
 - `[N]T.len` is the constant element count `N`.

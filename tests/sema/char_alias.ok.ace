@@ -1,0 +1,55 @@
+/* char is a predeclared transparent alias of u8 (Stdlib #15): shared
+ * identity, representation, conversions, and overload behavior.
+ * Also check sizeof with inline sequence types (Sequences #10). */
+
+Box: struct { tag: char }
+
+byte_it(x: u8): u8 {
+    return x
+}
+
+pick(a: u8, b: u8): u8 {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+main(): int {
+    c: char = 'A'
+    b: u8 = c
+    if b != 65 {
+        return 1
+    }
+    d: char = b
+    if d != c {
+        return 2
+    }
+    if sizeof(char) != 1 {
+        return 3
+    }
+    if sizeof([]char) != 16 || sizeof([]u8) != 16 || sizeof([3]char) != 3 ||
+       sizeof([2]u8) != 2 || sizeof(string) != 16 {
+        return 4
+    }
+    bytes: [2]u8 = [u8('x'), u8('y')]
+    view: []char = bytes[0..2]
+    if view.len != 2 || view[0] != 'x' {
+        return 5
+    }
+    wide: []u8 = view
+    if wide[1] != 'y' {
+        return 6
+    }
+    if byte_it(c) != 'A' {
+        return 7
+    }
+    if pick('b', 'a') != 'a' {
+        return 8
+    }
+    box: Box = Box { tag: 'Z' }
+    if box.tag != 90 {
+        return 9
+    }
+    return 0
+}

@@ -71,5 +71,16 @@ main(): int {
     if inside && category == 3 {
         return 0
     }
-    return 1
+    text: string = "héllo"
+    total: usize = 0
+    for c: u8 in text {
+        total += usize(c)
+    }
+    for index: usize, byte: char in text {
+        total += usize(byte) + index
+    }
+    if total == 0 {
+        return 1
+    }
+    return 0
 }

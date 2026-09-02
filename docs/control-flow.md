@@ -125,6 +125,23 @@ for index: usize, value: i32 in values {
 }
 ```
 
+## Strings
+
+Strings iterate as their stored UTF-8 bytes — the encoding, never decoded code
+points. The value binder is `u8` (or its transparent alias `char`), and the
+two-binder form indexes bytes:
+
+```ace
+text: string = "héllo"
+total: usize = 0
+for c: u8 in text {
+    total += usize(c)
+}
+for index: usize, byte: char in text {
+    total += usize(byte) + index
+}
+```
+
 The first binder must be `usize`, and the second binder must exactly match the
 element type. Assigning to either binder does not affect loop progress or the
 backing sequence. There is no `_` discard binder; use the one-binder form when
@@ -141,8 +158,8 @@ range loop, the captured endpoint does not change, while later indexing uses
 the slice's current descriptor. The current compiler does not insert runtime
 bounds checks, so such code must keep the current slice large enough.
 
-Direct array or slice iteration captures its pointer and length at loop entry.
-Reassigning the slice variable does not change that running loop.
+Direct array, slice, or string iteration captures its pointer and length at
+loop entry. Reassigning the variable does not change that running loop.
 
 ## Exits and labeled blocks
 

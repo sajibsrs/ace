@@ -1,0 +1,8 @@
+/* err: constant-provable slice bounds (Sequences #2). */
+
+word: const string = "hello"
+
+main(): int {
+    a: string = word[0..6]
+    return 0
+}

@@ -20,7 +20,7 @@ literal       := int_lit | float_lit | string_lit | char_lit | "null" | "true" |
 int_lit       := digit+ ("_" digit+)* | "0x" hex+ | "0b" bin+     [P: suffixes]
 float_lit     := digit+ "." digit+ [exponent]             [P]
 string_lit    := '"' (char – '"' | '\' escape)* '"'       [P: raw strings]
-char_lit      := "'" (char – "'" | '\' escape) "'"
+char_lit      := "'" (byte – "'" | '\' escape) "'"       // exactly one byte
 ```
 
 ## 2. Files & declarations
@@ -177,7 +177,7 @@ func_type     := "(" [type_list] ")" ":" ret_types         // (int, int): int
 named_type    := ident ("." ident)* ["[" type_list "]"]   // Vec[int], math.Vec
 prim_type     := "bool" | "i8" | "i16" | "i32" | "i64"
                | "u8" | "u16" | "u32" | "u64"
-               | "f32" | "f64" | "string" | "usize" | "typeid"
+               | "f32" | "f64" | "string" | "char" | "usize" | "typeid"
 
 type_list     := type ("," type)*
 ret_types     := type | "(" type ("," type)+ ")"
@@ -209,3 +209,5 @@ ret_types     := type | "(" type ("," type)+ ")"
 18. **Array repetition remains explicitly typed by context.** `[value : count]` is an array literal only; `count` is a nonnegative integer literal equal to the expected `[N]T` length. `value` is checked as `T`, evaluated once, then copied to all `N` elements. The form neither infers a declaration type nor allocates.
 19. **Byte sequences compare pairwise.** `==` and `!=` admit every combination of `[N]u8`, `[]u8`, and `string` in either operand order, including `[N]u8` against `[M]u8`. They compare complete lengths and exact stored bytes without conversion, allocation, decoding, or normalization. Arrays and slices of another element type do not receive this mixed-type rule.
 20. **Embedding is explicit and one-level.** `embed name: Base` is an ordinary named struct field whose owned methods may be promoted to the containing struct. Direct outer methods win, multiple exact promoted matches are ambiguous, and fields are not promoted. Contract conformance may flow from a directly embedded base to its embedder, never in reverse.
+21. **`char` is byte-sized.** It is a predeclared transparent alias of `u8`, not a decoded Unicode scalar. Character literals contain exactly one byte; strings carry UTF-8 bytes and retain byte indexing and iteration. A future `rune` and explicit UTF-8 conversion are outside this grammar.
+22. **`sizeof` accepts the full type grammar.** Its parenthesized operand may be an inline slice or array type (`sizeof([]u8)`, `sizeof([3]char)`) as well as a named or primitive type. The result is compile-time-only.

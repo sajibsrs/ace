@@ -114,7 +114,13 @@ main(): int {
     value: Value = Value(&number_object)
     human: Human = Human { named: Named { name: "Ada" } }
     promoted_name: string = human.name()
+    ok_bytes: [3]u8 = [u8('o'), u8('k'), u8('!')]
+    view: string = string(ok_bytes[0..3])
+    tail: string = view[1..]
+    if sizeof([]char) != 16 || sizeof([3]char) != 3 {
+        return 90
+    }
     return count + int(raw) + read_x(pointer) + middle[0] + middle[1] +
         operation(1, 2) + int(state) + box.value + value.get() +
-        partial.x + partial.y
+        partial.x + partial.y + int(view.len) + int(tail.len)
 }

@@ -2724,6 +2724,47 @@ static EV emit_printf_helper(Em* e, Node* at, Sym* helper, EV* values, int n) {
                      1, -1, tgt, ft->ret);
 }
 
+/*
+ * str.parse[T] lowering: sema chose the concrete per-type helper in call->aux
+ * and checked the arguments, so the call lowers as an ordinary internal call
+ * forwarding the parse arguments in order. The helper returns the complete
+ * (T, bool) result tuple.
+ */
+static EV gen_str_parse_builtin(Em* e, Node* call) {
+    Sym* helper = call->aux;
+    if (!helper || !helper->type || helper->type->kind != SK_FUNC) {
+        em_err(e, call, "missing checked str.parse helper");
+        return (EV){ CLS_INT, tmp_int(e) };
+    }
+    SType* ft = helper->type;
+    if (call->nkids > ft->nparams) {
+        em_err(e, call, "str.parse helper arity mismatch");
+        return (EV){ CLS_INT, tmp_int(e) };
+    }
+    CallArg args[2];
+    uint8_t muts[2] = { 0, 0 };
+    for (int i = 0; i < call->nkids; i++) {
+        args[i].node = call->kids[i];
+        args[i].val = (EV){ 0, 0 };
+        args[i].pre = 0;
+        args[i].ptrval = 0;
+    }
+    int nargs = call->nkids;
+    if (ft->nparams == 2 && nargs == 1) { // default integer form: radix 10
+        int t = tmp_int(e);
+        load_imm(e, 0, xreg(t), 10);
+        args[1].val = (EV){ CLS_INT, t };
+        args[1].pre = 1;
+        nargs = 2;
+    }
+    const char* mn = fn_mangle(helper->name, helper->len, ft,
+                               helper->decl, NULL, 0);
+    CallTarget tgt = { TK_INTERNAL, arena_copy(mn, strlen(mn)),
+                       (uint32_t)strlen(mn), 0 };
+    return emit_call(e, call, args, nargs, ft->params, muts,
+                     ft->nparams, 1, -1, tgt, ft->ret);
+}
+
 static EV gen_printf_builtin(Em* e, Node* call) {
     PrintfPlan* plan = (PrintfPlan*)call->aux;
     if (!plan) {
@@ -2946,6 +2987,11 @@ static EV gen_call(Em* e, Node* call) {
     if (intrinsic && intrinsic->decl &&
         intrinsic->decl->ival == BI_MEM_COMPARE && call->ival == BI_MEM_COMPARE)
         return gen_compare_builtin(e, call);
+    if (intrinsic && intrinsic->decl &&
+        ((intrinsic->decl->ival == BI_STR_PARSE && call->ival == BI_STR_PARSE) ||
+         (intrinsic->decl->ival == BI_STR_PARSE_RADIX &&
+          call->ival == BI_STR_PARSE_RADIX)))
+        return gen_str_parse_builtin(e, call);
     // panic(message): write the bytes to stderr best-effort, then abort —
     // both undefined externals resolved by the system linker (spec Errors #15).
     // The write result is ignored: a failed or partial write never blocks the
@@ -3448,11 +3494,12 @@ static EV gen_expr(Em* e, Node* x) {
     case N_SLICE_E: {
         SType* bt = lvalue_type(e, x->a);
         bt = bt ? unwrap(bt) : NULL;
-        if (!bt || (bt->kind != SK_SLICE && bt->kind != SK_ARRAY)) {
+        int is_string = bt && bt->kind == SK_PRIM && bt->prim == P_STRING;
+        if (!bt || (bt->kind != SK_SLICE && bt->kind != SK_ARRAY && !is_string)) {
             em_err(e, x, "slice of a non-sequence");
             return (EV){ CLS_ADDR, tmp_int(e) };
         }
-        uint32_t esz = ty_size(bt->base);
+        uint32_t esz = is_string ? 1 : ty_size(bt->base);
         uint32_t off = temp_slot(e, 16, 8);
         uint32_t lo_slot = temp_slot(e, 8, 8), hi_slot = temp_slot(e, 8, 8);
         int svi = e->vti, svf = e->vtf;
@@ -3471,7 +3518,7 @@ static EV gen_expr(Em* e, Node* x) {
             load_imm(e, 1, 16, bt->count);
             store_frame(e, 16, hi_slot, 8);
         } else {
-            ld_reg(e, 16, base, 8, 8, 0); // slice .len
+            ld_reg(e, 16, base, 8, 8, 0); // slice/string length word
             store_frame(e, 16, hi_slot, 8);
         }
         // lo (evaluated once; defaults to 0)
@@ -3483,8 +3530,8 @@ static EV gen_expr(Em* e, Node* x) {
             load_imm(e, 1, 16, 0);
             store_frame(e, 16, lo_slot, 8);
         }
-        // data pointer (slice: load; array: the base address)
-        if (bt->kind == SK_SLICE)
+        // data pointer (slice/string: load; array: the base address)
+        if (bt->kind != SK_ARRAY)
             ld_reg(e, base, base, 0, 8, 0);
         // ptr = data + lo*esz
         load_frame(e, 16, lo_slot, 8, 0);
@@ -3861,8 +3908,9 @@ static void emit_stmt(Em* e, Node* s) {
         // sequence loop: pointer-bump (spec Iterations #9-10)
         SType* bt = lvalue_type(e, s->b);
         bt = bt ? unwrap(bt) : NULL;
-        if (!bt || (bt->kind != SK_SLICE && bt->kind != SK_ARRAY)) {
-            em_err(e, s, "for-in iterates slices, arrays, or ranges");
+        int is_string = bt && bt->kind == SK_PRIM && bt->prim == P_STRING;
+        if (!bt || (bt->kind != SK_SLICE && bt->kind != SK_ARRAY && !is_string)) {
+            em_err(e, s, "for-in iterates slices, arrays, strings, or ranges");
             return;
         }
         uint32_t pslot = temp_slot(e, 8, 8), eslot = temp_slot(e, 8, 8);
@@ -3882,8 +3930,8 @@ static void emit_stmt(Em* e, Node* s) {
             EV v = gen_expr(e, s->b);
             base = v.idx;
         }
-        if (bt->kind == SK_SLICE) {
-            // p = ptr, end = p + len*esz
+        if (bt->kind != SK_ARRAY) {
+            // slice/string descriptor: p = ptr, end = p + len*esz
             ld_reg(e, 16, base, 0, 8, 0);
             store_frame(e, 16, pslot, 8);
             ld_reg(e, 16, base, 8, 8, 0); // len

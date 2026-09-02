@@ -216,6 +216,42 @@ Intrinsic `.len` is available on arrays (constant element count), slices
 (stored element count), and strings (stored byte count). It is not added to any
 other type. A struct can still declare an ordinary field named `len`.
 
+Slicing is uniform across arrays, slices, and strings with half-open
+`[lo, hi)` bounds and the defaults `0` and `len(source)`: slicing an array or
+slice yields `[]T`, and slicing a string yields a `string` — slicing never
+widens permission. The result length is `hi - lo` and the result pointer is the
+source pointer advanced by `lo * sizeof(T)`; slicing a slice re-bases inside
+that slice's own window. Empty results keep their computed pointer and are
+never canonicalized to `null`. Bounds may be any integer; when constants prove
+`0 <= lo <= hi <= len(source)` false, the program is rejected at compile time,
+and runtime bounds remain unchecked until checked builds land.
+
+```ace
+text: string = "hello world"
+tail: string = text[6..]
+letter: u8 = text[0]
+word: const string = "hello"
+window: string = word[1..word.len - 1]
+```
+
+The `string(bytes)` conversion is an explicit zero-cost view conversion from
+exactly `[]u8` (transparent aliases such as `[]char` included): the result
+preserves the descriptor, so the string and the slice share backing bytes and
+either may observe the other's writes. There is no conversion from `string` to
+`[]u8`, and a fixed `[N]u8` converts only through explicit slicing first
+(`string(arr[0..N])`).
+
+```ace
+arr: [3]u8 = [u8('o'), u8('k'), u8('!')]
+view: string = string(arr[0..3])
+arr[0] = u8('n')
+same_bytes: bool = view == "nk!"
+```
+
+`sizeof` accepts the full inline type grammar, so descriptor sizes are
+directly expressible: `sizeof([]u8)`, `sizeof([]char)`, and
+`sizeof([3]char)` are compile-time values 16, 16, and 3 on the current target.
+
 Array assignment copies all elements. Slice assignment copies only its pointer
 and length, so both values view the same backing storage; it never copies the
 elements. Slicing does not allocate. See [Memory](memory.md) for allocation and
@@ -259,9 +295,10 @@ stored pointer and the length are equal, in constant time with no element loop.
 Use `mem.compare` (byte slices) or an explicit loop to compare contents. Fixed
 arrays of a non-byte element type have no `==` at all.
 
-Arrays and slices do not convert implicitly in either direction. Slicing is the
-explicit bridge from an array to a view, and `mem.copy(mut arr[0..N], view)`
-writes a view's bytes into array storage.
+Arrays and slices do not convert implicitly in either direction. The explicit
+bridges are slicing (`arr[lo..hi]`, array to slice), `mem.copy(mut arr[0..N],
+view)` (slice into array storage), and `string(view)` (writable bytes to a
+read-only string view).
 
 ## Multiple-return and function types
 

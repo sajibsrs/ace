@@ -17,12 +17,20 @@ main(): int {
     letter: u8 = 'A'
     newline: u8 = '\n'
     hex_escape: u8 = '\x41'
+    direct: char = 'A'
+    as_byte: u8 = direct
+    back: char = as_byte
+    bytes: [2]char = [direct, newline]
     message: string = "Welcome Ace!\n"
     length: usize = message.len
     fmt.print(length)
     first: u8 = message[0]
     id: typeid = null
+    if int(as_byte) != 65 || back != direct {
+        return 90
+    }
     return signed_word + int(unsigned_word) + int(byte_value) + wide +
         int(unsigned) + int(double) + int(converted) + int(letter) +
-        int(newline) + int(hex_escape) + int(length) + int(first) + int(small)
+        int(newline) + int(hex_escape) + int(length) + int(first) + int(small) +
+        int(bytes[1])
 }

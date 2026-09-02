@@ -518,6 +518,17 @@ static Node* expr_postfix(P* p, int ctx) {
             Node* call = nd(p, N_CALL);
             call->a = base;
             p->i++;
+            if (base->kind == N_IDENT && base->len == 6 &&
+                memcmp(base->str, "sizeof", 6) == 0) {
+                // sizeof's operand is a type: the full inline type grammar is
+                // admitted, so slices and arrays need no named alias
+                NV w = {0};
+                nv_push(p, &w, parse_type(p));
+                expect(p, T_RPAREN, "')' after sizeof type");
+                set_kids(call, &w);
+                base = call;
+                continue;
+            }
             NV args = {0};
             if (!at(p, T_RPAREN)) {
                 for (;;) {

@@ -196,6 +196,37 @@ for want in \
     fi
 done
 
+string_view_errors=$("$ACE" tests/sema/string_view_rejections.err.ace 2>&1)
+if ! printf '%s\n' "$string_view_errors" | grep -qF "cannot cast [2]u8 to string"; then
+    echo "FAIL: missing string view-conversion rejection diagnostic"
+    fail=1
+fi
+bounds_hi=$("$ACE" tests/sema/slice_bounds_const_hi.err.ace 2>&1)
+if ! printf '%s\n' "$bounds_hi" | grep -qF "slice upper bound 6 exceeds source length 5"; then
+    echo "FAIL: missing constant slice upper-bound diagnostic"
+    fail=1
+fi
+bounds_order=$("$ACE" tests/sema/slice_bounds_const_order.err.ace 2>&1)
+if ! printf '%s\n' "$bounds_order" | grep -qF "slice lower bound 3 exceeds upper bound 1"; then
+    echo "FAIL: missing constant slice ordering diagnostic"
+    fail=1
+fi
+bounds_neg=$("$ACE" tests/sema/slice_bounds_const_negative.err.ace 2>&1)
+if ! printf '%s\n' "$bounds_neg" | grep -qF "slice upper bound -2 is negative"; then
+    echo "FAIL: missing constant slice negative-bound diagnostic"
+    fail=1
+fi
+parse_unsupported=$("$ACE" tests/sema/str_parse_unsupported.err.ace 2>&1)
+for want in \
+    "str.parse[T] supports exactly int, uint, usize, f32, and f64 — not bool" \
+    "str.parse[T](text, radix) supports exactly int, uint, usize — not f64" \
+    "str.parse[T] supports exactly int, uint, usize, f32, and f64 — not u8"; do
+    if ! printf '%s\n' "$parse_unsupported" | grep -qF "$want"; then
+        echo "FAIL: missing str.parse diagnostic '$want'"
+        fail=1
+    fi
+done
+
 # A bare std import accepts either std/name.ace or std/name/module.ace, but
 # diagnoses the std name when both definitions exist.
 mkdir -p /tmp/ace_std_module/normal/std/directory_probe

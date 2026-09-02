@@ -1,0 +1,177 @@
+/* str.parse: integers with and without radix, overflow and character-set
+ * rejections, and the float spellings including fmt's non-finite words.
+ */
+// expect-exit: 0
+
+import str
+
+main(): int {
+    v: int, ok: bool = str.parse[int]("42")
+    if !ok || v != 42 {
+        return 1
+    }
+    v, ok = str.parse[int]("-17")
+    if !ok || v != -17 {
+        return 2
+    }
+    v, ok = str.parse[int]("-9223372036854775808")
+    mini: int = -9223372036854775808
+    if !ok || v != mini {
+        return 3
+    }
+    v, ok = str.parse[int]("9223372036854775807")
+    if !ok || v != 9223372036854775807 {
+        return 4
+    }
+    v, ok = str.parse[int]("9223372036854775808")
+    if ok || v != 0 {
+        return 5
+    }
+    v, ok = str.parse[int]("007")
+    if !ok || v != 7 {
+        return 6
+    }
+    v, ok = str.parse[int]("-")
+    if ok {
+        return 7
+    }
+    v, ok = str.parse[int](" 1")
+    if ok {
+        return 8
+    }
+    v, ok = str.parse[int]("+1")
+    if ok {
+        return 9
+    }
+    v, ok = str.parse[int]("1x")
+    if ok {
+        return 10
+    }
+    v, ok = str.parse[int]("0x10")
+    if ok {
+        return 11
+    }
+    u: uint, uok: bool = str.parse[uint]("18446744073709551615")
+    if !uok || u != 18446744073709551615 {
+        return 12
+    }
+    u, uok = str.parse[uint]("-1")
+    if uok {
+        return 13
+    }
+    u, uok = str.parse[uint]("18446744073709551616")
+    if uok || u != 0 {
+        return 14
+    }
+    z: usize, zok: bool = str.parse[usize]("ff", u8(16))
+    if !zok || z != 255 {
+        return 15
+    }
+    z, zok = str.parse[usize]("777", u8(8))
+    if !zok || z != 511 {
+        return 16
+    }
+    z, zok = str.parse[usize]("1010", u8(2))
+    if !zok || z != 10 {
+        return 17
+    }
+    z, zok = str.parse[usize]("zz", u8(36))
+    if !zok || z != 1295 {
+        return 18
+    }
+    z, zok = str.parse[usize]("FF", u8(16))
+    if !zok || z != 255 {
+        return 19
+    }
+    z, zok = str.parse[usize]("0x10", u8(16))
+    if zok {
+        return 20
+    }
+    z, zok = str.parse[usize]("1", u8(1))
+    if zok {
+        return 21
+    }
+    z, zok = str.parse[usize]("1", u8(37))
+    if zok {
+        return 22
+    }
+    z, zok = str.parse[usize]("-1", u8(10))
+    if zok {
+        return 23
+    }
+    f: f64, fok: bool = str.parse[f64]("2.5")
+    want: f64 = 2.5
+    if !fok || f != want {
+        return 24
+    }
+    f, fok = str.parse[f64]("-0.5e2")
+    want = 0.0 - 50.0
+    if !fok || f != want {
+        return 25
+    }
+    f, fok = str.parse[f64]("nan")
+    if !fok || f == f {
+        return 26
+    }
+    f, fok = str.parse[f64]("inf")
+    huge: f64 = 1.0e308
+    if !fok || f <= huge {
+        return 27
+    }
+    f, fok = str.parse[f64]("-inf")
+    neg: f64 = 0.0 - 1.0
+    if !fok || f >= neg {
+        return 28
+    }
+    f, fok = str.parse[f64]("1e999")
+    if fok {
+        return 29
+    }
+    f, fok = str.parse[f64]("1e-999")
+    want = 0.0
+    if !fok || f != want {
+        return 30
+    }
+    f, fok = str.parse[f64](".5")
+    want = 0.5
+    if !fok || f != want {
+        return 31
+    }
+    f, fok = str.parse[f64]("5.")
+    want = 5.0
+    if !fok || f != want {
+        return 32
+    }
+    f, fok = str.parse[f64]("infinity")
+    if fok {
+        return 33
+    }
+    f, fok = str.parse[f64]("-nan")
+    if fok {
+        return 34
+    }
+    f, fok = str.parse[f64]("0x1p3")
+    if fok {
+        return 35
+    }
+    f, fok = str.parse[f64]("1.5")
+    want = 1.5
+    if !fok || f != want {
+        return 36
+    }
+    g: f32, gok: bool = str.parse[f32]("1.5")
+    gwant: f32 = 1.5
+    if !gok || g != gwant {
+        return 37
+    }
+    g, gok = str.parse[f32]("1.0e39")
+    if gok {
+        return 38
+    }
+    g, gok = str.parse[f32]("3.5")
+    gwant = 3.5
+    if !gok || g != gwant {
+        return 39
+    }
+    return 0
+}

@@ -1,0 +1,6 @@
+/* sizeof admits the full inline type grammar (Grammar note 22). */
+
+main(): int {
+    n: usize = sizeof([]char)
+    return 0
+}

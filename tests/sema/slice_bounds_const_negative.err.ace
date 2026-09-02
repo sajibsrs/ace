@@ -1,0 +1,7 @@
+/* err: constant-provable slice bounds (Sequences #2): array-typed source. */
+
+main(): int {
+    arr: [3]i32 = [1, 2, 3]
+    s: []i32 = arr[0..-2]
+    return 0
+}
