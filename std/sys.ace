@@ -23,6 +23,13 @@ extern "c" {
  */
 pub Fd: distinct i32
 
+/* The three standard descriptors, valid from process start: standard input
+ * (0), standard output (1), and standard error (2).
+ */
+pub stdin: const Fd = Fd(0)
+pub stdout: const Fd = Fd(1)
+pub stderr: const Fd = Fd(2)
+
 /* Per-operation error domains: the failing operation is readable from the
  * returned handle's domain; the raw errno is queried separately via errno().
  */

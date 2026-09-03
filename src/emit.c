@@ -4404,6 +4404,14 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
             put_u(out, v->ival, 8);
             return 1;
         }
+        // Constructor-shaped cast over a named distinct or enum type: the
+        // representation is the unwrapped target, so fold the argument there.
+        if (v->a && v->a->kind == N_IDENT && v->nkids == 1) {
+            Sym* ts = node_sym(v->a);
+            if (ts && ts->kind == SYM_TYPE && ts->type &&
+                (ts->type->kind == SK_DISTINCT || ts->type->kind == SK_ENUM))
+                return eval_const(e, v->kids[0], t, out);
+        }
         return 0;
     }
     case N_INT: case N_BOOL: case N_CHAR: {

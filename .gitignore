@@ -1,6 +1,6 @@
 /ace
 /ace-sanitize
-/sandbox.ace
+/sandbox*
 .DS_Store
 *.o
 *.dSYM/

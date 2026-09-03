@@ -353,6 +353,10 @@ main(): int {
 - `Fd: distinct i32` is the descriptor handle. Zero is fd 0 (standard input,
   a valid descriptor), so zero is not an invalid marker; a failed `open`
   returns `fd == -1` alongside its error.
+- `stdin`, `stdout`, and `stderr` are `const Fd` values for the three standard
+  descriptors (0, 1, and 2), valid from process start. They flow through the
+  ordinary operations — `sys.read(sys.stdin, mut buf)` fills from standard
+  input and `sys.write(sys.stderr, "oops")` writes to standard error.
 - `open(path: string, flags: i32): (Fd, Error)` and the three-argument form
   add a `mode: u32` used with `O_CREAT`. The path is copied into a fixed
   1024-byte stack buffer and NUL-terminated; longer paths fail with

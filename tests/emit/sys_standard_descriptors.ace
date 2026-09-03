@@ -1,0 +1,163 @@
+/* The standard descriptor constants route to fds 0, 1, and 2: files
+ * duplicated onto the standard descriptors serve byte I/O through
+ * sys.stdin, sys.stdout, and sys.stderr.
+ */
+
+// expect-exit: 7
+
+import sys
+
+extern "c" {
+    dup2(old_fd: i32, new_fd: i32): i32
+}
+
+IN_PATH: string = "/tmp/ace_std_in"
+OUT_PATH: string = "/tmp/ace_std_out"
+ERR_PATH: string = "/tmp/ace_std_err"
+
+write_payload(path: string, text: string): int {
+    fd: sys.Fd, err: Error = sys.open(path,
+        sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC, u32(0x1A4))
+
+    if err != null {
+        return 1
+    }
+    n: int, werr: Error = sys.write(fd, text)
+
+    if werr != null || n != int(text.len) {
+        return 2
+    }
+
+    if sys.close(fd) != null {
+        return 3
+    }
+    return 0
+}
+
+read_payload(path: string, want: string): int {
+    fd: sys.Fd, err: Error = sys.open(path, sys.O_RDONLY)
+
+    if err != null {
+        return 1
+    }
+    storage: [8]u8 = [0 : 8]
+    buf: []u8 = storage[0..8]
+    n: int, rerr: Error = sys.read(fd, mut buf)
+
+    if rerr != null || n != int(want.len) {
+        return 2
+    }
+
+    if string(buf[0..want.len]) != want {
+        return 3
+    }
+    eof: int, eerr: Error = sys.read(fd, mut buf)
+
+    if eerr != null || eof != 0 {
+        return 4
+    }
+
+    if sys.close(fd) != null {
+        return 5
+    }
+    return 0
+}
+
+main(): int {
+    if i32(sys.stdin) != 0 || i32(sys.stdout) != 1 || i32(sys.stderr) != 2 {
+        return 1
+    }
+
+    // Standard input: a readable file duplicated onto fd 0 reads through
+    // sys.stdin, then reports end of file.
+    code: int = write_payload(IN_PATH, "in")
+
+    if code != 0 {
+        return 10 + code
+    }
+    source: sys.Fd, serr: Error = sys.open(IN_PATH, sys.O_RDONLY)
+
+    if serr != null {
+        return 20
+    }
+
+    if dup2(i32(source), 0) != 0 {
+        return 21
+    }
+
+    if sys.close(source) != null {
+        return 22
+    }
+    storage: [8]u8 = [0 : 8]
+    buf: []u8 = storage[0..8]
+    n: int, rerr: Error = sys.read(sys.stdin, mut buf)
+
+    if rerr != null || n != 2 || string(buf[0..2]) != "in" {
+        return 23
+    }
+    eof: int, eerr: Error = sys.read(sys.stdin, mut buf)
+
+    if eerr != null || eof != 0 {
+        return 24
+    }
+
+    // Standard output and standard error: files duplicated onto fds 1 and 2
+    // receive writes through sys.stdout and sys.stderr.
+    code = write_payload(OUT_PATH, "out")
+
+    if code != 0 {
+        return 30 + code
+    }
+    out: sys.Fd, oerr: Error = sys.open(OUT_PATH, sys.O_WRONLY)
+
+    if oerr != null {
+        return 40
+    }
+
+    if dup2(i32(out), 1) != 1 {
+        return 41
+    }
+
+    if sys.close(out) != null {
+        return 42
+    }
+    wout: int, wouterr: Error = sys.write(sys.stdout, "out")
+
+    if wouterr != null || wout != 3 {
+        return 43
+    }
+    code = write_payload(ERR_PATH, "err")
+
+    if code != 0 {
+        return 50 + code
+    }
+    errf: sys.Fd, ferr: Error = sys.open(ERR_PATH, sys.O_WRONLY)
+
+    if ferr != null {
+        return 60
+    }
+
+    if dup2(i32(errf), 2) != 2 {
+        return 61
+    }
+
+    if sys.close(errf) != null {
+        return 62
+    }
+    werrf: int, werrferr: Error = sys.write(sys.stderr, "err")
+
+    if werrferr != null || werrf != 3 {
+        return 63
+    }
+    code = read_payload(OUT_PATH, "out")
+
+    if code != 0 {
+        return 70 + code
+    }
+    code = read_payload(ERR_PATH, "err")
+
+    if code != 0 {
+        return 80 + code
+    }
+    return 7
+}

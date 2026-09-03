@@ -1,7 +1,8 @@
 /*
  * Mirrors docs/standard-library.md mem, fmt, sys, net, and str examples (sema
  * check only; runtime coverage lives in tests/emit/print_*.ace,
- * tests/emit/sys.ace, tests/emit/sys_time.ace, tests/emit/net.ace,
+ * tests/emit/sys.ace, tests/emit/sys_standard_descriptors.ace,
+ * tests/emit/sys_time.ace, tests/emit/net.ace,
  * tests/emit/poll.ace, tests/emit/typed_allocation.ace, and tests/emit/str_*.ace).
  */
 
@@ -78,6 +79,22 @@ write_note(): int {
 
     if sys.close(fd) != null {
         return 3
+    }
+    return 0
+}
+
+standard_descriptors(): int {
+    storage: [8]u8 = [0 : 8]
+    buf: []u8 = storage[0..8]
+    n: int, rerr: Error = sys.read(sys.stdin, mut buf)
+
+    if rerr != null {
+        return 1
+    }
+    w: int, werr: Error = sys.write(sys.stderr, "oops")
+
+    if werr != null || w != 4 {
+        return 2
     }
     return 0
 }
@@ -237,6 +254,11 @@ main(): int {
 
     if code != 0 {
         return 10 + code
+    }
+    code = standard_descriptors()
+
+    if code != 0 {
+        return 60 + code
     }
     code = print_examples()
 

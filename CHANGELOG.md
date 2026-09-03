@@ -426,6 +426,10 @@ inspection shows the helpers emitted under exact-tuple `s` symbols with no C
 `printf`, variadic call, or allocator. `docs/standard-library.md` records the
 specialization-implemented lowering. Normal and sanitizer suites pass.
 
+### Standard descriptor constants (`sys.stdin`/`sys.stdout`/`sys.stderr`)
+
+Owner-decided spelling (the suggested `sys.in` is impossible because `in` is a keyword; OS words win per the `sys` mirroring rule): three `pub const Fd` globals in `std/sys.ace` — `stdin` (0), `stdout` (1), and `stderr` (2) — valid from process start and consumed through the ordinary `read`/`write` operations, with the decision recorded in spec.md Stdlib #10 and the implementation-phase list. The initializers (`Fd(0)` and friends) exposed a genuine emitter gap: `eval_const` folded literals, unions, and `typeid` but not constructor-shaped casts, so `const` globals of distinct or enum type could not hold compile-time constructor values. The folder now folds a single-argument constructor-shaped cast whose callee resolves to a named distinct or enum type by evaluating the argument at the unwrapped target representation — byte-identical to the runtime cast, which literal fit-checks and castability already constrain at sema. Coverage: `tests/emit/sys_standard_descriptors.ace` (`dup2`s files onto fds 0, 1, and 2; verifies the value checks, a read, a write, and EOF through each constant), the docs example mirrored in `tests/sema/docs_standard_library.ok.ace`, and the implemented-only bullet in `docs/standard-library.md`. Normal and sanitizer suites pass.
+
 ## Still open after these chunks
 
 Checked/release build modes, then checked allocation tracking; nonblocking echo and multi-client chat are the next networking proofs over the implemented `poll` readiness queue (see the `spec.md` Decision Queue).
