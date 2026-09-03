@@ -13,7 +13,8 @@ Ace is a systems programming language and its bootstrap compiler. The language d
 
 ## How work proceeds (owner-established process)
 - One topic at a time, closed one by one. Ask the owner clarifying questions in queue order; **decisions are made by the owner, never invented by the agent**.
-- Every closed decision is recorded in `spec.md` (rule + rationale) and the Decision Queue is updated in the same edit; implementation history goes to `CHANGELOG.md` in the same edit. Never keep a second copy of a decision or a status log here.
+- Propose before implementing: when work surfaces an issue — a compiler bug, a failing or stale fixture, a stdlib gap, a design question — describe the issue, present the proposed solution briefly, and ask the owner for implementation permission before changing any code. If multiple viable options exist, present them with a recommendation; implement only what the owner approves.
+- Every closed decision is recorded in `spec.md` (rule + rationale) and the Decision Queue is updated in the same edit; implementation history goes to `CHANGELOG.md` and the Current-status surface index in the same edit. Never keep a second copy of a decision or a status log here — the surface index is a directory of status words and pointers, never rule text.
 - Philosophy level first, syntax carving second. Never carve syntax for a topic whose semantics are still open.
 - Any contested design choice is resolved by the priority stack: **performance > simplicity > modularity > compile time > safety**.
 - New sessions must resume from the Decision Queue, not restart settled debates.
@@ -69,6 +70,43 @@ Digest only; the normative rules live in the linked `spec.md` topics in the inde
 - When a language change adds or changes syntax, keywords, comments, brackets, indentation, or another editor-visible construct, update the extension in the same change when support is practical. Record any required editor work that remains in `editors/vscode/README.md` so it is not lost.
 
 ## Current status
+Surface index — the fast block for "is X supported?": one row per surface, status word only, normative rules always at the linked `spec.md` section. Updated in the same edit as the Decision Queue and `CHANGELOG.md`; the prose below carries rationale and next steps, never duplicated status detail.
+
+| Surface | Status | Normative rules |
+|---|---|---|
+| Lexer, parser, typecheck, full carved-surface AArch64 codegen, minimal DWARF line tables | implemented | [Compiler](spec.md#compiler) |
+| Source and syntax/parsing rules (formatting lives in `.acefmt`) | implemented | [Source](spec.md#source), [Syntax & Parsing](spec.md#syntax--parsing) |
+| Values and passing: copy assignment, by-ref `mut`/`noalias` parameters | implemented | [Values & Passing](spec.md#values--passing) |
+| Mutability and per-level pointer permissions | implemented | [Mutability](spec.md#mutability) |
+| Canonical zero, `null`, definite initialization | implemented | [Zero, Null & Absence](spec.md#zero-null--absence) |
+| Checked builds: bounds, overflow, allocator diagnostics | open | [Safety & Checked Builds](spec.md#safety--checked-builds) |
+| Error layer, panic = abort | implemented | [Errors](spec.md#errors) |
+| Type system: explicit types, distinct types, enums | implemented | [Type System](spec.md#type-system) |
+| Contracts: methods, signings, conformances, embedding promotion | implemented | [Abstraction](spec.md#abstraction) |
+| Tagged unions | implemented | [Tagged Unions](spec.md#tagged-unions) |
+| Generics: explicit instantiation, specialization | implemented | [Generics](spec.md#generics) |
+| Functions & ABI, C ABI compatibility whitelist | implemented | [Functions & ABI](spec.md#functions--abi) |
+| C interop: `extern` blocks, variadics, link names | implemented | [C Interop](spec.md#c-interop) |
+| Names & scoping, overloading | implemented | [Names & Scoping](spec.md#names--scoping) |
+| Inline assembly | implemented | [Inline Assembly](spec.md#inline-assembly) |
+| Conditions: if, switch, explicit fallthrough | implemented | [Conditions](spec.md#conditions) |
+| Iterations: `for-in`, endpoint-ordered ranges, steps, labeled blocks | implemented | [Iterations](spec.md#iterations) |
+| Sequences: slicing, views, iteration, byte-sequence equality | implemented | [Sequences](spec.md#sequences) |
+| Modules: loader, selective imports, directory modules | implemented | [Modules](spec.md#modules) |
+| Package system | future | [Package System](spec.md#package-system-future-work) |
+| `mem`: raw and typed allocation, `copy`/`move`/`fill`/`zero`/`compare` | implemented | [Memory](spec.md#memory) |
+| `fmt`: `print`/`println` overloads, `printf` | implemented | [Stdlib](spec.md#stdlib) |
+| `str`: character/string library, `parse[T]` | implemented | [Stdlib](spec.md#stdlib) |
+| `sys`: file I/O, monotonic clocks, descriptor constants, `errno` | implemented | [Stdlib](spec.md#stdlib) |
+| `net`: blocking IPv4 TCP client/server, `resolve4` DNS, socket options | implemented | [Stdlib](spec.md#stdlib) |
+| `poll`: general `sys.Fd` readiness queue | implemented | [Stdlib](spec.md#stdlib) |
+| IPv6, UDP, address queries, nonblocking completion, half-close, extra TCP options | open, additive after carving | [Stdlib](spec.md#stdlib) |
+| `math` | minimal, no floats/libm | [Stdlib](spec.md#stdlib) |
+| `simd` | not implemented | [Stdlib](spec.md#stdlib) |
+| `fmt.print(Error)` | deferred by design | [Stdlib](spec.md#stdlib) |
+| Driver: extra `.o`/`.a`, `-L`/`-l`/`-framework`, in-place `-o FILE.ace` | implemented | [Compiler](spec.md#compiler) |
+| Multi-target backend selection | open | [Compiler](spec.md#compiler) |
+
 - Philosophy and the initial carving phases are complete. The C11 bootstrap compiler (clang, no dependencies; tcc-style direct emission; v1 target AArch64 / Apple arm64) implements the lexer, parser, typecheck, full carved-surface codegen, and minimal DWARF line tables. The additive tagged-union, `fmt.printf`, and blocking IPv4 TCP networking topics are implemented. Chunk-by-chunk history: `CHANGELOG.md`.
 - The general `poll` readiness queue and std directory-module mechanism are implemented ([networking carving](spec.md#initial-blocking-tcp-networking-carving-closed) in the Decision Queue). `poll` accepts general `sys.Fd`; `net` is only a consumer. The next networking proof is nonblocking echo followed by multi-client chat; carve any additional semantics that proof exposes before implementation. Multi-target backend selection remains open until a second target is genuinely supported.
 - Sequence overlaps and the character/string-library surface are carved ([sequence-overlap carving](spec.md#sequence-overlap-carving-closed), [character and string-library carving](spec.md#character-and-string-library-carving-closed)) and implemented: string slicing/view conversion/iteration/bounds checks, the `char` alias, inline sequence types in `sizeof`, and the pure-Ace `str` module with compiler-backed `parse[T]` (mem-allocation precedent) land together in this chunk.
