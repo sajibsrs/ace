@@ -1,0 +1,71 @@
+/* Constructor-shaped casts fold into constants when sema resolved them as
+ * casts and the argument's family matches the target: alias and primitive
+ * targets, enums, narrowing and negative distincts, multi-level alias chains,
+ * and qualified constructors all compare equal to the runtime cast.
+ */
+
+// expect-exit: 42
+
+import sys
+
+Color: enum { red, green }
+
+H: distinct u8
+
+S: distinct i8
+
+A: type = u8
+B2: type = u8
+A2: type = B2
+B4: type = H
+A4: type = B4
+
+a: const A = A(5)
+x: const i32 = i32(7)
+c: const char = char('K')
+g: const f64 = f64(3.5)
+fd0: const sys.Fd = sys.Fd(0)
+color: const Color = Color(1)
+h: const H = H(200)
+s: const S = S(-1)
+a2: const A2 = A2(9)
+h4: const A4 = A4(7)
+
+main(): int {
+    if i32(a) != 5 || x != 7 || i32(c) != 75 {
+        return 1
+    }
+
+    // A float argument folds only into a float-family target; the qualified
+    // constructor keeps working through the module name.
+    if g != 3.5 || i32(fd0) != 0 {
+        return 2
+    }
+
+    // Folded constants compare equal to the runtime cast of the same value.
+    if i32(color) != i32(Color(1)) {
+        return 3
+    }
+    h_rt: H = H(200)
+
+    if i32(h) != i32(h_rt) || i32(h) != 200 {
+        return 4
+    }
+    s_rt: S = S(-1)
+
+    if i32(s) != i32(s_rt) || i32(s) != -1 {
+        return 5
+    }
+
+    // Multi-level alias chains resolve to the terminal type, never an
+    // intermediate alias.
+    if i32(a2) != 9 || i32(h4) != i32(H(7)) {
+        return 6
+    }
+    A: int = 3 // a local value shadows the alias type; the folded global coexists
+
+    if A != 3 || i32(a) != 5 {
+        return 7
+    }
+    return 42
+}

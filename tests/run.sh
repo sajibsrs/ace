@@ -258,6 +258,46 @@ if ! printf '%s\n' "$zero_spec_error" | grep -qF \
     fail=1
 fi
 
+constructor_wins_error=$("$ACE" tests/sema/const_constructor_function_wins.err.ace 2>&1)
+if ! printf '%s\n' "$constructor_wins_error" | grep -qF \
+    "type mismatch: i32 given where u8 expected (casts are explicit)"; then
+    echo "FAIL: missing same-named-function-wins diagnostic"
+    fail=1
+fi
+constructor_arity_error=$("$ACE" tests/sema/const_constructor_arity.err.ace 2>&1)
+if ! printf '%s\n' "$constructor_arity_error" | grep -qF \
+    "wrong number of arguments: 1 given, 2 expected"; then
+    echo "FAIL: missing same-named-function arity diagnostic"
+    fail=1
+fi
+constructor_fit_error=$("$ACE" tests/sema/const_constructor_fit.err.ace 2>&1)
+if ! printf '%s\n' "$constructor_fit_error" | grep -qF \
+    "integer literal 300 out of range for u8"; then
+    echo "FAIL: missing constructor-constant fit diagnostic"
+    fail=1
+fi
+
+# Constructor-constant hazards: the constant folder writes the argument's own
+# representation, so int<->float crossings must not fold. Each fixture fails
+# to compile and documents its diagnostic on a `// error:` line; the check is
+# driven through -c because the folder only runs when code is emitted.
+if [ -d tests/emit_errors ]; then
+    mkdir -p /tmp/ace_emit_errors
+    for f in tests/emit_errors/*.ace; do
+        name=$(basename "$f" .ace)
+        want=$(sed -n 's/^.*error:[[:space:]]*//p' "$f" | head -1)
+        cp "$f" "/tmp/ace_emit_errors/$name.ace"
+        if (cd /tmp/ace_emit_errors && "$ACE" -c "$name.ace") >/dev/null 2>/tmp/ace_test_errs; then
+            echo "FAIL (should report errors): $f"
+            fail=1
+        elif [ -z "$want" ] || ! grep -qF "$want" /tmp/ace_test_errs; then
+            echo "FAIL: expected diagnostic '$want' from $f"
+            cat /tmp/ace_test_errs
+            fail=1
+        fi
+    done
+fi
+
 # A bare std import accepts either std/name.ace or std/name/module.ace, but
 # diagnoses the std name when both definitions exist.
 mkdir -p /tmp/ace_std_module/normal/std/directory_probe

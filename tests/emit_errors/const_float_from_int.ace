@@ -1,0 +1,16 @@
+/* err: an int argument may not fold into a float target. The constant folder
+ * writes the argument's own representation, so folding would store raw int
+ * bits; the family gate rejects the fold at emit while sema still accepts the
+ * cast itself.
+ */
+
+// error: global initializer must be a compile-time constant
+
+import fmt
+
+bad: const f64 = f64(3)
+
+main(): int {
+    fmt.print(bad)
+    return 0
+}

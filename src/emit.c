@@ -4379,6 +4379,31 @@ static void put_u(Buf* b, uint64_t v, uint32_t w) {
 }
 
 // constant initializer folding (little-endian, declaration-order layout)
+/*
+ * Constructor-constant targets, family-checked: an int argument may fold into
+ * an integer primitive, an enum, or a distinct over either; a float argument
+ * only into a float primitive or a distinct over one. The checked cast target
+ * is always terminal (aliases resolve to the same SType at declaration), so
+ * unwrap's DISTINCT walk lands on the representation. Contracts, Error,
+ * unions, strings, pointers, and aggregates match neither family and stay
+ * unfolded.
+ */
+static int fold_int_target(SType* t) {
+    t = unwrap(t);
+    if (!t) return 0;
+    if (t->kind == SK_ENUM) return 1;
+    if (t->kind == SK_DISTINCT) return fold_int_target(t->base);
+    return t->kind == SK_PRIM &&
+        ((t->prim >= P_I8 && t->prim <= P_U64) || t->prim == P_USIZE);
+}
+
+static int fold_float_target(SType* t) {
+    t = unwrap(t);
+    if (!t) return 0;
+    if (t->kind == SK_DISTINCT) return fold_float_target(t->base);
+    return t->kind == SK_PRIM && (t->prim == P_F32 || t->prim == P_F64);
+}
+
 static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
     t = unwrap(t);
     if (!t) return 0;
@@ -4404,13 +4429,21 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
             put_u(out, v->ival, 8);
             return 1;
         }
-        // Constructor-shaped cast over a named distinct or enum type: the
-        // representation is the unwrapped target, so fold the argument there.
-        if (v->a && v->a->kind == N_IDENT && v->nkids == 1) {
-            Sym* ts = node_sym(v->a);
-            if (ts && ts->kind == SYM_TYPE && ts->type &&
-                (ts->type->kind == SK_DISTINCT || ts->type->kind == SK_ENUM))
-                return eval_const(e, v->kids[0], t, out);
+        // Constructor-shaped cast sema resolved against a type (no callee
+        // function symbol): the runtime cast emits only a width adjustment
+        // (gen_cast), so folding the argument at the checked target is
+        // byte-identical. The family gate keeps the fold honest — the folder
+        // writes the argument's own representation, so int<->float crossings
+        // would store raw bits of the wrong family.
+        if (v->a && v->a->kind == N_IDENT && v->nkids == 1 && !v->sym) {
+            SType* want = node_ty(v->a);
+            Node* arg = v->kids[0];
+            int arg_int = arg->kind == N_INT || arg->kind == N_CHAR ||
+                arg->kind == N_BOOL ||
+                (arg->kind == N_UNARY && arg->op == T_MINUS);
+            if ((arg_int && fold_int_target(want)) ||
+                (arg->kind == N_FLOAT && fold_float_target(want)))
+                return eval_const(e, arg, want, out);
         }
         return 0;
     }

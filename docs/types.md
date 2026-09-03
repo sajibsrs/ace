@@ -18,6 +18,24 @@ an initializer. Assignment copies the value. A bare local declaration reserves
 uninitialized stack storage; it does not emit a zero fill. The compiler rejects
 every direct read until the local is definitely initialized.
 
+A global `const` initializer must be a compile-time constant. A
+constructor-shaped cast folds when the argument's family matches the target:
+integer, character, and boolean arguments (negated forms included) fold into
+integer primitives, enums, and distinct types over either, and float arguments
+fold into float primitives and distinct types over floats. Aliases resolve to
+their terminal type, so alias and primitive-cast constants fold directly. An
+int-to-float crossing does not fold, casts over strings, contracts, unions,
+`Error`, pointers, and aggregates never fold, and a same-named function still
+wins over the constructor shape.
+
+```ace
+A: type = u8
+
+size: const A = A(5)
+mask: const u32 = u32(255)
+ratio: const f64 = f64(0.5)
+```
+
 Multiple typed bindings can be declared and initialized together. Every binding
 states its own type, and values are matched by position, so the types do not need
 to match each other:

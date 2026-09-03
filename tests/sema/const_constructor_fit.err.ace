@@ -1,0 +1,9 @@
+/* err: constructor-constant fit stays a sema rule — 300 does not fit u8. */
+
+H: distinct u8
+
+h: const H = H(300)
+
+main(): int {
+    return 0
+}

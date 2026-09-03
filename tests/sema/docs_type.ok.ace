@@ -2,6 +2,12 @@
 
 limit: const int = 1024
 
+A: type = u8
+
+size: const A = A(5)
+mask: const u32 = u32(255)
+ratio: const f64 = f64(0.5)
+
 Count: type = int
 Meters: distinct f64
 
