@@ -295,4 +295,4 @@ result: i32 = c_variadic(0, i32(9), f32(1.25), &value)
 - Exceptions and hidden error propagation do not exist; functions return error
   values explicitly.
 
-The examples are covered by `tests/sema/docs_function.ok.ace`.
+The examples are covered by `tests/sema/docs/function_ok.ace`.

@@ -550,4 +550,4 @@ with no allocation, object metadata, subtype relation, or runtime search.
 - Checked-build bounds and allocator diagnostics are specified but not yet
   implemented in the runtime layer.
 
-The examples are covered by `tests/sema/docs_type.ok.ace`.
+The examples are covered by `tests/sema/docs/type_ok.ace`.

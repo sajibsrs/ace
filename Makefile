@@ -17,6 +17,6 @@ test-sanitize: ace-sanitize
 	ACE_BIN=./ace-sanitize ./tests/run.sh
 
 clean:
-	rm -f ace ace-sanitize *.o tests/emit/*.o
+	rm -f ace ace-sanitize *.o
 
 .PHONY: test test-sanitize clean

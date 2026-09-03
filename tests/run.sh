@@ -1,7 +1,9 @@
 #!/bin/sh
-# Fixtures: *.ok.ace must compile through the landed stages with zero errors;
-# *.err.ace must fail. tests/lexer and tests/parser run parse-only (--ast);
-# tests/sema runs the full check (default mode).
+# Fixtures: *_ok.ace must compile through the landed stages with zero errors;
+# *_err.ace must fail. Fixtures live in feature-grouped directories — one
+# directory per feature with a main fixture plus aspect-named companions.
+# tests/lexer and tests/parser run parse-only (--ast); tests/sema runs the
+# full check (default mode).
 set -u
 fail=0
 tab=$(printf '\t')
@@ -9,7 +11,7 @@ ACE_BIN=${ACE_BIN:-./ace}
 ACE_DIR=$(dirname "$ACE_BIN")
 ACE=$(cd "$ACE_DIR" && pwd)/$(basename "$ACE_BIN")
 
-for f in tests/lexer/*.ok.ace tests/parser/*.ok.ace; do
+for f in $(find tests/lexer tests/parser -name '*_ok.ace' | sort); do
     if ! "$ACE" --ast "$f" >/dev/null 2>/tmp/ace_test_errs; then
         echo "FAIL (should parse clean): $f"
         cat /tmp/ace_test_errs
@@ -17,27 +19,27 @@ for f in tests/lexer/*.ok.ace tests/parser/*.ok.ace; do
     fi
 done
 
-for f in tests/lexer/*.err.ace tests/parser/*.err.ace; do
+for f in $(find tests/lexer tests/parser -name '*_err.ace' | sort); do
     if "$ACE" "$f" >/dev/null 2>&1; then
         echo "FAIL (should report errors): $f"
         fail=1
     fi
 done
 
-unknown_decl=$("$ACE" tests/parser/unknown_decl_type.err.ace 2>&1)
+unknown_decl=$("$ACE" tests/parser/unknown_decl_type_err.ace 2>&1)
 if ! printf '%s\n' "$unknown_decl" | grep -qF \
-    "tests/parser/unknown_decl_type.err.ace:3:8: error: unknown declaration type 'protocol'"; then
+    "tests/parser/unknown_decl_type_err.ace:3:8: error: unknown declaration type 'protocol'"; then
     echo "FAIL: unknown declaration type should point at the type name"
     fail=1
 fi
 
 for case in empty NUL long; do
     case "$case" in
-        empty) file=extern_link_name_empty.err.ace
+        empty) file=extern_link_name/empty_err.ace
                want="extern link name cannot be empty" ;;
-        NUL)   file=extern_link_name_nul.err.ace
+        NUL)   file=extern_link_name/nul_err.ace
                want="extern link name cannot contain NUL" ;;
-        long)  file=extern_link_name_long.err.ace
+        long)  file=extern_link_name/long_err.ace
                want="extern link name cannot exceed 510 bytes" ;;
     esac
     link_name_error=$("$ACE" "tests/parser/$file" 2>&1)
@@ -46,14 +48,14 @@ for case in empty NUL long; do
         fail=1
     fi
 done
-default_link_name_error=$("$ACE" tests/parser/extern_default_link_name_long.err.ace 2>&1)
+default_link_name_error=$("$ACE" tests/parser/extern_link_name/default_long_err.ace 2>&1)
 if ! printf '%s\n' "$default_link_name_error" | grep -qF \
     "extern link name cannot exceed 510 bytes"; then
     echo "FAIL: default extern link-name length diagnostic"
     fail=1
 fi
 
-for f in tests/sema/*.ok.ace; do
+for f in $(find tests/sema -name '*_ok.ace' | sort); do
     if ! "$ACE" "$f" >/dev/null 2>/tmp/ace_test_errs; then
         echo "FAIL (should check clean): $f"
         cat /tmp/ace_test_errs
@@ -61,14 +63,14 @@ for f in tests/sema/*.ok.ace; do
     fi
 done
 
-for f in tests/sema/*.err.ace; do
+for f in $(find tests/sema -name '*_err.ace' | sort); do
     if "$ACE" "$f" >/dev/null 2>&1; then
         echo "FAIL (should report errors): $f"
         fail=1
     fi
 done
 
-fallthrough_errors=$("$ACE" tests/sema/fallthrough_placement.err.ace 2>&1)
+fallthrough_errors=$("$ACE" tests/sema/conditions/fallthrough_placement_err.ace 2>&1)
 for want in \
     "fallthrough must be the final statement of a switch case" \
     "fallthrough is not allowed in the final switch case"; do
@@ -77,14 +79,14 @@ for want in \
         fail=1
     fi
 done
-fallthrough_union_error=$("$ACE" tests/sema/fallthrough_union_payload.err.ace 2>&1)
+fallthrough_union_error=$("$ACE" tests/sema/conditions/fallthrough_union_err.ace 2>&1)
 if ! printf '%s\n' "$fallthrough_union_error" | grep -qF \
     "fallthrough is not allowed in a tagged-union switch"; then
     echo "FAIL: missing tagged-union fallthrough diagnostic"
     fail=1
 fi
 
-defer_placement_errors=$("$ACE" tests/sema/defer_placement.err.ace 2>&1)
+defer_placement_errors=$("$ACE" tests/sema/defer/placement_err.ace 2>&1)
 defer_placement_count=$(printf '%s\n' "$defer_placement_errors" | grep -cF \
     "defer statement must appear at the top level of the function body")
 if [ "$defer_placement_count" -ne 4 ]; then
@@ -92,7 +94,7 @@ if [ "$defer_placement_count" -ne 4 ]; then
     printf '%s\n' "$defer_placement_errors"
     fail=1
 fi
-defer_noncall_errors=$("$ACE" tests/sema/defer_noncall.err.ace 2>&1)
+defer_noncall_errors=$("$ACE" tests/sema/defer/noncall_err.ace 2>&1)
 defer_noncall_count=$(printf '%s\n' "$defer_noncall_errors" | grep -cF \
     "defer operand must be a call")
 if [ "$defer_noncall_count" -ne 2 ]; then
@@ -101,7 +103,7 @@ if [ "$defer_noncall_count" -ne 2 ]; then
     fail=1
 fi
 
-recursive_layout_errors=$("$ACE" tests/sema/recursive_value_layout.err.ace 2>&1)
+recursive_layout_errors=$("$ACE" tests/sema/types/recursive_layout_err.ace 2>&1)
 for name in Direct ArrayCycle UnionCycle DistinctCycle; do
     if ! printf '%s\n' "$recursive_layout_errors" | grep -qF \
         "type '$name' has a recursive value layout"; then
@@ -109,33 +111,33 @@ for name in Direct ArrayCycle UnionCycle DistinctCycle; do
         fail=1
     fi
 done
-generic_layout_error=$("$ACE" tests/sema/generic_recursive_value_layout.err.ace 2>&1)
+generic_layout_error=$("$ACE" tests/sema/types/generic_recursive_layout_err.ace 2>&1)
 if ! printf '%s\n' "$generic_layout_error" | grep -qF \
     "recursive value layout"; then
     echo "FAIL: missing recursive generic value-layout diagnostic"
     fail=1
 fi
-inline_forward_errors=$("$ACE" tests/sema/inline_forward_type.err.ace 2>&1)
+inline_forward_errors=$("$ACE" tests/sema/types/inline_forward_err.ace 2>&1)
 for name in B D F; do
     if ! printf '%s\n' "$inline_forward_errors" | grep -qF "unknown type '$name'"; then
         echo "FAIL: inline forward type $name should be rejected"
         fail=1
     fi
 done
-unresolved_forward_error=$("$ACE" tests/sema/unresolved_forward_type.err.ace 2>&1)
+unresolved_forward_error=$("$ACE" tests/sema/types/unresolved_forward_err.ace 2>&1)
 if ! printf '%s\n' "$unresolved_forward_error" | grep -qF \
     "pointer-only forward type 'Missing' was never declared in this module"; then
     echo "FAIL: missing unresolved pointer-only forward-type diagnostic"
     fail=1
 fi
-premature_member_error=$("$ACE" tests/sema/premature_forward_member.err.ace 2>&1)
+premature_member_error=$("$ACE" tests/sema/types/premature_forward_member_err.ace 2>&1)
 if ! printf '%s\n' "$premature_member_error" | grep -qF \
     "type 'B' is not declared yet; member access requires its declaration"; then
     echo "FAIL: missing premature forward-type member diagnostic"
     fail=1
 fi
 
-c_abi_errors=$("$ACE" tests/sema/c_abi_rejected.err.ace 2>&1)
+c_abi_errors=$("$ACE" tests/sema/c_abi/rejected_err.ace 2>&1)
 for want in \
     "parameter 'value' has type bool, which is not C-ABI compatible" \
     "parameter 'value' has type string, which is not C-ABI compatible" \
@@ -152,7 +154,7 @@ for want in \
     fi
 done
 
-printf_format_errors=$("$ACE" tests/sema/printf_formats.err.ace 2>&1)
+printf_format_errors=$("$ACE" tests/sema/printf/formats_err.ace 2>&1)
 for want in \
     "format must be a string literal or static-literal const global" \
     "incomplete fmt.printf conversion" \
@@ -169,7 +171,7 @@ for want in \
         fail=1
     fi
 done
-printf_type_errors=$("$ACE" tests/sema/printf_types.err.ace 2>&1)
+printf_type_errors=$("$ACE" tests/sema/printf/types_err.ace 2>&1)
 for want in \
     "requires int, got i32" \
     "requires uint or usize, got u16" \
@@ -184,7 +186,7 @@ for want in \
     fi
 done
 
-array_repeat_errors=$("$ACE" tests/sema/array_repeat_errors.err.ace 2>&1)
+array_repeat_errors=$("$ACE" tests/sema/arrays/repetition_err.ace 2>&1)
 for want in \
     "array repetition count is 3, expected 4 for [4]i32" \
     "type mismatch: float literal given where i32 expected" \
@@ -195,7 +197,7 @@ for want in \
     fi
 done
 
-mem_typed_errors=$("$ACE" tests/sema/mem_typed.err.ace 2>&1)
+mem_typed_errors=$("$ACE" tests/sema/memory/typed_err.ace 2>&1)
 for want in \
     "type mismatch: []usize given where []i32 expected" \
     "type mismatch: i64 given where usize expected" \
@@ -213,27 +215,27 @@ for want in \
     fi
 done
 
-string_view_errors=$("$ACE" tests/sema/string_view_rejections.err.ace 2>&1)
+string_view_errors=$("$ACE" tests/sema/sequences/view_rejections_err.ace 2>&1)
 if ! printf '%s\n' "$string_view_errors" | grep -qF "cannot cast [2]u8 to string"; then
     echo "FAIL: missing string view-conversion rejection diagnostic"
     fail=1
 fi
-bounds_hi=$("$ACE" tests/sema/slice_bounds_const_hi.err.ace 2>&1)
+bounds_hi=$("$ACE" tests/sema/sequences/bounds_hi_err.ace 2>&1)
 if ! printf '%s\n' "$bounds_hi" | grep -qF "slice upper bound 6 exceeds source length 5"; then
     echo "FAIL: missing constant slice upper-bound diagnostic"
     fail=1
 fi
-bounds_order=$("$ACE" tests/sema/slice_bounds_const_order.err.ace 2>&1)
+bounds_order=$("$ACE" tests/sema/sequences/bounds_order_err.ace 2>&1)
 if ! printf '%s\n' "$bounds_order" | grep -qF "slice lower bound 3 exceeds upper bound 1"; then
     echo "FAIL: missing constant slice ordering diagnostic"
     fail=1
 fi
-bounds_neg=$("$ACE" tests/sema/slice_bounds_const_negative.err.ace 2>&1)
+bounds_neg=$("$ACE" tests/sema/sequences/bounds_negative_err.ace 2>&1)
 if ! printf '%s\n' "$bounds_neg" | grep -qF "slice upper bound -2 is negative"; then
     echo "FAIL: missing constant slice negative-bound diagnostic"
     fail=1
 fi
-parse_unsupported=$("$ACE" tests/sema/str_parse_unsupported.err.ace 2>&1)
+parse_unsupported=$("$ACE" tests/sema/sequences/parse_unsupported_err.ace 2>&1)
 for want in \
     "call 'str\$parse[bool]' matches no specialization" \
     "call 'str\$parse[f64]' matches no specialization" \
@@ -244,50 +246,50 @@ for want in \
     fi
 done
 
-spec_mismatch_error=$("$ACE" tests/sema/spec_signature_mismatch.err.ace 2>&1)
+spec_mismatch_error=$("$ACE" tests/sema/specialization/main_err.ace 2>&1)
 if ! printf '%s\n' "$spec_mismatch_error" | grep -qF \
     "does not conform to any generic overload of 'pick'"; then
     echo "FAIL: missing specialization conformance diagnostic"
     fail=1
 fi
-duplicate_spec_error=$("$ACE" tests/sema/spec_duplicate.err.ace 2>&1)
+duplicate_spec_error=$("$ACE" tests/sema/specialization/duplicate_err.ace 2>&1)
 if ! printf '%s\n' "$duplicate_spec_error" | grep -qF \
     "duplicate specialization 'pick[i64]' — one exact type-argument tuple per generic overload"; then
     echo "FAIL: missing duplicate-specialization diagnostic"
     fail=1
 fi
-missing_generic_error=$("$ACE" tests/sema/spec_missing_generic.err.ace 2>&1)
+missing_generic_error=$("$ACE" tests/sema/specialization/missing_generic_err.ace 2>&1)
 if ! printf '%s\n' "$missing_generic_error" | grep -qF \
     "a specialization must follow a generic declaration of 'pick'"; then
     echo "FAIL: missing missing-generic diagnostic"
     fail=1
 fi
-unspecialized_call_error=$("$ACE" tests/sema/spec_unspecialized_call.err.ace 2>&1)
+unspecialized_call_error=$("$ACE" tests/sema/specialization/unspecialized_call_err.ace 2>&1)
 if ! printf '%s\n' "$unspecialized_call_error" | grep -qF \
     "matches no specialization — 'load' is declared 'specialized' (no default body) at line 4"; then
     echo "FAIL: missing no-default call-site diagnostic"
     fail=1
 fi
-zero_spec_error=$("$ACE" tests/sema/spec_zero_specializations.err.ace 2>&1)
+zero_spec_error=$("$ACE" tests/sema/specialization/zero_err.ace 2>&1)
 if ! printf '%s\n' "$zero_spec_error" | grep -qF \
     "is marked 'specialized' but no specialization is declared"; then
     echo "FAIL: missing zero-specialization declaration diagnostic"
     fail=1
 fi
 
-constructor_wins_error=$("$ACE" tests/sema/const_constructor_function_wins.err.ace 2>&1)
+constructor_wins_error=$("$ACE" tests/sema/consts/main_err.ace 2>&1)
 if ! printf '%s\n' "$constructor_wins_error" | grep -qF \
     "type mismatch: i32 given where u8 expected (casts are explicit)"; then
     echo "FAIL: missing same-named-function-wins diagnostic"
     fail=1
 fi
-constructor_arity_error=$("$ACE" tests/sema/const_constructor_arity.err.ace 2>&1)
+constructor_arity_error=$("$ACE" tests/sema/consts/arity_err.ace 2>&1)
 if ! printf '%s\n' "$constructor_arity_error" | grep -qF \
     "wrong number of arguments: 1 given, 2 expected"; then
     echo "FAIL: missing same-named-function arity diagnostic"
     fail=1
 fi
-constructor_fit_error=$("$ACE" tests/sema/const_constructor_fit.err.ace 2>&1)
+constructor_fit_error=$("$ACE" tests/sema/consts/fit_err.ace 2>&1)
 if ! printf '%s\n' "$constructor_fit_error" | grep -qF \
     "integer literal 300 out of range for u8"; then
     echo "FAIL: missing constructor-constant fit diagnostic"
@@ -350,20 +352,25 @@ done
 # emit fixtures: compile to an object, link with the system cc, run, and
 # check the exit code. The expected code rides in a `// expect-exit: N` line.
 if [ -d tests/emit ]; then
+    rm -rf /tmp/ace_emit
     mkdir -p /tmp/ace_emit
-    for f in tests/emit/*.ace; do
-        name=$(basename "$f" .ace)
+    for f in $(find tests/emit -name '*.ace' | sort); do
+        rel=${f#tests/emit/}
+        name=${rel%.ace}
         exp=$(sed -n 's/^.*expect-exit:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$f")
         if [ -z "$exp" ]; then
             echo "FAIL: $f has no '// expect-exit: N' line"
             fail=1
             continue
         fi
-        cp "$f" "/tmp/ace_emit/$name.ace"
-        out=$(cd /tmp/ace_emit && "$ACE" -c "$name.ace" && cc "$name.o" -o "$name" && "./$name")
+        mkdir -p "/tmp/ace_emit/$(dirname "$rel")"
+        cp "$f" "/tmp/ace_emit/$rel"
+        rm -f /tmp/ace_test_run
+        out=$(cd /tmp/ace_emit && { "$ACE" -c "$rel" && cc "$name.o" -o "$name" && "./$name"; } 2>/tmp/ace_test_run)
         got=$?
         if [ "$got" -ne "$exp" ]; then
             echo "FAIL: $f exited $got, want $exp"
+            cat /tmp/ace_test_run
             fail=1
         fi
         expout=$(sed -n 's/^.*expect-output:[[:space:]]*//p' "$f")
@@ -372,14 +379,14 @@ if [ -d tests/emit ]; then
             fail=1
         fi
     done
-    precision_out=$(/tmp/ace_emit/printf_precision)
+    precision_out=$(/tmp/ace_emit/printf/precision)
     if [ "${#precision_out}" -ne 326 ] ||
        [ "${precision_out#0.}" = "$precision_out" ] ||
        [ "${precision_out#${precision_out%?}}" != "5" ]; then
         echo "FAIL: %.324f should emit 0., 323 zero bytes, and a final 5"
         fail=1
     fi
-    precision_max_out=$(/tmp/ace_emit/printf_precision_max)
+    precision_max_out=$(/tmp/ace_emit/printf/precision_max)
     if [ "${#precision_max_out}" -ne 635 ] ||
        [ "${precision_max_out#-17976931348623157}" = "$precision_max_out" ] ||
        [ "${precision_max_out#${precision_max_out%?}}" != "0" ]; then
@@ -387,18 +394,18 @@ if [ -d tests/emit ]; then
         fail=1
     fi
     if command -v nm >/dev/null 2>&1; then
-        printf_undef=$(nm -u /tmp/ace_emit/printf.o 2>/dev/null)
+        printf_undef=$(nm -u /tmp/ace_emit/printf/main.o 2>/dev/null)
         if printf '%s\n' "$printf_undef" |
            grep -Eq '_(printf|snprintf|vprintf|malloc|calloc|realloc|free)$'; then
             echo "FAIL: fmt.printf must not depend on C formatting, variadics, or allocation"
             fail=1
         fi
-        if nm /tmp/ace_emit/printf.o 2>/dev/null |
+        if nm /tmp/ace_emit/printf/main.o 2>/dev/null |
            grep -qF '__ace$fn$fmt$printf$prstring$'; then
             echo "FAIL: checked fmt.printf calls must not emit a runtime printf body"
             fail=1
         fi
-        net_undef=$(nm -u /tmp/ace_emit/net.o 2>/dev/null)
+        net_undef=$(nm -u /tmp/ace_emit/net/main.o 2>/dev/null)
         if printf '%s\n' "$net_undef" |
            grep -Eq '_(malloc|calloc|realloc|free|printf|snprintf)$'; then
             echo "FAIL: net must not call a general-purpose allocator or C formatting"
@@ -414,7 +421,7 @@ if [ -d tests/emit ]; then
         done
     fi
     # -o mode drives the same pipeline through the cc link step
-    "$ACE" -o /tmp/ace_emit/direct tests/emit/hello_min.ace && /tmp/ace_emit/direct
+    "$ACE" -o /tmp/ace_emit/direct tests/emit/basics/main.ace && /tmp/ace_emit/direct
     got=$?
     if [ "$got" -ne 42 ]; then
         echo "FAIL: -o mode exited $got, want 42"
@@ -422,7 +429,7 @@ if [ -d tests/emit ]; then
     fi
     # --report writes whole-compilation statistics to stderr. welcome imports
     # fmt, so the source-file count also verifies imported-module accounting.
-    report=$(cd /tmp/ace_emit && "$ACE" --report -c welcome.ace 2>&1 >/dev/null)
+    report=$(cd /tmp/ace_emit/basics && "$ACE" --report -c welcome.ace 2>&1 >/dev/null)
     if ! printf '%s\n' "$report" | grep -q '^Ace compile report:$'; then
         echo "FAIL: --report heading missing"
         fail=1
@@ -452,7 +459,7 @@ if [ -d tests/emit ]; then
     # Darwin's DWARF reader must see both the source rows and the minimal
     # compile-unit/function metadata used to preserve them through linking.
     if command -v dwarfdump >/dev/null 2>&1; then
-        dwarf=$(dwarfdump --debug-info --debug-line /tmp/ace_emit/hello_min.o 2>/tmp/ace_test_errs)
+        dwarf=$(dwarfdump --debug-info --debug-line /tmp/ace_emit/basics/main.o 2>/tmp/ace_test_errs)
         if [ $? -ne 0 ]; then
             echo "FAIL: dwarfdump rejected emitter debug info"
             cat /tmp/ace_test_errs
@@ -461,13 +468,13 @@ if [ -d tests/emit ]; then
             echo "FAIL: DWARF should describe the main function"
             fail=1
         elif ! printf '%s\n' "$dwarf" | grep -Eq '^0x[0-9a-f]+[[:space:]]+5[[:space:]]+1'; then
-            echo "FAIL: DWARF should map main to hello_min.ace:5:1"
+            echo "FAIL: DWARF should map main to basics/main.ace:5:1"
             fail=1
         elif ! printf '%s\n' "$dwarf" | grep -Eq '^0x[0-9a-f]+[[:space:]]+6[[:space:]]+5'; then
-            echo "FAIL: DWARF should map return to hello_min.ace:6:5"
+            echo "FAIL: DWARF should map return to basics/main.ace:6:5"
             fail=1
         fi
-        multidwarf=$(dwarfdump --debug-line /tmp/ace_emit/welcome.o 2>/tmp/ace_test_errs)
+        multidwarf=$(dwarfdump --debug-line /tmp/ace_emit/basics/welcome.o 2>/tmp/ace_test_errs)
         if [ $? -ne 0 ] ||
            ! printf '%s\n' "$multidwarf" | grep -q '/std/fmt.ace' ||
            ! printf '%s\n' "$multidwarf" | grep -q '/welcome.ace'; then
@@ -479,7 +486,7 @@ if [ -d tests/emit ]; then
     # Bare locals reserve stack storage but emit no initialization stores,
     # including a large array. The frame adjustment itself is expected.
     if command -v otool >/dev/null 2>&1; then
-        nozero=$(otool -tvV /tmp/ace_emit/no_implicit_zeroing.o)
+        nozero=$(otool -tvV /tmp/ace_emit/definite_init/no_implicit_zeroing.o)
         if printf '%s\n' "$nozero" | grep -Eq '[[:space:]]str[^a-z]|_memset'; then
             echo "FAIL: bare locals should not emit zeroing stores"
             fail=1
@@ -503,10 +510,12 @@ if [ -d tests/modules ]; then
             fi
             continue
         fi
-        out=$("$ACE" -o "/tmp/ace_modules/$name" "$f" && "/tmp/ace_modules/$name")
+        rm -f /tmp/ace_test_run
+        out=$({ "$ACE" -o "/tmp/ace_modules/$name" "$f" && "/tmp/ace_modules/$name"; } 2>/tmp/ace_test_run)
         got=$?
         if [ "$got" -ne "$exp" ]; then
             echo "FAIL: $f exited $got, want $exp"
+            cat /tmp/ace_test_run
             fail=1
         fi
         expout=$(sed -n 's/^.*expect-output:[[:space:]]*//p' "$f")
@@ -692,29 +701,29 @@ if [ -d tests/driver ]; then
 fi
 
 # lexer spot-checks
-if ! "$ACE" --tokens tests/lexer/hello.ok.ace | grep -q "^3:1${tab}import$"; then
-    echo "FAIL: first token of hello.ok.ace should be 'import'"
+if ! "$ACE" --tokens tests/lexer/hello_ok.ace | grep -q "^3:1${tab}import$"; then
+    echo "FAIL: first token of hello_ok.ace should be 'import'"
     fail=1
 fi
-if ! "$ACE" --tokens tests/lexer/numbers.ok.ace | grep -q "${tab}int${tab}255$"; then
+if ! "$ACE" --tokens tests/lexer/numbers_ok.ace | grep -q "${tab}int${tab}255$"; then
     echo "FAIL: 0xFF should lex as int 255"
     fail=1
 fi
-if ! "$ACE" --tokens tests/lexer/numbers.ok.ace | grep -q "${tab}int${tab}172$"; then
+if ! "$ACE" --tokens tests/lexer/numbers_ok.ace | grep -q "${tab}int${tab}172$"; then
     echo "FAIL: 0b1010_1100 should lex as int 172"
     fail=1
 fi
-if ! "$ACE" --tokens tests/lexer/numbers.ok.ace | grep -q "${tab}float${tab}0.0015$"; then
+if ! "$ACE" --tokens tests/lexer/numbers_ok.ace | grep -q "${tab}float${tab}0.0015$"; then
     echo "FAIL: 1.5e-3 should lex as float 0.0015"
     fail=1
 fi
-if ! "$ACE" --tokens tests/lexer/numbers.ok.ace | grep -q "${tab}char${tab}'A'$"; then
+if ! "$ACE" --tokens tests/lexer/numbers_ok.ace | grep -q "${tab}char${tab}'A'$"; then
     echo "FAIL: 'A' should lex as char 'A'"
     fail=1
 fi
 
 # parser spot-checks on the full-surface fixture
-ast() { "$ACE" --ast tests/parser/full.ok.ace; }
+ast() { "$ACE" --ast tests/parser/full_ok.ace; }
 if ! ast | grep -q "(enum 'Color'"; then
     echo "FAIL: enum Color should appear in the AST"
     fail=1
@@ -759,24 +768,24 @@ if ! ast | grep -q "(param 'error'"; then
     echo "FAIL: destructuring binder 'error' should appear in the AST"
     fail=1
 fi
-uninitialized_scalar=$("$ACE" tests/sema/uninitialized_scalar.err.ace 2>&1)
+uninitialized_scalar=$("$ACE" tests/sema/uninitialized/scalar_err.ace 2>&1)
 if ! printf '%s\n' "$uninitialized_scalar" | grep -qF \
     "error: 'answer' was not initialized before use"; then
     echo "FAIL: scalar definite-initialization diagnostic"
     fail=1
 fi
-uninitialized_struct=$("$ACE" tests/sema/uninitialized_struct.err.ace 2>&1)
+uninitialized_struct=$("$ACE" tests/sema/uninitialized/struct_err.ace 2>&1)
 if ! printf '%s\n' "$uninitialized_struct" | grep -qF \
     "error: 'point' was not fully initialized before use"; then
     echo "FAIL: aggregate definite-initialization diagnostic"
     fail=1
 fi
 # shifts/bitwise parse with C precedence
-if ! "$ACE" --ast tests/lexer/numbers.ok.ace | grep -qF "op='<<'"; then
+if ! "$ACE" --ast tests/lexer/numbers_ok.ace | grep -qF "op='<<'"; then
     echo "FAIL: << operator should parse"
     fail=1
 fi
-if ! "$ACE" --ast tests/lexer/numbers.ok.ace | grep -qF "op='>>'"; then
+if ! "$ACE" --ast tests/lexer/numbers_ok.ace | grep -qF "op='>>'"; then
     echo "FAIL: >> operator should parse"
     fail=1
 fi

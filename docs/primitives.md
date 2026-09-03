@@ -154,4 +154,4 @@ from an ordinary zero value.
 - A character literal cannot yet initialize a `float` target, and untyped
   literals materialize only where the existing coercion rules admit them.
 
-The examples are covered by `tests/sema/docs_primitive.ok.ace`.
+The examples are covered by `tests/sema/docs/primitive_ok.ace`.

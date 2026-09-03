@@ -212,6 +212,6 @@ Termination behavior, identical in checked and release builds:
 - Domain identity values must never be serialized or exposed as stable
   identifiers outside one linked program.
 
-The examples are covered by `tests/sema/docs_errors.ok.ace` and the runnable
-fixtures in `tests/emit/errors.ace`, `tests/emit/panic.ace`, and
+The examples are covered by `tests/sema/docs/errors_ok.ace` and the runnable
+fixtures in `tests/emit/errors/main.ace`, `tests/emit/errors/panic.ace`, and
 `tests/modules/error_export/`.

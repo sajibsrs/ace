@@ -555,6 +555,25 @@ labeled break/continue on mut loops); compiler-checked documentation mirror
 extended in `tests/sema/docs_control_flow.ok.ace`. Normal and sanitizer
 suites pass.
 
+### Chunk 29 — Test suite grouped by feature directories
+
+The flat per-tier fixture directories were regrouped modules-style: one
+directory per feature under each tier, holding one main fixture (`main.ace`,
+`main_ok.ace`, or `main_err.ace`) plus aspect-named companions with the
+feature prefix dropped (`defer_placement.err.ace` became
+`tests/sema/defer/placement_err.ace`). The pass/fail marker moved from a
+`.ok.ace`/`.err.ace` extension to a snake-case `_ok`/`_err` infix. sema grew
+22 feature directories, emit 17, parser 6; lexer (8 files) and
+`tests/emit_errors/` stayed flat; empty `tests/stdlib_target/` was removed.
+`tests/run.sh` discovers fixtures recursively (`find ... | sort`), stages
+emit fixtures into `/tmp/ace_emit` preserving the feature subdirectory so
+basenames cannot collide, and keeps every multi-diagnostic grep check with
+only its paths updated. Emit and modules runs capture fixture stderr into a
+scratch file and show it only when that fixture fails, so the deliberate
+stderr writes under test (panic messages, the Error bridge) no longer leak
+into the test log. No fixture sources changed. Normal and sanitizer
+suites pass.
+
 ## Still open after these chunks
 
 Checked/release build modes, then checked allocation tracking; nonblocking echo and multi-client chat are the next networking proofs over the implemented `poll` readiness queue (see the `spec.md` Decision Queue).

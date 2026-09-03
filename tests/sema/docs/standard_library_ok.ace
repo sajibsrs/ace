@@ -1,9 +1,9 @@
 /*
  * Mirrors docs/standard-library.md mem, fmt, sys, net, and str examples (sema
- * check only; runtime coverage lives in tests/emit/print_*.ace,
- * tests/emit/sys.ace, tests/emit/sys_standard_descriptors.ace,
- * tests/emit/sys_time.ace, tests/emit/net.ace,
- * tests/emit/poll.ace, tests/emit/typed_allocation.ace, and tests/emit/str_*.ace).
+ * check only; runtime coverage lives in tests/emit/fmt/*.ace,
+ * tests/emit/sys/main.ace, tests/emit/sys/standard_descriptors.ace,
+ * tests/emit/sys/time.ace, tests/emit/net/main.ace,
+ * tests/emit/net/poll.ace, tests/emit/allocation/typed.ace, and tests/emit/strings/*.ace).
  */
 
 import fmt

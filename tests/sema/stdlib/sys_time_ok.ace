@@ -1,5 +1,5 @@
 /* sys time — selective import and exact signature typing (sema check only;
- * runtime coverage lives in tests/emit/sys_time.ace).
+ * runtime coverage lives in tests/emit/sys/time.ace).
  */
 
 import time_awake, time_elapsed from sys

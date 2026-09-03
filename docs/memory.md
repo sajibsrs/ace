@@ -253,9 +253,9 @@ they are programmer errors. Checked live-allocation tracking and stronger
 memory-access instrumentation have not landed yet.
 
 The examples on this page are checked by
-`tests/sema/docs_memory.ok.ace`; executable allocation and byte-operation
-behavior is covered by `tests/emit/allocation.ace`,
-`tests/emit/typed_allocation.ace`, and `tests/emit/mem_bytes.ace`. For manual
+`tests/sema/docs/memory_ok.ace`; executable allocation and byte-operation
+behavior is covered by `tests/emit/allocation/main.ace`,
+`tests/emit/allocation/typed.ace`, and `tests/emit/allocation/bytes.ace`. For manual
 performance and process-memory measurement on Apple arm64, run
 `./bench/run-memory.sh`; it reports allocator timings and usable bytes,
 compiler statistics, peak resident size, and related macOS process counters
