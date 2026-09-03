@@ -333,7 +333,7 @@
         },
         {
           "name": "keyword.control.ace",
-          "match": "\\b(?:import|from|pub|mut|const|noalias|if|else|for|in|switch|return|break|continue|asm|extern|export|contract|struct|embed|union|signs|specialized|distinct|type|enum)\\b"
+          "match": "\\b(?:import|from|pub|mut|const|noalias|if|else|for|in|switch|return|break|continue|defer|asm|extern|export|contract|struct|embed|union|signs|specialized|distinct|type|enum)\\b"
         }
       ]
     },

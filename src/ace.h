@@ -15,7 +15,7 @@
     X(CONST, "const")                                                          \
     X(NOALIAS, "noalias") X(IF, "if") X(ELSE, "else") X(FOR, "for")            \
     X(IN, "in") X(SWITCH, "switch") X(RETURN, "return") X(BREAK, "break")      \
-    X(CONTINUE, "continue") X(ASM, "asm") X(EXTERN, "extern")                  \
+    X(CONTINUE, "continue") X(DEFER, "defer") X(ASM, "asm") X(EXTERN, "extern")\
     X(EXPORT, "export") X(CONTRACT, "contract") X(STRUCT, "struct")           \
     X(EMBED, "embed")                                                         \
     X(SIGNS, "signs") X(DISTINCT, "distinct") X(TYPE, "type")                \
@@ -111,7 +111,7 @@ char* arena_alloc(size_t n);
     X(N_CASE, "case") X(N_VARPAT, "varpat") X(N_RETURN, "return")             \
     X(N_BREAK, "break") X(N_CONTINUE, "continue")                               \
     X(N_FALLTHROUGH, "fallthrough") X(N_ASM, "asm") X(N_ASMBIND, "asmbind")   \
-    X(N_LABEL, "label")                                                        \
+    X(N_LABEL, "label") X(N_DEFER, "defer")                                    \
     /* expressions */                                                          \
     X(N_INT, "int_lit") X(N_FLOAT, "float_lit") X(N_STR, "str_lit")            \
     X(N_CHAR, "char_lit") X(N_BOOL, "bool") X(N_NULL, "null")                  \

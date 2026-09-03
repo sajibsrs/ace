@@ -193,3 +193,107 @@ forever: {
 
 Reaching the closing brace still exits normally. Plain `continue` advances the
 nearest `for-in` loop; only its labeled form restarts a block. Ace has no `goto`.
+
+## Deferred calls
+
+`defer` schedules one call to run when the surrounding function exits. The
+statement is legal only as a direct statement of the function's top-level body
+block — not inside an `if`, `for`, a switch case, or a labeled block — and its
+operand must be a call:
+
+```ace
+finish(): int {
+    defer cleanup()
+    work()
+    return 0 // cleanup() runs after 0 is produced
+}
+```
+
+A function's defers form one list in source order. At every exit — each
+`return` and falling off the end of the body — they run in reverse order:
+
+```ace
+finish(): int {
+    defer fmt.println("first")
+    defer fmt.println("second")
+    return 0 // prints "second", then "first"
+}
+```
+
+Arguments are captured when the `defer` statement runs, not at the exit:
+
+- Read-only arguments are evaluated once, right there; the exit-time call uses
+  those values even if the variables changed in between:
+
+```ace
+report(value: int) {
+    fmt.println(value)
+}
+
+work(): int {
+    n: int = 1
+    defer report(n) // captures 1
+    n = 2
+    return 0 // prints 1
+}
+```
+
+- An argument marked `mut` at the call, and the receiver in the
+  receiver-marked form `defer mut c.method()`, capture the variable's address
+  instead. The exit-time call sees the variable's final value, and writes the
+  callee makes land before the function's storage is released:
+
+```ace
+total: int
+
+bump(mut n: int) {
+    n += 1
+}
+
+work(): int {
+    defer bump(mut total) // captures the global itself, not its value
+    total = 10
+    return total // returns 10; the bump lands after, leaving total at 11
+}
+```
+
+- A deferred call through a function value snapshots the callee itself at the
+  `defer` statement, exactly like a read-only argument. Reassigning the
+  variable afterwards cannot change which function the exit-time call
+  dispatches to:
+
+```ace
+a(x: int): int {
+    seen = 1
+    return 0
+}
+
+b(x: int): int {
+    seen = 2
+    return 0
+}
+
+work(): int {
+    f: (int): int = a
+    defer f(0) // snapshots a
+    f = b
+    return 0 // the exit-time call runs a, not b
+}
+```
+
+  The callee position is always read-only-captured. `mut` marks a receiver,
+  and through a function value there is no receiver, so `defer mut f()` marks
+  nothing.
+
+Defers run only at function exits, and nothing else runs them:
+
+- `panic` aborts the process and runs no defers.
+- `break` and `continue`, plain or labeled, leave the function running, so the
+  defers wait for the real exit that ends the function.
+- A `defer` written after the final `return` never runs; it is accepted
+  without an unreachable-code diagnostic.
+- A deferred call's result is discarded — it cannot change the function's own
+  return value.
+- There is no check for deferring the same call twice.
+
+`main` defers work like any other function's.

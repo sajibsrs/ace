@@ -195,6 +195,7 @@ typedef struct Scope {
     Sym*          types;
     const char*   label;
     int           is_loop;
+    int           is_fnbody; // the function's outermost body block
 } Scope;
 
 typedef struct Pending {
@@ -3315,6 +3316,24 @@ static void check_stmt(Ck* k, Node* s) {
             ck_err(k, s, "untyped literal expression has no effect — bind it to a type");
         return;
     }
+    case N_DEFER: {
+        // Hard restriction: `defer` is a direct statement of the function's
+        // top-level body block only. Every nested block pushes its own scope
+        // (if/for/switch case/label/bare block), while check_block pushes
+        // none — so the innermost scope is the body scope exactly when the
+        // defer sits at the top level.
+        if (!k->scope->is_fnbody)
+            ck_err(k, s,
+                   "defer statement must appear at the top level of the function body");
+        if (s->a->kind != N_CALL) {
+            ck_err(k, s->a, "defer operand must be a call");
+            return;
+        }
+        SType* t = expr_type(k, s->a); // checked like an ordinary call statement
+        if (t == T_UT_INT || t == T_UT_FLOAT)
+            ck_err(k, s, "untyped literal expression has no effect — bind it to a type");
+        return;
+    }
     case N_IF: {
         SType* c = expr_type(k, s->a);
         if (c->kind != SK_ERR && !is_bool(c))
@@ -4250,6 +4269,7 @@ static void check_func_body(Ck* k, Node* f) {
     SType* saved_ret = k->ret; // nested checks (generic stamping) must not clobber
     Node* saved_fn = k->curfn;
     scope_push(k);
+    k->scope->is_fnbody = 1; // `defer` is legal only as a direct statement here
     for (int i = 0; i < f->nkids; i++) {
         Node* pa = f->kids[i];
         Sym* s = declare_val(k, pa, SYM_VAR, pa->str, pa->len);

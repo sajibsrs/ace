@@ -1,0 +1,55 @@
+/*
+ * Deferred mem.release fixture: the exit-time call nulls the original lvalue,
+ * not a compiler-internal capture slot. After release_buf() returns, buf reads
+ * as canonical null (zero pointer and zero length) at its own storage, and a
+ * second release of the same variable is the documented null no-op instead of
+ * a double free.
+ */
+
+// expect-exit: 0
+// expect-output: before 512
+// expect-output: after 0
+
+import fmt
+import mem
+
+buf: []u8
+tbuf: []usize
+
+release_buf(): int {
+    defer mem.release(mut buf)
+    return 0
+}
+
+double_release(): int {
+    defer mem.release(mut buf) // runs second: sees the null left by the first
+    defer mem.release(mut buf) // runs first: frees and nulls buf itself
+    return 0
+}
+
+release_typed(): int {
+    defer mem.release[usize](mut tbuf)
+    return 0
+}
+
+main(): int {
+    buf = mem.alloc(512, 16)
+    fmt.print("before ")
+    fmt.println(buf.len)
+    release_buf()
+    fmt.print("after ")
+    fmt.println(buf.len)
+    if buf.len != 0 {
+        return 1
+    }
+    // buf's pointer was nulled too: a second release is a no-op, not a
+    // double free of the freed storage.
+    double_release()
+    tbuf = mem.alloc[usize](8)
+    release_typed()
+    if tbuf.len != 0 {
+        return 2
+    }
+    mem.release[usize](mut tbuf) // null no-op again at the original storage
+    return 0
+}

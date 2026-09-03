@@ -1,0 +1,32 @@
+/* Defer fall-off fixture: reaching the end of the body still runs defers. */
+
+// expect-exit: 0
+// expect-output: running
+// expect-output: cleanup2
+// expect-output: cleanup1
+// expect-output: maybe-body
+// expect-output: maybe-exit
+
+import fmt
+
+finish() {
+    defer fmt.println("cleanup1")
+    defer fmt.println("cleanup2")
+    fmt.println("running")
+    // no return: fall-off end is an exit
+}
+
+maybe(take: bool) {
+    defer fmt.println("maybe-exit")
+    if take {
+        fmt.println("maybe-body")
+        return
+    }
+    // falling off the end after a conditional return still runs defers
+}
+
+main(): int {
+    finish()
+    maybe(true)
+    return 0
+}

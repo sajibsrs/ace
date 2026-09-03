@@ -1,0 +1,80 @@
+/* Compiler-checked examples from docs/control-flow.md (deferred calls). */
+
+import fmt
+
+cleanup() {
+    fmt.println("cleanup")
+}
+
+task() {
+    fmt.println("task")
+}
+
+scheduled(): int {
+    defer cleanup()
+    task()
+    return 0 // cleanup() runs after 0 is produced
+}
+
+ordered(): int {
+    defer fmt.println("first")
+    defer fmt.println("second")
+    return 0 // prints "second", then "first"
+}
+
+report(value: int) {
+    fmt.println(value)
+}
+
+snapshot(): int {
+    n: int = 1
+    defer report(n) // captures 1
+    n = 2
+    return 0 // prints 1
+}
+
+total: int
+
+bump(mut n: int) {
+    n += 1
+}
+
+address(): int {
+    defer bump(mut total) // captures the global itself, not its value
+    total = 10
+    return total // returns 10; the bump lands after, leaving total at 11
+}
+
+picked: int
+
+choose_a(x: int): int {
+    picked = 1
+    return 0
+}
+
+choose_b(x: int): int {
+    picked = 2
+    return 0
+}
+
+callee_snapshot(): int {
+    f: (int): int = choose_a
+    defer f(0) // snapshots choose_a
+    f = choose_b
+    return 0 // the exit-time call runs choose_a, not choose_b
+}
+
+main(): int {
+    scheduled()
+    ordered()
+    snapshot()
+    address()
+    if total != 11 {
+        return 1
+    }
+    callee_snapshot()
+    if picked != 1 {
+        return 2
+    }
+    return 0
+}

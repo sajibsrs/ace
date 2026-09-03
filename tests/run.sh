@@ -84,6 +84,23 @@ if ! printf '%s\n' "$fallthrough_union_error" | grep -qF \
     fail=1
 fi
 
+defer_placement_errors=$("$ACE" tests/sema/defer_placement.err.ace 2>&1)
+defer_placement_count=$(printf '%s\n' "$defer_placement_errors" | grep -cF \
+    "defer statement must appear at the top level of the function body")
+if [ "$defer_placement_count" -ne 4 ]; then
+    echo "FAIL: expected 4 defer placement diagnostics, got $defer_placement_count"
+    printf '%s\n' "$defer_placement_errors"
+    fail=1
+fi
+defer_noncall_errors=$("$ACE" tests/sema/defer_noncall.err.ace 2>&1)
+defer_noncall_count=$(printf '%s\n' "$defer_noncall_errors" | grep -cF \
+    "defer operand must be a call")
+if [ "$defer_noncall_count" -ne 2 ]; then
+    echo "FAIL: expected 2 defer operand diagnostics, got $defer_noncall_count"
+    printf '%s\n' "$defer_noncall_errors"
+    fail=1
+fi
+
 recursive_layout_errors=$("$ACE" tests/sema/recursive_value_layout.err.ace 2>&1)
 for name in Direct ArrayCycle UnionCycle DistinctCycle; do
     if ! printf '%s\n' "$recursive_layout_errors" | grep -qF \

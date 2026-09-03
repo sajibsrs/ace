@@ -1,0 +1,29 @@
+/* Defer snapshot fixture: read-only arguments see the defer-time value. */
+
+// expect-exit: 0
+// expect-output: snapshot 1
+
+import fmt
+
+seen: int
+
+snatch(x: int) {
+    seen = x
+}
+
+snapshot_arg(): int {
+    v: int = 1
+    defer snatch(v) // evaluated now: the exit-time call reads 1
+    v = 2
+    return 0
+}
+
+main(): int {
+    snapshot_arg()
+    fmt.print("snapshot ")
+    fmt.println(seen)
+    if seen != 1 {
+        return 1
+    }
+    return 0
+}

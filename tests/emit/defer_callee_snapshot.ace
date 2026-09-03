@@ -1,0 +1,71 @@
+/*
+ * Deferred indirect-call fixture: a call through a function value snapshots
+ * the callee at the defer statement, like a read-only argument. Reassigning
+ * the variable afterwards cannot change which function the exit-time call
+ * dispatches to. The callee position is always read-only-captured: there is
+ * no `mut` tier for the callee itself (`defer mut f()` marks nothing on an
+ * indirect call).
+ */
+
+// expect-exit: 0
+// expect-output: callee 105
+// expect-output: args 1030
+
+import fmt
+
+seen: int
+sum: int
+
+a(x: int): int {
+    seen = 100 + x
+    return 0
+}
+
+b(x: int): int {
+    seen = 200 + x
+    return 0
+}
+
+add(x: int, y: int): int {
+    sum = 1000 + x + y
+    return 0
+}
+
+sub(x: int, y: int): int {
+    sum = 1000 - x - y
+    return 0
+}
+
+snapshot_callee(): int {
+    f: (int): int = a
+    defer f(5)
+    f = b // after the defer: the exit-time call must still invoke a
+    return 0
+}
+
+snapshot_callee_and_args(): int {
+    g: (int, int): int = add
+    x: int = 10
+    y: int = 20
+    defer g(x, y)
+    g = sub // the callee snapshot still picks add
+    x = 1   // read-only arguments keep their defer-time values
+    y = 2
+    return 0
+}
+
+main(): int {
+    snapshot_callee()
+    fmt.print("callee ")
+    fmt.println(seen)
+    if seen != 105 {
+        return 1
+    }
+    snapshot_callee_and_args()
+    fmt.print("args ")
+    fmt.println(sum)
+    if sum != 1030 {
+        return 2
+    }
+    return 0
+}

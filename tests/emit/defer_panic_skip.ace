@@ -1,0 +1,17 @@
+/* Defer panic fixture: panic aborts and runs no defers. */
+
+// expect-exit: 134
+// expect-output: before
+
+import fmt
+
+work(): int {
+    defer fmt.println("deferred-ran")
+    fmt.println("before")
+    panic("boom")
+}
+
+main(): int {
+    work()
+    return 0
+}

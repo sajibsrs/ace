@@ -336,6 +336,10 @@ typedef struct {
     int      ended_return;
     SType*   fnret;
     uint32_t sret_slot;
+    Node*    fnbody;   // current function's top-level body block (defer check)
+    struct { Node* call; Node* at; } *defers; // captured defers, source order
+    int      ndefers, cdefers;
+    uint32_t retsave_off; // result-register save area across deferred calls
     LineRow* lines;
     int      nlines, clines;
     DebugFn* debug_fns;
@@ -651,7 +655,12 @@ static int new_label(Em* e) {
     return e->nlab++;
 }
 
-static void bind_label(Em* e, int l) { e->lab[l] = (uint32_t)text(e)->len; }
+static void bind_label(Em* e, int l) {
+    e->lab[l] = (uint32_t)text(e)->len;
+    // Every bound label is a join point with an inbound branch, so linear
+    // control reaches here again and the fall-off epilogue must come back.
+    e->ended_return = 0;
+}
 
 static void bp_add(Em* e, int kind, int lab) {
     if (e->nbp == e->cbp) {
@@ -3553,6 +3562,196 @@ static void emit_block(Em* e, Node* b) {
     for (int i = 0; i < b->nkids; i++) emit_stmt(e, b->kids[i]);
 }
 
+// --- deferred calls ---------------------------------------------------------------------
+/*
+ * `defer` lowers by inline expansion (no runtime counter or epilogue loop):
+ * the defer statement captures its call, and every exit point re-emits the
+ * captured sequence in reverse immediately before the epilogue. Capture is
+ * two-tier: read-only arguments are fully evaluated at the defer statement
+ * and snapshotted into private frame slots, while `mut`-marked arguments and
+ * `mut`-marked method receivers capture the lvalue address, so the exit-time
+ * call reads the argument's final storage. A defer after a top-level return
+ * captures into dead code and never fires. `panic` never returns, so it runs
+ * no defers. Because a deferred call clobbers the temp pools and the result
+ * registers, an already-marshaled return value parks in a frame save area
+ * across the expansion.
+ */
+
+// fresh emitter-internal lvalue backed by a frame slot: gen_addr yields the
+// slot's address (or, when byaddr, the pointer stored inside it), so the
+// ordinary call path marshals the deferred argument without re-evaluating
+// its expression at exit time.
+static Node* defer_slot_ident(Em* e, Node* src, SType* t, int byaddr) {
+    Node* id = (Node*)arena_alloc(sizeof(Node));
+    memset(id, 0, sizeof *id);
+    id->kind = N_IDENT;
+    id->path = src ? src->path : NULL;
+    id->line = src ? src->line : 0;
+    id->col = src ? src->col : 0;
+    Sym* s = (Sym*)arena_alloc(sizeof(Sym));
+    memset(s, 0, sizeof *s);
+    s->name = "defer";
+    s->len = 5;
+    s->kind = SYM_VAR;
+    s->type = t;
+    s->decl = id; // the ident doubles as the slot key
+    id->sym = s;
+    id->ty = t;
+    slot_alloc(e, id, byaddr ? 8 : ty_size(t), byaddr ? 8 : ty_align(t));
+    if (byaddr) e->slots[e->nslots - 1].byref = 1;
+    return id;
+}
+
+// capture one deferred argument at the defer statement: byaddr stores the
+// argument lvalue's address (exit sees final storage), otherwise the value
+// is snapshotted (exit sees the defer-time state). Returns the synthetic
+// lvalue the exit-time call reads.
+static Node* defer_capture_arg(Em* e, Node* a, int byaddr) {
+    Node* inner = a->kind == N_MUTARG ? a->a : a;
+    SType* t = node_ty(inner);
+    Node* id = defer_slot_ident(e, inner, t, byaddr);
+    uint32_t off = slot_find(e, id)->off;
+    if (byaddr) {
+        int ta = gen_addr(e, inner);
+        store_frame(e, xreg(ta), off, 8);
+    } else {
+        EV v = gen_expr(e, inner);
+        store_to_slot(e, v, off, t);
+    }
+    return id;
+}
+
+// rewrap a mut-captured argument so every call path sees the original
+// call-site mut mark
+static Node* defer_mutarg(Node* a, Node* id) {
+    Node* w = (Node*)arena_alloc(sizeof(Node));
+    memset(w, 0, sizeof *w);
+    w->kind = N_MUTARG;
+    w->path = a->path;
+    w->line = a->line;
+    w->col = a->col;
+    w->a = id;
+    w->ty = id->ty;
+    return w;
+}
+
+/*
+ * Capture a top-level `defer` statement's call. The synthetic call copies the
+ * original's symbol, builtin marker, flags, and printf plan, so the ordinary
+ * gen_call dispatch lowers the exit-time call unchanged; only the argument
+ * nodes are replaced by capture-slot lvalues. Instance-method and
+ * contract-method receivers are captured with the call's `mut` mark deciding
+ * address vs snapshot, exactly like `mut`-marked arguments. An indirect call
+ * through a function value snapshots the callee value itself at the defer
+ * statement, so a later reassignment of the variable cannot change which
+ * function the exit-time call dispatches to.
+ */
+static void defer_capture(Em* e, Node* s) {
+    Node* call = s->a; // N_CALL (sema-checked)
+    Node* sc = (Node*)arena_alloc(sizeof(Node));
+    memset(sc, 0, sizeof *sc);
+    sc->kind = N_CALL;
+    sc->flags = call->flags;
+    sc->sym = call->sym;
+    sc->ival = call->ival;
+    sc->ty = call->ty;
+    sc->aux = call->aux;
+    sc->path = call->path;
+    sc->line = call->line;
+    sc->col = call->col;
+
+    Node* callee = call->a;
+    Sym* tgt = call->sym ? node_sym(call) : NULL;
+    // instance mirrors the direct call path's receiver-prepend guard: only a
+    // non-extern SYM_FUNC callee with an unqualified field callee receives
+    // the implicit receiver (a SYM_VAR callee is a function-value field call
+    // whose field expression is the callee itself, not a receiver)
+    int instance = callee->kind == N_FIELD_E && tgt && tgt->kind == SYM_FUNC &&
+        !tgt->is_extern && !(call->flags & F_METHOD);
+    SType* baset = callee->kind == N_FIELD_E ? node_ty(callee->a) : NULL;
+    int contract = callee->kind == N_FIELD_E && !call->sym && baset &&
+        baset->kind == SK_CONTRACT;
+    if (instance || contract) {
+        Node* rid = defer_capture_arg(e, callee->a, (call->flags & F_MUT) != 0);
+        Node* scallee = (Node*)arena_alloc(sizeof(Node));
+        memset(scallee, 0, sizeof *scallee);
+        scallee->kind = N_FIELD_E;
+        scallee->str = callee->str;
+        scallee->len = callee->len;
+        scallee->sym = callee->sym;
+        scallee->ty = callee->ty;
+        scallee->path = callee->path;
+        scallee->line = callee->line;
+        scallee->col = callee->col;
+        scallee->a = rid;
+        sc->a = scallee;
+    } else if (tgt && tgt->kind == SYM_VAR) {
+        // Indirect call through a function value: the callee is part of what
+        // gets called, so it snapshots at the defer statement like a
+        // read-only argument and the exit-time call dispatches through the
+        // snapshot instead of re-reading the variable.
+        sc->a = defer_capture_arg(e, callee, 0);
+    } else {
+        sc->a = callee;
+    }
+    sc->nkids = call->nkids;
+    if (call->nkids) {
+        sc->kids = (Node**)arena_alloc((size_t)call->nkids * sizeof(Node*));
+        for (int i = 0; i < call->nkids; i++) {
+            Node* a = call->kids[i];
+            if (a->kind == N_MUTARG)
+                sc->kids[i] = defer_mutarg(a, defer_capture_arg(e, a, 1));
+            else
+                sc->kids[i] = defer_capture_arg(e, a, 0);
+        }
+    }
+    if (e->ndefers == e->cdefers) {
+        e->cdefers = e->cdefers ? e->cdefers * 2 : 4;
+        e->defers = realloc(e->defers, (size_t)e->cdefers * sizeof *e->defers);
+        if (!e->defers) oom();
+    }
+    e->defers[e->ndefers].call = sc;
+    e->defers[e->ndefers].at = s;
+    e->ndefers++;
+}
+
+// re-emit the captured calls, last defer first, before an epilogue. `ret` is
+// the function's return type (NULL when no result is live, e.g. fall-off):
+// result-register units park in a frame save area across the calls.
+static void emit_defers(Em* e, SType* ret) {
+    if (!e->ndefers) return;
+    RetCls rc;
+    classify_ret(ret, &rc);
+    int save = !rc.sret && rc.nunits > 0;
+    if (save) {
+        if (!e->retsave_off) e->retsave_off = temp_slot(e, 4 * 8, 8);
+        for (int w = 0; w < rc.nunits; w++) {
+            TU* u = &rc.units[w];
+            if (u->kind == TU_XREG)
+                store_frame(e, u->reg, e->retsave_off + (uint32_t)w * 8, 8);
+            else
+                store_frame_fp(e, u->reg, e->retsave_off + (uint32_t)w * 8,
+                               u->size == 8);
+        }
+    }
+    for (int i = e->ndefers - 1; i >= 0; i--) {
+        line_mark(e, e->defers[i].at); // exit-time marks cite the defer line
+        e->vti = 0;
+        e->vtf = 0;
+        gen_expr(e, e->defers[i].call); // results discarded
+    }
+    if (save) {
+        for (int w = 0; w < rc.nunits; w++) {
+            TU* u = &rc.units[w];
+            if (u->kind == TU_XREG)
+                load_frame(e, u->reg, e->retsave_off + (uint32_t)w * 8, 8, 0);
+            else
+                load_frame_fp(e, u->reg, e->retsave_off + (uint32_t)w * 8,
+                              u->size == 8);
+        }
+    }
+}
+
 // copy member i of a tuple result (at address `ra`) into frame offset `off`
 static void store_member(Em* e, int ra, SType* tup, int i, uint32_t off) {
     SType* ft = tup && tup->kind == SK_TUPLE && i < tup->nfields
@@ -3733,6 +3932,23 @@ static void emit_stmt(Em* e, Node* s) {
     case N_EXPRSTMT:
         gen_expr(e, s->a);
         return;
+    case N_DEFER: {
+        // sema restricts defer to direct statements of the body block; the
+        // emitter re-checks because a nested defer would capture at the wrong
+        // point and expand on unrelated exits.
+        int top = 0;
+        for (int i = 0; e->fnbody && i < e->fnbody->nkids; i++)
+            if (e->fnbody->kids[i] == s) {
+                top = 1;
+                break;
+            }
+        if (!top) {
+            em_err(e, s, "defer must be a top-level statement of the function body");
+            return;
+        }
+        defer_capture(e, s);
+        return;
+    }
     case N_IF: {
         EV c = gen_expr(e, s->a);
         if (c.cls != CLS_INT) {
@@ -4019,6 +4235,7 @@ static void emit_stmt(Em* e, Node* s) {
         RetCls rc;
         classify_ret(rt, &rc);
         if (!s->a) {
+            emit_defers(e, rt);
             emit_epilogue(e);
             return;
         }
@@ -4026,6 +4243,7 @@ static void emit_stmt(Em* e, Node* s) {
             EV v = gen_expr(e, s->a);
             load_frame(e, 15, e->sret_slot, 8, 0); // x8 from the prologue
             copy_mem(e, 15, 0, xreg(v.idx), 0, ty_size(rt));
+            emit_defers(e, rt); // the result already sits in the caller's buffer
             emit_epilogue(e);
             return;
         }
@@ -4035,6 +4253,7 @@ static void emit_stmt(Em* e, Node* s) {
                 mov_fp(e, unwrap(rt)->prim == P_F64, 0, v.idx);
             else
                 mov_int(e, scalar_bits(rt) == 64, 0, xreg(v.idx));
+            emit_defers(e, rt);
             emit_epilogue(e);
             return;
         }
@@ -4059,10 +4278,12 @@ static void emit_stmt(Em* e, Node* s) {
             if (defer >= 0)
                 ld_reg(e, rc.units[defer].reg, xreg(v.idx),
                        rc.units[defer].off, 8, 0);
+            emit_defers(e, rt);
             emit_epilogue(e);
             return;
         }
         gen_expr(e, s->a); // void return with an expression: discard
+        emit_defers(e, rt);
         emit_epilogue(e);
         return;
     }
@@ -4281,6 +4502,9 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
     e->nctx = 0;
     e->ended_return = 0;
     e->fnret = ret;
+    e->fnbody = f->b;
+    e->ndefers = 0;
+    e->retsave_off = 0;
     sym_define(&e->syms, e->secs, symname, symlen, is_main || export_c,
                &e->secs[SEC_TEXT]);
     if (is_main) emit_has_main = 1;
@@ -4358,6 +4582,7 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
     for (int i = 0; i < f->b->nkids; i++) emit_stmt(e, f->b->kids[i]);
 
     if (!e->ended_return) { // fall-off end: zero the result registers
+        emit_defers(e, NULL); // no result register is live here
         if (rc.nunits == 1 && is_scalar(ret) && is_floatt(ret))
             ins(e, unwrap(ret)->prim == P_F64 ? 0x9E6703E0u : 0x1E2703E0u);
         else if (rc.nunits >= 1) {

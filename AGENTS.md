@@ -18,6 +18,10 @@ Ace is a systems programming language and its bootstrap compiler. The language d
 - Philosophy level first, syntax carving second. Never carve syntax for a topic whose semantics are still open.
 - Any contested design choice is resolved by the priority stack: **performance > simplicity > modularity > compile time > safety**.
 - New sessions must resume from the Decision Queue, not restart settled debates.
+- Large operations (an implementation or migration likely to cross 100k+ tokens
+  of work) are broken into 2–3 steps executed in separate sessions/turns —
+  agree on the step split with the owner first, complete one step per turn,
+  and keep every step compiling with the test suite passing before stopping.
 
 ## Invariants — never propose, generate, or assume these away
 Digest only; the normative rules live in the linked `spec.md` topics in the index below.
@@ -91,6 +95,7 @@ Surface index — the fast block for "is X supported?": one row per surface, sta
 | Inline assembly | implemented | [Inline Assembly](spec.md#inline-assembly) |
 | Conditions: if, switch, explicit fallthrough | implemented | [Conditions](spec.md#conditions) |
 | Iterations: `for-in`, endpoint-ordered ranges, steps, labeled blocks | implemented | [Iterations](spec.md#iterations) |
+| Deferred calls: `defer` at function exits, LIFO, two-tier capture | implemented | [Deferred calls](spec.md#deferred-calls) |
 | Sequences: slicing, views, iteration, byte-sequence equality | implemented | [Sequences](spec.md#sequences) |
 | Modules: loader, selective imports, directory modules | implemented | [Modules](spec.md#modules) |
 | Package system | future | [Package System](spec.md#package-system-future-work) |

@@ -1,0 +1,20 @@
+/* Defer basic fixture: a deferred call runs at the function's return. */
+
+// expect-exit: 0
+// expect-output: body
+// expect-output: deferred
+
+import fmt
+
+work(): int {
+    defer fmt.println("deferred")
+    fmt.println("body")
+    return 7
+}
+
+main(): int {
+    if work() != 7 {
+        return 1
+    }
+    return 0
+}

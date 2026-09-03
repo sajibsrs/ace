@@ -11,7 +11,7 @@ block_comment := "/*" (any – "*/")* "*/"       // non-nesting; a newline insid
 newline       := significant — terminates statements (see §6 Notes)
 
 keyword       := "import" | "from" | "pub" | "mut" | "const" | "noalias" | "if" | "else"
-                | "for" | "in" | "switch" | "return" | "break" | "continue"
+                | "for" | "in" | "switch" | "return" | "break" | "continue" | "defer"
                 | "asm" | "extern" | "export" | "contract" | "struct" | "embed" | "signs"
                 | "specialized" | "distinct" | "type" | "enum" | "union" | "null" | "true" | "false"
 
@@ -89,7 +89,8 @@ extern_param  := ident ":" type
 ```ebnf
 stmt          := var_decl | multi_decl | const_decl | assignment | expr_stmt
                | if_stmt | for_stmt | switch_stmt | return_stmt
-               | break_stmt | continue_stmt | fallthrough_stmt | asm_stmt | labeled_block
+               | break_stmt | continue_stmt | fallthrough_stmt | defer_stmt
+               | asm_stmt | labeled_block
 
 assignment    := target ("," target)* "=" expr_list       // n, err = read()
                 | target compound_op expr                 // x += y (pure sugar)
@@ -112,6 +113,7 @@ union_pattern := named_type "." ident
 return_stmt   := "return" [expr_list]
 break_stmt    := "break" [ident]                         // labeled break
 continue_stmt := "continue" [ident]                      // optional enclosing block label
+defer_stmt    := "defer" ["mut"] expr                   // operand must be a call (semantic rule)
 fallthrough_stmt := contextual_fallthrough                // only as final statement of a non-final switch case
 contextual_fallthrough := ident                            // exact text "fallthrough"; not reserved
 
@@ -213,3 +215,4 @@ ret_types     := type | "(" type ("," type)+ ")"
 21. **`char` is byte-sized.** It is a predeclared transparent alias of `u8`, not a decoded Unicode scalar. Character literals contain exactly one byte; strings carry UTF-8 bytes and retain byte indexing and iteration. A future `rune` and explicit UTF-8 conversion are outside this grammar.
 22. **`sizeof` accepts the full type grammar.** Its parenthesized operand may be an inline slice or array type (`sizeof([]u8)`, `sizeof([3]char)`) as well as a named or primitive type. The result is compile-time-only.
 23. **Function brackets are interpreted, not parsed.** Brackets after a function name hold bare identifiers only (`bracket_args`), so parsing never decides their meaning. Brackets whose identifiers resolve to declared types are specialization arguments and must follow a declared generic of that name; identifiers resolving to no declared type start a fresh type-parameter list, so one name may declare several generic overloads (as `str.parse[T]` does) before any specialization. A specialization's parameter and return types must equal the substituted generic signature with all type parameters supplied positionally, and it must appear after its generic — type-naming brackets with no preceding generic are an error, never a silent new parameter list. Compound type arguments (`[]u8`, `*Node`, `Pair[int, string]`) are an additive relaxation; v1 specializes over bare named types only. `specialized` replaces the body of a template that admits no call without an exact specialization; a specialization always carries a real body.
+24. **`defer` is statement-only and call-only.** The `mut` after `defer` marks the call's receiver (`defer mut c.scale(2.0)`) exactly like the ordinary receiver-marked call statement; the parser rejects `mut` when the following expression is not a call. That the operand must be a call, and that the statement may appear only as a direct statement of the function's top-level body block, are semantic rules — the grammar accepts the expression and sema diagnoses it (Deferred calls in `spec.md`).

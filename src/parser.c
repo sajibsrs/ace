@@ -38,6 +38,7 @@
 //   N_ASM       str = instruction text; kids = N_ASMBIND (str = in/out/clobbers;
 //               kids = [reg, val, reg, val, ...] for in/out, [reg, ...] for clobbers)
 //   N_LABEL     str = label; a = block
+//   N_DEFER     a = call expression deferred to function exit (top-level only)
 //   N_NAMED     str = name; a = qualifier (N_NAMED/N_IDENT chain); kids = generic args (types)
 //   N_PTR       a = pointee; F_MUT
 //   N_SLICE_T   a = element
@@ -1062,6 +1063,19 @@ static Node* parse_stmt(P* p) {
             n->str = tk(p)->str;
             n->len = tk(p)->len;
             p->i++;
+        }
+        return n;
+    }
+    case T_DEFER: {
+        Node* n = nd(p, N_DEFER);
+        p->i++;
+        if (ate(p, T_MUT)) { // `defer mut c.scale(2.0)` — receiver-marked call
+            Node* e = expr(p, CTX_NOSLIT);
+            if (e->kind != N_CALL) perr(p, "'mut' after 'defer' marks a call receiver");
+            e->flags |= F_MUT;
+            n->a = e;
+        } else {
+            n->a = expr(p, CTX_NOSLIT);
         }
         return n;
     }

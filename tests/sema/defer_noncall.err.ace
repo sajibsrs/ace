@@ -1,0 +1,9 @@
+/* The defer operand must be a call expression — no other statement form is
+ * deferred. */
+
+main(): int {
+    x: int = 4
+    defer x + 1
+    defer x
+    return 0
+}

@@ -1,0 +1,38 @@
+/* Defer return paths fixture: every return fires the defer exactly once. */
+
+// expect-exit: 0
+// expect-output: one
+// expect-output: exit
+// expect-output: two
+// expect-output: exit
+// expect-output: three
+// expect-output: exit
+
+import fmt
+
+pick(n: int): int {
+    defer fmt.println("exit")
+    if n == 1 {
+        fmt.println("one")
+        return 10
+    }
+    if n == 2 {
+        fmt.println("two")
+        return 20
+    }
+    fmt.println("three")
+    return 30
+}
+
+main(): int {
+    if pick(1) != 10 {
+        return 1
+    }
+    if pick(2) != 20 {
+        return 2
+    }
+    if pick(3) != 30 {
+        return 3
+    }
+    return 0
+}

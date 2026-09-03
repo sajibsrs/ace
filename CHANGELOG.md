@@ -454,6 +454,57 @@ array through a multi-value return) and the inlined address literal in
 checks and response arrays for byte-sequence equality and the `net.send`
 string overload. Normal and sanitizer suites pass.
 
+### Deferred calls (`defer`)
+
+Owner-approved cleanup statement, landed front end first and then codegen,
+recorded normatively as the Deferred calls section of `spec.md`. The lexer
+reserves `defer`; the parser's `defer` statement takes one expression — or,
+after an intervening `mut`, the receiver-marked call form
+(`defer mut counter.add(1)`, setting `F_MUT` on the call) and rejecting `mut`
+before any other expression. Sema admits a defer only as a direct statement of
+the function's top-level body block (the innermost scope is the body scope
+exactly when no nested block has pushed one), requires the operand to be a
+call, and type-checks it exactly like an ordinary call statement, so a
+discarded multi-return is allowed. The emitter expands each defer inline
+instead of building a runtime list: the statement captures its call as a
+synthetic call whose arguments read dedicated capture slots, and every exit
+point — the five `N_RETURN` emit paths plus the fall-off epilogue — re-emits
+the captured calls in reverse order through the ordinary call dispatch with
+results discarded, under DWARF line marks that cite the defer statement's own
+source line. Capture is two-tier: read-only arguments evaluate fully at the
+statement (snapshot), while call-site-`mut` arguments and the `F_MUT` receiver
+capture the lvalue's address, so the exit-time call reads final storage and
+its writes outlive the function's return. A result-register save area
+(`retsave_off`) parks a register-returned scalar/aggregate result across the
+deferred calls (sret results already sit in the caller's buffer), and a
+defensive emitter diagnostic re-checks the top-level-only invariant. The slice
+also fixed a pre-existing fall-off bug (owner-approved): `bind_label` now
+resets `ended_return`, because every bound label is a control join —
+previously any `return` inside an `if` permanently suppressed the fall-off
+epilogue, so falling off the end after a conditional return executed the next
+function's code (verified segfault). Post-implementation review fixed one
+capture defect: a deferred call through a function value now snapshots the
+callee value itself at the `defer` statement, like a read-only argument, so
+the exit-time call dispatches through the defer-time function instead of
+re-reading the variable after later reassignment (`defer f()` with `f`
+rebound called the new value); `mut` on an indirect callee marks nothing and
+the callee position is always read-only-captured. The deferred
+`mem.release(mut v)` null-out was audited against the same rule and already
+writes canonical null through the captured address into the original lvalue
+(probes: global, local, field, `mut` parameter, fall-off exit, live return
+value, double-release no-op), so no codegen change was needed there.
+Coverage: `tests/parser/defer_stmt.ok.ace`,
+`tests/sema/defer_top_level.ok.ace` plus `defer_placement.err.ace` and
+`defer_noncall.err.ace` with run.sh diagnostic-count checks, and ten runtime
+fixtures (`defer_basic`, `defer_return_paths`, `defer_lifo`, `defer_fall_off`,
+`defer_snapshot`, `defer_mut_capture`, `defer_panic_skip`,
+`defer_break_skip`, `defer_release_null`, `defer_callee_snapshot`) covering
+exit paths, LIFO order, both capture tiers, panic skipping, labeled-break
+skipping, the release null-out landing on the original variable, and the
+indirect-callee snapshot. Spec, grammar, and
+implemented-only documentation landed in the same change; the full suite
+passes.
+
 ## Still open after these chunks
 
 Checked/release build modes, then checked allocation tracking; nonblocking echo and multi-client chat are the next networking proofs over the implemented `poll` readiness queue (see the `spec.md` Decision Queue).

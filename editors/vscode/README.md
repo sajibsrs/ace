@@ -17,6 +17,8 @@ Language changes that affect syntax highlighting or basic editor behavior must u
 
 The highlighter recognizes case-final `fallthrough` as a control keyword without reserving the same spelling in functions, variables, or calls elsewhere.
 
+The `defer` statement keyword is reserved, so the highlighter colors it as a control keyword everywhere it appears; no contextual disambiguation is needed.
+
 The highlighter exposes distinct, stable TextMate categories:
 
 - all types: \`entity.name.type.ace\`
