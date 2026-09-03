@@ -13,8 +13,7 @@ extern "c" {
 }
 
 loopback(port: u16): net.Address4 {
-    ip: [4]u8 = [127, 0, 0, 1]
-    return net.Address4 {ip: ip, port: port}
+    return net.Address4 {ip: [127, 0, 0, 1], port: port}
 }
 
 check_error(err: Error, domain: typeid): bool {
@@ -160,8 +159,7 @@ child(port: u16): int {
     reply: []u8 = storage[0..4]
     count, ioerr = net.receive(sock, mut reply)
 
-    if ioerr != null || count != 4 || storage[0] != 'p' ||
-       storage[1] != 'o' || storage[2] != 'n' || storage[3] != 'g' {
+    if ioerr != null || count != 4 || storage != "pong" {
         sys.close(sock)
         return 4
     }
@@ -266,15 +264,12 @@ main(): int {
     request: []u8 = storage[0..4]
     count: int, ioerr: Error = net.receive(peer, mut request)
 
-    if ioerr != null || count != 4 || storage[0] != 'p' ||
-       storage[1] != 'i' || storage[2] != 'n' || storage[3] != 'g' {
+    if ioerr != null || count != 4 || storage != "ping" {
         sys.close(peer)
         sys.close(listener)
         return 29
     }
-    response_bytes: [4]u8 = ['p', 'o', 'n', 'g']
-    response: []u8 = response_bytes[0..4]
-    count, ioerr = net.send(peer, response)
+    count, ioerr = net.send(peer, "pong")
 
     if ioerr != null || count != 4 {
         sys.close(peer)

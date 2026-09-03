@@ -434,6 +434,26 @@ Owner-decided spelling (the suggested `sys.in` is impossible because `in` is a k
 
 The descriptor-constant landing gated the fold on the callee's type symbol being a distinct or enum type — an implementation leak. Owner-approved widening: the folder now folds any constructor-shaped call that sema resolved as a cast (no resolved function symbol, one argument, callee an identifier carrying the cast's checked type) whenever the argument's family matches the target family of `callee->ty`, which aliases resolve to their terminal type at declaration. Integer, character, and boolean arguments — negated forms included — require an int-family target (integer primitives, enums, and distinct types over either); float arguments require a float-family target (float primitives and distinct types over one). The family gate is load-bearing because the folder writes the argument's own representation: `const f64 = f64(3)` would store raw int bits and stays rejected at emit (`global initializer must be a compile-time constant`), while `const i32 = i32(3.5)` is rejected at sema (float literals cannot cast to ints at all); same-family float casts (`f64(0.5)`) fold, byte-identical to the runtime cast. Bool targets, strings, contracts, unions, Error, pointers, and aggregates match no family and stay unfolded; distinct-of-pointer constructor constants remain sema-rejected; literal fit checks stay at sema (`H(300)` on a distinct u8). A same-named function with a matching signature still wins over the constructor shape (the initializer type-errors), a non-matching twin gives an arity error, and a local value may shadow a type name beside a folded global. This makes alias constants (`A: type = u8; a: const A = A(5)`) and primitive-cast constants (`x: const i32 = i32(7)`) work, including multi-level alias chains (folded at the terminal type, never an intermediate alias) and qualified constructors (`sys.Fd(0)`). Coverage: `tests/emit/const_constructor_folds.ace` (fold-equals-runtime-cast for `Color(1)`, narrowing `H(200)`, negative `S(-1)`, alias chains, the qualified constructor, and shadowing), `tests/sema/const_constructor_function_wins.err.ace`, `tests/sema/const_constructor_arity.err.ace`, `tests/sema/const_constructor_fit.err.ace` with run.sh diagnostic greps, and the new `tests/emit_errors/` fixtures (emit-level rejections, each documenting its diagnostic on an `// error:` line, driven through `-c` because the folder only runs when code is emitted). `docs/types.md` documents the constant-initializer rule with the example mirrored in `tests/sema/docs_type.ok.ace`. Normal and sanitizer suites pass.
 
+### Composite-literal field stores keep their destination base
+
+The element-wise struct/array/tuple literal path computed its destination temp
+address into `x15` once before the field loop, but a nested aggregate literal in
+field position (`Pair {ip: [127, 0, 0, 1], port: p}`) re-programs `x15` for its
+own temp while evaluating, so every later field store landed at a stale base —
+observed as the array field never stored and the following scalar field written
+over the first field's bytes. Both loops (`N_STRUCTLIT`/`N_ARRAYLIT` and
+`N_TUPLE_E`) now re-derive the destination address after each field expression,
+stepping down to `x13`/`x14` when the evaluated value occupies the fallback
+register, so no base can collide with a live value; the fill-style repeat
+literal was already per-store and is unchanged. The const folder needed no
+change (it writes a byte buffer with an explicit cursor). Coverage: new
+`tests/emit/nested_literal.ace` (anonymous array fields in struct literals,
+nested struct literals, struct-literal array elements, and a tuple carrying an
+array through a multi-value return) and the inlined address literal in
+`tests/emit/net.ace`, which also dropped its now-redundant per-byte content
+checks and response arrays for byte-sequence equality and the `net.send`
+string overload. Normal and sanitizer suites pass.
+
 ## Still open after these chunks
 
 Checked/release build modes, then checked allocation tracking; nonblocking echo and multi-client chat are the next networking proofs over the implemented `poll` readiness queue (see the `spec.md` Decision Queue).

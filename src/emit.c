@@ -3276,7 +3276,6 @@ static EV gen_expr(Em* e, Node* x) {
         SType* t = node_ty(x);
         uint32_t size = t ? ty_size(t) : (uint32_t)(x->nkids * 8);
         uint32_t off = temp_slot(e, size, 8);
-        frame_addr(e, 15, off);
         for (int i = 0; i < x->nkids; i++) {
             SType* ft = t && t->kind == SK_TUPLE && i < t->nfields
                 ? t->fields[i].t
@@ -3285,7 +3284,10 @@ static EV gen_expr(Em* e, Node* x) {
             EV v = gen_expr(e, x->kids[i]);
             uint32_t member = t && t->kind == SK_TUPLE
                 ? field_off(t, i) : (uint32_t)i * 8;
-            store_value(e, v, 15, member, ft);
+            int dst = 15;
+            if (v.cls != CLS_FP && xreg(v.idx) >= 14) dst = xreg(v.idx) - 1;
+            frame_addr(e, dst, off);
+            store_value(e, v, dst, member, ft);
             e->vti = svi; e->vtf = svf;
         }
         int r = tmp_int(e);
@@ -3324,7 +3326,6 @@ static EV gen_expr(Em* e, Node* x) {
             frame_addr(e, xreg(r), off);
             return (EV){ CLS_ADDR, r };
         }
-        frame_addr(e, 15, off);
         int positional = x->nkids > 0 && x->kids[0]->str == NULL;
         for (int i = 0; i < x->nkids; i++) {
             Node* fi = x->kids[i];
@@ -3342,7 +3343,10 @@ static EV gen_expr(Em* e, Node* x) {
                 : field_off(t, fidx);
             int svi = e->vti, svf = e->vtf;
             EV v = gen_expr(e, value);
-            store_value(e, v, 15, fo,
+            int dst = 15;
+            if (v.cls != CLS_FP && xreg(v.idx) >= 14) dst = xreg(v.idx) - 1;
+            frame_addr(e, dst, off);
+            store_value(e, v, dst, fo,
                         x->kind == N_ARRAYLIT ? t->base : t->fields[fidx].t);
             e->vti = svi; e->vtf = svf;
         }

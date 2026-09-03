@@ -1,0 +1,56 @@
+/* Anonymous aggregate literals nested in composite construction keep their stores on target. */
+
+// expect-exit: 0
+
+Pair: struct { ip: [4]u8, port: u16 }
+
+Outer: struct { pair: Pair, tag: u16 }
+
+make_pair(port: u16): Pair {
+    return Pair {ip: [127, 0, 0, 1], port: port}
+}
+
+make_outer(tag: u16): Outer {
+    return Outer {pair: Pair {ip: [10, 0, 0, 2], port: tag}, tag: tag}
+}
+
+split(): (int, [2]u8) {
+    return 5, [8, 9]
+}
+
+main(): int {
+    a: Pair = make_pair(u16(1))
+
+    if a.ip[0] != 127 || a.ip[1] != 0 || a.ip[2] != 0 || a.ip[3] != 1 || a.port != 1 {
+        return 1
+    }
+    b: Pair = make_pair(u16(54321))
+
+    if b.ip[0] != 127 || b.ip[3] != 1 || b.port != 54321 {
+        return 2
+    }
+    storage: [2]Pair
+    storage[0] = make_pair(u16(7))
+    storage[1] = make_pair(u16(9))
+
+    if storage[0].port != 7 || storage[0].ip[0] != 127 || storage[1].port != 9 ||
+       storage[1].ip[0] != 127 {
+        return 3
+    }
+    row: [2]Pair = [Pair {ip: [192, 168, 0, 1], port: 80}, Pair {ip: [10, 1, 2, 3], port: 443}]
+
+    if row[0].ip[0] != 192 || row[0].port != 80 || row[1].ip[1] != 1 || row[1].port != 443 {
+        return 4
+    }
+    n: int, bytes: [2]u8 = split()
+
+    if n != 5 || bytes[0] != 8 || bytes[1] != 9 {
+        return 5
+    }
+    outer: Outer = make_outer(u16(3))
+
+    if outer.pair.ip[0] != 10 || outer.pair.port != 3 || outer.tag != 3 {
+        return 6
+    }
+    return 0
+}
