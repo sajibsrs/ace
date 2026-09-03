@@ -1,0 +1,62 @@
+/* `in mut` iteration type-checks: writable local array and slice storage,
+ * one- and two-binder forms, aliases through call-site `mut` and `mut &`,
+ * and labels on mut loops. Plain iteration is untouched beside it. */
+
+bump(mut n: i32) {
+    n += 1
+}
+
+poke(p: mut *i32) {
+    ~p += 10
+}
+
+main(): int {
+    // mut over a local array
+    xs: [3]i32 = [1, 2, 3]
+    for v: i32 in mut xs {
+        v *= 2
+    }
+
+    // mut over a local slice (of the same array)
+    view: []i32 = xs[0..3]
+    for v: i32 in mut view {
+        bump(mut v)
+    }
+
+    // two-binder mut: the index binder keeps its plain usize copy rule
+    for i: usize, v: i32 in mut xs {
+        v += i32(i)
+        i = 0 // assigning the index copy cannot disturb the loop
+    }
+
+    // the alias is addressable: mut &v is a mut *i32 into the storage
+    for v: i32 in mut view {
+        poke(mut &v)
+    }
+
+    // mut loops take labels; plain loops beside them stay copies
+    outer: for v: i32 in mut xs {
+        copy: for c: i32 in xs {
+            c = 99
+            if c == 99 {
+                break copy
+            }
+        }
+        if v < 0 {
+            break outer
+        }
+    }
+
+    // mut iteration over nested writable storage: a local slice view names
+    // the array's storage, the outer binder aliases each subarray, the inner
+    // binder aliases each cell
+    rows: [2][2]i32 = [[1, 2], [3, 4]]
+    all: [][2]i32 = rows[0..2]
+    for row: [2]i32 in mut all {
+        for cell: i32 in mut row {
+            cell += 1
+        }
+    }
+
+    return 0
+}

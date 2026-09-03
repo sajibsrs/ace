@@ -1,0 +1,8 @@
+/* A head declaration scopes over cond, post, and body and is invisible
+ * outside the loop. */
+
+main(): int {
+    for i: int = 0; i < 3; i += 1 {
+    }
+    return i
+}

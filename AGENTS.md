@@ -60,7 +60,7 @@ Digest only; the normative rules live in the linked `spec.md` topics in the inde
   `git diff --check`; only when the documentation exposes genuine uncertainty
   about compiler behavior, run the smallest targeted check needed to resolve it,
   never the full suite by default.
-- Never create a Git commit unless the owner explicitly asks for that commit. Completing an implementation does not imply permission to commit it.
+- Never create a Git commit unless the owner explicitly asks for that commit. Completing an implementation does not imply permission to commit it. Commit messages are a single line — subject only, imperative mood, no body (e.g. `Implement the general for statement`).
 
 ## Human documentation
 - Human-facing language documentation lives in `docs/`. It describes only behavior that is implemented and available in the current compiler; future work, queues, and planned APIs belong in the `spec.md` Decision Queue, not in the manual.
@@ -95,6 +95,8 @@ Surface index — the fast block for "is X supported?": one row per surface, sta
 | Inline assembly | implemented | [Inline Assembly](spec.md#inline-assembly) |
 | Conditions: if, switch, explicit fallthrough | implemented | [Conditions](spec.md#conditions) |
 | Iterations: `for-in`, endpoint-ordered ranges, steps, labeled blocks | implemented | [Iterations](spec.md#iterations) |
+| General `for` statement (three-clause, condition, infinite, labeled loops, `in mut` iteration over explicit binders) | implemented | [Iterations](spec.md#iterations) |
+| Mutable string bytes (indexed writes, `mut` iteration) | decided, future | [Sequences](spec.md#sequences) |
 | Deferred calls: `defer` at function exits, LIFO, two-tier capture | implemented | [Deferred calls](spec.md#deferred-calls) |
 | Sequences: slicing, views, iteration, byte-sequence equality | implemented | [Sequences](spec.md#sequences) |
 | Modules: loader, selective imports, directory modules | implemented | [Modules](spec.md#modules) |
@@ -114,6 +116,7 @@ Surface index — the fast block for "is X supported?": one row per surface, sta
 
 - Philosophy and the initial carving phases are complete. The C11 bootstrap compiler (clang, no dependencies; tcc-style direct emission; v1 target AArch64 / Apple arm64) implements the lexer, parser, typecheck, full carved-surface codegen, and minimal DWARF line tables. The additive tagged-union, `fmt.printf`, and blocking IPv4 TCP networking topics are implemented. Chunk-by-chunk history: `CHANGELOG.md`.
 - The general `poll` readiness queue and std directory-module mechanism are implemented ([networking carving](spec.md#initial-blocking-tcp-networking-carving-closed) in the Decision Queue). `poll` accepts general `sys.Fd`; `net` is only a consumer. The next networking proof is nonblocking echo followed by multi-client chat; carve any additional semantics that proof exposes before implementation. Multi-target backend selection remains open until a second target is genuinely supported.
+- The general `for` statement is implemented ([general-for carving](spec.md#general-for-statement-carving-closed) in the Decision Queue): one keyword, five head forms, labeled loops, and `in mut` aliasing iteration over explicitly typed binders (owner revision — contextual binders superseded); normative rules are Iterations #13–16. Mutable string bytes (indexed writes) remain decided future work outside that task.
 - Sequence overlaps and the character/string-library surface are carved ([sequence-overlap carving](spec.md#sequence-overlap-carving-closed), [character and string-library carving](spec.md#character-and-string-library-carving-closed)) and implemented: string slicing/view conversion/iteration/bounds checks, the `char` alias, inline sequence types in `sizeof`, and the pure-Ace `str` module with compiler-backed `parse[T]` (mem-allocation precedent) land together in this chunk.
 - Human documentation: `docs/README.md` indexes implemented-only guides (primitives, types/declarations, functions, modules, errors, memory, standard library); examples are compiler-checked by `tests/sema/docs_*.ok.ace` and the `tests/modules/` executables. Expand the guide only alongside landed behavior.
 - Editor support: `editors/vscode/` contains the dependency-free **Ace Language** extension (TextMate scopes, basic language configuration, compiler-checked syntax showcase; `.vscode/launch.json` runs an Extension Development Host). Outstanding editor work is tracked in `editors/vscode/README.md`.

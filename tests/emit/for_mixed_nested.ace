@@ -1,0 +1,65 @@
+/* Mixed head forms nested: an infinite outer, a condition-only inner, and a
+ * typed range loop. Plain transfers bind to the nearest loop of any form;
+ * labeled transfers reach across them. */
+
+// expect-exit: 0
+
+main(): int {
+    total: int = 0
+    rounds: int = 0
+
+    outer: for {
+        rounds += 1
+        if rounds > 3 {
+            return 2 // a lost outer target would spin here
+        }
+
+        probe: for total < 100 {
+            total += 1
+            if total == 1 {
+                continue probe // re-tests the inner condition
+            }
+            break // inner only
+        }
+
+        for k: int = 0; k < 4; k += 1 {
+            if k == 1 {
+                continue // inner only: k still advances
+            }
+            if k == 3 {
+                break // inner only
+            }
+            total += 10
+        }
+
+        if total >= 21 {
+            break outer // labeled exit from the infinite loop
+        }
+    }
+
+    // round 1: probe adds 1 (then breaks at 2... total=2), k adds 10+10,
+    // total = 22 -> break outer
+    if total != 22 {
+        return 1
+    }
+    if rounds != 1 {
+        return 3
+    }
+
+    // a typed loop under the same label rules
+    sum: int = 0
+    walk: for v: i32 in 0 .. 5 {
+        if v == 3 {
+            continue walk
+        }
+        if v == 4 {
+            break walk
+        }
+        sum += int(v)
+    }
+    if sum != 3 {
+        return 4
+    }
+
+    return 0
+}

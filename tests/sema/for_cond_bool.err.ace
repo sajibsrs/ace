@@ -1,0 +1,7 @@
+/* A for condition must be a bool. */
+
+main(): int {
+    for i: int = 0; i; i += 1 {
+    }
+    return 0
+}

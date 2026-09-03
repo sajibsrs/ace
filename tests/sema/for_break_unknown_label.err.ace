@@ -1,0 +1,8 @@
+/* A label that no enclosing scope carries is rejected. */
+
+main(): int {
+    outer: for i: int = 0; i < 3; i += 1 {
+        break missing
+    }
+    return 0
+}

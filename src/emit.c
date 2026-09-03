@@ -3970,12 +3970,47 @@ static void emit_stmt(Em* e, Node* s) {
         return;
     }
     case N_FOR: {
+        if (s->flags & F_FORGEN) {
+            // General head: init; lcond: [cond]; body; lcont: [post];
+            // br lcond; lbreak:. An omitted cond falls through; continue
+            // targets the post clause so it runs before the next test, and
+            // every loop owns its own exit targets.
+            if (s->a) emit_stmt(e, s->a);
+            int lcond = new_label(e), lcont = new_label(e), lbreak = new_label(e);
+            bind_label(e, lcond);
+            if (s->b) {
+                EV c = gen_expr(e, s->b);
+                if (c.cls != CLS_INT) {
+                    em_err(e, s, "for condition must be bool");
+                    return;
+                }
+                cbz_(e, 0, xreg(c.idx), 0, lbreak);
+            }
+            if (e->nctx >= 64) {
+                em_err(e, s, "control flow nested too deeply");
+                return;
+            }
+            e->ctx[e->nctx++] = (Ctx){ lbreak, lcont, s->str, s->len, 1 };
+            emit_block(e, s->d);
+            e->nctx--;
+            bind_label(e, lcont);
+            if (s->c) emit_stmt(e, s->c);
+            br_(e, lcond);
+            bind_label(e, lbreak);
+            return;
+        }
         Node* value_binder = s->kids[s->nkids - 1];
         SType* elem = sema_build_type(value_binder->a);
         Sym* lv = node_sym(value_binder);
         uint32_t esz = ty_size(elem);
+        // `in mut`: the value binder's slot holds the element address (the
+        // cursor at binding time) and is marked byref, so gen_var_addr loads
+        // it for every read, write, and address-of on the binder — the alias
+        // reaches backing storage, never the slot's own address.
+        int mut_iter = (s->flags & F_MUT) != 0 && s->b->kind != N_RANGE;
         uint32_t vs = slot_alloc(e, lv && lv->decl ? lv->decl : value_binder,
-                                 esz, ty_align(elem));
+                                 mut_iter ? 8 : esz, mut_iter ? 8 : ty_align(elem));
+        if (mut_iter) e->slots[e->nslots - 1].byref = 1;
         int lbreak = new_label(e), lcont = new_label(e), lcond = new_label(e);
         if (s->b->kind == N_RANGE) { // index loop over a range
             SType* rt = node_ty(s->b);
@@ -4071,7 +4106,7 @@ static void emit_stmt(Em* e, Node* s) {
                 em_err(e, s, "control flow nested too deeply");
                 return;
             }
-            e->ctx[e->nctx++] = (Ctx){ lbreak, lcont, NULL, 0, 1 };
+            e->ctx[e->nctx++] = (Ctx){ lbreak, lcont, s->str, s->len, 1 };
             emit_block(e, s->c);
             e->nctx--;
             bind_label(e, lcont);
@@ -4098,6 +4133,10 @@ static void emit_stmt(Em* e, Node* s) {
         int is_string = bt && bt->kind == SK_PRIM && bt->prim == P_STRING;
         if (!bt || (bt->kind != SK_SLICE && bt->kind != SK_ARRAY && !is_string)) {
             em_err(e, s, "for-in iterates slices, arrays, strings, or ranges");
+            return;
+        }
+        if (mut_iter && is_string) { // sema rejects strings for `in mut`
+            em_err(e, s, "mut iteration requires writable array or slice storage");
             return;
         }
         uint32_t pslot = temp_slot(e, 8, 8), eslot = temp_slot(e, 8, 8);
@@ -4140,9 +4179,14 @@ static void emit_stmt(Em* e, Node* s) {
         load_frame(e, xreg(te), eslot, 8, 0);
         ins(e, 0xEB00001Fu | (xreg(te) << 16) | (xreg(tp) << 5)); // cmp p, end
         bcond_(e, C_HS, lbreak);
-        // loop variable = element copy at [p]
-        frame_addr(e, 15, vs);
-        copy_mem(e, 15, 0, xreg(tp), 0, esz);
+        // loop variable = element copy at [p]; under `in mut`, the alias slot
+        // receives the cursor itself (the element address)
+        if (mut_iter)
+            store_frame(e, xreg(tp), vs, 8);
+        else {
+            frame_addr(e, 15, vs);
+            copy_mem(e, 15, 0, xreg(tp), 0, esz);
+        }
         if (index_binder) {
             load_frame(e, 16, ixslot, 8, 0);
             store_frame(e, 16, ivs, 8);
@@ -4152,7 +4196,7 @@ static void emit_stmt(Em* e, Node* s) {
             em_err(e, s, "control flow nested too deeply");
             return;
         }
-        e->ctx[e->nctx++] = (Ctx){ lbreak, lcont, NULL, 0, 1 };
+        e->ctx[e->nctx++] = (Ctx){ lbreak, lcont, s->str, s->len, 1 };
         emit_block(e, s->c);
         e->nctx--;
         bind_label(e, lcont);

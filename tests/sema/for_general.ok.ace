@@ -1,0 +1,76 @@
+/* General for heads type-check: head-scoped declarations cover cond, post,
+ * and body; assignment and expression-statement inits; labels on loops. */
+
+bump(): int {
+    return 1
+}
+
+main(): int {
+    total: int = 0
+
+    // the head declaration is visible in cond, post, and body
+    for i: int = 0; i < 4; i += 1 {
+        total += i
+    }
+
+    // assignment init reuses an outer variable; a head decl without an
+    // initializer is legal until read — the body assigns before the post
+    // clause reads it
+    n: int = 0
+    for n = 1; n < 3; n += 1 {
+        total += bump()
+    }
+    for x: int; ; x += 2 {
+        x = 6
+        total += x
+        break
+    }
+
+    // expression-statement init runs once
+    for bump(); n < 9; n += 4 {
+        total += 1
+    }
+
+    // omitted cond is always true; continue runs the post clause
+    runs: int = 0
+    for ; runs < 2; runs += 1 {
+        if runs == 0 {
+            continue
+        }
+        total += 10
+    }
+
+    running: bool = true
+    for running {
+        running = false
+    }
+
+    for ;; {
+        break
+    }
+
+    for {
+        break
+    }
+
+    // labels: break exits the loop, continue starts the next iteration
+    outer: for i: int = 0; i < 3; i += 1 {
+        inner: for j: int = 0; j < 3; j += 1 {
+            if j == 2 {
+                continue inner
+            }
+            if i == 1 {
+                continue outer
+            }
+            if i == 2 {
+                break outer
+            }
+            total += 1
+        }
+    }
+    guard: for total < 100 {
+        total += 100
+    }
+
+    return total
+}

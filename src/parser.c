@@ -26,8 +26,14 @@
 //   N_EXPRSTMT  a = expr
 //   N_ASSIGN    kids = targets; a = rhs; op = T_ASSIGN or compound token
 //   N_IF        a = cond; b = then-block; c = else (N_BLOCK or N_IF)
-//   N_FOR       kids = one value binder, or index + value binders (N_PARAM);
-//               b = iterable (expr) or N_RANGE; c = body
+//   N_FOR       F_FORGEN (general head): a = init stmt (N_VAR/N_ASSIGN/
+//               N_EXPRSTMT or NULL), b = cond expr or NULL, c = post stmt
+//               (N_ASSIGN/N_EXPRSTMT or NULL), d = body; kids empty.
+//               str/len = label. Typed range/sequence head (unchanged):
+//               kids = one value binder, or index + value binders (N_PARAM);
+//               b = iterable (expr) or N_RANGE; c = body; str/len = label.
+//               F_MUT = `in mut iterable`: the value binder aliases the
+//               element (sema requires writable array/slice storage)
 //   N_RANGE     a = first; b = second; c = optional contextual `step` expression
 //   N_SWITCH    a = scrutinee; kids = N_CASE (kids = patterns; b = block; F_ELSE)
 //   N_VARPAT    union-variant case pattern: a = Type.variant (N_FIELD_E);
@@ -724,6 +730,9 @@ static Node* expr_list(P* p, int ctx) {
 
 static Node* parse_block(P* p);
 static Node* parse_stmt(P* p);
+static Node* parse_decl_stmt(P* p, Token* first);
+static Node* parse_expr_stmt(P* p, int ctx);
+static Node* parse_for_head(P* p, Node* n);
 
 static void stmt_end(P* p) {
     if (!ate(p, T_NL) && !at(p, T_RBRACE) && !at(p, T_EOF))
@@ -743,43 +752,129 @@ static Node* parse_if(P* p) {
     return n;
 }
 
+/*
+ * Scan a `ident ':'` for-head to decide typed binders vs declaration init:
+ * the first depth-0 `in` selects the typed range/sequence path; a depth-0
+ * `=` or `;` selects a three-clause declaration init. A bounded scan, never
+ * backtracking (the variant_binder_at pattern).
+ */
+static int for_head_typed_at(P* p) {
+    size_t j = p->i + 2; // past the binder name and ':'
+    int depth = 0;
+    while (j < p->n) {
+        TokKind k = p->toks[j].kind;
+        if (depth == 0) {
+            if (k == T_IN) return 1;
+            if (k == T_ASSIGN || k == T_SEMI || k == T_LBRACE || k == T_NL ||
+                k == T_EOF)
+                return 0;
+        }
+        if (k == T_LBRACK || k == T_LPAREN || k == T_LBRACE) depth++;
+        else if (k == T_RBRACK || k == T_RPAREN || k == T_RBRACE) {
+            if (depth == 0) return 0;
+            depth--;
+        }
+        j++;
+    }
+    return 0;
+}
+
+static void for_semi(P* p, int hline, const char* what) {
+    if (tk(p)->line != hline)
+        perr(p, "for-head clauses must stay on one physical line");
+    expect(p, T_SEMI, what);
+}
+
+// Three-clause tail after the init: [cond] ';' [post] block. An omitted
+// condition is always true; the post clause accepts assignments and
+// expression statements only — parse_expr_stmt cannot produce a declaration.
+static void for_tail(P* p, Node* n, int hline) {
+    if (!at(p, T_SEMI) && !at(p, T_LBRACE)) n->b = expr(p, CTX_NOSLIT);
+    for_semi(p, hline, "';' after the for-head condition");
+    if (!at(p, T_LBRACE)) n->c = parse_expr_stmt(p, CTX_NOSLIT);
+    if (tk(p)->line != hline)
+        perr(p, "for-head clauses must stay on one physical line");
+    n->d = parse_block(p);
+}
+
+// Head disambiguation by bounded lookahead, no backtracking: `{` → infinite;
+// `;` → three-clause with an empty init; `ident ":"` → typed binders when the
+// scan finds a depth-0 `in`, otherwise a declaration init; anything else is
+// an expression that becomes the condition or an assignment/expression
+// statement init.
+static Node* parse_for_head(P* p, Node* n) {
+    int hline = tk(p)->line;
+    if (at(p, T_LBRACE)) { // infinite: exits only via break/return
+        n->flags |= F_FORGEN;
+        n->d = parse_block(p);
+        return n;
+    }
+    if (at(p, T_SEMI)) { // three-clause with an empty init
+        n->flags |= F_FORGEN;
+        p->i++;
+        for_tail(p, n, hline);
+        return n;
+    }
+    if (at(p, T_IDENT) && kth(p, 1) == T_COLON && for_head_typed_at(p)) {
+        NV binders = {0};
+        int line = tk(p)->line;
+        for (;;) {
+            Token* v = expect(p, T_IDENT, "loop variable name");
+            Node* binder = nd_tok(p, N_PARAM, v);
+            binder->str = v->str;
+            binder->len = v->len;
+            expect(p, T_COLON, "':' after loop variable");
+            binder->a = parse_type(p);
+            nv_push(p, &binders, binder);
+            if (!at(p, T_COMMA)) break;
+            bare_list_line(p, line);
+            p->i++;
+            bare_list_line(p, line);
+            if (binders.n == 2)
+                perr(p, "for-in accepts at most index and value binders");
+        }
+        set_kids(n, &binders);
+        expect(p, T_IN, "'in'");
+        if (ate(p, T_MUT)) n->flags |= F_MUT; // `in mut iterable`: aliasing
+        Node* it = expr(p, CTX_NOSLIT);
+        if (at(p, T_DOTDOT)) {
+            p->i++;
+            Node* r = nd(p, N_RANGE);
+            r->a = it;
+            r->b = expr(p, CTX_NOSLIT);
+            if (ident_at(p, "step")) {
+                p->i++;
+                r->c = expr(p, CTX_NOSLIT);
+            }
+            it = r;
+        }
+        n->b = it;
+        n->c = parse_block(p);
+        return n;
+    }
+    n->flags |= F_FORGEN;
+    if (at(p, T_IDENT) && kth(p, 1) == T_COLON) { // declaration init
+        Token* name = tk(p);
+        p->i++; // ident; ':' consumed inside
+        n->a = parse_decl_stmt(p, name);
+    } else {
+        n->a = parse_expr_stmt(p, CTX_NOSLIT);
+        if (at(p, T_LBRACE)) { // condition-only: the expression is the cond
+            n->b = n->a->a;
+            n->a = NULL;
+            n->d = parse_block(p);
+            return n;
+        }
+    }
+    for_semi(p, hline, "';' after the for-head initializer");
+    for_tail(p, n, hline);
+    return n;
+}
+
 static Node* parse_for(P* p) {
     Node* n = nd(p, N_FOR);
     expect(p, T_FOR, "'for'");
-    NV binders = {0};
-    int line = tk(p)->line;
-    for (;;) {
-        Token* v = expect(p, T_IDENT, "loop variable name");
-        Node* binder = nd_tok(p, N_PARAM, v);
-        binder->str = v->str;
-        binder->len = v->len;
-        expect(p, T_COLON, "':' after loop variable");
-        binder->a = parse_type(p);
-        nv_push(p, &binders, binder);
-        if (!at(p, T_COMMA)) break;
-        bare_list_line(p, line);
-        p->i++;
-        bare_list_line(p, line);
-        if (binders.n == 2)
-            perr(p, "for-in accepts at most index and value binders");
-    }
-    set_kids(n, &binders);
-    expect(p, T_IN, "'in'");
-    Node* it = expr(p, CTX_NOSLIT);
-    if (at(p, T_DOTDOT)) {
-        p->i++;
-        Node* r = nd(p, N_RANGE);
-        r->a = it;
-        r->b = expr(p, CTX_NOSLIT);
-        if (ident_at(p, "step")) {
-            p->i++;
-            r->c = expr(p, CTX_NOSLIT);
-        }
-        it = r;
-    }
-    n->b = it;
-    n->c = parse_block(p);
-    return n;
+    return parse_for_head(p, n);
 }
 
 /*
@@ -1098,45 +1193,60 @@ static Node* parse_stmt(P* p) {
                 n->a = parse_block(p);
                 return n;
             }
+            if (kth(p, 2) == T_FOR) { // labeled for — block-label namespace
+                Node* n = nd(p, N_FOR);
+                n->str = tk(p)->str;
+                n->len = tk(p)->len;
+                p->i += 3; // label, ':', 'for'
+                return parse_for_head(p, n);
+            }
             Token* name = tk(p);
             p->i++; // ident; ':' consumed inside
             return parse_decl_stmt(p, name);
         }
         // fall through: expression / assignment statement
-    default: {
-        int line = tk(p)->line;
-        Node* e = expr(p, CTX_NOSLIT);
-        if (at(p, T_COMMA)) { // destructuring assignment: n, err = read()
-            Node* a = nd(p, N_ASSIGN);
-            NV targets = {0};
-            nv_push(p, &targets, e);
-            while (at(p, T_COMMA)) {
-                bare_list_line(p, line);
-                p->i++;
-                bare_list_line(p, line);
-                nv_push(p, &targets, expr(p, 0));
-            }
-            Token* op = expect(p, T_ASSIGN, "'=' in assignment");
-            a->op = (uint8_t)op->kind;
-            set_kids(a, &targets);
-            a->a = expr_list(p, 0);
-            return a;
-        }
-        if (is_assign_op(tk(p)->kind)) { // single-target assignment (incl. compound)
-            Node* a = nd(p, N_ASSIGN);
-            a->op = (uint8_t)tk(p)->kind;
+    default:
+        return parse_expr_stmt(p, 0);
+    }
+}
+
+// Expression-led statement: assignment (single or destructuring) or a bare
+// expression statement. Shared by plain statements and for-head clauses;
+// for-head tails rely on it never producing a declaration. ctx carries the
+// caller's struct-literal suppression — a for-head clause is followed by the
+// body's '{', so head clauses parse with CTX_NOSLIT (grammar Note #9).
+static Node* parse_expr_stmt(P* p, int ctx) {
+    int line = tk(p)->line;
+    Node* e = expr(p, ctx);
+    if (at(p, T_COMMA)) { // destructuring assignment: n, err = read()
+        Node* a = nd(p, N_ASSIGN);
+        NV targets = {0};
+        nv_push(p, &targets, e);
+        while (at(p, T_COMMA)) {
+            bare_list_line(p, line);
             p->i++;
-            NV targets = {0};
-            nv_push(p, &targets, e);
-            set_kids(a, &targets);
-            a->a = expr(p, 0);
-            return a;
+            bare_list_line(p, line);
+            nv_push(p, &targets, expr(p, ctx));
         }
-        Node* n = nd(p, N_EXPRSTMT);
-        n->a = e;
-        return n;
+        Token* op = expect(p, T_ASSIGN, "'=' in assignment");
+        a->op = (uint8_t)op->kind;
+        set_kids(a, &targets);
+        a->a = expr_list(p, ctx);
+        return a;
     }
+    if (is_assign_op(tk(p)->kind)) { // single-target assignment (incl. compound)
+        Node* a = nd(p, N_ASSIGN);
+        a->op = (uint8_t)tk(p)->kind;
+        p->i++;
+        NV targets = {0};
+        nv_push(p, &targets, e);
+        set_kids(a, &targets);
+        a->a = expr(p, ctx);
+        return a;
     }
+    Node* n = nd(p, N_EXPRSTMT);
+    n->a = e;
+    return n;
 }
 
 static Node* parse_block(P* p) {

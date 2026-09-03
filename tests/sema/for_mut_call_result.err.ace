@@ -1,0 +1,11 @@
+/* `in mut` over a call result: the returned value has no storage. */
+
+make(): [2]i32 {
+    return [1, 2]
+}
+
+main(): int {
+    for v: i32 in mut make() {
+    }
+    return 0
+}

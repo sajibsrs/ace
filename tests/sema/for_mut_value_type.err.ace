@@ -1,0 +1,9 @@
+/* The binder element-type rule still applies under `in mut`: the declared
+ * binder type must equal the element type exactly. */
+
+main(): int {
+    xs: [2]i32 = [1, 2]
+    for v: i64 in mut xs {
+    }
+    return 0
+}

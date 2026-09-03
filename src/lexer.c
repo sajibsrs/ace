@@ -3,9 +3,10 @@
 // Newline handling (spec.md "newline terminates statements", grammar.md §6.1):
 // a newline token is emitted only when the previous token can end an
 // expression — ident/literal/null/true/false, ')', ']', '}', '?', or the
-// keywords return/break/continue. Consequence: parenthesized/bracketed groups
-// and trailing-comma lists continue across lines for free; 'else' stays on
-// the '}' line.
+// keywords return/break/continue — and the next token is not ';'. Consequence:
+// parenthesized/bracketed groups and trailing-comma lists continue across
+// lines for free; 'else' stays on the '}' line. ';' tokenizes only for the
+// for-head clause separators; the parser rejects it everywhere else.
 #include "ace.h"
 
 #include <stdarg.h>
@@ -486,8 +487,8 @@ static void scan_punct(Lex* L, char c) {
         break;
     case ';':
         adv(L);
-        err(L, "unexpected ';' — Ace has no semicolons; statements end at newlines");
-        return;
+        k = T_SEMI; // valid only between for-head clauses (parser enforces)
+        break;
     default:
         adv(L);
         if ((unsigned char)c >= 0x80)
@@ -565,7 +566,10 @@ Token* lex(Source* s, Diag* d, size_t* count) {
             break;
         }
 
-        if (nl && ends_expr(L.prev)) {
+        // No newline token before a ';': for-head clauses stay joined even
+        // across a physical line so the parser owns the one-line rule, and a
+        // stray ';' elsewhere still ends its statement in the parser.
+        if (nl && ends_expr(L.prev) && cur(&L) != ';') {
             L.tline = L.line;
             L.tcol = L.col;
             L.toff = L.pos;

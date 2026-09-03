@@ -505,6 +505,56 @@ indirect-callee snapshot. Spec, grammar, and
 implemented-only documentation landed in the same change; the full suite
 passes.
 
+### General `for` statement
+
+Implemented in two owner-agreed steps over the closed general-for carving, with
+one owner revision recorded in `spec.md`: the carving's contextually typed
+collection binders are superseded — binders keep their explicit `ident ":"
+type` annotation, and what landed instead is `mut` on the iterable (`for item:
+T in mut xs`), one token opting the loop into aliasing under the call-site
+`mut` discipline. Step one landed the general heads and label machinery: `;`
+tokenizes with NL insertion suppressed before it and the parser owns the
+head-on-one-line rule; bounded-lookahead head dispatch covers the infinite
+(`for { }`), three-clause (`for i: int = 0; i < n; i += 1`), condition-only
+(`for running`), declaration-init, and assignment/expression-statement init
+forms with no backtracking; head declarations scope over cond, post, and body;
+an omitted condition is always true; the post clause accepts assignments and
+expression statements; `continue` runs post then cond; and labels attach to
+`for` of every form, sharing the labeled-block namespace with `continue label`
+meaning next-iteration on loops. Step two landed the `in mut` sequence head:
+the iterable must be a writable lvalue naming array or slice storage —
+`check_lvalue`'s write discipline rejects by-value parameters, `const`
+globals, array literals, call results, slicing results, and ranges, and
+strings fail the same rule with the general diagnostic until the
+mutable-string-bytes decision lands. The value binder aliases the element:
+the emitter allocates the binder's frame slot as byref (the existing
+defer-capture slot mode) and stores the cursor pointer at binding time, so
+`gen_var_addr` resolves every read, write, and address-of on the binder
+through the slot to the backing storage — `&item` yields a pointer into the
+storage, `mut &item` a `mut *T` whose writes land there, and call-site `mut`
+arguments alias the element directly. The index binder stays a plain `usize`
+copy and binder writes never disturb the entry-captured cursor; plain
+iteration codegen is untouched. Normative rules are Iterations #13–16;
+grammar.md, `.acefmt` (no new rule needed — `mut` is an ordinary token in an
+existing spaced position), `docs/control-flow.md`, and this log landed with
+step two. Coverage: `tests/parser/for_general_heads.ok.ace`,
+`for_mut.ok.ace`, `for_mut_missing_iterable.err.ace`,
+`for_head_multiline.err.ace`, `for_three_binders.err.ace`;
+`tests/sema/for_general.ok.ace`, `for_mut.ok.ace`, `for_head_scope.err.ace`,
+`for_head_di.err.ace`, `for_cond_bool.err.ace`, `for_post_decl.err.ace`,
+`for_label_not_enclosing.err.ace`, `for_break_unknown_label.err.ace`,
+`for_index_type.err.ace`, `for_value_type.err.ace`,
+`for_index_range.err.ace`, and the `for_mut_*.err.ace` set (string, by-value
+parameter, `const` global, array literal, call result, range, binder type
+mismatch); runtime fixtures `tests/emit/for_three_clause.ace`,
+`for_cond.ace`, `for_infinite_break.ace`, `for_labels_nested.ace`,
+`for_mixed_nested.ace`, and `for_mut.ace` (alias writes land in backing
+storage, same-iteration alias reads, index-copy independence, cursor
+stability under reslicing, aggregate-element aliasing, plain-copy contrast,
+labeled break/continue on mut loops); compiler-checked documentation mirror
+extended in `tests/sema/docs_control_flow.ok.ace`. Normal and sanitizer
+suites pass.
+
 ## Still open after these chunks
 
 Checked/release build modes, then checked allocation tracking; nonblocking echo and multi-client chat are the next networking proofs over the implemented `poll` readiness queue (see the `spec.md` Decision Queue).

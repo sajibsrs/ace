@@ -1,0 +1,8 @@
+/* The post clause accepts assignments and expression statements only —
+ * never a declaration. */
+
+main(): int {
+    for i: int = 0; i < 3; j: int = 1 {
+    }
+    return 0
+}

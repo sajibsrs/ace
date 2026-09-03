@@ -106,6 +106,80 @@ range. A statically known zero or negative step is rejected. Runtime-computed
 steps must also be positive; the current compiler has no checked-build mode and
 therefore assumes that precondition without inserting validation.
 
+Range bounds are ordinary captured values, not aliases to expressions used to
+produce them. If a slice variable is resliced or reassigned inside an index
+range loop, the captured endpoint does not change, while later indexing uses
+the slice's current descriptor. The current compiler does not insert runtime
+bounds checks, so such code must keep the current slice large enough.
+
+## Loop heads
+
+One keyword carries every loop. Beside the range and sequence forms, `for`
+takes a condition-only head, an empty infinite head, and a three-clause head:
+
+```ace
+running: bool = true
+for running {
+    running = false
+}
+
+for {
+    break
+}
+
+for i: int = 0; i < 4; i += 1 {
+    total += i
+}
+```
+
+The three clauses share one physical line, and `;` is valid only between
+for-head clauses — statements themselves still end at newlines, with no
+semicolons. An omitted condition is always true (`for ;;` loops forever), and
+a present condition must be `bool`.
+
+The init clause runs once before the first condition test, and its scopes
+cover the condition, the post clause, and the body — a variable declared there
+is invisible outside the loop. The init may also be an assignment or an
+expression statement:
+
+```ace
+n: int = 0
+for n = 1; n < 3; n += 1 {
+    total += n
+}
+```
+
+The post clause accepts assignments and expression statements. `continue`
+runs the post clause, then the condition — so a three-clause loop always
+advances on a `continue`. A head declaration without an initializer follows
+the ordinary definite-initialization rule and must be assigned before any
+read.
+
+## Labels on loops
+
+A label attaches to a `for` of any head form:
+
+```ace
+outer: for i: int in 0 .. 3 {
+    inner: for j: int in 0 .. 3 {
+        if j == 2 {
+            continue inner
+        }
+        if i == 1 {
+            continue outer
+        }
+        if i == 2 {
+            break outer
+        }
+    }
+}
+```
+
+Labels share one namespace with labeled blocks. Plain `break` and `continue`
+bind to the nearest `for`; `break label` exits that loop; `continue label` on
+a loop starts its next iteration — distinct from the block-restart meaning
+`continue label` has on a labeled block. Only enclosing labels may be named.
+
 ## Arrays and slices
 
 A one-binder sequence loop exposes each element value:
@@ -124,6 +198,57 @@ for index: usize, value: i32 in values {
     values[index] = value + 1
 }
 ```
+
+Binders are always explicitly typed; the first binder of a two-binder loop
+must be `usize`, and the value binder must exactly match the element type.
+Both are per-iteration copies: assigning either changes only the local copy,
+never the loop cursor or the backing sequence. There is no `_` discard binder;
+use the one-binder form when the index is unwanted, or a range when only
+indices are wanted:
+
+```ace
+for index: usize in 0 .. values.len {
+}
+```
+
+## Mutating iteration
+
+`in mut` before the iterable opts the loop into aliasing. The value binder
+then names the element's own storage: reads and writes hit the backing
+sequence directly, with no per-iteration copy and no write-back. `&value`
+yields a pointer into the backing storage, and `mut &value` yields a
+`mut *T` whose writes land there:
+
+```ace
+xs: [4]i32 = [1, 2, 3, 4]
+for item: i32 in mut xs {
+    item *= 10 // lands in xs
+}
+```
+
+The two-binder form works the same way, and the index binder stays an
+ordinary `usize` copy:
+
+```ace
+for index: usize, item: i32 in mut xs {
+    item += i32(index)
+}
+```
+
+The iterable must be a writable lvalue naming array or slice storage — a
+local, field path, mutable global, or `mut` parameter. By-value parameters,
+`const` globals, array literals, call results, slicing results, and ranges
+are rejected. The alias reads the loop's entry-captured pointer and length,
+so binder writes never disturb the cursor: reslicing the iterable variable
+mid-loop changes neither the running loop nor where the alias points.
+
+A plain (non-`mut`) loop keeps the per-iteration copy; `in mut` is a strict
+superset, not a replacement.
+
+Current limitation: strings are rejected under the same writable-storage
+rule — no syntax writes through a string — so `for c: u8 in mut text` is a
+compile error until mutable string bytes land. There is no string-specific
+diagnostic or special case.
 
 ## Strings
 
@@ -144,19 +269,7 @@ for index: usize, byte: char in text {
 
 The first binder must be `usize`, and the second binder must exactly match the
 element type. Assigning to either binder does not affect loop progress or the
-backing sequence. There is no `_` discard binder; use the one-binder form when
-the index is unwanted. To iterate only indices, use a range:
-
-```ace
-for index: usize in 0 .. values.len {
-}
-```
-
-Range bounds are ordinary captured values, not aliases to expressions used to
-produce them. If a slice variable is resliced or reassigned inside an index
-range loop, the captured endpoint does not change, while later indexing uses
-the slice's current descriptor. The current compiler does not insert runtime
-bounds checks, so such code must keep the current slice large enough.
+backing sequence.
 
 Direct array, slice, or string iteration captures its pointer and length at
 loop entry. Reassigning the variable does not change that running loop.
@@ -176,9 +289,10 @@ work: {
 }
 ```
 
-`break label` may target only an enclosing labeled block. `continue label`
-restarts one from its beginning, making indefinite repetition explicit without
-a separate loop construct:
+`break label` may target only an enclosing label — a labeled block or a
+labeled loop. On a labeled block, `continue label` restarts it from its
+beginning, making indefinite repetition explicit without a separate loop
+construct:
 
 ```ace
 forever: {
@@ -191,8 +305,9 @@ forever: {
 }
 ```
 
-Reaching the closing brace still exits normally. Plain `continue` advances the
-nearest `for-in` loop; only its labeled form restarts a block. Ace has no `goto`.
+Reaching the closing brace still exits normally. Plain `continue` advances
+the nearest `for`; on a labeled loop, `continue label` starts that loop's
+next iteration instead of restarting a block. Ace has no `goto`.
 
 ## Deferred calls
 

@@ -1,0 +1,4 @@
+/* A semicolon is still invalid as a statement separator outside a for head. */
+
+n: int = 3
+n += 1;

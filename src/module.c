@@ -781,6 +781,17 @@ static void lower_selected_node(Node* n, SelectLower* c) {
             bind_local(c, n->kids[i]->str, n->kids[i]->len, 0);
         return;
     case N_FOR:
+        if (n->flags & F_FORGEN) {
+            // General head: one select scope covers init, cond, post, and
+            // body; a head declaration binds through its N_VAR statement.
+            select_scope_push(c);
+            lower_selected_node(n->a, c);
+            lower_selected_node(n->b, c);
+            lower_selected_node(n->c, c);
+            lower_selected_node(n->d, c);
+            select_scope_pop(c);
+            return;
+        }
         for (int i = 0; i < n->nkids; i++)
             lower_selected_type(n->kids[i]->a, c);
         lower_selected_node(n->b, c);

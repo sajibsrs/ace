@@ -39,6 +39,7 @@
     /* punctuation */                                                          \
     X(LPAREN, "(") X(RPAREN, ")") X(LBRACK, "[") X(RBRACK, "]")                \
     X(LBRACE, "{") X(RBRACE, "}") X(COMMA, ",") X(COLON, ":")                  \
+    X(SEMI, ";")                                                               \
     X(DOT, ".") X(DOTDOT, "..") X(DOTDOTDOT, "...")
 
 typedef enum {
@@ -133,7 +134,7 @@ const char* node_kind_name(NKind k);
 enum {
     F_PUB = 1, F_EXPO = 2, F_MUT = 4, F_NOALIAS = 8, F_CONST = 16,
     F_ELSE = 32, F_VARARGS = 64, F_METHOD = 128, F_SELECT = 256,
-    F_EMBED = 512, F_SPECIALIZED = 1024,
+    F_EMBED = 512, F_SPECIALIZED = 1024, F_FORGEN = 2048,
 };
 
 // Compiler-backed standard-module functions. These markers live only on the

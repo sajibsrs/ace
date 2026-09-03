@@ -1,0 +1,26 @@
+/* Infinite for, in both spellings: exits only via break. */
+
+// expect-exit: 0
+
+main(): int {
+    n: int = 0
+
+    for {
+        n += 1
+        if n == 5 {
+            break
+        }
+    }
+
+    for ;; {
+        n += 1
+        if n == 9 {
+            break
+        }
+    }
+
+    if n != 9 {
+        return 1
+    }
+    return 0
+}

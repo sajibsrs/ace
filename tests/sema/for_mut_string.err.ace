@@ -1,0 +1,11 @@
+/* `in mut` over a string: strings stay read-only views until the
+ * mutable-string-bytes decision lands, so the general writable-storage rule
+ * rejects them with the ordinary diagnostic. */
+
+main(): int {
+    text: string = "hi"
+    for c: u8 in mut text {
+        return 0
+    }
+    return 1
+}

@@ -1,0 +1,62 @@
+/* Labeled break/continue across nested three-clause loops. Each loop owns its
+ * exit targets: the inner plain break/continue must not disturb the outer
+ * loop, and a head variable may be redeclared after its loop ends. */
+
+// expect-exit: 0
+
+main(): int {
+    total: int = 0
+
+    outer: for i: int = 0; i < 5; i += 1 {
+        inner: for j: int = 0; j < 5; j += 1 {
+            if j == 3 {
+                continue inner // inner only: skip j == 3, then j += 1
+            }
+            if i == 3 {
+                continue outer // must run i += 1, then re-test
+            }
+            if i == 4 && j == 2 {
+                break outer // exits both loops
+            }
+            total += 1
+        }
+        total += 1000
+    }
+    // i=0,1,2: j counts 0,1,2,4 then +1000 -> 4*3 + 3000 = 3012
+    // i=3: j=0 hits continue outer (i += 1)
+    // i=4: j=0,1 count, j=2 breaks outer
+    if total != 3014 {
+        return 1
+    }
+
+    // plain break/continue in the inner loop provably leave the outer loop
+    // untouched: the outer still runs every iteration and its post advances
+    pairs: int = 0
+    for a: int = 0; a < 3; a += 1 {
+        for b: int = 0; b < 3; b += 1 {
+            if b == 1 {
+                continue // nearest loop only
+            }
+            if b == 2 {
+                break // exits the inner loop only
+            }
+            pairs += 1
+        }
+    }
+    // per a: b=0 counts, b=1 continues, b=2 breaks -> 1 per outer pass
+    if pairs != 3 {
+        return 2
+    }
+
+    // the head variable is invisible after the loop: this fresh declaration
+    // would be a redeclaration error if the head binding leaked
+    for i: int = 0; i < 2; i += 1 {
+    }
+    i: int = 41
+    i += 1
+    if i != 42 {
+        return 3
+    }
+
+    return 0
+}

@@ -1,0 +1,26 @@
+/* Three-clause for: counting, and continue must run the post clause before
+ * re-testing the condition — otherwise i never advances and the guard fires. */
+
+// expect-exit: 0
+
+main(): int {
+    hits: int = 0
+    guard: int = 0
+
+    for i: int = 0; i < 10; i += 1 {
+        guard += 1
+        if guard > 50 {
+            return 2 // continue stopped running the post clause
+        }
+        if i % 2 == 0 {
+            continue // must still run i += 1
+        }
+        hits += i
+    }
+
+    // odd i in 1..9: 1 + 3 + 5 + 7 + 9
+    if hits != 25 {
+        return 1
+    }
+    return 0
+}

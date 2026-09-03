@@ -1,0 +1,12 @@
+/* A loop label only answers transfers from lexically enclosing positions:
+ * `later` surrounds nothing, so continuing to it from an earlier loop is
+ * rejected. */
+
+main(): int {
+    for i: int = 0; i < 3; i += 1 {
+        continue later
+    }
+    later: for j: int = 0; j < 3; j += 1 {
+    }
+    return 0
+}

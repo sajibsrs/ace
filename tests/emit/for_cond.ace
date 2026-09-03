@@ -1,0 +1,30 @@
+/* Condition-only for: a labeled continue re-tests the condition (no post
+ * clause), and the loop runs until the condition fails. */
+
+// expect-exit: 0
+
+main(): int {
+    v: int = 1
+    hops: int = 0
+
+    again: for v < 100 {
+        hops += 1
+        if hops > 20 {
+            return 2 // continue stopped converging to the exit
+        }
+        if v == 32 {
+            v += 2 // resolve the hold, then take the labeled continue
+            continue again // re-tests the condition directly
+        }
+        v += v
+    }
+
+    // v: 1, 2, 4, 8, 16, 32, 34, 68, then 136 exits
+    if v != 136 {
+        return 1
+    }
+    if hops != 8 {
+        return 3
+    }
+    return 0
+}

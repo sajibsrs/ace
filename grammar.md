@@ -99,7 +99,12 @@ target        := ident postfix_part*                      // lvalue: ident, .f, 
 expr_stmt     := expr
 
 if_stmt       := "if" expr block ["else" (if_stmt | block)]
-for_stmt      := "for" loop_binders "in" iterable block
+for_stmt      := "for" for_head block
+for_head      := loop_binders "in" ["mut"] iterable    // sequence/range head
+               | [head_stmt] ";" [expr] ";" [head_stmt]  // three-clause head
+               | expr                                 // condition-only head
+               |                                      // infinite head
+head_stmt     := var_decl | assignment | expr_stmt     // post clause: assignment | expr_stmt only
 loop_binders  := loop_binder | loop_binder "," loop_binder
 loop_binder   := ident ":" type
 iterable      := expr | range_expr
@@ -112,7 +117,7 @@ union_pattern := named_type "." ident
                | named_type "." ident "(" ident ":" type ")"
 return_stmt   := "return" [expr_list]
 break_stmt    := "break" [ident]                         // labeled break
-continue_stmt := "continue" [ident]                      // optional enclosing block label
+continue_stmt := "continue" [ident]                      // nearest loop, or an enclosing label
 defer_stmt    := "defer" ["mut"] expr                   // operand must be a call (semantic rule)
 fallthrough_stmt := contextual_fallthrough                // only as final statement of a non-final switch case
 contextual_fallthrough := ident                            // exact text "fallthrough"; not reserved
@@ -188,10 +193,11 @@ ret_types     := type | "(" type ("," type)+ ")"
 
 ## 6. Notes for the implementer
 
-1. **Newlines terminate statements.** No semicolons. A statement ends at a newline unless the expression is syntactically incomplete. The BNF above abstracts this as statement separation. Implemented rule (lexer): a newline token is emitted only when the *previous* token can end an expression — identifier, any literal (`null`/`true`/`false` included), `)`, `]`, `}`, `return`, `break`, `continue` (Go-style semicolon insertion, made explicit). The parser additionally rejects any bare comma-separated list that crosses a physical line: multiline lists must live inside `()`, `[]`, or `{}` and carry continuation/trailing commas as needed. `else` stays on the `}` line.
+1. **Newlines terminate statements.** No semicolons — except between `for`-head clauses, which must share one physical line (`for i: int = 0; i < n; i += 1`). A statement ends at a newline unless the expression is syntactically incomplete. The BNF above abstracts this as statement separation. Implemented rule (lexer): a newline token is emitted only when the *previous* token can end an expression — identifier, any literal (`null`/`true`/`false` included), `)`, `]`, `}`, `return`, `break`, `continue` (Go-style semicolon insertion, made explicit); NL insertion is suppressed before a for-head `;`. The parser additionally rejects any bare comma-separated list that crosses a physical line: multiline lists must live inside `()`, `[]`, or `{}` and carry continuation/trailing commas as needed. `else` stays on the `}` line.
 2. **Statement-start disambiguation is bounded lookahead (LL(2)), not backtracking:**
    - `ident ":"` → declaration; `ident "="` or `ident ","` → assignment/destructuring; otherwise → expression statement.
    - `ident "(" … ")" ":"` or `… "{"` → function declaration; otherwise → call expression.
+   - `ident ":" "for"` → labeled `for` of any head form (the same `ident ":"` prefix that starts declarations and labeled blocks); the label rides on the loop.
 3. **`foo[bar]` index vs instantiation:** index arguments are expressions, instantiation arguments are types. Both start with `ident`. Resolve by the name's namespace (generics live in the type/value namespace as declared) — one symbol-table lookup, no backtracking. Where truly ambiguous at parse time, parse as expression and re-check in semantic pass. [P]
 4. **Tuple vs function type:** in type position, `"(" … ")"` followed by `":"` is a function type; otherwise a tuple.
 5. **Comparison chaining is a distinct production** (`cmp_expr` with `+`): `a < b < c` is one grammar node, not nested binaries; each operand evaluates once.
@@ -206,8 +212,8 @@ ret_types     := type | "(" type ("," type)+ ")"
 12. **Intrinsic `.len` is sequence-only.** The ordinary `"." ident` postfix carries it syntactically, while semantics admit the intrinsic only for arrays (constant element count), slices (stored element count), and strings (stored byte count). Other types have no intrinsic `.len`; a struct may independently declare an ordinary field with that name.
 13. **Selective imports preserve the namespaces.** Each selected spelling imports every public declaration of that name from its source module: a function's complete public overload set enters the value namespace, while types enter the type namespace. Same-namespace import/declaration collisions are errors; nested lexical bindings may shadow selected values normally.
 14. **Range endpoint order selects direction.** `a .. b` captures `a` then `b` once and traverses `[min(a,b), max(a,b))` in their written direction: `0 .. 4` yields `0,1,2,3`, while `4 .. 0` yields `3,2,1,0`. Equal endpoints are empty. After the second endpoint, an identifier token whose exact text is `step` introduces the once-evaluated positive step expression; `step` remains bindable everywhere, including as that expression.
-15. **Sequence binders are arity-directed.** One binder is the element value. Two binders are index then element value; the index must be `usize`, and both are fresh per-iteration locals whose mutation cannot change loop progress. Ranges accept exactly one binder. There is no discard binder: use the one-binder form when no index is wanted.
-16. **Labeled continue restarts blocks.** Plain `continue` targets the nearest loop. `continue name` targets only an enclosing labeled block and branches to its beginning; `break name` branches after it. Falling through the block still exits normally. These enclosing-only transfers provide structured repetition without `goto`.
+15. **Sequence binders are arity-directed.** One binder is the element value. Two binders are index then element value; the index must be `usize`, and both are fresh per-iteration locals whose mutation cannot change loop progress. Ranges accept exactly one binder. There is no discard binder: use the one-binder form when no index is wanted. Binders are always explicitly typed (`ident ":" type`); `in mut` (Iterations #16 in `spec.md`) changes the value binder's binding, not its arity or type rule.
+16. **Labeled continue restarts blocks, and advances loops.** Plain `continue` targets the nearest `for` of any head form and starts the next iteration (running the three-clause post clause first). `continue name` on a labeled loop means the next iteration of that loop; on a labeled block it restarts the block from its beginning. `break name` branches after its target in both cases. Falling through a block still exits normally. These enclosing-only transfers provide structured repetition without `goto`.
 17. **Tagged-union cases are patterns, not calls.** `Event.key(code: u32)` in a union switch binds an explicitly typed copy of the active payload; the same shape in expression position constructs a value. The scrutinee's union type selects pattern parsing/semantic checking, every variant must appear once unless `else` exists, and inactive payload access has no expression form.
 18. **Array repetition remains explicitly typed by context.** `[value : count]` is an array literal only; `count` is a nonnegative integer literal equal to the expected `[N]T` length. `value` is checked as `T`, evaluated once, then copied to all `N` elements. The form neither infers a declaration type nor allocates.
 19. **Byte sequences compare pairwise.** `==` and `!=` admit every combination of `[N]u8`, `[]u8`, and `string` in either operand order, including `[N]u8` against `[M]u8`. They compare complete lengths and exact stored bytes without conversion, allocation, decoding, or normalization. Arrays and slices of another element type do not receive this mixed-type rule.

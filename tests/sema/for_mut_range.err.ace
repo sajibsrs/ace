@@ -1,0 +1,8 @@
+/* `in mut` over a range: ranges have no writable element storage. */
+
+main(): int {
+    n: usize = 3
+    for i: usize in mut 0 .. n {
+    }
+    return 0
+}

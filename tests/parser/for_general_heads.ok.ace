@@ -1,0 +1,72 @@
+/* General for heads: three-clause, condition-only, infinite, `for ;;`,
+ * and a label on every head form. */
+
+step: int = 3
+
+bump(): int {
+    return 1
+}
+
+main(): int {
+    total: int = 0
+
+    // three-clause: declaration init scopes over cond, post, and body
+    for i: int = 0; i < 4; i += 1 {
+        total += i
+    }
+
+    // three-clause: omitted condition is always true
+    for i: int = 0; ; i += 1 {
+        if i == 2 {
+            break
+        }
+    }
+
+    // three-clause: assignment init, call-statement init, all clauses empty
+    n: int = 2
+    for n = 1; n < 3; n += 1 {
+        total += bump()
+    }
+    for bump(); n < 9; n += 4 {
+    }
+    for ;; {
+        break
+    }
+
+    // condition-only
+    running: bool = true
+    for running {
+        running = false
+    }
+
+    // infinite
+    for {
+        break
+    }
+
+    // label on every head form
+    outer: for i: int = 0; i < 3; i += 1 {
+        if i == 2 {
+            break outer
+        }
+    }
+    spin: for running {
+        break spin
+    }
+    forever: for {
+        break forever
+    }
+    again: for ;; {
+        break again
+    }
+    scan: for i: int in 0 .. 2 {
+        if i == 1 {
+            continue scan
+        }
+    }
+    pick: for c: u8 in "x" {
+        break pick
+    }
+
+    return total
+}

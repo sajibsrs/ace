@@ -1,0 +1,10 @@
+/* A head declaration without an initializer falls to definite initialization:
+ * reading it in the condition or the body is rejected. */
+
+main(): int {
+    total: int = 0
+    for x: int; x < 3; x += 1 {
+        total += x
+    }
+    return total
+}

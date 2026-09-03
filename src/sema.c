@@ -3349,6 +3349,26 @@ static void check_stmt(Ck* k, Node* s) {
         return;
     }
     case N_FOR: {
+        if (s->flags & F_FORGEN) {
+            // General head: one loop scope covers init, cond, post, and body,
+            // so a head declaration covers cond/post/body and is invisible
+            // outside. The scope carries the label and is_loop so the
+            // break/continue walks match labeled loops of every head form.
+            scope_push(k);
+            k->scope->is_loop = 1;
+            if (s->str) k->scope->label = s->str;
+            if (s->a) check_stmt(k, s->a); // head init: runs once, before cond
+            if (s->b) {
+                SType* c = expr_type(k, s->b);
+                if (c->kind != SK_ERR && !is_bool(c))
+                    ck_err(k, s->b, "for condition must be bool, not %s",
+                           type_name(c));
+            }
+            if (s->c) check_stmt(k, s->c);
+            check_block(k, s->d);
+            scope_pop(k);
+            return;
+        }
         SType* binds[2] = {0};
         for (int i = 0; i < s->nkids && i < 2; i++)
             binds[i] = build_type(k, s->kids[i]->a);
@@ -3376,8 +3396,26 @@ static void check_stmt(Ck* k, Node* s) {
                        type_name(it));
             }
         }
+        if ((s->flags & F_MUT) && it->kind != SK_ERR) {
+            // `in mut iterable` applies the call-site `mut` discipline to
+            // iteration: writable lvalue storage holding array or slice
+            // elements. Strings fail the same rule (no syntax writes through
+            // a string) and keep the general diagnostic until the
+            // mutable-string-bytes decision lands; ranges have no elements.
+            if (s->b->kind == N_RANGE) {
+                ck_err(k, s->b,
+                       "mut iteration requires writable array or slice storage, not a range");
+            } else {
+                SType* wt = check_lvalue(k, s->b, 1);
+                if (wt->kind != SK_ERR && wt->kind != SK_SLICE && wt->kind != SK_ARRAY)
+                    ck_err(k, s->b,
+                           "mut iteration requires writable array or slice storage, not %s",
+                           type_name(wt));
+            }
+        }
         scope_push(k);
         k->scope->is_loop = 1;
+        if (s->str) k->scope->label = s->str; // labeled typed loops
         for (int i = 0; i < s->nkids; i++) {
             Node* binder = s->kids[i];
             Sym* v = declare_val(k, binder, SYM_VAR, binder->str, binder->len);
@@ -4078,6 +4116,15 @@ static int init_stmt(InitCk* k, Node* s) {
         return tf || ef;
     }
     case N_FOR: {
+        if (s->flags & F_FORGEN) {
+            if (s->a) init_stmt(k, s->a); // head init runs before the first cond
+            if (s->b) init_expr(k, s->b);
+            InitSnap base = init_snapshot(k);
+            (void)init_block(k, s->d);
+            if (s->c) init_stmt(k, s->c); // post-clause reads see the body's state
+            init_restore(&base); // loop may execute zero times
+            return 1;
+        }
         init_expr(k, s->b);
         InitSnap base = init_snapshot(k);
         for (int i = 0; i < s->nkids; i++) {
