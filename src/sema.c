@@ -2333,7 +2333,7 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
             }
             coerce(k, arg, st_prim(P_I64));
         }
-        return T_BYTE_SLICE;
+        return T_MUT_BYTE_SLICE;
     }
     if (intrinsic == BI_MEM_REALLOC) {
         if (call->nkids != 2) {
@@ -2354,7 +2354,7 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         }
         coerce(k, data, T_BYTE_SLICE);
         coerce(k, size, st_prim(P_I64));
-        return T_BYTE_SLICE;
+        return T_MUT_BYTE_SLICE;
     }
 
     if (intrinsic == BI_MEM_RELEASE && call->nkids != 1) {
@@ -2374,7 +2374,8 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         Sym* current = raw->kind == N_IDENT ? node_sym(raw) : NULL;
         Sym* original = current && current->decl ? node_sym(current->decl) : NULL;
         if (original && original->type) declared = original->type;
-        if (!same_type(declared, T_BYTE_SLICE)) {
+        if (!same_type(declared, T_BYTE_SLICE) &&
+            !shrink_ok(declared, T_BYTE_SLICE)) {
             if (declared->kind == SK_SLICE)
                 ck_err(k, raw,
                        "mem.release requires a mutable []u8 allocation variable — a typed slice "
@@ -2422,8 +2423,8 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
 }
 
 /*
- * Typed allocation intrinsics: mem.alloc[T](count): []T,
- * mem.realloc[T](data, new_count): []T, and mem.release[T](mut data).
+ * Typed allocation intrinsics: mem.alloc[T](count): mut []T,
+ * mem.realloc[T](data, new_count): mut []T, and mem.release[T](mut data).
  * They ride the ordinary explicit generic-instantiation path, never stamp a
  * body, and are lowered directly by the emitter. The instantiation must name
  * exactly one element type whose layout the compiler can size.
@@ -2449,7 +2450,12 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn,
     SType* slice = st_new(SK_SLICE);
     slice->base = elem;
     layout(slice);
-    callee->ty = slice; // the emitter derives sizeof(T)/alignof(T) from the result
+    SType* mut_slice = st_new(SK_SLICE);
+    mut_slice->base = elem;
+    mut_slice->is_mut = 1;
+    layout(mut_slice);
+    callee->ty = intrinsic == BI_MEM_RELEASE_T ? slice : mut_slice;
+    // The emitter derives sizeof(T)/alignof(T) from the result slice.
 
     if (intrinsic == BI_MEM_ALLOC_T) {
         if (call->nkids != 1) {
@@ -2463,7 +2469,7 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn,
             count = count->a;
         }
         coerce(k, count, st_prim(P_USIZE));
-        return slice;
+        return mut_slice;
     }
     if (intrinsic == BI_MEM_REALLOC_T) {
         if (call->nkids != 2) {
@@ -2484,7 +2490,7 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn,
         }
         coerce(k, data, slice);
         coerce(k, count, st_prim(P_USIZE));
-        return slice;
+        return mut_slice;
     }
 
     if (call->nkids != 1) {
@@ -2503,7 +2509,7 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn,
     Sym* current = raw->kind == N_IDENT ? node_sym(raw) : NULL;
     Sym* original = current && current->decl ? node_sym(current->decl) : NULL;
     if (original && original->type) declared = original->type;
-    if (!same_type(declared, slice)) {
+    if (!same_type(declared, slice) && !shrink_ok(declared, slice)) {
         ck_err(k, raw, "%s requires a mutable []%s allocation variable — the "
                        "instantiation must match the slice's element type exactly",
                what, type_name(elem));

@@ -660,6 +660,28 @@ alias iteration. Documentation (types, primitives, control flow) replaced its
 for the conversion callee. The spec queue entry and the AGENTS.md surface
 index mark the topic implemented. Full suite passes.
 
+### Allocation-origin writability and writable allocation returns
+
+The owner clarified the general establishment invariant behind type-position
+mutability. Content writability originates only from proven
+writable storage — fresh local storage, fresh allocation, or an already-writable
+view — and copying, slicing, exact view conversions, and implicit permission
+shrink thereafter preserve or reduce that proof; widening requires a new proof.
+The raw and typed `mem.alloc`/`mem.realloc` declarations and compiler-backed
+call types now return `mut []T`. Their realloc inputs and `mem.release` content
+types remain plain so
+an authoritative handle remains reallocatable and releasable after permission
+shrink; release's call-site `mut` independently grants nulling the caller's
+descriptor. Semantic and runtime fixtures write directly through fresh raw and
+typed results, preserve permission shrink, and cover release of both plain and
+writable handles. Implemented-only documentation and compiler comments match
+the new signatures. Focused allocation, mutability, and documentation fixtures
+pass. Both full normal and sanitizer runs complete all other coverage but report
+the unrelated live-network fixture exiting 22 after it cannot bind any of its
+128 candidate loopback ports.
+
 ## Still open after these chunks
 
-Checked/release build modes, then checked allocation tracking; nonblocking echo and multi-client chat are the next networking proofs over the implemented `poll` readiness queue (see the `spec.md` Decision Queue).
+Checked/release build modes, then checked allocation tracking; nonblocking echo
+and multi-client chat are the next networking proofs
+over the implemented `poll` readiness queue (see the `spec.md` Decision Queue).

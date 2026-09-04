@@ -45,21 +45,20 @@ str_examples(): int {
 }
 
 mem_examples(): int {
-    data: []u8 = mem.alloc(64, 8)
+    data: mut []u8 = mem.alloc(64, 8)
 
     if data == null {
         return 1
     }
     mem.release(mut data)
 
-    numbers: []usize = mem.alloc[usize](4)
+    numbers: mut []usize = mem.alloc[usize](4)
 
     if numbers == null {
         return 2
     }
 
-    writable_numbers: mut []usize = mut numbers[0..4]
-    writable_numbers[0] = 42
+    numbers[0] = 42
     mem.release[usize](mut numbers)
     return 0
 }

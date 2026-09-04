@@ -43,8 +43,8 @@ and a string is a read-only view — its bytes cannot be written through it.
 The `mem` standard-library module exports:
 
 ```ace
-mem.alloc(size: int, align: int): []u8
-mem.realloc(data: []u8, new_size: int): []u8
+mem.alloc(size: int, align: int): mut []u8
+mem.realloc(data: []u8, new_size: int): mut []u8
 mem.release(mut data: []u8)
 ```
 
@@ -64,7 +64,7 @@ After a successful non-null check, `.len` is exactly the requested byte size:
 ```ace
 import mem
 
-data: []u8 = mem.alloc(16, 8)
+data: mut []u8 = mem.alloc(16, 8)
 if data != null {
     bytes: usize = data.len
     data[0] = 42
@@ -79,9 +79,10 @@ Null means the request failed and the original allocation remains live and
 unchanged. On success, only the returned slice is authoritative and its `.len`
 is the new requested byte size.
 
-`mem.release` requires a mutable `[]u8` lvalue. Passing null is a no-op.
-Otherwise it frees the storage and writes canonical null—zero pointer and zero
-length—back to that lvalue. The `mut` mark makes the mutation visible:
+`mem.release` requires a mutable slice binding; its content type may be `[]u8`
+or `mut []u8`. Passing null is a no-op. Otherwise it frees the storage and
+writes canonical null—zero pointer and zero length—back to that lvalue. The
+call-site `mut` mark makes the descriptor mutation visible:
 
 ```ace
 mem.release(mut data)
@@ -93,8 +94,8 @@ The same module exports explicitly instantiated generic overloads that return
 typed slices, so values no longer need manual byte packing:
 
 ```ace
-mem.alloc[T](count: usize): []T
-mem.realloc[T](data: []T, new_count: usize): []T
+mem.alloc[T](count: usize): mut []T
+mem.realloc[T](data: []T, new_count: usize): mut []T
 mem.release[T](mut data: []T)
 ```
 
@@ -108,7 +109,7 @@ import mem
 COUNT: const usize = 20
 
 fibonacci(count: usize): []usize {
-    values: []usize = mem.alloc[usize](count)
+    values: mut []usize = mem.alloc[usize](count)
 
     if values == null {
         return null
@@ -152,31 +153,40 @@ programmer error.
 
 A multiplication overflow, an unsupported type alignment, a zero byte-size
 request (`sizeof(T) == 0` or `count == 0`), or allocation failure returns the
-canonical null `[]T`; nothing aborts. An overflowing count is rejected before
-the platform allocator is called.
+canonical null `mut []T`; nothing aborts. It has the same representation as a
+plain null slice and may shrink implicitly. An overflowing count is rejected
+before the platform allocator is called.
 
 `mem.realloc[T]` requires the complete authoritative non-null typed slice
 returned by typed allocation or a previous successful typed reallocation of
 the same exact `T`. It may move the storage. On success the result is the
-only authoritative slice and its length is `new_count`; on overflow, invalid
+only authoritative writable slice and its length is `new_count`; on overflow, invalid
 size, or failure it returns null while the original allocation remains live
 and unchanged. Newly added elements are not initialized and removed elements
 are not destroyed.
 
 `mem.release[T](mut data)` releases the complete authoritative typed
 allocation. The `[T]` instantiation must match the argument's `[]T` element
-type exactly. A null typed slice is a no-op; otherwise the passed caller
-variable is set to canonical zero—zero pointer and zero length—and no element
-destruction or hidden iteration occurs.
+type exactly; its content permission may be plain or writable. A null typed
+slice is a no-op; otherwise the passed caller variable is set to canonical
+zero—zero pointer and zero length—and no element destruction or hidden
+iteration occurs.
 
 Typed slices alias exactly like raw ones: copying copies the descriptor, a
 `release` nulls only its argument, and copied slices become dangling aliases
 that must not be used or released.
 
 The raw byte forms and the typed overloads are one overload set per name:
-`mem.alloc(16, 8)` still returns `[]u8` unchanged, and there is no implicit
+`mem.alloc(16, 8)` returns `mut []u8`, and there is no implicit
 conversion between `[]u8` and `[]T` — reinterpretation is deliberately not
 part of this surface.
+
+Allocation and successful reallocation are writability origins: their fresh
+storage is returned as `mut []T` and can be written directly. Reallocation and
+release still accept plain `[]T` content permission because they consume the
+authoritative descriptor rather than writing elements. Release's call-site
+`mut` is the independent permission to replace the caller's descriptor with
+null, so a handle deliberately shrunk to `[]T` remains releasable.
 
 ## Byte operations
 

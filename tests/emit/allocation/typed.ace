@@ -7,7 +7,7 @@ import mem
 Item: struct { tag: u32, weight: u64, live: bool }
 
 main(): int {
-    numbers: []usize = mem.alloc[usize](4)
+    numbers: mut []usize = mem.alloc[usize](4)
 
     if numbers == null {
         return 1
@@ -18,9 +18,8 @@ main(): int {
         return 2
     }
 
-    writable_numbers: mut []usize = mut numbers[0..4]
-    writable_numbers[0] = 40
-    writable_numbers[1] = 2
+    numbers[0] = 40
+    numbers[1] = 2
 
     if numbers[0] + numbers[1] != 42 {
         mem.release[usize](mut numbers)
@@ -36,7 +35,7 @@ main(): int {
         return 4
     }
 
-    grown: []usize = mem.realloc[usize](numbers, 8)
+    grown: mut []usize = mem.realloc[usize](numbers, 8)
 
     if grown == null {
         return 5
@@ -49,8 +48,7 @@ main(): int {
     if grown[0] + grown[1] != 42 || grown[2] != 9 {
         return 7
     }
-    writable_grown: mut []usize = mut grown[0..8]
-    writable_grown[7] = 70
+    grown[7] = 70
 
     if grown[7] != 70 {
         return 8
@@ -87,7 +85,7 @@ main(): int {
     if sizeof(Item) != 24 {
         return 14
     }
-    items: []Item = mem.alloc[Item](3)
+    items: mut []Item = mem.alloc[Item](3)
 
     if items == null {
         return 15
@@ -96,10 +94,9 @@ main(): int {
     if items.len != 3 {
         return 16
     }
-    writable_items: mut []Item = mut items[0..3]
-    writable_items[0] = Item { tag: 1, weight: 10, live: true }
-    writable_items[1] = Item { tag: 2, weight: 20, live: false }
-    writable_items[2] = Item { tag: 3, weight: 30, live: true }
+    items[0] = Item { tag: 1, weight: 10, live: true }
+    items[1] = Item { tag: 2, weight: 20, live: false }
+    items[2] = Item { tag: 3, weight: 30, live: true }
 
     if items[1].tag != 2 || items[1].weight != 20 || items[1].live {
         return 17
@@ -109,7 +106,7 @@ main(): int {
     if total != 60 {
         return 18
     }
-    more: []Item = mem.realloc[Item](items, 6)
+    more: mut []Item = mem.realloc[Item](items, 6)
 
     if more == null {
         return 19
@@ -122,8 +119,7 @@ main(): int {
     if more[2].tag != 3 || more[2].weight != 30 || !more[2].live {
         return 21
     }
-    writable_more: mut []Item = mut more[0..6]
-    writable_more[5] = Item { tag: 6, weight: 60, live: true }
+    more[5] = Item { tag: 6, weight: 60, live: true }
 
     if more[5].weight != 60 {
         return 22
@@ -146,14 +142,13 @@ main(): int {
         return 25
     }
 
-    raw: []u8 = mem.alloc(8, 8)
+    raw: mut []u8 = mem.alloc(8, 8)
 
     if raw == null {
         return 26
     }
-    writable_raw: mut []u8 = mut raw[0..8]
-    writable_raw[0] = 7
-    raw_grown: []u8 = mem.realloc(raw, 16)
+    raw[0] = 7
+    raw_grown: mut []u8 = mem.realloc(raw, 16)
 
     if raw_grown == null {
         return 27

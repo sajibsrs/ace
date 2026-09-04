@@ -44,14 +44,14 @@ main(): int {
 }
 ```
 
-- `alloc(size: int, align: int): []u8` — raw bytes with an explicit size and
+- `alloc(size: int, align: int): mut []u8` — writable raw bytes with an explicit size and
   power-of-two alignment.
-- `alloc[T](count: usize): []T` — typed: `count * sizeof(T)` bytes, alignment
+- `alloc[T](count: usize): mut []T` — writable typed storage: `count * sizeof(T)` bytes, alignment
   taken from `T`, element length `count`, uninitialized storage, null on
   overflow/zero-size/failure.
-- `realloc(data: []u8, new_size: int): []u8` — raw growth; failure leaves the
+- `realloc(data: []u8, new_size: int): mut []u8` — raw growth; failure leaves the
   original live.
-- `realloc[T](data: []T, new_count: usize): []T` — typed growth with the same
+- `realloc[T](data: []T, new_count: usize): mut []T` — typed growth with the same
   failure contract; the result is the only authoritative slice.
 - `release(mut data: []u8)` and `release[T](mut data: []T)` — free the complete
   authoritative allocation and null only the passed variable; null is a no-op.

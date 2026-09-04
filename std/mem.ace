@@ -5,11 +5,11 @@
  * platform allocator; the fallback bodies are never emitted.
  */
 
-pub alloc(size: int, align: int): []u8 {
+pub alloc(size: int, align: int): mut []u8 {
     return null
 }
 
-pub realloc(data: []u8, new_size: int): []u8 {
+pub realloc(data: []u8, new_size: int): mut []u8 {
     return null
 }
 
@@ -23,11 +23,11 @@ pub release(mut data: []u8) {
  * the raw forms above.
  */
 
-pub alloc[T](count: usize): []T {
+pub alloc[T](count: usize): mut []T {
     return null
 }
 
-pub realloc[T](data: []T, new_count: usize): []T {
+pub realloc[T](data: []T, new_count: usize): mut []T {
     return null
 }
 

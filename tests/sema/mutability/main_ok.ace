@@ -35,8 +35,8 @@ id(text: string): string {
 
 main(): int {
     // Establishment from writable-lvalue sources; literals cannot establish.
-    backing: []u8 = mem.alloc(4, 1)
-    w: mut []u8 = mut backing[0..4]
+    backing: mut []u8 = mem.alloc(4, 1)
+    w: mut []u8 = backing
     w[0] = 40
     w[1] = 2
 
