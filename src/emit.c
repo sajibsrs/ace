@@ -3847,6 +3847,45 @@ static void emit_stmt(Em* e, Node* s) {
     e->vti = 0; e->vtf = 0; // statement boundary
     switch (s->kind) {
     case N_VAR: {
+        if (s->flags & F_MIXED) {
+            if (s->nkids > 16) {
+                em_err(e, s, "too many binders (max 16)");
+                return;
+            }
+            uint32_t offs[16] = {0};
+            for (int i = 0; i < s->nkids; i++) {
+                if (s->kids[i]->kind != N_PARAM) continue;
+                SType* t = node_sym(s->kids[i])->type;
+                offs[i] = slot_alloc(e, s->kids[i], ty_size(t), ty_align(t));
+            }
+            EV rhs = gen_expr(e, s->b);
+            if (rhs.cls != CLS_ADDR) {
+                em_err(e, s, "mixed assignment right side must be a tuple");
+                return;
+            }
+            SType* tup = node_ty(s->b);
+            for (int i = 0; i < s->nkids; i++) {
+                Node* binder = s->kids[i];
+                SType* t = node_sym(binder)->type;
+                if (binder->kind == N_PARAM) {
+                    store_member(e, xreg(rhs.idx), tup, i, offs[i]);
+                    continue;
+                }
+                int svi = e->vti;
+                int ta = gen_addr(e, binder);
+                if (is_scalar(t)) {
+                    SType* ft = tup && tup->kind == SK_TUPLE && i < tup->nfields
+                        ? tup->fields[i].t : t;
+                    EV v = load_scalar(e, xreg(rhs.idx), field_off(tup, i), ft);
+                    store_scalar(e, v, xreg(ta), 0, ft);
+                } else {
+                    copy_mem(e, xreg(ta), 0, xreg(rhs.idx), field_off(tup, i),
+                             ty_size(t));
+                }
+                e->vti = svi;
+            }
+            return;
+        }
         SType* wants[16];
         uint32_t offs[16];
         int nb = s->nkids < 16 ? s->nkids : 16;

@@ -1,0 +1,8 @@
+pair(): (int, Error) {
+    return 1, null
+}
+
+main(): int {
+    n: int, err := pair()
+    return n
+}

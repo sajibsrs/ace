@@ -47,12 +47,13 @@ mask: const u32 = u32(255)
 ratio: const f64 = f64(0.5)
 ```
 
-Multiple typed bindings can be declared and initialized together. Every binding
-states its own type, and values are matched by position, so the types do not need
-to match each other:
+Multiple names can be handled by one `=` statement. A name with a type declares
+a fresh binding; a bare name reassigns an existing binding. The two forms may
+mix in any position, and values are matched by position:
 
 ```ace
 number: int, message: string = 1, "old"
+written: int, message = 2, "new"
 ```
 
 Multi-assignment evaluates and preserves every value on the right before it
@@ -62,8 +63,12 @@ writes any target:
 number, message = 2, "new"
 ```
 
-Both forms require equal numbers of bindings or targets and values. Newly
-declared bindings remain uninitialized while their initializer is evaluated.
+All-typed and all-bare lists remain valid. A typed name that already exists is
+a redeclaration error, while a bare missing name is an undeclared-name error.
+Names are checked against the scope before the statement, so one item cannot
+declare a name for another item to reuse. Every form requires equal numbers of
+names and values. New bindings remain uninitialized while the initializer is
+evaluated. `:=` remains a single-name declaration and never accepts a type.
 
 This also provides a direct swap without a user-declared temporary:
 

@@ -780,6 +780,18 @@ if ! printf '%s\n' "$uninitialized_struct" | grep -qF \
     echo "FAIL: aggregate definite-initialization diagnostic"
     fail=1
 fi
+mixed_redecl=$("$ACE" tests/sema/mixed_assignment/typed_exists_err.ace 2>&1)
+if ! printf '%s\n' "$mixed_redecl" | grep -qF \
+    "error: redeclaration of 'err': a typed name under '=' must be new"; then
+    echo "FAIL: mixed '=' typed-existing diagnostic"
+    fail=1
+fi
+mixed_missing=$("$ACE" tests/sema/mixed_assignment/bare_missing_err.ace 2>&1)
+if ! printf '%s\n' "$mixed_missing" | grep -qF \
+    "error: undeclared name 'err': a bare name under '=' must already exist"; then
+    echo "FAIL: mixed '=' bare-missing diagnostic"
+    fail=1
+fi
 # shifts/bitwise parse with C precedence
 if ! "$ACE" --ast tests/lexer/numbers_ok.ace | grep -qF "op='<<'"; then
     echo "FAIL: << operator should parse"

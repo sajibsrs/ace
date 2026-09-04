@@ -3426,6 +3426,65 @@ static void check_switch_fallthrough(Ck* k, Node* s, SType* t) {
 static void check_stmt(Ck* k, Node* s) {
     switch (s->kind) {
     case N_VAR: {
+        if (s->flags & F_MIXED) {
+            /* Resolve every name against the scope as it stood before this
+             * statement. Earlier binders in the list do not affect later ones. */
+            SType* rt = expr_type(k, s->b);
+            SType** wants = (SType**)arena_alloc(
+                (size_t)(s->nkids ? s->nkids : 1) * sizeof(SType*));
+            Sym** old = (Sym**)arena_alloc(
+                (size_t)(s->nkids ? s->nkids : 1) * sizeof(Sym*));
+            for (int i = 0; i < s->nkids; i++) {
+                Node* binder = s->kids[i];
+                old[i] = lookup_val(k, binder->str, binder->len);
+                if (binder->kind == N_PARAM) {
+                    wants[i] = build_type(k, binder->a);
+                    if (old[i])
+                        ck_err(k, binder,
+                               "redeclaration of '%.*s': a typed name under '=' must be new",
+                               (int)binder->len, binder->str);
+                } else if (!old[i]) {
+                    ck_err(k, binder,
+                           "undeclared name '%.*s': a bare name under '=' must already exist",
+                           (int)binder->len, binder->str);
+                    wants[i] = T_ERR;
+                } else {
+                    binder->sym = old[i];
+                    wants[i] = check_lvalue(k, binder, 1);
+                }
+            }
+            for (int i = 0; i < s->nkids; i++) {
+                Node* binder = s->kids[i];
+                if (binder->kind != N_PARAM || old[i]) continue;
+                Sym* v = declare_val(k, binder, SYM_VAR, binder->str, binder->len);
+                if (v) {
+                    v->type = wants[i];
+                    v->is_const = (s->flags & F_CONST) != 0;
+                    v->decl = binder;
+                    binder->sym = v;
+                }
+            }
+            if (rt->kind == SK_ERR) return;
+            if (rt->kind != SK_TUPLE || rt->nfields != s->nkids) {
+                ck_err(k, s, "assignment binds %d names but the right side has %d values",
+                       s->nkids, rt->kind == SK_TUPLE ? rt->nfields : 1);
+                return;
+            }
+            if (s->b->kind == N_TUPLE_E) {
+                for (int i = 0; i < s->nkids; i++)
+                    coerce(k, s->b->kids[i], wants[i]);
+            } else {
+                for (int i = 0; i < s->nkids; i++)
+                    if (wants[i]->kind != SK_ERR &&
+                        !same_type(rt->fields[i].t, wants[i]))
+                        ck_err(k, s->kids[i],
+                               "value %d of the call is %s but '%.*s' is %s (casts are explicit)",
+                               i + 1, type_name(rt->fields[i].t),
+                               (int)s->kids[i]->len, s->kids[i]->str,
+                               type_name(wants[i]));
+            }
+            return;
+        }
         if (s->flags & F_ELIDED) {
             Node* binder = s->kids[0];
             Node* init = s->b;
@@ -4356,6 +4415,7 @@ static int init_stmt(InitCk* k, Node* s) {
     switch (s->kind) {
     case N_VAR:
         for (int i = 0; i < s->nkids; i++) {
+            if ((s->flags & F_MIXED) && s->kids[i]->kind != N_PARAM) continue;
             Sym* sym = node_sym(s->kids[i]);
             InitVar* v = init_var(k, sym, 1);
             if (v) memset(&v->state, 0, sizeof v->state);
@@ -4363,8 +4423,12 @@ static int init_stmt(InitCk* k, Node* s) {
         if (s->b) {
             init_expr(k, s->b);
             for (int i = 0; i < s->nkids; i++) {
-                InitVar* v = init_var(k, node_sym(s->kids[i]), 1);
-                if (v) { v->state.full = 1; v->state.parts = NULL; }
+                if ((s->flags & F_MIXED) && s->kids[i]->kind != N_PARAM) {
+                    init_mark_path(k, s->kids[i]);
+                } else {
+                    InitVar* v = init_var(k, node_sym(s->kids[i]), 1);
+                    if (v) { v->state.full = 1; v->state.parts = NULL; }
+                }
             }
         }
         return 1;

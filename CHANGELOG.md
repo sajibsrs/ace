@@ -702,6 +702,20 @@ returns and release's independent descriptor-null permission are unchanged.
 Parser, semantic, runtime, compiler-checked documentation, editor showcase, and
 negative propagation fixtures cover both changes.
 
+### Per-name mixed declaration and assignment under `=`
+
+Multi-name `=` statements now decide each left-hand name independently: a typed
+name declares fresh storage and a bare name reassigns existing storage, in any
+order or mixture. All names resolve against the scope before the statement, so
+typed-existing and bare-missing positions produce redeclaration and undeclared
+diagnostics without cross-name effects. Right-side values remain evaluated and
+preserved before any write. The parser, semantic checker, definite-initialization
+pass, and AArch64 emitter support the mixed form; `:=` remains single-name,
+annotation-free declaration elision. Focused semantic, parser-diagnostic, and
+runtime fixtures cover mixed, all-bare, all-typed, both invalid name states, and
+the rejected `:=` mix. The specification, grammar, manual, and status index are
+updated with the implemented behavior.
+
 ## Still open after these chunks
 
 Checked/release build modes, then checked allocation tracking; nonblocking echo

@@ -1,0 +1,10 @@
+/* The motivating read/write shape accepts a reused Error in either position. */
+import sys
+
+main(): int {
+    buf: [8]u8
+    view: mut []u8 = mut buf[0..]
+    n: int, err: Error = sys.read(sys.stdin, view)
+    written: int, err = sys.write(sys.stdout, buf[0..n])
+    return written
+}

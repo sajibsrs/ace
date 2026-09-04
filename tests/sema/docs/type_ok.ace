@@ -72,7 +72,8 @@ Human: struct {
 main(): int {
     inferred := 4
     number: int, message: string = 1, "old"
-    number, message = 2, "new"
+    written: int, message = 2, "new"
+    number, message = written, "newer"
     a: int = number
     b: int = 3
     a, b = b, a

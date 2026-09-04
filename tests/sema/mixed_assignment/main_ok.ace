@@ -1,0 +1,19 @@
+/* `=` decides declaration or reassignment independently for each name. */
+pair(): (int, Error) {
+    return 7, null
+}
+
+error_first(): (Error, int) {
+    return null, 9
+}
+
+main(): int {
+    err: Error = null
+
+    n: int, err = pair()
+    n, err = pair()
+    fresh: int, fresh_err: Error = pair()
+    err, tail: int = error_first()
+
+    return n + fresh + tail
+}

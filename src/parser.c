@@ -5,8 +5,9 @@
 //   N_IMPORT    whole: str = binding; b = module ident (alias); a = N_STR path
 //               selective (F_SELECT): kids = imported N_IDENT names;
 //               b = std module ident or a = local N_STR path
-//   N_VAR       kids = binders (N_PARAM: str name, a type); b = init (or N_TUPLE_E);
-//               F_CONST, or F_ELIDED for local `name := expr` (binder type is NULL)
+//   N_VAR       kids = binders (N_PARAM: typed declaration, N_IDENT: reassignment
+//               under mixed `=`); b = init (or N_TUPLE_E); F_CONST, F_MIXED,
+//               or F_ELIDED for local `name := expr` (binder type is NULL)
 //   N_FUNC      str = name; kids = params; a = ret; b = body; c = N_TPARAMS;
 //               d = owner type for methods; F_PUB/F_EXPO/F_METHOD/F_MUT
 //   N_PARAM     str = name; a = type; F_MUT/F_NOALIAS (also used as var binder)
@@ -1179,28 +1180,38 @@ static Node* parse_decl_stmt(P* p, Token* first) {
     int is_const = 0;
     Token* name = first;
     for (;;) {
-        p->i++; // ':' of this binder
-        if (at(p, T_CONST)) {
-            is_const = 1;
+        if (at(p, T_COLON)) {
             p->i++;
+            if (at(p, T_CONST)) {
+                is_const = 1;
+                p->i++;
+            }
+            Node* binder = nd_tok(p, N_PARAM, name);
+            binder->str = name->str;
+            binder->len = name->len;
+            binder->a = parse_type(p);
+            nv_push(p, &binders, binder);
+        } else {
+            Node* binder = nd_tok(p, N_IDENT, name);
+            binder->str = name->str;
+            binder->len = name->len;
+            nv_push(p, &binders, binder);
+            n->flags |= F_MIXED;
         }
-        Node* binder = nd_tok(p, N_PARAM, name);
-        binder->str = name->str;
-        binder->len = name->len;
-        binder->a = parse_type(p);
-        nv_push(p, &binders, binder);
         if (!at(p, T_COMMA)) break;
         bare_list_line(p, first->line);
         p->i++;
         bare_list_line(p, first->line);
         name = expect(p, T_IDENT, "binder name after ','");
-        if (!at(p, T_COLON)) perr(p, "expected ':' in destructuring declaration");
     }
     if (is_const) n->flags |= F_CONST;
     set_kids(n, &binders);
+    if (at(p, T_DECLARE))
+        perr(p, "type annotations are not allowed under ':='");
     if (ate(p, T_ASSIGN)) {
+        if (n->nkids > 1) n->flags |= F_MIXED;
         n->b = expr_list(p, 0);
-    } else if (n->nkids > 1) {
+    } else if (n->nkids > 1 || (n->flags & F_MIXED)) {
         perr(p, "destructuring declaration requires an initializer");
     }
     return n;
@@ -1316,7 +1327,7 @@ static Node* parse_stmt(P* p) {
 static Node* parse_expr_stmt(P* p, int ctx) {
     int line = tk(p)->line;
     Node* e = expr(p, ctx);
-    if (at(p, T_COMMA)) { // destructuring assignment: n, err = read()
+    if (at(p, T_COMMA)) { // destructuring assignment, possibly mixed under `=`
         Node* a = nd(p, N_ASSIGN);
         NV targets = {0};
         nv_push(p, &targets, e);
@@ -1324,12 +1335,32 @@ static Node* parse_expr_stmt(P* p, int ctx) {
             bare_list_line(p, line);
             p->i++;
             bare_list_line(p, line);
-            nv_push(p, &targets, expr(p, ctx));
+            if (at(p, T_IDENT) && kth(p, 1) == T_COLON) {
+                Token* name = tk(p);
+                p->i += 2;
+                Node* binder = nd_tok(p, N_PARAM, name);
+                binder->str = name->str;
+                binder->len = name->len;
+                binder->a = parse_type(p);
+                nv_push(p, &targets, binder);
+                a->flags |= F_MIXED;
+            } else {
+                nv_push(p, &targets, expr(p, ctx));
+            }
+        }
+        if (a->flags & F_MIXED) {
+            for (int i = 0; i < targets.n; i++)
+                if (targets.v[i]->kind != N_IDENT && targets.v[i]->kind != N_PARAM)
+                    perr(p, "mixed '=' left side accepts names only");
+            if (at(p, T_DECLARE))
+                perr(p, "type annotations are not allowed under ':='");
+            a->kind = N_VAR;
         }
         Token* op = expect(p, T_ASSIGN, "'=' in assignment");
         a->op = (uint8_t)op->kind;
         set_kids(a, &targets);
-        a->a = expr_list(p, ctx);
+        if (a->kind == N_VAR) a->b = expr_list(p, ctx);
+        else a->a = expr_list(p, ctx);
         return a;
     }
     if (is_assign_op(tk(p)->kind)) { // single-target assignment (incl. compound)

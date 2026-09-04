@@ -1,0 +1,5 @@
+main(): int {
+    err: Error = null
+    n: int, err: Error = 1, null
+    return n
+}

@@ -1,0 +1,11 @@
+// expect-exit: 42
+pair(a: int, b: int): (int, int) {
+    return a, b
+}
+
+main(): int {
+    old: int = 2
+    fresh: int, old = pair(40, old)
+    old, tail: int = pair(old, fresh)
+    return old + tail
+}
