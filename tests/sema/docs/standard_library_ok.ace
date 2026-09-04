@@ -36,7 +36,7 @@ str_examples(): int {
     }
     buf: [32]u8 = [0 : 32]
     dst: mut []u8 = mut buf[0..32]
-    count: usize, fit: bool = str.stringify(dst, n)
+    count: usize, fit: bool = str.format(dst, n)
 
     if !fit || count != 4 {
         return 5

@@ -288,7 +288,7 @@ strings remain read-only UTF-8 byte views; decoded `rune` support stays an
 explicit additive Unicode layer. The closed `str` surface uses ordinary free
 functions rather than methods: byte-exact `find`/`has`/`compare`, caller-buffer
 `copy`, zero-copy bounded `split`, exact-boundary and ASCII-whitespace `trim`,
-explicitly instantiated `parse[T]`, and overloaded caller-buffer `stringify`.
+explicitly instantiated `parse[T]`, and overloaded caller-buffer `format`.
 Every operation is allocation-free, decoding-free, and reports capacity or
 conversion failure explicitly. The carve also admits inline slice and array
 types in `sizeof`, so the already normative descriptor layouts can be stated
@@ -311,7 +311,7 @@ two-binder rules, and constant-provable slice bounds that violate
 `0 <= lo <= hi <= len(source)` are compile errors. `std/str.ace` implements
 the closed free-function surface in pure Ace — `find`, `has`, `compare`,
 `copy`, zero-copy `split`, exact-boundary and ASCII-whitespace `trim`, and
-overloaded `stringify` whose float forms are digit-for-digit identical to
+overloaded `format` whose float forms are digit-for-digit identical to
 `fmt.print`. `str.parse[T]` follows the mem typed-allocation precedent: the
 public generic declarations are compiler-backed, each instantiation is checked
 against the carved type set with a precise diagnostic, and the emitter lowers

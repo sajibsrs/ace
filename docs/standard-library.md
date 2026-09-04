@@ -274,7 +274,7 @@ Caller storage and views:
   whitespace processing.
 
 Numeric conversion — the explicitly instantiated `parse[T]` overloads and the
-ordinary `stringify` overloads. The `parse[T]` templates are declared
+ordinary `format` overloads. The `parse[T]` templates are declared
 `specialized` and are implemented entirely as generic specializations (see
 [Functions](function.md#generic-specialization)): the callable surface is the
 per-type specializations for `int`, `uint`, `usize`, `f32`, and `f64`, so any
@@ -294,7 +294,7 @@ main(): int {
     }
     buf: [32]u8 = [0 : 32]
     dst: mut []u8 = mut buf[0..32]
-    count: usize, fit: bool = str.stringify(dst, n)
+    count: usize, fit: bool = str.format(dst, n)
     if !fit || count != 4 {
         return 3
     }
@@ -315,7 +315,7 @@ main(): int {
   zero succeeds. Decimal floats accept ordinary decimal/scientific forms plus
   the exact non-finite spellings `fmt` produces (`nan`, `inf`, `-inf`).
   Naming any other `T` is a compile-time error at the call.
-- `stringify(destination: mut []u8, value): (usize, bool)` — overloads for
+- `format(destination: mut []u8, value): (usize, bool)` — overloads for
   `int`, `uint`, `usize`, `f32`, and `f64`, plus radix-taking overloads for
   the three integer types. The complete representation is written or, when
   capacity is insufficient or the runtime radix is outside 2 through 36,

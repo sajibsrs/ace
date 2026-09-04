@@ -220,7 +220,7 @@ pub parse[T](text: string, radix: u8): (T, bool) specialized
  * use lowercase digits with no base prefix and only int may emit a minus.
  * The no-radix float representations are exactly the matching fmt.print
  * overloads', including the nan/inf/-inf and signed-zero spellings. */
-pub stringify(destination: mut []u8, value: int): (usize, bool) {
+pub format(destination: mut []u8, value: int): (usize, bool) {
     digits: [20]u8
     at: int = 20
     remaining: int = value
@@ -250,7 +250,7 @@ pub stringify(destination: mut []u8, value: int): (usize, bool) {
     return n, ok
 }
 
-pub stringify(destination: mut []u8, value: uint): (usize, bool) {
+pub format(destination: mut []u8, value: uint): (usize, bool) {
     digits: [20]u8
     at: int = 20
     remaining: uint = value
@@ -268,7 +268,7 @@ pub stringify(destination: mut []u8, value: uint): (usize, bool) {
     return n, ok
 }
 
-pub stringify(destination: mut []u8, value: usize): (usize, bool) {
+pub format(destination: mut []u8, value: usize): (usize, bool) {
     digits: [20]u8
     at: int = 20
     remaining: usize = value
@@ -286,7 +286,7 @@ pub stringify(destination: mut []u8, value: usize): (usize, bool) {
     return n, ok
 }
 
-pub stringify(destination: mut []u8, value: f64): (usize, bool) {
+pub format(destination: mut []u8, value: f64): (usize, bool) {
     one: f64 = 1.0
     zero: f64 = 0.0
 
@@ -332,7 +332,7 @@ pub stringify(destination: mut []u8, value: f64): (usize, bool) {
     return n2, ok
 }
 
-pub stringify(destination: mut []u8, value: f32): (usize, bool) {
+pub format(destination: mut []u8, value: f32): (usize, bool) {
     pone: f32 = 1.0
     zero: f32 = 0.0
 
@@ -381,7 +381,7 @@ pub stringify(destination: mut []u8, value: f32): (usize, bool) {
     return n2, ok
 }
 
-pub stringify(destination: mut []u8, value: int, radix: u8): (usize, bool) {
+pub format(destination: mut []u8, value: int, radix: u8): (usize, bool) {
     if radix < 2 || radix > 36 {
         return 0, false
     }
@@ -420,7 +420,7 @@ pub stringify(destination: mut []u8, value: int, radix: u8): (usize, bool) {
     return n2, ok
 }
 
-pub stringify(destination: mut []u8, value: uint, radix: u8): (usize, bool) {
+pub format(destination: mut []u8, value: uint, radix: u8): (usize, bool) {
     if radix < 2 || radix > 36 {
         return 0, false
     }
@@ -447,7 +447,7 @@ pub stringify(destination: mut []u8, value: uint, radix: u8): (usize, bool) {
     return n2, ok
 }
 
-pub stringify(destination: mut []u8, value: usize, radix: u8): (usize, bool) {
+pub format(destination: mut []u8, value: usize, radix: u8): (usize, bool) {
     if radix < 2 || radix > 36 {
         return 0, false
     }
