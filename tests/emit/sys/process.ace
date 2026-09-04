@@ -1,0 +1,22 @@
+// expect-exit: 0
+
+import fmt
+import sys
+
+main(): int {
+    argument_fn: (usize): string = sys.arg
+    environment_fn: (usize): string = sys.env
+
+    argument_count: usize = sys.argc()
+    fmt.println(argument_count)
+    for i: usize in 0 .. argument_count {
+        fmt.println(argument_fn(i))
+    }
+
+    environment_count: usize = sys.envc()
+    fmt.println(environment_count)
+    for i: usize in 0 .. environment_count {
+        fmt.println(environment_fn(i))
+    }
+    return 0
+}

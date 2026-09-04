@@ -13,7 +13,8 @@ Today's modules:
 - `net` — allocation-free IPv4 TCP sockets
 - `poll` — allocation-free readiness queues for general file descriptors
 - `str` — allocation-free byte-exact string utilities
-- `sys` — file descriptors, byte I/O, errno, and monotonic time
+- `sys` — process arguments/environment, file descriptors, byte I/O, errno,
+  and monotonic time
 
 Everything else in the planned v1 set (`simd`) does not
 exist yet.
@@ -326,7 +327,8 @@ main(): int {
 
 ## sys
 
-`sys` is the thin operating-system boundary: file I/O and monotonic time. It
+`sys` is the thin operating-system boundary: process-start values, file I/O,
+and monotonic time. It
 never allocates — only callers allocate — and every failure is an ordinary
 `Error` value checked with a branch.
 
@@ -371,6 +373,30 @@ main(): int {
 - `close(fd: Fd): Error`.
 - `errno(): i32` reads the thread's raw errno. Query it immediately after a
   failed call; any intervening system call may overwrite it.
+
+Process arguments and raw environment entries are zero-copy string views:
+
+```ace
+argument_count: usize = sys.argc()
+for i: usize in 0 .. argument_count {
+    fmt.println(sys.arg(i))
+}
+
+environment_count: usize = sys.envc() // capture once: envc() is O(n)
+for i: usize in 0 .. environment_count {
+    fmt.println(sys.env(i)) // raw KEY=VALUE bytes
+}
+```
+
+`arg(0)` is the program invocation name. `arg(index)` requires
+`index < argc()`, and `env(index)` requires `index < envc()`. These are the
+ordinary sequence bounds preconditions: future checked builds diagnose a
+violation, while the current release path assumes valid indexes. `argc()` is
+constant-time; `envc()` scans the null-terminated environment pointer array on
+every call, so capture it before iteration. Each selected entry is scanned for
+its byte length only when requested. Argument views remain valid for the
+process lifetime. Behavior after linked C code mutates the environment is not
+specified yet.
 
 Flags are raw constants with the operating system's own values and spellings
 (`O_RDONLY`, `O_WRONLY`, `O_RDWR`, `O_NONBLOCK`, `O_APPEND`, `O_CREAT`,
@@ -422,8 +448,9 @@ main(): int {
 }
 ```
 
-Other operating-system surfaces (directory operations, calendar time, CPU
-time) are not implemented yet.
+Caller-buffer bulk argument/environment filling, keyed environment lookup,
+environment mutation, directory operations, calendar time, and CPU time are
+not implemented yet.
 
 ## net
 

@@ -30,6 +30,49 @@ pub stdin: const Fd = Fd(0)
 pub stdout: const Fd = Fd(1)
 pub stderr: const Fd = Fd(2)
 
+/* Process arguments are exposed as zero-copy, read-only string views. argc()
+ * is constant-time and arg(0) is the program invocation name. arg(index)
+ * requires index < argc(); it scans only the selected NUL-terminated entry.
+ * Private compiler-backed helpers cross Darwin's process-start boundary; the
+ * public functions remain ordinary Ace functions and function values.
+ */
+process_argc(): usize {
+    return 0
+}
+
+process_arg(index: usize): string {
+    return null
+}
+
+pub argc(): usize {
+    return process_argc()
+}
+
+pub arg(index: usize): string {
+    return process_arg(index)
+}
+
+/* envc() counts the null-terminated environment pointer array and is O(n) on
+ * every call. Capture its result before a loop, then call env(index) for
+ * 0 <= index < that count. env returns the raw zero-copy "KEY=VALUE" entry
+ * and scans only that selected NUL-terminated string.
+ */
+process_envc(): usize {
+    return 0
+}
+
+process_env(index: usize): string {
+    return null
+}
+
+pub envc(): usize {
+    return process_envc()
+}
+
+pub env(index: usize): string {
+    return process_env(index)
+}
+
 /* Per-operation error domains: the failing operation is readable from the
  * returned handle's domain; the raw errno is queried separately via errno().
  */

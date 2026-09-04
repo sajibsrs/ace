@@ -393,6 +393,30 @@ if [ -d tests/emit ]; then
         echo "FAIL: maximum negative f64 with %.324f must fit the 640-byte buffer"
         fail=1
     fi
+    process_empty_out=$(/usr/bin/env -i /tmp/ace_emit/sys/process)
+    process_empty_expected=$(printf '1\n/tmp/ace_emit/sys/process\n0')
+    if [ "$process_empty_out" != "$process_empty_expected" ]; then
+        echo "FAIL: sys empty argument/environment output did not match"
+        printf 'got:\n%s\nwant:\n%s\n' "$process_empty_out" "$process_empty_expected"
+        fail=1
+    fi
+    process_one_out=$(/usr/bin/env -i 'ACE_ENV_ONE=first' \
+        /tmp/ace_emit/sys/process single)
+    process_one_expected=$(printf '2\n/tmp/ace_emit/sys/process\nsingle\n1\nACE_ENV_ONE=first')
+    if [ "$process_one_out" != "$process_one_expected" ]; then
+        echo "FAIL: sys single argument/environment output did not match"
+        printf 'got:\n%s\nwant:\n%s\n' "$process_one_out" "$process_one_expected"
+        fail=1
+    fi
+    process_out=$(/usr/bin/env -i 'ACE_ENV_ONE=first' \
+        'ACE_TEST_ENV=value=with=equals and spaces' \
+        /tmp/ace_emit/sys/process 'one argument' 'quote"argument')
+    process_expected=$(printf '3\n/tmp/ace_emit/sys/process\none argument\nquote"argument\n2\nACE_ENV_ONE=first\nACE_TEST_ENV=value=with=equals and spaces')
+    if [ "$process_out" != "$process_expected" ]; then
+        echo "FAIL: sys process arguments/environment output did not match"
+        printf 'got:\n%s\nwant:\n%s\n' "$process_out" "$process_expected"
+        fail=1
+    fi
     if command -v nm >/dev/null 2>&1; then
         printf_undef=$(nm -u /tmp/ace_emit/printf/main.o 2>/dev/null)
         if printf '%s\n' "$printf_undef" |
@@ -419,6 +443,18 @@ if [ -d tests/emit ]; then
                 fail=1
             fi
         done
+        process_undef=$(nm -u /tmp/ace_emit/sys/process.o 2>/dev/null)
+        for symbol in __NSGetArgc __NSGetArgv __NSGetEnviron _strlen; do
+            if ! printf '%s\n' "$process_undef" | grep -q "^$symbol$"; then
+                echo "FAIL: sys process object is missing Darwin boundary '$symbol'"
+                fail=1
+            fi
+        done
+        if printf '%s\n' "$process_undef" |
+           grep -Eq '_(malloc|calloc|realloc|free)$'; then
+            echo "FAIL: sys process access must not allocate"
+            fail=1
+        fi
     fi
     # -o mode drives the same pipeline through the cc link step
     "$ACE" -o /tmp/ace_emit/direct tests/emit/basics/main.ace && /tmp/ace_emit/direct

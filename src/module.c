@@ -276,6 +276,18 @@ static void mark_fmt_intrinsics(Loader* L, Module* m) {
     }
 }
 
+static void mark_sys_intrinsics(Loader* L, Module* m) {
+    if (!is_std_named_module(L, m->canon, "sys")) return;
+    for (int i = 0; i < m->file->nkids; i++) {
+        Node* n = m->file->kids[i];
+        if (n->kind != N_FUNC) continue;
+        if (text_is(n->str, n->len, "process_argc")) n->ival = BI_SYS_ARGC;
+        else if (text_is(n->str, n->len, "process_arg")) n->ival = BI_SYS_ARG;
+        else if (text_is(n->str, n->len, "process_envc")) n->ival = BI_SYS_ENVC;
+        else if (text_is(n->str, n->len, "process_env")) n->ival = BI_SYS_ENV;
+    }
+}
+
 // Unique `name$` prefix per module; `$` never occurs in source identifiers,
 // so prefixed names cannot collide with root declarations, and distinct
 // modules can never share a prefixed member name.
@@ -495,6 +507,7 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
     collect_members(L, m); // original names + pub-ness, before any renaming
     mark_mem_intrinsics(L, m);
     mark_fmt_intrinsics(L, m);
+    mark_sys_intrinsics(L, m);
     m->next = L->loading; // push
     L->loading = m;
     resolve_file(L, file, canon, 0);

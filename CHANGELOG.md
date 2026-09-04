@@ -716,6 +716,25 @@ runtime fixtures cover mixed, all-bare, all-typed, both invalid name states, and
 the rejected `:=` mix. The specification, grammar, manual, and status index are
 updated with the implemented behavior.
 
+### Command-line arguments and environment access
+
+The owner-approved allocation-free `sys` process surface is implemented:
+`argc()` returns the Darwin process argument count, `arg(index)` exposes the
+selected argument with index zero retaining the program invocation name,
+`envc()` counts the null-terminated environment pointer array on every call,
+and `env(index)` exposes one raw `KEY=VALUE` entry. Argument and environment
+strings are zero-copy read-only views whose lengths are obtained by scanning
+only the selected NUL-terminated entry. Indexes carry the ordinary bounds
+precondition rather than introducing unconditional panic behavior ahead of
+checked builds. Private compiler-backed declarations in canonical
+`std/sys.ace` lower directly to Darwin's `_NSGetArgc`, `_NSGetArgv`, and `_NSGetEnviron` accessors plus
+`strlen`; no pointer-array reinterpretation, descriptor-array construction,
+dynamic stack storage, fixed cap, or allocation is introduced. Runtime
+coverage invokes a fixture with an empty inherited environment and exact
+arguments/environment bytes, while object inspection verifies the Darwin
+boundary and absence of allocation symbols. Caller-buffer bulk filling, keyed
+lookup, and environment-mutation interaction remain additive follow-ups.
+
 ## Still open after these chunks
 
 Checked/release build modes, then checked allocation tracking; nonblocking echo

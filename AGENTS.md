@@ -104,7 +104,7 @@ Surface index — the fast block for "is X supported?": one row per surface, sta
 | `mem`: raw and typed allocation, `copy`/`move`/`fill`/`zero`/`compare` | implemented | [Memory](spec.md#memory) |
 | `fmt`: `print`/`println` overloads, `printf` | implemented | [Stdlib](spec.md#stdlib) |
 | `str`: character/string library, `parse[T]` | implemented | [Stdlib](spec.md#stdlib) |
-| `sys`: file I/O, monotonic clocks, descriptor constants, `errno` | implemented | [Stdlib](spec.md#stdlib) |
+| `sys`: process arguments/environment, file I/O, monotonic clocks, descriptor constants, `errno` | implemented | [Stdlib](spec.md#stdlib) |
 | `net`: blocking IPv4 TCP client/server, `resolve4` DNS, socket options | implemented | [Stdlib](spec.md#stdlib) |
 | `poll`: general `sys.Fd` readiness queue | implemented | [Stdlib](spec.md#stdlib) |
 | IPv6, UDP, address queries, nonblocking completion, half-close, extra TCP options | open, additive after carving | [Stdlib](spec.md#stdlib) |

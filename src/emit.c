@@ -2385,6 +2385,70 @@ static EV finish_slice_builtin(Em* e, int si, int sf, uint32_t off) {
     return (EV){ CLS_ADDR, out };
 }
 
+static EV gen_process_array(Em* e, Node* call, const char* getter,
+                            uint32_t getter_len) {
+    CallTarget tgt = { TK_EXTERN, getter, getter_len, 0 };
+    EV outer = emit_call(e, call, NULL, 0, NULL, NULL, 0, 0, -1, tgt,
+                         raw_pointer_type());
+    ld_reg(e, xreg(outer.idx), xreg(outer.idx), 0, 8, 0);
+    return outer; // char ** returned through Darwin's char *** accessor
+}
+
+static EV gen_process_count_builtin(Em* e, Node* call, int environment) {
+    if (!environment) {
+        CallTarget tgt = { TK_EXTERN, "__NSGetArgc", 11, 0 };
+        EV p = emit_call(e, call, NULL, 0, NULL, NULL, 0, 0, -1, tgt,
+                         raw_pointer_type());
+        ld_reg(e, xreg(p.idx), xreg(p.idx), 0, 4, 0);
+        return p;
+    }
+
+    EV base = gen_process_array(e, call, "__NSGetEnviron", 14);
+    int cursor = tmp_int(e);
+    int count = tmp_int(e);
+    mov_int(e, 1, xreg(cursor), xreg(base.idx));
+    load_imm(e, 1, xreg(count), 0);
+    int loop = new_label(e), done = new_label(e);
+    bind_label(e, loop);
+    ld_reg(e, 16, xreg(cursor), 0, 8, 0);
+    cbz_(e, 1, 16, 0, done);
+    ins(e, 0x91002000u | ((uint32_t)xreg(cursor) << 5) |
+           (uint32_t)xreg(cursor)); // add cursor, cursor, #8
+    ins(e, 0x91000400u | ((uint32_t)xreg(count) << 5) |
+           (uint32_t)xreg(count)); // add count, count, #1
+    br_(e, loop);
+    bind_label(e, done);
+    if (count != base.idx) mov_int(e, 1, xreg(base.idx), xreg(count));
+    e->vti = base.idx + 1;
+    return (EV){ CLS_INT, base.idx };
+}
+
+static EV gen_process_entry_builtin(Em* e, Node* call, int environment) {
+    int si = e->vti, sf = e->vtf;
+    uint32_t off = temp_slot(e, 16, 8);
+    EV index = gen_expr(e, call->kids[0]);
+    EV base = gen_process_array(e, call,
+                                environment ? "__NSGetEnviron" : "__NSGetArgv",
+                                environment ? 14 : 11);
+    int entry_addr = tmp_int(e);
+    ins(e, 0x8B000000u | (3u << 10) |
+           ((uint32_t)xreg(index.idx) << 16) |
+           ((uint32_t)xreg(base.idx) << 5) | (uint32_t)xreg(entry_addr));
+    int ptr = tmp_int(e);
+    ld_reg(e, xreg(ptr), xreg(entry_addr), 0, 8, 0);
+
+    CallArg arg = { NULL, { CLS_INT, ptr }, 1, 0 };
+    SType* param = raw_pointer_type();
+    uint8_t mut = 0;
+    CallTarget strlen_tgt = { TK_EXTERN, "_strlen", 7, 0 };
+    EV len = emit_call(e, call, &arg, 1, &param, &mut, 1, 0, -1,
+                       strlen_tgt, default_i64());
+    frame_addr(e, 16, off);
+    st_reg(e, xreg(ptr), 16, 0, 8);
+    st_reg(e, xreg(len.idx), 16, 8, 8);
+    return finish_slice_builtin(e, si, sf, off);
+}
+
 static EV gen_alloc_builtin(Em* e, Node* call) {
     int si = e->vti, sf = e->vtf;
     uint32_t off = temp_slot(e, 16, 8);
@@ -2968,6 +3032,15 @@ static EV gen_call(Em* e, Node* call) {
     if (intrinsic && intrinsic->decl &&
         intrinsic->decl->ival == BI_MEM_COMPARE && call->ival == BI_MEM_COMPARE)
         return gen_compare_builtin(e, call);
+    if (intrinsic && intrinsic->decl) {
+        switch (intrinsic->decl->ival) {
+        case BI_SYS_ARGC: return gen_process_count_builtin(e, call, 0);
+        case BI_SYS_ARG: return gen_process_entry_builtin(e, call, 0);
+        case BI_SYS_ENVC: return gen_process_count_builtin(e, call, 1);
+        case BI_SYS_ENV: return gen_process_entry_builtin(e, call, 1);
+        default: break;
+        }
+    }
     // panic(message): write the bytes to stderr best-effort, then abort —
     // both undefined externals resolved by the system linker (spec Errors #15).
     // The write result is ignored: a failed or partial write never blocks the
@@ -5610,8 +5683,9 @@ int emit_object(Node* file, Diag* d, const char* out_path,
                 n->ival == BI_MEM_ALLOC_T || n->ival == BI_MEM_REALLOC_T ||
                 n->ival == BI_MEM_RELEASE_T)
                 break; // compiler-backed std/mem declarations have no body symbol
-            if (n->ival == BI_FMT_PRINTF)
-                break; // format-dependent calls lower directly; no runtime printf symbol
+            if (n->ival == BI_FMT_PRINTF ||
+                (n->ival >= BI_SYS_ARGC && n->ival <= BI_SYS_ENV))
+                break; // compiler-backed calls lower directly; no fallback symbol
             Sym* decl_sym = node_sym(n);
             if (n->c && !(decl_sym && decl_sym->spec_args)) {
                 // generic template: one function per instantiation memo entry

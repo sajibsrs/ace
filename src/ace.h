@@ -153,6 +153,10 @@ enum {
     BI_MEM_ALLOC_T = 11,   // mem.alloc[T](count: usize): mut []T
     BI_MEM_REALLOC_T = 12, // mem.realloc[T](data: []T, new_count: usize): mut []T
     BI_MEM_RELEASE_T = 13, // mem.release[T](mut data: []T)
+    BI_SYS_ARGC = 14,
+    BI_SYS_ARG = 15,
+    BI_SYS_ENVC = 16,
+    BI_SYS_ENV = 17,
 };
 
 enum {
