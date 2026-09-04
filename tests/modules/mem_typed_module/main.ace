@@ -15,8 +15,9 @@ main(): int {
         drop_points(mut points)
         return 2
     }
-    points[0] = Point { x: 1, y: 2 }
-    points[2] = Point { x: 3, y: 4 }
+    writable_points: mut []Point = mut points[0..3]
+    writable_points[0] = Point { x: 1, y: 2 }
+    writable_points[2] = Point { x: 3, y: 4 }
 
     if points[0].x + points[2].x != 4 {
         drop_points(mut points)

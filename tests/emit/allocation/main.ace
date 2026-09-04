@@ -30,8 +30,9 @@ main(): int {
             release(mut data)
             return 4
         }
-        data[0] = 40
-        data[1] = 2
+        writable: mut []u8 = mut data[0..4]
+        writable[0] = 40
+        writable[1] = 2
 
         alias: []u8 = data
 

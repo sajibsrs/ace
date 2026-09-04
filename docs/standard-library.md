@@ -215,10 +215,11 @@ arithmetic used by the function.
 ## str
 
 `str` is a pure-Ace module of allocation-free, byte-exact string utilities.
-Strings stay read-only UTF-8 byte views, `char` is the transparent `u8` alias,
-and every operation works on views or caller storage: nothing here allocates,
-decodes Unicode, normalizes, or uses the locale. Each `suffix: bool` parameter
-selects a boundary with `false` for the prefix and `true` for the suffix.
+Plain strings are read-only UTF-8 byte views, `char` is the transparent `u8`
+alias, and every operation works on views or caller storage: nothing here
+allocates, decodes Unicode, normalizes, or uses the locale. Each
+`suffix: bool` parameter selects a boundary with `false` for the prefix and
+`true` for the suffix.
 
 ```ace
 import str
@@ -253,12 +254,12 @@ Search and ordering:
 
 Caller storage and views:
 
-- `copy(text: string, noalias mut destination: []u8): bool` — copies the
+- `copy(text: string, noalias destination: mut []u8): bool` — copies the
   complete text into `destination[0..text.len]`; a shorter destination is
   unchanged and fails, and the unused suffix is untouched. Empty text succeeds
   without writing. Unlike `mem.copy`, the ranges need not be equal — only the
   source and the written range must not overlap.
-- `split(text: string, separator: string, mut parts: []string): (usize, bool)`
+- `split(text: string, separator: string, parts: mut []string): (usize, bool)`
   and the `separator: char` overload — splits left to right on non-overlapping
   exact matches. Separators are omitted, boundaries produce empty parts, empty
   input produces one empty part, and every written part is a zero-copy view
@@ -292,8 +293,8 @@ main(): int {
         return 2
     }
     buf: [32]u8 = [0 : 32]
-    dst: []u8 = buf[0..32]
-    count: usize, fit: bool = str.stringify(mut dst, n)
+    dst: mut []u8 = mut buf[0..32]
+    count: usize, fit: bool = str.stringify(dst, n)
     if !fit || count != 4 {
         return 3
     }
@@ -314,7 +315,7 @@ main(): int {
   zero succeeds. Decimal floats accept ordinary decimal/scientific forms plus
   the exact non-finite spellings `fmt` produces (`nan`, `inf`, `-inf`).
   Naming any other `T` is a compile-time error at the call.
-- `stringify(mut destination: []u8, value): (usize, bool)` — overloads for
+- `stringify(destination: mut []u8, value): (usize, bool)` — overloads for
   `int`, `uint`, `usize`, `f32`, and `f64`, plus radix-taking overloads for
   the three integer types. The complete representation is written or, when
   capacity is insufficient or the runtime radix is outside 2 through 36,
@@ -355,14 +356,14 @@ main(): int {
   returns `fd == -1` alongside its error.
 - `stdin`, `stdout`, and `stderr` are `const Fd` values for the three standard
   descriptors (0, 1, and 2), valid from process start. They flow through the
-  ordinary operations — `sys.read(sys.stdin, mut buf)` fills from standard
+  ordinary operations — `sys.read(sys.stdin, buf)` fills from standard
   input and `sys.write(sys.stderr, "oops")` writes to standard error.
 - `open(path: string, flags: i32): (Fd, Error)` and the three-argument form
   add a `mode: u32` used with `O_CREAT`. The path is copied into a fixed
   1024-byte stack buffer and NUL-terminated; longer paths fail with
   `ENAMETOOLONG` through the normal error path, exactly as the kernel would
   reject them.
-- `read(fd: Fd, mut buf: []u8): (int, Error)` fills the caller's buffer and
+- `read(fd: Fd, buf: mut []u8): (int, Error)` fills the caller's buffer and
   returns the byte count; `0` with a null error is end of file.
 - `write(fd: Fd, data: []u8): (int, Error)` and `write(fd: Fd, text: string)`
   return the byte count as the operating system reported it — partial writes
@@ -477,13 +478,13 @@ allocate, buffer, retry, close, or replace a socket on failure:
   socket. Failure returns `Socket(-1)` and canonical-zero `Address4`.
 - `connect(socket, Address4): Error` makes one connection attempt without
   retry, cleanup, or configuration.
-- `receive(socket, mut buffer: []u8): (int, Error)` performs one receive.
+- `receive(socket, buffer: mut []u8): (int, Error)` performs one receive.
   Partial counts are returned as-is; zero with null error is orderly peer
   shutdown.
 - `send(socket, []u8)` and `send(socket, string)` each perform one send and
   return partial counts as-is. A closed peer becomes an ordinary send error
   rather than terminating the process with `SIGPIPE`.
-- `resolve4(host, port, mut addresses): (usize, Error)` performs one blocking
+- `resolve4(host, port, addresses: mut []Address4): (usize, Error)` performs one blocking
   hostname lookup and writes IPv4 TCP endpoints into caller-owned storage in
   resolver order. The returned count is the number written; each address uses
   the supplied host-order port. Empty storage, invalid hostname bytes, lookup
@@ -491,8 +492,8 @@ allocate, buffer, retry, close, or replace a socket on failure:
 
 ```ace
 storage: [8]net.Address4
-addresses: []net.Address4 = storage[0..8]
-count: usize, err: Error = net.resolve4("example.com", u16(80), mut addresses)
+addresses: mut []net.Address4 = mut storage[0..8]
+count: usize, err: Error = net.resolve4("example.com", u16(80), addresses)
 if err == null && count != 0 {
     sock: net.Socket, socket_err: Error = net.socket(net.SocketKind.tcp)
     if socket_err == null {
@@ -562,8 +563,8 @@ main(): int {
         error: false, hangup: false,
     }
     storage: [16]poll.Event = [zero : 16]
-    events: []poll.Event = storage[0..16]
-    count: usize, wait_err: Error = poll.wait(q, mut events, poll.wait_forever)
+    events: mut []poll.Event = mut storage[0..16]
+    count: usize, wait_err: Error = poll.wait(q, events, poll.wait_forever)
 
     if wait_err == null {
         for index: usize in 0 .. count {
@@ -589,7 +590,7 @@ The readiness surface is:
   again before relying on that registration.
 - `unwatch(q, fd): Error` removes an existing registration. Removing an
   unwatched descriptor is an error.
-- `wait(q, mut events, timeout_ns): (usize, Error)` writes a fully initialized
+- `wait(q, events: mut []Event, timeout_ns): (usize, Error)` writes a fully initialized
   prefix of caller-owned storage. The suffix remains unchanged. An empty slice
   is an error. The backend uses bounded stack storage, allocates nothing, and
   may return fewer events than the supplied capacity.

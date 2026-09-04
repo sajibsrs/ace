@@ -68,8 +68,8 @@ pub connect(sock: Socket, address: Address4): Error {
     return connect_darwin(sock, address)
 }
 
-pub receive(sock: Socket, mut buffer: []u8): (int, Error) {
-    count: int, err: Error = receive_darwin(sock, mut buffer)
+pub receive(sock: Socket, buffer: mut []u8): (int, Error) {
+    count: int, err: Error = receive_darwin(sock, buffer)
     return count, err
 }
 
@@ -83,8 +83,8 @@ pub send(sock: Socket, data: string): (int, Error) {
     return count, err
 }
 
-pub resolve4(host: string, port: u16, mut addresses: []Address4): (usize, Error) {
-    count: usize, err: Error = resolve4_darwin(host, port, mut addresses)
+pub resolve4(host: string, port: u16, addresses: mut []Address4): (usize, Error) {
+    count: usize, err: Error = resolve4_darwin(host, port, addresses)
     return count, err
 }
 
@@ -324,7 +324,7 @@ connect_darwin(sock: Socket, address: Address4): Error {
     return null
 }
 
-receive_darwin(sock: Socket, mut buffer: []u8): (int, Error) {
+receive_darwin(sock: Socket, buffer: mut []u8): (int, Error) {
     if buffer.len == 0 {
         return 0, null
     }
@@ -360,7 +360,7 @@ send_string_darwin(sock: Socket, data: string): (int, Error) {
     return int(count), null
 }
 
-resolve4_darwin(host: string, port: u16, mut addresses: []Address4): (usize, Error) {
+resolve4_darwin(host: string, port: u16, addresses: mut []Address4): (usize, Error) {
     if host.len > HOST_NAME_MAX || addresses.len == 0 {
         return usize(0), Error(&resolve_error)
     }

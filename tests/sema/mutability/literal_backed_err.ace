@@ -1,0 +1,8 @@
+/* err: a binding initialized from a string literal is literal-backed; its
+ * storage cannot establish a writable view (Mutability #11). */
+
+main(): int {
+    text: string = "stored literal"
+    v: mut string = mut text[0..]
+    return 0
+}

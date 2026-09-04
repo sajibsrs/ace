@@ -26,6 +26,8 @@
 static SType *T_ERR, *T_VOID, *T_UT_INT, *T_UT_FLOAT, *T_UT_NULL;
 static SType *T_ERROR, *T_ERROR_DESC;
 static SType* T_BYTE_SLICE;
+static SType* T_MUT_BYTE_SLICE; // mut []u8 — writable byte view (Mutability #9)
+static SType* T_MUT_STRING;     // mut string — writable bytes
 static SType* PRIMS[14];
 static uint64_t next_type_id = 1;
 
@@ -63,14 +65,16 @@ static const char* type_name(SType* t) {
         case P_U8: return "u8"; case P_U16: return "u16";
         case P_U32: return "u32"; case P_U64: return "u64";
         case P_F32: return "f32"; case P_F64: return "f64";
-        case P_STRING: return "string"; case P_USIZE: return "usize";
+        case P_STRING: return t->is_mut ? "mut string" : "string";
+        case P_USIZE: return "usize";
         case P_TYPEID: return "typeid";
         }
         return "?";
     case SK_PTR: return t->is_mut ? "mut *T" : "*T";
     case SK_SLICE: {
         char* out = bufs[bi = (bi + 1) & 7];
-        snprintf(out, sizeof bufs[0], "[]%s", t->base ? type_name(t->base) : "?");
+        snprintf(out, sizeof bufs[0], "%s[]%s", t->is_mut ? "mut " : "",
+                 t->base ? type_name(t->base) : "?");
         return out;
     }
     case SK_ARRAY: {
@@ -256,6 +260,14 @@ static void ensure_memory_types(void) {
     T_BYTE_SLICE = st_new(SK_SLICE);
     T_BYTE_SLICE->base = st_prim(P_U8);
     layout(T_BYTE_SLICE);
+    T_MUT_BYTE_SLICE = st_new(SK_SLICE);
+    T_MUT_BYTE_SLICE->is_mut = 1;
+    T_MUT_BYTE_SLICE->base = st_prim(P_U8);
+    layout(T_MUT_BYTE_SLICE);
+    T_MUT_STRING = st_new(SK_PRIM);
+    T_MUT_STRING->prim = P_STRING;
+    T_MUT_STRING->is_mut = 1;
+    layout(T_MUT_STRING);
 }
 
 static Sym* sym_new(uint8_t kind, const char* name, uint32_t len) {
@@ -406,9 +418,10 @@ static int same_type(SType* a, SType* b) {
     if (a->kind == SK_ERR || b->kind == SK_ERR) return 1; // poison-tolerant
     if (a->kind != b->kind) return 0;
     switch (a->kind) {
-    case SK_PRIM: return a->prim == b->prim;
+    case SK_PRIM: return a->prim == b->prim && a->is_mut == b->is_mut;
     case SK_PTR: return a->is_mut == b->is_mut && same_type(a->base, b->base);
-    case SK_SLICE: return same_type(a->base, b->base);
+    case SK_SLICE:
+        return a->is_mut == b->is_mut && same_type(a->base, b->base);
     case SK_ARRAY: return a->count == b->count && same_type(a->base, b->base);
     case SK_TUPLE:
         if (a->nfields != b->nfields) return 0;
@@ -433,6 +446,29 @@ static int same_type(SType* a, SType* b) {
     }
 }
 
+/*
+ * Implicit permission shrink (Mutability #9): a mut-qualified view converts
+ * to its plain form at the same level — `mut string` -> `string`,
+ * `mut []T` -> `[]T`, `mut *T` -> `*T` — never the widening direction.
+ */
+static int shrink_ok(SType* f, SType* t) {
+    if (!f || !t || f->kind != t->kind) return 0;
+    if (!f->is_mut || t->is_mut) return 0;
+    switch (f->kind) {
+    case SK_PTR: case SK_SLICE:
+        return same_type(f->base, t->base);
+    case SK_PRIM: // only view prims carry is_mut (string)
+        return f->prim == t->prim;
+    default:
+        return 0;
+    }
+}
+
+/* Equality/identity admission modulo one implicit shrink (Mutability #9). */
+static int same_modulo_shrink(SType* a, SType* b) {
+    return same_type(a, b) || shrink_ok(a, b) || shrink_ok(b, a);
+}
+
 static int same_param_signature(SType* a, Node* ad, SType* b, Node* bd) {
     if (!a || !b || a->kind != SK_FUNC || b->kind != SK_FUNC ||
         a->nparams != b->nparams)
@@ -455,6 +491,7 @@ static int overload_count(Sym* head) {
 static int castable(SType* f, SType* t) {
     if (f->kind == SK_ERR || t->kind == SK_ERR) return 1;
     if (same_type(f, t)) return 1;
+    if (shrink_ok(f, t)) return 1; // mut view casts to its plain form
     if (f == T_UT_INT)
         return is_num(t) || t->kind == SK_ENUM ||
                (t->kind == SK_DISTINCT && castable(f, t->base));
@@ -466,7 +503,8 @@ static int castable(SType* f, SType* t) {
     if (t->kind == SK_ENUM) return is_int(f);
     if (f->kind == SK_PTR && t->kind == SK_PTR) return 1;
     // string(view): the zero-copy []u8 descriptor conversion (Sequences #4-5);
-    // fixed byte arrays convert only through explicit slicing first (#5)
+    // the mut-resulting overload selection lives at the call site, and fixed
+    // byte arrays convert only through explicit slicing first (#5)
     if (t->kind == SK_PRIM && t->prim == P_STRING &&
         f->kind == SK_SLICE && f->base == st_prim(P_U8))
         return 1;
@@ -540,6 +578,24 @@ static void check_slice_bounds(Ck* k, Node* e, Node* base, SType* bt) {
             ck_err(k, e->b, "slice lower bound %lld exceeds source length %lld",
                    (long long)lo, (long long)slen);
     }
+}
+
+/*
+ * Sequences #11: an indexed write follows the slice-write bounds contract —
+ * a compile-time error when constants prove the index out of range, a
+ * checked-build diagnostic otherwise, and release assumes it.
+ */
+static void check_index_write_bounds(Ck* k, Node* e, Node* base, SType* bt) {
+    int64_t ix;
+    if (!e->b || !bound_const(e->b, &ix)) return;
+    if (ix < 0) {
+        ck_err(k, e->b, "write index %lld is negative", (long long)ix);
+        return;
+    }
+    int64_t slen = seq_const_len(k, base, bt);
+    if (slen >= 0 && ix >= slen)
+        ck_err(k, e->b, "write index %lld exceeds source length %lld",
+               (long long)ix, (long long)slen);
 }
 
 // --- forward decls -------------------------------------------------------------------
@@ -724,6 +780,16 @@ static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int narg
 static SType* indexed_named_type(Ck* k, Node* ix);
 
 static SType* build_named_ctx(Ck* k, Node* t, int path) {
+    if (t->flags & F_MUT) { // `mut string` — the only mut-qualified named type
+        if (t->a || t->nkids ||
+            !(t->len == 6 && memcmp(t->str, "string", 6) == 0)) {
+            ck_err(k, t,
+                   "'mut' marks writable views ('mut *T', 'mut []T', 'mut string'), not '%.*s'",
+                   (int)t->len, t->str);
+            return T_ERR;
+        }
+        return T_MUT_STRING;
+    }
     if (t->a) {
         ck_err(k, t, "module-qualified types need the stdlib (not yet linked)");
         return T_ERR;
@@ -836,6 +902,7 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
     }
     case N_SLICE_T: {
         SType* s = st_new(SK_SLICE);
+        s->is_mut = (t->flags & F_MUT) != 0; // mut []T — writable elements
         s->base = build_type_ctx(k, t->a, 0);
         return s;
     }
@@ -1276,6 +1343,7 @@ static int coerce(Ck* k, Node* e, SType* want) {
     }
     SType* t = expr_type(k, e);
     if (same_type(t, want)) return 1;
+    if (shrink_ok(t, want)) return 1; // implicit permission shrink, never widening
     if (want->kind == SK_ERR || t->kind == SK_ERR) return 1;
     if (t == T_UT_NULL) {
         if (accepts_null(want)) { e->ty = want; return 1; }
@@ -1393,7 +1461,36 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
         return T_ERR;
     }
     case N_INDEX: {
-        SType* b = check_lvalue(k, e->a, write);
+        // Slice element writes are content writes: permission comes from the
+        // view's type (`mut []T`), not from the descriptor axis holding it —
+        // an unmarked parameter of type `mut []T` still has writable bytes.
+        // Arrays are direct storage, so their element writes keep the
+        // ordinary descriptor check.
+        SType* peek = check_lvalue(k, e->a, 0);
+        SType* b = peek;
+        if (write && peek->kind == SK_SLICE) {
+            if (!peek->is_mut)
+                ck_err(k, e,
+                       "cannot write through the read-only view %s — establish a writable one: 'mut %.*s[lo..hi]' or declare the view 'mut []T'",
+                       type_name(peek),
+                       e->a->kind == N_IDENT ? (int)e->a->len : 3,
+                       e->a->kind == N_IDENT ? e->a->str : "...");
+            b = peek;
+        } else if (write && peek->kind == SK_PRIM && peek->prim == P_STRING) {
+            // Sequences #11: indexed byte writes exist only through a
+            // 'mut string'. A plain string is a read-only view regardless of
+            // the descriptor axis — permission comes from the view's type,
+            // exactly as for slices.
+            if (!peek->is_mut)
+                ck_err(k, e,
+                       "cannot write through the read-only view string — establish a writable one: 'mut %.*s[lo..hi]' or declare the view 'mut string'",
+                       e->a->kind == N_IDENT ? (int)e->a->len : 3,
+                       e->a->kind == N_IDENT ? e->a->str : "...");
+            b = peek;
+            check_index_write_bounds(k, e, e->a, peek);
+        } else if (write) {
+            b = check_lvalue(k, e->a, 1);
+        }
         SType* ix = expr_type(k, e->b);
         if (ix->kind != SK_ERR && !is_int(ix) && ix != T_UT_INT)
             ck_err(k, e->b, "index must be an integer, not %s", type_name(ix));
@@ -1662,11 +1759,12 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                 while (ua && ua->kind == SK_DISTINCT) ua = ua->base;
                 if (ua && ua->kind == SK_UNION) return st_prim(P_BOOL);
             }
-            if (same_type(a, b) && (is_num(a) || is_bool(a) || a->kind == SK_PTR ||
-                                    a->kind == SK_FUNC || a->kind == SK_ENUM ||
-                                    a->kind == SK_CONTRACT || a->kind == SK_SLICE ||
-                                    a->kind == SK_DISTINCT ||
-                                    (a->kind == SK_PRIM && a->prim == P_STRING)))
+            if (same_modulo_shrink(a, b) &&
+                (is_num(a) || is_bool(a) || a->kind == SK_PTR ||
+                 a->kind == SK_FUNC || a->kind == SK_ENUM ||
+                 a->kind == SK_CONTRACT || a->kind == SK_SLICE ||
+                 a->kind == SK_DISTINCT ||
+                 (a->kind == SK_PRIM && a->prim == P_STRING)))
                 return st_prim(P_BOOL);
             if (equality && a == T_UT_NULL && accepts_null(b)) {
                 e->a->ty = b;
@@ -1863,21 +1961,55 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         return T_ERR;
     }
     case N_SLICE_E: {
-        SType* b = expr_type(k, e->a);
+        int establish = (e->flags & F_MUT) != 0;
+        if (establish && e->a->kind == N_STR) {
+            // Mutability #11: a literal cannot establish a writable view;
+            // its bytes live in static read-only storage.
+            ck_err(k, e,
+                   "a string literal cannot establish 'mut string' — slice a writable string binding");
+            return T_ERR;
+        }
+        SType* b = establish ? check_lvalue(k, e->a, 0) : expr_type(k, e->a);
+        if (establish) e->a->ty = b; // annotate for the definite-init pass
         if (b->kind == SK_ERR) return T_ERR;
         int is_string = b->kind == SK_PRIM && b->prim == P_STRING;
-        if (b->kind != SK_SLICE && b->kind != SK_ARRAY && !is_string) {
+        int is_view = is_string || b->kind == SK_SLICE || b->kind == SK_ARRAY;
+        if (!is_view) {
             ck_err(k, e, "can only slice arrays, slices, and strings, not %s",
                    type_name(b));
             return T_ERR;
+        }
+        if (establish) {
+            // Mutability #11: a writable view exists only where `mut` is
+            // written at establishment, from a writable-lvalue source. A
+            // mut-qualified source view is already writable content; other
+            // sources must be writable storage. Literal-backed strings can
+            // never establish one (the bytes live in read-only storage).
+            int content_writable = (is_string || b->kind == SK_SLICE) && b->is_mut;
+            if (!content_writable) {
+                Node* src = e->a;
+                Sym* vs = src->kind == N_IDENT ? node_sym(src) : NULL;
+                if (vs && vs->is_const)
+                    ck_err(k, e,
+                           "const '%.*s' cannot establish a writable view",
+                           (int)src->len, src->str);
+                else if (vs && vs->is_literal_backed)
+                    ck_err(k, e,
+                           "'%.*s' is literal-backed and cannot establish a writable view",
+                           (int)src->len, src->str);
+                else
+                    (void)check_lvalue(k, e->a, 1);
+            }
         }
         if (e->b) { SType* lo = expr_type(k, e->b);
             if (!is_int(lo) && lo != T_UT_INT) ck_err(k, e->b, "slice bound must be an integer"); }
         if (e->c) { SType* hi = expr_type(k, e->c);
             if (!is_int(hi) && hi != T_UT_INT) ck_err(k, e->c, "slice bound must be an integer"); }
         check_slice_bounds(k, e, e->a, b);
-        if (is_string) return st_prim(P_STRING); // slicing never widens (#1)
+        if (is_string)
+            return b->is_mut || establish ? T_MUT_STRING : st_prim(P_STRING);
         SType* s = st_new(SK_SLICE);
+        s->is_mut = b->kind == SK_ARRAY ? establish : (b->is_mut || establish);
         s->base = b->base;
         return s;
     }
@@ -1996,6 +2128,26 @@ static int call_exact_ft(Node* call, Node* decl, SType* ft, SType** actual) {
     return 1;
 }
 
+/*
+ * Shrink-compatible overload match: identical to the exact match except a
+ * mut-qualified argument may bind to the plain parameter form (Mutability #9).
+ * Used only when no overload matches exactly, so exact matches keep priority
+ * and distinct mut/plain overloads stay unambiguous.
+ */
+static int call_shrink_ft(Node* call, Node* decl, SType* ft, SType** actual) {
+    if (!ft || ft->kind != SK_FUNC || call->nkids != ft->nparams)
+        return 0;
+    for (int i = 0; i < call->nkids; i++) {
+        int am = call->kids[i]->kind == N_MUTARG;
+        int pm = decl && i < decl->nkids &&
+                 (decl->kids[i]->flags & F_MUT) != 0;
+        if (am != pm) return 0;
+        if (exact_arg_type(call->kids[i], actual[i], ft->params[i])) continue;
+        if (!shrink_ok(actual[i], ft->params[i])) return 0;
+    }
+    return 1;
+}
+
 static int call_exact_match(Node* call, Sym* s, SType** actual) {
     return s && !s->is_generic && !s->is_extern &&
            call_exact_ft(call, s->decl, s->type, actual);
@@ -2025,6 +2177,17 @@ static Sym* select_call_overload(Ck* k, Node* call, Sym* head, int final,
             return NULL;
         }
         found = s;
+    }
+    if (!found) { // no exact match: one shrink-compatible overload may win
+        for (Sym* s = head; s; s = s->overload) {
+            if (s->is_generic) continue;
+            if (!call_shrink_ft(call, s->decl, s->type, actual)) continue;
+            if (found) {
+                *ambiguous = 1;
+                return NULL;
+            }
+            found = s;
+        }
     }
     if (!found && final && nongeneric == 1) {
         for (Sym* s = head; s; s = s->overload)
@@ -2237,21 +2400,22 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
     int writes = intrinsic != BI_MEM_COMPARE;
     for (int i = 0; i < call->nkids; i++) {
         Node* arg = call->kids[i];
-        int should_mut = writes && i == 0;
-        if (should_mut && arg->kind != N_MUTARG) {
-            ck_err(k, arg, "mem.%s needs 'mut' on its destination", name);
-            continue;
-        }
-        if (!should_mut && arg->kind == N_MUTARG) {
-            ck_err(k, arg, "'mut' marks mut parameters; mem.%s parameter %d is read-only",
-                   name, i + 1);
+        int is_dst = writes && i == 0;
+        // Content-write destinations carry type-position `mut` (Memory #15):
+        // the argument's type must be `mut []u8`; there is no call-site mark.
+        if (arg->kind == N_MUTARG) {
+            if (is_dst)
+                ck_err(k, arg,
+                       "mem.%s's destination is a writable view — pass 'mut []u8'; no call-site 'mut'",
+                       name);
+            else
+                ck_err(k, arg, "'mut' marks mut parameters; mem.%s parameter %d is read-only",
+                       name, i + 1);
             arg = arg->a;
-        } else if (should_mut) {
-            arg = arg->a;
-            (void)check_lvalue(k, arg, 1);
         }
         SType* want_type = intrinsic == BI_MEM_FILL && i == 1
-                         ? st_prim(P_U8) : T_BYTE_SLICE;
+                         ? st_prim(P_U8)
+                         : (is_dst ? T_MUT_BYTE_SLICE : T_BYTE_SLICE);
         coerce(k, arg, want_type);
     }
     return intrinsic == BI_MEM_COMPARE ? st_prim(P_I64) : T_VOID;
@@ -2418,7 +2582,7 @@ static int printf_expected_type(Ck* k, Node* arg, int kind, SType** out,
         if (!ut_fits(k, arg, want)) return 0;
         arg->ty = t = want;
     }
-    if (same_type(t, want)) {
+    if (same_type(t, want) || shrink_ok(t, want)) { // mut string prints as string
         *out = t;
         return 1;
     }
@@ -2659,6 +2823,13 @@ static SType* check_call(Ck* k, Node* call) {
                 }
                 SType* from = expr_type(k, call->kids[0]);
                 if (want->kind == SK_ERR || from->kind == SK_ERR) return T_ERR;
+                // string(view): the two exact bytes-to-string overloads
+                // (Sequences #4) — the result follows the argument's stated
+                // type, never lvalue analysis, so a mut []u8 yields mut string.
+                if (want->kind == SK_PRIM && want->prim == P_STRING &&
+                    from->kind == SK_SLICE && from->base == st_prim(P_U8) &&
+                    from->is_mut)
+                    want = T_MUT_STRING;
                 if (!castable(from, want)) {
                     ck_err(k, call, "cannot cast %s to %s", type_name(from), type_name(want));
                     return T_ERR;
@@ -2777,6 +2948,41 @@ static SType* check_call(Ck* k, Node* call) {
         pd->next = k->pending;
         k->pending = pd;
         return T_ERR; // a matching overload may be declared later
+    }
+    // []u8(text): the exact reverse view conversion (Sequences #6). It
+    // requires 'mut string' — proven writable bytes — so it launders nothing,
+    // and the result carries that permission as 'mut []u8'. Plain string ->
+    // []u8 stays absent; descriptor-preserving and allocation-free either way.
+    if (callee->kind == N_SLICE_T) {
+        SType* want = build_type(k, callee);
+        if (want->kind == SK_ERR) return T_ERR;
+        if (want->kind != SK_SLICE || want->is_mut ||
+            want->base != st_prim(P_U8)) {
+            ck_err(k, call,
+                   "no view conversion to %s — the only reverse conversion is '[]u8(text)' from 'mut string'",
+                   type_name(want));
+            return T_ERR;
+        }
+        if (call->nkids != 1) {
+            ck_err(k, call, "a view conversion takes exactly one argument");
+            return T_ERR;
+        }
+        Node* arg = call->kids[0];
+        if (arg->kind == N_MUTARG) {
+            ck_err(k, arg,
+                   "'mut' marks mut parameters; a view conversion takes no call-site 'mut'");
+            return T_ERR;
+        }
+        SType* from = expr_type(k, arg);
+        if (from->kind == SK_ERR) return T_ERR;
+        if (from->kind != SK_PRIM || from->prim != P_STRING || !from->is_mut) {
+            ck_err(k, call,
+                   "[]u8(text) requires 'mut string', not %s — the argument must state writable bytes",
+                   type_name(from));
+            return T_ERR;
+        }
+        callee->ty = want; // emitter: slice-type cast marker
+        return T_MUT_BYTE_SLICE;
     }
     // generic instantiation call: max[int](3, 9)
     if (callee->kind == N_INDEX && callee->a->kind == N_IDENT) {
@@ -2986,7 +3192,9 @@ static SType* check_call(Ck* k, Node* call) {
                 SType* at = overload_arg_type(k, arg);
                 int am = arg->kind == N_MUTARG;
                 int pm = (f->decl->kids[i]->flags & F_MUT) != 0;
-                if (am != pm || !exact_arg_type(arg, at, ft->params[i])) exact = 0;
+                if (am != pm) exact = 0;
+                else if (!exact_arg_type(arg, at, ft->params[i]) &&
+                         !shrink_ok(at, ft->params[i])) exact = 0;
             }
             if (!exact && overload_count(head) > 1) continue;
             if (found) {
@@ -3027,7 +3235,9 @@ static SType* check_call(Ck* k, Node* call) {
                         SType* at = overload_arg_type(k, arg);
                         int am = arg->kind == N_MUTARG;
                         int pm = (f->decl->kids[i]->flags & F_MUT) != 0;
-                        if (am != pm || !exact_arg_type(arg, at, ft->params[i]))
+                        if (am != pm) exact = 0;
+                        else if (!exact_arg_type(arg, at, ft->params[i]) &&
+                                 !shrink_ok(at, ft->params[i]))
                             exact = 0;
                     }
                     if (!exact && overload_count(ehead) > 1) continue;
@@ -3235,8 +3445,28 @@ static void check_stmt(Ck* k, Node* s) {
             else
                 coerce(k, init, wants[0]);
             Sym* v = lookup_val(k, s->kids[0]->str, s->kids[0]->len);
-            if (v && wants[0]->kind == SK_CONTRACT && (init->flags & F_CONST))
-                v->is_const_backed = 1;
+            if (v) {
+                if (wants[0]->kind == SK_CONTRACT && (init->flags & F_CONST))
+                    v->is_const_backed = 1;
+                // Literal provenance for string bindings: a literal, another
+                // literal-backed binding, or a slice of one. The writable-view
+                // establishment reads this flag (Mutability #11).
+                if (wants[0]->kind == SK_PRIM && wants[0]->prim == P_STRING &&
+                    !wants[0]->is_mut) {
+                    if (init->kind == N_STR) v->is_literal_backed = 1;
+                    else if (init->kind == N_IDENT) {
+                        Sym* src = node_sym(init);
+                        if (src && src->is_literal_backed)
+                            v->is_literal_backed = 1;
+                    } else if (init->kind == N_SLICE_E && init->a) {
+                        if (init->a->kind == N_STR ||
+                            (init->a->kind == N_IDENT &&
+                             node_sym(init->a) &&
+                             node_sym(init->a)->is_literal_backed))
+                            v->is_literal_backed = 1;
+                    }
+                }
+            }
             return;
         }
         SType* rt = expr_type(k, s->b);
@@ -3398,18 +3628,22 @@ static void check_stmt(Ck* k, Node* s) {
         }
         if ((s->flags & F_MUT) && it->kind != SK_ERR) {
             // `in mut iterable` applies the call-site `mut` discipline to
-            // iteration: writable lvalue storage holding array or slice
-            // elements. Strings fail the same rule (no syntax writes through
-            // a string) and keep the general diagnostic until the
-            // mutable-string-bytes decision lands; ranges have no elements.
+            // iteration: binders alias writable element storage. A mut-qualified
+            // slice or string carries content writability in its type, so its
+            // storage needs no separate check; strings participate with no
+            // special-casing (Iterations #16). Ranges have no elements.
             if (s->b->kind == N_RANGE) {
                 ck_err(k, s->b,
-                       "mut iteration requires writable array or slice storage, not a range");
+                       "mut iteration requires writable array, slice, or string storage, not a range");
             } else {
-                SType* wt = check_lvalue(k, s->b, 1);
-                if (wt->kind != SK_ERR && wt->kind != SK_SLICE && wt->kind != SK_ARRAY)
+                int content_writable = (it->kind == SK_SLICE ||
+                                        (it->kind == SK_PRIM && it->prim == P_STRING)) &&
+                                       it->is_mut;
+                SType* wt = content_writable ? it : check_lvalue(k, s->b, 1);
+                if (!content_writable && wt->kind != SK_ERR &&
+                    wt->kind != SK_SLICE && wt->kind != SK_ARRAY)
                     ck_err(k, s->b,
-                           "mut iteration requires writable array or slice storage, not %s",
+                           "mut iteration requires writable array, slice, or string storage, not %s",
                            type_name(wt));
             }
         }
@@ -4732,6 +4966,7 @@ int sema_check(Node* file, Diag* d) {
             PRIMS[i]->prim = (uint8_t)i;
             layout(PRIMS[i]);
         }
+        ensure_memory_types(); // mut-view singletons exist from the first build
     }
     install_predeclared_error_types(&file_scope);
     Ck k = {0};
@@ -4821,6 +5056,9 @@ int sema_check(Node* file, Diag* d) {
                     coerce(&k, n->b, t);
                 if (s && t->kind == SK_CONTRACT && (n->b->flags & F_CONST))
                     s->is_const_backed = 1;
+                if (s && t->kind == SK_PRIM && t->prim == P_STRING &&
+                    !t->is_mut && n->b->kind == N_STR)
+                    s->is_literal_backed = 1;
                 if (t == T_ERROR_DESC)
                     check_error_descriptor_global(&k, n);
             } else if (n->flags & F_CONST) {

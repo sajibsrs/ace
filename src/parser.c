@@ -92,6 +92,13 @@ static TokKind kth(P* p, int k) {
 
 static int at(P* p, TokKind k) { return tk(p)->kind == k; }
 
+// A conversion callee begins `[]` + a type: the tokens that may start the
+// element type after the brackets. A newline keeps the empty array literal.
+static int slice_type_start(TokKind k) {
+    return k == T_IDENT || k == T_MUT || k == T_STAR || k == T_LBRACK ||
+           k == T_LPAREN || k == T_CONST;
+}
+
 static int ident_at(P* p, const char* s) {
     return at(p, T_IDENT) && tk(p)->len == strlen(s) &&
            memcmp(tk(p)->str, s, tk(p)->len) == 0;
@@ -215,13 +222,39 @@ static Node* type_atom(P* p) {
         t->a = parse_type(p);
         return t;
     }
-    if (at(p, T_MUT)) { // `mut *T` — the only type-level mut (spec Mutability #7)
-        t = nd(p, N_PTR);
-        t->flags |= F_MUT;
+    if (at(p, T_MUT)) { // type-position mut marks writable content (Mutability #9)
         p->i++;
-        expect(p, T_STAR, "'*' after 'mut'");
-        t->a = type_atom(p);
-        return t;
+        if (at(p, T_STAR)) { // mut *T — writable pointee
+            t = nd(p, N_PTR);
+            t->flags |= F_MUT;
+            p->i++;
+            t->a = type_atom(p);
+            return t;
+        }
+        if (at(p, T_LBRACK)) { // mut []T — writable elements
+            if (kth(p, 1) != T_RBRACK) {
+                perr(p,
+                     "'mut' marks writable views ('mut *T', 'mut []T', 'mut string'); a fixed array type takes no 'mut'");
+                return NULL;
+            }
+            t = nd(p, N_SLICE_T);
+            t->flags |= F_MUT;
+            p->i += 2;
+            t->a = type_atom(p);
+            return t;
+        }
+        if (at(p, T_IDENT) && tk(p)->len == 6 &&
+            memcmp(tk(p)->str, "string", 6) == 0 && kth(p, 1) != T_DOT) {
+            Token* s = tk(p); // mut string — writable bytes
+            t = nd_tok(p, N_NAMED, s);
+            t->str = s->str;
+            t->len = s->len;
+            t->flags |= F_MUT;
+            p->i++;
+            return t;
+        }
+        perr(p, "'mut' in a type marks a writable view: 'mut *T', 'mut []T', or 'mut string'");
+        return NULL;
     }
     if (at(p, T_STAR)) {
         t = nd(p, N_PTR);
@@ -483,6 +516,27 @@ static Node* expr_unary(P* p, int ctx) {
         u->a = expr_postfix(p, ctx);
         return u;
     }
+    if (at(p, T_MUT)) {
+        // Type-position mut in expression-position type arguments:
+        // Box[mut string], g[mut []u8]. No establishment form begins with
+        // '*', '[', or the prim name followed by something other than '['.
+        int is_mut_string = kth(p, 1) == T_IDENT &&
+            tk(p)[1].len == 6 && memcmp(tk(p)[1].str, "string", 6) == 0;
+        if (kth(p, 1) == T_STAR ||
+            (kth(p, 1) == T_LBRACK && kth(p, 2) == T_RBRACK) ||
+            (is_mut_string && kth(p, 2) != T_LBRACK)) {
+            return parse_type(p);
+        }
+        // mut seq[lo..hi] — writable-view establishment
+        p->i++;
+        Node* base = expr_postfix(p, ctx);
+        if (base->kind == N_SLICE_E) {
+            base->flags |= F_MUT;
+            return base;
+        }
+        perr(p, "'mut' in an expression establishes a writable view: 'mut &value' or 'mut seq[lo..hi]'");
+        return base;
+    }
     if (at(p, T_AMP)) { // address-of; lvalue-ness checked in semantic pass
         Node* u = nd(p, N_UNARY);
         u->op = (uint8_t)T_AMP;
@@ -546,7 +600,15 @@ static Node* expr_postfix(P* p, int ctx) {
                         Node* ma = nd(p, N_MUTARG);
                         p->i++;
                         ma->a = expr(p, 0);
-                        nv_push(p, &args, ma);
+                        if (ma->a->kind == N_SLICE_E) {
+                            // `mut seq[lo..hi]` establishes the writable view;
+                            // it is the argument value, not a mut-argument mark
+                            Node* sl = ma->a;
+                            sl->flags |= F_MUT;
+                            nv_push(p, &args, sl);
+                        } else {
+                            nv_push(p, &args, ma);
+                        }
                     } else {
                         nv_push(p, &args, expr(p, 0));
                     }
@@ -678,8 +740,15 @@ static Node* expr_primary(P* p, int ctx) {
         set_kids(tu, &w);
         return tu;
     }
-    case T_LBRACK: { // array literal
+    case T_LBRACK: { // array literal — or an inline slice type called as a
+        // view conversion ([]u8(text)), which only the callee position admits
         p->i++;
+        if (at(p, T_RBRACK) && slice_type_start(kth(p, 1))) {
+            Node* ty = nd(p, N_SLICE_T);
+            p->i++;
+            ty->a = parse_type(p);
+            return ty;
+        }
         Node* al = nd(p, N_ARRAYLIT);
         NV w = {0};
         if (!at(p, T_RBRACK)) {
@@ -837,6 +906,9 @@ static Node* parse_for_head(P* p, Node* n) {
         expect(p, T_IN, "'in'");
         if (ate(p, T_MUT)) n->flags |= F_MUT; // `in mut iterable`: aliasing
         Node* it = expr(p, CTX_NOSLIT);
+        if ((n->flags & F_MUT) && it->kind == N_SLICE_E &&
+            !(it->flags & F_MUT))
+            it->flags |= F_MUT; // `in mut xs[lo..hi]` — establish, then alias
         if (at(p, T_DOTDOT)) {
             p->i++;
             Node* r = nd(p, N_RANGE);

@@ -74,8 +74,8 @@ check_failures(): int {
     }
 
     bytes: [1]u8 = [0]
-    view: []u8 = bytes[0..1]
-    count: int, rerr: Error = net.receive(invalid, mut view)
+    view: mut []u8 = mut bytes[0..1]
+    count: int, rerr: Error = net.receive(invalid, view)
 
     if count != 0 || !check_error(rerr, typeid(net.ReceiveErr)) {
         return 9
@@ -104,9 +104,9 @@ check_resolution(): int {
     storage: [2]net.Address4
     storage[0] = loopback(u16(1))
     storage[1] = loopback(u16(54321))
-    first: []net.Address4 = storage[0..1]
+    first: mut []net.Address4 = mut storage[0..1]
 
-    count: usize, err: Error = net.resolve4("localhost", u16(8080), mut first)
+    count: usize, err: Error = net.resolve4("localhost", u16(8080), first)
 
     if err != null || count != 1 {
         return 1
@@ -122,14 +122,14 @@ check_resolution(): int {
         return 3
     }
 
-    empty: []net.Address4 = null
-    count, err = net.resolve4("localhost", u16(80), mut empty)
+    empty: mut []net.Address4 = null
+    count, err = net.resolve4("localhost", u16(80), empty)
 
     if count != 0 || !check_error(err, typeid(net.ResolveErr)) {
         return 4
     }
 
-    count, err = net.resolve4("local\x00host", u16(80), mut first)
+    count, err = net.resolve4("local\x00host", u16(80), first)
 
     if count != 0 || !check_error(err, typeid(net.ResolveErr)) {
         return 5
@@ -156,8 +156,8 @@ child(port: u16): int {
         return 3
     }
     storage: [4]u8 = [0 : 4]
-    reply: []u8 = storage[0..4]
-    count, ioerr = net.receive(sock, mut reply)
+    reply: mut []u8 = mut storage[0..4]
+    count, ioerr = net.receive(sock, reply)
 
     if ioerr != null || count != 4 || storage != "pong" {
         sys.close(sock)
@@ -261,8 +261,8 @@ main(): int {
     }
 
     storage: [4]u8 = [0 : 4]
-    request: []u8 = storage[0..4]
-    count: int, ioerr: Error = net.receive(peer, mut request)
+    request: mut []u8 = mut storage[0..4]
+    count: int, ioerr: Error = net.receive(peer, request)
 
     if ioerr != null || count != 4 || storage != "ping" {
         sys.close(peer)

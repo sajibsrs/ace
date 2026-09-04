@@ -180,19 +180,22 @@ part of this surface.
 
 ## Byte operations
 
-The same module exports allocation-free operations over byte-slice views:
+The same module exports allocation-free operations over byte-slice views.
+Write destinations carry type-position `mut` — their argument must be a
+`mut []u8` writable view, with no call-site mark:
 
 ```ace
-mem.copy(noalias mut dst: []u8, src: []u8)
-mem.move(mut dst: []u8, src: []u8)
-mem.fill(mut data: []u8, value: u8)
-mem.zero(mut data: []u8)
+mem.copy(noalias dst: mut []u8, src: []u8)
+mem.move(dst: mut []u8, src: []u8)
+mem.fill(data: mut []u8, value: u8)
+mem.zero(data: mut []u8)
 mem.compare(a: []u8, b: []u8): int
 ```
 
 `copy` and `move` require equal slice lengths and copy exactly the complete
 source view. They do not resize or otherwise change either slice descriptor.
-Slice larger storage to the exact destination range before calling:
+Slice larger storage to the exact destination range before calling, and
+establish the writable view where `mut` is written:
 
 ```ace
 import mem
@@ -200,8 +203,8 @@ import mem
 source_array: [3]u8 = [10, 20, 30]
 target_array: [8]u8 = [0, 0, 0, 0, 0, 0, 0, 0]
 source: []u8 = source_array[0..3]
-target: []u8 = target_array[0..3]
-mem.copy(mut target, source)
+target: mut []u8 = mut target_array[0..3]
+mem.copy(target, source)
 ```
 
 `copy` requires the complete source and destination ranges not to overlap.

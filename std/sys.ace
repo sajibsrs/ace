@@ -78,7 +78,7 @@ pub errno(): i32 {
     return ~slot
 }
 
-pub read(fd: Fd, mut buf: []u8): (int, Error) {
+pub read(fd: Fd, buf: mut []u8): (int, Error) {
     if buf.len == 0 {
         return 0, null
     }

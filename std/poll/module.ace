@@ -25,7 +25,7 @@ pub unwatch(q: Queue, fd: sys.Fd): Error {
     return backend.unwatch(q, fd)
 }
 
-pub wait(q: Queue, mut events: []Event, timeout_ns: u64): (usize, Error) {
-    count: usize, err: Error = backend.wait(q, mut events, timeout_ns)
+pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
+    count: usize, err: Error = backend.wait(q, events, timeout_ns)
     return count, err
 }

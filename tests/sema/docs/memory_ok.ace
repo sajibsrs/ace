@@ -29,18 +29,18 @@ main(): int {
     source_array: [3]u8 = [10, 20, 30]
     target_array: [4]u8 = [0, 0, 0, 99]
     source: []u8 = source_array[0..3]
-    target: []u8 = target_array[0..3]
-    mem.copy(mut target, source)
+    target: mut []u8 = mut target_array[0..3]
+    mem.copy(target, source)
 
     if mem.compare(target, source) != 0 {
         return 4
     }
-    mem.fill(mut target, 7)
-    mem.zero(mut target)
+    mem.fill(target, 7)
+    mem.zero(target)
 
     overlap_src: []u8 = target_array[0..2]
-    overlap_dst: []u8 = target_array[1..3]
-    mem.move(mut overlap_dst, overlap_src)
+    overlap_dst: mut []u8 = mut target_array[1..3]
+    mem.move(overlap_dst, overlap_src)
 
     numbers: []usize = mem.alloc[usize](4)
 
@@ -49,7 +49,8 @@ main(): int {
             mem.release[usize](mut numbers)
             return 5
         }
-        numbers[0] = 42
+        writable_numbers: mut []usize = mut numbers[0..4]
+        writable_numbers[0] = 42
 
         if numbers[0] != 42 {
             mem.release[usize](mut numbers)

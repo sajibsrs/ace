@@ -235,20 +235,23 @@ for index: usize, item: i32 in mut xs {
 }
 ```
 
-The iterable must be a writable lvalue naming array or slice storage — a
-local, field path, mutable global, or `mut` parameter. By-value parameters,
-`const` globals, array literals, call results, slicing results, and ranges
-are rejected. The alias reads the loop's entry-captured pointer and length,
-so binder writes never disturb the cursor: reslicing the iterable variable
-mid-loop changes neither the running loop nor where the alias points.
+The iterable must establish a writable view. A writable lvalue naming array or
+slice storage — a local, field path, mutable global, or `mut` parameter —
+establishes directly; a `mut []T` or `mut string` view value establishes
+through its type, with no storage check; and `in mut xs[lo..hi]` establishes a
+writable window of the storage. By-value parameters, `const` globals, array
+literals, call results, plain slicing results, and ranges are rejected. The
+alias reads the loop's entry-captured pointer and length, so binder writes
+never disturb the cursor: reslicing the iterable variable mid-loop changes
+neither the running loop nor where the alias points.
+
+Strings participate with no special case: `for c: u8 in mut text` requires
+`text` to be a `mut string` (or a writable slice of one), and the alias writes
+the string's bytes directly; a plain `string` is rejected by the same
+writable-storage rule as any read-only view.
 
 A plain (non-`mut`) loop keeps the per-iteration copy; `in mut` is a strict
 superset, not a replacement.
-
-Current limitation: strings are rejected under the same writable-storage
-rule — no syntax writes through a string — so `for c: u8 in mut text` is a
-compile error until mutable string bytes land. There is no string-specific
-diagnostic or special case.
 
 ## Strings
 

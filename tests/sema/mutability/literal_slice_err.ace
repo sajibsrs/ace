@@ -1,0 +1,7 @@
+/* err: a string literal itself cannot establish mut string — slicing a
+ * literal never widens (Mutability #11, Sequences #1). */
+
+main(): int {
+    v: mut string = mut "literal"[0..]
+    return 0
+}

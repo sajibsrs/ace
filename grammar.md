@@ -146,10 +146,11 @@ shift_expr    := add_expr (("<<" | ">>") add_expr)*
 add_expr      := mul_expr (("+" | "-") mul_expr)*
 mul_expr      := unary (("*" | "/" | "%") unary)*
 
-unary         := ("!" | "~" | "-") unary | "&" lvalue | "mut" "&" lvalue | postfix
+unary         := ("!" | "~" | "-") unary | "&" lvalue | "mut" "&" lvalue | "mut" postfix | postfix
 //  "!"  logical/bitwise NOT (dual role)     "~"  dereference
 //  "&"  read-only address-of                "mut &" writable address-of
-//  both address forms require lvalues        unary "-" negation
+//  "mut p" writable-view establishment (slicing operands only — Note 25)
+//  both address forms and establishment require writable lvalues   unary "-" negation
 
 postfix       := primary postfix_part*
 postfix_part  := "(" [arg_list] ")"                       // call; ["mut"] expr args
@@ -175,17 +176,18 @@ expr_list     := expr ("," expr)*                         // tuple expression / 
 ```ebnf
 type          := ["const"] type_expr                      // limit: const int = 1024
 type_expr     := ptr_type | slice_type | array_type | func_type
-               | tuple_type | named_type | prim_type
+               | tuple_type | string_type | named_type | prim_type
 
 ptr_type      := ["mut"] "*" type_expr                    // *Node, mut *Node
-slice_type    := "[]" type_expr                           // []u8
+slice_type    := ["mut"] "[]" type_expr                   // []u8, mut []u8
+string_type   := ["mut"] "string"                         // string, mut string
 array_type    := "[" int_lit "]" type_expr                // [16][8]u8
 tuple_type    := "(" type ("," type)+ ")"
 func_type     := "(" [type_list] ")" ":" ret_types         // (int, int): int
 named_type    := ident ("." ident)* ["[" type_list "]"]   // Vec[int], math.Vec
 prim_type     := "bool" | "i8" | "i16" | "i32" | "i64"
                | "u8" | "u16" | "u32" | "u64"
-               | "f32" | "f64" | "string" | "char" | "usize" | "typeid"
+               | "f32" | "f64" | "char" | "usize" | "typeid"
 
 type_list     := type ("," type)*
 ret_types     := type | "(" type ("," type)+ ")"
@@ -216,9 +218,11 @@ ret_types     := type | "(" type ("," type)+ ")"
 16. **Labeled continue restarts blocks, and advances loops.** Plain `continue` targets the nearest `for` of any head form and starts the next iteration (running the three-clause post clause first). `continue name` on a labeled loop means the next iteration of that loop; on a labeled block it restarts the block from its beginning. `break name` branches after its target in both cases. Falling through a block still exits normally. These enclosing-only transfers provide structured repetition without `goto`.
 17. **Tagged-union cases are patterns, not calls.** `Event.key(code: u32)` in a union switch binds an explicitly typed copy of the active payload; the same shape in expression position constructs a value. The scrutinee's union type selects pattern parsing/semantic checking, every variant must appear once unless `else` exists, and inactive payload access has no expression form.
 18. **Array repetition remains explicitly typed by context.** `[value : count]` is an array literal only; `count` is a nonnegative integer literal equal to the expected `[N]T` length. `value` is checked as `T`, evaluated once, then copied to all `N` elements. The form neither infers a declaration type nor allocates.
-19. **Byte sequences compare pairwise.** `==` and `!=` admit every combination of `[N]u8`, `[]u8`, and `string` in either operand order, including `[N]u8` against `[M]u8`. They compare complete lengths and exact stored bytes without conversion, allocation, decoding, or normalization. Arrays and slices of another element type do not receive this mixed-type rule.
+19. **Byte sequences compare pairwise.** `==` and `!=` admit every combination of `[N]u8`, `[]u8`, and `string` — including their `mut`-qualified forms (Mutability #9 in `spec.md`) — in either operand order, including `[N]u8` against `[M]u8`. They compare complete lengths and exact stored bytes without conversion, allocation, decoding, or normalization. Arrays and slices of another element type do not receive this mixed-type rule.
 20. **Embedding is explicit and one-level.** `embed name: Base` is an ordinary named struct field whose owned methods may be promoted to the containing struct. Direct outer methods win, multiple exact promoted matches are ambiguous, and fields are not promoted. Contract conformance may flow from a directly embedded base to its embedder, never in reverse.
 21. **`char` is byte-sized.** It is a predeclared transparent alias of `u8`, not a decoded Unicode scalar. Character literals contain exactly one byte; strings carry UTF-8 bytes and retain byte indexing and iteration. A future `rune` and explicit UTF-8 conversion are outside this grammar.
 22. **`sizeof` accepts the full type grammar.** Its parenthesized operand may be an inline slice or array type (`sizeof([]u8)`, `sizeof([3]char)`) as well as a named or primitive type. The result is compile-time-only.
 23. **Function brackets are interpreted, not parsed.** Brackets after a function name hold bare identifiers only (`bracket_args`), so parsing never decides their meaning. Brackets whose identifiers resolve to declared types are specialization arguments and must follow a declared generic of that name; identifiers resolving to no declared type start a fresh type-parameter list, so one name may declare several generic overloads (as `str.parse[T]` does) before any specialization. A specialization's parameter and return types must equal the substituted generic signature with all type parameters supplied positionally, and it must appear after its generic — type-naming brackets with no preceding generic are an error, never a silent new parameter list. Compound type arguments (`[]u8`, `*Node`, `Pair[int, string]`) are an additive relaxation; v1 specializes over bare named types only. `specialized` replaces the body of a template that admits no call without an exact specialization; a specialization always carries a real body.
 24. **`defer` is statement-only and call-only.** The `mut` after `defer` marks the call's receiver (`defer mut c.scale(2.0)`) exactly like the ordinary receiver-marked call statement; the parser rejects `mut` when the following expression is not a call. That the operand must be a call, and that the statement may appear only as a direct statement of the function's top-level body block, are semantic rules — the grammar accepts the expression and sema diagnoses it (Deferred calls in `spec.md`).
+25. **Writable views are established where `mut` is written.** Type-position `mut` marks writable content at one view level — `mut *T`, `mut []T`, `mut string` (Mutability #9–11 in `spec.md`). The bare prefix form `mut postfix` is legal only when the postfix expression is a slice expression `x[lo..hi]` over a writable-lvalue array, slice, or string, producing `mut []T` or `mut string`; every other operand is a semantic rejection, so the grammar accepts and sema diagnoses, as with `defer`. In argument position, a `mut`-marked slicing expression is exactly this establishment form (`mem.copy(mut arr[0..N], view)` against `dst: mut []u8`), while a `mut` prefix on any other argument expression remains the call-site mark. Slicing an already-writable view keeps the permission in its type with no new marker. The prefix parses with one token of lookahead after `mut`: `&` starts the writable address-of form, anything else starts establishment. In expression-position type arguments (`Box[mut string]`, `g[mut []u8]`), `mut` followed by `*`, `[]`, or `string` starts a type, not establishment.
+26. **`[]T` is a conversion callee only when called.** The reverse view conversion is spelled `[]u8(text)` (Sequences #6 in `spec.md`), so an inline slice type may open a call: `[]` immediately followed by `]` and a type-starting token parses the brackets as a slice type, and the following `(` builds an ordinary call node with the type as callee. Without the call parenthesis the form is not an expression, and an empty array literal is unaffected (the token after `]` must start a type on the same line). Sema owns the overload: only `[]u8(text: mut string): mut []u8` exists, so other slice types through the callee are semantic rejections, mirroring the primitive-name callee `string(view)`.

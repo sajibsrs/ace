@@ -1,0 +1,35 @@
+/* Strings participate in `in mut` with no special-casing (Iterations #16):
+ * the value binder aliases the bytes, writes land in storage, `&item` reads
+ * through the alias, and the index binder stays a plain usize copy. */
+
+fill(text: mut string, value: u8) {
+    for b: u8 in mut text {
+        b = value
+    }
+}
+
+main(): int {
+    storage: [6]u8
+    text: mut string = string(mut storage[0..])
+    fill(text, 7)
+    total: usize = 0
+    for i: usize, b: u8 in mut text {
+        total += i
+        if i == 2 {
+            b = 9 // the alias writes through to the string's bytes
+        }
+        if &b != null && text[4] == 7 {
+            continue // address-of the alias is valid; nullness is not implied
+        }
+    }
+    if text[2] != 9 || total != 15 {
+        return 1
+    }
+    for c: u8 in mut text[3..] { // re-sliced views stay writable
+        c = 1
+    }
+    if text[3] != 1 {
+        return 2
+    }
+    return 0
+}

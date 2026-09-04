@@ -31,8 +31,8 @@ check(fd: sys.Fd): int {
         hangup: false,
     }
     storage: [1]Event = [zero]
-    events: []Event = storage[0..1]
-    count: usize, wait_err: Error = wait(q, mut events, wait_forever)
+    events: mut []Event = mut storage[0..1]
+    count: usize, wait_err: Error = wait(q, events, wait_forever)
 
     if count == 0 && wait_err != null && wait_err.domain != typeid(WaitErr) {
         return 3

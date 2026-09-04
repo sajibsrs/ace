@@ -24,7 +24,8 @@ main(): int {
     if points == null {
         return 2
     }
-    points[1] = Point { x: 3, y: 4 }
+    writable_points: mut []Point = mut points[0..2]
+    writable_points[1] = Point { x: 3, y: 4 }
     grown: []Point = mem.realloc[Point](points, 4)
 
     if grown == null || grown.len != 4 {
@@ -41,7 +42,8 @@ main(): int {
     if pairs == null {
         return 5
     }
-    pairs[0] = Pair[i32] { first: 1, second: 2 }
+    writable_pairs: mut []Pair[i32] = mut pairs[0..2]
+    writable_pairs[0] = Pair[i32] { first: 1, second: 2 }
     mem.release[Pair[i32]](mut pairs)
 
     words: []string = mem.alloc[string](2)
@@ -49,7 +51,8 @@ main(): int {
     if words == null {
         return 6
     }
-    words[0] = "typed"
+    writable_words: mut []string = mut words[0..2]
+    writable_words[0] = "typed"
     mem.release[string](mut words)
 
     copied: []usize = clone[usize](numbers)

@@ -37,6 +37,16 @@ retarget(mut point: *Point, replacement: *Point) {
     point = replacement
 }
 
+fill(data: mut []u8, value: u8) {
+    for i: usize in 0 .. data.len {
+        data[i] = value
+    }
+}
+
+keep(text: string): string {
+    return text
+}
+
 Value: contract {
     get(): int
 }
@@ -123,11 +133,19 @@ main(): int {
     ok_bytes: [3]u8 = [u8('o'), u8('k'), u8('!')]
     view: string = string(ok_bytes[0..3])
     tail: string = view[1..]
+    buffer: [4]u8 = [0, 0, 0, 0]
+    fill(mut buffer[0..4], 7)
+    w: mut []u8 = mut buffer[0..4]
+    w[0] = 42
+    plain: []u8 = w
+    text: string = keep("ace")
+    writable_view: mut string = mut text[0..]
 
     if sizeof([]char) != 16 || sizeof([3]char) != 3 {
         return 90
     }
     return count + int(raw) + read_x(pointer) + middle[0] + middle[1] +
         operation(1, 2) + int(state) + box.value + value.get() +
-        partial.x + partial.y + int(view.len) + int(tail.len)
+        partial.x + partial.y + int(view.len) + int(tail.len) +
+        int(plain[1]) + int(writable_view.len) - 3
 }

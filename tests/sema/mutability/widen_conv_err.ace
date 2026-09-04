@@ -1,0 +1,9 @@
+/* err: a conversion result widens nothing (Mutability #9) — string() over a
+ * plain []u8 yields a plain string, which does not assign to mut string. */
+
+main(): int {
+    storage: [4]u8
+    view: []u8 = storage[0..4]
+    text: mut string = string(view)
+    return 0
+}

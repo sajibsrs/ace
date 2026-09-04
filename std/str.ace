@@ -82,7 +82,7 @@ pub compare(a: string, b: string): int {
 
 /* Copies the complete text into destination[0..text.len]; a shorter
  * destination is unchanged and fails, and the unused suffix is untouched. */
-pub copy(text: string, noalias mut destination: []u8): bool {
+pub copy(text: string, noalias destination: mut []u8): bool {
     if text.len > destination.len {
         return false
     }
@@ -98,7 +98,7 @@ pub copy(text: string, noalias mut destination: []u8): bool {
  * part, and each written part is a zero-copy view into text. The result is
  * the number written and whether the complete result fit; unwritten slots
  * are unchanged. An empty separator fails without writing. */
-pub split(text: string, separator: string, mut parts: []string): (usize, bool) {
+pub split(text: string, separator: string, parts: mut []string): (usize, bool) {
     if separator.len == 0 {
         return 0, false
     }
@@ -130,9 +130,9 @@ pub split(text: string, separator: string, mut parts: []string): (usize, bool) {
     return written, complete
 }
 
-pub split(text: string, separator: char, mut parts: []string): (usize, bool) {
+pub split(text: string, separator: char, parts: mut []string): (usize, bool) {
     unit: [1]char = [separator]
-    count: usize, complete: bool = split(text, string(unit[0..1]), mut parts)
+    count: usize, complete: bool = split(text, string(unit[0..1]), parts)
     return count, complete
 }
 
@@ -220,7 +220,7 @@ pub parse[T](text: string, radix: u8): (T, bool) specialized
  * use lowercase digits with no base prefix and only int may emit a minus.
  * The no-radix float representations are exactly the matching fmt.print
  * overloads', including the nan/inf/-inf and signed-zero spellings. */
-pub stringify(mut destination: []u8, value: int): (usize, bool) {
+pub stringify(destination: mut []u8, value: int): (usize, bool) {
     digits: [20]u8
     at: int = 20
     remaining: int = value
@@ -246,11 +246,11 @@ pub stringify(mut destination: []u8, value: int): (usize, bool) {
         at -= 1
         digits[at] = u8(45)
     }
-    n: usize, ok: bool = store_bytes(mut destination, digits[at..20])
+    n: usize, ok: bool = store_bytes(destination, mut digits[at..20])
     return n, ok
 }
 
-pub stringify(mut destination: []u8, value: uint): (usize, bool) {
+pub stringify(destination: mut []u8, value: uint): (usize, bool) {
     digits: [20]u8
     at: int = 20
     remaining: uint = value
@@ -264,11 +264,11 @@ pub stringify(mut destination: []u8, value: uint): (usize, bool) {
             break
         }
     }
-    n: usize, ok: bool = store_bytes(mut destination, digits[at..20])
+    n: usize, ok: bool = store_bytes(destination, mut digits[at..20])
     return n, ok
 }
 
-pub stringify(mut destination: []u8, value: usize): (usize, bool) {
+pub stringify(destination: mut []u8, value: usize): (usize, bool) {
     digits: [20]u8
     at: int = 20
     remaining: usize = value
@@ -282,25 +282,25 @@ pub stringify(mut destination: []u8, value: usize): (usize, bool) {
             break
         }
     }
-    n: usize, ok: bool = store_bytes(mut destination, digits[at..20])
+    n: usize, ok: bool = store_bytes(destination, mut digits[at..20])
     return n, ok
 }
 
-pub stringify(mut destination: []u8, value: f64): (usize, bool) {
+pub stringify(destination: mut []u8, value: f64): (usize, bool) {
     one: f64 = 1.0
     zero: f64 = 0.0
 
     if value != value {
-        n: usize, ok: bool = store_text(mut destination, "nan")
+        n: usize, ok: bool = store_text(destination, "nan")
         return n, ok
     }
 
     if value - value != zero {
         if value < zero {
-            n: usize, ok: bool = store_text(mut destination, "-inf")
+            n: usize, ok: bool = store_text(destination, "-inf")
             return n, ok
         }
-        n: usize, ok: bool = store_text(mut destination, "inf")
+        n: usize, ok: bool = store_text(destination, "inf")
         return n, ok
     }
     negative: bool = value < zero
@@ -314,39 +314,39 @@ pub stringify(mut destination: []u8, value: f64): (usize, bool) {
         /* The comparison operators cannot see the sign of a zero, so the
          * sign bit is read through the reciprocal: 1/-0 is -inf. */
         if one / value < zero {
-            n: usize, ok: bool = store_text(mut destination, "-0")
+            n: usize, ok: bool = store_text(destination, "-0")
             return n, ok
         }
-        n: usize, ok: bool = store_text(mut destination, "0")
+        n: usize, ok: bool = store_text(destination, "0")
         return n, ok
     }
     digits: [24]u8
     probe: [32]u8
-    dv: []u8 = digits[0..17]
-    pv: []u8 = probe[0..32]
-    count: int, decpt: i32 = shortest_digits(mag, 17, false, mut dv, mut pv)
+    dv: mut []u8 = mut digits[0..17]
+    pv: mut []u8 = mut probe[0..32]
+    count: int, decpt: i32 = shortest_digits(mag, 17, false, dv, pv)
     out: [48]u8
-    view: []u8 = out[0..48]
-    n: usize = render_float(negative, dv, count, decpt, mut view)
-    n2: usize, ok: bool = store_bytes(mut destination, out[0..n])
+    view: mut []u8 = mut out[0..48]
+    n: usize = render_float(negative, dv, count, decpt, view)
+    n2: usize, ok: bool = store_bytes(destination, out[0..n])
     return n2, ok
 }
 
-pub stringify(mut destination: []u8, value: f32): (usize, bool) {
+pub stringify(destination: mut []u8, value: f32): (usize, bool) {
     pone: f32 = 1.0
     zero: f32 = 0.0
 
     if value != value {
-        n: usize, ok: bool = store_text(mut destination, "nan")
+        n: usize, ok: bool = store_text(destination, "nan")
         return n, ok
     }
 
     if value - value != zero {
         if value < zero {
-            n: usize, ok: bool = store_text(mut destination, "-inf")
+            n: usize, ok: bool = store_text(destination, "-inf")
             return n, ok
         }
-        n: usize, ok: bool = store_text(mut destination, "inf")
+        n: usize, ok: bool = store_text(destination, "inf")
         return n, ok
     }
     negative: bool = value < zero
@@ -360,10 +360,10 @@ pub stringify(mut destination: []u8, value: f32): (usize, bool) {
         /* The comparison operators cannot see the sign of a zero, so the
          * sign bit is read through the reciprocal: 1/-0 is -inf. */
         if pone / value < zero {
-            n: usize, ok: bool = store_text(mut destination, "-0")
+            n: usize, ok: bool = store_text(destination, "-0")
             return n, ok
         }
-        n: usize, ok: bool = store_text(mut destination, "0")
+        n: usize, ok: bool = store_text(destination, "0")
         return n, ok
     }
     digits: [24]u8
@@ -371,17 +371,17 @@ pub stringify(mut destination: []u8, value: f32): (usize, bool) {
     /* f32 -> f64 is exact, so correctly rounded digits of the widened value
      * are correctly rounded digits of the f32 itself; the round trip is
      * checked against the narrow type through strtof. */
-    dv: []u8 = digits[0..9]
-    pv: []u8 = probe[0..32]
-    count: int, decpt: i32 = shortest_digits(f64(mag), 9, true, mut dv, mut pv)
+    dv: mut []u8 = mut digits[0..9]
+    pv: mut []u8 = mut probe[0..32]
+    count: int, decpt: i32 = shortest_digits(f64(mag), 9, true, dv, pv)
     out: [48]u8
-    view: []u8 = out[0..48]
-    n: usize = render_float(negative, dv, count, decpt, mut view)
-    n2: usize, ok: bool = store_bytes(mut destination, out[0..n])
+    view: mut []u8 = mut out[0..48]
+    n: usize = render_float(negative, dv, count, decpt, view)
+    n2: usize, ok: bool = store_bytes(destination, out[0..n])
     return n2, ok
 }
 
-pub stringify(mut destination: []u8, value: int, radix: u8): (usize, bool) {
+pub stringify(destination: mut []u8, value: int, radix: u8): (usize, bool) {
     if radix < 2 || radix > 36 {
         return 0, false
     }
@@ -416,11 +416,11 @@ pub stringify(mut destination: []u8, value: int, radix: u8): (usize, bool) {
         at -= 1
         digits[at] = u8(45)
     }
-    n2: usize, ok: bool = store_bytes(mut destination, digits[at..65])
+    n2: usize, ok: bool = store_bytes(destination, mut digits[at..65])
     return n2, ok
 }
 
-pub stringify(mut destination: []u8, value: uint, radix: u8): (usize, bool) {
+pub stringify(destination: mut []u8, value: uint, radix: u8): (usize, bool) {
     if radix < 2 || radix > 36 {
         return 0, false
     }
@@ -443,11 +443,11 @@ pub stringify(mut destination: []u8, value: uint, radix: u8): (usize, bool) {
             break
         }
     }
-    n2: usize, ok: bool = store_bytes(mut destination, digits[at..64])
+    n2: usize, ok: bool = store_bytes(destination, mut digits[at..64])
     return n2, ok
 }
 
-pub stringify(mut destination: []u8, value: usize, radix: u8): (usize, bool) {
+pub stringify(destination: mut []u8, value: usize, radix: u8): (usize, bool) {
     if radix < 2 || radix > 36 {
         return 0, false
     }
@@ -470,12 +470,12 @@ pub stringify(mut destination: []u8, value: usize, radix: u8): (usize, bool) {
             break
         }
     }
-    n2: usize, ok: bool = store_bytes(mut destination, digits[at..64])
+    n2: usize, ok: bool = store_bytes(destination, mut digits[at..64])
     return n2, ok
 }
 
 /* Writes the complete byte sequence into destination or nothing at all. */
-store_bytes(mut destination: []u8, source: []u8): (usize, bool) {
+store_bytes(destination: mut []u8, source: []u8): (usize, bool) {
     if source.len > destination.len {
         return 0, false
     }
@@ -487,7 +487,7 @@ store_bytes(mut destination: []u8, source: []u8): (usize, bool) {
 }
 
 /* Writes the complete text into destination or nothing at all. */
-store_text(mut destination: []u8, text: string): (usize, bool) {
+store_text(destination: mut []u8, text: string): (usize, bool) {
     if text.len > destination.len {
         return 0, false
     }
@@ -740,7 +740,7 @@ float_literal_shape(text: string): bool {
 }
 
 /* Copies the text into a NUL-terminated scratch buffer for the C scanner. */
-terminate(text: string, mut buf: []u8): bool {
+terminate(text: string, buf: mut []u8): bool {
     if text.len + 1 > buf.len {
         return false
     }
@@ -759,9 +759,9 @@ pub parse[f64](text: string): (f64, bool) {
         return 0.0, false
     }
     buf: [512]u8 = [0 : 512]
-    scratch: []u8 = buf[0..512]
+    scratch: mut []u8 = mut buf[0..512]
 
-    if !terminate(text, mut scratch) {
+    if !terminate(text, scratch) {
         return 0.0, false
     }
     value: f64 = strtod(&buf[0], null)
@@ -781,9 +781,9 @@ pub parse[f32](text: string): (f32, bool) {
         return 0.0, false
     }
     buf: [512]u8 = [0 : 512]
-    scratch: []u8 = buf[0..512]
+    scratch: mut []u8 = mut buf[0..512]
 
-    if !terminate(text, mut scratch) {
+    if !terminate(text, scratch) {
         return 0.0, false
     }
     value: f32 = strtof(&buf[0], null)
@@ -805,7 +805,7 @@ space_byte(c: u8): bool {
  * double-rounding detour). ecvt returns internal storage that a later call
  * may overwrite, so the digits are copied out immediately. The digits are
  * the integer form: value equals digits x 10^(decpt - count). */
-shortest_digits(mag: f64, max: int, narrow: bool, mut digits: []u8, mut probe: []u8): (int, i32) {
+shortest_digits(mag: f64, max: int, narrow: bool, digits: mut []u8, probe: mut []u8): (int, i32) {
     decpt: i32 = 0
     unused: i32 = 0
     count: int = max
@@ -864,7 +864,7 @@ shortest_digits(mag: f64, max: int, narrow: bool, mut digits: []u8, mut probe: [
 /* Renders the canonical notation into out: decimal for scientific exponents
  * -6 through 20, otherwise scientific like 1.5e-7. The sign comes first and
  * no trailing zeros are added. Returns the byte count. */
-render_float(negative: bool, digits: []u8, count: int, decpt: i32, mut out: []u8): usize {
+render_float(negative: bool, digits: []u8, count: int, decpt: i32, out: mut []u8): usize {
     at: int = 0
 
     if negative {

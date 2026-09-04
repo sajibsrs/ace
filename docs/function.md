@@ -38,10 +38,11 @@ main(): int {
 ```
 
 An unmarked call cannot replace the caller's argument value. Assigning to an
-unmarked parameter is a compile error. This is independent from pointer
-reachability: a parameter of type `mut *T` may write its pointee without
-replacing the pointer value, so that call does not use an argument-level `mut`.
-See [Types and declarations](types.md#pointers).
+unmarked parameter is a compile error. This is independent from content
+writes: a parameter whose type carries type-position `mut` — such as
+`mut *T`, `mut []T`, or `mut string` — writes through the view with no
+argument-level `mut`, because the permission is stated in the parameter's
+type. See [Types and declarations](types.md#writable-views).
 
 ## Returns and multiple values
 
@@ -92,7 +93,14 @@ call, an uncast integer literal selects `int` and an uncast floating literal
 selects `f64`. Use an explicit cast to select another numeric type.
 
 Return types do not distinguish overloads. `noalias` also does not distinguish
-them. `mut` does because it is visible at the call site.
+them. `mut` does because it is visible at the call site, and type-position
+`mut` forms distinguish themselves as distinct types.
+
+A `mut`-qualified view argument (`mut *T`, `mut []T`, `mut string`) resolves
+exactly when a candidate states that form. When no exact candidate fits, the
+call may still resolve against a plain-form candidate through implicit
+permission shrink. Exact matches always win first, so `f(s: string)` and
+`f(s: mut string)` are distinct, unambiguous overloads.
 
 On the current AArch64 target, `int` and `i64` are the same type, so these cannot
 be separate overloads.
@@ -114,7 +122,8 @@ boxing, or allocation.
 
 Type-owned methods use the same exact overload rule. Receiver type and receiver
 `mut` participate in selection, parameters must match exactly, and the return
-type must match after selection. Return type alone never creates or selects an
+type must match after selection, with the same shrink-only fallback for
+view permission. Return type alone never creates or selects an
 overload. Methods must be called; they are not first-class function values.
 
 ## Function values

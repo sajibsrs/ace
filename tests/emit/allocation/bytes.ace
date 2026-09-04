@@ -8,8 +8,8 @@ main(): int {
     source_array: [6]u8 = [1, 2, 3, 4, 5, 255]
     target_array: [8]u8 = [9, 9, 9, 9, 9, 9, 77, 88]
     source: []u8 = source_array[0..6]
-    target: []u8 = target_array[0..6]
-    copy(mut target, source)
+    target: mut []u8 = mut target_array[0..6]
+    copy(target, source)
 
     if compare(target, source) != 0 {
         return 1
@@ -19,13 +19,13 @@ main(): int {
         return 2
     }
 
-    first_five: []u8 = target_array[0..5]
-    fill(mut first_five, 42)
+    first_five: mut []u8 = mut target_array[0..5]
+    fill(first_five, 42)
 
     if target_array[0] != 42 || target_array[4] != 42 || target_array[5] != 255 {
         return 3
     }
-    zero(mut first_five)
+    zero(first_five)
 
     if target_array[0] != 0 || target_array[4] != 0 || target_array[5] != 255 {
         return 4
@@ -33,8 +33,8 @@ main(): int {
 
     overlap: [6]u8 = [1, 2, 3, 4, 5, 6]
     forward_src: []u8 = overlap[0..5]
-    forward_dst: []u8 = overlap[1..6]
-    move(mut forward_dst, forward_src)
+    forward_dst: mut []u8 = mut overlap[1..6]
+    move(forward_dst, forward_src)
 
     if overlap[0] != 1 || overlap[1] != 1 || overlap[5] != 5 {
         return 5
@@ -47,19 +47,19 @@ main(): int {
     overlap[4] = 5
     overlap[5] = 6
     backward_src: []u8 = overlap[1..6]
-    backward_dst: []u8 = overlap[0..5]
-    move(mut backward_dst, backward_src)
+    backward_dst: mut []u8 = mut overlap[0..5]
+    move(backward_dst, backward_src)
 
     if overlap[0] != 2 || overlap[4] != 6 || overlap[5] != 6 {
         return 6
     }
 
     empty_src: []u8 = source_array[0..0]
-    empty_dst: []u8 = target_array[0..0]
-    copy(mut empty_dst, empty_src)
-    move(mut empty_dst, empty_src)
-    fill(mut empty_dst, 7)
-    zero(mut empty_dst)
+    empty_dst: mut []u8 = mut target_array[0..0]
+    copy(empty_dst, empty_src)
+    move(empty_dst, empty_src)
+    fill(empty_dst, 7)
+    zero(empty_dst)
 
     prefix: []u8 = source_array[0..3]
     longer: []u8 = source_array[0..4]

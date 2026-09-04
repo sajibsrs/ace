@@ -52,8 +52,8 @@ pub connect(sock: Socket, address: Address4): Error {
     return backend.connect(sock, address)
 }
 
-pub receive(sock: Socket, mut buffer: []u8): (int, Error) {
-    count: int, err: Error = backend.receive(sock, mut buffer)
+pub receive(sock: Socket, buffer: mut []u8): (int, Error) {
+    count: int, err: Error = backend.receive(sock, buffer)
     return count, err
 }
 
@@ -67,7 +67,7 @@ pub send(sock: Socket, data: string): (int, Error) {
     return count, err
 }
 
-pub resolve4(host: string, port: u16, mut addresses: []Address4): (usize, Error) {
-    count: usize, err: Error = backend.resolve4(host, port, mut addresses)
+pub resolve4(host: string, port: u16, addresses: mut []Address4): (usize, Error) {
+    count: usize, err: Error = backend.resolve4(host, port, addresses)
     return count, err
 }

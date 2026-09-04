@@ -2607,7 +2607,10 @@ static int gen_slice_parts(Em* e, Node* value, int* ptr, int* len) {
 
 static EV gen_byte_write_builtin(Em* e, Node* call, int intrinsic) {
     int si = e->vti, sf = e->vtf;
-    Node* dst_node = call->kids[0]->a; // sema requires a mut destination lvalue
+    // The destination is a writable `mut []u8` view expression; tolerate the
+    // historical N_MUTARG spelling defensively.
+    Node* dst_node = call->kids[0]->kind == N_MUTARG ? call->kids[0]->a
+                                                     : call->kids[0];
     int dst, dlen;
     gen_slice_parts(e, dst_node, &dst, &dlen);
 
@@ -2897,8 +2900,9 @@ static EV gen_call(Em* e, Node* call) {
         return gen_expr(e, call->kids[0]);
     }
 
-    // cast: i32(x), Meters(x), Color(1) — callee resolves to a type symbol
-    if (callee->kind == N_IDENT && !call->sym &&
+    // cast: i32(x), Meters(x), Color(1) — callee resolves to a type symbol;
+    // []u8(text) arrives as an inline slice-type callee (Sequences #6)
+    if ((callee->kind == N_IDENT || callee->kind == N_SLICE_T) && !call->sym &&
         ((node_sym(callee) && node_sym(callee)->kind == SYM_TYPE) ||
          (node_ty(callee) && node_ty(callee)->kind != SK_FUNC))) {
         Node* arg = call->kids[0];
@@ -4133,10 +4137,6 @@ static void emit_stmt(Em* e, Node* s) {
         int is_string = bt && bt->kind == SK_PRIM && bt->prim == P_STRING;
         if (!bt || (bt->kind != SK_SLICE && bt->kind != SK_ARRAY && !is_string)) {
             em_err(e, s, "for-in iterates slices, arrays, strings, or ranges");
-            return;
-        }
-        if (mut_iter && is_string) { // sema rejects strings for `in mut`
-            em_err(e, s, "mut iteration requires writable array or slice storage");
             return;
         }
         uint32_t pslot = temp_slot(e, 8, 8), eslot = temp_slot(e, 8, 8);

@@ -258,9 +258,17 @@ main(): int {
     identity: typeid = typeid(Point)
     no_shape: Shape = null
 
-    // Allocation and package-qualified calls.
+    // Allocation, writable views, and package-qualified calls.
     bytes: []u8 = mem.alloc(16, 8)
-    mem.fill(mut bytes, letter)
+    writable_bytes: mut []u8 = mut bytes[0..16]
+    mem.fill(writable_bytes, letter)
+    writable_bytes[0] = letter
+    message: mut string = string(writable_bytes[0..1])
+    message[0] = 'A'
+    text_bytes: mut []u8 = []u8(message)
+    for byte: u8 in mut message {
+        total += int(byte) + int(text_bytes[0])
+    }
     mem.release(mut bytes)
 
     // Operators, comparison chains, short-circuiting, and constants.

@@ -7,7 +7,7 @@
 import str
 import fmt
 
-show(mut buf: []u8, n: usize, ok: bool) {
+show(buf: []u8, n: usize, ok: bool) {
     if ok {
         fmt.print(string(buf[0..n]))
     }
@@ -15,90 +15,90 @@ show(mut buf: []u8, n: usize, ok: bool) {
 
 main(): int {
     buf: [128]u8 = [0 : 128]
-    dst: []u8 = buf[0..128]
-    n: usize, ok: bool = str.stringify(mut dst, 42)
-    show(mut dst, n, ok)
+    dst: mut []u8 = mut buf[0..128]
+    n: usize, ok: bool = str.stringify(dst, 42)
+    show(dst, n, ok)
     fmt.print("|")
-    n, ok = str.stringify(mut dst, -17)
-    show(mut dst, n, ok)
+    n, ok = str.stringify(dst, -17)
+    show(dst, n, ok)
     fmt.print("|")
-    n, ok = str.stringify(mut dst, -9223372036854775807 - 1)
+    n, ok = str.stringify(dst, -9223372036854775807 - 1)
 
     if !ok || string(dst[0..n]) != "-9223372036854775808" {
         return 4
     }
     u: uint = 4294967295
-    n, ok = str.stringify(mut dst, u)
-    show(mut dst, n, ok)
+    n, ok = str.stringify(dst, u)
+    show(dst, n, ok)
     fmt.print("|")
     z: usize = 18446744073709551615
-    n, ok = str.stringify(mut dst, z)
+    n, ok = str.stringify(dst, z)
 
     if !ok || string(dst[0..n]) != "18446744073709551615" {
         return 5
     }
-    n, ok = str.stringify(mut dst, 255, u8(16))
-    show(mut dst, n, ok)
+    n, ok = str.stringify(dst, 255, u8(16))
+    show(dst, n, ok)
     fmt.print("|")
-    n, ok = str.stringify(mut dst, -255, u8(16))
-    show(mut dst, n, ok)
+    n, ok = str.stringify(dst, -255, u8(16))
+    show(dst, n, ok)
     fmt.print("|")
-    n, ok = str.stringify(mut dst, 0, u8(2))
-    show(mut dst, n, ok)
+    n, ok = str.stringify(dst, 0, u8(2))
+    show(dst, n, ok)
     fmt.print("|")
     f: f64 = 2.5
-    n, ok = str.stringify(mut dst, f)
-    show(mut dst, n, ok)
+    n, ok = str.stringify(dst, f)
+    show(dst, n, ok)
     fmt.print("|")
     f = 0.0 - 2.5
-    n, ok = str.stringify(mut dst, f)
-    show(mut dst, n, ok)
+    n, ok = str.stringify(dst, f)
+    show(dst, n, ok)
     fmt.print("|")
     f = 1.0
-    n, ok = str.stringify(mut dst, f)
-    show(mut dst, n, ok)
+    n, ok = str.stringify(dst, f)
+    show(dst, n, ok)
     fmt.print("|")
     f = 0.0 - 0.0
-    n, ok = str.stringify(mut dst, f)
-    show(mut dst, n, ok)
+    n, ok = str.stringify(dst, f)
+    show(dst, n, ok)
     fmt.print("|")
     f = 1.0 / 3.0
-    n, ok = str.stringify(mut dst, f)
+    n, ok = str.stringify(dst, f)
 
     if !ok || string(dst[0..n]) != "0.3333333333333333" {
         return 6
     }
     f = 100000000000000000000.0
-    n, ok = str.stringify(mut dst, f)
+    n, ok = str.stringify(dst, f)
 
     if !ok || string(dst[0..n]) != "100000000000000000000" {
         return 7
     }
     f = 1.5e-7
-    n, ok = str.stringify(mut dst, f)
-    show(mut dst, n, ok)
+    n, ok = str.stringify(dst, f)
+    show(dst, n, ok)
     fmt.print("|")
     g: f32 = 1.5
-    n, ok = str.stringify(mut dst, g)
-    show(mut dst, n, ok)
+    n, ok = str.stringify(dst, g)
+    show(dst, n, ok)
     fmt.print("|")
     g = 3.5
-    n, ok = str.stringify(mut dst, g)
-    show(mut dst, n, ok)
+    n, ok = str.stringify(dst, g)
+    show(dst, n, ok)
     fmt.print("|")
     small: [2]u8 = [0 : 2]
-    sdst: []u8 = small[0..2]
-    n, ok = str.stringify(mut sdst, 12345)
+    sdst: mut []u8 = mut small[0..2]
+    n, ok = str.stringify(sdst, 12345)
 
     if ok || n != 0 || small[0] != 0 || small[1] != 0 {
         return 1
     }
-    n, ok = str.stringify(mut dst, 1, u8(1))
+    n, ok = str.stringify(dst, 1, u8(1))
 
     if ok || n != 0 {
         return 2
     }
-    n, ok = str.stringify(mut dst, 1, u8(37))
+    n, ok = str.stringify(dst, 1, u8(37))
 
     if ok || n != 0 {
         return 3

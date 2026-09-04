@@ -88,10 +88,13 @@ single-byte values.
 `string` is a two-word byte view with the same descriptor as `[]u8`: a byte
 pointer and a byte count, so `sizeof(string)` is 16. String literals have static
 read-only storage, do not allocate, and contain exactly their encoded bytes; the
-language appends no terminator. A string is read-only — there is no `mut string`
-form and no syntax writes through a string's bytes. The empty literal `""` is a
-valid non-null string (pointer, length 0); only the all-bits-zero string is
-`null`.
+language appends no terminator. A plain string is a read-only view — indexed
+reads stay value reads, and no syntax writes through its bytes. The distinct
+`mut string` view type ([Types](types.md)) carries writable bytes: it
+establishes only where `mut` is written over proven-writable storage, so a
+literal can never back one, and `s[i] = c` through it assigns exactly one byte.
+The empty literal `""` is a valid non-null string (pointer, length 0); only the
+all-bits-zero string is `null`.
 
 ```ace
 message: string = "Welcome Ace!\n"
@@ -107,7 +110,8 @@ bounds defaulting to `0` and `len(source)`, exactly like array and slice
 slicing ([Types](types.md)). Where the bounds are compile-time constants that
 violate `0 <= lo <= hi <= len(source)`, the compiler rejects the program.
 `for-in` walks the stored bytes, and `string(bytes)` converts a `[]u8` view
-zero-copy ([Types](types.md), [Control flow](control-flow.md)).
+zero-copy while `[]u8(text)` requires a `mut string` and yields its writable
+byte view ([Types](types.md), [Control flow](control-flow.md)).
 
 ## Other primitives
 

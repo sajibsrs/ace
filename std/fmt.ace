@@ -268,7 +268,7 @@ format_float(negative: bool, digits: []u8, count: int, decpt: i32): int {
  * overwrite, so the digits are copied out immediately. The digits are the
  * integer form: value equals digits x 10^(decpt - count).
  */
-shortest_digits(mag: f64, max: int, narrow: bool, mut digits: []u8, mut probe: []u8): (int, i32) {
+shortest_digits(mag: f64, max: int, narrow: bool, digits: mut []u8, probe: mut []u8): (int, i32) {
     decpt: i32 = 0
     unused: i32 = 0
     count: int = max
@@ -357,9 +357,9 @@ pub print(value: f64): int {
     }
     digits: [24]u8
     probe: [32]u8
-    dv: []u8 = digits[0..17]
-    pv: []u8 = probe[0..32]
-    count: int, decpt: i32 = shortest_digits(mag, 17, false, mut dv, mut pv)
+    dv: mut []u8 = mut digits[0..17]
+    pv: mut []u8 = mut probe[0..32]
+    count: int, decpt: i32 = shortest_digits(mag, 17, false, dv, pv)
     return format_float(negative, dv, count, decpt)
 }
 
@@ -396,14 +396,14 @@ pub print(value: f32): int {
     }
     digits: [24]u8
     probe: [32]u8
-    dv: []u8 = digits[0..9]
-    pv: []u8 = probe[0..32]
+    dv: mut []u8 = mut digits[0..9]
+    pv: mut []u8 = mut probe[0..32]
     /*
      * f32 -> f64 is exact, so correctly rounded digits of the widened value are
      * correctly rounded digits of the f32 itself; the round trip is checked
      * against the narrow type through strtof.
      */
-    count: int, decpt: i32 = shortest_digits(f64(mag), 9, true, mut dv, mut pv)
+    count: int, decpt: i32 = shortest_digits(f64(mag), 9, true, dv, pv)
     return format_float(negative, dv, count, decpt)
 }
 

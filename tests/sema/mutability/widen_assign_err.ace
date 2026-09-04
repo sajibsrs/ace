@@ -1,0 +1,11 @@
+/* err: assignment never widens view permission (Mutability #9). */
+
+main(): int {
+    b: []u8 = mem_alloc4()
+    w: mut []u8 = b
+    return 0
+}
+
+mem_alloc4(): []u8 {
+    return null
+}

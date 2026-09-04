@@ -57,6 +57,7 @@ struct Sym {
     uint8_t     kind;
     uint8_t     is_const, is_mut, is_pub, is_noalias, is_generic, is_extern;
     uint8_t     is_param, is_const_backed, is_global, is_forward;
+    uint8_t     is_literal_backed; // string binding initialized from a literal
     SType*      type;
     Node*       decl;   // binder/declaration node (slot key for the emitter)
     Node*       init;   // top-level initializer (static Error validation/emission)

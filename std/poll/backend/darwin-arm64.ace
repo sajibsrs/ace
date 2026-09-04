@@ -163,7 +163,7 @@ change_filter(q: Queue, fd: sys.Fd, filter: i16, flags: u16): i32 {
     return c_kevent(i32(sys.Fd(q)), &change, 1, null, 0, null)
 }
 
-pub wait(q: Queue, mut events: []Event, timeout_ns: u64): (usize, Error) {
+pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
     if events.len == 0 {
         errno_set(EINVAL)
         return usize(0), Error(&wait_error)

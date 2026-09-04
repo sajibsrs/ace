@@ -35,8 +35,8 @@ str_examples(): int {
         return 4
     }
     buf: [32]u8 = [0 : 32]
-    dst: []u8 = buf[0..32]
-    count: usize, fit: bool = str.stringify(mut dst, n)
+    dst: mut []u8 = mut buf[0..32]
+    count: usize, fit: bool = str.stringify(dst, n)
 
     if !fit || count != 4 {
         return 5
@@ -58,7 +58,8 @@ mem_examples(): int {
         return 2
     }
 
-    numbers[0] = 42
+    writable_numbers: mut []usize = mut numbers[0..4]
+    writable_numbers[0] = 42
     mem.release[usize](mut numbers)
     return 0
 }
@@ -85,8 +86,8 @@ write_note(): int {
 
 standard_descriptors(): int {
     storage: [8]u8 = [0 : 8]
-    buf: []u8 = storage[0..8]
-    n: int, rerr: Error = sys.read(sys.stdin, mut buf)
+    buf: mut []u8 = mut storage[0..8]
+    n: int, rerr: Error = sys.read(sys.stdin, buf)
 
     if rerr != null {
         return 1
@@ -189,8 +190,8 @@ net_example(): int {
     }
 
     storage: [8]net.Address4
-    addresses: []net.Address4 = storage[0..8]
-    count: usize, resolve_err: Error = net.resolve4("example.com", u16(80), mut addresses)
+    addresses: mut []net.Address4 = mut storage[0..8]
+    count: usize, resolve_err: Error = net.resolve4("example.com", u16(80), addresses)
 
     if resolve_err == null && count != 0 {
         client: net.Socket, socket_err: Error = net.socket(net.SocketKind.tcp)
@@ -223,8 +224,8 @@ readiness_example(fd: sys.Fd): int {
         hangup: false,
     }
     storage: [16]poll.Event = [zero : 16]
-    events: []poll.Event = storage[0..16]
-    count: usize, wait_err: Error = poll.wait(q, mut events, poll.wait_forever)
+    events: mut []poll.Event = mut storage[0..16]
+    count: usize, wait_err: Error = poll.wait(q, events, poll.wait_forever)
 
     if wait_err == null {
         for index: usize in 0 .. count {

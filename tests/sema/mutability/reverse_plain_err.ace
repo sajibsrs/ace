@@ -1,0 +1,11 @@
+/* err: plain string -> []u8 stays absent (Sequences #6) — a view from
+ * unproven bytes would type writability over read-only storage. */
+
+bytes_of(text: string): mut []u8 {
+    return []u8(text)
+}
+
+main(): int {
+    literal_bytes: mut []u8 = []u8("no")
+    return 0
+}

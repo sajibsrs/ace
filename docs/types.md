@@ -171,6 +171,85 @@ Invalid: struct {
 }
 ```
 
+## Writable views
+
+Type-position `mut` is uniform across the three view kinds: `mut *T` grants
+writes through the pointer, `mut []T` grants writes to the slice's elements,
+and `mut string` is the writable string view. Each `mut` marks writable
+content at exactly one view level. It is independent of the `mut name: T`
+parameter mark, which grants replacing the caller's stored value, and the two
+compose per level (`mut data: mut []u8`, `mut point: mut *Point`).
+
+A writable view exists only where `mut` is written at establishment;
+afterwards the permission travels in the type:
+
+```ace
+fill(data: mut []u8, value: u8) {
+    for i: usize in 0 .. data.len {
+        data[i] = value
+    }
+}
+
+keep(text: string): string {
+    return text
+}
+
+main(): int {
+    buffer: [4]u8 = [0, 0, 0, 0]
+    fill(mut buffer[0..4], 7) // establishment at the call site
+
+    w: mut []u8 = mut buffer[0..4]
+    w[0] = 42
+    plain: []u8 = w // permission shrink is implicit
+
+    text: string = keep("ace")
+    view: mut string = mut text[0..]
+
+    return int(plain[1]) + int(view.len) - 3
+}
+```
+
+`mut buffer[0..4]` is an establishment expression: it yields a `mut []u8` over
+the array's storage. Establishment requires a writable-lvalue source — `const`
+bindings, literals, and literal-backed bindings (a binding initialized
+directly from a literal, or a slice of one) cannot establish a writable view.
+A source view that already carries `mut` establishes freely: re-slicing a
+writable view propagates the permission (`w[2..4]` is again `mut []u8`), so a
+writable view cannot be laundered by slicing, and no other route widens
+permission.
+
+Plain forms are read-only content regardless of backing storage. Writing
+`v[i] = x` requires the slice's own type to be `mut []T`; a `[]T` parameter
+cannot write its elements even when the caller passed writable storage.
+Permission shrink is implicit and widening never happens: a `mut []T` assigns,
+passes, and returns wherever `[]T` is required, while the reverse is rejected.
+The mut-qualified forms are distinct types everywhere a type can appear —
+overload sets, struct fields, unions, and generic instantiations — so
+`f(s: []u8)` and `f(s: mut []u8)` are different overloads. Exact matches win
+first; when no exact candidate fits, the call may still resolve through the
+implicit shrink.
+
+`mut string` participates in the same rules. `.len`, byte-sequence equality,
+and `null` behave exactly as for `string`, and `mut text[0..]` establishes one
+from a writable string binding. Indexed byte writes exist only through a
+`mut string`: `s[i] = c` assigns exactly one byte (`u8` or `char`) and follows
+the slice-write bounds contract — a compile-time error when constants prove the
+index out of range, a checked-build diagnostic otherwise, and release assumes
+it. Plain `string` indexing stays a value read.
+
+The view conversions are exact and type-driven. `string(view)` accepts exactly
+`[]u8` (or the transparent `[]char` alias) and yields `string`; over
+`mut []u8` it yields `mut string`, so the result carries the argument's stated
+permission and never depends on lvalue analysis. The reverse `[]u8(text)`
+accepts exactly `mut string` and yields `mut []u8`; a plain string converts
+nowhere, because a view over unproven bytes would type writability over
+read-only storage. Every conversion preserves the two-word descriptor exactly —
+same storage, same length, no copy, and a non-null empty view stays non-null
+while a zero descriptor stays zero. Strings iterate bytes as usual, and
+`for b: u8 in mut text` runs the ordinary alias loop when `text` is a
+`mut string`; a plain string is rejected by the same rule as any read-only
+view.
+
 ## Zero and absence
 
 Every type has an all-bits-zero representation. Pointer, slice, string,
@@ -236,11 +315,13 @@ other type. A struct can still declare an ordinary field named `len`.
 
 Slicing is uniform across arrays, slices, and strings with half-open
 `[lo, hi)` bounds and the defaults `0` and `len(source)`: slicing an array or
-slice yields `[]T`, and slicing a string yields a `string` — slicing never
-widens permission. The result length is `hi - lo` and the result pointer is the
-source pointer advanced by `lo * sizeof(T)`; slicing a slice re-bases inside
-that slice's own window. Empty results keep their computed pointer and are
-never canonicalized to `null`. Bounds may be any integer; when constants prove
+slice yields `[]T`, and slicing a string yields a `string`; the result carries
+the source's permission, so a writable source stays writable and slicing never
+widens permission ([Writable views](#writable-views)). The result length is
+`hi - lo` and the result pointer is the source pointer advanced by
+`lo * sizeof(T)`; slicing a slice re-bases inside that slice's own window.
+Empty results keep their computed pointer and are never canonicalized to
+`null`. Bounds may be any integer; when constants prove
 `0 <= lo <= hi <= len(source)` false, the program is rejected at compile time,
 and runtime bounds remain unchecked until checked builds land.
 
@@ -253,11 +334,14 @@ window: string = word[1..word.len - 1]
 ```
 
 The `string(bytes)` conversion is an explicit zero-cost view conversion from
-exactly `[]u8` (transparent aliases such as `[]char` included): the result
+exactly `[]u8` (transparent aliases such as `[]char` included); over a
+`mut []u8` argument it yields `mut string`, so the result follows the
+argument's stated type ([Writable views](#writable-views)). The result
 preserves the descriptor, so the string and the slice share backing bytes and
-either may observe the other's writes. There is no conversion from `string` to
-`[]u8`, and a fixed `[N]u8` converts only through explicit slicing first
-(`string(arr[0..N])`).
+either may observe the other's writes. The reverse `[]u8(text)` accepts
+exactly `mut string` and yields `mut []u8`; a plain `string` converts in
+neither direction, and a fixed `[N]u8` converts only through explicit slicing
+first (`string(arr[0..N])`).
 
 ```ace
 arr: [3]u8 = [u8('o'), u8('k'), u8('!')]
@@ -282,8 +366,9 @@ words: the element pointer at offset 0 and the element count at offset 8, giving
 field. An array stores `N` contiguous elements in index order with no metadata
 and no inter-element padding, so `sizeof([N]T)` = `N * sizeof(T)` and array
 alignment is the element's alignment. A string uses the identical two-word
-descriptor over bytes (pointer, byte count; `sizeof(string)` = 16), is never
-NUL-terminated, and is read-only: no syntax writes through a string's bytes.
+descriptor over bytes (pointer, byte count; `sizeof(string)` = 16) and is
+never NUL-terminated. Plain strings are read-only content; the writable
+`mut string` form is described under [Writable views](#writable-views).
 
 Fixed byte arrays `[N]u8`, byte slices `[]u8`, and strings compare as complete
 byte sequences with `==` and `!=`. Every pair and either operand order is
@@ -314,9 +399,12 @@ Use `mem.compare` (byte slices) or an explicit loop to compare contents. Fixed
 arrays of a non-byte element type have no `==` at all.
 
 Arrays and slices do not convert implicitly in either direction. The explicit
-bridges are slicing (`arr[lo..hi]`, array to slice), `mem.copy(mut arr[0..N],
-view)` (slice into array storage), and `string(view)` (writable bytes to a
-read-only string view).
+bridges are slicing (`arr[lo..hi]`, array to slice; `mut arr[lo..hi]`, array to
+writable view), `mem.copy` into an established writable view of the array
+(`dst: mut []u8 = mut arr[0..N]`, then `mem.copy(dst, view)`), and the exact
+view conversions `string(view)` / `[]u8(text)`. A fixed byte array reaches
+`string` only through slicing first: `string(arr[0..N])`, or
+`string(mut arr[0..N])` for a writable view.
 
 ## Multiple-return and function types
 
@@ -548,6 +636,7 @@ with no allocation, object metadata, subtype relation, or runtime search.
 - Standalone tuple-literal initialization is not implemented; tuple layout is
   currently used by multiple returns and destructuring.
 - Checked-build bounds and allocator diagnostics are specified but not yet
-  implemented in the runtime layer.
+  implemented in the runtime layer; indexed writes are checked only where
+  constants prove an out-of-range index at compile time.
 
 The examples are covered by `tests/sema/docs/type_ok.ace`.

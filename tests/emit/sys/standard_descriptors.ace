@@ -41,8 +41,8 @@ read_payload(path: string, want: string): int {
         return 1
     }
     storage: [8]u8 = [0 : 8]
-    buf: []u8 = storage[0..8]
-    n: int, rerr: Error = sys.read(fd, mut buf)
+    buf: mut []u8 = mut storage[0..8]
+    n: int, rerr: Error = sys.read(fd, buf)
 
     if rerr != null || n != int(want.len) {
         return 2
@@ -51,7 +51,7 @@ read_payload(path: string, want: string): int {
     if string(buf[0..want.len]) != want {
         return 3
     }
-    eof: int, eerr: Error = sys.read(fd, mut buf)
+    eof: int, eerr: Error = sys.read(fd, buf)
 
     if eerr != null || eof != 0 {
         return 4
@@ -89,13 +89,13 @@ main(): int {
         return 22
     }
     storage: [8]u8 = [0 : 8]
-    buf: []u8 = storage[0..8]
-    n: int, rerr: Error = sys.read(sys.stdin, mut buf)
+    buf: mut []u8 = mut storage[0..8]
+    n: int, rerr: Error = sys.read(sys.stdin, buf)
 
     if rerr != null || n != 2 || string(buf[0..2]) != "in" {
         return 23
     }
-    eof: int, eerr: Error = sys.read(sys.stdin, mut buf)
+    eof: int, eerr: Error = sys.read(sys.stdin, buf)
 
     if eerr != null || eof != 0 {
         return 24

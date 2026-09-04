@@ -1,0 +1,9 @@
+/* err: an indexed write follows the slice-write bounds contract (Sequences
+ * #11) — a compile-time error when constants prove the index out of range. */
+
+main(): int {
+    storage: [4]u8
+    text: mut string = string(mut storage[0..4])
+    text[-1] = 0
+    return 0
+}

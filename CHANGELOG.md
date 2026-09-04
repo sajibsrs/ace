@@ -574,6 +574,92 @@ stderr writes under test (panic messages, the Error bridge) no longer leak
 into the test log. No fixture sources changed. Normal and sanitizer
 suites pass.
 
+### Type-position mutability and mutable string bytes — Step 1
+
+Landed as step one of the owner-agreed two-step split over the closed
+type-position-mutability carving, normative Mutability #9–11 rules unchanged.
+The compiler now admits `mut` in type position uniformly: `mut *T`, `mut []T`,
+and `mut string` parse and check as distinct types (`is_mut` on the slice and
+string singletons; `same_type` compares the flag, so distinctness is automatic
+through overloads, generic instantiations, struct fields, and union payloads),
+`type_name` prints `mut []T`/`mut string`, and permission shrink is implicit in
+coercion, casting, and printf `%s` while widening is rejected. Writable views
+exist only where `mut` is written at establishment: `mut seq[lo..hi]` requires
+a writable-lvalue source unless the source view already carries `mut`, with
+syntactic best-effort rejection for `const`, literal, and literal-backed
+bindings (direct literals, aliases of one, slices of one — a flag on the
+symbol, the same class as the pre-existing `mut &s` rule, so a `mut s: string`
+callee could still establish from a caller's literal-backed binding). The
+parser accepts the establishment form in expression position, as a
+call-argument value (reinterpreted as establishment, not a call-site `mut`
+mark), in `in mut xs[lo..hi]` for heads, and as compound type arguments
+(`Box[mut string]`, `g[mut []u8]`) via type-form lookahead; `mut [N]T` and
+mut-qualified named structs are rejected — `mut` marks views, not inline
+storage. Slice content writes (`v[i] = x`) require `mut []T` in the type with
+no descriptor propagation; arrays keep the storage-permission check and
+strings keep the existing guarded behavior (no new string writes — step two).
+`in mut` accepts content-writable `mut []T` iterables without the storage
+check while strings stay rejected, and overload selection plus method matching
+gained a second shrink-only pass (exact matches still win first, so
+`f(string)`/`f(mut string)` stay unambiguous while `net.send(sock, mut_view)`
+resolves against the `{[]u8, string}` set). The `mem` write builtins (`copy`,
+`move`, `fill`, `zero`) now take type-position `mut []u8` destinations, with
+new call-site diagnostics rejecting a call-site `mut` there; the emitter's
+byte-write builtin no longer assumes a `N_MUTARG` destination;
+`mem.release(mut data)` keeps its descriptor-replacement mark by design. The
+whole standard library and every affected fixture migrated to the new
+spelling: `std/mem.ace`, `std/sys.ace`, `std/net` + backend, `std/poll` +
+backend, `std/str.ace`, `std/fmt.ace`, and the allocation pattern is now a
+plain view from `mem.alloc` plus a `w: mut []T = mut buf[lo..hi]` establishment
+for writes. Coverage: new `tests/sema/mutability/` (accepting main plus eleven
+err fixtures — literal declaration, widening through return and assignment,
+param/const/literal/literal-backed establishment, plain-slice write,
+`mut [N]T`, mut named struct, `in mut` string — each verified failing for the
+intended reason), migrated `tests/sema/memory/`, `tests/sema/stdlib/`,
+`tests/sema/docs/`, `tests/emit/{allocation,net,sys,printf,strings}/`, and
+`tests/modules/mem_typed_module`. Documentation pages (types, primitives,
+control flow, memory, standard library) landed with the behavior, with the new
+types.md examples mirrored in `tests/sema/docs/type_ok.ace`. Step two remains:
+the three exact conversion overloads, `mut string` indexed writes, `in mut`
+string iteration, and the remaining docs/fixtures. Full suite passes.
+
+### Type-position mutability and mutable string bytes — Step 2
+
+The mutable-string-bytes surface over Step 1's type core. The forward view
+conversion `string(view)` now follows its argument's stated type exactly:
+`[]u8` (and the transparent `[]char`) yields `string`, `mut []u8` yields
+`mut string` — selection purely type-driven, never lvalue analysis, `null`
+not special — and the result shrinks implicitly wherever a plain string is
+wanted. The reverse conversion `[]u8(text)` is new syntax: the parser admits
+an inline slice type as a conversion callee (`[]` + `]` + a type-starting
+token on the same line parses as a slice type, an ordinary call node builds
+behind it, so an empty array literal is unaffected), and sema admits exactly
+`mut string` → `mut []u8`; plain `string` → `[]u8` stays absent, `mut []u8`
+arguments are rejected as redundant, and any other slice type through the
+callee is a named rejection. Indexed byte writes now exist through a
+`mut string`: `s[i] = c` takes exactly one `u8`/`char`, permission rides the
+view's type (an unmarked parameter of type `mut string` still writes), plain
+strings stay read-only value reads, and the slice-write bounds contract
+applies — constant-proven out-of-range indices are compile errors (negative
+always; length-provable when the source length is known), checked-build
+diagnostics deferred with the Safety topic. `in mut` iteration accepts
+`mut string` iterables through the general alias rule with no string
+special-casing (two-binder form, `&item` aliasing, re-sliced views stay
+writable); the emitter's stale in-mut string guard is gone and plain strings
+keep the writable-storage rejection with its message updated to name strings.
+Conversions are descriptor pass-throughs in the emitter (the slice-type
+callee joins the cast dispatch), so no new machine code exists. Coverage: new
+`tests/sema/mutability/` companions — `conversions_ok`, `string_write_ok`,
+`in_mut_string_ok`, and `string_write_err`, `write_bounds_err`,
+`reverse_plain_err`, `reverse_slice_err`, `widen_conv_err`, `mut_postfix_err`
+(each verified failing for the intended reason) — plus the runtime fixture
+`tests/emit/mut_string/main.ace` covering conversions, descriptor
+preservation (non-null empty stays non-null, zero stays zero), writes, and
+alias iteration. Documentation (types, primitives, control flow) replaced its
+"not implemented yet" notes with the landed rules; grammar.md gained note 26
+for the conversion callee. The spec queue entry and the AGENTS.md surface
+index mark the topic implemented. Full suite passes.
+
 ## Still open after these chunks
 
 Checked/release build modes, then checked allocation tracking; nonblocking echo and multi-client chat are the next networking proofs over the implemented `poll` readiness queue (see the `spec.md` Decision Queue).

@@ -47,8 +47,8 @@ check_roundtrip(): int {
         return 4
     }
     buf: [64]u8
-    view: []u8 = buf[0..64]
-    got: int, rerr2: Error = sys.read(rfd, mut view)
+    view: mut []u8 = mut buf[0..64]
+    got: int, rerr2: Error = sys.read(rfd, view)
 
     if rerr2 != null || got != 9 {
         return 5
@@ -59,7 +59,7 @@ check_roundtrip(): int {
             return 6
         }
     }
-    more: int, rerr3: Error = sys.read(rfd, mut view)
+    more: int, rerr3: Error = sys.read(rfd, view)
 
     if rerr3 != null || more != 0 {
         return 7
@@ -70,7 +70,7 @@ check_roundtrip(): int {
     }
 
     // Reading through a closed descriptor reports ReadErr with EBADF.
-    bad: int, baderr: Error = sys.read(rfd, mut view)
+    bad: int, baderr: Error = sys.read(rfd, view)
 
     if baderr == null || baderr.domain != typeid(sys.ReadErr) || sys.errno() != 9 {
         return 9

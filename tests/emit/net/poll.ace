@@ -52,8 +52,8 @@ main(): int {
         hangup: false,
     }
     storage: [4]poll.Event = [zero : 4]
-    events: []poll.Event = storage[0..4]
-    count: usize, wait_err: Error = poll.wait(q, mut events, u64(0))
+    events: mut []poll.Event = mut storage[0..4]
+    count: usize, wait_err: Error = poll.wait(q, events, u64(0))
 
     if wait_err != null || count == 0 {
         sys.close(read_fd)
@@ -86,7 +86,7 @@ main(): int {
         return 6
     }
 
-    count, wait_err = poll.wait(q, mut events, u64(1000000000))
+    count, wait_err = poll.wait(q, events, u64(1000000000))
 
     if wait_err != null || count == 0 {
         sys.close(read_fd)
@@ -109,8 +109,8 @@ main(): int {
         return 8
     }
 
-    byte_view: []u8 = byte[0..1]
-    received: int, read_err: Error = sys.read(read_fd, mut byte_view)
+    byte_view: mut []u8 = mut byte[0..1]
+    received: int, read_err: Error = sys.read(read_fd, byte_view)
 
     if read_err != null || received != 1 {
         sys.close(read_fd)
@@ -127,7 +127,7 @@ main(): int {
     }
     sys.close(write_fd)
 
-    count, wait_err = poll.wait(q, mut events, u64(1000000000))
+    count, wait_err = poll.wait(q, events, u64(1000000000))
 
     if wait_err != null || count == 0 {
         sys.close(read_fd)
@@ -162,8 +162,8 @@ main(): int {
         return 14
     }
 
-    empty: []poll.Event = null
-    count, wait_err = poll.wait(q, mut empty, u64(0))
+    empty: mut []poll.Event = null
+    count, wait_err = poll.wait(q, empty, u64(0))
 
     if count != 0 || !has_error(wait_err, typeid(poll.WaitErr)) ||
        sys.errno() != 22 {

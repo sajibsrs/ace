@@ -1,0 +1,10 @@
+/* err: an unmarked parameter's storage is read-only, so it cannot establish
+ * a writable view (Mutability #11). */
+
+read_only(s: string) {
+    v: mut string = mut s[0..]
+}
+
+main(): int {
+    return 0
+}
