@@ -1,0 +1,10 @@
+/* err: descriptor rebindability cannot regrow plain content permission. */
+
+grow(mut bytes: []u8, mut text: string) {
+    writable_bytes: mut []u8 = mut bytes[0..]
+    writable_text: mut string = mut text[0..]
+}
+
+main(): int {
+    return 0
+}

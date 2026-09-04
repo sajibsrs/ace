@@ -1,0 +1,9 @@
+/* Local declaration elision parses as one binding, including in a for init. */
+
+main(): int {
+    answer := 42
+    for i := 0; i < 1; i += 1 {
+        answer += i
+    }
+    return answer
+}

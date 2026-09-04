@@ -1,0 +1,10 @@
+/* err: := has no multi-binding grammar. */
+
+read(): (int, Error) {
+    return 1, null
+}
+
+main(): int {
+    value, error := read()
+    return 0
+}

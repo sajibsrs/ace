@@ -70,6 +70,7 @@ Human: struct {
 }
 
 main(): int {
+    inferred := 4
     number: int, message: string = 1, "old"
     number, message = 2, "new"
     a: int = number
@@ -138,8 +139,8 @@ main(): int {
     w: mut []u8 = mut buffer[0..4]
     w[0] = 42
     plain: []u8 = w
-    text: string = keep("ace")
-    writable_view: mut string = mut text[0..]
+    letters: [3]u8 = [u8('a'), u8('c'), u8('e')]
+    writable_view: mut string = string(mut letters[0..])
 
     if sizeof([]char) != 16 || sizeof([3]char) != 3 {
         return 90
@@ -147,5 +148,5 @@ main(): int {
     return count + int(raw) + read_x(pointer) + middle[0] + middle[1] +
         operation(1, 2) + int(state) + box.value + value.get() +
         partial.x + partial.y + int(view.len) + int(tail.len) +
-        int(plain[1]) + int(writable_view.len) - 3
+        int(plain[1]) + int(writable_view.len) + inferred - 7
 }

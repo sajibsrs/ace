@@ -39,3 +39,4 @@ doc-adjacency = strict
 range-in-for = spaced
 slice-range = tight
 array-repeat = spaced
+declaration-elision = spaced

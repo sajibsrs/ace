@@ -1,17 +1,28 @@
 # Types and declarations
 
-Ace declarations use `name: type` everywhere: globals, locals, fields,
-parameters, and destructuring bindings. Type inference is not implemented.
+Ace declarations use `name: type` for globals, locals, fields, parameters, and
+destructuring bindings. Type inference is not implemented. One local-only
+convenience may elide a single binding's type when its initializer already has
+an independent type:
 
 ```ace
 limit: const int = 1024
 
 main(): int {
     count: int = 13
+    next := count + 1
     count = 42
-    return count
+    return count + next
 }
 ```
+
+`name := expression` always declares a new local; it is never assignment. The
+initializer is typed before the new name exists and receives no type context
+from the declaration. Standalone integer, float, and character literals use
+their existing defaults (`int`, `f64`, and `u8`). Values such as `null`, bare
+aggregate literals, and multi-return calls need an explicit typed declaration.
+The form is unavailable for globals and multi-bindings. This is declaration
+type elision from an independently typed expression, not contextual inference.
 
 Locals are mutable by default. `const` is an explicit type modifier and requires
 an initializer. Assignment copies the value. A bare local declaration reserves
@@ -190,10 +201,6 @@ fill(data: mut []u8, value: u8) {
     }
 }
 
-keep(text: string): string {
-    return text
-}
-
 main(): int {
     buffer: [4]u8 = [0, 0, 0, 0]
     fill(mut buffer[0..4], 7) // establishment at the call site
@@ -202,21 +209,20 @@ main(): int {
     w[0] = 42
     plain: []u8 = w // permission shrink is implicit
 
-    text: string = keep("ace")
-    view: mut string = mut text[0..]
+    letters: [3]u8 = [u8('a'), u8('c'), u8('e')]
+    view: mut string = string(mut letters[0..])
 
     return int(plain[1]) + int(view.len) - 3
 }
 ```
 
 `mut buffer[0..4]` is an establishment expression: it yields a `mut []u8` over
-the array's storage. Establishment requires a writable-lvalue source — `const`
-bindings, literals, and literal-backed bindings (a binding initialized
-directly from a literal, or a slice of one) cannot establish a writable view.
-A source view that already carries `mut` establishes freely: re-slicing a
-writable view propagates the permission (`w[2..4]` is again `mut []u8`), so a
-writable view cannot be laundered by slicing, and no other route widens
-permission.
+the array's owned writable element storage. Re-slicing an already-writable view
+propagates permission without restating `mut` (`w[2..4]` is again `mut []u8`).
+Applying the establishment form to a plain slice or plain string is always an
+error, even when its descriptor variable is locally rebindable: descriptor
+replacement cannot manufacture content permission. Once permission shrinks to
+a plain view, it cannot grow again for that binding.
 
 Plain forms are read-only content regardless of backing storage. Writing
 `v[i] = x` requires the slice's own type to be `mut []T`; a `[]T` parameter
@@ -230,12 +236,13 @@ first; when no exact candidate fits, the call may still resolve through the
 implicit shrink.
 
 `mut string` participates in the same rules. `.len`, byte-sequence equality,
-and `null` behave exactly as for `string`, and `mut text[0..]` establishes one
-from a writable string binding. Indexed byte writes exist only through a
-`mut string`: `s[i] = c` assigns exactly one byte (`u8` or `char`) and follows
-the slice-write bounds contract — a compile-time error when constants prove the
-index out of range, a checked-build diagnostic otherwise, and release assumes
-it. Plain `string` indexing stays a value read.
+and `null` behave exactly as for `string`; it originates from proven writable
+bytes, such as `string(mut array[0..])`, and re-slicing preserves it. Indexed
+byte writes exist only through a `mut string`: `s[i] = c` assigns exactly one
+byte (`u8` or `char`) and follows the slice-write bounds contract — a
+compile-time error when constants prove the index out of range, a checked-build
+diagnostic otherwise, and release assumes it. Plain `string` indexing stays a
+value read.
 
 The view conversions are exact and type-driven. `string(view)` accepts exactly
 `[]u8` (or the transparent `[]char` alias) and yields `string`; over

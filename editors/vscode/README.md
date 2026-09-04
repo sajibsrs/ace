@@ -21,6 +21,9 @@ The `defer` statement keyword is reserved, so the highlighter colors it as a con
 
 The `mut` keyword covers the parameter mark, the call-site argument mark, and the type-position view qualifier (`mut []T`, `mut string`, `mut x[lo..hi]`) alike. The grammar colors one keyword token in every role, so type-position mutability required no grammar change; no editor work remains outstanding for it.
 
+Local declaration elision (`name := expression`) uses the ordinary assignment
+operator scope and needs no indentation or bracket change.
+
 The highlighter exposes distinct, stable TextMate categories:
 
 - all types: \`entity.name.type.ace\`

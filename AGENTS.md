@@ -79,7 +79,7 @@ Surface index — the fast block for "is X supported?": one row per surface, sta
 | Surface | Status | Normative rules |
 |---|---|---|
 | Lexer, parser, typecheck, full carved-surface AArch64 codegen, minimal DWARF line tables | implemented | [Compiler](spec.md#compiler) |
-| Source and syntax/parsing rules (formatting lives in `.acefmt`) | implemented | [Source](spec.md#source), [Syntax & Parsing](spec.md#syntax--parsing) |
+| Source and syntax/parsing rules, including local `:=` type elision (formatting lives in `.acefmt`) | implemented | [Source](spec.md#source), [Syntax & Parsing](spec.md#syntax--parsing) |
 | Values and passing: copy assignment, by-ref `mut`/`noalias` parameters | implemented | [Values & Passing](spec.md#values--passing) |
 | Mutability and per-level pointer permissions | implemented | [Mutability](spec.md#mutability) |
 | Canonical zero, `null`, definite initialization | implemented | [Zero, Null & Absence](spec.md#zero-null--absence) |

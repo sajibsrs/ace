@@ -44,7 +44,8 @@ top_body      := var_decl | const_decl | func_decl | struct_decl
                | method_func_decl | signing_decl | extern_block
 
 binding       := ident ":" type
-var_decl      := binding ["=" expr]                       // global or local single binding
+var_decl      := binding ["=" expr]                       // global or local typed binding
+elided_decl   := ident ":=" expr                          // local only; one binding, independently typed RHS
 multi_decl    := binding ("," binding)+ "=" expr_list      // local typed multi-declaration; one line
 const_decl    := ident ":" "const" type "=" expr
 
@@ -87,7 +88,7 @@ extern_param  := ident ":" type
 ## 3. Statements
 
 ```ebnf
-stmt          := var_decl | multi_decl | const_decl | assignment | expr_stmt
+stmt          := var_decl | elided_decl | multi_decl | const_decl | assignment | expr_stmt
                | if_stmt | for_stmt | switch_stmt | return_stmt
                | break_stmt | continue_stmt | fallthrough_stmt | defer_stmt
                | asm_stmt | labeled_block
@@ -101,10 +102,11 @@ expr_stmt     := expr
 if_stmt       := "if" expr block ["else" (if_stmt | block)]
 for_stmt      := "for" for_head block
 for_head      := loop_binders "in" ["mut"] iterable    // sequence/range head
-               | [head_stmt] ";" [expr] ";" [head_stmt]  // three-clause head
+               | [for_init] ";" [expr] ";" [for_post]  // three-clause head
                | expr                                 // condition-only head
                |                                      // infinite head
-head_stmt     := var_decl | assignment | expr_stmt     // post clause: assignment | expr_stmt only
+for_init      := var_decl | elided_decl | assignment | expr_stmt
+for_post      := assignment | expr_stmt
 loop_binders  := loop_binder | loop_binder "," loop_binder
 loop_binder   := ident ":" type
 iterable      := expr | range_expr
@@ -197,7 +199,7 @@ ret_types     := type | "(" type ("," type)+ ")"
 
 1. **Newlines terminate statements.** No semicolons — except between `for`-head clauses, which must share one physical line (`for i: int = 0; i < n; i += 1`). A statement ends at a newline unless the expression is syntactically incomplete. The BNF above abstracts this as statement separation. Implemented rule (lexer): a newline token is emitted only when the *previous* token can end an expression — identifier, any literal (`null`/`true`/`false` included), `)`, `]`, `}`, `return`, `break`, `continue` (Go-style semicolon insertion, made explicit); NL insertion is suppressed before a for-head `;`. The parser additionally rejects any bare comma-separated list that crosses a physical line: multiline lists must live inside `()`, `[]`, or `{}` and carry continuation/trailing commas as needed. `else` stays on the `}` line.
 2. **Statement-start disambiguation is bounded lookahead (LL(2)), not backtracking:**
-   - `ident ":"` → declaration; `ident "="` or `ident ","` → assignment/destructuring; otherwise → expression statement.
+   - `ident ":"` → typed declaration; `ident ":="` → one local elided declaration; `ident "="` or `ident ","` → assignment/destructuring; otherwise → expression statement.
    - `ident "(" … ")" ":"` or `… "{"` → function declaration; otherwise → call expression.
    - `ident ":" "for"` → labeled `for` of any head form (the same `ident ":"` prefix that starts declarations and labeled blocks); the label rides on the loop.
 3. **`foo[bar]` index vs instantiation:** index arguments are expressions, instantiation arguments are types. Both start with `ident`. Resolve by the name's namespace (generics live in the type/value namespace as declared) — one symbol-table lookup, no backtracking. Where truly ambiguous at parse time, parse as expression and re-check in semantic pass. [P]
@@ -224,5 +226,6 @@ ret_types     := type | "(" type ("," type)+ ")"
 22. **`sizeof` accepts the full type grammar.** Its parenthesized operand may be an inline slice or array type (`sizeof([]u8)`, `sizeof([3]char)`) as well as a named or primitive type. The result is compile-time-only.
 23. **Function brackets are interpreted, not parsed.** Brackets after a function name hold bare identifiers only (`bracket_args`), so parsing never decides their meaning. Brackets whose identifiers resolve to declared types are specialization arguments and must follow a declared generic of that name; identifiers resolving to no declared type start a fresh type-parameter list, so one name may declare several generic overloads (as `str.parse[T]` does) before any specialization. A specialization's parameter and return types must equal the substituted generic signature with all type parameters supplied positionally, and it must appear after its generic — type-naming brackets with no preceding generic are an error, never a silent new parameter list. Compound type arguments (`[]u8`, `*Node`, `Pair[int, string]`) are an additive relaxation; v1 specializes over bare named types only. `specialized` replaces the body of a template that admits no call without an exact specialization; a specialization always carries a real body.
 24. **`defer` is statement-only and call-only.** The `mut` after `defer` marks the call's receiver (`defer mut c.scale(2.0)`) exactly like the ordinary receiver-marked call statement; the parser rejects `mut` when the following expression is not a call. That the operand must be a call, and that the statement may appear only as a direct statement of the function's top-level body block, are semantic rules — the grammar accepts the expression and sema diagnoses it (Deferred calls in `spec.md`).
-25. **Writable views originate from proven writable storage.** Type-position `mut` marks writable content at one view level — `mut *T`, `mut []T`, `mut string` (Mutability #9–11 in `spec.md`). Fresh allocation originates `mut []T` directly; copying, slicing, and the exact string/byte-view conversions preserve an already-writable type, while implicit conversion may only shrink it. The bare prefix form `mut postfix` is legal only when the postfix expression is a slice expression `x[lo..hi]` over writable local storage or an already-writable array, slice, or string view, producing `mut []T` or `mut string`; every other operand is a semantic rejection, so the grammar accepts and sema diagnoses, as with `defer`. In argument position, a `mut`-marked slicing expression is exactly this establishment form (`mem.copy(mut arr[0..N], view)` against `dst: mut []u8`), while a `mut` prefix on any other argument expression remains the call-site mark. Slicing an already-writable view keeps the permission in its type with no new marker. The prefix parses with one token of lookahead after `mut`: `&` starts the writable address-of form, anything else starts establishment. In expression-position type arguments (`Box[mut string]`, `g[mut []u8]`), `mut` followed by `*`, `[]`, or `string` starts a type, not establishment.
+25. **Writable views originate from proven writable storage.** Type-position `mut` marks writable content at one view level — `mut *T`, `mut []T`, `mut string` (Mutability #9–11 in `spec.md`). Fresh allocation originates `mut []T` directly; copying, slicing, and the exact string/byte-view conversions preserve an already-writable type, while implicit conversion may only shrink it. The bare prefix form `mut postfix` is legal only when the postfix expression is a slice expression over owned writable array-element storage, producing `mut []T`; applying it to a plain slice or plain string is always rejected, regardless of descriptor rebindability. An already-writable slice or string is re-sliced without restating `mut` and keeps permission in its type. Every other operand is a semantic rejection, so the grammar accepts and sema diagnoses, as with `defer`. In argument position, a `mut`-marked array-slicing expression is exactly this establishment form (`mem.copy(mut arr[0..N], view)` against `dst: mut []u8`), while a `mut` prefix on any other argument expression remains the call-site mark. The prefix parses with one token of lookahead after `mut`: `&` starts writable address-of, anything else starts establishment. In expression-position type arguments (`Box[mut string]`, `g[mut []u8]`), `mut` followed by `*`, `[]`, or `string` starts a type, not establishment.
 26. **`[]T` is a conversion callee only when called.** The reverse view conversion is spelled `[]u8(text)` (Sequences #6 in `spec.md`), so an inline slice type may open a call: `[]` immediately followed by `]` and a type-starting token parses the brackets as a slice type, and the following `(` builds an ordinary call node with the type as callee. Without the call parenthesis the form is not an expression, and an empty array literal is unaffected (the token after `]` must start a type on the same line). Sema owns the overload: only `[]u8(text: mut string): mut []u8` exists, so other slice types through the callee are semantic rejections, mirroring the primitive-name callee `string(view)`.
+27. **`:=` is local declaration type elision, not inference.** It accepts exactly `ident ":=" expr` for one local binding, including a three-clause `for` initializer. Sema types the right side before declaring the name and supplies no expected type; standalone literal defaults are `int`, `f64`, and `u8` for integer, float, and character literals. `null`, contextual bare literals, and multi-return values therefore require an explicit typed declaration. The spelling is unavailable at top level and for multi-bindings, and always declares rather than assigning.

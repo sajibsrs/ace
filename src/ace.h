@@ -23,9 +23,8 @@
     X(NULL, "null") X(TRUE, "true") X(FALSE, "false")                          \
     /* literals */                                                             \
     X(INT, "int") X(FLOAT, "float") X(STR, "string") X(CHARLIT, "char")        \
-    /* assignment + compound assignment (spellings recognized; acceptance */   \
-    /* is a parser decision — checklist open item) */                          \
-    X(ASSIGN, "=")                                                             \
+    /* declaration, assignment, and compound-assignment operators */           \
+    X(ASSIGN, "=") X(DECLARE, ":=")                                           \
     X(ADDEQ, "+=") X(SUBEQ, "-=") X(MULEQ, "*=") X(DIVEQ, "/=")                \
     X(MODEQ, "%=") X(ANDEQ, "&=") X(OREQ, "|=") X(XOREQ, "^=")                 \
     X(SHLEQ, "<<=") X(SHREQ, ">>=")                                            \
@@ -134,7 +133,7 @@ const char* node_kind_name(NKind k);
 enum {
     F_PUB = 1, F_EXPO = 2, F_MUT = 4, F_NOALIAS = 8, F_CONST = 16,
     F_ELSE = 32, F_VARARGS = 64, F_METHOD = 128, F_SELECT = 256,
-    F_EMBED = 512, F_SPECIALIZED = 1024, F_FORGEN = 2048,
+    F_EMBED = 512, F_SPECIALIZED = 1024, F_FORGEN = 2048, F_ELIDED = 4096,
 };
 
 // Compiler-backed standard-module functions. These markers live only on the

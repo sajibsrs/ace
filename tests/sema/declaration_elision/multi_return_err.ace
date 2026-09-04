@@ -1,0 +1,10 @@
+/* err: := binds one value and does not extend typed multi-declaration grammar. */
+
+read(): (int, Error) {
+    return 1, null
+}
+
+main(): int {
+    result := read()
+    return 0
+}

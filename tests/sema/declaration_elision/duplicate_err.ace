@@ -1,0 +1,7 @@
+/* err: := always declares; it never becomes assignment. */
+
+main(): int {
+    value := 1
+    value := 2
+    return value
+}

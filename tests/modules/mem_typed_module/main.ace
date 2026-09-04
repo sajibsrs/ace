@@ -5,7 +5,7 @@
 import Point, make_points, drop_points from "./helper.ace"
 
 main(): int {
-    points: []Point = make_points(3)
+    points: mut []Point = make_points(3)
 
     if points == null {
         return 1
@@ -15,7 +15,7 @@ main(): int {
         drop_points(mut points)
         return 2
     }
-    writable_points: mut []Point = mut points[0..3]
+    writable_points: mut []Point = points[0..3]
     writable_points[0] = Point { x: 1, y: 2 }
     writable_points[2] = Point { x: 3, y: 4 }
 

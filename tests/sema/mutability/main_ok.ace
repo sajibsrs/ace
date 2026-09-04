@@ -56,7 +56,8 @@ main(): int {
 
     // mut string exists: same .len, equality, and null semantics.
     source: string = id("ace")
-    ms: mut string = mut source[0..]
+    letters: [3]u8 = [u8('a'), u8('c'), u8('e')]
+    ms: mut string = string(mut letters[0..])
     if ms.len != 3 {
         return 3
     }
@@ -87,7 +88,7 @@ main(): int {
     }
 
     // Struct fields hold mut-qualified views.
-    store: Store = Store { bytes: mut backing[0..4], text: ms }
+    store: Store = Store { bytes: backing[0..4], text: ms }
     if store.bytes.len != 4 || store.text.len != 3 {
         return 10
     }

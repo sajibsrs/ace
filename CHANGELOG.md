@@ -680,6 +680,28 @@ pass. Both full normal and sanitizer runs complete all other coverage but report
 the unrelated live-network fixture exiting 22 after it cannot bind any of its
 128 candidate loopback ports.
 
+### Local declaration elision and strict writable-view propagation
+
+`name := expr` now declares one local whose type is copied from an independently
+checked initializer. The initializer is checked before the binding enters scope,
+so nested shadowing reads the outer name while a same-scope name remains a
+duplicate declaration; the spelling never becomes assignment. Integer, float,
+and character literals retain their standalone `int`, `f64`, and `u8` defaults.
+Globals, multi-bindings, `null`, contextual aggregate literals, and multi-return
+values remain explicitly typed. The parser admits the form as an ordinary local
+statement and as a three-clause `for` initializer; the emitter reuses the exact
+typed-local path, adding no runtime representation, metadata, or instruction.
+
+The shared slice-expression checker now enforces the clarified permission rule:
+`mut array[lo..hi]` establishes a writable view from owned writable array
+elements, and slicing an existing `mut []T` or `mut string` propagates its type,
+but `mut plain_slice[lo..hi]` and `mut plain_string[lo..hi]` are rejected even
+when the descriptor variable itself is rebindable. Once content permission has
+shrunk, descriptor mutability cannot regrow it. Allocation/reallocation writable
+returns and release's independent descriptor-null permission are unchanged.
+Parser, semantic, runtime, compiler-checked documentation, editor showcase, and
+negative propagation fixtures cover both changes.
+
 ## Still open after these chunks
 
 Checked/release build modes, then checked allocation tracking; nonblocking echo

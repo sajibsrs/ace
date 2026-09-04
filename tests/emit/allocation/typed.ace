@@ -27,7 +27,7 @@ main(): int {
     }
 
     alias: []usize = numbers
-    writable_alias: mut []usize = mut alias[0..4]
+    writable_alias: mut []usize = numbers[0..4]
     writable_alias[2] = 9
 
     if numbers[2] != 9 {

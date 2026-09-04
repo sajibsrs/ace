@@ -12,9 +12,10 @@ must be corrected.
 
 - [Primitives](primitives.md) — implemented scalar types, literals, casts,
   platform words, and strings.
-- [Types and declarations](types.md) — explicit declarations, aliases, distinct
-  types, pointers, zero values, definite initialization, arrays, slices, tuples,
-  structs, enums, tagged unions, contracts, and generic types.
+- [Types and declarations](types.md) — typed declarations, local `:=` elision,
+  aliases, distinct types, pointers, zero values, definite initialization,
+  arrays, slices, tuples, structs, enums, tagged unions, contracts, and generic
+  types.
 - [Memory](memory.md) — `sizeof`, sequence lengths, `mem` allocation,
   byte operations, explicit release, slice aliasing, and current diagnostics.
 - [Functions](function.md) — declarations, parameters, returns, mutation,

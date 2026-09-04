@@ -23,14 +23,14 @@ main(): int {
         return 3
     }
 
-    data: []u8 = alloc(4, 8)
+    data: mut []u8 = alloc(4, 8)
 
     if data != null {
         if data.len != 4 {
             release(mut data)
             return 4
         }
-        writable: mut []u8 = mut data[0..4]
+        writable: mut []u8 = data[0..4]
         writable[0] = 40
         writable[1] = 2
 
@@ -54,7 +54,7 @@ main(): int {
             return 7
         }
 
-        grown: []u8 = realloc(data, 8)
+        grown: mut []u8 = realloc(data, 8)
 
         if grown != null {
             data = grown

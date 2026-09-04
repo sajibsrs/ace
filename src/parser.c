@@ -5,7 +5,8 @@
 //   N_IMPORT    whole: str = binding; b = module ident (alias); a = N_STR path
 //               selective (F_SELECT): kids = imported N_IDENT names;
 //               b = std module ident or a = local N_STR path
-//   N_VAR       kids = binders (N_PARAM: str name, a type); b = init (or N_TUPLE_E); F_CONST
+//   N_VAR       kids = binders (N_PARAM: str name, a type); b = init (or N_TUPLE_E);
+//               F_CONST, or F_ELIDED for local `name := expr` (binder type is NULL)
 //   N_FUNC      str = name; kids = params; a = ret; b = body; c = N_TPARAMS;
 //               d = owner type for methods; F_PUB/F_EXPO/F_METHOD/F_MUT
 //   N_PARAM     str = name; a = type; F_MUT/F_NOALIAS (also used as var binder)
@@ -800,6 +801,7 @@ static Node* expr_list(P* p, int ctx) {
 static Node* parse_block(P* p);
 static Node* parse_stmt(P* p);
 static Node* parse_decl_stmt(P* p, Token* first);
+static Node* parse_elided_decl(P* p, Token* first, int ctx);
 static Node* parse_expr_stmt(P* p, int ctx);
 static Node* parse_for_head(P* p, Node* n);
 
@@ -925,7 +927,11 @@ static Node* parse_for_head(P* p, Node* n) {
         return n;
     }
     n->flags |= F_FORGEN;
-    if (at(p, T_IDENT) && kth(p, 1) == T_COLON) { // declaration init
+    if (at(p, T_IDENT) && kth(p, 1) == T_DECLARE) { // elided declaration init
+        Token* name = tk(p);
+        p->i += 2;
+        n->a = parse_elided_decl(p, name, CTX_NOSLIT);
+    } else if (at(p, T_IDENT) && kth(p, 1) == T_COLON) { // declaration init
         Token* name = tk(p);
         p->i++; // ident; ':' consumed inside
         n->a = parse_decl_stmt(p, name);
@@ -1200,6 +1206,21 @@ static Node* parse_decl_stmt(P* p, Token* first) {
     return n;
 }
 
+// name := expr — one local binding whose type is supplied only after sema has
+// independently typed the initializer. The caller has consumed name and :=.
+static Node* parse_elided_decl(P* p, Token* first, int ctx) {
+    Node* n = nd_tok(p, N_VAR, first);
+    n->flags |= F_ELIDED;
+    Node* binder = nd_tok(p, N_PARAM, first);
+    binder->str = first->str;
+    binder->len = first->len;
+    NV binders = {0};
+    nv_push(p, &binders, binder);
+    set_kids(n, &binders);
+    n->b = expr(p, ctx);
+    return n;
+}
+
 static Node* parse_stmt(P* p) {
     switch (tk(p)->kind) {
     case T_IF: return parse_if(p);
@@ -1256,6 +1277,11 @@ static Node* parse_stmt(P* p) {
         return n;
     }
     case T_IDENT:
+        if (kth(p, 1) == T_DECLARE) {
+            Token* name = tk(p);
+            p->i += 2;
+            return parse_elided_decl(p, name, 0);
+        }
         if (kth(p, 1) == T_COLON) {
             if (kth(p, 2) == T_LBRACE) { // labeled block
                 Node* n = nd(p, N_LABEL);
@@ -1830,6 +1856,9 @@ static Node* parse_top(P* p) {
     if (mut) perr(p, "'mut' before a top-level declaration requires a method owner");
     if (at(p, T_LPAREN)) return parse_func_rest(p, name, tp, pub, expo);
     if (at(p, T_COLON)) return parse_colon_decl(p, name, tp, pub);
+    if (at(p, T_DECLARE))
+        perr(p, "':=' is local-only; global '%.*s' must state its type",
+             (int)name->len, name->str);
     perr(p, "expected '(' or ':' after top-level name '%.*s'", (int)name->len, name->str);
     return NULL;
 }
@@ -1885,6 +1914,7 @@ static void pflags(Node* x) {
     if (x->flags & F_SELECT) printf(" select");
     if (x->flags & F_EMBED) printf(" embed");
     if (x->flags & F_SPECIALIZED) printf(" specialized");
+    if (x->flags & F_ELIDED) printf(" elided");
 }
 
 static void pnode(Node* x, int ind) {

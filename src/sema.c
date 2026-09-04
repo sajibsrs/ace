@@ -1980,13 +1980,17 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             return T_ERR;
         }
         if (establish) {
-            // Mutability #11: a writable view exists only where `mut` is
-            // written at establishment, from a writable-lvalue source. A
-            // mut-qualified source view is already writable content; other
-            // sources must be writable storage. Literal-backed strings can
-            // never establish one (the bytes live in read-only storage).
+            // Mutability #11: the establishment marker may prove writable
+            // array elements, but it may never regrow a plain slice/string.
+            // An already-mut view needs no marker; re-slicing preserves it.
             int content_writable = (is_string || b->kind == SK_SLICE) && b->is_mut;
-            if (!content_writable) {
+            if ((is_string || b->kind == SK_SLICE) && !content_writable) {
+                ck_err(k, e,
+                       "cannot establish writable content from plain %s — permission that has shrunk cannot grow again",
+                       type_name(b));
+                return T_ERR;
+            }
+            if (!content_writable) { // array: prove its inline element storage
                 Node* src = e->a;
                 Sym* vs = src->kind == N_IDENT ? node_sym(src) : NULL;
                 if (vs && vs->is_const)
@@ -3422,6 +3426,39 @@ static void check_switch_fallthrough(Ck* k, Node* s, SType* t) {
 static void check_stmt(Ck* k, Node* s) {
     switch (s->kind) {
     case N_VAR: {
+        if (s->flags & F_ELIDED) {
+            Node* binder = s->kids[0];
+            Node* init = s->b;
+            SType* t = expr_type(k, init); // initializer cannot see this binding
+            if (t == T_UT_INT) {
+                SType* def = init->kind == N_CHAR ? st_prim(P_U8) : st_prim(P_I64);
+                coerce(k, init, def);
+                t = def;
+            } else if (t == T_UT_FLOAT) {
+                SType* def = st_prim(P_F64);
+                coerce(k, init, def);
+                t = def;
+            } else if (t == T_UT_NULL) {
+                ck_err(k, init,
+                       "':=' initializer null has no independent type — use an explicit declaration");
+                t = T_ERR;
+            } else if (t->kind == SK_TUPLE) {
+                ck_err(k, init,
+                       "':=' binds one value, but the initializer produces %d values — use a typed multi-declaration",
+                       t->nfields);
+                t = T_ERR;
+            }
+            Sym* v = declare_val(k, binder, SYM_VAR, binder->str, binder->len);
+            if (v) {
+                v->type = t;
+                v->decl = binder;
+                binder->sym = v;
+                if (t->kind == SK_PRIM && t->prim == P_STRING &&
+                    init->kind == N_STR)
+                    v->is_literal_backed = 1;
+            }
+            return;
+        }
         SType** wants = (SType**)arena_alloc((size_t)(s->nkids ? s->nkids : 1) * sizeof(SType*));
         for (int i = 0; i < s->nkids; i++) {
             Node* binder = s->kids[i];

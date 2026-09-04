@@ -259,8 +259,8 @@ main(): int {
     no_shape: Shape = null
 
     // Allocation, writable views, and package-qualified calls.
-    bytes: []u8 = mem.alloc(16, 8)
-    writable_bytes: mut []u8 = mut bytes[0..16]
+    bytes: mut []u8 = mem.alloc(16, 8)
+    writable_bytes: mut []u8 = bytes[0..16]
     mem.fill(writable_bytes, letter)
     writable_bytes[0] = letter
     message: mut string = string(writable_bytes[0..1])

@@ -25,12 +25,12 @@ main(): int {
     }
     release[usize](mut grown)
 
-    items: []Item = alloc[Item](2)
+    items: mut []Item = alloc[Item](2)
 
     if items == null {
         return 4
     }
-    writable_items: mut []Item = mut items[0..2]
+    writable_items: mut []Item = items[0..2]
     writable_items[0] = Item { tag: 7 }
 
     if items[0].tag != 7 {
