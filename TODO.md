@@ -5,7 +5,7 @@ Candidate catalogue of missing features and capabilities, core language first. T
 Status tags:
 
 - **[queued]** — already listed for later work in `SPEC.md`
-- **[open]** — already open in the Decision Queue or the Current-status surface index
+- **[open]** — already open in the Decision Queue or normative spec
 - **[additive]** — explicitly deferred as an additive extension by a carved decision
 - **[new]** — absent from every existing deferred list; observed here first
 - **[unspecified]** — neither decided nor rejected in `SPEC.md`; support must be verified, then carved either way
@@ -36,7 +36,7 @@ Machine truth (Memory #4) is only half exposed: `sizeof` covers size; the rest o
 
 ## 3. Representation & declaration controls
 
-- **`volatile` / `packed` / `align` attributes** [queued] — listed under the Pre-Implementation Checklist; MMIO and wire-format work is blocked until landed.
+- **`volatile` / `packed` / `align` attributes** [queued] — MMIO and wire-format work is blocked until landed.
 - **Enum explicit discriminants and backing width** [new] — enums are i32 and sequential today (implementation-phase record); opcodes, hardware registers, and ABI structs need explicit values and a chosen width.
 - **Pointer ↔ integer conversions** (`usize(p)`, `T(addr)`) [unspecified] — admission and spelling unstated anywhere; a machine-true language should state the sanctioned form for descriptor packing and tagged pointers.
 
@@ -61,7 +61,7 @@ Specified, unimplemented — the largest promised capability (Safety & Checked B
 
 - **x86-64 second backend and multi-target facade selection** [open] — Decision Queue.
 - **Shared-library (dylib/PIC) and static-archive emission** [new] — the driver emits objects and executables only (Compiler, driver entry); C parity eventually requires both.
-- **Per-module objects and incremental rebuilds** [queued] — module-loader record, `CHANGELOG.md` chunk 11.
+- **Per-module objects and incremental rebuilds** [queued] — the current merged-unit module loader deliberately defers them.
 - **Richer DWARF** (variable/type DIEs, unwind tables) [additive].
 
 ## 7. Numeric & bit-level operations
@@ -89,7 +89,10 @@ Not core language; listed because each blocks practical use.
 - **Signals** [additive] — excluded from `poll` (Stdlib #14); servers need SIGINT handling.
 - **`str.concat` / `str.join`** into caller storage [new] — `str` searches, splits, trims, parses, and formats, but never assembles (Stdlib #15).
 - **Dynamic array and hash-map modules** [new] — composed from `mem` and explicit generics; none exist.
-- **`rune` + UTF-8 decode and `yarn`** [additive] — deferred design pass recorded in the Decision Queue. `char` remains the `u8` byte alias. `rune` is a codepoint scalar with decode-only `runes(s)` iteration and no `[]rune` view. `yarn` is an owning byte buffer rather than a string mirror. Still open for that pass: full cross-type `mem.equal` interoperability among `yarn`, `string`, and `[]u8` over length plus initialized bytes only (recommended: yes; capacity, allocator state, and pointer identity excluded), and whether the `yarn` → `string` view is named/explicit (current recommendation) or implicit.
+- **`rune` + UTF-8 decode and `yarn`** [additive] — `char` remains the
+  `u8` byte alias. The later pass may add a codepoint scalar with explicit
+  decoding and an owning byte buffer. Cross-type byte equality and the owning
+  buffer's string-view conversion remain undecided.
 - **Random source** [new].
 
 ## Suggested carving order

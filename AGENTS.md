@@ -1,143 +1,107 @@
 # AGENTS.md
 
-Working rules for AI agents on this repository. Read this file fully before doing anything else. This file is the operating manual and index; `SPEC.md` is the single ledger of language rules and decision records. Where this file summarizes language content, `SPEC.md` is normative.
+Operating rules for AI agents in this repository. `SPEC.md` is normative for the
+language. `CHANGELOG.md` is the sole implementation-history record.
 
-## What this repository is
-Ace is a systems programming language and its bootstrap compiler. The language design is complete and the C11 compiler is in active implementation; the living design documents remain philosophy, spec, and grammar.
+## Repository
 
-## Required reading, in order
-1. `PHILOSOPHY.md` — why Ace exists, the priority stack, the principles. **Closed**: do not change principles without explicit owner approval.
-2. `SPEC.md` — the concrete language rules, carved incrementally. The Decision Queue at the bottom is the source of truth for status and what comes next. Use the index below to jump to a topic instead of restating one.
-3. `GRAMMAR.md` — EBNF for the carved surface, with lookahead/ambiguity notes for the implementer. Where it disagrees with `SPEC.md`, `SPEC.md` wins.
-4. `CHANGELOG.md` — implementation history: what was built, changed, and fixed, chunk by chunk. Consult it before assuming how something is implemented today.
-5. `TODO.md` — non-normative future-completion survey: missing features and capabilities, core language first. Nothing there is a decision; items are promoted only by carving through the Decision Queue in `SPEC.md`, and the survey must be updated in the same edit whenever a listed item is carved, resolved, or superseded.
+Ace is a systems programming language and its bootstrap C11 compiler. The
+language design is complete; compiler implementation and additive carving are
+active.
 
-## How work proceeds (owner-established process)
-- One topic at a time, closed one by one. Ask the owner clarifying questions in queue order; **decisions are made by the owner, never invented by the agent**.
-- Propose before implementing: when work surfaces an issue — a compiler bug, a failing or stale fixture, a stdlib gap, a design question — describe the issue, present the proposed solution briefly, and ask the owner for implementation permission before changing any code. If multiple viable options exist, present them with a recommendation; implement only what the owner approves.
-- Every closed decision is recorded in `SPEC.md` (rule + rationale) and the Decision Queue is updated in the same edit; implementation history goes to `CHANGELOG.md` and the Current-status surface index in the same edit. Never keep a second copy of a decision or a status log here — the surface index is a directory of status words and pointers, never rule text.
-- Philosophy level first, syntax carving second. Never carve syntax for a topic whose semantics are still open.
-- Any contested design choice is resolved by the priority stack: **performance > simplicity > modularity > compile time > safety**.
-- New sessions must resume from the Decision Queue, not restart settled debates.
-- Large operations (an implementation or migration likely to cross 100k+ tokens
-  of work) are broken into 2–3 steps executed in separate sessions/turns —
-  agree on the step split with the owner first, complete one step per turn,
-  and keep every step compiling with the test suite passing before stopping.
+## Read by task
 
-## Invariants — never propose, generate, or assume these away
-Digest only; the normative rules live in the linked `SPEC.md` topics in the index below.
-- Manual memory through one fixed process-wide strategy exposed by `mem`. No allocator values/arguments, GC, borrow checker, or hidden allocation.
-- Errors are values, checked with explicit branches. No exceptions, no propagation operator; panic = abort only.
-- Fully explicit types, no inference. Explicit generic instantiation; no comptime, no trait solving.
-- Assignment copies; parameters are by-reference — read-only unless `mut`, marked in the signature and at the call site; `noalias` params state non-overlap (debug-verifiable, release-free).
-- Every type has an all-bits-zero representation. Pointer-like and handle-like
-  zero values use `null`; Ace has no optional type operator. Globals are zero-initialized,
-  while locals without initializers must be definitely initialized before use.
-- Composition over inheritance; contract values are explicit; inheritance is rejected.
-- Declarations are `name: type`; functions are keywordless with trailing returns; function values are typed by signature; no C pointer-to-function syntax.
-- Single-pass compilation, recursive descent parsing, direct machine-code emission; no whole-program analysis.
-- Safety is deliberately minimal: cheap local compile-time rules plus checked-build bounds, overflow, and allocator diagnostics; release strips runtime checks. No ownership, lifetime, borrow, or whole-program safety analysis.
-- Control flow: no goto — labeled blocks with `break label`; `for-in` loops only
-  (lowering to index loops over pointer+length); switch cases do not fall through
-  implicitly, and explicit contextual `fallthrough` is implemented.
+1. Read this file first.
+2. For design or carving, read `PHILOSOPHY.md`, the relevant `SPEC.md` sections,
+   and the active Decision Queue.
+3. For compiler work, read the relevant `SPEC.md` and `GRAMMAR.md` sections,
+   then search `CHANGELOG.md` and the implementation by topic.
+4. For planning, read the active Decision Queue and relevant `TODO.md` entries.
+5. Read an entire document only when the task spans it. Human documentation in
+   `docs/` is for implemented behavior, not agent startup context.
+
+## Process
+
+- Work on one topic at a time in Decision Queue order. The owner makes language
+  decisions; agents do not resolve `[open]` or `[controversial]` items.
+- Propose before changing code: describe the issue and recommended solution,
+  then obtain owner permission. If options are viable, present them with a
+  recommendation.
+- Philosophy precedes semantics; semantics precede syntax and implementation.
+  Resolve contested designs by: performance > simplicity > modularity > compile
+  time > safety.
+- Record current normative rules and rationale in `SPEC.md`; keep only active
+  decisions in its queue. Record what was implemented and its essential approach
+  once, briefly, in `CHANGELOG.md`.
+- `TODO.md` is a non-normative survey. Promote items only through the Decision
+  Queue, updating the survey in the same edit.
+- Split work likely to exceed 100k tokens into 2–3 owner-approved steps. Each
+  step must compile and pass its relevant tests.
+
+## Fixed design boundaries
+
+Do not propose or assume away these decisions; follow `SPEC.md` for exact rules.
+
+- Manual memory through one process-wide strategy exposed by `mem`; no allocator
+  values, GC, borrow checking, ownership, or hidden allocation.
+- Errors are values with explicit branches; no exceptions or propagation
+  operator. Panic aborts.
+- Types are explicit; generic instantiation is explicit; no comptime or trait
+  solving. Local `:=` is narrowly specified type elision.
+- Assignment copies. Parameters are by reference, read-only unless `mut`; the
+  signature and call site show mutation. `noalias` states non-overlap.
+- Every type has an all-bits-zero representation. Pointer/handle zero is `null`;
+  no optional type operator. Globals are zeroed; locals require definite
+  initialization before use.
+- Composition and explicit contract values replace inheritance.
+- Declarations use `name: type`; functions are keywordless with trailing
+  returns; function values use signature types.
+- The compiler uses recursive descent, single-pass compilation, and direct
+  machine-code emission; no whole-program analysis.
+- Safety is cheap local checking plus removable checked-build diagnostics.
+- No `goto`; use labeled blocks/loops. Iteration, switch, and `fallthrough`
+  follow `SPEC.md` exactly.
 
 ## Conventions
-- Operations that establish and reverse the same relationship should use a
-  recognizable lexical pair when an accurate pair exists, such as
-  `watch`/`unwatch` or `add`/`remove`. Semantic accuracy takes priority over
-  superficial symmetry; unrelated operations must not be named as a pair
-  merely to make an API appear balanced.
-- `[open]` marks undecided items and `[controversial]` contested ones. Never resolve these markers yourself — only the owner resolves them.
-- Spellings marked *provisional* may change during carving; their semantics may not.
-- Start strict, relax later: propose new convenience as opt-in additions, never as reductions of explicitness.
-- When design is contested, cite the relevant `PHILOSOPHY.md` principle or priority — not general language-design folklore.
-- Ace source formatting is normative in `.acefmt` at the repo root: file bytes,
-  indentation, line length, blank lines, braces, comments, and token spacing.
-  It is the standard the future formatter reads and agents follow; each key's
-  comment carries the rule text, so it is not restated here. Mimicking it in
-  editor-specific configuration is the reader's responsibility. When a
-  formatting rule is decided or changed, update `.acefmt` in the same edit.
-- Documentation-only changes do not run the test suite. Review the diff and run
-  `git diff --check`; only when the documentation exposes genuine uncertainty
-  about compiler behavior, run the smallest targeted check needed to resolve it,
-  never the full suite by default.
-- Never create a Git commit unless the owner explicitly asks for that commit. Completing an implementation does not imply permission to commit it. Commit messages are a single line — subject only, imperative mood, no body (e.g. `Implement the general for statement`).
 
-## Human documentation
-- Human-facing language documentation lives in `docs/`. It describes only behavior that is implemented and available in the current compiler; future work, queues, and planned APIs belong in the `SPEC.md` Decision Queue, not in the manual.
-- `SPEC.md` remains normative. Documentation explains the implemented rules with practical examples and explicit current limitations, and must never contradict the spec.
-- Every committed change to implemented syntax, semantics, compiler-visible behavior, command-line usage, or stdlib APIs must update the relevant `docs/` page in the same commit. Add a page only when its subject is implemented.
-- Keep documentation examples valid Ace. When practical, mirror substantive examples in `tests/sema/docs/*_ok.ace` or an executable fixture so later compiler changes cannot silently stale them.
+- Relationship-forming operations use accurate lexical pairs when available
+  (`watch`/`unwatch`, `add`/`remove`). Accuracy beats cosmetic symmetry.
+- `[open]` is undecided; `[controversial]` is contested. Only the owner removes
+  either marker. Provisional spellings may change; their semantics may not.
+- Start strict and relax later through additive conveniences.
+- Cite `PHILOSOPHY.md` when resolving contested design, not general folklore.
+- `.acefmt` is the normative Ace formatting configuration. Update it with any
+  formatting-rule change.
+- Do not commit unless explicitly asked. Commit messages are one imperative
+  subject line with no body.
 
-## Editor support
+## Documentation and editor support
 
-- The Ace Language VS Code editor plugin lives in `editors/vscode/`.
-- When a language change adds or changes syntax, keywords, comments, brackets, indentation, or another editor-visible construct, update the extension in the same change when support is practical. Record any required editor work that remains in `editors/vscode/README.md` so it is not lost.
+- `docs/` describes only implemented behavior and must agree with `SPEC.md`.
+  Compiler-visible changes update the relevant page and, when practical, a
+  compiler-checked example under `tests/sema/docs/` or an executable fixture.
+- Syntax or editor-visible changes update `editors/vscode/` when practical;
+  otherwise record the remaining work in its README.
+- Documentation-only changes require diff review and `git diff --check`, not the
+  full suite unless compiler behavior is genuinely uncertain.
 
-## Current status
-Surface index — the fast block for "is X supported?": one row per surface, status word only, normative rules always at the linked `SPEC.md` section. Updated in the same edit as the Decision Queue and `CHANGELOG.md`; the prose below carries rationale and next steps, never duplicated status detail.
+## Source index
 
-| Surface | Status | Normative rules |
-|---|---|---|
-| Lexer, parser, typecheck, full carved-surface AArch64 codegen, minimal DWARF line tables | implemented | [Compiler](SPEC.md#compiler) |
-| Source and syntax/parsing rules, including local `:=` type elision, per-name mixed `=` bindings, and `len(sequence)` (formatting lives in `.acefmt`) | implemented | [Source](SPEC.md#source), [Syntax & Parsing](SPEC.md#syntax--parsing), [Memory](SPEC.md#memory) |
-| Values and passing: copy assignment, by-ref `mut`/`noalias` parameters | implemented | [Values & Passing](SPEC.md#values--passing) |
-| Mutability and per-level pointer permissions | implemented | [Mutability](SPEC.md#mutability) |
-| Canonical zero, `null`, definite initialization | implemented | [Zero, Null & Absence](SPEC.md#zero-null--absence) |
-| Checked builds: bounds, overflow, allocator diagnostics | open | [Safety & Checked Builds](SPEC.md#safety--checked-builds) |
-| Packed Error domains/codes, panic = abort | implemented | [Errors](SPEC.md#errors) |
-| Type system: explicit types, distinct types, enums | implemented | [Type System](SPEC.md#type-system) |
-| Contracts: methods, signings, conformances, embedding promotion | implemented | [Abstraction](SPEC.md#abstraction) |
-| Tagged unions | implemented | [Tagged Unions](SPEC.md#tagged-unions) |
-| Generics: explicit instantiation, specialization | implemented | [Generics](SPEC.md#generics) |
-| Functions & ABI, C ABI compatibility whitelist | implemented | [Functions & ABI](SPEC.md#functions--abi) |
-| C interop: `extern` blocks, variadics, link names | implemented | [C Interop](SPEC.md#c-interop) |
-| Names & scoping, overloading | implemented | [Names & Scoping](SPEC.md#names--scoping) |
-| Inline assembly | implemented | [Inline Assembly](SPEC.md#inline-assembly) |
-| Conditions: if, switch, explicit fallthrough | implemented | [Conditions](SPEC.md#conditions) |
-| Iterations: `for-in`, endpoint-ordered ranges, steps, labeled blocks | implemented | [Iterations](SPEC.md#iterations) |
-| General `for` statement (three-clause, condition, infinite, labeled loops, `in mut` iteration over explicit binders) | implemented | [Iterations](SPEC.md#iterations) |
-| Mutable string bytes and view mutability (`mut string`, `mut []T`, indexed writes, view conversions) | implemented | [Sequences](SPEC.md#sequences), [Mutability](SPEC.md#mutability) |
-| Deferred calls: `defer` at function exits, LIFO, two-tier capture | implemented | [Deferred calls](SPEC.md#deferred-calls) |
-| Sequences: slicing, views, iteration, equality | implemented | [Sequences](SPEC.md#sequences) |
-| Modules: loader, selective imports, directory modules | implemented | [Modules](SPEC.md#modules) |
-| Package system | future | [Package System](SPEC.md#package-system-future-work) |
-| `mem`: raw and typed allocation, byte operations including `equal` | implemented | [Memory](SPEC.md#memory), [Stdlib](SPEC.md#stdlib) |
-| `fmt`: `print`/`println` overloads, `printf` | implemented | [Stdlib](SPEC.md#stdlib) |
-| `str`: character/string library, `parse[T]` | implemented | [Stdlib](SPEC.md#stdlib) |
-| `sys`: process arguments/environment, file I/O, monotonic clocks, descriptor constants, `errno` | implemented | [Stdlib](SPEC.md#stdlib) |
-| `net`: blocking IPv4 TCP client/server, `resolve4` DNS, socket options | implemented | [Stdlib](SPEC.md#stdlib) |
-| `poll`: general `sys.Fd` readiness queue | implemented | [Stdlib](SPEC.md#stdlib) |
-| IPv6, UDP, address queries, nonblocking completion, half-close, extra TCP options | open, additive after carving | [Stdlib](SPEC.md#stdlib) |
-| `math` | minimal, no floats/libm | [Stdlib](SPEC.md#stdlib) |
-| `simd` | not implemented | [Stdlib](SPEC.md#stdlib) |
-| `fmt.print(Error)` | deferred by design | [Stdlib](SPEC.md#stdlib) |
-| Driver: extra `.o`/`.a`, `-L`/`-l`/`-framework`, in-place `-o FILE.ace` | implemented | [Compiler](SPEC.md#compiler) |
-| Multi-target backend selection | open | [Compiler](SPEC.md#compiler) |
+- Rules and active decisions: `SPEC.md`
+- Formal syntax and parser notes: `GRAMMAR.md`
+- Principles and priority: `PHILOSOPHY.md`
+- Implemented surfaces and essential approach: `CHANGELOG.md`
+- Uncommitted future candidates: `TODO.md`
+- Formatting: `.acefmt`
 
-- Philosophy and the initial carving phases are complete. The C11 bootstrap compiler (clang, no dependencies; tcc-style direct emission; v1 target AArch64 / Apple arm64) implements the lexer, parser, typecheck, full carved-surface codegen, and minimal DWARF line tables. The additive tagged-union, `fmt.printf`, and blocking IPv4 TCP networking topics are implemented. Chunk-by-chunk history: `CHANGELOG.md`.
-- The general `poll` readiness queue and std directory-module mechanism are implemented ([networking carving](SPEC.md#initial-blocking-tcp-networking-carving-closed) in the Decision Queue). `poll` accepts general `sys.Fd`; `net` is only a consumer. The next networking proof is nonblocking echo followed by multi-client chat; carve any additional semantics that proof exposes before implementation. Multi-target backend selection remains open until a second target is genuinely supported.
-- The general `for` statement is implemented ([general-for carving](SPEC.md#general-for-statement-carving-closed) in the Decision Queue): one keyword, five head forms, labeled loops, and `in mut` aliasing iteration over explicitly typed binders (owner revision — contextual binders superseded); normative rules are Iterations #13–16. String participation in `in mut` landed with type-position view mutability ([type-position mutability and mutable string bytes](SPEC.md#type-position-mutability-and-mutable-string-bytes-implemented) in the Decision Queue) — `mut string`, `mut []T`, indexed writes, exact view conversions, and the stdlib destination-parameter migration — carved and implemented across two owner-agreed steps.
-- Sequence overlaps and the character/string-library surface are carved ([sequence-overlap carving](SPEC.md#sequence-overlap-carving-closed), [character and string-library carving](SPEC.md#character-and-string-library-carving-closed)) and implemented: string slicing/view conversion/iteration/bounds checks, the `char` alias, inline sequence types in `sizeof`, and the pure-Ace `str` module with compiler-backed `parse[T]` (mem-allocation precedent) land together in this chunk.
-- Human documentation: `docs/README.md` indexes implemented-only guides (primitives, types/declarations, functions, modules, errors, memory, standard library); examples are compiler-checked by `tests/sema/docs/*_ok.ace` and the `tests/modules/` executables. Expand the guide only alongside landed behavior.
-- Editor support: `editors/vscode/` contains the dependency-free **Ace Language** extension (TextMate scopes, basic language configuration, compiler-checked syntax showcase; `.vscode/launch.json` runs an Extension Development Host). Outstanding editor work is tracked in `editors/vscode/README.md`.
-- Open follow-ups: checked/release build modes, then checked allocation tracking; module loader known limits (`CHANGELOG.md`, chunk 11); stdlib gaps — `simd` not implemented, `math` minimal (no floats/libm), IPv6/UDP/address queries/nonblocking connection completion/half-close/extra TCP options additive after carving, `fmt.print(Error)` deferred by design (Stdlib #9), `str` view-returning `mut` overloads deferred as additive, input lower priority than output. The fuller candidate catalogue — including items on no existing deferred list — is surveyed in `TODO.md`.
-- Later milestone hints — **unconfirmed, not owner decisions and not queue commitments**. Revisit and approve each scope before carving or implementation. Current priority-shaped direction: (1) nonblocking echo/chat over the implemented readiness queue, then threads/atomics; (2) executable C-comparison benchmarks followed only by measured emitter optimizations; (3) checked/release modes and checked-only allocation diagnostics; (4) window/input/audio integration through a C boundary; (5) math/SIMD and a C-facing graphics abstraction or small Metal shim. Later proof milestones are a nonblocking chat server, window/input frame, 2D sprite+audio demo, textured 3D cube, then a small networked game; the blocking TCP echo pair is implemented.
-- Pre-Implementation Checklist items: **all decided** and recorded in SPEC.md; nothing left gating the emitter.
+## Build and test
 
-## Index into SPEC.md
-`SPEC.md` is the single ledger. Jump to the topic instead of restating it here; nothing in this file overrides the spec.
-
-Rules:
-
-[Source](SPEC.md#source) · [Syntax & Parsing](SPEC.md#syntax--parsing) · [Compiler](SPEC.md#compiler) · [Memory](SPEC.md#memory) · [Values & Passing](SPEC.md#values--passing) · [Mutability](SPEC.md#mutability) · [Zero, Null & Absence](SPEC.md#zero-null--absence) · [Safety & Checked Builds](SPEC.md#safety--checked-builds) · [Errors](SPEC.md#errors) · [Type System](SPEC.md#type-system) · [Modules](SPEC.md#modules) · [Package System](SPEC.md#package-system-future-work) · [C Interop](SPEC.md#c-interop) · [Abstraction](SPEC.md#abstraction) · [Tagged Unions](SPEC.md#tagged-unions) · [Generics](SPEC.md#generics) · [Functions & ABI](SPEC.md#functions--abi) · [Names & Scoping](SPEC.md#names--scoping) · [Inline Assembly](SPEC.md#inline-assembly) · [Stdlib](SPEC.md#stdlib) · [Conditions](SPEC.md#conditions) · [Iterations](SPEC.md#iterations) · [Pre-Implementation Checklist](SPEC.md#pre-implementation-checklist) · [Sequences](SPEC.md#sequences)
-
-Decision Queue — source of truth for status and what comes next:
-
-- Closed: [philosophy phase](SPEC.md#closed-philosophy-phase) · [carving phase](SPEC.md#closed-carving-phase)
-- Carved/implemented topics: [Explicit switch fallthrough](SPEC.md#explicit-switch-fallthrough-implemented) · [Recursive layouts and pointer-only type fixups](SPEC.md#recursive-layouts-and-pointer-only-type-fixups-implemented) · [Additive tagged-union carving](SPEC.md#additive-tagged-union-carving-closed) · [Formatted output (`fmt.printf`)](SPEC.md#formatted-output-carving-and-implementation-closed) · [Memory representation](SPEC.md#memory-representation-carving-closed) · [Sequence overlaps](SPEC.md#sequence-overlap-carving-closed) · [Character and string library](SPEC.md#character-and-string-library-carving-closed) · [Generic function specialization](SPEC.md#generic-function-specialization-carving-closed) · [Blocking TCP, DNS, general descriptor polling, and std directory modules](SPEC.md#initial-blocking-tcp-networking-carving-closed).
-- [Implementation phase: closed so far](SPEC.md#implementation-phase-closed-so-far) — networking and DNS implementations, lexical/layout rules, overloading, `fmt.print`/`println` overloads, module loader, methods and signings, compile report, contract terminology, Error layer, panic, allocation and `mem`, pointer permissions, the now-superseded byte-sequence equality implementation, canonical zero, ranges/steps/continuation, `sys` file I/O and time, driver linker controls, C ABI whitelist.
-- [Provisional spellings](SPEC.md#provisional-spellings) · [Syntax details surfaced by the first code sample](SPEC.md#syntax-details-surfaced-by-the-first-code-sample)
-
-## Build & test
-`make` (produces `./ace`). Test: `make test` (fixtures live in feature-grouped directories — one directory per feature under each tier holding a `main` fixture plus aspect-named companions; `*_ok.ace` must pass, `*_err.ace` must fail. `tests/lexer/` + `tests/parser/` run parse-only via `--ast`, `tests/sema/` full check, `tests/emit/<feature>/` compile+link+run via `// expect-exit: N` lines, `tests/modules/<case>/` same convention run in place so companion modules stay beside `main.ace`, `tests/stdlib_module/` std-resolution fixtures run against a copied compiler and synthetic `std/` tree under `/tmp` (directory-module resolution plus ambiguous/missing-name diagnostics), `tests/emit_errors/` negative fixtures that must fail to compile through `-c` with the expected diagnostic documented on an `// error:` line (the constant folder only runs when code is emitted), `tests/driver/` external-link fixtures for `.o`/`.a`/`-L`/`-l`/`-framework` linking and driver diagnostics). Modes: `./ace file.ace` = full check; `--ast` = parse only; `--tokens` = lex only; `--report` = successful-run compilation statistics on stderr; `-c` = emit object `<base>.o`; `-o NAME` = emit + link via `cc`, with optional ordered `.o`/`.a` inputs, `-L <dir>`, `-l <name>`, and `-framework <name>` passed to `cc` as separate arguments (no shell); `-o FILE.ace` compiles that file in place, naming the executable and object after the file stem.
+- Build: `make` (produces `./ace`). Full suite: `make test`.
+- `./ace file.ace`: check; `--tokens`: lex; `--ast`: parse; `--report`:
+  successful-run statistics; `-c`: object; `-o NAME`: emit and link.
+- Tests are feature-grouped under `tests/`: lexer/parser are parse-only, sema
+  checks diagnostics, emit and modules compile/link/run, stdlib-module tests use
+  a synthetic std tree, emit-errors fail during `-c`, and driver tests exercise
+  external linking.
+- Run the smallest relevant checks first. Follow the documentation-only rule
+  above when no executable behavior changed.
