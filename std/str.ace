@@ -42,23 +42,23 @@ pub has(text: string, needle: char): bool {
 /* One boundary test: false selects the prefix and true the suffix; an empty
  * string part matches either boundary. */
 pub has(text: string, part: string, suffix: bool): bool {
-    if part.len > text.len {
+    if len(part) > len(text) {
         return false
     }
 
     if !suffix {
-        return text[..part.len] == part
+        return text[..len(part)] == part
     }
-    return text[text.len - part.len..] == part
+    return text[len(text) - len(part)..] == part
 }
 
 /* Unsigned byte-wise lexicographic order: exactly -1, 0, or 1; after an
  * equal prefix the shorter string sorts first. */
 pub compare(a: string, b: string): int {
-    n: usize = a.len
+    n: usize = len(a)
 
-    if b.len < n {
-        n = b.len
+    if len(b) < n {
+        n = len(b)
     }
 
     for i: usize in 0 .. n {
@@ -70,24 +70,24 @@ pub compare(a: string, b: string): int {
         }
     }
 
-    if a.len < b.len {
+    if len(a) < len(b) {
         return -1
     }
 
-    if a.len > b.len {
+    if len(a) > len(b) {
         return 1
     }
     return 0
 }
 
-/* Copies the complete text into destination[0..text.len]; a shorter
+/* Copies the complete text into destination[0..len(text)]; a shorter
  * destination is unchanged and fails, and the unused suffix is untouched. */
 pub copy(text: string, noalias destination: mut []u8): bool {
-    if text.len > destination.len {
+    if len(text) > len(destination) {
         return false
     }
 
-    for i: usize in 0 .. text.len {
+    for i: usize in 0 .. len(text) {
         destination[i] = text[i]
     }
     return true
@@ -99,30 +99,30 @@ pub copy(text: string, noalias destination: mut []u8): bool {
  * the number written and whether the complete result fit; unwritten slots
  * are unchanged. An empty separator fails without writing. */
 pub split(text: string, separator: string, parts: mut []string): (usize, bool) {
-    if separator.len == 0 {
+    if len(separator) == 0 {
         return 0, false
     }
     written: usize = 0
     start: usize = 0
     cursor: usize = 0
 
-    for guard: usize in 0 .. text.len + 1 {
+    for guard: usize in 0 .. len(text) + 1 {
         at: usize, found: bool = index_from(text, separator, cursor)
 
         if !found {
             break
         }
 
-        if written < parts.len {
+        if written < len(parts) {
             parts[written] = text[start..at]
             written += 1
         }
-        start = at + separator.len
+        start = at + len(separator)
         cursor = start
     }
     complete: bool = false
 
-    if written < parts.len {
+    if written < len(parts) {
         parts[written] = text[start..]
         written += 1
         complete = true
@@ -141,25 +141,25 @@ pub split(text: string, separator: char, parts: mut []string): (usize, bool) {
  * absence returns the original view and false; an empty string part
  * succeeds without changing the view. */
 pub trim(text: string, part: string, suffix: bool): (string, bool) {
-    if part.len == 0 {
+    if len(part) == 0 {
         return text, true
     }
 
     if !suffix {
-        if part.len <= text.len && text[..part.len] == part {
-            return text[part.len..], true
+        if len(part) <= len(text) && text[..len(part)] == part {
+            return text[len(part)..], true
         }
         return text, false
     }
 
-    if part.len <= text.len && text[text.len - part.len..] == part {
-        return text[..text.len - part.len], true
+    if len(part) <= len(text) && text[len(text) - len(part)..] == part {
+        return text[..len(text) - len(part)], true
     }
     return text, false
 }
 
 pub trim(text: string, part: char, suffix: bool): (string, bool) {
-    if text.len == 0 {
+    if len(text) == 0 {
         return text, false
     }
 
@@ -170,8 +170,8 @@ pub trim(text: string, part: char, suffix: bool): (string, bool) {
         return text, false
     }
 
-    if text[text.len - 1] == part {
-        return text[..text.len - 1], true
+    if text[len(text) - 1] == part {
+        return text[..len(text) - 1], true
     }
     return text, false
 }
@@ -179,20 +179,20 @@ pub trim(text: string, part: char, suffix: bool): (string, bool) {
 /* Removes all leading and trailing ASCII whitespace bytes and returns the
  * zero-copy view; no Unicode whitespace processing happens. */
 pub trim(text: string): string {
-    start: usize = text.len
+    start: usize = len(text)
 
-    for i: usize in 0 .. text.len {
+    for i: usize in 0 .. len(text) {
         if !space_byte(text[i]) {
             start = i
             break
         }
     }
-    end: usize = text.len
+    end: usize = len(text)
 
-    if start < text.len {
-        for i: usize in 0 .. text.len - start {
-            if !space_byte(text[text.len - 1 - i]) {
-                end = text.len - i
+    if start < len(text) {
+        for i: usize in 0 .. len(text) - start {
+            if !space_byte(text[len(text) - 1 - i]) {
+                end = len(text) - i
                 break
             }
         }
@@ -476,43 +476,43 @@ pub format(destination: mut []u8, value: usize, radix: u8): (usize, bool) {
 
 /* Writes the complete byte sequence into destination or nothing at all. */
 store_bytes(destination: mut []u8, source: []u8): (usize, bool) {
-    if source.len > destination.len {
+    if len(source) > len(destination) {
         return 0, false
     }
 
-    for i: usize in 0 .. source.len {
+    for i: usize in 0 .. len(source) {
         destination[i] = source[i]
     }
-    return source.len, true
+    return len(source), true
 }
 
 /* Writes the complete text into destination or nothing at all. */
 store_text(destination: mut []u8, text: string): (usize, bool) {
-    if text.len > destination.len {
+    if len(text) > len(destination) {
         return 0, false
     }
 
-    for i: usize in 0 .. text.len {
+    for i: usize in 0 .. len(text) {
         destination[i] = text[i]
     }
-    return text.len, true
+    return len(text), true
 }
 
 /* First occurrence of needle at or after from: the index and whether the
  * needle was found. An empty needle is found at every position. */
 index_from(text: string, needle: string, after: usize): (usize, bool) {
-    if needle.len == 0 {
+    if len(needle) == 0 {
         return after, true
     }
 
-    if needle.len > text.len {
+    if len(needle) > len(text) {
         return 0, false
     }
 
-    for scan: usize in after .. text.len + 1 - needle.len {
+    for scan: usize in after .. len(text) + 1 - len(needle) {
         match: bool = true
 
-        for j: usize in 0 .. needle.len {
+        for j: usize in 0 .. len(needle) {
             if text[scan + j] != needle[j] {
                 match = false
                 break
@@ -528,7 +528,7 @@ index_from(text: string, needle: string, after: usize): (usize, bool) {
 
 /* First occurrence of one byte at or after from. */
 index_byte_from(text: string, byte: char, after: usize): (usize, bool) {
-    for i: usize in after .. text.len {
+    for i: usize in after .. len(text) {
         if text[i] == byte {
             return i, true
         }
@@ -569,7 +569,7 @@ pub parse[int](text: string, radix: u8): (int, bool) {
         return 0, false
     }
 
-    if text.len == 0 {
+    if len(text) == 0 {
         return 0, false
     }
     negative: bool = text[0] == 45
@@ -579,7 +579,7 @@ pub parse[int](text: string, radix: u8): (int, bool) {
         at = 1
     }
 
-    if at == text.len {
+    if at == len(text) {
         return 0, false
     }
     limit: u64 = 9223372036854775807
@@ -589,7 +589,7 @@ pub parse[int](text: string, radix: u8): (int, bool) {
     }
     mag: u64 = 0
 
-    for i: usize in at .. text.len {
+    for i: usize in at .. len(text) {
         d: u64, ok: bool = digit_value(text[i])
 
         if !ok || d >= u64(radix) {
@@ -613,7 +613,7 @@ pub parse[uint](text: string, radix: u8): (uint, bool) {
         return 0, false
     }
 
-    if text.len == 0 {
+    if len(text) == 0 {
         return 0, false
     }
 
@@ -622,7 +622,7 @@ pub parse[uint](text: string, radix: u8): (uint, bool) {
     }
     mag: u64 = 0
 
-    for i: usize in 0 .. text.len {
+    for i: usize in 0 .. len(text) {
         d: u64, ok: bool = digit_value(text[i])
 
         if !ok || d >= u64(radix) {
@@ -667,7 +667,7 @@ pub parse[usize](text: string): (usize, bool) {
 /* The exponent tail of a decimal/scientific spelling: an optional sign and
  * at least one digit, with nothing else. */
 exponent_shape(text: string, at: usize): bool {
-    n: usize = text.len
+    n: usize = len(text)
     cur: usize = at
 
     if cur >= n {
@@ -697,7 +697,7 @@ exponent_shape(text: string, at: usize): bool {
  * extended names — so the C scanner behind the float helpers can never
  * accept anything this language surface rejects. */
 float_literal_shape(text: string): bool {
-    n: usize = text.len
+    n: usize = len(text)
 
     if n == 0 {
         return false
@@ -741,14 +741,14 @@ float_literal_shape(text: string): bool {
 
 /* Copies the text into a NUL-terminated scratch buffer for the C scanner. */
 terminate(text: string, buf: mut []u8): bool {
-    if text.len + 1 > buf.len {
+    if len(text) + 1 > len(buf) {
         return false
     }
 
-    for i: usize in 0 .. text.len {
+    for i: usize in 0 .. len(text) {
         buf[i] = text[i]
     }
-    buf[text.len] = 0
+    buf[len(text)] = 0
     return true
 }
 

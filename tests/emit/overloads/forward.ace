@@ -12,5 +12,5 @@ later(value: int): int {
 }
 
 later(value: string): int {
-    return int(value.len)
+    return int(len(value))
 }

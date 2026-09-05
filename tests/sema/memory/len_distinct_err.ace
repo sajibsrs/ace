@@ -1,0 +1,8 @@
+/* User-defined wrappers do not acquire the built-in sequence operation. */
+
+Bytes: distinct [2]u8
+
+main(): int {
+    values: Bytes
+    return int(len(values))
+}

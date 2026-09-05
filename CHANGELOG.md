@@ -760,6 +760,17 @@ resolver status. Compiler, stdlib, manual, grammar, editor highlighting,
 compiler-checked examples, semantic diagnostics, runtime equality/code tests,
 and canonical-module fixtures were updated together.
 
+### Built-in sequence length call
+
+The owner-approved `len(sequence)` intrinsic replaces the former `.len`
+pseudo-field everywhere. Parentheses are mandatory. Exactly one built-in array,
+slice, or string value is accepted, including writable forms, and the result is
+`usize`: arrays lower to their compile-time element count, while slices and
+strings load the stored element or byte count from their descriptor. Other
+aggregates and user-defined wrappers are rejected; an ordinary struct field
+named `len` remains available. The compiler, standard library, fixtures, manual,
+grammar, specification, and VS Code highlighting migrated together.
+
 ## Still open after these chunks
 
 Checked/release build modes, then checked allocation tracking; nonblocking echo

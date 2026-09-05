@@ -33,5 +33,5 @@ main(): int {
     return calls + big_calls + int(values[0] + values[1] + values[2]) +
         int(bigs[0].a + bigs[0].b + bigs[0].c + bigs[1].a + bigs[1].b + bigs[1].c) +
         int(argument_sum + global_numbers[0] + global_numbers[1] + global_numbers[2]) +
-        int(strings[0].len + strings[1].len)
+        int(len(strings[0]) + len(strings[1]))
 }

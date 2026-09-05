@@ -7,7 +7,7 @@ score(value: int): int {
 }
 
 score(value: string): int {
-    return int(value.len)
+    return int(len(value))
 }
 
 score(value: f64): int {

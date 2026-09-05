@@ -22,7 +22,7 @@ main(): int {
     back: char = as_byte
     bytes: [2]char = [direct, newline]
     message: string = "Welcome Ace!\n"
-    length: usize = message.len
+    length: usize = len(message)
     fmt.print(length)
     first: u8 = message[0]
     id: typeid = null

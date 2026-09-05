@@ -50,7 +50,7 @@ raw_read(fd: int, mut buf: []u8): (int, Error) {
 
 find(buf: []u8, needle: u8): int {
     scan: {
-        for i: int in 0 .. buf.len {
+        for i: int in 0 .. len(buf) {
             if buf[i] == needle {
                 break scan
             }

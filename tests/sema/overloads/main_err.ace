@@ -5,7 +5,7 @@ show(value: int): int {
 }
 
 show(value: string): int {
-    return int(value.len)
+    return int(len(value))
 }
 
 main(): int {

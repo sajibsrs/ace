@@ -246,7 +246,7 @@ static void ck_err(Ck* k, Node* n, const char* fmt, ...) {
 }
 
 // `panic` is the one reserved builtin name: no binding may take it in any
-// scope (spec Errors #15, Names #2) — unlike sizeof/typeid, which are
+// scope (spec Errors #15, Names #2) — unlike sizeof/len/typeid, which are
 // ordinary shadowable identifiers.
 static int is_panic_name(const char* name, uint32_t len) {
     return len == 5 && memcmp(name, "panic", 5) == 0;
@@ -535,13 +535,16 @@ static int64_t seq_const_len(Ck* k, Node* base, SType* t) {
 
 /*
  * One slice bound's compile-time value when constant-provable: untyped
- * constant expressions and the constant `.len` of a sequence whose length is
+ * constant expressions and constant `len(sequence)` calls whose length is
  * itself provable. Returns 0 when the bound cannot be known at compile time.
  */
 static int bound_const(Node* n, int64_t* out) {
-    if (n->kind == N_FIELD_E && n->len == 3 &&
-        memcmp(n->str, "len", 3) == 0 && n->a) {
-        if (n->a->kind == N_STR) { *out = (int64_t)n->a->len; return 1; }
+    if (n->kind == N_CALL && n->a && n->a->kind == N_IDENT &&
+        n->a->len == 3 && memcmp(n->a->str, "len", 3) == 0 && n->nkids == 1) {
+        if (n->kids[0]->kind == N_STR) {
+            *out = (int64_t)n->kids[0]->len;
+            return 1;
+        }
         if (n->ival) { *out = (int64_t)n->ival; return 1; }
         return 0;
     }
@@ -1455,12 +1458,6 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
             ck_err(k, e, "type Error has no field '%.*s'", (int)e->len, e->str);
             return T_ERR;
         }
-        if (!write && e->len == 3 && memcmp(e->str, "len", 3) == 0 &&
-            (b->kind == SK_SLICE || b->kind == SK_ARRAY ||
-             (b->kind == SK_PRIM && b->prim == P_STRING))) {
-            if (b->kind == SK_ARRAY) e->ival = b->count;
-            return st_prim(P_USIZE);
-        }
         if (b->kind != SK_STRUCT) {
             ck_err(k, e, "type %s has no fields", type_name(b));
             return T_ERR;
@@ -1939,13 +1936,6 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                 return st_prim(P_I32);
             ck_err(k, e, "type Error has no field '%.*s'", (int)e->len, e->str);
             return T_ERR;
-        }
-        if (e->len == 3 && memcmp(e->str, "len", 3) == 0 &&
-            (b->kind == SK_SLICE || b->kind == SK_ARRAY ||
-             (b->kind == SK_PRIM && b->prim == P_STRING))) {
-            if (b->kind == SK_ARRAY) e->ival = b->count;
-            else if (e->a->kind == N_STR) e->ival = e->a->len; // constant len
-            return st_prim(P_USIZE);
         }
         if (b->kind == SK_CONTRACT) {
             Node* m = contract_method(b, e->str, e->len);
@@ -2889,6 +2879,25 @@ static SType* check_call(Ck* k, Node* call) {
                 }
                 ck_err(k, call, "sizeof takes one type name");
                 return T_ERR;
+            }
+            if (callee->len == 3 && memcmp(callee->str, "len", 3) == 0) {
+                if (call->nkids != 1 || call->kids[0]->kind == N_MUTARG) {
+                    ck_err(k, call, "len takes exactly one sequence value");
+                    return T_ERR;
+                }
+                SType* t = expr_type(k, call->kids[0]);
+                SType* seq = t;
+                if (!seq || (seq->kind != SK_ARRAY && seq->kind != SK_SLICE &&
+                    !(seq->kind == SK_PRIM && seq->prim == P_STRING))) {
+                    if (seq && seq->kind != SK_ERR)
+                        ck_err(k, call, "len requires a built-in sequence, got %s",
+                               type_name(t));
+                    return T_ERR;
+                }
+                if (seq->kind == SK_ARRAY) call->ival = seq->count;
+                else if (call->kids[0]->kind == N_STR)
+                    call->ival = call->kids[0]->len;
+                return st_prim(P_USIZE);
             }
             // reserved builtin: panic(message: string) — never returns
             if (is_panic_name(callee->str, callee->len)) {
@@ -4195,7 +4204,7 @@ static int init_path(Node* e, InitPath* p) {
         if (!init_path(e->a, p)) return 0;
         SType* bt = init_shape(p->type[p->n]);
         int fi = init_field_index(bt, e);
-        if (fi < 0) return 0; // pointer auto-deref, Error, method, or intrinsic .len
+        if (fi < 0) return 0; // pointer auto-deref, Error, or method
         p->key[p->n] = (uint64_t)fi;
         p->type[p->n + 1] = bt->fields[fi].t;
         p->n++;
@@ -4307,9 +4316,6 @@ static void init_expr(InitCk* k, Node* e) {
         return;
     }
     case N_FIELD_E: {
-        SType* bt = init_shape(node_ty(e->a));
-        if (e->len == 3 && memcmp(e->str, "len", 3) == 0 && bt &&
-            bt->kind == SK_ARRAY) return; // constant metadata, no element read
         InitPath p = {0};
         if (init_path(e, &p)) {
             (void)init_require_path(k, e);
@@ -4358,6 +4364,11 @@ static void init_expr(InitCk* k, Node* e) {
     case N_MUTARG:
         init_expr(k, e->a); return;
     case N_CALL:
+        if (e->a && e->a->kind == N_IDENT && e->a->len == 3 &&
+            memcmp(e->a->str, "len", 3) == 0 && e->nkids == 1) {
+            SType* t = init_shape(node_ty(e->kids[0]));
+            if (t && t->kind == SK_ARRAY) return; // compile-time metadata
+        }
         if (e->a && e->a->kind == N_IDENT) {
             Sym* s = node_sym(e->a);
             if (s && s->kind == SYM_VAR) init_expr(k, e->a); // function variable

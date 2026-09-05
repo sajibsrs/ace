@@ -35,11 +35,11 @@ release_typed(): int {
 main(): int {
     buf = mem.alloc(512, 16)
     fmt.print("before ")
-    fmt.println(buf.len)
+    fmt.println(len(buf))
     release_buf()
     fmt.print("after ")
-    fmt.println(buf.len)
-    if buf.len != 0 {
+    fmt.println(len(buf))
+    if len(buf) != 0 {
         return 1
     }
     // buf's pointer was nulled too: a second release is a no-op, not a
@@ -47,7 +47,7 @@ main(): int {
     double_release()
     tbuf = mem.alloc[usize](8)
     release_typed()
-    if tbuf.len != 0 {
+    if len(tbuf) != 0 {
         return 2
     }
     mem.release[usize](mut tbuf) // null no-op again at the original storage

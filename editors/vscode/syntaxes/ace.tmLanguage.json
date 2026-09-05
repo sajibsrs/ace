@@ -347,7 +347,7 @@
     },
     "builtins": {
       "name": "entity.name.function.ace support.function.builtin.ace",
-      "match": "\\b(?:sizeof|typeid|panic)\\b(?=\\s*\\()"
+      "match": "\\b(?:sizeof|len|typeid|panic)\\b(?=\\s*\\()"
     },
     "constants": {
       "patterns": [

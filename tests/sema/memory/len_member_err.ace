@@ -1,0 +1,6 @@
+/* Sequence length is a builtin call, not a pseudo-field. */
+
+main(): int {
+    values: [2]int = [1, 2]
+    return int(values.len)
+}

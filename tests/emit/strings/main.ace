@@ -21,11 +21,11 @@ main(): int {
         return 1
     }
 
-    if greeting[..2] != "he" || greeting[3..] != "lo" || greeting[..].len != 5 {
+    if greeting[..2] != "he" || greeting[3..] != "lo" || len(greeting[..]) != 5 {
         return 2
     }
 
-    if greeting[2..2].len != 0 {
+    if len(greeting[2..2]) != 0 {
         return 3
     }
 
@@ -39,7 +39,7 @@ main(): int {
     arr: [3]u8 = [u8('o'), u8('k'), u8('!')]
     view: string = string(arr[0..3])
 
-    if view != "ok!" || view.len != 3 {
+    if view != "ok!" || len(view) != 3 {
         return 6
     }
     arr[0] = u8('n')

@@ -130,7 +130,7 @@ main(): int {
 
     switch text_value {
         Scalar.text(text: string) {
-            if text.len != 5 || text[0] != u8(117) || text[4] != u8(110) {
+            if len(text) != 5 || text[0] != u8(117) || text[4] != u8(110) {
                 return 17
             }
         }

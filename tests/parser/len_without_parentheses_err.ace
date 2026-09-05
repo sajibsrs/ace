@@ -1,0 +1,4 @@
+main(): int {
+    values: [2]int = [1, 2]
+    return int(len values)
+}

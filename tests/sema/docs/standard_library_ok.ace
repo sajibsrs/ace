@@ -263,14 +263,14 @@ main(): int {
     argument_count: usize = sys.argc()
     if argument_count > 0 {
         program: string = sys.arg(0)
-        if program.len == 0 {
+        if len(program) == 0 {
             return 61
         }
     }
     environment_count: usize = sys.envc()
     if environment_count > 0 {
         entry: string = sys.env(0)
-        if entry.len == 0 {
+        if len(entry) == 0 {
             return 62
         }
     }

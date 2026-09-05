@@ -285,10 +285,10 @@ connect_darwin(sock: Socket, address: Address4): Error {
 }
 
 receive_darwin(sock: Socket, buffer: mut []u8): (int, Error) {
-    if buffer.len == 0 {
+    if len(buffer) == 0 {
         return 0, null
     }
-    count: i64 = c_recv(i32(sock), mut &buffer[0], buffer.len, 0)
+    count: i64 = c_recv(i32(sock), mut &buffer[0], len(buffer), 0)
 
     if count < 0 {
         return 0, ReceiveErr(sys.errno())
@@ -297,10 +297,10 @@ receive_darwin(sock: Socket, buffer: mut []u8): (int, Error) {
 }
 
 send_bytes_darwin(sock: Socket, data: []u8): (int, Error) {
-    if data.len == 0 {
+    if len(data) == 0 {
         return 0, null
     }
-    count: i64 = c_send(i32(sock), &data[0], data.len, MSG_NOSIGNAL)
+    count: i64 = c_send(i32(sock), &data[0], len(data), MSG_NOSIGNAL)
 
     if count < 0 {
         return 0, SendErr(sys.errno())
@@ -309,10 +309,10 @@ send_bytes_darwin(sock: Socket, data: []u8): (int, Error) {
 }
 
 send_string_darwin(sock: Socket, data: string): (int, Error) {
-    if data.len == 0 {
+    if len(data) == 0 {
         return 0, null
     }
-    count: i64 = c_send(i32(sock), &data[0], data.len, MSG_NOSIGNAL)
+    count: i64 = c_send(i32(sock), &data[0], len(data), MSG_NOSIGNAL)
 
     if count < 0 {
         return 0, SendErr(sys.errno())
@@ -321,12 +321,12 @@ send_string_darwin(sock: Socket, data: string): (int, Error) {
 }
 
 resolve4_darwin(host: string, port: u16, addresses: mut []Address4): (usize, Error) {
-    if host.len > HOST_NAME_MAX || addresses.len == 0 {
+    if len(host) > HOST_NAME_MAX || len(addresses) == 0 {
         return usize(0), ResolveErr(EINVAL)
     }
     name: [254]u8
 
-    for index: usize in usize(0) .. host.len {
+    for index: usize in usize(0) .. len(host) {
         byte: u8 = host[index]
 
         if byte == 0 {
@@ -334,7 +334,7 @@ resolve4_darwin(host: string, port: u16, addresses: mut []Address4): (usize, Err
         }
         name[index] = byte
     }
-    name[host.len] = u8(0)
+    name[len(host)] = u8(0)
 
     hints: DarwinAddrInfo = DarwinAddrInfo {
         flags: 0,
@@ -361,7 +361,7 @@ resolve4_darwin(host: string, port: u16, addresses: mut []Address4): (usize, Err
     current: *DarwinAddrInfo = result
 
     scan: {
-        if current == null || written == addresses.len {
+        if current == null || written == len(addresses) {
             break scan
         }
 

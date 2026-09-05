@@ -256,7 +256,7 @@ Search and ordering:
 Caller storage and views:
 
 - `copy(text: string, noalias destination: mut []u8): bool` — copies the
-  complete text into `destination[0..text.len]`; a shorter destination is
+  complete text into `destination[0..len(text)]`; a shorter destination is
   unchanged and fails, and the unused suffix is untouched. Empty text succeeds
   without writing. Unlike `mem.copy`, the ranges need not be equal — only the
   source and the written range must not overlap.

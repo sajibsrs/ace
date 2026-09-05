@@ -1,7 +1,7 @@
 FileError: error
 Alias: type = FileError
 fs_read(path: string): ([]u8, Error) {
-    if path.len == 0 {
+    if len(path) == 0 {
         return null, FileError(2)
     }
     return null, null
@@ -14,5 +14,5 @@ main(): int {
     if sizeof(Error) != 8 || typeid(FileError) != typeid(Alias) {
         panic("invalid Error representation")
     }
-    return int(data.len)
+    return int(len(data))
 }

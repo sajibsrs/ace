@@ -13,7 +13,7 @@ main(): int {
     byte := 'A'
     ratio := 1.5
     point := Point { x: 20, y: 22 }
-    if text.len != 3 || byte != u8('A') || ratio != 1.5 ||
+    if len(text) != 3 || byte != u8('A') || ratio != 1.5 ||
         point.x + point.y != 42 {
         return 1
     }

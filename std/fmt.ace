@@ -14,20 +14,20 @@ extern "c" {
 }
 
 pub print(text: string): int {
-    if text.len == 0 {
+    if len(text) == 0 {
         return 0
     }
     total: int = 0
 
-    for attempt: int in 0 .. int(text.len) {
-        n: int = write(1, &text[total], text.len - usize(total))
+    for attempt: int in 0 .. int(len(text)) {
+        n: int = write(1, &text[total], len(text) - usize(total))
 
         if n <= 0 {
             return n
         }
         total += n
 
-        if usize(total) == text.len {
+        if usize(total) == len(text) {
             return total
         }
     }
@@ -148,15 +148,15 @@ pub print(value: usize): int {
 write_bytes(data: []u8): int {
     total: int = 0
 
-    for attempt: int in 0 .. int(data.len) {
-        n: int = write(1, &data[total], data.len - usize(total))
+    for attempt: int in 0 .. int(len(data)) {
+        n: int = write(1, &data[total], len(data) - usize(total))
 
         if n <= 0 {
             return n
         }
         total += n
 
-        if usize(total) == data.len {
+        if usize(total) == len(data) {
             return total
         }
     }
@@ -642,7 +642,7 @@ finish_line(written: int): int {
 }
 
 pub println(text: string): int {
-    if text.len == 0 {
+    if len(text) == 0 {
         return print("\n")
     }
     return finish_line(print(text))

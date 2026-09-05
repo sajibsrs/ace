@@ -76,7 +76,7 @@ Selection uses the exact argument count, exact types, and `mut` positions.
 
 ```ace
 render(value: string): int {
-    return int(value.len)
+    return int(len(value))
 }
 
 render(value: int): int {

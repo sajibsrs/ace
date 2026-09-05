@@ -5,5 +5,5 @@ export consume(value: int): int {
 }
 
 consume(value: string): int {
-    return int(value.len)
+    return int(len(value))
 }

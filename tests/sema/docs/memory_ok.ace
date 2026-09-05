@@ -4,7 +4,7 @@ import mem
 
 main(): int {
     values: [4]u8 = [10, 20, 30, 40]
-    count: usize = values.len
+    count: usize = len(values)
 
     if count != 4 {
         return 1
@@ -13,7 +13,7 @@ main(): int {
     storage: mut []u8 = mem.alloc(16, 8)
 
     if storage != null {
-        bytes: usize = storage.len
+        bytes: usize = len(storage)
 
         if bytes != 16 {
             mem.release(mut storage)
@@ -45,7 +45,7 @@ main(): int {
     numbers: mut []usize = mem.alloc[usize](4)
 
     if numbers != null {
-        if numbers.len != 4 {
+        if len(numbers) != 4 {
             mem.release[usize](mut numbers)
             return 5
         }

@@ -98,7 +98,7 @@ all-bits-zero string is `null`.
 
 ```ace
 message: string = "Welcome Ace!\n"
-length: usize = message.len
+length: usize = len(message)
 first: u8 = message[0]
 ```
 
@@ -126,14 +126,14 @@ import fmt
 
 main(): int {
     message: string = "Welcome Ace!\n"
-    fmt.print(message.len)
+    fmt.print(len(message))
     return 0
 }
 ```
 
 The overload writes the complete unsigned decimal range without allocating or
 adding a newline. As with every numeric conversion, converting between `usize`
-and another primitive requires an explicit cast such as `int(message.len)`.
+and another primitive requires an explicit cast such as `int(len(message))`.
 
 `typeid` is an implemented opaque machine-word primitive type carrying a
 compiler-assigned nonzero 32-bit identity. `typeid(T)` produces the identity

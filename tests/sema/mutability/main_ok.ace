@@ -10,11 +10,11 @@ Box[T]: struct { v: T }
 Store: struct { bytes: mut []u8, text: mut string }
 
 plain_len(s: string): int {
-    return int(s.len)
+    return int(len(s))
 }
 
 mut_len(s: mut string): int {
-    return int(s.len)
+    return int(len(s))
 }
 
 pick(s: string): int {
@@ -54,11 +54,11 @@ main(): int {
     }
     plain_tail: []u8 = w[2..4]
 
-    // mut string exists: same .len, equality, and null semantics.
+    // mut string exists: same len(), equality, and null semantics.
     source: string = id("ace")
     letters: [3]u8 = [u8('a'), u8('c'), u8('e')]
     ms: mut string = string(mut letters[0..])
-    if ms.len != 3 {
+    if len(ms) != 3 {
         return 3
     }
     if ms != source || source != ms {
@@ -83,13 +83,13 @@ main(): int {
     // Generic instantiations are distinct types.
     a: Box[string] = Box[string] { v: source }
     b: Box[mut string] = Box[mut string] { v: ms }
-    if a.v.len != 3 || b.v.len != 3 {
+    if len(a.v) != 3 || len(b.v) != 3 {
         return 9
     }
 
     // Struct fields hold mut-qualified views.
     store: Store = Store { bytes: backing[0..4], text: ms }
-    if store.bytes.len != 4 || store.text.len != 3 {
+    if len(store.bytes) != 4 || len(store.text) != 3 {
         return 10
     }
 
@@ -116,5 +116,5 @@ main(): int {
 }
 
 plain_len_of(v: []u8): int {
-    return int(v.len)
+    return int(len(v))
 }

@@ -2158,10 +2158,6 @@ static SType* lvalue_type(Em* e, Node* x) {
         b = unwrap(b);
         if (b->kind == SK_ERROR) b = b->base;
         while (b->kind == SK_PTR) b = b->base;
-        if (x->len == 3 && memcmp(x->str, "len", 3) == 0 &&
-            (b->kind == SK_SLICE ||
-             (b->kind == SK_PRIM && b->prim == P_STRING)))
-            return node_ty(x);
         if (b->kind != SK_STRUCT) return NULL;
         int i = find_field(b, x->str, x->len);
         return i >= 0 ? b->fields[i].t : NULL;
@@ -2271,14 +2267,6 @@ static int gen_addr(Em* e, Node* x) {
         while (bt->kind == SK_PTR) { // auto-deref p.x
             ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
             bt = bt->base;
-        }
-        if (x->len == 3 && memcmp(x->str, "len", 3) == 0 &&
-            (bt->kind == SK_SLICE ||
-             (bt->kind == SK_PRIM && bt->prim == P_STRING))) {
-            uint32_t off = 8;
-            ins(e, 0x91000000u | (off << 10) | ((uint32_t)xreg(ta) << 5) |
-                   (uint32_t)xreg(ta));
-            return ta;
         }
         if (bt->kind != SK_STRUCT) {
             em_err(e, x, "field access on a non-struct");
@@ -3003,6 +2991,24 @@ static EV gen_call(Em* e, Node* call) {
         load_imm(e, 1, xreg(t), call->ival);
         return (EV){ CLS_INT, t };
     }
+    // len(sequence): arrays are compile-time constants; slices and strings
+    // load the stored count from the second descriptor word.
+    if (callee->kind == N_IDENT && !call->sym && callee->len == 3 &&
+        memcmp(callee->str, "len", 3) == 0) {
+        SType* seq = unwrap(node_ty(call->kids[0]));
+        if (seq && seq->kind == SK_ARRAY) {
+            int t = tmp_int(e);
+            load_imm(e, 1, xreg(t), call->ival);
+            return (EV){ CLS_INT, t };
+        }
+        EV value = gen_expr(e, call->kids[0]);
+        if (value.cls != CLS_ADDR) {
+            em_err(e, call, "len sequence has no descriptor");
+            return (EV){ CLS_INT, tmp_int(e) };
+        }
+        EV count = load_scalar(e, xreg(value.idx), 8, node_ty(call));
+        return collapse(e, value.idx, count);
+    }
     Sym* intrinsic = call->sym ? node_sym(call) : NULL;
     if (intrinsic && intrinsic->decl &&
         intrinsic->decl->ival == BI_FMT_PRINTF && call->ival == BI_FMT_PRINTF)
@@ -3533,14 +3539,6 @@ static EV gen_expr(Em* e, Node* x) {
             else
                 mov_int(e, 0, xreg(value.idx), xreg(value.idx)); // raw i32 bits
             return value;
-        }
-        SType* seq = unwrap(node_ty(x->a));
-        while (seq && seq->kind == SK_PTR) seq = unwrap(seq->base);
-        if (seq && seq->kind == SK_ARRAY && x->len == 3 &&
-            memcmp(x->str, "len", 3) == 0) {
-            int it = tmp_int(e);
-            load_imm(e, 1, xreg(it), x->ival);
-            return (EV){ CLS_INT, it };
         }
         SType* bt = node_ty(x->a);
         if (bt && unwrap(bt) && unwrap(bt)->kind == SK_CONTRACT) {

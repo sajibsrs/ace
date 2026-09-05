@@ -20,7 +20,7 @@ Declare a domain at top level and construct errors by calling it:
 pub FileError: error
 
 not_found(path: string): Error {
-    if path.len == 0 {
+    if len(path) == 0 {
         return FileError(2)
     }
     return null

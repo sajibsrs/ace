@@ -112,7 +112,7 @@ add(left: int, right: int): int {
 }
 
 inspect(noalias values: []int): usize {
-    return values.len
+    return len(values)
 }
 
 increment(mut value: int) {
@@ -288,7 +288,7 @@ main(): int {
 
     if valid && empty == null && writable != null && shape != null &&
        identity != null && size > 0 && viewed > 0 && inverted != 0 &&
-       head.len < tail.len {
+       len(head) < len(tail) {
         visits += 1
         return 0
     }

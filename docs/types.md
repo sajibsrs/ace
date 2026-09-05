@@ -201,7 +201,7 @@ afterwards the permission travels in the type:
 
 ```ace
 fill(data: mut []u8, value: u8) {
-    for i: usize in 0 .. data.len {
+    for i: usize in 0 .. len(data) {
         data[i] = value
     }
 }
@@ -217,7 +217,7 @@ main(): int {
     letters: [3]u8 = [u8('a'), u8('c'), u8('e')]
     view: mut string = string(mut letters[0..])
 
-    return int(plain[1]) + int(view.len) - 3
+    return int(plain[1]) + int(len(view)) - 3
 }
 ```
 
@@ -240,7 +240,7 @@ overload sets, struct fields, unions, and generic instantiations — so
 first; when no exact candidate fits, the call may still resolve through the
 implicit shrink.
 
-`mut string` participates in the same rules. `.len`, byte-sequence equality,
+`mut string` participates in the same rules. `len`, byte-sequence equality,
 and `null` behave exactly as for `string`; it originates from proven writable
 bytes, such as `string(mut array[0..])`, and re-slicing preserves it. Indexed
 byte writes exist only through a `mut string`: `s[i] = c` assigns exactly one
@@ -321,9 +321,11 @@ a nonnegative integer literal equal to the array type's length. `value` is
 evaluated once and copied into every element in index order; no allocation or
 shared element storage is introduced.
 
-Intrinsic `.len` is available on arrays (constant element count), slices
-(stored element count), and strings (stored byte count). It is not added to any
-other type. A struct can still declare an ordinary field named `len`.
+The intrinsic `len(sequence)` is available on built-in arrays (constant element
+count), slices (stored element count), and strings (stored byte count), including
+their writable forms. It returns `usize`, requires parentheses, and is not
+provided by structs, tuples, unions, contracts, or user-defined wrappers. A
+struct can still declare an ordinary field named `len`.
 
 Slicing is uniform across arrays, slices, and strings with half-open
 `[lo, hi)` bounds and the defaults `0` and `len(source)`: slicing an array or
@@ -342,7 +344,7 @@ text: string = "hello world"
 tail: string = text[6..]
 letter: u8 = text[0]
 word: const string = "hello"
-window: string = word[1..word.len - 1]
+window: string = word[1..len(word) - 1]
 ```
 
 The `string(bytes)` conversion is an explicit zero-cost view conversion from
