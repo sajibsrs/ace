@@ -1,0 +1,21 @@
+// expect-exit: 0
+
+@when(target == "never-supported")
+import os: "./missing.ace"
+
+@when(target == "darwin-arm64")
+import os: "./darwin.ace"
+
+@when(target != "darwin-arm64")
+selected(): int {
+    return missing_name
+}
+
+@when(target == "darwin-arm64")
+selected(): int {
+    return os.value()
+}
+
+main(): int {
+    return selected() - 17
+}

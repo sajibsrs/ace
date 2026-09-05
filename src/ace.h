@@ -38,7 +38,7 @@
     /* punctuation */                                                          \
     X(LPAREN, "(") X(RPAREN, ")") X(LBRACK, "[") X(RBRACK, "]")                \
     X(LBRACE, "{") X(RBRACE, "}") X(COMMA, ",") X(COLON, ":")                  \
-    X(SEMI, ";")                                                               \
+    X(SEMI, ";") X(AT, "@")                                                  \
     X(DOT, ".") X(DOTDOT, "..") X(DOTDOTDOT, "...")
 
 typedef enum {
@@ -209,7 +209,7 @@ struct Node {
 
 // Parse a token stream into an N_FILE node. Aborts at the first syntax error
 // (reported via d). Always returns a node (possibly partial).
-Node* parse(Token* toks, size_t ntok, Diag* d);
+Node* parse(Token* toks, size_t ntok, Diag* d, const char* target);
 
 // Print an S-expression dump of the AST (stdout).
 void parse_dump(Node* file);
@@ -224,6 +224,7 @@ int sema_check(Node* file, Diag* d);
 // unit. Qualified and selectively imported references are lowered to private
 // module-prefixed names before semantic checking.
 int resolve_imports(Node* file, Diag* d, const char* compiler_path,
+                    const char* target,
                     CompileReport* report);
 
 // Direct AArch64 codegen (stage four): walks the sema-checked AST and writes

@@ -1,5 +1,6 @@
 /* net — OS-neutral allocation-free networking facade. */
 
+@when(target == "darwin-arm64")
 import os: "./os/darwin-arm64.ace"
 
 pub Socket: type = os.Socket

@@ -349,6 +349,19 @@ for want in "absent_module_probe.ace" "absent_module_probe/module.ace"; do
     fi
 done
 
+# @when filters declarations before import loading, binding collisions, and
+# semantic checking, while inactive source still has to parse correctly.
+if ! "$ACE" -o /tmp/ace_when tests/modules/when/main.ace || ! /tmp/ace_when; then
+    echo "FAIL: @when should select exactly the Darwin import and declaration"
+    fail=1
+fi
+unsupported_target=$("$ACE" --target=linux-arm64 tests/parser/when/main_ok.ace 2>&1)
+if ! printf '%s\n' "$unsupported_target" | grep -qF \
+    "unsupported target 'linux-arm64'"; then
+    echo "FAIL: unsupported --target diagnostic"
+    fail=1
+fi
+
 # emit fixtures: compile to an object, link with the system cc, run, and
 # check the exit code. The expected code rides in a `// expect-exit: N` line.
 if [ -d tests/emit ]; then
@@ -474,8 +487,8 @@ if [ -d tests/emit ]; then
         echo "FAIL: --report separator missing"
         fail=1
     fi
-    if ! printf '%s\n' "$report" | grep -q 'source files:.*2$'; then
-        echo "FAIL: --report should count root + imported fmt source"
+    if ! printf '%s\n' "$report" | grep -q 'source files:.*3$'; then
+        echo "FAIL: --report should count root + fmt facade + target source"
         fail=1
     fi
     for label in 'source bytes:' 'tokens:' 'machine code:' 'object file:' 'compile time:'; do
@@ -512,7 +525,7 @@ if [ -d tests/emit ]; then
         fi
         multidwarf=$(dwarfdump --debug-line /tmp/ace_emit/basics/welcome.o 2>/tmp/ace_test_errs)
         if [ $? -ne 0 ] ||
-           ! printf '%s\n' "$multidwarf" | grep -q '/std/fmt.ace' ||
+           ! printf '%s\n' "$multidwarf" | grep -q '/std/fmt/module.ace' ||
            ! printf '%s\n' "$multidwarf" | grep -q '/welcome.ace'; then
             echo "FAIL: imported and root sources should both appear in DWARF"
             cat /tmp/ace_test_errs

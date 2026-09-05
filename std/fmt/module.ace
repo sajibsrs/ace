@@ -1,17 +1,7 @@
 /* fmt — allocation-free text output. */
 
-extern "c" {
-    write(fd: i32, data: *u8, size: usize): int
-    ecvt(value: f64, ndigit: i32, decpt: mut *i32, sign: mut *i32): *u8
-    fcvt(value: f64, ndigit: i32, decpt: mut *i32, sign: mut *i32): *u8
-    floor(value: f64): f64
-    fegetround(): i32
-    fesetround(mode: i32): i32
-    memcpy(dst: *u8, src: *u8, size: usize): *u8
-    memmove(dst: *u8, src: *u8, size: usize): *u8
-    strtod(text: *u8, end: *u8): f64
-    strtof(text: *u8, end: *u8): f32
-}
+@when(target == "darwin-arm64")
+import os: "./os/darwin-arm64.ace"
 
 pub print(text: string): int {
     if len(text) == 0 {
@@ -20,7 +10,7 @@ pub print(text: string): int {
     total: int = 0
 
     for attempt: int in 0 .. int(len(text)) {
-        n: int = write(1, &text[total], len(text) - usize(total))
+        n: int = os.write(&text[total], len(text) - usize(total))
 
         if n <= 0 {
             return n
@@ -64,7 +54,7 @@ pub print(value: int): int {
     total: int = 0
 
     for attempt: int in 0 .. int(size) {
-        n: int = write(1, &digits[at + total], size - usize(total))
+        n: int = os.write(&digits[at + total], size - usize(total))
 
         if n <= 0 {
             return n
@@ -97,7 +87,7 @@ pub print(value: uint): int {
     total: int = 0
 
     for attempt: int in 0 .. int(size) {
-        n: int = write(1, &digits[at + total], size - usize(total))
+        n: int = os.write(&digits[at + total], size - usize(total))
 
         if n <= 0 {
             return n
@@ -130,7 +120,7 @@ pub print(value: usize): int {
     total: int = 0
 
     for attempt: int in 0 .. int(size) {
-        n: int = write(1, &digits[at + total], size - usize(total))
+        n: int = os.write(&digits[at + total], size - usize(total))
 
         if n <= 0 {
             return n
@@ -149,7 +139,7 @@ write_bytes(data: []u8): int {
     total: int = 0
 
     for attempt: int in 0 .. int(len(data)) {
-        n: int = write(1, &data[total], len(data) - usize(total))
+        n: int = os.write(&data[total], len(data) - usize(total))
 
         if n <= 0 {
             return n
@@ -275,8 +265,8 @@ shortest_digits(mag: f64, max: int, narrow: bool, digits: mut []u8, probe: mut [
     limit: int = max + 1
 
     for p: int in 1 .. limit {
-        src: *u8 = ecvt(mag, i32(p), mut &decpt, mut &unused)
-        memcpy(&digits[0], src, usize(p))
+        src: *u8 = os.ecvt(mag, i32(p), mut &decpt, mut &unused)
+        os.memcpy(&digits[0], src, usize(p))
 
         for i: int in 0 .. p {
             probe[i] = digits[i]
@@ -310,12 +300,12 @@ shortest_digits(mag: f64, max: int, narrow: bool, digits: mut []u8, probe: mut [
         probe[q] = u8(0)
 
         if narrow {
-            if strtof(&probe[0], null) == f32(mag) {
+            if os.strtof(&probe[0], null) == f32(mag) {
                 count = p
                 break
             }
         } else {
-            if strtod(&probe[0], null) == mag {
+            if os.strtod(&probe[0], null) == mag {
                 count = p
                 break
             }
@@ -538,7 +528,7 @@ print_precision[f64](value: f64, precision: usize): int {
     src: *u8
 
     if places == 0 {
-        whole: f64 = floor(mag)
+        whole: f64 = os.floor(mag)
         fraction: f64 = mag - whole
         half: f64 = 0.5
 
@@ -551,28 +541,28 @@ print_precision[f64](value: f64, precision: usize): int {
                 whole += 1.0
             }
         }
-        src = fcvt(whole, 1, mut &decpt, mut &unused_sign)
+        src = os.fcvt(whole, 1, mut &decpt, mut &unused_sign)
 
         if whole == zero {
             out[at] = u8(48)
             at += 1
         } else {
             digits: int = int(decpt)
-            memcpy(&out[at], src, usize(digits))
+            os.memcpy(&out[at], src, usize(digits))
             at += digits
         }
         return write_bytes(out[0..at])
     }
 
-    rounding: i32 = fegetround()
+    rounding: i32 = os.fegetround()
 
     if rounding != 0 {
-        fesetround(0) // Darwin FE_TONEAREST: nearest, exact ties to even
+        os.fesetround(0) // Darwin FE_TONEAREST: nearest, exact ties to even
     }
-    src = fcvt(mag, i32(places), mut &decpt, mut &unused_sign)
+    src = os.fcvt(mag, i32(places), mut &decpt, mut &unused_sign)
 
     if rounding != 0 {
-        fesetround(rounding)
+        os.fesetround(rounding)
     }
     point: int = int(decpt)
     available: int = places + point
@@ -598,12 +588,12 @@ print_precision[f64](value: f64, precision: usize): int {
         digits: int = places - zeros
 
         if digits > 0 {
-            memcpy(&out[at], src, usize(digits))
+            os.memcpy(&out[at], src, usize(digits))
             at += digits
         }
     } else {
-        memcpy(&out[at], src, usize(available))
-        memmove(&out[at + point + 1], &out[at + point], usize(places))
+        os.memcpy(&out[at], src, usize(available))
+        os.memmove(&out[at + point + 1], &out[at + point], usize(places))
         out[at + point] = u8(46)
         at += point + places + 1
     }

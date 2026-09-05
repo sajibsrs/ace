@@ -1,9 +1,8 @@
 /* Darwin net OS layer — allocation-free IPv4 TCP sockets
  * (Darwin/Apple arm64).
  *
- * The public declarations form the stable Ace networking surface. The
- * private section below them owns Darwin's constants, structures, C link
- * names, byte order, and conversion details.
+ * Public declarations are the target interface consumed by ../module.ace.
+ * The stable user-facing networking surface remains in that facade.
  */
 
 import sys
@@ -33,67 +32,6 @@ pub ReceiveErr: error
 pub SendErr: error
 pub ResolveErr: error
 
-pub socket(kind: SocketKind): (Socket, Error) {
-    result: Socket, err: Error = socket_darwin(kind)
-    return result, err
-}
-
-pub set_reuse_address(sock: Socket, enabled: bool): Error {
-    return set_reuse_address_darwin(sock, enabled)
-}
-
-pub set_reuse_port(sock: Socket, enabled: bool): Error {
-    return set_reuse_port_darwin(sock, enabled)
-}
-
-pub set_nonblocking(sock: Socket, enabled: bool): Error {
-    return set_nonblocking_darwin(sock, enabled)
-}
-
-pub bind(sock: Socket, address: Address4): Error {
-    return bind_darwin(sock, address)
-}
-
-pub listen(sock: Socket, backlog: usize): Error {
-    return listen_darwin(sock, backlog)
-}
-
-pub accept(listener: Socket): (Socket, Address4, Error) {
-    address: Address4 = zero_address4()
-    accepted: Socket, err: Error = accept_darwin(listener, mut address)
-    return accepted, address, err
-}
-
-pub connect(sock: Socket, address: Address4): Error {
-    return connect_darwin(sock, address)
-}
-
-pub receive(sock: Socket, buffer: mut []u8): (int, Error) {
-    count: int, err: Error = receive_darwin(sock, buffer)
-    return count, err
-}
-
-pub send(sock: Socket, data: []u8): (int, Error) {
-    count: int, err: Error = send_bytes_darwin(sock, data)
-    return count, err
-}
-
-pub send(sock: Socket, data: string): (int, Error) {
-    count: int, err: Error = send_string_darwin(sock, data)
-    return count, err
-}
-
-pub resolve4(host: string, port: u16, addresses: mut []Address4): (usize, Error) {
-    count: usize, err: Error = resolve4_darwin(host, port, addresses)
-    return count, err
-}
-
-// --- private Darwin implementation ---------------------------------------
-
-/* Darwin's sockaddr_in layout: length/family bytes, network-order port,
- * four address bytes, then eight zero bytes. Keeping the byte fields explicit
- * prevents platform byte order from leaking into Address4.
- */
 DarwinAddress4: struct {
     length: u8,
     family: u8,
@@ -173,11 +111,10 @@ from_darwin(address: DarwinAddress4): Address4 {
 
 zero_address4(): Address4 {
     ip: [4]u8 = [u8(0) : 4]
-
     return Address4 {ip: ip, port: u16(0)}
 }
 
-socket_darwin(kind: SocketKind): (Socket, Error) {
+pub socket(kind: SocketKind): (Socket, Error) {
     // tcp is the only initial kind; its enum zero maps to SOCK_STREAM.
     if kind != SocketKind.tcp {
         errno_set(EINVAL)
@@ -191,7 +128,7 @@ socket_darwin(kind: SocketKind): (Socket, Error) {
     return Socket(raw), null
 }
 
-set_socket_option_darwin(sock: Socket, option: i32, enabled: bool, domain: typeid): Error {
+set_socket_option(sock: Socket, option: i32, enabled: bool, domain: typeid): Error {
     value: i32 = 0
 
     if enabled {
@@ -208,15 +145,15 @@ set_socket_option_darwin(sock: Socket, option: i32, enabled: bool, domain: typei
     return null
 }
 
-set_reuse_address_darwin(sock: Socket, enabled: bool): Error {
-    return set_socket_option_darwin(sock, SO_REUSEADDR, enabled, typeid(SetReuseAddressErr))
+pub set_reuse_address(sock: Socket, enabled: bool): Error {
+    return set_socket_option(sock, SO_REUSEADDR, enabled, typeid(SetReuseAddressErr))
 }
 
-set_reuse_port_darwin(sock: Socket, enabled: bool): Error {
-    return set_socket_option_darwin(sock, SO_REUSEPORT, enabled, typeid(SetReusePortErr))
+pub set_reuse_port(sock: Socket, enabled: bool): Error {
+    return set_socket_option(sock, SO_REUSEPORT, enabled, typeid(SetReusePortErr))
 }
 
-set_nonblocking_darwin(sock: Socket, enabled: bool): Error {
+pub set_nonblocking(sock: Socket, enabled: bool): Error {
     flags: i32 = c_fcntl(i32(sock), F_GETFL)
 
     if flags == -1 {
@@ -235,7 +172,7 @@ set_nonblocking_darwin(sock: Socket, enabled: bool): Error {
     return null
 }
 
-bind_darwin(sock: Socket, address: Address4): Error {
+pub bind(sock: Socket, address: Address4): Error {
     raw: DarwinAddress4 = to_darwin(address)
 
     if c_bind(i32(sock), &raw, SOCKADDR4_SIZE) == -1 {
@@ -244,7 +181,7 @@ bind_darwin(sock: Socket, address: Address4): Error {
     return null
 }
 
-listen_darwin(sock: Socket, backlog: usize): Error {
+pub listen(sock: Socket, backlog: usize): Error {
     if backlog > I32_MAX_USIZE {
         errno_set(EINVAL)
         return ListenErr(sys.errno())
@@ -256,7 +193,7 @@ listen_darwin(sock: Socket, backlog: usize): Error {
     return null
 }
 
-accept_darwin(listener: Socket, mut address: Address4): (Socket, Error) {
+pub accept(listener: Socket): (Socket, Address4, Error) {
     port: [2]u8 = [u8(0) : 2]
     ip: [4]u8 = [u8(0) : 4]
     zero: [8]u8 = [u8(0) : 8]
@@ -268,14 +205,12 @@ accept_darwin(listener: Socket, mut address: Address4): (Socket, Error) {
     accepted: i32 = c_accept(i32(listener), mut &raw, mut &length)
 
     if accepted == -1 {
-        address = zero_address4()
-        return Socket(-1), AcceptErr(sys.errno())
+        return Socket(-1), zero_address4(), AcceptErr(sys.errno())
     }
-    address = from_darwin(raw)
-    return Socket(accepted), null
+    return Socket(accepted), from_darwin(raw), null
 }
 
-connect_darwin(sock: Socket, address: Address4): Error {
+pub connect(sock: Socket, address: Address4): Error {
     raw: DarwinAddress4 = to_darwin(address)
 
     if c_connect(i32(sock), &raw, SOCKADDR4_SIZE) == -1 {
@@ -284,7 +219,7 @@ connect_darwin(sock: Socket, address: Address4): Error {
     return null
 }
 
-receive_darwin(sock: Socket, buffer: mut []u8): (int, Error) {
+pub receive(sock: Socket, buffer: mut []u8): (int, Error) {
     if len(buffer) == 0 {
         return 0, null
     }
@@ -296,7 +231,7 @@ receive_darwin(sock: Socket, buffer: mut []u8): (int, Error) {
     return int(count), null
 }
 
-send_bytes_darwin(sock: Socket, data: []u8): (int, Error) {
+pub send(sock: Socket, data: []u8): (int, Error) {
     if len(data) == 0 {
         return 0, null
     }
@@ -308,7 +243,7 @@ send_bytes_darwin(sock: Socket, data: []u8): (int, Error) {
     return int(count), null
 }
 
-send_string_darwin(sock: Socket, data: string): (int, Error) {
+pub send(sock: Socket, data: string): (int, Error) {
     if len(data) == 0 {
         return 0, null
     }
@@ -320,7 +255,7 @@ send_string_darwin(sock: Socket, data: string): (int, Error) {
     return int(count), null
 }
 
-resolve4_darwin(host: string, port: u16, addresses: mut []Address4): (usize, Error) {
+pub resolve4(host: string, port: u16, addresses: mut []Address4): (usize, Error) {
     if len(host) > HOST_NAME_MAX || len(addresses) == 0 {
         return usize(0), ResolveErr(EINVAL)
     }

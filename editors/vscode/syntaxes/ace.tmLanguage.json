@@ -7,6 +7,7 @@
     { "include": "#strings" },
     { "include": "#characters" },
     { "include": "#numbers" },
+    { "include": "#attributes" },
     { "include": "#imports" },
     { "include": "#externs" },
     { "include": "#generic-declarations" },
@@ -29,6 +30,26 @@
     { "include": "#punctuation" }
   ],
   "repository": {
+    "attributes": {
+      "patterns": [
+        {
+          "name": "meta.attribute.when.ace",
+          "match": "(@)(when)\\b",
+          "captures": {
+            "1": { "name": "punctuation.definition.annotation.ace" },
+            "2": { "name": "support.function.attribute.ace" }
+          }
+        },
+        {
+          "name": "variable.language.target.ace",
+          "match": "\\btarget\\b"
+        },
+        {
+          "name": "keyword.operator.logical.ace",
+          "match": "\\b(?:and|or|not)\\b"
+        }
+      ]
+    },
     "comments": {
       "patterns": [
         {

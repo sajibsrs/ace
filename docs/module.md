@@ -146,8 +146,23 @@ explicit relative `.ace` path. Internal OS-layer files may therefore remain
 directly importable, but carry no public compatibility promise; there is no
 special visibility mechanism for them. OS- and kernel-specific standard-library
 implementations always live at `std/<module>/os/<target>.ace` behind the
-module's public `module.ace` facade. The name `backend` is kept for
+module's public `module.ace` facade. The facade selects its target file with a
+top-level `@when(target == "...")` import. The name `backend` is kept for
 compiler/code-generation backends, not OS bindings.
+
+`@when` may precede any top-level declaration. Its condition is restricted to
+`target` string equality/inequality, booleans, `and`, `or`, `not`, and
+parentheses. The attribute has its own line and one blank line separates it
+from any preceding top-level construct. Inactive declarations must have valid
+syntax but are removed before imports are loaded or names and types are checked:
+
+```ace
+@when(target == "darwin-arm64")
+import os: "./os/darwin-arm64.ace"
+```
+
+There is no statement-level conditional compilation. Split target-dependent
+function bodies into separately guarded top-level declarations.
 
 Import cycles are compile errors, reported with the full chain:
 

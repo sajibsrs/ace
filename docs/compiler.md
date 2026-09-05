@@ -7,6 +7,7 @@ ace program.ace
 ace -c program.ace
 ace -o program program.ace
 ace -o program.ace
+ace --target=darwin-arm64 program.ace
 ```
 
 The default mode performs parsing, import resolution, and semantic checking
@@ -16,6 +17,10 @@ to link `NAME`. When `NAME` ends in `.ace`, it names the root source itself:
 that file is compiled and the executable and intermediate object are named after
 the file without the suffix, so `-o program.ace` links `program` and leaves
 `program.o` beside it.
+
+The build target defaults from the compiler host and can be selected explicitly
+with `--target=NAME` (or `--target NAME`). The bootstrap compiler currently
+supports only `darwin-arm64`; any other target is rejected before compilation.
 
 ## Linking external code
 

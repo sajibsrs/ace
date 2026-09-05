@@ -12,11 +12,26 @@
 
 extern char** environ;
 
+static const char* host_target(void) {
+#if defined(__APPLE__) && defined(__aarch64__)
+    return "darwin-arm64";
+#elif defined(__APPLE__) && defined(__x86_64__)
+    return "darwin-x86-64";
+#elif defined(__linux__) && defined(__aarch64__)
+    return "linux-arm64";
+#elif defined(__linux__) && defined(__x86_64__)
+    return "linux-x86-64";
+#else
+    return "unknown";
+#endif
+}
+
 static void usage(void) {
-    fprintf(stderr, "usage: ace [--tokens] [--ast] [--report] [-c] [-o NAME] <file.ace>\n"
+    fprintf(stderr, "usage: ace [--tokens] [--ast] [--report] [--target=TARGET] [-c] [-o NAME] <file.ace>\n"
                     "           [<file.o> | <file.a> | -L DIR | -l NAME | -framework NAME]...\n"
                     "  (default)       full semantic check, no codegen\n"
                     "  --report        print compilation statistics to stderr\n"
+                    "  --target=TARGET compile for TARGET (supported: darwin-arm64)\n"
                     "  -c              emit a Mach-O arm64 object <base>.o\n"
                     "  -o NAME         emit + link via the system cc; NAME ending in\n"
                     "                  .ace compiles that file, naming the output after it\n"
@@ -187,6 +202,7 @@ static void obj_path(char* out, size_t cap, const char* src) {
 int main(int argc, char** argv) {
     int dump_tok = 0, dump_ast = 0, show_report = 0, opt_c = 0, opt_link = 0;
     const char* path = NULL;
+    const char* target = host_target();
     char* out_name = NULL;
     ArgList link_args = {0}; // .o/.a inputs and -L/-l/-framework, written order
     ArgList link_files = {0}; // only positional .o/.a inputs, for collision checks
@@ -195,6 +211,12 @@ int main(int argc, char** argv) {
         if (strcmp(a, "--tokens") == 0) dump_tok = 1;
         else if (strcmp(a, "--ast") == 0) dump_ast = 1;
         else if (strcmp(a, "--report") == 0) show_report = 1;
+        else if (strncmp(a, "--target=", 9) == 0) {
+            if (a[9] == 0) cli_error("--target requires a target name");
+            target = a + 9;
+        }
+        else if (strcmp(a, "--target") == 0)
+            target = opt_value(&i, argc, argv, "--target", "a target name");
         else if (strcmp(a, "-c") == 0) opt_c = 1;
         else if (strcmp(a, "-o") == 0) {
             out_name = opt_value(&i, argc, argv, "-o", "an output name");
@@ -232,6 +254,10 @@ int main(int argc, char** argv) {
             fprintf(stderr, "ace: unrecognized input '%s' (expected .ace, .o, or .a)\n", a);
             exit(2);
         }
+    }
+    if (strcmp(target, "darwin-arm64") != 0) {
+        fprintf(stderr, "ace: unsupported target '%s' (supported: darwin-arm64)\n", target);
+        return 2;
     }
     // `-o <file>.ace` compiles that file in place: the executable is the stem.
     if (out_name && has_suffix(out_name, ".ace")) {
@@ -283,7 +309,7 @@ int main(int argc, char** argv) {
     if (d.errors > 0) goto done;
 
     {
-        Node* file = parse(toks, ntok, &d);
+        Node* file = parse(toks, ntok, &d, target);
         if (d.errors > 0) goto done;
         if (dump_ast) { // --ast: through the parser only
             parse_dump(file);
@@ -294,7 +320,8 @@ int main(int argc, char** argv) {
             }
             return 0;
         }
-        resolve_imports(file, &d, argv[0], show_report ? &report : NULL);
+        resolve_imports(file, &d, argv[0], target,
+                        show_report ? &report : NULL);
         if (d.errors > 0) goto done;
         sema_check(file, &d); // default mode: full semantic check
         if (d.errors > 0) goto done;

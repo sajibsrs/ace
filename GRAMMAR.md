@@ -26,7 +26,22 @@ char_lit      := "'" (byte – "'" | '\' escape) "'"       // exactly one byte
 ## 2. Files & declarations
 
 ```ebnf
-file          := import_decl* top_decl*
+file          := attributed_decl*
+attributed_decl := [when_attr] (import_decl | top_decl)
+
+when_attr     := "@" contextual_when "(" when_expr ")" newline*
+contextual_when := ident                              // exact text "when"
+when_expr     := when_or
+when_or       := when_and (contextual_or when_and)*
+when_and      := when_not (contextual_and when_not)*
+when_not      := contextual_not when_not | when_primary
+when_primary  := "true" | "false"
+               | contextual_target ("==" | "!=") string_lit
+               | "(" when_expr ")"
+contextual_or := ident                                // exact text "or"
+contextual_and := ident                               // exact text "and"
+contextual_not := ident                               // exact text "not"
+contextual_target := ident                            // exact text "target"
 
 import_decl   := module_import | selective_import
 module_import := "import" ident [":" (ident | import_path)]

@@ -11,12 +11,8 @@
 
 import mem
 
-extern "c" {
-    ecvt(value: f64, ndigit: i32, decpt: mut *i32, sign: mut *i32): *u8
-    memcpy(dst: *u8, src: *u8, size: usize): *u8
-    strtod(text: *u8, end: *u8): f64
-    strtof(text: *u8, end: *u8): f32
-}
+@when(target == "darwin-arm64")
+import os: "./os/darwin-arm64.ace"
 
 /* First occurrence of needle: the byte index and whether it was found; an
  * empty string needle is found at zero, and absence returns canonical zero. */
@@ -766,7 +762,7 @@ pub parse[f64](text: string): (f64, bool) {
     if !terminate(text, scratch) {
         return 0.0, false
     }
-    value: f64 = strtod(&buf[0], null)
+    value: f64 = os.strtod(&buf[0], null)
 
     /* Overflow reaches the scanner as infinity; only a spelled infinity may
      * come back as one. Underflow to signed zero succeeds. */
@@ -789,7 +785,7 @@ pub parse[f32](text: string): (f32, bool) {
     if !terminate(text, scratch) {
         return 0.0, false
     }
-    value: f32 = strtof(&buf[0], null)
+    value: f32 = os.strtof(&buf[0], null)
 
     if value == value && f64(value) - f64(value) != f64(zero) &&
        !mem.equal(text, "inf") && !mem.equal(text, "-inf") {
@@ -816,8 +812,8 @@ shortest_digits(mag: f64, max: int, narrow: bool, digits: mut []u8, probe: mut [
     limit: int = max + 1
 
     for p: int in 1 .. limit {
-        src: *u8 = ecvt(mag, i32(p), mut &decpt, mut &unused)
-        memcpy(&digits[0], src, usize(p))
+        src: *u8 = os.ecvt(mag, i32(p), mut &decpt, mut &unused)
+        os.memcpy(&digits[0], src, usize(p))
 
         for i: int in 0 .. p {
             probe[i] = digits[i]
@@ -851,12 +847,12 @@ shortest_digits(mag: f64, max: int, narrow: bool, digits: mut []u8, probe: mut [
         probe[q] = u8(0)
 
         if narrow {
-            if strtof(&probe[0], null) == f32(mag) {
+            if os.strtof(&probe[0], null) == f32(mag) {
                 count = p
                 break
             }
         } else {
-            if strtod(&probe[0], null) == mag {
+            if os.strtod(&probe[0], null) == mag {
                 count = p
                 break
             }

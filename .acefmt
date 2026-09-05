@@ -13,10 +13,14 @@ indent-width = 4
 continuation-alignment = open-delimiter
 
 [declarations]
-public-before-private = always
+public-before-private = dependency-order
 specialized-marker = line-final
 
+[attributes]
+top-level = own-line
+
 [blank-lines]
+before-top-level-attribute = always
 before-body = always
 declaration-group = preserve
 nested-first-body = never

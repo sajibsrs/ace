@@ -15,6 +15,10 @@ current normative rules, and Git preserves patch-level detail.
 - Added `--tokens`, `--ast`, `--report`, object emission, and executable
   linking. The driver passes ordered objects, archives, library paths, libraries,
   and Apple frameworks to `cc` through an argument vector rather than a shell.
+- Implemented `@when` for top-level compile-time declaration filtering with a
+  closed target/boolean expression language, plus host-defaulted `--target`;
+  inactive declarations remain syntax-checked but never reach imports, semantic
+  checking, or emission.
 
 ## Core language
 
@@ -94,14 +98,16 @@ current normative rules, and Git preserves patch-level detail.
 ## Standard library
 
 - Implemented allocation-free `fmt.print` and `println` overloads using small
-  fixed stack buffers and retrying partial writes.
+  fixed stack buffers and retrying partial writes; portable formatting lives in
+  its facade while libc primitives stay in its selected target layer.
 - Implemented compiler-planned `fmt.printf` for static format strings. Semantic
   analysis validates exact argument types and builds a format plan; emission
   calls typed helpers directly, with no runtime parser, argument tags, reflection,
   allocation, or C variadic formatter.
 - Implemented `str` character/string operations and explicit
-  `str.parse[T]` specializations in pure Ace where practical. `char` remains
-  the transparent byte alias and strings remain UTF-8 byte sequences.
+  `str.parse[T]` specializations in pure Ace where practical, with libc float
+  conversion isolated in its selected target layer. `char` remains the
+  transparent byte alias and strings remain UTF-8 byte sequences.
 - Implemented `sys` file-descriptor I/O, descriptor constants, errno capture,
   command-line arguments, environment access, and separate elapsed/awake
   monotonic clocks through thin platform bindings.
@@ -117,8 +123,8 @@ current normative rules, and Git preserves patch-level detail.
   caller-owned event storage, and finite/infinite nanosecond waits. Darwin kqueue
   is private to the OS layer.
 - Standardized OS-specific stdlib organization as a public `module.ace` facade
-  over `os/<target>.ace`, and moved the Darwin `sys`, `net`, and `poll` layers
-  from the ambiguous `backend` directory name to `os`.
+  selecting `os/<target>.ace`; `fmt`, `net`, `poll`, `str`, and `sys` use the
+  layout, and each target file implements its facade operations directly.
 - `math` currently contains only its minimal implemented integer/generic
   helpers; floating libm and SIMD remain open work.
 
@@ -133,6 +139,8 @@ current normative rules, and Git preserves patch-level detail.
   cross-family checks.
 - Canonicalized equivalent module paths before assigning nominal Error identities,
   preventing duplicate module loads and domain identities.
+- Derived private symbol prefixes for directory-module entries from their
+  directory names rather than the repeated `module.ace` filename.
 
 ## Current frontier
 

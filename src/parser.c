@@ -80,6 +80,7 @@ typedef struct {
     Token* toks;
     size_t n, i;
     Diag*  d;
+    const char* target;
     jmp_buf jb;
 } P;
 
@@ -1858,6 +1859,81 @@ static Node* parse_import(P* p) {
     return n;
 }
 
+// @when has a deliberately closed evaluator: target/string comparisons,
+// booleans, and/or/not, and parentheses. Inactive declarations are still
+// parsed for syntax, then omitted from the file before later compiler stages.
+static int when_or(P* p);
+
+static int when_primary(P* p) {
+    if (ate(p, T_TRUE)) return 1;
+    if (ate(p, T_FALSE)) return 0;
+    if (ate(p, T_LPAREN)) {
+        int value = when_or(p);
+        expect(p, T_RPAREN, "')' after @when expression");
+        return value;
+    }
+    if (ident_at(p, "target")) {
+        p->i++;
+        TokKind op = tk(p)->kind;
+        if (op != T_EQEQ && op != T_BANGEQ)
+            perr(p, "expected '==' or '!=' after target in @when expression");
+        p->i++;
+        Token* value = expect(p, T_STR, "target string after comparison");
+        int equal = strlen(p->target) == value->len &&
+                    memcmp(p->target, value->str, value->len) == 0;
+        return op == T_EQEQ ? equal : !equal;
+    }
+    if (at(p, T_IDENT))
+        perr(p, "unknown @when compile-time name '%.*s'",
+             (int)tk(p)->len, tk(p)->str);
+    perr(p, "expected target comparison, boolean, or parenthesized @when expression");
+    return 0;
+}
+
+static int when_not(P* p) {
+    if (ident_at(p, "not")) {
+        p->i++;
+        return !when_not(p);
+    }
+    return when_primary(p);
+}
+
+static int when_and(P* p) {
+    int value = when_not(p);
+    while (ident_at(p, "and")) {
+        p->i++;
+        int rhs = when_not(p); // parse even when the value is already false
+        value = value && rhs;
+    }
+    return value;
+}
+
+static int when_or(P* p) {
+    int value = when_and(p);
+    while (ident_at(p, "or")) {
+        p->i++;
+        int rhs = when_and(p); // parse even when the value is already true
+        value = value || rhs;
+    }
+    return value;
+}
+
+static int parse_when(P* p) {
+    expect(p, T_AT, "'@'");
+    if (!ident_at(p, "when")) perr(p, "only the @when attribute is supported");
+    p->i++;
+    expect(p, T_LPAREN, "'(' after @when");
+    int active = when_or(p);
+    expect(p, T_RPAREN, "')' after @when expression");
+    int attribute_line = p->toks[p->i - 1].line;
+    skipnl(p);
+    if (tk(p)->line == attribute_line)
+        perr(p, "@when must occupy its own line before a declaration");
+    if (at(p, T_AT)) perr(p, "a declaration accepts only one @when attribute");
+    if (at(p, T_EOF)) perr(p, "@when must be followed by a top-level declaration");
+    return active;
+}
+
 static Node* parse_top(P* p) {
     if (at(p, T_IMPORT)) perr(p, "imports must precede declarations");
     int pub = 0, expo = 0, mut = 0;
@@ -1903,11 +1979,12 @@ static Node* parse_top(P* p) {
     return NULL;
 }
 
-Node* parse(Token* toks, size_t ntok, Diag* d) {
+Node* parse(Token* toks, size_t ntok, Diag* d, const char* target) {
     P p = {0};
     p.toks = toks;
     p.n = ntok;
     p.d = d;
+    p.target = target;
     Node* file = (Node*)arena_alloc(sizeof(Node));
     memset(file, 0, sizeof *file);
     file->kind = (uint8_t)N_FILE;
@@ -1917,14 +1994,25 @@ Node* parse(Token* toks, size_t ntok, Diag* d) {
     if (setjmp(p.jb)) return file; // syntax error: stop at the first one
     NV decls = {0};
     skipnl(&p);
-    while (at(&p, T_IMPORT)) {
-        nv_push(&p, &decls, parse_import(&p));
-        skipnl(&p);
-    }
+    int saw_declaration = 0;
     while (!at(&p, T_EOF)) {
-        nv_push(&p, &decls, parse_top(&p));
-        if (!ate(&p, T_NL) && !at(&p, T_EOF))
-            perr(&p, "expected newline after declaration, got %s", gdesc(&p));
+        int active = at(&p, T_AT) ? parse_when(&p) : 1;
+        if (at(&p, T_IMPORT)) {
+            Node* imp = parse_import(&p);
+            if (active) {
+                if (saw_declaration)
+                    perr(&p, "imports must precede declarations");
+                nv_push(&p, &decls, imp);
+            }
+        } else {
+            Node* decl = parse_top(&p);
+            if (!ate(&p, T_NL) && !at(&p, T_EOF))
+                perr(&p, "expected newline after declaration, got %s", gdesc(&p));
+            if (active) {
+                nv_push(&p, &decls, decl);
+                saw_declaration = 1;
+            }
+        }
         skipnl(&p);
     }
     set_kids(file, &decls);

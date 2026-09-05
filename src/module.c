@@ -65,6 +65,7 @@ struct Module {
 typedef struct {
     Diag*       d;
     const char* compiler_path;
+    const char* target;
     CompileReport* report;
     Module*     mods;    // completed modules, dependency order
     Module*     loading; // in-progress stack (cycle detection/chain)
@@ -153,7 +154,7 @@ static Node* load_module(Loader* L, const char* path) {
     Token* toks = lex(&src, &d, &ntok);
     if (L->report && ntok) L->report->tokens += ntok - 1; // exclude EOF
     if (d.errors) { L->d->errors += d.errors; return NULL; }
-    Node* file = parse(toks, ntok, &d);
+    Node* file = parse(toks, ntok, &d, L->target);
     if (d.errors) { L->d->errors += d.errors; return NULL; }
     return file;
 }
@@ -293,10 +294,20 @@ static void mark_sys_intrinsics(Loader* L, Module* m) {
 // so prefixed names cannot collide with root declarations, and distinct
 // modules can never share a prefixed member name.
 static const char* assign_prefix(Loader* L, const char* canon) {
-    const char* base = strrchr(canon, '/');
-    base = base ? base + 1 : canon;
+    const char* slash = strrchr(canon, '/');
+    const char* base = slash ? slash + 1 : canon;
     size_t blen = strlen(base);
     if (blen > 4 && strcmp(base + blen - 4, ".ace") == 0) blen -= 4;
+    // A directory module's useful identity is its directory name, not the
+    // conventional entry filename shared by every directory module.
+    if (blen == 6 && memcmp(base, "module", 6) == 0 && slash) {
+        const char* parent = slash;
+        while (parent > canon && parent[-1] != '/') parent--;
+        if (parent < slash) {
+            base = parent;
+            blen = (size_t)(slash - parent);
+        }
+    }
     char candidate[512];
     for (int n = 1;; n++) {
         if (n == 1) snprintf(candidate, sizeof candidate, "%.*s$", (int)blen, base);
@@ -1134,10 +1145,12 @@ static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root
 // --- entry -------------------------------------------------------------------------------
 
 int resolve_imports(Node* file, Diag* d, const char* compiler_path,
+                    const char* target,
                     CompileReport* report) {
     Loader L = {0};
     L.d = d;
     L.compiler_path = compiler_path;
+    L.target = target;
     L.report = report;
 
     const char* root_canon = canonicalize(d->path);

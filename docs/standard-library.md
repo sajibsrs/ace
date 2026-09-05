@@ -147,7 +147,7 @@ main(): int {
 The format must be a string literal or a const-global `string` initialized
 from a static literal. The compiler parses it, checks the argument count and
 exact types, and emits direct typed formatting calls. Those calls are
-exact-type specializations of the private per-shape generics in `std/fmt.ace`
+exact-type specializations of the private per-shape generics in `std/fmt/module.ace`
 — `print_counted[T](value: T): int` for text, bytes, and decimal integers,
 `print_precision[T](value: T, precision: usize): int` for fixed floats, and
 `print_hex[T](value: T, uppercase: bool): int` for hexadecimal — selected by
@@ -465,8 +465,8 @@ not implemented yet.
 
 `net` provides a thin IPv4 TCP layer with allocation-free core socket
 operations. Its public values and operations are
-OS-neutral; `std/net/module.ace` explicitly imports the supported
-Darwin/Apple-arm64 OS layer. Platform structures, constants, byte order, and C
+OS-neutral; `std/net/module.ace` selects the supported Darwin/Apple-arm64 OS
+layer through `@when(target == "darwin-arm64")`. Platform structures, constants, byte order, and C
 bindings stay in that private-by-convention file. `net.Socket` is a transparent
 alias of `sys.Fd`, so close sockets with `sys.close`.
 

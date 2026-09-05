@@ -489,6 +489,7 @@ static void scan_punct(Lex* L, char c) {
         adv(L);
         k = T_SEMI; // valid only between for-head clauses (parser enforces)
         break;
+    case '@': adv(L); k = T_AT; break;
     default:
         adv(L);
         if ((unsigned char)c >= 0x80)

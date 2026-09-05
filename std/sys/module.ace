@@ -1,5 +1,6 @@
 /* sys — OS-neutral process and operating-system facade. */
 
+@when(target == "darwin-arm64")
 import os: "./os/darwin-arm64.ace"
 
 pub Fd: type = os.Fd

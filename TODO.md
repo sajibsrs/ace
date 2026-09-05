@@ -59,7 +59,7 @@ Specified, unimplemented — the largest promised capability (Safety & Checked B
 
 ## 6. Backend & emission capabilities
 
-- **x86-64 second backend and multi-target facade selection** [open] — Decision Queue.
+- **x86-64 second backend and OS-layer implementation** [open] — Decision Queue; facade selection already uses `@when`.
 - **Shared-library (dylib/PIC) and static-archive emission** [new] — the driver emits objects and executables only (Compiler, driver entry); C parity eventually requires both.
 - **Per-module objects and incremental rebuilds** [queued] — the current merged-unit module loader deliberately defers them.
 - **Richer DWARF** (variable/type DIEs, unwind tables) [additive].

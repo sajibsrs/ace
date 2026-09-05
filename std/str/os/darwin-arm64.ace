@@ -1,0 +1,24 @@
+/* Darwin string-conversion primitives consumed by ../module.ace. */
+
+extern "c" {
+    c_ecvt(value: f64, ndigit: i32, decpt: mut *i32, sign: mut *i32): *u8 = "ecvt"
+    c_memcpy(dst: *u8, src: *u8, size: usize): *u8 = "memcpy"
+    c_strtod(text: *u8, end: *u8): f64 = "strtod"
+    c_strtof(text: *u8, end: *u8): f32 = "strtof"
+}
+
+pub ecvt(value: f64, ndigit: i32, decpt: mut *i32, sign: mut *i32): *u8 {
+    return c_ecvt(value, ndigit, decpt, sign)
+}
+
+pub memcpy(dst: *u8, src: *u8, size: usize): *u8 {
+    return c_memcpy(dst, src, size)
+}
+
+pub strtod(text: *u8, end: *u8): f64 {
+    return c_strtod(text, end)
+}
+
+pub strtof(text: *u8, end: *u8): f32 {
+    return c_strtof(text, end)
+}
