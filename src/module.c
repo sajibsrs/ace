@@ -263,6 +263,7 @@ static void mark_mem_intrinsics(Loader* L, Module* m) {
         else if (text_is(n->str, n->len, "fill")) n->ival = BI_MEM_FILL;
         else if (text_is(n->str, n->len, "zero")) n->ival = BI_MEM_ZERO;
         else if (text_is(n->str, n->len, "compare")) n->ival = BI_MEM_COMPARE;
+        else if (text_is(n->str, n->len, "equal")) n->ival = BI_MEM_EQUAL;
     }
 }
 

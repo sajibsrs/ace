@@ -54,14 +54,14 @@ main(): int {
     }
     plain_tail: []u8 = w[2..4]
 
-    // mut string exists: same len(), equality, and null semantics.
+    // mut string exists: same len(), explicit content comparison, and null semantics.
     source: string = id("ace")
     letters: [3]u8 = [u8('a'), u8('c'), u8('e')]
     ms: mut string = string(mut letters[0..])
     if len(ms) != 3 {
         return 3
     }
-    if ms != source || source != ms {
+    if !mem.equal(ms, source) || !mem.equal(source, ms) {
         return 4
     }
     if ms == null {
@@ -102,14 +102,14 @@ main(): int {
         return 11
     }
 
-    // Plain and mut byte views compare by content.
-    if w != r || tail != plain_tail {
+    // Plain and mut byte views compare explicitly by content.
+    if !mem.equal(w, r) || !mem.equal(tail, plain_tail) {
         return 12
     }
 
     // Generic function instantiation keeps explicit type arguments.
     names: [1]string = ["x"]
-    if first[string](names[0..1]) != "x" {
+    if !mem.equal(first[string](names[0..1]), "x") {
         return 13
     }
     return 0

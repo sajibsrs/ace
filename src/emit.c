@@ -426,13 +426,6 @@ static SType* unwrap(SType* t) {
     return t;
 }
 
-static int is_byte_sequence_type(SType* t) {
-    if (!t) return 0;
-    if (t->kind == SK_PRIM) return t->prim == P_STRING;
-    return (t->kind == SK_ARRAY || t->kind == SK_SLICE) && t->base &&
-           t->base->kind == SK_PRIM && t->base->prim == P_U8;
-}
-
 static uint32_t ty_size(SType* t) { return sema_size(t); }
 static uint32_t ty_align(SType* t) { return sema_align(t); }
 
@@ -1266,15 +1259,6 @@ static EV gen_union_eq(Em* e, Node* n, EV a, EV b, SType* ut, int eq) {
             EV nested = gen_union_eq(e, n, (EV){ CLS_ADDR, pa },
                                      (EV){ CLS_ADDR, pb }, unwrap(pt), 1);
             t2 = nested.idx;
-        } else if (is_byte_sequence_type(pt)) {
-            int pa = tmp_int(e), pb = tmp_int(e);
-            ins(e, 0x91000000u | (poff << 10) |
-                   ((uint32_t)xreg(a.idx) << 5) | (uint32_t)xreg(pa));
-            ins(e, 0x91000000u | (poff << 10) |
-                   ((uint32_t)xreg(b.idx) << 5) | (uint32_t)xreg(pb));
-            EV bytes = gen_byte_sequence_eq(e, n, (EV){ CLS_ADDR, pa }, pt,
-                                            (EV){ CLS_ADDR, pb }, pt, 1);
-            t2 = bytes.idx;
         } else if (is_floatt(pt)) {
             t2 = tmp_int(e);
             int is64 = unwrap(pt)->prim == P_F64;
@@ -1356,15 +1340,6 @@ static EV gen_binop(Em* e, Node* n) {
             }
             return gen_union_eq(e, n, a, b, ut, op == T_EQEQ);
         }
-    }
-
-    if ((op == T_EQEQ || op == T_BANGEQ) &&
-        is_byte_sequence_type(node_ty(n->a)) &&
-        is_byte_sequence_type(node_ty(n->b))) {
-        EV a = gen_expr(e, n->a);
-        EV b = gen_expr(e, n->b);
-        return gen_byte_sequence_eq(e, n, a, node_ty(n->a), b,
-                                    node_ty(n->b), op == T_EQEQ);
     }
 
     EV a = gen_expr(e, n->a);
@@ -3046,6 +3021,13 @@ static EV gen_call(Em* e, Node* call) {
     if (intrinsic && intrinsic->decl &&
         intrinsic->decl->ival == BI_MEM_COMPARE && call->ival == BI_MEM_COMPARE)
         return gen_compare_builtin(e, call);
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival == BI_MEM_EQUAL && call->ival == BI_MEM_EQUAL) {
+        EV a = gen_expr(e, call->kids[0]);
+        EV b = gen_expr(e, call->kids[1]);
+        return gen_byte_sequence_eq(e, call, a, node_ty(call->kids[0]), b,
+                                    node_ty(call->kids[1]), 1);
+    }
     if (intrinsic && intrinsic->decl) {
         switch (intrinsic->decl->ival) {
         case BI_SYS_ARGC: return gen_process_count_builtin(e, call, 0);
@@ -5643,6 +5625,7 @@ int emit_object(Node* file, Diag* d, const char* out_path,
                 n->ival == BI_MEM_RELEASE || n->ival == BI_MEM_COPY ||
                 n->ival == BI_MEM_MOVE || n->ival == BI_MEM_FILL ||
                 n->ival == BI_MEM_ZERO || n->ival == BI_MEM_COMPARE ||
+                n->ival == BI_MEM_EQUAL ||
                 n->ival == BI_MEM_ALLOC_T || n->ival == BI_MEM_REALLOC_T ||
                 n->ival == BI_MEM_RELEASE_T)
                 break; // compiler-backed std/mem declarations have no body symbol

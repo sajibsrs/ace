@@ -21,7 +21,7 @@ str_examples(): int {
     }
     trimmed: string, hit: bool = str.trim("hello world", "world", true)
 
-    if !hit || trimmed != "hello " {
+    if !hit || !mem.equal(trimmed, "hello ") {
         return 2
     }
     n: int, ok: bool = str.parse[int]("-42")

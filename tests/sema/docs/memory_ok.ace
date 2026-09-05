@@ -35,6 +35,9 @@ main(): int {
     if mem.compare(target, source) != 0 {
         return 4
     }
+    if !mem.equal(target, source_array) {
+        return 9
+    }
     mem.fill(target, 7)
     mem.zero(target)
 

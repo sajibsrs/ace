@@ -2,6 +2,8 @@
 
 Historical record of the bootstrap compiler's implementation: what was built, changed, and fixed, in the order the work was recorded. Chunk labels are preserved from the original log. This file is history only: normative language rules and decision records (rule + rationale) live in `SPEC.md`, and current stage plus open work are summarized in `AGENTS.md`. It never overrides the spec.
 
+Dates in documentation use `DD-MM-YYYY`.
+
 ## Front end (C11 bootstrap)
 
 ### Lexer (`src/lexer.c`)
@@ -140,6 +142,8 @@ The process allocator is used directly with no Ace allocation header or registry
 
 `==`/`!=` compare complete contents for every pair of `[N]u8`, `[]u8`, and `string`, symmetrically and without conversion or allocation. Both operands are evaluated once in source order; unequal lengths read no element storage, empty equal values skip `memcmp`, and equal nonempty lengths compare exact bytes. The same content rule applies when a tagged union's active payload is a byte sequence. Other array/slice element types retain their existing rules. Focused semantic, runtime, union-payload, evaluation-order, embedded-NUL/high-byte, and compiler-checked docs coverage landed.
 
+Superseded: sequence equality operators, including this byte-content rule and the later descriptor-identity rule for non-byte slices, were removed in favor of no value-to-value `==`/`!=` on sequential types; see "Sequential equality rule carved" dated 05-09-2026.
+
 ### Chunk 20 — Canonical zero and definite initialization
 
 Every type has an all-bits-zero representation; plain pointers, slices, strings, function values, contracts, `Error`, and `typeid` accept `null`, and the optional-type syntax/layout is removed. Globals retain BSS zero initialization. Bare locals reserve uninitialized storage with no fill; a post-sema control-flow pass rejects direct reads before whole or per-subobject initialization, intersecting facts at branches and treating loops conservatively. Address-taking, pointer aliases, asm, and extern code are trust boundaries. Large-frame allocation now uses both AArch64 immediate tiers and correct x29-relative addressing. Normal, runtime, diagnostic, and sanitizer coverage is included.
@@ -235,6 +239,10 @@ unimplemented until a dedicated chunk. Documentation records only the
 already-implemented facts (descriptor identity, null-literal nullness,
 no implicit conversions, empty-view pointers) in `docs/types.md` and
 `docs/memory.md`.
+
+Superseded: the descriptor-identity comparison rule for non-byte slices was
+removed in favor of no value-to-value `==`/`!=` on sequential types; see
+"Sequential equality rule carved" dated 05-09-2026.
 
 ### Typed `mem` allocation
 
@@ -770,6 +778,38 @@ strings load the stored element or byte count from their descriptor. Other
 aggregates and user-defined wrappers are rejected; an ordinary struct field
 named `len` remains available. The compiler, standard library, fixtures, manual,
 grammar, specification, and VS Code highlighting migrated together.
+
+### Sequential equality rule carved — 05-09-2026
+
+Owner decision, implementation pending at the time of carving: arrays, slices, and strings no longer
+have value-to-value `==` or `!=`, regardless of element type. Byte-backed
+content comparison moves to the explicit allocation-free `mem.equal(a, b)`
+operation across every combination and length of `[N]u8`, `[]u8`, and `string`;
+it compares length then exact bytes without conversion, decoding, or
+normalization. Non-byte sequences use explicit loops, and length-only checks use
+`len`. A literal `null` operand remains a distinct canonical-zero nullness form
+for the categories enumerated by Zero, Null & Absence and grants no
+value-to-value equality. The former byte-content operators and non-byte slice
+descriptor-identity operator are superseded; their historical entries remain
+above with forward notes. The implemented-only manual remains unchanged until
+compiler and stdlib support land.
+
+The later Unicode/owned-buffer pass is recorded without resolving it: `char`
+stays the `u8` byte alias; `rune` is a codepoint scalar with decode-only
+`runes(s)` iteration and no `[]rune` view; `yarn` is an owning byte buffer, not a
+string mirror. Full `mem.equal` interoperability among `yarn`, `string`, and
+`[]u8` is recommended over initialized bytes only, excluding capacity,
+allocator state, and pointer identity. A named/explicit `yarn` → `string` view
+is recommended under start-strict. Both yarn choices remain open for that pass.
+
+### Sequential equality rule implemented — 05-09-2026
+
+Arrays, slices, and strings now reject value-to-value `==` and `!=`, including
+inside tagged-union equality. The compiler-backed `mem.equal` accepts every
+pairing of `[N]u8`, `[]u8`, and `string`, evaluates operands once in source
+order, compares length before exact bytes, and allocates or converts nothing.
+Runtime, semantic, compiler-checked manual, human documentation, grammar, and
+surface status were updated together.
 
 ## Still open after these chunks
 

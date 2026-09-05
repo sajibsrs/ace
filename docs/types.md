@@ -240,8 +240,8 @@ overload sets, struct fields, unions, and generic instantiations — so
 first; when no exact candidate fits, the call may still resolve through the
 implicit shrink.
 
-`mut string` participates in the same rules. `len`, byte-sequence equality,
-and `null` behave exactly as for `string`; it originates from proven writable
+`mut string` participates in the same rules. `len`, explicit byte-content
+comparison, and `null` behave exactly as for `string`; it originates from proven writable
 bytes, such as `string(mut array[0..])`, and re-slicing preserves it. Indexed
 byte writes exist only through a `mut string`: `s[i] = c` assigns exactly one
 byte (`u8` or `char`) and follows the slice-write bounds contract — a
@@ -384,33 +384,33 @@ descriptor over bytes (pointer, byte count; `sizeof(string)` = 16) and is
 never NUL-terminated. Plain strings are read-only content; the writable
 `mut string` form is described under [Writable views](#writable-views).
 
-Fixed byte arrays `[N]u8`, byte slices `[]u8`, and strings compare as complete
-byte sequences with `==` and `!=`. Every pair and either operand order is
-accepted, including fixed arrays with different lengths. Lengths must match,
-then every stored byte must match exactly:
+Sequential values — arrays, slices, and strings — do not use `==` or `!=`.
+Compare byte content explicitly with `mem.equal`, which accepts every pairing
+of `[N]u8`, `[]u8`, and `string`, including fixed arrays of different lengths.
+Lengths must match, then every stored byte must match exactly:
 
 ```ace
+import mem
+
 prefix: [12]u8 = [72, 84, 84, 80, 47, 49, 46, 49, 32, 50, 48, 48]
 view: []u8 = prefix[0..12]
 
-array_match: bool = prefix == "HTTP/1.1 200"
-slice_match: bool = "HTTP/1.1 200" == view
+array_match: bool = mem.equal(prefix, "HTTP/1.1 200")
+slice_match: bool = mem.equal("HTTP/1.1 200", view)
 ```
 
-Comparison does not allocate or convert either value. Strings are UTF-8 by
-convention, but equality compares their exact stored encoding without Unicode
+The call does not allocate or convert either value. Strings are UTF-8 by
+convention, but `mem.equal` compares their exact stored encoding without Unicode
 decoding or normalization.
 
 A comparison whose other operand is the literal `null` is a nullness test, not a
 content comparison: it is true only when both descriptor words are zero. An
-empty but non-null slice therefore equals another empty slice by content, while
-it does not equal `null`.
+empty but non-null slice may match another empty sequence through `mem.equal`,
+while it does not equal `null`.
 
-Slices of any other element type compare with `==` and `!=` only against the
-same slice type, and the comparison is descriptor identity: equal when both the
-stored pointer and the length are equal, in constant time with no element loop.
-Use `mem.compare` (byte slices) or an explicit loop to compare contents. Fixed
-arrays of a non-byte element type have no `==` at all.
+Non-byte arrays and slices have no built-in content comparison; use an explicit
+loop. Compare lengths alone with `len(a) == len(b)`. `mem.compare` remains the
+lexicographic operation for byte slices.
 
 Arrays and slices do not convert implicitly in either direction. The explicit
 bridges are slicing (`arr[lo..hi]`, array to slice; `mut arr[lo..hi]`, array to

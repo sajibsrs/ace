@@ -99,10 +99,10 @@ Surface index — the fast block for "is X supported?": one row per surface, sta
 | General `for` statement (three-clause, condition, infinite, labeled loops, `in mut` iteration over explicit binders) | implemented | [Iterations](SPEC.md#iterations) |
 | Mutable string bytes and view mutability (`mut string`, `mut []T`, indexed writes, view conversions) | implemented | [Sequences](SPEC.md#sequences), [Mutability](SPEC.md#mutability) |
 | Deferred calls: `defer` at function exits, LIFO, two-tier capture | implemented | [Deferred calls](SPEC.md#deferred-calls) |
-| Sequences: slicing, views, iteration, byte-sequence equality | implemented | [Sequences](SPEC.md#sequences) |
+| Sequences: slicing, views, iteration, equality | implemented | [Sequences](SPEC.md#sequences) |
 | Modules: loader, selective imports, directory modules | implemented | [Modules](SPEC.md#modules) |
 | Package system | future | [Package System](SPEC.md#package-system-future-work) |
-| `mem`: raw and typed allocation, `copy`/`move`/`fill`/`zero`/`compare` | implemented | [Memory](SPEC.md#memory) |
+| `mem`: raw and typed allocation, byte operations including `equal` | implemented | [Memory](SPEC.md#memory), [Stdlib](SPEC.md#stdlib) |
 | `fmt`: `print`/`println` overloads, `printf` | implemented | [Stdlib](SPEC.md#stdlib) |
 | `str`: character/string library, `parse[T]` | implemented | [Stdlib](SPEC.md#stdlib) |
 | `sys`: process arguments/environment, file I/O, monotonic clocks, descriptor constants, `errno` | implemented | [Stdlib](SPEC.md#stdlib) |
@@ -136,7 +136,7 @@ Decision Queue — source of truth for status and what comes next:
 
 - Closed: [philosophy phase](SPEC.md#closed-philosophy-phase) · [carving phase](SPEC.md#closed-carving-phase)
 - Carved/implemented topics: [Explicit switch fallthrough](SPEC.md#explicit-switch-fallthrough-implemented) · [Recursive layouts and pointer-only type fixups](SPEC.md#recursive-layouts-and-pointer-only-type-fixups-implemented) · [Additive tagged-union carving](SPEC.md#additive-tagged-union-carving-closed) · [Formatted output (`fmt.printf`)](SPEC.md#formatted-output-carving-and-implementation-closed) · [Memory representation](SPEC.md#memory-representation-carving-closed) · [Sequence overlaps](SPEC.md#sequence-overlap-carving-closed) · [Character and string library](SPEC.md#character-and-string-library-carving-closed) · [Generic function specialization](SPEC.md#generic-function-specialization-carving-closed) · [Blocking TCP, DNS, general descriptor polling, and std directory modules](SPEC.md#initial-blocking-tcp-networking-carving-closed).
-- [Implementation phase: closed so far](SPEC.md#implementation-phase-closed-so-far) — networking and DNS implementations, lexical/layout rules, overloading, `fmt.print`/`println` overloads, module loader, methods and signings, compile report, contract terminology, Error layer, panic, allocation and `mem`, pointer permissions, byte-sequence equality, canonical zero, ranges/steps/continuation, `sys` file I/O and time, driver linker controls, C ABI whitelist.
+- [Implementation phase: closed so far](SPEC.md#implementation-phase-closed-so-far) — networking and DNS implementations, lexical/layout rules, overloading, `fmt.print`/`println` overloads, module loader, methods and signings, compile report, contract terminology, Error layer, panic, allocation and `mem`, pointer permissions, the now-superseded byte-sequence equality implementation, canonical zero, ranges/steps/continuation, `sys` file I/O and time, driver linker controls, C ABI whitelist.
 - [Provisional spellings](SPEC.md#provisional-spellings) · [Syntax details surfaced by the first code sample](SPEC.md#syntax-details-surfaced-by-the-first-code-sample)
 
 ## Build & test

@@ -617,8 +617,8 @@ static void check_mut_args(Ck* k, Node* call, Node* fndecl);
 static Node* static_string_expr(Ck* k, Node* e);
 
 /*
- * The three byte-sequence representations participate in one symmetric
- * equality rule.  Transparent aliases already resolve to the same SType;
+ * The three byte-sequence representations participate in the explicit
+ * mem.equal operation. Transparent aliases already resolve to the same SType;
  * distinct wrappers deliberately do not enter this structural category.
  */
 static int is_byte_sequence(SType* t) {
@@ -640,18 +640,19 @@ static SType* indexed_named_type(Ck* k, Node* ix);
 
 /*
  * Union equality compares the tag and active payload. It exists only when
- * every payload type supports equality; structs and tuples do not.  Fixed
- * byte arrays are the one array category with language equality.
+ * every payload type supports equality; sequential payloads do not.
  */
 static int union_supports_equality(SType* t) {
     while (t && t->kind == SK_DISTINCT) t = t->base;
     if (!t) return 0;
     switch (t->kind) {
-    case SK_PRIM: case SK_PTR: case SK_FUNC: case SK_ENUM:
-    case SK_CONTRACT: case SK_ERROR: case SK_SLICE:
+    case SK_PRIM:
+        return t->prim != P_STRING;
+    case SK_PTR: case SK_FUNC: case SK_ENUM:
+    case SK_CONTRACT: case SK_ERROR:
         return 1;
-    case SK_ARRAY:
-        return is_byte_sequence(t);
+    case SK_ARRAY: case SK_SLICE:
+        return 0;
     case SK_UNION:
         for (int i = 0; i < t->nfields; i++)
             if (t->fields[i].t && !union_supports_equality(t->fields[i].t))
@@ -1756,8 +1757,6 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                   op == T_LE || op == T_GT || op == T_GE;
         if (cmp) {
             int equality = op == T_EQEQ || op == T_BANGEQ;
-            if (equality && is_byte_sequence(a) && is_byte_sequence(b))
-                return st_prim(P_BOOL);
             if (equality && same_type(a, b) &&
                 (a->kind == SK_ERROR ||
                  (a->kind == SK_PRIM && a->prim == P_TYPEID)))
@@ -1771,9 +1770,9 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             if (same_modulo_shrink(a, b) &&
                 (is_num(a) || is_bool(a) || a->kind == SK_PTR ||
                  a->kind == SK_FUNC || a->kind == SK_ENUM ||
-                 a->kind == SK_CONTRACT || a->kind == SK_SLICE ||
+                 a->kind == SK_CONTRACT ||
                  a->kind == SK_DISTINCT ||
-                 (a->kind == SK_PRIM && a->prim == P_STRING)))
+                 (a->kind == SK_PRIM && a->prim != P_STRING)))
                 return st_prim(P_BOOL);
             if (equality && a == T_UT_NULL && accepts_null(b)) {
                 e->a->ty = b;
@@ -2318,6 +2317,28 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
     callee->ty = fn->type;
     call->sym = fn;
     call->ival = (uint64_t)intrinsic;
+
+    if (intrinsic == BI_MEM_EQUAL) {
+        if (call->nkids != 2) {
+            ck_err(k, call, "mem.equal takes exactly 2 arguments");
+            return T_ERR;
+        }
+        for (int i = 0; i < 2; i++) {
+            Node* arg = call->kids[i];
+            if (arg->kind == N_MUTARG) {
+                ck_err(k, arg,
+                       "'mut' marks mut parameters; mem.equal parameter %d is read-only",
+                       i + 1);
+                arg = arg->a;
+            }
+            SType* t = expr_type(k, arg);
+            if (t->kind != SK_ERR && !is_byte_sequence(t))
+                ck_err(k, arg,
+                       "mem.equal requires byte sequences ([N]u8, []u8, or string), got %s",
+                       type_name(t));
+        }
+        return st_prim(P_BOOL);
+    }
 
     if (intrinsic == BI_MEM_ALLOC) {
         if (call->nkids != 2) {
@@ -2929,8 +2950,10 @@ static SType* check_call(Ck* k, Node* call) {
             // checked in the generic-instantiation path below
             Sym* mi = NULL;
             for (Sym* it = s; it; it = it->overload)
-                if (it->decl && it->decl->ival >= BI_MEM_ALLOC &&
-                    it->decl->ival <= BI_MEM_COMPARE) {
+                if (it->decl &&
+                    ((it->decl->ival >= BI_MEM_ALLOC &&
+                      it->decl->ival <= BI_MEM_COMPARE) ||
+                     it->decl->ival == BI_MEM_EQUAL)) {
                     mi = it;
                     break;
                 }

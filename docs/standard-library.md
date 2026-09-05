@@ -19,8 +19,8 @@ Today's modules:
 Everything else in the planned v1 set (`simd`) does not
 exist yet.
 
-`mem` exports `alloc`, `realloc`, `release`, `copy`, `move`, `fill`, `zero`, and
-`compare`. Each allocation name is one overload set with a raw byte form and an
+`mem` exports `alloc`, `realloc`, `release`, `copy`, `move`, `fill`, `zero`,
+`compare`, and `equal`. Each allocation name is one overload set with a raw byte form and an
 explicitly instantiated typed form. Import the module qualified or select those
 names explicitly; there are no unimported global memory functions. The current
 bootstrap compiler lowers these exact standard-module functions directly to the
@@ -56,6 +56,8 @@ main(): int {
   failure contract; the result is the only authoritative slice.
 - `release(mut data: []u8)` and `release[T](mut data: []T)` — free the complete
   authoritative allocation and null only the passed variable; null is a no-op.
+- `equal(a, b): bool` — exact, allocation-free content equality for every
+  pairing of `[N]u8`, `[]u8`, and `string`; sequential `==`/`!=` is unavailable.
 
 ## fmt
 

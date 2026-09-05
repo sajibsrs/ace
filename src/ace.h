@@ -158,6 +158,7 @@ enum {
     BI_SYS_ARG = 15,
     BI_SYS_ENVC = 16,
     BI_SYS_ENV = 17,
+    BI_MEM_EQUAL = 18,
 };
 
 enum {

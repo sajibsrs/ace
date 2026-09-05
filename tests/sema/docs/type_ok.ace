@@ -1,5 +1,7 @@
 /* Compiler-checked examples from docs/types.md. */
 
+import mem
+
 limit: const int = 1024
 
 A: type = u8
@@ -100,7 +102,7 @@ main(): int {
     middle: []int = values[1..3]
     bytes: [4]u8 = [65, 99, 101, 33]
     byte_view: []u8 = bytes[0..4]
-    byte_match: bool = bytes == "Ace!" && "Ace!" == byte_view
+    byte_match: bool = mem.equal(bytes, "Ace!") && mem.equal("Ace!", byte_view)
 
     if byte_match {
         count += 1

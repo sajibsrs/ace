@@ -52,3 +52,11 @@ pub zero(data: mut []u8) {}
 pub compare(a: []u8, b: []u8): int {
     return 0
 }
+
+/* The bootstrap accepts every pairwise [N]u8, []u8, and string combination
+ * at this compiler-backed declaration; its representative parameter types do
+ * not constrain intrinsic call checking.
+ */
+pub equal(a: []u8, b: []u8): bool {
+    return false
+}

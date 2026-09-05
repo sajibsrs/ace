@@ -1,14 +1,23 @@
-/* Mixed byte-sequence equality does not extend to other element types. */
+/* Sequential values have no == or != operators. */
+
+Bytes: union { none, data: []u8 }
 
 main(): int {
-    words: [2]u16 = [65, 66]
-    word_view: []u16 = words[0..2]
     bytes: [2]u8 = [65, 66]
+    other_bytes: [2]u8 = [65, 66]
+    words: [2]u16 = [65, 66]
+    other_words: [2]u16 = [65, 66]
+    byte_view: []u8 = bytes[0..2]
+    other_byte_view: []u8 = other_bytes[0..2]
+    text: string = "AB"
 
-    if words == "AB" {}
+    if bytes == other_bytes {}
+    if words != other_words {}
+    if byte_view == other_byte_view {}
+    if text != "AB" {}
 
-    if "AB" == word_view {}
-
-    if bytes == word_view {}
+    left: Bytes = Bytes.data(byte_view)
+    right: Bytes = Bytes.data(other_byte_view)
+    if left == right {}
     return 0
 }

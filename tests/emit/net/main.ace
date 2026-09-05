@@ -2,6 +2,7 @@
 
 // expect-exit: 0
 
+import mem
 import net
 import sys
 
@@ -155,7 +156,7 @@ child(port: u16): int {
     reply: mut []u8 = mut storage[0..4]
     count, ioerr = net.receive(sock, reply)
 
-    if ioerr != null || count != 4 || storage != "pong" {
+    if ioerr != null || count != 4 || !mem.equal(storage, "pong") {
         sys.close(sock)
         return 4
     }
@@ -260,7 +261,7 @@ main(): int {
     request: mut []u8 = mut storage[0..4]
     count: int, ioerr: Error = net.receive(peer, request)
 
-    if ioerr != null || count != 4 || storage != "ping" {
+    if ioerr != null || count != 4 || !mem.equal(storage, "ping") {
         sys.close(peer)
         sys.close(listener)
         return 29

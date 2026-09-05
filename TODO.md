@@ -89,7 +89,7 @@ Not core language; listed because each blocks practical use.
 - **Signals** [additive] — excluded from `poll` (Stdlib #14); servers need SIGINT handling.
 - **`str.concat` / `str.join`** into caller storage [new] — `str` searches, splits, trims, parses, and formats, but never assembles (Stdlib #15).
 - **Dynamic array and hash-map modules** [new] — composed from `mem` and explicit generics; none exist.
-- **`rune` + UTF-8 decode** [additive] — Stdlib #15.
+- **`rune` + UTF-8 decode and `yarn`** [additive] — deferred design pass recorded in the Decision Queue. `char` remains the `u8` byte alias. `rune` is a codepoint scalar with decode-only `runes(s)` iteration and no `[]rune` view. `yarn` is an owning byte buffer rather than a string mirror. Still open for that pass: full cross-type `mem.equal` interoperability among `yarn`, `string`, and `[]u8` over length plus initialized bytes only (recommended: yes; capacity, allocator state, and pointer identity excluded), and whether the `yarn` → `string` view is named/explicit (current recommendation) or implicit.
 - **Random source** [new].
 
 ## Suggested carving order

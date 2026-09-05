@@ -9,6 +9,8 @@
  * `fmt.print` overloads.
  */
 
+import mem
+
 extern "c" {
     ecvt(value: f64, ndigit: i32, decpt: mut *i32, sign: mut *i32): *u8
     memcpy(dst: *u8, src: *u8, size: usize): *u8
@@ -47,9 +49,9 @@ pub has(text: string, part: string, suffix: bool): bool {
     }
 
     if !suffix {
-        return text[..len(part)] == part
+        return mem.equal(text[..len(part)], part)
     }
-    return text[len(text) - len(part)..] == part
+    return mem.equal(text[len(text) - len(part)..], part)
 }
 
 /* Unsigned byte-wise lexicographic order: exactly -1, 0, or 1; after an
@@ -146,13 +148,13 @@ pub trim(text: string, part: string, suffix: bool): (string, bool) {
     }
 
     if !suffix {
-        if len(part) <= len(text) && text[..len(part)] == part {
+        if len(part) <= len(text) && mem.equal(text[..len(part)], part) {
             return text[len(part)..], true
         }
         return text, false
     }
 
-    if len(part) <= len(text) && text[len(text) - len(part)..] == part {
+    if len(part) <= len(text) && mem.equal(text[len(text) - len(part)..], part) {
         return text[..len(text) - len(part)], true
     }
     return text, false
@@ -712,7 +714,7 @@ float_literal_shape(text: string): bool {
         return false
     }
 
-    if text == "nan" || text == "inf" || text == "-inf" {
+    if mem.equal(text, "nan") || mem.equal(text, "inf") || mem.equal(text, "-inf") {
         return true
     }
     digits: usize = 0
@@ -768,7 +770,8 @@ pub parse[f64](text: string): (f64, bool) {
 
     /* Overflow reaches the scanner as infinity; only a spelled infinity may
      * come back as one. Underflow to signed zero succeeds. */
-    if value == value && value - value != zero && text != "inf" && text != "-inf" {
+    if value == value && value - value != zero &&
+       !mem.equal(text, "inf") && !mem.equal(text, "-inf") {
         return 0.0, false
     }
     return value, true
@@ -788,7 +791,8 @@ pub parse[f32](text: string): (f32, bool) {
     }
     value: f32 = strtof(&buf[0], null)
 
-    if value == value && f64(value) - f64(value) != f64(zero) && text != "inf" && text != "-inf" {
+    if value == value && f64(value) - f64(value) != f64(zero) &&
+       !mem.equal(text, "inf") && !mem.equal(text, "-inf") {
         return 0.0, false
     }
     return value, true

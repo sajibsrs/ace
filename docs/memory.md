@@ -200,10 +200,14 @@ mem.move(dst: mut []u8, src: []u8)
 mem.fill(data: mut []u8, value: u8)
 mem.zero(data: mut []u8)
 mem.compare(a: []u8, b: []u8): int
+mem.equal(a, b): bool
 ```
 
 `copy` and `move` require equal slice lengths and copy exactly the complete
 source view. They do not resize or otherwise change either slice descriptor.
+`equal` accepts every pair of `[N]u8`, `[]u8`, and `string` values, compares
+length and exact bytes, and allocates nothing. It is the explicit content test;
+sequential values do not support `==` or `!=` against one another.
 Slice larger storage to the exact destination range before calling, and
 establish the writable view where `mut` is written:
 

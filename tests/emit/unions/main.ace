@@ -117,17 +117,6 @@ main(): int {
         }
     }
 
-    a: Scalar = Scalar.integer(7)
-    b: Scalar = Scalar.integer(7)
-
-    if a != b || a == Scalar.decimal(7.0) {
-        return 10
-    }
-
-    if text_value != text_value {
-        return 11
-    }
-
     switch text_value {
         Scalar.text(text: string) {
             if len(text) != 5 || text[0] != u8(117) || text[4] != u8(110) {

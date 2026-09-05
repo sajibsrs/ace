@@ -17,7 +17,7 @@ main(): int {
     for i := 0; i < 2; i += 1 {
         integer += i
     }
-    ok := floating == 1.5 && byte == u8('A') && text == "ace"
+    ok := floating == 1.5 && byte == u8('A') && mem.equal(text, "ace")
     result := integer + int(tail[0]) - 43
     mem.release(mut storage)
     if !ok || storage != null {

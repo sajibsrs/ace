@@ -3,6 +3,7 @@
  */
 // expect-exit: 0
 
+import mem
 import str
 
 main(): int {
@@ -76,28 +77,30 @@ main(): int {
     sparts: mut []string = mut parts[0..8]
     n: usize, done: bool = str.split("a,b,c", ",", sparts)
 
-    if !done || n != 3 || parts[0] != "a" || parts[1] != "b" || parts[2] != "c" {
+    if !done || n != 3 || !mem.equal(parts[0], "a") ||
+       !mem.equal(parts[1], "b") || !mem.equal(parts[2], "c") {
         return 15
     }
     n, done = str.split(",a,,", ",", sparts)
 
-    if !done || n != 4 || parts[0] != "" || parts[1] != "a" || parts[2] != "" ||
-       parts[3] != "" {
+    if !done || n != 4 || !mem.equal(parts[0], "") || !mem.equal(parts[1], "a") ||
+       !mem.equal(parts[2], "") || !mem.equal(parts[3], "") {
         return 16
     }
     n, done = str.split("no-sep", ",", sparts)
 
-    if !done || n != 1 || parts[0] != "no-sep" {
+    if !done || n != 1 || !mem.equal(parts[0], "no-sep") {
         return 17
     }
     n, done = str.split("", ",", sparts)
 
-    if !done || n != 1 || parts[0] != "" {
+    if !done || n != 1 || !mem.equal(parts[0], "") {
         return 18
     }
     n, done = str.split("a::b", ":", sparts)
 
-    if !done || n != 3 || parts[0] != "a" || parts[1] != "" || parts[2] != "b" {
+    if !done || n != 3 || !mem.equal(parts[0], "a") ||
+       !mem.equal(parts[1], "") || !mem.equal(parts[2], "b") {
         return 19
     }
     n, done = str.split("xyz", "", sparts)
@@ -109,52 +112,53 @@ main(): int {
     stwo: mut []string = mut two[0..2]
     n, done = str.split("a,b,c", ",", stwo)
 
-    if done || n != 2 || two[0] != "a" || two[1] != "b" {
+    if done || n != 2 || !mem.equal(two[0], "a") || !mem.equal(two[1], "b") {
         return 21
     }
     n, done = str.split("aaa", "aa", sparts)
 
-    if !done || n != 2 || parts[0] != "" || parts[1] != "a" {
+    if !done || n != 2 || !mem.equal(parts[0], "") || !mem.equal(parts[1], "a") {
         return 22
     }
     n, done = str.split("1-2-3", '-', sparts)
 
-    if !done || n != 3 || parts[1] != "2" {
+    if !done || n != 3 || !mem.equal(parts[1], "2") {
         return 23
     }
     t: string, hit: bool = str.trim("prefix-value", "prefix-", false)
 
-    if !hit || t != "value" {
+    if !hit || !mem.equal(t, "value") {
         return 24
     }
     t, hit = str.trim("value.suffix", ".suffix", true)
 
-    if !hit || t != "value" {
+    if !hit || !mem.equal(t, "value") {
         return 25
     }
     t, hit = str.trim("other", "prefix-", false)
 
-    if hit || t != "other" {
+    if hit || !mem.equal(t, "other") {
         return 26
     }
     t, hit = str.trim("anything", "", true)
 
-    if !hit || t != "anything" {
+    if !hit || !mem.equal(t, "anything") {
         return 27
     }
     t, hit = str.trim("-x", '-', false)
 
-    if !hit || t != "x" {
+    if !hit || !mem.equal(t, "x") {
         return 28
     }
     t, hit = str.trim("x-", '-', true)
 
-    if !hit || t != "x" {
+    if !hit || !mem.equal(t, "x") {
         return 29
     }
 
-    if str.trim("  \t mixed \n ") != "mixed" || str.trim("   ") != "" ||
-       str.trim("") != "" || str.trim("plain") != "plain" {
+    if !mem.equal(str.trim("  \t mixed \n "), "mixed") ||
+       !mem.equal(str.trim("   "), "") || !mem.equal(str.trim(""), "") ||
+       !mem.equal(str.trim("plain"), "plain") {
         return 30
     }
     return 0

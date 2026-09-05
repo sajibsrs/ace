@@ -3,6 +3,8 @@
  */
 // expect-exit: 0
 
+import mem
+
 greeting: const string = "hello"
 
 sum(text: string): int {
@@ -17,11 +19,12 @@ sum(text: string): int {
 main(): int {
     a: string = greeting[1..4]
 
-    if a != "ell" {
+    if !mem.equal(a, "ell") {
         return 1
     }
 
-    if greeting[..2] != "he" || greeting[3..] != "lo" || len(greeting[..]) != 5 {
+    if !mem.equal(greeting[..2], "he") || !mem.equal(greeting[3..], "lo") ||
+       len(greeting[..]) != 5 {
         return 2
     }
 
@@ -29,22 +32,22 @@ main(): int {
         return 3
     }
 
-    if greeting[5..] != "" {
+    if !mem.equal(greeting[5..], "") {
         return 4
     }
 
-    if greeting[1..4][1..] != "ll" {
+    if !mem.equal(greeting[1..4][1..], "ll") {
         return 5
     }
     arr: [3]u8 = [u8('o'), u8('k'), u8('!')]
     view: string = string(arr[0..3])
 
-    if view != "ok!" || len(view) != 3 {
+    if !mem.equal(view, "ok!") || len(view) != 3 {
         return 6
     }
     arr[0] = u8('n')
 
-    if view != "nk!" {
+    if !mem.equal(view, "nk!") {
         return 7
     }
 
@@ -72,7 +75,7 @@ main(): int {
         return 11
     }
 
-    if "hello"[1..3] != "el" {
+    if !mem.equal("hello"[1..3], "el") {
         return 12
     }
     return 0

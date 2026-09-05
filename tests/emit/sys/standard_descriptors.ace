@@ -5,6 +5,7 @@
 
 // expect-exit: 7
 
+import mem
 import sys
 
 extern "c" {
@@ -48,7 +49,7 @@ read_payload(path: string, want: string): int {
         return 2
     }
 
-    if string(buf[0..len(want)]) != want {
+    if !mem.equal(string(buf[0..len(want)]), want) {
         return 3
     }
     eof: int, eerr: Error = sys.read(fd, buf)
@@ -92,7 +93,7 @@ main(): int {
     buf: mut []u8 = mut storage[0..8]
     n: int, rerr: Error = sys.read(sys.stdin, buf)
 
-    if rerr != null || n != 2 || string(buf[0..2]) != "in" {
+    if rerr != null || n != 2 || !mem.equal(string(buf[0..2]), "in") {
         return 23
     }
     eof: int, eerr: Error = sys.read(sys.stdin, buf)

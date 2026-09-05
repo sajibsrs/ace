@@ -5,18 +5,6 @@
 import events: "./events.ace"
 
 main(): int {
-    if events.idle != events.Status.idle {
-        return 1
-    }
-
-    if events.answer != events.Status.answer(42) {
-        return 2
-    }
-
-    if events.greeting != events.greeting {
-        return 3
-    }
-
     switch events.greeting {
         events.Status.text(text: string) {
             if len(text) != 5 || text[0] != u8(104) || text[4] != u8(111) {
