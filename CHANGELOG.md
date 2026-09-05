@@ -1,6 +1,6 @@
 # Ace — Implementation Changelog
 
-Historical record of the bootstrap compiler's implementation: what was built, changed, and fixed, in the order the work was recorded. Chunk labels are preserved from the original log. This file is history only: normative language rules and decision records (rule + rationale) live in `spec.md`, and current stage plus open work are summarized in `AGENTS.md`. It never overrides the spec.
+Historical record of the bootstrap compiler's implementation: what was built, changed, and fixed, in the order the work was recorded. Chunk labels are preserved from the original log. This file is history only: normative language rules and decision records (rule + rationale) live in `SPEC.md`, and current stage plus open work are summarized in `AGENTS.md`. It never overrides the spec.
 
 ## Front end (C11 bootstrap)
 
@@ -20,7 +20,7 @@ Single-pass semantic walk in declaration order: two-namespace scopes (types/valu
 
 ### Pre-emitter decisions
 
-Recorded in spec.md: `main(): int`; Mach-O objects + system linker (`cc` driver); minimal DWARF line tables.
+Recorded in SPEC.md: `main(): int`; Mach-O objects + system linker (`cc` driver); minimal DWARF line tables.
 
 ### Mach-O format pinning
 
@@ -98,7 +98,7 @@ Contextual only inside a switch case, final statement only, transfers to the imm
 
 ### Recursive-layout diagnostics and pointer-only type fixups
 
-Reject direct or indirect all-inline value cycles instead of assigning placeholder sizes; keep self-pointers valid; permit an unknown same-module type only behind one or more pointer levels, resolve it later in the file, and reject unresolved or layout-dependent early uses. Simultaneous heterogeneous multi-assignment is already implemented; its RHS-before-target ordering is now explicit in `spec.md` and `docs/types.md`.
+Reject direct or indirect all-inline value cycles instead of assigning placeholder sizes; keep self-pointers valid; permit an unknown same-module type only behind one or more pointer levels, resolve it later in the file, and reject unresolved or layout-dependent early uses. Simultaneous heterogeneous multi-assignment is already implemented; its RHS-before-target ordering is now explicit in `SPEC.md` and `docs/types.md`.
 
 ### Chunk 12 — Type-owned methods and canonical signings
 
@@ -154,7 +154,7 @@ Every type has an all-bits-zero representation; plain pointers, slices, strings,
 
 ### Chunk 23 — `sys` file I/O
 
-Pure-Ace `std/sys.ace` over `extern "c"` with the new optional extern link name (`c_open(...): i32 = "__open"`), added to keep raw C bindings privately named inside modules; the emitter already honored `Node.cname`. Link names are nonempty, NUL-free, and capped at the v1 emitter's 510-byte limit, with parser diagnostics for each invalid form. Surface as carved in spec.md Stdlib #10: `Fd: distinct i32` (`-1` failed open, zero is stdin), `read(fd, mut buf: []u8): (int, Error)` (0 = EOF), `write(fd, []u8)`/`write(fd, string)` (partial counts as-is, no retry; the string overload exists because no string→`[]u8` view exists yet), `close(fd): Error`, two `open` overloads with the fixed `[1024]u8` path buffer and `ENAMETOOLONG` passthrough, per-operation error domains with `errno(): i32` reading Darwin `__error()`, and raw Darwin flag constants with OS spellings. Two latent bugs surfaced and fixed: call marshaling read later arguments' temps from registers that earlier aggregate word-loads clobbered (flags arrived holding the path length — marshaling now spills all argument values and reads them exclusively from their spill slots), and Apple arm64 passes C variadic arguments on the caller's stack (libSystem `open` reads mode from the stack slot), so the module binds the fixed-arity `__open` export. General extern-varargs stack marshaling landed later with networking; `sys` keeps the fixed binding because its wrapper needs no variadic surface. `tests/emit/sys.ace` covers ENOENT/roundtrip/EOF/EBADF/EEXIST/long-path at runtime; parser fixtures cover the link-name grammar and validation. The test runner accepts an alternate compiler binary, and `make test-sanitize` repeats the full suite under ASan/UBSan. Normal and sanitizer suites pass.
+Pure-Ace `std/sys.ace` over `extern "c"` with the new optional extern link name (`c_open(...): i32 = "__open"`), added to keep raw C bindings privately named inside modules; the emitter already honored `Node.cname`. Link names are nonempty, NUL-free, and capped at the v1 emitter's 510-byte limit, with parser diagnostics for each invalid form. Surface as carved in SPEC.md Stdlib #10: `Fd: distinct i32` (`-1` failed open, zero is stdin), `read(fd, mut buf: []u8): (int, Error)` (0 = EOF), `write(fd, []u8)`/`write(fd, string)` (partial counts as-is, no retry; the string overload exists because no string→`[]u8` view exists yet), `close(fd): Error`, two `open` overloads with the fixed `[1024]u8` path buffer and `ENAMETOOLONG` passthrough, per-operation error domains with `errno(): i32` reading Darwin `__error()`, and raw Darwin flag constants with OS spellings. Two latent bugs surfaced and fixed: call marshaling read later arguments' temps from registers that earlier aggregate word-loads clobbered (flags arrived holding the path length — marshaling now spills all argument values and reads them exclusively from their spill slots), and Apple arm64 passes C variadic arguments on the caller's stack (libSystem `open` reads mode from the stack slot), so the module binds the fixed-arity `__open` export. General extern-varargs stack marshaling landed later with networking; `sys` keeps the fixed binding because its wrapper needs no variadic surface. `tests/emit/sys.ace` covers ENOENT/roundtrip/EOF/EBADF/EEXIST/long-path at runtime; parser fixtures cover the link-name grammar and validation. The test runner accepts an alternate compiler binary, and `make test-sanitize` repeats the full suite under ASan/UBSan. Normal and sanitizer suites pass.
 
 ### Chunk 24 — `sys` monotonic time
 
@@ -162,15 +162,15 @@ The owner-approved initial time surface in `std/sys.ace`: `pub time_mono(sleep: 
 
 ### Chunk 25 — `fmt.print(uint)` platform-word output
 
-First slice of the owner-decided overload policy (spec.md Stdlib #9): `pub print(value: uint): int` in `std/fmt.ace` formats unsigned platform-word decimal through the same fixed 20-byte stack buffer as the `usize` overload — zero through `UINT_MAX`, no implicit newline, partial-write retry, and the bytes-written/non-positive-result contract. `uint` is the `P_U64` platform-word primitive, so `u64`-typed values select the overload directly with no cast while `usize` remains a distinct exact overload. Narrower integer widths get no overload: callers convert explicitly (`fmt.print(int(my_i32))`, `fmt.print(uint(my_u16))`), and direct narrower prints diagnose `no matching overload`. Coverage: `tests/emit/print_uint.ace` (zero, `u64`-typed `UINT_MAX`, explicit `u16` cast; output and exit checked), `tests/sema/fmt_print_narrow.err.ace` (direct `u16`/`i32` prints rejected), and the four-overload docs example mirrored in `tests/sema/docs_standard_library.ok.ace`. Normal and sanitizer suites pass.
+First slice of the owner-decided overload policy (SPEC.md Stdlib #9): `pub print(value: uint): int` in `std/fmt.ace` formats unsigned platform-word decimal through the same fixed 20-byte stack buffer as the `usize` overload — zero through `UINT_MAX`, no implicit newline, partial-write retry, and the bytes-written/non-positive-result contract. `uint` is the `P_U64` platform-word primitive, so `u64`-typed values select the overload directly with no cast while `usize` remains a distinct exact overload. Narrower integer widths get no overload: callers convert explicitly (`fmt.print(int(my_i32))`, `fmt.print(uint(my_u16))`), and direct narrower prints diagnose `no matching overload`. Coverage: `tests/emit/print_uint.ace` (zero, `u64`-typed `UINT_MAX`, explicit `u16` cast; output and exit checked), `tests/sema/fmt_print_narrow.err.ace` (direct `u16`/`i32` prints rejected), and the four-overload docs example mirrored in `tests/sema/docs_standard_library.ok.ace`. Normal and sanitizer suites pass.
 
 ### Chunk 26 — `fmt.print` float overloads
 
-Owner-decided representation (spec.md Stdlib #9): shortest round-trip decimal in pure-Ace `std/fmt.ace` over three fixed-arity libSystem externs — `ecvt` supplies correctly rounded digit strings (the variadic `snprintf` path stays unavailable), `strtod`/`strtof` verify the round trip (strtof parses f32 directly, no double-rounding detour), and `memcpy` immediately copies ecvt's internal buffer before a later call can overwrite it. The search takes the first correctly rounded digit count in 1..17 (f64) / 1..9 (f32) whose decimal form parses back to the exact value; notation is decimal for scientific exponents -6..20, otherwise scientific like `1e21`/`1.5e-7` (no `+`, no padding); specials are spelled `nan`, `inf`, `-inf`; negative zero keeps its sign (read through the reciprocal, since comparisons cannot see a zero's sign bit); no trailing `.0`. ecvt's digits are the integer form (value = digits x 10^(decpt-count)) — the probe exponent is decpt-count while the notation exponent is decpt-1. This slice exposed and fixed a latent emitter bug: an untyped literal under a float cast (`f32(0.1)`, `f64(3)`) loaded its f64 bit pattern and was viewed at the narrow width (low 32 bits — garbage); the cast path in `gen_call` now materializes untyped literals directly at the target float width. A pre-existing sema wrinkle surfaced, deliberately unfixed: a pending call with an untyped-literal argument (`fmt.print(id32(0.1))`) reads as poison in overload matching, which matches every overload and reports `ambiguous` — printing a local avoids it. Coverage: `tests/emit/print_float.ace` (zero, shortest digits `0.1`/`1/3`/pi, notation thresholds 1e-6/1e-7 and 1e20/1e21, denormals `5e-324`/`1e-45`, `DBL_MAX`, `FLT_MAX`, specials, signed zero, negative scientific, bytes-written count; output and exit checked) and the six-overload docs example mirrored in `tests/sema/docs_standard_library.ok.ace`. Normal and sanitizer suites pass.
+Owner-decided representation (SPEC.md Stdlib #9): shortest round-trip decimal in pure-Ace `std/fmt.ace` over three fixed-arity libSystem externs — `ecvt` supplies correctly rounded digit strings (the variadic `snprintf` path stays unavailable), `strtod`/`strtof` verify the round trip (strtof parses f32 directly, no double-rounding detour), and `memcpy` immediately copies ecvt's internal buffer before a later call can overwrite it. The search takes the first correctly rounded digit count in 1..17 (f64) / 1..9 (f32) whose decimal form parses back to the exact value; notation is decimal for scientific exponents -6..20, otherwise scientific like `1e21`/`1.5e-7` (no `+`, no padding); specials are spelled `nan`, `inf`, `-inf`; negative zero keeps its sign (read through the reciprocal, since comparisons cannot see a zero's sign bit); no trailing `.0`. ecvt's digits are the integer form (value = digits x 10^(decpt-count)) — the probe exponent is decpt-count while the notation exponent is decpt-1. This slice exposed and fixed a latent emitter bug: an untyped literal under a float cast (`f32(0.1)`, `f64(3)`) loaded its f64 bit pattern and was viewed at the narrow width (low 32 bits — garbage); the cast path in `gen_call` now materializes untyped literals directly at the target float width. A pre-existing sema wrinkle surfaced, deliberately unfixed: a pending call with an untyped-literal argument (`fmt.print(id32(0.1))`) reads as poison in overload matching, which matches every overload and reports `ambiguous` — printing a local avoids it. Coverage: `tests/emit/print_float.ace` (zero, shortest digits `0.1`/`1/3`/pi, notation thresholds 1e-6/1e-7 and 1e20/1e21, denormals `5e-324`/`1e-45`, `DBL_MAX`, `FLT_MAX`, specials, signed zero, negative scientific, bytes-written count; output and exit checked) and the six-overload docs example mirrored in `tests/sema/docs_standard_library.ok.ace`. Normal and sanitizer suites pass.
 
 ### Chunk 27 — `fmt.println`
 
-Owner-approved newline layer over the landed `print` overload set (spec.md Stdlib #9): six overloads in `std/fmt.ace` (`string`, `int`, `uint`, `usize`, `f32`, `f64`), each a one-line call through a private `finish_line` helper that orders the two writes. Semantics: exactly the corresponding `print` representation followed by one `\n`; allocation-free; returns the total bytes written including the newline. A non-positive result from a nonempty value write returns immediately with no newline attempt; `println("")` handles its successful empty value directly by writing the newline and returning `1`; a newline failure after a written value returns the newline's negative result unchanged. No zero-argument form (`fmt.print("\n")` covers it); narrower integer widths stay rejected per the overload policy. Coverage: `tests/emit/println.ace` (byte-count contract across all six overloads, empty string, `INT_MIN`, negative scientific; output bytes verified via `od`), `tests/sema/fmt_println_narrow.err.ace` (direct `u16`/`i32` printlns rejected), and the docs examples mirrored in `tests/sema/docs_standard_library.ok.ace`. Normal and sanitizer suites pass.
+Owner-approved newline layer over the landed `print` overload set (SPEC.md Stdlib #9): six overloads in `std/fmt.ace` (`string`, `int`, `uint`, `usize`, `f32`, `f64`), each a one-line call through a private `finish_line` helper that orders the two writes. Semantics: exactly the corresponding `print` representation followed by one `\n`; allocation-free; returns the total bytes written including the newline. A non-positive result from a nonempty value write returns immediately with no newline attempt; `println("")` handles its successful empty value directly by writing the newline and returning `1`; a newline failure after a written value returns the newline's negative result unchanged. No zero-argument form (`fmt.print("\n")` covers it); narrower integer widths stay rejected per the overload policy. Coverage: `tests/emit/println.ace` (byte-count contract across all six overloads, empty string, `INT_MIN`, negative scientific; output bytes verified via `od`), `tests/sema/fmt_println_narrow.err.ace` (direct `u16`/`i32` printlns rejected), and the docs examples mirrored in `tests/sema/docs_standard_library.ok.ace`. Normal and sanitizer suites pass.
 
 ### Chunk 28 — `-o FILE.ace` in-place linking
 
@@ -202,7 +202,7 @@ types, and the rejected reverse-contract direction.
 ### Memory representation carved normative
 
 No code change: the carving records the bootstrap's existing layouts as normative
-language rules (spec.md Memory #17–21 and the Decision Queue's "Memory
+language rules (SPEC.md Memory #17–21 and the Decision Queue's "Memory
 representation carving"). Slices and strings are exactly two-word descriptors —
 data pointer at offset 0, count at offset 8, size 16, alignment 8 — with no
 capacity word or hidden fields ever; a string is a read-only view over bytes that
@@ -216,7 +216,7 @@ inspection, `sizeof` reasoning). Documentation mirrors the pinned facts in
 ### Sequence-overlap carving closed (implementation pending)
 
 No code change: the carve fixes the cross-type rules for `[N]T`, `[]T`, and
-`string` (spec.md new "Sequences" section, Decision Queue "Sequence-overlap
+`string` (SPEC.md new "Sequences" section, Decision Queue "Sequence-overlap
 carving"). Slicing is uniform with half-open bounds and 0/len defaults; string
 slicing will yield `string` and never widen permission; slice re-basing stays
 inside the current window; empty views keep their computed pointer and are never
@@ -293,7 +293,7 @@ Every operation is allocation-free, decoding-free, and reports capacity or
 conversion failure explicitly. The carve also admits inline slice and array
 types in `sizeof`, so the already normative descriptor layouts can be stated
 directly. Implementation, tests, and implemented-only human documentation are
-a later chunk; the full rules and rationale are in spec.md Stdlib #15 and the
+a later chunk; the full rules and rationale are in SPEC.md Stdlib #15 and the
 Decision Queue.
 
 ### Character, string sequences, and the str module implemented
@@ -428,7 +428,7 @@ specialization-implemented lowering. Normal and sanitizer suites pass.
 
 ### Standard descriptor constants (`sys.stdin`/`sys.stdout`/`sys.stderr`)
 
-Owner-decided spelling (the suggested `sys.in` is impossible because `in` is a keyword; OS words win per the `sys` mirroring rule): three `pub const Fd` globals in `std/sys.ace` — `stdin` (0), `stdout` (1), and `stderr` (2) — valid from process start and consumed through the ordinary `read`/`write` operations, with the decision recorded in spec.md Stdlib #10 and the implementation-phase list. The initializers (`Fd(0)` and friends) exposed a genuine emitter gap: `eval_const` folded literals, unions, and `typeid` but not constructor-shaped casts, so `const` globals of distinct or enum type could not hold compile-time constructor values. The folder now folds a single-argument constructor-shaped cast whose callee resolves to a named distinct or enum type by evaluating the argument at the unwrapped target representation — byte-identical to the runtime cast, which literal fit-checks and castability already constrain at sema. Coverage: `tests/emit/sys_standard_descriptors.ace` (`dup2`s files onto fds 0, 1, and 2; verifies the value checks, a read, a write, and EOF through each constant), the docs example mirrored in `tests/sema/docs_standard_library.ok.ace`, and the implemented-only bullet in `docs/standard-library.md`. Normal and sanitizer suites pass.
+Owner-decided spelling (the suggested `sys.in` is impossible because `in` is a keyword; OS words win per the `sys` mirroring rule): three `pub const Fd` globals in `std/sys.ace` — `stdin` (0), `stdout` (1), and `stderr` (2) — valid from process start and consumed through the ordinary `read`/`write` operations, with the decision recorded in SPEC.md Stdlib #10 and the implementation-phase list. The initializers (`Fd(0)` and friends) exposed a genuine emitter gap: `eval_const` folded literals, unions, and `typeid` but not constructor-shaped casts, so `const` globals of distinct or enum type could not hold compile-time constructor values. The folder now folds a single-argument constructor-shaped cast whose callee resolves to a named distinct or enum type by evaluating the argument at the unwrapped target representation — byte-identical to the runtime cast, which literal fit-checks and castability already constrain at sema. Coverage: `tests/emit/sys_standard_descriptors.ace` (`dup2`s files onto fds 0, 1, and 2; verifies the value checks, a read, a write, and EOF through each constant), the docs example mirrored in `tests/sema/docs_standard_library.ok.ace`, and the implemented-only bullet in `docs/standard-library.md`. Normal and sanitizer suites pass.
 
 ### Widened constructor-constant folding
 
@@ -457,7 +457,7 @@ string overload. Normal and sanitizer suites pass.
 ### Deferred calls (`defer`)
 
 Owner-approved cleanup statement, landed front end first and then codegen,
-recorded normatively as the Deferred calls section of `spec.md`. The lexer
+recorded normatively as the Deferred calls section of `SPEC.md`. The lexer
 reserves `defer`; the parser's `defer` statement takes one expression — or,
 after an intervening `mut`, the receiver-marked call form
 (`defer mut counter.add(1)`, setting `F_MUT` on the call) and rejecting `mut`
@@ -508,7 +508,7 @@ passes.
 ### General `for` statement
 
 Implemented in two owner-agreed steps over the closed general-for carving, with
-one owner revision recorded in `spec.md`: the carving's contextually typed
+one owner revision recorded in `SPEC.md`: the carving's contextually typed
 collection binders are superseded — binders keep their explicit `ident ":"
 type` annotation, and what landed instead is `mut` on the iterable (`for item:
 T in mut xs`), one token opting the loop into aliasing under the call-site
@@ -535,7 +535,7 @@ storage, `mut &item` a `mut *T` whose writes land there, and call-site `mut`
 arguments alias the element directly. The index binder stays a plain `usize`
 copy and binder writes never disturb the entry-captured cursor; plain
 iteration codegen is untouched. Normative rules are Iterations #13–16;
-grammar.md, `.acefmt` (no new rule needed — `mut` is an ordinary token in an
+GRAMMAR.md, `.acefmt` (no new rule needed — `mut` is an ordinary token in an
 existing spaced position), `docs/control-flow.md`, and this log landed with
 step two. Coverage: `tests/parser/for_general_heads.ok.ace`,
 `for_mut.ok.ace`, `for_mut_missing_iterable.err.ace`,
@@ -656,7 +656,7 @@ callee joins the cast dispatch), so no new machine code exists. Coverage: new
 `tests/emit/mut_string/main.ace` covering conversions, descriptor
 preservation (non-null empty stays non-null, zero stays zero), writes, and
 alias iteration. Documentation (types, primitives, control flow) replaced its
-"not implemented yet" notes with the landed rules; grammar.md gained note 26
+"not implemented yet" notes with the landed rules; GRAMMAR.md gained note 26
 for the conversion callee. The spec queue entry and the AGENTS.md surface
 index mark the topic implemented. Full suite passes.
 
@@ -775,4 +775,4 @@ grammar, specification, and VS Code highlighting migrated together.
 
 Checked/release build modes, then checked allocation tracking; nonblocking echo
 and multi-client chat are the next networking proofs
-over the implemented `poll` readiness queue (see the `spec.md` Decision Queue).
+over the implemented `poll` readiness queue (see the `SPEC.md` Decision Queue).

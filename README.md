@@ -6,9 +6,9 @@ The design is complete; the bootstrap compiler is implemented in dependency-free
 C11 and currently targets AArch64 Mach-O on Apple Silicon.
 
 The human-facing guide starts at [`docs/README.md`](docs/README.md). Normative
-language rules and decision records live in `spec.md`, their rationale in
-`philosophy.md`, and the formal surface grammar in `grammar.md`. `AGENTS.md`
-records repository workflow and indexes `spec.md`; implementation history is
+language rules and decision records live in `SPEC.md`, their rationale in
+`PHILOSOPHY.md`, and the formal surface grammar in `GRAMMAR.md`. `AGENTS.md`
+records repository workflow and indexes `SPEC.md`; implementation history is
 kept in `CHANGELOG.md`.
 
 ## Build and test
