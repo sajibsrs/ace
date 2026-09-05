@@ -77,26 +77,10 @@ pub env(index: usize): string {
  * returned handle's domain; the raw errno is queried separately via errno().
  */
 
-pub OpenErr: distinct i32
-pub ReadErr: distinct i32
-pub WriteErr: distinct i32
-pub CloseErr: distinct i32
-
-open_error: const ErrorDescriptor = ErrorDescriptor {
-    code: 0, domain: typeid(OpenErr), message: "open failed",
-}
-
-read_error: const ErrorDescriptor = ErrorDescriptor {
-    code: 0, domain: typeid(ReadErr), message: "read failed",
-}
-
-write_error: const ErrorDescriptor = ErrorDescriptor {
-    code: 0, domain: typeid(WriteErr), message: "write failed",
-}
-
-close_error: const ErrorDescriptor = ErrorDescriptor {
-    code: 0, domain: typeid(CloseErr), message: "close failed",
-}
+pub OpenErr: error
+pub ReadErr: error
+pub WriteErr: error
+pub CloseErr: error
 
 // open(2) flags: Darwin values and spellings, composed with `|`.
 pub O_RDONLY: i32 = 0
@@ -128,7 +112,7 @@ pub read(fd: Fd, buf: mut []u8): (int, Error) {
     n: i64 = c_read(i32(fd), mut &buf[0], buf.len)
 
     if n < 0 {
-        return 0, Error(&read_error)
+        return 0, ReadErr(errno())
     }
     return int(n), null
 }
@@ -141,7 +125,7 @@ pub write(fd: Fd, data: []u8): (int, Error) {
     n: i64 = c_write(i32(fd), &data[0], data.len)
 
     if n < 0 {
-        return 0, Error(&write_error)
+        return 0, WriteErr(errno())
     }
     return int(n), null
 }
@@ -153,14 +137,14 @@ pub write(fd: Fd, text: string): (int, Error) {
     n: i64 = c_write(i32(fd), &text[0], text.len)
 
     if n < 0 {
-        return 0, Error(&write_error)
+        return 0, WriteErr(errno())
     }
     return int(n), null
 }
 
 pub close(fd: Fd): Error {
     if c_close(i32(fd)) == -1 {
-        return Error(&close_error)
+        return CloseErr(errno())
     }
     return null
 }
@@ -179,7 +163,7 @@ pub open(path: string, flags: i32, mode: u32): (Fd, Error) {
 
     if path.len > 1023 {
         errno_set(63)
-        return Fd(-1), Error(&open_error)
+        return Fd(-1), OpenErr(errno())
     }
 
     for i: usize in 0 .. path.len {
@@ -189,7 +173,7 @@ pub open(path: string, flags: i32, mode: u32): (Fd, Error) {
     fd: i32 = c_open(&buf[0], flags, mode)
 
     if fd == -1 {
-        return Fd(-1), Error(&open_error)
+        return Fd(-1), OpenErr(errno())
     }
     return Fd(fd), null
 }

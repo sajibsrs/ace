@@ -1,0 +1,19 @@
+// expect-exit: 0
+import first: "./domain.ace"
+import duplicate: "./dir/../domain.ace"
+import other: "./other.ace"
+
+main(): int {
+    error: Error = first.make(-9)
+    if error.domain != typeid(first.Same) || error.code != -9 {
+        return 1
+    }
+    if typeid(first.Same) != typeid(duplicate.Same) ||
+       typeid(first.Alias) != typeid(duplicate.Same) {
+        return 2
+    }
+    if typeid(first.Same) == typeid(other.Same) {
+        return 3
+    }
+    return 0
+}

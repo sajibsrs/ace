@@ -102,7 +102,8 @@ char* arena_alloc(size_t n);
     X(N_PARAM, "param") X(N_STRUCT, "struct") X(N_FIELD, "field")              \
     X(N_UNION, "union") X(N_VARIANT, "variant")                                \
     X(N_CONTRACT, "contract") X(N_METHOD, "method") X(N_ENUM, "enum")         \
-    X(N_ALIAS, "alias") X(N_DISTINCT, "distinct") X(N_SIGNING, "signing")     \
+    X(N_ALIAS, "alias") X(N_DISTINCT, "distinct") X(N_ERROR_DOMAIN, "error")  \
+    X(N_SIGNING, "signing")                                                   \
     X(N_CONFORMANCE, "conformance") X(N_EXTERN, "extern")                      \
     X(N_EXTERNFN, "externfn")                                                  \
     /* statements */                                                           \

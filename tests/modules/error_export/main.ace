@@ -1,28 +1,13 @@
-/* Error export module fixture. */
-
-// expect-exit: 42
-
+// expect-exit: 0
 import errors: "./error_lib.ace"
 
-fail(): Error {
-    return errors.not_found
-}
-
 main(): int {
-    error: Error = fail()
-
-    if error == null {
+    error: Error = errors.fail(2)
+    if error.domain != typeid(errors.FileError) || error.code != 2 {
         return 1
     }
-
-    if error != null {
-        if error != errors.not_found || error.code != 2 {
-            return 2
-        }
-
-        if error.message.len != 12 {
-            return 3
-        }
+    if typeid(errors.FileError) != typeid(errors.Alias) {
+        return 2
     }
-    return 42
+    return 0
 }

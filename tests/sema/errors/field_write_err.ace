@@ -1,15 +1,5 @@
-/* Error field write fixture. */
-
-descriptor: const ErrorDescriptor = ErrorDescriptor {
-    code: 1,
-    domain: null,
-    message: "read only",
-}
-
-failure: const Error = Error(&descriptor)
-
-main(): int {
-    error: Error = failure
-    error.code = 2
-    return 0
+FileError: error
+main() {
+    failure: Error = FileError(2)
+    failure.code = 3
 }

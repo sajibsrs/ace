@@ -114,11 +114,11 @@ Source declarations use `Shape: contract`, and concrete types use one canonical 
 
 ### Chunk 15 — Minimal Error layer
 
-Predeclared one-word `Error` handle and 32-byte const-static `ErrorDescriptor` (`code: i32`, `domain: typeid`, `message: string`); compile-time `typeid(T)` builtin with per-exact-type nonzero identity, alias sharing, distinct/instantiation separation, and `==`/`!=` only; zero `Error`/`typeid` sentinels; `Error(&const_global_descriptor)` construction validated as a named literal with compile-time code, null/typeid domain, and static message backing (locals, mutable globals, and arbitrary casts rejected in all build modes); direct read-only `code`/`domain`/`message` inspection; exact descriptor-address identity; module-exported handles with private descriptors; strict `extern`/`export` rejection for `Error`/`ErrorDescriptor`/`typeid`. Panic was deliberately excluded pending its separate decision. Coverage: `tests/emit/errors.ace`, `tests/modules/error_export/`, five `tests/sema/error_*.err.ace` diagnostics, and `docs/errors.md` mirrored by `tests/sema/docs_errors.ok.ace`. The slice also fixed two latent emitter bugs the new tests exposed: short-circuit `||` computed NOR (result arms swapped), and multi-register aggregate call receives stored unit words below their frame slot (`off + w*8` instead of `off - w*8`); plus return-side loads deferred when the destination register aliases the slot base. Normal and sanitizer suites pass.
+The original Error layer used a one-word handle to const-static records carrying code, type identity, and static text. It established compile-time `typeid(T)` identity, alias sharing, distinct/instantiation separation, null sentinels, read-only inspection, module exports, and strict C-boundary rejection. This representation was later superseded completely by the packed Error redesign recorded below. The slice also fixed two latent emitter bugs: short-circuit `||` computed NOR (result arms swapped), and multi-register aggregate call receives stored unit words below their frame slot; return-side loads were also deferred when the destination register aliased the slot base. Normal and sanitizer suites passed.
 
 ### Chunk 16 — Panic builtin
 
-`panic` is a reserved name in every scope: sema rejects binding it as a local, global, param, destructuring binder, loop variable, import binding, free-function name, or type name (`panic` stays a plain identifier to the lexer; type-owned methods keep their qualified binding), and the loader rejects module-level `panic` declarations before `name$` prefixing, which would otherwise shadow the builtin for that module's own calls. The only use is the checked call `panic(message: string)` (typeid-style name case): exactly one argument coerced to `string` (static literal or runtime expression), never returns (poison-typed; no never-type work while sema has no return-completeness enforcement), not a first-class value (bare reference has its own diagnostic). Codegen evaluates the string (ptr/len in two registers) and emits a best-effort `write(2, ptr, len)` with the exact message bytes — no prefix, no added newline, result ignored — then `abort()`, both undefined externs through the existing BRANCH26 machinery; checked and release are identical; a failed or partial write never blocks the abort. Coverage: eight `tests/sema/panic_*.err.ace` diagnostics, `tests/emit/panic.ace` (`// expect-exit: 134`, runtime `panic(error.message)` bridge plus a not-taken static-literal path), and the `docs/errors.md` Panic section mirrored by `tests/sema/docs_errors.ok.ace`. Normal and sanitizer suites pass.
+`panic` is a reserved name in every scope: sema rejects binding it as a local, global, param, destructuring binder, loop variable, import binding, free-function name, or type name (`panic` stays a plain identifier to the lexer; type-owned methods keep their qualified binding), and the loader rejects module-level `panic` declarations before `name$` prefixing, which would otherwise shadow the builtin for that module's own calls. The only use is the checked call `panic(message: string)` (typeid-style name case): exactly one argument coerced to `string` (static literal or runtime expression), never returns (poison-typed; no never-type work while sema has no return-completeness enforcement), not a first-class value (bare reference has its own diagnostic). Codegen evaluates the string (ptr/len in two registers) and emits a best-effort `write(2, ptr, len)` with the exact message bytes — no prefix, no added newline, result ignored — then `abort()`, both undefined externs through the existing BRANCH26 machinery; checked and release are identical; a failed or partial write never blocks the abort. Coverage includes binding diagnostics, exit-status 134, and the compiler-checked manual examples. Normal and sanitizer suites pass.
 
 ### Chunk 17 — Global raw allocation machinery
 
@@ -734,6 +734,31 @@ coverage invokes a fixture with an empty inherited environment and exact
 arguments/environment bytes, while object inspection verifies the Darwin
 boundary and absence of allocation symbols. Caller-buffer bulk filling, keyed
 lookup, and environment-mutation interaction remain additive follow-ups.
+
+### Packed Error values and canonical module identity
+
+Replaced the static descriptor-pointer error layer with the owner-approved
+opaque 64-bit `Error`: a nonzero compiler-assigned 32-bit nominal domain ID in
+the upper half and the raw bits of an occurrence `i32` code in the lower half.
+Contextual top-level `Name: error` declarations now construct universal
+`Error` values with `Name()` or `Name(code)`; direct read-only `domain` and
+`code` extraction and complete-value equality lower without lookup, metadata,
+allocation, or registration. Type identities are assigned as nonzero 32-bit
+values in the existing pointer-sized representation, retaining null, alias,
+distinct-type, and exact generic-instantiation behavior. The former descriptor
+type, message field, static-message validation, relocations, and global
+descriptor emission are removed; the C boundary continues to reject Ace error
+shapes.
+
+The module loader's resolved `realpath` identity is now covered as a required
+pre-cache invariant: duplicate imports and lexically different `.`/`..` paths
+load one module instance, so aliases and re-exports preserve the originating
+domain while same-spelled declarations in different modules remain distinct.
+`sys`, `net`, and `poll` domains migrated to the new declarations; wrappers
+capture errno directly into the returned code, while DNS preserves its direct
+resolver status. Compiler, stdlib, manual, grammar, editor highlighting,
+compiler-checked examples, semantic diagnostics, runtime equality/code tests,
+and canonical-module fixtures were updated together.
 
 ## Still open after these chunks
 

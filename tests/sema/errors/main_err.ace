@@ -1,11 +1,5 @@
-/* Error dynamic message fixture. */
-
-make_message(): string {
-    return "runtime"
-}
-
-descriptor: const ErrorDescriptor = ErrorDescriptor {
-    code: 1,
-    domain: null,
-    message: make_message(),
+FileError: error
+main() {
+    failure: Error = FileError(2)
+    text: string = failure.message
 }

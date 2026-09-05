@@ -240,7 +240,7 @@ main(): int {
 
     switch result {
         Result[int].failed(error: Error) {
-            fmt.println(error.message)
+            fmt.println("operation failed")
         }
         Result[int].succeeded(payload: int) {
             total += payload

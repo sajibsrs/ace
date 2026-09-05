@@ -12,10 +12,10 @@ pub Event: struct {
     hangup: bool,
 }
 
-pub QueueErr: distinct i32
-pub WatchErr: distinct i32
-pub UnwatchErr: distinct i32
-pub WaitErr: distinct i32
+pub QueueErr: error
+pub WatchErr: error
+pub UnwatchErr: error
+pub WaitErr: error
 
 pub wait_forever: const u64 = 0xffffffffffffffff
 
@@ -44,22 +44,6 @@ EINVAL: const i32 = 22
 ENOENT: const i32 = 2
 NSEC_PER_SEC: const u64 = 1000000000
 MAX_WAIT_EVENTS: const usize = 64
-
-queue_error: const ErrorDescriptor = ErrorDescriptor {
-    code: 0, domain: typeid(QueueErr), message: "queue failed",
-}
-
-watch_error: const ErrorDescriptor = ErrorDescriptor {
-    code: 0, domain: typeid(WatchErr), message: "watch failed",
-}
-
-unwatch_error: const ErrorDescriptor = ErrorDescriptor {
-    code: 0, domain: typeid(UnwatchErr), message: "unwatch failed",
-}
-
-wait_error: const ErrorDescriptor = ErrorDescriptor {
-    code: 0, domain: typeid(WaitErr), message: "wait failed",
-}
 
 extern "c" {
     c_kqueue(): i32 = "kqueue"
@@ -100,7 +84,7 @@ pub queue(): (Queue, Error) {
     fd: i32 = c_kqueue()
 
     if fd == -1 {
-        return Queue(sys.Fd(-1)), Error(&queue_error)
+        return Queue(sys.Fd(-1)), QueueErr(sys.errno())
     }
     return Queue(sys.Fd(fd)), null
 }
@@ -108,7 +92,7 @@ pub queue(): (Queue, Error) {
 pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool): Error {
     if !readable && !writable {
         errno_set(EINVAL)
-        return Error(&watch_error)
+        return WatchErr(sys.errno())
     }
     read_flags: u16 = EV_DELETE
     write_flags: u16 = EV_DELETE
@@ -123,12 +107,12 @@ pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool): Error {
 
     if change_filter(q, fd, EVFILT_READ, read_flags) == -1 &&
        !(read_flags == EV_DELETE && sys.errno() == ENOENT) {
-        return Error(&watch_error)
+        return WatchErr(sys.errno())
     }
 
     if change_filter(q, fd, EVFILT_WRITE, write_flags) == -1 &&
        !(write_flags == EV_DELETE && sys.errno() == ENOENT) {
-        return Error(&watch_error)
+        return WatchErr(sys.errno())
     }
     return null
 }
@@ -140,7 +124,7 @@ pub unwatch(q: Queue, fd: sys.Fd): Error {
     if result == 0 {
         removed = true
     } else if sys.errno() != ENOENT {
-        return Error(&unwatch_error)
+        return UnwatchErr(sys.errno())
     }
 
     result = change_filter(q, fd, EVFILT_WRITE, EV_DELETE)
@@ -148,12 +132,12 @@ pub unwatch(q: Queue, fd: sys.Fd): Error {
     if result == 0 {
         removed = true
     } else if sys.errno() != ENOENT {
-        return Error(&unwatch_error)
+        return UnwatchErr(sys.errno())
     }
 
     if !removed {
         errno_set(ENOENT)
-        return Error(&unwatch_error)
+        return UnwatchErr(sys.errno())
     }
     return null
 }
@@ -166,7 +150,7 @@ change_filter(q: Queue, fd: sys.Fd, filter: i16, flags: u16): i32 {
 pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
     if events.len == 0 {
         errno_set(EINVAL)
-        return usize(0), Error(&wait_error)
+        return usize(0), WaitErr(sys.errno())
     }
     capacity: usize = events.len
 
@@ -186,7 +170,7 @@ pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
     ready: i32 = c_kevent(i32(sys.Fd(q)), null, 0, mut &raw[0], i32(capacity), timeout_pointer)
 
     if ready == -1 {
-        return usize(0), Error(&wait_error)
+        return usize(0), WaitErr(sys.errno())
     }
 
     written: usize = 0

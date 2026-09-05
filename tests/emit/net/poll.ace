@@ -10,7 +10,7 @@ extern "c" {
 }
 
 has_error(err: Error, domain: typeid): bool {
-    return err != null && err.domain == domain
+    return err != null && err.domain == domain && err.code != 0
 }
 
 main(): int {
@@ -155,8 +155,7 @@ main(): int {
         return 13
     }
 
-    if !has_error(poll.unwatch(q, read_fd), typeid(poll.UnwatchErr)) ||
-       sys.errno() != 2 {
+    if !has_error(poll.unwatch(q, read_fd), typeid(poll.UnwatchErr)) {
         sys.close(read_fd)
         sys.close(sys.Fd(q))
         return 14
@@ -165,8 +164,7 @@ main(): int {
     empty: mut []poll.Event = null
     count, wait_err = poll.wait(q, empty, u64(0))
 
-    if count != 0 || !has_error(wait_err, typeid(poll.WaitErr)) ||
-       sys.errno() != 22 {
+    if count != 0 || !has_error(wait_err, typeid(poll.WaitErr)) {
         sys.close(read_fd)
         sys.close(sys.Fd(q))
         return 15

@@ -273,8 +273,8 @@ maybe: *Point = null
 ```
 
 Zero-capable values may be compared directly with `null`. Dereferencing a zero
-pointer, calling a zero function, dispatching through a zero contract, or
-inspecting a zero `Error` is invalid. When zero is ordinary application data,
+pointer, calling a zero function, or dispatching through a zero contract is
+invalid. A zero `Error` is success and exposes zero domain/code bits. When zero is ordinary application data,
 represent presence explicitly with a struct containing a `present: bool` field.
 The current bootstrap has no checked/release mode yet and inserts no runtime
 null checks; invalid zero operations therefore follow the unchecked path.

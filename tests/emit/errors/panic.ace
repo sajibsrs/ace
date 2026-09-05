@@ -1,37 +1,12 @@
-/* Panic fixture. */
-
 // expect-exit: 134
-
-DiskError: distinct i32
-
-io_descriptor: const ErrorDescriptor = ErrorDescriptor {
-    code: 1,
-    domain: typeid(DiskError),
-    message: "should trigger panic",
+DiskError: error
+read(): Error {
+    return DiskError(5)
 }
-
-read(fail: bool): (int, Error) {
-    if fail {
-        return 0, Error(&io_descriptor)
-    }
-    return 7, null
-}
-
-guard(value: int): int {
-    if value < 0 {
-        panic("negative value")
-    }
-    return value
-}
-
 main(): int {
-    if guard(1) != 1 {
-        return 1
-    }
-    value: int, error: Error = read(true)
-
+    error: Error = read()
     if error != null {
-        panic(error.message)
+        panic("disk read failed")
     }
-    return value
+    return 0
 }

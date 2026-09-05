@@ -15,7 +15,6 @@ extern "c" {
     bad_contract(value: Shape)
     bad_union(value: Event)
     bad_error(value: Error)
-    bad_descriptor(value: ErrorDescriptor)
     bad_typeid(value: typeid)
     bad_tuple(): (i32, i32)
     bad_function(value: (i32): i32)

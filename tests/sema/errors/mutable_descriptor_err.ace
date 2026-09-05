@@ -1,9 +1,4 @@
-/* Error mutable descriptor fixture. */
-
-descriptor: ErrorDescriptor = ErrorDescriptor {
-    code: 1,
-    domain: null,
-    message: "mutable",
+Domain: error
+main() {
+    value: Error = Domain("bad")
 }
-
-failure: const Error = Error(&descriptor)

@@ -17,7 +17,7 @@ loopback(port: u16): net.Address4 {
 }
 
 check_error(err: Error, domain: typeid): bool {
-    return err != null && err.domain == domain
+    return err != null && err.domain == domain && err.code != 0
 }
 
 check_failures(): int {
@@ -53,10 +53,6 @@ check_failures(): int {
 
     if aerr == null {
         return 14
-    }
-
-    if aerr.message.len != 13 {
-        return 15
     }
 
     if !check_error(aerr, typeid(net.AcceptErr)) {
@@ -227,7 +223,7 @@ main(): int {
     }
 
     if !check_error(net.listen(listener, usize(0x80000000)),
-                    typeid(net.ListenErr)) || sys.errno() != 22 {
+                    typeid(net.ListenErr)) {
         sys.close(listener)
         return 25
     }

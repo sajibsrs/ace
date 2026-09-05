@@ -403,15 +403,15 @@ Flags are raw constants with the operating system's own values and spellings
 `O_TRUNC`, `O_EXCL`), composed with `|`. Permission bits are plain hex
 (`u32(0x1A4)` is `0644`).
 
-Each failing operation returns an error whose descriptor domain names the
+Each failing operation returns an error whose packed domain names the
 operation — `sys.OpenErr`, `sys.ReadErr`, `sys.WriteErr`, `sys.CloseErr` —
-so `err.domain == typeid(sys.ReadErr)` identifies what failed, and
-`sys.errno()` says why:
+so `err.domain == typeid(sys.ReadErr)` identifies what failed, and `err.code`
+is the errno captured at the failure:
 
 ```ace
 fd: sys.Fd, err: Error = sys.open("/tmp/missing", sys.O_RDONLY)
 if err != null {
-    if sys.errno() == 2 { // ENOENT
+    if err.code == 2 { // ENOENT
         // handle a missing file
     }
 }
@@ -542,9 +542,9 @@ Every network error is last and null on success. The operation-specific public
 domains are `SocketErr`, `SetReuseAddressErr`, `SetReusePortErr`,
 `SetNonblockingErr`, `BindErr`, `ListenErr`, `AcceptErr`, `ConnectErr`,
 `ReceiveErr`, `SendErr`, and `ResolveErr`. Compare `error.domain` with the
-corresponding `typeid(net.*Err)`. For socket-operation errors, query
-`sys.errno()` immediately to learn the OS reason. Detailed resolver status is
-not exposed by the initial `resolve4`. Closing uses `sys.close` and therefore
+corresponding `typeid(net.*Err)`. For socket-operation errors, `error.code` is
+the captured errno; resolver failures preserve the direct resolver status code.
+Closing uses `sys.close` and therefore
 retains `sys.CloseErr`.
 
 No retry policy is hidden. In particular, interrupted, aborted, would-block,
@@ -635,8 +635,8 @@ wait returns `WaitErr`; it is never restarted privately. A successful zero
 count means that the timeout expired or a poll found no readiness.
 
 The public domains are `QueueErr`, `WatchErr`, `UnwatchErr`, and `WaitErr`.
-Compare `error.domain` with the corresponding `typeid(poll.*Err)` and query
-`sys.errno()` immediately for the OS reason. Closing a poll queue uses
+Compare `error.domain` with the corresponding `typeid(poll.*Err)` and inspect
+`error.code` for the errno captured at failure. Closing a poll queue uses
 `sys.close` and therefore retains `sys.CloseErr`.
 
 ## Current limitations

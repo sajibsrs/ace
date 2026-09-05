@@ -72,14 +72,14 @@ check_roundtrip(): int {
     // Reading through a closed descriptor reports ReadErr with EBADF.
     bad: int, baderr: Error = sys.read(rfd, view)
 
-    if baderr == null || baderr.domain != typeid(sys.ReadErr) || sys.errno() != 9 {
+    if baderr == null || baderr.domain != typeid(sys.ReadErr) || baderr.code != 9 {
         return 9
     }
 
     // The O_EXCL|O_CREAT pair fails on the existing file with EEXIST (17).
     xfd: sys.Fd, xerr: Error = sys.open(PATH, sys.O_WRONLY | sys.O_CREAT | sys.O_EXCL, u32(0x1A4))
 
-    if xerr == null || xerr.domain != typeid(sys.OpenErr) || sys.errno() != 17 {
+    if xerr == null || xerr.domain != typeid(sys.OpenErr) || xerr.code != 17 {
         return 10
     }
     return 0
@@ -92,7 +92,7 @@ check_long_path(): int {
         return 1
     }
 
-    if sys.errno() != 63 {
+    if err.code != 63 {
         return 2
     }
     return 0

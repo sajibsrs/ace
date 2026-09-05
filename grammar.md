@@ -41,7 +41,7 @@ import_path   := string_lit
 top_decl      := ["pub"] top_body
 top_body      := var_decl | const_decl | func_decl | struct_decl
                | contract_decl | enum_decl | union_decl | alias_decl | distinct_decl
-               | method_func_decl | signing_decl | extern_block
+               | error_domain_decl | method_func_decl | signing_decl | extern_block
 
 binding       := ident ":" type
 eq_name       := ident [":" type]                       // typed declares; bare reassigns — Note #28
@@ -75,6 +75,8 @@ union_variant := ident [":" type]                    // zero or one payload
 
 alias_decl    := ident [type_params] ":" "type" "=" type
 distinct_decl := ident ":" "distinct" type
+error_domain_decl := ident ":" contextual_error             // pub OpenErr: error
+contextual_error := ident                                    // exact text "error"; not reserved
 
 signing_decl  := owner_type "signs" (type_list | "(" type_list [","] ")")
                                                           // bare = one line; parens = multiline
@@ -231,3 +233,4 @@ ret_types     := type | "(" type ("," type)+ ")"
 26. **`[]T` is a conversion callee only when called.** The reverse view conversion is spelled `[]u8(text)` (Sequences #6 in `spec.md`), so an inline slice type may open a call: `[]` immediately followed by `]` and a type-starting token parses the brackets as a slice type, and the following `(` builds an ordinary call node with the type as callee. Without the call parenthesis the form is not an expression, and an empty array literal is unaffected (the token after `]` must start a type on the same line). Sema owns the overload: only `[]u8(text: mut string): mut []u8` exists, so other slice types through the callee are semantic rejections, mirroring the primitive-name callee `string(view)`.
 27. **`:=` is local declaration type elision, not inference.** It accepts exactly `ident ":=" expr` for one local binding, including a three-clause `for` initializer. Sema types the right side before declaring the name and supplies no expected type; standalone literal defaults are `int`, `f64`, and `u8` for integer, float, and character literals. `null`, contextual bare literals, and multi-return values therefore require an explicit typed declaration. The spelling is unavailable at top level and for multi-bindings, and always declares rather than assigning.
 28. **Multi-name `=` is per-name declaration or assignment.** Each `eq_name` is independent: `ident ":" type` declares and therefore requires an absent name, while bare `ident` reassigns and therefore requires an existing name. Either form may appear in any position, including uniformly typed or uniformly bare lists. Resolution uses the scope before the whole statement, so binders do not interact. `:=` retains Note #27's single untyped binder and rejects this list grammar.
+29. **Error domains are nominal declarations.** In the exact top-level declaration shape `ident ":" error`, `error` is contextual rather than reserved, so ordinary bindings and fields may still be named `error`. Calling the declared name with zero arguments or one `i32` expression constructs the universal `Error`; the domain name itself is accepted by `typeid` and transparent aliases preserve its identity.

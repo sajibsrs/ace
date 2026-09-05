@@ -1,0 +1,4 @@
+OpenErr: error
+main(): int {
+    return int(sizeof(OpenErr))
+}

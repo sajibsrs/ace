@@ -84,7 +84,7 @@ Surface index — the fast block for "is X supported?": one row per surface, sta
 | Mutability and per-level pointer permissions | implemented | [Mutability](spec.md#mutability) |
 | Canonical zero, `null`, definite initialization | implemented | [Zero, Null & Absence](spec.md#zero-null--absence) |
 | Checked builds: bounds, overflow, allocator diagnostics | open | [Safety & Checked Builds](spec.md#safety--checked-builds) |
-| Error layer, panic = abort | implemented | [Errors](spec.md#errors) |
+| Packed Error domains/codes, panic = abort | implemented | [Errors](spec.md#errors) |
 | Type system: explicit types, distinct types, enums | implemented | [Type System](spec.md#type-system) |
 | Contracts: methods, signings, conformances, embedding promotion | implemented | [Abstraction](spec.md#abstraction) |
 | Tagged unions | implemented | [Tagged Unions](spec.md#tagged-unions) |

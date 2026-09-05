@@ -24,12 +24,12 @@
 // --- type kinds (definitions shared via sema.h) ---------------------------------
 
 static SType *T_ERR, *T_VOID, *T_UT_INT, *T_UT_FLOAT, *T_UT_NULL;
-static SType *T_ERROR, *T_ERROR_DESC;
+static SType *T_ERROR;
 static SType* T_BYTE_SLICE;
 static SType* T_MUT_BYTE_SLICE; // mut []u8 — writable byte view (Mutability #9)
 static SType* T_MUT_STRING;     // mut string — writable bytes
 static SType* PRIMS[14];
-static uint64_t next_type_id = 1;
+static uint32_t next_type_id = 1;
 
 static SType* st_new(uint8_t kind) {
     SType* t = (SType*)arena_alloc(sizeof(SType));
@@ -90,6 +90,7 @@ static const char* type_name(SType* t) {
     case SK_CONTRACT: return t->name ? t->name : "contract";
     case SK_UNION: return t->name ? t->name : "union";
     case SK_DISTINCT: return t->name ? t->name : "distinct";
+    case SK_ERROR_DOMAIN: return t->name ? t->name : "error domain";
     case SK_ERROR: return "Error";
     case SK_VOID: return "no value";
     case SK_UT: return t == T_UT_INT ? "integer literal" :
@@ -153,7 +154,7 @@ static int layout(SType* t) {
     }
     case SK_ENUM: t->size = t->align = 4; return 1; // int constants, i32 layout
     case SK_CONTRACT: t->size = 16; t->align = 8; return 1; // vtable + data
-    case SK_ERROR: t->size = t->align = 8; return 1; // static descriptor handle
+    case SK_ERROR: t->size = t->align = 8; return 1; // packed domain/code value
     case SK_UNION: {
         /*
          * i32 tag at offset 0, then inline storage for the largest payload.
@@ -434,7 +435,7 @@ static int same_type(SType* a, SType* b) {
             if (!same_type(a->params[i], b->params[i])) return 0;
         return same_type(a->ret, b->ret);
     case SK_STRUCT: case SK_ENUM: case SK_CONTRACT: case SK_DISTINCT:
-    case SK_UNION:
+    case SK_ERROR_DOMAIN: case SK_UNION:
         if (a->decl != b->decl || a->nargs != b->nargs) return 0;
         for (int i = 0; i < a->nargs; i++)
             if (!same_type(a->args[i], b->args[i])) return 0;
@@ -976,8 +977,14 @@ static SType* build_func_type(Ck* k, Node* f, SType** args, int nargs) {
     ft->nparams = f->nkids;
     ft->params = (SType**)arena_alloc(
         (size_t)(f->nkids ? f->nkids : 1) * sizeof(SType*));
-    for (int i = 0; i < f->nkids; i++) ft->params[i] = build_type(k, f->kids[i]->a);
+    for (int i = 0; i < f->nkids; i++) {
+        ft->params[i] = build_type(k, f->kids[i]->a);
+        if (ft->params[i] && ft->params[i]->kind == SK_ERROR_DOMAIN)
+            ck_err(k, f->kids[i], "error-domain names are identities, not parameter types; use Error");
+    }
     ft->ret = f->a ? build_type(k, f->a) : NULL;
+    if (ft->ret && ft->ret->kind == SK_ERROR_DOMAIN)
+        ck_err(k, f->a, "error-domain names are identities, not return types; use Error");
     k->tnames = saved_names;
     k->ttypes = saved_types;
     k->nsub = saved_nsub;
@@ -1040,7 +1047,7 @@ static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
     }
     default:
         // slices, tuples (multi-return), function values, enums, contracts,
-        // tagged unions, Error/ErrorDescriptor, type parameters, void/ut
+        // tagged unions, Error, error domains, typeid, type parameters, void/ut
         return 0;
     }
 }
@@ -1440,8 +1447,13 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
         }
         if (b->kind == SK_ERROR) {
             if (write)
-                ck_err(k, e, "Error descriptor fields are read-only");
-            b = b->base;
+                ck_err(k, e, "Error fields are read-only");
+            if (e->len == 6 && memcmp(e->str, "domain", 6) == 0)
+                return st_prim(P_TYPEID);
+            if (e->len == 4 && memcmp(e->str, "code", 4) == 0)
+                return st_prim(P_I32);
+            ck_err(k, e, "type Error has no field '%.*s'", (int)e->len, e->str);
+            return T_ERR;
         }
         if (!write && e->len == 3 && memcmp(e->str, "len", 3) == 0 &&
             (b->kind == SK_SLICE || b->kind == SK_ARRAY ||
@@ -1920,7 +1932,14 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                    type_name(b));
             return T_ERR;
         }
-        if (b->kind == SK_ERROR) b = b->base;
+        if (b->kind == SK_ERROR) {
+            if (e->len == 6 && memcmp(e->str, "domain", 6) == 0)
+                return st_prim(P_TYPEID);
+            if (e->len == 4 && memcmp(e->str, "code", 4) == 0)
+                return st_prim(P_I32);
+            ck_err(k, e, "type Error has no field '%.*s'", (int)e->len, e->str);
+            return T_ERR;
+        }
         if (e->len == 3 && memcmp(e->str, "len", 3) == 0 &&
             (b->kind == SK_SLICE || b->kind == SK_ARRAY ||
              (b->kind == SK_PRIM && b->prim == P_STRING))) {
@@ -2278,7 +2297,7 @@ static SType* indexed_named_type(Ck* k, Node* ix) {
     return instantiate_generic_type(k, ts->type->decl, args, n);
 }
 
-static uint64_t type_identity(SType* t) {
+static uint32_t type_identity(SType* t) {
     if (!t->type_id) t->type_id = next_type_id++;
     return t->type_id;
 }
@@ -2291,27 +2310,14 @@ static SType* typeid_argument(Ck* k, Node* arg) {
 }
 
 static SType* check_error_construct(Ck* k, Node* call, Sym* ts) {
-    if (call->nkids != 1) {
-        ck_err(k, call, "Error construction takes exactly one descriptor address");
+    if (call->nkids > 1) {
+        ck_err(k, call, "error-domain construction takes zero or one i32 code");
         return T_ERR;
     }
-    Node* arg = call->kids[0];
-    SType* from = expr_type(k, arg);
-    int right_type = from && from->kind == SK_PTR && from->base == T_ERROR_DESC;
-    if (!right_type) {
-        ck_err(k, arg, "Error construction requires &const_global_ErrorDescriptor");
-        return T_ERR;
-    }
-    Node* target = arg->kind == N_UNARY && arg->op == T_AMP ? arg->a : NULL;
-    Sym* s = target && target->kind == N_IDENT ? node_sym(target) : NULL;
-    if (!s || !s->is_global || !s->is_const || s->type != T_ERROR_DESC) {
-        ck_err(k, arg,
-               "Error construction requires the address of a const global ErrorDescriptor");
-        return T_ERR;
-    }
+    if (call->nkids == 1 && !coerce(k, call->kids[0], st_prim(P_I32))) return T_ERR;
     call->a->sym = ts;
-    call->a->ty = T_ERROR;
-    call->flags |= F_CONST;
+    call->a->ty = ts->type;
+    call->ival = type_identity(ts->type);
     return T_ERROR;
 }
 
@@ -2813,7 +2819,7 @@ static SType* check_call(Ck* k, Node* call) {
             SType* prim = prim_by_name(callee->str, callee->len);
             Sym* ts = lookup_type(k, callee->str, callee->len);
             if (prim || ts) { // constructor-shaped cast or contract construction
-                if (ts && ts->type == T_ERROR)
+                if (ts && ts->type && ts->type->kind == SK_ERROR_DOMAIN)
                     return check_error_construct(k, call, ts);
                 if (call->nkids != 1) {
                     ck_err(k, call, "a cast takes exactly one argument");
@@ -2869,6 +2875,10 @@ static SType* check_call(Ck* k, Node* call) {
                         ck_err(k, arg,
                                "type '%s' is not declared yet; sizeof requires its layout",
                                type_name(t));
+                        return T_ERR;
+                    }
+                    if (t && t->kind == SK_ERROR_DOMAIN) {
+                        ck_err(k, arg, "error-domain names have no value layout; use Error");
                         return T_ERR;
                     }
                     if (t && t->kind != SK_ERR) {
@@ -3439,6 +3449,8 @@ static void check_stmt(Ck* k, Node* s) {
                 old[i] = lookup_val(k, binder->str, binder->len);
                 if (binder->kind == N_PARAM) {
                     wants[i] = build_type(k, binder->a);
+                    if (wants[i] && wants[i]->kind == SK_ERROR_DOMAIN)
+                        ck_err(k, binder, "error-domain names are identities, not value types; use Error");
                     if (old[i])
                         ck_err(k, binder,
                                "redeclaration of '%.*s': a typed name under '=' must be new",
@@ -3522,6 +3534,8 @@ static void check_stmt(Ck* k, Node* s) {
         for (int i = 0; i < s->nkids; i++) {
             Node* binder = s->kids[i];
             SType* t = build_type(k, binder->a);
+            if (t && t->kind == SK_ERROR_DOMAIN)
+                ck_err(k, binder, "error-domain names are identities, not value types; use Error");
             wants[i] = t;
             Sym* v = declare_val(k, binder, SYM_VAR, binder->str, binder->len);
             if (v) {
@@ -4581,33 +4595,6 @@ static void check_definite_initialization(Node* file, Diag* d) {
     }
 }
 
-static Node* named_field_value(Node* lit, const char* name, int* count) {
-    Node* found = NULL;
-    *count = 0;
-    for (int i = 0; lit && i < lit->nkids; i++) {
-        Node* f = lit->kids[i];
-        if (f->str && strlen(name) == f->len && memcmp(name, f->str, f->len) == 0) {
-            found = f->a;
-            (*count)++;
-        }
-    }
-    return found;
-}
-
-static int static_i32_expr(Ck* k, Node* e) {
-    int64_t ignored;
-    if (ut_const(e, &ignored)) return 1;
-    if (e->kind == N_CALL && !e->sym && e->nkids == 1 &&
-        e->a->kind == N_IDENT && node_ty(e->a))
-        return static_i32_expr(k, e->kids[0]); // explicit numeric/distinct casts
-    if (e->kind == N_IDENT) {
-        Sym* s = lookup_val(k, e->str, e->len);
-        return s && s->is_global && s->is_const && s->init &&
-               static_i32_expr(k, s->init);
-    }
-    return 0;
-}
-
 static Node* static_string_expr(Ck* k, Node* e) {
     if (e->kind == N_STR) return e;
     if (e->kind == N_IDENT) {
@@ -4616,39 +4603,6 @@ static Node* static_string_expr(Ck* k, Node* e) {
             return static_string_expr(k, s->init);
     }
     return NULL;
-}
-
-static int is_typeid_call(Node* e) {
-    return e && e->kind == N_CALL && e->a && e->a->kind == N_IDENT &&
-           e->a->len == 6 && memcmp(e->a->str, "typeid", 6) == 0 && e->ival != 0;
-}
-
-static void check_error_descriptor_global(Ck* k, Node* decl) {
-    if (!(decl->flags & F_CONST)) {
-        ck_err(k, decl, "ErrorDescriptor used for Error construction must be a const global");
-        return;
-    }
-    Node* lit = decl->b;
-    if (!lit || lit->kind != N_STRUCTLIT ||
-        (lit->nkids > 0 && !lit->kids[0]->str)) {
-        ck_err(k, decl, "ErrorDescriptor initializer must be a named struct literal");
-        return;
-    }
-    int nc = 0, nd = 0, nm = 0;
-    Node* code = named_field_value(lit, "code", &nc);
-    Node* domain = named_field_value(lit, "domain", &nd);
-    Node* message = named_field_value(lit, "message", &nm);
-    if (nc != 1 || nd != 1 || nm != 1) {
-        ck_err(k, lit,
-               "ErrorDescriptor requires exactly one code, domain, and message field");
-        return;
-    }
-    if (!static_i32_expr(k, code))
-        ck_err(k, code, "ErrorDescriptor code must be a compile-time i32 value");
-    if (!(domain->kind == N_NULL || is_typeid_call(domain)))
-        ck_err(k, domain, "ErrorDescriptor domain must be null or typeid(NamedType)");
-    if (!static_string_expr(k, message))
-        ck_err(k, message, "ErrorDescriptor message must have static string backing");
 }
 
 // --- functions & top level ------------------------------------------------------------------
@@ -5034,25 +4988,11 @@ void sema_stamp_body(Node* f, SType** args, int nargs) {
 }
 
 static void install_predeclared_error_types(Scope* file_scope) {
-    if (!T_ERROR_DESC) {
-        T_ERROR_DESC = st_new(SK_STRUCT);
-        T_ERROR_DESC->name = "ErrorDescriptor";
-        T_ERROR_DESC->nfields = 3;
-        T_ERROR_DESC->fields = (SField*)arena_alloc(3 * sizeof(SField));
-        T_ERROR_DESC->fields[0] = (SField){ "code", st_prim(P_I32) };
-        T_ERROR_DESC->fields[1] = (SField){ "domain", st_prim(P_TYPEID) };
-        T_ERROR_DESC->fields[2] = (SField){ "message", st_prim(P_STRING) };
-        layout(T_ERROR_DESC);
-
+    if (!T_ERROR) {
         T_ERROR = st_new(SK_ERROR);
         T_ERROR->name = "Error";
-        T_ERROR->base = T_ERROR_DESC;
         layout(T_ERROR);
     }
-    Sym* desc = sym_new(SYM_TYPE, "ErrorDescriptor", 15);
-    desc->type = T_ERROR_DESC;
-    desc->next = file_scope->types;
-    file_scope->types = desc;
     Sym* error = sym_new(SYM_TYPE, "Error", 5);
     error->type = T_ERROR;
     error->next = file_scope->types;
@@ -5144,6 +5084,8 @@ int sema_check(Node* file, Diag* d) {
         case N_VAR: {
             Node* binder = n->kids[0];
             SType* t = build_type(&k, binder->a);
+            if (t && t->kind == SK_ERROR_DOMAIN)
+                ck_err(&k, binder, "error-domain names are identities, not value types; use Error");
             Sym* s = declare_val(&k, n, SYM_VAR, binder->str, binder->len);
             if (s) {
                 s->type = t;
@@ -5166,8 +5108,6 @@ int sema_check(Node* file, Diag* d) {
                 if (s && t->kind == SK_PRIM && t->prim == P_STRING &&
                     !t->is_mut && n->b->kind == N_STR)
                     s->is_literal_backed = 1;
-                if (t == T_ERROR_DESC)
-                    check_error_descriptor_global(&k, n);
             } else if (n->flags & F_CONST) {
                 ck_err(&k, n, "const declaration requires an initializer");
             }
@@ -5226,6 +5166,16 @@ int sema_check(Node* file, Diag* d) {
                 t->size = t->align = 1;
                 t->calc = 0;
             }
+            break;
+        }
+        case N_ERROR_DOMAIN: {
+            Sym* s = declare_type(&k, n, n->str, n->len);
+            if (!s) break;
+            SType* t = st_new(SK_ERROR_DOMAIN);
+            t->name = n->str;
+            t->decl = n;
+            t->size = t->align = 8;
+            resolve_type_fixes(&k, s, t, n);
             break;
         }
         case N_SIGNING:

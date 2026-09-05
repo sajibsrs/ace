@@ -1,11 +1,6 @@
-/* Companion module for the Error export fixture. */
+pub FileError: error
+pub Alias: type = FileError
 
-pub FileError: distinct i32
-
-not_found_descriptor: const ErrorDescriptor = ErrorDescriptor {
-    code: i32(FileError(2)),
-    domain: typeid(FileError),
-    message: "module error",
+pub fail(code: i32): Error {
+    return FileError(code)
 }
-
-pub not_found: const Error = Error(&not_found_descriptor)

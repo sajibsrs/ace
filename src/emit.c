@@ -2958,10 +2958,18 @@ static EV gen_call(Em* e, Node* call) {
         return (EV){ CLS_INT, t };
     }
 
-    // Error(&const_global_descriptor): the descriptor address is the handle.
+    // A nominal error domain packs its compiler-assigned id above raw i32 bits.
     if (callee->kind == N_IDENT && !call->sym && node_ty(callee) &&
-        node_ty(callee)->kind == SK_ERROR) {
-        return gen_expr(e, call->kids[0]);
+        node_ty(callee)->kind == SK_ERROR_DOMAIN) {
+        int out = tmp_int(e);
+        load_imm(e, 1, xreg(out), call->ival << 32);
+        if (call->nkids == 1) {
+            EV code = gen_expr(e, call->kids[0]);
+            mov_int(e, 0, xreg(code.idx), xreg(code.idx)); // clear upper 32 bits
+            ins(e, 0xAA000000u | ((uint32_t)xreg(code.idx) << 16) |
+                   ((uint32_t)xreg(out) << 5) | (uint32_t)xreg(out));
+        }
+        return (EV){ CLS_INT, out };
     }
 
     // cast: i32(x), Meters(x), Color(1) — callee resolves to a type symbol;
@@ -3515,6 +3523,16 @@ static EV gen_expr(Em* e, Node* x) {
                 }
                 return gen_union_construct(e, x, ut, vi, (EV){ CLS_INT, 0 });
             }
+        }
+        SType* eb = unwrap(node_ty(x->a));
+        if (eb && eb->kind == SK_ERROR) {
+            EV value = gen_expr(e, x->a);
+            if (x->len == 6 && memcmp(x->str, "domain", 6) == 0)
+                ins(e, 0xD360FC00u | ((uint32_t)xreg(value.idx) << 5) |
+                       (uint32_t)xreg(value.idx)); // lsr x, x, #32
+            else
+                mov_int(e, 0, xreg(value.idx), xreg(value.idx)); // raw i32 bits
+            return value;
         }
         SType* seq = unwrap(node_ty(x->a));
         while (seq && seq->kind == SK_PTR) seq = unwrap(seq->base);
@@ -4998,16 +5016,6 @@ static void add_global(Em* e, Sym* s, ESym* sym) {
         (GVar){ s, sym->name, (uint32_t)strlen(sym->name) };
 }
 
-static Node* init_field(Node* lit, const char* name) {
-    size_t len = strlen(name);
-    for (int i = 0; lit && i < lit->nkids; i++) {
-        Node* f = lit->kids[i];
-        if (f->str && f->len == len && memcmp(f->str, name, len) == 0)
-            return f->a;
-    }
-    return NULL;
-}
-
 static Node* static_string_node(Node* n) {
     if (n && n->kind == N_STR) return n;
     if (n && n->kind == N_IDENT) {
@@ -5018,66 +5026,27 @@ static Node* static_string_node(Node* n) {
     return NULL;
 }
 
-static int is_error_descriptor_type(SType* t) {
-    return t && t->kind == SK_STRUCT && !t->decl && t->name &&
-           strcmp(t->name, "ErrorDescriptor") == 0;
-}
-
-static int emit_error_descriptor_global(Em* e, Node* n, Sym* vs,
-                                        const char* nm, SType* t) {
-    Node* code = init_field(n->b, "code");
-    Node* domain = init_field(n->b, "domain");
-    Node* message = static_string_node(init_field(n->b, "message"));
-    uint64_t cv = 0;
-    if (!code || !const_int(code, &cv) || !domain || !message) {
-        em_err(e, n, "invalid static ErrorDescriptor initializer");
-        return 0;
-    }
-    uint64_t dv = domain->kind == N_NULL ? 0 : domain->ival;
-    ESym* str = intern_string(e, message);
-    const char* str_name = str->name;
-    uint32_t str_len = (uint32_t)strlen(str_name);
-    Sec* d = (n->flags & F_CONST) ? &e->secs[SEC_CONST] : &e->secs[SEC_DATA];
-    while (d->data.len % 8) buf_put8(&d->data, 0);
-    size_t start = d->data.len;
-    ESym* g = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, d);
-    str = sym_intern(&e->syms, str_name, str_len);
-    buf_put32(&d->data, (uint32_t)cv); // code + natural padding
-    buf_put32(&d->data, 0);
-    buf_put64(&d->data, dv);
-    uint32_t off = (uint32_t)d->data.len;
-    buf_put64(&d->data, 0);
-    reloc_add(d, off, str, 0, 3, 1, RM_UNSIGNED);
-    buf_put64(&d->data, message->len);
-    if ((uint32_t)(d->data.len - start) != ty_size(t))
-        em_err(e, n, "ErrorDescriptor layout mismatch in codegen: wrote %u, expected %u",
-               (unsigned)(d->data.len - start), ty_size(t));
-    g = sym_intern(&e->syms, nm, (uint32_t)strlen(nm));
-    add_global(e, vs, g);
-    return 1;
-}
-
 static int emit_error_handle_global(Em* e, Node* n, Sym* vs,
                                     const char* nm) {
     Node* call = n->b;
-    Node* arg = call && call->kind == N_CALL && call->nkids == 1
-        ? call->kids[0] : NULL;
-    Node* target = arg && arg->kind == N_UNARY && arg->op == T_AMP ? arg->a : NULL;
-    Sym* ds = target && target->kind == N_IDENT ? node_sym(target) : NULL;
-    ESym* descriptor = ds ? global_sym(e, ds) : NULL;
-    if (!descriptor) {
-        em_err(e, n, "Error descriptor must be emitted before its handle");
+    uint64_t code = 0;
+    if (call && call->kind == N_NULL) {
+        Sec* d = (n->flags & F_CONST) ? &e->secs[SEC_CONST] : &e->secs[SEC_DATA];
+        while (d->data.len % 8) buf_put8(&d->data, 0);
+        ESym* g = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, d);
+        buf_put64(&d->data, 0);
+        add_global(e, vs, g);
+        return 1;
+    }
+    if (!call || call->kind != N_CALL || call->nkids > 1 ||
+        (call->nkids == 1 && !const_int(call->kids[0], &code))) {
+        em_err(e, n, "global Error initializer must use a domain with a constant i32 code");
         return 0;
     }
-    const char* descriptor_name = descriptor->name;
-    uint32_t descriptor_len = (uint32_t)strlen(descriptor_name);
     Sec* d = (n->flags & F_CONST) ? &e->secs[SEC_CONST] : &e->secs[SEC_DATA];
     while (d->data.len % 8) buf_put8(&d->data, 0);
     ESym* g = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, d);
-    descriptor = sym_intern(&e->syms, descriptor_name, descriptor_len);
-    uint32_t off = (uint32_t)d->data.len;
-    buf_put64(&d->data, 0);
-    reloc_add(d, off, descriptor, 0, 3, 1, RM_UNSIGNED);
+    buf_put64(&d->data, (call->ival << 32) | (uint32_t)code);
     add_global(e, vs, g);
     return 1;
 }
@@ -5096,10 +5065,6 @@ static void emit_global(Em* e, Node* n) {
         ESym* s = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, b);
         b->size += size;
         add_global(e, vs, s);
-        return;
-    }
-    if (is_error_descriptor_type(t)) {
-        emit_error_descriptor_global(e, n, vs, nm, t);
         return;
     }
     if (t->kind == SK_ERROR) {

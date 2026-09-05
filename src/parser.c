@@ -1696,7 +1696,16 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
         n->a = parse_type(p);
         return n;
     }
-    default: { // global var / const
+    default: { // contextual `error` domain, or global var / const
+        if (at(p, T_IDENT) && tk(p)->len == 5 &&
+            memcmp(tk(p)->str, "error", 5) == 0) {
+            p->i++;
+            n = nd_tok(p, N_ERROR_DOMAIN, name);
+            n->str = name->str;
+            n->len = name->len;
+            if (pub) n->flags |= F_PUB;
+            return n;
+        }
         n = nd_tok(p, N_VAR, name);
         if (pub) n->flags |= F_PUB;
         int is_const = 0;

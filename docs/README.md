@@ -22,7 +22,7 @@ must be corrected.
   overloads, function values, generics, and the program entry point.
 - [Control flow](control-flow.md) — conditions, switches, ranges, sequence
   iteration, indices, loop exits, labeled blocks, and deferred calls.
-- [Errors](errors.md) — the `Error` handle, static `ErrorDescriptor`
+- [Errors](errors.md) — packed `Error` values and nominal domains
   construction, `typeid` domains, exact identity matching, module boundaries,
   and the reserved `panic(message)` builtin.
 - [Modules](module.md) — qualified and selective imports, standard-library and
