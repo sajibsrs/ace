@@ -405,7 +405,9 @@ work(): int {
 
 Defers run only at function exits, and nothing else runs them:
 
-- `panic` aborts the process and runs no defers.
+- `panic` and `sys.exit` terminate the process and run no defers. If either is
+  itself deferred, reaching it terminates immediately and earlier pending
+  defers do not run.
 - `break` and `continue`, plain or labeled, leave the function running, so the
   defers wait for the real exit that ends the function.
 - A `defer` written after the final `return` never runs; it is accepted

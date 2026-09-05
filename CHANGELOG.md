@@ -81,7 +81,7 @@ current normative rules, and Git preserves patch-level detail.
   declaration-before-use ordering. Modules merge into one compilation unit under
   private prefixed identities; canonical files load once.
 - Added standard directory modules (`std/name/module.ace`) beside single-file
-  modules, with ambiguity diagnostics. Backend files remain explicitly imported
+  modules, with ambiguity diagnostics. OS-layer files remain explicitly imported
   behind stable public facades.
 - Implemented `extern "c"`, `export`, link names, and C variadics behind a
   positive ABI whitelist. Apple-arm64 lowering covers compatible scalars,
@@ -105,14 +105,20 @@ current normative rules, and Git preserves patch-level detail.
 - Implemented `sys` file-descriptor I/O, descriptor constants, errno capture,
   command-line arguments, environment access, and separate elapsed/awake
   monotonic clocks through thin platform bindings.
+- Added immediate `sys.exit(code)` through the OS-neutral `sys` facade and
+  a private Darwin OS layer calling libSystem `_exit`; it runs neither defers
+  nor C-runtime exit handlers and requires no compiler intrinsic.
 - Implemented blocking IPv4 TCP `net`: socket creation, explicit options,
   bind/listen/accept/connect, partial send/receive, peer addresses, DNS
   resolution, and operation-specific error domains. The public directory module
-  wraps a private Darwin backend and owns no hidden allocation.
+  wraps a private Darwin OS layer and owns no hidden allocation.
 - Implemented general descriptor `poll` with allocation-free queues, paired
   watch/unwatch, level-triggered read/write interest, error/hangup reporting,
   caller-owned event storage, and finite/infinite nanosecond waits. Darwin kqueue
-  is private to the backend.
+  is private to the OS layer.
+- Standardized OS-specific stdlib organization as a public `module.ace` facade
+  over `os/<target>.ace`, and moved the Darwin `sys`, `net`, and `poll` layers
+  from the ambiguous `backend` directory name to `os`.
 - `math` currently contains only its minimal implemented integer/generic
   helpers; floating libm and SIMD remain open work.
 

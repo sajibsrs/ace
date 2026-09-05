@@ -1,31 +1,31 @@
-/* poll — backend-neutral allocation-free descriptor readiness. */
+/* poll — OS-neutral allocation-free descriptor readiness. */
 
 import sys
-import backend: "./backend/darwin-arm64.ace"
+import os: "./os/darwin-arm64.ace"
 
-pub Queue: type = backend.Queue
-pub Event: type = backend.Event
-pub QueueErr: type = backend.QueueErr
-pub WatchErr: type = backend.WatchErr
-pub UnwatchErr: type = backend.UnwatchErr
-pub WaitErr: type = backend.WaitErr
+pub Queue: type = os.Queue
+pub Event: type = os.Event
+pub QueueErr: type = os.QueueErr
+pub WatchErr: type = os.WatchErr
+pub UnwatchErr: type = os.UnwatchErr
+pub WaitErr: type = os.WaitErr
 
 pub wait_forever: const u64 = 0xffffffffffffffff
 
 pub queue(): (Queue, Error) {
-    result: Queue, err: Error = backend.queue()
+    result: Queue, err: Error = os.queue()
     return result, err
 }
 
 pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool): Error {
-    return backend.watch(q, fd, readable, writable)
+    return os.watch(q, fd, readable, writable)
 }
 
 pub unwatch(q: Queue, fd: sys.Fd): Error {
-    return backend.unwatch(q, fd)
+    return os.unwatch(q, fd)
 }
 
 pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
-    count: usize, err: Error = backend.wait(q, events, timeout_ns)
+    count: usize, err: Error = os.wait(q, events, timeout_ns)
     return count, err
 }

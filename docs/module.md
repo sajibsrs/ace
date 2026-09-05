@@ -142,9 +142,12 @@ once — a diamond dependency shares one set of globals, not copies.
 
 The selected std entry is an ordinary module and its resolved canonical path
 is its identity. Other files inside a multi-file std module are imported by
-explicit relative `.ace` path. Internal backend files may therefore remain
+explicit relative `.ace` path. Internal OS-layer files may therefore remain
 directly importable, but carry no public compatibility promise; there is no
-special visibility mechanism for them.
+special visibility mechanism for them. OS- and kernel-specific standard-library
+implementations always live at `std/<module>/os/<target>.ace` behind the
+module's public `module.ace` facade. The name `backend` is kept for
+compiler/code-generation backends, not OS bindings.
 
 Import cycles are compile errors, reported with the full chain:
 

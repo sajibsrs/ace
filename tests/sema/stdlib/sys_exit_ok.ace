@@ -1,0 +1,11 @@
+/* The public OS-neutral wrapper has an ordinary blank return surface. */
+
+import exit from sys
+
+stop(code: int) {
+    exit(code)
+}
+
+main(): int {
+    return 0
+}

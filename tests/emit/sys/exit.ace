@@ -1,0 +1,14 @@
+/* sys.exit is immediate: neither the caller's defer nor following code runs. */
+// expect-exit: 23
+// expect-output: before
+
+import fmt
+import sys
+
+main(): int {
+    defer fmt.println("deferred")
+    fmt.println("before")
+    sys.exit(23)
+    fmt.println("after")
+    return 99
+}

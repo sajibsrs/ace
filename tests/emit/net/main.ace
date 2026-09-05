@@ -8,7 +8,6 @@ import sys
 
 extern "c" {
     c_fork(): i32 = "fork"
-    c_exit(status: i32) = "_exit"
     c_getpid(): i32 = "getpid"
     c_waitpid(pid: i32, status: mut *i32, options: i32): i32 = "waitpid"
 }
@@ -238,8 +237,7 @@ main(): int {
 
     if pid == 0 {
         code: int = child(selected)
-        c_exit(i32(code))
-        return code
+        sys.exit(code)
     }
 
     peer: net.Socket, peer_address: net.Address4, err: Error = net.accept(listener)

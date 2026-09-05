@@ -1,4 +1,4 @@
-/* Darwin poll backend — allocation-free kqueue readiness. */
+/* Darwin poll OS layer — allocation-free kqueue readiness. */
 
 import sys
 

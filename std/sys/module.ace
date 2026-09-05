@@ -1,0 +1,103 @@
+/* sys — OS-neutral process and operating-system facade. */
+
+import os: "./os/darwin-arm64.ace"
+
+pub Fd: type = os.Fd
+
+pub OpenErr: type = os.OpenErr
+pub ReadErr: type = os.ReadErr
+pub WriteErr: type = os.WriteErr
+pub CloseErr: type = os.CloseErr
+
+pub stdin: const Fd = Fd(0)
+pub stdout: const Fd = Fd(1)
+pub stderr: const Fd = Fd(2)
+
+pub O_RDONLY: const i32 = 0
+pub O_WRONLY: const i32 = 1
+pub O_RDWR: const i32 = 2
+pub O_NONBLOCK: const i32 = 0x0004
+pub O_APPEND: const i32 = 0x0008
+pub O_CREAT: const i32 = 0x0200
+pub O_TRUNC: const i32 = 0x0400
+pub O_EXCL: const i32 = 0x0800
+
+/* Process-start pointer arrays stay behind compiler-backed helpers because
+ * Ace deliberately exposes no pointer arithmetic over their C layouts.
+ */
+process_argc(): usize {
+    return 0
+}
+
+process_arg(index: usize): string {
+    return null
+}
+
+process_envc(): usize {
+    return 0
+}
+
+process_env(index: usize): string {
+    return null
+}
+
+pub argc(): usize {
+    return process_argc()
+}
+
+pub arg(index: usize): string {
+    return process_arg(index)
+}
+
+pub envc(): usize {
+    return process_envc()
+}
+
+pub env(index: usize): string {
+    return process_env(index)
+}
+
+pub exit(code: int) {
+    os.exit(code)
+}
+
+pub errno(): i32 {
+    return os.errno()
+}
+
+pub read(fd: Fd, buf: mut []u8): (int, Error) {
+    count: int, err: Error = os.read(fd, buf)
+    return count, err
+}
+
+pub write(fd: Fd, data: []u8): (int, Error) {
+    count: int, err: Error = os.write(fd, data)
+    return count, err
+}
+
+pub write(fd: Fd, text: string): (int, Error) {
+    count: int, err: Error = os.write(fd, text)
+    return count, err
+}
+
+pub close(fd: Fd): Error {
+    return os.close(fd)
+}
+
+pub open(path: string, flags: i32): (Fd, Error) {
+    fd: Fd, err: Error = os.open(path, flags)
+    return fd, err
+}
+
+pub open(path: string, flags: i32, mode: u32): (Fd, Error) {
+    fd: Fd, err: Error = os.open(path, flags, mode)
+    return fd, err
+}
+
+pub time_elapsed(): u64 {
+    return os.time_elapsed()
+}
+
+pub time_awake(): u64 {
+    return os.time_awake()
+}

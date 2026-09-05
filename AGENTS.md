@@ -66,6 +66,9 @@ Do not propose or assume away these decisions; follow `SPEC.md` for exact rules.
 
 - Relationship-forming operations use accurate lexical pairs when available
   (`watch`/`unwatch`, `add`/`remove`). Accuracy beats cosmetic symmetry.
+- OS- or kernel-specific standard-library code always lives behind the public
+  `std/<module>/module.ace` facade under `std/<module>/os/<target>.ace`.
+  Reserve `backend` for compiler/code-generation backends, never OS bindings.
 - `[open]` is undecided; `[controversial]` is contested. Only the owner removes
   either marker. Provisional spellings may change; their semantics may not.
 - Start strict and relax later through additive conveniences.

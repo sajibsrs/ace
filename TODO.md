@@ -84,7 +84,6 @@ Small items, each needing an owner decision:
 
 Not core language; listed because each blocks practical use.
 
-- **`sys.exit(code)`** [new] — early termination is currently expressible only as `panic`; returning from `main` is the only normal exit. Process sleep is separately deferred (Stdlib #11).
 - **Filesystem surface beyond open/read/write/close** — stat, mkdir, readdir, rename, unlink [new].
 - **Signals** [additive] — excluded from `poll` (Stdlib #14); servers need SIGINT handling.
 - **`str.concat` / `str.join`** into caller storage [new] — `str` searches, splits, trims, parses, and formats, but never assembles (Stdlib #15).

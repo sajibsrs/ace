@@ -1,4 +1,4 @@
-/* Darwin net backend — allocation-free IPv4 TCP sockets
+/* Darwin net OS layer — allocation-free IPv4 TCP sockets
  * (Darwin/Apple arm64).
  *
  * The public declarations form the stable Ace networking surface. The

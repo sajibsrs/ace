@@ -390,6 +390,13 @@ for i: usize in 0 .. environment_count {
 }
 ```
 
+`sys.exit(code: int)` terminates the process immediately with the requested
+status and never returns. It is callable from any function and has no declared
+return value. It does not unwind the stack, run function-scope defers, or invoke
+C-runtime exit handlers. The operating system determines which status bits a
+parent process observes. Use it for deliberate CLI termination; `panic` instead
+reports a broken invariant best-effort and aborts with `SIGABRT`.
+
 `arg(0)` is the program invocation name. `arg(index)` requires
 `index < argc()`, and `env(index)` requires `index < envc()`. These are the
 ordinary sequence bounds preconditions: future checked builds diagnose a
@@ -458,8 +465,8 @@ not implemented yet.
 
 `net` provides a thin IPv4 TCP layer with allocation-free core socket
 operations. Its public values and operations are
-backend-neutral; `std/net/module.ace` explicitly imports the supported
-Darwin/Apple-arm64 backend. Platform structures, constants, byte order, and C
+OS-neutral; `std/net/module.ace` explicitly imports the supported
+Darwin/Apple-arm64 OS layer. Platform structures, constants, byte order, and C
 bindings stay in that private-by-convention file. `net.Socket` is a transparent
 alias of `sys.Fd`, so close sockets with `sys.close`.
 
@@ -621,7 +628,7 @@ The readiness surface is:
   unwatched descriptor is an error.
 - `wait(q, events: mut []Event, timeout_ns): (usize, Error)` writes a fully initialized
   prefix of caller-owned storage. The suffix remains unchanged. An empty slice
-  is an error. The backend uses bounded stack storage, allocates nothing, and
+  is an error. The OS layer uses bounded stack storage, allocates nothing, and
   may return fewer events than the supplied capacity.
 
 An `Event` contains `fd`, `readable`, `writable`, `error`, and `hangup`. At

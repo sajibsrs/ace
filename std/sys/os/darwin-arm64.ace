@@ -1,5 +1,5 @@
-/* sys — the thin OS boundary: file descriptors, byte I/O, and monotonic
- * time (Apple arm64).
+/* Darwin sys OS layer — process termination, file descriptors, byte I/O,
+ * and monotonic time (Darwin/Apple arm64).
  *
  * Pure Ace over the system library through extern "c"; the link-name syntax
  * keeps the raw C bindings private. Every public function is allocation-free;
@@ -16,6 +16,7 @@ extern "c" {
     c_write(fd: i32, buf: *u8, size: usize): i64 = "write"
     c_errno(): mut *i32 = "__error"
     c_clock_gettime_nsec_np(clk_id: i32): u64 = "clock_gettime_nsec_np"
+    c_exit(status: i32) = "_exit"
 }
 
 /* Descriptor handle. Canonical zero is fd 0 (stdin, valid); -1 marks a
@@ -30,47 +31,11 @@ pub stdin: const Fd = Fd(0)
 pub stdout: const Fd = Fd(1)
 pub stderr: const Fd = Fd(2)
 
-/* Process arguments are exposed as zero-copy, read-only string views. argc()
- * is constant-time and arg(0) is the program invocation name. arg(index)
- * requires index < argc(); it scans only the selected NUL-terminated entry.
- * Private compiler-backed helpers cross Darwin's process-start boundary; the
- * public functions remain ordinary Ace functions and function values.
+/* Terminate immediately with the requested process status. This does not
+ * return, unwind, run defers, or invoke C-runtime exit handlers.
  */
-process_argc(): usize {
-    return 0
-}
-
-process_arg(index: usize): string {
-    return null
-}
-
-pub argc(): usize {
-    return process_argc()
-}
-
-pub arg(index: usize): string {
-    return process_arg(index)
-}
-
-/* envc() counts the null-terminated environment pointer array and is O(n) on
- * every call. Capture its result before a loop, then call env(index) for
- * 0 <= index < that count. env returns the raw zero-copy "KEY=VALUE" entry
- * and scans only that selected NUL-terminated string.
- */
-process_envc(): usize {
-    return 0
-}
-
-process_env(index: usize): string {
-    return null
-}
-
-pub envc(): usize {
-    return process_envc()
-}
-
-pub env(index: usize): string {
-    return process_env(index)
+pub exit(code: int) {
+    c_exit(i32(code))
 }
 
 /* Per-operation error domains: the failing operation is readable from the
