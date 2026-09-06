@@ -97,6 +97,13 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Standard library
 
+- Standardized concise stdlib naming across public facades, selected OS layers,
+  documentation, and fixtures. Subject words remain where a module can expose
+  multiple categories (`net.SocketKind`, `sys.FileKind`); established
+  abbreviations shorten `Addr` and `Err` without
+  clipping ambiguous ordinary words; reversible networking properties use
+  `reuse_addr`, `reuse_port`, and `nonblock`; and directory operations use the
+  consistent `open_dir` / `read_dir` / `close_dir` family.
 - Implemented allocation-free `fmt.print` and `println` overloads using small
   fixed stack buffers and retrying partial writes; portable formatting lives in
   its facade while libc primitives stay in its selected target layer.
@@ -157,7 +164,7 @@ current normative rules, and Git preserves patch-level detail.
 
 - Expanded `sys` with allocation-free filesystem metadata and mutation
   (`stat`, `mkdir`, `rename`, and `unlink`) plus caller-owned buffered directory
-  iteration (`open_dir`, `readdir`, and `close_dir`). The Darwin layer parses
+  iteration (`open_dir`, `read_dir`, and `close_dir`). The Darwin layer parses
   private `dirent64` batches into exact caller-provided name buffers, keeps
   undersized entries retryable, and exposes only stable file kind and size.
   The portable `mkdir(path)` form delegates effective permissions to the

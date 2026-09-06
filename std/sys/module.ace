@@ -168,8 +168,8 @@ pub open_dir(path: string): (Dir, Error) {
     return dir, err
 }
 
-pub readdir(mut dir: Dir, name: mut []u8): (usize, FileKind, bool, Error) {
-    length: usize, kind: FileKind, done: bool, err: Error = os.readdir(mut dir, name)
+pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileKind, bool, Error) {
+    length: usize, kind: FileKind, done: bool, err: Error = os.read_dir(mut dir, name)
     return length, kind, done, err
 }
 

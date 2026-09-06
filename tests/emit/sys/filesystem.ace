@@ -63,7 +63,7 @@ main(): int {
     found: bool = false
     finished: bool = false
     for !finished {
-        count: usize, kind: sys.FileKind, done: bool, read_err: Error = sys.readdir(mut dir, name)
+        count: usize, kind: sys.FileKind, done: bool, read_err: Error = sys.read_dir(mut dir, name)
         if read_err != null {
             return 8
         }

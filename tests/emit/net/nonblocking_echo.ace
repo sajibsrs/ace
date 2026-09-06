@@ -7,8 +7,8 @@ import net
 import poll
 import sys
 
-loopback(port: u16): net.Address4 {
-    return net.Address4 {ip: [127, 0, 0, 1], port: port}
+loopback(port: u16): net.Addr4 {
+    return net.Addr4 {ip: [127, 0, 0, 1], port: port}
 }
 
 close_all(q: poll.Queue, listener: net.Socket, peer: net.Socket) {
@@ -81,12 +81,12 @@ main(): int {
         return 10
     }
 
-    if net.set_reuse_address(listener, true) != null ||
+    if net.reuse_addr(listener, true) != null ||
        net.bind(listener, loopback(u16(0))) != null {
         sys.close(listener)
         return 11
     }
-    local: net.Address4
+    local: net.Addr4
     local, listener_err = net.local(listener)
 
     if listener_err != null || local.port == 0 {
@@ -100,7 +100,7 @@ main(): int {
         return 17
     }
 
-    if net.set_nonblocking(listener, true) != null {
+    if net.nonblock(listener, true) != null {
         sys.close(listener)
         return 18
     }
@@ -108,7 +108,7 @@ main(): int {
     /* A nonblocking accept before readiness performs one attempt and exposes
      * would-block through the existing operation error and raw errno.
      */
-    absent: net.Socket, ignored: net.Address4, accept_err: Error = net.accept(listener)
+    absent: net.Socket, ignored: net.Addr4, accept_err: Error = net.accept(listener)
 
     if absent != -1 || accept_err == null ||
        accept_err.domain != typeid(net.AcceptErr) ||
@@ -172,10 +172,10 @@ main(): int {
             event: poll.Event = events[index]
 
             if event.fd == listener && event.readable {
-                accepted: net.Socket, address: net.Address4, err: Error = net.accept(listener)
+                accepted: net.Socket, address: net.Addr4, err: Error = net.accept(listener)
 
                 if err != null || accepted == -1 || address.ip[0] != 127 ||
-                   net.set_nonblocking(accepted, true) != null ||
+                   net.nonblock(accepted, true) != null ||
                    poll.watch(q, accepted, true, false) != null {
                     if accepted != -1 {
                         sys.close(accepted)

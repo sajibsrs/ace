@@ -339,6 +339,15 @@ Empty results keep their computed pointer and are never canonicalized to
 `0 <= lo <= hi <= len(source)` false, the program is rejected at compile time,
 and runtime bounds remain unchecked until checked builds land.
 
+All four bound forms are available:
+
+```ace
+source[lo..hi] // explicit half-open range [lo, hi)
+source[..hi]   // prefix: lo defaults to 0
+source[lo..]   // suffix: hi defaults to len(source)
+source[..]     // complete view: 0 through len(source)
+```
+
 ```ace
 text: string = "hello world"
 tail: string = text[6..]

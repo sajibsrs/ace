@@ -11,7 +11,7 @@ pub Socket: type = sys.Fd
 
 pub SocketKind: enum { tcp }
 
-pub Address4: struct {
+pub Addr4: struct {
     ip: [4]u8,
     port: u16,
 }
@@ -21,9 +21,9 @@ pub Address4: struct {
  */
 
 pub SocketErr: error
-pub SetReuseAddressErr: error
-pub SetReusePortErr: error
-pub SetNonblockingErr: error
+pub ReuseAddrErr: error
+pub ReusePortErr: error
+pub NonblockErr: error
 pub BindErr: error
 pub ListenErr: error
 pub AcceptErr: error
@@ -33,7 +33,7 @@ pub SendErr: error
 pub ResolveErr: error
 pub LocalErr: error
 
-DarwinAddress4: struct {
+DarwinAddr4: struct {
     length: u8,
     family: u8,
     port: [2]u8,
@@ -48,7 +48,7 @@ DarwinAddrInfo: struct {
     protocol: i32,
     address_length: u32,
     canonical_name: *u8,
-    address: *DarwinAddress4,
+    address: *DarwinAddr4,
     next: *DarwinAddrInfo,
 }
 
@@ -69,11 +69,11 @@ HOST_NAME_MAX: const usize = 253
 extern "c" {
     c_socket(domain: i32, kind: i32, protocol: i32): i32 = "socket"
     c_setsockopt(socket: i32, level: i32, option: i32, value: *i32, length: u32): i32 = "setsockopt"
-    c_bind(socket: i32, address: *DarwinAddress4, length: u32): i32 = "bind"
+    c_bind(socket: i32, address: *DarwinAddr4, length: u32): i32 = "bind"
     c_listen(socket: i32, backlog: i32): i32 = "listen"
-    c_accept(socket: i32, address: mut *DarwinAddress4, length: mut *u32): i32 = "accept"
-    c_connect(socket: i32, address: *DarwinAddress4, length: u32): i32 = "connect"
-    c_getsockname(socket: i32, address: mut *DarwinAddress4,
+    c_accept(socket: i32, address: mut *DarwinAddr4, length: mut *u32): i32 = "accept"
+    c_connect(socket: i32, address: *DarwinAddr4, length: u32): i32 = "connect"
+    c_getsockname(socket: i32, address: mut *DarwinAddr4,
                   length: mut *u32): i32 = "getsockname"
     c_recv(socket: i32, buffer: mut *u8, length: usize, flags: i32): i64 = "recv"
     c_send(socket: i32, data: *u8, length: usize, flags: i32): i64 = "send"
@@ -89,12 +89,12 @@ errno_set(value: i32) {
     ~slot = value
 }
 
-to_darwin(address: Address4): DarwinAddress4 {
+to_darwin(address: Addr4): DarwinAddr4 {
     port: [2]u8 = [u8(address.port >> 8), u8(address.port)]
     ip: [4]u8 = [address.ip[0], address.ip[1], address.ip[2], address.ip[3]]
     zero: [8]u8 = [u8(0) : 8]
 
-    return DarwinAddress4 {
+    return DarwinAddr4 {
         length: u8(SOCKADDR4_SIZE),
         family: u8(AF_INET),
         port: port,
@@ -103,18 +103,18 @@ to_darwin(address: Address4): DarwinAddress4 {
     }
 }
 
-from_darwin(address: DarwinAddress4): Address4 {
+from_darwin(address: DarwinAddr4): Addr4 {
     ip: [4]u8 = [address.ip[0], address.ip[1], address.ip[2], address.ip[3]]
 
-    return Address4 {
+    return Addr4 {
         ip: ip,
         port: (u16(address.port[0]) << 8) | u16(address.port[1]),
     }
 }
 
-zero_address4(): Address4 {
+zero_addr4(): Addr4 {
     ip: [4]u8 = [u8(0) : 4]
-    return Address4 {ip: ip, port: u16(0)}
+    return Addr4 {ip: ip, port: u16(0)}
 }
 
 pub socket(kind: SocketKind): (Socket, Error) {
@@ -140,27 +140,27 @@ set_socket_option(sock: Socket, option: i32, enabled: bool, domain: typeid): Err
 
     if c_setsockopt(i32(sock), SOL_SOCKET, option, &value, u32(sizeof(i32))) == -1 {
         code: i32 = sys.errno()
-        if domain == typeid(SetReuseAddressErr) {
-            return SetReuseAddressErr(code)
+        if domain == typeid(ReuseAddrErr) {
+            return ReuseAddrErr(code)
         }
-        return SetReusePortErr(code)
+        return ReusePortErr(code)
     }
     return null
 }
 
-pub set_reuse_address(sock: Socket, enabled: bool): Error {
-    return set_socket_option(sock, SO_REUSEADDR, enabled, typeid(SetReuseAddressErr))
+pub reuse_addr(sock: Socket, enabled: bool): Error {
+    return set_socket_option(sock, SO_REUSEADDR, enabled, typeid(ReuseAddrErr))
 }
 
-pub set_reuse_port(sock: Socket, enabled: bool): Error {
-    return set_socket_option(sock, SO_REUSEPORT, enabled, typeid(SetReusePortErr))
+pub reuse_port(sock: Socket, enabled: bool): Error {
+    return set_socket_option(sock, SO_REUSEPORT, enabled, typeid(ReusePortErr))
 }
 
-pub set_nonblocking(sock: Socket, enabled: bool): Error {
+pub nonblock(sock: Socket, enabled: bool): Error {
     flags: i32 = c_fcntl(i32(sock), F_GETFL)
 
     if flags == -1 {
-        return SetNonblockingErr(sys.errno())
+        return NonblockErr(sys.errno())
     }
 
     if enabled {
@@ -170,13 +170,13 @@ pub set_nonblocking(sock: Socket, enabled: bool): Error {
     }
 
     if c_fcntl(i32(sock), F_SETFL, flags) == -1 {
-        return SetNonblockingErr(sys.errno())
+        return NonblockErr(sys.errno())
     }
     return null
 }
 
-pub bind(sock: Socket, address: Address4): Error {
-    raw: DarwinAddress4 = to_darwin(address)
+pub bind(sock: Socket, address: Addr4): Error {
+    raw: DarwinAddr4 = to_darwin(address)
 
     if c_bind(i32(sock), &raw, SOCKADDR4_SIZE) == -1 {
         return BindErr(sys.errno())
@@ -196,25 +196,25 @@ pub listen(sock: Socket, backlog: usize): Error {
     return null
 }
 
-pub accept(listener: Socket): (Socket, Address4, Error) {
+pub accept(listener: Socket): (Socket, Addr4, Error) {
     port: [2]u8 = [u8(0) : 2]
     ip: [4]u8 = [u8(0) : 4]
     zero: [8]u8 = [u8(0) : 8]
 
-    raw: DarwinAddress4 = DarwinAddress4 {
+    raw: DarwinAddr4 = DarwinAddr4 {
         length: u8(0), family: u8(0), port: port, ip: ip, zero: zero,
     }
     length: u32 = SOCKADDR4_SIZE
     accepted: i32 = c_accept(i32(listener), mut &raw, mut &length)
 
     if accepted == -1 {
-        return Socket(-1), zero_address4(), AcceptErr(sys.errno())
+        return Socket(-1), zero_addr4(), AcceptErr(sys.errno())
     }
     return Socket(accepted), from_darwin(raw), null
 }
 
-pub connect(sock: Socket, address: Address4): Error {
-    raw: DarwinAddress4 = to_darwin(address)
+pub connect(sock: Socket, address: Addr4): Error {
+    raw: DarwinAddr4 = to_darwin(address)
 
     if c_connect(i32(sock), &raw, SOCKADDR4_SIZE) == -1 {
         return ConnectErr(sys.errno())
@@ -222,8 +222,8 @@ pub connect(sock: Socket, address: Address4): Error {
     return null
 }
 
-pub local(sock: Socket): (Address4, Error) {
-    raw: DarwinAddress4 = DarwinAddress4 {
+pub local(sock: Socket): (Addr4, Error) {
+    raw: DarwinAddr4 = DarwinAddr4 {
         length: u8(0),
         family: u8(0),
         port: [u8(0) : 2],
@@ -233,7 +233,7 @@ pub local(sock: Socket): (Address4, Error) {
     length: u32 = SOCKADDR4_SIZE
 
     if c_getsockname(i32(sock), mut &raw, mut &length) == -1 {
-        return zero_address4(), LocalErr(sys.errno())
+        return zero_addr4(), LocalErr(sys.errno())
     }
     return from_darwin(raw), null
 }
@@ -274,7 +274,7 @@ pub send(sock: Socket, data: string): (int, Error) {
     return int(count), null
 }
 
-pub resolve4(host: string, port: u16, addresses: mut []Address4): (usize, Error) {
+pub resolve4(host: string, port: u16, addresses: mut []Addr4): (usize, Error) {
     if len(host) > HOST_NAME_MAX || len(addresses) == 0 {
         return usize(0), ResolveErr(EINVAL)
     }
@@ -321,7 +321,7 @@ pub resolve4(host: string, port: u16, addresses: mut []Address4): (usize, Error)
 
         if current.family == AF_INET && current.address != null &&
            current.address_length >= SOCKADDR4_SIZE {
-            address: Address4 = from_darwin(~current.address)
+            address: Addr4 = from_darwin(~current.address)
             address.port = port
             addresses[written] = address
             written += usize(1)

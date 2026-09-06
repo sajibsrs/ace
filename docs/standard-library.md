@@ -19,6 +19,14 @@ Today's modules:
 Everything else in the planned v1 set (`simd`) does not
 exist yet.
 
+Public names use module context to stay short without becoming cryptic. Types
+and error domains use compact PascalCase, functions use lowercase words with
+underscores where separation helps, and only established unambiguous terms are
+shortened (`Fd`, `Addr`, `Err`). Identifying words otherwise remain complete:
+for example, `sys.ProcessStatus` is not shortened to the ambiguous
+`sys.ProcessStat`. A directory-module facade and its selected OS layer expose
+the same names.
+
 `mem` exports `alloc`, `realloc`, `release`, `copy`, `move`, `fill`, `zero`,
 `compare`, and `equal`. Each allocation name is one overload set with a raw byte form and an
 explicitly instantiated typed form. Import the module qualified or select those
@@ -401,7 +409,7 @@ name_storage: [256]u8
 name: mut []u8 = mut name_storage[0..256]
 done: bool = false
 for !done {
-    count: usize, kind: sys.FileKind, at_end: bool, read_err: Error = sys.readdir(mut dir, name)
+    count: usize, kind: sys.FileKind, at_end: bool, read_err: Error = sys.read_dir(mut dir, name)
     if read_err != null {
         sys.close_dir(mut dir)
         return 2
@@ -417,13 +425,13 @@ if sys.close_dir(mut dir) != null {
 return 0
 ```
 
-`readdir` skips `.` and `..` and returns values in the fixed order name byte
+`read_dir` skips `.` and `..` and returns values in the fixed order name byte
 count, kind, end flag, and `Error`. End is `(0, unknown, true, null)`. A kind
 may be `unknown`; use `stat` when classification is required. If the name
 buffer is too small, `ReadDirErr` reports `ERANGE`, leaves the entry pending,
 and writes no truncated name. Enumeration retains operating-system order.
 
-The call-site mark in `readdir(mut dir, name)` permits updating the caller's
+The call-site mark in `read_dir(mut dir, name)` permits updating the caller's
 iteration state. It is independent of the type-position `mut` in
 `name: mut []u8`, which permits writing the supplied bytes. Likewise,
 `close_dir(mut dir)` closes the descriptor and replaces that caller's complete
@@ -563,8 +571,8 @@ main(): int {
         return 1
     }
     ip: [4]u8 = [u8(127), u8(0), u8(0), u8(1)]
-    address: net.Address4 = net.Address4{ip: ip, port: u16(8080)}
-    if net.set_reuse_address(sock, true) != null ||
+    address: net.Addr4 = net.Addr4{ip: ip, port: u16(8080)}
+    if net.reuse_addr(sock, true) != null ||
        net.bind(sock, address) != null ||
        net.listen(sock, usize(128)) != null {
         sys.close(sock)
@@ -577,7 +585,7 @@ main(): int {
 }
 ```
 
-`Address4: struct { ip: [4]u8, port: u16 }` stores IP octets in ordinary
+`Addr4: struct { ip: [4]u8, port: u16 }` stores IP octets in ordinary
 textual order and the port in host order. Its canonical zero is
 `0.0.0.0:0`, usable as the wildcard address with an OS-selected port.
 Parsing, formatting, IPv6, and peer-address queries are not part of this initial
@@ -587,34 +595,34 @@ The core socket operations each perform one explicit operation and never
 allocate, buffer, retry, close, or replace a socket on failure:
 
 - `socket(SocketKind.tcp): (Socket, Error)` creates an IPv4 TCP socket.
-- `set_reuse_address` and `set_reuse_port` reversibly set their named option.
-- `set_nonblocking(socket, enabled): Error` reversibly changes blocking mode.
-- `bind(socket, Address4): Error` binds without enabling options implicitly.
+- `reuse_addr` and `reuse_port` reversibly set their named option.
+- `nonblock(socket, enabled): Error` reversibly changes blocking mode.
+- `bind(socket, Addr4): Error` binds without enabling options implicitly.
 - `listen(socket, backlog: usize): Error` starts listening. The OS may cap the
   backlog; a value too large for the platform call fails instead of truncating.
-- `accept(listener): (Socket, Address4, Error)` makes one blocking acceptance
+- `accept(listener): (Socket, Addr4, Error)` makes one blocking acceptance
   attempt. It returns the peer address and does not configure the accepted
-  socket. Failure returns `Socket(-1)` and canonical-zero `Address4`.
-- `connect(socket, Address4): Error` makes one connection attempt without
+  socket. Failure returns `Socket(-1)` and canonical-zero `Addr4`.
+- `connect(socket, Addr4): Error` makes one connection attempt without
   retry, cleanup, or configuration.
-- `local(socket): (Address4, Error)` queries the socket's current local
+- `local(socket): (Addr4, Error)` queries the socket's current local
   endpoint without changing it. This exposes the assigned port after binding
-  port zero; failure returns canonical-zero `Address4` with `LocalErr`.
+  port zero; failure returns canonical-zero `Addr4` with `LocalErr`.
 - `receive(socket, buffer: mut []u8): (int, Error)` performs one receive.
   Partial counts are returned as-is; zero with null error is orderly peer
   shutdown.
 - `send(socket, []u8)` and `send(socket, string)` each perform one send and
   return partial counts as-is. A closed peer becomes an ordinary send error
   rather than terminating the process with `SIGPIPE`.
-- `resolve4(host, port, addresses: mut []Address4): (usize, Error)` performs one blocking
+- `resolve4(host, port, addresses: mut []Addr4): (usize, Error)` performs one blocking
   hostname lookup and writes IPv4 TCP endpoints into caller-owned storage in
   resolver order. The returned count is the number written; each address uses
   the supplied host-order port. Empty storage, invalid hostname bytes, lookup
   failure, or no IPv4 result returns zero with `ResolveErr`.
 
 ```ace
-storage: [8]net.Address4
-addresses: mut []net.Address4 = mut storage[0..8]
+storage: [8]net.Addr4
+addresses: mut []net.Addr4 = mut storage[0..8]
 count: usize, err: Error = net.resolve4("example.com", u16(80), addresses)
 if err == null && count != 0 {
     sock: net.Socket, socket_err: Error = net.socket(net.SocketKind.tcp)
@@ -634,8 +642,8 @@ implementation, richer diagnostics, truncation discovery, IPv6, asynchronous
 resolution, caching, and resolver-policy controls remain future improvements.
 
 Every network error is last and null on success. The operation-specific public
-domains are `SocketErr`, `SetReuseAddressErr`, `SetReusePortErr`,
-`SetNonblockingErr`, `BindErr`, `ListenErr`, `AcceptErr`, `ConnectErr`,
+domains are `SocketErr`, `ReuseAddrErr`, `ReusePortErr`,
+`NonblockErr`, `BindErr`, `ListenErr`, `AcceptErr`, `ConnectErr`,
 `ReceiveErr`, `SendErr`, `ResolveErr`, and `LocalErr`. Compare `error.domain`
 with the corresponding `typeid(net.*Err)`. For socket-operation errors,
 `error.code` is

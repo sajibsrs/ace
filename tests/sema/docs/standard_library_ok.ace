@@ -133,7 +133,7 @@ filesystem_examples(): int {
     }
     storage: [256]u8 = [0 : 256]
     name: mut []u8 = mut storage[0..256]
-    count: usize, kind: sys.FileKind, done: bool, read_err: Error = sys.readdir(mut dir, name)
+    count: usize, kind: sys.FileKind, done: bool, read_err: Error = sys.read_dir(mut dir, name)
     if read_err != null || (!done && count == 0) || kind == sys.FileKind.symlink {
         sys.close_dir(mut dir)
         return 4
@@ -227,15 +227,15 @@ net_example(): int {
         return 1
     }
     ip: [4]u8 = [u8(127), u8(0), u8(0), u8(1)]
-    address: net.Address4 = net.Address4 {ip: ip, port: u16(0)}
+    address: net.Addr4 = net.Addr4 {ip: ip, port: u16(0)}
 
-    if net.set_reuse_address(sock, true) != null ||
+    if net.reuse_addr(sock, true) != null ||
        net.bind(sock, address) != null ||
        net.listen(sock, usize(128)) != null {
         sys.close(sock)
        return 2
     }
-    local: net.Address4, local_err: Error = net.local(sock)
+    local: net.Addr4, local_err: Error = net.local(sock)
 
     if local_err != null || local.port == 0 {
         sys.close(sock)
@@ -246,8 +246,8 @@ net_example(): int {
         return 3
     }
 
-    storage: [8]net.Address4
-    addresses: mut []net.Address4 = mut storage[0..8]
+    storage: [8]net.Addr4
+    addresses: mut []net.Addr4 = mut storage[0..8]
     count: usize, resolve_err: Error = net.resolve4("example.com", u16(80), addresses)
 
     if resolve_err == null && count != 0 {

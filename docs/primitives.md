@@ -113,6 +113,12 @@ violate `0 <= lo <= hi <= len(source)`, the compiler rejects the program.
 zero-copy while `[]u8(text)` requires a `mut string` and yields its writable
 byte view ([Types](types.md), [Control flow](control-flow.md)).
 
+```ace
+prefix: string = message[..7]
+suffix: string = message[8..]
+complete: string = message[..]
+```
+
 ## Other primitives
 
 `usize` is the unsigned type used for object sizes, lengths, and indexing-related

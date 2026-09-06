@@ -438,7 +438,7 @@ pub open_dir(path: string): (Dir, Error) {
  * namlen:u16, type:u8, then the name bytes. Entries are retained when the
  * caller's name buffer is too small, so the caller may retry.
  */
-pub readdir(mut dir: Dir, name: mut []u8): (usize, FileKind, bool, Error) {
+pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileKind, bool, Error) {
     if !dir.active {
         errno_set(9)
         return 0, FileKind.unknown, false, ReadDirErr(errno())

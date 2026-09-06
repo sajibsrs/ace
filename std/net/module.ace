@@ -5,12 +5,12 @@ import os: "./os/darwin-arm64.ace"
 
 pub Socket: type = os.Socket
 pub SocketKind: type = os.SocketKind
-pub Address4: type = os.Address4
+pub Addr4: type = os.Addr4
 
 pub SocketErr: type = os.SocketErr
-pub SetReuseAddressErr: type = os.SetReuseAddressErr
-pub SetReusePortErr: type = os.SetReusePortErr
-pub SetNonblockingErr: type = os.SetNonblockingErr
+pub ReuseAddrErr: type = os.ReuseAddrErr
+pub ReusePortErr: type = os.ReusePortErr
+pub NonblockErr: type = os.NonblockErr
 pub BindErr: type = os.BindErr
 pub ListenErr: type = os.ListenErr
 pub AcceptErr: type = os.AcceptErr
@@ -25,19 +25,19 @@ pub socket(kind: SocketKind): (Socket, Error) {
     return result, err
 }
 
-pub set_reuse_address(sock: Socket, enabled: bool): Error {
-    return os.set_reuse_address(sock, enabled)
+pub reuse_addr(sock: Socket, enabled: bool): Error {
+    return os.reuse_addr(sock, enabled)
 }
 
-pub set_reuse_port(sock: Socket, enabled: bool): Error {
-    return os.set_reuse_port(sock, enabled)
+pub reuse_port(sock: Socket, enabled: bool): Error {
+    return os.reuse_port(sock, enabled)
 }
 
-pub set_nonblocking(sock: Socket, enabled: bool): Error {
-    return os.set_nonblocking(sock, enabled)
+pub nonblock(sock: Socket, enabled: bool): Error {
+    return os.nonblock(sock, enabled)
 }
 
-pub bind(sock: Socket, address: Address4): Error {
+pub bind(sock: Socket, address: Addr4): Error {
     return os.bind(sock, address)
 }
 
@@ -45,17 +45,17 @@ pub listen(sock: Socket, backlog: usize): Error {
     return os.listen(sock, backlog)
 }
 
-pub accept(listener: Socket): (Socket, Address4, Error) {
-    accepted: Socket, address: Address4, err: Error = os.accept(listener)
+pub accept(listener: Socket): (Socket, Addr4, Error) {
+    accepted: Socket, address: Addr4, err: Error = os.accept(listener)
     return accepted, address, err
 }
 
-pub connect(sock: Socket, address: Address4): Error {
+pub connect(sock: Socket, address: Addr4): Error {
     return os.connect(sock, address)
 }
 
-pub local(sock: Socket): (Address4, Error) {
-    address: Address4, err: Error = os.local(sock)
+pub local(sock: Socket): (Addr4, Error) {
+    address: Addr4, err: Error = os.local(sock)
     return address, err
 }
 
@@ -74,7 +74,7 @@ pub send(sock: Socket, data: string): (int, Error) {
     return count, err
 }
 
-pub resolve4(host: string, port: u16, addresses: mut []Address4): (usize, Error) {
+pub resolve4(host: string, port: u16, addresses: mut []Addr4): (usize, Error) {
     count: usize, err: Error = os.resolve4(host, port, addresses)
     return count, err
 }
