@@ -17,7 +17,7 @@ Territory rejected by design is excluded entirely: manual memory through one fix
 Nothing carved; the largest unaddressed capability area.
 
 - **C-ABI function pointers as callable values** [new] — the C boundary whitelist rejects ordinary Ace function values (C Interop #3), and taking the address of an `export`ed function as a value is unspecified. `pthread_create`, `qsort`, `bsearch`, `signal`, and kqueue user filters all require passing a function through C. Prerequisite for threads; carve first.
-- **Threads** — explicit create/join/exit over libSystem pthreads; spawn/join as ordinary calls keeps "no hidden control flow" (philosophy #2). Hinted in the post-nonblocking-chat milestone direction; never carved.
+- **Threads** — explicit create/join/exit over libSystem pthreads; spawn/join as ordinary calls keeps "no hidden control flow" (philosophy #2). The completed single-threaded nonblocking chat proof establishes that threads are an independent concurrency carve, not a networking prerequisite; they remain uncarved.
 - **Atomics** — load/store/exchange/compare-and-swap plus fences with a stated ordering model; NEON/LL-SC or inline-asm lowering. Nothing exists.
 - **Thread-local storage** — absent entirely, not on any deferred list. Errno-style per-thread state patterns need a storage class.
 - **Memory-model statement** — what `noalias` and read-only parameter facts mean across threads; cheap to carve, expensive to retrofit.
@@ -85,6 +85,16 @@ Small items, each needing an owner decision:
 Not core language; listed because each blocks practical use.
 
 - **Signals** [additive] — excluded from `poll` (Stdlib #14); servers need SIGINT handling.
+- **TLS transport module** [new] — explicit secure transport over `net`, carved
+  after the core language work and IPv6. Configuration, handshake progress,
+  certificate verification, caller-owned buffers, capacities, and retry/timeout
+  policy must remain visible; no hidden allocation or background execution.
+- **HTTP client/server module** [new] — a later protocol layer over plain `net`
+  or explicit TLS transport, with caller-owned connection, parsing, body, and
+  response storage. Address family belongs to the transport values, so IPv6
+  should not duplicate the protocol surface as `http6` or `https6`. HTTPS is
+  HTTP composed with TLS; an `https` convenience module remains deferred until
+  real usage demonstrates that it can preserve Ace's explicit costs and state.
 - **`str.concat` / `str.join`** into caller storage [new] — `str` searches, splits, trims, parses, and formats, but never assembles (Stdlib #15).
 - **Dynamic array and hash-map modules** [new] — composed from `mem` and explicit generics; none exist.
 - **`rune` + UTF-8 decode and `yarn`** [additive] — `char` remains the
@@ -98,6 +108,6 @@ Not core language; listed because each blocks practical use.
 Recommendations only; queue order is an owner decision.
 
 1. **C-ABI function pointers** — small, and unblocks both threads and every real extern binding.
-2. **Concurrency carve** (threads, atomics, TLS, memory model) — the biggest true gap; matches the existing post-nonblocking-chat milestone direction.
+2. **Concurrency carve** (threads, atomics, thread-local storage, memory model) — the biggest true gap and the established direction after the completed nonblocking-chat proof.
 3. **Introspection carve** (`align_of`/`offset_of`/static assert, enum discriminants/width) — cheap and high-value; the same items keep surfacing in C-interop work meanwhile.
 4. **Checked-build modes plus the representation attributes** (`volatile`/`packed`/`align`) as the next tooling chunk.

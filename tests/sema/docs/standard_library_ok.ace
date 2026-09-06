@@ -4,7 +4,9 @@
  * tests/emit/sys/main.ace, tests/emit/sys/standard_descriptors.ace,
  * tests/emit/sys/time.ace, tests/emit/sys/process_control.ace,
  * tests/emit/net/main.ace,
- * tests/emit/net/poll.ace, tests/emit/allocation/typed.ace, and tests/emit/strings/*.ace).
+ * tests/emit/net/poll.ace, tests/emit/net/nonblocking_echo.ace,
+ * tests/emit/net/nonblocking_chat.ace, tests/emit/allocation/typed.ace,
+ * and tests/emit/strings/*.ace).
  */
 
 import fmt

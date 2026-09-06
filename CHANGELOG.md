@@ -134,6 +134,12 @@ current normative rules, and Git preserves patch-level detail.
   readiness drives one-attempt accept/receive/send operations, would-block stays
   caller-visible, partial progress is retained, and all descriptors are closed
   explicitly. It exposed the need to query an OS-selected local endpoint.
+- Extended the proof into a deterministic multi-client chat fixture with one
+  single-threaded event loop, fixed caller-owned client and buffer storage, and
+  forked child test clients. It covers multiple accepts, readiness-driven
+  fragmented reads and writes, per-recipient broadcast progress, orderly
+  disconnects, and reuse of a vacated client slot without adding API surface,
+  allocation, threads, atomics, or retry policy.
 - Added allocation-free `sys.Process`, `fork`, and `wait` wrappers with decoded
   exit/signal status, keeping process-control externs in the private Darwin OS
   layer. Added `net.local` for querying an ephemeral bound endpoint; networking
@@ -175,8 +181,8 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Current frontier
 
-The next established implementation proof is a multi-client chat server over
-`poll`. Checked/release modes, checked allocation
-tracking, additive networking, concurrency, fuller math/SIMD, and a second
+The next active carve is checked/release modes followed by checked-only bounds,
+overflow, `noalias`, null-use, and allocation diagnostics. Additive networking,
+concurrency, fuller math/SIMD, and a second
 backend remain open; their status belongs in the `SPEC.md` Decision Queue and
 `TODO.md`, not in this history.

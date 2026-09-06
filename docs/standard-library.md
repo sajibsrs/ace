@@ -738,12 +738,19 @@ timeout; every other value is a finite nanosecond duration. An interrupted
 wait returns `WaitErr`; it is never restarted privately. A successful zero
 count means that the timeout expired or a poll found no readiness.
 
-The executable nonblocking echo fixture in `tests/emit/net/nonblocking_echo.ace`
-demonstrates the intended server composition: watch a nonblocking listener for
-readability, accept one peer per ready attempt, configure that peer explicitly,
-and replace its read/write interest as buffered progress changes. Would-block
-remains an ordinary operation error, and partial receive/send counts remain the
-application's state; neither module owns buffering or retry policy.
+The executable fixtures demonstrate the intended server composition. The
+smaller `tests/emit/net/nonblocking_echo.ace` proof watches a nonblocking
+listener, accepts one peer per ready attempt, configures it explicitly, and
+replaces its read/write interest as buffered progress changes.
+
+`tests/emit/net/nonblocking_chat.ace` extends that proof into a deterministic
+single-threaded chat server. It accepts two clients, assembles deliberately
+fragmented messages, retains partial broadcast progress independently for each
+recipient, handles disconnects, and proves that a later client reuses the
+vacated fixed-capacity slot. Forked children are only test clients; the server
+event loop has no thread, atomic operation, hidden allocation, or retry policy.
+Would-block remains an ordinary operation error, and all client, buffer, and
+event storage remains caller-owned.
 
 The public domains are `QueueErr`, `WatchErr`, `UnwatchErr`, and `WaitErr`.
 Compare `error.domain` with the corresponding `typeid(poll.*Err)` and inspect
