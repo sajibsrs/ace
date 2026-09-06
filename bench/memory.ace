@@ -17,7 +17,7 @@ main(): int {
     initial_size: int = 64
     grown_size: int = 100
     operations: usize = usize(slots * rounds)
-    blocks: [128]([]u8?)
+    blocks: [128]mut []u8 = [null : 128]
     failures: usize = 0
     checksum: usize = 0
 
@@ -26,7 +26,7 @@ main(): int {
     for round: int in 0 .. rounds {
         alloc_started: u64 = clock_gettime_nsec_np(clock_id)
         for i: int in 0 .. slots {
-            block: []u8? = mem.alloc(initial_size, 16)
+            block: mut []u8 = mem.alloc(initial_size, 16)
             if block != null {
                 block[0] = u8((round + i) % 251)
                 block[initial_size - 1] = u8((round + i + 1) % 251)
@@ -39,7 +39,7 @@ main(): int {
 
         release_started: u64 = clock_gettime_nsec_np(clock_id)
         for i: int in 0 .. slots {
-            block: []u8? = blocks[i]
+            block: mut []u8 = blocks[i]
             mem.release(mut block)
             if block != null {
                 failures += 1
@@ -54,7 +54,7 @@ main(): int {
     realloc_elapsed: usize = 0
     for round: int in 0 .. rounds {
         for i: int in 0 .. slots {
-            block: []u8? = mem.alloc(initial_size, 16)
+            block: mut []u8 = mem.alloc(initial_size, 16)
             if block != null {
                 block[0] = u8((round + i) % 251)
                 block[initial_size - 1] = u8((round + i + 1) % 251)
@@ -66,9 +66,9 @@ main(): int {
 
         realloc_started: u64 = clock_gettime_nsec_np(clock_id)
         for i: int in 0 .. slots {
-            block: []u8? = blocks[i]
+            block: mut []u8 = blocks[i]
             if block != null {
-                grown: []u8? = mem.realloc(block, grown_size)
+                grown: mut []u8 = mem.realloc(block, grown_size)
                 if grown != null {
                     if grown[0] != u8((round + i) % 251) {
                         failures += 1
@@ -86,7 +86,7 @@ main(): int {
         realloc_elapsed += usize(clock_gettime_nsec_np(clock_id) - realloc_started)
 
         for i: int in 0 .. slots {
-            block: []u8? = blocks[i]
+            block: mut []u8 = blocks[i]
             mem.release(mut block)
             blocks[i] = block
         }
@@ -97,7 +97,7 @@ main(): int {
     requested_live: usize = 0
     usable_live: usize = 0
     for i: int in 0 .. slots {
-        block: []u8? = mem.alloc(grown_size, 16)
+        block: mut []u8 = mem.alloc(grown_size, 16)
         if block != null {
             block[0] = u8(i % 251)
             block[grown_size - 1] = u8((i + 1) % 251)
@@ -110,7 +110,7 @@ main(): int {
     }
 
     for i: int in 0 .. slots {
-        block: []u8? = blocks[i]
+        block: mut []u8 = blocks[i]
         if block != null {
             checksum += usize(block[0])
             checksum += usize(block[grown_size - 1])

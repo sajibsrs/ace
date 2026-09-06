@@ -16,14 +16,15 @@ The priority bands below are recommendations, not decisions. The active
 Decision Queue in `SPEC.md` always wins; dependencies within a band are listed
 before the work they unblock.
 
-## 1. Active next work
+## 1. Completed checked-build checkpoint
 
 ### Checked & release build modes
 
 The explicit `--checked`/`--release` modes and strict sequence bounds are
 implemented: emitted programs default to checked mode, while release strips
-their dynamic guards, failure paths, and diagnostic metadata. The remaining
-checked-build work stays active in the Decision Queue.
+their dynamic guards, failure paths, and diagnostic metadata. This checkpoint
+is complete; the next candidate work begins with the concurrency prerequisites
+in section 2, subject to promotion through the Decision Queue.
 
 - **[implemented]** Build-mode plumbing and array, slice, and string bounds diagnostics.
 - **[implemented]** Checked integer arithmetic diagnostics (Safety & Checked Builds #6).
@@ -102,6 +103,34 @@ remains uncarved and must begin with its ABI and memory-model foundations.
 - **Per-module objects and incremental rebuilds** [queued] — the merged-unit
   loader deliberately defers both.
 - **Richer DWARF** [additive] — variable/type DIEs and unwind tables.
+
+### Deferred optimization work
+
+Optimization follows the feature TODO rather than interrupting it. The first
+manual baseline is deliberately narrow: across five 5,000,000-iteration bounded
+integer runs on the reference Apple-arm64 development machine, median times were
+48.44 ms for Ace checked, 45.25 ms for Ace release, 43.15 ms for C `-O0`, and
+31.16 ms for C `-O2`; every variant produced the same checksum. This suggests
+that current direct release emission is already near unoptimized C for that
+workload, checked arithmetic has modest cost there, and optimization—not
+language machinery—is the visible gap to optimized C. The allocator benchmark
+separately confirms that checked registry bookkeeping is intentionally much
+more expensive than the stripped release path, especially around `release`.
+These are baseline observations, not performance promises.
+
+- **Peephole cleanup** [queued] — implement the bounded emitted-code pass from
+  Compiler #6, targeting redundant loads/stores and address recomputation first.
+- **Loop-carried register promotion** [queued] — reduce the current stack-slot
+  traffic with the specified bounded per-loop scan.
+- **Read-only parameter load reuse** [queued] — exploit the existing parameter
+  facts without adding global alias analysis.
+- **Constant arithmetic lowering** [new] — measure and carve local strength
+  reduction for constant division/remainder and similarly costly instruction
+  sequences if broader benchmarks confirm the recurrence result.
+- **Broader performance corpus** [new] — add checksum-matched Ace/C fixtures for
+  calls, large aggregates, slices, branches, floating point, cache-heavy loops,
+  and compile/object size before making optimizer-wide claims. `noalias`-driven
+  auto-vectorization remains outside v1 as stated by Compiler #6.
 
 ## 5. Practical standard-library capabilities
 

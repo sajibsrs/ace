@@ -263,19 +263,20 @@ allocation and copy.
 
 ## Current diagnostics
 
-The `mem` declarations are compiler-backed in the current bootstrap. Calls
-lower directly to the platform `malloc`, `realloc`, and `free` boundary and
-add no Ace allocation header or registry. This keeps the implemented path at
-C-like allocation cost. Invalid release, double release,
-use-after-free, and leaks are therefore not diagnosed by the current compiler;
-they are programmer errors. Checked live-allocation tracking and stronger
-memory-access instrumentation have not landed yet.
+The `mem` declarations are compiler-backed in the current bootstrap. Release
+calls lower directly to the platform `malloc`, `realloc`, and `free` boundary
+and add no Ace allocation header or registry. Checked builds maintain a live
+allocation registry that diagnoses invalid or repeated release/reallocation and
+reports allocations still live when `main` returns normally. It does not detect
+arbitrary access through a dangling alias.
 
 The examples on this page are checked by
 `tests/sema/docs/memory_ok.ace`; executable allocation and byte-operation
 behavior is covered by `tests/emit/allocation/main.ace`,
 `tests/emit/allocation/typed.ace`, and `tests/emit/allocation/bytes.ace`. For manual
 performance and process-memory measurement on Apple arm64, run
-`./bench/run-memory.sh`; it reports allocator timings and usable bytes,
-compiler statistics, peak resident size, and related macOS process counters
-without turning variable benchmark numbers into test thresholds.
+`./bench/run-memory.sh`; it reports checked and release allocator timings,
+usable bytes, compiler statistics, peak resident size, and related macOS
+process counters without turning variable benchmark numbers into test
+thresholds. `./bench/run-cpu.sh` compares one bounded integer workload across
+Ace checked/release output and equivalent C `-O0`/`-O2` builds.

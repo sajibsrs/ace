@@ -171,6 +171,9 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Significant implementation corrections
 
+- Repaired the manual memory benchmark for the current zero-valid slice model,
+  made checked/release costs explicit, and added a checksum-matched integer CPU
+  comparison against equivalent C `-O0` and `-O2` builds.
 - Corrected AArch64 aggregate argument/return layout, deep-frame loads, floating
   load/store scaling, integer-to-floating temporary separation, remainder
   lowering, short-circuit normalization, variadic stack slots, and large
