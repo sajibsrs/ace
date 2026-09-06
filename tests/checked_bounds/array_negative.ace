@@ -1,0 +1,5 @@
+read(values: [2]i32, index: i32): i32 { return values[index] }
+main(): int {
+    values: [2]i32 = [1, 2]
+    return read(values, -1)
+}

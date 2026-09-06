@@ -102,6 +102,10 @@ length: usize = len(message)
 first: u8 = message[0]
 ```
 
+Every string index must satisfy `0 <= index < len(message)`. The compiler
+rejects statically provable violations in every mode; checked output validates
+dynamic indices before reading or writing, while release output assumes them.
+
 Strings are UTF-8 by convention. Indexing addresses bytes, not Unicode code
 points. A string does not carry a terminator as part of its value.
 
@@ -109,6 +113,8 @@ Slicing a string yields a `string`: `message[1..4]` is a zero-copy view with
 bounds defaulting to `0` and `len(source)`, exactly like array and slice
 slicing ([Types](types.md)). Where the bounds are compile-time constants that
 violate `0 <= lo <= hi <= len(source)`, the compiler rejects the program.
+Checked output enforces the same complete precondition for dynamic bounds;
+release output emits no guard.
 `for-in` walks the stored bytes, and `string(bytes)` converts a `[]u8` view
 zero-copy while `[]u8(text)` requires a `mut string` and yields its writable
 byte view ([Types](types.md), [Control flow](control-flow.md)).

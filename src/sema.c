@@ -557,6 +557,7 @@ static int bound_const(Node* n, int64_t* out) {
  * runtime bounds are left to checked builds.
  */
 static void check_slice_bounds(Ck* k, Node* e, Node* base, SType* bt) {
+    enum { BP_LO_NONNEG = 1, BP_HI_NONNEG = 2, BP_ORDER = 4, BP_SOURCE = 8 };
     int64_t slen = seq_const_len(k, base, bt);
     int64_t lo = 0, hi = 0;
     int klo = e->b ? bound_const(e->b, &lo) : 1;
@@ -582,6 +583,16 @@ static void check_slice_bounds(Ck* k, Node* e, Node* base, SType* bt) {
             ck_err(k, e->b, "slice lower bound %lld exceeds source length %lld",
                    (long long)lo, (long long)slen);
     }
+    uint8_t proof = 0;
+    if (klo && lo >= 0) proof |= BP_LO_NONNEG;
+    if (khi && hi >= 0) proof |= BP_HI_NONNEG;
+    if (klo && khi && lo <= hi) proof |= BP_ORDER;
+    if (khi && slen >= 0 && hi <= slen) proof |= BP_SOURCE;
+    uint8_t* stored_proof = (uint8_t*)arena_alloc(1);
+    *stored_proof = proof;
+    e->aux = stored_proof;
+    if (proof == (BP_LO_NONNEG | BP_HI_NONNEG | BP_ORDER | BP_SOURCE))
+        e->flags |= F_BOUNDS_PROVEN;
 }
 
 /*
@@ -589,17 +600,21 @@ static void check_slice_bounds(Ck* k, Node* e, Node* base, SType* bt) {
  * a compile-time error when constants prove the index out of range, a
  * checked-build diagnostic otherwise, and release assumes it.
  */
-static void check_index_write_bounds(Ck* k, Node* e, Node* base, SType* bt) {
+static void check_index_bounds(Ck* k, Node* e, Node* base, SType* bt,
+                               int write) {
     int64_t ix;
     if (!e->b || !bound_const(e->b, &ix)) return;
     if (ix < 0) {
-        ck_err(k, e->b, "write index %lld is negative", (long long)ix);
+        ck_err(k, e->b, "%sindex %lld is negative", write ? "write " : "",
+               (long long)ix);
         return;
     }
     int64_t slen = seq_const_len(k, base, bt);
     if (slen >= 0 && ix >= slen)
-        ck_err(k, e->b, "write index %lld exceeds source length %lld",
-               (long long)ix, (long long)slen);
+        ck_err(k, e->b, "%sindex %lld exceeds source length %lld",
+               write ? "write " : "", (long long)ix, (long long)slen);
+    else if (slen >= 0)
+        e->flags |= F_BOUNDS_PROVEN;
 }
 
 // --- forward decls -------------------------------------------------------------------
@@ -1497,7 +1512,6 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
                        e->a->kind == N_IDENT ? (int)e->a->len : 3,
                        e->a->kind == N_IDENT ? e->a->str : "...");
             b = peek;
-            check_index_write_bounds(k, e, e->a, peek);
         } else if (write) {
             b = check_lvalue(k, e->a, 1);
         }
@@ -1506,11 +1520,15 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
             ck_err(k, e->b, "index must be an integer, not %s", type_name(ix));
         if (b->kind == SK_ERR) return T_ERR;
         if (b->kind == SK_PRIM && b->prim == P_STRING)
+        {
+            if (write) check_index_bounds(k, e, e->a, b, 1);
             return st_prim(P_U8);
+        }
         if (b->kind != SK_SLICE && b->kind != SK_ARRAY) {
             ck_err(k, e, "cannot index %s", type_name(b));
             return T_ERR;
         }
+        if (write) check_index_bounds(k, e, e->a, b, 1);
         return b->base;
     }
     case N_UNARY:
@@ -1963,8 +1981,14 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         if (b->kind == SK_ERR || ix->kind == SK_ERR) return T_ERR;
         if (!is_int(ix) && ix != T_UT_INT)
             ck_err(k, e->b, "index must be an integer, not %s", type_name(ix));
-        if (b->kind == SK_PRIM && b->prim == P_STRING) return st_prim(P_U8);
-        if (b->kind == SK_SLICE || b->kind == SK_ARRAY) return b->base;
+        if (b->kind == SK_PRIM && b->prim == P_STRING) {
+            check_index_bounds(k, e, e->a, b, 0);
+            return st_prim(P_U8);
+        }
+        if (b->kind == SK_SLICE || b->kind == SK_ARRAY) {
+            check_index_bounds(k, e, e->a, b, 0);
+            return b->base;
+        }
         ck_err(k, e, "cannot index %s", type_name(b));
         return T_ERR;
     }

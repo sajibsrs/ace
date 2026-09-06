@@ -27,9 +27,12 @@ static const char* host_target(void) {
 }
 
 static void usage(void) {
-    fprintf(stderr, "usage: ace [--tokens] [--ast] [--report] [--target=TARGET] [-c] [-o NAME] <file.ace>\n"
+    fprintf(stderr, "usage: ace [--checked | --release] [--tokens] [--ast] [--report]\n"
+                    "           [--target=TARGET] [-c] [-o NAME] <file.ace>\n"
                     "           [<file.o> | <file.a> | -L DIR | -l NAME | -framework NAME]...\n"
                     "  (default)       full semantic check, no codegen\n"
+                    "  --checked       emit runtime diagnostics (the emission default)\n"
+                    "  --release       emit without runtime diagnostic machinery\n"
                     "  --report        print compilation statistics to stderr\n"
                     "  --target=TARGET compile for TARGET (supported: darwin-arm64)\n"
                     "  -c              emit a Mach-O arm64 object <base>.o\n"
@@ -201,6 +204,8 @@ static void obj_path(char* out, size_t cap, const char* src) {
 
 int main(int argc, char** argv) {
     int dump_tok = 0, dump_ast = 0, show_report = 0, opt_c = 0, opt_link = 0;
+    int mode_seen = 0;
+    EmitMode emit_mode = EMIT_CHECKED;
     const char* path = NULL;
     const char* target = host_target();
     char* out_name = NULL;
@@ -210,6 +215,18 @@ int main(int argc, char** argv) {
         char* a = argv[i];
         if (strcmp(a, "--tokens") == 0) dump_tok = 1;
         else if (strcmp(a, "--ast") == 0) dump_ast = 1;
+        else if (strcmp(a, "--checked") == 0) {
+            if (mode_seen && emit_mode != EMIT_CHECKED)
+                cli_error("--checked and --release are mutually exclusive");
+            mode_seen = 1;
+            emit_mode = EMIT_CHECKED;
+        }
+        else if (strcmp(a, "--release") == 0) {
+            if (mode_seen && emit_mode != EMIT_RELEASE)
+                cli_error("--checked and --release are mutually exclusive");
+            mode_seen = 1;
+            emit_mode = EMIT_RELEASE;
+        }
         else if (strcmp(a, "--report") == 0) show_report = 1;
         else if (strncmp(a, "--target=", 9) == 0) {
             if (a[9] == 0) cli_error("--target requires a target name");
@@ -341,7 +358,8 @@ int main(int argc, char** argv) {
                     reject_output_collision(out_name, input, "linked output");
                 }
             }
-            if (emit_object(file, &d, obj, show_report ? &report : NULL) != 0 ||
+            if (emit_object(file, &d, obj, show_report ? &report : NULL,
+                            emit_mode) != 0 ||
                 d.errors > 0)
                 return 1;
             uint64_t compile_done = show_report ? monotonic_ns() : 0;

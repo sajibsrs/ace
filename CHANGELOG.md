@@ -15,6 +15,10 @@ current normative rules, and Git preserves patch-level detail.
 - Added `--tokens`, `--ast`, `--report`, object emission, and executable
   linking. The driver passes ordered objects, archives, library paths, libraries,
   and Apple frameworks to `cc` through an argument vector rather than a shell.
+- Added mutually exclusive checked/release emission modes, checked by default,
+  with statically elided runtime guards and aborting diagnostics for dynamic
+  array, slice, and string indexing and slicing bounds; release objects retain
+  no bounds failure machinery or metadata.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic
@@ -185,8 +189,8 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Current frontier
 
-The next active carve is checked/release modes followed by checked-only bounds,
-overflow, `noalias`, null-use, and allocation diagnostics. Additive networking,
+The next active carve is exact integer-overflow operation coverage, followed by
+checked-only overflow, `noalias`, null-use, and allocation diagnostics. Additive networking,
 concurrency, fuller math/SIMD, and a second
 backend remain open; their status belongs in the `SPEC.md` Decision Queue and
 `TODO.md`, not in this history.

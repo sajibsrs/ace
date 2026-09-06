@@ -480,8 +480,9 @@ the read end followed by the write end. Failure returns `Fd(-1)` for both with
 
 `arg(0)` is the program invocation name. `arg(index)` requires
 `index < argc()`, and `env(index)` requires `index < envc()`. These are the
-ordinary sequence bounds preconditions: future checked builds diagnose a
-violation, while the current release path assumes valid indexes. `argc()` is
+ordinary preconditions of these compiler-backed calls; their checked
+diagnostics have not landed in the sequence-bounds stage, so both modes
+currently assume valid indexes. `argc()` is
 constant-time; `envc()` scans the null-terminated environment pointer array on
 every call, so capture it before iteration. Each selected entry is scanned for
 its byte length only when requested. Argument views remain valid for the

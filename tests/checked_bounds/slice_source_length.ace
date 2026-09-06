@@ -1,0 +1,5 @@
+cut(text: string, hi: usize): string { return text[0..hi] }
+main(): int {
+    cut("ab", 3)
+    return 0
+}

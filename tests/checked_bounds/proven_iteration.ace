@@ -1,0 +1,12 @@
+/* Statically proven access and compiler-controlled iteration need no guards. */
+main(): int {
+    values: [3]i32 = [10, 20, 30]
+    total: i32 = values[0]
+    for value: i32 in values {
+        total += value
+    }
+    if total != 70 {
+        return 1
+    }
+    return 0
+}

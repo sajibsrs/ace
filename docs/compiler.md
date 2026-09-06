@@ -7,6 +7,8 @@ ace program.ace
 ace -c program.ace
 ace -o program program.ace
 ace -o program.ace
+ace --checked -o program program.ace
+ace --release -o program program.ace
 ace --target=darwin-arm64 program.ace
 ```
 
@@ -17,6 +19,13 @@ to link `NAME`. When `NAME` ends in `.ace`, it names the root source itself:
 that file is compiled and the executable and intermediate object are named after
 the file without the suffix, so `-o program.ace` links `program` and leaves
 `program.o` beside it.
+
+Emitted programs default to `--checked`. Checked output dynamically validates
+array, slice, and string element access and slicing bounds; a violation writes
+a concise diagnostic to standard error and aborts. `--release` removes those
+guards, failure paths, and diagnostic data completely. The flags are mutually
+exclusive. Check-only, `--tokens`, and `--ast` runs accept either flag, but the
+choice cannot change their result because they emit no program.
 
 The build target defaults from the compiler host and can be selected explicitly
 with `--target=NAME` (or `--target NAME`). The bootstrap compiler currently

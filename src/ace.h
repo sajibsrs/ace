@@ -135,7 +135,7 @@ enum {
     F_PUB = 1, F_EXPO = 2, F_MUT = 4, F_NOALIAS = 8, F_CONST = 16,
     F_ELSE = 32, F_VARARGS = 64, F_METHOD = 128, F_SELECT = 256,
     F_EMBED = 512, F_SPECIALIZED = 1024, F_FORGEN = 2048, F_ELIDED = 4096,
-    F_MIXED = 8192,
+    F_MIXED = 8192, F_BOUNDS_PROVEN = 16384,
 };
 
 // Compiler-backed standard-module functions. These markers live only on the
@@ -230,8 +230,10 @@ int resolve_imports(Node* file, Diag* d, const char* compiler_path,
 
 // Direct AArch64 codegen (stage four): walks the sema-checked AST and writes
 // a Mach-O arm64 object. Returns 0 on success. Sets emit_has_main.
+typedef enum { EMIT_CHECKED, EMIT_RELEASE } EmitMode;
+
 int emit_object(Node* file, Diag* d, const char* out_path,
-                CompileReport* report);
+                CompileReport* report, EmitMode mode);
 extern int emit_has_main;
 
 #endif

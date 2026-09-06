@@ -1,0 +1,6 @@
+/* Statically invalid element reads are rejected in every emission mode. */
+main(): int {
+    values: [2]i32 = [1, 2]
+    bad: i32 = values[-1]
+    return 0
+}

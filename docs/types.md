@@ -276,8 +276,9 @@ Zero-capable values may be compared directly with `null`. Dereferencing a zero
 pointer, calling a zero function, or dispatching through a zero contract is
 invalid. A zero `Error` is success and exposes zero domain/code bits. When zero is ordinary application data,
 represent presence explicitly with a struct containing a `present: bool` field.
-The current bootstrap has no checked/release mode yet and inserts no runtime
-null checks; invalid zero operations therefore follow the unchecked path.
+The current bootstrap has checked/release emission modes for sequence bounds,
+but null-use diagnostics have not landed; invalid zero operations therefore
+still follow the unchecked path.
 
 ## Definite initialization
 
@@ -337,7 +338,8 @@ widens permission ([Writable views](#writable-views)). The result length is
 Empty results keep their computed pointer and are never canonicalized to
 `null`. Bounds may be any integer; when constants prove
 `0 <= lo <= hi <= len(source)` false, the program is rejected at compile time,
-and runtime bounds remain unchecked until checked builds land.
+while checked output validates dynamic bounds and aborts with a standard-error
+diagnostic on failure. Release output assumes the complete precondition.
 
 All four bound forms are available:
 
@@ -380,8 +382,9 @@ directly expressible: `sizeof([]u8)`, `sizeof([]char)`, and
 Array assignment copies all elements. Slice assignment copies only its pointer
 and length, so both values view the same backing storage; it never copies the
 elements. Slicing does not allocate. See [Memory](memory.md) for allocation and
-lifetime rules. The current compiler does not insert runtime index or
-slice-bound checks; out-of-range access is unchecked.
+lifetime rules. Every element read or write requires
+`0 <= index < len(sequence)`: static violations are compilation errors, checked
+output validates dynamic indices, and release output emits no guard.
 
 These layout facts are normative — code may rely on them. A slice is exactly two
 words: the element pointer at offset 0 and the element count at offset 8, giving
@@ -658,8 +661,8 @@ with no allocation, object metadata, subtype relation, or runtime search.
   instantiated type and initialize its fields.
 - Standalone tuple-literal initialization is not implemented; tuple layout is
   currently used by multiple returns and destructuring.
-- Checked-build bounds and allocator diagnostics are specified but not yet
-  implemented in the runtime layer; indexed writes are checked only where
-  constants prove an out-of-range index at compile time.
+- Checked-build sequence bounds diagnostics are implemented. Overflow,
+  `noalias`, null-use, and allocator diagnostics remain future checked-mode
+  work.
 
 The examples are covered by `tests/sema/docs/type_ok.ace`.

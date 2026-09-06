@@ -120,9 +120,32 @@ Historical design note (non-normative): `T?` optionals were explored, specified,
 
 ## Safety & Checked Builds
 Decision: checks are a development tool; release trusts the developer.
-1. Checked builds (debug): array bounds and integer overflow are on. Allocator tracking diagnoses invalid/double release and leaks; arbitrary use-after-free access requires separate memory-access instrumentation and is not implied by allocation tracking.
-2. Release builds: checks stripped; the programmer and the tests own correctness.
-3. Safety is intentionally minimal and local: type checking and definite initialization improve on C at zero runtime cost; checked builds add bounds, overflow, and allocator diagnostics. Ace rejects Rust-style ownership, lifetime, borrow, and whole-program safety analysis under the priority stack.
+1. The compiler has two explicit emission modes: `--checked` and `--release`.
+   They are mutually exclusive, and emitted programs default to `--checked`.
+   Check-only, `--tokens`, and `--ast` invocations accept either flag but emit
+   no program, so the choice has no effect on their result.
+2. Checked builds diagnose dynamic contract violations and then abort; the
+   diagnostic is best-effort on standard error and is not a recoverable error
+   channel. Array, slice, and string bounds and integer overflow are on.
+   Allocator tracking diagnoses invalid/double release and leaks; arbitrary
+   use-after-free access requires separate memory-access instrumentation and is
+   not implied by allocation tracking.
+3. Release builds strip the guards and tracking completely; the programmer and
+   the tests own correctness. Violating a release-assumed contract has C-level
+   unchecked behavior. The mode adds no word to any value and changes no
+   language ABI or representation.
+4. A violation provable from compile-time constants is a compile-time error in
+   both modes. Mode selection controls only checks that depend on runtime
+   values.
+5. Safety is intentionally minimal and local: type checking and definite initialization improve on C at zero runtime cost; checked builds add bounds, overflow, and allocator diagnostics. Ace rejects Rust-style ownership, lifetime, borrow, and whole-program safety analysis under the priority stack.
+
+Rationale: the compiler never guesses a mode from its own build, an output
+name, or the surrounding environment; the selected artifact semantics remain
+visible and reproducible. Checked-by-default follows the strict-first rule for
+development, while explicit release preserves the priority stack's highest
+requirement by removing every dynamic safety cost. Compile-time proofs remain
+mode-independent because rejecting a known-invalid program costs nothing at
+runtime and avoids giving one source two static meanings.
 
 ## Errors
 Decision: errors are ordinary values; checking is always explicit.
@@ -433,6 +456,16 @@ Rationale: every view operation is explicit and allocation-free; permission is e
 
 10. Inline sequence types are valid operands of `sizeof`: `sizeof([]u8)`, `sizeof([]char)`, and `sizeof([3]char)` are compile-time expressions with values 16, 16, and 3 on the v1 target. They use the ordinary type grammar and do not require a named alias. Together with `sizeof(string) == 16`, this makes the normative descriptor and array layouts directly expressible without runtime work. `mut`-qualified forms measure identically — `sizeof(mut string)` is 16, `sizeof(mut []T)` is 16 — because `mut` never changes representation (Mutability #9).
 11. Indexed byte writes exist only through a `mut string`: `s[i] = c` requires `s`'s type to be `mut string`, assigns exactly one byte (`u8`/`char`), and follows the slice-write bounds contract — a compile-time error when constants prove `i` out of range, a checked-build diagnostic otherwise, and release assumes it (Sequences #2). Plain `string` indexing stays a value read (Memory #19), and `in mut` iteration over a `mut string` runs the ordinary alias loop with no string special-casing (Iterations #16). String mutability is indexed access and iteration, nothing more: the two-word descriptor never grows — no append, no capacity, no reallocation (Memory #18) — and the literal-write fault class cannot occur because no literal can establish a `mut string`: a declaration or conversion producing `mut string` from a literal is rejected at the declaration, at compile time (Mutability #11).
+12. Every array, slice, and string element index, for reads and writes alike,
+    requires `0 <= index < len(sequence)`. A negative index never means an
+    offset from the end. A statically known negative or oversized index is a
+    compile-time error in both modes; a runtime-invalid index is diagnosed in
+    checked mode, while release assumes the precondition. A checked comparison
+    of a signed index tests negativity before any unsigned widening, preserving
+    the lower-bound violation rather than reclassifying it as an oversized
+    index. Unsigned arithmetic underflow is independently an integer-overflow
+    violation in checked mode; however an oversized unsigned index produced by
+    any path is still rejected by the index upper-bound check.
 
 Standard library #10 addendum (implemented): `sys.pipe(): (Fd, Fd, Error)`
 creates one unidirectional byte pipe and returns its read end, write end, then
@@ -454,8 +487,9 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 
 ### Active
 
-1. Carve and implement checked/release build modes, followed by checked-only
-   bounds, overflow, `noalias`, null-use, and allocation diagnostics.
+1. Carve exact integer-overflow operation coverage, then implement checked-only
+   overflow, `noalias`, null-use, and allocation diagnostics in that order.
+   The emission-mode plumbing and sequence-bounds stage is implemented.
 
 ### Trigger-gated
 

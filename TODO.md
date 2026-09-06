@@ -20,14 +20,19 @@ before the work they unblock.
 
 ### Checked & release build modes
 
-Specified but unimplemented, this is the active Decision Queue item and the
-largest promised capability under Safety & Checked Builds.
+The explicit `--checked`/`--release` modes and strict sequence bounds are
+implemented: emitted programs default to checked mode, while release strips
+their dynamic guards, failure paths, and diagnostic metadata. The remaining
+checked-build work stays active in the Decision Queue.
 
-- Build-mode flags; bounds, overflow, and allocator diagnostics.
-- Call-boundary `noalias`/length diagnostics (Memory #16) and checked null-use
-  diagnostics (Zero #2).
-- **`assert`** [new] — checked-only and release-stripped; complements `panic`
-  without adding an error channel.
+- **[implemented]** Build-mode plumbing and array, slice, and string bounds
+  diagnostics.
+- Exact integer-overflow operation coverage, followed by its implementation.
+- Call-boundary `noalias`/length diagnostics (Memory #16).
+- Checked null-use diagnostics (Zero #2).
+- Allocator diagnostics.
+- **`assert`** [new] — a separate undecided carve; if admitted, checked-only
+  and release-stripped, complementing `panic` without adding an error channel.
 
 ## 2. Concurrency prerequisites and carve
 

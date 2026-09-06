@@ -311,6 +311,8 @@ typedef struct {
 
 typedef struct {
     Diag* d;
+    EmitMode mode;
+    int bounds_fail_used;
     Sec   secs[NSECS];
     SymTab syms;
     Fixup* fix;
@@ -1643,6 +1645,58 @@ static void emit_bl_extern(Em* e, const char* p, uint32_t len) {
               RM_BRANCH26);
 }
 
+static void emit_bounds_fail_call(Em* e) {
+    e->bounds_fail_used = 1;
+    emit_bl_internal(e, "__ace$bounds_fail", 17);
+}
+
+static int signed_index(Node* index) {
+    SType* t = node_ty(index);
+    return t && t->kind != SK_UT && t->kind != SK_ERR && ty_is_signed(t);
+}
+
+/* The lower comparison deliberately precedes widening: a negative signed
+ * value must remain a lower-bound failure rather than becoming a huge usize. */
+static void emit_index_guard(Em* e, Node* access, int index_reg,
+                             int length_reg, uint64_t array_length) {
+    if (e->mode != EMIT_CHECKED || (access->flags & F_BOUNDS_PROVEN)) return;
+    if (signed_index(access->b)) {
+        int ok = new_label(e);
+        int sf = scalar_bits(node_ty(access->b)) == 64;
+        ins(e, (sf ? 0xF100001Fu : 0x7100001Fu) |
+               ((uint32_t)index_reg << 5)); // cmp index, #0
+        bcond_(e, C_GE, ok);
+        emit_bounds_fail_call(e);
+        bind_label(e, ok);
+    }
+    widen_idx(e, access->b, index_reg);
+    if (length_reg < 0) {
+        load_imm(e, 1, 16, array_length);
+        length_reg = 16;
+    }
+    int ok = new_label(e);
+    ins(e, 0xEB00001Fu | ((uint32_t)length_reg << 16) |
+           ((uint32_t)index_reg << 5)); // cmp index, length
+    bcond_(e, C_LO, ok);
+    emit_bounds_fail_call(e);
+    bind_label(e, ok);
+}
+
+static void emit_nonnegative_guard(Em* e, Node* slice, Node* bound, int reg) {
+    enum { BP_LO_NONNEG = 1, BP_HI_NONNEG = 2 };
+    uint8_t proof = slice->aux ? *(uint8_t*)slice->aux : 0;
+    int bit = bound == slice->b ? BP_LO_NONNEG : BP_HI_NONNEG;
+    if (e->mode != EMIT_CHECKED || (slice->flags & F_BOUNDS_PROVEN) ||
+        !bound || (proof & bit) || !signed_index(bound)) return;
+    int ok = new_label(e);
+    int sf = scalar_bits(node_ty(bound)) == 64;
+    ins(e, (sf ? 0xF100001Fu : 0x7100001Fu) |
+           ((uint32_t)reg << 5));
+    bcond_(e, C_GE, ok);
+    emit_bounds_fail_call(e);
+    bind_label(e, ok);
+}
+
 // --- mangling ---------------------------------------------------------------------------
 
 static void mangle_name(Buf* b, const char* name) {
@@ -2268,6 +2322,7 @@ static int gen_addr(Em* e, Node* x) {
     case N_INDEX: {
         SType* bt = lvalue_type(e, x->a);
         bt = bt ? unwrap(bt) : NULL;
+        SType* seq = bt;
         int ta;
         if (is_lvalue_node(x->a)) ta = gen_addr(e, x->a);
         else {
@@ -2282,13 +2337,13 @@ static int gen_addr(Em* e, Node* x) {
             em_err(e, x, "no index base type");
             return ta;
         }
+        int descriptor = bt->kind == SK_SLICE ||
+                         (bt->kind == SK_PRIM && bt->prim == P_STRING);
         if (bt->kind == SK_PRIM && bt->prim == P_STRING) {
             static SType byte = { .kind = SK_PRIM, .prim = P_U8,
                                   .size = 1, .align = 1 };
-            ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
             bt = &byte;
         } else if (bt->kind == SK_SLICE) {
-            ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
             bt = bt->base;
         } else if (bt->kind == SK_ARRAY) {
             bt = bt->base;
@@ -2299,9 +2354,28 @@ static int gen_addr(Em* e, Node* x) {
             em_err(e, x, "cannot index this type");
             return ta;
         }
+        int need_guard = e->mode == EMIT_CHECKED &&
+                         !(x->flags & F_BOUNDS_PROVEN);
+        uint32_t len_slot = 0;
+        if (descriptor) {
+            if (need_guard) {
+                len_slot = temp_slot(e, 8, 8);
+                ld_reg(e, 16, xreg(ta), 8, 8, 0);
+                store_frame(e, 16, len_slot, 8);
+            }
+            ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
+        }
         int svi = e->vti, svf = e->vtf;
         EV ix = gen_expr(e, x->b);
-        widen_idx(e, x->b, xreg(ix.idx));
+        int lenreg = -1;
+        if (descriptor && need_guard) {
+            lenreg = 16;
+            load_frame(e, lenreg, len_slot, 8, 0);
+        }
+        emit_index_guard(e, x, xreg(ix.idx), lenreg,
+                         seq && seq->kind == SK_ARRAY ? seq->count : 0);
+        if (e->mode != EMIT_CHECKED || (x->flags & F_BOUNDS_PROVEN))
+            widen_idx(e, x->b, xreg(ix.idx));
         uint32_t esz = ty_size(bt);
         if (esz == 1) {
             ins(e, 0x8B000000u | ((uint32_t)xreg(ix.idx) << 16) |
@@ -3563,6 +3637,11 @@ static EV gen_expr(Em* e, Node* x) {
         uint32_t esz = is_string ? 1 : ty_size(bt->base);
         uint32_t off = temp_slot(e, 16, 8);
         uint32_t lo_slot = temp_slot(e, 8, 8), hi_slot = temp_slot(e, 8, 8);
+        enum { BP_ORDER = 4, BP_SOURCE = 8 };
+        uint8_t proof = x->aux ? *(uint8_t*)x->aux : 0;
+        int guard = e->mode == EMIT_CHECKED && !(x->flags & F_BOUNDS_PROVEN);
+        int guard_source = guard && !(proof & BP_SOURCE);
+        uint32_t len_slot = guard_source ? temp_slot(e, 8, 8) : 0;
         int svi = e->vti, svf = e->vtf;
         int base;
         if (is_lvalue_node(x->a)) base = gen_addr(e, x->a);
@@ -3570,26 +3649,57 @@ static EV gen_expr(Em* e, Node* x) {
             EV v = gen_expr(e, x->a);
             base = v.idx;
         }
+        if (guard_source) {
+            if (bt->kind == SK_ARRAY) {
+                load_imm(e, 1, 16, bt->count);
+            } else {
+                ld_reg(e, 16, base, 8, 8, 0);
+            }
+            store_frame(e, 16, len_slot, 8);
+        }
         // hi (evaluated once; open-ended reads the sequence length)
         if (x->c) {
             EV hi = gen_expr(e, x->c);
+            emit_nonnegative_guard(e, x, x->c, xreg(hi.idx));
             widen_idx(e, x->c, xreg(hi.idx));
             store_frame(e, xreg(hi.idx), hi_slot, 8);
         } else if (bt->kind == SK_ARRAY) {
             load_imm(e, 1, 16, bt->count);
             store_frame(e, 16, hi_slot, 8);
         } else {
-            ld_reg(e, 16, base, 8, 8, 0); // slice/string length word
+            if (guard_source) load_frame(e, 16, len_slot, 8, 0);
+            else ld_reg(e, 16, base, 8, 8, 0);
             store_frame(e, 16, hi_slot, 8);
         }
         // lo (evaluated once; defaults to 0)
         if (x->b) {
             EV lo = gen_expr(e, x->b);
+            emit_nonnegative_guard(e, x, x->b, xreg(lo.idx));
             widen_idx(e, x->b, xreg(lo.idx));
             store_frame(e, xreg(lo.idx), lo_slot, 8);
         } else {
             load_imm(e, 1, 16, 0);
             store_frame(e, 16, lo_slot, 8);
+        }
+        if (guard) {
+            if (!(proof & BP_ORDER)) {
+                int ok_order = new_label(e);
+                load_frame(e, 16, lo_slot, 8, 0);
+                load_frame(e, 17, hi_slot, 8, 0);
+                ins(e, 0xEB00001Fu | (17u << 16) | (16u << 5)); // cmp lo, hi
+                bcond_(e, C_LS, ok_order);
+                emit_bounds_fail_call(e);
+                bind_label(e, ok_order);
+            }
+            if (guard_source) {
+                int ok_len = new_label(e);
+                load_frame(e, 16, hi_slot, 8, 0);
+                load_frame(e, 17, len_slot, 8, 0);
+                ins(e, 0xEB00001Fu | (17u << 16) | (16u << 5)); // cmp hi, len
+                bcond_(e, C_LS, ok_len);
+                emit_bounds_fail_call(e);
+                bind_label(e, ok_len);
+            }
         }
         // data pointer (slice/string: load; array: the base address)
         if (bt->kind != SK_ARRAY)
@@ -5598,8 +5708,27 @@ static size_t write_object(Em* e, const char* path) {
 
 // --- entry ---------------------------------------------------------------------------
 
+static void emit_bounds_failure_helper(Em* e) {
+    if (!e->bounds_fail_used) return;
+    static const char message[] = "ace: bounds violation\n";
+    Sec* c = &e->secs[SEC_CONST];
+    ESym* msg = sym_define(&e->syms, e->secs, "__ace$bounds_message", 20, 0, c);
+    buf_write(&c->data, message, sizeof message - 1);
+
+    sym_define(&e->syms, e->secs, "__ace$bounds_fail", 17, 0,
+               &e->secs[SEC_TEXT]);
+    ins(e, 0xA9BF7BFD); // stp x29, x30, [sp, #-16]!
+    ins(e, 0x910003FD); // mov x29, sp
+    load_imm(e, 1, 0, 2); // stderr
+    addr_of_sym(e, 1, msg);
+    load_imm(e, 1, 2, sizeof message - 1);
+    emit_bl_extern(e, "_write", 6);
+    emit_bl_extern(e, "_abort", 6);
+    ins(e, 0xD4200000u); // brk #0 if abort unexpectedly returns
+}
+
 int emit_object(Node* file, Diag* d, const char* out_path,
-                CompileReport* report) {
+                CompileReport* report, EmitMode mode) {
     static const Sec PROTO[NSECS] = {
         [SEC_TEXT]       = { .sect = "__text",       .seg = "__TEXT",
                              .flags = S_ATTR_PURE_INSTRUCTIONS |
@@ -5621,6 +5750,7 @@ int emit_object(Node* file, Diag* d, const char* out_path,
     Em e;
     memset(&e, 0, sizeof e);
     e.d = d;
+    e.mode = mode;
     for (int i = 0; i < NSECS; i++) {
         e.secs[i].sect = PROTO[i].sect;
         e.secs[i].seg = PROTO[i].seg;
@@ -5692,6 +5822,7 @@ int emit_object(Node* file, Diag* d, const char* out_path,
             break; // types/imports/externs: no code
         }
     }
+    emit_bounds_failure_helper(&e);
     patch_fixups(&e);
     if (d->errors) return 1;
     if (report) report->machine_code = text(&e)->len;

@@ -236,8 +236,9 @@ the compared slices need not have equal lengths.
 
 No byte operation allocates. An unequal-length copy/move or overlapping copy
 is a programmer error. Checked builds are specified to diagnose these contract
-violations; the current bootstrap has no checked/release mode yet and runs the
-release fast path without those runtime checks.
+violations. The bootstrap accepts checked/release modes for sequence bounds,
+but this later call-contract stage has not landed, so byte operations still
+run the release fast path without those runtime checks.
 
 ## Slices alias; they do not own
 

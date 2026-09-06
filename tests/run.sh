@@ -362,6 +362,115 @@ if ! printf '%s\n' "$unsupported_target" | grep -qF \
     fail=1
 fi
 
+# Emission modes are accepted by every pipeline stage but affect only emitted
+# code. Checked is the emission default; release contains no bounds machinery.
+mkdir -p /tmp/ace_checked_bounds
+cp tests/checked_bounds/*.ace /tmp/ace_checked_bounds/
+if ! "$ACE" --checked tests/sema/sequences/main_ok.ace ||
+   ! "$ACE" --release tests/sema/sequences/main_ok.ace; then
+    echo "FAIL: check-only mode flags should not change semantic checking"
+    fail=1
+fi
+if ! "$ACE" --tokens tests/lexer/hello_ok.ace >/tmp/ace_mode_plain ||
+   ! "$ACE" --checked --tokens tests/lexer/hello_ok.ace >/tmp/ace_mode_checked ||
+   ! "$ACE" --release --tokens tests/lexer/hello_ok.ace >/tmp/ace_mode_release ||
+   ! cmp -s /tmp/ace_mode_plain /tmp/ace_mode_checked ||
+   ! cmp -s /tmp/ace_mode_plain /tmp/ace_mode_release; then
+    echo "FAIL: mode flags changed --tokens output"
+    fail=1
+fi
+if ! "$ACE" --ast tests/parser/full_ok.ace >/tmp/ace_mode_plain ||
+   ! "$ACE" --checked --ast tests/parser/full_ok.ace >/tmp/ace_mode_checked ||
+   ! "$ACE" --release --ast tests/parser/full_ok.ace >/tmp/ace_mode_release ||
+   ! cmp -s /tmp/ace_mode_plain /tmp/ace_mode_checked ||
+   ! cmp -s /tmp/ace_mode_plain /tmp/ace_mode_release; then
+    echo "FAIL: mode flags changed --ast output"
+    fail=1
+fi
+for flags in "--checked --release" "--release --checked"; do
+    if "$ACE" $flags tests/sema/sequences/main_ok.ace >/dev/null 2>/tmp/ace_test_errs ||
+       ! grep -qF -- "--checked and --release are mutually exclusive" /tmp/ace_test_errs; then
+        echo "FAIL: mode mutual exclusion for $flags"
+        fail=1
+    fi
+done
+for bad in --checked=yes --release=yes; do
+    if "$ACE" "$bad" tests/sema/sequences/main_ok.ace >/dev/null 2>/tmp/ace_test_errs ||
+       ! grep -qF "unknown option '$bad'" /tmp/ace_test_errs; then
+        echo "FAIL: invalid mode spelling $bad"
+        fail=1
+    fi
+done
+for mode in --checked --release; do
+    if "$ACE" "$mode" >/dev/null 2>/tmp/ace_test_errs; then
+        echo "FAIL: $mode without a source should show usage"
+        fail=1
+    fi
+done
+for mode in --checked --release; do
+    for f in tests/sema/sequences/index_read_negative_err.ace \
+             tests/sema/sequences/index_read_hi_err.ace \
+             tests/sema/sequences/bounds_negative_err.ace \
+             tests/sema/sequences/bounds_hi_err.ace; do
+        if "$ACE" "$mode" "$f" >/dev/null 2>&1; then
+            echo "FAIL: statically invalid bounds accepted in $mode: $f"
+            fail=1
+        fi
+    done
+done
+if ! "$ACE" -o /tmp/ace_checked_bounds/default /tmp/ace_checked_bounds/valid.ace ||
+   ! /tmp/ace_checked_bounds/default ||
+   ! "$ACE" --checked -o /tmp/ace_checked_bounds/checked /tmp/ace_checked_bounds/valid.ace ||
+   ! /tmp/ace_checked_bounds/checked ||
+   ! "$ACE" --release -o /tmp/ace_checked_bounds/release /tmp/ace_checked_bounds/valid.ace ||
+   ! /tmp/ace_checked_bounds/release; then
+    echo "FAIL: valid dynamic bounds program failed in an emission mode"
+    fail=1
+fi
+if ! "$ACE" --checked -o /tmp/ace_checked_bounds/proven_iteration \
+     /tmp/ace_checked_bounds/proven_iteration.ace ||
+   ! /tmp/ace_checked_bounds/proven_iteration; then
+    echo "FAIL: proven/iteration checked fixture failed"
+    fail=1
+fi
+for f in array_negative array_equal slice_greater string_equal \
+         mut_string_greater slice_lower slice_upper slice_order \
+         slice_source_length; do
+    if ! "$ACE" --checked -o "/tmp/ace_checked_bounds/$f" \
+         "/tmp/ace_checked_bounds/$f.ace" >/dev/null 2>/tmp/ace_test_errs; then
+        echo "FAIL: checked bounds fixture did not compile: $f"
+        cat /tmp/ace_test_errs
+        fail=1
+    elif "/tmp/ace_checked_bounds/$f" >/dev/null 2>/tmp/ace_test_errs; then
+        echo "FAIL: checked bounds fixture did not abort: $f"
+        fail=1
+    elif ! grep -qF "ace: bounds violation" /tmp/ace_test_errs; then
+        echo "FAIL: checked bounds fixture lacked diagnostic: $f"
+        fail=1
+    fi
+done
+if command -v nm >/dev/null 2>&1; then
+    if ! nm /tmp/ace_checked_bounds/default.o 2>/dev/null | grep -qF '__ace$bounds_fail'; then
+        echo "FAIL: default emission is not checked"
+        fail=1
+    fi
+    if nm /tmp/ace_checked_bounds/release.o 2>/dev/null |
+         grep -Eq '__ace\$bounds|[[:space:]]U (_abort|_write)$'; then
+        echo "FAIL: release object retains checked failure machinery"
+        fail=1
+    fi
+    if nm /tmp/ace_checked_bounds/proven_iteration.o 2>/dev/null |
+         grep -qF '__ace$bounds_fail'; then
+        echo "FAIL: proven access or direct iteration retained a bounds guard"
+        fail=1
+    fi
+fi
+if command -v strings >/dev/null 2>&1 &&
+   strings /tmp/ace_checked_bounds/release.o | grep -qF 'ace: bounds violation'; then
+    echo "FAIL: release object retains bounds diagnostic metadata"
+    fail=1
+fi
+
 # emit fixtures: compile to an object, link with the system cc, run, and
 # check the exit code. The expected code rides in a `// expect-exit: N` line.
 if [ -d tests/emit ]; then
