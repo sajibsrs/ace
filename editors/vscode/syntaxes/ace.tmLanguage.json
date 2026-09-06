@@ -368,7 +368,7 @@
     },
     "builtins": {
       "name": "entity.name.function.ace support.function.builtin.ace",
-      "match": "\\b(?:sizeof|len|typeid|panic)\\b(?=\\s*\\()"
+      "match": "\\b(?:sizeof|len|typeid|panic|assert)\\b(?=\\s*\\()"
     },
     "constants": {
       "patterns": [

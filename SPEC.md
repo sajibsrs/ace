@@ -138,6 +138,59 @@ Decision: checks are a development tool; release trusts the developer.
    both modes. Mode selection controls only checks that depend on runtime
    values.
 5. Safety is intentionally minimal and local: type checking and definite initialization improve on C at zero runtime cost; checked builds add bounds, overflow, and allocator diagnostics. Ace rejects Rust-style ownership, lifetime, borrow, and whole-program safety analysis under the priority stack.
+6. Integer overflow checking covers the value-producing arithmetic operations
+   `+`, `-`, `*`, and unary `-` on every fixed-width signed and unsigned integer
+   type, including their compound-assignment forms. Checked builds diagnose a
+   result outside the destination type before it is stored. They also diagnose
+   division or remainder by zero and the signed `MIN / -1` and `MIN % -1`
+   cases. Release builds emit the target's ordinary fixed-width operations with
+   no guards; overflowing arithmetic is unchecked. Bitwise operations and
+   explicit numeric casts are not overflow operations. A shift count must be
+   nonnegative and less than the left operand's bit width; checked builds
+   diagnose a false runtime precondition and release assumes it. Left shift is
+   otherwise a bit operation: discarded high bits are not an overflow
+   diagnostic. As elsewhere, a violation provable from constants is rejected
+   in every mode.
+7. Checked `noalias` enforcement is deliberately local. At a call boundary,
+   every slice argument corresponding to a `noalias` parameter is compared
+   against the byte range of every other slice argument whose parameter may
+   reach writable storage; nonempty ranges must be disjoint. Computing a byte
+   range that is not representable is itself a violation. The compiler performs
+   no pointee-graph walk, ownership inference, or general pointer provenance
+   analysis; promises outside directly represented slice ranges remain the
+   programmer's responsibility. Separately stated call contracts such as the
+   equal lengths required by `mem.copy` and `mem.move` are checked at the same
+   boundary. Release emits none of these comparisons.
+8. Checked null-use diagnostics cover explicit or automatic dereference of a
+   zero pointer, a call through a zero function value, and dispatch through a
+   zero contract value. Merely storing, copying, comparing, or passing a zero
+   value remains valid. Zero slices and strings keep their sequence rules, so an
+   indexed access fails the bounds contract rather than adding a second null
+   rule. Release emits no null-use guard.
+9. The checked allocator registry records each live allocation's base address,
+   byte size, and required alignment. `realloc` and `release` require the exact
+   live base and complete authoritative extent; an interior, truncated,
+   extended, already released, or otherwise unknown descriptor is diagnosed
+   before the platform allocator is called. A successful reallocation replaces
+   the record, a failed reallocation leaves it unchanged, and a successful
+   release removes it. Any records remaining when `main` returns normally are
+   reported as leaks before process completion. `panic`, `sys.exit`, signals,
+   and other abnormal or immediate termination perform no hidden cleanup or
+   leak pass. The registry is diagnostic metadata only: it does not prevent or
+   detect arbitrary access through dangling aliases, and release builds contain
+   no registry, headers, or checks.
+10. `assert(condition)` is a reserved language builtin for checked invariants.
+    It accepts exactly one `bool` expression, is not a first-class value, and
+    cannot be declared, shadowed, or redefined. A checked build evaluates the
+    condition exactly once; false produces a best-effort assertion diagnostic
+    with the source location and then aborts as a broken invariant. A release
+    build emits neither the condition nor its evaluation, so a program must not
+    rely on assertion side effects. A condition known false at compile time is
+    rejected in every mode under #4; one known true emits nothing. There is no
+    message overload: use `panic(message)` for an unconditional contextual
+    abort. The same builtin is suitable for simple tests run in checked mode;
+    richer expected/actual reporting and test discovery belong to a library or
+    runner rather than the language primitive.
 
 Rationale: the compiler never guesses a mode from its own build, an output
 name, or the surrounding environment; the selected artifact semantics remain
@@ -145,7 +198,14 @@ visible and reproducible. Checked-by-default follows the strict-first rule for
 development, while explicit release preserves the priority stack's highest
 requirement by removing every dynamic safety cost. Compile-time proofs remain
 mode-independent because rejecting a known-invalid program costs nothing at
-runtime and avoids giving one source two static meanings.
+runtime and avoids giving one source two static meanings. The exact arithmetic
+set checks operations that claim to produce a numeric value while keeping casts
+and bit manipulation machine-direct. Call-boundary range comparisons, direct
+null guards, and allocator bookkeeping are bounded local work rather than
+whole-program safety analysis. Assertions add one minimal development primitive
+and reuse abort semantics without weakening the visible distinction among
+recoverable `Error` values, broken-invariant `panic`, and caller-chosen
+`sys.exit` status.
 
 ## Errors
 Decision: errors are ordinary values; checking is always explicit.
@@ -487,9 +547,7 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 
 ### Active
 
-1. Carve exact integer-overflow operation coverage, then implement checked-only
-   overflow, `noalias`, null-use, and allocation diagnostics in that order.
-   The emission-mode plumbing and sequence-bounds stage is implemented.
+None.
 
 ### Trigger-gated
 

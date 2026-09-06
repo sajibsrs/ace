@@ -389,7 +389,9 @@ pub format(destination: mut []u8, value: int, radix: u8): (usize, bool) {
     negative: bool = value < 0
 
     if negative {
-        remaining = 0 - u64(value)
+        /* Add before negating so the signed minimum never overflows; convert
+         * only the nonnegative intermediate, then restore the final unit. */
+        remaining = u64(0 - (value + 1)) + 1
     } else {
         remaining = u64(value)
     }
@@ -601,7 +603,10 @@ pub parse[int](text: string, radix: u8): (int, bool) {
     }
 
     if negative {
-        return int(0 - mag), true
+        if mag == 9223372036854775808 {
+            return int(mag), true
+        }
+        return 0 - int(mag), true
     }
     return int(mag), true
 }

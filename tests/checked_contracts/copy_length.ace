@@ -1,0 +1,8 @@
+import mem
+
+main(): int {
+    data: mut []u8 = mem.alloc(8, 1)
+    if data == null { return 2 }
+    mem.copy(data[..4], data[4..6])
+    return 0
+}

@@ -66,6 +66,13 @@ current normative rules, and Git preserves patch-level detail.
   descriptor representation was removed.
 - Implemented reserved `panic(message)` as best-effort direct stderr output
   followed by platform `abort()`; it cannot be caught or used as a value.
+- Implemented the remaining checked-build diagnostics: exact integer arithmetic
+  and shift guards, slice-range `noalias` and byte-operation length contracts,
+  null dereference/call/dispatch checks, and an allocation-backed live registry
+  for authoritative extent validation and normal-return leak reporting. Release
+  objects retain none of this machinery. Added reserved checked-only
+  `assert(bool)` with source-located failure and fully stripped release
+  evaluation.
 
 ## Memory
 
@@ -189,8 +196,7 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Current frontier
 
-The next active carve is exact integer-overflow operation coverage, followed by
-checked-only overflow, `noalias`, null-use, and allocation diagnostics. Additive networking,
-concurrency, fuller math/SIMD, and a second
+The checked-build queue is complete. Additive networking, concurrency, fuller
+math/SIMD, and a second
 backend remain open; their status belongs in the `SPEC.md` Decision Queue and
 `TODO.md`, not in this history.

@@ -235,10 +235,11 @@ common prefix is equal, the shorter slice sorts first. Unlike copy and move,
 the compared slices need not have equal lengths.
 
 No byte operation allocates. An unequal-length copy/move or overlapping copy
-is a programmer error. Checked builds are specified to diagnose these contract
-violations. The bootstrap accepts checked/release modes for sequence bounds,
-but this later call-contract stage has not landed, so byte operations still
-run the release fast path without those runtime checks.
+is a programmer error. Checked builds diagnose these contracts at the call
+boundary; release builds emit the direct byte operation without validation.
+Checked allocation also tracks exact live base/extent pairs, diagnoses invalid
+or repeated release/reallocation, and reports allocations still live when
+`main` returns normally. The registry and its metadata are absent in release.
 
 ## Slices alias; they do not own
 

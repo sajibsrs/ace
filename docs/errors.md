@@ -90,5 +90,13 @@ if error != null {
 }
 ```
 
+`assert(condition)` is the checked-build invariant primitive. It accepts one
+`bool`, evaluates it once, and reports its source location and aborts when it is
+false. Release output removes the assertion and does not evaluate its
+condition, so program logic must not depend on assertion side effects. It is
+useful for simple checked-mode tests; use `panic(message)` when an unconditional
+abort needs contextual text. `sys.exit(code)` is different again: deliberate
+immediate process termination with a caller-selected status.
+
 The examples are checked by `tests/sema/docs/errors_ok.ace` and the runnable
 fixtures in `tests/emit/errors/` and `tests/modules/error_export/`.

@@ -159,13 +159,16 @@ static Node* load_module(Loader* L, const char* path) {
     return file;
 }
 
-// Module-level declaration names are checked before prefixing: `m$panic`
+// Module-level builtin names are checked before prefixing: `m$panic`
 // would pass sema's reservation and silently shadow the builtin for this
 // module's own calls (rename_refs rewrites them to the declaration).
 static void check_reserved_name(Loader* L, Node* at, const char* name, uint32_t len) {
     if (len == 5 && memcmp(name, "panic", 5) == 0)
         import_err(L->d, at,
                    "'panic' is a reserved builtin name — no declaration may take it");
+    if (len == 6 && memcmp(name, "assert", 6) == 0)
+        import_err(L->d, at,
+                   "'assert' is a reserved builtin name — no declaration may take it");
 }
 
 // The member surface of a module: name + namespace + pub-ness. Names are

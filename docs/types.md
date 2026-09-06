@@ -661,8 +661,7 @@ with no allocation, object metadata, subtype relation, or runtime search.
   instantiated type and initialize its fields.
 - Standalone tuple-literal initialization is not implemented; tuple layout is
   currently used by multiple returns and destructuring.
-- Checked-build sequence bounds diagnostics are implemented. Overflow,
-  `noalias`, null-use, and allocator diagnostics remain future checked-mode
-  work.
+- Checked-build sequence bounds, integer arithmetic, `noalias`/length,
+  null-use, and allocator diagnostics are implemented and stripped in release.
 
 The examples are covered by `tests/sema/docs/type_ok.ace`.

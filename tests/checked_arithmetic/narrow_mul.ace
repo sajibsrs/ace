@@ -1,0 +1,2 @@
+value(): i16 { return i16(300) }
+main(): int { return int(value() * i16(300)) }

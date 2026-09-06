@@ -1,0 +1,2 @@
+value(): i64 { return i64(0x7fffffffffffffff) }
+main(): int { return int(value() + 1) }

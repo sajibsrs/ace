@@ -1,0 +1,11 @@
+global: int
+
+condition(): bool {
+    global = 1
+    return false
+}
+
+main(): int {
+    assert(condition())
+    return global
+}

@@ -471,6 +471,101 @@ if command -v strings >/dev/null 2>&1 &&
     fail=1
 fi
 
+# Remaining checked-build contracts: arithmetic, call ranges, null use,
+# allocator tracking, and the language-level assert primitive.
+mkdir -p /tmp/ace_checked_features
+if ! "$ACE" --checked -o /tmp/ace_checked_features/arithmetic_valid \
+     tests/checked_arithmetic/valid.ace ||
+   ! /tmp/ace_checked_features/arithmetic_valid; then
+    echo "FAIL: valid checked arithmetic fixture"
+    fail=1
+fi
+for f in signed_add unsigned_mul narrow_mul div_zero neg_min shift_count compound; do
+    if ! "$ACE" --checked -o "/tmp/ace_checked_features/arithmetic_$f" \
+         "tests/checked_arithmetic/$f.ace" >/dev/null 2>/tmp/ace_test_errs ||
+       "/tmp/ace_checked_features/arithmetic_$f" >/dev/null 2>/tmp/ace_test_errs ||
+       ! grep -qF "ace: arithmetic violation" /tmp/ace_test_errs; then
+        echo "FAIL: checked arithmetic fixture $f"
+        fail=1
+    fi
+done
+for f in noalias copy_length copy_overlap; do
+    if ! "$ACE" --checked -o "/tmp/ace_checked_features/contract_$f" \
+         "tests/checked_contracts/$f.ace" >/dev/null 2>/tmp/ace_test_errs ||
+       "/tmp/ace_checked_features/contract_$f" >/dev/null 2>/tmp/ace_test_errs ||
+       ! grep -qF "ace: call contract violation" /tmp/ace_test_errs; then
+        echo "FAIL: checked call-contract fixture $f"
+        fail=1
+    fi
+done
+if ! "$ACE" --checked -o /tmp/ace_checked_features/contract_valid \
+     tests/checked_contracts/valid.ace; then
+    echo "FAIL: valid checked call-contract fixture did not compile"
+    fail=1
+else
+    /tmp/ace_checked_features/contract_valid
+    status=$?
+    if [ "$status" -ne 42 ]; then
+        echo "FAIL: valid checked call-contract fixture exited $status, want 42"
+        fail=1
+    fi
+fi
+for f in pointer function; do
+    if ! "$ACE" --checked -o "/tmp/ace_checked_features/null_$f" \
+         "tests/checked_null/$f.ace" >/dev/null 2>/tmp/ace_test_errs ||
+       "/tmp/ace_checked_features/null_$f" >/dev/null 2>/tmp/ace_test_errs ||
+       ! grep -qF "ace: null use violation" /tmp/ace_test_errs; then
+        echo "FAIL: checked null-use fixture $f"
+        fail=1
+    fi
+done
+if ! "$ACE" --checked -o /tmp/ace_checked_features/allocator_valid \
+     tests/checked_allocator/valid.ace ||
+   ! /tmp/ace_checked_features/allocator_valid; then
+    echo "FAIL: valid checked allocator fixture"
+    fail=1
+fi
+for f in double_release truncated_release leak; do
+    if ! "$ACE" --checked -o "/tmp/ace_checked_features/allocator_$f" \
+         "tests/checked_allocator/$f.ace" >/dev/null 2>/tmp/ace_test_errs ||
+       "/tmp/ace_checked_features/allocator_$f" >/dev/null 2>/tmp/ace_test_errs ||
+       ! grep -qF "ace: allocator violation" /tmp/ace_test_errs; then
+        echo "FAIL: checked allocator fixture $f"
+        fail=1
+    fi
+done
+if ! "$ACE" --checked -o /tmp/ace_checked_features/assert_false \
+     tests/assert/checked_false.ace ||
+   /tmp/ace_checked_features/assert_false >/dev/null 2>/tmp/ace_test_errs ||
+   ! grep -qF "assertion failed" /tmp/ace_test_errs; then
+    echo "FAIL: checked assert failure"
+    fail=1
+fi
+if ! "$ACE" --release -o /tmp/ace_checked_features/assert_release \
+     tests/assert/release_stripped.ace ||
+   ! /tmp/ace_checked_features/assert_release ||
+   ! "$ACE" --checked -o /tmp/ace_checked_features/assert_true \
+     tests/assert/true_ok.ace ||
+   ! /tmp/ace_checked_features/assert_true; then
+    echo "FAIL: assert true/release stripping"
+    fail=1
+fi
+if "$ACE" tests/assert/false_err.ace >/dev/null 2>/tmp/ace_test_errs ||
+   ! grep -qF "assert condition is always false" /tmp/ace_test_errs; then
+    echo "FAIL: compile-time false assert diagnostic"
+    fail=1
+fi
+if ! "$ACE" --release -c -o /tmp/ace_checked_features/release.o \
+     tests/checked_arithmetic/signed_add.ace; then
+    echo "FAIL: release checked-feature object"
+    fail=1
+elif command -v nm >/dev/null 2>&1 &&
+     nm /tmp/ace_checked_features/release.o 2>/dev/null |
+       grep -Eq '__ace\$(arithmetic|contract|null|registry)|[[:space:]]U (_abort|_write)$'; then
+    echo "FAIL: release object retains checked-feature machinery"
+    fail=1
+fi
+
 # emit fixtures: compile to an object, link with the system cc, run, and
 # check the exit code. The expected code rides in a `// expect-exit: N` line.
 if [ -d tests/emit ]; then

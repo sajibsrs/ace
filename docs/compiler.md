@@ -21,9 +21,10 @@ the file without the suffix, so `-o program.ace` links `program` and leaves
 `program.o` beside it.
 
 Emitted programs default to `--checked`. Checked output dynamically validates
-array, slice, and string element access and slicing bounds; a violation writes
-a concise diagnostic to standard error and aborts. `--release` removes those
-guards, failure paths, and diagnostic data completely. The flags are mutually
+sequence bounds, integer arithmetic, call-boundary slice contracts, null use,
+and allocator discipline; a violation writes a concise diagnostic to standard
+error and aborts. It also enables `assert`. `--release` removes those guards,
+failure paths, tracking, assertion evaluation, and diagnostic data. The flags are mutually
 exclusive. Check-only, `--tokens`, and `--ast` runs accept either flag, but the
 choice cannot change their result because they emit no program.
 

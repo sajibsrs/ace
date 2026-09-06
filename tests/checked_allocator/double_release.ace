@@ -1,0 +1,10 @@
+import mem
+
+main(): int {
+    data: mut []u8 = mem.alloc(8, 1)
+    if data == null { return 2 }
+    alias: mut []u8 = data
+    mem.release(mut data)
+    mem.release(mut alias)
+    return 0
+}

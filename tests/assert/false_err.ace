@@ -1,0 +1,4 @@
+main(): int {
+    assert(false) // error: assert condition is always false
+    return 0
+}

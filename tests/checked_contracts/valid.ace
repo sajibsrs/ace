@@ -1,0 +1,15 @@
+import mem
+
+touch(noalias dst: mut []u8, src: []u8) {
+    if len(dst) > 0 && len(src) > 0 { dst[0] = src[0] }
+}
+
+main(): int {
+    data: mut []u8 = mem.alloc(8, 1)
+    if data == null { return 2 }
+    data[4] = 42
+    touch(data[..4], data[4..])
+    result: int = int(data[0])
+    mem.release(mut data)
+    return result
+}

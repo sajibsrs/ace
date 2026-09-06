@@ -1,0 +1,2 @@
+value(): i8 { return i8(-128) }
+main(): int { return int(-value()) }

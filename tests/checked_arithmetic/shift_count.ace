@@ -1,0 +1,2 @@
+count(): i32 { return 32 }
+main(): int { return int(i32(1) << count()) }

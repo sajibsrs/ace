@@ -245,11 +245,14 @@ static void ck_err(Ck* k, Node* n, const char* fmt, ...) {
     k->d->errors++;
 }
 
-// `panic` is the one reserved builtin name: no binding may take it in any
-// scope (spec Errors #15, Names #2) — unlike sizeof/len/typeid, which are
-// ordinary shadowable identifiers.
+// `panic` and `assert` are reserved builtin names: no binding may take either
+// in any scope. Unlike them, sizeof/len/typeid are ordinary shadowable names.
 static int is_panic_name(const char* name, uint32_t len) {
     return len == 5 && memcmp(name, "panic", 5) == 0;
+}
+
+static int is_assert_name(const char* name, uint32_t len) {
+    return len == 6 && memcmp(name, "assert", 6) == 0;
 }
 
 static void ensure_memory_types(void) {
@@ -312,8 +315,9 @@ static Sym* lookup_type(Ck* k, const char* name, uint32_t len) {
 }
 
 static Sym* declare_val(Ck* k, Node* at, uint8_t kind, const char* name, uint32_t len) {
-    if (is_panic_name(name, len)) {
-        ck_err(k, at, "'panic' is a reserved builtin name — no declaration may take it");
+    if (is_panic_name(name, len) || is_assert_name(name, len)) {
+        ck_err(k, at, "'%.*s' is a reserved builtin name — no declaration may take it",
+               (int)len, name);
         return NULL;
     }
     if (find_in(k->scope->values, name, len)) {
@@ -327,8 +331,9 @@ static Sym* declare_val(Ck* k, Node* at, uint8_t kind, const char* name, uint32_
 }
 
 static Sym* declare_type(Ck* k, Node* at, const char* name, uint32_t len) {
-    if (is_panic_name(name, len)) {
-        ck_err(k, at, "'panic' is a reserved builtin name — no declaration may take it");
+    if (is_panic_name(name, len) || is_assert_name(name, len)) {
+        ck_err(k, at, "'%.*s' is a reserved builtin name — no declaration may take it",
+               (int)len, name);
         return NULL;
     }
     Sym* old = find_in(k->scope->types, name, len);
@@ -776,6 +781,41 @@ static int ut_const(Node* e, int64_t* out) {
     }
 }
 
+static int bool_const(Node* e, int* out) {
+    if (!e) return 0;
+    if (e->kind == N_BOOL) { *out = e->ival != 0; return 1; }
+    if (e->kind == N_IDENT) {
+        Sym* s = node_sym(e);
+        return s && s->is_const && s->init ? bool_const(s->init, out) : 0;
+    }
+    if (e->kind == N_UNARY && e->op == T_BANG) {
+        int v;
+        if (!bool_const(e->a, &v)) return 0;
+        *out = !v;
+        return 1;
+    }
+    if (e->kind == N_BINARY && (e->op == T_ANDAND || e->op == T_OROR)) {
+        int a, b;
+        if (!bool_const(e->a, &a) || !bool_const(e->b, &b)) return 0;
+        *out = e->op == T_ANDAND ? a && b : a || b;
+        return 1;
+    }
+    if (e->kind == N_BINARY) {
+        int64_t a, b;
+        if (!ut_const(e->a, &a) || !ut_const(e->b, &b)) return 0;
+        switch (e->op) {
+        case T_EQEQ: *out = a == b; return 1;
+        case T_BANGEQ: *out = a != b; return 1;
+        case T_LT: *out = a < b; return 1;
+        case T_LE: *out = a <= b; return 1;
+        case T_GT: *out = a > b; return 1;
+        case T_GE: *out = a >= b; return 1;
+        default: return 0;
+        }
+    }
+    return 0;
+}
+
 // --- type building ------------------------------------------------------------------
 
 static SType* build_type(Ck* k, Node* t);
@@ -1188,8 +1228,9 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
     uint32_t key_len = f->len;
     const char* key = f->str;
     if (f->flags & F_METHOD) key = method_key(f->d, f->str, f->len, &key_len);
-    else if (is_panic_name(f->str, f->len)) { // methods bind a qualified name
-        ck_err(k, f, "'panic' is a reserved builtin name — no declaration may take it");
+    else if (is_panic_name(f->str, f->len) || is_assert_name(f->str, f->len)) {
+        ck_err(k, f, "'%.*s' is a reserved builtin name — no declaration may take it",
+               (int)f->len, f->str);
         return NULL;
     }
     Sym* head = find_in(k->scope->values, key, key_len);
@@ -1413,8 +1454,9 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
     case N_IDENT: {
         Sym* s = lookup_val(k, e->str, e->len);
         if (!s) {
-            if (is_panic_name(e->str, e->len)) {
-                ck_err(k, e, "'panic' is a builtin call, not a value");
+            if (is_panic_name(e->str, e->len) || is_assert_name(e->str, e->len)) {
+                ck_err(k, e, "'%.*s' is a builtin call, not a value",
+                       (int)e->len, e->str);
                 return T_ERR;
             }
             ck_err(k, e, "unknown name '%.*s'", (int)e->len, e->str);
@@ -1668,8 +1710,9 @@ static SType* expr_type_raw(Ck* k, Node* e) {
     case N_IDENT: {
         Sym* s = lookup_val(k, e->str, e->len);
         if (!s) {
-            if (is_panic_name(e->str, e->len)) {
-                ck_err(k, e, "'panic' is a builtin call, not a value");
+            if (is_panic_name(e->str, e->len) || is_assert_name(e->str, e->len)) {
+                ck_err(k, e, "'%.*s' is a builtin call, not a value",
+                       (int)e->len, e->str);
                 return T_ERR;
             }
             ck_err(k, e, "unknown name '%.*s'", (int)e->len, e->str);
@@ -2946,6 +2989,28 @@ static SType* check_call(Ck* k, Node* call) {
                 else if (call->kids[0]->kind == N_STR)
                     call->ival = call->kids[0]->len;
                 return st_prim(P_USIZE);
+            }
+            // reserved builtin: assert(condition: bool) — checked-only
+            if (is_assert_name(callee->str, callee->len)) {
+                if (call->nkids != 1) {
+                    ck_err(k, call, "assert takes exactly one bool condition, got %d arguments",
+                           call->nkids);
+                    return T_ERR;
+                }
+                if (call->kids[0]->kind == N_MUTARG) {
+                    ck_err(k, call->kids[0],
+                           "'mut' marks mut parameters; assert's condition is read-only");
+                    return T_ERR;
+                }
+                if (!coerce(k, call->kids[0], st_prim(P_BOOL))) return T_ERR;
+                int known = 0;
+                if (bool_const(call->kids[0], &known) && !known) {
+                    ck_err(k, call->kids[0], "assert condition is always false");
+                    return T_ERR;
+                }
+                call->ival = known ? 3 : 2; // 3: proven true and fully erased
+                ensure_memory_types();
+                return T_VOID;
             }
             // reserved builtin: panic(message: string) — never returns
             if (is_panic_name(callee->str, callee->len)) {

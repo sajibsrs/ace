@@ -22,6 +22,12 @@ Integer arithmetic supports `+`, `-`, `*`, `/`, `%`, bitwise `& | ^ !`, and
 shifts `<< >>`. Comparisons produce `bool`. Signed division truncates toward
 zero, and the remainder has the dividend's sign.
 
+Checked output aborts when integer `+`, `-`, `*`, or unary `-` cannot produce a
+value of its declared type, and on division/remainder by zero or the signed
+minimum divided by `-1`. Shift counts must be nonnegative and below the left
+operand width. Release output emits direct fixed-width operations without
+guards; explicit casts and bitwise operations are not overflow-checked.
+
 Integer literals are untyped constants until used. They must fit the destination
 type. In overload selection, an uncast integer or character literal uses the
 natural `int` candidate; cast explicitly to select another overload.
