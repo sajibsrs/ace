@@ -142,6 +142,17 @@ current normative rules, and Git preserves patch-level detail.
 - Derived private symbol prefixes for directory-module entries from their
   directory names rather than the repeated `module.ace` filename.
 
+- Expanded `sys` with allocation-free filesystem metadata and mutation
+  (`stat`, `mkdir`, `rename`, and `unlink`) plus caller-owned buffered directory
+  iteration (`open_dir`, `readdir`, and `close_dir`). The Darwin layer parses
+  private `dirent64` batches into exact caller-provided name buffers, keeps
+  undersized entries retryable, and exposes only stable file kind and size.
+  The portable `mkdir(path)` form delegates effective permissions to the
+  process umask, while explicit POSIX creation modes use named `S_I*` bits.
+- Allowed global constant initializers to forward recursively evaluable
+  constants from imported modules. The `sys` facade now re-exports its
+  target-selected `O_*` and `S_I*` values without duplicating their numbers.
+
 ## Current frontier
 
 The next established implementation proof is nonblocking echo followed by a

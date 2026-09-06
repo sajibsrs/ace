@@ -9,19 +9,43 @@ pub OpenErr: type = os.OpenErr
 pub ReadErr: type = os.ReadErr
 pub WriteErr: type = os.WriteErr
 pub CloseErr: type = os.CloseErr
+pub StatErr: type = os.StatErr
+pub MkdirErr: type = os.MkdirErr
+pub RenameErr: type = os.RenameErr
+pub UnlinkErr: type = os.UnlinkErr
+pub OpenDirErr: type = os.OpenDirErr
+pub ReadDirErr: type = os.ReadDirErr
+pub CloseDirErr: type = os.CloseDirErr
+
+pub FileKind: type = os.FileKind
+pub FileInfo: type = os.FileInfo
+pub Dir: type = os.Dir
 
 pub stdin: const Fd = Fd(0)
 pub stdout: const Fd = Fd(1)
 pub stderr: const Fd = Fd(2)
 
-pub O_RDONLY: const i32 = 0
-pub O_WRONLY: const i32 = 1
-pub O_RDWR: const i32 = 2
-pub O_NONBLOCK: const i32 = 0x0004
-pub O_APPEND: const i32 = 0x0008
-pub O_CREAT: const i32 = 0x0200
-pub O_TRUNC: const i32 = 0x0400
-pub O_EXCL: const i32 = 0x0800
+pub O_RDONLY: const i32 = os.O_RDONLY
+pub O_WRONLY: const i32 = os.O_WRONLY
+pub O_RDWR: const i32 = os.O_RDWR
+pub O_NONBLOCK: const i32 = os.O_NONBLOCK
+pub O_APPEND: const i32 = os.O_APPEND
+pub O_CREAT: const i32 = os.O_CREAT
+pub O_TRUNC: const i32 = os.O_TRUNC
+pub O_EXCL: const i32 = os.O_EXCL
+
+pub S_IRWXU: const u32 = os.S_IRWXU
+pub S_IRUSR: const u32 = os.S_IRUSR
+pub S_IWUSR: const u32 = os.S_IWUSR
+pub S_IXUSR: const u32 = os.S_IXUSR
+pub S_IRWXG: const u32 = os.S_IRWXG
+pub S_IRGRP: const u32 = os.S_IRGRP
+pub S_IWGRP: const u32 = os.S_IWGRP
+pub S_IXGRP: const u32 = os.S_IXGRP
+pub S_IRWXO: const u32 = os.S_IRWXO
+pub S_IROTH: const u32 = os.S_IROTH
+pub S_IWOTH: const u32 = os.S_IWOTH
+pub S_IXOTH: const u32 = os.S_IXOTH
 
 /* Process-start pointer arrays stay behind compiler-backed helpers because
  * Ace deliberately exposes no pointer arithmetic over their C layouts.
@@ -93,6 +117,41 @@ pub open(path: string, flags: i32): (Fd, Error) {
 pub open(path: string, flags: i32, mode: u32): (Fd, Error) {
     fd: Fd, err: Error = os.open(path, flags, mode)
     return fd, err
+}
+
+pub stat(path: string): (FileInfo, Error) {
+    info: FileInfo, err: Error = os.stat(path)
+    return info, err
+}
+
+pub mkdir(path: string, mode: u32): Error {
+    return os.mkdir(path, mode)
+}
+
+pub mkdir(path: string): Error {
+    return os.mkdir(path)
+}
+
+pub rename(old_path: string, new_path: string): Error {
+    return os.rename(old_path, new_path)
+}
+
+pub unlink(path: string): Error {
+    return os.unlink(path)
+}
+
+pub open_dir(path: string): (Dir, Error) {
+    dir: Dir, err: Error = os.open_dir(path)
+    return dir, err
+}
+
+pub readdir(mut dir: Dir, name: mut []u8): (usize, FileKind, bool, Error) {
+    length: usize, kind: FileKind, done: bool, err: Error = os.readdir(mut dir, name)
+    return length, kind, done, err
+}
+
+pub close_dir(mut dir: Dir): Error {
+    return os.close_dir(mut dir)
 }
 
 pub time_elapsed(): u64 {

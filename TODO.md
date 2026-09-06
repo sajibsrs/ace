@@ -84,7 +84,6 @@ Small items, each needing an owner decision:
 
 Not core language; listed because each blocks practical use.
 
-- **Filesystem surface beyond open/read/write/close** — stat, mkdir, readdir, rename, unlink [new].
 - **Signals** [additive] — excluded from `poll` (Stdlib #14); servers need SIGINT handling.
 - **`str.concat` / `str.join`** into caller storage [new] — `str` searches, splits, trims, parses, and formats, but never assembles (Stdlib #15).
 - **Dynamic array and hash-map modules** [new] — composed from `mem` and explicit generics; none exist.

@@ -1,0 +1,3 @@
+pub signed: const i32 = -17
+pub unsigned: const u32 = 0x1234
+pub chained: const u32 = unsigned

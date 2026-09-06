@@ -4871,6 +4871,12 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
         for (uint32_t i = 0; i < ty_size(t); i++) buf_put8(out, 0);
         return 1;
     }
+    case N_IDENT: {
+        Sym* s = node_sym(v);
+        if (s && s->is_global && s->is_const && s->init)
+            return eval_const(e, s->init, t, out);
+        return 0;
+    }
     case N_UNARY:
         if (v->op == T_MINUS) {
             uint64_t c;

@@ -25,7 +25,8 @@ check_missing(): int {
 }
 
 check_roundtrip(): int {
-    wfd: sys.Fd, werr: Error = sys.open(PATH, sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC, u32(0x1A4))
+    mode: u32 = sys.S_IRUSR | sys.S_IWUSR | sys.S_IRGRP | sys.S_IROTH
+    wfd: sys.Fd, werr: Error = sys.open(PATH, sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC, mode)
 
     if werr != null {
         return 1
@@ -77,7 +78,7 @@ check_roundtrip(): int {
     }
 
     // The O_EXCL|O_CREAT pair fails on the existing file with EEXIST (17).
-    xfd: sys.Fd, xerr: Error = sys.open(PATH, sys.O_WRONLY | sys.O_CREAT | sys.O_EXCL, u32(0x1A4))
+    xfd: sys.Fd, xerr: Error = sys.open(PATH, sys.O_WRONLY | sys.O_CREAT | sys.O_EXCL, mode)
 
     if xerr == null || xerr.domain != typeid(sys.OpenErr) || xerr.code != 17 {
         return 10

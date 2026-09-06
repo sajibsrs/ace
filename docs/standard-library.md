@@ -340,7 +340,8 @@ import sys
 main(): int {
     fd: sys.Fd, err: Error = sys.open("/tmp/notes.txt",
                                       sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC,
-                                      u32(0x1A4))
+                                      sys.S_IRUSR | sys.S_IWUSR |
+                                      sys.S_IRGRP | sys.S_IROTH)
     if err != null {
         return 1
     }
@@ -373,8 +374,61 @@ main(): int {
   return the byte count as the operating system reported it — partial writes
   are legitimate results and are never retried here.
 - `close(fd: Fd): Error`.
+- `stat(path: string): (FileInfo, Error)` follows symbolic links and returns
+  byte size plus a `FileKind` of `unknown`, `regular`, `directory`, `symlink`,
+  or `other`.
+- `mkdir(path: string): Error` is the portable creation form. It requests all
+  ordinary permissions (`0777` on POSIX), after which the process umask chooses
+  the effective permissions. It creates one directory and does not create
+  missing parents.
+- `mkdir(path: string, mode: u32): Error` explicitly supplies Darwin/POSIX
+  creation permissions. This overload is target-specific rather than a claim
+  that POSIX mode bits model Windows ACLs.
+- `rename(old_path: string, new_path: string): Error` and
+  `unlink(path: string): Error` directly perform the corresponding filesystem
+  operation without recursion or retry.
 - `errno(): i32` reads the thread's raw errno. Query it immediately after a
   failed call; any intervening system call may overwrite it.
+
+Directory traversal keeps its buffer and cursor in a caller-owned `Dir` value:
+
+```ace
+dir: sys.Dir, err: Error = sys.open_dir("/tmp")
+if err != null {
+    return 1
+}
+name_storage: [256]u8
+name: mut []u8 = mut name_storage[0..256]
+done: bool = false
+for !done {
+    count: usize, kind: sys.FileKind, at_end: bool, read_err: Error = sys.readdir(mut dir, name)
+    if read_err != null {
+        sys.close_dir(mut dir)
+        return 2
+    }
+    done = at_end
+    if !done {
+        // The entry name is name[0..count]; no NUL byte is appended.
+    }
+}
+if sys.close_dir(mut dir) != null {
+    return 3
+}
+return 0
+```
+
+`readdir` skips `.` and `..` and returns values in the fixed order name byte
+count, kind, end flag, and `Error`. End is `(0, unknown, true, null)`. A kind
+may be `unknown`; use `stat` when classification is required. If the name
+buffer is too small, `ReadDirErr` reports `ERANGE`, leaves the entry pending,
+and writes no truncated name. Enumeration retains operating-system order.
+
+The call-site mark in `readdir(mut dir, name)` permits updating the caller's
+iteration state. It is independent of the type-position `mut` in
+`name: mut []u8`, which permits writing the supplied bytes. Likewise,
+`close_dir(mut dir)` closes the descriptor and replaces that caller's complete
+`Dir` value with canonical zero. Copying a `Dir` creates an unmanaged alias;
+closing one copy does not find or invalidate the others.
 
 Process arguments and raw environment entries are zero-copy string views:
 
@@ -409,11 +463,19 @@ specified yet.
 
 Flags are raw constants with the operating system's own values and spellings
 (`O_RDONLY`, `O_WRONLY`, `O_RDWR`, `O_NONBLOCK`, `O_APPEND`, `O_CREAT`,
-`O_TRUNC`, `O_EXCL`), composed with `|`. Permission bits are plain hex
-(`u32(0x1A4)` is `0644`).
+`O_TRUNC`, `O_EXCL`), composed with `|`. Explicit POSIX creation permissions
+use `S_IRWXU`, `S_IRUSR`, `S_IWUSR`, `S_IXUSR`, the corresponding `S_I*GRP`
+constants, and the corresponding `S_I*OTH` constants. They compose with `|`;
+for example, `S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH` requests `0644`.
+The process umask may remove requested bits. Windows permissions are ACL-based,
+so a future Windows target will keep the portable one-argument operation and
+carve its richer security surface separately rather than pretending these bits
+are universal.
 
-Each failing operation returns an error whose packed domain names the
-operation — `sys.OpenErr`, `sys.ReadErr`, `sys.WriteErr`, `sys.CloseErr` —
+Each failing operation returns an ordinary packed `Error` whose domain names
+the operation — `sys.OpenErr`, `sys.ReadErr`, `sys.WriteErr`, `sys.CloseErr`,
+`sys.StatErr`, `sys.MkdirErr`, `sys.RenameErr`, `sys.UnlinkErr`,
+`sys.OpenDirErr`, `sys.ReadDirErr`, or `sys.CloseDirErr` —
 so `err.domain == typeid(sys.ReadErr)` identifies what failed, and `err.code`
 is the errno captured at the failure:
 

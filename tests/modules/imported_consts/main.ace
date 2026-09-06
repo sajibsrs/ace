@@ -1,0 +1,17 @@
+/* Imported constants remain compile-time values in global initializers. */
+
+// expect-exit: 42
+
+import values: "./values.ace"
+
+forwarded_signed: const i32 = values.signed
+forwarded_unsigned: const u32 = values.unsigned
+forwarded_chain: const u32 = values.chained
+
+main(): int {
+    if forwarded_signed != -17 || forwarded_unsigned != 0x1234 ||
+       forwarded_chain != 0x1234 {
+        return 1
+    }
+    return 42
+}

@@ -18,7 +18,8 @@ ERR_PATH: string = "/tmp/ace_std_err"
 
 write_payload(path: string, text: string): int {
     fd: sys.Fd, err: Error = sys.open(path,
-        sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC, u32(0x1A4))
+        sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC,
+        sys.S_IRUSR | sys.S_IWUSR | sys.S_IRGRP | sys.S_IROTH)
 
     if err != null {
         return 1
