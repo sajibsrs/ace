@@ -158,7 +158,8 @@ exact types, and emits direct typed formatting calls. Those calls are
 exact-type specializations of the private per-shape generics in `std/fmt/module.ace`
 — `print_counted[T](value: T): int` for text, bytes, and decimal integers,
 `print_precision[T](value: T, precision: usize): int` for fixed floats, and
-`print_hex[T](value: T, uppercase: bool): int` for hexadecimal — selected by
+`print_radix[T](value: T, radix: u8, uppercase: bool): int` for binary, octal,
+and hexadecimal — selected by
 the format interpreter's concrete argument type (see
 [Functions](function.md#generic-specialization)). Runtime-created or
 runtime-selected formats are rejected. There is no runtime parser, argument
@@ -168,6 +169,8 @@ The initial conversions are deliberately small:
 
 - `%d` accepts `int` and writes signed decimal.
 - `%u` accepts `uint` or `usize` and writes unsigned decimal.
+- `%b` and `%o` accept `uint` or `usize` and write binary or octal digits
+  without a prefix or leading zeroes. Zero is written as `0`.
 - `%x` and `%X` accept `uint` or `usize` and write hexadecimal digits in the
   selected case, without a prefix.
 - `%f` accepts `f32` or `f64` and writes fixed decimal with six fractional
@@ -188,8 +191,9 @@ natural type: `int`, `uint`, `f64`, or `u8`; write `usize(...)` when that is
 the intended unsigned type.
 
 Width, padding, alignment, sign and alternate-form flags, dynamic `*`, and
-positional arguments are not implemented. The only modifier is the literal
-precision on `%f`.
+positional arguments are not implemented. Consequently `%b`, `%o`, `%x`, and
+`%X` cannot yet render fixed-width or zero-padded register values. The only
+modifier is the literal precision on `%f`.
 
 All runtime arguments are evaluated exactly once, in source order, before
 output begins. On success `printf` returns the complete byte count. Positive
@@ -759,9 +763,10 @@ Compare `error.domain` with the corresponding `typeid(poll.*Err)` and inspect
 
 ## Current limitations
 
-- `fmt.printf` supports only its documented initial conversions and literal
-  float precision; runtime formats, width/flags, dynamic precision, and
-  positional arguments are not implemented.
+- `fmt.printf` supports only its documented conversions and literal float
+  precision; runtime formats, width/flags, dynamic precision, and positional
+  arguments are not implemented. Binary/octal/hexadecimal output therefore
+  cannot yet request fixed width, zero padding, or a base prefix.
 - No output overloads for narrower integer widths; an explicit cast selects
   between the `int`, `uint`, and `usize` overloads.
 - `math` has no `sqrt`, floats, or libm binding.

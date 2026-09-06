@@ -2543,8 +2543,8 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn,
  * The checked printf lowering resolves each plan part's helper through exact-
  * type specialization lookup (Generics #10): the helper shapes are 'special-
  * ized' generics in std fmt — print_counted[T](value: T): int, print_preci-
- * sion[T](value: T, precision: usize): int, and print_hex[T](value: T, upper-
- * case: bool): int — and the format interpreter's concrete argument type
+ * sion[T](value: T, precision: usize): int, and print_radix[T](value: T,
+ * radix: u8, uppercase: bool): int — and the format interpreter's concrete argument type
  * selects the specialization whose type-argument tuple equals it. No name
  * composition remains.
  */
@@ -2577,7 +2577,8 @@ static int printf_expected_type(Ck* k, Node* arg, int kind, SType** out,
     SType* want = NULL;
     switch (kind) {
     case PF_SIGNED: want = st_prim(P_I64); *expected = "int"; break;
-    case PF_UNSIGNED: case PF_HEX_LOWER: case PF_HEX_UPPER:
+    case PF_UNSIGNED: case PF_BINARY: case PF_OCTAL:
+    case PF_HEX_LOWER: case PF_HEX_UPPER:
         if (t == T_UT_INT) {
             if (!ut_fits(k, arg, st_prim(P_U64))) return 0;
             arg->ty = t = st_prim(P_U64);
@@ -2719,6 +2720,8 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
         switch (format->str[i]) {
         case 'd': kind = PF_SIGNED; break;
         case 'u': kind = PF_UNSIGNED; break;
+        case 'b': kind = PF_BINARY; break;
+        case 'o': kind = PF_OCTAL; break;
         case 'x': kind = PF_HEX_LOWER; break;
         case 'X': kind = PF_HEX_UPPER; break;
         case 'f': kind = PF_FIXED; break;
@@ -2791,8 +2794,8 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
         const char* generic = "print_counted";
         SType* helper_arg[1] = { actual };
         switch (part->kind) {
-        case PF_HEX_LOWER: case PF_HEX_UPPER:
-            generic = "print_hex";
+        case PF_BINARY: case PF_OCTAL: case PF_HEX_LOWER: case PF_HEX_UPPER:
+            generic = "print_radix";
             break;
         case PF_FIXED:
             generic = "print_precision";

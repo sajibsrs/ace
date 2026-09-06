@@ -408,7 +408,7 @@ print_counted[T](value: T): int specialized
 
 print_precision[T](value: T, precision: usize): int specialized
 
-print_hex[T](value: T, uppercase: bool): int specialized
+print_radix[T](value: T, radix: u8, uppercase: bool): int specialized
 
 print_counted[string](text: string): int {
     return print(text)
@@ -431,14 +431,14 @@ print_counted[u8](value: u8): int {
     return write_bytes(out[0..1])
 }
 
-print_hex[uint](value: uint, uppercase: bool): int {
-    out: [16]u8
-    at: int = 16
+print_radix[uint](value: uint, radix: u8, uppercase: bool): int {
+    out: [64]u8
+    at: int = 64
     remaining: uint = value
 
-    for digit: int in 0 .. 16 {
+    for digit: int in 0 .. 64 {
         at -= 1
-        d: uint = remaining % 16
+        d: uint = remaining % uint(radix)
 
         if d < 10 {
             out[at] = u8(48 + d)
@@ -447,23 +447,23 @@ print_hex[uint](value: uint, uppercase: bool): int {
         } else {
             out[at] = u8(87 + d)
         }
-        remaining = remaining / 16
+        remaining = remaining / uint(radix)
 
         if remaining == 0 {
             break
         }
     }
-    return write_bytes(out[at..16])
+    return write_bytes(out[at..64])
 }
 
-print_hex[usize](value: usize, uppercase: bool): int {
-    out: [16]u8
-    at: int = 16
+print_radix[usize](value: usize, radix: u8, uppercase: bool): int {
+    out: [64]u8
+    at: int = 64
     remaining: usize = value
 
-    for digit: int in 0 .. 16 {
+    for digit: int in 0 .. 64 {
         at -= 1
-        d: usize = remaining % 16
+        d: usize = remaining % usize(radix)
 
         if d < 10 {
             out[at] = u8(48 + d)
@@ -472,13 +472,13 @@ print_hex[usize](value: usize, uppercase: bool): int {
         } else {
             out[at] = u8(87 + d)
         }
-        remaining = remaining / 16
+        remaining = remaining / usize(radix)
 
         if remaining == 0 {
             break
         }
     }
-    return write_bytes(out[at..16])
+    return write_bytes(out[at..64])
 }
 
 /*

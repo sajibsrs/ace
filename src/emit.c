@@ -2833,7 +2833,13 @@ static EV gen_printf_builtin(Em* e, Node* call) {
                 ld_reg(e, xreg(len), xreg(values[0].idx), 8, 8, 0);
                 cbz_(e, 1, xreg(len), 0, empty_success);
             }
-            if (part->kind == PF_HEX_LOWER || part->kind == PF_HEX_UPPER) {
+            if (part->kind == PF_BINARY || part->kind == PF_OCTAL ||
+                part->kind == PF_HEX_LOWER || part->kind == PF_HEX_UPPER) {
+                int radix = tmp_int(e);
+                uint64_t base = part->kind == PF_BINARY ? 2 :
+                                part->kind == PF_OCTAL ? 8 : 16;
+                load_imm(e, 0, xreg(radix), base);
+                values[nv++] = (EV){ CLS_INT, radix };
                 int upper = tmp_int(e);
                 load_imm(e, 0, xreg(upper), part->kind == PF_HEX_UPPER);
                 values[nv++] = (EV){ CLS_INT, upper };

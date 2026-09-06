@@ -111,6 +111,10 @@ current normative rules, and Git preserves patch-level detail.
   analysis validates exact argument types and builds a format plan; emission
   calls typed helpers directly, with no runtime parser, argument tags, reflection,
   allocation, or C variadic formatter.
+- Added `%b` binary and `%o` octal `fmt.printf` conversions for `uint` and
+  `usize`, generalizing hexadecimal's private helper into one fixed-buffer
+  unsigned-radix path. Prefixes, width, and zero padding remain explicit
+  additive work.
 - Implemented `str` character/string operations and explicit
   `str.parse[T]` specializations in pure Ace where practical, with libc float
   conversion isolated in its selected target layer. `char` remains the

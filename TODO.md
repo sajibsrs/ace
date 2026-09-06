@@ -107,6 +107,10 @@ remains uncarved and must begin with its ABI and memory-model foundations.
 - **Dynamic array and hash-map modules** [new] — composed from `mem` and
   explicit generics.
 - **`str.concat` / `str.join`** into caller storage [new].
+- **Fixed-width integer formatting** [additive] — width, zero padding, and base
+  prefixes for `fmt.printf`, especially fixed-width `%b`/`%o`/`%x` register
+  displays; carve consistently across integer conversions from a hardware
+  fixture rather than adding a binary-only modifier.
 - **`rune` + UTF-8 decode and `yarn`** [additive] — retain explicit decoding
   and ownership; cross-type byte equality and string-view conversion remain
   undecided.
