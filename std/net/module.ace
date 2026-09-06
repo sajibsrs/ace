@@ -18,6 +18,7 @@ pub ConnectErr: type = os.ConnectErr
 pub ReceiveErr: type = os.ReceiveErr
 pub SendErr: type = os.SendErr
 pub ResolveErr: type = os.ResolveErr
+pub LocalErr: type = os.LocalErr
 
 pub socket(kind: SocketKind): (Socket, Error) {
     result: Socket, err: Error = os.socket(kind)
@@ -51,6 +52,11 @@ pub accept(listener: Socket): (Socket, Address4, Error) {
 
 pub connect(sock: Socket, address: Address4): Error {
     return os.connect(sock, address)
+}
+
+pub local(sock: Socket): (Address4, Error) {
+    address: Address4, err: Error = os.local(sock)
+    return address, err
 }
 
 pub receive(sock: Socket, buffer: mut []u8): (int, Error) {

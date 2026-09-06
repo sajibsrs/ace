@@ -1,6 +1,6 @@
 /* Net selective fixture. */
 
-import Address4, ResolveErr, Socket, SocketKind, resolve4, send, socket from net
+import Address4, LocalErr, ResolveErr, Socket, SocketKind, local, resolve4, send, socket from net
 
 check(address: Address4, socket_value: Socket): int {
     if address.port == 0 {
@@ -10,6 +10,11 @@ check(address: Address4, socket_value: Socket): int {
 
     if err != null {
         return 1
+    }
+    bound: Address4, local_err: Error = local(socket_value)
+
+    if local_err != null && local_err.domain != typeid(LocalErr) {
+        return 3
     }
     return sent
 }

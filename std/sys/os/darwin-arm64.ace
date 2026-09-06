@@ -10,6 +10,13 @@
  * failed open. There is no named invalid constant.
  */
 pub Fd: distinct i32
+pub Process: distinct i32
+
+pub ProcessStatus: struct {
+    exited: bool,
+    code: int,
+    signal: int,
+}
 
 /* The three standard descriptors, valid from process start: standard input
  * (0), standard output (1), and standard error (2).
@@ -40,6 +47,9 @@ pub UnlinkErr: error
 pub OpenDirErr: error
 pub ReadDirErr: error
 pub CloseDirErr: error
+pub ForkErr: error
+pub WaitErr: error
+pub PipeErr: error
 
 pub FileKind: enum { unknown, regular, directory, symlink, other }
 
@@ -104,6 +114,9 @@ extern "c" {
     c_errno(): mut *i32 = "__error"
     c_clock_gettime_nsec_np(clk_id: i32): u64 = "clock_gettime_nsec_np"
     c_exit(status: i32) = "_exit"
+    c_fork(): i32 = "fork"
+    c_waitpid(pid: i32, status: mut *i32, options: i32): i32 = "waitpid"
+    c_pipe(fds: mut *i32): i32 = "pipe"
 }
 
 // open(2) flags: Darwin values and spellings, composed with `|`.
@@ -116,6 +129,10 @@ pub O_CREAT: const i32 = 0x0200
 pub O_TRUNC: const i32 = 0x0400
 pub O_EXCL: const i32 = 0x0800
 O_DIRECTORY: const i32 = 0x00100000
+
+// Retryable nonblocking-operation errno values on Darwin.
+pub EAGAIN: const i32 = 35
+pub EWOULDBLOCK: const i32 = EAGAIN
 
 // POSIX creation-permission bits for open(2) and mkdir(2).
 pub S_IRWXU: const u32 = 0x1C0
@@ -225,6 +242,50 @@ kind_from_dirent(kind: u8): FileKind {
 pub errno(): i32 {
     slot: mut *i32 = c_errno()
     return ~slot
+}
+
+pub fork(): (Process, Error) {
+    pid: i32 = c_fork()
+
+    if pid == -1 {
+        return Process(-1), ForkErr(errno())
+    }
+    return Process(pid), null
+}
+
+pub wait(process: Process): (ProcessStatus, Error) {
+    raw: i32 = 0
+
+    if i32(process) <= 0 {
+        errno_set(22)
+        zero: ProcessStatus = ProcessStatus {exited: false, code: 0, signal: 0}
+        return zero, WaitErr(errno())
+    }
+
+    if c_waitpid(i32(process), mut &raw, 0) == -1 {
+        zero: ProcessStatus = ProcessStatus {exited: false, code: 0, signal: 0}
+        return zero, WaitErr(errno())
+    }
+    signal: int = int(raw & 0x7f)
+
+    if signal == 0 {
+        status: ProcessStatus = ProcessStatus {
+            exited: true,
+            code: int((raw >> 8) & 0xff),
+            signal: 0,
+        }
+        return status, null
+    }
+    return ProcessStatus {exited: false, code: 0, signal: signal}, null
+}
+
+pub pipe(): (Fd, Fd, Error) {
+    fds: [2]i32 = [i32(0) : 2]
+
+    if c_pipe(mut &fds[0]) == -1 {
+        return Fd(-1), Fd(-1), PipeErr(errno())
+    }
+    return Fd(fds[0]), Fd(fds[1]), null
 }
 
 pub read(fd: Fd, buf: mut []u8): (int, Error) {

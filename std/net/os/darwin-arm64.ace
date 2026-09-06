@@ -31,6 +31,7 @@ pub ConnectErr: error
 pub ReceiveErr: error
 pub SendErr: error
 pub ResolveErr: error
+pub LocalErr: error
 
 DarwinAddress4: struct {
     length: u8,
@@ -72,6 +73,8 @@ extern "c" {
     c_listen(socket: i32, backlog: i32): i32 = "listen"
     c_accept(socket: i32, address: mut *DarwinAddress4, length: mut *u32): i32 = "accept"
     c_connect(socket: i32, address: *DarwinAddress4, length: u32): i32 = "connect"
+    c_getsockname(socket: i32, address: mut *DarwinAddress4,
+                  length: mut *u32): i32 = "getsockname"
     c_recv(socket: i32, buffer: mut *u8, length: usize, flags: i32): i64 = "recv"
     c_send(socket: i32, data: *u8, length: usize, flags: i32): i64 = "send"
     c_fcntl(socket: i32, command: i32, ...): i32 = "fcntl"
@@ -217,6 +220,22 @@ pub connect(sock: Socket, address: Address4): Error {
         return ConnectErr(sys.errno())
     }
     return null
+}
+
+pub local(sock: Socket): (Address4, Error) {
+    raw: DarwinAddress4 = DarwinAddress4 {
+        length: u8(0),
+        family: u8(0),
+        port: [u8(0) : 2],
+        ip: [u8(0) : 4],
+        zero: [u8(0) : 8],
+    }
+    length: u32 = SOCKADDR4_SIZE
+
+    if c_getsockname(i32(sock), mut &raw, mut &length) == -1 {
+        return zero_address4(), LocalErr(sys.errno())
+    }
+    return from_darwin(raw), null
 }
 
 pub receive(sock: Socket, buffer: mut []u8): (int, Error) {

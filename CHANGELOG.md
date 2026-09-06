@@ -122,6 +122,19 @@ current normative rules, and Git preserves patch-level detail.
   watch/unwatch, level-triggered read/write interest, error/hangup reporting,
   caller-owned event storage, and finite/infinite nanosecond waits. Darwin kqueue
   is private to the OS layer.
+- Proved nonblocking TCP server composition over `poll` with a forked loopback
+  echo fixture: the listener and accepted peer are configured explicitly,
+  readiness drives one-attempt accept/receive/send operations, would-block stays
+  caller-visible, partial progress is retained, and all descriptors are closed
+  explicitly. It exposed the need to query an OS-selected local endpoint.
+- Added allocation-free `sys.Process`, `fork`, and `wait` wrappers with decoded
+  exit/signal status, keeping process-control externs in the private Darwin OS
+  layer. Added `net.local` for querying an ephemeral bound endpoint; networking
+  fixtures now bind port zero instead of guessing ports from process IDs.
+- Added `sys.pipe` so descriptor-polling fixtures also use the public OS facade
+  instead of declaring a test-local C binding.
+- Exposed the target-defined `sys.EAGAIN` and `sys.EWOULDBLOCK` errno constants
+  so nonblocking callers do not embed platform numbers.
 - Standardized OS-specific stdlib organization as a public `module.ace` facade
   selecting `os/<target>.ace`; `fmt`, `net`, `poll`, `str`, and `sys` use the
   layout, and each target file implements its facade operations directly.
@@ -155,8 +168,8 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Current frontier
 
-The next established implementation proof is nonblocking echo followed by a
-multi-client chat server over `poll`. Checked/release modes, checked allocation
+The next established implementation proof is a multi-client chat server over
+`poll`. Checked/release modes, checked allocation
 tracking, additive networking, concurrency, fuller math/SIMD, and a second
 backend remain open; their status belongs in the `SPEC.md` Decision Queue and
 `TODO.md`, not in this history.

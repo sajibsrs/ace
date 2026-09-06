@@ -5,10 +5,6 @@
 import poll
 import sys
 
-extern "c" {
-    c_pipe(fds: mut *i32): i32 = "pipe"
-}
-
 has_error(err: Error, domain: typeid): bool {
     return err != null && err.domain == domain && err.code != 0
 }
@@ -26,14 +22,12 @@ main(): int {
         return 2
     }
 
-    raw_fds: [2]i32 = [i32(0) : 2]
+    read_fd: sys.Fd, write_fd: sys.Fd, pipe_err: Error = sys.pipe()
 
-    if c_pipe(mut &raw_fds[0]) == -1 {
+    if pipe_err != null {
         sys.close(sys.Fd(q))
         return 3
     }
-    read_fd: sys.Fd = sys.Fd(raw_fds[0])
-    write_fd: sys.Fd = sys.Fd(raw_fds[1])
 
     if poll.watch(q, read_fd, true, false) != null ||
        poll.watch(q, read_fd, true, false) != null ||

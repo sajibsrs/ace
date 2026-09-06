@@ -449,8 +449,8 @@ if [ -d tests/emit ]; then
             fail=1
         fi
         for symbol in _socket _setsockopt _fcntl _bind _listen _accept \
-                      _connect _recv _send _getaddrinfo _freeaddrinfo \
-                      _close ___error; do
+                      _connect _getsockname _recv _send _getaddrinfo \
+                      _freeaddrinfo _fork _waitpid _pipe _close ___error; do
             if ! printf '%s\n' "$net_undef" | grep -q "^$symbol$"; then
                 echo "FAIL: net object is missing Darwin boundary '$symbol'"
                 fail=1

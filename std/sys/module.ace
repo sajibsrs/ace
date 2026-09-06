@@ -4,6 +4,8 @@
 import os: "./os/darwin-arm64.ace"
 
 pub Fd: type = os.Fd
+pub Process: type = os.Process
+pub ProcessStatus: type = os.ProcessStatus
 
 pub OpenErr: type = os.OpenErr
 pub ReadErr: type = os.ReadErr
@@ -16,6 +18,9 @@ pub UnlinkErr: type = os.UnlinkErr
 pub OpenDirErr: type = os.OpenDirErr
 pub ReadDirErr: type = os.ReadDirErr
 pub CloseDirErr: type = os.CloseDirErr
+pub ForkErr: type = os.ForkErr
+pub WaitErr: type = os.WaitErr
+pub PipeErr: type = os.PipeErr
 
 pub FileKind: type = os.FileKind
 pub FileInfo: type = os.FileInfo
@@ -33,6 +38,9 @@ pub O_APPEND: const i32 = os.O_APPEND
 pub O_CREAT: const i32 = os.O_CREAT
 pub O_TRUNC: const i32 = os.O_TRUNC
 pub O_EXCL: const i32 = os.O_EXCL
+
+pub EAGAIN: const i32 = os.EAGAIN
+pub EWOULDBLOCK: const i32 = os.EWOULDBLOCK
 
 pub S_IRWXU: const u32 = os.S_IRWXU
 pub S_IRUSR: const u32 = os.S_IRUSR
@@ -88,6 +96,21 @@ pub exit(code: int) {
 
 pub errno(): i32 {
     return os.errno()
+}
+
+pub fork(): (Process, Error) {
+    process: Process, err: Error = os.fork()
+    return process, err
+}
+
+pub wait(process: Process): (ProcessStatus, Error) {
+    status: ProcessStatus, err: Error = os.wait(process)
+    return status, err
+}
+
+pub pipe(): (Fd, Fd, Error) {
+    input: Fd, output: Fd, err: Error = os.pipe()
+    return input, output, err
 }
 
 pub read(fd: Fd, buf: mut []u8): (int, Error) {

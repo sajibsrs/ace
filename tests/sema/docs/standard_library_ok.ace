@@ -2,7 +2,8 @@
  * Mirrors docs/standard-library.md mem, fmt, sys, net, and str examples (sema
  * check only; runtime coverage lives in tests/emit/fmt/*.ace,
  * tests/emit/sys/main.ace, tests/emit/sys/standard_descriptors.ace,
- * tests/emit/sys/time.ace, tests/emit/net/main.ace,
+ * tests/emit/sys/time.ace, tests/emit/sys/process_control.ace,
+ * tests/emit/net/main.ace,
  * tests/emit/net/poll.ace, tests/emit/allocation/typed.ace, and tests/emit/strings/*.ace).
  */
 
@@ -12,6 +13,9 @@ import net
 import poll
 import str
 import sys
+
+WOULD_BLOCK: const i32 = sys.EWOULDBLOCK
+TRY_AGAIN: const i32 = sys.EAGAIN
 
 str_examples(): int {
     at: usize, found: bool = str.find("hello world", "world")
@@ -198,6 +202,24 @@ time_awake_example(): int {
     return 0
 }
 
+process_example(): int {
+    process: sys.Process, fork_err: Error = sys.fork()
+
+    if fork_err != null {
+        return 1
+    }
+
+    if process == 0 {
+        sys.exit(0)
+    }
+    status: sys.ProcessStatus, wait_err: Error = sys.wait(process)
+
+    if wait_err != null || !status.exited {
+        return 2
+    }
+    return status.code
+}
+
 net_example(): int {
     sock: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
 
@@ -205,13 +227,19 @@ net_example(): int {
         return 1
     }
     ip: [4]u8 = [u8(127), u8(0), u8(0), u8(1)]
-    address: net.Address4 = net.Address4 {ip: ip, port: u16(8080)}
+    address: net.Address4 = net.Address4 {ip: ip, port: u16(0)}
 
     if net.set_reuse_address(sock, true) != null ||
        net.bind(sock, address) != null ||
        net.listen(sock, usize(128)) != null {
         sys.close(sock)
-        return 2
+       return 2
+    }
+    local: net.Address4, local_err: Error = net.local(sock)
+
+    if local_err != null || local.port == 0 {
+        sys.close(sock)
+        return 4
     }
 
     if sys.close(sock) != null {

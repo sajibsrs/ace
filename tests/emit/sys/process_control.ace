@@ -1,0 +1,32 @@
+/* Public process creation, waiting, status decoding, and error coverage. */
+
+// expect-exit: 0
+
+import sys
+
+main(): int {
+    process: sys.Process, fork_err: Error = sys.fork()
+
+    if fork_err != null || process == -1 {
+        return 1
+    }
+
+    if process == 0 {
+        sys.exit(37)
+    }
+
+    status: sys.ProcessStatus, wait_err: Error = sys.wait(process)
+
+    if wait_err != null || !status.exited || status.code != 37 ||
+       status.signal != 0 {
+        return 2
+    }
+    status, wait_err = sys.wait(sys.Process(-1))
+
+    if wait_err == null || wait_err.domain != typeid(sys.WaitErr) ||
+       wait_err.code != 22 || status.exited || status.code != 0 ||
+       status.signal != 0 {
+        return 3
+    }
+    return 0
+}

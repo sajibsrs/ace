@@ -451,6 +451,21 @@ C-runtime exit handlers. The operating system determines which status bits a
 parent process observes. Use it for deliberate CLI termination; `panic` instead
 reports a broken invariant best-effort and aborts with `SIGABRT`.
 
+`sys.fork(): (Process, Error)` duplicates the current process once. The parent
+receives the child handle, the child receives `Process(0)`, and failure returns
+`Process(-1)` with `ForkErr`. Because execution continues in both processes,
+callers branch on the returned handle explicitly. `sys.wait(process)` blocks
+for that exact positive child handle and returns
+`ProcessStatus {exited, code, signal}`. Zero and negative handles fail with
+`WaitErr`; they never acquire process-group or any-child meanings. Normal
+exit sets `exited` and `code`; signal termination clears `exited` and sets
+`signal`. Failure returns canonical-zero status with `WaitErr`. Neither
+operation retries interruption, allocates, or closes inherited descriptors.
+
+`sys.pipe(): (Fd, Fd, Error)` creates a unidirectional byte pipe and returns
+the read end followed by the write end. Failure returns `Fd(-1)` for both with
+`PipeErr`. The caller closes both descriptors explicitly.
+
 `arg(0)` is the program invocation name. `arg(index)` requires
 `index < argc()`, and `env(index)` requires `index < envc()`. These are the
 ordinary sequence bounds preconditions: future checked builds diagnose a
@@ -472,10 +487,16 @@ so a future Windows target will keep the portable one-argument operation and
 carve its richer security surface separately rather than pretending these bits
 are universal.
 
+`EAGAIN` and `EWOULDBLOCK` are the target-defined errno values for retryable
+nonblocking operations. They are equal on Darwin, but both standard spellings
+are exported so code can name the condition described by its operation instead
+of embedding a platform number.
+
 Each failing operation returns an ordinary packed `Error` whose domain names
 the operation — `sys.OpenErr`, `sys.ReadErr`, `sys.WriteErr`, `sys.CloseErr`,
 `sys.StatErr`, `sys.MkdirErr`, `sys.RenameErr`, `sys.UnlinkErr`,
-`sys.OpenDirErr`, `sys.ReadDirErr`, or `sys.CloseDirErr` —
+`sys.OpenDirErr`, `sys.ReadDirErr`, `sys.CloseDirErr`, `sys.ForkErr`, or
+`sys.WaitErr`, or `sys.PipeErr` —
 so `err.domain == typeid(sys.ReadErr)` identifies what failed, and `err.code`
 is the errno captured at the failure:
 
@@ -559,8 +580,8 @@ main(): int {
 `Address4: struct { ip: [4]u8, port: u16 }` stores IP octets in ordinary
 textual order and the port in host order. Its canonical zero is
 `0.0.0.0:0`, usable as the wildcard address with an OS-selected port.
-Parsing, formatting, IPv6, and local/peer address queries are not part of this
-initial surface.
+Parsing, formatting, IPv6, and peer-address queries are not part of this initial
+surface.
 
 The core socket operations each perform one explicit operation and never
 allocate, buffer, retry, close, or replace a socket on failure:
@@ -576,6 +597,9 @@ allocate, buffer, retry, close, or replace a socket on failure:
   socket. Failure returns `Socket(-1)` and canonical-zero `Address4`.
 - `connect(socket, Address4): Error` makes one connection attempt without
   retry, cleanup, or configuration.
+- `local(socket): (Address4, Error)` queries the socket's current local
+  endpoint without changing it. This exposes the assigned port after binding
+  port zero; failure returns canonical-zero `Address4` with `LocalErr`.
 - `receive(socket, buffer: mut []u8): (int, Error)` performs one receive.
   Partial counts are returned as-is; zero with null error is orderly peer
   shutdown.
@@ -612,8 +636,9 @@ resolution, caching, and resolver-policy controls remain future improvements.
 Every network error is last and null on success. The operation-specific public
 domains are `SocketErr`, `SetReuseAddressErr`, `SetReusePortErr`,
 `SetNonblockingErr`, `BindErr`, `ListenErr`, `AcceptErr`, `ConnectErr`,
-`ReceiveErr`, `SendErr`, and `ResolveErr`. Compare `error.domain` with the
-corresponding `typeid(net.*Err)`. For socket-operation errors, `error.code` is
+`ReceiveErr`, `SendErr`, `ResolveErr`, and `LocalErr`. Compare `error.domain`
+with the corresponding `typeid(net.*Err)`. For socket-operation errors,
+`error.code` is
 the captured errno; resolver failures preserve the direct resolver status code.
 Closing uses `sys.close` and therefore
 retains `sys.CloseErr`.
@@ -704,6 +729,13 @@ A timeout of `0` polls without blocking. `poll.wait_forever` waits without a
 timeout; every other value is a finite nanosecond duration. An interrupted
 wait returns `WaitErr`; it is never restarted privately. A successful zero
 count means that the timeout expired or a poll found no readiness.
+
+The executable nonblocking echo fixture in `tests/emit/net/nonblocking_echo.ace`
+demonstrates the intended server composition: watch a nonblocking listener for
+readability, accept one peer per ready attempt, configure that peer explicitly,
+and replace its read/write interest as buffered progress changes. Would-block
+remains an ordinary operation error, and partial receive/send counts remain the
+application's state; neither module owns buffering or retry policy.
 
 The public domains are `QueueErr`, `WatchErr`, `UnwatchErr`, and `WaitErr`.
 Compare `error.domain` with the corresponding `typeid(poll.*Err)` and inspect

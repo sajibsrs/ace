@@ -6,12 +6,6 @@ import mem
 import net
 import sys
 
-extern "c" {
-    c_fork(): i32 = "fork"
-    c_getpid(): i32 = "getpid"
-    c_waitpid(pid: i32, status: mut *i32, options: i32): i32 = "waitpid"
-}
-
 loopback(port: u16): net.Address4 {
     return net.Address4 {ip: [127, 0, 0, 1], port: port}
 }
@@ -67,6 +61,13 @@ check_failures(): int {
     if !check_error(net.connect(invalid, loopback(u16(1))),
                     typeid(net.ConnectErr)) {
         return 8
+    }
+    local: net.Address4, local_err: Error = net.local(invalid)
+
+    if local.ip[0] != 0 || local.ip[1] != 0 || local.ip[2] != 0 ||
+       local.ip[3] != 0 || local.port != 0 ||
+       !check_error(local_err, typeid(net.LocalErr)) {
+        return 15
     }
 
     bytes: [1]u8 = [0]
@@ -180,36 +181,30 @@ main(): int {
 
     listener: net.Socket = net.Socket(-1)
     selected: u16 = 0
-    start: int = 40000 + int(c_getpid()) % 20000
+    err: Error
+    listener, err = net.socket(net.SocketKind.tcp)
 
-    for candidate: int in start .. start + 128 {
-        current: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
-
-        if err != null {
-            return 20
-        }
-
-        if net.set_reuse_address(current, true) != null ||
-           net.set_reuse_address(current, false) != null ||
-           net.set_reuse_address(current, true) != null ||
-           net.set_reuse_port(current, true) != null ||
-           net.set_reuse_port(current, false) != null {
-            sys.close(current)
-            return 21
-        }
-        selected = u16(candidate)
-        err = net.bind(current, loopback(selected))
-
-        if err == null {
-            listener = current
-            break
-        }
-        sys.close(current)
+    if err != null {
+        return 20
     }
 
-    if listener == -1 {
+    if net.set_reuse_address(listener, true) != null ||
+       net.set_reuse_address(listener, false) != null ||
+       net.set_reuse_address(listener, true) != null ||
+       net.set_reuse_port(listener, true) != null ||
+       net.set_reuse_port(listener, false) != null ||
+       net.bind(listener, loopback(u16(0))) != null {
+        sys.close(listener)
+        return 21
+    }
+    local: net.Address4
+    local, err = net.local(listener)
+
+    if err != null || local.port == 0 {
+        sys.close(listener)
         return 22
     }
+    selected = local.port
 
     if net.set_nonblocking(listener, true) != null ||
        net.set_nonblocking(listener, false) != null {
@@ -228,19 +223,19 @@ main(): int {
         return 25
     }
 
-    pid: i32 = c_fork()
+    process: sys.Process, fork_err: Error = sys.fork()
 
-    if pid == -1 {
+    if fork_err != null || process == -1 {
         sys.close(listener)
         return 26
     }
 
-    if pid == 0 {
+    if process == 0 {
         code: int = child(selected)
         sys.exit(code)
     }
 
-    peer: net.Socket, peer_address: net.Address4, err: Error = net.accept(listener)
+    peer: net.Socket, peer_address: net.Address4, err = net.accept(listener)
 
     if err != null || peer == -1 {
         sys.close(listener)
@@ -276,9 +271,9 @@ main(): int {
         return 31
     }
 
-    status: i32 = 0
+    status: sys.ProcessStatus, wait_err: Error = sys.wait(process)
 
-    if c_waitpid(pid, mut &status, 0) != pid || status != 0 {
+    if wait_err != null || !status.exited || status.code != 0 {
         return 32
     }
     return 0

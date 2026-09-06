@@ -1,0 +1,246 @@
+/* Nonblocking TCP echo over the allocation-free poll queue. */
+
+// expect-exit: 0
+
+import mem
+import net
+import poll
+import sys
+
+loopback(port: u16): net.Address4 {
+    return net.Address4 {ip: [127, 0, 0, 1], port: port}
+}
+
+close_all(q: poll.Queue, listener: net.Socket, peer: net.Socket) {
+    if peer != -1 {
+        poll.unwatch(q, peer)
+        sys.close(peer)
+    }
+    poll.unwatch(q, listener)
+    sys.close(listener)
+    sys.close(sys.Fd(q))
+}
+
+client(port: u16): int {
+    sock: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
+
+    if err != null {
+        return 1
+    }
+
+    if net.connect(sock, loopback(port)) != null {
+        sys.close(sock)
+        return 2
+    }
+
+    request: string = "nonblocking echo"
+    sent: usize = 0
+
+    for sent < len(request) {
+        count: int, send_err: Error = net.send(sock, request[sent..len(request)])
+
+        if send_err != null || count <= 0 {
+            sys.close(sock)
+            return 3
+        }
+        sent += usize(count)
+    }
+
+    storage: [16]u8 = [u8(0) : 16]
+    received: usize = 0
+
+    for received < len(request) {
+        view: mut []u8 = mut storage[received..len(request)]
+        count: int, receive_err: Error = net.receive(sock, view)
+
+        if receive_err != null || count <= 0 {
+            sys.close(sock)
+            return 4
+        }
+        received += usize(count)
+    }
+
+    if !mem.equal(storage[0..len(request)], request) {
+        sys.close(sock)
+        return 5
+    }
+
+    if sys.close(sock) != null {
+        return 6
+    }
+    return 0
+}
+
+main(): int {
+    listener: net.Socket = net.Socket(-1)
+    selected: u16 = 0
+    listener_err: Error
+    listener, listener_err = net.socket(net.SocketKind.tcp)
+
+    if listener_err != null {
+        return 10
+    }
+
+    if net.set_reuse_address(listener, true) != null ||
+       net.bind(listener, loopback(u16(0))) != null {
+        sys.close(listener)
+        return 11
+    }
+    local: net.Address4
+    local, listener_err = net.local(listener)
+
+    if listener_err != null || local.port == 0 {
+        sys.close(listener)
+        return 12
+    }
+    selected = local.port
+
+    if net.listen(listener, usize(8)) != null {
+        sys.close(listener)
+        return 17
+    }
+
+    if net.set_nonblocking(listener, true) != null {
+        sys.close(listener)
+        return 18
+    }
+
+    /* A nonblocking accept before readiness performs one attempt and exposes
+     * would-block through the existing operation error and raw errno.
+     */
+    absent: net.Socket, ignored: net.Address4, accept_err: Error = net.accept(listener)
+
+    if absent != -1 || accept_err == null ||
+       accept_err.domain != typeid(net.AcceptErr) ||
+       accept_err.code != sys.EWOULDBLOCK {
+        sys.close(listener)
+        return 13
+    }
+
+    q: poll.Queue, queue_err: Error = poll.queue()
+
+    if queue_err != null || q == -1 {
+        sys.close(listener)
+        return 14
+    }
+
+    if poll.watch(q, listener, true, false) != null {
+        sys.close(listener)
+        sys.close(sys.Fd(q))
+        return 15
+    }
+
+    process: sys.Process, fork_err: Error = sys.fork()
+
+    if fork_err != null || process == -1 {
+        close_all(q, listener, net.Socket(-1))
+        return 16
+    }
+
+    if process == 0 {
+        sys.close(sys.Fd(q))
+        sys.close(listener)
+        code: int = client(selected)
+        sys.exit(code)
+    }
+
+    zero: poll.Event = poll.Event {
+        fd: sys.Fd(0),
+        readable: false,
+        writable: false,
+        error: false,
+        hangup: false,
+    }
+    event_storage: [4]poll.Event = [zero : 4]
+    events: mut []poll.Event = mut event_storage[0..4]
+    peer: net.Socket = net.Socket(-1)
+    buffer: [16]u8 = [u8(0) : 16]
+    received: usize = 0
+    sent: usize = 0
+    done: bool = false
+    failure: int = 0
+
+    for !done && failure == 0 {
+        count: usize, wait_err: Error = poll.wait(q, events, u64(1000000000))
+
+        if wait_err != null || count == 0 {
+            failure = 20
+            break
+        }
+
+        for index: usize in 0 .. count {
+            event: poll.Event = events[index]
+
+            if event.fd == listener && event.readable {
+                accepted: net.Socket, address: net.Address4, err: Error = net.accept(listener)
+
+                if err != null || accepted == -1 || address.ip[0] != 127 ||
+                   net.set_nonblocking(accepted, true) != null ||
+                   poll.watch(q, accepted, true, false) != null {
+                    if accepted != -1 {
+                        sys.close(accepted)
+                    }
+                    failure = 21
+                    break
+                }
+                peer = accepted
+                poll.unwatch(q, listener)
+            } else if peer != -1 && event.fd == peer {
+                if event.readable && received < len(buffer) {
+                    view: mut []u8 = mut buffer[received..len(buffer)]
+                    amount: int, err: Error = net.receive(peer, view)
+
+                    if err != null || amount <= 0 {
+                        failure = 22
+                        break
+                    }
+                    received += usize(amount)
+
+                    if received == len(buffer) {
+                        probe_storage: [1]u8 = [u8(0)]
+                        probe: mut []u8 = mut probe_storage[0..1]
+                        probe_count: int, probe_err: Error = net.receive(peer, probe)
+
+                        if probe_count != 0 || probe_err == null ||
+                           probe_err.domain != typeid(net.ReceiveErr) ||
+                           probe_err.code != sys.EWOULDBLOCK {
+                            failure = 23
+                            break
+                        }
+
+                        if poll.watch(q, peer, false, true) != null {
+                            failure = 25
+                            break
+                        }
+                    }
+                }
+
+                if event.writable && sent < received {
+                    amount: int, err: Error = net.send(peer, buffer[sent..received])
+
+                    if err != null || amount <= 0 {
+                        failure = 24
+                        break
+                    }
+                    sent += usize(amount)
+
+                    if sent == len(buffer) {
+                        done = true
+                    }
+                }
+            }
+        }
+    }
+
+    close_all(q, listener, peer)
+    status: sys.ProcessStatus, wait_err: Error = sys.wait(process)
+
+    if wait_err != null || !status.exited || status.code != 0 {
+        return 30
+    }
+
+    if failure != 0 {
+        return failure
+    }
+    return 0
+}
