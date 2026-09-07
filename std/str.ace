@@ -11,8 +11,8 @@
 
 import mem
 
-@when(target == "darwin-arm64")
-import os: "./os/darwin-arm64.ace"
+import decimal: "./internal/float_decimal.ace"
+import float_parse: "./internal/float_parse.ace"
 
 /* First occurrence of needle: the byte index and whether it was found; an
  * empty string needle is found at zero, and absence returns canonical zero. */
@@ -319,13 +319,11 @@ pub format(destination: mut []u8, value: f64): (usize, bool) {
         return n, ok
     }
     digits: [24]u8
-    probe: [32]u8
     dv: mut []u8 = mut digits[0..17]
-    pv: mut []u8 = mut probe[0..32]
-    count: int, decpt: i32 = shortest_digits(mag, 17, false, dv, pv)
+    converted: decimal.Decimal = decimal.binary64(mag, dv)
     out: [48]u8
     view: mut []u8 = mut out[0..48]
-    n: usize = render_float(negative, dv, count, decpt, view)
+    n: usize = render_float(negative, dv, converted.count, converted.point, view)
     n2: usize, ok: bool = store_bytes(destination, out[0..n])
     return n2, ok
 }
@@ -365,16 +363,11 @@ pub format(destination: mut []u8, value: f32): (usize, bool) {
         return n, ok
     }
     digits: [24]u8
-    probe: [32]u8
-    /* f32 -> f64 is exact, so correctly rounded digits of the widened value
-     * are correctly rounded digits of the f32 itself; the round trip is
-     * checked against the narrow type through strtof. */
     dv: mut []u8 = mut digits[0..9]
-    pv: mut []u8 = mut probe[0..32]
-    count: int, decpt: i32 = shortest_digits(f64(mag), 9, true, dv, pv)
+    converted: decimal.Decimal = decimal.binary32(mag, dv)
     out: [48]u8
     view: mut []u8 = mut out[0..48]
-    n: usize = render_float(negative, dv, count, decpt, view)
+    n: usize = render_float(negative, dv, converted.count, converted.point, view)
     n2: usize, ok: bool = store_bytes(destination, out[0..n])
     return n2, ok
 }
@@ -697,8 +690,7 @@ exponent_shape(text: string, at: usize): bool {
 
 /* Admits exactly the ordinary decimal/scientific spellings plus the exact
  * non-finite words fmt writes — no whitespace, plus sign, hex form, or
- * extended names — so the C scanner behind the float helpers can never
- * accept anything this language surface rejects. */
+ * extended names — before the native exact converter receives the text. */
 float_literal_shape(text: string): bool {
     n: usize = len(text)
 
@@ -742,128 +734,25 @@ float_literal_shape(text: string): bool {
     return digits > 0
 }
 
-/* Copies the text into a NUL-terminated scratch buffer for the C scanner. */
-terminate(text: string, buf: mut []u8): bool {
-    if len(text) + 1 > len(buf) {
-        return false
-    }
-
-    for i: usize in 0 .. len(text) {
-        buf[i] = text[i]
-    }
-    buf[len(text)] = 0
-    return true
-}
-
 pub parse[f64](text: string): (f64, bool) {
-    zero: f64 = 0.0
-
     if !float_literal_shape(text) {
         return 0.0, false
     }
-    buf: [512]u8 = [0 : 512]
-    scratch: mut []u8 = mut buf[0..512]
-
-    if !terminate(text, scratch) {
-        return 0.0, false
-    }
-    value: f64 = os.strtod(&buf[0], null)
-
-    /* Overflow reaches the scanner as infinity; only a spelled infinity may
-     * come back as one. Underflow to signed zero succeeds. */
-    if value == value && value - value != zero &&
-       !mem.equal(text, "inf") && !mem.equal(text, "-inf") {
-        return 0.0, false
-    }
-    return value, true
+    parsed: float_parse.Parsed64 = float_parse.binary64(text)
+    return parsed.value, parsed.ok
 }
 
 pub parse[f32](text: string): (f32, bool) {
-    zero: f32 = 0.0
-
     if !float_literal_shape(text) {
         return 0.0, false
     }
-    buf: [512]u8 = [0 : 512]
-    scratch: mut []u8 = mut buf[0..512]
-
-    if !terminate(text, scratch) {
-        return 0.0, false
-    }
-    value: f32 = os.strtof(&buf[0], null)
-
-    if value == value && f64(value) - f64(value) != f64(zero) &&
-       !mem.equal(text, "inf") && !mem.equal(text, "-inf") {
-        return 0.0, false
-    }
-    return value, true
+    parsed: float_parse.Parsed32 = float_parse.binary32(text)
+    return parsed.value, parsed.ok
 }
 
 /* True for exactly the ASCII whitespace bytes 0x09..0x0D and 0x20. */
 space_byte(c: u8): bool {
     return (c >= 9 && c <= 13) || c == 32
-}
-
-/* The shortest digit count whose correctly rounded decimal form parses back
- * to the exact value, through libSystem ecvt (correctly rounded digits) and
- * strtod/strtof (the round-trip check; strtof parses f32 directly, with no
- * double-rounding detour). ecvt returns internal storage that a later call
- * may overwrite, so the digits are copied out immediately. The digits are
- * the integer form: value equals digits x 10^(decpt - count). */
-shortest_digits(mag: f64, max: int, narrow: bool, digits: mut []u8, probe: mut []u8): (int, i32) {
-    decpt: i32 = 0
-    unused: i32 = 0
-    count: int = max
-    limit: int = max + 1
-
-    for p: int in 1 .. limit {
-        src: *u8 = os.ecvt(mag, i32(p), mut &decpt, mut &unused)
-        os.memcpy(&digits[0], src, usize(p))
-
-        for i: int in 0 .. p {
-            probe[i] = digits[i]
-        }
-        exp: i32 = decpt - i32(p)
-        q: int = p
-        probe[p] = u8(101)
-        q += 1
-        e: i32 = exp
-
-        if e < 0 {
-            probe[q] = u8(45)
-            q += 1
-            e = 0 - e
-        }
-        hi: i32 = e / 100
-        mid: i32 = (e / 10) % 10
-        lo: i32 = e % 10
-
-        if hi != 0 {
-            probe[q] = u8(48 + hi)
-            q += 1
-            probe[q] = u8(48 + mid)
-            q += 1
-        } else if mid != 0 {
-            probe[q] = u8(48 + mid)
-            q += 1
-        }
-        probe[q] = u8(48 + lo)
-        q += 1
-        probe[q] = u8(0)
-
-        if narrow {
-            if os.strtof(&probe[0], null) == f32(mag) {
-                count = p
-                break
-            }
-        } else {
-            if os.strtod(&probe[0], null) == mag {
-                count = p
-                break
-            }
-        }
-    }
-    return count, decpt
 }
 
 /* Renders the canonical notation into out: decimal for scientific exponents

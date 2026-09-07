@@ -1,0 +1,5 @@
+import shared: "../internal/shared.ace"
+
+pub second(): int {
+    return shared.value() + 2
+}

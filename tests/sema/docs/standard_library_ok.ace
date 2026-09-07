@@ -9,6 +9,7 @@
  * and tests/emit/strings/*.ace).
  */
 
+import bits
 import fmt
 import mem
 import net
@@ -18,6 +19,22 @@ import sys
 
 WOULD_BLOCK: const i32 = sys.EWOULDBLOCK
 TRY_AGAIN: const i32 = sys.EAGAIN
+
+bits_examples(): int {
+    raw: u32 = bits.from_float(f32(1.0))
+    restore: (u32): f32 = bits.to_float
+
+    if bits.from_float(restore(raw)) != raw {
+        return 1
+    }
+    return 0
+}
+
+fast_inverse_sqrt_seed(value: f32): f32 {
+    raw: u32 = bits.from_float(value)
+    raw = u32(0x5F3759DF) - (raw >> 1)
+    return bits.to_float(raw)
+}
 
 str_examples(): int {
     at: usize, found: bool = str.find("hello world", "world")
@@ -333,6 +350,11 @@ main(): int {
         if len(entry) == 0 {
             return 62
         }
+    }
+    code = bits_examples()
+
+    if code != 0 {
+        return 10 + code
     }
     code = print_examples()
 

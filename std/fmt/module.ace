@@ -2,6 +2,7 @@
 
 @when(target == "darwin-arm64")
 import os: "./os/darwin-arm64.ace"
+import decimal: "../internal/float_decimal.ace"
 
 pub print(text: string): int {
     if len(text) == 0 {
@@ -250,70 +251,6 @@ format_float(negative: bool, digits: []u8, count: int, decpt: i32): int {
     return write_bytes(out[0..at])
 }
 
-/*
- * The shortest digit count whose correctly rounded decimal form parses back
- * to the exact value, through libSystem ecvt (correctly rounded digits) and
- * strtod/strtof (the round-trip check; strtof parses f32 directly, with no
- * double-rounding detour). ecvt returns internal storage that a later call may
- * overwrite, so the digits are copied out immediately. The digits are the
- * integer form: value equals digits x 10^(decpt - count).
- */
-shortest_digits(mag: f64, max: int, narrow: bool, digits: mut []u8, probe: mut []u8): (int, i32) {
-    decpt: i32 = 0
-    unused: i32 = 0
-    count: int = max
-    limit: int = max + 1
-
-    for p: int in 1 .. limit {
-        src: *u8 = os.ecvt(mag, i32(p), mut &decpt, mut &unused)
-        os.memcpy(&digits[0], src, usize(p))
-
-        for i: int in 0 .. p {
-            probe[i] = digits[i]
-        }
-        exp: i32 = decpt - i32(p)
-        q: int = p
-        probe[p] = u8(101)
-        q += 1
-        e: i32 = exp
-
-        if e < 0 {
-            probe[q] = u8(45)
-            q += 1
-            e = 0 - e
-        }
-        hi: i32 = e / 100
-        mid: i32 = (e / 10) % 10
-        lo: i32 = e % 10
-
-        if hi != 0 {
-            probe[q] = u8(48 + hi)
-            q += 1
-            probe[q] = u8(48 + mid)
-            q += 1
-        } else if mid != 0 {
-            probe[q] = u8(48 + mid)
-            q += 1
-        }
-        probe[q] = u8(48 + lo)
-        q += 1
-        probe[q] = u8(0)
-
-        if narrow {
-            if os.strtof(&probe[0], null) == f32(mag) {
-                count = p
-                break
-            }
-        } else {
-            if os.strtod(&probe[0], null) == mag {
-                count = p
-                break
-            }
-        }
-    }
-    return count, decpt
-}
-
 pub print(value: f64): int {
     one: f64 = 1.0
     zero: f64 = 0.0
@@ -346,11 +283,9 @@ pub print(value: f64): int {
         return print("0")
     }
     digits: [24]u8
-    probe: [32]u8
     dv: mut []u8 = mut digits[0..17]
-    pv: mut []u8 = mut probe[0..32]
-    count: int, decpt: i32 = shortest_digits(mag, 17, false, dv, pv)
-    return format_float(negative, dv, count, decpt)
+    converted: decimal.Decimal = decimal.binary64(mag, dv)
+    return format_float(negative, dv, converted.count, converted.point)
 }
 
 pub print(value: f32): int {
@@ -385,16 +320,9 @@ pub print(value: f32): int {
         return print("0")
     }
     digits: [24]u8
-    probe: [32]u8
     dv: mut []u8 = mut digits[0..9]
-    pv: mut []u8 = mut probe[0..32]
-    /*
-     * f32 -> f64 is exact, so correctly rounded digits of the widened value are
-     * correctly rounded digits of the f32 itself; the round trip is checked
-     * against the narrow type through strtof.
-     */
-    count: int, decpt: i32 = shortest_digits(f64(mag), 9, true, dv, pv)
-    return format_float(negative, dv, count, decpt)
+    converted: decimal.Decimal = decimal.binary32(mag, dv)
+    return format_float(negative, dv, converted.count, converted.point)
 }
 
 /*
@@ -481,127 +409,74 @@ print_radix[usize](value: usize, radix: u8, uppercase: bool): int {
     return write_bytes(out[at..64])
 }
 
-/*
- * Fixed decimal through libSystem fcvt. The returned digits are copied into
- * the declared output buffer before any later conversion can reuse fcvt's
- * internal storage. Precision zero is rounded explicitly to nearest/even
- * because Darwin fcvt deliberately returns no digits for ndigit == 0.
- */
-print_precision[f64](value: f64, precision: usize): int {
-    zero: f64 = 0.0
-    one: f64 = 1.0
-
-    if value != value {
+write_fixed(value: decimal.Decimal, digits: []u8, precision: usize): int {
+    if value.kind == decimal.Kind.nan {
         return print_counted[string]("nan")
     }
 
-    if value - value != zero {
-        if value < zero {
+    if value.kind == decimal.Kind.infinity {
+        if value.negative {
             return print_counted[string]("-inf")
         }
         return print_counted[string]("inf")
     }
-
-    negative: bool = value < zero
-
-    if value == zero {
-        if one / value < zero {
-            negative = true
-        }
-    }
-    mag: f64 = value
-
-    if negative {
-        mag = zero - value
-    }
-
     out: [640]u8
     at: int = 0
 
-    if negative {
+    if value.negative {
         out[at] = u8(45)
         at += 1
     }
+    point: int = int(value.point)
     places: int = int(precision)
-    decpt: i32 = 0
-    unused_sign: i32 = 0
-    src: *u8
 
-    if places == 0 {
-        whole: f64 = os.floor(mag)
-        fraction: f64 = mag - whole
-        half: f64 = 0.5
-
-        if fraction > half {
-            whole += 1.0
-        } else if fraction == half {
-            parity: uint = uint(whole) % 2
-
-            if parity != 0 {
-                whole += 1.0
-            }
-        }
-        src = os.fcvt(whole, 1, mut &decpt, mut &unused_sign)
-
-        if whole == zero {
-            out[at] = u8(48)
-            at += 1
-        } else {
-            digits: int = int(decpt)
-            os.memcpy(&out[at], src, usize(digits))
-            at += digits
-        }
-        return write_bytes(out[0..at])
-    }
-
-    rounding: i32 = os.fegetround()
-
-    if rounding != 0 {
-        os.fesetround(0) // Darwin FE_TONEAREST: nearest, exact ties to even
-    }
-    src = os.fcvt(mag, i32(places), mut &decpt, mut &unused_sign)
-
-    if rounding != 0 {
-        os.fesetround(rounding)
-    }
-    point: int = int(decpt)
-    available: int = places + point
-
-    if point <= 0 && available < 0 {
-        available = 0
-    }
-
-    if point <= 0 {
+    if value.kind == decimal.Kind.zero {
         out[at] = u8(48)
-        out[at + 1] = u8(46)
-        at += 2
-        zeros: int = 0 - point
-
-        if zeros > places {
-            zeros = places
-        }
-
-        for i: int in 0 .. zeros {
-            out[at] = u8(48)
+        at += 1
+    } else if point <= 0 {
+        out[at] = u8(48)
+        at += 1
+    } else {
+        for i: int in 0 .. point {
+            if i < value.count {
+                out[at] = digits[i]
+            } else {
+                out[at] = u8(48)
+            }
             at += 1
         }
-        digits: int = places - zeros
+    }
 
-        if digits > 0 {
-            os.memcpy(&out[at], src, usize(digits))
-            at += digits
+    if places != 0 {
+        out[at] = u8(46)
+        at += 1
+
+        for i: int in 0 .. places {
+            source: int = point + i
+
+            if value.kind != decimal.Kind.zero && source >= 0 && source < value.count {
+                out[at] = digits[source]
+            } else {
+                out[at] = u8(48)
+            }
+            at += 1
         }
-    } else {
-        os.memcpy(&out[at], src, usize(available))
-        os.memmove(&out[at + point + 1], &out[at + point], usize(places))
-        out[at + point] = u8(46)
-        at += point + places + 1
     }
     return write_bytes(out[0..at])
 }
 
+print_precision[f64](value: f64, precision: usize): int {
+    digits: [640]u8
+    view: mut []u8 = mut digits[0..640]
+    converted: decimal.Decimal = decimal.fixed64(value, precision, view)
+    return write_fixed(converted, view, precision)
+}
+
 print_precision[f32](value: f32, precision: usize): int {
-    return print_precision[f64](f64(value), precision)
+    digits: [640]u8
+    view: mut []u8 = mut digits[0..640]
+    converted: decimal.Decimal = decimal.fixed32(value, precision, view)
+    return write_fixed(converted, view, precision)
 }
 
 /*

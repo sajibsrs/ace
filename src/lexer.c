@@ -176,7 +176,8 @@ static int ends_expr(TokKind k) {
     case T_NULL: case T_TRUE: case T_FALSE:
     case T_RPAREN: case T_RBRACK: case T_RBRACE:
     case T_RETURN: case T_BREAK: case T_CONTINUE:
-    case T_SPECIALIZED: // ends a 'specialized' template declaration
+    case T_SPECIALIZED: // ends a bodyless function declaration
+    case T_INTRINSIC:
         return 1;
     default:
         return 0;
@@ -200,6 +201,7 @@ static const struct {
     {"distinct", T_DISTINCT},
     {"type", T_TYPE},         {"enum", T_ENUM},         {"union", T_UNION},
     {"specialized", T_SPECIALIZED},
+    {"intrinsic", T_INTRINSIC},
     {"null", T_NULL},
     {"true", T_TRUE},         {"false", T_FALSE},
 };

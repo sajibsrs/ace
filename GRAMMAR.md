@@ -13,7 +13,7 @@ newline       := significant — terminates statements (see §6 Notes)
 keyword       := "import" | "from" | "pub" | "mut" | "const" | "noalias" | "if" | "else"
                 | "for" | "in" | "switch" | "return" | "break" | "continue" | "defer"
                 | "asm" | "extern" | "export" | "contract" | "struct" | "embed" | "signs"
-                | "specialized" | "distinct" | "type" | "enum" | "union" | "null" | "true" | "false"
+                | "specialized" | "intrinsic" | "distinct" | "type" | "enum" | "union" | "null" | "true" | "false"
 
 ident         := letter ("letter" | digit | "_")*        [P: exact ident charset]
 literal       := int_lit | float_lit | string_lit | char_lit | "null" | "true" | "false"
@@ -65,7 +65,8 @@ elided_decl   := ident ":=" expr                          // local only; one bin
 multi_decl    := eq_name ("," eq_name)+ "=" expr_list      // local per-name declare/assign; one line
 const_decl    := ident ":" "const" type "=" expr
 
-func_decl     := ident [bracket_args] "(" [params] ")" [ret_clause] (block | "specialized")
+func_decl     := ident [bracket_args] "(" [params] ")" [ret_clause]
+                 (block | "specialized" | "intrinsic")
                                                           // brackets = type params or specialization args — Notes #23
 method_func_decl := ["mut"] owner_type "." ident "(" [params] ")" [ret_clause] block
 owner_type    := ident [type_params]                        // declares owner T names
@@ -238,6 +239,9 @@ choices that are not evident from the productions.
    parentheses to force a literal in a control-flow head.
 8. Function declaration brackets contain bare identifiers and are interpreted
    after name resolution as type parameters or specialization arguments.
+9. `intrinsic` is a line-final body substitute accepted syntactically on an
+   ordinary function declaration. Semantic analysis restricts it to exact
+   compiler-provided standard-library declarations.
 9. Contextual words such as `error`, `step`, and `fallthrough` remain
    identifiers outside their exact grammatical context.
 10. `mut` uses local lookahead: `mut &` starts writable address-of; in a type

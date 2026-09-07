@@ -224,6 +224,21 @@ count_of[f64](v: f64): int {
 }
 ```
 
+## Compiler-provided intrinsic declarations
+
+The trailing `intrinsic` marker replaces a function body only for an exact
+compiler-provided standard-library operation:
+
+```ace
+pub from_float(value: f64): u64 intrinsic
+```
+
+It is not a user-extensible foreign-function or assembly mechanism. The initial
+whitelist consists only of the four public `bits.from_float` and `bits.to_float`
+overloads. They are ordinary first-class functions to callers: the compiler
+emits callable implementations for function values and may inline an equivalent
+instruction sequence at statically resolved direct calls.
+
 Specializations currently live in the generic's module and apply to free
 functions. Struct generics are untouched, and type-owned generic methods do not
 specialize yet. The standard library uses the feature directly: both `str`
@@ -252,7 +267,15 @@ AArch64 target, its `int` result travels in `x0`; the process observes the low
 
 ## C-compatible functions
 
-`extern "c"` declarations and `export` definitions use the platform C ABI.
+`extern "c"` declarations and `export` definitions use the platform C ABI. The
+spelling identifies a calling convention; it does not make C part of Ace's
+runtime foundation. Ace implements its own language and standard-library
+behavior. Target layers reach OS facilities through the OS's stable public
+interface, using an OS-provided system library or framework when direct syscalls
+are unavailable or unstable. On macOS, that stable entrance is commonly
+libSystem. Applications may still bind external C libraries explicitly when
+they choose. The bootstrap compiler is an ordinary C11 program and may use C
+freely; that source-language choice is separate from generated Ace programs.
 Their parameter and return types are restricted to representations the compiler
 has verified: fixed-width integers, `int`, `uint`, `usize`, `f32`, `f64`,
 compatible pointers and distinct types, and structs composed recursively from

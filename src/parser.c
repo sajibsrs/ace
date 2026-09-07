@@ -9,7 +9,8 @@
 //               under mixed `=`); b = init (or N_TUPLE_E); F_CONST, F_MIXED,
 //               or F_ELIDED for local `name := expr` (binder type is NULL)
 //   N_FUNC      str = name; kids = params; a = ret; b = body; c = N_TPARAMS;
-//               d = owner type for methods; F_PUB/F_EXPO/F_METHOD/F_MUT
+//               d = owner type for methods; F_PUB/F_EXPO/F_METHOD/F_MUT;
+//               F_SPECIALIZED/F_INTRINSIC mark bodyless declarations
 //   N_PARAM     str = name; a = type; F_MUT/F_NOALIAS (also used as var binder)
 //   N_STRUCT    str = name; kids = N_FIELD; c = N_TPARAMS; F_PUB
 //   N_FIELD     str = name; a = type
@@ -1487,6 +1488,10 @@ static Node* parse_func_rest(P* p, Token* name, Node* tp, int pub, int expo) {
         f->flags |= F_SPECIALIZED; // no-default template: no body follows
         return f;
     }
+    if (ate(p, T_INTRINSIC)) {
+        f->flags |= F_INTRINSIC; // compiler-owned implementation; no source body
+        return f;
+    }
     f->b = parse_block(p);
     return f;
 }
@@ -2042,6 +2047,7 @@ static void pflags(Node* x) {
     if (x->flags & F_SELECT) printf(" select");
     if (x->flags & F_EMBED) printf(" embed");
     if (x->flags & F_SPECIALIZED) printf(" specialized");
+    if (x->flags & F_INTRINSIC) printf(" intrinsic");
     if (x->flags & F_ELIDED) printf(" elided");
 }
 

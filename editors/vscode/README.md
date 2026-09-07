@@ -24,6 +24,9 @@ The `mut` keyword covers the parameter mark, the call-site argument mark, and th
 Local declaration elision (`name := expression`) uses the ordinary assignment
 operator scope and needs no indentation or bracket change.
 
+The reserved line-final `intrinsic` marker is highlighted as a keyword. The
+compiler restricts it to exact compiler-provided standard-library declarations.
+
 The highlighter exposes distinct, stable TextMate categories:
 
 - all types: \`entity.name.type.ace\`

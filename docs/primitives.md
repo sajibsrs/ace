@@ -54,6 +54,10 @@ Floating literals are untyped until context materializes them. In overload
 selection, an uncast floating literal uses `f64`. Arithmetic supports `+`, `-`,
 `*`, and `/`, with the ordinary comparisons.
 
+The `bits` standard module provides bit-preserving `from_float` and `to_float`
+overloads for `f32`/`u32` and `f64`/`u64`. These expose the complete IEEE-754
+representation and are distinct from numeric casts.
+
 ## Boolean
 
 `bool` has only `true` and `false` values.

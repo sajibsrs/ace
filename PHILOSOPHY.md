@@ -31,7 +31,13 @@ When goals conflict, resolve in this order:
 
 ## Other Language Support
 1. Assembly support.
-2. Way to work with C/C++ code. Though, it shouldn't depend on them.
+2. A way to work with C/C++ code, without making either language or its runtime
+   Ace's foundation. Ace implements its own language and library behavior. For
+   OS facilities, target code uses the OS's stable public interface; when direct
+   syscalls are unavailable or not a stable application contract, it uses the
+   system library or framework the OS provides (notably libSystem on macOS).
+   The bootstrap compiler's source language is an implementation choice and is
+   outside this generated-program rule.
 
 ## Principles
 Distilled from the closed philosophy decisions; operative rules live in SPEC.md.

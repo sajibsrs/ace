@@ -1,0 +1,5 @@
+import leaf: "./leaf.ace"
+
+pub value(): int {
+    return leaf.value()
+}

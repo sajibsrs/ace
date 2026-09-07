@@ -15,6 +15,7 @@ continuation-alignment = open-delimiter
 [declarations]
 public-before-private = dependency-order
 specialized-marker = line-final
+intrinsic-marker = line-final
 
 [attributes]
 top-level = own-line

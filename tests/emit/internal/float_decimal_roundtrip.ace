@@ -1,0 +1,55 @@
+/* Native shortest formatting round-trips deterministic IEEE bit patterns. */
+
+// expect-exit: 42
+
+import bits
+import str
+
+main(): int {
+    text: [64]u8 = [u8(0) : 64]
+    state64: u64 = u64(0x9E3779B97F4A7C15)
+
+    for sample: int in 0 .. 512 {
+        state64 ^= state64 << 13
+        state64 ^= state64 >> 7
+        state64 ^= state64 << 17
+        exponent: u64 = (state64 >> 52) & u64(0x7FF)
+
+        if exponent != u64(0x7FF) {
+            value: f64 = bits.to_float(state64)
+            count: usize, ok: bool = str.format(mut text[0..64], value)
+
+            if !ok {
+                return 1
+            }
+            parsed: f64, parsed_ok: bool = str.parse[f64](string(text[0..count]))
+
+            if !parsed_ok || bits.from_float(parsed) != state64 {
+                return 2
+            }
+        }
+    }
+    state32: u32 = u32(0x9E3779B9)
+
+    for sample: int in 0 .. 512 {
+        state32 ^= state32 << 13
+        state32 ^= state32 >> 17
+        state32 ^= state32 << 5
+        exponent: u32 = (state32 >> 23) & u32(0xFF)
+
+        if exponent != u32(0xFF) {
+            value: f32 = bits.to_float(state32)
+            count: usize, ok: bool = str.format(mut text[0..64], value)
+
+            if !ok {
+                return 3
+            }
+            parsed: f32, parsed_ok: bool = str.parse[f32](string(text[0..count]))
+
+            if !parsed_ok || bits.from_float(parsed) != state32 {
+                return 4
+            }
+        }
+    }
+    return 42
+}

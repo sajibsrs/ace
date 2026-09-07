@@ -1,0 +1,306 @@
+/* Exact decimal-to-IEEE-754 conversion available to compiler-shipped
+ * standard-library sources. This reserved internal implementation module has
+ * no bare std facade.
+ */
+
+import bits
+import big: "./bigint.ace"
+
+pub Parsed64: struct { value: f64, ok: bool }
+pub Parsed32: struct { value: f32, ok: bool }
+
+pub Decimal: struct {
+    coefficient: big.Big,
+    exponent10: int,
+    negative: bool,
+    digits: int,
+    kind: int, // 0 finite, 1 infinity, 2 NaN, 3 invalid
+}
+
+equal_text(text: string, expected: string): bool {
+    if len(text) != len(expected) {
+        return false
+    }
+    for i: usize in 0 .. len(text) {
+        if text[i] != expected[i] {
+            return false
+        }
+    }
+    return true
+}
+
+decimal(text: string): Decimal {
+    invalid: Decimal = Decimal { coefficient: big.from_u64(0), exponent10: 0,
+                                 negative: false, digits: 0, kind: 3 }
+
+    if len(text) == 0 || len(text) >= 512 {
+        return invalid
+    }
+    if equal_text(text, "nan") {
+        return Decimal { coefficient: big.from_u64(0), exponent10: 0,
+                         negative: false, digits: 0, kind: 2 }
+    }
+    if equal_text(text, "inf") {
+        return Decimal { coefficient: big.from_u64(0), exponent10: 0,
+                         negative: false, digits: 0, kind: 1 }
+    }
+    if equal_text(text, "-inf") {
+        return Decimal { coefficient: big.from_u64(0), exponent10: 0,
+                         negative: true, digits: 0, kind: 1 }
+    }
+    at: usize = 0
+    negative: bool = false
+
+    if text[0] == 45 {
+        negative = true
+        at = 1
+    }
+
+    if at == len(text) {
+        return invalid
+    }
+    coefficient: big.Big = big.from_u64(0)
+    fractional: int = 0
+    significant: int = 0
+    seen_nonzero: bool = false
+    seen_dot: bool = false
+    seen_digit: bool = false
+
+    for at < len(text) {
+        c: u8 = text[at]
+
+        if c >= 48 && c <= 57 {
+            seen_digit = true
+            big.multiply_small(mut coefficient, 10)
+            big.add_small(mut coefficient, u32(c - 48))
+
+            if seen_dot {
+                fractional += 1
+            }
+            if c != 48 || seen_nonzero {
+                seen_nonzero = true
+                significant += 1
+            }
+            at += 1
+            continue
+        }
+
+        if c == 46 && !seen_dot {
+            seen_dot = true
+            at += 1
+            continue
+        }
+        break
+    }
+
+    if !seen_digit {
+        return invalid
+    }
+    explicit: int = 0
+
+    if at < len(text) && (text[at] == 101 || text[at] == 69) {
+        at += 1
+        exponent_negative: bool = false
+
+        if at < len(text) && (text[at] == 43 || text[at] == 45) {
+            exponent_negative = text[at] == 45
+            at += 1
+        }
+        exponent_digits: int = 0
+
+        for at < len(text) && text[at] >= 48 && text[at] <= 57 {
+            if explicit < 10000 {
+                explicit = explicit * 10 + int(text[at] - 48)
+            }
+            exponent_digits += 1
+            at += 1
+        }
+
+        if exponent_digits == 0 {
+            return invalid
+        }
+        if exponent_negative {
+            explicit = 0 - explicit
+        }
+    }
+
+    if at != len(text) {
+        return invalid
+    }
+    return Decimal { coefficient: coefficient,
+                     exponent10: explicit - fractional,
+                     negative: negative, digits: significant, kind: 0 }
+}
+
+compare_binary(value: Decimal, mantissa: u64, exponent2: int): int {
+    left: big.Big = value.coefficient
+    right: big.Big = big.from_u64(mantissa)
+    left_exponent: int = 0
+    right_exponent: int = exponent2
+
+    if value.exponent10 >= 0 {
+        big.multiply_power5(mut left, value.exponent10)
+        left_exponent = value.exponent10
+    } else {
+        scale: int = 0 - value.exponent10
+        big.multiply_power5(mut right, scale)
+        right_exponent += scale
+    }
+
+    if left_exponent < right_exponent {
+        big.shift_left(mut right, right_exponent - left_exponent)
+    } else if right_exponent < left_exponent {
+        big.shift_left(mut left, left_exponent - right_exponent)
+    }
+    return big.compare(left, right)
+}
+
+decode64(raw: u64): (u64, int) {
+    exponent: u64 = (raw >> 52) & u64(0x7FF)
+    fraction: u64 = raw & u64(0xFFFFFFFFFFFFF)
+
+    if exponent == 0 {
+        return fraction, -1074
+    }
+    return fraction | u64(0x10000000000000), int(exponent) - 1023 - 52
+}
+
+decode32(raw: u32): (u64, int) {
+    exponent: u32 = (raw >> 23) & u32(0xFF)
+    fraction: u32 = raw & u32(0x7FFFFF)
+
+    if exponent == 0 {
+        return u64(fraction), -149
+    }
+    return u64(fraction | u32(0x800000)), int(exponent) - 127 - 23
+}
+
+midpoint64(value: Decimal, upper: u64): int {
+    mantissa: u64, exponent2: int = decode64(upper)
+    exponent_field: u64 = (upper >> 52) & u64(0x7FF)
+
+    if exponent_field > 1 && (upper & u64(0xFFFFFFFFFFFFF)) == 0 {
+        return compare_binary(value, u64(0x3FFFFFFFFFFFFF), exponent2 - 2)
+    }
+    return compare_binary(value, mantissa * 2 - 1, exponent2 - 1)
+}
+
+midpoint32(value: Decimal, upper: u32): int {
+    mantissa: u64, exponent2: int = decode32(upper)
+    exponent_field: u32 = (upper >> 23) & u32(0xFF)
+
+    if exponent_field > 1 && (upper & u32(0x7FFFFF)) == 0 {
+        return compare_binary(value, u64(0x1FFFFFF), exponent2 - 2)
+    }
+    return compare_binary(value, mantissa * 2 - 1, exponent2 - 1)
+}
+
+pub binary64(text: string): Parsed64 {
+    value: Decimal = decimal(text)
+
+    if value.kind == 3 {
+        return Parsed64 { value: 0.0, ok: false }
+    }
+    if value.kind == 2 {
+        return Parsed64 { value: bits.to_float(u64(0x7FF8000000000000)), ok: true }
+    }
+    if value.kind == 1 {
+        raw_inf: u64 = u64(0x7FF0000000000000)
+
+        if value.negative {
+            raw_inf |= u64(0x8000000000000000)
+        }
+        return Parsed64 { value: bits.to_float(raw_inf), ok: true }
+    }
+    sign: u64 = 0
+
+    if value.negative {
+        sign = u64(0x8000000000000000)
+    }
+    if value.digits == 0 || value.digits + value.exponent10 < -350 {
+        return Parsed64 { value: bits.to_float(sign), ok: true }
+    }
+    if value.digits + value.exponent10 > 310 ||
+       compare_binary(value, u64(0x3FFFFFFFFFFFFF), 970) >= 0 {
+        return Parsed64 { value: 0.0, ok: false }
+    }
+    low: u64 = 0
+    high: u64 = u64(0x7FEFFFFFFFFFFFFF)
+
+    for low < high {
+        middle: u64 = low + (high - low) / 2 + 1
+        mantissa: u64, exponent2: int = decode64(middle)
+
+        if compare_binary(value, mantissa, exponent2) >= 0 {
+            low = middle
+        } else {
+            high = middle - 1
+        }
+    }
+    mantissa: u64, exponent2: int = decode64(low)
+
+    if compare_binary(value, mantissa, exponent2) != 0 {
+        upper: u64 = low + 1
+        midpoint: int = midpoint64(value, upper)
+
+        if midpoint > 0 || (midpoint == 0 && (upper & 1) == 0) {
+            low = upper
+        }
+    }
+    return Parsed64 { value: bits.to_float(sign | low), ok: true }
+}
+
+pub binary32(text: string): Parsed32 {
+    value: Decimal = decimal(text)
+
+    if value.kind == 3 {
+        return Parsed32 { value: 0.0, ok: false }
+    }
+    if value.kind == 2 {
+        return Parsed32 { value: bits.to_float(u32(0x7FC00000)), ok: true }
+    }
+    if value.kind == 1 {
+        raw_inf: u32 = u32(0x7F800000)
+
+        if value.negative {
+            raw_inf |= u32(0x80000000)
+        }
+        return Parsed32 { value: bits.to_float(raw_inf), ok: true }
+    }
+    sign: u32 = 0
+
+    if value.negative {
+        sign = u32(0x80000000)
+    }
+    if value.digits == 0 || value.digits + value.exponent10 < -60 {
+        return Parsed32 { value: bits.to_float(sign), ok: true }
+    }
+    if value.digits + value.exponent10 > 50 ||
+       compare_binary(value, u64(0x1FFFFFF), 103) >= 0 {
+        return Parsed32 { value: 0.0, ok: false }
+    }
+    low: u32 = 0
+    high: u32 = u32(0x7F7FFFFF)
+
+    for low < high {
+        middle: u32 = low + (high - low) / 2 + 1
+        mantissa: u64, exponent2: int = decode32(middle)
+
+        if compare_binary(value, mantissa, exponent2) >= 0 {
+            low = middle
+        } else {
+            high = middle - 1
+        }
+    }
+    mantissa: u64, exponent2: int = decode32(low)
+
+    if compare_binary(value, mantissa, exponent2) != 0 {
+        upper: u32 = low + 1
+        midpoint: int = midpoint32(value, upper)
+
+        if midpoint > 0 || (midpoint == 0 && (upper & 1) == 0) {
+            low = upper
+        }
+    }
+    return Parsed32 { value: bits.to_float(sign | low), ok: true }
+}

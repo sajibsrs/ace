@@ -1,0 +1,9 @@
+import first
+import second
+
+main(): int {
+    if first.first() != 40 || second.second() != 41 {
+        return 1
+    }
+    return 0
+}

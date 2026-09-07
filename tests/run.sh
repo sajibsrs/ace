@@ -349,6 +349,49 @@ for want in "absent_module_probe.ace" "absent_module_probe/module.ace"; do
     fi
 done
 
+# The compiler-shipped std/internal subtree is shared by std sources but is not
+# importable by applications, including through traversal or symlink aliases.
+mkdir -p /tmp/ace_std_internal/std/second
+mkdir -p /tmp/ace_std_internal/std/internal
+mkdir -p /tmp/ace_std_internal/app
+mkdir -p /tmp/ace_std_internal/app/copied
+cp "$ACE" /tmp/ace_std_internal/ace
+cp tests/stdlib_internal/first.ace /tmp/ace_std_internal/std/first.ace
+cp tests/stdlib_internal/second/module.ace /tmp/ace_std_internal/std/second/module.ace
+cp tests/stdlib_internal/internal/shared.ace /tmp/ace_std_internal/std/internal/shared.ace
+cp tests/stdlib_internal/internal/leaf.ace /tmp/ace_std_internal/std/internal/leaf.ace
+cp tests/stdlib_internal/app/*.ace /tmp/ace_std_internal/app/
+cp tests/stdlib_internal/internal/*.ace /tmp/ace_std_internal/app/copied/
+ln -sf ../std/internal/shared.ace /tmp/ace_std_internal/app/internal-link.ace
+if ! /tmp/ace_std_internal/ace -o /tmp/ace_std_internal/out \
+     /tmp/ace_std_internal/app/main.ace || ! /tmp/ace_std_internal/out; then
+    echo "FAIL: ordinary std modules should share std/internal sources"
+    fail=1
+fi
+if ! /tmp/ace_std_internal/ace /tmp/ace_std_internal/std/internal/shared.ace; then
+    echo "FAIL: an internal source should compile directly and import another internal source"
+    fail=1
+fi
+if ! /tmp/ace_std_internal/ace -o /tmp/ace_std_internal/copied \
+     /tmp/ace_std_internal/app/copied_ok.ace || ! /tmp/ace_std_internal/copied; then
+    echo "FAIL: equivalent source outside std/internal should remain ordinary code"
+    fail=1
+fi
+internal_diag="standard-library internal module 'std/internal/shared.ace' may be imported only by standard-library sources"
+for case in direct_err traversal_err local_err symlink_err cached_err; do
+    internal_out=$(/tmp/ace_std_internal/ace "/tmp/ace_std_internal/app/$case.ace" 2>&1)
+    if ! printf '%s\n' "$internal_out" | grep -qF "$internal_diag"; then
+        echo "FAIL: $case should enforce the canonical std/internal boundary"
+        fail=1
+    fi
+done
+bare_internal=$(/tmp/ace_std_internal/ace /tmp/ace_std_internal/app/bare_err.ace 2>&1)
+if ! printf '%s\n' "$bare_internal" | grep -qF \
+    "standard library module 'internal' not found"; then
+    echo "FAIL: bare import internal should remain invalid"
+    fail=1
+fi
+
 # @when filters declarations before import loading, binding collisions, and
 # semantic checking, while inactive source still has to parse correctly.
 if ! "$ACE" -o /tmp/ace_when tests/modules/when/main.ace || ! /tmp/ace_when; then
@@ -661,12 +704,48 @@ if [ -d tests/emit ]; then
             fi
         done
         process_undef=$(nm -u /tmp/ace_emit/sys/process.o 2>/dev/null)
-        for symbol in __NSGetArgc __NSGetArgv __NSGetEnviron _strlen; do
+        for symbol in __NSGetArgc __NSGetArgv __NSGetEnviron; do
             if ! printf '%s\n' "$process_undef" | grep -q "^$symbol$"; then
                 echo "FAIL: sys process object is missing Darwin boundary '$symbol'"
                 fail=1
             fi
         done
+        if printf '%s\n' "$process_undef" | grep -q '^_strlen$'; then
+            echo "FAIL: sys process access must scan entry bytes directly"
+            fail=1
+        fi
+        byte_equal_undef=$(nm -u /tmp/ace_emit/strings/byte_equality.o 2>/dev/null)
+        if printf '%s\n' "$byte_equal_undef" | grep -q '^_memcmp$'; then
+            echo "FAIL: byte comparison must be emitted directly"
+            fail=1
+        fi
+        byte_write_undef=$(nm -u /tmp/ace_emit/mut_string/main.o 2>/dev/null)
+        if printf '%s\n' "$byte_write_undef" | grep -q '^_memset$'; then
+            echo "FAIL: byte fill and zero must be emitted directly"
+            fail=1
+        fi
+        byte_move_undef=$(nm -u /tmp/ace_emit/memory/copy_move.o 2>/dev/null)
+        if printf '%s\n' "$byte_move_undef" | grep -Eq '^_(memcpy|memmove)$'; then
+            echo "FAIL: byte copy and move must be emitted directly"
+            fail=1
+        fi
+        bits_undef=$(nm -u /tmp/ace_emit/internal/float_bits.o 2>/dev/null)
+        if printf '%s\n' "$bits_undef" | grep -Eq '_(memcpy|memmove|ecvt|strtod|strtof)$'; then
+            echo "FAIL: bits representation operations must have no runtime dependency"
+            fail=1
+        fi
+        float_fmt_undef=$(nm -u /tmp/ace_emit/fmt/float.o 2>/dev/null)
+        fixed_fmt_undef=$(nm -u /tmp/ace_emit/printf/precision.o 2>/dev/null)
+        if printf '%s\n%s\n' "$float_fmt_undef" "$fixed_fmt_undef" |
+           grep -Eq '^_(ecvt|fcvt|strtod|strtof|floor|fegetround|fesetround|memcpy|memmove)$'; then
+            echo "FAIL: float formatting must use the native exact engine"
+            fail=1
+        fi
+        float_parse_undef=$(nm -u /tmp/ace_emit/internal/native_float_parse.o 2>/dev/null)
+        if printf '%s\n' "$float_parse_undef" | grep -Eq '^_(strtod|strtof)$'; then
+            echo "FAIL: float parsing must use the native exact engine"
+            fail=1
+        fi
         if printf '%s\n' "$process_undef" |
            grep -Eq '_(malloc|calloc|realloc|free)$'; then
             echo "FAIL: sys process access must not allocate"
@@ -691,8 +770,8 @@ if [ -d tests/emit ]; then
         echo "FAIL: --report separator missing"
         fail=1
     fi
-    if ! printf '%s\n' "$report" | grep -q 'source files:.*3$'; then
-        echo "FAIL: --report should count root + fmt facade + target source"
+    if ! printf '%s\n' "$report" | grep -q 'source files:.*6$'; then
+        echo "FAIL: --report should count root + fmt/target + bits/decimal/bigint sources"
         fail=1
     fi
     for label in 'source bytes:' 'tokens:' 'machine code:' 'object file:' 'compile time:'; do

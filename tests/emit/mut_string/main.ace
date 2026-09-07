@@ -66,5 +66,11 @@ main(): int {
     if text[11] != 2 || back[0] != 2 || plain[5] != 2 {
         return 9
     }
+    mem.zero(view[3..7])
+    if view[2] != 2 || view[3] != 0 || view[6] != 0 || view[7] != 2 {
+        return 10
+    }
+    mem.fill(empty, 7)
+    mem.zero(empty)
     return 0
 }

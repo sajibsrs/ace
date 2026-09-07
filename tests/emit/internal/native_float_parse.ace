@@ -1,0 +1,37 @@
+/* Native decimal-to-float parsing covers exact midpoint rounding, extrema,
+ * subnormals, overflow, and signed underflow without a platform parser.
+ */
+// expect-exit: 0
+
+import bits
+import str
+
+main(): int {
+    d: f64, ok: bool = str.parse[f64]("1.00000000000000011102230246251565404236316680908203125")
+    if !ok || bits.from_float(d) != u64(0x3FF0000000000000) { return 1 }
+    d, ok = str.parse[f64]("1.00000000000000033306690738754696212708950042724609375")
+    if !ok || bits.from_float(d) != u64(0x3FF0000000000002) { return 2 }
+    d, ok = str.parse[f64]("2.4703282292062327e-324")
+    if !ok || bits.from_float(d) != 0 { return 3 }
+    d, ok = str.parse[f64]("2.4703282292062328e-324")
+    if !ok || bits.from_float(d) != 1 { return 4 }
+    d, ok = str.parse[f64]("-1e-999")
+    if !ok || bits.from_float(d) != u64(0x8000000000000000) { return 5 }
+    d, ok = str.parse[f64]("1.7976931348623157e308")
+    if !ok || bits.from_float(d) != u64(0x7FEFFFFFFFFFFFFF) { return 6 }
+    d, ok = str.parse[f64]("1.7976931348623159e308")
+    if ok || bits.from_float(d) != 0 { return 7 }
+    f: f32, fok: bool = str.parse[f32]("1.000000059604644775390625")
+    if !fok || bits.from_float(f) != u32(0x3F800000) { return 8 }
+    f, fok = str.parse[f32]("1.000000178813934326171875")
+    if !fok || bits.from_float(f) != u32(0x3F800002) { return 9 }
+    f, fok = str.parse[f32]("7.00649232162408535461864791644958065640130970938257885878534141944895541342930300743319094181060791015625e-46")
+    if !fok || bits.from_float(f) != 0 { return 10 }
+    f, fok = str.parse[f32]("7.006493e-46")
+    if !fok || bits.from_float(f) != 1 { return 11 }
+    f, fok = str.parse[f32]("3.4028235e38")
+    if !fok || bits.from_float(f) != u32(0x7F7FFFFF) { return 12 }
+    f, fok = str.parse[f32]("3.4028236e38")
+    if fok || bits.from_float(f) != 0 { return 13 }
+    return 0
+}

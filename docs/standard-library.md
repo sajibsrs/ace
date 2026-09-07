@@ -7,6 +7,7 @@ module. How imports resolve, aliasing, and visibility are described in
 
 Today's modules:
 
+- `bits` — explicit machine-representation access and operations
 - `fmt` — allocation-free text output
 - `math` — minimal generic helpers
 - `mem` — raw and typed allocation plus allocation-free byte operations
@@ -19,6 +20,14 @@ Today's modules:
 Everything else in the planned v1 set (`simd`) does not
 exist yet.
 
+The `std/internal/` directory is a compiler-reserved implementation namespace,
+not a public module. Ordinary standard-library modules may share code from it,
+and its files may import one another. Applications and packages cannot import
+canonical paths beneath it; canonicalization prevents traversal and symlink
+aliases from bypassing that boundary. Equivalent source copied outside the
+compiler-shipped `std/` tree is ordinary code, and `import internal` is not a
+valid bare standard-library import.
+
 Public names use module context to stay short without becoming cryptic. Types
 and error domains use compact PascalCase, functions use lowercase words with
 underscores where separation helps, and only established unambiguous terms are
@@ -26,6 +35,42 @@ shortened (`Fd`, `Addr`, `Err`). Identifying words otherwise remain complete:
 for example, `sys.ProcessStatus` is not shortened to the ambiguous
 `sys.ProcessStat`. A directory-module facade and its selected OS layer expose
 the same names.
+
+## bits
+
+`bits.from_float` and `bits.to_float` copy complete IEEE-754 representations
+between floating and same-width unsigned integer values. They do not perform
+numeric conversion, allocate, or call a runtime helper.
+
+```ace
+import bits
+
+one_bits: u64 = bits.from_float(1.0) // 0x3FF0000000000000
+one: f64 = bits.to_float(one_bits)
+```
+
+The exact overloads are `from_float(f64): u64`, `from_float(f32): u32`,
+`to_float(u64): f64`, and `to_float(u32): f32`. They preserve signed zero,
+infinities, subnormals, and NaN payloads. Ordinary casts such as `u64(value)`
+and `f64(integer)` remain numeric conversions.
+
+Their declarations use the restricted trailing `intrinsic` marker. Applications
+call them as ordinary public functions and may store an exact overload in a
+typed function value; only the compiler-owned standard library may declare an
+intrinsic. Direct calls may inline the register move, while indirect calls use
+a compiler-emitted callable implementation with identical semantics.
+
+Integer population counts, leading/trailing-zero counts, byte swaps, and
+rotations belong in this module but remain separately carved additions.
+
+Representation access supports algorithms that deliberately operate on a
+float's encoding, including the classic fast inverse-square-root seed:
+
+```ace
+raw: u32 = bits.from_float(value)
+raw = u32(0x5F3759DF) - (raw >> 1)
+estimate: f32 = bits.to_float(raw)
+```
 
 `mem` exports `alloc`, `realloc`, `release`, `copy`, `move`, `fill`, `zero`,
 `compare`, and `equal`. Each allocation name is one overload set with a raw byte form and an
@@ -107,6 +152,11 @@ the scientific exponent is between -6 and 20; anything larger or smaller
 uses scientific spelling like `1e21`, `1.5e-7`, or `3.4028235e38` — no `+`,
 no exponent padding. Whole-valued floats print without `.0` (`3.0` prints
 as `3`).
+
+Float output is converted natively from its exact IEEE representation using
+fixed-capacity stack arithmetic shared with `str.format`. It does not allocate,
+call a platform numeric-conversion routine, or depend on the ambient
+floating-point rounding mode.
 
 Numeric output is ASCII with a `-` only for negative signed values. There is
 no padding, no base selection, and no formatting language.
@@ -329,6 +379,8 @@ main(): int {
   canonical-zero `T` and `false`; finite float underflow rounded to signed
   zero succeeds. Decimal floats accept ordinary decimal/scientific forms plus
   the exact non-finite spellings `fmt` produces (`nan`, `inf`, `-inf`).
+  Finite decimals round directly to the requested IEEE width with exact
+  ties-to-even; parsing allocates nothing and uses no platform decimal parser.
   Naming any other `T` is a compile-time error at the call.
 - `format(destination: mut []u8, value): (usize, bool)` — overloads for
   `int`, `uint`, `usize`, `f32`, and `f64`, plus radix-taking overloads for
@@ -338,6 +390,12 @@ main(): int {
   lowercase ASCII with no base prefix, only `int` may emit `-`, and the
   no-radix float representations are exactly the matching `fmt.print`
   overloads'.
+
+Float formatting uses the same internal exact binary-to-decimal engine as
+`fmt`; the two APIs therefore share one rounding implementation rather than
+merely testing for matching output. Float parsing uses a companion internal
+exact decimal-to-binary engine, so it does not pass `f32` input through `f64`
+or depend on a target conversion routine.
 
 ## sys
 

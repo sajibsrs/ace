@@ -1,0 +1,353 @@
+/* Exact IEEE-754 binary-to-decimal conversion available to compiler-shipped
+ * standard-library sources. This reserved internal implementation module has
+ * no bare std facade.
+ */
+
+import bits
+import big: "./bigint.ace"
+
+pub Kind: enum { finite, zero, infinity, nan }
+
+pub Decimal: struct {
+    count: int,
+    point: i32,
+    negative: bool,
+    kind: Kind,
+}
+
+inside_interval(coefficient: u64, exponent10: i32, mantissa: u64,
+                exponent2: i32, even: bool, lower_closer: bool): bool {
+    lower: u64 = mantissa * 4 - 2
+
+    if lower_closer {
+        lower = mantissa * 4 - 1
+    }
+    upper: u64 = mantissa * 4 + 2
+    boundary_exponent: int = int(exponent2) - 2
+    left: big.Big = big.from_u64(coefficient)
+    right_low: big.Big = big.from_u64(lower)
+    right_high: big.Big = big.from_u64(upper)
+    left_exponent: int = 0
+    right_exponent: int = boundary_exponent
+    decimal_exponent: int = int(exponent10)
+
+    if decimal_exponent >= 0 {
+        big.multiply_power5(mut left, decimal_exponent)
+        left_exponent = decimal_exponent
+    } else {
+        scale: int = 0 - decimal_exponent
+        big.multiply_power5(mut right_low, scale)
+        big.multiply_power5(mut right_high, scale)
+        right_exponent += scale
+    }
+
+    if left_exponent < right_exponent {
+        shift: int = right_exponent - left_exponent
+        big.shift_left(mut right_low, shift)
+        big.shift_left(mut right_high, shift)
+    } else if right_exponent < left_exponent {
+        shift: int = left_exponent - right_exponent
+        big.shift_left(mut left, shift)
+    }
+    low_cmp: int = big.compare(left, right_low)
+    high_cmp: int = big.compare(left, right_high)
+    low_ok: bool = low_cmp > 0 || (low_cmp == 0 && even)
+    high_ok: bool = high_cmp < 0 || (high_cmp == 0 && even)
+    return low_ok && high_ok
+}
+
+rounded_prefix(exact: []u8, exact_count: int, wanted: int): u64 {
+    coefficient: u64 = 0
+
+    for i: int in 0 .. wanted {
+        coefficient = coefficient * 10 + u64(exact[i] - 48)
+    }
+
+    if wanted == exact_count {
+        return coefficient
+    }
+    next: u8 = exact[wanted]
+    round_up: bool = next > 53
+
+    if next == 53 {
+        for i: int in wanted + 1 .. exact_count {
+            if exact[i] != 48 {
+                round_up = true
+                break
+            }
+        }
+
+        if !round_up && coefficient % 2 != 0 {
+            round_up = true
+        }
+    }
+
+    if round_up {
+        coefficient += 1
+    }
+    return coefficient
+}
+
+shortest(mantissa: u64, exponent2: i32, max_digits: int,
+         lower_closer: bool, out: mut []u8): (int, i32) {
+    exact_value: big.Big = big.from_u64(mantissa)
+
+    if exponent2 >= 0 {
+        big.shift_left(mut exact_value, int(exponent2))
+    } else {
+        big.multiply_power5(mut exact_value, 0 - int(exponent2))
+    }
+    exact: [800]u8
+    exact_view: mut []u8 = mut exact[0..800]
+    exact_count: int = big.decimal(exact_value, exact_view)
+    point: i32 = i32(exact_count)
+
+    if exponent2 < 0 {
+        point += exponent2
+    }
+    even: bool = mantissa % 2 == 0
+
+    for wanted: int in 1 .. max_digits + 1 {
+        coefficient: u64 = rounded_prefix(exact_view, exact_count, wanted)
+        exponent10: i32 = point - i32(wanted)
+        limit: u64 = 1
+
+        for i: int in 0 .. wanted {
+            limit *= 10
+        }
+
+        if coefficient == limit {
+            coefficient = coefficient / 10
+            exponent10 += 1
+        }
+
+        if inside_interval(coefficient, exponent10, mantissa, exponent2,
+                           even, lower_closer) {
+            reversed: [24]u8 = [u8(0) : 24]
+            count: int = 0
+
+            for coefficient != 0 {
+                reversed[count] = u8(48 + coefficient % 10)
+                coefficient = coefficient / 10
+                count += 1
+            }
+
+            for i: int in 0 .. count {
+                out[i] = reversed[count - 1 - i]
+            }
+            return count, exponent10 + i32(count)
+        }
+    }
+    return 0, 0
+}
+
+pub binary64(value: f64, out: mut []u8): Decimal {
+    raw: u64 = bits.from_float(value)
+    negative: bool = raw >> 63 != 0
+    exponent: u64 = (raw >> 52) & u64(0x7FF)
+    fraction: u64 = raw & u64(0xFFFFFFFFFFFFF)
+
+    if exponent == u64(0x7FF) {
+        if fraction == 0 {
+            return Decimal { count: 0, point: 0, negative: negative, kind: Kind.infinity }
+        }
+        return Decimal { count: 0, point: 0, negative: false, kind: Kind.nan }
+    }
+
+    if exponent == 0 && fraction == 0 {
+        return Decimal { count: 0, point: 0, negative: negative, kind: Kind.zero }
+    }
+    mantissa: u64 = fraction
+    exponent2: i32 = -1074
+    lower_closer: bool = false
+
+    if exponent != 0 {
+        mantissa |= u64(0x10000000000000)
+        exponent2 = i32(exponent) - 1023 - 52
+        lower_closer = fraction == 0 && exponent > 1
+    }
+    count: int, point: i32 = shortest(mantissa, exponent2, 17,
+                                      lower_closer, out)
+    return Decimal { count: count, point: point, negative: negative, kind: Kind.finite }
+}
+
+pub binary32(value: f32, out: mut []u8): Decimal {
+    raw: u32 = bits.from_float(value)
+    negative: bool = raw >> 31 != 0
+    exponent: u32 = (raw >> 23) & u32(0xFF)
+    fraction: u32 = raw & u32(0x7FFFFF)
+
+    if exponent == u32(0xFF) {
+        if fraction == 0 {
+            return Decimal { count: 0, point: 0, negative: negative, kind: Kind.infinity }
+        }
+        return Decimal { count: 0, point: 0, negative: false, kind: Kind.nan }
+    }
+
+    if exponent == 0 && fraction == 0 {
+        return Decimal { count: 0, point: 0, negative: negative, kind: Kind.zero }
+    }
+    mantissa: u64 = u64(fraction)
+    exponent2: i32 = -149
+    lower_closer: bool = false
+
+    if exponent != 0 {
+        mantissa |= u64(0x800000)
+        exponent2 = i32(exponent) - 127 - 23
+        lower_closer = fraction == 0 && exponent > 1
+    }
+    count: int, point: i32 = shortest(mantissa, exponent2, 9,
+                                      lower_closer, out)
+    return Decimal { count: count, point: point, negative: negative, kind: Kind.finite }
+}
+
+fixed(mantissa: u64, exponent2: i32, precision: int,
+      negative: bool, out: mut []u8): Decimal {
+    exact_value: big.Big = big.from_u64(mantissa)
+
+    if exponent2 >= 0 {
+        big.shift_left(mut exact_value, int(exponent2))
+    } else {
+        big.multiply_power5(mut exact_value, 0 - int(exponent2))
+    }
+    exact: [800]u8
+    exact_view: mut []u8 = mut exact[0..800]
+    exact_count: int = big.decimal(exact_value, exact_view)
+    point: i32 = i32(exact_count)
+
+    if exponent2 < 0 {
+        point += exponent2
+    }
+    keep: int = int(point) + precision
+
+    if keep < 0 {
+        return Decimal { count: 0, point: point, negative: negative, kind: Kind.zero }
+    }
+
+    if keep == 0 {
+        round_up: bool = exact_view[0] > 53
+
+        if exact_view[0] == 53 {
+            for i: int in 1 .. exact_count {
+                if exact_view[i] != 48 {
+                    round_up = true
+                    break
+                }
+            }
+        }
+
+        if round_up {
+            out[0] = u8(49)
+            return Decimal { count: 1, point: i32(1 - precision),
+                             negative: negative, kind: Kind.finite }
+        }
+        return Decimal { count: 0, point: point, negative: negative, kind: Kind.zero }
+    }
+    copied: int = keep
+
+    if copied > exact_count {
+        copied = exact_count
+    }
+
+    for i: int in 0 .. copied {
+        out[i] = exact_view[i]
+    }
+
+    for i: int in copied .. keep {
+        out[i] = u8(48)
+    }
+
+    if keep < exact_count {
+        round_up: bool = exact_view[keep] > 53
+
+        if exact_view[keep] == 53 {
+            for i: int in keep + 1 .. exact_count {
+                if exact_view[i] != 48 {
+                    round_up = true
+                    break
+                }
+            }
+
+            if !round_up && (out[keep - 1] - 48) % 2 != 0 {
+                round_up = true
+            }
+        }
+
+        if round_up {
+            carry: bool = true
+
+            for i: int in 0 .. keep {
+                at: int = keep - 1 - i
+
+                if out[at] != 57 {
+                    out[at] += 1
+                    carry = false
+                    break
+                }
+                out[at] = u8(48)
+            }
+
+            if carry {
+                for i: int in 0 .. keep {
+                    out[keep - i] = out[keep - 1 - i]
+                }
+                out[0] = u8(49)
+                keep += 1
+                point += 1
+            }
+        }
+    }
+    return Decimal { count: keep, point: point, negative: negative, kind: Kind.finite }
+}
+
+pub fixed64(value: f64, precision: usize, out: mut []u8): Decimal {
+    raw: u64 = bits.from_float(value)
+    negative: bool = raw >> 63 != 0
+    exponent: u64 = (raw >> 52) & u64(0x7FF)
+    fraction: u64 = raw & u64(0xFFFFFFFFFFFFF)
+
+    if exponent == u64(0x7FF) {
+        if fraction == 0 {
+            return Decimal { count: 0, point: 0, negative: negative, kind: Kind.infinity }
+        }
+        return Decimal { count: 0, point: 0, negative: false, kind: Kind.nan }
+    }
+
+    if exponent == 0 && fraction == 0 {
+        return Decimal { count: 0, point: 0, negative: negative, kind: Kind.zero }
+    }
+    mantissa: u64 = fraction
+    exponent2: i32 = -1074
+
+    if exponent != 0 {
+        mantissa |= u64(0x10000000000000)
+        exponent2 = i32(exponent) - 1023 - 52
+    }
+    return fixed(mantissa, exponent2, int(precision), negative, out)
+}
+
+pub fixed32(value: f32, precision: usize, out: mut []u8): Decimal {
+    raw: u32 = bits.from_float(value)
+    negative: bool = raw >> 31 != 0
+    exponent: u32 = (raw >> 23) & u32(0xFF)
+    fraction: u32 = raw & u32(0x7FFFFF)
+
+    if exponent == u32(0xFF) {
+        if fraction == 0 {
+            return Decimal { count: 0, point: 0, negative: negative, kind: Kind.infinity }
+        }
+        return Decimal { count: 0, point: 0, negative: false, kind: Kind.nan }
+    }
+
+    if exponent == 0 && fraction == 0 {
+        return Decimal { count: 0, point: 0, negative: negative, kind: Kind.zero }
+    }
+    mantissa: u64 = u64(fraction)
+    exponent2: i32 = -149
+
+    if exponent != 0 {
+        mantissa |= u64(0x800000)
+        exponent2 = i32(exponent) - 127 - 23
+    }
+    return fixed(mantissa, exponent2, int(precision), negative, out)
+}

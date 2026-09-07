@@ -2272,8 +2272,8 @@ static int byte_sequence_parts(Em* e, Node* at, EV value, SType* t,
 /*
  * Compare the complete byte sequences represented by [N]u8, []u8, or
  * string.  Both values have already been evaluated in source order.  A
- * length mismatch touches no element storage; equal nonzero lengths use the
- * platform byte comparator directly and introduce no converted view.
+ * length mismatch touches no element storage; equal nonzero lengths are
+ * compared directly one unsigned byte at a time with no converted view.
  */
 static EV gen_byte_sequence_eq(Em* e, Node* n, EV a, SType* at,
                                EV b, SType* bt, int eq) {
@@ -2290,18 +2290,25 @@ static EV gen_byte_sequence_eq(Em* e, Node* n, EV a, SType* at,
     load_imm(e, 0, xreg(out), 1);
     cbz_(e, 1, xreg(alen), 0, done);
 
-    CallArg args[3] = {
-        { NULL, { CLS_INT, aptr }, 1, 0 },
-        { NULL, { CLS_INT, bptr }, 1, 0 },
-        { NULL, { CLS_INT, alen }, 1, 0 },
-    };
-    SType* params[3] = { raw_pointer_type(), raw_pointer_type(), default_i64() };
-    uint8_t muts[3] = { 0, 0, 0 };
-    CallTarget tgt = { TK_EXTERN, "_memcmp", 7, 0 };
-    EV cmp = emit_call(e, n, args, 3, params, muts, 3, 0, -1, tgt,
-                       default_i64());
-    ins(e, 0x7100001Fu | ((uint32_t)xreg(cmp.idx) << 5)); // cmp wresult, #0
-    cset_(e, 0, C_EQ, xreg(out));
+    int aend = tmp_int(e);
+    ins(e, 0x8B000000u | ((uint32_t)xreg(alen) << 16) |
+           ((uint32_t)xreg(aptr) << 5) | (uint32_t)xreg(aend));
+    int loop = new_label(e), mismatch = new_label(e);
+    bind_label(e, loop);
+    ld_reg(e, 16, xreg(aptr), 0, 1, 0);
+    ld_reg(e, 17, xreg(bptr), 0, 1, 0);
+    ins(e, 0x6B00001Fu | (17u << 16) | (16u << 5)); // cmp w16, w17
+    bcond_(e, C_NE, mismatch);
+    ins(e, 0x91000400u | ((uint32_t)xreg(aptr) << 5) |
+           (uint32_t)xreg(aptr));
+    ins(e, 0x91000400u | ((uint32_t)xreg(bptr) << 5) |
+           (uint32_t)xreg(bptr));
+    ins(e, 0xEB00001Fu | ((uint32_t)xreg(aend) << 16) |
+           ((uint32_t)xreg(aptr) << 5));
+    bcond_(e, C_NE, loop);
+    br_(e, done);
+    bind_label(e, mismatch);
+    load_imm(e, 0, xreg(out), 0);
 
     bind_label(e, done);
     if (!eq)
@@ -2739,15 +2746,23 @@ static EV gen_process_entry_builtin(Em* e, Node* call, int environment) {
     int ptr = tmp_int(e);
     ld_reg(e, xreg(ptr), xreg(entry_addr), 0, 8, 0);
 
-    CallArg arg = { NULL, { CLS_INT, ptr }, 1, 0 };
-    SType* param = raw_pointer_type();
-    uint8_t mut = 0;
-    CallTarget strlen_tgt = { TK_EXTERN, "_strlen", 7, 0 };
-    EV len = emit_call(e, call, &arg, 1, &param, &mut, 1, 0, -1,
-                       strlen_tgt, default_i64());
+    int cursor = tmp_int(e);
+    int len = tmp_int(e);
+    mov_int(e, 1, xreg(cursor), xreg(ptr));
+    load_imm(e, 1, xreg(len), 0);
+    int loop = new_label(e), scanned = new_label(e);
+    bind_label(e, loop);
+    ld_reg(e, 16, xreg(cursor), 0, 1, 0);
+    cbz_(e, 0, 16, 0, scanned);
+    ins(e, 0x91000400u | ((uint32_t)xreg(cursor) << 5) |
+           (uint32_t)xreg(cursor)); // add cursor, cursor, #1
+    ins(e, 0x91000400u | ((uint32_t)xreg(len) << 5) |
+           (uint32_t)xreg(len)); // add len, len, #1
+    br_(e, loop);
+    bind_label(e, scanned);
     frame_addr(e, 16, off);
     st_reg(e, xreg(ptr), 16, 0, 8);
-    st_reg(e, xreg(len.idx), 16, 8, 8);
+    st_reg(e, xreg(len), 16, 8, 8);
     return finish_slice_builtin(e, si, sf, off);
 }
 
@@ -3055,17 +3070,47 @@ static EV gen_byte_write_builtin(Em* e, Node* call, int intrinsic) {
             }
         }
         cbz_(e, 1, xreg(slen), 0, done); // empty slices may carry null pointers
-        CallArg args[3] = {
-            { NULL, { CLS_INT, dst }, 1, 0 },
-            { NULL, { CLS_INT, src }, 1, 0 },
-            { NULL, { CLS_INT, slen }, 1, 0 },
-        };
-        SType* params[3] = { raw_pointer_type(), raw_pointer_type(), default_i64() };
-        uint8_t muts[3] = { 0, 0, 0 };
-        const char* name = intrinsic == BI_MEM_COPY ? "_memcpy" : "_memmove";
-        uint32_t nlen = intrinsic == BI_MEM_COPY ? 7 : 8;
-        CallTarget tgt = { TK_EXTERN, name, nlen, 0 };
-        (void)emit_call(e, call, args, 3, params, muts, 3, 0, -1, tgt, NULL);
+        int forward = new_label(e);
+        if (intrinsic == BI_MEM_MOVE) {
+            ins(e, 0xEB00001Fu | ((uint32_t)xreg(src) << 16) |
+                   ((uint32_t)xreg(dst) << 5));
+            bcond_(e, C_EQ, done);
+            bcond_(e, C_LO, forward);
+
+            int src_end = tmp_int(e), dst_end = tmp_int(e);
+            ins(e, 0x8B000000u | ((uint32_t)xreg(slen) << 16) |
+                   ((uint32_t)xreg(src) << 5) | (uint32_t)xreg(src_end));
+            ins(e, 0x8B000000u | ((uint32_t)xreg(slen) << 16) |
+                   ((uint32_t)xreg(dst) << 5) | (uint32_t)xreg(dst_end));
+            int backward_loop = new_label(e);
+            bind_label(e, backward_loop);
+            ins(e, 0xD1000400u | ((uint32_t)xreg(src_end) << 5) |
+                   (uint32_t)xreg(src_end));
+            ins(e, 0xD1000400u | ((uint32_t)xreg(dst_end) << 5) |
+                   (uint32_t)xreg(dst_end));
+            ld_reg(e, 16, xreg(src_end), 0, 1, 0);
+            st_reg(e, 16, xreg(dst_end), 0, 1);
+            ins(e, 0xEB00001Fu | ((uint32_t)xreg(src) << 16) |
+                   ((uint32_t)xreg(src_end) << 5));
+            bcond_(e, C_NE, backward_loop);
+            br_(e, done);
+        }
+
+        bind_label(e, forward);
+        int src_end = tmp_int(e);
+        ins(e, 0x8B000000u | ((uint32_t)xreg(slen) << 16) |
+               ((uint32_t)xreg(src) << 5) | (uint32_t)xreg(src_end));
+        int forward_loop = new_label(e);
+        bind_label(e, forward_loop);
+        ld_reg(e, 16, xreg(src), 0, 1, 0);
+        st_reg(e, 16, xreg(dst), 0, 1);
+        ins(e, 0x91000400u | ((uint32_t)xreg(src) << 5) |
+               (uint32_t)xreg(src));
+        ins(e, 0x91000400u | ((uint32_t)xreg(dst) << 5) |
+               (uint32_t)xreg(dst));
+        ins(e, 0xEB00001Fu | ((uint32_t)xreg(src_end) << 16) |
+               ((uint32_t)xreg(src) << 5));
+        bcond_(e, C_NE, forward_loop);
     } else {
         int byte = tmp_int(e);
         if (intrinsic == BI_MEM_FILL) {
@@ -3075,15 +3120,17 @@ static EV gen_byte_write_builtin(Em* e, Node* call, int intrinsic) {
             load_imm(e, 1, xreg(byte), 0);
         }
         cbz_(e, 1, xreg(dlen), 0, done);
-        CallArg args[3] = {
-            { NULL, { CLS_INT, dst }, 1, 0 },
-            { NULL, { CLS_INT, byte }, 1, 0 },
-            { NULL, { CLS_INT, dlen }, 1, 0 },
-        };
-        SType* params[3] = { raw_pointer_type(), default_i64(), default_i64() };
-        uint8_t muts[3] = { 0, 0, 0 };
-        CallTarget tgt = { TK_EXTERN, "_memset", 7, 0 };
-        (void)emit_call(e, call, args, 3, params, muts, 3, 0, -1, tgt, NULL);
+        int end = tmp_int(e);
+        ins(e, 0x8B000000u | ((uint32_t)xreg(dlen) << 16) |
+               ((uint32_t)xreg(dst) << 5) | (uint32_t)xreg(end));
+        int loop = new_label(e);
+        bind_label(e, loop);
+        st_reg(e, xreg(byte), xreg(dst), 0, 1);
+        ins(e, 0x91000400u | ((uint32_t)xreg(dst) << 5) |
+               (uint32_t)xreg(dst));
+        ins(e, 0xEB00001Fu | ((uint32_t)xreg(end) << 16) |
+               ((uint32_t)xreg(dst) << 5));
+        bcond_(e, C_NE, loop);
     }
     bind_label(e, done);
     e->vti = si;
@@ -3108,22 +3155,30 @@ static EV gen_compare_builtin(Em* e, Node* call) {
 
     int out = tmp_int(e);
     load_imm(e, 1, xreg(out), 0);
-    int by_length = new_label(e), negative = new_label(e), done = new_label(e);
+    int by_length = new_label(e), negative = new_label(e);
+    int positive = new_label(e), done = new_label(e);
     cbz_(e, 1, xreg(count), 0, by_length);
 
-    CallArg args[3] = {
-        { NULL, { CLS_INT, aptr }, 1, 0 },
-        { NULL, { CLS_INT, bptr }, 1, 0 },
-        { NULL, { CLS_INT, count }, 1, 0 },
-    };
-    SType* params[3] = { raw_pointer_type(), raw_pointer_type(), default_i64() };
-    uint8_t muts[3] = { 0, 0, 0 };
-    CallTarget tgt = { TK_EXTERN, "_memcmp", 7, 0 };
-    EV cmp = emit_call(e, call, args, 3, params, muts, 3, 0, -1, tgt,
-                       default_i64());
-    ins(e, 0x7100001Fu | ((uint32_t)xreg(cmp.idx) << 5)); // cmp wresult, #0
-    bcond_(e, C_EQ, by_length);
-    bcond_(e, C_LT, negative);
+    int aend = tmp_int(e);
+    ins(e, 0x8B000000u | ((uint32_t)xreg(count) << 16) |
+           ((uint32_t)xreg(aptr) << 5) | (uint32_t)xreg(aend));
+    int loop = new_label(e);
+    bind_label(e, loop);
+    ld_reg(e, 16, xreg(aptr), 0, 1, 0);
+    ld_reg(e, 17, xreg(bptr), 0, 1, 0);
+    ins(e, 0x6B00001Fu | (17u << 16) | (16u << 5)); // cmp w16, w17
+    bcond_(e, C_LO, negative);
+    bcond_(e, C_HI, positive);
+    ins(e, 0x91000400u | ((uint32_t)xreg(aptr) << 5) |
+           (uint32_t)xreg(aptr));
+    ins(e, 0x91000400u | ((uint32_t)xreg(bptr) << 5) |
+           (uint32_t)xreg(bptr));
+    ins(e, 0xEB00001Fu | ((uint32_t)xreg(aend) << 16) |
+           ((uint32_t)xreg(aptr) << 5));
+    bcond_(e, C_NE, loop);
+    br_(e, by_length);
+
+    bind_label(e, positive);
     load_imm(e, 1, xreg(out), 1);
     br_(e, done);
 
@@ -3442,6 +3497,28 @@ static EV gen_call(Em* e, Node* call) {
         EV b = gen_expr(e, call->kids[1]);
         return gen_byte_sequence_eq(e, call, a, node_ty(call->kids[0]), b,
                                     node_ty(call->kids[1]), 1);
+    }
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival == BI_BITS_FROM_FLOAT) {
+        EV value = gen_expr(e, call->kids[0]);
+        int bits = tmp_int(e);
+        int is64 = unwrap(node_ty(call->kids[0]))->prim == P_F64;
+        uint32_t op = is64 ? 0x9E660000u : 0x1E260000u;
+        ins(e, op | ((uint32_t)vreg(value.idx) << 5) |
+               (uint32_t)xreg(bits)); // fmov integer bits from fp register
+        e->vtf = value.idx;
+        return (EV){ CLS_INT, bits };
+    }
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival == BI_BITS_TO_FLOAT) {
+        EV bits = gen_expr(e, call->kids[0]);
+        int value = tmp_fp(e);
+        int is64 = unwrap(node_ty(call))->prim == P_F64;
+        uint32_t op = is64 ? 0x9E670000u : 0x1E270000u;
+        ins(e, op | ((uint32_t)xreg(bits.idx) << 5) |
+               (uint32_t)vreg(value)); // fmov fp value from integer bits
+        e->vti = bits.idx;
+        return (EV){ CLS_FP, value };
     }
     if (intrinsic && intrinsic->decl) {
         switch (intrinsic->decl->ival) {
@@ -5227,7 +5304,20 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
         }
     }
 
-    for (int i = 0; i < f->b->nkids; i++) emit_stmt(e, f->b->kids[i]);
+    if (f->flags & F_INTRINSIC) {
+        if (f->ival == BI_BITS_FROM_FLOAT) {
+            int is64 = unwrap(pt[0])->prim == P_F64;
+            ins(e, is64 ? 0x9E660000u : 0x1E260000u); // fmov x0,d0 / w0,s0
+        } else if (f->ival == BI_BITS_TO_FLOAT) {
+            int is64 = unwrap(ret)->prim == P_F64;
+            ins(e, is64 ? 0x9E670000u : 0x1E270000u); // fmov d0,x0 / s0,w0
+        }
+        emit_epilogue(e);
+        e->ended_return = 1;
+    }
+
+    if (f->b)
+        for (int i = 0; i < f->b->nkids; i++) emit_stmt(e, f->b->kids[i]);
 
     if (!e->ended_return) { // fall-off end: zero the result registers
         emit_defers(e, NULL); // no result register is live here

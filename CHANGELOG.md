@@ -98,6 +98,9 @@ current normative rules, and Git preserves patch-level detail.
 - Added standard directory modules (`std/name/module.ace`) beside single-file
   modules, with ambiguity diagnostics. OS-layer files remain explicitly imported
   behind stable public facades.
+- Reserved the canonical compiler-shipped `std/internal/` subtree for imports
+  from standard-library sources, enforcing the boundary after path
+  canonicalization while leaving direct internal-source checks available.
 - Implemented `extern "c"`, `export`, link names, and C variadics behind a
   positive ABI whitelist. Apple-arm64 lowering covers compatible scalars,
   pointers, distincts, recursive structs, nested arrays, register exhaustion,
@@ -159,13 +162,38 @@ current normative rules, and Git preserves patch-level detail.
   exit/signal status, keeping process-control externs in the private Darwin OS
   layer. Added `net.local` for querying an ephemeral bound endpoint; networking
   fixtures now bind port zero instead of guessing ports from process IDs.
+- Removed generated programs' `strlen` dependency: `sys.arg` and `sys.env` now
+  scan their OS-provided NUL-terminated entry bytes directly in emitted code.
+- Removed generated programs' `memcmp` dependency: `mem.compare`, `mem.equal`,
+  and byte-sequence equality now use direct emitted unsigned-byte loops.
+- Removed generated programs' `memset` dependency: `mem.fill` and `mem.zero`
+  now use direct emitted byte-store loops.
+- Removed generated programs' `memcpy` and `memmove` dependencies: `mem.copy`
+  emits a forward byte loop and `mem.move` selects forward or backward traversal
+  from the source and destination addresses.
+- Added the public `bits` standard module with exact compiler-backed
+  `from_float` and `to_float` overloads for `f32`/`u32` and `f64`/`u64`; all
+  four preserve complete IEEE-754 representations through register moves with
+  no runtime call. Added the restricted trailing `intrinsic` declaration form;
+  admitted declarations receive real callable symbols while direct calls may
+  inline the same instruction sequence.
+- Replaced generated float formatting's `ecvt`/`fcvt`, parse-back, `floor`,
+  floating-environment, and memory-helper dependencies with a shared native
+  exact binary-to-decimal engine under `std/internal`. Fixed-capacity base-2^32
+  arithmetic produces shortest round-trip `f32`/`f64` text and fixed `%f`
+  rounding through precision 324 without allocation or platform conversion.
+- Replaced `str.parse[f32/f64]` platform parsing with native exact
+  decimal-to-IEEE conversion. Fixed-capacity bigint comparisons select adjacent
+  values and round exact midpoints to even, including subnormal and overflow
+  boundaries, without allocation, locale state, `strtod`, or `strtof`.
 - Added `sys.pipe` so descriptor-polling fixtures also use the public OS facade
   instead of declaring a test-local C binding.
 - Exposed the target-defined `sys.EAGAIN` and `sys.EWOULDBLOCK` errno constants
   so nonblocking callers do not embed platform numbers.
 - Standardized OS-specific stdlib organization as a public `module.ace` facade
-  selecting `os/<target>.ace`; `fmt`, `net`, `poll`, `str`, and `sys` use the
-  layout, and each target file implements its facade operations directly.
+  selecting `os/<target>.ace`; `fmt`, `net`, `poll`, and `sys` use the layout,
+  and each target file implements its facade operations directly. Flattened
+  `str` back to `std/str.ace` after its final OS dependency was removed.
 - `math` currently contains only its minimal implemented integer/generic
   helpers; floating libm and SIMD remain open work.
 

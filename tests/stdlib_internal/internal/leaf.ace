@@ -1,0 +1,3 @@
+pub value(): int {
+    return 39
+}

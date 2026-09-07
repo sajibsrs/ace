@@ -20,6 +20,7 @@
     X(EMBED, "embed")                                                         \
     X(SIGNS, "signs") X(DISTINCT, "distinct") X(TYPE, "type")                \
     X(ENUM, "enum") X(UNION, "union") X(SPECIALIZED, "specialized")            \
+    X(INTRINSIC, "intrinsic")                                                  \
     X(NULL, "null") X(TRUE, "true") X(FALSE, "false")                          \
     /* literals */                                                             \
     X(INT, "int") X(FLOAT, "float") X(STR, "string") X(CHARLIT, "char")        \
@@ -135,7 +136,7 @@ enum {
     F_PUB = 1, F_EXPO = 2, F_MUT = 4, F_NOALIAS = 8, F_CONST = 16,
     F_ELSE = 32, F_VARARGS = 64, F_METHOD = 128, F_SELECT = 256,
     F_EMBED = 512, F_SPECIALIZED = 1024, F_FORGEN = 2048, F_ELIDED = 4096,
-    F_MIXED = 8192, F_BOUNDS_PROVEN = 16384,
+    F_MIXED = 8192, F_BOUNDS_PROVEN = 16384, F_INTRINSIC = 32768,
 };
 
 // Compiler-backed standard-module functions. These markers live only on the
@@ -159,6 +160,8 @@ enum {
     BI_SYS_ENVC = 16,
     BI_SYS_ENV = 17,
     BI_MEM_EQUAL = 18,
+    BI_BITS_FROM_FLOAT = 19,
+    BI_BITS_TO_FLOAT = 20,
 };
 
 enum {

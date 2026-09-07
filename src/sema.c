@@ -1285,7 +1285,40 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
                (int)f->len, f->str);
         return NULL;
     }
+    if (f->flags & F_INTRINSIC) {
+        if (!f->ival) {
+            ck_err(k, f, "'intrinsic' declarations are restricted to compiler-provided standard-library operations");
+        }
+        if (!(f->flags & F_PUB))
+            ck_err(k, f, "intrinsic declaration '%.*s' must be public",
+                   (int)f->len, f->str);
+        if (f->flags & (F_EXPO | F_METHOD))
+            ck_err(k, f, "intrinsic declaration '%.*s' cannot be a method or C export",
+                   (int)f->len, f->str);
+        if (f->c)
+            ck_err(k, f, "intrinsic declaration '%.*s' cannot be generic or specialized",
+                   (int)f->len, f->str);
+    }
     SType* ft = build_func_type(k, f, NULL, 0);
+    if ((f->flags & F_INTRINSIC) && f->ival) {
+        SType* p = ft->nparams == 1 ? ft->params[0] : NULL;
+        SType* r = ft->ret;
+        int from64 = f->ival == BI_BITS_FROM_FLOAT && p && r &&
+            p->kind == SK_PRIM && p->prim == P_F64 &&
+            r->kind == SK_PRIM && r->prim == P_U64;
+        int from32 = f->ival == BI_BITS_FROM_FLOAT && p && r &&
+            p->kind == SK_PRIM && p->prim == P_F32 &&
+            r->kind == SK_PRIM && r->prim == P_U32;
+        int to64 = f->ival == BI_BITS_TO_FLOAT && p && r &&
+            p->kind == SK_PRIM && p->prim == P_U64 &&
+            r->kind == SK_PRIM && r->prim == P_F64;
+        int to32 = f->ival == BI_BITS_TO_FLOAT && p && r &&
+            p->kind == SK_PRIM && p->prim == P_U32 &&
+            r->kind == SK_PRIM && r->prim == P_F32;
+        if (!(from64 || from32 || to64 || to32))
+            ck_err(k, f, "intrinsic declaration '%.*s' does not match a compiler-provided signature",
+                   (int)f->len, f->str);
+    }
     if (is_extern || (f->flags & F_EXPO)) {
         if (f->c) {
             ck_err(k, f, "C-boundary function '%.*s' cannot be generic",
@@ -5194,7 +5227,7 @@ int sema_check(Node* file, Diag* d) {
                     overload_count(head) != 1)
                     ck_err(&k, n, "entry function must be main(): int");
             }
-            if (!s->is_generic) {
+            if (!s->is_generic && !(n->flags & F_INTRINSIC)) {
                 check_func_body(&k, n); // single pass: check now, in order
             }
             break;

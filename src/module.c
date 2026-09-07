@@ -65,6 +65,7 @@ struct Module {
 typedef struct {
     Diag*       d;
     const char* compiler_path;
+    const char* std_root; // canonical compiler-shipped std directory
     const char* target;
     CompileReport* report;
     Module*     mods;    // completed modules, dependency order
@@ -135,6 +136,33 @@ static const char* canonicalize(const char* path) {
     char buf[4096];
     if (!realpath(path, buf)) return NULL;
     return arena_string(buf);
+}
+
+// True only for descendants, with a path-component boundary after dir.
+static int path_beneath(const char* path, const char* dir) {
+    size_t n = strlen(dir);
+    return strncmp(path, dir, n) == 0 && path[n] == '/';
+}
+
+static int is_std_source(Loader* L, const char* canon) {
+    return L->std_root && path_beneath(canon, L->std_root);
+}
+
+static int is_std_internal(Loader* L, const char* canon) {
+    if (!L->std_root) return 0;
+    size_t n = strlen(L->std_root);
+    return strncmp(canon, L->std_root, n) == 0 &&
+           strcmp(canon + n, "/internal") != 0 &&
+           strncmp(canon + n, "/internal/", 10) == 0;
+}
+
+static const char* std_display_path(Loader* L, const char* canon) {
+    size_t n = strlen(L->std_root);
+    size_t tail = strlen(canon + n);
+    char* out = arena_alloc(3 + tail + 1);
+    memcpy(out, "std", 3);
+    memcpy(out + 3, canon + n, tail + 1);
+    return out;
 }
 
 // --- module loading -----------------------------------------------------------------
@@ -247,6 +275,18 @@ static int is_std_named_module(Loader* L, const char* canon, const char* name) {
     if (expected && strcmp(expected, canon) == 0) return 1;
     expected = canonicalize(directory);
     return expected && strcmp(expected, canon) == 0;
+}
+
+static void mark_bits_intrinsics(Loader* L, Module* m) {
+    if (!is_std_named_module(L, m->canon, "bits")) return;
+    for (int i = 0; i < m->file->nkids; i++) {
+        Node* n = m->file->kids[i];
+        if (n->kind != N_FUNC || !(n->flags & F_INTRINSIC)) continue;
+        if (text_is(n->str, n->len, "from_float"))
+            n->ival = BI_BITS_FROM_FLOAT;
+        else if (text_is(n->str, n->len, "to_float"))
+            n->ival = BI_BITS_TO_FLOAT;
+    }
 }
 
 static void mark_mem_intrinsics(Loader* L, Module* m) {
@@ -510,6 +550,14 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
                    imp->a ? imp->a->str : imp->str, src_path);
         return NULL;
     }
+    const char* importer = canonicalize(src_path);
+    if (is_std_internal(L, canon) &&
+        (!importer || !is_std_source(L, importer))) {
+        import_err(L->d, imp,
+                   "standard-library internal module '%s' may be imported only by standard-library sources",
+                   std_display_path(L, canon));
+        return NULL;
+    }
     if (module_on_stack(L, canon)) {
         report_cycle(L, imp, canon);
         return NULL;
@@ -523,6 +571,7 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
     mark_mem_intrinsics(L, m);
     mark_fmt_intrinsics(L, m);
     mark_sys_intrinsics(L, m);
+    mark_bits_intrinsics(L, m);
     m->next = L->loading; // push
     L->loading = m;
     resolve_file(L, file, canon, 0);
@@ -1153,6 +1202,12 @@ int resolve_imports(Node* file, Diag* d, const char* compiler_path,
     Loader L = {0};
     L.d = d;
     L.compiler_path = compiler_path;
+    char compiler[4096];
+    compiler_dir(compiler, sizeof compiler, compiler_path);
+    char std_path[4608];
+    if (strcmp(compiler, ".") == 0) snprintf(std_path, sizeof std_path, "std");
+    else snprintf(std_path, sizeof std_path, "%s/std", compiler);
+    L.std_root = canonicalize(std_path);
     L.target = target;
     L.report = report;
 

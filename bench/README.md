@@ -3,6 +3,44 @@
 These are manual measurements, not pass/fail performance thresholds. Close
 other expensive workloads and run several times before comparing results.
 
+## Strings and byte operations
+
+Run equivalent deterministic byte/string workloads through Ace release output
+and optimized C/libSystem:
+
+```sh
+./bench/run-string.sh
+```
+
+The report includes nanoseconds per operation and the Ace/C ratio for 64- and
+4096-byte comparison and copying, a late-match substring search, exact `f64`
+parsing, and float formatting. Parsing uses identical inputs and requires equal
+Ace/C bit checksums. C formatting uses `snprintf("%.17g")` only as a performance
+reference: it does not implement Ace's exact shortest-format contract, so its
+checksum and output lengths are not semantic comparisons. Timings are manual
+measurements, not test-suite thresholds; run several times on an idle machine.
+
+### Initial string baseline
+
+Three consecutive runs on the reference Apple-arm64 development machine with
+Apple Clang 21 produced these median release-mode results:
+
+- 64-byte compare: Ace 54.17 ns, C 5.82 ns (9.31x)
+- 4096-byte compare: Ace 3975.50 ns, C 196.74 ns (20.21x)
+- 64-byte copy: Ace 35.71 ns, C 3.98 ns (8.97x)
+- 4096-byte copy: Ace 2002.20 ns, C 74.95 ns (26.71x)
+- late 4096-byte substring search: Ace 16498.44 ns, C 2005.88 ns (8.22x)
+- `f64` parse: Ace 540161.91 ns, C 27.19 ns (about 19,866x)
+- shortest `f64` format: Ace 202440.32 ns, C `%.17g` 743.81 ns
+  (about 272x; reference workload only because the contracts differ)
+
+The byte loops expose the expected gap between scalar direct emission and
+libSystem's tuned implementations. Exact float parsing is the dominant issue:
+the initial correctness-first converter performs a bigint-backed binary search
+across the IEEE value space. These measurements justify a separate optimization
+carve; they do not weaken the native exact semantics or reopen convenience
+runtime dependencies.
+
 ## CPU
 
 Run the bounded integer recurrence in Ace checked and release modes and in

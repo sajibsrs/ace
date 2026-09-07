@@ -63,5 +63,15 @@ main(): int {
     if !mem.equal(make_array(), make_string()) || left_calls != 1 || right_calls != 1 {
         return 11
     }
+    if mem.compare(first_view, second_view) != 0 ||
+       mem.compare(short_view, first_view) >= 0 ||
+       mem.compare(first_view, short_view) <= 0 {
+        return 12
+    }
+    high: [1]u8 = [255]
+    low: [1]u8 = [1]
+    if mem.compare(high[..], low[..]) <= 0 || mem.compare(low[..], high[..]) >= 0 {
+        return 13
+    }
     return 42
 }

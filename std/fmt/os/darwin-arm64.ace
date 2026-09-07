@@ -2,53 +2,8 @@
 
 extern "c" {
     c_write(fd: i32, data: *u8, size: usize): int = "write"
-    c_ecvt(value: f64, ndigit: i32, decpt: mut *i32, sign: mut *i32): *u8 = "ecvt"
-    c_fcvt(value: f64, ndigit: i32, decpt: mut *i32, sign: mut *i32): *u8 = "fcvt"
-    c_floor(value: f64): f64 = "floor"
-    c_fegetround(): i32 = "fegetround"
-    c_fesetround(mode: i32): i32 = "fesetround"
-    c_memcpy(dst: *u8, src: *u8, size: usize): *u8 = "memcpy"
-    c_memmove(dst: *u8, src: *u8, size: usize): *u8 = "memmove"
-    c_strtod(text: *u8, end: *u8): f64 = "strtod"
-    c_strtof(text: *u8, end: *u8): f32 = "strtof"
 }
 
 pub write(data: *u8, size: usize): int {
     return c_write(1, data, size)
-}
-
-pub ecvt(value: f64, ndigit: i32, decpt: mut *i32, sign: mut *i32): *u8 {
-    return c_ecvt(value, ndigit, decpt, sign)
-}
-
-pub fcvt(value: f64, ndigit: i32, decpt: mut *i32, sign: mut *i32): *u8 {
-    return c_fcvt(value, ndigit, decpt, sign)
-}
-
-pub floor(value: f64): f64 {
-    return c_floor(value)
-}
-
-pub fegetround(): i32 {
-    return c_fegetround()
-}
-
-pub fesetround(mode: i32): i32 {
-    return c_fesetround(mode)
-}
-
-pub memcpy(dst: *u8, src: *u8, size: usize): *u8 {
-    return c_memcpy(dst, src, size)
-}
-
-pub memmove(dst: *u8, src: *u8, size: usize): *u8 {
-    return c_memmove(dst, src, size)
-}
-
-pub strtod(text: *u8, end: *u8): f64 {
-    return c_strtod(text, end)
-}
-
-pub strtof(text: *u8, end: *u8): f32 {
-    return c_strtof(text, end)
 }

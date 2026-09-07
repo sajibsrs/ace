@@ -33,6 +33,22 @@ in section 2, subject to promotion through the Decision Queue.
 - **[implemented]** Allocator diagnostics (Safety & Checked Builds #9).
 - **[implemented]** Language-level `assert(bool)`, checked-only and release-stripped, for invariants and simple checked-mode tests (Safety & Checked Builds #10).
 
+### Platform-boundary cleanup
+
+- **Remove non-platform C convenience dependencies** [open] — native exact
+  float formatting and parsing have removed `ecvt`/`fcvt`, `strtod`/`strtof`,
+  `floor`, and floating-environment use. The emitted-object audit finds no
+  remaining `memcmp`, `memcpy`, `memmove`, `memset`, or `strlen` dependency
+  implementing Ace operations. Preserve only the
+  purpose-based boundary of C Interop #4: stable OS interfaces and, where direct
+  syscalls are unavailable or unstable, OS-provided entry points such as Darwin
+  libSystem, the selected platform allocator, process termination, clocks, and
+  the platform resolver. Do not restrict ordinary C facilities inside the C11
+  bootstrap compiler: that is a build-time implementation choice. Do not replace
+  stable macOS interfaces with private direct syscalls. Complete this cleanup in
+  bounded independently tested pieces while retaining the existing rounding
+  and round-trip contracts.
+
 ## 2. Concurrency prerequisites and carve
 
 The completed single-threaded chat proof removes networking as a prerequisite.
@@ -41,9 +57,10 @@ remains uncarved and must begin with its ABI and memory-model foundations.
 
 - **C-ABI function pointers as callable values** [new] — the C boundary
   whitelist rejects ordinary Ace function values, and taking the address of an
-  `export`ed function as a value is unspecified. `pthread_create`, `qsort`,
-  `bsearch`, `signal`, and kqueue user filters require passing a function through
-  C. Carve this before threads.
+  `export`ed function as a value is unspecified. Carve only the callback shape
+  proven necessary by a target facility, initially Darwin thread creation;
+  general callback interoperability remains additive. C `qsort`/`bsearch` are
+  not a justification because sorting and searching are Ace facilities.
 - **Memory-model statement** [new] — specify data races, synchronization, and
   what `noalias` and read-only parameter facts mean across threads before
   exposing shared-memory execution.
@@ -148,7 +165,10 @@ These are baseline observations, not performance promises.
   undecided.
 - **libm transcendentals** [open] — `sin`, `cos`, `pow`, `exp`, `log`, `floor`,
   and `ceil` for the 2D/3D milestones.
-- **Bit intrinsics** [new] — popcount, clz/ctz, byteswap, and rotate.
+- **Integer operations in `bits`** [additive] — public popcount, leading/trailing
+  zero count, byte swap, and rotate overloads using the restricted intrinsic
+  declaration mechanism; carve exact types, return types, zero behavior, and
+  rotation-count reduction before implementation.
 - **Float classification** [new] — expose or reuse the `isnan`/`isinf`/
   `isfinite` work currently private to `fmt`.
 - **Random source** [new].

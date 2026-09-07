@@ -1,0 +1,11 @@
+/* bits — explicit access to machine representations.
+ * Compiler-backed register moves; no numeric conversion or runtime calls.
+ */
+
+pub from_float(value: f64): u64 intrinsic
+
+pub from_float(value: f32): u32 intrinsic
+
+pub to_float(value: u64): f64 intrinsic
+
+pub to_float(value: u32): f32 intrinsic
