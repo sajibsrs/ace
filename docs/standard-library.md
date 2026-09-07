@@ -9,7 +9,7 @@ Today's modules:
 
 - `bits` — explicit machine-representation access and operations
 - `fmt` — allocation-free text output
-- `math` — minimal generic helpers
+- `math` — minimal generic helpers and float classification
 - `mem` — raw and typed allocation plus allocation-free byte operations
 - `net` — allocation-free IPv4 TCP sockets
 - `poll` — allocation-free readiness queues for general file descriptors
@@ -273,7 +273,7 @@ shape depends on the static format.
 
 ## math
 
-Minimal, pure-Ace, no floating-point functions yet. All three are generic and
+`math` is pure Ace. Its ordering and absolute-value helpers are generic and
 require explicit instantiation:
 
 ```ace
@@ -294,6 +294,26 @@ main(): int {
 
 The body is checked per instantiation; `T` must support the comparison and
 arithmetic used by the function.
+
+Float classification uses exact overloads for `f32` and `f64`:
+
+```ace
+if math.isnan(value) {
+    // NaN, including quiet and signaling encodings.
+} else if math.isinf(value) {
+    // Positive or negative infinity.
+} else if math.isfinite(value) {
+    // Zero, subnormal, or normal finite value.
+}
+```
+
+- `isnan(value): bool` is true exactly when the exponent is all ones and the
+  fraction is nonzero.
+- `isinf(value): bool` is true for positive and negative infinity only.
+- `isfinite(value): bool` is true for zero, subnormal, and normal finite values.
+
+Classification inspects the IEEE-754 representation through `bits`, allocates
+nothing, and does not call libm.
 
 ## str
 

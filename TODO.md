@@ -16,86 +16,86 @@ The priority bands below are recommendations, not decisions. The active
 Decision Queue in `SPEC.md` always wins; dependencies within a band are listed
 before the work they unblock.
 
-## 1. Completed checked-build checkpoint
+## 1. Core type-system completion
 
-### Checked & release build modes
+Finish the existing primitive, sequential, and aggregate model before adding
+new execution or library layers. These are narrow completion tasks, not a
+reopening of Ace's fixed explicit-type, copy, mutation, or allocation rules.
 
-The explicit `--checked`/`--release` modes and strict sequence bounds are
-implemented: emitted programs default to checked mode, while release strips
-their dynamic guards, failure paths, and diagnostic metadata. This checkpoint
-is complete; the next candidate work begins with the concurrency prerequisites
-in section 2, subject to promotion through the Decision Queue.
+### Sequential and tuple completeness
 
-- **[implemented]** Build-mode plumbing and array, slice, and string bounds diagnostics.
-- **[implemented]** Checked integer arithmetic diagnostics (Safety & Checked Builds #6).
-- **[implemented]** Call-boundary `noalias`/length diagnostics (Safety & Checked Builds #7; Memory #16).
-- **[implemented]** Checked null-use diagnostics (Safety & Checked Builds #8; Zero #2).
-- **[implemented]** Allocator diagnostics (Safety & Checked Builds #9).
-- **[implemented]** Language-level `assert(bool)`, checked-only and release-stripped, for invariants and simple checked-mode tests (Safety & Checked Builds #10).
+- **Standalone tuple literals** [new] — tuple layout already serves multiple
+  returns and destructuring, but ordinary tuple-literal initialization is not
+  implemented. Carve construction without contextual inference.
+- **Sequential/aggregate composition audit** [new] — verify nested arrays and
+  slices of structs, enums, unions, distincts, and explicit generic instances
+  across initialization, copying, mutation, parameters, returns, and checked
+  bounds. Add missing positive and negative coverage before widening the model.
 
-## 2. Concurrency prerequisites and carve
+Read-only `string` → `[]u8`, wider array/string bridges, Unicode decoding, and
+owned growable sequences remain additive library or view conveniences; they are
+not blockers for the current sequential core.
 
-The completed single-threaded chat proof removes networking as a prerequisite.
-Process control has a usable allocation-free baseline; shared-memory concurrency
-remains uncarved and must begin with its ABI and memory-model foundations.
+### Aggregate and generic construction
 
-- **C-ABI function pointers as callable values** [new] — the C boundary
-  whitelist rejects ordinary Ace function values, and taking the address of an
-  `export`ed function as a value is unspecified. Carve only the callback shape
-  proven necessary by a target facility, initially Darwin thread creation;
-  general callback interoperability remains additive. C `qsort`/`bsearch` are
-  not a justification because sorting and searching are Ace facilities.
-- **Memory-model statement** [new] — specify data races, synchronization, and
-  what `noalias` and read-only parameter facts mean across threads before
-  exposing shared-memory execution.
-- **Threads** [new] — explicit create/join/exit over libSystem pthreads;
-  create/join remain ordinary calls with no hidden control flow.
-- **Atomics** [new] — load/store/exchange/compare-and-swap plus fences with
-  explicit ordering; lower directly to the target's supported instructions.
-- **Thread-local storage** [new] — required for per-thread application state;
-  distinct from the future TLS secure-transport module.
-- **Mutex/condition-variable module** [new] — thin explicit synchronization
-  over the thread and memory model, with no hidden allocation or ownership.
-- **Process lifecycle completion** [new] — `fork`, exact-child `wait`,
-  pipes, and immediate `exit` are implemented. Add `exec`/spawn composition,
-  explicit argument/environment and descriptor wiring, and nonblocking waits
-  only when a concrete subprocess fixture establishes their required shapes;
-  keep this separate from shared-memory thread semantics.
+- **Generic aliases** [new] — specified by Type System #4 but not implemented
+  by the compiler.
+- **Generic struct literals** [new] — explicitly instantiated generic structs
+  exist, but their direct literal construction is not implemented.
+- **Aggregate ABI cross-product audit** [new] — extend the existing ABI oracle
+  across nested arrays, structs, unions, tuples, homogeneous floating
+  aggregates, indirect returns, register exhaustion, and explicit generic
+  instances. Treat failures as implementation defects, not new semantics.
 
-## 3. Machine-truth foundations
+### Representation and layout controls
+
+- **Enum explicit discriminants and backing width** [new] — opcodes, hardware
+  registers, and ABI structs need explicit values and storage width.
+- **`packed` / `align` attributes** [queued] — required for exact wire, hardware,
+  and C-compatible aggregate layouts.
+- **`volatile` access** [queued] — required for MMIO and other storage whose
+  reads and writes are externally observable; keep its semantics distinct from
+  aggregate layout attributes.
 
 ### Compile-time layout introspection
 
-- **`align_of(T)`** [new] — raw `mem.alloc(size, align)` callers must currently
+- **`alignof(T)`** [new] — raw `mem.alloc(size, align)` callers must currently
   guess struct alignment; typed allocation derives it privately.
-- **`offset_of(T, field)`** [new] — C structs are hand-transcribed; offsets plus
+- **`offsetof(T, field)`** [new] — C structs are hand-transcribed; offsets plus
   static assertions are how a transcription is proven.
 - **Static assertions** [new] — no general constant-expression check context
   exists.
 - **`sizeof` on expressions** [new, minor] — currently type-only.
+
+### Other compile-time machine facilities
+
 - **Source-location builtins** (`@file`/`@line`-class) [new] — bounded context
   for checked assertions and panic diagnostics.
 - **Binary data embedding (`embed "file"`)** [new] — static read-only storage
   serving later game and asset milestones.
 
-### Representation controls
+### Pointer-level machine operations
 
-- **`volatile` / `packed` / `align` attributes** [queued] — required for MMIO
-  and exact wire/ABI layouts.
-- **Enum explicit discriminants and backing width** [new] — opcodes, hardware
-  registers, and ABI structs need explicit values and storage width.
+- **Pointer arithmetic** [unspecified] — the compiler currently provides none.
+  Carve only operations that preserve Ace's explicit mutability and checked-mode
+  boundaries, without introducing iterator or ownership machinery.
 - **Pointer ↔ integer conversions** (`usize(p)`, `T(addr)`) [unspecified] — state
   the sanctioned machine-true form for descriptor packing and tagged pointers.
 - **Over-16-byte alignment for raw `mem.alloc`** [additive].
 
 ### C boundary completion
 
+- **C-ABI function pointers as callable values** [new] — the C boundary
+  whitelist rejects ordinary Ace function values, and taking the address of an
+  `export`ed function as a value is unspecified. Carve only the callback shapes
+  proven by target facilities; general callback interoperability stays
+  additive.
 - **`bool` (`_Bool`) mapping** [additive].
 - **C enums at the boundary** [additive].
 - **C global variables in extern blocks** [unspecified] — data imports such as
   `stdout` and errno-style globals are unaddressed.
 
-## 4. Compiler and backend expansion
+## 2. Compiler and backend completion
 
 - **x86-64 backend and OS layer** [open] — the second target; facade selection
   already uses `@when`.
@@ -156,7 +156,33 @@ These are baseline observations, not performance promises.
   and compile/object size before making optimizer-wide claims. `noalias`-driven
   auto-vectorization remains outside v1 as stated by Compiler #6.
 
-## 5. Practical standard-library capabilities
+## 3. Concurrency and process expansion
+
+Begin this only after the core type, representation, pointer, and C-boundary
+work above. The completed single-threaded chat proof removes networking as a
+prerequisite, and process control already has a usable allocation-free baseline.
+Shared-memory concurrency must still begin with its ABI and memory-model
+foundations.
+
+- **Memory-model statement** [new] — specify data races, synchronization, and
+  what `noalias` and read-only parameter facts mean across threads before
+  exposing shared-memory execution.
+- **Threads** [new] — explicit create/join/exit over libSystem pthreads, using
+  the narrowly carved C-callable function values from section 1; create/join
+  remain ordinary calls with no hidden control flow.
+- **Atomics** [new] — load/store/exchange/compare-and-swap plus fences with
+  explicit ordering; lower directly to the target's supported instructions.
+- **Thread-local storage** [new] — required for per-thread application state;
+  distinct from the future TLS secure-transport module.
+- **Mutex/condition-variable module** [new] — thin explicit synchronization
+  over the thread and memory model, with no hidden allocation or ownership.
+- **Process lifecycle completion** [new] — `fork`, exact-child `wait`, pipes,
+  and immediate `exit` are implemented. Add `exec`/spawn composition, explicit
+  argument/environment and descriptor wiring, and nonblocking waits only when
+  a concrete subprocess fixture establishes their required shapes; keep this
+  separate from shared-memory thread semantics.
+
+## 4. Practical standard-library capabilities
 
 - **Signals** [additive] — excluded from `poll`; servers need explicit shutdown
   handling.
@@ -172,11 +198,9 @@ These are baseline observations, not performance promises.
   undecided.
 - **libm transcendentals** [open] — `sin`, `cos`, `pow`, `exp`, `log`, `floor`,
   and `ceil` for the 2D/3D milestones.
-- **Float classification** [new] — expose or reuse the `isnan`/`isinf`/
-  `isfinite` work currently private to `fmt`.
 - **Random source** [new].
 
-## 6. Language questions and conveniences
+## 5. Language questions and conveniences
 
 Each item requires an owner decision and should wait for a motivating use case.
 
@@ -189,7 +213,7 @@ Each item requires an owner decision and should wait for a motivating use case.
   constant-fold-only today; either admission or permanent rejection should be
   stated explicitly.
 
-## 7. Later networking and protocol layers
+## 6. Later networking and protocol layers
 
 Resume after the higher-priority core work. Each layer keeps allocation,
 buffering, capacities, retries, timeouts, and ownership explicit.
@@ -206,3 +230,18 @@ buffering, capacities, retries, timeouts, and ownership explicit.
   not duplicate the protocol API as `http6` or `https6`. HTTPS is HTTP composed
   with TLS; an `https` convenience remains deferred until real usage proves it
   can preserve explicit costs and state.
+
+## 7. Completed checked-build checkpoint
+
+The explicit `--checked`/`--release` modes and strict sequence bounds are
+implemented: emitted programs default to checked mode, while release strips
+their dynamic guards, failure paths, and diagnostic metadata. This completed
+checkpoint remains here as a compact reference rather than occupying the active
+priority list.
+
+- **[implemented]** Build-mode plumbing and array, slice, and string bounds diagnostics.
+- **[implemented]** Checked integer arithmetic diagnostics (Safety & Checked Builds #6).
+- **[implemented]** Call-boundary `noalias`/length diagnostics (Safety & Checked Builds #7; Memory #16).
+- **[implemented]** Checked null-use diagnostics (Safety & Checked Builds #8; Zero #2).
+- **[implemented]** Allocator diagnostics (Safety & Checked Builds #9).
+- **[implemented]** Language-level `assert(bool)`, checked-only and release-stripped, for invariants and simple checked-mode tests (Safety & Checked Builds #10).

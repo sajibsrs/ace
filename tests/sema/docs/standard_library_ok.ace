@@ -11,6 +11,7 @@
 
 import bits
 import fmt
+import math
 import mem
 import net
 import poll
@@ -40,6 +41,10 @@ fast_inverse_sqrt_seed(value: f32): f32 {
     raw: u32 = bits.from_float(value)
     raw = u32(0x5F3759DF) - (raw >> 1)
     return bits.to_float(raw)
+}
+
+math_examples(value: f64): bool {
+    return math.isnan(value) || math.isinf(value) || math.isfinite(value)
 }
 
 str_examples(): int {

@@ -1,0 +1,62 @@
+/* Public float classification covers both widths and every IEEE-754 class. */
+
+// expect-exit: 42
+
+import bits
+import math
+
+main(): int {
+    positive_inf64: f64 = bits.to_float(u64(0x7FF0000000000000))
+    negative_inf64: f64 = bits.to_float(u64(0xFFF0000000000000))
+    quiet_nan64: f64 = bits.to_float(u64(0x7FF8000000001234))
+    signaling_nan64: f64 = bits.to_float(u64(0x7FF0000000000001))
+    negative_zero64: f64 = bits.to_float(u64(0x8000000000000000))
+    subnormal64: f64 = bits.to_float(u64(1))
+    maximum64: f64 = bits.to_float(u64(0x7FEFFFFFFFFFFFFF))
+
+    if !math.isinf(positive_inf64) || !math.isinf(negative_inf64) ||
+       math.isinf(quiet_nan64) || math.isinf(maximum64) {
+        return 1
+    }
+    if !math.isnan(quiet_nan64) || !math.isnan(signaling_nan64) ||
+       math.isnan(positive_inf64) || math.isnan(negative_zero64) {
+        return 2
+    }
+    if !math.isfinite(0.0) || !math.isfinite(negative_zero64) ||
+       !math.isfinite(subnormal64) || !math.isfinite(maximum64) ||
+       math.isfinite(positive_inf64) || math.isfinite(quiet_nan64) {
+        return 3
+    }
+
+    positive_inf32: f32 = bits.to_float(u32(0x7F800000))
+    negative_inf32: f32 = bits.to_float(u32(0xFF800000))
+    quiet_nan32: f32 = bits.to_float(u32(0x7FC01234))
+    signaling_nan32: f32 = bits.to_float(u32(0x7F800001))
+    negative_zero32: f32 = bits.to_float(u32(0x80000000))
+    subnormal32: f32 = bits.to_float(u32(1))
+    maximum32: f32 = bits.to_float(u32(0x7F7FFFFF))
+
+    if !math.isinf(positive_inf32) || !math.isinf(negative_inf32) ||
+       math.isinf(quiet_nan32) || math.isinf(maximum32) {
+        return 4
+    }
+    if !math.isnan(quiet_nan32) || !math.isnan(signaling_nan32) ||
+       math.isnan(positive_inf32) || math.isnan(negative_zero32) {
+        return 5
+    }
+    if !math.isfinite(f32(0.0)) || !math.isfinite(negative_zero32) ||
+       !math.isfinite(subnormal32) || !math.isfinite(maximum32) ||
+       math.isfinite(positive_inf32) || math.isfinite(quiet_nan32) {
+        return 6
+    }
+
+    nan64: (f64): bool = math.isnan
+    inf32: (f32): bool = math.isinf
+    finite64: (f64): bool = math.isfinite
+
+    if !nan64(quiet_nan64) || !inf32(negative_inf32) ||
+       !finite64(subnormal64) {
+        return 7
+    }
+    return 42
+}

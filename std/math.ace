@@ -1,6 +1,44 @@
-/* math — minimal v1 math helpers. Pure Ace, no libm yet; floats and richer
- * functions (sqrt, …) are follow-up work.
- */
+/* math — minimal pure-Ace numeric helpers. */
+
+import bits
+
+pub isnan(value: f64): bool {
+    raw: u64 = bits.from_float(value)
+    exponent: u64 = raw & u64(0x7FF0000000000000)
+    fraction: u64 = raw & u64(0x000FFFFFFFFFFFFF)
+    return exponent == u64(0x7FF0000000000000) && fraction != 0
+}
+
+pub isnan(value: f32): bool {
+    raw: u32 = bits.from_float(value)
+    exponent: u32 = raw & u32(0x7F800000)
+    fraction: u32 = raw & u32(0x007FFFFF)
+    return exponent == u32(0x7F800000) && fraction != 0
+}
+
+pub isinf(value: f64): bool {
+    raw: u64 = bits.from_float(value)
+    magnitude: u64 = raw & u64(0x7FFFFFFFFFFFFFFF)
+    return magnitude == u64(0x7FF0000000000000)
+}
+
+pub isinf(value: f32): bool {
+    raw: u32 = bits.from_float(value)
+    magnitude: u32 = raw & u32(0x7FFFFFFF)
+    return magnitude == u32(0x7F800000)
+}
+
+pub isfinite(value: f64): bool {
+    raw: u64 = bits.from_float(value)
+    exponent: u64 = raw & u64(0x7FF0000000000000)
+    return exponent != u64(0x7FF0000000000000)
+}
+
+pub isfinite(value: f32): bool {
+    raw: u32 = bits.from_float(value)
+    exponent: u32 = raw & u32(0x7F800000)
+    return exponent != u32(0x7F800000)
+}
 
 pub min[T](a: T, b: T): T {
     if a < b {

@@ -183,6 +183,9 @@ current normative rules, and Git preserves patch-level detail.
   `uint`, zero-count operations return the operand width, and rotations reduce
   every `uint` count modulo that width; direct and indirect calls use native
   Apple-arm64 scalar/SIMD instruction sequences with no runtime dependency.
+- Added pure-Ace `math.isnan`, `math.isinf`, and `math.isfinite` overloads for
+  `f32` and `f64`, using `bits` to classify every IEEE-754 encoding without
+  allocation or a libm dependency.
 - Replaced generated float formatting's `ecvt`/`fcvt`, parse-back, `floor`,
   floating-environment, and memory-helper dependencies with a shared native
   exact binary-to-decimal engine under `std/@`. Fixed-capacity base-2^32

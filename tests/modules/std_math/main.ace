@@ -9,5 +9,9 @@ import math
 main(): int {
     fmt.print(math.max[int](3, 9))
     fmt.print(math.abs[int](0 - 7))
+
+    if math.isnan(1.0) || math.isinf(f32(1.0)) || !math.isfinite(1.0) {
+        return 1
+    }
     return 0
 }
