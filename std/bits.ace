@@ -1,11 +1,39 @@
 /* bits — explicit access to machine representations.
- * Compiler-backed register moves; no numeric conversion or runtime calls.
+ * Compiler-backed target instructions; no numeric conversion or runtime calls.
  */
 
 pub from_float(value: f64): u64 intrinsic
-
 pub from_float(value: f32): u32 intrinsic
 
 pub to_float(value: u64): f64 intrinsic
-
 pub to_float(value: u32): f32 intrinsic
+
+pub pop_count(value: u8): uint intrinsic
+pub pop_count(value: u16): uint intrinsic
+pub pop_count(value: u32): uint intrinsic
+pub pop_count(value: u64): uint intrinsic
+
+pub leading_zeros(value: u8): uint intrinsic
+pub leading_zeros(value: u16): uint intrinsic
+pub leading_zeros(value: u32): uint intrinsic
+pub leading_zeros(value: u64): uint intrinsic
+
+pub trailing_zeros(value: u8): uint intrinsic
+pub trailing_zeros(value: u16): uint intrinsic
+pub trailing_zeros(value: u32): uint intrinsic
+pub trailing_zeros(value: u64): uint intrinsic
+
+pub byte_swap(value: u8): u8 intrinsic
+pub byte_swap(value: u16): u16 intrinsic
+pub byte_swap(value: u32): u32 intrinsic
+pub byte_swap(value: u64): u64 intrinsic
+
+pub rotate_left(value: u8, count: uint): u8 intrinsic
+pub rotate_left(value: u16, count: uint): u16 intrinsic
+pub rotate_left(value: u32, count: uint): u32 intrinsic
+pub rotate_left(value: u64, count: uint): u64 intrinsic
+
+pub rotate_right(value: u8, count: uint): u8 intrinsic
+pub rotate_right(value: u16, count: uint): u16 intrinsic
+pub rotate_right(value: u32, count: uint): u32 intrinsic
+pub rotate_right(value: u64, count: uint): u64 intrinsic

@@ -1319,7 +1319,25 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
             ft->params[0]->kind == SK_PRIM && ft->params[0]->prim == P_STRING &&
             ft->params[1]->kind == SK_PRIM && ft->params[1]->prim == P_USIZE &&
             r->kind == SK_PRIM && r->prim == P_U64;
-        if (!(from64 || from32 || to64 || to32 || load64))
+        SType* ip = ft->nparams >= 1 ? ft->params[0] : NULL;
+        int fixed_unsigned = ip && ip->kind == SK_PRIM &&
+            (ip->prim == P_U8 || ip->prim == P_U16 ||
+             ip->prim == P_U32 || ip->prim == P_U64);
+        int bit_count = fixed_unsigned && ft->nparams == 1 && r &&
+            r->kind == SK_PRIM && r->prim == P_U64 &&
+            (f->ival == BI_BITS_POP_COUNT ||
+             f->ival == BI_BITS_LEADING_ZEROS ||
+             f->ival == BI_BITS_TRAILING_ZEROS);
+        int bit_transform = fixed_unsigned && ft->nparams == 1 && r &&
+            r->kind == SK_PRIM && r->prim == ip->prim &&
+            f->ival == BI_BITS_BYTE_SWAP;
+        int bit_rotate = fixed_unsigned && ft->nparams == 2 && r &&
+            ft->params[1]->kind == SK_PRIM && ft->params[1]->prim == P_U64 &&
+            r->kind == SK_PRIM && r->prim == ip->prim &&
+            (f->ival == BI_BITS_ROTATE_LEFT ||
+             f->ival == BI_BITS_ROTATE_RIGHT);
+        if (!(from64 || from32 || to64 || to32 || load64 || bit_count ||
+              bit_transform || bit_rotate))
             ck_err(k, f, "intrinsic declaration '%.*s' does not match a compiler-provided signature",
                    (int)f->len, f->str);
     }

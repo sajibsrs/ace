@@ -61,8 +61,25 @@ typed function value; only the compiler-owned standard library may declare an
 intrinsic. Direct calls may inline the register move, while indirect calls use
 a compiler-emitted callable implementation with identical semantics.
 
-Integer population counts, leading/trailing-zero counts, byte swaps, and
-rotations belong in this module but remain separately carved additions.
+The integer operations have exact overloads for `u8`, `u16`, `u32`, and `u64`:
+
+```ace
+ones: uint = bits.pop_count(u32(0xF00F))
+high: uint = bits.leading_zeros(u16(1))       // 15
+low: uint = bits.trailing_zeros(u64(8))       // 3
+reversed: u32 = bits.byte_swap(u32(0x12345678))
+rotated: u8 = bits.rotate_left(u8(0x81), uint(1)) // 0x03
+```
+
+`pop_count`, `leading_zeros`, and `trailing_zeros` return `uint`. On a zero
+operand, either zero-count operation returns the operand width. `byte_swap`
+returns the input type and is the identity for `u8`. Rotations return the input
+type and reduce their `uint` count modulo its width, so every count is valid.
+Signed values and `usize` require an explicit conversion to one of the four
+fixed-width unsigned types. Transparent platform aliases share their underlying
+overload as usual, so `uint` uses the `u64` overload on Apple arm64. Like the
+float representation operations, these operations allocate nothing, make no
+runtime-library call, and remain usable through exact function values.
 
 Representation access supports algorithms that deliberately operate on a
 float's encoding, including the classic fast inverse-square-root seed:

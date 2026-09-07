@@ -233,11 +233,12 @@ compiler-provided standard-library operation:
 pub from_float(value: f64): u64 intrinsic
 ```
 
-It is not a user-extensible foreign-function or assembly mechanism. The initial
-whitelist consists only of the four public `bits.from_float` and `bits.to_float`
-overloads. They are ordinary first-class functions to callers: the compiler
-emits callable implementations for function values and may inline an equivalent
-instruction sequence at statically resolved direct calls.
+It is not a user-extensible foreign-function or assembly mechanism. The
+whitelist consists of the exact public operations declared by `bits` (and a
+narrow compiler-reserved standard-library byte load). They are ordinary
+first-class functions to callers: the compiler emits callable implementations
+for function values and may inline an equivalent instruction sequence at
+statically resolved direct calls.
 
 Specializations currently live in the generic's module and apply to free
 functions. Struct generics are untouched, and type-owned generic methods do not

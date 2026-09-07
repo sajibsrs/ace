@@ -737,8 +737,10 @@ if [ -d tests/emit ]; then
             fail=1
         fi
         bits_undef=$(nm -u /tmp/ace_emit/internal/float_bits.o 2>/dev/null)
-        if printf '%s\n' "$bits_undef" | grep -Eq '_(memcpy|memmove|ecvt|strtod|strtof)$'; then
-            echo "FAIL: bits representation operations must have no runtime dependency"
+        integer_bits_undef=$(nm -u /tmp/ace_emit/internal/integer_bits.o 2>/dev/null)
+        if printf '%s\n%s\n' "$bits_undef" "$integer_bits_undef" |
+           grep -Eq '_(memcpy|memmove|ecvt|strtod|strtof|popcount|clz|ctz|bswap|rotl|rotr)[0-9_]*$'; then
+            echo "FAIL: bits operations must have no runtime dependency"
             fail=1
         fi
         float_fmt_undef=$(nm -u /tmp/ace_emit/fmt/float.o 2>/dev/null)

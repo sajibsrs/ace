@@ -3338,6 +3338,72 @@ static EV gen_printf_builtin(Em* e, Node* call) {
     return (EV){ CLS_INT, out };
 }
 
+/* Emit the exact Apple-arm64 scalar operation used by both direct intrinsic
+ * calls and their ordinary callable symbols.  Narrow rotations duplicate the
+ * source pattern through a 32-bit word, so rorv's hardware count reduction is
+ * also the required modulo-8/modulo-16 reduction. */
+static void emit_bits_integer(Em* e, int intrinsic, int bits,
+                              int value, int count, int vector) {
+    int sf = bits == 64;
+    switch (intrinsic) {
+    case BI_BITS_POP_COUNT:
+        ins(e, 0x9E670000u | ((uint32_t)value << 5) | (uint32_t)vector);
+        ins(e, 0x0E205800u | ((uint32_t)vector << 5) | (uint32_t)vector);
+        ins(e, 0x0E31B800u | ((uint32_t)vector << 5) | (uint32_t)vector);
+        ins(e, 0x0E013C00u | ((uint32_t)vector << 5) | (uint32_t)value);
+        return;
+    case BI_BITS_LEADING_ZEROS:
+        ins(e, (sf ? 0xDAC01000u : 0x5AC01000u) |
+               ((uint32_t)value << 5) | (uint32_t)value);
+        if (bits < 32)
+            ins(e, 0x51000000u | ((uint32_t)(32 - bits) << 10) |
+                   ((uint32_t)value << 5) | (uint32_t)value);
+        return;
+    case BI_BITS_TRAILING_ZEROS:
+        if (bits < 32) {
+            load_imm(e, 0, 16, UINT64_C(1) << bits);
+            ins(e, 0x2A000000u | (16u << 16) |
+                   ((uint32_t)value << 5) | (uint32_t)value);
+        }
+        ins(e, (sf ? 0xDAC00000u : 0x5AC00000u) |
+               ((uint32_t)value << 5) | (uint32_t)value);
+        ins(e, (sf ? 0xDAC01000u : 0x5AC01000u) |
+               ((uint32_t)value << 5) | (uint32_t)value);
+        return;
+    case BI_BITS_BYTE_SWAP:
+        if (bits == 16)
+            ins(e, 0x5AC00400u | ((uint32_t)value << 5) | (uint32_t)value);
+        else if (bits == 32)
+            ins(e, 0x5AC00800u | ((uint32_t)value << 5) | (uint32_t)value);
+        else if (bits == 64)
+            ins(e, 0xDAC00C00u | ((uint32_t)value << 5) | (uint32_t)value);
+        return;
+    case BI_BITS_ROTATE_LEFT:
+    case BI_BITS_ROTATE_RIGHT:
+        if (bits == 8) {
+            ins(e, 0x2A002000u | ((uint32_t)value << 16) |
+                   ((uint32_t)value << 5) | (uint32_t)value);
+            ins(e, 0x2A004000u | ((uint32_t)value << 16) |
+                   ((uint32_t)value << 5) | (uint32_t)value);
+        } else if (bits == 16) {
+            ins(e, 0x2A004000u | ((uint32_t)value << 16) |
+                   ((uint32_t)value << 5) | (uint32_t)value);
+        }
+        if (intrinsic == BI_BITS_ROTATE_LEFT)
+            ins(e, (sf ? 0xCB0003E0u : 0x4B0003E0u) |
+                   ((uint32_t)count << 16) | (uint32_t)count);
+        ins(e, (sf ? 0x9AC02C00u : 0x1AC02C00u) |
+               ((uint32_t)count << 16) | ((uint32_t)value << 5) |
+               (uint32_t)value);
+        if (bits < 32)
+            ins(e, uxtw_of(bits) | ((uint32_t)value << 5) |
+                   (uint32_t)value);
+        return;
+    default:
+        return;
+    }
+}
+
 static EV gen_call(Em* e, Node* call) {
     Node* callee = call->a;
     // Explicit contract construction: Shape(&value) / Shape[T](&value).
@@ -3519,6 +3585,22 @@ static EV gen_call(Em* e, Node* call) {
                (uint32_t)vreg(value)); // fmov fp value from integer bits
         e->vti = bits.idx;
         return (EV){ CLS_FP, value };
+    }
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival >= BI_BITS_POP_COUNT &&
+        intrinsic->decl->ival <= BI_BITS_ROTATE_RIGHT) {
+        int operation = intrinsic->decl->ival;
+        EV value = gen_expr(e, call->kids[0]);
+        EV count = { CLS_INT, 0 };
+        if (call->nkids == 2) count = gen_expr(e, call->kids[1]);
+        int vector = 0;
+        int saved_vtf = e->vtf;
+        if (operation == BI_BITS_POP_COUNT) vector = vreg(tmp_fp(e));
+        emit_bits_integer(e, operation, scalar_bits(node_ty(call->kids[0])),
+                          xreg(value.idx), xreg(count.idx), vector);
+        e->vtf = saved_vtf;
+        e->vti = value.idx + 1;
+        return value;
     }
     if (intrinsic && intrinsic->decl &&
         intrinsic->decl->ival == BI_INTERNAL_LOAD_U64) {
@@ -5327,6 +5409,9 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
         } else if (f->ival == BI_INTERNAL_LOAD_U64) {
             ins(e, 0x8B020000u); // add x0,x0,x2
             ins(e, 0xF9400000u); // ldr x0,[x0]
+        } else if (f->ival >= BI_BITS_POP_COUNT &&
+                   f->ival <= BI_BITS_ROTATE_RIGHT) {
+            emit_bits_integer(e, f->ival, scalar_bits(pt[0]), 0, 1, 0);
         }
         emit_epilogue(e);
         e->ended_return = 1;

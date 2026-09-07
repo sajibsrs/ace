@@ -172,10 +172,6 @@ These are baseline observations, not performance promises.
   undecided.
 - **libm transcendentals** [open] — `sin`, `cos`, `pow`, `exp`, `log`, `floor`,
   and `ceil` for the 2D/3D milestones.
-- **Integer operations in `bits`** [additive] — public popcount, leading/trailing
-  zero count, byte swap, and rotate overloads using the restricted intrinsic
-  declaration mechanism; carve exact types, return types, zero behavior, and
-  rotation-count reduction before implementation.
 - **Float classification** [new] — expose or reuse the `isnan`/`isinf`/
   `isfinite` work currently private to `fmt`.
 - **Random source** [new].

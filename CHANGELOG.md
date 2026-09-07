@@ -178,6 +178,11 @@ current normative rules, and Git preserves patch-level detail.
   no runtime call. Added the restricted trailing `intrinsic` declaration form;
   admitted declarations receive real callable symbols while direct calls may
   inline the same instruction sequence.
+- Extended `bits` with exact `u8`/`u16`/`u32`/`u64` population count,
+  leading/trailing-zero count, byte-swap, and rotate overloads. Counts return
+  `uint`, zero-count operations return the operand width, and rotations reduce
+  every `uint` count modulo that width; direct and indirect calls use native
+  Apple-arm64 scalar/SIMD instruction sequences with no runtime dependency.
 - Replaced generated float formatting's `ecvt`/`fcvt`, parse-back, `floor`,
   floating-environment, and memory-helper dependencies with a shared native
   exact binary-to-decimal engine under `std/@`. Fixed-capacity base-2^32
