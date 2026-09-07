@@ -660,92 +660,12 @@ pub parse[usize](text: string): (usize, bool) {
     return v, ok
 }
 
-/* The exponent tail of a decimal/scientific spelling: an optional sign and
- * at least one digit, with nothing else. */
-exponent_shape(text: string, at: usize): bool {
-    n: usize = len(text)
-    cur: usize = at
-
-    if cur >= n {
-        return false
-    }
-
-    if text[cur] == 43 || text[cur] == 45 {
-        cur += 1
-    }
-
-    if cur >= n {
-        return false
-    }
-
-    for i: usize in cur .. n {
-        c: u8 = text[i]
-
-        if c < 48 || c > 57 {
-            return false
-        }
-    }
-    return true
-}
-
-/* Admits exactly the ordinary decimal/scientific spellings plus the exact
- * non-finite words fmt writes — no whitespace, plus sign, hex form, or
- * extended names — before the native exact converter receives the text. */
-float_literal_shape(text: string): bool {
-    n: usize = len(text)
-
-    if n == 0 {
-        return false
-    }
-    at: usize = 0
-
-    if text[0] == 45 {
-        at = 1
-    }
-
-    if at == n {
-        return false
-    }
-
-    if mem.equal(text, "nan") || mem.equal(text, "inf") || mem.equal(text, "-inf") {
-        return true
-    }
-    digits: usize = 0
-    seen_dot: bool = false
-
-    for i: usize in at .. n {
-        c: u8 = text[i]
-
-        if c >= 48 && c <= 57 {
-            digits += 1
-            continue
-        }
-
-        if c == 46 && !seen_dot {
-            seen_dot = true
-            continue
-        }
-
-        if (c == 101 || c == 69) && digits > 0 {
-            return exponent_shape(text, i + 1)
-        }
-        return false
-    }
-    return digits > 0
-}
-
 pub parse[f64](text: string): (f64, bool) {
-    if !float_literal_shape(text) {
-        return 0.0, false
-    }
     parsed: float_parse.Parsed64 = float_parse.binary64(text)
     return parsed.value, parsed.ok
 }
 
 pub parse[f32](text: string): (f32, bool) {
-    if !float_literal_shape(text) {
-        return 0.0, false
-    }
     parsed: float_parse.Parsed32 = float_parse.binary32(text)
     return parsed.value, parsed.ok
 }

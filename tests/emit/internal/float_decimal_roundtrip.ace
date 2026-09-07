@@ -9,7 +9,7 @@ main(): int {
     text: [64]u8 = [u8(0) : 64]
     state64: u64 = u64(0x9E3779B97F4A7C15)
 
-    for sample: int in 0 .. 512 {
+    for sample: int in 0 .. 4096 {
         state64 ^= state64 << 13
         state64 ^= state64 >> 7
         state64 ^= state64 << 17
@@ -31,7 +31,7 @@ main(): int {
     }
     state32: u32 = u32(0x9E3779B9)
 
-    for sample: int in 0 .. 512 {
+    for sample: int in 0 .. 4096 {
         state32 ^= state32 << 13
         state32 ^= state32 >> 17
         state32 ^= state32 << 5

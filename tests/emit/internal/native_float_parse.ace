@@ -33,5 +33,13 @@ main(): int {
     if !fok || bits.from_float(f) != u32(0x7F7FFFFF) { return 12 }
     f, fok = str.parse[f32]("3.4028236e38")
     if fok || bits.from_float(f) != 0 { return 13 }
+    // Exact-small tier rounds integer values directly without ambient float work.
+    d, ok = str.parse[f64]("9007199254740993")
+    if !ok || bits.from_float(d) != u64(0x4340000000000000) { return 14 }
+    f, fok = str.parse[f32]("16777217")
+    if !fok || bits.from_float(f) != u32(0x4B800000) { return 15 }
+    // The internal tier-selecting scan owns complete syntax validation.
+    d, ok = str.parse[f64]("1.0e+")
+    if ok || bits.from_float(d) != 0 { return 16 }
     return 0
 }

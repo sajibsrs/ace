@@ -182,10 +182,18 @@ current normative rules, and Git preserves patch-level detail.
   exact binary-to-decimal engine under `std/internal`. Fixed-capacity base-2^32
   arithmetic produces shortest round-trip `f32`/`f64` text and fixed `%f`
   rounding through precision 324 without allocation or platform conversion.
+- Replaced shortest `f32`/`f64` formatting's exact bigint search with an
+  Apache-2.0-attributed Ace adaptation of Ulf Adams' Ryu algorithm. Fixed-width
+  products and cached powers now select the shortest ties-to-even coefficient;
+  fixed `%f` retains the bigint path through precision 324.
 - Replaced `str.parse[f32/f64]` platform parsing with native exact
   decimal-to-IEEE conversion. Fixed-capacity bigint comparisons select adjacent
   values and round exact midpoints to even, including subnormal and overflow
   boundaries, without allocation, locale state, `strtod`, or `strtof`.
+- Added a three-tier decimal-to-float parser: exact small integers, a
+  fast_float-attributed Eisel-Lemire fixed-width path for ordinary decimals,
+  and the existing bigint comparison path for long exact fallback cases. The
+  tier-selecting scan also performs the complete syntax validation once.
 - Added `sys.pipe` so descriptor-polling fixtures also use the public OS facade
   instead of declaring a test-local C binding.
 - Exposed the target-defined `sys.EAGAIN` and `sys.EWOULDBLOCK` errno constants

@@ -1,0 +1,53 @@
+/* Ryu boundary and regression vectors rendered with Ace's notation contract. */
+
+// expect-exit: 42
+
+import bits
+import mem
+import str
+
+check64(raw: u64, expected: string): bool {
+    storage: [64]u8 = [u8(0) : 64]
+    out: mut []u8 = mut storage[..]
+    count: usize, ok: bool = str.format(out, bits.to_float(raw))
+    return ok && mem.equal(string(storage[0..count]), expected)
+}
+
+check32(raw: u32, expected: string): bool {
+    storage: [64]u8 = [u8(0) : 64]
+    out: mut []u8 = mut storage[..]
+    count: usize, ok: bool = str.format(out, bits.to_float(raw))
+    return ok && mem.equal(string(storage[0..count]), expected)
+}
+
+main(): int {
+    // Normal/subnormal edges, extrema, cached-power corners, and shift bounds.
+    if !check64(u64(0x0010000000000000), "2.2250738585072014e-308") { return 1 }
+    if !check64(u64(0x7FEFFFFFFFFFFFFF), "1.7976931348623157e308") { return 2 }
+    if !check64(1, "5e-324") { return 3 }
+    if !check64(u64(0x3E60000000000000), "2.9802322387695312e-8") { return 4 }
+    if !check64(u64(0x4830F0CF064DD592), "5.764607523034235e39") { return 5 }
+    if !check64(u64(0x4840F0CF064DD592), "1.152921504606847e40") { return 6 }
+    if !check64(u64(0x4850F0CF064DD592), "2.305843009213694e40") { return 7 }
+    if !check64(u64(0x0040000000000000), "1.7800590868057611e-307") { return 8 }
+    if !check64(u64(0x029FFFFFFFFFFFFF), "4.8929891601781557e-296") { return 9 }
+    if !check64(u64(0x4350000000000000), "18014398509481984") { return 10 }
+
+    // The two notation transition edges remain Ace-owned rendering policy.
+    if !check64(u64(0x3EB0C6F7A0B5ED8D), "0.000001") { return 11 }
+    if !check64(u64(0x3E7AD7F29ABCAF48), "1e-7") { return 12 }
+    if !check64(u64(0x4415AF1D78B58C40), "100000000000000000000") { return 13 }
+    if !check64(u64(0x444B1AE4D6E2EF50), "1e21") { return 14 }
+
+    // Binary32 exact-boundary, ties-to-even, and upstream regression vectors.
+    if !check32(u32(0x00800000), "1.1754944e-38") { return 15 }
+    if !check32(u32(0x7F7FFFFF), "3.4028235e38") { return 16 }
+    if !check32(1, "1e-45") { return 17 }
+    if !check32(u32(0x4C000000), "33554432") { return 18 }
+    if !check32(u32(0x4C000006), "33554456") { return 19 }
+    if !check32(u32(0x5D1502F9), "671088640000000000") { return 20 }
+    if !check32(u32(0x5D9502F9), "1342177300000000000") { return 21 }
+    if !check32(u32(0x5E1502F9), "2684354600000000000") { return 22 }
+    if !check32(u32(0x39800000), "0.00024414062") { return 23 }
+    return 42
+}

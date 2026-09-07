@@ -770,8 +770,8 @@ if [ -d tests/emit ]; then
         echo "FAIL: --report separator missing"
         fail=1
     fi
-    if ! printf '%s\n' "$report" | grep -q 'source files:.*6$'; then
-        echo "FAIL: --report should count root + fmt/target + bits/decimal/bigint sources"
+    if ! printf '%s\n' "$report" | grep -q 'source files:.*8$'; then
+        echo "FAIL: --report should count root + fmt/target + bits/decimal/bigint/shortest/table sources"
         fail=1
     fi
     for label in 'source bytes:' 'tokens:' 'machine code:' 'object file:' 'compile time:'; do

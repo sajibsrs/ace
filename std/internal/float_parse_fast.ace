@@ -1,0 +1,162 @@
+/* Fixed-width tiers for decimal-to-IEEE conversion, adapted from Daniel
+ * Lemire's fast_float implementation (Apache-2.0). The caller retains an
+ * exact bigint fallback for inputs outside these proven paths.
+ */
+
+import wide: "./float_shortest.ace"
+import table: "./float_parse_tables.ace"
+
+pub Candidate: struct { raw: u64, handled: bool }
+
+leading_zeroes(value: u64): int {
+    count: int = 0
+    bit: u64 = u64(1) << 63
+
+    for (value & bit) == 0 {
+        count += 1
+        bit = bit >> 1
+    }
+    return count
+}
+
+integer_bits(value: u64, fraction_bits: int, bias: int): u64 {
+    length: int = 64 - leading_zeroes(value)
+    significand: u64 = value
+
+    if length > fraction_bits + 1 {
+        removed: int = length - fraction_bits - 1
+        quotient: u64 = value >> u64(removed)
+        mask: u64 = (u64(1) << u64(removed)) - 1
+        remainder: u64 = value & mask
+        halfway: u64 = u64(1) << u64(removed - 1)
+
+        if remainder > halfway || (remainder == halfway && quotient % 2 != 0) {
+            quotient += 1
+        }
+        significand = quotient
+
+        if significand == (u64(1) << u64(fraction_bits + 1)) {
+            significand = significand >> 1
+            length += 1
+        }
+    } else {
+        significand = value << u64(fraction_bits + 1 - length)
+    }
+    exponent: u64 = u64(length - 1 + bias)
+    fraction_mask: u64 = (u64(1) << u64(fraction_bits)) - 1
+    return (exponent << u64(fraction_bits)) | (significand & fraction_mask)
+}
+
+pub small_integer(coefficient: u64, exponent10: int,
+                  fraction_bits: int, bias: int): Candidate {
+    value: u64 = coefficient
+    exponent: int = exponent10
+
+    for exponent < 0 && value % 10 == 0 {
+        value = value / 10
+        exponent += 1
+    }
+
+    if exponent < 0 {
+        return Candidate { raw: 0, handled: false }
+    }
+
+    for exponent > 0 {
+        if value > u64(0xFFFFFFFFFFFFFFFF) / 10 {
+            return Candidate { raw: 0, handled: false }
+        }
+        value *= 10
+        exponent -= 1
+    }
+
+    if value == 0 {
+        return Candidate { raw: 0, handled: true }
+    }
+    return Candidate { raw: integer_bits(value, fraction_bits, bias), handled: true }
+}
+
+product(exponent10: int, value: u64, precision: int): wide.Wide {
+    index: int = 2 * (exponent10 + 342)
+    first: wide.Wide = wide.multiply_wide(value, table.powers[index])
+    mask: u64 = u64(0xFFFFFFFFFFFFFFFF) >> u64(precision)
+
+    if (first.high & mask) == mask {
+        second: wide.Wide = wide.multiply_wide(value, table.powers[index + 1])
+        low_part: u64 = u64(u32(first.low)) + u64(u32(second.high))
+        high_part: u64 = (first.low >> 32) + (second.high >> 32) +
+                         (low_part >> 32)
+        first.low = (u64(u32(high_part)) << 32) | u64(u32(low_part))
+        first.high += high_part >> 32
+    }
+    return first
+}
+
+compute(coefficient: u64, exponent10: int, fraction_bits: int,
+        minimum_exponent: int, infinite_power: int, smallest10: int,
+        largest10: int, even_min: int, even_max: int): Candidate {
+    if coefficient == 0 || exponent10 < smallest10 {
+        return Candidate { raw: 0, handled: true }
+    }
+    if exponent10 > largest10 {
+        return Candidate { raw: u64(infinite_power) << u64(fraction_bits),
+                           handled: true }
+    }
+    zeros: int = leading_zeroes(coefficient)
+    normalized: u64 = coefficient << u64(zeros)
+    multiplied: wide.Wide = product(exponent10, normalized, fraction_bits + 3)
+    upper_bit: int = int(multiplied.high >> 63)
+    shift: int = upper_bit + 64 - fraction_bits - 3
+    mantissa: u64 = multiplied.high >> u64(shift)
+    power2: int = ((217706 * exponent10) >> 16) + 63 + upper_bit - zeros -
+                  minimum_exponent
+
+    if power2 <= 0 {
+        distance: int = 0 - power2 + 1
+
+        if distance >= 64 {
+            return Candidate { raw: 0, handled: true }
+        }
+        mantissa = mantissa >> u64(distance)
+        mantissa += mantissa & 1
+        mantissa = mantissa >> 1
+
+        if mantissa < (u64(1) << u64(fraction_bits)) {
+            power2 = 0
+        } else {
+            power2 = 1
+        }
+        return Candidate { raw: (u64(power2) << u64(fraction_bits)) |
+                                  mantissa, handled: true }
+    }
+
+    if multiplied.low <= 1 && exponent10 >= even_min && exponent10 <= even_max &&
+       (mantissa & 3) == 1 &&
+       (mantissa << u64(shift)) == multiplied.high {
+        mantissa &= u64(0xFFFFFFFFFFFFFFFE)
+    }
+    mantissa += mantissa & 1
+    mantissa = mantissa >> 1
+
+    if mantissa >= (u64(2) << u64(fraction_bits)) {
+        mantissa = u64(1) << u64(fraction_bits)
+        power2 += 1
+    }
+    mantissa &= (u64(1) << u64(fraction_bits)) - 1
+
+    if power2 >= infinite_power {
+        power2 = infinite_power
+        mantissa = 0
+    }
+    return Candidate { raw: (u64(power2) << u64(fraction_bits)) | mantissa,
+                       handled: true }
+}
+
+pub binary64(coefficient: u64, exponent10: int): Candidate {
+    return compute(coefficient, exponent10, 52, -1023, 2047,
+                   -342, 308, -4, 23)
+}
+
+pub binary32(coefficient: u64, exponent10: int): Candidate {
+    return compute(coefficient, exponent10, 23, -127, 255,
+                   -64, 38, -17, 10)
+}
