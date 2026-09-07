@@ -13,15 +13,15 @@ pub pop_count(value: u16): uint intrinsic
 pub pop_count(value: u32): uint intrinsic
 pub pop_count(value: u64): uint intrinsic
 
-pub leading_zeros(value: u8): uint intrinsic
-pub leading_zeros(value: u16): uint intrinsic
-pub leading_zeros(value: u32): uint intrinsic
-pub leading_zeros(value: u64): uint intrinsic
+pub lead_zeros(value: u8): uint intrinsic
+pub lead_zeros(value: u16): uint intrinsic
+pub lead_zeros(value: u32): uint intrinsic
+pub lead_zeros(value: u64): uint intrinsic
 
-pub trailing_zeros(value: u8): uint intrinsic
-pub trailing_zeros(value: u16): uint intrinsic
-pub trailing_zeros(value: u32): uint intrinsic
-pub trailing_zeros(value: u64): uint intrinsic
+pub trail_zeros(value: u8): uint intrinsic
+pub trail_zeros(value: u16): uint intrinsic
+pub trail_zeros(value: u32): uint intrinsic
+pub trail_zeros(value: u64): uint intrinsic
 
 pub byte_swap(value: u8): u8 intrinsic
 pub byte_swap(value: u16): u16 intrinsic

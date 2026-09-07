@@ -65,13 +65,13 @@ The integer operations have exact overloads for `u8`, `u16`, `u32`, and `u64`:
 
 ```ace
 ones: uint = bits.pop_count(u32(0xF00F))
-high: uint = bits.leading_zeros(u16(1))       // 15
-low: uint = bits.trailing_zeros(u64(8))       // 3
+high: uint = bits.lead_zeros(u16(1))          // 15
+low: uint = bits.trail_zeros(u64(8))          // 3
 reversed: u32 = bits.byte_swap(u32(0x12345678))
 rotated: u8 = bits.rotate_left(u8(0x81), uint(1)) // 0x03
 ```
 
-`pop_count`, `leading_zeros`, and `trailing_zeros` return `uint`. On a zero
+`pop_count`, `lead_zeros`, and `trail_zeros` return `uint`. On a zero
 operand, either zero-count operation returns the operand width. `byte_swap`
 returns the input type and is the identity for `u8`. Rotations return the input
 type and reduce their `uint` count modulo its width, so every count is valid.

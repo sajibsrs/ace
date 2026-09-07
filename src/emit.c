@@ -3352,14 +3352,14 @@ static void emit_bits_integer(Em* e, int intrinsic, int bits,
         ins(e, 0x0E31B800u | ((uint32_t)vector << 5) | (uint32_t)vector);
         ins(e, 0x0E013C00u | ((uint32_t)vector << 5) | (uint32_t)value);
         return;
-    case BI_BITS_LEADING_ZEROS:
+    case BI_BITS_LEAD_ZEROS:
         ins(e, (sf ? 0xDAC01000u : 0x5AC01000u) |
                ((uint32_t)value << 5) | (uint32_t)value);
         if (bits < 32)
             ins(e, 0x51000000u | ((uint32_t)(32 - bits) << 10) |
                    ((uint32_t)value << 5) | (uint32_t)value);
         return;
-    case BI_BITS_TRAILING_ZEROS:
+    case BI_BITS_TRAIL_ZEROS:
         if (bits < 32) {
             load_imm(e, 0, 16, UINT64_C(1) << bits);
             ins(e, 0x2A000000u | (16u << 16) |

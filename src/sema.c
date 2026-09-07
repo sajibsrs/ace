@@ -1326,8 +1326,8 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
         int bit_count = fixed_unsigned && ft->nparams == 1 && r &&
             r->kind == SK_PRIM && r->prim == P_U64 &&
             (f->ival == BI_BITS_POP_COUNT ||
-             f->ival == BI_BITS_LEADING_ZEROS ||
-             f->ival == BI_BITS_TRAILING_ZEROS);
+             f->ival == BI_BITS_LEAD_ZEROS ||
+             f->ival == BI_BITS_TRAIL_ZEROS);
         int bit_transform = fixed_unsigned && ft->nparams == 1 && r &&
             r->kind == SK_PRIM && r->prim == ip->prim &&
             f->ival == BI_BITS_BYTE_SWAP;

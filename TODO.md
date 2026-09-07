@@ -204,6 +204,14 @@ foundations.
 
 Each item requires an owner decision and should wait for a motivating use case.
 
+### Future primitive extensions
+
+- **`f16`** [new] — IEEE binary16 for graphics, shaders, inference workloads,
+  and targets with native GPU texture or render-target support.
+- **`bf16`** [new] — a 16-bit float retaining the broad exponent range of
+  `f32`, useful for ML training-style workloads and straightforward conversion
+  to and from `f32`.
+
 - **Methods on enums and unions** [unspecified].
 - **Associated functions** (`Vec[T].new()`) [new].
 - **`switch` on strings and range cases** [unspecified].

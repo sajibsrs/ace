@@ -311,10 +311,10 @@ static void mark_bits_intrinsics(Loader* L, Module* m) {
             n->ival = BI_BITS_TO_FLOAT;
         else if (text_is(n->str, n->len, "pop_count"))
             n->ival = BI_BITS_POP_COUNT;
-        else if (text_is(n->str, n->len, "leading_zeros"))
-            n->ival = BI_BITS_LEADING_ZEROS;
-        else if (text_is(n->str, n->len, "trailing_zeros"))
-            n->ival = BI_BITS_TRAILING_ZEROS;
+        else if (text_is(n->str, n->len, "lead_zeros"))
+            n->ival = BI_BITS_LEAD_ZEROS;
+        else if (text_is(n->str, n->len, "trail_zeros"))
+            n->ival = BI_BITS_TRAIL_ZEROS;
         else if (text_is(n->str, n->len, "byte_swap"))
             n->ival = BI_BITS_BYTE_SWAP;
         else if (text_is(n->str, n->len, "rotate_left"))

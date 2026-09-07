@@ -12,16 +12,16 @@ main(): int {
        bits.pop_count(u64(0xF00000000000000F)) != 8 {
         return 1
     }
-    if bits.leading_zeros(u8(0)) != 8 ||
-       bits.leading_zeros(u16(1)) != 15 ||
-       bits.leading_zeros(u32(0x00010000)) != 15 ||
-       bits.leading_zeros(u64(1)) != 63 {
+    if bits.lead_zeros(u8(0)) != 8 ||
+       bits.lead_zeros(u16(1)) != 15 ||
+       bits.lead_zeros(u32(0x00010000)) != 15 ||
+       bits.lead_zeros(u64(1)) != 63 {
         return 2
     }
-    if bits.trailing_zeros(u8(0)) != 8 ||
-       bits.trailing_zeros(u16(0x8000)) != 15 ||
-       bits.trailing_zeros(u32(0x00010000)) != 16 ||
-       bits.trailing_zeros(u64(0)) != 64 {
+    if bits.trail_zeros(u8(0)) != 8 ||
+       bits.trail_zeros(u16(0x8000)) != 15 ||
+       bits.trail_zeros(u32(0x00010000)) != 16 ||
+       bits.trail_zeros(u64(0)) != 64 {
         return 3
     }
     if bits.byte_swap(u8(0xA5)) != u8(0xA5) ||
@@ -46,8 +46,8 @@ main(): int {
     }
 
     pop: (u64): uint = bits.pop_count
-    lead: (u8): uint = bits.leading_zeros
-    trail: (u16): uint = bits.trailing_zeros
+    lead: (u8): uint = bits.lead_zeros
+    trail: (u16): uint = bits.trail_zeros
     swap: (u32): u32 = bits.byte_swap
     left: (u64, uint): u64 = bits.rotate_left
     right: (u8, uint): u8 = bits.rotate_right

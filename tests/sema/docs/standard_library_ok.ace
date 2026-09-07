@@ -25,8 +25,8 @@ bits_examples(): int {
     raw: u32 = bits.from_float(f32(1.0))
     restore: (u32): f32 = bits.to_float
     ones: uint = bits.pop_count(u32(0xF00F))
-    high: uint = bits.leading_zeros(u16(1))
-    low: uint = bits.trailing_zeros(u64(8))
+    high: uint = bits.lead_zeros(u16(1))
+    low: uint = bits.trail_zeros(u64(8))
     reversed: u32 = bits.byte_swap(u32(0x12345678))
     rotated: u8 = bits.rotate_left(u8(0x81), uint(1))
 

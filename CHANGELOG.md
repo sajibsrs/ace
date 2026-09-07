@@ -183,6 +183,8 @@ current normative rules, and Git preserves patch-level detail.
   `uint`, zero-count operations return the operand width, and rotations reduce
   every `uint` count modulo that width; direct and indirect calls use native
   Apple-arm64 scalar/SIMD instruction sequences with no runtime dependency.
+- Shortened the public zero-count families to `bits.lead_zeros` and
+  `bits.trail_zeros`, retaining their exact overloads and lowering.
 - Added pure-Ace `math.isnan`, `math.isinf`, and `math.isfinite` overloads for
   `f32` and `f64`, using `bits` to classify every IEEE-754 encoding without
   allocation or a libm dependency.
