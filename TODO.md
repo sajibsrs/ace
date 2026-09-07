@@ -33,22 +33,6 @@ in section 2, subject to promotion through the Decision Queue.
 - **[implemented]** Allocator diagnostics (Safety & Checked Builds #9).
 - **[implemented]** Language-level `assert(bool)`, checked-only and release-stripped, for invariants and simple checked-mode tests (Safety & Checked Builds #10).
 
-### Platform-boundary cleanup
-
-- **Remove non-platform C convenience dependencies** [open] — native exact
-  float formatting and parsing have removed `ecvt`/`fcvt`, `strtod`/`strtof`,
-  `floor`, and floating-environment use. The emitted-object audit finds no
-  remaining `memcmp`, `memcpy`, `memmove`, `memset`, or `strlen` dependency
-  implementing Ace operations. Preserve only the
-  purpose-based boundary of C Interop #4: stable OS interfaces and, where direct
-  syscalls are unavailable or unstable, OS-provided entry points such as Darwin
-  libSystem, the selected platform allocator, process termination, clocks, and
-  the platform resolver. Do not restrict ordinary C facilities inside the C11
-  bootstrap compiler: that is a build-time implementation choice. Do not replace
-  stable macOS interfaces with private direct syscalls. Complete this cleanup in
-  bounded independently tested pieces while retaining the existing rounding
-  and round-trip contracts.
-
 ## 2. Concurrency prerequisites and carve
 
 The completed single-threaded chat proof removes networking as a prerequisite.

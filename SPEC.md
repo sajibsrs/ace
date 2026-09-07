@@ -567,27 +567,6 @@ errno names remain additive until concrete public usage requires them.
 Only active or trigger-gated decisions live here. Implemented history is recorded
 once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 
-### Active
-
-- Remove non-platform C convenience dependencies from generated Ace programs,
-  in bounded independently tested pieces. Ace operations must be implemented by
-  Ace code or direct emission rather than C convenience routines; stable OS
-  interfaces and OS-provided entry points remain the platform boundary under C
-  Interop #4. The C11 bootstrap compiler itself is outside this restriction.
-  Preserve the existing exact rounding and round-trip contracts when float
-  conversion is replaced. Standard modules use the public compiler-backed
-  `bits` representation operations rather than maintaining a private bit-access
-  mechanism.
-
-  Float-conversion progress: shortest `fmt.print`/`str.format`, fixed
-  `fmt.printf` `%f`, and `str.parse[f32/f64]` are native exact Ace
-  implementations over fixed-capacity internal multiprecision arithmetic. They
-  allocate nothing and do not call `ecvt`, `fcvt`, `strtod`, `strtof`, `floor`,
-  floating-environment, or memory convenience routines. The generated-object
-  audit finds no remaining convenience dependency; the explicit rounding-mode
-  test fixture itself still imports `fegetround`/`fesetround` to prove conversion
-  is independent of ambient mode. Owner closure of this queue item remains.
-
 ### Trigger-gated
 
 - Package-system manifest, lockfile, display, linker-input, and command syntax
