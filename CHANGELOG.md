@@ -194,6 +194,10 @@ current normative rules, and Git preserves patch-level detail.
   fast_float-attributed Eisel-Lemire fixed-width path for ordinary decimals,
   and the existing bigint comparison path for long exact fallback cases. The
   tier-selecting scan also performs the complete syntax validation once.
+  Specialized the f32/f64 fast converters after generated-AArch64 profiling:
+  fixed-step leading-zero normalization, scalar out-parameters, integrated
+  special-value classification, and fused cached-power multiplication avoid
+  the generic call chain and its aggregate spill/copy overhead.
 - Added `sys.pipe` so descriptor-polling fixtures also use the public OS facade
   instead of declaring a test-local C binding.
 - Exposed the target-defined `sys.EAGAIN` and `sys.EWOULDBLOCK` errno constants

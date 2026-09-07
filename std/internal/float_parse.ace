@@ -7,15 +7,12 @@ import bits
 import big: "./bigint.ace"
 import fast: "./float_parse_fast.ace"
 
-pub Parsed64: struct { value: f64, ok: bool }
-pub Parsed32: struct { value: f32, ok: bool }
-
 FastDecimal: struct {
     coefficient: u64,
     exponent10: int,
     negative: bool,
     digits: int,
-    valid: bool,
+    kind: int, // 0 finite, 1 infinity, 2 NaN, 3 invalid
 }
 
 pub Decimal: struct {
@@ -38,13 +35,24 @@ equal_text(text: string, expected: string): bool {
     return true
 }
 
-fast_decimal(text: string): FastDecimal {
-    invalid: FastDecimal = FastDecimal { coefficient: 0, exponent10: 0,
-                                         negative: false, digits: 0,
-                                         valid: false }
-
+fast_decimal(text: string, mut result: FastDecimal) {
     if len(text) == 0 || len(text) >= 512 {
-        return invalid
+        return
+    }
+    if len(text) == 3 {
+        if text[0] == 110 && text[1] == 97 && text[2] == 110 {
+            result.kind = 2
+            return
+        }
+        if text[0] == 105 && text[1] == 110 && text[2] == 102 {
+            result.kind = 1
+            return
+        }
+    } else if len(text) == 4 && text[0] == 45 && text[1] == 105 &&
+              text[2] == 110 && text[3] == 102 {
+        result.negative = true
+        result.kind = 1
+        return
     }
     at: usize = 0
     negative: bool = false
@@ -54,7 +62,7 @@ fast_decimal(text: string): FastDecimal {
         at = 1
     }
     if at == len(text) {
-        return invalid
+        return
     }
     coefficient: u64 = 0
     fractional: int = 0
@@ -91,7 +99,7 @@ fast_decimal(text: string): FastDecimal {
         break
     }
     if !seen_digit {
-        return invalid
+        return
     }
     explicit: int = 0
 
@@ -113,22 +121,25 @@ fast_decimal(text: string): FastDecimal {
             at += 1
         }
         if exponent_digits == 0 {
-            return invalid
+            return
         }
         if exponent_negative {
             explicit = 0 - explicit
         }
     }
     if at != len(text) {
-        return invalid
+        return
     }
     exponent10: int = explicit - fractional
 
     if significant > 19 {
         exponent10 += significant - 19
     }
-    return FastDecimal { coefficient: coefficient, exponent10: exponent10,
-                         negative: negative, digits: significant, valid: true }
+    result.coefficient = coefficient
+    result.exponent10 = exponent10
+    result.negative = negative
+    result.digits = significant
+    result.kind = 0
 }
 
 decimal(text: string): Decimal {
@@ -297,22 +308,28 @@ midpoint32(value: Decimal, upper: u32): int {
     return compare_binary(value, mantissa * 2 - 1, exponent2 - 1)
 }
 
-pub binary64(text: string): Parsed64 {
-    if equal_text(text, "nan") {
-        return Parsed64 { value: bits.to_float(u64(0x7FF8000000000000)), ok: true }
+pub binary64(text: string): (f64, bool) {
+    scanned: FastDecimal
+    scanned.coefficient = 0
+    scanned.exponent10 = 0
+    scanned.negative = false
+    scanned.digits = 0
+    scanned.kind = 3
+    fast_decimal(text, mut scanned)
+
+    if scanned.kind == 2 {
+        return bits.to_float(u64(0x7FF8000000000000)), true
     }
-    if equal_text(text, "inf") || equal_text(text, "-inf") {
+    if scanned.kind == 1 {
         raw_inf: u64 = u64(0x7FF0000000000000)
 
-        if text[0] == 45 {
+        if scanned.negative {
             raw_inf |= u64(0x8000000000000000)
         }
-        return Parsed64 { value: bits.to_float(raw_inf), ok: true }
+        return bits.to_float(raw_inf), true
     }
-    scanned: FastDecimal = fast_decimal(text)
-
-    if !scanned.valid {
-        return Parsed64 { value: 0.0, ok: false }
+    if scanned.kind == 3 {
+        return 0.0, false
     }
     sign: u64 = 0
 
@@ -320,28 +337,29 @@ pub binary64(text: string): Parsed64 {
         sign = u64(0x8000000000000000)
     }
     if scanned.digits <= 19 {
-        candidate: fast.Candidate = fast.small_integer(scanned.coefficient,
-                                    scanned.exponent10, 52, 1023)
+        raw: u64 = 0
+        handled: bool = fast.small_integer(scanned.coefficient,
+                                           scanned.exponent10, 52, 1023, mut raw)
 
-        if !candidate.handled {
-            candidate = fast.binary64(scanned.coefficient, scanned.exponent10)
+        if !handled {
+            handled = fast.binary64(scanned.coefficient, scanned.exponent10, mut raw)
         }
 
-        if candidate.handled {
-            if candidate.raw == u64(0x7FF0000000000000) {
-                return Parsed64 { value: 0.0, ok: false }
+        if handled {
+            if raw == u64(0x7FF0000000000000) {
+                return 0.0, false
             }
-            return Parsed64 { value: bits.to_float(sign | candidate.raw), ok: true }
+            return bits.to_float(sign | raw), true
         }
     }
     value: Decimal = decimal(text)
 
     if value.digits == 0 || value.digits + value.exponent10 < -350 {
-        return Parsed64 { value: bits.to_float(sign), ok: true }
+        return bits.to_float(sign), true
     }
     if value.digits + value.exponent10 > 310 ||
        compare_binary(value, u64(0x3FFFFFFFFFFFFF), 970) >= 0 {
-        return Parsed64 { value: 0.0, ok: false }
+        return 0.0, false
     }
     low: u64 = 0
     high: u64 = u64(0x7FEFFFFFFFFFFFFF)
@@ -366,25 +384,31 @@ pub binary64(text: string): Parsed64 {
             low = upper
         }
     }
-    return Parsed64 { value: bits.to_float(sign | low), ok: true }
+    return bits.to_float(sign | low), true
 }
 
-pub binary32(text: string): Parsed32 {
-    if equal_text(text, "nan") {
-        return Parsed32 { value: bits.to_float(u32(0x7FC00000)), ok: true }
+pub binary32(text: string): (f32, bool) {
+    scanned: FastDecimal
+    scanned.coefficient = 0
+    scanned.exponent10 = 0
+    scanned.negative = false
+    scanned.digits = 0
+    scanned.kind = 3
+    fast_decimal(text, mut scanned)
+
+    if scanned.kind == 2 {
+        return bits.to_float(u32(0x7FC00000)), true
     }
-    if equal_text(text, "inf") || equal_text(text, "-inf") {
+    if scanned.kind == 1 {
         raw_inf: u32 = u32(0x7F800000)
 
-        if text[0] == 45 {
+        if scanned.negative {
             raw_inf |= u32(0x80000000)
         }
-        return Parsed32 { value: bits.to_float(raw_inf), ok: true }
+        return bits.to_float(raw_inf), true
     }
-    scanned: FastDecimal = fast_decimal(text)
-
-    if !scanned.valid {
-        return Parsed32 { value: 0.0, ok: false }
+    if scanned.kind == 3 {
+        return 0.0, false
     }
     sign: u32 = 0
 
@@ -392,30 +416,31 @@ pub binary32(text: string): Parsed32 {
         sign = u32(0x80000000)
     }
     if scanned.digits <= 19 {
-        candidate: fast.Candidate = fast.small_integer(scanned.coefficient,
-                                    scanned.exponent10, 23, 127)
+        wide_raw: u64 = 0
+        handled: bool = fast.small_integer(scanned.coefficient,
+                                           scanned.exponent10, 23, 127, mut wide_raw)
 
-        if !candidate.handled {
-            candidate = fast.binary32(scanned.coefficient, scanned.exponent10)
+        if !handled {
+            handled = fast.binary32(scanned.coefficient, scanned.exponent10, mut wide_raw)
         }
 
-        if candidate.handled {
-            raw: u32 = u32(candidate.raw)
+        if handled {
+            raw: u32 = u32(wide_raw)
 
             if raw == u32(0x7F800000) {
-                return Parsed32 { value: 0.0, ok: false }
+                return 0.0, false
             }
-            return Parsed32 { value: bits.to_float(sign | raw), ok: true }
+            return bits.to_float(sign | raw), true
         }
     }
     value: Decimal = decimal(text)
 
     if value.digits == 0 || value.digits + value.exponent10 < -60 {
-        return Parsed32 { value: bits.to_float(sign), ok: true }
+        return bits.to_float(sign), true
     }
     if value.digits + value.exponent10 > 50 ||
        compare_binary(value, u64(0x1FFFFFF), 103) >= 0 {
-        return Parsed32 { value: 0.0, ok: false }
+        return 0.0, false
     }
     low: u32 = 0
     high: u32 = u32(0x7F7FFFFF)
@@ -440,5 +465,5 @@ pub binary32(text: string): Parsed32 {
             low = upper
         }
     }
-    return Parsed32 { value: bits.to_float(sign | low), ok: true }
+    return bits.to_float(sign | low), true
 }

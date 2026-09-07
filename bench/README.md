@@ -41,6 +41,25 @@ across the IEEE value space. These measurements justify a separate optimization
 carve; they do not weaken the native exact semantics or reopen convenience
 runtime dependencies.
 
+### Native float-parser optimization checkpoint
+
+After adding exact-small and Eisel-Lemire fixed-width tiers, then specializing
+and fusing the generated common path, five runs on the reference Apple-arm64
+machine produced these median parse results:
+
+- Ace `f64` parse: 191.04 ns/op
+- C `strtod`: 26.58 ns/op
+- Ace/C: about 7.2x
+
+Generated-code component probes attributed about 71 ns/op to syntax scanning,
+19 ns/op to exact-small selection, 4 ns/op to direct cached-power lookup,
+22 ns/op to the standalone software 64x64-to-128 multiply, 59 ns/op to the
+complete fixed-width conversion, and 15 ns/op to the public wrapper. These
+components overlap when composed and therefore do not sum to the end-to-end
+time. Direct and volatile-indirect C dispatch differed by less than 0.1 ns/op
+at median. Parsing remains materially slower than optimized C, with scanning,
+non-inlined calls, and spill-heavy direct emission the next measured targets.
+
 ## CPU
 
 Run the bounded integer recurrence in Ace checked and release modes and in

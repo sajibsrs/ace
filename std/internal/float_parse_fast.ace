@@ -3,18 +3,34 @@
  * exact bigint fallback for inputs outside these proven paths.
  */
 
-import wide: "./float_shortest.ace"
 import table: "./float_parse_tables.ace"
-
-pub Candidate: struct { raw: u64, handled: bool }
 
 leading_zeroes(value: u64): int {
     count: int = 0
-    bit: u64 = u64(1) << 63
+    work: u64 = value
 
-    for (value & bit) == 0 {
+    if (work >> 32) == 0 {
+        count += 32
+        work = work << 32
+    }
+    if (work >> 48) == 0 {
+        count += 16
+        work = work << 16
+    }
+    if (work >> 56) == 0 {
+        count += 8
+        work = work << 8
+    }
+    if (work >> 60) == 0 {
+        count += 4
+        work = work << 4
+    }
+    if (work >> 62) == 0 {
+        count += 2
+        work = work << 2
+    }
+    if (work >> 63) == 0 {
         count += 1
-        bit = bit >> 1
     }
     return count
 }
@@ -48,7 +64,7 @@ integer_bits(value: u64, fraction_bits: int, bias: int): u64 {
 }
 
 pub small_integer(coefficient: u64, exponent10: int,
-                  fraction_bits: int, bias: int): Candidate {
+                  fraction_bits: int, bias: int, mut raw: u64): bool {
     value: u64 = coefficient
     exponent: int = exponent10
 
@@ -58,105 +74,205 @@ pub small_integer(coefficient: u64, exponent10: int,
     }
 
     if exponent < 0 {
-        return Candidate { raw: 0, handled: false }
+        return false
     }
 
     for exponent > 0 {
         if value > u64(0xFFFFFFFFFFFFFFFF) / 10 {
-            return Candidate { raw: 0, handled: false }
+            return false
         }
         value *= 10
         exponent -= 1
     }
 
     if value == 0 {
-        return Candidate { raw: 0, handled: true }
+        raw = 0
+        return true
     }
-    return Candidate { raw: integer_bits(value, fraction_bits, bias), handled: true }
+    raw = integer_bits(value, fraction_bits, bias)
+    return true
 }
 
-product(exponent10: int, value: u64, precision: int): wide.Wide {
-    index: int = 2 * (exponent10 + 342)
-    first: wide.Wide = wide.multiply_wide(value, table.powers[index])
-    mask: u64 = u64(0xFFFFFFFFFFFFFFFF) >> u64(precision)
-
-    if (first.high & mask) == mask {
-        second: wide.Wide = wide.multiply_wide(value, table.powers[index + 1])
-        low_part: u64 = u64(u32(first.low)) + u64(u32(second.high))
-        high_part: u64 = (first.low >> 32) + (second.high >> 32) +
-                         (low_part >> 32)
-        first.low = (u64(u32(high_part)) << 32) | u64(u32(low_part))
-        first.high += high_part >> 32
+pub binary64(coefficient: u64, exponent10: int, mut raw: u64): bool {
+    if coefficient == 0 || exponent10 < -342 {
+        raw = 0
+        return true
     }
-    return first
-}
-
-compute(coefficient: u64, exponent10: int, fraction_bits: int,
-        minimum_exponent: int, infinite_power: int, smallest10: int,
-        largest10: int, even_min: int, even_max: int): Candidate {
-    if coefficient == 0 || exponent10 < smallest10 {
-        return Candidate { raw: 0, handled: true }
-    }
-    if exponent10 > largest10 {
-        return Candidate { raw: u64(infinite_power) << u64(fraction_bits),
-                           handled: true }
+    if exponent10 > 308 {
+        raw = u64(2047) << 52
+        return true
     }
     zeros: int = leading_zeroes(coefficient)
     normalized: u64 = coefficient << u64(zeros)
-    multiplied: wide.Wide = product(exponent10, normalized, fraction_bits + 3)
-    upper_bit: int = int(multiplied.high >> 63)
-    shift: int = upper_bit + 64 - fraction_bits - 3
-    mantissa: u64 = multiplied.high >> u64(shift)
-    power2: int = ((217706 * exponent10) >> 16) + 63 + upper_bit - zeros -
-                  minimum_exponent
+    index: int = 2 * (exponent10 + 342)
+    factor: u64 = table.powers[index]
+    value_low: u32 = u32(normalized)
+    value_high: u32 = u32(normalized >> 32)
+    factor_low: u32 = u32(factor)
+    factor_high: u32 = u32(factor >> 32)
+    p00: u64 = u64(value_low) * u64(factor_low)
+    p01: u64 = u64(value_low) * u64(factor_high)
+    p10: u64 = u64(value_high) * u64(factor_low)
+    p11: u64 = u64(value_high) * u64(factor_high)
+    mid1: u64 = p10 + (p00 >> 32)
+    mid2: u64 = p01 + u64(u32(mid1))
+    multiplied_high: u64 = p11 + (mid1 >> 32) + (mid2 >> 32)
+    multiplied_low: u64 = (u64(u32(mid2)) << 32) | u64(u32(p00))
+    mask: u64 = u64(0xFFFFFFFFFFFFFFFF) >> 55
+
+    if (multiplied_high & mask) == mask {
+        second_factor: u64 = table.powers[index + 1]
+        second_low: u32 = u32(second_factor)
+        second_high: u32 = u32(second_factor >> 32)
+        q00: u64 = u64(value_low) * u64(second_low)
+        q01: u64 = u64(value_low) * u64(second_high)
+        q10: u64 = u64(value_high) * u64(second_low)
+        q11: u64 = u64(value_high) * u64(second_high)
+        qmid1: u64 = q10 + (q00 >> 32)
+        qmid2: u64 = q01 + u64(u32(qmid1))
+        second_product_high: u64 = q11 + (qmid1 >> 32) + (qmid2 >> 32)
+        low_part: u64 = u64(u32(multiplied_low)) +
+                        u64(u32(second_product_high))
+        high_part: u64 = (multiplied_low >> 32) +
+                         (second_product_high >> 32) + (low_part >> 32)
+        multiplied_low = (u64(u32(high_part)) << 32) | u64(u32(low_part))
+        multiplied_high += high_part >> 32
+    }
+    upper_bit: int = int(multiplied_high >> 63)
+    shift: int = upper_bit + 9
+    mantissa: u64 = multiplied_high >> u64(shift)
+    power2: int = ((217706 * exponent10) >> 16) + 1086 + upper_bit - zeros
 
     if power2 <= 0 {
         distance: int = 0 - power2 + 1
 
         if distance >= 64 {
-            return Candidate { raw: 0, handled: true }
+            raw = 0
+            return true
         }
         mantissa = mantissa >> u64(distance)
         mantissa += mantissa & 1
         mantissa = mantissa >> 1
 
-        if mantissa < (u64(1) << u64(fraction_bits)) {
+        if mantissa < (u64(1) << 52) {
             power2 = 0
         } else {
             power2 = 1
         }
-        return Candidate { raw: (u64(power2) << u64(fraction_bits)) |
-                                  mantissa, handled: true }
+        raw = (u64(power2) << 52) | mantissa
+        return true
     }
 
-    if multiplied.low <= 1 && exponent10 >= even_min && exponent10 <= even_max &&
+    if multiplied_low <= 1 && exponent10 >= -4 && exponent10 <= 23 &&
        (mantissa & 3) == 1 &&
-       (mantissa << u64(shift)) == multiplied.high {
+       (mantissa << u64(shift)) == multiplied_high {
         mantissa &= u64(0xFFFFFFFFFFFFFFFE)
     }
     mantissa += mantissa & 1
     mantissa = mantissa >> 1
 
-    if mantissa >= (u64(2) << u64(fraction_bits)) {
-        mantissa = u64(1) << u64(fraction_bits)
+    if mantissa >= (u64(2) << 52) {
+        mantissa = u64(1) << 52
         power2 += 1
     }
-    mantissa &= (u64(1) << u64(fraction_bits)) - 1
+    mantissa &= (u64(1) << 52) - 1
 
-    if power2 >= infinite_power {
-        power2 = infinite_power
+    if power2 >= 2047 {
+        power2 = 2047
         mantissa = 0
     }
-    return Candidate { raw: (u64(power2) << u64(fraction_bits)) | mantissa,
-                       handled: true }
+    raw = (u64(power2) << 52) | mantissa
+    return true
 }
 
-pub binary64(coefficient: u64, exponent10: int): Candidate {
-    return compute(coefficient, exponent10, 52, -1023, 2047,
-                   -342, 308, -4, 23)
-}
+pub binary32(coefficient: u64, exponent10: int, mut raw: u64): bool {
+    if coefficient == 0 || exponent10 < -64 {
+        raw = 0
+        return true
+    }
+    if exponent10 > 38 {
+        raw = u64(255) << 23
+        return true
+    }
+    zeros: int = leading_zeroes(coefficient)
+    normalized: u64 = coefficient << u64(zeros)
+    index: int = 2 * (exponent10 + 342)
+    factor: u64 = table.powers[index]
+    value_low: u32 = u32(normalized)
+    value_high: u32 = u32(normalized >> 32)
+    factor_low: u32 = u32(factor)
+    factor_high: u32 = u32(factor >> 32)
+    p00: u64 = u64(value_low) * u64(factor_low)
+    p01: u64 = u64(value_low) * u64(factor_high)
+    p10: u64 = u64(value_high) * u64(factor_low)
+    p11: u64 = u64(value_high) * u64(factor_high)
+    mid1: u64 = p10 + (p00 >> 32)
+    mid2: u64 = p01 + u64(u32(mid1))
+    multiplied_high: u64 = p11 + (mid1 >> 32) + (mid2 >> 32)
+    multiplied_low: u64 = (u64(u32(mid2)) << 32) | u64(u32(p00))
+    mask: u64 = u64(0xFFFFFFFFFFFFFFFF) >> 26
 
-pub binary32(coefficient: u64, exponent10: int): Candidate {
-    return compute(coefficient, exponent10, 23, -127, 255,
-                   -64, 38, -17, 10)
+    if (multiplied_high & mask) == mask {
+        second_factor: u64 = table.powers[index + 1]
+        second_low: u32 = u32(second_factor)
+        second_high: u32 = u32(second_factor >> 32)
+        q00: u64 = u64(value_low) * u64(second_low)
+        q01: u64 = u64(value_low) * u64(second_high)
+        q10: u64 = u64(value_high) * u64(second_low)
+        q11: u64 = u64(value_high) * u64(second_high)
+        qmid1: u64 = q10 + (q00 >> 32)
+        qmid2: u64 = q01 + u64(u32(qmid1))
+        second_product_high: u64 = q11 + (qmid1 >> 32) + (qmid2 >> 32)
+        low_part: u64 = u64(u32(multiplied_low)) +
+                        u64(u32(second_product_high))
+        high_part: u64 = (multiplied_low >> 32) +
+                         (second_product_high >> 32) + (low_part >> 32)
+        multiplied_low = (u64(u32(high_part)) << 32) | u64(u32(low_part))
+        multiplied_high += high_part >> 32
+    }
+    upper_bit: int = int(multiplied_high >> 63)
+    shift: int = upper_bit + 38
+    mantissa: u64 = multiplied_high >> u64(shift)
+    power2: int = ((217706 * exponent10) >> 16) + 190 + upper_bit - zeros
+
+    if power2 <= 0 {
+        distance: int = 0 - power2 + 1
+
+        if distance >= 64 {
+            raw = 0
+            return true
+        }
+        mantissa = mantissa >> u64(distance)
+        mantissa += mantissa & 1
+        mantissa = mantissa >> 1
+
+        if mantissa < (u64(1) << 23) {
+            power2 = 0
+        } else {
+            power2 = 1
+        }
+        raw = (u64(power2) << 23) | mantissa
+        return true
+    }
+
+    if multiplied_low <= 1 && exponent10 >= -17 && exponent10 <= 10 &&
+       (mantissa & 3) == 1 &&
+       (mantissa << u64(shift)) == multiplied_high {
+        mantissa &= u64(0xFFFFFFFFFFFFFFFE)
+    }
+    mantissa += mantissa & 1
+    mantissa = mantissa >> 1
+
+    if mantissa >= (u64(2) << 23) {
+        mantissa = u64(1) << 23
+        power2 += 1
+    }
+    mantissa &= (u64(1) << 23) - 1
+
+    if power2 >= 255 {
+        power2 = 255
+        mantissa = 0
+    }
+    raw = (u64(power2) << 23) | mantissa
+    return true
 }

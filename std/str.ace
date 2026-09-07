@@ -661,13 +661,13 @@ pub parse[usize](text: string): (usize, bool) {
 }
 
 pub parse[f64](text: string): (f64, bool) {
-    parsed: float_parse.Parsed64 = float_parse.binary64(text)
-    return parsed.value, parsed.ok
+    value: f64, ok: bool = float_parse.binary64(text)
+    return value, ok
 }
 
 pub parse[f32](text: string): (f32, bool) {
-    parsed: float_parse.Parsed32 = float_parse.binary32(text)
-    return parsed.value, parsed.ok
+    value: f32, ok: bool = float_parse.binary32(text)
+    return value, ok
 }
 
 /* True for exactly the ASCII whitespace bytes 0x09..0x0D and 0x20. */
