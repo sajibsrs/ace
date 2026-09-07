@@ -162,6 +162,7 @@ enum {
     BI_MEM_EQUAL = 18,
     BI_BITS_FROM_FLOAT = 19,
     BI_BITS_TO_FLOAT = 20,
+    BI_INTERNAL_LOAD_U64 = 21,
 };
 
 enum {

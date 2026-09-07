@@ -5,6 +5,7 @@
 
 import bits
 import big: "./bigint.ace"
+import load: "./byte_load.ace"
 import fast: "./float_parse_fast.ace"
 
 FastDecimal: struct {
@@ -73,6 +74,91 @@ fast_decimal(text: string, mut result: FastDecimal) {
 
     for at < len(text) {
         c: u8 = text[at]
+
+        if seen_nonzero && c >= 48 && c <= 57 && at + 8 <= len(text) {
+            word: u64 = load.unaligned_u64(text, at)
+            high: u64 = (word & u64(0xF0F0F0F0F0F0F0F0)) ^
+                        u64(0x3030303030303030)
+            high_bad: u64 = (high | (high << 1) | (high << 2) | (high << 3)) &
+                            u64(0x8080808080808080)
+            low: u64 = word & u64(0x0F0F0F0F0F0F0F0F)
+            low_bad: u64 = ((low + u64(0x0606060606060606)) &
+                            u64(0x1010101010101010)) << 3
+            non_digit: u64 = high_bad | low_bad
+            run: int = 8
+
+            if non_digit != 0 {
+                zero_bits: int = 0
+                work: u64 = non_digit
+
+                if (work & u64(0xFFFFFFFF)) == 0 {
+                    zero_bits += 32
+                    work = work >> 32
+                }
+                if (work & u64(0xFFFF)) == 0 {
+                    zero_bits += 16
+                    work = work >> 16
+                }
+                if (work & u64(0xFF)) == 0 {
+                    zero_bits += 8
+                    work = work >> 8
+                }
+                if (work & u64(0xF)) == 0 {
+                    zero_bits += 4
+                    work = work >> 4
+                }
+                if (work & 3) == 0 {
+                    zero_bits += 2
+                    work = work >> 2
+                }
+                if (work & 1) == 0 {
+                    zero_bits += 1
+                }
+                run = zero_bits / 8
+            }
+
+            if run > 0 {
+                seen_digit = true
+
+                if run == 8 && seen_nonzero {
+                    if seen_dot {
+                        fractional += 8
+                    }
+                    significant += 8
+
+                    if significant <= 19 {
+                        digits: u64 = word - u64(0x3030303030303030)
+                        bytes: u64 = u64(0x00FF00FF00FF00FF)
+                        pairs: u64 = (digits & bytes) * 10 +
+                                     ((digits >> 8) & bytes)
+                        halves: u64 = u64(0x0000FFFF0000FFFF)
+                        quads: u64 = (pairs & halves) * 100 +
+                                     ((pairs >> 16) & halves)
+                        eight: u64 = u64(u32(quads)) * 10000 + (quads >> 32)
+                        coefficient = coefficient * 100000000 +
+                                      eight
+                    }
+                } else {
+                    for offset: int in 0 .. run {
+                        c: u8 = text[at + usize(offset)]
+
+                        if seen_dot {
+                            fractional += 1
+                        }
+                        if c != 48 || seen_nonzero {
+                            seen_nonzero = true
+                            significant += 1
+
+                            if significant <= 19 {
+                                coefficient = coefficient * 10 + u64(c - 48)
+                            }
+                        }
+                    }
+                }
+                at += usize(run)
+                continue
+            }
+        }
 
         if c >= 48 && c <= 57 {
             seen_digit = true

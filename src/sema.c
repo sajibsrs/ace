@@ -1315,7 +1315,11 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
         int to32 = f->ival == BI_BITS_TO_FLOAT && p && r &&
             p->kind == SK_PRIM && p->prim == P_U32 &&
             r->kind == SK_PRIM && r->prim == P_F32;
-        if (!(from64 || from32 || to64 || to32))
+        int load64 = f->ival == BI_INTERNAL_LOAD_U64 && ft->nparams == 2 &&
+            ft->params[0]->kind == SK_PRIM && ft->params[0]->prim == P_STRING &&
+            ft->params[1]->kind == SK_PRIM && ft->params[1]->prim == P_USIZE &&
+            r->kind == SK_PRIM && r->prim == P_U64;
+        if (!(from64 || from32 || to64 || to32 || load64))
             ck_err(k, f, "intrinsic declaration '%.*s' does not match a compiler-provided signature",
                    (int)f->len, f->str);
     }

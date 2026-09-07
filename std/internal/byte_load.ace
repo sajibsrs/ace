@@ -1,0 +1,6 @@
+/* Compiler-shipped byte-processing primitive. The caller must prove that the
+ * indexed eight-byte range is present. The value uses target-native byte order
+ * and the load has no alignment precondition.
+ */
+
+pub unaligned_u64(text: string, index: usize): u64 intrinsic

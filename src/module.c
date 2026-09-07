@@ -277,6 +277,29 @@ static int is_std_named_module(Loader* L, const char* canon, const char* name) {
     return expected && strcmp(expected, canon) == 0;
 }
 
+static int is_std_internal_named_module(Loader* L, const char* canon,
+                                        const char* name) {
+    char dir[4096];
+    compiler_dir(dir, sizeof dir, L->compiler_path);
+    char path[4608];
+    if (strcmp(dir, ".") == 0)
+        snprintf(path, sizeof path, "std/internal/%s.ace", name);
+    else
+        snprintf(path, sizeof path, "%s/std/internal/%s.ace", dir, name);
+    const char* expected = canonicalize(path);
+    return expected && strcmp(expected, canon) == 0;
+}
+
+static void mark_internal_load_intrinsic(Loader* L, Module* m) {
+    if (!is_std_internal_named_module(L, m->canon, "byte_load")) return;
+    for (int i = 0; i < m->file->nkids; i++) {
+        Node* n = m->file->kids[i];
+        if (n->kind == N_FUNC && (n->flags & F_INTRINSIC) &&
+            text_is(n->str, n->len, "unaligned_u64"))
+            n->ival = BI_INTERNAL_LOAD_U64;
+    }
+}
+
 static void mark_bits_intrinsics(Loader* L, Module* m) {
     if (!is_std_named_module(L, m->canon, "bits")) return;
     for (int i = 0; i < m->file->nkids; i++) {
@@ -572,6 +595,7 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
     mark_fmt_intrinsics(L, m);
     mark_sys_intrinsics(L, m);
     mark_bits_intrinsics(L, m);
+    mark_internal_load_intrinsic(L, m);
     m->next = L->loading; // push
     L->loading = m;
     resolve_file(L, file, canon, 0);

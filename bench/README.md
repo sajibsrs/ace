@@ -60,6 +60,12 @@ time. Direct and volatile-indirect C dispatch differed by less than 0.1 ns/op
 at median. Parsing remains materially slower than optimized C, with scanning,
 non-inlined calls, and spill-heavy direct emission the next measured targets.
 
+The subsequent SWAR scan carve reduced long digit-run scanning from about
+228.7 ns/op to 126.9 ns/op in an isolated probe (44.5%). On the mixed public
+parse workload, whose short inputs often remain scalar, five runs produced
+median results of 186.72 ns/op for Ace and 26.75 ns/op for C, or about 7.0x.
+That is a 4.32 ns/op (2.3%) reduction from the 191.04 ns/op checkpoint.
+
 ## CPU
 
 Run the bounded integer recurrence in Ace checked and release modes and in

@@ -198,6 +198,10 @@ current normative rules, and Git preserves patch-level detail.
   fixed-step leading-zero normalization, scalar out-parameters, integrated
   special-value classification, and fused cached-power multiplication avoid
   the generic call chain and its aggregate spill/copy overhead.
+- Added a compiler-shipped internal native-endian unaligned word load and used
+  it to scan finite float digit runs eight bytes at a time. A branchless SWAR
+  digit mask, fixed-step trailing-zero count, packed eight-digit accumulation,
+  and scalar short-tail path preserve the shared three-tier parser validation.
 - Added `sys.pipe` so descriptor-polling fixtures also use the public OS facade
   instead of declaring a test-local C binding.
 - Exposed the target-defined `sys.EAGAIN` and `sys.EWOULDBLOCK` errno constants

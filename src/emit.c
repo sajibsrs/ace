@@ -3520,6 +3520,19 @@ static EV gen_call(Em* e, Node* call) {
         e->vti = bits.idx;
         return (EV){ CLS_FP, value };
     }
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival == BI_INTERNAL_LOAD_U64) {
+        EV bytes = gen_expr(e, call->kids[0]);
+        int ptr, len;
+        byte_sequence_parts(e, call, bytes, node_ty(call->kids[0]), &ptr, &len);
+        EV index = gen_expr(e, call->kids[1]);
+        int out = ptr;
+        ins(e, 0x8B000000u | ((uint32_t)xreg(index.idx) << 16) |
+               ((uint32_t)xreg(ptr) << 5) | (uint32_t)xreg(out)); // add out,ptr,index
+        ld_reg(e, xreg(out), xreg(out), 0, 8, 0); // native-endian unaligned load
+        e->vti = out + 1;
+        return (EV){ CLS_INT, out };
+    }
     if (intrinsic && intrinsic->decl) {
         switch (intrinsic->decl->ival) {
         case BI_SYS_ARGC: return gen_process_count_builtin(e, call, 0);
@@ -5311,6 +5324,9 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
         } else if (f->ival == BI_BITS_TO_FLOAT) {
             int is64 = unwrap(ret)->prim == P_F64;
             ins(e, is64 ? 0x9E670000u : 0x1E270000u); // fmov d0,x0 / s0,w0
+        } else if (f->ival == BI_INTERNAL_LOAD_U64) {
+            ins(e, 0x8B020000u); // add x0,x0,x2
+            ins(e, 0xF9400000u); // ldr x0,[x0]
         }
         emit_epilogue(e);
         e->ended_return = 1;
