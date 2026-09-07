@@ -1,1 +1,1 @@
-import shared: "../std/internal/shared.ace"
+import shared: "../std/@/shared.ace"

@@ -1,2 +1,2 @@
 import first
-import shared: "../std/internal/shared.ace"
+import shared: @shared.ace

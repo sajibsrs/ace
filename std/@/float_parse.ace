@@ -4,9 +4,9 @@
  */
 
 import bits
-import big: "./bigint.ace"
-import load: "./byte_load.ace"
-import fast: "./float_parse_fast.ace"
+import big: @bigint.ace
+import load: @byte_load.ace
+import fast: @float_parse_fast.ace
 
 FastDecimal: struct {
     coefficient: u64,

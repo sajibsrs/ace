@@ -349,39 +349,46 @@ for want in "absent_module_probe.ace" "absent_module_probe/module.ace"; do
     fi
 done
 
-# The compiler-shipped std/internal subtree is shared by std sources but is not
+# The compiler-shipped std/@ subtree is shared by std sources but is not
 # importable by applications, including through traversal or symlink aliases.
 mkdir -p /tmp/ace_std_internal/std/second
-mkdir -p /tmp/ace_std_internal/std/internal
+mkdir -p /tmp/ace_std_internal/std/@
 mkdir -p /tmp/ace_std_internal/app
 mkdir -p /tmp/ace_std_internal/app/copied
 cp "$ACE" /tmp/ace_std_internal/ace
 cp tests/stdlib_internal/first.ace /tmp/ace_std_internal/std/first.ace
+cp tests/stdlib_internal/relative_std_err.ace /tmp/ace_std_internal/std/relative_std_err.ace
 cp tests/stdlib_internal/second/module.ace /tmp/ace_std_internal/std/second/module.ace
-cp tests/stdlib_internal/internal/shared.ace /tmp/ace_std_internal/std/internal/shared.ace
-cp tests/stdlib_internal/internal/leaf.ace /tmp/ace_std_internal/std/internal/leaf.ace
+cp tests/stdlib_internal/@/shared.ace /tmp/ace_std_internal/std/@/shared.ace
+cp tests/stdlib_internal/@/leaf.ace /tmp/ace_std_internal/std/@/leaf.ace
 cp tests/stdlib_internal/app/*.ace /tmp/ace_std_internal/app/
-cp tests/stdlib_internal/internal/*.ace /tmp/ace_std_internal/app/copied/
-ln -sf ../std/internal/shared.ace /tmp/ace_std_internal/app/internal-link.ace
+cp tests/stdlib_internal/copied/*.ace /tmp/ace_std_internal/app/copied/
+ln -sf ../std/@/shared.ace /tmp/ace_std_internal/app/internal-link.ace
 if ! /tmp/ace_std_internal/ace -o /tmp/ace_std_internal/out \
      /tmp/ace_std_internal/app/main.ace || ! /tmp/ace_std_internal/out; then
-    echo "FAIL: ordinary std modules should share std/internal sources"
+    echo "FAIL: ordinary std modules should share std/@ sources"
     fail=1
 fi
-if ! /tmp/ace_std_internal/ace /tmp/ace_std_internal/std/internal/shared.ace; then
+if ! /tmp/ace_std_internal/ace /tmp/ace_std_internal/std/@/shared.ace; then
     echo "FAIL: an internal source should compile directly and import another internal source"
+    fail=1
+fi
+relative_std=$(/tmp/ace_std_internal/ace /tmp/ace_std_internal/std/relative_std_err.ace 2>&1)
+if ! printf '%s\n' "$relative_std" | grep -qF \
+    "compiler-reserved standard-library implementation must use @file.ace import syntax"; then
+    echo "FAIL: reserved std implementation should require visible @file.ace syntax"
     fail=1
 fi
 if ! /tmp/ace_std_internal/ace -o /tmp/ace_std_internal/copied \
      /tmp/ace_std_internal/app/copied_ok.ace || ! /tmp/ace_std_internal/copied; then
-    echo "FAIL: equivalent source outside std/internal should remain ordinary code"
+    echo "FAIL: equivalent source outside std/@ should remain ordinary code"
     fail=1
 fi
-internal_diag="standard-library internal module 'std/internal/shared.ace' may be imported only by standard-library sources"
+internal_diag="compiler-reserved standard-library implementation 'std/@/shared.ace' may be imported only by standard-library sources"
 for case in direct_err traversal_err local_err symlink_err cached_err; do
     internal_out=$(/tmp/ace_std_internal/ace "/tmp/ace_std_internal/app/$case.ace" 2>&1)
     if ! printf '%s\n' "$internal_out" | grep -qF "$internal_diag"; then
-        echo "FAIL: $case should enforce the canonical std/internal boundary"
+        echo "FAIL: $case should enforce the canonical std/@ boundary"
         fail=1
     fi
 done

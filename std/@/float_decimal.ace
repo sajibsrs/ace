@@ -4,8 +4,8 @@
  */
 
 import bits
-import big: "./bigint.ace"
-import ryu: "./float_shortest.ace"
+import big: @bigint.ace
+import ryu: @float_shortest.ace
 
 pub Kind: enum { finite, zero, infinity, nan }
 

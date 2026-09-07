@@ -40,14 +40,17 @@ import one from "relative/path.ace"
   qualifier. Its source is either a bare standard-module name or a relative
   local path.
 
-The compiler reserves its shipped `std/internal/` subtree for shared standard-
-library implementation. Any source within that canonical `std/` tree may
-import internal files, and internal files may import one another. Application
-and package sources cannot import them, even through `./`, `../`, alternate
-lexical paths, or symlinks, because the boundary is checked after path
-canonicalization. Compiling an internal file directly remains valid for
-standard-library checks, and copying equivalent source outside the shipped
-tree produces ordinary application code. There is no bare `internal` module.
+The compiler reserves its shipped `std/@/` subtree for shared standard-library
+implementation. Imports use the visibly distinct unquoted form
+`import big: @bigint.ace`; selective imports use forms such as
+`import value from @shared.ace`. Any source within the canonical `std/` tree may
+use these imports, and reserved files may import one another. Application and
+package sources cannot import them, even through `./`, `../`, alternate lexical
+paths, or symlinks, because the boundary is checked after path canonicalization.
+Compiling a reserved file directly remains valid for standard-library checks,
+and equivalent source copied outside the shipped tree remains ordinary code.
+The `@file.ace` source is not a general path prefix, attribute, package
+namespace, or user-definable mechanism.
 
 Bare selected lists stay on one physical line. Use parentheses for a multiline
 list:

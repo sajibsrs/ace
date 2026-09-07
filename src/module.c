@@ -152,8 +152,8 @@ static int is_std_internal(Loader* L, const char* canon) {
     if (!L->std_root) return 0;
     size_t n = strlen(L->std_root);
     return strncmp(canon, L->std_root, n) == 0 &&
-           strcmp(canon + n, "/internal") != 0 &&
-           strncmp(canon + n, "/internal/", 10) == 0;
+           strcmp(canon + n, "/@") != 0 &&
+           strncmp(canon + n, "/@/", 3) == 0;
 }
 
 static const char* std_display_path(Loader* L, const char* canon) {
@@ -283,9 +283,9 @@ static int is_std_internal_named_module(Loader* L, const char* canon,
     compiler_dir(dir, sizeof dir, L->compiler_path);
     char path[4608];
     if (strcmp(dir, ".") == 0)
-        snprintf(path, sizeof path, "std/internal/%s.ace", name);
+        snprintf(path, sizeof path, "std/@/%s.ace", name);
     else
-        snprintf(path, sizeof path, "%s/std/internal/%s.ace", dir, name);
+        snprintf(path, sizeof path, "%s/std/@/%s.ace", dir, name);
     const char* expected = canonicalize(path);
     return expected && strcmp(expected, canon) == 0;
 }
@@ -421,8 +421,21 @@ static void report_cycle(Loader* L, Node* at, const char* canon) {
 
 // Resolve one import declaration to its target path (arena storage).
 // Bare, ident-aliased, and selective `from name` imports come from the stdlib
-// beside the compiler; string paths are local to the importing source file.
+// beside the compiler; @file.ace names compiler-reserved std implementation;
+// string paths are local to the importing source file.
 static const char* import_target(Loader* L, Node* imp, const char* src_path) {
+    if (imp->a && imp->a->op == T_AT) {
+        Node* p = imp->a;
+        char dir[4096];
+        compiler_dir(dir, sizeof dir, L->compiler_path);
+        size_t need = strlen(dir) + p->len + 12;
+        char* path = arena_alloc(need);
+        if (strcmp(dir, ".") == 0)
+            snprintf(path, need, "std/@/%.*s.ace", (int)p->len, p->str);
+        else
+            snprintf(path, need, "%s/std/@/%.*s.ace", dir, (int)p->len, p->str);
+        return path;
+    }
     if (imp->a) { // import util: "./util.ace" — path form
         Node* p = imp->a;
         char raw[4096];
@@ -577,8 +590,13 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
     if (is_std_internal(L, canon) &&
         (!importer || !is_std_source(L, importer))) {
         import_err(L->d, imp,
-                   "standard-library internal module '%s' may be imported only by standard-library sources",
+                   "compiler-reserved standard-library implementation '%s' may be imported only by standard-library sources",
                    std_display_path(L, canon));
+        return NULL;
+    }
+    if (is_std_internal(L, canon) && (!imp->a || imp->a->op != T_AT)) {
+        import_err(L->d, imp,
+                   "compiler-reserved standard-library implementation must use @file.ace import syntax");
         return NULL;
     }
     if (module_on_stack(L, canon)) {

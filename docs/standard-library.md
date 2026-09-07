@@ -20,13 +20,14 @@ Today's modules:
 Everything else in the planned v1 set (`simd`) does not
 exist yet.
 
-The `std/internal/` directory is a compiler-reserved implementation namespace,
-not a public module. Ordinary standard-library modules may share code from it,
-and its files may import one another. Applications and packages cannot import
-canonical paths beneath it; canonicalization prevents traversal and symlink
-aliases from bypassing that boundary. Equivalent source copied outside the
-compiler-shipped `std/` tree is ordinary code, and `import internal` is not a
-valid bare standard-library import.
+The `std/@/` directory contains compiler-reserved standard-library
+implementation, not public modules. Ordinary standard-library modules use the
+visibly distinct unquoted form `import big: @bigint.ace`, and reserved files may
+import one another the same way. Applications and packages cannot use these
+modules; canonicalization prevents traversal and symlink aliases from bypassing
+that boundary. Equivalent source copied outside the compiler-shipped `std/`
+tree is ordinary code. The `@file.ace` form is reserved import syntax, not a
+general path prefix or user-definable namespace.
 
 Public names use module context to stay short without becoming cryptic. Types
 and error domains use compact PascalCase, functions use lowercase words with

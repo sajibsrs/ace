@@ -98,9 +98,10 @@ current normative rules, and Git preserves patch-level detail.
 - Added standard directory modules (`std/name/module.ace`) beside single-file
   modules, with ambiguity diagnostics. OS-layer files remain explicitly imported
   behind stable public facades.
-- Reserved the canonical compiler-shipped `std/internal/` subtree for imports
-  from standard-library sources, enforcing the boundary after path
-  canonicalization while leaving direct internal-source checks available.
+- Represented compiler-reserved standard-library implementation as the
+  canonical `std/@/` subtree and unquoted `@file.ace` import source, enforcing
+  the existing boundary after path canonicalization while leaving direct
+  reserved-source checks available.
 - Implemented `extern "c"`, `export`, link names, and C variadics behind a
   positive ABI whitelist. Apple-arm64 lowering covers compatible scalars,
   pointers, distincts, recursive structs, nested arrays, register exhaustion,
@@ -179,7 +180,7 @@ current normative rules, and Git preserves patch-level detail.
   inline the same instruction sequence.
 - Replaced generated float formatting's `ecvt`/`fcvt`, parse-back, `floor`,
   floating-environment, and memory-helper dependencies with a shared native
-  exact binary-to-decimal engine under `std/internal`. Fixed-capacity base-2^32
+  exact binary-to-decimal engine under `std/@`. Fixed-capacity base-2^32
   arithmetic produces shortest round-trip `f32`/`f64` text and fixed `%f`
   rounding through precision 324 without allocation or platform conversion.
 - Replaced shortest `f32`/`f64` formatting's exact bigint search with an
