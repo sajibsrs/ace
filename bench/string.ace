@@ -89,6 +89,49 @@ main(): int {
             raw_sum ^= bits.from_float(value) + u64(i)
         }
     }
+    report("parse-f64-short", now() - started, float_iterations, usize(raw_sum))
+    long_decimal_inputs: [8]string = [
+        "1234567890123456", "1234567890123456789",
+        "0.1234567890123456789", "1234567890123456.5",
+        "1.234567890123456e+308", "-9876543210987654e-200",
+        "0.000000000000000123456789012345", "3141592653589793238",
+    ]
+    raw_sum = 0
+    started = now()
+
+    for i: usize in 0 .. float_iterations {
+        value: f64, ok: bool = str.parse[f64](long_decimal_inputs[i % 8])
+
+        if ok {
+            raw_sum ^= bits.from_float(value) + u64(i)
+        }
+    }
+    report("parse-f64-long", now() - started, float_iterations, usize(raw_sum))
+    // Canonical workload assumption: 80% common/short, 20% long/scientific.
+    blended_decimal_inputs: [40]string = [
+        decimal_inputs[0], decimal_inputs[1], decimal_inputs[2], decimal_inputs[3],
+        decimal_inputs[4], decimal_inputs[5], decimal_inputs[6], decimal_inputs[7],
+        decimal_inputs[0], decimal_inputs[1], decimal_inputs[2], decimal_inputs[3],
+        decimal_inputs[4], decimal_inputs[5], decimal_inputs[6], decimal_inputs[7],
+        decimal_inputs[0], decimal_inputs[1], decimal_inputs[2], decimal_inputs[3],
+        decimal_inputs[4], decimal_inputs[5], decimal_inputs[6], decimal_inputs[7],
+        decimal_inputs[0], decimal_inputs[1], decimal_inputs[2], decimal_inputs[3],
+        decimal_inputs[4], decimal_inputs[5], decimal_inputs[6], decimal_inputs[7],
+        long_decimal_inputs[0], long_decimal_inputs[1],
+        long_decimal_inputs[2], long_decimal_inputs[3],
+        long_decimal_inputs[4], long_decimal_inputs[5],
+        long_decimal_inputs[6], long_decimal_inputs[7],
+    ]
+    raw_sum = 0
+    started = now()
+
+    for i: usize in 0 .. float_iterations {
+        value: f64, ok: bool = str.parse[f64](blended_decimal_inputs[i % 40])
+
+        if ok {
+            raw_sum ^= bits.from_float(value) + u64(i)
+        }
+    }
     report("parse-f64", now() - started, float_iterations, usize(raw_sum))
     values: [8]f64 = [
         0.1, 1.5, 3.141592653589793, 1.0e-308,

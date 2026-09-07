@@ -202,6 +202,10 @@ current normative rules, and Git preserves patch-level detail.
   it to scan finite float digit runs eight bytes at a time. A branchless SWAR
   digit mask, fixed-step trailing-zero count, packed eight-digit accumulation,
   and scalar short-tail path preserve the shared three-tier parser validation.
+- Added short and long-mantissa float-parse benchmark cohorts as supporting
+  diagnostics and made an explicit 80%-short/20%-long blend the canonical
+  comparison, keeping scan-path performance visible without conflating it with
+  the greater-than-19-digit bigint conversion fallback.
 - Added `sys.pipe` so descriptor-polling fixtures also use the public OS facade
   instead of declaring a test-local C binding.
 - Exposed the target-defined `sys.EAGAIN` and `sys.EWOULDBLOCK` errno constants

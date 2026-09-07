@@ -141,6 +141,29 @@ These are baseline observations, not performance promises.
   traffic with the specified bounded per-loop scan.
 - **Read-only parameter load reuse** [queued] — exploit the existing parameter
   facts without adding global alias analysis.
+- **Float-parse optimization backlog** [new] — use the canonical 80%-short /
+  20%-long benchmark's current 6.8x `strtod` ratio as the auditable baseline;
+  roughly 2x is an aspirational next target, not a performance promise. Carve
+  only after measuring each boundary, in this order:
+  1. Disassemble the hot path and verify whether the specialized Eisel-Lemire
+     step is inlined, whether scalar and multi-value results stay in ABI
+     registers, and where calls introduce stack or out-parameter traffic.
+  2. Inspect 64x64-to-128 multiplication lowering. Apple arm64 should use
+     `mul`/`umulh` where applicable (and a future x86-64 backend its native wide
+     multiply) rather than an avoidable software partial-product sequence.
+  3. Instrument per-call tier selection on the canonical corpus: exact-small,
+     Eisel-Lemire, and bigint fallback. Improve exact-small coverage for common
+     inputs only where exactness and the existing explicit tier rules permit.
+  4. Profile fixed per-call work: special-value prefix handling, validation,
+     digit/exponent bookkeeping, spills, and repeated loads. Preserve the
+     current single syntax-validation pass and exact rounding behavior.
+  5. Audit arithmetic-heavy generated code for generally poor instruction
+     selection before adding parser-specific workarounds; feed reusable fixes
+     back into the backend.
+  6. Consider power-table alignment and cache layout last, after instruction
+     and call costs are reduced. Specialized parsers can outperform platform
+     `strtod`, so C is the comparison baseline rather than a hard ceiling, but
+     any stronger claim requires a local checksum-matched measurement.
 - **Constant arithmetic lowering** [new] — measure and carve local strength
   reduction for constant division/remainder and similarly costly instruction
   sequences if broader benchmarks confirm the recurrence result.

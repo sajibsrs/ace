@@ -66,6 +66,30 @@ parse workload, whose short inputs often remain scalar, five runs produced
 median results of 186.72 ns/op for Ace and 26.75 ns/op for C, or about 7.0x.
 That is a 4.32 ns/op (2.3%) reduction from the 191.04 ns/op checkpoint.
 
+The canonical `parse-f64` workload assumes 80% common/short inputs and 20%
+long-mantissa or scientific inputs. This is an explicit working estimate rather
+than a measured production distribution and may be revised when representative
+usage data exists. Its fixed 40-input schedule reuses the two eight-input pools
+without adding timed selection branches. On the reference Apple-arm64 machine,
+five release runs produced medians of 192.15 ns/op for Ace and 28.32 ns/op for C
+`strtod`, making the canonical comparison 6.8x.
+
+Supporting diagnostics remain separate: `parse-f64-short` retains the original
+mixed pool and measured 186.06 ns/op for Ace versus 26.45 ns/op for C (7.0x),
+while `parse-f64-long` uses 15–19 significant digits in long integer,
+fractional, leading-zero, and scientific forms and measured 213.60 ns/op versus
+31.67 ns/op (6.7x). The long cohort avoids inputs that invoke the greater-than-
+19-digit bigint conversion fallback. A temporary scalar-only A/B on those same
+long inputs measured 250.11 ns/op versus 212.46 ns/op with SWAR, a 37.65 ns/op
+(15.1%) saving when every call reached the eight-byte path. Checked
+instrumentation counted 27,500 SWAR chunks and 120,000 scalar steps over 20,000
+long-cohort calls; all calls reached SWAR, and the chunks covered 64.7% of the
+digit bytes counted by those paths.
+
+Further parser optimization is intentionally deferred. `TODO.md` records the
+measurement-ordered backlog and an aspirational next target of roughly 2x C;
+the canonical 6.8x result above remains the baseline until another carve lands.
+
 ## CPU
 
 Run the bounded integer recurrence in Ace checked and release modes and in

@@ -16,8 +16,16 @@ cc -std=c11 -O2 -o "$bench_tmp/string-c" bench/string.c
 
 ace_parse=$(awk '$1 == "parse-f64" { print $4 }' "$bench_tmp/ace.txt")
 c_parse=$(awk '$1 == "parse-f64" { print $4 }' "$bench_tmp/c.txt")
-if [ -z "$ace_parse" ] || [ "$ace_parse" != "$c_parse" ]; then
+ace_parse_short=$(awk '$1 == "parse-f64-short" { print $4 }' "$bench_tmp/ace.txt")
+c_parse_short=$(awk '$1 == "parse-f64-short" { print $4 }' "$bench_tmp/c.txt")
+ace_parse_long=$(awk '$1 == "parse-f64-long" { print $4 }' "$bench_tmp/ace.txt")
+c_parse_long=$(awk '$1 == "parse-f64-long" { print $4 }' "$bench_tmp/c.txt")
+if [ -z "$ace_parse" ] || [ "$ace_parse" != "$c_parse" ] ||
+   [ -z "$ace_parse_short" ] || [ "$ace_parse_short" != "$c_parse_short" ] ||
+   [ -z "$ace_parse_long" ] || [ "$ace_parse_long" != "$c_parse_long" ]; then
     echo "parse checksum mismatch: Ace=$ace_parse C=$c_parse" >&2
+    echo "short parse checksum mismatch: Ace=$ace_parse_short C=$c_parse_short" >&2
+    echo "long parse checksum mismatch: Ace=$ace_parse_long C=$c_parse_long" >&2
     exit 1
 fi
 

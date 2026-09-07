@@ -105,6 +105,45 @@ int main(void) {
         memcpy(&raw, &value, sizeof raw);
         raw_sum ^= raw + i;
     }
+    report("parse-f64-short", now_ns() - started, float_iterations, raw_sum);
+
+    static const char *long_inputs[8] = {
+        "1234567890123456", "1234567890123456789",
+        "0.1234567890123456789", "1234567890123456.5",
+        "1.234567890123456e+308", "-9876543210987654e-200",
+        "0.000000000000000123456789012345", "3141592653589793238"
+    };
+    raw_sum = 0;
+    started = now_ns();
+    for (uint64_t i = 0; i < float_iterations; i++) {
+        double value = parse_call(long_inputs[i % 8]);
+        uint64_t raw;
+        memcpy(&raw, &value, sizeof raw);
+        raw_sum ^= raw + i;
+    }
+    report("parse-f64-long", now_ns() - started, float_iterations, raw_sum);
+
+    /* Canonical workload assumption: 80% common/short, 20% long/scientific. */
+    const char *blended_inputs[40] = {
+        inputs[0], inputs[1], inputs[2], inputs[3],
+        inputs[4], inputs[5], inputs[6], inputs[7],
+        inputs[0], inputs[1], inputs[2], inputs[3],
+        inputs[4], inputs[5], inputs[6], inputs[7],
+        inputs[0], inputs[1], inputs[2], inputs[3],
+        inputs[4], inputs[5], inputs[6], inputs[7],
+        inputs[0], inputs[1], inputs[2], inputs[3],
+        inputs[4], inputs[5], inputs[6], inputs[7],
+        long_inputs[0], long_inputs[1], long_inputs[2], long_inputs[3],
+        long_inputs[4], long_inputs[5], long_inputs[6], long_inputs[7]
+    };
+    raw_sum = 0;
+    started = now_ns();
+    for (uint64_t i = 0; i < float_iterations; i++) {
+        double value = parse_call(blended_inputs[i % 40]);
+        uint64_t raw;
+        memcpy(&raw, &value, sizeof raw);
+        raw_sum ^= raw + i;
+    }
     report("parse-f64", now_ns() - started, float_iterations, raw_sum);
 
     static const double values[8] = {
