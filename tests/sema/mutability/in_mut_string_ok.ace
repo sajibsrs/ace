@@ -10,7 +10,7 @@ fill(text: mut string, value: u8) {
 
 main(): int {
     storage: [6]u8
-    text: mut string = string(mut storage[0..])
+    text: mut string = mut storage[0..]
     fill(text, 7)
     total: usize = 0
     for i: usize, b: u8 in mut text {

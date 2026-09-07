@@ -1,9 +1,0 @@
-/* err: the reverse conversion is exact — []u8(text) accepts only mut string
- * (Sequences #6); a mut []u8 argument needs no conversion and gets none. */
-
-main(): int {
-    storage: [4]u8
-    view: mut []u8 = mut storage[0..4]
-    widened: mut []u8 = []u8(view)
-    return 0
-}

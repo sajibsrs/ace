@@ -13,7 +13,7 @@ bump(pointer: mut *u8) { // mut &item yields mut *u8 over the byte storage
 
 main(): int {
     storage: [8]u8
-    text: mut string = string(mut storage[0..])
+    text: mut string = mut storage[0..]
     set_bytes(text)
     if text[0] != 72 || text[1] != 105 {
         return 1

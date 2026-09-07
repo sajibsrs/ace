@@ -1,8 +1,11 @@
-/* char is a predeclared transparent alias of u8 (Stdlib #15): shared
- * identity, representation, conversions, and overload behavior.
+/* char/u8 and string/[]char/[]u8 are predeclared transparent aliases:
+ * shared identity, representation, conversions, and overload behavior.
  * Also check sizeof with inline sequence types (Sequences #10). */
 
 Box: struct { tag: char }
+Text: type = string
+Bytes: type = []u8
+View[T]: struct { value: T }
 
 byte_it(x: u8): u8 {
     return x
@@ -46,6 +49,30 @@ main(): int {
 
     if wide[1] != 'y' {
         return 6
+    }
+    text: string = wide
+    bytes_again: []u8 = text
+
+    if len(text) != 2 || bytes_again[0] != 'x' {
+        return 10
+    }
+
+    letters: [2]char = ['o', 'k']
+    writable_text: mut string = mut letters[..]
+    writable_bytes: mut []u8 = writable_text
+    writable_bytes[0] = 'O'
+
+    if writable_text[0] != 'O' {
+        return 11
+    }
+    if typeid(Text) != typeid(Bytes) {
+        return 12
+    }
+    text_box: View[string] = View[string] {value: text}
+    bytes_box: View[[]u8] = text_box
+
+    if len(bytes_box.value) != 2 {
+        return 13
     }
 
     if byte_it(c) != 'A' {

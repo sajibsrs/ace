@@ -71,12 +71,17 @@ Conditions require `bool`; integers are not implicitly treated as conditions.
 Logical operators are `&&`, `||`, and `!`, with short-circuit evaluation for
 `&&` and `||`.
 
-## Characters: the `char` alias
+## Character and text aliases
 
 `char` is a predeclared transparent alias of `u8` with shared identity,
 representation, conversions, and overload behavior: `sizeof(char)` is 1, a
 `[]char` is a `[]u8`, and an overload taking `char` also accepts `u8` values. It
 names one byte used as character data, not a decoded Unicode character.
+
+`string`, `[]char`, and `[]u8` likewise share type identity and the same
+two-word view representation. Use `string` for complete text, `[]char` for
+character-oriented parsing or partial textual framing, and `[]u8` for raw
+bytes. These intent spellings cannot distinguish overloads.
 
 A character literal is an untyped constant holding exactly one byte and can
 materialize into a fitting integer type. The escapes are `\n`, `\t`, `\r`, `\0`,
@@ -95,12 +100,12 @@ single-byte values.
 
 ## Strings
 
-`string` is a two-word byte view with the same descriptor as `[]u8`: a byte
-pointer and a byte count, so `sizeof(string)` is 16. String literals have static
+`string` is the text-intent spelling of the same type as `[]char` and `[]u8`:
+a byte pointer and a byte count, so `sizeof(string)` is 16. String literals have static
 read-only storage, do not allocate, and contain exactly their encoded bytes; the
 language appends no terminator. A plain string is a read-only view — indexed
-reads stay value reads, and no syntax writes through its bytes. The distinct
-`mut string` view type ([Types](types.md)) carries writable bytes: it
+reads stay value reads, and no syntax writes through its bytes. The
+`mut string` spelling of `mut []char`/`mut []u8` ([Types](types.md)) carries writable bytes: it
 establishes only where `mut` is written over proven-writable storage, so a
 literal can never back one, and `s[i] = c` through it assigns exactly one byte.
 The empty literal `""` is a valid non-null string (pointer, length 0); only the
@@ -125,9 +130,9 @@ slicing ([Types](types.md)). Where the bounds are compile-time constants that
 violate `0 <= lo <= hi <= len(source)`, the compiler rejects the program.
 Checked output enforces the same complete precondition for dynamic bounds;
 release output emits no guard.
-`for-in` walks the stored bytes, and `string(bytes)` converts a `[]u8` view
-zero-copy while `[]u8(text)` requires a `mut string` and yields its writable
-byte view ([Types](types.md), [Control flow](control-flow.md)).
+`for-in` walks the stored bytes. Assignment and calls among `string`, `[]char`,
+and `[]u8` require no conversion and perform no work ([Types](types.md),
+[Control flow](control-flow.md)).
 
 ```ace
 prefix: string = message[..7]

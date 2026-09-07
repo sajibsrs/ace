@@ -1,5 +1,5 @@
 /* Type-position mutability (Mutability #9-11, Sequences #1): mut []T and
- * mut string as distinct view types, implicit permission shrink, slicing
+ * plain and writable view types, alias spellings, permission shrink, slicing
  * propagation, the mut x[lo..hi] establishment form, and distinct
  * instantiations through overloads, generics, and struct fields. */
 
@@ -57,7 +57,7 @@ main(): int {
     // mut string exists: same len(), explicit content comparison, and null semantics.
     source: string = id("ace")
     letters: [3]u8 = [u8('a'), u8('c'), u8('e')]
-    ms: mut string = string(mut letters[0..])
+    ms: mut string = mut letters[0..]
     if len(ms) != 3 {
         return 3
     }

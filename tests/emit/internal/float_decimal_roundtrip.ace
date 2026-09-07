@@ -22,7 +22,7 @@ main(): int {
             if !ok {
                 return 1
             }
-            parsed: f64, parsed_ok: bool = str.parse[f64](string(text[0..count]))
+            parsed: f64, parsed_ok: bool = str.parse[f64](text[0..count])
 
             if !parsed_ok || bits.from_float(parsed) != state64 {
                 return 2
@@ -44,7 +44,7 @@ main(): int {
             if !ok {
                 return 3
             }
-            parsed: f32, parsed_ok: bool = str.parse[f32](string(text[0..count]))
+            parsed: f32, parsed_ok: bool = str.parse[f32](text[0..count])
 
             if !parsed_ok || bits.from_float(parsed) != state32 {
                 return 4

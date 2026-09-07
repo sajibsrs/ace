@@ -80,7 +80,7 @@ pub compare(a: string, b: string): int {
 
 /* Copies the complete text into destination[0..len(text)]; a shorter
  * destination is unchanged and fails, and the unused suffix is untouched. */
-pub copy(text: string, noalias destination: mut []u8): bool {
+pub copy(text: string, noalias destination: mut []char): bool {
     if len(text) > len(destination) {
         return false
     }
@@ -130,7 +130,7 @@ pub split(text: string, separator: string, parts: mut []string): (usize, bool) {
 
 pub split(text: string, separator: char, parts: mut []string): (usize, bool) {
     unit: [1]char = [separator]
-    count: usize, complete: bool = split(text, string(unit[0..1]), parts)
+    count: usize, complete: bool = split(text, unit[0..1], parts)
     return count, complete
 }
 
@@ -218,7 +218,7 @@ pub parse[T](text: string, radix: u8): (T, bool) specialized
  * use lowercase digits with no base prefix and only int may emit a minus.
  * The no-radix float representations are exactly the matching fmt.print
  * overloads', including the nan/inf/-inf and signed-zero spellings. */
-pub format(destination: mut []u8, value: int): (usize, bool) {
+pub format(destination: mut []char, value: int): (usize, bool) {
     digits: [20]u8
     at: int = 20
     remaining: int = value
@@ -248,7 +248,7 @@ pub format(destination: mut []u8, value: int): (usize, bool) {
     return n, ok
 }
 
-pub format(destination: mut []u8, value: uint): (usize, bool) {
+pub format(destination: mut []char, value: uint): (usize, bool) {
     digits: [20]u8
     at: int = 20
     remaining: uint = value
@@ -266,7 +266,7 @@ pub format(destination: mut []u8, value: uint): (usize, bool) {
     return n, ok
 }
 
-pub format(destination: mut []u8, value: usize): (usize, bool) {
+pub format(destination: mut []char, value: usize): (usize, bool) {
     digits: [20]u8
     at: int = 20
     remaining: usize = value
@@ -284,7 +284,7 @@ pub format(destination: mut []u8, value: usize): (usize, bool) {
     return n, ok
 }
 
-pub format(destination: mut []u8, value: f64): (usize, bool) {
+pub format(destination: mut []char, value: f64): (usize, bool) {
     one: f64 = 1.0
     zero: f64 = 0.0
 
@@ -328,7 +328,7 @@ pub format(destination: mut []u8, value: f64): (usize, bool) {
     return n2, ok
 }
 
-pub format(destination: mut []u8, value: f32): (usize, bool) {
+pub format(destination: mut []char, value: f32): (usize, bool) {
     pone: f32 = 1.0
     zero: f32 = 0.0
 
@@ -372,7 +372,7 @@ pub format(destination: mut []u8, value: f32): (usize, bool) {
     return n2, ok
 }
 
-pub format(destination: mut []u8, value: int, radix: u8): (usize, bool) {
+pub format(destination: mut []char, value: int, radix: u8): (usize, bool) {
     if radix < 2 || radix > 36 {
         return 0, false
     }
@@ -413,7 +413,7 @@ pub format(destination: mut []u8, value: int, radix: u8): (usize, bool) {
     return n2, ok
 }
 
-pub format(destination: mut []u8, value: uint, radix: u8): (usize, bool) {
+pub format(destination: mut []char, value: uint, radix: u8): (usize, bool) {
     if radix < 2 || radix > 36 {
         return 0, false
     }
@@ -440,7 +440,7 @@ pub format(destination: mut []u8, value: uint, radix: u8): (usize, bool) {
     return n2, ok
 }
 
-pub format(destination: mut []u8, value: usize, radix: u8): (usize, bool) {
+pub format(destination: mut []char, value: usize, radix: u8): (usize, bool) {
     if radix < 2 || radix > 36 {
         return 0, false
     }
@@ -480,7 +480,7 @@ store_bytes(destination: mut []u8, source: []u8): (usize, bool) {
 }
 
 /* Writes the complete text into destination or nothing at all. */
-store_text(destination: mut []u8, text: string): (usize, bool) {
+store_text(destination: mut []char, text: string): (usize, bool) {
     if len(text) > len(destination) {
         return 0, false
     }

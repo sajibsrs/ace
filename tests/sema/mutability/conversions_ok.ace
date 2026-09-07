@@ -1,17 +1,16 @@
-/* The three exact view conversions (Sequences #4, #6): string over []u8 and
- * mut []u8 with the result following the argument's stated type, []u8 over
- * mut string only, and no other spelling in either direction. */
+/* string, []char, and []u8 are intent spellings of one view type; writable
+ * spellings likewise share identity and permission. */
 
-alias_view(views: []char): string { // transparent aliases convert identically
-    return string(views)
+alias_view(views: []char): string {
+    return views
 }
 
 from_call_result(view: mut []u8): mut string { // selection is type-driven
-    return string(view) // a call result is not an lvalue; the stated type rules
+    return view
 }
 
 round_trip(text: mut string): mut []u8 {
-    return []u8(text)
+    return text
 }
 
 shrink(text: mut string): string {
@@ -21,14 +20,14 @@ shrink(text: mut string): string {
 main(): int {
     storage: [6]u8
     view: mut []u8 = mut storage[0..6]
-    text: mut string = string(view) // mut []u8 carries its permission across
+    text: mut string = view
     w: mut string = text
-    plain: string = string(view[0..3]) // a plain view yields a plain string
+    plain: string = view[0..3]
     p: string = plain
-    back: mut []u8 = []u8(text) // the reverse conversion requires mut string
+    back: mut []u8 = text
     b: []u8 = back // and its result shrinks like any writable view
     chars: []char = view
-    same: string = string(chars)
+    same: string = chars
     if len(w) != 6 || len(back) != 6 || len(b) != 6 {
         return 1
     }

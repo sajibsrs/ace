@@ -422,7 +422,20 @@ static int same_type(SType* a, SType* b) {
     if (a == b) return 1;
     if (!a || !b) return 0;
     if (a->kind == SK_ERR || b->kind == SK_ERR) return 1; // poison-tolerant
-    if (a->kind != b->kind) return 0;
+    /* `string`, `[]char`, and `[]u8` are three intent spellings of one
+       read-only byte-view type. `char` already resolves to P_U8. Keep the
+       parser-facing string primitive so literals retain useful diagnostics
+       and direct static emission, but give it slice identity everywhere
+       semantic identity is observed (overloads, generics, assignments). */
+    if (a->kind != b->kind) {
+        SType* string = a->kind == SK_PRIM && a->prim == P_STRING ? a :
+                        b->kind == SK_PRIM && b->prim == P_STRING ? b : NULL;
+        SType* slice = a->kind == SK_SLICE ? a :
+                       b->kind == SK_SLICE ? b : NULL;
+        return string && slice && string->is_mut == slice->is_mut &&
+               slice->base && slice->base->kind == SK_PRIM &&
+               slice->base->prim == P_U8;
+    }
     switch (a->kind) {
     case SK_PRIM: return a->prim == b->prim && a->is_mut == b->is_mut;
     case SK_PTR: return a->is_mut == b->is_mut && same_type(a->base, b->base);
@@ -458,8 +471,16 @@ static int same_type(SType* a, SType* b) {
  * `mut []T` -> `[]T`, `mut *T` -> `*T` — never the widening direction.
  */
 static int shrink_ok(SType* f, SType* t) {
-    if (!f || !t || f->kind != t->kind) return 0;
+    if (!f || !t) return 0;
     if (!f->is_mut || t->is_mut) return 0;
+    if (f->kind != t->kind) {
+        SType* string = f->kind == SK_PRIM && f->prim == P_STRING ? f :
+                        t->kind == SK_PRIM && t->prim == P_STRING ? t : NULL;
+        SType* slice = f->kind == SK_SLICE ? f :
+                       t->kind == SK_SLICE ? t : NULL;
+        return string && slice && slice->base &&
+               slice->base->kind == SK_PRIM && slice->base->prim == P_U8;
+    }
     switch (f->kind) {
     case SK_PTR: case SK_SLICE:
         return same_type(f->base, t->base);
@@ -508,9 +529,8 @@ static int castable(SType* f, SType* t) {
     if (f->kind == SK_ENUM) return is_int(t);
     if (t->kind == SK_ENUM) return is_int(f);
     if (f->kind == SK_PTR && t->kind == SK_PTR) return 1;
-    // string(view): the zero-copy []u8 descriptor conversion (Sequences #4-5);
-    // the mut-resulting overload selection lives at the call site, and fixed
-    // byte arrays convert only through explicit slicing first (#5)
+    // string/[]char/[]u8 aliases share a descriptor; fixed arrays still reach
+    // that view only through explicit slicing.
     if (t->kind == SK_PRIM && t->prim == P_STRING &&
         f->kind == SK_SLICE && f->base == st_prim(P_U8))
         return 1;
@@ -2409,6 +2429,12 @@ static SType* indexed_named_type(Ck* k, Node* ix) {
 }
 
 static uint32_t type_identity(SType* t) {
+    /* Alias spellings must produce one runtime typeid. Canonicalize string to
+       the corresponding byte-slice representative before assigning an id. */
+    if (t && t->kind == SK_PRIM && t->prim == P_STRING) {
+        ensure_memory_types();
+        t = t->is_mut ? T_MUT_BYTE_SLICE : T_BYTE_SLICE;
+    }
     if (!t->type_id) t->type_id = next_type_id++;
     return t->type_id;
 }
@@ -2975,9 +3001,8 @@ static SType* check_call(Ck* k, Node* call) {
                 }
                 SType* from = expr_type(k, call->kids[0]);
                 if (want->kind == SK_ERR || from->kind == SK_ERR) return T_ERR;
-                // string(view): the two exact bytes-to-string overloads
-                // (Sequences #4) — the result follows the argument's stated
-                // type, never lvalue analysis, so a mut []u8 yields mut string.
+                // Preserve writable permission through an explicit legacy
+                // spelling cast between the shared byte-view aliases.
                 if (want->kind == SK_PRIM && want->prim == P_STRING &&
                     from->kind == SK_SLICE && from->base == st_prim(P_U8) &&
                     from->is_mut)
@@ -3148,40 +3173,29 @@ static SType* check_call(Ck* k, Node* call) {
         k->pending = pd;
         return T_ERR; // a matching overload may be declared later
     }
-    // []u8(text): the exact reverse view conversion (Sequences #6). It
-    // requires 'mut string' — proven writable bytes — so it launders nothing,
-    // and the result carries that permission as 'mut []u8'. Plain string ->
-    // []u8 stays absent; descriptor-preserving and allocation-free either way.
+    // Slice-shaped identity cast. string/[]char/[]u8 are spelling aliases;
+    // retain writable permission when an older explicit spelling cast is used.
     if (callee->kind == N_SLICE_T) {
         SType* want = build_type(k, callee);
         if (want->kind == SK_ERR) return T_ERR;
-        if (want->kind != SK_SLICE || want->is_mut ||
-            want->base != st_prim(P_U8)) {
-            ck_err(k, call,
-                   "no view conversion to %s — the only reverse conversion is '[]u8(text)' from 'mut string'",
-                   type_name(want));
-            return T_ERR;
-        }
         if (call->nkids != 1) {
-            ck_err(k, call, "a view conversion takes exactly one argument");
+            ck_err(k, call, "a cast takes exactly one argument");
             return T_ERR;
         }
         Node* arg = call->kids[0];
         if (arg->kind == N_MUTARG) {
             ck_err(k, arg,
-                   "'mut' marks mut parameters; a view conversion takes no call-site 'mut'");
+                   "'mut' marks mut parameters; a cast takes no call-site 'mut'");
             return T_ERR;
         }
         SType* from = expr_type(k, arg);
         if (from->kind == SK_ERR) return T_ERR;
-        if (from->kind != SK_PRIM || from->prim != P_STRING || !from->is_mut) {
-            ck_err(k, call,
-                   "[]u8(text) requires 'mut string', not %s — the argument must state writable bytes",
-                   type_name(from));
+        if (!same_type(from, want) && !shrink_ok(from, want)) {
+            ck_err(k, call, "cannot cast %s to %s", type_name(from), type_name(want));
             return T_ERR;
         }
         callee->ty = want; // emitter: slice-type cast marker
-        return T_MUT_BYTE_SLICE;
+        return from->is_mut ? T_MUT_BYTE_SLICE : want;
     }
     // generic instantiation call: max[int](3, 9)
     if (callee->kind == N_INDEX && callee->a->kind == N_IDENT) {

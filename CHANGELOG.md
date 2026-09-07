@@ -41,9 +41,12 @@ current normative rules, and Git preserves patch-level detail.
   contextual explicit `fallthrough`, labeled blocks, labeled break/continue,
   `for-in`, ranges and steps, and general condition/three-clause/infinite
   `for` forms. Loops lower directly to structured branches and index traversal.
-- Implemented arrays, slices, strings, slicing, indexing, `len`, mutable views,
-  and exact view conversions. Sequential value equality is rejected; byte
-  content comparison is the explicit compiler-backed `mem.equal`.
+- Implemented arrays, slices, strings, slicing, indexing, `len`, and mutable
+  views. Unified `string`, `[]char`, and `[]u8` as three intent spellings of
+  one type, with the same identity rule for writable forms; spelling-only
+  overload variations are duplicate declarations. Sequential value equality
+  is rejected; byte content comparison is the explicit compiler-backed
+  `mem.equal`.
 - Implemented call-only, function-scope `defer`. Calls are captured at the
   statement according to the specified two-tier model and emitted in LIFO order
   at every function exit.

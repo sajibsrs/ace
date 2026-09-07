@@ -1,5 +1,5 @@
 /* Sequence-overlap carve implementation (Sequences #1-9): string slicing,
- * the string([]u8) view conversion, string byte iteration, and the
+ * shared string/[]char/[]u8 view identity, byte iteration, and the
  * constant-provable slice-bounds compile check. */
 
 import mem
@@ -46,7 +46,7 @@ main(): int {
         return 5
     }
     arr: [3]u8 = [u8('o'), u8('k'), u8('!')]
-    view: string = string(arr[0..3])
+    view: string = arr[0..3]
 
     if !mem.equal(view, "ok!") {
         return 6

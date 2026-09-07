@@ -194,8 +194,7 @@ foundations.
   displays; carve consistently across integer conversions from a hardware
   fixture rather than adding a binary-only modifier.
 - **`rune` + UTF-8 decode and `yarn`** [additive] — retain explicit decoding
-  and ownership; cross-type byte equality and string-view conversion remain
-  undecided.
+  and ownership over the shared `string`/`[]char`/`[]u8` byte-view type.
 - **libm transcendentals** [open] — `sin`, `cos`, `pow`, `exp`, `log`, `floor`,
   and `ceil` for the 2D/3D milestones.
 - **Random source** [new].

@@ -9,9 +9,9 @@ main(): int {
     storage: [12]u8
     view: mut []u8 = mut storage[0..]
     mem.fill(view, 0)
-    // writes through mut []u8 read back through the converted mut string
+    // string and []u8 spell the same writable view by different intent
     view[0] = 'o'
-    text: mut string = string(view)
+    text: mut string = view
     if len(text) != 12 || text[0] != 111 {
         return 1
     }
@@ -21,25 +21,25 @@ main(): int {
         return 2
     }
     // the reverse conversion shares the descriptor: writes cross both ways
-    back: mut []u8 = []u8(text)
+    back: mut []u8 = text
     back[3] = 'A'
     if text[3] != 65 {
         return 3
     }
     // conversion result follows the stated type; shrink stays implicit
-    plain: string = string(view)
+    plain: string = view
     readonly: []u8 = back
     if len(plain) != 12 || readonly[3] != 65 {
         return 4
     }
     // descriptor preservation: empty views stay non-null, zero stays zero
     empty: mut []u8 = mut storage[12..]
-    hollow: mut string = string(empty)
+    hollow: mut string = empty
     if hollow == null || len(hollow) != 0 {
         return 5
     }
     zview: []u8 = null
-    ztext: string = string(zview)
+    ztext: string = zview
     if ztext != null {
         return 6
     }

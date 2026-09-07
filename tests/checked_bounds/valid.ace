@@ -13,7 +13,7 @@ main(): int {
     view: mut []i32 = mut values[0..4]
     slice_write(view, 1, 21)
     bytes: [4]u8 = ['a', 'b', 'c', 'd']
-    text: mut string = string(mut bytes[0..4])
+    text: mut string = mut bytes[0..4]
     string_write(text, 3, 'D')
     if array_read(values, 2) != 31 || slice_read(view, 1) != 21 ||
        string_read(text, 3) != 'D' {

@@ -96,6 +96,9 @@ Return types do not distinguish overloads. `noalias` also does not distinguish
 them. `mut` does because it is visible at the call site, and type-position
 `mut` forms distinguish themselves as distinct types.
 
+Transparent aliases do not distinguish overloads. In particular, `char`/`u8`
+and `string`/`[]char`/`[]u8` variations are duplicate declarations.
+
 A `mut`-qualified view argument (`mut *T`, `mut []T`, `mut string`) resolves
 exactly when a candidate states that form. When no exact candidate fits, the
 call may still resolve against a plain-form candidate through implicit

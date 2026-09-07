@@ -123,11 +123,6 @@ pub write(fd: Fd, data: []u8): (int, Error) {
     return count, err
 }
 
-pub write(fd: Fd, text: string): (int, Error) {
-    count: int, err: Error = os.write(fd, text)
-    return count, err
-}
-
 pub close(fd: Fd): Error {
     return os.close(fd)
 }

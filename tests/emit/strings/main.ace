@@ -1,5 +1,5 @@
-/* Sequence-overlap carve implementation: string slicing, the string([]u8)
- * view conversion, string iteration, inline-type sizeof, and the char alias.
+/* Sequence-overlap carve implementation: shared byte-view identity, string
+ * slicing and iteration, inline-type sizeof, and the char alias.
  */
 // expect-exit: 0
 
@@ -40,7 +40,7 @@ main(): int {
         return 5
     }
     arr: [3]u8 = [u8('o'), u8('k'), u8('!')]
-    view: string = string(arr[0..3])
+    view: string = arr[0..3]
 
     if !mem.equal(view, "ok!") || len(view) != 3 {
         return 6

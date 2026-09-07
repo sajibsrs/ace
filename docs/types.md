@@ -189,9 +189,9 @@ Invalid: struct {
 
 ## Writable views
 
-Type-position `mut` is uniform across the three view kinds: `mut *T` grants
-writes through the pointer, `mut []T` grants writes to the slice's elements,
-and `mut string` is the writable string view. Each `mut` marks writable
+Type-position `mut` marks writable content: `mut *T` grants writes through the
+pointer, `mut []T` grants writes to the slice's elements, and `mut string` is
+the text-intent spelling of `mut []char`/`mut []u8`. Each `mut` marks writable
 content at exactly one view level. It is independent of the `mut name: T`
 parameter mark, which grants replacing the caller's stored value, and the two
 compose per level (`mut data: mut []u8`, `mut point: mut *Point`).
@@ -215,7 +215,7 @@ main(): int {
     plain: []u8 = w // permission shrink is implicit
 
     letters: [3]u8 = [u8('a'), u8('c'), u8('e')]
-    view: mut string = string(mut letters[0..])
+    view: mut string = mut letters[0..]
 
     return int(plain[1]) + int(len(view)) - 3
 }
@@ -240,24 +240,19 @@ overload sets, struct fields, unions, and generic instantiations — so
 first; when no exact candidate fits, the call may still resolve through the
 implicit shrink.
 
-`mut string` participates in the same rules. `len`, explicit byte-content
+`mut string` participates in the same rules because it is the same type as
+`mut []char` and `mut []u8`. `len`, explicit byte-content
 comparison, and `null` behave exactly as for `string`; it originates from proven writable
-bytes, such as `string(mut array[0..])`, and re-slicing preserves it. Indexed
+bytes, such as `mut array[0..]`, and re-slicing preserves it. Indexed
 byte writes exist only through a `mut string`: `s[i] = c` assigns exactly one
 byte (`u8` or `char`) and follows the slice-write bounds contract — a
 compile-time error when constants prove the index out of range, a checked-build
 diagnostic otherwise, and release assumes it. Plain `string` indexing stays a
 value read.
 
-The view conversions are exact and type-driven. `string(view)` accepts exactly
-`[]u8` (or the transparent `[]char` alias) and yields `string`; over
-`mut []u8` it yields `mut string`, so the result carries the argument's stated
-permission and never depends on lvalue analysis. The reverse `[]u8(text)`
-accepts exactly `mut string` and yields `mut []u8`; a plain string converts
-nowhere, because a view over unproven bytes would type writability over
-read-only storage. Every conversion preserves the two-word descriptor exactly —
-same storage, same length, no copy, and a non-null empty view stays non-null
-while a zero descriptor stays zero. Strings iterate bytes as usual, and
+`string`, `[]char`, and `[]u8` are three spellings of one type, not types joined
+by implicit conversions. Their writable spellings likewise share identity and
+permission. Use the spelling that states the value's intent. Strings iterate bytes as usual, and
 `for b: u8 in mut text` runs the ordinary alias loop when `text` is a
 `mut string`; a plain string is rejected by the same rule as any read-only
 view.
@@ -358,19 +353,13 @@ word: const string = "hello"
 window: string = word[1..len(word) - 1]
 ```
 
-The `string(bytes)` conversion is an explicit zero-cost view conversion from
-exactly `[]u8` (transparent aliases such as `[]char` included); over a
-`mut []u8` argument it yields `mut string`, so the result follows the
-argument's stated type ([Writable views](#writable-views)). The result
-preserves the descriptor, so the string and the slice share backing bytes and
-either may observe the other's writes. The reverse `[]u8(text)` accepts
-exactly `mut string` and yields `mut []u8`; a plain `string` converts in
-neither direction, and a fixed `[N]u8` converts only through explicit slicing
-first (`string(arr[0..N])`).
+`string`, `[]char`, and `[]u8` share identity and may be assigned, passed, and
+returned directly under any of those intent spellings. A fixed array remains a
+different owned-storage type and reaches a view only through explicit slicing.
 
 ```ace
 arr: [3]u8 = [u8('o'), u8('k'), u8('!')]
-view: string = string(arr[0..3])
+view: string = arr[0..3]
 arr[0] = u8('n')
 same_bytes: bool = view == "nk!"
 ```
@@ -426,11 +415,9 @@ lexicographic operation for byte slices.
 
 Arrays and slices do not convert implicitly in either direction. The explicit
 bridges are slicing (`arr[lo..hi]`, array to slice; `mut arr[lo..hi]`, array to
-writable view), `mem.copy` into an established writable view of the array
-(`dst: mut []u8 = mut arr[0..N]`, then `mem.copy(dst, view)`), and the exact
-view conversions `string(view)` / `[]u8(text)`. A fixed byte array reaches
-`string` only through slicing first: `string(arr[0..N])`, or
-`string(mut arr[0..N])` for a writable view.
+writable view) and `mem.copy` into an established writable view of the array.
+`string`, `[]char`, and `[]u8` need no bridge because they share identity. A
+fixed byte array reaches that view type only through slicing first.
 
 ## Multiple-return and function types
 

@@ -1,0 +1,12 @@
+/* err: string, []char, and []u8 share identity, so their spelling cannot
+ * distinguish overload declarations. */
+
+write(data: []u8) {}
+write(text: string) {}
+
+scan(data: []char) {}
+scan(text: string) {}
+
+main(): int {
+    return 0
+}

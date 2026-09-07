@@ -10,14 +10,14 @@ check64(raw: u64, expected: string): bool {
     storage: [64]u8 = [u8(0) : 64]
     out: mut []u8 = mut storage[..]
     count: usize, ok: bool = str.format(out, bits.to_float(raw))
-    return ok && mem.equal(string(storage[0..count]), expected)
+    return ok && mem.equal(storage[0..count], expected)
 }
 
 check32(raw: u32, expected: string): bool {
     storage: [64]u8 = [u8(0) : 64]
     out: mut []u8 = mut storage[..]
     count: usize, ok: bool = str.format(out, bits.to_float(raw))
-    return ok && mem.equal(string(storage[0..count]), expected)
+    return ok && mem.equal(storage[0..count], expected)
 }
 
 main(): int {

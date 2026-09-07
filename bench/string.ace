@@ -62,7 +62,7 @@ main(): int {
     large_a[4093] = 120
     large_a[4094] = 121
     large_a[4095] = 122
-    haystack: string = string(large_a[..])
+    haystack: string = large_a[..]
     checksum = 0
     started = now()
 

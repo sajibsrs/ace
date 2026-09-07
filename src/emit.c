@@ -3472,7 +3472,7 @@ static EV gen_call(Em* e, Node* call) {
     }
 
     // cast: i32(x), Meters(x), Color(1) — callee resolves to a type symbol;
-    // []u8(text) arrives as an inline slice-type callee (Sequences #6)
+    // A slice-shaped identity cast arrives as an inline slice-type callee.
     if ((callee->kind == N_IDENT || callee->kind == N_SLICE_T) && !call->sym &&
         ((node_sym(callee) && node_sym(callee)->kind == SYM_TYPE) ||
          (node_ty(callee) && node_ty(callee)->kind != SK_FUNC))) {

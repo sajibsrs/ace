@@ -746,7 +746,7 @@ static Node* expr_primary(P* p, int ctx) {
         return tu;
     }
     case T_LBRACK: { // array literal — or an inline slice type called as a
-        // view conversion ([]u8(text)), which only the callee position admits
+        // slice-shaped cast syntax ([]u8(value)), admitted only as a callee
         p->i++;
         if (at(p, T_RBRACK) && slice_type_start(kth(p, 1))) {
             Node* ty = nd(p, N_SLICE_T);

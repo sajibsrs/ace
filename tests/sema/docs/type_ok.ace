@@ -135,7 +135,7 @@ main(): int {
     human: Human = Human { named: Named { name: "Ada" } }
     promoted_name: string = human.name()
     ok_bytes: [3]u8 = [u8('o'), u8('k'), u8('!')]
-    view: string = string(ok_bytes[0..3])
+    view: string = ok_bytes[0..3]
     tail: string = view[1..]
     buffer: [4]u8 = [0, 0, 0, 0]
     fill(mut buffer[0..4], 7)
@@ -143,7 +143,7 @@ main(): int {
     w[0] = 42
     plain: []u8 = w
     letters: [3]u8 = [u8('a'), u8('c'), u8('e')]
-    writable_view: mut string = string(mut letters[0..])
+    writable_view: mut string = mut letters[0..]
 
     if sizeof([]char) != 16 || sizeof([3]char) != 3 {
         return 90

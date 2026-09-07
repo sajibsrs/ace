@@ -262,18 +262,6 @@ pub send(sock: Socket, data: []u8): (int, Error) {
     return int(count), null
 }
 
-pub send(sock: Socket, data: string): (int, Error) {
-    if len(data) == 0 {
-        return 0, null
-    }
-    count: i64 = c_send(i32(sock), &data[0], len(data), MSG_NOSIGNAL)
-
-    if count < 0 {
-        return 0, SendErr(sys.errno())
-    }
-    return int(count), null
-}
-
 pub resolve4(host: string, port: u16, addresses: mut []Addr4): (usize, Error) {
     if len(host) > HOST_NAME_MAX || len(addresses) == 0 {
         return usize(0), ResolveErr(EINVAL)

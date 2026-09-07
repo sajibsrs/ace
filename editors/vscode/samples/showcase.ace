@@ -263,9 +263,9 @@ main(): int {
     writable_bytes: mut []u8 = bytes[0..16]
     mem.fill(writable_bytes, letter)
     writable_bytes[0] = letter
-    message: mut string = string(writable_bytes[0..1])
+    message: mut string = writable_bytes[0..1]
     message[0] = 'A'
-    text_bytes: mut []u8 = []u8(message)
+    text_bytes: mut []u8 = message
     for byte: u8 in mut message {
         total += int(byte) + int(text_bytes[0])
     }

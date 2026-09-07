@@ -357,7 +357,7 @@ Search and ordering:
 
 Caller storage and views:
 
-- `copy(text: string, noalias destination: mut []u8): bool` — copies the
+- `copy(text: string, noalias destination: mut []char): bool` — copies the
   complete text into `destination[0..len(text)]`; a shorter destination is
   unchanged and fails, and the unused suffix is untouched. Empty text succeeds
   without writing. Unlike `mem.copy`, the ranges need not be equal — only the
@@ -395,8 +395,8 @@ main(): int {
     if !radix_ok || r != 255 {
         return 2
     }
-    buf: [32]u8 = [0 : 32]
-    dst: mut []u8 = mut buf[0..32]
+    buf: [32]char = [char(0) : 32]
+    dst: mut []char = mut buf[0..32]
     count: usize, fit: bool = str.format(dst, n)
     if !fit || count != 4 {
         return 3
@@ -420,7 +420,7 @@ main(): int {
   Finite decimals round directly to the requested IEEE width with exact
   ties-to-even; parsing allocates nothing and uses no platform decimal parser.
   Naming any other `T` is a compile-time error at the call.
-- `format(destination: mut []u8, value): (usize, bool)` — overloads for
+- `format(destination: mut []char, value): (usize, bool)` — overloads for
   `int`, `uint`, `usize`, `f32`, and `f64`, plus radix-taking overloads for
   the three integer types. The complete representation is written or, when
   capacity is insufficient or the runtime radix is outside 2 through 36,
@@ -478,8 +478,8 @@ main(): int {
   reject them.
 - `read(fd: Fd, buf: mut []u8): (int, Error)` fills the caller's buffer and
   returns the byte count; `0` with a null error is end of file.
-- `write(fd: Fd, data: []u8): (int, Error)` and `write(fd: Fd, text: string)`
-  return the byte count as the operating system reported it — partial writes
+- `write(fd: Fd, data: []u8): (int, Error)` accepts `string`/`[]char` by shared
+  identity and returns the byte count as the operating system reported it — partial writes
   are legitimate results and are never retried here.
 - `close(fd: Fd): Error`.
 - `stat(path: string): (FileInfo, Error)` follows symbolic links and returns
@@ -712,8 +712,8 @@ allocate, buffer, retry, close, or replace a socket on failure:
 - `receive(socket, buffer: mut []u8): (int, Error)` performs one receive.
   Partial counts are returned as-is; zero with null error is orderly peer
   shutdown.
-- `send(socket, []u8)` and `send(socket, string)` each perform one send and
-  return partial counts as-is. A closed peer becomes an ordinary send error
+- `send(socket, data: []u8)` performs one send and accepts `string`/`[]char`
+  values by shared identity. It returns partial counts as-is. A closed peer becomes an ordinary send error
   rather than terminating the process with `SIGPIPE`.
 - `resolve4(host, port, addresses: mut []Addr4): (usize, Error)` performs one blocking
   hostname lookup and writes IPv4 TCP endpoints into caller-owned storage in

@@ -313,18 +313,6 @@ pub write(fd: Fd, data: []u8): (int, Error) {
     return int(n), null
 }
 
-pub write(fd: Fd, text: string): (int, Error) {
-    if len(text) == 0 {
-        return 0, null
-    }
-    n: i64 = c_write(i32(fd), &text[0], len(text))
-
-    if n < 0 {
-        return 0, WriteErr(errno())
-    }
-    return int(n), null
-}
-
 pub close(fd: Fd): Error {
     if c_close(i32(fd)) == -1 {
         return CloseErr(errno())

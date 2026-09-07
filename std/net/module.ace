@@ -69,11 +69,6 @@ pub send(sock: Socket, data: []u8): (int, Error) {
     return count, err
 }
 
-pub send(sock: Socket, data: string): (int, Error) {
-    count: int, err: Error = os.send(sock, data)
-    return count, err
-}
-
 pub resolve4(host: string, port: u16, addresses: mut []Addr4): (usize, Error) {
     count: usize, err: Error = os.resolve4(host, port, addresses)
     return count, err
