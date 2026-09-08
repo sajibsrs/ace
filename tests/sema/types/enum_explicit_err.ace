@@ -1,0 +1,14 @@
+/* Explicit enums reject unsafe or ambiguous representations. */
+
+BadBacking: enum bool { none, one }
+NonzeroFirst: enum u8 { one = 1, two }
+Duplicate: enum i16 { none, first = 4, second = 4 }
+TooWide: enum u8 { none, huge = 256 }
+NegativeUnsigned: enum u16 { none, bad = -1 }
+ImplicitOverflow: enum u8 { none, last = 255, overflow }
+SignedTooWide: enum i32 { none, huge = 2147483648 }
+
+runtime: int = 2
+Nonconstant: enum i32 { none, bad = runtime }
+
+main(): int { return 0 }

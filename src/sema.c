@@ -7,7 +7,8 @@
 // Type model (machine truth: size/align computed for every type):
 //   prims    bool i8..i64 u8..u64 f32 f64 string usize typeid
 //            (`int`/`uint` = i64/u64, the platform word on arm64)
-//   nominal  struct, enum (i32 layout), contract (16 bytes), distinct, Error,
+//   nominal  struct, enum (default i32 or explicit fixed-int layout),
+//            contract (16 bytes), distinct, Error,
 //            union (i32 tag + largest payload inline)
 //   struct.  *T (8), []T (16), [N]T, tuples
 //            (multi-return, laid out like anonymous structs), funcs
@@ -152,7 +153,11 @@ static int layout(SType* t) {
         t->calc = 0;
         return 1;
     }
-    case SK_ENUM: t->size = t->align = 4; return 1; // int constants, i32 layout
+    case SK_ENUM:
+        if (!t->base) t->base = st_prim(P_I32);
+        if (!layout(t->base)) return 0;
+        t->size = t->base->size; t->align = t->base->align;
+        return 1;
     case SK_CONTRACT: t->size = 16; t->align = 8; return 1; // vtable + data
     case SK_ERROR: t->size = t->align = 8; return 1; // packed domain/code value
     case SK_UNION: {
@@ -772,6 +777,14 @@ static void coerce_payload(Ck* k, Node* arg, SType* pt) {
 static int ut_const(Node* e, int64_t* out) {
     switch (e->kind) {
     case N_INT: case N_CHAR: *out = (int64_t)e->ival; return 1;
+    case N_IDENT: {
+        Sym* s = node_sym(e);
+        return s && s->is_const && s->init ? ut_const(s->init, out) : 0;
+    }
+    case N_FIELD_E: {
+        Sym* s = node_sym(e);
+        return s && s->is_const && s->init ? ut_const(s->init, out) : 0;
+    }
     case N_UNARY:
         if (e->op == T_MINUS) {
             int64_t v;
@@ -784,12 +797,16 @@ static int ut_const(Node* e, int64_t* out) {
         int64_t a, b;
         if (!ut_const(e->a, &a) || !ut_const(e->b, &b)) return 0;
         switch (e->op) {
-        case T_PLUS: *out = a + b; return 1;
-        case T_MINUS: *out = a - b; return 1;
-        case T_STAR: *out = a * b; return 1;
-        case T_SLASH: if (!b) return 0; *out = a / b; return 1;
-        case T_PERCENT: if (!b) return 0; *out = a % b; return 1;
-        case T_SHL: *out = a << (b & 63); return 1;
+        case T_PLUS: *out = (int64_t)((uint64_t)a + (uint64_t)b); return 1;
+        case T_MINUS: *out = (int64_t)((uint64_t)a - (uint64_t)b); return 1;
+        case T_STAR: *out = (int64_t)((uint64_t)a * (uint64_t)b); return 1;
+        case T_SLASH:
+            if (!b || (a == INT64_MIN && b == -1)) return 0;
+            *out = a / b; return 1;
+        case T_PERCENT:
+            if (!b || (a == INT64_MIN && b == -1)) return 0;
+            *out = a % b; return 1;
+        case T_SHL: *out = (int64_t)((uint64_t)a << ((uint64_t)b & 63)); return 1;
         case T_SHR: *out = a >> (b & 63); return 1;
         case T_AMP: *out = a & b; return 1;
         case T_PIPE: *out = a | b; return 1;
@@ -1110,6 +1127,9 @@ static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
         return is_c_abi_type(t->base, CABI_POINTEE, stack, nstack);
     case SK_DISTINCT:
         return is_c_abi_type(t->base, pos, stack, nstack);
+    case SK_ENUM:
+        return t->decl && t->decl->a &&
+               is_c_abi_type(t->base, pos, stack, nstack);
     case SK_ARRAY:
         return pos != CABI_DIRECT &&
                is_c_abi_type(t->base, pos, stack, nstack);
@@ -1125,7 +1145,7 @@ static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
         return 1;
     }
     default:
-        // slices, tuples (multi-return), function values, enums, contracts,
+        // slices, tuples (multi-return), function values, default enums, contracts,
         // tagged unions, Error, error domains, typeid, type parameters, void/ut
         return 0;
     }
@@ -1431,18 +1451,104 @@ static int ut_fits(Ck* k, Node* e, SType* want) {
     int64_t v;
     if (!ut_const(e, &v)) return 1;
     uint64_t u = (uint64_t)v;
-    switch (want->kind == SK_ENUM ? P_I32 : want->prim) {
-    case P_I8: if (v < -128 || v > 127) goto over; return 1;
-    case P_I16: if (v < -32768 || v > 32767) goto over; return 1;
+    if (want->kind == SK_ENUM) want = want->base ? want->base : st_prim(P_I32);
+    switch (want->prim) {
+    case P_I8:
+        if ((e->kind == N_INT && e->ival > 127) || v < -128 || v > 127) goto over;
+        return 1;
+    case P_I16:
+        if ((e->kind == N_INT && e->ival > 32767) || v < -32768 || v > 32767)
+            goto over;
+        return 1;
+    case P_I32:
+        if ((e->kind == N_INT && e->ival > INT32_MAX) ||
+            v < INT32_MIN || v > INT32_MAX)
+            goto over;
+        return 1;
+    case P_I64: if (e->kind == N_INT && e->ival > INT64_MAX) goto over; return 1;
     case P_U8: if (u > 255) goto over; return 1;
     case P_U16: if (u > 65535) goto over; return 1;
     case P_U32: if (u > 4294967295u) goto over; return 1;
+    case P_U64: if (v < 0 && e->kind != N_INT) goto over; return 1;
     default: return 1;
     }
 over:
     ck_err(k, e, "integer literal %lld out of range for %s", (long long)v,
            type_name(want));
     return 0;
+}
+
+static int enum_backing_type(SType* t) {
+    return t && t->kind == SK_PRIM &&
+           (t->prim == P_I8 || t->prim == P_I16 || t->prim == P_I32 ||
+            t->prim == P_I64 || t->prim == P_U8 || t->prim == P_U16 ||
+            t->prim == P_U32 || t->prim == P_U64);
+}
+
+static int enum_unsigned(SType* t) {
+    return t && t->kind == SK_PRIM &&
+           (t->prim == P_U8 || t->prim == P_U16 || t->prim == P_U32 ||
+            t->prim == P_U64);
+}
+
+static uint64_t enum_max(SType* t) {
+    switch (t->prim) {
+    case P_I8: return INT8_MAX;
+    case P_I16: return INT16_MAX;
+    case P_I32: return INT32_MAX;
+    case P_I64: return INT64_MAX;
+    case P_U8: return UINT8_MAX;
+    case P_U16: return UINT16_MAX;
+    case P_U32: return UINT32_MAX;
+    default: return UINT64_MAX;
+    }
+}
+
+static void check_enum_decl(Ck* k, Node* n, SType* t) {
+    t->base = n->a ? build_type(k, n->a) : st_prim(P_I32);
+    if (!enum_backing_type(t->base)) {
+        ck_err(k, n->a ? n->a : n,
+               "enum backing type must be i8, i16, i32, i64, u8, u16, u32, or u64");
+        t->base = st_prim(P_I32);
+    }
+    int64_t previous = -1;
+    for (int i = 0; i < n->nkids; i++) {
+        Node* m = n->kids[i];
+        int64_t value;
+        int valid = 1;
+        if (m->a) {
+            (void)expr_type(k, m->a);
+            if (!ut_const(m->a, &value)) {
+                ck_err(k, m->a, "enum discriminant must be a compile-time integer expression");
+                value = i == 0 ? 0 : (int64_t)((uint64_t)previous + 1);
+                valid = 0;
+            } else if (enum_unsigned(t->base) && value < 0 && m->a->kind != N_INT) {
+                ck_err(k, m->a, "negative enum discriminant does not fit %s",
+                       type_name(t->base));
+                valid = 0;
+            } else {
+                valid = ut_fits(k, m->a, t->base);
+            }
+        } else {
+            if (i > 0 && (uint64_t)previous == enum_max(t->base)) {
+                ck_err(k, m, "implicit enum discriminant overflows %s",
+                       type_name(t->base));
+                value = previous;
+                valid = 0;
+            } else {
+                value = i == 0 ? 0 : (int64_t)((uint64_t)previous + 1);
+            }
+        }
+        m->ival = (uint64_t)value;
+        if (valid && i == 0 && value != 0)
+            ck_err(k, m, "first enum member must have discriminant zero");
+        for (int j = 0; valid && j < i; j++) if (n->kids[j]->ival == m->ival) {
+            ck_err(k, m, "duplicate enum discriminant %lld", (long long)value);
+            break;
+        }
+        previous = value;
+    }
+    layout(t);
 }
 
 static int accepts_null(SType* t) {
@@ -2045,7 +2151,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                     Node* m = ts->type->decl->kids[i];
                     if (m->len == e->len && memcmp(m->str, e->str, e->len) == 0) {
                         e->a->sym = ts; // enum-constant marker for the emitter
-                        e->ival = (uint64_t)i; // member index
+                        e->ival = m->ival;
                         return ts->type;
                     }
                 }
@@ -5395,7 +5501,7 @@ int sema_check(Node* file, Diag* d) {
             } else if (!s->is_generic && n->kind == N_UNION) {
                 fill_union_type(&k, n, t);
             } else if (n->kind == N_ENUM) {
-                layout(t);
+                check_enum_decl(&k, n, t);
             }
             break;
         }

@@ -461,13 +461,30 @@ Point: struct { x: i32, y: i32 }
 point: Point = Point{ x: 13, y: 42 }
 ```
 
-An enum is a nominal type with distinct-typed named constants and `i32` layout.
+An enum is a nominal type with distinct-typed named constants. By default its
+members are numbered from zero and it has `i32` layout.
 
 ```ace
 State: enum { idle, running, stopped }
 
 state: State = State.running
 ```
+
+Select a fixed integer backing type and explicit discriminants when an external
+format owns the values or representation. The first member must remain zero;
+omitted values continue from the preceding member.
+
+```ace
+Opcode: enum u8 {
+    none,
+    load = 0x10,
+    store, // 0x11
+}
+```
+
+The backing type must be a fixed-width integer type. Values must fit it and may
+not be duplicated. Size, alignment, fields, arrays, parameters, and returns use
+that exact representation; conversions to and from integers remain explicit.
 
 A tagged union is a closed set of named alternatives stored inline. Variants
 may carry no data or one explicitly typed payload:

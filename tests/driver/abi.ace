@@ -12,6 +12,7 @@ Hfa4: struct { a: f64, b: f64, c: f64, d: f64 }
 Arr3: struct { v: [3]f32 }
 Large: struct { a: i64, b: i64, c: i64 }
 Code: distinct i32
+Wire: enum u8 { none, request = 7, response }
 
 extern "c" {
     c_scalars(a: i8, b: i16, c: i32, d: i64, e: u8, f: u16,
@@ -20,6 +21,7 @@ extern "c" {
     c_f32(value: f32): f32
     c_bump(value: mut *i32)
     c_code(value: Code): Code
+    c_wire(value: Wire): Wire
     c_mixed(value: Mixed): Mixed
     c_pair(value: Pair): Pair
     c_hfa3(value: Hfa3): Hfa3
@@ -61,6 +63,11 @@ export ace_bump(value: mut *i32) {
 
 export ace_code(value: Code): Code {
     return Code(i32(value) + 1)
+}
+
+export ace_wire(value: Wire): Wire {
+    if value == Wire.request { return Wire.response }
+    return Wire.none
 }
 
 export ace_mixed(value: Mixed): Mixed {
@@ -128,7 +135,8 @@ main(): int {
     x: i32 = 10
     c_bump(mut &x)
 
-    if x != 17 || c_code(Code(41)) != Code(42) {
+    if x != 17 || c_code(Code(41)) != Code(42) ||
+       c_wire(Wire.request) != Wire.response {
         return 3
     }
 

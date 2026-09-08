@@ -20,6 +20,12 @@ Color: enum {
     blue,
 }
 
+Opcode: enum u8 {
+    none,
+    load = 0x10,
+    store,
+}
+
 Point: struct {
     x: f64,
     y: f64,

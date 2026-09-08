@@ -956,7 +956,10 @@ static void lower_selected_node(Node* n, SelectLower* c) {
     case N_ERROR_DOMAIN:
         return;
     case N_ENUM:
-        return; // enum member names are declarations, not references
+        lower_selected_type(n->a, c);
+        for (int i = 0; i < n->nkids; i++)
+            lower_selected_node(n->kids[i]->a, c);
+        return; // member names themselves are declarations, not references
     case N_SIGNING:
         select_scope_push(c);
         if (n->c)
@@ -1236,7 +1239,12 @@ static void rename_refs(Node* n, Renames* rs, SelectLower* c) {
     case N_DISTINCT:
         rename_type_refs(n->a, rs, c);
         return;
-    case N_ENUM: case N_ERROR_DOMAIN:
+    case N_ENUM:
+        rename_type_refs(n->a, rs, c);
+        for (int i = 0; i < n->nkids; i++)
+            rename_refs(n->kids[i]->a, rs, c);
+        return;
+    case N_ERROR_DOMAIN:
         return;
     case N_FIELD_E:
         rename_refs(n->a, rs, c); // field spelling is member-local

@@ -300,10 +300,12 @@ export increment(value: mut *i32): i32 {
 ```
 
 Boundary parameters cannot use Ace's `mut parameter` convention. Pass an
-explicit `mut *T` when C receives writable storage. `bool`, enums, strings,
-slices, contracts, tagged unions, errors, tuples, function values, and generic
-shapes are currently rejected at the boundary. Wrappers must translate those
-values to an allowed representation explicitly.
+explicit `mut *T` when C receives writable storage. An explicitly backed enum
+crosses as its fixed-width backing integer; a default enum states no external
+width and remains rejected. `bool`, strings, slices, contracts, tagged unions,
+errors, tuples, function values, and generic shapes are also rejected at the
+boundary. Wrappers must translate those values to an allowed representation
+explicitly.
 
 C variadic imports use `...` after at least one fixed parameter. Unnamed
 arguments currently accept the verified C-compatible scalar and pointer set;

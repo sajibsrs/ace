@@ -15,6 +15,7 @@ extern double ace_floats(float, double);
 extern float ace_f32(float);
 extern void ace_bump(int32_t*);
 extern int32_t ace_code(int32_t);
+extern uint8_t ace_wire(uint8_t);
 extern Mixed ace_mixed(Mixed);
 extern Pair ace_pair(Pair);
 extern Hfa3 ace_hfa3(Hfa3);
@@ -42,6 +43,7 @@ float c_f32(float value) { return value + 0.5f; }
 void c_bump(int32_t* value) { *value += 7; }
 
 int32_t c_code(int32_t value) { return value + 1; }
+uint8_t c_wire(uint8_t value) { return value == 7 ? 8 : 0; }
 
 Mixed c_mixed(Mixed value) {
     value.a += 2;
@@ -138,6 +140,7 @@ int32_t c_run_ace(void) {
     ace_bump(&x);
     if (x != 17) return 3;
     if (ace_code(41) != 42) return 4;
+    if (ace_wire(7) != 8) return 18;
 
     Mixed mixed = ace_mixed((Mixed){10, 1.5f});
     if (mixed.a != 12 || mixed.b != 4.5f) return 5;

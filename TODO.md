@@ -22,9 +22,8 @@ Finish the existing primitive, sequential, and aggregate model before adding
 new execution or library layers. These are narrow completion tasks, not a
 reopening of Ace's fixed explicit-type, copy, mutation, or allocation rules.
 
-Read-only `string` → `[]u8`, wider array/string bridges, Unicode decoding, and
-owned growable sequences remain additive library or view conveniences; they are
-not blockers for the current sequential core.
+Wider fixed-array/view bridges remain additive conveniences; they are not
+blockers for the current sequential core.
 
 ### Aggregate and generic construction
 
@@ -37,8 +36,6 @@ not blockers for the current sequential core.
 
 ### Representation and layout controls
 
-- **Enum explicit discriminants and backing width** [new] — opcodes, hardware
-  registers, and ABI structs need explicit values and storage width.
 - **`packed` / `align` attributes** [queued] — required for exact wire, hardware,
   and C-compatible aggregate layouts.
 - **`volatile` access** [queued] — required for MMIO and other storage whose

@@ -19,7 +19,8 @@
 //   N_VARIANT   str = name; a = payload type or NULL (payloadless variant)
 //   N_CONTRACT str = name; kids = N_METHOD; c = N_TPARAMS; F_PUB
 //   N_METHOD    str = name; kids = params; a = ret; F_MUT (mutating receiver)
-//   N_ENUM      str = name; kids = N_IDENT members; F_PUB
+//   N_ENUM      str = name; a = optional backing type; kids = N_IDENT members
+//               whose a is an optional discriminant expression; F_PUB
 //   N_ALIAS     str = name; a = type; c = N_TPARAMS; F_PUB
 //   N_DISTINCT  str = name; a = base type; F_PUB
 //   N_SIGNING     a = concrete type; c = owner N_TPARAMS; kids = N_CONFORMANCE
@@ -1644,11 +1645,14 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
         n->str = name->str;
         n->len = name->len;
         if (pub) n->flags |= F_PUB;
+        if (!at(p, T_LBRACE)) n->a = parse_type(p);
         expect(p, T_LBRACE, "'{' after 'enum'");
         NV members = {0};
         if (!at(p, T_RBRACE)) {
             for (;;) {
-                nv_push(p, &members, ident_node(p, expect(p, T_IDENT, "enum member")));
+                Node* m = ident_node(p, expect(p, T_IDENT, "enum member"));
+                if (ate(p, T_ASSIGN)) m->a = expr(p, 0);
+                nv_push(p, &members, m);
                 if (!ate(p, T_COMMA)) break;
                 if (at(p, T_RBRACE)) break; // trailing comma
             }

@@ -1,0 +1,9 @@
+/* Explicit enum backing and discriminant syntax. */
+
+Opcode: enum u8 {
+    none,
+    load = 0x10,
+    store,
+}
+
+Delta: enum i16 { zero = 0, back = -4, forward = 2 + 3 }

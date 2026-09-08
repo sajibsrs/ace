@@ -85,7 +85,10 @@ field         := ["embed"] ident ":" type
 contract_decl := ident [type_params] ":" "contract" "{" method_decl* "}"
 method_decl   := ["mut"] ident "(" [params] ")" [ret_clause]  // receiver implied
 
-enum_decl     := ident ":" "enum" "{" ident ("," ident)* [","] "}"
+enum_decl     := ident ":" "enum" [enum_backing] "{" enum_members "}"
+enum_backing  := type                                  // sema: fixed-width integer or alias
+enum_members  := enum_member ("," enum_member)* [","]
+enum_member   := ident ["=" expr]
 union_decl    := ident [type_params] ":" "union" "{" union_variants "}"
 union_variants := union_variant ("," union_variant)* [","]
 union_variant := ident [":" type]                    // zero or one payload

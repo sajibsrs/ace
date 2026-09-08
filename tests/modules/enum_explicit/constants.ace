@@ -1,0 +1,3 @@
+pub ZERO: const int = 0
+pub LOAD: const int = 16
+pub Byte: type = u8

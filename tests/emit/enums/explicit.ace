@@ -1,0 +1,37 @@
+/* Explicit enum values and widths retain nominal value behavior while using
+ * the selected integer representation in scalars, arrays, and structs. */
+
+// expect-exit: 0
+
+Byte: type = u8
+LOAD: const int = 0x10
+Opcode: enum Byte { none, load = LOAD, store }
+Delta: enum i8 { zero, down = -2, up = 2 }
+Wide: enum u64 { none, high = 4294967296 }
+Maximum: enum u64 { none, high = 18446744073709551615 }
+Header: struct { op: Opcode, delta: Delta, pad: u8 }
+
+default_opcode: Opcode
+saved_opcode: const Opcode = Opcode.store
+
+round(op: Opcode): Opcode { return op }
+
+main(): int {
+    header: Header = Header { op: Opcode.store, delta: Delta.down, pad: 0 }
+    values: [2]Opcode = [Opcode.load, round(header.op)]
+    if sizeof(Opcode) != 1 || sizeof(Delta) != 1 || sizeof(Wide) != 8 ||
+       sizeof(Maximum) != 8 || sizeof(Header) != 3 {
+        return 1
+    }
+    if u8(values[0]) != 16 || u8(values[1]) != 17 ||
+       i8(header.delta) != -2 || u64(Wide.high) != 4294967296 ||
+       u64(Maximum.high) != 18446744073709551615 ||
+       default_opcode != Opcode.none || saved_opcode != Opcode.store {
+        return 2
+    }
+    switch header.op {
+        Opcode.store { }
+        else { return 3 }
+    }
+    return 0
+}

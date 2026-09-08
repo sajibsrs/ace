@@ -4,6 +4,8 @@ Leaf: struct { x: i16, y: u32 }
 Packet: struct { values: [3]f32, leaf: Leaf, next: *Packet }
 Code: distinct i32
 PacketPtr: distinct mut *Packet
+Opcode: enum u8 { none, load = 16, store }
+EnumPacket: struct { opcode: Opcode, value: u16 }
 
 extern "c" {
     accept_scalars(a: i8, b: i16, c: i32, d: i64,
@@ -11,6 +13,7 @@ extern "c" {
                    i: int, j: uint, k: usize, x: f32, y: f64)
     accept_shapes(packet: Packet, code: Code, pointer: PacketPtr): Packet
     accept_array_pointer(values: *[4]u16)
+    accept_explicit_enum(opcode: Opcode, packet: EnumPacket): Opcode
 }
 
 export write_value(value: mut *i32): i32 {

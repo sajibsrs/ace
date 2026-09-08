@@ -40,6 +40,10 @@ current normative rules, and Git preserves patch-level detail.
 - Implemented canonical all-bits-zero values and path-sensitive definite
   initialization for direct Ace storage. Pointer aliases, extern calls, and
   inline assembly remain explicit trust boundaries.
+- Implemented explicit enum discriminants and fixed integer backing types with
+  zero-first, fit, and uniqueness validation. Explicitly backed enums use their
+  selected layout throughout ordinary values and C-compatible boundaries;
+  default enums retain their existing `i32` layout and remain C-ABI-rejected.
 - Implemented operators, chained comparisons, `if`, exhaustive `switch`,
   contextual explicit `fallthrough`, labeled blocks, labeled break/continue,
   `for-in`, ranges and steps, and general condition/three-clause/infinite

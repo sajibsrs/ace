@@ -117,6 +117,21 @@ if ! printf '%s\n' "$generic_layout_error" | grep -qF \
     echo "FAIL: missing recursive generic value-layout diagnostic"
     fail=1
 fi
+enum_explicit_errors=$("$ACE" tests/sema/types/enum_explicit_err.ace 2>&1)
+for want in \
+    "enum backing type must be i8, i16, i32, i64, u8, u16, u32, or u64" \
+    "first enum member must have discriminant zero" \
+    "duplicate enum discriminant 4" \
+    "integer literal 256 out of range for u8" \
+    "negative enum discriminant does not fit u16" \
+    "implicit enum discriminant overflows u8" \
+    "integer literal 2147483648 out of range for i32" \
+    "enum discriminant must be a compile-time integer expression"; do
+    if ! printf '%s\n' "$enum_explicit_errors" | grep -qF "$want"; then
+        echo "FAIL: missing explicit enum diagnostic '$want'"
+        fail=1
+    fi
+done
 inline_forward_errors=$("$ACE" tests/sema/types/inline_forward_err.ace 2>&1)
 for name in B D F; do
     if ! printf '%s\n' "$inline_forward_errors" | grep -qF "unknown type '$name'"; then

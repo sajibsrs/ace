@@ -1,0 +1,10 @@
+// expect-exit: 0
+
+import ZERO, LOAD, Byte from "./constants.ace"
+
+Opcode: enum Byte { none = ZERO, load = LOAD, store }
+
+main(): int {
+    if u8(Opcode.store) != 17 || sizeof(Opcode) != 1 { return 1 }
+    return 0
+}

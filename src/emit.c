@@ -458,7 +458,7 @@ static int is_intt(SType* t) {
 static int ty_is_signed(SType* t) {
     t = unwrap(t);
     if (!t) return 1;
-    if (t->kind == SK_ENUM) return 1;
+    if (t->kind == SK_ENUM) return ty_is_signed(t->base);
     if (t->kind != SK_PRIM) return 0;
     switch (t->prim) {
     case P_I8: case P_I16: case P_I32: case P_I64: return 1;
@@ -480,7 +480,7 @@ static int is_scalar(SType* t) {
 static int scalar_bits(SType* t) {
     t = unwrap(t);
     if (!t || t->kind == SK_UT) return 64;
-    if (t->kind == SK_ENUM) return 32;
+    if (t->kind == SK_ENUM) return (int)(ty_size(t) * 8);
     if (t->kind == SK_PTR || t->kind == SK_FUNC || t->kind == SK_ERROR) return 64;
     if (t->kind == SK_PRIM && t->prim != P_STRING) return (int)(t->size * 8);
     return 64;
@@ -4122,7 +4122,7 @@ static EV gen_expr(Em* e, Node* x) {
         Sym* ts = node_sym(x->a); // enum member: Color.red
         if (ts && ts->kind == SYM_TYPE && ts->type && ts->type->kind == SK_ENUM) {
             int it = tmp_int(e);
-            load_imm(e, 0, xreg(it), x->ival);
+            load_imm(e, scalar_bits(ts->type) == 64, xreg(it), x->ival);
             return (EV){ CLS_INT, it };
         }
         // union variant value (payloadless): Event.quit / Pair[int].none
@@ -5538,7 +5538,7 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
     case N_FIELD_E: { // enum member (base carries the type symbol)
         Sym* ts = node_sym(v->a);
         if (ts && ts->kind == SYM_TYPE && ts->type && ts->type->kind == SK_ENUM) {
-            put_u(out, v->ival, 4);
+            put_u(out, v->ival, ty_size(ts->type));
             return 1;
         }
         { // union variant value (payloadless): tag, then canonical zero payload
