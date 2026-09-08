@@ -34,6 +34,9 @@ current normative rules, and Git preserves patch-level detail.
   caller-visible mutation at signatures and call sites; pointer and view
   writability is tracked independently at each type level; `noalias` supplies a
   compile-time non-overlap fact.
+- Fixed module-private name lowering to preserve lexical value and type scopes,
+  so parameters and locals shadow same-named module functions without changing
+  unshadowed overload, qualified-module, or method resolution.
 - Implemented canonical all-bits-zero values and path-sensitive definite
   initialization for direct Ace storage. Pointer aliases, extern calls, and
   inline assembly remain explicit trust boundaries.

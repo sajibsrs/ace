@@ -1,0 +1,10 @@
+// expect-exit: 39
+
+import shadow: "./shadow.ace"
+
+main(): int {
+    item: shadow.Record = shadow.record(4)
+    return shadow.parameter_field(shadow.Record { value: 3 }) +
+        shadow.local_value() + shadow.local_call() + shadow.nested_value() +
+        shadow.score(1) + shadow.score("ace") + item.doubled() + item.value
+}

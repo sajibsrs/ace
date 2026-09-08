@@ -1131,33 +1131,124 @@ static void rename_decls(Module* m, Renames* rs) {
     }
 }
 
-static void rename_refs(Node* n, Renames* rs) {
+static Rename* find_rename(Renames* rs, const char* name, uint32_t len) {
+    for (int i = 0; i < rs->n; i++)
+        if (rs->v[i].flen == len && memcmp(rs->v[i].from, name, len) == 0)
+            return &rs->v[i];
+    return NULL;
+}
+
+static void rename_type_refs(Node* t, Renames* rs, SelectLower* c) {
+    if (!t) return;
+    if (t->kind == N_NAMED && !local_name(c, t->str, t->len, 1)) {
+        Rename* r = find_rename(rs, t->str, t->len);
+        if (r) replace_name(t, r->to);
+    }
+    rename_type_refs(t->a, rs, c);
+    for (int i = 0; i < t->nkids; i++) rename_type_refs(t->kids[i], rs, c);
+}
+
+static void rename_refs(Node* n, Renames* rs, SelectLower* c);
+
+static void rename_block_refs(Node* b, Renames* rs, SelectLower* c) {
+    select_scope_push(c);
+    for (int i = 0; i < b->nkids; i++) rename_refs(b->kids[i], rs, c);
+    select_scope_pop(c);
+}
+
+static void rename_func_refs(Node* f, Renames* rs, SelectLower* c) {
+    select_scope_push(c);
+    if (f->c) {
+        for (int i = 0; i < f->c->nkids; i++)
+            bind_local(c, f->c->kids[i]->str, f->c->kids[i]->len, 1);
+    }
+    if (f->d) rename_type_refs(f->d, rs, c);
+    for (int i = 0; i < f->nkids; i++) rename_type_refs(f->kids[i]->a, rs, c);
+    rename_type_refs(f->a, rs, c);
+    select_scope_push(c);
+    if (f->flags & F_METHOD) bind_local(c, "self", 4, 0);
+    for (int i = 0; i < f->nkids; i++)
+        bind_local(c, f->kids[i]->str, f->kids[i]->len, 0);
+    if (f->b) rename_block_refs(f->b, rs, c);
+    select_scope_pop(c);
+    select_scope_pop(c);
+}
+
+static void rename_refs(Node* n, Renames* rs, SelectLower* c) {
     if (!n) return;
-    if (n->kind == N_IDENT) {
-        for (int i = 0; i < rs->n; i++) {
-            if (rs->v[i].flen == n->len && memcmp(rs->v[i].from, n->str, n->len) == 0) {
-                n->str = rs->v[i].to;
-                n->len = (uint32_t)strlen(rs->v[i].to);
-                break;
-            }
+    switch (n->kind) {
+    case N_IDENT:
+        if (!local_name(c, n->str, n->len, 0)) {
+            Rename* r = find_rename(rs, n->str, n->len);
+            if (r) replace_name(n, r->to);
         }
         return; // leaf: no children hold references
-    }
-    if (n->kind == N_NAMED) { // rename the type name; generic args still walk
-        for (int i = 0; i < rs->n; i++) {
-            if (rs->v[i].flen == n->len && memcmp(rs->v[i].from, n->str, n->len) == 0) {
-                n->str = rs->v[i].to;
-                n->len = (uint32_t)strlen(rs->v[i].to);
-                break;
-            }
+    case N_NAMED:
+        rename_type_refs(n, rs, c);
+        return;
+    case N_FUNC:
+        rename_func_refs(n, rs, c);
+        return;
+    case N_BLOCK:
+        rename_block_refs(n, rs, c);
+        return;
+    case N_VAR:
+        for (int i = 0; i < n->nkids; i++) rename_type_refs(n->kids[i]->a, rs, c);
+        rename_refs(n->b, rs, c); // initializer precedes the new bindings
+        for (int i = 0; i < n->nkids; i++)
+            bind_local(c, n->kids[i]->str, n->kids[i]->len, 0);
+        return;
+    case N_FOR:
+        if (n->flags & F_FORGEN) {
+            select_scope_push(c);
+            rename_refs(n->a, rs, c);
+            rename_refs(n->b, rs, c);
+            rename_refs(n->c, rs, c);
+            rename_refs(n->d, rs, c);
+            select_scope_pop(c);
+            return;
         }
+        for (int i = 0; i < n->nkids; i++) rename_type_refs(n->kids[i]->a, rs, c);
+        rename_refs(n->b, rs, c);
+        select_scope_push(c);
+        for (int i = 0; i < n->nkids; i++)
+            bind_local(c, n->kids[i]->str, n->kids[i]->len, 0);
+        rename_refs(n->c, rs, c);
+        select_scope_pop(c);
+        return;
+    case N_STRUCT: case N_CONTRACT: case N_ALIAS: case N_UNION:
+        select_scope_push(c);
+        if (n->c)
+            for (int i = 0; i < n->c->nkids; i++)
+                bind_local(c, n->c->kids[i]->str, n->c->kids[i]->len, 1);
+        if (n->kind == N_ALIAS) rename_type_refs(n->a, rs, c);
+        else if (n->kind == N_UNION) {
+            for (int i = 0; i < n->nkids; i++)
+                rename_type_refs(n->kids[i]->a, rs, c);
+        } else for (int i = 0; i < n->nkids; i++) {
+            Node* member = n->kids[i];
+            for (int j = 0; j < member->nkids; j++)
+                rename_type_refs(member->kids[j]->a, rs, c);
+            rename_type_refs(member->a, rs, c);
+        }
+        select_scope_pop(c);
+        return;
+    case N_DISTINCT:
+        rename_type_refs(n->a, rs, c);
+        return;
+    case N_ENUM: case N_ERROR_DOMAIN:
+        return;
+    case N_FIELD_E:
+        rename_refs(n->a, rs, c); // field spelling is member-local
+        return;
+    default:
+        break;
     }
-    if (n->kind == N_ENUM) return; // enum member names are type-scoped, keep them
-    rename_refs(n->a, rs);
-    rename_refs(n->b, rs);
-    rename_refs(n->c, rs);
-    rename_refs(n->d, rs);
-    for (int i = 0; i < n->nkids; i++) rename_refs(n->kids[i], rs);
+    rename_refs(n->a, rs, c);
+    rename_refs(n->b, rs, c);
+    rename_refs(n->c, rs, c);
+    rename_refs(n->d, rs, c);
+    for (int i = 0; i < n->nkids; i++) rename_refs(n->kids[i], rs, c);
 }
 
 // --- per-file resolution ----------------------------------------------------------------
@@ -1229,8 +1320,10 @@ static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root
         Module* self = L->loading; // the module being resolved is stack top
         Renames rs = {0};
         rename_decls(self, &rs);
-        for (int i = 0; i < file->nkids; i++)
-            rename_refs(file->kids[i], &rs);
+        for (int i = 0; i < file->nkids; i++) {
+            SelectLower c = {0};
+            rename_refs(file->kids[i], &rs, &c);
+        }
         free(rs.v);
         // Drop this module's import nodes: qualified bindings and selected
         // aliases have both been lowered to private target identities.

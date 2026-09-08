@@ -44,7 +44,7 @@ zero_connection(): Connection {
     }
 }
 
-make_connection(sock: net.Socket, interest: PollInterest): Connection {
+connection(sock: net.Socket, interest: PollInterest): Connection {
     return Connection {
         socket: sock,
         poll_interest: interest,
@@ -115,7 +115,7 @@ pub connect(address: net.Addr4): (Connection, Error) {
         sys.close(sock)
         return zero_connection(), err
     }
-    return make_connection(sock, PollInterest.read), null
+    return connection(sock, PollInterest.read), null
 }
 
 pub connect_nonblocking(address: net.Addr4): (Connection, Error) {
@@ -137,10 +137,10 @@ pub connect_nonblocking(address: net.Addr4): (Connection, Error) {
         }
     }
     if err == null {
-        return make_connection(sock, PollInterest.read), null
+        return connection(sock, PollInterest.read), null
     }
     if err.domain == typeid(net.ConnectErr) && err.code == sys.EINPROGRESS {
-        return make_connection(sock, PollInterest.write), null
+        return connection(sock, PollInterest.write), null
     }
     sys.close(sock)
     return zero_connection(), err
@@ -157,7 +157,7 @@ pub accept(listener: Listener): (Connection, net.Addr4, Error) {
     if err != null {
         return zero_connection(), address, err
     }
-    return make_connection(sock, PollInterest.read), address, null
+    return connection(sock, PollInterest.read), address, null
 }
 
 pub poll_interest(conn: Connection): PollInterest {

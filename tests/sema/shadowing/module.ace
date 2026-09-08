@@ -1,0 +1,11 @@
+pub Record: struct {
+    value: int,
+}
+
+record(value: int): Record {
+    return Record { value: value }
+}
+
+pub field_value(record: Record): int {
+    return record.value
+}

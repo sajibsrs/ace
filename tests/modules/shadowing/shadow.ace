@@ -1,0 +1,64 @@
+pub Record: struct {
+    value: int,
+}
+
+pub record(value: int): Record {
+    return Record { value: value }
+}
+
+pub parameter_field(record: Record): int {
+    return record.value
+}
+
+value(): int {
+    return 100
+}
+
+take(value: int): int {
+    return value
+}
+
+pub local_value(): int {
+    value: int = 5
+    value += 1
+    return take(value)
+}
+
+target(value: int): int {
+    return 100 + value
+}
+
+increment(value: int): int {
+    return value + 1
+}
+
+pub local_call(): int {
+    target: (int): int = increment
+    return target(8)
+}
+
+depth(): int {
+    return 100
+}
+
+pub nested_value(): int {
+    depth: int = 2
+    result: int = 0
+    if true {
+        depth: int = 7
+        result = depth
+    }
+    return result
+}
+
+pub score(value: int): int {
+    return value + 1
+}
+
+pub score(value: string): int {
+    return int(len(value))
+}
+
+pub Record.doubled(): int {
+    return self.value + 1
+}
