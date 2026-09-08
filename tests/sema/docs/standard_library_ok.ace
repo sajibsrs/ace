@@ -302,11 +302,11 @@ tcp_example(address: net.Addr4): int {
         tcp.close(mut listener)
         return 2
     }
-    connection: tcp.Connection, peer: net.Addr4, accept_err: Error = tcp.accept(listener)
+    connection: tcp.Conn, peer: net.Addr4, accept_err: Error = tcp.accept(listener)
     if accept_err == null {
         storage: [4]u8 = [0 : 4]
         buffer: mut []u8 = mut storage[0..]
-        count: usize, ioerr: Error = tcp.receive_exact(connection, buffer)
+        count: usize, ioerr: Error = tcp.receive_all(connection, buffer)
         if ioerr == null && count == 4 {
             count, ioerr = tcp.send_all(connection, "pong")
         }
@@ -317,15 +317,15 @@ tcp_example(address: net.Addr4): int {
 }
 
 tcp_nonblocking_example(address: net.Addr4): int {
-    connection: tcp.Connection, err: Error = tcp.connect_nonblocking(address)
+    connection: tcp.Conn, err: Error = tcp.connect_nonblock(address)
     if err != null {
         return 1
     }
-    if tcp.poll_interest(connection) == tcp.PollInterest.write {
-        event: tcp.ConnEvent = tcp.progress_connect(mut connection)
+    if tcp.interest(connection) == tcp.Interest.write {
+        event: tcp.Event = tcp.progress_connect(mut connection)
         switch event {
-            tcp.ConnEvent.connected {}
-            tcp.ConnEvent.failed(connect_err: Error) {
+            tcp.Event.connected {}
+            tcp.Event.failed(connect_err: Error) {
                 if connect_err != null {
                     tcp.close(mut connection)
                     return 2

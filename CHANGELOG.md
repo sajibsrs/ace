@@ -162,6 +162,11 @@ current normative rules, and Git preserves patch-level detail.
   partial-send offsets, backpressure, and nonblocking connect completion.
   Added the one-operation `net.pending_error` prerequisite and named Darwin
   errno constants without adding OS code or externs to `tcp`.
+- Reshaped the public `tcp` vocabulary around its module scope: `Conn`,
+  `Interest`, and `Event` keep type names compact; blocking and nonblocking
+  construction remain the distinct `connect` and `connect_nonblock` operations;
+  `interest` exposes readiness state; and whole-buffer receive/send use the
+  paired `receive_all` / `send_all` names with `ReceiveAllErr` / `SendAllErr`.
 - Implemented general descriptor `poll` with allocation-free queues, paired
   watch/unwatch, level-triggered read/write interest, error/hangup reporting,
   caller-owned event storage, and finite/infinite nanosecond waits. Darwin kqueue

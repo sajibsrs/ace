@@ -12,7 +12,7 @@ loopback(port: u16): net.Addr4 {
 }
 
 client(port: u16): int {
-    connection: tcp.Connection, err: Error = tcp.connect(loopback(port))
+    connection: tcp.Conn, err: Error = tcp.connect(loopback(port))
     if err != null {
         return 1
     }
@@ -28,7 +28,7 @@ client(port: u16): int {
     storage: [13]u8 = [u8(0) : 13]
     reply: mut []u8 = mut storage[0..]
     received: usize
-    received, err = tcp.receive_exact(connection, reply)
+    received, err = tcp.receive_all(connection, reply)
     if err != null || received != len(request) || !mem.equal(reply, request) {
         tcp.close(mut connection)
         return 3
@@ -61,7 +61,7 @@ main(): int {
         sys.exit(client(address.port))
     }
 
-    connection: tcp.Connection, peer: net.Addr4, accept_err: Error = tcp.accept(listener)
+    connection: tcp.Conn, peer: net.Addr4, accept_err: Error = tcp.accept(listener)
     if accept_err != null || peer.ip[0] != 127 || peer.port == 0 {
         tcp.close(mut listener)
         return 13
@@ -70,7 +70,7 @@ main(): int {
     storage: [13]u8 = [u8(0) : 13]
     request: mut []u8 = mut storage[0..]
     received: usize
-    received, err = tcp.receive_exact(connection, request)
+    received, err = tcp.receive_all(connection, request)
     if err != null || received != len(request) {
         tcp.close(mut connection)
         tcp.close(mut listener)

@@ -16,12 +16,12 @@ is_error(err: Error, domain: typeid): bool {
 }
 
 client(port: u16): int {
-    connection: tcp.Connection, err: Error = tcp.connect(loopback(port))
+    connection: tcp.Conn, err: Error = tcp.connect(loopback(port))
     if err != null {
         return 1
     }
 
-    // Separate one-attempt sends let receive_exact prove retained progress.
+    // Separate one-attempt sends let receive_all prove retained progress.
     count: int, ioerr: Error = net.send(connection.socket, "pi")
     if ioerr != null || count != 2 {
         tcp.close(mut connection)
@@ -37,7 +37,7 @@ client(port: u16): int {
     reply_storage: [4]u8 = [0 : 4]
     reply: mut []u8 = mut reply_storage[0..]
     received: usize
-    received, ioerr = tcp.receive_exact(connection, reply)
+    received, ioerr = tcp.receive_all(connection, reply)
     if ioerr != null || received != 4 || !mem.equal(reply_storage, "pong") {
         tcp.close(mut connection)
         return 4
@@ -49,7 +49,7 @@ client(port: u16): int {
 }
 
 eof_client(port: u16): int {
-    connection: tcp.Connection, err: Error = tcp.connect(loopback(port))
+    connection: tcp.Conn, err: Error = tcp.connect(loopback(port))
     if err != null {
         return 1
     }
@@ -93,7 +93,7 @@ check_cleanup(): int {
         return 5
     }
 
-    connection: tcp.Connection
+    connection: tcp.Conn
     connection, err = tcp.connect(loopback(u16(0)))
     if !is_error(err, typeid(net.ConnectErr)) || connection.socket != 0 {
         return 6
@@ -110,9 +110,9 @@ check_cleanup(): int {
         return 8
     }
 
-    invalid_connection: tcp.Connection = tcp.Connection {
+    invalid_connection: tcp.Conn = tcp.Conn {
         socket: net.Socket(-1),
-        poll_interest: tcp.PollInterest.none,
+        interest: tcp.Interest.none,
         send_offset: usize(0),
     }
     err = tcp.close(mut invalid_connection)
@@ -133,14 +133,14 @@ main(): int {
         return cleanup
     }
 
-    invalid: tcp.Connection = tcp.Connection {
+    invalid: tcp.Conn = tcp.Conn {
         socket: net.Socket(-1),
-        poll_interest: tcp.PollInterest.none,
+        interest: tcp.Interest.none,
         send_offset: usize(0),
     }
     one: [1]u8 = [0]
     writable: mut []u8 = mut one[0..]
-    count: usize, err: Error = tcp.receive_exact(invalid, writable)
+    count: usize, err: Error = tcp.receive_all(invalid, writable)
     if count != 0 || !is_error(err, typeid(net.ReceiveErr)) {
         return 10
     }
@@ -173,7 +173,7 @@ main(): int {
         sys.exit(client(address.port))
     }
 
-    connection: tcp.Connection, peer: net.Addr4, accept_err: Error = tcp.accept(listener)
+    connection: tcp.Conn, peer: net.Addr4, accept_err: Error = tcp.accept(listener)
     err = accept_err
     if err != null || peer.ip[0] != 127 || peer.port == 0 {
         tcp.close(mut listener)
@@ -181,7 +181,7 @@ main(): int {
     }
     request_storage: [4]u8 = [0 : 4]
     request: mut []u8 = mut request_storage[0..]
-    count, err = tcp.receive_exact(connection, request)
+    count, err = tcp.receive_all(connection, request)
     if err != null || count != 4 || !mem.equal(request_storage, "ping") {
         tcp.close(mut connection)
         tcp.close(mut listener)
@@ -217,8 +217,8 @@ main(): int {
         return 29
     }
     request_storage = [0 : 4]
-    count, err = tcp.receive_exact(connection, request)
-    if count != 2 || !is_error(err, typeid(tcp.ReceiveExactErr)) || err.code != 0 ||
+    count, err = tcp.receive_all(connection, request)
+    if count != 2 || !is_error(err, typeid(tcp.ReceiveAllErr)) || err.code != 0 ||
        !mem.equal(request_storage[0..2], "ok") {
         tcp.close(mut connection)
         tcp.close(mut listener)

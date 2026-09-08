@@ -7,20 +7,20 @@ pub Listener: struct {
     socket: net.Socket,
 }
 
-pub PollInterest: enum {
+pub Interest: enum {
     none,
     read,
     write,
     both,
 }
 
-pub Connection: struct {
+pub Conn: struct {
     socket: net.Socket,
-    poll_interest: PollInterest,
+    interest: Interest,
     send_offset: usize,
 }
 
-pub ConnEvent: union {
+pub Event: union {
     none,
     data: usize,
     sent: usize,
@@ -29,57 +29,57 @@ pub ConnEvent: union {
     failed: Error,
 }
 
-pub ReceiveExactErr: error
+pub ReceiveAllErr: error
 pub SendAllErr: error
 
 zero_listener(): Listener {
     return Listener {socket: net.Socket(0)}
 }
 
-zero_connection(): Connection {
-    return Connection {
+zero_connection(): Conn {
+    return Conn {
         socket: net.Socket(0),
-        poll_interest: PollInterest.none,
+        interest: Interest.none,
         send_offset: usize(0),
     }
 }
 
-connection(sock: net.Socket, interest: PollInterest): Connection {
-    return Connection {
+connection(sock: net.Socket, interest: Interest): Conn {
+    return Conn {
         socket: sock,
-        poll_interest: interest,
+        interest: interest,
         send_offset: usize(0),
     }
 }
 
-with_read(interest: PollInterest, enabled: bool): PollInterest {
+with_read(interest: Interest, enabled: bool): Interest {
     if enabled {
-        if interest == PollInterest.write || interest == PollInterest.both {
-            return PollInterest.both
+        if interest == Interest.write || interest == Interest.both {
+            return Interest.both
         }
-        return PollInterest.read
+        return Interest.read
     }
-    if interest == PollInterest.both {
-        return PollInterest.write
+    if interest == Interest.both {
+        return Interest.write
     }
-    if interest == PollInterest.read {
-        return PollInterest.none
+    if interest == Interest.read {
+        return Interest.none
     }
     return interest
 }
 
-with_write(interest: PollInterest, enabled: bool): PollInterest {
+with_write(interest: Interest, enabled: bool): Interest {
     if enabled {
-        if interest == PollInterest.read || interest == PollInterest.both {
-            return PollInterest.both
+        if interest == Interest.read || interest == Interest.both {
+            return Interest.both
         }
-        return PollInterest.write
+        return Interest.write
     }
-    if interest == PollInterest.both {
-        return PollInterest.read
+    if interest == Interest.both {
+        return Interest.read
     }
-    if interest == PollInterest.write {
-        return PollInterest.none
+    if interest == Interest.write {
+        return Interest.none
     }
     return interest
 }
@@ -104,7 +104,7 @@ pub listen(address: net.Addr4, backlog: usize): (Listener, Error) {
     return Listener {socket: sock}, null
 }
 
-pub connect(address: net.Addr4): (Connection, Error) {
+pub connect(address: net.Addr4): (Conn, Error) {
     sock: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
 
     if err != null {
@@ -115,10 +115,10 @@ pub connect(address: net.Addr4): (Connection, Error) {
         sys.close(sock)
         return zero_connection(), err
     }
-    return connection(sock, PollInterest.read), null
+    return connection(sock, Interest.read), null
 }
 
-pub connect_nonblocking(address: net.Addr4): (Connection, Error) {
+pub connect_nonblock(address: net.Addr4): (Conn, Error) {
     sock: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
 
     if err != null {
@@ -131,16 +131,15 @@ pub connect_nonblocking(address: net.Addr4): (Connection, Error) {
     }
     connect_attempt: {
         err = net.connect(sock, address)
-        if err != null && err.domain == typeid(net.ConnectErr) &&
-           err.code == sys.EINTR {
+        if err != null && err.domain == typeid(net.ConnectErr) && err.code == sys.EINTR {
             continue connect_attempt
         }
     }
     if err == null {
-        return connection(sock, PollInterest.read), null
+        return connection(sock, Interest.read), null
     }
     if err.domain == typeid(net.ConnectErr) && err.code == sys.EINPROGRESS {
-        return connection(sock, PollInterest.write), null
+        return connection(sock, Interest.write), null
     }
     sys.close(sock)
     return zero_connection(), err
@@ -151,34 +150,33 @@ pub local(listener: Listener): (net.Addr4, Error) {
     return address, err
 }
 
-pub accept(listener: Listener): (Connection, net.Addr4, Error) {
+pub accept(listener: Listener): (Conn, net.Addr4, Error) {
     sock: net.Socket, address: net.Addr4, err: Error = net.accept(listener.socket)
 
     if err != null {
         return zero_connection(), address, err
     }
-    return connection(sock, PollInterest.read), address, null
+    return connection(sock, Interest.read), address, null
 }
 
-pub poll_interest(conn: Connection): PollInterest {
-    return conn.poll_interest
+pub interest(conn: Conn): Interest {
+    return conn.interest
 }
 
-pub progress_connect(mut conn: Connection): ConnEvent {
+pub progress_connect(mut conn: Conn): Event {
     err: Error = net.pending_error(conn.socket)
     if err == null {
-        conn.poll_interest = PollInterest.read
-        return ConnEvent.connected
+        conn.interest = Interest.read
+        return Event.connected
     }
-    conn.poll_interest = PollInterest.none
-    return ConnEvent.failed(err)
+    conn.interest = Interest.none
+    return Event.failed(err)
 }
 
-pub progress_receive(mut conn: Connection,
-                     dest: mut []u8): ConnEvent {
+pub progress_receive(mut conn: Conn, dest: mut []u8): Event {
     if len(dest) == 0 {
-        conn.poll_interest = with_read(conn.poll_interest, false)
-        return ConnEvent.none
+        conn.interest = with_read(conn.interest, false)
+        return Event.none
     }
     receive_attempt: {
         count: int, err: Error = net.receive(conn.socket, dest)
@@ -186,73 +184,67 @@ pub progress_receive(mut conn: Connection,
             if err.domain == typeid(net.ReceiveErr) && err.code == sys.EINTR {
                 continue receive_attempt
             }
-            if err.domain == typeid(net.ReceiveErr) &&
-               (err.code == sys.EAGAIN || err.code == sys.EWOULDBLOCK) {
-                conn.poll_interest = with_read(conn.poll_interest, true)
-                return ConnEvent.none
+            if err.domain == typeid(net.ReceiveErr) && (err.code == sys.EAGAIN || err.code == sys.EWOULDBLOCK) {
+                conn.interest = with_read(conn.interest, true)
+                return Event.none
             }
-            conn.poll_interest = PollInterest.none
-            if err.domain == typeid(net.ReceiveErr) &&
-               err.code == sys.ECONNRESET {
-                return ConnEvent.disconnected
+            conn.interest = Interest.none
+            if err.domain == typeid(net.ReceiveErr) && err.code == sys.ECONNRESET {
+                return Event.disconnected
             }
-            return ConnEvent.failed(err)
+            return Event.failed(err)
         }
         if count == 0 {
-            conn.poll_interest = PollInterest.none
-            return ConnEvent.disconnected
+            conn.interest = Interest.none
+            return Event.disconnected
         }
-        conn.poll_interest = with_read(conn.poll_interest, false)
-        return ConnEvent.data(usize(count))
+        conn.interest = with_read(conn.interest, false)
+        return Event.data(usize(count))
     }
 }
 
-pub progress_send(mut conn: Connection, src: []u8): ConnEvent {
+pub progress_send(mut conn: Conn, src: []u8): Event {
     if len(src) == 0 {
         conn.send_offset = usize(0)
-        conn.poll_interest = with_write(conn.poll_interest, false)
-        return ConnEvent.sent(usize(0))
+        conn.interest = with_write(conn.interest, false)
+        return Event.sent(usize(0))
     }
     send_attempt: {
-        count: int, err: Error = net.send(conn.socket,
-                                          src[conn.send_offset..])
+        count: int, err: Error = net.send(conn.socket, src[conn.send_offset..])
         if err != null {
             if err.domain == typeid(net.SendErr) && err.code == sys.EINTR {
                 continue send_attempt
             }
-            if err.domain == typeid(net.SendErr) &&
-               (err.code == sys.EAGAIN || err.code == sys.EWOULDBLOCK) {
-                conn.poll_interest = with_write(conn.poll_interest, true)
-                return ConnEvent.none
+            if err.domain == typeid(net.SendErr) && (err.code == sys.EAGAIN || err.code == sys.EWOULDBLOCK) {
+                conn.interest = with_write(conn.interest, true)
+                return Event.none
             }
-            conn.poll_interest = PollInterest.none
+            conn.interest = Interest.none
             if err.domain == typeid(net.SendErr) && err.code == sys.ECONNRESET {
-                return ConnEvent.disconnected
+                return Event.disconnected
             }
-            return ConnEvent.failed(err)
+            return Event.failed(err)
         }
         if count == 0 {
-            conn.poll_interest = with_write(conn.poll_interest, true)
-            return ConnEvent.none
+            conn.interest = with_write(conn.interest, true)
+            return Event.none
         }
         conn.send_offset += usize(count)
         if conn.send_offset == len(src) {
             conn.send_offset = usize(0)
-            conn.poll_interest = with_write(conn.poll_interest, false)
+            conn.interest = with_write(conn.interest, false)
         } else {
-            conn.poll_interest = with_write(conn.poll_interest, true)
+            conn.interest = with_write(conn.interest, true)
         }
-        return ConnEvent.sent(usize(count))
+        return Event.sent(usize(count))
     }
 }
 
-pub receive_exact(connection: Connection,
-                  buffer: mut []u8): (usize, Error) {
+pub receive_all(connection: Conn, buffer: mut []u8): (usize, Error) {
     received: usize = 0
 
     for received < len(buffer) {
-        count: int, err: Error = net.receive(connection.socket,
-                                             buffer[received..])
+        count: int, err: Error = net.receive(connection.socket, buffer[received..])
         if err != null {
             if err.domain == typeid(net.ReceiveErr) && err.code == sys.EINTR {
                 continue
@@ -260,14 +252,14 @@ pub receive_exact(connection: Connection,
             return received, err
         }
         if count == 0 {
-            return received, ReceiveExactErr(0)
+            return received, ReceiveAllErr(0)
         }
         received += usize(count)
     }
     return received, null
 }
 
-pub send_all(connection: Connection, data: []u8): (usize, Error) {
+pub send_all(connection: Conn, data: []u8): (usize, Error) {
     if len(data) == 0 {
         return 0, null
     }
@@ -295,7 +287,7 @@ pub close(mut listener: Listener): Error {
     return err
 }
 
-pub close(mut connection: Connection): Error {
+pub close(mut connection: Conn): Error {
     err: Error = sys.close(connection.socket)
     connection = zero_connection()
     return err

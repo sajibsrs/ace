@@ -2,17 +2,35 @@
 
 import net
 import sys
-import ConnEvent, Connection, Listener, PollInterest, ReceiveExactErr, SendAllErr, accept, close, connect, connect_nonblocking, listen, local, poll_interest, progress_connect, progress_receive, progress_send, receive_exact, send_all from tcp
+import (
+    Event,
+    Conn,
+    Listener,
+    Interest,
+    ReceiveAllErr,
+    SendAllErr,
+    accept,
+    close,
+    connect,
+    connect_nonblock,
+    listen,
+    local,
+    interest,
+    progress_connect,
+    progress_receive,
+    progress_send,
+    receive_all,
+    send_all,
+) from tcp
 
-check(address: net.Addr4, listener: Listener, connection: Connection,
-      bytes: mut []u8, text: string): int {
+check(address: net.Addr4, listener: Listener, connection: Conn, bytes: mut []u8, text: string): int {
     bound: net.Addr4, local_err: Error = local(listener)
-    accepted: Connection, peer: net.Addr4, accept_err: Error = accept(listener)
-    received: usize, receive_err: Error = receive_exact(connection, bytes)
+    accepted: Conn, peer: net.Addr4, accept_err: Error = accept(listener)
+    received: usize, receive_err: Error = receive_all(connection, bytes)
     sent: usize, send_err: Error = send_all(connection, text)
-    interest: PollInterest = poll_interest(connection)
+    interest: Interest = interest(connection)
 
-    if receive_err != null && receive_err.domain == typeid(ReceiveExactErr) {
+    if receive_err != null && receive_err.domain == typeid(ReceiveAllErr) {
         received = usize(receive_err.code)
     }
     if send_err != null && send_err.domain == typeid(SendAllErr) {
@@ -21,11 +39,11 @@ check(address: net.Addr4, listener: Listener, connection: Connection,
     if local_err != null || accept_err != null || bound.port == peer.port {
         return int(received + sent)
     }
-    if interest == PollInterest.none {
-        event: ConnEvent = progress_receive(mut accepted, bytes)
+    if interest == Interest.none {
+        event: Event = progress_receive(mut accepted, bytes)
         switch event {
-            ConnEvent.data(count: usize) { received = count }
-            ConnEvent.failed(err: Error) { send_err = err }
+            Event.data(count: usize) { received = count }
+            Event.failed(err: Error) { send_err = err }
             else {}
         }
         event = progress_send(mut accepted, text)
@@ -38,8 +56,8 @@ check(address: net.Addr4, listener: Listener, connection: Connection,
 main(): int {
     address: net.Addr4 = net.Addr4 {ip: [127, 0, 0, 1], port: u16(0)}
     listener: Listener, listen_err: Error = listen(address, usize(8))
-    connection: Connection, connect_err: Error = connect(address)
-    pending: Connection, pending_err: Error = connect_nonblocking(address)
+    connection: Conn, connect_err: Error = connect(address)
+    pending: Conn, pending_err: Error = connect_nonblock(address)
     if listen_err == null {
         close(mut listener)
     }
