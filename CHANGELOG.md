@@ -147,6 +147,18 @@ current normative rules, and Git preserves patch-level detail.
   bind/listen/accept/connect, partial send/receive, peer addresses, DNS
   resolution, and operation-specific error domains. The public directory module
   wraps a private Darwin OS layer and owns no hidden allocation.
+- Added pure-Ace blocking IPv4 `tcp` composition over `net`: listener and
+  connection constructors with failure cleanup, blocking accept, exact receive,
+  all-byte send, EINTR retry with retained progress, and explicit wrapper close.
+  Lower-layer operation errors remain unchanged; only premature EOF and
+  successful zero-progress send introduce TCP-level domains. A fresh blocking
+  echo fixture establishes the Stage 2 carving baseline without preselecting a
+  nonblocking event model or public reactor state shape.
+- Implemented the selected `tcp` nonblocking connection-progress model with
+  caller-owned per-call buffers, explicit tagged events, managed poll interest,
+  partial-send offsets, backpressure, and nonblocking connect completion.
+  Added the one-operation `net.pending_error` prerequisite and named Darwin
+  errno constants without adding OS code or externs to `tcp`.
 - Implemented general descriptor `poll` with allocation-free queues, paired
   watch/unwatch, level-triggered read/write interest, error/hangup reporting,
   caller-owned event storage, and finite/infinite nanosecond waits. Darwin kqueue

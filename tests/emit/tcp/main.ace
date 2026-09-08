@@ -1,0 +1,237 @@
+/* High-level blocking TCP composition, transfer loops, cleanup, and domains. */
+
+// expect-exit: 0
+
+import mem
+import net
+import sys
+import tcp
+
+loopback(port: u16): net.Addr4 {
+    return net.Addr4 {ip: [127, 0, 0, 1], port: port}
+}
+
+is_error(err: Error, domain: typeid): bool {
+    return err != null && err.domain == domain
+}
+
+client(port: u16): int {
+    connection: tcp.Connection, err: Error = tcp.connect(loopback(port))
+    if err != null {
+        return 1
+    }
+
+    // Separate one-attempt sends let receive_exact prove retained progress.
+    count: int, ioerr: Error = net.send(connection.socket, "pi")
+    if ioerr != null || count != 2 {
+        tcp.close(mut connection)
+        return 2
+    }
+    sent: usize
+    sent, ioerr = tcp.send_all(connection, "ng")
+    if ioerr != null || sent != 2 {
+        tcp.close(mut connection)
+        return 3
+    }
+
+    reply_storage: [4]u8 = [0 : 4]
+    reply: mut []u8 = mut reply_storage[0..]
+    received: usize
+    received, ioerr = tcp.receive_exact(connection, reply)
+    if ioerr != null || received != 4 || !mem.equal(reply_storage, "pong") {
+        tcp.close(mut connection)
+        return 4
+    }
+    if tcp.close(mut connection) != null || connection.socket != 0 {
+        return 5
+    }
+    return 0
+}
+
+eof_client(port: u16): int {
+    connection: tcp.Connection, err: Error = tcp.connect(loopback(port))
+    if err != null {
+        return 1
+    }
+    sent: usize
+    sent, err = tcp.send_all(connection, "ok")
+    if err != null || sent != 2 {
+        tcp.close(mut connection)
+        return 2
+    }
+    if tcp.close(mut connection) != null {
+        return 3
+    }
+    return 0
+}
+
+check_cleanup(): int {
+    listener: tcp.Listener, err: Error = tcp.listen(loopback(u16(0)), usize(0x80000000))
+    if err == null {
+        return 1
+    }
+    if err.domain != typeid(net.ListenErr) {
+        if err.domain == typeid(net.ReuseAddrErr) {
+            return 41
+        }
+        if err.domain == typeid(net.BindErr) {
+            return 42
+        }
+        return 43
+    }
+    if listener.socket != 0 {
+        return 3
+    }
+
+    // A failed constructor closed its created fd: the next kernel allocation
+    // reuses the lowest available descriptor deterministically in this process.
+    first: net.Socket, socket_err: Error = net.socket(net.SocketKind.tcp)
+    if socket_err != null {
+        return 4
+    }
+    if sys.close(first) != null {
+        return 5
+    }
+
+    connection: tcp.Connection
+    connection, err = tcp.connect(loopback(u16(0)))
+    if !is_error(err, typeid(net.ConnectErr)) || connection.socket != 0 {
+        return 6
+    }
+    second: net.Socket
+    second, socket_err = net.socket(net.SocketKind.tcp)
+    if socket_err != null || second != first {
+        if socket_err == null {
+            sys.close(second)
+        }
+        return 7
+    }
+    if sys.close(second) != null {
+        return 8
+    }
+
+    invalid_connection: tcp.Connection = tcp.Connection {
+        socket: net.Socket(-1),
+        poll_interest: tcp.PollInterest.none,
+        send_offset: usize(0),
+    }
+    err = tcp.close(mut invalid_connection)
+    if !is_error(err, typeid(sys.CloseErr)) || invalid_connection.socket != 0 {
+        return 9
+    }
+    invalid_listener: tcp.Listener = tcp.Listener {socket: net.Socket(-1)}
+    err = tcp.close(mut invalid_listener)
+    if !is_error(err, typeid(sys.CloseErr)) || invalid_listener.socket != 0 {
+        return 10
+    }
+    return 0
+}
+
+main(): int {
+    cleanup: int = check_cleanup()
+    if cleanup != 0 {
+        return cleanup
+    }
+
+    invalid: tcp.Connection = tcp.Connection {
+        socket: net.Socket(-1),
+        poll_interest: tcp.PollInterest.none,
+        send_offset: usize(0),
+    }
+    one: [1]u8 = [0]
+    writable: mut []u8 = mut one[0..]
+    count: usize, err: Error = tcp.receive_exact(invalid, writable)
+    if count != 0 || !is_error(err, typeid(net.ReceiveErr)) {
+        return 10
+    }
+    count, err = tcp.send_all(invalid, "x")
+    if count != 0 || !is_error(err, typeid(net.SendErr)) {
+        return 11
+    }
+    count, err = tcp.send_all(invalid, "")
+    if count != 0 || err != null {
+        return 12
+    }
+
+    listener: tcp.Listener
+    listener, err = tcp.listen(loopback(u16(0)), usize(8))
+    if err != null {
+        return 20
+    }
+    address: net.Addr4
+    address, err = tcp.local(listener)
+    if err != null || address.port == 0 {
+        tcp.close(mut listener)
+        return 21
+    }
+    process: sys.Process, fork_err: Error = sys.fork()
+    if fork_err != null || process == -1 {
+        tcp.close(mut listener)
+        return 22
+    }
+    if process == 0 {
+        sys.exit(client(address.port))
+    }
+
+    connection: tcp.Connection, peer: net.Addr4, accept_err: Error = tcp.accept(listener)
+    err = accept_err
+    if err != null || peer.ip[0] != 127 || peer.port == 0 {
+        tcp.close(mut listener)
+        return 23
+    }
+    request_storage: [4]u8 = [0 : 4]
+    request: mut []u8 = mut request_storage[0..]
+    count, err = tcp.receive_exact(connection, request)
+    if err != null || count != 4 || !mem.equal(request_storage, "ping") {
+        tcp.close(mut connection)
+        tcp.close(mut listener)
+        return 24
+    }
+    count, err = tcp.send_all(connection, "pong")
+    if err != null || count != 4 {
+        tcp.close(mut connection)
+        tcp.close(mut listener)
+        return 25
+    }
+    if tcp.close(mut connection) != null || connection.socket != 0 {
+        tcp.close(mut listener)
+        return 26
+    }
+    status: sys.ProcessStatus, wait_err: Error = sys.wait(process)
+    if wait_err != null || !status.exited || status.code != 0 {
+        tcp.close(mut listener)
+        return 27
+    }
+
+    process, fork_err = sys.fork()
+    if fork_err != null || process == -1 {
+        tcp.close(mut listener)
+        return 28
+    }
+    if process == 0 {
+        sys.exit(eof_client(address.port))
+    }
+    connection, peer, err = tcp.accept(listener)
+    if err != null {
+        tcp.close(mut listener)
+        return 29
+    }
+    request_storage = [0 : 4]
+    count, err = tcp.receive_exact(connection, request)
+    if count != 2 || !is_error(err, typeid(tcp.ReceiveExactErr)) || err.code != 0 ||
+       !mem.equal(request_storage[0..2], "ok") {
+        tcp.close(mut connection)
+        tcp.close(mut listener)
+        return 30
+    }
+    tcp.close(mut connection)
+    status, wait_err = sys.wait(process)
+    if wait_err != null || !status.exited || status.code != 0 {
+        tcp.close(mut listener)
+        return 31
+    }
+    if tcp.close(mut listener) != null || listener.socket != 0 {
+        return 32
+    }
+    return 0
+}

@@ -1,9 +1,9 @@
 /*
- * Mirrors docs/standard-library.md mem, fmt, sys, net, and str examples (sema
+ * Mirrors docs/standard-library.md mem, fmt, sys, net, tcp, and str examples (sema
  * check only; runtime coverage lives in tests/emit/fmt/*.ace,
  * tests/emit/sys/main.ace, tests/emit/sys/standard_descriptors.ace,
  * tests/emit/sys/time.ace, tests/emit/sys/process_control.ace,
- * tests/emit/net/main.ace,
+ * tests/emit/net/main.ace, tests/emit/tcp/main.ace,
  * tests/emit/net/poll.ace, tests/emit/net/nonblocking_echo.ace,
  * tests/emit/net/nonblocking_chat.ace, tests/emit/allocation/typed.ace,
  * and tests/emit/strings/*.ace).
@@ -17,6 +17,7 @@ import net
 import poll
 import str
 import sys
+import tcp
 
 WOULD_BLOCK: const i32 = sys.EWOULDBLOCK
 TRY_AGAIN: const i32 = sys.EAGAIN
@@ -288,6 +289,52 @@ net_example(): int {
             sys.close(client)
         }
     }
+    return 0
+}
+
+tcp_example(address: net.Addr4): int {
+    listener: tcp.Listener, err: Error = tcp.listen(address, usize(128))
+    if err != null {
+        return 1
+    }
+    local: net.Addr4, local_err: Error = tcp.local(listener)
+    if local_err != null || local.port == 0 {
+        tcp.close(mut listener)
+        return 2
+    }
+    connection: tcp.Connection, peer: net.Addr4, accept_err: Error = tcp.accept(listener)
+    if accept_err == null {
+        storage: [4]u8 = [0 : 4]
+        buffer: mut []u8 = mut storage[0..]
+        count: usize, ioerr: Error = tcp.receive_exact(connection, buffer)
+        if ioerr == null && count == 4 {
+            count, ioerr = tcp.send_all(connection, "pong")
+        }
+        tcp.close(mut connection)
+    }
+    tcp.close(mut listener)
+    return 0
+}
+
+tcp_nonblocking_example(address: net.Addr4): int {
+    connection: tcp.Connection, err: Error = tcp.connect_nonblocking(address)
+    if err != null {
+        return 1
+    }
+    if tcp.poll_interest(connection) == tcp.PollInterest.write {
+        event: tcp.ConnEvent = tcp.progress_connect(mut connection)
+        switch event {
+            tcp.ConnEvent.connected {}
+            tcp.ConnEvent.failed(connect_err: Error) {
+                if connect_err != null {
+                    tcp.close(mut connection)
+                    return 2
+                }
+            }
+            else {}
+        }
+    }
+    tcp.close(mut connection)
     return 0
 }
 

@@ -39,8 +39,11 @@ pub O_CREAT: const i32 = os.O_CREAT
 pub O_TRUNC: const i32 = os.O_TRUNC
 pub O_EXCL: const i32 = os.O_EXCL
 
+pub EINTR: const i32 = os.EINTR
 pub EAGAIN: const i32 = os.EAGAIN
 pub EWOULDBLOCK: const i32 = os.EWOULDBLOCK
+pub EINPROGRESS: const i32 = os.EINPROGRESS
+pub ECONNRESET: const i32 = os.ECONNRESET
 
 pub S_IRWXU: const u32 = os.S_IRWXU
 pub S_IRUSR: const u32 = os.S_IRUSR

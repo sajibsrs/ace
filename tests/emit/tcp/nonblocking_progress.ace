@@ -1,0 +1,318 @@
+/* Stage 2 nonblocking connect, interest transitions, and buffered progress. */
+
+// expect-exit: 0
+
+import net
+import poll
+import sys
+import tcp
+
+loopback(port: u16): net.Addr4 {
+    return net.Addr4 {ip: [127, 0, 0, 1], port: port}
+}
+
+watch_connection(q: poll.Queue, connection: tcp.Connection): Error {
+    interest: tcp.PollInterest = tcp.poll_interest(connection)
+    return poll.watch(q, connection.socket,
+                      interest == tcp.PollInterest.read ||
+                      interest == tcp.PollInterest.both,
+                      interest == tcp.PollInterest.write ||
+                      interest == tcp.PollInterest.both)
+}
+
+wait_one(q: poll.Queue, storage: mut []poll.Event): (poll.Event, Error) {
+    count: usize, err: Error = poll.wait(q, storage, u64(1000000000))
+    if err != null || count != 1 {
+        zero: poll.Event = poll.Event {
+            fd: sys.Fd(0), readable: false, writable: false,
+            error: false, hangup: false,
+        }
+        if err == null {
+            return zero, poll.WaitErr(0)
+        }
+        return zero, err
+    }
+    return storage[0], null
+}
+
+is_connected(event: tcp.ConnEvent): bool {
+    switch event {
+        tcp.ConnEvent.connected { return true }
+        else { return false }
+    }
+}
+
+sent_count(event: tcp.ConnEvent): (usize, bool) {
+    switch event {
+        tcp.ConnEvent.sent(count: usize) { return count, true }
+        else { return usize(0), false }
+    }
+}
+
+is_none(event: tcp.ConnEvent): bool {
+    switch event {
+        tcp.ConnEvent.none { return true }
+        else { return false }
+    }
+}
+
+client(port: u16): int {
+    connection: tcp.Connection, err: Error = tcp.connect_nonblocking(loopback(port))
+    if err != null {
+        return 1
+    }
+    q: poll.Queue, queue_err: Error = poll.queue()
+    if queue_err != null {
+        tcp.close(mut connection)
+        return 2
+    }
+    if tcp.poll_interest(connection) == tcp.PollInterest.write {
+        if watch_connection(q, connection) != null {
+            tcp.close(mut connection)
+            sys.close(sys.Fd(q))
+            return 3
+        }
+        zero: poll.Event = poll.Event {
+            fd: sys.Fd(0), readable: false, writable: false,
+            error: false, hangup: false,
+        }
+        event_storage: [1]poll.Event = [zero]
+        events: mut []poll.Event = mut event_storage[0..]
+        ready: poll.Event, wait_err: Error = wait_one(q, events)
+        if wait_err != null || !ready.writable ||
+           !is_connected(tcp.progress_connect(mut connection)) ||
+           tcp.poll_interest(connection) != tcp.PollInterest.read {
+            tcp.close(mut connection)
+            sys.close(sys.Fd(q))
+            return 4
+        }
+    }
+
+    request: string = "stage2 echo"
+    sent: usize = 0
+    for sent < len(request) {
+        progress: tcp.ConnEvent = tcp.progress_send(mut connection, request)
+        advanced: bool = false
+        switch progress {
+            tcp.ConnEvent.sent(count: usize) {
+                sent += count
+                advanced = true
+            }
+            tcp.ConnEvent.none {}
+            else { return 5 }
+        }
+        if !advanced {
+            if watch_connection(q, connection) != null {
+                tcp.close(mut connection)
+                sys.close(sys.Fd(q))
+                return 6
+            }
+            zero: poll.Event = poll.Event {
+                fd: sys.Fd(0), readable: false, writable: false,
+                error: false, hangup: false,
+            }
+            event_storage: [1]poll.Event = [zero]
+            events: mut []poll.Event = mut event_storage[0..]
+            ready: poll.Event, wait_err: Error = wait_one(q, events)
+            if wait_err != null || !ready.writable {
+                tcp.close(mut connection)
+                sys.close(sys.Fd(q))
+                return 7
+            }
+        }
+    }
+
+    storage: [11]u8 = [u8(0) : 11]
+    received: usize = 0
+    for received < len(storage) {
+        destination: mut []u8 = mut storage[received..]
+        progress: tcp.ConnEvent = tcp.progress_receive(mut connection,
+                                                       destination)
+        receive_amount: usize = 0
+        receive_advanced: bool = false
+        switch progress {
+            tcp.ConnEvent.data(count: usize) {
+                receive_amount = count
+                receive_advanced = true
+            }
+            tcp.ConnEvent.none {}
+            else { return 7 }
+        }
+        if receive_advanced {
+            received += receive_amount
+        } else {
+            if watch_connection(q, connection) != null {
+                tcp.close(mut connection)
+                sys.close(sys.Fd(q))
+                return 7
+            }
+            zero: poll.Event = poll.Event {
+                fd: sys.Fd(0), readable: false, writable: false,
+                error: false, hangup: false,
+            }
+            event_storage: [1]poll.Event = [zero]
+            events: mut []poll.Event = mut event_storage[0..]
+            ready: poll.Event, wait_err: Error = wait_one(q, events)
+            if wait_err != null || !ready.readable {
+                tcp.close(mut connection)
+                sys.close(sys.Fd(q))
+                return 8
+            }
+        }
+    }
+    for index: usize in 0 .. len(storage) {
+        if storage[index] != request[index] {
+            return 50 + int(index)
+        }
+    }
+    if tcp.close(mut connection) != null {
+        return 10
+    }
+    if sys.close(sys.Fd(q)) != null {
+        return 11
+    }
+    return 0
+}
+
+main(): int {
+    // Empty buffers perform no I/O and exercise the pinned interest rules.
+    empty_connection: tcp.Connection = tcp.Connection {
+        socket: net.Socket(-1),
+        poll_interest: tcp.PollInterest.both,
+        send_offset: usize(7),
+    }
+    empty: mut []u8 = null
+    if !is_none(tcp.progress_receive(mut empty_connection, empty)) ||
+       tcp.poll_interest(empty_connection) != tcp.PollInterest.write {
+        return 1
+    }
+    amount: usize, sent: bool = sent_count(
+        tcp.progress_send(mut empty_connection, empty))
+    if !sent || amount != 0 || empty_connection.send_offset != 0 ||
+       tcp.poll_interest(empty_connection) != tcp.PollInterest.none {
+        return 2
+    }
+
+    listener: tcp.Listener, err: Error = tcp.listen(loopback(u16(0)), usize(8))
+    if err != null {
+        return 10
+    }
+    address: net.Addr4
+    address, err = tcp.local(listener)
+    if err != null || address.port == 0 {
+        tcp.close(mut listener)
+        return 11
+    }
+    process: sys.Process, fork_err: Error = sys.fork()
+    if fork_err != null || process == -1 {
+        tcp.close(mut listener)
+        return 12
+    }
+    if process == 0 {
+        tcp.close(mut listener)
+        sys.exit(client(address.port))
+    }
+
+    connection: tcp.Connection, peer: net.Addr4, accept_err: Error = tcp.accept(listener)
+    if accept_err != null || net.nonblock(connection.socket, true) != null {
+        tcp.close(mut listener)
+        return 13
+    }
+    q: poll.Queue, queue_err: Error = poll.queue()
+    if queue_err != null {
+        tcp.close(mut connection)
+        tcp.close(mut listener)
+        return 14
+    }
+
+    storage: [11]u8 = [u8(0) : 11]
+    received: usize = 0
+    for received < len(storage) {
+        destination: mut []u8 = mut storage[received..]
+        progress: tcp.ConnEvent = tcp.progress_receive(mut connection,
+                                                       destination)
+        receive_amount: usize = 0
+        receive_advanced: bool = false
+        switch progress {
+            tcp.ConnEvent.data(count: usize) {
+                receive_amount = count
+                receive_advanced = true
+            }
+            tcp.ConnEvent.none {}
+            else { return 15 }
+        }
+        if receive_advanced {
+            received += receive_amount
+        } else {
+            if watch_connection(q, connection) != null {
+                return 15
+            }
+            zero: poll.Event = poll.Event {
+                fd: sys.Fd(0), readable: false, writable: false,
+                error: false, hangup: false,
+            }
+            event_storage: [1]poll.Event = [zero]
+            events: mut []poll.Event = mut event_storage[0..]
+            ready: poll.Event, wait_err: Error = wait_one(q, events)
+            if wait_err != null || !ready.readable {
+                return 16
+            }
+        }
+    }
+
+    flushed: usize = 0
+    source: []u8 = storage[0..]
+    for flushed < len(source) {
+        send_amount: usize, send_advanced: bool = sent_count(
+            tcp.progress_send(mut connection, source))
+        if send_advanced {
+            flushed += send_amount
+        } else {
+            if watch_connection(q, connection) != null {
+                return 17
+            }
+            zero: poll.Event = poll.Event {
+                fd: sys.Fd(0), readable: false, writable: false,
+                error: false, hangup: false,
+            }
+            event_storage: [1]poll.Event = [zero]
+            events: mut []poll.Event = mut event_storage[0..]
+            ready: poll.Event, wait_err: Error = wait_one(q, events)
+            if wait_err != null || !ready.writable {
+                return 18
+            }
+        }
+    }
+    if connection.send_offset != 0 ||
+       tcp.poll_interest(connection) != tcp.PollInterest.none {
+        return 19
+    }
+
+    tcp.close(mut connection)
+    tcp.close(mut listener)
+    sys.close(sys.Fd(q))
+    status: sys.ProcessStatus, wait_err: Error = sys.wait(process)
+    if wait_err != null || !status.exited {
+        return 20
+    }
+    if status.code != 0 {
+        return status.code
+    }
+
+    invalid: tcp.Connection = tcp.Connection {
+        socket: net.Socket(-1),
+        poll_interest: tcp.PollInterest.write,
+        send_offset: usize(0),
+    }
+    failed: tcp.ConnEvent = tcp.progress_connect(mut invalid)
+    switch failed {
+        tcp.ConnEvent.failed(query_err: Error) {
+            if query_err.domain != typeid(net.PendingErrorErr) ||
+               invalid.poll_interest != tcp.PollInterest.none {
+                return 21
+            }
+        }
+        else { return 22 }
+    }
+    return 0
+}

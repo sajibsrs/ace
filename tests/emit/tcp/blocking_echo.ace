@@ -1,0 +1,95 @@
+/* Stage 2 carving baseline: a fresh blocking echo server over Stage 1 tcp. */
+
+// expect-exit: 0
+
+import mem
+import net
+import sys
+import tcp
+
+loopback(port: u16): net.Addr4 {
+    return net.Addr4 {ip: [127, 0, 0, 1], port: port}
+}
+
+client(port: u16): int {
+    connection: tcp.Connection, err: Error = tcp.connect(loopback(port))
+    if err != null {
+        return 1
+    }
+
+    request: string = "blocking echo"
+    sent: usize
+    sent, err = tcp.send_all(connection, request)
+    if err != null || sent != len(request) {
+        tcp.close(mut connection)
+        return 2
+    }
+
+    storage: [13]u8 = [u8(0) : 13]
+    reply: mut []u8 = mut storage[0..]
+    received: usize
+    received, err = tcp.receive_exact(connection, reply)
+    if err != null || received != len(request) || !mem.equal(reply, request) {
+        tcp.close(mut connection)
+        return 3
+    }
+    if tcp.close(mut connection) != null {
+        return 4
+    }
+    return 0
+}
+
+main(): int {
+    listener: tcp.Listener, err: Error = tcp.listen(loopback(u16(0)), usize(8))
+    if err != null {
+        return 10
+    }
+    address: net.Addr4
+    address, err = tcp.local(listener)
+    if err != null || address.port == 0 {
+        tcp.close(mut listener)
+        return 11
+    }
+
+    process: sys.Process, fork_err: Error = sys.fork()
+    if fork_err != null || process == -1 {
+        tcp.close(mut listener)
+        return 12
+    }
+    if process == 0 {
+        tcp.close(mut listener)
+        sys.exit(client(address.port))
+    }
+
+    connection: tcp.Connection, peer: net.Addr4, accept_err: Error = tcp.accept(listener)
+    if accept_err != null || peer.ip[0] != 127 || peer.port == 0 {
+        tcp.close(mut listener)
+        return 13
+    }
+
+    storage: [13]u8 = [u8(0) : 13]
+    request: mut []u8 = mut storage[0..]
+    received: usize
+    received, err = tcp.receive_exact(connection, request)
+    if err != null || received != len(request) {
+        tcp.close(mut connection)
+        tcp.close(mut listener)
+        return 14
+    }
+    sent: usize
+    sent, err = tcp.send_all(connection, request)
+    if err != null || sent != received {
+        tcp.close(mut connection)
+        tcp.close(mut listener)
+        return 15
+    }
+
+    connection_close: Error = tcp.close(mut connection)
+    listener_close: Error = tcp.close(mut listener)
+    status: sys.ProcessStatus, wait_err: Error = sys.wait(process)
+    if connection_close != null || listener_close != null || wait_err != null ||
+       !status.exited || status.code != 0 {
+        return 16
+    }
+    return 0
+}

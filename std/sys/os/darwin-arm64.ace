@@ -130,9 +130,12 @@ pub O_TRUNC: const i32 = 0x0400
 pub O_EXCL: const i32 = 0x0800
 O_DIRECTORY: const i32 = 0x00100000
 
-// Retryable nonblocking-operation errno values on Darwin.
+// Public retry-policy errno values on Darwin.
+pub EINTR: const i32 = 4
 pub EAGAIN: const i32 = 35
 pub EWOULDBLOCK: const i32 = EAGAIN
+pub EINPROGRESS: const i32 = 36
+pub ECONNRESET: const i32 = 54
 
 // POSIX creation-permission bits for open(2) and mkdir(2).
 pub S_IRWXU: const u32 = 0x1C0

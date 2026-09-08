@@ -225,8 +225,16 @@ Each item requires an owner decision and should wait for a motivating use case.
 Resume after the higher-priority core work. Each layer keeps allocation,
 buffering, capacities, retries, timeouts, and ownership explicit.
 
+The first pure-Ace blocking IPv4 TCP composition (`std/tcp.ace`) is implemented:
+explicit listener/connection handles, setup cleanup, blocking accept, exact
+receive, all-byte send, EINTR retry, and explicit close. The items below remain
+additive later work; the nonblocking proofs continue to use `net` and `poll`.
+The Stage 2 connection-progress layer is also implemented: caller-owned buffers,
+explicit tagged events, poll-interest transitions, partial-send offsets, and
+nonblocking connect completion remain visible without callbacks or allocation.
+
 - **Additive socket capabilities** [additive] — IPv6, UDP, address queries,
-  nonblocking connection completion, half-close, and extra TCP options, carved
+  half-close, and extra TCP options, carved
   in the order demanded by concrete proofs.
 - **TLS secure-transport module** [new] — explicit transport over `net`, with
   visible configuration, handshake progress, certificate verification, and

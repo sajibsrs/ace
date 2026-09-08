@@ -28,6 +28,7 @@ pub BindErr: error
 pub ListenErr: error
 pub AcceptErr: error
 pub ConnectErr: error
+pub PendingErrorErr: error
 pub ReceiveErr: error
 pub SendErr: error
 pub ResolveErr: error
@@ -57,6 +58,7 @@ SOCK_STREAM: const i32 = 1
 SOL_SOCKET: const i32 = 0xffff
 SO_REUSEADDR: const i32 = 0x0004
 SO_REUSEPORT: const i32 = 0x0200
+SO_ERROR: const i32 = 0x1007
 MSG_NOSIGNAL: const i32 = 0x00080000
 F_GETFL: const i32 = 3
 F_SETFL: const i32 = 4
@@ -69,6 +71,8 @@ HOST_NAME_MAX: const usize = 253
 extern "c" {
     c_socket(domain: i32, kind: i32, protocol: i32): i32 = "socket"
     c_setsockopt(socket: i32, level: i32, option: i32, value: *i32, length: u32): i32 = "setsockopt"
+    c_getsockopt(socket: i32, level: i32, option: i32, value: mut *i32,
+                 length: mut *u32): i32 = "getsockopt"
     c_bind(socket: i32, address: *DarwinAddr4, length: u32): i32 = "bind"
     c_listen(socket: i32, backlog: i32): i32 = "listen"
     c_accept(socket: i32, address: mut *DarwinAddr4, length: mut *u32): i32 = "accept"
@@ -218,6 +222,20 @@ pub connect(sock: Socket, address: Addr4): Error {
 
     if c_connect(i32(sock), &raw, SOCKADDR4_SIZE) == -1 {
         return ConnectErr(sys.errno())
+    }
+    return null
+}
+
+pub pending_error(sock: Socket): Error {
+    value: i32 = 0
+    length: u32 = u32(sizeof(i32))
+
+    if c_getsockopt(i32(sock), SOL_SOCKET, SO_ERROR, mut &value,
+                    mut &length) == -1 {
+        return PendingErrorErr(sys.errno())
+    }
+    if value != 0 {
+        return ConnectErr(value)
     }
     return null
 }

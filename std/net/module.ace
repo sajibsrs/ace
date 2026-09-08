@@ -15,6 +15,7 @@ pub BindErr: type = os.BindErr
 pub ListenErr: type = os.ListenErr
 pub AcceptErr: type = os.AcceptErr
 pub ConnectErr: type = os.ConnectErr
+pub PendingErrorErr: type = os.PendingErrorErr
 pub ReceiveErr: type = os.ReceiveErr
 pub SendErr: type = os.SendErr
 pub ResolveErr: type = os.ResolveErr
@@ -52,6 +53,10 @@ pub accept(listener: Socket): (Socket, Addr4, Error) {
 
 pub connect(sock: Socket, address: Addr4): Error {
     return os.connect(sock, address)
+}
+
+pub pending_error(sock: Socket): Error {
+    return os.pending_error(sock)
 }
 
 pub local(sock: Socket): (Addr4, Error) {
