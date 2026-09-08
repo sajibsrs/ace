@@ -1,0 +1,28 @@
+@align(3)
+BadPower: struct { value: u8 }
+
+@align(32)
+TooWide: struct { value: u8 }
+
+Natural: struct {
+    @align(1)
+    value: u32,
+}
+
+@packed
+ByValue: struct { value: u32 }
+
+FieldAlignedByValue: struct {
+    @align(8)
+    value: u32,
+}
+
+extern "c" {
+    bad_parameter(value: ByValue)
+    bad_return(): ByValue
+    bad_field_aligned(value: FieldAlignedByValue)
+}
+
+main(): int {
+    return 0
+}

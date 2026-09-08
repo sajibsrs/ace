@@ -1,0 +1,57 @@
+FOUR: const usize = 4
+
+@packed
+Packed: struct { tag: u8, value: u32 }
+
+@packed
+Mixed: struct {
+    tag: u8,
+
+    @align(FOUR)
+    value: u32,
+    tail: u16,
+}
+
+@align(8)
+Raised: struct { byte: u8 }
+
+AlignedField: struct {
+    lead: u8,
+
+    @align(8)
+    middle: u8,
+    tail: u8,
+}
+
+@packed
+Inner: struct { tag: u8, value: u32 }
+
+@packed
+Outer: struct { lead: u8, inner: Inner, tail: u16 }
+
+extern "c" {
+    accept_packed(value: *Packed)
+}
+
+static_assert(sizeof(Packed) == 5)
+static_assert(alignof(Packed) == 1)
+static_assert(offsetof(Packed, value) == 1)
+static_assert(sizeof(Mixed) == 12)
+static_assert(alignof(Mixed) == 4)
+static_assert(offsetof(Mixed, value) == 4)
+static_assert(offsetof(Mixed, tail) == 8)
+static_assert(sizeof(Raised) == 8)
+static_assert(alignof(Raised) == 8)
+static_assert(offsetof(AlignedField, middle) == 8)
+static_assert(offsetof(AlignedField, tail) == 9)
+static_assert(sizeof(AlignedField) == 16)
+static_assert(sizeof(Inner) == 5)
+static_assert(offsetof(Inner, value) == 1)
+static_assert(offsetof(Outer, inner.value) == 2)
+static_assert(offsetof(Outer, tail) == 6)
+static_assert(sizeof(Outer) == 8)
+static_assert(sizeof([2]Outer) == 16)
+
+main(): int {
+    return 0
+}

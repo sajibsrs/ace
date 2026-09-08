@@ -51,6 +51,16 @@ static int is_float(SType* t) {
 static int is_num(SType* t) { return is_int(t) || is_float(t); }
 static int is_bool(SType* t) { return t->kind == SK_PRIM && t->prim == P_BOOL; }
 
+static int is_volatile_scalar(SType* t) {
+    if (!t) return 0;
+    if (t->kind == SK_DISTINCT) return is_volatile_scalar(t->base);
+    if (t->kind == SK_PTR) return 1;
+    if (t->kind == SK_ENUM) return t->decl && t->decl->a;
+    if (t->kind != SK_PRIM) return 0;
+    return (t->prim >= P_I8 && t->prim <= P_U64) ||
+           t->prim == P_F32 || t->prim == P_F64 || t->prim == P_USIZE;
+}
+
 static const char* type_name(SType* t) {
     /* slice/array names render their element type: diagnostics must name the
        exact mismatched type, not a placeholder. A small ring of static
@@ -144,10 +154,15 @@ static int layout(SType* t) {
                 t->calc = 0; t->size = t->align = 1; return 1;
             }
             if (!layout(t->fields[i].t)) { t->calc = 0; return 0; }
-            if (maxa < t->fields[i].t->align) maxa = t->fields[i].t->align;
-            off = align_to(off, t->fields[i].t->align);
+            uint32_t a = t->is_packed ? 1 : t->fields[i].t->align;
+            if (t->fields[i].requested_align) a = t->fields[i].requested_align;
+            t->fields[i].effective_align = a;
+            if (maxa < a) maxa = a;
+            off = align_to(off, a);
+            t->fields[i].offset = off;
             off += t->fields[i].t->size;
         }
+        if (t->requested_align > maxa) maxa = t->requested_align;
         t->align = maxa;
         t->size = align_to(off, maxa);
         t->calc = 0;
@@ -1032,6 +1047,7 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
         SType* tu = st_new(SK_TUPLE);
         tu->nfields = t->nkids;
         tu->fields = (SField*)arena_alloc((size_t)(t->nkids ? t->nkids : 1) * sizeof(SField));
+        memset(tu->fields, 0, (size_t)(t->nkids ? t->nkids : 1) * sizeof(SField));
         for (int i = 0; i < t->nkids; i++) {
             tu->fields[i].name = NULL;
             tu->fields[i].t = build_type_ctx(k, t->kids[i], 0);
@@ -1121,7 +1137,15 @@ static const char* method_key(Node* owner, const char* name, uint32_t len,
  * carries the in-progress nominal structs: a repeat hit is a cycle, which can
  * only arise through a pointer, so it is compatible and recursion terminates.
  */
-enum { CABI_DIRECT, CABI_FIELD, CABI_POINTEE };
+enum { CABI_DIRECT, CABI_FIELD, CABI_POINTEE, CABI_POINTEE_FIELD };
+
+static int has_special_struct_layout(SType* t) {
+    if (!t || t->kind != SK_STRUCT) return 0;
+    if (t->is_packed || t->requested_align) return 1;
+    for (int i = 0; i < t->nfields; i++)
+        if (t->fields[i].requested_align) return 1;
+    return 0;
+}
 
 static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
     if (!t) return 1; // no-value shape: legal only as a return
@@ -1148,13 +1172,18 @@ static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
         return pos != CABI_DIRECT &&
                is_c_abi_type(t->base, pos, stack, nstack);
     case SK_STRUCT: {
+        if (has_special_struct_layout(t) &&
+            pos != CABI_POINTEE && pos != CABI_POINTEE_FIELD)
+            return 0; // special-layout aggregates are pointer-only initially
         if (t->nargs || (t->decl && t->decl->c)) return 0; // generic shapes
         for (int i = 0; i < nstack; i++)
             if (stack[i] == t) return 1; // cycle through a pointer
         if (nstack >= 512) return 0;
         stack[nstack] = t;
+        int field_pos = pos == CABI_POINTEE || pos == CABI_POINTEE_FIELD
+            ? CABI_POINTEE_FIELD : CABI_FIELD;
         for (int i = 0; i < t->nfields; i++)
-            if (!is_c_abi_type(t->fields[i].t, CABI_FIELD, stack, nstack + 1))
+            if (!is_c_abi_type(t->fields[i].t, field_pos, stack, nstack + 1))
                 return 0;
         return 1;
     }
@@ -1985,6 +2014,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         SType* tu = st_new(SK_TUPLE);
         tu->nfields = e->nkids;
         tu->fields = (SField*)arena_alloc((size_t)(e->nkids ? e->nkids : 1) * sizeof(SField));
+        memset(tu->fields, 0, (size_t)(e->nkids ? e->nkids : 1) * sizeof(SField));
         for (int i = 0; i < e->nkids; i++) {
             tu->fields[i].name = NULL;
             tu->fields[i].t = expr_type(k, e->kids[i]);
@@ -2001,6 +2031,14 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             return p;
         }
         if (e->op == T_TILDE) return check_lvalue(k, e, 0);
+        if (e->op == T_VOLATILE) {
+            SType* t = check_lvalue(k, e->a, 0);
+            if (t->kind != SK_ERR && !is_volatile_scalar(t))
+                ck_err(k, e,
+                       "volatile access requires an eligible scalar place, got %s",
+                       type_name(t));
+            return t;
+        }
         SType* t = expr_type(k, e->a);
         if (t->kind == SK_ERR) return t;
         if (t == T_UT_INT) return t;
@@ -3273,21 +3311,19 @@ static SType* check_call(Ck* k, Node* call) {
                         ck_err(k, parts[pi], "offsetof field paths traverse inline structs only");
                         return T_ERR;
                     }
-                    uint32_t off = 0; int found = -1;
+                    int found = -1;
                     for (int fi = 0; fi < t->nfields; fi++) {
-                        off = align_to(off, t->fields[fi].t->align);
                         if (strlen(t->fields[fi].name) == parts[pi]->len &&
                             memcmp(t->fields[fi].name, parts[pi]->str, parts[pi]->len) == 0) {
                             found = fi; break;
                         }
-                        off += t->fields[fi].t->size;
                     }
                     if (found < 0) {
                         ck_err(k, parts[pi], "type %s has no field '%.*s'", type_name(t),
                                (int)parts[pi]->len, parts[pi]->str);
                         return T_ERR;
                     }
-                    total += off; t = t->fields[found].t;
+                    total += t->fields[found].offset; t = t->fields[found].t;
                 }
                 call->ival = total;
                 return st_prim(P_USIZE);
@@ -4092,6 +4128,10 @@ static void check_stmt(Ck* k, Node* s) {
         }
         SType* t = check_lvalue(k, s->kids[0], 1);
         if (t->kind == SK_ERR) return;
+        if ((s->flags & F_VOLATILE) && !is_volatile_scalar(t))
+            ck_err(k, s,
+                   "volatile access requires an eligible scalar place, got %s",
+                   type_name(t));
         Node* rhs = s->a;
         if (rhs->kind == N_STRUCTLIT && !rhs->a && t->kind == SK_STRUCT) {
             check_structlit(k, rhs, t);
@@ -5088,6 +5128,23 @@ static void check_func_body(Ck* k, Node* f) {
     k->curfn = saved_fn;
 }
 
+static uint32_t checked_layout_align(Ck* k, Node* expr, const char* subject) {
+    if (!expr) return 0;
+    coerce(k, expr, st_prim(P_USIZE));
+    int64_t value;
+    if (!ut_const(expr, &value)) {
+        ck_err(k, expr, "%s @align value must be a compile-time usize expression", subject);
+        return 0;
+    }
+    if (value <= 0 || value > 16 || ((uint64_t)value & ((uint64_t)value - 1)) != 0) {
+        ck_err(k, expr,
+               "%s @align value must be a positive power of two no greater than 16",
+               subject);
+        return 0;
+    }
+    return (uint32_t)value;
+}
+
 static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
     k->type_build_depth++;
     t->kind = SK_STRUCT;
@@ -5096,12 +5153,25 @@ static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
     t->size = t->align = 0;
     t->calc = 0;
     t->invalid_layout = 0;
+    t->is_packed = (decl->flags & F_PACKED) != 0;
+    t->requested_align = 0;
     t->building = 1;
     t->nfields = decl->nkids;
     t->fields = (SField*)arena_alloc((size_t)(decl->nkids ? decl->nkids : 1) * sizeof(SField));
+    memset(t->fields, 0, (size_t)(decl->nkids ? decl->nkids : 1) * sizeof(SField));
     for (int i = 0; i < decl->nkids; i++) {
         t->fields[i].name = decl->kids[i]->str;
         t->fields[i].t = build_type_ctx(k, decl->kids[i]->a, 2);
+        t->fields[i].requested_align = checked_layout_align(
+            k, decl->kids[i]->b, "field");
+        if (t->fields[i].requested_align && !t->is_packed &&
+            layout(t->fields[i].t) &&
+            t->fields[i].requested_align < t->fields[i].t->align) {
+            ck_err(k, decl->kids[i]->b,
+                   "field @align(%u) cannot reduce natural alignment %u outside a packed struct",
+                   t->fields[i].requested_align, t->fields[i].t->align);
+            t->fields[i].requested_align = t->fields[i].t->align;
+        }
         if ((decl->kids[i]->flags & F_EMBED) &&
             t->fields[i].t->kind != SK_STRUCT &&
             t->fields[i].t->kind != SK_ERR)
@@ -5113,6 +5183,19 @@ static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
             if (strcmp(t->fields[i].name, t->fields[j].name) == 0)
                 ck_err(k, decl, "duplicate field '%s' in struct %s",
                        t->fields[i].name, decl->str);
+    uint32_t base_align = 1;
+    for (int i = 0; i < t->nfields; i++) {
+        uint32_t a = t->is_packed ? 1 : sema_align(t->fields[i].t);
+        if (t->fields[i].requested_align) a = t->fields[i].requested_align;
+        if (base_align < a) base_align = a;
+    }
+    t->requested_align = checked_layout_align(k, decl->b, "struct");
+    if (t->requested_align && t->requested_align < base_align) {
+        ck_err(k, decl->b,
+               "struct @align(%u) cannot reduce computed alignment %u",
+               t->requested_align, base_align);
+        t->requested_align = base_align;
+    }
     t->building = 0;
     if (!layout(t)) {
         if (k->type_build_depth == 1)
@@ -5140,6 +5223,7 @@ static SType* fill_union_type(Ck* k, Node* decl, SType* t) {
     t->building = 1;
     t->nfields = decl->nkids;
     t->fields = (SField*)arena_alloc((size_t)(decl->nkids ? decl->nkids : 1) * sizeof(SField));
+    memset(t->fields, 0, (size_t)(decl->nkids ? decl->nkids : 1) * sizeof(SField));
     for (int i = 0; i < decl->nkids; i++) {
         t->fields[i].name = decl->kids[i]->str;
         t->fields[i].t = decl->kids[i]->a

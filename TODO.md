@@ -34,17 +34,6 @@ blockers for the current sequential core.
   aggregates, indirect returns, register exhaustion, and explicit generic
   instances. Treat failures as implementation defects, not new semantics.
 
-### Representation and layout controls
-
-- **`packed` / `align` attributes** [queued] — required for exact wire, hardware,
-  and C-compatible aggregate layouts.
-- **`volatile` access** [queued] — required for MMIO and other storage whose
-  reads and writes are externally observable; keep its semantics distinct from
-  aggregate layout attributes.
-
-### Compile-time layout introspection
-
-
 ### Other compile-time machine facilities
 
 - **Source-location builtins** (`@file`/`@line`-class) [new] — bounded context

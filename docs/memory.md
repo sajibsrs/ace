@@ -32,6 +32,76 @@ function scope, emits no code, and rejects false or non-constant conditions:
 static_assert(offsetof(Packet, header.length) == 8)
 ```
 
+## Explicit aggregate layout
+
+Struct fields normally retain declaration order with natural alignment and
+padding. `@packed` changes each unannotated field's effective alignment to one;
+`@align(N)` raises the alignment of a struct or one field. Attributes occupy
+their own lines:
+
+```ace
+@packed
+Packet: struct {
+    kind: u8,
+
+    @align(4)
+    length: u32,
+    tail: u16,
+}
+
+static_assert(offsetof(Packet, length) == 4)
+static_assert(offsetof(Packet, tail) == 8)
+static_assert(sizeof(Packet) == 12)
+static_assert(alignof(Packet) == 4)
+```
+
+Outside a packed struct, field alignment cannot be reduced below the field
+type's natural alignment. Within a packed struct, an explicit field alignment
+raises only that field's packed baseline; the next unannotated field still has
+alignment one. A struct-level alignment cannot reduce the alignment computed
+from its fields. Alignment expressions are compile-time `usize` values and the
+current target accepts positive powers of two through 16.
+
+Nested values keep their internal layouts. Packing changes where a nested value
+starts, not the offsets inside it. Struct size includes any trailing padding
+needed for its alignment and therefore supplies the correct stride in arrays.
+Use explicit byte-array fields for reserved bytes. Layout attributes do not
+specify byte order, bit fields, access observability, or synchronization.
+
+Packed and explicitly aligned structs may cross a C boundary behind a pointer
+when their complete shape is otherwise C-compatible and matches the external
+declaration. Passing or returning such a struct directly is currently rejected
+until its target-specific by-value ABI has been separately verified.
+
+## Volatile access
+
+`volatile` marks one access, not a variable or type:
+
+```ace
+status: u32 = volatile device.status
+volatile device.control = command
+volatile ~register_pointer = value
+```
+
+The complete addressing expression and, for a write, the assigned expression
+are each evaluated once. The final load or store occurs exactly once at the
+width of its scalar type. A volatile `u8` packed field therefore performs one
+byte access; the compiler does not load a containing word and mask it. Packing
+and alignment affect the address but never the access width.
+
+The initial eligible types are integers, floating-point values, pointers,
+explicitly backed enums, and distinct forms of those types. Complete arrays,
+structs, tuples, tagged unions, default enums, slices, strings, contracts,
+function values, `Error`, and `typeid` are not volatile-access shapes. A tagged
+union's switch binder remains an ordinary local payload copy rather than an
+addressable view into the union.
+
+Ordinary permissions still apply: `volatile` cannot write through a read-only
+pointer or view. It guarantees an externally observable access but provides no
+atomicity, thread synchronization, memory barrier, or hardware-specific
+ordering. The programmer must also use an address and alignment accepted by the
+target device.
+
 The intrinsic `len(sequence)` belongs only to built-in sequences:
 
 - `len(array)` for `[N]T` is the constant element count `N`.

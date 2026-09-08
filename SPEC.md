@@ -81,6 +81,35 @@ Carved (memory representation):
 20. A string literal resides in static read-only storage holding exactly its written bytes — no appended NUL, nothing hidden. The empty literal `""` is a valid non-null string (byte pointer, count 0); only the all-bits-zero string is `null`. `mem.equal("", zero_string)` is true by content, while `"" == null` is false because nullness tests the complete descriptor (Values & Passing #11).
 21. An array `[N]T` is `N` contiguous elements in index order with no metadata and no inter-element padding: `sizeof([N]T)` is `N * sizeof(T)`, and array alignment is the element's alignment. Padding and byte order inside one element are that element type's own platform facts.
 
+Carved (volatile access):
+
+- `volatile place` performs one volatile read and `volatile place = value`
+  performs one volatile write. `volatile` marks an access, never storage or a
+  type. The final addressable place must hold an integer, floating value,
+  pointer, explicitly backed enum, or distinct form of an eligible type.
+  Complete arrays, structs, tuples, tagged unions, default enums, slices,
+  strings, contracts, function values, `Error`, and `typeid` are excluded.
+- The complete addressing expression is evaluated exactly once under ordinary
+  evaluation-order rules. A store retains ordinary assignment order and
+  evaluates both address and value once. Ordinary permissions remain; writing
+  through a pointer or view requires existing `mut` permission.
+- An access transfers exactly `sizeof(T)` bytes for the final scalar `T`.
+  Containment, field offset, `@packed`, and `@align` never widen, narrow, split,
+  or merge it. A target unable to perform one access at that width and effective
+  alignment rejects the program rather than synthesizing narrower accesses.
+- Volatile accesses cannot be removed, combined, duplicated, cached, or moved
+  across another volatile access. Volatile provides no atomicity,
+  synchronization, memory barrier, or hardware-specific ordering. Tagged-union
+  switch binders remain local payload copies, not addressable union views, and
+  therefore introduce no volatile payload access.
+
+Rationale: access-site marking exposes each observable operation without a
+contagious qualifier system and remains independent of byte layout.
+
+Implementation guidance: ordinary and volatile fields share one typed-place
+path which computes the address once, takes width only from the final scalar
+type, and selects volatile behavior at the exact-width load/store primitive.
+
 Carved (typed allocation):
 22. The `mem` module exports three explicitly instantiated generic overloads beside the raw byte forms: `mem.alloc[T](count: usize): mut []T`, `mem.realloc[T](data: []T, new_count: usize): mut []T`, and `mem.release[T](mut data: []T)`. Generic instantiation stays explicit (Generics #5): deallocation is spelled `mem.release[T](mut data)`, never inferred from the argument. As in the raw forms, allocation and successful reallocation originate writable-content proof in their results, while reallocation and release inputs require authoritative descriptors but not element-write permission. The raw and typed forms remain one overload set per name.
 23. `mem.alloc[T](count)` requests storage for exactly `count` contiguous `T` elements. The byte size is `count * sizeof(T)`, computed safely before the platform allocator is called; the alignment is selected automatically from `T` and the caller supplies neither. The returned `mut []T` is the allocation pointer plus `count` as its element length — no capacity, allocator value, ownership marker, header, or other metadata (Memory #18). Storage uses the target's native representation, alignment, and byte order: typed native memory, not serialization.
@@ -257,6 +286,36 @@ overload signature. Consequently, overloads cannot distinguish `float` from
 8. A pointer breaks a layout cycle because its size and alignment do not depend on its pointee. Self-pointers are valid, as are mutually recursive pointer-linked types: `Node: struct { next: *Node }` and `A: struct { b: *B }` followed by `B: struct { a: *A }`. Pointer mutability changes write permission, not this layout rule.
 9. Struct fields retain declaration order with natural alignment and padding; the
    compiler does not reorder them.
+
+Carved (explicit struct layout):
+
+- `@packed` and `@align(N)` occupy their own lines before a struct declaration;
+  `@align(N)` may likewise precede a field. Each occurs at most once on its
+  subject. With `@when`, order is `@when`, `@packed`, then `@align`. `N` is a
+  compile-time `usize` expression and, initially, a positive power of two no
+  greater than 16; larger alignment remains additive with over-aligned storage.
+- An ordinary field's effective alignment is its type's natural alignment, and
+  field `@align(N)` may only increase it. An ordinary struct's alignment is the
+  maximum effective field alignment, raised by its own `@align(N)`; the
+  struct-level attribute may not reduce that result.
+- In an `@packed` struct, each unannotated field has effective alignment one. A
+  field `@align(N)` raises only that field's packed baseline to exactly `N`, even
+  below its type's natural alignment. Following unannotated fields retain
+  alignment one. The struct alignment is the maximum effective field alignment,
+  raised by its own `@align(N)`.
+- Each field begins at the first offset satisfying its effective alignment and
+  struct size is rounded up to struct alignment. Nested values retain their
+  internal layouts; packing changes placement, not contents. Explicit byte
+  arrays represent reserved or unnamed bytes. `sizeof`, `alignof`, and
+  `offsetof` expose the result.
+- Packed and explicitly aligned structs may be C-compatible behind pointers
+  when all recursive rules hold and the layout matches the external definition.
+  They are rejected as direct `extern`/`export` parameters and returns pending
+  by-value ABI verification. Layout attributes do not determine byte order, bit
+  fields, observability, or synchronization.
+
+Rationale: explicit controls complete machine-true wire, hardware, and C
+representations without changing ordinary struct layout.
 10. Enums default to `i32` storage and declaration-order discriminants beginning
     at zero. `Name: enum u8 { none, read = 4, write }` explicitly selects one of
     `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, or `u64` as the backing type;

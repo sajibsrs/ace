@@ -20,7 +20,13 @@ enum {
 };
 
 typedef struct SType SType;
-typedef struct { const char* name; SType* t; } SField;
+typedef struct {
+    const char* name;
+    SType* t;
+    uint32_t requested_align; // zero means contextual default
+    uint32_t effective_align;
+    uint32_t offset;
+} SField;
 
 struct SType {
     uint8_t     kind;
@@ -29,7 +35,9 @@ struct SType {
     uint8_t     calc; // layout in progress (cycle guard)
     uint8_t     building; // aggregate fields are currently being constructed
     uint8_t     invalid_layout;
+    uint8_t     is_packed;
     uint32_t    size, align;
+    uint32_t    requested_align; // explicit aggregate @align, zero when absent
     const char* name;
     SType*      base;
     uint64_t    count;

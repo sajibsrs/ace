@@ -14,6 +14,7 @@ keyword       := "import" | "from" | "pub" | "mut" | "const" | "noalias" | "if" 
                 | "for" | "in" | "switch" | "return" | "break" | "continue" | "defer"
                 | "asm" | "extern" | "export" | "contract" | "struct" | "embed" | "signs"
                 | "specialized" | "intrinsic" | "distinct" | "type" | "enum" | "union" | "null" | "true" | "false"
+                | "volatile"
 
 ident         := letter ("letter" | digit | "_")*        [P: exact ident charset]
 literal       := int_lit | float_lit | string_lit | char_lit | "null" | "true" | "false"
@@ -27,7 +28,7 @@ char_lit      := "'" (byte – "'" | '\' escape) "'"       // exactly one byte
 
 ```ebnf
 file          := attributed_decl*
-attributed_decl := [when_attr] (import_decl | top_decl)
+attributed_decl := [when_attr] layout_attr* (import_decl | top_decl)
 
 when_attr     := "@" contextual_when "(" when_expr ")" newline*
 contextual_when := ident                              // exact text "when"
@@ -42,6 +43,11 @@ contextual_or := ident                                // exact text "or"
 contextual_and := ident                               // exact text "and"
 contextual_not := ident                               // exact text "not"
 contextual_target := ident                            // exact text "target"
+layout_attr   := packed_attr | align_attr
+packed_attr   := "@" contextual_packed newline*
+align_attr    := "@" contextual_align "(" expr ")" newline*
+contextual_packed := ident                            // exact text "packed"
+contextual_align := ident                             // exact text "align"
 
 import_decl   := module_import | selective_import
 module_import := "import" ident [":" (ident | import_path | internal_import)]
@@ -80,7 +86,7 @@ block         := "{" stmt* "}"
 
 struct_decl   := ident [type_params] ":" "struct" "{" field_list "}"
 field_list    := field ("," field)*
-field         := ["embed"] ident ":" type
+field         := align_attr* ["embed"] ident ":" type
 
 contract_decl := ident [type_params] ":" "contract" "{" method_decl* "}"
 method_decl   := ["mut"] ident "(" [params] ")" [ret_clause]  // receiver implied
@@ -120,8 +126,10 @@ static_assert_stmt := "static_assert" "(" expr ")"
 
 assignment    := target ("," target)* "=" expr_list       // n, err = read()
                 | target compound_op expr                 // x += y (pure sugar)
+                | "volatile" target "=" expr              // exactly one final scalar store
 compound_op   := "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>="
 target        := ident postfix_part*                      // lvalue: ident, .f, [i], ~x
+lvalue        := target | "~" unary                       // semantic analysis requires addressable storage
 expr_stmt     := expr
 
 if_stmt       := "if" expr block ["else" (if_stmt | block)]
@@ -173,10 +181,12 @@ shift_expr    := add_expr (("<<" | ">>") add_expr)*
 add_expr      := mul_expr (("+" | "-") mul_expr)*
 mul_expr      := unary (("*" | "/" | "%") unary)*
 
-unary         := ("!" | "~" | "-") unary | "&" lvalue | "mut" "&" lvalue | "mut" postfix | postfix
+unary         := ("!" | "~" | "-") unary | "&" lvalue | "mut" "&" lvalue | "mut" postfix
+               | "volatile" lvalue | postfix
 //  "!"  logical/bitwise NOT (dual role)     "~"  dereference
 //  "&"  read-only address-of                "mut &" writable address-of
 //  "mut p" writable-view establishment (slicing operands only — Note 25)
+//  "volatile place" exactly one final scalar load
 //  both address forms and establishment require writable lvalues   unary "-" negation
 
 postfix       := primary postfix_part*

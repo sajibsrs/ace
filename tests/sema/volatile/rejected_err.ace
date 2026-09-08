@@ -1,0 +1,19 @@
+Default: enum { zero, one }
+Pair: struct { left: u32, right: u32 }
+
+main(): int {
+    pair: Pair = Pair { left: 1, right: 2 }
+    default: Default = Default.zero
+    bytes: [2]u8 = [u8(1), u8(2)]
+    flag: bool = false
+    value: u32 = 0
+    readonly: *u32 = &value
+
+    volatile pair
+    volatile default
+    volatile bytes
+    volatile flag
+    volatile pair = pair
+    volatile ~readonly = 1
+    return 0
+}

@@ -675,8 +675,6 @@ with no allocation, object metadata, subtype relation, or runtime search.
 ## Current limits
 
 - Type inference and implicit generic instantiation are not implemented.
-- Packed structs, explicit alignment attributes, and volatile access are not
-  implemented.
 - Pointer arithmetic is not implemented.
 - Generic aliases are not implemented by the current compiler; generic structs
   are supported.

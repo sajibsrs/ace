@@ -13,8 +13,9 @@
 //               d = owner type for methods; F_PUB/F_EXPO/F_METHOD/F_MUT;
 //               F_SPECIALIZED/F_INTRINSIC mark bodyless declarations
 //   N_PARAM     str = name; a = type; F_MUT/F_NOALIAS (also used as var binder)
-//   N_STRUCT    str = name; kids = N_FIELD; c = N_TPARAMS; F_PUB
-//   N_FIELD     str = name; a = type
+//   N_STRUCT    str = name; kids = N_FIELD; b = optional @align expression;
+//               c = N_TPARAMS; F_PUB/F_PACKED
+//   N_FIELD     str = name; a = type; b = optional @align expression
 //   N_UNION     str = name; kids = N_VARIANT; c = N_TPARAMS; F_PUB
 //   N_VARIANT   str = name; a = payload type or NULL (payloadless variant)
 //   N_CONTRACT str = name; kids = N_METHOD; c = N_TPARAMS; F_PUB
@@ -29,7 +30,8 @@
 //   N_EXTERNFN  str = name; kids = params; a = ret; F_EXPO/F_VARARGS
 //   N_BLOCK     kids = statements
 //   N_EXPRSTMT  a = expr
-//   N_ASSIGN    kids = targets; a = rhs; op = T_ASSIGN or compound token
+//   N_ASSIGN    kids = targets; a = rhs; op = T_ASSIGN or compound token;
+//               F_VOLATILE marks the access-site volatile store
 //   N_IF        a = cond; b = then-block; c = else (N_BLOCK or N_IF)
 //   N_FOR       F_FORGEN (general head): a = init stmt (N_VAR/N_ASSIGN/
 //               N_EXPRSTMT or NULL), b = cond expr or NULL, c = post stmt
@@ -548,6 +550,13 @@ static Node* expr_unary(P* p, int ctx) {
         u->op = (uint8_t)T_AMP;
         p->i++;
         u->a = expr_postfix(p, ctx);
+        return u;
+    }
+    if (at(p, T_VOLATILE)) {
+        Node* u = nd(p, N_UNARY);
+        u->op = (uint8_t)T_VOLATILE;
+        p->i++;
+        u->a = expr_unary(p, ctx);
         return u;
     }
     return expr_postfix(p, ctx);
@@ -1390,6 +1399,12 @@ static Node* parse_expr_stmt(P* p, int ctx) {
     if (is_assign_op(tk(p)->kind)) { // single-target assignment (incl. compound)
         Node* a = nd(p, N_ASSIGN);
         a->op = (uint8_t)tk(p)->kind;
+        if (e->kind == N_UNARY && e->op == T_VOLATILE) {
+            if (a->op != T_ASSIGN)
+                perr(p, "volatile access supports only simple '=' assignment");
+            a->flags |= F_VOLATILE;
+            e = e->a;
+        }
         p->i++;
         NV targets = {0};
         nv_push(p, &targets, e);
@@ -1463,6 +1478,27 @@ static Node* parse_ret(P* p) {
         return t;
     }
     return parse_type(p);
+}
+
+static int named_attr_at(P* p, const char* name) {
+    size_t n = strlen(name);
+    return at(p, T_AT) && kth(p, 1) == T_IDENT &&
+           tk(p)[1].len == n && memcmp(tk(p)[1].str, name, n) == 0;
+}
+
+/* Parse @align(expr), including its required terminating physical line. */
+static Node* parse_align_attr(P* p) {
+    expect(p, T_AT, "'@' before align");
+    if (!ident_at(p, "align")) perr(p, "expected @align attribute");
+    p->i++;
+    expect(p, T_LPAREN, "'(' after @align");
+    Node* value = expr(p, 0);
+    expect(p, T_RPAREN, "')' after @align expression");
+    int line = p->toks[p->i - 1].line;
+    skipnl(p);
+    if (tk(p)->line == line)
+        perr(p, "@align must occupy its own line before a declaration or field");
+    return value;
 }
 
 // If toks[i] starts a type-parameter list `['T,' U']' (idents only), consume it.
@@ -1611,12 +1647,21 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
         NV fields = {0};
         if (!at(p, T_RBRACE)) {
             for (;;) {
+                Node* field_align = NULL;
+                if (named_attr_at(p, "align")) {
+                    field_align = parse_align_attr(p);
+                    if (named_attr_at(p, "align"))
+                        perr(p, "a field accepts at most one @align attribute");
+                } else if (at(p, T_AT)) {
+                    perr(p, "only @align may modify a struct field");
+                }
                 int embed = ate(p, T_EMBED);
                 Token* fname = expect(p, T_IDENT, "field name");
                 Node* fl = nd_tok(p, N_FIELD, fname);
                 fl->str = fname->str;
                 fl->len = fname->len;
                 if (embed) fl->flags |= F_EMBED;
+                fl->b = field_align;
                 expect(p, T_COLON, "':' after field name");
                 fl->a = parse_type(p);
                 nv_push(p, &fields, fl);
@@ -1977,9 +2022,32 @@ static int parse_when(P* p) {
     skipnl(p);
     if (tk(p)->line == attribute_line)
         perr(p, "@when must occupy its own line before a declaration");
-    if (at(p, T_AT)) perr(p, "a declaration accepts only one @when attribute");
     if (at(p, T_EOF)) perr(p, "@when must be followed by a top-level declaration");
     return active;
+}
+
+static void parse_layout_attrs(P* p, int* packed, Node** align) {
+    while (at(p, T_AT)) {
+        if (named_attr_at(p, "packed")) {
+            if (*packed) perr(p, "a declaration accepts at most one @packed attribute");
+            if (*align) perr(p, "@packed must precede @align");
+            p->i += 2;
+            int line = p->toks[p->i - 1].line;
+            skipnl(p);
+            if (tk(p)->line == line)
+                perr(p, "@packed must occupy its own line before a declaration");
+            *packed = 1;
+            continue;
+        }
+        if (named_attr_at(p, "align")) {
+            if (*align) perr(p, "a declaration accepts at most one @align attribute");
+            *align = parse_align_attr(p);
+            continue;
+        }
+        if (named_attr_at(p, "when"))
+            perr(p, "@when must precede layout attributes");
+        perr(p, "unknown top-level attribute");
+    }
 }
 
 static Node* parse_top(P* p) {
@@ -2051,8 +2119,13 @@ Node* parse(Token* toks, size_t ntok, Diag* d, const char* target) {
     skipnl(&p);
     int saw_declaration = 0;
     while (!at(&p, T_EOF)) {
-        int active = at(&p, T_AT) ? parse_when(&p) : 1;
+        int active = 1, packed = 0;
+        Node* explicit_align = NULL;
+        if (named_attr_at(&p, "when")) active = parse_when(&p);
+        parse_layout_attrs(&p, &packed, &explicit_align);
         if (at(&p, T_IMPORT)) {
+            if (packed || explicit_align)
+                perr(&p, "layout attributes apply only to struct declarations");
             Node* imp = parse_import(&p);
             if (active) {
                 if (saw_declaration)
@@ -2061,6 +2134,12 @@ Node* parse(Token* toks, size_t ntok, Diag* d, const char* target) {
             }
         } else {
             Node* decl = parse_top(&p);
+            if ((packed || explicit_align) && decl->kind != N_STRUCT)
+                perr(&p, "layout attributes apply only to struct declarations");
+            if (decl->kind == N_STRUCT) {
+                if (packed) decl->flags |= F_PACKED;
+                decl->b = explicit_align;
+            }
             if (!ate(&p, T_NL) && !at(&p, T_EOF))
                 perr(&p, "expected newline after declaration, got %s", gdesc(&p));
             if (active) {
@@ -2099,6 +2178,8 @@ static void pflags(Node* x) {
     if (x->flags & F_SPECIALIZED) printf(" specialized");
     if (x->flags & F_INTRINSIC) printf(" intrinsic");
     if (x->flags & F_ELIDED) printf(" elided");
+    if (x->flags & F_PACKED) printf(" packed");
+    if (x->flags & F_VOLATILE) printf(" volatile");
 }
 
 static void pnode(Node* x, int ind) {

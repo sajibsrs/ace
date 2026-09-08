@@ -487,6 +487,17 @@ static int scalar_bits(SType* t) {
 }
 
 static uint32_t field_off(SType* t, int want) {
+    int special = t->kind == SK_STRUCT && (t->is_packed || t->requested_align);
+    if (t->kind == SK_STRUCT && !special)
+        for (int i = 0; i < t->nfields; i++)
+            if (t->fields[i].requested_align) {
+                special = 1;
+                break;
+            }
+    if (special) {
+        (void)ty_size(t); // populate special-layout field offsets on demand
+        return want >= 0 && want < t->nfields ? t->fields[want].offset : 0;
+    }
     uint32_t off = 0;
     for (int i = 0; i <= want && i < t->nfields; i++) {
         uint32_t a = ty_align(t->fields[i].t);
@@ -535,13 +546,9 @@ static int hfa_leaves(SType* t, uint32_t off, uint32_t* offs, uint8_t* dbl,
         return n;
     }
     case SK_STRUCT: case SK_TUPLE: {
-        uint32_t o = 0;
         for (int i = 0; i < t->nfields; i++) {
-            uint32_t a = ty_align(t->fields[i].t);
-            o = align_up(o, a);
-            n = hfa_leaves(t->fields[i].t, off + o, offs, dbl, n, max);
+            n = hfa_leaves(t->fields[i].t, off + field_off(t, i), offs, dbl, n, max);
             if (n < 0) return -1;
-            o += ty_size(t->fields[i].t);
         }
         return n;
     }
@@ -726,7 +733,7 @@ static Slot* slot_find(Em* e, Node* key) {
 }
 
 static uint32_t slot_alloc(Em* e, Node* key, uint32_t size, uint32_t align) {
-    if (align > 8) align = 8;
+    if (align > 16) align = 16;
     size = size ? size : 1;
     e->frame = align_up(e->frame + size, align);
     uint32_t off = e->frame;
@@ -867,12 +874,19 @@ static void ld_reg(Em* e, int rt, int base, uint32_t off, uint32_t w, int signex
     else
         b = w == 1 ? 0x39C00000u : w == 2 ? 0x79C00000u :
             w == 4 ? 0xB9400000u : 0xF8400000u;
-    if (w == 8 || off / w < 4096)
+    if (off % w == 0 && off / w < 4096)
         ins(e, b | ((off / w) << 10) | ((uint32_t)base << 5) |
                ((uint32_t)rt & 31u));
     else {
         load_imm(e, 1, 16, off);
-        ins(e, 0xF8606800u | (16u << 16) | ((uint32_t)base << 5) |
+        uint32_t rb;
+        if (!signext)
+            rb = w == 1 ? 0x38606800u : w == 2 ? 0x78606800u :
+                 w == 4 ? 0xB8606800u : 0xF8606800u;
+        else
+            rb = w == 1 ? 0x38E06800u : w == 2 ? 0x78E06800u :
+                 w == 4 ? 0xB8606800u : 0xF8606800u;
+        ins(e, rb | (16u << 16) | ((uint32_t)base << 5) |
                ((uint32_t)rt & 31u));
     }
 }
@@ -880,12 +894,14 @@ static void ld_reg(Em* e, int rt, int base, uint32_t off, uint32_t w, int signex
 static void st_reg(Em* e, int rt, int base, uint32_t off, uint32_t w) {
     uint32_t b = w == 1 ? 0x39000000u : w == 2 ? 0x79000000u :
                  w == 4 ? 0xB9000000u : 0xF9000000u;
-    if (w == 8 || off / w < 4096)
+    if (off % w == 0 && off / w < 4096)
         ins(e, b | ((off / w) << 10) | ((uint32_t)base << 5) |
                ((uint32_t)rt & 31u));
     else {
         load_imm(e, 1, 16, off);
-        ins(e, 0xF8206800u | (16u << 16) | ((uint32_t)base << 5) |
+        uint32_t rb = w == 1 ? 0x38206800u : w == 2 ? 0x78206800u :
+                      w == 4 ? 0xB8206800u : 0xF8206800u;
+        ins(e, rb | (16u << 16) | ((uint32_t)base << 5) |
                ((uint32_t)rt & 31u));
     }
 }
@@ -2484,8 +2500,12 @@ static int gen_addr(Em* e, Node* x) {
     case N_UNARY:
         if (x->op == T_AMP) return gen_addr(e, x->a);
         if (x->op == T_TILDE) { // ~p: the pointer value IS the address
-            int ta = gen_addr(e, x->a);
-            ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
+            EV pointer = gen_expr(e, x->a);
+            if (pointer.cls != CLS_INT) {
+                em_err(e, x, "dereference operand did not produce a pointer");
+                return tmp_int(e);
+            }
+            int ta = pointer.idx;
             emit_null_guard(e, xreg(ta));
             return ta;
         }
@@ -4067,6 +4087,19 @@ static EV gen_expr(Em* e, Node* x) {
     case N_UNARY:
         if (x->op == T_AMP)
             return (EV){ CLS_INT, gen_addr(e, x) };
+        if (x->op == T_VOLATILE) {
+            SType* t = lvalue_type(e, x->a);
+            int a = gen_addr(e, x->a);
+            if (!t || !is_scalar(t)) {
+                em_err(e, x, "volatile access needs a scalar place");
+                return (EV){ CLS_INT, a };
+            }
+            /* The direct emitter has no optimization pass: this exact-width
+               typed load is emitted once at the access site and cannot be
+               cached, widened, merged, or moved. */
+            EV v = load_scalar(e, xreg(a), 0, t);
+            return collapse(e, a, v);
+        }
         if (x->op == T_TILDE) {
             SType* t = lvalue_type(e, x);
             int a = gen_addr(e, x);
@@ -4717,7 +4750,12 @@ static void emit_stmt(Em* e, Node* s) {
             return;
         }
         EV v = gen_expr(e, s->a);
-        store_value(e, v, xreg(ta), 0, t);
+        if (s->flags & F_VOLATILE) {
+            /* Semantic checking admits only exact-width scalar stores here. */
+            store_scalar(e, v, xreg(ta), 0, t);
+        } else {
+            store_value(e, v, xreg(ta), 0, t);
+        }
         return;
     }
     case N_EXPRSTMT:
@@ -5670,7 +5708,7 @@ static int emit_union_global(Em* e, Node* n, Sym* vs, const char* nm, SType* t) 
         str_name_len = (uint32_t)strlen(str_name);
     }
 
-    uint32_t align = ty_align(t) > 8 ? 8 : ty_align(t);
+    uint32_t align = ty_align(t);
     Sec* d = (n->flags & F_CONST) ? &e->secs[SEC_CONST] : &e->secs[SEC_DATA];
     while (d->data.len % align) buf_put8(&d->data, 0);
     size_t start = d->data.len;
@@ -5742,7 +5780,7 @@ static void emit_global(Em* e, Node* n) {
     Sym* vs = node_sym(binder);
     if (!vs) return;
     SType* t = sema_build_type(binder->a);
-    uint32_t size = ty_size(t), align = ty_align(t) > 8 ? 8 : ty_align(t);
+    uint32_t size = ty_size(t), align = ty_align(t);
     char nm[512];
     snprintf(nm, sizeof nm, "__ace$g$%.*s", (int)binder->len, binder->str);
     if (!n->b) { // no initializer: zero-fill storage
@@ -6112,7 +6150,12 @@ static size_t write_object(Em* e, const char* path) {
 
     uint32_t segcmd = 72 + 80 * NSECS;
     uint32_t cmdend = 32 + segcmd + 24 + 24 + 80; // header + 4 load commands
-    uint32_t base = (cmdend + 7u) & ~7u;          // first section file offset
+    uint32_t max_section_align = 1;
+    for (int i = 0; i < NSECS; i++) {
+        uint32_t a = 1u << e->secs[i].align;
+        if (max_section_align < a) max_section_align = a;
+    }
+    uint32_t base = (cmdend + max_section_align - 1) & ~(max_section_align - 1);
 
     // Layout: addrs continuous from 0; file offsets track (bss takes no bytes).
     uint64_t addr = 0;
@@ -6489,11 +6532,11 @@ int emit_object(Node* file, Diag* d, const char* out_path,
                              .flags = S_ATTR_PURE_INSTRUCTIONS |
                                       S_ATTR_SOME_INSTRUCTIONS, .align = 2 },
         [SEC_CONST]      = { .sect = "__const",      .seg = "__DATA_CONST",
-                             .align = 3 },
+                             .align = 4 },
         [SEC_DATA]       = { .sect = "__data",       .seg = "__DATA",
-                             .align = 3 },
+                             .align = 4 },
         [SEC_BSS]        = { .sect = "__bss",        .seg = "__DATA",
-                             .flags = S_ZEROFILL, .align = 3 },
+                             .flags = S_ZEROFILL, .align = 4 },
         [SEC_DEBUG_ABBREV] = { .sect = "__debug_abbrev", .seg = "__DWARF",
                                .flags = S_ATTR_DEBUG },
         [SEC_DEBUG_INFO] = { .sect = "__debug_info", .seg = "__DWARF",

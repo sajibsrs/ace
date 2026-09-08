@@ -1,0 +1,24 @@
+Backed: enum u16 { zero, one }
+Word: distinct u32
+Device: struct { status: u8, control: u32 }
+
+main(): int {
+    device: Device = Device { status: 1, control: 2 }
+    volatile device.status = 7
+    status: u8 = volatile device.status
+
+    word: Word = Word(4)
+    volatile word = Word(9)
+
+    state: Backed = Backed.one
+    volatile state = Backed.zero
+
+    p: mut *u32 = mut &device.control
+    volatile ~p = 11
+    control: u32 = volatile ~p
+
+    if status != 7 || control != 11 || word != Word(9) || state != Backed.zero {
+        return 1
+    }
+    return 0
+}

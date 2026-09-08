@@ -67,6 +67,10 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Types and abstraction
 
+- Implemented `@packed` structs and compile-time `@align` on structs and fields,
+  with declaration-order effective alignment, exact stored field offsets,
+  layout introspection, 16-byte stack/static support, and pointer-only initial
+  C interoperability for special-layout aggregates.
 - Implemented structs, explicit one-level field embedding, type-owned methods,
   exact method overloads, contracts, canonical signings, explicit contract-value
   construction, and per-used-pair vtables. Promoted methods use fixed-offset
@@ -97,6 +101,10 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Memory
 
+- Implemented access-site volatile scalar reads and writes with once-only
+  address/value evaluation and one exact-width AArch64 access. Packed and
+  volatile fields share typed-place offsets and scalar load/store lowering;
+  volatility adds no permission, atomicity, synchronization, or barrier.
 - Implemented compile-time `alignof(T)` over the full type grammar, exposing the
   compiler's target-native required alignment as `usize` for raw allocation and
   layout checks.

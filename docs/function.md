@@ -284,7 +284,9 @@ Their parameter and return types are restricted to representations the compiler
 has verified: fixed-width integers, `int`, `uint`, `usize`, `f32`, `f64`,
 compatible pointers and distinct types, and structs composed recursively from
 those types. Arrays are allowed as struct fields or behind pointers, but not as
-direct parameters or returns.
+direct parameters or returns. Packed and explicitly aligned structs are
+initially C-compatible only behind pointers; their direct parameter and return
+classification remains rejected pending target ABI verification.
 
 ```ace
 Point: struct { x: f32, y: f32 }

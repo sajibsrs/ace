@@ -19,6 +19,7 @@ intrinsic-marker = line-final
 
 [attributes]
 top-level = own-line
+field = own-line
 
 [blank-lines]
 before-top-level-attribute = always

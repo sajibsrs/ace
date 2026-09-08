@@ -1,0 +1,3 @@
+@align(8)
+@packed
+Value: struct { byte: u8 }
