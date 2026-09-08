@@ -1,0 +1,13 @@
+/* A whole nested aggregate read requires every constant-index subobject. */
+
+Box[T]: struct { value: T }
+
+consume(values: [2][2]Box[i32]): i32 {
+    return values[0][0].value
+}
+
+main(): int {
+    values: [2][2]Box[i32]
+    values[0][0].value = 42
+    return int(consume(values))
+}

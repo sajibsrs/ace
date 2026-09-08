@@ -220,6 +220,31 @@ if ! printf '%s\n' "$string_view_errors" | grep -qF "cannot cast [2]u8 to string
     echo "FAIL: missing string view-conversion rejection diagnostic"
     fail=1
 fi
+aggregate_readonly=$("$ACE" tests/sema/sequences/aggregate_readonly_err.ace 2>&1)
+if ! printf '%s\n' "$aggregate_readonly" | grep -qF \
+    "cannot write through the read-only view []Point"; then
+    echo "FAIL: missing read-only aggregate-slice diagnostic"
+    fail=1
+fi
+aggregate_identity=$("$ACE" tests/sema/sequences/aggregate_identity_err.ace 2>&1)
+identity_mismatches=$(printf '%s\n' "$aggregate_identity" | grep -cF "type mismatch:")
+if [ "$identity_mismatches" -ne 2 ]; then
+    echo "FAIL: expected distinct and generic aggregate identity diagnostics"
+    fail=1
+fi
+nested_uninitialized=$("$ACE" \
+    tests/sema/uninitialized/nested_aggregate_array_err.ace 2>&1)
+if ! printf '%s\n' "$nested_uninitialized" | grep -qF \
+    "'values' was not fully initialized before use"; then
+    echo "FAIL: missing nested aggregate initialization diagnostic"
+    fail=1
+fi
+aggregate_bounds=$("$ACE" tests/sema/sequences/aggregate_bounds_err.ace 2>&1)
+if ! printf '%s\n' "$aggregate_bounds" | grep -qF \
+    "slice upper bound 3 exceeds source length 2"; then
+    echo "FAIL: missing constant aggregate-slice bounds diagnostic"
+    fail=1
+fi
 bounds_hi=$("$ACE" tests/sema/sequences/bounds_hi_err.ace 2>&1)
 if ! printf '%s\n' "$bounds_hi" | grep -qF "slice upper bound 6 exceeds source length 5"; then
     echo "FAIL: missing constant slice upper-bound diagnostic"
@@ -483,7 +508,8 @@ if ! "$ACE" --checked -o /tmp/ace_checked_bounds/proven_iteration \
     echo "FAIL: proven/iteration checked fixture failed"
     fail=1
 fi
-for f in array_negative array_equal slice_greater string_equal \
+for f in array_negative array_equal aggregate_array_equal \
+         aggregate_slice_greater slice_greater string_equal \
          mut_string_greater slice_lower slice_upper slice_order \
          slice_source_length; do
     if ! "$ACE" --checked -o "/tmp/ace_checked_bounds/$f" \

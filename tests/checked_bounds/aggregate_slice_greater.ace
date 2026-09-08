@@ -1,0 +1,11 @@
+/* A dynamic aggregate slice index beyond its length aborts in checked mode. */
+
+Box[T]: struct { value: T }
+
+read(values: []Box[i64], index: int): i64 { return values[index].value }
+
+main(): int {
+    values: [2]Box[i64] = [Box[i64] { value: 1 }, Box[i64] { value: 2 }]
+    view: []Box[i64] = values[0..2]
+    return int(read(view, 3))
+}

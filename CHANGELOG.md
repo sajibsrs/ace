@@ -50,6 +50,10 @@ current normative rules, and Git preserves patch-level detail.
   overload variations are duplicate declarations. Sequential value equality
   is rejected; byte content comparison is the explicit compiler-backed
   `mem.equal`.
+- Audited sequential/aggregate composition with positive and negative coverage
+  for nested arrays and slices of structs, enums, unions, distincts, and exact
+  generic instances across initialization, copying, mutation, calls, returns,
+  and checked bounds; the existing value and view model required no widening.
 - Implemented call-only, function-scope `defer`. Calls are captured at the
   statement according to the specified two-tier model and emitted in LIFO order
   at every function exit.

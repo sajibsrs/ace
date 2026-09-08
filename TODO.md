@@ -22,13 +22,6 @@ Finish the existing primitive, sequential, and aggregate model before adding
 new execution or library layers. These are narrow completion tasks, not a
 reopening of Ace's fixed explicit-type, copy, mutation, or allocation rules.
 
-### Sequential and tuple completeness
-
-- **Sequential/aggregate composition audit** [new] — verify nested arrays and
-  slices of structs, enums, unions, distincts, and explicit generic instances
-  across initialization, copying, mutation, parameters, returns, and checked
-  bounds. Add missing positive and negative coverage before widening the model.
-
 Read-only `string` → `[]u8`, wider array/string bridges, Unicode decoding, and
 owned growable sequences remain additive library or view conveniences; they are
 not blockers for the current sequential core.

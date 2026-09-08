@@ -1,0 +1,10 @@
+/* Constant bounds checking is unchanged for aggregate-sized elements. */
+
+Point: struct { x: i32, y: i32 }
+
+main(): int {
+    values: [2][2]Point = [[Point { x: 1, y: 2 }, Point { x: 3, y: 4 }],
+                           [Point { x: 5, y: 6 }, Point { x: 7, y: 8 }]]
+    row: []Point = values[0][0..3]
+    return int(row[0].x)
+}
