@@ -97,6 +97,14 @@ not blockers for the current sequential core.
 
 ## 2. Compiler and backend completion
 
+- **Canonical source formatter** [open] — deferred while language implementation
+  remains the priority. Resume from the Decision Queue's `ace fmt` carving: one
+  shared lexer scan and parser pass, a mode-gated lossless token/trivia stream
+  and separate lossless syntax tree, compact compiler tokens/AST, normative
+  `.acefmt` discovery, transactional rewrite/check/stdout modes, preserved
+  comments and literal spellings, deterministic idempotent layout, and no
+  semantic analysis or `std/fmt` coupling. The future VS Code formatter and LSP
+  should consume this toolchain formatter rather than implement Ace parsing.
 - **x86-64 backend and OS layer** [open] — the second target; facade selection
   already uses `@when`.
 - **Shared-library (dylib/PIC) and static-archive emission** [new] — the driver

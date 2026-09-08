@@ -580,6 +580,29 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 
 ### Trigger-gated
 
+- The canonical source formatter is deferred until language implementation work
+  makes it timely. Its user surface is `ace fmt`, with in-place rewrite,
+  check-only, and stdout modes; it is compiler/toolchain functionality, not
+  `std/fmt`. `.acefmt` remains normative and is searched upward from the source
+  directory, with built-in defaults when absent. Implementation uses exactly
+  one lexer scan and one recursive-descent parse per invocation, sharing the
+  compiler's lexical and grammar implementations but selecting a formatter-only
+  path: the normal `Token` and compiler AST stay compact (apart from a token end
+  offset), while format mode alone allocates lossless syntax tokens, trivia, and
+  a separate lossless syntax tree. The parser produces either the compiler AST
+  or the lossless tree, never both for formatting; it retains every `@when`
+  declaration in the lossless tree. Comments and literal spellings are preserved
+  from source spans. Semantic analysis, imports, name/type/overload resolution,
+  declaration reordering, modifier reordering, LSP implementation, and changes
+  to `std/fmt` are outside this work. Formatting must be deterministic,
+  idempotent, enforce the configured 120-column layout where source tokens and
+  preserved comment contents permit it, and never partially rewrite invalid
+  input. Resume with a staged implementation carving and exact CLI diagnostics
+  when formatter work becomes an active priority. Rationale: sharing one lexer
+  and parser keeps syntax authoritative without permanently taxing ordinary
+  compilation with formatter-only data, while a separate lossless tree gives
+  future formatter and editor tooling room to evolve without distorting the
+  semantic compiler AST.
 - Package-system manifest, lockfile, display, linker-input, and command syntax
   remain open under Package System #3, #9, and #13–15. Resume only when package
   implementation is selected.
