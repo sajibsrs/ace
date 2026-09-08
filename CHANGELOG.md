@@ -97,6 +97,11 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Memory
 
+- Implemented compile-time `alignof(T)` over the full type grammar, exposing the
+  compiler's target-native required alignment as `usize` for raw allocation and
+  layout checks.
+- Implemented nested inline-struct `offsetof(T, field.path)` and zero-code
+  module/function `static_assert` over the bounded constant-expression set.
 - Implemented raw `mem.alloc`, `realloc`, and `release` over authoritative
   slice descriptors using the platform allocator directly. Release mode carries
   no headers or allocation registry; failures return canonical null, successful

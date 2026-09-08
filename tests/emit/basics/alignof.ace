@@ -1,0 +1,19 @@
+// expect-exit: 0
+
+import mem
+
+Point: struct { byte: u8, word: u64 }
+
+main(): int {
+    if alignof(Point) != 8 || alignof([4]Point) != 8 ||
+       alignof(string) != 8 || alignof(char) != 1 {
+        return 1
+    }
+
+    storage: mut []u8 = mem.alloc(int(sizeof(Point)), int(alignof(Point)))
+    if storage == null {
+        return 2
+    }
+    mem.release(mut storage)
+    return 0
+}

@@ -1,0 +1,11 @@
+// expect-exit: 0
+
+Inner: struct { byte: u8, word: u32 }
+Outer: struct { tag: u8, inner: Inner, tail: u16 }
+
+static_assert(offsetof(Outer, inner.word) == 8)
+
+main(): int {
+    static_assert(alignof(Outer) == 4)
+    return int(offsetof(Outer, tail)) - 12
+}

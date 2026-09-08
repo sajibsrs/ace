@@ -260,6 +260,7 @@ main(): int {
     shape: Shape = Shape(&point)
     mut point.scale(0.5)
     size: usize = sizeof(Point)
+    alignment: usize = alignof(Point)
     viewed: usize = inspect(middle)
     identity: typeid = typeid(Point)
     no_shape: Shape = null

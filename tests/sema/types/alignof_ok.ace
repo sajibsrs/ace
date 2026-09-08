@@ -1,0 +1,16 @@
+BytePair: struct { a: u8, b: u8 }
+Mixed: struct { byte: u8, word: u64 }
+Wide: union { none, value: Mixed }
+Code: enum u16 { none }
+Meters: distinct u32
+
+main(): int {
+    if alignof(bool) != 1 || alignof(u16) != 2 || alignof(u32) != 4 ||
+       alignof(u64) != 8 || alignof(BytePair) != 1 || alignof(Mixed) != 8 ||
+       alignof(Wide) != 8 || alignof(Code) != 2 || alignof(Meters) != 4 ||
+       alignof([]u8) != 8 || alignof([3]u16) != 2 ||
+       alignof(mut []u8) != alignof([]u8) {
+        return 1
+    }
+    return 0
+}

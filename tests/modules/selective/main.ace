@@ -17,7 +17,8 @@ main(): int {
     boxed: Thing = {value: p.x}
     type_only: TypeOnly = {value: 0}
 
-    if sizeof(Point) == 0 || typeid(Point) != typeid(Point) {
+    if sizeof(Point) == 0 || alignof(Point) != 8 ||
+       typeid(Point) != typeid(Point) {
         return 1
     }
     answer: int = score(p.x) + score(usize(p.y)) + keep(5) +

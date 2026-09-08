@@ -5,15 +5,32 @@ program explicitly calls the one process-wide allocation layer exported by
 `mem`. There is no garbage collector, allocator value, ownership checker,
 hidden allocation, or automatic cleanup.
 
-## Size and length
+## Size, alignment, and length
 
 `sizeof(T)` is a compile-time `usize`: the storage occupied by one `T`. Heap
 allocation never changes it. For example, `sizeof([]u8)` is the size of the
 two-word slice descriptor, not the number of bytes it views.
 
-The operand uses the full type grammar, so inline sequence types need no named
-alias: `sizeof([]u8)` and `sizeof([]char)` are 16, `sizeof([3]char)` is 3, and
-`sizeof(char)` is 1 (`char` is the transparent `u8` alias).
+`alignof(T)` is the compile-time `usize` alignment required by one `T`, in
+bytes. Raw allocation can therefore use the compiler's target-native layout
+instead of repeating it manually:
+
+```ace
+storage: mut []u8 = mem.alloc(int(sizeof(Point)), int(alignof(Point)))
+```
+
+Both operands use the full type grammar, so inline sequence types need no named
+alias: `sizeof([]u8)` and `sizeof([]char)` are 16, `sizeof([3]char)` is 3,
+`alignof([]u8)` is 8, and `alignof([3]char)` is 1. `char` is the transparent
+`u8` alias, so its size and alignment are both 1.
+
+`offsetof(T, field.path)` returns the compile-time byte offset of a direct or
+nested inline-struct field. `static_assert(condition)` is valid at module or
+function scope, emits no code, and rejects false or non-constant conditions:
+
+```ace
+static_assert(offsetof(Packet, header.length) == 8)
+```
 
 The intrinsic `len(sequence)` belongs only to built-in sequences:
 

@@ -3502,6 +3502,21 @@ static EV gen_call(Em* e, Node* call) {
         load_imm(e, 1, xreg(t), call->ival);
         return (EV){ CLS_INT, t };
     }
+    // alignof builtin (constant folded by sema)
+    if (callee->kind == N_IDENT && !call->sym && callee->len == 7 &&
+        memcmp(callee->str, "alignof", 7) == 0) {
+        int t = tmp_int(e);
+        load_imm(e, 1, xreg(t), call->ival);
+        return (EV){ CLS_INT, t };
+    }
+    if (callee->kind == N_IDENT && !call->sym && callee->len == 8 &&
+        memcmp(callee->str, "offsetof", 8) == 0) {
+        int t = tmp_int(e); load_imm(e, 1, xreg(t), call->ival);
+        return (EV){ CLS_INT, t };
+    }
+    if (callee->kind == N_IDENT && !call->sym && callee->len == 13 &&
+        memcmp(callee->str, "static_assert", 13) == 0)
+        return (EV){ CLS_INT, 0 };
     // len(sequence): arrays are compile-time constants; slices and strings
     // load the stored count from the second descriptor word.
     if (callee->kind == N_IDENT && !call->sym && callee->len == 3 &&

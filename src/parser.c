@@ -585,13 +585,33 @@ static Node* expr_postfix(P* p, int ctx) {
             Node* call = nd(p, N_CALL);
             call->a = base;
             p->i++;
-            if (base->kind == N_IDENT && base->len == 6 &&
-                memcmp(base->str, "sizeof", 6) == 0) {
-                // sizeof's operand is a type: the full inline type grammar is
-                // admitted, so slices and arrays need no named alias
+            if (base->kind == N_IDENT &&
+                ((base->len == 6 && memcmp(base->str, "sizeof", 6) == 0) ||
+                 (base->len == 7 && memcmp(base->str, "alignof", 7) == 0))) {
+                // sizeof/alignof operands are types: the full inline type
+                // grammar is admitted, so slices and arrays need no named alias
                 NV w = {0};
                 nv_push(p, &w, parse_type(p));
-                expect(p, T_RPAREN, "')' after sizeof type");
+                expect(p, T_RPAREN, "')' after layout type");
+                set_kids(call, &w);
+                base = call;
+                continue;
+            }
+            if (base->kind == N_IDENT && base->len == 8 &&
+                memcmp(base->str, "offsetof", 8) == 0) {
+                NV w = {0};
+                nv_push(p, &w, parse_type(p));
+                expect(p, T_COMMA, "',' after offsetof type");
+                Token* ft = expect(p, T_IDENT, "field name in offsetof");
+                Node* path = ident_node(p, ft);
+                while (ate(p, T_DOT)) {
+                    Token* part = expect(p, T_IDENT, "field name after '.' in offsetof");
+                    Node* field = nd_tok(p, N_FIELD_E, part);
+                    field->a = path; field->str = part->str; field->len = part->len;
+                    path = field;
+                }
+                nv_push(p, &w, path);
+                expect(p, T_RPAREN, "')' after offsetof field path");
                 set_kids(call, &w);
                 base = call;
                 continue;
@@ -1988,6 +2008,13 @@ static Node* parse_top(P* p) {
     if (!at(p, T_IDENT)) perr(p, "expected declaration, got %s", gdesc(p));
     Token* name = tk(p);
     p->i++;
+    if (name->len == 13 && memcmp(name->str, "static_assert", 13) == 0 &&
+        at(p, T_LPAREN)) {
+        p->i--;
+        Node* n = nd_tok(p, N_EXPRSTMT, name);
+        n->a = expr(p, 0);
+        return n;
+    }
     Node* tp = try_tparams(p);
     if (at(p, T_SIGNS)) {
         if (expo || mut) perr(p, "signings accept only the optional leading 'pub'");

@@ -44,13 +44,6 @@ blockers for the current sequential core.
 
 ### Compile-time layout introspection
 
-- **`alignof(T)`** [new] — raw `mem.alloc(size, align)` callers must currently
-  guess struct alignment; typed allocation derives it privately.
-- **`offsetof(T, field)`** [new] — C structs are hand-transcribed; offsets plus
-  static assertions are how a transcription is proven.
-- **Static assertions** [new] — no general constant-expression check context
-  exists.
-- **`sizeof` on expressions** [new, minor] — currently type-only.
 
 ### Other compile-time machine facilities
 

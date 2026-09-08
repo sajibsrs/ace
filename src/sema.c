@@ -251,13 +251,17 @@ static void ck_err(Ck* k, Node* n, const char* fmt, ...) {
 }
 
 // `panic` and `assert` are reserved builtin names: no binding may take either
-// in any scope. Unlike them, sizeof/len/typeid are ordinary shadowable names.
+// in any scope. Unlike them, sizeof/alignof/len/typeid are ordinary shadowable
+// names.
 static int is_panic_name(const char* name, uint32_t len) {
     return len == 5 && memcmp(name, "panic", 5) == 0;
 }
 
 static int is_assert_name(const char* name, uint32_t len) {
     return len == 6 && memcmp(name, "assert", 6) == 0;
+}
+static int is_static_assert_name(const char* name, uint32_t len) {
+    return len == 13 && memcmp(name, "static_assert", 13) == 0;
 }
 
 static void ensure_memory_types(void) {
@@ -320,7 +324,7 @@ static Sym* lookup_type(Ck* k, const char* name, uint32_t len) {
 }
 
 static Sym* declare_val(Ck* k, Node* at, uint8_t kind, const char* name, uint32_t len) {
-    if (is_panic_name(name, len) || is_assert_name(name, len)) {
+    if (is_panic_name(name, len) || is_assert_name(name, len) || is_static_assert_name(name, len)) {
         ck_err(k, at, "'%.*s' is a reserved builtin name — no declaration may take it",
                (int)len, name);
         return NULL;
@@ -336,7 +340,7 @@ static Sym* declare_val(Ck* k, Node* at, uint8_t kind, const char* name, uint32_
 }
 
 static Sym* declare_type(Ck* k, Node* at, const char* name, uint32_t len) {
-    if (is_panic_name(name, len) || is_assert_name(name, len)) {
+    if (is_panic_name(name, len) || is_assert_name(name, len) || is_static_assert_name(name, len)) {
         ck_err(k, at, "'%.*s' is a reserved builtin name — no declaration may take it",
                (int)len, name);
         return NULL;
@@ -781,6 +785,15 @@ static int ut_const(Node* e, int64_t* out) {
         Sym* s = node_sym(e);
         return s && s->is_const && s->init ? ut_const(s->init, out) : 0;
     }
+    case N_CALL:
+        if (e->a && e->a->kind == N_IDENT && !e->sym &&
+            ((e->a->len == 6 && memcmp(e->a->str, "sizeof", 6) == 0) ||
+             (e->a->len == 7 && memcmp(e->a->str, "alignof", 7) == 0) ||
+             (e->a->len == 8 && memcmp(e->a->str, "offsetof", 8) == 0))) {
+            *out = (int64_t)e->ival;
+            return 1;
+        }
+        return 0;
     case N_FIELD_E: {
         Sym* s = node_sym(e);
         return s && s->is_const && s->init ? ut_const(s->init, out) : 0;
@@ -1269,7 +1282,8 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
     uint32_t key_len = f->len;
     const char* key = f->str;
     if (f->flags & F_METHOD) key = method_key(f->d, f->str, f->len, &key_len);
-    else if (is_panic_name(f->str, f->len) || is_assert_name(f->str, f->len)) {
+    else if (is_panic_name(f->str, f->len) || is_assert_name(f->str, f->len) ||
+             is_static_assert_name(f->str, f->len)) {
         ck_err(k, f, "'%.*s' is a reserved builtin name — no declaration may take it",
                (int)f->len, f->str);
         return NULL;
@@ -1679,7 +1693,8 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
     case N_IDENT: {
         Sym* s = lookup_val(k, e->str, e->len);
         if (!s) {
-            if (is_panic_name(e->str, e->len) || is_assert_name(e->str, e->len)) {
+            if (is_panic_name(e->str, e->len) || is_assert_name(e->str, e->len) ||
+                is_static_assert_name(e->str, e->len)) {
                 ck_err(k, e, "'%.*s' is a builtin call, not a value",
                        (int)e->len, e->str);
                 return T_ERR;
@@ -1935,7 +1950,8 @@ static SType* expr_type_raw(Ck* k, Node* e) {
     case N_IDENT: {
         Sym* s = lookup_val(k, e->str, e->len);
         if (!s) {
-            if (is_panic_name(e->str, e->len) || is_assert_name(e->str, e->len)) {
+            if (is_panic_name(e->str, e->len) || is_assert_name(e->str, e->len) ||
+                is_static_assert_name(e->str, e->len)) {
                 ck_err(k, e, "'%.*s' is a builtin call, not a value",
                        (int)e->len, e->str);
                 return T_ERR;
@@ -3201,6 +3217,81 @@ static SType* check_call(Ck* k, Node* call) {
                 ck_err(k, call, "sizeof takes one type name");
                 return T_ERR;
             }
+            if (callee->len == 7 && memcmp(callee->str, "alignof", 7) == 0) {
+                if (call->nkids == 1) {
+                    Node* arg = call->kids[0];
+                    SType* t = NULL;
+                    if (arg->kind == N_IDENT) {
+                        t = prim_by_name(arg->str, arg->len);
+                        if (!t) {
+                            Sym* s2 = lookup_type(k, arg->str, arg->len);
+                            if (s2) t = s2->type;
+                        }
+                    } else { // inline type: []T, [N]T, *T, ...
+                        t = build_type(k, arg);
+                        if (t->kind == SK_ERR) return T_ERR;
+                    }
+                    if (t && t->kind == SK_FORWARD) {
+                        ck_err(k, arg,
+                               "type '%s' is not declared yet; alignof requires its layout",
+                               type_name(t));
+                        return T_ERR;
+                    }
+                    if (t && t->kind == SK_ERROR_DOMAIN) {
+                        ck_err(k, arg, "error-domain names have no value layout; use Error");
+                        return T_ERR;
+                    }
+                    if (t && t->kind != SK_ERR) {
+                        if (!layout(t)) return T_ERR;
+                        call->ival = t->align; // constant for the emitter
+                        return st_prim(P_USIZE);
+                    }
+                }
+                ck_err(k, call, "alignof takes one type name");
+                return T_ERR;
+            }
+            if (callee->len == 8 && memcmp(callee->str, "offsetof", 8) == 0) {
+                if (call->nkids != 2) {
+                    ck_err(k, call, "offsetof takes one struct type and one field path");
+                    return T_ERR;
+                }
+                SType* t = build_type(k, call->kids[0]);
+                if (!t || t->kind == SK_ERR) return T_ERR;
+                if (t->kind == SK_FORWARD) {
+                    ck_err(k, call->kids[0], "offsetof requires a complete struct type");
+                    return T_ERR;
+                }
+                Node* parts[64]; int np = 0;
+                Node* path = call->kids[1];
+                while (path && path->kind == N_FIELD_E && np < 64) {
+                    parts[np++] = path; path = path->a;
+                }
+                if (path && path->kind == N_IDENT && np < 64) parts[np++] = path;
+                uint64_t total = 0;
+                for (int pi = np - 1; pi >= 0; pi--) {
+                    if (t->kind != SK_STRUCT) {
+                        ck_err(k, parts[pi], "offsetof field paths traverse inline structs only");
+                        return T_ERR;
+                    }
+                    uint32_t off = 0; int found = -1;
+                    for (int fi = 0; fi < t->nfields; fi++) {
+                        off = align_to(off, t->fields[fi].t->align);
+                        if (strlen(t->fields[fi].name) == parts[pi]->len &&
+                            memcmp(t->fields[fi].name, parts[pi]->str, parts[pi]->len) == 0) {
+                            found = fi; break;
+                        }
+                        off += t->fields[fi].t->size;
+                    }
+                    if (found < 0) {
+                        ck_err(k, parts[pi], "type %s has no field '%.*s'", type_name(t),
+                               (int)parts[pi]->len, parts[pi]->str);
+                        return T_ERR;
+                    }
+                    total += off; t = t->fields[found].t;
+                }
+                call->ival = total;
+                return st_prim(P_USIZE);
+            }
             if (callee->len == 3 && memcmp(callee->str, "len", 3) == 0) {
                 if (call->nkids != 1 || call->kids[0]->kind == N_MUTARG) {
                     ck_err(k, call, "len takes exactly one sequence value");
@@ -3240,6 +3331,24 @@ static SType* check_call(Ck* k, Node* call) {
                 }
                 call->ival = known ? 3 : 2; // 3: proven true and fully erased
                 ensure_memory_types();
+                return T_VOID;
+            }
+            if (is_static_assert_name(callee->str, callee->len)) {
+                if (call->nkids != 1) {
+                    ck_err(k, call, "static_assert takes exactly one bool condition");
+                    return T_ERR;
+                }
+                if (!coerce(k, call->kids[0], st_prim(P_BOOL))) return T_ERR;
+                int known;
+                if (!bool_const(call->kids[0], &known)) {
+                    ck_err(k, call->kids[0], "static_assert condition is not compile-time constant");
+                    return T_ERR;
+                }
+                if (!known) {
+                    ck_err(k, call->kids[0], "static assertion failed");
+                    return T_ERR;
+                }
+                call->ival = 1;
                 return T_VOID;
             }
             // reserved builtin: panic(message: string) — never returns
@@ -5395,6 +5504,9 @@ int sema_check(Node* file, Diag* d) {
     for (int i = 0; i < file->nkids; i++) {
         Node* n = file->kids[i];
         switch (n->kind) {
+        case N_EXPRSTMT:
+            check_stmt(&k, n);
+            break;
         case N_IMPORT: {
             Sym* m = declare_val(&k, n, SYM_MODULE, n->str, n->len);
             (void)m;

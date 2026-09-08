@@ -373,9 +373,10 @@ arr[0] = u8('n')
 same_bytes: bool = view == "nk!"
 ```
 
-`sizeof` accepts the full inline type grammar, so descriptor sizes are
+`sizeof` and `alignof` accept the full inline type grammar, so layouts are
 directly expressible: `sizeof([]u8)`, `sizeof([]char)`, and
-`sizeof([3]char)` are compile-time values 16, 16, and 3 on the current target.
+`sizeof([3]char)` are compile-time values 16, 16, and 3 on the current target;
+`alignof([]u8)` and `alignof([3]char)` are 8 and 1.
 
 Array assignment copies all elements. Slice assignment copies only its pointer
 and length, so both values view the same backing storage; it never copies the

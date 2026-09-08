@@ -114,7 +114,9 @@ extern_param  := ident ":" type
 stmt          := var_decl | elided_decl | multi_decl | const_decl | assignment | expr_stmt
                | if_stmt | for_stmt | switch_stmt | return_stmt
                | break_stmt | continue_stmt | fallthrough_stmt | defer_stmt
-               | asm_stmt | labeled_block
+               | asm_stmt | labeled_block | static_assert_stmt
+
+static_assert_stmt := "static_assert" "(" expr ")"
 
 assignment    := target ("," target)* "=" expr_list       // n, err = read()
                 | target compound_op expr                 // x += y (pure sugar)
@@ -252,3 +254,7 @@ choices that are not evident from the productions.
     before `*`, `[]`, or `string` it qualifies that view; otherwise parsing
     admits the relevant expression/call-site form and semantic analysis enforces
     the normative permission rules.
+11. Calls spelled `sizeof(` or `alignof(` parse their sole operand with the full
+    type grammar.
+12. `offsetof(` parses a type, comma, and dot-separated field-name path.
+    `static_assert` is additionally admitted in the top-level declaration list.

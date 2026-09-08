@@ -1,0 +1,13 @@
+Inner: struct { byte: u8, word: u32 }
+Outer: struct { tag: u8, inner: Inner, tail: u16 }
+
+static_assert(offsetof(Inner, byte) == 0)
+static_assert(offsetof(Inner, word) == 4)
+static_assert(offsetof(Outer, inner) == 4)
+static_assert(offsetof(Outer, inner.word) == 8)
+static_assert(sizeof(Outer) == 16 && alignof(Outer) == 4)
+
+main(): int {
+    static_assert(offsetof(Outer, tail) == 12)
+    return int(offsetof(Outer, inner.word)) - 8
+}

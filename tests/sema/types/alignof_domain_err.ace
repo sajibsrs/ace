@@ -1,0 +1,5 @@
+OpenErr: error
+
+main(): int {
+    return int(alignof(OpenErr))
+}

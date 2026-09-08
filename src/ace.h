@@ -201,7 +201,7 @@ struct Node {
     const char* path; // source file owning this node (for diagnostics/DWARF)
     const char* str; // name / string bytes (len in len)
     uint32_t    len;
-    uint64_t    ival; // int/char/bool literals, array length; sizeof result
+    uint64_t    ival; // int/char/bool literals, array length; layout builtin result
     double      fval; // float literals
     Node*       a;
     Node*       b;

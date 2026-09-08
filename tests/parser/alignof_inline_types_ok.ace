@@ -1,0 +1,6 @@
+/* alignof admits the full inline type grammar. */
+
+main(): int {
+    n: usize = alignof([]char)
+    return 0
+}

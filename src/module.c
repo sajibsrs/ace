@@ -844,7 +844,7 @@ static void lower_selected_type_ref(Node* n, SelectLower* c) {
         return;
     }
     if (n->kind == N_SLICE_T || n->kind == N_ARRAY_T || n->kind == N_PTR ||
-        n->kind == N_CONST_T) { // inline type operand, e.g. sizeof([]pkg.T)
+        n->kind == N_CONST_T) { // inline operand, e.g. alignof([]pkg.T)
         lower_selected_type_ref(n->a, c);
         return;
     }
@@ -991,8 +991,10 @@ static void lower_selected_node(Node* n, SelectLower* c) {
             !local_name(c, n->a->str, n->a->len, 0) &&
             !find_select(c->sels, n->a->str, n->a->len, 0) &&
             (text_is(n->a->str, n->a->len, "sizeof") ||
+             text_is(n->a->str, n->a->len, "alignof") ||
+             text_is(n->a->str, n->a->len, "offsetof") ||
              text_is(n->a->str, n->a->len, "typeid"))) {
-            for (int i = 0; i < n->nkids; i++) lower_selected_type_ref(n->kids[i], c);
+            if (n->nkids) lower_selected_type_ref(n->kids[0], c);
             return;
         }
         break;

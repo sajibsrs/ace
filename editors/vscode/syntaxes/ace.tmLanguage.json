@@ -377,7 +377,7 @@
     },
     "builtins": {
       "name": "entity.name.function.ace support.function.builtin.ace",
-      "match": "\\b(?:sizeof|len|typeid|panic|assert)\\b(?=\\s*\\()"
+      "match": "\\b(?:sizeof|alignof|offsetof|len|typeid|panic|assert|static_assert)\\b(?=\\s*\\()"
     },
     "constants": {
       "patterns": [

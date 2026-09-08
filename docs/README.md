@@ -16,7 +16,7 @@ must be corrected.
   aliases, distinct types, pointers, zero values, definite initialization,
   arrays, slices, tuples, structs, enums, tagged unions, contracts, and generic
   types.
-- [Memory](memory.md) — `sizeof`, sequence lengths, `mem` allocation,
+- [Memory](memory.md) — layout introspection and assertions, sequence lengths, `mem` allocation,
   byte operations, explicit release, slice aliasing, and current diagnostics.
 - [Functions](function.md) — declarations, parameters, returns, mutation,
   overloads, function values, generics, and the program entry point.
