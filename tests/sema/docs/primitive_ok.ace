@@ -15,6 +15,9 @@ main(): int {
     unsigned: uint = uint(wide)
     single: f32 = 1.5
     double: f64 = 1.5
+    default_width: float = 1.5
+    same_identity: float = double
+    same_identity_back: f64 = default_width
     converted: f64 = f64(single)
     ready: bool = true
     stopped: bool = !ready
@@ -36,7 +39,8 @@ main(): int {
         return 90
     }
     return signed_word + int(unsigned_word) + int(byte_value) + wide +
-        int(unsigned) + int(double) + int(converted) + int(letter) +
+        int(unsigned) + int(double) + int(default_width) - int(same_identity) +
+        int(same_identity_back) + int(converted) + int(letter) +
         int(newline) + int(hex_escape) + int(length) + int(first) + int(small) +
         int(bytes[1]) + int(second)
 }

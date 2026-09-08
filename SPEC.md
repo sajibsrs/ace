@@ -237,8 +237,12 @@ Decision: errors are ordinary values; checking is always explicit.
 ## Type System
 Decision: fully explicit types; no inference.
 Predeclared types: `bool`, `i8`/`i16`/`i32`/`i64`,
-`u8`/`u16`/`u32`/`u64`, `f32`/`f64`, `string`, `usize`,
+`u8`/`u16`/`u32`/`u64`, `f32`/`f64`, `float`, `string`, `usize`,
 `typeid`, and the platform words `int`/`uint` (i64/u64 on Apple arm64).
+`float` is a transparent alias of `f64`: the spellings have the same type
+identity, representation, conversions, ABI behavior, generic identity, and
+overload signature. Consequently, overloads cannot distinguish `float` from
+`f64`. Floating literals continue to default to this shared type.
 `char` is the transparent `u8` alias specified by Stdlib #16.
 1. Every signature, global, field, parameter, return, and multi-binding states its type. A single local may use the narrow `name := expr` elision of Syntax & Parsing #9 only when the initializer has already resolved to one independent type. No declaration supplies contextual type information to its elided initializer, and generic instantiation remains explicit.
 2. No contextual type inference keeps compilation direct, types deterministic, and generated code machine-true. `:=` performs no search, unification, or bidirectional checking: after the ordinary expression checker has fixed the right side's type, the compiler copies that type onto the new binding.

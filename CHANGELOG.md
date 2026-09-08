@@ -26,6 +26,9 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Core language
 
+- Added `float` as a predeclared transparent alias of `f64`; both spellings
+  share type and overload identity, representation, conversions, and ABI
+  behavior.
 - Implemented explicit `name: type` declarations, local `:=` type elision,
   per-name declaration/assignment in multi-name `=`, constants, aggregates,
   distinct types, aliases, enums, tuples, functions, overloads, and simultaneous

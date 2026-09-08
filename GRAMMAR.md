@@ -212,7 +212,7 @@ func_type     := "(" [type_list] ")" ":" ret_types         // (int, int): int
 named_type    := ident ("." ident)* ["[" type_list "]"]   // Vec[int], math.Vec
 prim_type     := "bool" | "i8" | "i16" | "i32" | "i64"
                | "u8" | "u16" | "u32" | "u64"
-               | "f32" | "f64" | "char" | "usize" | "typeid"
+               | "f32" | "f64" | "float" | "char" | "usize" | "typeid"
 
 type_list     := type ("," type)*
 ret_types     := type | "(" type ("," type)+ ")"

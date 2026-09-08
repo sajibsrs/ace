@@ -70,6 +70,13 @@ for f in $(find tests/sema -name '*_err.ace' | sort); do
     fi
 done
 
+float_alias_overload=$("$ACE" tests/sema/types/float_alias_overload_err.ace 2>&1)
+if ! printf '%s\n' "$float_alias_overload" | grep -qF \
+    "duplicate overload 'measure': parameter signatures must differ"; then
+    echo "FAIL: float and f64 should have one overload identity"
+    fail=1
+fi
+
 fallthrough_errors=$("$ACE" tests/sema/conditions/fallthrough_placement_err.ace 2>&1)
 for want in \
     "fallthrough must be the final statement of a switch case" \

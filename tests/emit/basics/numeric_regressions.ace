@@ -4,8 +4,10 @@
 
 main(): int {
     ratio: f64 = 1.5
+    default_width: float = ratio
+    canonical_width: f64 = default_width
 
-    if ratio * 100 != 150.0 {
+    if sizeof(float) != sizeof(f64) || canonical_width * 100 != 150.0 {
         return 1
     }
     narrowed: int = int(ratio)

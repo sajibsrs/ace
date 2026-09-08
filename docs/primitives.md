@@ -42,11 +42,15 @@ There are no implicit numeric conversions.
 
 ## Floating point
 
-Ace implements IEEE-style `f32` and `f64` values.
+Ace implements IEEE-style `f32` and `f64` values. `float` is a predeclared
+transparent alias of `f64`: both spellings have the same type identity,
+representation, conversions, ABI behavior, generic identity, and overload
+signature. They cannot distinguish overloads.
 
 ```ace
 single: f32 = 1.5
 double: f64 = 1.5
+default_width: float = 1.5
 converted: f64 = f64(single)
 ```
 
@@ -183,7 +187,7 @@ from an ordinary zero value.
   typed declaration.
 - Strings provide byte storage, indexing, and slicing, but higher-level Unicode
   operations are not implemented in the standard library yet.
-- A character literal cannot yet initialize a `float` target, and untyped
+- A character literal cannot yet initialize a floating-point target, and untyped
   literals materialize only where the existing coercion rules admit them.
 
 The examples are covered by `tests/sema/docs/primitive_ok.ace`.

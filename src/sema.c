@@ -862,7 +862,8 @@ static SType* prim_by_name(const char* s, uint32_t len) {
     struct { const char* n; int p; } M[] = {
         {"bool", P_BOOL}, {"i8", P_I8}, {"i16", P_I16}, {"i32", P_I32},
         {"i64", P_I64}, {"u8", P_U8}, {"u16", P_U16}, {"u32", P_U32},
-        {"u64", P_U64}, {"f32", P_F32}, {"f64", P_F64}, {"string", P_STRING},
+        {"u64", P_U64}, {"f32", P_F32}, {"f64", P_F64}, {"float", P_F64},
+        {"string", P_STRING},
         {"usize", P_USIZE}, {"typeid", P_TYPEID},
         {"int", P_I64}, {"uint", P_U64}, // platform word on arm64
         {"char", P_U8}, // transparent alias: shared identity with u8 (Stdlib #15)
