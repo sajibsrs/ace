@@ -21,7 +21,16 @@ Concrete rules and syntax. The why behind every rule lives in PHILOSOPHY.md (clo
 10. Numeric and character literals are untyped constants that take the expected
     type at use and must fit it. Casts are explicit and constructor-shaped
     (`i32(x)`, `Meters(x)`); there are no implicit numeric conversions.
-11. `if`, `switch`, and `for` are statements, not expressions, and their
+11. A tuple expression may initialize or assign one explicitly stated tuple
+    type of the same arity when every member expression independently resolves
+    to the corresponding member type. Standalone integer, float, and character
+    members therefore use their ordinary `int`, `f64`, and `u8` defaults before
+    the tuple is compared with its destination; no tuple-wide contextual typing
+    or inference occurs. Write casts where a different member type is required:
+    `pair: (i32, i32) = (i32(1), i32(2))`. Construction uses the existing
+    positional tuple layout, performs no allocation, and introduces no new
+    runtime machinery.
+12. `if`, `switch`, and `for` are statements, not expressions, and their
     conditions require `bool`. Compound assignments are pure sugar with the
     left operand evaluated once; `++` and `--` do not exist.
 

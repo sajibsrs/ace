@@ -86,6 +86,15 @@ Count: type = int
 total: Count = 13
 ```
 
+Aliases may take explicit type parameters. Each instantiation is exactly its
+substituted target type; it does not introduce a new nominal identity.
+
+```ace
+Pair[T]: type = (T, T)
+
+coordinates: Pair[int]
+```
+
 A distinct type has the same machine layout as its base but a separate nominal
 identity. Crossing the boundary requires an explicit constructor-shaped cast.
 
@@ -429,8 +438,17 @@ operation: (int, int): int = add
 ```
 
 Multiple-return values use the platform aggregate ABI and are consumed through
-typed destructuring. Context-typing a standalone tuple literal into a tuple
-variable is not implemented by the current checker.
+typed destructuring. A standalone tuple literal may initialize or replace an
+explicit tuple when its independently resolved member types match exactly.
+
+```ace
+pair: (int, f64) = (20, 22.0)
+pair = (21, 23.0)
+```
+
+Tuple construction performs no member-type inference. Integer, float, and
+character literals first take their ordinary `int`, `f64`, and `u8` defaults;
+write explicit casts for other member types.
 
 ## Structs, enums, and tagged unions
 
@@ -646,8 +664,6 @@ with no allocation, object metadata, subtype relation, or runtime search.
   are supported.
 - Generic struct literals are not implemented; declare the explicitly
   instantiated type and initialize its fields.
-- Standalone tuple-literal initialization is not implemented; tuple layout is
-  currently used by multiple returns and destructuring.
 - Checked-build sequence bounds, integer arithmetic, `noalias`/length,
   null-use, and allocator diagnostics are implemented and stripped in release.
 

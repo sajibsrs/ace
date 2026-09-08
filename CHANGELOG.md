@@ -63,6 +63,10 @@ current normative rules, and Git preserves patch-level detail.
 - Implemented explicit generic instantiation and exact function specialization.
   Generic bodies are checked per concrete stamp; compiler-backed standard
   generics share the ordinary resolution path.
+- Implemented transparent generic type aliases by stamping and memoizing each
+  explicit argument tuple to its fully substituted target type.
+- Implemented standalone tuple-literal initialization and whole assignment;
+  member expressions resolve independently before exact positional checking.
 - Implemented closed tagged unions as an i32 declaration-order tag plus aligned
   maximum-size inline payload. Construction is qualified; switches are
   exhaustive and bind payload copies; no boxing, reflection, or hidden

@@ -1,0 +1,27 @@
+/* Generic aliases substitute explicit arguments and remain transparent. */
+
+Pair[T]: type = (T, T)
+Nested[T]: type = Pair[Pair[T]]
+IntPair: type = (int, int)
+
+make_pair(): (int, int) {
+    return (10, 20)
+}
+
+take_pair(value: (int, int)): int {
+    first: int
+    second: int
+    first, second = value
+    return first + second
+}
+
+main(): int {
+    pair: Pair[int] = make_pair()
+    ordinary: IntPair = pair
+    nested: Nested[int]
+    nested = (pair, ordinary)
+    left: Pair[int]
+    right: Pair[int]
+    left, right = nested
+    return take_pair(left) + take_pair(right)
+}

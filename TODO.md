@@ -24,9 +24,6 @@ reopening of Ace's fixed explicit-type, copy, mutation, or allocation rules.
 
 ### Sequential and tuple completeness
 
-- **Standalone tuple literals** [new] — tuple layout already serves multiple
-  returns and destructuring, but ordinary tuple-literal initialization is not
-  implemented. Carve construction without contextual inference.
 - **Sequential/aggregate composition audit** [new] — verify nested arrays and
   slices of structs, enums, unions, distincts, and explicit generic instances
   across initialization, copying, mutation, parameters, returns, and checked
@@ -38,8 +35,6 @@ not blockers for the current sequential core.
 
 ### Aggregate and generic construction
 
-- **Generic aliases** [new] — specified by Type System #4 but not implemented
-  by the compiler.
 - **Generic struct literals** [new] — explicitly instantiated generic structs
   exist, but their direct literal construction is not implemented.
 - **Aggregate ABI cross-product audit** [new] — extend the existing ABI oracle

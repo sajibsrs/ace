@@ -1,0 +1,5 @@
+/* err: a generic alias cannot expand recursively through an inline path. */
+
+Loop[T]: type = Loop[T]
+
+value: Loop[int]

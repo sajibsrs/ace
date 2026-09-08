@@ -1,0 +1,16 @@
+/* Standalone tuple literals use independently resolved member types. */
+
+Pair[T]: type = (T, T)
+
+main(): int {
+    pair: (int, f64) = (20, 22.0)
+    pair = (21, 23.0)
+    nested: ((int, f64), Pair[int]) = (pair, (1, 2))
+    left: (int, f64)
+    right: Pair[int]
+    left, right = nested
+    first: int
+    second: int
+    first, second = right
+    return first + second
+}

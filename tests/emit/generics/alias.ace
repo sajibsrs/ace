@@ -1,0 +1,17 @@
+/* Transparent generic aliases use the substituted target representation. */
+
+// expect-exit: 42
+
+Pair[T]: type = (T, T)
+
+sum(pair: Pair[int]): int {
+    first: int
+    second: int
+    first, second = pair
+    return first + second
+}
+
+main(): int {
+    pair: Pair[int] = (20, 22)
+    return sum(pair)
+}

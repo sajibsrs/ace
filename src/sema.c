@@ -1453,10 +1453,53 @@ static int accepts_null(SType* t) {
                   (t->prim == P_STRING || t->prim == P_TYPEID)));
 }
 
+/* Give a standalone expression the same fixed defaults used by `:=`, without
+ * borrowing type information from its destination. Tuple construction uses
+ * this recursively so its member types are determined before compatibility
+ * with the declared tuple is checked. */
+static SType* materialize_expr_defaults(Ck* k, Node* e) {
+    SType* t = expr_type(k, e);
+    if (t == T_UT_INT) {
+        SType* def = e->kind == N_CHAR ? st_prim(P_U8) : st_prim(P_I64);
+        coerce(k, e, def);
+        return def;
+    }
+    if (t == T_UT_FLOAT) {
+        SType* def = st_prim(P_F64);
+        coerce(k, e, def);
+        return def;
+    }
+    if (e->kind == N_TUPLE_E && t->kind == SK_TUPLE) {
+        for (int i = 0; i < e->nkids; i++)
+            t->fields[i].t = materialize_expr_defaults(k, e->kids[i]);
+        e->ty = t;
+    }
+    return t;
+}
+
 static int coerce(Ck* k, Node* e, SType* want) {
     if (e->kind == N_ARRAYLIT && want && want->kind == SK_ARRAY) {
         check_arraylit(k, e, want);
         return node_ty(e) != T_ERR;
+    }
+    if (e->kind == N_TUPLE_E && want && want->kind == SK_TUPLE) {
+        SType* t = materialize_expr_defaults(k, e);
+        if (t->nfields != want->nfields) {
+            ck_err(k, e, "tuple has %d values where %d expected",
+                   t->nfields, want->nfields);
+            return 0;
+        }
+        for (int i = 0; i < t->nfields; i++) {
+            if (!same_type(t->fields[i].t, want->fields[i].t)) {
+                ck_err(k, e->kids[i],
+                       "tuple value %d is %s where %s expected (casts are explicit)",
+                       i + 1, type_name(t->fields[i].t),
+                       type_name(want->fields[i].t));
+                return 0;
+            }
+        }
+        e->ty = want; // emitter uses the declared tuple's exact layout
+        return 1;
     }
     if (e->kind == N_IDENT && want && want->kind == SK_FUNC) {
         Sym* head = lookup_val(k, e->str, e->len);
@@ -4917,7 +4960,35 @@ static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int narg
     for (STypeInst* it = *head; it; it = it->next) {
         int same = 1;
         for (int i = 0; i < nargs && same; i++) same = same_type(it->args[i], args[i]);
-        if (same) return it->result;
+        if (same) {
+            if (!it->result) {
+                ck_err(k, decl,
+                       "generic alias '%s' has a recursive expansion",
+                       decl->str);
+                return T_ERR;
+            }
+            return it->result;
+        }
+    }
+    if (decl->kind == N_ALIAS) {
+        /* An alias has no nominal shell: stamp its right-hand type under the
+         * substitution environment and memoize that terminal type directly.
+         * A null result marks an expansion in progress so self-reference is
+         * diagnosed instead of recursing indefinitely. */
+        STypeInst* inst = (STypeInst*)arena_alloc(sizeof(STypeInst));
+        inst->args = args;
+        inst->result = NULL;
+        inst->next = *head;
+        *head = inst;
+
+        const char** sn = k->tnames; SType** st = k->ttypes; int ns = k->nsub;
+        k->tnames = (const char**)arena_alloc((size_t)nargs * sizeof(char*));
+        k->ttypes = args;
+        k->nsub = nargs;
+        for (int i = 0; i < nargs; i++) k->tnames[i] = tp->kids[i]->str;
+        inst->result = build_type(k, decl->a);
+        k->tnames = sn; k->ttypes = st; k->nsub = ns;
+        return inst->result;
     }
     SType* t = st_new(decl->kind == N_STRUCT ? SK_STRUCT :
                       decl->kind == N_UNION ? SK_UNION : SK_CONTRACT);
@@ -5339,6 +5410,10 @@ int sema_check(Node* file, Diag* d) {
                     ck_err(&k, forward_ref,
                            "forward generic type '%.*s' must be declared before use with explicit arguments",
                            (int)forward_ref->len, forward_ref->str);
+                SType* marker = st_new(SK_FORWARD);
+                marker->name = n->str;
+                marker->decl = n;
+                resolve_type_fixes(&k, s, marker, n);
             } else {
                 s->type = NULL; // the alias name is not visible in its own expansion
                 SType* actual = build_type(&k, n->a);

@@ -1,0 +1,4 @@
+/* err: tuple literal members resolve independently; the destination does not
+ * infer or materialize a narrower member type. */
+
+pair: (i32, i32) = (1, 2)
