@@ -461,6 +461,21 @@ fi
 
 # Emission modes are accepted by every pipeline stage but affect only emitted
 # code. Checked is the emission default; release contains no bounds machinery.
+mkdir -p /tmp/ace_checked_bits
+for f in runtime_range runtime_literal_range; do
+    if ! "$ACE" --checked -o "/tmp/ace_checked_bits/${f}_checked" "tests/checked_bits/$f.ace"; then
+        echo "FAIL: checked bits range fixture did not compile: $f"
+        fail=1
+    elif "/tmp/ace_checked_bits/${f}_checked" >/dev/null 2>/tmp/ace_test_errs; then
+        echo "FAIL: checked out-of-range bit-field operation did not abort: $f"
+        fail=1
+    fi
+    if ! "$ACE" --release -o "/tmp/ace_checked_bits/${f}_release" "tests/checked_bits/$f.ace" ||
+       ! "/tmp/ace_checked_bits/${f}_release"; then
+        echo "FAIL: release bit-field operation did not retain low field bits: $f"
+        fail=1
+    fi
+done
 mkdir -p /tmp/ace_checked_bounds
 cp tests/checked_bounds/*.ace /tmp/ace_checked_bounds/
 if ! "$ACE" --checked tests/sema/sequences/main_ok.ace ||

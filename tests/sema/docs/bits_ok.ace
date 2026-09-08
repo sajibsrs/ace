@@ -1,0 +1,10 @@
+/* Compiler-checked examples from docs/types.md: nominal scalar-backed bits. */
+Permissions: bits u8 { read: 1, write: 1, level: signed 3, _: 3 }
+
+main(): int {
+    permissions: Permissions = Permissions { read: 1, level: -2 }
+    raw: u8 = u8(permissions)
+    restored: Permissions = Permissions(raw)
+    restored.write = 1
+    return 0
+}

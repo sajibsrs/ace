@@ -266,6 +266,36 @@ permission. Use the spelling that states the value's intent. Strings iterate byt
 `mut string`; a plain string is rejected by the same rule as any read-only
 view.
 
+## Scalar-backed bit fields
+
+A `bits` declaration defines a nominal value with the size, alignment, and raw
+representation of an exact unsigned backing integer. Fields are packed from bit
+0 upward in declaration order; `_` reserves an inaccessible range.
+
+```ace
+Permissions: bits u8 { read: 1, write: 1, level: signed 3, _: 3 }
+
+permissions: Permissions = Permissions { read: 1, level: -2 }
+raw: u8 = u8(permissions)
+restored: Permissions = Permissions(raw)
+restored.write = 1
+```
+
+Widths must be positive and fill the backing `u8`, `u16`, `u32`, or `u64`
+exactly. Unsigned fields read as the backing unsigned type; signed fields read
+as its signed counterpart with exact two's-complement sign extension. Literals
+start from all-bits-zero, so named fields may be omitted and anonymous ranges
+remain zero.
+
+Named fields can be read and assigned but have no address: they cannot be used
+with address-of, a `mut` argument, `offsetof`, or individual volatile access.
+Assignment preserves every other backing bit. Constant out-of-range writes are
+compile errors; dynamic writes abort in checked builds and retain the low field
+bits in release builds. Whole values copy normally, compare with `==`/`!=` only
+against the same nominal type, compose in aggregates, and support whole-value
+volatile loads and stores. C boundaries use the backing integer plus an explicit
+conversion; a `bits` type itself is not C-ABI-compatible.
+
 ## Zero and absence
 
 Every type has an all-bits-zero representation. Pointer, slice, string,

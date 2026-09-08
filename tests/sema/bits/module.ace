@@ -1,0 +1,1 @@
+pub Flags: bits u16 { ready: 1, code: 7, _: 8 }

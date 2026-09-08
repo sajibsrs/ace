@@ -1,0 +1,3 @@
+Zero: bits u8 { bad: 0, _: 8 }
+Short: bits u16 { value: 15 }
+Long: bits u8 { value: 9 }

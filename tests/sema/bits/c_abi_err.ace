@@ -1,0 +1,8 @@
+Flags: bits u32 { value: 32 }
+
+extern "C" {
+    take(value: Flags)
+    give(): Flags
+}
+
+export expose(value: Flags): Flags { return value }

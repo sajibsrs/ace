@@ -1,0 +1,8 @@
+Flags: bits u32 { enabled: 1, mode: signed 3, _: 28 }
+Tiny: bits u8 { _: 2, value: 6 }
+
+main(): int {
+    flags: Flags = Flags { enabled: 1 }
+    tiny: Tiny = Tiny { value: 7 }
+    return int(flags.enabled) + int(tiny.value)
+}

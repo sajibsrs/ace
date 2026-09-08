@@ -1,0 +1,6 @@
+import flags: "./module.ace"
+
+main(): int {
+    value: flags.Flags = flags.Flags { ready: 1, code: 42 }
+    return int(value.code) - 42
+}

@@ -62,7 +62,7 @@ internal_import := "@" ident "." "ace"                  // compiler-reserved std
 
 top_decl      := ["pub"] top_body
 top_body      := var_decl | const_decl | func_decl | struct_decl
-               | contract_decl | enum_decl | union_decl | alias_decl | distinct_decl
+               | bits_decl | contract_decl | enum_decl | union_decl | alias_decl | distinct_decl
                | error_domain_decl | method_func_decl | signing_decl | extern_block
 
 binding       := ident ":" type
@@ -87,6 +87,13 @@ block         := "{" stmt* "}"
 struct_decl   := ident [type_params] ":" "struct" "{" field_list "}"
 field_list    := field ("," field)*
 field         := align_attr* ["embed"] ident ":" type
+
+bits_decl     := ident ":" contextual_bits bits_backing "{" bits_fields "}"
+contextual_bits := ident                                // exact text "bits"; not reserved
+bits_backing  := "u8" | "u16" | "u32" | "u64"
+bits_fields   := bits_field ("," bits_field)* [","]
+bits_field    := ident ":" [contextual_signed] int_lit // `_` is anonymous
+contextual_signed := ident                              // exact text "signed"; not reserved
 
 contract_decl := ident [type_params] ":" "contract" "{" method_decl* "}"
 method_decl   := ["mut"] ident "(" [params] ")" [ret_clause]  // receiver implied

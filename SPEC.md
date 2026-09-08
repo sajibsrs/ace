@@ -336,6 +336,45 @@ representations without changing ordinary struct layout.
     other relaxations additive (PHILOSOPHY.md, Priority Stack and Considerations
     #1).
 
+## Scalar-backed Bit Fields
+Decision: nominal, exact-width bit layouts lower:
+1. `Flags: bits u32 { enabled: 1, mode: signed 3, _: 28 }` declares a nominal
+   value backed by exactly `u8`, `u16`, `u32`, or `u64`. The backing integer
+   determines size, alignment, representation, and byte order. Fields occupy
+   contiguous bits from bit 0 upward in declaration order. Widths are positive
+   and must exactly fill the backing integer; there is no implicit padding or
+   cross-unit field.
+2. An unmarked named field is unsigned and reads as the backing unsigned type.
+   `signed N` reads as the corresponding signed type after exact two's-complement
+   sign extension; `signed 1` represents exactly `-1` and `0`. `_` is an
+   anonymous inaccessible range.
+3. Named fields are non-addressable projections. They may be read or assigned,
+   but cannot be addressed, passed as a `mut` argument, used with `offsetof`, or
+   accessed individually through `volatile`. Assignment requires an ordinarily
+   writable containing place and performs one preserving read-modify-write of
+   the complete backing value. The containing place and assigned expression are
+   each evaluated exactly once. Separate assignments remain separate updates.
+4. A constant write outside the field's signed or unsigned range is rejected in
+   every mode. A runtime violation aborts in checked mode; release keeps the low
+   `N` bits. This applies equally to construction and later assignment.
+5. `Flags { enabled: 1 }` starts from canonical all-bits-zero and may omit any
+   named field; omitted and anonymous bits remain zero. `_` cannot be named.
+   There is no spread or update literal.
+6. `Flags(raw)` and `u32(flags)` are exact explicit conversions only between a
+   bits type and its declared backing integer. Copies preserve the complete
+   backing value. `==` and `!=` compare every backing bit only between the same
+   exact nominal bits type.
+7. Bits values are ordinary fixed-size values in aggregates, packed structs,
+   arrays, parameters, and returns. Whole-value volatile access transfers
+   exactly the backing width. Bits types are not C-ABI-compatible in `extern` or
+   `export` signatures; interop uses the backing integer and explicit conversion.
+   No C bit-field ABI equivalence, atomic field operation, volatile field RMW,
+   reflection, wider backing unit, or cross-statement fusion is implied.
+
+Rationale: deterministic machine-register and compact binary layouts are useful
+without importing C's implementation-defined bit fields or weakening Ace's
+explicit mutation, checked-build, layout, and access-site volatile rules.
+
 ## Modules
 Decision: module = file; explicit imports; explicit exports.
 1. Each file is a module and lists exactly what it imports; after compile-time-inactive declarations are removed, import statements precede every other declaration — reading order is stated up front for the single pass.
@@ -671,6 +710,10 @@ additive until concrete public usage requires them.
 
 Only active or trigger-gated decisions live here. Implemented history is recorded
 once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
+
+### Active
+
+None.
 
 ### Trigger-gated
 

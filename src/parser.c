@@ -15,6 +15,8 @@
 //   N_PARAM     str = name; a = type; F_MUT/F_NOALIAS (also used as var binder)
 //   N_STRUCT    str = name; kids = N_FIELD; b = optional @align expression;
 //               c = N_TPARAMS; F_PUB/F_PACKED
+//   N_BITS      str = name; a = backing type; kids = N_FIELD whose ival is
+//               width and F_CONST marks signed; F_PUB
 //   N_FIELD     str = name; a = type; b = optional @align expression
 //   N_UNION     str = name; kids = N_VARIANT; c = N_TPARAMS; F_PUB
 //   N_VARIANT   str = name; a = payload type or NULL (payloadless variant)
@@ -1635,6 +1637,31 @@ static Node* parse_signing(P* p, Token* owner, Node* tp, int pub) {
 static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
     p->i++; // ':'
     Node* n;
+    if (ident_at(p, "bits")) {
+        if (tp) perr(p, "bits types are not generic");
+        p->i++;
+        n = nd_tok(p, N_BITS, name);
+        n->str = name->str; n->len = name->len;
+        if (pub) n->flags |= F_PUB;
+        n->a = parse_type(p);
+        expect(p, T_LBRACE, "'{' after bits backing type");
+        NV fields = {0};
+        if (!at(p, T_RBRACE)) for (;;) {
+            Token* fname = expect(p, T_IDENT, "bit-field name or '_'");
+            Node* fl = nd_tok(p, N_FIELD, fname);
+            fl->str = fname->str; fl->len = fname->len;
+            expect(p, T_COLON, "':' after bit-field name");
+            if (ident_at(p, "signed")) { fl->flags |= F_CONST; p->i++; }
+            Token* width = expect(p, T_INT, "positive bit-field width");
+            fl->ival = width->ival;
+            nv_push(p, &fields, fl);
+            if (!ate(p, T_COMMA)) break;
+            if (at(p, T_RBRACE)) break;
+        }
+        expect(p, T_RBRACE, "'}' to close bits type");
+        set_kids(n, &fields);
+        return n;
+    }
     switch (tk(p)->kind) {
     case T_STRUCT: {
         p->i++;

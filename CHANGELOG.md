@@ -47,6 +47,11 @@ current normative rules, and Git preserves patch-level detail.
   zero-first, fit, and uniqueness validation. Explicitly backed enums use their
   selected layout throughout ordinary values and C-compatible boundaries;
   default enums retain their existing `i32` layout and remain C-ABI-rejected.
+- Implemented nominal `bits u8`/`u16`/`u32`/`u64` types with exact LSB-first
+  signed, unsigned, and anonymous fields. The compiler lowers whole values at
+  backing width, emits sign-extending reads and preserving checked/release RMW
+  writes, zero-fill literals, exact raw conversions, same-type equality,
+  aggregate placement, whole-value volatile access, and C-boundary rejection.
 - Implemented operators, chained comparisons, `if`, exhaustive `switch`,
   contextual explicit `fallthrough`, labeled blocks, labeled break/continue,
   `for-in`, ranges and steps, and general condition/three-clause/infinite

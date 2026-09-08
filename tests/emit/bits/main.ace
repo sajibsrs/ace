@@ -1,0 +1,50 @@
+// expect-exit: 0
+Flags: bits u32 { enabled: 1, mode: signed 3, _: 4, count: 8, _: 16 }
+Byte: bits u8 { one: signed 1, rest: 7 }
+Packed: bits u64 { low: 17, high: signed 47 }
+
+global_raw: Flags = Flags { enabled: 1, mode: -2, count: 0xA5 }
+global_zero: Flags
+
+Box: struct { prefix: u8, flags: Flags }
+@packed
+PackedBox: struct { prefix: u8, flags: Flags }
+
+roundtrip(value: Flags): Flags { return value }
+once(mut calls: int, value: u32): u32 {
+    calls += 1
+    return value
+}
+index(mut calls: int): usize {
+    calls += 1
+    return 0
+}
+
+main(): int {
+    if global_raw.mode != -2 || u32(global_zero) != 0 { return 11 }
+    flags: Flags = Flags { enabled: 1, mode: -2, count: 0xA5 }
+    if flags.enabled != 1 || flags.mode != -2 || flags.count != 0xA5 { return 1 }
+    raw: u32 = u32(flags)
+    if raw != u32(0x0000A50D) { return 2 }
+    flags.mode = 3
+    if u32(flags) != u32(0x0000A507) { return 3 }
+    flags.count += 1
+    if flags.count != 0xA6 { return 4 }
+    copy: Flags = roundtrip(flags)
+    if copy != flags { return 5 }
+    array: [2]Flags = [Flags {}, copy]
+    box: Box = Box { prefix: 9, flags: array[1] }
+    packed: PackedBox = PackedBox { prefix: 8, flags: box.flags }
+    if packed.flags != copy || sizeof(PackedBox) != 5 { return 6 }
+    byte: Byte = Byte { one: -1, rest: 0x55 }
+    if byte.one != -1 || u8(byte) != u8(0xAB) { return 7 }
+    wide: Packed = Packed(u64(0xFFFFFFFFFFFFFFFF))
+    if wide.low != 0x1FFFF || wide.high != -1 { return 8 }
+    whole: Flags = volatile flags
+    volatile whole = flags
+    if whole != flags { return 9 }
+    calls: int = 0
+    array[index(mut calls)].count = once(mut calls, u32(9))
+    if calls != 2 || array[0].count != 9 { return 10 }
+    return 0
+}

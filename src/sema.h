@@ -11,7 +11,7 @@ enum {
     SK_PRIM, SK_PTR, SK_SLICE, SK_ARRAY, SK_TUPLE, SK_FUNC,
     SK_STRUCT, SK_ENUM, SK_CONTRACT, SK_DISTINCT, SK_ERROR_DOMAIN,
     SK_TYPEPARAM, SK_ERROR,
-    SK_UNION, SK_VOID, SK_UT, SK_FORWARD, SK_ERR
+    SK_UNION, SK_BITS, SK_VOID, SK_UT, SK_FORWARD, SK_ERR
 };
 
 enum {
@@ -26,6 +26,7 @@ typedef struct {
     uint32_t requested_align; // zero means contextual default
     uint32_t effective_align;
     uint32_t offset;
+    uint8_t bit_offset, bit_width, bit_signed, bit_anonymous;
 } SField;
 
 struct SType {

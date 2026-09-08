@@ -452,13 +452,14 @@ static int is_intt(SType* t) {
     return (t->kind == SK_PRIM && t->prim != P_BOOL && t->prim != P_F32 &&
             t->prim != P_F64 && t->prim != P_STRING) ||
            t->kind == SK_PTR || t->kind == SK_FUNC || t->kind == SK_ENUM ||
+           t->kind == SK_BITS ||
            t->kind == SK_ERROR;
 }
 
 static int ty_is_signed(SType* t) {
     t = unwrap(t);
     if (!t) return 1;
-    if (t->kind == SK_ENUM) return ty_is_signed(t->base);
+    if (t->kind == SK_ENUM || t->kind == SK_BITS) return ty_is_signed(t->base);
     if (t->kind != SK_PRIM) return 0;
     switch (t->prim) {
     case P_I8: case P_I16: case P_I32: case P_I64: return 1;
@@ -472,7 +473,7 @@ static int is_scalar(SType* t) {
     if (!t) return 0;
     switch (t->kind) {
     case SK_PRIM: return t->prim != P_STRING;
-    case SK_PTR: case SK_FUNC: case SK_ENUM: case SK_ERROR: return 1;
+    case SK_PTR: case SK_FUNC: case SK_ENUM: case SK_BITS: case SK_ERROR: return 1;
     default: return 0;
     }
 }
@@ -480,7 +481,7 @@ static int is_scalar(SType* t) {
 static int scalar_bits(SType* t) {
     t = unwrap(t);
     if (!t || t->kind == SK_UT) return 64;
-    if (t->kind == SK_ENUM) return (int)(ty_size(t) * 8);
+    if (t->kind == SK_ENUM || t->kind == SK_BITS) return (int)(ty_size(t) * 8);
     if (t->kind == SK_PTR || t->kind == SK_FUNC || t->kind == SK_ERROR) return 64;
     if (t->kind == SK_PRIM && t->prim != P_STRING) return (int)(t->size * 8);
     return 64;
@@ -1901,9 +1902,9 @@ static void mangle_type(Buf* b, SType* t) {
         return;
     }
     case SK_ERROR: buf_write(b, "Error", 5); return;
-    case SK_STRUCT: case SK_ENUM: case SK_CONTRACT: case SK_UNION:
+    case SK_STRUCT: case SK_ENUM: case SK_BITS: case SK_CONTRACT: case SK_UNION:
         buf_put8(b, t->kind == SK_STRUCT ? 'S' : t->kind == SK_ENUM ? 'E' :
-                   t->kind == SK_UNION ? 'U' : 'I');
+                   t->kind == SK_BITS ? 'B' : t->kind == SK_UNION ? 'U' : 'I');
         mangle_name(b, t->name);
         if (t->nargs) {
             buf_put8(b, 'g');
@@ -2426,7 +2427,7 @@ static SType* lvalue_type(Em* e, Node* x) {
         b = unwrap(b);
         if (b->kind == SK_ERROR) b = b->base;
         while (b->kind == SK_PTR) b = b->base;
-        if (b->kind != SK_STRUCT) return NULL;
+        if (b->kind != SK_STRUCT && b->kind != SK_BITS) return NULL;
         int i = find_field(b, x->str, x->len);
         return i >= 0 ? b->fields[i].t : NULL;
     }
@@ -2462,6 +2463,18 @@ static SType* lvalue_type(Em* e, Node* x) {
     default:
         return node_ty(x);
     }
+}
+
+static SType* bits_field_owner(Node* x, int* fi) {
+    if (!x || x->kind != N_FIELD_E) return NULL;
+    SType* b = node_ty(x->a);
+    b = unwrap(b);
+    while (b && b->kind == SK_PTR) b = b->base;
+    if (!b || b->kind != SK_BITS) return NULL;
+    int i = (int)x->ival;
+    if (i < 0 || i >= b->nfields || b->fields[i].bit_anonymous) return NULL;
+    if (fi) *fi = i;
+    return b;
 }
 
 static int gen_addr(Em* e, Node* x) {
@@ -2542,6 +2555,7 @@ static int gen_addr(Em* e, Node* x) {
             emit_null_guard(e, xreg(ta));
             bt = bt->base;
         }
+        if (bt->kind == SK_BITS) return ta; // field projection shares backing address
         if (bt->kind != SK_STRUCT) {
             em_err(e, x, "field access on a non-struct");
             return ta;
@@ -4030,6 +4044,48 @@ static EV gen_expr(Em* e, Node* x) {
             em_err(e, x, "literal type missing");
             return (EV){ CLS_INT, tmp_int(e) };
         }
+        if (x->kind == N_STRUCTLIT && t->kind == SK_BITS) {
+            int sf = scalar_bits(t) == 64;
+            int out = tmp_int(e);
+            load_imm(e, sf, xreg(out), 0);
+            for (int i = 0; i < x->nkids; i++) {
+                Node* fi = x->kids[i]; int fidx = find_field(t, fi->str, fi->len);
+                if (fidx < 0) continue;
+                SField* f = &t->fields[fidx];
+                EV v = gen_expr(e, fi->a);
+                if (e->mode == EMIT_CHECKED && f->bit_width < 64) {
+                    int fail = new_label(e), ok = new_label(e); uint64_t hi;
+                    if (f->bit_signed) {
+                        uint64_t lo = (uint64_t)(-(INT64_C(1) << (f->bit_width - 1)));
+                        hi = (UINT64_C(1) << (f->bit_width - 1)) - 1;
+                        load_imm(e, sf, 16, lo);
+                        ins(e, (sf ? 0xEB00001Fu : 0x6B00001Fu) | (16u << 16) |
+                               ((uint32_t)xreg(v.idx) << 5));
+                        bcond_(e, C_LT, fail);
+                    } else hi = (UINT64_C(1) << f->bit_width) - 1;
+                    load_imm(e, sf, 16, hi);
+                    ins(e, (sf ? 0xEB00001Fu : 0x6B00001Fu) | (16u << 16) |
+                           ((uint32_t)xreg(v.idx) << 5));
+                    bcond_(e, f->bit_signed ? C_LE : C_LS, ok);
+                    bind_label(e, fail); emit_arithmetic_fail_call(e); bind_label(e, ok);
+                }
+                uint64_t low = f->bit_width == 64 ? UINT64_MAX :
+                               (UINT64_C(1) << f->bit_width) - 1;
+                load_imm(e, sf, 16, low);
+                ins(e, (sf ? 0x8A000000u : 0x0A000000u) | (16u << 16) |
+                       ((uint32_t)xreg(v.idx) << 5) | (uint32_t)xreg(v.idx));
+                if (f->bit_offset) {
+                    uint32_t sh = f->bit_offset, regw = sf ? 64u : 32u;
+                    ins(e, (sf ? 0xD3400000u : 0x53000000u) | ((regw - sh) << 16) |
+                           ((regw - 1 - sh) << 10) | ((uint32_t)xreg(v.idx) << 5) |
+                           (uint32_t)xreg(v.idx));
+                }
+                ins(e, (sf ? 0xAA000000u : 0x2A000000u) | ((uint32_t)xreg(v.idx) << 16) |
+                       ((uint32_t)xreg(out) << 5) | (uint32_t)xreg(out));
+                e->vti = out + 1; // each initializer is consumed; preserve only accumulator
+            }
+            return (EV){ CLS_INT, out };
+        }
         uint32_t off = temp_slot(e, ty_size(t), ty_align(t));
         if (x->kind == N_ARRAYLIT && x->a) {
             int svi = e->vti, svf = e->vtf;
@@ -4199,6 +4255,26 @@ static EV gen_expr(Em* e, Node* x) {
         if (bt && unwrap(bt) && unwrap(bt)->kind == SK_CONTRACT) {
             em_err(e, x, "contract method values must be called");
             return (EV){ CLS_INT, tmp_int(e) };
+        }
+        SType* bits = unwrap(bt);
+        while (bits && bits->kind == SK_PTR) bits = bits->base;
+        if (bits && bits->kind == SK_BITS) {
+            int fi = (int)x->ival;
+            if (fi < 0 || fi >= bits->nfields) {
+                em_err(e, x, "invalid bit field");
+                return (EV){ CLS_INT, tmp_int(e) };
+            }
+            int a = gen_addr(e, x);
+            EV v = load_scalar(e, xreg(a), 0, bits->base);
+            v = collapse(e, a, v);
+            SField* f = &bits->fields[fi];
+            int rb = scalar_bits(bits), sf = rb == 64;
+            uint32_t base = f->bit_signed ? (sf ? 0x93400000u : 0x13000000u)
+                                          : (sf ? 0xD3400000u : 0x53000000u);
+            uint32_t imms = (uint32_t)f->bit_offset + f->bit_width - 1;
+            ins(e, base | ((uint32_t)f->bit_offset << 16) | (imms << 10) |
+                   ((uint32_t)xreg(v.idx) << 5) | (uint32_t)xreg(v.idx));
+            return v;
         }
         SType* t = node_ty(x);
         if (!t) t = lvalue_type(e, x);
@@ -4622,6 +4698,62 @@ static void emit_union_switch(Em* e, Node* s, SType* ut) {
     bind_label(e, lend);
 }
 
+static void emit_bits_field_assign(Em* e, Node* target, Node* rhs, TokKind op,
+                                   SType* bits, int fi) {
+    SField* f = &bits->fields[fi];
+    int width = scalar_bits(bits), sf = width == 64, regw = sf ? 64 : 32;
+    int ta = gen_addr(e, target);
+    EV whole = load_scalar(e, xreg(ta), 0, bits->base);
+    EV value;
+    if (op != T_ASSIGN) {
+        int vr = tmp_int(e);
+        mov_int(e, sf, xreg(vr), xreg(whole.idx));
+        uint32_t base = f->bit_signed ? (sf ? 0x93400000u : 0x13000000u)
+                                      : (sf ? 0xD3400000u : 0x53000000u);
+        uint32_t imms = (uint32_t)f->bit_offset + f->bit_width - 1;
+        ins(e, base | ((uint32_t)f->bit_offset << 16) | (imms << 10) |
+               ((uint32_t)xreg(vr) << 5) | (uint32_t)xreg(vr));
+        EV rv = gen_expr(e, rhs);
+        emit_checked_arith(e, compound_op(op), vr, vr, rv.idx, f->t);
+        value = (EV){ CLS_INT, vr };
+    } else value = gen_expr(e, rhs);
+    if (e->mode == EMIT_CHECKED && f->bit_width < 64) {
+        int fail = new_label(e), ok = new_label(e);
+        uint64_t hi;
+        if (f->bit_signed) {
+            uint64_t lo = (uint64_t)(-(INT64_C(1) << (f->bit_width - 1)));
+            hi = (UINT64_C(1) << (f->bit_width - 1)) - 1;
+            load_imm(e, sf, 16, lo);
+            ins(e, (sf ? 0xEB00001Fu : 0x6B00001Fu) | (16u << 16) |
+                   ((uint32_t)xreg(value.idx) << 5));
+            bcond_(e, C_LT, fail);
+        } else hi = (UINT64_C(1) << f->bit_width) - 1;
+        load_imm(e, sf, 16, hi);
+        ins(e, (sf ? 0xEB00001Fu : 0x6B00001Fu) | (16u << 16) |
+               ((uint32_t)xreg(value.idx) << 5));
+        bcond_(e, f->bit_signed ? C_LE : C_LS, ok);
+        bind_label(e, fail); emit_arithmetic_fail_call(e); bind_label(e, ok);
+    }
+    uint64_t low = f->bit_width == 64 ? UINT64_MAX : (UINT64_C(1) << f->bit_width) - 1;
+    uint64_t mask = low << f->bit_offset;
+    int mr = tmp_int(e);
+    load_imm(e, sf, xreg(mr), low);
+    ins(e, (sf ? 0x8A000000u : 0x0A000000u) | ((uint32_t)xreg(mr) << 16) |
+           ((uint32_t)xreg(value.idx) << 5) | (uint32_t)xreg(value.idx));
+    if (f->bit_offset) {
+        uint32_t sh = f->bit_offset;
+        ins(e, (sf ? 0xD3400000u : 0x53000000u) | ((uint32_t)(regw - sh) << 16) |
+               ((uint32_t)(regw - 1 - sh) << 10) |
+               ((uint32_t)xreg(value.idx) << 5) | (uint32_t)xreg(value.idx));
+    }
+    load_imm(e, sf, xreg(mr), ~mask);
+    ins(e, (sf ? 0x8A000000u : 0x0A000000u) | ((uint32_t)xreg(mr) << 16) |
+           ((uint32_t)xreg(whole.idx) << 5) | (uint32_t)xreg(whole.idx));
+    ins(e, (sf ? 0xAA000000u : 0x2A000000u) | ((uint32_t)xreg(value.idx) << 16) |
+           ((uint32_t)xreg(whole.idx) << 5) | (uint32_t)xreg(whole.idx));
+    store_scalar(e, whole, xreg(ta), 0, bits->base);
+}
+
 static void emit_stmt(Em* e, Node* s) {
     line_mark(e, s->kind == N_EXPRSTMT ? s->a : s);
     e->vti = 0; e->vtf = 0; // statement boundary
@@ -4723,6 +4855,11 @@ static void emit_stmt(Em* e, Node* s) {
                 }
                 e->vti = svi;
             }
+            return;
+        }
+        int bfi = -1; SType* bft = bits_field_owner(s->kids[0], &bfi);
+        if (bft) {
+            emit_bits_field_assign(e, s->kids[0], s->a, (TokKind)s->op, bft, bfi);
             return;
         }
         SType* t = lvalue_type(e, s->kids[0]);
@@ -5512,7 +5649,7 @@ static void put_u(Buf* b, uint64_t v, uint32_t w) {
 static int fold_int_target(SType* t) {
     t = unwrap(t);
     if (!t) return 0;
-    if (t->kind == SK_ENUM) return 1;
+    if (t->kind == SK_ENUM || t->kind == SK_BITS) return 1;
     if (t->kind == SK_DISTINCT) return fold_int_target(t->base);
     return t->kind == SK_PRIM &&
         ((t->prim >= P_I8 && t->prim <= P_U64) || t->prim == P_USIZE);
@@ -5625,6 +5762,20 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
         }
         return 0;
     case N_ARRAYLIT: case N_STRUCTLIT: {
+        if (v->kind == N_STRUCTLIT && t->kind == SK_BITS) {
+            uint64_t raw = 0;
+            for (int i = 0; i < v->nkids; i++) {
+                int fi = find_field(t, v->kids[i]->str, v->kids[i]->len);
+                uint64_t value;
+                if (fi < 0 || !const_int(v->kids[i]->a, &value)) return 0;
+                SField* f = &t->fields[fi];
+                uint64_t low = f->bit_width == 64 ? UINT64_MAX :
+                               (UINT64_C(1) << f->bit_width) - 1;
+                raw |= (value & low) << f->bit_offset;
+            }
+            put_u(out, raw, ty_size(t));
+            return 1;
+        }
         if (v->kind == N_STRUCTLIT && t->kind != SK_STRUCT) return 0;
         if (v->kind == N_ARRAYLIT && t->kind != SK_ARRAY) return 0;
         int positional = v->nkids > 0 && v->kids[0]->str == NULL;

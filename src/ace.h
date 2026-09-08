@@ -100,7 +100,8 @@ char* arena_alloc(size_t n);
     X(N_CONST_T, "const_t") X(N_TPARAMS, "tparams")                            \
     /* top-level declarations */                                               \
     X(N_IMPORT, "import") X(N_VAR, "var") X(N_FUNC, "func")                    \
-    X(N_PARAM, "param") X(N_STRUCT, "struct") X(N_FIELD, "field")              \
+    X(N_PARAM, "param") X(N_STRUCT, "struct") X(N_BITS, "bits")                \
+    X(N_FIELD, "field")                                                        \
     X(N_UNION, "union") X(N_VARIANT, "variant")                                \
     X(N_CONTRACT, "contract") X(N_METHOD, "method") X(N_ENUM, "enum")         \
     X(N_ALIAS, "alias") X(N_DISTINCT, "distinct") X(N_ERROR_DOMAIN, "error")  \

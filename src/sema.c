@@ -51,9 +51,25 @@ static int is_float(SType* t) {
 static int is_num(SType* t) { return is_int(t) || is_float(t); }
 static int is_bool(SType* t) { return t->kind == SK_PRIM && t->prim == P_BOOL; }
 
+static int is_bits_field(Node* e, SType** owner, int* index) {
+    if (!e || e->kind != N_FIELD_E) return 0;
+    SType* b = node_ty(e->a);
+    while (b && b->kind == SK_PTR) b = b->base;
+    if (!b || b->kind != SK_BITS) return 0;
+    for (int i = 0; i < b->nfields; i++)
+        if (!b->fields[i].bit_anonymous && strlen(b->fields[i].name) == e->len &&
+            memcmp(b->fields[i].name, e->str, e->len) == 0) {
+            if (owner) *owner = b;
+            if (index) *index = i;
+            return 1;
+        }
+    return 0;
+}
+
 static int is_volatile_scalar(SType* t) {
     if (!t) return 0;
     if (t->kind == SK_DISTINCT) return is_volatile_scalar(t->base);
+    if (t->kind == SK_BITS) return 1;
     if (t->kind == SK_PTR) return 1;
     if (t->kind == SK_ENUM) return t->decl && t->decl->a;
     if (t->kind != SK_PRIM) return 0;
@@ -100,6 +116,7 @@ static const char* type_name(SType* t) {
     case SK_ENUM: return t->name ? t->name : "enum";
     case SK_CONTRACT: return t->name ? t->name : "contract";
     case SK_UNION: return t->name ? t->name : "union";
+    case SK_BITS: return t->name ? t->name : "bits";
     case SK_DISTINCT: return t->name ? t->name : "distinct";
     case SK_ERROR_DOMAIN: return t->name ? t->name : "error domain";
     case SK_ERROR: return "Error";
@@ -170,6 +187,10 @@ static int layout(SType* t) {
     }
     case SK_ENUM:
         if (!t->base) t->base = st_prim(P_I32);
+        if (!layout(t->base)) return 0;
+        t->size = t->base->size; t->align = t->base->align;
+        return 1;
+    case SK_BITS:
         if (!layout(t->base)) return 0;
         t->size = t->base->size; t->align = t->base->align;
         return 1;
@@ -476,7 +497,7 @@ static int same_type(SType* a, SType* b) {
         for (int i = 0; i < a->nparams; i++)
             if (!same_type(a->params[i], b->params[i])) return 0;
         return same_type(a->ret, b->ret);
-    case SK_STRUCT: case SK_ENUM: case SK_CONTRACT: case SK_DISTINCT:
+    case SK_STRUCT: case SK_ENUM: case SK_BITS: case SK_CONTRACT: case SK_DISTINCT:
     case SK_ERROR_DOMAIN: case SK_UNION:
         if (a->decl != b->decl || a->nargs != b->nargs) return 0;
         for (int i = 0; i < a->nargs; i++)
@@ -543,6 +564,8 @@ static int castable(SType* f, SType* t) {
     if (f->kind == SK_ERR || t->kind == SK_ERR) return 1;
     if (same_type(f, t)) return 1;
     if (shrink_ok(f, t)) return 1; // mut view casts to its plain form
+    if (f->kind == SK_BITS) return same_type(f->base, t);
+    if (t->kind == SK_BITS) return same_type(f, t->base);
     if (f == T_UT_INT)
         return is_num(t) || t->kind == SK_ENUM ||
                (t->kind == SK_DISTINCT && castable(f, t->base));
@@ -712,7 +735,7 @@ static int union_supports_equality(SType* t) {
     switch (t->kind) {
     case SK_PRIM:
         return t->prim != P_STRING;
-    case SK_PTR: case SK_FUNC: case SK_ENUM:
+    case SK_PTR: case SK_FUNC: case SK_ENUM: case SK_BITS:
     case SK_CONTRACT: case SK_ERROR:
         return 1;
     case SK_ARRAY: case SK_SLICE:
@@ -779,7 +802,7 @@ static void coerce_payload(Ck* k, Node* arg, SType* pt) {
         arg->ty = pt; // emitter stores members at these widths
         return;
     }
-    if (arg->kind == N_STRUCTLIT && !arg->a && pt->kind == SK_STRUCT) {
+    if (arg->kind == N_STRUCTLIT && !arg->a && (pt->kind == SK_STRUCT || pt->kind == SK_BITS)) {
         check_structlit(k, arg, pt);
         return;
     }
@@ -1751,6 +1774,7 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
         // to reach the final object must be writable: `*mut *T` may write T,
         // while `mut **T` may replace the inner pointer but not write T.
         SType* b = check_lvalue(k, e->a, 0);
+        e->a->ty = b;
         SType* last_ptr = NULL;
         for (SType* q = b; q && q->kind == SK_PTR; q = q->base)
             last_ptr = q;
@@ -1783,6 +1807,17 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
             if (e->len == 4 && memcmp(e->str, "code", 4) == 0)
                 return st_prim(P_I32);
             ck_err(k, e, "type Error has no field '%.*s'", (int)e->len, e->str);
+            return T_ERR;
+        }
+        if (b->kind == SK_BITS) {
+            for (int i = 0; i < b->nfields; i++)
+                if (!b->fields[i].bit_anonymous && strlen(b->fields[i].name) == e->len &&
+                    memcmp(b->fields[i].name, e->str, e->len) == 0) {
+                    e->ival = (uint64_t)i;
+                    return b->fields[i].t;
+                }
+            ck_err(k, e, "bits type %s has no accessible field '%.*s'",
+                   type_name(b), (int)e->len, e->str);
             return T_ERR;
         }
         if (b->kind != SK_STRUCT) {
@@ -1958,6 +1993,8 @@ static void check_mut_args(Ck* k, Node* call, Node* fndecl) {
         else if (am) { // mut passes the caller's address — the arg must have one
             check_lvalue(k, call->kids[i]->a, 0);
             Node* raw = call->kids[i]->a;
+            if (is_bits_field(raw, NULL, NULL))
+                ck_err(k, raw, "bit fields cannot supply mut arguments");
             if (raw->kind == N_IDENT) {
                 Sym* s = lookup_val(k, raw->str, raw->len);
                 if (s && s->is_const_backed)
@@ -2025,6 +2062,10 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         if (e->op == T_AMP) { // &lvalue -> *T; mut &lvalue -> mut *T
             int writable = (e->flags & F_MUT) != 0;
             SType* t = check_lvalue(k, e->a, writable);
+            if (is_bits_field(e->a, NULL, NULL)) {
+                ck_err(k, e, "bit fields are non-addressable");
+                return T_ERR;
+            }
             SType* p = st_new(SK_PTR);
             p->is_mut = writable;
             p->base = t;
@@ -2033,6 +2074,10 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         if (e->op == T_TILDE) return check_lvalue(k, e, 0);
         if (e->op == T_VOLATILE) {
             SType* t = check_lvalue(k, e->a, 0);
+            if (is_bits_field(e->a, NULL, NULL)) {
+                ck_err(k, e, "volatile access is allowed only on a complete bits value");
+                return T_ERR;
+            }
             if (t->kind != SK_ERR && !is_volatile_scalar(t))
                 ck_err(k, e,
                        "volatile access requires an eligible scalar place, got %s",
@@ -2099,6 +2144,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             int equality = op == T_EQEQ || op == T_BANGEQ;
             if (equality && same_type(a, b) &&
                 (a->kind == SK_ERROR ||
+                 a->kind == SK_BITS ||
                  (a->kind == SK_PRIM && a->prim == P_TYPEID)))
                 return st_prim(P_BOOL);
             // union equality: tag + active payload, when every payload supports it
@@ -2286,6 +2332,17 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             SType* ft = contract_method_type(k, b, m);
             return ft->ret ? ft->ret : T_ERR; // dispatch target
         }
+        if (b->kind == SK_BITS) {
+            for (int i = 0; i < b->nfields; i++)
+                if (!b->fields[i].bit_anonymous && strlen(b->fields[i].name) == e->len &&
+                    memcmp(b->fields[i].name, e->str, e->len) == 0) {
+                    e->ival = (uint64_t)i;
+                    return b->fields[i].t;
+                }
+            ck_err(k, e, "bits type %s has no accessible field '%.*s'",
+                   type_name(b), (int)e->len, e->str);
+            return T_ERR;
+        }
         if (b->kind == SK_STRUCT) {
             for (int i = 0; i < b->nfields; i++)
                 if ((uint32_t)strlen(b->fields[i].name) == e->len &&
@@ -2378,7 +2435,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         }
         SType* t = build_type(k, e->a);
         if (t->kind == SK_ERR) return t;
-        if (t->kind == SK_STRUCT) check_structlit(k, e, t);
+        if (t->kind == SK_STRUCT || t->kind == SK_BITS) check_structlit(k, e, t);
         else ck_err(k, e, "%s does not take a literal", type_name(t));
         return t;
     }
@@ -4042,7 +4099,7 @@ static void check_stmt(Ck* k, Node* s) {
         }
         if (s->nkids == 1) {
             Node* init = s->b;
-            if (init->kind == N_STRUCTLIT && !init->a && wants[0]->kind == SK_STRUCT)
+            if (init->kind == N_STRUCTLIT && !init->a && (wants[0]->kind == SK_STRUCT || wants[0]->kind == SK_BITS))
                 check_structlit(k, init, wants[0]);
             else if (init->kind == N_ARRAYLIT && wants[0]->kind == SK_ARRAY)
                 check_arraylit(k, init, wants[0]);
@@ -4132,8 +4189,24 @@ static void check_stmt(Ck* k, Node* s) {
             ck_err(k, s,
                    "volatile access requires an eligible scalar place, got %s",
                    type_name(t));
+        if ((s->flags & F_VOLATILE) && is_bits_field(s->kids[0], NULL, NULL))
+            ck_err(k, s, "volatile access is allowed only on a complete bits value");
         Node* rhs = s->a;
-        if (rhs->kind == N_STRUCTLIT && !rhs->a && t->kind == SK_STRUCT) {
+        SType* bits_owner = NULL; int bits_index = -1;
+        if (is_bits_field(s->kids[0], &bits_owner, &bits_index) && !compound) {
+            SField* f = &bits_owner->fields[bits_index]; int64_t v;
+            if (ut_const(rhs, &v)) {
+                int ok;
+                if (f->bit_signed) {
+                    int64_t lo = f->bit_width == 64 ? INT64_MIN : -(INT64_C(1) << (f->bit_width - 1));
+                    int64_t hi = f->bit_width == 64 ? INT64_MAX : (INT64_C(1) << (f->bit_width - 1)) - 1;
+                    ok = v >= lo && v <= hi;
+                } else ok = v >= 0 && (f->bit_width == 64 || (uint64_t)v < (UINT64_C(1) << f->bit_width));
+                if (!ok) ck_err(k, rhs, "constant does not fit %s.%s %s %u-bit field",
+                                type_name(bits_owner), f->name, f->bit_signed ? "signed" : "unsigned", f->bit_width);
+            }
+        }
+        if (rhs->kind == N_STRUCTLIT && !rhs->a && (t->kind == SK_STRUCT || t->kind == SK_BITS)) {
             check_structlit(k, rhs, t);
             return;
         }
@@ -4402,6 +4475,39 @@ static void check_block(Ck* k, Node* b) {
 
 static void check_structlit(Ck* k, Node* lit, SType* want) {
     lit->ty = want; // emitter: context-typed literal carries its type
+    if (want->kind == SK_BITS) {
+        uint8_t* seen = (uint8_t*)arena_alloc((size_t)(want->nfields ? want->nfields : 1));
+        memset(seen, 0, (size_t)(want->nfields ? want->nfields : 1));
+        for (int i = 0; i < lit->nkids; i++) {
+            Node* fi = lit->kids[i];
+            if (!fi->str) { ck_err(k, fi, "bits literals require named fields"); continue; }
+            int found = -1;
+            for (int j = 0; j < want->nfields; j++)
+                if (!want->fields[j].bit_anonymous && strlen(want->fields[j].name) == fi->len &&
+                    memcmp(want->fields[j].name, fi->str, fi->len) == 0) { found = j; break; }
+            if (found < 0) {
+                ck_err(k, fi, "bits type %s has no accessible field '%.*s'",
+                       type_name(want), (int)fi->len, fi->str); continue;
+            }
+            if (seen[found]) { ck_err(k, fi, "duplicate field '%.*s' in %s literal",
+                                      (int)fi->len, fi->str, type_name(want)); continue; }
+            seen[found] = 1;
+            int64_t v;
+            SField* f = &want->fields[found];
+            if (ut_const(fi->a, &v)) {
+                int ok;
+                if (f->bit_signed) {
+                    int64_t lo = f->bit_width == 64 ? INT64_MIN : -(INT64_C(1) << (f->bit_width - 1));
+                    int64_t hi = f->bit_width == 64 ? INT64_MAX : (INT64_C(1) << (f->bit_width - 1)) - 1;
+                    ok = v >= lo && v <= hi;
+                } else ok = v >= 0 && (f->bit_width == 64 || (uint64_t)v < (UINT64_C(1) << f->bit_width));
+                if (!ok) ck_err(k, fi->a, "constant does not fit %s.%s %s %u-bit field",
+                                type_name(want), f->name, f->bit_signed ? "signed" : "unsigned", f->bit_width);
+            }
+            coerce(k, fi->a, f->t);
+        }
+        return; // omitted named fields and anonymous ranges remain canonical zero
+    }
     if (want->kind != SK_STRUCT) {
         ck_err(k, lit, "struct literal used where %s expected", type_name(want));
         return;
@@ -4943,6 +5049,10 @@ static int init_stmt(InitCk* k, Node* s) {
     case N_ASSIGN:
         init_expr(k, s->a);
         for (int i = 0; i < s->nkids; i++) {
+            SType* base = s->kids[i]->kind == N_FIELD_E
+                ? init_shape(node_ty(s->kids[i]->a)) : NULL;
+            if (base && base->kind == SK_BITS)
+                init_expr(k, s->kids[i]->a); // preserving RMW reads the whole unit
             if (s->op != T_ASSIGN) init_expr(k, s->kids[i]);
             init_addr_parts(k, s->kids[i]);
             init_mark_path(k, s->kids[i]);
@@ -5207,6 +5317,41 @@ static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
         t->calc = 0;
     }
     k->type_build_depth--;
+    return t;
+}
+
+static SType* fill_bits_type(Ck* k, Node* decl, SType* t) {
+    t->kind = SK_BITS; t->name = decl->str; t->decl = decl;
+    t->base = build_type(k, decl->a);
+    int valid_backing = t->base && t->base->kind == SK_PRIM &&
+        t->base->prim >= P_U8 && t->base->prim <= P_U64;
+    if (!valid_backing) {
+        ck_err(k, decl->a, "bits backing type must be exactly u8, u16, u32, or u64");
+        t->base = st_prim(P_U8);
+    }
+    uint32_t total = 0, backing_bits = sema_size(t->base) * 8;
+    t->nfields = decl->nkids;
+    t->fields = (SField*)arena_alloc((size_t)(decl->nkids ? decl->nkids : 1) * sizeof(SField));
+    memset(t->fields, 0, (size_t)(decl->nkids ? decl->nkids : 1) * sizeof(SField));
+    for (int i = 0; i < decl->nkids; i++) {
+        Node* fd = decl->kids[i]; SField* f = &t->fields[i];
+        f->name = fd->str; f->bit_offset = (uint8_t)total;
+        f->bit_width = (uint8_t)fd->ival; f->bit_signed = (fd->flags & F_CONST) != 0;
+        f->bit_anonymous = fd->len == 1 && fd->str[0] == '_';
+        if (fd->ival == 0 || fd->ival > backing_bits || total + fd->ival > backing_bits)
+            ck_err(k, fd, "bit-field width must be positive and fit within the %u-bit backing integer", backing_bits);
+        total += (uint32_t)fd->ival;
+        int p = t->base->prim;
+        if (f->bit_signed) p = P_I8 + (p - P_U8);
+        f->t = st_prim(p);
+    }
+    if (total != backing_bits)
+        ck_err(k, decl, "bits fields total %u bits; backing type requires exactly %u", total, backing_bits);
+    for (int i = 0; i < t->nfields; i++) if (!t->fields[i].bit_anonymous)
+        for (int j = i + 1; j < t->nfields; j++)
+            if (!t->fields[j].bit_anonymous && strcmp(t->fields[i].name, t->fields[j].name) == 0)
+                ck_err(k, decl->kids[j], "duplicate bit-field '%s' in %s", t->fields[j].name, decl->str);
+    layout(t);
     return t;
 }
 
@@ -5666,7 +5811,7 @@ int sema_check(Node* file, Diag* d) {
                 binder->sym = s; // emitter: global storage key
             }
             if (n->b) {
-                if (n->b->kind == N_STRUCTLIT && !n->b->a && t->kind == SK_STRUCT)
+                if (n->b->kind == N_STRUCTLIT && !n->b->a && (t->kind == SK_STRUCT || t->kind == SK_BITS))
                     check_structlit(&k, n->b, t);
                 else if (n->b->kind == N_ARRAYLIT && t->kind == SK_ARRAY)
                     check_arraylit(&k, n->b, t);
@@ -5682,10 +5827,11 @@ int sema_check(Node* file, Diag* d) {
             }
             break;
         }
-        case N_STRUCT: case N_CONTRACT: case N_ENUM: case N_UNION: {
+        case N_STRUCT: case N_BITS: case N_CONTRACT: case N_ENUM: case N_UNION: {
             Sym* s = declare_type(&k, n, n->str, n->len);
             if (!s) break;
             SType* t = st_new(n->kind == N_STRUCT ? SK_STRUCT :
+                              n->kind == N_BITS ? SK_BITS :
                               n->kind == N_ENUM ? SK_ENUM :
                               n->kind == N_UNION ? SK_UNION : SK_CONTRACT);
             t->name = n->str;
@@ -5695,6 +5841,8 @@ int sema_check(Node* file, Diag* d) {
             if (!s->is_generic && n->kind == N_STRUCT) {
                 // register first (self-reference via pointer), then build fields
                 fill_struct_type(&k, n, t);
+            } else if (n->kind == N_BITS) {
+                fill_bits_type(&k, n, t);
             } else if (!s->is_generic && n->kind == N_UNION) {
                 fill_union_type(&k, n, t);
             } else if (n->kind == N_ENUM) {
