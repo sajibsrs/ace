@@ -25,8 +25,12 @@ main(): int {
     }
     values: [4]u8 = [10, 20, 30, 40]
     count: usize = len(values)
+    pointer: mut *u8 = mut &values[0]
+    address: usize = usize(pointer)
+    restored: mut *u8 = mut *u8(address)
+    constructed: mut []u8 = mut []u8(restored, count)
 
-    if count != 4 {
+    if count != 4 || len(constructed) != 4 {
         return 1
     }
 

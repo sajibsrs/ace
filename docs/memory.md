@@ -125,6 +125,33 @@ order with no metadata and no inter-element padding: `sizeof([N]T)` is
 `N * sizeof(T)` with the element's alignment. Strings are never NUL-terminated,
 and a string is a read-only view — its bytes cannot be written through it.
 
+## Pointer and slice construction
+
+`usize(pointer)` extracts the exact machine address from any data pointer.
+`*T(address)` and `mut *T(address)` convert an exact `usize` address back to the
+written pointer type; the writable form is an explicit assertion of write
+authority. Checked output diagnoses dynamic nonzero misalignment, while a
+locally known misaligned address is always a compile error.
+
+An existing extent can be made into a slice without allocation:
+
+```ace
+plain: []Packet = []Packet(pointer, count)
+writable: mut []Packet = mut []Packet(writable_pointer, count)
+```
+
+The pointer element type must match exactly and `count` is exactly `usize`.
+The plain form may shrink pointer permission; the writable form requires a
+writable pointer. A null pointer is valid only with count zero. Checked output
+also diagnoses dynamic byte-extent and end-address overflow; release output
+assumes these local preconditions and emits only the descriptor construction.
+A non-null pointer with count zero remains a non-null empty view.
+
+This operation asserts a view extent only. It does not validate mapping,
+lifetime, allocation membership, or actual accessibility, and it does not make
+the slice authoritative for `mem.realloc` or `mem.release`. No reverse
+possibly-empty-slice-to-pointer conversion is provided.
+
 ## Raw allocation
 
 The `mem` standard-library module exports:
@@ -134,6 +161,11 @@ mem.alloc(size: int, align: int): mut []u8
 mem.realloc(data: []u8, new_size: int): mut []u8
 mem.release(mut data: []u8)
 ```
+
+> Allocation returns a writable slice descriptor, not a bare pointer. The
+> descriptor contains the allocation address and requested byte length. Calling
+> it a pointer hides an essential part of the API's semantics. Copying or
+> returning the slice copies only this descriptor, not the allocated bytes.
 
 Import the module for qualified calls, or explicitly select the names:
 

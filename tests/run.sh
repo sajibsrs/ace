@@ -696,6 +696,21 @@ if command -v strings >/dev/null 2>&1 &&
     fail=1
 fi
 
+for f in null overflow alignment; do
+    if ! "$ACE" --checked -o "/tmp/ace_checked_features/pointer_construct_$f" \
+         "tests/checked_pointer_construct/$f.ace" >/dev/null 2>/tmp/ace_test_errs; then
+        echo "FAIL: checked pointer/slice construction fixture did not compile: $f"
+        fail=1
+    elif "/tmp/ace_checked_features/pointer_construct_$f" \
+         >/dev/null 2>/tmp/ace_test_errs; then
+        echo "FAIL: checked pointer/slice construction did not abort: $f"
+        fail=1
+    elif ! grep -Eq 'ace: (arithmetic violation|null use violation)' /tmp/ace_test_errs; then
+        echo "FAIL: checked pointer/slice construction lacked diagnostic: $f"
+        fail=1
+    fi
+done
+
 # emit fixtures: compile to an object, link with the system cc, run, and
 # check the exit code. The expected code rides in a `// expect-exit: N` line.
 if [ -d tests/emit ]; then

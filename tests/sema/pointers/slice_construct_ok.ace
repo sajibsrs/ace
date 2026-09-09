@@ -1,0 +1,10 @@
+Item: struct { value: int }
+
+views(pointer: mut *Item, count: usize) {
+    plain: []Item = []Item(pointer, count)
+    writable: mut []Item = mut []Item(pointer, count)
+    empty: []Item = []Item(pointer, usize(0))
+    zero: []Item = []Item(null, usize(0))
+    address: usize = usize(pointer)
+    restored: mut *Item = mut *Item(address)
+}

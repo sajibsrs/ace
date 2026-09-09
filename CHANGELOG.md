@@ -112,6 +112,11 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Memory
 
+- Implemented exact data-pointer/address conversions and explicit
+  pointer-plus-count slice construction. The compiler preserves written
+  permission, lowers the address and two-word descriptor directly, rejects
+  locally provable alignment/null/extent violations, and emits only local
+  alignment, null, scaling, and end-address guards in checked output.
 - Implemented access-site volatile scalar reads and writes with once-only
   address/value evaluation and one exact-width AArch64 access. Packed and
   volatile fields share typed-place offsets and scalar load/store lowering;

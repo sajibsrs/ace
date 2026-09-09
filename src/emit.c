@@ -3489,6 +3489,69 @@ static void emit_bits_integer(Em* e, int intrinsic, int bits,
 
 static EV gen_call(Em* e, Node* call) {
     Node* callee = call->a;
+
+    // usize -> data pointer: identical bits, plus the local checked alignment
+    // diagnostic promised by the explicit trust boundary.
+    if (callee->kind == N_PTR && !call->sym) {
+        EV address = gen_expr(e, call->kids[0]);
+        SType* pt = node_ty(call);
+        uint32_t align = pt && pt->base ? ty_align(pt->base) : 1;
+        if (e->mode == EMIT_CHECKED && align > 1 &&
+            !(call->flags & F_BOUNDS_PROVEN)) {
+            load_imm(e, 1, 16, align - 1);
+            ins(e, 0xEA00001Fu | (16u << 16) |
+                   ((uint32_t)xreg(address.idx) << 5)); // tst address, align-1
+            int aligned = new_label(e);
+            bcond_(e, C_EQ, aligned);
+            emit_arithmetic_fail_call(e);
+            bind_label(e, aligned);
+        }
+        return address;
+    }
+
+    // Explicit pointer + element count -> two-word slice descriptor.
+    if (callee->kind == N_SLICE_T && call->nkids == 2 && !call->sym) {
+        int si = e->vti, sf = e->vtf;
+        uint32_t off = temp_slot(e, 16, 8);
+        EV pointer = gen_expr(e, call->kids[0]);
+        EV count = gen_expr(e, call->kids[1]);
+        if (e->mode == EMIT_CHECKED && !(call->flags & F_BOUNDS_PROVEN)) {
+            int extent_ok = new_label(e);
+            cbz_(e, 1, xreg(count.idx), 0, extent_ok);
+            int nonnull = new_label(e);
+            cbz_(e, 1, xreg(pointer.idx), 1, nonnull);
+            emit_null_fail_call(e);
+            bind_label(e, nonnull);
+            uint32_t size = ty_size(node_ty(call)->base);
+            if (size != 1) {
+                load_imm(e, 1, 16, size);
+                ins(e, 0x9BC07C00u | (16u << 16) |
+                       ((uint32_t)xreg(count.idx) << 5) | 17u); // umulh
+                int scaled = new_label(e);
+                cbz_(e, 1, 17, 0, scaled);
+                emit_arithmetic_fail_call(e);
+                bind_label(e, scaled);
+                ins(e, 0x9B007C00u | (16u << 16) |
+                       ((uint32_t)xreg(count.idx) << 5) | 17u); // scaled bytes
+            } else {
+                ins(e, 0xAA0003F1u | ((uint32_t)xreg(count.idx) << 16)); // mov x17,count
+            }
+            ins(e, 0xAB00001Fu | (17u << 16) |
+                   ((uint32_t)xreg(pointer.idx) << 5)); // adds xzr,pointer,bytes
+            int end_ok = new_label(e);
+            bcond_(e, C_LO, end_ok);
+            emit_arithmetic_fail_call(e);
+            bind_label(e, end_ok);
+            bind_label(e, extent_ok);
+        }
+        frame_addr(e, 16, off);
+        st_reg(e, xreg(pointer.idx), 16, 0, 8);
+        st_reg(e, xreg(count.idx), 16, 8, 8);
+        e->vti = si; e->vtf = sf;
+        int result = tmp_int(e);
+        frame_addr(e, xreg(result), off);
+        return (EV){ CLS_ADDR, result };
+    }
     // Explicit contract construction: Shape(&value) / Shape[T](&value).
     if (call->d && call->d->kind == N_CONFORMANCE) {
         SType* pt = node_ty(call->kids[0]);

@@ -888,6 +888,16 @@ static int usize_const(Node* e, uint64_t* out) {
     return 0;
 }
 
+/* Exact machine addresses visible at a local construction site. */
+static int address_const(Node* e, uint64_t* out) {
+    if (!e) return 0;
+    if (e->kind == N_NULL) { *out = 0; return 1; }
+    if (e->kind == N_CALL && e->a && e->a->kind == N_PTR &&
+        e->nkids == 1)
+        return usize_const(e->kids[0], out);
+    return 0;
+}
+
 static int bool_const(Node* e, int* out) {
     if (!e) return 0;
     if (e->kind == N_BOOL) { *out = e->ival != 0; return 1; }
@@ -3282,6 +3292,40 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
 
 static SType* check_call(Ck* k, Node* call) {
     Node* callee = call->a;
+    /* Pointer types are conversion callees only for the exact usize-address
+     * boundary.  Writable construction is an explicit authority assertion. */
+    if (callee->kind == N_PTR) {
+        SType* want = build_type(k, callee);
+        if (call->nkids != 1) {
+            ck_err(k, call, "a data-pointer conversion takes exactly one usize address");
+            return T_ERR;
+        }
+        if (!layout(want->base) || !want->base->size) {
+            ck_err(k, call,
+                   "data-pointer conversion requires a complete, nonzero-sized pointee, got %s",
+                   type_name(want->base));
+            return T_ERR;
+        }
+        SType* from = expr_type(k, call->kids[0]);
+        if (from->kind == SK_ERR) return T_ERR;
+        if (from->kind != SK_PRIM || from->prim != P_USIZE) {
+            ck_err(k, call, "data-pointer conversion requires usize, got %s",
+                   type_name(from));
+            return T_ERR;
+        }
+        uint64_t address;
+        if (usize_const(call->kids[0], &address)) {
+            if (address && address % want->base->align) {
+                ck_err(k, call->kids[0],
+                       "address 0x%llx is not aligned for %s",
+                       (unsigned long long)address, type_name(want->base));
+                return T_ERR;
+            }
+            call->flags |= F_BOUNDS_PROVEN;
+        }
+        callee->ty = want;
+        return want;
+    }
     // direct name: call, cast, or forward (pending) call
     if (callee->kind == N_IDENT) {
         Sym* s = lookup_val(k, callee->str, callee->len);
@@ -3326,7 +3370,10 @@ static SType* check_call(Ck* k, Node* call) {
                     from->kind == SK_SLICE && from->base == st_prim(P_U8) &&
                     from->is_mut)
                     want = T_MUT_STRING;
-                if (!castable(from, want)) {
+                if (want->kind == SK_PRIM && want->prim == P_USIZE &&
+                    from->kind == SK_PTR) {
+                    /* exact address extraction, including null */
+                } else if (!castable(from, want)) {
                     ck_err(k, call, "cannot cast %s to %s", type_name(from), type_name(want));
                     return T_ERR;
                 }
@@ -3583,13 +3630,66 @@ static SType* check_call(Ck* k, Node* call) {
         k->pending = pd;
         return T_ERR; // a matching overload may be declared later
     }
-    // Slice-shaped identity cast. string/[]char/[]u8 are spelling aliases;
-    // retain writable permission when an older explicit spelling cast is used.
+    // Slice-shaped identity cast or explicit pointer-plus-count construction.
     if (callee->kind == N_SLICE_T) {
         SType* want = build_type(k, callee);
         if (want->kind == SK_ERR) return T_ERR;
+        if (call->nkids == 2) {
+            if (!layout(want->base) || !want->base->size) {
+                ck_err(k, call,
+                       "slice construction requires a complete, nonzero-sized element type, got %s",
+                       type_name(want->base));
+                return T_ERR;
+            }
+            SType* pointer;
+            if (call->kids[0]->kind == N_NULL) {
+                pointer = st_new(SK_PTR);
+                pointer->base = want->base;
+                pointer->is_mut = want->is_mut;
+                call->kids[0]->ty = pointer;
+            } else {
+                pointer = expr_type(k, call->kids[0]);
+            }
+            SType* count = expr_type(k, call->kids[1]);
+            if (pointer->kind == SK_ERR || count->kind == SK_ERR) return T_ERR;
+            int exact_pointee = pointer->kind == SK_PTR &&
+                                same_type(pointer->base, want->base);
+            int permission = exact_pointee && (!want->is_mut || pointer->is_mut);
+            if (!permission) {
+                ck_err(k, call->kids[0],
+                       "%s construction requires an exact %spointer to %s, got %s",
+                       type_name(want), want->is_mut ? "writable " : "",
+                       type_name(want->base), type_name(pointer));
+                return T_ERR;
+            }
+            if (count->kind != SK_PRIM || count->prim != P_USIZE) {
+                ck_err(k, call->kids[1], "slice element count must be usize, got %s",
+                       type_name(count));
+                return T_ERR;
+            }
+            uint64_t n, address;
+            int kn = usize_const(call->kids[1], &n);
+            int ka = address_const(call->kids[0], &address);
+            if (kn && n > UINT64_MAX / want->base->size) {
+                ck_err(k, call->kids[1],
+                       "slice byte extent count * sizeof(%s) overflows usize",
+                       type_name(want->base));
+                return T_ERR;
+            }
+            if (ka && kn && n && !address) {
+                ck_err(k, call, "null pointer cannot construct a non-empty slice");
+                return T_ERR;
+            }
+            if (ka && kn && n && address > UINT64_MAX - n * want->base->size) {
+                ck_err(k, call, "slice end address overflows usize");
+                return T_ERR;
+            }
+            if ((kn && n == 0) || (ka && kn)) call->flags |= F_BOUNDS_PROVEN;
+            callee->ty = want;
+            return want;
+        }
         if (call->nkids != 1) {
-            ck_err(k, call, "a cast takes exactly one argument");
+            ck_err(k, call, "a slice cast takes one argument; construction takes pointer and count");
             return T_ERR;
         }
         Node* arg = call->kids[0];

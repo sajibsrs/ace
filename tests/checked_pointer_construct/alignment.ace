@@ -1,0 +1,11 @@
+Item: struct { value: int }
+
+restore(address: usize): *Item {
+    return *Item(address)
+}
+
+main(): int {
+    pointer: *Item = restore(usize(3))
+    if pointer == null { return 1 }
+    return 0
+}

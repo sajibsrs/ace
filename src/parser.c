@@ -382,6 +382,7 @@ static Node* expr_and(P* p, int ctx);
 static Node* expr_orlvl(P* p, int ctx);
 static Node* expr_unary(P* p, int ctx);
 static Node* expr_postfix(P* p, int ctx);
+static Node* expr_postfix_base(P* p, int ctx, Node* base);
 static Node* expr_primary(P* p, int ctx);
 
 static int is_assign_op(TokKind k) {
@@ -535,7 +536,7 @@ static Node* expr_unary(P* p, int ctx) {
         if (kth(p, 1) == T_STAR ||
             (kth(p, 1) == T_LBRACK && kth(p, 2) == T_RBRACK) ||
             (is_mut_string && kth(p, 2) != T_LBRACK)) {
-            return parse_type(p);
+            return expr_postfix_base(p, ctx, parse_type(p));
         }
         // mut seq[lo..hi] — writable-view establishment
         p->i++;
@@ -546,6 +547,12 @@ static Node* expr_unary(P* p, int ctx) {
         }
         perr(p, "'mut' in an expression establishes a writable view: 'mut &value' or 'mut seq[lo..hi]'");
         return base;
+    }
+    if (at(p, T_STAR)) {
+        /* A leading '*' cannot be a binary operator.  In expression position
+         * it therefore starts the explicit data-pointer conversion type:
+         * `*T(address)`.  Postfix parsing consumes the following call. */
+        return expr_postfix_base(p, ctx, parse_type(p));
     }
     if (at(p, T_AMP)) { // address-of; lvalue-ness checked in semantic pass
         Node* u = nd(p, N_UNARY);
@@ -589,7 +596,10 @@ static Node* parse_structlit(P* p, Node* base) {
 }
 
 static Node* expr_postfix(P* p, int ctx) {
-    Node* base = expr_primary(p, ctx);
+    return expr_postfix_base(p, ctx, expr_primary(p, ctx));
+}
+
+static Node* expr_postfix_base(P* p, int ctx, Node* base) {
     for (;;) {
         switch (tk(p)->kind) {
         case T_LPAREN: { // call

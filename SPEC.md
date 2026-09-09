@@ -102,6 +102,21 @@ Decision: manual management through one fixed process-wide allocator strategy (C
    the trust boundary; Ace adds no tagged-pointer abstraction, hidden metadata,
    ownership rule, or runtime validation beyond the cheap local alignment
    diagnostic.
+   A slice view may be constructed explicitly from an exact element pointer and
+   element count: `[]T(pointer, count)` accepts `*T` or `mut *T`, while
+   `mut []T(writable_pointer, count)` accepts only `mut *T`. The count is
+   exactly `usize`; permission may shrink but never widen. Null plus zero is
+   canonical null, while a non-null pointer plus zero remains a non-null empty
+   view. Null plus a positive count is rejected when locally constant,
+   diagnosed in checked output when dynamic, and is a release precondition.
+   The same static/checked/release policy applies to `count * sizeof(T)` and
+   end-address overflow. `T` must have a complete, nonzero-sized layout.
+   Construction allocates nothing and asserts only the stated view extent: it
+   establishes no allocation identity, ownership, lifetime, mapping, or actual
+   range validity and never creates an authoritative `mem.realloc` or
+   `mem.release` descriptor. There is no implicit pointer/slice conversion,
+   allocator-metadata lookup, or reverse possibly-empty-slice-to-pointer
+   conversion.
 10. Raw surface: `mem.alloc(size: int, align: int): mut []u8`, `mem.realloc(data: []u8, new_size: int): mut []u8`, and `mem.release(mut data: []u8)`. Allocation and successful reallocation originate writable-content proof because they return fresh writable storage; failure returns the canonical null `mut []u8`, with the same representation as plain `[]u8`. The input to `realloc` remains plain because the operation requires the authoritative allocation descriptor, not element-write permission. `release` likewise takes plain content permission while its call-site `mut` grants replacement of the caller's descriptor with null; an intentionally permission-shrunk allocation handle therefore remains reallocatable and releasable. The module may be imported qualified or its members selected explicitly. Invalid requests and OOM return null, never abort. Sizes must be positive. v1 Apple arm64 alignment must be a positive power of two no greater than the platform heap's fundamental 16-byte alignment; larger over-aligned allocation is additive later. `mem.realloc` requires the complete authoritative non-null slice, may move, and requires a positive new size; on invalid size or OOM the original slice remains live and unchanged, and on success only the returned slice is authoritative.
 11. `mem.release` accepts a slice so cleanup may be unconditional. A null empty slice is a no-op; otherwise it releases the storage and sets that caller variable to canonical zero (zero pointer and zero length). The `mut` signature and call-site mark make this mutation visible.
 12. Slices are copyable views, not owners. Copying a slice copies only its pointer and length; all copies address the same storage. `mem.release(mut a)` nulls only `a`: copied slices remain non-null dangling aliases and must not be used or released. Ace performs no alias search and adds no ownership or move analysis.
@@ -771,11 +786,7 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 
 ### Active
 
-- Implement the carved `usize(p)`, `*T(address)`, and
-  `mut *T(address)` data-pointer conversions from Memory #9, including parser
-  support for pointer types in conversion position, exact address lowering,
-  complete/nonzero pointee validation, checked alignment diagnostics, and
-  exclusion coverage for non-`usize`, function, and multiword values.
+No active decisions.
 
 ### Trigger-gated
 

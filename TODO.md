@@ -43,10 +43,6 @@ blockers for the current sequential core.
 
 ### Pointer-level machine operations
 
-- **Pointer ↔ integer conversions** [open] — `usize(p)`, `*T(address)`, and
-  `mut *T(address)` are carved in Memory #9 and queued after pointer arithmetic.
-  `usize` is the sole address integer; no separate address type or tagged-pointer
-  abstraction is introduced.
 - **Over-16-byte alignment for raw `mem.alloc`** [additive].
 
 ### C boundary completion

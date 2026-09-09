@@ -207,6 +207,7 @@ arg_list      := arg ("," arg)*
 arg           := ["mut"] expr                             // call-site mutation mark
 
 primary       := literal | ident | "(" expr_list ")" | array_lit | struct_lit
+               | ptr_type | slice_type
 array_lit     := "[" [expr_list | array_repeat] "]"
 array_repeat  := expr ":" int_lit                       // [u8(0) : 12]; exact contextual array length
 struct_lit    := "{" field_init ("," field_init)* "}"     [P]
@@ -275,3 +276,7 @@ choices that are not evident from the productions.
     type grammar.
 12. `offsetof(` parses a type, comma, and dot-separated field-name path.
     `static_assert` is additionally admitted in the top-level declaration list.
+13. A pointer or slice type is admitted as a primary only as the callee of its
+    explicit conversion/construction call. Semantic analysis distinguishes the
+    one-argument slice spelling cast from two-argument pointer-plus-count slice
+    construction.
