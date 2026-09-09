@@ -1,0 +1,26 @@
+/* Darwin ioctl wrappers preserve operation identity and immediate errno. */
+
+// expect-exit: 0
+
+import sys
+
+main(): int {
+    no_argument: Error = sys.ioctl(sys.Fd(-1), sys.BIOCPROMISC)
+    if no_argument == null || no_argument.domain != typeid(sys.IoctlErr) ||
+       no_argument.code != 9 {
+        return 1
+    }
+    value: [4]u8 = [u8(0) : 4]
+    with_argument: Error = sys.ioctl(sys.Fd(-1), sys.BIOCGBLEN, mut value[0..4])
+    if with_argument == null || with_argument.domain != typeid(sys.IoctlErr) ||
+       with_argument.code != 9 {
+        return 2
+    }
+    empty: mut []u8 = mut value[0..0]
+    empty_error: Error = sys.ioctl(sys.Fd(-1), sys.BIOCGBLEN, empty)
+    if empty_error == null || empty_error.domain != typeid(sys.IoctlErr) ||
+       empty_error.code != 22 {
+        return 3
+    }
+    return 0
+}

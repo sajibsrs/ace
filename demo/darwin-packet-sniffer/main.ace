@@ -1,0 +1,203 @@
+/* macOS/Apple-arm64 BPF packet-sniffer proof of concept.
+ *
+ * Build and run:
+ *   ./ace demo/darwin-packet-sniffer/main.ace -o bpf-sniffer
+ *   sudo ./bpf-sniffer [interface]
+ *
+ * Capture storage is a fixed-capacity caller-owned stack array. The parser
+ * reads bounded byte slices manually and creates no typed view over them.
+ */
+
+import fmt
+import mem
+import sys
+import bpf: "./packet.ace"
+
+CAPTURE_CAPACITY: const usize = 524288
+
+report(context: string, err: Error) {
+    fmt.printf("%s: error %d\n", context, int(err.code))
+}
+
+print_hex_byte(value: u8) {
+    digits: string = "0123456789abcdef"
+    fmt.printf("%c%c", digits[usize(value >> 4)], digits[usize(value & 0x0f)])
+}
+
+print_mac(address: [6]u8) {
+    for i: usize in 0 .. 6 {
+        if i != 0 {
+            fmt.print(":")
+        }
+        print_hex_byte(address[i])
+    }
+}
+
+print_ip(address: [4]u8) {
+    for i: usize in 0 .. 4 {
+        if i != 0 {
+            fmt.print(".")
+        }
+        fmt.print(uint(address[i]))
+    }
+}
+
+print_packet(packet: bpf.Packet) {
+    fmt.print("source MAC: ")
+    print_mac(packet.source_mac)
+    fmt.print("\ndestination MAC: ")
+    print_mac(packet.destination_mac)
+    fmt.print("\nsource IPv4: ")
+    print_ip(packet.source_ip)
+    fmt.print("\ndestination IPv4: ")
+    print_ip(packet.destination_ip)
+    fmt.printf("\ncaptured length: %u\nprotocol: ", packet.captured_length)
+    if packet.protocol == 6 {
+        fmt.println("TCP")
+    } else if packet.protocol == 17 {
+        fmt.println("UDP")
+    } else if packet.protocol == 1 {
+        fmt.println("ICMP")
+    } else {
+        fmt.println(uint(packet.protocol))
+    }
+}
+
+main(): int {
+    paths: [8]string = [
+        "/dev/bpf0", "/dev/bpf1", "/dev/bpf2", "/dev/bpf3",
+        "/dev/bpf4", "/dev/bpf5", "/dev/bpf6", "/dev/bpf7",
+    ]
+    fd: sys.Fd = sys.Fd(-1)
+    last_open_error: Error = null
+
+    for i: usize in 0 .. 8 {
+        open_error: Error
+        fd, open_error = sys.open(paths[i], sys.O_RDWR)
+        if open_error == null {
+            break
+        }
+        last_open_error = open_error
+        if open_error.code == sys.EACCES {
+            report(paths[i], open_error)
+            fmt.println("BPF access was denied; this demo may need to be run with sudo.")
+            return 1
+        }
+        if open_error.code != sys.EBUSY {
+            report(paths[i], open_error)
+            return 1
+        }
+    }
+    if fd == -1 {
+        report("all /dev/bpf0 through /dev/bpf7 devices are busy", last_open_error)
+        return 1
+    }
+
+    interface: string = "en0"
+    if sys.argc() > 1 {
+        interface = sys.arg(1)
+    }
+    if len(interface) == 0 || len(interface) > 15 {
+        fmt.printf("interface name must contain 1 through 15 bytes: error %d\n", 22)
+        sys.close(fd)
+        return 1
+    }
+    debug: bool = sys.argc() > 2 && mem.equal(sys.arg(2), "--debug")
+    interface_request: [32]u8 = [u8(0) : 32]
+    for i: usize in 0 .. len(interface) {
+        interface_request[i] = interface[i]
+    }
+    err: Error = sys.ioctl(fd, sys.BIOCSETIF, mut interface_request[0..32])
+    if err != null {
+        fmt.printf("BIOCSETIF %s: error %d\n", interface, int(err.code))
+        sys.close(fd)
+        return 1
+    }
+
+    err = sys.ioctl(fd, sys.BIOCPROMISC)
+    if err != null {
+        report("BIOCPROMISC", err)
+        sys.close(fd)
+        return 1
+    }
+
+    immediate: [4]u8 = [u8(1), u8(0), u8(0), u8(0)]
+    err = sys.ioctl(fd, sys.BIOCIMMEDIATE, mut immediate[0..4])
+    if err != null {
+        report("BIOCIMMEDIATE", err)
+        sys.close(fd)
+        return 1
+    }
+
+    length_bytes: [4]u8 = [u8(0) : 4]
+    err = sys.ioctl(fd, sys.BIOCGBLEN, mut length_bytes[0..4])
+    if err != null {
+        report("BIOCGBLEN", err)
+        sys.close(fd)
+        return 1
+    }
+    buffer_length: usize = usize(length_bytes[0]) |
+                           (usize(length_bytes[1]) << 8) |
+                           (usize(length_bytes[2]) << 16) |
+                           (usize(length_bytes[3]) << 24)
+    if buffer_length == 0 || buffer_length > CAPTURE_CAPACITY {
+        fmt.printf("BIOCGBLEN returned unsupported size %u: error %d\n",
+                   buffer_length, 22)
+        sys.close(fd)
+        return 1
+    }
+
+    fmt.printf("listening on %s with a %u-byte BPF buffer\n", interface, buffer_length)
+
+    storage: [524288]u8
+    for {
+        count: int, read_error: Error = sys.read(fd, mut storage[0..buffer_length])
+        if read_error != null {
+            report("BPF read", read_error)
+            sys.close(fd)
+            return 1
+        }
+        if count == 0 {
+            continue
+        }
+        bytes: usize = usize(count)
+        captured: []u8 = storage[0..bytes]
+        if debug {
+            fmt.printf("BPF read returned %u bytes\n", bytes)
+            shown: usize = bytes
+            if shown > 24 {
+                shown = 24
+            }
+            fmt.print("header bytes:")
+            for i: usize in 0 .. shown {
+                fmt.print(" ")
+                print_hex_byte(captured[i])
+            }
+            fmt.print("\n")
+        }
+        at: usize = 0
+        for at < bytes {
+            record: bpf.Record, complete: bool = bpf.decode_record(captured, at)
+            if !complete {
+                if debug {
+                    fmt.printf("truncated or malformed BPF record at byte %u\n", at)
+                }
+                break
+            }
+            packet: bpf.Packet, is_ipv4: bool = bpf.decode_ipv4(captured, record)
+            if is_ipv4 {
+                print_packet(packet)
+                close_error: Error = sys.close(fd)
+                if close_error != null {
+                    report("close BPF descriptor", close_error)
+                    return 1
+                }
+                return 0
+            }
+            if debug {
+                fmt.printf("skipped record at byte %u with captured length %u\n", at, record.captured_length)
+            }
+            at = record.next
+        }
+    }
+}

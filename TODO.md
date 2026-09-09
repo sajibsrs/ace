@@ -57,6 +57,30 @@ blockers for the current sequential core.
 - **C global variables in extern blocks** [unspecified] — data imports such as
   `stdout` and errno-style globals are unaddressed.
 
+### Low-level systems breadth
+
+The Darwin BPF proof establishes allocation-free user-space kernel interaction,
+native ABI calls, descriptor control, aligned record walking, and bounded
+binary parsing. It does not by itself establish every low-level domain. Keep
+the remaining proof points explicit:
+
+- **Memory-mapped files and devices** [new] — carve mapping, protection,
+  synchronization, unmapping, and device-memory rules from real target uses.
+- **Signals and signal-safe execution** [new] — define handler ABI, masks,
+  interruption, and the deliberately restricted operations valid in handlers.
+- **Threads, atomics, and synchronization** [queued] — follow the networking
+  proof in Decision Queue order; preserve explicit memory ordering and costs.
+- **Broader event and descriptor control** [additive] — extend existing polling
+  and raw Darwin `ioctl` only for proven terminal, device, or kernel customers,
+  without implying unsupported portability.
+- **Freestanding and privileged targets** [new] — kernels, drivers, bootloaders,
+  and no-libSystem programs require separately carved runtime and target
+  contracts; successful Darwin user-space BPF access does not establish them.
+- **Low-level target breadth** [new] — validate assembly and SIMD ergonomics,
+  device-scale volatile access, additional architectures and operating systems,
+  and richer static/shared linking through concrete programs. C callbacks and
+  callable C-ABI function pointers remain tracked under C boundary completion.
+
 ## 2. Compiler and backend completion
 
 - **Canonical source formatter** [open] — deferred while language implementation

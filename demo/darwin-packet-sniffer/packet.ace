@@ -1,0 +1,119 @@
+/* Allocation-free decoding shared by the Darwin BPF demo and deterministic tests.
+ * Darwin BPF metadata is native-endian; Ethernet and IPv4 fields are
+ * network-endian. Every load is preceded by an explicit slice bound check.
+ */
+
+pub Record: struct {
+    frame_start: usize,
+    captured_length: usize,
+    next: usize,
+}
+
+pub Packet: struct {
+    source_mac: [6]u8,
+    destination_mac: [6]u8,
+    source_ip: [4]u8,
+    destination_ip: [4]u8,
+    captured_length: usize,
+    protocol: u8,
+}
+
+zero_record(): Record {
+    return Record {frame_start: 0, captured_length: 0, next: 0}
+}
+
+zero_packet(): Packet {
+    return Packet {
+        source_mac: [u8(0) : 6],
+        destination_mac: [u8(0) : 6],
+        source_ip: [u8(0) : 4],
+        destination_ip: [u8(0) : 4],
+        captured_length: 0,
+        protocol: 0,
+    }
+}
+
+native_u16(data: []u8, at: usize): u16 {
+    return u16(data[at]) | (u16(data[at + 1]) << 8)
+}
+
+native_u32(data: []u8, at: usize): u32 {
+    return u32(data[at]) |
+           (u32(data[at + 1]) << 8) |
+           (u32(data[at + 2]) << 16) |
+           (u32(data[at + 3]) << 24)
+}
+
+network_u16(data: []u8, at: usize): u16 {
+    return (u16(data[at]) << 8) | u16(data[at + 1])
+}
+
+/* Decode one complete Darwin bpf_hdr plus frame and BPF_WORDALIGN padding.
+ * A false result never exposes partially decoded offsets.
+ */
+pub decode_record(data: []u8, at: usize): (Record, bool) {
+    if at > len(data) || len(data) - at < 18 {
+        return zero_record(), false
+    }
+    captured: usize = usize(native_u32(data, at + 8))
+    header: usize = usize(native_u16(data, at + 16))
+    if header < 18 {
+        return zero_record(), false
+    }
+    total: usize = header + captured
+    remaining: usize = len(data) - at
+    if total > remaining {
+        return zero_record(), false
+    }
+    padding: usize = (4 - (total & 3)) & 3
+    if padding > remaining - total {
+        return zero_record(), false
+    }
+    record: Record = Record {
+        frame_start: at + header,
+        captured_length: captured,
+        next: at + total + padding,
+    }
+    return record, true
+}
+
+/* Decode an Ethernet II IPv4 frame. The complete IPv4 datagram named by its
+ * network-order total-length field must be present in the captured bytes.
+ */
+pub decode_ipv4(data: []u8, record: Record): (Packet, bool) {
+    if record.frame_start > len(data) ||
+       record.captured_length > len(data) - record.frame_start ||
+       record.captured_length < 34 {
+        return zero_packet(), false
+    }
+    frame: usize = record.frame_start
+    if network_u16(data, frame + 12) != u16(0x0800) {
+        return zero_packet(), false
+    }
+    ip: usize = frame + 14
+    version_ihl: u8 = data[ip]
+    if version_ihl >> 4 != 4 {
+        return zero_packet(), false
+    }
+    header_length: usize = usize(version_ihl & 0x0f) * 4
+    if header_length < 20 || header_length > record.captured_length - 14 {
+        return zero_packet(), false
+    }
+    total_length: usize = usize(network_u16(data, ip + 2))
+    if total_length < header_length || total_length > record.captured_length - 14 {
+        return zero_packet(), false
+    }
+
+    packet: Packet = zero_packet()
+    for i: usize in 0 .. 6 {
+        packet.destination_mac[i] = data[frame + i]
+        packet.source_mac[i] = data[frame + 6 + i]
+    }
+    for i: usize in 0 .. 4 {
+        packet.source_ip[i] = data[ip + 12 + i]
+        packet.destination_ip[i] = data[ip + 16 + i]
+    }
+    packet.captured_length = record.captured_length
+    packet.protocol = data[ip + 9]
+    return packet, true
+}

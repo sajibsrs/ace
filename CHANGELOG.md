@@ -187,6 +187,11 @@ current normative rules, and Git preserves patch-level detail.
 - Implemented `sys` file-descriptor I/O, descriptor constants, errno capture,
   command-line arguments, environment access, and separate elapsed/awake
   monotonic clocks through thin platform bindings.
+- Added the Darwin Apple-arm64 `sys.ioctl` escape hatch with the native
+  `unsigned long` request width, variadic-call ABI, caller-owned byte arguments,
+  immediate `IoctlErr` capture, and SDK-verified BPF constants/layouts; the
+  allocation-free BPF demo manually walks aligned native headers and bounded
+  Ethernet/IPv4 bytes, with deterministic decoding and ABI fixtures.
 - Added immediate `sys.exit(code)` through the OS-neutral `sys` facade and
   a private Darwin OS layer calling libSystem `_exit`; it runs neither defers
   nor C-runtime exit handlers and requires no compiler intrinsic.

@@ -50,6 +50,7 @@ pub CloseDirErr: error
 pub ForkErr: error
 pub WaitErr: error
 pub PipeErr: error
+pub IoctlErr: error
 
 pub FileKind: enum { unknown, regular, directory, symlink, other }
 
@@ -98,6 +99,36 @@ DarwinStat: struct {
     qspare: [2]i64,
 }
 
+/* Darwin arm64 layouts used to derive and verify the BPF ioctl request
+ * values. The public ioctl wrapper still accepts caller-owned bytes; it does
+ * not turn byte storage into typed storage.
+ */
+@align(8)
+DarwinIfreq: struct {
+    name: [16]u8,
+    data: [16]u8,
+}
+
+DarwinBpfTimeval: struct {
+    seconds: i32,
+    microseconds: i32,
+}
+
+DarwinBpfHeader: struct {
+    timestamp: DarwinBpfTimeval,
+    captured_length: u32,
+    data_length: u32,
+    header_length: u16,
+}
+
+static_assert(sizeof(DarwinIfreq) == 32 && alignof(DarwinIfreq) == 8)
+static_assert(offsetof(DarwinIfreq, name) == 0 && offsetof(DarwinIfreq, data) == 16)
+static_assert(sizeof(DarwinBpfTimeval) == 8 && alignof(DarwinBpfTimeval) == 4)
+static_assert(sizeof(DarwinBpfHeader) == 20 && alignof(DarwinBpfHeader) == 4)
+static_assert(offsetof(DarwinBpfHeader, captured_length) == 8)
+static_assert(offsetof(DarwinBpfHeader, data_length) == 12)
+static_assert(offsetof(DarwinBpfHeader, header_length) == 16)
+
 extern "c" {
     /* `open` is variadic and Apple arm64 passes its variadic mode on the
      * caller's stack, so the fixed-arity libSystem export __open is used.
@@ -117,6 +148,10 @@ extern "c" {
     c_fork(): i32 = "fork"
     c_waitpid(pid: i32, status: mut *i32, options: i32): i32 = "waitpid"
     c_pipe(fds: mut *i32): i32 = "pipe"
+    /* Darwin declares ioctl(int, unsigned long, ...). On Apple arm64 every
+     * unnamed variadic argument is passed in an eight-byte stack slot.
+     */
+    c_ioctl(fd: i32, request: uint, ...): i32 = "ioctl"
 }
 
 // open(2) flags: Darwin values and spellings, composed with `|`.
@@ -136,6 +171,17 @@ pub EAGAIN: const i32 = 35
 pub EWOULDBLOCK: const i32 = EAGAIN
 pub EINPROGRESS: const i32 = 36
 pub ECONNRESET: const i32 = 54
+pub EACCES: const i32 = 13
+pub EBUSY: const i32 = 16
+
+/* Darwin <net/bpf.h> request values, expanded using the SDK's _IOC macros.
+ * The request parameter is unsigned long on Darwin, hence uint rather than
+ * u32 even though the encoded values occupy 32 bits.
+ */
+pub BIOCGBLEN: const uint = uint(0x40044266)
+pub BIOCPROMISC: const uint = uint(0x20004269)
+pub BIOCSETIF: const uint = uint(0x8020426c)
+pub BIOCIMMEDIATE: const uint = uint(0x80044270)
 
 // POSIX creation-permission bits for open(2) and mkdir(2).
 pub S_IRWXU: const u32 = 0x1C0
@@ -319,6 +365,26 @@ pub write(fd: Fd, data: []u8): (int, Error) {
 pub close(fd: Fd): Error {
     if c_close(i32(fd)) == -1 {
         return CloseErr(errno())
+    }
+    return null
+}
+
+pub ioctl(fd: Fd, request: uint): Error {
+    if c_ioctl(i32(fd), request) == -1 {
+        code: i32 = errno()
+        return IoctlErr(code)
+    }
+    return null
+}
+
+pub ioctl(fd: Fd, request: uint, data: mut []u8): Error {
+    if len(data) == 0 {
+        errno_set(22)
+        return IoctlErr(22)
+    }
+    if c_ioctl(i32(fd), request, &data[0]) == -1 {
+        code: i32 = errno()
+        return IoctlErr(code)
     }
     return null
 }

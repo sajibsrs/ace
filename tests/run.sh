@@ -713,6 +713,16 @@ done
 
 # emit fixtures: compile to an object, link with the system cc, run, and
 # check the exit code. The expected code rides in a `// expect-exit: N` line.
+if ! cc -target arm64-apple-macos tests/darwin_bpf_layout.c \
+        -o /tmp/ace_darwin_bpf_layout 2>/tmp/ace_test_errs; then
+    echo "FAIL: Darwin SDK BPF declarations do not match the verified sys layout"
+    cat /tmp/ace_test_errs
+    fail=1
+elif ! /tmp/ace_darwin_bpf_layout; then
+    echo "FAIL: Darwin SDK BPF layout verifier failed"
+    fail=1
+fi
+
 if [ -d tests/emit ]; then
     rm -rf /tmp/ace_emit
     mkdir -p /tmp/ace_emit

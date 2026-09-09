@@ -483,6 +483,12 @@ main(): int {
   identity and returns the byte count as the operating system reported it — partial writes
   are legitimate results and are never retried here.
 - `close(fd: Fd): Error`.
+- `ioctl(fd: Fd, request: uint): Error` issues a Darwin descriptor-control
+  request with no additional argument. The overload
+  `ioctl(fd: Fd, request: uint, data: mut []u8): Error` passes caller-owned,
+  nonempty byte storage as the request argument. It performs no allocation,
+  typed reinterpretation, request-size inference, or retry. These are raw
+  target operations rather than an OS-independent device-control abstraction.
 - `stat(path: string): (FileInfo, Error)` follows symbolic links and returns
   byte size plus a `FileKind` of `unknown`, `regular`, `directory`, `symlink`,
   or `other`.
@@ -602,11 +608,18 @@ nonblocking operations. They are equal on Darwin, but both standard spellings
 are exported so code can name the condition described by its operation instead
 of embedding a platform number.
 
+Darwin additionally exposes `BIOCGBLEN`, `BIOCPROMISC`, `BIOCSETIF`, and
+`BIOCIMMEDIATE` for the BPF proof of concept, together with `EBUSY` and
+`EACCES` so device probing can distinguish contention from access denial. The
+request parameter is `uint`, matching Darwin's 64-bit `unsigned long`; callers
+must not narrow it to `u32`. An ioctl failure uses `IoctlErr` and contains the
+errno captured at the failing call.
+
 Each failing operation returns an ordinary packed `Error` whose domain names
 the operation — `sys.OpenErr`, `sys.ReadErr`, `sys.WriteErr`, `sys.CloseErr`,
 `sys.StatErr`, `sys.MkdirErr`, `sys.RenameErr`, `sys.UnlinkErr`,
-`sys.OpenDirErr`, `sys.ReadDirErr`, `sys.CloseDirErr`, `sys.ForkErr`, or
-`sys.WaitErr`, or `sys.PipeErr` —
+`sys.OpenDirErr`, `sys.ReadDirErr`, `sys.CloseDirErr`, `sys.ForkErr`,
+`sys.WaitErr`, `sys.PipeErr`, or `sys.IoctlErr` —
 so `err.domain == typeid(sys.ReadErr)` identifies what failed, and `err.code`
 is the errno captured at the failure:
 
@@ -653,6 +666,32 @@ main(): int {
 Caller-buffer bulk argument/environment filling, keyed environment lookup,
 environment mutation, directory operations, calendar time, and CPU time are
 not implemented yet.
+
+### Darwin BPF packet-sniffer demo
+
+The Apple-arm64 proof of concept opens the first available device from
+`/dev/bpf0` through `/dev/bpf7`, binds it to `en0` by default, enables
+promiscuous and immediate modes, queries the native capture-buffer size, and
+prints the first complete IPv4 Ethernet frame. An optional first argument
+selects another interface. It uses one fixed-capacity caller-owned buffer and
+manually decodes bounded byte slices; it creates no typed view over packet or
+BPF-header storage. Build and run it with:
+
+```sh
+./ace demo/darwin-packet-sniffer/main.ace -o bpf-sniffer
+sudo ./bpf-sniffer
+```
+
+For example, capture from `en1` with `sudo ./bpf-sniffer en1`.
+Pass `--debug` as the second argument to report completed BPF reads and skipped
+or malformed records while diagnosing an interface, for example
+`sudo ./bpf-sniffer en1 --debug`.
+
+Live capture is a manual check because BPF access and traffic are machine
+state. Automated fixtures instead verify the Darwin SDK layouts and request
+values, the native 18-byte BPF header length (which excludes two bytes of C
+structure tail padding), four-byte record alignment, truncated-input rejection,
+and Ethernet/IPv4 decoding for TCP, UDP, and ICMP.
 
 ## net
 
