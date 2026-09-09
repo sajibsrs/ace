@@ -593,7 +593,8 @@ if ! "$ACE" --checked -o /tmp/ace_checked_features/arithmetic_valid \
     echo "FAIL: valid checked arithmetic fixture"
     fail=1
 fi
-for f in signed_add unsigned_mul narrow_mul div_zero neg_min shift_count compound; do
+for f in signed_add unsigned_mul narrow_mul div_zero neg_min shift_count compound \
+         pointer_null pointer_scale pointer_add pointer_sub; do
     if ! "$ACE" --checked -o "/tmp/ace_checked_features/arithmetic_$f" \
          "tests/checked_arithmetic/$f.ace" >/dev/null 2>/tmp/ace_test_errs ||
        "/tmp/ace_checked_features/arithmetic_$f" >/dev/null 2>/tmp/ace_test_errs ||
@@ -676,6 +677,22 @@ elif command -v nm >/dev/null 2>&1 &&
      nm /tmp/ace_checked_features/release.o 2>/dev/null |
        grep -Eq '__ace\$(arithmetic|contract|null|registry)|[[:space:]]U (_abort|_write)$'; then
     echo "FAIL: release object retains checked-feature machinery"
+    fail=1
+fi
+if ! "$ACE" --release -c -o /tmp/ace_checked_features/pointer_release.o \
+     tests/emit/pointers/arithmetic.ace; then
+    echo "FAIL: release pointer-arithmetic object"
+    fail=1
+elif command -v nm >/dev/null 2>&1 &&
+     nm /tmp/ace_checked_features/pointer_release.o 2>/dev/null |
+       grep -Eq '__ace\$(arithmetic|null)|[[:space:]]U (_abort|_write)$'; then
+    echo "FAIL: release pointer arithmetic retains checked machinery"
+    fail=1
+fi
+if command -v strings >/dev/null 2>&1 &&
+   strings /tmp/ace_checked_features/pointer_release.o |
+     grep -Eq 'ace: (arithmetic|null) violation'; then
+    echo "FAIL: release pointer arithmetic retains diagnostic metadata"
     fail=1
 fi
 

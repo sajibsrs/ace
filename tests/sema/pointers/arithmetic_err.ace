@@ -1,0 +1,27 @@
+/* Pointer arithmetic intentionally excludes sequence-like and mixed-type forms. */
+
+Item: struct { value: int }
+Empty: struct {}
+
+bad(left: *Item, right: *Item, signed: int, small: u32, offset: usize) {
+    a: *Item = offset + left
+    b: *Item = left + right
+    c: *Item = left - right
+    d: *Item = left + signed
+    e: *Item = left - small
+    (left + offset).value = 1
+    if left < right {}
+    left *= offset
+}
+
+zero_sized(pointer: *Empty) {
+    bad: *Empty = pointer + 1
+}
+
+scaled_constant(pointer: *Item) {
+    bad: *Item = pointer + usize(0xffffffffffffffff)
+}
+
+readonly(pointer: *Item, offset: usize) {
+    pointer += offset
+}

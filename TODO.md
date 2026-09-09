@@ -43,11 +43,10 @@ blockers for the current sequential core.
 
 ### Pointer-level machine operations
 
-- **Pointer arithmetic** [unspecified] — the compiler currently provides none.
-  Carve only operations that preserve Ace's explicit mutability and checked-mode
-  boundaries, without introducing iterator or ownership machinery.
-- **Pointer ↔ integer conversions** (`usize(p)`, `T(addr)`) [unspecified] — state
-  the sanctioned machine-true form for descriptor packing and tagged pointers.
+- **Pointer ↔ integer conversions** [open] — `usize(p)`, `*T(address)`, and
+  `mut *T(address)` are carved in Memory #9 and queued after pointer arithmetic.
+  `usize` is the sole address integer; no separate address type or tagged-pointer
+  abstraction is introduced.
 - **Over-16-byte alignment for raw `mem.alloc`** [additive].
 
 ### C boundary completion

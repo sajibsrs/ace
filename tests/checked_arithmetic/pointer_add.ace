@@ -1,0 +1,6 @@
+main(): int {
+    value: u8 = 0
+    pointer: *u8 = &value
+    bad: *u8 = pointer + usize(0xffffffffffffffff)
+    return 0
+}

@@ -1304,6 +1304,40 @@ static TokKind compound_op(TokKind op) {
     }
 }
 
+/* Typed pointer arithmetic scales a usize element offset and then performs an
+ * unsigned machine-address add/subtract. Checked mode keeps all three local
+ * preconditions at the operation site; release is only multiply plus add/sub. */
+static void emit_pointer_arith(Em* e, TokKind op, int pointer, int offset,
+                               uint32_t elem_size) {
+    int rp = xreg(pointer), ro = xreg(offset);
+    if (e->mode == EMIT_CHECKED) {
+        int nonnull = new_label(e);
+        cbz_(e, 1, rp, 1, nonnull);
+        emit_arithmetic_fail_call(e);
+        bind_label(e, nonnull);
+    }
+    if (elem_size != 1) {
+        load_imm(e, 1, 16, elem_size);
+        if (e->mode == EMIT_CHECKED) {
+            ins(e, 0x9BC07C00u | (16u << 16) | ((uint32_t)ro << 5) | 17u); // umulh
+            int scaled = new_label(e);
+            cbz_(e, 1, 17, 0, scaled);
+            emit_arithmetic_fail_call(e);
+            bind_label(e, scaled);
+        }
+        ins(e, 0x9B007C00u | (16u << 16) | ((uint32_t)ro << 5) |
+               (uint32_t)ro); // mul
+    }
+    uint32_t base = op == T_PLUS ? 0xAB000000u : 0xEB000000u; // adds/subs x
+    ins(e, base | ((uint32_t)ro << 16) | ((uint32_t)rp << 5) | (uint32_t)rp);
+    if (e->mode == EMIT_CHECKED) {
+        int valid = new_label(e);
+        bcond_(e, op == T_PLUS ? C_LO : C_HS, valid);
+        emit_arithmetic_fail_call(e);
+        bind_label(e, valid);
+    }
+}
+
 static void emit_farith(Em* e, TokKind op, int dst, int a, int b, int is64) {
     uint32_t s = is64 ? 0x00400000u : 0;
     uint32_t ra = vreg(a), rb = vreg(b), rd = vreg(dst);
@@ -1493,6 +1527,16 @@ static EV gen_binop(Em* e, Node* n) {
 
     EV a = gen_expr(e, n->a);
     EV b = gen_expr(e, n->b);
+
+    if (t->kind == SK_PTR && (op == T_PLUS || op == T_MINUS)) {
+        if (a.cls != CLS_INT || b.cls != CLS_INT) {
+            em_err(e, n, "pointer arithmetic operands must be scalar");
+            return a;
+        }
+        emit_pointer_arith(e, op, a.idx, b.idx, ty_size(t->base));
+        e->vti = a.idx + 1;
+        return a;
+    }
 
     // two-word identity compare (slices, strings, contracts): == and !=
     if (a.cls == CLS_ADDR && b.cls == CLS_ADDR) {
@@ -2528,12 +2572,16 @@ static int gen_addr(Em* e, Node* x) {
         if (!bt) bt = node_ty(x->a);
         bt = unwrap(bt);
         int error_handle = bt && bt->kind == SK_ERROR;
+        int direct_pointer = 0;
         int ta;
         if (is_lvalue_node(x->a)) ta = gen_addr(e, x->a);
         else {
             EV v = gen_expr(e, x->a);
             if (error_handle && v.cls == CLS_INT) {
                 ta = v.idx;
+            } else if (bt && bt->kind == SK_PTR && v.cls == CLS_INT) {
+                ta = v.idx;
+                direct_pointer = 1;
             } else if (v.cls != CLS_ADDR) {
                 em_err(e, x, "cannot address this value");
                 return tmp_int(e);
@@ -2551,7 +2599,8 @@ static int gen_addr(Em* e, Node* x) {
             bt = bt->base;
         }
         while (bt->kind == SK_PTR) { // auto-deref p.x
-            ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
+            if (direct_pointer) direct_pointer = 0;
+            else ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
             emit_null_guard(e, xreg(ta));
             bt = bt->base;
         }
@@ -4875,7 +4924,12 @@ static void emit_stmt(Em* e, Node* s) {
             }
             EV old = load_scalar(e, xreg(ta), 0, t);
             EV rhs = gen_expr(e, s->a);
-            if (old.cls == CLS_FP) {
+            if (t->kind == SK_PTR &&
+                (s->op == T_ADDEQ || s->op == T_SUBEQ)) {
+                emit_pointer_arith(e, compound_op((TokKind)s->op), old.idx,
+                                   rhs.idx, ty_size(t->base));
+                store_scalar(e, old, xreg(ta), 0, t);
+            } else if (old.cls == CLS_FP) {
                 emit_farith(e, compound_op((TokKind)s->op), old.idx, old.idx, rhs.idx,
                             unwrap(t)->prim == P_F64);
                 strf_(e, vreg(old.idx), xreg(ta), 0, unwrap(t)->prim == P_F64);

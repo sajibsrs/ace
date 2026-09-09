@@ -26,6 +26,12 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Core language
 
+- Implemented typed pointer `+`, `-`, `+=`, and `-=` with `usize` element
+  offsets, exact pointer-permission preservation, complete nonzero pointee
+  validation, checked null/scaling/address diagnostics, and guard-free release
+  lowering. Pointer indexing, difference, ordering, bounds, and provenance stay
+  excluded.
+
 - Added `float` as a predeclared transparent alias of `f64`; both spellings
   share type and overload identity, representation, conversions, and ABI
   behavior.

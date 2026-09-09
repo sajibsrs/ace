@@ -1,0 +1,7 @@
+offset(value: usize): usize { return value }
+main(): int {
+    value: u64 = 0
+    pointer: *u64 = &value
+    bad: *u64 = pointer + offset(usize(0xffffffffffffffff))
+    return 0
+}

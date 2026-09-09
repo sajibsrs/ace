@@ -62,7 +62,46 @@ Decision: manual management through one fixed process-wide allocator strategy (C
 6. Pointer type is `*T` (`p: *Point`); field access auto-derefs (`p.x` ≡ `(~p).x`); full dereference is `~p`; `->` never exists. A pointer's all-bits-zero value is `null`; there is no separate optional-pointer type.
 7. `~` is dereference, so NOT is `!` — logical on bools, bitwise on integers (Rust-style dual role). [provisional]
 8. Address-of exists only for lvalues (variables, `arr[i]`, `s.field`, and dereferences). `&expr` yields a read-only `*T`; `mut &expr` yields a writable `mut *T` and is rejected for const or otherwise read-only storage. Both emit the same machine address: `mut` is a compile-time permission with zero runtime representation or cost. Its C jobs are otherwise gone: out-params died to by-reference parameters and multi-return; a `mut` parameter supplies the outer reference needed to replace caller storage. What remains: aliasing stack values, interior/field pointers, bridging storage into pointer signatures, and explicit writable-pointer construction.
-9. No pointer arithmetic on `*T` — use slices `[]T` (pointer + length) or an explicit raw-byte pointer type from the stdlib. [slice details carved with iteration]
+9. Typed pointer arithmetic is deliberately narrow. For `p: *T` or
+   `p: mut *T` and `n: usize`, `p + n` and `p - n` offset the stored address by
+   `n * sizeof(T)` bytes and preserve the exact pointer type, including its
+   read/write permission. Untyped nonnegative integer literals materialize as
+   `usize` in the offset position. The corresponding `+=` and `-=` forms are
+   valid only when the pointer binding itself is assignable; they grant no
+   additional pointee permission and remain subject to the ordinary outer
+   `mut` parameter rules. `T` must have a complete, nonzero-sized layout.
+   Checked builds diagnose a null starting pointer, overflow of the scaled byte
+   offset, and overflow or underflow of the machine address; release emits the
+   scaled machine add or subtract with no guard and assumes those preconditions.
+   A pointer carries no extent, allocation identity, lifetime, or provenance,
+   so neither mode promises bounds or same-object validation. Pointer-pointer
+   difference, pointer ordering, `n + p`, and pointer indexing (`p[i]`) do not
+   exist. Use slices for bounded traversal; an extent-free access remains
+   explicit as `~(p + n)` or `~(p - n)`. Rationale: this exposes the required
+   machine operation without making a pointer resemble a sequence, widening
+   permission, adding metadata, or implying iterator, ownership, or provenance
+   machinery.
+   Pointer-integer conversion uses `usize` as the sole address integer; no
+   separate `uintptr_t`-class type exists. `usize(p)` converts any data pointer,
+   plain or writable and including `null`, to its exact target machine address.
+   `*T(address)` and `mut *T(address)` convert exactly one `usize` value to the
+   explicitly written read-only or writable data-pointer type. The latter is a
+   programmer-trusted assertion of write authority; conversion never infers or
+   implicitly widens permission. `T` must have a complete, nonzero-sized layout.
+   Address zero produces canonical `null`. A statically known nonzero address
+   not divisible by `alignof(T)` is rejected in both modes; checked builds
+   diagnose dynamic nonzero misalignment, while release emits no guard. No mode
+   validates mapping, lifetime, extent, allocation membership, provenance, or
+   actual readability or writability. Pointer-to-integer conversion discards
+   type and permission facts; converting an unchanged address back restores
+   only the explicitly written pointer type and address. Function values,
+   slices, strings, contracts, and other callable or multiword values do not
+   participate. Rationale: kernels, embedded and memory-mapped access, tagged
+   pointers, integer-address ABIs, custom runtimes, renderers, and address
+   diagnostics require the exact machine facility. The explicit conversion is
+   the trust boundary; Ace adds no tagged-pointer abstraction, hidden metadata,
+   ownership rule, or runtime validation beyond the cheap local alignment
+   diagnostic.
 10. Raw surface: `mem.alloc(size: int, align: int): mut []u8`, `mem.realloc(data: []u8, new_size: int): mut []u8`, and `mem.release(mut data: []u8)`. Allocation and successful reallocation originate writable-content proof because they return fresh writable storage; failure returns the canonical null `mut []u8`, with the same representation as plain `[]u8`. The input to `realloc` remains plain because the operation requires the authoritative allocation descriptor, not element-write permission. `release` likewise takes plain content permission while its call-site `mut` grants replacement of the caller's descriptor with null; an intentionally permission-shrunk allocation handle therefore remains reallocatable and releasable. The module may be imported qualified or its members selected explicitly. Invalid requests and OOM return null, never abort. Sizes must be positive. v1 Apple arm64 alignment must be a positive power of two no greater than the platform heap's fundamental 16-byte alignment; larger over-aligned allocation is additive later. `mem.realloc` requires the complete authoritative non-null slice, may move, and requires a positive new size; on invalid size or OOM the original slice remains live and unchanged, and on success only the returned slice is authoritative.
 11. `mem.release` accepts a slice so cleanup may be unconditional. A null empty slice is a no-op; otherwise it releases the storage and sets that caller variable to canonical zero (zero pointer and zero length). The `mut` signature and call-site mark make this mutation visible.
 12. Slices are copyable views, not owners. Copying a slice copies only its pointer and length; all copies address the same storage. `mem.release(mut a)` nulls only `a`: copied slices remain non-null dangling aliases and must not be used or released. Ace performs no alias search and adds no ownership or move analysis.
@@ -147,7 +186,26 @@ Decision: locals are mutable by default; mutation marking lives at reference bou
 8. `noalias` parameter marker: a signature-stated fact that memory reachable through one `noalias` parameter is not reachable through another or through any parameter that can write the same reachable storage (an outer `mut` reference or a writable pointer level). The emitter may vectorize and reorder on it. Checked builds verify slice-range disjointness pairwise in O(1) at call boundaries — a false claim crashes in dev, never in prod. Release cost: zero. Signature facts are optimizer facts, same pattern as read-only.
 9. Type-position `mut` marks writable content at exactly one view level: `mut *T` grants a writable pointee and `mut []T` grants writable elements; `mut string` is the text-intent spelling of `mut []char`/`mut []u8`. Plain views are read-only through their content regardless of backing storage; `mut` is the only source of content writability. It never changes representation, size, layout, canonical zero, or emitted code — a compile-time permission with zero runtime cost (Memory #17, #19). A writable view participates wherever its plain form does and implicitly shrinks to the plain form at the same level; widening is never implicit. Writable and plain forms remain distinct types, while declarations differing only among `string`, `[]char`, and `[]u8` are duplicate declarations.
 10. The two axes compose per level: call-site `mut name: T` grants replacing the caller's binding (the descriptor); type-position `mut` in the parameter's type grants content writes; the two are independent — `mut s: string` may rebind only, `s: mut string` may write bytes only, and `mut s: mut string` permits both. Content-write parameters are therefore spelled in the type (`dst: mut []u8`), while descriptor-replace parameters keep the call-site mark (`mem.release(mut data: []u8)`).
-11. Content writability originates only from proven writable storage and is thereafter preserved or shrunk by the explicit rules. `mut array[lo..hi]` establishes writability when the array's elements are owned writable storage. Slicing an already-`mut []T` or `mut string` preserves writability without restating `mut`; copying and function returns retain the value's stated type, and the exact conversions preserve proven permission between `mut []u8` and `mut string` (Sequences #4, #6). `mem.alloc` and successful `mem.realloc` originate `mut []T` results from fresh allocation (Memory #10, #22), and `mut &lvalue` produces `mut *T` (#8). In contrast, `mut plain_slice[lo..hi]` and `mut plain_string[lo..hi]` are always rejected, even when the descriptor variable is locally rebindable or passed through a call-site `mut name:` parameter: that axis permits replacing which descriptor value the variable holds and never manufactures content permission the current value lacks. Once a binding's permission has shrunk to a plain view, it cannot grow again under any circumstance. String literals, `const` globals, unmarked parameters, plain-returning calls, and every other read-only view likewise provide no writable-content proof. Rejection is compile-time only and changes no representation or emitted code.
+11. Content writability originates from proven writable storage or an explicit
+    programmer-trusted integer-to-writable-pointer conversion and is thereafter
+    preserved or shrunk by the explicit rules. `mut array[lo..hi]` establishes
+    writability when the array's elements are owned writable storage. Slicing an
+    already-`mut []T` or `mut string` preserves writability without restating
+    `mut`; copying and function returns retain the value's stated type, and the
+    exact conversions preserve proven permission between `mut []u8` and
+    `mut string` (Sequences #4, #6). `mem.alloc` and successful `mem.realloc`
+    originate `mut []T` results from fresh allocation (Memory #10, #22),
+    `mut &lvalue` produces `mut *T` (#8), and `mut *T(address)` explicitly
+    asserts writable authority for a `usize` machine address (Memory #9). In
+    contrast, `mut plain_slice[lo..hi]` and `mut plain_string[lo..hi]` are always
+    rejected, even when the descriptor variable is locally rebindable or passed
+    through a call-site `mut name:` parameter: that axis permits replacing which
+    descriptor value the variable holds and never manufactures content
+    permission the current value lacks. Once a view's permission has shrunk to
+    plain, ordinary view operations cannot grow it again. String literals,
+    `const` globals, unmarked parameters, plain-returning calls, and every other
+    read-only view likewise provide no writable-content proof. Rejection is
+    compile-time only and changes no representation or emitted code.
 
 ## Zero, Null & Absence
 Decision: every type has canonical zero; Ace has no optional type constructor.
@@ -713,7 +771,11 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 
 ### Active
 
-None.
+- Implement the carved `usize(p)`, `*T(address)`, and
+  `mut *T(address)` data-pointer conversions from Memory #9, including parser
+  support for pointer types in conversion position, exact address lowering,
+  complete/nonzero pointee validation, checked alignment diagnostics, and
+  exclusion coverage for non-`usize`, function, and multiword values.
 
 ### Trigger-gated
 

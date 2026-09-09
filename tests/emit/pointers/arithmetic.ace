@@ -1,0 +1,15 @@
+/* expect-exit: 42 */
+
+Pair: struct { first: int, second: int }
+
+main(): int {
+    values: [4]Pair
+    pointer: mut *Pair = mut &values[0]
+    (pointer + 2).first = 40
+    (pointer + usize(2)).second = 2
+    pointer += 3
+    pointer -= 1
+    plain: *Pair = pointer
+    if (plain - 2) != &values[0] { return 1 }
+    return plain.first + plain.second
+}

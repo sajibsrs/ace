@@ -869,6 +869,25 @@ static int ut_const(Node* e, int64_t* out) {
     }
 }
 
+/* Exact nonnegative constants used by pointer offsets. Keep the surface narrow:
+ * literals, const aliases, and an explicit usize conversion around either. */
+static int usize_const(Node* e, uint64_t* out) {
+    if (!e) return 0;
+    if (e->kind == N_INT || e->kind == N_CHAR) {
+        *out = e->ival;
+        return 1;
+    }
+    if (e->kind == N_IDENT) {
+        Sym* s = node_sym(e);
+        return s && s->is_const && s->init ? usize_const(s->init, out) : 0;
+    }
+    if (e->kind == N_CALL && e->a && e->a->kind == N_IDENT &&
+        e->a->len == 5 && memcmp(e->a->str, "usize", 5) == 0 &&
+        e->nkids == 1)
+        return usize_const(e->kids[0], out);
+    return 0;
+}
+
 static int bool_const(Node* e, int* out) {
     if (!e) return 0;
     if (e->kind == N_BOOL) { *out = e->ival != 0; return 1; }
@@ -1537,6 +1556,7 @@ static int ut_fits(Ck* k, Node* e, SType* want) {
     case P_U16: if (u > 65535) goto over; return 1;
     case P_U32: if (u > 4294967295u) goto over; return 1;
     case P_U64: if (v < 0 && e->kind != N_INT) goto over; return 1;
+    case P_USIZE: if (v < 0 && e->kind != N_INT) goto over; return 1;
     default: return 1;
     }
 over:
@@ -1773,7 +1793,7 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
         // holds it. For auto-deref writes, only the innermost pointer edge used
         // to reach the final object must be writable: `*mut *T` may write T,
         // while `mut **T` may replace the inner pointer but not write T.
-        SType* b = check_lvalue(k, e->a, 0);
+        SType* b = expr_type(k, e->a);
         e->a->ty = b;
         SType* last_ptr = NULL;
         for (SType* q = b; q && q->kind == SK_PTR; q = q->base)
@@ -2119,6 +2139,44 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                    tok_disp(op), type_name(a), type_name(b));
             return T_ERR;
         }
+        if (a->kind == SK_PTR && (op == T_PLUS || op == T_MINUS)) {
+            if (b == T_UT_INT) {
+                int64_t offset;
+                if (ut_const(e->b, &offset) && offset < 0) {
+                    ck_err(k, e->b, "pointer offset must be a nonnegative usize");
+                    return T_ERR;
+                }
+                if (!ut_fits(k, e->b, st_prim(P_USIZE))) return T_ERR;
+                b = st_prim(P_USIZE);
+                e->b->ty = b;
+            }
+            if (b->kind != SK_PRIM || b->prim != P_USIZE) {
+                ck_err(k, e, "pointer '%s' offset must be usize, not %s",
+                       tok_disp(op), type_name(b));
+                return T_ERR;
+            }
+            if (!layout(a->base) || !a->base->size) {
+                ck_err(k, e, "pointer arithmetic requires a complete, nonzero-sized pointee, got %s",
+                       type_name(a->base));
+                return T_ERR;
+            }
+            uint64_t offset;
+            if (usize_const(e->b, &offset) &&
+                offset > UINT64_MAX / a->base->size) {
+                ck_err(k, e->b, "pointer offset scaled by sizeof(%s) overflows usize",
+                       type_name(a->base));
+                return T_ERR;
+            }
+            if (e->a->kind == N_NULL) {
+                ck_err(k, e->a, "pointer arithmetic cannot start from null");
+                return T_ERR;
+            }
+            return a;
+        }
+        if (b->kind == SK_PTR && (op == T_PLUS || op == T_MINUS)) {
+            ck_err(k, e, "pointer arithmetic requires the pointer as the left operand");
+            return T_ERR;
+        }
         if (a == T_UT_INT && b != T_UT_INT && b->kind != SK_UT) {
             if (!ut_fits(k, e->a, is_int(b) ? b : st_prim(P_I64))) return T_ERR;
             a = b;
@@ -2154,7 +2212,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                 if (ua && ua->kind == SK_UNION) return st_prim(P_BOOL);
             }
             if (same_modulo_shrink(a, b) &&
-                (is_num(a) || is_bool(a) || a->kind == SK_PTR ||
+                (is_num(a) || is_bool(a) || (a->kind == SK_PTR && equality) ||
                  a->kind == SK_FUNC || a->kind == SK_ENUM ||
                  a->kind == SK_CONTRACT ||
                  a->kind == SK_DISTINCT ||
@@ -4192,6 +4250,35 @@ static void check_stmt(Ck* k, Node* s) {
         if ((s->flags & F_VOLATILE) && is_bits_field(s->kids[0], NULL, NULL))
             ck_err(k, s, "volatile access is allowed only on a complete bits value");
         Node* rhs = s->a;
+        if (t->kind == SK_PTR && (s->op == T_ADDEQ || s->op == T_SUBEQ)) {
+            SType* rt = expr_type(k, rhs);
+            if (rt == T_UT_INT) {
+                int64_t offset;
+                if (ut_const(rhs, &offset) && offset < 0) {
+                    ck_err(k, rhs, "pointer offset must be a nonnegative usize");
+                    return;
+                }
+                if (!ut_fits(k, rhs, st_prim(P_USIZE))) return;
+                rt = st_prim(P_USIZE);
+                rhs->ty = rt;
+            }
+            if (rt->kind != SK_PRIM || rt->prim != P_USIZE) {
+                ck_err(k, rhs, "pointer compound-assignment offset must be usize, not %s",
+                       type_name(rt));
+                return;
+            }
+            if (!layout(t->base) || !t->base->size) {
+                ck_err(k, s, "pointer arithmetic requires a complete, nonzero-sized pointee, got %s",
+                       type_name(t->base));
+                return;
+            }
+            uint64_t offset;
+            if (usize_const(rhs, &offset) &&
+                offset > UINT64_MAX / t->base->size)
+                ck_err(k, rhs, "pointer offset scaled by sizeof(%s) overflows usize",
+                       type_name(t->base));
+            return;
+        }
         SType* bits_owner = NULL; int bits_index = -1;
         if (is_bits_field(s->kids[0], &bits_owner, &bits_index) && !compound) {
             SField* f = &bits_owner->fields[bits_index]; int64_t v;

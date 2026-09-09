@@ -158,8 +158,25 @@ retain them independently: `mut **T` may replace the stored inner pointer,
 `*mut *T` may read that inner pointer and write `T`, and `mut *mut *T` permits
 both. Only the level performing a write needs `mut`.
 
-Pointer arithmetic is not implemented. Use arrays or slices for bounded
-sequences.
+Pointer arithmetic is typed and deliberately narrow. For `pointer: *T` or
+`mut *T` and `offset: usize`, `pointer + offset` and `pointer - offset` advance
+or retreat by `offset * sizeof(T)` bytes and preserve the pointer's exact
+permission. Nonnegative integer literals materialize as `usize`; other integer
+types require an explicit conversion. An assignable pointer binding also
+supports `+=` and `-=`.
+
+```ace
+second: mut *Point = mut &points[0] + 1
+second.x = 42
+second -= 1
+```
+
+The pointee must have complete, nonzero-sized layout. Checked builds diagnose a
+null starting pointer, scaled-offset overflow, and address overflow or
+underflow. Pointers carry no bounds or provenance, so use arrays or slices for
+bounded traversal. Pointer indexing, pointer-pointer difference and ordering,
+and `offset + pointer` are intentionally unavailable; an extent-free access is
+written explicitly as `~(pointer + offset)`.
 
 Every inline value layout must be finite. A pointer breaks a layout cycle, so
 self-pointers and mutually pointer-linked structs are valid:
@@ -705,7 +722,6 @@ with no allocation, object metadata, subtype relation, or runtime search.
 ## Current limits
 
 - Type inference and implicit generic instantiation are not implemented.
-- Pointer arithmetic is not implemented.
 - Generic aliases are not implemented by the current compiler; generic structs
   are supported.
 - Generic struct literals are not implemented; declare the explicitly
