@@ -80,7 +80,7 @@ until its target-specific by-value ABI has been separately verified.
 ```ace
 status: u32 = volatile device.status
 volatile device.control = command
-volatile ~register_pointer = value
+volatile *register_pointer = value
 ```
 
 The complete addressing expression and, for a write, the assigned expression

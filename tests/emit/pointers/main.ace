@@ -38,7 +38,7 @@ main(): int {
      * that performs the final write. */
     read_outer: *mut *Point = &writable
     read_outer.x += 1
-    ~~read_outer = Point { x: 23 }
+    **read_outer = Point { x: 23 }
 
     if first.x != 23 {
         return 2
@@ -48,7 +48,7 @@ main(): int {
      * read-only pointer without gaining permission to write the Point. */
     readonly: *Point = &first
     write_outer: mut **Point = mut &readonly
-    ~write_outer = &second
+    *write_outer = &second
 
     if readonly.x != 10 {
         return 3

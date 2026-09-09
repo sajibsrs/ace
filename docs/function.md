@@ -296,8 +296,8 @@ extern "c" {
 }
 
 export increment(value: mut *i32): i32 {
-    ~value += 1
-    return ~value
+    *value += 1
+    return *value
 }
 ```
 

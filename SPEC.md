@@ -59,8 +59,8 @@ Decision: manual management through one fixed process-wide allocator strategy (C
 3. The release-mode implementation stays at C cost: it uses the platform allocation boundary and carries no Ace header, guards, registry, quarantine, or other per-allocation diagnostic metadata. Checked builds add a live-allocation registry for invalid/double release and leak diagnostics; detecting arbitrary reads or writes through a dangling alias requires separate access instrumentation and is not promised by the allocator alone.
 4. Machine-true: sizes and layout stay visible to the programmer (see: Iterations, Errors).
 5. A value lives on the stack unless explicitly allocated; allocation is the only path to heap memory, so stack vs heap is always statically known.
-6. Pointer type is `*T` (`p: *Point`); field access auto-derefs (`p.x` ≡ `(~p).x`); full dereference is `~p`; `->` never exists. A pointer's all-bits-zero value is `null`; there is no separate optional-pointer type.
-7. `~` is dereference, so NOT is `!` — logical on bools, bitwise on integers (Rust-style dual role). [provisional]
+6. Pointer type is `*T` (`p: *Point`); unary `*p` explicitly dereferences a pointer, while infix `*` remains multiplication and `*T` remains the pointer-type spelling. Field access auto-derefs (`p.x` ≡ `(*p).x`); `->` never exists. A pointer's all-bits-zero value is `null`; there is no separate optional-pointer type.
+7. Unary `!` is logical negation and accepts only `bool`; unary `~` is bitwise complement and accepts only integers. Rationale: distinct operators keep pointer access, Boolean logic, and integer bit manipulation visible and type-specific while retaining the familiar machine-level spellings.
 8. Address-of exists only for lvalues (variables, `arr[i]`, `s.field`, and dereferences). `&expr` yields a read-only `*T`; `mut &expr` yields a writable `mut *T` and is rejected for const or otherwise read-only storage. Both emit the same machine address: `mut` is a compile-time permission with zero runtime representation or cost. Its C jobs are otherwise gone: out-params died to by-reference parameters and multi-return; a `mut` parameter supplies the outer reference needed to replace caller storage. What remains: aliasing stack values, interior/field pointers, bridging storage into pointer signatures, and explicit writable-pointer construction.
 9. Typed pointer arithmetic is deliberately narrow. For `p: *T` or
    `p: mut *T` and `n: usize`, `p + n` and `p - n` offset the stored address by
@@ -77,7 +77,7 @@ Decision: manual management through one fixed process-wide allocator strategy (C
    so neither mode promises bounds or same-object validation. Pointer-pointer
    difference, pointer ordering, `n + p`, and pointer indexing (`p[i]`) do not
    exist. Use slices for bounded traversal; an extent-free access remains
-   explicit as `~(p + n)` or `~(p - n)`. Rationale: this exposes the required
+   explicit as `*(p + n)` or `*(p - n)`. Rationale: this exposes the required
    machine operation without making a pointer resemble a sequence, widening
    permission, adding metadata, or implying iterator, ownership, or provenance
    machinery.

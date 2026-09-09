@@ -79,8 +79,8 @@ extern "c" {
 }
 
 export increment_c(value: mut *i32): i32 {
-    ~value += 1
-    return ~value
+    *value += 1
+    return *value
 }
 
 check_c_variadic(): i32 {

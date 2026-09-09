@@ -26,6 +26,9 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Core language
 
+- Split unary operators by role: `*` now explicitly dereferences pointers, `~`
+  complements integers, and `!` negates only Booleans, with dereference lvalues
+  carried through semantic checking, constant evaluation, and direct emission.
 - Implemented typed pointer `+`, `-`, `+=`, and `-=` with `usize` element
   offsets, exact pointer-permission preservation, complete nonzero pointee
   validation, checked null/scaling/address diagnostics, and guard-free release

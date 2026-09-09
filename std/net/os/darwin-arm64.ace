@@ -90,7 +90,7 @@ extern "c" {
 
 errno_set(value: i32) {
     slot: mut *i32 = c_errno()
-    ~slot = value
+    *slot = value
 }
 
 to_darwin(address: Addr4): DarwinAddr4 {
@@ -170,7 +170,7 @@ pub nonblock(sock: Socket, enabled: bool): Error {
     if enabled {
         flags = flags | O_NONBLOCK
     } else {
-        flags = flags & !O_NONBLOCK
+        flags = flags & ~O_NONBLOCK
     }
 
     if c_fcntl(i32(sock), F_SETFL, flags) == -1 {
@@ -327,7 +327,7 @@ pub resolve4(host: string, port: u16, addresses: mut []Addr4): (usize, Error) {
 
         if current.family == AF_INET && current.address != null &&
            current.address_length >= SOCKADDR4_SIZE {
-            address: Addr4 = from_darwin(~current.address)
+            address: Addr4 = from_darwin(*current.address)
             address.port = port
             addresses[written] = address
             written += usize(1)

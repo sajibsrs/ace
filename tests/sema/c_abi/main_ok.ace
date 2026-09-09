@@ -17,6 +17,6 @@ extern "c" {
 }
 
 export write_value(value: mut *i32): i32 {
-    ~value = ~value + 1
-    return ~value
+    *value = *value + 1
+    return *value
 }

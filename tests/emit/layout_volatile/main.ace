@@ -23,7 +23,7 @@ main(): int {
         return 4
     }
 
-    volatile ~address(mut &registers.status) = value()
+    volatile *(address(mut &registers.status)) = value()
     if address_calls != 1 || value_calls != 1 {
         return 5
     }
@@ -36,8 +36,8 @@ main(): int {
     }
 
     pointer: mut *u32 = mut &registers.control
-    volatile ~pointer = 0x11223344
-    if volatile ~pointer != 0x11223344 {
+    volatile *pointer = 0x11223344
+    if volatile *pointer != 0x11223344 {
         return 3
     }
     return 0

@@ -58,7 +58,7 @@ export ace_f32(value: f32): f32 {
 }
 
 export ace_bump(value: mut *i32) {
-    ~value = ~value + 7
+    *value = *value + 7
 }
 
 export ace_code(value: Code): Code {

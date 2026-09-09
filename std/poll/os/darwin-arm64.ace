@@ -55,7 +55,7 @@ extern "c" {
 
 errno_set(value: i32) {
     slot: mut *i32 = c_errno()
-    ~slot = value
+    *slot = value
 }
 
 kevent_change(fd: sys.Fd, filter: i16, flags: u16): DarwinKevent {

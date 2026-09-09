@@ -256,7 +256,7 @@ main(): int {
     // Pointers, writable address-of, contracts, null, and built-ins.
     pointer: *int = &number
     writable: mut *int = mut &number
-    copied: int = ~pointer
+    copied: int = *pointer
     shape: Shape = Shape(&point)
     mut point.scale(0.5)
     size: usize = sizeof(Point)

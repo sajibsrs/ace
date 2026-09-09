@@ -63,7 +63,7 @@
 //   N_CONST_T   a = inner
 //   N_TPARAMS   kids = N_IDENT
 //   N_BINARY    op; a; b      N_CMPCHAIN kids = operands; a = N_OPS{kids = N_OP}
-//   N_UNARY     op (T_AMP = address-of); a; F_MUT = writable `mut &`
+//   N_UNARY     op (T_STAR = dereference, T_AMP = address-of); a; F_MUT = writable `mut &`
 //   N_CALL      a = callee; kids = args (N_MUTARG wraps mut-marked args); F_MUT = receiver mark
 //   N_INDEX     a = base; b = index
 //   N_SLICE_E   a = base; b = lo (nullable); c = hi (nullable)
@@ -385,6 +385,71 @@ static Node* expr_postfix(P* p, int ctx);
 static Node* expr_postfix_base(P* p, int ctx, Node* base);
 static Node* expr_primary(P* p, int ctx);
 
+/* Non-diagnostic type lookahead disambiguates `*T(address)` from unary
+ * dereference.  The real type parser remains the sole AST builder. */
+static int scan_type(P* p, size_t* at_i) {
+    size_t i = *at_i;
+    if (i >= p->n) return 0;
+    TokKind k = p->toks[i].kind;
+    if (k == T_CONST) {
+        i++;
+        if (!scan_type(p, &i)) return 0;
+    } else if (k == T_MUT) {
+        i++;
+        if (i >= p->n || (p->toks[i].kind != T_STAR &&
+                          p->toks[i].kind != T_LBRACK &&
+                          p->toks[i].kind != T_IDENT)) return 0;
+        if (!scan_type(p, &i)) return 0;
+    } else if (k == T_STAR) {
+        i++;
+        if (!scan_type(p, &i)) return 0;
+    } else if (k == T_LBRACK) {
+        i++;
+        if (i < p->n && p->toks[i].kind == T_RBRACK) i++;
+        else {
+            if (i >= p->n || p->toks[i].kind != T_INT) return 0;
+            i++;
+            if (i >= p->n || p->toks[i].kind != T_RBRACK) return 0;
+            i++;
+        }
+        if (!scan_type(p, &i)) return 0;
+    } else if (k == T_IDENT) {
+        i++;
+        while (i < p->n && p->toks[i].kind == T_DOT) {
+            i++;
+            if (i >= p->n || p->toks[i].kind != T_IDENT) return 0;
+            i++;
+        }
+        if (i < p->n && p->toks[i].kind == T_LBRACK) {
+            i++;
+            for (;;) {
+                if (!scan_type(p, &i)) return 0;
+                if (i < p->n && p->toks[i].kind == T_COMMA) { i++; continue; }
+                break;
+            }
+            if (i >= p->n || p->toks[i].kind != T_RBRACK) return 0;
+            i++;
+        }
+    } else if (k == T_LPAREN) {
+        i++;
+        for (;;) {
+            if (!scan_type(p, &i)) return 0;
+            if (i < p->n && p->toks[i].kind == T_COMMA) { i++; continue; }
+            break;
+        }
+        if (i >= p->n || p->toks[i].kind != T_RPAREN) return 0;
+        i++;
+        if (i < p->n && p->toks[i].kind == T_COLON) {
+            i++;
+            if (!scan_type(p, &i)) return 0;
+        }
+    } else {
+        return 0;
+    }
+    *at_i = i;
+    return 1;
+}
+
 static int is_assign_op(TokKind k) {
     switch (k) {
     case T_ASSIGN: case T_ADDEQ: case T_SUBEQ: case T_MULEQ: case T_DIVEQ:
@@ -524,7 +589,7 @@ static Node* expr_unary(P* p, int ctx) {
         u->op = (uint8_t)T_AMP;
         u->flags |= F_MUT;
         p->i += 2;
-        u->a = expr_postfix(p, ctx);
+        u->a = expr_unary(p, ctx);
         return u;
     }
     if (at(p, T_MUT)) {
@@ -549,16 +614,23 @@ static Node* expr_unary(P* p, int ctx) {
         return base;
     }
     if (at(p, T_STAR)) {
-        /* A leading '*' cannot be a binary operator.  In expression position
-         * it therefore starts the explicit data-pointer conversion type:
-         * `*T(address)`.  Postfix parsing consumes the following call. */
-        return expr_postfix_base(p, ctx, parse_type(p));
+        /* `*T(address)` remains the pointer-conversion spelling.  Its type is
+         * immediately called; every other leading '*' is dereference. */
+        size_t after_type = p->i;
+        if (scan_type(p, &after_type) && after_type < p->n &&
+            p->toks[after_type].kind == T_LPAREN)
+            return expr_postfix_base(p, ctx, parse_type(p));
+        p->i++;
+        Node* u = nd(p, N_UNARY);
+        u->op = (uint8_t)T_STAR;
+        u->a = expr_unary(p, ctx);
+        return u;
     }
     if (at(p, T_AMP)) { // address-of; lvalue-ness checked in semantic pass
         Node* u = nd(p, N_UNARY);
         u->op = (uint8_t)T_AMP;
         p->i++;
-        u->a = expr_postfix(p, ctx);
+        u->a = expr_unary(p, ctx);
         return u;
     }
     if (at(p, T_VOLATILE)) {

@@ -843,6 +843,12 @@ static int ut_const(Node* e, int64_t* out) {
             *out = (int64_t)(0 - (uint64_t)v); // unsigned negate: defined at i64 min
             return 1;
         }
+        if (e->op == T_TILDE) {
+            int64_t v;
+            if (!ut_const(e->a, &v)) return 0;
+            *out = ~v;
+            return 1;
+        }
         return 0;
     case N_BINARY: {
         int64_t a, b;
@@ -1908,11 +1914,11 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
         return b->base;
     }
     case N_UNARY:
-        if (e->op == T_TILDE) {
+        if (e->op == T_STAR) {
             SType* p = expr_type(k, e->a);
             if (p->kind == SK_ERR) return T_ERR;
             if (p->kind != SK_PTR) {
-                ck_err(k, e, "'~' dereferences pointers, not %s", type_name(p));
+                ck_err(k, e, "'*' dereferences pointers, not %s", type_name(p));
                 return T_ERR;
             }
             if (write && !p->is_mut)
@@ -2101,7 +2107,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             p->base = t;
             return p;
         }
-        if (e->op == T_TILDE) return check_lvalue(k, e, 0);
+        if (e->op == T_STAR) return check_lvalue(k, e, 0);
         if (e->op == T_VOLATILE) {
             SType* t = check_lvalue(k, e->a, 0);
             if (is_bits_field(e->a, NULL, NULL)) {
@@ -2119,7 +2125,10 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         if (t == T_UT_INT) return t;
         switch (e->op) {
         case T_BANG:
-            if (is_bool(t) || is_int(t)) return t;
+            if (is_bool(t)) return t;
+            break;
+        case T_TILDE:
+            if (is_int(t)) return t;
             break;
         case T_MINUS:
             if (is_float(t)) return t;
@@ -5075,7 +5084,7 @@ static void init_addr_parts(InitCk* k, Node* e) {
         else init_addr_parts(k, e->a);
         return;
     }
-    if (e->kind == N_UNARY && e->op == T_TILDE) {
+    if (e->kind == N_UNARY && e->op == T_STAR) {
         init_expr(k, e->a);
         return;
     }

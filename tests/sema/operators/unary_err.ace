@@ -1,0 +1,12 @@
+/* Each unary operator rejects operands belonging to the other roles. */
+
+main(): int {
+    value: int = 1
+    pointer: *int = &value
+    flag: bool = true
+    a: int = ~pointer
+    b: int = !value
+    c: bool = *flag
+    d: bool = ~flag
+    return a + b
+}

@@ -199,7 +199,7 @@ pub S_IXOTH: const u32 = 0x001
 
 errno_set(value: i32) {
     slot: mut *i32 = c_errno()
-    ~slot = value
+    *slot = value
 }
 
 path_copy(path: string, buf: mut []u8): bool {
@@ -290,7 +290,7 @@ kind_from_dirent(kind: u8): FileKind {
  */
 pub errno(): i32 {
     slot: mut *i32 = c_errno()
-    return ~slot
+    return *slot
 }
 
 pub fork(): (Process, Error) {

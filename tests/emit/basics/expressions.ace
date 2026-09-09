@@ -2,6 +2,8 @@
 
 // expect-exit: 43
 
+INVERTED: const u32 = ~u32(0xFFFFFFD5)
+
 main(): int {
     x: i32 = 6
     x = x * 7
@@ -13,7 +15,7 @@ main(): int {
     x &= 63
     x ^= 7
 
-    if 0 <= x <= 40 && !false {
+    if 0 <= x <= 40 && !false && INVERTED == 42 {
         x += 2
     }
     f: f64 = 1.5 + 2.5

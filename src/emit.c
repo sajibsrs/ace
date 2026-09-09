@@ -593,15 +593,19 @@ static void load_imm(Em* e, int sf, int reg, uint64_t v) {
 static int const_int(Node* v, uint64_t* out) {
     Node* n = v;
     int neg = 0;
+    int complement = 0;
     if (n->kind == N_UNARY && n->op == T_MINUS) {
         neg = 1;
+        n = n->a;
+    } else if (n->kind == N_UNARY && n->op == T_TILDE) {
+        complement = 1;
         n = n->a;
     }
     if (n->kind == N_CALL && !n->sym && n->nkids == 1 &&
         n->a && n->a->kind == N_IDENT && node_ty(n->a)) {
         uint64_t inner;
         if (!const_int(n->kids[0], &inner)) return 0;
-        *out = neg ? (uint64_t)0 - inner : inner;
+        *out = neg ? (uint64_t)0 - inner : complement ? ~inner : inner;
         return 1;
     }
     if (n->kind == N_IDENT) {
@@ -609,7 +613,7 @@ static int const_int(Node* v, uint64_t* out) {
         if (s && s->is_global && s->is_const && s->init) {
             uint64_t inner;
             if (!const_int(s->init, &inner)) return 0;
-            *out = neg ? (uint64_t)0 - inner : inner;
+            *out = neg ? (uint64_t)0 - inner : complement ? ~inner : inner;
             return 1;
         }
     }
@@ -617,7 +621,7 @@ static int const_int(Node* v, uint64_t* out) {
     SType* t = unwrap(node_ty(v));
     if (!t) return 0;
     if (t->kind == SK_UT) {
-        *out = neg ? (uint64_t)0 - n->ival : n->ival;
+        *out = neg ? (uint64_t)0 - n->ival : complement ? ~n->ival : n->ival;
         return 1;
     }
     if (t->kind != SK_PRIM) return 0;
@@ -628,7 +632,7 @@ static int const_int(Node* v, uint64_t* out) {
     default:
         return 0;
     }
-    *out = neg ? (uint64_t)0 - n->ival : n->ival;
+    *out = neg ? (uint64_t)0 - n->ival : complement ? ~n->ival : n->ival;
     return 1;
 }
 
@@ -2452,7 +2456,7 @@ static int is_lvalue_node(Node* x) {
             return 0;
         return 1;
     case N_UNARY:
-        return x->op == T_TILDE || x->op == T_AMP;
+        return x->op == T_STAR || x->op == T_AMP;
     default:
         return 0;
     }
@@ -2489,7 +2493,7 @@ static SType* lvalue_type(Em* e, Node* x) {
         return NULL;
     }
     case N_UNARY:
-        if (x->op == T_TILDE) {
+        if (x->op == T_STAR) {
             SType* b = lvalue_type(e, x->a);
             return b && b->kind == SK_PTR ? b->base : NULL;
         }
@@ -2556,7 +2560,7 @@ static int gen_addr(Em* e, Node* x) {
     }
     case N_UNARY:
         if (x->op == T_AMP) return gen_addr(e, x->a);
-        if (x->op == T_TILDE) { // ~p: the pointer value IS the address
+        if (x->op == T_STAR) { // *p: the pointer value IS the address
             EV pointer = gen_expr(e, x->a);
             if (pointer.cls != CLS_INT) {
                 em_err(e, x, "dereference operand did not produce a pointer");
@@ -4268,7 +4272,7 @@ static EV gen_expr(Em* e, Node* x) {
             EV v = load_scalar(e, xreg(a), 0, t);
             return collapse(e, a, v);
         }
-        if (x->op == T_TILDE) {
+        if (x->op == T_STAR) {
             SType* t = lvalue_type(e, x);
             int a = gen_addr(e, x);
             if (t && is_scalar(t)) {
@@ -4311,14 +4315,15 @@ static EV gen_expr(Em* e, Node* x) {
                    ((uint32_t)xreg(v.idx) << 16) | (uint32_t)xreg(v.idx));
             return v;
         }
-        if (x->op == T_BANG) {
+        if (x->op == T_BANG || x->op == T_TILDE) {
             SType* t = node_ty(x->a);
             EV v = gen_expr(e, x->a);
             if (v.cls == CLS_FP) {
-                em_err(e, x, "'!' needs bool or integer operands");
+                em_err(e, x, "invalid operand for '%s'",
+                       tok_disp((TokKind)x->op));
                 return v;
             }
-            if (t && is_boolt(t)) { // logical not
+            if (x->op == T_BANG) { // logical not
                 ins(e, 0x7100001Fu | ((uint32_t)xreg(v.idx) << 5)); // cmp w, #0
                 cset_(e, 0, C_EQ, xreg(v.idx));
                 return v;
@@ -5870,7 +5875,7 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
         return 0;
     }
     case N_UNARY:
-        if (v->op == T_MINUS) {
+        if (v->op == T_MINUS || v->op == T_TILDE) {
             uint64_t c;
             if (const_int(v, &c)) {
                 put_u(out, c, ty_size(t) < 8 ? ty_size(t) : 8);

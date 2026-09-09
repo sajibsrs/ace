@@ -111,7 +111,7 @@ raw: f64 = f64(distance)
 pointer level. Address-of requires an lvalue: `&value` produces `*T`, while
 `mut &value` produces `mut *T` and is rejected for const or otherwise
 read-only storage. Both forms emit the same machine address; `mut` is a
-compile-time permission. `~pointer` explicitly dereferences, while field
+compile-time permission. `*pointer` explicitly dereferences, while field
 access automatically dereferences pointers.
 
 ```ace
@@ -176,7 +176,7 @@ null starting pointer, scaled-offset overflow, and address overflow or
 underflow. Pointers carry no bounds or provenance, so use arrays or slices for
 bounded traversal. Pointer indexing, pointer-pointer difference and ordering,
 and `offset + pointer` are intentionally unavailable; an extent-free access is
-written explicitly as `~(pointer + offset)`.
+written explicitly as `*(pointer + offset)`.
 
 Every inline value layout must be finite. A pointer breaks a layout cycle, so
 self-pointers and mutually pointer-linked structs are valid:

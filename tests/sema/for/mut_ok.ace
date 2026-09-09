@@ -7,7 +7,7 @@ bump(mut n: i32) {
 }
 
 poke(p: mut *i32) {
-    ~p += 10
+    *p += 10
 }
 
 main(): int {

@@ -131,12 +131,12 @@ stmt          := var_decl | elided_decl | multi_decl | const_decl | assignment |
 
 static_assert_stmt := "static_assert" "(" expr ")"
 
-assignment    := target ("," target)* "=" expr_list       // n, err = read()
-                | target compound_op expr                 // x += y (pure sugar)
-                | "volatile" target "=" expr              // exactly one final scalar store
+assignment    := lvalue ("," lvalue)* "=" expr_list       // n, err = read()
+                | lvalue compound_op expr                 // x += y (pure sugar)
+                | "volatile" lvalue "=" expr              // exactly one final scalar store
 compound_op   := "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>="
-target        := ident postfix_part*                      // lvalue: ident, .f, [i], ~x
-lvalue        := target | "~" unary                       // semantic analysis requires addressable storage
+target        := ident postfix_part*                      // lvalue: ident, .f, [i]
+lvalue        := target | "*" unary                       // semantic analysis requires addressable storage
 expr_stmt     := expr
 
 if_stmt       := "if" expr block ["else" (if_stmt | block)]
@@ -188,9 +188,10 @@ shift_expr    := add_expr (("<<" | ">>") add_expr)*
 add_expr      := mul_expr (("+" | "-") mul_expr)*
 mul_expr      := unary (("*" | "/" | "%") unary)*
 
-unary         := ("!" | "~" | "-") unary | "&" lvalue | "mut" "&" lvalue | "mut" postfix
+unary         := ("*" | "!" | "~" | "-") unary | "&" lvalue | "mut" "&" lvalue | "mut" postfix
                | "volatile" lvalue | postfix
-//  "!"  logical/bitwise NOT (dual role)     "~"  dereference
+//  "*"  pointer dereference                 "!"  logical negation
+//  "~"  integer bitwise complement
 //  "&"  read-only address-of                "mut &" writable address-of
 //  "mut p" writable-view establishment (slicing operands only — Note 25)
 //  "volatile place" exactly one final scalar load

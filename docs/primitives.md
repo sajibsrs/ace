@@ -18,9 +18,10 @@ small: i8 = 13
 byte_value: u8 = 255
 ```
 
-Integer arithmetic supports `+`, `-`, `*`, `/`, `%`, bitwise `& | ^ !`, and
+Integer arithmetic supports `+`, `-`, `*`, `/`, `%`, bitwise `& | ^ ~`, and
 shifts `<< >>`. Comparisons produce `bool`. Signed division truncates toward
-zero, and the remainder has the dividend's sign.
+zero, and the remainder has the dividend's sign. `!` is logical negation and
+accepts only `bool`; `~` complements every bit of an integer value.
 
 Checked output aborts when integer `+`, `-`, `*`, or unary `-` cannot produce a
 value of its declared type, and on division/remainder by zero or the signed

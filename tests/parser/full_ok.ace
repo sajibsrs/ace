@@ -118,7 +118,7 @@ main(): int {
     circle_scale(mut p, 0.5)
     pp: *int = &one
     nptr: *Point = null
-    v: int = ~pp
+    v: int = *pp
     neg: int = -v
     flip: bool = !true
     return total

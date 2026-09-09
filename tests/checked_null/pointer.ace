@@ -1,4 +1,4 @@
 main(): int {
     p: *i64 = null
-    return int(~p)
+    return int(*p)
 }

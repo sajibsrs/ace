@@ -8,7 +8,7 @@ set_bytes(text: mut string) { // content permission rides the view's type
 }
 
 bump(pointer: mut *u8) { // mut &item yields mut *u8 over the byte storage
-    ~pointer = ~pointer + 1
+    *pointer = *pointer + 1
 }
 
 main(): int {

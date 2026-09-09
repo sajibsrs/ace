@@ -14,8 +14,8 @@ main(): int {
     volatile state = Backed.zero
 
     p: mut *u32 = mut &device.control
-    volatile ~p = 11
-    control: u32 = volatile ~p
+    volatile *p = 11
+    control: u32 = volatile *p
 
     if status != 7 || control != 11 || word != Word(9) || state != Backed.zero {
         return 1
