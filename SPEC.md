@@ -787,7 +787,19 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 
 ### Active
 
-No active decisions.
+- **C-ABI function pointers as callable values** [open] — carve only the exact
+  callback shapes required by the first thread entry-point fixture. Decide how
+  a function-value type states its C calling convention, how an `export`
+  function is converted or referenced as that value, which recursively
+  C-compatible parameter and return shapes are initially admitted, and how
+  null function pointers behave. Preserve the positive C-ABI whitelist,
+  explicit calls, ordinary pointer-sized representation, and zero/null value;
+  do not imply closures, hidden context, callback lifetime management, generic
+  callbacks, or arbitrary foreign calling conventions. The implementation must
+  be checked bidirectionally against a C ABI oracle before threads are exposed.
+  Rationale: thread creation is the first concrete callback customer, and
+  carving its narrow boundary first follows the core-before-concurrency order
+  without prematurely designing the larger signal-handler environment.
 
 ### Trigger-gated
 

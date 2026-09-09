@@ -54,11 +54,11 @@ blockers for the current sequential core.
 
 ### C boundary completion
 
-- **C-ABI function pointers as callable values** [new] — the C boundary
-  whitelist rejects ordinary Ace function values, and taking the address of an
-  `export`ed function as a value is unspecified. Carve only the callback shapes
-  proven by target facilities; general callback interoperability stays
-  additive.
+- **C-ABI function pointers as callable values** [open] — active in the
+  Decision Queue, with the first thread entry point as its concrete customer.
+  The C boundary currently rejects ordinary Ace function values, and taking the
+  address of an `export`ed function as a value remains unspecified until this
+  carving is resolved.
 - **`bool` (`_Bool`) mapping** [additive].
 - **C enums at the boundary** [additive].
 - **C global variables in extern blocks** [unspecified] — data imports such as
@@ -73,10 +73,6 @@ the remaining proof points explicit:
 
 - **Memory-mapped files and devices** [new] — carve mapping, protection,
   synchronization, unmapping, and device-memory rules from real target uses.
-- **Signals and signal-safe execution** [new] — define handler ABI, masks,
-  interruption, and the deliberately restricted operations valid in handlers.
-- **Threads, atomics, and synchronization** [queued] — follow the networking
-  proof in Decision Queue order; preserve explicit memory ordering and costs.
 - **Broader event and descriptor control** [additive] — extend existing polling
   and raw Darwin `ioctl` only for proven terminal, device, or kernel customers,
   without implying unsupported portability.
@@ -168,15 +164,21 @@ foundations.
 - **Memory-model statement** [new] — specify data races, synchronization, and
   what `noalias` and read-only parameter facts mean across threads before
   exposing shared-memory execution.
-- **Threads** [new] — explicit create/join/exit over libSystem pthreads, using
-  the narrowly carved C-callable function values from section 1; create/join
-  remain ordinary calls with no hidden control flow.
 - **Atomics** [new] — load/store/exchange/compare-and-swap plus fences with
   explicit ordering; lower directly to the target's supported instructions.
+- **Threads** [new] — explicit create/join/exit over libSystem pthreads, using
+  the narrowly carved C-callable function values from section 1 and the stated
+  memory model and atomics; create/join remain ordinary calls with no hidden
+  control flow.
 - **Thread-local storage** [new] — required for per-thread application state;
   distinct from the future TLS secure-transport module.
 - **Mutex/condition-variable module** [new] — thin explicit synchronization
   over the thread and memory model, with no hidden allocation or ownership.
+- **Signals and signal-safe execution** [new] — after the concurrency
+  foundations, define process- and thread-directed delivery, handler ABI,
+  masks, interruption, synchronous waiting, and the deliberately restricted
+  operations valid in handlers. Graceful server shutdown is a required proof,
+  not a reason to bypass these prerequisites or fold signals into `poll` early.
 - **Process lifecycle completion** [new] — `fork`, exact-child `wait`, pipes,
   and immediate `exit` are implemented. Add `exec`/spawn composition, explicit
   argument/environment and descriptor wiring, and nonblocking waits only when
@@ -185,8 +187,6 @@ foundations.
 
 ## 4. Practical standard-library capabilities
 
-- **Signals** [additive] — excluded from `poll`; servers need explicit shutdown
-  handling.
 - **Dynamic array and hash-map modules** [new] — composed from `mem` and
   explicit generics.
 - **`str.concat` / `str.join`** into caller storage [new].
