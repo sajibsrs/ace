@@ -43,6 +43,13 @@ blockers for the current sequential core.
 
 ### Pointer-level machine operations
 
+- **Typed views over byte storage** [additive] — consider an explicit general
+  operation that aliases an existing byte slice as a read-only or writable
+  pointer to `T`, with size, alignment, permission, representation, and lifetime
+  rules stated directly. This is a future convenience for native binary layouts,
+  memory-mapped data, devices, and foreign buffers, not a prerequisite for such
+  work: bounded byte-wise parsing remains the baseline and is sufficient for the
+  BPF packet-sniffer proof of concept.
 - **Over-16-byte alignment for raw `mem.alloc`** [additive].
 
 ### C boundary completion
