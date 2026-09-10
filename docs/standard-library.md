@@ -9,6 +9,7 @@ Today's modules:
 
 - `bits` — explicit machine-representation access and operations
 - `fmt` — allocation-free text output
+- `http` — allocation-free HTTP/1.1 message parsing and formatting
 - `math` — minimal generic helpers and float classification
 - `mem` — raw and typed allocation plus allocation-free byte operations
 - `net` — allocation-free IPv4 TCP sockets
@@ -316,6 +317,18 @@ if math.isnan(value) {
 Classification inspects the IEEE-754 representation through `bits`, allocates
 nothing, and does not call libm.
 
+## ascii
+
+`ascii` provides allocation-free operations with explicitly ASCII-only
+semantics. It does not decode Unicode, normalize text, or consult the locale.
+
+- `is_control(byte: u8): bool` recognizes `0x00` through `0x1F` and `0x7F`.
+- `to_lower(byte: u8): u8` maps `A` through `Z` to lowercase and leaves every
+  other byte unchanged.
+- `is_equal(a: string, b: string, sensitive: bool): bool` compares exact bytes
+  when `sensitive` is `true`; when false, it ignores ASCII letter case while
+  leaving all other bytes unchanged.
+
 ## str
 
 `str` is a pure-Ace module of allocation-free, byte-exact string utilities.
@@ -363,6 +376,11 @@ Caller storage and views:
   unchanged and fails, and the unused suffix is untouched. Empty text succeeds
   without writing. Unlike `mem.copy`, the ranges need not be equal — only the
   source and the written range must not overlap.
+- `concat(parts: []string, destination: mut []char): (usize, bool)` — writes all
+  parts in order and returns the complete byte count and whether it fit. A short
+  destination returns `(0, false)` without writing; empty parts are valid and
+  the unused destination suffix is untouched. Source bytes must not overlap the
+  written destination range.
 - `split(text: string, separator: string, parts: mut []string): (usize, bool)`
   and the `separator: char` overload — splits left to right on non-overlapping
   exact matches. Separators are omitted, boundaries produce empty parts, empty
@@ -729,8 +747,11 @@ main(): int {
 `Addr4: struct { ip: [4]u8, port: u16 }` stores IP octets in ordinary
 textual order and the port in host order. Its canonical zero is
 `0.0.0.0:0`, usable as the wildcard address with an OS-selected port.
-Parsing, formatting, IPv6, and peer-address queries are not part of this initial
-surface.
+`parse4(endpoint): (Addr4, bool)` parses a complete dotted-decimal IPv4
+endpoint such as `127.0.0.1:8080`. All four octets and the decimal port are
+required; invalid or trailing text returns canonical-zero `Addr4` and false.
+It performs no lookup or allocation. Endpoint formatting, IPv6, and peer-address
+queries remain additive.
 
 The core socket operations each perform one explicit operation and never
 allocate, buffer, retry, close, or replace a socket on failure:
@@ -801,6 +822,81 @@ UDP, and broader server/client convenience remain future additions.
 It returns null when no stored connection error exists, `ConnectErr(code)` for
 the stored connection result, or `PendingErrorErr(errno)` if the query itself
 fails. Higher-level nonblocking connection completion belongs to `tcp`.
+
+## http
+
+`http` implements the caller-storage HTTP/1.1 protocol core. It allocates
+nothing, performs no I/O, DNS, Unicode processing, or policy work, and retains
+no caller buffer.
+
+`parse_url(url): (Url, Error)` accepts absolute plaintext `http://` URLs.
+`Url { host, path, query, port }` contains byte views and a host-order port.
+The default port is 80 and the default path is the static `/` view. A query
+without a written path is represented as that path plus a `query` view which
+includes `?`. DNS names up to 253 bytes with labels up to 63 bytes and dotted
+IPv4 hosts are accepted. User information, fragments, bracketed IPv6, controls,
+empty or invalid ports, HTTPS, and other schemes return `UrlErr`. Path/query
+bytes and percent escapes are unchanged.
+
+`Request.format(output): (usize, Error)` and
+`Response.format(output): (usize, Error)` write one complete HTTP message or
+leave insufficient `output` unchanged. Output must not overlap storage
+reachable through the message. `Request` contains a string method and target;
+`Response` contains an HTTP minor version, status, and reason. Both contain
+caller header and body views. Formatting validates start-line and header bytes,
+preserves header order and content, and does not invent `Host`,
+`Content-Length`, or `Transfer-Encoding`. `FormatErr` code 1 means output
+capacity; request codes 2–5 identify method, target, header-name, and
+header-value validation. Response codes 4–8 identify header-name, header-value,
+version, status, and reason validation.
+
+Request headers and body default to null, while method and target remain
+required. Every `Response` field has a construction default: HTTP/1.1, status
+200, and null reason, headers, and body. A null reason formats with the
+conventional phrase for a named status, or an empty phrase for another valid
+status; an explicit reason, including `""`, is preserved. The nine common
+request methods are public string constants such as `method_get` and
+`method_patch`. Standard and selected WebDAV/misc response codes are public
+`u16` constants such as `status_ok`, `status_not_found`, and
+`status_multi_status`; these constants do not restrict extension methods or
+other statuses in `100...999`.
+
+`mut parser.parse(input, headers, body, eof)` on `RequestParser` and
+`mut parser.parse(input, headers, body, eof, no_body)` on `ResponseParser`
+incrementally parse HTTP/1.0 or HTTP/1.1 messages. `input` is the complete
+occupied prefix of the same stable caller-owned receive storage on every call.
+Each call resumes from saved state and examines only newly available line bytes
+or body bytes, rather than reparsing the prefix. `headers` stores zero-copy
+name/value views; `body` receives payload bytes and decoded chunk data. The
+caller preserves both buffers and their written prefixes until completion;
+the parser retains no buffer pointer. Each public parser records line scanning,
+consumed input, header/body counts, framing, phase, and chunk progress. The
+response parser additionally records consumed informational responses; its
+`eof` completes a connection-close body, and `no_body` supplies request context
+such as HEAD. A request without an explicit framing header has an empty body.
+Reinitialize the parser value before starting another message.
+All numeric and Boolean parser-progress fields have zero defaults, so a fresh
+parser literal needs to name only its initial `phase` and `framing` fields.
+
+`RequestResult` and `ResponseResult` report exactly one of cumulative
+`progress`, `complete`, `capacity(headers|body)`, `syntax`, or `framing`.
+Completion exposes the parsed message and its caller-owned views. Both parsers
+handle `Content-Length` and chunked coding with syntax-checked discarded
+trailers. Response parsing additionally handles bodyless, connection-close, and
+informational-response framing. Conflicting lengths, length plus transfer
+coding, unsupported transfer coding, malformed chunks, premature fixed/chunked
+EOF, and status 101 are explicit failures. Header names are compared using
+ASCII case folding; values and payload bytes otherwise pass through unchanged.
+
+### Known limitations and next improvements
+
+Client and server transport orchestration are separate implementations over
+`tcp`; the `http` protocol module performs no network I/O. TLS/HTTPS, redirects,
+decompression, cookies, authentication policy, caching, proxies, upgrades,
+connection reuse/pooling, exposed trailers, deadlines, and cancellation are
+also absent. URL path and query remain separate views; callers composing a
+request target provide destination storage explicitly. Unicode helpers,
+`rune`, and `yarn` are not required by this byte-oriented layer.
 
 ## tcp
 

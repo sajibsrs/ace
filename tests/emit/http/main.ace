@@ -1,0 +1,149 @@
+// expect-exit: 0
+
+import http
+import mem
+import net
+
+main(): int {
+    address: net.Addr4, valid: bool = net.parse4("127.0.0.1:8080")
+    if !valid || address.ip[0] != 127 || address.ip[3] != 1 || address.port != 8080 {
+        return 1
+    }
+    address, valid = net.parse4("256.0.0.1:80")
+    if valid || address.port != 0 {
+        return 2
+    }
+    address, valid = net.parse4("1.2.3.4:65535")
+    if !valid || address.port != 65535 {
+        return 21
+    }
+    address, valid = net.parse4("1.2.3:80")
+    if valid {
+        return 22
+    }
+    address, valid = net.parse4("1.2.3.4:65536")
+    if valid {
+        return 23
+    }
+    address, valid = net.parse4("1.2.3.4:80x")
+    if valid {
+        return 24
+    }
+
+    url: http.Url, err: Error = http.parse_url("http://example.com:8080?x=%2f")
+    if err != null || !mem.equal(url.host, "example.com") ||
+        !mem.equal(url.path, "/") || !mem.equal(url.query, "?x=%2f") ||
+        url.port != 8080 {
+        return 3
+    }
+    url, err = http.parse_url("http://127.0.0.1/")
+    if err != null || !mem.equal(url.path, "/") || len(url.query) != 0 {
+        return 31
+    }
+    url, err = http.parse_url("https://example.com/")
+    if err == null || err.domain != typeid(http.UrlErr) {
+        return 32
+    }
+    url, err = http.parse_url("http://user@example.com/")
+    if err == null {
+        return 33
+    }
+    url, err = http.parse_url("http://example.com:65536/")
+    if err == null {
+        return 34
+    }
+    url, err = http.parse_url("http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com/")
+    if err == null {
+        return 35
+    }
+    url, err = http.parse_url("http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com:65535/")
+    if err != null || url.port != 65535 {
+        return 36
+    }
+
+    header_storage: [2]http.Header = [
+        http.Header {name: "Host", value: "example.com"},
+        http.Header {name: "X-Test", value: "caf\xC3\xA9"},
+    ]
+    request: http.Request = http.Request {
+        method: "POST",
+        target: "/submit",
+        headers: header_storage[..],
+        body: "ok",
+    }
+    output_storage: [128]u8 = [0 : 128]
+    written: usize
+    written, err = request.format(mut output_storage[..])
+    expected: string = "POST /submit HTTP/1.1\r\nHost: example.com\r\nX-Test: caf\xC3\xA9\r\n\r\nok"
+    if err != null || !mem.equal(output_storage[..written], expected) {
+        return 4
+    }
+    small: [4]u8 = [7 : 4]
+    written, err = request.format(mut small[..])
+    if written != 0 || err == null || err.domain != typeid(http.FormatErr) || err.code != 1 ||
+        small[0] != 7 || small[3] != 7 {
+        return 41
+    }
+    bad_headers: [1]http.Header = [
+        http.Header {name: "Bad Name", value: "x"},
+    ]
+    request.headers = bad_headers[..]
+    written, err = request.format(mut output_storage[..])
+    if written != 0 || err == null || err.code != 4 {
+        return 42
+    }
+
+    default_request: http.Request = http.Request {
+        method: http.method_get,
+        target: "/health",
+    }
+    written, err = default_request.format(mut output_storage[..])
+    if err != null || !mem.equal(output_storage[..written], "GET /health HTTP/1.1\r\n\r\n") {
+        return 43
+    }
+
+    default_response: http.Response = http.Response {}
+    written, err = default_response.format(mut output_storage[..])
+    if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 200 OK\r\n\r\n") {
+        return 44
+    }
+    default_response.status = http.status_not_found
+    written, err = default_response.format(mut output_storage[..])
+    if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 404 Not Found\r\n\r\n") {
+        return 45
+    }
+    default_response.status = u16(599)
+    written, err = default_response.format(mut output_storage[..])
+    if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 599 \r\n\r\n") {
+        return 46
+    }
+    default_response.status = http.status_ok
+    default_response.reason = ""
+    written, err = default_response.format(mut output_storage[..])
+    if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 200 \r\n\r\n") {
+        return 47
+    }
+
+    response_headers: [4]http.Header
+    response_body: [16]u8 = [0 : 16]
+    state: http.ResponseParser = http.ResponseParser {
+        phase: http.ResponsePhase.status,
+        framing: http.ResponseFraming.undecided,
+    }
+    result: http.ResponseResult = mut state.parse(
+        "HTTP/1.1 200 OK\r\nContent-Length: 4\r\nX-Text: caf\xC3\xA9\r\n\r\nh\xC3\xA9!",
+        mut response_headers[..],
+        mut response_body[..],
+        false,
+        false,
+    )
+    switch result {
+        http.ResponseResult.complete(response: http.Response) {
+            if response.status != 200 { return 51 }
+            if !mem.equal(response.body, "h\xC3\xA9!") { return 52 }
+            if len(response.headers) != 2 { return 53 }
+        }
+        else { return 6 }
+    }
+    return 0
+}

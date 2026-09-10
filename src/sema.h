@@ -23,6 +23,7 @@ typedef struct SType SType;
 typedef struct {
     const char* name;
     SType* t;
+    Node* default_value; // struct-literal default; never storage initialization
     uint32_t requested_align; // zero means contextual default
     uint32_t effective_align;
     uint32_t offset;

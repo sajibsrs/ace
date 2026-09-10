@@ -939,6 +939,62 @@ static int bool_const(Node* e, int* out) {
     return 0;
 }
 
+/* Struct defaults use the language's existing compile-time expression surface.
+ * This is intentionally structural: semantic resolution has already separated
+ * const names, enum/union members, casts, and builtins from ordinary calls. */
+static int compile_time_expr(Node* e) {
+    if (!e) return 0;
+    switch (e->kind) {
+    case N_INT: case N_FLOAT: case N_CHAR: case N_BOOL: case N_STR: case N_NULL:
+        return 1;
+    case N_IDENT: {
+        Sym* s = node_sym(e);
+        return s && s->is_const && s->is_global && s->init &&
+               compile_time_expr(s->init);
+    }
+    case N_FIELD_E: {
+        Sym* s = e->a ? node_sym(e->a) : NULL;
+        return s && s->kind == SYM_TYPE;
+    }
+    case N_UNARY:
+        return compile_time_expr(e->a);
+    case N_BINARY:
+        return compile_time_expr(e->a) && compile_time_expr(e->b);
+    case N_CMPCHAIN:
+        for (int i = 0; i < e->nkids; i++) if (!compile_time_expr(e->kids[i])) return 0;
+        return 1;
+    case N_TUPLE_E:
+        for (int i = 0; i < e->nkids; i++) if (!compile_time_expr(e->kids[i])) return 0;
+        return 1;
+    case N_ARRAYLIT:
+        if (e->a) return compile_time_expr(e->a);
+        for (int i = 0; i < e->nkids; i++) if (!compile_time_expr(e->kids[i])) return 0;
+        return 1;
+    case N_STRUCTLIT:
+        for (int i = 0; i < e->nkids; i++) if (!compile_time_expr(e->kids[i]->a)) return 0;
+        return 1;
+    case N_CALL:
+        if (e->sym) return 0; // resolved ordinary function call
+        for (int i = 0; i < e->nkids; i++) if (!compile_time_expr(e->kids[i])) return 0;
+        return 1; // type cast, layout/type builtin, or union construction
+    default:
+        return 0;
+    }
+}
+
+static Node* clone_expr(Node* n) {
+    if (!n) return NULL;
+    Node* q = (Node*)arena_alloc(sizeof(Node));
+    *q = *n;
+    q->a = clone_expr(n->a); q->b = clone_expr(n->b);
+    q->c = clone_expr(n->c); q->d = clone_expr(n->d);
+    if (n->nkids) {
+        q->kids = (Node**)arena_alloc((size_t)n->nkids * sizeof(Node*));
+        for (int i = 0; i < n->nkids; i++) q->kids[i] = clone_expr(n->kids[i]);
+    }
+    return q;
+}
+
 // --- type building ------------------------------------------------------------------
 
 static SType* build_type(Ck* k, Node* t);
@@ -4745,6 +4801,25 @@ static void check_structlit(Ck* k, Node* lit, SType* want) {
         ck_err(k, lit, "missing fields: %s has %d, literal has %d",
                type_name(want), want->nfields, n);
     if (!positional) {
+        int added = 0;
+        for (int i = 0; i < want->nfields; i++)
+            if (!seen[i] && want->fields[i].default_value) added++;
+        if (added) {
+            Node** kids = (Node**)arena_alloc((size_t)(lit->nkids + added) * sizeof(Node*));
+            memcpy(kids, lit->kids, (size_t)lit->nkids * sizeof(Node*));
+            int at = lit->nkids;
+            for (int i = 0; i < want->nfields; i++) if (!seen[i] && want->fields[i].default_value) {
+                Node* fi = (Node*)arena_alloc(sizeof(Node));
+                memset(fi, 0, sizeof *fi);
+                fi->kind = N_FIELDINIT; fi->str = want->fields[i].name;
+                fi->len = (uint32_t)strlen(fi->str); fi->path = lit->path;
+                fi->line = lit->line; fi->col = lit->col;
+                fi->a = clone_expr(want->fields[i].default_value);
+                kids[at++] = fi;
+                seen[i] = 1;
+            }
+            lit->kids = kids; lit->nkids = at;
+        }
         for (int i = 0; i < want->nfields; i++)
             if (!seen[i])
                 ck_err(k, lit, "missing field '%s' in %s literal",
@@ -5468,6 +5543,7 @@ static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
     for (int i = 0; i < decl->nkids; i++) {
         t->fields[i].name = decl->kids[i]->str;
         t->fields[i].t = build_type_ctx(k, decl->kids[i]->a, 2);
+        t->fields[i].default_value = decl->kids[i]->c;
         t->fields[i].requested_align = checked_layout_align(
             k, decl->kids[i]->b, "field");
         if (t->fields[i].requested_align && !t->is_packed &&
@@ -5483,6 +5559,19 @@ static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
             t->fields[i].t->kind != SK_ERR)
             ck_err(k, decl->kids[i], "embedded field '%s' must have a struct type",
                    t->fields[i].name);
+        if (decl->kids[i]->c) {
+            Node* value = decl->kids[i]->c;
+            if (value->kind == N_STRUCTLIT && !value->a &&
+                t->fields[i].t->kind == SK_STRUCT)
+                check_structlit(k, value, t->fields[i].t);
+            else if (value->kind == N_ARRAYLIT && t->fields[i].t->kind == SK_ARRAY)
+                check_arraylit(k, value, t->fields[i].t);
+            else
+                coerce(k, value, t->fields[i].t);
+            if (!compile_time_expr(value))
+                ck_err(k, value, "default for field '%s' must be a compile-time expression",
+                       t->fields[i].name);
+        }
     }
     for (int i = 0; i < t->nfields; i++)
         for (int j = i + 1; j < t->nfields; j++)

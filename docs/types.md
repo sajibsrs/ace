@@ -509,6 +509,21 @@ Point: struct { x: i32, y: i32 }
 point: Point = Point{ x: 13, y: 42 }
 ```
 
+A field may declare a compile-time default. Named struct literals may omit only
+defaulted fields, and an empty literal is valid only when every field has a
+default. An explicit initializer overrides the default.
+
+```ace
+Request: struct { retries: u8 = u8(3), path: string }
+
+request: Request = Request { path: "/status" }
+custom: Request = Request { retries: u8(5), path: "/health" }
+```
+
+Defaults apply only to struct literals. Bare locals, globals, allocations,
+arrays, and canonical-zero values remain uninitialized or zeroed according to
+their ordinary storage rules; a field default does not change layout or ABI.
+
 An enum is a nominal type with distinct-typed named constants. By default its
 members are numbered from zero and it has `i32` layout.
 

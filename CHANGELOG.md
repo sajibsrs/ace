@@ -26,6 +26,10 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Core language
 
+- Implemented per-field compile-time struct defaults and omission of defaulted
+  fields in named literals, including empty all-default literals and explicit
+  overrides, without changing canonical zero, implicit storage initialization,
+  layout, or ABI.
 - Split unary operators by role: `*` now explicitly dereferences pointers, `~`
   complements integers, and `!` negates only Booleans, with dereference lvalues
   carried through semantic checking, constant evaluation, and direct emission.
@@ -81,6 +85,13 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Types and abstraction
 
+- Added the allocation-free `ascii` module with control-byte classification,
+  lowercase conversion, and selectable case-sensitive comparison; HTTP now
+  reuses it, exposes serialization and incremental response parsing as
+  type-owned methods, uses `str.concat` for multi-part text assembly, and keeps
+  `mem.copy` for single-range byte movement.
+- Added allocation-free, all-or-nothing `str.concat` over a string-parts slice
+  and caller-owned destination storage.
 - Implemented `@packed` structs and compile-time `@align` on structs and fields,
   with declaration-order effective alignment, exact stored field offsets,
   layout introspection, 16-byte stack/static support, and pointer-only initial
@@ -89,6 +100,9 @@ current normative rules, and Git preserves patch-level detail.
   exact method overloads, contracts, canonical signings, explicit contract-value
   construction, and per-used-pair vtables. Promoted methods use fixed-offset
   receiver thunks; fields are never promoted.
+- Extended receiver-marked mutating method calls to every expression position,
+  so their return values initialize and assign ordinary values while retaining
+  the same visible `mut` receiver mark.
 - Implemented explicit generic instantiation and exact function specialization.
   Generic bodies are checked per concrete stamp; compiler-backed standard
   generics share the ordinary resolution path.
@@ -202,6 +216,21 @@ current normative rules, and Git preserves patch-level detail.
   bind/listen/accept/connect, partial send/receive, peer addresses, DNS
   resolution, and operation-specific error domains. The public directory module
   wraps a private Darwin OS layer and owns no hidden allocation.
+- Implemented the first allocation-free HTTP slice: strict IPv4 endpoint and
+  HTTP URL parsing, all-or-nothing caller-storage request serialization, and
+  incremental response parsing for bodyless, fixed-length, chunked,
+  connection-close, and informational framing with caller-owned views/storage.
+- Completed the symmetric HTTP message surface with `RequestParser` and
+  `RequestResult`, renamed response state parsing to `ResponseParser.parse`,
+  and exposed all-or-nothing `Request.format` and `Response.format` methods.
+- Made both HTTP parsers genuinely incremental by preserving phase, line scan,
+  framing, header, and body progress across calls instead of reparsing the
+  complete occupied input prefix.
+- Added HTTP message and parser-progress field defaults, named method and
+  status constants, and conventional response reason selection for a null
+  reason while preserving explicit and unknown-status empty phrases.
+- Renamed the HTTP formatting error domain to `FormatErr`, matching the public
+  `Request.format` and `Response.format` operations.
 - Added pure-Ace blocking IPv4 `tcp` composition over `net`: listener and
   connection constructors with failure cleanup, blocking accept, exact receive,
   all-byte send, EINTR retry with retained progress, and explicit wrapper close.

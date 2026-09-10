@@ -1,0 +1,74 @@
+import http
+import net
+
+check(
+    mut state: http.ResponseParser,
+    mut request_parser: http.RequestParser,
+    headers: mut []http.Header,
+    body: mut []u8,
+    output: mut []u8,
+): int {
+    address: net.Addr4, valid: bool = net.parse4("127.0.0.1:80")
+    url: http.Url, err: Error = http.parse_url("http://example.com/?q=1")
+    request_headers: [1]http.Header = [
+        http.Header {name: "Host", value: "example.com"},
+    ]
+    request: http.Request = http.Request {
+        method: http.method_get,
+        target: "/",
+        headers: request_headers[..],
+    }
+    empty_request: http.Request = http.Request {method: http.method_head, target: "/"}
+    default_response: http.Response = http.Response {}
+    not_found: http.Response = http.Response {status: http.status_not_found}
+    fresh_request_parser: http.RequestParser = http.RequestParser {
+        phase: http.RequestPhase.request,
+        framing: http.RequestFraming.undecided,
+    }
+    fresh_response_parser: http.ResponseParser = http.ResponseParser {
+        phase: http.ResponsePhase.status,
+        framing: http.ResponseFraming.undecided,
+    }
+    count: usize
+    count, err = request.format(output)
+    if err != null && err.domain != typeid(http.FormatErr) { return 2 }
+    request_result: http.RequestResult = mut request_parser.parse(
+        "GET / HTTP/1.1\r\n\r\n",
+        headers,
+        body,
+        false,
+    )
+    result: http.ResponseResult = mut state.parse(
+        "HTTP/1.1 204 No Content\r\n\r\n",
+        headers,
+        body,
+        false,
+        false,
+    )
+    switch result {
+        http.ResponseResult.complete(response: http.Response) {
+            count += usize(response.status)
+            response_count: usize
+            response_count, err = response.format(output)
+            count += response_count
+        }
+        else {}
+    }
+    switch request_result {
+        http.RequestResult.complete(parsed: http.Request) {
+            count += len(parsed.method)
+        }
+        else {}
+    }
+    if valid && address.port == 80 && url.port == 80 && err == null {
+        count += len(empty_request.body) + usize(default_response.status - http.status_ok)
+        count += usize(not_found.status - http.status_not_found)
+        count += fresh_request_parser.input_offset + fresh_response_parser.input_offset
+        return int(count - count)
+    }
+    return 1
+}
+
+main(): int {
+    return 0
+}

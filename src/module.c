@@ -947,6 +947,7 @@ static void lower_selected_node(Node* n, SelectLower* c) {
             for (int j = 0; j < member->nkids; j++)
                 lower_selected_type(member->kids[j]->a, c);
             lower_selected_type(member->a, c);
+            lower_selected_node(member->c, c);
         }
         select_scope_pop(c);
         return;

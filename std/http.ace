@@ -1,0 +1,1338 @@
+/* http — allocation-free HTTP/1.1 framing over caller-owned storage. */
+
+import ascii
+import mem
+import str
+
+pub Url: struct {
+    host: string,
+    path: string,
+    query: string,
+    port: u16,
+}
+
+pub UrlErr: error
+pub FormatErr: error
+
+pub method_connect: const string = "CONNECT"
+pub method_delete: const string = "DELETE"
+pub method_get: const string = "GET"
+pub method_head: const string = "HEAD"
+pub method_options: const string = "OPTIONS"
+pub method_patch: const string = "PATCH"
+pub method_post: const string = "POST"
+pub method_put: const string = "PUT"
+pub method_trace: const string = "TRACE"
+
+pub status_continue: const u16 = 100
+pub status_switching_protocols: const u16 = 101
+pub status_processing: const u16 = 102
+pub status_early_hints: const u16 = 103
+
+pub status_ok: const u16 = 200
+pub status_created: const u16 = 201
+pub status_accepted: const u16 = 202
+pub status_non_authoritative_information: const u16 = 203
+pub status_no_content: const u16 = 204
+pub status_reset_content: const u16 = 205
+pub status_partial_content: const u16 = 206
+pub status_multi_status: const u16 = 207
+pub status_already_reported: const u16 = 208
+pub status_im_used: const u16 = 226
+
+pub status_multiple_choices: const u16 = 300
+pub status_moved_permanently: const u16 = 301
+pub status_found: const u16 = 302
+pub status_see_other: const u16 = 303
+pub status_not_modified: const u16 = 304
+pub status_use_proxy: const u16 = 305
+pub status_temporary_redirect: const u16 = 307
+pub status_permanent_redirect: const u16 = 308
+
+pub status_bad_request: const u16 = 400
+pub status_unauthorized: const u16 = 401
+pub status_payment_required: const u16 = 402
+pub status_forbidden: const u16 = 403
+pub status_not_found: const u16 = 404
+pub status_method_not_allowed: const u16 = 405
+pub status_not_acceptable: const u16 = 406
+pub status_proxy_authentication_required: const u16 = 407
+pub status_request_timeout: const u16 = 408
+pub status_conflict: const u16 = 409
+pub status_gone: const u16 = 410
+pub status_length_required: const u16 = 411
+pub status_precondition_failed: const u16 = 412
+pub status_content_too_large: const u16 = 413
+pub status_uri_too_long: const u16 = 414
+pub status_unsupported_media_type: const u16 = 415
+pub status_range_not_satisfiable: const u16 = 416
+pub status_expectation_failed: const u16 = 417
+pub status_im_a_teapot: const u16 = 418
+pub status_misdirected_request: const u16 = 421
+pub status_unprocessable_content: const u16 = 422
+pub status_locked: const u16 = 423
+pub status_failed_dependency: const u16 = 424
+pub status_too_early: const u16 = 425
+pub status_upgrade_required: const u16 = 426
+pub status_precondition_required: const u16 = 428
+pub status_too_many_requests: const u16 = 429
+pub status_request_header_fields_too_large: const u16 = 431
+pub status_unavailable_for_legal_reasons: const u16 = 451
+
+pub status_internal_server_error: const u16 = 500
+pub status_not_implemented: const u16 = 501
+pub status_bad_gateway: const u16 = 502
+pub status_service_unavailable: const u16 = 503
+pub status_gateway_timeout: const u16 = 504
+pub status_http_version_not_supported: const u16 = 505
+pub status_variant_also_negotiates: const u16 = 506
+pub status_insufficient_storage: const u16 = 507
+pub status_loop_detected: const u16 = 508
+pub status_not_extended: const u16 = 510
+pub status_network_authentication_required: const u16 = 511
+
+pub Header: struct {
+    name: string,
+    value: string,
+}
+
+pub Request: struct {
+    method: string,
+    target: string,
+    headers: []Header = null,
+    body: []u8 = null,
+}
+
+pub RequestPhase: enum {
+    request,
+    headers,
+    body,
+    chunk_size,
+    chunk_data,
+    chunk_end,
+    trailers,
+    complete,
+    failed,
+}
+
+pub RequestFraming: enum {
+    undecided,
+    none,
+    content_length,
+    chunked,
+}
+
+pub RequestCapacity: enum {
+    headers,
+    body,
+}
+
+pub RequestParser: struct {
+    input_offset: usize = 0,
+    line_start: usize = 0,
+    scan_offset: usize = 0,
+    line_stop: usize = 0,
+    line_next: usize = 0,
+    line_ready: bool = false,
+    header_count: usize = 0,
+    body_count: usize = 0,
+    content_length: usize = 0,
+    chunk_remaining: usize = 0,
+    method_start: usize = 0,
+    method_count: usize = 0,
+    target_start: usize = 0,
+    target_count: usize = 0,
+    phase: RequestPhase,
+    framing: RequestFraming,
+}
+
+pub RequestProgress: struct {
+    consumed: usize,
+    body_written: usize,
+}
+
+pub RequestResult: union {
+    progress: RequestProgress,
+    complete: Request,
+    capacity: RequestCapacity,
+    syntax,
+    framing,
+}
+
+pub Response: struct {
+    version_minor: u8 = 1,
+    status: u16 = 200,
+    reason: string = null,
+    headers: []Header = null,
+    body: []u8 = null,
+}
+
+pub ResponsePhase: enum {
+    status,
+    headers,
+    body,
+    chunk_size,
+    chunk_data,
+    chunk_end,
+    trailers,
+    complete,
+    failed,
+}
+
+pub ResponseFraming: enum {
+    undecided,
+    none,
+    content_length,
+    chunked,
+    close,
+}
+
+pub ResponseCapacity: enum {
+    headers,
+    body,
+}
+
+pub ResponseParser: struct {
+    input_offset: usize = 0,
+    line_start: usize = 0,
+    scan_offset: usize = 0,
+    line_stop: usize = 0,
+    line_next: usize = 0,
+    line_ready: bool = false,
+    header_count: usize = 0,
+    body_count: usize = 0,
+    content_length: usize = 0,
+    chunk_remaining: usize = 0,
+    version_minor: u8 = 0,
+    status: u16 = 0,
+    reason_start: usize = 0,
+    reason_count: usize = 0,
+    phase: ResponsePhase,
+    framing: ResponseFraming,
+    informational_count: usize = 0,
+}
+
+pub ResponseProgress: struct {
+    consumed: usize,
+    body_written: usize,
+}
+
+pub ResponseResult: union {
+    progress: ResponseProgress,
+    complete: Response,
+    capacity: ResponseCapacity,
+    syntax,
+    framing,
+}
+
+/* Returns the canonical zero URL used by parse failures. */
+zero_url(): Url {
+    return Url {host: null, path: null, query: null, port: u16(0)}
+}
+
+/* Reports whether `byte` is permitted by the HTTP token grammar. */
+is_token(byte: u8): bool {
+    if (byte >= 48 && byte <= 57) || (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122) {
+        return true
+    }
+    return byte == 33 || byte == 35 || byte == 36 || byte == 37 ||
+        byte == 38 || byte == 39 || byte == 42 || byte == 43 ||
+        byte == 45 || byte == 46 || byte == 94 || byte == 95 ||
+        byte == 96 || byte == 124 || byte == 126
+}
+
+/* Validates a bounded ASCII DNS name or a four-part dotted-decimal IPv4 host. */
+is_host(host: string): bool {
+    if len(host) == 0 || len(host) > 253 {
+        return false
+    }
+    label_start: usize = 0
+    digits_dots: bool = true
+    for i: usize in 0 .. len(host) {
+        byte: u8 = host[i]
+        if !((byte >= 48 && byte <= 57) || byte == 46) {
+            digits_dots = false
+        }
+        if byte == 46 {
+            if i == label_start || i - label_start > 63 || host[i - 1] == 45 {
+                return false
+            }
+            label_start = i + 1
+        } else {
+            if !((byte >= 48 && byte <= 57) || (byte >= 65 && byte <= 90) ||
+                (byte >= 97 && byte <= 122) || byte == 45) {
+                return false
+            }
+            if i == label_start && byte == 45 {
+                return false
+            }
+        }
+    }
+    if label_start == len(host) || len(host) - label_start > 63 || host[len(host) - 1] == 45 {
+        return false
+    }
+    if digits_dots {
+        parts: usize = 0
+        start: usize = 0
+        for i: usize in 0 .. len(host) + 1 {
+            if i == len(host) || host[i] == 46 {
+                if i == start {
+                    return false
+                }
+                value: uint = 0
+                for j: usize in start .. i {
+                    value = value * 10 + uint(host[j] - 48)
+                    if value > 255 {
+                        return false
+                    }
+                }
+                parts += 1
+                start = i + 1
+            }
+        }
+        return parts == 4
+    }
+    return true
+}
+
+/* Parses an absolute plaintext HTTP URL into zero-copy host, path, and query
+ * views. Returns `UrlErr` for unsupported or malformed input.
+ */
+pub parse_url(url: string): (Url, Error) {
+    if len(url) < 7 || !mem.equal(url[..7], "http://") {
+        return zero_url(), UrlErr(1)
+    }
+    for i: usize in 0 .. len(url) {
+        if ascii.is_control(url[i]) || url[i] == 35 {
+            return zero_url(), UrlErr(1)
+        }
+    }
+    authority_end: usize = len(url)
+    for i: usize in 7 .. len(url) {
+        if url[i] == 47 || url[i] == 63 {
+            authority_end = i
+            break
+        }
+    }
+    for i: usize in 7 .. authority_end {
+        if url[i] == 64 || url[i] == 91 || url[i] == 93 {
+            return zero_url(), UrlErr(1)
+        }
+    }
+    colon: usize = authority_end
+    for i: usize in 7 .. authority_end {
+        if url[i] == 58 {
+            if colon != authority_end {
+                return zero_url(), UrlErr(1)
+            }
+            colon = i
+        }
+    }
+    host_end: usize = colon
+    host: string = url[7..host_end]
+    if !is_host(host) {
+        return zero_url(), UrlErr(1)
+    }
+    port: u16 = 80
+    if colon != authority_end {
+        parsed_port: uint, parsed: bool = str.parse[uint](url[colon + 1..authority_end])
+        if !parsed || parsed_port > 65535 {
+            return zero_url(), UrlErr(1)
+        }
+        port = u16(parsed_port)
+    }
+    path: string = "/"
+    query: string = ""
+    if authority_end < len(url) {
+        if url[authority_end] == 63 {
+            query = url[authority_end..]
+        } else {
+            query_at: usize = len(url)
+            for i: usize in authority_end .. len(url) {
+                if url[i] == 63 {
+                    query_at = i
+                    break
+                }
+            }
+            path = url[authority_end..query_at]
+            if query_at < len(url) {
+                query = url[query_at..]
+            }
+        }
+    }
+    return Url {host: host, path: path, query: query, port: port}, null
+}
+
+/* Adds a serialized size without exceeding `capacity` or overflowing. */
+add_size(total: usize, amount: usize, capacity: usize): (usize, bool) {
+    if total > capacity || amount > capacity - total {
+        return usize(0), false
+    }
+    return total + amount, true
+}
+
+/* Returns the conventional reason phrase for a named status. Unknown valid
+ * statuses deliberately format with an empty phrase.
+ */
+reason_phrase(status: u16): string {
+    if status == status_continue { return "Continue" }
+    if status == status_switching_protocols { return "Switching Protocols" }
+    if status == status_processing { return "Processing" }
+    if status == status_early_hints { return "Early Hints" }
+    if status == status_ok { return "OK" }
+    if status == status_created { return "Created" }
+    if status == status_accepted { return "Accepted" }
+    if status == status_non_authoritative_information { return "Non-Authoritative Information" }
+    if status == status_no_content { return "No Content" }
+    if status == status_reset_content { return "Reset Content" }
+    if status == status_partial_content { return "Partial Content" }
+    if status == status_multi_status { return "Multi-Status" }
+    if status == status_already_reported { return "Already Reported" }
+    if status == status_im_used { return "IM Used" }
+    if status == status_multiple_choices { return "Multiple Choices" }
+    if status == status_moved_permanently { return "Moved Permanently" }
+    if status == status_found { return "Found" }
+    if status == status_see_other { return "See Other" }
+    if status == status_not_modified { return "Not Modified" }
+    if status == status_use_proxy { return "Use Proxy" }
+    if status == status_temporary_redirect { return "Temporary Redirect" }
+    if status == status_permanent_redirect { return "Permanent Redirect" }
+    if status == status_bad_request { return "Bad Request" }
+    if status == status_unauthorized { return "Unauthorized" }
+    if status == status_payment_required { return "Payment Required" }
+    if status == status_forbidden { return "Forbidden" }
+    if status == status_not_found { return "Not Found" }
+    if status == status_method_not_allowed { return "Method Not Allowed" }
+    if status == status_not_acceptable { return "Not Acceptable" }
+    if status == status_proxy_authentication_required { return "Proxy Authentication Required" }
+    if status == status_request_timeout { return "Request Timeout" }
+    if status == status_conflict { return "Conflict" }
+    if status == status_gone { return "Gone" }
+    if status == status_length_required { return "Length Required" }
+    if status == status_precondition_failed { return "Precondition Failed" }
+    if status == status_content_too_large { return "Content Too Large" }
+    if status == status_uri_too_long { return "URI Too Long" }
+    if status == status_unsupported_media_type { return "Unsupported Media Type" }
+    if status == status_range_not_satisfiable { return "Range Not Satisfiable" }
+    if status == status_expectation_failed { return "Expectation Failed" }
+    if status == status_im_a_teapot { return "I'm a Teapot" }
+    if status == status_misdirected_request { return "Misdirected Request" }
+    if status == status_unprocessable_content { return "Unprocessable Content" }
+    if status == status_locked { return "Locked" }
+    if status == status_failed_dependency { return "Failed Dependency" }
+    if status == status_too_early { return "Too Early" }
+    if status == status_upgrade_required { return "Upgrade Required" }
+    if status == status_precondition_required { return "Precondition Required" }
+    if status == status_too_many_requests { return "Too Many Requests" }
+    if status == status_request_header_fields_too_large { return "Request Header Fields Too Large" }
+    if status == status_unavailable_for_legal_reasons { return "Unavailable For Legal Reasons" }
+    if status == status_internal_server_error { return "Internal Server Error" }
+    if status == status_not_implemented { return "Not Implemented" }
+    if status == status_bad_gateway { return "Bad Gateway" }
+    if status == status_service_unavailable { return "Service Unavailable" }
+    if status == status_gateway_timeout { return "Gateway Timeout" }
+    if status == status_http_version_not_supported { return "HTTP Version Not Supported" }
+    if status == status_variant_also_negotiates { return "Variant Also Negotiates" }
+    if status == status_insufficient_storage { return "Insufficient Storage" }
+    if status == status_loop_detected { return "Loop Detected" }
+    if status == status_not_extended { return "Not Extended" }
+    if status == status_network_authentication_required { return "Network Authentication Required" }
+    return ""
+}
+
+/* Serializes this request into caller-owned storage. Returns the byte count on
+ * success; on `FormatErr`, `output` is unchanged. Output must not overlap
+ * the request's method, target, headers, or body.
+ */
+pub Request.format(output: mut []u8): (usize, Error) {
+    if len(self.method) == 0 {
+        return 0, FormatErr(2)
+    }
+    for i: usize in 0 .. len(self.method) {
+        if !is_token(self.method[i]) {
+            return 0, FormatErr(2)
+        }
+    }
+    if len(self.target) == 0 {
+        return 0, FormatErr(3)
+    }
+    for i: usize in 0 .. len(self.target) {
+        if self.target[i] <= 32 || self.target[i] == 127 {
+            return 0, FormatErr(3)
+        }
+    }
+    total: usize = 0
+    ok: bool
+    total, ok = add_size(total, len(self.method), len(output))
+    if ok { total, ok = add_size(total, 1, len(output)) }
+    if ok { total, ok = add_size(total, len(self.target), len(output)) }
+    if ok { total, ok = add_size(total, 11, len(output)) }
+
+    for i: usize in 0 .. len(self.headers) {
+        header: Header = self.headers[i]
+        if len(header.name) == 0 {
+            return 0, FormatErr(4)
+        }
+        for j: usize in 0 .. len(header.name) {
+            if !is_token(header.name[j]) {
+                return 0, FormatErr(4)
+            }
+        }
+        for j: usize in 0 .. len(header.value) {
+            if header.value[j] == 0 || header.value[j] == 10 || header.value[j] == 13 {
+                return 0, FormatErr(5)
+            }
+        }
+        if ok { total, ok = add_size(total, len(header.name), len(output)) }
+        if ok { total, ok = add_size(total, 2, len(output)) }
+        if ok { total, ok = add_size(total, len(header.value), len(output)) }
+        if ok { total, ok = add_size(total, 2, len(output)) }
+    }
+    if ok { total, ok = add_size(total, 2, len(output)) }
+    if ok { total, ok = add_size(total, len(self.body), len(output)) }
+    if !ok {
+        return 0, FormatErr(1)
+    }
+
+    at: usize = 0
+    start: [4]string = [self.method, " ", self.target, " HTTP/1.1\r\n"]
+    written: usize, fit: bool = str.concat(start[..], output[at..])
+    if !fit { return 0, FormatErr(1) }
+    at += written
+    for i: usize in 0 .. len(self.headers) {
+        name: string = self.headers[i].name
+        value: string = self.headers[i].value
+        field: [4]string = [name, ": ", value, "\r\n"]
+        written, fit = str.concat(field[..], output[at..])
+        if !fit { return 0, FormatErr(1) }
+        at += written
+    }
+    mem.copy(output[at..at + 2], "\r\n")
+    at += 2
+    mem.copy(output[at..at + len(self.body)], self.body)
+    at += len(self.body)
+    return at, null
+}
+
+/* Formats this response into caller-owned storage. Returns the byte count on
+ * success; on `FormatErr`, `output` is unchanged.
+ */
+pub Response.format(output: mut []u8): (usize, Error) {
+    if self.version_minor > 1 {
+        return 0, FormatErr(6)
+    }
+    if self.status < 100 || self.status > 999 {
+        return 0, FormatErr(7)
+    }
+    reason: string = self.reason
+    if reason == null {
+        reason = reason_phrase(self.status)
+    }
+    for i: usize in 0 .. len(reason) {
+        if (reason[i] < 32 && reason[i] != 9) || reason[i] == 127 {
+            return 0, FormatErr(8)
+        }
+    }
+    total: usize = 13
+    ok: bool = total <= len(output)
+    total, ok = add_size(total, len(reason), len(output))
+    if ok { total, ok = add_size(total, 2, len(output)) }
+
+    for i: usize in 0 .. len(self.headers) {
+        header: Header = self.headers[i]
+        if len(header.name) == 0 {
+            return 0, FormatErr(4)
+        }
+        for j: usize in 0 .. len(header.name) {
+            if !is_token(header.name[j]) {
+                return 0, FormatErr(4)
+            }
+        }
+        for j: usize in 0 .. len(header.value) {
+            if header.value[j] == 0 || header.value[j] == 10 || header.value[j] == 13 {
+                return 0, FormatErr(5)
+            }
+        }
+        if ok { total, ok = add_size(total, len(header.name), len(output)) }
+        if ok { total, ok = add_size(total, 2, len(output)) }
+        if ok { total, ok = add_size(total, len(header.value), len(output)) }
+        if ok { total, ok = add_size(total, 2, len(output)) }
+    }
+    if ok { total, ok = add_size(total, 2, len(output)) }
+    if ok { total, ok = add_size(total, len(self.body), len(output)) }
+    if !ok {
+        return 0, FormatErr(1)
+    }
+
+    at: usize = 0
+    mem.copy(output[at..at + 7], "HTTP/1.")
+    at += 7
+    output[at] = 48 + self.version_minor
+    at += 1
+    output[at] = 32
+    at += 1
+    output[at] = 48 + u8(self.status / 100)
+    output[at + 1] = 48 + u8((self.status / 10) % 10)
+    output[at + 2] = 48 + u8(self.status % 10)
+    at += 3
+    output[at] = 32
+    at += 1
+    reason_line: [2]string = [reason, "\r\n"]
+    written: usize, fit: bool = str.concat(reason_line[..], output[at..])
+    if !fit { return 0, FormatErr(1) }
+    at += written
+    for i: usize in 0 .. len(self.headers) {
+        name: string = self.headers[i].name
+        value: string = self.headers[i].value
+        field: [4]string = [name, ": ", value, "\r\n"]
+        written, fit = str.concat(field[..], output[at..])
+        if !fit { return 0, FormatErr(1) }
+        at += written
+    }
+    mem.copy(output[at..at + 2], "\r\n")
+    at += 2
+    mem.copy(output[at..at + len(self.body)], self.body)
+    at += len(self.body)
+    return at, null
+}
+
+LineStatus: enum {
+    incomplete,
+    complete,
+    malformed,
+}
+
+/* Scans only the newly available suffix of an incremental line. A trailing CR
+ * remains the next scan position so its following byte is checked once.
+ */
+scan_line(input: string, scan_offset: usize): (usize, usize, usize, LineStatus) {
+    for i: usize in scan_offset .. len(input) {
+        if input[i] == 10 {
+            return 0, 0, i, LineStatus.malformed
+        }
+        if input[i] == 13 {
+            if i + 1 >= len(input) {
+                return 0, 0, i, LineStatus.incomplete
+            }
+            if input[i + 1] != 10 {
+                return 0, 0, i, LineStatus.malformed
+            }
+            return i, i + 2, i + 2, LineStatus.complete
+        }
+    }
+    return 0, 0, len(input), LineStatus.incomplete
+}
+
+mut RequestParser.prepare_line(input: string): LineStatus {
+    if self.line_ready {
+        return LineStatus.complete
+    }
+    stop: usize, next: usize, scan: usize, status: LineStatus =
+        scan_line(input, self.scan_offset)
+    self.scan_offset = scan
+    if status == LineStatus.complete {
+        self.line_stop = stop
+        self.line_next = next
+        self.line_ready = true
+    }
+    return status
+}
+
+mut RequestParser.consume_line() {
+    self.input_offset = self.line_next
+    self.line_start = self.line_next
+    self.scan_offset = self.line_next
+    self.line_ready = false
+}
+
+mut ResponseParser.prepare_line(input: string): LineStatus {
+    if self.line_ready {
+        return LineStatus.complete
+    }
+    stop: usize, next: usize, scan: usize, status: LineStatus =
+        scan_line(input, self.scan_offset)
+    self.scan_offset = scan
+    if status == LineStatus.complete {
+        self.line_stop = stop
+        self.line_next = next
+        self.line_ready = true
+    }
+    return status
+}
+
+mut ResponseParser.consume_line() {
+    self.input_offset = self.line_next
+    self.line_start = self.line_next
+    self.scan_offset = self.line_next
+    self.line_ready = false
+}
+
+/* Advances from `at` over HTTP optional whitespace. */
+skip_ows(text: string, at: usize): usize {
+    cursor: usize = at
+    for cursor < len(text) && (text[cursor] == 32 || text[cursor] == 9) {
+        cursor += 1
+    }
+    return cursor
+}
+
+/* Removes leading and trailing HTTP optional whitespace from a byte view. */
+trim_ows(value: string): string {
+    first: usize = skip_ows(value, 0)
+    last: usize = len(value)
+    for last > first && (value[last - 1] == 32 || value[last - 1] == 9) {
+        last -= 1
+    }
+    return value[first..last]
+}
+
+/* Validates the chunk-extension suffix following a parsed chunk size. */
+is_chunk_ext(text: string): bool {
+    at: usize = 0
+    for at < len(text) {
+        at = skip_ows(text, at)
+        if at >= len(text) || text[at] != 59 {
+            return false
+        }
+        at += 1
+        at = skip_ows(text, at)
+        start: usize = at
+        for at < len(text) && is_token(text[at]) {
+            at += 1
+        }
+        if at == start {
+            return false
+        }
+        at = skip_ows(text, at)
+        if at < len(text) && text[at] == 61 {
+            at += 1
+            at = skip_ows(text, at)
+            if at >= len(text) {
+                return false
+            }
+            if text[at] == 34 {
+                at += 1
+                closed: bool = false
+                for at < len(text) {
+                    byte: u8 = text[at]
+                    if byte == 34 {
+                        at += 1
+                        closed = true
+                        break
+                    }
+                    if byte == 92 {
+                        at += 1
+                        if at >= len(text) || (ascii.is_control(text[at]) && text[at] != 9) {
+                            return false
+                        }
+                    } else if (ascii.is_control(byte) && byte != 9) {
+                        return false
+                    }
+                    at += 1
+                }
+                if !closed {
+                    return false
+                }
+            } else {
+                start = at
+                for at < len(text) && is_token(text[at]) {
+                    at += 1
+                }
+                if at == start {
+                    return false
+                }
+            }
+            at = skip_ows(text, at)
+        }
+    }
+    return true
+}
+
+RequestParser.progress(): RequestResult {
+    return RequestResult.progress(RequestProgress {
+        consumed: self.input_offset,
+        body_written: self.body_count,
+    })
+}
+
+mut RequestParser.syntax_failure(): RequestResult {
+    self.phase = RequestPhase.failed
+    return RequestResult.syntax
+}
+
+mut RequestParser.framing_failure(): RequestResult {
+    self.phase = RequestPhase.failed
+    return RequestResult.framing
+}
+
+request_complete_result(
+    method: string,
+    target: string,
+    headers: []Header,
+    body: []u8,
+): RequestResult {
+    return RequestResult.complete(Request {
+        method: method,
+        target: target,
+        headers: headers,
+        body: body,
+    })
+}
+
+/* Resumes request parsing at the saved phase and scans only newly appended
+ * input bytes.
+ */
+pub mut RequestParser.parse(
+    input: string,
+    headers: mut []Header,
+    body: mut []u8,
+    eof: bool,
+): RequestResult {
+    if len(input) < self.input_offset || len(input) < self.scan_offset {
+        return mut self.syntax_failure()
+    }
+    parse_loop: {
+        if self.phase == RequestPhase.request {
+            status: LineStatus = mut self.prepare_line(input)
+            if status == LineStatus.incomplete {
+                if eof { return mut self.syntax_failure() }
+                return self.progress()
+            }
+            if status == LineStatus.malformed { return mut self.syntax_failure() }
+            first: usize = self.line_stop
+            second: usize = self.line_stop
+            for i: usize in self.line_start .. self.line_stop {
+                if input[i] == 32 {
+                    if first == self.line_stop {
+                        first = i
+                    } else {
+                        second = i
+                        break
+                    }
+                }
+            }
+            if first == self.line_start || second == self.line_stop || second == first + 1 ||
+                self.line_stop - second != 9 {
+                return mut self.syntax_failure()
+            }
+            method: string = input[self.line_start..first]
+            target: string = input[first + 1..second]
+            for i: usize in 0 .. len(method) {
+                if !is_token(method[i]) { return mut self.syntax_failure() }
+            }
+            for i: usize in 0 .. len(target) {
+                if target[i] <= 32 || target[i] == 127 { return mut self.syntax_failure() }
+            }
+            version: string = input[second + 1..self.line_stop]
+            if !mem.equal(version, "HTTP/1.0") && !mem.equal(version, "HTTP/1.1") {
+                return mut self.syntax_failure()
+            }
+            self.method_start = self.line_start
+            self.method_count = first - self.line_start
+            self.target_start = first + 1
+            self.target_count = second - self.target_start
+            mut self.consume_line()
+            self.phase = RequestPhase.headers
+            continue parse_loop
+        }
+        if self.phase == RequestPhase.headers {
+            status: LineStatus = mut self.prepare_line(input)
+            if status == LineStatus.incomplete {
+                if eof { return mut self.syntax_failure() }
+                return self.progress()
+            }
+            if status == LineStatus.malformed { return mut self.syntax_failure() }
+            if self.line_stop == self.line_start {
+                mut self.consume_line()
+                if self.framing == RequestFraming.undecided {
+                    self.framing = RequestFraming.none
+                    self.phase = RequestPhase.complete
+                } else if self.framing == RequestFraming.content_length {
+                    self.phase = RequestPhase.body
+                } else {
+                    self.phase = RequestPhase.chunk_size
+                }
+                continue parse_loop
+            }
+            colon: usize = self.line_stop
+            for i: usize in self.line_start .. self.line_stop {
+                if input[i] == 58 {
+                    colon = i
+                    break
+                }
+            }
+            if colon == self.line_start || colon == self.line_stop {
+                return mut self.syntax_failure()
+            }
+            name: string = input[self.line_start..colon]
+            raw: string = input[colon + 1..self.line_stop]
+            for i: usize in 0 .. len(name) {
+                if !is_token(name[i]) { return mut self.syntax_failure() }
+            }
+            for i: usize in 0 .. len(raw) {
+                if (raw[i] < 32 && raw[i] != 9) || raw[i] == 127 {
+                    return mut self.syntax_failure()
+                }
+            }
+            value: string = trim_ows(raw)
+            if self.header_count >= len(headers) {
+                return RequestResult.capacity(RequestCapacity.headers)
+            }
+            if ascii.is_equal(name, "content-length", false) {
+                if self.framing == RequestFraming.chunked { return mut self.framing_failure() }
+                length: usize, valid: bool = str.parse[usize](value)
+                if !valid { return mut self.framing_failure() }
+                if self.framing == RequestFraming.content_length &&
+                    length != self.content_length { return mut self.framing_failure() }
+                self.framing = RequestFraming.content_length
+                self.content_length = length
+            }
+            if ascii.is_equal(name, "transfer-encoding", false) {
+                if self.framing != RequestFraming.undecided ||
+                    !ascii.is_equal(value, "chunked", false) {
+                    return mut self.framing_failure()
+                }
+                self.framing = RequestFraming.chunked
+            }
+            headers[self.header_count] = Header {name: name, value: value}
+            self.header_count += 1
+            mut self.consume_line()
+            continue parse_loop
+        }
+        if self.phase == RequestPhase.body {
+            if self.body_count > len(body) || self.content_length > len(body) {
+                return RequestResult.capacity(RequestCapacity.body)
+            }
+            remaining: usize = self.content_length - self.body_count
+            count: usize = len(input) - self.input_offset
+            if count > remaining { count = remaining }
+            if count > 0 {
+                mem.copy(body[self.body_count..self.body_count + count],
+                    input[self.input_offset..self.input_offset + count])
+                self.body_count += count
+                self.input_offset += count
+            }
+            if self.body_count < self.content_length {
+                if eof { return mut self.framing_failure() }
+                return self.progress()
+            }
+            self.phase = RequestPhase.complete
+            continue parse_loop
+        }
+        if self.phase == RequestPhase.chunk_size {
+            status: LineStatus = mut self.prepare_line(input)
+            if status == LineStatus.incomplete {
+                if eof { return mut self.framing_failure() }
+                return self.progress()
+            }
+            if status == LineStatus.malformed { return mut self.syntax_failure() }
+            semicolon: usize = self.line_stop
+            for i: usize in self.line_start .. self.line_stop {
+                if input[i] == 59 {
+                    semicolon = i
+                    break
+                }
+            }
+            chunk: usize, valid: bool = str.parse[usize](input[self.line_start..semicolon], u8(16))
+            if !valid || (semicolon < self.line_stop &&
+                !is_chunk_ext(input[semicolon..self.line_stop])) {
+                return mut self.syntax_failure()
+            }
+            self.chunk_remaining = chunk
+            mut self.consume_line()
+            if chunk == 0 {
+                self.phase = RequestPhase.trailers
+            } else {
+                self.phase = RequestPhase.chunk_data
+            }
+            continue parse_loop
+        }
+        if self.phase == RequestPhase.chunk_data {
+            if self.body_count > len(body) || self.chunk_remaining > len(body) - self.body_count {
+                return RequestResult.capacity(RequestCapacity.body)
+            }
+            count: usize = len(input) - self.input_offset
+            if count > self.chunk_remaining { count = self.chunk_remaining }
+            if count > 0 {
+                mem.copy(body[self.body_count..self.body_count + count],
+                    input[self.input_offset..self.input_offset + count])
+                self.body_count += count
+                self.input_offset += count
+                self.chunk_remaining -= count
+            }
+            if self.chunk_remaining > 0 {
+                if eof { return mut self.framing_failure() }
+                return self.progress()
+            }
+            self.line_start = self.input_offset
+            self.scan_offset = self.input_offset
+            self.phase = RequestPhase.chunk_end
+            continue parse_loop
+        }
+        if self.phase == RequestPhase.chunk_end {
+            status: LineStatus = mut self.prepare_line(input)
+            if status == LineStatus.incomplete {
+                if eof { return mut self.framing_failure() }
+                return self.progress()
+            }
+            if status == LineStatus.malformed || self.line_stop != self.line_start {
+                return mut self.syntax_failure()
+            }
+            mut self.consume_line()
+            self.phase = RequestPhase.chunk_size
+            continue parse_loop
+        }
+        if self.phase == RequestPhase.trailers {
+            status: LineStatus = mut self.prepare_line(input)
+            if status == LineStatus.incomplete {
+                if eof { return mut self.framing_failure() }
+                return self.progress()
+            }
+            if status == LineStatus.malformed { return mut self.syntax_failure() }
+            if self.line_stop == self.line_start {
+                mut self.consume_line()
+                self.phase = RequestPhase.complete
+                continue parse_loop
+            }
+            colon: usize = self.line_stop
+            for i: usize in self.line_start .. self.line_stop {
+                if input[i] == 58 {
+                    colon = i
+                    break
+                }
+            }
+            if colon == self.line_start || colon == self.line_stop {
+                return mut self.syntax_failure()
+            }
+            for i: usize in self.line_start .. colon {
+                if !is_token(input[i]) { return mut self.syntax_failure() }
+            }
+            for i: usize in colon + 1 .. self.line_stop {
+                if (input[i] < 32 && input[i] != 9) || input[i] == 127 {
+                    return mut self.syntax_failure()
+                }
+            }
+            mut self.consume_line()
+            continue parse_loop
+        }
+        if self.phase == RequestPhase.complete {
+            return request_complete_result(
+                input[self.method_start..self.method_start + self.method_count],
+                input[self.target_start..self.target_start + self.target_count],
+                headers[..self.header_count], body[..self.body_count])
+        }
+        return RequestResult.syntax
+    }
+}
+
+ResponseParser.progress(): ResponseResult {
+    return ResponseResult.progress(ResponseProgress {
+        consumed: self.input_offset,
+        body_written: self.body_count,
+    })
+}
+
+/* Marks this parser failed and returns a syntax result. */
+mut ResponseParser.syntax_failure(): ResponseResult {
+    self.phase = ResponsePhase.failed
+    return ResponseResult.syntax
+}
+
+/* Marks this parser failed and returns a framing result. */
+mut ResponseParser.framing_failure(): ResponseResult {
+    self.phase = ResponsePhase.failed
+    return ResponseResult.framing
+}
+
+/* Packages a completed response over the caller-owned header and body views. */
+complete_result(
+    version_minor: u8,
+    status: u16,
+    reason: string,
+    headers: []Header,
+    body: []u8,
+): ResponseResult {
+    return ResponseResult.complete(Response {
+        version_minor: version_minor,
+        status: status,
+        reason: reason,
+        headers: headers,
+        body: body,
+    })
+}
+
+/* Resumes response parsing at the saved phase and scans only newly appended
+ * input bytes.
+ */
+pub mut ResponseParser.parse(
+    input: string,
+    headers: mut []Header,
+    body: mut []u8,
+    eof: bool,
+    no_body: bool,
+): ResponseResult {
+    if len(input) < self.input_offset || len(input) < self.scan_offset {
+        return mut self.syntax_failure()
+    }
+    parse_loop: {
+        if self.phase == ResponsePhase.status {
+            line_status: LineStatus = mut self.prepare_line(input)
+            if line_status == LineStatus.incomplete {
+                if eof { return mut self.syntax_failure() }
+                return self.progress()
+            }
+            if line_status == LineStatus.malformed { return mut self.syntax_failure() }
+            count: usize = self.line_stop - self.line_start
+            if count < 12 { return mut self.syntax_failure() }
+            start: usize = self.line_start
+            if mem.equal(input[start..start + 8], "HTTP/1.0") {
+                self.version_minor = 0
+            } else if mem.equal(input[start..start + 8], "HTTP/1.1") {
+                self.version_minor = 1
+            } else {
+                return mut self.syntax_failure()
+            }
+            if input[start + 8] != 32 || input[start + 9] < 48 || input[start + 9] > 57 ||
+                input[start + 10] < 48 || input[start + 10] > 57 ||
+                input[start + 11] < 48 || input[start + 11] > 57 {
+                return mut self.syntax_failure()
+            }
+            if count > 12 && input[start + 12] != 32 {
+                return mut self.syntax_failure()
+            }
+            self.status = u16(input[start + 9] - 48) * 100 +
+                u16(input[start + 10] - 48) * 10 + u16(input[start + 11] - 48)
+            if count > 12 {
+                self.reason_start = start + 13
+                self.reason_count = self.line_stop - self.reason_start
+            } else {
+                self.reason_start = self.line_stop
+                self.reason_count = 0
+            }
+            mut self.consume_line()
+            self.phase = ResponsePhase.headers
+            self.framing = ResponseFraming.undecided
+            self.content_length = 0
+            continue parse_loop
+        }
+        if self.phase == ResponsePhase.headers {
+            line_status: LineStatus = mut self.prepare_line(input)
+            if line_status == LineStatus.incomplete {
+                if eof { return mut self.syntax_failure() }
+                return self.progress()
+            }
+            if line_status == LineStatus.malformed { return mut self.syntax_failure() }
+            if self.line_stop == self.line_start {
+                mut self.consume_line()
+                if self.status >= 100 && self.status < 200 {
+                    if self.status == 101 || self.framing != ResponseFraming.undecided {
+                        return mut self.framing_failure()
+                    }
+                    self.informational_count += 1
+                    self.header_count = 0
+                    self.phase = ResponsePhase.status
+                    continue parse_loop
+                }
+                if no_body || self.status == 204 || self.status == 304 {
+                    self.framing = ResponseFraming.none
+                    self.phase = ResponsePhase.complete
+                } else if self.framing == ResponseFraming.undecided {
+                    self.framing = ResponseFraming.close
+                    self.phase = ResponsePhase.body
+                } else if self.framing == ResponseFraming.content_length {
+                    self.phase = ResponsePhase.body
+                } else {
+                    self.phase = ResponsePhase.chunk_size
+                }
+                continue parse_loop
+            }
+            colon: usize = self.line_stop
+            for i: usize in self.line_start .. self.line_stop {
+                if input[i] == 58 {
+                    colon = i
+                    break
+                }
+            }
+            if colon == self.line_start || colon == self.line_stop {
+                return mut self.syntax_failure()
+            }
+            name: string = input[self.line_start..colon]
+            raw: string = input[colon + 1..self.line_stop]
+            for i: usize in 0 .. len(name) {
+                if !is_token(name[i]) { return mut self.syntax_failure() }
+            }
+            for i: usize in 0 .. len(raw) {
+                if (raw[i] < 32 && raw[i] != 9) || raw[i] == 127 {
+                    return mut self.syntax_failure()
+                }
+            }
+            value: string = trim_ows(raw)
+            if (self.status < 100 || self.status >= 200) && self.header_count >= len(headers) {
+                return ResponseResult.capacity(ResponseCapacity.headers)
+            }
+            if ascii.is_equal(name, "content-length", false) {
+                if self.framing == ResponseFraming.chunked { return mut self.framing_failure() }
+                length: usize, valid: bool = str.parse[usize](value)
+                if !valid { return mut self.framing_failure() }
+                if self.framing == ResponseFraming.content_length &&
+                    length != self.content_length { return mut self.framing_failure() }
+                self.framing = ResponseFraming.content_length
+                self.content_length = length
+            }
+            if ascii.is_equal(name, "transfer-encoding", false) {
+                if self.framing != ResponseFraming.undecided ||
+                    !ascii.is_equal(value, "chunked", false) {
+                    return mut self.framing_failure()
+                }
+                self.framing = ResponseFraming.chunked
+            }
+            if self.status < 100 || self.status >= 200 {
+                headers[self.header_count] = Header {name: name, value: value}
+                self.header_count += 1
+            }
+            mut self.consume_line()
+            continue parse_loop
+        }
+        if self.phase == ResponsePhase.body {
+            if self.framing == ResponseFraming.content_length {
+                if self.body_count > len(body) || self.content_length > len(body) {
+                    return ResponseResult.capacity(ResponseCapacity.body)
+                }
+                remaining: usize = self.content_length - self.body_count
+                count: usize = len(input) - self.input_offset
+                if count > remaining { count = remaining }
+                if count > 0 {
+                    mem.copy(body[self.body_count..self.body_count + count],
+                        input[self.input_offset..self.input_offset + count])
+                    self.body_count += count
+                    self.input_offset += count
+                }
+                if self.body_count < self.content_length {
+                    if eof { return mut self.framing_failure() }
+                    return self.progress()
+                }
+                self.phase = ResponsePhase.complete
+                continue parse_loop
+            }
+            available: usize = len(input) - self.input_offset
+            if self.body_count > len(body) || available > len(body) - self.body_count {
+                return ResponseResult.capacity(ResponseCapacity.body)
+            }
+            if available > 0 {
+                mem.copy(body[self.body_count..self.body_count + available],
+                    input[self.input_offset..])
+                self.body_count += available
+                self.input_offset = len(input)
+            }
+            if !eof { return self.progress() }
+            self.phase = ResponsePhase.complete
+            continue parse_loop
+        }
+        if self.phase == ResponsePhase.chunk_size {
+            line_status: LineStatus = mut self.prepare_line(input)
+            if line_status == LineStatus.incomplete {
+                if eof { return mut self.framing_failure() }
+                return self.progress()
+            }
+            if line_status == LineStatus.malformed { return mut self.syntax_failure() }
+            semicolon: usize = self.line_stop
+            for i: usize in self.line_start .. self.line_stop {
+                if input[i] == 59 {
+                    semicolon = i
+                    break
+                }
+            }
+            chunk: usize, valid: bool = str.parse[usize](input[self.line_start..semicolon], u8(16))
+            if !valid || (semicolon < self.line_stop &&
+                !is_chunk_ext(input[semicolon..self.line_stop])) {
+                return mut self.syntax_failure()
+            }
+            self.chunk_remaining = chunk
+            mut self.consume_line()
+            if chunk == 0 {
+                self.phase = ResponsePhase.trailers
+            } else {
+                self.phase = ResponsePhase.chunk_data
+            }
+            continue parse_loop
+        }
+        if self.phase == ResponsePhase.chunk_data {
+            if self.body_count > len(body) || self.chunk_remaining > len(body) - self.body_count {
+                return ResponseResult.capacity(ResponseCapacity.body)
+            }
+            count: usize = len(input) - self.input_offset
+            if count > self.chunk_remaining { count = self.chunk_remaining }
+            if count > 0 {
+                mem.copy(body[self.body_count..self.body_count + count],
+                    input[self.input_offset..self.input_offset + count])
+                self.body_count += count
+                self.input_offset += count
+                self.chunk_remaining -= count
+            }
+            if self.chunk_remaining > 0 {
+                if eof { return mut self.framing_failure() }
+                return self.progress()
+            }
+            self.line_start = self.input_offset
+            self.scan_offset = self.input_offset
+            self.phase = ResponsePhase.chunk_end
+            continue parse_loop
+        }
+        if self.phase == ResponsePhase.chunk_end {
+            line_status: LineStatus = mut self.prepare_line(input)
+            if line_status == LineStatus.incomplete {
+                if eof { return mut self.framing_failure() }
+                return self.progress()
+            }
+            if line_status == LineStatus.malformed || self.line_stop != self.line_start {
+                return mut self.syntax_failure()
+            }
+            mut self.consume_line()
+            self.phase = ResponsePhase.chunk_size
+            continue parse_loop
+        }
+        if self.phase == ResponsePhase.trailers {
+            line_status: LineStatus = mut self.prepare_line(input)
+            if line_status == LineStatus.incomplete {
+                if eof { return mut self.framing_failure() }
+                return self.progress()
+            }
+            if line_status == LineStatus.malformed { return mut self.syntax_failure() }
+            if self.line_stop == self.line_start {
+                mut self.consume_line()
+                self.phase = ResponsePhase.complete
+                continue parse_loop
+            }
+            colon: usize = self.line_stop
+            for i: usize in self.line_start .. self.line_stop {
+                if input[i] == 58 {
+                    colon = i
+                    break
+                }
+            }
+            if colon == self.line_start || colon == self.line_stop {
+                return mut self.syntax_failure()
+            }
+            for i: usize in self.line_start .. colon {
+                if !is_token(input[i]) { return mut self.syntax_failure() }
+            }
+            for i: usize in colon + 1 .. self.line_stop {
+                if (input[i] < 32 && input[i] != 9) || input[i] == 127 {
+                    return mut self.syntax_failure()
+                }
+            }
+            mut self.consume_line()
+            continue parse_loop
+        }
+        if self.phase == ResponsePhase.complete {
+            return complete_result(
+                self.version_minor,
+                self.status,
+                input[self.reason_start..self.reason_start + self.reason_count],
+                headers[..self.header_count],
+                body[..self.body_count],
+            )
+        }
+        return ResponseResult.syntax
+    }
+}

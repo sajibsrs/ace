@@ -1,0 +1,163 @@
+// expect-exit: 0
+
+import http
+import mem
+
+new_parser(): http.RequestParser {
+    return http.RequestParser {
+        input_offset: usize(0),
+        line_start: usize(0),
+        scan_offset: usize(0),
+        line_stop: usize(0),
+        line_next: usize(0),
+        line_ready: false,
+        header_count: usize(0),
+        body_count: usize(0),
+        content_length: usize(0),
+        chunk_remaining: usize(0),
+        method_start: usize(0),
+        method_count: usize(0),
+        target_start: usize(0),
+        target_count: usize(0),
+        phase: http.RequestPhase.request,
+        framing: http.RequestFraming.undecided,
+    }
+}
+
+new_response_parser(): http.ResponseParser {
+    return http.ResponseParser {
+        input_offset: usize(0),
+        line_start: usize(0),
+        scan_offset: usize(0),
+        line_stop: usize(0),
+        line_next: usize(0),
+        line_ready: false,
+        header_count: usize(0),
+        body_count: usize(0),
+        content_length: usize(0),
+        chunk_remaining: usize(0),
+        version_minor: u8(0),
+        status: u16(0),
+        reason_start: usize(0),
+        reason_count: usize(0),
+        phase: http.ResponsePhase.status,
+        framing: http.ResponseFraming.undecided,
+        informational_count: usize(0),
+    }
+}
+
+main(): int {
+    headers: [4]http.Header
+    body: [16]u8 = [0 : 16]
+    parser: http.RequestParser = new_parser()
+    result: http.RequestResult = mut parser.parse(
+        "POST /submit HTTP/1.1\r\nContent-Length: 4\r\nX-Test: yes\r\n\r\ndata",
+        mut headers[..],
+        mut body[..],
+        false,
+    )
+    switch result {
+        http.RequestResult.complete(request: http.Request) {
+            if !mem.equal(request.method, "POST") { return 1 }
+            if !mem.equal(request.target, "/submit") { return 2 }
+            if len(request.headers) != 2 { return 3 }
+            if !mem.equal(request.body, "data") { return 4 }
+        }
+        else { return 5 }
+    }
+
+    parser = new_parser()
+    result = mut parser.parse(
+        "POST /chunk HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n",
+        mut headers[..],
+        mut body[..],
+        false,
+    )
+    switch result {
+        http.RequestResult.complete(request: http.Request) {
+            if !mem.equal(request.body, "Wikipedia") { return 6 }
+        }
+        else { return 7 }
+    }
+
+    request_text: string = "PUT /byte HTTP/1.1\r\nContent-Length: 3\r\nX-A: b\r\n\r\none"
+    parser = new_parser()
+    previous_scan: usize = 0
+    previous_body: usize = 0
+    for occupied: usize in 1 .. len(request_text) + 1 {
+        result = mut parser.parse(
+            request_text[..occupied],
+            mut headers[..],
+            mut body[..],
+            false,
+        )
+        if parser.scan_offset < previous_scan || parser.body_count < previous_body {
+            return 10
+        }
+        previous_scan = parser.scan_offset
+        previous_body = parser.body_count
+        switch result {
+            http.RequestResult.progress(value: http.RequestProgress) {
+                if occupied == len(request_text) { return 11 }
+            }
+            http.RequestResult.complete(request: http.Request) {
+                if occupied != len(request_text) || !mem.equal(request.body, "one") {
+                    return 12
+                }
+            }
+            else { return 13 }
+        }
+    }
+
+    response_text: string = "HTTP/1.1 200 OK\r\nContent-Length: 3\r\nX-A: b\r\n\r\ntwo"
+    response_parser: http.ResponseParser = new_response_parser()
+    response_result: http.ResponseResult
+    previous_scan = 0
+    previous_body = 0
+    for occupied: usize in 1 .. len(response_text) + 1 {
+        response_result = mut response_parser.parse(
+            response_text[..occupied],
+            mut headers[..],
+            mut body[..],
+            false,
+            false,
+        )
+        if response_parser.scan_offset < previous_scan ||
+            response_parser.body_count < previous_body {
+            return 14
+        }
+        previous_scan = response_parser.scan_offset
+        previous_body = response_parser.body_count
+        switch response_result {
+            http.ResponseResult.progress(value: http.ResponseProgress) {
+                if occupied == len(response_text) { return 15 }
+            }
+            http.ResponseResult.complete(parsed: http.Response) {
+                if occupied != len(response_text) || !mem.equal(parsed.body, "two") {
+                    return 16
+                }
+            }
+            else { return 17 }
+        }
+    }
+
+    response_headers: [1]http.Header = [
+        http.Header {name: "Content-Length", value: "2"},
+    ]
+    response: http.Response = http.Response {
+        version_minor: u8(1),
+        status: u16(200),
+        reason: "OK",
+        headers: response_headers[..],
+        body: "ok",
+    }
+    output: [64]u8 = [0 : 64]
+    count: usize, err: Error = response.format(mut output[..])
+    expected: string = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"
+    if err != null || !mem.equal(output[..count], expected) { return 8 }
+
+    small: [4]u8 = [7 : 4]
+    count, err = response.format(mut small[..])
+    if count != 0 || err == null || small[0] != 7 || small[3] != 7 { return 9 }
+    return 0
+}

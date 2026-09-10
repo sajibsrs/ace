@@ -1,0 +1,25 @@
+/* Defaults work in runtime, nested, generic, and static struct literals. */
+
+// expect-exit: 0
+
+Inner: struct { low: u8 = u8(3), high: u8 = u8(4) }
+Outer: struct { tag: int, inner: Inner = Inner {} }
+Box[T]: struct { value: T = 11 }
+
+static_outer: Outer = Outer { inner: Inner { high: u8(9) }, tag: 5 }
+canonical_zero: Inner
+
+main(): int {
+    empty: Inner = Inner {}
+    override: Inner = Inner { high: u8(8) }
+    nested: Outer = Outer { tag: 6 }
+    box: Box[int] = {}
+
+    if empty.low != 3 || empty.high != 4 { return 1 }
+    if override.low != 3 || override.high != 8 { return 2 }
+    if nested.tag != 6 || nested.inner.low != 3 || nested.inner.high != 4 { return 3 }
+    if static_outer.tag != 5 || static_outer.inner.low != 3 || static_outer.inner.high != 9 { return 4 }
+    if box.value != 11 { return 5 }
+    if canonical_zero.low != 0 || canonical_zero.high != 0 { return 6 }
+    return 0
+}

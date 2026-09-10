@@ -1,0 +1,13 @@
+/* Invalid defaults and omissions remain diagnostics. */
+
+runtime(): int { return 1 }
+
+Missing: struct { required: int, optional: int = 2 }
+Called: struct { value: int = runtime() }
+OtherField: struct { first: int = 1, second: int = first }
+
+main(): int {
+    a: Missing = Missing {}
+    b: Missing = Missing { optional: 3 }
+    return a.required + b.required
+}

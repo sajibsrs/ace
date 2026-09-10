@@ -189,7 +189,6 @@ foundations.
 
 - **Dynamic array and hash-map modules** [new] — composed from `mem` and
   explicit generics.
-- **`str.concat` / `str.join`** into caller storage [new].
 - **Fixed-width integer formatting** [additive] — width, zero padding, and base
   prefixes for `fmt.printf`, especially fixed-width `%b`/`%o`/`%x` register
   displays; carve consistently across integer conversions from a hardware
@@ -240,12 +239,16 @@ nonblocking connect completion remain visible without callbacks or allocation.
 - **TLS secure-transport module** [new] — explicit transport over `net`, with
   visible configuration, handshake progress, certificate verification, and
   caller-owned buffers; no hidden allocation or background execution.
-- **HTTP client/server module** [new] — a protocol layer over plain `net` or
-  explicit TLS transport with caller-owned connection, parser, body, and
-  response storage. Address family belongs to transport values, so IPv6 does
-  not duplicate the protocol API as `http6` or `https6`. HTTPS is HTTP composed
-  with TLS; an `https` convenience remains deferred until real usage proves it
-  can preserve explicit costs and state.
+- **HTTP protocol and transport ergonomics** [partly implemented] — the strict IPv4 endpoint
+  parser, zero-copy HTTP URL parser, caller-storage request and response
+  formatters, and incremental HTTP/1.1 request and response parsers from
+  Standard Library #17 are implemented, including field and response defaults,
+  named method/status constants, and conventional response reasons. Next
+  implement blocking socket request/response overloads, then the caller-bounded
+  nonblocking `serve` loop over `tcp` and `poll`. TLS/HTTPS remains a separate
+  secure-transport composition. `rune`,
+  UTF-8 decoding, and `yarn` are not prerequisites because HTTP framing is
+  ASCII and payloads remain byte views.
 
 ## 7. Completed checked-build checkpoint
 

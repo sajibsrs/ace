@@ -33,6 +33,22 @@ Concrete rules and syntax. The why behind every rule lives in PHILOSOPHY.md (clo
 12. `if`, `switch`, and `for` are statements, not expressions, and their
     conditions require `bool`. Compound assignments are pure sugar with the
     left operand evaluated once; `++` and `--` do not exist.
+13. A struct field may opt into a compile-time default with `name: Type =
+    expression`. A named-field struct literal may omit exactly the fields with
+    declared defaults; every field without one remains required, and `T {}` is
+    valid only when every field of `T` has one. An explicit initializer wins.
+    Unknown and duplicate fields remain errors, and there is no positional,
+    spread, or update literal. Each default is independently checked against
+    its declared field type and may use only the existing constant-expression
+    surface; it cannot call a function or refer to `self` or another instance
+    field. Defaults apply only when constructing a struct literal: they do not
+    initialize bare locals, globals, allocations, arrays, or canonical-zero
+    values and do not affect layout or ABI. Generic defaults neither infer type
+    arguments nor instantiate a generic implicitly; when generic struct
+    literals are implemented, substitution follows an explicitly written
+    instantiation. Rationale: omission explicitly authorized by the type author
+    removes repetitive construction without hidden work or weakening definite
+    initialization, while per-field opt-in keeps required state visible.
 
 ## Compiler
 1. Make memory size available to programmer. (see: Errors)
@@ -515,7 +531,7 @@ Carved (contract value layout):
 7. Each struct has at most one canonical signing, declared in the struct's defining module after all named contracts in its list are declared: `Circle signs Shape, Color`. A second `Circle signs` declaration is an error, as is repeating a contract in the list. A multiline contract list uses parentheses. The signing is checked at end-of-file so its type-owned methods may follow it. Methods may exist without a signing.
 8. A signing registers one exact concrete/contract pair per listed contract. Construction names the target contract explicitly: `s: Shape = Shape(&c)`. The compiler looks up the concrete type's one signing and emits one const vtable per exact used pair. There is no named signing value, alternate implementation, open-ended search, runtime lookup, or trait solving.
 9. Contract methods are plain signatures with the receiver implied. Conformance matches method name, receiver `mut`, exact parameter types, and return type. Methods may overload by exact parameters and receiver mutation; return types must match a requirement but never distinguish or select overloads.
-10. Calls are `c.area()` and `mut c.scale(2)`; direct disambiguated calls are `Circle.area(c)` and `Circle.scale(mut c, 2)`. `Circle.area` by itself is not a first-class method value. Dispatch through a contract calls the selected vtable slot with `s.data` and retains the same visible `mut` call-site rule.
+10. Calls are `c.area()` and `mut c.scale(2)` in both statement and value-producing expression positions; direct disambiguated calls are `Circle.area(c)` and `Circle.scale(mut c, 2)`. `Circle.area` by itself is not a first-class method value. Dispatch through a contract calls the selected vtable slot with `s.data` and retains the same visible `mut` call-site rule.
 11. `Shape(&c)` does not mutate `c`; a later `mut s.scale(2)` is the explicit mutation. Const remains absolute: a contract constructed over const backing storage may be read through, but mutating dispatch through it is a compile error. This property is compile-time-only and adds no runtime word or check.
 12. Signings and methods are private by default. `pub Circle signs Shape, Color` exports every conformance in that canonical signing; `pub Circle.area()` exports a method for direct external calls. A public signing may use private methods internally.
 13. Generic signings ride the bracket rules: `Box[T] signs Value[T]`. Both sides are explicitly instantiated at use (`Value[int](&box)`), and each used exact pair gets its own stamped vtable. The one-signing rule applies to the nominal generic struct; per-instantiation/conditional signings are rejected.
@@ -629,7 +645,7 @@ or making related facade and target APIs differ.
    is the OS front door, not permission to outsource Ace behavior; C Interop #4
    defines the boundary.
 7. `string` is the complete-text intent spelling of `[]char`/`[]u8` (UTF-8 by convention); all three share type identity and machinery.
-8. v1 contents — seven modules: `mem` (the raw allocation layer plus explicit byte/memory operations), `sys` (OS calls), `fmt` (print/format), `bits` (explicit access to and operations on machine representations), `math` (sqrt, `abs[T]`, `min[T]`/`max[T]`, …), `str` (byte/string operations), `simd` (`f32x4`, `i8x16`, arithmetic and shuffles emitting NEON directly — explicit vectorization, zero compiler analysis). `bits.from_float(f64): u64`, `bits.from_float(f32): u32`, `bits.to_float(u64): f64`, and `bits.to_float(u32): f32` copy the complete representation unchanged rather than performing numeric conversion. The exact overloads preserve signed zero, infinities, subnormals, and NaN payloads and lower to register moves without allocation or runtime calls. Ordinary numeric casts retain their numeric meaning.
+8. v1 contents — eight modules: `mem` (the raw allocation layer plus explicit byte/memory operations), `sys` (OS calls), `fmt` (print/format), `bits` (explicit access to and operations on machine representations), `math` (sqrt, `abs[T]`, `min[T]`/`max[T]`, …), `ascii` (ASCII byte classification, conversion, and comparison), `str` (byte/string operations), `simd` (`f32x4`, `i8x16`, arithmetic and shuffles emitting NEON directly — explicit vectorization, zero compiler analysis). `bits.from_float(f64): u64`, `bits.from_float(f32): u32`, `bits.to_float(u64): f64`, and `bits.to_float(u32): f32` copy the complete representation unchanged rather than performing numeric conversion. The exact overloads preserve signed zero, infinities, subnormals, and NaN payloads and lower to register moves without allocation or runtime calls. Ordinary numeric casts retain their numeric meaning.
    Integer representation operations are exact overloads for `u8`, `u16`, `u32`, and `u64`. `bits.pop_count(value): uint` returns the number of set bits. `bits.lead_zeros(value): uint` and `bits.trail_zeros(value): uint` return the number of consecutive zero bits from the named edge; for zero they return the operand width. `bits.byte_swap(value)` returns the same type with its bytes reversed and is the identity for `u8`. `bits.rotate_left(value, count: uint)` and `bits.rotate_right(value, count: uint)` return the same type and reduce `count` modulo the operand width, so every count is valid. Signed integers and `usize` require an explicit conversion to a fixed-width unsigned type; transparent platform aliases share their underlying overload as usual (`uint` is `u64` on Apple arm64). The three counts return `uint`, rather than `int` or an artificially narrow integer, because their result domain is intrinsically nonnegative; that accuracy costs no runtime performance. All operations allocate nothing and lower to target instructions without runtime-library calls.
    Float classification is the exact `f32`/`f64` overload set `math.isnan(value): bool`, `math.isinf(value): bool`, and `math.isfinite(value): bool`. `isnan` recognizes every exponent-all-ones, nonzero-fraction encoding, including quiet and signaling NaNs with either sign. `isinf` recognizes only positive and negative infinity. `isfinite` recognizes zeros, subnormals, and normal finite values. The pure-Ace implementations inspect representations through `bits`, allocate nothing, and make no libm call. Rationale: the compact established names remain unambiguous under the `math` qualifier, while representation access stays centralized in `bits`.
    Intrinsic declarations: a function declaration may use the trailing body substitute `intrinsic`, as in `pub from_float(value: f64): u64 intrinsic`, only for an exact compiler-provided standard-library operation. It is not a user-extensible foreign or assembly hook. The admitted public operations are the nongeneric, top-level `bits` overloads specified in #8; methods, private declarations, generics, specializations, `extern`, and `export` uses are rejected. The compiler emits an ordinary callable symbol for every admitted declaration so explicitly typed function values and indirect calls have the same semantics as direct calls. A statically resolved direct call may lower inline to the same instruction sequence. Rationale: source states honestly that no Ace body exists, the public API remains first-class, and the exact whitelist adds machine operations without exposing backend internals or an unrestricted intrinsic namespace.
@@ -692,14 +708,174 @@ or making related facade and target APIs differ.
 16. Character and string utilities:
     - `char` is a predeclared transparent alias of `u8`, with shared identity, representation, conversions, and overload behavior; `sizeof(char) == 1`. It names one byte used as character data, not a decoded Unicode character. Character literals remain untyped constants holding exactly one byte and retain the existing escapes (`\n`, `\t`, `\r`, `\0`, `\\`, `\"`, `\'`, and `\xNN`); a direct multibyte source character in a character literal remains invalid. Strings remain read-only UTF-8 byte sequences with byte length, indexing, slicing, and iteration. A future `rune` type and explicit UTF-8 encode/decode operations are additive; no decoding, normalization, or grapheme processing is implicit.
     - `str` is an ordinary free-function module. Strings gain no methods, and no primitive-method or generic-method facility is introduced. Exact overload selection treats `char` and `u8` as the same type, so a `char` overload is also the byte overload.
+    - `ascii` is an ordinary allocation-free module over ASCII bytes and byte strings. `ascii.is_control(byte: u8): bool` recognizes exactly bytes `0x00..0x1F` and `0x7F`. `ascii.to_lower(byte: u8): u8` maps `A..Z` to `a..z` and leaves every other byte unchanged. `ascii.is_equal(a: string, b: string, sensitive: bool): bool` compares exact bytes when `sensitive` is true and compares after that ASCII-only lowercase mapping when false; unequal lengths fail, and bytes outside ASCII letters remain unchanged. It performs no Unicode decoding, normalization, locale processing, or allocation.
     - Search is allocation-free and byte-exact. `str.find(text: string, needle: string): (usize, bool)` and its `needle: char` overload return the first byte index and `true`, or canonical-zero `usize` and `false`; an empty string needle is found at zero. `str.has(text, needle)` has `string` and `char` overloads and tests occurrence anywhere; an empty string needle is present. The corresponding three-argument overloads `str.has(text, part, suffix: bool)` test one boundary: `false` selects the prefix and `true` the suffix. An empty string part matches either boundary.
     - `str.compare(a: string, b: string): int` compares unsigned bytes lexicographically and returns exactly `-1`, `0`, or `1`; after an equal prefix, the shorter string sorts first. It allocates nothing and performs no Unicode decoding or normalization.
     - `str.copy(text: string, noalias destination: mut []char): bool` copies the complete text into `destination[0..len(text)]`. A shorter destination returns `false` and is unchanged; otherwise the copy succeeds, returns `true`, and leaves the destination suffix unchanged. Empty text succeeds without writing. The source and written destination range must not overlap; checked builds diagnose a false promise and release assumes it. This is a capacity-oriented convenience, unlike `mem.copy`, whose two complete ranges must have equal lengths.
+    - `str.concat(parts: []string, destination: mut []char): (usize, bool)` concatenates every part in order into caller storage. Success returns the complete byte count and true while leaving the unused destination suffix unchanged. If the complete result exceeds destination capacity, it returns `(0, false)` without writing. Empty parts and an empty parts slice are valid. Source bytes must not overlap the written destination range. The operation allocates nothing and performs no decoding or normalization.
     - `str.split(text: string, separator: string, parts: mut []string): (usize, bool)` and its `separator: char` overload split left-to-right on non-overlapping exact byte matches. Separators are omitted; leading, trailing, and adjacent separators produce empty parts, and empty input produces one empty part. Each written part is a zero-copy view into `text`; unwritten slots are unchanged. The result is the number written and whether the complete result fit. An empty string separator returns `(0, false)` without writing. The operation allocates nothing and performs no decoding or normalization.
     - Exact boundary removal is overloaded as `str.trim(text: string, part: string, suffix: bool): (string, bool)` and with `part: char`; `false` removes at most one matching prefix and `true` at most one matching suffix. A match returns the remaining zero-copy view and `true`; absence returns the original view and `false`; an empty string part succeeds without changing the view. `str.trim(text: string): string` instead removes all leading and trailing ASCII whitespace bytes — exactly `0x09..0x0D` and `0x20` — and returns a zero-copy view. It performs no Unicode whitespace processing.
     - Parsing is the explicitly instantiated generic overload set `str.parse[T](text: string): (T, bool)` and `str.parse[T](text: string, radix: u8): (T, bool)`. The default form admits exactly `int`, `uint`, `usize`, `f32`, and `f64`; the radix form admits exactly the three integer types and radices 2 through 36. Integer digits above nine are ASCII letters, case-insensitive. An explicit radix accepts digits only, with no `0x` or `0b` prefix. Parsing consumes the complete nonempty string, accepts no surrounding whitespace or leading `+`, permits leading `-` only for `int` and signed floats, and accepts leading zeroes. Decimal floats accept ordinary decimal/scientific forms plus the exact non-finite spellings produced by `fmt` (`nan`, `inf`, `-inf`). Finite decimals round directly to the requested IEEE width using nearest with exact ties to even; conversion does not pass through another float width. Invalid text, an unsupported runtime radix, or overflow returns canonical-zero `T` and `false`; finite float underflow rounded to signed zero succeeds. Unsupported `T` is a compile-time error. Parsing allocates nothing, performs no locale-dependent interpretation, and uses no platform decimal parser.
     - Value-to-text conversion is the ordinary overload set `str.format(destination: mut []char, value): (usize, bool)` for exact value types `int`, `uint`, `usize`, `f32`, and `f64`, plus radix-taking overloads for the three integer types. It writes the complete representation or, when capacity is insufficient or a runtime radix is outside 2 through 36, writes nothing and returns `(0, false)`. Success returns the byte count and `true`, leaving the unused destination suffix unchanged. Integer radix digits are lowercase ASCII and carry no base prefix; only `int` may emit `-`. The no-radix float representations are exactly those of the corresponding `fmt.print` overloads. The operation allocates nothing.
     - Rationale: `char` improves byte-oriented intent without adding a second representation or conversion domain; `rune` remains available for a later explicit Unicode layer. Free `str` functions keep library ownership visible and reuse Ace's existing overload and explicit-generic machinery without extending methods to primitives. Every operation works on views or caller storage, exposes capacity and failure explicitly, and adds no hidden allocation, decoding, normalization, locale, or runtime type dispatch. Compact overload sets avoid a family of prefix/suffix/type-specific names while their argument and explicit type shapes remain statically unambiguous.
+
+17. HTTP (protocol core implemented; transport ergonomics carved) — `http` is
+    the allocation-free HTTP/1.1 protocol layer. Its parser and formatter core
+    performs no network I/O; its higher-level operations compose the concrete
+    `net`, `tcp`, and `poll` modules directly, with no transport contract or
+    module split. HTTP
+    transports bytes: it parses protocol delimiters, method and header-name
+    grammar, decimal fields, and case-insensitive names as ASCII, while header
+    values and bodies remain byte views. It performs no Unicode decoding,
+    validation, normalization, or case folding. Consequently `rune`, UTF-8
+    decoding and `yarn` are not prerequisites. A
+    later owned-string convenience may compose with `http`, but the base API
+    keeps every capacity and allocation decision with the caller.
+    - Endpoint text and URLs are different values. The general networking
+      convenience is `net.parse4(endpoint: string): (Addr4, bool)`, which
+      accepts exactly a dotted-decimal IPv4 address and required decimal port
+      separated by one colon, for example `127.0.0.1:8080`. It consumes the
+      complete nonempty input, accepts four decimal octets in `0...255` and a
+      port in `0...65535`, performs no name resolution, and returns canonical
+      zero plus false for invalid text. Hostname resolution remains
+      `net.resolve4`; endpoint formatting and IPv6 literals are additive.
+    - `Url: struct { host: string, path: string, query: string, port: u16 }`
+      contains zero-copy views into the input URL and a host-order port.
+      Separating path and query makes a query-only URL representable without
+      allocation: its path is the static `/` view and its query retains the
+      leading `?`. `parse_url(url:
+      string): (Url, Error)` initially accepts only an absolute `http` URL with
+      a nonempty authority: `http://host`, an optional explicit decimal port,
+      and an optional path/query request target. An omitted port becomes 80;
+      an omitted path becomes `/`; a query without a path therefore composes
+      as `/?`. The host may be an ASCII DNS name or dotted IPv4
+      literal. DNS names are limited to 253 bytes with labels of at most 63
+      bytes. User information, fragments, bracketed IPv6 literals, embedded
+      control/NUL bytes, empty or out-of-range ports, and every other scheme
+      fail with `UrlErr`; `https://` is rejected rather than silently using
+      plaintext. Parsing allocates nothing, performs no DNS lookup, preserves
+      path/query bytes and percent escapes exactly, and never percent-decodes
+      or Unicode-normalizes them.
+    - The protocol core uses `Header: struct { name: string, value: string }`
+      and caller-provided header/body/output storage. Methods are strings rather
+      than a closed enum so extension methods need no API change. Serialization
+      rejects invalid method and header-name bytes plus CR, LF, and NUL in
+      caller-supplied header values. It writes a complete HTTP/1.1 message or
+      reports insufficient capacity without emitting a partial message.
+      Parsing is incremental state supplied and retained by the caller, accepts
+      arbitrary receive fragmentation, returns zero-copy header/value views
+      into caller-owned stable input storage, and reports one explicit progress,
+      completion, capacity, syntax, or framing result per call.
+      The public message surface is `Request { method, target, headers, body }`
+      and `Response { version_minor = 1, status = 200, reason = null, headers =
+      null, body = null }`. Request keeps its essential method and target
+      required; response construction may name only the fields it overrides.
+      Response fields remain directly accessible; getter/setter pairs add no
+      protection while fields are visible and remain additive only after a
+      concrete need. A null response reason selects the module's static
+      conventional phrase for a known status, or the empty phrase for an
+      unknown valid status. A non-null reason, including `""`, is emitted
+      exactly after validation. Parsing preserves the received reason.
+      Their
+      read-only `format(output: mut []u8): (usize, Error)` methods write one
+      complete message or leave insufficient output unchanged. Output must not
+      overlap storage reachable through the message. Formatting preserves the
+      supplied headers exactly and synthesizes neither `Host` nor framing
+      fields; `FormatErr` distinguishes output capacity and invalid start-line
+      or header fields. The incremental parser surface is
+      `mut RequestParser.parse(input, headers, body, eof): RequestResult` and
+      `mut ResponseParser.parse(input, headers, body, eof, no_body):
+      ResponseResult`, with public phase, framing, capacity, and cumulative
+      progress support types for each parser. Each call resumes from saved
+      phase, line-scan, framing, header, and body progress; already-consumed
+      bytes are not reparsed or recopied. `input` is the same stable complete
+      occupied prefix extended with newly received bytes on every call. The
+      parser retains no buffer pointer, while the caller preserves previously
+      written header and body storage until completion. Reinitialize the parser
+      value before starting another message.
+    - Initial request framing supports `Content-Length`, `Transfer-Encoding:
+      chunked`, and an empty body when neither is present. Initial response
+      framing additionally supports explicit no-body responses and
+      connection-close bodies. Chunk syntax is decoded into caller-owned body
+      storage; extensions are ignored after syntactic validation and trailers
+      are parsed for framing but not exposed initially. Conflicting or invalid
+      framing is an error. Informational `1xx` responses are consumed before the
+      one final response. Header names compare case-insensitively as ASCII;
+      field values are otherwise preserved.
+    - The nine standard request methods and the complete selected RFC 9110 plus
+      WebDAV/misc status catalogue are public named constants, spelled
+      `method_get`, `method_post`, ... as `string` and `status_ok`,
+      `status_not_found`, ... as `u16`. They are conveniences, not closed
+      types: request parsing and formatting continue to accept any valid method
+      token and response handling continues to accept every status in
+      `100...999`. The static reason lookup is initially an internal formatting
+      detail rather than another public operation.
+    - Blocking TCP socket convenience is the exact overload set
+      `request(socket: net.Socket, request: Request, scratch: mut []u8): Error`,
+      `request(socket: net.Socket, input: mut []u8, headers: mut []Header, body:
+      mut []u8): (Request, Error)`, `response(socket: net.Socket, response:
+      Response, scratch: mut []u8): Error`, and `response(socket: net.Socket,
+      input: mut []u8, headers: mut []Header, body: mut []u8, no_body: bool):
+      (Response, Error)`. The write forms format completely before performing
+      all-byte sends; the read forms extend one stable occupied input prefix
+      until the corresponding parser completes. They require blocking TCP
+      sockets, retry interrupted I/O, preserve lower-layer error domains, and
+      retain neither socket nor buffer. `no_body` makes HEAD-style response
+      semantics explicit. Connection creation, DNS, retry, TLS, reuse, and
+      keep-alive policy remain with the client caller.
+    - Parser failures mapped through those conveniences use the shared public
+      `SyntaxErr`, `FramingErr`, and `CapacityErr` domains. Syntax and framing
+      variants map to their matching domain, and premature EOF is framing
+      failure. `CapacityErr` codes are the public `i32` constants
+      `capacity_input`, `capacity_headers`, and `capacity_body`. Formatter
+      failures remain `FormatErr`; lower-layer socket/TCP errors retain
+      their original domains and codes.
+    - Server convenience is `serve(endpoint: string, mut handler: Handler,
+      storage: ServerStorage): Error`, where `Handler` requires `mut
+      handle(request: Request, body: mut []u8): Response`. `ServerStorage`
+      groups a caller-owned mutable slice of `Session` values and caller-owned
+      `poll.Event` storage. Each session supplies independent input, header,
+      request-body, handler response-body, and serialized-output storage plus
+      HTTP-owned progress state; its defaulted progress fields make literal
+      initialization name only those five required buffers. Their capacities
+      and the session count are entirely caller-selected. `serve` parses its
+      endpoint through `net.parse4`, owns nonblocking listener setup and one
+      blocking poll loop, and multiplexes every active session without threads
+      or hidden allocation. A completed request's views remain valid only for
+      its synchronous handler call; the returned response is immediately
+      formatted into that session's output before another handler invocation.
+      Slow sockets therefore do not block one another, while a slow handler
+      still pauses the loop. Full slots leave further connections in the OS
+      listen queue until a slot is recycled.
+    - Each accepted connection handles exactly one request and response, then
+      closes and recycles its session. Server serialization adds exactly one
+      `Connection: close` field and rejects a handler-supplied `Connection`
+      field, while ordinary `Request.format`, `Response.format`, and client
+      socket conveniences continue to synthesize no headers. Client-specific
+      syntax, framing, capacity, receive, send, or close failures close only
+      that session and are initially not dispatched to the handler. Listener,
+      poll-queue, wait, and unrecoverable accept failures terminate `serve` and
+      preserve their domains. Persistent connections, resumable handlers, and
+      threaded application work remain additive.
+    - HTTPS is a future secure-transport composition, not a mode hidden behind
+      `http`: TLS configuration, handshake progress, certificate verification,
+      and buffers must first be carved explicitly. A later `https` convenience
+      may reuse the byte-oriented HTTP parsers and formatters. Address family is
+      a transport property, so future IPv6 does not create `http6` or duplicate
+      the protocol API.
+    - Known initial limitations and next improvements: redirects, content
+      decoding, cookies, authentication policy, caching, proxies, upgrades,
+      multipart helpers, and exposed trailers are not part of the protocol core.
+      Client concerns such as connection reuse, pooling, deadlines, and
+      cancellation remain outside the initial conveniences. Each proof updates
+      the user guide and compiler-checked or executable fixtures only for
+      behavior that has actually landed. Rationale: keeping the framing core
+      independent while composing concrete TCP operations at the ergonomic
+      boundary preserves machine-visible storage, explicit errors, and the
+      lack of hidden allocation without adding dependency inversion for a
+      TCP-only protocol. Byte-oriented parsing matches HTTP and permits UTF-8
+      payloads to pass through unchanged without making Unicode text processing
+      part of networking.
 
 ## Conditions
 1. Chained comparisons: `lo <= x <= hi` — each operand evaluated once; no boolean-coercion trap (C's `a < b < c` meaning `(a<b)<c` is dead); lowers to two compares and a branch.

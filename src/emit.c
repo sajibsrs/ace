@@ -5902,6 +5902,22 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
         if (v->kind == N_ARRAYLIT && t->kind != SK_ARRAY) return 0;
         int positional = v->nkids > 0 && v->kids[0]->str == NULL;
         size_t start = out->len;
+        if (v->kind == N_STRUCTLIT) {
+            for (uint32_t i = 0; i < ty_size(t); i++) buf_put8(out, 0);
+            for (int i = 0; i < v->nkids; i++) {
+                Node* fi = v->kids[i];
+                int fidx = positional ? i : find_field(t, fi->str, fi->len);
+                if (fidx < 0 || fidx >= t->nfields) { out->len = start; return 0; }
+                Buf field = {0};
+                if (!eval_const(e, fi->a, t->fields[fidx].t, &field) ||
+                    field.len != ty_size(t->fields[fidx].t)) {
+                    free(field.d); out->len = start; return 0;
+                }
+                memcpy(out->d + start + field_off(t, fidx), field.d, field.len);
+                free(field.d);
+            }
+            return 1;
+        }
         uint32_t cursor = 0;
         if (v->kind == N_ARRAYLIT && v->a) {
             for (uint64_t i = 0; i < t->count; i++) {

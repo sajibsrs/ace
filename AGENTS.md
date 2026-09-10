@@ -16,8 +16,15 @@ active.
    and the active Decision Queue.
 3. For compiler work, read the relevant `SPEC.md` and `GRAMMAR.md` sections,
    then search `CHANGELOG.md` and the implementation by topic.
-4. For planning, read the active Decision Queue and relevant `TODO.md` entries.
-5. Read an entire document only when the task spans it. Human documentation in
+4. For standard-library work, inspect the relevant existing `std/` modules and
+   normative standard-library surface in `SPEC.md` before introducing helpers
+   or public operations. Reuse or compose existing operations when their
+   contracts fit; do not duplicate parsing, memory, text, or platform utilities
+   inside another module. Before adding a free helper, check whether explicit
+   generics, a type-owned method, or an overload expresses the operation with
+   clearer ownership and less duplication; do not default to free functions.
+5. For planning, read the active Decision Queue and relevant `TODO.md` entries.
+6. Read an entire document only when the task spans it. Human documentation in
    `docs/` is for implemented behavior, not agent startup context.
 
 ## Process

@@ -86,7 +86,7 @@ block         := "{" stmt* "}"
 
 struct_decl   := ident [type_params] ":" "struct" "{" field_list "}"
 field_list    := field ("," field)*
-field         := align_attr* ["embed"] ident ":" type
+field         := align_attr* ["embed"] ident ":" type ["=" expr]
 
 bits_decl     := ident ":" contextual_bits bits_backing "{" bits_fields "}"
 contextual_bits := ident                                // exact text "bits"; not reserved
@@ -193,7 +193,8 @@ unary         := ("*" | "!" | "~" | "-") unary | "&" lvalue | "mut" "&" lvalue |
 //  "*"  pointer dereference                 "!"  logical negation
 //  "~"  integer bitwise complement
 //  "&"  read-only address-of                "mut &" writable address-of
-//  "mut p" writable-view establishment (slicing operands only — Note 25)
+//  "mut p" receiver-marked method call or writable-view establishment
+//  (slicing operands only for establishment — Note 25)
 //  "volatile place" exactly one final scalar load
 //  both address forms and establishment require writable lvalues   unary "-" negation
 
@@ -211,7 +212,7 @@ primary       := literal | ident | "(" expr_list ")" | array_lit | struct_lit
                | ptr_type | slice_type
 array_lit     := "[" [expr_list | array_repeat] "]"
 array_repeat  := expr ":" int_lit                       // [u8(0) : 12]; exact contextual array length
-struct_lit    := "{" field_init ("," field_init)* "}"     [P]
+struct_lit    := "{" [field_init ("," field_init)*] "}"   [P]
 field_init    := ident ":" expr
 
 expr_list     := expr ("," expr)*                         // tuple expression / multi-value

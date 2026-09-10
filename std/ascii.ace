@@ -1,0 +1,39 @@
+/* ascii — allocation-free operations over ASCII bytes and byte strings. */
+
+import mem
+
+/* Reports whether `byte` is an ASCII control byte: 0x00 through 0x1F or
+ * 0x7F.
+ */
+pub is_control(byte: u8): bool {
+    return byte < 32 || byte == 127
+}
+
+/* Converts an ASCII uppercase letter to lowercase. Every other byte is
+ * returned unchanged.
+ */
+pub to_lower(byte: u8): u8 {
+    if byte >= 65 && byte <= 90 {
+        return byte + 32
+    }
+    return byte
+}
+
+/* Compares two byte strings exactly when `sensitive` is true, or with ASCII
+ * case folding when false. Bytes outside ASCII letters are compared
+ * unchanged.
+ */
+pub is_equal(a: string, b: string, sensitive: bool): bool {
+    if sensitive {
+        return mem.equal(a, b)
+    }
+    if len(a) != len(b) {
+        return false
+    }
+    for i: usize in 0 .. len(a) {
+        if to_lower(a[i]) != to_lower(b[i]) {
+            return false
+        }
+    }
+    return true
+}

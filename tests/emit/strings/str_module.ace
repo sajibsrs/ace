@@ -73,6 +73,27 @@ main(): int {
     if short[0] != 0 {
         return 14
     }
+    concat_parts: [4]string = ["ace", "", " ", "lang"]
+    concat_buffer: [12]u8 = [7 : 12]
+    concat_count: usize, concat_ok: bool = str.concat(
+        concat_parts[..],
+        mut concat_buffer[..],
+    )
+    if !concat_ok || concat_count != 8 ||
+       !mem.equal(concat_buffer[..concat_count], "ace lang") ||
+       concat_buffer[8] != 7 || concat_buffer[11] != 7 {
+        return 101
+    }
+    concat_short: [3]u8 = [9 : 3]
+    concat_count, concat_ok = str.concat(concat_parts[..], mut concat_short[..])
+    if concat_ok || concat_count != 0 || concat_short[0] != 9 || concat_short[2] != 9 {
+        return 102
+    }
+    empty_parts: []string = null
+    concat_count, concat_ok = str.concat(empty_parts, mut concat_buffer[..])
+    if !concat_ok || concat_count != 0 || concat_buffer[0] != u8('a') {
+        return 103
+    }
     parts: [8]string = ["" : 8]
     sparts: mut []string = mut parts[0..8]
     n: usize, done: bool = str.split("a,b,c", ",", sparts)

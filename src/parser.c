@@ -17,7 +17,7 @@
 //               c = N_TPARAMS; F_PUB/F_PACKED
 //   N_BITS      str = name; a = backing type; kids = N_FIELD whose ival is
 //               width and F_CONST marks signed; F_PUB
-//   N_FIELD     str = name; a = type; b = optional @align expression
+//   N_FIELD     str = name; a = type; b = optional @align expression; c = optional default
 //   N_UNION     str = name; kids = N_VARIANT; c = N_TPARAMS; F_PUB
 //   N_VARIANT   str = name; a = payload type or NULL (payloadless variant)
 //   N_CONTRACT str = name; kids = N_METHOD; c = N_TPARAMS; F_PUB
@@ -603,14 +603,19 @@ static Node* expr_unary(P* p, int ctx) {
             (is_mut_string && kth(p, 2) != T_LBRACK)) {
             return expr_postfix_base(p, ctx, parse_type(p));
         }
-        // mut seq[lo..hi] — writable-view establishment
+        // A leading mut marks either a value-producing mutating method call
+        // or writable-view establishment through a slice.
         p->i++;
         Node* base = expr_postfix(p, ctx);
         if (base->kind == N_SLICE_E) {
             base->flags |= F_MUT;
             return base;
         }
-        perr(p, "'mut' in an expression establishes a writable view: 'mut &value' or 'mut seq[lo..hi]'");
+        if (base->kind == N_CALL) {
+            base->flags |= F_MUT;
+            return base;
+        }
+        perr(p, "'mut' in an expression marks a method receiver or establishes a writable view");
         return base;
     }
     if (at(p, T_STAR)) {
@@ -716,16 +721,21 @@ static Node* expr_postfix_base(P* p, int ctx, Node* base) {
                     // mut call argument. `mut &value` could not be a valid mut
                     // argument anyway because an address expression is not an lvalue.
                     if (at(p, T_MUT) && kth(p, 1) != T_AMP) {
-                        Node* ma = nd(p, N_MUTARG);
                         p->i++;
-                        ma->a = expr(p, 0);
-                        if (ma->a->kind == N_SLICE_E) {
+                        Node* value = expr(p, 0);
+                        if (value->kind == N_SLICE_E) {
                             // `mut seq[lo..hi]` establishes the writable view;
                             // it is the argument value, not a mut-argument mark
-                            Node* sl = ma->a;
-                            sl->flags |= F_MUT;
-                            nv_push(p, &args, sl);
+                            value->flags |= F_MUT;
+                            nv_push(p, &args, value);
+                        } else if (value->kind == N_CALL) {
+                            // `mut receiver.method()` marks that nested call's
+                            // receiver; it is not the enclosing call's mut arg.
+                            value->flags |= F_MUT;
+                            nv_push(p, &args, value);
                         } else {
+                            Node* ma = nd(p, N_MUTARG);
+                            ma->a = value;
                             nv_push(p, &args, ma);
                         }
                     } else {
@@ -1773,6 +1783,7 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
                 fl->b = field_align;
                 expect(p, T_COLON, "':' after field name");
                 fl->a = parse_type(p);
+                if (ate(p, T_ASSIGN)) fl->c = expr(p, 0);
                 nv_push(p, &fields, fl);
                 if (!ate(p, T_COMMA)) break;
                 if (at(p, T_RBRACE)) break; // trailing comma

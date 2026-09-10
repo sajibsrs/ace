@@ -15,7 +15,8 @@ import decimal: @float_decimal.ace
 import float_parse: @float_parse.ace
 
 /* First occurrence of needle: the byte index and whether it was found; an
- * empty string needle is found at zero, and absence returns canonical zero. */
+ * empty string needle is found at zero, and absence returns canonical zero.
+ */
 pub find(text: string, needle: string): (usize, bool) {
     at: usize, found: bool = index_from(text, needle, 0)
     return at, found
@@ -38,7 +39,8 @@ pub has(text: string, needle: char): bool {
 }
 
 /* One boundary test: false selects the prefix and true the suffix; an empty
- * string part matches either boundary. */
+ * string part matches either boundary.
+ */
 pub has(text: string, part: string, suffix: bool): bool {
     if len(part) > len(text) {
         return false
@@ -51,7 +53,8 @@ pub has(text: string, part: string, suffix: bool): bool {
 }
 
 /* Unsigned byte-wise lexicographic order: exactly -1, 0, or 1; after an
- * equal prefix the shorter string sorts first. */
+ * equal prefix the shorter string sorts first.
+ */
 pub compare(a: string, b: string): int {
     n: usize = len(a)
 
@@ -79,7 +82,8 @@ pub compare(a: string, b: string): int {
 }
 
 /* Copies the complete text into destination[0..len(text)]; a shorter
- * destination is unchanged and fails, and the unused suffix is untouched. */
+ * destination is unchanged and fails, and the unused suffix is untouched.
+ */
 pub copy(text: string, noalias destination: mut []char): bool {
     if len(text) > len(destination) {
         return false
@@ -91,11 +95,35 @@ pub copy(text: string, noalias destination: mut []char): bool {
     return true
 }
 
+/* Concatenates every part in order into caller storage. Insufficient capacity
+ * fails without writing; success returns the complete byte count and leaves
+ * the unused destination suffix unchanged.
+ */
+pub concat(parts: []string, destination: mut []char): (usize, bool) {
+    total: usize = 0
+
+    for i: usize in 0 .. len(parts) {
+        if total > len(destination) || len(parts[i]) > len(destination) - total {
+            return 0, false
+        }
+        total += len(parts[i])
+    }
+
+    at: usize = 0
+    for i: usize in 0 .. len(parts) {
+        count: usize = len(parts[i])
+        mem.copy(destination[at..at + count], parts[i])
+        at += count
+    }
+    return total, true
+}
+
 /* Splits left to right on non-overlapping exact matches. Separators are
  * omitted, boundaries produce empty parts, empty input produces one empty
  * part, and each written part is a zero-copy view into text. The result is
  * the number written and whether the complete result fit; unwritten slots
- * are unchanged. An empty separator fails without writing. */
+ * are unchanged. An empty separator fails without writing.
+ */
 pub split(text: string, separator: string, parts: mut []string): (usize, bool) {
     if len(separator) == 0 {
         return 0, false
@@ -137,7 +165,8 @@ pub split(text: string, separator: char, parts: mut []string): (usize, bool) {
 /* Removes at most one exact boundary match: false selects the prefix and
  * true the suffix. A match returns the remaining zero-copy view and true;
  * absence returns the original view and false; an empty string part
- * succeeds without changing the view. */
+ * succeeds without changing the view.
+ */
 pub trim(text: string, part: string, suffix: bool): (string, bool) {
     if len(part) == 0 {
         return text, true
@@ -175,7 +204,8 @@ pub trim(text: string, part: char, suffix: bool): (string, bool) {
 }
 
 /* Removes all leading and trailing ASCII whitespace bytes and returns the
- * zero-copy view; no Unicode whitespace processing happens. */
+ * zero-copy view; no Unicode whitespace processing happens.
+ */
 pub trim(text: string): string {
     start: usize = len(text)
 
@@ -206,8 +236,7 @@ pub trim(text: string): string {
  * canonical-zero T and false; finite float underflow rounded to signed zero
  * succeeds. Both forms are specialized templates with no default body, so
  * the callable surface is exactly the per-type specializations below; any
- * other type argument is a compile-time error at the call.
- */
+ * other type argument is a compile-time error at the call. */
 
 pub parse[T](text: string): (T, bool) specialized
 
@@ -217,7 +246,8 @@ pub parse[T](text: string, radix: u8): (T, bool) specialized
  * at all, returning the byte count and whether it fit. Integer radix forms
  * use lowercase digits with no base prefix and only int may emit a minus.
  * The no-radix float representations are exactly the matching fmt.print
- * overloads', including the nan/inf/-inf and signed-zero spellings. */
+ * overloads', including the nan/inf/-inf and signed-zero spellings.
+ */
 pub format(destination: mut []char, value: int): (usize, bool) {
     digits: [20]u8
     at: int = 20
@@ -492,7 +522,8 @@ store_text(destination: mut []char, text: string): (usize, bool) {
 }
 
 /* First occurrence of needle at or after from: the index and whether the
- * needle was found. An empty needle is found at every position. */
+ * needle was found. An empty needle is found at every position.
+ */
 index_from(text: string, needle: string, after: usize): (usize, bool) {
     if len(needle) == 0 {
         return after, true
@@ -677,7 +708,8 @@ space_byte(c: u8): bool {
 
 /* Renders the canonical notation into out: decimal for scientific exponents
  * -6 through 20, otherwise scientific like 1.5e-7. The sign comes first and
- * no trailing zeros are added. Returns the byte count. */
+ * no trailing zeros are added. Returns the byte count.
+ */
 render_float(negative: bool, digits: []u8, count: int, decpt: i32, out: mut []u8): usize {
     at: int = 0
 
