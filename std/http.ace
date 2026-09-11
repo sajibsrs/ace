@@ -3,6 +3,8 @@
 import ascii
 import mem
 import str
+import tcp
+import net
 
 pub Url: struct {
     host: string,
@@ -13,6 +15,7 @@ pub Url: struct {
 
 pub UrlErr: error
 pub FormatErr: error
+pub ClientErr: error
 
 pub method_connect: const string = "CONNECT"
 pub method_delete: const string = "DELETE"
@@ -223,6 +226,15 @@ pub ResponseResult: union {
     capacity: ResponseCapacity,
     syntax,
     framing,
+}
+
+pub ClientStorage: struct {
+    addresses: mut []net.Addr4,
+    output: mut []u8,
+    target: mut []u8,
+    input: mut []u8,
+    headers: mut []Header,
+    body: mut []u8,
 }
 
 /* Returns the canonical zero URL used by parse failures. */
@@ -1334,5 +1346,97 @@ pub mut ResponseParser.parse(
             )
         }
         return ResponseResult.syntax
+    }
+}
+
+pub get(url: string, mut storage: ClientStorage): (Response, Error) {
+    parsed: Url, url_err: Error = parse_url(url)
+    if url_err != null { return Response{}, url_err }
+
+    count: usize, resolve_err: Error = net.resolve4(parsed.host, parsed.port, mut storage.addresses[..])
+    if resolve_err != null { return Response{}, resolve_err }
+    if count == 0 { return Response{}, ClientErr(1) }
+
+    conn: tcp.Conn = tcp.Conn {
+        socket: net.Socket(0),
+        interest: tcp.Interest.none,
+        send_offset: usize(0),
+    }
+
+    conn_err: Error = ClientErr(1)
+
+    is_connected: bool = false
+    for i: usize in 0 .. count {
+        conn, conn_err = tcp.connect(storage.addresses[i])
+        if conn_err == null {
+            is_connected = true
+            break
+        }
+    }
+    if !is_connected { return Response{}, conn_err }
+
+    target_parts: [2]string = [parsed.path, parsed.query]
+    target_count: usize, fit: bool = str.concat(target_parts[..], mut storage.target[..])
+    if !fit {
+        tcp.close(mut conn)
+        return Response{}, ClientErr(2)
+    }
+
+    fields: [2]Header = [
+        Header {name: "Host", value: parsed.host},
+        Header {name: "Connection", value: "close"},
+    ]
+    request: Request = Request {
+        method: method_get,
+        target: storage.target[..target_count],
+        headers: fields[..],
+    }
+
+    output_count: usize, format_err: Error = request.format(mut storage.output[..])
+    if format_err != null {
+        tcp.close(mut conn)
+        return Response{}, format_err
+    }
+
+    _: usize, send_err: Error = tcp.send_all(conn, storage.output[..output_count])
+    if send_err != null {
+        tcp.close(mut conn)
+        return Response{}, send_err
+    }
+
+    occupied: usize = 0
+    parser: ResponseParser = ResponseParser {
+        phase: ResponsePhase.status,
+        framing: ResponseFraming.undecided,
+    }
+
+    for {
+        received: int
+        received, recv_err: Error = net.receive(conn.socket, mut storage.input[occupied..])
+        if recv_err != null {
+            tcp.close(mut conn)
+            return Response{}, recv_err
+        }
+        occupied += usize(received)
+
+        result: ResponseResult = mut parser.parse(
+            storage.input[..occupied],
+            mut storage.headers[..],
+            mut storage.body[..],
+            received == 0,
+            false,
+        )
+
+        switch result {
+            ResponseResult.complete(response: Response) {
+                tcp.close(mut conn)
+                return response, null
+            }
+            ResponseResult.progress(value: ResponseProgress) {}
+            else {
+                tcp.close(mut conn)
+                return Response{}, ClientErr(3)
+            }
+        }
     }
 }

@@ -244,7 +244,8 @@ nonblocking connect completion remain visible without callbacks or allocation.
   formatters, and incremental HTTP/1.1 request and response parsers from
   Standard Library #17 are implemented, including field and response defaults,
   named method/status constants, and conventional response reasons. Next
-  implement blocking socket request/response overloads, then the caller-bounded
+  implement blocking socket request/response overloads, then allocation-free
+  one-shot `get`/`post` over explicit `ClientStorage`, then the caller-bounded
   nonblocking `serve` loop over `tcp` and `poll`. TLS/HTTPS remains a separate
   secure-transport composition. `rune`,
   UTF-8 decoding, and `yarn` are not prerequisites because HTTP framing is
