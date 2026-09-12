@@ -1,0 +1,18 @@
+Mode: enum u8 { none, read, write }
+Tag: distinct u16
+Word: distinct string
+
+truth: StaticMap[bool]u8 = { false: 1, true: 2 }
+modes: StaticMap[Mode]string = { Mode.read: "read", Mode.write: "write" }
+tags: StaticMap[Tag]u32 = { Tag(7): 70 }
+types: StaticMap[typeid]u8 = { typeid(u16): 16 }
+named_words: StaticMap[Word]u8 = { Word("ace"): 3 }
+
+main(): int {
+    n: u8 = truth[true]
+    text: string = modes[Mode.read]
+    value: u32 = tags[Tag(7)]
+    width: u8 = types[typeid(u16)]
+    named: u8 = named_words[Word("ace")]
+    return int(n) + int(len(text)) + int(value) + int(width) + int(named)
+}

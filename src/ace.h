@@ -98,6 +98,7 @@ char* arena_alloc(size_t n);
     X(N_NAMED, "named") X(N_PTR, "ptr") X(N_SLICE_T, "slice_t")                \
     X(N_ARRAY_T, "array_t") X(N_TUPLE_T, "tuple_t") X(N_FUNC_T, "func_t")      \
     X(N_CONST_T, "const_t") X(N_TPARAMS, "tparams")                            \
+    X(N_STATICMAP_T, "staticmap_t")                                             \
     /* top-level declarations */                                               \
     X(N_IMPORT, "import") X(N_VAR, "var") X(N_FUNC, "func")                    \
     X(N_PARAM, "param") X(N_STRUCT, "struct") X(N_BITS, "bits")                \
@@ -123,7 +124,8 @@ char* arena_alloc(size_t n);
     X(N_OP, "op") X(N_UNARY, "unary") X(N_CALL, "call")                        \
     X(N_MUTARG, "mutarg") X(N_INDEX, "index") X(N_SLICE_E, "slice")            \
     X(N_FIELD_E, "field") X(N_ARRAYLIT, "arraylit")                            \
-    X(N_STRUCTLIT, "structlit") X(N_FIELDINIT, "fieldinit")
+    X(N_STRUCTLIT, "structlit") X(N_FIELDINIT, "fieldinit")                   \
+    X(N_STATICMAPLIT, "staticmaplit") X(N_MAPENTRY, "mapentry")
 
 typedef enum {
 #define N(k, _) k,

@@ -430,6 +430,41 @@ representations without changing ordinary struct layout.
     other relaxations additive (PHILOSOPHY.md, Priority Stack and Considerations
     #1).
 
+Carved (compile-time static lookup maps):
+
+- `StaticMap[K]V` is a predeclared compiler type for immutable lookup tables.
+  Its sole construction form is a module-level declaration initialized by a
+  brace list of compile-time `key: value` pairs, for example
+  `status: StaticMap[u16]string = { 200: "OK", 404: "Not Found" }`.
+  `StaticMap` intrinsically makes the binding and every entry immutable;
+  `const` is neither required nor permitted on the declaration. Construction
+  in a function, mutation, insertion, removal, iteration, membership syntax,
+  methods, `.find`, and other first-class map operations do not exist.
+- Lookup is exactly `table[key]`. The key expression has the map's exact key
+  type; an untyped literal may materialize as that type under the ordinary
+  literal rules. A present key returns its stored value by value. A missing key
+  returns the canonical all-bits-zero `V`, so absence and a present entry whose
+  value is canonical zero are intentionally indistinguishable.
+- Keys are exactly `bool`, `char`, the integer types, enums, `typeid`, `string`,
+  and distinct types recursively backed by one of those types. String equality
+  is exact stored-byte equality. Floats, pointers, functions, slices, arrays,
+  structs, tuples, unions, contracts, and `Error` are not key types. Each key
+  and value uses the existing global constant-expression rules; `V` may be any
+  complete value type those rules can initialize. Equal keys are a duplicate
+  declaration error under their key type's equality.
+- The compiler emits keys, values, and lookup-plan data in read-only static
+  storage. It deterministically searches a seeded perfect-hash family for a
+  collision-free slot plan, then confirms the candidate key exactly so misses
+  cannot alias a stored entry. A declaration performs no runtime construction
+  or initialization. The representation is compiler-private and introduces no
+  runtime map descriptor or hashing contract for user-defined types.
+
+Rationale: sparse standard-library LUTs need direct declarative source without
+hand-written ranges, holes, or switches. A module-only lookup surface supplies
+that use while preserving recursive descent, single-pass compilation, direct
+machine-code emission, explicit values, and no hidden allocation or general
+compile-time execution.
+
 ## Scalar-backed Bit Fields
 Decision: nominal, exact-width bit layouts lower:
 1. `Flags: bits u32 { enabled: 1, mode: signed 3, _: 28 }` declares a nominal

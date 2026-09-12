@@ -62,12 +62,14 @@ internal_import := "@" ident "." "ace"                  // compiler-reserved std
 
 top_decl      := ["pub"] top_body
 top_body      := var_decl | const_decl | func_decl | struct_decl
+               | static_map_decl
                | bits_decl | contract_decl | enum_decl | union_decl | alias_decl | distinct_decl
                | error_domain_decl | method_func_decl | signing_decl | extern_block
 
 binding       := ident ":" type
 eq_name       := ident [":" type]                       // typed declares; bare reassigns — Note #28
 var_decl      := binding ["=" expr]                       // global or local typed binding
+static_map_decl := ident ":" static_map_type "=" static_map_lit // module-level only
 elided_decl   := ident ":=" expr                          // local only; one binding, independently typed RHS
 multi_decl    := eq_name ("," eq_name)+ "=" expr_list      // local per-name declare/assign; one line
 const_decl    := ident ":" "const" type "=" expr
@@ -216,6 +218,8 @@ array_lit     := "[" [expr_list | array_repeat] "]"
 array_repeat  := expr ":" int_lit                       // [u8(0) : 12]; exact contextual array length
 struct_lit    := "{" [field_init ("," field_init)*] "}"   [P]
 field_init    := ident ":" expr
+static_map_lit := "{" [map_entry ("," map_entry)* [","]] "}"
+map_entry     := expr ":" expr
 
 expr_list     := expr ("," expr)*                         // tuple expression / multi-value
 ```
@@ -225,7 +229,7 @@ expr_list     := expr ("," expr)*                         // tuple expression / 
 ```ebnf
 type          := ["const"] type_expr                      // limit: const int = 1024
 type_expr     := ptr_type | slice_type | array_type | func_type
-               | tuple_type | string_type | named_type | prim_type
+               | tuple_type | string_type | static_map_type | named_type | prim_type
 
 ptr_type      := ["mut"] "*" type_expr                    // *Node, mut *Node
 slice_type    := ["mut"] "[]" type_expr                   // []u8, mut []u8
@@ -234,6 +238,7 @@ array_type    := "[" int_lit "]" type_expr                // [16][8]u8
 tuple_type    := "(" type ("," type)+ ")"
 func_type     := "(" [type_list] ")" ":" ret_types         // (int, int): int
 named_type    := ident ("." ident)* ["[" type_list "]"]   // Vec[int], math.Vec
+static_map_type := "StaticMap" "[" type "]" type           // StaticMap[K]V
 prim_type     := "bool" | "i8" | "i16" | "i32" | "i64"
                | "u8" | "u16" | "u32" | "u64"
                | "f32" | "f64" | "float" | "char" | "usize" | "typeid"

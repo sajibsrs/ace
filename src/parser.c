@@ -70,6 +70,8 @@
 //   N_FIELD_E   a = base; str = field
 //   N_ARRAYLIT  kids = elements; repetition: a = value, ival = count
 //   N_STRUCTLIT a = type expr or NULL (bare literal); kids = N_FIELDINIT (str or NULL; a = value)
+//   N_STATICMAP_T a = key type; b = value type
+//   N_STATICMAPLIT kids = N_MAPENTRY (a = key, b = value)
 //
 // Contexts: struct literals are not parsed where a `{` would open a block
 // (if/for/switch heads, statement starts) — Go's composite-literal rule.
@@ -224,6 +226,10 @@ static void set_kids(Node* x, NV* w) {
 
 static Node* parse_type(P* p);
 
+static int spells_staticmap(Node* t) {
+    return t && t->kind == N_STATICMAP_T;
+}
+
 static Node* type_atom(P* p) {
     Node* t;
     if (at(p, T_CONST)) {
@@ -321,6 +327,17 @@ static Node* type_atom(P* p) {
         return t;
     }
     if (at(p, T_IDENT)) { // named, qualified, generic-instantiated
+        if (tk(p)->len == 9 && memcmp(tk(p)->str, "StaticMap", 9) == 0 &&
+            kth(p, 1) == T_LBRACK) {
+            Node* map = nd_tok(p, N_STATICMAP_T, tk(p));
+            p->i += 2;
+            map->a = parse_type(p);
+            if (ate(p, T_COMMA))
+                perr(p, "StaticMap type is spelled StaticMap[K]V, not StaticMap[K, V]");
+            expect(p, T_RBRACK, "']' after StaticMap key type");
+            map->b = parse_type(p);
+            return map;
+        }
         t = ident_node(p, tk(p));
         p->i++;
         Node* named = nd(p, N_NAMED);
@@ -668,6 +685,24 @@ static Node* parse_structlit(P* p, Node* base) {
         }
     }
     expect(p, T_RBRACE, "'}' to close struct literal");
+    set_kids(lit, &w);
+    return lit;
+}
+
+static Node* parse_staticmaplit(P* p) {
+    Node* lit = nd(p, N_STATICMAPLIT);
+    expect(p, T_LBRACE, "'{' to open StaticMap literal");
+    NV w = {0};
+    while (!at(p, T_RBRACE)) {
+        Node* entry = nd(p, N_MAPENTRY);
+        entry->a = expr(p, 0);
+        expect(p, T_COLON, "':' between StaticMap key and value");
+        entry->b = expr(p, 0);
+        nv_push(p, &w, entry);
+        if (!ate(p, T_COMMA)) break;
+        if (at(p, T_RBRACE)) break;
+    }
+    expect(p, T_RBRACE, "'}' to close StaticMap literal");
     set_kids(lit, &w);
     return lit;
 }
@@ -1337,7 +1372,8 @@ static Node* parse_decl_stmt(P* p, Token* first) {
         perr(p, "type annotations are not allowed under ':='");
     if (ate(p, T_ASSIGN)) {
         if (n->nkids > 1) n->flags |= F_MIXED;
-        n->b = expr_list(p, 0);
+        n->b = n->nkids == 1 && spells_staticmap(n->kids[0]->a) && at(p, T_LBRACE)
+            ? parse_staticmaplit(p) : expr_list(p, 0);
     } else if (n->nkids > 1 || (n->flags & F_MIXED)) {
         perr(p, "destructuring declaration requires an initializer");
     }
@@ -1945,7 +1981,9 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
         nv_push(p, &binders, binder);
         if (is_const) n->flags |= F_CONST;
         set_kids(n, &binders);
-        if (ate(p, T_ASSIGN)) n->b = expr_list(p, 0);
+        if (ate(p, T_ASSIGN))
+            n->b = spells_staticmap(binder->a) && at(p, T_LBRACE)
+                ? parse_staticmaplit(p) : expr_list(p, 0);
         else if (is_const) perr(p, "const declaration requires an initializer");
         return n;
     }

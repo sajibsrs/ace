@@ -1,0 +1,26 @@
+// expect-exit: 0
+
+numbers: StaticMap[i32]u64 = { -7: 91, 0: 0, 42: 1234 }
+words: StaticMap[string]u16 = { "ace": 9, "other": 20, "": 3 }
+phrases: StaticMap[u16]string = { 200: "OK", 404: "Not Found", 999: null }
+Word: distinct string
+named: StaticMap[Word]u8 = { Word("ace"): 7 }
+Pair: struct { left: u32, right: u32 }
+pairs: StaticMap[u8]Pair = { 1: { left: 4, right: 5 } }
+
+main(): int {
+    if numbers[i32(-7)] != 91 || numbers[i32(42)] != 1234 { return 1 }
+    if numbers[i32(9)] != 0 { return 2 }
+    if numbers[i32(0)] != 0 { return 3 }
+    if words["ace"] != 9 || words["missing"] != 0 || words[""] != 3 { return 4 }
+    ok: string = phrases[u16(200)]
+    missing: string = phrases[u16(404)]
+    if len(ok) != 2 || ok[0] != 'O' || len(missing) != 9 || missing[0] != 'N' { return 5 }
+    if phrases[u16(500)] != null || phrases[u16(999)] != null { return 6 }
+    if named[Word("ace")] != 7 || named[Word("missing")] != 0 { return 7 }
+    pair: Pair = pairs[u8(1)]
+    zero: Pair = pairs[u8(2)]
+    if pair.left != 4 || pair.right != 5 { return 8 }
+    if zero.left != 0 || zero.right != 0 { return 9 }
+    return 0
+}

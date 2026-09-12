@@ -1,0 +1,8 @@
+codes: StaticMap[u16]string = {
+    100: "Continue",
+    200: "OK",
+}
+
+main(): int {
+    return int(len(codes[u16(200)]))
+}

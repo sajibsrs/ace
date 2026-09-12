@@ -476,6 +476,32 @@ writable view) and `mem.copy` into an established writable view of the array.
 `string`, `[]char`, and `[]u8` need no bridge because they share identity. A
 fixed byte array reaches that view type only through slicing first.
 
+## Compile-time static lookup maps
+
+`StaticMap[K]V` declares an immutable module-level lookup table:
+
+```ace
+status: StaticMap[u16]string = {
+    100: "Continue",
+    200: "OK",
+    404: "Not Found",
+}
+
+phrase: string = status[code]
+```
+
+The declaration does not take `const`; the type itself makes the binding and
+entries immutable. Keys and values are global constant expressions, duplicate
+keys are rejected, and construction performs no runtime work. Keys may be
+Booleans, characters, integers, enums, `typeid`, strings, or distinct types
+backed by one of those types. String keys compare exact bytes.
+
+Indexing is the complete operation surface. There is no mutation, iteration,
+membership operation, insertion, removal, or method lookup. A missing key
+returns the value type's canonical zero. This deliberately makes a missing key
+indistinguishable from an entry that stores canonical zero; for `string`, the
+missing result is null rather than a non-null empty literal.
+
 ## Multiple-return and function types
 
 Multiple-return signatures use positional tuple layout. Function types use

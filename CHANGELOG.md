@@ -26,6 +26,10 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Core language
 
+- Implemented predeclared module-level `StaticMap[K]V` constants with
+  compile-time entry checking and duplicate detection, read-only key/value and
+  deterministic perfect-hash-plan emission, exact candidate confirmation, and
+  canonical-zero misses; `std/http` now uses the facility for status phrases.
 - Implemented per-field compile-time struct defaults and omission of defaulted
   fields in named literals, including empty all-default literals and explicit
   overrides, without changing canonical zero, implicit storage initialization,

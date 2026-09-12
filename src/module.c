@@ -834,6 +834,7 @@ static void lower_selected_type(Node* t, SelectLower* c) {
         if (s) replace_name(t, s->type_name);
     }
     lower_selected_type(t->a, c);
+    if (t->kind == N_STATICMAP_T) lower_selected_type(t->b, c);
     for (int i = 0; i < t->nkids; i++) lower_selected_type(t->kids[i], c);
 }
 
@@ -1154,6 +1155,7 @@ static void rename_type_refs(Node* t, Renames* rs, SelectLower* c) {
         if (r) replace_name(t, r->to);
     }
     rename_type_refs(t->a, rs, c);
+    if (t->kind == N_STATICMAP_T) rename_type_refs(t->b, rs, c);
     for (int i = 0; i < t->nkids; i++) rename_type_refs(t->kids[i], rs, c);
 }
 

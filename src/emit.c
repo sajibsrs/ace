@@ -287,6 +287,16 @@ typedef struct { // per-function stack slot (keyed by binder/loop node)
 } Slot;
 
 typedef struct { Sym* s; const char* name; uint32_t len; } GVar; // global storage
+typedef struct {
+    Sym* s;
+    ESym* keys;
+    ESym* values;
+    ESym* slots;
+    uint64_t seed;
+    uint32_t mask;
+    uint32_t count;
+    uint8_t string_keys;
+} StaticMapData;
 typedef struct { uint32_t addr; int line, col; const char* path; } LineRow;
 typedef struct { uint32_t addr, size; const char* name; uint32_t nlen; } DebugFn;
 
@@ -325,6 +335,8 @@ typedef struct {
     size_t nfix, capfix;
     GVar*  globs;
     int    nglobs, cglobs;
+    StaticMapData* maps;
+    int    nmaps, cmaps;
     int    str_n;
     // current function
     size_t subsp_fix;
@@ -426,6 +438,7 @@ static SType* lvalue_type(Em* e, Node* x);
 static void emit_asm(Em* e, Node* s);
 static void emit_epilogue(Em* e);
 static ESym* emit_vtable(Em* e, SType* conc, SType* contract, Node* conf);
+static StaticMapData* map_data(Em* e, Sym* s);
 
 // --- type helpers -----------------------------------------------------------------
 
@@ -4106,6 +4119,159 @@ static EV gen_call(Em* e, Node* call) {
 
 // --- expressions -----------------------------------------------------------------------
 
+static EV gen_staticmap_lookup(Em* e, Node* x, SType* map) {
+    int svi = e->vti, svf = e->vtf;
+    StaticMapData* md = map_data(e, node_sym(x->a));
+    if (!md) {
+        em_err(e, x, "StaticMap storage was not emitted before its lookup");
+        return (EV){ CLS_INT, tmp_int(e) };
+    }
+    uint32_t value_size = ty_size(map->ret);
+    uint32_t outoff = temp_slot(e, value_size, ty_align(map->ret));
+    int out = tmp_int(e);
+    frame_addr(e, xreg(out), outoff);
+    for (uint32_t o = 0; o < value_size; ) {
+        uint32_t w = value_size - o >= 8 ? 8 : value_size - o >= 4 ? 4 :
+                     value_size - o >= 2 ? 2 : 1;
+        st_reg(e, 31, xreg(out), o, w);
+        o += w;
+    }
+    int miss = new_label(e), matched = new_label(e);
+    int entry = tmp_int(e);
+
+    if (!md->string_keys) {
+        EV key = gen_expr(e, x->b);
+        uint32_t keyoff = temp_slot(e, 8, 8);
+        store_frame(e, xreg(key.idx), keyoff, 8);
+        int h = tmp_int(e), q = tmp_int(e);
+        mov_int(e, 1, xreg(h), xreg(key.idx));
+        load_imm(e, 1, 16, md->seed + UINT64_C(0x9e3779b97f4a7c15));
+        ins(e, 0x8B000000u | (16u << 16) | ((uint32_t)xreg(h) << 5) |
+               (uint32_t)xreg(h));
+        ins(e, 0xD340FC00u | (30u << 16) | ((uint32_t)xreg(h) << 5) |
+               (uint32_t)xreg(q));
+        ins(e, 0xCA000000u | ((uint32_t)xreg(q) << 16) |
+               ((uint32_t)xreg(h) << 5) | (uint32_t)xreg(h));
+        load_imm(e, 1, 16, UINT64_C(0xbf58476d1ce4e5b9));
+        ins(e, 0x9B007C00u | (16u << 16) | ((uint32_t)xreg(h) << 5) |
+               (uint32_t)xreg(h));
+        ins(e, 0xD340FC00u | (27u << 16) | ((uint32_t)xreg(h) << 5) |
+               (uint32_t)xreg(q));
+        ins(e, 0xCA000000u | ((uint32_t)xreg(q) << 16) |
+               ((uint32_t)xreg(h) << 5) | (uint32_t)xreg(h));
+        load_imm(e, 1, 16, UINT64_C(0x94d049bb133111eb));
+        ins(e, 0x9B007C00u | (16u << 16) | ((uint32_t)xreg(h) << 5) |
+               (uint32_t)xreg(h));
+        ins(e, 0xD340FC00u | (31u << 16) | ((uint32_t)xreg(h) << 5) |
+               (uint32_t)xreg(q));
+        ins(e, 0xCA000000u | ((uint32_t)xreg(q) << 16) |
+               ((uint32_t)xreg(h) << 5) | (uint32_t)xreg(h));
+        load_imm(e, 1, 16, md->mask);
+        ins(e, 0x8A000000u | (16u << 16) | ((uint32_t)xreg(h) << 5) |
+               (uint32_t)xreg(h));
+        addr_of_sym(e, 16, md->slots);
+        ins(e, 0x8B000000u | ((uint32_t)xreg(h) << 16) | (2u << 10) |
+               (16u << 5) | 16u);
+        ld_reg(e, xreg(entry), 16, 0, 4, 0);
+        cbz_(e, 0, xreg(entry), 0, miss);
+        ins(e, 0x51000400u | ((uint32_t)xreg(entry) << 5) |
+               (uint32_t)xreg(entry));
+        addr_of_sym(e, 16, md->keys);
+        uint32_t ksz = ty_size(map->base);
+        if ((ksz & (ksz - 1)) == 0) {
+            uint32_t sh = ksz == 1 ? 0 : ksz == 2 ? 1 : ksz == 4 ? 2 : 3;
+            ins(e, 0x8B000000u | ((uint32_t)xreg(entry) << 16) | (sh << 10) |
+                   (16u << 5) | 16u);
+        } else {
+            load_imm(e, 1, 17, ksz);
+            ins(e, 0x9B007C00u | (17u << 16) | ((uint32_t)xreg(entry) << 5) | 17u);
+            ins(e, 0x8B000000u | (17u << 16) | (16u << 5) | 16u);
+        }
+        ld_reg(e, 17, 16, 0, ksz, ty_is_signed(map->base) && ksz < 8);
+        load_frame(e, 16, keyoff, ksz, ty_is_signed(map->base) && ksz < 8);
+        ins(e, 0xEB00001Fu | (17u << 16) | (16u << 5));
+        bcond_(e, C_NE, miss);
+    } else {
+        EV key = gen_expr(e, x->b);
+        int ptr = tmp_int(e), len = tmp_int(e), h = tmp_int(e), at = tmp_int(e);
+        ld_reg(e, xreg(ptr), xreg(key.idx), 0, 8, 0);
+        ld_reg(e, xreg(len), xreg(key.idx), 8, 8, 0);
+        load_imm(e, 1, xreg(h), UINT64_C(1469598103934665603) ^ md->seed);
+        load_imm(e, 1, xreg(at), 0);
+        int loop = new_label(e), hashed = new_label(e);
+        bind_label(e, loop);
+        ins(e, 0xEB00001Fu | ((uint32_t)xreg(len) << 16) |
+               ((uint32_t)xreg(at) << 5));
+        bcond_(e, C_HS, hashed);
+        ins(e, 0x38606810u | ((uint32_t)xreg(at) << 16) |
+               ((uint32_t)xreg(ptr) << 5));
+        ins(e, 0xCA000000u | (16u << 16) | ((uint32_t)xreg(h) << 5) |
+               (uint32_t)xreg(h));
+        load_imm(e, 1, 17, UINT64_C(1099511628211));
+        ins(e, 0x9B007C00u | (17u << 16) | ((uint32_t)xreg(h) << 5) |
+               (uint32_t)xreg(h));
+        ins(e, 0x91000400u | ((uint32_t)xreg(at) << 5) | (uint32_t)xreg(at));
+        br_(e, loop);
+        bind_label(e, hashed);
+        load_imm(e, 1, 16, md->mask);
+        ins(e, 0x8A000000u | (16u << 16) | ((uint32_t)xreg(h) << 5) |
+               (uint32_t)xreg(h));
+        addr_of_sym(e, 16, md->slots);
+        ins(e, 0x8B000000u | ((uint32_t)xreg(h) << 16) | (2u << 10) |
+               (16u << 5) | 16u);
+        ld_reg(e, xreg(entry), 16, 0, 4, 0);
+        cbz_(e, 0, xreg(entry), 0, miss);
+        ins(e, 0x51000400u | ((uint32_t)xreg(entry) << 5) |
+               (uint32_t)xreg(entry));
+        addr_of_sym(e, 16, md->keys);
+        ins(e, 0x8B000000u | ((uint32_t)xreg(entry) << 16) | (4u << 10) |
+               (16u << 5) | 16u);
+        ld_reg(e, 17, 16, 8, 8, 0);
+        ins(e, 0xEB00001Fu | (17u << 16) | ((uint32_t)xreg(len) << 5));
+        bcond_(e, C_NE, miss);
+        ld_reg(e, 16, 16, 0, 8, 0);
+        load_imm(e, 1, xreg(at), 0);
+        int eqloop = new_label(e);
+        bind_label(e, eqloop);
+        ins(e, 0xEB00001Fu | ((uint32_t)xreg(len) << 16) |
+               ((uint32_t)xreg(at) << 5));
+        bcond_(e, C_HS, matched);
+        ins(e, 0x38606811u | ((uint32_t)xreg(at) << 16) | (16u << 5));
+        ins(e, 0x38606808u | ((uint32_t)xreg(at) << 16) |
+               ((uint32_t)xreg(ptr) << 5));
+        ins(e, 0x6B08023Fu);
+        bcond_(e, C_NE, miss);
+        ins(e, 0x91000400u | ((uint32_t)xreg(at) << 5) | (uint32_t)xreg(at));
+        br_(e, eqloop);
+    }
+    bind_label(e, matched);
+    addr_of_sym(e, 16, md->values);
+    load_imm(e, 1, 17, value_size);
+    ins(e, 0x9B007C00u | (17u << 16) | ((uint32_t)xreg(entry) << 5) | 17u);
+    ins(e, 0x8B000000u | (17u << 16) | (16u << 5) | 16u);
+    mov_int(e, 1, 15, 16);
+    copy_mem(e, xreg(out), 0, 15, 0, value_size);
+    bind_label(e, miss);
+    if (is_scalar(map->ret)) {
+        if (is_floatt(map->ret)) {
+            ldrf_(e, vreg(svf), xreg(out), 0,
+                   unwrap(map->ret)->prim == P_F64);
+            e->vti = svi;
+            e->vtf = svf + 1;
+            return (EV){ CLS_FP, svf };
+        }
+        uint32_t w = (uint32_t)((scalar_bits(map->ret) + 7) / 8);
+        ld_reg(e, xreg(svi), xreg(out), 0, w,
+               ty_is_signed(map->ret) && w < 8);
+        e->vti = svi + 1;
+        e->vtf = svf;
+        return (EV){ CLS_INT, svi };
+    }
+    e->vti = svi + 1;
+    e->vtf = svf;
+    return (EV){ CLS_ADDR, svi };
+}
+
 static EV gen_expr(Em* e, Node* x) {
     if (!x) {
         em_err(e, NULL, "missing expression in codegen");
@@ -4475,6 +4641,9 @@ static EV gen_expr(Em* e, Node* x) {
         return (EV){ CLS_ADDR, a };
     }
     case N_INDEX: {
+        SType* bt = node_ty(x->a);
+        if (bt && bt->kind == SK_STATICMAP)
+            return gen_staticmap_lookup(e, x, bt);
         SType* t = node_ty(x);
         if (!t) t = lvalue_type(e, x);
         int a = gen_addr(e, x);
@@ -6073,6 +6242,136 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels) {
     }
 }
 
+static Node* const_string_node(Node* n) {
+    if (!n) return NULL;
+    if (n->kind == N_STR) return n;
+    if (n->kind == N_IDENT) {
+        Sym* s = node_sym(n);
+        if (s && s->is_global && s->is_const && s->init)
+            return const_string_node(s->init);
+    }
+    if (n->kind == N_CALL && !n->sym && n->nkids == 1)
+        return const_string_node(n->kids[0]);
+    return NULL;
+}
+
+static uint64_t map_hash_int(uint64_t x, uint64_t seed) {
+    uint64_t z = x + seed + UINT64_C(0x9e3779b97f4a7c15);
+    z = (z ^ (z >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
+    z = (z ^ (z >> 27)) * UINT64_C(0x94d049bb133111eb);
+    return z ^ (z >> 31);
+}
+
+static uint64_t map_hash_string(const char* p, uint32_t n, uint64_t seed) {
+    uint64_t h = UINT64_C(1469598103934665603) ^ seed;
+    for (uint32_t i = 0; i < n; i++) {
+        h ^= (uint8_t)p[i];
+        h *= UINT64_C(1099511628211);
+    }
+    return h;
+}
+
+static StaticMapData* map_data(Em* e, Sym* s) {
+    for (int i = 0; i < e->nmaps; i++) if (e->maps[i].s == s) return &e->maps[i];
+    return NULL;
+}
+
+static void emit_staticmap_global(Em* e, Node* n, Sym* vs, SType* t) {
+    Node* lit = n->b;
+    int count = lit ? lit->nkids : 0;
+    SType* rawkey = unwrap(t->base);
+    int strings = rawkey && rawkey->kind == SK_PRIM && rawkey->prim == P_STRING;
+    uint32_t size = 1;
+    while (size < (uint32_t)(count ? count * 2 : 1)) size <<= 1;
+    uint64_t seed = 0;
+    uint32_t* slots = NULL;
+    for (;;) {
+        slots = calloc(size, sizeof(uint32_t));
+        if (!slots) oom();
+        int found = 0;
+        for (seed = 0; seed < UINT64_C(1000000); seed++) {
+            memset(slots, 0, (size_t)size * sizeof(uint32_t));
+            int collision = 0;
+            for (int i = 0; i < count; i++) {
+                Node* entry = lit->kids[i];
+                uint64_t h;
+                if (strings) {
+                    Node* s = const_string_node(entry->a);
+                    h = map_hash_string(s->str, s->len, seed);
+                } else {
+                    h = map_hash_int(entry->ival, seed);
+                }
+                uint32_t at = (uint32_t)h & (size - 1);
+                if (slots[at]) { collision = 1; break; }
+                slots[at] = (uint32_t)i + 1;
+            }
+            if (!collision) { found = 1; break; }
+        }
+        if (found) break;
+        free(slots);
+        if (size >= (1u << 30)) {
+            em_err(e, n, "could not construct StaticMap perfect hash");
+            return;
+        }
+        size <<= 1;
+    }
+
+    Sec* d = &e->secs[SEC_CONST];
+    char name[640];
+    uint32_t ka = ty_align(t->base), va = ty_align(t->ret);
+    Buf key_bytes = {0}, value_bytes = {0};
+    ConstRels key_rels = {0};
+    for (int i = 0; i < count; i++) {
+        if (strings) {
+            Node* text = const_string_node(lit->kids[i]->a);
+            if (!text || !eval_const(e, text, t->base, &key_bytes, &key_rels))
+                em_err(e, lit->kids[i]->a, "StaticMap key did not emit as a constant");
+        } else {
+            put_u(&key_bytes, lit->kids[i]->ival, ty_size(t->base));
+        }
+    }
+    ConstRels value_rels = {0};
+    for (int i = 0; i < count; i++)
+        if (!eval_const(e, lit->kids[i]->b, t->ret, &value_bytes, &value_rels))
+            em_err(e, lit->kids[i]->b, "StaticMap value did not emit as a constant");
+
+    while (d->data.len % ka) buf_put8(&d->data, 0);
+    snprintf(name, sizeof name, "__ace$map$%.*s$keys", (int)vs->len, vs->name);
+    ESym* keys = sym_define(&e->syms, e->secs, name, (uint32_t)strlen(name), 0, d);
+    uint32_t key_start = (uint32_t)d->data.len;
+    buf_write(&d->data, key_bytes.d, key_bytes.len);
+    for (int i = 0; i < key_rels.n; i++)
+        reloc_add(d, key_start + key_rels.v[i].off, key_rels.v[i].sym,
+                  0, 3, 1, RM_UNSIGNED);
+
+    while (d->data.len % va) buf_put8(&d->data, 0);
+    snprintf(name, sizeof name, "__ace$map$%.*s$values", (int)vs->len, vs->name);
+    ESym* values = sym_define(&e->syms, e->secs, name, (uint32_t)strlen(name), 0, d);
+    uint32_t value_start = (uint32_t)d->data.len;
+    buf_write(&d->data, value_bytes.d, value_bytes.len);
+    for (int i = 0; i < value_rels.n; i++)
+        reloc_add(d, value_start + value_rels.v[i].off, value_rels.v[i].sym,
+                  0, 3, 1, RM_UNSIGNED);
+    free(key_bytes.d); free(value_bytes.d);
+    free(key_rels.v); free(value_rels.v);
+
+    while (d->data.len % 4) buf_put8(&d->data, 0);
+    snprintf(name, sizeof name, "__ace$map$%.*s$slots", (int)vs->len, vs->name);
+    ESym* slot_sym = sym_define(&e->syms, e->secs, name, (uint32_t)strlen(name), 0, d);
+    for (uint32_t i = 0; i < size; i++) buf_put32(&d->data, slots[i]);
+    free(slots);
+
+    if (e->nmaps == e->cmaps) {
+        e->cmaps = e->cmaps ? e->cmaps * 2 : 8;
+        e->maps = realloc(e->maps, (size_t)e->cmaps * sizeof(*e->maps));
+        if (!e->maps) oom();
+    }
+    e->maps[e->nmaps++] = (StaticMapData){
+        vs, keys, values, slot_sym, seed, size - 1, (uint32_t)count,
+        (uint8_t)strings
+    };
+}
+
 static void add_global(Em* e, Sym* s, ESym* sym);
 
 static void add_global(Em* e, Sym* s, ESym* sym) {
@@ -6124,6 +6423,10 @@ static void emit_global(Em* e, Node* n) {
     Sym* vs = node_sym(binder);
     if (!vs) return;
     SType* t = sema_build_type(binder->a);
+    if (t->kind == SK_STATICMAP) {
+        emit_staticmap_global(e, n, vs, t);
+        return;
+    }
     uint32_t size = ty_size(t), align = ty_align(t);
     char nm[512];
     snprintf(nm, sizeof nm, "__ace$g$%.*s", (int)binder->len, binder->str);

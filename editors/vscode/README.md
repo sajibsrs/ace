@@ -27,6 +27,9 @@ operator scope and needs no indentation or bracket change.
 The reserved line-final `intrinsic` marker is highlighted as a keyword. The
 compiler restricts it to exact compiler-provided standard-library declarations.
 
+The predeclared `StaticMap` type is highlighted as a built-in type; its braces,
+colons, and indexing use the extension's existing punctuation scopes.
+
 The highlighter exposes distinct, stable TextMate categories:
 
 - all types: \`entity.name.type.ace\`

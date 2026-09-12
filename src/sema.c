@@ -110,6 +110,13 @@ static const char* type_name(SType* t) {
                  (unsigned long long)t->count, t->base ? type_name(t->base) : "?");
         return out;
     }
+    case SK_STATICMAP: {
+        char* out = bufs[bi = (bi + 1) & 7];
+        snprintf(out, sizeof bufs[0], "StaticMap[%s]%s",
+                 t->base ? type_name(t->base) : "?",
+                 t->ret ? type_name(t->ret) : "?");
+        return out;
+    }
     case SK_TUPLE: return "(tuple)";
     case SK_FUNC: return "(func)";
     case SK_STRUCT: return t->name ? t->name : "struct";
@@ -162,6 +169,11 @@ static int layout(SType* t) {
         t->align = t->base->align;
         t->size = (uint32_t)(t->base->size * t->count);
         t->calc = 0;
+        return 1;
+    case SK_STATICMAP:
+        /* A map binding has no runtime descriptor. Give the compiler-only
+           type a harmless complete layout so generic layout walkers recover. */
+        t->size = t->align = 1;
         return 1;
     case SK_STRUCT: case SK_TUPLE: {
         t->calc = 1;
@@ -299,6 +311,9 @@ static int is_assert_name(const char* name, uint32_t len) {
 static int is_static_assert_name(const char* name, uint32_t len) {
     return len == 13 && memcmp(name, "static_assert", 13) == 0;
 }
+static int is_staticmap_name(const char* name, uint32_t len) {
+    return len == 9 && memcmp(name, "StaticMap", 9) == 0;
+}
 
 static void ensure_memory_types(void) {
     if (T_BYTE_SLICE) return;
@@ -376,6 +391,10 @@ static Sym* declare_val(Ck* k, Node* at, uint8_t kind, const char* name, uint32_
 }
 
 static Sym* declare_type(Ck* k, Node* at, const char* name, uint32_t len) {
+    if (is_staticmap_name(name, len)) {
+        ck_err(k, at, "'StaticMap' is a predeclared type name and cannot be redeclared");
+        return NULL;
+    }
     if (is_panic_name(name, len) || is_assert_name(name, len) || is_static_assert_name(name, len)) {
         ck_err(k, at, "'%.*s' is a reserved builtin name — no declaration may take it",
                (int)len, name);
@@ -487,6 +506,8 @@ static int same_type(SType* a, SType* b) {
     case SK_SLICE:
         return a->is_mut == b->is_mut && same_type(a->base, b->base);
     case SK_ARRAY: return a->count == b->count && same_type(a->base, b->base);
+    case SK_STATICMAP:
+        return same_type(a->base, b->base) && same_type(a->ret, b->ret);
     case SK_TUPLE:
         if (a->nfields != b->nfields) return 0;
         for (int i = 0; i < a->nfields; i++)
@@ -976,10 +997,117 @@ static int compile_time_expr(Node* e) {
         return 1;
     case N_CALL:
         if (e->sym) return 0; // resolved ordinary function call
+        if (e->a && e->a->kind == N_IDENT && e->a->len == 6 &&
+            memcmp(e->a->str, "typeid", 6) == 0 && e->ival)
+            return 1;
         for (int i = 0; i < e->nkids; i++) if (!compile_time_expr(e->kids[i])) return 0;
         return 1; // type cast, layout/type builtin, or union construction
     default:
         return 0;
+    }
+}
+
+static int static_key_int(Node* e, uint64_t* out) {
+    if (!e) return 0;
+    if (e->kind == N_BOOL) { *out = e->ival != 0; return 1; }
+    if (e->kind == N_FIELD_E) {
+        Sym* ts = e->a ? node_sym(e->a) : NULL;
+        if (ts && ts->kind == SYM_TYPE && ts->type && ts->type->kind == SK_ENUM) {
+            *out = e->ival;
+            return 1;
+        }
+    }
+    if (e->kind == N_CALL && !e->sym) {
+        if (e->a && e->a->kind == N_IDENT && e->a->len == 6 &&
+            memcmp(e->a->str, "typeid", 6) == 0 && e->ival) {
+            *out = e->ival;
+            return 1;
+        }
+        if (e->nkids == 1) return static_key_int(e->kids[0], out);
+    }
+    if (e->kind == N_IDENT) {
+        Sym* s = node_sym(e);
+        if (s && s->is_const && s->is_global && s->init)
+            return static_key_int(s->init, out);
+    }
+    int64_t v;
+    if (!ut_const(e, &v)) return 0;
+    *out = (uint64_t)v;
+    return 1;
+}
+
+static Node* static_key_string(Node* e) {
+    if (!e) return NULL;
+    if (e->kind == N_STR) return e;
+    if (e->kind == N_IDENT) {
+        Sym* s = node_sym(e);
+        if (s && s->is_const && s->is_global && s->init)
+            return static_key_string(s->init);
+    }
+    if (e->kind == N_CALL && !e->sym && e->nkids == 1)
+        return static_key_string(e->kids[0]);
+    return NULL;
+}
+
+static int staticmap_key_type(SType* t) {
+    while (t && t->kind == SK_DISTINCT) t = t->base;
+    if (!t) return 0;
+    if (t->kind == SK_ENUM) return 1;
+    if (t->kind != SK_PRIM) return 0;
+    return t->prim == P_BOOL ||
+           (t->prim >= P_I8 && t->prim <= P_U64) ||
+           t->prim == P_STRING || t->prim == P_USIZE || t->prim == P_TYPEID;
+}
+
+static void check_staticmap(Ck* k, Node* lit, SType* map) {
+    if (!lit || lit->kind != N_STATICMAPLIT) {
+        ck_err(k, lit, "StaticMap requires a brace literal of key: value entries");
+        return;
+    }
+    if (!staticmap_key_type(map->base))
+        ck_err(k, lit, "%s is not an allowed StaticMap key type", type_name(map->base));
+    if (!layout(map->ret))
+        ck_err(k, lit, "StaticMap value type %s must have a complete layout",
+               type_name(map->ret));
+    SType* key = map->base;
+    while (key && key->kind == SK_DISTINCT) key = key->base;
+    int strings = key && key->kind == SK_PRIM && key->prim == P_STRING;
+    for (int i = 0; i < lit->nkids; i++) {
+        Node* entry = lit->kids[i];
+        coerce(k, entry->a, map->base);
+        if (entry->b->kind == N_STRUCTLIT && !entry->b->a &&
+            (map->ret->kind == SK_STRUCT || map->ret->kind == SK_BITS))
+            check_structlit(k, entry->b, map->ret);
+        else if (entry->b->kind == N_ARRAYLIT && map->ret->kind == SK_ARRAY)
+            check_arraylit(k, entry->b, map->ret);
+        else
+            coerce(k, entry->b, map->ret);
+        if (!compile_time_expr(entry->a))
+            ck_err(k, entry->a, "StaticMap key must be a global constant expression");
+        if (!compile_time_expr(entry->b))
+            ck_err(k, entry->b, "StaticMap value must be a global constant expression");
+        uint64_t bits = 0;
+        Node* text = strings ? static_key_string(entry->a) : NULL;
+        if (strings ? !text : !static_key_int(entry->a, &bits)) {
+            ck_err(k, entry->a, "StaticMap key must be reducible at compile time");
+            continue;
+        }
+        entry->ival = bits;
+        for (int j = 0; j < i; j++) {
+            Node* prev = lit->kids[j];
+            int equal = 0;
+            if (strings) {
+                Node* ptext = static_key_string(prev->a);
+                equal = ptext && text && ptext->len == text->len &&
+                        memcmp(ptext->str, text->str, text->len) == 0;
+            } else {
+                equal = prev->ival == bits;
+            }
+            if (equal) {
+                ck_err(k, entry->a, "duplicate StaticMap key");
+                break;
+            }
+        }
     }
 }
 
@@ -1156,6 +1284,12 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
         a->count = t->ival;
         a->base = build_type_ctx(k, t->a, 0);
         return a;
+    }
+    case N_STATICMAP_T: {
+        SType* m = st_new(SK_STATICMAP);
+        m->base = build_type_ctx(k, t->a, 0);
+        m->ret = build_type_ctx(k, t->b, 0);
+        return m;
     }
     case N_CONST_T: return build_type_ctx(k, t->a, 0);
     case N_TUPLE_T: {
@@ -1935,6 +2069,11 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
         // ordinary descriptor check.
         SType* peek = check_lvalue(k, e->a, 0);
         SType* b = peek;
+        if (peek->kind == SK_STATICMAP) {
+            ck_err(k, e, write ? "StaticMap entries are immutable" :
+                                "StaticMap lookup is not an assignable place");
+            return T_ERR;
+        }
         if (write && peek->kind == SK_SLICE) {
             if (!peek->is_mut)
                 ck_err(k, e,
@@ -2511,6 +2650,20 @@ static SType* expr_type_raw(Ck* k, Node* e) {
     }
     case N_INDEX: {
         SType* b = expr_type(k, e->a);
+        if (b->kind == SK_STATICMAP) {
+            if (!e->a || e->a->kind != N_IDENT || !node_sym(e->a) ||
+                !node_sym(e->a)->is_global) {
+                ck_err(k, e, "StaticMap lookup requires a module-level table binding");
+                return T_ERR;
+            }
+            SType* ix = expr_type(k, e->b);
+            if (ix == T_UT_INT || ix == T_UT_FLOAT || ix == T_UT_NULL)
+                coerce(k, e->b, b->base);
+            else if (!same_type(ix, b->base))
+                ck_err(k, e->b, "StaticMap key is %s, not the table's exact key type %s",
+                       type_name(ix), type_name(b->base));
+            return b->ret;
+        }
         SType* ix = expr_type(k, e->b);
         if (b->kind == SK_ERR || ix->kind == SK_ERR) return T_ERR;
         if (!is_int(ix) && ix != T_UT_INT)
@@ -4364,7 +4517,9 @@ static void check_stmt(Ck* k, Node* s) {
             }
         }
         if (!s->b) {
-            if (s->flags & F_CONST)
+            if (wants[0]->kind == SK_STATICMAP)
+                ck_err(k, s, "StaticMap construction requires a module-level brace initializer");
+            else if (s->flags & F_CONST)
                 ck_err(k, s, "const declaration requires an initializer");
             else if (s->nkids > 1)
                 ck_err(k, s, "destructuring declaration requires an initializer");
@@ -4372,7 +4527,10 @@ static void check_stmt(Ck* k, Node* s) {
         }
         if (s->nkids == 1) {
             Node* init = s->b;
-            if (init->kind == N_STRUCTLIT && !init->a && (wants[0]->kind == SK_STRUCT || wants[0]->kind == SK_BITS))
+            if (wants[0]->kind == SK_STATICMAP) {
+                ck_err(k, s, "StaticMap construction is allowed only in a module-level declaration");
+                check_staticmap(k, init, wants[0]);
+            } else if (init->kind == N_STRUCTLIT && !init->a && (wants[0]->kind == SK_STRUCT || wants[0]->kind == SK_BITS))
                 check_structlit(k, init, wants[0]);
             else if (init->kind == N_ARRAYLIT && wants[0]->kind == SK_ARRAY)
                 check_arraylit(k, init, wants[0]);
@@ -6138,7 +6296,7 @@ int sema_check(Node* file, Diag* d) {
             Sym* s = declare_val(&k, n, SYM_VAR, binder->str, binder->len);
             if (s) {
                 s->type = t;
-                s->is_const = (n->flags & F_CONST) != 0;
+                s->is_const = (n->flags & F_CONST) != 0 || t->kind == SK_STATICMAP;
                 s->is_pub = (n->flags & F_PUB) != 0;
                 s->is_global = 1;
                 s->decl = binder;
@@ -6146,7 +6304,11 @@ int sema_check(Node* file, Diag* d) {
                 binder->sym = s; // emitter: global storage key
             }
             if (n->b) {
-                if (n->b->kind == N_STRUCTLIT && !n->b->a && (t->kind == SK_STRUCT || t->kind == SK_BITS))
+                if (t->kind == SK_STATICMAP) {
+                    if (n->flags & F_CONST)
+                        ck_err(&k, n, "const is not permitted on a StaticMap declaration");
+                    check_staticmap(&k, n->b, t);
+                } else if (n->b->kind == N_STRUCTLIT && !n->b->a && (t->kind == SK_STRUCT || t->kind == SK_BITS))
                     check_structlit(&k, n->b, t);
                 else if (n->b->kind == N_ARRAYLIT && t->kind == SK_ARRAY)
                     check_arraylit(&k, n->b, t);
@@ -6157,6 +6319,10 @@ int sema_check(Node* file, Diag* d) {
                 if (s && t->kind == SK_PRIM && t->prim == P_STRING &&
                     !t->is_mut && n->b->kind == N_STR)
                     s->is_literal_backed = 1;
+            } else if (t->kind == SK_STATICMAP) {
+                if (n->flags & F_CONST)
+                    ck_err(&k, n, "const is not permitted on a StaticMap declaration");
+                ck_err(&k, n, "StaticMap declaration requires a brace initializer");
             } else if (n->flags & F_CONST) {
                 ck_err(&k, n, "const declaration requires an initializer");
             }

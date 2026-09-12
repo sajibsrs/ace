@@ -1,0 +1,10 @@
+bad_key: StaticMap[f32]u8 = { 1.0: 1 }
+bad_const: const StaticMap[u8]u8 = { 1: 1 }
+wrong: StaticMap[u16]u8 = { 1: 1 }
+
+main(): int {
+    local: StaticMap[u8]u8 = { 1: 1 }
+    wrong_key: u8 = wrong[u8(1)]
+    wrong[1] = 2
+    return int(wrong_key) + int(local[u8(1)])
+}
