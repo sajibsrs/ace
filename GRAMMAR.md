@@ -108,7 +108,9 @@ union_variant := ident [":" type]                    // zero or one payload
 
 alias_decl    := ident [type_params] ":" "type" "=" type
 distinct_decl := ident ":" "distinct" type
-error_domain_decl := ident ":" contextual_error             // pub OpenErr: error
+error_domain_decl := ident ":" contextual_error ["{" newline* error_entry* "}"]
+error_entry   := signed_int_lit ":" ident "=" string_lit newline+
+signed_int_lit := ["-"] int_lit
 contextual_error := ident                                    // exact text "error"; not reserved
 
 signing_decl  := owner_type "signs" (type_list | "(" type_list [","] ")")

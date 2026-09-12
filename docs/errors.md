@@ -31,7 +31,25 @@ not_found(path: string): Error {
 Both expressions have type `Error`; signatures return the universal type, not
 `FileError`.
 
-The two fields are read-only:
+A domain may declare named codes and static descriptions:
+
+```ace
+pub FileError: error {
+    0: unknown = "unknown file failure"
+    2: not_found = "file not found"
+}
+```
+
+Entries are line-oriented and take no commas. Codes must be exact `i32`
+compile-time integers; zero, negative values, and both `i32` limits are valid.
+Names and codes are unique within one domain, and messages are string literals.
+The domain's visibility also controls its entries.
+
+`FileError.not_found` is an `Error`, exactly equal to `FileError(2)`. Equality
+still includes the domain, so an entry in another domain with code 2 is not
+equal. Constructors remain available for undeclared runtime codes.
+
+The four fields are read-only:
 
 ```ace
 if error != null {
@@ -39,10 +57,20 @@ if error != null {
         /* handle missing file */
     }
 }
+
+domain_name: string = error.name
+description: string = error.message
 ```
 
-There is no message field, descriptor, registry, metadata table, allocation,
-or runtime registration.
+`name` is the originating declaration's unqualified spelling, even through an
+alias or re-export. `message` requires an exact domain/code match. Null errors
+have empty names and messages; an unlisted code has an empty message. Entry
+labels are not fields on arbitrary values, so `error.not_found` is invalid.
+
+Descriptions use static read-only strings and allocate nothing. The compiler
+emits their lookup data and code only when `.name` or `.message` is used. There
+is no runtime registry or initialization and no metadata inside the 64-bit
+`Error` value.
 
 ## Identity
 
@@ -59,7 +87,9 @@ the pointer-sized `typeid` type. An error's domain bits compare directly with
 IDs are collision-free only within one linked program. Their numeric values are
 unstable across builds and processes and must not be serialized or used as
 external identifiers. `typeid` supports storage, passing, `==`, and `!=`, but
-not ordering, arithmetic, integer conversion, reflection, or runtime names.
+not ordering, arithmetic, integer conversion, reflection, or general runtime
+type names. `Error.name` is the narrow error-domain description described
+above.
 
 Resolved module paths are canonicalized before loading and caching. Importing
 the same file through `./errors.ace` and `./dir/../errors.ace` therefore reaches

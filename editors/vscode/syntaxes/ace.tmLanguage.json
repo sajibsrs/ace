@@ -293,7 +293,7 @@
     "type-declarations": {
       "patterns": [
         {
-          "match": "^\\s*(?:(pub)\\s+)?([A-Za-z_][A-Za-z0-9_]*)(?:\\s*\\[[^\\n]+\\])?\\s*(?=:\\s*(?:struct|bits|contract|union|enum|type|distinct)\\b)",
+          "match": "^\\s*(?:(pub)\\s+)?([A-Za-z_][A-Za-z0-9_]*)(?:\\s*\\[[^\\n]+\\])?\\s*(?=:\\s*(?:struct|bits|contract|union|enum|type|distinct|error)\\b)",
           "captures": {
             "1": { "name": "keyword.control.ace" },
             "2": { "name": "entity.name.type.ace" }
@@ -367,7 +367,7 @@
         },
         {
           "name": "storage.type.ace",
-          "match": "\\berror\\b(?=\\s*(?:\\/\\/.*)?$)"
+          "match": "\\berror\\b(?=\\s*(?:\\{|\\/\\/.*)?$)"
         },
         {
           "name": "keyword.control.ace",

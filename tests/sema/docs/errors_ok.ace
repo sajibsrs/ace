@@ -1,4 +1,7 @@
-FileError: error
+FileError: error {
+    0: unknown = "unknown file failure"
+    2: not_found = "file not found"
+}
 Alias: type = FileError
 fs_read(path: string): ([]u8, Error) {
     if len(path) == 0 {
@@ -13,6 +16,12 @@ main(): int {
     }
     if sizeof(Error) != 8 || typeid(FileError) != typeid(Alias) {
         panic("invalid Error representation")
+    }
+    if FileError.not_found != FileError(2) || FileError.unknown == null {
+        panic("invalid named Error entry")
+    }
+    if len(error.name) != 9 || len(error.message) != 14 {
+        panic("invalid Error description")
     }
     return int(len(data))
 }

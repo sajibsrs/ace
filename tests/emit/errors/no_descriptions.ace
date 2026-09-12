@@ -1,0 +1,10 @@
+// expect-exit: 0
+
+QuietErr: error {
+    7: quiet = "ACE_DESCRIPTION_METADATA_MUST_BE_LAZY"
+}
+
+main(): int {
+    if QuietErr.quiet != QuietErr(7) { return 1 }
+    return 0
+}

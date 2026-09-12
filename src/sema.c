@@ -692,6 +692,7 @@ static void check_index_bounds(Ck* k, Node* e, Node* base, SType* bt,
 // --- forward decls -------------------------------------------------------------------
 
 static SType* expr_type(Ck* k, Node* e);
+static uint32_t type_identity(SType* t);
 static int coerce(Ck* k, Node* e, SType* want);
 static SType* check_call(Ck* k, Node* call);
 static void check_stmt(Ck* k, Node* s);
@@ -1898,6 +1899,9 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
                 return st_prim(P_TYPEID);
             if (e->len == 4 && memcmp(e->str, "code", 4) == 0)
                 return st_prim(P_I32);
+            if ((e->len == 4 && memcmp(e->str, "name", 4) == 0) ||
+                (e->len == 7 && memcmp(e->str, "message", 7) == 0))
+                return st_prim(P_STRING);
             ck_err(k, e, "type Error has no field '%.*s'", (int)e->len, e->str);
             return T_ERR;
         }
@@ -2393,6 +2397,21 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                        (int)e->len, e->str);
                 return T_ERR;
             }
+            if (ts && ts->type && ts->type->kind == SK_ERROR_DOMAIN) {
+                for (int i = 0; i < ts->type->decl->nkids; i++) {
+                    Node* m = ts->type->decl->kids[i];
+                    if (m->len == e->len && memcmp(m->str, e->str, e->len) == 0) {
+                        e->a->sym = ts;
+                        e->a->ty = ts->type;
+                        e->ival = ((uint64_t)type_identity(ts->type) << 32) |
+                                  (uint32_t)m->ival;
+                        return T_ERROR;
+                    }
+                }
+                ck_err(k, e, "error domain %s has no entry '%.*s'",
+                       type_name(ts->type), (int)e->len, e->str);
+                return T_ERR;
+            }
             // union variant value (payloadless): Event.quit
             if (ts && ts->type && ts->type->kind == SK_UNION) {
                 int vi = union_variant_index(k, e, ts->type, e);
@@ -2452,6 +2471,9 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                 return st_prim(P_TYPEID);
             if (e->len == 4 && memcmp(e->str, "code", 4) == 0)
                 return st_prim(P_I32);
+            if ((e->len == 4 && memcmp(e->str, "name", 4) == 0) ||
+                (e->len == 7 && memcmp(e->str, "message", 7) == 0))
+                return st_prim(P_STRING);
             ck_err(k, e, "type Error has no field '%.*s'", (int)e->len, e->str);
             return T_ERR;
         }
@@ -2850,6 +2872,34 @@ static SType* check_error_construct(Ck* k, Node* call, Sym* ts) {
     call->a->ty = ts->type;
     call->ival = type_identity(ts->type);
     return T_ERROR;
+}
+
+static void check_error_domain_decl(Ck* k, Node* n) {
+    for (int i = 0; i < n->nkids; i++) {
+        Node* entry = n->kids[i];
+        int64_t code = 0;
+        (void)expr_type(k, entry->a);
+        int exact = entry->a->kind == N_INT ||
+                    (entry->a->kind == N_UNARY && entry->a->op == T_MINUS &&
+                     entry->a->a && entry->a->a->kind == N_INT);
+        if (!exact || !ut_const(entry->a, &code))
+            ck_err(k, entry->a, "error code must be an exact integer literal");
+        else if (code < INT32_MIN || code > INT32_MAX)
+            ck_err(k, entry->a, "error code %lld is outside i32", (long long)code);
+        entry->ival = (uint64_t)code;
+        if (!entry->b || entry->b->kind != N_STR)
+            ck_err(k, entry->b ? entry->b : entry,
+                   "error message must be a string literal");
+        for (int j = 0; j < i; j++) {
+            Node* prior = n->kids[j];
+            if (prior->len == entry->len &&
+                memcmp(prior->str, entry->str, entry->len) == 0)
+                ck_err(k, entry, "duplicate error entry name '%.*s'",
+                       (int)entry->len, entry->str);
+            if ((int64_t)prior->ival == code)
+                ck_err(k, entry, "duplicate error code %lld", (long long)code);
+        }
+    }
 }
 
 static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
@@ -5175,7 +5225,7 @@ static void init_expr(InitCk* k, Node* e) {
         if (s && s->kind == SYM_VAR && !s->is_global) (void)init_require_path(k, e);
         return;
     }
-    case N_FIELD_E: {
+        case N_FIELD_E: {
         InitPath p = {0};
         if (init_path(e, &p)) {
             (void)init_require_path(k, e);
@@ -6177,11 +6227,13 @@ int sema_check(Node* file, Diag* d) {
         case N_ERROR_DOMAIN: {
             Sym* s = declare_type(&k, n, n->str, n->len);
             if (!s) break;
+            n->sym = s;
             SType* t = st_new(SK_ERROR_DOMAIN);
             t->name = n->str;
             t->decl = n;
             t->size = t->align = 8;
             resolve_type_fixes(&k, s, t, n);
+            check_error_domain_decl(&k, n);
             break;
         }
         case N_SIGNING:

@@ -1,0 +1,18 @@
+message: const string = "not literal syntax"
+
+Bad: error {
+    2147483648: too_high = "high"
+    -2147483649: too_low = "low"
+    1: duplicate_name = "first"
+    2: duplicate_name = "second"
+    3: first_code = "third"
+    3: second_code = "fourth"
+    4: indirect_message = message
+}
+
+main(): int {
+    err: Error = Bad(1)
+    value: Error = Bad.duplicate_name
+    code: i32 = value.address
+    return int(err.code + code)
+}

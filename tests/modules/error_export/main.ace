@@ -9,5 +9,9 @@ main(): int {
     if typeid(errors.FileError) != typeid(errors.Alias) {
         return 2
     }
+    if errors.Alias.not_found != error || len(error.name) != 9 ||
+       len(error.message) != 14 {
+        return 3
+    }
     return 0
 }

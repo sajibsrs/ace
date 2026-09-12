@@ -16,6 +16,7 @@ continuation-alignment = open-delimiter
 public-before-private = dependency-order
 specialized-marker = line-final
 intrinsic-marker = line-final
+error-domain-entries = line-oriented-no-commas
 
 [attributes]
 top-level = own-line

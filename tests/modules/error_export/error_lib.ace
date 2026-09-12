@@ -1,4 +1,6 @@
-pub FileError: error
+pub FileError: error {
+    2: not_found = "file not found"
+}
 pub Alias: type = FileError
 
 pub fail(code: i32): Error {

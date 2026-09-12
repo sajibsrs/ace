@@ -311,6 +311,7 @@ typedef struct {
 
 typedef struct {
     Diag* d;
+    Node* file;
     EmitMode mode;
     int bounds_fail_used;
     int arithmetic_fail_used;
@@ -2398,6 +2399,69 @@ static ESym* intern_string(Em* e, Node* s) {
     return sym;
 }
 
+static void addr_of_sym(Em* e, int rd, ESym* sym);
+
+static EV gen_error_description(Em* e, EV value, int message) {
+    uint32_t off = temp_slot(e, 16, 8);
+    frame_addr(e, 16, off);
+    st_reg(e, 31, 16, 0, 8);
+    st_reg(e, 31, 16, 8, 8);
+    int done = new_label(e);
+    if (!message) {
+        mov_int(e, 1, 16, xreg(value.idx));
+        ins(e, 0xD360FC10u); // lsr x16, x16, #32
+    }
+    for (int i = 0; i < e->file->nkids; i++) {
+        Node* domain = e->file->kids[i];
+        if (domain->kind != N_ERROR_DOMAIN) continue;
+        SType* dt = node_ty(domain);
+        if (!dt) {
+            Sym* ds = node_sym(domain);
+            dt = ds ? ds->type : NULL;
+        }
+        if (!dt || !dt->type_id) continue;
+        if (!message) {
+            load_imm(e, 1, 17, dt->type_id);
+            ins(e, 0xEB11021Fu); // cmp x16, x17
+            int next = new_label(e);
+            bcond_(e, C_NE, next);
+            const char* name = domain->cname ? domain->cname : domain->str;
+            uint32_t name_len = domain->cname ? (uint32_t)strlen(domain->cname)
+                                               : domain->len;
+            Node text = { .kind = N_STR, .str = name, .len = name_len };
+            ESym* str = intern_string(e, &text);
+            addr_of_sym(e, 17, str);
+            frame_addr(e, 16, off);
+            st_reg(e, 17, 16, 0, 8);
+            load_imm(e, 1, 17, name_len);
+            st_reg(e, 17, 16, 8, 8);
+            br_(e, done);
+            bind_label(e, next);
+        } else {
+            for (int j = 0; j < domain->nkids; j++) {
+                Node* entry = domain->kids[j];
+                uint64_t packed = ((uint64_t)dt->type_id << 32) |
+                                  (uint32_t)entry->ival;
+                load_imm(e, 1, 17, packed);
+                ins(e, 0xEB11001Fu | ((uint32_t)xreg(value.idx) << 5));
+                int next = new_label(e);
+                bcond_(e, C_NE, next);
+                ESym* str = intern_string(e, entry->b);
+                addr_of_sym(e, 17, str);
+                frame_addr(e, 16, off);
+                st_reg(e, 17, 16, 0, 8);
+                load_imm(e, 1, 17, entry->b->len);
+                st_reg(e, 17, 16, 8, 8);
+                br_(e, done);
+                bind_label(e, next);
+            }
+        }
+    }
+    bind_label(e, done);
+    frame_addr(e, xreg(value.idx), off);
+    return (EV){ CLS_ADDR, value.idx };
+}
+
 // --- variable addressing ------------------------------------------------------------------
 
 static ESym* global_sym(Em* e, Sym* s) {
@@ -4341,6 +4405,12 @@ static EV gen_expr(Em* e, Node* x) {
         return gen_cmpchain(e, x);
     case N_FIELD_E: {
         Sym* ts = node_sym(x->a); // enum member: Color.red
+        if (ts && ts->kind == SYM_TYPE && ts->type &&
+            ts->type->kind == SK_ERROR_DOMAIN) {
+            int it = tmp_int(e);
+            load_imm(e, 1, xreg(it), x->ival);
+            return (EV){ CLS_INT, it };
+        }
         if (ts && ts->kind == SYM_TYPE && ts->type && ts->type->kind == SK_ENUM) {
             int it = tmp_int(e);
             load_imm(e, scalar_bits(ts->type) == 64, xreg(it), x->ival);
@@ -4364,8 +4434,10 @@ static EV gen_expr(Em* e, Node* x) {
             if (x->len == 6 && memcmp(x->str, "domain", 6) == 0)
                 ins(e, 0xD360FC00u | ((uint32_t)xreg(value.idx) << 5) |
                        (uint32_t)xreg(value.idx)); // lsr x, x, #32
-            else
+            else if (x->len == 4 && memcmp(x->str, "code", 4) == 0)
                 mov_int(e, 0, xreg(value.idx), xreg(value.idx)); // raw i32 bits
+            else
+                return gen_error_description(e, value, x->len == 7);
             return value;
         }
         SType* bt = node_ty(x->a);
@@ -5849,6 +5921,11 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
     }
     case N_FIELD_E: { // enum member (base carries the type symbol)
         Sym* ts = node_sym(v->a);
+        if (ts && ts->kind == SYM_TYPE && ts->type &&
+            ts->type->kind == SK_ERROR_DOMAIN) {
+            put_u(out, v->ival, 8);
+            return 1;
+        }
         if (ts && ts->kind == SYM_TYPE && ts->type && ts->type->kind == SK_ENUM) {
             put_u(out, v->ival, ty_size(ts->type));
             return 1;
@@ -6048,6 +6125,15 @@ static int emit_error_handle_global(Em* e, Node* n, Sym* vs,
         while (d->data.len % 8) buf_put8(&d->data, 0);
         ESym* g = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, d);
         buf_put64(&d->data, 0);
+        add_global(e, vs, g);
+        return 1;
+    }
+    if (call && call->kind == N_FIELD_E && node_ty(call) &&
+        node_ty(call)->kind == SK_ERROR) {
+        Sec* d = (n->flags & F_CONST) ? &e->secs[SEC_CONST] : &e->secs[SEC_DATA];
+        while (d->data.len % 8) buf_put8(&d->data, 0);
+        ESym* g = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, d);
+        buf_put64(&d->data, call->ival);
         add_global(e, vs, g);
         return 1;
     }
@@ -6837,6 +6923,7 @@ int emit_object(Node* file, Diag* d, const char* out_path,
     Em e;
     memset(&e, 0, sizeof e);
     e.d = d;
+    e.file = file;
     e.mode = mode;
     for (int i = 0; i < NSECS; i++) {
         e.secs[i].sect = PROTO[i].sect;

@@ -117,6 +117,9 @@ current normative rules, and Git preserves patch-level detail.
 - Implemented opaque packed 64-bit `Error` values with compiler-assigned nominal
   domains and i32 codes. Errors remain ordinary values. The earlier static
   descriptor representation was removed.
+- Added structured error-domain entries and allocation-free `Error.name` /
+  `Error.message` lookup, emitting static description data only when used while
+  retaining the packed 64-bit representation and arbitrary-code constructors.
 - Implemented reserved `panic(message)` as best-effort direct stderr output
   followed by platform `abort()`; it cannot be caught or used as a value.
 - Implemented the remaining checked-build diagnostics: exact integer arithmetic

@@ -1106,7 +1106,8 @@ static const char* arena_stringn(const char* s, uint32_t len) {
 // Collect every module-level declaration name (free functions, globals,
 // types, extern C bindings) and rename the declaration nodes. Methods derive
 // their private identity from their renamed owner type.
-// Externs and exported functions keep their linker spelling in Node.cname.
+// Externs/exported functions keep their linker spelling in Node.cname; error
+// domains keep their unqualified source spelling there for Error.name.
 static void rename_decls(Module* m, Renames* rs) {
     for (int i = 0; i < m->file->nkids; i++) {
         Node* n = m->file->kids[i];
@@ -1129,6 +1130,8 @@ static void rename_decls(Module* m, Renames* rs) {
             n->kind != N_ALIAS && n->kind != N_DISTINCT &&
             n->kind != N_ERROR_DOMAIN && n->kind != N_UNION)
             continue;
+        if (n->kind == N_ERROR_DOMAIN && !n->cname)
+            n->cname = arena_stringn(named->str, named->len);
         if ((n->flags & F_EXPO) && !n->cname) // `export` keeps its C name
             n->cname = arena_stringn(named->str, named->len);
         renames_add(rs, named->str, named->len, prefixed(m, named->str, named->len));

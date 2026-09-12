@@ -1900,6 +1900,32 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
             n->str = name->str;
             n->len = name->len;
             if (pub) n->flags |= F_PUB;
+            if (at(p, T_LBRACE)) {
+                int brace_line = tk(p)->line;
+                p->i++;
+                NV entries = {0};
+                if (!at(p, T_RBRACE) && tk(p)->line == brace_line)
+                    perr(p, "expected newline after '{' in error domain");
+                skipnl(p);
+                while (!at(p, T_RBRACE)) {
+                    if (at(p, T_EOF))
+                        perr(p, "unexpected end of file in error domain");
+                    Node* entry = nd(p, N_FIELD);
+                    entry->a = expr(p, 0);
+                    expect(p, T_COLON, "':' after error code");
+                    Token* ename = expect(p, T_IDENT, "error entry name");
+                    entry->str = ename->str;
+                    entry->len = ename->len;
+                    expect(p, T_ASSIGN, "'=' after error entry name");
+                    entry->b = expr(p, 0);
+                    nv_push(p, &entries, entry);
+                    if (!ate(p, T_NL))
+                        perr(p, "expected newline after error entry");
+                    skipnl(p);
+                }
+                p->i++;
+                set_kids(n, &entries);
+            }
             return n;
         }
         n = nd_tok(p, N_VAR, name);

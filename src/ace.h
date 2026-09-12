@@ -211,8 +211,8 @@ struct Node {
     Node*       d; // method owner / contract-construction signing metadata
     Node**      kids;
     int         nkids;
-    const char* cname; // original C-boundary name of a module-prefixed extern
-                       // declaration (module.c); the linker still sees `_name`
+    const char* cname; // preserved source spelling for a renamed C boundary or
+                       // error domain (module.c); extern linkage uses `_name`
     // sema annotations (filled by sema.c, consumed by emit.c):
     void*       ty;  // SType* — computed type of this expression
     void*       sym; // Sym* — resolved symbol (idents, call targets, binders;

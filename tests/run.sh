@@ -139,6 +139,19 @@ for want in \
         fail=1
     fi
 done
+structured_error_errors=$("$ACE" tests/sema/errors/structured_err.ace 2>&1)
+for want in \
+    "error code 2147483648 is outside i32" \
+    "error code -2147483649 is outside i32" \
+    "duplicate error entry name 'duplicate_name'" \
+    "duplicate error code 3" \
+    "error message must be a string literal" \
+    "type Error has no field 'address'"; do
+    if ! printf '%s\n' "$structured_error_errors" | grep -qF "$want"; then
+        echo "FAIL: missing structured error diagnostic '$want'"
+        fail=1
+    fi
+done
 inline_forward_errors=$("$ACE" tests/sema/types/inline_forward_err.ace 2>&1)
 for name in B D F; do
     if ! printf '%s\n' "$inline_forward_errors" | grep -qF "unknown type '$name'"; then
@@ -756,6 +769,12 @@ if [ -d tests/emit ]; then
        [ "${precision_out#0.}" = "$precision_out" ] ||
        [ "${precision_out#${precision_out%?}}" != "5" ]; then
         echo "FAIL: %.324f should emit 0., 323 zero bytes, and a final 5"
+        fail=1
+    fi
+    if command -v strings >/dev/null 2>&1 &&
+       strings /tmp/ace_emit/errors/no_descriptions.o |
+       grep -qF 'ACE_DESCRIPTION_METADATA_MUST_BE_LAZY'; then
+        echo "FAIL: unused Error description metadata was emitted"
         fail=1
     fi
     precision_max_out=$(/tmp/ace_emit/printf/precision_max)

@@ -1,0 +1,46 @@
+// expect-exit: 0
+
+ClientErr: error {
+    0: unknown = "unknown client failure"
+    1: address = "name resolution failed"
+    -1: negative = "negative"
+    -2147483648: minimum = "minimum"
+    2147483647: maximum = "maximum"
+}
+
+ClientAlias: type = ClientErr
+
+ServerErr: error {
+    1: address = "server address"
+}
+
+global_named: const Error = ClientErr.address
+
+same(a: string, b: string): bool {
+    if len(a) != len(b) { return false }
+    for i: usize in 0 .. len(a) {
+        if a[i] != b[i] { return false }
+    }
+    return true
+}
+
+main(): int {
+    if ClientErr.unknown == null || ClientErr(0) != ClientErr.unknown { return 1 }
+    if ClientErr.address != ClientErr(1) { return 2 }
+    if global_named != ClientErr.address { return 10 }
+    if ClientErr.address == ServerErr.address { return 3 }
+    named: Error = ClientErr.address
+    if !same(named.name, "ClientErr") { return 4 }
+    if !same(named.message, "name resolution failed") { return 5 }
+    if !same(ServerErr.address.message, "server address") { return 11 }
+    if !same(ClientAlias.address.name, "ClientErr") ||
+       !same(ClientAlias.address.message, "name resolution failed") { return 12 }
+    if !same(ClientErr(99).message, "") { return 6 }
+    empty: Error = null
+    if !same(empty.name, "") || !same(empty.message, "") { return 7 }
+    if sizeof(Error) != 8 { return 8 }
+    if ClientErr().code != 0 || ClientErr(-1) != ClientErr.negative { return 9 }
+    if ClientErr(-2147483648) != ClientErr.minimum ||
+       ClientErr(2147483647) != ClientErr.maximum { return 13 }
+    return 0
+}
