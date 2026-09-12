@@ -249,8 +249,9 @@ current normative rules, and Git preserves patch-level detail.
   network and poll validation failures, resolver statuses, and deterministic
   system-facade validation failures while preserving raw OS error passthrough.
 - Added allocation-free `http.get` over neutral caller-owned `Storage` and an
-  owning, automatically resized `Client` with explicit `client_init` and
-  `client_clean` lifecycle operations.
+  owning heap-backed `Client` whose workspace buffers are lazily allocated and
+  automatically resized, with the conventional explicit `client_new` and
+  `client_wipe` lifecycle operations.
 - Added pure-Ace blocking IPv4 `tcp` composition over `net`: listener and
   connection constructors with failure cleanup, blocking accept, exact receive,
   all-byte send, EINTR retry with retained progress, and explicit wrapper close.

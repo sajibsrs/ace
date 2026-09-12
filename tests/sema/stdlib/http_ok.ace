@@ -75,7 +75,7 @@ check(
 }
 
 main(): int {
-    client: http.Client = http.client_init()
-    http.client_clean(mut client)
+    client: http.Client = http.client_new()
+    http.client_wipe(mut client)
     return 0
 }

@@ -189,30 +189,36 @@ pub Storage: struct {
 }
 
 pub Client: struct {
-    storage: Storage,
+    storage: mut []Storage,
 }
 
-pub client_init(): Client {
-    return Client {storage: Storage {
+pub client_new(): Client {
+    storage: mut []Storage = mem.alloc[Storage](1)
+    if storage == null { return Client {storage: null} }
+    storage[0] = Storage {
         addresses: null,
         output: null,
         target: null,
         input: null,
         headers: null,
         body: null,
-    }}
+    }
+    return Client {storage: storage}
 }
 
-/* Releases every allocated slice; null slices are no-ops, so cleaning is safe
- * on a partially constructed or already cleaned client.
+/* Releases every lazily allocated workspace slice, then the workspace itself.
+ * A null client is a no-op, so wiping is safe after allocation failure or an
+ * earlier wipe.
  */
-pub client_clean(mut client: Client) {
-    mem.release[net.Addr4](mut client.storage.addresses)
-    mem.release[u8](mut client.storage.output)
-    mem.release[u8](mut client.storage.target)
-    mem.release[u8](mut client.storage.input)
-    mem.release[Header](mut client.storage.headers)
-    mem.release[u8](mut client.storage.body)
+pub client_wipe(mut client: Client) {
+    if client.storage == null { return }
+    mem.release[net.Addr4](mut client.storage[0].addresses)
+    mem.release[u8](mut client.storage[0].output)
+    mem.release[u8](mut client.storage[0].target)
+    mem.release[u8](mut client.storage[0].input)
+    mem.release[Header](mut client.storage[0].headers)
+    mem.release[u8](mut client.storage[0].body)
+    mem.release[Storage](mut client.storage)
 }
 
 /* Returns the canonical zero URL used by parse failures. */
@@ -1494,6 +1500,7 @@ pub get(url: string, storage: Storage): (Response, Error) {
 }
 
 pub get(url: string, mut client: Client): (Response, Error) {
-    response: Response, err: Error = get_with_storage(url, mut client.storage, true)
+    if client.storage == null { return Response{}, ClientErr.allocation }
+    response: Response, err: Error = get_with_storage(url, mut client.storage[0], true)
     return response, err
 }

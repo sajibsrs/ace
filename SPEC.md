@@ -869,9 +869,12 @@ or making related facade and target APIs differ.
       groups the neutral workspace for one HTTP exchange. `get(url: string,
       storage: Storage): (Response, Error)` and the corresponding `post`
       overload use only caller-owned capacities and never allocate.
-      `Client: struct { storage: Storage }` owns the same workspace;
-      `client_init(): Client` creates canonical-zero storage,
-      `client_clean(mut client: Client)` releases all of its allocations, and
+      `Client: struct { storage: mut []Storage }` is a handle owning one
+      heap-allocated workspace. `client_new(): Client` allocates and
+      canonical-zero initializes that workspace, returning a null handle on
+      allocation failure. `client_wipe(mut client: Client)` releases the
+      workspace's lazily allocated slices, releases the workspace itself, and
+      restores the handle to canonical zero; and
       `get(url: string, mut client: Client): (Response, Error)` plus the
       corresponding `post` overload grow it automatically through `mem`.
       Allocation failure is explicit. Plain `Storage` has no cleanup operation

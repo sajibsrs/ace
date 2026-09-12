@@ -5,6 +5,12 @@ import mem
 import net
 
 main(): int {
+    client: http.Client = http.client_new()
+    if client.storage == null { return 100 }
+    http.client_wipe(mut client)
+    if client.storage != null { return 101 }
+    http.client_wipe(mut client)
+
     if !mem.equal(http.status(u16(200)), "OK") ||
        !mem.equal(http.status(u16(209)), "") ||
        !mem.equal(http.status(u16(226)), "IM Used") ||
