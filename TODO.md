@@ -240,9 +240,15 @@ nonblocking connect completion remain visible without callbacks or allocation.
 - **Additive socket capabilities** [additive] — IPv6, UDP, address queries,
   half-close, and extra TCP options, carved
   in the order demanded by concrete proofs.
-- **TLS secure-transport module** [new] — explicit transport over `net`, with
-  visible configuration, handshake progress, certificate verification, and
-  caller-owned buffers; no hidden allocation or background execution.
+- **TLS client transport** [open] — active in the Decision Queue: carve a
+  backend-neutral, client-only secure byte transport over `tcp`, initially
+  proven with pinned BearSSL while keeping its names and layouts private.
+  Inventory secure OS entropy, opaque foreign-context size/alignment and inline
+  adapters, explicit trust-anchor ingestion, native archive linking, and partial
+  I/O composition before proposing any language or compiler convenience.
+  Server mode, client certificates, automatic system roots, revocation/network
+  fetching, ALPN/HTTP/2, session state, and HTTPS convenience remain later
+  additive work.
 - **HTTP protocol and transport ergonomics** [partly implemented] — the strict IPv4 endpoint
   parser, zero-copy HTTP URL parser, caller-storage request and response
   formatters, and incremental HTTP/1.1 request and response parsers from

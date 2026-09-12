@@ -1051,6 +1051,27 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
   carving its narrow boundary first follows the core-before-concurrency order
   without prematurely designing the larger signal-handler environment.
 
+- **TLS client transport** [open] — carve a backend-neutral, client-only secure
+  byte transport over `tcp`, initially proven with a pinned BearSSL backend.
+  Decide the public configuration, connection, and progress shapes; caller-owned
+  context and record-buffer storage; blocking-first operation and the boundary
+  of later nonblocking progress; SNI and mandatory hostname verification; an
+  explicit initial trust-anchor source; minimum/maximum protocol-version policy;
+  secure OS entropy; alert, verification, transport, EOF, and orderly-close
+  results; and whether the TLS connection closes its underlying `tcp.Conn`.
+  BearSSL names, layouts, cipher selectors, and error constants stay private to
+  the proof, and its TLS 1.2 ceiling must remain visible in the selected policy
+  rather than being presented as general modern-version support. First determine
+  whether existing pointers, pointer-to-slice construction, C externs, `mem`,
+  `tcp`, and `poll` express the boundary; any proposed language or compiler
+  convenience returns to the owner as a separate decision. The initial slice
+  excludes servers, client certificates, session caches, renegotiation, ALPN,
+  HTTP/2, automatic system-root discovery, revocation/network fetching, and
+  `https` convenience. Rationale: the public transport contract should express
+  TLS rather than one foreign implementation, while one narrow client proof
+  establishes the required storage, verification, entropy, and failure model
+  before HTTP composition or broader TLS policy is added.
+
 ### Trigger-gated
 
 - The canonical source formatter is deferred until language implementation work
