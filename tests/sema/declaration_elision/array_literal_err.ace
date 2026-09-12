@@ -1,6 +1,0 @@
-/* err: an array literal needs declaration context and has no independent type. */
-
-main(): int {
-    values := [1, 2, 3]
-    return 0
-}

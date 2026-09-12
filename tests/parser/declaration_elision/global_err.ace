@@ -1,7 +1,0 @@
-/* err: := is local-only; a global must state its type. */
-
-answer := 42
-
-main(): int {
-    return 0
-}

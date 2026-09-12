@@ -72,7 +72,7 @@ Human: struct {
 }
 
 main(): int {
-    inferred := 4
+    explicit: int = 4
     number: int, message: string = 1, "old"
     written: int, message = 2, "new"
     number, message = written, "newer"
@@ -151,5 +151,5 @@ main(): int {
     return count + int(raw) + read_x(pointer) + middle[0] + middle[1] +
         operation(1, 2) + int(state) + box.value + value.get() +
         partial.x + partial.y + int(len(view)) + int(len(tail)) +
-        int(plain[1]) + int(len(writable_view)) + inferred - 7
+        int(plain[1]) + int(len(writable_view)) + explicit - 7
 }

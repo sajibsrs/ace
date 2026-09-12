@@ -487,7 +487,7 @@
       "patterns": [
         {
           "name": "keyword.operator.assignment.ace",
-          "match": ":=|<<=|>>=|[+\\-*/%&|^]=|(?<![=!<>])=(?!=)"
+          "match": "<<=|>>=|[+\\-*/%&|^]=|(?<![=!<>])=(?!=)"
         },
         {
           "name": "keyword.operator.comparison.ace",

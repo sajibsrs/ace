@@ -70,7 +70,6 @@ binding       := ident ":" type
 eq_name       := ident [":" type]                       // typed declares; bare reassigns — Note #28
 var_decl      := binding ["=" expr]                       // global or local typed binding
 static_map_decl := ident ":" static_map_type "=" static_map_lit // module-level only
-elided_decl   := ident ":=" expr                          // local only; one binding, independently typed RHS
 multi_decl    := eq_name ("," eq_name)+ "=" expr_list      // local per-name declare/assign; one line
 const_decl    := ident ":" "const" type "=" expr
 
@@ -128,7 +127,7 @@ extern_param  := ident ":" type
 ## 3. Statements
 
 ```ebnf
-stmt          := var_decl | elided_decl | multi_decl | const_decl | assignment | expr_stmt
+stmt          := var_decl | multi_decl | const_decl | assignment | expr_stmt
                | if_stmt | for_stmt | switch_stmt | return_stmt
                | break_stmt | continue_stmt | fallthrough_stmt | defer_stmt
                | asm_stmt | labeled_block | static_assert_stmt
@@ -149,7 +148,7 @@ for_head      := loop_binders "in" ["mut"] iterable    // sequence/range head
                | [for_init] ";" [expr] ";" [for_post]  // three-clause head
                | expr                                 // condition-only head
                |                                      // infinite head
-for_init      := var_decl | elided_decl | assignment | expr_stmt
+for_init      := var_decl | assignment | expr_stmt
 for_post      := assignment | expr_stmt
 loop_binders  := loop_binder | loop_binder "," loop_binder
 loop_binder   := ident ":" type
@@ -255,10 +254,9 @@ choices that are not evident from the productions.
 1. Newlines terminate statements using lexer insertion after tokens that can end
    an expression. Incomplete expressions suppress insertion; `for`-head
    semicolons are the only semicolons.
-2. Statement starts use bounded lookahead: `ident :` begins a declaration or
-   label, `ident :=` an elided local declaration, and `ident =`/`ident ,`
-   assignment. Function declarations are distinguished from calls by their
-   trailing return clause or body.
+2. Statement starts use bounded lookahead: `ident :` begins a label or typed
+   declaration, and `ident =`/`ident ,` begins assignment. Function declarations
+   are distinguished from calls by their trailing return clause or body.
 3. Bare comma lists are single-line. Delimited lists may span lines and accept a
    trailing comma; signing and selective-import parentheses are the multiline
    form only.

@@ -1,6 +1,0 @@
-/* err: null has no independent concrete type. */
-
-main(): int {
-    value := null
-    return 0
-}

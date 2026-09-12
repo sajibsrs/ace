@@ -1,28 +1,24 @@
 # Types and declarations
 
 Ace declarations use `name: type` for globals, locals, fields, parameters, and
-destructuring bindings. Type inference is not implemented. One local-only
-convenience may elide a single binding's type when its initializer already has
-an independent type:
+destructuring bindings. Type inference and declaration elision are not
+implemented:
 
 ```ace
 limit: const int = 1024
 
 main(): int {
     count: int = 13
-    next := count + 1
+    next: int = count + 1
     count = 42
     return count + next
 }
 ```
 
-`name := expression` always declares a new local; it is never assignment. The
-initializer is typed before the new name exists and receives no type context
-from the declaration. Standalone integer, float, and character literals use
-their existing defaults (`int`, `f64`, and `u8`). Values such as `null`, bare
-aggregate literals, and multi-return calls need an explicit typed declaration.
-The form is unavailable for globals and multi-bindings. This is declaration
-type elision from an independently typed expression, not contextual inference.
+The written type makes the programmer's expectation visible and lets the
+compiler check it independently against the initializer. The same rule applies
+to literals, null values, aggregates, and functions with one or several return
+values.
 
 Locals are mutable by default. `const` is an explicit type modifier and requires
 an initializer. Assignment copies the value. A bare local declaration reserves
@@ -68,7 +64,7 @@ a redeclaration error, while a bare missing name is an undeclared-name error.
 Names are checked against the scope before the statement, so one item cannot
 declare a name for another item to reuse. Every form requires equal numbers of
 names and values. New bindings remain uninitialized while the initializer is
-evaluated. `:=` remains a single-name declaration and never accepts a type.
+evaluated.
 
 This also provides a direct swap without a user-declared temporary:
 

@@ -12,7 +12,7 @@ must be corrected.
 
 - [Primitives](primitives.md) — implemented scalar types, literals, casts,
   platform words, and strings.
-- [Types and declarations](types.md) — typed declarations, local `:=` elision,
+- [Types and declarations](types.md) — explicit typed declarations,
   aliases, distinct types, pointers, zero values, definite initialization,
   arrays, slices, tuples, structs, enums, tagged unions, contracts, and generic
   types.

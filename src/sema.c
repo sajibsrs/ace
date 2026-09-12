@@ -1853,10 +1853,10 @@ static int accepts_null(SType* t) {
                   (t->prim == P_STRING || t->prim == P_TYPEID)));
 }
 
-/* Give a standalone expression the same fixed defaults used by `:=`, without
- * borrowing type information from its destination. Tuple construction uses
- * this recursively so its member types are determined before compatibility
- * with the declared tuple is checked. */
+/* Give a standalone expression fixed literal defaults without borrowing type
+ * information from its destination. Tuple construction uses this recursively
+ * so its member types are determined before compatibility with the declared
+ * tuple is checked. */
 static SType* materialize_expr_defaults(Ck* k, Node* e) {
     SType* t = expr_type(k, e);
     if (t == T_UT_INT) {
@@ -4465,39 +4465,6 @@ static void check_stmt(Ck* k, Node* s) {
                                i + 1, type_name(rt->fields[i].t),
                                (int)s->kids[i]->len, s->kids[i]->str,
                                type_name(wants[i]));
-            }
-            return;
-        }
-        if (s->flags & F_ELIDED) {
-            Node* binder = s->kids[0];
-            Node* init = s->b;
-            SType* t = expr_type(k, init); // initializer cannot see this binding
-            if (t == T_UT_INT) {
-                SType* def = init->kind == N_CHAR ? st_prim(P_U8) : st_prim(P_I64);
-                coerce(k, init, def);
-                t = def;
-            } else if (t == T_UT_FLOAT) {
-                SType* def = st_prim(P_F64);
-                coerce(k, init, def);
-                t = def;
-            } else if (t == T_UT_NULL) {
-                ck_err(k, init,
-                       "':=' initializer null has no independent type — use an explicit declaration");
-                t = T_ERR;
-            } else if (t->kind == SK_TUPLE) {
-                ck_err(k, init,
-                       "':=' binds one value, but the initializer produces %d values — use a typed multi-declaration",
-                       t->nfields);
-                t = T_ERR;
-            }
-            Sym* v = declare_val(k, binder, SYM_VAR, binder->str, binder->len);
-            if (v) {
-                v->type = t;
-                v->decl = binder;
-                binder->sym = v;
-                if (t->kind == SK_PRIM && t->prim == P_STRING &&
-                    init->kind == N_STR)
-                    v->is_literal_backed = 1;
             }
             return;
         }

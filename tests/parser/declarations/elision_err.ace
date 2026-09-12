@@ -1,0 +1,6 @@
+/* err: every storage declaration must state its type. */
+
+main(): int {
+    value := 42
+    return value
+}

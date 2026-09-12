@@ -187,8 +187,8 @@ foundations.
 
 ## 4. Practical standard-library capabilities
 
-- **Dynamic array and hash-map modules** [new] — composed from `mem` and
-  explicit generics.
+- **Dynamic array and runtime hash-map modules** [new] — composed from `mem`
+  and explicit generics; separate from the compiler-built static lookup map.
 - **Fixed-width integer formatting** [additive] — width, zero padding, and base
   prefixes for `fmt.printf`, especially fixed-width `%b`/`%o`/`%x` register
   displays; carve consistently across integer conversions from a hardware
@@ -212,7 +212,11 @@ Each item requires an owner decision and should wait for a motivating use case.
   to and from `f32`.
 
 - **Methods on enums and unions** [unspecified].
-- **Associated functions** (`Vec[T].new()`) [new].
+- **Deferred cleanup-result handling** [unspecified] — `defer` currently
+  executes its call at function exit and discards every returned value,
+  including `Error`; no exception or propagation occurs. Revisit only when a
+  concrete cleanup path must affect the enclosing function's result without an
+  explicit pre-return cleanup call.
 - **`switch` on strings and range cases** [unspecified].
 - **Operator overloading / custom indexing** [unspecified] — likely conflicts
   with explicit dispatch; free functions may suffice.

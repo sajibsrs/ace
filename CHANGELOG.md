@@ -26,6 +26,8 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Core language
 
+- Removed local `:=` declaration elision so every storage binding states its
+  type and initializer checking always has an explicit declared expectation.
 - Implemented predeclared module-level `StaticMap[K]V` constants with
   compile-time entry checking and duplicate detection, read-only key/value and
   deterministic perfect-hash-plan emission, exact candidate confirmation, and
@@ -46,8 +48,8 @@ current normative rules, and Git preserves patch-level detail.
 - Added `float` as a predeclared transparent alias of `f64`; both spellings
   share type and overload identity, representation, conversions, and ABI
   behavior.
-- Implemented explicit `name: type` declarations, local `:=` type elision,
-  per-name declaration/assignment in multi-name `=`, constants, aggregates,
+- Implemented explicit `name: type` declarations, per-name
+  declaration/assignment in multi-name `=`, constants, aggregates,
   distinct types, aliases, enums, tuples, functions, overloads, and simultaneous
   multi-return assignment.
 - Implemented value-copy assignment and by-reference parameters. `mut` controls

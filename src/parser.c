@@ -7,8 +7,7 @@
 //               selective (F_SELECT): kids = imported N_IDENT names;
 //               b = std module ident or a = local N_STR path
 //   N_VAR       kids = binders (N_PARAM: typed declaration, N_IDENT: reassignment
-//               under mixed `=`); b = init (or N_TUPLE_E); F_CONST, F_MIXED,
-//               or F_ELIDED for local `name := expr` (binder type is NULL)
+//               under mixed `=`); b = init (or N_TUPLE_E); F_CONST/F_MIXED
 //   N_FUNC      str = name; kids = params; a = ret; b = body; c = N_TPARAMS;
 //               d = owner type for methods; F_PUB/F_EXPO/F_METHOD/F_MUT;
 //               F_SPECIALIZED/F_INTRINSIC mark bodyless declarations
@@ -964,7 +963,6 @@ static Node* expr_list(P* p, int ctx) {
 static Node* parse_block(P* p);
 static Node* parse_stmt(P* p);
 static Node* parse_decl_stmt(P* p, Token* first);
-static Node* parse_elided_decl(P* p, Token* first, int ctx);
 static Node* parse_expr_stmt(P* p, int ctx);
 static Node* parse_for_head(P* p, Node* n);
 
@@ -1090,11 +1088,7 @@ static Node* parse_for_head(P* p, Node* n) {
         return n;
     }
     n->flags |= F_FORGEN;
-    if (at(p, T_IDENT) && kth(p, 1) == T_DECLARE) { // elided declaration init
-        Token* name = tk(p);
-        p->i += 2;
-        n->a = parse_elided_decl(p, name, CTX_NOSLIT);
-    } else if (at(p, T_IDENT) && kth(p, 1) == T_COLON) { // declaration init
+    if (at(p, T_IDENT) && kth(p, 1) == T_COLON) { // declaration init
         Token* name = tk(p);
         p->i++; // ident; ':' consumed inside
         n->a = parse_decl_stmt(p, name);
@@ -1368,8 +1362,6 @@ static Node* parse_decl_stmt(P* p, Token* first) {
     }
     if (is_const) n->flags |= F_CONST;
     set_kids(n, &binders);
-    if (at(p, T_DECLARE))
-        perr(p, "type annotations are not allowed under ':='");
     if (ate(p, T_ASSIGN)) {
         if (n->nkids > 1) n->flags |= F_MIXED;
         n->b = n->nkids == 1 && spells_staticmap(n->kids[0]->a) && at(p, T_LBRACE)
@@ -1377,21 +1369,6 @@ static Node* parse_decl_stmt(P* p, Token* first) {
     } else if (n->nkids > 1 || (n->flags & F_MIXED)) {
         perr(p, "destructuring declaration requires an initializer");
     }
-    return n;
-}
-
-// name := expr — one local binding whose type is supplied only after sema has
-// independently typed the initializer. The caller has consumed name and :=.
-static Node* parse_elided_decl(P* p, Token* first, int ctx) {
-    Node* n = nd_tok(p, N_VAR, first);
-    n->flags |= F_ELIDED;
-    Node* binder = nd_tok(p, N_PARAM, first);
-    binder->str = first->str;
-    binder->len = first->len;
-    NV binders = {0};
-    nv_push(p, &binders, binder);
-    set_kids(n, &binders);
-    n->b = expr(p, ctx);
     return n;
 }
 
@@ -1451,11 +1428,6 @@ static Node* parse_stmt(P* p) {
         return n;
     }
     case T_IDENT:
-        if (kth(p, 1) == T_DECLARE) {
-            Token* name = tk(p);
-            p->i += 2;
-            return parse_elided_decl(p, name, 0);
-        }
         if (kth(p, 1) == T_COLON) {
             if (kth(p, 2) == T_LBRACE) { // labeled block
                 Node* n = nd(p, N_LABEL);
@@ -1515,8 +1487,6 @@ static Node* parse_expr_stmt(P* p, int ctx) {
             for (int i = 0; i < targets.n; i++)
                 if (targets.v[i]->kind != N_IDENT && targets.v[i]->kind != N_PARAM)
                     perr(p, "mixed '=' left side accepts names only");
-            if (at(p, T_DECLARE))
-                perr(p, "type annotations are not allowed under ':='");
             a->kind = N_VAR;
         }
         Token* op = expect(p, T_ASSIGN, "'=' in assignment");
@@ -2279,9 +2249,6 @@ static Node* parse_top(P* p) {
     if (mut) perr(p, "'mut' before a top-level declaration requires a method owner");
     if (at(p, T_LPAREN)) return parse_func_rest(p, name, tp, pub, expo);
     if (at(p, T_COLON)) return parse_colon_decl(p, name, tp, pub);
-    if (at(p, T_DECLARE))
-        perr(p, "':=' is local-only; global '%.*s' must state its type",
-             (int)name->len, name->str);
     perr(p, "expected '(' or ':' after top-level name '%.*s'", (int)name->len, name->str);
     return NULL;
 }
@@ -2361,7 +2328,6 @@ static void pflags(Node* x) {
     if (x->flags & F_EMBED) printf(" embed");
     if (x->flags & F_SPECIALIZED) printf(" specialized");
     if (x->flags & F_INTRINSIC) printf(" intrinsic");
-    if (x->flags & F_ELIDED) printf(" elided");
     if (x->flags & F_PACKED) printf(" packed");
     if (x->flags & F_VOLATILE) printf(" volatile");
 }

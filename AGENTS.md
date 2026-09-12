@@ -53,8 +53,8 @@ Do not propose or assume away these decisions; follow `SPEC.md` for exact rules.
   values, GC, borrow checking, ownership, or hidden allocation.
 - Errors are values with explicit branches; no exceptions or propagation
   operator. Panic aborts.
-- Types are explicit; generic instantiation is explicit; no comptime or trait
-  solving. Local `:=` is narrowly specified type elision.
+- Types and generic instantiations are explicit; no declaration elision,
+  comptime, or trait solving.
 - Assignment copies. Parameters are by reference, read-only unless `mut`; the
   signature and call site show mutation. `noalias` states non-overlap.
 - Every type has an all-bits-zero representation. Pointer/handle zero is `null`;

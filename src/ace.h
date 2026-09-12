@@ -24,8 +24,8 @@
     X(NULL, "null") X(TRUE, "true") X(FALSE, "false")                          \
     /* literals */                                                             \
     X(INT, "int") X(FLOAT, "float") X(STR, "string") X(CHARLIT, "char")        \
-    /* declaration, assignment, and compound-assignment operators */           \
-    X(ASSIGN, "=") X(DECLARE, ":=")                                           \
+    /* assignment and compound-assignment operators */                        \
+    X(ASSIGN, "=")                                                            \
     X(ADDEQ, "+=") X(SUBEQ, "-=") X(MULEQ, "*=") X(DIVEQ, "/=")                \
     X(MODEQ, "%=") X(ANDEQ, "&=") X(OREQ, "|=") X(XOREQ, "^=")                 \
     X(SHLEQ, "<<=") X(SHREQ, ">>=")                                            \
@@ -138,9 +138,9 @@ const char* node_kind_name(NKind k);
 enum {
     F_PUB = 1, F_EXPO = 2, F_MUT = 4, F_NOALIAS = 8, F_CONST = 16,
     F_ELSE = 32, F_VARARGS = 64, F_METHOD = 128, F_SELECT = 256,
-    F_EMBED = 512, F_SPECIALIZED = 1024, F_FORGEN = 2048, F_ELIDED = 4096,
-    F_MIXED = 8192, F_BOUNDS_PROVEN = 16384, F_INTRINSIC = 32768,
-    F_PACKED = 65536, F_VOLATILE = 131072,
+    F_EMBED = 512, F_SPECIALIZED = 1024, F_FORGEN = 2048, F_MIXED = 4096,
+    F_BOUNDS_PROVEN = 8192, F_INTRINSIC = 16384, F_PACKED = 32768,
+    F_VOLATILE = 65536,
 };
 
 // Compiler-backed standard-module functions. These markers live only on the

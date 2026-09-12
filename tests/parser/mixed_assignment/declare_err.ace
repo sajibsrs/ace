@@ -3,6 +3,6 @@ pair(): (int, Error) {
 }
 
 main(): int {
-    n: int, err := pair()
+    n: int, err := pair() // declaration elision is not part of the grammar
     return n
 }
