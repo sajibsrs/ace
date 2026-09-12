@@ -1,6 +1,11 @@
 import http
 import net
 
+check_client(storage: http.Storage, mut client: http.Client) {
+    response: http.Response, err: Error = http.get("http://example.com/", storage)
+    response, err = http.get("http://example.com/", mut client)
+}
+
 check(
     mut state: http.ResponseParser,
     mut request_parser: http.RequestParser,
@@ -70,5 +75,7 @@ check(
 }
 
 main(): int {
+    client: http.Client = http.client_init()
+    http.client_clean(mut client)
     return 0
 }

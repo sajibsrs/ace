@@ -823,19 +823,22 @@ or making related facade and target APIs differ.
       retain neither socket nor buffer. `no_body` makes HEAD-style response
       semantics explicit. Connection creation, DNS, retry, TLS, reuse, and
       keep-alive policy remain with the client caller.
-    - One-shot client ergonomics are the exact operations `get(url: string,
-      storage: ClientStorage): (Response, Error)` and `post(url: string,
-      content_type: string, body: []u8, storage: ClientStorage): (Response,
-      Error)`. Its exact shape is `ClientStorage: struct { addresses: mut
-      []net.Addr4, request: mut []u8, response: mut []u8, headers: mut
-      []Header, body: mut []u8 }`: IPv4 address candidates, serialized request
-      bytes, received response bytes, parsed response headers, and decoded
-      response-body bytes are all caller-owned mutable slices.
-      Every capacity is therefore visible and caller-selected; neither
-      operation allocates, retains storage, or uses a fixed internal limit.
-      The returned response's header and body views borrow `storage` and remain
-      valid only while those bytes remain unchanged. Both operations parse the
-      absolute plaintext URL, resolve its host into the supplied address
+    - One-shot client ergonomics have allocation-free and owning overloads.
+      `Storage: struct { addresses: mut []net.Addr4, output: mut []u8, target:
+      mut []u8, input: mut []u8, headers: mut []Header, body: mut []u8 }`
+      groups the neutral workspace for one HTTP exchange. `get(url: string,
+      storage: Storage): (Response, Error)` and the corresponding `post`
+      overload use only caller-owned capacities and never allocate.
+      `Client: struct { storage: Storage }` owns the same workspace;
+      `client_init(): Client` creates canonical-zero storage,
+      `client_clean(mut client: Client)` releases all of its allocations, and
+      `get(url: string, mut client: Client): (Response, Error)` plus the
+      corresponding `post` overload grow it automatically through `mem`.
+      Allocation failure is explicit. Plain `Storage` has no cleanup operation
+      because its slices may refer to stack or external storage. Returned views
+      borrow the supplied storage; views returned through a `Client` remain
+      valid only until its next mutating operation or cleanup. Both operations
+      parse the absolute plaintext URL, resolve its host into the supplied address
       storage, try resolved addresses in order with a fresh blocking TCP
       connection, perform exactly one request and response, and close the
       connection before returning. `get` emits GET with no body. `post` emits
@@ -846,10 +849,11 @@ or making related facade and target APIs differ.
       compression, proxy, TLS, or user-header policy. Request formatting,
       response parsing, DNS, TCP, close, and capacity failures preserve the
       existing error domains, with an unsuccessful address sequence returning
-      the final connection error. Rationale: a single storage argument keeps
-      the common call site compact without concealing allocation, capacity,
-      lifetime, network attempts, or ownership; the narrow fixed methods avoid
-      introducing a premature options or client-policy object.
+      the final connection error. Rationale: `Storage` preserves exact capacity
+      control for allocation-free and server composition, while `Client` makes
+      ownership, resizing, lifetime, and cleanup explicit at a compact call
+      site. The narrow fixed methods avoid introducing a premature options or
+      client-policy object.
     - Parser failures mapped through those conveniences use the shared public
       `SyntaxErr`, `FramingErr`, and `CapacityErr` domains. Syntax and framing
       variants map to their matching domain, and premature EOF is framing

@@ -228,13 +228,40 @@ pub ResponseResult: union {
     framing,
 }
 
-pub ClientStorage: struct {
+pub Storage: struct {
     addresses: mut []net.Addr4,
     output: mut []u8,
     target: mut []u8,
     input: mut []u8,
     headers: mut []Header,
     body: mut []u8,
+}
+
+pub Client: struct {
+    storage: Storage,
+}
+
+pub client_init(): Client {
+    return Client {storage: Storage {
+        addresses: null,
+        output: null,
+        target: null,
+        input: null,
+        headers: null,
+        body: null,
+    }}
+}
+
+/* Releases every allocated slice; null slices are no-ops, so cleaning is safe
+ * on a partially constructed or already cleaned client.
+ */
+pub client_clean(mut client: Client) {
+    mem.release[net.Addr4](mut client.storage.addresses)
+    mem.release[u8](mut client.storage.output)
+    mem.release[u8](mut client.storage.target)
+    mem.release[u8](mut client.storage.input)
+    mem.release[Header](mut client.storage.headers)
+    mem.release[u8](mut client.storage.body)
 }
 
 /* Returns the canonical zero URL used by parse failures. */
@@ -1349,9 +1376,38 @@ pub mut ResponseParser.parse(
     }
 }
 
-pub get(url: string, mut storage: ClientStorage): (Response, Error) {
+/* Adjusts `slice` to at least `needed` elements, doubling its length when that
+ * is larger. A null slice allocates. On allocation failure or count overflow
+ * the caller's slice is returned unchanged with false; the original stays
+ * live, so check the flag before replacing the caller's slice.
+ */
+mem_adjust[T](slice: mut []T, needed: usize): (mut []T, bool) {
+    if len(slice) >= needed { return slice, true }
+    capacity: usize = len(slice) * 2
+    if capacity < len(slice) { return slice, false }
+    if capacity < needed { capacity = needed }
+    if capacity == 0 { capacity = 1 }
+    if slice == null {
+        fresh: mut []T = mem.alloc[T](capacity)
+        if fresh == null {
+            return slice, false
+        }
+        return fresh, true
+    }
+    bigger: mut []T = mem.realloc[T](slice, capacity)
+    if bigger == null { return slice, false }
+    return bigger, true
+}
+
+get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Error) {
     parsed: Url, url_err: Error = parse_url(url)
     if url_err != null { return Response{}, url_err }
+
+    if resize {
+        mem_addresses: mut []net.Addr4, addr_ok: bool = mem_adjust[net.Addr4](storage.addresses, 1)
+        if !addr_ok { return Response{}, ClientErr(4) }
+        storage.addresses = mem_addresses
+    }
 
     count: usize, resolve_err: Error = net.resolve4(parsed.host, parsed.port, mut storage.addresses[..])
     if resolve_err != null { return Response{}, resolve_err }
@@ -1375,7 +1431,16 @@ pub get(url: string, mut storage: ClientStorage): (Response, Error) {
     }
     if !is_connected { return Response{}, conn_err }
 
+    /* The request target is known exactly: size to fit before writing. */
     target_parts: [2]string = [parsed.path, parsed.query]
+    if resize {
+        mem_target: mut []u8, target_ok: bool = mem_adjust[u8](storage.target, len(parsed.path) + len(parsed.query))
+        if !target_ok {
+            tcp.close(mut conn)
+            return Response{}, ClientErr(4)
+        }
+        storage.target = mem_target
+    }
     target_count: usize, fit: bool = str.concat(target_parts[..], mut storage.target[..])
     if !fit {
         tcp.close(mut conn)
@@ -1393,6 +1458,15 @@ pub get(url: string, mut storage: ClientStorage): (Response, Error) {
     }
 
     output_count: usize, format_err: Error = request.format(mut storage.output[..])
+    for resize && format_err != null && format_err.domain == typeid(FormatErr) && format_err.code == 1 {
+        mem_output: mut []u8, output_ok: bool = mem_adjust[u8](storage.output, len(storage.output) + 1)
+        if !output_ok {
+            tcp.close(mut conn)
+            return Response{}, ClientErr(4)
+        }
+        storage.output = mem_output
+        output_count, format_err = request.format(mut storage.output[..])
+    }
     if format_err != null {
         tcp.close(mut conn)
         return Response{}, format_err
@@ -1409,21 +1483,48 @@ pub get(url: string, mut storage: ClientStorage): (Response, Error) {
         phase: ResponsePhase.status,
         framing: ResponseFraming.undecided,
     }
+    parse_pending: bool = false
+    eof: bool = false
 
     for {
-        received: int
-        received, recv_err: Error = net.receive(conn.socket, mut storage.input[occupied..])
-        if recv_err != null {
-            tcp.close(mut conn)
-            return Response{}, recv_err
+        if !parse_pending {
+            if occupied == len(storage.input) {
+                if !resize {
+                    tcp.close(mut conn)
+                    return Response{}, ClientErr(3)
+                }
+                mem_input: mut []u8, input_ok: bool = mem_adjust[u8](storage.input, len(storage.input) + 1)
+                if !input_ok {
+                    tcp.close(mut conn)
+                    return Response{}, ClientErr(4)
+                }
+                storage.input = mem_input
+
+                /* Header views point into input. Reparse the retained bytes
+                 * after a moving reallocation before exposing any views.
+                 */
+                parser = ResponseParser {
+                    phase: ResponsePhase.status,
+                    framing: ResponseFraming.undecided,
+                }
+            }
+
+            received: int
+            received, recv_err: Error = net.receive(conn.socket, mut storage.input[occupied..])
+            if recv_err != null {
+                tcp.close(mut conn)
+                return Response{}, recv_err
+            }
+            occupied += usize(received)
+            eof = received == 0
         }
-        occupied += usize(received)
+        parse_pending = false
 
         result: ResponseResult = mut parser.parse(
             storage.input[..occupied],
             mut storage.headers[..],
             mut storage.body[..],
-            received == 0,
+            eof,
             false,
         )
 
@@ -1433,10 +1534,49 @@ pub get(url: string, mut storage: ClientStorage): (Response, Error) {
                 return response, null
             }
             ResponseResult.progress(value: ResponseProgress) {}
+            ResponseResult.capacity(kind: ResponseCapacity) {
+                if !resize {
+                    tcp.close(mut conn)
+                    return Response{}, ClientErr(3)
+                }
+                if kind == ResponseCapacity.headers {
+                    mem_headers: mut []Header, headers_ok: bool = mem_adjust[Header](storage.headers, len(storage.headers) + 1)
+                    if !headers_ok {
+                        tcp.close(mut conn)
+                        return Response{}, ClientErr(4)
+                    }
+                    storage.headers = mem_headers
+                } else {
+                    /* Body size is exact when the response states its length;
+                     * otherwise adjust by the pending bytes, doubled. */
+                    needed: usize = parser.body_count + (occupied - parser.input_offset)
+                    if parser.framing == ResponseFraming.content_length {
+                        needed = parser.content_length
+                    }
+                    mem_body: mut []u8, body_ok: bool = mem_adjust[u8](storage.body, needed)
+                    if !body_ok {
+                        tcp.close(mut conn)
+                        return Response{}, ClientErr(4)
+                    }
+                    storage.body = mem_body
+                }
+                parse_pending = true
+            }
             else {
                 tcp.close(mut conn)
                 return Response{}, ClientErr(3)
             }
         }
     }
+}
+
+pub get(url: string, storage: Storage): (Response, Error) {
+    workspace: Storage = storage
+    response: Response, err: Error = get_with_storage(url, mut workspace, false)
+    return response, err
+}
+
+pub get(url: string, mut client: Client): (Response, Error) {
+    response: Response, err: Error = get_with_storage(url, mut client.storage, true)
+    return response, err
 }

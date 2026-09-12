@@ -231,6 +231,9 @@ current normative rules, and Git preserves patch-level detail.
   reason while preserving explicit and unknown-status empty phrases.
 - Renamed the HTTP formatting error domain to `FormatErr`, matching the public
   `Request.format` and `Response.format` operations.
+- Added allocation-free `http.get` over neutral caller-owned `Storage` and an
+  owning, automatically resized `Client` with explicit `client_init` and
+  `client_clean` lifecycle operations.
 - Added pure-Ace blocking IPv4 `tcp` composition over `net`: listener and
   connection constructors with failure cleanup, blocking accept, exact receive,
   all-byte send, EINTR retry with retained progress, and explicit wrapper close.
