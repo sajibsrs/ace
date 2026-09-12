@@ -807,14 +807,14 @@ or making related facade and target APIs differ.
       framing is an error. Informational `1xx` responses are consumed before the
       one final response. Header names compare case-insensitively as ASCII;
       field values are otherwise preserved.
-    - The nine standard request methods and the complete selected RFC 9110 plus
-      WebDAV/misc status catalogue are public named constants, spelled
-      `method_get`, `method_post`, ... as `string` and `status_ok`,
-      `status_not_found`, ... as `u16`. They are conveniences, not closed
-      types: request parsing and formatting continue to accept any valid method
-      token and response handling continues to accept every status in
-      `100...999`. The static reason lookup is initially an internal formatting
-      detail rather than another public operation.
+    - The nine standard request methods are public `string` constants spelled
+      `method_get`, `method_post`, and so on. Statuses remain plain `u16`
+      numbers: response handling accepts every status in `100...999`, without
+      duplicating the protocol catalogue as public numeric constants.
+      `status(code: u16): string` returns the static conventional
+      reason phrase for a known status code and `""` for an unknown code. The
+      lookup is allocation-free and does not classify a response as an error;
+      `Response.reason` remains the phrase actually supplied on the wire.
     - Blocking TCP socket convenience is the exact overload set
       `request(socket: net.Socket, request: Request, scratch: mut []u8): Error`,
       `request(socket: net.Socket, input: mut []u8, headers: mut []Header, body:

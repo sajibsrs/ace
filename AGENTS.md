@@ -113,5 +113,9 @@ Do not propose or assume away these decisions; follow `SPEC.md` for exact rules.
   checks diagnostics, emit and modules compile/link/run, stdlib-module tests use
   a synthetic std tree, emit-errors fail during `-c`, and driver tests exercise
   external linking.
+- Isolated or sandboxed environments may deny network and socket operations,
+  including loopback traffic. In that environment the `net`, `poll`, `tcp`, and
+  HTTP network fixtures can fail for environmental reasons; identify that
+  restriction before spending time diagnosing those failures as regressions.
 - Run the smallest relevant checks first. Follow the documentation-only rule
   above when no executable behavior changed.

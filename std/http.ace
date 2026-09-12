@@ -13,9 +13,27 @@ pub Url: struct {
     port: u16,
 }
 
-pub UrlErr: error
-pub FormatErr: error
-pub ClientErr: error
+pub UrlErr: error {
+    1: invalid = "invalid or unsupported HTTP URL"
+}
+
+pub FormatErr: error {
+    1: capacity = "output storage is too small"
+    2: method = "invalid request method"
+    3: target = "invalid request target"
+    4: header_name = "invalid header name"
+    5: header_value = "invalid header value"
+    6: version = "invalid HTTP version"
+    7: status = "invalid HTTP status"
+    8: reason = "invalid HTTP reason phrase"
+}
+
+pub ClientErr: error {
+    1: address = "no usable address was resolved"
+    2: target_capacity = "request-target storage is too small"
+    3: response = "response parsing or storage failed"
+    4: allocation = "memory allocation failed"
+}
 
 pub method_connect: const string = "CONNECT"
 pub method_delete: const string = "DELETE"
@@ -26,73 +44,6 @@ pub method_patch: const string = "PATCH"
 pub method_post: const string = "POST"
 pub method_put: const string = "PUT"
 pub method_trace: const string = "TRACE"
-
-pub status_continue: const u16 = 100
-pub status_switching_protocols: const u16 = 101
-pub status_processing: const u16 = 102
-pub status_early_hints: const u16 = 103
-
-pub status_ok: const u16 = 200
-pub status_created: const u16 = 201
-pub status_accepted: const u16 = 202
-pub status_non_authoritative_information: const u16 = 203
-pub status_no_content: const u16 = 204
-pub status_reset_content: const u16 = 205
-pub status_partial_content: const u16 = 206
-pub status_multi_status: const u16 = 207
-pub status_already_reported: const u16 = 208
-pub status_im_used: const u16 = 226
-
-pub status_multiple_choices: const u16 = 300
-pub status_moved_permanently: const u16 = 301
-pub status_found: const u16 = 302
-pub status_see_other: const u16 = 303
-pub status_not_modified: const u16 = 304
-pub status_use_proxy: const u16 = 305
-pub status_temporary_redirect: const u16 = 307
-pub status_permanent_redirect: const u16 = 308
-
-pub status_bad_request: const u16 = 400
-pub status_unauthorized: const u16 = 401
-pub status_payment_required: const u16 = 402
-pub status_forbidden: const u16 = 403
-pub status_not_found: const u16 = 404
-pub status_method_not_allowed: const u16 = 405
-pub status_not_acceptable: const u16 = 406
-pub status_proxy_authentication_required: const u16 = 407
-pub status_request_timeout: const u16 = 408
-pub status_conflict: const u16 = 409
-pub status_gone: const u16 = 410
-pub status_length_required: const u16 = 411
-pub status_precondition_failed: const u16 = 412
-pub status_content_too_large: const u16 = 413
-pub status_uri_too_long: const u16 = 414
-pub status_unsupported_media_type: const u16 = 415
-pub status_range_not_satisfiable: const u16 = 416
-pub status_expectation_failed: const u16 = 417
-pub status_im_a_teapot: const u16 = 418
-pub status_misdirected_request: const u16 = 421
-pub status_unprocessable_content: const u16 = 422
-pub status_locked: const u16 = 423
-pub status_failed_dependency: const u16 = 424
-pub status_too_early: const u16 = 425
-pub status_upgrade_required: const u16 = 426
-pub status_precondition_required: const u16 = 428
-pub status_too_many_requests: const u16 = 429
-pub status_request_header_fields_too_large: const u16 = 431
-pub status_unavailable_for_legal_reasons: const u16 = 451
-
-pub status_internal_server_error: const u16 = 500
-pub status_not_implemented: const u16 = 501
-pub status_bad_gateway: const u16 = 502
-pub status_service_unavailable: const u16 = 503
-pub status_gateway_timeout: const u16 = 504
-pub status_http_version_not_supported: const u16 = 505
-pub status_variant_also_negotiates: const u16 = 506
-pub status_insufficient_storage: const u16 = 507
-pub status_loop_detected: const u16 = 508
-pub status_not_extended: const u16 = 510
-pub status_network_authentication_required: const u16 = 511
 
 pub Header: struct {
     name: string,
@@ -339,11 +290,11 @@ is_host(host: string): bool {
  */
 pub parse_url(url: string): (Url, Error) {
     if len(url) < 7 || !mem.equal(url[..7], "http://") {
-        return zero_url(), UrlErr(1)
+        return zero_url(), UrlErr.invalid
     }
     for i: usize in 0 .. len(url) {
         if ascii.is_control(url[i]) || url[i] == 35 {
-            return zero_url(), UrlErr(1)
+            return zero_url(), UrlErr.invalid
         }
     }
     authority_end: usize = len(url)
@@ -355,14 +306,14 @@ pub parse_url(url: string): (Url, Error) {
     }
     for i: usize in 7 .. authority_end {
         if url[i] == 64 || url[i] == 91 || url[i] == 93 {
-            return zero_url(), UrlErr(1)
+            return zero_url(), UrlErr.invalid
         }
     }
     colon: usize = authority_end
     for i: usize in 7 .. authority_end {
         if url[i] == 58 {
             if colon != authority_end {
-                return zero_url(), UrlErr(1)
+                return zero_url(), UrlErr.invalid
             }
             colon = i
         }
@@ -370,13 +321,13 @@ pub parse_url(url: string): (Url, Error) {
     host_end: usize = colon
     host: string = url[7..host_end]
     if !is_host(host) {
-        return zero_url(), UrlErr(1)
+        return zero_url(), UrlErr.invalid
     }
     port: u16 = 80
     if colon != authority_end {
         parsed_port: uint, parsed: bool = str.parse[uint](url[colon + 1..authority_end])
         if !parsed || parsed_port > 65535 {
-            return zero_url(), UrlErr(1)
+            return zero_url(), UrlErr.invalid
         }
         port = u16(parsed_port)
     }
@@ -410,72 +361,50 @@ add_size(total: usize, amount: usize, capacity: usize): (usize, bool) {
     return total + amount, true
 }
 
-/* Returns the conventional reason phrase for a named status. Unknown valid
- * statuses deliberately format with an empty phrase.
+status_100: const [4]string = [
+    "Continue", "Switching Protocols", "Processing", "Early Hints",
+]
+
+status_200: const [27]string = [
+    "OK", "Created", "Accepted", "Non-Authoritative Information", "No Content",
+    "Reset Content", "Partial Content", "Multi-Status", "Already Reported",
+    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+    "IM Used",
+]
+
+status_300: const [9]string = [
+    "Multiple Choices", "Moved Permanently", "Found", "See Other", "Not Modified",
+    "Use Proxy", "", "Temporary Redirect", "Permanent Redirect",
+]
+
+status_400: const [52]string = [
+    "Bad Request", "Unauthorized", "Payment Required", "Forbidden", "Not Found",
+    "Method Not Allowed", "Not Acceptable", "Proxy Authentication Required",
+    "Request Timeout", "Conflict", "Gone", "Length Required", "Precondition Failed",
+    "Content Too Large", "URI Too Long", "Unsupported Media Type",
+    "Range Not Satisfiable", "Expectation Failed", "I'm a Teapot", "", "",
+    "Misdirected Request", "Unprocessable Content", "Locked", "Failed Dependency",
+    "Too Early", "Upgrade Required", "", "Precondition Required", "Too Many Requests",
+    "", "Request Header Fields Too Large", "", "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", "", "", "", "Unavailable For Legal Reasons",
+]
+
+status_500: const [12]string = [
+    "Internal Server Error", "Not Implemented", "Bad Gateway", "Service Unavailable",
+    "Gateway Timeout", "HTTP Version Not Supported", "Variant Also Negotiates",
+    "Insufficient Storage", "Loop Detected", "", "Not Extended",
+    "Network Authentication Required",
+]
+
+/* Returns the conventional reason phrase for a known status code. Unknown
+ * codes return an empty string. The private range tables keep lookup O(1).
  */
-reason_phrase(status: u16): string {
-    if status == status_continue { return "Continue" }
-    if status == status_switching_protocols { return "Switching Protocols" }
-    if status == status_processing { return "Processing" }
-    if status == status_early_hints { return "Early Hints" }
-    if status == status_ok { return "OK" }
-    if status == status_created { return "Created" }
-    if status == status_accepted { return "Accepted" }
-    if status == status_non_authoritative_information { return "Non-Authoritative Information" }
-    if status == status_no_content { return "No Content" }
-    if status == status_reset_content { return "Reset Content" }
-    if status == status_partial_content { return "Partial Content" }
-    if status == status_multi_status { return "Multi-Status" }
-    if status == status_already_reported { return "Already Reported" }
-    if status == status_im_used { return "IM Used" }
-    if status == status_multiple_choices { return "Multiple Choices" }
-    if status == status_moved_permanently { return "Moved Permanently" }
-    if status == status_found { return "Found" }
-    if status == status_see_other { return "See Other" }
-    if status == status_not_modified { return "Not Modified" }
-    if status == status_use_proxy { return "Use Proxy" }
-    if status == status_temporary_redirect { return "Temporary Redirect" }
-    if status == status_permanent_redirect { return "Permanent Redirect" }
-    if status == status_bad_request { return "Bad Request" }
-    if status == status_unauthorized { return "Unauthorized" }
-    if status == status_payment_required { return "Payment Required" }
-    if status == status_forbidden { return "Forbidden" }
-    if status == status_not_found { return "Not Found" }
-    if status == status_method_not_allowed { return "Method Not Allowed" }
-    if status == status_not_acceptable { return "Not Acceptable" }
-    if status == status_proxy_authentication_required { return "Proxy Authentication Required" }
-    if status == status_request_timeout { return "Request Timeout" }
-    if status == status_conflict { return "Conflict" }
-    if status == status_gone { return "Gone" }
-    if status == status_length_required { return "Length Required" }
-    if status == status_precondition_failed { return "Precondition Failed" }
-    if status == status_content_too_large { return "Content Too Large" }
-    if status == status_uri_too_long { return "URI Too Long" }
-    if status == status_unsupported_media_type { return "Unsupported Media Type" }
-    if status == status_range_not_satisfiable { return "Range Not Satisfiable" }
-    if status == status_expectation_failed { return "Expectation Failed" }
-    if status == status_im_a_teapot { return "I'm a Teapot" }
-    if status == status_misdirected_request { return "Misdirected Request" }
-    if status == status_unprocessable_content { return "Unprocessable Content" }
-    if status == status_locked { return "Locked" }
-    if status == status_failed_dependency { return "Failed Dependency" }
-    if status == status_too_early { return "Too Early" }
-    if status == status_upgrade_required { return "Upgrade Required" }
-    if status == status_precondition_required { return "Precondition Required" }
-    if status == status_too_many_requests { return "Too Many Requests" }
-    if status == status_request_header_fields_too_large { return "Request Header Fields Too Large" }
-    if status == status_unavailable_for_legal_reasons { return "Unavailable For Legal Reasons" }
-    if status == status_internal_server_error { return "Internal Server Error" }
-    if status == status_not_implemented { return "Not Implemented" }
-    if status == status_bad_gateway { return "Bad Gateway" }
-    if status == status_service_unavailable { return "Service Unavailable" }
-    if status == status_gateway_timeout { return "Gateway Timeout" }
-    if status == status_http_version_not_supported { return "HTTP Version Not Supported" }
-    if status == status_variant_also_negotiates { return "Variant Also Negotiates" }
-    if status == status_insufficient_storage { return "Insufficient Storage" }
-    if status == status_loop_detected { return "Loop Detected" }
-    if status == status_not_extended { return "Not Extended" }
-    if status == status_network_authentication_required { return "Network Authentication Required" }
+pub status(code: u16): string {
+    if code >= 100 && code <= 103 { return status_100[usize(code - 100)] }
+    if code >= 200 && code <= 226 { return status_200[usize(code - 200)] }
+    if code >= 300 && code <= 308 { return status_300[usize(code - 300)] }
+    if code >= 400 && code <= 451 { return status_400[usize(code - 400)] }
+    if code >= 500 && code <= 511 { return status_500[usize(code - 500)] }
     return ""
 }
 
@@ -485,19 +414,19 @@ reason_phrase(status: u16): string {
  */
 pub Request.format(output: mut []u8): (usize, Error) {
     if len(self.method) == 0 {
-        return 0, FormatErr(2)
+        return 0, FormatErr.method
     }
     for i: usize in 0 .. len(self.method) {
         if !is_token(self.method[i]) {
-            return 0, FormatErr(2)
+            return 0, FormatErr.method
         }
     }
     if len(self.target) == 0 {
-        return 0, FormatErr(3)
+        return 0, FormatErr.target
     }
     for i: usize in 0 .. len(self.target) {
         if self.target[i] <= 32 || self.target[i] == 127 {
-            return 0, FormatErr(3)
+            return 0, FormatErr.target
         }
     }
     total: usize = 0
@@ -510,16 +439,16 @@ pub Request.format(output: mut []u8): (usize, Error) {
     for i: usize in 0 .. len(self.headers) {
         header: Header = self.headers[i]
         if len(header.name) == 0 {
-            return 0, FormatErr(4)
+            return 0, FormatErr.header_name
         }
         for j: usize in 0 .. len(header.name) {
             if !is_token(header.name[j]) {
-                return 0, FormatErr(4)
+                return 0, FormatErr.header_name
             }
         }
         for j: usize in 0 .. len(header.value) {
             if header.value[j] == 0 || header.value[j] == 10 || header.value[j] == 13 {
-                return 0, FormatErr(5)
+                return 0, FormatErr.header_value
             }
         }
         if ok { total, ok = add_size(total, len(header.name), len(output)) }
@@ -530,20 +459,20 @@ pub Request.format(output: mut []u8): (usize, Error) {
     if ok { total, ok = add_size(total, 2, len(output)) }
     if ok { total, ok = add_size(total, len(self.body), len(output)) }
     if !ok {
-        return 0, FormatErr(1)
+        return 0, FormatErr.capacity
     }
 
     at: usize = 0
     start: [4]string = [self.method, " ", self.target, " HTTP/1.1\r\n"]
     written: usize, fit: bool = str.concat(start[..], output[at..])
-    if !fit { return 0, FormatErr(1) }
+    if !fit { return 0, FormatErr.capacity }
     at += written
     for i: usize in 0 .. len(self.headers) {
         name: string = self.headers[i].name
         value: string = self.headers[i].value
         field: [4]string = [name, ": ", value, "\r\n"]
         written, fit = str.concat(field[..], output[at..])
-        if !fit { return 0, FormatErr(1) }
+        if !fit { return 0, FormatErr.capacity }
         at += written
     }
     mem.copy(output[at..at + 2], "\r\n")
@@ -558,18 +487,18 @@ pub Request.format(output: mut []u8): (usize, Error) {
  */
 pub Response.format(output: mut []u8): (usize, Error) {
     if self.version_minor > 1 {
-        return 0, FormatErr(6)
+        return 0, FormatErr.version
     }
     if self.status < 100 || self.status > 999 {
-        return 0, FormatErr(7)
+        return 0, FormatErr.status
     }
     reason: string = self.reason
     if reason == null {
-        reason = reason_phrase(self.status)
+        reason = status(self.status)
     }
     for i: usize in 0 .. len(reason) {
         if (reason[i] < 32 && reason[i] != 9) || reason[i] == 127 {
-            return 0, FormatErr(8)
+            return 0, FormatErr.reason
         }
     }
     total: usize = 13
@@ -580,16 +509,16 @@ pub Response.format(output: mut []u8): (usize, Error) {
     for i: usize in 0 .. len(self.headers) {
         header: Header = self.headers[i]
         if len(header.name) == 0 {
-            return 0, FormatErr(4)
+            return 0, FormatErr.header_name
         }
         for j: usize in 0 .. len(header.name) {
             if !is_token(header.name[j]) {
-                return 0, FormatErr(4)
+                return 0, FormatErr.header_name
             }
         }
         for j: usize in 0 .. len(header.value) {
             if header.value[j] == 0 || header.value[j] == 10 || header.value[j] == 13 {
-                return 0, FormatErr(5)
+                return 0, FormatErr.header_value
             }
         }
         if ok { total, ok = add_size(total, len(header.name), len(output)) }
@@ -600,7 +529,7 @@ pub Response.format(output: mut []u8): (usize, Error) {
     if ok { total, ok = add_size(total, 2, len(output)) }
     if ok { total, ok = add_size(total, len(self.body), len(output)) }
     if !ok {
-        return 0, FormatErr(1)
+        return 0, FormatErr.capacity
     }
 
     at: usize = 0
@@ -618,14 +547,14 @@ pub Response.format(output: mut []u8): (usize, Error) {
     at += 1
     reason_line: [2]string = [reason, "\r\n"]
     written: usize, fit: bool = str.concat(reason_line[..], output[at..])
-    if !fit { return 0, FormatErr(1) }
+    if !fit { return 0, FormatErr.capacity }
     at += written
     for i: usize in 0 .. len(self.headers) {
         name: string = self.headers[i].name
         value: string = self.headers[i].value
         field: [4]string = [name, ": ", value, "\r\n"]
         written, fit = str.concat(field[..], output[at..])
-        if !fit { return 0, FormatErr(1) }
+        if !fit { return 0, FormatErr.capacity }
         at += written
     }
     mem.copy(output[at..at + 2], "\r\n")
@@ -1405,13 +1334,13 @@ get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Er
 
     if resize {
         mem_addresses: mut []net.Addr4, addr_ok: bool = mem_adjust[net.Addr4](storage.addresses, 1)
-        if !addr_ok { return Response{}, ClientErr(4) }
+        if !addr_ok { return Response{}, ClientErr.allocation }
         storage.addresses = mem_addresses
     }
 
     count: usize, resolve_err: Error = net.resolve4(parsed.host, parsed.port, mut storage.addresses[..])
     if resolve_err != null { return Response{}, resolve_err }
-    if count == 0 { return Response{}, ClientErr(1) }
+    if count == 0 { return Response{}, ClientErr.address }
 
     conn: tcp.Conn = tcp.Conn {
         socket: net.Socket(0),
@@ -1419,7 +1348,7 @@ get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Er
         send_offset: usize(0),
     }
 
-    conn_err: Error = ClientErr(1)
+    conn_err: Error = ClientErr.address
 
     is_connected: bool = false
     for i: usize in 0 .. count {
@@ -1437,14 +1366,14 @@ get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Er
         mem_target: mut []u8, target_ok: bool = mem_adjust[u8](storage.target, len(parsed.path) + len(parsed.query))
         if !target_ok {
             tcp.close(mut conn)
-            return Response{}, ClientErr(4)
+            return Response{}, ClientErr.allocation
         }
         storage.target = mem_target
     }
     target_count: usize, fit: bool = str.concat(target_parts[..], mut storage.target[..])
     if !fit {
         tcp.close(mut conn)
-        return Response{}, ClientErr(2)
+        return Response{}, ClientErr.target_capacity
     }
 
     fields: [2]Header = [
@@ -1458,11 +1387,11 @@ get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Er
     }
 
     output_count: usize, format_err: Error = request.format(mut storage.output[..])
-    for resize && format_err != null && format_err.domain == typeid(FormatErr) && format_err.code == 1 {
+    for resize && format_err == FormatErr.capacity {
         mem_output: mut []u8, output_ok: bool = mem_adjust[u8](storage.output, len(storage.output) + 1)
         if !output_ok {
             tcp.close(mut conn)
-            return Response{}, ClientErr(4)
+            return Response{}, ClientErr.allocation
         }
         storage.output = mem_output
         output_count, format_err = request.format(mut storage.output[..])
@@ -1491,12 +1420,12 @@ get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Er
             if occupied == len(storage.input) {
                 if !resize {
                     tcp.close(mut conn)
-                    return Response{}, ClientErr(3)
+                    return Response{}, ClientErr.response
                 }
                 mem_input: mut []u8, input_ok: bool = mem_adjust[u8](storage.input, len(storage.input) + 1)
                 if !input_ok {
                     tcp.close(mut conn)
-                    return Response{}, ClientErr(4)
+                    return Response{}, ClientErr.allocation
                 }
                 storage.input = mem_input
 
@@ -1537,13 +1466,13 @@ get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Er
             ResponseResult.capacity(kind: ResponseCapacity) {
                 if !resize {
                     tcp.close(mut conn)
-                    return Response{}, ClientErr(3)
+                    return Response{}, ClientErr.response
                 }
                 if kind == ResponseCapacity.headers {
                     mem_headers: mut []Header, headers_ok: bool = mem_adjust[Header](storage.headers, len(storage.headers) + 1)
                     if !headers_ok {
                         tcp.close(mut conn)
-                        return Response{}, ClientErr(4)
+                        return Response{}, ClientErr.allocation
                     }
                     storage.headers = mem_headers
                 } else {
@@ -1556,7 +1485,7 @@ get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Er
                     mem_body: mut []u8, body_ok: bool = mem_adjust[u8](storage.body, needed)
                     if !body_ok {
                         tcp.close(mut conn)
-                        return Response{}, ClientErr(4)
+                        return Response{}, ClientErr.allocation
                     }
                     storage.body = mem_body
                 }
@@ -1564,7 +1493,7 @@ get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Er
             }
             else {
                 tcp.close(mut conn)
-                return Response{}, ClientErr(3)
+                return Response{}, ClientErr.response
             }
         }
     }

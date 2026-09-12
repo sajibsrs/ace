@@ -2,6 +2,7 @@
 
 // expect-exit: 0
 
+import mem
 import poll
 import sys
 
@@ -16,8 +17,9 @@ main(): int {
         return 1
     }
 
-    if !has_error(poll.watch(q, sys.Fd(0), false, false), typeid(poll.WatchErr)) ||
-       sys.errno() != 22 {
+    watch_err: Error = poll.watch(q, sys.Fd(0), false, false)
+    if watch_err != poll.WatchErr.invalid || sys.errno() != 22 ||
+       !mem.equal(watch_err.message, "at least one readiness interest is required") {
         sys.close(sys.Fd(q))
         return 2
     }
@@ -158,7 +160,8 @@ main(): int {
     empty: mut []poll.Event = null
     count, wait_err = poll.wait(q, empty, u64(0))
 
-    if count != 0 || !has_error(wait_err, typeid(poll.WaitErr)) {
+    if count != 0 || wait_err != poll.WaitErr.invalid ||
+       !mem.equal(wait_err.message, "event storage must not be empty") {
         sys.close(read_fd)
         sys.close(sys.Fd(q))
         return 15

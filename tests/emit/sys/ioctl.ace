@@ -2,6 +2,7 @@
 
 // expect-exit: 0
 
+import mem
 import sys
 
 main(): int {
@@ -18,8 +19,8 @@ main(): int {
     }
     empty: mut []u8 = mut value[0..0]
     empty_error: Error = sys.ioctl(sys.Fd(-1), sys.BIOCGBLEN, empty)
-    if empty_error == null || empty_error.domain != typeid(sys.IoctlErr) ||
-       empty_error.code != 22 {
+    if empty_error != sys.IoctlErr.empty ||
+       !mem.equal(empty_error.message, "device-control data storage must not be empty") {
         return 3
     }
     return 0

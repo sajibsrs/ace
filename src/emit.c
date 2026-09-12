@@ -5830,6 +5830,25 @@ static void put_u(Buf* b, uint64_t v, uint32_t w) {
     for (uint32_t i = 0; i < w; i++) buf_put8(b, (uint8_t)(v >> (8 * i)));
 }
 
+typedef struct {
+    uint32_t off;
+    ESym* sym;
+} ConstRel;
+
+typedef struct {
+    ConstRel* v;
+    int n, cap;
+} ConstRels;
+
+static void const_reloc_add(ConstRels* rs, uint32_t off, ESym* sym) {
+    if (rs->n == rs->cap) {
+        rs->cap = rs->cap ? rs->cap * 2 : 8;
+        rs->v = realloc(rs->v, (size_t)rs->cap * sizeof(ConstRel));
+        if (!rs->v) oom();
+    }
+    rs->v[rs->n++] = (ConstRel){ off, sym };
+}
+
 // constant initializer folding (little-endian, declaration-order layout)
 /*
  * Constructor-constant targets, family-checked: an int argument may fold into
@@ -5856,7 +5875,7 @@ static int fold_float_target(SType* t) {
     return t->kind == SK_PRIM && (t->prim == P_F32 || t->prim == P_F64);
 }
 
-static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
+static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels) {
     t = unwrap(t);
     if (!t) return 0;
     switch (v->kind) {
@@ -5872,7 +5891,7 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
             size_t start = out->len;
             put_u(out, (uint64_t)vi, 4);
             while (out->len - start < poff) buf_put8(out, 0);
-            if (!eval_const(e, v->kids[0], ut->fields[vi].t, out)) return 0;
+            if (!eval_const(e, v->kids[0], ut->fields[vi].t, out, rels)) return 0;
             while (out->len - start < ty_size(t)) buf_put8(out, 0);
             return 1;
         }
@@ -5895,7 +5914,7 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
                 (arg->kind == N_UNARY && arg->op == T_MINUS);
             if ((arg_int && fold_int_target(want)) ||
                 (arg->kind == N_FLOAT && fold_float_target(want)))
-                return eval_const(e, arg, want, out);
+                return eval_const(e, arg, want, out, rels);
         }
         return 0;
     }
@@ -5917,6 +5936,15 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
             memcpy(&b, &f, 4);
             put_u(out, b, 4);
         }
+        return 1;
+    }
+    case N_STR: {
+        if (t->kind != SK_PRIM || t->prim != P_STRING) return 0;
+        uint32_t off = (uint32_t)out->len;
+        ESym* str = intern_string(e, v);
+        buf_put64(out, 0);
+        buf_put64(out, v->len);
+        const_reloc_add(rels, off, str);
         return 1;
     }
     case N_FIELD_E: { // enum member (base carries the type symbol)
@@ -5948,7 +5976,7 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
     case N_IDENT: {
         Sym* s = node_sym(v);
         if (s && s->is_global && s->is_const && s->init)
-            return eval_const(e, s->init, t, out);
+            return eval_const(e, s->init, t, out, rels);
         return 0;
     }
     case N_UNARY:
@@ -5986,19 +6014,27 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
                 int fidx = positional ? i : find_field(t, fi->str, fi->len);
                 if (fidx < 0 || fidx >= t->nfields) { out->len = start; return 0; }
                 Buf field = {0};
-                if (!eval_const(e, fi->a, t->fields[fidx].t, &field) ||
+                ConstRels field_rels = {0};
+                if (!eval_const(e, fi->a, t->fields[fidx].t, &field,
+                                &field_rels) ||
                     field.len != ty_size(t->fields[fidx].t)) {
-                    free(field.d); out->len = start; return 0;
+                    free(field.d); free(field_rels.v);
+                    out->len = start; return 0;
                 }
-                memcpy(out->d + start + field_off(t, fidx), field.d, field.len);
+                uint32_t field_start = (uint32_t)(start + field_off(t, fidx));
+                memcpy(out->d + field_start, field.d, field.len);
+                for (int j = 0; j < field_rels.n; j++)
+                    const_reloc_add(rels, field_start + field_rels.v[j].off,
+                                    field_rels.v[j].sym);
                 free(field.d);
+                free(field_rels.v);
             }
             return 1;
         }
         uint32_t cursor = 0;
         if (v->kind == N_ARRAYLIT && v->a) {
             for (uint64_t i = 0; i < t->count; i++) {
-                if (!eval_const(e, v->a, t->base, out)) return 0;
+                if (!eval_const(e, v->a, t->base, out, rels)) return 0;
             }
             return 1;
         }
@@ -6023,7 +6059,7 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
                 buf_put8(out, 0);
                 cursor++;
             }
-            if (!eval_const(e, value, ft, out)) return 0;
+            if (!eval_const(e, value, ft, out, rels)) return 0;
             cursor = (uint32_t)(out->len - start);
         }
         while (cursor < ty_size(t)) { // tail padding
@@ -6038,63 +6074,6 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out) {
 }
 
 static void add_global(Em* e, Sym* s, ESym* sym);
-static Node* static_string_node(Node* n);
-
-/*
- * Emit a compile-time union value. Most payloads use the ordinary constant
- * folder; a static string needs a section relocation for its pointer word.
- */
-static int emit_union_global(Em* e, Node* n, Sym* vs, const char* nm, SType* t) {
-    Node* ref = n->b;
-    Node* payload = NULL;
-    if (ref && ref->kind == N_CALL) {
-        payload = ref->nkids == 1 ? ref->kids[0] : NULL;
-        ref = ref->a;
-    }
-    if (!ref || ref->kind != N_FIELD_E) return 0;
-    SType* ut = union_type_of_base(ref->a);
-    int vi = (int)ref->ival;
-    if (!ut || ut != t || vi < 0 || vi >= ut->nfields) return 0;
-    SType* pt = ut->fields[vi].t;
-    if ((pt != NULL) != (payload != NULL)) return 0;
-
-    Node* text = pt && unwrap(pt)->kind == SK_PRIM &&
-                 unwrap(pt)->prim == P_STRING ? static_string_node(payload) : NULL;
-    Buf payload_bytes = {0};
-    if (pt && !text && !eval_const(e, payload, pt, &payload_bytes)) {
-        free(payload_bytes.d);
-        return 0;
-    }
-
-    const char* str_name = NULL;
-    uint32_t str_name_len = 0;
-    if (text) {
-        ESym* str = intern_string(e, text);
-        str_name = str->name;
-        str_name_len = (uint32_t)strlen(str_name);
-    }
-
-    uint32_t align = ty_align(t);
-    Sec* d = (n->flags & F_CONST) ? &e->secs[SEC_CONST] : &e->secs[SEC_DATA];
-    while (d->data.len % align) buf_put8(&d->data, 0);
-    size_t start = d->data.len;
-    ESym* g = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, d);
-    put_u(&d->data, (uint64_t)vi, 4);
-    while (d->data.len - start < sema_union_payload_off(t)) buf_put8(&d->data, 0);
-    if (text) {
-        ESym* str = sym_intern(&e->syms, str_name, str_name_len);
-        uint32_t off = (uint32_t)d->data.len;
-        buf_put64(&d->data, 0);
-        reloc_add(d, off, str, 0, 3, 1, RM_UNSIGNED);
-        buf_put64(&d->data, text->len);
-    } else if (pt) {
-        buf_write(&d->data, payload_bytes.d, payload_bytes.len);
-    }
-    while (d->data.len - start < ty_size(t)) buf_put8(&d->data, 0);
-    free(payload_bytes.d);
-    add_global(e, vs, g);
-    return 1;
-}
 
 static void add_global(Em* e, Sym* s, ESym* sym) {
     if (e->nglobs == e->cglobs) {
@@ -6104,16 +6083,6 @@ static void add_global(Em* e, Sym* s, ESym* sym) {
     }
     e->globs[e->nglobs++] =
         (GVar){ s, sym->name, (uint32_t)strlen(sym->name) };
-}
-
-static Node* static_string_node(Node* n) {
-    if (n && n->kind == N_STR) return n;
-    if (n && n->kind == N_IDENT) {
-        Sym* s = node_sym(n);
-        if (s && s->is_global && s->is_const && s->init)
-            return static_string_node(s->init);
-    }
-    return NULL;
 }
 
 static int emit_error_handle_global(Em* e, Node* n, Sym* vs,
@@ -6170,35 +6139,27 @@ static void emit_global(Em* e, Node* n) {
         emit_error_handle_global(e, n, vs, nm);
         return;
     }
-    if (t->kind == SK_UNION) {
-        if (!emit_union_global(e, n, vs, nm, t))
-            em_err(e, n, "global union initializer must be a compile-time variant value");
-        return;
-    }
-    // string global: {ptr into __const, len} — the pointer needs a reloc
-    if (n->b->kind == N_STR && t->kind == SK_PRIM && t->prim == P_STRING) {
-        ESym* str = intern_string(e, n->b);
-        Sec* d = (n->flags & F_CONST) ? &e->secs[SEC_CONST] : &e->secs[SEC_DATA];
-        while (d->data.len % 8) buf_put8(&d->data, 0);
-        ESym* g = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, d);
-        uint32_t off = (uint32_t)d->data.len;
-        buf_put64(&d->data, 0);
-        reloc_add(d, off, str, 0, 3, 1, RM_UNSIGNED);
-        buf_put64(&d->data, n->b->len);
-        add_global(e, vs, g);
-        return;
-    }
     Buf bytes = {0};
-    if (!eval_const(e, n->b, t, &bytes)) {
-        em_err(e, n, "global initializer must be a compile-time constant");
+    ConstRels rels = {0};
+    if (!eval_const(e, n->b, t, &bytes, &rels)) {
+        if (t->kind == SK_UNION)
+            em_err(e, n, "global union initializer must be a compile-time variant value");
+        else
+            em_err(e, n, "global initializer must be a compile-time constant");
         free(bytes.d);
+        free(rels.v);
         return;
     }
     Sec* d = (n->flags & F_CONST) ? &e->secs[SEC_CONST] : &e->secs[SEC_DATA];
     while (d->data.len % align) buf_put8(&d->data, 0);
     ESym* g = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, d);
+    uint32_t start = (uint32_t)d->data.len;
     buf_write(&d->data, bytes.d, bytes.len);
+    for (int i = 0; i < rels.n; i++)
+        reloc_add(d, start + rels.v[i].off, rels.v[i].sym,
+                  0, 3, 1, RM_UNSIGNED);
     free(bytes.d);
+    free(rels.v);
     add_global(e, vs, g);
 }
 

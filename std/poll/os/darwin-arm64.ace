@@ -12,10 +12,30 @@ pub Event: struct {
     hangup: bool,
 }
 
-pub QueueErr: error
-pub WatchErr: error
-pub UnwatchErr: error
-pub WaitErr: error
+pub QueueErr: error {
+    12: memory = "insufficient memory for readiness queue"
+    23: system_limit = "system descriptor limit reached"
+    24: process_limit = "process descriptor limit reached"
+}
+
+pub WatchErr: error {
+    9: descriptor = "invalid queue or watched descriptor"
+    12: memory = "insufficient memory for readiness registration"
+    22: invalid = "at least one readiness interest is required"
+}
+
+pub UnwatchErr: error {
+    2: not_found = "descriptor was not watched"
+    9: descriptor = "invalid queue or watched descriptor"
+    12: memory = "insufficient memory while removing readiness registration"
+}
+
+pub WaitErr: error {
+    4: interrupted = "readiness wait was interrupted"
+    9: descriptor = "invalid readiness queue descriptor"
+    14: address = "invalid readiness event storage"
+    22: invalid = "event storage must not be empty"
+}
 
 pub wait_forever: const u64 = 0xffffffffffffffff
 
@@ -92,7 +112,7 @@ pub queue(): (Queue, Error) {
 pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool): Error {
     if !readable && !writable {
         errno_set(EINVAL)
-        return WatchErr(sys.errno())
+        return WatchErr.invalid
     }
     read_flags: u16 = EV_DELETE
     write_flags: u16 = EV_DELETE
@@ -124,7 +144,7 @@ pub unwatch(q: Queue, fd: sys.Fd): Error {
     if result == 0 {
         removed = true
     } else if sys.errno() != ENOENT {
-        return UnwatchErr(sys.errno())
+        return UnwatchErr.not_found
     }
 
     result = change_filter(q, fd, EVFILT_WRITE, EV_DELETE)
@@ -150,7 +170,7 @@ change_filter(q: Queue, fd: sys.Fd, filter: i16, flags: u16): i32 {
 pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
     if len(events) == 0 {
         errno_set(EINVAL)
-        return usize(0), WaitErr(sys.errno())
+        return usize(0), WaitErr.invalid
     }
     capacity: usize = len(events)
 

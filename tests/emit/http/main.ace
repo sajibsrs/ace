@@ -5,6 +5,32 @@ import mem
 import net
 
 main(): int {
+    if !mem.equal(http.status(u16(200)), "OK") ||
+       !mem.equal(http.status(u16(209)), "") ||
+       !mem.equal(http.status(u16(226)), "IM Used") ||
+       !mem.equal(http.status(u16(301)), "Moved Permanently") ||
+       !mem.equal(http.status(u16(404)), "Not Found") ||
+       !mem.equal(http.status(u16(999)), "") {
+        return 89
+    }
+
+    allocation: Error = http.ClientErr.allocation
+    if http.UrlErr.invalid != http.UrlErr(1) ||
+        http.FormatErr.capacity != http.FormatErr(1) ||
+        http.FormatErr.method != http.FormatErr(2) ||
+        http.FormatErr.target != http.FormatErr(3) ||
+        http.FormatErr.header_name != http.FormatErr(4) ||
+        http.FormatErr.header_value != http.FormatErr(5) ||
+        http.FormatErr.version != http.FormatErr(6) ||
+        http.FormatErr.status != http.FormatErr(7) ||
+        http.FormatErr.reason != http.FormatErr(8) ||
+        http.ClientErr.address != http.ClientErr(1) ||
+        http.ClientErr.target_capacity != http.ClientErr(2) ||
+        http.ClientErr.response != http.ClientErr(3) || allocation.code != 4 ||
+        !mem.equal(allocation.message, "memory allocation failed") {
+        return 90
+    }
+
     address: net.Addr4, valid: bool = net.parse4("127.0.0.1:8080")
     if !valid || address.ip[0] != 127 || address.ip[3] != 1 || address.port != 8080 {
         return 1
@@ -41,7 +67,8 @@ main(): int {
         return 31
     }
     url, err = http.parse_url("https://example.com/")
-    if err == null || err.domain != typeid(http.UrlErr) {
+    if err != http.UrlErr.invalid || !mem.equal(err.name, "UrlErr") ||
+        !mem.equal(err.message, "invalid or unsupported HTTP URL") {
         return 32
     }
     url, err = http.parse_url("http://user@example.com/")
@@ -80,7 +107,9 @@ main(): int {
     }
     small: [4]u8 = [7 : 4]
     written, err = request.format(mut small[..])
-    if written != 0 || err == null || err.domain != typeid(http.FormatErr) || err.code != 1 ||
+    if written != 0 || err != http.FormatErr.capacity ||
+        !mem.equal(err.name, "FormatErr") ||
+        !mem.equal(err.message, "output storage is too small") ||
         small[0] != 7 || small[3] != 7 {
         return 41
     }
@@ -89,7 +118,8 @@ main(): int {
     ]
     request.headers = bad_headers[..]
     written, err = request.format(mut output_storage[..])
-    if written != 0 || err == null || err.code != 4 {
+    if written != 0 || err != http.FormatErr.header_name ||
+        !mem.equal(err.message, "invalid header name") {
         return 42
     }
 
@@ -107,7 +137,7 @@ main(): int {
     if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 200 OK\r\n\r\n") {
         return 44
     }
-    default_response.status = http.status_not_found
+    default_response.status = 404
     written, err = default_response.format(mut output_storage[..])
     if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 404 Not Found\r\n\r\n") {
         return 45
@@ -117,7 +147,7 @@ main(): int {
     if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 599 \r\n\r\n") {
         return 46
     }
-    default_response.status = http.status_ok
+    default_response.status = 200
     default_response.reason = ""
     written, err = default_response.format(mut output_storage[..])
     if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 200 \r\n\r\n") {

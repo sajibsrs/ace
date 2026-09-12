@@ -234,6 +234,16 @@ current normative rules, and Git preserves patch-level detail.
   reason while preserving explicit and unknown-status empty phrases.
 - Renamed the HTTP formatting error domain to `FormatErr`, matching the public
   `Request.format` and `Response.format` operations.
+- Added named, allocation-free descriptions to the existing HTTP URL,
+  formatting, and client error codes without changing their domains or numeric
+  values; HTTP now constructs those failures through their named entries.
+- Exposed the existing allocation-free HTTP status text lookup as
+  `http.status(code)`, returning conventional phrases for known codes and an
+  empty string for unknown codes without changing `Response`; removed the
+  redundant public numeric status constants in favor of ordinary status codes.
+- Added named descriptions for standard-library-defined TCP terminal conditions,
+  network and poll validation failures, resolver statuses, and deterministic
+  system-facade validation failures while preserving raw OS error passthrough.
 - Added allocation-free `http.get` over neutral caller-owned `Storage` and an
   owning, automatically resized `Client` with explicit `client_init` and
   `client_clean` lifecycle operations.
@@ -340,6 +350,9 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Significant implementation corrections
 
+- Extended global constant emission to carry pointer relocations recursively
+  through arrays, structs, repeated elements, aliases, and union payloads, so
+  string-bearing aggregates remain static data without runtime initialization.
 - Repaired the manual memory benchmark for the current zero-valid slice model,
   made checked/release costs explicit, and added a checksum-matched integer CPU
   comparison against equivalent C `-O0` and `-O2` builds.

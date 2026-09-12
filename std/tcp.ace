@@ -29,8 +29,13 @@ pub Event: union {
     failed: Error,
 }
 
-pub ReceiveAllErr: error
-pub SendAllErr: error
+pub ReceiveAllErr: error {
+    0: incomplete = "connection closed before the requested bytes were received"
+}
+
+pub SendAllErr: error {
+    0: stalled = "connection made no progress while sending"
+}
 
 zero_listener(): Listener {
     return Listener {socket: net.Socket(0)}
@@ -252,7 +257,7 @@ pub receive_all(connection: Conn, buffer: mut []u8): (usize, Error) {
             return received, err
         }
         if count == 0 {
-            return received, ReceiveAllErr(0)
+            return received, ReceiveAllErr.incomplete
         }
         received += usize(count)
     }
@@ -274,7 +279,7 @@ pub send_all(connection: Conn, data: []u8): (usize, Error) {
             return sent, err
         }
         if count == 0 {
-            return sent, SendAllErr(0)
+            return sent, SendAllErr.stalled
         }
         sent += usize(count)
     }

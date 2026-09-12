@@ -1,0 +1,50 @@
+/* Relocation-bearing string descriptors fold recursively through const-global
+ * arrays, repeated elements, structs, aliases, and union payloads. */
+
+// expect-exit: 0
+
+import mem
+
+Table: struct {
+    title: string,
+    rows: [2][2]string,
+}
+
+Choice: union {
+    none,
+    table: Table,
+}
+
+alias_text: const string = "alias"
+words: const [3]string = ["", alias_text, "three"]
+repeated: const [2]string = ["same" : 2]
+nested: const Table = Table {
+    title: "nested",
+    rows: [["a", "bb"], [alias_text, "dddd"]],
+}
+selected: const Choice = Choice.table(Table {
+    title: "union",
+    rows: [["x", "yy"], ["zzz", alias_text]],
+})
+
+main(): int {
+    if !mem.equal(words[0], "") || !mem.equal(words[1], "alias") ||
+        !mem.equal(words[2], "three") ||
+        !mem.equal(repeated[0], "same") || !mem.equal(repeated[1], "same") ||
+        !mem.equal(nested.title, "nested") ||
+        !mem.equal(nested.rows[0][1], "bb") ||
+        !mem.equal(nested.rows[1][0], "alias") {
+        return 1
+    }
+    switch selected {
+        Choice.table(value: Table) {
+            if !mem.equal(value.title, "union") ||
+                !mem.equal(value.rows[0][0], "x") ||
+                !mem.equal(value.rows[1][1], "alias") {
+                return 2
+            }
+        }
+        else { return 3 }
+    }
+    return 0
+}

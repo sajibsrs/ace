@@ -856,10 +856,9 @@ required. Every `Response` field has a construction default: HTTP/1.1, status
 conventional phrase for a named status, or an empty phrase for another valid
 status; an explicit reason, including `""`, is preserved. The nine common
 request methods are public string constants such as `method_get` and
-`method_patch`. Standard and selected WebDAV/misc response codes are public
-`u16` constants such as `status_ok`, `status_not_found`, and
-`status_multi_status`; these constants do not restrict extension methods or
-other statuses in `100...999`.
+`method_patch`. Response statuses remain plain `u16` numbers. `status(code)`
+returns the conventional phrase for a known code and `""` for an unknown code;
+it does not restrict extension statuses in `100...999`.
 
 `mut parser.parse(input, headers, body, eof)` on `RequestParser` and
 `mut parser.parse(input, headers, body, eof, no_body)` on `ResponseParser`

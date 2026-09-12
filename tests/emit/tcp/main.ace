@@ -218,7 +218,8 @@ main(): int {
     }
     request_storage = [0 : 4]
     count, err = tcp.receive_all(connection, request)
-    if count != 2 || !is_error(err, typeid(tcp.ReceiveAllErr)) || err.code != 0 ||
+    if count != 2 || err != tcp.ReceiveAllErr.incomplete ||
+       !mem.equal(err.message, "connection closed before the requested bytes were received") ||
        !mem.equal(request_storage[0..2], "ok") {
         tcp.close(mut connection)
         tcp.close(mut listener)

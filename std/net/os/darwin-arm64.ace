@@ -20,19 +20,126 @@ pub Addr4: struct {
  * available through sys.errno() and must be queried immediately on failure.
  */
 
-pub SocketErr: error
-pub ReuseAddrErr: error
-pub ReusePortErr: error
-pub NonblockErr: error
-pub BindErr: error
-pub ListenErr: error
-pub AcceptErr: error
-pub ConnectErr: error
-pub PendingErrorErr: error
-pub ReceiveErr: error
-pub SendErr: error
-pub ResolveErr: error
-pub LocalErr: error
+pub SocketErr: error {
+    12: memory = "insufficient memory"
+    22: invalid = "invalid socket kind"
+    23: system_limit = "system socket limit reached"
+    24: process_limit = "process socket limit reached"
+    43: protocol = "protocol is not supported"
+    47: family = "address family is not supported"
+    55: buffer = "insufficient network buffer space"
+}
+
+pub ReuseAddrErr: error {
+    9: descriptor = "invalid socket descriptor"
+    22: invalid = "invalid socket option value"
+    42: option = "socket option is not available"
+    45: unsupported = "operation is not supported by the socket"
+}
+
+pub ReusePortErr: error {
+    9: descriptor = "invalid socket descriptor"
+    22: invalid = "invalid socket option value"
+    42: option = "socket option is not available"
+    45: unsupported = "operation is not supported by the socket"
+}
+
+pub NonblockErr: error {
+    9: descriptor = "invalid socket descriptor"
+    22: invalid = "invalid descriptor flags"
+}
+
+pub BindErr: error {
+    9: descriptor = "invalid socket descriptor"
+    13: access = "permission denied for the address"
+    22: invalid = "invalid socket or address"
+    48: in_use = "address is already in use"
+    49: unavailable = "address is not available"
+}
+
+pub ListenErr: error {
+    9: descriptor = "invalid socket descriptor"
+    22: invalid = "invalid listen backlog"
+    45: unsupported = "socket does not support listening"
+}
+
+pub AcceptErr: error {
+    4: interrupted = "accept was interrupted"
+    9: descriptor = "invalid listener descriptor"
+    24: process_limit = "process socket limit reached"
+    35: would_block = "no connection is ready to accept"
+    53: aborted = "pending connection was aborted"
+}
+
+pub ConnectErr: error {
+    4: interrupted = "connection attempt was interrupted"
+    9: descriptor = "invalid socket descriptor"
+    13: access = "permission denied for the address"
+    22: invalid = "invalid socket or address"
+    35: would_block = "connection cannot complete immediately"
+    36: in_progress = "connection is in progress"
+    47: family = "address family is not supported"
+    48: in_use = "local address is already in use"
+    49: unavailable = "local address is not available"
+    50: network_down = "network is down"
+    51: network_unreachable = "network is unreachable"
+    60: timed_out = "connection attempt timed out"
+    61: refused = "connection was refused"
+    64: host_down = "remote host is down"
+    65: host_unreachable = "no route to remote host"
+}
+
+pub PendingErrorErr: error {
+    9: descriptor = "invalid socket descriptor"
+    14: address = "invalid option storage address"
+    22: invalid = "invalid socket option query"
+    42: option = "socket option is not available"
+    45: unsupported = "operation is not supported by the socket"
+}
+
+pub ReceiveErr: error {
+    4: interrupted = "receive was interrupted"
+    9: descriptor = "invalid socket descriptor"
+    14: address = "invalid receive buffer address"
+    22: invalid = "invalid receive request"
+    35: would_block = "receive would block"
+    54: reset = "connection was reset"
+    57: disconnected = "socket is not connected"
+    60: timed_out = "receive timed out"
+}
+
+pub SendErr: error {
+    4: interrupted = "send was interrupted"
+    9: descriptor = "invalid socket descriptor"
+    13: access = "permission denied while sending"
+    14: address = "invalid send buffer address"
+    22: invalid = "invalid send request"
+    32: broken_pipe = "connection is closed"
+    35: would_block = "send would block"
+    40: too_large = "message is too large"
+    54: reset = "connection was reset"
+    55: buffer = "insufficient network buffer space"
+    57: disconnected = "socket is not connected"
+    60: timed_out = "send timed out"
+}
+pub ResolveErr: error {
+    2: again = "temporary name-resolution failure"
+    3: bad_flags = "invalid name-resolution flags"
+    4: failed = "non-recoverable name-resolution failure"
+    5: family = "unsupported address family"
+    6: memory = "name-resolution memory allocation failed"
+    8: not_found = "host or service was not found"
+    9: service = "service is unavailable for the socket kind"
+    10: socket_kind = "unsupported socket kind"
+    11: system = "system error during name resolution"
+    14: overflow = "name-resolution result overflowed"
+    22: invalid = "invalid name-resolution input or result"
+}
+pub LocalErr: error {
+    9: descriptor = "invalid socket descriptor"
+    14: address = "invalid address storage"
+    22: invalid = "invalid socket address query"
+}
 
 DarwinAddr4: struct {
     length: u8,
@@ -125,7 +232,7 @@ pub socket(kind: SocketKind): (Socket, Error) {
     // tcp is the only initial kind; its enum zero maps to SOCK_STREAM.
     if kind != SocketKind.tcp {
         errno_set(EINVAL)
-        return Socket(-1), SocketErr(sys.errno())
+        return Socket(-1), SocketErr.invalid
     }
     raw: i32 = c_socket(AF_INET, SOCK_STREAM, 0)
 
@@ -191,7 +298,7 @@ pub bind(sock: Socket, address: Addr4): Error {
 pub listen(sock: Socket, backlog: usize): Error {
     if backlog > I32_MAX_USIZE {
         errno_set(EINVAL)
-        return ListenErr(sys.errno())
+        return ListenErr.invalid
     }
 
     if c_listen(i32(sock), i32(backlog)) == -1 {
@@ -282,7 +389,7 @@ pub send(sock: Socket, data: []u8): (int, Error) {
 
 pub resolve4(host: string, port: u16, addresses: mut []Addr4): (usize, Error) {
     if len(host) > HOST_NAME_MAX || len(addresses) == 0 {
-        return usize(0), ResolveErr(EINVAL)
+        return usize(0), ResolveErr.invalid
     }
     name: [254]u8
 
@@ -290,7 +397,7 @@ pub resolve4(host: string, port: u16, addresses: mut []Addr4): (usize, Error) {
         byte: u8 = host[index]
 
         if byte == 0 {
-            return usize(0), ResolveErr(EINVAL)
+            return usize(0), ResolveErr.invalid
         }
         name[index] = byte
     }
@@ -312,7 +419,7 @@ pub resolve4(host: string, port: u16, addresses: mut []Addr4): (usize, Error) {
 
     if status != 0 || result == null {
         if status == 0 {
-            status = EINVAL
+            status = ResolveErr.invalid.code
         }
         return usize(0), ResolveErr(status)
     }
@@ -338,7 +445,7 @@ pub resolve4(host: string, port: u16, addresses: mut []Addr4): (usize, Error) {
     c_freeaddrinfo(result)
 
     if written == 0 {
-        return usize(0), ResolveErr(EINVAL)
+        return usize(0), ResolveErr.invalid
     }
     return written, null
 }

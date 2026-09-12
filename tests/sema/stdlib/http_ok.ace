@@ -25,7 +25,7 @@ check(
     }
     empty_request: http.Request = http.Request {method: http.method_head, target: "/"}
     default_response: http.Response = http.Response {}
-    not_found: http.Response = http.Response {status: http.status_not_found}
+    not_found: http.Response = http.Response {status: 404}
     fresh_request_parser: http.RequestParser = http.RequestParser {
         phase: http.RequestPhase.request,
         framing: http.RequestFraming.undecided,
@@ -66,8 +66,8 @@ check(
         else {}
     }
     if valid && address.port == 80 && url.port == 80 && err == null {
-        count += len(empty_request.body) + usize(default_response.status - http.status_ok)
-        count += usize(not_found.status - http.status_not_found)
+        count += len(empty_request.body) + usize(default_response.status - 200)
+        count += usize(not_found.status - 404)
         count += fresh_request_parser.input_offset + fresh_response_parser.input_offset
         return int(count - count)
     }
