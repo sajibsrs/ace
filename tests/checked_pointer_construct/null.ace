@@ -6,5 +6,5 @@ build(pointer: *Item, count: usize): []Item {
 
 main(): int {
     value: []Item = build(*Item(usize(0)), usize(1))
-    return int(len(value))
+    return int(value.len)
 }

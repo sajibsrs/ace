@@ -364,10 +364,10 @@ pub local(sock: Socket): (Addr4, Error) {
 }
 
 pub receive(sock: Socket, buffer: mut []u8): (int, Error) {
-    if len(buffer) == 0 {
+    if buffer.len == 0 {
         return 0, null
     }
-    count: i64 = c_recv(i32(sock), mut &buffer[0], len(buffer), 0)
+    count: i64 = c_recv(i32(sock), mut &buffer[0], buffer.len, 0)
 
     if count < 0 {
         return 0, ReceiveErr(sys.errno())
@@ -376,10 +376,10 @@ pub receive(sock: Socket, buffer: mut []u8): (int, Error) {
 }
 
 pub send(sock: Socket, data: []u8): (int, Error) {
-    if len(data) == 0 {
+    if data.len == 0 {
         return 0, null
     }
-    count: i64 = c_send(i32(sock), &data[0], len(data), MSG_NOSIGNAL)
+    count: i64 = c_send(i32(sock), &data[0], data.len, MSG_NOSIGNAL)
 
     if count < 0 {
         return 0, SendErr(sys.errno())
@@ -388,12 +388,12 @@ pub send(sock: Socket, data: []u8): (int, Error) {
 }
 
 pub resolve4(host: string, port: u16, addresses: mut []Addr4): (usize, Error) {
-    if len(host) > HOST_NAME_MAX || len(addresses) == 0 {
+    if host.len > HOST_NAME_MAX || addresses.len == 0 {
         return usize(0), ResolveErr.invalid
     }
     name: [254]u8
 
-    for index: usize in usize(0) .. len(host) {
+    for index: usize in usize(0) .. host.len {
         byte: u8 = host[index]
 
         if byte == 0 {
@@ -401,7 +401,7 @@ pub resolve4(host: string, port: u16, addresses: mut []Addr4): (usize, Error) {
         }
         name[index] = byte
     }
-    name[len(host)] = u8(0)
+    name[host.len] = u8(0)
 
     hints: DarwinAddrInfo = DarwinAddrInfo {
         flags: 0,
@@ -428,7 +428,7 @@ pub resolve4(host: string, port: u16, addresses: mut []Addr4): (usize, Error) {
     current: *DarwinAddrInfo = result
 
     scan: {
-        if current == null || written == len(addresses) {
+        if current == null || written == addresses.len {
             break scan
         }
 

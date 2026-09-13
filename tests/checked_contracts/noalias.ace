@@ -1,7 +1,7 @@
 import mem
 
 touch(noalias dst: mut []u8, src: []u8) {
-    if len(dst) > 0 && len(src) > 0 { dst[0] = src[0] }
+    if dst.len > 0 && src.len > 0 { dst[0] = src[0] }
 }
 
 main(): int {

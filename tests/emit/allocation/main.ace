@@ -7,12 +7,12 @@ import alloc, realloc, release from mem
 main(): int {
     fixed: [3]u8 = [1, 2, 3]
 
-    if len(fixed) != 3 {
+    if fixed.len != 3 {
         return 1
     }
     text: string = "ace"
 
-    if len(text) != 3 {
+    if text.len != 3 {
         return 2
     }
 
@@ -26,7 +26,7 @@ main(): int {
     data: mut []u8 = alloc(4, 8)
 
     if data != null {
-        if len(data) != 4 {
+        if data.len != 4 {
             release(mut data)
             return 4
         }
@@ -36,7 +36,7 @@ main(): int {
 
         alias: []u8 = data
 
-        if len(alias) != 4 {
+        if alias.len != 4 {
             release(mut data)
             return 5
         }
@@ -59,7 +59,7 @@ main(): int {
         if grown != null {
             data = grown
 
-            if len(data) != 8 {
+            if data.len != 8 {
                 release(mut data)
                 return 8
             }

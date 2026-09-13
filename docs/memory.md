@@ -102,19 +102,19 @@ atomicity, thread synchronization, memory barrier, or hardware-specific
 ordering. The programmer must also use an address and alignment accepted by the
 target device.
 
-The intrinsic `len(sequence)` belongs only to built-in sequences:
+The direct read-only property `sequence.len` belongs only to built-in sequences:
 
-- `len(array)` for `[N]T` is the constant element count `N`.
-- `len(slice)` for `[]T` is the runtime element count stored in the slice.
-- `len(text)` for `string` is the runtime byte count stored in the string view.
+- `array.len` for `[N]T` is the constant element count `N`.
+- `slice.len` for `[]T` is the runtime element count stored in the slice.
+- `text.len` for `string` is the runtime byte count stored in the string view.
 
-A zero slice or string has length zero, so calling `len` is valid. An empty
+A zero slice or string has length zero, so reading `.len` is valid. An empty
 view created by slicing (`data[5..5]`) is an ordinary value: it keeps its
 computed pointer and is never canonicalized to null. Comparing it with `null`
 is a nullness test on the complete descriptor, so it is false; comparing it
 with another empty slice is a content comparison, so it is true. Other types
-have no intrinsic `len`; a struct field with that name is an ordinary declared
-field. Parentheses are required: `len value` is not a form.
+have no built-in `.len`; a struct field with that name is an ordinary declared
+field. The former `len(value)` call spelling is not a form.
 
 The layout facts are normative — code may rely on them, including inline-asm
 bindings and descriptor inspection through `&`. A slice or string value is
@@ -178,14 +178,14 @@ import mem
 alignment must be a positive power of two no greater than 16. Invalid requests
 and allocation failure return null; memory is uninitialized.
 
-After a successful non-null check, `len(data)` is exactly the requested byte size:
+After a successful non-null check, `data.len` is exactly the requested byte size:
 
 ```ace
 import mem
 
 data: mut []u8 = mem.alloc(16, 8)
 if data != null {
-    bytes: usize = len(data)
+    bytes: usize = data.len
     data[0] = 42
     mem.release(mut data)
 }
@@ -195,7 +195,7 @@ if data != null {
 the most recent successful `mem.realloc`, plus a positive new size. It may move
 the storage.
 Null means the request failed and the original allocation remains live and
-unchanged. On success, only the returned slice is authoritative, and `len` of
+unchanged. On success, only the returned slice is authoritative, and `.len` of
 that slice is the new requested byte size.
 
 `mem.release` requires a mutable slice binding; its content type may be `[]u8`

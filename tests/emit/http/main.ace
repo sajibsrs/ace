@@ -69,7 +69,7 @@ main(): int {
         return 3
     }
     url, err = http.parse_url("http://127.0.0.1/")
-    if err != null || !mem.equal(url.path, "/") || len(url.query) != 0 {
+    if err != null || !mem.equal(url.path, "/") || url.query.len != 0 {
         return 31
     }
     url, err = http.parse_url("https://example.com/")
@@ -177,7 +177,7 @@ main(): int {
         http.ResponseResult.complete(response: http.Response) {
             if response.status != 200 { return 51 }
             if !mem.equal(response.body, "h\xC3\xA9!") { return 52 }
-            if len(response.headers) != 2 { return 53 }
+            if response.headers.len != 2 { return 53 }
         }
         else { return 6 }
     }

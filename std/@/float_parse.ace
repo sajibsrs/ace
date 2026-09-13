@@ -25,10 +25,10 @@ pub Decimal: struct {
 }
 
 equal_text(text: string, expected: string): bool {
-    if len(text) != len(expected) {
+    if text.len != expected.len {
         return false
     }
-    for i: usize in 0 .. len(text) {
+    for i: usize in 0 .. text.len {
         if text[i] != expected[i] {
             return false
         }
@@ -37,10 +37,10 @@ equal_text(text: string, expected: string): bool {
 }
 
 fast_decimal(text: string, mut result: FastDecimal) {
-    if len(text) == 0 || len(text) >= 512 {
+    if text.len == 0 || text.len >= 512 {
         return
     }
-    if len(text) == 3 {
+    if text.len == 3 {
         if text[0] == 110 && text[1] == 97 && text[2] == 110 {
             result.kind = 2
             return
@@ -49,7 +49,7 @@ fast_decimal(text: string, mut result: FastDecimal) {
             result.kind = 1
             return
         }
-    } else if len(text) == 4 && text[0] == 45 && text[1] == 105 &&
+    } else if text.len == 4 && text[0] == 45 && text[1] == 105 &&
               text[2] == 110 && text[3] == 102 {
         result.negative = true
         result.kind = 1
@@ -62,7 +62,7 @@ fast_decimal(text: string, mut result: FastDecimal) {
         negative = true
         at = 1
     }
-    if at == len(text) {
+    if at == text.len {
         return
     }
     coefficient: u64 = 0
@@ -72,10 +72,10 @@ fast_decimal(text: string, mut result: FastDecimal) {
     seen_dot: bool = false
     seen_digit: bool = false
 
-    for at < len(text) {
+    for at < text.len {
         c: u8 = text[at]
 
-        if seen_nonzero && c >= 48 && c <= 57 && at + 8 <= len(text) {
+        if seen_nonzero && c >= 48 && c <= 57 && at + 8 <= text.len {
             word: u64 = load.unaligned_u64(text, at)
             high: u64 = (word & u64(0xF0F0F0F0F0F0F0F0)) ^
                         u64(0x3030303030303030)
@@ -189,17 +189,17 @@ fast_decimal(text: string, mut result: FastDecimal) {
     }
     explicit: int = 0
 
-    if at < len(text) && (text[at] == 101 || text[at] == 69) {
+    if at < text.len && (text[at] == 101 || text[at] == 69) {
         at += 1
         exponent_negative: bool = false
 
-        if at < len(text) && (text[at] == 43 || text[at] == 45) {
+        if at < text.len && (text[at] == 43 || text[at] == 45) {
             exponent_negative = text[at] == 45
             at += 1
         }
         exponent_digits: int = 0
 
-        for at < len(text) && text[at] >= 48 && text[at] <= 57 {
+        for at < text.len && text[at] >= 48 && text[at] <= 57 {
             if explicit < 10000 {
                 explicit = explicit * 10 + int(text[at] - 48)
             }
@@ -213,7 +213,7 @@ fast_decimal(text: string, mut result: FastDecimal) {
             explicit = 0 - explicit
         }
     }
-    if at != len(text) {
+    if at != text.len {
         return
     }
     exponent10: int = explicit - fractional
@@ -232,7 +232,7 @@ decimal(text: string): Decimal {
     invalid: Decimal = Decimal { coefficient: big.from_u64(0), exponent10: 0,
                                  negative: false, digits: 0, kind: 3 }
 
-    if len(text) == 0 || len(text) >= 512 {
+    if text.len == 0 || text.len >= 512 {
         return invalid
     }
     if equal_text(text, "nan") {
@@ -255,7 +255,7 @@ decimal(text: string): Decimal {
         at = 1
     }
 
-    if at == len(text) {
+    if at == text.len {
         return invalid
     }
     coefficient: big.Big = big.from_u64(0)
@@ -265,7 +265,7 @@ decimal(text: string): Decimal {
     seen_dot: bool = false
     seen_digit: bool = false
 
-    for at < len(text) {
+    for at < text.len {
         c: u8 = text[at]
 
         if c >= 48 && c <= 57 {
@@ -297,17 +297,17 @@ decimal(text: string): Decimal {
     }
     explicit: int = 0
 
-    if at < len(text) && (text[at] == 101 || text[at] == 69) {
+    if at < text.len && (text[at] == 101 || text[at] == 69) {
         at += 1
         exponent_negative: bool = false
 
-        if at < len(text) && (text[at] == 43 || text[at] == 45) {
+        if at < text.len && (text[at] == 43 || text[at] == 45) {
             exponent_negative = text[at] == 45
             at += 1
         }
         exponent_digits: int = 0
 
-        for at < len(text) && text[at] >= 48 && text[at] <= 57 {
+        for at < text.len && text[at] >= 48 && text[at] <= 57 {
             if explicit < 10000 {
                 explicit = explicit * 10 + int(text[at] - 48)
             }
@@ -323,7 +323,7 @@ decimal(text: string): Decimal {
         }
     }
 
-    if at != len(text) {
+    if at != text.len {
         return invalid
     }
     return Decimal { coefficient: coefficient,

@@ -628,14 +628,14 @@ static int64_t seq_const_len(Ck* k, Node* base, SType* t) {
 
 /*
  * One slice bound's compile-time value when constant-provable: untyped
- * constant expressions and constant `len(sequence)` calls whose length is
+ * constant expressions and constant `sequence.len` properties whose length is
  * itself provable. Returns 0 when the bound cannot be known at compile time.
  */
 static int bound_const(Node* n, int64_t* out) {
-    if (n->kind == N_CALL && n->a && n->a->kind == N_IDENT &&
-        n->a->len == 3 && memcmp(n->a->str, "len", 3) == 0 && n->nkids == 1) {
-        if (n->kids[0]->kind == N_STR) {
-            *out = (int64_t)n->kids[0]->len;
+    if (n->kind == N_FIELD_E && n->a && n->len == 3 &&
+        memcmp(n->str, "len", 3) == 0) {
+        if (n->a->kind == N_STR) {
+            *out = (int64_t)n->a->len;
             return 1;
         }
         if (n->ival) { *out = (int64_t)n->ival; return 1; }
@@ -645,7 +645,7 @@ static int bound_const(Node* n, int64_t* out) {
 }
 
 /*
- * Sequences #2: the bounds precondition 0 <= lo <= hi <= len(source) is a
+ * Sequences #2: the bounds precondition 0 <= lo <= hi <= source.len is a
  * compile-time error when constants prove a violation. Unknown lengths and
  * runtime bounds are left to checked builds.
  */
@@ -656,7 +656,7 @@ static void check_slice_bounds(Ck* k, Node* e, Node* base, SType* bt) {
     int klo = e->b ? bound_const(e->b, &lo) : 1;
     int khi;
     if (e->c) khi = bound_const(e->c, &hi);
-    else { khi = slen >= 0; hi = khi ? slen : 0; } // omitted hi is len(source)
+    else { khi = slen >= 0; hi = khi ? slen : 0; } // omitted hi is source.len
     if (klo && lo < 0) {
         ck_err(k, e->b, "slice lower bound %lld is negative", (long long)lo);
         klo = 0; // the negative bound already explains any ordering violation
@@ -855,6 +855,11 @@ static int ut_const(Node* e, int64_t* out) {
         }
         return 0;
     case N_FIELD_E: {
+        if (e->len == 3 && memcmp(e->str, "len", 3) == 0 && e->a) {
+            SType* b = node_ty(e->a);
+            if (b && b->kind == SK_ARRAY) { *out = (int64_t)b->count; return 1; }
+            if (e->a->kind == N_STR) { *out = (int64_t)e->a->len; return 1; }
+        }
         Sym* s = node_sym(e);
         return s && s->is_const && s->init ? ut_const(s->init, out) : 0;
     }
@@ -975,6 +980,10 @@ static int compile_time_expr(Node* e) {
                compile_time_expr(s->init);
     }
     case N_FIELD_E: {
+        if (e->len == 3 && memcmp(e->str, "len", 3) == 0 && e->a) {
+            SType* b = node_ty(e->a);
+            if ((b && b->kind == SK_ARRAY) || e->a->kind == N_STR) return 1;
+        }
         Sym* s = e->a ? node_sym(e->a) : NULL;
         return s && s->kind == SYM_TYPE;
     }
@@ -1996,6 +2005,13 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
         return s->type;
     }
     case N_FIELD_E: {
+        SType* direct = expr_type(k, e->a);
+        if (direct && e->len == 3 && memcmp(e->str, "len", 3) == 0 &&
+            (direct->kind == SK_ARRAY || direct->kind == SK_SLICE ||
+             (direct->kind == SK_PRIM && direct->prim == P_STRING))) {
+            ck_err(k, e, "sequence .len is a read-only property, not an assignable place");
+            return T_ERR;
+        }
         // Reading a pointer value never needs write access to the storage that
         // holds it. For auto-deref writes, only the innermost pointer edge used
         // to reach the final object must be writable: `*mut *T` may write T,
@@ -2598,6 +2614,13 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         }
         SType* b = expr_type(k, e->a);
         if (b->kind == SK_ERR) return T_ERR;
+        if (e->len == 3 && memcmp(e->str, "len", 3) == 0 &&
+            (b->kind == SK_ARRAY || b->kind == SK_SLICE ||
+             (b->kind == SK_PRIM && b->prim == P_STRING))) {
+            if (b->kind == SK_ARRAY) e->ival = b->count;
+            else if (e->a->kind == N_STR) e->ival = e->a->len;
+            return st_prim(P_USIZE);
+        }
         while (b->kind == SK_PTR) b = b->base; // p.x auto-derefs
         if (b->kind == SK_FORWARD) {
             ck_err(k, e,
@@ -3756,25 +3779,6 @@ static SType* check_call(Ck* k, Node* call) {
                     total += t->fields[found].offset; t = t->fields[found].t;
                 }
                 call->ival = total;
-                return st_prim(P_USIZE);
-            }
-            if (callee->len == 3 && memcmp(callee->str, "len", 3) == 0) {
-                if (call->nkids != 1 || call->kids[0]->kind == N_MUTARG) {
-                    ck_err(k, call, "len takes exactly one sequence value");
-                    return T_ERR;
-                }
-                SType* t = expr_type(k, call->kids[0]);
-                SType* seq = t;
-                if (!seq || (seq->kind != SK_ARRAY && seq->kind != SK_SLICE &&
-                    !(seq->kind == SK_PRIM && seq->prim == P_STRING))) {
-                    if (seq && seq->kind != SK_ERR)
-                        ck_err(k, call, "len requires a built-in sequence, got %s",
-                               type_name(t));
-                    return T_ERR;
-                }
-                if (seq->kind == SK_ARRAY) call->ival = seq->count;
-                else if (call->kids[0]->kind == N_STR)
-                    call->ival = call->kids[0]->len;
                 return st_prim(P_USIZE);
             }
             // reserved builtin: assert(condition: bool) — checked-only
@@ -5350,7 +5354,11 @@ static void init_expr(InitCk* k, Node* e) {
         if (s && s->kind == SYM_VAR && !s->is_global) (void)init_require_path(k, e);
         return;
     }
-        case N_FIELD_E: {
+    case N_FIELD_E: {
+        if (e->len == 3 && memcmp(e->str, "len", 3) == 0) {
+            SType* t = init_shape(node_ty(e->a));
+            if (t && t->kind == SK_ARRAY) return; // compile-time metadata
+        }
         InitPath p = {0};
         if (init_path(e, &p)) {
             (void)init_require_path(k, e);
@@ -5399,11 +5407,6 @@ static void init_expr(InitCk* k, Node* e) {
     case N_MUTARG:
         init_expr(k, e->a); return;
     case N_CALL:
-        if (e->a && e->a->kind == N_IDENT && e->a->len == 3 &&
-            memcmp(e->a->str, "len", 3) == 0 && e->nkids == 1) {
-            SType* t = init_shape(node_ty(e->kids[0]));
-            if (t && t->kind == SK_ARRAY) return; // compile-time metadata
-        }
         if (e->a && e->a->kind == N_IDENT) {
             Sym* s = node_sym(e->a);
             if (s && s->kind == SYM_VAR) init_expr(k, e->a); // function variable

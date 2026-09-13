@@ -13,14 +13,14 @@ main(): int {
         return 1
     }
 
-    if len(numbers) != 4 {
+    if numbers.len != 4 {
         release[usize](mut numbers)
         return 2
     }
 
     grown: []usize = realloc[usize](numbers, 8)
 
-    if grown == null || len(grown) != 8 {
+    if grown == null || grown.len != 8 {
         return 3
     }
     release[usize](mut grown)

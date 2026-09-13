@@ -223,7 +223,7 @@ afterwards the permission travels in the type:
 
 ```ace
 fill(data: mut []u8, value: u8) {
-    for i: usize in 0 .. len(data) {
+    for i: usize in 0 .. data.len {
         data[i] = value
     }
 }
@@ -239,7 +239,7 @@ main(): int {
     letters: [3]u8 = [u8('a'), u8('c'), u8('e')]
     view: mut string = mut letters[0..]
 
-    return int(plain[1]) + int(len(view)) - 3
+    return int(plain[1]) + int(view.len) - 3
 }
 ```
 
@@ -263,7 +263,7 @@ first; when no exact candidate fits, the call may still resolve through the
 implicit shrink.
 
 `mut string` participates in the same rules because it is the same type as
-`mut []char` and `mut []u8`. `len`, explicit byte-content
+`mut []char` and `mut []u8`. `.len`, explicit byte-content
 comparison, and `null` behave exactly as for `string`; it originates from proven writable
 bytes, such as `mut array[0..]`, and re-slicing preserves it. Indexed
 byte writes exist only through a `mut string`: `s[i] = c` assigns exactly one
@@ -369,14 +369,14 @@ a nonnegative integer literal equal to the array type's length. `value` is
 evaluated once and copied into every element in index order; no allocation or
 shared element storage is introduced.
 
-The intrinsic `len(sequence)` is available on built-in arrays (constant element
+The direct read-only property `sequence.len` is available on built-in arrays (constant element
 count), slices (stored element count), and strings (stored byte count), including
-their writable forms. It returns `usize`, requires parentheses, and is not
-provided by structs, tuples, unions, contracts, or user-defined wrappers. A
+their writable forms. It returns `usize`, performs no call or dispatch, and is
+not provided by structs, tuples, unions, contracts, or user-defined wrappers. A
 struct can still declare an ordinary field named `len`.
 
 Slicing is uniform across arrays, slices, and strings with half-open
-`[lo, hi)` bounds and the defaults `0` and `len(source)`: slicing an array or
+`[lo, hi)` bounds and the defaults `0` and `source.len`: slicing an array or
 slice yields `[]T`, and slicing a string yields a `string`; the result carries
 the source's permission, so a writable source stays writable and slicing never
 widens permission ([Writable views](#writable-views)). The result length is
@@ -384,7 +384,7 @@ widens permission ([Writable views](#writable-views)). The result length is
 `lo * sizeof(T)`; slicing a slice re-bases inside that slice's own window.
 Empty results keep their computed pointer and are never canonicalized to
 `null`. Bounds may be any integer; when constants prove
-`0 <= lo <= hi <= len(source)` false, the program is rejected at compile time,
+`0 <= lo <= hi <= source.len` false, the program is rejected at compile time,
 while checked output validates dynamic bounds and aborts with a standard-error
 diagnostic on failure. Release output assumes the complete precondition.
 
@@ -393,8 +393,8 @@ All four bound forms are available:
 ```ace
 source[lo..hi] // explicit half-open range [lo, hi)
 source[..hi]   // prefix: lo defaults to 0
-source[lo..]   // suffix: hi defaults to len(source)
-source[..]     // complete view: 0 through len(source)
+source[lo..]   // suffix: hi defaults to source.len
+source[..]     // complete view: 0 through source.len
 ```
 
 ```ace
@@ -402,7 +402,7 @@ text: string = "hello world"
 tail: string = text[6..]
 letter: u8 = text[0]
 word: const string = "hello"
-window: string = word[1..len(word) - 1]
+window: string = word[1..word.len - 1]
 ```
 
 `string`, `[]char`, and `[]u8` share identity and may be assigned, passed, and
@@ -425,7 +425,7 @@ Array assignment copies all elements. Slice assignment copies only its pointer
 and length, so both values view the same backing storage; it never copies the
 elements. Slicing does not allocate. See [Memory](memory.md) for allocation and
 lifetime rules. Every element read or write requires
-`0 <= index < len(sequence)`: static violations are compilation errors, checked
+`0 <= index < sequence.len`: static violations are compilation errors, checked
 output validates dynamic indices, and release output emits no guard.
 
 These layout facts are normative — code may rely on them. A slice is exactly two
@@ -463,7 +463,7 @@ empty but non-null slice may match another empty sequence through `mem.equal`,
 while it does not equal `null`.
 
 Non-byte arrays and slices have no built-in content comparison; use an explicit
-loop. Compare lengths alone with `len(a) == len(b)`. `mem.compare` remains the
+loop. Compare lengths alone with `a.len == b.len`. `mem.compare` remains the
 lexicographic operation for byte slices.
 
 Arrays and slices do not convert implicitly in either direction. The explicit

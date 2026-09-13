@@ -60,7 +60,7 @@ main(): int {
         http.RequestResult.complete(request: http.Request) {
             if !mem.equal(request.method, "POST") { return 1 }
             if !mem.equal(request.target, "/submit") { return 2 }
-            if len(request.headers) != 2 { return 3 }
+            if request.headers.len != 2 { return 3 }
             if !mem.equal(request.body, "data") { return 4 }
         }
         else { return 5 }
@@ -84,7 +84,7 @@ main(): int {
     parser = new_parser()
     previous_scan: usize = 0
     previous_body: usize = 0
-    for occupied: usize in 1 .. len(request_text) + 1 {
+    for occupied: usize in 1 .. request_text.len + 1 {
         result = mut parser.parse(
             request_text[..occupied],
             mut headers[..],
@@ -98,10 +98,10 @@ main(): int {
         previous_body = parser.body_count
         switch result {
             http.RequestResult.progress(value: http.RequestProgress) {
-                if occupied == len(request_text) { return 11 }
+                if occupied == request_text.len { return 11 }
             }
             http.RequestResult.complete(request: http.Request) {
-                if occupied != len(request_text) || !mem.equal(request.body, "one") {
+                if occupied != request_text.len || !mem.equal(request.body, "one") {
                     return 12
                 }
             }
@@ -114,7 +114,7 @@ main(): int {
     response_result: http.ResponseResult
     previous_scan = 0
     previous_body = 0
-    for occupied: usize in 1 .. len(response_text) + 1 {
+    for occupied: usize in 1 .. response_text.len + 1 {
         response_result = mut response_parser.parse(
             response_text[..occupied],
             mut headers[..],
@@ -130,10 +130,10 @@ main(): int {
         previous_body = response_parser.body_count
         switch response_result {
             http.ResponseResult.progress(value: http.ResponseProgress) {
-                if occupied == len(response_text) { return 15 }
+                if occupied == response_text.len { return 15 }
             }
             http.ResponseResult.complete(parsed: http.Response) {
-                if occupied != len(response_text) || !mem.equal(parsed.body, "two") {
+                if occupied != response_text.len || !mem.equal(parsed.body, "two") {
                     return 16
                 }
             }

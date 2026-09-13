@@ -10,7 +10,7 @@ NEW_PATH: string = "/tmp/ace_sys_fs_directory/new-entry"
 ENTRY: string = "new-entry"
 
 name_is(buf: []u8, count: usize, text: string): bool {
-    if count != len(text) {
+    if count != text.len {
         return false
     }
     for i: usize in 0 .. count {

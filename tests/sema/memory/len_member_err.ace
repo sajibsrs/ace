@@ -1,6 +1,6 @@
-/* Sequence length is a builtin call, not a pseudo-field. */
+/* The former free-call spelling is not a sequence operation. */
 
 main(): int {
     values: [2]int = [1, 2]
-    return int(values.len)
+    return int(len(values))
 }

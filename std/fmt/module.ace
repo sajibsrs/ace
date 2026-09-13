@@ -5,20 +5,20 @@ import os: "./os/darwin-arm64.ace"
 import decimal: @float_decimal.ace
 
 pub print(text: string): int {
-    if len(text) == 0 {
+    if text.len == 0 {
         return 0
     }
     total: int = 0
 
-    for attempt: int in 0 .. int(len(text)) {
-        n: int = os.write(&text[total], len(text) - usize(total))
+    for attempt: int in 0 .. int(text.len) {
+        n: int = os.write(&text[total], text.len - usize(total))
 
         if n <= 0 {
             return n
         }
         total += n
 
-        if usize(total) == len(text) {
+        if usize(total) == text.len {
             return total
         }
     }
@@ -139,15 +139,15 @@ pub print(value: usize): int {
 write_bytes(data: []u8): int {
     total: int = 0
 
-    for attempt: int in 0 .. int(len(data)) {
-        n: int = os.write(&data[total], len(data) - usize(total))
+    for attempt: int in 0 .. int(data.len) {
+        n: int = os.write(&data[total], data.len - usize(total))
 
         if n <= 0 {
             return n
         }
         total += n
 
-        if usize(total) == len(data) {
+        if usize(total) == data.len {
             return total
         }
     }
@@ -507,7 +507,7 @@ finish_line(written: int): int {
 }
 
 pub println(text: string): int {
-    if len(text) == 0 {
+    if text.len == 0 {
         return print("\n")
     }
     return finish_line(print(text))

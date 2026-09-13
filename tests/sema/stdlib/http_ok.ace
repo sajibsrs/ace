@@ -61,12 +61,12 @@ check(
     }
     switch request_result {
         http.RequestResult.complete(parsed: http.Request) {
-            count += len(parsed.method)
+            count += parsed.method.len
         }
         else {}
     }
     if valid && address.port == 80 && url.port == 80 && err == null {
-        count += len(empty_request.body) + usize(default_response.status - 200)
+        count += empty_request.body.len + usize(default_response.status - 200)
         count += usize(not_found.status - 404)
         count += fresh_request_parser.input_offset + fresh_response_parser.input_offset
         return int(count - count)

@@ -4,5 +4,5 @@ Bytes: distinct [2]u8
 
 main(): int {
     values: Bytes
-    return int(len(values))
+    return int(values.len)
 }

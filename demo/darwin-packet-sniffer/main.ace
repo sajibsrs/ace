@@ -97,14 +97,14 @@ main(): int {
     if sys.argc() > 1 {
         interface = sys.arg(1)
     }
-    if len(interface) == 0 || len(interface) > 15 {
+    if interface.len == 0 || interface.len > 15 {
         fmt.printf("interface name must contain 1 through 15 bytes: error %d\n", 22)
         sys.close(fd)
         return 1
     }
     debug: bool = sys.argc() > 2 && mem.equal(sys.arg(2), "--debug")
     interface_request: [32]u8 = [u8(0) : 32]
-    for i: usize in 0 .. len(interface) {
+    for i: usize in 0 .. interface.len {
         interface_request[i] = interface[i]
     }
     err: Error = sys.ioctl(fd, sys.BIOCSETIF, mut interface_request[0..32])

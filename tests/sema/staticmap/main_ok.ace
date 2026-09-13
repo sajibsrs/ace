@@ -14,5 +14,5 @@ main(): int {
     value: u32 = tags[Tag(7)]
     width: u8 = types[typeid(u16)]
     named: u8 = named_words[Word("ace")]
-    return int(n) + int(len(text)) + int(value) + int(width) + int(named)
+    return int(n) + int(text.len) + int(value) + int(width) + int(named)
 }

@@ -205,7 +205,7 @@ postfix       := primary postfix_part*
 postfix_part  := "(" [arg_list] ")"                       // call; ["mut"] expr args
                | "[" expr "]"                             // index
                | "[" [expr] ".." [expr] "]"               [P] slice expression
-               | "." ident                                // field
+               | "." ident                                // field or built-in sequence .len
                | "[" type_list "]"                        // generic instantiation — see Notes
 
 arg_list      := arg ("," arg)*

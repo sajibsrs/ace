@@ -36,8 +36,8 @@ client(port: u16): int {
     request: string = "nonblocking echo"
     sent: usize = 0
 
-    for sent < len(request) {
-        count: int, send_err: Error = net.send(sock, request[sent..len(request)])
+    for sent < request.len {
+        count: int, send_err: Error = net.send(sock, request[sent..request.len])
 
         if send_err != null || count <= 0 {
             sys.close(sock)
@@ -49,8 +49,8 @@ client(port: u16): int {
     storage: [16]u8 = [u8(0) : 16]
     received: usize = 0
 
-    for received < len(request) {
-        view: mut []u8 = mut storage[received..len(request)]
+    for received < request.len {
+        view: mut []u8 = mut storage[received..request.len]
         count: int, receive_err: Error = net.receive(sock, view)
 
         if receive_err != null || count <= 0 {
@@ -60,7 +60,7 @@ client(port: u16): int {
         received += usize(count)
     }
 
-    if !mem.equal(storage[0..len(request)], request) {
+    if !mem.equal(storage[0..request.len], request) {
         sys.close(sock)
         return 5
     }
@@ -186,8 +186,8 @@ main(): int {
                 peer = accepted
                 poll.unwatch(q, listener)
             } else if peer != -1 && event.fd == peer {
-                if event.readable && received < len(buffer) {
-                    view: mut []u8 = mut buffer[received..len(buffer)]
+                if event.readable && received < buffer.len {
+                    view: mut []u8 = mut buffer[received..buffer.len]
                     amount: int, err: Error = net.receive(peer, view)
 
                     if err != null || amount <= 0 {
@@ -196,7 +196,7 @@ main(): int {
                     }
                     received += usize(amount)
 
-                    if received == len(buffer) {
+                    if received == buffer.len {
                         probe_storage: [1]u8 = [u8(0)]
                         probe: mut []u8 = mut probe_storage[0..1]
                         probe_count: int, probe_err: Error = net.receive(peer, probe)
@@ -224,7 +224,7 @@ main(): int {
                     }
                     sent += usize(amount)
 
-                    if sent == len(buffer) {
+                    if sent == buffer.len {
                         done = true
                     }
                 }

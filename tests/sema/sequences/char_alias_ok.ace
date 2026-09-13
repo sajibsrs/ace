@@ -42,7 +42,7 @@ main(): int {
     bytes: [2]u8 = [u8('x'), u8('y')]
     view: []char = bytes[0..2]
 
-    if len(view) != 2 || view[0] != 'x' {
+    if view.len != 2 || view[0] != 'x' {
         return 5
     }
     wide: []u8 = view
@@ -53,7 +53,7 @@ main(): int {
     text: string = wide
     bytes_again: []u8 = text
 
-    if len(text) != 2 || bytes_again[0] != 'x' {
+    if text.len != 2 || bytes_again[0] != 'x' {
         return 10
     }
 
@@ -71,7 +71,7 @@ main(): int {
     text_box: View[string] = View[string] {value: text}
     bytes_box: View[[]u8] = text_box
 
-    if len(bytes_box.value) != 2 {
+    if bytes_box.value.len != 2 {
         return 13
     }
 

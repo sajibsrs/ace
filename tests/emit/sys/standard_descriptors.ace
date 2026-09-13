@@ -26,7 +26,7 @@ write_payload(path: string, text: string): int {
     }
     n: int, werr: Error = sys.write(fd, text)
 
-    if werr != null || n != int(len(text)) {
+    if werr != null || n != int(text.len) {
         return 2
     }
 
@@ -46,11 +46,11 @@ read_payload(path: string, want: string): int {
     buf: mut []u8 = mut storage[0..8]
     n: int, rerr: Error = sys.read(fd, buf)
 
-    if rerr != null || n != int(len(want)) {
+    if rerr != null || n != int(want.len) {
         return 2
     }
 
-    if !mem.equal(buf[0..len(want)], want) {
+    if !mem.equal(buf[0..want.len], want) {
         return 3
     }
     eof: int, eerr: Error = sys.read(fd, buf)

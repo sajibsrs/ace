@@ -1,0 +1,7 @@
+/* Built-in sequence length is structural read-only data, not an lvalue. */
+
+main(): int {
+    values: [2]int = [1, 2]
+    values.len = 1
+    return 0
+}

@@ -2531,6 +2531,12 @@ static int is_lvalue_node(Node* x) {
         if (x->a && x->a->kind == N_INDEX && node_ty(x->a) &&
             node_ty(x->a)->kind == SK_UNION)
             return 0;
+        if (x->len == 3 && memcmp(x->str, "len", 3) == 0) {
+            SType* b = unwrap(node_ty(x->a));
+            if (b && (b->kind == SK_ARRAY || b->kind == SK_SLICE ||
+                      (b->kind == SK_PRIM && b->prim == P_STRING)))
+                return 0;
+        }
         return 1;
     case N_UNARY:
         return x->op == T_STAR || x->op == T_AMP;
@@ -3744,24 +3750,6 @@ static EV gen_call(Em* e, Node* call) {
     if (callee->kind == N_IDENT && !call->sym && callee->len == 13 &&
         memcmp(callee->str, "static_assert", 13) == 0)
         return (EV){ CLS_INT, 0 };
-    // len(sequence): arrays are compile-time constants; slices and strings
-    // load the stored count from the second descriptor word.
-    if (callee->kind == N_IDENT && !call->sym && callee->len == 3 &&
-        memcmp(callee->str, "len", 3) == 0) {
-        SType* seq = unwrap(node_ty(call->kids[0]));
-        if (seq && seq->kind == SK_ARRAY) {
-            int t = tmp_int(e);
-            load_imm(e, 1, xreg(t), call->ival);
-            return (EV){ CLS_INT, t };
-        }
-        EV value = gen_expr(e, call->kids[0]);
-        if (value.cls != CLS_ADDR) {
-            em_err(e, call, "len sequence has no descriptor");
-            return (EV){ CLS_INT, tmp_int(e) };
-        }
-        EV count = load_scalar(e, xreg(value.idx), 8, node_ty(call));
-        return collapse(e, value.idx, count);
-    }
     Sym* intrinsic = call->sym ? node_sym(call) : NULL;
     if (intrinsic && intrinsic->decl &&
         intrinsic->decl->ival == BI_FMT_PRINTF && call->ival == BI_FMT_PRINTF)
@@ -4595,6 +4583,24 @@ static EV gen_expr(Em* e, Node* x) {
             }
         }
         SType* eb = unwrap(node_ty(x->a));
+        // sequence.len: arrays are compile-time constants; slices and strings
+        // load the stored count from the second descriptor word.
+        if (eb && x->len == 3 && memcmp(x->str, "len", 3) == 0 &&
+            (eb->kind == SK_ARRAY || eb->kind == SK_SLICE ||
+             (eb->kind == SK_PRIM && eb->prim == P_STRING))) {
+            if (eb->kind == SK_ARRAY || x->a->kind == N_STR) {
+                int t = tmp_int(e);
+                load_imm(e, 1, xreg(t), x->ival);
+                return (EV){ CLS_INT, t };
+            }
+            EV value = gen_expr(e, x->a);
+            if (value.cls != CLS_ADDR) {
+                em_err(e, x, "sequence .len has no descriptor");
+                return (EV){ CLS_INT, tmp_int(e) };
+            }
+            EV count = load_scalar(e, xreg(value.idx), 8, node_ty(x));
+            return collapse(e, value.idx, count);
+        }
         if (eb && eb->kind == SK_ERROR) {
             EV value = gen_expr(e, x->a);
             if (x->len == 6 && memcmp(x->str, "domain", 6) == 0)

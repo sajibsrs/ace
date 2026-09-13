@@ -168,11 +168,11 @@ change_filter(q: Queue, fd: sys.Fd, filter: i16, flags: u16): i32 {
 }
 
 pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
-    if len(events) == 0 {
+    if events.len == 0 {
         errno_set(EINVAL)
         return usize(0), WaitErr.invalid
     }
-    capacity: usize = len(events)
+    capacity: usize = events.len
 
     if capacity > MAX_WAIT_EVENTS {
         capacity = MAX_WAIT_EVENTS

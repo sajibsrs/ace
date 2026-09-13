@@ -40,7 +40,7 @@ retarget(mut point: *Point, replacement: *Point) {
 }
 
 fill(data: mut []u8, value: u8) {
-    for i: usize in 0 .. len(data) {
+    for i: usize in 0 .. data.len {
         data[i] = value
     }
 }
@@ -150,6 +150,6 @@ main(): int {
     }
     return count + int(raw) + read_x(pointer) + middle[0] + middle[1] +
         operation(1, 2) + int(state) + box.value + value.get() +
-        partial.x + partial.y + int(len(view)) + int(len(tail)) +
-        int(plain[1]) + int(len(writable_view)) + explicit - 7
+        partial.x + partial.y + int(view.len) + int(tail.len) +
+        int(plain[1]) + int(writable_view.len) + explicit - 7
 }

@@ -24,20 +24,20 @@ main(): int {
         return 4
     }
     values: [4]u8 = [10, 20, 30, 40]
-    count: usize = len(values)
+    count: usize = values.len
     pointer: mut *u8 = mut &values[0]
     address: usize = usize(pointer)
     restored: mut *u8 = mut *u8(address)
     constructed: mut []u8 = mut []u8(restored, count)
 
-    if count != 4 || len(constructed) != 4 {
+    if count != 4 || constructed.len != 4 {
         return 1
     }
 
     storage: mut []u8 = mem.alloc(16, 8)
 
     if storage != null {
-        bytes: usize = len(storage)
+        bytes: usize = storage.len
 
         if bytes != 16 {
             mem.release(mut storage)
@@ -72,7 +72,7 @@ main(): int {
     numbers: mut []usize = mem.alloc[usize](4)
 
     if numbers != null {
-        if len(numbers) != 4 {
+        if numbers.len != 4 {
             mem.release[usize](mut numbers)
             return 5
         }

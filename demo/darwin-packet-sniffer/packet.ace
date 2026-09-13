@@ -52,7 +52,7 @@ network_u16(data: []u8, at: usize): u16 {
  * A false result never exposes partially decoded offsets.
  */
 pub decode_record(data: []u8, at: usize): (Record, bool) {
-    if at > len(data) || len(data) - at < 18 {
+    if at > data.len || data.len - at < 18 {
         return zero_record(), false
     }
     captured: usize = usize(native_u32(data, at + 8))
@@ -61,7 +61,7 @@ pub decode_record(data: []u8, at: usize): (Record, bool) {
         return zero_record(), false
     }
     total: usize = header + captured
-    remaining: usize = len(data) - at
+    remaining: usize = data.len - at
     if total > remaining {
         return zero_record(), false
     }
@@ -81,8 +81,8 @@ pub decode_record(data: []u8, at: usize): (Record, bool) {
  * network-order total-length field must be present in the captured bytes.
  */
 pub decode_ipv4(data: []u8, record: Record): (Packet, bool) {
-    if record.frame_start > len(data) ||
-       record.captured_length > len(data) - record.frame_start ||
+    if record.frame_start > data.len ||
+       record.captured_length > data.len - record.frame_start ||
        record.captured_length < 34 {
         return zero_packet(), false
     }

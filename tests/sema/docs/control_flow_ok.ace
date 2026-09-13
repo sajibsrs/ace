@@ -47,7 +47,7 @@ main(): int {
         values[index] = item + 1
     }
 
-    for index: usize in 0 .. len(values) {
+    for index: usize in 0 .. values.len {
         index = 0
     }
 

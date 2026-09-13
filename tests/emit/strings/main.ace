@@ -24,11 +24,11 @@ main(): int {
     }
 
     if !mem.equal(greeting[..2], "he") || !mem.equal(greeting[3..], "lo") ||
-       len(greeting[..]) != 5 {
+       greeting[..].len != 5 {
         return 2
     }
 
-    if len(greeting[2..2]) != 0 {
+    if greeting[2..2].len != 0 {
         return 3
     }
 
@@ -42,7 +42,7 @@ main(): int {
     arr: [3]u8 = [u8('o'), u8('k'), u8('!')]
     view: string = arr[0..3]
 
-    if !mem.equal(view, "ok!") || len(view) != 3 {
+    if !mem.equal(view, "ok!") || view.len != 3 {
         return 6
     }
     arr[0] = u8('n')

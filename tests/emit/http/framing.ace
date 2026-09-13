@@ -89,8 +89,8 @@ informational_and_none(): int {
     )
     switch result {
         http.ResponseResult.complete(response: http.Response) {
-            if response.status != 304 || len(response.body) != 0 ||
-                state.informational_count != 1 || len(response.headers) != 1 {
+            if response.status != 304 || response.body.len != 0 ||
+                state.informational_count != 1 || response.headers.len != 1 {
                 return 1
             }
         }

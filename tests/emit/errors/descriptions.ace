@@ -17,8 +17,8 @@ ServerErr: error {
 global_named: const Error = ClientErr.address
 
 same(a: string, b: string): bool {
-    if len(a) != len(b) { return false }
-    for i: usize in 0 .. len(a) {
+    if a.len != b.len { return false }
+    for i: usize in 0 .. a.len {
         if a[i] != b[i] { return false }
     }
     return true

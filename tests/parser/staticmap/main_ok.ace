@@ -4,5 +4,5 @@ codes: StaticMap[u16]string = {
 }
 
 main(): int {
-    return int(len(codes[u16(200)]))
+    return int(codes[u16(200)].len)
 }

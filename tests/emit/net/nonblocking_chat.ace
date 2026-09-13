@@ -49,7 +49,7 @@ read_token(fd: sys.Fd): bool {
 send_fragmented(sock: net.Socket, text: string): bool {
     sent: usize = 0
 
-    for sent < len(text) {
+    for sent < text.len {
         /* A one-byte view makes partial application progress deterministic;
          * net.send still performs exactly one kernel operation per attempt.
          */
@@ -67,7 +67,7 @@ receive_exact(sock: net.Socket, expected: string): bool {
     storage: [8]u8 = [u8(0) : 8]
     received: usize = 0
 
-    for received < len(expected) {
+    for received < expected.len {
         /* Bound each receive to one byte so message assembly necessarily
          * retains partial progress across multiple operations.
          */
@@ -187,34 +187,34 @@ fork_client(kind: int, port: u16, gate_read: sys.Fd, gate_write: sys.Fd,
 }
 
 find_client(clients: []Client, fd: sys.Fd): usize {
-    for index: usize in 0 .. len(clients) {
+    for index: usize in 0 .. clients.len {
         if clients[index].socket == fd {
             return index
         }
     }
-    return len(clients)
+    return clients.len
 }
 
 find_free(clients: []Client): usize {
-    for index: usize in 0 .. len(clients) {
+    for index: usize in 0 .. clients.len {
         if clients[index].socket == -1 {
             return index
         }
     }
-    return len(clients)
+    return clients.len
 }
 
 broadcast(clients: mut []Client, message: []u8): bool {
-    for index: usize in 0 .. len(clients) {
+    for index: usize in 0 .. clients.len {
         if clients[index].socket != -1 {
             if clients[index].output_count != clients[index].output_sent ||
-               len(message) > BUFFER_CAPACITY {
+               message.len > BUFFER_CAPACITY {
                 return false
             }
-            for byte_index: usize in 0 .. len(message) {
+            for byte_index: usize in 0 .. message.len {
                 clients[index].output[byte_index] = message[byte_index]
             }
-            clients[index].output_count = len(message)
+            clients[index].output_count = message.len
             clients[index].output_sent = 0
         }
     }

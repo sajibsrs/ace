@@ -101,7 +101,7 @@ main(): int {
         if block != null {
             block[0] = u8(i % 251)
             block[grown_size - 1] = u8((i + 1) % 251)
-            requested_live += len(block)
+            requested_live += block.len
             usable_live += malloc_size(&block[0])
         } else {
             failures += 1

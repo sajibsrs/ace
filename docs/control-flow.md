@@ -210,7 +210,7 @@ use the one-binder form when the index is unwanted, or a range when only
 indices are wanted:
 
 ```ace
-for index: usize in 0 .. len(values) {
+for index: usize in 0 .. values.len {
 }
 ```
 

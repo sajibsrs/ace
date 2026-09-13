@@ -27,10 +27,10 @@ pub is_equal(a: string, b: string, sensitive: bool): bool {
     if sensitive {
         return mem.equal(a, b)
     }
-    if len(a) != len(b) {
+    if a.len != b.len {
         return false
     }
-    for i: usize in 0 .. len(a) {
+    for i: usize in 0 .. a.len {
         if to_lower(a[i]) != to_lower(b[i]) {
             return false
         }

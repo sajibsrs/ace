@@ -15,7 +15,7 @@ main(): int {
     if words["ace"] != 9 || words["missing"] != 0 || words[""] != 3 { return 4 }
     ok: string = phrases[u16(200)]
     missing: string = phrases[u16(404)]
-    if len(ok) != 2 || ok[0] != 'O' || len(missing) != 9 || missing[0] != 'N' { return 5 }
+    if ok.len != 2 || ok[0] != 'O' || missing.len != 9 || missing[0] != 'N' { return 5 }
     if phrases[u16(500)] != null || phrases[u16(999)] != null { return 6 }
     if named[Word("ace")] != 7 || named[Word("missing")] != 0 { return 7 }
     pair: Pair = pairs[u8(1)]

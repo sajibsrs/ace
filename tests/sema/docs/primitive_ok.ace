@@ -29,7 +29,7 @@ main(): int {
     back: char = as_byte
     bytes: [2]char = [direct, newline]
     message: string = "Welcome Ace!\n"
-    length: usize = len(message)
+    length: usize = message.len
     fmt.print(length)
     first: u8 = message[0]
     second: u8 = dynamic_byte(message, 1)

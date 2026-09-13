@@ -42,24 +42,24 @@ pub has(text: string, needle: char): bool {
  * string part matches either boundary.
  */
 pub has(text: string, part: string, suffix: bool): bool {
-    if len(part) > len(text) {
+    if part.len > text.len {
         return false
     }
 
     if !suffix {
-        return mem.equal(text[..len(part)], part)
+        return mem.equal(text[..part.len], part)
     }
-    return mem.equal(text[len(text) - len(part)..], part)
+    return mem.equal(text[text.len - part.len..], part)
 }
 
 /* Unsigned byte-wise lexicographic order: exactly -1, 0, or 1; after an
  * equal prefix the shorter string sorts first.
  */
 pub compare(a: string, b: string): int {
-    n: usize = len(a)
+    n: usize = a.len
 
-    if len(b) < n {
-        n = len(b)
+    if b.len < n {
+        n = b.len
     }
 
     for i: usize in 0 .. n {
@@ -71,25 +71,25 @@ pub compare(a: string, b: string): int {
         }
     }
 
-    if len(a) < len(b) {
+    if a.len < b.len {
         return -1
     }
 
-    if len(a) > len(b) {
+    if a.len > b.len {
         return 1
     }
     return 0
 }
 
-/* Copies the complete text into destination[0..len(text)]; a shorter
+/* Copies the complete text into destination[0..text.len]; a shorter
  * destination is unchanged and fails, and the unused suffix is untouched.
  */
 pub copy(text: string, noalias destination: mut []char): bool {
-    if len(text) > len(destination) {
+    if text.len > destination.len {
         return false
     }
 
-    for i: usize in 0 .. len(text) {
+    for i: usize in 0 .. text.len {
         destination[i] = text[i]
     }
     return true
@@ -102,16 +102,16 @@ pub copy(text: string, noalias destination: mut []char): bool {
 pub concat(parts: []string, destination: mut []char): (usize, bool) {
     total: usize = 0
 
-    for i: usize in 0 .. len(parts) {
-        if total > len(destination) || len(parts[i]) > len(destination) - total {
+    for i: usize in 0 .. parts.len {
+        if total > destination.len || parts[i].len > destination.len - total {
             return 0, false
         }
-        total += len(parts[i])
+        total += parts[i].len
     }
 
     at: usize = 0
-    for i: usize in 0 .. len(parts) {
-        count: usize = len(parts[i])
+    for i: usize in 0 .. parts.len {
+        count: usize = parts[i].len
         mem.copy(destination[at..at + count], parts[i])
         at += count
     }
@@ -125,30 +125,30 @@ pub concat(parts: []string, destination: mut []char): (usize, bool) {
  * are unchanged. An empty separator fails without writing.
  */
 pub split(text: string, separator: string, parts: mut []string): (usize, bool) {
-    if len(separator) == 0 {
+    if separator.len == 0 {
         return 0, false
     }
     written: usize = 0
     start: usize = 0
     cursor: usize = 0
 
-    for guard: usize in 0 .. len(text) + 1 {
+    for guard: usize in 0 .. text.len + 1 {
         at: usize, found: bool = index_from(text, separator, cursor)
 
         if !found {
             break
         }
 
-        if written < len(parts) {
+        if written < parts.len {
             parts[written] = text[start..at]
             written += 1
         }
-        start = at + len(separator)
+        start = at + separator.len
         cursor = start
     }
     complete: bool = false
 
-    if written < len(parts) {
+    if written < parts.len {
         parts[written] = text[start..]
         written += 1
         complete = true
@@ -168,25 +168,25 @@ pub split(text: string, separator: char, parts: mut []string): (usize, bool) {
  * succeeds without changing the view.
  */
 pub trim(text: string, part: string, suffix: bool): (string, bool) {
-    if len(part) == 0 {
+    if part.len == 0 {
         return text, true
     }
 
     if !suffix {
-        if len(part) <= len(text) && mem.equal(text[..len(part)], part) {
-            return text[len(part)..], true
+        if part.len <= text.len && mem.equal(text[..part.len], part) {
+            return text[part.len..], true
         }
         return text, false
     }
 
-    if len(part) <= len(text) && mem.equal(text[len(text) - len(part)..], part) {
-        return text[..len(text) - len(part)], true
+    if part.len <= text.len && mem.equal(text[text.len - part.len..], part) {
+        return text[..text.len - part.len], true
     }
     return text, false
 }
 
 pub trim(text: string, part: char, suffix: bool): (string, bool) {
-    if len(text) == 0 {
+    if text.len == 0 {
         return text, false
     }
 
@@ -197,8 +197,8 @@ pub trim(text: string, part: char, suffix: bool): (string, bool) {
         return text, false
     }
 
-    if text[len(text) - 1] == part {
-        return text[..len(text) - 1], true
+    if text[text.len - 1] == part {
+        return text[..text.len - 1], true
     }
     return text, false
 }
@@ -207,20 +207,20 @@ pub trim(text: string, part: char, suffix: bool): (string, bool) {
  * zero-copy view; no Unicode whitespace processing happens.
  */
 pub trim(text: string): string {
-    start: usize = len(text)
+    start: usize = text.len
 
-    for i: usize in 0 .. len(text) {
+    for i: usize in 0 .. text.len {
         if !space_byte(text[i]) {
             start = i
             break
         }
     }
-    end: usize = len(text)
+    end: usize = text.len
 
-    if start < len(text) {
-        for i: usize in 0 .. len(text) - start {
-            if !space_byte(text[len(text) - 1 - i]) {
-                end = len(text) - i
+    if start < text.len {
+        for i: usize in 0 .. text.len - start {
+            if !space_byte(text[text.len - 1 - i]) {
+                end = text.len - i
                 break
             }
         }
@@ -499,44 +499,44 @@ pub format(destination: mut []char, value: usize, radix: u8): (usize, bool) {
 
 /* Writes the complete byte sequence into destination or nothing at all. */
 store_bytes(destination: mut []u8, source: []u8): (usize, bool) {
-    if len(source) > len(destination) {
+    if source.len > destination.len {
         return 0, false
     }
 
-    for i: usize in 0 .. len(source) {
+    for i: usize in 0 .. source.len {
         destination[i] = source[i]
     }
-    return len(source), true
+    return source.len, true
 }
 
 /* Writes the complete text into destination or nothing at all. */
 store_text(destination: mut []char, text: string): (usize, bool) {
-    if len(text) > len(destination) {
+    if text.len > destination.len {
         return 0, false
     }
 
-    for i: usize in 0 .. len(text) {
+    for i: usize in 0 .. text.len {
         destination[i] = text[i]
     }
-    return len(text), true
+    return text.len, true
 }
 
 /* First occurrence of needle at or after from: the index and whether the
  * needle was found. An empty needle is found at every position.
  */
 index_from(text: string, needle: string, after: usize): (usize, bool) {
-    if len(needle) == 0 {
+    if needle.len == 0 {
         return after, true
     }
 
-    if len(needle) > len(text) {
+    if needle.len > text.len {
         return 0, false
     }
 
-    for scan: usize in after .. len(text) + 1 - len(needle) {
+    for scan: usize in after .. text.len + 1 - needle.len {
         match: bool = true
 
-        for j: usize in 0 .. len(needle) {
+        for j: usize in 0 .. needle.len {
             if text[scan + j] != needle[j] {
                 match = false
                 break
@@ -552,7 +552,7 @@ index_from(text: string, needle: string, after: usize): (usize, bool) {
 
 /* First occurrence of one byte at or after from. */
 index_byte_from(text: string, byte: char, after: usize): (usize, bool) {
-    for i: usize in after .. len(text) {
+    for i: usize in after .. text.len {
         if text[i] == byte {
             return i, true
         }
@@ -593,7 +593,7 @@ pub parse[int](text: string, radix: u8): (int, bool) {
         return 0, false
     }
 
-    if len(text) == 0 {
+    if text.len == 0 {
         return 0, false
     }
     negative: bool = text[0] == 45
@@ -603,7 +603,7 @@ pub parse[int](text: string, radix: u8): (int, bool) {
         at = 1
     }
 
-    if at == len(text) {
+    if at == text.len {
         return 0, false
     }
     limit: u64 = 9223372036854775807
@@ -613,7 +613,7 @@ pub parse[int](text: string, radix: u8): (int, bool) {
     }
     mag: u64 = 0
 
-    for i: usize in at .. len(text) {
+    for i: usize in at .. text.len {
         d: u64, ok: bool = digit_value(text[i])
 
         if !ok || d >= u64(radix) {
@@ -640,7 +640,7 @@ pub parse[uint](text: string, radix: u8): (uint, bool) {
         return 0, false
     }
 
-    if len(text) == 0 {
+    if text.len == 0 {
         return 0, false
     }
 
@@ -649,7 +649,7 @@ pub parse[uint](text: string, radix: u8): (uint, bool) {
     }
     mag: u64 = 0
 
-    for i: usize in 0 .. len(text) {
+    for i: usize in 0 .. text.len {
         d: u64, ok: bool = digit_value(text[i])
 
         if !ok || d >= u64(radix) {

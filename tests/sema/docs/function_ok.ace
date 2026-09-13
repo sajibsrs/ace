@@ -19,7 +19,7 @@ divide(value: int, by: int): (int, int) {
 }
 
 render(value: string): int {
-    return int(len(value))
+    return int(value.len)
 }
 
 render(value: int): int {

@@ -179,7 +179,7 @@ pub progress_connect(mut conn: Conn): Event {
 }
 
 pub progress_receive(mut conn: Conn, dest: mut []u8): Event {
-    if len(dest) == 0 {
+    if dest.len == 0 {
         conn.interest = with_read(conn.interest, false)
         return Event.none
     }
@@ -209,7 +209,7 @@ pub progress_receive(mut conn: Conn, dest: mut []u8): Event {
 }
 
 pub progress_send(mut conn: Conn, src: []u8): Event {
-    if len(src) == 0 {
+    if src.len == 0 {
         conn.send_offset = usize(0)
         conn.interest = with_write(conn.interest, false)
         return Event.sent(usize(0))
@@ -235,7 +235,7 @@ pub progress_send(mut conn: Conn, src: []u8): Event {
             return Event.none
         }
         conn.send_offset += usize(count)
-        if conn.send_offset == len(src) {
+        if conn.send_offset == src.len {
             conn.send_offset = usize(0)
             conn.interest = with_write(conn.interest, false)
         } else {
@@ -248,7 +248,7 @@ pub progress_send(mut conn: Conn, src: []u8): Event {
 pub receive_all(connection: Conn, buffer: mut []u8): (usize, Error) {
     received: usize = 0
 
-    for received < len(buffer) {
+    for received < buffer.len {
         count: int, err: Error = net.receive(connection.socket, buffer[received..])
         if err != null {
             if err.domain == typeid(net.ReceiveErr) && err.code == sys.EINTR {
@@ -265,12 +265,12 @@ pub receive_all(connection: Conn, buffer: mut []u8): (usize, Error) {
 }
 
 pub send_all(connection: Conn, data: []u8): (usize, Error) {
-    if len(data) == 0 {
+    if data.len == 0 {
         return 0, null
     }
     sent: usize = 0
 
-    for sent < len(data) {
+    for sent < data.len {
         count: int, err: Error = net.send(connection.socket, data[sent..])
         if err != null {
             if err.domain == typeid(net.SendErr) && err.code == sys.EINTR {

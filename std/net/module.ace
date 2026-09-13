@@ -30,14 +30,14 @@ pub parse4(endpoint: string): (Addr4, bool) {
     address: Addr4 = zero_addr4()
     at: usize = 0
 
-    if len(endpoint) == 0 {
+    if endpoint.len == 0 {
         return address, false
     }
     for part: usize in 0 .. 4 {
         value: uint = 0
         digits: usize = 0
 
-        for at < len(endpoint) && endpoint[at] >= 48 && endpoint[at] <= 57 {
+        for at < endpoint.len && endpoint[at] >= 48 && endpoint[at] <= 57 {
             value = value * 10 + uint(endpoint[at] - 48)
             digits += 1
             at += 1
@@ -50,19 +50,19 @@ pub parse4(endpoint: string): (Addr4, bool) {
         }
         address.ip[part] = u8(value)
         if part < 3 {
-            if at >= len(endpoint) || endpoint[at] != 46 {
+            if at >= endpoint.len || endpoint[at] != 46 {
                 return zero_addr4(), false
             }
             at += 1
         }
     }
-    if at >= len(endpoint) || endpoint[at] != 58 {
+    if at >= endpoint.len || endpoint[at] != 58 {
         return zero_addr4(), false
     }
     at += 1
     port: uint = 0
     digits: usize = 0
-    for at < len(endpoint) && endpoint[at] >= 48 && endpoint[at] <= 57 {
+    for at < endpoint.len && endpoint[at] >= 48 && endpoint[at] <= 57 {
         port = port * 10 + uint(endpoint[at] - 48)
         digits += 1
         at += 1
@@ -70,7 +70,7 @@ pub parse4(endpoint: string): (Addr4, bool) {
             return zero_addr4(), false
         }
     }
-    if digits == 0 || at != len(endpoint) {
+    if digits == 0 || at != endpoint.len {
         return zero_addr4(), false
     }
     address.port = u16(port)

@@ -8,13 +8,13 @@ Pair[T]: struct { first: T, second: T }
 
 /* A generic wrapper states its own T; the typed allocation instantiates it. */
 clone[T](values: []T): []T {
-    copy_values: mut []T = mem.alloc[T](len(values))
+    copy_values: mut []T = mem.alloc[T](values.len)
     return copy_values
 }
 
 main(): int {
     uninitialized: [7]u8
-    if len(uninitialized) != 7 {
+    if uninitialized.len != 7 {
         return 90
     }
     numbers: mut []usize = mem.alloc[usize](4)
@@ -31,7 +31,7 @@ main(): int {
     points[1] = Point { x: 3, y: 4 }
     grown: mut []Point = mem.realloc[Point](points, 4)
 
-    if grown == null || len(grown) != 4 {
+    if grown == null || grown.len != 4 {
         return 3
     }
 

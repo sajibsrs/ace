@@ -20,7 +20,7 @@ client(port: u16): int {
     request: string = "blocking echo"
     sent: usize
     sent, err = tcp.send_all(connection, request)
-    if err != null || sent != len(request) {
+    if err != null || sent != request.len {
         tcp.close(mut connection)
         return 2
     }
@@ -29,7 +29,7 @@ client(port: u16): int {
     reply: mut []u8 = mut storage[0..]
     received: usize
     received, err = tcp.receive_all(connection, reply)
-    if err != null || received != len(request) || !mem.equal(reply, request) {
+    if err != null || received != request.len || !mem.equal(reply, request) {
         tcp.close(mut connection)
         return 3
     }
@@ -71,7 +71,7 @@ main(): int {
     request: mut []u8 = mut storage[0..]
     received: usize
     received, err = tcp.receive_all(connection, request)
-    if err != null || received != len(request) {
+    if err != null || received != request.len {
         tcp.close(mut connection)
         tcp.close(mut listener)
         return 14

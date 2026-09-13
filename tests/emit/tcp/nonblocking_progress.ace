@@ -90,7 +90,7 @@ client(port: u16): int {
 
     request: string = "stage2 echo"
     sent: usize = 0
-    for sent < len(request) {
+    for sent < request.len {
         progress: tcp.Event = tcp.progress_send(mut connection, request)
         advanced: bool = false
         switch progress {
@@ -124,7 +124,7 @@ client(port: u16): int {
 
     storage: [11]u8 = [u8(0) : 11]
     received: usize = 0
-    for received < len(storage) {
+    for received < storage.len {
         destination: mut []u8 = mut storage[received..]
         progress: tcp.Event = tcp.progress_receive(mut connection, destination)
         receive_amount: usize = 0
@@ -159,7 +159,7 @@ client(port: u16): int {
             }
         }
     }
-    for index: usize in 0 .. len(storage) {
+    for index: usize in 0 .. storage.len {
         if storage[index] != request[index] {
             return 50 + int(index)
         }
@@ -225,7 +225,7 @@ main(): int {
 
     storage: [11]u8 = [u8(0) : 11]
     received: usize = 0
-    for received < len(storage) {
+    for received < storage.len {
         destination: mut []u8 = mut storage[received..]
         progress: tcp.Event = tcp.progress_receive(mut connection, destination)
         receive_amount: usize = 0
@@ -259,7 +259,7 @@ main(): int {
 
     flushed: usize = 0
     source: []u8 = storage[0..]
-    for flushed < len(source) {
+    for flushed < source.len {
         send_amount: usize, send_advanced: bool = sent_count(tcp.progress_send(mut connection, source))
         if send_advanced {
             flushed += send_amount

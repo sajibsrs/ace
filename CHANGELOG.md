@@ -75,7 +75,8 @@ current normative rules, and Git preserves patch-level detail.
   contextual explicit `fallthrough`, labeled blocks, labeled break/continue,
   `for-in`, ranges and steps, and general condition/three-clause/infinite
   `for` forms. Loops lower directly to structured branches and index traversal.
-- Implemented arrays, slices, strings, slicing, indexing, `len`, and mutable
+- Implemented arrays, slices, strings, slicing, indexing, the direct read-only
+  `.len` structural property, and mutable
   views. Unified `string`, `[]char`, and `[]u8` as three intent spellings of
   one type, with the same identity rule for writable forms; spelling-only
   overload variations are duplicate declarations. Sequential value equality
