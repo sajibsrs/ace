@@ -4,6 +4,7 @@ Candidate catalogue of missing features and capabilities, core language first. T
 
 Status tags:
 
+- **[defect]** — implemented behavior is incorrect and requires diagnosis or repair
 - **[queued]** — already listed for later work in `SPEC.md`
 - **[open]** — already open in the Decision Queue or normative spec
 - **[additive]** — explicitly deferred as an additive extension by a carved decision
@@ -15,6 +16,19 @@ Territory rejected by design is excluded entirely: manual memory through one fix
 The priority bands below are recommendations, not decisions. The active
 Decision Queue in `SPEC.md` always wins; dependencies within a band are listed
 before the work they unblock.
+
+## 0. Known implementation defects
+
+- **Owning HTTP client heap corruption** [defect] — a successful HTTPS GET of
+  `https://stackoverflow.com/` can return its ordinary 403 response and then
+  segfault during deferred `http.client_wipe`. The macOS crash reports place
+  failures at releases of different `Client.storage` slices, with allocation
+  pointers or allocator metadata already corrupted by response-like bytes.
+  DNS failures and smaller exchanges avoid the failure, so investigate the
+  response-dependent `mem.realloc[T]` paths, their generated code under the
+  HTTP exchange's register pressure, and parser copy bounds before attributing
+  the defect to cleanup. The reproducer uses the unchanged no-policy
+  `http.get(url, mut client)` overload; redirect following is not involved.
 
 ## 1. Core type-system completion
 
