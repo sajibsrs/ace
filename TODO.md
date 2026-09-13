@@ -262,7 +262,8 @@ nonblocking connect completion remain visible without callbacks or allocation.
   formatters, and incremental HTTP/1.1 request and response parsers from
   Standard Library #17 are implemented, including field and response defaults,
   named method/status constants, conventional response reasons, and blocking
-  plaintext/TLS `get` overloads over caller storage. Next complete the paired
+  plaintext/TLS `get` overloads over caller storage and opt-in bounded redirects
+  for the owning client. Next complete the paired
   one-shot `post` overloads over `Storage` and owning `Client`, then the
   caller-bounded nonblocking `serve` loop over `tcp` and `poll`. HTTPS shares
   the `http` surface and transport core through its exact TLS-config overload. `rune`,

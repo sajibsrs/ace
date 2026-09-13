@@ -36,6 +36,11 @@ pub ClientErr: error {
     4: allocation = "memory allocation failed"
 }
 
+pub RedirectErr: error {
+    1: limit = "HTTP redirect limit was exceeded"
+    2: downgrade = "HTTPS redirect to HTTP is not permitted"
+}
+
 pub method_connect: const string = "CONNECT"
 pub method_delete: const string = "DELETE"
 pub method_get: const string = "GET"
@@ -187,12 +192,17 @@ pub Storage: struct {
     input: mut []u8,
     headers: mut []Header,
     body: mut []u8,
+    url: mut []u8 = null,
     tls_context: mut []u8 = null,
     tls_records: mut []u8 = null,
 }
 
 pub TlsConfig: struct {
     trust_anchor: []u8 = null,
+}
+
+pub RedirectPolicy: struct {
+    limit: usize = 10,
 }
 
 pub Client: struct {
@@ -209,6 +219,7 @@ pub client_new(): Client {
         input: null,
         headers: null,
         body: null,
+        url: null,
         tls_context: null,
         tls_records: null,
     }
@@ -227,6 +238,7 @@ pub client_wipe(mut client: Client) {
     mem.release[u8](mut client.storage[0].input)
     mem.release[Header](mut client.storage[0].headers)
     mem.release[u8](mut client.storage[0].body)
+    mem.release[u8](mut client.storage[0].url)
     mem.release(mut client.storage[0].tls_context)
     mem.release[u8](mut client.storage[0].tls_records)
     mem.release[Storage](mut client.storage)
@@ -1545,8 +1557,7 @@ get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Er
 }
 
 @extern("tls")
-get_tls_with_storage(url: string, config: TlsConfig,
-    mut storage: Storage, resize: bool): (Response, Error) {
+get_tls_with_storage(url: string, config: TlsConfig, mut storage: Storage, resize: bool): (Response, Error) {
     parsed: Url, url_err: Error = parse_url_for(url, true)
     if url_err != null { return Response{}, url_err }
     if resize {
@@ -1574,6 +1585,156 @@ get_tls_with_storage(url: string, config: TlsConfig,
     response: Response, err: Error = exchange[tls.Conn](secured, connection,
         tls.send_all, tls.receive, parsed, mut storage, resize)
     return response, err
+}
+
+/* Writes one redirect URL into non-overlapping caller storage. Relative
+ * references are resolved against the preceding absolute URL.
+ */
+resolve_redirect(current: string, location: string, destination: mut []u8): (usize, bool) {
+    if location.len == 0 { return 0, false }
+    for i: usize in 0 .. location.len {
+        if ascii.is_control(location[i]) || location[i] == 35 {
+            return 0, false
+        }
+    }
+
+    absolute: bool = (location.len >= 7 && mem.equal(location[..7], "http://")) ||
+        (location.len >= 8 && mem.equal(location[..8], "https://"))
+    if absolute {
+        _: Url, err: Error = parse_url(location)
+        if err != null || destination.len < location.len { return 0, false }
+        mem.copy(destination[..location.len], location)
+        return location.len, true
+    }
+
+    secure: bool = current.len >= 8 && mem.equal(current[..8], "https://")
+    base: Url, base_err: Error = parse_url_for(current, secure)
+    if base_err != null { return 0, false }
+
+    scheme: string = "http://"
+    default_port: u16 = 80
+    if secure {
+        scheme = "https://"
+        default_port = 443
+    }
+
+    at: usize = 0
+    if location.len >= 2 && mem.equal(location[..2], "//") {
+        if destination.len < scheme.len + location.len - 2 { return 0, false }
+        mem.copy(destination[..scheme.len], scheme)
+        at = scheme.len
+        mem.copy(destination[at..at + location.len - 2], location[2..])
+        at += location.len - 2
+    } else {
+        if destination.len < scheme.len + base.host.len { return 0, false }
+        mem.copy(destination[..scheme.len], scheme)
+        at = scheme.len
+        mem.copy(destination[at..at + base.host.len], base.host)
+        at += base.host.len
+        if base.port != default_port {
+            if at == destination.len { return 0, false }
+            destination[at] = 58
+            at += 1
+            port_count: usize, port_ok: bool = str.format(mut destination[at..], uint(base.port))
+            if !port_ok { return 0, false }
+            at += port_count
+        }
+
+        if location[0] == 47 {
+            if location.len > destination.len - at { return 0, false }
+            mem.copy(destination[at..at + location.len], location)
+            at += location.len
+        } else if location[0] == 63 {
+            if base.path.len + location.len > destination.len - at { return 0, false }
+            mem.copy(destination[at..at + base.path.len], base.path)
+            at += base.path.len
+            mem.copy(destination[at..at + location.len], location)
+            at += location.len
+        } else {
+            directory_count: usize = 1
+            for i: usize in 0 .. base.path.len {
+                if base.path[i] == 47 { directory_count = i + 1 }
+            }
+            if directory_count + location.len > destination.len - at { return 0, false }
+            mem.copy(destination[at..at + directory_count], base.path[..directory_count])
+            at += directory_count
+            mem.copy(destination[at..at + location.len], location)
+            at += location.len
+        }
+    }
+
+    _: Url, result_err: Error = parse_url(destination[..at])
+    if result_err != null { return 0, false }
+    return at, true
+}
+
+redirect_location(response: Response): string {
+    for i: usize in 0 .. response.headers.len {
+        if ascii.is_equal(response.headers[i].name, "Location", false) {
+            return response.headers[i].value
+        }
+    }
+    return null
+}
+
+is_redirect(status_code: u16): bool {
+    return status_code == 301 || status_code == 302 || status_code == 303 ||
+        status_code == 307 || status_code == 308
+}
+
+@extern("tls")
+get_redirecting(url: string, config: TlsConfig, policy: RedirectPolicy, mut client: Client): (Response, Error) {
+    mem_url: mut []u8, url_ok: bool = mem_adjust[u8](client.storage[0].url, url.len)
+    if !url_ok { return Response{}, ClientErr.allocation }
+    client.storage[0].url = mem_url
+    mem.copy(client.storage[0].url[..url.len], url)
+    current_count: usize = url.len
+    followed: usize = 0
+
+    for {
+        current: string = client.storage[0].url[..current_count]
+        secure: bool = current.len >= 8 && mem.equal(current[..8], "https://")
+        response: Response = Response{}
+        err: Error = null
+        if secure {
+            response, err = get_tls_with_storage(current, config,
+                mut client.storage[0], true)
+        } else {
+            response, err = get_with_storage(current, mut client.storage[0], true)
+        }
+        if err != null { return Response{}, err }
+        if !is_redirect(response.status) { return response, null }
+        location: string = redirect_location(response)
+        if location == null || location.len == 0 { return response, null }
+
+        /* Keep the current URL above the new result so resolution remains
+         * valid even when reallocating or following several relative hops.
+         */
+        needed: usize = current_count * 2
+        if needed < current_count { return Response{}, ClientErr.allocation }
+        with_location: usize = needed + location.len
+        if with_location < needed { return Response{}, ClientErr.allocation }
+        needed = with_location + 32
+        if needed < with_location { return Response{}, ClientErr.allocation }
+        larger: mut []u8, larger_ok: bool = mem_adjust[u8](client.storage[0].url, needed)
+        if !larger_ok { return Response{}, ClientErr.allocation }
+        client.storage[0].url = larger
+        shifted_at: usize = client.storage[0].url.len - current_count
+        for i: usize in 0 .. current_count {
+            source_at: usize = current_count - 1 - i
+            client.storage[0].url[shifted_at + source_at] = client.storage[0].url[source_at]
+        }
+        previous: string = client.storage[0].url[shifted_at..]
+        next_count: usize, valid: bool = resolve_redirect(previous, location,
+            mut client.storage[0].url[..shifted_at])
+        if !valid { return response, null }
+        next_secure: bool = next_count >= 8 &&
+            mem.equal(client.storage[0].url[..8], "https://")
+        if secure && !next_secure { return Response{}, RedirectErr.downgrade }
+        if followed == policy.limit { return Response{}, RedirectErr.limit }
+        followed += 1
+        current_count = next_count
+    }
 }
 
 pub get(url: string, storage: Storage): (Response, Error) {
@@ -1606,5 +1767,25 @@ pub get(url: string, config: TlsConfig, mut client: Client): (Response, Error) {
     if client.storage == null { return Response{}, ClientErr.allocation }
     response: Response, err: Error = get_tls_with_storage(url, config,
         mut client.storage[0], true)
+    return response, err
+}
+
+@extern("tls")
+pub get(url: string, policy: RedirectPolicy, mut client: Client): (Response, Error) {
+    if client.storage == null { return Response{}, ClientErr.allocation }
+    _: Url, url_err: Error = parse_url(url)
+    if url_err != null { return Response{}, url_err }
+    response: Response, err: Error = get_redirecting(url, TlsConfig{}, policy,
+        mut client)
+    return response, err
+}
+
+@extern("tls")
+pub get(url: string, config: TlsConfig, policy: RedirectPolicy, mut client: Client): (Response, Error) {
+    if client.storage == null { return Response{}, ClientErr.allocation }
+    _: Url, url_err: Error = parse_url_for(url, true)
+    if url_err != null { return Response{}, url_err }
+    response: Response, err: Error = get_redirecting(url, config, policy,
+        mut client)
     return response, err
 }

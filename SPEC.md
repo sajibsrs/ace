@@ -907,7 +907,8 @@ or making related facade and target APIs differ.
       keep-alive policy remain with the client caller.
     - One-shot client ergonomics have allocation-free and owning overloads.
       `Storage: struct { addresses: mut []net.Addr4, output: mut []u8, target:
-      mut []u8, input: mut []u8, headers: mut []Header, body: mut []u8 }`
+      mut []u8, input: mut []u8, headers: mut []Header, body: mut []u8, url:
+      mut []u8 = null }`
       groups the neutral workspace for one HTTP exchange. `get(url: string,
       storage: Storage): (Response, Error)` and the corresponding `post`
       overload use only caller-owned capacities and never allocate.
@@ -929,7 +930,8 @@ or making related facade and target APIs differ.
       connection before returning. `get` emits GET with no body. `post` emits
       POST with the supplied bytes and requires a valid nonempty content type.
       `get` synthesizes exactly `Host` and `Connection: close`; `post` also
-      synthesizes `Content-Type` and `Content-Length`. There is no
+      synthesizes `Content-Type` and `Content-Length`. Without an explicit
+      redirect policy there is no
       redirect, retry-after-response, connection reuse, authentication, cookie,
       compression, proxy, TLS, or user-header policy. Request formatting,
       response parsing, DNS, TCP, close, and capacity failures preserve the
@@ -994,7 +996,23 @@ or making related facade and target APIs differ.
       nonblocking HTTPS remain additive. Address
       family is a transport property, so future IPv6 does not duplicate the
       protocol API.
-    - Known initial limitations and next improvements: redirects, content
+    - Redirect following is an opt-in owning-client operation.
+      `RedirectPolicy: struct { limit: usize = 10 }` and the overloads
+      `get(url, policy, mut client)` and `get(url, config, policy, mut client)`
+      make both bounded extra network work and a TLS trust override explicit.
+      Statuses 301, 302, 303, 307, and 308 are followed only with a nonempty,
+      valid `Location`; otherwise the ordinary 3xx response is returned.
+      Absolute HTTP/HTTPS, scheme-relative, absolute-path, query-only, and
+      path-relative references resolve against the preceding URL. HTTP may
+      upgrade to HTTPS; HTTPS-to-HTTP fails with `RedirectErr.downgrade`.
+      Encountering another followable response after `limit` hops fails with
+      `RedirectErr.limit`, including at a zero limit. The client reuses explicit
+      owned URL workspace so each location is stable before response input is
+      reused. Cookies, custom headers, authentication, connection reuse, and
+      session state remain deferred. Rationale: explicit overloads preserve
+      existing one-request behavior, make network work opt-in, and bound it in
+      accordance with `PHILOSOPHY.md` Principles #2, #3, and #7.
+    - Known initial limitations and next improvements: content
       decoding, cookies, authentication policy, caching, proxies, upgrades,
       multipart helpers, and exposed trailers are not part of the protocol core.
       Client concerns such as connection reuse, pooling, deadlines, and

@@ -196,6 +196,10 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Standard library
 
+- Added opt-in bounded HTTP redirects to the owning client through explicit
+  `RedirectPolicy` overloads, including relative URL resolution, HTTP-to-HTTPS
+  upgrades, downgrade rejection, deterministic limits, and reusable owned URL
+  workspace; existing GET overloads retain one-response behavior.
 - Implemented the first blocking secure-client slice: a private TLS adapter uses
   system trust by default or decodes one explicit DER override, enforces
   hostname verification and SNI, and exposes partial record/application I/O to

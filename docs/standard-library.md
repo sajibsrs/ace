@@ -857,8 +857,19 @@ workspace, uses system trust for HTTPS, and releases all workspace through
 `client_wipe`. `get(url, config, mut client)` supplies the explicit trust
 override with the same owning behavior.
 
+Redirects remain opt-in. `RedirectPolicy { limit: 10 }` is accepted by
+`get(url, policy, mut client)` and `get(url, config, policy, mut client)`.
+Those overloads follow 301, 302, 303, 307, and 308 responses with valid
+`Location` fields, resolving absolute HTTP/HTTPS URLs, scheme-relative URLs,
+absolute paths, query-only references, and relative paths against the previous
+URL. HTTP may upgrade to HTTPS; HTTPS-to-HTTP fails with
+`RedirectErr.downgrade`. A chain requiring more than `limit` followed responses
+fails with `RedirectErr.limit`. Missing or invalid locations return the original
+3xx response. The overloads without `RedirectPolicy` still perform one request.
+
 `Storage` contains caller-owned address, serialized-output, request-target,
-input, header, and body slices. Its `tls_context` and `tls_records` slices
+input, header, and body slices. Its default-null `url` slice is owning-client
+redirect workspace. Its `tls_context` and `tls_records` slices
 default to null, so plaintext callers omit them and allocate no TLS storage.
 TLS callers provide backend-sized opaque byte storage in those two fields. The
 backend-neutral `tls.context_size`, `tls.context_align`, and `tls.record_size`

@@ -2,11 +2,14 @@ import http
 import net
 
 check_client(storage: http.Storage, config: http.TlsConfig, mut client: http.Client) {
+    policy: http.RedirectPolicy = http.RedirectPolicy{}
     response: http.Response, err: Error = http.get("http://example.com/", storage)
     response, err = http.get("https://example.com/", config, storage)
     response, err = http.get("http://example.com/", mut client)
     response, err = http.get("https://example.com/", mut client)
     response, err = http.get("https://example.com/", config, mut client)
+    response, err = http.get("http://example.com/", policy, mut client)
+    response, err = http.get("https://example.com/", config, policy, mut client)
 }
 
 check(
