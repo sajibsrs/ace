@@ -168,6 +168,12 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Modules and C boundary
 
+- Added explicit callable C function values with the distinct
+  `extern "c" (parameters): return` type spelling, including zero-parameter and
+  no-value shapes, contextual references to exact `export`/`extern` functions,
+  positive ABI checking, null values with checked-call diagnostics, and
+  C-convention indirect lowering. A clang fixture verifies the POSIX thread-entry
+  shape in both C-to-Ace and Ace-to-C directions.
 - Implemented canonical-path, depth-first module loading with whole-module and
   selective imports, aliases, visibility checks, cycle diagnostics, and
   declaration-before-use ordering. Modules merge into one compilation unit under

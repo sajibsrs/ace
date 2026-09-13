@@ -6,6 +6,7 @@ Event: union { none, value: i32 }
 BadDistinct: distinct string
 BadField: struct { text: string }
 Box[T]: struct { value: T }
+CallbackBox: struct { callback: extern "c" (i32): i32 }
 
 extern "c" {
     bad_bool(value: bool)
@@ -23,6 +24,8 @@ extern "c" {
     bad_distinct(value: BadDistinct)
     bad_field(value: BadField)
     bad_stamp(value: Box[i32])
+    bad_callback_box(value: CallbackBox)
+    bad_callback_pointer(value: *extern "c" (i32): i32)
 }
 
 export bad_mut(mut value: i32) {
@@ -30,3 +33,11 @@ export bad_mut(mut value: i32) {
 
 export bad_generic[T](value: T) {
 }
+
+plain(value: mut *u8): mut *u8 {
+    return value
+}
+
+bad_callback_param: extern "c" (string): i32 = null
+bad_callback_return: extern "c" (): string = null
+wrong_convention: extern "c" (mut *u8): mut *u8 = plain

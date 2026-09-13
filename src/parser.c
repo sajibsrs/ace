@@ -58,7 +58,7 @@
 //   N_SLICE_T   a = element
 //   N_ARRAY_T   a = element; ival = length
 //   N_TUPLE_T   kids = types
-//   N_FUNC_T    kids = param types; a = ret
+//   N_FUNC_T    kids = param types; a = ret; F_CABI for extern "c" type
 //   N_CONST_T   a = inner
 //   N_TPARAMS   kids = N_IDENT
 //   N_BINARY    op; a; b      N_CMPCHAIN kids = operands; a = N_OPS{kids = N_OP}
@@ -291,14 +291,52 @@ static Node* type_atom(P* p) {
         t->a = type_atom(p);
         return t;
     }
+    if (at(p, T_EXTERN)) { // extern "c" ([params]) [: returns]
+        Node* f = nd(p, N_FUNC_T);
+        f->flags |= F_CABI;
+        p->i++;
+        Token* abi = expect(p, T_STR, "ABI string after 'extern'");
+        if (abi->len != 1 || memcmp(abi->str, "c", 1) != 0)
+            perr(p, "function types support only the 'c' ABI");
+        expect(p, T_LPAREN, "'(' after function type ABI");
+        NV w = {0};
+        if (!at(p, T_RPAREN)) {
+            for (;;) {
+                nv_push(p, &w, parse_type(p));
+                if (!ate(p, T_COMMA)) break;
+                if (at(p, T_RPAREN)) break;
+            }
+        }
+        expect(p, T_RPAREN, "')' to close function parameter types");
+        set_kids(f, &w);
+        if (ate(p, T_COLON)) {
+            if (at(p, T_LPAREN)) {
+                p->i++;
+                Node* r = nd(p, N_TUPLE_T);
+                NV rw = {0};
+                for (;;) {
+                    nv_push(p, &rw, parse_type(p));
+                    if (!ate(p, T_COMMA)) break;
+                    if (at(p, T_RPAREN)) break;
+                }
+                expect(p, T_RPAREN, "')' to close return list");
+                f->a = rw.n == 1 ? rw.v[0] : (set_kids(r, &rw), r);
+            } else {
+                f->a = parse_type(p);
+            }
+        }
+        return f;
+    }
     if (at(p, T_LPAREN)) { // tuple or function type
         t = nd(p, N_TUPLE_T);
         p->i++;
         NV w = {0};
-        for (;;) {
-            nv_push(p, &w, parse_type(p));
-            if (!ate(p, T_COMMA)) break;
-            if (at(p, T_RPAREN)) break; // trailing comma
+        if (!at(p, T_RPAREN)) {
+            for (;;) {
+                nv_push(p, &w, parse_type(p));
+                if (!ate(p, T_COMMA)) break;
+                if (at(p, T_RPAREN)) break; // trailing comma
+            }
         }
         expect(p, T_RPAREN, "')' to close type list");
         if (at(p, T_COLON)) { // (params): ret — function value type
@@ -2330,6 +2368,7 @@ static void pflags(Node* x) {
     if (x->flags & F_INTRINSIC) printf(" intrinsic");
     if (x->flags & F_PACKED) printf(" packed");
     if (x->flags & F_VOLATILE) printf(" volatile");
+    if (x->flags & F_CABI) printf(" c_abi");
 }
 
 static void pnode(Node* x, int ind) {

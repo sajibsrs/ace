@@ -152,6 +152,25 @@ main(): int {
 A bare overloaded function name without an explicit function-value type is an
 error.
 
+C-callable function values state their convention in the type:
+
+```ace
+export thread_entry(argument: mut *u8): mut *u8 {
+    return argument
+}
+
+entry: extern "c" (mut *u8): mut *u8 = thread_entry
+empty: extern "c" () = null
+```
+
+Use `extern "c" (): R` for a zero-parameter function returning `R`, and omit
+the return clause for a function returning no value. Only an exact `export`
+function or imported `extern "c"` declaration can initialize a non-null value
+of this type; an ordinary Ace function has a distinct convention. Parameters
+and returns must be C-ABI-compatible. C function values are one word, may be
+`null`, and may be compared with `null`. Calling null is diagnosed in checked
+builds; release builds require a non-null callee.
+
 ## Generic functions
 
 Generic parameters use brackets. Every call supplies its type arguments; Ace

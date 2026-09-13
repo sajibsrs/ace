@@ -1,0 +1,4 @@
+main(): int {
+    callback: extern "c" (int): int = null
+    return callback(1)
+}

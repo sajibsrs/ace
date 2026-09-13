@@ -54,11 +54,6 @@ blockers for the current sequential core.
 
 ### C boundary completion
 
-- **C-ABI function pointers as callable values** [open] — active in the
-  Decision Queue, with the first thread entry point as its concrete customer.
-  The C boundary currently rejects ordinary Ace function values, and taking the
-  address of an `export`ed function as a value remains unspecified until this
-  carving is resolved.
 - **`bool` (`_Bool`) mapping** [additive].
 - **C enums at the boundary** [additive].
 - **C global variables in extern blocks** [unspecified] — data imports such as
@@ -81,8 +76,9 @@ the remaining proof points explicit:
   contracts; successful Darwin user-space BPF access does not establish them.
 - **Low-level target breadth** [new] — validate assembly and SIMD ergonomics,
   device-scale volatile access, additional architectures and operating systems,
-  and richer static/shared linking through concrete programs. C callbacks and
-  callable C-ABI function pointers remain tracked under C boundary completion.
+  and richer static/shared linking through concrete programs. Callback families
+  beyond the implemented direct C-function-value boundary require their own
+  concrete customers.
 
 ## 2. Compiler and backend completion
 

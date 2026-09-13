@@ -38,6 +38,7 @@ struct SType {
     uint8_t     building; // aggregate fields are currently being constructed
     uint8_t     invalid_layout;
     uint8_t     is_packed;
+    uint8_t     is_c_abi; // SK_FUNC: explicitly extern "c" callable shape
     uint32_t    size, align;
     uint32_t    requested_align; // explicit aggregate @align, zero when absent
     const char* name;

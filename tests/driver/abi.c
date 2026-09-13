@@ -8,6 +8,7 @@ typedef struct { float a, b, c; } Hfa3;
 typedef struct { double a, b, c, d; } Hfa4;
 typedef struct { float v[3]; } Arr3;
 typedef struct { int64_t a, b, c; } Large;
+typedef void* (*ThreadEntry)(void*);
 
 extern int64_t ace_scalars(int8_t, int16_t, int32_t, int64_t,
                            uint8_t, uint16_t, uint32_t, uint64_t, size_t);
@@ -30,6 +31,7 @@ extern int64_t ace_stack_align(int64_t, int64_t, int64_t, int64_t, int64_t,
                                int64_t, int64_t, int64_t, int32_t, int64_t);
 extern double ace_fp_align(double, double, double, double, double, double,
                            double, double, float, double);
+extern void* ace_thread_entry(void*);
 
 int64_t c_scalars(int8_t a, int16_t b, int32_t c, int64_t d,
                   uint8_t e, uint16_t f, uint32_t g, uint64_t h, size_t i) {
@@ -121,6 +123,14 @@ double c_fp_align(double a, double b, double c, double d, double e, double f,
     return a + b + c + d + e + f + g + h + narrow + wide;
 }
 
+void* c_thread_entry(void* argument) { return argument; }
+
+void* c_call_thread_entry(ThreadEntry entry, void* argument) {
+    return entry(argument);
+}
+
+ThreadEntry c_get_thread_entry(void) { return c_thread_entry; }
+
 int32_t c_varargs(int32_t fixed, ...) {
     va_list args;
     va_start(args, fixed);
@@ -160,5 +170,8 @@ int32_t c_run_ace(void) {
     if (ace_f32(1.25f) != 2.0f) return 13;
     if (ace_stack_align(1, 2, 3, 4, 5, 6, 7, 8, 4, 7) != 47) return 14;
     if (ace_fp_align(1, 2, 3, 4, 5, 6, 7, 8, 4, 7) != 47) return 15;
+    int32_t callback_value = 19;
+    if (c_call_thread_entry(ace_thread_entry, &callback_value) !=
+        &callback_value) return 16;
     return 0;
 }

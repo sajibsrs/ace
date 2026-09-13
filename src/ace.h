@@ -140,7 +140,7 @@ enum {
     F_ELSE = 32, F_VARARGS = 64, F_METHOD = 128, F_SELECT = 256,
     F_EMBED = 512, F_SPECIALIZED = 1024, F_FORGEN = 2048, F_MIXED = 4096,
     F_BOUNDS_PROVEN = 8192, F_INTRINSIC = 16384, F_PACKED = 32768,
-    F_VOLATILE = 65536,
+    F_VOLATILE = 65536, F_CABI = 131072,
 };
 
 // Compiler-backed standard-module functions. These markers live only on the

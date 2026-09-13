@@ -541,7 +541,7 @@ Decision: explicit extern/export boundary; Ace internals stay free.
 1. Ace-internal symbols may be mangled (multi-return, mut params, modules) — mangling is private to the compiler.
 2. `extern "c" { … }` blocks import C declarations — the ABI stated once per block; variadics (`…`) are legal only inside extern blocks (Functions & ABI #7). Export: an `export` modifier on the declaration produces a C-ABI function with an unmangled name. An extern declaration may carry a link name — `c_open(path: *u8, flags: i32, mode: u32): i32 = "open"` — binding an Ace-side name distinct from the linker symbol, which lets a module wrap a C function under the name it wants to own (first customer: `sys`). The linker spelling is always the declared (or link-named) symbol with the platform's underscore convention applied by the compiler. Link names must be nonempty, contain no NUL byte, and in the v1 emitter are limited to 510 decoded bytes; other bytes are accepted because platform symbols need not be C or Ace identifiers. [spellings provisional]
    Implementation note (Apple arm64): C variadic functions receive their unnamed arguments in 8-byte caller-stack slots, not in the remaining argument registers — libSystem's `open` itself reads mode from the first stack-argument slot. The emitter implements that convention, including the ordinary f32-to-f64 default promotion. The initially verified unnamed-argument set is C-compatible integer, floating, distinct-scalar, and pointer values; aggregate and Ace-specific shapes are rejected until their variadic ABI is separately verified. A fixed-surface wrapper may still bind a fixed-arity export such as `__open` rather than expose variadics it does not need.
-3. C-facing signatures are checked by a positive, position-aware C-ABI compatibility predicate (chunk 1B decision). Allowed: the fixed-width integers `i8 i16 i32 i64` and `u8 u16 u32 u64`, the platform words `int`/`uint`, `usize`, `f32`, `f64`; explicitly backed enums, represented exactly as their fixed-width backing integer; plain and writable pointers (`*T`, `mut *T`) whose pointee shapes are recursively compatible; distinct types whose bases are allowed in the same position; structs whose fields are recursively compatible; and arrays whose elements are recursively compatible only when nested inside a compatible aggregate or behind a pointer. A no-value (void) shape is allowed only as a function return. Direct array parameters and returns are rejected. Rejected: `bool`, default enums without an external width promise, `string`, slices, contracts, tagged unions, `Error`, error domains, `typeid`, every tuple shape, ordinary Ace function values, type parameters, generic declarations, and generic instantiations. `mut` parameters stay internal-only — writable storage crosses the boundary as an explicit `mut *T` (the former `mut p` → `T*` export mapping under Functions & ABI #6 is struck). The recursive check carries a cycle guard so C-compatible self-referential structs through pointers terminate correctly. Every rejected category is additive later, each only after an exact C representation is separately approved. Rationale: a positive whitelist states exactly what the compiler has verified against the platform ABI; anything absent is unverified, and under the priority stack an explicit opt-in beats accidental shape coincidences (`bool` vs `_Bool` promotion rules, default enum width freedom, slice/string descriptor layout).
+3. C-facing signatures are checked by a positive, position-aware C-ABI compatibility predicate (chunk 1B decision). Allowed: the fixed-width integers `i8 i16 i32 i64` and `u8 u16 u32 u64`, the platform words `int`/`uint`, `usize`, `f32`, `f64`; explicitly backed enums, represented exactly as their fixed-width backing integer; plain and writable pointers (`*T`, `mut *T`) whose pointee shapes are recursively compatible; distinct types whose bases are allowed in the same position; structs whose fields are recursively compatible; arrays whose elements are recursively compatible only when nested inside a compatible aggregate or behind a pointer; and explicitly `extern "c"` function values only as direct parameters or returns. A no-value (void) shape is allowed only as a function return. Direct array parameters and returns are rejected. Rejected: `bool`, default enums without an external width promise, `string`, slices, contracts, tagged unions, `Error`, error domains, `typeid`, every tuple shape, ordinary Ace function values, type parameters, generic declarations, and generic instantiations. `mut` parameters stay internal-only — writable storage crosses the boundary as an explicit `mut *T` (the former `mut p` → `T*` export mapping under Functions & ABI #6 is struck). The recursive check carries a cycle guard so C-compatible self-referential structs through pointers terminate correctly. Every rejected category is additive later, each only after an exact C representation is separately approved. Rationale: a positive whitelist states exactly what the compiler has verified against the platform ABI; anything absent is unverified, and under the priority stack an explicit opt-in beats accidental shape coincidences (`bool` vs `_Bool` promotion rules, default enum width freedom, slice/string descriptor layout).
 4. Ace programs never depend on another programming language or its utility
    runtime — interop is a declared boundary, not a foundation. Ace language and
    standard-library behavior is implemented in Ace or emitted directly. A
@@ -557,6 +557,24 @@ Decision: explicit extern/export boundary; Ace internals stay free.
    to opt into explicit interoperability. The bootstrap compiler's C11 source
    and its ordinary C implementation facilities are a build-time choice, not
    part of Ace program semantics or the generated runtime model.
+5. A callable C function-pointer type is spelled `extern "c" (P1, P2): R`;
+   zero parameters use `extern "c" (): R`, and the return clause is omitted for
+   no value (`extern "c" ()`). Its parameters and return independently satisfy
+   the positive C-ABI whitelist, and variadic, generic, and non-`c` function
+   types are rejected. The value is one pointer-sized word with canonical zero
+   `null`; equality with `null` is ordinary function-value equality. A checked
+   build diagnoses calling null and a release build assumes the callee is
+   nonnull. An `export` function or an imported `extern "c"` declaration with
+   the exact signature is referenced by its bare name under an explicitly typed
+   destination; an ordinary Ace function never converts to this type. Calls use
+   the platform C convention in both directions. C function values are admitted
+   directly as C parameters and returns, not recursively inside aggregates or
+   behind another pointer in this initial slice. There is no address sigil,
+   closure, captured context, lifetime management, generic callback, calling-
+   convention inference, or arbitrary foreign ABI. Rationale: a distinct type
+   makes the foreign convention visible while retaining the existing one-word,
+   explicit function-value model; the narrow direct position proves the first
+   POSIX-style thread entry callback without enlarging unrelated aggregate ABI.
 
 ## Abstraction
 Decision: composition over inheritance; dispatch is explicit.
@@ -1037,20 +1055,6 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 
 ### Active
 
-- **C-ABI function pointers as callable values** [open] — carve only the exact
-  callback shapes required by the first thread entry-point fixture. Decide how
-  a function-value type states its C calling convention, how an `export`
-  function is converted or referenced as that value, which recursively
-  C-compatible parameter and return shapes are initially admitted, and how
-  null function pointers behave. Preserve the positive C-ABI whitelist,
-  explicit calls, ordinary pointer-sized representation, and zero/null value;
-  do not imply closures, hidden context, callback lifetime management, generic
-  callbacks, or arbitrary foreign calling conventions. The implementation must
-  be checked bidirectionally against a C ABI oracle before threads are exposed.
-  Rationale: thread creation is the first concrete callback customer, and
-  carving its narrow boundary first follows the core-before-concurrency order
-  without prematurely designing the larger signal-handler environment.
-
 - **TLS client transport** [open] — carve a backend-neutral, client-only secure
   byte transport over `tcp`, initially proven with a pinned BearSSL backend.
   Boundary decision: the initial proof uses a narrow C adapter and does not
@@ -1067,8 +1071,8 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
   by a language convenience. Rationale: an opaque adapter establishes the TLS
   transport with the existing small ABI, keeps a foreign implementation out of
   the public module, and avoids coupling an unrelated language feature to TLS;
-  callable C-ABI function pointers remain independently carved by their first
-  actual callback customer.
+  the separately implemented callable C-function-value boundary remains unused
+  by this adapter because BearSSL never calls Ace in the initial proof.
   Backend pin (decided): the proof uses the upstream BearSSL 0.6 release
   archive with SHA-256
   `6705bba1714961b41a728dfc5debbe348d2966c117649392f8c8139efc83ff14`.

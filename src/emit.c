@@ -4017,7 +4017,7 @@ static EV gen_call(Em* e, Node* call) {
             }
             CallTarget tgt = { TK_REG, NULL, 0, f.idx };
             return emit_call(e, call, args, call->nkids, ft->params, muts,
-                             ft->nparams, 1, -1, tgt, ft->ret);
+                             ft->nparams, !ft->is_c_abi, -1, tgt, ft->ret);
         }
 
         if (s->kind == SYM_FUNC) {

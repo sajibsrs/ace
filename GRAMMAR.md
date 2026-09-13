@@ -227,7 +227,7 @@ expr_list     := expr ("," expr)*                         // tuple expression / 
 
 ```ebnf
 type          := ["const"] type_expr                      // limit: const int = 1024
-type_expr     := ptr_type | slice_type | array_type | func_type
+type_expr     := ptr_type | slice_type | array_type | func_type | c_func_type
                | tuple_type | string_type | static_map_type | named_type | prim_type
 
 ptr_type      := ["mut"] "*" type_expr                    // *Node, mut *Node
@@ -236,6 +236,8 @@ string_type   := ["mut"] "string"                         // string, mut string
 array_type    := "[" int_lit "]" type_expr                // [16][8]u8
 tuple_type    := "(" type ("," type)+ ")"
 func_type     := "(" [type_list] ")" ":" ret_types         // (int, int): int
+c_func_type   := "extern" string_lit "(" [type_list] ")" [":" ret_types]
+                                                          // semantic ABI string: exactly "c"
 named_type    := ident ("." ident)* ["[" type_list "]"]   // Vec[int], math.Vec
 static_map_type := "StaticMap" "[" type "]" type           // StaticMap[K]V
 prim_type     := "bool" | "i8" | "i16" | "i32" | "i64"

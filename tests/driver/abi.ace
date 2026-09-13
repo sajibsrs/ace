@@ -15,8 +15,7 @@ Code: distinct i32
 Wire: enum u8 { none, request = 7, response }
 
 extern "c" {
-    c_scalars(a: i8, b: i16, c: i32, d: i64, e: u8, f: u16,
-              g: u32, h: u64, i: usize): i64
+    c_scalars(a: i8, b: i16, c: i32, d: i64, e: u8, f: u16, g: u32, h: u64, i: usize): i64
     c_floats(a: f32, b: f64): f64
     c_f32(value: f32): f32
     c_bump(value: mut *i32)
@@ -29,24 +28,23 @@ extern "c" {
     c_arr3(value: Arr3): Arr3
     c_large(value: Large): Large
     c_large_copy(value: Large): i64
-    c_stack(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64,
-            g: i64, pair: Pair, tail: i32): i64
-    c_stack_align(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64,
-                  g: i64, h: i64, narrow: i32, wide: i64): i64
-    c_fpstack(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64,
-              g: f64, h: Hfa3, tail: f64): f64
-    c_fpstack_check(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64,
-                    g: f64, h: Hfa3, tail: f64): i32
-    c_fp_align(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64,
-               g: f64, h: f64, narrow: f32, wide: f64): f64
+    c_stack(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, pair: Pair, tail: i32): i64
+    c_stack_align(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, narrow: i32, wide: i64): i64
+    c_fpstack(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: Hfa3, tail: f64): f64
+    c_fpstack_check(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: Hfa3, tail: f64): i32
+    c_fp_align(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: f64, narrow: f32, wide: f64): f64
     c_varargs(fixed: i32, ...): i32
     c_run_ace(): i32
+    c_call_thread_entry(entry: extern "c" (mut *u8): mut *u8, argument: mut *u8): mut *u8
+    c_get_thread_entry(): extern "c" (mut *u8): mut *u8
 }
 
-export ace_scalars(a: i8, b: i16, c: i32, d: i64, e: u8, f: u16,
-                   g: u32, h: u64, i: usize): i64 {
-    return i64(a) + i64(b) + i64(c) + d + i64(e) + i64(f) +
-           i64(g) + i64(h) + i64(i)
+export ace_thread_entry(argument: mut *u8): mut *u8 {
+    return argument
+}
+
+export ace_scalars(a: i8, b: i16, c: i32, d: i64, e: u8, f: u16, g: u32, h: u64, i: usize): i64 {
+    return i64(a) + i64(b) + i64(c) + d + i64(e) + i64(f) + i64(g) + i64(h) + i64(i)
 }
 
 export ace_floats(a: f32, b: f64): f64 {
@@ -100,23 +98,19 @@ export ace_large(value: Large): Large {
     return Large { a: value.a + 4, b: value.b + 5, c: value.c + 6 }
 }
 
-export ace_stack(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64,
-                 g: i64, pair: Pair, tail: i32): i64 {
+export ace_stack(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, pair: Pair, tail: i32): i64 {
     return a + b + c + d + e + f + g + pair.a + i64(pair.b) + i64(tail)
 }
 
-export ace_fpstack(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64,
-                   g: f64, h: Hfa3, tail: f64): f64 {
+export ace_fpstack(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: Hfa3, tail: f64): f64 {
     return a + b + c + d + e + f + g + f64(h.a) + f64(h.b) + f64(h.c) + tail
 }
 
-export ace_stack_align(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64,
-                       g: i64, h: i64, narrow: i32, wide: i64): i64 {
+export ace_stack_align(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, narrow: i32, wide: i64): i64 {
     return a + b + c + d + e + f + g + h + i64(narrow) + wide
 }
 
-export ace_fp_align(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64,
-                    g: f64, h: f64, narrow: f32, wide: f64): f64 {
+export ace_fp_align(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: f64, narrow: f32, wide: f64): f64 {
     return a + b + c + d + e + f + g + h + f64(narrow) + wide
 }
 
@@ -184,20 +178,17 @@ main(): int {
     if c_stack_align(1, 2, 3, 4, 5, 6, 7, 8, 4, 7) != 47 {
         return 15
     }
-    fpcheck: i32 = c_fpstack_check(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
-                                   Hfa3 { a: 8.0, b: 9.0, c: 10.0 }, 11.0)
+    fpcheck: i32 = c_fpstack_check(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, Hfa3 { a: 8.0, b: 9.0, c: 10.0 }, 11.0)
 
     if fpcheck != 0 {
         return int(40 + fpcheck)
     }
 
-    if c_fpstack(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
-                 Hfa3 { a: 8.0, b: 9.0, c: 10.0 }, 11.0) != 66.0 {
+    if c_fpstack(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, Hfa3 { a: 8.0, b: 9.0, c: 10.0 }, 11.0) != 66.0 {
         return 12
     }
 
-    if c_fp_align(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0,
-                  4.0, 7.0) != 47.0 {
+    if c_fp_align(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 4.0, 7.0) != 47.0 {
         return 16
     }
     narrow: f32 = 1.25
@@ -216,6 +207,16 @@ main(): int {
 
     if from_c != 0 {
         return int(20 + from_c)
+    }
+    callback_value: u8 = 31
+    callback_pointer: mut *u8 = mut &callback_value
+    callback: extern "c" (mut *u8): mut *u8 = c_get_thread_entry()
+    if callback(callback_pointer) != callback_pointer {
+        return 50
+    }
+    if c_call_thread_entry(ace_thread_entry, callback_pointer) !=
+       callback_pointer {
+        return 51
     }
     return 0
 }

@@ -637,7 +637,7 @@ else
         fail=1
     fi
 fi
-for f in pointer function; do
+for f in pointer function c_function; do
     if ! "$ACE" --checked -o "/tmp/ace_checked_features/null_$f" \
          "tests/checked_null/$f.ace" >/dev/null 2>/tmp/ace_test_errs ||
        "/tmp/ace_checked_features/null_$f" >/dev/null 2>/tmp/ace_test_errs ||

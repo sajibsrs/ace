@@ -514,7 +514,7 @@ static int same_type(SType* a, SType* b) {
             if (!same_type(a->fields[i].t, b->fields[i].t)) return 0;
         return 1;
     case SK_FUNC:
-        if (a->nparams != b->nparams) return 0;
+        if (a->is_c_abi != b->is_c_abi || a->nparams != b->nparams) return 0;
         for (int i = 0; i < a->nparams; i++)
             if (!same_type(a->params[i], b->params[i])) return 0;
         return same_type(a->ret, b->ret);
@@ -1137,6 +1137,8 @@ static Node* clone_expr(Node* n) {
 
 static SType* build_type(Ck* k, Node* t);
 static SType* build_type_ctx(Ck* k, Node* t, int path);
+enum { CABI_DIRECT, CABI_FIELD, CABI_POINTEE, CABI_POINTEE_FIELD };
+static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack);
 
 static SType* prim_by_name(const char* s, uint32_t len) {
     struct { const char* n; int p; } M[] = {
@@ -1314,11 +1316,26 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
     }
     case N_FUNC_T: {
         SType* f = st_new(SK_FUNC);
+        f->is_c_abi = (t->flags & F_CABI) != 0;
         f->nparams = t->nkids;
         f->params = (SType**)arena_alloc((size_t)(t->nkids ? t->nkids : 1) * sizeof(SType*));
         for (int i = 0; i < t->nkids; i++)
             f->params[i] = build_type_ctx(k, t->kids[i], 0);
         f->ret = t->a ? build_type_ctx(k, t->a, 0) : NULL;
+        if (f->is_c_abi) {
+            SType* stack[512];
+            for (int i = 0; i < f->nparams; i++)
+                if (f->params[i]->kind != SK_ERR &&
+                    !is_c_abi_type(f->params[i], CABI_DIRECT, stack, 0))
+                    ck_err(k, t->kids[i],
+                           "C function-pointer parameter type %s is not C-ABI compatible",
+                           type_name(f->params[i]));
+            if (f->ret && f->ret->kind != SK_ERR &&
+                !is_c_abi_type(f->ret, CABI_DIRECT, stack, 0))
+                ck_err(k, t->a,
+                       "C function-pointer return type %s is not C-ABI compatible",
+                       type_name(f->ret));
+        }
         return f;
     }
     default:
@@ -1395,8 +1412,6 @@ static const char* method_key(Node* owner, const char* name, uint32_t len,
  * carries the in-progress nominal structs: a repeat hit is a cycle, which can
  * only arise through a pointer, so it is compatible and recursion terminates.
  */
-enum { CABI_DIRECT, CABI_FIELD, CABI_POINTEE, CABI_POINTEE_FIELD };
-
 static int has_special_struct_layout(SType* t) {
     if (!t || t->kind != SK_STRUCT) return 0;
     if (t->is_packed || t->requested_align) return 1;
@@ -1429,6 +1444,12 @@ static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
     case SK_ARRAY:
         return pos != CABI_DIRECT &&
                is_c_abi_type(t->base, pos, stack, nstack);
+    case SK_FUNC:
+        if (!t->is_c_abi || pos != CABI_DIRECT) return 0;
+        for (int i = 0; i < t->nparams; i++)
+            if (!is_c_abi_type(t->params[i], CABI_DIRECT, stack, nstack))
+                return 0;
+        return is_c_abi_type(t->ret, CABI_DIRECT, stack, nstack);
     case SK_STRUCT: {
         if (has_special_struct_layout(t) &&
             pos != CABI_POINTEE && pos != CABI_POINTEE_FIELD)
@@ -1642,6 +1663,7 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
                    (int)f->len, f->str);
     }
     SType* ft = build_func_type(k, f, NULL, 0);
+    ft->is_c_abi = is_extern || (f->flags & F_EXPO);
     if ((f->flags & F_INTRINSIC) && f->ival) {
         SType* p = ft->nparams == 1 ? ft->params[0] : NULL;
         SType* r = ft->ret;
