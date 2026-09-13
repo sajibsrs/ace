@@ -1354,7 +1354,7 @@ connect_url(parsed: Url, mut storage: Storage, resize: bool): (tcp.Conn, Error) 
         send_offset: usize(0),
     }
     if resize {
-        mem_addresses: mut []net.Addr4, addr_ok: bool = mem_adjust[net.Addr4](storage.addresses, 1)
+        mem_addresses: mut []net.Addr4, addr_ok: bool = mem_adjust[net.Addr4](storage.addresses, 4)
         if !addr_ok { return zero, ClientErr.allocation }
         storage.addresses = mem_addresses
     }
@@ -1514,6 +1514,8 @@ exchange[C](connection: C, raw: tcp.Conn,
                     needed: usize = parser.body_count + (occupied - parser.input_offset)
                     if parser.framing == ResponseFraming.content_length {
                         needed = parser.content_length
+                    } else if parser.framing == ResponseFraming.chunked {
+                        needed = parser.body_count + parser.chunk_remaining
                     }
                     mem_body: mut []u8, body_ok: bool = mem_adjust[u8](storage.body, needed)
                     if !body_ok {
@@ -1558,7 +1560,7 @@ get_tls_with_storage(url: string, config: TlsConfig,
         if !records_ok { return Response{}, ClientErr.allocation }
         storage.tls_records = mem_records
     }
-    connection: tcp.Conn, connect_err: Error = connect_url(parsed, mut storage, false)
+    connection: tcp.Conn, connect_err: Error = connect_url(parsed, mut storage, resize)
     if connect_err != null { return Response{}, connect_err }
     secured: tls.Conn, tls_err: Error = tls.connect(connection, parsed.host,
         config.trust_anchor, tls.Storage {

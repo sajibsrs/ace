@@ -222,6 +222,9 @@ current normative rules, and Git preserves patch-level detail.
   SSL hostname policy; SNI remains mandatory. The owning `http.Client` now
   accepts both URL schemes and lazily manages TLS workspace, while the
   caller-storage HTTPS path remains allocation-free.
+- Fixed owning HTTPS clients to allocate DNS address storage and grow chunked
+  response bodies to the active chunk size instead of retrying unchanged
+  capacity indefinitely.
 - Pinned BearSSL 0.6 as an experimental TLS-client proof backend and added a
   private adapter/fixture proving direct archive linkage, opaque caller-owned
   client/X.509 storage, supported alignment, half-duplex record-buffer sizing,
