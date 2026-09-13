@@ -19,8 +19,8 @@ modify_and_retarget(mut point: mut *Point, replacement: mut *Point) {
 }
 
 main(): int {
-    first: Point = Point { x: 1 }
-    second: Point = Point { x: 10 }
+    first: Point = Point { x = 1 }
+    second: Point = Point { x = 10 }
 
     /* A writable address may be passed directly; in a call `mut &first` is
      * one address expression, not a mut-argument wrapper. */
@@ -38,7 +38,7 @@ main(): int {
      * that performs the final write. */
     read_outer: *mut *Point = &writable
     read_outer.x += 1
-    **read_outer = Point { x: 23 }
+    **read_outer = Point { x = 23 }
 
     if first.x != 23 {
         return 2

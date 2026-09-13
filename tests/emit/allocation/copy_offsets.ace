@@ -20,7 +20,7 @@ U24: union {
     triple: Triple,
 }
 
-global: const U24 = U24.triple({ first: 7.0, second: 8.0, third: 9.0 })
+global: const U24 = U24.triple({ first = 7.0, second = 8.0, third = 9.0 })
 
 pair(value: Triple): (int, Triple) {
     return 11, value
@@ -41,7 +41,7 @@ main(): int {
         }
     }
 
-    triple: Triple = { first: 1.0, second: 2.0, third: 3.0 }
+    triple: Triple = { first = 1.0, second = 2.0, third = 3.0 }
     u24: U24 = U24.triple(triple)
 
     switch u24 {

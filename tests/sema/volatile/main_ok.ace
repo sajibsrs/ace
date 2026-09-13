@@ -3,7 +3,7 @@ Word: distinct u32
 Device: struct { status: u8, control: u32 }
 
 main(): int {
-    device: Device = Device { status: 1, control: 2 }
+    device: Device = Device { status = 1, control = 2 }
     volatile device.status = 7
     status: u8 = volatile device.status
 

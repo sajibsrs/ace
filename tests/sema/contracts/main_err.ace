@@ -8,7 +8,7 @@ Thing.read(): int {
 }
 
 main(): int {
-    thing: Thing = Thing { value: 1 }
+    thing: Thing = Thing { value = 1 }
     readable: Readable = Readable(&thing)
     return readable.read()
 }

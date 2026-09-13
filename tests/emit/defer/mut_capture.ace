@@ -42,7 +42,7 @@ mut Counter.add(by: int) {
     self.n = self.n + by
 }
 
-gc: Counter = Counter { n: 0 }
+gc: Counter = Counter { n = 0 }
 
 mut_arg(): int {
     v: int = 2
@@ -57,14 +57,14 @@ global_mut(): int {
 }
 
 recv_snapshot(): int {
-    c: Counter = Counter { n: 1 }
+    c: Counter = Counter { n = 1 }
     defer c.note() // read-only receiver: snapshot, sees n = 1
     c.n = 2
     return 0
 }
 
 recv_address(): int {
-    c: Counter = Counter { n: 1 }
+    c: Counter = Counter { n = 1 }
     defer mut c.note_mut() // mut receiver: address, sees final n = 2
     c.n = 2
     return 0

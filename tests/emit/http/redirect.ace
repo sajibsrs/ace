@@ -8,7 +8,7 @@ import sys
 import tcp
 
 loopback(port: u16): net.Addr4 {
-    return net.Addr4 {ip: [127, 0, 0, 1], port: port}
+    return net.Addr4 {ip = [127, 0, 0, 1], port = port}
 }
 
 read_request(connection: tcp.Conn, expected: string): Error {

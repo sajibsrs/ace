@@ -10,10 +10,10 @@ global: All = All {}
 zero: All
 
 main(): int {
-    a: Point = Point { y: 9 }
-    b: Point = { x: 2, y: 5 }
+    a: Point = Point { y = 9 }
+    b: Point = { x = 2, y = 5 }
     c: All = All {}
-    d: All = All { count: u8(8) }
+    d: All = All { count = u8(8) }
     box: Box[int] = { }
     if a.x != 7 || a.y != 9 || b.x != 2 || b.y != 5 { return 1 }
     if !c.enabled || c.count != 3 || !d.enabled || d.count != 8 { return 2 }

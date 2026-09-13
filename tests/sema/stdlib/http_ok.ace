@@ -22,23 +22,23 @@ check(
     address: net.Addr4, valid: bool = net.parse4("127.0.0.1:80")
     url: http.Url, err: Error = http.parse_url("http://example.com/?q=1")
     request_headers: [1]http.Header = [
-        http.Header {name: "Host", value: "example.com"},
+        http.Header {name = "Host", value = "example.com"},
     ]
     request: http.Request = http.Request {
-        method: http.method_get,
-        target: "/",
-        headers: request_headers[..],
+        method = http.method_get,
+        target = "/",
+        headers = request_headers[..],
     }
-    empty_request: http.Request = http.Request {method: http.method_head, target: "/"}
+    empty_request: http.Request = http.Request {method = http.method_head, target = "/"}
     default_response: http.Response = http.Response {}
-    not_found: http.Response = http.Response {status: 404}
+    not_found: http.Response = http.Response {status = 404}
     fresh_request_parser: http.RequestParser = http.RequestParser {
-        phase: http.RequestPhase.request,
-        framing: http.RequestFraming.undecided,
+        phase = http.RequestPhase.request,
+        framing = http.RequestFraming.undecided,
     }
     fresh_response_parser: http.ResponseParser = http.ResponseParser {
-        phase: http.ResponsePhase.status,
-        framing: http.ResponseFraming.undecided,
+        phase = http.ResponsePhase.status,
+        framing = http.ResponseFraming.undecided,
     }
     count: usize
     count, err = request.format(output)

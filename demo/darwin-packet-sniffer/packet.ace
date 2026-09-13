@@ -19,17 +19,17 @@ pub Packet: struct {
 }
 
 zero_record(): Record {
-    return Record {frame_start: 0, captured_length: 0, next: 0}
+    return Record {frame_start = 0, captured_length = 0, next = 0}
 }
 
 zero_packet(): Packet {
     return Packet {
-        source_mac: [u8(0) : 6],
-        destination_mac: [u8(0) : 6],
-        source_ip: [u8(0) : 4],
-        destination_ip: [u8(0) : 4],
-        captured_length: 0,
-        protocol: 0,
+        source_mac = [u8(0) : 6],
+        destination_mac = [u8(0) : 6],
+        source_ip = [u8(0) : 4],
+        destination_ip = [u8(0) : 4],
+        captured_length = 0,
+        protocol = 0,
     }
 }
 
@@ -70,9 +70,9 @@ pub decode_record(data: []u8, at: usize): (Record, bool) {
         return zero_record(), false
     }
     record: Record = Record {
-        frame_start: at + header,
-        captured_length: captured,
-        next: at + total + padding,
+        frame_start = at + header,
+        captured_length = captured,
+        next = at + total + padding,
     }
     return record, true
 }

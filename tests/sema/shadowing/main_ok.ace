@@ -1,5 +1,5 @@
 import shadow: "./module.ace"
 
 main(): int {
-    return shadow.field_value(shadow.Record { value: 42 })
+    return shadow.field_value(shadow.Record { value = 42 })
 }

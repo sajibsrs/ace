@@ -5,6 +5,6 @@ Point: struct { x: i64, y: i64 }
 read(values: [2]Point, index: int): i64 { return values[index].x }
 
 main(): int {
-    values: [2]Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }]
+    values: [2]Point = [Point { x = 1, y = 2 }, Point { x = 3, y = 4 }]
     return int(read(values, 2))
 }

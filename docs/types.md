@@ -118,7 +118,7 @@ read_x(point: *Point): int {
 }
 
 main(): int {
-    point: Point = Point{ x: 13, y: 29 }
+    point: Point = Point{ x = 13, y = 29 }
     pointer: *Point = &point
     return read_x(pointer)
 }
@@ -137,8 +137,8 @@ retarget(mut point: *Point, replacement: *Point) {
 }
 
 main(): int {
-    first: Point = Point{ x: 13, y: 29 }
-    second: Point = Point{ x: 42, y: 50 }
+    first: Point = Point{ x = 13, y = 29 }
+    second: Point = Point{ x = 42, y = 50 }
 
     writable: mut *Point = mut &first
     set_x(writable, 21)
@@ -288,7 +288,7 @@ representation of an exact unsigned backing integer. Fields are packed from bit
 ```ace
 Permissions: bits u8 { read: 1, write: 1, level: signed 3, _: 3 }
 
-permissions: Permissions = Permissions { read: 1, level: -2 }
+permissions: Permissions = Permissions { read = 1, level = -2 }
 raw: u8 = u8(permissions)
 restored: Permissions = Permissions(raw)
 restored.write = 1
@@ -528,7 +528,7 @@ copy semantics.
 ```ace
 Point: struct { x: i32, y: i32 }
 
-point: Point = Point{ x: 13, y: 42 }
+point: Point = Point{ x = 13, y = 42 }
 ```
 
 A field may declare a compile-time default. Named struct literals may omit only
@@ -538,8 +538,8 @@ default. An explicit initializer overrides the default.
 ```ace
 Request: struct { retries: u8 = u8(3), path: string }
 
-request: Request = Request { path: "/status" }
-custom: Request = Request { retries: u8(5), path: "/health" }
+request: Request = Request { path = "/status" }
+custom: Request = Request { retries = u8(5), path = "/health" }
 ```
 
 Defaults apply only to struct literals. Bare locals, globals, allocations,
@@ -590,7 +590,7 @@ variant with one argument:
 ```ace
 event: Event = Event.quit
 event = Event.key(42)
-event = Event.cursor({ x: 10, y: 20 })
+event = Event.cursor({ x = 10, y = 20 })
 ```
 
 Inspect a union with `switch`. A payload binder is an explicitly typed local
@@ -681,7 +681,7 @@ Number.get(): int {
 }
 
 main(): int {
-    number: Number = Number{ value: 13 }
+    number: Number = Number{ value = 13 }
     value: Value = Value(&number)
     return value.get()
 }
@@ -742,7 +742,7 @@ Human: struct {
     embed named: Named,
 }
 
-human: Human = Human { named: Named { name: "Ada" } }
+human: Human = Human { named = Named { name = "Ada" } }
 name: string = human.name()       // same method as human.named.name()
 ```
 

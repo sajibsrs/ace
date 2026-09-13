@@ -26,6 +26,13 @@ for f in $(find tests/lexer tests/parser -name '*_err.ace' | sort); do
     fi
 done
 
+struct_literal_colon_error=$($ACE tests/parser/struct_literal_colon_err.ace 2>&1)
+if ! printf '%s\n' "$struct_literal_colon_error" | grep -qF \
+    "struct literal field initialization uses '='; ':' is for declarations and type annotations"; then
+    echo "FAIL: former struct literal colon spelling should receive the migration diagnostic"
+    fail=1
+fi
+
 unknown_decl=$("$ACE" tests/parser/unknown_decl_type_err.ace 2>&1)
 if ! printf '%s\n' "$unknown_decl" | grep -qF \
     "tests/parser/unknown_decl_type_err.ace:3:8: error: unknown declaration type 'protocol'"; then

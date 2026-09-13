@@ -357,42 +357,42 @@ path_copy(path: string, buf: mut []u8): bool {
 
 zero_dir(): Dir {
     dir: Dir = Dir {
-        fd: Fd(0),
-        buffer: [u8(0) : 4096],
-        next: 0,
-        count: 0,
-        base: 0,
-        active: false,
-        done: false,
+        fd = Fd(0),
+        buffer = [u8(0) : 4096],
+        next = 0,
+        count = 0,
+        base = 0,
+        active = false,
+        done = false,
     }
     return dir
 }
 
 zero_timespec(): DarwinTimespec {
-    return DarwinTimespec { seconds: 0, nanoseconds: 0 }
+    return DarwinTimespec { seconds = 0, nanoseconds = 0 }
 }
 
 zero_stat(): DarwinStat {
     time: DarwinTimespec = zero_timespec()
     return DarwinStat {
-        device: 0,
-        mode: 0,
-        links: 0,
-        inode: 0,
-        user: 0,
-        group: 0,
-        special_device: 0,
-        access: time,
-        modification: time,
-        change: time,
-        birth: time,
-        size: 0,
-        blocks: 0,
-        block_size: 0,
-        flags: 0,
-        generation: 0,
-        spare: 0,
-        qspare: [i64(0) : 2],
+        device = 0,
+        mode = 0,
+        links = 0,
+        inode = 0,
+        user = 0,
+        group = 0,
+        special_device = 0,
+        access = time,
+        modification = time,
+        change = time,
+        birth = time,
+        size = 0,
+        blocks = 0,
+        block_size = 0,
+        flags = 0,
+        generation = 0,
+        spare = 0,
+        qspare = [i64(0) : 2],
     }
 }
 
@@ -448,25 +448,25 @@ pub wait(process: Process): (ProcessStatus, Error) {
 
     if i32(process) <= 0 {
         errno_set(22)
-        zero: ProcessStatus = ProcessStatus {exited: false, code: 0, signal: 0}
+        zero: ProcessStatus = ProcessStatus {exited = false, code = 0, signal = 0}
         return zero, WaitErr.invalid
     }
 
     if c_waitpid(i32(process), mut &raw, 0) == -1 {
-        zero: ProcessStatus = ProcessStatus {exited: false, code: 0, signal: 0}
+        zero: ProcessStatus = ProcessStatus {exited = false, code = 0, signal = 0}
         return zero, WaitErr(errno())
     }
     signal: int = int(raw & 0x7f)
 
     if signal == 0 {
         status: ProcessStatus = ProcessStatus {
-            exited: true,
-            code: int((raw >> 8) & 0xff),
-            signal: 0,
+            exited = true,
+            code = int((raw >> 8) & 0xff),
+            signal = 0,
         }
         return status, null
     }
-    return ProcessStatus {exited: false, code: 0, signal: signal}, null
+    return ProcessStatus {exited = false, code = 0, signal = signal}, null
 }
 
 pub pipe(): (Fd, Fd, Error) {
@@ -555,7 +555,7 @@ pub open(path: string, flags: i32, mode: u32): (Fd, Error) {
 
 pub stat(path: string): (FileInfo, Error) {
     path_buf: [1024]u8
-    zero: FileInfo = FileInfo { size: 0, kind: FileKind.unknown }
+    zero: FileInfo = FileInfo { size = 0, kind = FileKind.unknown }
 
     if !path_copy(path, mut path_buf[0..1024]) {
         return zero, StatErr.name_too_long
@@ -564,7 +564,7 @@ pub stat(path: string): (FileInfo, Error) {
     if c_stat(&path_buf[0], mut &raw) == -1 {
         return zero, StatErr(errno())
     }
-    return FileInfo { size: u64(raw.size), kind: kind_from_mode(raw.mode) }, null
+    return FileInfo { size = u64(raw.size), kind = kind_from_mode(raw.mode) }, null
 }
 
 pub mkdir(path: string, mode: u32): Error {
@@ -621,13 +621,13 @@ pub open_dir(path: string): (Dir, Error) {
         return zero_dir(), OpenDirErr(errno())
     }
     dir: Dir = Dir {
-        fd: Fd(fd),
-        buffer: [u8(0) : 4096],
-        next: 0,
-        count: 0,
-        base: 0,
-        active: true,
-        done: false,
+        fd = Fd(fd),
+        buffer = [u8(0) : 4096],
+        next = 0,
+        count = 0,
+        base = 0,
+        active = true,
+        done = false,
     }
     return dir, null
 }

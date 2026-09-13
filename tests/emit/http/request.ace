@@ -5,44 +5,44 @@ import mem
 
 new_parser(): http.RequestParser {
     return http.RequestParser {
-        input_offset: usize(0),
-        line_start: usize(0),
-        scan_offset: usize(0),
-        line_stop: usize(0),
-        line_next: usize(0),
-        line_ready: false,
-        header_count: usize(0),
-        body_count: usize(0),
-        content_length: usize(0),
-        chunk_remaining: usize(0),
-        method_start: usize(0),
-        method_count: usize(0),
-        target_start: usize(0),
-        target_count: usize(0),
-        phase: http.RequestPhase.request,
-        framing: http.RequestFraming.undecided,
+        input_offset = usize(0),
+        line_start = usize(0),
+        scan_offset = usize(0),
+        line_stop = usize(0),
+        line_next = usize(0),
+        line_ready = false,
+        header_count = usize(0),
+        body_count = usize(0),
+        content_length = usize(0),
+        chunk_remaining = usize(0),
+        method_start = usize(0),
+        method_count = usize(0),
+        target_start = usize(0),
+        target_count = usize(0),
+        phase = http.RequestPhase.request,
+        framing = http.RequestFraming.undecided,
     }
 }
 
 new_response_parser(): http.ResponseParser {
     return http.ResponseParser {
-        input_offset: usize(0),
-        line_start: usize(0),
-        scan_offset: usize(0),
-        line_stop: usize(0),
-        line_next: usize(0),
-        line_ready: false,
-        header_count: usize(0),
-        body_count: usize(0),
-        content_length: usize(0),
-        chunk_remaining: usize(0),
-        version_minor: u8(0),
-        status: u16(0),
-        reason_start: usize(0),
-        reason_count: usize(0),
-        phase: http.ResponsePhase.status,
-        framing: http.ResponseFraming.undecided,
-        informational_count: usize(0),
+        input_offset = usize(0),
+        line_start = usize(0),
+        scan_offset = usize(0),
+        line_stop = usize(0),
+        line_next = usize(0),
+        line_ready = false,
+        header_count = usize(0),
+        body_count = usize(0),
+        content_length = usize(0),
+        chunk_remaining = usize(0),
+        version_minor = u8(0),
+        status = u16(0),
+        reason_start = usize(0),
+        reason_count = usize(0),
+        phase = http.ResponsePhase.status,
+        framing = http.ResponseFraming.undecided,
+        informational_count = usize(0),
     }
 }
 
@@ -142,14 +142,14 @@ main(): int {
     }
 
     response_headers: [1]http.Header = [
-        http.Header {name: "Content-Length", value: "2"},
+        http.Header {name = "Content-Length", value = "2"},
     ]
     response: http.Response = http.Response {
-        version_minor: u8(1),
-        status: u16(200),
-        reason: "OK",
-        headers: response_headers[..],
-        body: "ok",
+        version_minor = u8(1),
+        status = u16(200),
+        reason = "OK",
+        headers = response_headers[..],
+        body = "ok",
     }
     output: [64]u8 = [0 : 64]
     count: usize, err: Error = response.format(mut output[..])

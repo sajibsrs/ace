@@ -211,19 +211,19 @@ pub Client: struct {
 
 pub client_new(): Client {
     storage: mut []Storage = mem.alloc[Storage](1)
-    if storage == null { return Client {storage: null} }
+    if storage == null { return Client {storage = null} }
     storage[0] = Storage {
-        addresses: null,
-        output: null,
-        target: null,
-        input: null,
-        headers: null,
-        body: null,
-        url: null,
-        tls_context: null,
-        tls_records: null,
+        addresses = null,
+        output = null,
+        target = null,
+        input = null,
+        headers = null,
+        body = null,
+        url = null,
+        tls_context = null,
+        tls_records = null,
     }
-    return Client {storage: storage}
+    return Client {storage = storage}
 }
 
 /* Releases every lazily allocated workspace slice, then the workspace itself.
@@ -246,7 +246,7 @@ pub client_wipe(mut client: Client) {
 
 /* Returns the canonical zero URL used by parse failures. */
 zero_url(): Url {
-    return Url {host: null, path: null, query: null, port: u16(0)}
+    return Url {host = null, path = null, query = null, port = u16(0)}
 }
 
 /* Reports whether `byte` is permitted by the HTTP token grammar. */
@@ -387,7 +387,7 @@ parse_url_for(url: string, secure: bool): (Url, Error) {
             }
         }
     }
-    return Url {host: host, path: path, query: query, port: port}, null
+    return Url {host = host, path = path, query = query, port = port}, null
 }
 
 pub parse_url(url: string): (Url, Error) {
@@ -749,8 +749,8 @@ is_chunk_ext(text: string): bool {
 
 RequestParser.progress(): RequestResult {
     return RequestResult.progress(RequestProgress {
-        consumed: self.input_offset,
-        body_written: self.body_count,
+        consumed = self.input_offset,
+        body_written = self.body_count,
     })
 }
 
@@ -771,10 +771,10 @@ request_complete_result(
     body: []u8,
 ): RequestResult {
     return RequestResult.complete(Request {
-        method: method,
-        target: target,
-        headers: headers,
-        body: body,
+        method = method,
+        target = target,
+        headers = headers,
+        body = body,
     })
 }
 
@@ -893,7 +893,7 @@ pub mut RequestParser.parse(
                 }
                 self.framing = RequestFraming.chunked
             }
-            headers[self.header_count] = Header {name: name, value: value}
+            headers[self.header_count] = Header {name = name, value = value}
             self.header_count += 1
             mut self.consume_line()
             continue parse_loop
@@ -1026,8 +1026,8 @@ pub mut RequestParser.parse(
 
 ResponseParser.progress(): ResponseResult {
     return ResponseResult.progress(ResponseProgress {
-        consumed: self.input_offset,
-        body_written: self.body_count,
+        consumed = self.input_offset,
+        body_written = self.body_count,
     })
 }
 
@@ -1052,11 +1052,11 @@ complete_result(
     body: []u8,
 ): ResponseResult {
     return ResponseResult.complete(Response {
-        version_minor: version_minor,
-        status: status,
-        reason: reason,
-        headers: headers,
-        body: body,
+        version_minor = version_minor,
+        status = status,
+        reason = reason,
+        headers = headers,
+        body = body,
     })
 }
 
@@ -1186,7 +1186,7 @@ pub mut ResponseParser.parse(
                 self.framing = ResponseFraming.chunked
             }
             if self.status < 100 || self.status >= 200 {
-                headers[self.header_count] = Header {name: name, value: value}
+                headers[self.header_count] = Header {name = name, value = value}
                 self.header_count += 1
             }
             mut self.consume_line()
@@ -1361,9 +1361,9 @@ mem_adjust[T](slice: mut []T, needed: usize): (mut []T, bool) {
 
 connect_url(parsed: Url, mut storage: Storage, resize: bool): (tcp.Conn, Error) {
     zero: tcp.Conn = tcp.Conn {
-        socket: net.Socket(0),
-        interest: tcp.Interest.none,
-        send_offset: usize(0),
+        socket = net.Socket(0),
+        interest = tcp.Interest.none,
+        send_offset = usize(0),
     }
     if resize {
         mem_addresses: mut []net.Addr4, addr_ok: bool = mem_adjust[net.Addr4](storage.addresses, 4)
@@ -1376,9 +1376,9 @@ connect_url(parsed: Url, mut storage: Storage, resize: bool): (tcp.Conn, Error) 
     if count == 0 { return zero, ClientErr.address }
 
     conn: tcp.Conn = tcp.Conn {
-        socket: net.Socket(0),
-        interest: tcp.Interest.none,
-        send_offset: usize(0),
+        socket = net.Socket(0),
+        interest = tcp.Interest.none,
+        send_offset = usize(0),
     }
 
     conn_err: Error = ClientErr.address
@@ -1422,13 +1422,13 @@ exchange[C](connection: C, raw: tcp.Conn,
     }
 
     fields: [2]Header = [
-        Header {name: "Host", value: parsed.host},
-        Header {name: "Connection", value: "close"},
+        Header {name = "Host", value = parsed.host},
+        Header {name = "Connection", value = "close"},
     ]
     request: Request = Request {
-        method: method_get,
-        target: storage.target[..target_count],
-        headers: fields[..],
+        method = method_get,
+        target = storage.target[..target_count],
+        headers = fields[..],
     }
 
     output_count: usize, format_err: Error = request.format(mut storage.output[..])
@@ -1454,8 +1454,8 @@ exchange[C](connection: C, raw: tcp.Conn,
 
     occupied: usize = 0
     parser: ResponseParser = ResponseParser {
-        phase: ResponsePhase.status,
-        framing: ResponseFraming.undecided,
+        phase = ResponsePhase.status,
+        framing = ResponseFraming.undecided,
     }
     parse_pending: bool = false
     eof: bool = false
@@ -1478,8 +1478,8 @@ exchange[C](connection: C, raw: tcp.Conn,
                  * after a moving reallocation before exposing any views.
                  */
                 parser = ResponseParser {
-                    phase: ResponsePhase.status,
-                    framing: ResponseFraming.undecided,
+                    phase = ResponsePhase.status,
+                    framing = ResponseFraming.undecided,
                 }
             }
 
@@ -1575,8 +1575,8 @@ get_tls_with_storage(url: string, config: TlsConfig, mut storage: Storage, resiz
     if connect_err != null { return Response{}, connect_err }
     secured: tls.Conn, tls_err: Error = tls.connect(connection, parsed.host,
         config.trust_anchor, tls.Storage {
-            context: storage.tls_context,
-            records: storage.tls_records,
+            context = storage.tls_context,
+            records = storage.tls_records,
         })
     if tls_err != null {
         tcp.close(mut connection)

@@ -31,7 +31,7 @@ main(): int {
         return 4
     }
     writable_items: mut []Item = items[0..2]
-    writable_items[0] = Item { tag: 7 }
+    writable_items[0] = Item { tag = 7 }
 
     if items[0].tag != 7 {
         release[Item](mut items)

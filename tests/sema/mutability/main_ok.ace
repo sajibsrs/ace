@@ -81,14 +81,14 @@ main(): int {
     }
 
     // Generic instantiations are distinct types.
-    a: Box[string] = Box[string] { v: source }
-    b: Box[mut string] = Box[mut string] { v: ms }
+    a: Box[string] = Box[string] { v = source }
+    b: Box[mut string] = Box[mut string] { v = ms }
     if a.v.len != 3 || b.v.len != 3 {
         return 9
     }
 
     // Struct fields hold mut-qualified views.
-    store: Store = Store { bytes: backing[0..4], text: ms }
+    store: Store = Store { bytes = backing[0..4], text = ms }
     if store.bytes.len != 4 || store.text.len != 3 {
         return 10
     }

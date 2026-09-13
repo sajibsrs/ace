@@ -72,8 +72,8 @@ main(): int {
     n: int, error: Error = read()
     n, error = read()
     n += 1
-    p: Point = Point { x: 1.0, y: 2.0 }
-    q: Point = { x: 3.0, y: 4.0 }
+    p: Point = Point { x = 1.0, y = 2.0 }
+    q: Point = { x = 3.0, y = 4.0 }
     ok: bool = 0 <= n <= 100
     e: Error = null
 

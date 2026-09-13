@@ -7,11 +7,11 @@ Pair: struct { ip: [4]u8, port: u16 }
 Outer: struct { pair: Pair, tag: u16 }
 
 make_pair(port: u16): Pair {
-    return Pair {ip: [127, 0, 0, 1], port: port}
+    return Pair {ip = [127, 0, 0, 1], port = port}
 }
 
 make_outer(tag: u16): Outer {
-    return Outer {pair: Pair {ip: [10, 0, 0, 2], port: tag}, tag: tag}
+    return Outer {pair = Pair {ip = [10, 0, 0, 2], port = tag}, tag = tag}
 }
 
 split(): (int, [2]u8) {
@@ -37,7 +37,7 @@ main(): int {
        storage[1].ip[0] != 127 {
         return 3
     }
-    row: [2]Pair = [Pair {ip: [192, 168, 0, 1], port: 80}, Pair {ip: [10, 1, 2, 3], port: 443}]
+    row: [2]Pair = [Pair {ip = [192, 168, 0, 1], port = 80}, Pair {ip = [10, 1, 2, 3], port = 443}]
 
     if row[0].ip[0] != 192 || row[0].port != 80 || row[1].ip[1] != 1 || row[1].port != 443 {
         return 4

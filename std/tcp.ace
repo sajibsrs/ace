@@ -38,22 +38,22 @@ pub SendAllErr: error {
 }
 
 zero_listener(): Listener {
-    return Listener {socket: net.Socket(0)}
+    return Listener {socket = net.Socket(0)}
 }
 
 zero_connection(): Conn {
     return Conn {
-        socket: net.Socket(0),
-        interest: Interest.none,
-        send_offset: usize(0),
+        socket = net.Socket(0),
+        interest = Interest.none,
+        send_offset = usize(0),
     }
 }
 
 connection(sock: net.Socket, interest: Interest): Conn {
     return Conn {
-        socket: sock,
-        interest: interest,
-        send_offset: usize(0),
+        socket = sock,
+        interest = interest,
+        send_offset = usize(0),
     }
 }
 
@@ -106,7 +106,7 @@ pub listen(address: net.Addr4, backlog: usize): (Listener, Error) {
         sys.close(sock)
         return zero_listener(), err
     }
-    return Listener {socket: sock}, null
+    return Listener {socket = sock}, null
 }
 
 pub connect(address: net.Addr4): (Conn, Error) {

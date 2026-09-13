@@ -41,11 +41,11 @@ main(): int {
     }
 
     zero: poll.Event = poll.Event {
-        fd: sys.Fd(0),
-        readable: false,
-        writable: false,
-        error: false,
-        hangup: false,
+        fd = sys.Fd(0),
+        readable = false,
+        writable = false,
+        error = false,
+        hangup = false,
     }
     storage: [4]poll.Event = [zero : 4]
     events: mut []poll.Event = mut storage[0..4]

@@ -14,7 +14,7 @@ identity(value: Writable): Writable {
 }
 
 main(): int {
-    thing: const Thing = Thing { value: 1 }
+    thing: const Thing = Thing { value = 1 }
     first: Writable = Writable(&thing)
     second: Writable = identity(first)
     mut second.write(2)

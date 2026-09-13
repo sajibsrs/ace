@@ -8,7 +8,7 @@ pub Big: struct {
 }
 
 pub from_u64(value: u64): Big {
-    out: Big = Big { limbs: [u32(0) : 96], used: 0 }
+    out: Big = Big { limbs = [u32(0) : 96], used = 0 }
 
     if value != 0 {
         out.limbs[0] = u32(value)

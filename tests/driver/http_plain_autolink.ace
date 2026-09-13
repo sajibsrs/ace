@@ -2,12 +2,12 @@ import http
 
 main(): int {
     storage: http.Storage = http.Storage {
-        addresses: null,
-        output: null,
-        target: null,
-        input: null,
-        headers: null,
-        body: null,
+        addresses = null,
+        output = null,
+        target = null,
+        input = null,
+        headers = null,
+        body = null,
     }
     mismatch: http.Response, mismatch_err: Error = http.get(
         "https://example.com/", storage)

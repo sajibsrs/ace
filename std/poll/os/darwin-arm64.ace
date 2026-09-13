@@ -80,23 +80,23 @@ errno_set(value: i32) {
 
 kevent_change(fd: sys.Fd, filter: i16, flags: u16): DarwinKevent {
     return DarwinKevent {
-        ident: usize(i32(fd)),
-        filter: filter,
-        flags: flags,
-        fflags: u32(0),
-        data: i64(0),
-        udata: null,
+        ident = usize(i32(fd)),
+        filter = filter,
+        flags = flags,
+        fflags = u32(0),
+        data = i64(0),
+        udata = null,
     }
 }
 
 zero_kevent(): DarwinKevent {
     return DarwinKevent {
-        ident: usize(0),
-        filter: i16(0),
-        flags: u16(0),
-        fflags: u32(0),
-        data: i64(0),
-        udata: null,
+        ident = usize(0),
+        filter = i16(0),
+        flags = u16(0),
+        fflags = u32(0),
+        data = i64(0),
+        udata = null,
     }
 }
 
@@ -178,7 +178,7 @@ pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
         capacity = MAX_WAIT_EVENTS
     }
 
-    timeout: DarwinTimespec = DarwinTimespec {seconds: i64(0), nanoseconds: i64(0)}
+    timeout: DarwinTimespec = DarwinTimespec {seconds = i64(0), nanoseconds = i64(0)}
     timeout_pointer: *DarwinTimespec = null
 
     if timeout_ns != wait_forever {
@@ -207,11 +207,11 @@ pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
 
         if slot == written {
             events[slot] = Event {
-                fd: fd,
-                readable: false,
-                writable: false,
-                error: false,
-                hangup: false,
+                fd = fd,
+                readable = false,
+                writable = false,
+                error = false,
+                hangup = false,
             }
             written += usize(1)
         }

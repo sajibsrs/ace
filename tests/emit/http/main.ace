@@ -95,14 +95,14 @@ main(): int {
     }
 
     header_storage: [2]http.Header = [
-        http.Header {name: "Host", value: "example.com"},
-        http.Header {name: "X-Test", value: "caf\xC3\xA9"},
+        http.Header {name = "Host", value = "example.com"},
+        http.Header {name = "X-Test", value = "caf\xC3\xA9"},
     ]
     request: http.Request = http.Request {
-        method: "POST",
-        target: "/submit",
-        headers: header_storage[..],
-        body: "ok",
+        method = "POST",
+        target = "/submit",
+        headers = header_storage[..],
+        body = "ok",
     }
     output_storage: [128]u8 = [0 : 128]
     written: usize
@@ -120,7 +120,7 @@ main(): int {
         return 41
     }
     bad_headers: [1]http.Header = [
-        http.Header {name: "Bad Name", value: "x"},
+        http.Header {name = "Bad Name", value = "x"},
     ]
     request.headers = bad_headers[..]
     written, err = request.format(mut output_storage[..])
@@ -130,8 +130,8 @@ main(): int {
     }
 
     default_request: http.Request = http.Request {
-        method: http.method_get,
-        target: "/health",
+        method = http.method_get,
+        target = "/health",
     }
     written, err = default_request.format(mut output_storage[..])
     if err != null || !mem.equal(output_storage[..written], "GET /health HTTP/1.1\r\n\r\n") {
@@ -163,8 +163,8 @@ main(): int {
     response_headers: [4]http.Header
     response_body: [16]u8 = [0 : 16]
     state: http.ResponseParser = http.ResponseParser {
-        phase: http.ResponsePhase.status,
-        framing: http.ResponseFraming.undecided,
+        phase = http.ResponsePhase.status,
+        framing = http.ResponseFraming.undecided,
     }
     result: http.ResponseResult = mut state.parse(
         "HTTP/1.1 200 OK\r\nContent-Length: 4\r\nX-Text: caf\xC3\xA9\r\n\r\nh\xC3\xA9!",

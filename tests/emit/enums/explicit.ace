@@ -17,7 +17,7 @@ saved_opcode: const Opcode = Opcode.store
 round(op: Opcode): Opcode { return op }
 
 main(): int {
-    header: Header = Header { op: Opcode.store, delta: Delta.down, pad: 0 }
+    header: Header = Header { op = Opcode.store, delta = Delta.down, pad = 0 }
     values: [2]Opcode = [Opcode.load, round(header.op)]
     if sizeof(Opcode) != 1 || sizeof(Delta) != 1 || sizeof(Wide) != 8 ||
        sizeof(Maximum) != 8 || sizeof(Header) != 3 {

@@ -27,6 +27,9 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Core language
 
+- Replaced `:` with `=` for named struct and bits literal field initialization,
+  reserving `:` for declarations and type annotations and rejecting the former
+  literal spelling in the parser.
 - Removed local `:=` declaration elision so every storage binding states its
   type and initializer checking always has an explicit declared expectation.
 - Implemented predeclared module-level `StaticMap[K]V` constants with

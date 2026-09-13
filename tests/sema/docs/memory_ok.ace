@@ -17,7 +17,7 @@ static_assert(sizeof(Packet) == 12)
 static_assert(alignof(Packet) == 4)
 
 main(): int {
-    packet: Packet = Packet { kind: 0, length: 1, tail: 2 }
+    packet: Packet = Packet { kind = 0, length = 1, tail = 2 }
     volatile packet.kind = 3
     kind: u8 = volatile packet.kind
     if kind != 3 {

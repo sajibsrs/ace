@@ -17,10 +17,10 @@ B: struct {
 }
 
 main(): int {
-    node: Node = { next: null, value: 2 }
+    node: Node = { next = null, value = 2 }
     node.next = &node
-    b: B = { a: null, value: 40 }
-    a: A = { b: &b }
+    b: B = { a = null, value = 40 }
+    a: A = { b = &b }
     b.a = &a
     return node.next.value + b.a.b.value
 }

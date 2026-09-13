@@ -28,7 +28,7 @@ main(): int {
     if points == null {
         return 2
     }
-    points[1] = Point { x: 3, y: 4 }
+    points[1] = Point { x = 3, y = 4 }
     grown: mut []Point = mem.realloc[Point](points, 4)
 
     if grown == null || grown.len != 4 {
@@ -45,7 +45,7 @@ main(): int {
     if pairs == null {
         return 5
     }
-    pairs[0] = Pair[i32] { first: 1, second: 2 }
+    pairs[0] = Pair[i32] { first = 1, second = 2 }
     mem.release[Pair[i32]](mut pairs)
 
     words: mut []string = mem.alloc[string](2)

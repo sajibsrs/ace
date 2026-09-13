@@ -91,7 +91,7 @@ main(): int {
         return 5
     }
 
-    event: Event = Event.cursor({ x: 10, y: 20 })
+    event: Event = Event.cursor({ x = 10, y = 20 })
     event = round_trip(event)
 
     switch event {
@@ -128,7 +128,7 @@ main(): int {
         }
     }
 
-    small: Small = Small.bytes({ a: 1, b: 2, c: 3 })
+    small: Small = Small.bytes({ a = 1, b = 2, c = 3 })
 
     switch small {
         Small.bytes(bytes: Tiny) {

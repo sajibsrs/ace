@@ -8,7 +8,7 @@ import sys
 import tcp
 
 loopback(port: u16): net.Addr4 {
-    return net.Addr4 {ip: [127, 0, 0, 1], port: port}
+    return net.Addr4 {ip = [127, 0, 0, 1], port = port}
 }
 
 is_error(err: Error, domain: typeid): bool {
@@ -111,15 +111,15 @@ check_cleanup(): int {
     }
 
     invalid_connection: tcp.Conn = tcp.Conn {
-        socket: net.Socket(-1),
-        interest: tcp.Interest.none,
-        send_offset: usize(0),
+        socket = net.Socket(-1),
+        interest = tcp.Interest.none,
+        send_offset = usize(0),
     }
     err = tcp.close(mut invalid_connection)
     if !is_error(err, typeid(sys.CloseErr)) || invalid_connection.socket != 0 {
         return 9
     }
-    invalid_listener: tcp.Listener = tcp.Listener {socket: net.Socket(-1)}
+    invalid_listener: tcp.Listener = tcp.Listener {socket = net.Socket(-1)}
     err = tcp.close(mut invalid_listener)
     if !is_error(err, typeid(sys.CloseErr)) || invalid_listener.socket != 0 {
         return 10
@@ -134,9 +134,9 @@ main(): int {
     }
 
     invalid: tcp.Conn = tcp.Conn {
-        socket: net.Socket(-1),
-        interest: tcp.Interest.none,
-        send_offset: usize(0),
+        socket = net.Socket(-1),
+        interest = tcp.Interest.none,
+        send_offset = usize(0),
     }
     one: [1]u8 = [0]
     writable: mut []u8 = mut one[0..]

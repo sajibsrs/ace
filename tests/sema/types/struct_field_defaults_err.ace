@@ -8,6 +8,6 @@ OtherField: struct { first: int = 1, second: int = first }
 
 main(): int {
     a: Missing = Missing {}
-    b: Missing = Missing { optional: 3 }
+    b: Missing = Missing { optional = 3 }
     return a.required + b.required
 }

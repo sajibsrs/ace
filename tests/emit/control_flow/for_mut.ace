@@ -77,7 +77,7 @@ main(): int {
     }
 
     // aggregate elements alias too: field writes reach the array
-    ps: [2]Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }]
+    ps: [2]Point = [Point { x = 1, y = 2 }, Point { x = 3, y = 4 }]
     for p: Point in mut ps {
         p.x = 9
     }

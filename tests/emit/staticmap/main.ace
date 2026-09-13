@@ -6,7 +6,7 @@ phrases: StaticMap[u16]string = { 200: "OK", 404: "Not Found", 999: null }
 Word: distinct string
 named: StaticMap[Word]u8 = { Word("ace"): 7 }
 Pair: struct { left: u32, right: u32 }
-pairs: StaticMap[u8]Pair = { 1: { left: 4, right: 5 } }
+pairs: StaticMap[u8]Pair = { 1: { left = 4, right = 5 } }
 
 main(): int {
     if numbers[i32(-7)] != 91 || numbers[i32(42)] != 1234 { return 1 }

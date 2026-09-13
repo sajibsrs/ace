@@ -94,7 +94,7 @@ main(): int {
 ```
 
 Calls, overload selection, generic instantiation (`math.max[int](3, 9)`),
-casts/constructors (`util.Point { x: 1, y: 2 }`), and function values all work
+casts/constructors (`util.Point { x = 1, y = 2 }`), and function values all work
 through qualification exactly as they do for local names.
 
 A selective import places each spelling in the namespace its declaration

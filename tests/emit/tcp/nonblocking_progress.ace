@@ -8,7 +8,7 @@ import sys
 import tcp
 
 loopback(port: u16): net.Addr4 {
-    return net.Addr4 {ip: [127, 0, 0, 1], port: port}
+    return net.Addr4 {ip = [127, 0, 0, 1], port = port}
 }
 
 watch_connection(q: poll.Queue, connection: tcp.Conn): Error {
@@ -24,8 +24,8 @@ wait_one(q: poll.Queue, storage: mut []poll.Event): (poll.Event, Error) {
     count: usize, err: Error = poll.wait(q, storage, u64(1000000000))
     if err != null || count != 1 {
         zero: poll.Event = poll.Event {
-            fd: sys.Fd(0), readable: false, writable: false,
-            error: false, hangup: false,
+            fd = sys.Fd(0), readable = false, writable = false,
+            error = false, hangup = false,
         }
         if err == null {
             return zero, poll.WaitErr(0)
@@ -73,8 +73,8 @@ client(port: u16): int {
             return 3
         }
         zero: poll.Event = poll.Event {
-            fd: sys.Fd(0), readable: false, writable: false,
-            error: false, hangup: false,
+            fd = sys.Fd(0), readable = false, writable = false,
+            error = false, hangup = false,
         }
         event_storage: [1]poll.Event = [zero]
         events: mut []poll.Event = mut event_storage[0..]
@@ -108,8 +108,8 @@ client(port: u16): int {
                 return 6
             }
             zero: poll.Event = poll.Event {
-                fd: sys.Fd(0), readable: false, writable: false,
-                error: false, hangup: false,
+                fd = sys.Fd(0), readable = false, writable = false,
+                error = false, hangup = false,
             }
             event_storage: [1]poll.Event = [zero]
             events: mut []poll.Event = mut event_storage[0..]
@@ -146,8 +146,8 @@ client(port: u16): int {
                 return 7
             }
             zero: poll.Event = poll.Event {
-                fd: sys.Fd(0), readable: false, writable: false,
-                error: false, hangup: false,
+                fd = sys.Fd(0), readable = false, writable = false,
+                error = false, hangup = false,
             }
             event_storage: [1]poll.Event = [zero]
             events: mut []poll.Event = mut event_storage[0..]
@@ -176,9 +176,9 @@ client(port: u16): int {
 main(): int {
     // Empty buffers perform no I/O and exercise the pinned interest rules.
     empty_connection: tcp.Conn = tcp.Conn {
-        socket: net.Socket(-1),
-        interest: tcp.Interest.both,
-        send_offset: usize(7),
+        socket = net.Socket(-1),
+        interest = tcp.Interest.both,
+        send_offset = usize(7),
     }
     empty: mut []u8 = null
     if !is_none(tcp.progress_receive(mut empty_connection, empty)) ||
@@ -245,8 +245,8 @@ main(): int {
                 return 15
             }
             zero: poll.Event = poll.Event {
-                fd: sys.Fd(0), readable: false, writable: false,
-                error: false, hangup: false,
+                fd = sys.Fd(0), readable = false, writable = false,
+                error = false, hangup = false,
             }
             event_storage: [1]poll.Event = [zero]
             events: mut []poll.Event = mut event_storage[0..]
@@ -268,8 +268,8 @@ main(): int {
                 return 17
             }
             zero: poll.Event = poll.Event {
-                fd: sys.Fd(0), readable: false, writable: false,
-                error: false, hangup: false,
+                fd = sys.Fd(0), readable = false, writable = false,
+                error = false, hangup = false,
             }
             event_storage: [1]poll.Event = [zero]
             events: mut []poll.Event = mut event_storage[0..]
@@ -295,9 +295,9 @@ main(): int {
     }
 
     invalid: tcp.Conn = tcp.Conn {
-        socket: net.Socket(-1),
-        interest: tcp.Interest.write,
-        send_offset: usize(0),
+        socket = net.Socket(-1),
+        interest = tcp.Interest.write,
+        send_offset = usize(0),
     }
     failed: tcp.Event = tcp.progress_connect(mut invalid)
     switch failed {

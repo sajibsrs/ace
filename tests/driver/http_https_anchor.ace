@@ -22,17 +22,17 @@ main(): int {
     tls_context: [12000]u8
     tls_records: [16709]u8
     storage: http.Storage = http.Storage {
-        addresses: mut addresses[..],
-        output: mut output[..],
-        target: mut target[..],
-        input: mut input[..],
-        headers: mut headers[..],
-        body: mut body[..],
-        tls_context: mut tls_context[..],
-        tls_records: mut tls_records[..],
+        addresses = mut addresses[..],
+        output = mut output[..],
+        target = mut target[..],
+        input = mut input[..],
+        headers = mut headers[..],
+        body = mut body[..],
+        tls_context = mut tls_context[..],
+        tls_records = mut tls_records[..],
     }
     config: http.TlsConfig = http.TlsConfig {
-        trust_anchor: anchor[..usize(count)],
+        trust_anchor = anchor[..usize(count)],
     }
     response: http.Response, err: Error = http.get(
         "https://example.org/", config, storage)

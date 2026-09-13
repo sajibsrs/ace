@@ -734,7 +734,7 @@ main(): int {
         return 1
     }
     ip: [4]u8 = [u8(127), u8(0), u8(0), u8(1)]
-    address: net.Addr4 = net.Addr4{ip: ip, port: u16(8080)}
+    address: net.Addr4 = net.Addr4{ip = ip, port = u16(8080)}
     if net.reuse_addr(sock, true) != null ||
        net.bind(sock, address) != null ||
        net.listen(sock, usize(128)) != null {
@@ -857,7 +857,7 @@ workspace, uses system trust for HTTPS, and releases all workspace through
 `client_wipe`. `get(url, config, mut client)` supplies the explicit trust
 override with the same owning behavior.
 
-Redirects remain opt-in. `RedirectPolicy { limit: 10 }` is accepted by
+Redirects remain opt-in. `RedirectPolicy { limit = 10 }` is accepted by
 `get(url, policy, mut client)` and `get(url, config, policy, mut client)`.
 Those overloads follow 301, 302, 303, 307, and 308 responses with valid
 `Location` fields, resolving absolute HTTP/HTTPS URLs, scheme-relative URLs,
@@ -952,7 +952,7 @@ import net
 import tcp
 
 serve_one(): int {
-    address: net.Addr4 = net.Addr4 {ip: [127, 0, 0, 1], port: u16(8080)}
+    address: net.Addr4 = net.Addr4 {ip = [127, 0, 0, 1], port = u16(8080)}
     listener: tcp.Listener, err: Error = tcp.listen(address, usize(128))
     if err != null {
         return 1
@@ -1080,8 +1080,8 @@ main(): int {
     }
 
     zero: poll.Event = poll.Event {
-        fd: sys.Fd(0), readable: false, writable: false,
-        error: false, hangup: false,
+        fd = sys.Fd(0), readable = false, writable = false,
+        error = false, hangup = false,
     }
     storage: [16]poll.Event = [zero : 16]
     events: mut []poll.Event = mut storage[0..16]

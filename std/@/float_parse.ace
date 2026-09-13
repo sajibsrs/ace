@@ -229,23 +229,23 @@ fast_decimal(text: string, mut result: FastDecimal) {
 }
 
 decimal(text: string): Decimal {
-    invalid: Decimal = Decimal { coefficient: big.from_u64(0), exponent10: 0,
-                                 negative: false, digits: 0, kind: 3 }
+    invalid: Decimal = Decimal { coefficient = big.from_u64(0), exponent10 = 0,
+                                 negative = false, digits = 0, kind = 3 }
 
     if text.len == 0 || text.len >= 512 {
         return invalid
     }
     if equal_text(text, "nan") {
-        return Decimal { coefficient: big.from_u64(0), exponent10: 0,
-                         negative: false, digits: 0, kind: 2 }
+        return Decimal { coefficient = big.from_u64(0), exponent10 = 0,
+                         negative = false, digits = 0, kind = 2 }
     }
     if equal_text(text, "inf") {
-        return Decimal { coefficient: big.from_u64(0), exponent10: 0,
-                         negative: false, digits: 0, kind: 1 }
+        return Decimal { coefficient = big.from_u64(0), exponent10 = 0,
+                         negative = false, digits = 0, kind = 1 }
     }
     if equal_text(text, "-inf") {
-        return Decimal { coefficient: big.from_u64(0), exponent10: 0,
-                         negative: true, digits: 0, kind: 1 }
+        return Decimal { coefficient = big.from_u64(0), exponent10 = 0,
+                         negative = true, digits = 0, kind = 1 }
     }
     at: usize = 0
     negative: bool = false
@@ -326,9 +326,9 @@ decimal(text: string): Decimal {
     if at != text.len {
         return invalid
     }
-    return Decimal { coefficient: coefficient,
-                     exponent10: explicit - fractional,
-                     negative: negative, digits: significant, kind: 0 }
+    return Decimal { coefficient = coefficient,
+                     exponent10 = explicit - fractional,
+                     negative = negative, digits = significant, kind = 0 }
 }
 
 compare_binary(value: Decimal, mantissa: u64, exponent2: int): int {

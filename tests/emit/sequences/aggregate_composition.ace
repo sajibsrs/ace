@@ -23,8 +23,8 @@ replace[T](values: mut []T, index: int, value: T) {
 }
 
 make_points(): [2][2]Point {
-    return [[Point { x: 1, y: 2 }, Point { x: 3, y: 4 }],
-            [Point { x: 5, y: 6 }, Point { x: 7, y: 8 }]]
+    return [[Point { x = 1, y = 2 }, Point { x = 3, y = 4 }],
+            [Point { x = 5, y = 6 }, Point { x = 7, y = 8 }]]
 }
 
 make_colors(): [2][2]Color {
@@ -36,8 +36,8 @@ make_scores(): [2][2]Score {
 }
 
 make_boxes(): [2][2]Box[i32] {
-    return [[Box[i32] { value: 1 }, Box[i32] { value: 2 }],
-            [Box[i32] { value: 3 }, Box[i32] { value: 4 }]]
+    return [[Box[i32] { value = 1 }, Box[i32] { value = 2 }],
+            [Box[i32] { value = 3 }, Box[i32] { value = 4 }]]
 }
 
 make_choices(): [2][2]Choice[i32] {
@@ -50,7 +50,7 @@ main(): int {
     points_copy: [2][2]Point = points
     points_copy[0][0].x = 10
     point_view: mut []Point = mut points_copy[0][0..2]
-    replace[Point](point_view, 1, Point { x: 20, y: 21 })
+    replace[Point](point_view, 1, Point { x = 20, y = 21 })
     if points[0][0].x != 1 || points_copy[0][0].x != 10 || point_view[1].y != 21 {
         return 1
     }
@@ -71,7 +71,7 @@ main(): int {
 
     boxes: [2][2]Box[i32] = id[Boxes](make_boxes())
     box_view: mut []Box[i32] = mut boxes[1][0..2]
-    replace[Box[i32]](box_view, 1, Box[i32] { value: 40 })
+    replace[Box[i32]](box_view, 1, Box[i32] { value = 40 })
     if boxes[0][0].value != 1 || box_view[1].value != 40 {
         return 4
     }

@@ -94,9 +94,9 @@ main(): int {
     if items.len != 3 {
         return 16
     }
-    items[0] = Item { tag: 1, weight: 10, live: true }
-    items[1] = Item { tag: 2, weight: 20, live: false }
-    items[2] = Item { tag: 3, weight: 30, live: true }
+    items[0] = Item { tag = 1, weight = 10, live = true }
+    items[1] = Item { tag = 2, weight = 20, live = false }
+    items[2] = Item { tag = 3, weight = 30, live = true }
 
     if items[1].tag != 2 || items[1].weight != 20 || items[1].live {
         return 17
@@ -119,7 +119,7 @@ main(): int {
     if more[2].tag != 3 || more[2].weight != 30 || !more[2].live {
         return 21
     }
-    more[5] = Item { tag: 6, weight: 60, live: true }
+    more[5] = Item { tag = 6, weight = 60, live = true }
 
     if more[5].weight != 60 {
         return 22

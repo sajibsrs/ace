@@ -218,7 +218,7 @@ primary       := literal | ident | "(" expr_list ")" | array_lit | struct_lit
 array_lit     := "[" [expr_list | array_repeat] "]"
 array_repeat  := expr ":" int_lit                       // [u8(0) : 12]; exact contextual array length
 struct_lit    := "{" [field_init ("," field_init)*] "}"   [P]
-field_init    := ident ":" expr
+field_init    := ident "=" expr
 static_map_lit := "{" [map_entry ("," map_entry)* [","]] "}"
 map_entry     := expr ":" expr
 

@@ -19,6 +19,6 @@ Outer.value(): int {
 }
 
 bad(): Value {
-    base: Base = Base { n: 1 }
+    base: Base = Base { n = 1 }
     return Value(&base)
 }

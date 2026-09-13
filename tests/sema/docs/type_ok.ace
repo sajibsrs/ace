@@ -83,18 +83,18 @@ main(): int {
     count: Count = 13
     distance: Meters = Meters(12.5)
     raw: f64 = f64(distance)
-    point: Point = Point { x: 13, y: 29 }
+    point: Point = Point { x = 13, y = 29 }
     pointer: *Point = &point
     writable: mut *Point = mut &point
     set_x(writable, 14)
-    other: Point = Point { x: 15, y: 31 }
+    other: Point = Point { x = 15, y = 31 }
     retarget(mut pointer, &other)
     outer: *mut *Point = &writable
     outer.x = 16
     maybe: *Point = null
-    node: Node = { next: null }
-    left: Left = { right: null }
-    right: Right = { left: &left }
+    node: Node = { next = null }
+    left: Left = { right = null }
+    right: Right = { left = &left }
     node.next = &node
     left.right = &right
     values: [4]int = [10, 20, 30, 40]
@@ -109,7 +109,7 @@ main(): int {
     }
     operation: (int, int): int = add
     state: State = State.running
-    event: Event = Event.point({ x: 3, y: 4 })
+    event: Event = Event.point({ x = 3, y = 4 })
 
     switch event {
         Event.point(payload: Point) {
@@ -130,9 +130,9 @@ main(): int {
     partial: Point
     partial.x = 40
     partial.y = 2
-    number_object: Number = Number { value: 13 }
+    number_object: Number = Number { value = 13 }
     value: Value = Value(&number_object)
-    human: Human = Human { named: Named { name: "Ada" } }
+    human: Human = Human { named = Named { name = "Ada" } }
     promoted_name: string = human.name()
     ok_bytes: [3]u8 = [u8('o'), u8('k'), u8('!')]
     view: string = ok_bytes[0..3]

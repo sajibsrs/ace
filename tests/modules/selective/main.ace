@@ -14,8 +14,8 @@ keep_type[Point](value: Point): Point {
 
 main(): int {
     p: Point = origin
-    boxed: Thing = {value: p.x}
-    type_only: TypeOnly = {value: 0}
+    boxed: Thing = {value = p.x}
+    type_only: TypeOnly = {value = 0}
 
     if sizeof(Point) == 0 || alignof(Point) != 8 ||
        typeid(Point) != typeid(Point) {

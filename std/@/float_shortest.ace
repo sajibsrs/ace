@@ -45,7 +45,7 @@ pub multiply_wide(a: u64, b: u64): Wide {
     mid2: u64 = p01 + u64(u32(mid1))
     high: u64 = p11 + (mid1 >> 32) + (mid2 >> 32)
     low: u64 = (u64(u32(mid2)) << 32) | u64(u32(p00))
-    return Wide { low: low, high: high }
+    return Wide { low = low, high = high }
 }
 
 shift_wide(value: Wide, distance: i32): u64 {
@@ -61,7 +61,7 @@ multiply_shift64(value: u64, factor: table.Power, shift: i32): u64 {
                     (low_sum >> 32)
     middle: u64 = (u64(u32(high_sum)) << 32) | u64(u32(low_sum))
     high: u64 = upper.high + (high_sum >> 32)
-    return shift_wide(Wide { low: middle, high: high }, shift - 64)
+    return shift_wide(Wide { low = middle, high = high }, shift - 64)
 }
 
 multiply_shift32(value: u32, factor: u64, shift: i32): u32 {
@@ -237,7 +237,7 @@ pub binary64(fraction: u64, exponent: u64): Floating {
             output += 1
         }
     }
-    return Floating { coefficient: output, exponent: exponent10 + removed }
+    return Floating { coefficient = output, exponent = exponent10 + removed }
 }
 
 pub binary32(fraction: u32, exponent: u32): Floating {
@@ -373,5 +373,5 @@ pub binary32(fraction: u32, exponent: u32): Floating {
             output += 1
         }
     }
-    return Floating { coefficient: u64(output), exponent: exponent10 + removed }
+    return Floating { coefficient = u64(output), exponent = exponent10 + removed }
 }

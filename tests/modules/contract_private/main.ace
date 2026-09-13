@@ -3,7 +3,7 @@
 import shapes: "./shapes.ace"
 
 main(): int {
-    circle: shapes.Circle = shapes.Circle { radius: 6 }
+    circle: shapes.Circle = shapes.Circle { radius = 6 }
     shape: shapes.Shape = shapes.Shape(&circle)
     return shape.area()
 }

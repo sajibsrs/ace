@@ -2,7 +2,7 @@
 
 main(): int {
     bytes: [4]u8 = [u8(0) : 4]
-    points: [2]Point = [Point { x: 1, y: 2 } : 2]
+    points: [2]Point = [Point { x = 1, y = 2 } : 2]
     return int(bytes[0]) + points[1].y
 }
 

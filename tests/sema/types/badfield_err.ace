@@ -3,6 +3,6 @@
 Point: struct { x: f32 }
 
 main(): int {
-    p: Point = Point { x: 1.0, z: 2.0 }
+    p: Point = Point { x = 1.0, z = 2.0 }
     return 0
 }

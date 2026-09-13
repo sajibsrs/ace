@@ -39,7 +39,7 @@ read(): (int, bool) {
 g: int = 40
 
 main(): int {
-    p: Point = Point { x: 1.0, y: 2.0 }
+    p: Point = Point { x = 1.0, y = 2.0 }
     c: Color = Color.green
     m: Meters = Meters(3.5)
     n: int, ok: bool = read()

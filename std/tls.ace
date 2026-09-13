@@ -141,26 +141,26 @@ pub connect(connection: tcp.Conn, hostname: string, anchor_der: []u8,
     if storage.context.len < backend_size() || storage.records.len < backend_record_size() ||
         storage.context.len == 0 || storage.records.len == 0 ||
         usize(&storage.context[0]) % backend_align() != 0 {
-        return Conn {tcp: connection, context: null}, TlsErr.storage
+        return Conn {tcp = connection, context = null}, TlsErr.storage
     }
     if hostname.len == 0 {
-        return Conn {tcp: connection, context: null}, TlsErr.initialize
+        return Conn {tcp = connection, context = null}, TlsErr.initialize
     }
     entropy: [32]u8
     entropy_err: Error = fill_entropy(mut entropy[..])
-    if entropy_err != null { return Conn {tcp: connection, context: null}, entropy_err }
+    if entropy_err != null { return Conn {tcp = connection, context = null}, entropy_err }
     anchor: *u8 = null
     if anchor_der.len != 0 { anchor = &anchor_der[0] }
     if backend_init(mut &storage.context[0], mut &storage.records[0],
         storage.records.len, &entropy[0], entropy.len, anchor,
         anchor_der.len) == 0 {
-        return Conn {tcp: connection, context: null}, TlsErr.initialize
+        return Conn {tcp = connection, context = null}, TlsErr.initialize
     }
     if backend_reset(mut &storage.context[0], &hostname[0], hostname.len) == 0 {
         backend_cleanup(mut &storage.context[0])
-        return Conn {tcp: connection, context: null}, TlsErr.hostname
+        return Conn {tcp = connection, context = null}, TlsErr.hostname
     }
-    secured: Conn = Conn {tcp: connection, context: storage.context}
+    secured: Conn = Conn {tcp = connection, context = storage.context}
     err: Error = pump_handshake(secured)
     if err != null { backend_cleanup(mut &storage.context[0]) }
     return secured, err

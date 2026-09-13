@@ -1,7 +1,7 @@
 Flags: bits u8 { small: 2, signed_value: signed 3, _: 3 }
 
 main(): int {
-    flags: Flags = Flags { small: 4 }
+    flags: Flags = Flags { small = 4 }
     flags.small = 5
     flags.signed_value = 4
     flags.signed_value = -5

@@ -3,6 +3,6 @@
 Point: struct { x: int, y: int }
 
 main(): int {
-    point: Point = Point { x: 40, x: 2, y: 0 }
+    point: Point = Point { x = 40, x = 2, y = 0 }
     return point.x
 }

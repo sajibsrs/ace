@@ -24,11 +24,11 @@ check(fd: sys.Fd): int {
         return 2
     }
     zero: Event = Event {
-        fd: fd,
-        readable: false,
-        writable: false,
-        error: false,
-        hangup: false,
+        fd = fd,
+        readable = false,
+        writable = false,
+        error = false,
+        hangup = false,
     }
     storage: [1]Event = [zero]
     events: mut []Event = mut storage[0..1]

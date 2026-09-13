@@ -710,7 +710,9 @@ static Node* parse_structlit(P* p, Node* base) {
     if (!at(p, T_RBRACE)) {
         for (;;) {
             Node* fi = nd(p, N_FIELDINIT);
-            if (at(p, T_IDENT) && kth(p, 1) == T_COLON) {
+            if (at(p, T_IDENT) && kth(p, 1) == T_COLON)
+                perr(p, "struct literal field initialization uses '='; ':' is for declarations and type annotations");
+            if (at(p, T_IDENT) && kth(p, 1) == T_ASSIGN) {
                 fi->str = tk(p)->str;
                 fi->len = tk(p)->len;
                 p->i += 2;

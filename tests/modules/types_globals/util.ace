@@ -5,5 +5,5 @@ pub Point: struct {
     y: int,
 }
 pub Color: enum { red, green, blue }
-pub origin: Point = Point { x: 1, y: 2 }
+pub origin: Point = Point { x = 1, y = 2 }
 pub zero: int = 0

@@ -24,7 +24,7 @@ solo(): int {
 
 several(): int {
     defer record()
-    counter: Counter = Counter { value: 5 }
+    counter: Counter = Counter { value = 5 }
     defer mut counter.add(1)
     if false {
         return 9

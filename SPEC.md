@@ -34,7 +34,10 @@ Concrete rules and syntax. The why behind every rule lives in PHILOSOPHY.md (clo
     conditions require `bool`. Compound assignments are pure sugar with the
     left operand evaluated once; `++` and `--` do not exist.
 13. A struct field may opt into a compile-time default with `name: Type =
-    expression`. A named-field struct literal may omit exactly the fields with
+    expression`. A named-field struct literal supplies a field value with
+    `name = expression`; `:` is reserved there for declarations and type
+    annotations and is rejected as a field-initializer separator. A literal may
+    omit exactly the fields with
     declared defaults; every field without one remains required, and `T {}` is
     valid only when every field of `T` has one. An explicit initializer wins.
     Unknown and duplicate fields remain errors, and there is no positional,
@@ -48,7 +51,9 @@ Concrete rules and syntax. The why behind every rule lives in PHILOSOPHY.md (clo
     literals are implemented, substitution follows an explicitly written
     instantiation. Rationale: omission explicitly authorized by the type author
     removes repetitive construction without hidden work or weakening definite
-    initialization, while per-field opt-in keeps required state visible.
+    initialization, while per-field opt-in keeps required state visible. `=`
+    consistently supplies a value, while `:` consistently associates a name
+    with a type.
 14. A structured error domain keeps one entry per physical line inside its
     braces, with no commas: `code: name = "message"`. The opening brace is
     followed by a newline unless the block is empty. Rationale: error entries
@@ -487,7 +492,7 @@ Decision: nominal, exact-width bit layouts lower:
 4. A constant write outside the field's signed or unsigned range is rejected in
    every mode. A runtime violation aborts in checked mode; release keeps the low
    `N` bits. This applies equally to construction and later assignment.
-5. `Flags { enabled: 1 }` starts from canonical all-bits-zero and may omit any
+5. `Flags { enabled = 1 }` starts from canonical all-bits-zero and may omit any
    named field; omitted and anonymous bits remain zero. `_` cannot be named.
    There is no spread or update literal.
 6. `Flags(raw)` and `u32(flags)` are exact explicit conversions only between a

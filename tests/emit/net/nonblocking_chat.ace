@@ -20,17 +20,17 @@ Client: struct {
 }
 
 loopback(port: u16): net.Addr4 {
-    return net.Addr4 {ip: [127, 0, 0, 1], port: port}
+    return net.Addr4 {ip = [127, 0, 0, 1], port = port}
 }
 
 zero_client(): Client {
     return Client {
-        socket: net.Socket(-1),
-        input: [u8(0) : 8],
-        input_count: 0,
-        output: [u8(0) : 8],
-        output_count: 0,
-        output_sent: 0,
+        socket = net.Socket(-1),
+        input = [u8(0) : 8],
+        input_count = 0,
+        output = [u8(0) : 8],
+        output_count = 0,
+        output_sent = 0,
     }
 }
 
@@ -321,8 +321,8 @@ main(): int {
     gates[0] = gate_write
 
     zero_event: poll.Event = poll.Event {
-        fd: sys.Fd(0), readable: false, writable: false,
-        error: false, hangup: false,
+        fd = sys.Fd(0), readable = false, writable = false,
+        error = false, hangup = false,
     }
     event_storage: [4]poll.Event = [zero_event : 4]
     events: mut []poll.Event = mut event_storage[0..4]

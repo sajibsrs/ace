@@ -7,7 +7,7 @@ Box[T]: struct { value: T }
 main(): int {
     left: [1]Left = [Left(1)]
     right: [1]Right = left
-    ints: [1]Box[i32] = [Box[i32] { value: 1 }]
+    ints: [1]Box[i32] = [Box[i32] { value = 1 }]
     words: [1]Box[i64] = ints
     return int(i32(right[0]) + i32(words[0].value))
 }

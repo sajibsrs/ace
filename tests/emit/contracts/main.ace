@@ -37,7 +37,7 @@ Circle.value(k: f64): f64 {
 }
 
 main(): int {
-    circle: Circle = Circle { radius: 3 }
+    circle: Circle = Circle { radius = 3 }
     shape: Shape = Shape(&circle)
     metric: Metric = Metric(&circle)
     mut shape.scale(2)

@@ -161,10 +161,10 @@ main(): int {
     local_limit: const int = 100
 
     // Variables, user-defined types, literals, and generic instantiations.
-    point: Point = {x: 3.0, y: 4.0}
-    explicit_point: Point = Point{x: 1.0, y: 2.0}
-    boxed: Box[int] = {value: decimal}
-    pair: Pair[int, string] = {left: boxed.value, right: "Ace"}
+    point: Point = {x = 3.0, y = 4.0}
+    explicit_point: Point = Point{x = 1.0, y = 2.0}
+    boxed: Box[int] = {value = decimal}
+    pair: Pair[int, string] = {left = boxed.value, right = "Ace"}
     result: Result[int] = Result[int].succeeded(pair.left)
     bounded: int = clamp[int](boxed.value, 0, 100)
     operation: (int, int): int = add

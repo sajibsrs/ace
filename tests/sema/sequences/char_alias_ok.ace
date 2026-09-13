@@ -68,7 +68,7 @@ main(): int {
     if typeid(Text) != typeid(Bytes) {
         return 12
     }
-    text_box: View[string] = View[string] {value: text}
+    text_box: View[string] = View[string] {value = text}
     bytes_box: View[[]u8] = text_box
 
     if bytes_box.value.len != 2 {
@@ -82,7 +82,7 @@ main(): int {
     if pick('b', 'a') != 'a' {
         return 8
     }
-    box: Box = Box { tag: 'Z' }
+    box: Box = Box { tag = 'Z' }
 
     if box.tag != 90 {
         return 9

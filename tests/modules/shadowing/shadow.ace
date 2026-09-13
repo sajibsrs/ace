@@ -3,7 +3,7 @@ pub Record: struct {
 }
 
 pub record(value: int): Record {
-    return Record { value: value }
+    return Record { value = value }
 }
 
 pub parameter_field(record: Record): int {

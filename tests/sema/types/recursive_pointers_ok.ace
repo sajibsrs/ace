@@ -42,13 +42,13 @@ Future[T]: struct {
 }
 
 main(): int {
-    node: Node = { next: null, value: 1 }
-    b: B = { a: null, value: 40 }
-    a: A = { b: &b }
-    box: Box[int] = { next: null, value: 2 }
+    node: Node = { next = null, value = 1 }
+    b: B = { a = null, value = 40 }
+    a: A = { b = &b }
+    box: Box[int] = { next = null, value = 2 }
     recursive_union: RecursiveUnion = RecursiveUnion.next(null)
     holder: Holder = Holder.later(null)
-    generic_holder: GenericHolder = { future: null }
+    generic_holder: GenericHolder = { future = null }
     node.next = &node
 
     if recursive_union == RecursiveUnion.none || holder == Holder.none {
