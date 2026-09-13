@@ -1,8 +1,0 @@
-/* Experimental TLS proof boundary. No public std/tls API is carved yet. */
-
-@when(target == "darwin-arm64")
-import os: "./os/darwin-arm64.ace"
-
-fill_entropy(storage: mut []u8): Error {
-    return os.fill(storage)
-}

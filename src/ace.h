@@ -143,6 +143,11 @@ enum {
     F_VOLATILE = 65536, F_CABI = 131072,
 };
 
+enum {
+    EXTERN_NONE = 0,
+    EXTERN_TLS = 1,
+};
+
 // Compiler-backed standard-module functions. These markers live only on the
 // canonical module's declaration/call nodes; names remain ordinary imports
 // and are never predeclared globally.
@@ -215,6 +220,7 @@ struct Node {
     int         nkids;
     const char* cname; // preserved source spelling for a renamed C boundary or
                        // error domain (module.c); extern linkage uses `_name`
+    const char* extern_component; // compiler-owned @extern component, or NULL
     // sema annotations (filled by sema.c, consumed by emit.c):
     void*       ty;  // SType* — computed type of this expression
     void*       sym; // Sym* — resolved symbol (idents, call targets, binders;
@@ -234,6 +240,11 @@ void parse_dump(Node* file);
 // for the emitter; generic stamp bodies are re-annotated on demand via
 // sema.h's sema_stamp_body().
 int sema_check(Node* file, Diag* d);
+
+// Resolve the closed set of compiler-owned external-component references after
+// semantic call/function-value binding. The returned mask controls emission
+// and the final link driver; this is a bounded AST walk, not reachability.
+uint32_t extern_requirements(Node* file);
 
 // Load supported imports and merge their declarations into the compilation
 // unit. Qualified and selectively imported references are lowered to private

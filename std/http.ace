@@ -5,6 +5,7 @@ import mem
 import str
 import tcp
 import net
+import tls
 
 pub Url: struct {
     host: string,
@@ -14,7 +15,7 @@ pub Url: struct {
 }
 
 pub UrlErr: error {
-    1: invalid = "invalid or unsupported HTTP URL"
+    1: invalid = "invalid URL or scheme for HTTP operation"
 }
 
 pub FormatErr: error {
@@ -186,6 +187,12 @@ pub Storage: struct {
     input: mut []u8,
     headers: mut []Header,
     body: mut []u8,
+    tls_context: mut []u8 = null,
+    tls_records: mut []u8 = null,
+}
+
+pub TlsConfig: struct {
+    trust_anchor: []u8 = null,
 }
 
 pub Client: struct {
@@ -202,6 +209,8 @@ pub client_new(): Client {
         input: null,
         headers: null,
         body: null,
+        tls_context: null,
+        tls_records: null,
     }
     return Client {storage: storage}
 }
@@ -218,6 +227,8 @@ pub client_wipe(mut client: Client) {
     mem.release[u8](mut client.storage[0].input)
     mem.release[Header](mut client.storage[0].headers)
     mem.release[u8](mut client.storage[0].body)
+    mem.release(mut client.storage[0].tls_context)
+    mem.release[u8](mut client.storage[0].tls_records)
     mem.release[Storage](mut client.storage)
 }
 
@@ -294,8 +305,16 @@ is_host(host: string): bool {
 /* Parses an absolute plaintext HTTP URL into zero-copy host, path, and query
  * views. Returns `UrlErr` for unsupported or malformed input.
  */
-pub parse_url(url: string): (Url, Error) {
-    if url.len < 7 || !mem.equal(url[..7], "http://") {
+parse_url_for(url: string, secure: bool): (Url, Error) {
+    scheme: string = "http://"
+    start: usize = 7
+    default_port: u16 = 80
+    if secure {
+        scheme = "https://"
+        start = 8
+        default_port = 443
+    }
+    if url.len < start || !mem.equal(url[..start], scheme) {
         return zero_url(), UrlErr.invalid
     }
     for i: usize in 0 .. url.len {
@@ -304,19 +323,19 @@ pub parse_url(url: string): (Url, Error) {
         }
     }
     authority_end: usize = url.len
-    for i: usize in 7 .. url.len {
+    for i: usize in start .. url.len {
         if url[i] == 47 || url[i] == 63 {
             authority_end = i
             break
         }
     }
-    for i: usize in 7 .. authority_end {
+    for i: usize in start .. authority_end {
         if url[i] == 64 || url[i] == 91 || url[i] == 93 {
             return zero_url(), UrlErr.invalid
         }
     }
     colon: usize = authority_end
-    for i: usize in 7 .. authority_end {
+    for i: usize in start .. authority_end {
         if url[i] == 58 {
             if colon != authority_end {
                 return zero_url(), UrlErr.invalid
@@ -325,11 +344,11 @@ pub parse_url(url: string): (Url, Error) {
         }
     }
     host_end: usize = colon
-    host: string = url[7..host_end]
+    host: string = url[start..host_end]
     if !is_host(host) {
         return zero_url(), UrlErr.invalid
     }
-    port: u16 = 80
+    port: u16 = default_port
     if colon != authority_end {
         parsed_port: uint, parsed: bool = str.parse[uint](url[colon + 1..authority_end])
         if !parsed || parsed_port > 65535 {
@@ -357,6 +376,12 @@ pub parse_url(url: string): (Url, Error) {
         }
     }
     return Url {host: host, path: path, query: query, port: port}, null
+}
+
+pub parse_url(url: string): (Url, Error) {
+    secure: bool = url.len >= 8 && mem.equal(url[..8], "https://")
+    parsed: Url, err: Error = parse_url_for(url, secure)
+    return parsed, err
 }
 
 /* Adds a serialized size without exceeding `capacity` or overflowing. */
@@ -1322,19 +1347,21 @@ mem_adjust[T](slice: mut []T, needed: usize): (mut []T, bool) {
     return bigger, true
 }
 
-get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Error) {
-    parsed: Url, url_err: Error = parse_url(url)
-    if url_err != null { return Response{}, url_err }
-
+connect_url(parsed: Url, mut storage: Storage, resize: bool): (tcp.Conn, Error) {
+    zero: tcp.Conn = tcp.Conn {
+        socket: net.Socket(0),
+        interest: tcp.Interest.none,
+        send_offset: usize(0),
+    }
     if resize {
         mem_addresses: mut []net.Addr4, addr_ok: bool = mem_adjust[net.Addr4](storage.addresses, 1)
-        if !addr_ok { return Response{}, ClientErr.allocation }
+        if !addr_ok { return zero, ClientErr.allocation }
         storage.addresses = mem_addresses
     }
 
     count: usize, resolve_err: Error = net.resolve4(parsed.host, parsed.port, mut storage.addresses[..])
-    if resolve_err != null { return Response{}, resolve_err }
-    if count == 0 { return Response{}, ClientErr.address }
+    if resolve_err != null { return zero, resolve_err }
+    if count == 0 { return zero, ClientErr.address }
 
     conn: tcp.Conn = tcp.Conn {
         socket: net.Socket(0),
@@ -1352,21 +1379,33 @@ get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Er
             break
         }
     }
-    if !is_connected { return Response{}, conn_err }
+    if !is_connected { return zero, conn_err }
+    return conn, null
+}
+
+tcp_receive(connection: tcp.Conn, destination: mut []u8): (int, Error) {
+    count: int, err: Error = net.receive(connection.socket, destination)
+    return count, err
+}
+
+exchange[C](connection: C, raw: tcp.Conn,
+    send: (C, []u8): (usize, Error),
+    receive: (C, mut []u8): (int, Error),
+    parsed: Url, mut storage: Storage, resize: bool): (Response, Error) {
 
     /* The request target is known exactly: size to fit before writing. */
     target_parts: [2]string = [parsed.path, parsed.query]
     if resize {
         mem_target: mut []u8, target_ok: bool = mem_adjust[u8](storage.target, parsed.path.len + parsed.query.len)
         if !target_ok {
-            tcp.close(mut conn)
+            tcp.close(mut raw)
             return Response{}, ClientErr.allocation
         }
         storage.target = mem_target
     }
     target_count: usize, fit: bool = str.concat(target_parts[..], mut storage.target[..])
     if !fit {
-        tcp.close(mut conn)
+        tcp.close(mut raw)
         return Response{}, ClientErr.target_capacity
     }
 
@@ -1384,20 +1423,20 @@ get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Er
     for resize && format_err == FormatErr.capacity {
         mem_output: mut []u8, output_ok: bool = mem_adjust[u8](storage.output, storage.output.len + 1)
         if !output_ok {
-            tcp.close(mut conn)
+            tcp.close(mut raw)
             return Response{}, ClientErr.allocation
         }
         storage.output = mem_output
         output_count, format_err = request.format(mut storage.output[..])
     }
     if format_err != null {
-        tcp.close(mut conn)
+        tcp.close(mut raw)
         return Response{}, format_err
     }
 
-    _: usize, send_err: Error = tcp.send_all(conn, storage.output[..output_count])
+    _: usize, send_err: Error = send(connection, storage.output[..output_count])
     if send_err != null {
-        tcp.close(mut conn)
+        tcp.close(mut raw)
         return Response{}, send_err
     }
 
@@ -1413,12 +1452,12 @@ get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Er
         if !parse_pending {
             if occupied == storage.input.len {
                 if !resize {
-                    tcp.close(mut conn)
+                    tcp.close(mut raw)
                     return Response{}, ClientErr.response
                 }
                 mem_input: mut []u8, input_ok: bool = mem_adjust[u8](storage.input, storage.input.len + 1)
                 if !input_ok {
-                    tcp.close(mut conn)
+                    tcp.close(mut raw)
                     return Response{}, ClientErr.allocation
                 }
                 storage.input = mem_input
@@ -1433,9 +1472,9 @@ get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Er
             }
 
             received: int
-            received, recv_err: Error = net.receive(conn.socket, mut storage.input[occupied..])
+            received, recv_err: Error = receive(connection, mut storage.input[occupied..])
             if recv_err != null {
-                tcp.close(mut conn)
+                tcp.close(mut raw)
                 return Response{}, recv_err
             }
             occupied += usize(received)
@@ -1453,19 +1492,19 @@ get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Er
 
         switch result {
             ResponseResult.complete(response: Response) {
-                tcp.close(mut conn)
+                tcp.close(mut raw)
                 return response, null
             }
             ResponseResult.progress(value: ResponseProgress) {}
             ResponseResult.capacity(kind: ResponseCapacity) {
                 if !resize {
-                    tcp.close(mut conn)
+                    tcp.close(mut raw)
                     return Response{}, ClientErr.response
                 }
                 if kind == ResponseCapacity.headers {
                     mem_headers: mut []Header, headers_ok: bool = mem_adjust[Header](storage.headers, storage.headers.len + 1)
                     if !headers_ok {
-                        tcp.close(mut conn)
+                        tcp.close(mut raw)
                         return Response{}, ClientErr.allocation
                     }
                     storage.headers = mem_headers
@@ -1478,7 +1517,7 @@ get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Er
                     }
                     mem_body: mut []u8, body_ok: bool = mem_adjust[u8](storage.body, needed)
                     if !body_ok {
-                        tcp.close(mut conn)
+                        tcp.close(mut raw)
                         return Response{}, ClientErr.allocation
                     }
                     storage.body = mem_body
@@ -1486,11 +1525,53 @@ get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Er
                 parse_pending = true
             }
             else {
-                tcp.close(mut conn)
+                tcp.close(mut raw)
                 return Response{}, ClientErr.response
             }
         }
     }
+}
+
+get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Error) {
+    parsed: Url, url_err: Error = parse_url_for(url, false)
+    if url_err != null { return Response{}, url_err }
+    connection: tcp.Conn, connect_err: Error = connect_url(parsed, mut storage, resize)
+    if connect_err != null { return Response{}, connect_err }
+    response: Response, err: Error = exchange[tcp.Conn](connection, connection,
+        tcp.send_all, tcp_receive, parsed, mut storage, resize)
+    return response, err
+}
+
+@extern("tls")
+get_tls_with_storage(url: string, config: TlsConfig,
+    mut storage: Storage, resize: bool): (Response, Error) {
+    parsed: Url, url_err: Error = parse_url_for(url, true)
+    if url_err != null { return Response{}, url_err }
+    if resize {
+        if storage.tls_context == null {
+            storage.tls_context = mem.alloc(int(tls.context_size()),
+                int(tls.context_align()))
+            if storage.tls_context == null { return Response{}, ClientErr.allocation }
+        }
+        mem_records: mut []u8, records_ok: bool = mem_adjust[u8](
+            storage.tls_records, tls.record_size())
+        if !records_ok { return Response{}, ClientErr.allocation }
+        storage.tls_records = mem_records
+    }
+    connection: tcp.Conn, connect_err: Error = connect_url(parsed, mut storage, false)
+    if connect_err != null { return Response{}, connect_err }
+    secured: tls.Conn, tls_err: Error = tls.connect(connection, parsed.host,
+        config.trust_anchor, tls.Storage {
+            context: storage.tls_context,
+            records: storage.tls_records,
+        })
+    if tls_err != null {
+        tcp.close(mut connection)
+        return Response{}, tls_err
+    }
+    response: Response, err: Error = exchange[tls.Conn](secured, connection,
+        tls.send_all, tls.receive, parsed, mut storage, resize)
+    return response, err
 }
 
 pub get(url: string, storage: Storage): (Response, Error) {
@@ -1499,8 +1580,29 @@ pub get(url: string, storage: Storage): (Response, Error) {
     return response, err
 }
 
+@extern("tls")
+pub get(url: string, config: TlsConfig, storage: Storage): (Response, Error) {
+    workspace: Storage = storage
+    response: Response, err: Error = get_tls_with_storage(url, config, mut workspace, false)
+    return response, err
+}
+
+@extern("tls")
 pub get(url: string, mut client: Client): (Response, Error) {
     if client.storage == null { return Response{}, ClientErr.allocation }
+    if url.len >= 8 && mem.equal(url[..8], "https://") {
+        response: Response, err: Error = get_tls_with_storage(url, TlsConfig{},
+            mut client.storage[0], true)
+        return response, err
+    }
     response: Response, err: Error = get_with_storage(url, mut client.storage[0], true)
+    return response, err
+}
+
+@extern("tls")
+pub get(url: string, config: TlsConfig, mut client: Client): (Response, Error) {
+    if client.storage == null { return Response{}, ClientErr.allocation }
+    response: Response, err: Error = get_tls_with_storage(url, config,
+        mut client.storage[0], true)
     return response, err
 }

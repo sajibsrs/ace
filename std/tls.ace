@@ -1,0 +1,220 @@
+/* tls — blocking client TLS transport over caller-owned BearSSL storage. */
+
+import net
+import sys
+import tcp
+
+@extern("tls")
+fill_entropy(storage: mut []u8): Error {
+    return sys.random(storage)
+}
+
+extern "c" {
+    backend_size(): usize = "ace_tls_client_size"
+    backend_align(): usize = "ace_tls_client_align"
+    backend_record_size(): usize = "ace_tls_record_buffer_size"
+    backend_init(storage: mut *u8, records: mut *u8, records_len: usize,
+        entropy: *u8, entropy_len: usize, anchor: *u8, anchor_len: usize): i32 =
+        "ace_tls_client_init"
+    backend_reset(storage: mut *u8, hostname: *u8, hostname_len: usize): i32 =
+        "ace_tls_client_reset"
+    backend_cleanup(storage: mut *u8) = "ace_tls_client_cleanup"
+    backend_state(storage: *u8): u32 = "ace_tls_client_state"
+    backend_error(storage: *u8): i32 = "ace_tls_client_error"
+    backend_sendrec_len(storage: *u8): usize = "ace_tls_sendrec_len"
+    backend_sendrec_ptr(storage: *u8): *u8 = "ace_tls_sendrec_ptr"
+    backend_sendrec_ack(storage: mut *u8, length: usize) =
+        "ace_tls_sendrec_ack"
+    backend_recvrec_len(storage: *u8): usize = "ace_tls_recvrec_len"
+    backend_recvrec_ptr(storage: *u8): mut *u8 = "ace_tls_recvrec_ptr"
+    backend_recvrec_ack(storage: mut *u8, length: usize) =
+        "ace_tls_recvrec_ack"
+    backend_sendapp(storage: mut *u8, data: *u8, length: usize): usize =
+        "ace_tls_sendapp"
+    backend_recvapp(storage: mut *u8, data: mut *u8, length: usize): usize =
+        "ace_tls_recvapp"
+}
+
+closed: const u32 = 1
+send_record: const u32 = 2
+receive_record: const u32 = 4
+send_application: const u32 = 8
+receive_application: const u32 = 16
+backend_error_base: const i32 = 1024
+
+pub Storage: struct {
+    context: mut []u8,
+    records: mut []u8,
+}
+
+pub Conn: struct {
+    tcp: tcp.Conn,
+    context: mut []u8,
+}
+
+pub TlsErr: error {
+    1: storage = "TLS backend storage is too small or misaligned"
+    2: initialize = "TLS client initialization failed"
+    3: hostname = "TLS hostname or SNI initialization failed"
+    4: eof = "TCP connection closed before an orderly TLS close"
+    5: stalled = "TLS engine made no progress"
+    6: protocol = "TLS handshake or record processing failed"
+}
+
+@extern("tls")
+pub context_size(): usize {
+    return backend_size()
+}
+
+@extern("tls")
+pub context_align(): usize {
+    return backend_align()
+}
+
+@extern("tls")
+pub record_size(): usize {
+    return backend_record_size()
+}
+
+@extern("tls")
+context_pointer(connection: Conn): mut *u8 {
+    return mut &connection.context[0]
+}
+
+@extern("tls")
+backend_failure(connection: Conn): Error {
+    code: i32 = backend_error(context_pointer(connection))
+    if code == 0 { return TlsErr.stalled }
+    return TlsErr(backend_error_base + code)
+}
+
+@extern("tls")
+flush_records(connection: Conn): Error {
+    for (backend_state(context_pointer(connection)) & send_record) != 0 {
+        length: usize = backend_sendrec_len(context_pointer(connection))
+        pointer: *u8 = backend_sendrec_ptr(context_pointer(connection))
+        if pointer == null || length == 0 { return TlsErr.stalled }
+        sent: int, err: Error = net.send(connection.tcp.socket, []u8(pointer, length))
+        if err != null { return err }
+        if sent <= 0 { return TlsErr.stalled }
+        backend_sendrec_ack(context_pointer(connection), usize(sent))
+    }
+    return null
+}
+
+@extern("tls")
+receive_record_bytes(connection: Conn): Error {
+    length: usize = backend_recvrec_len(context_pointer(connection))
+    pointer: mut *u8 = backend_recvrec_ptr(context_pointer(connection))
+    if pointer == null || length == 0 { return TlsErr.stalled }
+    buffer: mut []u8 = mut []u8(pointer, length)
+    received: int, err: Error = net.receive(connection.tcp.socket, buffer)
+    if err != null { return err }
+    if received == 0 { return TlsErr.eof }
+    backend_recvrec_ack(context_pointer(connection), usize(received))
+    return null
+}
+
+@extern("tls")
+pump_handshake(connection: Conn): Error {
+    for {
+        state: u32 = backend_state(context_pointer(connection))
+        if (state & send_application) != 0 { return null }
+        if state == closed || state == 0 { return backend_failure(connection) }
+        if (state & send_record) != 0 {
+            err: Error = flush_records(connection)
+            if err != null { return err }
+            continue
+        }
+        if (state & receive_record) != 0 {
+            err: Error = receive_record_bytes(connection)
+            if err != null { return err }
+            continue
+        }
+        return TlsErr.stalled
+    }
+}
+
+@extern("tls")
+pub connect(connection: tcp.Conn, hostname: string, anchor_der: []u8,
+    storage: Storage): (Conn, Error) {
+    if storage.context.len < backend_size() || storage.records.len < backend_record_size() ||
+        storage.context.len == 0 || storage.records.len == 0 ||
+        usize(&storage.context[0]) % backend_align() != 0 {
+        return Conn {tcp: connection, context: null}, TlsErr.storage
+    }
+    if hostname.len == 0 {
+        return Conn {tcp: connection, context: null}, TlsErr.initialize
+    }
+    entropy: [32]u8
+    entropy_err: Error = fill_entropy(mut entropy[..])
+    if entropy_err != null { return Conn {tcp: connection, context: null}, entropy_err }
+    anchor: *u8 = null
+    if anchor_der.len != 0 { anchor = &anchor_der[0] }
+    if backend_init(mut &storage.context[0], mut &storage.records[0],
+        storage.records.len, &entropy[0], entropy.len, anchor,
+        anchor_der.len) == 0 {
+        return Conn {tcp: connection, context: null}, TlsErr.initialize
+    }
+    if backend_reset(mut &storage.context[0], &hostname[0], hostname.len) == 0 {
+        backend_cleanup(mut &storage.context[0])
+        return Conn {tcp: connection, context: null}, TlsErr.hostname
+    }
+    secured: Conn = Conn {tcp: connection, context: storage.context}
+    err: Error = pump_handshake(secured)
+    if err != null { backend_cleanup(mut &storage.context[0]) }
+    return secured, err
+}
+
+@extern("tls")
+pub send_all(connection: Conn, data: []u8): (usize, Error) {
+    offset: usize = 0
+    for offset < data.len {
+        state: u32 = backend_state(context_pointer(connection))
+        if state == closed || state == 0 { return offset, backend_failure(connection) }
+        if (state & send_application) != 0 {
+            count: usize = backend_sendapp(context_pointer(connection),
+                &data[offset], data.len - offset)
+            if count == 0 { return offset, TlsErr.stalled }
+            offset += count
+        }
+        err: Error = flush_records(connection)
+        if err != null { return offset, err }
+        state = backend_state(context_pointer(connection))
+        if (state & receive_record) != 0 && (state & send_application) == 0 {
+            err = receive_record_bytes(connection)
+            if err != null { return offset, err }
+        }
+    }
+    err: Error = flush_records(connection)
+    return offset, err
+}
+
+@extern("tls")
+pub receive(connection: Conn, destination: mut []u8): (int, Error) {
+    if destination.len == 0 { return 0, TlsErr.stalled }
+    for {
+        state: u32 = backend_state(context_pointer(connection))
+        if (state & receive_application) != 0 {
+            count: usize = backend_recvapp(context_pointer(connection),
+                mut &destination[0], destination.len)
+            return int(count), null
+        }
+        if state == closed || state == 0 {
+            code: i32 = backend_error(context_pointer(connection))
+            if code == 0 { return 0, null }
+            return 0, TlsErr(backend_error_base + code)
+        }
+        if (state & send_record) != 0 {
+            err: Error = flush_records(connection)
+            if err != null { return 0, err }
+            continue
+        }
+        if (state & receive_record) != 0 {
+            err: Error = receive_record_bytes(connection)
+            if err != null { return 0, err }
+            continue
+        }
+        return 0, TlsErr.stalled
+    }
+}

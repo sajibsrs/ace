@@ -259,8 +259,9 @@ Decision: checks are a development tool; release trusts the developer.
    They are mutually exclusive, and emitted programs default to `--checked`.
    Check-only, `--tokens`, and `--ast` invocations accept either flag but emit
    no program, so the choice has no effect on their result.
-2. Checked builds diagnose dynamic contract violations and then abort; the
-   diagnostic is best-effort on standard error and is not a recoverable error
+2. Checked builds diagnose dynamic contract violations and then abort; bounds
+   diagnostics include the source file, line, and column of the failing access.
+   The diagnostic is best-effort on standard error and is not a recoverable error
    channel. Array, slice, and string bounds and integer overflow are on.
    Allocator tracking diagnoses invalid/double release and leaks; arbitrary
    use-after-free access requires separate memory-access instrumentation and is
@@ -517,6 +518,24 @@ Decision: module = file; explicit imports; explicit exports.
 9. A resolved module path is canonicalized before cache lookup and deduplication. Lexically different paths containing `.` or `..` that resolve to the same file produce one module instance and one set of declarations. This changes neither import scope nor the supported standard/relative import forms and adds no search path.
 10. OS- or kernel-specific standard-library code always sits behind a stable public facade at `std/<module>/module.ace`; target implementations live under `std/<module>/os/<target>.ace` and are selected through `@when(target == "...")` imports in that facade. Public callers never import an OS file as the supported API. The target file exposes exactly the operations and types required by its facade; it does not add same-signature target-named forwarding functions. Those declarations are `pub` only to cross the file-module boundary and carry no supported compatibility promise. The `os` name is reserved by convention for this implementation layer; `backend` refers to compiler/code-generation backends and is not used for OS bindings. Rationale: platform replacement changes the target layer without spreading kernel ABI, constants, structures, or link names through callers, while the public Ace surface remains reviewable in one place and redundant forwarding layers do not accumulate.
 11. `@when(condition)` is the sole conditional-compilation form and attaches to exactly one top-level declaration, including an import, function, type, global, signing, or extern block. The attribute occupies its own line and a preceding top-level construct is separated from it by one blank line. Its deliberately closed boolean expression language contains `true`, `false`, `target == "name"`, `target != "name"`, contextual `and`/`or`/`not`, and parentheses. `target` is the compiler-selected build target string; it defaults from the host and may be overridden with `--target=NAME`. Unsupported targets are rejected rather than implying an unavailable backend or standard-library layer. The compiler lexes and parses an inactive declaration, so its syntax must be valid, then removes it before import loading, binding/duplicate checks, semantic analysis, and emission. Thus mutually exclusive imports may bind the same alias and mutually exclusive declarations may share a signature; if more than one matching declaration survives, ordinary duplicate rules apply. There is no block, statement-level form, user-defined build flag, arbitrary constant evaluation, or runtime condition. A file need not provide an exhaustive arm, but any surviving reference to an absent declaration fails normally. Rationale: one restricted declaration filter supplies zero-cost target selection without a textual preprocessor, hidden runtime branch, general compile-time execution, or mid-function source fragmentation.
+12. `@extern("tls")` is a compiler-owned standard-library function attribute,
+not a user dependency mechanism. A resolved reference from an ordinary emitted
+function to a function carrying the attribute requires the named external
+component; references among functions in that component do not activate it.
+When no such external reference exists, every function carrying the component
+is omitted from emission. The component set is closed and currently contains
+only `tls`. This is a bounded walk of semantically resolved function references
+in the functions Ace already emits, not whole-program reachability. The final
+`-o` link resolves `(component, target, selected backend)` to one ordered
+target-specific recipe containing any number of compiler-distributed objects,
+archives, libraries, and frameworks, then appends that recipe without a shell
+or network access. The Darwin-arm64 BearSSL TLS recipe supplies its adapter,
+archive, Security framework, and CoreFoundation framework.
+`--tls-backend=bearssl` selects the default backend. Standalone `-c` rejects a unit that requires an
+external component because v1 objects do not record requirements; a plaintext
+unit remains valid under `-c`. Rationale: external TLS is zero-cost when unused,
+backend choice remains outside public protocol APIs, and the initial mechanism
+does not grow into package scripts, implicit fetching, or general analysis.
 
 ## Package System (future work)
 Decision: packaging is an optional, explicit layer above file modules; one `ace` executable owns both the direct compiler and the separately grouped package commands. Manifest and lockfile syntax remain open for later carving.
@@ -721,6 +740,11 @@ or making related facade and target APIs differ.
     - Paths: copied into a fixed `[1024]u8` stack buffer (`PATH_MAX` including NUL — the kernel rejects longer paths itself, so the buffer never rejects a legitimate one), NUL appended, then passed to the OS. An overlong path returns the ordinary `open` error with `ENAMETOOLONG` written into errno by `sys` itself. Every public `sys` function is allocation-free; only callers allocate.
     - Flags and creation permissions: raw `pub` i32 flag constants mirror Darwin's values and spellings exactly (`O_RDONLY` … `O_NONBLOCK`, including POSIX `O_CREAT`) and compose with `|`. The POSIX permission constants are the `u32` set `S_IRWXU`, `S_IRUSR`, `S_IWUSR`, `S_IXUSR`, `S_IRWXG`, `S_IRGRP`, `S_IWGRP`, `S_IXGRP`, `S_IRWXO`, `S_IROTH`, `S_IWOTH`, and `S_IXOTH`, likewise composed with `|` for the mode argument of file and directory creation. They request permissions; the process umask may remove bits. File-type and special-mode bits remain deferred until real usage justifies them. Rule: `sys` mirrors OS spellings for OS-defined words; Ace names belong to Ace abstractions. Errno name constants remain deferred. Rationale: distinct-typed handles prevent silent integer misuse where the OS cannot diagnose it; flags and POSIX permission bits stay plain because the kernel validates their combinations; per-operation domains plus the errno query keep one fact in one place without bending the static-descriptor rule.
     - Implementation facts: the raw bindings are private link-named externs (`c_open` → `__open` because `open` is variadic and Apple arm64 passes variadic args on the caller's stack). `write(fd: Fd, data: []u8)` accepts text as well because `string` and `[]u8` share identity; a spelling-only overload would be a duplicate declaration.
+    - Secure entropy (implemented): `random(storage: mut []u8): Error` fills
+      caller-owned storage from the operating system and allocates nothing.
+      Empty storage succeeds without a foreign call. Darwin uses `getentropy`
+      in chunks of at most 256 bytes, retries `EINTR`, and returns every other
+      failure through `RandomErr(code)` after capturing errno immediately.
     - Darwin descriptor control (implemented): `ioctl(fd: Fd, request: uint): Error` performs a request with no unnamed argument; `ioctl(fd: Fd, request: uint, data: mut []u8): Error` passes the address of the caller's first mutable byte as the single unnamed argument and requires nonempty storage. Failure is `IoctlErr` with errno captured immediately; an empty data view fails locally with `EINVAL`. The request type is `uint` because Darwin declares it as `unsigned long`, which is 64 bits on Apple arm64; it is not narrowed to the 32 bits occupied by current encoded values. The target layer binds the genuinely variadic `ioctl` entry point so Apple arm64 places the unnamed pointer in its required eight-byte stack slot. The Darwin BPF requests `BIOCGBLEN`, `BIOCPROMISC`, `BIOCSETIF`, and `BIOCIMMEDIATE`, plus the classification errno constants `EBUSY` and `EACCES`, are exposed only for the packet-sniffer proof and retain their target spellings and values. Their raw definitions, the verified `ifreq` and `bpf_hdr` layouts used to derive them, and the C binding stay in `std/sys/os/darwin-arm64.ace`. BPF records use the native 18-byte `bh_hdrlen` through its last declared field, excluding the C structure's two tail-padding bytes, and advance by four-byte `BPF_WORDALIGN`. The byte-buffer overload does not infer an object type, validate an encoded request size, reinterpret storage, or promise that a request is portable; the caller selects a target request and supplies its exact native bytes. Rationale: one allocation-free escape hatch is smaller and more honest than a premature portable device-control abstraction, while caller-owned bytes preserve explicit layout and make the existing bounded manual parsing baseline sufficient for BPF.
     - Filesystem metadata and mutation (implemented, Darwin/Apple-arm64): `FileKind: enum { unknown, regular, directory, symlink, other }` classifies only the stable categories exposed by the facade. `FileInfo: struct { size: u64, kind: FileKind }` is canonical zero for a failed query. `stat(path: string): (FileInfo, Error)` follows symbolic links and returns their targets' metadata; it exposes byte size and kind only. Timestamps, permissions, ownership, inode/device identity, link count, allocated blocks, and a no-follow query remain additive. `mkdir(path: string): Error` is the portable form: on POSIX it requests `S_IRWXU | S_IRWXG | S_IRWXO` (`0777`) and lets the process umask select effective permissions. It creates exactly one directory and never creates missing parents. The overload `mkdir(path: string, mode: u32): Error` supplies an explicit Darwin/POSIX permission request, matching the existing creation-mode parameter of `open`; it is a target-specific facility, not a cross-platform permission abstraction. Windows permissions are ACL-based, so a future Windows target retains the one-argument operation and must separately carve richer security rather than pretending POSIX owner/group/other bits represent ACLs. `rename(old_path: string, new_path: string): Error` and `unlink(path: string): Error` perform exactly the corresponding OS operation, with no recursive behavior or retry.
     - Directory iteration (implemented): `Dir: struct { fd: Fd, buffer: [4096]u8, next: usize, count: usize, base: i64, active: bool, done: bool }` is caller-owned buffered iteration state, not an alias of `Fd` and not an ownership-tracked value. Its representation is visible under the ordinary struct rules but its fields collectively form handle state; callers do not edit them between directory operations. Its canonical all-bits-zero value is invalid even when descriptor zero is usable. `open_dir(path: string): (Dir, Error)` opens only a directory. `read_dir(mut dir: Dir, name: mut []u8): (usize, FileKind, bool, Error)` returns, in order, the name byte count, entry kind, end flag, and error. The parameter mark on `mut dir: Dir` grants updates to the caller's iteration value and must be repeated at the call; independently, type-position `mut` on `name` grants writes to its bytes without replacing its descriptor. A successful entry returns `(name_length, kind, false, null)`. End returns `(0, unknown, true, null)`. Failure returns `(0, unknown, false, error)`. Names are exact bytes with no appended NUL; `.` and `..` are skipped. Enumeration order is the OS order. An entry kind may be `unknown`, in which case callers use `stat` when classification is required. If the name buffer is too small, the operation returns `ReadDirErr(ERANGE)` without truncating or consuming that entry, so a later call with a larger buffer retries it. `close_dir(mut dir: Dir): Error` closes the resource and replaces the caller's complete `Dir` value with canonical zero, including on close failure. Copying `Dir` copies its descriptor and buffered cursor; aliases are not found or invalidated and using them after either copy is closed has the ordinary manual-handle hazards. There is no hidden allocation, ownership, destructor, automatic close, sorting, recursion, path joining, or retained entry view.
@@ -949,12 +973,27 @@ or making related facade and target APIs differ.
       poll-queue, wait, and unrecoverable accept failures terminate `serve` and
       preserve their domains. Persistent connections, resumable handlers, and
       threaded application work remain additive.
-    - HTTPS is a future secure-transport composition, not a mode hidden behind
-      `http`: TLS configuration, handshake progress, certificate verification,
-      and buffers must first be carved explicitly. A later `https` convenience
-      may reuse the byte-oriented HTTP parsers and formatters. Address family is
-      a transport property, so future IPv6 does not create `http6` or duplicate
-      the protocol API.
+    - HTTPS is selected by the URL in `http`, not exposed as a separate
+      protocol module. `get(url, mut client)` accepts `http://` and `https://`,
+      lazily retains its ordinary and TLS workspace, and uses system trust for
+      HTTPS. `get(url, config: TlsConfig, mut client)` retains the owning path
+      while allowing a trust override. Canonical `TlsConfig{}` selects system
+      trust; a nonempty DER `trust_anchor` replaces it for private roots,
+      deterministic tests, and embedded or specialized use. Hostname
+      verification and SNI are mandatory in both modes. `Storage` adds
+      default-null opaque TLS-context and TLS-record
+      slices to its required plaintext workspace, so plaintext literals omit
+      them and allocate nothing for TLS. The allocation-free HTTPS overload
+      continues to require those caller-provided work buffers, but system trust
+      requires no caller-provided certificate bytes. All overloads share URL parsing,
+      resolution and address iteration, request construction and formatting,
+      response parsing, error mapping, and cleanup; one connection-typed generic
+      exchange receives typed send/receive functions, avoiding a runtime
+      transport tag. BearSSL is the default toolchain-selected backend and is
+      absent from the public `http` and `tls` vocabulary. `post` and
+      nonblocking HTTPS remain additive. Address
+      family is a transport property, so future IPv6 does not duplicate the
+      protocol API.
     - Known initial limitations and next improvements: redirects, content
       decoding, cookies, authentication policy, caching, proxies, upgrades,
       multipart helpers, and exposed trailers are not part of the protocol core.
@@ -1067,8 +1106,8 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
   interaction; BearSSL never calls an Ace function in the initial proof. Direct
   representation or invocation of a BearSSL class table therefore does not
   motivate C-ABI function-pointer support. Native archive linkage and the exact
-  context size/alignment contract must be proven as integration work, not hidden
-  by a language convenience. Rationale: an opaque adapter establishes the TLS
+  context size/alignment contract are toolchain integration facts rather than
+  public language types. Rationale: an opaque adapter establishes the TLS
   transport with the existing small ABI, keeps a foreign implementation out of
   the public module, and avoids coupling an unrelated language feature to TLS;
   the separately implemented callable C-function-value boundary remains unused
@@ -1084,9 +1123,9 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
   facts queried through the adapter, not public `std/tls` constants or a
   portable ABI promise. The pinned backend is experimental until dependency
   maintenance, trust roots, and security-update policy are resolved.
-  Entropy boundary (decided): the proof acquires secure entropy through a
-  TLS-private target layer rather than adding a public `sys` operation. On
-  Darwin that layer fills caller-owned storage with `getentropy`, splits the
+  Entropy boundary (decided, implemented): `sys.random(storage: mut []u8):
+  Error` fills caller-owned storage with cryptographically secure OS entropy.
+  On Darwin its private target layer uses `getentropy`, splits the
   fill into requests of at most 256 bytes, retries `EINTR`, and returns every
   other failure explicitly with its errno. The caller supplies at least 32
   bytes to the C adapter, which injects them into BearSSL directly; the proof
@@ -1094,26 +1133,53 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
   acquisition inside the backend. Deterministic adapter tests use supplied
   entropy, while a separate smoke test exercises the real OS source. Rationale:
   visible acquisition and injection make initialization failures testable,
-  preserve caller-owned storage and explicit errors, and avoid committing a
-  general-purpose public entropy API before another concrete customer exists.
-  Decide the public configuration, connection, and progress shapes; caller-owned
-  context and record-buffer storage; blocking-first operation and the boundary
-  of later nonblocking progress; SNI and mandatory hostname verification; an
-  explicit initial trust-anchor source; minimum/maximum protocol-version policy;
-  alert, verification, transport, EOF, and orderly-close
-  results; and whether the TLS connection closes its underlying `tcp.Conn`.
+  preserve caller-owned storage and explicit errors, while centralizing a
+  general-purpose OS capability instead of duplicating it inside TLS.
+  Blocking client slice (implemented): `tls.Storage` supplies opaque context
+  and half-duplex record buffers. `tls.connect(tcp.Conn, hostname, anchor_der,
+  storage)` obtains explicit entropy, selects system trust for an empty anchor
+  or decodes one nonempty DER override, sets mandatory hostname verification
+  and SNI, and drives a blocking handshake.
+  `tls.send_all` and `tls.receive` drive partial record I/O and preserve
+  transport errors. A BearSSL engine failure is retained as the private
+  diagnostic occurrence code `1024 + backend_code`; the offset avoids every
+  public `TlsErr` entry without exposing backend constants as API. The TLS
+  wrapper does not close its underlying `tcp.Conn`;
+  its composing caller retains that responsibility. BearSSL sizes, layouts,
+  engine states, and error constants stay private. The target-neutral TLS Ace
+  implementation is the single-file `std/tls.ace`; target and foreign-library
+  details stay in external adapters. TLS functions carry the compiler-owned
+  `@extern("tls")` component: an executable link automatically includes
+  the bundled selected adapter/backend, while callers restricted to the
+  allocation-free plaintext `http` path emit and link neither. BearSSL is the
+  default selected backend through
+  `--tls-backend`; the public APIs do not name it. External requirements are not
+  yet representable in standalone `-c` objects, so such compilation is rejected
+  explicitly.
+  Trust policy (decided, implemented): an empty anchor selects system trust;
+  a nonempty DER anchor selects the private minimal-X.509 override. The Darwin
+  adapter receives BearSSL's delivered chain, evaluates it with Security and
+  CoreFoundation under an SSL hostname policy, and returns only the stable
+  private adapter result to target-neutral Ace. Apple types and certificate
+  store details never enter the Ace API. The owning `http.Client` lazily manages
+  TLS workspace and selects plaintext or TLS from the URL; the caller-storage
+  HTTPS overload remains allocation-free and requires buffers but not root
+  certificate bytes.
+  Next decide the nonblocking progress shape, multiple-anchor representation,
+  broader minimum/maximum protocol-version policy, richer alert/verification
+  result classification, and explicit orderly-close behavior.
   BearSSL names, layouts, cipher selectors, and error constants stay private to
   the proof, and its TLS 1.2 ceiling must remain visible in the selected policy
   rather than being presented as general modern-version support. First determine
   whether existing pointers, pointer-to-slice construction, C externs, `mem`,
   `tcp`, and `poll` express the boundary; any proposed language or compiler
-  convenience returns to the owner as a separate decision. The initial slice
+  convenience returns to the owner as a separate decision. Remaining work
   excludes servers, client certificates, session caches, renegotiation, ALPN,
-  HTTP/2, automatic system-root discovery, revocation/network fetching, and
-  `https` convenience. Rationale: the public transport contract should express
+  HTTP/2 and explicit revocation/network-fetching policy.
+  Rationale: the public transport contract should express
   TLS rather than one foreign implementation, while one narrow client proof
   establishes the required storage, verification, entropy, and failure model
-  before HTTP composition or broader TLS policy is added.
+  and HTTP composition without prematurely fixing broader TLS policy.
 
 ### Trigger-gated
 

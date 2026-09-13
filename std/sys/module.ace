@@ -22,6 +22,7 @@ pub ForkErr: type = os.ForkErr
 pub WaitErr: type = os.WaitErr
 pub PipeErr: type = os.PipeErr
 pub IoctlErr: type = os.IoctlErr
+pub RandomErr: type = os.RandomErr
 
 pub FileKind: type = os.FileKind
 pub FileInfo: type = os.FileInfo
@@ -107,6 +108,13 @@ pub exit(code: int) {
 
 pub errno(): i32 {
     return os.errno()
+}
+
+/* Fill caller-owned storage with cryptographically secure operating-system
+ * entropy. Empty storage succeeds without making a platform call.
+ */
+pub random(storage: mut []u8): Error {
+    return os.random(storage)
 }
 
 pub fork(): (Process, Error) {

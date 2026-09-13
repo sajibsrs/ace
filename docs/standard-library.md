@@ -457,7 +457,7 @@ or depend on a target conversion routine.
 ## sys
 
 `sys` is the thin operating-system boundary: process-start values, file I/O,
-and monotonic time. It
+secure entropy, and monotonic time. It
 never allocates — only callers allocate — and every failure is an ordinary
 `Error` value checked with a branch.
 
@@ -522,6 +522,10 @@ main(): int {
   operation without recursion or retry.
 - `errno(): i32` reads the thread's raw errno. Query it immediately after a
   failed call; any intervening system call may overwrite it.
+- `random(storage: mut []u8): Error` fills caller-owned storage with
+  cryptographically secure OS entropy and allocates nothing. Empty storage
+  succeeds. Darwin chunks `getentropy` requests to at most 256 bytes, retries
+  `EINTR`, and returns other failures through `RandomErr`.
 
 Directory traversal keeps its buffer and cursor in a caller-owned `Dir` value:
 
@@ -825,18 +829,44 @@ fails. Higher-level nonblocking connection completion belongs to `tcp`.
 
 ## http
 
-`http` implements the caller-storage HTTP/1.1 protocol core. It allocates
-nothing, performs no I/O, DNS, Unicode processing, or policy work, and retains
-no caller buffer.
+`http` implements caller-storage HTTP/1.1 framing plus blocking one-shot GET
+over plaintext TCP or TLS. The framing and parsing operations allocate nothing,
+perform no I/O, and retain no caller buffer. The `Storage` overloads likewise
+allocate nothing; their DNS, connection, request, response, and cleanup steps
+remain explicit in returned errors.
 
-`parse_url(url): (Url, Error)` accepts absolute plaintext `http://` URLs.
+`parse_url(url): (Url, Error)` accepts absolute `http://` and `https://` URLs.
 `Url { host, path, query, port }` contains byte views and a host-order port.
 The default port is 80 and the default path is the static `/` view. A query
 without a written path is represented as that path plus a `query` view which
 includes `?`. DNS names up to 253 bytes with labels up to 63 bytes and dotted
 IPv4 hosts are accepted. User information, fragments, bracketed IPv6, controls,
-empty or invalid ports, HTTPS, and other schemes return `UrlErr`. Path/query
+empty or invalid ports, and other schemes return `UrlErr`. HTTP defaults to
+port 80 and HTTPS to port 443. Path/query
 bytes and percent escapes are unchanged.
+
+`get(url, storage): (Response, Error)` is the allocation-free plaintext path.
+`get(url, config: TlsConfig, storage)` handles HTTPS with caller-provided TLS
+buffers. Canonical `TlsConfig{}` uses system trust; a nonempty `trust_anchor`
+selects one explicit DER root as an override for private roots and deterministic
+tests. Both modes require hostname verification and SNI.
+
+`get(url, mut client)` is the reference-level convenience and accepts either
+scheme, selected by the URL. It lazily allocates and retains ordinary and TLS
+workspace, uses system trust for HTTPS, and releases all workspace through
+`client_wipe`. `get(url, config, mut client)` supplies the explicit trust
+override with the same owning behavior.
+
+`Storage` contains caller-owned address, serialized-output, request-target,
+input, header, and body slices. Its `tls_context` and `tls_records` slices
+default to null, so plaintext callers omit them and allocate no TLS storage.
+TLS callers provide backend-sized opaque byte storage in those two fields. The
+backend-neutral `tls.context_size`, `tls.context_align`, and `tls.record_size`
+queries report the current adapter requirements. The
+two GET overloads share URL parsing, address iteration, request construction,
+formatting, response parsing, error mapping, and TCP cleanup through one typed
+transport exchange. BearSSL is the default bundled implementation selected by
+the compiler, not a public type or API name.
 
 `Request.format(output): (usize, Error)` and
 `Response.format(output): (usize, Error)` write one complete HTTP message or
@@ -889,12 +919,13 @@ ASCII case folding; values and payload bytes otherwise pass through unchanged.
 
 ### Known limitations and next improvements
 
-Client and server transport orchestration are separate implementations over
-`tcp`; the `http` protocol module performs no network I/O. TLS/HTTPS, redirects,
+Client and server transport orchestration remain separate. Redirects,
 decompression, cookies, authentication policy, caching, proxies, upgrades,
-connection reuse/pooling, exposed trailers, deadlines, and cancellation are
-also absent. URL path and query remain separate views; callers composing a
-request target provide destination storage explicitly. Unicode helpers,
+connection reuse/pooling, exposed trailers,
+deadlines, and cancellation are absent. TLS is blocking and BearSSL 0.6 is
+limited to TLS 1.2; explicit override mode currently accepts one DER anchor.
+URL path and query remain separate views;
+callers composing a request target provide destination storage explicitly. Unicode helpers,
 `rune`, and `yarn` are not required by this byte-oriented layer.
 
 ## tcp

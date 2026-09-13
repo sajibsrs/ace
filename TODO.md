@@ -243,23 +243,29 @@ nonblocking connect completion remain visible without callbacks or allocation.
   integer, `usize`, and byte-pointer ABI; BearSSL class tables and callbacks stay
   inside that adapter and do not block on C-ABI function-pointer support. The
   0.6 archive/checksum, Apple-arm64 context size/alignment, half-duplex buffer,
-  TLS-1.2-only configuration, direct native-archive link, private Darwin
-  `getentropy` acquisition, and explicit 32-byte-or-larger BearSSL seeding are
-  proven. Next prove explicit DER trust-anchor ingestion, mandatory hostname/SNI
-  reset, and partial record I/O before proposing any language or compiler
-  convenience.
-  Server mode, client certificates, automatic system roots, revocation/network
-  fetching, ALPN/HTTP/2, session state, and HTTPS convenience remain later
-  additive work.
+  TLS-1.2-only configuration, direct external-archive link, public OS-neutral
+  `sys.random` backed by chunked Darwin `getentropy`, and explicit
+  32-byte-or-larger BearSSL seeding are
+  proven. One blocking slice now implements Darwin system trust by default,
+  explicit DER trust-anchor override, mandatory hostname/SNI validation,
+  partial record I/O, and URL-selected TLS in the owning `http.Client`. A
+  narrow emitted-reference component rule conditionally links the bundled
+  target recipe; standalone external-component object metadata remains future
+  work. Next carve multiple explicit anchors,
+  richer TLS result classification, orderly-close policy, and nonblocking
+  progress.
+  Server mode, client certificates, explicit revocation/network
+  fetching, ALPN/HTTP/2, session state, and higher-level secure-client
+  conveniences remain later additive work.
 - **HTTP protocol and transport ergonomics** [partly implemented] — the strict IPv4 endpoint
   parser, zero-copy HTTP URL parser, caller-storage request and response
   formatters, and incremental HTTP/1.1 request and response parsers from
   Standard Library #17 are implemented, including field and response defaults,
-  named method/status constants, and conventional response reasons. Next
-  implement blocking socket request/response overloads, complete the paired
+  named method/status constants, conventional response reasons, and blocking
+  plaintext/TLS `get` overloads over caller storage. Next complete the paired
   one-shot `post` overloads over `Storage` and owning `Client`, then the
-  caller-bounded nonblocking `serve` loop over `tcp` and `poll`. TLS/HTTPS remains a separate
-  secure-transport composition. `rune`,
+  caller-bounded nonblocking `serve` loop over `tcp` and `poll`. HTTPS shares
+  the `http` surface and transport core through its exact TLS-config overload. `rune`,
   UTF-8 decoding, and `yarn` are not prerequisites because HTTP framing is
   ASCII and payloads remain byte views.
 

@@ -17,7 +17,8 @@ current normative rules, and Git preserves patch-level detail.
   and Apple frameworks to `cc` through an argument vector rather than a shell.
 - Added mutually exclusive checked/release emission modes, checked by default,
   with statically elided runtime guards and aborting diagnostics for dynamic
-  array, slice, and string indexing and slicing bounds; release objects retain
+  array, slice, and string indexing and slicing bounds. Bounds diagnostics now
+  identify the failing source file, line, and column; release objects retain
   no bounds failure machinery or metadata.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
@@ -195,12 +196,39 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Standard library
 
+- Implemented the first blocking secure-client slice: a private TLS adapter uses
+  system trust by default or decodes one explicit DER override, enforces
+  hostname verification and SNI, and exposes partial record/application I/O to
+  backend-neutral `tls` storage
+  over `tcp`. Consolidated HTTPS into an exact allocation-free `http.get`
+  overload with backend-neutral `TlsConfig`, default-null TLS storage, and one
+  generic HTTP exchange path. Added compiler-owned conditional external components:
+  TLS use automatically links the bundled, selectable BearSSL recipe, while the
+  allocation-free plaintext HTTP path emits none of it. BearSSL engine failures retain
+  their raw backend code behind a private offset.
+- Moved secure entropy into allocation-free `sys.random`, with Darwin
+  `getentropy` chunking, `EINTR` retry, and explicit errno failures; collapsed
+  the target-neutral TLS facade to `std/tls.ace`; and renamed the compiler-owned
+  conditional marker and internal requirement terminology from `@native` to
+  `@extern`.
+- Generalized compiler-managed external components to ordered recipes keyed by
+  component, target, and selected backend. Migrated distributed target-native
+  TLS artifacts to `external/` and BearSSL source, headers, rebuild guidance,
+  and staging files to `vendor/`; the Darwin BearSSL recipe now carries its
+  object, archive, Security, and CoreFoundation inputs.
+- Added Darwin system-trust HTTPS as the default behind the stable private TLS
+  adapter ABI, while preserving a nonempty DER anchor as an explicit override.
+  The adapter feeds BearSSL's delivered chain to the Security framework with an
+  SSL hostname policy; SNI remains mandatory. The owning `http.Client` now
+  accepts both URL schemes and lazily manages TLS workspace, while the
+  caller-storage HTTPS path remains allocation-free.
 - Pinned BearSSL 0.6 as an experimental TLS-client proof backend and added a
   private adapter/fixture proving direct archive linkage, opaque caller-owned
   client/X.509 storage, supported alignment, half-duplex record-buffer sizing,
-  enforced TLS-1.2-only policy, private chunked Darwin `getentropy` acquisition,
+  enforced TLS-1.2-only policy, chunked Darwin `getentropy` acquisition through
+  `sys.random`,
   and explicit caller-supplied BearSSL seeding without expanding Ace's C ABI or
-  adding a public entropy API.
+  expanding Ace's C ABI.
 - Standardized concise stdlib naming across public facades, selected OS layers,
   documentation, and fixtures. Subject words remain where a module can expose
   multiple categories (`net.SocketKind`, `sys.FileKind`); established

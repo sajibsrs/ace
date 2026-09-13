@@ -1,9 +1,12 @@
 import http
 import net
 
-check_client(storage: http.Storage, mut client: http.Client) {
+check_client(storage: http.Storage, config: http.TlsConfig, mut client: http.Client) {
     response: http.Response, err: Error = http.get("http://example.com/", storage)
+    response, err = http.get("https://example.com/", config, storage)
     response, err = http.get("http://example.com/", mut client)
+    response, err = http.get("https://example.com/", mut client)
+    response, err = http.get("https://example.com/", config, mut client)
 }
 
 check(

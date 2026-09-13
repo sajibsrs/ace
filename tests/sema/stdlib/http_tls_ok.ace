@@ -1,0 +1,8 @@
+import http
+
+check(config: http.TlsConfig, storage: http.Storage) {
+    default_config: http.TlsConfig = http.TlsConfig{}
+    response: http.Response, err: Error = http.get(
+        "https://example.com/", config, storage)
+    response, err = http.get("https://example.com/", default_config, storage)
+}

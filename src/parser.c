@@ -1620,8 +1620,10 @@ static Node* parse_ret(P* p) {
 
 static int named_attr_at(P* p, const char* name) {
     size_t n = strlen(name);
-    return at(p, T_AT) && kth(p, 1) == T_IDENT &&
-           tk(p)[1].len == n && memcmp(tk(p)[1].str, name, n) == 0;
+    if (!at(p, T_AT)) return 0;
+    if (strcmp(name, "extern") == 0) return kth(p, 1) == T_EXTERN;
+    return kth(p, 1) == T_IDENT && tk(p)[1].len == n &&
+           memcmp(tk(p)[1].str, name, n) == 0;
 }
 
 /* Parse @align(expr), including its required terminating physical line. */
@@ -2218,6 +2220,23 @@ static int parse_when(P* p) {
     return active;
 }
 
+static const char* parse_extern_component(P* p) {
+    expect(p, T_AT, "'@'");
+    expect(p, T_EXTERN, "'extern' after '@'");
+    expect(p, T_LPAREN, "'(' after @extern");
+    Token* component = expect(p, T_STR, "external component name");
+    if (component->len != 3 || memcmp(component->str, "tls", 3) != 0)
+        perr(p, "unknown external component '%.*s'", (int)component->len,
+             component->str);
+    expect(p, T_RPAREN, "')' after external component name");
+    int attribute_line = p->toks[p->i - 1].line;
+    skipnl(p);
+    if (tk(p)->line == attribute_line)
+        perr(p, "@extern must occupy its own line before a function declaration");
+    if (at(p, T_EOF)) perr(p, "@extern must be followed by a function declaration");
+    return component->str;
+}
+
 static void parse_layout_attrs(P* p, int* packed, Node** align) {
     while (at(p, T_AT)) {
         if (named_attr_at(p, "packed")) {
@@ -2309,12 +2328,14 @@ Node* parse(Token* toks, size_t ntok, Diag* d, const char* target) {
     int saw_declaration = 0;
     while (!at(&p, T_EOF)) {
         int active = 1, packed = 0;
+        const char* extern_component = NULL;
         Node* explicit_align = NULL;
         if (named_attr_at(&p, "when")) active = parse_when(&p);
+        if (named_attr_at(&p, "extern")) extern_component = parse_extern_component(&p);
         parse_layout_attrs(&p, &packed, &explicit_align);
         if (at(&p, T_IMPORT)) {
-            if (packed || explicit_align)
-                perr(&p, "layout attributes apply only to struct declarations");
+            if (packed || explicit_align || extern_component)
+                perr(&p, "@extern and layout attributes do not apply to imports");
             Node* imp = parse_import(&p);
             if (active) {
                 if (saw_declaration)
@@ -2323,6 +2344,9 @@ Node* parse(Token* toks, size_t ntok, Diag* d, const char* target) {
             }
         } else {
             Node* decl = parse_top(&p);
+            if (extern_component && decl->kind != N_FUNC)
+                perr(&p, "@extern applies only to function declarations");
+            if (extern_component) decl->extern_component = extern_component;
             if ((packed || explicit_align) && decl->kind != N_STRUCT)
                 perr(&p, "layout attributes apply only to struct declarations");
             if (decl->kind == N_STRUCT) {

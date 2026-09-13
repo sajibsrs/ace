@@ -70,6 +70,13 @@ for f in $(find tests/sema -name '*_err.ace' | sort); do
     fi
 done
 
+extern_attribute_error=$("$ACE" tests/sema/extern_attribute_err.ace 2>&1)
+if ! printf '%s\n' "$extern_attribute_error" | grep -qF \
+    "@extern is reserved for compiler-shipped standard-library sources"; then
+    echo "FAIL: user @extern ownership diagnostic"
+    fail=1
+fi
+
 float_alias_overload=$("$ACE" tests/sema/types/float_alias_overload_err.ace 2>&1)
 if ! printf '%s\n' "$float_alias_overload" | grep -qF \
     "duplicate overload 'measure': parameter signatures must differ"; then
@@ -570,7 +577,8 @@ for f in array_negative array_equal aggregate_array_equal \
     elif "/tmp/ace_checked_bounds/$f" >/dev/null 2>/tmp/ace_test_errs; then
         echo "FAIL: checked bounds fixture did not abort: $f"
         fail=1
-    elif ! grep -qF "ace: bounds violation" /tmp/ace_test_errs; then
+    elif ! grep -qF "/tmp/ace_checked_bounds/$f.ace:" /tmp/ace_test_errs ||
+         ! grep -qF ": bounds violation" /tmp/ace_test_errs; then
         echo "FAIL: checked bounds fixture lacked diagnostic: $f"
         fail=1
     fi
@@ -592,7 +600,7 @@ if command -v nm >/dev/null 2>&1; then
     fi
 fi
 if command -v strings >/dev/null 2>&1 &&
-   strings /tmp/ace_checked_bounds/release.o | grep -qF 'ace: bounds violation'; then
+   strings /tmp/ace_checked_bounds/release.o | grep -qF 'bounds violation'; then
     echo "FAIL: release object retains bounds diagnostic metadata"
     fail=1
 fi
@@ -1083,8 +1091,8 @@ if [ -d tests/driver ]; then
         fi
     fi
 
-    bearssl_inc=external/bearssl/local/inc
-    bearssl_lib=external/bearssl/local/lib/libbearssl.a
+    bearssl_inc=vendor/bearssl/local/inc
+    bearssl_lib=vendor/bearssl/local/lib/libbearssl.a
     if [ -f "$bearssl_inc/bearssl.h" ] && [ -f "$bearssl_lib" ]; then
         if ! cc -std=c11 -Wall -Wextra -Werror -I"$bearssl_inc" \
              -c tests/driver/bearssl_adapter.c \
@@ -1097,7 +1105,58 @@ if [ -d tests/driver ]; then
             fail=1
         fi
     else
-        echo "SKIP: BearSSL proof (see external/bearssl/README.md)"
+        echo "SKIP: BearSSL proof (see vendor/bearssl/README.md)"
+    fi
+
+    if ! "$ACE" -o /tmp/ace_driver/http_plain \
+         tests/driver/http_plain_autolink.ace >/dev/null 2>/tmp/ace_test_errs ||
+       ! /tmp/ace_driver/http_plain; then
+        echo "FAIL: plaintext http automatic-link isolation"
+        cat /tmp/ace_test_errs
+        fail=1
+    elif command -v nm >/dev/null 2>&1 &&
+         nm -u /tmp/ace_driver/http_plain.o 2>/dev/null |
+         grep -q 'ace_tls'; then
+        echo "FAIL: plaintext http object references the TLS adapter"
+        fail=1
+    elif command -v nm >/dev/null 2>&1 &&
+         nm /tmp/ace_driver/http_plain 2>/dev/null |
+         grep -q 'ace_tls'; then
+        echo "FAIL: plaintext http executable contains the TLS adapter"
+        fail=1
+    fi
+    cp tests/driver/http_plain_autolink.ace /tmp/ace_driver/http_plain_object.ace
+    if ! "$ACE" -c /tmp/ace_driver/http_plain_object.ace \
+         >/dev/null 2>/tmp/ace_test_errs; then
+        echo "FAIL: plaintext http standalone object"
+        cat /tmp/ace_test_errs
+        fail=1
+    elif command -v nm >/dev/null 2>&1 &&
+         nm -u /tmp/ace_driver/http_plain_object.o 2>/dev/null |
+         grep -q 'ace_tls'; then
+        echo "FAIL: plaintext standalone object references the TLS adapter"
+        fail=1
+    fi
+    if ! "$ACE" -o /tmp/ace_driver/http_tls \
+         tests/driver/http_tls_autolink.ace >/dev/null 2>/tmp/ace_test_errs ||
+       ! /tmp/ace_driver/http_tls; then
+        echo "FAIL: TLS http bundled-backend automatic link"
+        cat /tmp/ace_test_errs
+        fail=1
+    fi
+    if ! "$ACE" -o /tmp/ace_driver/http_https_system \
+         tests/driver/http_https_system.ace >/dev/null 2>/tmp/ace_test_errs ||
+       ! /tmp/ace_driver/http_https_system; then
+        echo "FAIL: HTTPS owning-client system trust"
+        cat /tmp/ace_test_errs
+        fail=1
+    fi
+    if ! "$ACE" -o /tmp/ace_driver/http_https_anchor \
+         tests/driver/http_https_anchor.ace >/dev/null 2>/tmp/ace_test_errs ||
+       ! /tmp/ace_driver/http_https_anchor; then
+        echo "FAIL: HTTPS explicit DER trust override"
+        cat /tmp/ace_test_errs
+        fail=1
     fi
 
     driver_diag() {
@@ -1137,6 +1196,12 @@ if [ -d tests/driver ]; then
         -c tests/driver/main_obj.ace /tmp/ace_driver/helper_raw.o
     driver_diag "ace: additional link inputs cannot be used with -c" \
         -c tests/driver/main_obj.ace -l helper
+    driver_diag "ace: TLS external requirements cannot be recorded by -c; use -o to link an executable" \
+        -c tests/driver/http_tls_autolink.ace
+    driver_diag "ace: TLS external requirements cannot be recorded by -c; use -o to link an executable" \
+        -c tests/sema/stdlib/tls_ok.ace
+    driver_diag "ace: unsupported TLS backend 'unknown' for target 'darwin-arm64'" \
+        --tls-backend=unknown tests/driver/main_obj.ace
     driver_diag "ace: unknown option '--wat'" \
         -o x --wat tests/driver/main_obj.ace
     driver_diag "ace: unrecognized input 'notes.txt' (expected .ace, .o, or .a)" \

@@ -28,13 +28,14 @@ static const char* host_target(void) {
 
 static void usage(void) {
     fprintf(stderr, "usage: ace [--checked | --release] [--tokens] [--ast] [--report]\n"
-                    "           [--target=TARGET] [-c] [-o NAME] <file.ace>\n"
+                    "           [--target=TARGET] [--tls-backend=NAME] [-c] [-o NAME] <file.ace>\n"
                     "           [<file.o> | <file.a> | -L DIR | -l NAME | -framework NAME]...\n"
                     "  (default)       full semantic check, no codegen\n"
                     "  --checked       emit runtime diagnostics (the emission default)\n"
                     "  --release       emit without runtime diagnostic machinery\n"
                     "  --report        print compilation statistics to stderr\n"
                     "  --target=TARGET compile for TARGET (supported: darwin-arm64)\n"
+                    "  --tls-backend=NAME select TLS backend (default: bearssl)\n"
                     "  -c              emit a Mach-O arm64 object <base>.o\n"
                     "  -o NAME         emit + link via the system cc; NAME ending in\n"
                     "                  .ace compiles that file, naming the output after it\n"
@@ -83,6 +84,72 @@ static char* opt_value(int* i, int argc, char** argv, const char* option,
 static int has_suffix(const char* s, const char* suffix) {
     size_t n = strlen(s), m = strlen(suffix);
     return n >= m && strcmp(s + n - m, suffix) == 0;
+}
+
+static void executable_dir(char* out, size_t cap, const char* argv0) {
+    const char* slash = strrchr(argv0, '/');
+    if (!slash) { snprintf(out, cap, "."); return; }
+    size_t n = (size_t)(slash - argv0);
+    if (n == 0) n = 1;
+    if (n >= cap) n = cap - 1;
+    memcpy(out, argv0, n);
+    out[n] = 0;
+}
+
+typedef enum {
+    RECIPE_FILE,
+    RECIPE_LIBRARY,
+    RECIPE_FRAMEWORK,
+} RecipeItemKind;
+
+typedef struct {
+    RecipeItemKind kind;
+    const char* value;
+} RecipeItem;
+
+typedef struct {
+    const char* component;
+    const char* target;
+    const char* backend;
+    const RecipeItem* items;
+    size_t item_count;
+} ExternRecipe;
+
+static const RecipeItem TLS_BEARSSL_DARWIN_ARM64[] = {
+    { RECIPE_FILE, "external/darwin-arm64/tls/bearssl/adapter.o" },
+    { RECIPE_FILE, "external/darwin-arm64/tls/bearssl/libbearssl.a" },
+    { RECIPE_FRAMEWORK, "Security" },
+    { RECIPE_FRAMEWORK, "CoreFoundation" },
+};
+
+static const ExternRecipe EXTERN_RECIPES[] = {
+    { "tls", "darwin-arm64", "bearssl", TLS_BEARSSL_DARWIN_ARM64,
+      sizeof TLS_BEARSSL_DARWIN_ARM64 / sizeof TLS_BEARSSL_DARWIN_ARM64[0] },
+};
+
+static const ExternRecipe* extern_recipe(const char* component,
+                                         const char* target,
+                                         const char* backend) {
+    for (size_t i = 0; i < sizeof EXTERN_RECIPES / sizeof EXTERN_RECIPES[0]; i++)
+        if (strcmp(component, EXTERN_RECIPES[i].component) == 0 &&
+            strcmp(target, EXTERN_RECIPES[i].target) == 0 &&
+            strcmp(backend, EXTERN_RECIPES[i].backend) == 0)
+            return &EXTERN_RECIPES[i];
+    return NULL;
+}
+
+static void bundled_path(char* out, size_t cap, const char* argv0,
+                         const char* relative) {
+    char dir[4096];
+    executable_dir(dir, sizeof dir, argv0);
+    snprintf(out, cap, "%s/%s", dir, relative);
+}
+
+static void require_regular_file(const char* path, const char* what) {
+    struct stat st;
+    if (stat(path, &st) == 0 && S_ISREG(st.st_mode)) return;
+    fprintf(stderr, "ace: bundled %s is unavailable at '%s'\n", what, path);
+    exit(1);
 }
 
 // Existing aliases (relative paths, symlinks, hard links) compare by identity;
@@ -208,6 +275,7 @@ int main(int argc, char** argv) {
     EmitMode emit_mode = EMIT_CHECKED;
     const char* path = NULL;
     const char* target = host_target();
+    const char* tls_backend_name = "bearssl";
     char* out_name = NULL;
     ArgList link_args = {0}; // .o/.a inputs and -L/-l/-framework, written order
     ArgList link_files = {0}; // only positional .o/.a inputs, for collision checks
@@ -234,6 +302,13 @@ int main(int argc, char** argv) {
         }
         else if (strcmp(a, "--target") == 0)
             target = opt_value(&i, argc, argv, "--target", "a target name");
+        else if (strncmp(a, "--tls-backend=", 14) == 0) {
+            if (a[14] == 0) cli_error("--tls-backend requires a backend name");
+            tls_backend_name = a + 14;
+        }
+        else if (strcmp(a, "--tls-backend") == 0)
+            tls_backend_name = opt_value(&i, argc, argv, "--tls-backend",
+                                         "a backend name");
         else if (strcmp(a, "-c") == 0) opt_c = 1;
         else if (strcmp(a, "-o") == 0) {
             out_name = opt_value(&i, argc, argv, "-o", "an output name");
@@ -274,6 +349,13 @@ int main(int argc, char** argv) {
     }
     if (strcmp(target, "darwin-arm64") != 0) {
         fprintf(stderr, "ace: unsupported target '%s' (supported: darwin-arm64)\n", target);
+        return 2;
+    }
+    const ExternRecipe* configured_tls =
+        extern_recipe("tls", target, tls_backend_name);
+    if (!configured_tls) {
+        fprintf(stderr, "ace: unsupported TLS backend '%s' for target '%s'\n",
+                tls_backend_name, target);
         return 2;
     }
     // `-o <file>.ace` compiles that file in place: the executable is the stem.
@@ -343,6 +425,27 @@ int main(int argc, char** argv) {
         sema_check(file, &d); // default mode: full semantic check
         if (d.errors > 0) goto done;
 
+        uint32_t external = (opt_c || opt_link) ? extern_requirements(file) : EXTERN_NONE;
+        const ExternRecipe* selected_tls = NULL;
+        char tls_files[8][8192];
+        if (external & EXTERN_TLS) {
+            selected_tls = configured_tls;
+            if (opt_c) {
+                fprintf(stderr,
+                        "ace: TLS external requirements cannot be recorded by -c; use -o to link an executable\n");
+                return 2;
+            }
+            if (opt_link) {
+                for (size_t k = 0; k < selected_tls->item_count; k++) {
+                    const RecipeItem* item = &selected_tls->items[k];
+                    if (item->kind != RECIPE_FILE) continue;
+                    bundled_path(tls_files[k], sizeof tls_files[k], argv[0],
+                                 item->value);
+                    require_regular_file(tls_files[k], "TLS external artifact");
+                }
+            }
+        }
+
         if (opt_c || opt_link) { // codegen: Mach-O arm64 object
             char obj[4096];
             if (opt_link)
@@ -357,6 +460,13 @@ int main(int argc, char** argv) {
                     reject_output_collision(obj, input, "generated object");
                     reject_output_collision(out_name, input, "linked output");
                 }
+                if (selected_tls) {
+                    for (size_t k = 0; k < selected_tls->item_count; k++) {
+                        if (selected_tls->items[k].kind != RECIPE_FILE) continue;
+                        reject_output_collision(obj, tls_files[k], "generated object");
+                        reject_output_collision(out_name, tls_files[k], "linked output");
+                    }
+                }
             }
             if (emit_object(file, &d, obj, show_report ? &report : NULL,
                             emit_mode) != 0 ||
@@ -369,6 +479,20 @@ int main(int argc, char** argv) {
                 arg_push(&cc, obj);
                 for (size_t k = 0; k < link_args.len; k++)
                     arg_push(&cc, link_args.items[k]);
+                if (selected_tls) {
+                    for (size_t k = 0; k < selected_tls->item_count; k++) {
+                        const RecipeItem* item = &selected_tls->items[k];
+                        if (item->kind == RECIPE_FILE) {
+                            arg_push(&cc, tls_files[k]);
+                        } else if (item->kind == RECIPE_LIBRARY) {
+                            arg_push(&cc, "-l");
+                            arg_push(&cc, (char*)item->value);
+                        } else {
+                            arg_push(&cc, "-framework");
+                            arg_push(&cc, (char*)item->value);
+                        }
+                    }
+                }
                 arg_push(&cc, "-o");
                 arg_push(&cc, out_name);
                 arg_push(&cc, NULL);

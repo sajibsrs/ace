@@ -1272,6 +1272,16 @@ static void rename_refs(Node* n, Renames* rs, SelectLower* c) {
 static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root) {
     Binding* binds = NULL;
     Select* sels = NULL;
+    const char* source_canon = canonicalize(src_path);
+    for (int i = 0; i < file->nkids; i++) {
+        Node* n = file->kids[i];
+        if (n->extern_component &&
+            (is_root || !source_canon || !is_std_source(L, source_canon))) {
+            import_err(L->d, n,
+                       "@extern is reserved for compiler-shipped standard-library sources");
+        }
+    }
+    if (L->d->errors) return L->d->errors;
     for (int i = 0; i < file->nkids; i++) {
         Node* n = file->kids[i];
         if (n->kind != N_IMPORT) break; // imports precede declarations (parser)

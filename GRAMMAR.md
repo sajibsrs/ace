@@ -28,9 +28,11 @@ char_lit      := "'" (byte – "'" | '\' escape) "'"       // exactly one byte
 
 ```ebnf
 file          := attributed_decl*
-attributed_decl := [when_attr] layout_attr* (import_decl | top_decl)
+attributed_decl := [when_attr] [extern_attr] layout_attr* (import_decl | top_decl)
 
 when_attr     := "@" contextual_when "(" when_expr ")" newline*
+extern_attr   := "@" "extern" "(" string_lit ")" newline*
+                  // compiler-shipped stdlib functions only; closed component set
 contextual_when := ident                              // exact text "when"
 when_expr     := when_or
 when_or       := when_and (contextual_or when_and)*

@@ -20,6 +20,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 // --- type kinds (definitions shared via sema.h) ---------------------------------
@@ -6451,4 +6452,86 @@ int sema_check(Node* file, Diag* d) {
     k.scope = &file_scope;
     if (d->errors == 0) check_definite_initialization(file, d);
     return d->errors;
+}
+
+static uint32_t extern_component_bit(const char* name) {
+    if (name && strcmp(name, "tls") == 0) return EXTERN_TLS;
+    return EXTERN_NONE;
+}
+
+typedef struct {
+    Node** slots;
+    size_t cap, len;
+} ExternSeen;
+
+static size_t extern_hash(Node* n) {
+    uintptr_t x = (uintptr_t)n >> 4;
+    x ^= x >> 17;
+    x *= UINT64_C(0xed5ad4bb);
+    x ^= x >> 11;
+    return (size_t)x;
+}
+
+static void extern_seen_grow(ExternSeen* seen) {
+    size_t old_cap = seen->cap;
+    Node** old = seen->slots;
+    seen->cap = old_cap ? old_cap * 2 : 1024;
+    seen->slots = calloc(seen->cap, sizeof(Node*));
+    if (!seen->slots) exit(1);
+    seen->len = 0;
+    for (size_t i = 0; i < old_cap; i++) {
+        Node* n = old[i];
+        if (!n) continue;
+        size_t at = extern_hash(n) & (seen->cap - 1);
+        while (seen->slots[at]) at = (at + 1) & (seen->cap - 1);
+        seen->slots[at] = n;
+        seen->len++;
+    }
+    free(old);
+}
+
+static int extern_seen_add(ExternSeen* seen, Node* n) {
+    if (!n) return 0;
+    if (!seen->cap || (seen->len + 1) * 2 >= seen->cap)
+        extern_seen_grow(seen);
+    size_t at = extern_hash(n) & (seen->cap - 1);
+    while (seen->slots[at]) {
+        if (seen->slots[at] == n) return 0;
+        at = (at + 1) & (seen->cap - 1);
+    }
+    seen->slots[at] = n;
+    seen->len++;
+    return 1;
+}
+
+static void collect_extern_refs(Node* n, ExternSeen* seen, uint32_t* required) {
+    if (!extern_seen_add(seen, n)) return;
+    Sym* s = node_sym(n);
+    if (s && s->kind == SYM_FUNC && s->decl && s->decl->extern_component) {
+        uint32_t bit = extern_component_bit(s->decl->extern_component);
+        if (bit) {
+            *required |= bit;
+        }
+    }
+    collect_extern_refs(n->a, seen, required);
+    collect_extern_refs(n->b, seen, required);
+    collect_extern_refs(n->c, seen, required);
+    collect_extern_refs(n->d, seen, required);
+    for (int i = 0; i < n->nkids; i++)
+        collect_extern_refs(n->kids[i], seen, required);
+}
+
+uint32_t extern_requirements(Node* file) {
+    uint32_t required = EXTERN_NONE;
+    ExternSeen seen = {0};
+    for (int i = 0; i < file->nkids; i++) {
+        Node* n = file->kids[i];
+        if (n->kind != N_FUNC || n->extern_component) continue;
+        Sym* s = node_sym(n);
+        if (n->c && !(s && s->spec_args) && !sema_insts(n))
+            continue; // an uninstantiated generic template is not emitted
+        collect_extern_refs(n->b, &seen, &required);
+    }
+    free(seen.slots);
+    return required;
 }

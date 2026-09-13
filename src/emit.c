@@ -1854,8 +1854,25 @@ static void emit_bl_extern(Em* e, const char* p, uint32_t len) {
               RM_BRANCH26);
 }
 
-static void emit_bounds_fail_call(Em* e) {
+static ESym* intern_string(Em* e, Node* s);
+static void addr_of_sym(Em* e, int rd, ESym* sym);
+
+static void emit_bounds_fail_call(Em* e, Node* at) {
     e->bounds_fail_used = 1;
+    const char* path = at && at->path ? at->path : "<source>";
+    size_t need = strlen(path) + 80;
+    char* diagnostic = (char*)arena_alloc(need);
+    int n = snprintf(diagnostic, need, "%s:%d:%d: bounds violation\n",
+                     path, at ? at->line : 0, at ? at->col : 0);
+    Node message;
+    memset(&message, 0, sizeof message);
+    message.kind = N_STR;
+    message.str = diagnostic;
+    message.len = (uint32_t)n;
+    ESym* msg = intern_string(e, &message);
+    load_imm(e, 1, 0, 2);
+    addr_of_sym(e, 1, msg);
+    load_imm(e, 1, 2, (uint64_t)n);
     emit_bl_internal(e, "__ace$bounds_fail", 17);
 }
 
@@ -1898,7 +1915,7 @@ static void emit_index_guard(Em* e, Node* access, int index_reg,
         ins(e, (sf ? 0xF100001Fu : 0x7100001Fu) |
                ((uint32_t)index_reg << 5)); // cmp index, #0
         bcond_(e, C_GE, ok);
-        emit_bounds_fail_call(e);
+        emit_bounds_fail_call(e, access);
         bind_label(e, ok);
     }
     widen_idx(e, access->b, index_reg);
@@ -1910,7 +1927,7 @@ static void emit_index_guard(Em* e, Node* access, int index_reg,
     ins(e, 0xEB00001Fu | ((uint32_t)length_reg << 16) |
            ((uint32_t)index_reg << 5)); // cmp index, length
     bcond_(e, C_LO, ok);
-    emit_bounds_fail_call(e);
+    emit_bounds_fail_call(e, access);
     bind_label(e, ok);
 }
 
@@ -1925,7 +1942,7 @@ static void emit_nonnegative_guard(Em* e, Node* slice, Node* bound, int reg) {
     ins(e, (sf ? 0xF100001Fu : 0x7100001Fu) |
            ((uint32_t)reg << 5));
     bcond_(e, C_GE, ok);
-    emit_bounds_fail_call(e);
+    emit_bounds_fail_call(e, slice);
     bind_label(e, ok);
 }
 
@@ -4721,7 +4738,7 @@ static EV gen_expr(Em* e, Node* x) {
                 load_frame(e, 17, hi_slot, 8, 0);
                 ins(e, 0xEB00001Fu | (17u << 16) | (16u << 5)); // cmp lo, hi
                 bcond_(e, C_LS, ok_order);
-                emit_bounds_fail_call(e);
+                emit_bounds_fail_call(e, x);
                 bind_label(e, ok_order);
             }
             if (guard_source) {
@@ -4730,7 +4747,7 @@ static EV gen_expr(Em* e, Node* x) {
                 load_frame(e, 17, len_slot, 8, 0);
                 ins(e, 0xEB00001Fu | (17u << 16) | (16u << 5)); // cmp hi, len
                 bcond_(e, C_LS, ok_len);
-                emit_bounds_fail_call(e);
+                emit_bounds_fail_call(e, x);
                 bind_label(e, ok_len);
             }
         }
@@ -6982,18 +6999,10 @@ static size_t write_object(Em* e, const char* path) {
 
 static void emit_bounds_failure_helper(Em* e) {
     if (!e->bounds_fail_used) return;
-    static const char message[] = "ace: bounds violation\n";
-    Sec* c = &e->secs[SEC_CONST];
-    ESym* msg = sym_define(&e->syms, e->secs, "__ace$bounds_message", 20, 0, c);
-    buf_write(&c->data, message, sizeof message - 1);
-
     sym_define(&e->syms, e->secs, "__ace$bounds_fail", 17, 0,
                &e->secs[SEC_TEXT]);
     ins(e, 0xA9BF7BFD); // stp x29, x30, [sp, #-16]!
     ins(e, 0x910003FD); // mov x29, sp
-    load_imm(e, 1, 0, 2); // stderr
-    addr_of_sym(e, 1, msg);
-    load_imm(e, 1, 2, sizeof message - 1);
     emit_bl_extern(e, "_write", 6);
     emit_bl_extern(e, "_abort", 6);
     ins(e, 0xD4200000u); // brk #0 if abort unexpectedly returns
@@ -7203,10 +7212,15 @@ int emit_object(Node* file, Diag* d, const char* out_path,
     }
     sym_define(&e.syms, e.secs, "__ace$text", 10, 0, &e.secs[SEC_TEXT]);
 
+    uint32_t external = extern_requirements(file);
+
     for (int i = 0; i < file->nkids; i++) {
         Node* n = file->kids[i];
         switch (n->kind) {
         case N_FUNC: {
+            if (n->extern_component &&
+                (!(external & EXTERN_TLS) || strcmp(n->extern_component, "tls") != 0))
+                break;
             if (n->ival == BI_MEM_ALLOC || n->ival == BI_MEM_REALLOC ||
                 n->ival == BI_MEM_RELEASE || n->ival == BI_MEM_COPY ||
                 n->ival == BI_MEM_MOVE || n->ival == BI_MEM_FILL ||
