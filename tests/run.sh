@@ -1083,6 +1083,23 @@ if [ -d tests/driver ]; then
         fi
     fi
 
+    bearssl_inc=external/bearssl/local/inc
+    bearssl_lib=external/bearssl/local/lib/libbearssl.a
+    if [ -f "$bearssl_inc/bearssl.h" ] && [ -f "$bearssl_lib" ]; then
+        if ! cc -std=c11 -Wall -Wextra -Werror -I"$bearssl_inc" \
+             -c tests/driver/bearssl_adapter.c \
+             -o /tmp/ace_driver/bearssl_adapter.o ||
+           ! "$ACE" -o /tmp/ace_driver/bearssl_abi \
+             tests/driver/bearssl_abi.ace \
+             /tmp/ace_driver/bearssl_adapter.o "$bearssl_lib" ||
+           ! /tmp/ace_driver/bearssl_abi; then
+            echo "FAIL: BearSSL entropy adapter proof"
+            fail=1
+        fi
+    else
+        echo "SKIP: BearSSL proof (see external/bearssl/README.md)"
+    fi
+
     driver_diag() {
         want=$1; shift
         if "$ACE" "$@" >/dev/null 2>/tmp/ace_test_errs; then

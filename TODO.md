@@ -243,9 +243,15 @@ nonblocking connect completion remain visible without callbacks or allocation.
 - **TLS client transport** [open] — active in the Decision Queue: carve a
   backend-neutral, client-only secure byte transport over `tcp`, initially
   proven with pinned BearSSL while keeping its names and layouts private.
-  Inventory secure OS entropy, opaque foreign-context size/alignment and inline
-  adapters, explicit trust-anchor ingestion, native archive linking, and partial
-  I/O composition before proposing any language or compiler convenience.
+  The accepted boundary uses a narrow C adapter over the existing fixed-width
+  integer, `usize`, and byte-pointer ABI; BearSSL class tables and callbacks stay
+  inside that adapter and do not block on C-ABI function-pointer support. The
+  0.6 archive/checksum, Apple-arm64 context size/alignment, half-duplex buffer,
+  TLS-1.2-only configuration, direct native-archive link, private Darwin
+  `getentropy` acquisition, and explicit 32-byte-or-larger BearSSL seeding are
+  proven. Next prove explicit DER trust-anchor ingestion, mandatory hostname/SNI
+  reset, and partial record I/O before proposing any language or compiler
+  convenience.
   Server mode, client certificates, automatic system roots, revocation/network
   fetching, ALPN/HTTP/2, session state, and HTTPS convenience remain later
   additive work.

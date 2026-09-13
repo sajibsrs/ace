@@ -1,0 +1,14 @@
+// expect-exit: 0
+
+import entropy: "../../../std/tls/os/darwin-arm64.ace"
+
+main(): int {
+    empty: mut []u8 = null
+    if entropy.fill(empty) != null { return 1 }
+
+    /* Exceeds Darwin's per-call ceiling, proving that the private layer
+     * completes a caller-owned destination across multiple calls. */
+    seed: [513]u8
+    if entropy.fill(mut seed[..]) != null { return 2 }
+    return 0
+}

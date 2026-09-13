@@ -189,6 +189,12 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Standard library
 
+- Pinned BearSSL 0.6 as an experimental TLS-client proof backend and added a
+  private adapter/fixture proving direct archive linkage, opaque caller-owned
+  client/X.509 storage, supported alignment, half-duplex record-buffer sizing,
+  enforced TLS-1.2-only policy, private chunked Darwin `getentropy` acquisition,
+  and explicit caller-supplied BearSSL seeding without expanding Ace's C ABI or
+  adding a public entropy API.
 - Standardized concise stdlib naming across public facades, selected OS layers,
   documentation, and fixtures. Subject words remain where a module can expose
   multiple categories (`net.SocketKind`, `sys.FileKind`); established

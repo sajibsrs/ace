@@ -1053,11 +1053,50 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 
 - **TLS client transport** [open] — carve a backend-neutral, client-only secure
   byte transport over `tcp`, initially proven with a pinned BearSSL backend.
+  Boundary decision: the initial proof uses a narrow C adapter and does not
+  expand Ace's C ABI. BearSSL contexts are caller-owned opaque byte storage;
+  adapter-provided size and alignment values define that storage, and the proof
+  must verify that the required alignment is supported before allocation. The
+  adapter exposes only fixed-width integers, `usize`, and read-only or writable
+  byte pointers already admitted by the positive C-ABI whitelist. It owns all
+  BearSSL struct, union, macro, inline-function, class-table, and function-pointer
+  interaction; BearSSL never calls an Ace function in the initial proof. Direct
+  representation or invocation of a BearSSL class table therefore does not
+  motivate C-ABI function-pointer support. Native archive linkage and the exact
+  context size/alignment contract must be proven as integration work, not hidden
+  by a language convenience. Rationale: an opaque adapter establishes the TLS
+  transport with the existing small ABI, keeps a foreign implementation out of
+  the public module, and avoids coupling an unrelated language feature to TLS;
+  callable C-ABI function pointers remain independently carved by their first
+  actual callback customer.
+  Backend pin (decided): the proof uses the upstream BearSSL 0.6 release
+  archive with SHA-256
+  `6705bba1714961b41a728dfc5debbe348d2966c117649392f8c8139efc83ff14`.
+  It configures `BR_TLS12` as both the minimum and maximum version; TLS 1.0
+  and 1.1 are disabled, and BearSSL 0.6 provides no TLS 1.3. The combined
+  client and minimal-X.509 opaque context is 6888 bytes with alignment 8 on
+  Apple arm64, within `mem`'s supported 16-byte ceiling, and the half-duplex
+  record buffer is 16709 caller-owned bytes. These values are backend proof
+  facts queried through the adapter, not public `std/tls` constants or a
+  portable ABI promise. The pinned backend is experimental until dependency
+  maintenance, trust roots, and security-update policy are resolved.
+  Entropy boundary (decided): the proof acquires secure entropy through a
+  TLS-private target layer rather than adding a public `sys` operation. On
+  Darwin that layer fills caller-owned storage with `getentropy`, splits the
+  fill into requests of at most 256 bytes, retries `EINTR`, and returns every
+  other failure explicitly with its errno. The caller supplies at least 32
+  bytes to the C adapter, which injects them into BearSSL directly; the proof
+  does not invoke BearSSL's system-seeder helper or otherwise hide entropy
+  acquisition inside the backend. Deterministic adapter tests use supplied
+  entropy, while a separate smoke test exercises the real OS source. Rationale:
+  visible acquisition and injection make initialization failures testable,
+  preserve caller-owned storage and explicit errors, and avoid committing a
+  general-purpose public entropy API before another concrete customer exists.
   Decide the public configuration, connection, and progress shapes; caller-owned
   context and record-buffer storage; blocking-first operation and the boundary
   of later nonblocking progress; SNI and mandatory hostname verification; an
   explicit initial trust-anchor source; minimum/maximum protocol-version policy;
-  secure OS entropy; alert, verification, transport, EOF, and orderly-close
+  alert, verification, transport, EOF, and orderly-close
   results; and whether the TLS connection closes its underlying `tcp.Conn`.
   BearSSL names, layouts, cipher selectors, and error constants stay private to
   the proof, and its TLS 1.2 ceiling must remain visible in the selected policy
