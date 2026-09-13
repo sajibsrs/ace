@@ -81,7 +81,7 @@ func_decl     := ident [bracket_args] "(" [params] ")" [ret_clause]
 method_func_decl := ["mut"] owner_type "." ident "(" [params] ")" [ret_clause] block
 owner_type    := ident [type_params]                        // declares owner T names
 type_params   := "[" ident ("," ident)* "]"               // max[T] — type declarations always declare params
-params        := param ("," param)*
+params        := param ("," param)* [","]
 param         := param_mod* ident ":" type
 param_mod     := "mut" | "noalias"
 ret_clause    := ":" type | ":" "(" type ("," type)+ ")"
@@ -262,8 +262,9 @@ choices that are not evident from the productions.
    declaration, and `ident =`/`ident ,` begins assignment. Function declarations
    are distinguished from calls by their trailing return clause or body.
 3. Bare comma lists are single-line. Delimited lists may span lines and accept a
-   trailing comma; signing and selective-import parentheses are the multiline
-   form only.
+   trailing comma; canonical formatting keeps a list on one line while it fits
+   the configured 120-column limit, then uses one item per line with a trailing
+   comma. Signing and selective-import parentheses are the multiline form only.
 4. Indexing and generic instantiation share brackets. Resolve them from the
    symbol namespace; when parsing cannot decide, parse an expression and let
    semantic analysis reclassify/check it.

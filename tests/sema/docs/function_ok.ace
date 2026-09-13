@@ -18,6 +18,16 @@ divide(value: int, by: int): (int, int) {
     )
 }
 
+long_parameter_list(
+    url: string,
+    config: int,
+    policy: int,
+    mut client: int,
+): int {
+    client += config + policy
+    return int(url.len) + client
+}
+
 render(value: string): int {
     return int(value.len)
 }

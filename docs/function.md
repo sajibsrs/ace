@@ -69,6 +69,28 @@ as `return quotient, remainder` or a typed destructuring list must stay on one
 physical line. Parentheses provide the multiline return form shown above;
 delimited parameter and argument lists follow the same general layout rule.
 
+## Parameter-list layout
+
+A parameter list stays on one line when the complete declaration fits within
+120 columns. Crossing that limit uses one parameter per line and a trailing
+comma after the final parameter:
+
+```ace
+pub get(
+    url: string,
+    config: TlsConfig,
+    policy: RedirectPolicy,
+    mut client: Client,
+): (Response, Error) {
+    // ...
+}
+```
+
+The trailing comma is the canonical multiline style. It makes continuation
+explicit and lets parameters be added, removed, or reordered without also
+editing the neighboring line. A formatter does not expand a fitting single-line
+declaration merely because the parameter list could be written vertically.
+
 ## Overloads
 
 Free functions may share a name when their parameter signatures differ.

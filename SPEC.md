@@ -1223,12 +1223,18 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
   to `std/fmt` are outside this work. Formatting must be deterministic,
   idempotent, enforce the configured 120-column layout where source tokens and
   preserved comment contents permit it, and never partially rewrite invalid
-  input. Resume with a staged implementation carving and exact CLI diagnostics
-  when formatter work becomes an active priority. Rationale: sharing one lexer
-  and parser keeps syntax authoritative without permanently taxing ordinary
-  compilation with formatter-only data, while a separate lossless tree gives
-  future formatter and editor tooling room to evolve without distorting the
-  semantic compiler AST.
+  input. A delimited comma-separated list remains on one line when its complete
+  surrounding construct fits the configured 120-column limit.
+  When it does not fit, the formatter places one item on each continuation line
+  and writes a trailing comma after the final item; it does not break a fitting
+  single-line list merely because multiline layout is available. Preserved
+  comments or source tokens that force a break may require multiline layout
+  before the width limit. Resume with a staged implementation carving and exact
+  CLI diagnostics when formatter work becomes an active priority. Rationale:
+  sharing one lexer and parser keeps syntax authoritative without permanently
+  taxing ordinary compilation with formatter-only data, while a separate
+  lossless tree gives future formatter and editor tooling room to evolve without
+  distorting the semantic compiler AST.
 - Package-system manifest, lockfile, display, linker-input, and command syntax
   remain open under Package System #3, #9, and #13–15. Resume only when package
   implementation is selected.

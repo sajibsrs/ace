@@ -11,6 +11,8 @@ line-length = 120
 indent-style = space
 indent-width = 4
 continuation-alignment = open-delimiter
+delimited-list = single-line-if-fits
+multiline-trailing-comma = always
 
 [declarations]
 public-before-private = dependency-order
