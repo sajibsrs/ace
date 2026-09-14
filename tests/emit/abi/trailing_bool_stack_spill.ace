@@ -1,0 +1,21 @@
+// Internal ABI regression: once eight preceding usize arguments have filled
+// x0-x7, a further usize and a trailing bool both spill to the stack. Homing
+// the bool into its one-byte callee slot must copy only its own width, not
+// the ABI-padded 4-byte stack-slot width (Darwin pads scalar stack slots to
+// a 4-byte minimum) — otherwise the extra bytes land on the low bytes of the
+// adjacent (previously homed) usize stack argument, corrupting it.
+
+// expect-exit: 0
+
+probe(a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize,
+      a6: usize, a7: usize, guard: usize, flag: bool): usize {
+    if !flag { return 0 }
+    return guard
+}
+
+main(): int {
+    guard: usize = usize(0x1122334455667788)
+    result: usize = probe(1, 2, 3, 4, 5, 6, 7, 8, guard, true)
+    if result != guard { return 1 }
+    return 0
+}

@@ -7,11 +7,9 @@ main(): int {
     if mismatch_err == null || mismatch_err.domain != typeid(http.UrlErr) {
         return int(mismatch.status) + 1
     }
-    if false {
-        response: http.Response, err: Error = http.get(
-            "http://example.com/", mut context)
-        if err == null { return int(response.status) }
-    }
+    response: http.Response, err: Error = http.get(
+        "http://nonexistent.invalid/", mut context)
+    if err == null { return int(response.status) }
     http.context_wipe(mut context)
     return 0
 }

@@ -5962,8 +5962,14 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
                     ldrf_(e, 0, 16, 0, u->size == 8);
                     store_frame_fp(e, 0, slot, u->size == 8);
                 } else {
-                    uint32_t bw = u->size < 8 ? u->size : 8;
-                    ld_reg(e, 16, 16, 0, bw, 0);
+                    // u->size is the ABI stack-slot width (Darwin pads to a
+                    // 4-byte minimum); homing into the frame must only copy
+                    // the scalar's actual width, or a narrow trailing scalar
+                    // (e.g. a stack-passed bool) overwrites adjacent bytes.
+                    uint32_t slotw = u->size < 8 ? u->size : 8;
+                    uint32_t bw = byref ? 8 : is_scalar(t)
+                        ? (uint32_t)((scalar_bits(t) + 7) / 8) : slotw;
+                    ld_reg(e, 16, 16, 0, slotw, 0);
                     frame_addr(e, 17, slot);
                     st_reg(e, 16, 17, byref ? 0u : u->off, bw);
                 }
