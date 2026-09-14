@@ -452,6 +452,12 @@ current normative rules, and Git preserves patch-level detail.
 - Allowed global constant initializers to forward recursively evaluable
   constants from imported modules. The `sys` facade now re-exports its
   target-selected `O_*` and `S_I*` values without duplicating their numbers.
+- Fixed homing of a trailing stack-passed scalar parameter to copy only its own
+  width instead of the ABI-padded stack-slot width (Darwin pads scalar slots to
+  4 bytes), which had let a narrow trailing argument (e.g. `bool`) clobber the
+  low bytes of the previously homed adjacent stack argument. This was the root
+  cause of the owning HTTPS client's response-dependent heap corruption during
+  deferred `client_wipe`.
 
 ## Current frontier
 

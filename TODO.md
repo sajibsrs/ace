@@ -17,19 +17,6 @@ The priority bands below are recommendations, not decisions. The active
 Decision Queue in `SPEC.md` always wins; dependencies within a band are listed
 before the work they unblock.
 
-## 0. Known implementation defects
-
-- **Owning HTTP client heap corruption** [defect] — a successful HTTPS GET of
-  `https://stackoverflow.com/` can return its ordinary 403 response and then
-  segfault during deferred `http.client_wipe`. The macOS crash reports place
-  failures at releases of different `Client.storage` slices, with allocation
-  pointers or allocator metadata already corrupted by response-like bytes.
-  DNS failures and smaller exchanges avoid the failure, so investigate the
-  response-dependent `mem.realloc[T]` paths, their generated code under the
-  HTTP exchange's register pressure, and parser copy bounds before attributing
-  the defect to cleanup. The reproducer uses the unchanged no-policy
-  `http.get(url, mut client)` overload; redirect following is not involved.
-
 ## 1. Core type-system completion
 
 Finish the existing primitive, sequential, and aggregate model before adding
@@ -283,6 +270,14 @@ nonblocking connect completion remain visible without callbacks or allocation.
   the `http` surface and transport core through its exact TLS-config overload. `rune`,
   UTF-8 decoding, and `yarn` are not prerequisites because HTTP framing is
   ASCII and payloads remain byte views.
+  Once `serve` exists and TLS server mode (see the TLS client transport item's
+  deferred server mode above) makes a loopback HTTPS fixture possible, add
+  redirect scheme-transition coverage to `tests/emit/http/redirect.ace`: an
+  HTTP-to-HTTPS upgrade hop and an HTTPS-to-HTTP hop asserting
+  `RedirectErr.downgrade`. Today that file's only scheme-relative hop resolves
+  against the initial `http://` URL and never crosses schemes, so `SPEC.md`'s
+  upgrade-allowed/downgrade-rejected redirect rule is implemented and used by
+  `sandbox.ace`'s upgrade case in practice but has no fixture of its own.
 
 ## 7. Completed checked-build checkpoint
 
