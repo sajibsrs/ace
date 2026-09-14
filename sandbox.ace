@@ -1,0 +1,23 @@
+import http
+import fmt
+
+main(): int {
+    client: http.Client = http.client_new()
+    defer http.client_wipe(mut client)
+
+    url: string = "https://w3schools.com/"
+    client.context.redirects = http.RedirectPolicy {limit = 10}
+    response: http.Response, err: Error = http.get(url, mut client)
+    if err != null {
+        fmt.println(err.message)
+        return 2
+    }
+
+    if response.status != 200 {
+        fmt.println(url)
+        fmt.println(http.status(response.status))
+        return 3
+    }
+    fmt.print(response.body)
+    return 0
+}
