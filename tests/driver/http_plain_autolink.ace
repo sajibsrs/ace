@@ -1,23 +1,17 @@
 import http
 
 main(): int {
-    storage: http.Storage = http.Storage {
-        addresses = null,
-        output = null,
-        target = null,
-        input = null,
-        headers = null,
-        body = null,
-    }
+    context: http.Context = http.context_new()
     mismatch: http.Response, mismatch_err: Error = http.get(
-        "https://example.com/", storage)
+        "https://example.com/", mut context)
     if mismatch_err == null || mismatch_err.domain != typeid(http.UrlErr) {
         return int(mismatch.status) + 1
     }
     if false {
         response: http.Response, err: Error = http.get(
-            "http://example.com/", storage)
+            "http://example.com/", mut context)
         if err == null { return int(response.status) }
     }
+    http.context_wipe(mut context)
     return 0
 }

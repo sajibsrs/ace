@@ -829,11 +829,10 @@ fails. Higher-level nonblocking connection completion belongs to `tcp`.
 
 ## http
 
-`http` implements caller-storage HTTP/1.1 framing plus blocking one-shot GET
+`http` implements allocation-free HTTP/1.1 framing plus blocking one-shot GET
 over plaintext TCP or TLS. The framing and parsing operations allocate nothing,
-perform no I/O, and retain no caller buffer. The `Storage` overloads likewise
-allocate nothing; their DNS, connection, request, response, and cleanup steps
-remain explicit in returned errors.
+perform no I/O, and retain no caller buffer. Client DNS, connection, request,
+response, and cleanup failures remain explicit in returned errors.
 
 `parse_url(url): (Url, Error)` accepts absolute `http://` and `https://` URLs.
 `Url { host, path, query, port }` contains byte views and a host-order port.
@@ -845,36 +844,27 @@ empty or invalid ports, and other schemes return `UrlErr`. HTTP defaults to
 port 80 and HTTPS to port 443. Path/query
 bytes and percent escapes are unchanged.
 
-`get(url, storage): (Response, Error)` is the allocation-free plaintext path.
-`get(url, config: TlsConfig, storage)` handles HTTPS with caller-provided TLS
-buffers. Canonical `TlsConfig{}` uses system trust; a nonempty `trust_anchor`
-selects one explicit DER root as an override for private roots and deterministic
-tests. Both modes require hostname verification and SNI.
+`get(url, mut context)` accepts only `http://`. `Context` owns reusable HTTP
+workspace and policy, is created with `context_new`, and is released with
+`context_wipe`. This overload carries no TLS external-component reference.
 
-`get(url, mut client)` is the reference-level convenience and accepts either
-scheme, selected by the URL. It lazily allocates and retains ordinary and TLS
-workspace, uses system trust for HTTPS, and releases all workspace through
-`client_wipe`. `get(url, config, mut client)` supplies the explicit trust
-override with the same owning behavior.
+`get(url, mut client)` accepts either scheme. `Client` composes a `context`
+with `tls: TlsConfig`, lazily retains ordinary and TLS workspace, and releases
+it through `client_wipe`. Canonical `TlsConfig{}` uses system trust; assigning a
+nonempty `client.tls.trust_anchor` selects one explicit DER root. HTTPS always
+requires hostname verification and SNI.
 
-Redirects remain opt-in. `RedirectPolicy { limit = 10 }` is accepted by
-`get(url, policy, mut client)` and `get(url, config, policy, mut client)`.
-Those overloads follow 301, 302, 303, 307, and 308 responses with valid
+Redirects remain opt-in. Assigning `RedirectPolicy { limit = 10 }` to
+`context.redirects` or `client.context.redirects` follows 301, 302, 303, 307,
+and 308 responses with valid
 `Location` fields, resolving absolute HTTP/HTTPS URLs, scheme-relative URLs,
 absolute paths, query-only references, and relative paths against the previous
 URL. HTTP may upgrade to HTTPS; HTTPS-to-HTTP fails with
 `RedirectErr.downgrade`. A chain requiring more than `limit` followed responses
 fails with `RedirectErr.limit`. Missing or invalid locations return the original
-3xx response. The overloads without `RedirectPolicy` still perform one request.
+3xx response. The canonical zero policy performs one request.
 
-`Storage` contains caller-owned address, serialized-output, request-target,
-input, header, and body slices. Its default-null `url` slice is owning-client
-redirect workspace. Its `tls_context` and `tls_records` slices
-default to null, so plaintext callers omit them and allocate no TLS storage.
-TLS callers provide backend-sized opaque byte storage in those two fields. The
-backend-neutral `tls.context_size`, `tls.context_align`, and `tls.record_size`
-queries report the current adapter requirements. The
-two GET overloads share URL parsing, address iteration, request construction,
+The two GET overloads share URL parsing, address iteration, request construction,
 formatting, response parsing, error mapping, and TCP cleanup through one typed
 transport exchange. BearSSL is the default bundled implementation selected by
 the compiler, not a public type or API name.

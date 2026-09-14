@@ -1,8 +1,7 @@
 import http
 
-check(config: http.TlsConfig, storage: http.Storage) {
-    default_config: http.TlsConfig = http.TlsConfig{}
+check(mut client: http.Client) {
+    client.tls = http.TlsConfig{}
     response: http.Response, err: Error = http.get(
-        "https://example.com/", config, storage)
-    response, err = http.get("https://example.com/", default_config, storage)
+        "https://example.com/", mut client)
 }

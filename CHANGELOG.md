@@ -205,6 +205,11 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Standard library
 
+- Reorganized `std/http` as a directory module with focused parsing,
+  formatting, client, redirect, transport, and TLS implementation files, and
+  replaced six `get` overloads with plaintext `Context` and
+  TLS-capable composed `Client { context, tls }` entry points. Redirect and TLS
+  choices now live on those reusable values without multiplying overloads.
 - Added opt-in bounded HTTP redirects to the owning client through explicit
   `RedirectPolicy` overloads, including relative URL resolution, HTTP-to-HTTPS
   upgrades, downgrade rejection, deterministic limits, and reusable owned URL

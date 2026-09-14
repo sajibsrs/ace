@@ -1,15 +1,10 @@
 import http
 import net
 
-check_client(storage: http.Storage, config: http.TlsConfig, mut client: http.Client) {
-    policy: http.RedirectPolicy = http.RedirectPolicy{}
-    response: http.Response, err: Error = http.get("http://example.com/", storage)
-    response, err = http.get("https://example.com/", config, storage)
+check_client(mut context: http.Context, mut client: http.Client) {
+    response: http.Response, err: Error = http.get("http://example.com/", mut context)
     response, err = http.get("http://example.com/", mut client)
     response, err = http.get("https://example.com/", mut client)
-    response, err = http.get("https://example.com/", config, mut client)
-    response, err = http.get("http://example.com/", policy, mut client)
-    response, err = http.get("https://example.com/", config, policy, mut client)
 }
 
 check(
@@ -81,7 +76,13 @@ check(
 }
 
 main(): int {
+    context: http.Context = http.context_new()
+    context.redirects = http.RedirectPolicy {limit = 10}
     client: http.Client = http.client_new()
+    client.context.redirects = http.RedirectPolicy {limit = 10}
+    client.tls = http.TlsConfig{}
+    check_client(mut context, mut client)
+    http.context_wipe(mut context)
     http.client_wipe(mut client)
     return 0
 }

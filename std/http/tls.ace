@@ -1,0 +1,48 @@
+/* Private secure HTTP transport composition. */
+
+import tcp
+import mem
+import secure: "../tls.ace"
+import message: "./format.ace"
+import parsing: "./parse.ace"
+import transport: "./transport.ace"
+
+pub Response: type = message.Response
+pub Storage: type = transport.Storage
+pub ClientErr: type = transport.ClientErr
+pub Url: type = parsing.Url
+
+pub TlsConfig: struct {
+    trust_anchor: []u8 = null,
+}
+
+@extern("tls")
+pub get_with_storage(url: string, config: TlsConfig, mut storage: Storage, resize: bool): (Response, Error) {
+    parsed: Url, url_err: Error = parsing.parse_url_for(url, true)
+    if url_err != null { return Response{}, url_err }
+    if resize {
+        if storage.tls_context == null {
+            storage.tls_context = mem.alloc(int(secure.context_size()),
+                int(secure.context_align()))
+            if storage.tls_context == null { return Response{}, ClientErr.allocation }
+        }
+        mem_records: mut []u8, records_ok: bool = transport.mem_adjust[u8](
+            storage.tls_records, secure.record_size())
+        if !records_ok { return Response{}, ClientErr.allocation }
+        storage.tls_records = mem_records
+    }
+    connection: tcp.Conn, connect_err: Error = transport.connect_url(parsed, mut storage, resize)
+    if connect_err != null { return Response{}, connect_err }
+    secured: secure.Conn, tls_err: Error = secure.connect(connection, parsed.host,
+        config.trust_anchor, secure.Storage {
+            context = storage.tls_context,
+            records = storage.tls_records,
+        })
+    if tls_err != null {
+        tcp.close(mut connection)
+        return Response{}, tls_err
+    }
+    response: Response, err: Error = transport.exchange[secure.Conn](secured, connection,
+        secure.send_all, secure.receive, parsed, mut storage, resize)
+    return response, err
+}

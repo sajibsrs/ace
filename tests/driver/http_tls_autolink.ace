@@ -1,25 +1,11 @@
 import http
 
 main(): int {
-    storage: http.Storage = http.Storage {
-        addresses = null,
-        output = null,
-        target = null,
-        input = null,
-        headers = null,
-        body = null,
-    }
-    config: http.TlsConfig = http.TlsConfig{}
-    mismatch: http.Response, mismatch_err: Error = http.get("http://example.com/", config, storage)
-    if mismatch_err == null || mismatch_err.domain != typeid(http.UrlErr) {
-        return int(mismatch.status) + 1
-    }
+    client: http.Client = http.client_new()
     if false {
-        response: http.Response, err: Error = http.get("https://example.com/", config, storage)
+        response: http.Response, err: Error = http.get("https://example.com/", mut client)
         if err == null { return int(response.status) }
-        client: http.Client = http.client_new()
-        response, err = http.get("https://example.com/", mut client)
-        http.client_wipe(mut client)
     }
+    http.client_wipe(mut client)
     return 0
 }

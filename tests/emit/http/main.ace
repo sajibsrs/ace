@@ -5,10 +5,17 @@ import mem
 import net
 
 main(): int {
+    context: http.Context = http.context_new()
+    if context.storage == null { return 98 }
+    context.redirects = http.RedirectPolicy {limit = 4}
+    http.context_wipe(mut context)
+    if context.storage != null || context.redirects.limit != 0 { return 99 }
+    http.context_wipe(mut context)
+
     client: http.Client = http.client_new()
-    if client.storage == null { return 100 }
+    if client.context.storage == null { return 100 }
     http.client_wipe(mut client)
-    if client.storage != null { return 101 }
+    if client.context.storage != null { return 101 }
     http.client_wipe(mut client)
 
     if !mem.equal(http.status(u16(200)), "OK") ||

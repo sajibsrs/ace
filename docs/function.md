@@ -78,9 +78,7 @@ comma after the final parameter:
 ```ace
 pub get(
     url: string,
-    config: TlsConfig,
-    policy: RedirectPolicy,
-    mut client: Client,
+    mut context: Context,
 ): (Response, Error) {
     // ...
 }

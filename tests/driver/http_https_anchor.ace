@@ -31,11 +31,13 @@ main(): int {
         tls_context = mut tls_context[..],
         tls_records = mut tls_records[..],
     }
-    config: http.TlsConfig = http.TlsConfig {
+    client: http.Client = http.client_new()
+    client.tls = http.TlsConfig {
         trust_anchor = anchor[..usize(count)],
     }
     response: http.Response, err: Error = http.get(
-        "https://example.org/", config, storage)
+        "https://example.org/", mut client)
+    http.client_wipe(mut client)
     if err != null { return 3 }
     if response.status != 200 { return 4 }
     return 0

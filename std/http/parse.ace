@@ -1,11 +1,9 @@
-/* http — allocation-free HTTP/1.1 framing over caller-owned storage. */
+/* URL and incremental HTTP message parsing. */
 
 import ascii
 import mem
 import str
-import tcp
-import net
-import tls
+import message: "./format.ace"
 
 pub Url: struct {
     host: string,
@@ -18,50 +16,9 @@ pub UrlErr: error {
     1: invalid = "invalid URL or scheme for HTTP operation"
 }
 
-pub FormatErr: error {
-    1: capacity = "output storage is too small"
-    2: method = "invalid request method"
-    3: target = "invalid request target"
-    4: header_name = "invalid header name"
-    5: header_value = "invalid header value"
-    6: version = "invalid HTTP version"
-    7: status = "invalid HTTP status"
-    8: reason = "invalid HTTP reason phrase"
-}
-
-pub ClientErr: error {
-    1: address = "no usable address was resolved"
-    2: target_capacity = "request-target storage is too small"
-    3: response = "response parsing or storage failed"
-    4: allocation = "memory allocation failed"
-}
-
-pub RedirectErr: error {
-    1: limit = "HTTP redirect limit was exceeded"
-    2: downgrade = "HTTPS redirect to HTTP is not permitted"
-}
-
-pub method_connect: const string = "CONNECT"
-pub method_delete: const string = "DELETE"
-pub method_get: const string = "GET"
-pub method_head: const string = "HEAD"
-pub method_options: const string = "OPTIONS"
-pub method_patch: const string = "PATCH"
-pub method_post: const string = "POST"
-pub method_put: const string = "PUT"
-pub method_trace: const string = "TRACE"
-
-pub Header: struct {
-    name: string,
-    value: string,
-}
-
-pub Request: struct {
-    method: string,
-    target: string,
-    headers: []Header = null,
-    body: []u8 = null,
-}
+pub Header: type = message.Header
+pub Request: type = message.Request
+pub Response: type = message.Response
 
 pub RequestPhase: enum {
     request,
@@ -117,14 +74,6 @@ pub RequestResult: union {
     capacity: RequestCapacity,
     syntax,
     framing,
-}
-
-pub Response: struct {
-    version_minor: u8 = 1,
-    status: u16 = 200,
-    reason: string = null,
-    headers: []Header = null,
-    body: []u8 = null,
 }
 
 pub ResponsePhase: enum {
@@ -185,82 +134,11 @@ pub ResponseResult: union {
     framing,
 }
 
-pub Storage: struct {
-    addresses: mut []net.Addr4,
-    output: mut []u8,
-    target: mut []u8,
-    input: mut []u8,
-    headers: mut []Header,
-    body: mut []u8,
-    url: mut []u8 = null,
-    tls_context: mut []u8 = null,
-    tls_records: mut []u8 = null,
-}
-
-pub TlsConfig: struct {
-    trust_anchor: []u8 = null,
-}
-
-pub RedirectPolicy: struct {
-    limit: usize = 10,
-}
-
-pub Client: struct {
-    storage: mut []Storage,
-}
-
-pub client_new(): Client {
-    storage: mut []Storage = mem.alloc[Storage](1)
-    if storage == null { return Client {storage = null} }
-    storage[0] = Storage {
-        addresses = null,
-        output = null,
-        target = null,
-        input = null,
-        headers = null,
-        body = null,
-        url = null,
-        tls_context = null,
-        tls_records = null,
-    }
-    return Client {storage = storage}
-}
-
-/* Releases every lazily allocated workspace slice, then the workspace itself.
- * A null client is a no-op, so wiping is safe after allocation failure or an
- * earlier wipe.
- */
-pub client_wipe(mut client: Client) {
-    if client.storage == null { return }
-    mem.release[net.Addr4](mut client.storage[0].addresses)
-    mem.release[u8](mut client.storage[0].output)
-    mem.release[u8](mut client.storage[0].target)
-    mem.release[u8](mut client.storage[0].input)
-    mem.release[Header](mut client.storage[0].headers)
-    mem.release[u8](mut client.storage[0].body)
-    mem.release[u8](mut client.storage[0].url)
-    mem.release(mut client.storage[0].tls_context)
-    mem.release[u8](mut client.storage[0].tls_records)
-    mem.release[Storage](mut client.storage)
-}
-
-/* Returns the canonical zero URL used by parse failures. */
 zero_url(): Url {
     return Url {host = null, path = null, query = null, port = u16(0)}
 }
 
 /* Reports whether `byte` is permitted by the HTTP token grammar. */
-is_token(byte: u8): bool {
-    if (byte >= 48 && byte <= 57) || (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122) {
-        return true
-    }
-    return byte == 33 || byte == 35 || byte == 36 || byte == 37 ||
-        byte == 38 || byte == 39 || byte == 42 || byte == 43 ||
-        byte == 45 || byte == 46 || byte == 94 || byte == 95 ||
-        byte == 96 || byte == 124 || byte == 126
-}
-
-/* Validates a bounded ASCII DNS name or a four-part dotted-decimal IPv4 host. */
 is_host(host: string): bool {
     if host.len == 0 || host.len > 253 {
         return false
@@ -317,7 +195,7 @@ is_host(host: string): bool {
 /* Parses an absolute plaintext HTTP URL into zero-copy host, path, and query
  * views. Returns `UrlErr` for unsupported or malformed input.
  */
-parse_url_for(url: string, secure: bool): (Url, Error) {
+pub parse_url_for(url: string, secure: bool): (Url, Error) {
     scheme: string = "http://"
     start: usize = 7
     default_port: u16 = 80
@@ -397,204 +275,6 @@ pub parse_url(url: string): (Url, Error) {
 }
 
 /* Adds a serialized size without exceeding `capacity` or overflowing. */
-add_size(total: usize, amount: usize, capacity: usize): (usize, bool) {
-    if total > capacity || amount > capacity - total {
-        return usize(0), false
-    }
-    return total + amount, true
-}
-
-status_phrases: StaticMap[u16]string = {
-    100: "Continue", 101: "Switching Protocols", 102: "Processing",
-    103: "Early Hints", 200: "OK", 201: "Created", 202: "Accepted",
-    203: "Non-Authoritative Information", 204: "No Content", 205: "Reset Content",
-    206: "Partial Content", 207: "Multi-Status", 208: "Already Reported",
-    226: "IM Used", 300: "Multiple Choices", 301: "Moved Permanently",
-    302: "Found", 303: "See Other", 304: "Not Modified", 305: "Use Proxy",
-    307: "Temporary Redirect", 308: "Permanent Redirect", 400: "Bad Request",
-    401: "Unauthorized", 402: "Payment Required", 403: "Forbidden",
-    404: "Not Found", 405: "Method Not Allowed", 406: "Not Acceptable",
-    407: "Proxy Authentication Required", 408: "Request Timeout", 409: "Conflict",
-    410: "Gone", 411: "Length Required", 412: "Precondition Failed",
-    413: "Content Too Large", 414: "URI Too Long", 415: "Unsupported Media Type",
-    416: "Range Not Satisfiable", 417: "Expectation Failed", 418: "I'm a Teapot",
-    421: "Misdirected Request", 422: "Unprocessable Content", 423: "Locked",
-    424: "Failed Dependency", 425: "Too Early", 426: "Upgrade Required",
-    428: "Precondition Required", 429: "Too Many Requests",
-    431: "Request Header Fields Too Large", 451: "Unavailable For Legal Reasons",
-    500: "Internal Server Error", 501: "Not Implemented", 502: "Bad Gateway",
-    503: "Service Unavailable", 504: "Gateway Timeout",
-    505: "HTTP Version Not Supported", 506: "Variant Also Negotiates",
-    507: "Insufficient Storage", 508: "Loop Detected", 510: "Not Extended",
-    511: "Network Authentication Required",
-}
-
-/* Returns the conventional reason phrase for a known status code. Unknown
- * codes return an empty string. StaticMap misses are canonical-null strings,
- * so this public boundary converts that intrinsic zero to the historic "".
- */
-pub status(code: u16): string {
-    phrase: string = status_phrases[code]
-    if phrase == null { return "" }
-    return phrase
-}
-
-/* Serializes this request into caller-owned storage. Returns the byte count on
- * success; on `FormatErr`, `output` is unchanged. Output must not overlap
- * the request's method, target, headers, or body.
- */
-pub Request.format(output: mut []u8): (usize, Error) {
-    if self.method.len == 0 {
-        return 0, FormatErr.method
-    }
-    for i: usize in 0 .. self.method.len {
-        if !is_token(self.method[i]) {
-            return 0, FormatErr.method
-        }
-    }
-    if self.target.len == 0 {
-        return 0, FormatErr.target
-    }
-    for i: usize in 0 .. self.target.len {
-        if self.target[i] <= 32 || self.target[i] == 127 {
-            return 0, FormatErr.target
-        }
-    }
-    total: usize = 0
-    ok: bool
-    total, ok = add_size(total, self.method.len, output.len)
-    if ok { total, ok = add_size(total, 1, output.len) }
-    if ok { total, ok = add_size(total, self.target.len, output.len) }
-    if ok { total, ok = add_size(total, 11, output.len) }
-
-    for i: usize in 0 .. self.headers.len {
-        header: Header = self.headers[i]
-        if header.name.len == 0 {
-            return 0, FormatErr.header_name
-        }
-        for j: usize in 0 .. header.name.len {
-            if !is_token(header.name[j]) {
-                return 0, FormatErr.header_name
-            }
-        }
-        for j: usize in 0 .. header.value.len {
-            if header.value[j] == 0 || header.value[j] == 10 || header.value[j] == 13 {
-                return 0, FormatErr.header_value
-            }
-        }
-        if ok { total, ok = add_size(total, header.name.len, output.len) }
-        if ok { total, ok = add_size(total, 2, output.len) }
-        if ok { total, ok = add_size(total, header.value.len, output.len) }
-        if ok { total, ok = add_size(total, 2, output.len) }
-    }
-    if ok { total, ok = add_size(total, 2, output.len) }
-    if ok { total, ok = add_size(total, self.body.len, output.len) }
-    if !ok {
-        return 0, FormatErr.capacity
-    }
-
-    at: usize = 0
-    start: [4]string = [self.method, " ", self.target, " HTTP/1.1\r\n"]
-    written: usize, fit: bool = str.concat(start[..], output[at..])
-    if !fit { return 0, FormatErr.capacity }
-    at += written
-    for i: usize in 0 .. self.headers.len {
-        name: string = self.headers[i].name
-        value: string = self.headers[i].value
-        field: [4]string = [name, ": ", value, "\r\n"]
-        written, fit = str.concat(field[..], output[at..])
-        if !fit { return 0, FormatErr.capacity }
-        at += written
-    }
-    mem.copy(output[at..at + 2], "\r\n")
-    at += 2
-    mem.copy(output[at..at + self.body.len], self.body)
-    at += self.body.len
-    return at, null
-}
-
-/* Formats this response into caller-owned storage. Returns the byte count on
- * success; on `FormatErr`, `output` is unchanged.
- */
-pub Response.format(output: mut []u8): (usize, Error) {
-    if self.version_minor > 1 {
-        return 0, FormatErr.version
-    }
-    if self.status < 100 || self.status > 999 {
-        return 0, FormatErr.status
-    }
-    reason: string = self.reason
-    if reason == null {
-        reason = status(self.status)
-    }
-    for i: usize in 0 .. reason.len {
-        if (reason[i] < 32 && reason[i] != 9) || reason[i] == 127 {
-            return 0, FormatErr.reason
-        }
-    }
-    total: usize = 13
-    ok: bool = total <= output.len
-    total, ok = add_size(total, reason.len, output.len)
-    if ok { total, ok = add_size(total, 2, output.len) }
-
-    for i: usize in 0 .. self.headers.len {
-        header: Header = self.headers[i]
-        if header.name.len == 0 {
-            return 0, FormatErr.header_name
-        }
-        for j: usize in 0 .. header.name.len {
-            if !is_token(header.name[j]) {
-                return 0, FormatErr.header_name
-            }
-        }
-        for j: usize in 0 .. header.value.len {
-            if header.value[j] == 0 || header.value[j] == 10 || header.value[j] == 13 {
-                return 0, FormatErr.header_value
-            }
-        }
-        if ok { total, ok = add_size(total, header.name.len, output.len) }
-        if ok { total, ok = add_size(total, 2, output.len) }
-        if ok { total, ok = add_size(total, header.value.len, output.len) }
-        if ok { total, ok = add_size(total, 2, output.len) }
-    }
-    if ok { total, ok = add_size(total, 2, output.len) }
-    if ok { total, ok = add_size(total, self.body.len, output.len) }
-    if !ok {
-        return 0, FormatErr.capacity
-    }
-
-    at: usize = 0
-    mem.copy(output[at..at + 7], "HTTP/1.")
-    at += 7
-    output[at] = 48 + self.version_minor
-    at += 1
-    output[at] = 32
-    at += 1
-    output[at] = 48 + u8(self.status / 100)
-    output[at + 1] = 48 + u8((self.status / 10) % 10)
-    output[at + 2] = 48 + u8(self.status % 10)
-    at += 3
-    output[at] = 32
-    at += 1
-    reason_line: [2]string = [reason, "\r\n"]
-    written: usize, fit: bool = str.concat(reason_line[..], output[at..])
-    if !fit { return 0, FormatErr.capacity }
-    at += written
-    for i: usize in 0 .. self.headers.len {
-        name: string = self.headers[i].name
-        value: string = self.headers[i].value
-        field: [4]string = [name, ": ", value, "\r\n"]
-        written, fit = str.concat(field[..], output[at..])
-        if !fit { return 0, FormatErr.capacity }
-        at += written
-    }
-    mem.copy(output[at..at + 2], "\r\n")
-    at += 2
-    mem.copy(output[at..at + self.body.len], self.body)
-    at += self.body.len
-    return at, null
-}
-
 LineStatus: enum {
     incomplete,
     complete,
@@ -696,7 +376,7 @@ is_chunk_ext(text: string): bool {
         at += 1
         at = skip_ows(text, at)
         start: usize = at
-        for at < text.len && is_token(text[at]) {
+        for at < text.len && message.is_token(text[at]) {
             at += 1
         }
         if at == start {
@@ -734,7 +414,7 @@ is_chunk_ext(text: string): bool {
                 }
             } else {
                 start = at
-                for at < text.len && is_token(text[at]) {
+                for at < text.len && message.is_token(text[at]) {
                     at += 1
                 }
                 if at == start {
@@ -817,7 +497,7 @@ pub mut RequestParser.parse(
             method: string = input[self.line_start..first]
             target: string = input[first + 1..second]
             for i: usize in 0 .. method.len {
-                if !is_token(method[i]) { return mut self.syntax_failure() }
+                if !message.is_token(method[i]) { return mut self.syntax_failure() }
             }
             for i: usize in 0 .. target.len {
                 if target[i] <= 32 || target[i] == 127 { return mut self.syntax_failure() }
@@ -866,7 +546,7 @@ pub mut RequestParser.parse(
             name: string = input[self.line_start..colon]
             raw: string = input[colon + 1..self.line_stop]
             for i: usize in 0 .. name.len {
-                if !is_token(name[i]) { return mut self.syntax_failure() }
+                if !message.is_token(name[i]) { return mut self.syntax_failure() }
             }
             for i: usize in 0 .. raw.len {
                 if (raw[i] < 32 && raw[i] != 9) || raw[i] == 127 {
@@ -1004,7 +684,7 @@ pub mut RequestParser.parse(
                 return mut self.syntax_failure()
             }
             for i: usize in self.line_start .. colon {
-                if !is_token(input[i]) { return mut self.syntax_failure() }
+                if !message.is_token(input[i]) { return mut self.syntax_failure() }
             }
             for i: usize in colon + 1 .. self.line_stop {
                 if (input[i] < 32 && input[i] != 9) || input[i] == 127 {
@@ -1158,7 +838,7 @@ pub mut ResponseParser.parse(
             name: string = input[self.line_start..colon]
             raw: string = input[colon + 1..self.line_stop]
             for i: usize in 0 .. name.len {
-                if !is_token(name[i]) { return mut self.syntax_failure() }
+                if !message.is_token(name[i]) { return mut self.syntax_failure() }
             }
             for i: usize in 0 .. raw.len {
                 if (raw[i] < 32 && raw[i] != 9) || raw[i] == 127 {
@@ -1313,7 +993,7 @@ pub mut ResponseParser.parse(
                 return mut self.syntax_failure()
             }
             for i: usize in self.line_start .. colon {
-                if !is_token(input[i]) { return mut self.syntax_failure() }
+                if !message.is_token(input[i]) { return mut self.syntax_failure() }
             }
             for i: usize in colon + 1 .. self.line_stop {
                 if (input[i] < 32 && input[i] != 9) || input[i] == 127 {
@@ -1334,458 +1014,4 @@ pub mut ResponseParser.parse(
         }
         return ResponseResult.syntax
     }
-}
-
-/* Adjusts `slice` to at least `needed` elements, doubling its length when that
- * is larger. A null slice allocates. On allocation failure or count overflow
- * the caller's slice is returned unchanged with false; the original stays
- * live, so check the flag before replacing the caller's slice.
- */
-mem_adjust[T](slice: mut []T, needed: usize): (mut []T, bool) {
-    if slice.len >= needed { return slice, true }
-    capacity: usize = slice.len * 2
-    if capacity < slice.len { return slice, false }
-    if capacity < needed { capacity = needed }
-    if capacity == 0 { capacity = 1 }
-    if slice == null {
-        fresh: mut []T = mem.alloc[T](capacity)
-        if fresh == null {
-            return slice, false
-        }
-        return fresh, true
-    }
-    bigger: mut []T = mem.realloc[T](slice, capacity)
-    if bigger == null { return slice, false }
-    return bigger, true
-}
-
-connect_url(parsed: Url, mut storage: Storage, resize: bool): (tcp.Conn, Error) {
-    zero: tcp.Conn = tcp.Conn {
-        socket = net.Socket(0),
-        interest = tcp.Interest.none,
-        send_offset = usize(0),
-    }
-    if resize {
-        mem_addresses: mut []net.Addr4, addr_ok: bool = mem_adjust[net.Addr4](storage.addresses, 4)
-        if !addr_ok { return zero, ClientErr.allocation }
-        storage.addresses = mem_addresses
-    }
-
-    count: usize, resolve_err: Error = net.resolve4(parsed.host, parsed.port, mut storage.addresses[..])
-    if resolve_err != null { return zero, resolve_err }
-    if count == 0 { return zero, ClientErr.address }
-
-    conn: tcp.Conn = tcp.Conn {
-        socket = net.Socket(0),
-        interest = tcp.Interest.none,
-        send_offset = usize(0),
-    }
-
-    conn_err: Error = ClientErr.address
-
-    is_connected: bool = false
-    for i: usize in 0 .. count {
-        conn, conn_err = tcp.connect(storage.addresses[i])
-        if conn_err == null {
-            is_connected = true
-            break
-        }
-    }
-    if !is_connected { return zero, conn_err }
-    return conn, null
-}
-
-tcp_receive(connection: tcp.Conn, destination: mut []u8): (int, Error) {
-    count: int, err: Error = net.receive(connection.socket, destination)
-    return count, err
-}
-
-exchange[C](connection: C, raw: tcp.Conn,
-    send: (C, []u8): (usize, Error),
-    receive: (C, mut []u8): (int, Error),
-    parsed: Url, mut storage: Storage, resize: bool): (Response, Error) {
-
-    /* The request target is known exactly: size to fit before writing. */
-    target_parts: [2]string = [parsed.path, parsed.query]
-    if resize {
-        mem_target: mut []u8, target_ok: bool = mem_adjust[u8](storage.target, parsed.path.len + parsed.query.len)
-        if !target_ok {
-            tcp.close(mut raw)
-            return Response{}, ClientErr.allocation
-        }
-        storage.target = mem_target
-    }
-    target_count: usize, fit: bool = str.concat(target_parts[..], mut storage.target[..])
-    if !fit {
-        tcp.close(mut raw)
-        return Response{}, ClientErr.target_capacity
-    }
-
-    fields: [2]Header = [
-        Header {name = "Host", value = parsed.host},
-        Header {name = "Connection", value = "close"},
-    ]
-    request: Request = Request {
-        method = method_get,
-        target = storage.target[..target_count],
-        headers = fields[..],
-    }
-
-    output_count: usize, format_err: Error = request.format(mut storage.output[..])
-    for resize && format_err == FormatErr.capacity {
-        mem_output: mut []u8, output_ok: bool = mem_adjust[u8](storage.output, storage.output.len + 1)
-        if !output_ok {
-            tcp.close(mut raw)
-            return Response{}, ClientErr.allocation
-        }
-        storage.output = mem_output
-        output_count, format_err = request.format(mut storage.output[..])
-    }
-    if format_err != null {
-        tcp.close(mut raw)
-        return Response{}, format_err
-    }
-
-    _: usize, send_err: Error = send(connection, storage.output[..output_count])
-    if send_err != null {
-        tcp.close(mut raw)
-        return Response{}, send_err
-    }
-
-    occupied: usize = 0
-    parser: ResponseParser = ResponseParser {
-        phase = ResponsePhase.status,
-        framing = ResponseFraming.undecided,
-    }
-    parse_pending: bool = false
-    eof: bool = false
-
-    for {
-        if !parse_pending {
-            if occupied == storage.input.len {
-                if !resize {
-                    tcp.close(mut raw)
-                    return Response{}, ClientErr.response
-                }
-                mem_input: mut []u8, input_ok: bool = mem_adjust[u8](storage.input, storage.input.len + 1)
-                if !input_ok {
-                    tcp.close(mut raw)
-                    return Response{}, ClientErr.allocation
-                }
-                storage.input = mem_input
-
-                /* Header views point into input. Reparse the retained bytes
-                 * after a moving reallocation before exposing any views.
-                 */
-                parser = ResponseParser {
-                    phase = ResponsePhase.status,
-                    framing = ResponseFraming.undecided,
-                }
-            }
-
-            received: int
-            received, recv_err: Error = receive(connection, mut storage.input[occupied..])
-            if recv_err != null {
-                tcp.close(mut raw)
-                return Response{}, recv_err
-            }
-            occupied += usize(received)
-            eof = received == 0
-        }
-        parse_pending = false
-
-        result: ResponseResult = mut parser.parse(
-            storage.input[..occupied],
-            mut storage.headers[..],
-            mut storage.body[..],
-            eof,
-            false,
-        )
-
-        switch result {
-            ResponseResult.complete(response: Response) {
-                tcp.close(mut raw)
-                return response, null
-            }
-            ResponseResult.progress(value: ResponseProgress) {}
-            ResponseResult.capacity(kind: ResponseCapacity) {
-                if !resize {
-                    tcp.close(mut raw)
-                    return Response{}, ClientErr.response
-                }
-                if kind == ResponseCapacity.headers {
-                    mem_headers: mut []Header, headers_ok: bool = mem_adjust[Header](storage.headers, storage.headers.len + 1)
-                    if !headers_ok {
-                        tcp.close(mut raw)
-                        return Response{}, ClientErr.allocation
-                    }
-                    storage.headers = mem_headers
-                } else {
-                    /* Body size is exact when the response states its length;
-                     * otherwise adjust by the pending bytes, doubled. */
-                    needed: usize = parser.body_count + (occupied - parser.input_offset)
-                    if parser.framing == ResponseFraming.content_length {
-                        needed = parser.content_length
-                    } else if parser.framing == ResponseFraming.chunked {
-                        needed = parser.body_count + parser.chunk_remaining
-                    }
-                    mem_body: mut []u8, body_ok: bool = mem_adjust[u8](storage.body, needed)
-                    if !body_ok {
-                        tcp.close(mut raw)
-                        return Response{}, ClientErr.allocation
-                    }
-                    storage.body = mem_body
-                }
-                parse_pending = true
-            }
-            else {
-                tcp.close(mut raw)
-                return Response{}, ClientErr.response
-            }
-        }
-    }
-}
-
-get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Error) {
-    parsed: Url, url_err: Error = parse_url_for(url, false)
-    if url_err != null { return Response{}, url_err }
-    connection: tcp.Conn, connect_err: Error = connect_url(parsed, mut storage, resize)
-    if connect_err != null { return Response{}, connect_err }
-    response: Response, err: Error = exchange[tcp.Conn](connection, connection,
-        tcp.send_all, tcp_receive, parsed, mut storage, resize)
-    return response, err
-}
-
-@extern("tls")
-get_tls_with_storage(url: string, config: TlsConfig, mut storage: Storage, resize: bool): (Response, Error) {
-    parsed: Url, url_err: Error = parse_url_for(url, true)
-    if url_err != null { return Response{}, url_err }
-    if resize {
-        if storage.tls_context == null {
-            storage.tls_context = mem.alloc(int(tls.context_size()),
-                int(tls.context_align()))
-            if storage.tls_context == null { return Response{}, ClientErr.allocation }
-        }
-        mem_records: mut []u8, records_ok: bool = mem_adjust[u8](
-            storage.tls_records, tls.record_size())
-        if !records_ok { return Response{}, ClientErr.allocation }
-        storage.tls_records = mem_records
-    }
-    connection: tcp.Conn, connect_err: Error = connect_url(parsed, mut storage, resize)
-    if connect_err != null { return Response{}, connect_err }
-    secured: tls.Conn, tls_err: Error = tls.connect(connection, parsed.host,
-        config.trust_anchor, tls.Storage {
-            context = storage.tls_context,
-            records = storage.tls_records,
-        })
-    if tls_err != null {
-        tcp.close(mut connection)
-        return Response{}, tls_err
-    }
-    response: Response, err: Error = exchange[tls.Conn](secured, connection,
-        tls.send_all, tls.receive, parsed, mut storage, resize)
-    return response, err
-}
-
-/* Writes one redirect URL into non-overlapping caller storage. Relative
- * references are resolved against the preceding absolute URL.
- */
-resolve_redirect(current: string, location: string, destination: mut []u8): (usize, bool) {
-    if location.len == 0 { return 0, false }
-    for i: usize in 0 .. location.len {
-        if ascii.is_control(location[i]) || location[i] == 35 {
-            return 0, false
-        }
-    }
-
-    absolute: bool = (location.len >= 7 && mem.equal(location[..7], "http://")) ||
-        (location.len >= 8 && mem.equal(location[..8], "https://"))
-    if absolute {
-        _: Url, err: Error = parse_url(location)
-        if err != null || destination.len < location.len { return 0, false }
-        mem.copy(destination[..location.len], location)
-        return location.len, true
-    }
-
-    secure: bool = current.len >= 8 && mem.equal(current[..8], "https://")
-    base: Url, base_err: Error = parse_url_for(current, secure)
-    if base_err != null { return 0, false }
-
-    scheme: string = "http://"
-    default_port: u16 = 80
-    if secure {
-        scheme = "https://"
-        default_port = 443
-    }
-
-    at: usize = 0
-    if location.len >= 2 && mem.equal(location[..2], "//") {
-        if destination.len < scheme.len + location.len - 2 { return 0, false }
-        mem.copy(destination[..scheme.len], scheme)
-        at = scheme.len
-        mem.copy(destination[at..at + location.len - 2], location[2..])
-        at += location.len - 2
-    } else {
-        if destination.len < scheme.len + base.host.len { return 0, false }
-        mem.copy(destination[..scheme.len], scheme)
-        at = scheme.len
-        mem.copy(destination[at..at + base.host.len], base.host)
-        at += base.host.len
-        if base.port != default_port {
-            if at == destination.len { return 0, false }
-            destination[at] = 58
-            at += 1
-            port_count: usize, port_ok: bool = str.format(mut destination[at..], uint(base.port))
-            if !port_ok { return 0, false }
-            at += port_count
-        }
-
-        if location[0] == 47 {
-            if location.len > destination.len - at { return 0, false }
-            mem.copy(destination[at..at + location.len], location)
-            at += location.len
-        } else if location[0] == 63 {
-            if base.path.len + location.len > destination.len - at { return 0, false }
-            mem.copy(destination[at..at + base.path.len], base.path)
-            at += base.path.len
-            mem.copy(destination[at..at + location.len], location)
-            at += location.len
-        } else {
-            directory_count: usize = 1
-            for i: usize in 0 .. base.path.len {
-                if base.path[i] == 47 { directory_count = i + 1 }
-            }
-            if directory_count + location.len > destination.len - at { return 0, false }
-            mem.copy(destination[at..at + directory_count], base.path[..directory_count])
-            at += directory_count
-            mem.copy(destination[at..at + location.len], location)
-            at += location.len
-        }
-    }
-
-    _: Url, result_err: Error = parse_url(destination[..at])
-    if result_err != null { return 0, false }
-    return at, true
-}
-
-redirect_location(response: Response): string {
-    for i: usize in 0 .. response.headers.len {
-        if ascii.is_equal(response.headers[i].name, "Location", false) {
-            return response.headers[i].value
-        }
-    }
-    return null
-}
-
-is_redirect(status_code: u16): bool {
-    return status_code == 301 || status_code == 302 || status_code == 303 ||
-        status_code == 307 || status_code == 308
-}
-
-@extern("tls")
-get_redirecting(url: string, config: TlsConfig, policy: RedirectPolicy, mut client: Client): (Response, Error) {
-    mem_url: mut []u8, url_ok: bool = mem_adjust[u8](client.storage[0].url, url.len)
-    if !url_ok { return Response{}, ClientErr.allocation }
-    client.storage[0].url = mem_url
-    mem.copy(client.storage[0].url[..url.len], url)
-    current_count: usize = url.len
-    followed: usize = 0
-
-    for {
-        current: string = client.storage[0].url[..current_count]
-        secure: bool = current.len >= 8 && mem.equal(current[..8], "https://")
-        response: Response = Response{}
-        err: Error = null
-        if secure {
-            response, err = get_tls_with_storage(current, config,
-                mut client.storage[0], true)
-        } else {
-            response, err = get_with_storage(current, mut client.storage[0], true)
-        }
-        if err != null { return Response{}, err }
-        if !is_redirect(response.status) { return response, null }
-        location: string = redirect_location(response)
-        if location == null || location.len == 0 { return response, null }
-
-        /* Keep the current URL above the new result so resolution remains
-         * valid even when reallocating or following several relative hops.
-         */
-        needed: usize = current_count * 2
-        if needed < current_count { return Response{}, ClientErr.allocation }
-        with_location: usize = needed + location.len
-        if with_location < needed { return Response{}, ClientErr.allocation }
-        needed = with_location + 32
-        if needed < with_location { return Response{}, ClientErr.allocation }
-        larger: mut []u8, larger_ok: bool = mem_adjust[u8](client.storage[0].url, needed)
-        if !larger_ok { return Response{}, ClientErr.allocation }
-        client.storage[0].url = larger
-        shifted_at: usize = client.storage[0].url.len - current_count
-        for i: usize in 0 .. current_count {
-            source_at: usize = current_count - 1 - i
-            client.storage[0].url[shifted_at + source_at] = client.storage[0].url[source_at]
-        }
-        previous: string = client.storage[0].url[shifted_at..]
-        next_count: usize, valid: bool = resolve_redirect(previous, location,
-            mut client.storage[0].url[..shifted_at])
-        if !valid { return response, null }
-        next_secure: bool = next_count >= 8 &&
-            mem.equal(client.storage[0].url[..8], "https://")
-        if secure && !next_secure { return Response{}, RedirectErr.downgrade }
-        if followed == policy.limit { return Response{}, RedirectErr.limit }
-        followed += 1
-        current_count = next_count
-    }
-}
-
-pub get(url: string, storage: Storage): (Response, Error) {
-    workspace: Storage = storage
-    response: Response, err: Error = get_with_storage(url, mut workspace, false)
-    return response, err
-}
-
-@extern("tls")
-pub get(url: string, config: TlsConfig, storage: Storage): (Response, Error) {
-    workspace: Storage = storage
-    response: Response, err: Error = get_tls_with_storage(url, config, mut workspace, false)
-    return response, err
-}
-
-@extern("tls")
-pub get(url: string, mut client: Client): (Response, Error) {
-    if client.storage == null { return Response{}, ClientErr.allocation }
-    if url.len >= 8 && mem.equal(url[..8], "https://") {
-        response: Response, err: Error = get_tls_with_storage(url, TlsConfig{},
-            mut client.storage[0], true)
-        return response, err
-    }
-    response: Response, err: Error = get_with_storage(url, mut client.storage[0], true)
-    return response, err
-}
-
-@extern("tls")
-pub get(url: string, config: TlsConfig, mut client: Client): (Response, Error) {
-    if client.storage == null { return Response{}, ClientErr.allocation }
-    response: Response, err: Error = get_tls_with_storage(url, config,
-        mut client.storage[0], true)
-    return response, err
-}
-
-@extern("tls")
-pub get(url: string, policy: RedirectPolicy, mut client: Client): (Response, Error) {
-    if client.storage == null { return Response{}, ClientErr.allocation }
-    _: Url, url_err: Error = parse_url(url)
-    if url_err != null { return Response{}, url_err }
-    response: Response, err: Error = get_redirecting(url, TlsConfig{}, policy,
-        mut client)
-    return response, err
-}
-
-@extern("tls")
-pub get(url: string, config: TlsConfig, policy: RedirectPolicy, mut client: Client): (Response, Error) {
-    if client.storage == null { return Response{}, ClientErr.allocation }
-    _: Url, url_err: Error = parse_url_for(url, true)
-    if url_err != null { return Response{}, url_err }
-    response: Response, err: Error = get_redirecting(url, config, policy,
-        mut client)
-    return response, err
 }

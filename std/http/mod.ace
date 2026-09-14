@@ -1,0 +1,67 @@
+/* http — HTTP/1.1 framing and owning blocking clients. */
+
+import client: "./client.ace"
+import message: "./format.ace"
+import parsing: "./parse.ace"
+import redirect: "./redirect.ace"
+import transport: "./transport.ace"
+import secure_http: "./tls.ace"
+
+pub Url: type = parsing.Url
+pub UrlErr: type = parsing.UrlErr
+pub FormatErr: type = message.FormatErr
+pub ClientErr: type = transport.ClientErr
+pub RedirectErr: type = redirect.RedirectErr
+pub Header: type = message.Header
+pub Request: type = message.Request
+pub Response: type = message.Response
+pub RequestPhase: type = parsing.RequestPhase
+pub RequestFraming: type = parsing.RequestFraming
+pub RequestCapacity: type = parsing.RequestCapacity
+pub RequestParser: type = parsing.RequestParser
+pub RequestProgress: type = parsing.RequestProgress
+pub RequestResult: type = parsing.RequestResult
+pub ResponsePhase: type = parsing.ResponsePhase
+pub ResponseFraming: type = parsing.ResponseFraming
+pub ResponseCapacity: type = parsing.ResponseCapacity
+pub ResponseParser: type = parsing.ResponseParser
+pub ResponseProgress: type = parsing.ResponseProgress
+pub ResponseResult: type = parsing.ResponseResult
+pub Storage: type = transport.Storage
+pub TlsConfig: type = secure_http.TlsConfig
+pub RedirectPolicy: type = redirect.RedirectPolicy
+pub Context: type = client.Context
+pub Client: type = client.Client
+
+pub method_connect: const string = message.method_connect
+pub method_delete: const string = message.method_delete
+pub method_get: const string = message.method_get
+pub method_head: const string = message.method_head
+pub method_options: const string = message.method_options
+pub method_patch: const string = message.method_patch
+pub method_post: const string = message.method_post
+pub method_put: const string = message.method_put
+pub method_trace: const string = message.method_trace
+
+pub parse_url(value: string): (Url, Error) {
+    parsed: Url, err: Error = parsing.parse_url(value)
+    return parsed, err
+}
+
+pub status(code: u16): string { return message.status(code) }
+pub context_new(): Context { return client.context_new() }
+pub context_wipe(mut context: Context) { client.context_wipe(mut context) }
+pub client_new(): Client { return client.client_new() }
+pub client_wipe(mut value: Client) { client.client_wipe(mut value) }
+
+pub get(value: string, mut context: Context): (Response, Error) {
+    response: Response, err: Error = client.get(value, mut context)
+    return response, err
+}
+
+@extern("tls")
+pub get(value: string, mut value_client: Client): (Response, Error) {
+    response: Response, err: Error = client.get(value, mut value_client)
+    return response, err
+}
+

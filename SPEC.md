@@ -910,25 +910,23 @@ or making related facade and target APIs differ.
       retain neither socket nor buffer. `no_body` makes HEAD-style response
       semantics explicit. Connection creation, DNS, retry, TLS, reuse, and
       keep-alive policy remain with the client caller.
-    - One-shot client ergonomics have allocation-free and owning overloads.
+    - One-shot client ergonomics use two owning entry points.
       `Storage: struct { addresses: mut []net.Addr4, output: mut []u8, target:
       mut []u8, input: mut []u8, headers: mut []Header, body: mut []u8, url:
       mut []u8 = null }`
-      groups the neutral workspace for one HTTP exchange. `get(url: string,
-      storage: Storage): (Response, Error)` and the corresponding `post`
-      overload use only caller-owned capacities and never allocate.
-      `Client: struct { storage: mut []Storage }` is a handle owning one
-      heap-allocated workspace. `client_new(): Client` allocates and
-      canonical-zero initializes that workspace, returning a null handle on
-      allocation failure. `client_wipe(mut client: Client)` releases the
-      workspace's lazily allocated slices, releases the workspace itself, and
-      restores the handle to canonical zero; and
-      `get(url: string, mut client: Client): (Response, Error)` plus the
-      corresponding `post` overload grow it automatically through `mem`.
-      Allocation failure is explicit. Plain `Storage` has no cleanup operation
-      because its slices may refer to stack or external storage. Returned views
-      borrow the supplied storage; views returned through a `Client` remain
-      valid only until its next mutating operation or cleanup. Both operations
+      remains the internal neutral workspace for one HTTP exchange.
+      `Context: struct { storage: mut []Storage, redirects: RedirectPolicy }`
+      owns and grows the plaintext workspace through `mem` and carries HTTP
+      policy. `context_new` constructs it and `context_wipe` releases it.
+      `Client: struct { context: Context, tls: TlsConfig }` composes that same
+      HTTP state with secure-transport configuration; `client_new` and
+      `client_wipe` manage the composed value. The exact public overloads are
+      `get(url: string, mut context: Context): (Response, Error)`, which accepts
+      only plaintext HTTP and has no TLS external-component reference, and
+      `get(url: string, mut client: Client): (Response, Error)`, which accepts
+      HTTP or HTTPS and carries `@extern("tls")`. Allocation failure is explicit.
+      Returned views remain valid only until the corresponding context or
+      client is next mutated or wiped. Both operations
       parse the absolute plaintext URL, resolve its host into the supplied address
       storage, try resolved addresses in order with a fresh blocking TCP
       connection, perform exactly one request and response, and close the
@@ -941,11 +939,9 @@ or making related facade and target APIs differ.
       compression, proxy, TLS, or user-header policy. Request formatting,
       response parsing, DNS, TCP, close, and capacity failures preserve the
       existing error domains, with an unsuccessful address sequence returning
-      the final connection error. Rationale: `Storage` preserves exact capacity
-      control for allocation-free and server composition, while `Client` makes
-      ownership, resizing, lifetime, and cleanup explicit at a compact call
-      site. The narrow fixed methods avoid introducing a premature options or
-      client-policy object.
+      the final connection error. Rationale: the two entry points make plaintext
+      versus TLS linkage explicit while composition avoids an overload for every
+      policy combination.
     - Parser failures mapped through those conveniences use the shared public
       `SyntaxErr`, `FramingErr`, and `CapacityErr` domains. Syntax and framing
       variants map to their matching domain, and premature EOF is framing
@@ -983,8 +979,8 @@ or making related facade and target APIs differ.
     - HTTPS is selected by the URL in `http`, not exposed as a separate
       protocol module. `get(url, mut client)` accepts `http://` and `https://`,
       lazily retains its ordinary and TLS workspace, and uses system trust for
-      HTTPS. `get(url, config: TlsConfig, mut client)` retains the owning path
-      while allowing a trust override. Canonical `TlsConfig{}` selects system
+      HTTPS. Assigning `client.tls` provides a trust override without another
+      overload. Canonical `TlsConfig{}` selects system
       trust; a nonempty DER `trust_anchor` replaces it for private roots,
       deterministic tests, and embedded or specialized use. Hostname
       verification and SNI are mandatory in both modes. `Storage` adds
@@ -1001,10 +997,11 @@ or making related facade and target APIs differ.
       nonblocking HTTPS remain additive. Address
       family is a transport property, so future IPv6 does not duplicate the
       protocol API.
-    - Redirect following is an opt-in owning-client operation.
-      `RedirectPolicy: struct { limit: usize = 10 }` and the overloads
-      `get(url, policy, mut client)` and `get(url, config, policy, mut client)`
-      make both bounded extra network work and a TLS trust override explicit.
+    - Redirect following is opt-in context policy.
+      `RedirectPolicy: struct { limit: usize = 0 }` is stored as
+      `context.redirects`; zero performs exactly one exchange, while a nonzero
+      value opts into at most that many followed responses. A secure `Client`
+      uses `client.context.redirects` and `client.tls` together.
       Statuses 301, 302, 303, 307, and 308 are followed only with a nonempty,
       valid `Location`; otherwise the ordinary 3xx response is returned.
       Absolute HTTP/HTTPS, scheme-relative, absolute-path, query-only, and
