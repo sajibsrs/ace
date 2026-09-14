@@ -4,6 +4,7 @@ import mem
 import net
 import tcp
 import str
+import secure: "../tls.ace"
 import message: "./format.ace"
 import parsing: "./parse.ace"
 
@@ -18,6 +19,10 @@ pub ResponseCapacity: type = parsing.ResponseCapacity
 pub ResponseProgress: type = parsing.ResponseProgress
 pub Url: type = parsing.Url
 pub UrlErr: type = parsing.UrlErr
+
+pub TlsConfig: struct {
+    trust_anchor: []u8 = null,
+}
 
 FormatErr: type = message.FormatErr
 method_get: const string = message.method_get
@@ -87,7 +92,6 @@ pub connect_url(parsed: Url, mut storage: Storage, resize: bool): (tcp.Conn, Err
     }
 
     conn_err: Error = ClientErr.address
-
     is_connected: bool = false
     for i: usize in 0 .. count {
         conn, conn_err = tcp.connect(storage.addresses[i])
@@ -258,5 +262,36 @@ pub get_with_storage(url: string, mut storage: Storage, resize: bool): (Response
     if connect_err != null { return Response{}, connect_err }
     response: Response, err: Error = exchange[tcp.Conn](connection, connection,
         tcp.send_all, tcp_receive, parsed, mut storage, resize)
+    return response, err
+}
+
+@extern("tls")
+pub get_with_storage(url: string, config: TlsConfig, mut storage: Storage, resize: bool): (Response, Error) {
+    parsed: Url, url_err: Error = parsing.parse_url_for(url, true)
+    if url_err != null { return Response{}, url_err }
+    if resize {
+        if storage.tls_context == null {
+            storage.tls_context = mem.alloc(int(secure.context_size()),
+                int(secure.context_align()))
+            if storage.tls_context == null { return Response{}, ClientErr.allocation }
+        }
+        mem_records: mut []u8, records_ok: bool = mem_adjust[u8](
+            storage.tls_records, secure.record_size())
+        if !records_ok { return Response{}, ClientErr.allocation }
+        storage.tls_records = mem_records
+    }
+    connection: tcp.Conn, connect_err: Error = connect_url(parsed, mut storage, resize)
+    if connect_err != null { return Response{}, connect_err }
+    secured: secure.Conn, tls_err: Error = secure.connect(connection, parsed.host,
+        config.trust_anchor, secure.Storage {
+            context = storage.tls_context,
+            records = storage.tls_records,
+        })
+    if tls_err != null {
+        tcp.close(mut connection)
+        return Response{}, tls_err
+    }
+    response: Response, err: Error = exchange[secure.Conn](secured, connection,
+        secure.send_all, secure.receive, parsed, mut storage, resize)
     return response, err
 }

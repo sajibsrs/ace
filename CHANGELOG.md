@@ -205,6 +205,11 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Standard library
 
+- Folded secure HTTP composition into the shared transport module and marked
+  its redirecting client helper with the TLS external component, preserving
+  standalone plaintext objects without a separate HTTP TLS file. Plaintext and
+  TLS redirect entry points are now private overloads over shared redirect
+  state preparation and advancement.
 - Reorganized `std/http` as a directory module with focused parsing,
   formatting, client, redirect, transport, and TLS implementation files, and
   replaced six `get` overloads with plaintext `Context` and

@@ -36,7 +36,6 @@ pub Request: struct {
     body: []u8 = null,
 }
 
-
 pub Response: struct {
     version_minor: u8 = 1,
     status: u16 = 200,

@@ -5,7 +5,6 @@ import message: "./format.ace"
 import parsing: "./parse.ace"
 import redirect: "./redirect.ace"
 import transport: "./transport.ace"
-import secure_http: "./tls.ace"
 
 pub Url: type = parsing.Url
 pub UrlErr: type = parsing.UrlErr
@@ -28,7 +27,7 @@ pub ResponseParser: type = parsing.ResponseParser
 pub ResponseProgress: type = parsing.ResponseProgress
 pub ResponseResult: type = parsing.ResponseResult
 pub Storage: type = transport.Storage
-pub TlsConfig: type = secure_http.TlsConfig
+pub TlsConfig: type = transport.TlsConfig
 pub RedirectPolicy: type = redirect.RedirectPolicy
 pub Context: type = client.Context
 pub Client: type = client.Client
@@ -66,4 +65,3 @@ pub get(value: string, mut client: Client): (Response, Error) {
     response: Response, err: Error = client.get(value, mut client)
     return response, err
 }
-
