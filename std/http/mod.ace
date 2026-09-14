@@ -49,8 +49,10 @@ pub parse_url(value: string): (Url, Error) {
 }
 
 pub status(code: u16): string { return message.status(code) }
+
 pub context_new(): Context { return client.context_new() }
 pub context_wipe(mut context: Context) { client.context_wipe(mut context) }
+
 pub client_new(): Client { return client.client_new() }
 pub client_wipe(mut value: Client) { client.client_wipe(mut value) }
 
@@ -60,8 +62,8 @@ pub get(value: string, mut context: Context): (Response, Error) {
 }
 
 @extern("tls")
-pub get(value: string, mut value_client: Client): (Response, Error) {
-    response: Response, err: Error = client.get(value, mut value_client)
+pub get(value: string, mut client: Client): (Response, Error) {
+    response: Response, err: Error = client.get(value, mut client)
     return response, err
 }
 
