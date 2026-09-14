@@ -1,121 +1,68 @@
 # AGENTS.md
 
-Operating rules for AI agents in this repository. `SPEC.md` is normative for the
-language. `CHANGELOG.md` is the sole implementation-history record.
+Rules for AI agents working on Ace, a systems language and bootstrap C11
+compiler. `SPEC.md` is normative; `CHANGELOG.md` is the sole implementation
+history.
 
-## Repository
+## Before working
 
-Ace is a systems programming language and its bootstrap C11 compiler. The
-language design is complete; compiler implementation and additive carving are
-active.
-
-## Read by task
-
-1. Read this file first.
-2. For design or carving, read `PHILOSOPHY.md`, the relevant `SPEC.md` sections,
-   and the active Decision Queue.
-3. For compiler work, read the relevant `SPEC.md` and `GRAMMAR.md` sections,
-   then search `CHANGELOG.md` and the implementation by topic.
-4. For standard-library work, inspect the relevant existing `std/` modules and
-   normative standard-library surface in `SPEC.md` before introducing helpers
-   or public operations. Reuse or compose existing operations when their
-   contracts fit; do not duplicate parsing, memory, text, or platform utilities
-   inside another module. Before adding a free helper, check whether explicit
-   generics, a type-owned method, or an overload expresses the operation with
-   clearer ownership and less duplication; do not default to free functions.
-5. For planning, read the active Decision Queue and relevant `TODO.md` entries.
-6. Read an entire document only when the task spans it. Human documentation in
-   `docs/` is for implemented behavior, not agent startup context.
+- Read this file first, then only the relevant source sections.
+- Design or carving: read `PHILOSOPHY.md`, `SPEC.md`, and the active Decision
+  Queue.
+- Compiler work: read `SPEC.md` and `GRAMMAR.md`, then search `CHANGELOG.md` and
+  the implementation by topic.
+- Standard-library work: inspect the relevant `std/` modules and normative
+  `SPEC.md` surface. Reuse existing operations; do not duplicate parsing,
+  memory, text, or platform utilities. Prefer explicit generics, type-owned
+  methods, or overloads over free helpers when ownership is clearer.
+- Planning: read the active Decision Queue and relevant `TODO.md` entries.
+- `docs/` describes implemented behavior; do not use it as design authority.
 
 ## Process
 
-- Work on one topic at a time in Decision Queue order. The owner makes language
-  decisions; agents do not resolve `[open]` or `[controversial]` items.
-- Propose before changing code: describe the issue and recommended solution,
-  then obtain owner permission. If options are viable, present them with a
-  recommendation.
-- Philosophy precedes semantics; semantics precede syntax and implementation.
-  Resolve contested designs by: performance > simplicity > modularity > compile
-  time > safety.
-- Record current normative rules and rationale in `SPEC.md`; keep only active
-  decisions in its queue. Record what was implemented and its essential approach
-  once, briefly, in `CHANGELOG.md`.
-- `TODO.md` is a non-normative survey. Promote items only through the Decision
-  Queue, updating the survey in the same edit.
-- Split work likely to exceed 100k tokens into 2–3 owner-approved steps. Each
-  step must compile and pass its relevant tests.
-
-## Fixed design boundaries
-
-Do not propose or assume away these decisions; follow `SPEC.md` for exact rules.
-
-- Manual memory through one process-wide strategy exposed by `mem`; no allocator
-  values, GC, borrow checking, ownership, or hidden allocation.
-- Errors are values with explicit branches; no exceptions or propagation
-  operator. Panic aborts.
-- Types and generic instantiations are explicit; no declaration elision,
-  comptime, or trait solving.
-- Assignment copies. Parameters are by reference, read-only unless `mut`; the
-  signature and call site show mutation. `noalias` states non-overlap.
-- Every type has an all-bits-zero representation. Pointer/handle zero is `null`;
-  no optional type operator. Globals are zeroed; locals require definite
-  initialization before use.
-- Composition and explicit contract values replace inheritance.
-- Declarations use `name: type`; functions are keywordless with trailing
-  returns; function values use signature types.
-- The compiler uses recursive descent, single-pass compilation, and direct
-  machine-code emission; no whole-program analysis.
-- Safety is cheap local checking plus removable checked-build diagnostics.
-- No `goto`; use labeled blocks/loops. Iteration, switch, and `fallthrough`
-  follow `SPEC.md` exactly.
+- Work on one topic at a time in Decision Queue order.
+- Propose the issue and recommended solution before changing code, and obtain
+  owner permission. Present viable alternatives when relevant.
+- The owner resolves `[open]` and `[controversial]` items and removes those
+  markers. Provisional spelling may change; semantics may not.
+- Order decisions as philosophy, semantics, syntax, then implementation. For
+  contested design, cite `PHILOSOPHY.md` and prioritize
+  performance > simplicity > modularity > compile time > safety.
+- Record current rules and rationale in `SPEC.md`, keeping only active decisions
+  in its queue. Record implemented behavior and its essential approach once,
+  briefly, in `CHANGELOG.md`.
+- `TODO.md` is non-normative. Promote entries through the Decision Queue and
+  update the survey in the same edit.
+- Split work likely to exceed 100k tokens into 2–3 owner-approved steps; each
+  step must compile and pass relevant tests.
+- Do not commit unless explicitly asked. Use a single imperative subject line
+  with no commit body.
 
 ## Conventions
 
-- Relationship-forming operations use accurate lexical pairs when available
-  (`watch`/`unwatch`, `add`/`remove`). Accuracy beats cosmetic symmetry.
-- OS- or kernel-specific standard-library code always lives behind the public
-  `std/<module>/mod.ace` facade under `std/<module>/os/<target>.ace`.
-  Reserve `backend` for compiler/code-generation backends, never OS bindings.
-- `[open]` is undecided; `[controversial]` is contested. Only the owner removes
-  either marker. Provisional spellings may change; their semantics may not.
-- Start strict and relax later through additive conveniences.
-- Cite `PHILOSOPHY.md` when resolving contested design, not general folklore.
-- `.acefmt` is the normative Ace formatting configuration. Update it with any
-  formatting-rule change.
-- Do not commit unless explicitly asked. Commit messages are one imperative
-  subject line with no body.
+- Use accurate lexical pairs for relationships (`watch`/`unwatch`,
+  `add`/`remove`); accuracy beats cosmetic symmetry.
+- Put OS-specific standard-library code behind `std/<module>/mod.ace` in
+  `std/<module>/os/<target>.ace`. Reserve `backend` for compiler/code-generation
+  backends.
+- Start strict and add conveniences later.
+- `.acefmt` is normative; update it with formatting-rule changes.
 
-## Documentation and editor support
+## Scoped rules
 
-- `docs/` describes only implemented behavior and must agree with `SPEC.md`.
-  Compiler-visible changes update the relevant page and, when practical, a
-  compiler-checked example under `tests/sema/docs/` or an executable fixture.
-- Syntax or editor-visible changes update `editors/vscode/` when practical;
-  otherwise record the remaining work in its README.
-- Documentation-only changes require diff review and `git diff --check`, not the
-  full suite unless compiler behavior is genuinely uncertain.
+Path-specific guidance lives in `.claude/rules/`:
 
-## Source index
+- `language-boundaries.md`: fixed language and compiler design boundaries.
+- `documentation.md`: documentation and editor-support requirements.
+- `testing.md`: test selection, organization, and environment caveats.
 
-- Rules and active decisions: `SPEC.md`
-- Formal syntax and parser notes: `GRAMMAR.md`
-- Principles and priority: `PHILOSOPHY.md`
-- Implemented surfaces and essential approach: `CHANGELOG.md`
-- Uncommitted future candidates: `TODO.md`
-- Formatting: `.acefmt`
+## Commands
 
-## Build and test
-
-- Build: `make` (produces `./ace`). Full suite: `make test`.
-- `./ace file.ace`: check; `--tokens`: lex; `--ast`: parse; `--report`:
-  successful-run statistics; `-c`: object; `-o NAME`: emit and link.
-- Tests are feature-grouped under `tests/`: lexer/parser are parse-only, sema
-  checks diagnostics, emit and modules compile/link/run, stdlib-module tests use
-  a synthetic std tree, emit-errors fail during `-c`, and driver tests exercise
-  external linking.
-- Isolated or sandboxed environments may deny network and socket operations,
-  including loopback traffic. In that environment the `net`, `poll`, `tcp`, and
-  HTTP network fixtures can fail for environmental reasons; identify that
-  restriction before spending time diagnosing those failures as regressions.
-- Run the smallest relevant checks first. Follow the documentation-only rule
-  above when no executable behavior changed.
+- Build compiler: `make`
+- Run test suite: `make test`
+- Lex file: `./ace --tokens file.ace`
+- Parse file: `./ace --ast file.ace`
+- Check sema: `./ace file.ace`
+- Show successful-run statistics: `./ace --report file.ace`
+- Compile object: `./ace -c file.ace`
+- Compile binary: `./ace -o output file.ace`
