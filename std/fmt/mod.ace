@@ -2,7 +2,7 @@
 
 @when(target == "darwin-arm64")
 import os: "./os/darwin-arm64.ace"
-import decimal: @float_decimal.ace
+import decimal: @float_decimal
 
 pub print(text: string): int {
     if text.len == 0 {

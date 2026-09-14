@@ -391,37 +391,49 @@ if [ -d tests/emit_errors ]; then
     done
 fi
 
-# A bare std import accepts either std/name.ace or std/name/module.ace, but
+# A bare std import accepts either std/name.ace or std/name/mod.ace, but
 # diagnoses the std name when both definitions exist.
 mkdir -p /tmp/ace_std_module/normal/std/directory_probe
+mkdir -p /tmp/ace_std_module/normal/app
 mkdir -p /tmp/ace_std_module/ambiguous/std/ambiguous_probe
 cp "$ACE" /tmp/ace_std_module/normal/ace
 cp "$ACE" /tmp/ace_std_module/ambiguous/ace
-cp tests/stdlib_module/module.ace \
-   /tmp/ace_std_module/normal/std/directory_probe/module.ace
+cp tests/stdlib_module/mod.ace \
+   /tmp/ace_std_module/normal/std/directory_probe/mod.ace
+cp tests/stdlib_module/impl.ace \
+   /tmp/ace_std_module/normal/std/directory_probe/impl.ace
+cp tests/stdlib_module/deep_import.ace \
+   /tmp/ace_std_module/normal/app/deep_import.ace
 cp tests/stdlib_module/flat.ace \
    /tmp/ace_std_module/ambiguous/std/ambiguous_probe.ace
-cp tests/stdlib_module/module.ace \
-   /tmp/ace_std_module/ambiguous/std/ambiguous_probe/module.ace
+cp tests/stdlib_module/mod.ace \
+   /tmp/ace_std_module/ambiguous/std/ambiguous_probe/mod.ace
 if ! /tmp/ace_std_module/normal/ace -o /tmp/ace_std_module/normal/out \
      tests/stdlib_module/main.ace || ! /tmp/ace_std_module/normal/out; then
-    echo "FAIL: std directory module should resolve through module.ace"
+    echo "FAIL: std directory module should resolve through mod.ace and re-export its type"
     fail=1
 fi
 ambiguous_std=$(/tmp/ace_std_module/ambiguous/ace tests/stdlib_module/ambiguous.ace 2>&1)
-for want in "ambiguous_probe.ace" "ambiguous_probe/module.ace"; do
+for want in "ambiguous_probe.ace" "ambiguous_probe/mod.ace"; do
     if ! printf '%s\n' "$ambiguous_std" | grep -qF "$want"; then
         echo "FAIL: ambiguous std diagnostic should name '$want'"
         fail=1
     fi
 done
 missing_std=$(/tmp/ace_std_module/normal/ace tests/stdlib_module/missing.ace 2>&1)
-for want in "absent_module_probe.ace" "absent_module_probe/module.ace"; do
+for want in "absent_module_probe.ace" "absent_module_probe/mod.ace"; do
     if ! printf '%s\n' "$missing_std" | grep -qF "$want"; then
         echo "FAIL: missing std diagnostic should name '$want'"
         fail=1
     fi
 done
+deep_std=$(/tmp/ace_std_module/normal/ace \
+    /tmp/ace_std_module/normal/app/deep_import.ace 2>&1)
+if ! printf '%s\n' "$deep_std" | grep -qF \
+    "implementation file 'std/directory_probe/impl.ace' is private to directory module 'std/directory_probe/mod.ace'"; then
+    echo "FAIL: directory module implementation should reject external deep imports"
+    fail=1
+fi
 
 # The compiler-shipped std/@ subtree is shared by std sources but is not
 # importable by applications, including through traversal or symlink aliases.
@@ -432,7 +444,7 @@ mkdir -p /tmp/ace_std_internal/app/copied
 cp "$ACE" /tmp/ace_std_internal/ace
 cp tests/stdlib_internal/first.ace /tmp/ace_std_internal/std/first.ace
 cp tests/stdlib_internal/relative_std_err.ace /tmp/ace_std_internal/std/relative_std_err.ace
-cp tests/stdlib_internal/second/module.ace /tmp/ace_std_internal/std/second/module.ace
+cp tests/stdlib_internal/second/mod.ace /tmp/ace_std_internal/std/second/mod.ace
 cp tests/stdlib_internal/@/shared.ace /tmp/ace_std_internal/std/@/shared.ace
 cp tests/stdlib_internal/@/leaf.ace /tmp/ace_std_internal/std/@/leaf.ace
 cp tests/stdlib_internal/app/*.ace /tmp/ace_std_internal/app/
@@ -449,8 +461,8 @@ if ! /tmp/ace_std_internal/ace /tmp/ace_std_internal/std/@/shared.ace; then
 fi
 relative_std=$(/tmp/ace_std_internal/ace /tmp/ace_std_internal/std/relative_std_err.ace 2>&1)
 if ! printf '%s\n' "$relative_std" | grep -qF \
-    "compiler-reserved standard-library implementation must use @file.ace import syntax"; then
-    echo "FAIL: reserved std implementation should require visible @file.ace syntax"
+    "compiler-reserved standard-library implementation must use @name import syntax"; then
+    echo "FAIL: reserved std implementation should require visible @name syntax"
     fail=1
 fi
 if ! /tmp/ace_std_internal/ace -o /tmp/ace_std_internal/copied \
@@ -956,7 +968,7 @@ if [ -d tests/emit ]; then
         fi
         multidwarf=$(dwarfdump --debug-line /tmp/ace_emit/basics/welcome.o 2>/tmp/ace_test_errs)
         if [ $? -ne 0 ] ||
-           ! printf '%s\n' "$multidwarf" | grep -q '/std/fmt/module.ace' ||
+           ! printf '%s\n' "$multidwarf" | grep -q '/std/fmt/mod.ace' ||
            ! printf '%s\n' "$multidwarf" | grep -q '/welcome.ace'; then
             echo "FAIL: imported and root sources should both appear in DWARF"
             cat /tmp/ace_test_errs

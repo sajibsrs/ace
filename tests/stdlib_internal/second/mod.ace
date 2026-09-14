@@ -1,4 +1,4 @@
-import shared: @shared.ace
+import shared: @shared
 
 pub second(): int {
     return shared.value() + 2

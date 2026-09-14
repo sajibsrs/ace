@@ -1,3 +1,3 @@
-import big: @bigint.txt
+import big: @bigint.ace
 
 main() {}

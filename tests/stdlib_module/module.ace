@@ -1,3 +1,0 @@
-/* Directory std module entry candidate. */
-
-pub value: const int = 2

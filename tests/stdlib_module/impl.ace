@@ -1,0 +1,4 @@
+/* Public only within the enclosing directory module. */
+
+pub Number: type = int
+pub value: const Number = 2

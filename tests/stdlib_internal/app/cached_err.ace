@@ -1,2 +1,2 @@
 import first
-import shared: @shared.ace
+import shared: @shared

@@ -172,6 +172,12 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Modules and C boundary
 
+- Made `mod.ace` the sole external facade of a standard-library directory
+  module, with recursive implementation files importable only from within that
+  directory boundary; facade-owned `pub` declarations, including transparent
+  type aliases, explicitly define the external surface. Renamed existing
+  directory facades from `module.ace` and shortened compiler-reserved imports
+  from `@name.ace` to `@name`.
 - Added explicit callable C function values with the distinct
   `extern "c" (parameters): return` type spelling, including zero-parameter and
   no-value shapes, contextual references to exact `export`/`extern` functions,

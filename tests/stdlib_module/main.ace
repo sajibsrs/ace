@@ -3,5 +3,6 @@
 import directory_probe
 
 main(): int {
-    return directory_probe.value - 2
+    value: directory_probe.Number = directory_probe.value()
+    return value - 2
 }

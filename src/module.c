@@ -1,8 +1,8 @@
 // module.c — general import resolution for the merged compilation unit.
 //
-// Modules are files. The loader recursively loads what each file imports —
-// bare names from the stdlib beside the compiler (a flat file or a directory
-// with module.ace), local files by a path relative to the importing source —
+// A module is either one file or a directory rooted at mod.ace. The loader
+// recursively loads what each file imports — bare names from the stdlib beside
+// the compiler, local files by a path relative to the importing source —
 // canonicalizes identity by realpath so
 // every file loads exactly once through any number of imports or aliases,
 // and diagnoses cycles with the full chain. Each loaded module's surface is
@@ -156,6 +156,24 @@ static int is_std_internal(Loader* L, const char* canon) {
            strncmp(canon + n, "/@/", 3) == 0;
 }
 
+// Return the canonical root directory for a std directory module containing
+// canon, or NULL. Only an immediate std child with mod.ace establishes the
+// boundary; every recursively contained implementation file belongs to it.
+static const char* std_directory_module_root(Loader* L, const char* canon) {
+    if (!is_std_source(L, canon) || is_std_internal(L, canon)) return NULL;
+    const char* rel = canon + strlen(L->std_root) + 1;
+    const char* slash = strchr(rel, '/');
+    if (!slash) return NULL; // std/name.ace
+    size_t name_len = (size_t)(slash - rel);
+    size_t need = strlen(L->std_root) + 1 + name_len + 1;
+    char* root = arena_alloc(need);
+    snprintf(root, need, "%s/%.*s", L->std_root, (int)name_len, rel);
+    size_t entry_need = need + strlen("/mod.ace");
+    char* entry = arena_alloc(entry_need);
+    snprintf(entry, entry_need, "%s/mod.ace", root);
+    return canonicalize(entry) ? root : NULL;
+}
+
 static const char* std_display_path(Loader* L, const char* canon) {
     size_t n = strlen(L->std_root);
     size_t tail = strlen(canon + n);
@@ -266,10 +284,10 @@ static int is_std_named_module(Loader* L, const char* canon, const char* name) {
     char directory[4608];
     if (strcmp(dir, ".") == 0) {
         snprintf(flat, sizeof flat, "std/%s.ace", name);
-        snprintf(directory, sizeof directory, "std/%s/module.ace", name);
+        snprintf(directory, sizeof directory, "std/%s/mod.ace", name);
     } else {
         snprintf(flat, sizeof flat, "%s/std/%s.ace", dir, name);
-        snprintf(directory, sizeof directory, "%s/std/%s/module.ace", dir, name);
+        snprintf(directory, sizeof directory, "%s/std/%s/mod.ace", dir, name);
     }
     const char* expected = canonicalize(flat);
     if (expected && strcmp(expected, canon) == 0) return 1;
@@ -378,7 +396,7 @@ static const char* assign_prefix(Loader* L, const char* canon) {
     if (blen > 4 && strcmp(base + blen - 4, ".ace") == 0) blen -= 4;
     // A directory module's useful identity is its directory name, not the
     // conventional entry filename shared by every directory module.
-    if (blen == 6 && memcmp(base, "module", 6) == 0 && slash) {
+    if (blen == 3 && memcmp(base, "mod", 3) == 0 && slash) {
         const char* parent = slash;
         while (parent > canon && parent[-1] != '/') parent--;
         if (parent < slash) {
@@ -433,7 +451,7 @@ static void report_cycle(Loader* L, Node* at, const char* canon) {
 
 // Resolve one import declaration to its target path (arena storage).
 // Bare, ident-aliased, and selective `from name` imports come from the stdlib
-// beside the compiler; @file.ace names compiler-reserved std implementation;
+// beside the compiler; @name names compiler-reserved std implementation;
 // string paths are local to the importing source file.
 static const char* import_target(Loader* L, Node* imp, const char* src_path) {
     if (imp->a && imp->a->op == T_AT) {
@@ -485,10 +503,10 @@ static const char* import_target(Loader* L, Node* imp, const char* src_path) {
     char directory[4608];
     if (strcmp(dir, ".") == 0) {
         snprintf(flat, sizeof flat, "std/%s.ace", stdname);
-        snprintf(directory, sizeof directory, "std/%s/module.ace", stdname);
+        snprintf(directory, sizeof directory, "std/%s/mod.ace", stdname);
     } else {
         snprintf(flat, sizeof flat, "%s/std/%s.ace", dir, stdname);
-        snprintf(directory, sizeof directory, "%s/std/%s/module.ace", dir, stdname);
+        snprintf(directory, sizeof directory, "%s/std/%s/mod.ace", dir, stdname);
     }
     const char* flat_canon = canonicalize(flat);
     const char* directory_canon = canonicalize(directory);
@@ -599,6 +617,23 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
         return NULL;
     }
     const char* importer = canonicalize(src_path);
+    const char* target_root = std_directory_module_root(L, canon);
+    if (target_root) {
+        size_t entry_len = strlen(target_root) + strlen("/mod.ace") + 1;
+        char* entry = arena_alloc(entry_len);
+        snprintf(entry, entry_len, "%s/mod.ace", target_root);
+        int is_entry = strcmp(canon, entry) == 0;
+        int same_module = importer &&
+                          (strcmp(importer, entry) == 0 ||
+                           path_beneath(importer, target_root));
+        if (!is_entry && !same_module) {
+            import_err(L->d, imp,
+                       "implementation file '%s' is private to directory module '%s'",
+                       std_display_path(L, canon),
+                       std_display_path(L, entry));
+            return NULL;
+        }
+    }
     if (is_std_internal(L, canon) &&
         (!importer || !is_std_source(L, importer))) {
         import_err(L->d, imp,
@@ -608,7 +643,7 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
     }
     if (is_std_internal(L, canon) && (!imp->a || imp->a->op != T_AT)) {
         import_err(L->d, imp,
-                   "compiler-reserved standard-library implementation must use @file.ace import syntax");
+                   "compiler-reserved standard-library implementation must use @name import syntax");
         return NULL;
     }
     if (module_on_stack(L, canon)) {

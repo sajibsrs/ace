@@ -3,7 +3,7 @@
 // Node layout (a/b/c plus kids where lists are needed):
 //   N_FILE      kids = imports + top decls
 //   N_IMPORT    whole: str = binding; b = module ident (alias); a = N_STR path
-//               (a->op = T_AT for compiler-reserved `@file.ace`)
+//               (a->op = T_AT for compiler-reserved `@name`)
 //               selective (F_SELECT): kids = imported N_IDENT names;
 //               b = std module ident or a = local N_STR path
 //   N_VAR       kids = binders (N_PARAM: typed declaration, N_IDENT: reassignment
@@ -2064,11 +2064,9 @@ static Node* parse_extern(P* p) {
 
 static Node* parse_internal_import(P* p) {
     expect(p, T_AT, "'@'");
-    Token* name = expect(p, T_IDENT, "reserved module filename after '@'");
-    expect(p, T_DOT, "'.' before 'ace' in reserved module import");
-    Token* ext = expect(p, T_IDENT, "'ace' extension in reserved module import");
-    if (ext->len != 3 || memcmp(ext->str, "ace", 3) != 0)
-        perr(p, "reserved module path must end in .ace");
+    Token* name = expect(p, T_IDENT, "reserved module name after '@'");
+    if (at(p, T_DOT))
+        perr(p, "reserved module imports omit the .ace suffix");
     Node* path = nd(p, N_STR);
     path->str = name->str;
     path->len = name->len;
@@ -2137,7 +2135,7 @@ static Node* parse_import(P* p) {
             n->a->str = tk(p)->str;
             n->a->len = tk(p)->len;
             p->i++;
-        } else if (at(p, T_AT)) { // import big: @bigint.ace — reserved form
+        } else if (at(p, T_AT)) { // import big: @bigint — reserved form
             n->a = parse_internal_import(p);
         } else {
             perr(p, "expected module name, path, or internal module after ':' in import");

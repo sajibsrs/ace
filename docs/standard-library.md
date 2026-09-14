@@ -24,12 +24,12 @@ exist yet.
 
 The `std/@/` directory contains compiler-reserved standard-library
 implementation, not public modules. Ordinary standard-library modules use the
-visibly distinct unquoted form `import big: @bigint.ace`, and reserved files may
+visibly distinct unquoted form `import big: @bigint`, and reserved files may
 import one another the same way. Applications and packages cannot use these
 modules; canonicalization prevents traversal and symlink aliases from bypassing
 that boundary. Equivalent source copied outside the compiler-shipped `std/`
-tree is ordinary code. The `@file.ace` form is reserved import syntax, not a
-general path prefix or user-definable namespace.
+tree is ordinary code. The suffixless `@name` form is reserved import syntax,
+not a general path prefix or user-definable namespace.
 
 Public names use module context to stay short without becoming cryptic. Types
 and error domains use compact PascalCase, functions use lowercase words with
@@ -225,7 +225,7 @@ main(): int {
 The format must be a string literal or a const-global `string` initialized
 from a static literal. The compiler parses it, checks the argument count and
 exact types, and emits direct typed formatting calls. Those calls are
-exact-type specializations of the private per-shape generics in `std/fmt/module.ace`
+exact-type specializations of the private per-shape generics in `std/fmt/mod.ace`
 — `print_counted[T](value: T): int` for text, bytes, and decimal integers,
 `print_precision[T](value: T, precision: usize): int` for fixed floats, and
 `print_radix[T](value: T, radix: u8, uppercase: bool): int` for binary, octal,
@@ -719,7 +719,7 @@ and Ethernet/IPv4 decoding for TCP, UDP, and ICMP.
 
 `net` provides a thin IPv4 TCP layer with allocation-free core socket
 operations. Its public values and operations are
-OS-neutral; `std/net/module.ace` selects the supported Darwin/Apple-arm64 OS
+OS-neutral; `std/net/mod.ace` selects the supported Darwin/Apple-arm64 OS
 layer through `@when(target == "darwin-arm64")`. Platform structures, constants, byte order, and C
 bindings stay in that private-by-convention file. `net.Socket` is a transparent
 alias of `sys.Fd`, so close sockets with `sys.close`.

@@ -1,4 +1,4 @@
-import leaf: @leaf.ace
+import leaf: @leaf
 
 pub value(): int {
     return leaf.value()

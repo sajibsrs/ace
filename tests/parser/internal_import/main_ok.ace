@@ -1,4 +1,4 @@
-import big: @bigint.ace
-import value from @shared.ace
+import big: @bigint
+import value from @shared
 
 main() {}

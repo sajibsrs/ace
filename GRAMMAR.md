@@ -60,7 +60,7 @@ import_names  := ident ("," ident)*
                | "(" ident ("," ident)* [","] ")"       // parenthesized = multiline
 import_source := ident | import_path | internal_import     // std, local, or reserved
 import_path   := string_lit
-internal_import := "@" ident "." "ace"                  // compiler-reserved std implementation
+internal_import := "@" ident                              // compiler-reserved std implementation
 
 top_decl      := ["pub"] top_body
 top_body      := var_decl | const_decl | func_decl | struct_decl

@@ -1,4 +1,4 @@
-import value from @shared.ace
+import value from @shared
 
 pub first(): int {
     return value() + 1

@@ -11,8 +11,8 @@
 
 import mem
 
-import decimal: @float_decimal.ace
-import float_parse: @float_parse.ace
+import decimal: @float_decimal
+import float_parse: @float_parse
 
 /* First occurrence of needle: the byte index and whether it was found; an
  * empty string needle is found at zero, and absence returns canonical zero.

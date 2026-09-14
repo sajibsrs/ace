@@ -1,7 +1,7 @@
 /* Darwin net OS layer — allocation-free IPv4 TCP sockets
  * (Darwin/Apple arm64).
  *
- * Public declarations are the target interface consumed by ../module.ace.
+ * Public declarations are the target interface consumed by ../mod.ace.
  * The stable user-facing networking surface remains in that facade.
  */
 

@@ -8,7 +8,7 @@
  * fmt and str.
  */
 
-import table: @float_shortest_tables.ace
+import table: @float_shortest_tables
 
 pub Floating: struct {
     coefficient: u64,

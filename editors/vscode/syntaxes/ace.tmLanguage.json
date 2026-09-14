@@ -130,12 +130,10 @@
     "imports": {
       "patterns": [
         {
-          "match": "(@)([A-Za-z_][A-Za-z0-9_]*)(\\.)(ace)\\b",
+          "match": "(@)([A-Za-z_][A-Za-z0-9_]*)\\b",
           "captures": {
             "1": { "name": "punctuation.definition.module.ace" },
-            "2": { "name": "entity.name.namespace.ace" },
-            "3": { "name": "punctuation.accessor.ace" },
-            "4": { "name": "support.constant.module-extension.ace" }
+            "2": { "name": "entity.name.namespace.ace" }
           }
         },
         {

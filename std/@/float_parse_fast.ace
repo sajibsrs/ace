@@ -3,7 +3,7 @@
  * exact bigint fallback for inputs outside these proven paths.
  */
 
-import table: @float_parse_tables.ace
+import table: @float_parse_tables
 
 leading_zeroes(value: u64): int {
     count: int = 0

@@ -1,0 +1,9 @@
+/* Directory std module entry candidate and sole external surface. */
+
+import impl: "./impl.ace"
+
+pub Number: type = impl.Number
+
+pub value(): Number {
+    return impl.value
+}

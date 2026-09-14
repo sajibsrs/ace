@@ -1,9 +1,10 @@
 # Modules
 
-Every `.ace` file is a module. A file states its imports up front, before any
-declaration, and members are private unless marked `pub` on the declaration
-line. Import a module binding for qualified access, or explicitly select public
-members into their ordinary type/value namespaces.
+A module is either one `.ace` file or a directory rooted at `mod.ace`. A file
+states its imports up front, before any declaration, and members are private
+unless marked `pub` on the declaration line. Import a module binding for
+qualified access, or explicitly select public members into their ordinary
+type/value namespaces.
 
 ```ace
 import fmt
@@ -28,9 +29,10 @@ import one from "relative/path.ace"
 - A **bare** name (`import fmt`, `import math`) resolves only inside the
   standard library directory `std/` that ships beside the compiler. A local
   file can never shadow a standard module. A single-file std module is
-  `std/<name>.ace`; a multi-file std module is `std/<name>/module.ace` with
-  its other files grouped beside that entry. Defining both forms for one std
-  name is an ambiguity error. A missing-module diagnostic names both paths.
+  `std/<name>.ace`; a directory std module is `std/<name>/mod.ace`. The entry
+  and every recursively contained implementation file form one module, and
+  `mod.ace` is its sole external import surface. Defining both forms for one
+  std name is an ambiguity error. A missing-module diagnostic names both paths.
 - The **alias** form binds a different local name to a standard module
   (`import f: fmt`); the module is still the standard one.
 - The **path** form loads a local file. The path must be relative (no leading
@@ -42,15 +44,15 @@ import one from "relative/path.ace"
 
 The compiler reserves its shipped `std/@/` subtree for shared standard-library
 implementation. Imports use the visibly distinct unquoted form
-`import big: @bigint.ace`; selective imports use forms such as
-`import value from @shared.ace`. Any source within the canonical `std/` tree may
+`import big: @bigint`; selective imports use forms such as
+`import value from @shared`. Any source within the canonical `std/` tree may
 use these imports, and reserved files may import one another. Application and
 package sources cannot import them, even through `./`, `../`, alternate lexical
 paths, or symlinks, because the boundary is checked after path canonicalization.
 Compiling a reserved file directly remains valid for standard-library checks,
 and equivalent source copied outside the shipped tree remains ordinary code.
-The `@file.ace` source is not a general path prefix, attribute, package
-namespace, or user-definable mechanism.
+The suffixless `@name` source is not a general path prefix, attribute, package
+namespace, or user-definable mechanism. Writing `.ace` after it is invalid.
 
 Bare selected lists stay on one physical line. Use parentheses for a multiline
 list:
@@ -139,6 +141,20 @@ then for a consumer importing `middle`:
 
 Whoever needs `ping` imports `./inner.ace` through their own explicit line.
 
+Within a directory module, implementation files import one another through
+relative `.ace` paths. A `pub` declaration in such a file is visible only to
+other files in that directory module. The `mod.ace` facade exposes its chosen
+surface with declarations of its own; transparent type re-exports are explicit:
+
+```ace
+import os: "./os/darwin-arm64.ace"
+
+pub Fd: type = os.Fd
+```
+
+Code outside the directory module cannot import an implementation file, even
+through `..` components or symlinks. It can import only `mod.ace`.
+
 Visibility is decided per member **name and namespace**. Mark every overload
 `pub` to export a value overload set. A type and value sharing a spelling are
 considered independently, so selecting the spelling may import either or both,
@@ -152,15 +168,14 @@ fully loaded before its importer. Module identity is the file's canonical
 path, so a module reached through several paths or aliases is loaded exactly
 once — a diamond dependency shares one set of globals, not copies.
 
-The selected std entry is an ordinary module and its resolved canonical path
-is its identity. Other files inside a multi-file std module are imported by
-explicit relative `.ace` path. Internal OS-layer files may therefore remain
-directly importable, but carry no public compatibility promise; there is no
-special visibility mechanism for them. OS- and kernel-specific standard-library
-implementations always live at `std/<module>/os/<target>.ace` behind the
-module's public `module.ace` facade. The facade selects its target file with a
-top-level `@when(target == "...")` import. The name `backend` is kept for
-compiler/code-generation backends, not OS bindings.
+Each file keeps a canonical compilation identity, while the enclosing
+`mod.ace` root establishes a directory module's external visibility boundary.
+Implementation files are loaded only through imports originating within that
+boundary. OS- and kernel-specific standard-library implementations always live
+at `std/<module>/os/<target>.ace` behind the module's public `mod.ace` facade.
+The facade selects its target file with a top-level `@when(target == "...")`
+import. The name `backend` is kept for compiler/code-generation backends, not
+OS bindings.
 
 `@when` may precede any top-level declaration. Its condition is restricted to
 `target` string equality/inequality, booleans, `and`, `or`, `not`, and
@@ -198,8 +213,8 @@ every function to the file it was written in.
 - There are no separate per-module objects yet: everything is recompiled in
   one merged unit on every build, and incremental rebuild granularity (the
   file, per spec) is future work.
-- Import paths must name a file directly; directories, wildcard imports, and
-  package lists do not exist.
+- Relative import paths must name a file directly; wildcard imports and package
+  lists do not exist.
 - A local variable that shadows an import binding cannot be used with `.`
   member syntax in that file — the qualified use is rejected as an unknown
   module member name. Rename one side. Selectively imported values do not have

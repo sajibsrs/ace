@@ -1,4 +1,4 @@
-/* Darwin fmt primitives consumed by ../module.ace. */
+/* Darwin fmt primitives consumed by ../mod.ace. */
 
 extern "c" {
     c_write(fd: i32, data: *u8, size: usize): int = "write"
