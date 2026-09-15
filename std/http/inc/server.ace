@@ -1,0 +1,578 @@
+/* Caller-driven nonblocking HTTP/1.1 server core over tcp and poll. */
+
+import ascii
+import mem
+import net
+import poll
+import sys
+import tcp
+import message: "./format.ace"
+import parsing: "./parse.ace"
+
+pub Header: type = message.Header
+pub Request: type = message.Request
+pub Response: type = message.Response
+pub RequestParser: type = parsing.RequestParser
+pub RequestPhase: type = parsing.RequestPhase
+pub RequestFraming: type = parsing.RequestFraming
+pub RequestResult: type = parsing.RequestResult
+pub RequestProgress: type = parsing.RequestProgress
+pub RequestCapacity: type = parsing.RequestCapacity
+
+FormatErr: type = message.FormatErr
+
+pub ServerErr: error {
+    1: allocation = "memory allocation failed"
+    2: capacity = "session storage is too small for the request or response"
+    3: syntax = "malformed request"
+    4: framing = "invalid or unsupported request framing"
+    5: connection_header = "handler-supplied Connection header is not permitted"
+    6: state = "session is not awaiting a response"
+}
+
+pub SessionState: enum {
+    free,
+    receiving,
+    ready,
+    sending,
+}
+
+pub Session: struct {
+    conn: tcp.Conn,
+    state: SessionState,
+    parser: RequestParser,
+    occupied: usize,
+    input: mut []u8,
+    headers: mut []Header,
+    body: mut []u8,
+    output: mut []u8,
+    output_count: usize,
+    request: Request,
+}
+
+pub Failure: struct {
+    index: usize,
+    err: Error,
+}
+
+pub Event: union {
+    none,
+    accepted: usize,
+    request: usize,
+    sent: usize,
+    disconnected: usize,
+    failed: Failure,
+}
+
+pub Context: struct {
+    listener: tcp.Listener,
+    queue: poll.Queue,
+    sessions: mut []Session,
+    events: mut []poll.Event,
+    pending: usize,
+    pending_count: usize,
+}
+
+zero_session(): Session {
+    return Session {
+        conn = tcp.Conn {socket = net.Socket(0), interest = tcp.Interest.none, send_offset = usize(0)},
+        state = SessionState.free,
+        parser = RequestParser {phase = RequestPhase.request, framing = RequestFraming.undecided},
+        occupied = 0,
+        input = null,
+        headers = null,
+        body = null,
+        output = null,
+        output_count = 0,
+        request = Request {method = "", target = ""},
+    }
+}
+
+fresh_session(conn: tcp.Conn, existing: Session): Session {
+    return Session {
+        conn = conn,
+        state = SessionState.receiving,
+        parser = RequestParser {phase = RequestPhase.request, framing = RequestFraming.undecided},
+        occupied = 0,
+        input = existing.input,
+        headers = existing.headers,
+        body = existing.body,
+        output = existing.output,
+        output_count = 0,
+        request = Request {method = "", target = ""},
+    }
+}
+
+find_free(sessions: []Session): usize {
+    for index: usize in 0 .. sessions.len {
+        if sessions[index].state == SessionState.free {
+            return index
+        }
+    }
+    return sessions.len
+}
+
+find_by_socket(sessions: []Session, fd: sys.Fd): usize {
+    for index: usize in 0 .. sessions.len {
+        if sessions[index].state != SessionState.free && sessions[index].conn.socket == fd {
+            return index
+        }
+    }
+    return sessions.len
+}
+
+fail_session(mut ctx: Context, index: usize) {
+    poll.unwatch(ctx.queue, ctx.sessions[index].conn.socket)
+    tcp.close(mut ctx.sessions[index].conn)
+    ctx.sessions[index] = fresh_session(ctx.sessions[index].conn, ctx.sessions[index])
+    ctx.sessions[index].state = SessionState.free
+}
+
+/* Binds a nonblocking listener at `endpoint`, creates the poll queue, and
+ * allocates `session_count` sessions with the given per-buffer capacities.
+ * Capacities are fixed for the context's lifetime: a request or response
+ * that does not fit its session's storage fails only that session.
+ */
+pub context_new(endpoint: string, backlog: usize, session_count: usize,
+    input_size: usize, header_size: usize, body_size: usize, output_size: usize): (Context, Error) {
+
+    zero: Context = Context {
+        listener = tcp.Listener {socket = net.Socket(0)},
+        queue = poll.Queue(0),
+        sessions = null,
+        events = null,
+        pending = 0,
+        pending_count = 0,
+    }
+
+    address: net.Addr4, parsed: bool = net.parse4(endpoint)
+    if !parsed {
+        return zero, ServerErr.capacity
+    }
+    listener: tcp.Listener, listen_err: Error = tcp.listen_nonblock(address, backlog)
+    if listen_err != null {
+        return zero, listen_err
+    }
+    queue: poll.Queue, queue_err: Error = poll.queue()
+    if queue_err != null {
+        tcp.close(mut listener)
+        return zero, queue_err
+    }
+    watch_err: Error = poll.watch(queue, listener.socket, true, false)
+    if watch_err != null {
+        tcp.close(mut listener)
+        sys.close(sys.Fd(queue))
+        return zero, watch_err
+    }
+
+    sessions: mut []Session = mem.alloc[Session](session_count)
+    events: mut []poll.Event = mem.alloc[poll.Event](session_count + 1)
+    if sessions == null || events == null {
+        poll.unwatch(queue, listener.socket)
+        tcp.close(mut listener)
+        sys.close(sys.Fd(queue))
+        mem.release[Session](mut sessions)
+        mem.release[poll.Event](mut events)
+        return zero, ServerErr.allocation
+    }
+
+    ok: bool = true
+    for index: usize in 0 .. session_count {
+        sessions[index] = zero_session()
+        sessions[index].input = mem.alloc[u8](input_size)
+        sessions[index].headers = mem.alloc[Header](header_size)
+        sessions[index].body = mem.alloc[u8](body_size)
+        sessions[index].output = mem.alloc[u8](output_size)
+        if sessions[index].input == null || sessions[index].headers == null ||
+           sessions[index].body == null || sessions[index].output == null {
+            ok = false
+            break
+        }
+    }
+    if !ok {
+        for index: usize in 0 .. session_count {
+            mem.release[u8](mut sessions[index].input)
+            mem.release[Header](mut sessions[index].headers)
+            mem.release[u8](mut sessions[index].body)
+            mem.release[u8](mut sessions[index].output)
+        }
+        poll.unwatch(queue, listener.socket)
+        tcp.close(mut listener)
+        sys.close(sys.Fd(queue))
+        mem.release[Session](mut sessions)
+        mem.release[poll.Event](mut events)
+        return zero, ServerErr.allocation
+    }
+
+    built: Context = Context {
+        listener = listener,
+        queue = queue,
+        sessions = sessions,
+        events = events,
+        pending = 0,
+        pending_count = 0,
+    }
+    return built, null
+}
+
+_backlog: const usize = 512
+_session_count: const usize = 128
+_input_size: const usize = 8192
+_header_size: const usize = 64
+_body_size: const usize = 262144
+_output_size: const usize = 262144
+
+/* Low-effort form of `context_new` for callers with no capacity preference:
+ * fixed built-in defaults (512 backlog, 128 sessions, 8 KiB input/output, 64
+ * headers, 256 KiB body per session). Capacities remain fixed for the
+ * context's lifetime exactly as in the explicit form.
+ */
+pub context_new(endpoint: string): (Context, Error) {
+    ctx: Context, err: Error = context_new(endpoint, _backlog, _session_count,
+        _input_size, _header_size, _body_size, _output_size)
+    return ctx, err
+}
+
+pub context_wipe(mut ctx: Context) {
+    if ctx.sessions == null {
+        return
+    }
+    for index: usize in 0 .. ctx.sessions.len {
+        if ctx.sessions[index].state != SessionState.free {
+            poll.unwatch(ctx.queue, ctx.sessions[index].conn.socket)
+            tcp.close(mut ctx.sessions[index].conn)
+        }
+        mem.release[u8](mut ctx.sessions[index].input)
+        mem.release[Header](mut ctx.sessions[index].headers)
+        mem.release[u8](mut ctx.sessions[index].body)
+        mem.release[u8](mut ctx.sessions[index].output)
+    }
+    mem.release[Session](mut ctx.sessions)
+    mem.release[poll.Event](mut ctx.events)
+    poll.unwatch(ctx.queue, ctx.listener.socket)
+    tcp.close(mut ctx.listener)
+    sys.close(sys.Fd(ctx.queue))
+    ctx.pending = 0
+    ctx.pending_count = 0
+}
+
+is_would_block(err: Error, domain: typeid): bool {
+    return err != null && err.domain == domain && (err.code == sys.EAGAIN || err.code == sys.EWOULDBLOCK)
+}
+
+drive_accept(mut ctx: Context, event: poll.Event): (Event, Error) {
+    if !event.readable {
+        return Event.none, null
+    }
+    slot: usize = find_free(ctx.sessions)
+    if slot == ctx.sessions.len {
+        /* No free slot: leave the connection in the OS listen queue. */
+        return Event.none, null
+    }
+    conn: tcp.Conn, _: net.Addr4, accept_err: Error = tcp.accept_nonblock(ctx.listener)
+    if accept_err != null {
+        if is_would_block(accept_err, typeid(net.AcceptErr)) {
+            return Event.none, null
+        }
+        return Event.none, accept_err
+    }
+    watch_err: Error = poll.watch(ctx.queue, conn.socket, true, false)
+    if watch_err != null {
+        tcp.close(mut conn)
+        return Event.none, watch_err
+    }
+    ctx.sessions[slot] = fresh_session(conn, ctx.sessions[slot])
+    return Event.accepted(slot), null
+}
+
+drive_receive(mut ctx: Context, index: usize): (Event, Error) {
+    if ctx.sessions[index].occupied == ctx.sessions[index].input.len {
+        fail: Failure = Failure {index = index, err = ServerErr.capacity}
+        fail_session(mut ctx, index)
+        return Event.failed(fail), null
+    }
+    occupied: usize = ctx.sessions[index].occupied
+    progress: tcp.Event = tcp.progress_receive(mut ctx.sessions[index].conn,
+        ctx.sessions[index].input[occupied..])
+
+    switch progress {
+        tcp.Event.none {
+            return Event.none, null
+        }
+        tcp.Event.data(count: usize) {
+            ctx.sessions[index].occupied += count
+        }
+        tcp.Event.disconnected {
+            fail_session(mut ctx, index)
+            return Event.disconnected(index), null
+        }
+        tcp.Event.failed(err: Error) {
+            fail: Failure = Failure {index = index, err = err}
+            fail_session(mut ctx, index)
+            return Event.failed(fail), null
+        }
+        else {
+            return Event.none, null
+        }
+    }
+
+    result: RequestResult = mut ctx.sessions[index].parser.parse(
+        ctx.sessions[index].input[..ctx.sessions[index].occupied],
+        mut ctx.sessions[index].headers[..],
+        mut ctx.sessions[index].body[..],
+        false)
+
+    switch result {
+        RequestResult.complete(request: Request) {
+            ctx.sessions[index].request = request
+            ctx.sessions[index].state = SessionState.ready
+            return Event.request(index), null
+        }
+        RequestResult.progress(value: RequestProgress) {
+            return Event.none, null
+        }
+        RequestResult.capacity(kind: RequestCapacity) {
+            fail: Failure = Failure {index = index, err = ServerErr.capacity}
+            fail_session(mut ctx, index)
+            return Event.failed(fail), null
+        }
+        RequestResult.syntax {
+            fail: Failure = Failure {index = index, err = ServerErr.syntax}
+            fail_session(mut ctx, index)
+            return Event.failed(fail), null
+        }
+        RequestResult.framing {
+            fail: Failure = Failure {index = index, err = ServerErr.framing}
+            fail_session(mut ctx, index)
+            return Event.failed(fail), null
+        }
+    }
+    return Event.none, null
+}
+
+drive_send(mut ctx: Context, index: usize): (Event, Error) {
+    progress: tcp.Event = tcp.progress_send(mut ctx.sessions[index].conn,
+        ctx.sessions[index].output[..ctx.sessions[index].output_count])
+
+    switch progress {
+        tcp.Event.none {
+            return Event.none, null
+        }
+        tcp.Event.sent(count: usize) {
+            current: tcp.Interest = tcp.interest(ctx.sessions[index].conn)
+            if current != tcp.Interest.write && current != tcp.Interest.both {
+                fail_session(mut ctx, index)
+                return Event.sent(index), null
+            }
+            return Event.none, null
+        }
+        tcp.Event.disconnected {
+            fail_session(mut ctx, index)
+            return Event.disconnected(index), null
+        }
+        tcp.Event.failed(err: Error) {
+            fail: Failure = Failure {index = index, err = err}
+            fail_session(mut ctx, index)
+            return Event.failed(fail), null
+        }
+        else {
+            return Event.none, null
+        }
+    }
+    return Event.none, null
+}
+
+drive(mut ctx: Context, event: poll.Event): (Event, Error) {
+    if event.fd == ctx.listener.socket {
+        accept_event: Event, accept_err: Error = drive_accept(mut ctx, event)
+        return accept_event, accept_err
+    }
+    index: usize = find_by_socket(ctx.sessions, event.fd)
+    if index == ctx.sessions.len {
+        return Event.none, null
+    }
+    if event.error || event.hangup {
+        fail_session(mut ctx, index)
+        return Event.disconnected(index), null
+    }
+    if event.readable && ctx.sessions[index].state == SessionState.receiving {
+        receive_event: Event, receive_err: Error = drive_receive(mut ctx, index)
+        return receive_event, receive_err
+    }
+    if event.writable && ctx.sessions[index].state == SessionState.sending {
+        send_event: Event, send_err: Error = drive_send(mut ctx, index)
+        return send_event, send_err
+    }
+    return Event.none, null
+}
+
+/* Drains one pending readiness notification and drives exactly the affected
+ * listener or session by one nonblocking step, returning the resulting
+ * `Event`. Internally batches one `poll.wait` across multiple calls when it
+ * reports several ready descriptors at once. The caller's own loop supplies
+ * the bound: how many times `serve` is called and when it stops. A non-null
+ * `Error` is a listener, poll-queue, or wait-level failure and is terminal;
+ * per-session failures are reported through `Event.failed` instead.
+ */
+pub serve(mut ctx: Context, timeout_ns: u64): (Event, Error) {
+    if ctx.pending == ctx.pending_count {
+        count: usize, wait_err: Error = poll.wait(ctx.queue, mut ctx.events[..], timeout_ns)
+        if wait_err != null {
+            return Event.none, wait_err
+        }
+        ctx.pending = 0
+        ctx.pending_count = count
+        if count == 0 {
+            return Event.none, null
+        }
+    }
+    event: poll.Event = ctx.events[ctx.pending]
+    ctx.pending += 1
+    driven_event: Event, driven_err: Error = drive(mut ctx, event)
+    return driven_event, driven_err
+}
+
+/* Formats `response` into the session's output storage, synthesizing exactly
+ * `Connection: close`, and arms the session to send it. A handler-supplied
+ * `Connection` header is rejected. The session closes and recycles once the
+ * response is fully sent (`Event.sent`).
+ */
+pub respond(mut ctx: Context, index: usize, response: Response): Error {
+    if ctx.sessions[index].state != SessionState.ready {
+        return ServerErr.state
+    }
+    for i: usize in 0 .. response.headers.len {
+        if ascii.is_equal(response.headers[i].name, "connection", false) {
+            fail_session(mut ctx, index)
+            return ServerErr.connection_header
+        }
+    }
+    needed: usize = response.headers.len + 1
+    if needed > ctx.sessions[index].headers.len {
+        fail_session(mut ctx, index)
+        return ServerErr.capacity
+    }
+    for i: usize in 0 .. response.headers.len {
+        ctx.sessions[index].headers[i] = response.headers[i]
+    }
+    ctx.sessions[index].headers[response.headers.len] = Header {name = "Connection", value = "close"}
+
+    outgoing: Response = Response {
+        version_minor = response.version_minor,
+        status = response.status,
+        reason = response.reason,
+        headers = ctx.sessions[index].headers[..needed],
+        body = response.body,
+    }
+    count: usize, format_err: Error = outgoing.format(mut ctx.sessions[index].output[..])
+    if format_err != null {
+        fail_session(mut ctx, index)
+        return format_err
+    }
+    ctx.sessions[index].output_count = count
+    ctx.sessions[index].state = SessionState.sending
+    watch_err: Error = poll.watch(ctx.queue, ctx.sessions[index].conn.socket, true, true)
+    if watch_err != null {
+        fail_session(mut ctx, index)
+        return watch_err
+    }
+    return null
+}
+
+/* Reads exactly one request from `conn`, calls `handle`, and writes its
+ * response with a synthesized `Connection: close` (a handler-supplied one is
+ * dropped along with the connection, same as `respond`). Any parse failure,
+ * oversized request, or mid-write disconnect just returns; the caller closes
+ * the connection either way.
+ */
+serve_one(conn: tcp.Conn, handle: (Request): Response,
+    input: mut []u8, headers: mut []Header, body: mut []u8, output: mut []u8) {
+
+    parser: RequestParser = RequestParser {phase = RequestPhase.request, framing = RequestFraming.undecided}
+    occupied: usize = 0
+
+    for occupied < input.len {
+        received: int, recv_err: Error = net.receive(conn.socket, input[occupied..])
+        if recv_err != null {
+            if recv_err.domain == typeid(net.ReceiveErr) && recv_err.code == sys.EINTR {
+                continue
+            }
+            return
+        }
+        if received == 0 {
+            return
+        }
+        occupied += usize(received)
+
+        result: RequestResult = mut parser.parse(input[..occupied], headers, body, false)
+        switch result {
+            RequestResult.complete(request: Request) {
+                response: Response = handle(request)
+                for i: usize in 0 .. response.headers.len {
+                    if ascii.is_equal(response.headers[i].name, "connection", false) {
+                        return
+                    }
+                }
+                needed: usize = response.headers.len + 1
+                if needed > headers.len {
+                    return
+                }
+                for i: usize in 0 .. response.headers.len {
+                    headers[i] = response.headers[i]
+                }
+                headers[response.headers.len] = Header {name = "Connection", value = "close"}
+                outgoing: Response = Response {
+                    version_minor = response.version_minor,
+                    status = response.status,
+                    reason = response.reason,
+                    headers = headers[..needed],
+                    body = response.body,
+                }
+                count: usize, format_err: Error = outgoing.format(output)
+                if format_err == null {
+                    tcp.send_all(conn, output[..count])
+                }
+                return
+            }
+            RequestResult.progress(value: RequestProgress) {}
+            else {
+                return
+            }
+        }
+    }
+}
+
+/* Blocking, single-connection-at-a-time HTTP/1.1 server: binds `endpoint`,
+ * then loops forever accepting one connection, reading exactly one request,
+ * calling `handle`, writing its response, and closing it — no poll queue, no
+ * session table, and no caller-visible backlog or capacity tuning. Returns
+ * only if the listener itself cannot be created; a per-connection failure
+ * just drops that connection and the loop continues.
+ */
+pub serve(endpoint: string, handle: (Request): Response): Error {
+    address: net.Addr4, parsed: bool = net.parse4(endpoint)
+    if !parsed {
+        return ServerErr.capacity
+    }
+    listener: tcp.Listener, listen_err: Error = tcp.listen(address, _backlog)
+    if listen_err != null {
+        return listen_err
+    }
+
+    /* Fixed per-connection buffers, sized like the built-in `context_new`
+     * session defaults above, reused serially across connections.
+     */
+    input: [8192]u8
+    headers: [64]Header
+    body: [262144]u8
+    output: [262144]u8
+
+    for {
+        conn: tcp.Conn, _: net.Addr4, accept_err: Error = tcp.accept(listener)
+        if accept_err != null {
+            continue
+        }
+        serve_one(conn, handle, mut input[..], mut headers[..], mut body[..], mut output[..])
+        tcp.close(mut conn)
+    }
+}

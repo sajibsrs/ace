@@ -458,6 +458,53 @@ current normative rules, and Git preserves patch-level detail.
   low bytes of the previously homed adjacent stack argument. This was the root
   cause of the owning HTTPS client's response-dependent heap corruption during
   deferred `client_wipe`.
+- Moved `http`'s implementation files (`client.ace`, `format.ace`, `parse.ace`,
+  `redirect.ace`, `server.ace`, `transport.ace`) under `std/http/inc/` by
+  convention, keeping `std/http/mod.ace` as the sole external surface. Each of
+  `client.ace` and `server.ace` now declares its own plain `Context` struct and
+  `context_new`/`context_wipe` pair, since directory-module privacy already
+  keeps the two from colliding internally; `mod.ace` aliases them as public
+  `ClientContext`/`ServerContext` and re-exposes disambiguated constructors
+  `client_context_new`/`client_context_wipe` alongside the existing
+  `server_context_new`/`server_context_wipe`, keeping the facade uniform.
+- Added `tcp.listen_nonblock` and `tcp.accept_nonblock`, mirroring
+  `connect_nonblock`, so a listener and its accepted connections can join the
+  same nonblocking, `poll`-driven composition as outbound connections.
+- Implemented `http.serve`: a caller-driven, nonblocking HTTP/1.1 server core
+  (`std/http/server.ace`) built directly on the existing incremental
+  `RequestParser` and `Response.format`, following `tcp`'s externally-driven
+  connection-progress model rather than owning a blocking loop. `ServerContext`
+  binds a nonblocking listener and poll queue and allocates a caller-sized
+  array of fixed-capacity `Session` slots (separate input/header/body/output
+  buffers per session, no internal resizing); `serve` performs at most one
+  `poll.wait` per exhausted batch and drives exactly one ready listener or
+  session per call, returning one `Event`
+  (`accepted`/`request`/`sent`/`disconnected`/`failed`) — the caller's own loop
+  supplies the bound on how long to run. `respond` formats a handler's
+  `Response` into the session's output, synthesizing exactly one
+  `Connection: close` header and rejecting a handler-supplied one; each
+  session closes and recycles once its response is fully sent. A forked-client
+  loopback fixture (`tests/emit/http/serve.ace`) proves accept, parse,
+  respond, close, and slot reuse across two sequential connections.
+- Renamed the server context's per-buffer parameters from `*_cap` to `*_size`
+  (`input_size`, `header_size`, `body_size`, `output_size`), matching the
+  `_size` naming already used elsewhere (`mem.realloc`'s `new_size`,
+  `tls.context_size`/`record_size`) instead of introducing a one-off `_cap`
+  spelling.
+- Added `server_context_new(endpoint): (ServerContext, Error)`, a low-effort
+  overload beside the fully-parameterized form, for a caller with no capacity
+  preference. Unlike the client's `Storage`, session capacities are
+  deliberately fixed for the context's lifetime rather than grown on demand
+  (so one session overflowing never disturbs another live session's buffer
+  mid-poll), so the low-effort form supplies fixed built-in defaults instead —
+  512 backlog, 128 sessions, 8 KiB input/output, 64 headers, and 256 KiB body
+  per session — rather than growing storage. The defaults live in
+  underscore-prefixed module constants (`_backlog`, `_session_count`, …)
+  rather than uppercase names, following the project's established lowercase
+  `const` style (e.g. `tls`'s `closed`, `send_record`); a same-named local
+  parameter in the explicit overload ordinarily shadows a same-named constant
+  without conflict, so no artificial `default_`-style prefix was needed to
+  avoid a collision that was never actually possible.
 - Added a complete HTTP server proof of concept
   (`demo/http-complete-server/main.ace`) built on the low-effort
   `server_context_new(endpoint)` overload, and a small `http.get` usage

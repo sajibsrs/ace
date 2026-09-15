@@ -5,12 +5,12 @@ import mem
 import net
 
 main(): int {
-    context: http.Context = http.context_new()
+    context: http.ClientContext = http.client_context_new()
     if context.storage == null { return 98 }
     context.redirects = http.RedirectPolicy {limit = 4}
-    http.context_wipe(mut context)
+    http.client_context_wipe(mut context)
     if context.storage != null || context.redirects.limit != 0 { return 99 }
-    http.context_wipe(mut context)
+    http.client_context_wipe(mut context)
 
     client: http.Client = http.client_new()
     if client.context.storage == null { return 100 }
@@ -188,5 +188,12 @@ main(): int {
         }
         else { return 6 }
     }
+
+    server_ctx: http.ServerContext, server_err: Error = http.server_context_new("127.0.0.1:0")
+    if server_err != null { return 54 }
+    if server_ctx.sessions.len != 128 { return 55 }
+    http.server_context_wipe(mut server_ctx)
+    if server_ctx.sessions != null { return 56 }
+
     return 0
 }

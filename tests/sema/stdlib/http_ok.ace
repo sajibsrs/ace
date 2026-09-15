@@ -1,7 +1,7 @@
 import http
 import net
 
-check_client(mut context: http.Context, mut client: http.Client) {
+check_client(mut context: http.ClientContext, mut client: http.Client) {
     response: http.Response, err: Error = http.get("http://example.com/", mut context)
     response, err = http.get("http://example.com/", mut client)
     response, err = http.get("https://example.com/", mut client)
@@ -75,14 +75,45 @@ check(
     return 1
 }
 
+check_server(mut ctx: http.ServerContext): int {
+    event: http.Event, err: Error = http.serve(mut ctx, u64(1000000000))
+    switch event {
+        http.Event.none { return 0 }
+        http.Event.accepted(index: usize) { return int(index) }
+        http.Event.request(index: usize) {
+            target: string = ctx.sessions[index].request.target
+            method: string = ctx.sessions[index].request.method
+            response: http.Response = http.Response {status = 200, body = "ok"}
+            respond_err: Error = http.respond(mut ctx, index, response)
+            if respond_err != null && respond_err.domain != typeid(http.ServerErr) { return 1 }
+            return int(target.len + method.len)
+        }
+        http.Event.sent(index: usize) { return int(index) }
+        http.Event.disconnected(index: usize) { return int(index) }
+        http.Event.failed(fail: http.Failure) {
+            if fail.err != null { return 1 }
+            return int(fail.index)
+        }
+    }
+    if err != null && err.domain != typeid(http.ServerErr) { return 1 }
+    return 0
+}
+
 main(): int {
-    context: http.Context = http.context_new()
+    context: http.ClientContext = http.client_context_new()
     context.redirects = http.RedirectPolicy {limit = 10}
     client: http.Client = http.client_new()
     client.context.redirects = http.RedirectPolicy {limit = 10}
     client.tls = http.TlsConfig{}
     check_client(mut context, mut client)
-    http.context_wipe(mut context)
+    http.client_context_wipe(mut context)
     http.client_wipe(mut client)
+
+    server_ctx: http.ServerContext, server_err: Error = http.server_context_new(
+        "127.0.0.1:0", usize(8), usize(4), usize(1024), usize(8), usize(256), usize(1024))
+    if server_err == null {
+        check_server(mut server_ctx)
+        http.server_context_wipe(mut server_ctx)
+    }
     return 0
 }

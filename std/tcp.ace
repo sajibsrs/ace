@@ -150,6 +150,29 @@ pub connect_nonblock(address: net.Addr4): (Conn, Error) {
     return zero_connection(), err
 }
 
+pub listen_nonblock(address: net.Addr4, backlog: usize): (Listener, Error) {
+    sock: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
+
+    if err != null {
+        return zero_listener(), err
+    }
+    err = net.nonblock(sock, true)
+    if err == null {
+        err = net.reuse_addr(sock, true)
+    }
+    if err == null {
+        err = net.bind(sock, address)
+    }
+    if err == null {
+        err = net.listen(sock, backlog)
+    }
+    if err != null {
+        sys.close(sock)
+        return zero_listener(), err
+    }
+    return Listener {socket = sock}, null
+}
+
 pub local(listener: Listener): (net.Addr4, Error) {
     address: net.Addr4, err: Error = net.local(listener.socket)
     return address, err
@@ -159,6 +182,20 @@ pub accept(listener: Listener): (Conn, net.Addr4, Error) {
     sock: net.Socket, address: net.Addr4, err: Error = net.accept(listener.socket)
 
     if err != null {
+        return zero_connection(), address, err
+    }
+    return connection(sock, Interest.read), address, null
+}
+
+pub accept_nonblock(listener: Listener): (Conn, net.Addr4, Error) {
+    sock: net.Socket, address: net.Addr4, err: Error = net.accept(listener.socket)
+
+    if err != null {
+        return zero_connection(), address, err
+    }
+    err = net.nonblock(sock, true)
+    if err != null {
+        sys.close(sock)
         return zero_connection(), address, err
     }
     return connection(sock, Interest.read), address, null

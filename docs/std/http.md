@@ -146,6 +146,24 @@ closes and its slot returns to `free` once `Event.sent` reports the response
 fully sent; a full session table simply leaves further connections in the OS
 listen queue until a slot recycles.
 
+## Server: blocking `serve`
+
+`serve(endpoint, handle): Error` is a second, unrelated overload for a caller
+with no interest in the nonblocking core above: no `ServerContext`, no poll
+queue, no session table, and no caller-visible backlog or capacity tuning. It
+parses `endpoint`, binds a blocking `tcp` listener, then loops forever,
+serially: accept one connection, read exactly one request into a fixed
+internal buffer, call `handle(request): Response`, format and write the
+response with a synthesized `Connection: close` (a handler-supplied one is
+dropped along with the connection, same as `respond`), close, repeat. Per-
+connection buffer sizes match the low-effort `server_context_new(endpoint)`
+defaults but are not configurable. `serve` returns only if the listener itself
+cannot be created; any per-connection failure (parse error, oversized
+request, mid-write disconnect) just drops that connection and the loop
+continues. There is no concurrency — one connection is handled at a time —
+and no session table to overflow, so this overload is meant for demos and
+local testing rather than serving concurrent traffic.
+
 ## Complete HTTP server demo
 
 A runnable proof of concept lives at `demo/http-complete-server/main.ace`: it
@@ -159,6 +177,18 @@ and anything else with `404`. Build and run it with:
 ```
 
 Verify it with any HTTP client, for example `curl http://127.0.0.1:8080/`.
+
+## Simple HTTP server demo
+
+A second, minimal proof of concept lives at
+`demo/http-simple-server/main.ace`: it calls the blocking `serve(endpoint,
+handle)` overload directly, with no `ServerContext`, `Event` loop, or explicit
+`respond` call — just an endpoint and a handler. Build and run it with:
+
+```sh
+./ace demo/http-simple-server/main.ace -o http-simple-server
+./http-simple-server  # listens on 127.0.0.1:8080
+```
 
 ## Known limitations and next improvements
 

@@ -1,0 +1,33 @@
+/* Minimal HTTP/1.1 server proof of concept over std/http's blocking
+ * `serve(endpoint, handle)` overload: no poll queue, no session table, no
+ * backlog or capacity tuning — just an address and a handler.
+ *
+ * Build and run:
+ *   ./ace demo/http-simple-server/main.ace -o http-simple-server
+ *   ./http-simple-server
+ *
+ * Listens on 127.0.0.1:8080.
+ */
+
+import fmt
+import http
+import mem
+
+handle(request: http.Request): http.Response {
+    if mem.equal(request.target, "/") {
+        return http.Response {status = 200, body = "Hello from Ace!\n"}
+    }
+    return http.Response {status = 404, body = "not found\n"}
+}
+
+main(): int {
+    endpoint: string = "127.0.0.1:8080"
+    fmt.printf("listening on %s (Ctrl+C to stop)\n", endpoint)
+
+    err: Error = http.serve(endpoint, handle)
+    if err != null {
+        fmt.printf("failed to start server on %s: error %d\n", endpoint, int(err.code))
+        return 1
+    }
+    return 0
+}
