@@ -146,17 +146,16 @@ closes and its slot returns to `free` once `Event.sent` reports the response
 fully sent; a full session table simply leaves further connections in the OS
 listen queue until a slot recycles.
 
-## Minimal HTTP server demo
+## Complete HTTP server demo
 
-A runnable proof of concept lives at `demo/http-server/main.ace`: it opens a
-listener with the low-effort `server_context_new(endpoint)` overload, loops on
-`serve`, logs each `Event`, and answers `GET /` with a static body and
-anything else with `404`. Build and run it with:
+A runnable proof of concept lives at `demo/http-complete-server/main.ace`: it
+opens a listener with the low-effort `server_context_new(endpoint)` overload,
+loops on `serve`, logs each `Event`, and answers `GET /` with a static body
+and anything else with `404`. Build and run it with:
 
 ```sh
-./ace demo/http-server/main.ace -o http-server
-./http-server               # listens on 127.0.0.1:8080
-./http-server 0.0.0.0:9000  # or an explicit host:port
+./ace demo/http-complete-server/main.ace -o http-complete-server
+./http-complete-server  # listens on 127.0.0.1:8080
 ```
 
 Verify it with any HTTP client, for example `curl http://127.0.0.1:8080/`.

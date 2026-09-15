@@ -458,6 +458,10 @@ current normative rules, and Git preserves patch-level detail.
   low bytes of the previously homed adjacent stack argument. This was the root
   cause of the owning HTTPS client's response-dependent heap corruption during
   deferred `client_wipe`.
+- Added a complete HTTP server proof of concept
+  (`demo/http-complete-server/main.ace`) built on the low-effort
+  `server_context_new(endpoint)` overload, and a small `http.get` usage
+  example to `docs/standard-library.md`.
 
 ## Current frontier
 
