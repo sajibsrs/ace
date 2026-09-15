@@ -509,6 +509,23 @@ current normative rules, and Git preserves patch-level detail.
   (`demo/http-complete-server/main.ace`) built on the low-effort
   `server_context_new(endpoint)` overload, and a small `http.get` usage
   example to `docs/standard-library.md`.
+- Added a blocking `serve(endpoint, handle): Error` overload alongside the
+  nonblocking core: no `ServerContext`, poll queue, session table, or
+  caller-visible backlog/capacity tuning, just an endpoint and a
+  `(Request): Response` handler. It binds, then loops forever, serially —
+  accept, read one request, call `handle`, write the response with a
+  synthesized `Connection: close`, close, repeat — using fixed internal
+  buffers sized like the low-effort `server_context_new(endpoint)`
+  defaults. A per-connection failure just drops that connection; `serve`
+  itself only returns if the listener cannot be created. Added a matching
+  minimal demo (`demo/http-simple-server/main.ace`).
+- Fixed `SPEC.md`'s stale claim that `parse_url` rejects `https://`: the
+  parser has accepted both schemes since the TLS-capable client overload was
+  added, since `get(url, mut client)` needs `https://` to parse and both
+  `get` overloads share one parser (`get(url, mut context)` still rejects
+  `https://` before connecting, but through its own scheme-forced
+  `parse_url_for(url, false)` call, not through `parse_url` itself). Updated
+  the stale test assertion in `tests/emit/http/main.ace` to match.
 
 ## Current frontier
 

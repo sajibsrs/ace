@@ -264,13 +264,14 @@ nonblocking connect completion remain visible without callbacks or allocation.
   Standard Library #17 are implemented, including field and response defaults,
   named method/status constants, conventional response reasons, and blocking
   plaintext/TLS `get` overloads over caller storage and opt-in bounded redirects
-  for the owning client. Next complete the paired
-  one-shot `post` overloads over `Storage` and owning `Client`, then the
-  caller-bounded nonblocking `serve` loop over `tcp` and `poll`. HTTPS shares
+  for the owning client, and the caller-driven nonblocking `serve` core over
+  `tcp` and `poll` (`ServerContext`, `serve`, `respond`; see `SPEC.md`). Next
+  complete the paired one-shot `post` overloads over `Storage` and owning
+  `Client`. HTTPS shares
   the `http` surface and transport core through its exact TLS-config overload. `rune`,
   UTF-8 decoding, and `yarn` are not prerequisites because HTTP framing is
   ASCII and payloads remain byte views.
-  Once `serve` exists and TLS server mode (see the TLS client transport item's
+  Now that `serve` exists, TLS server mode (see the TLS client transport item's
   deferred server mode above) makes a loopback HTTPS fixture possible, add
   redirect scheme-transition coverage to `tests/emit/http/redirect.ace`: an
   HTTP-to-HTTPS upgrade hop and an HTTPS-to-HTTP hop asserting

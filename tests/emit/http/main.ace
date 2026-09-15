@@ -80,8 +80,8 @@ main(): int {
         return 31
     }
     url, err = http.parse_url("https://example.com/")
-    if err != http.UrlErr.invalid || !mem.equal(err.name, "UrlErr") ||
-        !mem.equal(err.message, "invalid or unsupported HTTP URL") {
+    if err != null || !mem.equal(url.host, "example.com") ||
+        !mem.equal(url.path, "/") || url.port != 443 {
         return 32
     }
     url, err = http.parse_url("http://user@example.com/")

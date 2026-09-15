@@ -45,7 +45,16 @@ history.
 - Put OS-specific standard-library code behind `std/<module>/mod.ace` in
   `std/<module>/os/<target>.ace`. Reserve `backend` for compiler/code-generation
   backends.
+- By convention (not a requirement), keep a directory module's `mod.ace` at its
+  root and its other implementation files under `std/<module>/inc/`. This is
+  organizational only; `mod.ace` remains the sole external import surface
+  regardless of where its implementation files sit.
 - Start strict and add conveniences later.
+- Module-level `const` declarations use a leading underscore (`_backlog`), not
+  uppercase, keeping the language's ordinary lowercase identifier style. A
+  same-named local (e.g. a parameter) may still shadow it per the ordinary
+  nearest-binding rule; that shadowing is not an error, so there is no need for
+  a `default_`-style prefix to dodge a collision that cannot occur.
 - `.acefmt` is normative; update it with formatting-rule changes.
 
 ## Scoped rules

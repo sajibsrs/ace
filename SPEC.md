@@ -831,18 +831,23 @@ or making related facade and target APIs differ.
       Separating path and query makes a query-only URL representable without
       allocation: its path is the static `/` view and its query retains the
       leading `?`. `parse_url(url:
-      string): (Url, Error)` initially accepts only an absolute `http` URL with
-      a nonempty authority: `http://host`, an optional explicit decimal port,
-      and an optional path/query request target. An omitted port becomes 80;
-      an omitted path becomes `/`; a query without a path therefore composes
-      as `/?`. The host may be an ASCII DNS name or dotted IPv4
-      literal. DNS names are limited to 253 bytes with labels of at most 63
-      bytes. User information, fragments, bracketed IPv6 literals, embedded
-      control/NUL bytes, empty or out-of-range ports, and every other scheme
-      fail with `UrlErr`; `https://` is rejected rather than silently using
-      plaintext. Parsing allocates nothing, performs no DNS lookup, preserves
-      path/query bytes and percent escapes exactly, and never percent-decodes
-      or Unicode-normalizes them.
+      string): (Url, Error)` accepts an absolute `http` or `https` URL with a
+      nonempty authority: `http://host` or `https://host`, an optional
+      explicit decimal port, and an optional path/query request target. An
+      omitted port becomes 80 for `http` and 443 for `https`; an omitted path
+      becomes `/`; a query without a path therefore composes as `/?`. The host
+      may be an ASCII DNS name or dotted IPv4 literal. DNS names are limited
+      to 253 bytes with labels of at most 63 bytes. User information,
+      fragments, bracketed IPv6 literals, embedded control/NUL bytes, empty or
+      out-of-range ports, and every other scheme fail with `UrlErr`. Both
+      schemes share this one parser because both `get` overloads share it: the
+      TLS-capable `get(url, mut client)` needs `https://` to parse, and the
+      plaintext-only `get(url, mut context)` still rejects an `https://` URL
+      before connecting — it never silently falls back to plaintext — through
+      its own scheme-forced `parse_url_for(url, false)` call. Parsing
+      allocates nothing, performs no DNS lookup, preserves path/query bytes
+      and percent escapes exactly, and never percent-decodes or
+      Unicode-normalizes them.
     - The protocol core uses `Header: struct { name: string, value: string }`
       and caller-provided header/body/output storage. Methods are strings rather
       than a closed enum so extension methods need no API change. Serialization
@@ -915,13 +920,14 @@ or making related facade and target APIs differ.
       mut []u8, input: mut []u8, headers: mut []Header, body: mut []u8, url:
       mut []u8 = null }`
       remains the internal neutral workspace for one HTTP exchange.
-      `Context: struct { storage: mut []Storage, redirects: RedirectPolicy }`
+      `ClientContext: struct { storage: mut []Storage, redirects: RedirectPolicy }`
       owns and grows the plaintext workspace through `mem` and carries HTTP
-      policy. `context_new` constructs it and `context_wipe` releases it.
-      `Client: struct { context: Context, tls: TlsConfig }` composes that same
-      HTTP state with secure-transport configuration; `client_new` and
-      `client_wipe` manage the composed value. The exact public overloads are
-      `get(url: string, mut context: Context): (Response, Error)`, which accepts
+      policy. `client_context_new` constructs it and `client_context_wipe`
+      releases it. `Client: struct { context: ClientContext, tls: TlsConfig }`
+      composes that same HTTP state with secure-transport configuration;
+      `client_new` and `client_wipe` manage the composed value. The exact
+      public overloads are
+      `get(url: string, mut context: ClientContext): (Response, Error)`, which accepts
       only plaintext HTTP and has no TLS external-component reference, and
       `get(url: string, mut client: Client): (Response, Error)`, which accepts
       HTTP or HTTPS and carries `@extern("tls")`. Allocation failure is explicit.
@@ -949,33 +955,49 @@ or making related facade and target APIs differ.
       `capacity_input`, `capacity_headers`, and `capacity_body`. Formatter
       failures remain `FormatErr`; lower-layer socket/TCP errors retain
       their original domains and codes.
-    - Server convenience is `serve(endpoint: string, mut handler: Handler,
-      storage: ServerStorage): Error`, where `Handler` requires `mut
-      handle(request: Request, body: mut []u8): Response`. `ServerStorage`
-      groups a caller-owned mutable slice of `Session` values and caller-owned
-      `poll.Event` storage. Each session supplies independent input, header,
-      request-body, handler response-body, and serialized-output storage plus
-      HTTP-owned progress state; its defaulted progress fields make literal
-      initialization name only those five required buffers. Their capacities
-      and the session count are entirely caller-selected. `serve` parses its
-      endpoint through `net.parse4`, owns nonblocking listener setup and one
-      blocking poll loop, and multiplexes every active session without threads
-      or hidden allocation. A completed request's views remain valid only for
-      its synchronous handler call; the returned response is immediately
-      formatted into that session's output before another handler invocation.
-      Slow sockets therefore do not block one another, while a slow handler
-      still pauses the loop. Full slots leave further connections in the OS
-      listen queue until a slot is recycled.
+    - Server convenience is caller-driven and nonblocking, mirroring `tcp`'s
+      externally-driven connection-progress model rather than owning a loop:
+      `server_context_new(endpoint: string, backlog: usize, session_count:
+      usize, input_size: usize, header_size: usize, body_size: usize,
+      output_size: usize): (ServerContext, Error)` parses `endpoint` through
+      `net.parse4`, binds a nonblocking listener, creates the poll queue, and
+      allocates `session_count` `Session` slots with those exact per-buffer
+      capacities. The overload `server_context_new(endpoint: string):
+      (ServerContext, Error)` is the low-effort form for a caller with no
+      capacity preference: fixed built-in defaults (512 backlog, 128 sessions,
+      8 KiB input/output, 64 headers, 256 KiB body per session), chosen once
+      and not otherwise adjustable short of the explicit form. Capacities are fixed for the
+      context's lifetime — no internal resizing, unlike the client's growing
+      `Storage` — so a request or response that overflows its session's storage fails only
+      that session. `serve(mut context: ServerContext, timeout_ns: u64):
+      (Event, Error)` performs at most one `poll.wait` and drives exactly one
+      ready listener or session by one nonblocking step, returning one
+      `Event`; when one wait reports several ready descriptors, subsequent
+      calls drain them before waiting again. The caller's own loop supplies
+      the bound: how many times it calls `serve` and when it stops, so slow
+      sockets never block one another and nothing is hidden inside the
+      library. `Event` is the tagged union `accepted`/`request`/`sent`/
+      `disconnected`/`failed(index, Error)`, each payload (or the failure
+      pair) naming the affected session index; a nonnull `Error` returned
+      from `serve` itself is a listener, poll-queue, or wait-level failure
+      and is terminal, distinct from a per-session `Event.failed`. On
+      `Event.request`, the parsed `Request`'s views remain valid on
+      `context.sessions[index].request` only until the next call that touches
+      that session. `respond(mut context: ServerContext, index: usize,
+      response: Response): Error` formats the response into that session's
+      output storage and arms it to send.
     - Each accepted connection handles exactly one request and response, then
-      closes and recycles its session. Server serialization adds exactly one
-      `Connection: close` field and rejects a handler-supplied `Connection`
-      field, while ordinary `Request.format`, `Response.format`, and client
-      socket conveniences continue to synthesize no headers. Client-specific
-      syntax, framing, capacity, receive, send, or close failures close only
-      that session and are initially not dispatched to the handler. Listener,
-      poll-queue, wait, and unrecoverable accept failures terminate `serve` and
-      preserve their domains. Persistent connections, resumable handlers, and
-      threaded application work remain additive.
+      closes and recycles its session once `Event.sent` reports the response
+      fully sent. Server serialization adds exactly one `Connection: close`
+      field and rejects a handler-supplied `Connection` field, while ordinary
+      `Request.format`, `Response.format`, and client socket conveniences
+      continue to synthesize no headers. Session-specific syntax, framing,
+      capacity, receive, send, or close failures close only that session and
+      surface as `Event.failed` or `Event.disconnected`. Listener, poll-queue,
+      and wait failures terminate `serve` and preserve their domains. Full
+      slots leave further connections in the OS listen queue until a slot is
+      recycled. Persistent connections, TLS server mode, and threaded
+      application work remain additive.
     - HTTPS is selected by the URL in `http`, not exposed as a separate
       protocol module. `get(url, mut client)` accepts `http://` and `https://`,
       lazily retains its ordinary and TLS workspace, and uses system trust for
