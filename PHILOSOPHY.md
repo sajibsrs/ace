@@ -20,7 +20,12 @@ When goals conflict, resolve in this order:
 ## General Goals
 1. Trust the programmer, but provide what they need.
 2. As simple/minimal as it goes.
-3. Don't force features that can remain opt-in.
+3. Don't force features that can remain opt-in. Distinguish implementation
+   defaults (no caller-visible behavioral or safety variance — e.g. which TLS
+   library backs a single mandatory security posture) from policy defaults
+   (caller-visible behavior or safety varies — e.g. redirect-following, backend
+   selection once pluggable). Hide the former entirely; keep the latter an
+   explicit, overridable knob with a safe/minimal default at the zero value.
 4. Performance is the ultimate goal.
 5. Simple, clean, distinguishable and pragmatic syntax.
 6. True to machine (less magic).
