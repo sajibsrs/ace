@@ -222,4 +222,4 @@ every function to the file it was written in.
 - Standard-library modules live beside the compiler binary (`std/` next to
   `ace`); there is no user-configurable search path yet.
 - `bits`, `fmt`, `mem`, and the minimal `math` exist in the standard library today — see
-  [Standard library](standard-library.md).
+  [Standard library](std/index.md).

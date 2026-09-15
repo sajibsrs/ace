@@ -286,7 +286,7 @@ Specializations currently live in the generic's module and apply to free
 functions. Struct generics are untouched, and type-owned generic methods do not
 specialize yet. The standard library uses the feature directly: both `str`
 `parse[T]` overloads are `specialized` templates whose entire callable surface
-is per-type specializations (see [str](standard-library.md#str)).
+is per-type specializations (see [str](std/str.md)).
 
 ## Declaration order and forward calls
 

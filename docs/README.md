@@ -27,7 +27,7 @@ must be corrected.
   and the reserved `panic(message)` and checked-only `assert(condition)` builtins.
 - [Modules](module.md) — qualified and selective imports, standard-library and
   relative local sources, `pub` visibility, dependency loading, and cycles.
-- [Standard library](standard-library.md) — the shipped `std/` modules and
+- [Standard library](std/index.md) — the shipped `std/` modules and
   their implemented APIs.
 
 ## Tooling
