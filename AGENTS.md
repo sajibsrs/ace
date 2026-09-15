@@ -22,7 +22,9 @@ history.
 
 - Work on one topic at a time in Decision Queue order.
 - Propose the issue and recommended solution before changing code, and obtain
-  owner permission. Present viable alternatives when relevant.
+  owner permission. Present viable alternatives when relevant. No code is
+  modified or implemented without the owner's explicit permission, even when a
+  future change is already agreed in principle (e.g. noted in `TODO.md`).
 - The owner resolves `[open]` and `[controversial]` items and removes those
   markers. Provisional spelling may change; semantics may not.
 - Order decisions as philosophy, semantics, syntax, then implementation. For

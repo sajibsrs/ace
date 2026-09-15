@@ -189,11 +189,5 @@ main(): int {
         else { return 6 }
     }
 
-    server_ctx: http.ServerContext, server_err: Error = http.server_context_new("127.0.0.1:0")
-    if server_err != null { return 54 }
-    if server_ctx.sessions.len != 128 { return 55 }
-    http.server_context_wipe(mut server_ctx)
-    if server_ctx.sessions != null { return 56 }
-
     return 0
 }

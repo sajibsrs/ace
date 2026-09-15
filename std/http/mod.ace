@@ -32,12 +32,6 @@ pub TlsConfig: type = transport.TlsConfig
 pub RedirectPolicy: type = redirect.RedirectPolicy
 pub ClientContext: type = client.Context
 pub Client: type = client.Client
-pub ServerErr: type = server.ServerErr
-pub SessionState: type = server.SessionState
-pub Session: type = server.Session
-pub Failure: type = server.Failure
-pub Event: type = server.Event
-pub ServerContext: type = server.Context
 
 pub method_connect: const string = message.method_connect
 pub method_delete: const string = message.method_delete
@@ -73,29 +67,6 @@ pub get(value: string, mut client: Client): (Response, Error) {
     return response, err
 }
 
-pub server_context_new(endpoint: string): (ServerContext, Error) {
-    ctx: ServerContext, err: Error = server.context_new(endpoint)
-    return ctx, err
-}
-
-pub server_context_new(endpoint: string, backlog: usize, session_count: usize,
-    input_size: usize, header_size: usize, body_size: usize, output_size: usize): (ServerContext, Error) {
-    ctx: ServerContext, err: Error = server.context_new(endpoint, backlog,
-        session_count, input_size, header_size, body_size, output_size)
-    return ctx, err
-}
-
-pub server_context_wipe(mut ctx: ServerContext) { server.context_wipe(mut ctx) }
-
-pub serve(mut ctx: ServerContext, timeout_ns: u64): (Event, Error) {
-    event: Event, err: Error = server.serve(mut ctx, timeout_ns)
-    return event, err
-}
-
 pub serve(endpoint: string, handle: (Request): Response): Error {
     return server.serve(endpoint, handle)
-}
-
-pub respond(mut ctx: ServerContext, index: usize, response: Response): Error {
-    return server.respond(mut ctx, index, response)
 }

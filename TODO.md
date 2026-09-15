@@ -264,10 +264,11 @@ nonblocking connect completion remain visible without callbacks or allocation.
   Standard Library #17 are implemented, including field and response defaults,
   named method/status constants, conventional response reasons, and blocking
   plaintext/TLS `get` overloads over caller storage and opt-in bounded redirects
-  for the owning client, and the caller-driven nonblocking `serve` core over
-  `tcp` and `poll` (`ServerContext`, `serve`, `respond`; see `SPEC.md`). Next
-  complete the paired one-shot `post` overloads over `Storage` and owning
-  `Client`. HTTPS shares
+  for the owning client, plus the single blocking server convenience,
+  `serve(endpoint, handle): Error` (see `SPEC.md`); the caller-driven
+  nonblocking `ServerContext`/`Event` core has been removed (see the fresh-carve
+  item below). Next complete the paired one-shot `post` overloads over
+  `Storage` and owning `Client`. HTTPS shares
   the `http` surface and transport core through its exact TLS-config overload. `rune`,
   UTF-8 decoding, and `yarn` are not prerequisites because HTTP framing is
   ASCII and payloads remain byte views.
@@ -279,6 +280,17 @@ nonblocking connect completion remain visible without callbacks or allocation.
   against the initial `http://` URL and never crosses schemes, so `SPEC.md`'s
   upgrade-allowed/downgrade-rejected redirect rule is implemented and used by
   `sandbox.ace`'s upgrade case in practice but has no fixture of its own.
+- **Nonblocking HTTP server core needs a fresh carve** [open] — the
+  caller-driven `ServerContext`/`Event`/`serve(mut ctx, timeout_ns)` core
+  (formerly `std/http/inc/server.ace`) and its `demo/http-complete-server`
+  proof of concept had been implemented directly, without going through the
+  Decision Queue carve process first. The owner does not want to keep that
+  design and has removed it (code, tests, and docs); `std/http/inc/server.ace`
+  now holds only the blocking `serve(endpoint, handle)` overload, and
+  `demo/http-simple-server/main.ace` is the sole server demo. A fresh carve
+  (philosophy, then semantics, then syntax, then implementation) deciding how
+  much server mechanism belongs in the language versus a framework built on
+  top must happen before anything like the nonblocking core returns.
 
 ## 7. Completed checked-build checkpoint
 

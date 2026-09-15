@@ -110,85 +110,41 @@ coding, unsupported transfer coding, malformed chunks, premature fixed/chunked
 EOF, and status 101 are explicit failures. Header names are compared using
 ASCII case folding; values and payload bytes otherwise pass through unchanged.
 
-## Server: `serve`
-
-`server_context_new(endpoint, backlog, session_count, input_size, header_size,
-body_size, output_size): (ServerContext, Error)` parses `endpoint` with
-`net.parse4`, binds a nonblocking `tcp` listener, creates the `poll` queue, and
-allocates `session_count` `Session` slots, each with its own fixed-size input,
-header, body, and output storage. Capacities never grow after construction: a
-request or response that does not fit its session closes only that session.
-The overload `server_context_new(endpoint): (ServerContext, Error)` skips all
-of that for a caller with no capacity preference, using fixed built-in
-defaults: 512 backlog, 128 sessions, 8 KiB input/output, 64 headers, and
-256 KiB body per session. `server_context_wipe(mut context)` closes every open session, the listener,
-and the poll queue, and releases all storage.
-
-`serve(mut context, timeout_ns): (Event, Error)` drives the server by exactly
-one nonblocking step per call — at most one `poll.wait`, then one accept or
-one session receive/send attempt — and returns one `Event`. When a single
-`poll.wait` reports several ready descriptors, later `serve` calls drain them
-before waiting again. There is no loop inside `http`: the caller's own loop
-decides how many times to call `serve` and when to stop, so one slow
-connection never blocks another. `Event` is the tagged union `none`,
-`accepted(index)`, `request(index)`, `sent(index)`, `disconnected(index)`, and
-`failed(Failure { index, err })`. A nonnull `Error` returned from `serve`
-itself (as opposed to `Event.failed`) is a listener, poll-queue, or wait-level
-failure and ends the server.
-
-On `Event.request(index)`, `context.sessions[index].request` holds the parsed
-`Request`; its views stay valid only until the next call that touches that
-session. The caller inspects it, builds a `Response`, and calls
-`respond(mut context, index, response): Error`, which formats the response
-into the session's output storage, synthesizes exactly one `Connection: close`
-header, and rejects a handler-supplied `Connection` header. Each session
-closes and its slot returns to `free` once `Event.sent` reports the response
-fully sent; a full session table simply leaves further connections in the OS
-listen queue until a slot recycles.
-
 ## Server: blocking `serve`
 
-`serve(endpoint, handle): Error` is a second, unrelated overload for a caller
-with no interest in the nonblocking core above: no `ServerContext`, no poll
-queue, no session table, and no caller-visible backlog or capacity tuning. It
-parses `endpoint`, binds a blocking `tcp` listener, then loops forever,
-serially: accept one connection, read exactly one request into a fixed
-internal buffer, call `handle(request): Response`, format and write the
-response with a synthesized `Connection: close` (a handler-supplied one is
-dropped along with the connection, same as `respond`), close, repeat. Per-
-connection buffer sizes match the low-effort `server_context_new(endpoint)`
-defaults but are not configurable. `serve` returns only if the listener itself
-cannot be created; any per-connection failure (parse error, oversized
-request, mid-write disconnect) just drops that connection and the loop
-continues. There is no concurrency — one connection is handled at a time —
-and no session table to overflow, so this overload is meant for demos and
-local testing rather than serving concurrent traffic.
+`serve(endpoint, handle): Error` is the only server convenience: no
+`ServerContext`, no poll queue, no session table, and no caller-visible
+backlog or capacity tuning. It parses `endpoint`, binds a blocking `tcp`
+listener, then loops forever, serially: accept one connection, read exactly
+one request into a fixed internal buffer, call `handle(request): Response`,
+format and write the response with a synthesized `Connection: close` (a
+handler-supplied one is dropped along with the connection), close, repeat.
+Buffer sizes are fixed and not configurable. `serve` returns only if the
+listener itself cannot be created; any per-connection failure (parse error,
+oversized request, mid-write disconnect) just drops that connection and the
+loop continues. There is no concurrency — one connection is handled at a
+time — so this overload is meant for demos and local testing rather than
+serving concurrent traffic.
 
-## Complete HTTP server demo
-
-A runnable proof of concept lives at `demo/http-complete-server/main.ace`: it
-opens a listener with the low-effort `server_context_new(endpoint)` overload,
-loops on `serve`, logs each `Event`, and answers `GET /` with a static body
-and anything else with `404`. Build and run it with:
-
-```sh
-./ace demo/http-complete-server/main.ace -o http-complete-server
-./http-complete-server  # listens on 127.0.0.1:8080
-```
-
-Verify it with any HTTP client, for example `curl http://127.0.0.1:8080/`.
+A caller-driven, nonblocking `ServerContext`/`Event` core existed here at one
+point but was implemented directly, without going through the Decision Queue
+carve process. It has been removed; a fresh carve of how much server
+mechanism belongs in the language versus a framework built on top is tracked
+in `TODO.md` before anything like it returns.
 
 ## Simple HTTP server demo
 
-A second, minimal proof of concept lives at
-`demo/http-simple-server/main.ace`: it calls the blocking `serve(endpoint,
-handle)` overload directly, with no `ServerContext`, `Event` loop, or explicit
-`respond` call — just an endpoint and a handler. Build and run it with:
+A runnable proof of concept lives at `demo/http-simple-server/main.ace`: it
+calls `serve(endpoint, handle)` directly, with no `ServerContext`, event loop,
+or explicit respond call — just an endpoint and a handler. Build and run it
+with:
 
 ```sh
 ./ace demo/http-simple-server/main.ace -o http-simple-server
 ./http-simple-server  # listens on 127.0.0.1:8080
 ```
+
+Verify it with any HTTP client, for example `curl http://127.0.0.1:8080/`.
 
 ## Known limitations and next improvements
 

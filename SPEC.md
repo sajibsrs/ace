@@ -955,49 +955,27 @@ or making related facade and target APIs differ.
       `capacity_input`, `capacity_headers`, and `capacity_body`. Formatter
       failures remain `FormatErr`; lower-layer socket/TCP errors retain
       their original domains and codes.
-    - Server convenience is caller-driven and nonblocking, mirroring `tcp`'s
-      externally-driven connection-progress model rather than owning a loop:
-      `server_context_new(endpoint: string, backlog: usize, session_count:
-      usize, input_size: usize, header_size: usize, body_size: usize,
-      output_size: usize): (ServerContext, Error)` parses `endpoint` through
-      `net.parse4`, binds a nonblocking listener, creates the poll queue, and
-      allocates `session_count` `Session` slots with those exact per-buffer
-      capacities. The overload `server_context_new(endpoint: string):
-      (ServerContext, Error)` is the low-effort form for a caller with no
-      capacity preference: fixed built-in defaults (512 backlog, 128 sessions,
-      8 KiB input/output, 64 headers, 256 KiB body per session), chosen once
-      and not otherwise adjustable short of the explicit form. Capacities are fixed for the
-      context's lifetime — no internal resizing, unlike the client's growing
-      `Storage` — so a request or response that overflows its session's storage fails only
-      that session. `serve(mut context: ServerContext, timeout_ns: u64):
-      (Event, Error)` performs at most one `poll.wait` and drives exactly one
-      ready listener or session by one nonblocking step, returning one
-      `Event`; when one wait reports several ready descriptors, subsequent
-      calls drain them before waiting again. The caller's own loop supplies
-      the bound: how many times it calls `serve` and when it stops, so slow
-      sockets never block one another and nothing is hidden inside the
-      library. `Event` is the tagged union `accepted`/`request`/`sent`/
-      `disconnected`/`failed(index, Error)`, each payload (or the failure
-      pair) naming the affected session index; a nonnull `Error` returned
-      from `serve` itself is a listener, poll-queue, or wait-level failure
-      and is terminal, distinct from a per-session `Event.failed`. On
-      `Event.request`, the parsed `Request`'s views remain valid on
-      `context.sessions[index].request` only until the next call that touches
-      that session. `respond(mut context: ServerContext, index: usize,
-      response: Response): Error` formats the response into that session's
-      output storage and arms it to send.
-    - Each accepted connection handles exactly one request and response, then
-      closes and recycles its session once `Event.sent` reports the response
-      fully sent. Server serialization adds exactly one `Connection: close`
-      field and rejects a handler-supplied `Connection` field, while ordinary
-      `Request.format`, `Response.format`, and client socket conveniences
-      continue to synthesize no headers. Session-specific syntax, framing,
-      capacity, receive, send, or close failures close only that session and
-      surface as `Event.failed` or `Event.disconnected`. Listener, poll-queue,
-      and wait failures terminate `serve` and preserve their domains. Full
-      slots leave further connections in the OS listen queue until a slot is
-      recycled. Persistent connections, TLS server mode, and threaded
-      application work remain additive.
+    - Server convenience is exactly one blocking overload:
+      `serve(endpoint: string, handle: (Request): Response): Error` parses
+      `endpoint` through `net.parse4`, binds a blocking listener, then loops
+      forever, serially: accept one connection, read exactly one request into
+      a fixed internal buffer, call `handle`, format and write its response,
+      close, repeat. There is no `ServerContext`, poll queue, session table,
+      or caller-visible backlog/capacity tuning; buffer sizes are fixed and
+      not configurable. `serve` returns only if the listener itself cannot be
+      created; any per-connection failure (parse error, oversized request,
+      mid-write disconnect) just drops that connection and the loop
+      continues. Response serialization adds exactly one `Connection: close`
+      field and drops a handler-supplied `Connection` field along with the
+      connection, while ordinary `Request.format` and `Response.format`
+      continue to synthesize no headers. There is no concurrency — one
+      connection is handled at a time — so this overload suits demos and
+      local testing rather than serving concurrent traffic. A caller-driven
+      nonblocking server core existed at one point but was implemented
+      without a carve; it was removed pending a fresh carve of how much
+      server mechanism belongs in the language versus a framework built on
+      top (see `TODO.md`). Concurrency, persistent connections, and TLS
+      server mode remain additive or deferred to that future carve.
     - HTTPS is selected by the URL in `http`, not exposed as a separate
       protocol module. `get(url, mut client)` accepts `http://` and `https://`,
       lazily retains its ordinary and TLS workspace, and uses system trust for

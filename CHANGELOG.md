@@ -526,6 +526,19 @@ current normative rules, and Git preserves patch-level detail.
   `https://` before connecting, but through its own scheme-forced
   `parse_url_for(url, false)` call, not through `parse_url` itself). Updated
   the stale test assertion in `tests/emit/http/main.ace` to match.
+- Removed the caller-driven nonblocking HTTP server core
+  (`ServerContext`/`Session`/`Event`, `server_context_new`,
+  `server_context_wipe`, `serve(mut context, timeout_ns)`, `respond`) and its
+  `demo/http-complete-server` proof of concept: it had been implemented
+  directly, without going through the Decision Queue carve process, and the
+  owner does not want to keep that design. `std/http` now exposes exactly one
+  server convenience, the blocking `serve(endpoint, handle): Error` overload,
+  with `demo/http-simple-server` as its sole demo. Trimmed the matching
+  fixtures (`tests/emit/http/serve.ace` removed; `tests/emit/http/main.ace`
+  and `tests/sema/stdlib/http_ok.ace` no longer exercise the removed surface).
+  A fresh carve of how much server mechanism belongs in the language versus a
+  framework built on top is tracked in `TODO.md` before anything like the
+  nonblocking core returns.
 
 ## Current frontier
 
