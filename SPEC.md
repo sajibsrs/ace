@@ -970,26 +970,36 @@ or making related facade and target APIs differ.
       failures remain `FormatErr`; lower-layer socket/TCP errors retain
       their original domains and codes.
     - Server convenience is exactly one blocking overload:
-      `serve(endpoint: string, handle: (Request): Response): Error` parses
-      `endpoint` through `net.parse4`, binds a blocking listener, then loops
-      forever, serially: accept one connection, read exactly one request into
-      a fixed internal buffer, call `handle`, format and write its response,
-      close, repeat. There is no `ServerContext`, poll queue, session table,
-      or caller-visible backlog/capacity tuning; buffer sizes are fixed and
-      not configurable. `serve` returns only if the listener itself cannot be
-      created; any per-connection failure (parse error, oversized request,
-      mid-write disconnect) just drops that connection and the loop
-      continues. Response serialization adds exactly one `Connection: close`
-      field and drops a handler-supplied `Connection` field along with the
-      connection, while ordinary `Request.format` and `Response.format`
-      continue to synthesize no headers. There is no concurrency — one
-      connection is handled at a time — so this overload suits demos and
-      local testing rather than serving concurrent traffic. A caller-driven
-      nonblocking server core existed at one point but was implemented
-      without a carve; it was removed pending a fresh carve of how much
-      server mechanism belongs in the language versus a framework built on
-      top (see `TODO.md`). Concurrency, persistent connections, and TLS
-      server mode remain additive or deferred to that future carve.
+      `serve(endpoint: string, mut context: Context, router: Router): Error`
+      parses `endpoint` through `net.parse4`, binds a blocking listener, then
+      loops forever, serially: accept one connection, read exactly one
+      request into `context`'s buffers, dispatch it through `router`, format
+      and write its response, close, repeat. `Router.handle(method, path,
+      handler)` registers a handler for an exact method and a path-segment
+      prefix (`"/home"` matches `/home` and `/home/about` but not
+      `/homework`); `Router.dispatch` picks the longest matching registered
+      prefix, ignoring any `?query` suffix, and returns a bare 404 when
+      nothing matches. `Context` owns the `input`, `headers`, `body`, and
+      `output` buffers used across every connection; each starts empty and
+      grows through `mem.adjust` as a request or response demands, with no
+      size cap. `Context.backlog` (default 512) is the one plain, non-growing
+      field, passed once to `tcp.listen` when `serve` binds `endpoint`; it is
+      not adjusted at runtime. There is no poll queue or session table.
+      `serve` returns only if the listener itself cannot be created; any
+      per-connection failure
+      (parse error, allocation failure, mid-write disconnect) just drops
+      that connection and the loop continues. Response serialization adds
+      exactly one `Connection: close` field and drops a handler-supplied
+      `Connection` field along with the connection, while ordinary
+      `Request.format` and `Response.format` continue to synthesize no
+      headers. There is no concurrency — one connection is handled at a
+      time — so this overload suits demos and local testing rather than
+      serving concurrent traffic. A caller-driven nonblocking server core
+      existed at one point but was implemented without a carve; it was
+      removed pending a fresh carve of how much server mechanism belongs in
+      the language versus a framework built on top (see `TODO.md`).
+      Concurrency, persistent connections, and TLS server mode remain
+      additive or deferred to that future carve.
     - HTTPS is selected by the URL in `http`, not exposed as a separate
       protocol module. `get(url, mut client)` accepts `http://` and `https://`,
       lazily retains its ordinary and TLS workspace, and uses system trust for

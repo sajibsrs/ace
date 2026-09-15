@@ -1,6 +1,7 @@
 /* Minimal HTTP/1.1 server proof of concept over std/http's blocking
- * `serve(endpoint, handle)` overload: no poll queue, no session table, no
- * backlog or capacity tuning — just an address and a handler.
+ * `serve(endpoint, context, router)` overload: no poll queue, no session
+ * table, no backlog tuning — just an address, a growable context, and a
+ * router.
  *
  * Build and run:
  *   ./ace demo/http-simple-server/main.ace -o http-simple-server
@@ -24,7 +25,17 @@ main(): int {
     endpoint: string = "127.0.0.1:8080"
     fmt.printf("listening on %s (Ctrl+C to stop)\n", endpoint)
 
-    err: Error = http.serve(endpoint, handle)
+    router: http.Router = http.router_new()
+    defer http.router_wipe(mut router)
+    route_err: Error = mut router.handle(http.method_get, "/", handle)
+    if route_err != null {
+        fmt.printf("failed to register route: error %d\n", int(route_err.code))
+        return 1
+    }
+
+    context: http.ServerContext = http.server_context_new()
+    defer http.server_context_wipe(mut context)
+    err: Error = http.serve(endpoint, mut context, router)
     if err != null {
         fmt.printf("failed to start server on %s: error %d\n", endpoint, int(err.code))
         return 1

@@ -34,6 +34,7 @@ pub RedirectPolicy: type = redirect.RedirectPolicy
 pub ClientContext: type = client.Context
 pub Client: type = client.Client
 pub Router: type = routing.Router
+pub ServerContext: type = server.Context
 
 pub method_connect: const string = message.method_connect
 pub method_delete: const string = message.method_delete
@@ -69,13 +70,12 @@ pub get(value: string, mut client: Client): (Response, Error) {
     return response, err
 }
 
-pub serve(endpoint: string, handle: (Request): Response): Error {
-    return server.serve(endpoint, handle)
+pub serve(endpoint: string, mut context: ServerContext, router: Router): Error {
+    return server.serve(endpoint, mut context, router)
 }
 
-pub serve(endpoint: string, router: Router): Error {
-    return server.serve(endpoint, router)
-}
+pub server_context_new(): ServerContext { return server.context_new() }
+pub server_context_wipe(mut context: ServerContext) { server.context_wipe(mut context) }
 
 pub router_new(): Router { return routing.router_new() }
 pub router_wipe(mut router: Router) { routing.router_wipe(mut router) }

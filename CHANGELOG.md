@@ -582,6 +582,24 @@ current normative rules, and Git preserves patch-level detail.
   lowercase spelling to all uppercase (`_backlog` → `BACKLOG`, `_input_size` →
   `INPUT_SIZE`, and the rest of `server.ace`'s session defaults), replacing
   the project's earlier lowercase `const` convention.
+- Collapsed `server.ace`'s two `serve` overloads back to one,
+  `serve(endpoint: string, mut context: Context, router: Router): Error`,
+  removing the bare-`handle` overload now that `Router` is the sole
+  dispatch surface. Added `server.Context` (`input`/`headers`/`body`/`output`,
+  each starting empty, plus a `backlog` field defaulting to 512) with
+  `context_new`/`context_wipe`, replacing `server.ace`'s fixed
+  `BACKLOG`/`INPUT_SIZE`/`MAX_HEADERS`/`BODY_SIZE`/`OUTPUT_SIZE` module
+  constants; `read_request` and `respond_close` now grow each buffer through
+  `mem.adjust` off the same capacity signals the parser and formatter
+  already reported (`RequestResult.capacity`, `FormatErr.capacity`, and the
+  `input` buffer filling before a request completes), with no size cap.
+  Growing `input` resets and reparses the retained bytes, mirroring
+  `transport.exchange`'s existing handling of a moving reallocation, since
+  the parser's header/target views point into it. `backlog` is the one
+  non-growing field, read once by `listen_endpoint` when `serve` binds and
+  never touched by `mem.adjust`. `demo/http-simple-server` and `http.mod.ace`
+  (`ServerContext`, `server_context_new`/`server_context_wipe`) were updated
+  to match.
 
 ## Current frontier
 

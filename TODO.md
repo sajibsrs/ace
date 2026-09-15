@@ -276,9 +276,9 @@ nonblocking connect completion remain visible without callbacks or allocation.
   named method/status constants, conventional response reasons, and blocking
   plaintext/TLS `get` overloads over caller storage and opt-in bounded redirects
   for the owning client, plus the single blocking server convenience,
-  `serve(endpoint, handle): Error` (see `SPEC.md`); the caller-driven
-  nonblocking `ServerContext`/`Event` core has been removed (see the fresh-carve
-  item below). Next complete the paired one-shot `post` overloads over
+  `serve(endpoint, mut context, router): Error` over a growable `Context` and
+  `Router` (see `SPEC.md`); the caller-driven nonblocking `ServerContext`/
+  `Event` core has been removed (see the fresh-carve item below). Next complete the paired one-shot `post` overloads over
   `Storage` and owning `Client`. HTTPS shares
   the `http` surface and transport core through its exact TLS-config overload. `rune`,
   UTF-8 decoding, and `yarn` are not prerequisites because HTTP framing is
@@ -297,8 +297,10 @@ nonblocking connect completion remain visible without callbacks or allocation.
   proof of concept had been implemented directly, without going through the
   Decision Queue carve process first. The owner does not want to keep that
   design and has removed it (code, tests, and docs); `std/http/inc/server.ace`
-  now holds only the blocking `serve(endpoint, handle)` overload, and
-  `demo/http-simple-server/main.ace` is the sole server demo. A fresh carve
+  now holds only the blocking `serve(endpoint, mut context, router)` overload
+  over a growable `Context` (unrelated to the removed `ServerContext`/`Event`
+  design beyond the name), and `demo/http-simple-server/main.ace` is the sole
+  server demo. A fresh carve
   (philosophy, then semantics, then syntax, then implementation) deciding how
   much server mechanism belongs in the language versus a framework built on
   top must happen before anything like the nonblocking core returns.

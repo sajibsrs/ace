@@ -1,6 +1,7 @@
 /* Blocking, single-connection-at-a-time HTTP/1.1 server core. */
 
 import ascii
+import mem
 import net
 import sys
 import tcp
@@ -15,167 +16,203 @@ ServerErr: error {
 Header: type = message.Header
 Request: type = message.Request
 Response: type = message.Response
+FormatErr: type = message.FormatErr
 Router: type = routing.Router
 RequestParser: type = parsing.RequestParser
 RequestPhase: type = parsing.RequestPhase
 RequestFraming: type = parsing.RequestFraming
+RequestCapacity: type = parsing.RequestCapacity
 RequestResult: type = parsing.RequestResult
 RequestProgress: type = parsing.RequestProgress
 
-BACKLOG: const usize = 512
-INPUT_SIZE: const usize = 8192
-MAX_HEADERS: const usize = 64
-BODY_SIZE: const usize = 262144
-OUTPUT_SIZE: const usize = 262144
+/* Owns the buffers a `serve` loop reads requests into and writes responses
+ * from, growing each one via `mem.adjust` as connections demand, plus the
+ * listen backlog `serve` binds with. Buffers start empty; there is no size
+ * cap.
+ */
+pub Context: struct {
+    input: mut []u8 = null,
+    headers: mut []Header = null,
+    body: mut []u8 = null,
+    output: mut []u8 = null,
+    backlog: usize = 512,
+}
 
-/* Reads exactly one complete request from `conn` into `input`/`headers`/
- * `body`. The second result is false on EOF, mid-read disconnect, oversized
- * request, or parse failure — in every such case the caller responds to
+pub context_new(): Context {
+    return Context{}
+}
+
+/* Releases buffer storage. Call once the context is no longer served. */
+pub context_wipe(mut context: Context) {
+    mem.release[u8](mut context.input)
+    mem.release[Header](mut context.headers)
+    mem.release[u8](mut context.body)
+    mem.release[u8](mut context.output)
+}
+
+/* Reads exactly one complete request from `conn` into `context`, growing its
+ * `input`/`headers`/`body` buffers via `mem.adjust` as the request demands.
+ * The second result is false on EOF, mid-read disconnect, allocation
+ * failure, or parse failure — in every such case the caller responds to
  * nothing and just returns.
  */
-read_request(conn: tcp.Conn, input: mut []u8, headers: mut []Header, body: mut []u8): (Request, bool) {
+read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
     parser: RequestParser = RequestParser {phase = RequestPhase.request, framing = RequestFraming.undecided}
     occupied: usize = 0
+    parse_pending: bool = false
 
-    for occupied < input.len {
-        received: int, recv_err: Error = net.receive(conn.socket, input[occupied..])
-        if recv_err != null {
-            if recv_err.domain == typeid(net.ReceiveErr) && recv_err.code == sys.EINTR {
-                continue
+    for {
+        if !parse_pending {
+            if occupied == context.input.len {
+                grown: mut []u8, ok: bool = mem.adjust[u8](context.input, context.input.len + 1)
+                if !ok {
+                    return Request{method = null, target = null}, false
+                }
+                context.input = grown
+
+                /* Header and target views point into input. Reparse the
+                 * retained bytes after a moving reallocation before
+                 * exposing any views. */
+                parser = RequestParser {phase = RequestPhase.request, framing = RequestFraming.undecided}
             }
-            return Request{method = null, target = null}, false
-        }
-        if received == 0 {
-            return Request{method = null, target = null}, false
-        }
-        occupied += usize(received)
 
-        result: RequestResult = mut parser.parse(input[..occupied], headers, body, false)
+            received: int, recv_err: Error = net.receive(conn.socket, mut context.input[occupied..])
+            if recv_err != null {
+                if recv_err.domain == typeid(net.ReceiveErr) && recv_err.code == sys.EINTR {
+                    continue
+                }
+                return Request{method = null, target = null}, false
+            }
+            if received == 0 {
+                return Request{method = null, target = null}, false
+            }
+            occupied += usize(received)
+        }
+        parse_pending = false
+
+        result: RequestResult = mut parser.parse(context.input[..occupied], mut context.headers[..], mut context.body[..], false)
         switch result {
             RequestResult.complete(request: Request) {
                 return request, true
             }
             RequestResult.progress(value: RequestProgress) {}
+            RequestResult.capacity(kind: RequestCapacity) {
+                if kind == RequestCapacity.headers {
+                    grown: mut []Header, ok: bool = mem.adjust[Header](context.headers, context.headers.len + 1)
+                    if !ok {
+                        return Request{method = null, target = null}, false
+                    }
+                    context.headers = grown
+                } else {
+                    needed: usize = parser.body_count + (occupied - parser.input_offset)
+                    if parser.framing == RequestFraming.content_length {
+                        needed = parser.content_length
+                    } else if parser.framing == RequestFraming.chunked {
+                        needed = parser.body_count + parser.chunk_remaining
+                    }
+                    grown: mut []u8, ok: bool = mem.adjust[u8](context.body, needed)
+                    if !ok {
+                        return Request{method = null, target = null}, false
+                    }
+                    context.body = grown
+                }
+                parse_pending = true
+            }
             else {
                 return Request{method = null, target = null}, false
             }
         }
     }
-    return Request{method = null, target = null}, false
 }
 
 /* Writes `response` with a synthesized `Connection: close` (a handler-
- * supplied one is dropped along with the connection either way). Too many
- * headers to add the close header, or a format failure, just skips the write;
- * the caller closes the connection regardless.
+ * supplied one is dropped along with the connection either way), growing
+ * `context.headers`/`context.output` via `mem.adjust` as needed. A format
+ * failure other than a capacity shortfall just skips the write; the caller
+ * closes the connection regardless.
  */
-respond_close(conn: tcp.Conn, response: Response, headers: mut []Header, output: mut []u8) {
+respond_close(conn: tcp.Conn, response: Response, mut context: Context) {
     for i: usize in 0 .. response.headers.len {
         if ascii.is_equal(response.headers[i].name, "connection", false) {
             return
         }
     }
     needed: usize = response.headers.len + 1
-    if needed > headers.len {
-        return
+    if needed > context.headers.len {
+        grown: mut []Header, ok: bool = mem.adjust[Header](context.headers, needed)
+        if !ok {
+            return
+        }
+        context.headers = grown
     }
     for i: usize in 0 .. response.headers.len {
-        headers[i] = response.headers[i]
+        context.headers[i] = response.headers[i]
     }
-    headers[response.headers.len] = Header {name = "Connection", value = "close"}
+    context.headers[response.headers.len] = Header {name = "Connection", value = "close"}
     outgoing: Response = Response {
         version_minor = response.version_minor,
         status = response.status,
         reason = response.reason,
-        headers = headers[..needed],
+        headers = context.headers[..needed],
         body = response.body,
     }
-    count: usize, format_err: Error = outgoing.format(output)
+    count: usize, format_err: Error = outgoing.format(mut context.output[..])
+    for format_err == FormatErr.capacity {
+        grown: mut []u8, ok: bool = mem.adjust[u8](context.output, context.output.len + 1)
+        if !ok {
+            return
+        }
+        context.output = grown
+        count, format_err = outgoing.format(mut context.output[..])
+    }
     if format_err == null {
-        tcp.send_all(conn, output[..count])
+        tcp.send_all(conn, context.output[..count])
     }
-}
-
-/* Reads exactly one request from `conn` and writes `handle`'s response. */
-serve_one(conn: tcp.Conn, handle: (Request): Response,
-    input: mut []u8, headers: mut []Header, body: mut []u8, output: mut []u8) {
-
-    request: Request, ok: bool = read_request(conn, input, headers, body)
-    if !ok {
-        return
-    }
-    respond_close(conn, handle(request), headers, output)
 }
 
 /* Reads exactly one request from `conn` and writes `router`'s response. */
-serve_one_router(conn: tcp.Conn, router: Router,
-    input: mut []u8, headers: mut []Header, body: mut []u8, output: mut []u8) {
-
-    request: Request, ok: bool = read_request(conn, input, headers, body)
+serve_one(conn: tcp.Conn, router: Router, mut context: Context) {
+    request: Request, ok: bool = read_request(conn, mut context)
     if !ok {
         return
     }
-    respond_close(conn, router.dispatch(request), headers, output)
+    respond_close(conn, router.dispatch(request), mut context)
 }
 
-/* Resolves and binds `endpoint`, ready for a caller's `tcp.accept` loop. */
-listen_endpoint(endpoint: string): (tcp.Listener, Error) {
+/* Resolves and binds `endpoint` with the given listen backlog, ready for a
+ * caller's `tcp.accept` loop.
+ */
+listen_endpoint(endpoint: string, backlog: usize): (tcp.Listener, Error) {
     address: net.Addr4, parsed: bool = net.parse4(endpoint)
     if !parsed {
         return tcp.Listener{socket = net.Socket(0)}, ServerErr.capacity
     }
-    listener: tcp.Listener, listen_err: Error = tcp.listen(address, BACKLOG)
+    listener: tcp.Listener, listen_err: Error = tcp.listen(address, backlog)
     return listener, listen_err
 }
 
-/* Blocking, single-connection-at-a-time HTTP/1.1 server: binds `endpoint`,
- * then loops forever accepting one connection, reading exactly one request,
- * calling `handle`, writing its response, and closing it — no poll queue, no
- * session table, and no caller-visible backlog or capacity tuning. Returns
- * only if the listener itself cannot be created; a per-connection failure
- * just drops that connection and the loop continues.
+/* Blocking, single-connection-at-a-time HTTP/1.1 server: binds `endpoint`
+ * with `context.backlog`, then loops forever accepting one connection,
+ * reading exactly one request, dispatching it through `router`, writing the
+ * response, and closing the connection — no poll queue, no session table.
+ * `context` owns the buffers used across every connection, growing them via
+ * `mem.adjust` as requests demand; wipe it with `context_wipe` once the
+ * server is no longer served. Returns only if the listener itself cannot be
+ * created; a per-connection failure just drops that connection and the loop
+ * continues.
  */
-pub serve(endpoint: string, handle: (Request): Response): Error {
-    listener: tcp.Listener, listen_err: Error = listen_endpoint(endpoint)
+pub serve(endpoint: string, mut context: Context, router: Router): Error {
+    listener: tcp.Listener, listen_err: Error = listen_endpoint(endpoint, context.backlog)
     if listen_err != null {
         return listen_err
     }
-
-    input: [INPUT_SIZE]u8
-    headers: [MAX_HEADERS]Header
-    body: [BODY_SIZE]u8
-    output: [OUTPUT_SIZE]u8
 
     for {
         conn: tcp.Conn, _: net.Addr4, accept_err: Error = tcp.accept(listener)
         if accept_err != null {
             continue
         }
-        serve_one(conn, handle, mut input[..], mut headers[..], mut body[..], mut output[..])
-        tcp.close(mut conn)
-    }
-}
-
-/* Same as `serve(endpoint, handle)`, dispatching each request through
- * `router`'s registered routes instead of a single bare handler.
- */
-pub serve(endpoint: string, router: Router): Error {
-    listener: tcp.Listener, listen_err: Error = listen_endpoint(endpoint)
-    if listen_err != null {
-        return listen_err
-    }
-
-    input: [INPUT_SIZE]u8
-    headers: [MAX_HEADERS]Header
-    body: [BODY_SIZE]u8
-    output: [OUTPUT_SIZE]u8
-
-    for {
-        conn: tcp.Conn, _: net.Addr4, accept_err: Error = tcp.accept(listener)
-        if accept_err != null {
-            continue
-        }
-        serve_one_router(conn, router, mut input[..], mut headers[..], mut body[..], mut output[..])
+        serve_one(conn, router, mut context)
         tcp.close(mut conn)
     }
 }
