@@ -353,21 +353,27 @@ boundaries with no hidden alias analysis.
 
 ## Arrays and slices
 
-`[N]T` is an inline array containing exactly `N` elements. `[]T` is a two-word
-view containing a pointer and length.
+`[N]T` is an inline array containing exactly `N` elements, where `N` is a
+compile-time constant expression: a literal, a `const` identifier,
+`sizeof`/`alignof`/`offsetof`, or integer/bitwise arithmetic over these — the
+same restricted surface `@align(N)` uses. `[]T` is a two-word view containing
+a pointer and length.
 
 ```ace
 values: [4]int = [10, 20, 30, 40]
 zeros: [4]int = [0 : 4]
 middle: []int = values[1..3]
 answer: int = middle[0] + middle[1]
+
+buffer_size: const usize = 8
+buffer: [buffer_size]u8 = [0 : buffer_size]
 ```
 
 An array repetition literal `[value : count]` takes its exact array type from
-the surrounding declaration, assignment, return, or parameter. `count` must be
-a nonnegative integer literal equal to the array type's length. `value` is
-evaluated once and copied into every element in index order; no allocation or
-shared element storage is introduced.
+the surrounding declaration, assignment, return, or parameter. `count` is a
+compile-time constant expression and must evaluate to the array type's
+length. `value` is evaluated once and copied into every element in index
+order; no allocation or shared element storage is introduced.
 
 The direct read-only property `sequence.len` is available on built-in arrays (constant element
 count), slices (stored element count), and strings (stored byte count), including

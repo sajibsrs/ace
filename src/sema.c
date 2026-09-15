@@ -1288,12 +1288,18 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
         return s;
     }
     case N_ARRAY_T: {
-        if (t->ival == 0) {
-            ck_err(k, t, "array length must be positive");
+        coerce(k, t->b, st_prim(P_USIZE));
+        int64_t len;
+        if (!ut_const(t->b, &len)) {
+            ck_err(k, t->b, "array length must be a compile-time usize expression");
+            return T_ERR;
+        }
+        if (len <= 0) {
+            ck_err(k, t->b, "array length must be positive");
             return T_ERR;
         }
         SType* a = st_new(SK_ARRAY);
-        a->count = t->ival;
+        a->count = (uint64_t)len;
         a->base = build_type_ctx(k, t->a, 0);
         return a;
     }
@@ -5036,9 +5042,15 @@ static void check_arraylit(Ck* k, Node* lit, SType* want) {
         return;
     }
     if (lit->a) {
-        if (lit->ival != want->count) {
-            ck_err(k, lit, "array repetition count is %llu, expected %llu for %s",
-                   (unsigned long long)lit->ival,
+        coerce(k, lit->b, st_prim(P_USIZE));
+        int64_t count;
+        if (!ut_const(lit->b, &count)) {
+            ck_err(k, lit->b, "array repetition count must be a compile-time usize expression");
+            return;
+        }
+        if (count < 0 || (uint64_t)count != want->count) {
+            ck_err(k, lit, "array repetition count is %lld, expected %llu for %s",
+                   (long long)count,
                    (unsigned long long)want->count, type_name(want));
             return;
         }

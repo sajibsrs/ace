@@ -16,7 +16,7 @@ Concrete rules and syntax. The why behind every rule lives in PHILOSOPHY.md (clo
 5. Function values are typed by signature — `(int, int): int` — C pointer-to-function syntax never enters the language.
 6. Tuple expressions are comma-built at the top level: `return words, null` ≡ `return (words, null)` — parentheses are grouping, required only for nesting (`return (a, b), err`) or clarity. Same rule on assignment sides.
 7. Bare comma-separated lists stay on one physical line. A list that crosses a newline must be enclosed by its construct's `()`, `[]`, or `{}` delimiters. Where delimiters are otherwise optional, parentheses are the multiline form: `Circle signs Shape, Color` on one line, or `Circle signs (` followed by the contract list and `)` on later lines. A single-line parenthesized contract is rejected so the surface has one canonical spelling per layout.
-8. An array literal may repeat one value with `[value : count]`, as in `prefix: [12]u8 = [u8(0) : 12]`. The surrounding context still supplies the exact array type; `count` is a nonnegative integer literal and must equal that array type's length. `value` is evaluated once and copied into every element in index order. The form allocates nothing and introduces no shared element storage.
+8. An array literal may repeat one value with `[value : count]`, as in `prefix: [12]u8 = [u8(0) : 12]`. The surrounding context still supplies the exact array type; `count` is a compile-time constant expression (Syntax & Parsing #15) and must evaluate to that array type's length. `value` is evaluated once and copied into every element in index order. The form allocates nothing and introduces no shared element storage.
 9. Every storage declaration states its type explicitly. There is no declaration-elision spelling: a local initialized from an expression is `name: Type = expr`, and every name introduced by a multi-declaration states its own type. Rationale: one declaration rule works uniformly for literals, aggregates, null values, and single- or multi-return expressions while making the programmer's expected type locally visible and independently checkable against the initializer.
 10. Numeric and character literals are untyped constants that take the expected
     type at use and must fit it. Casts are explicit and constructor-shaped
@@ -59,6 +59,20 @@ Concrete rules and syntax. The why behind every rule lives in PHILOSOPHY.md (clo
     followed by a newline unless the block is empty. Rationale: error entries
     are declarative records rather than an expression list; a line-oriented
     form stays easy to scan and parse without redundant separators.
+15. A fixed array type's length `[N]T` is a compile-time constant expression,
+    not only a bare integer literal: literals, `const` identifiers (including
+    one reached through an imported module, Values & Passing #12),
+    `sizeof`/`alignof`/`offsetof`, and integer/bitwise arithmetic over these —
+    the same restricted surface `@align(N)` already uses (Type System,
+    Carved). The evaluated length must be a positive `usize`; a runtime
+    value, a non-positive result, or an expression the compiler cannot
+    reduce is a compile-time error. An array literal's repetition count
+    (Syntax & Parsing #8) uses the identical surface and must match the
+    destination array type's length exactly. Rationale: a compile-time
+    constant identifier is exactly as fixed and safe as a literal, so a
+    literal-only grammar bought no safety — only friction for named sizes
+    shared across declarations (`_input_size: const usize = 8192` backing
+    `input: [_input_size]u8`).
 
 ## Compiler
 1. Make memory size available to programmer. (see: Errors)

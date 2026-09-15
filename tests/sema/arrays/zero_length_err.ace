@@ -1,0 +1,10 @@
+/* A compile-time-constant array length must still be positive; the
+ * positivity check applies after constant evaluation, not just to a literal
+ * zero. */
+
+_zero: const usize = 0
+
+main(): int {
+    values: [_zero]int
+    return int(values.len)
+}

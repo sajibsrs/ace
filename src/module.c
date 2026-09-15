@@ -1183,6 +1183,8 @@ static Rename* find_rename(Renames* rs, const char* name, uint32_t len) {
     return NULL;
 }
 
+static void rename_refs(Node* n, Renames* rs, SelectLower* c);
+
 static void rename_type_refs(Node* t, Renames* rs, SelectLower* c) {
     if (!t) return;
     if (t->kind == N_NAMED && !local_name(c, t->str, t->len, 1)) {
@@ -1191,10 +1193,9 @@ static void rename_type_refs(Node* t, Renames* rs, SelectLower* c) {
     }
     rename_type_refs(t->a, rs, c);
     if (t->kind == N_STATICMAP_T) rename_type_refs(t->b, rs, c);
+    if (t->kind == N_ARRAY_T) rename_refs(t->b, rs, c); // array length: an expression, not a type
     for (int i = 0; i < t->nkids; i++) rename_type_refs(t->kids[i], rs, c);
 }
-
-static void rename_refs(Node* n, Renames* rs, SelectLower* c);
 
 static void rename_block_refs(Node* b, Renames* rs, SelectLower* c) {
     select_scope_push(c);

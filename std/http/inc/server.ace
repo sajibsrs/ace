@@ -23,6 +23,10 @@ RequestResult: type = parsing.RequestResult
 RequestProgress: type = parsing.RequestProgress
 
 _backlog: const usize = 512
+_input_size: const usize = 8192
+_max_headers: const usize = 64
+_body_size: const usize = 262144
+_output_size: const usize = 262144
 
 /* Reads exactly one complete request from `conn` into `input`/`headers`/
  * `body`. The second result is false on EOF, mid-read disconnect, oversized
@@ -137,10 +141,10 @@ pub serve(endpoint: string, handle: (Request): Response): Error {
         return listen_err
     }
 
-    input: [8192]u8
-    headers: [64]Header
-    body: [262144]u8
-    output: [262144]u8
+    input: [_input_size]u8
+    headers: [_max_headers]Header
+    body: [_body_size]u8
+    output: [_output_size]u8
 
     for {
         conn: tcp.Conn, _: net.Addr4, accept_err: Error = tcp.accept(listener)
@@ -161,10 +165,10 @@ pub serve(endpoint: string, router: Router): Error {
         return listen_err
     }
 
-    input: [8192]u8
-    headers: [64]Header
-    body: [262144]u8
-    output: [262144]u8
+    input: [_input_size]u8
+    headers: [_max_headers]Header
+    body: [_body_size]u8
+    output: [_output_size]u8
 
     for {
         conn: tcp.Conn, _: net.Addr4, accept_err: Error = tcp.accept(listener)

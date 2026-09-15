@@ -1,0 +1,8 @@
+/* array_repeat's count is a compile-time constant expression, so a negative
+ * count now parses; it is rejected as a semantic constant-range violation,
+ * not a parser error. */
+
+main(): int {
+    values: [2]int = [1 : -2]
+    return values[0]
+}

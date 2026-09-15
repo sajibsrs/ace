@@ -1,0 +1,10 @@
+/* array_type and array_repeat lengths admit the same compile-time constant
+ * expression surface as @align(N): identifiers and arithmetic, not only a
+ * bare integer literal. */
+
+_count: const usize = 3
+
+main(): int {
+    values: [_count]i32 = [7 : _count]
+    return int(values[0] + values[1] + values[2]) - 21
+}

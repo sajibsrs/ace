@@ -56,7 +56,7 @@
 //   N_NAMED     str = name; a = qualifier (N_NAMED/N_IDENT chain); kids = generic args (types)
 //   N_PTR       a = pointee; F_MUT
 //   N_SLICE_T   a = element
-//   N_ARRAY_T   a = element; ival = length
+//   N_ARRAY_T   a = element; b = length expression
 //   N_TUPLE_T   kids = types
 //   N_FUNC_T    kids = param types; a = ret; F_CABI for extern "c" type
 //   N_CONST_T   a = inner
@@ -67,7 +67,7 @@
 //   N_INDEX     a = base; b = index
 //   N_SLICE_E   a = base; b = lo (nullable); c = hi (nullable)
 //   N_FIELD_E   a = base; str = field
-//   N_ARRAYLIT  kids = elements; repetition: a = value, ival = count
+//   N_ARRAYLIT  kids = elements; repetition: a = value, b = count expression
 //   N_STRUCTLIT a = type expr or NULL (bare literal); kids = N_FIELDINIT (str or NULL; a = value)
 //   N_STATICMAP_T a = key type; b = value type
 //   N_STATICMAPLIT kids = N_MAPENTRY (a = key, b = value)
@@ -224,6 +224,7 @@ static void set_kids(Node* x, NV* w) {
 // --- types --------------------------------------------------------------------
 
 static Node* parse_type(P* p);
+static Node* expr(P* p, int ctx);
 
 static int spells_staticmap(Node* t) {
     return t && t->kind == N_STATICMAP_T;
@@ -284,9 +285,8 @@ static Node* type_atom(P* p) {
             t->a = type_atom(p);
             return t;
         }
-        Token* n = expect(p, T_INT, "array length"); // [N]T array
-        t = nd(p, N_ARRAY_T);
-        t->ival = n->ival;
+        t = nd(p, N_ARRAY_T); // [N]T array; N is a compile-time constant expression
+        t->b = expr(p, 0);
         expect(p, T_RBRACK, "']' after array length");
         t->a = type_atom(p);
         return t;
@@ -957,9 +957,8 @@ static Node* expr_primary(P* p, int ctx) {
         if (!at(p, T_RBRACK)) {
             Node* first = expr(p, 0);
             if (ate(p, T_COLON)) {
-                Token* count = expect(p, T_INT, "nonnegative integer literal repetition count");
                 al->a = first;
-                al->ival = count->ival;
+                al->b = expr(p, 0); // repetition count: a compile-time constant expression
             } else {
                 nv_push(p, &w, first);
                 while (ate(p, T_COMMA)) {
@@ -2403,8 +2402,7 @@ static void pnode(Node* x, int ind) {
     }
     printf("(%s", node_kind_name((NKind)x->kind));
     if (x->str) printf(" '%.*s'", (int)x->len, x->str);
-    if (x->kind == N_INT || x->kind == N_CHAR || x->kind == N_BOOL ||
-        x->kind == N_ARRAY_T || (x->kind == N_ARRAYLIT && x->a))
+    if (x->kind == N_INT || x->kind == N_CHAR || x->kind == N_BOOL)
         printf(" %llu", (unsigned long long)x->ival);
     if (x->kind == N_FLOAT) printf(" %g", x->fval);
     if (x->kind == N_BINARY || x->kind == N_UNARY || x->kind == N_ASSIGN ||

@@ -1,0 +1,10 @@
+/* A module-private const backs a fixed array length used only inside this
+ * module's own function bodies, exercising cross-module identifier renaming
+ * for the array-length position specifically. */
+
+_size: const usize = 4
+
+pub make(): usize {
+    buf: [_size]u8 = [0 : _size]
+    return buf.len
+}

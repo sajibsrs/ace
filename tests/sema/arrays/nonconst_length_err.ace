@@ -1,0 +1,8 @@
+/* A fixed array length must be a compile-time constant expression; a runtime
+ * value is rejected even though it has the right type. */
+
+main(): int {
+    n: usize = 3
+    values: [n]int
+    return int(values[0])
+}

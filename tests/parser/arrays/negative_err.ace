@@ -1,6 +1,0 @@
-/* A repetition count is a nonnegative integer literal, not an expression. */
-
-main(): int {
-    values: [2]int = [1 : -2]
-    return values[0]
-}

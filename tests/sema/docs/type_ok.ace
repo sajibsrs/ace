@@ -3,6 +3,7 @@
 import mem
 
 limit: const int = 1024
+buffer_size: const usize = 8
 
 A: type = u8
 
@@ -100,6 +101,7 @@ main(): int {
     values: [4]int = [10, 20, 30, 40]
     zeros: [4]int = [0 : 4]
     middle: []int = values[1..3]
+    sized: [buffer_size]u8 = [0 : buffer_size]
     bytes: [4]u8 = [65, 99, 101, 33]
     byte_view: []u8 = bytes[0..4]
     byte_match: bool = mem.equal(bytes, "Ace!") && mem.equal("Ace!", byte_view)

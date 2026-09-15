@@ -11,3 +11,8 @@ bad_element() {
 bad_context() {
     [1 : 2]
 }
+
+bad_repeat_expr() {
+    n: usize = 3
+    values: [3]i32 = [1 : n]
+}

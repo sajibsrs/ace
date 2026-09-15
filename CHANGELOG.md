@@ -93,6 +93,16 @@ current normative rules, and Git preserves patch-level detail.
 - Implemented call-only, function-scope `defer`. Calls are captured at the
   statement according to the specified two-tier model and emitted in LIFO order
   at every function exit.
+- Widened a fixed array type's length (`[N]T`) and an array literal's
+  repetition count (`[value : count]`) from a bare integer literal to the
+  existing restricted compile-time constant-expression surface already used
+  by `@align(N)`: literals, `const` identifiers, `sizeof`/`alignof`/
+  `offsetof`, and integer/bitwise arithmetic, resolved with the same `ut_const`
+  evaluator. Both positions parse a general expression and defer constant
+  resolution and positivity/exact-match checking to sema, which reports a
+  non-constant or non-positive length or a mismatched repetition count as a
+  compile-time error. Raised while carving `std/http`'s router, where a
+  module-level `const usize` could not back a buffer or route-table size.
 
 ## Types and abstraction
 
@@ -441,6 +451,14 @@ current normative rules, and Git preserves patch-level detail.
   preventing duplicate module loads and domain identities.
 - Derived private symbol prefixes for directory-module entries from their
   directory names rather than the repeated `module.ace` filename.
+- Fixed cross-module identifier renaming (`module.c`'s `rename_type_refs`) to
+  walk a fixed array type's length expression. It previously recursed only
+  into an array type's element (`t->a`), so a module-private `const` used to
+  back a `[N]T` array length inside that same imported module's own function
+  bodies, struct fields, or parameter/return types kept its bare name instead
+  of gaining the module's private prefix, producing a spurious "unknown name".
+  Latent since array lengths were always integer literals; surfaced once
+  Core language widened array lengths to constant expressions (above).
 
 - Expanded `sys` with allocation-free filesystem metadata and mutation
   (`stat`, `mkdir`, `rename`, and `unlink`) plus caller-owned buffered directory

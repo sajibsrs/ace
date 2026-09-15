@@ -226,16 +226,6 @@ Each item requires an owner decision and should wait for a motivating use case.
   concrete cleanup path must affect the enclosing function's result without an
   explicit pre-return cleanup call.
 - **`switch` on strings and range cases** [unspecified].
-- **Const-expression array lengths** [open] — `array_type` (`GRAMMAR.md`) accepts
-  only an `int_lit`, so a module-level `const usize` cannot back a fixed array
-  length (`input: [_input_size]u8` is rejected; only `input: [8192]u8`
-  compiles). Raised while carving `std/http`'s router (`std/http/inc/server.ace`
-  and `std/http/inc/router.ace` fell back to inline literal buffer/route
-  sizes for this reason). A compile-time-constant identifier is exactly as
-  fixed and safe as a literal, so this reads like an oversight in the grammar
-  rather than a deliberate restriction; needs an owner decision on widening
-  `array_type` to a restricted constant-expression form (plain `const` of
-  integer type, at minimum) before any code relies on it.
 - **Operator overloading / custom indexing** [unspecified] — likely conflicts
   with explicit dispatch; free functions may suffice.
 - **Runtime global initializers / module-init hook** [unspecified] — globals are

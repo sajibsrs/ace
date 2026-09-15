@@ -216,7 +216,7 @@ arg           := ["mut"] expr                             // call-site mutation 
 primary       := literal | ident | "(" expr_list ")" | array_lit | struct_lit
                | ptr_type | slice_type
 array_lit     := "[" [expr_list | array_repeat] "]"
-array_repeat  := expr ":" int_lit                       // [u8(0) : 12]; exact contextual array length
+array_repeat  := expr ":" expr                          // [u8(0) : 12]; exact contextual array length
 struct_lit    := "{" [field_init ("," field_init)*] "}"   [P]
 field_init    := ident "=" expr
 static_map_lit := "{" [map_entry ("," map_entry)* [","]] "}"
@@ -235,7 +235,7 @@ type_expr     := ptr_type | slice_type | array_type | func_type | c_func_type
 ptr_type      := ["mut"] "*" type_expr                    // *Node, mut *Node
 slice_type    := ["mut"] "[]" type_expr                   // []u8, mut []u8
 string_type   := ["mut"] "string"                         // string, mut string
-array_type    := "[" int_lit "]" type_expr                // [16][8]u8
+array_type    := "[" expr "]" type_expr                   // [16][8]u8; N is a compile-time constant expression
 tuple_type    := "(" type ("," type)+ ")"
 func_type     := "(" [type_list] ")" ":" ret_types         // (int, int): int
 c_func_type   := "extern" string_lit "(" [type_list] ")" [":" ret_types]
