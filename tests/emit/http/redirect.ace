@@ -60,15 +60,15 @@ client(port: u16): int {
     url_count: usize
     url_count, ok = str.concat(parts[..], mut url_bytes[..])
     if !ok { return 2 }
-    client_value: http.Client = http.client_new()
-    client_value.context.redirects = http.RedirectPolicy {limit = 10}
+    context: http.ClientContext = http.client_context_new()
+    context.redirects = http.RedirectPolicy {limit = 10}
     response: http.Response, err: Error = http.get(
-        url_bytes[..url_count], mut client_value)
+        url_bytes[..url_count], mut context)
     result: int = 0
     if err != null || response.status != 200 || !mem.equal(response.body, "done") {
         result = 3
     }
-    http.client_wipe(mut client_value)
+    http.client_context_wipe(mut context)
     return result
 }
 

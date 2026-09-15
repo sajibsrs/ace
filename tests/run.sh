@@ -1170,13 +1170,6 @@ if [ -d tests/driver ]; then
         cat /tmp/ace_test_errs
         fail=1
     fi
-    if ! "$ACE" -o /tmp/ace_driver/http_https_anchor \
-         tests/driver/http_https_anchor.ace >/dev/null 2>/tmp/ace_test_errs ||
-       ! /tmp/ace_driver/http_https_anchor; then
-        echo "FAIL: HTTPS explicit DER trust override"
-        cat /tmp/ace_test_errs
-        fail=1
-    fi
 
     driver_diag() {
         want=$1; shift

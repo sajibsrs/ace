@@ -290,7 +290,15 @@ nonblocking connect completion remain visible without callbacks or allocation.
   `RedirectErr.downgrade`. Today that file's only scheme-relative hop resolves
   against the initial `http://` URL and never crosses schemes, so `SPEC.md`'s
   upgrade-allowed/downgrade-rejected redirect rule is implemented and used by
-  `sandbox.ace`'s upgrade case in practice but has no fixture of its own.
+  `sandbox.ace`'s upgrade case in practice but has no fixture of its own. The
+  same loopback HTTPS fixture is also needed to re-cover `TlsConfig.trust_anchor`
+  (explicit DER trust-anchor override): its only test, `tests/driver/http_https_anchor.ace`,
+  pinned Let's Encrypt's root and asserted a live request to `https://example.org/`
+  chains to it, which broke once that site's certificate moved to an unrelated
+  CA, so it was removed rather than left flaky against live CA state outside
+  this repo's control. `trust_anchor` itself is unchanged and still implemented
+  in `transport.ace`; it is presently untested until a loopback HTTPS fixture
+  with our own pinned root replaces it.
 - **Nonblocking HTTP server core needs a fresh carve** [open] — the
   caller-driven `ServerContext`/`Event`/`serve(mut ctx, timeout_ns)` core
   (formerly `std/http/inc/server.ace`) and its `demo/http-complete-server`
