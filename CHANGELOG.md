@@ -539,6 +539,22 @@ current normative rules, and Git preserves patch-level detail.
   A fresh carve of how much server mechanism belongs in the language versus a
   framework built on top is tracked in `TODO.md` before anything like the
   nonblocking core returns.
+- Implemented `http.Router` (`std/http/inc/router.ace`), the fresh carve for
+  the nonblocking-server item above's routing half: a growable route table
+  (`transport.mem_adjust`/`mem.release`, the same pattern `Client`'s
+  `Context`/`Storage` already uses) with `router_new`/`router_wipe`,
+  `mut Router.handle(method, path, handler)`, and `pub Router.dispatch`
+  matching on exact method plus segment-boundary longest path-prefix
+  (`/home` matches `/home` and `/home/about` but not `/homework`; any
+  `?query` on the request target is stripped before matching). Ace has no
+  closures or first-class method values, so a stateful `Router` cannot be
+  handed to `serve` as a bare `(Request): Response`; instead `serve` gained a
+  second overload, `serve(endpoint: string, router: Router): Error`, that
+  dispatches through the router directly. `server.ace`'s single-shot
+  `serve_one` was split into shared `read_request`/`respond_close` helpers
+  reused by both the handler-based and router-based per-connection paths.
+  Added `tests/emit/http/router.ace` covering registration, prefix/segment
+  matching, method mismatch, query stripping, and the built-in 404 fallback.
 
 ## Current frontier
 

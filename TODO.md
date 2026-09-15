@@ -17,6 +17,17 @@ The priority bands below are recommendations, not decisions. The active
 Decision Queue in `SPEC.md` always wins; dependencies within a band are listed
 before the work they unblock.
 
+## 0. Known defects
+
+- **[defect]** — `tests/emit/http/redirect.ace` passes standalone but fails
+  (`exited 2, want 0`) when run inside the full `make test` suite; reproduces
+  identically on a clean `master` with no `std/http` router changes applied,
+  so it predates that work. Likely full-suite resource contention (parallel
+  fork/loopback-socket fixtures) rather than a logic bug in the redirect test
+  itself; needs isolating which concurrent fixture it collides with.
+- **[defect]** — "HTTPS explicit DER trust override" fails in `make test`;
+  also reproduces on a clean `master`. Needs its own diagnosis pass.
+
 ## 1. Core type-system completion
 
 Finish the existing primitive, sequential, and aggregate model before adding
@@ -215,6 +226,16 @@ Each item requires an owner decision and should wait for a motivating use case.
   concrete cleanup path must affect the enclosing function's result without an
   explicit pre-return cleanup call.
 - **`switch` on strings and range cases** [unspecified].
+- **Const-expression array lengths** [open] — `array_type` (`GRAMMAR.md`) accepts
+  only an `int_lit`, so a module-level `const usize` cannot back a fixed array
+  length (`input: [_input_size]u8` is rejected; only `input: [8192]u8`
+  compiles). Raised while carving `std/http`'s router (`std/http/inc/server.ace`
+  and `std/http/inc/router.ace` fell back to inline literal buffer/route
+  sizes for this reason). A compile-time-constant identifier is exactly as
+  fixed and safe as a literal, so this reads like an oversight in the grammar
+  rather than a deliberate restriction; needs an owner decision on widening
+  `array_type` to a restricted constant-expression form (plain `const` of
+  integer type, at minimum) before any code relies on it.
 - **Operator overloading / custom indexing** [unspecified] — likely conflicts
   with explicit dispatch; free functions may suffice.
 - **Runtime global initializers / module-init hook** [unspecified] — globals are

@@ -1,0 +1,54 @@
+// expect-exit: 0
+
+import http
+import mem
+
+home_route(request: http.Request): http.Response {
+    return http.Response {status = 200, body = "home"}
+}
+
+about_route(request: http.Request): http.Response {
+    return http.Response {status = 200, body = "about"}
+}
+
+submit_route(request: http.Request): http.Response {
+    return http.Response {status = 200, body = "submit"}
+}
+
+main(): int {
+    router: http.Router = http.router_new()
+
+    err: Error = mut router.handle(http.method_get, "/home", home_route)
+    if err != null { return 1 }
+    err = mut router.handle(http.method_get, "/home/about", about_route)
+    if err != null { return 2 }
+    err = mut router.handle(http.method_post, "/submit", submit_route)
+    if err != null { return 3 }
+
+    response: http.Response = router.dispatch(http.Request {method = "GET", target = "/home"})
+    if response.status != 200 || !mem.equal(response.body, "home") { return 10 }
+
+    response = router.dispatch(http.Request {method = "GET", target = "/home/about"})
+    if response.status != 200 || !mem.equal(response.body, "about") { return 11 }
+
+    response = router.dispatch(http.Request {method = "GET", target = "/home/42"})
+    if response.status != 200 || !mem.equal(response.body, "home") { return 12 }
+
+    response = router.dispatch(http.Request {method = "GET", target = "/homework"})
+    if response.status != 404 { return 13 }
+
+    response = router.dispatch(http.Request {method = "GET", target = "/home?x=1"})
+    if response.status != 200 || !mem.equal(response.body, "home") { return 14 }
+
+    response = router.dispatch(http.Request {method = "POST", target = "/home"})
+    if response.status != 404 { return 15 }
+
+    response = router.dispatch(http.Request {method = "GET", target = "/nope"})
+    if response.status != 404 || !mem.equal(response.reason, "Not Found") { return 16 }
+
+    response = router.dispatch(http.Request {method = "POST", target = "/submit"})
+    if response.status != 200 || !mem.equal(response.body, "submit") { return 17 }
+
+    http.router_wipe(mut router)
+    return 0
+}

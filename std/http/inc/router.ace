@@ -1,0 +1,99 @@
+/* HTTP request routing: a growable, longest-prefix route table. */
+
+import mem
+import str
+import message: "./format.ace"
+import transport: "./transport.ace"
+
+RouterErr: error {
+    1: allocation = "route storage allocation failed"
+}
+
+Header: type = message.Header
+Request: type = message.Request
+Response: type = message.Response
+
+Route: struct {
+    method: string,
+    path: string,
+    handler: (Request): Response,
+}
+
+pub Router: struct {
+    routes: mut []Route = null,
+    count: usize,
+}
+
+pub router_new(): Router {
+    return Router{count = 0}
+}
+
+/* Releases route storage. Call once the router is no longer served. */
+pub router_wipe(mut router: Router) {
+    mem.release[Route](mut router.routes)
+    router.count = 0
+}
+
+/* Registers `handler` for exact `method` and path-segment prefix `path`.
+ * Grows route storage as needed; fails only if that growth fails.
+ */
+pub mut Router.handle(method: string, path: string, handler: (Request): Response): Error {
+    grown: mut []Route, ok: bool = transport.mem_adjust[Route](self.routes, self.count + 1)
+    if !ok {
+        return RouterErr.allocation
+    }
+    self.routes = grown
+    self.routes[self.count] = Route{method = method, path = path, handler = handler}
+    self.count += 1
+    return null
+}
+
+/* True when `prefix` matches `target` on a path-segment boundary: "/home"
+ * matches "/home" and "/home/about" but not "/homework".
+ */
+path_matches(prefix: string, target: string): bool {
+    if prefix.len > target.len {
+        return false
+    }
+    if !mem.equal(prefix, target[..prefix.len]) {
+        return false
+    }
+    return prefix.len == target.len || target[prefix.len] == 47
+}
+
+/* Dispatches `request` to the longest matching registered route, or a bare
+ * 404 when nothing matches. Matching ignores any `?query` suffix on the
+ * request target.
+ */
+pub Router.dispatch(request: Request): Response {
+    query_at: usize, has_query: bool = str.find(request.target, '?')
+    path: string = request.target
+    if has_query {
+        path = request.target[..query_at]
+    }
+
+    best: usize = 0
+    best_len: usize = 0
+    matched: bool = false
+    for i: usize in 0 .. self.count {
+        route: Route = self.routes[i]
+        if !mem.equal(route.method, request.method) {
+            continue
+        }
+        if !path_matches(route.path, path) {
+            continue
+        }
+        if !matched || route.path.len > best_len {
+            best = i
+            best_len = route.path.len
+            matched = true
+        }
+    }
+
+    if matched {
+        handler: (Request): Response = self.routes[best].handler
+        return handler(request)
+    }
+
+    return Response{status = 404, reason = message.status(404)}
+}

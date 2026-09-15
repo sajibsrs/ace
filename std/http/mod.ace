@@ -4,6 +4,7 @@ import client: "./inc/client.ace"
 import message: "./inc/format.ace"
 import parsing: "./inc/parse.ace"
 import redirect: "./inc/redirect.ace"
+import routing: "./inc/router.ace"
 import server: "./inc/server.ace"
 import transport: "./inc/transport.ace"
 
@@ -32,6 +33,7 @@ pub TlsConfig: type = transport.TlsConfig
 pub RedirectPolicy: type = redirect.RedirectPolicy
 pub ClientContext: type = client.Context
 pub Client: type = client.Client
+pub Router: type = routing.Router
 
 pub method_connect: const string = message.method_connect
 pub method_delete: const string = message.method_delete
@@ -70,3 +72,10 @@ pub get(value: string, mut client: Client): (Response, Error) {
 pub serve(endpoint: string, handle: (Request): Response): Error {
     return server.serve(endpoint, handle)
 }
+
+pub serve(endpoint: string, router: Router): Error {
+    return server.serve(endpoint, router)
+}
+
+pub router_new(): Router { return routing.router_new() }
+pub router_wipe(mut router: Router) { routing.router_wipe(mut router) }

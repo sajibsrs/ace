@@ -6,6 +6,7 @@ import sys
 import tcp
 import message: "./format.ace"
 import parsing: "./parse.ace"
+import routing: "./router.ace"
 
 ServerErr: error {
     1: capacity = "malformed or unresolvable endpoint"
@@ -14,6 +15,7 @@ ServerErr: error {
 Header: type = message.Header
 Request: type = message.Request
 Response: type = message.Response
+Router: type = routing.Router
 RequestParser: type = parsing.RequestParser
 RequestPhase: type = parsing.RequestPhase
 RequestFraming: type = parsing.RequestFraming
@@ -22,15 +24,12 @@ RequestProgress: type = parsing.RequestProgress
 
 _backlog: const usize = 512
 
-/* Reads exactly one request from `conn`, calls `handle`, and writes its
- * response with a synthesized `Connection: close` (a handler-supplied one is
- * dropped along with the connection, same as the owning server's `respond`).
- * Any parse failure, oversized request, or mid-write disconnect just returns;
- * the caller closes the connection either way.
+/* Reads exactly one complete request from `conn` into `input`/`headers`/
+ * `body`. The second result is false on EOF, mid-read disconnect, oversized
+ * request, or parse failure — in every such case the caller responds to
+ * nothing and just returns.
  */
-serve_one(conn: tcp.Conn, handle: (Request): Response,
-    input: mut []u8, headers: mut []Header, body: mut []u8, output: mut []u8) {
-
+read_request(conn: tcp.Conn, input: mut []u8, headers: mut []Header, body: mut []u8): (Request, bool) {
     parser: RequestParser = RequestParser {phase = RequestPhase.request, framing = RequestFraming.undecided}
     occupied: usize = 0
 
@@ -40,49 +39,89 @@ serve_one(conn: tcp.Conn, handle: (Request): Response,
             if recv_err.domain == typeid(net.ReceiveErr) && recv_err.code == sys.EINTR {
                 continue
             }
-            return
+            return Request{method = null, target = null}, false
         }
         if received == 0 {
-            return
+            return Request{method = null, target = null}, false
         }
         occupied += usize(received)
 
         result: RequestResult = mut parser.parse(input[..occupied], headers, body, false)
         switch result {
             RequestResult.complete(request: Request) {
-                response: Response = handle(request)
-                for i: usize in 0 .. response.headers.len {
-                    if ascii.is_equal(response.headers[i].name, "connection", false) {
-                        return
-                    }
-                }
-                needed: usize = response.headers.len + 1
-                if needed > headers.len {
-                    return
-                }
-                for i: usize in 0 .. response.headers.len {
-                    headers[i] = response.headers[i]
-                }
-                headers[response.headers.len] = Header {name = "Connection", value = "close"}
-                outgoing: Response = Response {
-                    version_minor = response.version_minor,
-                    status = response.status,
-                    reason = response.reason,
-                    headers = headers[..needed],
-                    body = response.body,
-                }
-                count: usize, format_err: Error = outgoing.format(output)
-                if format_err == null {
-                    tcp.send_all(conn, output[..count])
-                }
-                return
+                return request, true
             }
             RequestResult.progress(value: RequestProgress) {}
             else {
-                return
+                return Request{method = null, target = null}, false
             }
         }
     }
+    return Request{method = null, target = null}, false
+}
+
+/* Writes `response` with a synthesized `Connection: close` (a handler-
+ * supplied one is dropped along with the connection either way). Too many
+ * headers to add the close header, or a format failure, just skips the write;
+ * the caller closes the connection regardless.
+ */
+respond_close(conn: tcp.Conn, response: Response, headers: mut []Header, output: mut []u8) {
+    for i: usize in 0 .. response.headers.len {
+        if ascii.is_equal(response.headers[i].name, "connection", false) {
+            return
+        }
+    }
+    needed: usize = response.headers.len + 1
+    if needed > headers.len {
+        return
+    }
+    for i: usize in 0 .. response.headers.len {
+        headers[i] = response.headers[i]
+    }
+    headers[response.headers.len] = Header {name = "Connection", value = "close"}
+    outgoing: Response = Response {
+        version_minor = response.version_minor,
+        status = response.status,
+        reason = response.reason,
+        headers = headers[..needed],
+        body = response.body,
+    }
+    count: usize, format_err: Error = outgoing.format(output)
+    if format_err == null {
+        tcp.send_all(conn, output[..count])
+    }
+}
+
+/* Reads exactly one request from `conn` and writes `handle`'s response. */
+serve_one(conn: tcp.Conn, handle: (Request): Response,
+    input: mut []u8, headers: mut []Header, body: mut []u8, output: mut []u8) {
+
+    request: Request, ok: bool = read_request(conn, input, headers, body)
+    if !ok {
+        return
+    }
+    respond_close(conn, handle(request), headers, output)
+}
+
+/* Reads exactly one request from `conn` and writes `router`'s response. */
+serve_one_router(conn: tcp.Conn, router: Router,
+    input: mut []u8, headers: mut []Header, body: mut []u8, output: mut []u8) {
+
+    request: Request, ok: bool = read_request(conn, input, headers, body)
+    if !ok {
+        return
+    }
+    respond_close(conn, router.dispatch(request), headers, output)
+}
+
+/* Resolves and binds `endpoint`, ready for a caller's `tcp.accept` loop. */
+listen_endpoint(endpoint: string): (tcp.Listener, Error) {
+    address: net.Addr4, parsed: bool = net.parse4(endpoint)
+    if !parsed {
+        return tcp.Listener{socket = net.Socket(0)}, ServerErr.capacity
+    }
+    listener: tcp.Listener, listen_err: Error = tcp.listen(address, _backlog)
+    return listener, listen_err
 }
 
 /* Blocking, single-connection-at-a-time HTTP/1.1 server: binds `endpoint`,
@@ -93,11 +132,7 @@ serve_one(conn: tcp.Conn, handle: (Request): Response,
  * just drops that connection and the loop continues.
  */
 pub serve(endpoint: string, handle: (Request): Response): Error {
-    address: net.Addr4, parsed: bool = net.parse4(endpoint)
-    if !parsed {
-        return ServerErr.capacity
-    }
-    listener: tcp.Listener, listen_err: Error = tcp.listen(address, _backlog)
+    listener: tcp.Listener, listen_err: Error = listen_endpoint(endpoint)
     if listen_err != null {
         return listen_err
     }
@@ -113,6 +148,30 @@ pub serve(endpoint: string, handle: (Request): Response): Error {
             continue
         }
         serve_one(conn, handle, mut input[..], mut headers[..], mut body[..], mut output[..])
+        tcp.close(mut conn)
+    }
+}
+
+/* Same as `serve(endpoint, handle)`, dispatching each request through
+ * `router`'s registered routes instead of a single bare handler.
+ */
+pub serve(endpoint: string, router: Router): Error {
+    listener: tcp.Listener, listen_err: Error = listen_endpoint(endpoint)
+    if listen_err != null {
+        return listen_err
+    }
+
+    input: [8192]u8
+    headers: [64]Header
+    body: [262144]u8
+    output: [262144]u8
+
+    for {
+        conn: tcp.Conn, _: net.Addr4, accept_err: Error = tcp.accept(listener)
+        if accept_err != null {
+            continue
+        }
+        serve_one_router(conn, router, mut input[..], mut headers[..], mut body[..], mut output[..])
         tcp.close(mut conn)
     }
 }
