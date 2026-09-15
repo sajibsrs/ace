@@ -1,0 +1,116 @@
+/* Redirect recognition and URL-reference resolution. */
+
+import ascii
+import mem
+import str
+import message: "./format.ace"
+import parsing: "./parse.ace"
+
+pub Response: type = message.Response
+pub Url: type = parsing.Url
+pub UrlErr: type = parsing.UrlErr
+
+pub RedirectErr: error {
+    1: limit = "HTTP redirect limit was exceeded"
+    2: downgrade = "HTTPS redirect to HTTP is not permitted"
+}
+
+pub method_connect: const string = "CONNECT"
+pub method_delete: const string = "DELETE"
+
+pub RedirectPolicy: struct {
+    /* Zero preserves the strict one-response default. */
+    limit: usize = 0,
+}
+
+pub resolve(current: string, location: string, destination: mut []u8): (usize, bool) {
+    if location.len == 0 { return 0, false }
+    for i: usize in 0 .. location.len {
+        if ascii.is_control(location[i]) || location[i] == 35 {
+            return 0, false
+        }
+    }
+
+    absolute: bool = (location.len >= 7 && mem.equal(location[..7], "http://")) ||
+        (location.len >= 8 && mem.equal(location[..8], "https://"))
+    if absolute {
+        _: Url, err: Error = parsing.parse_url(location)
+        if err != null || destination.len < location.len { return 0, false }
+        mem.copy(destination[..location.len], location)
+        return location.len, true
+    }
+
+    secure: bool = current.len >= 8 && mem.equal(current[..8], "https://")
+    base: Url, base_err: Error = parsing.parse_url_for(current, secure)
+    if base_err != null { return 0, false }
+
+    scheme: string = "http://"
+    default_port: u16 = 80
+    if secure {
+        scheme = "https://"
+        default_port = 443
+    }
+
+    at: usize = 0
+    if location.len >= 2 && mem.equal(location[..2], "//") {
+        if destination.len < scheme.len + location.len - 2 { return 0, false }
+        mem.copy(destination[..scheme.len], scheme)
+        at = scheme.len
+        mem.copy(destination[at..at + location.len - 2], location[2..])
+        at += location.len - 2
+    } else {
+        if destination.len < scheme.len + base.host.len { return 0, false }
+        mem.copy(destination[..scheme.len], scheme)
+        at = scheme.len
+        mem.copy(destination[at..at + base.host.len], base.host)
+        at += base.host.len
+        if base.port != default_port {
+            if at == destination.len { return 0, false }
+            destination[at] = 58
+            at += 1
+            port_count: usize, port_ok: bool = str.format(mut destination[at..], uint(base.port))
+            if !port_ok { return 0, false }
+            at += port_count
+        }
+
+        if location[0] == 47 {
+            if location.len > destination.len - at { return 0, false }
+            mem.copy(destination[at..at + location.len], location)
+            at += location.len
+        } else if location[0] == 63 {
+            if base.path.len + location.len > destination.len - at { return 0, false }
+            mem.copy(destination[at..at + base.path.len], base.path)
+            at += base.path.len
+            mem.copy(destination[at..at + location.len], location)
+            at += location.len
+        } else {
+            directory_count: usize = 1
+            for i: usize in 0 .. base.path.len {
+                if base.path[i] == 47 { directory_count = i + 1 }
+            }
+            if directory_count + location.len > destination.len - at { return 0, false }
+            mem.copy(destination[at..at + directory_count], base.path[..directory_count])
+            at += directory_count
+            mem.copy(destination[at..at + location.len], location)
+            at += location.len
+        }
+    }
+
+    _: Url, result_err: Error = parsing.parse_url(destination[..at])
+    if result_err != null { return 0, false }
+    return at, true
+}
+
+pub location(response: Response): string {
+    for i: usize in 0 .. response.headers.len {
+        if ascii.is_equal(response.headers[i].name, "Location", false) {
+            return response.headers[i].value
+        }
+    }
+    return null
+}
+
+pub is_redirect(status_code: u16): bool {
+    return status_code == 301 || status_code == 302 || status_code == 303 ||
+        status_code == 307 || status_code == 308
+}
