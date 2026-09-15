@@ -62,7 +62,7 @@ RedirectState: struct {
 }
 
 redirect_start(url: string, mut storage: Storage): (RedirectState, Error) {
-    mem_url: mut []u8, url_ok: bool = transport.mem_adjust[u8](storage.url, url.len)
+    mem_url: mut []u8, url_ok: bool = mem.adjust[u8](storage.url, url.len)
     if !url_ok {
         return RedirectState {current_count = 0, followed = 0}, ClientErr.allocation
     }
@@ -83,7 +83,7 @@ redirect_next(response: Response, policy: RedirectPolicy, secure_transport: bool
     if with_location < needed { return false, ClientErr.allocation }
     needed = with_location + 32
     if needed < with_location { return false, ClientErr.allocation }
-    larger: mut []u8, larger_ok: bool = transport.mem_adjust[u8](storage.url, needed)
+    larger: mut []u8, larger_ok: bool = mem.adjust[u8](storage.url, needed)
     if !larger_ok { return false, ClientErr.allocation }
     storage.url = larger
     shifted_at: usize = storage.url.len - state.current_count

@@ -3,7 +3,6 @@
 import mem
 import str
 import message: "./format.ace"
-import transport: "./transport.ace"
 
 RouterErr: error {
     1: allocation = "route storage allocation failed"
@@ -38,7 +37,7 @@ pub router_wipe(mut router: Router) {
  * Grows route storage as needed; fails only if that growth fails.
  */
 pub mut Router.handle(method: string, path: string, handler: (Request): Response): Error {
-    grown: mut []Route, ok: bool = transport.mem_adjust[Route](self.routes, self.count + 1)
+    grown: mut []Route, ok: bool = mem.adjust[Route](self.routes, self.count + 1)
     if !ok {
         return RouterErr.allocation
     }

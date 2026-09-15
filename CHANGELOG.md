@@ -555,6 +555,11 @@ current normative rules, and Git preserves patch-level detail.
   reused by both the handler-based and router-based per-connection paths.
   Added `tests/emit/http/router.ace` covering registration, prefix/segment
   matching, method mismatch, query stripping, and the built-in 404 fallback.
+- Moved the grow-or-allocate helper formerly named `transport.mem_adjust`
+  into `std/mem.ace` as `mem.adjust[T]`: `router.ace` and `client.ace` both
+  called it through `transport` for a purely generic slice-growth operation,
+  not anything HTTP-specific. `transport.ace`, `router.ace`, and `client.ace`
+  now call `mem.adjust` directly; `router.ace` no longer imports `transport`.
 
 ## Current frontier
 
