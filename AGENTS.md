@@ -37,8 +37,10 @@ history.
   update the survey in the same edit.
 - Split work likely to exceed 100k tokens into 2–3 owner-approved steps; each
   step must compile and pass relevant tests.
-- Do not commit unless explicitly asked. Use a single imperative subject line
-  with no commit body.
+- Do not commit unless explicitly asked. Every commit message is exactly one
+  imperative subject line, full stop — no body paragraph, no rationale, no
+  bullet list, even when the change feels like it needs explaining. That
+  explanation belongs in `CHANGELOG.md`, not the commit.
 
 ## Conventions
 
