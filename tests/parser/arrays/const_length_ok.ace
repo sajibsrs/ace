@@ -2,9 +2,9 @@
  * expression surface as @align(N): identifiers and arithmetic, not only a
  * bare integer literal. */
 
-_count: const usize = 3
+COUNT: const usize = 3
 
 main(): int {
-    values: [_count]i32 = [7 : _count]
+    values: [COUNT]i32 = [7 : COUNT]
     return int(values[0] + values[1] + values[2]) - 21
 }

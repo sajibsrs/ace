@@ -2,9 +2,9 @@
  * module's own function bodies, exercising cross-module identifier renaming
  * for the array-length position specifically. */
 
-_size: const usize = 4
+SIZE: const usize = 4
 
 pub make(): usize {
-    buf: [_size]u8 = [0 : _size]
+    buf: [SIZE]u8 = [0 : SIZE]
     return buf.len
 }

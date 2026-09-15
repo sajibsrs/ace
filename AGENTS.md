@@ -54,11 +54,10 @@ history.
   organizational only; `mod.ace` remains the sole external import surface
   regardless of where its implementation files sit.
 - Start strict and add conveniences later.
-- Module-level `const` declarations use a leading underscore (`_backlog`), not
-  uppercase, keeping the language's ordinary lowercase identifier style. A
+- Module-level `const` declarations use all uppercase (`BACKLOG`). A
   same-named local (e.g. a parameter) may still shadow it per the ordinary
   nearest-binding rule; that shadowing is not an error, so there is no need for
-  a `default_`-style prefix to dodge a collision that cannot occur.
+  a `DEFAULT_`-style prefix to dodge a collision that cannot occur.
 - `.acefmt` is normative; update it with formatting-rule changes.
 
 ## Scoped rules

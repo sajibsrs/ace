@@ -22,11 +22,11 @@ RequestFraming: type = parsing.RequestFraming
 RequestResult: type = parsing.RequestResult
 RequestProgress: type = parsing.RequestProgress
 
-_backlog: const usize = 512
-_input_size: const usize = 8192
-_max_headers: const usize = 64
-_body_size: const usize = 262144
-_output_size: const usize = 262144
+BACKLOG: const usize = 512
+INPUT_SIZE: const usize = 8192
+MAX_HEADERS: const usize = 64
+BODY_SIZE: const usize = 262144
+OUTPUT_SIZE: const usize = 262144
 
 /* Reads exactly one complete request from `conn` into `input`/`headers`/
  * `body`. The second result is false on EOF, mid-read disconnect, oversized
@@ -124,7 +124,7 @@ listen_endpoint(endpoint: string): (tcp.Listener, Error) {
     if !parsed {
         return tcp.Listener{socket = net.Socket(0)}, ServerErr.capacity
     }
-    listener: tcp.Listener, listen_err: Error = tcp.listen(address, _backlog)
+    listener: tcp.Listener, listen_err: Error = tcp.listen(address, BACKLOG)
     return listener, listen_err
 }
 
@@ -141,10 +141,10 @@ pub serve(endpoint: string, handle: (Request): Response): Error {
         return listen_err
     }
 
-    input: [_input_size]u8
-    headers: [_max_headers]Header
-    body: [_body_size]u8
-    output: [_output_size]u8
+    input: [INPUT_SIZE]u8
+    headers: [MAX_HEADERS]Header
+    body: [BODY_SIZE]u8
+    output: [OUTPUT_SIZE]u8
 
     for {
         conn: tcp.Conn, _: net.Addr4, accept_err: Error = tcp.accept(listener)
@@ -165,10 +165,10 @@ pub serve(endpoint: string, router: Router): Error {
         return listen_err
     }
 
-    input: [_input_size]u8
-    headers: [_max_headers]Header
-    body: [_body_size]u8
-    output: [_output_size]u8
+    input: [INPUT_SIZE]u8
+    headers: [MAX_HEADERS]Header
+    body: [BODY_SIZE]u8
+    output: [OUTPUT_SIZE]u8
 
     for {
         conn: tcp.Conn, _: net.Addr4, accept_err: Error = tcp.accept(listener)

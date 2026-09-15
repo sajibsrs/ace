@@ -365,8 +365,8 @@ zeros: [4]int = [0 : 4]
 middle: []int = values[1..3]
 answer: int = middle[0] + middle[1]
 
-buffer_size: const usize = 8
-buffer: [buffer_size]u8 = [0 : buffer_size]
+BUFFER_SIZE: const usize = 8
+buffer: [BUFFER_SIZE]u8 = [0 : BUFFER_SIZE]
 ```
 
 An array repetition literal `[value : count]` takes its exact array type from

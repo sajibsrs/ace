@@ -71,8 +71,8 @@ Concrete rules and syntax. The why behind every rule lives in PHILOSOPHY.md (clo
     destination array type's length exactly. Rationale: a compile-time
     constant identifier is exactly as fixed and safe as a literal, so a
     literal-only grammar bought no safety — only friction for named sizes
-    shared across declarations (`_input_size: const usize = 8192` backing
-    `input: [_input_size]u8`).
+    shared across declarations (`INPUT_SIZE: const usize = 8192` backing
+    `input: [INPUT_SIZE]u8`).
 
 ## Compiler
 1. Make memory size available to programmer. (see: Errors)

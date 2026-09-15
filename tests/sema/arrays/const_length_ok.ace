@@ -1,12 +1,12 @@
 /* A module-level const usize backs a fixed array length and an array
  * repetition count, exactly as safely as a literal. */
 
-_input_size: const usize = 8192
-_route_count: const usize = 4
+INPUT_SIZE: const usize = 8192
+ROUTE_COUNT: const usize = 4
 
 Router: struct {
-    input: [_input_size]u8,
-    hits: [_route_count]i32 = [0 : _route_count],
+    input: [INPUT_SIZE]u8,
+    hits: [ROUTE_COUNT]i32 = [0 : ROUTE_COUNT],
 }
 
 main(): int {

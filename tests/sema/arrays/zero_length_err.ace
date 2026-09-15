@@ -2,9 +2,9 @@
  * positivity check applies after constant evaluation, not just to a literal
  * zero. */
 
-_zero: const usize = 0
+ZERO: const usize = 0
 
 main(): int {
-    values: [_zero]int
+    values: [ZERO]int
     return int(values.len)
 }

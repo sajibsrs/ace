@@ -578,6 +578,10 @@ current normative rules, and Git preserves patch-level detail.
   called it through `transport` for a purely generic slice-growth operation,
   not anything HTTP-specific. `transport.ace`, `router.ace`, and `client.ace`
   now call `mem.adjust` directly; `router.ace` no longer imports `transport`.
+- Renamed module-level `const` declarations from a leading-underscore
+  lowercase spelling to all uppercase (`_backlog` → `BACKLOG`, `_input_size` →
+  `INPUT_SIZE`, and the rest of `server.ace`'s session defaults), replacing
+  the project's earlier lowercase `const` convention.
 
 ## Current frontier
 
