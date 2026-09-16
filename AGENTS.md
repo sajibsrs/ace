@@ -27,6 +27,9 @@ history.
   future change is already agreed in principle (e.g. noted in `TODO.md`).
 - The owner resolves `[open]` and `[controversial]` items and removes those
   markers. Provisional spelling may change; semantics may not.
+- Confirm each step before proceeding. Implement only what was explicitly
+  asked; do not add unrequested options, flags, or behavior (e.g. CLI-argument
+  parsing nobody asked for).
 - Order decisions as philosophy, semantics, syntax, then implementation. For
   contested design, cite `PHILOSOPHY.md` and prioritize
   performance > simplicity > modularity > compile time > safety.
