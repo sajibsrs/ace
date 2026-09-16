@@ -1,0 +1,13 @@
+// A same-package sibling file (loaded via a relative import) inherits its
+// package's context and can resolve that package's own declared
+// dependencies, several levels removed from the compiled root.
+// expect-check-ok
+
+name: same_package_sibling
+version: 0.1.0
+ace: 0.1
+kind: app
+root: main.ace
+
+[dependencies]
+lib_a: ./lib_a

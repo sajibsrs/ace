@@ -1,0 +1,12 @@
+// A package may import only dependencies declared directly in its own
+// manifest; lib_a's dependency on lib_c is not automatically visible here.
+// expect-check-err: standard library module 'lib_c' not found
+
+name: no_transitive_dep
+version: 0.1.0
+ace: 0.1
+kind: app
+root: main.ace
+
+[dependencies]
+lib_a: ./lib_a

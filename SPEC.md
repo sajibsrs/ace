@@ -557,7 +557,7 @@ backend choice remains outside public protocol APIs, and the initial mechanism
 does not grow into package scripts, implicit fetching, or general analysis.
 
 ## Package System (future work)
-Decision: packaging is an optional, explicit layer above file modules; one `ace` executable owns both the direct compiler and the separately grouped package commands. Manifest and lockfile syntax remain open for later carving.
+Decision: packaging is an optional, explicit layer above file modules; one `ace` executable owns both the direct compiler and the separately grouped package commands. Manifest and lockfile syntax remain open for later carving. A minimal local-path-only v1 slice has been carved into the Decision Queue's Active section below; the items here describe the target full design and remain future work beyond that slice.
 1. `ace.pkg` at a package root defines exactly one package and one primary output. Every package explicitly declares `kind` as `app` or `lib` and explicitly names one root `.ace` file. An app produces an executable and its root must provide `main(): int`; a library exposes its root module as its sole external import surface. Consumers cannot deep-import its internal files. A library is distributed as source; initially, `ace pkg build` checks its complete graph and produces no reusable binary archive.
 2. A package has a required name, exact package version, and Ace language version. The name is case-sensitive, must be lowercase, and follows the Ace identifier shape; its source location is separate from its identity. Package versions are exactly three nonnegative components (`major.minor.patch`) with no initial prerelease/build suffixes. The Ace field names one exact `major.minor` language version, not a compiler release. Every package in one build graph must use the same Ace language version.
 3. Required build fields are package name, package version, Ace language version, kind, and root. Description, authors, license, repository, and homepage are optional informational metadata and never affect identity, resolution, or compilation. Exact `ace.pkg` structure, delimiters, and field syntax remain [open].
@@ -1224,6 +1224,128 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
   TLS rather than one foreign implementation, while one narrow client proof
   establishes the required storage, verification, entropy, and failure model
   and HTTP composition without prematurely fixing broader TLS policy.
+  Future relocation (open): core `std` should provide only the essential
+  OS-facing mechanism (`tcp`/`udp`), not a foreign-library-backed protocol
+  layer; `tls` (and `http`, which composes it) are the first candidates for
+  relocation out of the compiler-bundled tree into a `lib`-kind package once
+  the package system exists. This follows C Interop #4: standard-library
+  behavior is implemented in Ace or emitted directly, and a foreign library is
+  explicit interoperability a program opts into, never a foundation the
+  compiler bundles. Once relocated, a `tls` package expresses its BearSSL (or
+  alternative) dependency through ordinary `extern "c"` blocks and
+  package-declared native link inputs (Package System #14, still open) rather
+  than the compiler-owned `@extern(component)` attribute; the closed
+  component set and `external/` exist solely to serve the currently
+  std-resident backend and are removed, not repurposed, once that migration
+  lands. Zero-cost-when-unused shifts from the compiler's reachability walk to
+  ordinary dependency-graph opt-in, and backend choice shifts from
+  `--tls-backend` to choice of package. This relocation is gated on two
+  undecided prerequisites: a minimal package carve sufficient to host a `lib`
+  package (an initial local-path-only slice can defer git/lockfile/registry
+  complexity), and the package-level native-link-declaration syntax left open
+  by Package System #14. Until both land, `tls` remains exactly as
+  implemented in `std/tls.ace`.
+
+- **Package system v1 (local-path)** [open] — carve a minimal packaging layer
+  sufficient to host a `lib` package and prove cross-package imports,
+  deferring every remote/registry concern from the Package System
+  future-work section above. `ace.pkg` at a package root declares exactly one
+  package: required fields `name`, `version` (exact `major.minor.patch`),
+  `ace` (language version), `kind` (`app` or `lib`), and `root` (the
+  package's root `.ace` file, a relative path with no `..` component,
+  ending in `.ace`, that must exist under the package directory). An app's
+  root must provide `main(): int`; a library's root module is its sole
+  external import surface, exactly as a directory module's `mod.ace` already
+  works. Optional metadata (`description`, `authors`, `license`) is a
+  single-line value only — it never affects identity, resolution, or
+  compilation, so it does not motivate a multiline text-block grammar.
+  Dependencies are declared under a `[dependencies]` section as
+  `name: relative/path`, resolved only as relative local paths from the
+  declaring `ace.pkg`; a dependency path may traverse upward (packages are
+  ordinary sibling directories, not nested inside one another), but the
+  root field may not. There is no git source, version range, registry, or
+  lockfile in v1. A package may import only dependencies declared in its own
+  manifest; dependency names may not collide with standard-library module
+  names, and a dependency's manifest name must exactly equal the alias its
+  consumer declared for it (no renaming). Only a `lib` package may be a
+  dependency; the graph must be acyclic with at most one source per declared
+  package name, and every package in the graph must share the root's exact
+  `ace` language version. Plain `ace file.ace` remains fully manifest-free.
+  Manifest syntax (decided, implemented): a line-based `key: value` format,
+  `//`-prefixed comment and blank lines ignored, one `[dependencies]` section
+  header after which every line is a `name: path` dependency entry — chosen
+  over TOML or full Ace struct syntax to avoid a second parser style, kept to
+  a small hand-written line scanner (`src/package.c`). Graph resolution (decided,
+  implemented): `package_resolve` parses a package and recursively resolves its
+  dependencies depth-first, deduplicating an already-loaded canonical
+  directory (diamonds load once) and diagnosing a directory still on the
+  loading stack as a cycle, mirroring `module.c`'s existing module loader.
+  The `--pkg-graph=DIR` compiler flag is a debug hook exposing this stage,
+  parsing and printing the resolved dependency-first `name`/`kind`/root-file
+  order (or reporting every manifest/graph diagnostic) with no codegen
+  involvement — analogous to `--tokens`/`--ast` exposing earlier stages; the
+  real `ace pkg init`/`build`/`run`/`check` command set and conventional
+  output paths (`build/<package-name>` for an app, `build/` for a library)
+  remain a later step. Cross-package imports (decided, implemented):
+  `module.c`'s loader now carries the owning `Package*` (if any) alongside
+  each loaded module — the compiled root's own package, propagated to every
+  module it reaches. A bare/aliased/selective import first checks the
+  importing module's package dependencies for a matching alias before
+  falling back to stdlib resolution (the two never collide, per the
+  std-name-collision check above), resolving straight to the dependency's
+  already-canonical `root_file`; a same-package relative `"./x.ace"` import
+  inherits the importer's package unchanged. Every relative import from a
+  package-owned module must stay within that package's own canonical
+  directory — the same check that keeps a dependency's non-root files from
+  being deep-imported (Package System #1) also satisfies the general
+  containment rule (#7), since escaping a dependency's directory via a
+  consumer's relative path and escaping one's own package directory are the
+  same violation from the importing module's point of view. A dependency's
+  own further dependencies stay invisible to its consumers unless the
+  consumer redeclares them itself (no automatic transitivity), matching #7's
+  "only dependencies declared directly in its own manifest." The
+  `--pkg-check=DIR` compiler flag is a debug hook exposing this stage: full
+  semantic check of a package's root file with cross-package imports
+  resolved, no codegen — the manifest-free counterpart to plain
+  `ace file.ace`'s default mode. Real `ace pkg` CLI (decided, implemented):
+  `ace pkg init <app|lib> [DIR]`, `build`, `run`, and `check` are a distinct
+  argument-parsing mode (`ace pkg ...`, detected before the direct compiler's
+  own option loop). `build`/`run`/`check` take no directory argument; they
+  find the nearest enclosing `ace.pkg` by walking up from the working
+  directory (Package System #11), independent of `--pkg-graph`/`--pkg-check`
+  which keep taking an explicit `DIR` and remain as lower-level debug hooks
+  analogous to `--tokens`/`--ast` — the two pairs are additive, not a
+  replacement. `check` promotes `--pkg-check`'s semantics verbatim, minus the
+  directory argument. `build` resolves the graph and fully checks the root
+  file; for a `lib` package this is the entire result plus ensuring `build/`
+  exists (`mkdir -p`) — v1 ships libraries as source with no reusable binary
+  archive, so there is nothing further to write (Package System #1, #15).
+  For an `app` package, `build` additionally compiles and links into
+  `build/<package-name>` (the package name, not the root file's stem),
+  reusing the direct compiler's existing TLS-recipe and linker-invocation
+  machinery; it accepts the same `--checked`/`--release`/`--target=`/
+  `--tls-backend=`/`--report` flags as plain compilation, with no `-o`
+  override and no extra link-input flags in this slice (packages are pure
+  Ace with no native link inputs yet). `run` is app-only — it errors on a
+  `lib` package before building — and otherwise runs `build`'s own logic
+  then executes the linked binary in place, propagating its exact exit code
+  (or reporting a terminating signal) as `ace`'s own. `init` creates `DIR`
+  (default: the working directory) if missing, derives the package name from
+  its basename (validated as a lowercase identifier before anything is
+  written, so an invalid name leaves no directory behind), and refuses to
+  overwrite an existing `ace.pkg` or root file. It writes `version: 0.1.0`
+  and `ace: 0.1`, and `root: src/main.ace` (app) or `root: src/mod.ace`
+  (lib); an app's root file is a minimal `main(): int { return 0 }`, a lib's
+  root file is empty, since a library root module needs no content to be a
+  valid sole import surface. Native link-input declarations (Package System
+  #14 above, which separately gates `tls`'s eventual relocation and is not
+  required for a pure-Ace package such as `http`) remain a separate next
+  step. Rationale: a pure local-path slice proves the manifest, graph, and
+  import boundary this depends on without committing to git-fetch,
+  lockfile-hash, registry, or CLI-surface policy before a concrete package
+  (`http`) exercises it; keeping the debug flags alongside the real commands
+  avoids rewriting the graph/check-stage fixtures for a CLI-ergonomics
+  change.
 
 ### Trigger-gated
 

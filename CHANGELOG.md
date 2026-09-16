@@ -212,6 +212,51 @@ current normative rules, and Git preserves patch-level detail.
   clang-compiled fixtures serve as the ABI oracle.
 - Implemented statement-only AArch64 inline assembly with explicit
   input/output/clobber bindings and no constraint language or reordering.
+- Implemented Package System v1's manifest and dependency-graph resolution
+  (`src/package.c`): a line-based `ace.pkg` format (`key: value` fields, `//`
+  comments, one `[dependencies]` section of `name: relative/path` entries)
+  and a depth-first resolver mirroring the existing module loader's
+  canonical-path dedup and cycle diagnostics. Validates required fields,
+  exact `major.minor.patch`/`major.minor` version formats, `app`/`lib` kind
+  (only `lib` may be a dependency), a `root` file confined to its package
+  directory, dependency aliases that exactly match the target's declared
+  name, one source per declared package name, a shared `ace` language
+  version across the graph, and no collision with standard-library module
+  names. The `--pkg-graph=DIR` flag exposes this stage for testing, printing
+  the resolved dependency-first order with no codegen involvement. Local-path
+  dependencies only; no git, lockfile, or registry. Cross-package import
+  resolution and the `ace pkg` command set remain separate next steps.
+- Wired Package System v1 into `module.c`'s import loader: each loaded module
+  now carries its owning `Package*` (propagated from the compiled root, or
+  NULL for a manifest-free compile), and a bare/aliased/selective import
+  checks the importing module's declared dependencies before falling back to
+  stdlib resolution. Every relative import from a package-owned module must
+  stay within that package's own canonical directory, which both keeps a
+  dependency's non-root files from being deep-imported and blocks a
+  package's own relative imports from escaping it; a dependency's further
+  dependencies stay invisible to consumers unless redeclared (no automatic
+  transitivity). The `--pkg-check=DIR` flag exposes this stage: full
+  semantic check of a package's root file with cross-package imports
+  resolved, no codegen. The real `ace pkg` command set and native
+  link-input declarations remain separate next steps.
+- Implemented the real `ace pkg init`/`build`/`run`/`check` CLI as a distinct
+  argument-parsing mode in `main.c`, alongside (not replacing) the
+  `--pkg-graph`/`--pkg-check` debug flags. `build`/`run`/`check` find the
+  nearest enclosing `ace.pkg` by walking up from the working directory
+  rather than taking a directory argument. `check` promotes `--pkg-check`'s
+  logic verbatim. `build` resolves and fully checks the graph; a `lib`
+  package stops there plus ensuring `build/` exists (v1 libraries are
+  source-only, with no reusable archive), while an `app` package additionally
+  compiles and links into `build/<package-name>`, reusing the direct
+  compiler's TLS-recipe and linker machinery and accepting the same
+  `--checked`/`--release`/`--target=`/`--tls-backend=`/`--report` flags.
+  `run` is app-only and executes `build`'s linked binary in place,
+  propagating its exit code. `init` creates a minimal `ace.pkg` plus root
+  file (an app gets `main(): int { return 0 }`; a lib gets an empty root
+  module) without overwriting an existing manifest or root file, deriving
+  the package name from the target directory's basename. Added
+  `tests/package_cli/` fixtures covering app/lib builds, cross-package builds,
+  `run`'s app-only restriction, and nested-directory `check` discovery.
 
 ## Standard library
 

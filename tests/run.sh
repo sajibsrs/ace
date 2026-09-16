@@ -1361,6 +1361,164 @@ if ! "$ACE" --ast tests/lexer/numbers_ok.ace | grep -qF "op='>>'"; then
     fail=1
 fi
 
+# package fixtures: one directory per case. The root ace.pkg passed to
+# --pkg-graph/--pkg-check sits directly at the case root, or at "$case/app"
+# when the case also needs a sibling dependency package (packages are never
+# nested inside one another, so such a dependency cannot live under the case
+# root itself without defeating a containment test). A `// expect-ok:
+# name1,name2,...` comment names the expected dependency-first package-name
+# order from --pkg-graph; `// expect-err: substring` names diagnostic text a
+# failing graph-resolution case must report instead. `// expect-check-ok` and
+# `// expect-check-err: substring` are the --pkg-check equivalents, covering
+# cross-package import resolution (module.c) rather than graph resolution
+# alone. A case may use either pair, or both.
+if [ -d tests/package ]; then
+    for case_dir in tests/package/*/; do
+        if [ -f "${case_dir}ace.pkg" ]; then dir=${case_dir%/}
+        elif [ -f "${case_dir}app/ace.pkg" ]; then dir="${case_dir}app"
+        else continue
+        fi
+        f="$dir/ace.pkg"
+        ok=$(sed -n 's/^\/\/ *expect-ok:[[:space:]]*//p' "$f")
+        err=$(sed -n 's/^\/\/ *expect-err:[[:space:]]*//p' "$f")
+        check_ok=$(sed -n 's/^\/\/ *expect-check-ok[[:space:]]*.*/yes/p' "$f")
+        check_err=$(sed -n 's/^\/\/ *expect-check-err:[[:space:]]*//p' "$f")
+        if [ -n "$ok" ] || [ -n "$err" ]; then
+            out=$("$ACE" --pkg-graph="$dir" 2>/tmp/ace_test_errs)
+            got=$?
+            if [ -n "$ok" ]; then
+                if [ "$got" -ne 0 ]; then
+                    echo "FAIL (should resolve clean): $dir"
+                    cat /tmp/ace_test_errs
+                    fail=1
+                else
+                    names=$(printf '%s\n' "$out" | cut -f1 | paste -sd, -)
+                    if [ "$names" != "$ok" ]; then
+                        echo "FAIL: $dir resolved order '$names', want '$ok'"
+                        fail=1
+                    fi
+                fi
+            else
+                if [ "$got" -eq 0 ]; then
+                    echo "FAIL (should report errors): $dir"
+                    fail=1
+                elif ! grep -qF "$err" /tmp/ace_test_errs; then
+                    echo "FAIL: $dir missing diagnostic '$err'"
+                    cat /tmp/ace_test_errs
+                    fail=1
+                fi
+            fi
+        fi
+        if [ -n "$check_ok" ] || [ -n "$check_err" ]; then
+            "$ACE" --pkg-check="$dir" >/dev/null 2>/tmp/ace_test_errs
+            got=$?
+            if [ -n "$check_ok" ]; then
+                if [ "$got" -ne 0 ]; then
+                    echo "FAIL (should check clean): $dir"
+                    cat /tmp/ace_test_errs
+                    fail=1
+                fi
+            else
+                if [ "$got" -eq 0 ]; then
+                    echo "FAIL (should report errors): $dir"
+                    fail=1
+                elif ! grep -qF "$check_err" /tmp/ace_test_errs; then
+                    echo "FAIL: $dir missing diagnostic '$check_err'"
+                    cat /tmp/ace_test_errs
+                    fail=1
+                fi
+            fi
+        fi
+        if [ -z "$ok" ] && [ -z "$err" ] && [ -z "$check_ok" ] && [ -z "$check_err" ]; then
+            echo "FAIL: $f has no 'expect-ok'/'expect-err'/'expect-check-ok'/'expect-check-err' comment"
+            fail=1
+        fi
+    done
+fi
+
+# `ace pkg` real subcommand fixtures: one directory per case, exercising the
+# CLI surface itself (cwd-based ace.pkg discovery, build/run linking, check)
+# rather than the --pkg-graph/--pkg-check debug hooks above. The root
+# ace.pkg sits directly at the case root, or at "$case/app" with a sibling
+# "$case/lib" dependency, matching the tests/package convention. Markers live as
+# `//`-comments in ace.pkg: `// expect-build-exit: N` builds an app case and
+# runs it (via both `pkg build` + the binary, and `pkg run` directly),
+# expecting exit code N; `// expect-build-ok` builds a lib case, expecting
+# `pkg build` to succeed with no linked binary in build/; `// expect-run-err:
+# substring` expects `pkg run` on a lib case to fail with that diagnostic;
+# `// expect-check-ok` expects `pkg check` to succeed from a nested working
+# directory (src/) rather than the package root.
+if [ -d tests/package_cli ]; then
+    for case_dir in tests/package_cli/*/; do
+        if [ -f "${case_dir}ace.pkg" ]; then dir=${case_dir%/}
+        elif [ -f "${case_dir}app/ace.pkg" ]; then dir="${case_dir}app"
+        else continue
+        fi
+        f="$dir/ace.pkg"
+        name=$(sed -n 's/^name: *//p' "$f")
+        build_exit=$(sed -n 's/^\/\/ *expect-build-exit:[[:space:]]*//p' "$f")
+        build_ok=$(sed -n 's/^\/\/ *expect-build-ok[[:space:]]*.*/yes/p' "$f")
+        run_err=$(sed -n 's/^\/\/ *expect-run-err:[[:space:]]*//p' "$f")
+        check_ok=$(sed -n 's/^\/\/ *expect-check-ok[[:space:]]*.*/yes/p' "$f")
+        rm -rf "$dir/build"
+        if [ -n "$build_exit" ]; then
+            if ! (cd "$dir" && "$ACE" pkg build) >/dev/null 2>/tmp/ace_test_errs; then
+                echo "FAIL (pkg build should succeed): $dir"
+                cat /tmp/ace_test_errs
+                fail=1
+            else
+                "$dir/build/$name"
+                got=$?
+                if [ "$got" -ne "$build_exit" ]; then
+                    echo "FAIL: $dir/build/$name exited $got, want $build_exit"
+                    fail=1
+                fi
+                (cd "$dir" && "$ACE" pkg run) >/dev/null 2>/tmp/ace_test_errs
+                got=$?
+                if [ "$got" -ne "$build_exit" ]; then
+                    echo "FAIL: $dir 'pkg run' exited $got, want $build_exit"
+                    cat /tmp/ace_test_errs
+                    fail=1
+                fi
+            fi
+        fi
+        if [ -n "$build_ok" ]; then
+            if ! (cd "$dir" && "$ACE" pkg build) >/dev/null 2>/tmp/ace_test_errs; then
+                echo "FAIL (pkg build should succeed): $dir"
+                cat /tmp/ace_test_errs
+                fail=1
+            elif [ ! -d "$dir/build" ] || [ -e "$dir/build/$name" ]; then
+                echo "FAIL: $dir lib build should create an empty build/ with no linked binary"
+                fail=1
+            fi
+        fi
+        if [ -n "$run_err" ]; then
+            run_out=$(cd "$dir" && "$ACE" pkg run 2>&1)
+            got=$?
+            if [ "$got" -eq 0 ]; then
+                echo "FAIL (pkg run on a lib should fail): $dir"
+                fail=1
+            elif ! printf '%s\n' "$run_out" | grep -qF "$run_err"; then
+                echo "FAIL: $dir missing 'pkg run' diagnostic '$run_err'"
+                printf '%s\n' "$run_out"
+                fail=1
+            fi
+        fi
+        if [ -n "$check_ok" ]; then
+            if ! (cd "$dir/src" && "$ACE" pkg check) >/dev/null 2>/tmp/ace_test_errs; then
+                echo "FAIL (pkg check from a nested directory should succeed): $dir"
+                cat /tmp/ace_test_errs
+                fail=1
+            fi
+        fi
+        rm -rf "$dir/build"
+        if [ -z "$build_exit" ] && [ -z "$build_ok" ] && [ -z "$run_err" ] && [ -z "$check_ok" ]; then
+            echo "FAIL: $f has no 'expect-build-exit'/'expect-build-ok'/'expect-run-err'/'expect-check-ok' comment"
+            fail=1
+        fi
+    done
+fi
+
 if [ $fail -eq 0 ]; then
     echo "\n--------------------"
     echo "all tests passed"

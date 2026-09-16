@@ -1,0 +1,1 @@
+pub hello(): int { return 7 }

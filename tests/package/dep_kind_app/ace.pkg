@@ -1,0 +1,11 @@
+// Only a lib package can be a dependency; an app has no importable surface.
+// expect-err: only a lib package can be a dependency
+
+name: dep_kind_app
+version: 0.1.0
+ace: 0.1
+kind: app
+root: main.ace
+
+[dependencies]
+dep: ./dep

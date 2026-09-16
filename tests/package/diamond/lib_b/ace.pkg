@@ -1,0 +1,8 @@
+name: lib_b
+version: 0.1.0
+ace: 0.1
+kind: lib
+root: root.ace
+
+[dependencies]
+lib_c: ../lib_c

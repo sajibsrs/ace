@@ -105,3 +105,46 @@ so the machine-code and object-file values are zero.
 
 The report uses standard error so token dumps, AST dumps, and other
 machine-consumable standard output remain unchanged.
+
+## Packages
+
+Plain `ace file.ace` compiles one root source with no manifest. An optional
+`ace.pkg` at a directory root groups a package's files under a declared
+`name`, exact `version`, `ace` language version, `kind` (`app` or `lib`), and
+`root` source file, with local-path-only `[dependencies]` entries (see
+`SPEC.md`'s Package System section for the manifest format and dependency
+rules). Every manifest-aware operation is grouped under `ace pkg`:
+
+```sh
+ace pkg init app my_app
+ace pkg init lib my_lib
+ace pkg build
+ace pkg run
+ace pkg check
+```
+
+`build`, `run`, and `check` take no path argument: they find the nearest
+enclosing `ace.pkg` by walking up from the working directory, the same way a
+nested manifest starts an independent package. `check` performs a full
+semantic check with cross-package imports resolved, no codegen — the
+manifest-aware counterpart to plain `ace file.ace`'s default mode. `build`
+resolves the dependency graph and fully checks the root file; for a `lib`
+package that is the entire result, plus ensuring `build/` exists, since v1
+ships libraries as source with no reusable binary archive. For an `app`
+package, `build` additionally compiles and links into
+`build/<package-name>`, accepting the same `--checked`/`--release`/
+`--target=`/`--tls-backend=`/`--report` flags as plain compilation. `run` is
+app-only — it errors on a `lib` package — and otherwise builds, then
+executes the linked binary in place, propagating its exact exit code.
+
+`init <app|lib> [DIR]` creates a minimal package skeleton at `DIR` (default:
+the working directory), deriving the package name from `DIR`'s basename. It
+refuses to overwrite an existing `ace.pkg` or root file. An app gets
+`src/main.ace` with a minimal `main(): int { return 0 }`; a lib gets an
+empty `src/mod.ace`, since a library's root module needs no content to be a
+valid sole import surface.
+
+`--pkg-graph=DIR` and `--pkg-check=DIR` remain as lower-level debug hooks —
+analogous to `--tokens`/`--ast` exposing earlier compiler stages — resolving
+or checking the package at an explicit `DIR` rather than one found from the
+working directory.

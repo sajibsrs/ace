@@ -1,0 +1,13 @@
+// Diamond dependency: lib_a and lib_b both depend on lib_c. lib_c must be
+// loaded once and resolved before either of them.
+// expect-ok: lib_c,lib_a,lib_b,diamond
+
+name: diamond
+version: 0.1.0
+ace: 0.1
+kind: app
+root: main.ace
+
+[dependencies]
+lib_a: ./lib_a
+lib_b: ./lib_b

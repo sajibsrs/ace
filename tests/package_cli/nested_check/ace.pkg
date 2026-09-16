@@ -1,0 +1,6 @@
+// expect-check-ok
+name: nested_check
+version: 0.1.0
+ace: 0.1
+kind: app
+root: src/main.ace

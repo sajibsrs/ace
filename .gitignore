@@ -1,6 +1,8 @@
 /ace
 /ace-sanitize
 /sandbox*
+/tests/pkg_cli/*/build/
+/tests/pkg_cli/*/*/build/
 .DS_Store
 *.o
 *.dSYM/

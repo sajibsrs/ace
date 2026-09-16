@@ -1,0 +1,7 @@
+// A manifest missing a required field is rejected.
+// expect-err: missing required field 'ace'
+
+name: missing_field
+version: 0.1.0
+kind: app
+root: main.ace

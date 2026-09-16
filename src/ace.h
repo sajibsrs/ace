@@ -82,6 +82,15 @@ typedef struct {
 
 int source_load(Source* s, const char* path);
 
+// --- Shared path/string helpers (implemented in module.c) --------------------
+const char* arena_string(const char* s);
+int         text_is(const char* s, uint32_t len, const char* t);
+void        compiler_dir(char* out, size_t cap, const char* argv0);
+void        path_dir(char* out, size_t cap, const char* path);
+const char* join_path(const char* dir, const char* rel);
+const char* canonicalize(const char* path); // arena storage, or NULL
+int         path_beneath(const char* path, const char* dir);
+
 // Lex the whole source; returns a malloc'd token array terminated by T_EOF.
 // *count includes the terminator. Token text storage outlives the call.
 Token* lex(Source* s, Diag* d, size_t* count);
@@ -188,6 +197,11 @@ enum {
 
 typedef struct Node Node;
 
+// Forward declarations for Package System v1 (full definitions near the end
+// of this header, beside package_resolve); resolve_imports takes a Package*.
+typedef struct PackageDep PackageDep;
+typedef struct Package Package;
+
 typedef struct {
     uint8_t  kind;
     uint16_t precision;
@@ -248,10 +262,13 @@ uint32_t extern_requirements(Node* file);
 
 // Load supported imports and merge their declarations into the compilation
 // unit. Qualified and selectively imported references are lowered to private
-// module-prefixed names before semantic checking.
+// module-prefixed names before semantic checking. root_package is the package
+// owning `file` (Package System v1), or NULL for a plain manifest-free
+// compile; it gates dependency-alias bare imports and same-package relative
+// import containment.
 int resolve_imports(Node* file, Diag* d, const char* compiler_path,
                     const char* target,
-                    CompileReport* report);
+                    CompileReport* report, Package* root_package);
 
 // Direct AArch64 codegen (stage four): walks the sema-checked AST and writes
 // a Mach-O arm64 object. Returns 0 on success. Sets emit_has_main.
@@ -260,5 +277,41 @@ typedef enum { EMIT_CHECKED, EMIT_RELEASE } EmitMode;
 int emit_object(Node* file, Diag* d, const char* out_path,
                 CompileReport* report, EmitMode mode);
 extern int emit_has_main;
+
+// --- Packages (ace.pkg manifests, Package System v1: local-path only) --------
+// SPEC.md Decision Queue, "Package system v1 (local-path)". A package is a
+// directory holding one ace.pkg and one root .ace file; dependencies are
+// relative local paths to other package directories, resolved recursively.
+// module.c's resolve_imports consumes the resolved graph for cross-package
+// imports; this stage itself has no codegen involvement.
+struct PackageDep {
+    const char* name;    // import alias — equals the target package's own name
+    Package*    package;
+    PackageDep* next;
+};
+
+struct Package {
+    const char* dir;         // canonical package root directory
+    const char* name;
+    int         ver_major, ver_minor, ver_patch;
+    int         ace_major, ace_minor;
+    int         is_app;      // 0 = lib, 1 = app
+    const char* root_file;   // canonical path to the root .ace file
+    const char* description; // NULL if absent
+    PackageDep* deps;
+    Package*    next;        // completion order: dependencies before dependents
+};
+
+// Parse ace.pkg at package_dir and resolve its complete local-path dependency
+// graph. Returns the root package, or NULL if any error was reported through
+// d. On success, *order receives every loaded package (including the root)
+// in dependency-first order and *norder its count; the caller owns the
+// returned array (free) but not the Package storage (arena, stable).
+Package* package_resolve(const char* package_dir, Diag* d, const char* compiler_path,
+                         Package*** order, int* norder);
+
+// True iff s is a nonempty lowercase Ace identifier, the shape a package name
+// must have. Shared by manifest validation and `ace pkg init`'s derived name.
+int package_valid_name(const char* s, size_t len);
 
 #endif

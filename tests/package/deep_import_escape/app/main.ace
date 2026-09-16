@@ -1,0 +1,5 @@
+import x: "../lib/secret.ace"
+
+main(): int {
+    return x.hidden()
+}

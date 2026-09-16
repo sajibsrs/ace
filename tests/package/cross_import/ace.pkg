@@ -1,0 +1,12 @@
+// A bare import matching a declared dependency alias resolves to that
+// dependency's root module.
+// expect-check-ok
+
+name: cross_import
+version: 0.1.0
+ace: 0.1
+kind: app
+root: main.ace
+
+[dependencies]
+lib: ./lib

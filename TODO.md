@@ -269,6 +269,11 @@ nonblocking connect completion remain visible without callbacks or allocation.
   Server mode, client certificates, explicit revocation/network
   fetching, ALPN/HTTP/2, session state, and higher-level secure-client
   conveniences remain later additive work.
+  Longer-term direction [open]: relocate `tls` (and `http`) out of `std` into
+  a `lib` package once the package system exists, since core `std` should
+  provide only `tcp`/`udp`-level mechanism; see the SPEC.md Decision Queue
+  entry for the native-linkage and package-carving prerequisites this
+  depends on.
 - **HTTP protocol and transport ergonomics** [partly implemented] — the strict IPv4 endpoint
   parser, zero-copy HTTP URL parser, caller-storage request and response
   formatters, and incremental HTTP/1.1 request and response parsers from

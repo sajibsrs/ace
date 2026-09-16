@@ -1,0 +1,8 @@
+// A package name may not collide with a standard-library module name.
+// expect-err: collides with a standard-library module name
+
+name: math
+version: 0.1.0
+ace: 0.1
+kind: app
+root: main.ace

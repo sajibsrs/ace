@@ -1,0 +1,13 @@
+// The graph can contain at most one source for each declared package name;
+// dep1 and dep2 both declare `name: shared`.
+// expect-err: resolves to two different sources
+
+name: name_conflict
+version: 0.1.0
+ace: 0.1
+kind: app
+root: main.ace
+
+[dependencies]
+shared: ./dep1
+shared2: ./dep2

@@ -60,6 +60,7 @@ struct Module {
     Binding*    binds;  // this module's own import bindings
     Member*     members;
     Module*     next;   // completion order: dependencies before dependents
+    Package*    package; // owning package (Package System v1), or NULL
 };
 
 typedef struct {
@@ -85,18 +86,18 @@ static void import_err(Diag* d, Node* n, const char* fmt, ...) {
     d->errors++;
 }
 
-static const char* arena_string(const char* s) {
+const char* arena_string(const char* s) {
     size_t n = strlen(s);
     char* out = arena_alloc(n + 1);
     memcpy(out, s, n + 1);
     return out;
 }
 
-static int text_is(const char* s, uint32_t len, const char* t) {
+int text_is(const char* s, uint32_t len, const char* t) {
     return len == (uint32_t)strlen(t) && memcmp(s, t, len) == 0;
 }
 
-static void compiler_dir(char* out, size_t cap, const char* argv0) {
+void compiler_dir(char* out, size_t cap, const char* argv0) {
     const char* slash = strrchr(argv0, '/');
     if (!slash) {
         snprintf(out, cap, ".");
@@ -110,7 +111,7 @@ static void compiler_dir(char* out, size_t cap, const char* argv0) {
 }
 
 // Directory part of a source path ("dir/file.ace" → "dir", "file.ace" → ".").
-static void path_dir(char* out, size_t cap, const char* path) {
+void path_dir(char* out, size_t cap, const char* path) {
     const char* slash = strrchr(path, '/');
     if (!slash) {
         snprintf(out, cap, ".");
@@ -123,7 +124,7 @@ static void path_dir(char* out, size_t cap, const char* path) {
     out[n] = 0;
 }
 
-static const char* join_path(const char* dir, const char* rel) {
+const char* join_path(const char* dir, const char* rel) {
     size_t n = strlen(dir) + 1 + strlen(rel) + 1;
     char* buf = arena_alloc(n);
     if (strcmp(dir, ".") == 0) snprintf(buf, n, "%s", rel);
@@ -132,14 +133,14 @@ static const char* join_path(const char* dir, const char* rel) {
 }
 
 // Canonical path = module identity. Returns arena storage or NULL.
-static const char* canonicalize(const char* path) {
+const char* canonicalize(const char* path) {
     char buf[4096];
     if (!realpath(path, buf)) return NULL;
     return arena_string(buf);
 }
 
 // True only for descendants, with a path-component boundary after dir.
-static int path_beneath(const char* path, const char* dir) {
+int path_beneath(const char* path, const char* dir) {
     size_t n = strlen(dir);
     return strncmp(path, dir, n) == 0 && path[n] == '/';
 }
@@ -450,11 +451,18 @@ static void report_cycle(Loader* L, Node* at, const char* canon) {
 }
 
 // Resolve one import declaration to its target path (arena storage).
-// Bare, ident-aliased, and selective `from name` imports come from the stdlib
-// beside the compiler; @name names compiler-reserved std implementation;
-// string paths are local to the importing source file.
-static const char* import_target(Loader* L, Node* imp, const char* src_path) {
+// Bare, ident-aliased, and selective `from name` imports check the importing
+// file's own package dependencies first (Package System v1), then the
+// stdlib beside the compiler; @name names compiler-reserved std
+// implementation; string paths are local to the importing source file. On
+// return, *target_package names the package owning the resolved file (the
+// matched dependency, the importer's own package for a same-package relative
+// path, or NULL for std/std-internal/non-package targets).
+static const char* import_target(Loader* L, Node* imp, const char* src_path,
+                                 Package** target_package) {
+    *target_package = L->loading ? L->loading->package : NULL;
     if (imp->a && imp->a->op == T_AT) {
+        *target_package = NULL; // compiler-reserved, never package-owned
         Node* p = imp->a;
         char dir[4096];
         compiler_dir(dir, sizeof dir, L->compiler_path);
@@ -486,10 +494,36 @@ static const char* import_target(Loader* L, Node* imp, const char* src_path) {
         }
         char dir[4096];
         path_dir(dir, sizeof dir, src_path);
-        return join_path(dir, raw);
+        const char* target = join_path(dir, raw);
+        // A package's ordinary relative imports may not reach outside its own
+        // canonical directory — this is also what keeps a dependency's
+        // internal files from being deep-imported by a consumer (Package
+        // System #1, #7). Non-package compiles (*target_package == NULL) are
+        // unaffected.
+        if (*target_package) {
+            const char* target_canon = canonicalize(target);
+            if (target_canon && strcmp(target_canon, (*target_package)->dir) != 0 &&
+                !path_beneath(target_canon, (*target_package)->dir)) {
+                import_err(L->d, imp,
+                           "relative import '%s' escapes its package directory '%s'",
+                           raw, (*target_package)->dir);
+                return NULL;
+            }
+        }
+        return target;
     }
-    // bare/alias import, or selective `from mem` — stdlib only
+    // bare/alias import, or selective `from mem` — package dependency first,
+    // then stdlib
     Node* name = imp->b ? imp->b : imp;
+    if (*target_package) {
+        for (PackageDep* dep = (*target_package)->deps; dep; dep = dep->next) {
+            if (text_is(name->str, name->len, dep->name)) {
+                *target_package = dep->package;
+                return dep->package->root_file;
+            }
+        }
+    }
+    *target_package = NULL; // falling through to std: never package-owned
     char stdname[512];
     if (name->len >= sizeof stdname) {
         import_err(L->d, imp, "module name is too long");
@@ -607,7 +641,8 @@ static void select_members(Loader* L, Node* imp, Module* mod,
 
 // Load (once) the module an import refers to and return it.
 static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
-    const char* target = import_target(L, imp, src_path);
+    Package* target_package = NULL;
+    const char* target = import_target(L, imp, src_path, &target_package);
     if (!target) return NULL;
     const char* canon = canonicalize(target);
     if (!canon) {
@@ -655,6 +690,7 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
     Node* file = load_module(L, canon);
     if (!file) return NULL;
     Module* m = module_new(L, canon, file);
+    m->package = target_package;
     collect_members(L, m); // original names + pub-ness, before any renaming
     mark_mem_intrinsics(L, m);
     mark_fmt_intrinsics(L, m);
@@ -1407,7 +1443,7 @@ static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root
 
 int resolve_imports(Node* file, Diag* d, const char* compiler_path,
                     const char* target,
-                    CompileReport* report) {
+                    CompileReport* report, Package* root_package) {
     Loader L = {0};
     L.d = d;
     L.compiler_path = compiler_path;
@@ -1429,6 +1465,7 @@ int resolve_imports(Node* file, Diag* d, const char* compiler_path,
     root.canon = root_canon;
     root.file = file;
     root.prefix = "";
+    root.package = root_package;
     L.loading = &root;
     if (resolve_file(&L, file, d->path, 1)) return d->errors;
     L.loading = NULL;

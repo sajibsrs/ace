@@ -1,0 +1,5 @@
+name: greeter
+version: 0.1.0
+ace: 0.1
+kind: lib
+root: src/mod.ace

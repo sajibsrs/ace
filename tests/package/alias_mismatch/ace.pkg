@@ -1,0 +1,12 @@
+// A dependency's manifest alias cannot rename the fetched package: it must
+// equal the target's own declared name.
+// expect-err: does not match package name
+
+name: alias_mismatch
+version: 0.1.0
+ace: 0.1
+kind: app
+root: main.ace
+
+[dependencies]
+wrong_name: ./dep
