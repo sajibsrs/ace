@@ -4,20 +4,14 @@
  *
  * Build and run:
  *   ./ace demo/http-simple-client/main.ace -o http-simple-client
- *   ./http-simple-client [url]
- *
- * Defaults to http://example.com/.
+ *   ./http-simple-client
  */
 
 import fmt
 import http
-import sys
 
 main(): int {
     url: string = "http://example.com/"
-    if sys.argc() > 1 {
-        url = sys.arg(1)
-    }
 
     context: http.ClientContext = http.client_context_new()
     defer http.client_context_wipe(mut context)

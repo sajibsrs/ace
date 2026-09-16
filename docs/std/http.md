@@ -118,8 +118,7 @@ body. Build and run it with:
 
 ```sh
 ./ace demo/http-simple-client/main.ace -o http-simple-client
-./http-simple-client  # defaults to http://example.com/
-./http-simple-client http://127.0.0.1:8080/
+./http-simple-client
 ```
 
 ## Server: blocking `serve`

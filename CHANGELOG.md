@@ -606,7 +606,7 @@ current normative rules, and Git preserves patch-level detail.
   `message` were already used at every import site, and the `redirect` alias
   at its one call site in `client.ace` was renamed to `redirection` to match.
 - Added a minimal `http.get` client demo (`demo/http-simple-client/main.ace`):
-  an optional URL argument, one `ClientContext`-backed GET, and the response
+  one `ClientContext`-backed GET against a fixed URL, and the response
   status/body printed with no redirects or TLS.
 
 ## Current frontier
