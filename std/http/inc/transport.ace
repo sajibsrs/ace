@@ -5,8 +5,8 @@ import net
 import tcp
 import str
 import secure: "../../tls.ace"
-import message: "./format.ace"
-import parsing: "./parse.ace"
+import message: "./message.ace"
+import parsing: "./parsing.ace"
 
 pub Header: type = message.Header
 pub Request: type = message.Request

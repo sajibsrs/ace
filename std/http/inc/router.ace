@@ -2,7 +2,7 @@
 
 import mem
 import str
-import message: "./format.ace"
+import message: "./message.ace"
 
 RouterErr: error {
     1: allocation = "route storage allocation failed"

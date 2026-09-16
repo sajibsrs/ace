@@ -2,16 +2,16 @@
 
 import mem
 import net
-import message: "./format.ace"
-import parsing: "./parse.ace"
-import redirect: "./redirect.ace"
+import message: "./message.ace"
+import parsing: "./parsing.ace"
+import redirection: "./redirection.ace"
 import transport: "./transport.ace"
 
 pub Response: type = message.Response
 pub Storage: type = transport.Storage
 pub ClientErr: type = transport.ClientErr
-pub RedirectErr: type = redirect.RedirectErr
-pub RedirectPolicy: type = redirect.RedirectPolicy
+pub RedirectErr: type = redirection.RedirectErr
+pub RedirectPolicy: type = redirection.RedirectPolicy
 pub TlsConfig: type = transport.TlsConfig
 pub Url: type = parsing.Url
 pub UrlErr: type = parsing.UrlErr
@@ -73,8 +73,8 @@ redirect_start(url: string, mut storage: Storage): (RedirectState, Error) {
 
 redirect_next(response: Response, policy: RedirectPolicy, secure_transport: bool,
     mut state: RedirectState, mut storage: Storage): (bool, Error) {
-    if !redirect.is_redirect(response.status) { return false, null }
-    location: string = redirect.location(response)
+    if !redirection.is_redirect(response.status) { return false, null }
+    location: string = redirection.location(response)
     if location == null || location.len == 0 { return false, null }
     current_secure: bool = state.current_count >= 8 && mem.equal(storage.url[..8], "https://")
     needed: usize = state.current_count * 2
@@ -92,7 +92,7 @@ redirect_next(response: Response, policy: RedirectPolicy, secure_transport: bool
         storage.url[shifted_at + source_at] = storage.url[source_at]
     }
     previous: string = storage.url[shifted_at..]
-    next_count: usize, valid: bool = redirect.resolve(previous, location,
+    next_count: usize, valid: bool = redirection.resolve(previous, location,
         mut storage.url[..shifted_at])
     if !valid { return false, null }
     next_secure: bool = next_count >= 8 && mem.equal(storage.url[..8], "https://")

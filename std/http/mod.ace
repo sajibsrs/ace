@@ -1,9 +1,9 @@
 /* http — HTTP/1.1 framing and owning blocking clients. */
 
 import client: "./inc/client.ace"
-import message: "./inc/format.ace"
-import parsing: "./inc/parse.ace"
-import redirect: "./inc/redirect.ace"
+import message: "./inc/message.ace"
+import parsing: "./inc/parsing.ace"
+import redirection: "./inc/redirection.ace"
 import routing: "./inc/router.ace"
 import server: "./inc/server.ace"
 import transport: "./inc/transport.ace"
@@ -12,7 +12,7 @@ pub Url: type = parsing.Url
 pub UrlErr: type = parsing.UrlErr
 pub FormatErr: type = message.FormatErr
 pub ClientErr: type = transport.ClientErr
-pub RedirectErr: type = redirect.RedirectErr
+pub RedirectErr: type = redirection.RedirectErr
 pub Header: type = message.Header
 pub Request: type = message.Request
 pub Response: type = message.Response
@@ -30,7 +30,7 @@ pub ResponseProgress: type = parsing.ResponseProgress
 pub ResponseResult: type = parsing.ResponseResult
 pub Storage: type = transport.Storage
 pub TlsConfig: type = transport.TlsConfig
-pub RedirectPolicy: type = redirect.RedirectPolicy
+pub RedirectPolicy: type = redirection.RedirectPolicy
 pub ClientContext: type = client.Context
 pub Client: type = client.Client
 pub Router: type = routing.Router

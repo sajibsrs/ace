@@ -5,8 +5,8 @@ import mem
 import net
 import sys
 import tcp
-import message: "./format.ace"
-import parsing: "./parse.ace"
+import message: "./message.ace"
+import parsing: "./parsing.ace"
 import routing: "./router.ace"
 
 ServerErr: error {
