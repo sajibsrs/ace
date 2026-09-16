@@ -600,6 +600,11 @@ current normative rules, and Git preserves patch-level detail.
   never touched by `mem.adjust`. `demo/http-simple-server` and `http.mod.ace`
   (`ServerContext`, `server_context_new`/`server_context_wipe`) were updated
   to match.
+- Renamed `std/http/inc`'s `format.ace`, `parse.ace`, and `redirect.ace` to
+  `message.ace`, `parsing.ace`, and `redirection.ace` so every file in the
+  directory is a noun, matching its own import alias exactly; `parsing` and
+  `message` were already used at every import site, and the `redirect` alias
+  at its one call site in `client.ace` was renamed to `redirection` to match.
 
 ## Current frontier
 

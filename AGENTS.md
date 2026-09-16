@@ -35,6 +35,8 @@ history.
   briefly, in `CHANGELOG.md`.
 - `TODO.md` is non-normative. Promote entries through the Decision Queue and
   update the survey in the same edit.
+- Update `SPEC.md`, `CHANGELOG.md`, `TODO.md`, and `docs/` in the same commit
+  as the change they describe, not a follow-up.
 - Split work likely to exceed 100k tokens into 2–3 owner-approved steps; each
   step must compile and pass relevant tests.
 - Do not commit unless explicitly asked. Every commit message is exactly one
@@ -59,6 +61,8 @@ history.
   nearest-binding rule; that shadowing is not an error, so there is no need for
   a `DEFAULT_`-style prefix to dodge a collision that cannot occur.
 - `.acefmt` is normative; update it with formatting-rule changes.
+- File names are nouns, matching their own import alias (`parsing.ace` as
+  `parsing`, not `parse.ace`).
 
 ## Scoped rules
 
