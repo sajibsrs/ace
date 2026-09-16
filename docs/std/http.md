@@ -110,6 +110,18 @@ coding, unsupported transfer coding, malformed chunks, premature fixed/chunked
 EOF, and status 101 are explicit failures. Header names are compared using
 ASCII case folding; values and payload bytes otherwise pass through unchanged.
 
+## Simple HTTP client demo
+
+A runnable proof of concept lives at `demo/http-simple-client/main.ace`: it
+calls `get(url, mut context)` directly, printing the response status and
+body. Build and run it with:
+
+```sh
+./ace demo/http-simple-client/main.ace -o http-simple-client
+./http-simple-client  # defaults to http://example.com/
+./http-simple-client http://127.0.0.1:8080/
+```
+
 ## Server: blocking `serve`
 
 `serve(endpoint, handle): Error` is the only server convenience: no

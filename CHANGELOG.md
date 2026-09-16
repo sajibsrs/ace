@@ -605,6 +605,9 @@ current normative rules, and Git preserves patch-level detail.
   directory is a noun, matching its own import alias exactly; `parsing` and
   `message` were already used at every import site, and the `redirect` alias
   at its one call site in `client.ace` was renamed to `redirection` to match.
+- Added a minimal `http.get` client demo (`demo/http-simple-client/main.ace`):
+  an optional URL argument, one `ClientContext`-backed GET, and the response
+  status/body printed with no redirects or TLS.
 
 ## Current frontier
 

@@ -1,0 +1,34 @@
+/* Minimal HTTP/1.1 client proof of concept over std/http's blocking
+ * `http.get(url, context)` overload: an allocation-lazy `ClientContext`,
+ * one GET, and the response status/body — no redirects, no TLS.
+ *
+ * Build and run:
+ *   ./ace demo/http-simple-client/main.ace -o http-simple-client
+ *   ./http-simple-client [url]
+ *
+ * Defaults to http://example.com/.
+ */
+
+import fmt
+import http
+import sys
+
+main(): int {
+    url: string = "http://example.com/"
+    if sys.argc() > 1 {
+        url = sys.arg(1)
+    }
+
+    context: http.ClientContext = http.client_context_new()
+    defer http.client_context_wipe(mut context)
+
+    response: http.Response, err: Error = http.get(url, mut context)
+    if err != null {
+        fmt.printf("failed to fetch %s: error %d\n", url, int(err.code))
+        return 1
+    }
+
+    fmt.printf("%d %s\n", int(response.status), response.reason)
+    fmt.printf("%s\n", response.body)
+    return 0
+}
