@@ -12,7 +12,6 @@ pub UrlErr: type = parsing.UrlErr
 
 pub RedirectErr: error {
     1: limit = "HTTP redirect limit was exceeded"
-    2: downgrade = "HTTPS redirect to HTTP is not permitted"
 }
 
 pub method_connect: const string = "CONNECT"

@@ -12,12 +12,6 @@ main(): int {
     if context.storage != null || context.redirects.limit != 0 { return 99 }
     http.client_context_wipe(mut context)
 
-    client: http.Client = http.client_new()
-    if client.context.storage == null { return 100 }
-    http.client_wipe(mut client)
-    if client.context.storage != null { return 101 }
-    http.client_wipe(mut client)
-
     if !mem.equal(http.status(u16(200)), "OK") ||
        !mem.equal(http.status(u16(209)), "") ||
        !mem.equal(http.status(u16(226)), "IM Used") ||

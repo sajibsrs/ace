@@ -10,7 +10,6 @@ ace -o program.ace
 ace --checked -o program program.ace
 ace --release -o program program.ace
 ace --target=darwin-arm64 program.ace
-ace --tls-backend=bearssl -o program program.ace
 ```
 
 The default mode performs parsing, import resolution, and semantic checking
@@ -32,23 +31,6 @@ choice cannot change their result because they emit no program.
 The build target defaults from the compiler host and can be selected explicitly
 with `--target=NAME` (or `--target NAME`). The bootstrap compiler currently
 supports only `darwin-arm64`; any other target is rejected before compilation.
-
-Functions in the compiler-shipped standard library may carry the closed
-toolchain-owned `@extern("tls")` component marker. Importing such a function is
-free: Ace omits every TLS-component body unless an ordinary emitted function
-actually references a marked entry point. For a required component, Ace maps
-the component, target, and selected backend to an ordered link recipe. A recipe
-may contain multiple objects, archives, libraries, and frameworks. Darwin-arm64
-BearSSL artifacts live under `external/darwin-arm64/tls/bearssl/`; its recipe
-also links Security and CoreFoundation. BearSSL is selected by default; the
-explicit equivalent is `--tls-backend=bearssl`. The mechanism never downloads
-or runs dependency scripts, and public `http`/`tls` APIs do not expose the
-backend name.
-
-The initial object format does not record external-component requirements. For
-that reason `-c` explicitly rejects a source unit that uses TLS and directs the
-caller to `-o`; plaintext-only objects, including programs that import and use
-`http`, remain valid and contain no TLS adapter or backend references.
 
 ## Linking external code
 
@@ -133,7 +115,7 @@ package that is the entire result, plus ensuring `build/` exists, since v1
 ships libraries as source with no reusable binary archive. For an `app`
 package, `build` additionally compiles and links into
 `build/<package-name>`, accepting the same `--checked`/`--release`/
-`--target=`/`--tls-backend=`/`--report` flags as plain compilation. `run` is
+`--target=`/`--report` flags as plain compilation. `run` is
 app-only — it errors on a `lib` package — and otherwise builds, then
 executes the linked binary in place, propagating its exact exit code.
 

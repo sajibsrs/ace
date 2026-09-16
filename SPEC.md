@@ -537,25 +537,6 @@ Decision: modules are single files or `mod.ace`-rooted directories; explicit imp
 9. A resolved module path is canonicalized before cache lookup and deduplication. Lexically different paths containing `.` or `..` that resolve to the same file produce one module instance and one set of declarations. This changes neither import scope nor the supported standard/relative import forms and adds no search path.
 10. OS- or kernel-specific standard-library code always sits behind a stable public facade at `std/<module>/mod.ace`; target implementations live under `std/<module>/os/<target>.ace` and are selected through `@when(target == "...")` imports in that facade. Public callers cannot import an OS file directly. The target file exposes exactly the operations and types required by its facade; it does not add same-signature target-named forwarding functions. Those declarations are `pub` only within the directory module and carry no compatibility promise outside it. The `os` name is reserved by convention for this implementation layer; `backend` refers to compiler/code-generation backends and is not used for OS bindings. Rationale: platform replacement changes the target layer without spreading kernel ABI, constants, structures, or link names through callers, while the public Ace surface remains reviewable in one place and redundant forwarding layers do not accumulate.
 11. `@when(condition)` is the sole conditional-compilation form and attaches to exactly one top-level declaration, including an import, function, type, global, signing, or extern block. The attribute occupies its own line and a preceding top-level construct is separated from it by one blank line. Its deliberately closed boolean expression language contains `true`, `false`, `target == "name"`, `target != "name"`, contextual `and`/`or`/`not`, and parentheses. `target` is the compiler-selected build target string; it defaults from the host and may be overridden with `--target=NAME`. Unsupported targets are rejected rather than implying an unavailable backend or standard-library layer. The compiler lexes and parses an inactive declaration, so its syntax must be valid, then removes it before import loading, binding/duplicate checks, semantic analysis, and emission. Thus mutually exclusive imports may bind the same alias and mutually exclusive declarations may share a signature; if more than one matching declaration survives, ordinary duplicate rules apply. There is no block, statement-level form, user-defined build flag, arbitrary constant evaluation, or runtime condition. A file need not provide an exhaustive arm, but any surviving reference to an absent declaration fails normally. Rationale: one restricted declaration filter supplies zero-cost target selection without a textual preprocessor, hidden runtime branch, general compile-time execution, or mid-function source fragmentation.
-12. `@extern("tls")` is a compiler-owned standard-library function attribute,
-not a user dependency mechanism. A resolved reference from an ordinary emitted
-function to a function carrying the attribute requires the named external
-component; references among functions in that component do not activate it.
-When no such external reference exists, every function carrying the component
-is omitted from emission. The component set is closed and currently contains
-only `tls`. This is a bounded walk of semantically resolved function references
-in the functions Ace already emits, not whole-program reachability. The final
-`-o` link resolves `(component, target, selected backend)` to one ordered
-target-specific recipe containing any number of compiler-distributed objects,
-archives, libraries, and frameworks, then appends that recipe without a shell
-or network access. The Darwin-arm64 BearSSL TLS recipe supplies its adapter,
-archive, Security framework, and CoreFoundation framework.
-`--tls-backend=bearssl` selects the default backend. Standalone `-c` rejects a unit that requires an
-external component because v1 objects do not record requirements; a plaintext
-unit remains valid under `-c`. Rationale: external TLS is zero-cost when unused,
-backend choice remains outside public protocol APIs, and the initial mechanism
-does not grow into package scripts, implicit fetching, or general analysis.
-
 ## Package System (future work)
 Decision: packaging is an optional, explicit layer above file modules; one `ace` executable owns both the direct compiler and the separately grouped package commands. Manifest and lockfile syntax remain open for later carving. A minimal local-path-only v1 slice has been carved into the Decision Queue's Active section below; the items here describe the target full design and remain future work beyond that slice.
 1. `ace.pkg` at a package root defines exactly one package and one primary output. Every package explicitly declares `kind` as `app` or `lib` and explicitly names one root `.ace` file. An app produces an executable and its root must provide `main(): int`; a library exposes its root module as its sole external import surface. Consumers cannot deep-import its internal files. A library is distributed as source; initially, `ace pkg build` checks its complete graph and produces no reusable binary archive.
@@ -854,11 +835,10 @@ or making related facade and target APIs differ.
       to 253 bytes with labels of at most 63 bytes. User information,
       fragments, bracketed IPv6 literals, embedded control/NUL bytes, empty or
       out-of-range ports, and every other scheme fail with `UrlErr`. Both
-      schemes share this one parser because both `get` overloads share it: the
-      TLS-capable `get(url, mut client)` needs `https://` to parse, and the
-      plaintext-only `get(url, mut context)` still rejects an `https://` URL
-      before connecting — it never silently falls back to plaintext — through
-      its own scheme-forced `parse_url_for(url, false)` call. Parsing
+      schemes share this one parser even though the plaintext-only
+      `get(url, mut context)` rejects an `https://` URL before connecting —
+      it never silently falls back to plaintext — through its own
+      scheme-forced `parse_url_for(url, false)` call. Parsing
       allocates nothing, performs no DNS lookup, preserves path/query bytes
       and percent escapes exactly, and never percent-decodes or
       Unicode-normalizes them.
@@ -929,7 +909,7 @@ or making related facade and target APIs differ.
       retain neither socket nor buffer. `no_body` makes HEAD-style response
       semantics explicit. Connection creation, DNS, retry, TLS, reuse, and
       keep-alive policy remain with the client caller.
-    - One-shot client ergonomics use two owning entry points.
+    - One-shot client ergonomics use one owning entry point.
       `Storage: struct { addresses: mut []net.Addr4, output: mut []u8, target:
       mut []u8, input: mut []u8, headers: mut []Header, body: mut []u8, url:
       mut []u8 = null }`
@@ -937,31 +917,24 @@ or making related facade and target APIs differ.
       `ClientContext: struct { storage: mut []Storage, redirects: RedirectPolicy }`
       owns and grows the plaintext workspace through `mem` and carries HTTP
       policy. `client_context_new` constructs it and `client_context_wipe`
-      releases it. `Client: struct { context: ClientContext, tls: TlsConfig }`
-      composes that same HTTP state with secure-transport configuration;
-      `client_new` and `client_wipe` manage the composed value. The exact
-      public overloads are
-      `get(url: string, mut context: ClientContext): (Response, Error)`, which accepts
-      only plaintext HTTP and has no TLS external-component reference, and
-      `get(url: string, mut client: Client): (Response, Error)`, which accepts
-      HTTP or HTTPS and carries `@extern("tls")`. Allocation failure is explicit.
-      Returned views remain valid only until the corresponding context or
-      client is next mutated or wiped. Both operations
-      parse the absolute plaintext URL, resolve its host into the supplied address
-      storage, try resolved addresses in order with a fresh blocking TCP
-      connection, perform exactly one request and response, and close the
+      releases it. The exact public overload is
+      `get(url: string, mut context: ClientContext): (Response, Error)`, which
+      accepts only plaintext HTTP. Allocation failure is explicit.
+      Returned views remain valid only until the corresponding context
+      is next mutated or wiped. This operation
+      parses the absolute plaintext URL, resolves its host into the supplied address
+      storage, tries resolved addresses in order with a fresh blocking TCP
+      connection, performs exactly one request and response, and closes the
       connection before returning. `get` emits GET with no body. `post` emits
       POST with the supplied bytes and requires a valid nonempty content type.
       `get` synthesizes exactly `Host` and `Connection: close`; `post` also
       synthesizes `Content-Type` and `Content-Length`. Without an explicit
       redirect policy there is no
       redirect, retry-after-response, connection reuse, authentication, cookie,
-      compression, proxy, TLS, or user-header policy. Request formatting,
+      compression, proxy, or user-header policy. Request formatting,
       response parsing, DNS, TCP, close, and capacity failures preserve the
       existing error domains, with an unsuccessful address sequence returning
-      the final connection error. Rationale: the two entry points make plaintext
-      versus TLS linkage explicit while composition avoids an overload for every
-      policy combination.
+      the final connection error.
     - Parser failures mapped through those conveniences use the shared public
       `SyntaxErr`, `FramingErr`, and `CapacityErr` domains. Syntax and framing
       variants map to their matching domain, and premature EOF is framing
@@ -1000,37 +973,21 @@ or making related facade and target APIs differ.
       the language versus a framework built on top (see `TODO.md`).
       Concurrency, persistent connections, and TLS server mode remain
       additive or deferred to that future carve.
-    - HTTPS is selected by the URL in `http`, not exposed as a separate
-      protocol module. `get(url, mut client)` accepts `http://` and `https://`,
-      lazily retains its ordinary and TLS workspace, and uses system trust for
-      HTTPS. Assigning `client.tls` provides a trust override without another
-      overload. Canonical `TlsConfig{}` selects system
-      trust; a nonempty DER `trust_anchor` replaces it for private roots,
-      deterministic tests, and embedded or specialized use. Hostname
-      verification and SNI are mandatory in both modes. `Storage` adds
-      default-null opaque TLS-context and TLS-record
-      slices to its required plaintext workspace, so plaintext literals omit
-      them and allocate nothing for TLS. The allocation-free HTTPS overload
-      continues to require those caller-provided work buffers, but system trust
-      requires no caller-provided certificate bytes. All overloads share URL parsing,
-      resolution and address iteration, request construction and formatting,
-      response parsing, error mapping, and cleanup; one connection-typed generic
-      exchange receives typed send/receive functions, avoiding a runtime
-      transport tag. BearSSL is the default toolchain-selected backend and is
-      absent from the public `http` and `tls` vocabulary. `post` and
-      nonblocking HTTPS remain additive. Address
-      family is a transport property, so future IPv6 does not duplicate the
-      protocol API.
+    - `http` is plaintext-only; HTTPS/TLS support was removed (see the TLS
+      client transport item in `TODO.md`) and is not part of the current
+      surface. `Url` parsing still accepts an `https://` scheme for syntax
+      purposes, but every client entry point rejects it with `UrlErr.invalid`
+      since no secure transport exists to serve it.
     - Redirect following is opt-in context policy.
       `RedirectPolicy: struct { limit: usize = 0 }` is stored as
       `context.redirects`; zero performs exactly one exchange, while a nonzero
-      value opts into at most that many followed responses. A secure `Client`
-      uses `client.context.redirects` and `client.tls` together.
+      value opts into at most that many followed responses.
       Statuses 301, 302, 303, 307, and 308 are followed only with a nonempty,
       valid `Location`; otherwise the ordinary 3xx response is returned.
       Absolute HTTP/HTTPS, scheme-relative, absolute-path, query-only, and
-      path-relative references resolve against the preceding URL. HTTP may
-      upgrade to HTTPS; HTTPS-to-HTTP fails with `RedirectErr.downgrade`.
+      path-relative references resolve against the preceding URL, but an
+      HTTPS redirect target fails with `UrlErr.invalid` under the current
+      plaintext-only client.
       Encountering another followable response after `limit` hops fails with
       `RedirectErr.limit`, including at a zero limit. The client reuses explicit
       owned URL workspace so each location is stable before response input is
@@ -1138,113 +1095,16 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 
 ### Active
 
-- **TLS client transport** [open] — carve a backend-neutral, client-only secure
-  byte transport over `tcp`, initially proven with a pinned BearSSL backend.
-  Boundary decision: the initial proof uses a narrow C adapter and does not
-  expand Ace's C ABI. BearSSL contexts are caller-owned opaque byte storage;
-  adapter-provided size and alignment values define that storage, and the proof
-  must verify that the required alignment is supported before allocation. The
-  adapter exposes only fixed-width integers, `usize`, and read-only or writable
-  byte pointers already admitted by the positive C-ABI whitelist. It owns all
-  BearSSL struct, union, macro, inline-function, class-table, and function-pointer
-  interaction; BearSSL never calls an Ace function in the initial proof. Direct
-  representation or invocation of a BearSSL class table therefore does not
-  motivate C-ABI function-pointer support. Native archive linkage and the exact
-  context size/alignment contract are toolchain integration facts rather than
-  public language types. Rationale: an opaque adapter establishes the TLS
-  transport with the existing small ABI, keeps a foreign implementation out of
-  the public module, and avoids coupling an unrelated language feature to TLS;
-  the separately implemented callable C-function-value boundary remains unused
-  by this adapter because BearSSL never calls Ace in the initial proof.
-  Backend pin (decided): the proof uses the upstream BearSSL 0.6 release
-  archive with SHA-256
-  `6705bba1714961b41a728dfc5debbe348d2966c117649392f8c8139efc83ff14`.
-  It configures `BR_TLS12` as both the minimum and maximum version; TLS 1.0
-  and 1.1 are disabled, and BearSSL 0.6 provides no TLS 1.3. The combined
-  client and minimal-X.509 opaque context is 6888 bytes with alignment 8 on
-  Apple arm64, within `mem`'s supported 16-byte ceiling, and the half-duplex
-  record buffer is 16709 caller-owned bytes. These values are backend proof
-  facts queried through the adapter, not public `std/tls` constants or a
-  portable ABI promise. The pinned backend is experimental until dependency
-  maintenance, trust roots, and security-update policy are resolved.
-  Entropy boundary (decided, implemented): `sys.random(storage: mut []u8):
-  Error` fills caller-owned storage with cryptographically secure OS entropy.
-  On Darwin its private target layer uses `getentropy`, splits the
-  fill into requests of at most 256 bytes, retries `EINTR`, and returns every
-  other failure explicitly with its errno. The caller supplies at least 32
-  bytes to the C adapter, which injects them into BearSSL directly; the proof
-  does not invoke BearSSL's system-seeder helper or otherwise hide entropy
-  acquisition inside the backend. Deterministic adapter tests use supplied
-  entropy, while a separate smoke test exercises the real OS source. Rationale:
-  visible acquisition and injection make initialization failures testable,
-  preserve caller-owned storage and explicit errors, while centralizing a
-  general-purpose OS capability instead of duplicating it inside TLS.
-  Blocking client slice (implemented): `tls.Storage` supplies opaque context
-  and half-duplex record buffers. `tls.connect(tcp.Conn, hostname, anchor_der,
-  storage)` obtains explicit entropy, selects system trust for an empty anchor
-  or decodes one nonempty DER override, sets mandatory hostname verification
-  and SNI, and drives a blocking handshake.
-  `tls.send_all` and `tls.receive` drive partial record I/O and preserve
-  transport errors. A BearSSL engine failure is retained as the private
-  diagnostic occurrence code `1024 + backend_code`; the offset avoids every
-  public `TlsErr` entry without exposing backend constants as API. The TLS
-  wrapper does not close its underlying `tcp.Conn`;
-  its composing caller retains that responsibility. BearSSL sizes, layouts,
-  engine states, and error constants stay private. The target-neutral TLS Ace
-  implementation is the single-file `std/tls.ace`; target and foreign-library
-  details stay in external adapters. TLS functions carry the compiler-owned
-  `@extern("tls")` component: an executable link automatically includes
-  the bundled selected adapter/backend, while callers restricted to the
-  allocation-free plaintext `http` path emit and link neither. BearSSL is the
-  default selected backend through
-  `--tls-backend`; the public APIs do not name it. External requirements are not
-  yet representable in standalone `-c` objects, so such compilation is rejected
-  explicitly.
-  Trust policy (decided, implemented): an empty anchor selects system trust;
-  a nonempty DER anchor selects the private minimal-X.509 override. The Darwin
-  adapter receives BearSSL's delivered chain, evaluates it with Security and
-  CoreFoundation under an SSL hostname policy, and returns only the stable
-  private adapter result to target-neutral Ace. Apple types and certificate
-  store details never enter the Ace API. The owning `http.Client` lazily manages
-  TLS workspace and selects plaintext or TLS from the URL; the caller-storage
-  HTTPS overload remains allocation-free and requires buffers but not root
-  certificate bytes.
-  Next decide the nonblocking progress shape, multiple-anchor representation,
-  broader minimum/maximum protocol-version policy, richer alert/verification
-  result classification, and explicit orderly-close behavior.
-  BearSSL names, layouts, cipher selectors, and error constants stay private to
-  the proof, and its TLS 1.2 ceiling must remain visible in the selected policy
-  rather than being presented as general modern-version support. First determine
-  whether existing pointers, pointer-to-slice construction, C externs, `mem`,
-  `tcp`, and `poll` express the boundary; any proposed language or compiler
-  convenience returns to the owner as a separate decision. Remaining work
-  excludes servers, client certificates, session caches, renegotiation, ALPN,
-  HTTP/2 and explicit revocation/network-fetching policy.
-  Rationale: the public transport contract should express
-  TLS rather than one foreign implementation, while one narrow client proof
-  establishes the required storage, verification, entropy, and failure model
-  and HTTP composition without prematurely fixing broader TLS policy.
-  Future relocation (open): core `std` should provide only the essential
-  OS-facing mechanism (`tcp`/`udp`), not a foreign-library-backed protocol
-  layer; `tls` (and `http`, which composes it) are the first candidates for
-  relocation out of the compiler-bundled tree into a `lib`-kind package once
-  the package system exists. This follows C Interop #4: standard-library
-  behavior is implemented in Ace or emitted directly, and a foreign library is
-  explicit interoperability a program opts into, never a foundation the
-  compiler bundles. Once relocated, a `tls` package expresses its BearSSL (or
-  alternative) dependency through ordinary `extern "c"` blocks and
-  package-declared native link inputs (Package System #14, still open) rather
-  than the compiler-owned `@extern(component)` attribute; the closed
-  component set and `external/` exist solely to serve the currently
-  std-resident backend and are removed, not repurposed, once that migration
-  lands. Zero-cost-when-unused shifts from the compiler's reachability walk to
-  ordinary dependency-graph opt-in, and backend choice shifts from
-  `--tls-backend` to choice of package. This relocation is gated on two
-  undecided prerequisites: a minimal package carve sufficient to host a `lib`
-  package (an initial local-path-only slice can defer git/lockfile/registry
-  complexity), and the package-level native-link-declaration syntax left open
-  by Package System #14. Until both land, `tls` remains exactly as
-  implemented in `std/tls.ace`.
+- **TLS client transport** [open] — a full redesign from scratch. The prior
+  proof (pinned BearSSL 0.6, a private C adapter, the compiler-owned
+  `@extern(component)`/link-recipe mechanism, and `std/tls.ace`) has been
+  removed entirely, along with `http`'s HTTPS overloads and `Client` type;
+  see `CHANGELOG.md`. Nothing about the removed approach — backend choice,
+  adapter shape, or the `@extern` component mechanism — carries forward.
+  Restart this carve at philosophy/semantics before any implementation,
+  including whether `tls` (and HTTPS `http` support) belongs in `std` at
+  all or should launch directly as a package once the package system
+  supports package-declared native link inputs.
 
 - **Package system v1 (local-path)** [open] — carve a minimal packaging layer
   sufficient to host a `lib` package and prove cross-package imports,
@@ -1322,9 +1182,9 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
   archive, so there is nothing further to write (Package System #1, #15).
   For an `app` package, `build` additionally compiles and links into
   `build/<package-name>` (the package name, not the root file's stem),
-  reusing the direct compiler's existing TLS-recipe and linker-invocation
+  reusing the direct compiler's existing linker-invocation
   machinery; it accepts the same `--checked`/`--release`/`--target=`/
-  `--tls-backend=`/`--report` flags as plain compilation, with no `-o`
+  `--report` flags as plain compilation, with no `-o`
   override and no extra link-input flags in this slice (packages are pure
   Ace with no native link inputs yet). `run` is app-only — it errors on a
   `lib` package before building — and otherwise runs `build`'s own logic

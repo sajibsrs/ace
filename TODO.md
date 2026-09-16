@@ -248,62 +248,30 @@ nonblocking connect completion remain visible without callbacks or allocation.
 - **Additive socket capabilities** [additive] — IPv6, UDP, address queries,
   half-close, and extra TCP options, carved
   in the order demanded by concrete proofs.
-- **TLS client transport** [open] — active in the Decision Queue: carve a
-  backend-neutral, client-only secure byte transport over `tcp`, initially
-  proven with pinned BearSSL while keeping its names and layouts private.
-  The accepted boundary uses a narrow C adapter over the existing fixed-width
-  integer, `usize`, and byte-pointer ABI; BearSSL class tables and callbacks stay
-  inside that adapter and do not block on C-ABI function-pointer support. The
-  0.6 archive/checksum, Apple-arm64 context size/alignment, half-duplex buffer,
-  TLS-1.2-only configuration, direct external-archive link, public OS-neutral
-  `sys.random` backed by chunked Darwin `getentropy`, and explicit
-  32-byte-or-larger BearSSL seeding are
-  proven. One blocking slice now implements Darwin system trust by default,
-  explicit DER trust-anchor override, mandatory hostname/SNI validation,
-  partial record I/O, and URL-selected TLS in the owning `http.Client`. A
-  narrow emitted-reference component rule conditionally links the bundled
-  target recipe; standalone external-component object metadata remains future
-  work. Next carve multiple explicit anchors,
-  richer TLS result classification, orderly-close policy, and nonblocking
-  progress.
-  Server mode, client certificates, explicit revocation/network
-  fetching, ALPN/HTTP/2, session state, and higher-level secure-client
-  conveniences remain later additive work.
-  Longer-term direction [open]: relocate `tls` (and `http`) out of `std` into
-  a `lib` package once the package system exists, since core `std` should
-  provide only `tcp`/`udp`-level mechanism; see the SPEC.md Decision Queue
-  entry for the native-linkage and package-carving prerequisites this
-  depends on.
+- **TLS client transport needs a fresh carve** [open] — the prior proof
+  (pinned BearSSL 0.6, a private C adapter, the compiler-owned
+  `@extern(component)`/link-recipe mechanism, `std/tls.ace`, and `http`'s
+  HTTPS/`Client` overloads) has been removed entirely (code, tests, vendor
+  sources, and docs); see `CHANGELOG.md` and the SPEC.md Decision Queue entry.
+  Nothing about the removed approach — backend, adapter shape, or the
+  `@extern` component mechanism — carries forward. A fresh carve (philosophy,
+  then semantics, then syntax, then implementation) deciding the transport
+  boundary and whether `tls`/HTTPS belongs in `std` at all versus launching
+  directly as a package must happen before anything like it returns.
 - **HTTP protocol and transport ergonomics** [partly implemented] — the strict IPv4 endpoint
   parser, zero-copy HTTP URL parser, caller-storage request and response
   formatters, and incremental HTTP/1.1 request and response parsers from
   Standard Library #17 are implemented, including field and response defaults,
   named method/status constants, conventional response reasons, and blocking
-  plaintext/TLS `get` overloads over caller storage and opt-in bounded redirects
+  plaintext `get` overloads over caller storage and opt-in bounded redirects
   for the owning client, plus the single blocking server convenience,
   `serve(endpoint, mut context, router): Error` over a growable `Context` and
   `Router` (see `SPEC.md`); the caller-driven nonblocking `ServerContext`/
-  `Event` core has been removed (see the fresh-carve item below). Next complete the paired one-shot `post` overloads over
-  `Storage` and owning `Client`. HTTPS shares
-  the `http` surface and transport core through its exact TLS-config overload. `rune`,
+  `Event` core has been removed (see the fresh-carve item below). Next complete
+  the paired one-shot `post` overload over `Storage`. `http` is plaintext-only
+  until the TLS client transport carve above lands; `rune`,
   UTF-8 decoding, and `yarn` are not prerequisites because HTTP framing is
   ASCII and payloads remain byte views.
-  Now that `serve` exists, TLS server mode (see the TLS client transport item's
-  deferred server mode above) makes a loopback HTTPS fixture possible, add
-  redirect scheme-transition coverage to `tests/emit/http/redirect.ace`: an
-  HTTP-to-HTTPS upgrade hop and an HTTPS-to-HTTP hop asserting
-  `RedirectErr.downgrade`. Today that file's only scheme-relative hop resolves
-  against the initial `http://` URL and never crosses schemes, so `SPEC.md`'s
-  upgrade-allowed/downgrade-rejected redirect rule is implemented and used by
-  `sandbox.ace`'s upgrade case in practice but has no fixture of its own. The
-  same loopback HTTPS fixture is also needed to re-cover `TlsConfig.trust_anchor`
-  (explicit DER trust-anchor override): its only test, `tests/driver/http_https_anchor.ace`,
-  pinned Let's Encrypt's root and asserted a live request to `https://example.org/`
-  chains to it, which broke once that site's certificate moved to an unrelated
-  CA, so it was removed rather than left flaky against live CA state outside
-  this repo's control. `trust_anchor` itself is unchanged and still implemented
-  in `transport.ace`; it is presently untested until a loopback HTTPS fixture
-  with our own pinned root replaces it.
 - **Nonblocking HTTP server core needs a fresh carve** [open] — the
   caller-driven `ServerContext`/`Event`/`serve(mut ctx, timeout_ns)` core
   (formerly `std/http/inc/server.ace`) and its `demo/http-complete-server`

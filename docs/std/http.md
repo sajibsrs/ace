@@ -3,9 +3,14 @@
 [Standard library](index.md)
 
 `http` implements allocation-free HTTP/1.1 framing plus blocking one-shot GET
-over plaintext TCP or TLS. The framing and parsing operations allocate nothing,
+over plaintext TCP. The framing and parsing operations allocate nothing,
 perform no I/O, and retain no caller buffer. Client DNS, connection, request,
 response, and cleanup failures remain explicit in returned errors.
+
+HTTPS/TLS support was removed pending a full redesign; see the TLS client
+transport item in `TODO.md`. `parse_url` still accepts an `https://` scheme
+for syntax purposes, but every client entry point rejects it with
+`UrlErr.invalid`.
 
 `parse_url(url): (Url, Error)` accepts absolute `http://` and `https://` URLs.
 `Url { host, path, query, port }` contains byte views and a host-order port.
@@ -19,8 +24,7 @@ bytes and percent escapes are unchanged.
 
 `get(url, mut context)` accepts only `http://`. `ClientContext` owns reusable
 HTTP workspace and policy, is created with `client_context_new`, and is
-released with `client_context_wipe`. This overload carries no TLS
-external-component reference.
+released with `client_context_wipe`.
 
 ```ace
 import fmt
@@ -40,26 +44,19 @@ main(): int {
 }
 ```
 
-`get(url, mut client)` accepts either scheme. `Client` composes a `context`
-with `tls: TlsConfig`, lazily retains ordinary and TLS workspace, and releases
-it through `client_wipe`. Canonical `TlsConfig{}` uses system trust; assigning a
-nonempty `client.tls.trust_anchor` selects one explicit DER root. HTTPS always
-requires hostname verification and SNI.
-
 Redirects remain opt-in. Assigning `RedirectPolicy { limit = 10 }` to
-`context.redirects` or `client.context.redirects` follows 301, 302, 303, 307,
+`context.redirects` follows 301, 302, 303, 307,
 and 308 responses with valid
 `Location` fields, resolving absolute HTTP/HTTPS URLs, scheme-relative URLs,
 absolute paths, query-only references, and relative paths against the previous
-URL. HTTP may upgrade to HTTPS; HTTPS-to-HTTP fails with
-`RedirectErr.downgrade`. A chain requiring more than `limit` followed responses
+URL, but a redirect target requiring HTTPS fails with `UrlErr.invalid` since
+this client is plaintext-only. A chain requiring more than `limit` followed responses
 fails with `RedirectErr.limit`. Missing or invalid locations return the original
 3xx response. The canonical zero policy performs one request.
 
-The two GET overloads share URL parsing, address iteration, request construction,
+`get` shares URL parsing, address iteration, request construction,
 formatting, response parsing, error mapping, and TCP cleanup through one typed
-transport exchange. BearSSL is the default bundled implementation selected by
-the compiler, not a public type or API name.
+transport exchange.
 
 `Request.format(output): (usize, Error)` and
 `Response.format(output): (usize, Error)` write one complete HTTP message or
@@ -159,12 +156,10 @@ Verify it with any HTTP client, for example `curl http://127.0.0.1:8080/`.
 
 ## Known limitations and next improvements
 
-Redirects,
+HTTPS/TLS,
 decompression, cookies, authentication policy, caching, proxies, upgrades,
 connection reuse/pooling, exposed trailers,
-deadlines, and cancellation are absent. TLS is blocking, has no server mode,
-and BearSSL 0.6 is
-limited to TLS 1.2; explicit override mode currently accepts one DER anchor.
+deadlines, and cancellation are absent.
 URL path and query remain separate views;
 callers composing a request target provide destination storage explicitly. Unicode helpers,
 `rune`, and `yarn` are not required by this byte-oriented layer.

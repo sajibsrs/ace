@@ -1,4 +1,4 @@
-/* Owning plaintext and TLS-capable HTTP clients. */
+/* Owning plaintext HTTP clients. */
 
 import mem
 import net
@@ -12,7 +12,6 @@ pub Storage: type = transport.Storage
 pub ClientErr: type = transport.ClientErr
 pub RedirectErr: type = redirection.RedirectErr
 pub RedirectPolicy: type = redirection.RedirectPolicy
-pub TlsConfig: type = transport.TlsConfig
 pub Url: type = parsing.Url
 pub UrlErr: type = parsing.UrlErr
 
@@ -21,17 +20,11 @@ pub Context: struct {
     redirects: RedirectPolicy,
 }
 
-pub Client: struct {
-    context: Context,
-    tls: TlsConfig,
-}
-
 pub context_new(): Context {
     storage: mut []Storage = mem.alloc[Storage](1)
     if storage == null { return Context {storage = null, redirects = RedirectPolicy{}} }
     storage[0] = Storage {addresses = null, output = null, target = null,
-        input = null, headers = null, body = null, url = null,
-        tls_context = null, tls_records = null}
+        input = null, headers = null, body = null, url = null}
     return Context {storage = storage, redirects = RedirectPolicy{}}
 }
 
@@ -44,16 +37,8 @@ pub context_wipe(mut context: Context) {
     mem.release[message.Header](mut context.storage[0].headers)
     mem.release[u8](mut context.storage[0].body)
     mem.release[u8](mut context.storage[0].url)
-    mem.release(mut context.storage[0].tls_context)
-    mem.release[u8](mut context.storage[0].tls_records)
     mem.release[Storage](mut context.storage)
     context.redirects = RedirectPolicy{}
-}
-
-pub client_new(): Client { return Client {context = context_new(), tls = TlsConfig{}} }
-pub client_wipe(mut client: Client) {
-    context_wipe(mut client.context)
-    client.tls = TlsConfig{}
 }
 
 RedirectState: struct {
@@ -71,12 +56,11 @@ redirect_start(url: string, mut storage: Storage): (RedirectState, Error) {
     return RedirectState {current_count = url.len, followed = 0}, null
 }
 
-redirect_next(response: Response, policy: RedirectPolicy, secure_transport: bool,
+redirect_next(response: Response, policy: RedirectPolicy,
     mut state: RedirectState, mut storage: Storage): (bool, Error) {
     if !redirection.is_redirect(response.status) { return false, null }
     location: string = redirection.location(response)
     if location == null || location.len == 0 { return false, null }
-    current_secure: bool = state.current_count >= 8 && mem.equal(storage.url[..8], "https://")
     needed: usize = state.current_count * 2
     if needed < state.current_count { return false, ClientErr.allocation }
     with_location: usize = needed + location.len
@@ -96,8 +80,7 @@ redirect_next(response: Response, policy: RedirectPolicy, secure_transport: bool
         mut storage.url[..shifted_at])
     if !valid { return false, null }
     next_secure: bool = next_count >= 8 && mem.equal(storage.url[..8], "https://")
-    if !secure_transport && next_secure { return false, UrlErr.invalid }
-    if current_secure && !next_secure { return false, RedirectErr.downgrade }
+    if next_secure { return false, UrlErr.invalid }
     if state.followed == policy.limit { return false, RedirectErr.limit }
     state.followed += 1
     state.current_count = next_count
@@ -112,32 +95,7 @@ get_redirecting(url: string, policy: RedirectPolicy, mut context: Context): (Res
             context.storage[0].url[..state.current_count], mut context.storage[0], true)
         if err != null { return Response{}, err }
         follow: bool
-        follow, err = redirect_next(response, policy, false, mut state, mut context.storage[0])
-        if err != null { return Response{}, err }
-        if !follow { return response, null }
-    }
-}
-
-@extern("tls")
-get_redirecting(url: string, config: TlsConfig, policy: RedirectPolicy,
-    mut client: Client): (Response, Error) {
-    state: RedirectState, start_err: Error = redirect_start(url, mut client.context.storage[0])
-    if start_err != null { return Response{}, start_err }
-    for {
-        current: string = client.context.storage[0].url[..state.current_count]
-        response: Response = Response{}
-        err: Error = null
-        if current.len >= 8 && mem.equal(current[..8], "https://") {
-            response, err = transport.get_with_storage(current, config,
-                mut client.context.storage[0], true)
-        } else {
-            response, err = transport.get_with_storage(current,
-                mut client.context.storage[0], true)
-        }
-        if err != null { return Response{}, err }
-        follow: bool
-        follow, err = redirect_next(response, policy, true, mut state,
-            mut client.context.storage[0])
+        follow, err = redirect_next(response, policy, mut state, mut context.storage[0])
         if err != null { return Response{}, err }
         if !follow { return response, null }
     }
@@ -152,26 +110,5 @@ pub get(url: string, mut context: Context): (Response, Error) {
         return response, err
     }
     response: Response, err: Error = get_redirecting(url, context.redirects, mut context)
-    return response, err
-}
-
-@extern("tls")
-pub get(url: string, mut client: Client): (Response, Error) {
-    if client.context.storage == null { return Response{}, ClientErr.allocation }
-    _: Url, url_err: Error = parsing.parse_url_for(url,
-        url.len >= 8 && mem.equal(url[..8], "https://"))
-    if url_err != null { return Response{}, url_err }
-    if client.context.redirects.limit == 0 {
-        if url.len >= 8 && mem.equal(url[..8], "https://") {
-            response: Response, err: Error = transport.get_with_storage(url, client.tls,
-                mut client.context.storage[0], true)
-            return response, err
-        }
-        response: Response, err: Error = transport.get_with_storage(url,
-            mut client.context.storage[0], true)
-        return response, err
-    }
-    response: Response, err: Error = get_redirecting(url, client.tls,
-        client.context.redirects, mut client)
     return response, err
 }

@@ -653,6 +653,33 @@ current normative rules, and Git preserves patch-level detail.
 - Added a minimal `http.get` client demo (`demo/http-simple-client/main.ace`):
   one `ClientContext`-backed GET against a fixed URL, and the response
   status/body printed with no redirects or TLS.
+- Removed TLS entirely: `std/tls.ace`, `http`'s HTTPS overloads
+  (`get(url, mut client)`, `get_redirecting`'s TLS overload) and its `Client`/
+  `TlsConfig` types, the Darwin BearSSL adapter and vendored sources
+  (`vendor/bearssl/`), the distributed `external/` link artifacts, and every
+  TLS-only test and driver fixture. `http` is now plaintext-only; `Storage`
+  no longer carries `tls_context`/`tls_records`. Removed the compiler-owned
+  `@extern("component")` attribute and its supporting mechanism along with
+  it, since TLS was its only consumer: the `Node.extern_component` field, its
+  parsing (`@extern("tls")`), the sema reachability walk
+  (`extern_requirements`) that conditionally omitted component-carrying
+  functions from emission, the emit-time gating, the `--tls-backend` CLI flag
+  and pkg-build equivalent, and the `(component, target, backend)` link-recipe
+  table in `main.c` (`ExternRecipe`, `TLS_BEARSSL_DARWIN_ARM64`) that
+  resolved and appended bundled TLS link inputs. `-c`/`-o` and `ace pkg
+  build`/`run` no longer have any external-component linking to perform.
+  This was a deliberate reset, not a deprecation: the prior TLS approach is
+  discarded outright rather than migrated, and its Decision Queue entry and
+  `TODO.md` survey now record a fresh carve, unconstrained by the removed
+  backend, adapter shape, or `@extern` mechanism.
+- Removed `client.ace`'s `redirect_next` `secure_transport` parameter and
+  `current_secure`/`RedirectErr.downgrade` branch, dead since the TLS removal
+  above left the plaintext client as `redirect_next`'s only caller, always
+  passing a constant `secure_transport = false`: the current URL can never be
+  HTTPS, so the downgrade branch could no longer trigger. The remaining
+  HTTPS-redirect-target rejection (`UrlErr.invalid`) is now unconditional.
+  Removed `RedirectErr.downgrade` from `redirection.ace`'s error domain, now
+  unreachable.
 
 ## Current frontier
 

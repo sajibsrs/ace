@@ -1,7 +1,0 @@
-import http
-
-check(mut client: http.Client) {
-    client.tls = http.TlsConfig{}
-    response: http.Response, err: Error = http.get(
-        "https://example.com/", mut client)
-}

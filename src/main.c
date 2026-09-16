@@ -29,7 +29,7 @@ static const char* host_target(void) {
 
 static void usage(void) {
     fprintf(stderr, "usage: ace [--checked | --release] [--tokens] [--ast] [--report]\n"
-                    "           [--target=TARGET] [--tls-backend=NAME] [-c] [-o NAME] <file.ace>\n"
+                    "           [--target=TARGET] [-c] [-o NAME] <file.ace>\n"
                     "           [<file.o> | <file.a> | -L DIR | -l NAME | -framework NAME]...\n"
                     "       ace --pkg-graph=DIR\n"
                     "       ace --pkg-check=DIR\n"
@@ -39,7 +39,6 @@ static void usage(void) {
                     "  --release       emit without runtime diagnostic machinery\n"
                     "  --report        print compilation statistics to stderr\n"
                     "  --target=TARGET compile for TARGET (supported: darwin-arm64)\n"
-                    "  --tls-backend=NAME select TLS backend (default: bearssl)\n"
                     "  -c              emit a Mach-O arm64 object <base>.o\n"
                     "  -o NAME         emit + link via the system cc; NAME ending in\n"
                     "                  .ace compiles that file, naming the output after it\n"
@@ -51,12 +50,10 @@ static void usage(void) {
                     "  --pkg-check=DIR full semantic check of the ace.pkg package at DIR,\n"
                     "                  with cross-package imports resolved, no codegen\n"
                     "  ace pkg init <app|lib> [DIR]  create a minimal package skeleton\n"
-                    "  ace pkg build [--checked|--release] [--target=TARGET]\n"
-                    "                [--tls-backend=NAME] [--report]\n"
+                    "  ace pkg build [--checked|--release] [--target=TARGET] [--report]\n"
                     "                compile (and, for an app, link) the package found by\n"
                     "                walking up from the working directory to the nearest ace.pkg\n"
-                    "  ace pkg run   [--checked|--release] [--target=TARGET]\n"
-                    "                [--tls-backend=NAME] [--report]\n"
+                    "  ace pkg run   [--checked|--release] [--target=TARGET] [--report]\n"
                     "                build, then execute the app (app-only)\n"
                     "  ace pkg check full semantic check of the enclosing package, no codegen\n");
     exit(2);
@@ -100,72 +97,6 @@ static char* opt_value(int* i, int argc, char** argv, const char* option,
 static int has_suffix(const char* s, const char* suffix) {
     size_t n = strlen(s), m = strlen(suffix);
     return n >= m && strcmp(s + n - m, suffix) == 0;
-}
-
-static void executable_dir(char* out, size_t cap, const char* argv0) {
-    const char* slash = strrchr(argv0, '/');
-    if (!slash) { snprintf(out, cap, "."); return; }
-    size_t n = (size_t)(slash - argv0);
-    if (n == 0) n = 1;
-    if (n >= cap) n = cap - 1;
-    memcpy(out, argv0, n);
-    out[n] = 0;
-}
-
-typedef enum {
-    RECIPE_FILE,
-    RECIPE_LIBRARY,
-    RECIPE_FRAMEWORK,
-} RecipeItemKind;
-
-typedef struct {
-    RecipeItemKind kind;
-    const char* value;
-} RecipeItem;
-
-typedef struct {
-    const char* component;
-    const char* target;
-    const char* backend;
-    const RecipeItem* items;
-    size_t item_count;
-} ExternRecipe;
-
-static const RecipeItem TLS_BEARSSL_DARWIN_ARM64[] = {
-    { RECIPE_FILE, "external/darwin-arm64/tls/bearssl/adapter.o" },
-    { RECIPE_FILE, "external/darwin-arm64/tls/bearssl/libbearssl.a" },
-    { RECIPE_FRAMEWORK, "Security" },
-    { RECIPE_FRAMEWORK, "CoreFoundation" },
-};
-
-static const ExternRecipe EXTERN_RECIPES[] = {
-    { "tls", "darwin-arm64", "bearssl", TLS_BEARSSL_DARWIN_ARM64,
-      sizeof TLS_BEARSSL_DARWIN_ARM64 / sizeof TLS_BEARSSL_DARWIN_ARM64[0] },
-};
-
-static const ExternRecipe* extern_recipe(const char* component,
-                                         const char* target,
-                                         const char* backend) {
-    for (size_t i = 0; i < sizeof EXTERN_RECIPES / sizeof EXTERN_RECIPES[0]; i++)
-        if (strcmp(component, EXTERN_RECIPES[i].component) == 0 &&
-            strcmp(target, EXTERN_RECIPES[i].target) == 0 &&
-            strcmp(backend, EXTERN_RECIPES[i].backend) == 0)
-            return &EXTERN_RECIPES[i];
-    return NULL;
-}
-
-static void bundled_path(char* out, size_t cap, const char* argv0,
-                         const char* relative) {
-    char dir[4096];
-    executable_dir(dir, sizeof dir, argv0);
-    snprintf(out, cap, "%s/%s", dir, relative);
-}
-
-static void require_regular_file(const char* path, const char* what) {
-    struct stat st;
-    if (stat(path, &st) == 0 && S_ISREG(st.st_mode)) return;
-    fprintf(stderr, "ace: bundled %s is unavailable at '%s'\n", what, path);
-    exit(1);
 }
 
 // Existing aliases (relative paths, symlinks, hard links) compare by identity;
@@ -438,7 +369,6 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
     int mode_seen = 0, show_report = 0;
     EmitMode emit_mode = EMIT_CHECKED;
     const char* target = host_target();
-    const char* tls_backend_name = "bearssl";
     for (int i = 0; i < argc; i++) {
         char* a = argv[i];
         if (strcmp(a, "--checked") == 0) {
@@ -456,9 +386,6 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
         } else if (strncmp(a, "--target=", 9) == 0) {
             if (a[9] == 0) cli_error("--target requires a target name");
             target = a + 9;
-        } else if (strncmp(a, "--tls-backend=", 14) == 0) {
-            if (a[14] == 0) cli_error("--tls-backend requires a backend name");
-            tls_backend_name = a + 14;
         } else {
             fprintf(stderr, "ace: unknown option '%s'\n", a);
             return 2;
@@ -466,12 +393,6 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
     }
     if (strcmp(target, "darwin-arm64") != 0) {
         fprintf(stderr, "ace: unsupported target '%s' (supported: darwin-arm64)\n", target);
-        return 2;
-    }
-    const ExternRecipe* configured_tls = extern_recipe("tls", target, tls_backend_name);
-    if (!configured_tls) {
-        fprintf(stderr, "ace: unsupported TLS backend '%s' for target '%s'\n",
-                tls_backend_name, target);
         return 2;
     }
     const char* dir = find_package_root();
@@ -504,17 +425,6 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
     }
     if (!root_package->is_app) return 0; // lib: checked, build/ ensured, nothing to link
 
-    uint32_t external = extern_requirements(file);
-    char tls_files[8][8192];
-    if (external & EXTERN_TLS) {
-        for (size_t k = 0; k < configured_tls->item_count; k++) {
-            const RecipeItem* item = &configured_tls->items[k];
-            if (item->kind != RECIPE_FILE) continue;
-            bundled_path(tls_files[k], sizeof tls_files[k], argv0, item->value);
-            require_regular_file(tls_files[k], "TLS external artifact");
-        }
-    }
-
     char obj[4096];
     snprintf(obj, sizeof obj, "%s/%s.o", build_dir, root_package->name);
     if (out_bin_cap) snprintf(out_bin, out_bin_cap, "%s/%s", build_dir, root_package->name);
@@ -526,20 +436,6 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
     ArgList cc = {0};
     arg_push(&cc, "cc");
     arg_push(&cc, obj);
-    if (external & EXTERN_TLS) {
-        for (size_t k = 0; k < configured_tls->item_count; k++) {
-            const RecipeItem* item = &configured_tls->items[k];
-            if (item->kind == RECIPE_FILE) {
-                arg_push(&cc, tls_files[k]);
-            } else if (item->kind == RECIPE_LIBRARY) {
-                arg_push(&cc, "-l");
-                arg_push(&cc, (char*)item->value);
-            } else {
-                arg_push(&cc, "-framework");
-                arg_push(&cc, (char*)item->value);
-            }
-        }
-    }
     arg_push(&cc, "-o");
     arg_push(&cc, out_bin);
     arg_push(&cc, NULL);
@@ -683,7 +579,6 @@ int main(int argc, char** argv) {
     const char* package_graph_dir = NULL;
     const char* package_check_dir = NULL;
     const char* target = host_target();
-    const char* tls_backend_name = "bearssl";
     char* out_name = NULL;
     ArgList link_args = {0}; // .o/.a inputs and -L/-l/-framework, written order
     ArgList link_files = {0}; // only positional .o/.a inputs, for collision checks
@@ -710,13 +605,6 @@ int main(int argc, char** argv) {
         }
         else if (strcmp(a, "--target") == 0)
             target = opt_value(&i, argc, argv, "--target", "a target name");
-        else if (strncmp(a, "--tls-backend=", 14) == 0) {
-            if (a[14] == 0) cli_error("--tls-backend requires a backend name");
-            tls_backend_name = a + 14;
-        }
-        else if (strcmp(a, "--tls-backend") == 0)
-            tls_backend_name = opt_value(&i, argc, argv, "--tls-backend",
-                                         "a backend name");
         else if (strncmp(a, "--pkg-graph=", 12) == 0) {
             if (a[12] == 0) cli_error("--pkg-graph requires a directory");
             package_graph_dir = a + 12;
@@ -793,13 +681,6 @@ int main(int argc, char** argv) {
         Diag d;
         return package_load_and_check(package_check_dir, argv[0], target, NULL, &root_package, &file, &d);
     }
-    const ExternRecipe* configured_tls =
-        extern_recipe("tls", target, tls_backend_name);
-    if (!configured_tls) {
-        fprintf(stderr, "ace: unsupported TLS backend '%s' for target '%s'\n",
-                tls_backend_name, target);
-        return 2;
-    }
     // `-o <file>.ace` compiles that file in place: the executable is the stem.
     if (out_name && has_suffix(out_name, ".ace")) {
         size_t stem_len = strlen(out_name) - 4;
@@ -867,27 +748,6 @@ int main(int argc, char** argv) {
         sema_check(file, &d); // default mode: full semantic check
         if (d.errors > 0) goto done;
 
-        uint32_t external = (opt_c || opt_link) ? extern_requirements(file) : EXTERN_NONE;
-        const ExternRecipe* selected_tls = NULL;
-        char tls_files[8][8192];
-        if (external & EXTERN_TLS) {
-            selected_tls = configured_tls;
-            if (opt_c) {
-                fprintf(stderr,
-                        "ace: TLS external requirements cannot be recorded by -c; use -o to link an executable\n");
-                return 2;
-            }
-            if (opt_link) {
-                for (size_t k = 0; k < selected_tls->item_count; k++) {
-                    const RecipeItem* item = &selected_tls->items[k];
-                    if (item->kind != RECIPE_FILE) continue;
-                    bundled_path(tls_files[k], sizeof tls_files[k], argv[0],
-                                 item->value);
-                    require_regular_file(tls_files[k], "TLS external artifact");
-                }
-            }
-        }
-
         if (opt_c || opt_link) { // codegen: Mach-O arm64 object
             char obj[4096];
             if (opt_link)
@@ -902,13 +762,6 @@ int main(int argc, char** argv) {
                     reject_output_collision(obj, input, "generated object");
                     reject_output_collision(out_name, input, "linked output");
                 }
-                if (selected_tls) {
-                    for (size_t k = 0; k < selected_tls->item_count; k++) {
-                        if (selected_tls->items[k].kind != RECIPE_FILE) continue;
-                        reject_output_collision(obj, tls_files[k], "generated object");
-                        reject_output_collision(out_name, tls_files[k], "linked output");
-                    }
-                }
             }
             if (emit_object(file, &d, obj, show_report ? &report : NULL,
                             emit_mode) != 0 ||
@@ -921,20 +774,6 @@ int main(int argc, char** argv) {
                 arg_push(&cc, obj);
                 for (size_t k = 0; k < link_args.len; k++)
                     arg_push(&cc, link_args.items[k]);
-                if (selected_tls) {
-                    for (size_t k = 0; k < selected_tls->item_count; k++) {
-                        const RecipeItem* item = &selected_tls->items[k];
-                        if (item->kind == RECIPE_FILE) {
-                            arg_push(&cc, tls_files[k]);
-                        } else if (item->kind == RECIPE_LIBRARY) {
-                            arg_push(&cc, "-l");
-                            arg_push(&cc, (char*)item->value);
-                        } else {
-                            arg_push(&cc, "-framework");
-                            arg_push(&cc, (char*)item->value);
-                        }
-                    }
-                }
                 arg_push(&cc, "-o");
                 arg_push(&cc, out_name);
                 arg_push(&cc, NULL);

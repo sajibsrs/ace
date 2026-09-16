@@ -7218,15 +7218,10 @@ int emit_object(Node* file, Diag* d, const char* out_path,
     }
     sym_define(&e.syms, e.secs, "__ace$text", 10, 0, &e.secs[SEC_TEXT]);
 
-    uint32_t external = extern_requirements(file);
-
     for (int i = 0; i < file->nkids; i++) {
         Node* n = file->kids[i];
         switch (n->kind) {
         case N_FUNC: {
-            if (n->extern_component &&
-                (!(external & EXTERN_TLS) || strcmp(n->extern_component, "tls") != 0))
-                break;
             if (n->ival == BI_MEM_ALLOC || n->ival == BI_MEM_REALLOC ||
                 n->ival == BI_MEM_RELEASE || n->ival == BI_MEM_COPY ||
                 n->ival == BI_MEM_MOVE || n->ival == BI_MEM_FILL ||

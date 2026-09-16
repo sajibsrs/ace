@@ -29,10 +29,8 @@ pub ResponseParser: type = parsing.ResponseParser
 pub ResponseProgress: type = parsing.ResponseProgress
 pub ResponseResult: type = parsing.ResponseResult
 pub Storage: type = transport.Storage
-pub TlsConfig: type = transport.TlsConfig
 pub RedirectPolicy: type = redirection.RedirectPolicy
 pub ClientContext: type = client.Context
-pub Client: type = client.Client
 pub Router: type = routing.Router
 pub ServerContext: type = server.Context
 
@@ -56,17 +54,8 @@ pub status(code: u16): string { return message.status(code) }
 pub client_context_new(): ClientContext { return client.context_new() }
 pub client_context_wipe(mut context: ClientContext) { client.context_wipe(mut context) }
 
-pub client_new(): Client { return client.client_new() }
-pub client_wipe(mut value: Client) { client.client_wipe(mut value) }
-
 pub get(value: string, mut context: ClientContext): (Response, Error) {
     response: Response, err: Error = client.get(value, mut context)
-    return response, err
-}
-
-@extern("tls")
-pub get(value: string, mut client: Client): (Response, Error) {
-    response: Response, err: Error = client.get(value, mut client)
     return response, err
 }
 
