@@ -197,8 +197,30 @@ tagged-union payload type. The declaration must appear later in the file.
 Arrays, tuples, aliases, and distinct wrappers do not extend the pointer-only
 path, so `[1]*Later` and `*[1]Later` still require `Later` to be declared first.
 Before the declaration, member access, dereference, `sizeof`, and other
-operations requiring the exact layout are rejected. An unresolved pointer-only
-name is diagnosed at the end of the file.
+operations requiring the exact layout are rejected. An unresolved forward-
+referenced name is diagnosed at the end of the file.
+
+A bare slice exactly at the field or variant root (`[]Later`) is also
+permitted, for the same reason a pointer is: its pointer-plus-count
+representation doesn't depend on the element's size either. This lets two
+nominal types reference each other through a runtime-sized collection without
+boxing every element behind a pointer:
+
+```ace
+Json: union {
+    none,
+    object: []Pair,
+}
+
+Pair: struct {
+    key: string,
+    value: Json,
+}
+```
+
+The allowance stops at the slice: `*[]Later` (a pointer reached first) still
+requires `Later` to be declared first, while `[]*Later` (a pointer reached
+after a root slice) forwards on the ordinary pointer rule above.
 
 Direct or indirect inline recursion is rejected instead of receiving a
 placeholder size:

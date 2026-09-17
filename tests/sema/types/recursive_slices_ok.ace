@@ -1,0 +1,46 @@
+/* Recursive slices fixture: a bare slice at a field/variant root may also
+ * forward-reference a type declared later in the module, exactly like a
+ * pointer chain (Types & Declarations #5) — its ptr+count representation is
+ * equally independent of the pointee's size.
+ */
+
+Tree: struct {
+    children: []Tree,
+    value: int,
+}
+
+Json: union {
+    none,
+    array: []Json,
+    object: []Pair,
+}
+
+Pair: struct {
+    key: string,
+    value: Json,
+}
+
+/* A slice reached through a preceding pointer chain still forwards, since
+ * the pointer's own existing fixup (Types & Declarations #5) applies once
+ * the slice hands it a path that already started at the root.
+ */
+Index: struct {
+    entries: []*Entry,
+}
+
+Entry: struct {
+    value: int,
+}
+
+main(): int {
+    leaf: Tree = { children = null, value = 1 }
+    pair: Pair = { key = "k", value = Json.none }
+    obj: Json = Json.object(null)
+    idx: Index = { entries = null }
+
+    switch obj {
+        Json.none { return 0 }
+        else {}
+    }
+    return leaf.value + int(pair.key.len) + int(idx.entries.len)
+}

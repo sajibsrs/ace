@@ -1,8 +1,11 @@
 // sema.c — semantic checking (stage three): types, names, expression typing.
 // Walks the AST in declaration order — single-pass semantics: declaration
 // before use; forward top-level calls are deferred (like emitter fixups), and
-// aggregate fields admit a second narrow fixup only for uninterrupted pointer
-// paths to a later same-module type. Both are verified at end of file.
+// aggregate fields admit a second narrow fixup for uninterrupted pointer
+// paths to a later same-module type, or a bare slice at the field/variant
+// root ([]Later — its ptr+count representation is equally pointee-size-
+// independent, but the allowance doesn't extend through or past it). Both
+// are verified at end of file.
 //
 // Type model (machine truth: size/align computed for every type):
 //   prims    bool i8..i64 u8..u64 f32 f64 string usize typeid
@@ -1195,7 +1198,7 @@ static SType* build_named_ctx(Ck* k, Node* t, int path) {
     if (s->is_forward) {
         if (path == 1) return s->type;
         ck_err(k, t,
-               "type '%.*s' is not declared yet; only pointer-only field references may be fixed up",
+               "type '%.*s' is not declared yet; only a pointer chain or a root-level slice field reference may be fixed up",
                (int)t->len, t->str);
         return T_ERR;
     }
@@ -1238,7 +1241,7 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
         if (s->is_forward) {
             if (path == 1) return s->type;
             ck_err(k, t,
-                   "type '%.*s' is not declared yet; only pointer-only field references may be fixed up",
+                   "type '%.*s' is not declared yet; only a pointer chain or a root-level slice field reference may be fixed up",
                    (int)t->len, t->str);
             return T_ERR;
         }
@@ -1284,7 +1287,19 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
     case N_SLICE_T: {
         SType* s = st_new(SK_SLICE);
         s->is_mut = (t->flags & F_MUT) != 0; // mut []T — writable elements
-        s->base = build_type_ctx(k, t->a, 0);
+        // A slice's own representation (pointer + count) doesn't depend on
+        // its element's size, exactly like a pointer's — so a bare slice at
+        // the aggregate field/variant root may also forward-reference a
+        // type declared later in the module. Narrower than the pointer
+        // case on purpose: only the direct root ([]Later), not a slice
+        // reached through a preceding pointer or nested further.
+        int child_path = (path == 2) ? 1 : 0;
+        s->base = build_type_ctx(k, t->a, child_path);
+        if (s->base && s->base->kind == SK_FORWARD) {
+            Sym* sym = lookup_type(k, s->base->name,
+                                   (uint32_t)strlen(s->base->name));
+            if (sym && sym->is_forward) record_type_fix(k, sym, &s->base, t->a);
+        }
         return s;
     }
     case N_ARRAY_T: {
@@ -6437,7 +6452,7 @@ int sema_check(Node* file, Diag* d) {
     for (Sym* s = file_scope.types; s; s = s->next)
         if (s->is_forward)
             ck_err(&k, s->decl,
-                   "pointer-only forward type '%.*s' was never declared in this module",
+                   "forward-referenced type '%.*s' was never declared in this module",
                    (int)s->len, s->name);
 
     // Contracts precede their methods; validate their complete method sets now.

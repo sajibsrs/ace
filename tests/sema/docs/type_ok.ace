@@ -23,6 +23,8 @@ Result[T]: union { empty, value: T }
 Node: struct { next: *Node }
 Left: struct { right: *Right }
 Right: struct { left: *Left }
+Json: union { none, object: []Pair }
+Pair: struct { key: string, value: Json }
 
 add(a: int, b: int): int {
     return a + b
@@ -98,6 +100,8 @@ main(): int {
     right: Right = { left = &left }
     node.next = &node
     left.right = &right
+    pair: Pair = { key = "k", value = Json.none }
+    object: Json = Json.object(null)
     values: [4]int = [10, 20, 30, 40]
     zeros: [4]int = [0 : 4]
     middle: []int = values[1..3]

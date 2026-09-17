@@ -160,7 +160,7 @@ for want in \
     fi
 done
 inline_forward_errors=$("$ACE" tests/sema/types/inline_forward_err.ace 2>&1)
-for name in B D F; do
+for name in B D F H; do
     if ! printf '%s\n' "$inline_forward_errors" | grep -qF "unknown type '$name'"; then
         echo "FAIL: inline forward type $name should be rejected"
         fail=1
@@ -168,8 +168,8 @@ for name in B D F; do
 done
 unresolved_forward_error=$("$ACE" tests/sema/types/unresolved_forward_err.ace 2>&1)
 if ! printf '%s\n' "$unresolved_forward_error" | grep -qF \
-    "pointer-only forward type 'Missing' was never declared in this module"; then
-    echo "FAIL: missing unresolved pointer-only forward-type diagnostic"
+    "forward-referenced type 'Missing' was never declared in this module"; then
+    echo "FAIL: missing unresolved forward-type diagnostic"
     fail=1
 fi
 premature_member_error=$("$ACE" tests/sema/types/premature_forward_member_err.ace 2>&1)
