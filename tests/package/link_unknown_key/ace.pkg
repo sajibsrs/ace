@@ -1,0 +1,12 @@
+// An unrecognized key inside [[link]] is an error; only object/search/
+// library/framework are recognized (GRAMMAR.md §7).
+// expect-err: unknown [[link]] field 'linkto'
+
+name: link_unknown_key
+version: 0.1.0
+ace: 0.1
+kind: app
+root: main.ace
+
+[[link]]
+linkto: crypto

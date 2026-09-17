@@ -279,6 +279,18 @@ struct PackageDep {
     PackageDep* next;
 };
 
+// Native link inputs declared through a repeatable [[link]] manifest section
+// (SPEC.md Package System #14, GRAMMAR.md §7) — the same four kinds the
+// direct compiler driver accepts on its command line.
+typedef struct PackageLink PackageLink;
+typedef enum { LINK_OBJECT, LINK_SEARCH, LINK_LIBRARY, LINK_FRAMEWORK } LinkKind;
+struct PackageLink {
+    LinkKind     kind;
+    const char*  value; // canonical path for OBJECT/SEARCH; bare name for LIBRARY/FRAMEWORK
+    int          line;
+    PackageLink* next;
+};
+
 struct Package {
     const char* dir;         // canonical package root directory
     const char* name;
@@ -290,7 +302,8 @@ struct Package {
     const char* author;      // NULL if absent
     const char* license;     // NULL if absent
     const char* repository;  // NULL if absent
-    PackageDep* deps;
+    PackageDep*  deps;
+    PackageLink* links;      // declaration order
     Package*    next;        // completion order: dependencies before dependents
 };
 
@@ -301,6 +314,16 @@ struct Package {
 // returned array (free) but not the Package storage (arena, stable).
 Package* package_resolve(const char* package_dir, Diag* d, const char* compiler_path,
                          Package*** order, int* norder);
+
+// Collects every package's declared [[link]] inputs across order
+// (dependency-first, from package_resolve) into direct-driver flag form —
+// SPEC.md Package System #14: object path positional, "-L"/dir, "-l"/name,
+// "-framework"/name — de-duplicating exact kind+value matches and
+// diagnosing a same-identity/different-value conflict as an error anchored
+// at each declaration's own manifest:line. Returns the argv-style array
+// (caller owns the array itself, not its arena-backed string contents) and
+// its count via *nargs; returns NULL with *nargs 0 if d gained any errors.
+char** package_collect_links(Package** order, int norder, Diag* d, int* nargs);
 
 // True iff s is a nonempty lowercase Ace identifier, the shape a package name
 // must have. Shared by manifest validation and `ace pkg init`'s derived name.

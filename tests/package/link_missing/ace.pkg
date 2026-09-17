@@ -1,0 +1,13 @@
+// A syntactically valid [[link]] object path that does not exist on disk
+// is still an error, reported at manifest-load time rather than deferred
+// to a later link failure.
+// expect-err: [[link]] path 'vendor/libcrypto.a' does not exist
+
+name: link_missing
+version: 0.1.0
+ace: 0.1
+kind: app
+root: main.ace
+
+[[link]]
+object: vendor/libcrypto.a

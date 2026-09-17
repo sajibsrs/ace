@@ -254,8 +254,8 @@ current normative rules, and Git preserves patch-level detail.
   dependencies stay invisible to consumers unless redeclared (no automatic
   transitivity). The `--pkg-check=DIR` flag exposes this stage: full
   semantic check of a package's root file with cross-package imports
-  resolved, no codegen. The real `ace pkg` command set and native
-  link-input declarations remain separate next steps.
+  resolved, no codegen. The real `ace pkg` command set remains a separate
+  next step.
 - Implemented the real `ace pkg init`/`build`/`run`/`check` CLI as a distinct
   argument-parsing mode in `main.c`, alongside (not replacing) the
   `--pkg-graph`/`--pkg-check` debug flags. `build`/`run`/`check` find the
@@ -283,6 +283,29 @@ current normative rules, and Git preserves patch-level detail.
   still builds unedited. Added `tests/package/metadata_blank` and
   `tests/package/metadata_dup_author` covering the blank-is-absent carve-out
   and that a real duplicate value is still rejected.
+- Implemented native link-input declarations (SPEC.md Package System #14,
+  `GRAMMAR.md` §7): a repeatable `[[link]]` manifest section, one record per
+  occurrence admitting up to four optional keys once each — `object`/
+  `search` (relative to the declaring package, no `..` traversal, `object`
+  ending in `.o` or `.a`) and bare-name `library`/`framework` — parsed in
+  `package.c` alongside the existing `[dependencies]` section (`path_is_
+  contained` factored out of `path_is_local_ace` and reused for both).
+  `object`/`search` are existence-checked and canonicalized at manifest-load
+  time the same way `root` already is; validated entries populate a new
+  `Package.links` list (`ace.h`) in file order. `ace pkg build`/`run` (`main.c`)
+  collect every package's `links` across `package_resolve`'s dependency-first
+  `order` into the direct driver's own flag vocabulary (`object` positional,
+  `-L`/`-l`/`-framework`), de-duplicating exact matches and diagnosing a
+  same-identity-different-value conflict (basename for `object`, the name
+  itself for the other three kinds) as a resolution-time error naming both
+  declaring packages — mirroring the existing one-version-per-package-name
+  conflict handling rather than merging or renaming. A `lib` package's
+  declared inputs stay dormant until some `app` in the graph reaches the
+  link step. Added `tests/package/link_*` (parsing and per-package
+  validation) and `tests/package_cli/link_framework`/`link_conflict`
+  (end-to-end transitive linking through a real `cc` invocation, and the
+  conflict diagnostic); `tests/run.sh` gained the `// expect-build-err:`
+  marker since checking alone never reaches the link step.
 - Implemented recursive nested modules: a subdirectory with its own `mod.ace`
   is itself addressable via a `/`-separated path (bare, aliased, or quoted
   relative without a `.ace` suffix). The parser accepts `ident (/ ident)*` for

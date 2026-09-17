@@ -1,6 +1,6 @@
 # Ace — Grammar
 
-EBNF for the carved language surface (v1). Semantics live in `SPEC.md`; `[P]` marks productions whose *spelling* is provisional (semantics are final). Nothing here may contradict `SPEC.md` — where they disagree, `SPEC.md` wins and this file gets fixed.
+EBNF for the carved language surface (v1) and the separate `ace.pkg` package-manifest format (§7). Semantics live in `SPEC.md`; `[P]` marks productions whose *spelling* is provisional (semantics are final). Nothing here may contradict `SPEC.md` — where they disagree, `SPEC.md` wins and this file gets fixed.
 
 ## 1. Lexical
 
@@ -293,3 +293,56 @@ choices that are not evident from the productions.
     explicit conversion/construction call. Semantic analysis distinguishes the
     one-argument slice spelling cast from two-argument pointer-plus-count slice
     construction.
+
+## 7. Package manifest (ace.pkg)
+
+A separate small line-based format for `ace.pkg`, parsed independently of the
+Ace language grammar above (`src/package.c`). Semantics live in `SPEC.md`'s
+Package System section.
+
+```ebnf
+manifest        := line*
+line            := comment | blank | table_header | section_header | field
+
+comment         := "//" (any – newline)* newline
+blank           := newline
+
+section_header  := "[" "dependencies" "]" newline
+table_header    := "[[" "link" "]]" newline        // repeatable; each
+                                                    // occurrence opens one
+                                                    // new record
+
+field           := key ":" value newline           // surrounding spaces/tabs
+                                                    // around key and value
+                                                    // are insignificant
+key             := top_key | dep_key | link_key
+top_key         := "name" | "version" | "ace" | "kind" | "root"
+                  | "description" | "author" | "license" | "repository"
+dep_key         := ident                           // import alias, only
+                                                    // inside [dependencies]
+link_key        := "object" | "search" | "library" | "framework"
+                                                    // only inside [[link]]
+value           := (any – newline)*                [P: escaping/quoting]
+```
+
+Notes:
+
+1. Context is positional: `top_key` fields are only valid before any header;
+   `dep_key` fields only after `[dependencies]` and before the next header;
+   `link_key` fields only after a `[[link]]` header and before the next
+   header.
+2. `top_key` and `dep_key` (per alias) may each appear at most once in their
+   manifest; `link_key` may appear at most once per `[[link]]` record — a
+   fresh occurrence opens a new record and resets `link_key` availability.
+   Any repeat is an error.
+3. `description`/`author`/`license`/`repository` alone admit an empty
+   `value` (field present, meaning absent); every other `top_key`, every
+   `dep_key`, and every `link_key` requires a nonempty `value`.
+4. `[dependencies]`'s `value` is a relative path (Package System #4); an
+   `object`/`search` `link_key`'s `value` is a path relative to the
+   declaring package's own directory with no `..` traversal, and `object`
+   must end in `.o` or `.a` (Package System #14); `library`/`framework`
+   values are bare names.
+5. [P] The recognized header and key sets are closed and expected to grow
+   (e.g. a future `authors` as `[[authors]]`); today only `[dependencies]`
+   and `[[link]]` exist, and an unrecognized header or key is an error.

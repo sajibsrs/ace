@@ -1427,10 +1427,13 @@ fi
 # `//`-comments in ace.pkg: `// expect-build-exit: N` builds an app case and
 # runs it (via both `pkg build` + the binary, and `pkg run` directly),
 # expecting exit code N; `// expect-build-ok` builds a lib case, expecting
-# `pkg build` to succeed with no linked binary in build/; `// expect-run-err:
-# substring` expects `pkg run` on a lib case to fail with that diagnostic;
-# `// expect-check-ok` expects `pkg check` to succeed from a nested working
-# directory (src/) rather than the package root.
+# `pkg build` to succeed with no linked binary in build/; `// expect-build-err:
+# substring` expects `pkg build` on an app case to fail with that diagnostic
+# (e.g. a native link-input conflict, Package System #14 — checking alone
+# never reaches the link step); `// expect-run-err: substring` expects
+# `pkg run` on a lib case to fail with that diagnostic; `// expect-check-ok`
+# expects `pkg check` to succeed from a nested working directory (src/)
+# rather than the package root.
 if [ -d tests/package_cli ]; then
     for case_dir in tests/package_cli/*/; do
         if [ -f "${case_dir}ace.pkg" ]; then dir=${case_dir%/}
@@ -1441,6 +1444,7 @@ if [ -d tests/package_cli ]; then
         name=$(sed -n 's/^name: *//p' "$f")
         build_exit=$(sed -n 's/^\/\/ *expect-build-exit:[[:space:]]*//p' "$f")
         build_ok=$(sed -n 's/^\/\/ *expect-build-ok[[:space:]]*.*/yes/p' "$f")
+        build_err=$(sed -n 's/^\/\/ *expect-build-err:[[:space:]]*//p' "$f")
         run_err=$(sed -n 's/^\/\/ *expect-run-err:[[:space:]]*//p' "$f")
         check_ok=$(sed -n 's/^\/\/ *expect-check-ok[[:space:]]*.*/yes/p' "$f")
         rm -rf "$dir/build"
@@ -1475,6 +1479,18 @@ if [ -d tests/package_cli ]; then
                 fail=1
             fi
         fi
+        if [ -n "$build_err" ]; then
+            build_out=$(cd "$dir" && "$ACE" pkg build 2>&1)
+            got=$?
+            if [ "$got" -eq 0 ]; then
+                echo "FAIL (pkg build should fail): $dir"
+                fail=1
+            elif ! printf '%s\n' "$build_out" | grep -qF "$build_err"; then
+                echo "FAIL: $dir missing 'pkg build' diagnostic '$build_err'"
+                printf '%s\n' "$build_out"
+                fail=1
+            fi
+        fi
         if [ -n "$run_err" ]; then
             run_out=$(cd "$dir" && "$ACE" pkg run 2>&1)
             got=$?
@@ -1495,8 +1511,8 @@ if [ -d tests/package_cli ]; then
             fi
         fi
         rm -rf "$dir/build"
-        if [ -z "$build_exit" ] && [ -z "$build_ok" ] && [ -z "$run_err" ] && [ -z "$check_ok" ]; then
-            echo "FAIL: $f has no 'expect-build-exit'/'expect-build-ok'/'expect-run-err'/'expect-check-ok' comment"
+        if [ -z "$build_exit" ] && [ -z "$build_ok" ] && [ -z "$build_err" ] && [ -z "$run_err" ] && [ -z "$check_ok" ]; then
+            echo "FAIL: $f has no 'expect-build-exit'/'expect-build-ok'/'expect-build-err'/'expect-run-err'/'expect-check-ok' comment"
             fail=1
         fi
     done

@@ -295,9 +295,14 @@ static int package_write_file(const char* path, const char* data, size_t len) {
 // to plain `ace file.ace`. On success *out_package/*out_file/*out_diag are set
 // for a caller (pkg build) that still needs the parsed file for codegen;
 // `ace pkg check` discards them. report may be NULL.
+// out_order/out_norder are optional (pass NULL/NULL to skip): when given,
+// the caller receives package_resolve's dependency-first array (SPEC.md
+// Package System #14's native-link-input collection order) and owns freeing
+// it; otherwise it is freed here.
 static int package_load_and_check(const char* dir, const char* argv0, const char* target,
                                   CompileReport* report, Package** out_package,
-                                  Node** out_file, Diag* out_diag) {
+                                  Node** out_file, Diag* out_diag,
+                                  Package*** out_order, int* out_norder) {
     Diag pd = {dir, 0};
     Package** order = NULL;
     int norder = 0;
@@ -306,7 +311,8 @@ static int package_load_and_check(const char* dir, const char* argv0, const char
         fprintf(stderr, "%s: %d error%s\n", dir, pd.errors, pd.errors == 1 ? "" : "s");
         return 1;
     }
-    free(order);
+    if (out_order) { *out_order = order; *out_norder = norder; }
+    else free(order);
     Source s;
     if (source_load(&s, root_package->root_file) != 0) return 1;
     if (report) {
@@ -355,7 +361,7 @@ static int package_cmd_check(int argc, char** argv, const char* argv0) {
     Package* root_package;
     Node* file;
     Diag d;
-    return package_load_and_check(dir, argv0, target, NULL, &root_package, &file, &d);
+    return package_load_and_check(dir, argv0, target, NULL, &root_package, &file, &d, NULL, NULL);
 }
 
 // Shared by `pkg build` and `pkg run`: resolve + check the enclosing
@@ -407,13 +413,16 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
     Package* root_package;
     Node* file;
     Diag d;
+    Package** order;
+    int norder;
     int rc = package_load_and_check(dir, argv0, target, show_report ? &report : NULL,
-                                &root_package, &file, &d);
+                                &root_package, &file, &d, &order, &norder);
     if (rc != 0) return rc;
 
     if (require_app && !root_package->is_app) {
         fprintf(stderr, "ace: 'run' requires an app package; '%s' is kind 'lib'\n",
                 root_package->name);
+        free(order);
         return 2;
     }
 
@@ -421,21 +430,38 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
     snprintf(build_dir, sizeof build_dir, "%s/build", root_package->dir);
     if (mkdir_p(build_dir) != 0) {
         fprintf(stderr, "ace: cannot create '%s': %s\n", build_dir, strerror(errno));
+        free(order);
         return 1;
     }
-    if (!root_package->is_app) return 0; // lib: checked, build/ ensured, nothing to link
+    if (!root_package->is_app) { // lib: checked, build/ ensured, nothing to link
+        free(order);
+        return 0;
+    }
 
     char obj[4096];
     snprintf(obj, sizeof obj, "%s/%s.o", build_dir, root_package->name);
     if (out_bin_cap) snprintf(out_bin, out_bin_cap, "%s/%s", build_dir, root_package->name);
     if (emit_object(file, &d, obj, show_report ? &report : NULL, emit_mode) != 0 ||
-        d.errors > 0)
+        d.errors > 0) {
+        free(order);
         return 1;
+    }
     uint64_t compile_done = show_report ? monotonic_ns() : 0;
+
+    // Package System #14: the transitive union of every package's declared
+    // [[link]] inputs, dependency-first (order already matches that from
+    // package_resolve), deduplicated, conflict-checked.
+    int nlinkargs;
+    char** link_args = package_collect_links(order, norder, &d, &nlinkargs);
+    free(order);
+    if (d.errors > 0) return 1;
 
     ArgList cc = {0};
     arg_push(&cc, "cc");
     arg_push(&cc, obj);
+    for (int i = 0; i < nlinkargs; i++)
+        arg_push(&cc, link_args[i]);
+    free(link_args);
     arg_push(&cc, "-o");
     arg_push(&cc, out_bin);
     arg_push(&cc, NULL);
@@ -680,7 +706,8 @@ int main(int argc, char** argv) {
         Package* root_package;
         Node* file;
         Diag d;
-        return package_load_and_check(package_check_dir, argv[0], target, NULL, &root_package, &file, &d);
+        return package_load_and_check(package_check_dir, argv[0], target, NULL, &root_package, &file, &d,
+                                      NULL, NULL);
     }
     // `-o <file>.ace` compiles that file in place: the executable is the stem.
     if (out_name && has_suffix(out_name, ".ace")) {

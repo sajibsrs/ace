@@ -1,0 +1,22 @@
+// A [[link]] section with two records, each declaring all four keys once,
+// parses cleanly and does not affect ordinary graph resolution (Step 1:
+// parsing only, not yet wired into Package or the link step).
+// expect-ok: link_ok
+
+name: link_ok
+version: 0.1.0
+ace: 0.1
+kind: app
+root: main.ace
+
+[[link]]
+object: vendor/libcrypto.a
+search: vendor/lib
+library: crypto
+framework: Security
+
+[[link]]
+object: vendor/x.a
+search: vendor/x
+library: x
+framework: x

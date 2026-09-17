@@ -552,7 +552,7 @@ Decision: packaging is an optional, explicit layer above file modules; one `ace`
 11. Plain `ace` remains the direct compiler interface and standalone source compilation does not require a manifest. Every manifest-aware operation is grouped under `ace pkg`: the initial commands are `init`, `build`, `run`, `check`, `add`, `remove`, `update`, `resolve`, `fetch`, and `list`. `run` is app-only. `init` creates a minimal app or library without overwriting existing files. From a subdirectory, package commands find the nearest enclosing `ace.pkg`; a nested manifest starts an independent package.
 12. `ace pkg add`, `remove`, and `update` edit the manifest and update resolution atomically; update always names one dependency and its exact new version. Manual manifest edits use `ace pkg resolve`. Resolution validates the complete graph, writes the lockfile, and fetches newly resolved remote packages; failure changes neither project file. `ace pkg fetch` performs no resolution and never changes the lockfile: it restores or verifies exactly the locked trees, replacing only missing or corrupt generated copies. Build, run, and check are offline and diagnose whether the cure is `resolve`, `fetch`, or repair of a local path.
 13. `ace pkg list` reports the locally resolved graph, including direct/transitive and remote/path status. `ace pkg list name` queries that package's configured remote source for canonical version tags and lists only releases whose tagged root manifest has a matching name/version and is structurally valid; releases for another Ace language version remain visible but marked incompatible. Because one graph contains only one version per name, the queried source is unambiguous. Exact display and flags remain [open].
-14. Package operations use the installed `git` executable through a shell-free argument vector. Ordinary compilation has no Git dependency. Arbitrary shell scripts, lifecycle hooks, dependency-injected native link requirements, publishing, and releasing are excluded initially. The root package may declare the direct compiler driver's existing ordered `.o`/`.a`, library-path, library, and Apple-framework inputs; its exact manifest syntax remains [open]. Custom code generation, deployment, assets, and unrelated tasks stay with an external build tool. A future `tls` client transport (carved from philosophy/semantics; see `TODO.md`) gates on this: whether it belongs in `std` or launches as a package depends on native link-input declarations landing here.
+14. Package operations use the installed `git` executable through a shell-free argument vector. Ordinary compilation has no Git dependency. Arbitrary shell scripts, lifecycle hooks, publishing, and releasing are excluded initially. Any package (`app` or `lib`), not only the root, may declare native link inputs of the same four kinds the direct compiler driver already accepts — `.o`/`.a` paths, `-L` search directories, `-l` library names, and `-framework` names. An app's final link step collects the transitive union of every native input declared anywhere in its dependency graph, ordered dependency-before-dependent with each package's own declaration order preserved among its own inputs, and de-duplicates only exact same-kind-and-value entries. A native link input's declared name (not its file content) is its logical identity — the given name for `search`/`library`/`framework`, the file's basename for `object`; the same identity declared with a different value by two different packages in one graph is a resolution-time error naming both packages, mirroring the existing one-version-per-package-name conflict rule (#8) rather than attempting silent merging or symbol renaming. A `lib` package's declared inputs stay dormant metadata until some `app` in the graph actually reaches the link step (#1). Declared through a repeatable `[[link]]` manifest section (`GRAMMAR.md` §7): each occurrence is one record admitting up to four optional keys — `object: PATH`, `search: DIR`, `library: NAME`, `framework: NAME` — each at most once per record; two unrelated native components use two separate `[[link]]` records rather than repeating a key within one. `object` and `search` paths resolve relative to the declaring package's own directory with no `..` traversal, matching the existing import-containment rule (#7), and `object` must end in `.o` or `.a`. There is no absolute or system search path in v1: a package declares only native inputs it vendors inside its own directory, and a host-installed library remains reachable only through the direct driver's own `-L`/`-l`/`-framework` CLI flags. Custom code generation, deployment, assets, and unrelated tasks stay with an external build tool. A future `tls` client transport (carved from philosophy/semantics; see `TODO.md`) gates on this: whether it belongs in `std` or launches as a package depends on native link-input declarations landing here.
 15. Conventional output paths keep the manifest small: an app defaults to `build/<package-name>`, library build state stays under `build/`, and an explicit command-line output path may override an app build. Exact package command flags remain [open]. Rationale: the package layer preserves explicit imports and source boundaries, performs no hidden network work during compilation, admits no dependency code execution, and uses exact identities plus a committed lockfile. This puts simplicity and modularity ahead of convenience machinery while leaving registries, shared caches, workspaces, ranges, precompiled packages, testing classes, and publishing additive.
 
 ## C Interop
@@ -1096,12 +1096,11 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 ### Active
 
 - **Package system v1 (local-path)** [open] — manifest format, dependency
-  graph resolution, cross-package imports, and the real `ace pkg`
+  graph resolution, cross-package imports, native link-input declarations
+  (Package System #14, `GRAMMAR.md` §7), and the real `ace pkg`
   `init`/`build`/`run`/`check` CLI are decided and implemented; see
   `CHANGELOG.md`. Local-path dependencies only — no git source, version
-  range, registry, or lockfile in v1. Still open: native link-input
-  declarations (needed before a package like a future `tls` can declare
-  native link inputs; not required for pure-Ace packages such as `http`).
+  range, registry, or lockfile in v1.
 
 ### Trigger-gated
 
@@ -1117,9 +1116,10 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
   comma-separated list stays on one line if it fits, otherwise one item per
   continuation line with a trailing comma. Resume with staged implementation
   carving when formatter work becomes an active priority.
-- Package-system manifest, lockfile, display, linker-input, and command syntax
-  remain open under Package System #3, #9, and #13–15. Resume only when package
-  implementation is selected.
+- Package-system manifest, lockfile, display, and command syntax remain open
+  under Package System #3, #9, #13, and #15 (native link-input declarations,
+  formerly #14, are carved and implemented; see `CHANGELOG.md`). Resume only
+  when package implementation is selected.
 - A second target remains trigger-gated until its backend and OS implementations
   are genuinely supported; directory-module facades already select target files
   consistently through `@when`.

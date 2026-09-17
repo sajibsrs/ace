@@ -1,0 +1,13 @@
+// A key repeated within one [[link]] record is an error; two unrelated
+// native components need two separate [[link]] records instead.
+// expect-err: duplicate 'library' in this [[link]] record
+
+name: link_dup_key
+version: 0.1.0
+ace: 0.1
+kind: app
+root: main.ace
+
+[[link]]
+library: crypto
+library: ssl
