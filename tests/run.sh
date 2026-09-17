@@ -1433,7 +1433,16 @@ fi
 # never reaches the link step); `// expect-run-err: substring` expects
 # `pkg run` on a lib case to fail with that diagnostic; `// expect-check-ok`
 # expects `pkg check` to succeed from a nested working directory (src/)
-# rather than the package root.
+# rather than the package root. `// pkg-add-args: NAME PATH` runs
+# `ace pkg add NAME PATH` before any of the above, so a case can prove the
+# added dependency actually builds/links; `// expect-add-err: NAME PATH
+# substring` and `// expect-remove-err: NAME substring` run `pkg add`/`pkg
+# remove` expecting failure with that diagnostic substring and an unchanged
+# manifest (SPEC.md Decision Queue, "Package system v1": failure leaves the
+# manifest byte-for-byte unchanged); `// expect-remove-ok: NAME` runs `pkg
+# remove NAME` expecting success and the entry gone from ace.pkg; `//
+# expect-list-has: substring` (repeatable) runs `pkg list` expecting success
+# and every listed substring present in its output.
 if [ -d tests/package_cli ]; then
     for case_dir in tests/package_cli/*/; do
         if [ -f "${case_dir}ace.pkg" ]; then dir=${case_dir%/}
@@ -1447,6 +1456,91 @@ if [ -d tests/package_cli ]; then
         build_err=$(sed -n 's/^\/\/ *expect-build-err:[[:space:]]*//p' "$f")
         run_err=$(sed -n 's/^\/\/ *expect-run-err:[[:space:]]*//p' "$f")
         check_ok=$(sed -n 's/^\/\/ *expect-check-ok[[:space:]]*.*/yes/p' "$f")
+        pkg_add_args=$(sed -n 's/^\/\/ *pkg-add-args:[[:space:]]*//p' "$f")
+        add_err=$(sed -n 's/^\/\/ *expect-add-err:[[:space:]]*//p' "$f")
+        remove_ok=$(sed -n 's/^\/\/ *expect-remove-ok:[[:space:]]*//p' "$f")
+        remove_err=$(sed -n 's/^\/\/ *expect-remove-err:[[:space:]]*//p' "$f")
+        list_has=$(sed -n 's/^\/\/ *expect-list-has:[[:space:]]*//p' "$f")
+
+        if [ -n "$pkg_add_args" ]; then
+            add_name=$(printf '%s\n' "$pkg_add_args" | awk '{print $1}')
+            add_path=$(printf '%s\n' "$pkg_add_args" | awk '{print $2}')
+            if ! (cd "$dir" && "$ACE" pkg add "$add_name" "$add_path") >/tmp/ace_test_errs 2>&1; then
+                echo "FAIL (pkg add should succeed): $dir"
+                cat /tmp/ace_test_errs
+                fail=1
+            fi
+        fi
+        if [ -n "$add_err" ]; then
+            add_err_name=$(printf '%s\n' "$add_err" | awk '{print $1}')
+            add_err_path=$(printf '%s\n' "$add_err" | awk '{print $2}')
+            add_err_msg=$(printf '%s\n' "$add_err" | cut -d' ' -f3-)
+            before=$(cat "$f")
+            add_out=$(cd "$dir" && "$ACE" pkg add "$add_err_name" "$add_err_path" 2>&1)
+            got=$?
+            after=$(cat "$f")
+            if [ "$got" -eq 0 ]; then
+                echo "FAIL (pkg add should fail): $dir"
+                fail=1
+            elif ! printf '%s\n' "$add_out" | grep -qF "$add_err_msg"; then
+                echo "FAIL: $dir missing 'pkg add' diagnostic '$add_err_msg'"
+                printf '%s\n' "$add_out"
+                fail=1
+            elif [ "$before" != "$after" ]; then
+                echo "FAIL: $dir 'pkg add' should leave the manifest unchanged on failure"
+                fail=1
+            fi
+        fi
+        if [ -n "$remove_ok" ]; then
+            if ! (cd "$dir" && "$ACE" pkg remove "$remove_ok") >/tmp/ace_test_errs 2>&1; then
+                echo "FAIL (pkg remove should succeed): $dir"
+                cat /tmp/ace_test_errs
+                fail=1
+            elif grep -q "^${remove_ok}:" "$f"; then
+                echo "FAIL: $dir manifest still contains removed dependency '$remove_ok'"
+                fail=1
+            fi
+        fi
+        if [ -n "$remove_err" ]; then
+            rm_err_name=$(printf '%s\n' "$remove_err" | awk '{print $1}')
+            rm_err_msg=$(printf '%s\n' "$remove_err" | cut -d' ' -f2-)
+            before=$(cat "$f")
+            rm_out=$(cd "$dir" && "$ACE" pkg remove "$rm_err_name" 2>&1)
+            got=$?
+            after=$(cat "$f")
+            if [ "$got" -eq 0 ]; then
+                echo "FAIL (pkg remove should fail): $dir"
+                fail=1
+            elif ! printf '%s\n' "$rm_out" | grep -qF "$rm_err_msg"; then
+                echo "FAIL: $dir missing 'pkg remove' diagnostic '$rm_err_msg'"
+                printf '%s\n' "$rm_out"
+                fail=1
+            elif [ "$before" != "$after" ]; then
+                echo "FAIL: $dir 'pkg remove' should leave the manifest unchanged on failure"
+                fail=1
+            fi
+        fi
+        if [ -n "$list_has" ]; then
+            list_out=$(cd "$dir" && "$ACE" pkg list 2>&1)
+            got=$?
+            if [ "$got" -ne 0 ]; then
+                echo "FAIL (pkg list should succeed): $dir"
+                printf '%s\n' "$list_out"
+                fail=1
+            else
+                while IFS= read -r want; do
+                    [ -z "$want" ] && continue
+                    if ! printf '%s\n' "$list_out" | grep -qF "$want"; then
+                        echo "FAIL: $dir 'pkg list' missing '$want'"
+                        printf '%s\n' "$list_out"
+                        fail=1
+                    fi
+                done <<EOF
+$list_has
+EOF
+            fi
+        fi
+
         rm -rf "$dir/build"
         if [ -n "$build_exit" ]; then
             if ! (cd "$dir" && "$ACE" pkg build) >/dev/null 2>/tmp/ace_test_errs; then
@@ -1511,8 +1605,17 @@ if [ -d tests/package_cli ]; then
             fi
         fi
         rm -rf "$dir/build"
-        if [ -z "$build_exit" ] && [ -z "$build_ok" ] && [ -z "$build_err" ] && [ -z "$run_err" ] && [ -z "$check_ok" ]; then
-            echo "FAIL: $f has no 'expect-build-exit'/'expect-build-ok'/'expect-build-err'/'expect-run-err'/'expect-check-ok' comment"
+        # pkg-add-args mutates the checked-in manifest in place (unlike
+        # build/, ace.pkg is a tracked source file); restore it so repeated
+        # runs stay idempotent rather than hitting "duplicate dependency" on
+        # the second run.
+        if [ -n "$pkg_add_args" ]; then
+            (cd "$dir" && "$ACE" pkg remove "$add_name") >/dev/null 2>&1
+        fi
+        if [ -z "$build_exit" ] && [ -z "$build_ok" ] && [ -z "$build_err" ] && [ -z "$run_err" ] &&
+           [ -z "$check_ok" ] && [ -z "$add_err" ] && [ -z "$remove_ok" ] && [ -z "$remove_err" ] &&
+           [ -z "$list_has" ]; then
+            echo "FAIL: $f has no expect-*/pkg-add-args marker comment"
             fail=1
         fi
     done

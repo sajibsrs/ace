@@ -1,0 +1,12 @@
+// expect-list-has: lib_a
+// expect-list-has: lib_b
+// expect-list-has: direct
+// expect-list-has: transitive
+name: consumer
+version: 0.1.0
+ace: 0.1
+kind: app
+root: src/main.ace
+
+[dependencies]
+lib_a: ../lib_a

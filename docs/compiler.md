@@ -106,6 +106,9 @@ ace pkg init lib my_lib
 ace pkg build
 ace pkg run
 ace pkg check
+ace pkg add NAME PATH
+ace pkg remove NAME
+ace pkg list
 ```
 
 `build`, `run`, and `check` take no path argument: they find the nearest
@@ -129,6 +132,16 @@ refuses to overwrite an existing `ace.pkg` or root file. An app gets
 empty `src/mod.ace`, since a library's root module needs no content to be a
 valid sole import surface. The generated `ace.pkg` includes empty
 `description`, `author`, `license`, and `repository` fields ready to fill in.
+
+`add NAME PATH` and `remove NAME` edit the enclosing package's own
+`[dependencies]` section for a local-path entry (`PATH` relative to that
+`ace.pkg`, same convention as an existing entry): `add` validates the
+complete resulting graph — no duplicate or colliding name, `PATH` holding a
+`lib` package whose declared `name` exactly matches `NAME`, no cycle, one
+shared `ace` language version — before writing, and `remove` re-validates
+symmetrically; either restores the manifest to its exact original bytes if
+validation fails. `list` is read-only: it prints the resolved graph (name,
+kind, direct/transitive, directory).
 
 `--pkg-graph=DIR` and `--pkg-check=DIR` remain as lower-level debug hooks —
 analogous to `--tokens`/`--ast` exposing earlier compiler stages — resolving

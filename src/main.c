@@ -33,7 +33,7 @@ static void usage(void) {
                     "           [<file.o> | <file.a> | -L DIR | -l NAME | -framework NAME]...\n"
                     "       ace --pkg-graph=DIR\n"
                     "       ace --pkg-check=DIR\n"
-                    "       ace pkg <init|build|run|check> ...\n"
+                    "       ace pkg <init|build|run|check|add|remove|list> ...\n"
                     "  (default)       full semantic check, no codegen\n"
                     "  --checked       emit runtime diagnostics (the emission default)\n"
                     "  --release       emit without runtime diagnostic machinery\n"
@@ -229,12 +229,18 @@ static void package_usage(void) {
                     "       ace pkg run   [--checked|--release] [--target=TARGET]\n"
                     "                     [--report]\n"
                     "       ace pkg check\n"
+                    "       ace pkg add NAME PATH\n"
+                    "       ace pkg remove NAME\n"
+                    "       ace pkg list\n"
                     "  init   create a minimal app or lib package skeleton, without\n"
                     "         overwriting an existing ace.pkg or root file\n"
                     "  build  compile (and for an app, link) the package found by walking\n"
                     "         up from the working directory to the nearest ace.pkg\n"
                     "  run    build, then execute the app (app-only)\n"
-                    "  check  full semantic check of the package, no codegen\n");
+                    "  check  full semantic check of the package, no codegen\n"
+                    "  add    add a local-path lib dependency (PATH relative to ace.pkg)\n"
+                    "  remove remove a dependency by name\n"
+                    "  list   print the resolved dependency graph\n");
     exit(2);
 }
 
@@ -339,6 +345,143 @@ static int package_load_and_check(const char* dir, const char* argv0, const char
     *out_package = root_package;
     *out_file = rfile;
     *out_diag = rd;
+    return 0;
+}
+
+// Reads the manifest's current bytes so a failed add/remove can restore them
+// (SPEC.md Decision Queue, "Package system v1": "the manifest file is left
+// byte-for-byte unchanged" on any validation failure).
+static int package_manifest_backup(const char* manifest_path, char** out_buf, size_t* out_len) {
+    Source s;
+    if (source_load(&s, manifest_path) != 0) return 1;
+    *out_buf = s.buf;
+    *out_len = s.len;
+    return 0;
+}
+
+static int package_manifest_restore(const char* manifest_path, const char* buf, size_t len) {
+    FILE* f = fopen(manifest_path, "w");
+    if (!f) {
+        fprintf(stderr, "ace: cannot restore '%s': %s\n", manifest_path, strerror(errno));
+        return 1;
+    }
+    if (len && fwrite(buf, 1, len, f) != len) {
+        fprintf(stderr, "ace: cannot restore '%s': %s\n", manifest_path, strerror(errno));
+        fclose(f);
+        return 1;
+    }
+    fclose(f);
+    return 0;
+}
+
+// Shared by add/remove: re-resolve dir's graph after a manifest edit, and on
+// any error restore the manifest to backup/backup_len and report failure.
+// Frees backup either way.
+static int package_revalidate_or_restore(const char* dir, const char* argv0,
+                                         const char* manifest_path, char* backup,
+                                         size_t backup_len, const char* verb,
+                                         const char* name) {
+    Diag pd = {dir, 0};
+    Package** order = NULL;
+    int norder = 0;
+    Package* root = package_resolve(dir, &pd, argv0, &order, &norder);
+    free(order);
+    if (!root || pd.errors > 0) {
+        package_manifest_restore(manifest_path, backup, backup_len);
+        free(backup);
+        fprintf(stderr, "ace: '%s' was not %s; the manifest was left unchanged\n", name, verb);
+        return 1;
+    }
+    free(backup);
+    return 0;
+}
+
+static int package_cmd_add(int argc, char** argv, const char* argv0) {
+    if (argc != 2) package_usage();
+    const char* name = argv[0];
+    const char* path = argv[1];
+    if (!package_valid_name(name, strlen(name))) {
+        fprintf(stderr, "ace: dependency name '%s' must be a lowercase identifier\n", name);
+        return 2;
+    }
+    const char* dir = find_package_root();
+    if (!dir) {
+        fprintf(stderr, "ace: no ace.pkg found in the working directory or any parent\n");
+        return 1;
+    }
+    char manifest_path[4160];
+    snprintf(manifest_path, sizeof manifest_path, "%s/ace.pkg", dir);
+
+    char* backup;
+    size_t backup_len;
+    if (package_manifest_backup(manifest_path, &backup, &backup_len) != 0) return 1;
+    if (package_manifest_add_dep(manifest_path, name, path) != 0) {
+        free(backup);
+        return 1;
+    }
+    return package_revalidate_or_restore(dir, argv0, manifest_path, backup, backup_len,
+                                         "added", name);
+}
+
+static int package_cmd_remove(int argc, char** argv, const char* argv0) {
+    if (argc != 1) package_usage();
+    const char* name = argv[0];
+    const char* dir = find_package_root();
+    if (!dir) {
+        fprintf(stderr, "ace: no ace.pkg found in the working directory or any parent\n");
+        return 1;
+    }
+    char manifest_path[4160];
+    snprintf(manifest_path, sizeof manifest_path, "%s/ace.pkg", dir);
+
+    char* backup;
+    size_t backup_len;
+    if (package_manifest_backup(manifest_path, &backup, &backup_len) != 0) return 1;
+    int found = 0;
+    if (package_manifest_remove_dep(manifest_path, name, &found) != 0) {
+        free(backup);
+        return 1;
+    }
+    if (!found) {
+        free(backup);
+        fprintf(stderr, "ace: '%s' is not a dependency of '%s'\n", name, dir);
+        return 1;
+    }
+    return package_revalidate_or_restore(dir, argv0, manifest_path, backup, backup_len,
+                                         "removed", name);
+}
+
+static int package_cmd_list(int argc, char** argv, const char* argv0) {
+    (void)argv;
+    if (argc != 0) {
+        fprintf(stderr, "ace: pkg list takes no arguments\n");
+        return 2;
+    }
+    const char* dir = find_package_root();
+    if (!dir) {
+        fprintf(stderr, "ace: no ace.pkg found in the working directory or any parent\n");
+        return 1;
+    }
+    Diag pd = {dir, 0};
+    Package** order = NULL;
+    int norder = 0;
+    Package* root = package_resolve(dir, &pd, argv0, &order, &norder);
+    if (!root || pd.errors > 0) {
+        fprintf(stderr, "%s: %d error%s\n", dir, pd.errors, pd.errors == 1 ? "" : "s");
+        free(order);
+        return 1;
+    }
+    for (int i = 0; i < norder; i++) {
+        Package* pkg = order[i];
+        const char* relation = "transitive";
+        if (pkg == root) relation = "root";
+        else
+            for (PackageDep* dep = root->deps; dep; dep = dep->next)
+                if (dep->package == pkg) { relation = "direct"; break; }
+        printf("%-16s %-4s %-10s %s\n", pkg->name, pkg->is_app ? "app" : "lib", relation,
+               pkg->dir);
+    }
+    free(order);
     return 0;
 }
 
@@ -591,6 +734,9 @@ static int package_main(int argc, char** argv, const char* argv0) {
     if (strcmp(argv[0], "build") == 0) return package_cmd_build(argc - 1, argv + 1, argv0);
     if (strcmp(argv[0], "run") == 0) return package_cmd_run(argc - 1, argv + 1, argv0);
     if (strcmp(argv[0], "check") == 0) return package_cmd_check(argc - 1, argv + 1, argv0);
+    if (strcmp(argv[0], "add") == 0) return package_cmd_add(argc - 1, argv + 1, argv0);
+    if (strcmp(argv[0], "remove") == 0) return package_cmd_remove(argc - 1, argv + 1, argv0);
+    if (strcmp(argv[0], "list") == 0) return package_cmd_list(argc - 1, argv + 1, argv0);
     fprintf(stderr, "ace: unknown pkg subcommand '%s'\n", argv[0]);
     package_usage();
     return 2; // unreachable

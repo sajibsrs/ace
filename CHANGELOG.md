@@ -780,6 +780,36 @@ current normative rules, and Git preserves patch-level detail.
   `package_usage()`'s printed help: the flag itself was already removed with
   `@extern(component)`, so the argument parser has rejected it as unknown
   since then, but the help text kept advertising it.
+- Implemented `ace pkg add NAME PATH`, `ace pkg remove NAME`, and
+  `ace pkg list` (SPEC.md Decision Queue, "Package system v1"), completing
+  v1's local-path-only manifest-editing surface. `add`/`remove` are line-
+  oriented text surgery in `package.c` (`package_manifest_add_dep`/
+  `package_manifest_remove_dep`) mirroring `parse_manifest`'s own comment/
+  section/key scan: `add` inserts a `NAME: PATH` line right after the
+  `[dependencies]` header (creating the section, preceded by exactly one
+  blank line normalized from however many trailing blank lines the file
+  already had, if absent); `remove` deletes the one matching entry line and,
+  if it was the section's last entry, the header line too, along with a
+  blank separator line immediately before it — keeping repeated add/remove
+  cycles byte-for-byte idempotent. Neither function validates the graph
+  itself: `main.c`'s `package_cmd_add`/`package_cmd_remove` back up the
+  manifest's original bytes first, perform the edit, then re-run the same
+  `package_resolve` the other subcommands already use, restoring the backup
+  verbatim and reporting the failing package_resolve diagnostic if the edit
+  produced an invalid graph (duplicate name, alias not matching the target's
+  declared name, stdlib-name collision, cycle, mismatched `ace` version) — no
+  separate validation logic, and a failed `add`/`remove` never touches the
+  file. `list` is read-only, resolving and printing the graph's name/kind/
+  direct-or-transitive/directory. Added `tests/package_cli/pkg_add_cross_dep`
+  (`add` then `pkg build`/`run` prove a real cross-package import),
+  `pkg_add_err_rollback` (mismatched alias, manifest unchanged),
+  `pkg_remove_dep` (add then remove round-trips to the original bytes),
+  `pkg_remove_err_missing`, and `pkg_list_transitive` (three-package chain
+  distinguishing direct from transitive); `tests/run.sh` gained the
+  `pkg-add-args`/`expect-add-err`/`expect-remove-ok`/`expect-remove-err`/
+  `expect-list-has` markers, with `pkg-add-args` cases auto-cleaned by a
+  trailing `pkg remove` so the checked-in fixture manifest stays unmutated
+  across repeated runs.
 
 ## Current frontier
 

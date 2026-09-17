@@ -1,0 +1,7 @@
+// pkg-add-args: greeter ../lib
+// expect-remove-ok: greeter
+name: consumer
+version: 0.1.0
+ace: 0.1
+kind: app
+root: src/main.ace

@@ -329,4 +329,17 @@ char** package_collect_links(Package** order, int norder, Diag* d, int* nargs);
 // must have. Shared by manifest validation and `ace pkg init`'s derived name.
 int package_valid_name(const char* s, size_t len);
 
+// Textual-only manifest edits for `ace pkg add`/`remove` (SPEC.md Decision
+// Queue, "Package system v1"): no grammar or graph validation happens here —
+// the caller re-resolves the graph afterward and restores the manifest's
+// original bytes on failure. Both return 0 on a successful rewrite, 1 if the
+// manifest could not be read or written back (message already printed).
+// add_dep inserts "name: path\n" as a new [dependencies] entry, creating the
+// section header at end-of-file if absent.
+int package_manifest_add_dep(const char* manifest_path, const char* name, const char* path);
+// remove_dep deletes the [dependencies] entry whose key exactly equals name,
+// and the section header too if no other entry remains; *found reports
+// whether such an entry existed (false leaves the manifest untouched).
+int package_manifest_remove_dep(const char* manifest_path, const char* name, int* found);
+
 #endif

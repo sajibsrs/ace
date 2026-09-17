@@ -1101,6 +1101,24 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
   `init`/`build`/`run`/`check` CLI are decided and implemented; see
   `CHANGELOG.md`. Local-path dependencies only — no git source, version
   range, registry, or lockfile in v1.
+  `ace pkg add NAME PATH` and `ace pkg remove NAME` are also decided and
+  implemented: they edit a package's own `[dependencies]` section for a
+  local-path entry only (`PATH` relative to the declaring `ace.pkg`, the same
+  convention existing dependency paths already use) and validate the
+  complete graph before writing — `NAME` not already a dependency, no
+  collision with an existing dependency or standard-library module name,
+  `PATH` containing an `ace.pkg` with `kind: lib` whose declared `name`
+  exactly matches `NAME`, no cycle, one shared `ace` language version across
+  the graph. On any validation failure the manifest file is left
+  byte-for-byte unchanged. `add` creates the `[dependencies]` section if
+  absent; `remove` deletes its one entry and, if none remain, the
+  now-empty section header. `ace pkg list` is read-only: it resolves and
+  prints the current graph (name, kind, path, direct vs. transitive) with no
+  manifest write. All three reuse the existing `package_resolve` validator
+  and manifest grammar — no new parsing surface; see `CHANGELOG.md`. This is
+  a v1-scoped slice distinct from the full future design's git/lockfile-driven
+  `add`/`remove`/`update`/`resolve`/`fetch` (Package System #12 below), which
+  remains out of local-path-only v1's scope.
 
 ### Trigger-gated
 

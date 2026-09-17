@@ -9,6 +9,7 @@
 #include "ace.h"
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -636,4 +637,159 @@ char** package_collect_links(Package** order, int norder, Diag* d, int* nargs) {
     }
     *nargs = nargv;
     return args;
+}
+
+// --- `ace pkg add`/`remove` manifest rewriting (SPEC.md Decision Queue,
+// "Package system v1") -------------------------------------------------------
+// Both functions are line-oriented text surgery only, mirroring
+// parse_manifest's own comment/section/key scan so they agree with it on
+// where an entry begins and ends; neither validates the graph. The caller
+// re-resolves afterward and restores the original bytes on any error.
+
+static int overwrite_file(const char* path, const char* data, size_t len) {
+    FILE* f = fopen(path, "w");
+    if (!f) {
+        fprintf(stderr, "ace: cannot write '%s': %s\n", path, strerror(errno));
+        return 1;
+    }
+    if (len && fwrite(data, 1, len, f) != len) {
+        fprintf(stderr, "ace: cannot write '%s': %s\n", path, strerror(errno));
+        fclose(f);
+        return 1;
+    }
+    fclose(f);
+    return 0;
+}
+
+int package_manifest_add_dep(const char* manifest_path, const char* name, const char* path) {
+    Source s;
+    if (source_load(&s, manifest_path) != 0) return 1;
+
+    char entry[512];
+    int entry_len = snprintf(entry, sizeof entry, "%s: %s\n", name, path);
+
+    // Find the end of the first "[dependencies]" line; the new entry is
+    // inserted immediately after it, regardless of what else the section
+    // already holds.
+    const char* p = s.buf;
+    const char* end = s.buf + s.len;
+    const char* insert_at = NULL;
+    while (p < end) {
+        const char* nl = memchr(p, '\n', (size_t)(end - p));
+        const char* eol = nl ? nl : end;
+        size_t tlen;
+        const char* t = trim(p, (size_t)(eol - p), &tlen);
+        const char* next = nl ? nl + 1 : end;
+        if (tlen == 14 && memcmp(t, "[dependencies]", 14) == 0) { insert_at = next; break; }
+        p = next;
+    }
+
+    char* out;
+    size_t out_len;
+    if (insert_at) {
+        size_t head = (size_t)(insert_at - s.buf);
+        out_len = s.len + (size_t)entry_len;
+        out = malloc(out_len + 1);
+        if (!out) { fprintf(stderr, "ace: out of memory\n"); exit(1); }
+        memcpy(out, s.buf, head);
+        memcpy(out + head, entry, (size_t)entry_len);
+        memcpy(out + head + (size_t)entry_len, s.buf + head, s.len - head);
+    } else {
+        // No existing section: append one, preceded by exactly one blank
+        // line — collapsing any trailing blank lines already in the file so
+        // repeated add/remove cycles stay idempotent rather than piling up.
+        size_t content_end = s.len;
+        while (content_end > 0 && s.buf[content_end - 1] == '\n') content_end--;
+        static const char header[] = "[dependencies]\n";
+        size_t sep_len = content_end > 0 ? 2 : 0; // blank line before the header, unless file is empty
+        out_len = content_end + sep_len + (sizeof header - 1) + (size_t)entry_len;
+        out = malloc(out_len + 1);
+        if (!out) { fprintf(stderr, "ace: out of memory\n"); exit(1); }
+        size_t w = 0;
+        memcpy(out, s.buf, content_end); w += content_end;
+        memcpy(out + w, "\n\n", sep_len); w += sep_len;
+        memcpy(out + w, header, sizeof header - 1); w += sizeof header - 1;
+        memcpy(out + w, entry, (size_t)entry_len); w += (size_t)entry_len;
+    }
+
+    int rc = overwrite_file(manifest_path, out, out_len);
+    free(out);
+    free(s.buf);
+    return rc;
+}
+
+int package_manifest_remove_dep(const char* manifest_path, const char* name, int* found) {
+    Source s;
+    if (source_load(&s, manifest_path) != 0) return 1;
+    size_t nlen = strlen(name);
+
+    const char* p = s.buf;
+    const char* end = s.buf + s.len;
+    int in_deps = 0;
+    const char* header_line = NULL, *header_line_end = NULL;
+    const char* entry_line = NULL, *entry_line_end = NULL;
+    int other_deps = 0;
+
+    while (p < end) {
+        const char* line_start = p;
+        const char* nl = memchr(p, '\n', (size_t)(end - p));
+        const char* eol = nl ? nl : end;
+        size_t tlen;
+        const char* t = trim(p, (size_t)(eol - p), &tlen);
+        const char* next = nl ? nl + 1 : end;
+        p = next;
+        if (tlen == 0) continue;
+        if (tlen >= 2 && t[0] == '/' && t[1] == '/') continue;
+        if (tlen == 14 && memcmp(t, "[dependencies]", 14) == 0) {
+            in_deps = 1;
+            header_line = line_start;
+            header_line_end = next;
+            continue;
+        }
+        if (t[0] == '[') { in_deps = 0; continue; }
+        if (!in_deps) continue;
+        const char* colon = memchr(t, ':', tlen);
+        if (!colon) continue;
+        size_t klen;
+        const char* key = trim(t, (size_t)(colon - t), &klen);
+        if (!entry_line && klen == nlen && memcmp(key, name, nlen) == 0) {
+            entry_line = line_start;
+            entry_line_end = next;
+        } else {
+            other_deps = 1;
+        }
+    }
+
+    if (!entry_line) {
+        *found = 0;
+        free(s.buf);
+        return 0;
+    }
+    *found = 1;
+
+    int drop_header = header_line && !other_deps;
+    // A blank line immediately precedes the header (two consecutive '\n's
+    // right before it) exactly when `add` inserted this section itself;
+    // swallow it too so the round trip stays idempotent.
+    const char* del_start = header_line;
+    if (drop_header && del_start - s.buf >= 2 && del_start[-1] == '\n' && del_start[-2] == '\n')
+        del_start -= 1;
+
+    char* out = malloc(s.len + 1);
+    if (!out) { fprintf(stderr, "ace: out of memory\n"); exit(1); }
+    size_t w = 0;
+    if (drop_header) {
+        memcpy(out + w, s.buf, (size_t)(del_start - s.buf)); w += (size_t)(del_start - s.buf);
+        memcpy(out + w, header_line_end, (size_t)(entry_line - header_line_end));
+        w += (size_t)(entry_line - header_line_end);
+    } else {
+        memcpy(out + w, s.buf, (size_t)(entry_line - s.buf)); w += (size_t)(entry_line - s.buf);
+    }
+    memcpy(out + w, entry_line_end, (size_t)(end - entry_line_end));
+    w += (size_t)(end - entry_line_end);
+
+    int rc = overwrite_file(manifest_path, out, w);
+    free(out);
+    free(s.buf);
+    return rc;
 }
