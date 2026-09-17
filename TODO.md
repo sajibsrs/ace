@@ -19,6 +19,31 @@ before the work they unblock.
 
 ## 0. Known defects
 
+- **Method calls get no forward/mutual-call fixup** [defect] — Compiler #5's
+  placeholder-and-patch mechanism resolves forward and mutually recursive
+  plain top-level calls, but not method-call syntax on the same type: two
+  methods on one type that call each other fail with "no method 'x'" unless
+  one happens to be declared textually first, which mutual recursion can
+  never satisfy for both. Identically shaped plain functions already compile.
+  Surfaced by a recursive-descent parser needing `Parser.parse_value` to call
+  `Parser.parse_object`/`Parser.parse_array`, which call back into
+  `parse_value`; worked around there by writing those as plain functions
+  instead of methods.
+- **Import aliases leak program-wide instead of staying file-scoped**
+  [defect] — an aliased import (`import name: "./path.ace"`) in one file
+  collides with an unrelated local variable of the same name anywhere else
+  in the merged compilation unit, including inside `std` modules the
+  importing package never directly names. Confirmed minimally: a package
+  with `import str` plus `import d: "./d.ace"` fails to compile with
+  "redeclaration of 'd'" pointing *inside* `std/str.ace`, at whichever lines
+  happen to declare a same-named local (`value`, `d`, ...) in one of its
+  functions — `str.ace` itself is unchanged and correct; only the caller's
+  choice of alias name determines which unrelated line breaks. Every file's
+  declarations appear to share one flat scope in the merged-unit compilation
+  model rather than each import alias being visible only within its own
+  importing file. Practical workaround: pick alias names unlikely to appear
+  as a local variable anywhere in the transitive dependency graph (verified
+  short/common words like `value` and `d` are not safe).
 ## 1. Core type-system completion
 
 Finish the existing primitive, sequential, and aggregate model before adding

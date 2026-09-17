@@ -24,6 +24,19 @@ current normative rules, and Git preserves patch-level detail.
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic
   checking, or emission.
+- Extended the narrow forward-reference fixup class to a bare slice exactly at
+  an aggregate field or union variant root (`[]Later`), alongside the existing
+  pointer-chain shape (`*Later`, `**Later`): a slice's fixed pointer-plus-count
+  representation is equally independent of its element's size, so the same
+  end-of-file placeholder-patch mechanism (`TypeFix`) now also records a fix
+  slot for a slice's element type. The allowance does not extend through or
+  past the slice itself — a slice reached via a preceding pointer, or nested
+  inside another compound, stays ordinary declaration-before-use — while a
+  pointer reached via a preceding root slice still forwards on its own
+  existing rule. This lets two nominal types reference each other through a
+  runtime-sized collection without boxing every element behind a pointer, e.g.
+  `Json: union { none, object: []Pair }` followed by
+  `Pair: struct { key: string, value: Json }`.
 
 ## Core language
 
@@ -810,6 +823,19 @@ current normative rules, and Git preserves patch-level detail.
   `expect-list-has` markers, with `pkg-add-args` cases auto-cleaned by a
   trailing `pkg remove` so the checked-in fixture manifest stays unmutated
   across repeated runs.
+- Fixed `switch` dispatch (`emit_union_switch` and the scalar `N_SWITCH` case,
+  both in `emit.c`) falling through into whichever case was emitted first when
+  the scrutinee matched no explicit pattern and `else` was not the last case,
+  instead of running `else`. For a union switch this ran the wrong variant's
+  case body against a mismatched payload, misreading raw bytes (e.g. an `f64`)
+  as a slice descriptor or other pointer-bearing binder; this was the actual
+  cause of both the growable-array-of-unions corruption and the non-tail
+  recursive-call-with-union-parameter crash recorded in `TODO.md`, which
+  turned out to be a single defect rather than two. Both switch forms now
+  branch unconditionally to `else`'s label (or past the switch with no
+  `else`) after the pattern comparisons, never relying on fallthrough. Added
+  `tests/emit/control_flow/switch_else_position.ace` and
+  `tests/emit/unions/else_not_last.ace`.
 
 ## Current frontier
 

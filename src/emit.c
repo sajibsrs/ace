@@ -5021,8 +5021,9 @@ static int case_falls_through(Node* c) {
 /*
  * Union switch: the scrutinee's address is parked in a stack slot (arm bodies
  * reuse the temp registers), each pattern compares the i32 tag, and matching
- * arms copy their payload binder before running the body. No else means no
- * arm runs when nothing matches.
+ * arms copy their payload binder before running the body. An unmatched tag
+ * always jumps explicitly, to the else arm if present or past the switch
+ * otherwise; it never falls through into the first case.
  */
 static void emit_union_switch(Em* e, Node* s, SType* ut) {
     EV v = gen_expr(e, s->a);
@@ -5038,11 +5039,12 @@ static void emit_union_switch(Em* e, Node* s, SType* ut) {
         return;
     }
     int lcase[64], lend = new_label(e);
-    int has_else = 0;
+    int has_else = 0, else_idx = -1;
     for (int i = 0; i < s->nkids; i++) {
         lcase[i] = new_label(e);
         if (s->kids[i]->flags & F_ELSE) {
             has_else = 1;
+            else_idx = i;
             continue;
         }
         for (int j = 0; j < s->kids[i]->nkids; j++) {
@@ -5054,7 +5056,7 @@ static void emit_union_switch(Em* e, Node* s, SType* ut) {
             bcond_(e, C_EQ, lcase[i]);
         }
     }
-    if (!has_else) br_(e, lend);
+    br_(e, has_else ? lcase[else_idx] : lend);
     for (int i = 0; i < s->nkids; i++) {
         Node* c = s->kids[i];
         bind_label(e, lcase[i]);
@@ -5612,14 +5614,13 @@ static void emit_stmt(Em* e, Node* s) {
                 e->vti = svi; e->vtf = svf;
             }
         }
-        if (!has_else) br_(e, lend);
+        br_(e, has_else ? lcase[ielse] : lend);
         for (int i = 0; i < s->nkids; i++) {
             bind_label(e, lcase[i]);
             emit_block(e, s->kids[i]->b);
             if (i != s->nkids - 1 && !case_falls_through(s->kids[i])) br_(e, lend);
         }
         bind_label(e, lend);
-        (void)ielse;
         return;
     }
     case N_RETURN: {
