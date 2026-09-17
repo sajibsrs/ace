@@ -29,21 +29,15 @@ before the work they unblock.
   `Parser.parse_object`/`Parser.parse_array`, which call back into
   `parse_value`; worked around there by writing those as plain functions
   instead of methods.
-- **Import aliases leak program-wide instead of staying file-scoped**
-  [defect] — an aliased import (`import name: "./path.ace"`) in one file
-  collides with an unrelated local variable of the same name anywhere else
-  in the merged compilation unit, including inside `std` modules the
-  importing package never directly names. Confirmed minimally: a package
-  with `import str` plus `import d: "./d.ace"` fails to compile with
-  "redeclaration of 'd'" pointing *inside* `std/str.ace`, at whichever lines
-  happen to declare a same-named local (`value`, `d`, ...) in one of its
-  functions — `str.ace` itself is unchanged and correct; only the caller's
-  choice of alias name determines which unrelated line breaks. Every file's
-  declarations appear to share one flat scope in the merged-unit compilation
-  model rather than each import alias being visible only within its own
-  importing file. Practical workaround: pick alias names unlikely to appear
-  as a local variable anywhere in the transitive dependency graph (verified
-  short/common words like `value` and `d` are not safe).
+- **Generic re-stamping cannot see a root file's import aliases** [defect] —
+  `sema_stamp_body` re-checks a generic function body under type substitution
+  using the shared program-wide scope, not the root file's own import-alias
+  scope. A generic function declared in the root file whose body references a
+  root import alias (`import name: "./path.ace"`) fails to resolve that name
+  when the generic is stamped for a concrete type. Dependency-module generics
+  are unaffected, since their own import aliases are already lowered before
+  merge. Fix requires threading the declaring scope through to stamp time
+  (e.g. recording it on the `Sym`/`Node`, mirroring `Pending.scope`).
 ## 1. Core type-system completion
 
 Finish the existing primitive, sequential, and aggregate model before adding

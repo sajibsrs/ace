@@ -6218,6 +6218,14 @@ void sema_stamp_body(Node* f, SType** args, int nargs) {
     check_func_body(&k, f); // re-annotate the body under substitution
 }
 
+// Root import aliases live in their own scope, parented to the shared global
+// scope, so a same-named local anywhere else in the merged unit — including
+// inside a std module the root package never names directly — cannot collide
+// with them. Only nodes originating in the root file consult it.
+static int is_root_node(Diag* d, Node* n) {
+    return n->path && d->path && strcmp(n->path, d->path) == 0;
+}
+
 static void install_predeclared_error_types(Scope* file_scope) {
     if (!T_ERROR) {
         T_ERROR = st_new(SK_ERROR);
@@ -6247,18 +6255,26 @@ int sema_check(Node* file, Diag* d) {
         ensure_memory_types(); // mut-view singletons exist from the first build
     }
     install_predeclared_error_types(&file_scope);
+    Scope import_scope = {0}; // root's own aliased imports; see is_root_node
+    import_scope.parent = &file_scope;
     Ck k = {0};
     k.d = d;
     k.scope = &file_scope;
     for (int i = 0; i < file->nkids; i++) {
         Node* n = file->kids[i];
         switch (n->kind) {
-        case N_EXPRSTMT:
+        case N_EXPRSTMT: {
+            int root = is_root_node(d, n);
+            if (root) k.scope = &import_scope;
             check_stmt(&k, n);
+            if (root) k.scope = &file_scope;
             break;
+        }
         case N_IMPORT: {
+            k.scope = &import_scope;
             Sym* m = declare_val(&k, n, SYM_MODULE, n->str, n->len);
             (void)m;
+            k.scope = &file_scope;
             break;
         }
         case N_FUNC: {
@@ -6303,7 +6319,10 @@ int sema_check(Node* file, Diag* d) {
                     ck_err(&k, n, "entry function must be main(): int");
             }
             if (!s->is_generic && !(n->flags & F_INTRINSIC)) {
+                int root = is_root_node(d, n);
+                if (root) k.scope = &import_scope;
                 check_func_body(&k, n); // single pass: check now, in order
+                if (root) k.scope = &file_scope;
             }
             break;
         }
@@ -6331,6 +6350,8 @@ int sema_check(Node* file, Diag* d) {
                 binder->sym = s; // emitter: global storage key
             }
             if (n->b) {
+                int root = is_root_node(d, n);
+                if (root) k.scope = &import_scope;
                 if (t->kind == SK_STATICMAP) {
                     if (n->flags & F_CONST)
                         ck_err(&k, n, "const is not permitted on a StaticMap declaration");
@@ -6341,6 +6362,7 @@ int sema_check(Node* file, Diag* d) {
                     check_arraylit(&k, n->b, t);
                 else
                     coerce(&k, n->b, t);
+                if (root) k.scope = &file_scope;
                 if (s && t->kind == SK_CONTRACT && (n->b->flags & F_CONST))
                     s->is_const_backed = 1;
                 if (s && t->kind == SK_PRIM && t->prim == P_STRING &&

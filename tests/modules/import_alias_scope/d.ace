@@ -1,0 +1,5 @@
+/* Companion module for the import_alias_scope fixture. */
+
+pub value(): int {
+    return 0
+}

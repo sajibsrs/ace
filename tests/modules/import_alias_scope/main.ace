@@ -1,0 +1,16 @@
+/* A root import alias must stay file-scoped: it must not collide with a
+   same-named local inside an unrelated std module (str.ace declares locals
+   named 'd' in mixed-assignment binders). */
+
+/* expect-exit: 0 */
+
+import str
+import d: "./d.ace"
+
+main(): int {
+    n: int, ok: bool = str.parse[int]("42")
+    if !ok || n != 42 {
+        return 1
+    }
+    return d.value()
+}

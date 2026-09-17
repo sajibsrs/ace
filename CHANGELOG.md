@@ -837,6 +837,17 @@ current normative rules, and Git preserves patch-level detail.
   `tests/emit/control_flow/switch_else_position.ace` and
   `tests/emit/unions/else_not_last.ace`.
 
+- Fixed a root import alias (`import name: "./path.ace"`) being declared into
+  the single flat scope semantic checking used for the entire merged
+  compilation unit, so it collided with any same-named local anywhere else in
+  the unit, including inside `std` modules the importing package never
+  directly names. Root import aliases now declare into their own `Scope`,
+  parented to that shared scope, spliced in only while checking the root
+  file's own function bodies, global-variable initializers, and top-level
+  statements; declarations of every kind still land in the one shared scope
+  as before, so cross-file name resolution is unaffected. Added
+  `tests/modules/import_alias_scope`.
+
 ## Current frontier
 
 The checked-build queue is complete. Additive networking, concurrency, fuller
