@@ -189,7 +189,7 @@
           }
         },
         {
-          "match": "\\b(import)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(:)\\s*([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(import)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(:)\\s*([A-Za-z_][A-Za-z0-9_]*(?:/[A-Za-z_][A-Za-z0-9_]*)*)",
           "captures": {
             "1": { "name": "keyword.control.ace" },
             "2": { "name": "entity.name.namespace.ace" },
@@ -198,7 +198,7 @@
           }
         },
         {
-          "match": "\\b(import)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*$",
+          "match": "\\b(import)\\s+([A-Za-z_][A-Za-z0-9_]*(?:/[A-Za-z_][A-Za-z0-9_]*)*)\\s*$",
           "captures": {
             "1": { "name": "keyword.control.ace" },
             "2": { "name": "entity.name.namespace.ace" }

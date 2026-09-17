@@ -1,0 +1,3 @@
+/* Flat half of a nested ambiguous leaf (outer/amb_leaf). */
+
+pub value: const int = 1

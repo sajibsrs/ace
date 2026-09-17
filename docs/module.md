@@ -20,8 +20,11 @@ main(): int {
 
 ```ebnf
 import ident                      // bare: standard library only
+import ident/ident                // bare, nested: standard library only
 import ident: ident               // aliased: standard library only
+import ident: ident/ident         // aliased, nested: standard library only
 import ident: "relative/path.ace" // local file, relative to the importing file
+import ident: "relative/path"     // local nested module, relative to the importing file
 import one, two from ident        // selected public members from std
 import one from "relative/path.ace"
 ```
@@ -41,6 +44,24 @@ import one from "relative/path.ace"
 - The **selective** form imports named public members without a module
   qualifier. Its source is either a bare standard-module name or a relative
   local path.
+
+A subdirectory with its own `mod.ace` is itself a **nested module**,
+addressable by a `/`-separated path from any enclosing directory:
+
+```ace
+import net/tcp
+import bla: net/tcp
+import "../net/tcp"       // quoted relative, no .ace suffix
+```
+
+Every non-leaf segment must itself be a directory module (`mod.ace`); a
+subdirectory without one stays private, swallowed by its nearest enclosing
+module boundary exactly like any other implementation file. Only the **leaf**
+segment's identifier becomes the bound qualifier — `import net/tcp` brings
+`tcp` into scope, not `net` — mirroring single-segment `import tcp` binding
+`tcp`. There is no transitivity in either direction: importing `net/tcp`
+exposes nothing through `net`, and importing `net` does not expose `tcp`
+unless `net`'s own `mod.ace` explicitly re-exports it.
 
 The compiler reserves its shipped `std/@/` subtree for shared standard-library
 implementation. Imports use the visibly distinct unquoted form
@@ -213,8 +234,8 @@ every function to the file it was written in.
 - There are no separate per-module objects yet: everything is recompiled in
   one merged unit on every build, and incremental rebuild granularity (the
   file, per spec) is future work.
-- Relative import paths must name a file directly; wildcard imports and package
-  lists do not exist.
+- Relative import paths must name a file or nested module directly; wildcard
+  imports and package lists do not exist.
 - A local variable that shadows an import binding cannot be used with `.`
   member syntax in that file — the qualified use is rejected as an unknown
   module member name. Rename one side. Selectively imported values do not have

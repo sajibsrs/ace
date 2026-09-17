@@ -2,10 +2,15 @@
 //
 // Node layout (a/b/c plus kids where lists are needed):
 //   N_FILE      kids = imports + top decls
-//   N_IMPORT    whole: str = binding; b = module ident (alias); a = N_STR path
+//   N_IMPORT    whole: str = binding (leaf segment); b = module ident (alias,
+//               also the leaf segment); a = N_STR path
 //               (a->op = T_AT for compiler-reserved `@name`)
+//               c = full path segment chain (N_IDENT list linked through each
+//               segment's own `a`), head to leaf, for bare/alias-target module
+//               paths (e.g. `net/tcp`); NULL when a or F_SELECT's `a` path form
+//               is used instead
 //               selective (F_SELECT): kids = imported N_IDENT names;
-//               b = std module ident or a = local N_STR path
+//               b = std module ident (leaf) or a = local N_STR path
 //   N_VAR       kids = binders (N_PARAM: typed declaration, N_IDENT: reassignment
 //               under mixed `=`); b = init (or N_TUPLE_E); F_CONST/F_MIXED
 //   N_FUNC      str = name; kids = params; a = ret; b = body; c = N_TPARAMS;
@@ -2072,6 +2077,25 @@ static Node* parse_internal_import(P* p) {
     return path;
 }
 
+// A bare or alias-target module reference may name a nested module path,
+// e.g. `net/tcp`. `first` is the already-consumed leading segment; this
+// consumes any `/ident` continuations and returns the segment chain (head to
+// leaf, linked through each segment's own `a`), with `*leaf` set to the last
+// segment. A single-segment path is a one-node chain.
+static Node* parse_import_path(P* p, Token* first, Node** leaf) {
+    Node* head = ident_node(p, first);
+    Node* tail = head;
+    while (at(p, T_SLASH)) {
+        p->i++;
+        Token* seg = expect(p, T_IDENT, "module path segment after '/'");
+        Node* next = ident_node(p, seg);
+        tail->a = next;
+        tail = next;
+    }
+    *leaf = tail;
+    return head;
+}
+
 static Node* parse_import(P* p) {
     Node* n = nd(p, N_IMPORT);
     expect(p, T_IMPORT, "'import'");
@@ -2106,8 +2130,11 @@ static Node* parse_import(P* p) {
         set_kids(n, &selected);
         expect(p, T_FROM, "'from' after imported member list");
         if (at(p, T_IDENT)) {
-            n->b = ident_node(p, tk(p));
+            Token* target = tk(p);
             p->i++;
+            Node* leaf;
+            n->c = parse_import_path(p, target, &leaf);
+            n->b = leaf;
         } else if (at(p, T_STR)) {
             n->a = nd(p, N_STR);
             n->a->str = tk(p)->str;
@@ -2119,15 +2146,20 @@ static Node* parse_import(P* p) {
             perr(p, "expected module name, path, or internal module after 'from'");
         }
     } else {
-        n->str = first->str;
-        n->len = first->len;
+        Node* leaf;
+        n->c = parse_import_path(p, first, &leaf);
+        n->str = leaf->str;
+        n->len = leaf->len;
     }
     if (ate(p, T_COLON)) {
         if (n->flags & F_SELECT)
             perr(p, "selective imports use 'from', not ':'");
         if (at(p, T_IDENT)) { // import m: math — alias binding
-            n->b = ident_node(p, tk(p));
+            Token* target = tk(p);
             p->i++;
+            Node* leaf;
+            n->c = parse_import_path(p, target, &leaf);
+            n->b = leaf;
         } else if (at(p, T_STR)) { // import util: "./util.ace" — path form
             n->a = nd(p, N_STR);
             n->a->str = tk(p)->str;

@@ -428,6 +428,63 @@ if ! printf '%s\n' "$deep_std" | grep -qF \
     fail=1
 fi
 
+# Recursive nested modules: a subdirectory with its own mod.ace is addressable
+# by a `/`-separated path, and only the leaf segment binds.
+mkdir -p /tmp/ace_std_module/normal/std/outer/inner
+mkdir -p /tmp/ace_std_module/normal/std/outer/amb_leaf
+mkdir -p /tmp/ace_std_module/normal/std/outer_missing
+mkdir -p /tmp/ace_std_module/normal/nested_quoted_dir
+cp tests/stdlib_module/nested_outer_mod.ace \
+   /tmp/ace_std_module/normal/std/outer/mod.ace
+cp tests/stdlib_module/nested_outer_inner_mod.ace \
+   /tmp/ace_std_module/normal/std/outer/inner/mod.ace
+cp tests/stdlib_module/nested_outer_missing_inner.ace \
+   /tmp/ace_std_module/normal/std/outer_missing/inner.ace
+cp tests/stdlib_module/nested_outer_amb_leaf.ace \
+   /tmp/ace_std_module/normal/std/outer/amb_leaf.ace
+cp tests/stdlib_module/nested_outer_amb_leaf_mod.ace \
+   /tmp/ace_std_module/normal/std/outer/amb_leaf/mod.ace
+cp tests/stdlib_module/nested_quoted_mod.ace \
+   /tmp/ace_std_module/normal/nested_quoted_dir/mod.ace
+cp tests/stdlib_module/nested_quoted_leaf.ace \
+   /tmp/ace_std_module/normal/nested_quoted_dir/leaf.ace
+cp tests/stdlib_module/nested_quoted.ace \
+   /tmp/ace_std_module/normal/app/nested_quoted.ace
+if ! /tmp/ace_std_module/normal/ace -o /tmp/ace_std_module/normal/nested_bare \
+     tests/stdlib_module/nested_bare.ace || ! /tmp/ace_std_module/normal/nested_bare; then
+    echo "FAIL: two-level nested import (bare form) should bind the leaf segment"
+    fail=1
+fi
+if ! /tmp/ace_std_module/normal/ace -o /tmp/ace_std_module/normal/nested_alias \
+     tests/stdlib_module/nested_alias.ace || ! /tmp/ace_std_module/normal/nested_alias; then
+    echo "FAIL: two-level nested import (aliased form) should bind the leaf segment"
+    fail=1
+fi
+if ! /tmp/ace_std_module/normal/ace -o /tmp/ace_std_module/normal/nested_quoted \
+     /tmp/ace_std_module/normal/app/nested_quoted.ace ||
+   ! /tmp/ace_std_module/normal/nested_quoted; then
+    echo "FAIL: quoted relative import without .ace should resolve as a nested-module path"
+    fail=1
+fi
+nested_notrans=$(/tmp/ace_std_module/normal/ace tests/stdlib_module/nested_no_transitivity.ace 2>&1)
+if ! printf '%s\n' "$nested_notrans" | grep -qF "unknown name 'outer'"; then
+    echo "FAIL: a nested import should not also bind its non-leaf segments"
+    fail=1
+fi
+nested_missing_mod=$(/tmp/ace_std_module/normal/ace tests/stdlib_module/nested_missing_mod.ace 2>&1)
+if ! printf '%s\n' "$nested_missing_mod" | grep -qF \
+    "'outer_missing' has no mod.ace — 'outer_missing/inner' is not a nested module"; then
+    echo "FAIL: a non-leaf segment without mod.ace should be a clear nested-module error"
+    fail=1
+fi
+nested_ambiguous=$(/tmp/ace_std_module/normal/ace tests/stdlib_module/nested_ambiguous.ace 2>&1)
+for want in "outer/amb_leaf.ace" "outer/amb_leaf/mod.ace"; do
+    if ! printf '%s\n' "$nested_ambiguous" | grep -qF "$want"; then
+        echo "FAIL: ambiguous nested leaf diagnostic should name '$want'"
+        fail=1
+    fi
+done
+
 # The compiler-shipped std/@ subtree is shared by std sources but is not
 # importable by applications, including through traversal or symlink aliases.
 mkdir -p /tmp/ace_std_internal/std/second

@@ -1,0 +1,7 @@
+/* Only the leaf segment binds; 'outer' itself must stay out of scope. */
+
+import outer/inner
+
+main(): int {
+    return outer.sentinel
+}

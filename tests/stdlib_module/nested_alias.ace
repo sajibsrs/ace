@@ -1,0 +1,7 @@
+/* Two-level nested import (aliased form). */
+
+import bla: outer/inner
+
+main(): int {
+    return bla.value - 7
+}

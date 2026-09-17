@@ -1,0 +1,3 @@
+/* Leaf reached via a quoted relative path without a .ace suffix. */
+
+pub value: const int = 7

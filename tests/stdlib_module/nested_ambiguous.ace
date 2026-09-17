@@ -1,0 +1,7 @@
+/* Nested leaf ambiguous between flat file and directory module. */
+
+import outer/amb_leaf
+
+main(): int {
+    return amb_leaf.value
+}

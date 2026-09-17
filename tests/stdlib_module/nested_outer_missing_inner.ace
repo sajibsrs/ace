@@ -1,0 +1,3 @@
+/* Sits under a directory with no mod.ace — not a nested-module boundary. */
+
+pub value: const int = 5

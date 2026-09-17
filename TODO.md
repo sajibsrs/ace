@@ -238,7 +238,8 @@ nonblocking connect completion remain visible without callbacks or allocation.
 
 - **Additive socket capabilities** [additive] — IPv6, UDP, address queries,
   half-close, and extra TCP options, carved
-  in the order demanded by concrete proofs.
+  in the order demanded by concrete proofs. UDP's placement (nested under
+  `net` vs. a flat sibling like today's `tcp`) remains undecided.
 - **TLS client transport needs a fresh carve** [open] — see the Package
   System future-work section (#14) in `SPEC.md`. `http` lives in `pkg/http`,
   independent of this item.

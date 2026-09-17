@@ -157,22 +157,29 @@ static int is_std_internal(Loader* L, const char* canon) {
            strncmp(canon + n, "/@/", 3) == 0;
 }
 
-// Return the canonical root directory for a std directory module containing
-// canon, or NULL. Only an immediate std child with mod.ace establishes the
-// boundary; every recursively contained implementation file belongs to it.
+// Return the canonical root directory for the nearest enclosing std
+// directory module containing canon, or NULL. A nested module (its own
+// mod.ace) is its own boundary — the walk keeps the deepest ancestor
+// directory with a mod.ace, so a nested module's implementation files are
+// private to it, not to whichever outer directory module contains it.
 static const char* std_directory_module_root(Loader* L, const char* canon) {
     if (!is_std_source(L, canon) || is_std_internal(L, canon)) return NULL;
     const char* rel = canon + strlen(L->std_root) + 1;
-    const char* slash = strchr(rel, '/');
-    if (!slash) return NULL; // std/name.ace
-    size_t name_len = (size_t)(slash - rel);
-    size_t need = strlen(L->std_root) + 1 + name_len + 1;
-    char* root = arena_alloc(need);
-    snprintf(root, need, "%s/%.*s", L->std_root, (int)name_len, rel);
-    size_t entry_need = need + strlen("/mod.ace");
-    char* entry = arena_alloc(entry_need);
-    snprintf(entry, entry_need, "%s/mod.ace", root);
-    return canonicalize(entry) ? root : NULL;
+    const char* best = NULL;
+    for (const char* p = rel;;) {
+        const char* slash = strchr(p, '/');
+        if (!slash) break; // remaining component is the filename, not a directory
+        size_t prefix_len = (size_t)(slash - rel);
+        size_t need = strlen(L->std_root) + 1 + prefix_len + 1;
+        char* root = arena_alloc(need);
+        snprintf(root, need, "%s/%.*s", L->std_root, (int)prefix_len, rel);
+        size_t entry_need = need + strlen("/mod.ace");
+        char* entry = arena_alloc(entry_need);
+        snprintf(entry, entry_need, "%s/mod.ace", root);
+        if (canonicalize(entry)) best = root;
+        p = slash + 1;
+    }
+    return best;
 }
 
 static const char* std_display_path(Loader* L, const char* canon) {
@@ -450,14 +457,104 @@ static void report_cycle(Loader* L, Node* at, const char* canon) {
     import_err(L->d, at, "import cycle: %s", chain);
 }
 
+// One `/`-separated module-path segment: a name plus its length, independent
+// of whether it came from a parsed N_IDENT chain (bare/alias imports) or was
+// split out of a quoted relative-path string.
+typedef struct { const char* str; uint32_t len; } PathSeg;
+
+static void join_segs(char* buf, size_t cap, PathSeg* segs, int nsegs) {
+    size_t off = 0;
+    for (int i = 0; i < nsegs; i++) {
+        if (i) {
+            if (off >= cap) break;
+            buf[off++] = '/';
+        }
+        if (off >= cap) break;
+        int n = snprintf(buf + off, cap - off, "%.*s", (int)segs[i].len, segs[i].str);
+        if (n > 0) off += (size_t)n;
+    }
+    buf[off < cap ? off : cap - 1] = 0;
+}
+
+// Resolves `<root>/<leaf>` per the flat-file-vs-directory-module convention:
+// `<root>/<leaf>.ace` or `<root>/<leaf>/mod.ace`, erroring if both exist or
+// neither does. `kind` names what's being resolved, for diagnostics.
+static const char* resolve_leaf(Loader* L, Node* imp, const char* root,
+                                const char* kind, PathSeg leaf) {
+    char flat[4608], directory[4608];
+    snprintf(flat, sizeof flat, "%s/%.*s.ace", root, (int)leaf.len, leaf.str);
+    snprintf(directory, sizeof directory, "%s/%.*s/mod.ace", root, (int)leaf.len, leaf.str);
+    const char* flat_canon = canonicalize(flat);
+    const char* directory_canon = canonicalize(directory);
+    if (flat_canon && directory_canon) {
+        import_err(L->d, imp, "%s '%.*s' is ambiguous (found %s and %s)",
+                   kind, (int)leaf.len, leaf.str, flat, directory);
+        return NULL;
+    }
+    if (directory_canon) return directory_canon;
+    if (flat_canon) return flat_canon;
+    import_err(L->d, imp, "%s '%.*s' not found (tried %s and %s)",
+               kind, (int)leaf.len, leaf.str, flat, directory);
+    return NULL;
+}
+
+// Walks a full module path (all segments, including the leaf) under `root`.
+// Every non-leaf segment must be a nested-module boundary (`<dir>/mod.ace`);
+// a subdirectory without `mod.ace` is not traversable here — it stays a
+// private implementation detail of its enclosing module. The leaf resolves
+// exactly like a single-segment stdname (flat file vs. directory module).
+// A non-leaf segment of exactly "." or ".." is plain filesystem navigation
+// (from a quoted relative path's own "./"/"../" prefix), not a module-path
+// segment, so it is never required to be a nested-module boundary.
+static const char* resolve_module_path(Loader* L, Node* imp, const char* root,
+                                       const char* kind, PathSeg* segs, int nsegs) {
+    for (int i = 0; i < nsegs; i++) {
+        if (segs[i].len >= 400) {
+            import_err(L->d, imp, "module path segment '%.*s' is too long",
+                       (int)segs[i].len, segs[i].str);
+            return NULL;
+        }
+    }
+    char cur[4096];
+    snprintf(cur, sizeof cur, "%s", root);
+    for (int i = 0; i < nsegs - 1; i++) {
+        int dot = segs[i].len == 1 && segs[i].str[0] == '.';
+        int dotdot = segs[i].len == 2 && segs[i].str[0] == '.' && segs[i].str[1] == '.';
+        char next[4096];
+        if (dot) {
+            continue;
+        } else if (dotdot) {
+            snprintf(next, sizeof next, "%s/..", cur);
+            snprintf(cur, sizeof cur, "%s", next);
+        } else {
+            char probe[4608];
+            snprintf(probe, sizeof probe, "%s/%.*s/mod.ace", cur, (int)segs[i].len, segs[i].str);
+            if (!canonicalize(probe)) {
+                char full[512];
+                join_segs(full, sizeof full, segs, nsegs);
+                import_err(L->d, imp, "'%.*s' has no mod.ace — '%s' is not a nested module",
+                           (int)segs[i].len, segs[i].str, full);
+                return NULL;
+            }
+            snprintf(next, sizeof next, "%s/%.*s", cur, (int)segs[i].len, segs[i].str);
+            snprintf(cur, sizeof cur, "%s", next);
+        }
+    }
+    return resolve_leaf(L, imp, cur, kind, segs[nsegs - 1]);
+}
+
 // Resolve one import declaration to its target path (arena storage).
 // Bare, ident-aliased, and selective `from name` imports check the importing
 // file's own package dependencies first (Package System v1), then the
 // stdlib beside the compiler; @name names compiler-reserved std
-// implementation; string paths are local to the importing source file. On
-// return, *target_package names the package owning the resolved file (the
-// matched dependency, the importer's own package for a same-package relative
-// path, or NULL for std/std-internal/non-package targets).
+// implementation; string paths are local to the importing source file. A
+// bare/alias/quoted-relative path may name a nested module two or more
+// `/`-separated segments deep — every non-leaf segment must itself be a
+// directory module (`mod.ace`), and only the leaf segment's name becomes the
+// bound qualifier (SPEC.md rule 1). On return, *target_package names the
+// package owning the resolved file (the matched dependency, the importer's
+// own package for a same-package relative path, or NULL for
+// std/std-internal/non-package targets).
 static const char* import_target(Loader* L, Node* imp, const char* src_path,
                                  Package** target_package) {
     *target_package = L->loading ? L->loading->package : NULL;
@@ -488,13 +585,37 @@ static const char* import_target(Loader* L, Node* imp, const char* src_path,
             return NULL;
         }
         size_t n = strlen(raw);
-        if (n < 5 || strcmp(raw + n - 4, ".ace") != 0) {
-            import_err(L->d, imp, "module path '%s' must end in .ace", raw);
-            return NULL;
-        }
         char dir[4096];
         path_dir(dir, sizeof dir, src_path);
-        const char* target = join_path(dir, raw);
+        const char* target;
+        if (n >= 5 && strcmp(raw + n - 4, ".ace") == 0) {
+            target = join_path(dir, raw);
+        } else {
+            // No .ace suffix: a `/`-separated nested-module path, same
+            // segment walk as a bare import, rooted at the importer's own
+            // directory instead of the std root.
+            PathSeg segs[64];
+            int nsegs = 0;
+            char* cursor = raw;
+            for (;;) {
+                char* slash = strchr(cursor, '/');
+                if (nsegs == (int)(sizeof segs / sizeof *segs)) {
+                    import_err(L->d, imp, "module path '%s' has too many segments", raw);
+                    return NULL;
+                }
+                segs[nsegs].str = cursor;
+                segs[nsegs].len = (uint32_t)(slash ? (size_t)(slash - cursor) : strlen(cursor));
+                if (segs[nsegs].len == 0) {
+                    import_err(L->d, imp, "module path '%s' has an empty segment", raw);
+                    return NULL;
+                }
+                nsegs++;
+                if (!slash) break;
+                cursor = slash + 1;
+            }
+            target = resolve_module_path(L, imp, dir, "module", segs, nsegs);
+            if (!target) return NULL;
+        }
         // A package's ordinary relative imports may not reach outside its own
         // canonical directory — this is also what keeps a dependency's
         // internal files from being deep-imported by a consumer (Package
@@ -513,48 +634,36 @@ static const char* import_target(Loader* L, Node* imp, const char* src_path,
         return target;
     }
     // bare/alias import, or selective `from mem` — package dependency first,
-    // then stdlib
-    Node* name = imp->b ? imp->b : imp;
+    // then stdlib. imp->c (when set) chains every path segment head-to-leaf;
+    // a plain single-segment import is the same walk with an empty prefix.
+    PathSeg segs[64];
+    int nsegs = 0;
+    for (Node* s = imp->c; s; s = s->a) {
+        if (nsegs == (int)(sizeof segs / sizeof *segs)) {
+            import_err(L->d, imp, "module path has too many segments");
+            return NULL;
+        }
+        segs[nsegs].str = s->str;
+        segs[nsegs].len = s->len;
+        nsegs++;
+    }
     if (*target_package) {
         for (PackageDep* dep = (*target_package)->deps; dep; dep = dep->next) {
-            if (text_is(name->str, name->len, dep->name)) {
+            if (text_is(segs[0].str, segs[0].len, dep->name)) {
                 *target_package = dep->package;
-                return dep->package->root_file;
+                if (nsegs == 1) return dep->package->root_file;
+                return resolve_module_path(L, imp, dep->package->dir, "package module",
+                                           segs + 1, nsegs - 1);
             }
         }
     }
     *target_package = NULL; // falling through to std: never package-owned
-    char stdname[512];
-    if (name->len >= sizeof stdname) {
-        import_err(L->d, imp, "module name is too long");
-        return NULL;
-    }
-    memcpy(stdname, name->str, name->len);
-    stdname[name->len] = 0;
     char dir[4096];
     compiler_dir(dir, sizeof dir, L->compiler_path);
-    char flat[4608];
-    char directory[4608];
-    if (strcmp(dir, ".") == 0) {
-        snprintf(flat, sizeof flat, "std/%s.ace", stdname);
-        snprintf(directory, sizeof directory, "std/%s/mod.ace", stdname);
-    } else {
-        snprintf(flat, sizeof flat, "%s/std/%s.ace", dir, stdname);
-        snprintf(directory, sizeof directory, "%s/std/%s/mod.ace", dir, stdname);
-    }
-    const char* flat_canon = canonicalize(flat);
-    const char* directory_canon = canonicalize(directory);
-    if (flat_canon && directory_canon) {
-        import_err(L->d, imp,
-                   "standard library module '%s' is ambiguous (found %s and %s)",
-                   stdname, flat, directory);
-        return NULL;
-    }
-    if (directory_canon) return directory_canon;
-    if (flat_canon) return flat_canon;
-    import_err(L->d, imp, "standard library module '%s' not found (tried %s and %s)",
-               stdname, flat, directory);
-    return NULL;
+    char std_root[4104];
+    if (strcmp(dir, ".") == 0) snprintf(std_root, sizeof std_root, "std");
+    else snprintf(std_root, sizeof std_root, "%s/std", dir);
+    return resolve_module_path(L, imp, std_root, "standard library module", segs, nsegs);
 }
 
 static void bind(Loader* L, Node* imp, Module* mod, Binding** binds, Select* sels) {

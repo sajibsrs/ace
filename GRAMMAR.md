@@ -50,14 +50,17 @@ contextual_packed := ident                            // exact text "packed"
 contextual_align := ident                             // exact text "align"
 
 import_decl   := module_import | selective_import
-module_import := "import" ident [":" (ident | import_path | internal_import)]
-                                                          // import math; import m: math
+module_import := "import" module_path
+               | "import" ident ":" (module_path | import_path | internal_import)
+                                                          // import math; import net/tcp
+                                                          // import m: math; import bla: net/tcp
                                                           // import util: "./util.ace"
 selective_import := "import" import_names "from" import_source
 import_names  := ident ("," ident)*
                | "(" ident ("," ident)* [","] ")"       // parenthesized = multiline
-import_source := ident | import_path | internal_import     // std, local, or reserved
-import_path   := string_lit
+import_source := module_path | import_path | internal_import     // std, local, or reserved
+module_path   := ident ("/" ident)*             // net/tcp; only the leaf binds
+import_path   := string_lit                     // "./util.ace" or "../A/B" (no .ace = nested)
 internal_import := "@" ident                              // compiler-reserved std implementation
 
 top_decl      := ["pub"] top_body

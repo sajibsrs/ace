@@ -1,0 +1,4 @@
+/* Leaf of a two-level nested module path (outer/inner), itself a directory
+   module. */
+
+pub value: const int = 7

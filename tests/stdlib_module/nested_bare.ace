@@ -1,0 +1,7 @@
+/* Two-level nested import (bare form): binds the leaf 'inner', not 'outer'. */
+
+import outer/inner
+
+main(): int {
+    return inner.value - 7
+}

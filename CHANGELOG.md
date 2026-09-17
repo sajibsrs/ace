@@ -266,6 +266,20 @@ current normative rules, and Git preserves patch-level detail.
   still builds unedited. Added `tests/package/metadata_blank` and
   `tests/package/metadata_dup_author` covering the blank-is-absent carve-out
   and that a real duplicate value is still rejected.
+- Implemented recursive nested modules: a subdirectory with its own `mod.ace`
+  is itself addressable via a `/`-separated path (bare, aliased, or quoted
+  relative without a `.ace` suffix). The parser accepts `ident (/ ident)*` for
+  a bare/alias-target module reference, threading the full segment chain
+  through the import node (`N_IMPORT.c`) while `str`/`b` keep naming the leaf
+  segment, the sole bound qualifier. `module.c`'s import resolution walks
+  every non-leaf segment requiring `<dir>/mod.ace` (erroring by name if
+  absent — a subdirectory without `mod.ace` stays private, not a nested-module
+  segment) before resolving the leaf exactly like today's flat-vs-directory
+  stdname lookup; the same walk covers std, package-dependency, and quoted
+  relative paths. The existing std directory-module privacy check now finds
+  the *nearest* enclosing `mod.ace` rather than assuming one level, so a
+  nested module's own implementation files stay private to it rather than to
+  whichever outer directory module contains it.
 
 ## Standard library
 
