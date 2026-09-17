@@ -95,7 +95,10 @@ Plain `ace file.ace` compiles one root source with no manifest. An optional
 `name`, exact `version`, `ace` language version, `kind` (`app` or `lib`), and
 `root` source file, with local-path-only `[dependencies]` entries (see
 `SPEC.md`'s Package System section for the manifest format and dependency
-rules). Every manifest-aware operation is grouped under `ace pkg`:
+rules). Optional `description`, `author`, `license`, and `repository` fields
+hold free-form single-line metadata with no effect on identity, resolution, or
+compilation; any of them may be left empty. Every manifest-aware operation is
+grouped under `ace pkg`:
 
 ```sh
 ace pkg init app my_app
@@ -124,7 +127,8 @@ the working directory), deriving the package name from `DIR`'s basename. It
 refuses to overwrite an existing `ace.pkg` or root file. An app gets
 `src/main.ace` with a minimal `main(): int { return 0 }`; a lib gets an
 empty `src/mod.ace`, since a library's root module needs no content to be a
-valid sole import surface.
+valid sole import surface. The generated `ace.pkg` includes empty
+`description`, `author`, `license`, and `repository` fields ready to fill in.
 
 `--pkg-graph=DIR` and `--pkg-check=DIR` remain as lower-level debug hooks —
 analogous to `--tokens`/`--ast` exposing earlier compiler stages — resolving

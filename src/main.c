@@ -548,7 +548,8 @@ static int package_cmd_init(int argc, char** argv) {
 
     char manifest_body[512];
     snprintf(manifest_body, sizeof manifest_body,
-             "name: %s\nversion: 0.1.0\nace: 0.1\nkind: %s\nroot: %s\n",
+             "name: %s\nversion: 0.1.0\nace: 0.1\nkind: %s\nroot: %s\n"
+             "description:\nauthor:\nlicense:\nrepository:\n",
              base, is_app ? "app" : "lib", root_rel);
     if (package_write_file(manifest_path, manifest_body, strlen(manifest_body)) != 0) return 1;
 

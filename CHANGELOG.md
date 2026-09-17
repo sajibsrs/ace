@@ -257,6 +257,15 @@ current normative rules, and Git preserves patch-level detail.
   the package name from the target directory's basename. Added
   `tests/package_cli/` fixtures covering app/lib builds, cross-package builds,
   `run`'s app-only restriction, and nested-directory `check` discovery.
+- Added `author`, `license`, and `repository` manifest fields alongside the
+  existing `description` — all free-form single-line optional metadata with
+  no format validation and no effect on identity, resolution, or
+  compilation. `ace pkg init` now writes all four fields present but empty;
+  an empty value for any of the four is treated as absent rather than the
+  usual malformed-`key: value` parse error, so a freshly initialized manifest
+  still builds unedited. Added `tests/package/metadata_blank` and
+  `tests/package/metadata_dup_author` covering the blank-is-absent carve-out
+  and that a real duplicate value is still rejected.
 
 ## Standard library
 

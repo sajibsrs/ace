@@ -24,6 +24,9 @@ typedef struct {
     const char* kind; int kind_line;
     const char* root; int root_line;
     const char* description; int description_line;
+    const char* author; int author_line;
+    const char* license; int license_line;
+    const char* repository; int repository_line;
     RawDep* deps; int ndeps, cdeps;
 } RawManifest;
 
@@ -183,7 +186,18 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
         size_t vraw = tlen - klen - 1;
         size_t vlen;
         const char* val = trim(colon + 1, vraw, &vlen);
-        if (!kt || !vlen) {
+        if (!kt) {
+            package_err(L, manifest_path, line, "expected 'key: value'");
+            ok = 0;
+            continue;
+        }
+        if (!vlen) {
+            // description/author are optional single-line metadata: an empty
+            // value (the field present with nothing after the colon, as
+            // `ace pkg init` writes it) means absent, not an error.
+            if (!in_deps && (text_is(key, (uint32_t)kt, "description") || text_is(key, (uint32_t)kt, "author") ||
+                             text_is(key, (uint32_t)kt, "license") || text_is(key, (uint32_t)kt, "repository")))
+                continue;
             package_err(L, manifest_path, line, "expected 'key: value'");
             ok = 0;
             continue;
@@ -210,6 +224,9 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
         FIELD("kind", kind, kind_line)
         FIELD("root", root, root_line)
         FIELD("description", description, description_line)
+        FIELD("author", author, author_line)
+        FIELD("license", license, license_line)
+        FIELD("repository", repository, repository_line)
 #undef FIELD
         package_err(L, manifest_path, line, "unknown field '%.*s'", (int)kt, key);
         ok = 0;
@@ -396,6 +413,9 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
     package->is_app = is_app;
     package->root_file = root_canon;
     package->description = rm.description ? arena_string(rm.description) : NULL;
+    package->author = rm.author ? arena_string(rm.author) : NULL;
+    package->license = rm.license ? arena_string(rm.license) : NULL;
+    package->repository = rm.repository ? arena_string(rm.repository) : NULL;
     package->next = L->loading; // push (cycle-detection stack)
     L->loading = package;
 

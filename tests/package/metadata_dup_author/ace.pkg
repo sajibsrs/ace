@@ -1,0 +1,10 @@
+// A duplicate field with a real (non-blank) value is still an error.
+// expect-err: duplicate field 'author'
+
+name: metadata_dup_author
+version: 0.1.0
+ace: 0.1
+kind: app
+root: main.ace
+author: A
+author: B

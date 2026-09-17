@@ -1119,10 +1119,15 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
   ending in `.ace`, that must exist under the package directory). An app's
   root must provide `main(): int`; a library's root module is its sole
   external import surface, exactly as a directory module's `mod.ace` already
-  works. Optional metadata (`description`, `authors`, `license`) is a
-  single-line value only — it never affects identity, resolution, or
-  compilation, so it does not motivate a multiline text-block grammar.
-  Dependencies are declared under a `[dependencies]` section as
+  works. Optional metadata (`description`, `author`, `license`, `repository`)
+  is a single-line value only — it never affects identity, resolution, or
+  compilation, so it does not motivate a multiline text-block grammar. All
+  four (decided, implemented) are free-form single-line strings with no
+  format validation; `ace pkg init` writes all four fields present but empty,
+  and an empty value for any of them is treated as absent rather than a parse
+  error (any other field, and any other empty value, is still rejected as
+  malformed `key: value`). `homepage` remains unimplemented. Dependencies are
+  declared under a `[dependencies]` section as
   `name: relative/path`, resolved only as relative local paths from the
   declaring `ace.pkg`; a dependency path may traverse upward (packages are
   ordinary sibling directories, not nested inside one another), but the

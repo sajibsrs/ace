@@ -1,0 +1,13 @@
+// description/author/license/repository present but blank (as ace pkg init
+// writes them) are absent metadata, not a parse error.
+// expect-ok: metadata_blank
+
+name: metadata_blank
+version: 0.1.0
+ace: 0.1
+kind: app
+root: main.ace
+description:
+author:
+license:
+repository:

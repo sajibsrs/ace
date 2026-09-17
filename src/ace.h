@@ -287,6 +287,9 @@ struct Package {
     int         is_app;      // 0 = lib, 1 = app
     const char* root_file;   // canonical path to the root .ace file
     const char* description; // NULL if absent
+    const char* author;      // NULL if absent
+    const char* license;     // NULL if absent
+    const char* repository;  // NULL if absent
     PackageDep* deps;
     Package*    next;        // completion order: dependencies before dependents
 };
