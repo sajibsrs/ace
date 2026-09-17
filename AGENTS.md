@@ -33,6 +33,9 @@ history.
 - Order decisions as philosophy, semantics, syntax, then implementation. For
   contested design, cite `PHILOSOPHY.md` and prioritize
   performance > simplicity > modularity > compile time > safety.
+- Judge a proposed change by the value it adds against that priority stack,
+  never by whether it breaks with what's already decided or implemented.
+  "That's not how it's currently done" is not a counterargument on its own.
 - Record current rules and rationale in `SPEC.md`, keeping only active decisions
   in its queue. Record implemented behavior and its essential approach once,
   briefly, in `CHANGELOG.md`. Keep `SPEC.md`, `CHANGELOG.md`, `GRAMMAR.md`, and
