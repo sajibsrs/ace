@@ -121,6 +121,13 @@ current normative rules, and Git preserves patch-level detail.
   exact method overloads, contracts, canonical signings, explicit contract-value
   construction, and per-used-pair vtables. Promoted methods use fixed-offset
   receiver thunks; fields are never promoted.
+- Extended bare (type-omitting) struct-literal contextual typing to `return`
+  statements and ordinary call arguments, matching the existing var-decl,
+  assignment, field-default, static-map-entry, and union-payload contexts;
+  applies equally to plain and generic struct targets. `coerce` now resolves
+  a bare struct literal directly, and overload resolution defers a bare
+  struct-literal argument's type to its matched parameter the same way it
+  already deferred bare array literals.
 - Extended receiver-marked mutating method calls to every expression position,
   so their return values initialize and assign ordinary values while retaining
   the same visible `mut` receiver mark.

@@ -30,8 +30,6 @@ blockers for the current sequential core.
 
 ### Aggregate and generic construction
 
-- **Generic struct literals** [new] — explicitly instantiated generic structs
-  exist, but their direct literal construction is not implemented.
 - **Aggregate ABI cross-product audit** [new] — extend the existing ABI oracle
   across nested arrays, structs, unions, tuples, homogeneous floating
   aggregates, indirect returns, register exhaustion, and explicit generic

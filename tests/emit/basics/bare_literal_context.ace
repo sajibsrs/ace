@@ -1,0 +1,31 @@
+/* Bare struct literals take their type from a function's declared return type
+   and from a call's matched parameter type, mirroring existing var-decl and
+   assignment contextual typing, for both plain and generic structs. */
+
+// expect-exit: 0
+
+Point: struct { x: int, y: int }
+Box[T]: struct { value: T }
+
+make_point(): Point {
+    return { x = 1, y = 2 }
+}
+
+make_box(): Box[int] {
+    return { value = 9 }
+}
+
+take_point(p: Point): int { return p.x + p.y }
+take_box(b: Box[int]): int { return b.value }
+
+main(): int {
+    p: Point = make_point()
+    if p.x != 1 || p.y != 2 { return 1 }
+
+    b: Box[int] = make_box()
+    if b.value != 9 { return 2 }
+
+    if take_point({ x = 3, y = 4 }) != 7 { return 3 }
+    if take_box({ value = 5 }) != 5 { return 4 }
+    return 0
+}

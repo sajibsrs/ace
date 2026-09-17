@@ -767,8 +767,6 @@ with no allocation, object metadata, subtype relation, or runtime search.
 - Type inference and implicit generic instantiation are not implemented.
 - Generic aliases are not implemented by the current compiler; generic structs
   are supported.
-- Generic struct literals are not implemented; declare the explicitly
-  instantiated type and initialize its fields.
 - Checked-build sequence bounds, integer arithmetic, `noalias`/length,
   null-use, and allocator diagnostics are implemented and stripped in release.
 

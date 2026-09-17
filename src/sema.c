@@ -1920,6 +1920,10 @@ static int coerce(Ck* k, Node* e, SType* want) {
         check_arraylit(k, e, want);
         return node_ty(e) != T_ERR;
     }
+    if (e->kind == N_STRUCTLIT && !e->a && want && (want->kind == SK_STRUCT || want->kind == SK_BITS)) {
+        check_structlit(k, e, want);
+        return node_ty(e) != T_ERR;
+    }
     if (e->kind == N_TUPLE_E && want && want->kind == SK_TUPLE) {
         SType* t = materialize_expr_defaults(k, e);
         if (t->nfields != want->nfields) {
@@ -2869,6 +2873,7 @@ static SType* instantiate_generic_func(Ck* k, Sym* gs, Node* index_node) {
 static SType* overload_arg_type(Ck* k, Node* arg) {
     Node* raw = arg->kind == N_MUTARG ? arg->a : arg;
     if (raw->kind == N_ARRAYLIT) return NULL; // candidate parameter supplies its type
+    if (raw->kind == N_STRUCTLIT && !raw->a) return NULL; // bare literal: parameter supplies its type
     SType* t = expr_type(k, raw);
     if (t == T_UT_INT) {
         /* A character literal is a one-byte constant, so its overload-call
@@ -2887,6 +2892,8 @@ static int exact_arg_type(Node* arg, SType* actual, SType* param) {
         return raw->a ? raw->ival == param->count
                       : (uint64_t)raw->nkids == param->count;
     }
+    if (raw->kind == N_STRUCTLIT && !raw->a)
+        return param && (param->kind == SK_STRUCT || param->kind == SK_BITS);
     return same_type(actual, param);
 }
 
