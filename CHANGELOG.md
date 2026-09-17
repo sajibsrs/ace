@@ -710,6 +710,10 @@ current normative rules, and Git preserves patch-level detail.
   with `@extern(component)` removed entirely there is nothing left to
   isolate from; the case's behavioral half (https scheme rejection, DNS-
   failure propagation) is preserved as `plaintext_only`.
+- Removed `ace pkg build`/`run`'s stale `--tls-backend=NAME` mention from
+  `package_usage()`'s printed help: the flag itself was already removed with
+  `@extern(component)`, so the argument parser has rejected it as unknown
+  since then, but the help text kept advertising it.
 
 ## Current frontier
 

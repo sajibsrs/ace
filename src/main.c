@@ -225,9 +225,9 @@ static void obj_path(char* out, size_t cap, const char* src) {
 static void package_usage(void) {
     fprintf(stderr, "usage: ace pkg init <app|lib> [DIR]\n"
                     "       ace pkg build [--checked|--release] [--target=TARGET]\n"
-                    "                     [--tls-backend=NAME] [--report]\n"
+                    "                     [--report]\n"
                     "       ace pkg run   [--checked|--release] [--target=TARGET]\n"
-                    "                     [--tls-backend=NAME] [--report]\n"
+                    "                     [--report]\n"
                     "       ace pkg check\n"
                     "  init   create a minimal app or lib package skeleton, without\n"
                     "         overwriting an existing ace.pkg or root file\n"
