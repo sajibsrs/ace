@@ -3,6 +3,9 @@
 /sandbox*
 /tests/package_cli/*/build/
 /tests/package_cli/*/*/build/
+/demo/*/build/
+/pkg/*/build/
+/pkg/*/tests/*/build/
 .DS_Store
 *.o
 *.dSYM/

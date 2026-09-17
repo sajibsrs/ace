@@ -9,7 +9,6 @@ Today's modules:
 
 - [`bits`](bits.md) — explicit machine-representation access and operations
 - [`fmt`](fmt.md) — allocation-free text output
-- [`http`](http.md) — allocation-free HTTP/1.1 message parsing and formatting
 - [`math`](math.md) — minimal generic helpers and float classification
 - `mem` — raw and typed allocation plus allocation-free byte operations (see
   [`bits`](bits.md) and [Memory](../memory.md))

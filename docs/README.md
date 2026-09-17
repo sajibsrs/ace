@@ -30,6 +30,11 @@ must be corrected.
 - [Standard library](std/index.md) — the shipped `std/` modules and
   their implemented APIs.
 
+## Packages
+
+- [`http`](http.md) — HTTP/1.1 framing and blocking client/server, the first
+  standalone package under [`pkg/`](../pkg).
+
 ## Tooling
 
 - [Compiler usage](compiler.md) — checking, object emission, linking, and the

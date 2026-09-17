@@ -1,11 +1,20 @@
-# std.http
+# http
 
-[Standard library](index.md)
+[Documentation](README.md)
 
 `http` implements allocation-free HTTP/1.1 framing plus blocking one-shot GET
 over plaintext TCP. The framing and parsing operations allocate nothing,
 perform no I/O, and retain no caller buffer. Client DNS, connection, request,
 response, and cleanup failures remain explicit in returned errors.
+
+`http` is a standalone package at [`pkg/http`](../pkg/http), not a `std`
+module — it has no compiler-owned mechanism tying it to the shipped `std/`
+tree. A consumer depends on it like any other package (a `[dependencies]`
+entry in its own `ace.pkg` naming a relative path to `pkg/http`); the bare
+`import http` in source stays the same either way. See
+[`demo/http-simple-client`](../demo/http-simple-client) and
+[`demo/http-simple-server`](../demo/http-simple-server) for consuming
+examples.
 
 HTTPS/TLS support was removed pending a full redesign; see the TLS client
 transport item in `TODO.md`. `parse_url` still accepts an `https://` scheme

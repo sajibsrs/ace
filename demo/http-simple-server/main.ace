@@ -1,11 +1,10 @@
-/* Minimal HTTP/1.1 server proof of concept over std/http's blocking
+/* Minimal HTTP/1.1 server proof of concept over pkg/http's blocking
  * `serve(endpoint, context, router)` overload: no poll queue, no session
  * table, no backlog tuning — just an address, a growable context, and a
  * router.
  *
- * Build and run:
- *   ./ace demo/http-simple-server/main.ace -o http-simple-server
- *   ./http-simple-server
+ * Build and run (from this directory):
+ *   ace pkg run
  *
  * Listens on 127.0.0.1:8080.
  */

@@ -1,10 +1,9 @@
-/* Minimal HTTP/1.1 client proof of concept over std/http's blocking
+/* Minimal HTTP/1.1 client proof of concept over pkg/http's blocking
  * `http.get(url, context)` overload: an allocation-lazy `ClientContext`,
  * one GET, and the response status/body — no redirects, no TLS.
  *
- * Build and run:
- *   ./ace demo/http-simple-client/main.ace -o http-simple-client
- *   ./http-simple-client
+ * Build and run (from this directory):
+ *   ace pkg run
  */
 
 import fmt

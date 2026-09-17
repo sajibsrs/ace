@@ -1,5 +1,3 @@
-// expect-exit: 0
-
 import http
 import mem
 import net

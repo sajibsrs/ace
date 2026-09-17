@@ -1,0 +1,8 @@
+name: http_simple_server
+version: 0.1.0
+ace: 0.1
+kind: app
+root: main.ace
+
+[dependencies]
+http: ../../pkg/http

@@ -10,6 +10,15 @@ ace: $(SRC) $(HDR)
 test: ace
 	./tests/run.sh
 
+# First-party packages under pkg/ own their own behavioral tests
+# (pkg/<name>/tests/run.sh), decoupled from the core compiler suite above so
+# package content doesn't gate core compiler iteration. Not part of `test`.
+test-packages: ace
+	for d in pkg/*/tests; do \
+		[ -x "$$d/run.sh" ] || continue; \
+		ACE_BIN=$(CURDIR)/ace "$$d/run.sh" || exit 1; \
+	done
+
 ace-sanitize: $(SRC) $(HDR)
 	$(CC) $(SANFLAGS) -o $@ $(SRC)
 
@@ -19,4 +28,4 @@ test-sanitize: ace-sanitize
 clean:
 	rm -f ace ace-sanitize *.o
 
-.PHONY: test test-sanitize clean
+.PHONY: test test-packages test-sanitize clean

@@ -1,0 +1,9 @@
+// expect-exit: 0
+name: client
+version: 0.1.0
+ace: 0.1
+kind: app
+root: main.ace
+
+[dependencies]
+http: ../..

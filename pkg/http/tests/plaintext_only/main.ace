@@ -1,3 +1,10 @@
+// http is plaintext-only: an https:// scheme must be rejected with
+// UrlErr.invalid, and a DNS/connect failure must surface as an error rather
+// than a fabricated response. (Formerly named for isolating http's linked
+// object from the removed @extern(component)/TLS mechanism, back when that
+// mechanism existed; the behavior it actually exercises is the scheme
+// rejection and failure-propagation checked below.)
+
 import http
 
 main(): int {

@@ -1104,7 +1104,10 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
   Restart this carve at philosophy/semantics before any implementation,
   including whether `tls` (and HTTPS `http` support) belongs in `std` at
   all or should launch directly as a package once the package system
-  supports package-declared native link inputs.
+  supports package-declared native link inputs. `http` itself (independent
+  of TLS/HTTPS) has already relocated out of `std` to the standalone package
+  `pkg/http`; see `CHANGELOG.md`. `std/net` and `std/poll`, which `http`
+  builds on, remain in `std` as general-purpose networking primitives.
 
 - **Package system v1 (local-path)** [open] — carve a minimal packaging layer
   sufficient to host a `lib` package and prove cross-package imports,

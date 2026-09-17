@@ -19,12 +19,16 @@ before the work they unblock.
 
 ## 0. Known defects
 
-- **[defect]** — `tests/emit/http/redirect.ace` passes standalone but fails
-  (`exited 2, want 0`) when run inside the full `make test` suite; reproduces
-  identically on a clean `master` with no `std/http` router changes applied,
-  so it predates that work. Likely full-suite resource contention (parallel
-  fork/loopback-socket fixtures) rather than a logic bug in the redirect test
-  itself; needs isolating which concurrent fixture it collides with.
+- **[defect]** — `pkg/http/tests/redirect` (formerly `tests/emit/http/
+  redirect.ace`) passes standalone but fails (`exited 2, want 0`) when run
+  inside the full `make test` suite; reproduces identically on a clean
+  `master` with no `std/http` router changes applied, so it predates that
+  work. Likely full-suite resource contention (parallel fork/loopback-socket
+  fixtures) rather than a logic bug in the redirect test itself; needs
+  isolating which concurrent fixture it collides with. Now that this fixture
+  runs under `make test-packages` (`pkg/http/tests/run.sh`) instead of inside
+  `make test`, re-check whether the contention still reproduces there before
+  assuming this defect still applies as described.
 - **[defect]** — "HTTPS explicit DER trust override" fails in `make test`;
   also reproduces on a clean `master`. Needs its own diagnosis pass.
 
@@ -257,7 +261,9 @@ nonblocking connect completion remain visible without callbacks or allocation.
   `@extern` component mechanism — carries forward. A fresh carve (philosophy,
   then semantics, then syntax, then implementation) deciding the transport
   boundary and whether `tls`/HTTPS belongs in `std` at all versus launching
-  directly as a package must happen before anything like it returns.
+  directly as a package must happen before anything like it returns. `http`
+  itself (independent of TLS/HTTPS) has already relocated out of `std` to
+  the standalone package `pkg/http`; see `CHANGELOG.md`.
 - **HTTP protocol and transport ergonomics** [partly implemented] — the strict IPv4 endpoint
   parser, zero-copy HTTP URL parser, caller-storage request and response
   formatters, and incremental HTTP/1.1 request and response parsers from
@@ -274,10 +280,11 @@ nonblocking connect completion remain visible without callbacks or allocation.
   ASCII and payloads remain byte views.
 - **Nonblocking HTTP server core needs a fresh carve** [open] — the
   caller-driven `ServerContext`/`Event`/`serve(mut ctx, timeout_ns)` core
-  (formerly `std/http/inc/server.ace`) and its `demo/http-complete-server`
-  proof of concept had been implemented directly, without going through the
-  Decision Queue carve process first. The owner does not want to keep that
-  design and has removed it (code, tests, and docs); `std/http/inc/server.ace`
+  (formerly `std/http/inc/server.ace`, now `pkg/http/inc/server.ace`) and its
+  `demo/http-complete-server` proof of concept had been implemented directly,
+  without going through the Decision Queue carve process first. The owner
+  does not want to keep that design and has removed it (code, tests, and
+  docs); `pkg/http/inc/server.ace`
   now holds only the blocking `serve(endpoint, mut context, router)` overload
   over a growable `Context` (unrelated to the removed `ServerContext`/`Event`
   design beyond the name), and `demo/http-simple-server/main.ace` is the sole

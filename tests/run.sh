@@ -1103,21 +1103,6 @@ if [ -d tests/driver ]; then
         fi
     fi
 
-    if ! "$ACE" -o /tmp/ace_driver/http_plain \
-         tests/driver/http_plain_autolink.ace >/dev/null 2>/tmp/ace_test_errs ||
-       ! /tmp/ace_driver/http_plain; then
-        echo "FAIL: plaintext http automatic-link isolation"
-        cat /tmp/ace_test_errs
-        fail=1
-    fi
-    cp tests/driver/http_plain_autolink.ace /tmp/ace_driver/http_plain_object.ace
-    if ! "$ACE" -c /tmp/ace_driver/http_plain_object.ace \
-         >/dev/null 2>/tmp/ace_test_errs; then
-        echo "FAIL: plaintext http standalone object"
-        cat /tmp/ace_test_errs
-        fail=1
-    fi
-
     driver_diag() {
         want=$1; shift
         if "$ACE" "$@" >/dev/null 2>/tmp/ace_test_errs; then

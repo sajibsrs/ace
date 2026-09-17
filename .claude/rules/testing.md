@@ -3,6 +3,7 @@ paths:
   - "Makefile"
   - "src/**/*"
   - "std/**/*"
+  - "pkg/**/*"
   - "tests/**/*"
 ---
 
@@ -29,3 +30,11 @@ paths:
 - Sandboxes may deny network and loopback sockets, causing `net`, `poll`, `tcp`,
   and HTTP fixtures to fail. Confirm environmental restrictions before treating
   those failures as regressions.
+- A first-party package under `pkg/<name>/` owns its own behavioral tests
+  under `pkg/<name>/tests/`, run by `make test-packages`
+  (`pkg/<name>/tests/run.sh`), not `make test`/`tests/run.sh`: package content
+  doesn't gate core compiler iteration. Same one-directory-per-case layout as
+  `tests/package_cli/`, each case an `app` package depending on the sibling
+  package by relative path, with `// expect-exit: N`/`// expect-check-ok`
+  markers as `ace.pkg` comments. Run `make test-packages` when touching a
+  `pkg/` package; it is not covered by `make test`.

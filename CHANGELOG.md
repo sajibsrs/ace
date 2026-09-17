@@ -680,6 +680,36 @@ current normative rules, and Git preserves patch-level detail.
   HTTPS-redirect-target rejection (`UrlErr.invalid`) is now unconditional.
   Removed `RedirectErr.downgrade` from `redirection.ace`'s error domain, now
   unreachable.
+- Relocated `http` out of `std` to the standalone package `pkg/http`
+  (`ace.pkg`: `kind: lib`, `root: mod.ace`), independent of the separate
+  TLS/HTTPS std-vs-package question, since TLS's removal above left `http`
+  plaintext-only and pure Ace with no compiler-owned mechanism tying it to
+  the `std` tree. `pkg/http` is Package System v1's first real payload,
+  proving its local-path dependency mechanism end to end. `demo/http-simple-
+  client` and `demo/http-simple-server` became `app` packages (`ace.pkg`
+  each declaring `http: ../../pkg/http`) since a bare `import http` no longer
+  resolves under plain manifest-free compilation; `docs/std/http.md` moved to
+  `docs/http.md`.
+- Gave `pkg/http` its own behavioral test suite, decoupled from the core
+  compiler suite: `pkg/http/tests/` holds 7 cases (`framing`, `client`,
+  `redirect`, `request`, `router`, `plaintext_only`, `api_surface`), one
+  directory per case, each an `app` package depending on the sibling `http`
+  package (`http: ../..`), matching `tests/package_cli`'s convention —
+  `// expect-exit: N`/`// expect-check-ok` markers as `ace.pkg` comments, run
+  by the new `pkg/http/tests/run.sh`. `make test-packages` runs every
+  `pkg/*/tests/run.sh`, kept separate from `make test`'s `tests/run.sh`:
+  package content tests shouldn't gate core compiler iteration. Content
+  carried over unchanged from the fixtures the relocation above left broken
+  (`tests/emit/http`'s 5 fixtures, `tests/sema/stdlib/http_ok.ace`,
+  `tests/driver/http_plain_autolink.ace`), which are removed from the core
+  suite now that they're superseded; `tests/run.sh`'s corresponding
+  `http_plain_autolink.ace` driver block is removed. `http_plain_autolink`'s
+  duplicate "standalone object" invocation (recompiling the same file with
+  `-c` alone) is dropped rather than ported: it existed to check that a
+  plaintext build didn't drag in TLS link inputs at the object level, and
+  with `@extern(component)` removed entirely there is nothing left to
+  isolate from; the case's behavioral half (https scheme rejection, DNS-
+  failure propagation) is preserved as `plaintext_only`.
 
 ## Current frontier
 
