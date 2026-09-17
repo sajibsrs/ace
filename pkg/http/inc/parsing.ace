@@ -147,38 +147,38 @@ is_host(host: string): bool {
     digits_dots: bool = true
     for i: usize in 0 .. host.len {
         byte: u8 = host[i]
-        if !((byte >= 48 && byte <= 57) || byte == 46) {
+        if !((byte >= '0' && byte <= '9') || byte == '.') {
             digits_dots = false
         }
-        if byte == 46 {
-            if i == label_start || i - label_start > 63 || host[i - 1] == 45 {
+        if byte == '.' {
+            if i == label_start || i - label_start > 63 || host[i - 1] == '-' {
                 return false
             }
             label_start = i + 1
         } else {
-            if !((byte >= 48 && byte <= 57) || (byte >= 65 && byte <= 90) ||
-                (byte >= 97 && byte <= 122) || byte == 45) {
+            if !((byte >= '0' && byte <= '9') || (byte >= 'A' && byte <= 'Z') ||
+                (byte >= 'a' && byte <= 'z') || byte == '-') {
                 return false
             }
-            if i == label_start && byte == 45 {
+            if i == label_start && byte == '-' {
                 return false
             }
         }
     }
-    if label_start == host.len || host.len - label_start > 63 || host[host.len - 1] == 45 {
+    if label_start == host.len || host.len - label_start > 63 || host[host.len - 1] == '-' {
         return false
     }
     if digits_dots {
         parts: usize = 0
         start: usize = 0
         for i: usize in 0 .. host.len + 1 {
-            if i == host.len || host[i] == 46 {
+            if i == host.len || host[i] == '.' {
                 if i == start {
                     return false
                 }
                 value: uint = 0
                 for j: usize in start .. i {
-                    value = value * 10 + uint(host[j] - 48)
+                    value = value * 10 + uint(host[j] - '0')
                     if value > 255 {
                         return false
                     }
@@ -389,22 +389,22 @@ is_chunk_ext(text: string): bool {
             if at >= text.len {
                 return false
             }
-            if text[at] == 34 {
+            if text[at] == '"' {
                 at += 1
                 closed: bool = false
                 for at < text.len {
                     byte: u8 = text[at]
-                    if byte == 34 {
+                    if byte == '"' {
                         at += 1
                         closed = true
                         break
                     }
-                    if byte == 92 {
+                    if byte == '\\' {
                         at += 1
-                        if at >= text.len || (ascii.is_control(text[at]) && text[at] != 9) {
+                        if at >= text.len || (ascii.is_control(text[at]) && text[at] != '\t') {
                             return false
                         }
-                    } else if (ascii.is_control(byte) && byte != 9) {
+                    } else if (ascii.is_control(byte) && byte != '\t') {
                         return false
                     }
                     at += 1
@@ -771,16 +771,16 @@ pub mut ResponseParser.parse(
             } else {
                 return mut self.syntax_failure()
             }
-            if input[start + 8] != 32 || input[start + 9] < 48 || input[start + 9] > 57 ||
-                input[start + 10] < 48 || input[start + 10] > 57 ||
-                input[start + 11] < 48 || input[start + 11] > 57 {
+            if input[start + 8] != ' ' || input[start + 9] < '0' || input[start + 9] > '9' ||
+                input[start + 10] < '0' || input[start + 10] > '9' ||
+                input[start + 11] < '0' || input[start + 11] > '9' {
                 return mut self.syntax_failure()
             }
-            if count > 12 && input[start + 12] != 32 {
+            if count > 12 && input[start + 12] != ' ' {
                 return mut self.syntax_failure()
             }
-            self.status = u16(input[start + 9] - 48) * 100 +
-                u16(input[start + 10] - 48) * 10 + u16(input[start + 11] - 48)
+            self.status = u16(input[start + 9] - '0') * 100 +
+                u16(input[start + 10] - '0') * 10 + u16(input[start + 11] - '0')
             if count > 12 {
                 self.reason_start = start + 13
                 self.reason_count = self.line_stop - self.reason_start

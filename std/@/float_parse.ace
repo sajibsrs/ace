@@ -75,7 +75,7 @@ fast_decimal(text: string, mut result: FastDecimal) {
     for at < text.len {
         c: u8 = text[at]
 
-        if seen_nonzero && c >= 48 && c <= 57 && at + 8 <= text.len {
+        if seen_nonzero && c >= '0' && c <= '9' && at + 8 <= text.len {
             word: u64 = load.unaligned_u64(text, at)
             high: u64 = (word & u64(0xF0F0F0F0F0F0F0F0)) ^
                         u64(0x3030303030303030)
@@ -160,7 +160,7 @@ fast_decimal(text: string, mut result: FastDecimal) {
             }
         }
 
-        if c >= 48 && c <= 57 {
+        if c >= '0' && c <= '9' {
             seen_digit = true
 
             if seen_dot {
@@ -177,7 +177,7 @@ fast_decimal(text: string, mut result: FastDecimal) {
             at += 1
             continue
         }
-        if c == 46 && !seen_dot {
+        if c == '.' && !seen_dot {
             seen_dot = true
             at += 1
             continue
@@ -268,7 +268,7 @@ decimal(text: string): Decimal {
     for at < text.len {
         c: u8 = text[at]
 
-        if c >= 48 && c <= 57 {
+        if c >= '0' && c <= '9' {
             seen_digit = true
             big.multiply_small(mut coefficient, 10)
             big.add_small(mut coefficient, u32(c - 48))
@@ -284,7 +284,7 @@ decimal(text: string): Decimal {
             continue
         }
 
-        if c == 46 && !seen_dot {
+        if c == '.' && !seen_dot {
             seen_dot = true
             at += 1
             continue

@@ -45,13 +45,13 @@ pub Response: struct {
 }
 
 pub is_token(byte: u8): bool {
-    if (byte >= 48 && byte <= 57) || (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122) {
+    if (byte >= '0' && byte <= '9') || (byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z') {
         return true
     }
-    return byte == 33 || byte == 35 || byte == 36 || byte == 37 ||
-        byte == 38 || byte == 39 || byte == 42 || byte == 43 ||
-        byte == 45 || byte == 46 || byte == 94 || byte == 95 ||
-        byte == 96 || byte == 124 || byte == 126
+    return byte == '!' || byte == '#' || byte == '$' || byte == '%' ||
+        byte == '&' || byte == '\'' || byte == '*' || byte == '+' ||
+        byte == '-' || byte == '.' || byte == '^' || byte == '_' ||
+        byte == '`' || byte == '|' || byte == '~'
 }
 
 /* Validates a bounded ASCII DNS name or a four-part dotted-decimal IPv4 host. */

@@ -562,15 +562,15 @@ index_byte_from(text: string, byte: char, after: usize): (usize, bool) {
 
 /* The value of one ASCII digit and whether it is a digit at all. */
 digit_value(c: u8): (u64, bool) {
-    if c >= 48 && c <= 57 {
-        return u64(c - 48), true
+    if c >= '0' && c <= '9' {
+        return u64(c - '0'), true
     }
 
-    if c >= 97 && c <= 122 {
+    if c >= 'a' && c <= 'z' {
         return u64(c - 87), true
     }
 
-    if c >= 65 && c <= 90 {
+    if c >= 'A' && c <= 'Z' {
         return u64(c - 55), true
     }
     return 0, false
@@ -703,7 +703,7 @@ pub parse[f32](text: string): (f32, bool) {
 
 /* True for exactly the ASCII whitespace bytes 0x09..0x0D and 0x20. */
 space_byte(c: u8): bool {
-    return (c >= 9 && c <= 13) || c == 32
+    return (c >= '\t' && c <= '\r') || c == ' '
 }
 
 /* Renders the canonical notation into out: decimal for scientific exponents
