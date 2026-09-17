@@ -35,7 +35,11 @@ history.
   performance > simplicity > modularity > compile time > safety.
 - Record current rules and rationale in `SPEC.md`, keeping only active decisions
   in its queue. Record implemented behavior and its essential approach once,
-  briefly, in `CHANGELOG.md`.
+  briefly, in `CHANGELOG.md`. Keep `SPEC.md`, `CHANGELOG.md`, `GRAMMAR.md`, and
+  `TODO.md` entries minimal but sufficient; full detail belongs only in
+  `docs/`. `SPEC.md` and `TODO.md` entries state current rules and open
+  questions only; what was removed, replaced, or how something got here is
+  `CHANGELOG.md`'s history alone, not restated elsewhere.
 - `TODO.md` is non-normative. Promote entries through the Decision Queue and
   update the survey in the same edit. It reflects present state only; remove
   resolved entries outright, no resolution notes.

@@ -239,18 +239,9 @@ nonblocking connect completion remain visible without callbacks or allocation.
 - **Additive socket capabilities** [additive] — IPv6, UDP, address queries,
   half-close, and extra TCP options, carved
   in the order demanded by concrete proofs.
-- **TLS client transport needs a fresh carve** [open] — the prior proof
-  (pinned BearSSL 0.6, a private C adapter, the compiler-owned
-  `@extern(component)`/link-recipe mechanism, `std/tls.ace`, and `http`'s
-  HTTPS/`Client` overloads) has been removed entirely (code, tests, vendor
-  sources, and docs); see `CHANGELOG.md` and the SPEC.md Decision Queue entry.
-  Nothing about the removed approach — backend, adapter shape, or the
-  `@extern` component mechanism — carries forward. A fresh carve (philosophy,
-  then semantics, then syntax, then implementation) deciding the transport
-  boundary and whether `tls`/HTTPS belongs in `std` at all versus launching
-  directly as a package must happen before anything like it returns. `http`
-  itself (independent of TLS/HTTPS) has already relocated out of `std` to
-  the standalone package `pkg/http`; see `CHANGELOG.md`.
+- **TLS client transport needs a fresh carve** [open] — see the Package
+  System future-work section (#14) in `SPEC.md`. `http` lives in `pkg/http`,
+  independent of this item.
 - **HTTP protocol and transport ergonomics** [partly implemented] — the strict IPv4 endpoint
   parser, zero-copy HTTP URL parser, caller-storage request and response
   formatters, and incremental HTTP/1.1 request and response parsers from
