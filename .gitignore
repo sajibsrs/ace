@@ -8,6 +8,7 @@
 /pkg/*/tests/*/build/
 .DS_Store
 *.o
+*.vsix
 *.dSYM/
 .vscode/
 !.vscode/
