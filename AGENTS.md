@@ -37,7 +37,8 @@ history.
   in its queue. Record implemented behavior and its essential approach once,
   briefly, in `CHANGELOG.md`.
 - `TODO.md` is non-normative. Promote entries through the Decision Queue and
-  update the survey in the same edit.
+  update the survey in the same edit. It reflects present state only; remove
+  resolved entries outright, no resolution notes.
 - Update `SPEC.md`, `CHANGELOG.md`, `TODO.md`, and `docs/` in the same commit
   as the change they describe, not a follow-up.
 - Split work likely to exceed 100k tokens into 2–3 owner-approved steps; each

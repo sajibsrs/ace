@@ -19,19 +19,6 @@ before the work they unblock.
 
 ## 0. Known defects
 
-- **[defect]** — `pkg/http/tests/redirect` (formerly `tests/emit/http/
-  redirect.ace`) passes standalone but fails (`exited 2, want 0`) when run
-  inside the full `make test` suite; reproduces identically on a clean
-  `master` with no `std/http` router changes applied, so it predates that
-  work. Likely full-suite resource contention (parallel fork/loopback-socket
-  fixtures) rather than a logic bug in the redirect test itself; needs
-  isolating which concurrent fixture it collides with. Now that this fixture
-  runs under `make test-packages` (`pkg/http/tests/run.sh`) instead of inside
-  `make test`, re-check whether the contention still reproduces there before
-  assuming this defect still applies as described.
-- **[defect]** — "HTTPS explicit DER trust override" fails in `make test`;
-  also reproduces on a clean `master`. Needs its own diagnosis pass.
-
 ## 1. Core type-system completion
 
 Finish the existing primitive, sequential, and aggregate model before adding
