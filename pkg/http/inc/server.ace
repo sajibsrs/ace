@@ -4,7 +4,7 @@ import ascii
 import mem
 import net
 import sys
-import tcp
+import net/tcp
 import message: "./message.ace"
 import parsing: "./parsing.ace"
 import routing: "./router.ace"

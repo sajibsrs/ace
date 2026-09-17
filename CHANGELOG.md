@@ -280,6 +280,9 @@ current normative rules, and Git preserves patch-level detail.
   the *nearest* enclosing `mod.ace` rather than assuming one level, so a
   nested module's own implementation files stay private to it rather than to
   whichever outer directory module contains it.
+- Moved the blocking TCP composition module from the flat `std/tcp.ace` into
+  `std/net/tcp/mod.ace`, its first real use as a nested module: `import
+  net/tcp` replaces `import tcp` everywhere it is used.
 
 ## Standard library
 

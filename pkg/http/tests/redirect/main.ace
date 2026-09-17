@@ -3,7 +3,7 @@ import mem
 import net
 import str
 import sys
-import tcp
+import net/tcp
 
 loopback(port: u16): net.Addr4 {
     return net.Addr4 {ip = [127, 0, 0, 1], port = port}

@@ -2,7 +2,7 @@
 
 import mem
 import net
-import tcp
+import net/tcp
 import str
 import message: "./message.ace"
 import parsing: "./parsing.ace"

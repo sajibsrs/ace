@@ -17,7 +17,7 @@ import net
 import poll
 import str
 import sys
-import tcp
+import net/tcp
 
 WOULD_BLOCK: const i32 = sys.EWOULDBLOCK
 TRY_AGAIN: const i32 = sys.EAGAIN

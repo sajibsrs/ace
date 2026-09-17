@@ -228,7 +228,7 @@ Each item requires an owner decision and should wait for a motivating use case.
 Resume after the higher-priority core work. Each layer keeps allocation,
 buffering, capacities, retries, timeouts, and ownership explicit.
 
-The first pure-Ace blocking IPv4 TCP composition (`std/tcp.ace`) is implemented:
+The first pure-Ace blocking IPv4 TCP composition (`net/tcp`) is implemented:
 explicit listener/connection handles, setup cleanup, blocking accept, exact
 receive, all-byte send, EINTR retry, and explicit close. The items below remain
 additive later work; the nonblocking proofs continue to use `net` and `poll`.
@@ -239,7 +239,8 @@ nonblocking connect completion remain visible without callbacks or allocation.
 - **Additive socket capabilities** [additive] — IPv6, UDP, address queries,
   half-close, and extra TCP options, carved
   in the order demanded by concrete proofs. UDP's placement (nested under
-  `net` vs. a flat sibling like today's `tcp`) remains undecided.
+  `net` directly, or as its own `net/udp`-style composition module) remains
+  undecided.
 - **TLS client transport needs a fresh carve** [open] — see the Package
   System future-work section (#14) in `SPEC.md`. `http` lives in `pkg/http`,
   independent of this item.

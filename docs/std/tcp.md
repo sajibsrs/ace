@@ -10,7 +10,7 @@ hazards.
 
 ```ace
 import net
-import tcp
+import net/tcp
 
 serve_one(): int {
     address: net.Addr4 = net.Addr4 {ip = [127, 0, 0, 1], port = u16(8080)}

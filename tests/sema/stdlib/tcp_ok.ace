@@ -21,7 +21,7 @@ import (
     progress_send,
     receive_all,
     send_all,
-) from tcp
+) from net/tcp
 
 check(address: net.Addr4, listener: Listener, connection: Conn, bytes: mut []u8, text: string): int {
     bound: net.Addr4, local_err: Error = local(listener)
