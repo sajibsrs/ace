@@ -8,6 +8,11 @@ typedef struct { float a, b, c; } Hfa3;
 typedef struct { double a, b, c, d; } Hfa4;
 typedef struct { float v[3]; } Arr3;
 typedef struct { int64_t a, b, c; } Large;
+typedef struct { Pair pair; int32_t extra; } Nested;
+typedef struct { int32_t v[2]; } IntPair;
+typedef struct { IntPair inner; int32_t tag; } Wrapped;
+typedef struct { Hfa3 h; } Envelope;
+typedef struct { Hfa3 h; int32_t tag; } WrappedHfa;
 typedef void* (*ThreadEntry)(void*);
 
 extern int64_t ace_scalars(int8_t, int16_t, int32_t, int64_t,
@@ -32,6 +37,10 @@ extern int64_t ace_stack_align(int64_t, int64_t, int64_t, int64_t, int64_t,
 extern double ace_fp_align(double, double, double, double, double, double,
                            double, double, float, double);
 extern void* ace_thread_entry(void*);
+extern Nested ace_nested(Nested);
+extern Wrapped ace_wrapped(Wrapped);
+extern Envelope ace_envelope(Envelope);
+extern WrappedHfa ace_wrapped_hfa(WrappedHfa);
 
 int64_t c_scalars(int8_t a, int16_t b, int32_t c, int64_t d,
                   uint8_t e, uint16_t f, uint32_t g, uint64_t h, size_t i) {
@@ -123,6 +132,35 @@ double c_fp_align(double a, double b, double c, double d, double e, double f,
     return a + b + c + d + e + f + g + h + narrow + wide;
 }
 
+Nested c_nested(Nested value) {
+    value.pair.a += 1;
+    value.pair.b += 2;
+    value.extra += 3;
+    return value;
+}
+
+Wrapped c_wrapped(Wrapped value) {
+    value.inner.v[0] += 1;
+    value.inner.v[1] += 2;
+    value.tag += 3;
+    return value;
+}
+
+Envelope c_envelope(Envelope value) {
+    value.h.a += 1.0f;
+    value.h.b += 2.0f;
+    value.h.c += 3.0f;
+    return value;
+}
+
+WrappedHfa c_wrapped_hfa(WrappedHfa value) {
+    value.h.a += 1.0f;
+    value.h.b += 2.0f;
+    value.h.c += 3.0f;
+    value.tag += 4;
+    return value;
+}
+
 void* c_thread_entry(void* argument) { return argument; }
 
 void* c_call_thread_entry(ThreadEntry entry, void* argument) {
@@ -165,13 +203,23 @@ int32_t c_run_ace(void) {
     Large large = ace_large((Large){1, 2, 3});
     if (large.a != 5 || large.b != 7 || large.c != 9) return 10;
     if (ace_stack(1, 2, 3, 4, 5, 6, 7, (Pair){8, 9}, 10) != 55) return 11;
-    if (ace_fpstack(1, 2, 3, 4, 5, 6, 7,
-                    (Hfa3){8, 9, 10}, 11) != 66.0) return 12;
+    if (ace_fpstack(1, 2, 3, 4, 5, 6, 7, (Hfa3){8, 9, 10}, 11) != 66.0) return 12;
     if (ace_f32(1.25f) != 2.0f) return 13;
     if (ace_stack_align(1, 2, 3, 4, 5, 6, 7, 8, 4, 7) != 47) return 14;
     if (ace_fp_align(1, 2, 3, 4, 5, 6, 7, 8, 4, 7) != 47) return 15;
     int32_t callback_value = 19;
-    if (c_call_thread_entry(ace_thread_entry, &callback_value) !=
-        &callback_value) return 16;
+    if (c_call_thread_entry(ace_thread_entry, &callback_value) != &callback_value) return 16;
+
+    Nested nested = ace_nested((Nested){{1, 2}, 3});
+    if (nested.pair.a != 2 || nested.pair.b != 4 || nested.extra != 6) return 19;
+    Wrapped wrapped = ace_wrapped((Wrapped){{{1, 2}}, 3});
+    if (wrapped.inner.v[0] != 2 || wrapped.inner.v[1] != 4 || wrapped.tag != 6)
+        return 20;
+    Envelope envelope = ace_envelope((Envelope){{1.0f, 2.0f, 3.0f}});
+    if (envelope.h.a != 2.0f || envelope.h.b != 4.0f || envelope.h.c != 6.0f)
+        return 21;
+    WrappedHfa wh = ace_wrapped_hfa((WrappedHfa){{1.0f, 2.0f, 3.0f}, 4});
+    if (wh.h.a != 2.0f || wh.h.b != 4.0f || wh.h.c != 6.0f || wh.tag != 8)
+        return 22;
     return 0;
 }

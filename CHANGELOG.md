@@ -128,6 +128,16 @@ current normative rules, and Git preserves patch-level detail.
   a bare struct literal directly, and overload resolution defers a bare
   struct-literal argument's type to its matched parameter the same way it
   already deferred bare array literals.
+- Audited aggregate-ABI classification (`classify_hfa`/`classify_ret`/
+  `hfa_leaves`) across the cross-product of struct-in-struct, array-in-struct,
+  struct-in-array-in-struct, tagged unions, multi-return tuples, and generic
+  struct instances, at HFA, register-boundary, indirect, and
+  register-exhausted positions, for ordinary Ace-to-Ace calls
+  (`tests/emit/basics/abi_matrix.ace`) and, for the categories legal at the
+  boundary, extended the clang-checked bidirectional C-ABI oracle
+  (`tests/driver/abi.ace`/`abi.c`) with nested-struct and array-in-struct
+  cases. No defect found; the existing recursive classification already
+  covers every case correctly.
 - Extended receiver-marked mutating method calls to every expression position,
   so their return values initialize and assign ordinary values while retaining
   the same visible `mut` receiver mark.

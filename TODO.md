@@ -28,13 +28,6 @@ reopening of Ace's fixed explicit-type, copy, mutation, or allocation rules.
 Wider fixed-array/view bridges remain additive conveniences; they are not
 blockers for the current sequential core.
 
-### Aggregate and generic construction
-
-- **Aggregate ABI cross-product audit** [new] — extend the existing ABI oracle
-  across nested arrays, structs, unions, tuples, homogeneous floating
-  aggregates, indirect returns, register exhaustion, and explicit generic
-  instances. Treat failures as implementation defects, not new semantics.
-
 ### Other compile-time machine facilities
 
 - **Source-location builtins** (`@file`/`@line`-class) [new] — bounded context
