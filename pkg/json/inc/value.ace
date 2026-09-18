@@ -1,0 +1,56 @@
+/* json value model: a closed tagged union over the seven JSON value shapes. */
+
+import mem
+
+pub Json: union {
+    none,
+    bool: bool,
+    number: f64,
+    string: string,
+    array: []Json,
+    object: []Pair,
+}
+
+pub Pair: struct {
+    key: string,
+    value: Json,
+}
+
+pub JsonErr: error {
+    1: unexpected_token = "unexpected token"
+    2: unterminated_string = "unterminated string literal"
+    3: invalid_escape = "invalid string escape"
+    4: invalid_number = "invalid number literal"
+    5: depth_exceeded = "nesting depth exceeded"
+    6: trailing_data = "unexpected trailing data after value"
+    7: empty_input = "empty input"
+    8: allocation = "allocation failed"
+}
+
+/* Recursively releases every heap allocation owned by `value`: string bytes,
+ * array/object backing storage, and every nested element's own allocations.
+ * Payload binders are independent local copies (Tagged Unions #6), so this
+ * needs no write access to the caller's `value`.
+ */
+pub wipe(value: Json) {
+    switch value {
+        Json.string(text: string) {
+            mem.release[u8](mut text)
+        }
+        Json.array(items: []Json) {
+            for i: usize in 0 .. items.len {
+                wipe(items[i])
+            }
+            mem.release[Json](mut items)
+        }
+        Json.object(pairs: []Pair) {
+            for i: usize in 0 .. pairs.len {
+                key: string = pairs[i].key
+                mem.release[u8](mut key)
+                wipe(pairs[i].value)
+            }
+            mem.release[Pair](mut pairs)
+        }
+        else {}
+    }
+}

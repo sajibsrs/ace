@@ -1,0 +1,147 @@
+import json
+import mem
+
+scalars(): int {
+    v: json.Json, err: Error = json.parse("null")
+
+    if err != null {
+        return 1
+    }
+
+    switch v {
+        json.Json.none {}
+        else { return 2 }
+    }
+    v, err = json.parse("true")
+
+    switch v {
+        json.Json.bool(b: bool) {
+            if !b { return 3 }
+        }
+        else { return 4 }
+    }
+    v, err = json.parse("false")
+
+    switch v {
+        json.Json.bool(b: bool) {
+            if b { return 5 }
+        }
+        else { return 6 }
+    }
+    v, err = json.parse("  42  ")
+
+    switch v {
+        json.Json.number(n: f64) {
+            if n != 42.0 { return 7 }
+        }
+        else { return 8 }
+    }
+    v, err = json.parse("-3.5e2")
+    expected: f64 = 0.0 - 350.0
+
+    switch v {
+        json.Json.number(n: f64) {
+            if n != expected { return 9 }
+        }
+        else { return 10 }
+    }
+    v, err = json.parse("\"a\\u00e9\\n\\\"\"")
+
+    if err != null {
+        return 11
+    }
+
+    switch v {
+        json.Json.string(s: string) {
+            if !mem.equal(s, "a\xC3\xA9\n\"") { return 12 }
+            json.wipe(v)
+        }
+        else { return 13 }
+    }
+    return 0
+}
+
+containers(): int {
+    v: json.Json, err: Error = json.parse("[1, 2, [3, 4], \"x\"]")
+
+    if err != null {
+        return 20
+    }
+
+    switch v {
+        json.Json.array(items: []json.Json) {
+            if items.len != 4 { return 21 }
+
+            switch items[2] {
+                json.Json.array(inner: []json.Json) {
+                    if inner.len != 2 { return 22 }
+                }
+                else { return 23 }
+            }
+        }
+        else { return 24 }
+    }
+    json.wipe(v)
+    v, err = json.parse("{\"a\": 1, \"b\": {\"c\": true}, \"d\": []}")
+
+    if err != null {
+        return 25
+    }
+
+    switch v {
+        json.Json.object(pairs: []json.Pair) {
+            if pairs.len != 3 { return 26 }
+            if !mem.equal(pairs[0].key, "a") { return 27 }
+            if !mem.equal(pairs[1].key, "b") { return 28 }
+
+            switch pairs[1].value {
+                json.Json.object(nested: []json.Pair) {
+                    if nested.len != 1 || !mem.equal(nested[0].key, "c") { return 29 }
+                }
+                else { return 30 }
+            }
+
+            switch pairs[2].value {
+                json.Json.array(empty: []json.Json) {
+                    if empty.len != 0 { return 31 }
+                }
+                else { return 32 }
+            }
+        }
+        else { return 33 }
+    }
+    json.wipe(v)
+    return 0
+}
+
+failures(): int {
+    v: json.Json, err: Error = json.parse("")
+
+    if err != json.JsonErr.empty_input { return 40 }
+    v, err = json.parse("{")
+
+    if err != json.JsonErr.unexpected_token { return 41 }
+    v, err = json.parse("\"unterminated")
+
+    if err != json.JsonErr.unterminated_string { return 42 }
+    v, err = json.parse("01")
+
+    if err != json.JsonErr.invalid_number { return 43 }
+    v, err = json.parse("true false")
+
+    if err != json.JsonErr.trailing_data { return 44 }
+    v, err = json.parse("{\"a\": 1,}")
+
+    if err != json.JsonErr.unexpected_token { return 45 }
+    return 0
+}
+
+main(): int {
+    code: int = scalars()
+    if code != 0 { return 100 + code }
+    code = containers()
+    if code != 0 { return 200 + code }
+    code = failures()
+    if code != 0 { return 300 + code }
+    return 0
+}

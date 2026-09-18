@@ -1,0 +1,605 @@
+/* Whole-document recursive-descent JSON parsing (RFC 8259). Input is a
+ * complete in-memory buffer, unlike http's incremental socket parsing, so an
+ * eager parse needs no resumable state machine.
+ *
+ * The walk is written as plain mutually recursive functions taking the
+ * parser explicitly (parse_value <-> parse_object/parse_array), not as
+ * methods: method-call syntax gets no forward/mutual-call fixup today
+ * (TODO.md, "Known defects"), so two methods on one type that call each
+ * other fail unless one is declared first — impossible to satisfy for both
+ * sides of a genuine cycle. Plain top-level calls already get that fixup.
+ */
+
+import mem
+import str
+import jsonval: "./value.ace"
+
+Json: type = jsonval.Json
+Pair: type = jsonval.Pair
+JsonErr: type = jsonval.JsonErr
+
+/* Recursion guard: bounds stack depth on adversarial input rather than
+ * risking overflow.
+ */
+MAX_DEPTH: usize = 512
+
+Parser: struct {
+    text: string,
+    at: usize,
+}
+
+/* Parses the complete text as one JSON value. Trailing non-whitespace bytes
+ * after the value are rejected, matching a whole-document parse rather than
+ * a stream that tolerates more input after one value.
+ */
+pub parse(text: string): (Json, Error) {
+    p: Parser = Parser{text = text, at = 0}
+    skip_ws(mut p)
+
+    if p.at == p.text.len {
+        return Json.none, JsonErr.empty_input
+    }
+    result: Json, err: Error = parse_value(mut p, 0)
+
+    if err != null {
+        return Json.none, err
+    }
+    skip_ws(mut p)
+
+    if p.at != p.text.len {
+        jsonval.wipe(result)
+        return Json.none, JsonErr.trailing_data
+    }
+    return result, null
+}
+
+skip_ws(mut p: Parser) {
+    for p.at < p.text.len && is_ws(p.text[p.at]) {
+        p.at += 1
+    }
+}
+
+parse_value(mut p: Parser, depth: usize): (Json, Error) {
+    if depth > MAX_DEPTH {
+        return Json.none, JsonErr.depth_exceeded
+    }
+    skip_ws(mut p)
+
+    if p.at == p.text.len {
+        return Json.none, JsonErr.unexpected_token
+    }
+    c: u8 = p.text[p.at]
+
+    if c == '"' {
+        text: string, err: Error = parse_string(mut p)
+
+        if err != null {
+            return Json.none, err
+        }
+        return Json.string(text), null
+    }
+
+    if c == '{' {
+        result: Json, err: Error = parse_object(mut p, depth)
+        return result, err
+    }
+
+    if c == '[' {
+        result: Json, err: Error = parse_array(mut p, depth)
+        return result, err
+    }
+
+    if c == 't' {
+        if consume_literal(mut p, "true") {
+            return Json.bool(true), null
+        }
+        return Json.none, JsonErr.unexpected_token
+    }
+
+    if c == 'f' {
+        if consume_literal(mut p, "false") {
+            return Json.bool(false), null
+        }
+        return Json.none, JsonErr.unexpected_token
+    }
+
+    if c == 'n' {
+        if consume_literal(mut p, "null") {
+            return Json.none, null
+        }
+        return Json.none, JsonErr.unexpected_token
+    }
+
+    if c == '-' || is_digit(c) {
+        result: Json, err: Error = parse_number(mut p)
+        return result, err
+    }
+    return Json.none, JsonErr.unexpected_token
+}
+
+consume_literal(mut p: Parser, literal: string): bool {
+    remaining: usize = p.text.len - p.at
+
+    if remaining < literal.len {
+        return false
+    }
+
+    if !mem.equal(p.text[p.at..p.at + literal.len], literal) {
+        return false
+    }
+    p.at += literal.len
+    return true
+}
+
+parse_number(mut p: Parser): (Json, Error) {
+    start: usize = p.at
+
+    if p.at < p.text.len && p.text[p.at] == '-' {
+        p.at += 1
+    }
+
+    if p.at == p.text.len || !is_digit(p.text[p.at]) {
+        return Json.none, JsonErr.invalid_number
+    }
+
+    if p.text[p.at] == '0' {
+        p.at += 1
+
+        if p.at < p.text.len && is_digit(p.text[p.at]) {
+            return Json.none, JsonErr.invalid_number
+        }
+    } else {
+        for p.at < p.text.len && is_digit(p.text[p.at]) {
+            p.at += 1
+        }
+    }
+
+    if p.at < p.text.len && p.text[p.at] == '.' {
+        p.at += 1
+
+        if p.at == p.text.len || !is_digit(p.text[p.at]) {
+            return Json.none, JsonErr.invalid_number
+        }
+
+        for p.at < p.text.len && is_digit(p.text[p.at]) {
+            p.at += 1
+        }
+    }
+
+    if p.at < p.text.len && (p.text[p.at] == 'e' || p.text[p.at] == 'E') {
+        p.at += 1
+
+        if p.at < p.text.len && (p.text[p.at] == '+' || p.text[p.at] == '-') {
+            p.at += 1
+        }
+
+        if p.at == p.text.len || !is_digit(p.text[p.at]) {
+            return Json.none, JsonErr.invalid_number
+        }
+
+        for p.at < p.text.len && is_digit(p.text[p.at]) {
+            p.at += 1
+        }
+    }
+    raw: string = p.text[start..p.at]
+    parsed: f64, ok: bool = str.parse[f64](raw)
+
+    if !ok {
+        return Json.none, JsonErr.invalid_number
+    }
+    return Json.number(parsed), null
+}
+
+parse_string(mut p: Parser): (string, Error) {
+    p.at += 1
+    start: usize = p.at
+    end: usize, closed: bool = find_string_end(p.text, start)
+
+    if !closed {
+        return "", JsonErr.unterminated_string
+    }
+    upper: usize = end - start
+    buffer: mut []u8 = null
+
+    if upper != 0 {
+        buffer = mem.alloc[u8](upper)
+
+        if buffer == null {
+            return "", JsonErr.allocation
+        }
+    }
+    used: usize, err: Error = decode_string(p.text, start, end, buffer)
+
+    if err != null {
+        if upper != 0 {
+            mem.release[u8](mut buffer)
+        }
+        return "", err
+    }
+    p.at = end + 1
+
+    if used == 0 {
+        return "", null
+    }
+
+    if used == upper {
+        return buffer, null
+    }
+    shrunk: mut []u8 = mem.realloc[u8](buffer, used)
+
+    if shrunk == null {
+        mem.release[u8](mut buffer)
+        return "", JsonErr.allocation
+    }
+    return shrunk, null
+}
+
+parse_array(mut p: Parser, depth: usize): (Json, Error) {
+    p.at += 1
+    items: mut []Json = null
+    count: usize = 0
+    skip_ws(mut p)
+
+    if p.at < p.text.len && p.text[p.at] == ']' {
+        p.at += 1
+        return Json.array(items), null
+    }
+
+    for {
+        skip_ws(mut p)
+        elem: Json, err: Error = parse_value(mut p, depth + 1)
+
+        if err != null {
+            wipe_items(mut items, count)
+            return Json.none, err
+        }
+        grown: mut []Json, ok: bool = mem.adjust[Json](items, count + 1)
+
+        if !ok {
+            jsonval.wipe(elem)
+            wipe_items(mut items, count)
+            return Json.none, JsonErr.allocation
+        }
+        items = grown
+        items[count] = elem
+        count += 1
+        skip_ws(mut p)
+
+        if p.at == p.text.len {
+            wipe_items(mut items, count)
+            return Json.none, JsonErr.unexpected_token
+        }
+        c: u8 = p.text[p.at]
+
+        if c == ',' {
+            p.at += 1
+            continue
+        }
+
+        if c == ']' {
+            p.at += 1
+            break
+        }
+        wipe_items(mut items, count)
+        return Json.none, JsonErr.unexpected_token
+    }
+
+    if count == 0 {
+        return Json.array(items), null
+    }
+    final: mut []Json = mem.realloc[Json](items, count)
+
+    if final == null {
+        wipe_items(mut items, count)
+        return Json.none, JsonErr.allocation
+    }
+    return Json.array(final), null
+}
+
+parse_object(mut p: Parser, depth: usize): (Json, Error) {
+    p.at += 1
+    pairs: mut []Pair = null
+    count: usize = 0
+    skip_ws(mut p)
+
+    if p.at < p.text.len && p.text[p.at] == '}' {
+        p.at += 1
+        return Json.object(pairs), null
+    }
+
+    for {
+        skip_ws(mut p)
+
+        if p.at == p.text.len || p.text[p.at] != '"' {
+            wipe_pairs(mut pairs, count)
+            return Json.none, JsonErr.unexpected_token
+        }
+        key: string, kerr: Error = parse_string(mut p)
+
+        if kerr != null {
+            wipe_pairs(mut pairs, count)
+            return Json.none, kerr
+        }
+        skip_ws(mut p)
+
+        if p.at == p.text.len || p.text[p.at] != ':' {
+            mem.release[u8](mut key)
+            wipe_pairs(mut pairs, count)
+            return Json.none, JsonErr.unexpected_token
+        }
+        p.at += 1
+        skip_ws(mut p)
+        elem: Json, verr: Error = parse_value(mut p, depth + 1)
+
+        if verr != null {
+            mem.release[u8](mut key)
+            wipe_pairs(mut pairs, count)
+            return Json.none, verr
+        }
+        grown: mut []Pair, ok: bool = mem.adjust[Pair](pairs, count + 1)
+
+        if !ok {
+            mem.release[u8](mut key)
+            jsonval.wipe(elem)
+            wipe_pairs(mut pairs, count)
+            return Json.none, JsonErr.allocation
+        }
+        pairs = grown
+        pairs[count] = Pair{key = key, value = elem}
+        count += 1
+        skip_ws(mut p)
+
+        if p.at == p.text.len {
+            wipe_pairs(mut pairs, count)
+            return Json.none, JsonErr.unexpected_token
+        }
+        c: u8 = p.text[p.at]
+
+        if c == ',' {
+            p.at += 1
+            continue
+        }
+
+        if c == '}' {
+            p.at += 1
+            break
+        }
+        wipe_pairs(mut pairs, count)
+        return Json.none, JsonErr.unexpected_token
+    }
+
+    if count == 0 {
+        return Json.object(pairs), null
+    }
+    final: mut []Pair = mem.realloc[Pair](pairs, count)
+
+    if final == null {
+        wipe_pairs(mut pairs, count)
+        return Json.none, JsonErr.allocation
+    }
+    return Json.object(final), null
+}
+
+/* Releases a partially built array on an error path: each collected
+ * element's own allocations, then the backing storage itself.
+ */
+wipe_items(mut items: mut []Json, count: usize) {
+    for i: usize in 0 .. count {
+        jsonval.wipe(items[i])
+    }
+
+    if items != null {
+        mem.release[Json](mut items)
+    }
+}
+
+/* Releases a partially built object on an error path: each collected key
+ * and value, then the backing storage itself.
+ */
+wipe_pairs(mut pairs: mut []Pair, count: usize) {
+    for i: usize in 0 .. count {
+        mem.release[u8](mut pairs[i].key)
+        jsonval.wipe(pairs[i].value)
+    }
+
+    if pairs != null {
+        mem.release[Pair](mut pairs)
+    }
+}
+
+is_ws(c: u8): bool {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r'
+}
+
+is_digit(c: u8): bool {
+    return c >= '0' && c <= '9'
+}
+
+hex_value(c: u8): (u32, bool) {
+    if c >= '0' && c <= '9' {
+        return u32(c - '0'), true
+    }
+
+    if c >= 'a' && c <= 'f' {
+        return u32(c - 'a' + 10), true
+    }
+
+    if c >= 'A' && c <= 'F' {
+        return u32(c - 'A' + 10), true
+    }
+    return 0, false
+}
+
+/* Scans from `start` (just past the opening quote) for the matching
+ * unescaped closing quote. An escaped byte is always skipped as a pair, so a
+ * "\u" sequence's hex digits are simply walked as ordinary bytes afterward;
+ * escape *validity* is checked later, during decoding.
+ */
+find_string_end(text: string, start: usize): (usize, bool) {
+    i: usize = start
+
+    for i < text.len {
+        c: u8 = text[i]
+
+        if c == '"' {
+            return i, true
+        }
+
+        if c == '\\' {
+            i += 2
+            continue
+        }
+        i += 1
+    }
+    return i, false
+}
+
+/* Decodes text[start..end] into buffer, which must be at least end - start
+ * bytes (decoded output is never longer than its escaped source). Returns
+ * the bytes written.
+ */
+decode_string(text: string, start: usize, end: usize, buffer: mut []u8): (usize, Error) {
+    i: usize = start
+    out: usize = 0
+
+    for i < end {
+        c: u8 = text[i]
+
+        if c == '\\' {
+            i += 1
+            e: u8 = text[i]
+
+            if e == '"' {
+                buffer[out] = '"'
+                out += 1
+                i += 1
+            } else if e == '\\' {
+                buffer[out] = '\\'
+                out += 1
+                i += 1
+            } else if e == '/' {
+                buffer[out] = '/'
+                out += 1
+                i += 1
+            } else if e == 'b' {
+                buffer[out] = '\x08'
+                out += 1
+                i += 1
+            } else if e == 'f' {
+                buffer[out] = '\x0C'
+                out += 1
+                i += 1
+            } else if e == 'n' {
+                buffer[out] = '\n'
+                out += 1
+                i += 1
+            } else if e == 'r' {
+                buffer[out] = '\r'
+                out += 1
+                i += 1
+            } else if e == 't' {
+                buffer[out] = '\t'
+                out += 1
+                i += 1
+            } else if e == 'u' {
+                cp: u32, next: usize, err: Error = escape_codepoint(text, i + 1, end)
+
+                if err != null {
+                    return 0, err
+                }
+                out += encode_utf8(cp, mut buffer[out..])
+                i = next
+            } else {
+                return 0, JsonErr.invalid_escape
+            }
+            continue
+        }
+
+        if c < 32 {
+            return 0, JsonErr.unexpected_token
+        }
+        buffer[out] = c
+        out += 1
+        i += 1
+    }
+    return out, null
+}
+
+/* Parses one \uXXXX escape at `pos`, combining a UTF-16 surrogate pair into
+ * one codepoint when the first unit is a high surrogate. Returns the
+ * codepoint and the position just past everything consumed.
+ */
+escape_codepoint(text: string, pos: usize, end: usize): (u32, usize, Error) {
+    unit: u32, next: usize, err: Error = read_hex4(text, pos, end)
+
+    if err != null {
+        return 0, 0, err
+    }
+
+    if unit >= 0xD800 && unit <= 0xDBFF {
+        if next + 2 > end || text[next] != '\\' || text[next + 1] != 'u' {
+            return 0, 0, JsonErr.invalid_escape
+        }
+        low: u32, next2: usize, lerr: Error = read_hex4(text, next + 2, end)
+
+        if lerr != null {
+            return 0, 0, lerr
+        }
+
+        if low < 0xDC00 || low > 0xDFFF {
+            return 0, 0, JsonErr.invalid_escape
+        }
+        cp: u32 = 0x10000 + (unit - 0xD800) * 0x400 + (low - 0xDC00)
+        return cp, next2, null
+    }
+
+    if unit >= 0xDC00 && unit <= 0xDFFF {
+        return 0, 0, JsonErr.invalid_escape
+    }
+    return unit, next, null
+}
+
+read_hex4(text: string, pos: usize, end: usize): (u32, usize, Error) {
+    if pos + 4 > end {
+        return 0, 0, JsonErr.invalid_escape
+    }
+    value: u32 = 0
+
+    for i: usize in 0 .. 4 {
+        d: u32, ok: bool = hex_value(text[pos + i])
+
+        if !ok {
+            return 0, 0, JsonErr.invalid_escape
+        }
+        value = value * 16 + d
+    }
+    return value, pos + 4, null
+}
+
+/* Encodes one Unicode codepoint as UTF-8 into out[0..], returning the byte
+ * count written (1-4).
+ */
+encode_utf8(cp: u32, out: mut []u8): usize {
+    if cp < 0x80 {
+        out[0] = u8(cp)
+        return 1
+    }
+
+    if cp < 0x800 {
+        out[0] = u8(0xC0 | (cp >> 6))
+        out[1] = u8(0x80 | (cp & 0x3F))
+        return 2
+    }
+
+    if cp < 0x10000 {
+        out[0] = u8(0xE0 | (cp >> 12))
+        out[1] = u8(0x80 | ((cp >> 6) & 0x3F))
+        out[2] = u8(0x80 | (cp & 0x3F))
+        return 3
+    }
+    out[0] = u8(0xF0 | (cp >> 18))
+    out[1] = u8(0x80 | ((cp >> 12) & 0x3F))
+    out[2] = u8(0x80 | ((cp >> 6) & 0x3F))
+    out[3] = u8(0x80 | (cp & 0x3F))
+    return 4
+}
