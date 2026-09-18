@@ -1,0 +1,28 @@
+// expect-exit: 0
+
+Parser: struct {
+    depth: int,
+}
+
+Parser.value(n: int): int {
+    if n <= 0 {
+        return 0
+    }
+    return self.object(n) + self.array(n)
+}
+
+Parser.object(n: int): int {
+    return 1 + self.value(n - 1)
+}
+
+Parser.array(n: int): int {
+    return 1 + self.value(n - 1)
+}
+
+main(): int {
+    p: Parser = Parser {depth = 0}
+    if p.value(2) != 6 {
+        return 1
+    }
+    return 0
+}

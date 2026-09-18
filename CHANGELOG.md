@@ -24,6 +24,9 @@ current normative rules, and Git preserves patch-level detail.
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic
   checking, or emission.
+- Deferred method calls on a struct receiver that find no method yet to the same
+  end-of-file `Pending` fixup plain calls use (`check_method_call`, re-run with
+  `final`), so methods on one type may call each other in any declaration order.
 - Extended the narrow forward-reference fixup class to a bare slice exactly at
   an aggregate field or union variant root (`[]Later`), alongside the existing
   pointer-chain shape (`*Later`, `**Later`): a slice's fixed pointer-plus-count

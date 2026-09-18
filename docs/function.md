@@ -291,8 +291,9 @@ is per-type specializations (see [str](std/str.md)).
 ## Declaration order and forward calls
 
 Names normally follow declaration-before-use. Top-level function calls are the
-exception: calls to functions declared later are recorded and resolved at the
-end of the file. This supports forward and mutual calls without prototypes.
+exception: calls to functions, and method calls on a struct, declared later are
+recorded and resolved at the end of the file. This supports forward and mutual
+calls without prototypes. A deferred call's result is untyped until then.
 
 ## Entry point
 

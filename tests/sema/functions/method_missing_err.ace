@@ -1,0 +1,12 @@
+Box: struct {
+    n: int,
+}
+
+Box.get(): int {
+    return self.missing()
+}
+
+main(): int {
+    b: Box = Box {n = 1}
+    return b.get()
+}

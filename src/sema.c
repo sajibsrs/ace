@@ -263,6 +263,9 @@ typedef struct Scope {
 typedef struct Pending {
     Node* call;
     Scope* scope;
+    SType* recv;   // method calls: struct receiver type
+    int qualified; // method calls: Type.method(recv, ...) spelling
+    int method;    // method call awaiting its declaration
     struct Pending* next;
 } Pending;
 
@@ -3635,6 +3638,140 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
     return st_prim(P_I64);
 }
 
+/*
+ * Resolve a method call on struct receiver type b. With final == 0 a miss
+ * returns NULL so the caller can defer the call to end of file, when every
+ * method is declared; with final == 1 a miss is the "no method" error.
+ */
+static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified,
+                                int final) {
+    Node* callee = call->a;
+    uint32_t key_len;
+    const char* key = method_key(b->decl, callee->str, callee->len, &key_len);
+    Sym* head = lookup_val(k, key, key_len);
+    int supplied = call->nkids + (qualified ? 0 : 1);
+    Sym* found = NULL;
+    for (Sym* f = head; f; f = f->overload) {
+        SType* ft = f->is_generic && b->nargs
+            ? build_func_type(k, f->decl, b->args, b->nargs)
+            : f->type;
+        if (!ft || (f->is_generic && !b->nargs) || ft->nparams != supplied ||
+            !same_type(ft->params[0], b)) continue;
+        int rmut = (f->decl->flags & F_MUT) != 0;
+        int cmut = qualified
+            ? (call->nkids > 0 && call->kids[0]->kind == N_MUTARG)
+            : ((call->flags & F_MUT) != 0);
+        if (rmut != cmut) continue;
+        int exact = 1;
+        for (int i = 1; i < ft->nparams; i++) {
+            Node* arg = call->kids[qualified ? i : i - 1];
+            SType* at = overload_arg_type(k, arg);
+            int am = arg->kind == N_MUTARG;
+            int pm = (f->decl->kids[i]->flags & F_MUT) != 0;
+            if (am != pm) exact = 0;
+            else if (!exact_arg_type(arg, at, ft->params[i]) &&
+                     !shrink_ok(at, ft->params[i])) exact = 0;
+        }
+        if (!exact && overload_count(head) > 1) continue;
+        if (found) {
+            ck_err(k, call, "ambiguous method call '%.*s'", (int)callee->len, callee->str);
+            return T_ERR;
+        }
+        found = f;
+    }
+    /* A directly owned method wins. Otherwise, one explicitly embedded
+     * field may promote an exact method by rewriting the receiver to the
+     * ordinary field expression that codegen already understands. */
+    if (!found && !qualified && b->decl) {
+        Sym* promoted = NULL;
+        SType* promoted_ft = NULL;
+        Node* promoted_field = NULL;
+        for (int fi = 0; fi < b->nfields; fi++) {
+            Node* fd = b->decl->kids[fi];
+            SType* eb = b->fields[fi].t;
+            if (!(fd->flags & F_EMBED) || !eb || eb->kind != SK_STRUCT)
+                continue;
+            uint32_t ekey_len;
+            const char* ekey = method_key(eb->decl, callee->str, callee->len,
+                                          &ekey_len);
+            Sym* ehead = lookup_val(k, ekey, ekey_len);
+            for (Sym* f = ehead; f; f = f->overload) {
+                SType* ft = f->is_generic && eb->nargs
+                    ? build_func_type(k, f->decl, eb->args, eb->nargs)
+                    : f->type;
+                if (!ft || (f->is_generic && !eb->nargs) ||
+                    ft->nparams != call->nkids + 1 ||
+                    !same_type(ft->params[0], eb)) continue;
+                int rmut = (f->decl->flags & F_MUT) != 0;
+                int cmut = (call->flags & F_MUT) != 0;
+                if (rmut != cmut) continue;
+                int exact = 1;
+                for (int i = 1; i < ft->nparams; i++) {
+                    Node* arg = call->kids[i - 1];
+                    SType* at = overload_arg_type(k, arg);
+                    int am = arg->kind == N_MUTARG;
+                    int pm = (f->decl->kids[i]->flags & F_MUT) != 0;
+                    if (am != pm) exact = 0;
+                    else if (!exact_arg_type(arg, at, ft->params[i]) &&
+                             !shrink_ok(at, ft->params[i]))
+                        exact = 0;
+                }
+                if (!exact && overload_count(ehead) > 1) continue;
+                if (promoted) {
+                    ck_err(k, call, "ambiguous promoted method call '%.*s'",
+                           (int)callee->len, callee->str);
+                    return T_ERR;
+                }
+                promoted = f;
+                promoted_ft = ft;
+                promoted_field = fd;
+            }
+        }
+        if (promoted) {
+            Node* recv = (Node*)arena_alloc(sizeof(Node));
+            memset(recv, 0, sizeof *recv);
+            recv->kind = N_FIELD_E;
+            recv->path = callee->path; recv->line = callee->line;
+            recv->col = callee->col;
+            recv->a = callee->a;
+            recv->str = promoted_field->str;
+            recv->len = promoted_field->len;
+            recv->ty = promoted_ft->params[0];
+            callee->a = recv;
+            found = promoted;
+            b = promoted_ft->params[0];
+        }
+    }
+    if (found) {
+        SType* method_ft = found->is_generic
+            ? instantiate_generic_func_args(k, found, b->args, b->nargs, call)
+            : found->type;
+        int rmut = (found->decl->flags & F_MUT) != 0;
+        Node* recv = qualified
+            ? (call->kids[0]->kind == N_MUTARG ? call->kids[0]->a : call->kids[0])
+            : callee->a;
+        if (rmut) check_lvalue(k, recv, 1);
+        else coerce(k, recv, b);
+        int start = qualified ? 1 : 0;
+        for (int i = start; i < call->nkids; i++) {
+            Node* arg = call->kids[i];
+            int pi = i + (qualified ? 0 : 1);
+            coerce(k, arg->kind == N_MUTARG ? arg->a : arg, method_ft->params[pi]);
+        }
+        if (found->decl->path && call->path &&
+            strcmp(found->decl->path, call->path) != 0 && !found->is_pub)
+            ck_err(k, call, "method '%.*s' is private", (int)callee->len, callee->str);
+        call->sym = found;
+        callee->ty = method_ft;
+        if (qualified) call->flags |= F_METHOD; // emitter: receiver is argument zero
+        return method_ft->ret;
+    }
+    if (!final) return NULL; // a later declaration may add the method
+    ck_err(k, call, "no method '%.*s' for %s", (int)callee->len, callee->str,
+           type_name(b));
+    return T_ERR;
+}
+
 static SType* check_call(Ck* k, Node* call) {
     Node* callee = call->a;
     /* Pointer types are conversion callees only for the exact usize-address
@@ -4219,129 +4356,17 @@ static SType* check_call(Ck* k, Node* call) {
                    type_name(b));
             return T_ERR;
         }
-        uint32_t key_len;
-        const char* key = method_key(b->decl, callee->str, callee->len, &key_len);
-        Sym* head = lookup_val(k, key, key_len);
-        int supplied = call->nkids + (qualified ? 0 : 1);
-        Sym* found = NULL;
-        for (Sym* f = head; f; f = f->overload) {
-            SType* ft = f->is_generic && b->nargs
-                ? build_func_type(k, f->decl, b->args, b->nargs)
-                : f->type;
-            if (!ft || (f->is_generic && !b->nargs) || ft->nparams != supplied ||
-                !same_type(ft->params[0], b)) continue;
-            int rmut = (f->decl->flags & F_MUT) != 0;
-            int cmut = qualified
-                ? (call->nkids > 0 && call->kids[0]->kind == N_MUTARG)
-                : ((call->flags & F_MUT) != 0);
-            if (rmut != cmut) continue;
-            int exact = 1;
-            for (int i = 1; i < ft->nparams; i++) {
-                Node* arg = call->kids[qualified ? i : i - 1];
-                SType* at = overload_arg_type(k, arg);
-                int am = arg->kind == N_MUTARG;
-                int pm = (f->decl->kids[i]->flags & F_MUT) != 0;
-                if (am != pm) exact = 0;
-                else if (!exact_arg_type(arg, at, ft->params[i]) &&
-                         !shrink_ok(at, ft->params[i])) exact = 0;
-            }
-            if (!exact && overload_count(head) > 1) continue;
-            if (found) {
-                ck_err(k, call, "ambiguous method call '%.*s'", (int)callee->len, callee->str);
-                return T_ERR;
-            }
-            found = f;
-        }
-        /* A directly owned method wins. Otherwise, one explicitly embedded
-         * field may promote an exact method by rewriting the receiver to the
-         * ordinary field expression that codegen already understands. */
-        if (!found && !qualified && b->decl) {
-            Sym* promoted = NULL;
-            SType* promoted_ft = NULL;
-            Node* promoted_field = NULL;
-            for (int fi = 0; fi < b->nfields; fi++) {
-                Node* fd = b->decl->kids[fi];
-                SType* eb = b->fields[fi].t;
-                if (!(fd->flags & F_EMBED) || !eb || eb->kind != SK_STRUCT)
-                    continue;
-                uint32_t ekey_len;
-                const char* ekey = method_key(eb->decl, callee->str, callee->len,
-                                              &ekey_len);
-                Sym* ehead = lookup_val(k, ekey, ekey_len);
-                for (Sym* f = ehead; f; f = f->overload) {
-                    SType* ft = f->is_generic && eb->nargs
-                        ? build_func_type(k, f->decl, eb->args, eb->nargs)
-                        : f->type;
-                    if (!ft || (f->is_generic && !eb->nargs) ||
-                        ft->nparams != call->nkids + 1 ||
-                        !same_type(ft->params[0], eb)) continue;
-                    int rmut = (f->decl->flags & F_MUT) != 0;
-                    int cmut = (call->flags & F_MUT) != 0;
-                    if (rmut != cmut) continue;
-                    int exact = 1;
-                    for (int i = 1; i < ft->nparams; i++) {
-                        Node* arg = call->kids[i - 1];
-                        SType* at = overload_arg_type(k, arg);
-                        int am = arg->kind == N_MUTARG;
-                        int pm = (f->decl->kids[i]->flags & F_MUT) != 0;
-                        if (am != pm) exact = 0;
-                        else if (!exact_arg_type(arg, at, ft->params[i]) &&
-                                 !shrink_ok(at, ft->params[i]))
-                            exact = 0;
-                    }
-                    if (!exact && overload_count(ehead) > 1) continue;
-                    if (promoted) {
-                        ck_err(k, call, "ambiguous promoted method call '%.*s'",
-                               (int)callee->len, callee->str);
-                        return T_ERR;
-                    }
-                    promoted = f;
-                    promoted_ft = ft;
-                    promoted_field = fd;
-                }
-            }
-            if (promoted) {
-                Node* recv = (Node*)arena_alloc(sizeof(Node));
-                memset(recv, 0, sizeof *recv);
-                recv->kind = N_FIELD_E;
-                recv->path = callee->path; recv->line = callee->line;
-                recv->col = callee->col;
-                recv->a = callee->a;
-                recv->str = promoted_field->str;
-                recv->len = promoted_field->len;
-                recv->ty = promoted_ft->params[0];
-                callee->a = recv;
-                found = promoted;
-                b = promoted_ft->params[0];
-            }
-        }
-        if (found) {
-            SType* method_ft = found->is_generic
-                ? instantiate_generic_func_args(k, found, b->args, b->nargs, call)
-                : found->type;
-            int rmut = (found->decl->flags & F_MUT) != 0;
-            Node* recv = qualified
-                ? (call->kids[0]->kind == N_MUTARG ? call->kids[0]->a : call->kids[0])
-                : callee->a;
-            if (rmut) check_lvalue(k, recv, 1);
-            else coerce(k, recv, b);
-            int start = qualified ? 1 : 0;
-            for (int i = start; i < call->nkids; i++) {
-                Node* arg = call->kids[i];
-                int pi = i + (qualified ? 0 : 1);
-                coerce(k, arg->kind == N_MUTARG ? arg->a : arg, method_ft->params[pi]);
-            }
-            if (found->decl->path && call->path &&
-                strcmp(found->decl->path, call->path) != 0 && !found->is_pub)
-                ck_err(k, call, "method '%.*s' is private", (int)callee->len, callee->str);
-            call->sym = found;
-            callee->ty = method_ft;
-            if (qualified) call->flags |= F_METHOD; // emitter: receiver is argument zero
-            return method_ft->ret;
-        }
-        ck_err(k, call, "no method '%.*s' for %s", (int)callee->len, callee->str,
-               type_name(b));
-        return T_ERR;
+        SType* r = check_method_call(k, call, b, qualified, 0);
+        if (r) return r;
+        Pending* pd = (Pending*)arena_alloc(sizeof(Pending));
+        pd->call = call;
+        pd->scope = k->scope;
+        pd->recv = b;
+        pd->qualified = qualified;
+        pd->method = 1;
+        pd->next = k->pending;
+        k->pending = pd;
+        return T_ERR; // a method may be declared later
     }
     ck_err(k, call, "unsupported callee");
     return T_ERR;
@@ -6496,6 +6521,11 @@ int sema_check(Node* file, Diag* d) {
         Node* call = pd->call;
         Node* callee = call->a;
         k.scope = pd->scope;
+        if (pd->method) {
+            SType* r = check_method_call(&k, call, pd->recv, pd->qualified, 1);
+            call->ty = r;
+            continue;
+        }
         Sym* head = lookup_val(&k, callee->str, callee->len);
         if (!head || head->kind != SYM_FUNC) {
             ck_err(&k, call, "unknown function '%.*s'", (int)callee->len, callee->str);

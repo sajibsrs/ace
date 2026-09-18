@@ -19,16 +19,6 @@ before the work they unblock.
 
 ## 0. Known defects
 
-- **Method calls get no forward/mutual-call fixup** [defect] — Compiler #5's
-  placeholder-and-patch mechanism resolves forward and mutually recursive
-  plain top-level calls, but not method-call syntax on the same type: two
-  methods on one type that call each other fail with "no method 'x'" unless
-  one happens to be declared textually first, which mutual recursion can
-  never satisfy for both. Identically shaped plain functions already compile.
-  Surfaced by a recursive-descent parser needing `Parser.parse_value` to call
-  `Parser.parse_object`/`Parser.parse_array`, which call back into
-  `parse_value`; worked around there by writing those as plain functions
-  instead of methods.
 ## 1. Core type-system completion
 
 Finish the existing primitive, sequential, and aggregate model before adding
