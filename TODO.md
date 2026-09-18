@@ -29,15 +29,6 @@ before the work they unblock.
   `Parser.parse_object`/`Parser.parse_array`, which call back into
   `parse_value`; worked around there by writing those as plain functions
   instead of methods.
-- **Generic re-stamping cannot see a root file's import aliases** [defect] —
-  `sema_stamp_body` re-checks a generic function body under type substitution
-  using the shared program-wide scope, not the root file's own import-alias
-  scope. A generic function declared in the root file whose body references a
-  root import alias (`import name: "./path.ace"`) fails to resolve that name
-  when the generic is stamped for a concrete type. Dependency-module generics
-  are unaffected, since their own import aliases are already lowered before
-  merge. Fix requires threading the declaring scope through to stamp time
-  (e.g. recording it on the `Sym`/`Node`, mirroring `Pending.scope`).
 ## 1. Core type-system completion
 
 Finish the existing primitive, sequential, and aggregate model before adding

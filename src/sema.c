@@ -2872,7 +2872,10 @@ static SType* instantiate_generic_func_args(Ck* k, Sym* gs, SType** args,
         k->tnames = sn; k->ttypes = st; k->nsub = ns;
         return ft;
     }
+    Scope* saved_scope = k->scope;
+    if (gs->decl_scope) k->scope = gs->decl_scope;
     check_func_body(k, f); // stamping: body checked once per instantiation
+    k->scope = saved_scope;
     k->tnames = sn; k->ttypes = st; k->nsub = ns;
     return ft;
 }
@@ -6210,7 +6213,8 @@ void sema_stamp_body(Node* f, SType** args, int nargs) {
     if (f->flags & F_SPECIALIZED) return; // no default body: nothing to stamp
     Ck k = {0};
     k.d = &g_dummy_diag;
-    k.scope = g_file_scope;
+    Sym* gs = (Sym*)f->sym;
+    k.scope = gs && gs->decl_scope ? gs->decl_scope : g_file_scope;
     k.tnames = (const char**)arena_alloc((size_t)nargs * sizeof(char*));
     k.ttypes = args;
     k.nsub = nargs;
@@ -6240,7 +6244,9 @@ static void install_predeclared_error_types(Scope* file_scope) {
 
 int sema_check(Node* file, Diag* d) {
     static Scope file_scope; // static: outlives the call for stamp re-checks
+    static Scope import_scope; // likewise: root generics stamp under it
     memset(&file_scope, 0, sizeof file_scope);
+    memset(&import_scope, 0, sizeof import_scope);
     g_file_scope = &file_scope;
     if (!PRIMS[0]) {
         T_ERR = st_new(SK_ERR);
@@ -6255,7 +6261,7 @@ int sema_check(Node* file, Diag* d) {
         ensure_memory_types(); // mut-view singletons exist from the first build
     }
     install_predeclared_error_types(&file_scope);
-    Scope import_scope = {0}; // root's own aliased imports; see is_root_node
+    // import_scope: root's own aliased imports; see is_root_node
     import_scope.parent = &file_scope;
     Ck k = {0};
     k.d = d;
@@ -6309,6 +6315,8 @@ int sema_check(Node* file, Diag* d) {
             }
             Sym* s = declare_func(&k, n, 0);
             if (!s) break;
+            if (s->is_generic)
+                s->decl_scope = is_root_node(d, n) ? &import_scope : &file_scope;
             if (!(n->flags & F_METHOD) && n->len == 4 &&
                 memcmp(n->str, "main", 4) == 0) {
                 int spells_int = n->a && n->a->kind == N_NAMED &&

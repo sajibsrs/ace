@@ -82,6 +82,9 @@ struct Sym {
     Sym*        spec_next; // specialization: next bound to the same template
     SType**     spec_args; // specialization: exact type-argument tuple
     int         spec_nargs;
+    // generic function: the scope its body is checked under at stamp time;
+    // NULL means the shared file scope
+    struct Scope* decl_scope;
 };
 
 // --- helpers used by the emitter --------------------------------------------------

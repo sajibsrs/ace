@@ -848,6 +848,13 @@ current normative rules, and Git preserves patch-level detail.
   as before, so cross-file name resolution is unaffected. Added
   `tests/modules/import_alias_scope`.
 
+- Generic function stamping now checks each body under the scope it was
+  declared in: `Sym.decl_scope` records the root file's import-alias scope for
+  root-declared generics and the shared file scope for every other generic, and
+  both `instantiate_generic_func_args` and `sema_stamp_body` use it instead of
+  the caller's scope or the bare shared scope. Added
+  `tests/modules/import_alias_generic`.
+
 ## Current frontier
 
 The checked-build queue is complete. Additive networking, concurrency, fuller

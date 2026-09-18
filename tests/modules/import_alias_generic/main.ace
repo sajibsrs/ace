@@ -1,0 +1,21 @@
+/* A generic declared in the root file must resolve the root's import alias
+   when stamped for a concrete type, including from a nested generic call. */
+
+/* expect-exit: 0 */
+
+import util: "./util.ace"
+
+pick[T](x: T, n: int): int {
+    return util.twice(n)
+}
+
+wrap[T](x: T): int {
+    return pick[T](x, 21)
+}
+
+main(): int {
+    if pick[int](1, 21) != 42 || wrap[bool](true) != 42 {
+        return 1
+    }
+    return 0
+}

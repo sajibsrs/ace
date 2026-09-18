@@ -1,0 +1,5 @@
+/* Companion module for the import_alias_generic fixture. */
+
+pub twice(x: int): int {
+    return x + x
+}
