@@ -77,6 +77,13 @@ for f in $(find tests/sema -name '*_err.ace' | sort); do
     fi
 done
 
+untyped_float_mix=$("$ACE" tests/sema/operators/untyped_float_mix_err.ace 2>&1)
+if ! printf '%s\n' "$untyped_float_mix" | grep -qF \
+    "type mismatch: integer literal given where f64 expected (casts are explicit)"; then
+    echo "FAIL: a compound untyped integer beside f64 must need an explicit cast"
+    fail=1
+fi
+
 float_alias_overload=$("$ACE" tests/sema/types/float_alias_overload_err.ace 2>&1)
 if ! printf '%s\n' "$float_alias_overload" | grep -qF \
     "duplicate overload 'measure': parameter signatures must differ"; then

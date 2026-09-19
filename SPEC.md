@@ -20,7 +20,11 @@ Concrete rules and syntax. The why behind every rule lives in PHILOSOPHY.md (clo
 9. Every storage declaration states its type explicitly. There is no declaration-elision spelling: a local initialized from an expression is `name: Type = expr`, and every name introduced by a multi-declaration states its own type. Rationale: one declaration rule works uniformly for literals, aggregates, null values, and single- or multi-return expressions while making the programmer's expected type locally visible and independently checkable against the initializer.
 10. Numeric and character literals are untyped constants that take the expected
     type at use and must fit it. Casts are explicit and constructor-shaped
-    (`i32(x)`, `Meters(x)`); there are no implicit numeric conversions.
+    (`i32(x)`, `Meters(x)`); there are no implicit numeric conversions. An
+    untyped constant expression (`1 + 2`, `-0.5`, `1 << 3`) takes the expected
+    type as a whole, beside a typed operand as in a declaration; an integer
+    expression never becomes floating-point arithmetic (`x != 7 / 2` with `x: f64`
+    needs a cast), while a lone integer literal may still meet a float operand.
 11. A tuple expression may initialize or assign one explicitly stated tuple
     type of the same arity when every member expression independently resolves
     to the corresponding member type. Standalone integer, float, and character

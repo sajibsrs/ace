@@ -1002,6 +1002,14 @@ current normative rules, and Git preserves patch-level detail.
   (bits 5-9) rather than `Rm`. `fneg` previously always negated v0, so
   `a * -b` on floats miscompiled whenever `-b` sat in a later temp; `fmov`'s
   sole caller only ever moved v0 to itself, so it never misbehaved.
+- Untyped constant expressions beside a typed operand (`b != 1 + 2`,
+  `b + (1 << 3)`, `-(1 + 2)`) now type every node through `coerce`, which
+  also recurses into unary `-`/`~`; previously only the top node was typed and
+  codegen rejected its untyped children. Unary `-` accepts untyped floats, so
+  `-0.5` is valid; a negated literal keeps the plain-literal path, so its
+  magnitude is judged through the negation (`-9223372036854775808` for i64).
+  A compound untyped integer beside a float operand is rejected with the
+  declaration's explicit-cast error rather than computed in float.
 
 ## Current frontier
 

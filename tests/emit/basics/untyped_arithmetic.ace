@@ -1,0 +1,44 @@
+/* Compound untyped constants materialize at the typed operand's or declared
+ * type through every node, in arithmetic and unary forms as in comparisons. */
+
+// expect-exit: 42
+
+Level: enum { low, mid, high }
+
+Meters: distinct i64
+
+Fd: distinct i32
+
+Handle: distinct Fd
+
+main(): int {
+    b: int = 3
+    c: int = b + (1 + 2)
+    if c != 6 { return 1 }
+    d: int = (4 * 5) - b
+    if d != 17 { return 2 }
+    e: int = -(1 + 2)
+    if e != b - 6 { return 3 }
+    f: i32 = ~(1 << 2)
+    if f != i32(0) - 5 { return 4 }
+    m: Meters = 2 * 5
+    if m != 1 + 9 { return 5 }
+    lv: Level = Level.high
+    if lv != 1 + 1 { return 6 }
+
+    x: f64 = 2.0
+    y: f64 = x * (0.5 + 0.25)
+    if y != 1.5 { return 7 }
+    s: f32 = -(0.5 * 3.0)
+    if s + 1.5 != 0.0 { return 8 }
+    g: f64 = -2.5
+    if g * 2.0 != -5.0 { return 9 }
+
+    // a negated literal stays a literal: nested distinct operands accept it,
+    // and its magnitude may exceed the type as long as the negation fits
+    h: Handle = Handle(Fd(3))
+    if h == -1 { return 10 }
+    lowest: i64 = -9223372036854775808
+    if lowest + 1 != -9223372036854775807 { return 11 }
+    return 42
+}

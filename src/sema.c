@@ -2019,6 +2019,13 @@ static int coerce(Ck* k, Node* e, SType* want) {
             if (e->kind == N_BINARY) {
                 coerce(k, e->a, want);
                 coerce(k, e->b, want);
+            } else if (e->kind == N_UNARY) {
+                // the whole was range-checked above; a literal operand is a
+                // magnitude (i64 min negates 9223372036854775808)
+                if (e->a->kind == N_INT || e->a->kind == N_FLOAT)
+                    e->a->ty = want;
+                else
+                    coerce(k, e->a, want);
             }
             e->ty = want; // untyped literal takes its expected type here
             return 1;
@@ -2031,6 +2038,13 @@ static int coerce(Ck* k, Node* e, SType* want) {
             if (e->kind == N_BINARY) {
                 coerce(k, e->a, want);
                 coerce(k, e->b, want);
+            } else if (e->kind == N_UNARY) {
+                // the whole was range-checked above; a literal operand is a
+                // magnitude (i64 min negates 9223372036854775808)
+                if (e->a->kind == N_INT || e->a->kind == N_FLOAT)
+                    e->a->ty = want;
+                else
+                    coerce(k, e->a, want);
             }
             e->ty = want;
             return 1;
@@ -2040,6 +2054,21 @@ static int coerce(Ck* k, Node* e, SType* want) {
     ck_err(k, e, "type mismatch: %s given where %s expected (casts are explicit)",
            type_name(t), type_name(want));
     return 0;
+}
+
+/*
+ * An untyped operand beside a typed one materializes at that type. A plain
+ * or negated literal takes it directly (an integer literal may meet a float
+ * operand); a compound constant expression goes through coerce so every node
+ * beneath it is typed, and an integer expression never becomes float math.
+ */
+static int settle_operand(Ck* k, Node* e, SType* want) {
+    if (e->kind == N_UNARY && (e->a->kind == N_INT || e->a->kind == N_FLOAT))
+        e->a->ty = want; // a negated literal is still a literal
+    else if (e->kind == N_BINARY || e->kind == N_UNARY)
+        return coerce(k, e, want);
+    e->ty = want; // literal materializes to the operand type
+    return 1;
 }
 
 // --- lvalues ------------------------------------------------------------------------
@@ -2406,6 +2435,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         SType* t = expr_type(k, e->a);
         if (t->kind == SK_ERR) return t;
         if (t == T_UT_INT) return t;
+        if (t == T_UT_FLOAT && e->op == T_MINUS) return t;
         switch (e->op) {
         case T_BANG:
             if (is_bool(t)) return t;
@@ -2482,19 +2512,19 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         if (a == T_UT_INT && b != T_UT_INT && b->kind != SK_UT) {
             if (!ut_fits(k, e->a, is_int(b) ? b : st_prim(P_I64))) return T_ERR;
             a = b;
-            e->a->ty = a; // literal materializes to the operand type
+            if (!settle_operand(k, e->a, a)) return T_ERR;
         } else if (b == T_UT_INT && a != T_UT_INT && a->kind != SK_UT) {
             if (!ut_fits(k, e->b, is_int(a) ? a : st_prim(P_I64))) return T_ERR;
             b = a;
-            e->b->ty = b;
+            if (!settle_operand(k, e->b, b)) return T_ERR;
         } else if (a == T_UT_FLOAT && is_float(b)) {
             if (!ut_fits(k, e->a, b)) return T_ERR;
             a = b;
-            e->a->ty = a;
+            if (!settle_operand(k, e->a, a)) return T_ERR;
         } else if (b == T_UT_FLOAT && is_float(a)) {
             if (!ut_fits(k, e->b, a)) return T_ERR;
             b = a;
-            e->b->ty = b;
+            if (!settle_operand(k, e->b, b)) return T_ERR;
         }
         int cmp = op == T_EQEQ || op == T_BANGEQ || op == T_LT ||
                   op == T_LE || op == T_GT || op == T_GE;

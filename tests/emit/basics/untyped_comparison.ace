@@ -7,6 +7,27 @@ main(): int {
     ge: bool = 0.5 >= 0.25
     x: f64 = 1.5
     inside: bool = 1.0 < x <= 2.0
-    if eq && !ne && lt && ge && inside { return 0 }
-    return 1
+    if !(eq && !ne && lt && ge && inside) { return 1 }
+
+    // compound untyped constants beside a typed operand, either side
+    b: int = 3
+    if b != 1 + 2 { return 2 }
+    if (1 + 2) != b { return 3 }
+    if b != -(0 - 3) { return 4 }
+    n: i32 = 8
+    if n != 1 << 3 { return 5 }
+    if !(n > 2 * 3) { return 6 }
+    small: u8 = 200
+    if small != 100 + 100 { return 7 }
+
+    // untyped floats, including negated literals and negated compounds
+    y: f64 = 0.75
+    if y != 0.5 + 0.25 { return 8 }
+    neg: f64 = -0.5
+    if neg != -0.5 { return 9 }
+    if neg != -(0.25 + 0.25) { return 10 }
+    if -0.5 >= 0.25 { return 11 }
+    z: f32 = -1.5
+    if !(z < -1.0) { return 12 }
+    return 0
 }
