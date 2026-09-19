@@ -38,7 +38,7 @@ fragmented_length(): int {
         http.ResponseResult.progress(value: http.ResponseProgress) {
             if value.body_written != 0 { return 1 }
         }
-        else { return 2 }
+        default { return 2 }
     }
     result = mut state.parse(
         "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\na\xC3\xA9b",
@@ -53,7 +53,7 @@ fragmented_length(): int {
                 return 3
             }
         }
-        else { return 4 }
+        default { return 4 }
     }
     return 0
 }
@@ -72,7 +72,7 @@ chunked(): int {
                 return 1
             }
         }
-        else { return 2 }
+        default { return 2 }
     }
     return 0
 }
@@ -92,7 +92,7 @@ informational_and_none(): int {
                 return 1
             }
         }
-        else { return 2 }
+        default { return 2 }
     }
     return 0
 }
@@ -114,7 +114,7 @@ close_body(): int {
             body[0] = 120
             if response.body[0] != 120 { return 5 }
         }
-        else { return 4 }
+        default { return 4 }
     }
     return 0
 }
@@ -135,7 +135,7 @@ failures(): int {
         http.ResponseResult.capacity(capacity_type: http.ResponseCapacity) {
             if capacity_type != http.ResponseCapacity.headers { return 1 }
         }
-        else { return 2 }
+        default { return 2 }
     }
     state = new_state()
     result = mut state.parse(
@@ -149,7 +149,7 @@ failures(): int {
         http.ResponseResult.capacity(capacity_type: http.ResponseCapacity) {
             if capacity_type != http.ResponseCapacity.body { return 3 }
         }
-        else { return 4 }
+        default { return 4 }
     }
     state = new_state()
     result = mut state.parse(
@@ -161,7 +161,7 @@ failures(): int {
     )
     switch result {
         http.ResponseResult.framing {}
-        else { return 5 }
+        default { return 5 }
     }
     state = new_state()
     result = mut state.parse(
@@ -173,7 +173,7 @@ failures(): int {
     )
     switch result {
         http.ResponseResult.framing {}
-        else { return 6 }
+        default { return 6 }
     }
     state = new_state()
     result = mut state.parse(
@@ -185,7 +185,7 @@ failures(): int {
     )
     switch result {
         http.ResponseResult.syntax {}
-        else { return 7 }
+        default { return 7 }
     }
     state = new_state()
     result = mut state.parse(
@@ -197,7 +197,7 @@ failures(): int {
     )
     switch result {
         http.ResponseResult.syntax {}
-        else { return 8 }
+        default { return 8 }
     }
     state = new_state()
     result = mut state.parse(
@@ -211,7 +211,7 @@ failures(): int {
         http.ResponseResult.capacity(capacity_type: http.ResponseCapacity) {
             if capacity_type != http.ResponseCapacity.body { return 10 }
         }
-        else { return 11 }
+        default { return 11 }
     }
     state = new_state()
     result = mut state.parse(
@@ -223,7 +223,7 @@ failures(): int {
     )
     switch result {
         http.ResponseResult.framing {}
-        else { return 12 }
+        default { return 12 }
     }
     return 0
 }

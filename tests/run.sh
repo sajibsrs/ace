@@ -100,6 +100,18 @@ if ! printf '%s\n' "$fallthrough_union_error" | grep -qF \
     fail=1
 fi
 
+default_last_errors=$("$ACE" tests/sema/conditions/default_not_last_err.ace 2>&1)
+default_last_count=$(printf '%s\n' "$default_last_errors" | grep -cF "'default' must be the last case")
+if [ "$default_last_count" -ne 3 ]; then
+    echo "FAIL: expected 3 'default' must be the last case diagnostics, got $default_last_count"
+    fail=1
+fi
+switch_else_error=$("$ACE" tests/sema/conditions/switch_else_err.ace 2>&1)
+if ! printf '%s\n' "$switch_else_error" | grep -qF "'else' is not a switch case; use 'default'"; then
+    echo "FAIL: missing switch 'else' diagnostic"
+    fail=1
+fi
+
 defer_placement_errors=$("$ACE" tests/sema/defer/placement_err.ace 2>&1)
 defer_placement_count=$(printf '%s\n' "$defer_placement_errors" | grep -cF \
     "defer statement must appear at the top level of the function body")

@@ -217,7 +217,7 @@ pub exchange[C](connection: C, raw: tcp.Conn,
                 }
                 parse_pending = true
             }
-            else {
+            default {
                 tcp.close(mut raw)
                 return Response{}, ClientErr.response
             }

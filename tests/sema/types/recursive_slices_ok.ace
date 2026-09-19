@@ -40,7 +40,7 @@ main(): int {
 
     switch obj {
         Json.none { return 0 }
-        else {}
+        default {}
     }
     return leaf.value + int(pair.key.len) + int(idx.entries.len)
 }

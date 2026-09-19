@@ -4,7 +4,7 @@ main(): int {
     if true {
         n |= 2
     }
-    else {
+    default {
         n &= 3
     }
     return 0

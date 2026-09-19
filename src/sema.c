@@ -4382,12 +4382,11 @@ static SType* check_call(Ck* k, Node* call) {
 static void check_union_switch(Ck* k, Node* s, SType* u) {
     uint8_t* covered = (uint8_t*)arena_alloc((size_t)(u->nfields ? u->nfields : 1));
     memset(covered, 0, (size_t)(u->nfields ? u->nfields : 1));
-    int has_else = 0;
+    int has_default = 0;
     for (int i = 0; i < s->nkids; i++) {
         Node* c = s->kids[i];
-        if (c->flags & F_ELSE) {
-            if (has_else) ck_err(k, c, "duplicate else case");
-            has_else = 1;
+        if (c->flags & F_DEFAULT) {
+            has_default = 1;
         } else {
             if (c->nkids != 1)
                 ck_err(k, c, "union switch cases name exactly one variant");
@@ -4448,7 +4447,7 @@ static void check_union_switch(Ck* k, Node* s, SType* u) {
             }
         }
         scope_push(k);
-        if (!(c->flags & F_ELSE)) {
+        if (!(c->flags & F_DEFAULT)) {
             for (int j = 0; j < c->nkids; j++) {
                 Node* pat = c->kids[j];
                 if (pat->kind != N_VARPAT || !pat->b || !pat->b->a) continue;
@@ -4463,11 +4462,22 @@ static void check_union_switch(Ck* k, Node* s, SType* u) {
         check_block(k, c->b);
         scope_pop(k);
     }
-    if (!has_else) {
+    if (!has_default) {
         for (int i = 0; i < u->nfields; i++)
             if (!covered[i])
-                ck_err(k, s, "switch on %s is missing variant '%s' (or add else)",
+                ck_err(k, s, "switch on %s is missing variant '%s' (or add default)",
                        type_name(u), u->fields[i].name);
+    }
+}
+
+// `default` is optional and, when present, the last case (SPEC Conditions #2);
+// a second `default` is likewise a case after the first.
+static void check_default_last(Ck* k, Node* s) {
+    for (int i = 0; i + 1 < s->nkids; i++) {
+        if (s->kids[i]->flags & F_DEFAULT) {
+            ck_err(k, s->kids[i + 1], "'default' must be the last case");
+            return;
+        }
     }
 }
 
@@ -4857,17 +4867,14 @@ static void check_stmt(Ck* k, Node* s) {
     case N_SWITCH: {
         SType* t = expr_type(k, s->a);
         check_switch_fallthrough(k, s, t);
+        check_default_last(k, s);
         if (t->kind == SK_UNION) {
             check_union_switch(k, s, t);
             return;
         }
-        int has_else = 0;
         for (int i = 0; i < s->nkids; i++) {
             Node* c = s->kids[i];
-            if (c->flags & F_ELSE) {
-                if (has_else) ck_err(k, c, "duplicate else case");
-                has_else = 1;
-            } else if (t->kind != SK_ERR) {
+            if (!(c->flags & F_DEFAULT) && t->kind != SK_ERR) {
                 for (int j = 0; j < c->nkids; j++) coerce(k, c->kids[j], t);
             }
             scope_push(k);
@@ -5632,10 +5639,10 @@ static int init_stmt(InitCk* k, Node* s) {
         init_expr(k, s->a);
         InitSnap base = init_snapshot(k);
         InitSnap merged = base;
-        int have = 0, has_else = 0;
+        int have = 0, has_default = 0;
         for (int i = 0; i < s->nkids; i++) {
             Node* c = s->kids[i];
-            if (c->flags & F_ELSE) has_else = 1;
+            if (c->flags & F_DEFAULT) has_default = 1;
             init_restore(&base);
             for (int j = 0; j < c->nkids; j++) {
                 Node* pat = c->kids[j];
@@ -5658,7 +5665,7 @@ static int init_stmt(InitCk* k, Node* s) {
                 merged = init_snapshot(k);
             }
         }
-        if (!has_else) {
+        if (!has_default) {
             if (!have) merged = base;
             else {
                 init_restore(&merged);
@@ -5667,8 +5674,8 @@ static int init_stmt(InitCk* k, Node* s) {
                 merged = init_snapshot(k);
             }
         }
-        init_restore(have || !has_else ? &merged : &base);
-        return !has_else || have;
+        init_restore(have || !has_default ? &merged : &base);
+        return !has_default || have;
     }
     case N_RETURN:
         init_expr(k, s->a); return 0;

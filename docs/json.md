@@ -82,7 +82,7 @@ main(): int {
         json.Json.object(pairs: []json.Pair) {
             fmt.printf("%d keys\n", int(pairs.len))
         }
-        else {}
+        default {}
     }
     return 0
 }

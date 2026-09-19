@@ -82,7 +82,7 @@ main(): int {
         Status.key(code: u32) {
             key = code
         }
-        else {
+        default {
             return 4
         }
     }
@@ -101,7 +101,7 @@ main(): int {
             }
             point.x = 99
         }
-        else {
+        default {
             return 7
         }
     }
@@ -112,7 +112,7 @@ main(): int {
                 return 8
             }
         }
-        else {
+        default {
             return 9
         }
     }
@@ -123,7 +123,7 @@ main(): int {
                 return 17
             }
         }
-        else {
+        default {
             return 18
         }
     }
@@ -136,7 +136,7 @@ main(): int {
                 return 12
             }
         }
-        else {
+        default {
             return 13
         }
     }
@@ -149,7 +149,7 @@ main(): int {
                 return 14
             }
         }
-        else {
+        default {
             return 15
         }
     }

@@ -26,7 +26,7 @@ main(): int {
 
     switch total {
         49 { total = 42 }
-        else { total = 1 }
+        default { total = 1 }
     }
     return int(total)
 }

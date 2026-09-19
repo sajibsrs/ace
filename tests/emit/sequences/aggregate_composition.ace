@@ -83,7 +83,7 @@ main(): int {
         Choice[i32].value(value: i32) {
             if value != 20 { return 5 }
         }
-        else { return 6 }
+        default { return 6 }
     }
     return 0
 }

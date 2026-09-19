@@ -194,7 +194,7 @@ static const struct {
     {"mut", T_MUT},
     {"const", T_CONST},       {"noalias", T_NOALIAS},   {"if", T_IF},
     {"else", T_ELSE},         {"for", T_FOR},           {"in", T_IN},
-    {"switch", T_SWITCH},     {"return", T_RETURN},     {"break", T_BREAK},
+    {"switch", T_SWITCH},     {"default", T_DEFAULT},   {"return", T_RETURN},     {"break", T_BREAK},
     {"continue", T_CONTINUE}, {"defer", T_DEFER},        {"asm", T_ASM},
     {"extern", T_EXTERN},     {"export", T_EXPORT},     {"contract", T_CONTRACT},
     {"struct", T_STRUCT},     {"embed", T_EMBED},       {"signs", T_SIGNS},

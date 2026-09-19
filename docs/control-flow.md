@@ -24,10 +24,11 @@ Comparisons may be chained. Each operand is evaluated once:
 inside: bool = 0 <= value < limit
 ```
 
-`switch` compares one scalar value against cases and uses `else` for the default
-case. Cases do not fall through implicitly. A non-final case may end with the
-contextual statement `fallthrough` to continue directly into the immediately
-following case without testing that case's pattern:
+`switch` compares one scalar value against cases and uses `default` for the
+catch-all case, which must be the last case. Cases do not fall through
+implicitly. A non-final case may end with the contextual statement
+`fallthrough` to continue directly into the immediately following case without
+testing that case's pattern:
 
 ```ace
 switch value {
@@ -38,7 +39,7 @@ switch value {
     2 {
         count += 2
     }
-    else {}
+    default {}
 }
 ```
 
@@ -51,7 +52,7 @@ variant pattern, so entering the next case without a match would contradict its
 pattern; retesting it would never match a different active variant.
 
 For a tagged union, cases name variants and payload variants bind an explicitly
-typed local copy. The switch must cover every variant or include `else`:
+typed local copy. The switch must cover every variant or include `default`:
 
 ```ace
 switch event {
@@ -61,7 +62,7 @@ switch event {
     Event.key(code: u32) {
         code += 1
     }
-    else {}
+    default {}
 }
 ```
 

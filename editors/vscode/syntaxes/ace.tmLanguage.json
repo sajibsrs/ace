@@ -344,13 +344,13 @@
           "match": "\\b(?:bits|signed)\\b(?=\\s+(?:u8|u16|u32|u64|[0-9]))"
         },
         {
-          "match": "^(\\s*)(fallthrough)\\b(?=\\s*\\}\\s*(?:else\\b|[^{}\\n]+)\\s*\\{)",
+          "match": "^(\\s*)(fallthrough)\\b(?=\\s*\\}\\s*(?:default\\b|[^{}\\n]+)\\s*\\{)",
           "captures": {
             "2": { "name": "keyword.control.ace" }
           }
         },
         {
-          "match": "(?<=\\{)(\\s*)(fallthrough)\\b(?=\\s*\\}\\s*(?:else\\b|[^{}\\n]+)\\s*\\{)",
+          "match": "(?<=\\{)(\\s*)(fallthrough)\\b(?=\\s*\\}\\s*(?:default\\b|[^{}\\n]+)\\s*\\{)",
           "captures": {
             "2": { "name": "keyword.control.ace" }
           }
@@ -369,7 +369,7 @@
         },
         {
           "name": "keyword.control.ace",
-          "match": "\\b(?:import|from|pub|mut|const|noalias|if|else|for|in|switch|return|break|continue|defer|asm|extern|export|contract|struct|embed|union|signs|specialized|intrinsic|distinct|type|enum|volatile)\\b"
+          "match": "\\b(?:import|from|pub|mut|const|noalias|if|else|for|in|switch|default|return|break|continue|defer|asm|extern|export|contract|struct|embed|union|signs|specialized|intrinsic|distinct|type|enum|volatile)\\b"
         }
       ]
     },

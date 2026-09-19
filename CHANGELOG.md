@@ -883,6 +883,15 @@ current normative rules, and Git preserves patch-level detail.
   the private float `decimal.Kind` is `decimal.Type` with `number_type` fields,
   and the `pkg/http` capacity parameter is `capacity_type`. The C compiler
   keeps its internal `kind` names, since `Sym` already has a `type` member.
+- Renamed the `switch` catch-all case from `else` to `default` and required it
+  to be the last case. `default` is a new keyword and `F_ELSE` is now
+  `F_DEFAULT`. One sema check (`check_default_last`) reports a case after
+  `default`, which also covers a repeated `default`, replacing the old
+  duplicate-`else` check. `else` as a case is a parse error naming `default`.
+  The two dispatch regression tests now put `default` last and live as
+  `switch_default_dispatch.ace` and `default_dispatch.ace`; new error fixtures
+  cover both diagnostics. Every switch arm in `std`, `pkg`, `docs`, tests, and
+  the VS Code grammar was migrated.
 
 ## Current frontier
 

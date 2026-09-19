@@ -12,7 +12,7 @@ main(): int {
         0 {
             fallthrough
         }
-        else {
+        default {
             fallthrough()
         }
     }

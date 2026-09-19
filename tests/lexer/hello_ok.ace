@@ -59,7 +59,7 @@ find(buf: []u8, needle: u8): int {
 
     switch needle {
         0, 1 { return -1 }
-        else {}
+        default {}
     }
     return 0
 }

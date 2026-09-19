@@ -44,7 +44,7 @@ check(address: net.Addr4, listener: Listener, connection: Conn, bytes: mut []u8,
         switch event {
             Event.data(count: usize) { received = count }
             Event.failed(err: Error) { send_err = err }
-            else {}
+            default {}
         }
         event = progress_send(mut accepted, text)
         event = progress_connect(mut accepted)

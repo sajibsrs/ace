@@ -73,7 +73,7 @@ if err == null && tcp.interest(connection) == tcp.Interest.write {
         tcp.Event.failed(connect_err: Error) {
             tcp.close(mut connection)
         }
-        else {}
+        default {}
     }
 }
 ```

@@ -331,7 +331,7 @@ tcp_nonblocking_example(address: net.Addr4): int {
                     return 2
                 }
             }
-            else {}
+            default {}
         }
     }
     tcp.close(mut connection)

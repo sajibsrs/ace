@@ -18,7 +18,7 @@ main(): int {
         2 {
             total += 32
         }
-        else {
+        default {
             total = 100
         }
     }
@@ -28,7 +28,7 @@ main(): int {
     switch selected {
         7 { total += 0 }
         8 { total = 100 }
-        else { total = 100 }
+        default { total = 100 }
     }
 
     total += 7

@@ -637,7 +637,7 @@ switch event {
 }
 ```
 
-Every variant must appear once unless the switch contains `else`. Payloads
+Every variant must appear once unless the switch contains `default`. Payloads
 cannot be accessed outside their matching arm. Replacing a payload or variant
 uses whole-value assignment.
 

@@ -56,13 +56,13 @@ check(
             response_count, err = response.format(output)
             count += response_count
         }
-        else {}
+        default {}
     }
     switch request_result {
         http.RequestResult.complete(parsed: http.Request) {
             count += parsed.method.len
         }
-        else {}
+        default {}
     }
     if valid && address.port == 80 && url.port == 80 && err == null {
         count += empty_request.body.len + usize(default_response.status - 200)

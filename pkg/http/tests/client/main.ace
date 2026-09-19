@@ -178,7 +178,7 @@ main(): int {
             if !mem.equal(response.body, "h\xC3\xA9!") { return 52 }
             if response.headers.len != 2 { return 53 }
         }
-        else { return 6 }
+        default { return 6 }
     }
 
     return 0

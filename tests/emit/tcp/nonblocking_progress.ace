@@ -38,21 +38,21 @@ wait_one(q: poll.Queue, storage: mut []poll.Event): (poll.Event, Error) {
 is_connected(event: tcp.Event): bool {
     switch event {
         tcp.Event.connected { return true }
-        else { return false }
+        default { return false }
     }
 }
 
 sent_count(event: tcp.Event): (usize, bool) {
     switch event {
         tcp.Event.sent(count: usize) { return count, true }
-        else { return usize(0), false }
+        default { return usize(0), false }
     }
 }
 
 is_none(event: tcp.Event): bool {
     switch event {
         tcp.Event.none { return true }
-        else { return false }
+        default { return false }
     }
 }
 
@@ -99,7 +99,7 @@ client(port: u16): int {
                 advanced = true
             }
             tcp.Event.none {}
-            else { return 5 }
+            default { return 5 }
         }
         if !advanced {
             if watch_connection(q, connection) != null {
@@ -135,7 +135,7 @@ client(port: u16): int {
                 receive_advanced = true
             }
             tcp.Event.none {}
-            else { return 7 }
+            default { return 7 }
         }
         if receive_advanced {
             received += receive_amount
@@ -236,7 +236,7 @@ main(): int {
                 receive_advanced = true
             }
             tcp.Event.none {}
-            else { return 15 }
+            default { return 15 }
         }
         if receive_advanced {
             received += receive_amount
@@ -306,7 +306,7 @@ main(): int {
                 return 21
             }
         }
-        else { return 22 }
+        default { return 22 }
     }
     return 0
 }

@@ -17,7 +17,7 @@ main(): int {
         1 {
             defer touch()
         }
-        else {
+        default {
         }
     }
     outer: {

@@ -118,7 +118,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
                 }
                 parse_pending = true
             }
-            else {
+            default {
                 return Request{method = null, target = null}, false
             }
         }

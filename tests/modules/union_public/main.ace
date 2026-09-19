@@ -11,7 +11,7 @@ main(): int {
                 return 6
             }
         }
-        else {
+        default {
             return 7
         }
     }
@@ -22,7 +22,7 @@ main(): int {
                 return 8
             }
         }
-        else {
+        default {
             return 9
         }
     }
@@ -34,7 +34,7 @@ main(): int {
                 return 4
             }
         }
-        else {
+        default {
             return 5
         }
     }

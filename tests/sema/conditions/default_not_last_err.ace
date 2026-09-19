@@ -1,0 +1,22 @@
+/* `default` must be the last case of a switch; this covers a scalar switch, a
+   union switch, and a repeated `default`. */
+
+Event: union { none, ready }
+
+main(): int {
+    x: int = 1
+    switch x {
+        default {}
+        1 {}
+    }
+    event: Event = Event.none
+    switch event {
+        default {}
+        Event.none {}
+    }
+    switch x {
+        default {}
+        default {}
+    }
+    return 0
+}

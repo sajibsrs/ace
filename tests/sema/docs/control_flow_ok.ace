@@ -23,7 +23,7 @@ main(): int {
         4 {
             category += 1
         }
-        else {}
+        default {}
     }
 
     for i: int in 0 .. 4 {

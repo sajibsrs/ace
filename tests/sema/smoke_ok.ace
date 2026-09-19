@@ -79,7 +79,7 @@ main(): int {
 
     switch c {
         Color.red { total = 1 }
-        else { total = 0 }
+        default { total = 0 }
     }
     hi: int = bigger[int](n, total)
     return hi

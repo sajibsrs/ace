@@ -51,6 +51,6 @@ pub wipe(value: Json) {
             }
             mem.release[Pair](mut pairs)
         }
-        else {}
+        default {}
     }
 }

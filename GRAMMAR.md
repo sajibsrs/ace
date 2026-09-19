@@ -11,7 +11,7 @@ block_comment := "/*" (any – "*/")* "*/"       // non-nesting; a newline insid
 newline       := significant — terminates statements (see §6 Notes)
 
 keyword       := "import" | "from" | "pub" | "mut" | "const" | "noalias" | "if" | "else"
-                | "for" | "in" | "switch" | "return" | "break" | "continue" | "defer"
+                | "for" | "in" | "switch" | "default" | "return" | "break" | "continue" | "defer"
                 | "asm" | "extern" | "export" | "contract" | "struct" | "embed" | "signs"
                 | "specialized" | "intrinsic" | "distinct" | "type" | "enum" | "union" | "null" | "true" | "false"
                 | "volatile"
@@ -158,9 +158,10 @@ loop_binder   := ident ":" type
 iterable      := expr | range_expr
 range_expr    := expr ".." expr [contextual_step expr]
 contextual_step := ident                                  // exact text "step"; not reserved
-switch_stmt   := "switch" expr "{" switch_case* "}"
+switch_stmt   := "switch" expr "{" switch_case* [default_case] "}"
 switch_case   := case_pat block
-case_pat      := union_pattern | expr ("," expr)* | "else" [P]
+default_case  := "default" block                          [P]
+case_pat      := union_pattern | expr ("," expr)*
 union_pattern := named_type "." ident
                | named_type "." ident "(" ident ":" type ")"
 return_stmt   := "return" [expr_list]

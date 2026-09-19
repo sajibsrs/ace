@@ -61,7 +61,7 @@ main(): int {
             if request.headers.len != 2 { return 3 }
             if !mem.equal(request.body, "data") { return 4 }
         }
-        else { return 5 }
+        default { return 5 }
     }
 
     parser = new_parser()
@@ -75,7 +75,7 @@ main(): int {
         http.RequestResult.complete(request: http.Request) {
             if !mem.equal(request.body, "Wikipedia") { return 6 }
         }
-        else { return 7 }
+        default { return 7 }
     }
 
     request_text: string = "PUT /byte HTTP/1.1\r\nContent-Length: 3\r\nX-A: b\r\n\r\none"
@@ -103,7 +103,7 @@ main(): int {
                     return 12
                 }
             }
-            else { return 13 }
+            default { return 13 }
         }
     }
 
@@ -135,7 +135,7 @@ main(): int {
                     return 16
                 }
             }
-            else { return 17 }
+            default { return 17 }
         }
     }
 

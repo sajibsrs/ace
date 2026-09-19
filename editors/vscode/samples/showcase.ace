@@ -228,7 +228,7 @@ main(): int {
             fallthrough
         }
         2 { total += 2 }
-        else { total += 3 }
+        default { total += 3 }
     }
 
     event: Event = Event.message("ready")

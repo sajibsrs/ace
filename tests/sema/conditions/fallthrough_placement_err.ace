@@ -8,7 +8,7 @@ main(): int {
             fallthrough
             value = 1
         }
-        else {
+        default {
             fallthrough
         }
     }

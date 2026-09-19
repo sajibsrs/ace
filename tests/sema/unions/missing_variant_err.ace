@@ -1,4 +1,4 @@
-/* Switching on a union without else must cover every variant. */
+/* Switching on a union without default must cover every variant. */
 
 Event: union { none, quit, key: u32 }
 

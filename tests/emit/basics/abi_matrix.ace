@@ -57,14 +57,14 @@ sum_msg(m: Msg): i64 {
     switch m {
         Msg.pair(p: Pair) { return p.a + i64(p.b) }
         Msg.big(t: Triple) { return t.a + t.b + i64(t.c) }
-        else { return -1 }
+        default { return -1 }
     }
 }
 
 sum_flag(f: Flag): u8 {
     switch f {
         Flag.byte(v: u8) { return v }
-        else { return u8(0) }
+        default { return u8(0) }
     }
 }
 

@@ -1,0 +1,22 @@
+/* Regression: a union switch must dispatch a non-matching tag to `default`,
+   not fall through into the wrong variant's case body and misread its payload
+   binder. */
+
+// expect-exit: 0
+
+V: union {
+    none,
+    num: f64,
+    arr: []V,
+}
+
+main(): int {
+    v: V = V.num(7.0)
+    switch v {
+        V.arr(items: []V) {
+            return 1
+        }
+        default {}
+    }
+    return 0
+}

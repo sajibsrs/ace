@@ -21,7 +21,7 @@ main(): int {
         0 {
             fallthrough()
         }
-        else {}
+        default {}
     }
     return value
 }

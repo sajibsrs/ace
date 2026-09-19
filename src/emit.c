@@ -5039,12 +5039,12 @@ static void emit_union_switch(Em* e, Node* s, SType* ut) {
         return;
     }
     int lcase[64], lend = new_label(e);
-    int has_else = 0, else_idx = -1;
+    int has_default = 0, default_idx = -1;
     for (int i = 0; i < s->nkids; i++) {
         lcase[i] = new_label(e);
-        if (s->kids[i]->flags & F_ELSE) {
-            has_else = 1;
-            else_idx = i;
+        if (s->kids[i]->flags & F_DEFAULT) {
+            has_default = 1;
+            default_idx = i;
             continue;
         }
         for (int j = 0; j < s->kids[i]->nkids; j++) {
@@ -5056,11 +5056,11 @@ static void emit_union_switch(Em* e, Node* s, SType* ut) {
             bcond_(e, C_EQ, lcase[i]);
         }
     }
-    br_(e, has_else ? lcase[else_idx] : lend);
+    br_(e, has_default ? lcase[default_idx] : lend);
     for (int i = 0; i < s->nkids; i++) {
         Node* c = s->kids[i];
         bind_label(e, lcase[i]);
-        if (!(c->flags & F_ELSE)) {
+        if (!(c->flags & F_DEFAULT)) {
             for (int j = 0; j < c->nkids; j++) {
                 Node* pat = c->kids[j];
                 if (pat->kind != N_VARPAT || !pat->b) continue;
@@ -5587,16 +5587,16 @@ static void emit_stmt(Em* e, Node* s) {
         int vi = v.idx;
         int isf = v.cls == CLS_FP;
         int lcase[64], lend = new_label(e);
-        int has_else = 0, ielse = -1;
+        int has_default = 0, idefault = -1;
         if (s->nkids > 64) {
             em_err(e, s, "too many switch cases (max 64)");
             return;
         }
         for (int i = 0; i < s->nkids; i++) {
             lcase[i] = new_label(e);
-            if (s->kids[i]->flags & F_ELSE) {
-                has_else = 1;
-                ielse = i;
+            if (s->kids[i]->flags & F_DEFAULT) {
+                has_default = 1;
+                idefault = i;
                 continue;
             }
             for (int j = 0; j < s->kids[i]->nkids; j++) {
@@ -5614,7 +5614,7 @@ static void emit_stmt(Em* e, Node* s) {
                 e->vti = svi; e->vtf = svf;
             }
         }
-        br_(e, has_else ? lcase[ielse] : lend);
+        br_(e, has_default ? lcase[idefault] : lend);
         for (int i = 0; i < s->nkids; i++) {
             bind_label(e, lcase[i]);
             emit_block(e, s->kids[i]->b);

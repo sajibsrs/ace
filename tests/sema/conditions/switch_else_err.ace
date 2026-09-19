@@ -1,0 +1,10 @@
+/* `else` belongs to `if`; a switch catch-all is spelled `default`. */
+
+main(): int {
+    x: int = 1
+    switch x {
+        1 {}
+        else {}
+    }
+    return 0
+}

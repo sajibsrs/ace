@@ -14,7 +14,7 @@
     X(IMPORT, "import") X(FROM, "from") X(PUB, "pub") X(MUT, "mut")           \
     X(CONST, "const")                                                          \
     X(NOALIAS, "noalias") X(IF, "if") X(ELSE, "else") X(FOR, "for")            \
-    X(IN, "in") X(SWITCH, "switch") X(RETURN, "return") X(BREAK, "break")      \
+    X(IN, "in") X(SWITCH, "switch") X(DEFAULT, "default") X(RETURN, "return") X(BREAK, "break")      \
     X(CONTINUE, "continue") X(DEFER, "defer") X(ASM, "asm") X(EXTERN, "extern")\
     X(EXPORT, "export") X(CONTRACT, "contract") X(STRUCT, "struct")           \
     X(EMBED, "embed")                                                         \
@@ -146,7 +146,7 @@ const char* node_kind_name(NKind k);
 
 enum {
     F_PUB = 1, F_EXPO = 2, F_MUT = 4, F_NOALIAS = 8, F_CONST = 16,
-    F_ELSE = 32, F_VARARGS = 64, F_METHOD = 128, F_SELECT = 256,
+    F_DEFAULT = 32, F_VARARGS = 64, F_METHOD = 128, F_SELECT = 256,
     F_EMBED = 512, F_SPECIALIZED = 1024, F_FORGEN = 2048, F_MIXED = 4096,
     F_BOUNDS_PROVEN = 8192, F_INTRINSIC = 16384, F_PACKED = 32768,
     F_VOLATILE = 65536, F_CABI = 131072,

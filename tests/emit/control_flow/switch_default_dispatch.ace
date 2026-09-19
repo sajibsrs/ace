@@ -1,0 +1,15 @@
+/* Regression: an unmatched scrutinee must dispatch to `default`, never fall
+   through into whichever case happens to be written first. */
+
+// expect-exit: 42
+
+main(): int {
+    x: int = 3
+    total: int = 0
+    switch x {
+        1 { total = 1 }
+        2 { total = 2 }
+        default { total = 42 }
+    }
+    return total
+}

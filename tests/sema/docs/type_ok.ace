@@ -121,7 +121,7 @@ main(): int {
         Event.point(payload: Point) {
             point.x = payload.x
         }
-        else {}
+        default {}
     }
     result: Result[int] = Result[int].value(7)
 
@@ -129,7 +129,7 @@ main(): int {
         Result[int].value(payload: int) {
             count += payload
         }
-        else {}
+        default {}
     }
     box: Box[int]
     box.value = 13

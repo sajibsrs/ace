@@ -48,7 +48,7 @@
 //               F_MUT = `in mut iterable`: the value binder aliases the
 //               element (sema requires writable array/slice storage)
 //   N_RANGE     a = first; b = second; c = optional contextual `step` expression
-//   N_SWITCH    a = scrutinee; kids = N_CASE (kids = patterns; b = block; F_ELSE)
+//   N_SWITCH    a = scrutinee; kids = N_CASE (kids = patterns; b = block; F_DEFAULT marks `default`)
 //   N_VARPAT    union-variant case pattern: a = Type.variant (N_FIELD_E);
 //               b = binder N_PARAM (str, a = payload type) or NULL; ival = variant
 //   N_RETURN    a = expr / N_TUPLE_E / NULL
@@ -1265,9 +1265,11 @@ static Node* parse_switch(P* p) {
     while (!at(p, T_RBRACE)) {
         if (at(p, T_EOF)) perr(p, "unexpected end of file in switch body");
         Node* c = nd(p, N_CASE);
-        if (at(p, T_ELSE)) {
+        if (at(p, T_DEFAULT)) {
             p->i++;
-            c->flags |= F_ELSE;
+            c->flags |= F_DEFAULT;
+        } else if (at(p, T_ELSE)) {
+            perr(p, "'else' is not a switch case; use 'default'");
         } else {
             NV pats = {0};
             int line = tk(p)->line;
@@ -2391,7 +2393,7 @@ static void pflags(Node* x) {
     if (x->flags & F_MUT) printf(" mut");
     if (x->flags & F_NOALIAS) printf(" noalias");
     if (x->flags & F_CONST) printf(" const");
-    if (x->flags & F_ELSE) printf(" else");
+    if (x->flags & F_DEFAULT) printf(" default");
     if (x->flags & F_VARARGS) printf(" varargs");
     if (x->flags & F_METHOD) printf(" method");
     if (x->flags & F_SELECT) printf(" select");
