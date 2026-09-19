@@ -984,6 +984,12 @@ current normative rules, and Git preserves patch-level detail.
   0 and double the filled prefix through disjoint `__ace$mem_copy` calls, so
   code grows with log2(count). `bench/string.ace` `__text` fell from 358 KB to
   106 KB and its `main` from about 66,000 to 3,400 instructions.
+- Aggregate copies above 32 bytes call `__ace$mem_copy` instead of an 8-byte
+  word loop, with operand moves ordered so no source register is overwritten
+  first; up to 32 bytes stays inline. `StaticMap` string-key checks call
+  `__ace$mem_compare` instead of a byte loop. Release copies of 48-byte
+  sequence elements fell about 22%, 256-byte array assignment about 50%, and
+  48-byte struct returns about 8%.
 
 ## Current frontier
 

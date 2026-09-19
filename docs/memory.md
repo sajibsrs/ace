@@ -359,7 +359,11 @@ walks backward only when the destination begins inside the source.
 chunks for a difference, then orders the first differing byte by comparing
 byte-reversed 64-bit words, so `equal` costs no more than a scan. On Apple
 arm64 these routines use NEON registers internally; this is instruction
-selection only and adds no vector facility to the language.
+selection only and adds no vector facility to the language. The compiler
+reuses both routines internally: aggregate values larger than 32 bytes
+(assignments, arguments, returns, sequence elements, tuple and pattern
+binders) copy through the copy routine, and `StaticMap` string-key checks
+call the ordering routine; smaller aggregates copy inline.
 
 `compare` reads complete slices as unsigned bytes and returns exactly `-1`,
 `0`, or `1`. It is lexicographic: the first differing byte decides; when the

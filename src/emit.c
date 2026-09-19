@@ -455,6 +455,8 @@ typedef struct {
 } ConstRels;
 
 static EV gen_expr(Em* e, Node* x);
+static void mov_int(Em* e, int sf, int dst, int src);
+static void emit_bl_internal(Em* e, const char* p, uint32_t len);
 static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels);
 static void emit_stmt(Em* e, Node* s);
 static int gen_addr(Em* e, Node* x);
@@ -974,10 +976,26 @@ static void strf_(Em* e, int vr, int base, uint32_t off, int is64) {
     }
 }
 
-// byte copy [dst+doff, +size) <- [src+soff, +size); uses x8/x16/x17
+// rd = rn + off; rn may be sp (immediate adds read register 31 as sp)
+static void addr_plus(Em* e, int rd, int rn, uint32_t off) {
+    uint32_t lo = off & 0xFFFu, hi = off >> 12;
+    if (hi) {
+        ins(e, 0x91400000u | ((hi & 0xFFFu) << 10) | ((uint32_t)rn << 5) |
+               (uint32_t)rd); // add rd, rn, #hi, lsl #12
+        rn = rd;
+    }
+    if (lo || !hi)
+        ins(e, 0x91000000u | (lo << 10) | ((uint32_t)rn << 5) | (uint32_t)rd);
+}
+
+/*
+ * byte copy [dst+doff, +size) <- [src+soff, +size). Up to 32 bytes copies
+ * inline through x16; larger sizes call __ace$mem_copy, clobbering x8,
+ * x15-x17, x30, v24-v31, and flags. Ranges must not partially overlap.
+ */
 static void copy_mem(Em* e, int dst, uint32_t doff, int src, uint32_t soff, uint32_t size) {
     if (!size) return;
-    if (size <= 16) {
+    if (size <= 32) {
         /*
          * Chunk widths respect both offsets' alignment: scaled unsigned
          * offsets cannot express, say, an 8-byte word at +4 (union payloads
@@ -996,36 +1014,22 @@ static void copy_mem(Em* e, int dst, uint32_t doff, int src, uint32_t soff, uint
         }
         return;
     }
-    int loop = new_label(e), done = new_label(e);
-    load_imm(e, 1, 17, size & ~7u);
-    bind_label(e, loop);
-    cbz_(e, 1, 17, 0, done);
-    ins(e, 0xD1002231u); // sub x17, x17, #8
-    // downward offsets: [src + soff + x17] -> x16 -> [dst + doff + x17]
-    if (soff) {
-        load_imm(e, 1, 8, soff);
-        ins(e, 0x8B000000u | (8u << 16) | ((uint32_t)src << 5) | 8u); // x8 = src + soff
-        ins(e, 0x8B000000u | (17u << 16) | (8u << 5) | 8u);           // x8 += x17
-        ins(e, 0xF9400000u | (8u << 5) | 16u);                        // ldr x16, [x8]
+    // x15 = dst + doff, x16 = src + soff, ordered so neither source register
+    // is overwritten before it is read.
+    if (dst != 16) {
+        addr_plus(e, 16, src, soff);
+        addr_plus(e, 15, dst, doff);
+    } else if (src != 15) {
+        addr_plus(e, 15, dst, doff);
+        addr_plus(e, 16, src, soff);
     } else {
-        ins(e, 0xF8606800u | (17u << 16) | ((uint32_t)src << 5) | 16u);
+        addr_plus(e, 17, src, soff);
+        addr_plus(e, 15, dst, doff);
+        mov_int(e, 1, 16, 17);
     }
-    if (doff) {
-        load_imm(e, 1, 8, doff);
-        ins(e, 0x8B000000u | (8u << 16) | ((uint32_t)dst << 5) | 8u); // x8 = dst + doff
-        ins(e, 0x8B000000u | (17u << 16) | (8u << 5) | 8u);           // x8 += x17
-        ins(e, 0xF9000000u | (8u << 5) | 16u);                        // str x16, [x8]
-    } else {
-        ins(e, 0xF8206800u | (17u << 16) | ((uint32_t)dst << 5) | 16u);
-    }
-    br_(e, loop);
-    bind_label(e, done);
-    uint32_t rem = size & 7u;
-    if (rem) {
-        uint32_t w = rem == 1 ? 1 : rem == 2 ? 2 : rem <= 4 ? 4 : 8;
-        ld_reg(e, 16, src, soff + size - w, w, 0);
-        st_reg(e, 16, dst, doff + size - w, w);
-    }
+    load_imm(e, 1, 17, size);
+    e->mem_copy_used = 1;
+    emit_bl_internal(e, "__ace$mem_copy", 14);
 }
 
 // --- scalar moves ---------------------------------------------------------------------
@@ -4333,19 +4337,11 @@ static EV gen_staticmap_lookup(Em* e, Node* x, SType* map) {
         ins(e, 0xEB00001Fu | (17u << 16) | ((uint32_t)xreg(len) << 5));
         bcond_(e, C_NE, miss);
         ld_reg(e, 16, 16, 0, 8, 0);
-        load_imm(e, 1, xreg(at), 0);
-        int eqloop = new_label(e);
-        bind_label(e, eqloop);
-        ins(e, 0xEB00001Fu | ((uint32_t)xreg(len) << 16) |
-               ((uint32_t)xreg(at) << 5));
-        bcond_(e, C_HS, matched);
-        ins(e, 0x38606811u | ((uint32_t)xreg(at) << 16) | (16u << 5));
-        ins(e, 0x38606808u | ((uint32_t)xreg(at) << 16) |
-               ((uint32_t)xreg(ptr) << 5));
-        ins(e, 0x6B08023Fu);
-        bcond_(e, C_NE, miss);
-        ins(e, 0x91000400u | ((uint32_t)xreg(at) << 5) | (uint32_t)xreg(at));
-        br_(e, eqloop);
+        e->mem_compare_used = 1;
+        mov_int(e, 1, 15, xreg(ptr));
+        mov_int(e, 1, 17, xreg(len));
+        emit_bl_internal(e, "__ace$mem_compare", 17);
+        cbz_(e, 1, 17, 1, miss);
     }
     bind_label(e, matched);
     addr_of_sym(e, 16, md->values);
