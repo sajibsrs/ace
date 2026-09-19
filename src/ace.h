@@ -90,6 +90,10 @@ void        path_dir(char* out, size_t cap, const char* path);
 const char* join_path(const char* dir, const char* rel);
 const char* canonicalize(const char* path); // arena storage, or NULL
 int         path_beneath(const char* path, const char* dir);
+// Build-relative source paths (SPEC.md Errors #16): set both roots before
+// parsing, then map any source path for @file and assert diagnostics.
+void        build_roots(const char* compiler_path, const char* root_dir);
+const char* build_path(const char* path);
 
 // Lex the whole source; returns a malloc'd token array terminated by T_EOF.
 // *count includes the terminator. Token text storage outlives the call.

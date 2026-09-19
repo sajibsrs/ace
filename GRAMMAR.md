@@ -215,8 +215,9 @@ postfix_part  := "(" [arg_list] ")"                       // call; ["mut"] expr 
 arg_list      := arg ("," arg)*
 arg           := ["mut"] expr                             // call-site mutation mark
 
-primary       := literal | ident | "(" expr_list ")" | array_lit | struct_lit
+primary       := literal | ident | location | "(" expr_list ")" | array_lit | struct_lit
                | ptr_type | slice_type
+location      := "@" ident                                // exact text "file" or "line"
 array_lit     := "[" [expr_list | array_repeat] "]"
 array_repeat  := expr ":" expr                          // [u8(0) : 12]; exact contextual array length
 struct_lit    := "{" [field_init ("," field_init)*] "}"   [P]
@@ -294,6 +295,9 @@ choices that are not evident from the productions.
     explicit conversion/construction call. Semantic analysis distinguishes the
     one-argument slice spelling cast from two-argument pointer-plus-count slice
     construction.
+14. In expression position `@` must be followed by exactly `file` or `line`
+    (`location`); any other name is a syntax error. Both words remain ordinary
+    identifiers everywhere else.
 
 ## 7. Package manifest (ace.pkg)
 

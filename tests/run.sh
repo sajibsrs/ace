@@ -418,6 +418,13 @@ if ! /tmp/ace_std_module/normal/ace -o /tmp/ace_std_module/normal/out \
     echo "FAIL: std directory module should resolve through mod.ace and re-export its type"
     fail=1
 fi
+cp tests/stdlib_module/location_probe.ace \
+   /tmp/ace_std_module/normal/std/location_probe.ace
+if ! /tmp/ace_std_module/normal/ace -o /tmp/ace_std_module/normal/location \
+     tests/stdlib_module/location.ace || ! /tmp/ace_std_module/normal/location; then
+    echo "FAIL: @file in a std module should be std/location_probe.ace"
+    fail=1
+fi
 ambiguous_std=$(/tmp/ace_std_module/ambiguous/ace tests/stdlib_module/ambiguous.ace 2>&1)
 for want in "ambiguous_probe.ace" "ambiguous_probe/mod.ace"; do
     if ! printf '%s\n' "$ambiguous_std" | grep -qF "$want"; then
@@ -753,7 +760,7 @@ done
 if ! "$ACE" --checked -o /tmp/ace_checked_features/assert_false \
      tests/assert/checked_false.ace ||
    /tmp/ace_checked_features/assert_false >/dev/null 2>/tmp/ace_test_errs ||
-   ! grep -qF "assertion failed" /tmp/ace_test_errs; then
+   ! grep -qx "checked_false.ace:4:11: assertion failed" /tmp/ace_test_errs; then
     echo "FAIL: checked assert failure"
     fail=1
 fi

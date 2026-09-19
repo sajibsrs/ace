@@ -1,0 +1,15 @@
+import location_probe
+
+/* The synthetic std tree has no mem, so compare bytes directly. */
+same(a: string, b: string): bool {
+    if a.len != b.len { return false }
+    for i: usize in 0 .. a.len {
+        if a[i] != b[i] { return false }
+    }
+    return true
+}
+
+main(): int {
+    if !same(location_probe.file(), "std/location_probe.ace") { return 1 }
+    return 0
+}

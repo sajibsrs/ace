@@ -1,3 +1,5 @@
+import fmt
+
 FileError: error {
     0: unknown = "unknown file failure"
     2: not_found = "file not found"
@@ -8,6 +10,15 @@ fs_read(path: string): ([]u8, Error) {
         return null, FileError(2)
     }
     return null, null
+}
+check(error: Error, file: string, line: usize) {
+    if error != null {
+        fmt.print(file)
+        fmt.print(":")
+        fmt.print(line)
+        fmt.print("\n")
+        panic(error.message)
+    }
 }
 main(): int {
     data: []u8, error: Error = fs_read("")
@@ -23,5 +34,6 @@ main(): int {
     if error.name.len != 9 || error.message.len != 14 {
         panic("invalid Error description")
     }
+    check(null, @file, @line)
     return int(data.len)
 }

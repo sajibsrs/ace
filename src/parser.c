@@ -919,6 +919,24 @@ static Node* expr_primary(P* p, int ctx) {
         p->i++;
         return x;
     }
+    case T_AT: { // @file / @line: literals for the location written (Errors #16)
+        Token* name = &p->toks[p->i + 1];
+        if (name->kind == T_IDENT && text_is(name->str, name->len, "line")) {
+            Node* x = nd(p, N_INT);
+            x->ival = (uint64_t)t->line;
+            p->i += 2;
+            return x;
+        }
+        if (name->kind == T_IDENT && text_is(name->str, name->len, "file")) {
+            Node* x = nd(p, N_STR);
+            x->str = build_path(p->d->path);
+            x->len = (uint32_t)strlen(x->str);
+            p->i += 2;
+            return x;
+        }
+        perr(p, "expected 'file' or 'line' after '@' in an expression");
+        return nd(p, N_INT);
+    }
     case T_NULL:
         p->i++;
         return nd(p, N_NULL);

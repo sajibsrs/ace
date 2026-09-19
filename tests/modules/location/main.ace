@@ -1,0 +1,19 @@
+/* @file and @line: build-relative paths, the line where each is written. */
+
+/* expect-exit: 0 */
+
+import mem
+import where: "./sub/where.ace"
+import outside: "../location_outside/outside.ace"
+
+LINE: const usize = @line
+static_assert(LINE == 9)
+
+main(): int {
+    line: int = @line
+    if line != 13 { return 1 }
+    if !mem.equal(@file, "main.ace") { return 2 }
+    if !mem.equal(where.file(), "sub/where.ace") || where.line() != 4 { return 3 }
+    if !mem.equal(outside.file(), "../location_outside/outside.ace") { return 4 }
+    return 0
+}

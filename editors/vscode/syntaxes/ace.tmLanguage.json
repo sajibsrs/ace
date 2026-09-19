@@ -34,7 +34,7 @@
       "patterns": [
         {
           "name": "meta.attribute.when.ace",
-          "match": "(@)(when|packed|align)\\b",
+          "match": "(@)(when|packed|align|file|line)\\b",
           "captures": {
             "1": { "name": "punctuation.definition.annotation.ace" },
             "2": { "name": "support.function.attribute.ace" }

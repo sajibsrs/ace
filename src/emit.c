@@ -3881,7 +3881,7 @@ static EV gen_call(Em* e, Node* call) {
         EV condition = gen_expr(e, call->kids[0]);
         int ok = new_label(e);
         cbz_(e, 0, xreg(condition.idx), 1, ok);
-        const char* path = call->path ? call->path : "<source>";
+        const char* path = call->path ? build_path(call->path) : "<source>";
         size_t need = strlen(path) + 80;
         char* diagnostic = (char*)arena_alloc(need);
         int n = snprintf(diagnostic, need, "%s:%d:%d: assertion failed\n",

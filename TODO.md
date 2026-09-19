@@ -36,8 +36,6 @@ blockers for the current sequential core.
 
 ### Other compile-time machine facilities
 
-- **Source-location builtins** (`@file`/`@line`-class) [new] — bounded context
-  for checked assertions and panic diagnostics.
 - **Binary data embedding (`embed "file"`)** [new] — static read-only storage
   serving later game and asset milestones.
 

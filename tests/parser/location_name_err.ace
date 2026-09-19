@@ -1,0 +1,4 @@
+main(): int {
+    column: int = @column
+    return column
+}

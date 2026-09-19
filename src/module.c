@@ -145,6 +145,53 @@ int path_beneath(const char* path, const char* dir) {
     return strncmp(path, dir, n) == 0 && path[n] == '/';
 }
 
+// Build-relative source paths for @file and assert diagnostics (SPEC.md
+// Errors #16): std files as "std/...", everything else relative to the build
+// root, climbing with ".." when outside it. Never absolute.
+static const char* build_root_dir;
+static const char* build_std_dir;
+
+void build_roots(const char* compiler_path, const char* root_dir) {
+    char compiler[4096];
+    compiler_dir(compiler, sizeof compiler, compiler_path);
+    build_std_dir = canonicalize(join_path(compiler, "std"));
+    build_root_dir = canonicalize(root_dir);
+}
+
+const char* build_path(const char* path) {
+    static const char* last_in;
+    static const char* last_out;
+    if (path == last_in && last_out) return last_out;
+    const char* canon = canonicalize(path);
+    const char* out = path;
+    if (canon && build_std_dir && path_beneath(canon, build_std_dir)) {
+        out = join_path("std", canon + strlen(build_std_dir) + 1);
+    } else if (canon && build_root_dir) {
+        // Longest shared prefix ending at a component boundary.
+        size_t common = 0;
+        for (size_t i = 0; canon[i] && canon[i] == build_root_dir[i]; i++)
+            if (canon[i] == '/') common = i;
+        size_t rn = strlen(build_root_dir);
+        if (strncmp(canon, build_root_dir, rn) == 0 && canon[rn] == '/') common = rn;
+        int up = 0;
+        if (common < rn) {
+            up = 1;
+            for (size_t i = common + 1; i < rn; i++)
+                if (build_root_dir[i] == '/') up++;
+        }
+        const char* rest = canon + common + 1;
+        size_t need = (size_t)up * 3 + strlen(rest) + 1;
+        char* buf = arena_alloc(need);
+        buf[0] = 0;
+        for (int i = 0; i < up; i++) strcat(buf, "../");
+        strcat(buf, rest);
+        out = buf;
+    }
+    last_in = path;
+    last_out = out;
+    return out;
+}
+
 static int is_std_source(Loader* L, const char* canon) {
     return L->std_root && path_beneath(canon, L->std_root);
 }

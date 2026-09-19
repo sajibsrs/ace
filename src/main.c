@@ -331,6 +331,7 @@ static int package_load_and_check(const char* dir, const char* argv0, const char
     if (report && ntok) report->tokens = ntok - 1; // exclude EOF
     Node* rfile = NULL;
     if (rd.errors == 0) {
+        build_roots(argv0, root_package->dir);
         rfile = parse(toks, ntok, &rd, target);
         if (rd.errors == 0) {
             resolve_imports(rfile, &rd, argv0, target, report, root_package);
@@ -905,6 +906,9 @@ int main(int argc, char** argv) {
     if (d.errors > 0) goto done;
 
     {
+        char root_dir[4096];
+        path_dir(root_dir, sizeof root_dir, path);
+        build_roots(argv[0], root_dir);
         Node* file = parse(toks, ntok, &d, target);
         if (d.errors > 0) goto done;
         if (dump_ast) { // --ast: through the parser only

@@ -338,7 +338,7 @@ Decision: checks are a development tool; release trusts the developer.
     It accepts exactly one `bool` expression, is not a first-class value, and
     cannot be declared, shadowed, or redefined. A checked build evaluates the
     condition exactly once; false produces a best-effort assertion diagnostic
-    with the source location and then aborts as a broken invariant. A release
+    with the source location (`file:line:col`, paths per Errors #16) and then aborts as a broken invariant. A release
     build emits neither the condition nor its evaluation, so a program must not
     rely on assertion side effects. A condition known false at compile time is
     rejected in every mode under #4; one known true emits nothing. There is no
@@ -379,6 +379,9 @@ Decision: errors are ordinary values; checking is always explicit.
 13. `Error`, error-domain names, and `typeid` are Ace-internal shapes and are rejected in `extern`/`export` signatures. C-facing wrappers translate explicitly to stable `i32` codes or another declared C-compatible shape; imported C failures are mapped to an Ace domain and occurrence code.
 14. Error descriptions are opt-in static metadata: names and messages are read-only string data, and lookup data/code is emitted only when `.name` or `.message` is used. Lookup is allocation-free and safely returns empty strings for unknown domains/codes. There is no runtime registry or initialization, metadata carried inside `Error`, descriptor, pointer, vtable, general reflection/type-name facility, dynamic entry lookup, or `fmt.print(Error)` support. Occurrence-specific context is returned separately. Rationale: static descriptions improve diagnostics at no per-value or unused-program cost while preserving the packed ABI, explicit errors, and machine-visible allocation model.
 15. Panic remains semantically separate from recoverable errors: it terminates the process for broken invariants and is never catchable, recoverable, or convertible into `Error`. Surface (decided): `panic` is a reserved builtin — no declaration may bind, shadow, or redefine the name in any scope — and its only use is the call `panic(message: string)`: exactly one message argument, any string expression, static or runtime. The call never returns and `panic` is not a first-class value. Termination (decided): the message is delivered best-effort to standard error (file descriptor 2) exactly as supplied — no prefix, no added newline, a failed or partial write never blocks termination — then the process aborts via `abort()` (`SIGABRT`), as undefined externals resolved by the system linker. Checked and release builds behave identically. Users trigger it; the language owns everything that happens next.
+16. Source-location builtins: `@file` and `@line` are reserved expression forms naming where they are written, never where the caller is. `@file` is a compile-time `string` constant naming the containing source file; its bytes are static read-only data. `@line` is an untyped integer constant holding the 1-based source line, typed by context exactly like an integer literal. A helper reporting its caller's location receives these values as ordinary arguments: there is no implicit caller-location parameter, `@column`, `@function`, or location struct, and any other `@name` in an expression is an error.
+    - Reported paths are build-relative with `/` separators, never absolute. A standard-library file is `std/<path within std>`; every other file is relative to the build root — the directory holding the entry file for a direct compile, or the root package's directory under `ace pkg` — using `..` segments when outside it. The `assert` diagnostic (Safety & Checked Builds #10) reports the same paths.
+    - Rationale: panic, log, and error-report text gains location without macros or hidden parameters, and build-relative paths keep binaries identical across machines without exposing the builder's directory layout.
 
 ## Type System
 Decision: fully explicit types; no inference.
@@ -538,7 +541,7 @@ Decision: modules are single files or `mod.ace`-rooted directories; explicit imp
 10. OS- or kernel-specific standard-library code always sits behind a stable public facade at `std/<module>/mod.ace`; target implementations live under `std/<module>/os/<target>.ace` and are selected through `@when(target == "...")` imports in that facade. Public callers cannot import an OS file directly. The target file exposes exactly the operations and types required by its facade; it does not add same-signature target-named forwarding functions. Those declarations are `pub` only within the directory module and carry no compatibility promise outside it. The `os` name is reserved by convention for this implementation layer; `backend` refers to compiler/code-generation backends and is not used for OS bindings. Rationale: platform replacement changes the target layer without spreading kernel ABI, constants, structures, or link names through callers, while the public Ace surface remains reviewable in one place and redundant forwarding layers do not accumulate.
 11. `@when(condition)` is the sole conditional-compilation form and attaches to exactly one top-level declaration, including an import, function, type, global, signing, or extern block. The attribute occupies its own line and a preceding top-level construct is separated from it by one blank line. Its deliberately closed boolean expression language contains `true`, `false`, `target == "name"`, `target != "name"`, contextual `and`/`or`/`not`, and parentheses. `target` is the compiler-selected build target string; it defaults from the host and may be overridden with `--target=NAME`. Unsupported targets are rejected rather than implying an unavailable backend or standard-library layer. The compiler lexes and parses an inactive declaration, so its syntax must be valid, then removes it before import loading, binding/duplicate checks, semantic analysis, and emission. Thus mutually exclusive imports may bind the same alias and mutually exclusive declarations may share a signature; if more than one matching declaration survives, ordinary duplicate rules apply. There is no block, statement-level form, user-defined build flag, arbitrary constant evaluation, or runtime condition. A file need not provide an exhaustive arm, but any surviving reference to an absent declaration fails normally. Rationale: one restricted declaration filter supplies zero-cost target selection without a textual preprocessor, hidden runtime branch, general compile-time execution, or mid-function source fragmentation.
 ## Package System (future work)
-Decision: packaging is an optional, explicit layer above file modules; one `ace` executable owns both the direct compiler and the separately grouped package commands. Manifest and lockfile syntax remain open for later carving. A minimal local-path-only v1 slice has been carved into the Decision Queue's Active section below; the items here describe the target full design and remain future work beyond that slice.
+Decision: packaging is an optional, explicit layer above file modules; one `ace` executable owns both the direct compiler and the separately grouped package commands. Manifest and lockfile syntax remain open for later carving. A minimal local-path-only v1 slice is implemented (see `CHANGELOG.md`); the items here describe the target full design and remain future work beyond that slice.
 1. `ace.pkg` at a package root defines exactly one package and one primary output. Every package explicitly declares `type` as `exe` or `lib` and explicitly names one root `.ace` file. An exe package produces an executable and its root must provide `main(): int`; a library exposes its root module as its sole external import surface. Consumers cannot deep-import its internal files. A library is distributed as source; initially, `ace pkg build` checks its complete graph and produces no reusable binary archive.
 2. A package has a required name, exact package version, and Ace language version. The name is case-sensitive, must be lowercase, and follows the Ace identifier shape; its source location is separate from its identity. Package versions are exactly three nonnegative components (`major.minor.patch`) with no initial prerelease/build suffixes. The Ace field names one exact `major.minor` language version, not a compiler release. Every package in one build graph must use the same Ace language version.
 3. Required build fields are package name, package version, Ace language version, type, and root. Description, authors, license, repository, and homepage are optional informational metadata and never affect identity, resolution, or compilation. Exact `ace.pkg` structure, delimiters, and field syntax remain [open].
@@ -1094,31 +1097,6 @@ Only active or trigger-gated decisions live here. Implemented history is recorde
 once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 
 ### Active
-
-- **Package system v1 (local-path)** [open] — manifest format, dependency
-  graph resolution, cross-package imports, native link-input declarations
-  (Package System #14, `GRAMMAR.md` §7), and the real `ace pkg`
-  `init`/`build`/`run`/`check` CLI are decided and implemented; see
-  `CHANGELOG.md`. Local-path dependencies only — no git source, version
-  range, registry, or lockfile in v1.
-  `ace pkg add NAME PATH` and `ace pkg remove NAME` are also decided and
-  implemented: they edit a package's own `[dependencies]` section for a
-  local-path entry only (`PATH` relative to the declaring `ace.pkg`, the same
-  convention existing dependency paths already use) and validate the
-  complete graph before writing — `NAME` not already a dependency, no
-  collision with an existing dependency or standard-library module name,
-  `PATH` containing an `ace.pkg` with `type: lib` whose declared `name`
-  exactly matches `NAME`, no cycle, one shared `ace` language version across
-  the graph. On any validation failure the manifest file is left
-  byte-for-byte unchanged. `add` creates the `[dependencies]` section if
-  absent; `remove` deletes its one entry and, if none remain, the
-  now-empty section header. `ace pkg list` is read-only: it resolves and
-  prints the current graph (name, type, path, direct vs. transitive) with no
-  manifest write. All three reuse the existing `package_resolve` validator
-  and manifest grammar — no new parsing surface; see `CHANGELOG.md`. This is
-  a v1-scoped slice distinct from the full future design's git/lockfile-driven
-  `add`/`remove`/`update`/`resolve`/`fetch` (Package System #12 below), which
-  remains out of local-path-only v1's scope.
 
 ### Trigger-gated
 

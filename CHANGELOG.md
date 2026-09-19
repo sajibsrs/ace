@@ -921,6 +921,13 @@ current normative rules, and Git preserves patch-level detail.
   `bool_const` evaluates chains pairwise, so `static_assert` accepts ordering
   comparisons. Fixed the `f64` `fcmp` encoding, which carried a stray `Rm` bit
   and read the wrong register when the right operand sat in an even temp ≥ 2.
+- Added `@file` and `@line` (Errors #16): the parser lowers them to a string
+  literal and an untyped integer literal for the location where they are
+  written. Paths are build-relative (`std/...`, or relative to the entry
+  file's directory or root package, with `..` outside it) via one
+  `build_path` helper, which `assert` diagnostics now use too, replacing the
+  absolute paths they embedded for imported modules. Closed the package v1
+  Decision Queue item, whose slice is fully implemented.
 
 ## Current frontier
 

@@ -128,5 +128,31 @@ useful for simple checked-mode tests; use `panic(message)` when an unconditional
 abort needs contextual text. `sys.exit(code)` is different again: deliberate
 immediate process termination with a caller-selected status.
 
+## Source location
+
+`@file` and `@line` name where they are written: `@file` is a `string` constant
+and `@line` an untyped integer constant, typed by context like an integer
+literal. There are no macros and no implicit caller location, so a helper that
+reports its caller's position takes the values as ordinary arguments:
+
+```ace
+check(error: Error, file: string, line: usize) {
+    if error != null {
+        fmt.print(file)
+        fmt.print(":")
+        fmt.print(line)
+        fmt.print("\n")
+        panic(error.message)
+    }
+}
+
+check(error, @file, @line)
+```
+
+Paths are build-relative, never absolute: standard-library files appear as
+`std/<path>`, and everything else is relative to the directory holding the
+entry file, or to the root package's directory under `ace pkg`, with `..` when
+outside it. `assert` diagnostics use the same `file:line:col` paths.
+
 The examples are checked by `tests/sema/docs/errors_ok.ace` and the runnable
 fixtures in `tests/emit/errors/` and `tests/modules/error_export/`.
