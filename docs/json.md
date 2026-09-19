@@ -3,7 +3,7 @@
 [Documentation](README.md)
 
 `json` parses a complete in-memory RFC 8259 document into a tagged `Json`
-value. Parsing is eager and whole-document: it reads one buffer, returns one
+value, and writes JSON text into caller-owned storage. Parsing is eager and whole-document: it reads one buffer, returns one
 value, and rejects anything after it. Every failure is an explicit returned
 error, and a failed parse releases everything it allocated.
 
@@ -90,6 +90,120 @@ main(): int {
 
 Read a value with `switch`; each payload binder is an independent copy, so
 matching does not need write access to the value.
+
+## Writing
+
+`json.Writer` writes compact JSON into caller-owned storage, one call at a
+time. It allocates nothing and needs no `Json` tree, so a log line or an HTTP
+body can be written straight into its buffer:
+
+```ace
+import json
+
+main(): int {
+    buf: [256]u8
+    w: json.Writer = json.writer_new(mut buf[..])
+    mut w.object()
+    mut w.field("level", "info")
+    mut w.field("status", 200)
+    mut w.key("tags")
+    mut w.array()
+    mut w.value("a")
+    mut w.value("b")
+    mut w.end()
+    mut w.end()
+    n: usize, err: Error = w.finish()
+
+    if err != null {
+        return 1
+    }
+    // buf[0..n] holds {"level":"info","status":200,"tags":["a","b"]}
+    return 0
+}
+```
+
+| Call | Writes |
+| --- | --- |
+| `object()`, `array()` | opens a container |
+| `end()` | closes the innermost container, `}` or `]` as its kind requires |
+| `key(name)` | an object member's name |
+| `value(x)` | a value: `string`, `int`, `uint`, `usize`, `f64`, `bool`, or a whole `Json` tree |
+| `none()` | `null` |
+| `field(name, x)` | `key(name)` then `value(x)`, for the same value types |
+| `finish()` | returns `(usize, Error)`: the byte count, or the first error |
+
+`json.format(value, output): (usize, Error)` writes a whole `Json` tree; it is
+`writer_new`, `value`, and `finish` in one call.
+
+Strings escape `"`, `\`, and control bytes below 0x20 (`\b`, `\f`, `\n`,
+`\r`, `\t`, otherwise `\u00XX`); every other byte, including UTF-8, is
+copied unchanged and not validated. Numbers use `str.format`, so an `f64`
+takes its shortest round-trip spelling (`0.5`, `1e21`).
+
+The first failure is kept and every later call does nothing, so a sequence of
+writes needs one check at `finish`. After a failure the contents of the output
+storage are unspecified. Errors come from the `json.FormatErr` domain:
+
+| Error | Meaning |
+| --- | --- |
+| `capacity` | the output storage is full |
+| `depth` | more than 512 nested arrays or objects |
+| `number` | a NaN or infinite `f64`, which JSON cannot spell |
+| `structure` | the calls do not form exactly one value: a value where a key belongs, a key outside an object, a key with no value, `end` with nothing open, a second top-level value, or `finish` with a container open or nothing written |
+
+### Growing output
+
+The writer never allocates, and a failed write cannot be resumed. When the
+output size is not known in advance, put the writes in one function and, on
+`capacity`, write again from the start into a buffer twice the size:
+
+```ace
+import json
+import mem
+
+write_items(mut w: json.Writer, count: int) {
+    mut w.array()
+
+    for i: int in 0 .. count {
+        mut w.object()
+        mut w.field("id", i)
+        mut w.field("name", "item")
+        mut w.end()
+    }
+    mut w.end()
+}
+
+/* On success the caller owns the returned buffer and releases it whole;
+ * the JSON text is its first `n` bytes.
+ */
+render(count: int): (mut []u8, usize, Error) {
+    size: usize = 256
+
+    for {
+        buf: mut []u8 = mem.alloc[u8](size)
+
+        if buf == null {
+            return null, 0, json.JsonErr.allocation
+        }
+        w: json.Writer = json.writer_new(buf)
+        write_items(mut w, count)
+        n: usize, err: Error = w.finish()
+
+        if err == null {
+            return buf, n, null
+        }
+        mem.release[u8](mut buf)
+
+        if err != json.FormatErr.capacity {
+            return null, 0, err
+        }
+        size = size * 2
+    }
+}
+```
+
+Doubling keeps the total bytes written under twice the final size; a starting
+size near the expected output usually avoids a retry.
 
 ## Tests
 

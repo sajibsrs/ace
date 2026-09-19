@@ -896,6 +896,17 @@ current normative rules, and Git preserves patch-level detail.
   (`Content-Length`, `Transfer-Encoding`) before checking header-slot capacity,
   so a framing conflict reports `framing` even on a full header buffer. State
   changes follow the capacity check, so a `capacity(headers)` retry is clean.
+- Added a streaming writer to `pkg/json` (`inc/writing.ace`): `json.Writer`
+  emits compact RFC 8259 text into caller storage with no allocation or tree.
+  `object`/`array`/`end` open and close containers (`end` picks `}` or `]`
+  from a one-bit-per-level kind set sized to the parser's 512-level limit),
+  `key` plus `value`/`none` or the `field` shorthand write members, and
+  `value(Json)` walks a parsed tree, which `json.format(value, output)`
+  wraps. The first failure sticks and later calls are no-ops; `finish`
+  returns the byte count or a `json.FormatErr` (`capacity`, `depth`,
+  non-finite `number`, `structure`). Numbers reuse `str.format`; strings
+  escape `"`, `\` and control bytes and pass other bytes through.
+  `pkg/json/tests/writing` covers output, round trip, and every error.
 
 ## Current frontier
 
