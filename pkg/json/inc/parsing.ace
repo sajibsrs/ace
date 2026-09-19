@@ -1,13 +1,9 @@
 /* Whole-document recursive-descent JSON parsing (RFC 8259). Input is a
- * complete in-memory buffer, unlike http's incremental socket parsing, so an
- * eager parse needs no resumable state machine.
+ * complete in-memory buffer, so an eager parse needs no resumable state
+ * machine.
  *
- * The walk is written as plain mutually recursive functions taking the
- * parser explicitly (parse_value <-> parse_object/parse_array), not as
- * methods: method-call syntax gets no forward/mutual-call fixup today
- * (TODO.md, "Known defects"), so two methods on one type that call each
- * other fail unless one is declared first — impossible to satisfy for both
- * sides of a genuine cycle. Plain top-level calls already get that fixup.
+ * The walk is a set of Parser methods; parse_value and parse_object/
+ * parse_array call each other recursively.
  */
 
 import mem
@@ -34,17 +30,17 @@ Parser: struct {
  */
 pub parse(text: string): (Json, Error) {
     p: Parser = Parser{text = text, at = 0}
-    skip_ws(mut p)
+    mut p.skip_ws()
 
     if p.at == p.text.len {
         return Json.none, JsonErr.empty_input
     }
-    result: Json, err: Error = parse_value(mut p, 0)
+    result: Json, err: Error = mut p.parse_value(0)
 
     if err != null {
         return Json.none, err
     }
-    skip_ws(mut p)
+    mut p.skip_ws()
 
     if p.at != p.text.len {
         jsonval.wipe(result)
@@ -53,25 +49,25 @@ pub parse(text: string): (Json, Error) {
     return result, null
 }
 
-skip_ws(mut p: Parser) {
-    for p.at < p.text.len && is_ws(p.text[p.at]) {
-        p.at += 1
+mut Parser.skip_ws() {
+    for self.at < self.text.len && is_ws(self.text[self.at]) {
+        self.at += 1
     }
 }
 
-parse_value(mut p: Parser, depth: usize): (Json, Error) {
+mut Parser.parse_value(depth: usize): (Json, Error) {
     if depth > MAX_DEPTH {
         return Json.none, JsonErr.depth_exceeded
     }
-    skip_ws(mut p)
+    mut self.skip_ws()
 
-    if p.at == p.text.len {
+    if self.at == self.text.len {
         return Json.none, JsonErr.unexpected_token
     }
-    c: u8 = p.text[p.at]
+    c: u8 = self.text[self.at]
 
     if c == '"' {
-        text: string, err: Error = parse_string(mut p)
+        text: string, err: Error = mut self.parse_string()
 
         if err != null {
             return Json.none, err
@@ -80,108 +76,108 @@ parse_value(mut p: Parser, depth: usize): (Json, Error) {
     }
 
     if c == '{' {
-        result: Json, err: Error = parse_object(mut p, depth)
+        result: Json, err: Error = mut self.parse_object(depth)
         return result, err
     }
 
     if c == '[' {
-        result: Json, err: Error = parse_array(mut p, depth)
+        result: Json, err: Error = mut self.parse_array(depth)
         return result, err
     }
 
     if c == 't' {
-        if consume_literal(mut p, "true") {
+        if mut self.consume_literal("true") {
             return Json.bool(true), null
         }
         return Json.none, JsonErr.unexpected_token
     }
 
     if c == 'f' {
-        if consume_literal(mut p, "false") {
+        if mut self.consume_literal("false") {
             return Json.bool(false), null
         }
         return Json.none, JsonErr.unexpected_token
     }
 
     if c == 'n' {
-        if consume_literal(mut p, "null") {
+        if mut self.consume_literal("null") {
             return Json.none, null
         }
         return Json.none, JsonErr.unexpected_token
     }
 
     if c == '-' || is_digit(c) {
-        result: Json, err: Error = parse_number(mut p)
+        result: Json, err: Error = mut self.parse_number()
         return result, err
     }
     return Json.none, JsonErr.unexpected_token
 }
 
-consume_literal(mut p: Parser, literal: string): bool {
-    remaining: usize = p.text.len - p.at
+mut Parser.consume_literal(literal: string): bool {
+    remaining: usize = self.text.len - self.at
 
     if remaining < literal.len {
         return false
     }
 
-    if !mem.equal(p.text[p.at..p.at + literal.len], literal) {
+    if !mem.equal(self.text[self.at..self.at + literal.len], literal) {
         return false
     }
-    p.at += literal.len
+    self.at += literal.len
     return true
 }
 
-parse_number(mut p: Parser): (Json, Error) {
-    start: usize = p.at
+mut Parser.parse_number(): (Json, Error) {
+    start: usize = self.at
 
-    if p.at < p.text.len && p.text[p.at] == '-' {
-        p.at += 1
+    if self.at < self.text.len && self.text[self.at] == '-' {
+        self.at += 1
     }
 
-    if p.at == p.text.len || !is_digit(p.text[p.at]) {
+    if self.at == self.text.len || !is_digit(self.text[self.at]) {
         return Json.none, JsonErr.invalid_number
     }
 
-    if p.text[p.at] == '0' {
-        p.at += 1
+    if self.text[self.at] == '0' {
+        self.at += 1
 
-        if p.at < p.text.len && is_digit(p.text[p.at]) {
+        if self.at < self.text.len && is_digit(self.text[self.at]) {
             return Json.none, JsonErr.invalid_number
         }
     } else {
-        for p.at < p.text.len && is_digit(p.text[p.at]) {
-            p.at += 1
+        for self.at < self.text.len && is_digit(self.text[self.at]) {
+            self.at += 1
         }
     }
 
-    if p.at < p.text.len && p.text[p.at] == '.' {
-        p.at += 1
+    if self.at < self.text.len && self.text[self.at] == '.' {
+        self.at += 1
 
-        if p.at == p.text.len || !is_digit(p.text[p.at]) {
+        if self.at == self.text.len || !is_digit(self.text[self.at]) {
             return Json.none, JsonErr.invalid_number
         }
 
-        for p.at < p.text.len && is_digit(p.text[p.at]) {
-            p.at += 1
+        for self.at < self.text.len && is_digit(self.text[self.at]) {
+            self.at += 1
         }
     }
 
-    if p.at < p.text.len && (p.text[p.at] == 'e' || p.text[p.at] == 'E') {
-        p.at += 1
+    if self.at < self.text.len && (self.text[self.at] == 'e' || self.text[self.at] == 'E') {
+        self.at += 1
 
-        if p.at < p.text.len && (p.text[p.at] == '+' || p.text[p.at] == '-') {
-            p.at += 1
+        if self.at < self.text.len && (self.text[self.at] == '+' || self.text[self.at] == '-') {
+            self.at += 1
         }
 
-        if p.at == p.text.len || !is_digit(p.text[p.at]) {
+        if self.at == self.text.len || !is_digit(self.text[self.at]) {
             return Json.none, JsonErr.invalid_number
         }
 
-        for p.at < p.text.len && is_digit(p.text[p.at]) {
-            p.at += 1
+        for self.at < self.text.len && is_digit(self.text[self.at]) {
+            self.at += 1
         }
     }
-    raw: string = p.text[start..p.at]
+    raw: string = self.text[start..self.at]
     parsed: f64, ok: bool = str.parse[f64](raw)
 
     if !ok {
@@ -190,10 +186,10 @@ parse_number(mut p: Parser): (Json, Error) {
     return Json.number(parsed), null
 }
 
-parse_string(mut p: Parser): (string, Error) {
-    p.at += 1
-    start: usize = p.at
-    end: usize, closed: bool = find_string_end(p.text, start)
+mut Parser.parse_string(): (string, Error) {
+    self.at += 1
+    start: usize = self.at
+    end: usize, closed: bool = find_string_end(self.text, start)
 
     if !closed {
         return "", JsonErr.unterminated_string
@@ -208,7 +204,7 @@ parse_string(mut p: Parser): (string, Error) {
             return "", JsonErr.allocation
         }
     }
-    used: usize, err: Error = decode_string(p.text, start, end, buffer)
+    used: usize, err: Error = decode_string(self.text, start, end, buffer)
 
     if err != null {
         if upper != 0 {
@@ -216,7 +212,7 @@ parse_string(mut p: Parser): (string, Error) {
         }
         return "", err
     }
-    p.at = end + 1
+    self.at = end + 1
 
     if used == 0 {
         return "", null
@@ -234,20 +230,20 @@ parse_string(mut p: Parser): (string, Error) {
     return shrunk, null
 }
 
-parse_array(mut p: Parser, depth: usize): (Json, Error) {
-    p.at += 1
+mut Parser.parse_array(depth: usize): (Json, Error) {
+    self.at += 1
     items: mut []Json = null
     count: usize = 0
-    skip_ws(mut p)
+    mut self.skip_ws()
 
-    if p.at < p.text.len && p.text[p.at] == ']' {
-        p.at += 1
+    if self.at < self.text.len && self.text[self.at] == ']' {
+        self.at += 1
         return Json.array(items), null
     }
 
     for {
-        skip_ws(mut p)
-        elem: Json, err: Error = parse_value(mut p, depth + 1)
+        mut self.skip_ws()
+        elem: Json, err: Error = mut self.parse_value(depth + 1)
 
         if err != null {
             wipe_items(mut items, count)
@@ -263,21 +259,21 @@ parse_array(mut p: Parser, depth: usize): (Json, Error) {
         items = grown
         items[count] = elem
         count += 1
-        skip_ws(mut p)
+        mut self.skip_ws()
 
-        if p.at == p.text.len {
+        if self.at == self.text.len {
             wipe_items(mut items, count)
             return Json.none, JsonErr.unexpected_token
         }
-        c: u8 = p.text[p.at]
+        c: u8 = self.text[self.at]
 
         if c == ',' {
-            p.at += 1
+            self.at += 1
             continue
         }
 
         if c == ']' {
-            p.at += 1
+            self.at += 1
             break
         }
         wipe_items(mut items, count)
@@ -296,40 +292,40 @@ parse_array(mut p: Parser, depth: usize): (Json, Error) {
     return Json.array(final), null
 }
 
-parse_object(mut p: Parser, depth: usize): (Json, Error) {
-    p.at += 1
+mut Parser.parse_object(depth: usize): (Json, Error) {
+    self.at += 1
     pairs: mut []Pair = null
     count: usize = 0
-    skip_ws(mut p)
+    mut self.skip_ws()
 
-    if p.at < p.text.len && p.text[p.at] == '}' {
-        p.at += 1
+    if self.at < self.text.len && self.text[self.at] == '}' {
+        self.at += 1
         return Json.object(pairs), null
     }
 
     for {
-        skip_ws(mut p)
+        mut self.skip_ws()
 
-        if p.at == p.text.len || p.text[p.at] != '"' {
+        if self.at == self.text.len || self.text[self.at] != '"' {
             wipe_pairs(mut pairs, count)
             return Json.none, JsonErr.unexpected_token
         }
-        key: string, kerr: Error = parse_string(mut p)
+        key: string, kerr: Error = mut self.parse_string()
 
         if kerr != null {
             wipe_pairs(mut pairs, count)
             return Json.none, kerr
         }
-        skip_ws(mut p)
+        mut self.skip_ws()
 
-        if p.at == p.text.len || p.text[p.at] != ':' {
+        if self.at == self.text.len || self.text[self.at] != ':' {
             mem.release[u8](mut key)
             wipe_pairs(mut pairs, count)
             return Json.none, JsonErr.unexpected_token
         }
-        p.at += 1
-        skip_ws(mut p)
-        elem: Json, verr: Error = parse_value(mut p, depth + 1)
+        self.at += 1
+        mut self.skip_ws()
+        elem: Json, verr: Error = mut self.parse_value(depth + 1)
 
         if verr != null {
             mem.release[u8](mut key)
@@ -347,21 +343,21 @@ parse_object(mut p: Parser, depth: usize): (Json, Error) {
         pairs = grown
         pairs[count] = Pair{key = key, value = elem}
         count += 1
-        skip_ws(mut p)
+        mut self.skip_ws()
 
-        if p.at == p.text.len {
+        if self.at == self.text.len {
             wipe_pairs(mut pairs, count)
             return Json.none, JsonErr.unexpected_token
         }
-        c: u8 = p.text[p.at]
+        c: u8 = self.text[self.at]
 
         if c == ',' {
-            p.at += 1
+            self.at += 1
             continue
         }
 
         if c == '}' {
-            p.at += 1
+            self.at += 1
             break
         }
         wipe_pairs(mut pairs, count)
