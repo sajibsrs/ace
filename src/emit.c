@@ -1138,6 +1138,17 @@ static void widen_idx(Em* e, Node* idx, int r) {
 // --- binary operators -------------------------------------------------------------------
 
 static int tok_cond(TokKind op, SType* t) {
+    // Float orderings are false on an unordered fcmp (NZCV = 0011): LO/LS test
+    // C and GT/GE test N == V, all of which fail there.
+    if (is_floatt(t)) {
+        switch (op) {
+        case T_LT: return C_LO;
+        case T_LE: return C_LS;
+        case T_GT: return C_GT;
+        case T_GE: return C_GE;
+        default: break;
+        }
+    }
     int unsig = !ty_is_signed(t);
     switch (op) {
     case T_EQEQ: return C_EQ;

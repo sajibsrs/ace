@@ -1,0 +1,20 @@
+// expect-exit: 0
+
+main(): int {
+    zero: f64 = 0.0
+    nan: f64 = zero / zero
+    one: f64 = 1.0
+    if nan > one { return 1 }
+    if nan >= one { return 2 }
+    if nan < one { return 3 }
+    if nan <= one { return 4 }
+    if one > nan { return 5 }
+    if one >= nan { return 6 }
+    if zero < nan < one { return 7 }
+    if nan == nan { return 8 }
+    if !(nan != nan) { return 9 }
+    small: f32 = f32(nan)
+    if small > f32(1.0) { return 10 }
+    if !(one > zero && one >= one && zero < one && one <= one) { return 11 }
+    return 0
+}

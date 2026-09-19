@@ -19,12 +19,6 @@ before the work they unblock.
 
 ## 0. Known defects
 
-- **[defect]** — Float ordering comparisons take their condition codes from
-  the integer table (`tok_cond` in `src/emit.c`), which treats floats as
-  unsigned: `>` emits `HI` and `>=` emits `HS`, both true on an unordered
-  `fcmp`, so `nan > 1.0` evaluates true. Floats need ordered codes (`GT`,
-  `GE`, `MI`, `LS`) in both the binary and comparison-chain paths.
-
 ## 1. Core type-system completion
 
 Finish the existing primitive, sequential, and aggregate model before adding

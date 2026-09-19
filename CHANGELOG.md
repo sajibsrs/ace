@@ -928,6 +928,9 @@ current normative rules, and Git preserves patch-level detail.
   `build_path` helper, which `assert` diagnostics now use too, replacing the
   absolute paths they embedded for imported modules. Closed the package v1
   Decision Queue item, whose slice is fully implemented.
+- Float `<`, `<=`, `>`, and `>=` are now false when either operand is NaN:
+  `tok_cond` gives floats `LO`/`LS`/`GT`/`GE`, which all fail on an
+  unordered `fcmp`, instead of the unsigned `HI`/`HS` that held there.
 
 ## Current frontier
 
