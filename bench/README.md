@@ -242,6 +242,17 @@ short inputs. A sampled profile of short inputs now puts 51% of the time in
 syntax scanning, 15% in the Eisel-Lemire step, 14% in the wrapper, 9% in the
 small-integer tier, and 4% in the exact-power tier.
 
+### Leaf-register checkpoint
+
+After call-free functions gained x9-x14 for promoted locals, five alternating
+runs produced `parse-f64` 61 ns (from 87; 2.2x C `strtod`, from 3.2x),
+`parse-f64-short` 57 ns (from 76), `parse-f64-long` 79 ns (from 112), and
+`format-f64-shortest` 303 ns (from 314). CPU, search, compare, and copy were
+unchanged, and the string benchmark's text fell 1.3%. A sampled profile of
+short inputs now puts 47% of parse time in syntax scanning, 20% in the
+wrapper, 10% in the small-integer tier, 9% in the Eisel-Lemire step, and 4%
+in the exact-power tier.
+
 ## Memory
 
 Run the v1 raw-memory benchmark on Apple arm64:

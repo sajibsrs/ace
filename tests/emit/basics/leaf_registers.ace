@@ -1,0 +1,130 @@
+/* A function that makes no call keeps its heaviest locals in x14 down to x9
+ * before x19-x28; byte helpers, union payload copies, and deep expressions
+ * leave them intact, and a function-value call keeps locals callee-saved. */
+
+// expect-exit: 42
+
+import mem
+
+Wide: struct {
+    a: int,
+    b: int,
+    c: int,
+    d: int,
+    e: int,
+    f: int,
+}
+
+Shape: union {
+    none,
+    wide: Wide,
+}
+
+// first in the file, so each function below keeps its own symbol
+twice(x: int): int {
+    return x * 2
+}
+
+// twelve loop-carried locals fill all six leaf registers and spill into x19+
+hot(n: int): int {
+    a: int = 1
+    b: int = 2
+    c: int = 3
+    d: int = 4
+    e: int = 5
+    f: int = 6
+    g: int = 7
+    h: int = 8
+    i: int = 9
+    j: int = 10
+    k: int = 11
+    m: int = 12
+    for step: int in 0 .. n {
+        a += b
+        b += c
+        c += d
+        d += e
+        e += f
+        f += g
+        g += h
+        h += i
+        i += j
+        j += k
+        k += m
+        m += a
+    }
+    return (a + b + c + d + e + f + g + h + i + j + k + m) % 1000
+}
+
+// the out-of-line byte copy clobbers only x8 and x15-x17
+copy_live(): int {
+    source: [64]u8 = [u8(7) : 64]
+    target: [64]u8 = [u8(0) : 64]
+    x: int = 3
+    y: int = 5
+    total: int = 0
+    for r: int in 0 .. 4 {
+        target_view: mut []u8 = mut target[..]
+        mem.copy(target_view, source[..])
+        total += x * y + int(target[63])
+        x += 1
+        y += 2
+    }
+    return total
+}
+
+// a payload binder copies 48 bytes through the byte helper
+pick(s: Shape, bias: int): int {
+    total: int = bias
+    step: int = 2
+    for r: int in 0 .. 3 {
+        switch s {
+            Shape.wide(w: Wide) {
+                total += w.a + w.f * step
+            }
+            default {
+                total -= 1
+            }
+        }
+        step += 1
+    }
+    return total
+}
+
+// right-nested operands hold a temp per level beside promoted accumulators,
+// so the temp bound leaves them no leaf register to collide with
+deep(): int {
+    v: [12]int = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    total: int = 0
+    scale: int = 1
+    for r: int in 0 .. 3 {
+        total += (v[0] + (v[1] * (v[2] + (v[3] * (v[4] + (v[5] * (v[6] +
+                 (v[7] * (v[8] + (v[9] * (v[10] + v[11]))))))))))) % 1000 +
+                 scale
+        scale += 1
+    }
+    return total
+}
+
+// a function-value call clobbers x9-x14, so its locals stay callee-saved
+with_call(f: (int): int, n: int): int {
+    a: int = 1
+    b: int = 2
+    for i: int in 0 .. n {
+        a += f(b)
+        b += a
+    }
+    return a + b
+}
+
+main(): int {
+    if hot(20) != 68 { return 1 }
+    if copy_live() != 182 { return 2 }
+    if pick(Shape.wide(Wide { a = 1, b = 0, c = 0, d = 0, e = 0, f = 10 }), 5) != 98 {
+        return 3
+    }
+    if pick(Shape.none, 5) != 2 { return 4 }
+    if deep() != 483 { return 5 }
+    if with_call(twice, 5) != 2340 { return 6 }
+    return 42
+}

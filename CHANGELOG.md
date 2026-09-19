@@ -1096,6 +1096,16 @@ current normative rules, and Git preserves patch-level detail.
   assuming round-to-nearest. The scanner and Eisel-Lemire step use
   `bits.trail_zeros`/`lead_zeros` instead of software cascades. `parse-f64`
   fell from 100 to 87 ns (3.2x C `strtod`).
+- Call-free functions promote into caller-saved x14 down to x9 before
+  x19-x28, needing no save. The promotion scan marks any call that is not an
+  inline form (cast, constructor, compile-time builtin, assert/panic, `bits`,
+  `@byte_load`, or `mem` byte operation, whose helpers clobber only x8 and
+  x15-x17); `emit_call` rejects a call in such a function. An operand-count
+  temp estimate plus a margin of 3 (largest shortfall seen: 2) caps the temps
+  below the promoted registers, with `tmp_int`'s cap as backstop. Union
+  payload binders no longer use x14 as scratch. `parse-f64` fell from 87 to
+  61 ns (2.2x C `strtod`), `format-f64-shortest` from 314 to 303 ns, and
+  string-bench code by 1.3%; promoting `text.len` measured no gain.
 
 ## Current frontier
 

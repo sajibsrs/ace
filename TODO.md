@@ -105,13 +105,20 @@ more expensive than the stripped release path, especially around `release`.
 These are baseline observations, not performance promises.
 
 - **Read-only parameter load reuse** [queued] — exploit the existing parameter
-  facts without adding global alias analysis.
+  facts without adding global alias analysis. Keeping a string parameter's
+  length in a register measured no parse gain even with registers free.
+- **Caller-saved promotion across calls** [new] — non-leaf functions still
+  keep every promoted local in x19-x28; locals not live across any call could
+  use x9-x14 given per-call liveness.
 - **Float-parse optimization backlog** [new] — the canonical 80%-short /
-  20%-long `parse-f64` workload is 3.2x `strtod` (87 ns); roughly 2x is an
+  20%-long `parse-f64` workload is 2.2x `strtod` (61 ns); roughly 2x is an
   aspirational target, not a promise. Measured next steps, in order:
-  1. Re-profile; then consider a wide-multiply intrinsic (`umulh`) for the
-     Eisel-Lemire step's four 32-bit partial products.
-  2. Consider power-table alignment and cache layout last. C is the
+  1. Return `small_integer` early once the exact-power tier has declined
+     (`exponent10 > 19`), ending its multiply loop on large exponents.
+  2. Reduce syntax-scanning (47% of short-input time) and wrapper (20%) cost.
+  3. Consider a wide-multiply intrinsic (`umulh`) for the Eisel-Lemire step
+     (9%).
+  4. Consider power-table alignment and cache layout last. C is the
      comparison baseline, not a ceiling; any stronger claim requires a local
      checksum-matched measurement.
 - **Broader performance corpus** [new] — add checksum-matched Ace/C fixtures for

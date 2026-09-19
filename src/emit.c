@@ -325,7 +325,13 @@ typedef struct {
     uint32_t off;    // byte offset within the value (register units)
 } TU;
 
-#define MAX_ITEMPS 14  // x0-x7, x9-x15
+#define MAX_ITEMPS 14  // x0-x7, x9-x14
+#define LEAF_REGS 6    // x14 down to x9: promoted locals of a call-free function
+/* temp_need counts operands, not the internal temps some lowerings add (a
+ * static-map probe, a byte-sequence compare); the largest shortfall across
+ * the std, test, bench, and package corpus is 2, so leaf promotion leaves 3
+ * more. tmp_int's cap still rejects, never miscompiles, an expression beyond. */
+#define TEMP_MARGIN 3
 #define MAX_FPTEMPS 16 // v0-v7, v16-v23
 #define LOOP_REGS 10   // x19-x28, callee-saved loop state and promoted locals
 #define FP_PROMO_REGS 8 // d8-d15, callee-saved promoted float locals
@@ -363,6 +369,10 @@ typedef struct {
     int      lreg_max;   // loop registers x19..x19+lreg_max-1
     Node*    preg_decl[LOOP_REGS]; // promoted locals, from x19+lreg_max up
     int      npreg;
+    Node*    xpreg_decl[LEAF_REGS]; // leaf-function promoted locals, x14 down
+    int      nxpreg;
+    int      vti_cap;    // int temps available: MAX_ITEMPS less nxpreg
+    int      scan_call;  // promo_scan met a call that may clobber x9-x14
     int      nsaved;     // callee-saved x registers the function saves and restores
     uint32_t lreg_save;  // depth of the callee-saved x save area
     Node*    fpreg_decl[FP_PROMO_REGS]; // promoted float locals, d8 up
@@ -835,7 +845,7 @@ static void frame_addr(Em* e, int rd, uint32_t off) {
 }
 
 static int tmp_int(Em* e) {
-    if (e->vti >= MAX_ITEMPS) {
+    if (e->vti >= e->vti_cap) {
         e->d->errors++;
         fprintf(stderr, "ace: expression too deeply nested (int temps)\n");
         return 0;
@@ -2477,6 +2487,10 @@ static SType* raw_pointer_type(void) {
 static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
                     SType** params, uint8_t* muts, int nparams, int internal,
                     int varargs_from, CallTarget tgt, SType* ret) {
+    if (e->nxpreg) { // call_is_inline let a clobbering call into a leaf
+        e->d->errors++;
+        fprintf(stderr, "ace: call in a leaf-register function\n");
+    }
     int si = e->vti, sf = e->vtf;
     spill_temps(e);
 
@@ -2875,14 +2889,16 @@ static void addr_of_sym(Em* e, int rd, ESym* sym) {
 }
 
 /*
- * Callee-saved register holding a promoted local, or -1 for slot storage: an
- * x register number for integer-class locals, a v register number (8-15)
- * for float locals.
+ * Register holding a promoted local, or -1 for slot storage: an x register
+ * number for integer-class locals (x19 up, or x14 down in a call-free
+ * function), a v register number (8-15) for float locals.
  */
 static int promo_reg(Em* e, Sym* s) {
     if (!s || !s->decl) return -1;
     for (int i = 0; i < e->npreg; i++)
         if (e->preg_decl[i] == s->decl) return 19 + e->lreg_max + i;
+    for (int i = 0; i < e->nxpreg; i++)
+        if (e->xpreg_decl[i] == s->decl) return 14 - i;
     for (int i = 0; i < e->nfpreg; i++)
         if (e->fpreg_decl[i] == s->decl) return 8 + i;
     return -1;
@@ -5573,9 +5589,11 @@ static void emit_union_switch(Em* e, Node* s, SType* ut) {
                 Sym* bs = node_sym(pat->b);
                 uint32_t bslot = slot_alloc(e, bs && bs->decl ? bs->decl : pat->b,
                                             ty_size(pt), ty_align(pt));
-                load_frame(e, 14, sslot, 8, 0); // scrutinee (x14: copy_mem-safe)
+                int base = tmp_int(e); // scrutinee, outside copy_mem's x15-x17
+                load_frame(e, xreg(base), sslot, 8, 0);
                 frame_addr(e, 15, bslot);
-                copy_mem(e, 15, 0, 14, poff, ty_size(pt)); // binder = payload copy
+                copy_mem(e, 15, 0, xreg(base), poff, ty_size(pt)); // binder = payload copy
+                e->vti = base;
             }
         }
         emit_block(e, c->b);
@@ -6668,6 +6686,73 @@ static void promo_escape(Em* e, Node* x) {
 }
 
 /*
+ * Whether gen_call lowers `call` without a bl that may clobber x9-x14: casts,
+ * constructors, compile-time builtins, assert/panic (which never return), and
+ * intrinsics that emit inline code or the x8/x15-x17-only byte helpers. This
+ * mirrors gen_call's dispatch conservatively; emit_call rejects any real call
+ * made while leaf registers hold locals, so a missed case cannot miscompile.
+ */
+static int call_is_inline(Node* call) {
+    Node* callee = call->a;
+    if (call->d && call->d->kind == N_CONFORMANCE) return 1;
+    if (!call->sym) {
+        if (callee->kind == N_PTR || callee->kind == N_SLICE_T) return 1;
+        if (callee->kind == N_FIELD_E) return union_type_of_base(callee->a) != NULL;
+        if (callee->kind != N_IDENT) return 0;
+        Sym* cs = node_sym(callee);
+        SType* ct = node_ty(callee);
+        if ((cs && cs->kind == SYM_TYPE) || (ct && ct->kind != SK_FUNC)) return 1;
+        static const char* const names[] = {
+            "typeid", "sizeof", "alignof", "offsetof", "static_assert",
+            "assert", "panic",
+        };
+        for (size_t i = 0; i < sizeof names / sizeof names[0]; i++)
+            if (callee->len == strlen(names[i]) &&
+                memcmp(callee->str, names[i], callee->len) == 0)
+                return 1;
+        return 0;
+    }
+    Sym* s = node_sym(call);
+    uint64_t bi = s && s->decl ? (uint64_t)s->decl->ival : 0;
+    switch (bi) {
+    case BI_MEM_COPY: case BI_MEM_MOVE: case BI_MEM_FILL: case BI_MEM_ZERO:
+    case BI_MEM_COMPARE: case BI_MEM_EQUAL:
+        return call->ival == bi;
+    case BI_BITS_FROM_FLOAT: case BI_BITS_TO_FLOAT: case BI_INTERNAL_LOAD_U64:
+        return 1;
+    default:
+        return bi >= BI_BITS_POP_COUNT && bi <= BI_BITS_ROTATE_RIGHT;
+    }
+}
+
+/*
+ * Operand-count estimate of the int temps evaluating `n` holds at once:
+ * operands are evaluated in order with earlier results held, so an expression
+ * needs the most of i + (its i-th operand's need), and at least one temp per
+ * operand plus its result. Statements hold nothing across their parts.
+ * Lowerings with internal temps can exceed it; see TEMP_MARGIN.
+ */
+static int temp_need(Node* n) {
+    if (!n) return 0;
+    Node* part[4] = { n->a, n->b, n->c, NULL };
+    if (n->kind == N_FOR && (n->flags & F_FORGEN)) part[3] = n->d;
+    int held = 0, need = 0, count = 0;
+    int stmt = n->kind == N_BLOCK || n->kind == N_IF || n->kind == N_FOR ||
+               n->kind == N_SWITCH || n->kind == N_CASE || n->kind == N_LABEL ||
+               n->kind == N_DEFER;
+    for (int i = 0; i < 4 + n->nkids; i++) {
+        Node* k = i < 4 ? part[i] : n->kids[i - 4];
+        if (!k) continue;
+        int kn = temp_need(k) + (stmt ? 0 : held);
+        if (kn > need) need = kn;
+        held++;
+        count++;
+    }
+    if (!stmt && count + 1 > need) need = count + 1;
+    return need;
+}
+
+/*
  * One walk over a function body before it is emitted: collect single-binder
  * scalar declarations and loop binders, weight every use by its loop depth, and mark each
  * place the emitter takes a variable's address or needs its storage (&x, a
@@ -6700,6 +6785,9 @@ static void promo_scan(Em* e, Node* n, int depth) {
         break;
     case N_MUTARG: case N_FIELD_E: case N_INDEX: case N_SLICE_E:
         promo_escape(e, n->a);
+        break;
+    case N_CALL:
+        if (!call_is_inline(n)) e->scan_call = 1;
         break;
     case N_FOR:
         if (n->flags & F_FORGEN) {
@@ -6742,19 +6830,29 @@ static Node* promo_take(Em* e, int fp) {
 }
 
 /*
- * Choose the locals that live in callee-saved registers: integer-class ones
- * in the x19-x28 registers loop state leaves free, float ones in d8-d15.
- * Within each class, non-escaping candidates go by descending weight, ties in
- * declaration order. Parameters passed by reference (mut, method receivers)
- * never qualify.
+ * Choose the locals that live in registers: integer-class ones in the x19-x28
+ * registers loop state leaves free, float ones in d8-d15. A function that
+ * makes no call first gives its heaviest integer locals x14 down to x9, which
+ * nothing else clobbers and which need no save: as many as its expressions'
+ * temp bound leaves above the temps. Within each class, non-escaping
+ * candidates go by descending weight, ties in declaration order. Parameters
+ * passed by reference (mut, method receivers) never qualify.
  */
 static void plan_promotion(Em* e, Node* f) {
     e->npcands = 0;
     for (int i = 0; i < f->nkids; i++)
         if (!(f->kids[i]->flags & F_MUT) && !((f->flags & F_METHOD) && i == 0))
             promo_add(e, f->kids[i]);
+    e->scan_call = 0;
     promo_scan(e, f->b, 0);
     Node* d;
+    if (!e->scan_call) {
+        int room = MAX_ITEMPS - temp_need(f->b) - TEMP_MARGIN;
+        while (e->nxpreg < LEAF_REGS && e->nxpreg < room &&
+               (d = promo_take(e, 0)))
+            e->xpreg_decl[e->nxpreg++] = d;
+        e->vti_cap = MAX_ITEMPS - e->nxpreg;
+    }
     while (e->lreg_max + e->npreg < LOOP_REGS && (d = promo_take(e, 0)))
         e->preg_decl[e->npreg++] = d;
     while (e->nfpreg < FP_PROMO_REGS && (d = promo_take(e, 1)))
@@ -6785,7 +6883,8 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
     e->lreg_top = e->lreg_max = 0;
     e->fn_has_asm = 0;
     plan_loops(e, f->b);
-    e->npreg = e->nfpreg = 0;
+    e->npreg = e->nfpreg = e->nxpreg = 0;
+    e->vti_cap = MAX_ITEMPS;
     if (e->fn_has_asm) { // asm bindings may name any x register
         e->nlreg_loops = 0;
         e->lreg_max = 0;
@@ -8449,6 +8548,7 @@ int emit_object(Node* file, Diag* d, const char* out_path,
 
     Em e;
     memset(&e, 0, sizeof e);
+    e.vti_cap = MAX_ITEMPS;
     e.d = d;
     e.file = file;
     e.mode = mode;

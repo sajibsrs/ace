@@ -1048,18 +1048,19 @@ if [ -d tests/emit ]; then
         fi
         # Promoted integer locals are operands in their own registers:
         # arithmetic, compares, bool tests, and 64-bit indexes read x19-x28
-        # directly, and arith copies none of them into a temp.
+        # (or x9-x14 in these call-free functions) directly, and arith copies
+        # none of them into a temp.
         if ! otool -tv /tmp/ace_emit/basics/register_operands.o | awk '
             /^[^0-9].*:$/ { fn = $0; next }
             {
                 n = 0
                 for (i = 3; i <= NF; i++) {
                     r = $i; gsub(/[][,]/, "", r)
-                    if (r ~ /^[xw](19|2[0-8])$/) n++
+                    if (r ~ /^[xw](9|1[0-4]|19|2[0-8])$/) n++
                 }
             }
             fn ~ /^__ace\$fn\$arith\$/ && $2 == "mov" && n == 1 &&
-                $3 ~ /^[xw]([0-9]|1[0-4]),$/ { bad = 1 }
+                $3 ~ /^[xw][0-8],$/ { bad = 1 }
             fn ~ /^__ace\$fn\$arith\$/ && $2 ~ /^(add|sub)s$/ && n == 2 { arith = 1 }
             fn ~ /^__ace\$fn\$narrow\$/ && $2 == "cmp" && n == 2 { cmp = 1 }
             fn ~ /^__ace\$fn\$narrow\$/ && $2 ~ /^cbn?z$/ && n == 1 { test = 1 }
@@ -1069,9 +1070,9 @@ if [ -d tests/emit ]; then
             fail=1
         fi
         # Loop state takes x19-x28 innermost-first: four nested range loops
-        # (12 registers) keep the outermost in slots and use x19-x27, leaving
-        # x28 to the promoted accumulator; a function with any asm statement
-        # touches none of them.
+        # (12 registers) keep the outermost in slots and use x19-x27, while the
+        # call-free function's promoted accumulator takes x14 ahead of x28; a
+        # function with any asm statement touches none of them.
         if ! otool -tv /tmp/ace_emit/control_flow/loop_registers.o | awk '
             /^[^0-9].*:$/ { fn = $0; next }
             {
@@ -1079,11 +1080,10 @@ if [ -d tests/emit ]; then
                     r = $i; gsub(/[][,]/, "", r)
                     if (r !~ /^x(19|2[0-8])$/) continue
                     if (fn ~ /^__ace\$fn\$with_asm\$/) bad = 1
-                    if (fn ~ /^__ace\$fn\$nested\$/) {
-                        if (r == "x27") top = 1
-                        if (r == "x28") acc = 1
-                    }
+                    if (fn ~ /^__ace\$fn\$nested\$/ && r == "x27") top = 1
+                    if (fn ~ /^__ace\$fn\$nested\$/ && r == "x28") bad = 1
                 }
+                if (fn ~ /^__ace\$fn\$nested\$/ && $0 ~ /[ ,]x14(,|$)/) acc = 1
             }
             END { exit bad || !top || !acc }'; then
             echo "FAIL: loop registers must be assigned innermost-first within x19-x28"
@@ -1106,19 +1106,39 @@ if [ -d tests/emit ]; then
             fail=1
         fi
         # Loop-free code promotes locals used at least twice and leaves
-        # single-use ones in their slots: straight() takes exactly x19-x20.
+        # single-use ones in their slots: call-free straight() takes exactly
+        # x14 and x13 and saves no callee-saved register.
         if ! otool -tv /tmp/ace_emit/basics/register_locals.o | awk '
             /^[^0-9].*:$/ { fn = ($0 ~ /^__ace\$fn\$straight\$/); next }
             fn {
                 for (i = 3; i <= NF; i++) {
                     r = $i; gsub(/[][,]/, "", r)
-                    if (r == "x19") low = 1
-                    if (r == "x20") high = 1
-                    if (r ~ /^x(2[1-8])$/) bad = 1
+                    if (r == "x14") low = 1
+                    if (r == "x13") high = 1
+                    if (r ~ /^x(9|1[0-2]|19|2[0-8])$/) bad = 1
                 }
             }
             END { exit bad || !low || !high }'; then
             echo "FAIL: loop-free locals must be promoted by use count"
+            fail=1
+        fi
+        # A call-free function fills x14 down to x9 before x19-x28; one with a
+        # function-value call keeps its locals out of the caller-saved x9-x14.
+        if ! otool -tv /tmp/ace_emit/basics/leaf_registers.o | awk '
+            /^[^0-9].*:$/ {
+                fn = ($0 ~ /^__ace\$fn\$hot\$/) ? 1 : ($0 ~ /^__ace\$fn\$with_call\$/) ? 2 : 0
+                next
+            }
+            fn {
+                for (i = 3; i <= NF; i++) {
+                    r = $i; gsub(/[][,]/, "", r)
+                    if (fn == 1 && r == "x9") low = 1
+                    if (fn == 1 && r == "x19") spill = 1
+                    if (fn == 2 && r ~ /^x(9|1[0-4])$/) bad = 1
+                }
+            }
+            END { exit bad || !low || !spill }'; then
+            echo "FAIL: call-free functions must promote into x14-x9 first"
             fail=1
         fi
     fi
