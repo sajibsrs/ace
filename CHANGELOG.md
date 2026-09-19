@@ -914,6 +914,13 @@ current normative rules, and Git preserves patch-level detail.
   Dropped the planned `rune` and `yarn` types: a transparent `u32` alias adds
   no behavior, and a code-point sequence costs 4x storage for indexing that
   code points do not make meaningful.
+- Comparing two untyped constants (`3 == 3`, `2 + 3 > 4`) now yields `bool`;
+  both operands materialize at their natural type (`int` or `f64`) through
+  `coerce`. A comparison chain unifies on its first typed operand and also
+  materializes untyped float operands, so `x < 2.0` checks for `x: f64`.
+  `bool_const` evaluates chains pairwise, so `static_assert` accepts ordering
+  comparisons. Fixed the `f64` `fcmp` encoding, which carried a stray `Rm` bit
+  and read the wrong register when the right operand sat in an even temp ≥ 2.
 
 ## Current frontier
 

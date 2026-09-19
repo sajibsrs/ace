@@ -970,6 +970,23 @@ static int bool_const(Node* e, int* out) {
         default: return 0;
         }
     }
+    if (e->kind == N_CMPCHAIN && e->a) { // a < b <= c: every adjacent pair holds
+        int all = 1;
+        int64_t prev, next;
+        if (!ut_const(e->kids[0], &prev)) return 0;
+        for (int i = 1; i < e->nkids; i++, prev = next) {
+            if (!ut_const(e->kids[i], &next)) return 0;
+            switch (e->a->kids[i - 1]->op) {
+            case T_LT: all &= prev < next; break;
+            case T_LE: all &= prev <= next; break;
+            case T_GT: all &= prev > next; break;
+            case T_GE: all &= prev >= next; break;
+            default: return 0;
+            }
+        }
+        *out = all;
+        return 1;
+    }
     return 0;
 }
 
@@ -2479,10 +2496,17 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             b = a;
             e->b->ty = b;
         }
-        if (a == T_UT_INT && b == T_UT_INT) return T_UT_INT;
-        if (a == T_UT_FLOAT && b == T_UT_FLOAT) return T_UT_FLOAT;
         int cmp = op == T_EQEQ || op == T_BANGEQ || op == T_LT ||
                   op == T_LE || op == T_GT || op == T_GE;
+        // Two untyped operands compare at their natural type (int or f64);
+        // the result is bool, never an untyped constant.
+        if (cmp && a == b && (a == T_UT_INT || a == T_UT_FLOAT)) {
+            SType* nat = st_prim(a == T_UT_INT ? P_I64 : P_F64);
+            if (!coerce(k, e->a, nat) || !coerce(k, e->b, nat)) return T_ERR;
+            return st_prim(P_BOOL);
+        }
+        if (a == T_UT_INT && b == T_UT_INT) return T_UT_INT;
+        if (a == T_UT_FLOAT && b == T_UT_FLOAT) return T_UT_FLOAT;
         if (cmp) {
             int equality = op == T_EQEQ || op == T_BANGEQ;
             if (equality && same_type(a, b) &&
@@ -2564,23 +2588,30 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         return range;
     }
     case N_CMPCHAIN: {
-        SType* t = expr_type(k, e->kids[0]);
-        if (t->kind == SK_ERR) return t;
-        for (int i = 1; i < e->nkids; i++) {
+        // One operand type for the whole chain: the first typed operand's, or
+        // the natural int/f64 when every operand is an untyped constant.
+        SType* want = NULL;
+        SType* ut = NULL;
+        for (int i = 0; i < e->nkids; i++) {
             SType* u = expr_type(k, e->kids[i]);
             if (u->kind == SK_ERR) return T_ERR;
-            if (t == T_UT_INT && is_int(u)) {
-                if (!ut_fits(k, e->kids[0], u)) return T_ERR;
-                t = u;
-                e->kids[0]->ty = t;
-            } else if (u == T_UT_INT && is_int(t)) {
-                if (!ut_fits(k, e->kids[i], t)) return T_ERR;
-                u = t;
-                e->kids[i]->ty = u;
+            if (u == T_UT_INT || u == T_UT_FLOAT) {
+                if (!ut) ut = u;
+            } else if (!want) {
+                want = u;
             }
-            if (!same_type(t, u) || !is_num(t)) {
+        }
+        if (!want) want = st_prim(ut == T_UT_FLOAT ? P_F64 : P_I64);
+        for (int i = 0; i < e->nkids; i++) {
+            SType* u = node_ty(e->kids[i]);
+            if ((u == T_UT_INT && is_int(want)) ||
+                (u == T_UT_FLOAT && is_float(want))) {
+                if (!coerce(k, e->kids[i], want)) return T_ERR;
+                u = want;
+            }
+            if (!same_type(u, want) || !is_num(want)) {
                 ck_err(k, e, "comparison chain needs one numeric type, got %s and %s",
-                       type_name(t), type_name(u));
+                       type_name(want), type_name(u));
                 return T_ERR;
             }
         }

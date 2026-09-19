@@ -1369,7 +1369,7 @@ static void emit_farith(Em* e, TokKind op, int dst, int a, int b, int is64) {
 }
 
 static void emit_fcmp(Em* e, int a, int b, int is64) {
-    ins(e, (is64 ? 0x1E612000u : 0x1E202000u) |
+    ins(e, (is64 ? 0x1E602000u : 0x1E202000u) |
            (vreg(b) << 16) | (vreg(a) << 5));
 }
 

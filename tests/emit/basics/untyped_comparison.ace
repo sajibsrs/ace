@@ -1,0 +1,12 @@
+// expect-exit: 0
+
+main(): int {
+    eq: bool = 7 == 7
+    ne: bool = 7 != 7
+    lt: bool = -1 < 1
+    ge: bool = 0.5 >= 0.25
+    x: f64 = 1.5
+    inside: bool = 1.0 < x <= 2.0
+    if eq && !ne && lt && ge && inside { return 0 }
+    return 1
+}

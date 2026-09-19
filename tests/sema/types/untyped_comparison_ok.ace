@@ -1,0 +1,17 @@
+LIMIT: const int = 4
+
+static_assert(1 == 1)
+static_assert(2 + 3 > 4)
+static_assert('a' < 'b')
+static_assert(LIMIT == 4)
+static_assert(0 <= LIMIT < 8)
+static_assert(sizeof(u8) < 2)
+
+main(): int {
+    static_assert(3 != 4)
+    eq: bool = 3 == 3
+    lt: bool = 1.5 < 2.5
+    x: f64 = 1.0
+    if eq && lt && x < 2.0 { return 0 }
+    return 1
+}
