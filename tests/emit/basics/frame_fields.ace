@@ -1,0 +1,100 @@
+/*
+ * Fields and descriptor words of local aggregates load and store directly in
+ * their frame slots, and loads through an address land in that address
+ * register: narrow fields keep their slot-reload width and sign.
+ */
+
+// expect-exit: 42
+
+Inner: struct { pad: u8, small: i8, half: i16 }
+
+Mixed: struct {
+    word: i32,
+    inner: Inner,
+    ratio: f32,
+    scale: f64,
+    count: u16,
+}
+
+// scalar and nested fields read straight from the frame
+field_reads(m: Mixed): int {
+    local: Mixed = m
+    local.word -= 1
+    r: int = 0
+    if local.word != -70001 { r += 1 }
+    if local.inner.small != -5 { r += 2 }
+    if local.inner.half != -300 { r += 4 }
+    if local.inner.pad != 200 { r += 8 }
+    if local.count != 65535 { r += 16 }
+    if local.ratio != 0.5 { r += 32 }
+    if local.scale != -2.25 { r += 64 }
+    if m.inner.half != -300 { r += 128 }         // by-reference parameter
+    inner: Inner = local.inner
+    view: *Inner = &inner                        // pointer base: not a frame place
+    if view.small != -5 { r += 256 }
+    return r
+}
+
+// string and slice descriptors: .len and the data pointer
+text_sum(text: string, part: []i32, k: usize): int {
+    total: int = int(text.len) * 100 + int(part.len) + int(text[k]) + int(part[k])
+    for i: usize in 0 .. text.len {
+        total += int(text[i]) - 48
+    }
+    for i: usize in 0 .. part.len {
+        total += int(part[i])
+    }
+    return total
+}
+
+// .len of a value that is not a place loads through its address register
+tail_len(text: string): int {
+    return int(text[1..].len)
+}
+
+// scalar tuple and literal members store straight into the result slot
+parts(x: i8, y: f64): (i8, f64, u16) {
+    return x, y, 65535
+}
+
+literals(): int {
+    a: i8, b: f64, c: u16 = parts(-7, 1.5)
+    inner: Inner = { pad = 255, small = -1, half = -2 }
+    values: [3]i16 = [-1, -2, -3]
+    n: i64 = -9
+    repeated: [4]i64 = [n : 4]
+    r: int = 0
+    if a != -7 || b != 1.5 || c != 65535 { r += 1 }
+    if inner.pad != 255 || inner.small != -1 || inner.half != -2 { r += 2 }
+    if values[0] + values[1] + values[2] != -6 { r += 4 }
+    if repeated[0] + repeated[3] != -18 { r += 8 }
+    return r
+}
+
+// a struct below x29 - 256 falls back to a computed frame address
+deep(): int {
+    fill: [40]i64 = [0 : 40]
+    m: Mixed = { word = 3, inner = { pad = 1, small = -2, half = 4 },
+                 ratio = 1.0, scale = 2.0, count = 5 }
+    fill[0] = int(m.inner.small)
+    return int(fill[0]) + int(m.word) + int(m.count)
+}
+
+// loads through a pointer reuse the address register
+through(p: *i8, q: *u16): int {
+    return int(*p) + int(*q)
+}
+
+main(): int {
+    m: Mixed = { word = -70000, inner = { pad = 200, small = -5, half = -300 },
+                 ratio = 0.5, scale = -2.25, count = 65535 }
+    values: [3]i32 = [4, 5, 6]
+    small: i8 = -3
+    wide: u16 = 40000
+    r: int = field_reads(m) + literals()
+    r += text_sum("123", values[..], 2) - 381    // 303 + 51 + 6 + 6 + 15
+    r += tail_len("123") - 2
+    r += deep() - 6                              // -2 + 3 + 5
+    r += through(&small, &wide) - 39997
+    return 42 + r
+}

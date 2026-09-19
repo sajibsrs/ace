@@ -1119,14 +1119,16 @@ static void store_value(Em* e, EV v, int base, uint32_t off, SType* t) {
         store_scalar(e, v, base, off, t);
 }
 
-// fold (address temp n, int result temp n+1) into a single temp at n
-static EV collapse(Em* e, int addr_temp, EV v) {
-    if (v.cls == CLS_INT && v.idx == addr_temp + 1) {
-        mov_int(e, 1, xreg(addr_temp), xreg(v.idx));
-        e->vti--;
-        return (EV){ CLS_INT, addr_temp };
-    }
-    return v; // fp result (different pool) or already folded
+/*
+ * Load a scalar of type t from [a+off] into address temp a itself (a load
+ * without writeback may name its base as destination); floats land in a fresh
+ * fp temp and leave a allocated.
+ */
+static EV load_in_place(Em* e, int a, uint32_t off, SType* t) {
+    if (is_floatt(t)) return load_scalar(e, xreg(a), off, t);
+    uint32_t w = (uint32_t)((scalar_bits(t) + 7) / 8);
+    ld_reg(e, xreg(a), xreg(a), off, w, ty_is_signed(t) && w < 8);
+    return (EV){ CLS_INT, a };
 }
 
 // --- casts ---------------------------------------------------------------------------
@@ -2891,6 +2893,44 @@ static Slot* local_slot(Em* e, Sym* s) {
     return slot_find(e, s->decl);
 }
 
+// scalar of type t at x29 - depth into a fresh temp, as a slot reload
+static EV load_frame_value(Em* e, uint32_t depth, SType* t) {
+    if (is_floatt(t)) {
+        int vt = tmp_fp(e);
+        load_frame_fp(e, vreg(vt), depth, unwrap(t)->prim == P_F64);
+        return (EV){ CLS_FP, vt };
+    }
+    int it = tmp_int(e);
+    uint32_t w = (uint32_t)((scalar_bits(t) + 7) / 8);
+    load_frame(e, xreg(it), depth, w, ty_is_signed(t) && w < 8);
+    return (EV){ CLS_INT, it };
+}
+
+/*
+ * A place that is a plain local slot, or a struct-field chain over one, sits
+ * at x29 - depth: its fields and descriptor words load directly instead of
+ * through a materialized address.
+ */
+static int frame_place(Em* e, Node* x, uint32_t* depth) {
+    if (x->kind == N_IDENT) {
+        Sym* s = node_sym(x);
+        if (!s || s->kind != SYM_VAR || promo_reg(e, s) >= 0) return 0;
+        Slot* sl = local_slot(e, s);
+        if (!sl || sl->byref) return 0;
+        *depth = sl->off;
+        return 1;
+    }
+    if (x->kind != N_FIELD_E || !is_lvalue_node(x)) return 0;
+    SType* bt = lvalue_type(e, x->a);
+    if (!bt) bt = node_ty(x->a);
+    bt = bt ? unwrap(bt) : NULL;
+    if (!bt || bt->kind != SK_STRUCT || !frame_place(e, x->a, depth)) return 0;
+    int fi = find_field(bt, x->str, x->len);
+    if (fi < 0) return 0;
+    *depth -= field_off(bt, fi);
+    return 1;
+}
+
 /*
  * Scalar variable read without a separate address temp: a plain slot loads
  * directly (one ldur within x29 - 256); a by-reference slot loads its pointer
@@ -2911,21 +2951,12 @@ static EV load_var(Em* e, Sym* s, SType* t, Node* at) {
     Slot* sl = local_slot(e, s);
     if (!sl) {
         int a = gen_var_addr(e, s, at);
-        return collapse(e, a, load_scalar(e, xreg(a), 0, t));
+        return load_in_place(e, a, 0, t);
     }
+    if (!sl->byref) return load_frame_value(e, sl->off, t);
     int is64 = unwrap(t)->prim == P_F64;
     uint32_t w = (uint32_t)((scalar_bits(t) + 7) / 8);
     int signext = ty_is_signed(t) && w < 8;
-    if (!sl->byref) {
-        if (is_floatt(t)) {
-            int vt = tmp_fp(e);
-            load_frame_fp(e, vreg(vt), sl->off, is64);
-            return (EV){ CLS_FP, vt };
-        }
-        int it = tmp_int(e);
-        load_frame(e, xreg(it), sl->off, w, signext);
-        return (EV){ CLS_INT, it };
-    }
     int it = tmp_int(e);
     load_frame(e, xreg(it), sl->off, 8, 0); // slot holds the pointer
     if (is_floatt(t)) {
@@ -3141,8 +3172,13 @@ static int gen_addr(Em* e, Node* x) {
         SType* bt = lvalue_type(e, x->a);
         bt = bt ? unwrap(bt) : NULL;
         SType* seq = bt;
+        int descriptor = bt && (bt->kind == SK_SLICE ||
+                                (bt->kind == SK_PRIM && bt->prim == P_STRING));
+        uint32_t depth = 0;
+        int framed = descriptor && frame_place(e, x->a, &depth);
         int ta;
-        if (is_lvalue_node(x->a)) ta = gen_addr(e, x->a);
+        if (framed) ta = tmp_int(e); // descriptor words load from the frame
+        else if (is_lvalue_node(x->a)) ta = gen_addr(e, x->a);
         else {
             EV v = gen_expr(e, x->a);
             if (v.cls != CLS_ADDR) {
@@ -3155,8 +3191,6 @@ static int gen_addr(Em* e, Node* x) {
             em_err(e, x, "no index base type");
             return ta;
         }
-        int descriptor = bt->kind == SK_SLICE ||
-                         (bt->kind == SK_PRIM && bt->prim == P_STRING);
         if (bt->kind == SK_PRIM && bt->prim == P_STRING) {
             static SType byte = { .kind = SK_PRIM, .prim = P_U8,
                                   .size = 1, .align = 1 };
@@ -3179,10 +3213,12 @@ static int gen_addr(Em* e, Node* x) {
         if (descriptor) {
             if (need_guard) {
                 len_slot = temp_slot(e, 8, 8);
-                ld_reg(e, 16, xreg(ta), 8, 8, 0);
+                if (framed) load_frame(e, 16, depth - 8, 8, 0);
+                else ld_reg(e, 16, xreg(ta), 8, 8, 0);
                 store_frame(e, 16, len_slot, 8);
             }
-            ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
+            if (framed) load_frame(e, xreg(ta), depth, 8, 0);
+            else ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
         }
         int svi = e->vti, svf = e->vtf;
         EV ix = gen_expr(e, x->b);
@@ -3737,8 +3773,7 @@ static EV load_printf_capture(Em* e, uint32_t off, SType* t) {
     }
     int a = tmp_int(e);
     frame_addr(e, xreg(a), off);
-    EV v = load_scalar(e, xreg(a), 0, t);
-    return collapse(e, a, v);
+    return load_in_place(e, a, 0, t);
 }
 
 static EV emit_printf_helper(Em* e, Node* at, Sym* helper, EV* values, int n) {
@@ -4708,10 +4743,13 @@ static EV gen_expr(Em* e, Node* x) {
             EV v = gen_expr(e, x->kids[i]);
             uint32_t member = t && t->kind == SK_TUPLE
                 ? field_off(t, i) : (uint32_t)i * 8;
-            int dst = 15;
-            if (v.cls != CLS_FP && xreg(v.idx) >= 14) dst = xreg(v.idx) - 1;
-            frame_addr(e, dst, off);
-            store_value(e, v, dst, member, ft);
+            if (v.cls != CLS_ADDR) {
+                store_to_slot(e, v, off - member, ft);
+            } else {
+                int dst = xreg(v.idx) >= 14 ? xreg(v.idx) - 1 : 15;
+                frame_addr(e, dst, off);
+                store_value(e, v, dst, member, ft);
+            }
             e->vti = svi; e->vtf = svf;
         }
         int r = tmp_int(e);
@@ -4802,10 +4840,13 @@ static EV gen_expr(Em* e, Node* x) {
                     load_imm(e, 1, 17, total);
                     emit_bl_internal(e, "__ace$mem_fill", 14);
                 } else {
-                    int dst = 15;
-                    if (v.cls != CLS_FP && xreg(v.idx) == dst) dst = 14;
-                    frame_addr(e, dst, off);
-                    store_value(e, v, dst, 0, t->base);
+                    if (v.cls != CLS_ADDR) {
+                        store_to_slot(e, v, off, t->base);
+                    } else {
+                        int dst = xreg(v.idx) == 15 ? 14 : 15;
+                        frame_addr(e, dst, off);
+                        store_value(e, v, dst, 0, t->base);
+                    }
                     for (uint64_t done = 1; esz && done < t->count;) {
                         uint64_t n = t->count - done < done
                             ? t->count - done : done;
@@ -4840,11 +4881,14 @@ static EV gen_expr(Em* e, Node* x) {
                 : field_off(t, fidx);
             int svi = e->vti, svf = e->vtf;
             EV v = gen_expr(e, value);
-            int dst = 15;
-            if (v.cls != CLS_FP && xreg(v.idx) >= 14) dst = xreg(v.idx) - 1;
-            frame_addr(e, dst, off);
-            store_value(e, v, dst, fo,
-                        x->kind == N_ARRAYLIT ? t->base : t->fields[fidx].t);
+            SType* ft = x->kind == N_ARRAYLIT ? t->base : t->fields[fidx].t;
+            if (v.cls != CLS_ADDR) {
+                store_to_slot(e, v, off - fo, ft);
+            } else {
+                int dst = xreg(v.idx) >= 14 ? xreg(v.idx) - 1 : 15;
+                frame_addr(e, dst, off);
+                store_value(e, v, dst, fo, ft);
+            }
             e->vti = svi; e->vtf = svf;
         }
         int r = tmp_int(e);
@@ -4864,15 +4908,13 @@ static EV gen_expr(Em* e, Node* x) {
             /* The direct emitter has no optimization pass: this exact-width
                typed load is emitted once at the access site and cannot be
                cached, widened, merged, or moved. */
-            EV v = load_scalar(e, xreg(a), 0, t);
-            return collapse(e, a, v);
+            return load_in_place(e, a, 0, t);
         }
         if (x->op == T_STAR) {
             SType* t = lvalue_type(e, x);
             int a = gen_addr(e, x);
             if (t && is_scalar(t)) {
-                EV v = load_scalar(e, xreg(a), 0, t);
-                return collapse(e, a, v);
+                return load_in_place(e, a, 0, t);
             }
             return (EV){ CLS_ADDR, a };
         }
@@ -4970,13 +5012,15 @@ static EV gen_expr(Em* e, Node* x) {
                 load_imm(e, 1, xreg(t), x->ival);
                 return (EV){ CLS_INT, t };
             }
+            uint32_t depth;
+            if (frame_place(e, x->a, &depth))
+                return load_frame_value(e, depth - 8, node_ty(x));
             EV value = gen_expr(e, x->a);
             if (value.cls != CLS_ADDR) {
                 em_err(e, x, "sequence .len has no descriptor");
                 return (EV){ CLS_INT, tmp_int(e) };
             }
-            EV count = load_scalar(e, xreg(value.idx), 8, node_ty(x));
-            return collapse(e, value.idx, count);
+            return load_in_place(e, value.idx, 8, node_ty(x));
         }
         if (eb && eb->kind == SK_ERROR) {
             EV value = gen_expr(e, x->a);
@@ -5003,8 +5047,7 @@ static EV gen_expr(Em* e, Node* x) {
                 return (EV){ CLS_INT, tmp_int(e) };
             }
             int a = gen_addr(e, x);
-            EV v = load_scalar(e, xreg(a), 0, bits->base);
-            v = collapse(e, a, v);
+            EV v = load_in_place(e, a, 0, bits->base);
             SField* f = &bits->fields[fi];
             int rb = scalar_bits(bits), sf = rb == 64;
             uint32_t base = f->bit_signed ? (sf ? 0x93400000u : 0x13000000u)
@@ -5016,10 +5059,12 @@ static EV gen_expr(Em* e, Node* x) {
         }
         SType* t = node_ty(x);
         if (!t) t = lvalue_type(e, x);
+        uint32_t depth;
+        if (t && is_scalar(t) && frame_place(e, x, &depth))
+            return load_frame_value(e, depth, t);
         int a = gen_addr(e, x);
         if (t && is_scalar(t)) {
-            EV v = load_scalar(e, xreg(a), 0, t);
-            return collapse(e, a, v);
+            return load_in_place(e, a, 0, t);
         }
         return (EV){ CLS_ADDR, a };
     }
@@ -5031,8 +5076,7 @@ static EV gen_expr(Em* e, Node* x) {
         if (!t) t = lvalue_type(e, x);
         int a = gen_addr(e, x);
         if (t && is_scalar(t)) {
-            EV v = load_scalar(e, xreg(a), 0, t);
-            return collapse(e, a, v);
+            return load_in_place(e, a, 0, t);
         }
         return (EV){ CLS_ADDR, a };
     }

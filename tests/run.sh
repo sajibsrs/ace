@@ -1019,6 +1019,33 @@ if [ -d tests/emit ]; then
             echo "FAIL: scalar locals must use direct frame slot access"
             fail=1
         fi
+        # Local aggregate fields and descriptor words load, and tuple members
+        # store, at x29 directly; a load through an address register lands in
+        # that register rather than in a new temp moved back.
+        if ! otool -tv /tmp/ace_emit/basics/frame_fields.o | awk '
+            /^[^0-9].*:$/ {
+                fn = 0
+                if ($0 ~ /^__ace\$fn\$(text_sum|through)\$/) fn = 2
+                else if ($0 ~ /^__ace\$fn\$parts\$/) fn = 1
+                last = ""; next
+            }
+            fn == 2 && $2 == "sub" && $4 == "x29," { bad = 1 }
+            fn == 1 && $2 == "sub" && $3 ~ /^x1[5-7],$/ && $4 == "x29," { bad = 1 }
+            fn && last != "" && $2 == "mov" && $4 == last { bad = 1 }
+            fn == 2 && $2 ~ /^ldr/ {
+                d = $3; gsub(/[wx,]/, "", d)
+                a = $4; gsub(/[][x,]/, "", a)
+                if (d == a) same = 1
+            }
+            {
+                last = ""
+                if (fn && $2 ~ /^ldr/ && $3 ~ /^[wx]/)
+                    last = "x" substr($3, 2, length($3) - 2)
+            }
+            END { exit bad || !same }'; then
+            echo "FAIL: local aggregate access must address the frame directly"
+            fail=1
+        fi
         # Loop state takes x19-x28 innermost-first: four nested range loops
         # (12 registers) keep the outermost in slots and use x19-x27, leaving
         # x28 to the promoted accumulator; a function with any asm statement

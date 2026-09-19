@@ -1052,6 +1052,15 @@ current normative rules, and Git preserves patch-level detail.
   other conditions still test a bool with `cbz`/`cbnz`. The string
   benchmark's code fell from 21,951 to 20,963 instructions (`cset` 436 to
   37) and `find-4096` about 3%.
+- Loads land in their destination: a scalar load through an address temp
+  names that temp as its own destination instead of loading a new temp and
+  moving it back. Scalar fields (through struct-field chains), `.len`, and the
+  indexed data pointer of a plain local slot load directly at `x29 - depth`,
+  and scalar members of tuple, struct, and array literals store there; deep
+  slots keep the computed-address fallback, and by-reference slots and
+  pointer bases keep their address loads. The string benchmark's code fell
+  from 20,963 to 20,211 instructions and `str.index_from`'s inner loop from
+  20 to 16.
 
 ## Current frontier
 

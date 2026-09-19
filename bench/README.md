@@ -198,6 +198,15 @@ round-trips through memory. String medians: `find-4096` 5.5x, `copy-64`
 between two placements (64-byte 1.8x or 3.1x, 4096-byte 0.67x or 0.86x);
 an alternating A/B against the previous compiler measured identical times.
 
+### Frame-access checkpoint
+
+After loads landed in their destination and local aggregate fields,
+descriptors, and literal members moved to direct `x29` access, five
+alternating A/B runs produced string medians of `find-4096` 9,877 ns (from
+10,551), `format-f64-shortest` 373 ns (from 391), and `parse-f64` 144 ns
+(from 149); CPU was unchanged at 37.0 ms. `compare-64` moved to its slower
+placement (7.2 ns from 6.7) with an instruction-identical loop.
+
 ## Memory
 
 Run the v1 raw-memory benchmark on Apple arm64:
