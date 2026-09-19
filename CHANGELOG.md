@@ -1031,6 +1031,12 @@ current normative rules, and Git preserves patch-level detail.
   Writes normalize narrow values exactly as a slot store and reload would;
   taking a promoted local's address is an internal compiler error. The CPU
   recurrence fell from 41.7 to 36.0 ms (C `-O2` 34.2 ms).
+- Float locals and by-value float parameters are promoted the same way into
+  d8-d15, a separate eight-register pool ranked by the same weights; `f32`
+  values live in the low half. The pool has its own save area, saved with
+  `stp`/`ldp d` pairs. Compiler runtime routines use only v24-v31, so the
+  registers survive their calls. No current benchmark has a hot float loop;
+  string timings are unchanged.
 
 ## Current frontier
 

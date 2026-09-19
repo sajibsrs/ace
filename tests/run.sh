@@ -1040,6 +1040,22 @@ if [ -d tests/emit ]; then
             echo "FAIL: loop registers must be assigned innermost-first within x19-x28"
             fail=1
         fi
+        # Hot float locals fill d8-d15; a loop-free function saves none of
+        # the callee-saved registers.
+        if ! otool -tv /tmp/ace_emit/basics/register_locals.o | awk '
+            /^[^0-9].*:$/ { fn = $0; next }
+            {
+                for (i = 3; i <= NF; i++) {
+                    r = $i; gsub(/[][,]/, "", r)
+                    if (r !~ /^([sd]([89]|1[0-5])|x(19|2[0-8]))$/) continue
+                    if (fn ~ /^__ace\$fn\$(id8|idf)\$/) bad = 1
+                    if (fn ~ /^__ace\$fn\$fpressure\$/ && r == "d15") full = 1
+                }
+            }
+            END { exit bad || !full }'; then
+            echo "FAIL: float locals must be promoted into d8-d15"
+            fail=1
+        fi
     fi
     # -o mode drives the same pipeline through the cc link step
     "$ACE" -o /tmp/ace_emit/direct tests/emit/basics/main.ace && /tmp/ace_emit/direct

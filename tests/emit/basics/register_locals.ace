@@ -1,6 +1,7 @@
 /*
  * Scalar locals and by-value parameters whose address never escapes live in
- * callee-saved registers; every address-taking use keeps a local in its slot.
+ * callee-saved registers (x19-x28, floats in d8-d15); every address-taking use
+ * keeps a local in its slot.
  */
 
 // expect-exit: 42
@@ -15,6 +16,18 @@ set(p: mut *int, v: int) {
 }
 
 bump(mut x: int, by: int) {
+    x = x + by
+}
+
+idf(x: f64): f64 {
+    return x
+}
+
+setf(p: mut *f64, v: f64) {
+    *p = v
+}
+
+bumpf(mut x: f64, by: f64) {
     x = x + by
 }
 
@@ -148,12 +161,120 @@ walk(n: int): int {
     return total
 }
 
+// f32 and f64 locals stay in d8-d15 across calls, negation, and conversions
+floats(): int {
+    s: f32 = 1.5
+    d: f64 = 0.25
+    m: f64 = 0.0
+    n: int = 0
+    for i: int in 0 .. 4 {
+        s = s * 2.0 - 1.0
+        d = idf(d) + f64(i)
+        m = -d
+        n += int(d)
+    }
+    if s != 9.0 { return 15 }
+    if f64(s) + d != 15.25 { return 16 }
+    if m != -6.25 { return 17 }
+    if n != 10 { return 18 }
+    return 0
+}
+
+// eight float parameters in v0-v7, the last two on the stack
+fsum(a0: f64, a1: f64, a2: f64, a3: f64, a4: f64, a5: f64, a6: f64,
+     a7: f64, a8: f64, a9: f32): f64 {
+    total: f64 = a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7
+    for i: int in 0 .. 2 {
+        total += a8 + f64(a9)
+    }
+    return total
+}
+
+// address-taking uses keep float locals in memory
+fescapes(): int {
+    x: f64 = 0.0
+    setf(mut &x, 2.5)
+    v: f64 = 1.0
+    bumpf(mut v, 0.5)
+    w: f64 = 0.0
+    total: f64 = 0.0
+    for i: int in 0 .. 2 {
+        volatile w = f64(i)
+        total += x + v + w
+    }
+    if total != 9.0 { return 19 }
+    return 0
+}
+
+// more hot float locals than d8-d15: the rest keep their slots
+fpressure(n: int): f64 {
+    a: f64 = 1.0
+    b: f64 = 2.0
+    c: f64 = 3.0
+    d: f64 = 4.0
+    f: f64 = 5.0
+    g: f64 = 6.0
+    h: f64 = 7.0
+    k: f64 = 8.0
+    m: f64 = 9.0
+    o: f64 = 10.0
+    for i: int in 0 .. n {
+        a += 1.0
+        b += a
+        c += b
+        d += c
+        f += d
+        g += f
+        h += g
+        k += h
+        m += k
+        o += m + f64(i)
+    }
+    return o
+}
+
+// the running total is read after each recursive call returns
+fwalk(n: int): f64 {
+    total: f64 = 0.0
+    for i: int in 0 .. n {
+        total = fwalk(i) + total + 1.0
+    }
+    return total
+}
+
+// float locals start at d8 in every function: the callee saves and restores
+// three (an odd count) under the caller's three, which are read after it
+// returns; `step` arrives in v1
+fdown(n: f64, step: f64): f64 {
+    k: f64 = n
+    s: f64 = 0.0
+    for k > 0.0 {
+        s += k
+        k -= step
+    }
+    return s
+}
+
+fnested(): f64 {
+    acc: f64 = 0.0
+    b: f64 = 1.0
+    c: f64 = 2.0
+    for i: int in 0 .. 3 {
+        acc = fdown(4.0, 1.0) + acc + b * c + f64(i)
+    }
+    return acc
+}
+
 main(): int {
-    r: int = widths() + escapes()
+    r: int = widths() + escapes() + floats() + fescapes()
     if r != 0 { return r }
     if many(1, 2, 3, 4, 5, 6, 7, 8, 9, -10) != 34 { return 10 }
     if nested_calls() != 33 { return 13 }
     if pressure(4) != 367 { return 11 }
     if walk(10) != 1023 { return 12 }
+    if fsum(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 0.5, 0.25) != 37.5 { return 20 }
+    if fpressure(4) != 2294.0 { return 21 }
+    if fwalk(10) != 1023.0 { return 22 }
+    if fnested() != 39.0 { return 23 }
     return 42
 }

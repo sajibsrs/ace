@@ -106,9 +106,6 @@ These are baseline observations, not performance promises.
 
 - **Peephole cleanup** [queued] — implement the bounded emitted-code pass from
   Compiler #6, targeting redundant loads/stores and address recomputation first.
-- **Register promotion** [queued] — loop state and integer-class scalar
-  locals already live in x19-x28; extend promotion to float locals in
-  d8-d15 per the bounded per-function pass in Compiler #6.
 - **Read-only parameter load reuse** [queued] — exploit the existing parameter
   facts without adding global alias analysis.
 - **Float-parse optimization backlog** [new] — use the canonical 80%-short /
