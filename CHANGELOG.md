@@ -1022,6 +1022,15 @@ current normative rules, and Git preserves patch-level detail.
   state gone, `state`'s store-to-next-load forwarding is the loop's only
   memory traffic and costs about 3.7 cycles per iteration on Apple cores;
   promoting `state` itself removes it.
+- Integer-class scalar locals and by-value parameters whose address never
+  escapes live in the callee-saved registers loop state leaves free. The
+  loop pre-pass also walks expressions, weights each use 8^loop-depth
+  (straight-line uses weigh nothing, so loop-free functions save no extra
+  registers), and marks escapes: `&x`, volatile access, `mut` arguments,
+  field/index/slice bases, tuple assignment targets, and sequence iterables.
+  Writes normalize narrow values exactly as a slot store and reload would;
+  taking a promoted local's address is an internal compiler error. The CPU
+  recurrence fell from 41.7 to 36.0 ms (C `-O2` 34.2 ms).
 
 ## Current frontier
 

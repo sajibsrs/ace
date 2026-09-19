@@ -303,6 +303,12 @@ typedef struct { uint32_t addr, size; const char* name; uint32_t nlen; } DebugFn
 enum { CLS_INT, CLS_FP, CLS_ADDR };
 typedef struct { uint8_t cls; int idx; } EV; // int temp / fp temp / address in int temp
 
+typedef struct { // register-promotion candidate: a scalar local or parameter
+    Node*    decl;    // binder node (the Sym's decl)
+    uint32_t weight;  // use_weight summed over its uses
+    uint8_t  escaped; // its address is taken somewhere; stays in its slot
+} PromoCand;
+
 typedef struct { // loop / labeled-block context stack
     int         brk, cont; // labels; cont = -1 for non-loops
     const char* label;
@@ -321,7 +327,7 @@ typedef struct {
 
 #define MAX_ITEMPS 14  // x0-x7, x9-x15
 #define MAX_FPTEMPS 16 // v0-v7, v16-v23
-#define LOOP_REGS 10   // x19-x28, callee-saved emitter loop state
+#define LOOP_REGS 10   // x19-x28, callee-saved loop state and promoted locals
 
 typedef struct {
     Diag* d;
@@ -353,8 +359,13 @@ typedef struct {
     Node**   lreg_loops; // loops whose state lives in x19-x28 (plan_loops)
     int      nlreg_loops, clreg_loops;
     int      lreg_top;   // next free loop register, as an offset from x19
-    int      lreg_max;   // loop registers the function saves and restores
+    int      lreg_max;   // loop registers x19..x19+lreg_max-1
+    Node*    preg_decl[LOOP_REGS]; // promoted locals, from x19+lreg_max up
+    int      npreg;
+    int      nsaved;     // callee-saved registers the function saves and restores
     uint32_t lreg_save;  // depth of the callee-saved save area
+    PromoCand* pcands;   // plan_promotion scratch
+    int      npcands, cpcands;
     int      fn_has_asm;
     uint32_t out_max;
     Slot*   slots;
@@ -468,6 +479,7 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels);
 static void emit_stmt(Em* e, Node* s);
 static int loop_regs_take(Em* e, Node* s);
 static int loop_own_regs(Node* s);
+static void plan_promotion(Em* e, Node* f);
 static int gen_addr(Em* e, Node* x);
 static int is_lvalue_node(Node* x);
 static SType* lvalue_type(Em* e, Node* x);
@@ -2702,9 +2714,46 @@ static void addr_of_sym(Em* e, int rd, ESym* sym) {
     reloc_add(&e->secs[SEC_TEXT], site, sym, 0, 2, 1, RM_PAGEOFF12);
 }
 
+// callee-saved register holding a promoted local, or -1 for slot storage
+static int promo_reg(Em* e, Sym* s) {
+    if (!s || !s->decl) return -1;
+    for (int i = 0; i < e->npreg; i++)
+        if (e->preg_decl[i] == s->decl) return 19 + e->lreg_max + i;
+    return -1;
+}
+
+/*
+ * Move an integer-class value into its promoted register at the type's width,
+ * leaving exactly what a slot store and reload would: 32-bit values
+ * zero-extended, narrow signed values sign-extended into w (ldursb/ldursh),
+ * narrow unsigned values zero-extended.
+ */
+static void set_preg(Em* e, int r, int src, SType* t) {
+    uint32_t w = (uint32_t)((scalar_bits(t) + 7) / 8);
+    if (w >= 8) {
+        mov_int(e, 1, r, src);
+    } else if (w == 4) {
+        ins(e, 0x2A0003E0u | ((uint32_t)src << 16) | (uint32_t)r); // mov wr, ws
+    } else { // sxtb/sxth/uxtb/uxth wr, ws
+        uint32_t imms = w == 1 ? 7u : 15u;
+        ins(e, (ty_is_signed(t) ? 0x13000000u : 0x53000000u) | (imms << 10) |
+               ((uint32_t)src << 5) | (uint32_t)r);
+    }
+}
+
+static void store_preg(Em* e, int r, EV v, SType* t) {
+    if (v.cls == CLS_ADDR) v = load_scalar(e, xreg(v.idx), 0, t);
+    set_preg(e, r, xreg(v.idx), t);
+}
+
 // address of a variable's storage in a fresh int temp
 static int gen_var_addr(Em* e, Sym* s, Node* at) {
     int t = tmp_int(e);
+    if (promo_reg(e, s) >= 0) { // plan_promotion missed an escape
+        em_err(e, at, "internal compiler error: address of register local '%.*s'",
+               (int)s->len, s->name);
+        return t;
+    }
     ESym* g = global_sym(e, s);
     if (g) {
         addr_of_sym(e, xreg(t), g);
@@ -2735,6 +2784,12 @@ static Slot* local_slot(Em* e, Sym* s) {
  * and then the value into the same register.
  */
 static EV load_var(Em* e, Sym* s, SType* t, Node* at) {
+    int pr = promo_reg(e, s);
+    if (pr >= 0) {
+        int it = tmp_int(e);
+        mov_int(e, 1, xreg(it), pr);
+        return (EV){ CLS_INT, it };
+    }
     Slot* sl = local_slot(e, s);
     if (!sl) {
         int a = gen_var_addr(e, s, at);
@@ -4987,10 +5042,13 @@ static void store_to_slot(Em* e, EV v, uint32_t off, SType* t) {
     }
 }
 
-// assignment store: in place for a direct local slot, else through ta
+// assignment store: into a promoted register (direct 2, doff = register), in
+// place for a direct local slot (direct 1), else through ta
 static void store_target(Em* e, EV v, int direct, uint32_t doff, int ta,
                          SType* t) {
-    if (direct)
+    if (direct == 2)
+        store_preg(e, (int)doff, v, t);
+    else if (direct)
         store_to_slot(e, v, doff, t);
     else
         store_scalar(e, v, xreg(ta), 0, t);
@@ -5385,6 +5443,11 @@ static void emit_stmt(Em* e, Node* s) {
             em_err(e, s, "too many binders (max 16)");
             return;
         }
+        int pr = nb == 1 ? promo_reg(e, node_sym(s->kids[0])) : -1;
+        if (pr >= 0) { // promoted: no slot
+            if (s->b) store_preg(e, pr, gen_expr(e, s->b), node_sym(s->kids[0])->type);
+            return;
+        }
         for (int i = 0; i < nb; i++) {
             Node* binder = s->kids[i];
             Sym* vs = node_sym(binder);
@@ -5454,10 +5517,11 @@ static void emit_stmt(Em* e, Node* s) {
          */
         Node* lhs = s->kids[0];
         Sym* ls = lhs->kind == N_IDENT ? node_sym(lhs) : NULL;
-        Slot* lsl = ls && ls->kind == SYM_VAR && is_scalar(t) ? local_slot(e, ls)
-                                                              : NULL;
-        int direct = lsl && !lsl->byref;
-        uint32_t doff = direct ? lsl->off : 0;
+        int local = ls && ls->kind == SYM_VAR && is_scalar(t);
+        int pr = local ? promo_reg(e, ls) : -1;
+        Slot* lsl = local && pr < 0 ? local_slot(e, ls) : NULL;
+        int direct = pr >= 0 ? 2 : lsl && !lsl->byref;
+        uint32_t doff = pr >= 0 ? (uint32_t)pr : direct ? lsl->off : 0;
         int ta = direct ? -1 : gen_addr(e, lhs);
         if (s->op != T_ASSIGN) { // compound: x = x op y, address evaluated once
             if (!is_scalar(t)) {
@@ -5491,7 +5555,7 @@ static void emit_stmt(Em* e, Node* s) {
         }
         EV v = gen_expr(e, s->a);
         if (direct) {
-            store_to_slot(e, v, doff, t);
+            store_target(e, v, direct, doff, ta, t);
         } else if (s->flags & F_VOLATILE) {
             /* Semantic checking admits only exact-width scalar stores here. */
             store_scalar(e, v, xreg(ta), 0, t);
@@ -6180,12 +6244,13 @@ static void emit_prologue(Em* e) {
 }
 
 /*
- * Loop registers x19..x19+n-1 live in a frame save area at depth lreg_save:
+ * Saved registers x19..x19+n-1 (loop state, then promoted locals) live in a
+ * frame save area at depth lreg_save:
  * register k sits at x29 - lreg_save + 8k, pairs through stp/ldp and an odd
  * last register through stur/ldur.
  */
 static void loop_regs_save(Em* e, int load) {
-    int n = e->lreg_max;
+    int n = e->nsaved;
     for (int k = 0; k + 1 < n; k += 2) {
         uint32_t imm = (uint32_t)(-(int32_t)(e->lreg_save - 8u * (uint32_t)k) / 8);
         ins(e, (load ? 0xA9400000u : 0xA9000000u) | ((imm & 0x7Fu) << 15) |
@@ -6203,7 +6268,7 @@ static void emit_epilogue(Em* e) {
     if (e->mode == EMIT_CHECKED && e->current_is_main) {
         emit_bl_internal(e, "__ace$registry_leaks", 20);
     }
-    if (e->lreg_max) loop_regs_save(e, 1);
+    if (e->nsaved) loop_regs_save(e, 1);
     ins(e, 0x910003BF); // mov sp, x29
     ins(e, 0xA8C17BFD); // ldp x29, x30, [sp], #16
     ins(e, 0xD65F03C0); // ret
@@ -6288,6 +6353,126 @@ static int loop_regs_take(Em* e, Node* s) {
     return -1;
 }
 
+// --- register promotion ----------------------------------------------------------------
+
+/*
+ * Rank one use at loop depth `depth` adds to its local's promotion weight;
+ * a local whose total weight is 0 keeps its slot. Straight-line uses weigh
+ * nothing, so functions without loops pay no register save/restore; each
+ * loop level counts 8x, capped at depth 5 so a sum cannot overflow short of
+ * 131072 uses.
+ */
+static uint32_t use_weight(int depth) {
+    if (depth <= 0) return 0;
+    return 1u << (3 * (depth < 5 ? depth : 5));
+}
+
+static PromoCand* promo_find(Em* e, Node* x) {
+    Sym* s = x && x->kind == N_IDENT ? node_sym(x) : NULL;
+    if (!s || !s->decl) return NULL;
+    for (int i = 0; i < e->npcands; i++)
+        if (e->pcands[i].decl == s->decl) return &e->pcands[i];
+    return NULL;
+}
+
+// binder of an integer-class scalar local or by-value parameter
+static void promo_add(Em* e, Node* binder) {
+    Sym* s = node_sym(binder);
+    if (!s || s->kind != SYM_VAR || s->is_global || s->decl != binder ||
+        !is_scalar(s->type) || is_floatt(s->type))
+        return;
+    if (e->npcands == e->cpcands) {
+        e->cpcands = e->cpcands ? e->cpcands * 2 : 16;
+        e->pcands = realloc(e->pcands, (size_t)e->cpcands * sizeof(PromoCand));
+        if (!e->pcands) oom();
+    }
+    e->pcands[e->npcands++] = (PromoCand){ binder, 0, 0 };
+}
+
+static void promo_escape(Em* e, Node* x) {
+    PromoCand* c = promo_find(e, x);
+    if (c) c->escaped = 1;
+}
+
+/*
+ * One walk over a function body before it is emitted: collect single-binder
+ * scalar declarations, weight every use by its loop depth, and mark each
+ * place the emitter takes a variable's address or needs its storage (&x, a
+ * volatile read or store, a mut argument, a field/index/slice base, a tuple
+ * assignment target, a sequence loop's iterable). Follows a/b/c/kids only; Node.d is read solely as a
+ * general for's body, since sema's d links form cycles.
+ */
+static void promo_scan(Em* e, Node* n, int depth) {
+    if (!n) return;
+    switch (n->kind) {
+    case N_IDENT: {
+        PromoCand* c = promo_find(e, n);
+        if (c) c->weight += use_weight(depth);
+        return;
+    }
+    case N_VAR:
+        if (n->flags & F_MIXED) {
+            for (int i = 0; i < n->nkids; i++)
+                if (n->kids[i]->kind != N_PARAM) promo_escape(e, n->kids[i]);
+        } else if (n->nkids == 1) {
+            promo_add(e, n->kids[0]);
+        }
+        break;
+    case N_ASSIGN:
+        if (n->nkids > 1 || (n->flags & F_VOLATILE))
+            for (int i = 0; i < n->nkids; i++) promo_escape(e, n->kids[i]);
+        break;
+    case N_UNARY:
+        if (n->op == T_AMP || n->op == T_VOLATILE) promo_escape(e, n->a);
+        break;
+    case N_MUTARG: case N_FIELD_E: case N_INDEX: case N_SLICE_E:
+        promo_escape(e, n->a);
+        break;
+    case N_FOR:
+        if (n->flags & F_FORGEN) {
+            promo_scan(e, n->a, depth);
+            promo_scan(e, n->b, depth + 1);
+            promo_scan(e, n->c, depth + 1);
+            promo_scan(e, n->d, depth + 1);
+        } else {
+            if (n->b->kind != N_RANGE) promo_escape(e, n->b);
+            promo_scan(e, n->b, depth);
+            promo_scan(e, n->c, depth + 1);
+        }
+        return;
+    default:
+        break;
+    }
+    promo_scan(e, n->a, depth);
+    promo_scan(e, n->b, depth);
+    promo_scan(e, n->c, depth);
+    for (int i = 0; i < n->nkids; i++) promo_scan(e, n->kids[i], depth);
+}
+
+/*
+ * Choose the locals that live in the callee-saved registers loop state leaves
+ * free: non-escaping candidates by descending weight, ties in declaration
+ * order. Parameters passed by reference (mut, method receivers) never qualify.
+ */
+static void plan_promotion(Em* e, Node* f) {
+    e->npcands = 0;
+    for (int i = 0; i < f->nkids; i++)
+        if (!(f->kids[i]->flags & F_MUT) && !((f->flags & F_METHOD) && i == 0))
+            promo_add(e, f->kids[i]);
+    promo_scan(e, f->b, 0);
+    while (e->lreg_max + e->npreg < LOOP_REGS) {
+        PromoCand* best = NULL;
+        for (int i = 0; i < e->npcands; i++) {
+            PromoCand* c = &e->pcands[i];
+            if (!c->escaped && c->weight && (!best || c->weight > best->weight))
+                best = c;
+        }
+        if (!best) break;
+        e->preg_decl[e->npreg++] = best->decl;
+        best->weight = 0;
+    }
+}
+
 static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
                       SType* ret, int is_main, int export_c) {
     align_code(e, FUNC_ALIGN);
@@ -6312,16 +6497,20 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
     e->lreg_top = e->lreg_max = 0;
     e->fn_has_asm = 0;
     plan_loops(e, f->b);
+    e->npreg = 0;
     if (e->fn_has_asm) { // asm bindings may name any x register
         e->nlreg_loops = 0;
         e->lreg_max = 0;
+    } else {
+        plan_promotion(e, f);
     }
+    e->nsaved = e->lreg_max + e->npreg;
     sym_define(&e->syms, e->secs, symname, symlen, is_main || export_c,
                &e->secs[SEC_TEXT]);
     if (is_main) emit_has_main = 1;
     emit_prologue(e);
-    if (e->lreg_max) {
-        e->lreg_save = slot_alloc(e, NULL, 8u * (uint32_t)e->lreg_max, 8);
+    if (e->nsaved) {
+        e->lreg_save = slot_alloc(e, NULL, 8u * (uint32_t)e->nsaved, 8);
         loop_regs_save(e, 0);
     }
 
@@ -6356,6 +6545,18 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
         uint8_t hfa_dbl[5];
         int is_hfa = classify_hfa(t, hfa_offs, hfa_dbl) >= 0;
         int byref = (!export_c && muts[i]) || (size > 16 && !is_hfa);
+        int pr = promo_reg(e, node_sym(f->kids[i]));
+        if (pr >= 0) { // promoted scalar: one register or stack unit
+            TU* u = &units[i * 4];
+            if (u->kind == TU_XREG && u->reg >= 0) {
+                set_preg(e, pr, u->reg, t);
+            } else if (u->kind == TU_STACK) {
+                incoming_addr(e, 16, u->soff);
+                ld_reg(e, 16, 16, 0, u->size < 8 ? u->size : 8, 0);
+                set_preg(e, pr, 16, t);
+            }
+            continue;
+        }
         uint32_t storage = byref ? 8 : is_scalar(t) ? size : align_up(size, 8);
         uint32_t slot = slot_alloc(e, f->kids[i], storage,
                                    byref ? 8 : ty_align(t));

@@ -1,0 +1,159 @@
+/*
+ * Scalar locals and by-value parameters whose address never escapes live in
+ * callee-saved registers; every address-taking use keeps a local in its slot.
+ */
+
+// expect-exit: 42
+
+Point: struct { x: int, y: int }
+id8(x: i8): i8 {
+    return x
+}
+
+set(p: mut *int, v: int) {
+    *p = v
+}
+
+bump(mut x: int, by: int) {
+    x = x + by
+}
+
+pair(): (int, int) {
+    return (3, 4)
+}
+
+read_x(p: *Point): int {
+    return p.x
+}
+
+// narrow locals keep their width through register moves and calls
+widths(): int {
+    a: i8 = -3
+    b: u8 = 250
+    c: i16 = -300
+    d: u16 = 65000
+    f: i32 = -70000
+    g: u32 = 4000000000
+    t: bool = false
+    big: int = 1 << 40
+    for i: int in 0 .. 3 {
+        big += big
+        a = id8(a) - 1
+        b = b + 1
+        c -= 1
+        d = d + 100
+        f *= 2
+        g = g / 2
+        t = !t
+    }
+    if a != -6 { return 1 }
+    if int(b) != 253 { return 2 }
+    if int(c) != -303 { return 3 }
+    if int(d) != 65300 { return 4 }
+    if int(f) != -560000 { return 5 }
+    if int(g) != 500000000 { return 6 }
+    if !t { return 7 }
+    if big != 1 << 43 { return 14 }
+    return 0
+}
+
+// ten parameters: the last two arrive on the stack, one of them narrow, and
+// only they are used inside the loop, so they rank first
+many(p0: int, p1: int, p2: int, p3: int, p4: int, p5: int, p6: int,
+     p7: int, p8: int, p9: i8): int {
+    total: int = p0 + p1 + p2 + p3 + p4 + p5 + p6 + p7
+    for i: int in 0 .. 2 {
+        total += p8 + int(p9)
+    }
+    return total
+}
+
+// a general loop has no loop registers: its promoted locals start at x19,
+// which the calling loop is using
+countdown(n: int): int {
+    k: int = n
+    s: int = 0
+    for k > 0 {
+        s += k
+        k -= 1
+    }
+    return s
+}
+
+nested_calls(): int {
+    acc: int = 0
+    for i: int in 0 .. 3 {
+        acc += countdown(4) + i
+    }
+    return acc
+}
+
+// each address-taking use keeps its local in memory
+escapes(): int {
+    x: int = 0
+    set(mut &x, 5)
+    v: int = 1
+    bump(mut v, 2)
+    pt: Point = Point { x = 7, y = 0 }
+    q: *Point = &pt
+    first: int = 0
+    second: int = 0
+    first, second = pair()
+    w: int = 0
+    total: int = 0
+    for i: int in 0 .. 3 {
+        volatile w = i
+        total += x + v + q.x + first + second + w
+    }
+    if total != 3 * (5 + 3 + 7 + 3 + 4) + 3 { return 8 }
+    if read_x(q) != 7 { return 9 }
+    return 0
+}
+
+// more hot locals than free registers: the rest keep their slots
+pressure(n: int): int {
+    a: int = 1
+    b: int = 2
+    c: int = 3
+    d: int = 4
+    f: int = 5
+    g: int = 6
+    h: int = 7
+    k: int = 8
+    m: int = 9
+    o: int = 10
+    r: int = 11
+    for i: int in 0 .. n {
+        a += 1
+        b += a
+        c += b
+        d += c
+        f += d
+        g += f
+        h += g
+        k += h
+        m += k
+        o += m
+        r += o
+    }
+    return r % 1000
+}
+
+// callee-saved registers survive recursion
+walk(n: int): int {
+    total: int = 0
+    for i: int in 0 .. n {
+        total += walk(i) + 1
+    }
+    return total
+}
+
+main(): int {
+    r: int = widths() + escapes()
+    if r != 0 { return r }
+    if many(1, 2, 3, 4, 5, 6, 7, 8, 9, -10) != 34 { return 10 }
+    if nested_calls() != 33 { return 13 }
+    if pressure(4) != 367 { return 11 }
+    if walk(10) != 1023 { return 12 }
+    return 42
+}

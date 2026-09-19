@@ -1020,23 +1020,23 @@ if [ -d tests/emit ]; then
             fail=1
         fi
         # Loop state takes x19-x28 innermost-first: four nested range loops
-        # (12 registers) keep the outermost in slots and use exactly x19-x27;
-        # a function without range or sequence loops, or with any asm
-        # statement, touches none of them.
+        # (12 registers) keep the outermost in slots and use x19-x27, leaving
+        # x28 to the promoted accumulator; a function with any asm statement
+        # touches none of them.
         if ! otool -tv /tmp/ace_emit/control_flow/loop_registers.o | awk '
             /^[^0-9].*:$/ { fn = $0; next }
             {
                 for (i = 3; i <= NF; i++) {
                     r = $i; gsub(/[][,]/, "", r)
                     if (r !~ /^x(19|2[0-8])$/) continue
-                    if (fn == "_main:" || fn ~ /^__ace\$fn\$with_asm\$/) bad = 1
+                    if (fn ~ /^__ace\$fn\$with_asm\$/) bad = 1
                     if (fn ~ /^__ace\$fn\$nested\$/) {
-                        if (r == "x28") bad = 1
                         if (r == "x27") top = 1
+                        if (r == "x28") acc = 1
                     }
                 }
             }
-            END { exit bad || !top }'; then
+            END { exit bad || !top || !acc }'; then
             echo "FAIL: loop registers must be assigned innermost-first within x19-x28"
             fail=1
         fi

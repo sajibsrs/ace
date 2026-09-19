@@ -188,6 +188,16 @@ traffic, store forwarding adds about 3.7 cycles per iteration; one unrelated
 `ldur`/`stur` pair per iteration, or keeping `state` in a register, restores
 23.0 cycles. Loop alignment of 16, 32, or 64 bytes made no difference.
 
+### Register-local checkpoint
+
+After non-escaping integer-class locals moved to callee-saved registers,
+three runs produced CPU medians of 36.0 ms release versus 34.2 ms C `-O2`
+(1.05x), recovering the loop-register regression: `state` no longer
+round-trips through memory. String medians: `find-4096` 5.5x, `copy-64`
+1.9x, `parse-f64` 5.2x, `format-f64-shortest` 0.49x. `compare` alternates
+between two placements (64-byte 1.8x or 3.1x, 4096-byte 0.67x or 0.86x);
+an alternating A/B against the previous compiler measured identical times.
+
 ## Memory
 
 Run the v1 raw-memory benchmark on Apple arm64:
