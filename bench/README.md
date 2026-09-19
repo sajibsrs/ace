@@ -263,6 +263,17 @@ produced `find-4096` 1,300 ns (from 1,456; 0.65x C `strstr`),
 unchanged. Parse retired 7% fewer instructions in the earlier prototype with
 no cycle change, so its remaining cost is not instruction count.
 
+### Full-comparison checkpoint
+
+On the same compiler, three string runs and one CPU run produced these
+medians against C `-O2`: `compare-64` 11.5 ns (3.0x; 8.9–11.9 across runs,
+placement-dependent), `compare-4096` 0.85x, `copy-64` 1.8x, `copy-4096`
+1.08x, `find-4096` 0.65x, `parse-f64` 58.7 ns (2.1x), `parse-f64-short`
+54.9 ns (2.1x), `parse-f64-long` 74.0 ns (2.4x), and `format-f64-shortest`
+296 ns (0.37x of `%.17g`, reference only). CPU measured 37.7 ms release
+versus 35.5 ms C `-O2` (1.06x) and 41.4 ms C `-O0`, with 35.5 ms checked;
+all checksums matched.
+
 ## Memory
 
 Run the v1 raw-memory benchmark on Apple arm64:
