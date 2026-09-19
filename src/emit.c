@@ -2772,6 +2772,16 @@ static void store_preg(Em* e, int r, EV v, SType* t) {
                ((uint32_t)xreg(v.idx) << 5) | (uint32_t)r);
 }
 
+// a promoted sequence-loop value binder takes the element at [p] directly
+static void load_binder(Em* e, int r, int p, SType* t) {
+    if (is_floatt(t)) {
+        ldrf_(e, r, p, 0, unwrap(t)->prim == P_F64);
+        return;
+    }
+    uint32_t w = (uint32_t)((scalar_bits(t) + 7) / 8);
+    ld_reg(e, r, p, 0, w, ty_is_signed(t) && w < 4); // ldrsb/ldrsh w, as a slot reload
+}
+
 // address of a variable's storage in a fresh int temp
 static int gen_var_addr(Em* e, Sym* s, Node* at) {
     int t = tmp_int(e);
@@ -5675,9 +5685,15 @@ static void emit_stmt(Em* e, Node* s) {
         // it for every read, write, and address-of on the binder — the alias
         // reaches backing storage, never the slot's own address.
         int mut_iter = (s->flags & F_MUT) != 0 && s->b->kind != N_RANGE;
-        uint32_t vs = slot_alloc(e, lv && lv->decl ? lv->decl : value_binder,
-                                 mut_iter ? 8 : esz, mut_iter ? 8 : ty_align(elem));
-        if (mut_iter) e->slots[e->nslots - 1].byref = 1;
+        // a promoted value binder takes each iteration's value in its
+        // register (vpr) and has no slot
+        int vpr = promo_reg(e, lv);
+        uint32_t vs = 0;
+        if (vpr < 0) {
+            vs = slot_alloc(e, lv && lv->decl ? lv->decl : value_binder,
+                            mut_iter ? 8 : esz, mut_iter ? 8 : ty_align(elem));
+            if (mut_iter) e->slots[e->nslots - 1].byref = 1;
+        }
         int lbreak = new_label(e), lcont = new_label(e), lcond = new_label(e);
         int lr = loop_regs_take(e, s); // x19+: cursor/count/step or p/end/index
         if (s->b->kind == N_RANGE) { // index loop over a range
@@ -5778,7 +5794,8 @@ static void emit_stmt(Em* e, Node* s) {
             bind_label(e, lcond);
             if (lr >= 0) {
                 cbz_(e, 1, rcnt, 0, lbreak);
-                store_frame(e, rcur, vs, (uint32_t)((scalar_bits(elem) + 7) / 8));
+                if (vpr >= 0) set_preg(e, vpr, rcur, elem);
+                else store_frame(e, rcur, vs, (uint32_t)((scalar_bits(elem) + 7) / 8));
                 e->vti = 0; e->vtf = 0;
                 if (e->nctx >= 64) {
                     em_err(e, s, "control flow nested too deeply");
@@ -5803,13 +5820,15 @@ static void emit_stmt(Em* e, Node* s) {
             int ti = tmp_int(e);
             load_frame(e, xreg(ti), islot, rsz, ty_is_signed(rt) && rsz < 8);
             // loop variable = i (truncating/extending store)
-            if (scalar_bits(elem) <= rbits)
-                store_frame(e, xreg(ti), vs, (uint32_t)((scalar_bits(elem) + 7) / 8));
-            else {
+            if (scalar_bits(elem) > rbits) {
                 if (ty_is_signed(rt)) ins(e, 0x93407C00u | (xreg(ti) << 5) | xreg(ti));
                 else ins(e, 0xD3407C00u | (xreg(ti) << 5) | xreg(ti));
-                store_frame(e, xreg(ti), vs, 8);
             }
+            if (vpr >= 0)
+                set_preg(e, vpr, xreg(ti), elem);
+            else
+                store_frame(e, xreg(ti), vs, scalar_bits(elem) > rbits ? 8u
+                            : (uint32_t)((scalar_bits(elem) + 7) / 8));
             e->vti = 0; e->vtf = 0;
             if (e->nctx >= 64) {
                 em_err(e, s, "control flow nested too deeply");
@@ -5852,9 +5871,11 @@ static void emit_stmt(Em* e, Node* s) {
             eslot = temp_slot(e, 8, 8);
         }
         uint32_t ivs = 0, ixslot = 0;
+        int ipr = index_binder ? promo_reg(e, node_sym(index_binder)) : -1;
         if (index_binder) {
             Sym* ixv = node_sym(index_binder);
-            ivs = slot_alloc(e, ixv && ixv->decl ? ixv->decl : index_binder, 8, 8);
+            if (ipr < 0)
+                ivs = slot_alloc(e, ixv && ixv->decl ? ixv->decl : index_binder, 8, 8);
             if (lr >= 0)
                 mov_int(e, 1, rix, 31); // mov xN, xzr
             else {
@@ -5888,13 +5909,16 @@ static void emit_stmt(Em* e, Node* s) {
             bind_label(e, lcond);
             ins(e, 0xEB00001Fu | ((uint32_t)rend << 16) | ((uint32_t)rp << 5));
             bcond_(e, C_HS, lbreak);
-            if (mut_iter)
+            if (vpr >= 0)
+                load_binder(e, vpr, rp, elem);
+            else if (mut_iter)
                 store_frame(e, rp, vs, 8);
             else {
                 frame_addr(e, 15, vs);
                 copy_mem(e, 15, 0, rp, 0, esz);
             }
-            if (index_binder) store_frame(e, rix, ivs, 8);
+            if (ipr >= 0) mov_int(e, 1, ipr, rix);
+            else if (index_binder) store_frame(e, rix, ivs, 8);
             e->vti = 0; e->vtf = 0;
             if (e->nctx >= 64) {
                 em_err(e, s, "control flow nested too deeply");
@@ -5943,13 +5967,17 @@ static void emit_stmt(Em* e, Node* s) {
         bcond_(e, C_HS, lbreak);
         // loop variable = element copy at [p]; under `in mut`, the alias slot
         // receives the cursor itself (the element address)
-        if (mut_iter)
+        if (vpr >= 0)
+            load_binder(e, vpr, xreg(tp), elem);
+        else if (mut_iter)
             store_frame(e, xreg(tp), vs, 8);
         else {
             frame_addr(e, 15, vs);
             copy_mem(e, 15, 0, xreg(tp), 0, esz);
         }
-        if (index_binder) {
+        if (ipr >= 0) {
+            load_frame(e, ipr, ixslot, 8, 0);
+        } else if (index_binder) {
             load_frame(e, 16, ixslot, 8, 0);
             store_frame(e, 16, ivs, 8);
         }
@@ -6415,7 +6443,7 @@ static PromoCand* promo_find(Em* e, Node* x) {
     return NULL;
 }
 
-// binder of a scalar local or by-value parameter
+// binder of a scalar local, loop binder, or by-value parameter
 static void promo_add(Em* e, Node* binder) {
     Sym* s = node_sym(binder);
     if (!s || s->kind != SYM_VAR || s->is_global || s->decl != binder ||
@@ -6436,7 +6464,7 @@ static void promo_escape(Em* e, Node* x) {
 
 /*
  * One walk over a function body before it is emitted: collect single-binder
- * scalar declarations, weight every use by its loop depth, and mark each
+ * scalar declarations and loop binders, weight every use by its loop depth, and mark each
  * place the emitter takes a variable's address or needs its storage (&x, a
  * volatile read or store, a mut argument, a field/index/slice base, a tuple
  * assignment target, a sequence loop's iterable). Follows a/b/c/kids only; Node.d is read solely as a
@@ -6475,6 +6503,10 @@ static void promo_scan(Em* e, Node* n, int depth) {
             promo_scan(e, n->c, depth + 1);
             promo_scan(e, n->d, depth + 1);
         } else {
+            // binders are per-iteration copies, except an `in mut` value alias
+            int alias = (n->flags & F_MUT) && n->b->kind != N_RANGE;
+            for (int i = 0; i < n->nkids; i++)
+                if (!(alias && i == n->nkids - 1)) promo_add(e, n->kids[i]);
             if (n->b->kind != N_RANGE) promo_escape(e, n->b);
             promo_scan(e, n->b, depth);
             promo_scan(e, n->c, depth + 1);

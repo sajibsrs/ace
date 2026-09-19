@@ -1037,6 +1037,14 @@ current normative rules, and Git preserves patch-level detail.
   `stp`/`ldp d` pairs. Compiler runtime routines use only v24-v31, so the
   registers survive their calls. No current benchmark has a hot float loop;
   string timings are unchanged.
+- Loop binders are promotion candidates: a range binder, a sequence index
+  binder, and a sequence value binder (not an `in mut` alias) take each
+  iteration's value in their own register — a width-normalizing move from
+  the cursor, or a direct element load — instead of a slot store and reload
+  per use. They stay per-iteration copies, so assigning one never moves the
+  cursor. The CPU loop fell from 31 to 30 instructions with no memory
+  traffic (time unchanged: `i` is off the recurrence); `find-4096` improved
+  about 1.5%.
 
 ## Current frontier
 

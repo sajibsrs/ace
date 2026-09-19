@@ -31,6 +31,10 @@ bumpf(mut x: f64, by: f64) {
     x = x + by
 }
 
+peek(p: *int): int {
+    return *p
+}
+
 pair(): (int, int) {
     return (3, 4)
 }
@@ -265,8 +269,72 @@ fnested(): f64 {
     return acc
 }
 
+// loop binders live in registers; assigning one changes only the copy
+binders(): int {
+    total: int = 0
+    for i: int in 0 .. 5 {
+        i = i * 10
+        total += i
+    }
+    if total != 100 { return 24 }
+    narrow: int = 0
+    for b: i8 in 3 .. -4 step 2 {
+        narrow += int(b) * 3
+    }
+    if narrow != -12 { return 25 }
+    wide: int = 0
+    for u: u16 in 65530 .. 65535 {
+        wide += int(u)
+    }
+    if wide != 327660 { return 26 }
+    xs: [4]i16 = [-1, 2, -3, 4]
+    seq: int = 0
+    for ix: usize, v: i16 in xs {
+        v = v * 2
+        seq += int(ix) * int(v)
+    }
+    if seq != 16 || xs[2] != -3 { return 27 }
+    fs: [3]f32 = [0.5, 1.5, 2.5]
+    fsum: f32 = 0.0
+    for f: f32 in fs {
+        fsum += f * 2.0
+    }
+    if fsum != 9.0 { return 28 }
+    esc: int = 0
+    for j: int in 0 .. 3 {
+        esc += peek(&j)
+    }
+    if esc != 3 { return 29 }
+    return 0
+}
+
+// an `in mut` value binder aliases the element and is never promoted
+alias_loop(): int {
+    xs: [3]int = [1, 2, 3]
+    for v: int in mut xs {
+        v = v * 5
+    }
+    return xs[0] + xs[1] + xs[2]
+}
+
+// the outermost of four nested loops keeps its state in slots while its
+// binder, the only hot candidate, is promoted
+deep_nest(): int {
+    hits: int = 0
+    for a: int in 0 .. 2 {
+        for b: int in 0 .. 2 {
+            for c: int in 0 .. 2 {
+                for d: int in 0 .. 2 {
+                    bump(mut hits, a)
+                }
+            }
+        }
+    }
+    return hits
+}
+
 main(): int {
-    r: int = widths() + escapes() + floats() + fescapes()
+    r: int = widths() + escapes() + floats() + fescapes() + binders()
     if r != 0 { return r }
     if many(1, 2, 3, 4, 5, 6, 7, 8, 9, -10) != 34 { return 10 }
     if nested_calls() != 33 { return 13 }
@@ -276,5 +344,7 @@ main(): int {
     if fpressure(4) != 2294.0 { return 21 }
     if fwalk(10) != 1023.0 { return 22 }
     if fnested() != 39.0 { return 23 }
+    if deep_nest() != 8 { return 30 }
+    if alias_loop() != 30 { return 31 }
     return 42
 }
