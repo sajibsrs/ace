@@ -67,6 +67,11 @@ history.
   organizational only; `mod.ace` remains the sole external import surface
   regardless of where its implementation files sit.
 - Start strict and add conveniences later.
+- Release a resource that must be freed on every function exit with `defer`,
+  placed immediately after its acquisition, before the error check (release
+  is a no-op on `null`, so the failure path stays covered). Keep explicit
+  release only where ownership transfers on success, since `defer` also runs
+  on the success path.
 - Module-level `const` declarations use all uppercase (`BACKLOG`). A
   same-named local (e.g. a parameter) may still shadow it per the ordinary
   nearest-binding rule; that shadowing is not an error, so there is no need for
