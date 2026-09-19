@@ -182,8 +182,8 @@ from an ordinary zero value.
 
 ## Current limits
 
-- `f16`, complex numbers, and Unicode scalar/`rune` types are not implemented;
-  an explicit UTF-8 decode/encode layer remains additive future work.
+- `f16` and complex numbers are not implemented. Unicode code points are plain
+  `u32` values; UTF-8 encoding and decoding live in [`utf8`](std/utf8.md).
 - Numeric suffixes on literals are not implemented; use explicit casts or a
   typed declaration.
 - Strings provide byte storage, indexing, and slicing, but higher-level Unicode

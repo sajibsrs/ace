@@ -171,6 +171,5 @@ decompression, cookies, authentication policy, caching, proxies, upgrades,
 connection reuse/pooling, exposed trailers,
 deadlines, and cancellation are absent.
 URL path and query remain separate views;
-callers composing a request target provide destination storage explicitly. Unicode helpers,
-`rune`, and `yarn` are not required by this byte-oriented layer.
+callers composing a request target provide destination storage explicitly.
 

@@ -1,0 +1,118 @@
+// expect-exit: 0
+
+import utf8
+
+decodes(text: string, value: u32, n: usize): bool {
+    got: u32, width: usize, ok: bool = utf8.decode(text, 0)
+    return ok && got == value && width == n
+}
+
+rejects(text: string): bool {
+    got: u32, width: usize, ok: bool = utf8.decode(text, 0)
+    return !ok && got == 0 && width == 1
+}
+
+main(): int {
+    /* Width boundaries of every encoded length. */
+    if !decodes("\x00", 0, 1) || !decodes("\x7F", 0x7F, 1) ||
+        !decodes("\xC2\x80", 0x80, 2) || !decodes("\xDF\xBF", 0x7FF, 2) ||
+        !decodes("\xE0\xA0\x80", 0x800, 3) || !decodes("\xEF\xBF\xBF", 0xFFFF, 3) ||
+        !decodes("\xF0\x90\x80\x80", 0x10000, 4) || !decodes("\xF4\x8F\xBF\xBF", 0x10FFFF, 4) {
+        return 1
+    }
+
+    /* Surrogate neighbours stay valid. */
+    if !decodes("\xED\x9F\xBF", 0xD7FF, 3) || !decodes("\xEE\x80\x80", 0xE000, 3) {
+        return 2
+    }
+
+    /* Overlong forms. */
+    if !rejects("\xC0\x80") || !rejects("\xC1\xBF") || !rejects("\xE0\x9F\xBF") ||
+        !rejects("\xF0\x8F\xBF\xBF") {
+        return 3
+    }
+
+    /* Surrogates and values above 0x10FFFF. */
+    if !rejects("\xED\xA0\x80") || !rejects("\xED\xBF\xBF") ||
+        !rejects("\xF4\x90\x80\x80") || !rejects("\xF5\x80\x80\x80") || !rejects("\xFF") {
+        return 4
+    }
+
+    /* Truncated sequences and unexpected continuation bytes. */
+    if !rejects("\xC2") || !rejects("\xE0\xA0") || !rejects("\xF0\x90\x80") ||
+        !rejects("\x80") || !rejects("\xBF") || !rejects("\xC2\x41") ||
+        !rejects("\xE1\x80\xC0") {
+        return 5
+    }
+
+    /* Decoding at an offset, and past the end. */
+    text: string = "a\xC3\xA9"
+    value: u32, n: usize, ok: bool = utf8.decode(text, 1)
+
+    if !ok || value != 0xE9 || n != 2 {
+        return 6
+    }
+    value, n, ok = utf8.decode(text, 3)
+
+    if ok || value != 0 || n != 0 {
+        return 7
+    }
+
+    /* A loop skips one bad byte and resynchronizes. */
+    mixed: string = "\x80\xC3\xA9z"
+    at: usize = 0
+    good: usize = 0
+    bad: usize = 0
+
+    for at < mixed.len {
+        _: u32, width: usize, fine: bool = utf8.decode(mixed, at)
+
+        if fine {
+            good += 1
+        } else {
+            bad += 1
+        }
+        at += width
+    }
+
+    if good != 2 || bad != 1 {
+        return 8
+    }
+
+    /* Width. */
+    if utf8.width(0x7F) != 1 || utf8.width(0x80) != 2 || utf8.width(0x800) != 3 ||
+        utf8.width(0x10000) != 4 || utf8.width(0xD800) != 0 || utf8.width(0x110000) != 0 {
+        return 9
+    }
+
+    /* Encode round trip and failures. */
+    buffer: [4]char = [char(0) : 4]
+    written: usize, fits: bool = utf8.encode(0x10FFFF, mut buffer[..])
+
+    if !fits || written != 4 || !decodes(buffer[..], 0x10FFFF, 4) {
+        return 10
+    }
+    written, fits = utf8.encode(0xE9, mut buffer[..])
+
+    if !fits || written != 2 || buffer[0] != 0xC3 || buffer[1] != 0xA9 || buffer[2] != 0xBF {
+        return 11
+    }
+    small: [1]char = [char('x') : 1]
+    written, fits = utf8.encode(0xE9, mut small[..])
+
+    if fits || written != 0 || small[0] != 'x' {
+        return 12
+    }
+    written, fits = utf8.encode(0xDC00, mut buffer[..])
+
+    if fits || written != 0 {
+        return 13
+    }
+
+    /* Whole-string validity. */
+    if !utf8.is_valid("") || !utf8.is_valid("h\xC3\xA9llo \xF0\x9F\x98\x80") ||
+        utf8.is_valid("ok\xC0\x80") || utf8.is_valid("\xE2\x82") {
+        return 14
+    }
+    return 0
+}

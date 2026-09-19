@@ -1,0 +1,144 @@
+/* utf8 — allocation-free UTF-8 encoding and decoding over byte strings.
+ *
+ * Code points are plain u32 values. Validation is strict per RFC 3629:
+ * overlong forms, surrogates 0xD800..0xDFFF, values above 0x10FFFF,
+ * truncated sequences, and unexpected continuation bytes are invalid.
+ */
+
+/* Returns the encoded byte width of `value` (1-4), or 0 when it is not a
+ * Unicode scalar value.
+ */
+pub width(value: u32): usize {
+    if value < 0x80 {
+        return 1
+    }
+
+    if value < 0x800 {
+        return 2
+    }
+
+    if value >= 0xD800 && value <= 0xDFFF {
+        return 0
+    }
+
+    if value < 0x10000 {
+        return 3
+    }
+
+    if value <= 0x10FFFF {
+        return 4
+    }
+    return 0
+}
+
+/* Writes the complete encoding of `value` and returns its width and true.
+ * An invalid code point or insufficient capacity returns (0, false) without
+ * writing; the unused destination suffix is unchanged.
+ */
+pub encode(value: u32, destination: mut []char): (usize, bool) {
+    n: usize = width(value)
+
+    if n == 0 || destination.len < n {
+        return 0, false
+    }
+
+    if n == 1 {
+        destination[0] = u8(value)
+    } else if n == 2 {
+        destination[0] = u8(0xC0 | (value >> 6))
+        destination[1] = u8(0x80 | (value & 0x3F))
+    } else if n == 3 {
+        destination[0] = u8(0xE0 | (value >> 12))
+        destination[1] = u8(0x80 | ((value >> 6) & 0x3F))
+        destination[2] = u8(0x80 | (value & 0x3F))
+    } else {
+        destination[0] = u8(0xF0 | (value >> 18))
+        destination[1] = u8(0x80 | ((value >> 12) & 0x3F))
+        destination[2] = u8(0x80 | ((value >> 6) & 0x3F))
+        destination[3] = u8(0x80 | (value & 0x3F))
+    }
+    return n, true
+}
+
+/* Decodes the one sequence starting at byte `at`, returning the code point,
+ * its width, and true. Invalid input returns (0, 1, false): the width stays
+ * 1 so a decode loop always advances past a bad byte. `at >= text.len`
+ * returns (0, 0, false).
+ */
+pub decode(text: string, at: usize): (u32, usize, bool) {
+    if at >= text.len {
+        return 0, 0, false
+    }
+    lead: u8 = text[at]
+
+    if lead < 0x80 {
+        return u32(lead), 1, true
+    }
+    n: usize = 0
+    value: u32 = 0
+
+    if lead >= 0xC2 && lead <= 0xDF {
+        n = 2
+        value = u32(lead & 0x1F)
+    } else if lead >= 0xE0 && lead <= 0xEF {
+        n = 3
+        value = u32(lead & 0x0F)
+    } else if lead >= 0xF0 && lead <= 0xF4 {
+        n = 4
+        value = u32(lead & 0x07)
+    } else {
+        return 0, 1, false
+    }
+
+    if text.len - at < n {
+        return 0, 1, false
+    }
+
+    /* The second byte's valid range, which some leads narrow. */
+    low: u8 = 0x80
+    high: u8 = 0xBF
+
+    if lead == 0xE0 {
+        low = 0xA0
+    } else if lead == 0xED {
+        high = 0x9F
+    } else if lead == 0xF0 {
+        low = 0x90
+    } else if lead == 0xF4 {
+        high = 0x8F
+    }
+
+    second: u8 = text[at + 1]
+
+    if second < low || second > high {
+        return 0, 1, false
+    }
+    value = (value << 6) | u32(second & 0x3F)
+
+    for i: usize in 2 .. n {
+        next: u8 = text[at + i]
+
+        if next < 0x80 || next > 0xBF {
+            return 0, 1, false
+        }
+        value = (value << 6) | u32(next & 0x3F)
+    }
+    return value, n, true
+}
+
+/* Reports whether the complete text is well-formed UTF-8. Empty text is
+ * valid.
+ */
+pub is_valid(text: string): bool {
+    at: usize = 0
+
+    for at < text.len {
+        _: u32, n: usize, ok: bool = decode(text, at)
+
+        if !ok {
+            return false
+        }
+        at += n
+    }
+    return true
+}

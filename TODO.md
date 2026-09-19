@@ -183,11 +183,6 @@ foundations.
   prefixes for `fmt.printf`, especially fixed-width `%b`/`%o`/`%x` register
   displays; carve consistently across integer conversions from a hardware
   fixture rather than adding a binary-only modifier.
-- **`rune` + UTF-8 decode and `yarn`** [additive] — retain explicit decoding
-  and ownership over the shared `string`/`[]char`/`[]u8` byte-view type.
-  `pkg/json` carries a private codepoint-to-UTF-8 encoder
-  (`encode_utf8` in `pkg/json/inc/parsing.ace`) for `\uXXXX` escapes, to be
-  replaced by the standard facility.
 - **libm transcendentals** [open] — `sin`, `cos`, `pow`, `exp`, `log`, `floor`,
   and `ceil` for the 2D/3D milestones.
 - **Random source** [new].
@@ -249,9 +244,7 @@ nonblocking connect completion remain visible without callbacks or allocation.
   `Router` (see `SPEC.md`); the caller-driven nonblocking `ServerContext`/
   `Event` core has been removed (see the fresh-carve item below). Next complete
   the paired one-shot `post` overload over `Storage`. `http` is plaintext-only
-  until the TLS client transport carve above lands; `rune`,
-  UTF-8 decoding, and `yarn` are not prerequisites because HTTP framing is
-  ASCII and payloads remain byte views.
+  until the TLS client transport carve above lands.
 - **Nonblocking HTTP server core needs a fresh carve** [open] — the
   caller-driven `ServerContext`/`Event`/`serve(mut ctx, timeout_ns)` core
   (formerly `std/http/inc/server.ace`, now `pkg/http/inc/server.ace`) and its

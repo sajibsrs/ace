@@ -8,6 +8,7 @@
 
 import mem
 import str
+import utf8
 import jsonval: "./value.ace"
 
 Json: type = jsonval.Json
@@ -506,7 +507,12 @@ decode_string(text: string, start: usize, end: usize, buffer: mut []u8): (usize,
                 if err != null {
                     return 0, err
                 }
-                out += encode_utf8(cp, mut buffer[out..])
+                n: usize, fits: bool = utf8.encode(cp, mut buffer[out..])
+
+                if !fits {
+                    return 0, JsonErr.invalid_escape
+                }
+                out += n
                 i = next
             } else {
                 return 0, JsonErr.invalid_escape
@@ -573,32 +579,4 @@ read_hex4(text: string, pos: usize, end: usize): (u32, usize, Error) {
         value = value * 16 + d
     }
     return value, pos + 4, null
-}
-
-/* Encodes one Unicode codepoint as UTF-8 into out[0..], returning the byte
- * count written (1-4).
- */
-encode_utf8(cp: u32, out: mut []u8): usize {
-    if cp < 0x80 {
-        out[0] = u8(cp)
-        return 1
-    }
-
-    if cp < 0x800 {
-        out[0] = u8(0xC0 | (cp >> 6))
-        out[1] = u8(0x80 | (cp & 0x3F))
-        return 2
-    }
-
-    if cp < 0x10000 {
-        out[0] = u8(0xE0 | (cp >> 12))
-        out[1] = u8(0x80 | ((cp >> 6) & 0x3F))
-        out[2] = u8(0x80 | (cp & 0x3F))
-        return 3
-    }
-    out[0] = u8(0xF0 | (cp >> 18))
-    out[1] = u8(0x80 | ((cp >> 12) & 0x3F))
-    out[2] = u8(0x80 | ((cp >> 6) & 0x3F))
-    out[3] = u8(0x80 | (cp & 0x3F))
-    return 4
 }

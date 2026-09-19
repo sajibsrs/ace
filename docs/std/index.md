@@ -19,6 +19,7 @@ Today's modules:
 - [`sys`](sys.md) — process arguments/environment, file descriptors, byte I/O, errno,
   and monotonic time
 - [`ascii`](ascii.md) — allocation-free ASCII-only text operations
+- [`utf8`](utf8.md) — allocation-free strict UTF-8 encoding and decoding
 
 Everything else in the planned v1 set (`simd`) does not
 exist yet.

@@ -907,6 +907,13 @@ current normative rules, and Git preserves patch-level detail.
   non-finite `number`, `structure`). Numbers reuse `str.format`; strings
   escape `"`, `\` and control bytes and pass other bytes through.
   `pkg/json/tests/writing` covers output, round trip, and every error.
+- Added the allocation-free `utf8` module (`decode`, `encode`, `width`,
+  `is_valid`) over plain `u32` code points with strict RFC 3629 validation;
+  a failed decode returns width 1 so loops always advance. `pkg/json` now
+  uses `utf8.encode` for `\uXXXX` escapes instead of a private encoder.
+  Dropped the planned `rune` and `yarn` types: a transparent `u32` alias adds
+  no behavior, and a code-point sequence costs 4x storage for indexing that
+  code points do not make meaningful.
 
 ## Current frontier
 
