@@ -321,6 +321,7 @@ typedef struct {
 
 #define MAX_ITEMPS 14  // x0-x7, x9-x15
 #define MAX_FPTEMPS 16 // v0-v7, v16-v23
+#define LOOP_REGS 10   // x19-x28, callee-saved emitter loop state
 
 typedef struct {
     Diag* d;
@@ -349,6 +350,12 @@ typedef struct {
     uint32_t frame;
     uint32_t int_spill[MAX_ITEMPS]; // per-temp spill slots, 0 until first use
     uint32_t fp_spill[MAX_FPTEMPS];
+    Node**   lreg_loops; // loops whose state lives in x19-x28 (plan_loops)
+    int      nlreg_loops, clreg_loops;
+    int      lreg_top;   // next free loop register, as an offset from x19
+    int      lreg_max;   // loop registers the function saves and restores
+    uint32_t lreg_save;  // depth of the callee-saved save area
+    int      fn_has_asm;
     uint32_t out_max;
     Slot*   slots;
     int     nslots, cslots;
@@ -459,6 +466,8 @@ static void mov_int(Em* e, int sf, int dst, int src);
 static void emit_bl_internal(Em* e, const char* p, uint32_t len);
 static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels);
 static void emit_stmt(Em* e, Node* s);
+static int loop_regs_take(Em* e, Node* s);
+static int loop_own_regs(Node* s);
 static int gen_addr(Em* e, Node* x);
 static int is_lvalue_node(Node* x);
 static SType* lvalue_type(Em* e, Node* x);
@@ -5575,14 +5584,19 @@ static void emit_stmt(Em* e, Node* s) {
                                  mut_iter ? 8 : esz, mut_iter ? 8 : ty_align(elem));
         if (mut_iter) e->slots[e->nslots - 1].byref = 1;
         int lbreak = new_label(e), lcont = new_label(e), lcond = new_label(e);
+        int lr = loop_regs_take(e, s); // x19+: cursor/count/step or p/end/index
         if (s->b->kind == N_RANGE) { // index loop over a range
             SType* rt = node_ty(s->b);
             if (!rt || rt->kind == SK_UT) rt = default_i64();
             uint32_t rsz = ty_size(rt);
             int rbits = scalar_bits(rt);
             uint32_t islot = temp_slot(e, rsz, 8), hslot = temp_slot(e, rsz, 8);
-            uint32_t cslot = temp_slot(e, 8, 8), dslot = temp_slot(e, 8, 8);
+            uint32_t cslot = lr < 0 ? temp_slot(e, 8, 8) : 0;
+            uint32_t dslot = lr < 0 ? temp_slot(e, 8, 8) : 0;
             uint32_t sslot = temp_slot(e, 8, 8);
+            // register loops hold the exact 64-bit cursor, so the binder
+            // store below needs no reload or extension
+            int rcur = lr, rcnt = lr + 1, rstep = lr + 2;
             int svi = e->vti;
             EV lo = gen_expr(e, s->b->a);
             store_frame(e, xreg(lo.idx), islot, rsz);
@@ -5614,8 +5628,14 @@ static void emit_stmt(Em* e, Node* s) {
             ins(e, 0xD1000000u | (1u << 10) | (15u << 5) | 15u);
             ins(e, 0x9AC00800u | (17u << 16) | (15u << 5) | 15u);
             ins(e, 0x91000000u | (1u << 10) | (15u << 5) | 15u);
-            store_frame(e, 15, cslot, 8);
-            store_frame(e, 17, dslot, 8);
+            if (lr >= 0) {
+                mov_int(e, 1, rcur, 16);
+                mov_int(e, 1, rcnt, 15);
+                mov_int(e, 1, rstep, 17);
+            } else {
+                store_frame(e, 15, cslot, 8);
+                store_frame(e, 17, dslot, 8);
+            }
             br_(e, lsetup);
             bind_label(e, ldesc);
             // Descending selects the same lower-anchored values in reverse.
@@ -5637,21 +5657,51 @@ static void emit_stmt(Em* e, Node* s) {
                 ins(e, sx | (17u << 5) | 17u);
             }
             ins(e, 0x8B000000u | (17u << 16) | (16u << 5) | 16u);
-            store_frame(e, 16, islot, rsz);
+            if (lr < 0) store_frame(e, 16, islot, rsz);
             ins(e, 0x91000000u | (1u << 10) | (15u << 5) | 15u);
-            store_frame(e, 15, cslot, 8);
+            if (lr < 0) store_frame(e, 15, cslot, 8);
             load_frame(e, 17, sslot, 8, 0);
             ins(e, 0xCB000000u | (17u << 16) | (31u << 5) | 17u);
-            store_frame(e, 17, dslot, 8);
-            br_(e, lsetup);
-            bind_label(e, lempty);
-            load_imm(e, 1, 16, 0);
-            store_frame(e, 16, cslot, 8);
-            load_frame(e, 17, sslot, 8, 0);
-            store_frame(e, 17, dslot, 8);
+            if (lr >= 0) {
+                mov_int(e, 1, rcur, 16);
+                mov_int(e, 1, rcnt, 15);
+                mov_int(e, 1, rstep, 17);
+                br_(e, lsetup);
+                bind_label(e, lempty);
+                mov_int(e, 1, rcnt, 31); // mov xN, xzr: cursor and step unused
+            } else {
+                store_frame(e, 17, dslot, 8);
+                br_(e, lsetup);
+                bind_label(e, lempty);
+                load_imm(e, 1, 16, 0);
+                store_frame(e, 16, cslot, 8);
+                load_frame(e, 17, sslot, 8, 0);
+                store_frame(e, 17, dslot, 8);
+            }
             align_code(e, LOOP_ALIGN);
             bind_label(e, lsetup);
             bind_label(e, lcond);
+            if (lr >= 0) {
+                cbz_(e, 1, rcnt, 0, lbreak);
+                store_frame(e, rcur, vs, (uint32_t)((scalar_bits(elem) + 7) / 8));
+                e->vti = 0; e->vtf = 0;
+                if (e->nctx >= 64) {
+                    em_err(e, s, "control flow nested too deeply");
+                    return;
+                }
+                e->ctx[e->nctx++] = (Ctx){ lbreak, lcont, s->str, s->len, 1 };
+                emit_block(e, s->c);
+                e->nctx--;
+                bind_label(e, lcont);
+                ins(e, 0x8B000000u | ((uint32_t)rstep << 16) |
+                       ((uint32_t)rcur << 5) | (uint32_t)rcur); // add cursor, step
+                ins(e, 0xD1000000u | (1u << 10) |
+                       ((uint32_t)rcnt << 5) | (uint32_t)rcnt); // sub count, #1
+                e->lreg_top -= 3;
+                br_(e, lcond);
+                bind_label(e, lbreak);
+                return;
+            }
             int tc = tmp_int(e);
             load_frame(e, xreg(tc), cslot, 8, 0);
             cbz_(e, 1, xreg(tc), 0, lbreak);
@@ -5699,15 +5749,24 @@ static void emit_stmt(Em* e, Node* s) {
             em_err(e, s, "for-in iterates slices, arrays, strings, or ranges");
             return;
         }
-        uint32_t pslot = temp_slot(e, 8, 8), eslot = temp_slot(e, 8, 8);
         Node* index_binder = s->nkids == 2 ? s->kids[0] : NULL;
+        int rp = lr, rend = lr + 1, rix = lr + 2; // register loops
+        uint32_t pslot = 0, eslot = 0;
+        if (lr < 0) {
+            pslot = temp_slot(e, 8, 8);
+            eslot = temp_slot(e, 8, 8);
+        }
         uint32_t ivs = 0, ixslot = 0;
         if (index_binder) {
             Sym* ixv = node_sym(index_binder);
             ivs = slot_alloc(e, ixv && ixv->decl ? ixv->decl : index_binder, 8, 8);
-            ixslot = temp_slot(e, 8, 8);
-            load_imm(e, 1, 16, 0);
-            store_frame(e, 16, ixslot, 8);
+            if (lr >= 0)
+                mov_int(e, 1, rix, 31); // mov xN, xzr
+            else {
+                ixslot = temp_slot(e, 8, 8);
+                load_imm(e, 1, 16, 0);
+                store_frame(e, 16, ixslot, 8);
+            }
         }
         int svi = e->vti;
         int base;
@@ -5715,6 +5774,53 @@ static void emit_stmt(Em* e, Node* s) {
         else {
             EV v = gen_expr(e, s->b);
             base = v.idx;
+        }
+        if (lr >= 0) {
+            // p = start; end = p + len*esz (array: fixed count)
+            if (bt->kind != SK_ARRAY) {
+                ld_reg(e, rp, base, 0, 8, 0);
+                ld_reg(e, 16, base, 8, 8, 0); // len
+                load_imm(e, 1, 17, esz);
+                ins(e, 0x9B007C00u | (17u << 16) | (16u << 5) | 17u); // x17 = len*esz
+            } else {
+                mov_int(e, 1, rp, base);
+                load_imm(e, 1, 17, (uint64_t)bt->count * esz);
+            }
+            ins(e, 0x8B000000u | (17u << 16) | ((uint32_t)rp << 5) |
+                   (uint32_t)rend); // end = p + x17
+            e->vti = svi;
+            align_code(e, LOOP_ALIGN);
+            bind_label(e, lcond);
+            ins(e, 0xEB00001Fu | ((uint32_t)rend << 16) | ((uint32_t)rp << 5));
+            bcond_(e, C_HS, lbreak);
+            if (mut_iter)
+                store_frame(e, rp, vs, 8);
+            else {
+                frame_addr(e, 15, vs);
+                copy_mem(e, 15, 0, rp, 0, esz);
+            }
+            if (index_binder) store_frame(e, rix, ivs, 8);
+            e->vti = 0; e->vtf = 0;
+            if (e->nctx >= 64) {
+                em_err(e, s, "control flow nested too deeply");
+                return;
+            }
+            e->ctx[e->nctx++] = (Ctx){ lbreak, lcont, s->str, s->len, 1 };
+            emit_block(e, s->c);
+            e->nctx--;
+            bind_label(e, lcont);
+            if (esz <= 4095)
+                ins(e, 0x91000000u | (esz << 10) | ((uint32_t)rp << 5) | (uint32_t)rp);
+            else {
+                load_imm(e, 1, 16, esz);
+                ins(e, 0x8B000000u | (16u << 16) | ((uint32_t)rp << 5) | (uint32_t)rp);
+            }
+            if (index_binder)
+                ins(e, 0x91000000u | (1u << 10) | ((uint32_t)rix << 5) | (uint32_t)rix);
+            e->lreg_top -= loop_own_regs(s);
+            br_(e, lcond);
+            bind_label(e, lbreak);
+            return;
         }
         if (bt->kind != SK_ARRAY) {
             // slice/string descriptor: p = ptr, end = p + len*esz
@@ -6073,11 +6179,31 @@ static void emit_prologue(Em* e) {
     ins(e, 0xD10003FF); // sub sp, sp, #frame — patched at end
 }
 
+/*
+ * Loop registers x19..x19+n-1 live in a frame save area at depth lreg_save:
+ * register k sits at x29 - lreg_save + 8k, pairs through stp/ldp and an odd
+ * last register through stur/ldur.
+ */
+static void loop_regs_save(Em* e, int load) {
+    int n = e->lreg_max;
+    for (int k = 0; k + 1 < n; k += 2) {
+        uint32_t imm = (uint32_t)(-(int32_t)(e->lreg_save - 8u * (uint32_t)k) / 8);
+        ins(e, (load ? 0xA9400000u : 0xA9000000u) | ((imm & 0x7Fu) << 15) |
+               ((uint32_t)(20 + k) << 10) | (29u << 5) | (uint32_t)(19 + k));
+    }
+    if (n % 2) {
+        uint32_t d = e->lreg_save - 8u * (uint32_t)(n - 1);
+        if (load) load_frame(e, 19 + n - 1, d, 8, 0);
+        else store_frame(e, 19 + n - 1, d, 8);
+    }
+}
+
 static void emit_epilogue(Em* e) {
     e->ended_return = 1;
     if (e->mode == EMIT_CHECKED && e->current_is_main) {
         emit_bl_internal(e, "__ace$registry_leaks", 20);
     }
+    if (e->lreg_max) loop_regs_save(e, 1);
     ins(e, 0x910003BF); // mov sp, x29
     ins(e, 0xA8C17BFD); // ldp x29, x30, [sp], #16
     ins(e, 0xD65F03C0); // ret
@@ -6093,6 +6219,73 @@ static void incoming_addr(Em* e, int rd, uint32_t soff) {
         load_imm(e, 1, rd, d);
         ins(e, 0x8B000000u | ((uint32_t)rd << 16) | (29u << 5) | ((uint32_t)rd & 31u));
     }
+}
+
+// --- loop registers --------------------------------------------------------------------
+
+// registers a range or sequence loop keeps in x19-x28 (0: general loop)
+static int loop_own_regs(Node* s) {
+    if (s->kind != N_FOR || (s->flags & F_FORGEN)) return 0;
+    if (s->b->kind == N_RANGE) return 3;    // cursor, remaining count, step
+    return s->nkids == 2 ? 3 : 2;           // cursor, end [, index]
+}
+
+/*
+ * One linear walk over a function's statements before it is emitted. Returns
+ * the register need of the deepest loop chain in s. A loop takes registers
+ * when its own chain fits the pool, so inner loops win and no nested chain of
+ * register loops can exceed LOOP_REGS; loops beyond that keep frame slots.
+ */
+static int plan_loops(Em* e, Node* s) {
+    if (!s) return 0;
+    int inner = 0, n;
+    switch (s->kind) {
+    case N_BLOCK:
+        for (int i = 0; i < s->nkids; i++)
+            if ((n = plan_loops(e, s->kids[i])) > inner) inner = n;
+        return inner;
+    case N_IF:
+        inner = plan_loops(e, s->b);
+        if ((n = plan_loops(e, s->c)) > inner) inner = n;
+        return inner;
+    case N_SWITCH:
+        for (int i = 0; i < s->nkids; i++)
+            if ((n = plan_loops(e, s->kids[i]->b)) > inner) inner = n;
+        return inner;
+    case N_LABEL:
+        return plan_loops(e, s->a);
+    case N_ASM:
+        e->fn_has_asm = 1;
+        return 0;
+    case N_FOR: {
+        if (s->flags & F_FORGEN) return plan_loops(e, s->d);
+        int below = loop_own_regs(s) + plan_loops(e, s->c);
+        if (below <= LOOP_REGS) {
+            if (e->nlreg_loops == e->clreg_loops) {
+                e->clreg_loops = e->clreg_loops ? e->clreg_loops * 2 : 16;
+                e->lreg_loops = realloc(e->lreg_loops,
+                                        (size_t)e->clreg_loops * sizeof(Node*));
+                if (!e->lreg_loops) oom();
+            }
+            e->lreg_loops[e->nlreg_loops++] = s;
+            if (below > e->lreg_max) e->lreg_max = below;
+        }
+        return below;
+    }
+    default:
+        return 0;
+    }
+}
+
+// first loop register (x19 + offset) for s, or -1 when s uses frame slots
+static int loop_regs_take(Em* e, Node* s) {
+    for (int i = 0; i < e->nlreg_loops; i++)
+        if (e->lreg_loops[i] == s) {
+            int r = 19 + e->lreg_top;
+            e->lreg_top += loop_own_regs(s);
+            return r;
+        }
+    return -1;
 }
 
 static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
@@ -6115,10 +6308,22 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
     e->fnbody = f->b;
     e->ndefers = 0;
     e->retsave_off = 0;
+    e->nlreg_loops = 0;
+    e->lreg_top = e->lreg_max = 0;
+    e->fn_has_asm = 0;
+    plan_loops(e, f->b);
+    if (e->fn_has_asm) { // asm bindings may name any x register
+        e->nlreg_loops = 0;
+        e->lreg_max = 0;
+    }
     sym_define(&e->syms, e->secs, symname, symlen, is_main || export_c,
                &e->secs[SEC_TEXT]);
     if (is_main) emit_has_main = 1;
     emit_prologue(e);
+    if (e->lreg_max) {
+        e->lreg_save = slot_alloc(e, NULL, 8u * (uint32_t)e->lreg_max, 8);
+        loop_regs_save(e, 0);
+    }
 
     RetCls rc;
     classify_ret(ret, &rc);

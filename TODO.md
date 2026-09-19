@@ -106,8 +106,10 @@ These are baseline observations, not performance promises.
 
 - **Peephole cleanup** [queued] — implement the bounded emitted-code pass from
   Compiler #6, targeting redundant loads/stores and address recomputation first.
-- **Loop-carried register promotion** [queued] — reduce the current stack-slot
-  traffic with the specified bounded per-loop scan.
+- **Register promotion** [queued] — compiler loop state already lives in
+  callee-saved registers; extend the pool to user scalar locals (FP in
+  d8-d15) whose address never escapes, per the bounded per-function pass in
+  Compiler #6.
 - **Read-only parameter load reuse** [queued] — exploit the existing parameter
   facts without adding global alias analysis.
 - **Float-parse optimization backlog** [new] — use the canonical 80%-short /

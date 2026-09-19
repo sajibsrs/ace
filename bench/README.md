@@ -175,6 +175,19 @@ instructions. String medians: `find-4096` 9.2x, `parse-f64` 6.1x,
 `format-f64-shortest` 0.60x; `compare`/`copy` are unchanged within noise.
 `state` still round-trips through its slot every iteration.
 
+### Loop-register checkpoint
+
+After compiler loop state moved to callee-saved registers, three runs each
+produced string medians of `find-4096` 5.77x C (from 9.15x), `compare-4096`
+0.70x (from 0.85x), `copy-64` about 1.9x (from 2.2x), and
+`format-f64-shortest` 0.57x. The CPU recurrence regressed from 36.1 to
+41.7 ms release in an alternating same-machine A/B, although its loop fell
+from 37 to 30 instructions. A hand-written assembly harness isolates the
+cause: once `state`'s store and next-iteration load are the loop's only memory
+traffic, store forwarding adds about 3.7 cycles per iteration; one unrelated
+`ldur`/`stur` pair per iteration, or keeping `state` in a register, restores
+23.0 cycles. Loop alignment of 16, 32, or 64 bytes made no difference.
+
 ## Memory
 
 Run the v1 raw-memory benchmark on Apple arm64:

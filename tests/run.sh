@@ -1019,6 +1019,27 @@ if [ -d tests/emit ]; then
             echo "FAIL: scalar locals must use direct frame slot access"
             fail=1
         fi
+        # Loop state takes x19-x28 innermost-first: four nested range loops
+        # (12 registers) keep the outermost in slots and use exactly x19-x27;
+        # a function without range or sequence loops, or with any asm
+        # statement, touches none of them.
+        if ! otool -tv /tmp/ace_emit/control_flow/loop_registers.o | awk '
+            /^[^0-9].*:$/ { fn = $0; next }
+            {
+                for (i = 3; i <= NF; i++) {
+                    r = $i; gsub(/[][,]/, "", r)
+                    if (r !~ /^x(19|2[0-8])$/) continue
+                    if (fn == "_main:" || fn ~ /^__ace\$fn\$with_asm\$/) bad = 1
+                    if (fn ~ /^__ace\$fn\$nested\$/) {
+                        if (r == "x28") bad = 1
+                        if (r == "x27") top = 1
+                    }
+                }
+            }
+            END { exit bad || !top }'; then
+            echo "FAIL: loop registers must be assigned innermost-first within x19-x28"
+            fail=1
+        fi
     fi
     # -o mode drives the same pipeline through the cc link step
     "$ACE" -o /tmp/ace_emit/direct tests/emit/basics/main.ace && /tmp/ace_emit/direct

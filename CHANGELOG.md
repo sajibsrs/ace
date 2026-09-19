@@ -1010,6 +1010,18 @@ current normative rules, and Git preserves patch-level detail.
   magnitude is judged through the negation (`-9223372036854775808` for i64).
   A compound untyped integer beside a float operand is rejected with the
   declaration's explicit-cast error rather than computed in float.
+- Compiler loop state lives in callee-saved registers x19-x28: a range loop's
+  cursor, count, and step, and a sequence loop's cursor and count (plus its
+  index binder). A statement-only pre-pass sizes each loop nest and grants
+  registers innermost-first while the nest fits the ten-register pool; outer
+  loops that do not fit keep frame slots. Used registers are saved right after
+  the prologue and restored in the epilogue. Functions containing `asm` get no
+  loop registers. String `find-4096` fell from 9.2x to 5.8x C and
+  `compare-4096` from 0.85x to 0.70x. The CPU recurrence regressed from 36.1
+  to 41.7 ms although its loop shrank from 37 to 30 instructions: with loop
+  state gone, `state`'s store-to-next-load forwarding is the loop's only
+  memory traffic and costs about 3.7 cycles per iteration on Apple cores;
+  promoting `state` itself removes it.
 
 ## Current frontier
 

@@ -1,0 +1,161 @@
+/* Range and sequence loop state lives in callee-saved registers x19-x28:
+ * saved and restored around every exit, reused by sibling loops, and kept in
+ * frame slots by outer loops whose nested chain exceeds the pool. */
+
+// expect-exit: 42
+
+extern "c" {
+    abs(x: i32): i32
+}
+
+// every level's loop registers survive the recursive calls: rec(n) = 2^n
+rec(n: int): int {
+    total: int = 1
+    for i: int in 0 .. n {
+        total += rec(i)
+    }
+    return total
+}
+
+// four nested range loops need 12 registers: the outermost uses slots
+nested(): int {
+    count: int = 0
+    for a: int in 0 .. 3 {
+        for b: int in 0 .. 3 {
+            for c: int in 0 .. 3 {
+                for d: int in 0 .. 3 {
+                    count += a * 27 + b * 9 + c * 3 + d + 1
+                }
+            }
+        }
+    }
+    return count // sum of 1..81
+}
+
+// return, break, continue, and labeled break from nested register loops
+find(target: int): int {
+    for i: int in 0 .. 10 {
+        for j: int in 0 .. 10 {
+            if i * 10 + j == target {
+                return i * 100 + j
+            }
+        }
+    }
+    return -1
+}
+
+exits(): int {
+    total: int = 0
+    outer: for i: int in 0 .. 5 {
+        for j: int in 0 .. 5 {
+            if j == 1 { continue }
+            if j == 3 { break }
+            if i == 3 { break outer }
+            total += 10 * i + j
+        }
+    }
+    return total // i=0..2: j=0 and j=2 -> 0+2 + 10+12 + 20+22
+}
+
+// sibling loops reuse the same registers
+siblings(): int {
+    a: int = 0
+    for i: int in 0 .. 4 {
+        a += i
+    }
+    for i: int in 10 .. 12 {
+        a += i
+    }
+    xs: [3]int = [5, 6, 7]
+    for v: int in xs {
+        a += v
+    }
+    return a // 6 + 21 + 18
+}
+
+ranges(): int {
+    down: int = 0
+    for i: int in 5 .. 0 {
+        down = down * 10 + i // half-open [0, 5) visited from the top
+    }
+    if down != 43210 { return 1 }
+    stepped: int = 0
+    for i: int in 0 .. 10 step 3 {
+        stepped += i
+    }
+    if stepped != 18 { return 2 }
+    empty: int = 0
+    for i: int in 4 .. 4 {
+        empty += 1
+    }
+    if empty != 0 { return 3 }
+    narrow: int = 0
+    for i: i8 in -3 .. 3 {
+        narrow += int(i) * int(i)
+    }
+    if narrow != 19 { return 4 }
+    wide: i64 = 0
+    for i: i16 in -2 .. 2 {
+        wide += i64(abs(i32(i)))
+    }
+    if wide != 4 { return 5 }
+    return 0
+}
+
+sequences(): int {
+    xs: [4]int = [1, 2, 3, 4]
+    weighted: int = 0
+    for i: usize, v: int in xs {
+        weighted += int(i) * v
+    }
+    if weighted != 20 { return 6 }
+    part: int = 0
+    for v: int in xs[1..3] {
+        part += v
+    }
+    if part != 5 { return 7 }
+    text: string = "Ace"
+    bytes: int = 0
+    for c: u8 in text {
+        bytes += int(c)
+    }
+    if bytes != 265 { return 8 } // 'A' + 'c' + 'e'
+    for v: int in mut xs {
+        v *= 2
+    }
+    if xs[3] != 8 { return 9 }
+    pairs: int = 0
+    for i: usize, a: int in xs {
+        for b: int in xs {
+            if a < b { pairs += int(i) + 1 }
+        }
+    }
+    if pairs != 10 { return 10 } // 3*1 + 2*2 + 1*3
+    return 0
+}
+
+// asm bindings may name any x register, so this loop keeps frame slots
+with_asm(n: int): int {
+    total: int = 0
+    for i: int in 0 .. n {
+        v: i64 = 0
+        asm "nop" {
+            in: x9 = 7
+            out: x9 = v
+        }
+        total += i + int(v)
+    }
+    return total
+}
+
+main(): int {
+    if rec(5) != 32 { return 11 }
+    if nested() != 3321 { return 12 }
+    if find(47) != 407 || find(100) != -1 { return 13 }
+    if exits() != 66 { return 14 }
+    if siblings() != 45 { return 15 }
+    if with_asm(3) != 24 { return 16 }
+    r: int = ranges() + sequences()
+    if r != 0 { return r }
+    return 42
+}
