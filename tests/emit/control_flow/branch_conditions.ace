@@ -1,0 +1,115 @@
+/*
+ * if / for / assert conditions branch on the flags directly: scalar
+ * comparisons become cmp/fcmp + b.cond, `!` swaps the sense, and && / ||
+ * chain branches without materializing a bool.
+ */
+
+// expect-exit: 42
+
+order: int
+
+// records its position in evaluation order and returns v
+note(tag: int, v: bool): bool {
+    order = order * 10 + tag
+    return v
+}
+
+// every NaN comparison is false, so its negation is true; the inverted
+// branch must preserve that
+nan_branches(): int {
+    zero: f64 = 0.0
+    nan: f64 = zero / zero
+    one: f64 = 1.0
+    if nan < one { return 1 }
+    if nan <= one { return 2 }
+    if nan > one { return 3 }
+    if nan >= one { return 4 }
+    if nan == nan { return 5 }
+    if !(nan != nan) { return 6 }
+    if !(nan < one) {} else { return 7 }
+    if !(nan >= one) {} else { return 8 }
+    small: f32 = f32(nan)
+    if small > f32(1.0) || small <= f32(1.0) { return 9 }
+    count: int = 0
+    for !(nan > one) && count < 3 {
+        count += 1
+    }
+    if count != 3 { return 10 }
+    return 0
+}
+
+// width and signedness select the compare form and condition code
+int_branches(): int {
+    a: i8 = -1
+    b: u8 = 255
+    c: u64 = 18446744073709551615
+    d: i64 = -1
+    e: i32 = -2147483648
+    if !(a < 0) { return 11 }
+    if b < 200 { return 12 }
+    if c < 1 { return 13 }
+    if d >= 0 { return 14 }
+    if e > 0 || e != -2147483648 { return 15 }
+    if !(u64(4294967296) > u64(4294967295)) { return 16 }
+    p: *int = null
+    if p != null { return 17 }
+    big: int = 1 << 32
+    if big == 0 { return 18 }
+    flag: bool = false
+    if flag { return 19 }
+    if !flag {} else { return 20 }
+    return 0
+}
+
+// && / || evaluate left to right and stop as soon as the result is known
+short_circuit(): int {
+    order = 0
+    if note(1, false) && note(2, true) { return 21 }
+    if order != 1 { return 22 }
+    order = 0
+    if note(1, true) || note(2, false) {} else { return 23 }
+    if order != 1 { return 24 }
+    order = 0
+    if !(note(1, true) && note(2, false)) || note(3, true) {} else { return 25 }
+    if order != 12 { return 26 }
+    order = 0
+    if (note(1, false) || note(2, true)) && !(note(3, false) || note(4, false)) {} else { return 27 }
+    if order != 1234 { return 28 }
+    order = 0
+    if !(note(1, false) || note(2, false)) && note(3, false) { return 29 }
+    if order != 123 { return 30 }
+    order = 0
+    i: int = 0
+    for i < 2 && note(5, true) {
+        i += 1
+    }
+    if order != 55 { return 31 }
+    return 0
+}
+
+// chains branch once per adjacent pair, evaluating every operand once
+chains(): int {
+    order = 0
+    lo: int = 1
+    hi: int = 5
+    if lo < 3 <= hi {} else { return 32 }
+    if lo < 0 < hi { return 33 }
+    if !(lo <= 1 < hi < 6) { return 34 }
+    if !(lo < 3 < 2) {} else { return 39 }
+    if lo < 3 < 2 || lo > hi { return 40 }
+    if lo > 0 && 0 < lo < hi || note(1, true) {} else { return 35 }
+    if order != 0 { return 36 }
+    zero: f64 = 0.0
+    nan: f64 = zero / zero
+    if 0.0 <= nan < 1.0 { return 37 }
+    if !(0.0 <= nan < 1.0) {} else { return 38 }
+    return 0
+}
+
+// no branch here: a mutated branch cannot mask a failing check
+main(): int {
+    r: int = nan_branches() + int_branches() + short_circuit() + chains()
+    order = 55
+    assert(order == 55 && !(order < 0))
+    return 42 + r
+}

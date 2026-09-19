@@ -1892,6 +1892,83 @@ static EV gen_cmpchain(Em* e, Node* n) {
     return (EV){ CLS_INT, obase };
 }
 
+/*
+ * Branch to lab when condition x evaluates to jump_if (1 or 0); fall through
+ * otherwise. Scalar comparisons — ==/!= and ordering chains — branch on the
+ * flags directly (cmp/fcmp + b.cond; inverting the condition code is exact,
+ * NaN included), `!` swaps the
+ * sense, and && / || chain branches with no bool materialized. Anything else
+ * evaluates to a bool and tests it with cbz/cbnz. Leaves no temps live.
+ */
+static void gen_branch(Em* e, Node* x, int jump_if, int lab) {
+    int svi = e->vti, svf = e->vtf;
+    if (x->kind == N_UNARY && x->op == T_BANG) {
+        gen_branch(e, x->a, !jump_if, lab);
+        return;
+    }
+    if (x->kind == N_BINARY && (x->op == T_ANDAND || x->op == T_OROR)) {
+        int is_and = x->op == T_ANDAND;
+        if (is_and != jump_if) { // && jumping on false, || jumping on true
+            gen_branch(e, x->a, jump_if, lab);
+            gen_branch(e, x->b, jump_if, lab);
+        } else { // the left operand alone can settle it the other way
+            int skip = new_label(e);
+            gen_branch(e, x->a, !jump_if, skip);
+            gen_branch(e, x->b, jump_if, lab);
+            bind_label(e, skip);
+        }
+        return;
+    }
+    if (x->kind == N_CMPCHAIN && x->nkids <= 16) { // a < b <= c: every pair holds
+        SType* t = node_ty(x->kids[0]);
+        if (t && t->kind != SK_UT && is_scalar(t)) {
+            int isf = is_floatt(t), sf = scalar_bits(t) == 64;
+            EV v[16];
+            for (int i = 0; i < x->nkids; i++) v[i] = gen_expr(e, x->kids[i]);
+            int skip = jump_if && x->nkids > 2 ? new_label(e) : -1;
+            for (int i = 1; i < x->nkids; i++) {
+                int cond = tok_cond((TokKind)x->a->kids[i - 1]->op, t);
+                if (cond < 0) cond = C_EQ;
+                if (isf)
+                    emit_fcmp(e, v[i - 1].idx, v[i].idx, unwrap(t)->prim == P_F64);
+                else
+                    ins(e, (sf ? 0xEB00001Fu : 0x6B00001Fu) |
+                           (xreg(v[i].idx) << 16) | (xreg(v[i - 1].idx) << 5));
+                if (!jump_if) bcond_(e, cond ^ 1, lab);       // any pair fails
+                else if (i == x->nkids - 1) bcond_(e, cond, lab); // all held
+                else bcond_(e, cond ^ 1, skip);
+            }
+            if (skip >= 0) bind_label(e, skip);
+            e->vti = svi; e->vtf = svf;
+            return;
+        }
+    }
+    if (x->kind == N_BINARY && x->a->kind != N_NULL && x->b->kind != N_NULL) {
+        SType* t = node_ty(x->a);
+        int cond = t && is_scalar(t) ? tok_cond((TokKind)x->op, t) : -1;
+        if (cond >= 0) {
+            EV a = gen_expr(e, x->a);
+            EV b = gen_expr(e, x->b);
+            if (a.cls == CLS_FP && b.cls == CLS_FP) {
+                emit_fcmp(e, a.idx, b.idx, unwrap(t)->prim == P_F64);
+            } else if (a.cls == CLS_INT && b.cls == CLS_INT) {
+                int sf = scalar_bits(t) == 64;
+                ins(e, (sf ? 0xEB00001Fu : 0x6B00001Fu) |
+                       (xreg(b.idx) << 16) | (xreg(a.idx) << 5));
+            } else {
+                em_err(e, x, "comparison operands must be scalar");
+            }
+            bcond_(e, jump_if ? cond : cond ^ 1, lab);
+            e->vti = svi; e->vtf = svf;
+            return;
+        }
+    }
+    EV c = gen_expr(e, x);
+    if (c.cls != CLS_INT) em_err(e, x, "condition must be bool");
+    cbz_(e, 0, xreg(c.idx), jump_if, lab);
+    e->vti = svi; e->vtf = svf;
+}
+
 // --- calls ------------------------------------------------------------------------------
 
 typedef struct {
@@ -4143,9 +4220,8 @@ static EV gen_call(Em* e, Node* call) {
         callee->len == 6 && memcmp(callee->str, "assert", 6) == 0) {
         if (e->mode != EMIT_CHECKED || call->ival == 3)
             return (EV){ CLS_INT, 0 };
-        EV condition = gen_expr(e, call->kids[0]);
         int ok = new_label(e);
-        cbz_(e, 0, xreg(condition.idx), 1, ok);
+        gen_branch(e, call->kids[0], 1, ok);
         const char* path = call->path ? build_path(call->path) : "<source>";
         size_t need = strlen(path) + 80;
         char* diagnostic = (char*)arena_alloc(need);
@@ -4159,7 +4235,7 @@ static EV gen_call(Em* e, Node* call) {
         emit_bl_extern(e, "_write", 6); emit_bl_extern(e, "_abort", 6);
         ins(e, 0xD4200000u);
         bind_label(e, ok);
-        return (EV){ CLS_INT, condition.idx };
+        return (EV){ CLS_INT, 0 }; // statement-only, like the release form
     }
     // panic(message): write the bytes to stderr best-effort, then abort —
     // both undefined externals resolved by the system linker (spec Errors #15).
@@ -5626,13 +5702,8 @@ static void emit_stmt(Em* e, Node* s) {
         return;
     }
     case N_IF: {
-        EV c = gen_expr(e, s->a);
-        if (c.cls != CLS_INT) {
-            em_err(e, s, "if condition must be bool");
-            return;
-        }
         int l_else = new_label(e), l_end = new_label(e);
-        cbz_(e, 0, xreg(c.idx), 0, l_else);
+        gen_branch(e, s->a, 0, l_else);
         emit_block(e, s->b);
         if (s->c) {
             br_(e, l_end);
@@ -5655,14 +5726,7 @@ static void emit_stmt(Em* e, Node* s) {
             int lcond = new_label(e), lcont = new_label(e), lbreak = new_label(e);
             align_code(e, LOOP_ALIGN);
             bind_label(e, lcond);
-            if (s->b) {
-                EV c = gen_expr(e, s->b);
-                if (c.cls != CLS_INT) {
-                    em_err(e, s, "for condition must be bool");
-                    return;
-                }
-                cbz_(e, 0, xreg(c.idx), 0, lbreak);
-            }
+            if (s->b) gen_branch(e, s->b, 0, lbreak);
             if (e->nctx >= 64) {
                 em_err(e, s, "control flow nested too deeply");
                 return;

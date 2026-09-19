@@ -104,8 +104,9 @@ separately confirms that checked registry bookkeeping is intentionally much
 more expensive than the stripped release path, especially around `release`.
 These are baseline observations, not performance promises.
 
-- **Peephole cleanup** [queued] — implement the bounded emitted-code pass from
-  Compiler #6, targeting redundant loads/stores and address recomputation first.
+- **Emission-time selection** [queued] — Compiler #6: conditions already
+  branch on flags; remaining are loads into their destination with
+  frame-relative field access, then direct use of promoted registers.
 - **Read-only parameter load reuse** [queued] — exploit the existing parameter
   facts without adding global alias analysis.
 - **Float-parse optimization backlog** [new] — use the canonical 80%-short /

@@ -1045,6 +1045,13 @@ current normative rules, and Git preserves patch-level detail.
   cursor. The CPU loop fell from 31 to 30 instructions with no memory
   traffic (time unchanged: `i` is off the recurrence); `find-4096` improved
   about 1.5%.
+- `if`, general `for`, and checked `assert` conditions branch on the flags:
+  `==`/`!=` and ordering chains on scalars emit `cmp`/`fcmp` + `b.cond`
+  (condition-code inversion is exact on unordered floats), `!` swaps the
+  branch sense, and `&&`/`||` chain branches without materializing a bool;
+  other conditions still test a bool with `cbz`/`cbnz`. The string
+  benchmark's code fell from 21,951 to 20,963 instructions (`cset` 436 to
+  37) and `find-4096` about 3%.
 
 ## Current frontier
 
