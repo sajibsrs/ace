@@ -121,7 +121,7 @@ close_body(): int {
 
 failures(): int {
     state: http.ResponseParser = new_state()
-    one_header: [1]http.Header
+    one_header: [2]http.Header
     no_headers: mut []http.Header = mut one_header[..0]
     body: [2]u8 = [0, 0]
     result: http.ResponseResult = mut state.parse(
