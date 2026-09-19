@@ -111,11 +111,11 @@ These are baseline observations, not performance promises.
   keep every promoted local in x19-x28; locals not live across any call could
   use x9-x14 given per-call liveness.
 - **Float-parse optimization backlog** [new] — the canonical 80%-short /
-  20%-long `parse-f64` workload is 2.2x `strtod` (61 ns); roughly 2x is an
+  20%-long `parse-f64` workload is 2.2x `strtod` (60 ns); roughly 2x is an
   aspirational target, not a promise. Measured next steps, in order:
-  1. Return `small_integer` early once the exact-power tier has declined
-     (`exponent10 > 19`), ending its multiply loop on large exponents.
-  2. Reduce syntax-scanning (47% of short-input time) and wrapper (20%) cost.
+  1. Reduce syntax-scanning (47% of short-input time) and wrapper (20%) cost.
+  2. Consider dropping the exact-small tier (10%) for the Eisel-Lemire step,
+     with differential tests of exact integers above 2^53.
   3. Consider a wide-multiply intrinsic (`umulh`) for the Eisel-Lemire step
      (9%).
   4. Consider power-table alignment and cache layout last. C is the

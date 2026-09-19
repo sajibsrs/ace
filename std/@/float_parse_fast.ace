@@ -78,8 +78,11 @@ pub exact32(coefficient: u64, exponent10: int, mut raw: u64): bool {
     return true
 }
 
-pub small_integer(coefficient: u64, exponent10: int,
-                  fraction_bits: int, bias: int, mut raw: u64): bool {
+pub small_integer(coefficient: u64, exponent10: int, fraction_bits: int, bias: int, mut raw: u64): bool {
+    // Past 10^19 any nonzero value overflows; binary64/binary32 handle zero.
+    if exponent10 > 19 {
+        return false
+    }
     value: u64 = coefficient
     exponent: int = exponent10
 

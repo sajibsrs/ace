@@ -89,5 +89,26 @@ main(): int {
     if !fok || bits.from_float(f) != u32(0x3DCCCCCD) { return 36 }
     f, fok = str.parse[f32]("-0.0")
     if !fok || bits.from_float(f) != u32(0x80000000) { return 37 }
+    // The exact-small tier stops at 10^19; zero with any exponent is signed zero.
+    d, ok = str.parse[f64]("1e19")
+    if !ok || bits.from_float(d) != u64(0x43E158E460913D00) { return 39 }
+    d, ok = str.parse[f64]("1e20")
+    if !ok || bits.from_float(d) != u64(0x4415AF1D78B58C40) { return 40 }
+    d, ok = str.parse[f64]("-2.5e100")
+    if !ok || bits.from_float(d) != u64(0xD4C6DC186EF9F45C) { return 41 }
+    d, ok = str.parse[f64]("0e9999")
+    if !ok || bits.from_float(d) != u64(0x0000000000000000) { return 42 }
+    d, ok = str.parse[f64]("-0e9999")
+    if !ok || bits.from_float(d) != u64(0x8000000000000000) { return 43 }
+    f, fok = str.parse[f32]("1e19")
+    if !fok || bits.from_float(f) != u32(0x5F0AC723) { return 44 }
+    f, fok = str.parse[f32]("1e20")
+    if !fok || bits.from_float(f) != u32(0x60AD78EC) { return 45 }
+    f, fok = str.parse[f32]("-2.5e30")
+    if !fok || bits.from_float(f) != u32(0xF1FC6F7C) { return 46 }
+    f, fok = str.parse[f32]("0e9999")
+    if !fok || bits.from_float(f) != u32(0x00000000) { return 47 }
+    f, fok = str.parse[f32]("-0e9999")
+    if !fok || bits.from_float(f) != u32(0x80000000) { return 48 }
     return 0
 }

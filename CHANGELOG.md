@@ -1106,6 +1106,10 @@ current normative rules, and Git preserves patch-level detail.
   payload binders no longer use x14 as scratch. `parse-f64` fell from 87 to
   61 ns (2.2x C `strtod`), `format-f64-shortest` from 314 to 303 ns, and
   string-bench code by 1.3%; promoting `text.len` measured no gain.
+- The exact-small float tier declines exponents past 19, where any nonzero
+  coefficient overflows u64, instead of multiplying until overflow; zero goes
+  to the Eisel-Lemire tier's zero check. Parsing `0e9999` fell from 14,429 to
+  41 ns and `parse-f64` from 61 to 60 ns.
 
 ## Current frontier
 
