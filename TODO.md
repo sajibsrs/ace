@@ -104,9 +104,6 @@ separately confirms that checked registry bookkeeping is intentionally much
 more expensive than the stripped release path, especially around `release`.
 These are baseline observations, not performance promises.
 
-- **Emission-time selection** [queued] — Compiler #6: conditions branch on
-  flags and loads land in their destination; remaining is direct use of
-  promoted registers.
 - **Read-only parameter load reuse** [queued] — exploit the existing parameter
   facts without adding global alias analysis.
 - **Float-parse optimization backlog** [new] — use the canonical 80%-short /

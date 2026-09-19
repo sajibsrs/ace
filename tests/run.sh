@@ -1046,6 +1046,28 @@ if [ -d tests/emit ]; then
             echo "FAIL: local aggregate access must address the frame directly"
             fail=1
         fi
+        # Promoted integer locals are operands in their own registers:
+        # arithmetic, compares, bool tests, and 64-bit indexes read x19-x28
+        # directly, and arith copies none of them into a temp.
+        if ! otool -tv /tmp/ace_emit/basics/register_operands.o | awk '
+            /^[^0-9].*:$/ { fn = $0; next }
+            {
+                n = 0
+                for (i = 3; i <= NF; i++) {
+                    r = $i; gsub(/[][,]/, "", r)
+                    if (r ~ /^[xw](19|2[0-8])$/) n++
+                }
+            }
+            fn ~ /^__ace\$fn\$arith\$/ && $2 == "mov" && n == 1 &&
+                $3 ~ /^[xw]([0-9]|1[0-4]),$/ { bad = 1 }
+            fn ~ /^__ace\$fn\$arith\$/ && $2 ~ /^(add|sub)s$/ && n == 2 { arith = 1 }
+            fn ~ /^__ace\$fn\$narrow\$/ && $2 == "cmp" && n == 2 { cmp = 1 }
+            fn ~ /^__ace\$fn\$narrow\$/ && $2 ~ /^cbn?z$/ && n == 1 { test = 1 }
+            fn ~ /^__ace\$fn\$indexed\$/ && $2 == "add" && $NF == "#3" && n == 1 { idx = 1 }
+            END { exit bad || !arith || !cmp || !test || !idx }'; then
+            echo "FAIL: promoted locals must be read in place as operands"
+            fail=1
+        fi
         # Loop state takes x19-x28 innermost-first: four nested range loops
         # (12 registers) keep the outermost in slots and use x19-x27, leaving
         # x28 to the promoted accumulator; a function with any asm statement

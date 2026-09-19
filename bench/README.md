@@ -207,6 +207,14 @@ alternating A/B runs produced string medians of `find-4096` 9,877 ns (from
 (from 149); CPU was unchanged at 37.0 ms. `compare-64` moved to its slower
 placement (7.2 ns from 6.7) with an instruction-identical loop.
 
+### Register-operand checkpoint
+
+After promoted integer locals became direct operands, five alternating A/B
+runs produced CPU medians of 36.0 ms release (from 37.0) and string medians
+of `format-f64-shortest` 366 ns (from 374) and `parse-f64` 141 ns (from 144).
+`find-4096` stayed at 9,855 ns although its inner loop fell from 16 to 13
+instructions: the removed register moves were not on its load-latency path.
+
 ## Memory
 
 Run the v1 raw-memory benchmark on Apple arm64:

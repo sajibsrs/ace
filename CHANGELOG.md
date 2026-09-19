@@ -1061,6 +1061,16 @@ current normative rules, and Git preserves patch-level detail.
   pointer bases keep their address loads. The string benchmark's code fell
   from 20,963 to 20,211 instructions and `str.index_from`'s inner loop from
   20 to 16.
+- Promoted integer locals are operands in their own registers: arithmetic,
+  compound assignment, comparisons (including chains and bool condition
+  tests), and 64-bit indexes read x19-x28 directly through `src_reg` instead
+  of copying into a temp, and write results to a temp, so a promoted local
+  never changes by accident. Only those audited read-only consumers borrow;
+  narrower indexes, which widen in place, and every other consumer still
+  copy. The arithmetic emitters take physical registers so the destination
+  can differ from a borrowed source. Static copies in the string benchmark
+  fell from 715 to 156 and its code from 20,211 to 19,623 instructions;
+  the CPU recurrence fell from 37.0 to 36.0 ms.
 
 ## Current frontier
 

@@ -484,6 +484,7 @@ static void emit_stmt(Em* e, Node* s);
 static int loop_regs_take(Em* e, Node* s);
 static int loop_own_regs(Node* s);
 static void plan_promotion(Em* e, Node* f);
+static int promo_reg(Em* e, Sym* s);
 static int gen_addr(Em* e, Node* x);
 static int is_lvalue_node(Node* x);
 static SType* lvalue_type(Em* e, Node* x);
@@ -1235,10 +1236,10 @@ static int tok_cond(TokKind op, SType* t) {
 
 static void emit_arithmetic_fail_call(Em* e);
 
-static void emit_arith(Em* e, TokKind op, int dst, int a, int b, SType* t) {
+// rd = ra op rb on physical registers; ra and rb are only read
+static void emit_arith(Em* e, TokKind op, int rd, int ra, int rb, SType* t) {
     int sf = scalar_bits(t) == 64;
     uint32_t s = sf ? 0x80000000u : 0;
-    int ra = xreg(a), rb = xreg(b), rd = xreg(dst);
     switch (op) {
     case T_PLUS:  ins(e, s | 0x0B000000u | (rb << 16) | (ra << 5) | rd); return;
     case T_MINUS: ins(e, s | 0x4B000000u | (rb << 16) | (ra << 5) | rd); return;
@@ -1326,7 +1327,7 @@ static DivMagic div_magic(uint64_t d, int w, int sign, int neg) {
  * checked-build overflow guard lives with the generic path. Uses x16/x17.
  */
 static int emit_const_divide(Em* e, TokKind op, int dst, int a, uint64_t c,
-                             SType* t) {
+                             SType* t) { // physical registers; a is only read
     SType* u = unwrap(t);
     if (!u || u->kind != SK_PRIM || !is_intt(u)) return 0;
     int w = scalar_bits(u) == 64 ? 64 : 32, sf = w == 64;
@@ -1337,7 +1338,7 @@ static int emit_const_divide(Em* e, TokKind op, int dst, int a, uint64_t c,
     uint64_t d = sig ? (sd < 0 ? (uint64_t)0 - (uint64_t)sd : (uint64_t)sd) & mask
                      : c & mask;
     if (d == 0 || (sig && sd == -1)) return 0;
-    uint32_t ra = (uint32_t)xreg(a), rd = (uint32_t)xreg(dst);
+    uint32_t ra = (uint32_t)a, rd = (uint32_t)dst;
     uint32_t qd = op == T_SLASH ? rd : 16u; // the remainder keeps q in x16
     uint32_t lsr = sf ? 0xD340FC00u : 0x53007C00u; // UBFM shift-right form
     uint32_t asr = sf ? 0x9340FC00u : 0x13007C00u; // SBFM shift-right form
@@ -1404,14 +1405,14 @@ static int emit_const_divide(Em* e, TokKind op, int dst, int a, uint64_t c,
  * are already extended according to their declared type by load_scalar; for
  * 8/16-bit arithmetic a 32-bit result therefore has enough room to range-check
  * after the operation. */
-static void emit_checked_arith(Em* e, TokKind op, int dst, int a, int b,
+// physical registers, as emit_arith: ra and rb are only read
+static void emit_checked_arith(Em* e, TokKind op, int rd, int ra, int rb,
                                SType* t) {
     int bits = scalar_bits(t);
     int sf = bits == 64;
     int sig = ty_is_signed(t);
-    int ra = xreg(a), rb = xreg(b), rd = xreg(dst);
     if (e->mode != EMIT_CHECKED || !is_intt(t)) {
-        emit_arith(e, op, dst, a, b, t);
+        emit_arith(e, op, rd, ra, rb, t);
         return;
     }
 
@@ -1436,7 +1437,7 @@ static void emit_checked_arith(Em* e, TokKind op, int dst, int a, int b,
             bind_label(e, safe);
             bind_label(e, not_min);
         }
-        emit_arith(e, op, dst, a, b, t);
+        emit_arith(e, op, rd, ra, rb, t);
         return;
     }
 
@@ -1455,7 +1456,7 @@ static void emit_checked_arith(Em* e, TokKind op, int dst, int a, int b,
         bcond_(e, C_LO, in_range);
         emit_arithmetic_fail_call(e);
         bind_label(e, in_range);
-        emit_arith(e, op, dst, a, b, t);
+        emit_arith(e, op, rd, ra, rb, t);
         return;
     }
 
@@ -1474,7 +1475,7 @@ static void emit_checked_arith(Em* e, TokKind op, int dst, int a, int b,
         }
     } else if (op == T_STAR) {
         if (bits < 32) {
-            emit_arith(e, op, dst, a, b, t);
+            emit_arith(e, op, rd, ra, rb, t);
         } else if (bits == 32) {
             ins(e, (sig ? 0x9B207C00u : 0x9BA07C00u) |
                    ((uint32_t)rb << 16) | ((uint32_t)ra << 5) | 16u);
@@ -1490,7 +1491,7 @@ static void emit_checked_arith(Em* e, TokKind op, int dst, int a, int b,
         } else {
             ins(e, (sig ? 0x9B407C00u : 0x9BC07C00u) |
                    ((uint32_t)rb << 16) | ((uint32_t)ra << 5) | 16u);
-            emit_arith(e, op, dst, a, b, t);
+            emit_arith(e, op, rd, ra, rb, t);
             if (sig) ins(e, 0x937FFC00u | ((uint32_t)rd << 5) | 17u); // asr x17,xrd,#63
             else load_imm(e, 1, 17, 0);
             int ok = new_label(e);
@@ -1501,7 +1502,7 @@ static void emit_checked_arith(Em* e, TokKind op, int dst, int a, int b,
             return;
         }
     } else {
-        emit_arith(e, op, dst, a, b, t);
+        emit_arith(e, op, rd, ra, rb, t);
         return;
     }
 
@@ -1721,6 +1722,28 @@ static EV gen_union_eq(Em* e, Node* n, EV a, EV b, SType* ut, int eq) {
     return (EV){ CLS_INT, a.idx };
 }
 
+/*
+ * Register a read-only operand is taken from: an integer-class promoted local
+ * is read in its own register (v->idx = -1: no temp, no copy), anything else
+ * evaluates into a temp. Reading the register at the consumer rather than
+ * copying it at evaluation is exact: a promoted local's address never
+ * escapes, so no operand evaluated in between can change it. Only consumers
+ * that never write their operand registers may call this.
+ */
+static int src_reg(Em* e, Node* x, EV* v) {
+    Sym* s = x->kind == N_IDENT ? node_sym(x) : NULL;
+    if (s && s->kind == SYM_VAR && s->type && is_scalar(s->type) &&
+        !is_floatt(s->type)) {
+        int pr = promo_reg(e, s);
+        if (pr >= 0) {
+            *v = (EV){ CLS_INT, -1 };
+            return pr;
+        }
+    }
+    *v = gen_expr(e, x);
+    return v->cls == CLS_FP ? vreg(v->idx) : xreg(v->idx);
+}
+
 static EV gen_binop(Em* e, Node* n) {
     TokKind op = (TokKind)n->op;
     SType* t = node_ty(n->a);
@@ -1760,14 +1783,45 @@ static EV gen_binop(Em* e, Node* n) {
         }
     }
 
-    EV a = gen_expr(e, n->a);
-    uint64_t divisor;
-    if ((op == T_SLASH || op == T_PERCENT) && a.cls == CLS_INT &&
-        const_int(n->b, &divisor) &&
-        emit_const_divide(e, op, a.idx, a.idx, divisor, t)) {
-        e->vti = a.idx + 1;
-        return a;
+    // Integer operands are read in place; the result takes the lowest operand
+    // temp, or a fresh one when both operands are promoted locals.
+    if (is_scalar(t) && !is_floatt(t) &&
+        !(t->kind == SK_PTR && (op == T_PLUS || op == T_MINUS))) {
+        EV a, b;
+        int ra = src_reg(e, n->a, &a);
+        if (a.cls != CLS_INT) {
+            em_err(e, n, "integer operand did not produce a scalar");
+            return (EV){ CLS_INT, tmp_int(e) };
+        }
+        uint64_t divisor;
+        if ((op == T_SLASH || op == T_PERCENT) && const_int(n->b, &divisor)) {
+            int d = a.idx >= 0 ? a.idx : tmp_int(e);
+            if (emit_const_divide(e, op, xreg(d), ra, divisor, t)) {
+                e->vti = d + 1;
+                return (EV){ CLS_INT, d };
+            }
+            e->vti = a.idx >= 0 ? a.idx + 1 : d;
+        }
+        int rb = src_reg(e, n->b, &b);
+        if (b.cls != CLS_INT) {
+            em_err(e, n, "integer operand did not produce a scalar");
+            return (EV){ CLS_INT, tmp_int(e) };
+        }
+        int d = a.idx >= 0 ? a.idx : b.idx >= 0 ? b.idx : tmp_int(e);
+        int cond = tok_cond(op, t);
+        if (cond >= 0) { // comparison -> bool
+            int sf = scalar_bits(t) == 64;
+            ins(e, (sf ? 0xEB00001Fu : 0x6B00001Fu) |
+                   ((uint32_t)rb << 16) | ((uint32_t)ra << 5));
+            cset_(e, sf, cond, xreg(d));
+        } else {
+            emit_checked_arith(e, op, xreg(d), ra, rb, t);
+        }
+        e->vti = d + 1;
+        return (EV){ CLS_INT, d };
     }
+
+    EV a = gen_expr(e, n->a);
     EV b = gen_expr(e, n->b);
 
     if (t->kind == SK_PTR && (op == T_PLUS || op == T_MINUS)) {
@@ -1822,7 +1876,7 @@ static EV gen_binop(Em* e, Node* n) {
         e->vtf = a.idx + 1;
         return a;
     }
-    emit_checked_arith(e, op, a.idx, a.idx, b.idx, t);
+    emit_checked_arith(e, op, xreg(a.idx), xreg(a.idx), xreg(b.idx), t);
     e->vti = a.idx + 1;
     return a;
 }
@@ -1863,6 +1917,26 @@ static EV gen_cmpchain(Em* e, Node* n) {
     }
     int isf = is_floatt(t);
     int nops = n->nkids;
+    if (!isf && nops <= 16) { // integer operands are read in place
+        EV v[16];
+        int r[16];
+        int base = e->vti;
+        for (int i = 0; i < nops; i++) r[i] = src_reg(e, n->kids[i], &v[i]);
+        int d = tmp_int(e), sf = scalar_bits(t) == 64;
+        for (int i = 1; i < nops; i++) {
+            int cond = tok_cond((TokKind)n->a->kids[i - 1]->op, t);
+            if (cond < 0) cond = C_EQ;
+            ins(e, (sf ? 0xEB00001Fu : 0x6B00001Fu) |
+                   ((uint32_t)r[i] << 16) | ((uint32_t)r[i - 1] << 5));
+            cset_(e, 0, cond, i == 1 ? xreg(d) : 16);
+            if (i > 1) // AND-fold the bools
+                ins(e, 0x0A000000u | (16u << 16) | ((uint32_t)xreg(d) << 5) |
+                       (uint32_t)xreg(d));
+        }
+        mov_int(e, 0, xreg(base), xreg(d));
+        e->vti = base + 1;
+        return (EV){ CLS_INT, base };
+    }
     int obase = isf ? e->vtf : e->vti;
     for (int i = 0; i < nops; i++) gen_expr(e, n->kids[i]);
     int nb = e->vti;
@@ -1926,7 +2000,8 @@ static void gen_branch(Em* e, Node* x, int jump_if, int lab) {
         if (t && t->kind != SK_UT && is_scalar(t)) {
             int isf = is_floatt(t), sf = scalar_bits(t) == 64;
             EV v[16];
-            for (int i = 0; i < x->nkids; i++) v[i] = gen_expr(e, x->kids[i]);
+            int r[16];
+            for (int i = 0; i < x->nkids; i++) r[i] = src_reg(e, x->kids[i], &v[i]);
             int skip = jump_if && x->nkids > 2 ? new_label(e) : -1;
             for (int i = 1; i < x->nkids; i++) {
                 int cond = tok_cond((TokKind)x->a->kids[i - 1]->op, t);
@@ -1935,7 +2010,7 @@ static void gen_branch(Em* e, Node* x, int jump_if, int lab) {
                     emit_fcmp(e, v[i - 1].idx, v[i].idx, unwrap(t)->prim == P_F64);
                 else
                     ins(e, (sf ? 0xEB00001Fu : 0x6B00001Fu) |
-                           (xreg(v[i].idx) << 16) | (xreg(v[i - 1].idx) << 5));
+                           ((uint32_t)r[i] << 16) | ((uint32_t)r[i - 1] << 5));
                 if (!jump_if) bcond_(e, cond ^ 1, lab);       // any pair fails
                 else if (i == x->nkids - 1) bcond_(e, cond, lab); // all held
                 else bcond_(e, cond ^ 1, skip);
@@ -1949,14 +2024,15 @@ static void gen_branch(Em* e, Node* x, int jump_if, int lab) {
         SType* t = node_ty(x->a);
         int cond = t && is_scalar(t) ? tok_cond((TokKind)x->op, t) : -1;
         if (cond >= 0) {
-            EV a = gen_expr(e, x->a);
-            EV b = gen_expr(e, x->b);
+            EV a, b;
+            int ra = src_reg(e, x->a, &a);
+            int rb = src_reg(e, x->b, &b);
             if (a.cls == CLS_FP && b.cls == CLS_FP) {
                 emit_fcmp(e, a.idx, b.idx, unwrap(t)->prim == P_F64);
             } else if (a.cls == CLS_INT && b.cls == CLS_INT) {
                 int sf = scalar_bits(t) == 64;
                 ins(e, (sf ? 0xEB00001Fu : 0x6B00001Fu) |
-                       (xreg(b.idx) << 16) | (xreg(a.idx) << 5));
+                       ((uint32_t)rb << 16) | ((uint32_t)ra << 5));
             } else {
                 em_err(e, x, "comparison operands must be scalar");
             }
@@ -1965,9 +2041,10 @@ static void gen_branch(Em* e, Node* x, int jump_if, int lab) {
             return;
         }
     }
-    EV c = gen_expr(e, x);
+    EV c;
+    int rc = src_reg(e, x, &c);
     if (c.cls != CLS_INT) em_err(e, x, "condition must be bool");
-    cbz_(e, 0, xreg(c.idx), jump_if, lab);
+    cbz_(e, 0, rc, jump_if, lab);
     e->vti = svi; e->vtf = svf;
 }
 
@@ -3221,29 +3298,39 @@ static int gen_addr(Em* e, Node* x) {
             else ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
         }
         int svi = e->vti, svf = e->vtf;
-        EV ix = gen_expr(e, x->b);
+        // A 64-bit index is only read, so a promoted one is used in place; a
+        // narrower one is widened in its register and needs its own temp.
+        SType* it = node_ty(x->b);
+        int narrow = it && it->kind != SK_UT && it->kind != SK_ERR &&
+                     scalar_bits(it) != 64;
+        EV ix;
+        int ri;
+        if (narrow) {
+            ix = gen_expr(e, x->b);
+            ri = xreg(ix.idx);
+        } else ri = src_reg(e, x->b, &ix);
         int lenreg = -1;
         if (descriptor && need_guard) {
             lenreg = 16;
             load_frame(e, lenreg, len_slot, 8, 0);
         }
-        emit_index_guard(e, x, xreg(ix.idx), lenreg,
+        emit_index_guard(e, x, ri, lenreg,
                          seq && seq->kind == SK_ARRAY ? seq->count : 0);
         if (e->mode != EMIT_CHECKED || (x->flags & F_BOUNDS_PROVEN))
-            widen_idx(e, x->b, xreg(ix.idx));
+            widen_idx(e, x->b, ri);
         uint32_t esz = ty_size(bt);
         if (esz == 1) {
-            ins(e, 0x8B000000u | ((uint32_t)xreg(ix.idx) << 16) |
+            ins(e, 0x8B000000u | ((uint32_t)ri << 16) |
                    ((uint32_t)xreg(ta) << 5) | (uint32_t)xreg(ta));
         } else if ((esz & (esz - 1)) == 0) {
             int sh = 0;
             while ((1u << sh) < esz) sh++;
             ins(e, 0x8B000000u | ((uint32_t)sh << 10) |
-                   ((uint32_t)xreg(ix.idx) << 16) |
+                   ((uint32_t)ri << 16) |
                    ((uint32_t)xreg(ta) << 5) | (uint32_t)xreg(ta));
         } else {
             load_imm(e, 1, 16, esz);
-            ins(e, 0x9B007C00u | (16u << 16) | ((uint32_t)xreg(ix.idx) << 5) | 16u);
+            ins(e, 0x9B007C00u | (16u << 16) | ((uint32_t)ri << 5) | 16u);
             ins(e, 0x8B000000u | (16u << 16) | ((uint32_t)xreg(ta) << 5) |
                    (uint32_t)xreg(ta));
         }
@@ -5513,7 +5600,8 @@ static void emit_bits_field_assign(Em* e, Node* target, Node* rhs, TokKind op,
         ins(e, base | ((uint32_t)f->bit_offset << 16) | (imms << 10) |
                ((uint32_t)xreg(vr) << 5) | (uint32_t)xreg(vr));
         EV rv = gen_expr(e, rhs);
-        emit_checked_arith(e, compound_op(op), vr, vr, rv.idx, f->t);
+        emit_checked_arith(e, compound_op(op), xreg(vr), xreg(vr), xreg(rv.idx),
+                           f->t);
         value = (EV){ CLS_INT, vr };
     } else value = gen_expr(e, rhs);
     if (e->mode == EMIT_CHECKED && f->bit_width < 64) {
@@ -5689,27 +5777,33 @@ static void emit_stmt(Em* e, Node* s) {
                 em_err(e, s, "compound assignment needs a scalar target");
                 return;
             }
-            EV old = direct ? load_var(e, ls, t, lhs)
+            TokKind op = compound_op((TokKind)s->op);
+            int pointer = t->kind == SK_PTR && (op == T_PLUS || op == T_MINUS);
+            // A promoted integer target is read in place and the result
+            // computed into a fresh temp before it is stored back.
+            int in_place = pr >= 0 && !is_floatt(t) && !pointer;
+            EV old = in_place ? (EV){ CLS_INT, tmp_int(e) }
+                   : direct ? load_var(e, ls, t, lhs)
                             : load_scalar(e, xreg(ta), 0, t);
+            int ra = in_place ? pr : xreg(old.idx);
             uint64_t divisor;
-            if ((s->op == T_DIVEQ || s->op == T_MODEQ) && old.cls == CLS_INT &&
+            if ((op == T_SLASH || op == T_PERCENT) && old.cls == CLS_INT &&
                 const_int(s->a, &divisor) &&
-                emit_const_divide(e, compound_op((TokKind)s->op), old.idx,
-                                  old.idx, divisor, t)) {
+                emit_const_divide(e, op, xreg(old.idx), ra, divisor, t)) {
                 store_target(e, old, direct, doff, ta, t);
                 return;
             }
-            EV rhs = gen_expr(e, s->a);
-            if (t->kind == SK_PTR &&
-                (s->op == T_ADDEQ || s->op == T_SUBEQ)) {
-                emit_pointer_arith(e, compound_op((TokKind)s->op), old.idx,
-                                   rhs.idx, ty_size(t->base));
+            if (pointer) {
+                EV rhs = gen_expr(e, s->a);
+                emit_pointer_arith(e, op, old.idx, rhs.idx, ty_size(t->base));
             } else if (old.cls == CLS_FP) {
-                emit_farith(e, compound_op((TokKind)s->op), old.idx, old.idx, rhs.idx,
+                EV rhs = gen_expr(e, s->a);
+                emit_farith(e, op, old.idx, old.idx, rhs.idx,
                             unwrap(t)->prim == P_F64);
             } else {
-                emit_checked_arith(e, compound_op((TokKind)s->op), old.idx,
-                                   old.idx, rhs.idx, t);
+                EV rhs;
+                int rb = src_reg(e, s->a, &rhs);
+                emit_checked_arith(e, op, xreg(old.idx), ra, rb, t);
             }
             store_target(e, old, direct, doff, ta, t);
             return;

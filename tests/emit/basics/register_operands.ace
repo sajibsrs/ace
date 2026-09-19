@@ -1,0 +1,96 @@
+/*
+ * Promoted integer locals are read in their own registers by arithmetic,
+ * comparisons, and 64-bit indexes, without a copy; the result goes to a temp,
+ * so the operands keep their values.
+ */
+
+// expect-exit: 42
+
+// both, left, and right operands in registers; constant divides read in place
+arith(n: int): int {
+    a: int = n
+    b: int = 7
+    r: int = 0
+    for i: int in 0 .. 3 {
+        s: int = a + b               // 17
+        d: int = a - b               // 3
+        m: int = a * b               // 70
+        q: int = a / 3               // 3
+        k: int = a % 4               // 2
+        h: int = b << 2              // 28
+        l: int = a + (b * 2)         // 24
+        g: int = (a * 2) - b         // 13
+        r += s + d + m + q + k + h + l + g - 160 + i
+    }
+    if a != 10 || b != 7 { r += 1000 }
+    return r - 3
+}
+
+// narrow values keep their slot-reload form: signed compares see the sign
+narrow(): int {
+    x: i8 = -100
+    y: i8 = 27
+    u: u8 = 200
+    v: u8 = 55
+    w: u32 = 4000000000
+    r: int = 0
+    for i: int in 0 .. 2 {
+        if x + y != -73 { r += 1 }
+        if u + v != 255 { r += 2 }
+        if !(x < y) { r += 4 }
+        if u < v { r += 8 }
+        ordered: bool = x < y <= y
+        if !ordered { r += 16 }
+        broken: bool = x < y < y
+        if broken { r += 100 }
+        if !(-128 < x < y) { r += 32 }
+        if w / 2 != 2000000000 { r += 64 }
+    }
+    if x != -100 || y != 27 || u != 200 || v != 55 { r += 128 }
+    return r
+}
+
+// promoted floats live in d8-d15 and are still evaluated into temps
+floats(): int {
+    f: f64 = 1.5
+    g: f64 = 2.0
+    h: f32 = 0.25
+    r: int = 0
+    for i: int in 0 .. 2 {
+        if f + g != 3.5 { r += 1 }
+        if f > g { r += 2 }
+        if h * f32(4.0) != f32(1.0) { r += 4 }
+    }
+    return r
+}
+
+// compound assignment reads a promoted target and operand in place
+compound(n: int): int {
+    total: int = 0
+    step: int = n
+    small: i16 = 1000
+    rest: u32 = 100
+    for i: int in 0 .. 4 {
+        total += step
+        total -= i
+        small /= 2
+        rest %= 7
+    }
+    return (total - 14) + (int(small) - 62) + (int(rest) - 2) + (step - 5)
+}
+
+// a 64-bit promoted index is used in place
+indexed(values: [4]int): int {
+    total: int = 0
+    j: usize = 3
+    for i: usize in 0 .. 4 {
+        total += values[i] * 10 + values[j]
+    }
+    return total + int(j) - 119
+}
+
+main(): int {
+    values: [4]int = [1, 2, 3, 4]
+    r: int = arith(10) + narrow() + floats() + compound(5) + indexed(values)
+    return 42 + r
+}
