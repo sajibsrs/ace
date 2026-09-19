@@ -151,6 +151,14 @@ C `-O2`, all with checksum `1019507998`. Release now edges past unoptimized C;
 the remaining gap to `-O2` is loop state that still round-trips through stack
 slots every iteration.
 
+### Code-placement checkpoint
+
+After function entries and source loop heads were aligned to 16 bytes, three
+runs each of both benchmarks matched the previous checkpoints within noise;
+32- and 64-byte loop alignment measured the same. `str.index_from`'s inner
+loop body is 152 bytes across three cache lines, so head alignment cannot
+recover its earlier 16.6 us best placement until loop bodies shrink.
+
 ## Memory
 
 Run the v1 raw-memory benchmark on Apple arm64:

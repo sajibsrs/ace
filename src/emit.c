@@ -396,6 +396,16 @@ static void fix_add(Em* e, uint8_t kind, uint32_t site, ESym* target) {
 
 static Buf* text(Em* e) { return &e->secs[SEC_TEXT].data; }
 static void ins(Em* e, uint32_t w) { buf_put32(text(e), w); }
+
+// Pad with nops to a code boundary; __text is 64-byte aligned, so the
+// boundary holds after linking. Function entries and loop heads start on one
+// so identical code does not change speed with its offset in a fetch block.
+// Entry padding never executes; loop-head padding runs once per loop entry.
+enum { FUNC_ALIGN = 16, LOOP_ALIGN = 16 };
+static void align_code(Em* e, uint32_t bytes) {
+    while (text(e)->len % bytes) ins(e, 0xD503201Fu);
+}
+
 static int xreg(int t) { return t < 8 ? t : t + 1; }
 static int vreg(int t) { return t < 8 ? t : t + 8; }
 
@@ -5415,6 +5425,7 @@ static void emit_stmt(Em* e, Node* s) {
             // every loop owns its own exit targets.
             if (s->a) emit_stmt(e, s->a);
             int lcond = new_label(e), lcont = new_label(e), lbreak = new_label(e);
+            align_code(e, LOOP_ALIGN);
             bind_label(e, lcond);
             if (s->b) {
                 EV c = gen_expr(e, s->b);
@@ -5524,6 +5535,7 @@ static void emit_stmt(Em* e, Node* s) {
             store_frame(e, 16, cslot, 8);
             load_frame(e, 17, sslot, 8, 0);
             store_frame(e, 17, dslot, 8);
+            align_code(e, LOOP_ALIGN);
             bind_label(e, lsetup);
             bind_label(e, lcond);
             int tc = tmp_int(e);
@@ -5607,6 +5619,7 @@ static void emit_stmt(Em* e, Node* s) {
             store_frame(e, 16, eslot, 8);
         }
         e->vti = svi;
+        align_code(e, LOOP_ALIGN);
         bind_label(e, lcond);
         int tp = tmp_int(e), te = tmp_int(e);
         load_frame(e, xreg(tp), pslot, 8, 0);
@@ -5970,6 +5983,7 @@ static void incoming_addr(Em* e, int rd, uint32_t soff) {
 
 static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
                       SType* ret, int is_main, int export_c) {
+    align_code(e, FUNC_ALIGN);
     uint32_t debug_addr = (uint32_t)text(e)->len;
     line_mark(e, f);
     e->frame = 0;
@@ -7178,12 +7192,6 @@ static void vmem(Em* e, uint32_t op, int rt, int rn, int32_t off) {
            (uint32_t)rt);
 }
 
-// Pad with nops to a code boundary; __text is 64-byte aligned, so the
-// boundary holds after linking. Hot loops start on one to avoid splitting
-// across fetch blocks and cache lines.
-static void align_code(Em* e, uint32_t bytes) {
-    while (text(e)->len % bytes) ins(e, 0xD503201Fu);
-}
 
 // Q-register LDP/STP (op selects offset, pre-, or post-index form).
 static void vpair(Em* e, uint32_t op, int rt, int rt2, int rn, int32_t off) {

@@ -981,6 +981,28 @@ if [ -d tests/emit ]; then
             fail=1
         fi
     fi
+    # Function entries and source-loop heads (every backward branch target in
+    # a user function) start on 16-byte boundaries: the last hex digit is 0.
+    if command -v nm >/dev/null 2>&1 && command -v otool >/dev/null 2>&1; then
+        placement_o=/tmp/ace_emit/control_flow/code_placement.o
+        if ! nm "$placement_o" | awk '
+            $2 ~ /^[tT]$/ && ($3 ~ /^__ace\$fn\$/ || $3 == "_main") &&
+            $1 !~ /0$/ { bad = 1 } END { exit bad }'; then
+            echo "FAIL: function entries must be 16-byte aligned"
+            fail=1
+        fi
+        if ! otool -tv "$placement_o" | awk '
+            /^[^0-9].*:$/ { user = ($0 ~ /^__ace\$fn\$/ || $0 == "_main:"); next }
+            user && $2 ~ /^(b|b\..*|cbn?z|tbn?z)$/ && $NF ~ /^0x/ {
+                t = substr($NF, 3)
+                t = substr("0000000000000000", length(t) + 1) t
+                if (t <= $1 && t !~ /0$/) bad = 1
+            }
+            END { exit bad }'; then
+            echo "FAIL: loop heads must be 16-byte aligned"
+            fail=1
+        fi
+    fi
     # -o mode drives the same pipeline through the cc link step
     "$ACE" -o /tmp/ace_emit/direct tests/emit/basics/main.ace && /tmp/ace_emit/direct
     got=$?

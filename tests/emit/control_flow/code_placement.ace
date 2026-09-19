@@ -1,0 +1,63 @@
+/* Function entries and loop heads start on 16-byte boundaries. */
+
+// expect-exit: 42
+
+tiny(x: int): int {
+    return x + 1
+}
+
+odd(x: int): int {
+    y: int = x * 3
+    return y - x
+}
+
+counted(n: int): int {
+    total: int = 0
+
+    for i: int in 0 .. n {
+        total += i
+    }
+
+    return total
+}
+
+// Different preambles shift each range head to a different offset.
+stepped(n: int): int {
+    total: int = 0
+    base: int = n * 2
+
+    for i: int in n .. 0 {
+        total += 1
+    }
+
+    for i: int in 0 .. base step 3 {
+        total += 1
+    }
+
+    return total
+}
+
+general(n: int): int {
+    total: int = 0
+
+    for i: int = 0; i < n; i += 1 {
+        total += 2
+    }
+
+    return total
+}
+
+summed(values: [2]int): int {
+    total: int = 0
+
+    for v: int in values {
+        total += v
+    }
+
+    return total
+}
+
+main(): int {
+    arr: [2]int = [3, 4]
+    return tiny(1) + odd(2) + counted(5) + general(3) + summed(arr) + stepped(3) + 8
+}

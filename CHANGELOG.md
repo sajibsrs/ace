@@ -972,6 +972,12 @@ current normative rules, and Git preserves patch-level detail.
   C. Constant nonzero divisors other than signed -1 need no checked guards.
   The generator was validated against hardware division on 30.9M cases. The
   CPU recurrence fell from about 45.5 to 42.5 ms in release (C `-O2` 34 ms).
+- Function entries and source `for` loop heads are padded with `nop` to
+  16-byte boundaries (`align_code`), so identical code no longer changes speed
+  with its offset in a fetch block. Entry padding never executes; loop-head
+  padding runs once per loop entry. Current benchmarks are unchanged within
+  noise, since loop bodies are still too large for head placement to
+  dominate; `__text` grows about 0.4%.
 
 ## Current frontier
 
