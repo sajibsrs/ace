@@ -948,6 +948,14 @@ current normative rules, and Git preserves patch-level detail.
   check like `mem.release`. `pkg/http` now spells its empty handles that way.
 - Range `for` loops test their 64-bit remaining trip count with a 64-bit
   `cbz`; the 32-bit test skipped or truncated ranges whose count reached 2^32.
+- `mem.copy`, `move`, `fill`, and `zero` call shared per-object routines
+  (`__ace$mem_copy`/`move`/`fill`) instead of emitting byte loops. A private
+  convention (x15 destination, x16 source or byte, x17 count; clobbers only
+  x8, x15-x17, x30, v24-v31) keeps call sites spill-free. Ranges up to 64
+  bytes use overlapping NEON chunks loaded before any store, which also makes
+  them overlap-safe; larger ranges use 32-byte loops with the far-end chunk
+  preloaded, and forward runs align the destination to 32 bytes. Release
+  4096-byte copy fell from 1995 to 82 ns (1.10x libSystem).
 
 ## Current frontier
 

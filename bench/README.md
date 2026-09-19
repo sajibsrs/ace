@@ -41,6 +41,18 @@ across the IEEE value space. These measurements justify a separate optimization
 carve; they do not weaken the native exact semantics or reopen convenience
 runtime dependencies.
 
+### Wide byte-write checkpoint
+
+After `mem.copy`, `move`, `fill`, and `zero` moved from byte loops to shared
+NEON routines with a 32-byte-aligned forward loop, five runs on the reference
+Apple-arm64 machine produced these median copy results:
+
+- 64-byte copy: Ace 7.64 ns, C 3.36 ns (2.28x)
+- 4096-byte copy: Ace 81.59 ns, C 74.08 ns (1.10x)
+
+The remaining 64-byte gap is mostly the benchmark loop itself: its `i % 64`
+index still lowers to `udiv`, and loop state stays in stack slots.
+
 ### Native float-parser optimization checkpoint
 
 After adding exact-small and Eisel-Lemire fixed-width tiers, then specializing

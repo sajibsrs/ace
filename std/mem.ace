@@ -37,8 +37,9 @@ pub release[T](mut data: []T) {
 
 /* Byte operations use complete slice views as their ranges. Write destinations
  * carry type-position `mut` (Mutability #10): their argument must be a
- * `mut []u8` view. The bootstrap compiler lowers them directly to the
- * platform's optimized memory routines.
+ * `mut []u8` view. The bootstrap compiler emits them natively: `copy`,
+ * `move`, `fill`, and `zero` call wide per-object routines, and the rest use
+ * direct emitted loops. No platform memory routine is called.
  */
 
 pub copy(noalias dst: mut []u8, src: []u8) {}

@@ -348,6 +348,16 @@ not repeated at the call site. Use `move` whenever the ranges might overlap.
 `fill` writes `value` to every byte in its slice; `zero` writes zero to every
 byte. All four write operations return nothing. Empty slices are valid.
 
+The compiler emits these operations natively rather than calling platform
+memory routines. `copy`, `move`, `fill`, and `zero` call one private routine
+per object file that selects a size class: up to 64 bytes, it covers the range
+with two overlapping chunks after loading every source byte, so the same code
+serves overlapping moves; larger ranges run 32-byte loops from a 32-byte-aligned
+destination, with the far-end chunk loaded before the loop starts. `move`
+walks backward only when the destination begins inside the source. On Apple
+arm64 these routines use NEON registers internally; this is instruction
+selection only and adds no vector facility to the language.
+
 `compare` reads complete slices as unsigned bytes and returns exactly `-1`,
 `0`, or `1`. It is lexicographic: the first differing byte decides; when the
 common prefix is equal, the shorter slice sorts first. Unlike copy and move,

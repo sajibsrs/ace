@@ -328,6 +328,8 @@ typedef struct {
     int contract_fail_used;
     int null_fail_used;
     int allocator_used;
+    int mem_copy_used; // __ace$mem_copy / __ace$mem_move
+    int mem_fill_used; // __ace$mem_fill
     int current_is_main;
     Sec   secs[NSECS];
     SymTab syms;
@@ -3231,7 +3233,6 @@ static EV gen_byte_write_builtin(Em* e, Node* call, int intrinsic) {
     int dst, dlen;
     gen_slice_parts(e, dst_node, &dst, &dlen);
 
-    int done = new_label(e);
     if (intrinsic == BI_MEM_COPY || intrinsic == BI_MEM_MOVE) {
         int src, slen;
         gen_slice_parts(e, call->kids[1], &src, &slen);
@@ -3267,70 +3268,26 @@ static EV gen_byte_write_builtin(Em* e, Node* call, int intrinsic) {
                 bind_label(e, empty);
             }
         }
-        cbz_(e, 1, xreg(slen), 0, done); // empty slices may carry null pointers
-        int forward = new_label(e);
-        if (intrinsic == BI_MEM_MOVE) {
-            ins(e, 0xEB00001Fu | ((uint32_t)xreg(src) << 16) |
-                   ((uint32_t)xreg(dst) << 5));
-            bcond_(e, C_EQ, done);
-            bcond_(e, C_LO, forward);
-
-            int src_end = tmp_int(e), dst_end = tmp_int(e);
-            ins(e, 0x8B000000u | ((uint32_t)xreg(slen) << 16) |
-                   ((uint32_t)xreg(src) << 5) | (uint32_t)xreg(src_end));
-            ins(e, 0x8B000000u | ((uint32_t)xreg(slen) << 16) |
-                   ((uint32_t)xreg(dst) << 5) | (uint32_t)xreg(dst_end));
-            int backward_loop = new_label(e);
-            bind_label(e, backward_loop);
-            ins(e, 0xD1000400u | ((uint32_t)xreg(src_end) << 5) |
-                   (uint32_t)xreg(src_end));
-            ins(e, 0xD1000400u | ((uint32_t)xreg(dst_end) << 5) |
-                   (uint32_t)xreg(dst_end));
-            ld_reg(e, 16, xreg(src_end), 0, 1, 0);
-            st_reg(e, 16, xreg(dst_end), 0, 1);
-            ins(e, 0xEB00001Fu | ((uint32_t)xreg(src) << 16) |
-                   ((uint32_t)xreg(src_end) << 5));
-            bcond_(e, C_NE, backward_loop);
-            br_(e, done);
-        }
-
-        bind_label(e, forward);
-        int src_end = tmp_int(e);
-        ins(e, 0x8B000000u | ((uint32_t)xreg(slen) << 16) |
-               ((uint32_t)xreg(src) << 5) | (uint32_t)xreg(src_end));
-        int forward_loop = new_label(e);
-        bind_label(e, forward_loop);
-        ld_reg(e, 16, xreg(src), 0, 1, 0);
-        st_reg(e, 16, xreg(dst), 0, 1);
-        ins(e, 0x91000400u | ((uint32_t)xreg(src) << 5) |
-               (uint32_t)xreg(src));
-        ins(e, 0x91000400u | ((uint32_t)xreg(dst) << 5) |
-               (uint32_t)xreg(dst));
-        ins(e, 0xEB00001Fu | ((uint32_t)xreg(src_end) << 16) |
-               ((uint32_t)xreg(src) << 5));
-        bcond_(e, C_NE, forward_loop);
+        // Empty slices may carry null pointers; the routines touch no bytes
+        // for a zero count.
+        e->mem_copy_used = 1;
+        mov_int(e, 1, 15, xreg(dst));
+        mov_int(e, 1, 16, xreg(src));
+        mov_int(e, 1, 17, xreg(slen));
+        if (intrinsic == BI_MEM_MOVE) emit_bl_internal(e, "__ace$mem_move", 14);
+        else emit_bl_internal(e, "__ace$mem_copy", 14);
     } else {
-        int byte = tmp_int(e);
+        e->mem_fill_used = 1;
         if (intrinsic == BI_MEM_FILL) {
             EV value = gen_expr(e, call->kids[1]);
-            mov_int(e, 1, xreg(byte), xreg(value.idx));
+            mov_int(e, 1, 16, xreg(value.idx));
         } else {
-            load_imm(e, 1, xreg(byte), 0);
+            load_imm(e, 1, 16, 0);
         }
-        cbz_(e, 1, xreg(dlen), 0, done);
-        int end = tmp_int(e);
-        ins(e, 0x8B000000u | ((uint32_t)xreg(dlen) << 16) |
-               ((uint32_t)xreg(dst) << 5) | (uint32_t)xreg(end));
-        int loop = new_label(e);
-        bind_label(e, loop);
-        st_reg(e, xreg(byte), xreg(dst), 0, 1);
-        ins(e, 0x91000400u | ((uint32_t)xreg(dst) << 5) |
-               (uint32_t)xreg(dst));
-        ins(e, 0xEB00001Fu | ((uint32_t)xreg(end) << 16) |
-               ((uint32_t)xreg(dst) << 5));
-        bcond_(e, C_NE, loop);
+        mov_int(e, 1, 15, xreg(dst));
+        mov_int(e, 1, 17, xreg(dlen));
+        emit_bl_internal(e, "__ace$mem_fill", 14);
     }
-    bind_label(e, done);
     e->vti = si;
     e->vtf = sf;
     return (EV){ CLS_INT, 0 };
@@ -7099,6 +7056,206 @@ static void helper_epilogue(Em* e) {
     ins(e, 0xD65F03C0);
 }
 
+// SIMD&FP single-register LDUR/STUR (op selects b/s/d/q and direction).
+static void vmem(Em* e, uint32_t op, int rt, int rn, int32_t off) {
+    ins(e, op | (((uint32_t)off & 0x1FFu) << 12) | ((uint32_t)rn << 5) |
+           (uint32_t)rt);
+}
+
+// Q-register LDP/STP (op selects offset, pre-, or post-index form).
+static void vpair(Em* e, uint32_t op, int rt, int rt2, int rn, int32_t off) {
+    ins(e, op | (((uint32_t)(off / 16) & 0x7Fu) << 15) | ((uint32_t)rt2 << 10) |
+           ((uint32_t)rn << 5) | (uint32_t)rt);
+}
+
+enum {
+    LDUR_B = 0x3C400000u, STUR_B = 0x3C000000u,
+    LDUR_S = 0xBC400000u, STUR_S = 0xBC000000u,
+    LDUR_D = 0xFC400000u, STUR_D = 0xFC000000u,
+    LDUR_Q = 0x3CC00000u, STUR_Q = 0x3C800000u,
+    LDP_Q = 0xAD400000u, STP_Q = 0xAD000000u,
+    LDP_Q_POST = 0xACC00000u, STP_Q_POST = 0xAC800000u,
+    LDP_Q_PRE = 0xADC00000u, STP_Q_PRE = 0xAD800000u,
+};
+
+/*
+ * Shared byte-operation routines, emitted once per object when used. A private
+ * convention keeps call sites spill-free: x15 = destination, x16 = source or
+ * fill byte, x17 = byte count. The routines clobber only x8, x15-x17, x30,
+ * v24-v31, and flags, none of which hold temps. Each size class up to 64 bytes
+ * loads every byte before storing, so it also serves overlapping moves; tails
+ * reuse overlapping chunks instead of byte loops. Larger runs move 32 bytes per
+ * iteration with the far-end chunk loaded before the loop. NEON use here is
+ * internal instruction selection, not a language vector facility.
+ */
+static void emit_byte_helpers(Em* e) {
+    if (e->mem_copy_used) {
+        int copy = new_label(e), backward = new_label(e), lt16 = new_label(e);
+        int lt8 = new_label(e), lt4 = new_label(e), done = new_label(e);
+        int gt32 = new_label(e), big = new_label(e), loop = new_label(e);
+        int bloop = new_label(e);
+
+        // move: at most 64 bytes is overlap-safe; above that, go backward only
+        // when the destination starts inside the source.
+        sym_define(&e->syms, e->secs, "__ace$mem_move", 14, 0,
+                   &e->secs[SEC_TEXT]);
+        ins(e, 0xF100001Fu | (64u << 10) | (17u << 5));   // cmp x17, #64
+        bcond_(e, C_LS, copy);
+        ins(e, 0xCB000000u | (16u << 16) | (15u << 5) | 8u); // x8 = dst - src
+        ins(e, 0xEB00001Fu | (17u << 16) | (8u << 5));    // cmp x8, x17
+        bcond_(e, C_LO, backward);
+
+        sym_define(&e->syms, e->secs, "__ace$mem_copy", 14, 0,
+                   &e->secs[SEC_TEXT]);
+        bind_label(e, copy);
+        ins(e, 0xF100001Fu | (32u << 10) | (17u << 5));   // cmp x17, #32
+        bcond_(e, C_HI, gt32);
+        ins(e, 0xF100001Fu | (16u << 10) | (17u << 5));   // cmp x17, #16
+        bcond_(e, C_LO, lt16);
+        vmem(e, LDUR_Q, 24, 16, 0);                        // 16..32
+        ins(e, 0x8B000000u | (17u << 16) | (16u << 5) | 16u);
+        vmem(e, LDUR_Q, 25, 16, -16);
+        vmem(e, STUR_Q, 24, 15, 0);
+        ins(e, 0x8B000000u | (17u << 16) | (15u << 5) | 15u);
+        vmem(e, STUR_Q, 25, 15, -16);
+        ins(e, 0xD65F03C0u);
+        bind_label(e, lt16);
+        ins(e, 0xF100001Fu | (8u << 10) | (17u << 5));    // cmp x17, #8
+        bcond_(e, C_LO, lt8);
+        vmem(e, LDUR_D, 24, 16, 0);                        // 8..15
+        ins(e, 0x8B000000u | (17u << 16) | (16u << 5) | 16u);
+        vmem(e, LDUR_D, 25, 16, -8);
+        vmem(e, STUR_D, 24, 15, 0);
+        ins(e, 0x8B000000u | (17u << 16) | (15u << 5) | 15u);
+        vmem(e, STUR_D, 25, 15, -8);
+        ins(e, 0xD65F03C0u);
+        bind_label(e, lt8);
+        ins(e, 0xF100001Fu | (4u << 10) | (17u << 5));    // cmp x17, #4
+        bcond_(e, C_LO, lt4);
+        vmem(e, LDUR_S, 24, 16, 0);                        // 4..7
+        ins(e, 0x8B000000u | (17u << 16) | (16u << 5) | 16u);
+        vmem(e, LDUR_S, 25, 16, -4);
+        vmem(e, STUR_S, 24, 15, 0);
+        ins(e, 0x8B000000u | (17u << 16) | (15u << 5) | 15u);
+        vmem(e, STUR_S, 25, 15, -4);
+        ins(e, 0xD65F03C0u);
+        bind_label(e, lt4);                                // 0..3: first, middle, last
+        cbz_(e, 1, 17, 0, done);
+        ins(e, 0xD341FE28u);                               // lsr x8, x17, #1
+        vmem(e, LDUR_B, 24, 16, 0);
+        ins(e, 0x3C606800u | (8u << 16) | (16u << 5) | 25u); // ldr b25, [x16, x8]
+        ins(e, 0x8B000000u | (17u << 16) | (16u << 5) | 16u);
+        vmem(e, LDUR_B, 26, 16, -1);
+        vmem(e, STUR_B, 24, 15, 0);
+        ins(e, 0x3C206800u | (8u << 16) | (15u << 5) | 25u); // str b25, [x15, x8]
+        ins(e, 0x8B000000u | (17u << 16) | (15u << 5) | 15u);
+        vmem(e, STUR_B, 26, 15, -1);
+        bind_label(e, done);
+        ins(e, 0xD65F03C0u);
+        bind_label(e, gt32);
+        ins(e, 0xF100001Fu | (64u << 10) | (17u << 5));   // cmp x17, #64
+        bcond_(e, C_HI, big);
+        vpair(e, LDP_Q, 24, 25, 16, 0);                    // 33..64
+        ins(e, 0x8B000000u | (17u << 16) | (16u << 5) | 16u);
+        vpair(e, LDP_Q, 26, 27, 16, -32);
+        vpair(e, STP_Q, 24, 25, 15, 0);
+        ins(e, 0x8B000000u | (17u << 16) | (15u << 5) | 15u);
+        vpair(e, STP_Q, 26, 27, 15, -32);
+        ins(e, 0xD65F03C0u);
+        // Forward: preload the tail and head, then continue from a
+        // 32-byte-aligned destination so no loop store splits a cache line.
+        // The first aligned chunk loads before the head store, which may
+        // overwrite it in a leftward overlapping move.
+        int tail = new_label(e);
+        bind_label(e, big);
+        ins(e, 0x8B000000u | (17u << 16) | (16u << 5) | 8u);
+        vpair(e, LDP_Q, 30, 31, 8, -32);
+        vpair(e, LDP_Q, 26, 27, 16, 0);
+        ins(e, 0x91000000u | (32u << 10) | (15u << 5) | 8u);  // add x8, x15, #32
+        ins(e, 0x927BE908u);                                  // and x8, x8, #~31
+        ins(e, 0xCB000000u | (15u << 16) | (8u << 5) | 8u);   // x8 = step, 1..32
+        ins(e, 0x8B000000u | (8u << 16) | (16u << 5) | 16u);
+        vpair(e, LDP_Q_POST, 24, 25, 16, 32);
+        vpair(e, STP_Q, 26, 27, 15, 0);
+        ins(e, 0x8B000000u | (8u << 16) | (15u << 5) | 15u);
+        ins(e, 0xCB000000u | (8u << 16) | (17u << 5) | 17u);
+        vpair(e, STP_Q_POST, 24, 25, 15, 32);
+        ins(e, 0xF1000000u | (64u << 10) | (17u << 5) | 17u); // subs x17, x17, #64
+        bcond_(e, C_LS, tail);
+        bind_label(e, loop);
+        vpair(e, LDP_Q_POST, 24, 25, 16, 32);
+        vpair(e, STP_Q_POST, 24, 25, 15, 32);
+        ins(e, 0xF1000000u | (32u << 10) | (17u << 5) | 17u); // subs x17, x17, #32
+        bcond_(e, C_HI, loop);
+        bind_label(e, tail);
+        ins(e, 0x8B000000u | (17u << 16) | (15u << 5) | 8u);  // x8 = end - 32
+        vpair(e, STP_Q, 30, 31, 8, 0);
+        ins(e, 0xD65F03C0u);
+        bind_label(e, backward);                           // backward, head preloaded
+        vpair(e, LDP_Q, 30, 31, 16, 0);
+        mov_int(e, 1, 8, 15);
+        ins(e, 0x8B000000u | (17u << 16) | (16u << 5) | 16u);
+        ins(e, 0x8B000000u | (17u << 16) | (15u << 5) | 15u);
+        ins(e, 0xD1000000u | (32u << 10) | (17u << 5) | 17u);
+        bind_label(e, bloop);
+        vpair(e, LDP_Q_PRE, 24, 25, 16, -32);
+        vpair(e, STP_Q_PRE, 24, 25, 15, -32);
+        ins(e, 0xF1000000u | (32u << 10) | (17u << 5) | 17u);
+        bcond_(e, C_HI, bloop);
+        vpair(e, STP_Q, 30, 31, 8, 0);
+        ins(e, 0xD65F03C0u);
+    }
+    if (e->mem_fill_used) {
+        int lt16 = new_label(e), lt8 = new_label(e), lt4 = new_label(e);
+        int done = new_label(e), gt32 = new_label(e), loop = new_label(e);
+
+        sym_define(&e->syms, e->secs, "__ace$mem_fill", 14, 0,
+                   &e->secs[SEC_TEXT]);
+        ins(e, 0x4E010C00u | (16u << 5) | 24u);            // dup v24.16b, w16
+        ins(e, 0xF100001Fu | (32u << 10) | (17u << 5));   // cmp x17, #32
+        bcond_(e, C_HI, gt32);
+        ins(e, 0xF100001Fu | (16u << 10) | (17u << 5));   // cmp x17, #16
+        bcond_(e, C_LO, lt16);
+        vmem(e, STUR_Q, 24, 15, 0);                        // 16..32
+        ins(e, 0x8B000000u | (17u << 16) | (15u << 5) | 15u);
+        vmem(e, STUR_Q, 24, 15, -16);
+        ins(e, 0xD65F03C0u);
+        bind_label(e, lt16);
+        ins(e, 0xF100001Fu | (8u << 10) | (17u << 5));    // cmp x17, #8
+        bcond_(e, C_LO, lt8);
+        vmem(e, STUR_D, 24, 15, 0);                        // 8..15
+        ins(e, 0x8B000000u | (17u << 16) | (15u << 5) | 15u);
+        vmem(e, STUR_D, 24, 15, -8);
+        ins(e, 0xD65F03C0u);
+        bind_label(e, lt8);
+        ins(e, 0xF100001Fu | (4u << 10) | (17u << 5));    // cmp x17, #4
+        bcond_(e, C_LO, lt4);
+        vmem(e, STUR_S, 24, 15, 0);                        // 4..7
+        ins(e, 0x8B000000u | (17u << 16) | (15u << 5) | 15u);
+        vmem(e, STUR_S, 24, 15, -4);
+        ins(e, 0xD65F03C0u);
+        bind_label(e, lt4);                                // 0..3: first, middle, last
+        cbz_(e, 1, 17, 0, done);
+        ins(e, 0xD341FE28u);                               // lsr x8, x17, #1
+        vmem(e, STUR_B, 24, 15, 0);
+        ins(e, 0x3C206800u | (8u << 16) | (15u << 5) | 24u); // str b24, [x15, x8]
+        ins(e, 0x8B000000u | (17u << 16) | (15u << 5) | 15u);
+        vmem(e, STUR_B, 24, 15, -1);
+        bind_label(e, done);
+        ins(e, 0xD65F03C0u);
+        bind_label(e, gt32);                               // 33+: tail, then 32-byte runs
+        ins(e, 0x8B000000u | (17u << 16) | (15u << 5) | 8u);
+        vpair(e, STP_Q, 24, 24, 8, -32);
+        ins(e, 0xD1000000u | (32u << 10) | (17u << 5) | 17u); // sub x17, x17, #32
+        bind_label(e, loop);
+        vpair(e, STP_Q_POST, 24, 24, 15, 32);
+        ins(e, 0xF1000000u | (32u << 10) | (17u << 5) | 17u); // subs x17, x17, #32
+        bcond_(e, C_HI, loop);
+        ins(e, 0xD65F03C0u);
+    }
+    patch_branches(e);
+}
+
 static void emit_allocator_helpers(Em* e) {
     if (!e->allocator_used) {
         if (e->mode == EMIT_CHECKED) {
@@ -7298,6 +7455,7 @@ int emit_object(Node* file, Diag* d, const char* out_path,
     emit_contract_failure_helper(&e);
     emit_null_failure_helper(&e);
     emit_allocator_helpers(&e);
+    emit_byte_helpers(&e);
     patch_fixups(&e);
     if (d->errors) return 1;
     if (report) report->machine_code = text(&e)->len;
