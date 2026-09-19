@@ -5455,7 +5455,7 @@ static void emit_stmt(Em* e, Node* s) {
             bind_label(e, lcond);
             int tc = tmp_int(e);
             load_frame(e, xreg(tc), cslot, 8, 0);
-            cbz_(e, 0, xreg(tc), 0, lbreak);
+            cbz_(e, 1, xreg(tc), 0, lbreak);
             int ti = tmp_int(e);
             load_frame(e, xreg(ti), islot, rsz, ty_is_signed(rt) && rsz < 8);
             // loop variable = i (truncating/extending store)

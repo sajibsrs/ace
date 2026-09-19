@@ -946,6 +946,8 @@ current normative rules, and Git preserves patch-level detail.
   a live-looking descriptor zero; `close` on an inactive handle is a
   syscall-free no-op returning null, so `defer tcp.close` precedes the error
   check like `mem.release`. `pkg/http` now spells its empty handles that way.
+- Range `for` loops test their 64-bit remaining trip count with a 64-bit
+  `cbz`; the 32-bit test skipped or truncated ranges whose count reached 2^32.
 
 ## Current frontier
 

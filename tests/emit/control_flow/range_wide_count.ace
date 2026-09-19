@@ -1,0 +1,44 @@
+/* Range trip counts wider than 32 bits. */
+
+// expect-exit: 42
+
+main(): int {
+    exact: usize = 4294967296
+    hits: usize = 0
+
+    for i: usize in 0 .. exact {
+        hits += 1
+        break
+    }
+
+    if hits != 1 {
+        return 1
+    }
+
+    wider: usize = 4294967301
+    hits = 0
+
+    for i: usize in 0 .. wider {
+        hits += 1
+
+        if hits == 6 {
+            break
+        }
+    }
+
+    if hits != 6 {
+        return 2
+    }
+
+    hits = 0
+
+    for i: usize in exact .. 0 {
+        hits += 1
+        break
+    }
+
+    if hits != 1 {
+        return 3
+    }
+    return 42
+}
