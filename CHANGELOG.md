@@ -956,6 +956,14 @@ current normative rules, and Git preserves patch-level detail.
   them overlap-safe; larger ranges use 32-byte loops with the far-end chunk
   preloaded, and forward runs align the destination to 32 bytes. Release
   4096-byte copy fell from 1995 to 82 ns (1.10x libSystem).
+- `mem.compare` and `mem.equal` share `__ace$mem_compare` (x15/x16 operands,
+  x17 common length in, -1/0/1 out) instead of byte loops. NEON `eor`/`umaxp`
+  finds a differing 16- or 32-byte chunk, and byte-reversed 64-bit words order
+  its first differing byte; lengths below 16 load overlapping or first/middle/
+  last chunks into vector lanes. `__text` is now 64-byte aligned and helper
+  loop heads are padded to 16 bytes, since an unaligned copy loop measured
+  135 ns instead of 82. Release 4096-byte compare fell from 2976 to 107 ns
+  (0.67x libSystem `memcmp`).
 
 ## Current frontier
 

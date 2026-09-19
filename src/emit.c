@@ -330,6 +330,7 @@ typedef struct {
     int allocator_used;
     int mem_copy_used; // __ace$mem_copy / __ace$mem_move
     int mem_fill_used; // __ace$mem_fill
+    int mem_compare_used; // __ace$mem_compare
     int current_is_main;
     Sec   secs[NSECS];
     SymTab syms;
@@ -2381,8 +2382,8 @@ static int byte_sequence_parts(Em* e, Node* at, EV value, SType* t,
 /*
  * Compare the complete byte sequences represented by [N]u8, []u8, or
  * string.  Both values have already been evaluated in source order.  A
- * length mismatch touches no element storage; equal nonzero lengths are
- * compared directly one unsigned byte at a time with no converted view.
+ * length mismatch touches no element storage; equal lengths are compared by
+ * the shared ordering routine with no converted view.
  */
 static EV gen_byte_sequence_eq(Em* e, Node* n, EV a, SType* at,
                                EV b, SType* bt, int eq) {
@@ -2396,28 +2397,13 @@ static EV gen_byte_sequence_eq(Em* e, Node* n, EV a, SType* at,
     ins(e, 0xEB00001Fu | ((uint32_t)xreg(blen) << 16) |
            ((uint32_t)xreg(alen) << 5)); // cmp alen, blen
     bcond_(e, C_NE, done);
-    load_imm(e, 0, xreg(out), 1);
-    cbz_(e, 1, xreg(alen), 0, done);
-
-    int aend = tmp_int(e);
-    ins(e, 0x8B000000u | ((uint32_t)xreg(alen) << 16) |
-           ((uint32_t)xreg(aptr) << 5) | (uint32_t)xreg(aend));
-    int loop = new_label(e), mismatch = new_label(e);
-    bind_label(e, loop);
-    ld_reg(e, 16, xreg(aptr), 0, 1, 0);
-    ld_reg(e, 17, xreg(bptr), 0, 1, 0);
-    ins(e, 0x6B00001Fu | (17u << 16) | (16u << 5)); // cmp w16, w17
-    bcond_(e, C_NE, mismatch);
-    ins(e, 0x91000400u | ((uint32_t)xreg(aptr) << 5) |
-           (uint32_t)xreg(aptr));
-    ins(e, 0x91000400u | ((uint32_t)xreg(bptr) << 5) |
-           (uint32_t)xreg(bptr));
-    ins(e, 0xEB00001Fu | ((uint32_t)xreg(aend) << 16) |
-           ((uint32_t)xreg(aptr) << 5));
-    bcond_(e, C_NE, loop);
-    br_(e, done);
-    bind_label(e, mismatch);
-    load_imm(e, 0, xreg(out), 0);
+    e->mem_compare_used = 1;
+    mov_int(e, 1, 15, xreg(aptr));
+    mov_int(e, 1, 16, xreg(bptr));
+    mov_int(e, 1, 17, xreg(alen));
+    emit_bl_internal(e, "__ace$mem_compare", 17);
+    ins(e, 0xF100001Fu | (17u << 5));                 // cmp x17, #0
+    cset_(e, 0, C_EQ, xreg(out));
 
     bind_label(e, done);
     if (!eq)
@@ -3308,36 +3294,17 @@ static EV gen_compare_builtin(Em* e, Node* call) {
     mov_int(e, 1, xreg(count), xreg(blen));
     bind_label(e, have_count);
 
+    // The shared routine orders the common prefix; zero-length prefixes
+    // touch no bytes, so empty slices may carry null pointers.
+    e->mem_compare_used = 1;
+    mov_int(e, 1, 15, xreg(aptr));
+    mov_int(e, 1, 16, xreg(bptr));
+    mov_int(e, 1, 17, xreg(count));
+    emit_bl_internal(e, "__ace$mem_compare", 17);
     int out = tmp_int(e);
-    load_imm(e, 1, xreg(out), 0);
-    int by_length = new_label(e), negative = new_label(e);
-    int positive = new_label(e), done = new_label(e);
-    cbz_(e, 1, xreg(count), 0, by_length);
-
-    int aend = tmp_int(e);
-    ins(e, 0x8B000000u | ((uint32_t)xreg(count) << 16) |
-           ((uint32_t)xreg(aptr) << 5) | (uint32_t)xreg(aend));
-    int loop = new_label(e);
-    bind_label(e, loop);
-    ld_reg(e, 16, xreg(aptr), 0, 1, 0);
-    ld_reg(e, 17, xreg(bptr), 0, 1, 0);
-    ins(e, 0x6B00001Fu | (17u << 16) | (16u << 5)); // cmp w16, w17
-    bcond_(e, C_LO, negative);
-    bcond_(e, C_HI, positive);
-    ins(e, 0x91000400u | ((uint32_t)xreg(aptr) << 5) |
-           (uint32_t)xreg(aptr));
-    ins(e, 0x91000400u | ((uint32_t)xreg(bptr) << 5) |
-           (uint32_t)xreg(bptr));
-    ins(e, 0xEB00001Fu | ((uint32_t)xreg(aend) << 16) |
-           ((uint32_t)xreg(aptr) << 5));
-    bcond_(e, C_NE, loop);
-    br_(e, by_length);
-
-    bind_label(e, positive);
-    load_imm(e, 1, xreg(out), 1);
-    br_(e, done);
-
-    bind_label(e, by_length);
+    mov_int(e, 1, xreg(out), 17);
+    int negative = new_label(e), done = new_label(e);
+    cbz_(e, 1, xreg(out), 1, done);
     ins(e, 0xEB00001Fu | ((uint32_t)xreg(blen) << 16) |
            ((uint32_t)xreg(alen) << 5)); // equal prefix: shorter slice sorts first
     bcond_(e, C_EQ, done);
@@ -7062,6 +7029,13 @@ static void vmem(Em* e, uint32_t op, int rt, int rn, int32_t off) {
            (uint32_t)rt);
 }
 
+// Pad with nops to a code boundary; __text is 64-byte aligned, so the
+// boundary holds after linking. Hot loops start on one to avoid splitting
+// across fetch blocks and cache lines.
+static void align_code(Em* e, uint32_t bytes) {
+    while (text(e)->len % bytes) ins(e, 0xD503201Fu);
+}
+
 // Q-register LDP/STP (op selects offset, pre-, or post-index form).
 static void vpair(Em* e, uint32_t op, int rt, int rt2, int rn, int32_t off) {
     ins(e, op | (((uint32_t)(off / 16) & 0x7Fu) << 15) | ((uint32_t)rt2 << 10) |
@@ -7077,6 +7051,18 @@ enum {
     LDP_Q_POST = 0xACC00000u, STP_Q_POST = 0xAC800000u,
     LDP_Q_PRE = 0xADC00000u, STP_Q_PRE = 0xAD800000u,
 };
+
+// Branch to mismatch when the 32 bytes at [x15] and [x16] differ.
+static void compare_block32(Em* e, int mismatch) {
+    vpair(e, LDP_Q, 24, 25, 15, 0);
+    vpair(e, LDP_Q, 26, 27, 16, 0);
+    ins(e, 0x6E201C00u | (26u << 16) | (24u << 5) | 24u); // eor v24, v24, v26
+    ins(e, 0x6E201C00u | (27u << 16) | (25u << 5) | 25u); // eor v25, v25, v27
+    ins(e, 0x4EA01C00u | (25u << 16) | (24u << 5) | 24u); // orr v24, v24, v25
+    ins(e, 0x6EA0A400u | (24u << 16) | (24u << 5) | 24u); // umaxp v24.4s
+    ins(e, 0x9E660000u | (24u << 5) | 8u);                // fmov x8, d24
+    cbz_(e, 1, 8, 1, mismatch);
+}
 
 /*
  * Shared byte-operation routines, emitted once per object when used. A private
@@ -7182,6 +7168,7 @@ static void emit_byte_helpers(Em* e) {
         vpair(e, STP_Q_POST, 24, 25, 15, 32);
         ins(e, 0xF1000000u | (64u << 10) | (17u << 5) | 17u); // subs x17, x17, #64
         bcond_(e, C_LS, tail);
+        align_code(e, 16);
         bind_label(e, loop);
         vpair(e, LDP_Q_POST, 24, 25, 16, 32);
         vpair(e, STP_Q_POST, 24, 25, 15, 32);
@@ -7197,6 +7184,7 @@ static void emit_byte_helpers(Em* e) {
         ins(e, 0x8B000000u | (17u << 16) | (16u << 5) | 16u);
         ins(e, 0x8B000000u | (17u << 16) | (15u << 5) | 15u);
         ins(e, 0xD1000000u | (32u << 10) | (17u << 5) | 17u);
+        align_code(e, 16);
         bind_label(e, bloop);
         vpair(e, LDP_Q_PRE, 24, 25, 16, -32);
         vpair(e, STP_Q_PRE, 24, 25, 15, -32);
@@ -7247,10 +7235,137 @@ static void emit_byte_helpers(Em* e) {
         ins(e, 0x8B000000u | (17u << 16) | (15u << 5) | 8u);
         vpair(e, STP_Q, 24, 24, 8, -32);
         ins(e, 0xD1000000u | (32u << 10) | (17u << 5) | 17u); // sub x17, x17, #32
+        align_code(e, 16);
         bind_label(e, loop);
         vpair(e, STP_Q_POST, 24, 24, 15, 32);
         ins(e, 0xF1000000u | (32u << 10) | (17u << 5) | 17u); // subs x17, x17, #32
         bcond_(e, C_HI, loop);
+        ins(e, 0xD65F03C0u);
+    }
+    if (e->mem_compare_used) {
+        int lt16 = new_label(e), lt8 = new_label(e), lt4 = new_label(e);
+        int gt32 = new_label(e), loop = new_label(e), words = new_label(e);
+        int same = new_label(e), diff = new_label(e), res16 = new_label(e);
+        int res32 = new_label(e), last = new_label(e);
+
+        /*
+         * compare: x15 = a, x16 = b, x17 = common length; returns -1, 0, or 1
+         * in x17 by the first differing unsigned byte. NEON locates a
+         * differing 16- or 32-byte chunk; byte-reversed 64-bit words then
+         * order it, since reversal puts the first byte in the high bits.
+         * Overlapping tail chunks rescan only bytes already known equal.
+         */
+        sym_define(&e->syms, e->secs, "__ace$mem_compare", 17, 0,
+                   &e->secs[SEC_TEXT]);
+        ins(e, 0xF100001Fu | (16u << 10) | (17u << 5));   // cmp x17, #16
+        bcond_(e, C_LO, lt16);
+        ins(e, 0xF100001Fu | (32u << 10) | (17u << 5));   // cmp x17, #32
+        bcond_(e, C_HI, gt32);
+        vmem(e, LDUR_Q, 24, 15, 0);                        // 16..32: head
+        vmem(e, LDUR_Q, 25, 16, 0);
+        ins(e, 0x6E201C00u | (25u << 16) | (24u << 5) | 24u); // eor v24, v24, v25
+        ins(e, 0x6EA0A400u | (24u << 16) | (24u << 5) | 24u); // umaxp v24.4s
+        ins(e, 0x9E660000u | (24u << 5) | 8u);                // fmov x8, d24
+        cbz_(e, 1, 8, 1, res16);
+        ins(e, 0x8B000000u | (17u << 16) | (15u << 5) | 15u); // then the tail
+        ins(e, 0x8B000000u | (17u << 16) | (16u << 5) | 16u);
+        ins(e, 0xD1000000u | (16u << 10) | (15u << 5) | 15u);
+        ins(e, 0xD1000000u | (16u << 10) | (16u << 5) | 16u);
+        vmem(e, LDUR_Q, 24, 15, 0);
+        vmem(e, LDUR_Q, 25, 16, 0);
+        ins(e, 0x6E201C00u | (25u << 16) | (24u << 5) | 24u);
+        ins(e, 0x6EA0A400u | (24u << 16) | (24u << 5) | 24u);
+        ins(e, 0x9E660000u | (24u << 5) | 8u);
+        cbz_(e, 1, 8, 0, same);
+        bind_label(e, res16);                              // [x15], [x16] differ in 16
+        ld_reg(e, 8, 15, 0, 8, 0);
+        ld_reg(e, 17, 16, 0, 8, 0);
+        ins(e, 0xEB00001Fu | (17u << 16) | (8u << 5));    // cmp x8, x17
+        bcond_(e, C_NE, diff);
+        ld_reg(e, 8, 15, 8, 8, 0);
+        ld_reg(e, 17, 16, 8, 8, 0);
+        br_(e, diff);
+
+        bind_label(e, gt32);                               // 33+: 32-byte blocks
+        ins(e, 0xD1000000u | (32u << 10) | (17u << 5) | 17u); // sub x17, x17, #32
+        align_code(e, 16);
+        bind_label(e, loop);
+        compare_block32(e, res32);
+        ins(e, 0x91000000u | (32u << 10) | (15u << 5) | 15u); // add x15, x15, #32
+        ins(e, 0x91000000u | (32u << 10) | (16u << 5) | 16u);
+        ins(e, 0xF1000000u | (32u << 10) | (17u << 5) | 17u); // subs x17, x17, #32
+        bcond_(e, C_HI, loop);
+        ins(e, 0x8B000000u | (17u << 16) | (15u << 5) | 15u); // final block: end - 32
+        ins(e, 0x8B000000u | (17u << 16) | (16u << 5) | 16u);
+        compare_block32(e, res32);
+        br_(e, same);
+        bind_label(e, res32);                              // [x15], [x16] differ in 32
+        for (int w = 0; w < 3; w++) {
+            ld_reg(e, 8, 15, (uint32_t)w * 8, 8, 0);
+            ld_reg(e, 17, 16, (uint32_t)w * 8, 8, 0);
+            ins(e, 0xEB00001Fu | (17u << 16) | (8u << 5));
+            bcond_(e, C_NE, diff);
+        }
+        ld_reg(e, 8, 15, 24, 8, 0);
+        ld_reg(e, 17, 16, 24, 8, 0);
+        br_(e, diff);
+
+        bind_label(e, lt16);                               // 8..15: two overlapping words
+        ins(e, 0xF100001Fu | (8u << 10) | (17u << 5));    // cmp x17, #8
+        bcond_(e, C_LO, lt8);
+        ins(e, 0xD1000000u | (8u << 10) | (17u << 5) | 17u); // x17 = tail offset
+        vmem(e, LDUR_D, 24, 15, 0);
+        vmem(e, LDUR_D, 25, 16, 0);
+        ins(e, 0xFC606800u | (17u << 16) | (15u << 5) | 26u); // ldr d26, [x15, x17]
+        ins(e, 0xFC606800u | (17u << 16) | (16u << 5) | 27u); // ldr d27, [x16, x17]
+        br_(e, words);
+        bind_label(e, lt8);                                // 4..7: two overlapping halves
+        ins(e, 0xF100001Fu | (4u << 10) | (17u << 5));    // cmp x17, #4
+        bcond_(e, C_LO, lt4);
+        ins(e, 0xD1000000u | (4u << 10) | (17u << 5) | 17u);
+        vmem(e, LDUR_S, 24, 15, 0);
+        vmem(e, LDUR_S, 25, 16, 0);
+        ins(e, 0xBC606800u | (17u << 16) | (15u << 5) | 26u); // ldr s26, [x15, x17]
+        ins(e, 0xBC606800u | (17u << 16) | (16u << 5) | 27u); // ldr s27, [x16, x17]
+        br_(e, words);
+        bind_label(e, lt4);                                // 1..3: first, middle, last
+        cbz_(e, 1, 17, 0, same);
+        ins(e, 0xD341FE28u);                               // lsr x8, x17, #1
+        vmem(e, LDUR_B, 24, 15, 0);
+        vmem(e, LDUR_B, 25, 16, 0);
+        ins(e, 0x3C606800u | (8u << 16) | (15u << 5) | 28u); // ldr b28, [x15, x8]
+        ins(e, 0x3C606800u | (8u << 16) | (16u << 5) | 29u); // ldr b29, [x16, x8]
+        ins(e, 0x8B000000u | (17u << 16) | (15u << 5) | 15u);
+        ins(e, 0x8B000000u | (17u << 16) | (16u << 5) | 16u);
+        vmem(e, LDUR_B, 30, 15, -1);
+        vmem(e, LDUR_B, 31, 16, -1);
+        ins(e, 0x6E000400u | (3u << 16) | (28u << 5) | 24u); // mov v24.b[1], v28.b[0]
+        ins(e, 0x6E000400u | (5u << 16) | (30u << 5) | 24u); // mov v24.b[2], v30.b[0]
+        ins(e, 0x6E000400u | (3u << 16) | (29u << 5) | 25u); // mov v25.b[1], v29.b[0]
+        ins(e, 0x6E000400u | (5u << 16) | (31u << 5) | 25u); // mov v25.b[2], v31.b[0]
+        ins(e, 0x9E660000u | (24u << 5) | 8u);             // fmov x8, d24
+        ins(e, 0x9E660000u | (25u << 5) | 17u);            // fmov x17, d25
+        br_(e, last);
+        bind_label(e, words);                              // head words, then tail words
+        ins(e, 0x9E660000u | (24u << 5) | 8u);
+        ins(e, 0x9E660000u | (25u << 5) | 17u);
+        ins(e, 0xEB00001Fu | (17u << 16) | (8u << 5));
+        bcond_(e, C_NE, diff);
+        ins(e, 0x9E660000u | (26u << 5) | 8u);
+        ins(e, 0x9E660000u | (27u << 5) | 17u);
+        bind_label(e, last);
+        ins(e, 0xEB00001Fu | (17u << 16) | (8u << 5));
+        bcond_(e, C_NE, diff);
+        bind_label(e, same);
+        load_imm(e, 1, 17, 0);
+        ins(e, 0xD65F03C0u);
+        bind_label(e, diff);                               // x8 != x17 in memory order
+        ins(e, 0xDAC00C00u | (8u << 5) | 8u);              // rev x8, x8
+        ins(e, 0xDAC00C00u | (17u << 5) | 17u);            // rev x17, x17
+        ins(e, 0xEB00001Fu | (17u << 16) | (8u << 5));
+        load_imm(e, 1, 17, 1);
+        ins(e, 0xDA800400u | (17u << 16) | ((uint32_t)C_HS << 12) |
+               (17u << 5) | 17u);                          // cneg x17, x17, lo
         ins(e, 0xD65F03C0u);
     }
     patch_branches(e);
@@ -7359,7 +7474,7 @@ int emit_object(Node* file, Diag* d, const char* out_path,
     static const Sec PROTO[NSECS] = {
         [SEC_TEXT]       = { .sect = "__text",       .seg = "__TEXT",
                              .flags = S_ATTR_PURE_INSTRUCTIONS |
-                                      S_ATTR_SOME_INSTRUCTIONS, .align = 2 },
+                                      S_ATTR_SOME_INSTRUCTIONS, .align = 6 },
         [SEC_CONST]      = { .sect = "__const",      .seg = "__DATA_CONST",
                              .align = 4 },
         [SEC_DATA]       = { .sect = "__data",       .seg = "__DATA",

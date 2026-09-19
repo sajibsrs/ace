@@ -1,0 +1,120 @@
+/* Wide byte comparison and equality: a single difference at every position of
+ * every size class, at unaligned offsets. A contradicting second difference
+ * right after the first proves the first differing byte decides the order,
+ * and high bytes prove the comparison is unsigned.
+ */
+
+// expect-exit: 42
+
+import mem
+
+seed(data: mut []u8, salt: usize) {
+    for i: usize in 0 .. data.len {
+        data[i] = u8((i * 13 + salt) % 97 + 64)
+    }
+}
+
+// Lengths 0..130 cross every size class; 300 and 4096 run the 32-byte loop.
+length_at(i: usize): usize {
+    if i <= 130 {
+        return i
+    }
+
+    if i == 131 {
+        return 300
+    }
+    return 4096
+}
+
+check_order(a_all: mut []u8, b_all: mut []u8): bool {
+    for li: usize in 0 .. 133 {
+        count: usize = length_at(li)
+
+        for shift: usize in 0 .. 4 {
+            ao: usize = shift * 5 % 16
+            bo: usize = shift * 3 % 16
+            a: mut []u8 = mut a_all[ao .. ao + count]
+            b: mut []u8 = mut b_all[bo .. bo + count]
+            seed(a, count)
+            seed(b, count)
+
+            if mem.compare(a, b) != 0 || !mem.equal(a, b) {
+                return false
+            }
+
+            for p: usize in 0 .. count {
+                if count > 130 && p % 29 != 0 && p + 40 < count {
+                    continue
+                }
+                saved_a: u8 = a[p]
+                saved_b: u8 = b[p]
+                a[p] = 200
+                b[p] = 100
+                next_a: u8 = 0
+                next_b: u8 = 0
+
+                if p + 1 < count {
+                    next_a = a[p + 1]
+                    next_b = b[p + 1]
+                    a[p + 1] = 0
+                    b[p + 1] = 255
+                }
+
+                if mem.compare(a, b) != 1 || mem.compare(b, a) != -1 {
+                    return false
+                }
+
+                if mem.equal(a, b) || mem.equal(b, a) {
+                    return false
+                }
+                a[p] = saved_a
+                b[p] = saved_b
+
+                if p + 1 < count {
+                    a[p + 1] = next_a
+                    b[p + 1] = next_b
+                }
+            }
+        }
+    }
+    return true
+}
+
+check_prefix(a_all: mut []u8, b_all: mut []u8): bool {
+    for li: usize in 0 .. 132 {
+        count: usize = length_at(li)
+        a: mut []u8 = mut a_all[0 .. count + 3]
+        b: mut []u8 = mut b_all[0 .. count + 3]
+        seed(a, 1)
+        seed(b, 1)
+        shorter: []u8 = a[0 .. count]
+
+        if mem.compare(shorter, b) != -1 || mem.compare(b, shorter) != 1 {
+            return false
+        }
+
+        if mem.equal(shorter, b) || mem.equal(b, shorter) {
+            return false
+        }
+    }
+    return true
+}
+
+main(): int {
+    a: [4200]u8 = [u8(0) : 4200]
+    b: [4200]u8 = [u8(0) : 4200]
+
+    if !check_order(mut a[..], mut b[..]) {
+        return 1
+    }
+
+    if !check_prefix(mut a[..], mut b[..]) {
+        return 2
+    }
+    empty: []u8 = a[0 .. 0]
+
+    if mem.compare(empty, empty) != 0 || !mem.equal(empty, empty) {
+        return 3
+    }
+    return 42
+}

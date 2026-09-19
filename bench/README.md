@@ -53,6 +53,13 @@ Apple-arm64 machine produced these median copy results:
 The remaining 64-byte gap is mostly the benchmark loop itself: its `i % 64`
 index still lowers to `udiv`, and loop state stays in stack slots.
 
+After `mem.compare` and `mem.equal` moved to one shared NEON scan, with helper
+loop heads aligned to 16 bytes, twelve runs of one release binary produced
+median compare results of 8.1 ns for 64 bytes (C 3.84 ns, 2.1x) and 107 ns for
+4096 bytes (C 159 ns, 0.67x). Before loop alignment, the same copy loop
+straddled a cache line and measured 135 ns instead of 82 ns; placement matters
+as much as instruction choice at this scale.
+
 ### Native float-parser optimization checkpoint
 
 After adding exact-small and Eisel-Lemire fixed-width tiers, then specializing

@@ -354,7 +354,10 @@ per object file that selects a size class: up to 64 bytes, it covers the range
 with two overlapping chunks after loading every source byte, so the same code
 serves overlapping moves; larger ranges run 32-byte loops from a 32-byte-aligned
 destination, with the far-end chunk loaded before the loop starts. `move`
-walks backward only when the destination begins inside the source. On Apple
+walks backward only when the destination begins inside the source.
+`compare` and `equal` share one ordering routine: it scans 16- or 32-byte
+chunks for a difference, then orders the first differing byte by comparing
+byte-reversed 64-bit words, so `equal` costs no more than a scan. On Apple
 arm64 these routines use NEON registers internally; this is instruction
 selection only and adds no vector facility to the language.
 
