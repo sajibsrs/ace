@@ -215,6 +215,12 @@ of `format-f64-shortest` 366 ns (from 374) and `parse-f64` 141 ns (from 144).
 `find-4096` stayed at 9,855 ns although its inner loop fell from 16 to 13
 instructions: the removed register moves were not on its load-latency path.
 
+### Word-at-a-time search checkpoint
+
+After `str` search moved to an eight-byte first-and-last-byte filter, five
+alternating runs produced `find-4096` medians of 1,454 ns for Ace versus
+1,993 ns for C `strstr` (0.73x, from 5.0x); other workloads were unchanged.
+
 ## Memory
 
 Run the v1 raw-memory benchmark on Apple arm64:

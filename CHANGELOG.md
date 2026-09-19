@@ -1075,6 +1075,13 @@ current normative rules, and Git preserves patch-level detail.
   iterating: a range whose first endpoint exceeds its second runs downward,
   so `split` with a multi-byte separator ending the text read past the end
   (a checked bounds abort).
+- `str` search is word-at-a-time: byte search tests eight bytes per
+  `@byte_load` load with the exact carry-free zero-byte test
+  `~(((x & 0x7F…) + 0x7F…) | x | 0x7F…)` and `bits.trail_zeros`; substring
+  search loads the words at each start and at start + len - 1, keeps
+  positions matching both the first and last needle byte, and confirms each
+  candidate with `mem.equal`. `find-4096` fell from 9,860 to 1,450 ns
+  (0.73x C `strstr`).
 
 ## Current frontier
 

@@ -9,10 +9,21 @@
  * `fmt.print` overloads.
  */
 
+import bits
 import mem
 
 import decimal: @float_decimal
 import float_parse: @float_parse
+import load: @byte_load
+
+/* Word-at-a-time search constants. For a word x, ~(((x & LOW7) + LOW7) | x |
+ * LOW7) has 0x80 exactly in the bytes of x that are zero: each masked byte
+ * sum is at most 0xFE, so no carry crosses a byte and the test is exact.
+ * Byte i of a word is text[at + i] on the little-endian target, so the
+ * lowest set bit marks the first match.
+ */
+ONES: const u64 = 0x0101010101010101
+LOW7: const u64 = 0x7F7F7F7F7F7F7F7F
 
 /* First occurrence of needle: the byte index and whether it was found; an
  * empty string needle is found at zero, and absence returns canonical zero.
@@ -522,7 +533,9 @@ store_text(destination: mut []char, text: string): (usize, bool) {
 }
 
 /* First occurrence of needle at or after from: the index and whether the
- * needle was found. An empty needle is found at every position.
+ * needle was found. An empty needle is found at every position. Eight start
+ * positions are filtered per step by needle's first and last bytes together;
+ * each surviving candidate is confirmed whole.
  */
 index_from(text: string, needle: string, after: usize): (usize, bool) {
     if needle.len == 0 {
@@ -534,30 +547,58 @@ index_from(text: string, needle: string, after: usize): (usize, bool) {
         return 0, false
     }
 
-    for scan: usize in after .. text.len + 1 - needle.len {
-        match: bool = true
+    if needle.len == 1 {
+        index: usize, found: bool = index_byte_from(text, needle[0], after)
+        return index, found
+    }
+    last: usize = needle.len - 1
+    first_pattern: u64 = u64(needle[0]) * ONES
+    last_pattern: u64 = u64(needle[last]) * ONES
+    at: usize = after
 
-        for j: usize in 0 .. needle.len {
-            if text[scan + j] != needle[j] {
-                match = false
-                break
+    for at + last + 8 <= text.len {
+        a: u64 = load.unaligned_u64(text, at) ^ first_pattern
+        b: u64 = load.unaligned_u64(text, at + last) ^ last_pattern
+        hit: u64 = ~(((a & LOW7) + LOW7) | a | ((b & LOW7) + LOW7) | b | LOW7)
+
+        for hit != 0 {
+            scan: usize = at + usize(bits.trail_zeros(hit) / 8)
+
+            if mem.equal(text[scan..scan + needle.len], needle) {
+                return scan, true
             }
+            hit &= hit - 1
         }
+        at += 8
+    }
 
-        if match {
+    for scan: usize in at .. text.len - last {
+        if text[scan] == needle[0] && mem.equal(text[scan..scan + needle.len], needle) {
             return scan, true
         }
     }
     return 0, false
 }
 
-/* First occurrence of one byte at or after from. */
+/* First occurrence of one byte at or after from, eight bytes per step. */
 index_byte_from(text: string, byte: char, after: usize): (usize, bool) {
     if after >= text.len {
         return 0, false
     }
+    pattern: u64 = u64(byte) * ONES
+    at: usize = after
 
-    for i: usize in after .. text.len {
+    for at + 8 <= text.len {
+        x: u64 = load.unaligned_u64(text, at) ^ pattern
+        hit: u64 = ~(((x & LOW7) + LOW7) | x | LOW7)
+
+        if hit != 0 {
+            return at + usize(bits.trail_zeros(hit) / 8), true
+        }
+        at += 8
+    }
+
+    for i: usize in at .. text.len {
         if text[i] == byte {
             return i, true
         }

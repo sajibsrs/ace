@@ -1,0 +1,129 @@
+/*
+ * str.find, word-at-a-time, against a byte-by-byte reference: every start
+ * offset (so every word alignment), needles of length 1-10 taken from the
+ * text and made up, and bytes that stress the zero-byte test (0x00, 0x01,
+ * 0x7F, 0x80, 0xFF, and neighbors of the searched bytes).
+ */
+// expect-exit: 0
+
+import mem
+import str
+
+ALPHABET: const [8]u8 = [0, 1, 127, 128, 255, 97, 98, 99]
+
+seed: u64
+
+next(bound: u64): u64 {
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    return (seed >> 8) % bound
+}
+
+reference(text: string, needle: string): (usize, bool) {
+    if needle.len == 0 {
+        return 0, true
+    }
+
+    if needle.len > text.len {
+        return 0, false
+    }
+
+    for scan: usize in 0 .. text.len - needle.len + 1 {
+        if mem.equal(text[scan..scan + needle.len], needle) {
+            return scan, true
+        }
+    }
+    return 0, false
+}
+
+reference(text: string, byte: char): (usize, bool) {
+    for i: usize in 0 .. text.len {
+        if text[i] == byte {
+            return i, true
+        }
+    }
+    return 0, false
+}
+
+// every suffix of text against needle, as a string and (length 1) as a byte
+agree(text: string, needle: string): bool {
+    for k: usize in 0 .. text.len + 1 {
+        view: string = text[k..]
+        at: usize, found: bool = str.find(view, needle)
+        want: usize, hit: bool = reference(view, needle)
+
+        if found != hit || at != want {
+            return false
+        }
+
+        if needle.len == 1 {
+            at, found = str.find(view, needle[0])
+            want, hit = reference(view, needle[0])
+
+            if found != hit || at != want {
+                return false
+            }
+        }
+    }
+    return true
+}
+
+main(): int {
+    seed = 12345
+    storage: [48]u8 = [0 : 48]
+    probe: [10]u8 = [0 : 10]
+
+    for round: usize in 0 .. 300 {
+        drawn: u64 = next(49)
+        size: usize = usize(drawn)
+
+        for i: usize in 0 .. size {
+            pick: u64 = next(8)
+            storage[i] = ALPHABET[pick]
+        }
+        text: string = storage[0..size]
+
+        for length: usize in 1 .. 11 {
+            // a needle cut from the text, when it fits, and a made-up one
+            if length <= size {
+                offset: u64 = next(u64(size - length + 1))
+                cut: usize = usize(offset)
+
+                if !agree(text, text[cut..cut + length]) {
+                    return 1
+                }
+            }
+
+            for i: usize in 0 .. length {
+                pick: u64 = next(8)
+                probe[i] = ALPHABET[pick]
+            }
+
+            if !agree(text, probe[0..length]) {
+                return 2
+            }
+        }
+    }
+
+    // a late match after a long run of one byte, and a first byte that
+    // repeats before the whole needle matches
+    long: [4096]u8 = [97 : 4096]
+    long[4093] = 120
+    long[4094] = 121
+    long[4095] = 122
+    at: usize, found: bool = str.find(long[..], "xyz")
+
+    if !found || at != 4093 {
+        return 3
+    }
+    at, found = str.find(long[..], "aax")
+
+    if !found || at != 4091 {
+        return 4
+    }
+    at, found = str.find(long[..], "xya")
+
+    if found {
+        return 5
+    }
+    return 0
+}

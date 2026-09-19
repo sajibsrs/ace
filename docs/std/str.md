@@ -30,7 +30,10 @@ Search and ordering:
 - `find(text: string, needle: string): (usize, bool)` and
   `find(text: string, needle: char): (usize, bool)` — the first byte index and
   whether it was found; an empty string needle is found at zero and absence
-  returns canonical zero.
+  returns canonical zero. The search scans eight bytes per step, filtering
+  candidate positions by the needle's first and last bytes before comparing
+  the whole needle; the worst case stays proportional to text length times
+  needle length.
 - `has(text: string, needle: string): bool`,
   `has(text: string, needle: char): bool` — occurrence anywhere; an empty
   string needle is present.
