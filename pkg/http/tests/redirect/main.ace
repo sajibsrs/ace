@@ -59,6 +59,7 @@ client(port: u16): int {
     url_count, ok = str.concat(parts[..], mut url_bytes[..])
     if !ok { return 2 }
     context: http.ClientContext = http.client_context_new()
+    defer http.client_context_wipe(mut context)
     context.redirects = http.RedirectPolicy {limit = 10}
     response: http.Response, err: Error = http.get(
         url_bytes[..url_count], mut context)
@@ -66,25 +67,19 @@ client(port: u16): int {
     if err != null || response.status != 200 || !mem.equal(response.body, "done") {
         result = 3
     }
-    http.client_context_wipe(mut context)
     return result
 }
 
 main(): int {
     listener: tcp.Listener, err: Error = tcp.listen(loopback(u16(0)), usize(8))
+    defer tcp.close(mut listener)
     if err != null { return 10 }
     address: net.Addr4
     address, err = tcp.local(listener)
-    if err != null {
-        tcp.close(mut listener)
-        return 11
-    }
+    if err != null { return 11 }
 
     process: sys.Process, fork_err: Error = sys.fork()
-    if fork_err != null || process == -1 {
-        tcp.close(mut listener)
-        return 12
-    }
+    if fork_err != null || process == -1 { return 12 }
     if process == 0 {
         tcp.close(mut listener)
         sys.exit(client(address.port))
@@ -103,10 +98,7 @@ main(): int {
     mem.copy(mut scheme_response[..at], scheme_prefix)
     location_count: usize
     location_count, ok = str.concat(location_parts[..], mut scheme_response[at..])
-    if !ok {
-        tcp.close(mut listener)
-        return 13
-    }
+    if !ok { return 13 }
     at += location_count
     mem.copy(mut scheme_response[at..at + 21], "Content-Length: 0\r\n\r\n")
     at += 21
@@ -119,10 +111,7 @@ main(): int {
     absolute_response: [192]u8 = [0 : 192]
     absolute_count: usize
     absolute_count, ok = str.concat(absolute_parts[..], mut absolute_response[..])
-    if !ok {
-        tcp.close(mut listener)
-        return 14
-    }
+    if !ok { return 14 }
 
     err = serve(listener, "/a/b/start", "HTTP/1.1 301 Moved Permanently\r\nLocation: next\r\nContent-Length: 0\r\n\r\n")
     if err == null { err = serve(listener, "/a/b/next", "HTTP/1.1 302 Found\r\nLocation: ?q=1\r\nContent-Length: 0\r\n\r\n") }
@@ -131,7 +120,6 @@ main(): int {
     if err == null { err = serve(listener, "/scheme", absolute_response[..absolute_count]) }
     if err == null { err = serve(listener, "/final", "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\ndone") }
 
-    tcp.close(mut listener)
     status: sys.ProcessStatus, wait_err: Error = sys.wait(process)
     if err != null || wait_err != null || !status.exited || status.code != 0 { return 15 }
     return 0

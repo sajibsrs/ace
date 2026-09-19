@@ -181,6 +181,7 @@ depth_limit(): int {
 
     if derr != null { return 52 }
     w: json.Json, werr: Error = json.parse(deeper)
+    defer json.wipe(w)
 
     if werr != json.JsonErr.depth_exceeded { return 53 }
     return 0

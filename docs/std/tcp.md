@@ -15,12 +15,13 @@ import net/tcp
 serve_one(): int {
     address: net.Addr4 = net.Addr4 {ip = [127, 0, 0, 1], port = u16(8080)}
     listener: tcp.Listener, err: Error = tcp.listen(address, usize(128))
+    defer tcp.close(mut listener)
     if err != null {
         return 1
     }
     connection: tcp.Conn, peer: net.Addr4, accept_err: Error = tcp.accept(listener)
+    defer tcp.close(mut connection)
     if accept_err != null {
-        tcp.close(mut listener)
         return 2
     }
     storage: [4]u8 = [0 : 4]
@@ -29,8 +30,6 @@ serve_one(): int {
     if receive_err == null && count == 4 {
         count, receive_err = tcp.send_all(connection, "pong")
     }
-    tcp.close(mut connection)
-    tcp.close(mut listener)
     return 0
 }
 ```
@@ -52,10 +51,14 @@ a successful zero-progress send returns `SendAllErr(0)`. Both operations retry
 only `sys.EINTR`, preserving progress, and empty views succeed with count zero.
 Use `net.receive` or `net.send` when exactly one kernel attempt is required.
 
-`close(mut value)` attempts `sys.close` and then zeros the complete caller value
-even if closing fails. It returns `sys.CloseErr` unchanged. Canonical zero is
-not an ownership state and may contain fd 0, which is valid; close only a live
-handle you own. There is no destructor, alias invalidation, or ownership
+Each handle carries an `active` flag, set only by a successful constructor or
+accept, so canonical zero (`tcp.Listener {}`, `tcp.Conn {}`) is the empty
+handle even though fd 0 is valid. `close(mut value)` on an inactive handle is a
+silent no-op returning null; this is what lets `defer tcp.close(...)` sit
+directly after the constructor, before its error check. On an active handle it
+attempts `sys.close` and then zeros the complete caller value even if closing
+fails, returning `sys.CloseErr` unchanged. Copies are not found or
+deactivated; there is no destructor, alias invalidation, or ownership
 tracking.
 
 Stage 2 adds explicit nonblocking connection progress while leaving peer

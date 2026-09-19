@@ -25,12 +25,12 @@ read_file(path: string): (mut []u8, Error) {
         return null, json.JsonErr.allocation
     }
     fd: sys.Fd, oerr: Error = sys.open(path, sys.O_RDONLY)
+    defer sys.close(fd)
 
     if oerr != null {
         mem.release[u8](mut buffer)
         return null, oerr
     }
-    defer sys.close(fd)
     total: usize = 0
 
     for total < buffer.len {

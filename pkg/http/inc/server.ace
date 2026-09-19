@@ -170,8 +170,15 @@ respond_close(conn: tcp.Conn, response: Response, mut context: Context) {
     }
 }
 
-/* Reads exactly one request from `conn` and writes `router`'s response. */
-serve_one(conn: tcp.Conn, router: Router, mut context: Context) {
+/* Accepts one connection from `listener`, reads exactly one request from it,
+ * writes `router`'s response, and closes it. An accept failure just returns.
+ */
+serve_one(listener: tcp.Listener, router: Router, mut context: Context) {
+    conn: tcp.Conn, _: net.Addr4, accept_err: Error = tcp.accept(listener)
+    defer tcp.close(mut conn)
+    if accept_err != null {
+        return
+    }
     request: Request, ok: bool = read_request(conn, mut context)
     if !ok {
         return
@@ -185,7 +192,7 @@ serve_one(conn: tcp.Conn, router: Router, mut context: Context) {
 listen_endpoint(endpoint: string, backlog: usize): (tcp.Listener, Error) {
     address: net.Addr4, parsed: bool = net.parse4(endpoint)
     if !parsed {
-        return tcp.Listener{socket = net.Socket(0)}, ServerErr.capacity
+        return tcp.Listener {}, ServerErr.capacity
     }
     listener: tcp.Listener, listen_err: Error = tcp.listen(address, backlog)
     return listener, listen_err
@@ -203,16 +210,12 @@ listen_endpoint(endpoint: string, backlog: usize): (tcp.Listener, Error) {
  */
 pub serve(endpoint: string, mut context: Context, router: Router): Error {
     listener: tcp.Listener, listen_err: Error = listen_endpoint(endpoint, context.backlog)
+    defer tcp.close(mut listener)
     if listen_err != null {
         return listen_err
     }
 
     for {
-        conn: tcp.Conn, _: net.Addr4, accept_err: Error = tcp.accept(listener)
-        if accept_err != null {
-            continue
-        }
-        serve_one(conn, router, mut context)
-        tcp.close(mut conn)
+        serve_one(listener, router, mut context)
     }
 }

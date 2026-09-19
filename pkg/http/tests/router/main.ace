@@ -15,6 +15,7 @@ submit_route(request: http.Request): http.Response {
 
 main(): int {
     router: http.Router = http.router_new()
+    defer http.router_wipe(mut router)
 
     err: Error = mut router.handle(http.method_get, "/home", home_route)
     if err != null { return 1 }
@@ -47,6 +48,5 @@ main(): int {
     response = router.dispatch(http.Request {method = "POST", target = "/submit"})
     if response.status != 200 || !mem.equal(response.body, "submit") { return 17 }
 
-    http.router_wipe(mut router)
     return 0
 }

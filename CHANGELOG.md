@@ -936,6 +936,16 @@ current normative rules, and Git preserves patch-level detail.
   visits the `@align` slots it skipped. Previously such an expression naming
   its own module's enum or `const` stayed unprefixed, so the struct failed to
   resolve once imported.
+- Brought `pkg/http`, `pkg/json`, their tests, and demos under the
+  `defer`-after-acquisition discipline. `transport.get_with_storage` defers
+  the connection close instead of `exchange` closing a passed `raw` handle on
+  every exit; `server.serve_one` now accepts and defers its own connection
+  close, and `serve` defers the listener close.
+- `tcp.Listener` and `tcp.Conn` gained an `active` flag and canonical-zero
+  field defaults, making `Listener {}`/`Conn {}` the empty handle rather than
+  a live-looking descriptor zero; `close` on an inactive handle is a
+  syscall-free no-op returning null, so `defer tcp.close` precedes the error
+  check like `mem.release`. `pkg/http` now spells its empty handles that way.
 
 ## Current frontier
 

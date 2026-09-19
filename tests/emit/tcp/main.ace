@@ -42,7 +42,7 @@ client(port: u16): int {
         tcp.close(mut connection)
         return 4
     }
-    if tcp.close(mut connection) != null || connection.socket != 0 {
+    if tcp.close(mut connection) != null || connection.active {
         return 5
     }
     return 0
@@ -79,7 +79,7 @@ check_cleanup(): int {
         }
         return 43
     }
-    if listener.socket != 0 {
+    if listener.active {
         return 3
     }
 
@@ -95,7 +95,7 @@ check_cleanup(): int {
 
     connection: tcp.Conn
     connection, err = tcp.connect(loopback(u16(0)))
-    if !is_error(err, typeid(net.ConnectErr)) || connection.socket != 0 {
+    if !is_error(err, typeid(net.ConnectErr)) || connection.active {
         return 6
     }
     second: net.Socket
@@ -110,19 +110,32 @@ check_cleanup(): int {
         return 8
     }
 
-    invalid_connection: tcp.Conn = tcp.Conn {
-        socket = net.Socket(-1),
-        interest = tcp.Interest.none,
-        send_offset = usize(0),
-    }
+    invalid_connection: tcp.Conn = tcp.Conn {socket = net.Socket(-1), active = true}
     err = tcp.close(mut invalid_connection)
-    if !is_error(err, typeid(sys.CloseErr)) || invalid_connection.socket != 0 {
+    if !is_error(err, typeid(sys.CloseErr)) || invalid_connection.active ||
+       invalid_connection.socket != 0 {
         return 9
     }
-    invalid_listener: tcp.Listener = tcp.Listener {socket = net.Socket(-1)}
+    invalid_listener: tcp.Listener = tcp.Listener {socket = net.Socket(-1), active = true}
     err = tcp.close(mut invalid_listener)
-    if !is_error(err, typeid(sys.CloseErr)) || invalid_listener.socket != 0 {
+    if !is_error(err, typeid(sys.CloseErr)) || invalid_listener.active ||
+       invalid_listener.socket != 0 {
         return 10
+    }
+
+    // Closing an inactive handle is a silent no-op that never reaches the
+    // descriptor it holds: canonical zero carries descriptor zero.
+    if tcp.close(mut invalid_connection) != null || tcp.close(mut invalid_listener) != null {
+        return 11
+    }
+    probe: net.Socket
+    probe, socket_err = net.socket(net.SocketType.tcp)
+    if socket_err != null {
+        return 12
+    }
+    inactive: tcp.Conn = tcp.Conn {socket = probe}
+    if tcp.close(mut inactive) != null || inactive.socket != probe || sys.close(probe) != null {
+        return 13
     }
     return 0
 }
@@ -193,7 +206,7 @@ main(): int {
         tcp.close(mut listener)
         return 25
     }
-    if tcp.close(mut connection) != null || connection.socket != 0 {
+    if tcp.close(mut connection) != null || connection.active {
         tcp.close(mut listener)
         return 26
     }
@@ -231,7 +244,7 @@ main(): int {
         tcp.close(mut listener)
         return 31
     }
-    if tcp.close(mut listener) != null || listener.socket != 0 {
+    if tcp.close(mut listener) != null || listener.active {
         return 32
     }
     return 0

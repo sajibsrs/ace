@@ -3,8 +3,12 @@
 import net
 import sys
 
+/* `active` marks a live handle: canonical zero (`Listener {}`) is the empty
+ * handle, since descriptor zero is itself a valid descriptor.
+ */
 pub Listener: struct {
-    socket: net.Socket,
+    socket: net.Socket = net.Socket(0),
+    active: bool = false,
 }
 
 pub Interest: enum {
@@ -15,9 +19,10 @@ pub Interest: enum {
 }
 
 pub Conn: struct {
-    socket: net.Socket,
-    interest: Interest,
-    send_offset: usize,
+    socket: net.Socket = net.Socket(0),
+    interest: Interest = Interest.none,
+    send_offset: usize = 0,
+    active: bool = false,
 }
 
 pub Event: union {
@@ -37,24 +42,8 @@ pub SendAllErr: error {
     0: stalled = "connection made no progress while sending"
 }
 
-zero_listener(): Listener {
-    return Listener {socket = net.Socket(0)}
-}
-
-zero_connection(): Conn {
-    return Conn {
-        socket = net.Socket(0),
-        interest = Interest.none,
-        send_offset = usize(0),
-    }
-}
-
 connection(sock: net.Socket, interest: Interest): Conn {
-    return Conn {
-        socket = sock,
-        interest = interest,
-        send_offset = usize(0),
-    }
+    return Conn {socket = sock, interest = interest, active = true}
 }
 
 with_read(interest: Interest, enabled: bool): Interest {
@@ -93,7 +82,7 @@ pub listen(address: net.Addr4, backlog: usize): (Listener, Error) {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
     if err != null {
-        return zero_listener(), err
+        return Listener {}, err
     }
     err = net.reuse_addr(sock, true)
     if err == null {
@@ -104,21 +93,21 @@ pub listen(address: net.Addr4, backlog: usize): (Listener, Error) {
     }
     if err != null {
         sys.close(sock)
-        return zero_listener(), err
+        return Listener {}, err
     }
-    return Listener {socket = sock}, null
+    return Listener {socket = sock, active = true}, null
 }
 
 pub connect(address: net.Addr4): (Conn, Error) {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
     if err != null {
-        return zero_connection(), err
+        return Conn {}, err
     }
     err = net.connect(sock, address)
     if err != null {
         sys.close(sock)
-        return zero_connection(), err
+        return Conn {}, err
     }
     return connection(sock, Interest.read), null
 }
@@ -127,12 +116,12 @@ pub connect_nonblock(address: net.Addr4): (Conn, Error) {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
     if err != null {
-        return zero_connection(), err
+        return Conn {}, err
     }
     err = net.nonblock(sock, true)
     if err != null {
         sys.close(sock)
-        return zero_connection(), err
+        return Conn {}, err
     }
     connect_attempt: {
         err = net.connect(sock, address)
@@ -147,14 +136,14 @@ pub connect_nonblock(address: net.Addr4): (Conn, Error) {
         return connection(sock, Interest.write), null
     }
     sys.close(sock)
-    return zero_connection(), err
+    return Conn {}, err
 }
 
 pub listen_nonblock(address: net.Addr4, backlog: usize): (Listener, Error) {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
     if err != null {
-        return zero_listener(), err
+        return Listener {}, err
     }
     err = net.nonblock(sock, true)
     if err == null {
@@ -168,9 +157,9 @@ pub listen_nonblock(address: net.Addr4, backlog: usize): (Listener, Error) {
     }
     if err != null {
         sys.close(sock)
-        return zero_listener(), err
+        return Listener {}, err
     }
-    return Listener {socket = sock}, null
+    return Listener {socket = sock, active = true}, null
 }
 
 pub local(listener: Listener): (net.Addr4, Error) {
@@ -182,7 +171,7 @@ pub accept(listener: Listener): (Conn, net.Addr4, Error) {
     sock: net.Socket, address: net.Addr4, err: Error = net.accept(listener.socket)
 
     if err != null {
-        return zero_connection(), address, err
+        return Conn {}, address, err
     }
     return connection(sock, Interest.read), address, null
 }
@@ -191,12 +180,12 @@ pub accept_nonblock(listener: Listener): (Conn, net.Addr4, Error) {
     sock: net.Socket, address: net.Addr4, err: Error = net.accept(listener.socket)
 
     if err != null {
-        return zero_connection(), address, err
+        return Conn {}, address, err
     }
     err = net.nonblock(sock, true)
     if err != null {
         sys.close(sock)
-        return zero_connection(), address, err
+        return Conn {}, address, err
     }
     return connection(sock, Interest.read), address, null
 }
@@ -323,14 +312,23 @@ pub send_all(connection: Conn, data: []u8): (usize, Error) {
     return sent, null
 }
 
+/* A no-op returning null on an inactive handle, so a deferred close may
+ * precede the constructor's error check.
+ */
 pub close(mut listener: Listener): Error {
+    if !listener.active {
+        return null
+    }
     err: Error = sys.close(listener.socket)
-    listener = zero_listener()
+    listener = Listener {}
     return err
 }
 
 pub close(mut connection: Conn): Error {
+    if !connection.active {
+        return null
+    }
     err: Error = sys.close(connection.socket)
-    connection = zero_connection()
+    connection = Conn {}
     return err
 }
