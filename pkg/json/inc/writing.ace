@@ -37,7 +37,7 @@ pub Writer: struct {
     err: Error,
 }
 
-pub writer_new(output: mut []u8): Writer {
+pub writer(output: mut []u8): Writer {
     return Writer{
         output = output,
         at = 0,
@@ -272,7 +272,7 @@ pub mut Writer.field(name: string, tree: Json) {
 
 /* Serializes a complete value tree into caller-owned storage. */
 pub format(value: Json, output: mut []u8): (usize, Error) {
-    w: Writer = writer_new(output)
+    w: Writer = writer(output)
     mut w.value(value)
     n: usize, err: Error = w.finish()
     return n, err

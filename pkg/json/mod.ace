@@ -21,8 +21,8 @@ pub wipe(v: Json) {
     jsonval.wipe(v)
 }
 
-pub writer_new(output: mut []u8): Writer {
-    return writing.writer_new(output)
+pub writer(output: mut []u8): Writer {
+    return writing.writer(output)
 }
 
 pub format(value: Json, output: mut []u8): (usize, Error) {

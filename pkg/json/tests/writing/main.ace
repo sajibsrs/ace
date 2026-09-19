@@ -10,7 +10,7 @@ same(output: []u8, n: usize, err: Error, expected: string): bool {
 
 fields(): int {
     buf: [128]u8
-    w: json.Writer = json.writer_new(mut buf[..])
+    w: json.Writer = json.writer(mut buf[..])
     mut w.object()
     mut w.field("level", "info")
     mut w.field("status", 200)
@@ -33,7 +33,7 @@ fields(): int {
 
 nesting(): int {
     buf: [128]u8
-    w: json.Writer = json.writer_new(mut buf[..])
+    w: json.Writer = json.writer(mut buf[..])
     mut w.object()
     mut w.key("tags")
     mut w.array()
@@ -56,7 +56,7 @@ nesting(): int {
 
 scalar_root(): int {
     buf: [16]u8
-    w: json.Writer = json.writer_new(mut buf[..])
+    w: json.Writer = json.writer(mut buf[..])
     mut w.value(1.0e21)
     n: usize, err: Error = w.finish()
 
@@ -85,7 +85,7 @@ tree(): int {
 
 escapes(): int {
     buf: [64]u8
-    w: json.Writer = json.writer_new(mut buf[..])
+    w: json.Writer = json.writer(mut buf[..])
     mut w.value("q\"b\\n\nt\tc\x01é")
     n: usize, err: Error = w.finish()
 
@@ -102,49 +102,49 @@ failures(): int {
     n: usize
     err: Error
 
-    w: json.Writer = json.writer_new(mut small[..])
+    w: json.Writer = json.writer(mut small[..])
     mut w.value("toolong")
     n, err = w.finish()
     if err != json.FormatErr.capacity { return 51 }
 
-    w = json.writer_new(mut buf[..])
+    w = json.writer(mut buf[..])
     mut w.value(nan)
     n, err = w.finish()
     if err != json.FormatErr.number { return 52 }
 
-    w = json.writer_new(mut buf[..])
+    w = json.writer(mut buf[..])
     mut w.object()
     mut w.value(1)
     n, err = w.finish()
     if err != json.FormatErr.structure { return 53 }
 
-    w = json.writer_new(mut buf[..])
+    w = json.writer(mut buf[..])
     mut w.array()
     mut w.key("k")
     n, err = w.finish()
     if err != json.FormatErr.structure { return 54 }
 
-    w = json.writer_new(mut buf[..])
+    w = json.writer(mut buf[..])
     mut w.value(1)
     mut w.value(2)
     n, err = w.finish()
     if err != json.FormatErr.structure { return 55 }
 
-    w = json.writer_new(mut buf[..])
+    w = json.writer(mut buf[..])
     mut w.array()
     n, err = w.finish()
     if err != json.FormatErr.structure { return 56 }
 
-    w = json.writer_new(mut buf[..])
+    w = json.writer(mut buf[..])
     mut w.end()
     n, err = w.finish()
     if err != json.FormatErr.structure { return 57 }
 
-    w = json.writer_new(mut buf[..])
+    w = json.writer(mut buf[..])
     n, err = w.finish()
     if err != json.FormatErr.structure { return 58 }
 
-    w = json.writer_new(mut buf[..])
+    w = json.writer(mut buf[..])
     mut w.object()
     mut w.key("k")
     mut w.end()
@@ -152,7 +152,7 @@ failures(): int {
     if err != json.FormatErr.structure { return 59 }
 
     deep: [1100]u8
-    w = json.writer_new(mut deep[..])
+    w = json.writer(mut deep[..])
     for i: int in 0 .. 513 {
         mut w.array()
     }
@@ -160,7 +160,7 @@ failures(): int {
     if err != json.FormatErr.depth { return 60 }
 
     /* The first error sticks: a later capacity failure does not replace it. */
-    w = json.writer_new(mut small[..])
+    w = json.writer(mut small[..])
     mut w.value(nan)
     mut w.value("toolong")
     n, err = w.finish()

@@ -422,6 +422,9 @@ current normative rules, and Git preserves patch-level detail.
   in place of their private externs.
 - Implemented `time.elapsed` and `time.awake` as separate monotonic clocks in
   the `time` module over a private Darwin binding.
+- Renamed `json.writer_new` to `json.writer`: a constructor carries the `_new`
+  suffix exactly when a matching `_wipe` releases what it returns, and the
+  writer is a plain value over a caller-owned buffer.
 - Added the Darwin Apple-arm64 `sys.ioctl` escape hatch with the native
   `unsigned long` request width, variadic-call ABI, caller-owned byte arguments,
   immediate `IoctlErr` capture, and SDK-verified BPF constants/layouts; the

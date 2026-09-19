@@ -102,7 +102,7 @@ import json
 
 main(): int {
     buf: [256]u8
-    w: json.Writer = json.writer_new(mut buf[..])
+    w: json.Writer = json.writer(mut buf[..])
     mut w.object()
     mut w.field("level", "info")
     mut w.field("status", 200)
@@ -133,7 +133,7 @@ main(): int {
 | `finish()` | returns `(usize, Error)`: the byte count, or the first error |
 
 `json.format(value, output): (usize, Error)` writes a whole `Json` tree; it is
-`writer_new`, `value`, and `finish` in one call.
+`writer`, `value`, and `finish` in one call.
 
 Strings escape `"`, `\`, and control bytes below 0x20 (`\b`, `\f`, `\n`,
 `\r`, `\t`, otherwise `\u00XX`); every other byte, including UTF-8, is
@@ -185,7 +185,7 @@ render(count: int): (mut []u8, usize, Error) {
         if buf == null {
             return null, 0, json.JsonErr.allocation
         }
-        w: json.Writer = json.writer_new(buf)
+        w: json.Writer = json.writer(buf)
         write_items(mut w, count)
         n: usize, err: Error = w.finish()
 
