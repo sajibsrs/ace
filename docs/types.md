@@ -395,7 +395,10 @@ An array repetition literal `[value : count]` takes its exact array type from
 the surrounding declaration, assignment, return, or parameter. `count` is a
 compile-time constant expression and must evaluate to the array type's
 length. `value` is evaluated once and copied into every element in index
-order; no allocation or shared element storage is introduced.
+order; no allocation or shared element storage is introduced. A constant
+whose encoding repeats one byte, or a runtime one-byte integer, fills the whole
+array in one pass; any other value is stored into element 0 and the filled
+prefix is doubled by copies, so generated code grows with `log2(count)`.
 
 The direct read-only property `sequence.len` is available on built-in arrays (constant element
 count), slices (stored element count), and strings (stored byte count), including

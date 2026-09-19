@@ -159,6 +159,13 @@ runs each of both benchmarks matched the previous checkpoints within noise;
 loop body is 152 bytes across three cache lines, so head alignment cannot
 recover its earlier 16.6 us best placement until loop bodies shrink.
 
+### Repeat-initializer checkpoint
+
+After `[value : count]` moved to whole-array fill and doubling copies, the
+string benchmark's `__text` fell from 358 KB to 106 KB and `main` from about
+66,000 to 3,400 instructions. Its repeats run outside the timed loops, so the
+timed workloads are unchanged.
+
 ## Memory
 
 Run the v1 raw-memory benchmark on Apple arm64:

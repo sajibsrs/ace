@@ -1,0 +1,132 @@
+/* Repeat initializers lowered through whole-array fill and doubling copies:
+ * every element holds the value, the value is evaluated once, and neighbors
+ * stay intact. */
+
+// expect-exit: 42
+
+Pair: struct { a: i32, b: i16 }
+Holder: struct { head: i64, data: [3]Pair, tail: i64 }
+
+calls: int
+
+seven(): i32 {
+    calls += 1
+    return 7
+}
+
+byte_of(x: int): u8 {
+    return u8(x)
+}
+
+bytes(): int {
+    guard_lo: u64 = 0x1122334455667788
+    runtime: [1000]u8 = [byte_of(3) : 1000]
+    constant: [4096]u8 = [u8(97) : 4096]
+    guard_hi: u64 = 0x8877665544332211
+
+    for i: usize in 0 .. 1000 {
+        if runtime[i] != 3 {
+            return 1
+        }
+    }
+    for i: usize in 0 .. 4096 {
+        if constant[i] != 97 {
+            return 2
+        }
+    }
+    if guard_lo != 0x1122334455667788 || guard_hi != 0x8877665544332211 {
+        return 3
+    }
+    return 0
+}
+
+uniform(): int {
+    zeros: [1000]i32 = [0 : 1000]
+    ones: [37]i64 = [-1 : 37]
+    same: [5]i16 = [i16(257) : 5]
+    flat: [9]f64 = [0.0 : 9]
+
+    for i: usize in 0 .. 1000 {
+        if zeros[i] != 0 {
+            return 4
+        }
+    }
+    for i: usize in 0 .. 37 {
+        if ones[i] != -1 {
+            return 5
+        }
+    }
+    for i: usize in 0 .. 5 {
+        if same[i] != 257 {
+            return 6
+        }
+    }
+    for i: usize in 0 .. 9 {
+        if flat[i] != 0.0 {
+            return 7
+        }
+    }
+    return 0
+}
+
+doubled(): int {
+    guard_lo: u64 = 0x0102030405060708
+    counted: [1000]i32 = [seven() : 1000]
+    halves: [33]f64 = [1.5 : 33]
+    pairs: [100]Pair = [Pair { a = 1, b = 2 } : 100]
+    single: [1]i32 = [i32(9) : 1]
+    held: Holder = Holder { head = 99, data = [Pair { a = 5, b = 6 } : 3], tail = 98 }
+    guard_hi: u64 = 0x0807060504030201
+
+    if calls != 1 {
+        return 8
+    }
+    for i: usize in 0 .. 1000 {
+        if counted[i] != 7 {
+            return 9
+        }
+    }
+    for i: usize in 0 .. 33 {
+        if halves[i] != 1.5 {
+            return 10
+        }
+    }
+    for i: usize in 0 .. 100 {
+        if pairs[i].a != 1 || pairs[i].b != 2 {
+            return 11
+        }
+    }
+    if single[0] != 9 {
+        return 12
+    }
+    // The last doubling copy stops at the array end; the struct literal's
+    // already-stored head sits directly above the repeat's temporary.
+    if held.head != 99 || held.tail != 98 {
+        return 14
+    }
+    for i: usize in 0 .. 3 {
+        if held.data[i].a != 5 || held.data[i].b != 6 {
+            return 15
+        }
+    }
+    if guard_lo != 0x0102030405060708 || guard_hi != 0x0807060504030201 {
+        return 13
+    }
+    return 0
+}
+
+main(): int {
+    failed: int = bytes()
+    if failed != 0 {
+        return failed
+    }
+    failed = uniform()
+    if failed != 0 {
+        return failed
+    }
+    failed = doubled()
+    if failed != 0 {
+        return failed
+    }
+    return 42
+}

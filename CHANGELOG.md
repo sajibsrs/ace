@@ -978,6 +978,12 @@ current normative rules, and Git preserves patch-level detail.
   padding runs once per loop entry. Current benchmarks are unchanged within
   noise, since loop bodies are still too large for head placement to
   dominate; `__text` grows about 0.4%.
+- Runtime repeat initializers `[value : count]` no longer emit one copy per
+  element. A constant whose encoding repeats one byte, or a runtime one-byte
+  integer, fills the array through `__ace$mem_fill`; other values store element
+  0 and double the filled prefix through disjoint `__ace$mem_copy` calls, so
+  code grows with log2(count). `bench/string.ace` `__text` fell from 358 KB to
+  106 KB and its `main` from about 66,000 to 3,400 instructions.
 
 ## Current frontier
 

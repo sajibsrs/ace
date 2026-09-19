@@ -443,7 +443,19 @@ static void debug_fn_add(Em* e, Node* f, uint32_t addr, uint32_t size) {
         (DebugFn){ addr, size, f->str, f->len };
 }
 
+// Relocations collected while folding a constant initializer.
+typedef struct {
+    uint32_t off;
+    ESym* sym;
+} ConstRel;
+
+typedef struct {
+    ConstRel* v;
+    int n, cap;
+} ConstRels;
+
 static EV gen_expr(Em* e, Node* x);
+static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels);
 static void emit_stmt(Em* e, Node* s);
 static int gen_addr(Em* e, Node* x);
 static int is_lvalue_node(Node* x);
@@ -4525,23 +4537,54 @@ static EV gen_expr(Em* e, Node* x) {
         }
         uint32_t off = temp_slot(e, ty_size(t), ty_align(t));
         if (x->kind == N_ARRAYLIT && x->a) {
+            /*
+             * [value : count]: a constant whose encoding repeats one byte, or
+             * a runtime byte, fills the whole array; otherwise element 0 is
+             * stored and the filled prefix doubles through disjoint copies,
+             * so emitted code grows with log2(count), not count.
+             */
             int svi = e->vti, svf = e->vtf;
-            EV v = gen_expr(e, x->a);
-            if (t->count > 0) {
-                int dst = 15;
-                if (v.cls != CLS_FP && xreg(v.idx) == dst) dst = 14;
-                frame_addr(e, dst, off);
-                store_value(e, v, dst, 0, t->base);
-                for (uint64_t i = 1; i < t->count; i++) {
+            uint32_t esz = ty_size(t->base);
+            uint64_t total = t->count * (uint64_t)esz;
+            Buf cb = {0};
+            ConstRels cr = {0};
+            int uniform = total > 0 &&
+                eval_const(e, x->a, t->base, &cb, &cr) && cr.n == 0 &&
+                cb.len == esz;
+            for (uint32_t i = 1; uniform && i < esz; i++)
+                uniform = cb.d[i] == cb.d[0];
+            uint8_t byte = uniform ? cb.d[0] : 0;
+            free(cb.d);
+            free(cr.v);
+            if (uniform) {
+                e->mem_fill_used = 1;
+                frame_addr(e, 15, off);
+                load_imm(e, 1, 16, byte);
+                load_imm(e, 1, 17, total);
+                emit_bl_internal(e, "__ace$mem_fill", 14);
+            } else if (t->count > 0) {
+                EV v = gen_expr(e, x->a);
+                if (esz == 1 && v.cls == CLS_INT) {
+                    e->mem_fill_used = 1;
+                    mov_int(e, 1, 16, xreg(v.idx));
                     frame_addr(e, 15, off);
-                    uint32_t elem_off = (uint32_t)i * ty_size(t->base);
-                    if (elem_off <= 4095) {
-                        ins(e, 0x91000000u | (elem_off << 10) | (15u << 5) | 14u);
-                    } else {
-                        load_imm(e, 1, 14, elem_off);
-                        ins(e, 0x8B000000u | (14u << 16) | (15u << 5) | 14u);
+                    load_imm(e, 1, 17, total);
+                    emit_bl_internal(e, "__ace$mem_fill", 14);
+                } else {
+                    int dst = 15;
+                    if (v.cls != CLS_FP && xreg(v.idx) == dst) dst = 14;
+                    frame_addr(e, dst, off);
+                    store_value(e, v, dst, 0, t->base);
+                    for (uint64_t done = 1; esz && done < t->count;) {
+                        uint64_t n = t->count - done < done
+                            ? t->count - done : done;
+                        e->mem_copy_used = 1;
+                        frame_addr(e, 15, off - (uint32_t)(done * esz));
+                        frame_addr(e, 16, off);
+                        load_imm(e, 1, 17, n * esz);
+                        emit_bl_internal(e, "__ace$mem_copy", 14);
+                        done += n;
                     }
-                    copy_mem(e, 14, 0, 15, 0, ty_size(t->base));
                 }
             }
             e->vti = svi; e->vtf = svf;
@@ -6126,16 +6169,6 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
 static void put_u(Buf* b, uint64_t v, uint32_t w) {
     for (uint32_t i = 0; i < w; i++) buf_put8(b, (uint8_t)(v >> (8 * i)));
 }
-
-typedef struct {
-    uint32_t off;
-    ESym* sym;
-} ConstRel;
-
-typedef struct {
-    ConstRel* v;
-    int n, cap;
-} ConstRels;
 
 static void const_reloc_add(ConstRels* rs, uint32_t off, ESym* sym) {
     if (rs->n == rs->cap) {
