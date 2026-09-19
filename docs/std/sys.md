@@ -54,7 +54,7 @@ main(): int {
   typed reinterpretation, request-size inference, or retry. These are raw
   target operations rather than an OS-independent device-control abstraction.
 - `stat(path: string): (FileInfo, Error)` follows symbolic links and returns
-  byte size plus a `FileKind` of `unknown`, `regular`, `directory`, `symlink`,
+  byte size plus a `FileType` of `unknown`, `regular`, `directory`, `symlink`,
   or `other`.
 - `mkdir(path: string): Error` is the portable creation form. It requests all
   ordinary permissions (`0777` on POSIX), after which the process umask chooses
@@ -84,7 +84,7 @@ name_storage: [256]u8
 name: mut []u8 = mut name_storage[0..256]
 done: bool = false
 for !done {
-    count: usize, kind: sys.FileKind, at_end: bool, read_err: Error = sys.read_dir(mut dir, name)
+    count: usize, file_type: sys.FileType, at_end: bool, read_err: Error = sys.read_dir(mut dir, name)
     if read_err != null {
         sys.close_dir(mut dir)
         return 2
@@ -101,8 +101,8 @@ return 0
 ```
 
 `read_dir` skips `.` and `..` and returns values in the fixed order name byte
-count, kind, end flag, and `Error`. End is `(0, unknown, true, null)`. A kind
-may be `unknown`; use `stat` when classification is required. If the name
+count, file type, end flag, and `Error`. End is `(0, unknown, true, null)`. A file
+type may be `unknown`; use `stat` when classification is required. If the name
 buffer is too small, `ReadDirErr` reports `ERANGE`, leaves the entry pending,
 and writes no truncated name. Enumeration retains operating-system order.
 

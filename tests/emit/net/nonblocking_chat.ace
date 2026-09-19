@@ -83,7 +83,7 @@ receive_exact(sock: net.Socket, expected: string): bool {
 }
 
 connect_client(port: u16): (net.Socket, bool) {
-    sock: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
+    sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
     if err != null || net.connect(sock, loopback(port)) != null {
         if sock != -1 {
@@ -155,7 +155,7 @@ client_c(port: u16, gate: sys.Fd): int {
     return 0
 }
 
-fork_client(kind: int, port: u16, gate_read: sys.Fd, gate_write: sys.Fd,
+fork_client(client_type: int, port: u16, gate_read: sys.Fd, gate_write: sys.Fd,
             q: poll.Queue, listener: net.Socket,
             clients: []Client): (sys.Process, Error) {
     process: sys.Process, err: Error = sys.fork()
@@ -174,9 +174,9 @@ fork_client(kind: int, port: u16, gate_read: sys.Fd, gate_write: sys.Fd,
     }
 
     code: int = 90
-    if kind == 0 {
+    if client_type == 0 {
         code = client_a(port, gate_read)
-    } else if kind == 1 {
+    } else if client_type == 1 {
         code = client_b(port, gate_read)
     } else {
         code = client_c(port, gate_read)
@@ -258,7 +258,7 @@ wait_child(process: sys.Process): bool {
 }
 
 main(): int {
-    listener: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
+    listener: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
     if err != null {
         return 10

@@ -96,8 +96,8 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
                 return request, true
             }
             RequestResult.progress(value: RequestProgress) {}
-            RequestResult.capacity(kind: RequestCapacity) {
-                if kind == RequestCapacity.headers {
+            RequestResult.capacity(capacity_type: RequestCapacity) {
+                if capacity_type == RequestCapacity.headers {
                     grown: mut []Header, ok: bool = mem.adjust[Header](context.headers, context.headers.len + 1)
                     if !ok {
                         return Request{method = null, target = null}, false

@@ -28,7 +28,7 @@ main(): int {
     }
 
     dir_info: sys.FileInfo, stat_err: Error = sys.stat(DIR_PATH)
-    if stat_err != null || dir_info.kind != sys.FileKind.directory {
+    if stat_err != null || dir_info.file_type != sys.FileType.directory {
         return 2
     }
 
@@ -47,7 +47,7 @@ main(): int {
     }
 
     file_info: sys.FileInfo, file_stat_err: Error = sys.stat(OLD_PATH)
-    if file_stat_err != null || file_info.kind != sys.FileKind.regular || file_info.size != 10 {
+    if file_stat_err != null || file_info.file_type != sys.FileType.regular || file_info.size != 10 {
         return 5
     }
     if sys.rename(OLD_PATH, NEW_PATH) != null {
@@ -63,14 +63,14 @@ main(): int {
     found: bool = false
     finished: bool = false
     for !finished {
-        count: usize, kind: sys.FileKind, done: bool, read_err: Error = sys.read_dir(mut dir, name)
+        count: usize, file_type: sys.FileType, done: bool, read_err: Error = sys.read_dir(mut dir, name)
         if read_err != null {
             return 8
         }
         if done {
             finished = true
         } else if name_is(name, count, ENTRY) {
-            if kind != sys.FileKind.regular && kind != sys.FileKind.unknown {
+            if file_type != sys.FileType.regular && file_type != sys.FileType.unknown {
                 return 9
             }
             found = true

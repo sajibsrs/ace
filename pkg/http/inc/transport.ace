@@ -187,12 +187,12 @@ pub exchange[C](connection: C, raw: tcp.Conn,
                 return response, null
             }
             ResponseResult.progress(value: ResponseProgress) {}
-            ResponseResult.capacity(kind: ResponseCapacity) {
+            ResponseResult.capacity(capacity_type: ResponseCapacity) {
                 if !resize {
                     tcp.close(mut raw)
                     return Response{}, ClientErr.response
                 }
-                if kind == ResponseCapacity.headers {
+                if capacity_type == ResponseCapacity.headers {
                     mem_headers: mut []Header, headers_ok: bool = mem.adjust[Header](storage.headers, storage.headers.len + 1)
                     if !headers_ok {
                         tcp.close(mut raw)

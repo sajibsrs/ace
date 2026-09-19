@@ -22,7 +22,7 @@ close_all(q: poll.Queue, listener: net.Socket, peer: net.Socket) {
 }
 
 client(port: u16): int {
-    sock: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
+    sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
     if err != null {
         return 1
@@ -75,7 +75,7 @@ main(): int {
     listener: net.Socket = net.Socket(-1)
     selected: u16 = 0
     listener_err: Error
-    listener, listener_err = net.socket(net.SocketKind.tcp)
+    listener, listener_err = net.socket(net.SocketType.tcp)
 
     if listener_err != null {
         return 10

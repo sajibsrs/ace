@@ -132,8 +132,8 @@ failures(): int {
         false,
     )
     switch result {
-        http.ResponseResult.capacity(kind: http.ResponseCapacity) {
-            if kind != http.ResponseCapacity.headers { return 1 }
+        http.ResponseResult.capacity(capacity_type: http.ResponseCapacity) {
+            if capacity_type != http.ResponseCapacity.headers { return 1 }
         }
         else { return 2 }
     }
@@ -146,8 +146,8 @@ failures(): int {
         false,
     )
     switch result {
-        http.ResponseResult.capacity(kind: http.ResponseCapacity) {
-            if kind != http.ResponseCapacity.body { return 3 }
+        http.ResponseResult.capacity(capacity_type: http.ResponseCapacity) {
+            if capacity_type != http.ResponseCapacity.body { return 3 }
         }
         else { return 4 }
     }
@@ -208,8 +208,8 @@ failures(): int {
         false,
     )
     switch result {
-        http.ResponseResult.capacity(kind: http.ResponseCapacity) {
-            if kind != http.ResponseCapacity.body { return 10 }
+        http.ResponseResult.capacity(capacity_type: http.ResponseCapacity) {
+            if capacity_type != http.ResponseCapacity.body { return 10 }
         }
         else { return 11 }
     }

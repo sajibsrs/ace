@@ -148,7 +148,7 @@ check_missing(): int {
 
 filesystem_examples(): int {
     info: sys.FileInfo, stat_err: Error = sys.stat("/tmp")
-    if stat_err != null || info.kind != sys.FileKind.directory {
+    if stat_err != null || info.file_type != sys.FileType.directory {
         return 1
     }
     make_err: Error = sys.mkdir("/tmp/example")
@@ -164,8 +164,8 @@ filesystem_examples(): int {
     }
     storage: [256]u8 = [0 : 256]
     name: mut []u8 = mut storage[0..256]
-    count: usize, kind: sys.FileKind, done: bool, read_err: Error = sys.read_dir(mut dir, name)
-    if read_err != null || (!done && count == 0) || kind == sys.FileKind.symlink {
+    count: usize, file_type: sys.FileType, done: bool, read_err: Error = sys.read_dir(mut dir, name)
+    if read_err != null || (!done && count == 0) || file_type == sys.FileType.symlink {
         sys.close_dir(mut dir)
         return 4
     }
@@ -252,7 +252,7 @@ process_example(): int {
 }
 
 net_example(): int {
-    sock: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
+    sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
     if err != null {
         return 1
@@ -282,7 +282,7 @@ net_example(): int {
     count: usize, resolve_err: Error = net.resolve4("example.com", u16(80), addresses)
 
     if resolve_err == null && count != 0 {
-        client: net.Socket, socket_err: Error = net.socket(net.SocketKind.tcp)
+        client: net.Socket, socket_err: Error = net.socket(net.SocketType.tcp)
 
         if socket_err == null {
             socket_err = net.connect(client, addresses[0])

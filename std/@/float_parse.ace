@@ -13,7 +13,7 @@ FastDecimal: struct {
     exponent10: int,
     negative: bool,
     digits: int,
-    kind: int, // 0 finite, 1 infinity, 2 NaN, 3 invalid
+    number_type: int, // 0 finite, 1 infinity, 2 NaN, 3 invalid
 }
 
 pub Decimal: struct {
@@ -21,7 +21,7 @@ pub Decimal: struct {
     exponent10: int,
     negative: bool,
     digits: int,
-    kind: int, // 0 finite, 1 infinity, 2 NaN, 3 invalid
+    number_type: int, // 0 finite, 1 infinity, 2 NaN, 3 invalid
 }
 
 equal_text(text: string, expected: string): bool {
@@ -42,17 +42,17 @@ fast_decimal(text: string, mut result: FastDecimal) {
     }
     if text.len == 3 {
         if text[0] == 110 && text[1] == 97 && text[2] == 110 {
-            result.kind = 2
+            result.number_type = 2
             return
         }
         if text[0] == 105 && text[1] == 110 && text[2] == 102 {
-            result.kind = 1
+            result.number_type = 1
             return
         }
     } else if text.len == 4 && text[0] == 45 && text[1] == 105 &&
               text[2] == 110 && text[3] == 102 {
         result.negative = true
-        result.kind = 1
+        result.number_type = 1
         return
     }
     at: usize = 0
@@ -225,27 +225,27 @@ fast_decimal(text: string, mut result: FastDecimal) {
     result.exponent10 = exponent10
     result.negative = negative
     result.digits = significant
-    result.kind = 0
+    result.number_type = 0
 }
 
 decimal(text: string): Decimal {
     invalid: Decimal = Decimal { coefficient = big.from_u64(0), exponent10 = 0,
-                                 negative = false, digits = 0, kind = 3 }
+                                 negative = false, digits = 0, number_type = 3 }
 
     if text.len == 0 || text.len >= 512 {
         return invalid
     }
     if equal_text(text, "nan") {
         return Decimal { coefficient = big.from_u64(0), exponent10 = 0,
-                         negative = false, digits = 0, kind = 2 }
+                         negative = false, digits = 0, number_type = 2 }
     }
     if equal_text(text, "inf") {
         return Decimal { coefficient = big.from_u64(0), exponent10 = 0,
-                         negative = false, digits = 0, kind = 1 }
+                         negative = false, digits = 0, number_type = 1 }
     }
     if equal_text(text, "-inf") {
         return Decimal { coefficient = big.from_u64(0), exponent10 = 0,
-                         negative = true, digits = 0, kind = 1 }
+                         negative = true, digits = 0, number_type = 1 }
     }
     at: usize = 0
     negative: bool = false
@@ -328,7 +328,7 @@ decimal(text: string): Decimal {
     }
     return Decimal { coefficient = coefficient,
                      exponent10 = explicit - fractional,
-                     negative = negative, digits = significant, kind = 0 }
+                     negative = negative, digits = significant, number_type = 0 }
 }
 
 compare_binary(value: Decimal, mantissa: u64, exponent2: int): int {
@@ -400,13 +400,13 @@ pub binary64(text: string): (f64, bool) {
     scanned.exponent10 = 0
     scanned.negative = false
     scanned.digits = 0
-    scanned.kind = 3
+    scanned.number_type = 3
     fast_decimal(text, mut scanned)
 
-    if scanned.kind == 2 {
+    if scanned.number_type == 2 {
         return bits.to_float(u64(0x7FF8000000000000)), true
     }
-    if scanned.kind == 1 {
+    if scanned.number_type == 1 {
         raw_inf: u64 = u64(0x7FF0000000000000)
 
         if scanned.negative {
@@ -414,7 +414,7 @@ pub binary64(text: string): (f64, bool) {
         }
         return bits.to_float(raw_inf), true
     }
-    if scanned.kind == 3 {
+    if scanned.number_type == 3 {
         return 0.0, false
     }
     sign: u64 = 0
@@ -479,13 +479,13 @@ pub binary32(text: string): (f32, bool) {
     scanned.exponent10 = 0
     scanned.negative = false
     scanned.digits = 0
-    scanned.kind = 3
+    scanned.number_type = 3
     fast_decimal(text, mut scanned)
 
-    if scanned.kind == 2 {
+    if scanned.number_type == 2 {
         return bits.to_float(u32(0x7FC00000)), true
     }
-    if scanned.kind == 1 {
+    if scanned.number_type == 1 {
         raw_inf: u32 = u32(0x7F800000)
 
         if scanned.negative {
@@ -493,7 +493,7 @@ pub binary32(text: string): (f32, bool) {
         }
         return bits.to_float(raw_inf), true
     }
-    if scanned.kind == 3 {
+    if scanned.number_type == 3 {
         return 0.0, false
     }
     sign: u32 = 0

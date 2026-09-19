@@ -875,6 +875,14 @@ current normative rules, and Git preserves patch-level detail.
   `exe` (`lib` unchanged). The parser reads keys as plain text, so `type` is
   not affected by the reserved keyword. `kind:` and `type: app` are now
   errors with no alias; `ace pkg init`, `list`, and `--pkg-graph` use `exe`.
+- Renamed `sys.FileKind` and `net.SocketKind` to `sys.FileType` and
+  `net.SocketType`, matching POSIX file/socket-type vocabulary. Because `type`
+  is a keyword, the `FileInfo` field, the `socket` parameter, and the
+  `read_dir` local are `file_type`/`socket_type`, and the `ResolveErr` member
+  `socket_kind` is `socket_type`. The remaining Ace-side `kind` names follow:
+  the private float `decimal.Kind` is `decimal.Type` with `number_type` fields,
+  and the `pkg/http` capacity parameter is `capacity_type`. The C compiler
+  keeps its internal `kind` names, since `Sym` already has a `type` member.
 
 ## Current frontier
 

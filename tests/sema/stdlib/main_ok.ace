@@ -1,6 +1,6 @@
 /* Net selective fixture. */
 
-import Addr4, LocalErr, ResolveErr, Socket, SocketKind, local, resolve4, send, socket from net
+import Addr4, LocalErr, ResolveErr, Socket, SocketType, local, resolve4, send, socket from net
 
 check(address: Addr4, socket_value: Socket): int {
     if address.port == 0 {
@@ -25,7 +25,7 @@ main(): int {
         ip = ip,
         port = u16(80),
     }
-    value: Socket, err: Error = socket(SocketKind.tcp)
+    value: Socket, err: Error = socket(SocketType.tcp)
 
     if err != null {
         return 1

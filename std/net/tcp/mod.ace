@@ -90,7 +90,7 @@ with_write(interest: Interest, enabled: bool): Interest {
 }
 
 pub listen(address: net.Addr4, backlog: usize): (Listener, Error) {
-    sock: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
+    sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
     if err != null {
         return zero_listener(), err
@@ -110,7 +110,7 @@ pub listen(address: net.Addr4, backlog: usize): (Listener, Error) {
 }
 
 pub connect(address: net.Addr4): (Conn, Error) {
-    sock: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
+    sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
     if err != null {
         return zero_connection(), err
@@ -124,7 +124,7 @@ pub connect(address: net.Addr4): (Conn, Error) {
 }
 
 pub connect_nonblock(address: net.Addr4): (Conn, Error) {
-    sock: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
+    sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
     if err != null {
         return zero_connection(), err
@@ -151,7 +151,7 @@ pub connect_nonblock(address: net.Addr4): (Conn, Error) {
 }
 
 pub listen_nonblock(address: net.Addr4, backlog: usize): (Listener, Error) {
-    sock: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
+    sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
     if err != null {
         return zero_listener(), err

@@ -9,7 +9,7 @@ import sys
 
 pub Socket: type = sys.Fd
 
-pub SocketKind: enum { tcp }
+pub SocketType: enum { tcp }
 
 pub Addr4: struct {
     ip: [4]u8,
@@ -22,7 +22,7 @@ pub Addr4: struct {
 
 pub SocketErr: error {
     12: memory = "insufficient memory"
-    22: invalid = "invalid socket kind"
+    22: invalid = "invalid socket type"
     23: system_limit = "system socket limit reached"
     24: process_limit = "process socket limit reached"
     43: protocol = "protocol is not supported"
@@ -129,8 +129,8 @@ pub ResolveErr: error {
     5: family = "unsupported address family"
     6: memory = "name-resolution memory allocation failed"
     8: not_found = "host or service was not found"
-    9: service = "service is unavailable for the socket kind"
-    10: socket_kind = "unsupported socket kind"
+    9: service = "service is unavailable for the socket type"
+    10: socket_type = "unsupported socket type"
     11: system = "system error during name resolution"
     14: overflow = "name-resolution result overflowed"
     22: invalid = "invalid name-resolution input or result"
@@ -152,7 +152,7 @@ DarwinAddr4: struct {
 DarwinAddrInfo: struct {
     flags: i32,
     family: i32,
-    kind: i32,
+    socket_type: i32,
     protocol: i32,
     address_length: u32,
     canonical_name: *u8,
@@ -176,7 +176,7 @@ I32_MAX_USIZE: const usize = 0x7fffffff
 HOST_NAME_MAX: const usize = 253
 
 extern "c" {
-    c_socket(domain: i32, kind: i32, protocol: i32): i32 = "socket"
+    c_socket(domain: i32, socket_type: i32, protocol: i32): i32 = "socket"
     c_setsockopt(socket: i32, level: i32, option: i32, value: *i32, length: u32): i32 = "setsockopt"
     c_getsockopt(socket: i32, level: i32, option: i32, value: mut *i32,
                  length: mut *u32): i32 = "getsockopt"
@@ -228,9 +228,9 @@ zero_addr4(): Addr4 {
     return Addr4 {ip = ip, port = u16(0)}
 }
 
-pub socket(kind: SocketKind): (Socket, Error) {
-    // tcp is the only initial kind; its enum zero maps to SOCK_STREAM.
-    if kind != SocketKind.tcp {
+pub socket(socket_type: SocketType): (Socket, Error) {
+    // tcp is the only initial type; its enum zero maps to SOCK_STREAM.
+    if socket_type != SocketType.tcp {
         errno_set(EINVAL)
         return Socket(-1), SocketErr.invalid
     }
@@ -406,7 +406,7 @@ pub resolve4(host: string, port: u16, addresses: mut []Addr4): (usize, Error) {
     hints: DarwinAddrInfo = DarwinAddrInfo {
         flags = 0,
         family = AF_INET,
-        kind = SOCK_STREAM,
+        socket_type = SOCK_STREAM,
         protocol = 0,
         address_length = u32(0),
         canonical_name = null,

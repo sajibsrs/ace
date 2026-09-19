@@ -24,7 +24,7 @@ pub PipeErr: type = os.PipeErr
 pub IoctlErr: type = os.IoctlErr
 pub RandomErr: type = os.RandomErr
 
-pub FileKind: type = os.FileKind
+pub FileType: type = os.FileType
 pub FileInfo: type = os.FileInfo
 pub Dir: type = os.Dir
 
@@ -190,9 +190,9 @@ pub open_dir(path: string): (Dir, Error) {
     return dir, err
 }
 
-pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileKind, bool, Error) {
-    length: usize, kind: FileKind, done: bool, err: Error = os.read_dir(mut dir, name)
-    return length, kind, done, err
+pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileType, bool, Error) {
+    length: usize, file_type: FileType, done: bool, err: Error = os.read_dir(mut dir, name)
+    return length, file_type, done, err
 }
 
 pub close_dir(mut dir: Dir): Error {

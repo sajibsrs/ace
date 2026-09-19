@@ -4,7 +4,7 @@
 import os: "./os/darwin-arm64.ace"
 
 pub Socket: type = os.Socket
-pub SocketKind: type = os.SocketKind
+pub SocketType: type = os.SocketType
 pub Addr4: type = os.Addr4
 
 pub SocketErr: type = os.SocketErr
@@ -77,8 +77,8 @@ pub parse4(endpoint: string): (Addr4, bool) {
     return address, true
 }
 
-pub socket(kind: SocketKind): (Socket, Error) {
-    result: Socket, err: Error = os.socket(kind)
+pub socket(socket_type: SocketType): (Socket, Error) {
+    result: Socket, err: Error = os.socket(socket_type)
     return result, err
 }
 

@@ -105,7 +105,7 @@ pub RenameErr: error {
     17: exists = "destination already exists"
     18: cross_device = "paths are on different file systems"
     20: not_directory = "path component is not a directory"
-    21: directory = "file and directory kinds do not match"
+    21: directory = "file and directory types do not match"
     22: invalid = "invalid rename operation"
     28: no_space = "device has no space available"
     30: read_only = "file system is read-only"
@@ -174,11 +174,11 @@ pub IoctlErr: error {
     25: inappropriate = "device does not support the requested control"
 }
 
-pub FileKind: enum { unknown, regular, directory, symlink, other }
+pub FileType: enum { unknown, regular, directory, symlink, other }
 
 pub FileInfo: struct {
     size: u64,
-    kind: FileKind,
+    file_type: FileType,
 }
 
 /* Caller-owned directory iteration state. `active` makes canonical zero an
@@ -396,34 +396,34 @@ zero_stat(): DarwinStat {
     }
 }
 
-kind_from_mode(mode: u16): FileKind {
-    kind: u16 = mode & u16(0xf000)
-    if kind == u16(0x8000) {
-        return FileKind.regular
+file_type_from_mode(mode: u16): FileType {
+    type_bits: u16 = mode & u16(0xf000)
+    if type_bits == u16(0x8000) {
+        return FileType.regular
     }
-    if kind == u16(0x4000) {
-        return FileKind.directory
+    if type_bits == u16(0x4000) {
+        return FileType.directory
     }
-    if kind == u16(0xa000) {
-        return FileKind.symlink
+    if type_bits == u16(0xa000) {
+        return FileType.symlink
     }
-    return FileKind.other
+    return FileType.other
 }
 
-kind_from_dirent(kind: u8): FileKind {
-    if kind == 8 {
-        return FileKind.regular
+file_type_from_dirent(dirent_type: u8): FileType {
+    if dirent_type == 8 {
+        return FileType.regular
     }
-    if kind == 4 {
-        return FileKind.directory
+    if dirent_type == 4 {
+        return FileType.directory
     }
-    if kind == 10 {
-        return FileKind.symlink
+    if dirent_type == 10 {
+        return FileType.symlink
     }
-    if kind == 0 {
-        return FileKind.unknown
+    if dirent_type == 0 {
+        return FileType.unknown
     }
-    return FileKind.other
+    return FileType.other
 }
 
 /* Raw errno of the most recent system call (thread-local). Query it
@@ -555,7 +555,7 @@ pub open(path: string, flags: i32, mode: u32): (Fd, Error) {
 
 pub stat(path: string): (FileInfo, Error) {
     path_buf: [1024]u8
-    zero: FileInfo = FileInfo { size = 0, kind = FileKind.unknown }
+    zero: FileInfo = FileInfo { size = 0, file_type = FileType.unknown }
 
     if !path_copy(path, mut path_buf[0..1024]) {
         return zero, StatErr.name_too_long
@@ -564,7 +564,7 @@ pub stat(path: string): (FileInfo, Error) {
     if c_stat(&path_buf[0], mut &raw) == -1 {
         return zero, StatErr(errno())
     }
-    return FileInfo { size = u64(raw.size), kind = kind_from_mode(raw.mode) }, null
+    return FileInfo { size = u64(raw.size), file_type = file_type_from_mode(raw.mode) }, null
 }
 
 pub mkdir(path: string, mode: u32): Error {
@@ -636,13 +636,13 @@ pub open_dir(path: string): (Dir, Error) {
  * namlen:u16, type:u8, then the name bytes. Entries are retained when the
  * caller's name buffer is too small, so the caller may retry.
  */
-pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileKind, bool, Error) {
+pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileType, bool, Error) {
     if !dir.active {
         errno_set(9)
-        return 0, FileKind.unknown, false, ReadDirErr.inactive
+        return 0, FileType.unknown, false, ReadDirErr.inactive
     }
     if dir.done {
-        return 0, FileKind.unknown, true, null
+        return 0, FileType.unknown, true, null
     }
 
     for {
@@ -650,11 +650,11 @@ pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileKind, bool, Error) {
             count: i32 = c_getdirentries64(i32(dir.fd), mut &dir.buffer[0],
                                            4096, mut &dir.base)
             if count < 0 {
-                return 0, FileKind.unknown, false, ReadDirErr(errno())
+                return 0, FileType.unknown, false, ReadDirErr(errno())
             }
             if count == 0 {
                 dir.done = true
-                return 0, FileKind.unknown, true, null
+                return 0, FileType.unknown, true, null
             }
             dir.next = 0
             dir.count = usize(count)
@@ -663,7 +663,7 @@ pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileKind, bool, Error) {
         at: usize = dir.next
         if at + 21 > dir.count {
             errno_set(5)
-            return 0, FileKind.unknown, false, ReadDirErr.malformed
+            return 0, FileType.unknown, false, ReadDirErr.malformed
         }
         record_len: usize = usize(dir.buffer[at + 16]) |
                             (usize(dir.buffer[at + 17]) << 8)
@@ -672,7 +672,7 @@ pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileKind, bool, Error) {
         if record_len < 21 || at + record_len > dir.count ||
            name_len > record_len - 21 {
             errno_set(5)
-            return 0, FileKind.unknown, false, ReadDirErr.malformed
+            return 0, FileType.unknown, false, ReadDirErr.malformed
         }
 
         is_dot: bool = name_len == 1 && dir.buffer[at + 21] == u8('.')
@@ -684,14 +684,14 @@ pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileKind, bool, Error) {
         } else {
             if name.len < name_len {
                 errno_set(34)
-                return 0, FileKind.unknown, false, ReadDirErr.capacity
+                return 0, FileType.unknown, false, ReadDirErr.capacity
             }
             for i: usize in 0 .. name_len {
                 name[i] = dir.buffer[at + 21 + i]
             }
-            kind: FileKind = kind_from_dirent(dir.buffer[at + 20])
+            file_type: FileType = file_type_from_dirent(dir.buffer[at + 20])
             dir.next = at + record_len
-            return name_len, kind, false, null
+            return name_len, file_type, false, null
         }
     }
 }

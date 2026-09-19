@@ -42,7 +42,7 @@ their own lines:
 ```ace
 @packed
 Packet: struct {
-    kind: u8,
+    packet_type: u8,
 
     @align(4)
     length: u32,

@@ -410,11 +410,11 @@ print_radix[usize](value: usize, radix: u8, uppercase: bool): int {
 }
 
 write_fixed(value: decimal.Decimal, digits: []u8, precision: usize): int {
-    if value.kind == decimal.Kind.nan {
+    if value.number_type == decimal.Type.nan {
         return print_counted[string]("nan")
     }
 
-    if value.kind == decimal.Kind.infinity {
+    if value.number_type == decimal.Type.infinity {
         if value.negative {
             return print_counted[string]("-inf")
         }
@@ -430,7 +430,7 @@ write_fixed(value: decimal.Decimal, digits: []u8, precision: usize): int {
     point: int = int(value.point)
     places: int = int(precision)
 
-    if value.kind == decimal.Kind.zero {
+    if value.number_type == decimal.Type.zero {
         out[at] = u8(48)
         at += 1
     } else if point <= 0 {
@@ -454,7 +454,7 @@ write_fixed(value: decimal.Decimal, digits: []u8, precision: usize): int {
         for i: int in 0 .. places {
             source: int = point + i
 
-            if value.kind != decimal.Kind.zero && source >= 0 && source < value.count {
+            if value.number_type != decimal.Type.zero && source >= 0 && source < value.count {
                 out[at] = digits[source]
             } else {
                 out[at] = u8(48)

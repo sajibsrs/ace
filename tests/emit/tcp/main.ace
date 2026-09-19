@@ -85,7 +85,7 @@ check_cleanup(): int {
 
     // A failed constructor closed its created fd: the next kernel allocation
     // reuses the lowest available descriptor deterministically in this process.
-    first: net.Socket, socket_err: Error = net.socket(net.SocketKind.tcp)
+    first: net.Socket, socket_err: Error = net.socket(net.SocketType.tcp)
     if socket_err != null {
         return 4
     }
@@ -99,7 +99,7 @@ check_cleanup(): int {
         return 6
     }
     second: net.Socket
-    second, socket_err = net.socket(net.SocketKind.tcp)
+    second, socket_err = net.socket(net.SocketType.tcp)
     if socket_err != null || second != first {
         if socket_err == null {
             sys.close(second)

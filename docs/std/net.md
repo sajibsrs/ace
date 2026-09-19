@@ -14,7 +14,7 @@ import net
 import sys
 
 main(): int {
-    sock: net.Socket, err: Error = net.socket(net.SocketKind.tcp)
+    sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
     if err != null {
         return 1
     }
@@ -45,7 +45,7 @@ queries remain additive.
 The core socket operations each perform one explicit operation and never
 allocate, buffer, retry, close, or replace a socket on failure:
 
-- `socket(SocketKind.tcp): (Socket, Error)` creates an IPv4 TCP socket.
+- `socket(SocketType.tcp): (Socket, Error)` creates an IPv4 TCP socket.
 - `reuse_addr` and `reuse_port` reversibly set their named option.
 - `nonblock(socket, enabled): Error` reversibly changes blocking mode.
 - `bind(socket, Addr4): Error` binds without enabling options implicitly.
@@ -76,7 +76,7 @@ storage: [8]net.Addr4
 addresses: mut []net.Addr4 = mut storage[0..8]
 count: usize, err: Error = net.resolve4("example.com", u16(80), addresses)
 if err == null && count != 0 {
-    sock: net.Socket, socket_err: Error = net.socket(net.SocketKind.tcp)
+    sock: net.Socket, socket_err: Error = net.socket(net.SocketType.tcp)
     if socket_err == null {
         socket_err = net.connect(sock, addresses[0])
         sys.close(sock)
