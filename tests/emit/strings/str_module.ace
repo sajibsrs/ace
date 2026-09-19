@@ -141,6 +141,18 @@ main(): int {
     if !done || n != 2 || !mem.equal(parts[0], "") || !mem.equal(parts[1], "a") {
         return 22
     }
+    // a multi-byte separator ending the text leaves the cursor past the last
+    // possible match start
+    n, done = str.split("ab::", "::", sparts)
+
+    if !done || n != 2 || !mem.equal(parts[0], "ab") || !mem.equal(parts[1], "") {
+        return 31
+    }
+    n, done = str.split("a::b::", "::", sparts)
+
+    if !done || n != 3 || !mem.equal(parts[1], "b") || !mem.equal(parts[2], "") {
+        return 32
+    }
     n, done = str.split("1-2-3", '-', sparts)
 
     if !done || n != 3 || !mem.equal(parts[1], "2") {

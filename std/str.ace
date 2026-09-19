@@ -529,7 +529,8 @@ index_from(text: string, needle: string, after: usize): (usize, bool) {
         return after, true
     }
 
-    if needle.len > text.len {
+    // after past the last start would make the range below run downward
+    if needle.len > text.len || after > text.len - needle.len {
         return 0, false
     }
 
@@ -552,6 +553,10 @@ index_from(text: string, needle: string, after: usize): (usize, bool) {
 
 /* First occurrence of one byte at or after from. */
 index_byte_from(text: string, byte: char, after: usize): (usize, bool) {
+    if after >= text.len {
+        return 0, false
+    }
+
     for i: usize in after .. text.len {
         if text[i] == byte {
             return i, true

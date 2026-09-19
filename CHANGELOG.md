@@ -1071,6 +1071,10 @@ current normative rules, and Git preserves patch-level detail.
   can differ from a borrowed source. Static copies in the string benchmark
   fell from 715 to 156 and its code from 20,211 to 19,623 instructions;
   the CPU recurrence fell from 37.0 to 36.0 ms.
+- `str` searches reject a start position past the last possible match before
+  iterating: a range whose first endpoint exceeds its second runs downward,
+  so `split` with a multi-byte separator ending the text read past the end
+  (a checked bounds abort).
 
 ## Current frontier
 
