@@ -26,7 +26,7 @@ typedef struct {
     const char* name; int name_line;
     const char* version; int version_line;
     const char* ace; int ace_line;
-    const char* kind; int kind_line;
+    const char* type; int type_line;
     const char* root; int root_line;
     const char* description; int description_line;
     const char* author; int author_line;
@@ -277,7 +277,7 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
         FIELD("name", name, name_line)
         FIELD("version", version, version_line)
         FIELD("ace", ace, ace_line)
-        FIELD("kind", kind, kind_line)
+        FIELD("type", type, type_line)
         FIELD("root", root, root_line)
         FIELD("description", description, description_line)
         FIELD("author", author, author_line)
@@ -365,7 +365,7 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
     if (!rm.name) { package_err(L, manifest, 1, "missing required field 'name'"); ok = 0; }
     if (!rm.version) { package_err(L, manifest, 1, "missing required field 'version'"); ok = 0; }
     if (!rm.ace) { package_err(L, manifest, 1, "missing required field 'ace'"); ok = 0; }
-    if (!rm.kind) { package_err(L, manifest, 1, "missing required field 'kind'"); ok = 0; }
+    if (!rm.type) { package_err(L, manifest, 1, "missing required field 'type'"); ok = 0; }
     if (!rm.root) { package_err(L, manifest, 1, "missing required field 'root'"); ok = 0; }
     if (!ok) { free(rm.deps); free(rm.links); return NULL; }
 
@@ -397,16 +397,16 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
             ok = 0;
         }
     }
-    int is_app = 0;
-    if (text_is(rm.kind, (uint32_t)strlen(rm.kind), "app")) is_app = 1;
-    else if (text_is(rm.kind, (uint32_t)strlen(rm.kind), "lib")) is_app = 0;
+    int is_exe = 0;
+    if (text_is(rm.type, (uint32_t)strlen(rm.type), "exe")) is_exe = 1;
+    else if (text_is(rm.type, (uint32_t)strlen(rm.type), "lib")) is_exe = 0;
     else {
-        package_err(L, manifest, rm.kind_line, "kind '%s' must be 'app' or 'lib'", rm.kind);
+        package_err(L, manifest, rm.type_line, "type '%s' must be 'exe' or 'lib'", rm.type);
         ok = 0;
     }
-    if (!is_root && is_app) {
-        package_err(L, manifest, rm.kind_line,
-                "dependency '%s' is kind 'app'; only a lib package can be a dependency",
+    if (!is_root && is_exe) {
+        package_err(L, manifest, rm.type_line,
+                "dependency '%s' is type 'exe'; only a lib package can be a dependency",
                 rm.name);
         ok = 0;
     }
@@ -481,7 +481,7 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
     package->name = arena_string(rm.name);
     package->ver_major = vmaj; package->ver_minor = vmin; package->ver_patch = vpat;
     package->ace_major = amaj; package->ace_minor = amin;
-    package->is_app = is_app;
+    package->is_exe = is_exe;
     package->root_file = root_canon;
     package->description = rm.description ? arena_string(rm.description) : NULL;
     package->author = rm.author ? arena_string(rm.author) : NULL;

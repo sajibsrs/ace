@@ -296,7 +296,7 @@ struct Package {
     const char* name;
     int         ver_major, ver_minor, ver_patch;
     int         ace_major, ace_minor;
-    int         is_app;      // 0 = lib, 1 = app
+    int         is_exe;      // 0 = lib, 1 = exe
     const char* root_file;   // canonical path to the root .ace file
     const char* description; // NULL if absent
     const char* author;      // NULL if absent

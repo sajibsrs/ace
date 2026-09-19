@@ -871,6 +871,10 @@ current normative rules, and Git preserves patch-level detail.
   a private `encode_utf8`. `pkg/json/tests/basics` runs under
   `make test-packages`, `demo/json-parse-file` parses a file and prints every
   key and value, and `docs/json.md` documents the package.
+- Renamed the `ace.pkg` manifest field `kind` to `type` and its value `app` to
+  `exe` (`lib` unchanged). The parser reads keys as plain text, so `type` is
+  not affected by the reserved keyword. `kind:` and `type: app` are now
+  errors with no alias; `ace pkg init`, `list`, and `--pkg-graph` use `exe`.
 
 ## Current frontier
 

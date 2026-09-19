@@ -1,5 +1,5 @@
 name: dep
 version: 0.1.0
 ace: 0.1
-kind: app
+type: exe
 root: root.ace

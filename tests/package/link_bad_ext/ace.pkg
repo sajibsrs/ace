@@ -4,7 +4,7 @@
 name: link_bad_ext
 version: 0.1.0
 ace: 0.1
-kind: app
+type: exe
 root: main.ace
 
 [[link]]

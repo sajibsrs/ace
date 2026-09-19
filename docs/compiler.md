@@ -92,7 +92,7 @@ machine-consumable standard output remain unchanged.
 
 Plain `ace file.ace` compiles one root source with no manifest. An optional
 `ace.pkg` at a directory root groups a package's files under a declared
-`name`, exact `version`, `ace` language version, `kind` (`app` or `lib`), and
+`name`, exact `version`, `ace` language version, `type` (`exe` or `lib`), and
 `root` source file, with local-path-only `[dependencies]` entries (see
 `SPEC.md`'s Package System section for the manifest format and dependency
 rules). Optional `description`, `author`, `license`, and `repository` fields
@@ -101,7 +101,7 @@ compilation; any of them may be left empty. Every manifest-aware operation is
 grouped under `ace pkg`:
 
 ```sh
-ace pkg init app my_app
+ace pkg init exe my_app
 ace pkg init lib my_lib
 ace pkg build
 ace pkg run
@@ -118,16 +118,16 @@ semantic check with cross-package imports resolved, no codegen — the
 manifest-aware counterpart to plain `ace file.ace`'s default mode. `build`
 resolves the dependency graph and fully checks the root file; for a `lib`
 package that is the entire result, plus ensuring `build/` exists, since v1
-ships libraries as source with no reusable binary archive. For an `app`
+ships libraries as source with no reusable binary archive. For an `exe`
 package, `build` additionally compiles and links into
 `build/<package-name>`, accepting the same `--checked`/`--release`/
 `--target=`/`--report` flags as plain compilation. `run` is
-app-only — it errors on a `lib` package — and otherwise builds, then
+exe-only — it errors on a `lib` package — and otherwise builds, then
 executes the linked binary in place, propagating its exact exit code.
 
-`init <app|lib> [DIR]` creates a minimal package skeleton at `DIR` (default:
+`init <exe|lib> [DIR]` creates a minimal package skeleton at `DIR` (default:
 the working directory), deriving the package name from `DIR`'s basename. It
-refuses to overwrite an existing `ace.pkg` or root file. An app gets
+refuses to overwrite an existing `ace.pkg` or root file. An exe gets
 `src/main.ace` with a minimal `main(): int { return 0 }`; a lib gets an
 empty `src/mod.ace`, since a library's root module needs no content to be a
 valid sole import surface. The generated `ace.pkg` includes empty
@@ -141,7 +141,7 @@ complete resulting graph — no duplicate or colliding name, `PATH` holding a
 shared `ace` language version — before writing, and `remove` re-validates
 symmetrically; either restores the manifest to its exact original bytes if
 validation fails. `list` is read-only: it prints the resolved graph (name,
-kind, direct/transitive, directory).
+type, direct/transitive, directory).
 
 `--pkg-graph=DIR` and `--pkg-check=DIR` remain as lower-level debug hooks —
 analogous to `--tokens`/`--ast` exposing earlier compiler stages — resolving

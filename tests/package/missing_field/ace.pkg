@@ -3,5 +3,5 @@
 
 name: missing_field
 version: 0.1.0
-kind: app
+type: exe
 root: main.ace

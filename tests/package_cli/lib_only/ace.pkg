@@ -1,7 +1,7 @@
 // expect-build-ok
-// expect-run-err: requires an app package
+// expect-run-err: requires an exe package
 name: lib_only
 version: 0.1.0
 ace: 0.1
-kind: lib
+type: lib
 root: src/mod.ace

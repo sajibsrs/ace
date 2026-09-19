@@ -49,12 +49,12 @@ static void usage(void) {
                     "  --pkg-graph=DIR resolve and print the ace.pkg dependency graph at DIR\n"
                     "  --pkg-check=DIR full semantic check of the ace.pkg package at DIR,\n"
                     "                  with cross-package imports resolved, no codegen\n"
-                    "  ace pkg init <app|lib> [DIR]  create a minimal package skeleton\n"
+                    "  ace pkg init <exe|lib> [DIR]  create a minimal package skeleton\n"
                     "  ace pkg build [--checked|--release] [--target=TARGET] [--report]\n"
-                    "                compile (and, for an app, link) the package found by\n"
+                    "                compile (and, for an exe, link) the package found by\n"
                     "                walking up from the working directory to the nearest ace.pkg\n"
                     "  ace pkg run   [--checked|--release] [--target=TARGET] [--report]\n"
-                    "                build, then execute the app (app-only)\n"
+                    "                build, then execute the exe (exe-only)\n"
                     "  ace pkg check full semantic check of the enclosing package, no codegen\n");
     exit(2);
 }
@@ -223,7 +223,7 @@ static void obj_path(char* out, size_t cap, const char* src) {
 // (SPEC.md Package System #11) rather than taking a directory argument.
 
 static void package_usage(void) {
-    fprintf(stderr, "usage: ace pkg init <app|lib> [DIR]\n"
+    fprintf(stderr, "usage: ace pkg init <exe|lib> [DIR]\n"
                     "       ace pkg build [--checked|--release] [--target=TARGET]\n"
                     "                     [--report]\n"
                     "       ace pkg run   [--checked|--release] [--target=TARGET]\n"
@@ -232,11 +232,11 @@ static void package_usage(void) {
                     "       ace pkg add NAME PATH\n"
                     "       ace pkg remove NAME\n"
                     "       ace pkg list\n"
-                    "  init   create a minimal app or lib package skeleton, without\n"
+                    "  init   create a minimal exe or lib package skeleton, without\n"
                     "         overwriting an existing ace.pkg or root file\n"
-                    "  build  compile (and for an app, link) the package found by walking\n"
+                    "  build  compile (and for an exe, link) the package found by walking\n"
                     "         up from the working directory to the nearest ace.pkg\n"
-                    "  run    build, then execute the app (app-only)\n"
+                    "  run    build, then execute the exe (exe-only)\n"
                     "  check  full semantic check of the package, no codegen\n"
                     "  add    add a local-path lib dependency (PATH relative to ace.pkg)\n"
                     "  remove remove a dependency by name\n"
@@ -478,7 +478,7 @@ static int package_cmd_list(int argc, char** argv, const char* argv0) {
         else
             for (PackageDep* dep = root->deps; dep; dep = dep->next)
                 if (dep->package == pkg) { relation = "direct"; break; }
-        printf("%-16s %-4s %-10s %s\n", pkg->name, pkg->is_app ? "app" : "lib", relation,
+        printf("%-16s %-4s %-10s %s\n", pkg->name, pkg->is_exe ? "exe" : "lib", relation,
                pkg->dir);
     }
     free(order);
@@ -508,12 +508,12 @@ static int package_cmd_check(int argc, char** argv, const char* argv0) {
 }
 
 // Shared by `pkg build` and `pkg run`: resolve + check the enclosing
-// package, then for an app compile and link it into build/<package-name>
+// package, then for an exe compile and link it into build/<package-name>
 // (SPEC.md Package System #15). A lib only checks and ensures build/
 // exists, since v1 ships libraries as source with no reusable archive.
-// require_app rejects a lib package outright (used by `run`). On success
-// for an app, out_bin receives the linked executable's path.
-static int package_build_or_run(int argc, char** argv, const char* argv0, int require_app,
+// require_exe rejects a lib package outright (used by `run`). On success
+// for an exe, out_bin receives the linked executable's path.
+static int package_build_or_run(int argc, char** argv, const char* argv0, int require_exe,
                                 char* out_bin, size_t out_bin_cap) {
     int mode_seen = 0, show_report = 0;
     EmitMode emit_mode = EMIT_CHECKED;
@@ -562,8 +562,8 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
                                 &root_package, &file, &d, &order, &norder);
     if (rc != 0) return rc;
 
-    if (require_app && !root_package->is_app) {
-        fprintf(stderr, "ace: 'run' requires an app package; '%s' is kind 'lib'\n",
+    if (require_exe && !root_package->is_exe) {
+        fprintf(stderr, "ace: 'run' requires an exe package; '%s' is type 'lib'\n",
                 root_package->name);
         free(order);
         return 2;
@@ -576,7 +576,7 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
         free(order);
         return 1;
     }
-    if (!root_package->is_app) { // lib: checked, build/ ensured, nothing to link
+    if (!root_package->is_exe) { // lib: checked, build/ ensured, nothing to link
         free(order);
         return 0;
     }
@@ -650,11 +650,11 @@ static int package_cmd_run(int argc, char** argv, const char* argv0) {
 
 static int package_cmd_init(int argc, char** argv) {
     if (argc < 1 || argc > 2) package_usage();
-    int is_app;
-    if (strcmp(argv[0], "app") == 0) is_app = 1;
-    else if (strcmp(argv[0], "lib") == 0) is_app = 0;
+    int is_exe;
+    if (strcmp(argv[0], "exe") == 0) is_exe = 1;
+    else if (strcmp(argv[0], "lib") == 0) is_exe = 0;
     else {
-        fprintf(stderr, "ace: pkg init kind must be 'app' or 'lib'\n");
+        fprintf(stderr, "ace: pkg init type must be 'exe' or 'lib'\n");
         return 2;
     }
     const char* dir_arg = argc == 2 ? argv[1] : ".";
@@ -700,7 +700,7 @@ static int package_cmd_init(int argc, char** argv) {
         fprintf(stderr, "ace: '%s' already exists\n", manifest_path);
         return 1;
     }
-    const char* root_rel = is_app ? "src/main.ace" : "src/mod.ace";
+    const char* root_rel = is_exe ? "src/main.ace" : "src/mod.ace";
     char root_path[4160];
     snprintf(root_path, sizeof root_path, "%s/%s", canon, root_rel);
     if (stat(root_path, &st) == 0) {
@@ -717,12 +717,12 @@ static int package_cmd_init(int argc, char** argv) {
 
     char manifest_body[512];
     snprintf(manifest_body, sizeof manifest_body,
-             "name: %s\nversion: 0.1.0\nace: 0.1\nkind: %s\nroot: %s\n"
+             "name: %s\nversion: 0.1.0\nace: 0.1\ntype: %s\nroot: %s\n"
              "description:\nauthor:\nlicense:\nrepository:\n",
-             base, is_app ? "app" : "lib", root_rel);
+             base, is_exe ? "exe" : "lib", root_rel);
     if (package_write_file(manifest_path, manifest_body, strlen(manifest_body)) != 0) return 1;
 
-    const char* root_body = is_app ? "main(): int {\n    return 0\n}\n" : "";
+    const char* root_body = is_exe ? "main(): int {\n    return 0\n}\n" : "";
     if (package_write_file(root_path, root_body, strlen(root_body)) != 0) return 1;
 
     return 0;
@@ -840,7 +840,7 @@ int main(int argc, char** argv) {
         }
         for (int i = 0; i < norder; i++)
             printf("%s\t%s\t%s\n", order[i]->name,
-                   order[i]->is_app ? "app" : "lib", order[i]->root_file);
+                   order[i]->is_exe ? "exe" : "lib", order[i]->root_file);
         free(order);
         return 0;
     }

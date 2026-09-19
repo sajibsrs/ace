@@ -316,7 +316,7 @@ field           := key ":" value newline           // surrounding spaces/tabs
                                                     // around key and value
                                                     // are insignificant
 key             := top_key | dep_key | link_key
-top_key         := "name" | "version" | "ace" | "kind" | "root"
+top_key         := "name" | "version" | "ace" | "type" | "root"
                   | "description" | "author" | "license" | "repository"
 dep_key         := ident                           // import alias, only
                                                     // inside [dependencies]
