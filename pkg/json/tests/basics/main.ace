@@ -45,7 +45,12 @@ scalars(): int {
         }
         else { return 10 }
     }
-    v, err = json.parse("\"a\\u00e9\\n\\\"\"")
+    return string_case()
+}
+
+string_case(): int {
+    v: json.Json, err: Error = json.parse("\"a\\u00e9\\n\\\"\"")
+    defer json.wipe(v)
 
     if err != null {
         return 11
@@ -54,7 +59,6 @@ scalars(): int {
     switch v {
         json.Json.string(s: string) {
             if !mem.equal(s, "a\xC3\xA9\n\"") { return 12 }
-            json.wipe(v)
         }
         else { return 13 }
     }
@@ -62,7 +66,17 @@ scalars(): int {
 }
 
 containers(): int {
+    code: int = array_case()
+
+    if code != 0 {
+        return code
+    }
+    return object_case()
+}
+
+array_case(): int {
     v: json.Json, err: Error = json.parse("[1, 2, [3, 4], \"x\"]")
+    defer json.wipe(v)
 
     if err != null {
         return 20
@@ -81,8 +95,12 @@ containers(): int {
         }
         else { return 24 }
     }
-    json.wipe(v)
-    v, err = json.parse("{\"a\": 1, \"b\": {\"c\": true}, \"d\": []}")
+    return 0
+}
+
+object_case(): int {
+    v: json.Json, err: Error = json.parse("{\"a\": 1, \"b\": {\"c\": true}, \"d\": []}")
+    defer json.wipe(v)
 
     if err != null {
         return 25
@@ -110,7 +128,6 @@ containers(): int {
         }
         else { return 33 }
     }
-    json.wipe(v)
     return 0
 }
 
