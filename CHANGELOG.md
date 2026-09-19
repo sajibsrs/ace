@@ -858,6 +858,20 @@ current normative rules, and Git preserves patch-level detail.
   the caller's scope or the bare shared scope. Added
   `tests/modules/import_alias_generic`.
 
+- Added the standalone package `pkg/json` (`kind: lib`, `root: mod.ace`): a
+  whole-document RFC 8259 parser. `json.parse(text): (Json, Error)` builds a
+  `Json` union (`none`, `bool`, `number: f64`, `string`, `array: []Json`,
+  `object: []Pair`) with heap strings and backing storage, reports failures
+  through the `JsonErr` domain, and enforces a fixed nesting-depth limit
+  (`MAX_DEPTH`). Leading-zero numbers, unpaired `\u` surrogates, unescaped
+  control bytes, and trailing data are rejected. `json.wipe` recursively releases every
+  allocation, keys included. The parser walk is `Parser` methods, with
+  `parse_value` and `parse_object`/`parse_array` calling each other; only
+  helpers that ignore parser state stay free functions. `\uXXXX` decoding uses
+  a private `encode_utf8`. `pkg/json/tests/basics` runs under
+  `make test-packages`, `demo/json-parse-file` parses a file and prints every
+  key and value, and `docs/json.md` documents the package.
+
 ## Current frontier
 
 The checked-build queue is complete. Additive networking, concurrency, fuller
