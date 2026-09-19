@@ -1,0 +1,19 @@
+/* Field defaults and @align expressions naming this module's own enum and
+ * constant; the loader must prefix them like every other reference here.
+ */
+
+pub Mode: enum {
+    off,
+    on,
+}
+
+LIMIT: const usize = 7
+ALIGN: const usize = 16
+
+@align(ALIGN)
+pub Box: struct {
+    mode: Mode = Mode.on,
+    size: usize = LIMIT,
+    @align(ALIGN)
+    tag: u8 = 3,
+}

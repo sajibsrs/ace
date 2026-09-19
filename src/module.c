@@ -1175,8 +1175,12 @@ static void lower_selected_node(Node* n, SelectLower* c) {
             for (int j = 0; j < member->nkids; j++)
                 lower_selected_type(member->kids[j]->a, c);
             lower_selected_type(member->a, c);
-            lower_selected_node(member->c, c);
+            if (n->kind == N_STRUCT) {
+                lower_selected_node(member->b, c); // field @align expression
+                lower_selected_node(member->c, c); // field default
+            }
         }
+        if (n->kind == N_STRUCT) lower_selected_node(n->b, c); // struct @align expression
         select_scope_pop(c);
         return;
     case N_DISTINCT:
@@ -1469,7 +1473,12 @@ static void rename_refs(Node* n, Renames* rs, SelectLower* c) {
             for (int j = 0; j < member->nkids; j++)
                 rename_type_refs(member->kids[j]->a, rs, c);
             rename_type_refs(member->a, rs, c);
+            if (n->kind == N_STRUCT) {
+                rename_refs(member->b, rs, c); // field @align expression
+                rename_refs(member->c, rs, c); // field default
+            }
         }
+        if (n->kind == N_STRUCT) rename_refs(n->b, rs, c); // struct @align expression
         select_scope_pop(c);
         return;
     case N_DISTINCT:

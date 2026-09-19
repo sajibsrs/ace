@@ -1,0 +1,1 @@
+pub WIDE: const usize = 8

@@ -1,0 +1,30 @@
+/* Imported struct field defaults and @align expressions resolve in their
+ * declaring module; selected names resolve in root @align expressions.
+ */
+
+// expect-exit: 42
+
+import shapes: "./shapes.ace"
+import WIDE from "./sizes.ace"
+
+@align(WIDE)
+Pair: struct {
+    @align(WIDE)
+    a: u8,
+    n: usize = WIDE,
+}
+
+main(): int {
+    box: shapes.Box = shapes.Box {}
+    if box.mode != shapes.Mode.on || box.size != 7 || box.tag != 3 {
+        return 1
+    }
+    if alignof(shapes.Box) != 16 || offsetof(shapes.Box, tag) % 16 != 0 {
+        return 2
+    }
+    pair: Pair = Pair {a = 1}
+    if pair.n != 8 || alignof(Pair) != 8 {
+        return 3
+    }
+    return 42
+}

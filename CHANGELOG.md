@@ -931,6 +931,11 @@ current normative rules, and Git preserves patch-level detail.
 - Float `<`, `<=`, `>`, and `>=` are now false when either operand is NaN:
   `tok_cond` gives floats `LO`/`LS`/`GT`/`GE`, which all fail on an
   unordered `fcmp`, instead of the unsigned `HI`/`HS` that held there.
+- The loader's module-prefix walk (`rename_refs`) now visits struct field
+  defaults and field/struct `@align` expressions, and selected-import lowering
+  visits the `@align` slots it skipped. Previously such an expression naming
+  its own module's enum or `const` stayed unprefixed, so the struct failed to
+  resolve once imported.
 
 ## Current frontier
 
