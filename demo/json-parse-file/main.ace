@@ -1,0 +1,127 @@
+/* Parses data.json with pkg/json and prints every key with its value to
+ * standard output, indenting nested objects and arrays.
+ *
+ * data.json is opened relative to the current working directory, not to this
+ * source file, so run from this directory:
+ *   ace pkg run
+ */
+
+import fmt
+import json
+import mem
+import sys
+
+PATH: string = "data.json"
+
+read_file(path: string): (mut []u8, Error) {
+    info: sys.FileInfo, serr: Error = sys.stat(path)
+
+    if serr != null {
+        return null, serr
+    }
+    buffer: mut []u8 = mem.alloc[u8](usize(info.size))
+
+    if buffer == null {
+        return null, json.JsonErr.allocation
+    }
+    fd: sys.Fd, oerr: Error = sys.open(path, sys.O_RDONLY)
+
+    if oerr != null {
+        mem.release[u8](mut buffer)
+        return null, oerr
+    }
+    defer sys.close(fd)
+    total: usize = 0
+
+    for total < buffer.len {
+        n: int, rerr: Error = sys.read(fd, buffer[total..])
+
+        if rerr != null || n == 0 {
+            break
+        }
+        total += usize(n)
+    }
+
+    if total != buffer.len {
+        mem.release[u8](mut buffer)
+        return null, json.JsonErr.unexpected_token
+    }
+    return buffer, null
+}
+
+indent(depth: usize) {
+    for i: usize in 0 .. depth {
+        fmt.print("  ")
+    }
+}
+
+newline_unless_root(depth: usize) {
+    if depth > 0 {
+        fmt.print("\n")
+    }
+}
+
+/* Prints one value after its "key:" or "-" label. A scalar continues the
+ * label's line; a container starts a fresh line (except the root) and lists
+ * its children at `depth`, one level in per nesting.
+ */
+show(value: json.Json, depth: usize) {
+    switch value {
+        json.Json.none {
+            fmt.println(" null")
+        }
+        json.Json.bool(b: bool) {
+            if b {
+                fmt.println(" true")
+            } else {
+                fmt.println(" false")
+            }
+        }
+        json.Json.number(n: f64) {
+            fmt.print(" ")
+            fmt.println(n)
+        }
+        json.Json.string(s: string) {
+            fmt.print(" ")
+            fmt.println(s)
+        }
+        json.Json.array(items: []json.Json) {
+            newline_unless_root(depth)
+
+            for i: usize in 0 .. items.len {
+                indent(depth)
+                fmt.print("-")
+                show(items[i], depth + 1)
+            }
+        }
+        json.Json.object(pairs: []json.Pair) {
+            newline_unless_root(depth)
+
+            for i: usize in 0 .. pairs.len {
+                indent(depth)
+                fmt.print(pairs[i].key)
+                fmt.print(":")
+                show(pairs[i].value, depth + 1)
+            }
+        }
+    }
+}
+
+main(): int {
+    data: mut []u8, rerr: Error = read_file(PATH)
+    defer mem.release[u8](mut data)
+
+    if rerr != null {
+        fmt.printf("failed to read %s: error %d\n", PATH, int(rerr.code))
+        return 1
+    }
+    root: json.Json, perr: Error = json.parse(data)
+    defer json.wipe(root)
+
+    if perr != null {
+        fmt.printf("failed to parse %s: error %d\n", PATH, int(perr.code))
+        return 1
+    }
+    show(root, 0)
+    return 0
+}
