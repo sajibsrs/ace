@@ -998,6 +998,10 @@ current normative rules, and Git preserves patch-level detail.
   rather than as a fixed 240-byte area, so later locals and range-loop state
   stay within direct reach. The CPU recurrence loop fell from 50 to 37
   instructions per iteration and 42.5 to 39.5 ms in release (C `-O2` 33.9 ms).
+- Float negation and float register moves encode their source in `Rn`
+  (bits 5-9) rather than `Rm`. `fneg` previously always negated v0, so
+  `a * -b` on floats miscompiled whenever `-b` sat in a later temp; `fmov`'s
+  sole caller only ever moved v0 to itself, so it never misbehaved.
 
 ## Current frontier
 

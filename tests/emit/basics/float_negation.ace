@@ -1,0 +1,28 @@
+/* Float negation reads its own operand register, not v0: each negated value
+ * below sits in a later temp while another value already holds v0. */
+
+// expect-exit: 42
+
+scaled(a: f64, b: f64): f64 {
+    return a * -b
+}
+
+main(): int {
+    a: f64 = 3.0
+    b: f64 = 2.0
+    want: f64 = 0.0 - 6.0
+    c: f64 = a * -b
+    if c != want { return 1 }
+    d: f64 = a - -b
+    if d != 5.0 { return 2 }
+    if scaled(a, b) != want { return 3 }
+
+    x: f32 = 1.5
+    y: f32 = 0.5
+    z: f32 = x + -y
+    if z != 1.0 { return 4 }
+    w: f32 = x * -(y + y)
+    want32: f32 = 0.0 - 1.5
+    if w != want32 { return 5 }
+    return 42
+}

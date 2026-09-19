@@ -1058,7 +1058,7 @@ static void mov_int(Em* e, int sf, int dst, int src) {
 
 static void mov_fp(Em* e, int is64, int dst, int src) {
     if (dst == src) return;
-    ins(e, (is64 ? 0x1E604000u : 0x1E204000u) | ((uint32_t)vreg(src) << 16) |
+    ins(e, (is64 ? 0x1E604000u : 0x1E204000u) | ((uint32_t)vreg(src) << 5) |
            (uint32_t)vreg(dst));
 }
 
@@ -4709,7 +4709,7 @@ static EV gen_expr(Em* e, Node* x) {
             if (v.cls == CLS_FP) {
                 int is64 = !t || unwrap(t)->prim == P_F64;
                 ins(e, (is64 ? 0x1E614000u : 0x1E214000u) |
-                       ((uint32_t)vreg(v.idx) << 16) | (uint32_t)vreg(v.idx));
+                       ((uint32_t)vreg(v.idx) << 5) | (uint32_t)vreg(v.idx));
                 return v;
             }
             int sf = !t || scalar_bits(t) == 64;
