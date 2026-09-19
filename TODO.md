@@ -133,9 +133,6 @@ These are baseline observations, not performance promises.
      and call costs are reduced. Specialized parsers can outperform platform
      `strtod`, so C is the comparison baseline rather than a hard ceiling, but
      any stronger claim requires a local checksum-matched measurement.
-- **Constant arithmetic lowering** [new] — measure and carve local strength
-  reduction for constant division/remainder and similarly costly instruction
-  sequences if broader benchmarks confirm the recurrence result.
 - **Broader performance corpus** [new] — add checksum-matched Ace/C fixtures for
   calls, large aggregates, slices, branches, floating point, cache-heavy loops,
   and compile/object size before making optimizer-wide claims. `noalias`-driven

@@ -29,6 +29,13 @@ minimum divided by `-1`. Shift counts must be nonnegative and below the left
 operand width. Release output emits direct fixed-width operations without
 guards; explicit casts and bitwise operations are not overflow-checked.
 
+When the divisor of `/`, `%`, `/=`, or `%=` is an integer literal or named
+constant, the compiler replaces the hardware divide with shifts and masks for
+powers of two, or a multiply-high by a precomputed reciprocal otherwise. The
+results are identical, including signed truncation toward zero. A constant
+nonzero divisor cannot fail, so checked output omits its guards; zero and a
+signed `-1` divisor keep the ordinary divide and checks.
+
 Integer literals are untyped constants until used. They must fit the destination
 type. In overload selection, an uncast integer or character literal uses the
 natural `int` candidate; cast explicitly to select another overload.

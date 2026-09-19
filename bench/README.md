@@ -59,6 +59,10 @@ median compare results of 8.1 ns for 64 bytes (C 3.84 ns, 2.1x) and 107 ns for
 4096 bytes (C 159 ns, 0.67x). Before loop alignment, the same copy loop
 straddled a cache line and measured 135 ns instead of 82 ns; placement matters
 as much as instruction choice at this scale.
+The same holds for ordinary emitted code: `find-4096` measured 16.6 us with
+`str.index_from` 12 bytes into a 64-byte line and 19.5 us at 44 bytes, with
+byte-identical instructions. Compare string results across builds only when
+that placement is controlled.
 
 ### Native float-parser optimization checkpoint
 
@@ -138,6 +142,14 @@ was about 5% behind unoptimized C, checked guards added about 7% over release,
 and optimized C was about 31% faster than release. The result points first to
 local code-generation optimization and broader workload coverage; it does not
 establish performance for other programs or machines.
+
+### Constant-divisor checkpoint
+
+After constant divisors lowered to reciprocal multiplies, five runs produced
+medians of 43.60 ms checked, 42.45 ms release, 43.40 ms C `-O0`, and 34.22 ms
+C `-O2`, all with checksum `1019507998`. Release now edges past unoptimized C;
+the remaining gap to `-O2` is loop state that still round-trips through stack
+slots every iteration.
 
 ## Memory
 

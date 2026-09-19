@@ -1,0 +1,509 @@
+/* Constant-divisor lowering: shifts, masks, and multiply-high reciprocals
+ * must match the hardware divide that a runtime divisor still uses, for every
+ * integer width and signedness, in `/`, `%`, `/=`, and `%=`.
+ */
+
+// expect-exit: 42
+
+TEN: u32 = 10
+
+state: u64 = 88172645463325252
+
+// xorshift64, shifted right by a varying amount to spread magnitudes.
+next(): u64 {
+    state ^= state << 13
+    state ^= state >> 7
+    state ^= state << 17
+    return state >> (state % 61)
+}
+
+check_u8(x: u8): bool {
+    d1: u8 = 1
+    d2: u8 = 2
+    d3: u8 = 3
+    d5: u8 = 5
+    d6: u8 = 6
+    d7: u8 = 7
+    d8: u8 = 8
+    d10: u8 = 10
+    d16: u8 = 16
+    d25: u8 = 25
+    d60: u8 = 60
+    d64: u8 = 64
+    d100: u8 = 100
+    d127: u8 = 127
+    d128: u8 = 128
+    d200: u8 = 200
+    d255: u8 = 255
+    if x / 1 != x / d1 || x % 1 != x % d1 { return false }
+    if x / 2 != x / d2 || x % 2 != x % d2 { return false }
+    if x / 3 != x / d3 || x % 3 != x % d3 { return false }
+    if x / 5 != x / d5 || x % 5 != x % d5 { return false }
+    if x / 6 != x / d6 || x % 6 != x % d6 { return false }
+    if x / 7 != x / d7 || x % 7 != x % d7 { return false }
+    if x / 8 != x / d8 || x % 8 != x % d8 { return false }
+    if x / 10 != x / d10 || x % 10 != x % d10 { return false }
+    if x / 16 != x / d16 || x % 16 != x % d16 { return false }
+    if x / 25 != x / d25 || x % 25 != x % d25 { return false }
+    if x / 60 != x / d60 || x % 60 != x % d60 { return false }
+    if x / 64 != x / d64 || x % 64 != x % d64 { return false }
+    if x / 100 != x / d100 || x % 100 != x % d100 { return false }
+    if x / 127 != x / d127 || x % 127 != x % d127 { return false }
+    if x / 128 != x / d128 || x % 128 != x % d128 { return false }
+    if x / 200 != x / d200 || x % 200 != x % d200 { return false }
+    if x / 255 != x / d255 || x % 255 != x % d255 { return false }
+    q: u8 = x
+    r: u8 = x
+    q /= 7
+    r %= 7
+    seven: u8 = 7
+    return q == x / seven && r == x % seven
+}
+
+run_u8(): bool {
+    edges: [9]u8 = [0, 1, 2, 3, 5, 6, 97, 254, 255]
+    for value: u8 in edges {
+        if !check_u8(value) { return false }
+    }
+    for i: usize in 0 .. 3000 {
+        if !check_u8(u8(next() & 0xff)) { return false }
+    }
+    return true
+}
+
+check_u16(x: u16): bool {
+    d1: u16 = 1
+    d3: u16 = 3
+    d7: u16 = 7
+    d10: u16 = 10
+    d13: u16 = 13
+    d100: u16 = 100
+    d641: u16 = 641
+    d1000: u16 = 1000
+    d1024: u16 = 1024
+    d4095: u16 = 4095
+    d32768: u16 = 32768
+    d65521: u16 = 65521
+    d65535: u16 = 65535
+    if x / 1 != x / d1 || x % 1 != x % d1 { return false }
+    if x / 3 != x / d3 || x % 3 != x % d3 { return false }
+    if x / 7 != x / d7 || x % 7 != x % d7 { return false }
+    if x / 10 != x / d10 || x % 10 != x % d10 { return false }
+    if x / 13 != x / d13 || x % 13 != x % d13 { return false }
+    if x / 100 != x / d100 || x % 100 != x % d100 { return false }
+    if x / 641 != x / d641 || x % 641 != x % d641 { return false }
+    if x / 1000 != x / d1000 || x % 1000 != x % d1000 { return false }
+    if x / 1024 != x / d1024 || x % 1024 != x % d1024 { return false }
+    if x / 4095 != x / d4095 || x % 4095 != x % d4095 { return false }
+    if x / 32768 != x / d32768 || x % 32768 != x % d32768 { return false }
+    if x / 65521 != x / d65521 || x % 65521 != x % d65521 { return false }
+    if x / 65535 != x / d65535 || x % 65535 != x % d65535 { return false }
+    q: u16 = x
+    r: u16 = x
+    q /= 7
+    r %= 7
+    seven: u16 = 7
+    return q == x / seven && r == x % seven
+}
+
+run_u16(): bool {
+    edges: [9]u16 = [0, 1, 2, 3, 5, 6, 97, 65534, 65535]
+    for value: u16 in edges {
+        if !check_u16(value) { return false }
+    }
+    for i: usize in 0 .. 3000 {
+        if !check_u16(u16(next() & 0xffff)) { return false }
+    }
+    return true
+}
+
+check_u32(x: u32): bool {
+    d1: u32 = 1
+    d2: u32 = 2
+    d3: u32 = 3
+    d5: u32 = 5
+    d7: u32 = 7
+    d10: u32 = 10
+    d12: u32 = 12
+    d60: u32 = 60
+    d97: u32 = 97
+    d100: u32 = 100
+    d641: u32 = 641
+    d1000: u32 = 1000
+    d1024: u32 = 1024
+    d86400: u32 = 86400
+    d1000000: u32 = 1000000
+    d2147483647: u32 = 2147483647
+    d2147483648: u32 = 2147483648
+    d2147483649: u32 = 2147483649
+    d4294967291: u32 = 4294967291
+    d4294967295: u32 = 4294967295
+    if x / 1 != x / d1 || x % 1 != x % d1 { return false }
+    if x / 2 != x / d2 || x % 2 != x % d2 { return false }
+    if x / 3 != x / d3 || x % 3 != x % d3 { return false }
+    if x / 5 != x / d5 || x % 5 != x % d5 { return false }
+    if x / 7 != x / d7 || x % 7 != x % d7 { return false }
+    if x / 10 != x / d10 || x % 10 != x % d10 { return false }
+    if x / 12 != x / d12 || x % 12 != x % d12 { return false }
+    if x / 60 != x / d60 || x % 60 != x % d60 { return false }
+    if x / 97 != x / d97 || x % 97 != x % d97 { return false }
+    if x / 100 != x / d100 || x % 100 != x % d100 { return false }
+    if x / 641 != x / d641 || x % 641 != x % d641 { return false }
+    if x / 1000 != x / d1000 || x % 1000 != x % d1000 { return false }
+    if x / 1024 != x / d1024 || x % 1024 != x % d1024 { return false }
+    if x / 86400 != x / d86400 || x % 86400 != x % d86400 { return false }
+    if x / 1000000 != x / d1000000 || x % 1000000 != x % d1000000 { return false }
+    if x / 2147483647 != x / d2147483647 || x % 2147483647 != x % d2147483647 { return false }
+    if x / 2147483648 != x / d2147483648 || x % 2147483648 != x % d2147483648 { return false }
+    if x / 2147483649 != x / d2147483649 || x % 2147483649 != x % d2147483649 { return false }
+    if x / 4294967291 != x / d4294967291 || x % 4294967291 != x % d4294967291 { return false }
+    if x / 4294967295 != x / d4294967295 || x % 4294967295 != x % d4294967295 { return false }
+    q: u32 = x
+    r: u32 = x
+    q /= 7
+    r %= 7
+    seven: u32 = 7
+    return q == x / seven && r == x % seven
+}
+
+run_u32(): bool {
+    edges: [9]u32 = [0, 1, 2, 3, 5, 6, 97, 4294967294, 4294967295]
+    for value: u32 in edges {
+        if !check_u32(value) { return false }
+    }
+    for i: usize in 0 .. 3000 {
+        if !check_u32(u32(next() & 0xffffffff)) { return false }
+    }
+    return true
+}
+
+check_u64(x: u64): bool {
+    d1: u64 = 1
+    d2: u64 = 2
+    d3: u64 = 3
+    d5: u64 = 5
+    d7: u64 = 7
+    d10: u64 = 10
+    d60: u64 = 60
+    d97: u64 = 97
+    d100: u64 = 100
+    d641: u64 = 641
+    d1000: u64 = 1000
+    d1024: u64 = 1024
+    d1000000: u64 = 1000000
+    d2147483647: u64 = 2147483647
+    d4294967295: u64 = 4294967295
+    d4294967296: u64 = 4294967296
+    d1000000000000000000: u64 = 1000000000000000000
+    d9223372036854775807: u64 = 9223372036854775807
+    d9223372036854775808: u64 = 9223372036854775808
+    d9223372036854775809: u64 = 9223372036854775809
+    d18446744073709551557: u64 = 18446744073709551557
+    d18446744073709551615: u64 = 18446744073709551615
+    if x / 1 != x / d1 || x % 1 != x % d1 { return false }
+    if x / 2 != x / d2 || x % 2 != x % d2 { return false }
+    if x / 3 != x / d3 || x % 3 != x % d3 { return false }
+    if x / 5 != x / d5 || x % 5 != x % d5 { return false }
+    if x / 7 != x / d7 || x % 7 != x % d7 { return false }
+    if x / 10 != x / d10 || x % 10 != x % d10 { return false }
+    if x / 60 != x / d60 || x % 60 != x % d60 { return false }
+    if x / 97 != x / d97 || x % 97 != x % d97 { return false }
+    if x / 100 != x / d100 || x % 100 != x % d100 { return false }
+    if x / 641 != x / d641 || x % 641 != x % d641 { return false }
+    if x / 1000 != x / d1000 || x % 1000 != x % d1000 { return false }
+    if x / 1024 != x / d1024 || x % 1024 != x % d1024 { return false }
+    if x / 1000000 != x / d1000000 || x % 1000000 != x % d1000000 { return false }
+    if x / 2147483647 != x / d2147483647 || x % 2147483647 != x % d2147483647 { return false }
+    if x / 4294967295 != x / d4294967295 || x % 4294967295 != x % d4294967295 { return false }
+    if x / 4294967296 != x / d4294967296 || x % 4294967296 != x % d4294967296 { return false }
+    if x / 1000000000000000000 != x / d1000000000000000000 || x % 1000000000000000000 != x % d1000000000000000000 { return false }
+    if x / 9223372036854775807 != x / d9223372036854775807 || x % 9223372036854775807 != x % d9223372036854775807 { return false }
+    if x / 9223372036854775808 != x / d9223372036854775808 || x % 9223372036854775808 != x % d9223372036854775808 { return false }
+    if x / 9223372036854775809 != x / d9223372036854775809 || x % 9223372036854775809 != x % d9223372036854775809 { return false }
+    if x / 18446744073709551557 != x / d18446744073709551557 || x % 18446744073709551557 != x % d18446744073709551557 { return false }
+    if x / 18446744073709551615 != x / d18446744073709551615 || x % 18446744073709551615 != x % d18446744073709551615 { return false }
+    q: u64 = x
+    r: u64 = x
+    q /= 7
+    r %= 7
+    seven: u64 = 7
+    return q == x / seven && r == x % seven
+}
+
+run_u64(): bool {
+    edges: [9]u64 = [0, 1, 2, 3, 5, 6, 97, 18446744073709551614, 18446744073709551615]
+    for value: u64 in edges {
+        if !check_u64(value) { return false }
+    }
+    for i: usize in 0 .. 3000 {
+        if !check_u64(next()) { return false }
+    }
+    return true
+}
+
+check_i8(x: i8): bool {
+    d1: i8 = 1
+    d2: i8 = 2
+    d3: i8 = 3
+    d5: i8 = 5
+    d7: i8 = 7
+    d8: i8 = 8
+    d10: i8 = 10
+    d16: i8 = 16
+    d64: i8 = 64
+    d100: i8 = 100
+    d127: i8 = 127
+    d2n: i8 = -2
+    d3n: i8 = -3
+    d7n: i8 = -7
+    d8n: i8 = -8
+    d64n: i8 = -64
+    d100n: i8 = -100
+    d127n: i8 = -127
+    d128n: i8 = -128
+    if x / 1 != x / d1 || x % 1 != x % d1 { return false }
+    if x / 2 != x / d2 || x % 2 != x % d2 { return false }
+    if x / 3 != x / d3 || x % 3 != x % d3 { return false }
+    if x / 5 != x / d5 || x % 5 != x % d5 { return false }
+    if x / 7 != x / d7 || x % 7 != x % d7 { return false }
+    if x / 8 != x / d8 || x % 8 != x % d8 { return false }
+    if x / 10 != x / d10 || x % 10 != x % d10 { return false }
+    if x / 16 != x / d16 || x % 16 != x % d16 { return false }
+    if x / 64 != x / d64 || x % 64 != x % d64 { return false }
+    if x / 100 != x / d100 || x % 100 != x % d100 { return false }
+    if x / 127 != x / d127 || x % 127 != x % d127 { return false }
+    if x / -2 != x / d2n || x % -2 != x % d2n { return false }
+    if x / -3 != x / d3n || x % -3 != x % d3n { return false }
+    if x / -7 != x / d7n || x % -7 != x % d7n { return false }
+    if x / -8 != x / d8n || x % -8 != x % d8n { return false }
+    if x / -64 != x / d64n || x % -64 != x % d64n { return false }
+    if x / -100 != x / d100n || x % -100 != x % d100n { return false }
+    if x / -127 != x / d127n || x % -127 != x % d127n { return false }
+    if x / -128 != x / d128n || x % -128 != x % d128n { return false }
+    q: i8 = x
+    r: i8 = x
+    q /= 7
+    r %= 7
+    seven: i8 = 7
+    return q == x / seven && r == x % seven
+}
+
+run_i8(): bool {
+    edges: [11]i8 = [-128, -127, -2, -1, 0, 1, 2, 3, 97, 126, 127]
+    for value: i8 in edges {
+        if !check_i8(value) { return false }
+    }
+    for i: usize in 0 .. 3000 {
+        if !check_i8(i8(i64(next() & 0xff) - 128)) { return false }
+    }
+    return true
+}
+
+check_i16(x: i16): bool {
+    d1: i16 = 1
+    d3: i16 = 3
+    d7: i16 = 7
+    d10: i16 = 10
+    d641: i16 = 641
+    d1000: i16 = 1000
+    d1024: i16 = 1024
+    d32767: i16 = 32767
+    d3n: i16 = -3
+    d7n: i16 = -7
+    d10n: i16 = -10
+    d1024n: i16 = -1024
+    d32767n: i16 = -32767
+    d32768n: i16 = -32768
+    if x / 1 != x / d1 || x % 1 != x % d1 { return false }
+    if x / 3 != x / d3 || x % 3 != x % d3 { return false }
+    if x / 7 != x / d7 || x % 7 != x % d7 { return false }
+    if x / 10 != x / d10 || x % 10 != x % d10 { return false }
+    if x / 641 != x / d641 || x % 641 != x % d641 { return false }
+    if x / 1000 != x / d1000 || x % 1000 != x % d1000 { return false }
+    if x / 1024 != x / d1024 || x % 1024 != x % d1024 { return false }
+    if x / 32767 != x / d32767 || x % 32767 != x % d32767 { return false }
+    if x / -3 != x / d3n || x % -3 != x % d3n { return false }
+    if x / -7 != x / d7n || x % -7 != x % d7n { return false }
+    if x / -10 != x / d10n || x % -10 != x % d10n { return false }
+    if x / -1024 != x / d1024n || x % -1024 != x % d1024n { return false }
+    if x / -32767 != x / d32767n || x % -32767 != x % d32767n { return false }
+    if x / -32768 != x / d32768n || x % -32768 != x % d32768n { return false }
+    q: i16 = x
+    r: i16 = x
+    q /= 7
+    r %= 7
+    seven: i16 = 7
+    return q == x / seven && r == x % seven
+}
+
+run_i16(): bool {
+    edges: [11]i16 = [-32768, -32767, -2, -1, 0, 1, 2, 3, 97, 32766, 32767]
+    for value: i16 in edges {
+        if !check_i16(value) { return false }
+    }
+    for i: usize in 0 .. 3000 {
+        if !check_i16(i16(i64(next() & 0xffff) - 32768)) { return false }
+    }
+    return true
+}
+
+check_i32(x: i32): bool {
+    d1: i32 = 1
+    d2: i32 = 2
+    d3: i32 = 3
+    d5: i32 = 5
+    d6: i32 = 6
+    d7: i32 = 7
+    d10: i32 = 10
+    d60: i32 = 60
+    d97: i32 = 97
+    d100: i32 = 100
+    d641: i32 = 641
+    d1000: i32 = 1000
+    d1024: i32 = 1024
+    d86400: i32 = 86400
+    d2147483647: i32 = 2147483647
+    d2n: i32 = -2
+    d3n: i32 = -3
+    d5n: i32 = -5
+    d7n: i32 = -7
+    d10n: i32 = -10
+    d100n: i32 = -100
+    d1024n: i32 = -1024
+    d641n: i32 = -641
+    d2147483647n: i32 = -2147483647
+    d2147483648n: i32 = -2147483648
+    if x / 1 != x / d1 || x % 1 != x % d1 { return false }
+    if x / 2 != x / d2 || x % 2 != x % d2 { return false }
+    if x / 3 != x / d3 || x % 3 != x % d3 { return false }
+    if x / 5 != x / d5 || x % 5 != x % d5 { return false }
+    if x / 6 != x / d6 || x % 6 != x % d6 { return false }
+    if x / 7 != x / d7 || x % 7 != x % d7 { return false }
+    if x / 10 != x / d10 || x % 10 != x % d10 { return false }
+    if x / 60 != x / d60 || x % 60 != x % d60 { return false }
+    if x / 97 != x / d97 || x % 97 != x % d97 { return false }
+    if x / 100 != x / d100 || x % 100 != x % d100 { return false }
+    if x / 641 != x / d641 || x % 641 != x % d641 { return false }
+    if x / 1000 != x / d1000 || x % 1000 != x % d1000 { return false }
+    if x / 1024 != x / d1024 || x % 1024 != x % d1024 { return false }
+    if x / 86400 != x / d86400 || x % 86400 != x % d86400 { return false }
+    if x / 2147483647 != x / d2147483647 || x % 2147483647 != x % d2147483647 { return false }
+    if x / -2 != x / d2n || x % -2 != x % d2n { return false }
+    if x / -3 != x / d3n || x % -3 != x % d3n { return false }
+    if x / -5 != x / d5n || x % -5 != x % d5n { return false }
+    if x / -7 != x / d7n || x % -7 != x % d7n { return false }
+    if x / -10 != x / d10n || x % -10 != x % d10n { return false }
+    if x / -100 != x / d100n || x % -100 != x % d100n { return false }
+    if x / -1024 != x / d1024n || x % -1024 != x % d1024n { return false }
+    if x / -641 != x / d641n || x % -641 != x % d641n { return false }
+    if x / -2147483647 != x / d2147483647n || x % -2147483647 != x % d2147483647n { return false }
+    if x / -2147483648 != x / d2147483648n || x % -2147483648 != x % d2147483648n { return false }
+    q: i32 = x
+    r: i32 = x
+    q /= 7
+    r %= 7
+    seven: i32 = 7
+    return q == x / seven && r == x % seven
+}
+
+run_i32(): bool {
+    edges: [11]i32 = [-2147483648, -2147483647, -2, -1, 0, 1, 2, 3, 97, 2147483646, 2147483647]
+    for value: i32 in edges {
+        if !check_i32(value) { return false }
+    }
+    for i: usize in 0 .. 3000 {
+        if !check_i32(i32(i64(next() & 0xffffffff) - 2147483648)) { return false }
+    }
+    return true
+}
+
+check_i64(x: i64): bool {
+    d1: i64 = 1
+    d2: i64 = 2
+    d3: i64 = 3
+    d5: i64 = 5
+    d7: i64 = 7
+    d10: i64 = 10
+    d60: i64 = 60
+    d97: i64 = 97
+    d100: i64 = 100
+    d641: i64 = 641
+    d1000: i64 = 1000
+    d1024: i64 = 1024
+    d4294967296: i64 = 4294967296
+    d1000000000000000000: i64 = 1000000000000000000
+    d9223372036854775807: i64 = 9223372036854775807
+    d2n: i64 = -2
+    d3n: i64 = -3
+    d7n: i64 = -7
+    d10n: i64 = -10
+    d1024n: i64 = -1024
+    d4294967296n: i64 = -4294967296
+    d1000000000000000000n: i64 = -1000000000000000000
+    d9223372036854775807n: i64 = -9223372036854775807
+    d9223372036854775808n: i64 = -9223372036854775808
+    if x / 1 != x / d1 || x % 1 != x % d1 { return false }
+    if x / 2 != x / d2 || x % 2 != x % d2 { return false }
+    if x / 3 != x / d3 || x % 3 != x % d3 { return false }
+    if x / 5 != x / d5 || x % 5 != x % d5 { return false }
+    if x / 7 != x / d7 || x % 7 != x % d7 { return false }
+    if x / 10 != x / d10 || x % 10 != x % d10 { return false }
+    if x / 60 != x / d60 || x % 60 != x % d60 { return false }
+    if x / 97 != x / d97 || x % 97 != x % d97 { return false }
+    if x / 100 != x / d100 || x % 100 != x % d100 { return false }
+    if x / 641 != x / d641 || x % 641 != x % d641 { return false }
+    if x / 1000 != x / d1000 || x % 1000 != x % d1000 { return false }
+    if x / 1024 != x / d1024 || x % 1024 != x % d1024 { return false }
+    if x / 4294967296 != x / d4294967296 || x % 4294967296 != x % d4294967296 { return false }
+    if x / 1000000000000000000 != x / d1000000000000000000 || x % 1000000000000000000 != x % d1000000000000000000 { return false }
+    if x / 9223372036854775807 != x / d9223372036854775807 || x % 9223372036854775807 != x % d9223372036854775807 { return false }
+    if x / -2 != x / d2n || x % -2 != x % d2n { return false }
+    if x / -3 != x / d3n || x % -3 != x % d3n { return false }
+    if x / -7 != x / d7n || x % -7 != x % d7n { return false }
+    if x / -10 != x / d10n || x % -10 != x % d10n { return false }
+    if x / -1024 != x / d1024n || x % -1024 != x % d1024n { return false }
+    if x / -4294967296 != x / d4294967296n || x % -4294967296 != x % d4294967296n { return false }
+    if x / -1000000000000000000 != x / d1000000000000000000n || x % -1000000000000000000 != x % d1000000000000000000n { return false }
+    if x / -9223372036854775807 != x / d9223372036854775807n || x % -9223372036854775807 != x % d9223372036854775807n { return false }
+    if x / -9223372036854775808 != x / d9223372036854775808n || x % -9223372036854775808 != x % d9223372036854775808n { return false }
+    q: i64 = x
+    r: i64 = x
+    q /= 7
+    r %= 7
+    seven: i64 = 7
+    return q == x / seven && r == x % seven
+}
+
+run_i64(): bool {
+    edges: [11]i64 = [-9223372036854775808, -9223372036854775807, -2, -1, 0, 1, 2, 3, 97, 9223372036854775806, 9223372036854775807]
+    for value: i64 in edges {
+        if !check_i64(value) { return false }
+    }
+    for i: usize in 0 .. 3000 {
+        if !check_i64(i64(next() >> 1) - i64(next() >> 1)) { return false }
+    }
+    return true
+}
+
+main(): int {
+    code: int = 1
+    if !run_u8() { return code }
+    code += 1
+    if !run_u16() { return code }
+    code += 1
+    if !run_u32() { return code }
+    code += 1
+    if !run_u64() { return code }
+    code += 1
+    if !run_i8() { return code }
+    code += 1
+    if !run_i16() { return code }
+    code += 1
+    if !run_i32() { return code }
+    code += 1
+    if !run_i64() { return code }
+    x: u32 = 123456789
+    ten: u32 = 10
+    if x / TEN != x / ten || x % TEN != x % ten { return 20 }
+    return 42
+}

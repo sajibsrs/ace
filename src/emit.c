@@ -1197,6 +1197,140 @@ static void emit_arith(Em* e, TokKind op, int dst, int a, int b, SType* t) {
     }
 }
 
+/*
+ * Division by a constant (Granlund-Montgomery, with libdivide's generator):
+ * a divisor known at compile time becomes a multiply-high by a reciprocal
+ * "magic" number plus shifts, and powers of two become shifts and masks.
+ * Values narrower than 32 bits live extended in 32-bit registers, so every
+ * integer type divides at width 32 or 64.
+ */
+typedef struct { uint64_t magic; int shift, add, neg; } DivMagic;
+
+// floor(2^(w + p) / d) and its remainder, for p < w and 2^p < d.
+static uint64_t pow2_quotient(int w, int p, uint64_t d, uint64_t* rem) {
+    if (w == 32) {
+        uint64_t n = UINT64_C(1) << (32 + p);
+        *rem = n % d;
+        return n / d;
+    }
+    uint64_t hi = UINT64_C(1) << p, q = 0;
+    for (int i = 0; i < 64; i++) { // 128-by-64 long division of hi:0
+        uint64_t top = hi >> 63;
+        hi <<= 1;
+        q <<= 1;
+        if (top || hi >= d) {
+            hi -= d;
+            q |= 1;
+        }
+    }
+    *rem = hi;
+    return q;
+}
+
+static int floor_log2(uint64_t v) {
+    int l = 0;
+    while (v >>= 1) l++;
+    return l;
+}
+
+// Magic for d >= 3, not a power of two; sign selects the signed variant.
+static DivMagic div_magic(uint64_t d, int w, int sign, int neg) {
+    uint64_t mask = w == 64 ? UINT64_MAX : UINT32_MAX;
+    int l = floor_log2(d);
+    uint64_t rem, q = pow2_quotient(w, sign ? l - 1 : l, d, &rem);
+    DivMagic m = { 0, sign ? l - 1 : l, 0, neg };
+    if (d - rem >= (UINT64_C(1) << l)) { // needs the extra precision bit
+        uint64_t twice = (rem * 2) & mask;
+        q = (q * 2) & mask;
+        if (twice >= d || twice < rem) q++;
+        m.shift = l;
+        m.add = 1;
+    }
+    q = (q + 1) & mask;
+    m.magic = (neg ? (uint64_t)0 - q : q) & mask;
+    return m;
+}
+
+/*
+ * dst = a / c or a % c for a constant divisor. Returns 0, emitting nothing,
+ * when the hardware divide must stay: a zero divisor, or signed -1, whose
+ * checked-build overflow guard lives with the generic path. Uses x16/x17.
+ */
+static int emit_const_divide(Em* e, TokKind op, int dst, int a, uint64_t c,
+                             SType* t) {
+    SType* u = unwrap(t);
+    if (!u || u->kind != SK_PRIM || !is_intt(u)) return 0;
+    int w = scalar_bits(u) == 64 ? 64 : 32, sf = w == 64;
+    uint32_t s = sf ? 0x80000000u : 0;
+    int sig = ty_is_signed(u);
+    uint64_t mask = sf ? UINT64_MAX : UINT32_MAX;
+    int64_t sd = sf ? (int64_t)c : (int64_t)(int32_t)(uint32_t)c;
+    uint64_t d = sig ? (sd < 0 ? (uint64_t)0 - (uint64_t)sd : (uint64_t)sd) & mask
+                     : c & mask;
+    if (d == 0 || (sig && sd == -1)) return 0;
+    uint32_t ra = (uint32_t)xreg(a), rd = (uint32_t)xreg(dst);
+    uint32_t qd = op == T_SLASH ? rd : 16u; // the remainder keeps q in x16
+    uint32_t lsr = sf ? 0xD340FC00u : 0x53007C00u; // UBFM shift-right form
+    uint32_t asr = sf ? 0x9340FC00u : 0x13007C00u; // SBFM shift-right form
+
+    if (d == 1) {
+        if (op == T_SLASH) mov_int(e, sf, (int)rd, (int)ra);
+        else load_imm(e, sf, (int)rd, 0);
+        return 1;
+    }
+    if ((d & (d - 1)) == 0) {
+        uint32_t k = (uint32_t)floor_log2(d);
+        if (!sig) {
+            if (op == T_SLASH) ins(e, lsr | (k << 16) | (ra << 5) | rd);
+            else ins(e, (sf ? 0x92400000u : 0x12000000u) | ((k - 1) << 10) |
+                        (ra << 5) | rd); // and rd, ra, #(d - 1)
+            return 1;
+        }
+        // Signed rounds toward zero: bias negative dividends by d - 1.
+        ins(e, asr | ((uint32_t)(w - 1) << 16) | (ra << 5) | 16u);
+        ins(e, s | 0x0B400000u | (16u << 16) | ((uint32_t)(w - (int)k) << 10) |
+               (ra << 5) | 16u); // add x16, ra, x16, lsr #(w - k)
+        ins(e, asr | (k << 16) | (16u << 5) | (sd < 0 ? 16u : qd));
+        if (sd < 0) ins(e, s | 0x4B0003E0u | (16u << 16) | qd); // neg
+    } else if (!sig) {
+        DivMagic m = div_magic(d, w, 0, 0);
+        load_imm(e, sf, 17, m.magic);
+        if (sf) ins(e, 0x9BC07C00u | (17u << 16) | (ra << 5) | 16u); // umulh
+        else ins(e, 0x9BA07C00u | (17u << 16) | (ra << 5) | 16u);    // umull
+        if (!m.add) {
+            ins(e, 0xD340FC00u | ((uint32_t)((sf ? 0 : 32) + m.shift) << 16) |
+                   (16u << 5) | qd);
+        } else {
+            if (!sf) ins(e, 0xD340FC00u | (32u << 16) | (16u << 5) | 16u);
+            ins(e, s | 0x4B000000u | (16u << 16) | (ra << 5) | 17u); // a - t
+            ins(e, s | 0x0B400000u | (17u << 16) | (1u << 10) | (16u << 5) |
+                   16u); // t + ((a - t) >> 1)
+            ins(e, lsr | ((uint32_t)m.shift << 16) | (16u << 5) | qd);
+        }
+    } else {
+        DivMagic m = div_magic(d, w, 1, sd < 0);
+        load_imm(e, sf, 17, m.magic);
+        if (sf) ins(e, 0x9B407C00u | (17u << 16) | (ra << 5) | 16u); // smulh
+        else ins(e, 0x9B207C00u | (17u << 16) | (ra << 5) | 16u);    // smull
+        if (!m.add) {
+            ins(e, 0x9340FC00u | ((uint32_t)((sf ? 0 : 32) + m.shift) << 16) |
+                   (16u << 5) | 16u);
+        } else {
+            if (!sf) ins(e, 0x9340FC00u | (32u << 16) | (16u << 5) | 16u);
+            ins(e, s | (m.neg ? 0x4B000000u : 0x0B000000u) | (ra << 16) |
+                   (16u << 5) | 16u); // t -= a or t += a
+            ins(e, asr | ((uint32_t)m.shift << 16) | (16u << 5) | 16u);
+        }
+        ins(e, s | 0x0B400000u | (16u << 16) | ((uint32_t)(w - 1) << 10) |
+               (16u << 5) | qd); // round toward zero: q += q < 0
+    }
+    if (op == T_PERCENT) { // r = a - q * c
+        load_imm(e, sf, 17, c & mask);
+        ins(e, s | 0x1B008000u | (17u << 16) | (ra << 10) | (16u << 5) | rd);
+    }
+    return 1;
+}
+
 /* Checked integer arithmetic is kept at each operation site.  The operands
  * are already extended according to their declared type by load_scalar; for
  * 8/16-bit arithmetic a 32-bit result therefore has enough room to range-check
@@ -1558,6 +1692,13 @@ static EV gen_binop(Em* e, Node* n) {
     }
 
     EV a = gen_expr(e, n->a);
+    uint64_t divisor;
+    if ((op == T_SLASH || op == T_PERCENT) && a.cls == CLS_INT &&
+        const_int(n->b, &divisor) &&
+        emit_const_divide(e, op, a.idx, a.idx, divisor, t)) {
+        e->vti = a.idx + 1;
+        return a;
+    }
     EV b = gen_expr(e, n->b);
 
     if (t->kind == SK_PTR && (op == T_PLUS || op == T_MINUS)) {
@@ -5192,6 +5333,14 @@ static void emit_stmt(Em* e, Node* s) {
                 return;
             }
             EV old = load_scalar(e, xreg(ta), 0, t);
+            uint64_t divisor;
+            if ((s->op == T_DIVEQ || s->op == T_MODEQ) && old.cls == CLS_INT &&
+                const_int(s->a, &divisor) &&
+                emit_const_divide(e, compound_op((TokKind)s->op), old.idx,
+                                  old.idx, divisor, t)) {
+                store_scalar(e, old, xreg(ta), 0, t);
+                return;
+            }
             EV rhs = gen_expr(e, s->a);
             if (t->kind == SK_PTR &&
                 (s->op == T_ADDEQ || s->op == T_SUBEQ)) {

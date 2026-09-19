@@ -964,6 +964,14 @@ current normative rules, and Git preserves patch-level detail.
   loop heads are padded to 16 bytes, since an unaligned copy loop measured
   135 ns instead of 82. Release 4096-byte compare fell from 2976 to 107 ns
   (0.67x libSystem `memcmp`).
+- Integer `/`, `%`, `/=`, and `%=` by a literal or named-constant divisor
+  lower without `udiv`/`sdiv` (`emit_const_divide`): powers of two become
+  shifts, masks, or a biased signed shift, and other divisors a
+  `umulh`/`smulh` (64-bit) or `umull`/`smull` (narrower) reciprocal multiply
+  with libdivide's Granlund-Montgomery magic generator, computed in portable
+  C. Constant nonzero divisors other than signed -1 need no checked guards.
+  The generator was validated against hardware division on 30.9M cases. The
+  CPU recurrence fell from about 45.5 to 42.5 ms in release (C `-O2` 34 ms).
 
 ## Current frontier
 
