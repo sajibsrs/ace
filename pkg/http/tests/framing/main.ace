@@ -225,6 +225,55 @@ failures(): int {
         http.ResponseResult.framing {}
         default { return 12 }
     }
+    state = new_state()
+    result = mut state.parse(
+        "HTTP/1.1 200 OK\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\nx",
+        mut one_header[..1],
+        mut body[..],
+        false,
+        false,
+    )
+    switch result {
+        http.ResponseResult.framing {}
+        default { return 13 }
+    }
+    state = new_state()
+    result = mut state.parse(
+        "HTTP/1.1 200 OK\r\nContent-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\n",
+        mut one_header[..1],
+        mut body[..],
+        false,
+        false,
+    )
+    switch result {
+        http.ResponseResult.framing {}
+        default { return 14 }
+    }
+    state = new_state()
+    result = mut state.parse(
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
+        no_headers,
+        mut body[..],
+        false,
+        false,
+    )
+    switch result {
+        http.ResponseResult.capacity(capacity_type: http.ResponseCapacity) {
+            if capacity_type != http.ResponseCapacity.headers { return 15 }
+        }
+        default { return 16 }
+    }
+    result = mut state.parse(
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
+        mut one_header[..],
+        mut body[..],
+        false,
+        false,
+    )
+    switch result {
+        http.ResponseResult.complete(response: http.Response) {}
+        default { return 17 }
+    }
     return 0
 }
 

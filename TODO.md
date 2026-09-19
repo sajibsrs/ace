@@ -252,13 +252,6 @@ nonblocking connect completion remain visible without callbacks or allocation.
   until the TLS client transport carve above lands; `rune`,
   UTF-8 decoding, and `yarn` are not prerequisites because HTTP framing is
   ASCII and payloads remain byte views.
-- **HTTP parser error precedence on a full header buffer** [unspecified] — the
-  `pkg/http` request and response parsers check header-buffer capacity before
-  framing conflicts, so a conflicting `Content-Length` (a differing duplicate,
-  or one alongside `Transfer-Encoding`) in the header that exceeds the caller's
-  header slots reports `capacity(headers)` rather than `framing`. Whether a
-  framing conflict should take precedence over a full buffer is neither
-  specified nor decided.
 - **Nonblocking HTTP server core needs a fresh carve** [open] — the
   caller-driven `ServerContext`/`Event`/`serve(mut ctx, timeout_ns)` core
   (formerly `std/http/inc/server.ace`, now `pkg/http/inc/server.ace`) and its

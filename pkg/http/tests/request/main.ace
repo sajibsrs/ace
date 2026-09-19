@@ -66,6 +66,41 @@ main(): int {
 
     parser = new_parser()
     result = mut parser.parse(
+        "POST / HTTP/1.1\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\nx",
+        mut headers[..1],
+        mut body[..],
+        false,
+    )
+    switch result {
+        http.RequestResult.framing {}
+        default { return 30 }
+    }
+    parser = new_parser()
+    result = mut parser.parse(
+        "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
+        mut headers[..0],
+        mut body[..],
+        false,
+    )
+    switch result {
+        http.RequestResult.capacity(capacity_type: http.RequestCapacity) {
+            if capacity_type != http.RequestCapacity.headers { return 31 }
+        }
+        default { return 32 }
+    }
+    result = mut parser.parse(
+        "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
+        mut headers[..],
+        mut body[..],
+        false,
+    )
+    switch result {
+        http.RequestResult.complete(request: http.Request) {}
+        default { return 33 }
+    }
+
+    parser = new_parser()
+    result = mut parser.parse(
         "POST /chunk HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n",
         mut headers[..],
         mut body[..],

@@ -554,15 +554,14 @@ pub mut RequestParser.parse(
                 }
             }
             value: string = trim_ows(raw)
-            if self.header_count >= headers.len {
-                return RequestResult.capacity(RequestCapacity.headers)
-            }
+            full: bool = self.header_count >= headers.len
             if ascii.is_equal(name, "content-length", false) {
                 if self.framing == RequestFraming.chunked { return mut self.framing_failure() }
                 length: usize, valid: bool = str.parse[usize](value)
                 if !valid { return mut self.framing_failure() }
                 if self.framing == RequestFraming.content_length &&
                     length != self.content_length { return mut self.framing_failure() }
+                if full { return RequestResult.capacity(RequestCapacity.headers) }
                 self.framing = RequestFraming.content_length
                 self.content_length = length
             }
@@ -571,8 +570,10 @@ pub mut RequestParser.parse(
                     !ascii.is_equal(value, "chunked", false) {
                     return mut self.framing_failure()
                 }
+                if full { return RequestResult.capacity(RequestCapacity.headers) }
                 self.framing = RequestFraming.chunked
             }
+            if full { return RequestResult.capacity(RequestCapacity.headers) }
             headers[self.header_count] = Header {name = name, value = value}
             self.header_count += 1
             mut self.consume_line()
@@ -846,15 +847,14 @@ pub mut ResponseParser.parse(
                 }
             }
             value: string = trim_ows(raw)
-            if (self.status < 100 || self.status >= 200) && self.header_count >= headers.len {
-                return ResponseResult.capacity(ResponseCapacity.headers)
-            }
+            full: bool = (self.status < 100 || self.status >= 200) && self.header_count >= headers.len
             if ascii.is_equal(name, "content-length", false) {
                 if self.framing == ResponseFraming.chunked { return mut self.framing_failure() }
                 length: usize, valid: bool = str.parse[usize](value)
                 if !valid { return mut self.framing_failure() }
                 if self.framing == ResponseFraming.content_length &&
                     length != self.content_length { return mut self.framing_failure() }
+                if full { return ResponseResult.capacity(ResponseCapacity.headers) }
                 self.framing = ResponseFraming.content_length
                 self.content_length = length
             }
@@ -863,8 +863,10 @@ pub mut ResponseParser.parse(
                     !ascii.is_equal(value, "chunked", false) {
                     return mut self.framing_failure()
                 }
+                if full { return ResponseResult.capacity(ResponseCapacity.headers) }
                 self.framing = ResponseFraming.chunked
             }
+            if full { return ResponseResult.capacity(ResponseCapacity.headers) }
             if self.status < 100 || self.status >= 200 {
                 headers[self.header_count] = Header {name = name, value = value}
                 self.header_count += 1

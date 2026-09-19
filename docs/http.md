@@ -113,7 +113,8 @@ handle `Content-Length` and chunked coding with syntax-checked discarded
 trailers. Response parsing additionally handles bodyless, connection-close, and
 informational-response framing. Conflicting lengths, length plus transfer
 coding, unsupported transfer coding, malformed chunks, premature fixed/chunked
-EOF, and status 101 are explicit failures. Header names are compared using
+EOF, and status 101 are explicit failures. A framing conflict takes precedence
+over a full header buffer (`framing`, not `capacity(headers)`). Header names are compared using
 ASCII case folding; values and payload bytes otherwise pass through unchanged.
 
 ## Simple HTTP client demo

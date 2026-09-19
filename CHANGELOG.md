@@ -892,6 +892,10 @@ current normative rules, and Git preserves patch-level detail.
   `switch_default_dispatch.ace` and `default_dispatch.ace`; new error fixtures
   cover both diagnostics. Every switch arm in `std`, `pkg`, `docs`, tests, and
   the VS Code grammar was migrated.
+- The `pkg/http` request and response parsers now validate a header's framing
+  (`Content-Length`, `Transfer-Encoding`) before checking header-slot capacity,
+  so a framing conflict reports `framing` even on a full header buffer. State
+  changes follow the capacity check, so a `capacity(headers)` retry is clean.
 
 ## Current frontier
 
