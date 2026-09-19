@@ -317,6 +317,14 @@ alias_loop(): int {
     return xs[0] + xs[1] + xs[2]
 }
 
+// loop-free code promotes a local used at least twice (a, t); a single
+// use (b, u) keeps its slot
+straight(a: int, b: int): int {
+    t: int = a * b
+    u: int = t + a
+    return t - u + t
+}
+
 // the outermost of four nested loops keeps its state in slots while its
 // binder, the only hot candidate, is promoted
 deep_nest(): int {
@@ -346,5 +354,6 @@ main(): int {
     if fnested() != 39.0 { return 23 }
     if deep_nest() != 8 { return 30 }
     if alias_loop() != 30 { return 31 }
+    if straight(6, 7) != 36 { return 32 }
     return 42
 }

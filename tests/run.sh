@@ -1105,6 +1105,22 @@ if [ -d tests/emit ]; then
             echo "FAIL: float locals must be promoted into d8-d15"
             fail=1
         fi
+        # Loop-free code promotes locals used at least twice and leaves
+        # single-use ones in their slots: straight() takes exactly x19-x20.
+        if ! otool -tv /tmp/ace_emit/basics/register_locals.o | awk '
+            /^[^0-9].*:$/ { fn = ($0 ~ /^__ace\$fn\$straight\$/); next }
+            fn {
+                for (i = 3; i <= NF; i++) {
+                    r = $i; gsub(/[][,]/, "", r)
+                    if (r == "x19") low = 1
+                    if (r == "x20") high = 1
+                    if (r ~ /^x(2[1-8])$/) bad = 1
+                }
+            }
+            END { exit bad || !low || !high }'; then
+            echo "FAIL: loop-free locals must be promoted by use count"
+            fail=1
+        fi
     fi
     # -o mode drives the same pipeline through the cc link step
     "$ACE" -o /tmp/ace_emit/direct tests/emit/basics/main.ace && /tmp/ace_emit/direct

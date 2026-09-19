@@ -221,6 +221,17 @@ After `str` search moved to an eight-byte first-and-last-byte filter, five
 alternating runs produced `find-4096` medians of 1,454 ns for Ace versus
 1,993 ns for C `strstr` (0.73x, from 5.0x); other workloads were unchanged.
 
+### Straight-line promotion checkpoint
+
+After loop-free locals used at least twice moved into callee-saved registers,
+five alternating runs produced `parse-f64` 101 ns (from 141; 3.6x C
+`strtod`, from 5.0x), `parse-f64-short` 92 ns (from 139), and
+`format-f64-shortest` 313 ns (from 367). CPU, search, and copy were
+unchanged. A sampled profile before the change put 38% of short-input parse
+time in syntax scanning, 26% in the Eisel-Lemire step (a quarter of its
+instructions were slot loads and stores), 12% each in the small-integer tier
+and the wrapper, and 5% in the software leading-zero count.
+
 ## Memory
 
 Run the v1 raw-memory benchmark on Apple arm64:

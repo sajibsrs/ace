@@ -6626,14 +6626,17 @@ static int loop_regs_take(Em* e, Node* s) {
 // --- register promotion ----------------------------------------------------------------
 
 /*
- * Rank one use at loop depth `depth` adds to its local's promotion weight;
- * a local whose total weight is 0 keeps its slot. Straight-line uses weigh
- * nothing, so functions without loops pay no register save/restore; each
- * loop level counts 8x, capped at depth 5 so a sum cannot overflow short of
- * 131072 uses.
+ * Rank one use at loop depth `depth` adds to its local's promotion weight: a
+ * straight-line use counts 1 and each loop level 8x, capped at depth 5 so a
+ * sum cannot overflow short of 131072 uses. A local below PROMO_MIN_WEIGHT
+ * keeps its slot: one straight-line use costs a slot store and load, about
+ * what saving and restoring a callee-saved register would, while every
+ * further use is a round-trip through memory the register avoids.
  */
+#define PROMO_MIN_WEIGHT 2
+
 static uint32_t use_weight(int depth) {
-    if (depth <= 0) return 0;
+    if (depth <= 0) return 1;
     return 1u << (3 * (depth < 5 ? depth : 5));
 }
 
@@ -6728,7 +6731,7 @@ static Node* promo_take(Em* e, int fp) {
     PromoCand* best = NULL;
     for (int i = 0; i < e->npcands; i++) {
         PromoCand* c = &e->pcands[i];
-        if (!c->escaped && c->weight &&
+        if (!c->escaped && c->weight >= PROMO_MIN_WEIGHT &&
             is_floatt(node_sym(c->decl)->type) == fp &&
             (!best || c->weight > best->weight))
             best = c;

@@ -1082,6 +1082,14 @@ current normative rules, and Git preserves patch-level detail.
   positions matching both the first and last needle byte, and confirms each
   candidate with `mem.equal`. `find-4096` fell from 9,860 to 1,450 ns
   (0.73x C `strstr`).
+- Straight-line uses count toward promotion: each weighs 1 (loop uses keep
+  8^depth), and a local needs a total weight of at least 2, so a single
+  straight-line use, which costs about what a register save and restore
+  would, keeps its slot. Loop-free arithmetic such as the float parser's
+  Eisel-Lemire step no longer stores and reloads every local. `parse-f64`
+  fell from 141 to 101 ns and `format-f64-shortest` from 367 to 313 ns;
+  weighting a single use as enough measured 301 ns on format with no parse
+  difference, but saved registers in one-use functions.
 
 ## Current frontier
 
