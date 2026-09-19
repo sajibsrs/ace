@@ -46,7 +46,7 @@ returns `Json.none` and an error from the `json.JsonErr` domain:
 | `unterminated_string` | a string with no closing quote |
 | `invalid_escape` | an unknown `\` escape, a malformed `\uXXXX`, or an unpaired UTF-16 surrogate |
 | `invalid_number` | a malformed number, including a leading zero such as `01` |
-| `depth_exceeded` | nesting beyond the parser's fixed depth limit |
+| `depth_exceeded` | more than 512 nested arrays or objects |
 | `trailing_data` | non-whitespace bytes after the value |
 | `empty_input` | no value at all |
 | `allocation` | an allocation failed |

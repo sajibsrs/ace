@@ -14,8 +14,8 @@ Json: type = jsonval.Json
 Pair: type = jsonval.Pair
 JsonErr: type = jsonval.JsonErr
 
-/* Recursion guard: bounds stack depth on adversarial input rather than
- * risking overflow.
+/* Recursion guard: the most containers that may nest, bounding stack depth on
+ * adversarial input rather than risking overflow.
  */
 MAX_DEPTH: usize = 512
 
@@ -56,9 +56,6 @@ mut Parser.skip_ws() {
 }
 
 mut Parser.parse_value(depth: usize): (Json, Error) {
-    if depth > MAX_DEPTH {
-        return Json.none, JsonErr.depth_exceeded
-    }
     mut self.skip_ws()
 
     if self.at == self.text.len {
@@ -231,6 +228,9 @@ mut Parser.parse_string(): (string, Error) {
 }
 
 mut Parser.parse_array(depth: usize): (Json, Error) {
+    if depth >= MAX_DEPTH {
+        return Json.none, JsonErr.depth_exceeded
+    }
     self.at += 1
     items: mut []Json = null
     count: usize = 0
@@ -293,6 +293,9 @@ mut Parser.parse_array(depth: usize): (Json, Error) {
 }
 
 mut Parser.parse_object(depth: usize): (Json, Error) {
+    if depth >= MAX_DEPTH {
+        return Json.none, JsonErr.depth_exceeded
+    }
     self.at += 1
     pairs: mut []Pair = null
     count: usize = 0

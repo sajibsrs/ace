@@ -153,6 +153,39 @@ failures(): int {
     return 0
 }
 
+nested(depth: usize): (mut []u8, Error) {
+    text: mut []u8 = mem.alloc[u8](depth * 2)
+
+    if text == null {
+        return null, json.JsonErr.allocation
+    }
+
+    for i: usize in 0 .. depth {
+        text[i] = '['
+        text[depth * 2 - 1 - i] = ']'
+    }
+    return text, null
+}
+
+depth_limit(): int {
+    text: mut []u8, terr: Error = nested(512)
+    defer mem.release[u8](mut text)
+
+    if terr != null { return 50 }
+    v: json.Json, err: Error = json.parse(text)
+    defer json.wipe(v)
+
+    if err != null { return 51 }
+    deeper: mut []u8, derr: Error = nested(513)
+    defer mem.release[u8](mut deeper)
+
+    if derr != null { return 52 }
+    w: json.Json, werr: Error = json.parse(deeper)
+
+    if werr != json.JsonErr.depth_exceeded { return 53 }
+    return 0
+}
+
 main(): int {
     code: int = scalars()
     if code != 0 { return 100 + code }
@@ -160,5 +193,7 @@ main(): int {
     if code != 0 { return 200 + code }
     code = failures()
     if code != 0 { return 300 + code }
+    code = depth_limit()
+    if code != 0 { return 400 + code }
     return 0
 }

@@ -862,8 +862,8 @@ current normative rules, and Git preserves patch-level detail.
   whole-document RFC 8259 parser. `json.parse(text): (Json, Error)` builds a
   `Json` union (`none`, `bool`, `number: f64`, `string`, `array: []Json`,
   `object: []Pair`) with heap strings and backing storage, reports failures
-  through the `JsonErr` domain, and enforces a fixed nesting-depth limit
-  (`MAX_DEPTH`). Leading-zero numbers, unpaired `\u` surrogates, unescaped
+  through the `JsonErr` domain, and enforces a limit of 512 nested
+  containers (`MAX_DEPTH`). Leading-zero numbers, unpaired `\u` surrogates, unescaped
   control bytes, and trailing data are rejected. `json.wipe` recursively releases every
   allocation, keys included. The parser walk is `Parser` methods, with
   `parse_value` and `parse_object`/`parse_array` calling each other; only
