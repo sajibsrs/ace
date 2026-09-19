@@ -3,3 +3,5 @@ version: 0.1.0
 ace: 0.1
 type: lib
 root: mod.ace
+description: HTTP/1.1 framing and owning blocking clients
+author: Sajidur Rahman <sajibsrs@gmail.com>

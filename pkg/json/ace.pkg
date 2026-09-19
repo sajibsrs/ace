@@ -3,3 +3,5 @@ version: 0.1.0
 ace: 0.1
 type: lib
 root: mod.ace
+description: Whole-document JSON value model, RFC 8259 parser, and streaming writer
+author: Sajidur Rahman <sajibsrs@gmail.com>
