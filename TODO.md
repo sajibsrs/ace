@@ -185,6 +185,9 @@ foundations.
   fixture rather than adding a binary-only modifier.
 - **`rune` + UTF-8 decode and `yarn`** [additive] — retain explicit decoding
   and ownership over the shared `string`/`[]char`/`[]u8` byte-view type.
+  `pkg/json` carries a private codepoint-to-UTF-8 encoder
+  (`encode_utf8` in `pkg/json/inc/parsing.ace`) for `\uXXXX` escapes, to be
+  replaced by the standard facility.
 - **libm transcendentals** [open] — `sin`, `cos`, `pow`, `exp`, `log`, `floor`,
   and `ceil` for the 2D/3D milestones.
 - **Random source** [new].
