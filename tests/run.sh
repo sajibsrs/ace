@@ -1002,6 +1002,16 @@ if [ -d tests/emit ]; then
             echo "FAIL: loop heads must be 16-byte aligned"
             fail=1
         fi
+        # Scalar locals, parameters, and range-loop state within x29 - 256
+        # are accessed with single ldur/stur, never a computed frame address.
+        if ! otool -tv /tmp/ace_emit/basics/local_slots.o | awk '
+            /^[^0-9].*:$/ { hot = ($0 ~ /^__ace\$fn\$hot\$/); next }
+            hot && /ldur|stur/ { direct = 1 }
+            hot && $2 == "sub" && $4 == "x29," { bad = 1 }
+            END { exit bad || !direct }'; then
+            echo "FAIL: scalar locals must use direct frame slot access"
+            fail=1
+        fi
     fi
     # -o mode drives the same pipeline through the cc link step
     "$ACE" -o /tmp/ace_emit/direct tests/emit/basics/main.ace && /tmp/ace_emit/direct

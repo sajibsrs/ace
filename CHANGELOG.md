@@ -990,6 +990,14 @@ current normative rules, and Git preserves patch-level detail.
   `__ace$mem_compare` instead of a byte loop. Release copies of 48-byte
   sequence elements fell about 22%, 256-byte array assignment about 50%, and
   48-byte struct returns about 8%.
+- Scalar locals are read and written directly in their frame slots: one
+  `ldur`/`stur` (including `ldursb`/`ldursh` and FP `s`/`d` forms) within
+  x29 - 256 instead of an address temp, load, and `mov`; `mut` slots load the
+  pointer and then the value into one register. Register parameters are homed
+  the same way. Call spill slots are allocated per temp index on first use
+  rather than as a fixed 240-byte area, so later locals and range-loop state
+  stay within direct reach. The CPU recurrence loop fell from 50 to 37
+  instructions per iteration and 42.5 to 39.5 ms in release (C `-O2` 33.9 ms).
 
 ## Current frontier
 

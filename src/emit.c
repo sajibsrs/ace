@@ -319,6 +319,9 @@ typedef struct {
     uint32_t off;    // byte offset within the value (register units)
 } TU;
 
+#define MAX_ITEMPS 14  // x0-x7, x9-x15
+#define MAX_FPTEMPS 16 // v0-v7, v16-v23
+
 typedef struct {
     Diag* d;
     Node* file;
@@ -344,8 +347,8 @@ typedef struct {
     // current function
     size_t subsp_fix;
     uint32_t frame;
-    uint32_t spill_base;
-    int     spill_on;
+    uint32_t int_spill[MAX_ITEMPS]; // per-temp spill slots, 0 until first use
+    uint32_t fp_spill[MAX_FPTEMPS];
     uint32_t out_max;
     Slot*   slots;
     int     nslots, cslots;
@@ -369,9 +372,6 @@ typedef struct {
     int      ndebug_fns, cdebug_fns;
 } Em;
 
-#define MAX_ITEMPS 14  // x0-x7, x9-x15
-#define MAX_FPTEMPS 16 // v0-v7, v16-v23
-#define SPILL_SIZE (MAX_ITEMPS * 8 + MAX_FPTEMPS * 8)
 
 static void em_err(Em* e, Node* n, const char* fmt, ...) {
     va_list ap;
@@ -826,11 +826,18 @@ static int tmp_fp(Em* e) {
     return e->vtf++;
 }
 
+/*
+ * Spill slots are allocated per temp index on first use rather than as one
+ * fixed area, so the frame stays shallow and later locals remain within the
+ * single-instruction ldur/stur range (x29 - 256).
+ */
 static uint32_t spill_slot_int(Em* e, int i) {
-    return e->spill_base + (uint32_t)i * 8;
+    if (!e->int_spill[i]) e->int_spill[i] = temp_slot(e, 8, 8);
+    return e->int_spill[i];
 }
 static uint32_t spill_slot_fp(Em* e, int j) {
-    return e->spill_base + MAX_ITEMPS * 8 + (uint32_t)j * 8;
+    if (!e->fp_spill[j]) e->fp_spill[j] = temp_slot(e, 8, 8);
+    return e->fp_spill[j];
 }
 
 // --- frame loads/stores (x29-relative) ---------------------------------------------
@@ -861,8 +868,10 @@ static void store_frame(Em* e, int rt, uint32_t off, uint32_t w) {
 
 static void load_frame(Em* e, int rt, uint32_t off, uint32_t w, int signext) {
     uint32_t d = off;
-    if (d <= 256 && !signext) { // ldur rt, [x29, #-d]
-        ins(e, ldur_base(w) | ((((uint32_t)(0u - d)) & 0x1FFu) << 12) |
+    if (d <= 256) { // ldur rt, [x29, #-d]; ldursb/ldursh wt sign-extend narrow
+        uint32_t b = !signext || w >= 4 ? ldur_base(w)
+                   : w == 1 ? 0x38C00000u : 0x78C00000u;
+        ins(e, b | ((((uint32_t)(0u - d)) & 0x1FFu) << 12) |
                (29u << 5) | ((uint32_t)rt & 31u));
         return;
     }
@@ -882,21 +891,28 @@ static void load_frame(Em* e, int rt, uint32_t off, uint32_t w, int signext) {
 }
 
 static void store_frame_fp(Em* e, int vr, uint32_t off, int is64) {
+    if (off <= 256) { // stur s|d, [x29, #-off]
+        ins(e, (is64 ? 0xFC000000u : 0xBC000000u) |
+               ((((uint32_t)(0u - off)) & 0x1FFu) << 12) | (29u << 5) |
+               (uint32_t)vr);
+        return;
+    }
     frame_addr(e, 16, off);
     ins(e, (is64 ? 0xFD000000u : 0xBD000000u) | (16u << 5) | (uint32_t)vr);
 }
 
 static void load_frame_fp(Em* e, int vr, uint32_t off, int is64) {
+    if (off <= 256) { // ldur s|d, [x29, #-off]
+        ins(e, (is64 ? 0xFC400000u : 0xBC400000u) |
+               ((((uint32_t)(0u - off)) & 0x1FFu) << 12) | (29u << 5) |
+               (uint32_t)vr);
+        return;
+    }
     frame_addr(e, 16, off);
     ins(e, (is64 ? 0xFD400000u : 0xBD400000u) | (16u << 5) | (uint32_t)vr);
 }
 
 static void spill_temps(Em* e) {
-    if (!e->spill_on) {
-        e->spill_base = align_up(e->frame + 8, 8);
-        e->frame = e->spill_base + SPILL_SIZE - 8;
-        e->spill_on = 1;
-    }
     for (int i = 0; i < e->vti; i++)
         store_frame(e, xreg(i), spill_slot_int(e, i), 8);
     for (int j = 0; j < e->vtf; j++)
@@ -2698,6 +2714,48 @@ static int gen_var_addr(Em* e, Sym* s, Node* at) {
     return t;
 }
 
+// frame slot of a local variable; NULL for globals and unallocated names
+static Slot* local_slot(Em* e, Sym* s) {
+    if (!s->decl || global_sym(e, s)) return NULL;
+    return slot_find(e, s->decl);
+}
+
+/*
+ * Scalar variable read without a separate address temp: a plain slot loads
+ * directly (one ldur within x29 - 256); a by-reference slot loads its pointer
+ * and then the value into the same register.
+ */
+static EV load_var(Em* e, Sym* s, SType* t, Node* at) {
+    Slot* sl = local_slot(e, s);
+    if (!sl) {
+        int a = gen_var_addr(e, s, at);
+        return collapse(e, a, load_scalar(e, xreg(a), 0, t));
+    }
+    int is64 = unwrap(t)->prim == P_F64;
+    uint32_t w = (uint32_t)((scalar_bits(t) + 7) / 8);
+    int signext = ty_is_signed(t) && w < 8;
+    if (!sl->byref) {
+        if (is_floatt(t)) {
+            int vt = tmp_fp(e);
+            load_frame_fp(e, vreg(vt), sl->off, is64);
+            return (EV){ CLS_FP, vt };
+        }
+        int it = tmp_int(e);
+        load_frame(e, xreg(it), sl->off, w, signext);
+        return (EV){ CLS_INT, it };
+    }
+    int it = tmp_int(e);
+    load_frame(e, xreg(it), sl->off, 8, 0); // slot holds the pointer
+    if (is_floatt(t)) {
+        int vt = tmp_fp(e);
+        ldrf_(e, vreg(vt), xreg(it), 0, is64);
+        e->vti--;
+        return (EV){ CLS_FP, vt };
+    }
+    ld_reg(e, xreg(it), xreg(it), 0, w, signext);
+    return (EV){ CLS_INT, it };
+}
+
 static int is_lvalue_node(Node* x) {
     switch (x->kind) {
     case N_IDENT: case N_INDEX:
@@ -4454,11 +4512,7 @@ static EV gen_expr(Em* e, Node* x) {
             em_err(e, x, "variable has no type");
             return (EV){ CLS_INT, tmp_int(e) };
         }
-        if (is_scalar(t)) {
-            int a = gen_var_addr(e, s, x);
-            EV v = load_scalar(e, xreg(a), 0, t);
-            return collapse(e, a, v);
-        }
+        if (is_scalar(t)) return load_var(e, s, t, x);
         return (EV){ CLS_ADDR, gen_var_addr(e, s, x) };
     }
     case N_TUPLE_E: {
@@ -4924,6 +4978,15 @@ static void store_to_slot(Em* e, EV v, uint32_t off, SType* t) {
     }
 }
 
+// assignment store: in place for a direct local slot, else through ta
+static void store_target(Em* e, EV v, int direct, uint32_t doff, int ta,
+                         SType* t) {
+    if (direct)
+        store_to_slot(e, v, doff, t);
+    else
+        store_scalar(e, v, xreg(ta), 0, t);
+}
+
 static void emit_block(Em* e, Node* b) {
     for (int i = 0; i < b->nkids; i++) emit_stmt(e, b->kids[i]);
 }
@@ -5375,19 +5438,31 @@ static void emit_stmt(Em* e, Node* s) {
             em_err(e, s, "assignment target has no type");
             return;
         }
-        int ta = gen_addr(e, s->kids[0]);
+        /*
+         * A scalar local with a plain slot is read and written in place
+         * (ldur/stur) with no address temp; the slot offset, not the Slot*,
+         * is kept because evaluating the right side may grow the slot table.
+         */
+        Node* lhs = s->kids[0];
+        Sym* ls = lhs->kind == N_IDENT ? node_sym(lhs) : NULL;
+        Slot* lsl = ls && ls->kind == SYM_VAR && is_scalar(t) ? local_slot(e, ls)
+                                                              : NULL;
+        int direct = lsl && !lsl->byref;
+        uint32_t doff = direct ? lsl->off : 0;
+        int ta = direct ? -1 : gen_addr(e, lhs);
         if (s->op != T_ASSIGN) { // compound: x = x op y, address evaluated once
             if (!is_scalar(t)) {
                 em_err(e, s, "compound assignment needs a scalar target");
                 return;
             }
-            EV old = load_scalar(e, xreg(ta), 0, t);
+            EV old = direct ? load_var(e, ls, t, lhs)
+                            : load_scalar(e, xreg(ta), 0, t);
             uint64_t divisor;
             if ((s->op == T_DIVEQ || s->op == T_MODEQ) && old.cls == CLS_INT &&
                 const_int(s->a, &divisor) &&
                 emit_const_divide(e, compound_op((TokKind)s->op), old.idx,
                                   old.idx, divisor, t)) {
-                store_scalar(e, old, xreg(ta), 0, t);
+                store_target(e, old, direct, doff, ta, t);
                 return;
             }
             EV rhs = gen_expr(e, s->a);
@@ -5395,20 +5470,20 @@ static void emit_stmt(Em* e, Node* s) {
                 (s->op == T_ADDEQ || s->op == T_SUBEQ)) {
                 emit_pointer_arith(e, compound_op((TokKind)s->op), old.idx,
                                    rhs.idx, ty_size(t->base));
-                store_scalar(e, old, xreg(ta), 0, t);
             } else if (old.cls == CLS_FP) {
                 emit_farith(e, compound_op((TokKind)s->op), old.idx, old.idx, rhs.idx,
                             unwrap(t)->prim == P_F64);
-                strf_(e, vreg(old.idx), xreg(ta), 0, unwrap(t)->prim == P_F64);
             } else {
                 emit_checked_arith(e, compound_op((TokKind)s->op), old.idx,
                                    old.idx, rhs.idx, t);
-                store_scalar(e, old, xreg(ta), 0, t);
             }
+            store_target(e, old, direct, doff, ta, t);
             return;
         }
         EV v = gen_expr(e, s->a);
-        if (s->flags & F_VOLATILE) {
+        if (direct) {
+            store_to_slot(e, v, doff, t);
+        } else if (s->flags & F_VOLATILE) {
             /* Semantic checking admits only exact-width scalar stores here. */
             store_scalar(e, v, xreg(ta), 0, t);
         } else {
@@ -6026,7 +6101,8 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
     uint32_t debug_addr = (uint32_t)text(e)->len;
     line_mark(e, f);
     e->frame = 0;
-    e->spill_on = 0;
+    memset(e->int_spill, 0, sizeof e->int_spill);
+    memset(e->fp_spill, 0, sizeof e->fp_spill);
     e->out_max = 0;
     e->nslots = 0;
     e->vti = e->vtf = 0;
@@ -6085,15 +6161,10 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
                 if (u->reg < 0) continue;
                 uint32_t bw = byref ? 8 : is_scalar(t)
                     ? (uint32_t)((scalar_bits(t) + 7) / 8) : 8;
-                if (byref) {
-                    store_frame(e, u->reg, slot, bw);
-                } else {
-                    frame_addr(e, 16, slot);
-                    st_reg(e, u->reg, 16, u->off, bw);
-                }
+                // unit u->off bytes into the slot sits at depth slot - off
+                store_frame(e, u->reg, byref ? slot : slot - u->off, bw);
             } else if (u->kind == TU_VREG) {
-                frame_addr(e, 16, slot);
-                strf_(e, u->reg, 16, u->off, u->size == 8);
+                store_frame_fp(e, u->reg, slot - u->off, u->size == 8);
             } else if (u->kind == TU_STACK) {
                 incoming_addr(e, 16, u->soff);
                 if (is_floatt(t)) {

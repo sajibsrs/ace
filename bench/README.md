@@ -166,6 +166,15 @@ string benchmark's `__text` fell from 358 KB to 106 KB and `main` from about
 66,000 to 3,400 instructions. Its repeats run outside the timed loops, so the
 timed workloads are unchanged.
 
+### Direct-slot checkpoint
+
+After scalar locals moved to direct `ldur`/`stur` slot access and call spill
+slots became per-temp, three runs each produced CPU medians of 39.53 ms
+release versus 33.91 ms C `-O2` (1.17x, from 1.29x), with the loop body at 37
+instructions. String medians: `find-4096` 9.2x, `parse-f64` 6.1x,
+`format-f64-shortest` 0.60x; `compare`/`copy` are unchanged within noise.
+`state` still round-trips through its slot every iteration.
+
 ## Memory
 
 Run the v1 raw-memory benchmark on Apple arm64:

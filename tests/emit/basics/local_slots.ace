@@ -1,0 +1,101 @@
+/* Scalar locals are read and written directly in their frame slots. */
+
+// expect-exit: 42
+
+id8(x: i8): i8 {
+    return x
+}
+
+idi(x: int): int {
+    return x
+}
+
+idf(x: f64): f64 {
+    return x
+}
+
+// narrow signed locals sign-extend when read after a call
+narrow(): int {
+    a: i8 = -3
+    b: i16 = -300
+    c: i32 = -70000
+    a = id8(a) - 1
+    b -= 1
+    c *= 2
+    if a != -4 { return 1 }
+    if int(b) != -301 { return 2 }
+    if int(c) != -140000 { return 3 }
+    return 0
+}
+
+// float locals round-trip in place, including compound updates
+floats(): int {
+    s: f32 = 1.5
+    d: f64 = 2.25
+    s += 0.25
+    d = idf(d) * 2.0
+    d -= 0.5
+    if s != 1.75 { return 4 }
+    if d != 4.0 { return 5 }
+    return 0
+}
+
+// mut parameters read and write through their stored pointer
+bump(mut n: i16, mut x: f64) {
+    n -= 7
+    x = x + f64(n)
+}
+
+by_ref(): int {
+    n: i16 = 2
+    x: f64 = 0.5
+    bump(mut n, mut x)
+    if int(n) != -5 { return 6 }
+    if x + 4.5 != 0.0 { return 7 }
+    return 0
+}
+
+// locals declared past a large array sit beyond the ldur range
+deep(): int {
+    big: [64]u64 = [0 : 64]
+    late: i16 = -9
+    lf: f32 = 0.5
+    lb: i8 = -1
+    big[3] = 11
+    late += i16(big[3])
+    lf *= 3.0
+    lb = id8(lb) - 2
+    if int(late) != 2 { return 8 }
+    if lf != 1.5 { return 9 }
+    if lb != -3 { return 10 }
+    return 0
+}
+
+// several int and float temps stay live across a call and are spilled
+spilled(): int {
+    a: int = 1
+    b: int = 2
+    c: int = 3
+    x: f64 = 0.5
+    y: f64 = 0.25
+    total: int = a + (b + (c + idi(4)))
+    f: f64 = x + (y + idf(0.125))
+    if total != 10 { return 11 }
+    if f != 0.875 { return 12 }
+    return 0
+}
+
+hot(n: int): int {
+    state: int = 1
+    for i: int in 0 .. n {
+        state = (state * 3 + i) % 1000
+    }
+    return state
+}
+
+main(): int {
+    r: int = narrow() + floats() + by_ref() + deep() + spilled()
+    if r != 0 { return r }
+    if hot(10) != 806 { return 13 }
+    return 42
+}
