@@ -2693,8 +2693,40 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
     // argument registers overlap the temp pool, so placing one argument (a
     // two-word aggregate load into x1, say) must not read a later argument's
     // still-unplaced temp register directly.
-    spill_temps(e);
+    /*
+     * A scalar or by-address argument whose temp already is its argument
+     * register is placed: the marshal order never writes another argument's
+     * register, so it needs neither a spill nor a reload. Temps below `si`
+     * were spilled at entry and have not changed since.
+     */
+    uint8_t placed[40];
+    uint8_t skip_spill[64];
+    memset(placed, 0, sizeof placed);
+    memset(skip_spill, 0, sizeof skip_spill);
     for (int i = 0; i < n; i++) {
+        EV v = args[i].val;
+        TU* u = &units[i * 4];
+        if (v.cls == CLS_FP || (v.cls == CLS_ADDR && !args[i].ptrval)) continue;
+        if (u->kind != TU_XREG || u->reg != xreg(v.idx) || v.idx >= 8) continue;
+        int single = 1;
+        for (int w = 1; w < 4; w++)
+            if (units[i * 4 + w].kind != TU_XREG || units[i * 4 + w].reg >= 0)
+                single = 0;
+        for (int j = 0; j < n; j++)
+            if (j != i && args[j].val.cls != CLS_FP && args[j].val.idx == v.idx)
+                single = 0;
+        if (tgt.kind == TK_REG && tgt.reg == v.idx) single = 0;
+        if (!single) continue;
+        placed[i] = 1;
+        if (v.idx >= si) skip_spill[v.idx] = 1;
+    }
+    for (int t = si; t < e->vti; t++)
+        if (!(t < 64 && skip_spill[t]))
+            store_frame(e, xreg(t), spill_slot_int(e, t), 8);
+    for (int j = 0; j < e->vtf; j++)
+        store_frame_fp(e, vreg(j), spill_slot_fp(e, j), 1);
+    for (int i = 0; i < n; i++) {
+        if (placed[i]) continue;
         EV v = args[i].val;
         int pass_addr = args[i].ptrval || args[i].val.cls == CLS_INT;
         int is_agg = v.cls == CLS_ADDR && !pass_addr;
@@ -2770,18 +2802,17 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
         // single scalar: stage through the result temp's spill slot
         if (is_floatt(ret)) {
             int is64 = rc.units[0].size == 8;
-            store_frame_fp(e, 0, spill_slot_fp(e, sf), is64); // v0/s0
+            // move v0 clear of the temps reload_temps rewrites
+            if (sf) mov_fp(e, is64, sf, 0);
             reload_temps(e, si, sf);
             e->vti = si; e->vtf = sf;
             int t = tmp_fp(e);
-            load_frame_fp(e, vreg(t), spill_slot_fp(e, sf), is64);
             out = (EV){ CLS_FP, t };
         } else {
-            store_frame(e, 0, spill_slot_int(e, si), 8); // x0
+            if (si) mov_int(e, 1, xreg(si), 0); // x0 is temp 0's register
             reload_temps(e, si, sf);
             e->vti = si; e->vtf = sf;
             int t = tmp_int(e);
-            load_frame(e, xreg(t), spill_slot_int(e, si), 8, 0);
             out = (EV){ CLS_INT, t };
         }
     } else if (rc.nunits >= 1) {
@@ -3383,6 +3414,15 @@ static int gen_addr(Em* e, Node* x) {
             if (framed) load_frame(e, xreg(ta), depth, 8, 0);
             else ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
         }
+        uint32_t esz = ty_size(bt);
+        uint64_t cidx;
+        if (!need_guard && const_int(x->b, &cidx) && cidx <= 4095 &&
+            cidx * esz <= 4095) { // constant unguarded index: one add or none
+            if (cidx)
+                ins(e, 0x91000000u | ((uint32_t)(cidx * esz) << 10) |
+                       ((uint32_t)xreg(ta) << 5) | (uint32_t)xreg(ta));
+            return ta;
+        }
         int svi = e->vti, svf = e->vtf;
         // A 64-bit index is only read, so a promoted one is used in place; a
         // narrower one is widened in its register and needs its own temp.
@@ -3404,7 +3444,6 @@ static int gen_addr(Em* e, Node* x) {
                          seq && seq->kind == SK_ARRAY ? seq->count : 0);
         if (e->mode != EMIT_CHECKED || (x->flags & F_BOUNDS_PROVEN))
             widen_idx(e, x->b, ri);
-        uint32_t esz = ty_size(bt);
         if (esz == 1) {
             ins(e, 0x8B000000u | ((uint32_t)ri << 16) |
                    ((uint32_t)xreg(ta) << 5) | (uint32_t)xreg(ta));
@@ -5859,6 +5898,12 @@ static void emit_stmt(Em* e, Node* s) {
         Slot* lsl = local && pr < 0 ? local_slot(e, ls) : NULL;
         int direct = pr >= 0 ? 2 : lsl && !lsl->byref;
         uint32_t doff = pr >= 0 ? (uint32_t)pr : direct ? lsl->off : 0;
+        // A plain store to a scalar field of a frame-resident local struct
+        // also skips the address temp.
+        if (!direct && s->op == T_ASSIGN && !(s->flags & F_VOLATILE) &&
+            lhs->kind == N_FIELD_E && is_scalar(t) &&
+            frame_place(e, lhs, &doff))
+            direct = 1;
         int ta = direct ? -1 : gen_addr(e, lhs);
         if (s->op != T_ASSIGN) { // compound: x = x op y, address evaluated once
             if (!is_scalar(t)) {

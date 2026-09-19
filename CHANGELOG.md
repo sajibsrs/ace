@@ -1120,6 +1120,15 @@ current normative rules, and Git preserves patch-level detail.
   error-domain constructor, which packs its domain id above the code.
   `find-4096` fell from 1,456 to 1,300 ns, `parse-f64-long` from 79 to 75 ns,
   and `format-f64-shortest` from 303 to 297 ns; CPU was unchanged.
+- `emit_call` places a scalar or by-address argument whose temp already is its
+  argument register without a spill or reload, and spills only argument temps
+  not placed that way (temps below the call's entry depth were spilled at
+  entry). A scalar result moves from x0/v0 into its temp's register before
+  `reload_temps` instead of round-tripping a slot. An unguarded constant index
+  (at most 4095 bytes of offset) is one add or none, and a plain store to a
+  scalar field of a frame-resident local struct is a direct `stur`.
+  `parse-f64` fell from 59 to 52 ns (1.9x C `strtod`), `format-f64-shortest`
+  from 296 to 262 ns, and string-bench code by 5.3%; CPU was unchanged.
 
 ## Current frontier
 

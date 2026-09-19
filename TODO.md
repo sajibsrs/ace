@@ -110,13 +110,18 @@ These are baseline observations, not performance promises.
 - **Caller-saved promotion across calls** [new] — non-leaf functions still
   keep every promoted local in x19-x28; locals not live across any call could
   use x9-x14 given per-call liveness.
+- **Call and tuple-return plumbing** [new] — aggregate and floating-point
+  arguments still stage through spill slots, a `(f64, bool)` return is built in
+  memory and reloaded, and `bool` locals and a string parameter's pointer and
+  length stay in stack slots inside loops.
 - **Remaining immediate and destination forms** [new] — declarations with an
   initializer still compute through a temp, and a constant on the left of a
   compare or in the middle of a chain still takes a register.
 - **Float-parse optimization backlog** [new] — the canonical 80%-short /
-  20%-long `parse-f64` workload is 2.2x `strtod` (59 ns); roughly 2x is an
+  20%-long `parse-f64` workload is 1.9x `strtod` (52 ns), at the roughly 2x
   aspirational target, not a promise. Measured next steps, in order:
-  1. Reduce syntax-scanning (47% of short-input time) and wrapper (20%) cost.
+  1. Reduce syntax-scanning cost (47% of short-input time before argument
+     placement; re-profile first). The `nan`/`inf` check gate measured no gain.
   2. Consider dropping the exact-small tier (10%) for the Eisel-Lemire step,
      with differential tests of exact integers above 2^53.
   3. Consider a wide-multiply intrinsic (`umulh`) for the Eisel-Lemire step

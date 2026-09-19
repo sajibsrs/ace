@@ -274,6 +274,18 @@ placement-dependent), `compare-4096` 0.85x, `copy-64` 1.8x, `copy-4096`
 versus 35.5 ms C `-O2` (1.06x) and 41.4 ms C `-O0`, with 35.5 ms checked;
 all checksums matched.
 
+### Argument-placement checkpoint
+
+After call arguments already in their argument registers skipped the spill
+and reload, and scalar results moved by register instead of a slot, five
+alternating runs produced `parse-f64` 52.4 ns (from 58.8; 1.9x C `strtod`,
+from 2.1x), `parse-f64-short` 48.3 ns (from 54.0), `parse-f64-long` 71.0 ns
+(from 74.3), and `format-f64-shortest` 262 ns (from 296). CPU, search, compare,
+and copy were unchanged, and the string benchmark's text fell 5.3%. Gating the
+`nan`/`inf` checks behind the first byte alone measured no change. Constant
+unguarded indexes and direct local-struct field stores landed in the same
+build and saved instructions without measurable time on their own.
+
 ## Memory
 
 Run the v1 raw-memory benchmark on Apple arm64:
