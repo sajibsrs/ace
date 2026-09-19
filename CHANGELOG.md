@@ -1110,6 +1110,16 @@ current normative rules, and Git preserves patch-level detail.
   coefficient overflows u64, instead of multiplying until overflow; zero goes
   to the Eisel-Lemire tier's zero check. Parsing `0e9999` fell from 14,429 to
   41 ns and `parse-f64` from 61 to 60 ns.
+- Integer constants 0..4095 become add/sub/compare immediates in binary
+  expressions, branches, the last operand of a comparison chain, and compound
+  assignment; checked 32/64-bit forms keep the flag-based overflow branch,
+  while checked narrow `+`/`-` keep the register path and its range check.
+  A promoted 32/64-bit integer local takes compound results (except `/`, `%`),
+  constants (masked to its width), and same-width `a op b` results directly
+  in its register instead of through a temp. `const_int` no longer folds an
+  error-domain constructor, which packs its domain id above the code.
+  `find-4096` fell from 1,456 to 1,300 ns, `parse-f64-long` from 79 to 75 ns,
+  and `format-f64-shortest` from 303 to 297 ns; CPU was unchanged.
 
 ## Current frontier
 

@@ -1,0 +1,182 @@
+/*
+ * Integer constants 0..4095 become add/sub/cmp immediates; larger and negative
+ * ones fall back to a register. Promoted 32- and 64-bit locals take compound
+ * results, constants, and binary results straight into their own registers.
+ */
+
+// expect-exit: 42
+
+PingErr: error {
+    5: late = "late"
+}
+
+// first in the file, so each function below keeps its own symbol
+late(k: int): Error {
+    if k == 0 { return PingErr.late }
+    return null
+}
+
+// a digit scan: compares against #0x30/#0x39 and adds #1 in the loop
+digits(s: string): int {
+    n: int = 0
+    count: int = 0
+    for k: usize in 0 .. s.len {
+        c: u8 = s[k]
+        if c < 48 || c > 57 { return -1 }
+        n = n * 10 + int(c) - 48
+        count += 1
+    }
+    return n * 10 + count
+}
+
+// immediate bounds and the register fallback, in branch and value context;
+// a chain takes an immediate only as its last operand
+bounds(a: int, b: u32, w: u64): int {
+    s: i32 = -5
+    x: i8 = -100
+    u: u8 = 200
+    r: int = 0
+    for i: int in 0 .. 2 {
+        if a + 0 != 10 || a - 0 != 10 { r += 1 }
+        if a + 4095 != 4105 || a - 4095 != -4085 { r += 1 }
+        if a + 4096 != 4106 || a - 4096 != -4086 { r += 1 }
+        if a + -1 != 9 || a - -5 != 15 { r += 1 }
+        if !(a < 4095) || a > 4096 || a >= 11 || !(a != 0) { r += 1 }
+        lt: bool = a < 11
+        ge: bool = a >= 4096
+        if !lt || ge { r += 1 }
+        if !(b > 4095) || b - 4095 != 3999995905 || b + 1 != 4000000001 { r += 1 }
+        big: bool = b < 4095
+        if big { r += 1 }
+        if !(w > 4095) || w - 4095 != 18446744073709547520 { r += 1 }
+        if !(s < 0) || !(s < 4095) || s + 4095 != 4090 || s - 1 != -6 { r += 1 }
+        neg: bool = s > 0
+        if neg { r += 1 }
+        if !(x < 1) || x > 100 || x + 27 != -73 || x - 28 != -128 { r += 1 }
+        if !(u > 100) || !(u < 201) || u + 55 != 255 || u - 200 != 0 { r += 1 }
+        small: bool = u < 100
+        if small { r += 1 }
+        if !(0 <= a < 4095) || (0 <= a < 10) || !(-1 < a <= 4096) { r += 1 }
+        if 11 <= a < 4095 { r += 1 }
+        low: bool = 11 <= a < 4095
+        if low { r += 1 }
+        mid: bool = 0 <= a < 11
+        edge: bool = a <= 4095 <= a + 4095
+        if !mid || !edge { r += 1 }
+        wide: int = a * 4294967296 + 5
+        eq5: bool = wide == 5
+        if eq5 || wide == 5 || !(wide != 5) { r += 1 }
+    }
+    return r
+}
+
+// compound and plain assignments computed into promoted registers
+dest(a: int, b: int, c: u32): int {
+    x: int = a
+    y: int = b
+    z: u32 = c
+    h: i32 = 3
+    r: int = 0
+    for i: int in 0 .. 2 {
+        x = 100
+        x = x - y                    // 93
+        if x != 93 { r += 1 }
+        x = y - x                    // -86
+        if x != -86 { r += 1 }
+        x = x * y                    // -602
+        x = y * x                    // -4214
+        if x != -4214 { r += 1 }
+        x = x ^ y                    // -4211
+        x = x & 4095                 // 3981
+        x = x | 4096                 // 8077
+        if x != 8077 { r += 1 }
+        x = x << 2                   // 32308
+        x = x >> y                   // 252
+        x = x + 4095                 // 4347
+        x = x - 4096                 // 251
+        x = x + -1                   // 250
+        if x != 250 { r += 1 }
+        x += 4095
+        x -= 4096
+        x += y
+        x *= y                       // 1792
+        x <<= 1
+        x ^= 5                       // 3589
+        x -= -10                     // 3599
+        if x != 3599 { r += 1 }
+        z = 4294967295
+        z -= 4095                    // 4294963200
+        z += 1
+        if z != 4294963201 { r += 1 }
+        z = z - c                    // 4294963196
+        z = c - 5                    // 0
+        if z != 0 { r += 1 }
+        h = 3
+        h += 4096
+        h = h - 4099                 // 0
+        h -= 1
+        if h != -1 || i64(h) != -1 { r += 1 }
+        y += 0
+    }
+    return r
+}
+
+// constants into promoted locals of each width keep the extended form
+consts(): int {
+    a: i8 = 0
+    b: u8 = 0
+    c: i32 = 0
+    d: u32 = 0
+    e: i64 = 0
+    f: u64 = 0
+    r: int = 0
+    for i: int in 0 .. 2 {
+        a = -1
+        b = 255
+        c = -2147483648
+        d = 4294967295
+        e = -1
+        f = 18446744073709551615
+        if a >= 0 || int(a) != -1 || a != i8(-1) { r += 1 }
+        if b != 255 || int(b) != 255 || u64(b) != 255 { r += 1 }
+        if c >= 0 || i64(c) != -2147483648 { r += 1 }
+        if d != 4294967295 || u64(d) != 4294967295 { r += 1 }
+        if e != -1 || e >= 0 { r += 1 }
+        if f != 18446744073709551615 || f - 1 != 18446744073709551614 { r += 1 }
+        a = -128
+        b = 128
+        c = 2147483647
+        d = 0
+        if int(a) != -128 || int(b) != 128 || i64(c) != 2147483647 { r += 1 }
+        if d != 0 || u64(d) != 0 { r += 1 }
+        b = ~u8(0)
+        if b != 255 || int(b) != 255 { r += 1 }
+        a = i8(5)
+        b = u8(7)
+        if int(a) + int(b) != 12 { r += 1 }
+    }
+    return r
+}
+
+// an error-domain constructor is not a plain integer constant
+errors(k: int): int {
+    r: int = 0
+    for i: int in 0 .. 2 {
+        v: Error = late(k)
+        if v != PingErr(5) { r += 1 }
+        same: bool = v == PingErr(5)
+        if !same { r += 1 }
+        if v == PingErr(4) { r += 1 }
+    }
+    return r
+}
+
+main(): int {
+    if digits("4095") != 40954 { return 1 }
+    if digits("12a") != -1 { return 2 }
+    if bounds(10, 4000000000, 18446744073709551615) != 0 { return 3 }
+    if dest(5, 7, 5) != 0 { return 4 }
+    if consts() != 0 { return 5 }
+    if errors(0) != 0 { return 6 }
+    return 42
+}

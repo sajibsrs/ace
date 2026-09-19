@@ -1,0 +1,11 @@
+value(): u8 { return u8(250) }
+main(): int {
+    n: u8 = value()
+    m: u8 = value()
+    for i: int in 0 .. 2 {
+        n += 5
+        m = m + 5
+    }
+    if n != 4 || m != 4 { return 1 }
+    return 0
+}

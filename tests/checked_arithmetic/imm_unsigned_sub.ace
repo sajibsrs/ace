@@ -1,0 +1,11 @@
+value(): u32 { return 1 }
+main(): int {
+    n: u32 = value()
+    m: u32 = value()
+    for i: int in 0 .. 2 {
+        n -= 1
+        m = m - 1
+    }
+    if n != 4294967295 || m != 4294967295 { return 1 }
+    return 0
+}

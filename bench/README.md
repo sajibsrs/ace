@@ -253,6 +253,16 @@ short inputs now puts 47% of parse time in syntax scanning, 20% in the
 wrapper, 10% in the small-integer tier, 9% in the Eisel-Lemire step, and 4%
 in the exact-power tier.
 
+### Immediate-operand checkpoint
+
+After small constants became add/sub/compare immediates and promoted integer
+locals took assignment results in their own registers, five alternating runs
+produced `find-4096` 1,300 ns (from 1,456; 0.65x C `strstr`),
+`parse-f64-long` 75 ns (from 79), `parse-f64` 59 ns (from 60), and
+`format-f64-shortest` 297 ns (from 303). CPU, compare, and copy were
+unchanged. Parse retired 7% fewer instructions in the earlier prototype with
+no cycle change, so its remaining cost is not instruction count.
+
 ## Memory
 
 Run the v1 raw-memory benchmark on Apple arm64:

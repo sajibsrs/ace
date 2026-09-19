@@ -710,12 +710,23 @@ if ! "$ACE" --checked -o /tmp/ace_checked_features/arithmetic_valid \
     fail=1
 fi
 for f in signed_add unsigned_mul narrow_mul div_zero neg_min shift_count compound \
+         imm_signed_add imm_unsigned_sub imm_narrow_add \
          pointer_null pointer_scale pointer_add pointer_sub; do
     if ! "$ACE" --checked -o "/tmp/ace_checked_features/arithmetic_$f" \
          "tests/checked_arithmetic/$f.ace" >/dev/null 2>/tmp/ace_test_errs ||
        "/tmp/ace_checked_features/arithmetic_$f" >/dev/null 2>/tmp/ace_test_errs ||
        ! grep -qF "ace: arithmetic violation" /tmp/ace_test_errs; then
         echo "FAIL: checked arithmetic fixture $f"
+        fail=1
+    fi
+done
+# release arithmetic wraps: the same immediate-operand overflows produce the
+# fixed-width result, including narrow values computed in registers
+for f in imm_signed_add imm_unsigned_sub imm_narrow_add; do
+    if ! "$ACE" --release -o "/tmp/ace_checked_features/arithmetic_${f}_release" \
+         "tests/checked_arithmetic/$f.ace" ||
+       ! "/tmp/ace_checked_features/arithmetic_${f}_release"; then
+        echo "FAIL: release arithmetic fixture $f must wrap"
         fail=1
     fi
 done
@@ -1139,6 +1150,26 @@ if [ -d tests/emit ]; then
             }
             END { exit bad || !low || !spill }'; then
             echo "FAIL: call-free functions must promote into x14-x9 first"
+            fail=1
+        fi
+        # Small constants are immediates: the digit scan compares against #0x30
+        # and counts with an immediate add on its own register, and past the
+        # entry declarations dest() copies no computed temp into a promoted
+        # register.
+        if ! otool -tv /tmp/ace_emit/basics/immediate_operands.o | awk '
+            /^[^0-9].*:$/ {
+                fn = ($0 ~ /^__ace\$fn\$digits\$/) ? 1 : ($0 ~ /^__ace\$fn\$dest\$/) ? 2 : 0
+                body = 0
+                next
+            }
+            fn == 1 && $2 == "cmp" && $3 ~ /^w/ && $4 == "#0x30" { cmp = 1 }
+            fn == 1 && $2 ~ /^adds?$/ && $3 == $4 && $5 == "#0x1" &&
+                $3 ~ /^x(9|1[0-4]|19|2[0-8]),$/ { inc = 1 }
+            fn == 2 && $2 ~ /^(b|b\..*|cbn?z)$/ { body = 1 }
+            fn == 2 && body && $2 == "mov" && $3 ~ /^[xw](9|1[0-4]|19|2[0-8]),$/ &&
+                $4 ~ /^[xw][0-8]$/ { bad = 1 }
+            END { exit bad || !cmp || !inc }'; then
+            echo "FAIL: small constants must be immediates computed into promoted registers"
             fail=1
         fi
     fi

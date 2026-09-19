@@ -1,0 +1,11 @@
+value(): i32 { return 2147483646 }
+main(): int {
+    n: i32 = value()
+    m: i32 = value()
+    for i: int in 0 .. 2 {
+        n += 1
+        m = m + 1
+    }
+    if n != -2147483648 || m != -2147483648 { return 1 }
+    return 0
+}
