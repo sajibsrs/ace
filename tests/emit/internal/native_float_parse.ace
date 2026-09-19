@@ -1,5 +1,6 @@
 /* Native decimal-to-float parsing covers exact midpoint rounding, extrema,
- * subnormals, overflow, and signed underflow without a platform parser.
+ * subnormals, overflow, signed underflow, and every fast-tier boundary
+ * without a platform parser.
  */
 // expect-exit: 0
 
@@ -33,7 +34,7 @@ main(): int {
     if !fok || bits.from_float(f) != u32(0x7F7FFFFF) { return 12 }
     f, fok = str.parse[f32]("3.4028236e38")
     if fok || bits.from_float(f) != 0 { return 13 }
-    // Exact-small tier rounds integer values directly without ambient float work.
+    // Integers just past the exact-power tier round in the exact-small tier.
     d, ok = str.parse[f64]("9007199254740993")
     if !ok || bits.from_float(d) != u64(0x4340000000000000) { return 14 }
     f, fok = str.parse[f32]("16777217")
@@ -41,5 +42,52 @@ main(): int {
     // The internal tier-selecting scan owns complete syntax validation.
     d, ok = str.parse[f64]("1.0e+")
     if ok || bits.from_float(d) != 0 { return 16 }
+    // A digit run ending inside an eight-byte word stops at its first non-digit.
+    d, ok = str.parse[f64]("1.2345e100")
+    if !ok || bits.from_float(d) != u64(0x54B693878AAE8F8A) { return 38 }
+    // Exact-power tier limits: 2^53 and |exponent10| 22 for f64, 2^24 and 10
+    // for f32; neighbors fall through to the wider tiers.
+    d, ok = str.parse[f64]("9007199254740992")
+    if !ok || bits.from_float(d) != u64(0x4340000000000000) { return 17 }
+    d, ok = str.parse[f64]("9007199254740992e-22")
+    if !ok || bits.from_float(d) != u64(0x3EAE392010175EE6) { return 18 }
+    d, ok = str.parse[f64]("9007199254740993e-22")
+    if !ok || bits.from_float(d) != u64(0x3EAE392010175EE7) { return 19 }
+    d, ok = str.parse[f64]("1e22")
+    if !ok || bits.from_float(d) != u64(0x4480F0CF064DD592) { return 20 }
+    d, ok = str.parse[f64]("1e23")
+    if !ok || bits.from_float(d) != u64(0x44B52D02C7E14AF6) { return 21 }
+    d, ok = str.parse[f64]("1e-22")
+    if !ok || bits.from_float(d) != u64(0x3B5E392010175EE6) { return 22 }
+    d, ok = str.parse[f64]("1e-23")
+    if !ok || bits.from_float(d) != u64(0x3B282DB34012B251) { return 23 }
+    d, ok = str.parse[f64]("9007199254740991e22")
+    if !ok || bits.from_float(d) != u64(0x47D0F0CF064DD591) { return 24 }
+    d, ok = str.parse[f64]("-3.141592653589793")
+    if !ok || bits.from_float(d) != u64(0xC00921FB54442D18) { return 25 }
+    d, ok = str.parse[f64]("-0.0")
+    if !ok || bits.from_float(d) != u64(0x8000000000000000) { return 26 }
+    d, ok = str.parse[f64]("-0e5")
+    if !ok || bits.from_float(d) != u64(0x8000000000000000) { return 27 }
+    f, fok = str.parse[f32]("16777216")
+    if !fok || bits.from_float(f) != u32(0x4B800000) { return 28 }
+    f, fok = str.parse[f32]("16777216e10")
+    if !fok || bits.from_float(f) != u32(0x5C1502F9) { return 29 }
+    f, fok = str.parse[f32]("16777216e-10")
+    if !fok || bits.from_float(f) != u32(0x3ADBE6FF) { return 30 }
+    f, fok = str.parse[f32]("16777217e-10")
+    if !fok || bits.from_float(f) != u32(0x3ADBE700) { return 31 }
+    f, fok = str.parse[f32]("1e10")
+    if !fok || bits.from_float(f) != u32(0x501502F9) { return 32 }
+    f, fok = str.parse[f32]("1e11")
+    if !fok || bits.from_float(f) != u32(0x51BA43B7) { return 33 }
+    f, fok = str.parse[f32]("1e-10")
+    if !fok || bits.from_float(f) != u32(0x2EDBE6FF) { return 34 }
+    f, fok = str.parse[f32]("1e-11")
+    if !fok || bits.from_float(f) != u32(0x2D2FEBFF) { return 35 }
+    f, fok = str.parse[f32]("0.1")
+    if !fok || bits.from_float(f) != u32(0x3DCCCCCD) { return 36 }
+    f, fok = str.parse[f32]("-0.0")
+    if !fok || bits.from_float(f) != u32(0x80000000) { return 37 }
     return 0
 }

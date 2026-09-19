@@ -232,6 +232,16 @@ time in syntax scanning, 26% in the Eisel-Lemire step (a quarter of its
 instructions were slot loads and stores), 12% each in the small-integer tier
 and the wrapper, and 5% in the software leading-zero count.
 
+### Exact-power parse checkpoint
+
+After the float parser gained a Clinger tier and hardware bit counts, five
+alternating runs produced `parse-f64` 87 ns (from 100; 3.2x C `strtod`, from
+3.6x), `parse-f64-short` 77 ns (from 92), and `parse-f64-long` 112 ns (from
+118); format was unchanged. The exact-power tier takes four of the eight
+short inputs. A sampled profile of short inputs now puts 51% of the time in
+syntax scanning, 15% in the Eisel-Lemire step, 14% in the wrapper, 9% in the
+small-integer tier, and 4% in the exact-power tier.
+
 ## Memory
 
 Run the v1 raw-memory benchmark on Apple arm64:

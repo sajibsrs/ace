@@ -3,40 +3,22 @@
  * exact bigint fallback for inputs outside these proven paths.
  */
 
+import bits
 import table: @float_parse_tables
 
-leading_zeroes(value: u64): int {
-    count: int = 0
-    work: u64 = value
-
-    if (work >> 32) == 0 {
-        count += 32
-        work = work << 32
-    }
-    if (work >> 48) == 0 {
-        count += 16
-        work = work << 16
-    }
-    if (work >> 56) == 0 {
-        count += 8
-        work = work << 8
-    }
-    if (work >> 60) == 0 {
-        count += 4
-        work = work << 4
-    }
-    if (work >> 62) == 0 {
-        count += 2
-        work = work << 2
-    }
-    if (work >> 63) == 0 {
-        count += 1
-    }
-    return count
-}
+// Powers of ten exactly representable at each width: 5^22 < 2^53, 5^10 < 2^24.
+EXACT_POWERS64: const [23]f64 = [
+    1.0e0, 1.0e1, 1.0e2, 1.0e3, 1.0e4, 1.0e5, 1.0e6, 1.0e7,
+    1.0e8, 1.0e9, 1.0e10, 1.0e11, 1.0e12, 1.0e13, 1.0e14, 1.0e15,
+    1.0e16, 1.0e17, 1.0e18, 1.0e19, 1.0e20, 1.0e21, 1.0e22,
+]
+EXACT_POWERS32: const [11]f32 = [
+    1.0e0, 1.0e1, 1.0e2, 1.0e3, 1.0e4, 1.0e5, 1.0e6, 1.0e7,
+    1.0e8, 1.0e9, 1.0e10,
+]
 
 integer_bits(value: u64, fraction_bits: int, bias: int): u64 {
-    length: int = 64 - leading_zeroes(value)
+    length: int = 64 - int(bits.lead_zeros(value))
     significand: u64 = value
 
     if length > fraction_bits + 1 {
@@ -61,6 +43,39 @@ integer_bits(value: u64, fraction_bits: int, bias: int): u64 {
     exponent: u64 = u64(length - 1 + bias)
     fraction_mask: u64 = (u64(1) << u64(fraction_bits)) - 1
     return (exponent << u64(fraction_bits)) | (significand & fraction_mask)
+}
+
+/* Clinger's fast path: an exact coefficient scaled by an exact power of ten
+ * rounds once, correctly, in the default round-to-nearest environment.
+ */
+pub exact64(coefficient: u64, exponent10: int, mut raw: u64): bool {
+    if coefficient > (u64(1) << 53) || exponent10 < -22 || exponent10 > 22 {
+        return false
+    }
+    value: f64 = f64(coefficient)
+
+    if exponent10 < 0 {
+        value = value / EXACT_POWERS64[0 - exponent10]
+    } else {
+        value = value * EXACT_POWERS64[exponent10]
+    }
+    raw = bits.from_float(value)
+    return true
+}
+
+pub exact32(coefficient: u64, exponent10: int, mut raw: u64): bool {
+    if coefficient > (u64(1) << 24) || exponent10 < -10 || exponent10 > 10 {
+        return false
+    }
+    value: f32 = f32(coefficient)
+
+    if exponent10 < 0 {
+        value = value / EXACT_POWERS32[0 - exponent10]
+    } else {
+        value = value * EXACT_POWERS32[exponent10]
+    }
+    raw = u64(bits.from_float(value))
+    return true
 }
 
 pub small_integer(coefficient: u64, exponent10: int,
@@ -102,7 +117,7 @@ pub binary64(coefficient: u64, exponent10: int, mut raw: u64): bool {
         raw = u64(2047) << 52
         return true
     }
-    zeros: int = leading_zeroes(coefficient)
+    zeros: int = int(bits.lead_zeros(coefficient))
     normalized: u64 = coefficient << u64(zeros)
     index: int = 2 * (exponent10 + 342)
     factor: u64 = table.powers[index]
@@ -194,7 +209,7 @@ pub binary32(coefficient: u64, exponent10: int, mut raw: u64): bool {
         raw = u64(255) << 23
         return true
     }
-    zeros: int = leading_zeroes(coefficient)
+    zeros: int = int(bits.lead_zeros(coefficient))
     normalized: u64 = coefficient << u64(zeros)
     index: int = 2 * (exponent10 + 342)
     factor: u64 = table.powers[index]

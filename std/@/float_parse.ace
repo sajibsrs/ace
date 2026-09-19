@@ -88,33 +88,7 @@ fast_decimal(text: string, mut result: FastDecimal) {
             run: int = 8
 
             if non_digit != 0 {
-                zero_bits: int = 0
-                work: u64 = non_digit
-
-                if (work & u64(0xFFFFFFFF)) == 0 {
-                    zero_bits += 32
-                    work = work >> 32
-                }
-                if (work & u64(0xFFFF)) == 0 {
-                    zero_bits += 16
-                    work = work >> 16
-                }
-                if (work & u64(0xFF)) == 0 {
-                    zero_bits += 8
-                    work = work >> 8
-                }
-                if (work & u64(0xF)) == 0 {
-                    zero_bits += 4
-                    work = work >> 4
-                }
-                if (work & 3) == 0 {
-                    zero_bits += 2
-                    work = work >> 2
-                }
-                if (work & 1) == 0 {
-                    zero_bits += 1
-                }
-                run = zero_bits / 8
+                run = int(bits.trail_zeros(non_digit)) / 8
             }
 
             if run > 0 {
@@ -424,9 +398,13 @@ pub binary64(text: string): (f64, bool) {
     }
     if scanned.digits <= 19 {
         raw: u64 = 0
-        handled: bool = fast.small_integer(scanned.coefficient,
-                                           scanned.exponent10, 52, 1023, mut raw)
+        handled: bool = fast.exact64(scanned.coefficient, scanned.exponent10,
+                                     mut raw)
 
+        if !handled {
+            handled = fast.small_integer(scanned.coefficient,
+                                         scanned.exponent10, 52, 1023, mut raw)
+        }
         if !handled {
             handled = fast.binary64(scanned.coefficient, scanned.exponent10, mut raw)
         }
@@ -503,9 +481,13 @@ pub binary32(text: string): (f32, bool) {
     }
     if scanned.digits <= 19 {
         wide_raw: u64 = 0
-        handled: bool = fast.small_integer(scanned.coefficient,
-                                           scanned.exponent10, 23, 127, mut wide_raw)
+        handled: bool = fast.exact32(scanned.coefficient, scanned.exponent10,
+                                     mut wide_raw)
 
+        if !handled {
+            handled = fast.small_integer(scanned.coefficient,
+                                         scanned.exponent10, 23, 127, mut wide_raw)
+        }
         if !handled {
             handled = fast.binary32(scanned.coefficient, scanned.exponent10, mut wide_raw)
         }

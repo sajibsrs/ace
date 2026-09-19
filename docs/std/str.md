@@ -111,7 +111,8 @@ main(): int {
   zero succeeds. Decimal floats accept ordinary decimal/scientific forms plus
   the exact non-finite spellings `fmt` produces (`nan`, `inf`, `-inf`).
   Finite decimals round directly to the requested IEEE width with exact
-  ties-to-even; parsing allocates nothing and uses no platform decimal parser.
+  ties-to-even, assuming the default round-to-nearest floating-point
+  environment; parsing allocates nothing and uses no platform decimal parser.
   Naming any other `T` is a compile-time error at the call.
 - `format(destination: mut []char, value): (usize, bool)` — overloads for
   `int`, `uint`, `usize`, `f32`, and `f64`, plus radix-taking overloads for

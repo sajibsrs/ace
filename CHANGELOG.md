@@ -1090,6 +1090,12 @@ current normative rules, and Git preserves patch-level detail.
   fell from 141 to 101 ns and `format-f64-shortest` from 367 to 313 ns;
   weighting a single use as enough measured 301 ns on format with no parse
   difference, but saved registers in one-use functions.
+- Float parsing tries a Clinger tier first: a coefficient of at most 2^53
+  with |exponent10| <= 22 (`f64`), or 2^24 with <= 10 (`f32`), is one
+  multiply or divide by an exact power-of-ten table at the requested width,
+  assuming round-to-nearest. The scanner and Eisel-Lemire step use
+  `bits.trail_zeros`/`lead_zeros` instead of software cascades. `parse-f64`
+  fell from 100 to 87 ns (3.2x C `strtod`).
 
 ## Current frontier
 

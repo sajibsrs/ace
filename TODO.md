@@ -107,17 +107,11 @@ These are baseline observations, not performance promises.
 - **Read-only parameter load reuse** [queued] — exploit the existing parameter
   facts without adding global alias analysis.
 - **Float-parse optimization backlog** [new] — the canonical 80%-short /
-  20%-long `parse-f64` workload is 3.6x `strtod` (101 ns); roughly 2x is an
+  20%-long `parse-f64` workload is 3.2x `strtod` (87 ns); roughly 2x is an
   aspirational target, not a promise. Measured next steps, in order:
-  1. Replace the parser's software leading/trailing-zero cascades with
-     `bits.lead_zeros`/`trail_zeros`.
-  2. Add a Clinger fast path (coefficient within the float's exact integer
-     range, |exponent10| within its exact power-of-ten range, one correctly
-     rounded multiply or divide at the requested width) ahead of the
-     small-integer and Eisel-Lemire tiers.
-  3. Re-profile; then consider a wide-multiply intrinsic (`umulh`) for the
+  1. Re-profile; then consider a wide-multiply intrinsic (`umulh`) for the
      Eisel-Lemire step's four 32-bit partial products.
-  4. Consider power-table alignment and cache layout last. C is the
+  2. Consider power-table alignment and cache layout last. C is the
      comparison baseline, not a ceiling; any stronger claim requires a local
      checksum-matched measurement.
 - **Broader performance corpus** [new] — add checksum-matched Ace/C fixtures for
