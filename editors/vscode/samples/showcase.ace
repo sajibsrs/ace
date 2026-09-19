@@ -6,9 +6,9 @@ import arithmetic: math
 import sample: "./support.ace"
 import min, max from math
 import (
-    time_awake,
-    time_elapsed,
-) from sys
+    awake,
+    elapsed,
+) from time
 
 /* Declarations: built-in types, user-defined types, generics, and constants. */
 MAX_ITEMS: const int = 1_024

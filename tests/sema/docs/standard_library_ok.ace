@@ -17,6 +17,7 @@ import net
 import poll
 import str
 import sys
+import time
 import net/tcp
 
 WOULD_BLOCK: const i32 = sys.EWOULDBLOCK
@@ -218,14 +219,14 @@ printf_examples(): int {
     return 0
 }
 
-time_awake_example(): int {
-    start: u64 = sys.time_awake()
+awake_example(): int {
+    start: u64 = time.awake()
     sum: int = 0
 
     for i: int in 0 .. 1_000_000 {
         sum += i
     }
-    elapsed_ns: u64 = sys.time_awake() - start
+    elapsed_ns: u64 = time.awake() - start
 
     if elapsed_ns == 0 {
         return 1
@@ -434,5 +435,5 @@ main(): int {
     if code != 0 {
         return 50 + code
     }
-    return time_awake_example()
+    return awake_example()
 }

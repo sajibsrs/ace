@@ -2,16 +2,11 @@
 // Run with: ./bench/run-memory.sh
 import fmt
 import mem
-
-extern "c" {
-    clock_gettime_nsec_np(clock_id: i32): u64
-    malloc_size(ptr: *u8): usize
-}
+import time
 
 main(): int {
-    // CLOCK_UPTIME_RAW on Darwin. Keep the timed workload large enough to
-    // dominate clock and loop overhead while keeping peak memory modest.
-    clock_id: i32 = 8
+    // Keep the timed workload large enough to dominate clock and loop
+    // overhead while keeping peak memory modest.
     slots: int = 128
     rounds: int = 1600
     initial_size: int = 64
@@ -24,7 +19,7 @@ main(): int {
     alloc_elapsed: usize = 0
     release_elapsed: usize = 0
     for round: int in 0 .. rounds {
-        alloc_started: u64 = clock_gettime_nsec_np(clock_id)
+        alloc_started: u64 = time.awake()
         for i: int in 0 .. slots {
             block: mut []u8 = mem.alloc(initial_size, 16)
             if block != null {
@@ -35,9 +30,9 @@ main(): int {
             }
             blocks[i] = block
         }
-        alloc_elapsed += usize(clock_gettime_nsec_np(clock_id) - alloc_started)
+        alloc_elapsed += usize(time.awake() - alloc_started)
 
-        release_started: u64 = clock_gettime_nsec_np(clock_id)
+        release_started: u64 = time.awake()
         for i: int in 0 .. slots {
             block: mut []u8 = blocks[i]
             mem.release(mut block)
@@ -46,7 +41,7 @@ main(): int {
             }
             blocks[i] = block
         }
-        release_elapsed += usize(clock_gettime_nsec_np(clock_id) - release_started)
+        release_elapsed += usize(time.awake() - release_started)
     }
 
     // Time realloc separately. Successful growth must preserve both sentinel
@@ -64,7 +59,7 @@ main(): int {
             blocks[i] = block
         }
 
-        realloc_started: u64 = clock_gettime_nsec_np(clock_id)
+        realloc_started: u64 = time.awake()
         for i: int in 0 .. slots {
             block: mut []u8 = blocks[i]
             if block != null {
@@ -83,7 +78,7 @@ main(): int {
             }
             blocks[i] = block
         }
-        realloc_elapsed += usize(clock_gettime_nsec_np(clock_id) - realloc_started)
+        realloc_elapsed += usize(time.awake() - realloc_started)
 
         for i: int in 0 .. slots {
             block: mut []u8 = blocks[i]
@@ -92,8 +87,8 @@ main(): int {
         }
     }
 
-    // Probe live allocator usage outside the timed loops. malloc_size reports
-    // the usable size supplied by Darwin's allocator for each allocation.
+    // Probe live allocator usage outside the timed loops. mem.alloc_size reports
+    // the usable size supplied by the platform allocator for each allocation.
     requested_live: usize = 0
     usable_live: usize = 0
     for i: int in 0 .. slots {
@@ -102,7 +97,7 @@ main(): int {
             block[0] = u8(i % 251)
             block[grown_size - 1] = u8((i + 1) % 251)
             requested_live += block.len
-            usable_live += malloc_size(&block[0])
+            usable_live += mem.alloc_size(block)
         } else {
             failures += 1
         }

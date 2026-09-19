@@ -397,7 +397,7 @@
       "patterns": [
         {
           "name": "entity.name.namespace.ace",
-          "match": "\\b(?:fmt|math|mem|sys)\\b(?=\\s*\\.)"
+          "match": "\\b(?:fmt|math|mem|sys|time)\\b(?=\\s*\\.)"
         },
         {
           "name": "entity.name.namespace.ace",

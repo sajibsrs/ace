@@ -3850,6 +3850,26 @@ static EV gen_release_builtin(Em* e, Node* call) {
     return (EV){ CLS_INT, 0 }; // release has no value; expression statements discard it
 }
 
+/* Usable size of a live allocation: the platform allocator's own report for
+ * the slice's base pointer. Null and non-allocation pointers report 0. */
+static EV gen_alloc_size_builtin(Em* e, Node* call) {
+    EV data = gen_expr(e, call->kids[0]);
+    if (data.cls != CLS_ADDR) {
+        em_err(e, call->kids[0], "mem.alloc_size data must materialize as a slice");
+        int zero = tmp_int(e);
+        load_imm(e, 1, xreg(zero), 0);
+        return (EV){ CLS_INT, zero };
+    }
+    int ptr = tmp_int(e);
+    ld_reg(e, xreg(ptr), xreg(data.idx), 0, 8, 0);
+    CallArg arg = { NULL, { CLS_INT, ptr }, 1, 0 };
+    SType* param = raw_pointer_type();
+    uint8_t mut = 0;
+    CallTarget tgt = { TK_EXTERN, "_malloc_size", 12, 0 };
+    return emit_call(e, call, &arg, 1, &param, &mut, 1, 0, -1, tgt,
+                     default_i64());
+}
+
 static int gen_slice_parts(Em* e, Node* value, int* ptr, int* len) {
     EV slice = gen_expr(e, value);
     *ptr = tmp_int(e);
@@ -4390,6 +4410,10 @@ static EV gen_call(Em* e, Node* call) {
     if (intrinsic && intrinsic->decl &&
         intrinsic->decl->ival == BI_MEM_ZERO && call->ival == BI_MEM_ZERO)
         return gen_byte_write_builtin(e, call, BI_MEM_ZERO);
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival == BI_MEM_ALLOC_SIZE &&
+        call->ival == BI_MEM_ALLOC_SIZE)
+        return gen_alloc_size_builtin(e, call);
     if (intrinsic && intrinsic->decl &&
         intrinsic->decl->ival == BI_MEM_COMPARE && call->ival == BI_MEM_COMPARE)
         return gen_compare_builtin(e, call);
@@ -8735,7 +8759,7 @@ int emit_object(Node* file, Diag* d, const char* out_path,
                 n->ival == BI_MEM_RELEASE || n->ival == BI_MEM_COPY ||
                 n->ival == BI_MEM_MOVE || n->ival == BI_MEM_FILL ||
                 n->ival == BI_MEM_ZERO || n->ival == BI_MEM_COMPARE ||
-                n->ival == BI_MEM_EQUAL ||
+                n->ival == BI_MEM_EQUAL || n->ival == BI_MEM_ALLOC_SIZE ||
                 n->ival == BI_MEM_ALLOC_T || n->ival == BI_MEM_REALLOC_T ||
                 n->ival == BI_MEM_RELEASE_T)
                 break; // compiler-backed std/mem declarations have no body symbol

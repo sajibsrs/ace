@@ -1,21 +1,17 @@
 // Integer CPU benchmark shared with cpu.c. Keep the recurrence bounded so
 // checked mode measures guards without intentionally overflowing.
 import fmt
-
-extern "c" {
-    clock_gettime_nsec_np(clock_id: i32): u64
-}
+import time
 
 main(): int {
-    clock_id: i32 = 8 // CLOCK_UPTIME_RAW on Darwin
     iterations: usize = 5000000
     state: usize = 1
 
-    started: u64 = clock_gettime_nsec_np(clock_id)
+    started: u64 = time.awake()
     for i: usize in 0 .. iterations {
         state = (state * 48271 + (i % 97)) % 2147483647
     }
-    elapsed: u64 = clock_gettime_nsec_np(clock_id) - started
+    elapsed: u64 = time.awake() - started
 
     fmt.printf("iterations: %u\nelapsed ns: %u\nchecksum: %u\n",
                iterations, usize(elapsed), state)

@@ -6,13 +6,10 @@ import bits
 import fmt
 import mem
 import str
-
-extern "c" {
-    clock_gettime_nsec_np(clock_id: i32): u64
-}
+import time
 
 now(): u64 {
-    return clock_gettime_nsec_np(8) // CLOCK_UPTIME_RAW on Darwin
+    return time.awake()
 }
 
 report(name: string, elapsed: u64, operations: usize, checksum: usize) {

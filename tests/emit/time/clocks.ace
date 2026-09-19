@@ -1,9 +1,9 @@
-/* sys time — elapsed and awake clocks with runtime advancement checks. */
+/* time — elapsed and awake clocks with runtime advancement checks. */
 
 // expect-exit: 42
 
-import sys
-import time_awake from sys
+import time
+import awake from time
 
 /* Harness-only wait: an ordinary process sleep proving the clocks advance
  * while this process sits idle. usleep is not part of the tested surface.
@@ -17,14 +17,14 @@ wait_us(micros: u32) {
 }
 
 check_nondecreasing(): int {
-    asleep1: u64 = sys.time_elapsed()
-    asleep2: u64 = sys.time_elapsed()
+    asleep1: u64 = time.elapsed()
+    asleep2: u64 = time.elapsed()
 
     if asleep2 < asleep1 {
         return 1
     }
-    awake1: u64 = sys.time_awake()
-    awake2: u64 = sys.time_awake()
+    awake1: u64 = time.awake()
+    awake2: u64 = time.awake()
 
     if awake2 < awake1 {
         return 2
@@ -33,9 +33,9 @@ check_nondecreasing(): int {
 }
 
 check_elapsed_advance(): int {
-    before: u64 = sys.time_elapsed()
+    before: u64 = time.elapsed()
     wait_us(150_000)
-    after: u64 = sys.time_elapsed()
+    after: u64 = time.elapsed()
     elapsed: u64 = after - before
 
     /* The 150 ms wait must move the clock; the bounds stay generous for
@@ -51,9 +51,9 @@ check_elapsed_advance(): int {
 }
 
 check_awake_advance(): int {
-    before: u64 = time_awake()
+    before: u64 = awake()
     wait_us(150_000)
-    after: u64 = time_awake()
+    after: u64 = awake()
     elapsed: u64 = after - before
 
     /* The 150 ms wait must move the clock; the bounds stay generous for
@@ -69,8 +69,8 @@ check_awake_advance(): int {
 }
 
 check_selective(): int {
-    start: u64 = time_awake()
-    end: u64 = time_awake()
+    start: u64 = awake()
+    end: u64 = awake()
 
     if end < start {
         return 1

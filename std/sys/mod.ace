@@ -198,11 +198,3 @@ pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileType, bool, Error) {
 pub close_dir(mut dir: Dir): Error {
     return os.close_dir(mut dir)
 }
-
-pub time_elapsed(): u64 {
-    return os.time_elapsed()
-}
-
-pub time_awake(): u64 {
-    return os.time_awake()
-}

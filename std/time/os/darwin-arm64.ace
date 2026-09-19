@@ -1,0 +1,32 @@
+/* time Darwin arm64 — monotonic clocks over libSystem. */
+
+extern "c" {
+    c_clock_gettime_nsec_np(clk_id: i32): u64 = "clock_gettime_nsec_np"
+}
+
+/* Monotonic time. Darwin clock ids from mach/clock_types.h:
+ * CLOCK_MONOTONIC_RAW runs on mach_continuous_time and keeps advancing while
+ * the system is asleep; CLOCK_UPTIME_RAW runs on mach_absolute_time and
+ * pauses while the system is asleep. Both are tick-based, so setting the
+ * calendar clock moves neither.
+ */
+
+CLOCK_MONOTONIC_RAW: const i32 = 4
+CLOCK_UPTIME_RAW: const i32 = 8
+
+/* System-wide monotonic nanoseconds from an unspecified origin, reset at
+ * every boot. Continues advancing during system sleep, so it stays in sync
+ * with real elapsed time across sleep/wake cycles. Unaffected by
+ * calendar-clock changes.
+ */
+pub elapsed(): u64 {
+    return c_clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)
+}
+
+/* System-wide monotonic nanoseconds from an unspecified origin, reset at
+ * every boot. Pauses during system sleep and resumes when the system wakes;
+ * unaffected by calendar-clock changes.
+ */
+pub awake(): u64 {
+    return c_clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+}

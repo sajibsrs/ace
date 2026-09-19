@@ -16,8 +16,8 @@ Today's modules:
 - [`poll`](poll.md) — allocation-free readiness queues for general file descriptors
 - [`str`](str.md) — allocation-free byte-exact string utilities
 - [`tcp`](tcp.md) — explicit blocking IPv4 TCP composition over `net`
-- [`sys`](sys.md) — process arguments/environment, file descriptors, byte I/O, errno,
-  and monotonic time
+- [`sys`](sys.md) — process arguments/environment, file descriptors, byte I/O, and errno
+- [`time`](time.md) — monotonic clocks
 - [`ascii`](ascii.md) — allocation-free ASCII-only text operations
 - [`utf8`](utf8.md) — allocation-free strict UTF-8 encoding and decoding
 

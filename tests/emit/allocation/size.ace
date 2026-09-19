@@ -1,0 +1,37 @@
+/* mem.alloc_size runtime coverage. */
+
+// expect-exit: 42
+
+import alloc, realloc, release, alloc_size from mem
+
+main(): int {
+    none: mut []u8 = null
+
+    if alloc_size(none) != 0 {
+        return 1
+    }
+    block: mut []u8 = alloc(100, 16)
+
+    if block == null {
+        return 2
+    }
+
+    if alloc_size(block) < 100 {
+        return 3
+    }
+    grown: mut []u8 = realloc(block, 1000)
+
+    if grown == null {
+        return 4
+    }
+
+    if alloc_size(grown) < 1000 {
+        return 5
+    }
+    release(mut grown)
+
+    if alloc_size(grown) != 0 {
+        return 6
+    }
+    return 42
+}

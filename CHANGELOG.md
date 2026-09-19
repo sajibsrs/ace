@@ -415,8 +415,13 @@ current normative rules, and Git preserves patch-level detail.
   conversion isolated in its selected target layer. `char` remains the
   transparent byte alias and strings remain UTF-8 byte sequences.
 - Implemented `sys` file-descriptor I/O, descriptor constants, errno capture,
-  command-line arguments, environment access, and separate elapsed/awake
-  monotonic clocks through thin platform bindings.
+  command-line arguments, and environment access through thin platform
+  bindings.
+- Implemented `mem.alloc_size` as a compiler-backed raw `mem` name lowered to
+  the platform allocator's size query; the benchmarks use it and `time.awake`
+  in place of their private externs.
+- Implemented `time.elapsed` and `time.awake` as separate monotonic clocks in
+  the `time` module over a private Darwin binding.
 - Added the Darwin Apple-arm64 `sys.ioctl` escape hatch with the native
   `unsigned long` request width, variadic-call ABI, caller-owned byte arguments,
   immediate `IoctlErr` capture, and SDK-verified BPF constants/layouts; the

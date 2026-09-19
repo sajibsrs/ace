@@ -3,7 +3,7 @@
 [Standard library](index.md)
 
 `sys` is the thin operating-system boundary: process-start values, file I/O,
-secure entropy, and monotonic time. It
+secure entropy. It
 never allocates — only callers allocate — and every failure is an ordinary
 `Error` value checked with a branch.
 
@@ -200,40 +200,8 @@ if err != null {
 }
 ```
 
-`time_elapsed(): u64` and `time_awake(): u64` read separate system-wide
-monotonic clocks in nanoseconds. Their origins reset at every boot:
-
-- `time_elapsed()` keeps advancing during system sleep, so differences between
-  its readings measure real elapsed time across sleep and wake cycles.
-- `time_awake()` pauses during system sleep and resumes when the system wakes.
-  It advances whenever the system is awake, regardless of whether this or any
-  other process is running, scheduled, or blocked. It is not process CPU time.
-
-Both clocks are immune to calendar-clock changes. Each returned value is a
-clock reading, not a duration by itself; subtract two readings from the same
-operation to obtain elapsed nanoseconds. Cross-clock differences are
-meaningless. Neither call allocates or can fail.
-
-```ace
-import sys
-
-main(): int {
-    start: u64 = sys.time_awake()
-    sum: int = 0
-    for i: int in 0 .. 1_000_000 {
-        sum += i
-    }
-    elapsed_ns: u64 = sys.time_awake() - start
-    if elapsed_ns == 0 {
-        return 1
-    }
-    return 0
-}
-```
-
 Caller-buffer bulk argument/environment filling, keyed environment lookup,
-environment mutation, directory operations, calendar time, and CPU time are
-not implemented yet.
+environment mutation and directory operations are not implemented yet.
 
 ## Darwin BPF packet-sniffer demo
 

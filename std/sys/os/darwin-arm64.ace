@@ -1,5 +1,5 @@
-/* Darwin sys OS layer — process termination, file descriptors, byte I/O,
- * and monotonic time (Darwin/Apple arm64).
+/* Darwin sys OS layer — process termination, file descriptors, byte I/O
+ * (Darwin/Apple arm64).
  *
  * Pure Ace over the system library through extern "c"; the link-name syntax
  * keeps the raw C bindings private. Every public function is allocation-free;
@@ -266,7 +266,6 @@ extern "c" {
     c_getdirentries64(fd: i32, buf: mut *u8, size: usize, base: mut *i64): i32 = "__getdirentries64"
     c_errno(): mut *i32 = "__error"
     c_getentropy(buffer: mut *u8, size: usize): i32 = "getentropy"
-    c_clock_gettime_nsec_np(clk_id: i32): u64 = "clock_gettime_nsec_np"
     c_exit(status: i32) = "_exit"
     c_fork(): i32 = "fork"
     c_waitpid(pid: i32, status: mut *i32, options: i32): i32 = "waitpid"
@@ -707,31 +706,4 @@ pub close_dir(mut dir: Dir): Error {
         return CloseDirErr(errno())
     }
     return null
-}
-
-/* Monotonic time. Darwin clock ids from mach/clock_types.h:
- * CLOCK_MONOTONIC_RAW runs on mach_continuous_time and keeps advancing while
- * the system is asleep; CLOCK_UPTIME_RAW runs on mach_absolute_time and
- * pauses while the system is asleep. Both are tick-based, so setting the
- * calendar clock moves neither.
- */
-
-CLOCK_MONOTONIC_RAW: const i32 = 4
-CLOCK_UPTIME_RAW: const i32 = 8
-
-/* System-wide monotonic nanoseconds from an unspecified origin, reset at
- * every boot. Continues advancing during system sleep, so it stays in sync
- * with real elapsed time across sleep/wake cycles. Unaffected by
- * calendar-clock changes.
- */
-pub time_elapsed(): u64 {
-    return c_clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)
-}
-
-/* System-wide monotonic nanoseconds from an unspecified origin, reset at
- * every boot. Pauses during system sleep and resumes when the system wakes;
- * unaffected by calendar-clock changes.
- */
-pub time_awake(): u64 {
-    return c_clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
 }

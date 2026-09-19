@@ -1,0 +1,25 @@
+/* time — selective import and exact signature typing (sema check only;
+ * runtime coverage lives in tests/emit/time/clocks.ace).
+ */
+
+import awake, elapsed from time
+
+same_mode_difference(): int {
+    start: u64 = awake()
+    end: u64 = awake()
+
+    if end < start {
+        return 1
+    }
+    return 0
+}
+
+main(): int {
+    since_boot: u64 = elapsed()
+    uptime: u64 = awake()
+
+    if since_boot == 0 || uptime == 0 {
+        return 2
+    }
+    return same_mode_difference()
+}

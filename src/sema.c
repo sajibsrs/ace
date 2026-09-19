@@ -3226,6 +3226,21 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         return st_prim(P_BOOL);
     }
 
+    if (intrinsic == BI_MEM_ALLOC_SIZE) {
+        if (call->nkids != 1) {
+            ck_err(k, call, "mem.alloc_size takes exactly one allocation slice");
+            return T_ERR;
+        }
+        Node* data = call->kids[0];
+        if (data->kind == N_MUTARG) {
+            ck_err(k, data,
+                   "'mut' marks mut parameters; mem.alloc_size's argument is read-only");
+            data = data->a;
+        }
+        coerce(k, data, T_BYTE_SLICE);
+        return st_prim(P_USIZE);
+    }
+
     if (intrinsic == BI_MEM_ALLOC) {
         if (call->nkids != 2) {
             ck_err(k, call, "mem.alloc takes exactly size and alignment");
@@ -4106,7 +4121,8 @@ static SType* check_call(Ck* k, Node* call) {
                 if (it->decl &&
                     ((it->decl->ival >= BI_MEM_ALLOC &&
                       it->decl->ival <= BI_MEM_COMPARE) ||
-                     it->decl->ival == BI_MEM_EQUAL)) {
+                     it->decl->ival == BI_MEM_EQUAL ||
+                     it->decl->ival == BI_MEM_ALLOC_SIZE)) {
                     mi = it;
                     break;
                 }

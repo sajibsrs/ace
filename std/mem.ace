@@ -35,6 +35,17 @@ pub release[T](mut data: []T) {
     data = null
 }
 
+/* Usable size in bytes of a live allocation, at least the requested length
+ * and allocator-defined beyond it. `data` must be the base slice a raw
+ * `alloc`/`realloc` returned; null and non-allocation pointers report 0. The
+ * bootstrap compiler lowers this exact declaration directly to the platform
+ * allocator's size query.
+ */
+
+pub alloc_size(data: []u8): usize {
+    return 0
+}
+
 /* Byte operations use complete slice views as their ranges. Write destinations
  * carry type-position `mut` (Mutability #10): their argument must be a
  * `mut []u8` view. The bootstrap compiler emits them natively as calls to

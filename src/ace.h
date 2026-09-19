@@ -186,6 +186,7 @@ enum {
     BI_BITS_BYTE_SWAP = 25,
     BI_BITS_ROTATE_LEFT = 26,
     BI_BITS_ROTATE_RIGHT = 27,
+    BI_MEM_ALLOC_SIZE = 28, // mem.alloc_size(data: []u8): usize
 };
 
 enum {
