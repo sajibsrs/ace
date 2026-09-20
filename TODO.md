@@ -72,10 +72,12 @@ the remaining proof points explicit:
 
 ## 2. Compiler and backend completion
 
-- **Negative float global initializers** [defect] — `G: f32 = -2.5` and
-  `G: f32 = f32(-2.5)` fail with "global initializer must be a compile-time
-  constant"; the constant-initializer folder in `emit.c` accepts positive float
-  literals only. Local `x: f32 = -2.5` is unaffected.
+- **Constant arithmetic in global initializers** [new] — a global initializer
+  built from constant arithmetic (`G: f64 = 0.0 - 1.0`, `G: int = 2 * 3`) or an
+  integer literal cast to float (`G: f32 = f32(-3)`) fails with "global
+  initializer must be a compile-time constant"; the folder in `emit.c` accepts
+  only literals, negated literals, and same-family casts. The same expressions
+  work in local declarations.
 
 - **Canonical source formatter** [open] — deferred while language implementation
   remains the priority. Resume from the Decision Queue's `ace fmt` carving: one

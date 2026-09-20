@@ -621,6 +621,10 @@ current normative rules, and Git preserves patch-level detail.
   `f32(0.0 - 1.0)`, `f32(-3)`, `f32(2 * 3)`), which stored a wrong value or hit
   "untyped operand reached codegen": the cast check now settles the operand
   through `coerce` (float math at the target type, integer math as `i64`).
+- Fixed global initializers with a negated float literal (`G: f32 = -2.5`,
+  `f32(-2.5)`, struct and array elements), which were rejected as not
+  compile-time constants: the constant-initializer folder now folds a negated
+  float literal and admits it under a same-family float cast.
 - Replaced generated float formatting's `ecvt`/`fcvt`, parse-back, `floor`,
   floating-environment, and memory-helper dependencies with a shared native
   exact binary-to-decimal engine under `std/@`. Fixed-capacity base-2^32

@@ -7646,8 +7646,10 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels) {
             int arg_int = arg->kind == N_INT || arg->kind == N_CHAR ||
                 arg->kind == N_BOOL ||
                 (arg->kind == N_UNARY && arg->op == T_MINUS);
+            int arg_float = arg->kind == N_FLOAT ||
+                (arg->kind == N_UNARY && arg->op == T_MINUS && arg->a->kind == N_FLOAT);
             if ((arg_int && fold_int_target(want)) ||
-                (arg->kind == N_FLOAT && fold_float_target(want)))
+                (arg_float && fold_float_target(want)))
                 return eval_const(e, arg, want, out, rels);
         }
         return 0;
@@ -7718,6 +7720,11 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels) {
                 put_u(out, c, ty_size(t) < 8 ? ty_size(t) : 8);
                 return 1;
             }
+        }
+        if (v->op == T_MINUS && v->a->kind == N_FLOAT && fold_float_target(t)) {
+            Node literal = *v->a; // a negated float literal folds as its negated value
+            literal.fval = -literal.fval;
+            return eval_const(e, &literal, t, out, rels);
         }
         return 0;
     case N_ARRAYLIT: case N_STRUCTLIT: {
