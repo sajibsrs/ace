@@ -328,6 +328,36 @@ Medians of three runs, Ace release against noinline C `-O2` (ns/op, ratio):
 aggregates and the float aggregate; the method and the 24-byte struct already
 beat noinline C.
 
+## Compile time
+
+Run the compile-time benchmark on Apple arm64:
+
+```sh
+./bench/run-compile.sh
+```
+
+`bench/compile-corpus.sh <functions> <dir>` emits an equivalent Ace and C pair:
+N call-chained functions cycling through a bounded loop with branches, by-value
+struct passing, and early-return branches, plus a `main` that prints one
+checksum. The runner compiles each size to an object, timing whole-process wall
+clock (median of three runs) for `ace -c` in checked and release modes against
+`cc -O0 -c` and `cc -O2 -c`, then reports machine-code bytes and times a few
+real programs. The generated pair was verified to print the same checksum.
+
+Medians, with `Ace/-O0` and `Ace/-O2` for release: 100 functions (1,053 lines)
+11.1 ms against 64.4 and 210.6 ms (0.17x, 0.05x); 1,000 functions (10,353
+lines) 47.4 ms against 216.6 and 1,615.8 ms (0.22x, 0.03x); 5,000 functions
+(51,684 lines) 813 ms against 937 and 7,746 ms (0.87x, 0.10x). Ace is much
+faster at small and medium sizes but grows faster than linearly: a single
+20,000-function run took 12.9 s against 3.6 s for `cc -O0` and 31.3 s for
+`cc -O2`. A profile of that run put about 78% of the time in semantic checking,
+inside the linear scans `find_in` and `lookup_val` over a scope's symbol list
+and in `declare_func`. Machine code for 5,000 functions is 1.60 MB release and
+2.07 MB checked against 0.98 MB for `cc -O0` and 1.10 MB for `cc -O2`. Real
+programs compile in 10 to 17 ms for the 19- to 194-line benchmarks (mostly
+process start and standard-library loading) and 140 ms for the 2,150-line HTTP
+server demo including its link step.
+
 ## Memory
 
 Run the v1 raw-memory benchmark on Apple arm64:

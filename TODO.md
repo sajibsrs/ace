@@ -19,6 +19,13 @@ before the work they unblock.
 
 ## 0. Known defects
 
+- **`fmt.printf` with a `usize`-returning call argument** [defect] —
+  `fmt.printf("%u\n", f(x))` with `f(x): usize` prints the text before the
+  argument and then nothing more, dropping the value and the rest of the
+  format while exiting 0. The same call with an `int` result and `%d`, or with
+  the `usize` result first assigned to a variable, prints correctly. Cause not
+  yet diagnosed.
+
 ## 1. Core type-system completion
 
 Finish the existing primitive, sequential, and aggregate model before adding
@@ -128,6 +135,14 @@ These are baseline observations, not performance promises.
   functions need callee-saved restoration and frame teardown first. Whether the
   form becomes a normative guarantee or stays an unspecified optimization is
   undecided.
+- **Linear scope lookup** [new] — a scope's symbols are a linked list scanned
+  by `find_in`/`lookup_val`, and `declare_func` scans it again, so name
+  resolution and declaration cost O(symbols) each. Generated corpora compile in
+  47 ms at 1,000 functions, 813 ms at 5,000 (17x for 5x the code), and 12.9 s at
+  20,000 against 3.6 s for `cc -O0`; a profile puts about 78% of that in sema
+  lookup and declaration. Candidate: index the module scope with a hash table.
+- **Machine-code size** [new] — 5,000 generated functions emit 1.60 MB release
+  and 2.07 MB checked against 1.10 MB for `cc -O2`.
 - **Float-parse optimization backlog** [new] — the canonical 80%-short /
   20%-long `parse-f64` workload is 1.9x `strtod` (52 ns); the goal is to close
   the gap to C and surpass it where possible. Measured next steps, in order:
@@ -141,9 +156,9 @@ These are baseline observations, not performance promises.
      comparison baseline, not a ceiling; any stronger claim requires a local
      checksum-matched measurement.
 - **Broader performance corpus** [new] — add checksum-matched Ace/C fixtures for
-  slices, branches, floating-point kernels, cache-heavy loops, and
-  compile/object size before making optimizer-wide claims; `bench/calls.ace`
-  already covers calls and aggregate passing. `noalias`-driven
+  slices, branches, floating-point kernels, and cache-heavy loops before
+  making optimizer-wide claims; `bench/calls.ace` covers calls and aggregate
+  passing, and `bench/run-compile.sh` covers compile time and code size. `noalias`-driven
   auto-vectorization remains outside v1 as stated by Compiler #6.
 
 ## 3. Concurrency and process expansion
