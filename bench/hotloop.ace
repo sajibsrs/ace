@@ -1,0 +1,111 @@
+/* Hot-loop kernel benchmark paired with hotloop.c. Arrays are globals so every
+ * access pays the base-address computation the emitter still repeats. Timed
+ * results are consumed into checksums so the work stays observable. Ace and C
+ * perform identical operations in an identical order, so every checksum must
+ * match bit for bit.
+ */
+
+import bits
+import fmt
+import time
+
+COUNT: const usize = 4096
+REPEATS: const usize = 20000
+PARTICLE_REPEATS: const usize = 5000
+
+Vec3: struct { x: f32, y: f32, z: f32 }
+
+xs64: [4096]f64
+ys64: [4096]f64
+xs32: [4096]f32
+ys32: [4096]f32
+positions: [4096]Vec3
+velocities: [4096]Vec3
+
+now(): u64 {
+    return time.awake()
+}
+
+report(name: string, elapsed: u64, operations: usize, checksum: usize) {
+    fmt.printf("%s %u %u %u\n", name, usize(elapsed), operations, checksum)
+}
+
+// Whole-array reductions in f64: a single element can be insensitive to the
+// kernel (some particles have zero velocity) and would check nothing.
+sum64(v: []f64): usize {
+    acc: f64 = 0.0
+    for i: usize in 0 .. COUNT {
+        acc += v[i]
+    }
+    return usize(bits.from_float(acc))
+}
+
+sum32(v: []f32): usize {
+    acc: f64 = 0.0
+    for i: usize in 0 .. COUNT {
+        acc += f64(v[i])
+    }
+    return usize(bits.from_float(acc))
+}
+
+sum_particles(): usize {
+    acc: f64 = 0.0
+    for i: usize in 0 .. COUNT {
+        acc += f64(positions[i].x) + f64(positions[i].y) + f64(positions[i].z)
+    }
+    return usize(bits.from_float(acc))
+}
+
+main(): int {
+    saxpy_ops: usize = COUNT * REPEATS
+    particle_ops: usize = COUNT * PARTICLE_REPEATS
+
+    for i: usize in 0 .. COUNT {
+        xs64[i] = f64(i % 17) * 0.25
+        ys64[i] = 0.0
+        xs32[i] = f32(i % 17) * 0.25
+        ys32[i] = 0.0
+        positions[i].x = f32(i % 11) * 0.5
+        positions[i].y = f32(i % 13) * 0.5
+        positions[i].z = f32(i % 7) * 0.5
+        velocities[i].x = f32(i % 3) * 0.25
+        velocities[i].y = f32(i % 5) * 0.25
+        velocities[i].z = f32(i % 9) * 0.25
+    }
+
+    started: u64 = now()
+    for r: usize in 0 .. REPEATS {
+        for i: usize in 0 .. COUNT {
+            ys64[i] = 0.5 * xs64[i] + ys64[i]
+        }
+    }
+    report("saxpy-f64", now() - started, saxpy_ops, sum64(ys64[..]))
+
+    started = now()
+    for r: usize in 0 .. REPEATS {
+        for i: usize in 0 .. COUNT {
+            ys32[i] = 0.5 * xs32[i] + ys32[i]
+        }
+    }
+    report("saxpy-f32", now() - started, saxpy_ops, sum32(ys32[..]))
+
+    acc: f64 = 0.0
+    started = now()
+    for r: usize in 0 .. REPEATS {
+        for i: usize in 0 .. COUNT {
+            acc += xs64[i] * ys64[i]
+        }
+    }
+    report("dot-f64", now() - started, saxpy_ops, usize(bits.from_float(acc)))
+
+    started = now()
+    for r: usize in 0 .. PARTICLE_REPEATS {
+        for i: usize in 0 .. COUNT {
+            positions[i].x += velocities[i].x * 0.5
+            positions[i].y += velocities[i].y * 0.5
+            positions[i].z += velocities[i].z * 0.5
+        }
+    }
+    report("particle-vec3", now() - started, particle_ops, sum_particles())
+    return 0
+}

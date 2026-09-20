@@ -161,7 +161,8 @@ These are baseline observations, not performance promises.
   by-value `Vec3`s copies every argument register and sets up a frame it does
   not use. A bottom-tested loop measured 7.7% on `saxpy` and 31% on a short
   branchy loop, but 8% slower on `for cond {}`; it is deferred until it can be
-  weighed on top of the address work. `math.sqrt` and `std/simd` are specified
+  weighed on top of the address work. `bench/run-hotloop.sh` tracks the saxpy,
+  dot, and `Vec3` kernels. `math.sqrt` and `std/simd` are specified
   and unimplemented.
 - **Tail-call optimization** [new] — a `return f(args)` still emits `bl` plus a
   full epilogue, so tail recursion grows the stack linearly and overflows at

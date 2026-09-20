@@ -383,6 +383,48 @@ changes on these rows are not evidence until the memory round trips are
 removed. `divmod` also computes its quotient twice because Ace has no
 common-subexpression elimination; that is left as is.
 
+## Hot loops
+
+Run float array kernels through Ace release output and equivalent C:
+
+```sh
+./bench/run-hotloop.sh
+```
+
+Four kernels over 4096-element global arrays: `saxpy-f64` and `saxpy-f32`
+(`y[i] = a*x[i] + y[i]`), `dot-f64` (an accumulating reduction), and
+`particle-vec3` (three `f32` fields of an indexed struct element, read and
+written per iteration). The arrays are globals so every access pays the
+base-address computation. The runner checks that Ace and both C builds produce
+identical checksums, which are whole-array reductions rather than single
+elements: some particles have zero velocity, so one element can be insensitive
+to the kernel and check nothing.
+
+Ace leaves vectorization to explicit `simd`, so scalar C `-O2`
+(`-fno-vectorize -fno-slp-vectorize`) is the comparison target. The
+auto-vectorized `-O2` column is a reference, not a goal. Neither compiler
+vectorizes `dot-f64`'s reduction, because clang will not reassociate floating
+point without `-ffast-math`.
+
+### Initial hot-loop baseline
+
+Five runs on the reference Apple-arm64 machine, medians in ns per element:
+
+| workload | Ace | C scalar | Ace/C | C vector |
+|---|---|---|---|---|
+| `saxpy-f64` | 0.964 | 0.484 | 1.99x | 0.182 |
+| `saxpy-f32` | 0.965 | 0.484 | 1.99x | 0.092 |
+| `dot-f64` | 1.280 | 1.645 | 0.78x | 1.070 |
+| `particle-vec3` | 2.744 | 0.733 | 3.74x | 0.272 |
+
+Spreads were under 0.01 ns within each build. `dot-f64` is the one kernel where
+neither compiler can vectorize and both are bound by the accumulator's
+dependency chain; Ace leads it. The `saxpy` pair reproduces the ad-hoc figures
+`TODO.md` records for this gap. `particle-vec3` is the widest: binding
+`velocities[i]` to a local `Vec3` once, instead of indexing it three times,
+measured 2.551 ns against 2.744, so about 7% of that row is repeated address
+computation and the rest is elsewhere.
+
 ## Compile time
 
 Run the compile-time benchmark on Apple arm64:
