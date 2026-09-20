@@ -1,6 +1,17 @@
-/* math — minimal pure-Ace numeric helpers. */
+/* math — minimal pure-Ace numeric helpers.
+ * sqrt, floor, and ceil are compiler-backed exact IEEE operations.
+ */
 
 import bits
+
+pub sqrt(value: f64): f64 intrinsic
+pub sqrt(value: f32): f32 intrinsic
+
+pub floor(value: f64): f64 intrinsic
+pub floor(value: f32): f32 intrinsic
+
+pub ceil(value: f64): f64 intrinsic
+pub ceil(value: f32): f32 intrinsic
 
 pub isnan(value: f64): bool {
     raw: u64 = bits.from_float(value)

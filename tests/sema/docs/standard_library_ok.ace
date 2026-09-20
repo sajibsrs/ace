@@ -49,6 +49,11 @@ math_examples(value: f64): bool {
     return math.isnan(value) || math.isinf(value) || math.isfinite(value)
 }
 
+rounding_examples(value: f64, single: f32): f64 {
+    length: f32 = math.sqrt(single)
+    return math.floor(value) + math.ceil(value) + f64(length)
+}
+
 str_examples(): int {
     at: usize, found: bool = str.find("hello world", "world")
 

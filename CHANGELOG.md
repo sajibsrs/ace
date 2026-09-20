@@ -612,6 +612,11 @@ current normative rules, and Git preserves patch-level detail.
 - Added pure-Ace `math.isnan`, `math.isinf`, and `math.isfinite` overloads for
   `f32` and `f64`, using `bits` to classify every IEEE-754 encoding without
   allocation or a libm dependency.
+- Added `math.sqrt`, `math.floor`, and `math.ceil` for `f32` and `f64` as
+  compiler-provided intrinsics (`BI_MATH_*`, marked in `module.c`, signature-
+  checked in `sema.c`) lowering to in-place `fsqrt`, `frintm`, and `frintp` on
+  the operand's FP temp, with the same instruction in the callable symbol. The
+  intrinsic whitelist grew from `bits` to include these `math` overloads.
 - Replaced generated float formatting's `ecvt`/`fcvt`, parse-back, `floor`,
   floating-environment, and memory-helper dependencies with a shared native
   exact binary-to-decimal engine under `std/@`. Fixed-capacity base-2^32

@@ -1,0 +1,77 @@
+/* math.sqrt, floor, and ceil are exact IEEE operations for both widths, direct and through function values. */
+
+// expect-exit: 42
+
+import bits
+import math
+
+same(a: f64, b: f64): bool {
+    return bits.from_float(a) == bits.from_float(b)
+}
+
+same32(a: f32, b: f32): bool {
+    return bits.from_float(a) == bits.from_float(b)
+}
+
+main(): int {
+    negative_zero: f64 = bits.to_float(u64(0x8000000000000000))
+    infinity: f64 = bits.to_float(u64(0x7FF0000000000000))
+    negative_infinity: f64 = bits.to_float(u64(0xFFF0000000000000))
+    negative_one: f64 = 0.0 - 1.0
+    negative_one32: f32 = f32(negative_one)
+
+    if math.sqrt(4.0) != 2.0 || math.sqrt(2.0) != 1.4142135623730951 {
+        return 1
+    }
+    if !same(math.sqrt(negative_zero), negative_zero) || !same(math.sqrt(0.0), 0.0) ||
+       math.sqrt(infinity) != infinity {
+        return 2
+    }
+    if !math.isnan(math.sqrt(negative_one)) || !math.isnan(math.sqrt(negative_infinity)) {
+        return 3
+    }
+
+    if math.floor(2.5) != 2.0 || math.floor(negative_one - 0.5) != negative_one - 1.0 ||
+       math.ceil(2.5) != 3.0 || math.ceil(negative_one - 0.5) != negative_one {
+        return 4
+    }
+    // ceil of a small negative fraction is negative zero; whole values are unchanged.
+    if !same(math.ceil(negative_one / 4.0), negative_zero) || !same(math.floor(negative_zero), negative_zero) ||
+       math.floor(9007199254740993.0) != 9007199254740992.0 {
+        return 5
+    }
+    if math.floor(infinity) != infinity || math.ceil(negative_infinity) != negative_infinity ||
+       !math.isnan(math.floor(math.sqrt(negative_one))) {
+        return 6
+    }
+
+    if math.sqrt(f32(9.0)) != f32(3.0) || math.floor(negative_one32 - f32(0.5)) != negative_one32 - f32(1.0) ||
+       math.ceil(f32(1.25)) != f32(2.0) {
+        return 7
+    }
+    // The f32 square root is rounded once at f32 precision, not the f64 result narrowed.
+    if !same32(math.sqrt(f32(2.0)), f32(1.41421354)) || !math.isnan(math.sqrt(negative_one32)) {
+        return 8
+    }
+
+    root64: (f64): f64 = math.sqrt
+    down64: (f64): f64 = math.floor
+    up64: (f64): f64 = math.ceil
+    root32: (f32): f32 = math.sqrt
+    down32: (f32): f32 = math.floor
+    up32: (f32): f32 = math.ceil
+    if root64(16.0) != 4.0 || down64(1.5) != 1.0 || up64(1.5) != 2.0 ||
+       root32(f32(16.0)) != f32(4.0) || down32(f32(1.5)) != f32(1.0) ||
+       up32(f32(1.5)) != f32(2.0) {
+        return 9
+    }
+
+    total: f64 = 0.0
+    for index: int in 0 .. 10 {
+        total = total + math.sqrt(f64(index * index)) + math.floor(f64(index) + 0.5)
+    }
+    if total != 90.0 {
+        return 10
+    }
+    return 42
+}

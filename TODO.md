@@ -162,8 +162,8 @@ These are baseline observations, not performance promises.
   not use. A bottom-tested loop measured 7.7% on `saxpy` and 31% on a short
   branchy loop, but 8% slower on `for cond {}`; it is deferred until it can be
   weighed on top of the address work. `bench/run-hotloop.sh` tracks the saxpy,
-  dot, and `Vec3` kernels. `math.sqrt` and `std/simd` are specified
-  and unimplemented.
+  dot, and `Vec3` kernels. `std/simd` is specified and
+  unimplemented.
 - **Tail-call optimization** [new] — a `return f(args)` still emits `bl` plus a
   full epilogue, so tail recursion grows the stack linearly and overflows at
   roughly 100M frames in checked and release builds alike. Candidate: lower a
@@ -237,8 +237,9 @@ foundations.
   prefixes for `fmt.printf`, especially fixed-width `%b`/`%o`/`%x` register
   displays; carve consistently across integer conversions from a hardware
   fixture rather than adding a binary-only modifier.
-- **libm transcendentals** [open] — `sin`, `cos`, `pow`, `exp`, `log`, `floor`,
-  and `ceil` for the 2D/3D milestones.
+- **Transcendental math functions** [open] — `sin`, `cos`, `pow`, `exp`, and
+  `log` for the 2D/3D milestones, implemented in Ace rather than through a
+  platform libm (C Interop #4); accuracy contract and algorithms uncarved.
 - **Random source** [new].
 
 ## 5. Language questions and conveniences

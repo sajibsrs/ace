@@ -4308,6 +4308,15 @@ static void emit_bits_integer(Em* e, int intrinsic, int bits, int value, int cou
     }
 }
 
+/* In-place exact IEEE operation on one FP register: fsqrt, frintm (floor),
+ * frintp (ceil), single or double.  Shared by inline calls and the ordinary
+ * callable symbol. */
+static void emit_math_exact(Em* e, int intrinsic, int is64, int reg) {
+    uint32_t op = intrinsic == BI_MATH_SQRT ? 0x1E21C000u :
+                  intrinsic == BI_MATH_FLOOR ? 0x1E254000u : 0x1E24C000u;
+    ins(e, op | (is64 ? 0x00400000u : 0u) | ((uint32_t)reg << 5) | (uint32_t)reg);
+}
+
 static EV gen_call(Em* e, Node* call) {
     Node* callee = call->a;
 
@@ -4531,6 +4540,12 @@ static EV gen_call(Em* e, Node* call) {
                (uint32_t)xreg(bits)); // fmov integer bits from fp register
         e->vtf = value.idx;
         return (EV){ CLS_INT, bits };
+    }
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival >= BI_MATH_SQRT && intrinsic->decl->ival <= BI_MATH_CEIL) {
+        EV value = gen_expr(e, call->kids[0]);
+        emit_math_exact(e, intrinsic->decl->ival, unwrap(node_ty(call))->prim == P_F64, vreg(value.idx));
+        return value;
     }
     if (intrinsic && intrinsic->decl && intrinsic->decl->ival == BI_BITS_TO_FLOAT) {
         EV bits = gen_expr(e, call->kids[0]);
@@ -7116,7 +7131,8 @@ static int call_is_inline(Node* call) {
     case BI_BITS_FROM_FLOAT: case BI_BITS_TO_FLOAT: case BI_INTERNAL_LOAD_U64:
         return 1;
     default:
-        return bi >= BI_BITS_POP_COUNT && bi <= BI_BITS_ROTATE_RIGHT;
+        return (bi >= BI_BITS_POP_COUNT && bi <= BI_BITS_ROTATE_RIGHT) ||
+               (bi >= BI_MATH_SQRT && bi <= BI_MATH_CEIL);
     }
 }
 
@@ -7529,6 +7545,8 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
             ins(e, 0xF9400000u); // ldr x0,[x0]
         } else if (f->ival >= BI_BITS_POP_COUNT && f->ival <= BI_BITS_ROTATE_RIGHT) {
             emit_bits_integer(e, f->ival, scalar_bits(pt[0]), 0, 1, 0);
+        } else if (f->ival >= BI_MATH_SQRT && f->ival <= BI_MATH_CEIL) {
+            emit_math_exact(e, f->ival, unwrap(pt[0])->prim == P_F64, 0);
         }
         emit_epilogue(e);
         e->ended_return = 1;

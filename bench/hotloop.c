@@ -5,6 +5,7 @@
  * so every checksum must match bit for bit.
  */
 
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -105,5 +106,14 @@ int main(void) {
             positions[i].z += velocities[i].z * 0.5f;
         }
     report("particle-vec3", now() - started, particle_ops, sum_particles());
+
+    double length = 0.0;
+    started = now();
+    for (uint64_t r = 0; r < PARTICLE_REPEATS; r++)
+        for (int i = 0; i < N; i++)
+            length += (double)sqrtf(velocities[i].x * velocities[i].x +
+                                    velocities[i].y * velocities[i].y +
+                                    velocities[i].z * velocities[i].z);
+    report("length-vec3", now() - started, particle_ops, bits64(length));
     return 0;
 }

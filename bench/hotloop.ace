@@ -7,6 +7,7 @@
 
 import bits
 import fmt
+import math
 import time
 
 COUNT: const usize = 4096
@@ -107,5 +108,16 @@ main(): int {
         }
     }
     report("particle-vec3", now() - started, particle_ops, sum_particles())
+
+    length: f64 = 0.0
+    started = now()
+    for r: usize in 0 .. PARTICLE_REPEATS {
+        for i: usize in 0 .. COUNT {
+            length += f64(math.sqrt(velocities[i].x * velocities[i].x +
+                                    velocities[i].y * velocities[i].y +
+                                    velocities[i].z * velocities[i].z))
+        }
+    }
+    report("length-vec3", now() - started, particle_ops, usize(bits.from_float(length)))
     return 0
 }

@@ -2,7 +2,7 @@
 
 [Standard library](index.md)
 
-`math` is pure Ace. Its ordering and absolute-value helpers are generic and
+`math` needs no platform library. Its ordering and absolute-value helpers are generic and
 require explicit instantiation:
 
 ```ace
@@ -23,6 +23,25 @@ main(): int {
 
 The body is checked per instantiation; `T` must support the comparison and
 arithmetic used by the function.
+
+Exact rounding operations are `f32` and `f64` overloads that return their
+operand's type:
+
+```ace
+root: f64 = math.sqrt(2.0)      // correctly rounded
+down: f32 = math.floor(single)  // toward negative infinity
+up: f32 = math.ceil(single)     // toward positive infinity
+```
+
+- `sqrt(value)` is correctly rounded at the operand's width. `sqrt(-0.0)` is
+  `-0.0`; a negative nonzero operand gives a NaN with unspecified sign and
+  payload.
+- `floor(value)` and `ceil(value)` round to an integral float. Zeros,
+  infinities, and integral values are unchanged, and a NaN stays a NaN.
+
+They are compiler-provided instructions (`fsqrt`, `frintm`, `frintp`): no
+allocation, no libm call, no errno or flag. Converting the result to an integer
+remains an explicit cast.
 
 Float classification uses exact overloads for `f32` and `f64`:
 

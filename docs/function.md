@@ -276,8 +276,9 @@ pub from_float(value: f64): u64 intrinsic
 ```
 
 It is not a user-extensible foreign-function or assembly mechanism. The
-whitelist consists of the exact public operations declared by `bits` (and a
-narrow compiler-reserved standard-library byte load). They are ordinary
+whitelist consists of the exact public operations declared by `bits`, the
+`math` exact-rounding overloads `sqrt`, `floor`, and `ceil` (and a narrow
+compiler-reserved standard-library byte load). They are ordinary
 first-class functions to callers: the compiler emits callable implementations
 for function values and may inline an equivalent instruction sequence at
 statically resolved direct calls.

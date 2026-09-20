@@ -657,10 +657,11 @@ Run float array kernels through Ace release output and equivalent C:
 ./bench/run-hotloop.sh
 ```
 
-Four kernels over 4096-element global arrays: `saxpy-f64` and `saxpy-f32`
+Five kernels over 4096-element global arrays: `saxpy-f64` and `saxpy-f32`
 (`y[i] = a*x[i] + y[i]`), `dot-f64` (an accumulating reduction), and
 `particle-vec3` (three `f32` fields of an indexed struct element, read and
-written per iteration). The arrays are globals so every access pays the
+written per iteration), and `length-vec3` (`math.sqrt` of a squared-length
+sum of three `f32` fields, accumulated). The arrays are globals so every access pays the
 base-address computation. The runner checks that Ace and both C builds produce
 identical checksums, which are whole-array reductions rather than single
 elements: some particles have zero velocity, so one element can be insensitive
@@ -684,6 +685,11 @@ against auto-vectorized C, the ceiling explicit `simd` would chase:
 | `saxpy-f32` | 0.962 | 0.483 | 1.99x | 0.092 | 10.46x |
 | `dot-f64` | 1.277 | 1.642 | 0.78x | 1.068 | 1.20x |
 | `particle-vec3` | 2.735 | 0.731 | 3.74x | 0.272 | 10.05x |
+| `length-vec3` | 2.556 | 1.650 | 1.55x | 1.104 | 2.31x |
+
+`length-vec3` was added with `math.sqrt` on the same machine (five runs, spread
+under 0.003 ns for Ace); it has no `bf3fc42` measurement, and its row is the
+inline `fsqrt`, not a call.
 
 The first baseline (`283dc4f`: 0.964, 0.965, 1.280, and 2.744 ns for the four
 rows in order) is within 0.01 ns of these on every row, which is run-to-run

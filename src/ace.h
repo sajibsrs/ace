@@ -201,6 +201,9 @@ enum {
     BI_BITS_ROTATE_LEFT = 26,
     BI_BITS_ROTATE_RIGHT = 27,
     BI_MEM_ALLOC_SIZE = 28, // mem.alloc_size(data: []u8): usize
+    BI_MATH_SQRT = 29,      // math.sqrt/floor/ceil: exact f32/f64 -> same type
+    BI_MATH_FLOOR = 30,
+    BI_MATH_CEIL = 31,
 };
 
 enum {

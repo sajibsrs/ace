@@ -379,6 +379,17 @@ static void mark_bits_intrinsics(Loader* L, Module* m) {
     }
 }
 
+static void mark_math_intrinsics(Loader* L, Module* m) {
+    if (!is_std_named_module(L, m->canon, "math")) return;
+    for (int i = 0; i < m->file->nkids; i++) {
+        Node* n = m->file->kids[i];
+        if (n->kind != N_FUNC || !(n->flags & F_INTRINSIC)) continue;
+        if (text_is(n->str, n->len, "sqrt")) n->ival = BI_MATH_SQRT;
+        else if (text_is(n->str, n->len, "floor")) n->ival = BI_MATH_FLOOR;
+        else if (text_is(n->str, n->len, "ceil")) n->ival = BI_MATH_CEIL;
+    }
+}
+
 static void mark_mem_intrinsics(Loader* L, Module* m) {
     if (!is_std_named_module(L, m->canon, "mem")) return;
     for (int i = 0; i < m->file->nkids; i++) {
@@ -813,6 +824,7 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
     mark_fmt_intrinsics(L, m);
     mark_sys_intrinsics(L, m);
     mark_bits_intrinsics(L, m);
+    mark_math_intrinsics(L, m);
     mark_internal_load_intrinsic(L, m);
     m->next = L->loading; // push
     L->loading = m;
