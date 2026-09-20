@@ -1,0 +1,184 @@
+// expect-exit: 42
+// A call-free function reads a by-value HFA parameter's float leaves from
+// registers when every use is a constant leaf read; any whole-value use, a
+// runtime index, a call in the body, or too many leaves keeps the slot.
+
+Vec3: struct {
+    x: f64,
+    y: f64,
+    z: f64,
+}
+
+Vec2: struct {
+    x: f32,
+    y: f32,
+}
+
+Pt: struct {
+    x: f64,
+    y: f64,
+}
+
+Rect: struct {
+    min: Pt,
+    max: Pt,
+}
+
+Arr: struct {
+    v: [2]f64,
+}
+
+// The object's first function label is the section, so it stays a dummy.
+first(): usize {
+    return 0
+}
+
+vec_add(a: Vec3, b: Vec3): Vec3 {
+    return Vec3 {x = a.x + b.x, y = a.y + b.y, z = a.z + b.z}
+}
+
+// result registers d0-d2 are the incoming argument registers
+rotate(a: Vec3): Vec3 {
+    return Vec3 {x = a.z, y = a.x, z = a.y}
+}
+
+dot(a: Vec3, b: Vec3): f64 {
+    return a.x * b.x + a.y * b.y + a.z * b.z
+}
+
+second(a: Vec3): f64 {
+    return a.y
+}
+
+unused(a: Vec3, b: Vec3): f64 {
+    return b.z
+}
+
+sum2(a: Vec2, b: Vec2): f32 {
+    return a.x + b.y
+}
+
+widen(a: Vec2): f64 {
+    return f64(a.x) + f64(a.y)
+}
+
+area(r: Rect): f64 {
+    return (r.max.x - r.min.x) * (r.max.y - r.min.y)
+}
+
+// operand order and literals on either side
+order(a: Vec3): f64 {
+    return (2.0 - a.x) / a.y - a.z * 0.5
+}
+
+negate(a: Vec3): f64 {
+    return -a.x + a.y
+}
+
+bigger(a: Vec3, b: Vec3): bool {
+    return a.x > b.x
+}
+
+// a whole-value use keeps the slot; the other parameter still qualifies
+pass(a: Vec3): Vec3 {
+    return a
+}
+
+mixed(a: Vec3, b: Vec3): f64 {
+    c: Vec3 = b
+    return a.x + c.y
+}
+
+// a runtime index needs the array in memory
+pick(a: Arr, i: usize): f64 {
+    return a.v[i]
+}
+
+// a call clobbers the registers, so a non-leaf keeps its slots
+twice(x: f64): f64 {
+    return x * 2.0
+}
+
+after_call(a: Vec3): f64 {
+    return twice(a.x) + a.y
+}
+
+// three parameters exceed the register budget: the last keeps its slot
+sum3(a: Vec3, b: Vec3, c: Vec3): f64 {
+    return a.x + a.y + a.z + b.x + b.y + b.z + c.x + c.y + c.z
+}
+
+in_loop(a: Vec3): f64 {
+    acc: f64 = 0.0
+    for i: usize in 0 .. 4 {
+        acc = acc + a.x * a.y - a.z
+    }
+    return acc
+}
+
+deep(a: Vec3): f64 {
+    return a.x * (a.y + (a.z * (a.x + (a.y * (a.z + (a.x * (a.y + a.z)))))))
+}
+
+main(): int {
+    a: Vec3 = Vec3 {x = 1.0, y = 2.0, z = 4.0}
+    b: Vec3 = Vec3 {x = 8.0, y = 16.0, z = 32.0}
+
+    s: Vec3 = vec_add(a, b)
+    if s.x != 9.0 || s.y != 18.0 || s.z != 36.0 {
+        return 1
+    }
+    r: Vec3 = rotate(a)
+    if r.x != 4.0 || r.y != 1.0 || r.z != 2.0 {
+        return 2
+    }
+    if dot(a, b) != 8.0 + 32.0 + 128.0 {
+        return 3
+    }
+    if second(b) != 16.0 || unused(a, b) != 32.0 {
+        return 4
+    }
+    if sum2(Vec2 {x = 1.5, y = 2.5}, Vec2 {x = 10.0, y = 20.0}) != 21.5 {
+        return 5
+    }
+    if widen(Vec2 {x = 0.25, y = 0.5}) != 0.75 {
+        return 6
+    }
+    rc: Rect = Rect {min = Pt {x = 1.0, y = 2.0}, max = Pt {x = 4.0, y = 10.0}}
+    if area(rc) != 24.0 {
+        return 7
+    }
+    if order(Vec3 {x = 1.0, y = 4.0, z = 8.0}) != 0.25 - 4.0 {
+        return 8
+    }
+    if negate(a) != 1.0 {
+        return 9
+    }
+    if !bigger(b, a) || bigger(a, b) {
+        return 10
+    }
+    p: Vec3 = pass(b)
+    if p.x != 8.0 || p.y != 16.0 || p.z != 32.0 {
+        return 11
+    }
+    if mixed(a, b) != 17.0 {
+        return 12
+    }
+    arr: Arr = Arr {v = [3.0, 5.0]}
+    if pick(arr, 0) != 3.0 || pick(arr, 1) != 5.0 {
+        return 13
+    }
+    if after_call(a) != 4.0 {
+        return 14
+    }
+    if sum3(a, b, s) != 7.0 + 56.0 + 63.0 {
+        return 15
+    }
+    if in_loop(a) != 4.0 * (2.0 - 4.0) {
+        return 16
+    }
+    if deep(a) != 1.0 * (2.0 + (4.0 * (1.0 + (2.0 * (4.0 + (1.0 * (2.0 + 4.0))))))) {
+        return 17
+    }
+    return 42
+}

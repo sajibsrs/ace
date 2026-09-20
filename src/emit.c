@@ -363,6 +363,7 @@ typedef struct {
 #define MAX_FPTEMPS 16 // v0-v7, v16-v23
 #define LOOP_REGS 10   // x19-x28, callee-saved loop state and promoted locals
 #define FP_PROMO_REGS 8 // d8-d15, callee-saved promoted float locals
+#define HFA_HOMES 8    // v23 down: register-homed leaves of incoming HFA parameters
 
 typedef struct {
     Diag* d;
@@ -409,6 +410,9 @@ typedef struct {
     PromoCand* pcands;   // plan_promotion scratch
     int      npcands, cpcands;
     int      fn_has_asm;
+    struct { Node* decl; uint32_t off; int reg; } hfa[HFA_HOMES]; // homed HFA parameter leaves
+    int      nhfa;
+    int      vtf_cap;    // fp temps available: MAX_FPTEMPS less nhfa
     uint32_t out_max;
     Slot*   slots;
     int     nslots, cslots;
@@ -528,6 +532,7 @@ static int promo_reg(Em* e, Sym* s);
 static int gen_addr(Em* e, Node* x);
 static int is_lvalue_node(Node* x);
 static int frame_place(Em* e, Node* x, uint32_t* depth);
+static int hfa_home(Em* e, Node* x);
 static SType* lvalue_type(Em* e, Node* x);
 static void emit_asm(Em* e, Node* s);
 static void emit_epilogue(Em* e);
@@ -897,7 +902,7 @@ static int tmp_int(Em* e) {
 }
 
 static int tmp_fp(Em* e) {
-    if (e->vtf >= MAX_FPTEMPS) {
+    if (e->vtf >= e->vtf_cap) {
         e->d->errors++;
         fprintf(stderr, "ace: expression too deeply nested (fp temps)\n");
         return 0;
@@ -1645,9 +1650,9 @@ static void emit_pointer_arith(Em* e, TokKind op, int pointer, int offset, uint3
     }
 }
 
-static void emit_farith(Em* e, TokKind op, int dst, int a, int b, int is64) {
+// float arithmetic between raw v registers
+static void emit_farith_raw(Em* e, TokKind op, uint32_t rd, uint32_t ra, uint32_t rb, int is64) {
     uint32_t s = is64 ? 0x00400000u : 0;
-    uint32_t ra = vreg(a), rb = vreg(b), rd = vreg(dst);
     switch (op) {
     case T_PLUS:  ins(e, 0x1E202800u | s | (rb << 16) | (ra << 5) | rd); return;
     case T_MINUS: ins(e, 0x1E203800u | s | (rb << 16) | (ra << 5) | rd); return;
@@ -1655,6 +1660,10 @@ static void emit_farith(Em* e, TokKind op, int dst, int a, int b, int is64) {
     case T_SLASH: ins(e, 0x1E201800u | s | (rb << 16) | (ra << 5) | rd); return;
     default: return;
     }
+}
+
+static void emit_farith(Em* e, TokKind op, int dst, int a, int b, int is64) {
+    emit_farith_raw(e, op, (uint32_t)vreg(dst), (uint32_t)vreg(a), (uint32_t)vreg(b), is64);
 }
 
 static void emit_fcmp(Em* e, int a, int b, int is64) {
@@ -1901,6 +1910,25 @@ static EV gen_binop(Em* e, Node* n) {
         }
         e->vti = d + 1;
         return (EV){ CLS_INT, d };
+    }
+
+    // a homed HFA parameter leaf is read in its own register, never copied
+    if (is_floatt(t) && (op == T_PLUS || op == T_MINUS || op == T_STAR || op == T_SLASH)) {
+        int ha = hfa_home(e, n->a), hb = hfa_home(e, n->b);
+        if (ha >= 0 || hb >= 0) {
+            EV a = { CLS_FP, -1 }, b = { CLS_FP, -1 };
+            if (ha < 0) a = gen_expr(e, n->a);
+            if (hb < 0) b = gen_expr(e, n->b);
+            if ((ha < 0 && a.cls != CLS_FP) || (hb < 0 && b.cls != CLS_FP)) {
+                em_err(e, n, "float operand did not produce a float");
+                return (EV){ CLS_INT, tmp_int(e) };
+            }
+            int d = ha < 0 ? a.idx : hb < 0 ? b.idx : tmp_fp(e);
+            emit_farith_raw(e, op, (uint32_t)vreg(d), ha >= 0 ? (uint32_t)ha : (uint32_t)vreg(a.idx),
+                            hb >= 0 ? (uint32_t)hb : (uint32_t)vreg(b.idx), unwrap(t)->prim == P_F64);
+            e->vtf = d + 1;
+            return (EV){ CLS_FP, d };
+        }
     }
 
     EV a = gen_expr(e, n->a);
@@ -3133,6 +3161,44 @@ static int frame_place(Em* e, Node* x, uint32_t* depth) {
 }
 
 /*
+ * A read-only by-value HFA parameter whose every use is a constant field read
+ * of one float leaf keeps those leaves in v23 downward: copied once from the
+ * incoming argument registers, never spilled to a slot. `p.f.g` over struct
+ * fields resolves to its base declaration and byte offset.
+ */
+static Node* hfa_chain(Em* e, Node* x, uint32_t* off) {
+    *off = 0;
+    while (x && x->kind == N_FIELD_E) {
+        SType* bt = lvalue_type(e, x->a);
+        if (!bt) bt = node_ty(x->a);
+        bt = bt ? unwrap(bt) : NULL;
+        if (!bt || bt->kind != SK_STRUCT) return NULL;
+        int fi = find_field(bt, x->str, x->len);
+        if (fi < 0) return NULL;
+        *off += field_off(bt, fi);
+        x = x->a;
+    }
+    Sym* s = x && x->kind == N_IDENT ? node_sym(x) : NULL;
+    return s && s->kind == SYM_VAR && !s->is_global ? s->decl : NULL;
+}
+
+static int hfa_reg(Em* e, Node* decl, uint32_t off) {
+    for (int i = 0; i < e->nhfa; i++)
+        if (e->hfa[i].decl == decl && e->hfa[i].off == off) return e->hfa[i].reg;
+    return -1;
+}
+
+// v register holding the float leaf a field expression names, or -1
+static int hfa_home(Em* e, Node* x) {
+    if (!e->nhfa || x->kind != N_FIELD_E) return -1;
+    SType* t = node_ty(x);
+    if (!t) t = lvalue_type(e, x);
+    uint32_t off;
+    Node* d = t && is_floatt(t) ? hfa_chain(e, x, &off) : NULL;
+    return d ? hfa_reg(e, d, off) : -1;
+}
+
+/*
  * Scalar variable read without a separate address temp: a plain slot loads
  * directly (one ldur within x29 - 256); a by-reference slot loads its pointer
  * and then the value into the same register.
@@ -3305,6 +3371,10 @@ static int gen_addr(Em* e, Node* x) {
         }
         break;
     case N_FIELD_E: {
+        if (hfa_home(e, x) >= 0) {
+            em_err(e, x, "internal: register-homed parameter leaf has no address");
+            return tmp_int(e);
+        }
         SType* bt = lvalue_type(e, x->a);
         if (!bt) bt = node_ty(x->a);
         bt = unwrap(bt);
@@ -5186,6 +5256,12 @@ static EV gen_expr(Em* e, Node* x) {
         }
         SType* t = node_ty(x);
         if (!t) t = lvalue_type(e, x);
+        int home = hfa_home(e, x);
+        if (home >= 0) {
+            int vt = tmp_fp(e);
+            fmov_raw(e, unwrap(t)->prim == P_F64, vreg(vt), home);
+            return (EV){ CLS_FP, vt };
+        }
         uint32_t depth;
         if (t && is_scalar(t) && frame_place(e, x, &depth)) return load_frame_value(e, depth, t);
         int a = gen_addr(e, x);
@@ -7038,6 +7114,118 @@ static void plan_promotion(Em* e, Node* f) {
     while (e->nfpreg < FP_PROMO_REGS && (d = promo_take(e, 1, PROMO_MIN_WEIGHT))) e->fpreg_decl[e->nfpreg++] = d;
 }
 
+typedef struct {
+    Node*   decl[40];
+    int     n[40];    // float leaves of an eligible HFA parameter, else 0
+    uint8_t ok[40];
+    uint8_t mask[40]; // leaves read, by unit index
+    TU*     units;
+    int     np;
+} HfaPlan;
+
+static int hfa_find(HfaPlan* p, Node* decl) {
+    for (int i = 0; i < p->np; i++) if (p->decl[i] == decl && p->n[i]) return i;
+    return -1;
+}
+
+// An HFA parameter stays eligible while every mention is a constant leaf read.
+static void hfa_scan(Em* e, HfaPlan* p, Node* n) {
+    if (!n) return;
+    uint32_t off;
+    int i;
+    switch (n->kind) {
+    case N_IDENT: {
+        Sym* s = node_sym(n);
+        i = s && s->decl ? hfa_find(p, s->decl) : -1;
+        if (i >= 0) p->ok[i] = 0;
+        return;
+    }
+    case N_FIELD_E: {
+        Node* d = hfa_chain(e, n, &off);
+        SType* t = node_ty(n);
+        i = d && t && is_floatt(t) ? hfa_find(p, d) : -1;
+        for (int w = 0; i >= 0 && w < p->n[i]; w++)
+            if (p->units[i * 4 + w].off == off) {
+                p->mask[i] |= (uint8_t)(1u << w);
+                return;
+            }
+        break;
+    }
+    case N_UNARY:
+        if (n->op != T_AMP && n->op != T_VOLATILE) break;
+        // fallthrough
+    case N_MUTARG: {
+        Node* d = hfa_chain(e, n->a, &off);
+        i = d ? hfa_find(p, d) : -1;
+        if (i >= 0) p->ok[i] = 0;
+        break;
+    }
+    case N_FOR:
+        if (n->flags & F_FORGEN) {
+            hfa_scan(e, p, n->a);
+            hfa_scan(e, p, n->b);
+            hfa_scan(e, p, n->c);
+            hfa_scan(e, p, n->d);
+        } else {
+            hfa_scan(e, p, n->b);
+            hfa_scan(e, p, n->c);
+        }
+        return;
+    default:
+        break;
+    }
+    hfa_scan(e, p, n->a);
+    hfa_scan(e, p, n->b);
+    hfa_scan(e, p, n->c);
+    for (int k = 0; k < n->nkids; k++) hfa_scan(e, p, n->kids[k]);
+}
+
+/*
+ * Choose the HFA parameters that live in registers: a call-free function's
+ * read-only by-value HFA parameters that arrive in v registers and are only
+ * read leaf by leaf. Each leaf read gets one of v23 down, within the fp temps
+ * the body's expressions leave free; a parameter that does not fit whole keeps
+ * its slot.
+ */
+static void plan_hfa_params(Em* e, Node* f, SType** pt, const uint8_t* muts, TU* units, int np, uint8_t* homed) {
+    e->nhfa = 0;
+    if (!f->b || e->fn_has_asm || e->scan_call) return;
+    int room = MAX_FPTEMPS - temp_need(f->b) - TEMP_MARGIN;
+    if (room > HFA_HOMES) room = HFA_HOMES;
+    if (room <= 0) return;
+    HfaPlan p = { .units = units, .np = np };
+    int any = 0;
+    for (int i = 0; i < np; i++) {
+        uint32_t offs[5];
+        uint8_t dbl[5];
+        SType* t = unwrap(pt[i]);
+        int n = !muts[i] && t && t->kind == SK_STRUCT ? classify_hfa(pt[i], offs, dbl) : -1;
+        p.decl[i] = f->kids[i];
+        if (n < 1) continue;
+        int ok = 1;
+        for (int w = 0; w < n; w++) if (units[i * 4 + w].kind != TU_VREG) ok = 0;
+        p.n[i] = n;
+        p.ok[i] = (uint8_t)ok;
+        any |= ok;
+    }
+    if (!any) return;
+    hfa_scan(e, &p, f->b);
+    for (int i = 0; i < np; i++) {
+        if (!p.n[i] || !p.ok[i]) continue;
+        int cnt = __builtin_popcount(p.mask[i]);
+        if (e->nhfa + cnt > room) continue;
+        homed[i] = 1;
+        for (int w = 0; w < p.n[i]; w++) {
+            if (!(p.mask[i] & (1u << w))) continue;
+            e->hfa[e->nhfa].decl = f->kids[i];
+            e->hfa[e->nhfa].off = units[i * 4 + w].off;
+            e->hfa[e->nhfa].reg = 23 - e->nhfa;
+            e->nhfa++;
+        }
+    }
+    e->vtf_cap = MAX_FPTEMPS - e->nhfa;
+}
+
 static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, SType* ret, int is_main, int export_c) {
     align_code(e, FUNC_ALIGN);
     uint32_t debug_addr = (uint32_t)text(e)->len;
@@ -7066,6 +7254,8 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
     plan_loops(e, f->b);
     e->npreg = e->nfpreg = e->nxpreg = 0;
     e->vti_cap = MAX_ITEMPS;
+    e->vtf_cap = MAX_FPTEMPS;
+    e->nhfa = 0;
     if (e->fn_has_asm) { // asm bindings may name any x register
         e->nlreg_loops = 0;
         e->lreg_max = 0;
@@ -7104,7 +7294,17 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
         muts[0] = 1; // every method receives self through the vtable data-pointer ABI
     TU units[160];
     assign_cc(pt, muts, np, !export_c, -1, units);
+    uint8_t homed[40] = {0};
+    plan_hfa_params(e, f, pt, muts, units, np, homed);
     for (int i = 0; i < np; i++) {
+        if (homed[i]) { // leaves read in place: copy each into its home, no slot
+            for (int w = 0; w < 4; w++) {
+                TU* u = &units[i * 4 + w];
+                int home = u->kind == TU_VREG ? hfa_reg(e, f->kids[i], u->off) : -1;
+                if (home >= 0) fmov_raw(e, u->size == 8, home, u->reg);
+            }
+            continue;
+        }
         SType* t = pt[i];
         uint32_t size = ty_size(t);
         uint32_t hfa_offs[5];
@@ -8668,6 +8868,7 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
     Em e;
     memset(&e, 0, sizeof e);
     e.vti_cap = MAX_ITEMPS;
+    e.vtf_cap = MAX_FPTEMPS;
     e.d = d;
     e.file = file;
     e.mode = mode;

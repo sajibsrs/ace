@@ -448,6 +448,15 @@ current normative rules, and Git preserves patch-level detail.
   before the arguments are evaluated. Slice arguments keep the address temp in
   checked builds for the `noalias` range check. Text of `bench/calls.ace`
   fell 33,984 to 33,712 bytes; the call benchmarks moved within layout noise.
+- A call-free function's read-only by-value HFA parameter whose every use is a
+  constant read of one float leaf (`p.x`, `r.max.y`) keeps only the leaves it
+  reads in v23 downward, copied once from the incoming argument registers, with
+  no frame slot (`plan_hfa_params`, `hfa_home`). Any whole-value use, `&`,
+  runtime index, or call in the body, or more than eight homed leaves within
+  the fp temps the body leaves free (`vtf_cap`), keeps the slot. Float `+ - * /`
+  reads a homed operand in place, as `src_reg` does for integers. v24-v31 are
+  the byte helpers' scratch, so homes sit at the top of the fp temp pool.
+  `struct-hfa` 9.7 to 4.9 ns.
 - Fixed a multi-register return with a pending `defer` returning a corrupted
   second register: `emit_defers` addressed save-area unit w above the slot
   (`retsave_off + w * 8`), which fell below `sp`, instead of within it
