@@ -3483,7 +3483,14 @@ static void printf_add_part(PrintfPlan* plan, int* cap, PrintfPart part) {
 
 static int printf_expected_type(Ck* k, Node* arg, int kind, SType** out,
                                 const char** expected) {
+    int errors = k->d->errors;
     SType* t = expr_type(k, arg);
+    // A call deferred to end of file is still poison here; picking a helper
+    // from it would match any specialization.
+    if (t && t->kind == SK_ERR && k->d->errors == errors) {
+        ck_err(k, arg, "fmt.printf argument type is not yet known; give the call typed arguments or assign its result first");
+        return -1;
+    }
     SType* want = NULL;
     switch (kind) {
     case PF_SIGNED: want = st_prim(P_I64); *expected = "int"; break;
@@ -3694,7 +3701,9 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
         }
         SType* actual = NULL;
         const char* expected = "value";
-        if (!printf_expected_type(k, arg, part->kind, &actual, &expected)) {
+        int typed = printf_expected_type(k, arg, part->kind, &actual, &expected);
+        if (typed < 0) continue;
+        if (!typed) {
             SType* got = node_ty(arg);
             ck_err(k, arg, "fmt.printf argument %d for conversion at decoded byte %u requires %s, got %s",
                    part->arg, part->off, expected,

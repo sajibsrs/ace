@@ -17,15 +17,6 @@ The priority bands below are recommendations, not decisions. The active
 Decision Queue in `SPEC.md` always wins; dependencies within a band are listed
 before the work they unblock.
 
-## 0. Known defects
-
-- **`fmt.printf` with a `usize`-returning call argument** [defect] —
-  `fmt.printf("%u\n", f(x))` with `f(x): usize` prints the text before the
-  argument and then nothing more, dropping the value and the rest of the
-  format while exiting 0. The same call with an `int` result and `%d`, or with
-  the `usize` result first assigned to a variable, prints correctly. Cause not
-  yet diagnosed.
-
 ## 1. Core type-system completion
 
 Finish the existing primitive, sequential, and aggregate model before adding

@@ -408,6 +408,9 @@ current normative rules, and Git preserves patch-level detail.
   allocation, or C variadic formatter.
 - Zero-initialized every deferred-call record, which read uninitialized arena
   memory under the sanitizer build.
+- Rejected `fmt.printf` value arguments whose type is still unresolved when the
+  plan is built (calls deferred to end of file), which previously matched the
+  first helper specialization and silently dropped output.
 - Added `%b` binary and `%o` octal `fmt.printf` conversions for `uint` and
   `usize`, generalizing hexadecimal's private helper into one fixed-buffer
   unsigned-radix path. Prefixes, width, and zero padding remain explicit

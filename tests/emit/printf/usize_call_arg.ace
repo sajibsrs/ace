@@ -1,0 +1,12 @@
+// expect-exit: 3
+// A typed usize-returning call argument prints its value: "42\n" is 3 bytes.
+
+import fmt
+
+g(a: usize): usize {
+    return a + 1
+}
+
+main(): int {
+    return fmt.printf("%u\n", g(usize(41)))
+}

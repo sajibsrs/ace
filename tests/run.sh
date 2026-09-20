@@ -247,6 +247,13 @@ for want in \
     fi
 done
 
+printf_deferred_error=$("$ACE" tests/sema/printf/deferred_arg_err.ace 2>&1)
+if ! printf '%s\n' "$printf_deferred_error" | grep -qF \
+    "fmt.printf argument type is not yet known"; then
+    echo "FAIL: missing printf deferred-argument diagnostic"
+    fail=1
+fi
+
 array_repeat_errors=$("$ACE" tests/sema/arrays/repetition_err.ace 2>&1)
 for want in \
     "array repetition count is 3, expected 4 for [4]i32" \
