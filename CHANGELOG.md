@@ -433,6 +433,13 @@ current normative rules, and Git preserves patch-level detail.
   (`index_addr`; stores and other strides keep the separate add). On a `saxpy`
   loop over `f64` arrays, 1.25 ns fell to 0.97; a branchy `f32` collision loop
   fell 19%, a `u8` blend 9%, and a dot product 5%.
+- Corrected the float load and store fallbacks for an offset the scaled `imm12`
+  cannot reach (over 32 KiB for `f64`, 16 KiB for `f32`). Both materialized the
+  byte offset in `x16` and then emitted the unsigned-offset opcode, where the
+  `Rm` field lands inside `imm12`: the load ignored `x16` and read a wrong
+  constant displacement instead. They now emit the register-offset form,
+  `ldr`/`str Vt, [base, x16]`, matching the sibling integer paths. Reachable
+  through a scalar tuple member past that distance.
 - Read a global integer `const` with a compile-time initializer as an immediate
   instead of a memory load, emit `and`/`orr`/`eor` with an encodable constant
   operand as one bitmask-immediate instruction, and let call-free functions keep

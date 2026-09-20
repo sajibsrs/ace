@@ -1048,7 +1048,7 @@ static void ldrf_(Em* e, int vr, int base, uint32_t off, int is64) {
         ins(e, b | ((off / scale) << 10) | ((uint32_t)base << 5) | (uint32_t)vr);
     else {
         load_imm(e, 1, 16, off);
-        ins(e, (is64 ? 0xFD600000u : 0xBD600000u) | (16u << 16) | ((uint32_t)base << 5) | (uint32_t)vr);
+        ins(e, (is64 ? 0xFC606800u : 0xBC606800u) | (16u << 16) | ((uint32_t)base << 5) | (uint32_t)vr);
     }
 }
 
@@ -1073,7 +1073,7 @@ static void strf_(Em* e, int vr, int base, uint32_t off, int is64) {
         ins(e, b | ((off / scale) << 10) | ((uint32_t)base << 5) | (uint32_t)vr);
     else {
         load_imm(e, 1, 16, off);
-        ins(e, (is64 ? 0xFD200000u : 0xBD200000u) | (16u << 16) | ((uint32_t)base << 5) | (uint32_t)vr);
+        ins(e, (is64 ? 0xFC206800u : 0xBC206800u) | (16u << 16) | ((uint32_t)base << 5) | (uint32_t)vr);
     }
 }
 
