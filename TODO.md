@@ -109,8 +109,10 @@ These are baseline observations, not performance promises.
   keep every promoted local in x19-x28; locals not live across any call could
   use x9-x14 given per-call liveness.
 - **Call and tuple-return plumbing** [new] — incoming aggregate parameters
-  other than the read-only float-leaf HFA parameters of a call-free function
-  are spilled to slots and reloaded per use, and an aggregate
+  other than the read-only, leaf-read HFA and 8-byte-integer-leaf struct
+  parameters of a call-free function (a parameter in a function with calls, a
+  packed or mixed-class struct, a tuple) are spilled to slots and reloaded per
+  use, and an aggregate
   argument that is not a plain frame-resident local (a global, an rvalue, a
   member behind a pointer) or that overflows the argument registers still
   travels through an address temp. A returned literal or tuple with packed
@@ -122,11 +124,11 @@ These are baseline observations, not performance promises.
   stage the result in a temp and copy it. `bool` locals and a string
   parameter's pointer and length stay in stack slots inside loops.
   `bench/calls.ace` measures it: the by-value 8- and 16-byte structs, the
-  three-`f64` aggregate, and the tuple return run 1.6x to 3.4x noinline C
+  three-`f64` aggregate, and the tuple return run 1.0x to 3.4x noinline C
   `-O2`; what remains is bound by store-to-load forwards on the loop-carried
-  slot, so a further step needs its gain measured first (for example homing
-  incoming integer-class aggregate parameters, or reading HFA leaves in the
-  incoming registers themselves, prototyped at about 0.7 ns on `struct-hfa`).
+  slot, so a further step needs its gain measured first (for example reading
+  HFA leaves in the incoming registers themselves, prototyped at about 0.7 ns
+  on `struct-hfa`, or the caller side of `struct-8`, still 1.6 ns above C).
 - **Unoptimized debug build mode** [new] — only the checked and release modes
   exist, and both emit the same optimized code; the modes differ in runtime
   guards alone. Local register promotion, immediates, and register returns are

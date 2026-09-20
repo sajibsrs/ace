@@ -451,12 +451,18 @@ current normative rules, and Git preserves patch-level detail.
 - A call-free function's read-only by-value HFA parameter whose every use is a
   constant read of one float leaf (`p.x`, `r.max.y`) keeps only the leaves it
   reads in v23 downward, copied once from the incoming argument registers, with
-  no frame slot (`plan_hfa_params`, `hfa_home`). Any whole-value use, `&`,
+  no frame slot (`plan_param_homes`, `param_home`). Any whole-value use, `&`,
   runtime index, or call in the body, or more than eight homed leaves within
   the fp temps the body leaves free (`vtf_cap`), keeps the slot. Float `+ - * /`
   reads a homed operand in place, as `src_reg` does for integers. v24-v31 are
   the byte helpers' scratch, so homes sit at the top of the fp temp pool.
   `struct-hfa` 9.7 to 4.9 ns.
+- The same read-only leaf-read rule homes whole 8-byte integer-class leaves of a
+  by-value struct of at most 16 bytes that arrives in `x` registers: each read
+  leaf is copied once into the x14-down registers leaf promotion leaves unused,
+  within the int temps (`vti_cap`), and `src_reg` reads it in place. Packed or
+  mixed-class structs and narrower leaves keep the slot. `struct-8` 6.5 to 3.9,
+  `struct-16` 5.4 to 2.4 ns.
 - Fixed a multi-register return with a pending `defer` returning a corrupted
   second register: `emit_defers` addressed save-area unit w above the slot
   (`retsave_off + w * 8`), which fell below `sp`, instead of within it
