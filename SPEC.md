@@ -1107,6 +1107,29 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 
 ### Active
 
+- Transcendental `math` functions (carved; implementation pending). Decided:
+  the exact `f32`/`f64` overload sets `math.exp`, `math.log`, `math.sin`, and
+  `math.cos`, each returning its operand's type, implemented in pure Ace with
+  no `extern` and no platform-libm call (C Interop #4). Every `f64` result is
+  within 1 ULP of the exact result over the whole finite domain; an `f32`
+  result is computed at `f64` and rounded once, so it is also within 1 ULP.
+  Platform libm may serve as a differential-test reference, never as a
+  dependency. Special cases follow C99 Annex F: `exp(±0)` is `1`, `exp(+inf)`
+  is `+inf`, `exp(-inf)` is `0`, overflow gives `+inf`, and underflow is
+  gradual through subnormals; `log(+0)` is `-inf`, `log` of a negative value is
+  a NaN, `log(1)` is `+0`; `sin(±0)` is `±0`, `cos(±0)` is `1`, and `sin`/`cos`
+  of an infinity is a NaN; a generated NaN has unspecified sign and payload.
+  No errno or floating-point flag is observable, and the default rounding mode
+  is assumed. `sin` and `cos` cover the full finite domain, so large arguments
+  need exact (Payne–Hanek) argument reduction rather than an unspecified
+  range. Speed does not gate the carve: the contract and API are
+  speed-independent, and backend improvements make the functions faster
+  without changing them. `pow` is not carved: `exp(y * log(x))` measured up to
+  36 ULP, so it needs an extended-precision `log` and its own carve after
+  these four land. Rationale: a stated bound is testable and portable, and
+  in-Ace implementations keep results identical across targets and leave
+  `math` usable without a system library.
+
 ### Trigger-gated
 
 - The canonical source formatter (`ace fmt`: in-place, check-only, stdout

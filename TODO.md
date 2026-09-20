@@ -72,6 +72,11 @@ the remaining proof points explicit:
 
 ## 2. Compiler and backend completion
 
+- **Negative float global initializers** [defect] — `G: f32 = -2.5` and
+  `G: f32 = f32(-2.5)` fail with "global initializer must be a compile-time
+  constant"; the constant-initializer folder in `emit.c` accepts positive float
+  literals only. Local `x: f32 = -2.5` is unaffected.
+
 - **Canonical source formatter** [open] — deferred while language implementation
   remains the priority. Resume from the Decision Queue's `ace fmt` carving: one
   shared lexer scan and parser pass, a mode-gated lossless token/trivia stream
@@ -173,6 +178,12 @@ These are baseline observations, not performance promises.
   functions need callee-saved restoration and frame teardown first. Whether the
   form becomes a normative guarantee or stays an unspecified optimization is
   undecided.
+- **Float constant materialization** [new] — every float constant is rebuilt
+  with `mov`/`movk` plus `fmov` at each use (19 sequences in a 226-instruction
+  `exp`), where C loads it from a literal pool or hoists it. A pure-Ace `exp`
+  runs 6x the same algorithm compiled by clang. Candidate: pool float
+  constants per function or module and load them with one PC-relative `ldr`;
+  measure on the transcendental prototypes and `bench/run-hotloop.sh`.
 - **Signing-check scaling** [new] — the check that walks all module values once
   per signing is O(signings x declarations); not yet measured on a corpus with
   many signings. Candidate: index values by signing; measure with
@@ -237,9 +248,12 @@ foundations.
   prefixes for `fmt.printf`, especially fixed-width `%b`/`%o`/`%x` register
   displays; carve consistently across integer conversions from a hardware
   fixture rather than adding a binary-only modifier.
-- **Transcendental math functions** [open] — `sin`, `cos`, `pow`, `exp`, and
-  `log` for the 2D/3D milestones, implemented in Ace rather than through a
-  platform libm (C Interop #4); accuracy contract and algorithms uncarved.
+- **Transcendental math functions** [open] — `exp`, `log`, `sin`, and `cos` are
+  carved in the Decision Queue; `pow` is uncarved (naive `exp(y * log(x))`
+  measured up to 36 ULP; it needs an extended-precision `log`). A C prototype
+  of the fdlibm-class algorithms ran 1.6x libm for `exp`/`log` and 3-5x for
+  `sin`/`cos`, all within 1 ULP of libm; the same `exp` in Ace ran 33 ns
+  against 5.4 ns in C and 3.2 ns for libm.
 - **Random source** [new].
 
 ## 5. Language questions and conveniences
