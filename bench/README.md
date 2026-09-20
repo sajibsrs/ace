@@ -339,24 +339,40 @@ Run the compile-time benchmark on Apple arm64:
 `bench/compile-corpus.sh <functions> <dir>` emits an equivalent Ace and C pair:
 N call-chained functions cycling through a bounded loop with branches, by-value
 struct passing, and early-return branches, plus a `main` that prints one
-checksum. The runner compiles each size to an object, timing whole-process wall
-clock (median of three runs) for `ace -c` in checked and release modes against
-`cc -O0 -c` and `cc -O2 -c`, then reports machine-code bytes and times a few
-real programs. The generated pair was verified to print the same checksum.
+checksum. `bench/scaling-corpus.sh <long|types> <count> <dir>` scales other
+dimensions: `long` is one function with N locals in a single scope, `types` is
+N structs each with a function taking one by value. Both pairs were verified to
+print the same checksum. The runner compiles each size to an object, timing
+whole-process wall clock (median of three runs) for `ace -c` in checked and
+release modes against `cc -O0 -c` and `cc -O2 -c`, prints a growth column (time
+over the previous size's time; linear code growth is 10x for 100 to 1,000 and
+4x for the later steps shown), then reports machine-code bytes and times a few
+real programs.
 
-Medians, with `Ace/-O0` and `Ace/-O2` for release: 100 functions (1,053 lines)
-11.1 ms against 64.4 and 210.6 ms (0.17x, 0.05x); 1,000 functions (10,353
-lines) 47.4 ms against 216.6 and 1,615.8 ms (0.22x, 0.03x); 5,000 functions
-(51,684 lines) 813 ms against 937 and 7,746 ms (0.87x, 0.10x). Ace is much
-faster at small and medium sizes but grows faster than linearly: a single
-20,000-function run took 12.9 s against 3.6 s for `cc -O0` and 31.3 s for
-`cc -O2`. A profile of that run put about 78% of the time in semantic checking,
-inside the linear scans `find_in` and `lookup_val` over a scope's symbol list
-and in `declare_func`. Machine code for 5,000 functions is 1.60 MB release and
-2.07 MB checked against 0.98 MB for `cc -O0` and 1.10 MB for `cc -O2`. Real
-programs compile in 10 to 17 ms for the 19- to 194-line benchmarks (mostly
-process start and standard-library loading) and 140 ms for the 2,150-line HTTP
-server demo including its link step.
+The small-size comparison against `cc` flatters Ace: `cc` pays process startup
+and header parsing that a 100-function corpus barely amortizes, so the growth
+column, not the ratio at small sizes, is the real signal.
+
+Function-count corpus, medians (Ace checked / `cc -O0` / `cc -O2`, ms): 100
+functions (1,053 lines) 10.2 / 54.7 / 206.4; 1,000 (10,353 lines) 29.0 / 215.6 /
+1,575; 5,000 (51,684 lines) 111 / 937 / 7,736; 20,000 (206,684 lines) 409 /
+3,626 / 31,014. Growth is 3.8x for 5x the code and 3.7x for 4x, so this shape is
+now linear. Before scope symbols were indexed the same corpus took 813 ms at
+5,000 functions and 12.9 s at 20,000; a profile put about 78% in `find_in`,
+`lookup_val`, and `declare_func`, and emit's symbol interning scanned every
+symbol per call. Scopes past 32 names now use a hash index and emit interns
+through a hash table.
+
+Other shapes, Ace checked ms at 1,000 / 5,000 / 20,000: `types` 22 / 76 / 287
+(3.5x and 3.8x growth, linear); `long` 20 / 161 / 2,347 (8.1x for 5x and 14.6x
+for 4x, still superlinear; `cc -O0` is also superlinear there at 15x and 13x).
+A sample of the 20,000-local case shows sema's definite-initialization tracking
+(`init_var`) and emit's `promo_scan` and `load_var` as the remaining
+hot spots. Machine code for 5,000 functions is 1.60 MB release and 2.07 MB
+checked against 0.98 MB for `cc -O0` and 1.10 MB for `cc -O2`. Real programs
+compile in 9 to 16 ms for the 19- to 194-line benchmarks (mostly process start
+and standard-library loading) and 127 ms for the 2,150-line HTTP server demo
+including its link step.
 
 ## Memory
 

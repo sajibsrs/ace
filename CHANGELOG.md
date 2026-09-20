@@ -415,6 +415,11 @@ current normative rules, and Git preserves patch-level detail.
   `usize`, generalizing hexadecimal's private helper into one fixed-buffer
   unsigned-radix path. Prefixes, width, and zero padding remain explicit
   additive work.
+- Indexed compile-time name lookup: scopes past 32 names build an
+  open-addressing hash over their value and type lists, and emit interns symbols
+  through a hash table, removing the quadratic scans that made 20,000 generated
+  functions take 12.9 s (now 0.4 s). Added `bench/scaling-corpus.sh`, the
+  20,000-function point, and growth columns to `bench/run-compile.sh`.
 - Implemented `str` character/string operations and explicit
   `str.parse[T]` specializations in pure Ace where practical, with libc float
   conversion isolated in its selected target layer. `char` remains the

@@ -251,10 +251,19 @@ static int layout(SType* t) {
 // --- symbols & scopes -------------------------------------------------------------
 // (Sym and kind enums are shared via sema.h)
 
+// Open-addressing index over one scope list; names are unique per list.
+typedef struct {
+    Sym**    slots;
+    uint32_t cap;
+} SymIndex;
+
 typedef struct Scope {
     struct Scope* parent;
     Sym*          values;
     Sym*          types;
+    SymIndex      value_index; // built once a list passes SCOPE_INDEX_MIN
+    SymIndex      type_index;
+    uint32_t      nvalues, ntypes;
     const char*   label;
     int           is_loop;
     int           is_fnbody; // the function's outermost body block
@@ -374,9 +383,57 @@ static Sym* find_in(Sym* list, const char* name, uint32_t len) {
     return NULL;
 }
 
+// Small scopes (most locals) scan their list; larger ones use the index.
+enum { SCOPE_INDEX_MIN = 32 };
+
+static uint32_t name_hash(const char* name, uint32_t len) {
+    uint32_t h = 2166136261u; // FNV-1a
+    for (uint32_t i = 0; i < len; i++) h = (h ^ (uint8_t)name[i]) * 16777619u;
+    return h;
+}
+
+static void index_put(SymIndex* ix, Sym* s) {
+    uint32_t i = name_hash(s->name, s->len) & (ix->cap - 1);
+    while (ix->slots[i]) i = (i + 1) & (ix->cap - 1);
+    ix->slots[i] = s;
+}
+
+static Sym* index_find(SymIndex* ix, const char* name, uint32_t len) {
+    uint32_t i = name_hash(name, len) & (ix->cap - 1);
+    for (Sym* s; (s = ix->slots[i]); i = (i + 1) & (ix->cap - 1))
+        if (s->len == len && memcmp(s->name, name, len) == 0) return s;
+    return NULL;
+}
+
+static Sym* scope_find(Scope* sc, int types, const char* name, uint32_t len) {
+    Sym* list = types ? sc->types : sc->values;
+    SymIndex* ix = types ? &sc->type_index : &sc->value_index;
+    return ix->slots ? index_find(ix, name, len) : find_in(list, name, len);
+}
+
+static void scope_insert(Scope* sc, int types, Sym* s) {
+    Sym** list = types ? &sc->types : &sc->values;
+    SymIndex* ix = types ? &sc->type_index : &sc->value_index;
+    uint32_t* n = types ? &sc->ntypes : &sc->nvalues;
+    s->next = *list;
+    *list = s;
+    ++*n;
+    if (*n < SCOPE_INDEX_MIN) return;
+    if (ix->slots && *n * 2 <= ix->cap) {
+        index_put(ix, s);
+        return;
+    }
+    uint32_t cap = ix->cap ? ix->cap * 2 : 128; // load factor <= 1/2
+    while (cap < *n * 2) cap *= 2;
+    ix->slots = (Sym**)arena_alloc((size_t)cap * sizeof(Sym*));
+    memset(ix->slots, 0, (size_t)cap * sizeof(Sym*));
+    ix->cap = cap;
+    for (Sym* it = *list; it; it = it->next) index_put(ix, it);
+}
+
 static Sym* lookup_val(Ck* k, const char* name, uint32_t len) {
     for (Scope* s = k->scope; s; s = s->parent) {
-        Sym* v = find_in(s->values, name, len);
+        Sym* v = scope_find(s, 0, name, len);
         if (v) return v;
     }
     return NULL;
@@ -384,7 +441,7 @@ static Sym* lookup_val(Ck* k, const char* name, uint32_t len) {
 
 static Sym* lookup_type(Ck* k, const char* name, uint32_t len) {
     for (Scope* s = k->scope; s; s = s->parent) {
-        Sym* v = find_in(s->types, name, len);
+        Sym* v = scope_find(s, 1, name, len);
         if (v) return v;
     }
     return NULL;
@@ -396,13 +453,12 @@ static Sym* declare_val(Ck* k, Node* at, uint8_t kind, const char* name, uint32_
                (int)len, name);
         return NULL;
     }
-    if (find_in(k->scope->values, name, len)) {
+    if (scope_find(k->scope, 0, name, len)) {
         ck_err(k, at, "duplicate name '%.*s' in this scope", (int)len, name);
         return NULL;
     }
     Sym* s = sym_new(kind, name, len);
-    s->next = k->scope->values;
-    k->scope->values = s;
+    scope_insert(k->scope, 0, s);
     return s;
 }
 
@@ -416,7 +472,7 @@ static Sym* declare_type(Ck* k, Node* at, const char* name, uint32_t len) {
                (int)len, name);
         return NULL;
     }
-    Sym* old = find_in(k->scope->types, name, len);
+    Sym* old = scope_find(k->scope, 1, name, len);
     if (old && old->is_forward) {
         if (old->decl && old->decl->path && at->path &&
             strcmp(old->decl->path, at->path) != 0) {
@@ -433,8 +489,7 @@ static Sym* declare_type(Ck* k, Node* at, const char* name, uint32_t len) {
         return NULL;
     }
     Sym* s = sym_new(SYM_TYPE, name, len);
-    s->next = k->scope->types;
-    k->scope->types = s;
+    scope_insert(k->scope, 1, s);
     return s;
 }
 
@@ -446,7 +501,7 @@ static Scope* file_scope(Ck* k) {
 
 static Sym* forward_type(Ck* k, Node* ref) {
     Scope* fs = file_scope(k);
-    Sym* s = find_in(fs->types, ref->str, ref->len);
+    Sym* s = scope_find(fs, 1, ref->str, ref->len);
     if (s) return s;
     s = sym_new(SYM_TYPE, ref->str, ref->len);
     s->is_forward = 1;
@@ -454,8 +509,7 @@ static Sym* forward_type(Ck* k, Node* ref) {
     s->type = st_new(SK_FORWARD);
     s->type->name = ref->str;
     s->type->decl = ref;
-    s->next = fs->types;
-    fs->types = s;
+    scope_insert(fs, 1, s);
     return s;
 }
 
@@ -1647,7 +1701,7 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
                (int)f->len, f->str);
         return NULL;
     }
-    Sym* head = find_in(k->scope->values, key, key_len);
+    Sym* head = scope_find(k->scope, 0, key, key_len);
     if (head && head->kind != SYM_FUNC) {
         ck_err(k, f, "duplicate name '%.*s' in this scope", (int)f->len, f->str);
         return NULL;
@@ -1801,8 +1855,7 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
     s->is_pub = (f->flags & F_PUB) != 0;
     f->sym = s;
     if (!head) {
-        s->next = k->scope->values;
-        k->scope->values = s;
+        scope_insert(k->scope, 0, s);
     } else {
         Sym* tail = head;
         while (tail->overload) tail = tail->overload;
@@ -6356,8 +6409,7 @@ static void install_predeclared_error_types(Scope* file_scope) {
     }
     Sym* error = sym_new(SYM_TYPE, "Error", 5);
     error->type = T_ERROR;
-    error->next = file_scope->types;
-    file_scope->types = error;
+    scope_insert(file_scope, 1, error);
 }
 
 int sema_check(Node* file, Diag* d) {
@@ -6439,7 +6491,7 @@ int sema_check(Node* file, Diag* d) {
                 memcmp(n->str, "main", 4) == 0) {
                 int spells_int = n->a && n->a->kind == N_NAMED &&
                     n->a->len == 3 && memcmp(n->a->str, "int", 3) == 0;
-                Sym* head = find_in(k.scope->values, n->str, n->len);
+                Sym* head = scope_find(k.scope, 0, n->str, n->len);
                 if (s->is_generic || n->nkids != 0 || !spells_int ||
                     overload_count(head) != 1)
                     ck_err(&k, n, "entry function must be main(): int");

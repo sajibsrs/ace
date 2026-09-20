@@ -39,10 +39,18 @@ c_text_bytes() {
     size -m "$1" | awk '/Section \(__TEXT, __text\)/ { print $NF }'
 }
 
+# Growth of a time against the previous size's time, blank for the first size.
+growth() {
+    awk -v cur="$1" -v prev="$2" 'BEGIN {
+        if (prev > 0) printf "%.1fx", cur / prev; else printf "-" }'
+}
+
 echo "Generated corpus: median of $runs runs, wall-clock ms per compile-to-object"
-printf '%-8s %8s %12s %12s %10s %10s %10s %10s\n' \
-    "funcs" "lines" "Ace checked" "Ace release" "cc -O0" "cc -O2" "Ace/-O0" "Ace/-O2"
-for n in 100 1000 5000; do
+echo "(growth = Ace checked time over the previous size; linear code growth is the size ratio)"
+printf '%-8s %8s %12s %12s %10s %10s %10s %10s %8s\n' \
+    "funcs" "lines" "Ace checked" "Ace release" "cc -O0" "cc -O2" "Ace/-O0" "Ace/-O2" "growth"
+prev=0
+for n in 100 1000 5000 20000; do
     dir=$bench_tmp/n$n
     ./bench/compile-corpus.sh "$n" "$dir"
     lines=$(wc -l < "$dir/corpus.ace" | tr -d ' ')
@@ -51,9 +59,30 @@ for n in 100 1000 5000; do
     cc_o0=$(cd "$dir" && median_ms cc -std=c11 -O0 -c corpus.c -o corpus-o0.o)
     cc_o2=$(cd "$dir" && median_ms cc -std=c11 -O2 -c corpus.c -o corpus-o2.o)
     awk -v n="$n" -v l="$lines" -v ak="$ace_checked" -v ar="$ace_release" \
-        -v c0="$cc_o0" -v c2="$cc_o2" 'BEGIN {
-        printf "%-8s %8d %12.2f %12.2f %10.2f %10.2f %9.2fx %9.2fx\n",
-               n, l, ak, ar, c0, c2, ar / c0, ar / c2 }'
+        -v c0="$cc_o0" -v c2="$cc_o2" -v g="$(growth "$ace_checked" "$prev")" 'BEGIN {
+        printf "%-8s %8d %12.2f %12.2f %10.2f %10.2f %9.2fx %9.2fx %8s\n",
+               n, l, ak, ar, c0, c2, ar / c0, ar / c2, g }'
+    prev=$ace_checked
+done
+
+# Second scaling dimension: one function with many locals, and many types.
+# The small-size cc comparison is flattered by cc's startup and header cost;
+# the growth column is the signal.
+for shape in long types; do
+    echo
+    echo "Scaling shape '$shape': median of $runs runs, wall-clock ms per compile-to-object"
+    printf '%-8s %8s %12s %10s %8s\n' "count" "lines" "Ace checked" "cc -O0" "growth"
+    prev=0
+    for n in 1000 5000 20000; do
+        dir=$bench_tmp/$shape$n
+        ./bench/scaling-corpus.sh "$shape" "$n" "$dir"
+        lines=$(wc -l < "$dir/corpus.ace" | tr -d ' ')
+        ace_checked=$(cd "$dir" && median_ms "$ace" -c corpus.ace)
+        cc_o0=$(cd "$dir" && median_ms cc -std=c11 -O0 -c corpus.c -o corpus-o0.o)
+        printf '%-8s %8s %12.2f %10.2f %8s\n' "$n" "$lines" "$ace_checked" "$cc_o0" \
+            "$(growth "$ace_checked" "$prev")"
+        prev=$ace_checked
+    done
 done
 
 echo

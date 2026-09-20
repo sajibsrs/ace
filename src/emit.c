@@ -202,8 +202,9 @@ enum { // n_type bits
     N_SECT_ = 0x0e,
 };
 
-typedef struct { char* name; uint32_t strx, ord; uint8_t type, sect; uint64_t value; } ESym;
-typedef struct { ESym** v; size_t n, cap; } SymTab;
+typedef struct { char* name; uint32_t strx, ord; uint8_t type, sect; uint64_t value; uint32_t hash, len; } ESym;
+// v keeps emission order; slots is an open-addressing index over it by name.
+typedef struct { ESym** v; size_t n, cap; ESym** slots; size_t slot_cap; } SymTab;
 
 // Structured relocation; serialized once symbol indices are known at write.
 typedef struct {
@@ -235,10 +236,28 @@ static void reloc_add(Sec* s, uint32_t off, ESym* sym, int pcrel, int len,
                              (uint8_t)!!ext, (uint8_t)type };
 }
 
+static uint32_t sym_hash(const char* p, uint32_t len) {
+    uint32_t h = 2166136261u; // FNV-1a
+    for (uint32_t i = 0; i < len; i++) h = (h ^ (uint8_t)p[i]) * 16777619u;
+    return h;
+}
+
+static void sym_slot_put(SymTab* t, ESym* s) {
+    size_t i = s->hash & (t->slot_cap - 1);
+    while (t->slots[i]) i = (i + 1) & (t->slot_cap - 1);
+    t->slots[i] = s;
+}
+
 static ESym* sym_intern(SymTab* t, const char* p, uint32_t len) {
-    for (size_t i = 0; i < t->n; i++)
-        if (strlen(t->v[i]->name) == len && memcmp(t->v[i]->name, p, len) == 0)
-            return t->v[i];
+    uint32_t h = sym_hash(p, len);
+    if (t->slot_cap) {
+        for (size_t i = h & (t->slot_cap - 1); t->slots[i];
+             i = (i + 1) & (t->slot_cap - 1)) {
+            ESym* s = t->slots[i];
+            if (s->hash == h && s->len == len && memcmp(s->name, p, len) == 0)
+                return s;
+        }
+    }
     if (t->n == t->cap) {
         t->cap = t->cap ? t->cap * 2 : 16;
         t->v = realloc(t->v, t->cap * sizeof(ESym*));
@@ -251,10 +270,22 @@ static ESym* sym_intern(SymTab* t, const char* p, uint32_t len) {
     if (!s->name) oom();
     memcpy(s->name, p, len);
     s->name[len] = 0;
+    s->hash = h;
+    s->len = len;
     s->strx = s->ord = 0;
     s->type = 0;
     s->sect = 0;
     s->value = 0;
+    if (t->n * 2 > t->slot_cap) { // load factor <= 1/2
+        size_t cap = t->slot_cap ? t->slot_cap * 2 : 64;
+        free(t->slots);
+        t->slots = calloc(cap, sizeof(ESym*));
+        if (!t->slots) oom();
+        t->slot_cap = cap;
+        for (size_t i = 0; i < t->n; i++) sym_slot_put(t, t->v[i]);
+    } else {
+        sym_slot_put(t, s);
+    }
     return s;
 }
 
