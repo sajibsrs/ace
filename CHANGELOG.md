@@ -617,6 +617,10 @@ current normative rules, and Git preserves patch-level detail.
   checked in `sema.c`) lowering to in-place `fsqrt`, `frintm`, and `frintp` on
   the operand's FP temp, with the same instruction in the callable symbol. The
   intrinsic whitelist grew from `bits` to include these `math` overloads.
+- Fixed compound untyped constants under a float cast (`f32(-1.0)`,
+  `f32(0.0 - 1.0)`, `f32(-3)`, `f32(2 * 3)`), which stored a wrong value or hit
+  "untyped operand reached codegen": the cast check now settles the operand
+  through `coerce` (float math at the target type, integer math as `i64`).
 - Replaced generated float formatting's `ecvt`/`fcvt`, parse-back, `floor`,
   floating-environment, and memory-helper dependencies with a shared native
   exact binary-to-decimal engine under `std/@`. Fixed-capacity base-2^32

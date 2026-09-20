@@ -25,6 +25,9 @@ Concrete rules and syntax. The why behind every rule lives in PHILOSOPHY.md (clo
     type as a whole, beside a typed operand as in a declaration; an integer
     expression never becomes floating-point arithmetic (`x != 7 / 2` with `x: f64`
     needs a cast), while a lone integer literal may still meet a float operand.
+    Under a float cast, an untyped floating constant expression takes the
+    cast's target type (`f32(1.0 / 3.0)` computes at `f32`), and an untyped
+    integer constant expression is evaluated as `int` and then converted.
 11. A tuple expression may initialize or assign one explicitly stated tuple
     type of the same arity when every member expression independently resolves
     to the corresponding member type. Standalone integer, float, and character

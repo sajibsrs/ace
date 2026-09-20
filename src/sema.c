@@ -3779,6 +3779,13 @@ static SType* check_call(Ck* k, Node* call) {
                     ck_err(k, call, "cannot cast %s to %s", type_name(from), type_name(want));
                     return T_ERR;
                 }
+                // A compound untyped constant under a float cast is settled
+                // here: float math at the target type, integer math as int.
+                if ((from == T_UT_FLOAT || from == T_UT_INT) &&
+                    (is_float(want) || (want->kind == SK_DISTINCT && is_float(want->base))) &&
+                    (call->kids[0]->kind == N_UNARY || call->kids[0]->kind == N_BINARY) &&
+                    !coerce(k, call->kids[0], from == T_UT_FLOAT ? want : st_prim(P_I64)))
+                    return T_ERR;
                 callee->sym = ts; // named-type cast marker
                 callee->ty = want; // primitive cast marker
                 if (from == T_UT_INT &&
