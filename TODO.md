@@ -256,14 +256,20 @@ foundations.
   prefixes for `fmt.printf`, especially fixed-width `%b`/`%o`/`%x` register
   displays; carve consistently across integer conversions from a hardware
   fixture rather than adding a binary-only modifier.
-- **Transcendental math functions** [open] — `exp`, `log`, `sin`, and `cos` are
-  implemented; `pow` is uncarved (naive `exp(y * log(x))` measured up to 36
-  ULP; it needs an extended-precision `log`). The fdlibm-class algorithms ran
-  1.6x libm for `exp`/`log` and 3-5x for `sin`/`cos` in C. Shipped Ace runs
+- **Transcendental math functions** [new] — `exp`, `log`, `pow`, `sin`, and
+  `cos` are implemented. The fdlibm-class algorithms ran 1.6x libm for
+  `exp`/`log`, 3-5x for `sin`/`cos`, and 3.6x for `pow` in C. Shipped Ace runs
   `exp` and `log` at 33 and 31 ns, `sin` at 50 ns (medium) and `cos` at 24 ns
-  (small) against libm's 3-4 ns, and arguments beyond 1.6e6 at about 600 ns
-  because the Payne-Hanek fraction is extracted bit by bit; a word-at-a-time
-  extraction would cut that.
+  (small) against libm's 3-4 ns, `pow` at 145 ns against libm's 9 ns, and
+  arguments beyond 1.6e6 at about 600 ns because the Payne-Hanek fraction is
+  extracted bit by bit; a word-at-a-time extraction would cut that. `pow` splits
+  into two independent gaps: libm's 9 ns comes from a different algorithm
+  (tables and FMA, no division), reaching 33 ns for the fdlibm kernel under
+  clang -O2, and the remaining 4.4x is backend quality, 293 ns at -O0. That
+  second gap is dominated by stack traffic and missing FMA rather than
+  constant materialization: `pow` and its helpers issue 405 loads/stores
+  against clang's 7 and no `fmadd` against 21. The kernel's two divisions are the next cost after
+  those; a table-driven variant trades about 4 KB for them.
 - **Random source** [new].
 
 ## 5. Language questions and conveniences

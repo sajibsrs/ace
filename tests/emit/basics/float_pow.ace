@@ -1,0 +1,124 @@
+/* math.pow is within 1 ULP over the whole finite domain, exact for representable integer powers, and follows the C99
+ * Annex F special cases, for both widths.
+ */
+
+// expect-exit: 42
+
+import bits
+import math
+
+close64(got: f64, want: u64): bool {
+    have: u64 = bits.from_float(got)
+    if have > want {
+        return have - want <= 1
+    }
+    return want - have <= 1
+}
+
+close32(got: f32, want: u32): bool {
+    have: u32 = bits.from_float(got)
+    if have > want {
+        return have - want <= 1
+    }
+    return want - have <= 1
+}
+
+main(): int {
+    infinity: f64 = bits.to_float(u64(0x7FF0000000000000))
+    negative_infinity: f64 = bits.to_float(u64(0xFFF0000000000000))
+    negative_zero: f64 = bits.to_float(u64(0x8000000000000000))
+    quiet_nan: f64 = bits.to_float(u64(0x7FF8000000000000))
+
+    // A zero exponent and a base of 1 win over every other case, a NaN included.
+    if bits.from_float(math.pow(quiet_nan, 0.0)) != u64(0x3FF0000000000000) ||
+       bits.from_float(math.pow(infinity, negative_zero)) != u64(0x3FF0000000000000) ||
+       bits.from_float(math.pow(1.0, quiet_nan)) != u64(0x3FF0000000000000) ||
+       bits.from_float(math.pow(-1.0, infinity)) != u64(0x3FF0000000000000) ||
+       bits.from_float(math.pow(-1.0, negative_infinity)) != u64(0x3FF0000000000000) {
+        return 1
+    }
+    // A NaN anywhere else propagates; a negative base with a fractional exponent makes one.
+    if !math.isnan(math.pow(quiet_nan, 2.0)) || !math.isnan(math.pow(2.0, quiet_nan)) ||
+       !math.isnan(math.pow(-2.0, 0.5)) || !math.isnan(math.pow(-0.5, 1.5)) {
+        return 2
+    }
+    // Signed zero bases split on odd integer exponents.
+    if bits.from_float(math.pow(negative_zero, -3.0)) != u64(0xFFF0000000000000) ||
+       bits.from_float(math.pow(negative_zero, -2.0)) != u64(0x7FF0000000000000) ||
+       bits.from_float(math.pow(negative_zero, 3.0)) != u64(0x8000000000000000) ||
+       bits.from_float(math.pow(negative_zero, 2.0)) != u64(0) ||
+       bits.from_float(math.pow(0.0, -3.0)) != u64(0x7FF0000000000000) ||
+       bits.from_float(math.pow(0.0, 3.0)) != u64(0) {
+        return 3
+    }
+    // Infinite bases and exponents are limits, not powers.
+    if bits.from_float(math.pow(0.5, infinity)) != u64(0) ||
+       bits.from_float(math.pow(0.5, negative_infinity)) != u64(0x7FF0000000000000) ||
+       bits.from_float(math.pow(2.0, infinity)) != u64(0x7FF0000000000000) ||
+       bits.from_float(math.pow(2.0, negative_infinity)) != u64(0) ||
+       bits.from_float(math.pow(negative_infinity, -3.0)) != u64(0x8000000000000000) ||
+       bits.from_float(math.pow(negative_infinity, -2.0)) != u64(0) ||
+       bits.from_float(math.pow(negative_infinity, 3.0)) != u64(0xFFF0000000000000) ||
+       bits.from_float(math.pow(negative_infinity, 2.0)) != u64(0x7FF0000000000000) ||
+       bits.from_float(math.pow(infinity, -2.0)) != u64(0) ||
+       bits.from_float(math.pow(infinity, 2.0)) != u64(0x7FF0000000000000) {
+        return 4
+    }
+    // Every representable integer power is exact, for either base sign.
+    for base: int in 2 .. 21 {
+        exact: f64 = 1.0
+        for power: int in 0 .. 60 {
+            if exact < 9007199254740992.0 {
+                negated: f64 = exact
+                if power % 2 == 1 {
+                    negated = -exact
+                }
+                if math.pow(f64(base), f64(power)) != exact ||
+                   math.pow(-f64(base), f64(power)) != negated {
+                    return 5
+                }
+            }
+            exact = exact * f64(base)
+        }
+    }
+    // Ordinary arguments across the exponent range, against platform libm.
+    if !close64(math.pow(3.0, 7.2999999999999998), u64(0x40A7C18FEE5E49AC)) ||
+       !close64(math.pow(0.5, -13.699999999999999), u64(0x40C9FDF8BCCE533A)) ||
+       !close64(math.pow(6.7398165136447767e+284, -0.54907143148602389), u64(0x1F764EA1C483A940)) ||
+       !close64(math.pow(7.0000000000000005e-200, -1.5), u64(0x7DF4A3EE7F17699E)) ||
+       !close64(math.pow(10.0, 308.0), u64(0x7FE1CCF385EBC8A0)) ||
+       !close64(math.pow(2.0, 0.33333333333333331), u64(0x3FF428A2F98D728B)) ||
+       !close64(math.pow(-3.0, 7.0), u64(0xC0A1160000000000)) {
+        return 6
+    }
+    // A base within 2^-20 of 1 with an exponent past 2^31 takes the series path.
+    if !close64(math.pow(1.0000001000000001, 3000000000.0), u64(0x5AFC05A56D6753A4)) ||
+       !close64(math.pow(0.99999998999999995, -2500000000.0), u64(0x4230C3D3D8872ECF)) {
+        return 7
+    }
+    // Underflow stays gradual, and overflow saturates with the right sign.
+    if !close64(math.pow(1.5, -1800.0), u64(0x0000000000218862)) ||
+       bits.from_float(math.pow(2.0, -1074.0)) != u64(1) ||
+       bits.from_float(math.pow(2.0, -1200.0)) != u64(0) ||
+       bits.from_float(math.pow(-2.0, -1201.0)) != u64(0x8000000000000000) ||
+       bits.from_float(math.pow(10.0, 400.0)) != u64(0x7FF0000000000000) ||
+       bits.from_float(math.pow(-10.0, 401.0)) != u64(0xFFF0000000000000) {
+        return 8
+    }
+    // The f32 overload computes at f64 and rounds once.
+    if !close32(math.pow(f32(3.0), f32(7.3)), u32(0x453E0C82)) ||
+       !close32(math.pow(f32(0.5), f32(-13.7)), u32(0x464FEFC4)) ||
+       !close32(math.pow(f32(1.0000001), f32(30000.0)), u32(0x3F807566)) ||
+       bits.from_float(math.pow(f32(2.0), f32(10.0))) != u32(0x44800000) ||
+       bits.from_float(math.pow(f32(-2.0), f32(3.0))) != u32(0xC1000000) {
+        return 9
+    }
+    // Function values select the same overloads.
+    pow64: (f64, f64): f64 = math.pow
+    pow32: (f32, f32): f32 = math.pow
+    if bits.from_float(pow64(2.0, 10.0)) != u64(0x4090000000000000) ||
+       bits.from_float(pow32(f32(2.0), f32(10.0))) != u32(0x44800000) {
+        return 10
+    }
+    return 42
+}

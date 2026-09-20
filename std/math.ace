@@ -38,6 +38,26 @@ LOG_L5: const f64 = 1.818357216161805012e-01
 LOG_L6: const f64 = 1.531383769920937332e-01
 LOG_L7: const f64 = 1.479819860511658591e-01
 
+/* pow's extended-precision log2 kernel. Its 2^x polynomial reuses EXP_P1..P5. */
+POW_L1: const f64 = 5.99999999999994648725e-01
+POW_L2: const f64 = 4.28571428578550184252e-01
+POW_L3: const f64 = 3.33333329818377432918e-01
+POW_L4: const f64 = 2.72728123808534006489e-01
+POW_L5: const f64 = 2.30660745775561754067e-01
+POW_L6: const f64 = 2.06975017800338417784e-01
+POW_LG2: const f64 = 6.93147180559945286227e-01
+POW_LG2_HI: const f64 = 6.93147182464599609375e-01
+POW_LG2_LO: const f64 = -1.90465429995776804525e-09
+POW_INV_LN2_HI: const f64 = 1.44269466400146484375e+00
+POW_INV_LN2_LO: const f64 = 3.76887498563609911454e-07
+POW_CP: const f64 = 9.61796693925975554329e-01
+POW_CP_HI: const f64 = 9.61796700954437255859e-01
+POW_CP_LO: const f64 = -7.02846165095275826516e-09
+POW_DP_HI: const f64 = 5.84962487220764160156e-01
+POW_DP_LO: const f64 = 1.35003920212974897128e-08
+POW_OVT: const f64 = 8.0085662595372944372e-17
+POW_TWO_M54: const f64 = 5.55111512312578270212e-17
+
 PIO4: const f64 = 7.85398163397448278999e-01
 SMALL_ARGUMENT: const f64 = 7.450580596923828125e-09
 MEDIUM_LIMIT: const f64 = 1647099.0
@@ -228,6 +248,245 @@ pub log(value: f64): f64 {
 
 pub log(value: f32): f32 {
     return f32(log(f64(value)))
+}
+
+/* Low 32 bits cleared, so the product of two such values is exact in f64. */
+trunc_low(x: f64): f64 {
+    return bits.to_float((bits.from_float(x) >> 32) << 32)
+}
+
+/* 0 when y is not an integer, 1 when it is an odd integer, 2 when it is even.
+ * Only a negative base needs this: it decides the sign of the result and
+ * whether the power exists at all.
+ */
+integer_kind(y: f64): int {
+    ay: u64 = bits.from_float(y) & u64(0x7FFFFFFFFFFFFFFF)
+    if ay >= u64(0x4340000000000000) {
+        // 2^53 and above: no odd value is representable there.
+        return 2
+    }
+    if ay < u64(0x3FF0000000000000) {
+        // Below 1, and a zero exponent is settled by the caller.
+        return 0
+    }
+    // The binary point sits 1075 - exponent_field bits up from the bottom.
+    shift: u64 = u64(1075) - (ay >> 52)
+    if (ay & ((u64(1) << shift) - u64(1))) != 0 {
+        return 0
+    }
+    return 2 - int((ay >> shift) & u64(1))
+}
+
+/* log2(value) as a high and low part, the high part holding the leading bits
+ * with its low 32 cleared. pow needs about eleven bits more than log returns,
+ * so it carries this kernel instead: the significand is normalized into one of
+ * two subintervals, around 1.0 and 1.5, and the polynomial runs in
+ * s = (m - bp) / (m + bp), every step split into a high and low part.
+ */
+log2_split(value: f64): (f64, f64) {
+    ax: f64 = value
+    raw: u64 = bits.from_float(ax)
+    n: int = 0
+    if raw < u64(0x0010000000000000) {
+        // Subnormal: scale by 2^53 so the exponent field is meaningful.
+        ax = ax * 9007199254740992.0
+        raw = bits.from_float(ax)
+        n = -53
+    }
+    n = n + int(raw >> 52) - 1023
+    mantissa: u64 = raw & u64(0x000FFFFFFFFFFFFF)
+    raw = mantissa | u64(0x3FF0000000000000)
+    k: int = 0
+    bp: f64 = 1.0
+    dp_hi: f64 = 0.0
+    dp_lo: f64 = 0.0
+    top: u64 = mantissa >> 32
+    if top > u64(0x3988E) {
+        if top < u64(0xBB67A) {
+            // Between sqrt(3/2) and sqrt(3): measure against 1.5.
+            k = 1
+            bp = 1.5
+            dp_hi = POW_DP_HI
+            dp_lo = POW_DP_LO
+        } else {
+            // Above sqrt(3): halve the significand and raise the exponent.
+            n = n + 1
+            raw = raw - u64(0x0010000000000000)
+        }
+    }
+    ax = bits.to_float(raw)
+    u: f64 = ax - bp
+    v: f64 = 1.0 / (ax + bp)
+    s: f64 = u * v
+    s_hi: f64 = trunc_low(s)
+    // High part of ax + bp, assembled from the exponent field directly.
+    sum_word: u64 = ((raw >> 33) | u64(0x20000000)) + u64(0x00080000) + (u64(k) << 18)
+    t_hi: f64 = bits.to_float(sum_word << 32)
+    t_lo: f64 = ax - (t_hi - bp)
+    s_lo: f64 = v * ((u - s_hi * t_hi) - s_hi * t_lo)
+    z: f64 = s * s
+    r: f64 = z * z *
+        (POW_L1 + z * (POW_L2 + z * (POW_L3 + z * (POW_L4 + z * (POW_L5 + z * POW_L6)))))
+    r = r + s_lo * (s_hi + s)
+    z = s_hi * s_hi
+    t_hi = trunc_low(3.0 + z + r)
+    t_lo = r - ((t_hi - 3.0) - z)
+    u = s_hi * t_hi
+    v = s_lo * t_hi + t_lo * s
+    p_hi: f64 = trunc_low(u + v)
+    p_lo: f64 = v - (p_hi - u)
+    // 2/(3 ln 2) scales the kernel to log2; dp and n restore the rest.
+    z_hi: f64 = POW_CP_HI * p_hi
+    z_lo: f64 = POW_CP_LO * p_hi + p_lo * POW_CP + dp_lo
+    scale: f64 = f64(n)
+    high: f64 = trunc_low(((z_hi + z_lo) + dp_hi) + scale)
+    return high, z_lo - (((high - scale) - dp_hi) - z_hi)
+}
+
+pub pow(base: f64, exponent: f64): f64 {
+    xbits: u64 = bits.from_float(base)
+    ybits: u64 = bits.from_float(exponent)
+    ax_bits: u64 = xbits & u64(0x7FFFFFFFFFFFFFFF)
+    ay_bits: u64 = ybits & u64(0x7FFFFFFFFFFFFFFF)
+    // x**0 and 1**y are 1 for every operand, a NaN included, and so is
+    // (-1)**(+-inf). Every other NaN operand gives a NaN.
+    if ay_bits == 0 || xbits == u64(0x3FF0000000000000) {
+        return 1.0
+    }
+    if ax_bits == u64(0x3FF0000000000000) && ay_bits == u64(0x7FF0000000000000) {
+        return 1.0
+    }
+    if isnan(base) || isnan(exponent) {
+        return base + exponent
+    }
+    negative: bool = (xbits >> 63) != 0
+    down: bool = (ybits >> 63) != 0
+    kind: int = 0
+    if negative {
+        kind = integer_kind(exponent)
+    }
+    if ay_bits == u64(0x7FF0000000000000) {
+        // |x| == 1 is settled above, so this is a limit of 0 or an infinity.
+        if (ax_bits > u64(0x3FF0000000000000)) != down {
+            return bits.to_float(u64(0x7FF0000000000000))
+        }
+        return 0.0
+    }
+    if ay_bits == u64(0x3FF0000000000000) {
+        if down {
+            return 1.0 / base
+        }
+        return base
+    }
+    if ybits == u64(0x4000000000000000) {
+        return base * base
+    }
+    if ybits == u64(0x3FE0000000000000) && !negative {
+        return sqrt(base)
+    }
+    if ax_bits == 0 || ax_bits == u64(0x3FF0000000000000) || ax_bits == u64(0x7FF0000000000000) {
+        // |x| is 0, 1, or an infinity: again a limit rather than a power.
+        limit: f64 = bits.to_float(ax_bits)
+        if down {
+            limit = 1.0 / limit
+        }
+        if negative {
+            if ax_bits == u64(0x3FF0000000000000) && kind == 0 {
+                return bits.to_float(u64(0x7FF8000000000000))
+            }
+            if kind == 1 {
+                limit = -limit
+            }
+        }
+        return limit
+    }
+    // A finite negative base with a finite non-integer exponent has no real power.
+    if negative && kind == 0 {
+        return bits.to_float(u64(0x7FF8000000000000))
+    }
+    sign: f64 = 1.0
+    if negative && kind == 1 {
+        sign = -1.0
+    }
+    ax: f64 = bits.to_float(ax_bits)
+    high: f64 = 0.0
+    low: f64 = 0.0
+    if ay_bits > u64(0x41E0000000000000) {
+        // |y| > 2^31. Unless the base sits within 2^-20 of 1 the result is a
+        // limit, and past 2^64 every exponent is an even integer, so no base
+        // escapes it.
+        far: bool = ax_bits < u64(0x3FEFFFFF00000000) || ax_bits >= u64(0x3FF0000100000000)
+        if ay_bits > u64(0x43F0000000000000) {
+            far = true
+        }
+        if far {
+            if (ax_bits > u64(0x3FF0000000000000)) != down {
+                return sign * bits.to_float(u64(0x7FF0000000000000))
+            }
+            return sign * 0.0
+        }
+        // |1 - x| <= 2^-20: four series terms carry log(x) to full precision.
+        d: f64 = ax - 1.0
+        series: f64 = (d * d) * (0.5 - d * (0.3333333333333333333333 - d * 0.25))
+        lead: f64 = POW_INV_LN2_HI * d
+        rest: f64 = d * POW_INV_LN2_LO - series * INV_LN2
+        high = trunc_low(lead + rest)
+        low = rest - (high - lead)
+    } else {
+        high, low = log2_split(ax)
+    }
+    // y * log2(x), split so the leading product is exact.
+    y_hi: f64 = trunc_low(exponent)
+    p_lo: f64 = (exponent - y_hi) * high + exponent * low
+    p_hi: f64 = y_hi * high
+    z: f64 = p_lo + p_hi
+    if z >= 1024.0 {
+        if z > 1024.0 || p_lo + POW_OVT > z - p_hi {
+            return sign * bits.to_float(u64(0x7FF0000000000000))
+        }
+    } else if z <= -1075.0 {
+        if z < -1075.0 || p_lo <= z - p_hi {
+            return sign * 0.0
+        }
+    }
+    // 2**(p_hi + p_lo): take the nearest integer n out of the exponent, leaving
+    // a remainder of at most half for the polynomial.
+    word: u64 = bits.from_float(z) >> 32
+    magnitude: u64 = word & u64(0x7FFFFFFF)
+    k: int = int(magnitude >> 20) - 1023
+    n: int = 0
+    if magnitude > u64(0x3FE00000) {
+        rounded: u64 = word + (u64(0x00100000) >> u64(k + 1))
+        k = int((rounded & u64(0x7FFFFFFF)) >> 20) - 1023
+        mask: u64 = u64(0x000FFFFF) >> u64(k)
+        whole: f64 = bits.to_float((rounded - (rounded & mask)) << 32)
+        n = int(((rounded & u64(0x000FFFFF)) | u64(0x00100000)) >> u64(20 - k))
+        if (word >> 31) != 0 {
+            n = -n
+        }
+        p_hi = p_hi - whole
+    }
+    split: f64 = trunc_low(p_lo + p_hi)
+    u: f64 = split * POW_LG2_HI
+    v: f64 = (p_lo - (split - p_hi)) * POW_LG2 + split * POW_LG2_LO
+    r: f64 = u + v
+    w: f64 = v - (r - u)
+    q: f64 = r * r
+    c: f64 = r - q * (EXP_P1 + q * (EXP_P2 + q * (EXP_P3 + q * (EXP_P4 + q * EXP_P5))))
+    correction: f64 = (r * c) / (c - 2.0) - (w + r * w)
+    result: f64 = 1.0 - (correction - r)
+    mantissa: u64 = bits.from_float(result) & u64(0x000FFFFFFFFFFFFF)
+    field: int = int(bits.from_float(result) >> 52) + n
+    if field <= 0 {
+        // Subnormal result: bias the exponent up by 54 and scale back in one
+        // rounding step. The underflow return above keeps field above -54.
+        return sign * (bits.to_float(mantissa | (u64(field + 54) << 52)) * POW_TWO_M54)
+    }
+    return sign * bits.to_float(mantissa | (u64(field) << 52))
+}
+
+pub pow(base: f32, exponent: f32): f32 {
+    return f32(pow(f64(base), f64(exponent)))
 }
 
 kernel_sin(x: f64, y: f64, tail: bool): f64 {

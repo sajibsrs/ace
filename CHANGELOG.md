@@ -642,6 +642,21 @@ current normative rules, and Git preserves patch-level detail.
   exact big-integer arithmetic: 22K random arguments (worst 0.80 ULP) and 2.5K
   continued-fraction worst cases whose reduced fraction reaches 2^-62 (worst
   0.50 ULP).
+- Added pure-Ace `math.pow` for `f32` and `f64`, within 1 ULP over the whole
+  finite domain and exact for every representable integer power. Composing the
+  existing `exp` and `log` reaches hundreds of ULP, so `pow` carries a private
+  extended-precision `log2` in the fdlibm scheme: the significand is normalized
+  into one of two subintervals, around 1.0 and 1.5, and every step is kept as a
+  high part with its low 32 bits cleared plus a tail, so `y * log2(x)` is formed
+  from exact products; the `2^p` kernel then reuses `exp`'s polynomial
+  coefficients. C99 Annex F special cases are dispatched before the kernels.
+  Verified against platform libm on 966K comparisons (main path, negative bases
+  with integer exponents, bases within 2^-20 of 1 with exponents past 2^31,
+  subnormal results, and 200K `f32` cases, the last bit-identical throughout),
+  with every Annex F case and all 736 representable integer powers exact; libm
+  is a test reference only. It runs at about 145 ns per call against libm's
+  9 ns, where the same algorithm is 33 ns compiled by clang at -O2 and 293 ns
+  at -O0.
 - Fixed compound untyped constants under a float cast (`f32(-1.0)`,
   `f32(0.0 - 1.0)`, `f32(-3)`, `f32(2 * 3)`), which stored a wrong value or hit
   "untyped operand reached codegen": the cast check now settles the operand

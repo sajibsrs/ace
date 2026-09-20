@@ -58,6 +58,10 @@ exponential_examples(value: f64, single: f32): f64 {
     return math.exp(value) + math.log(value) + f64(math.exp(single)) + f64(math.log(single))
 }
 
+power_examples(value: f64, single: f32): f64 {
+    return math.pow(2.0, value) + f64(math.pow(single, f32(0.5)))
+}
+
 trigonometry_examples(angle: f64, single: f32): f64 {
     return math.sin(angle) + math.cos(angle) + f64(math.sin(single)) + f64(math.cos(single))
 }
