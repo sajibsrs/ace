@@ -1,0 +1,136 @@
+/* math.exp and math.log are within 1 ULP of the exact result, with C99 Annex F special cases, for both widths. */
+
+// expect-exit: 42
+
+import bits
+import math
+
+close64(got: f64, want: u64): bool {
+    have: u64 = bits.from_float(got)
+    if have > want {
+        return have - want <= 1
+    }
+    return want - have <= 1
+}
+
+close32(got: f32, want: u32): bool {
+    have: u32 = bits.from_float(got)
+    if have > want {
+        return have - want <= 1
+    }
+    return want - have <= 1
+}
+
+main(): int {
+    infinity: f64 = bits.to_float(u64(0x7FF0000000000000))
+    negative_infinity: f64 = bits.to_float(u64(0xFFF0000000000000))
+    negative_zero: f64 = bits.to_float(u64(0x8000000000000000))
+    quiet_nan: f64 = bits.to_float(u64(0x7FF8000000000000))
+    negative_one: f64 = 0.0 - 1.0
+
+    // Special cases: exact results, not tolerances.
+    if bits.from_float(math.exp(0.0)) != u64(0x3FF0000000000000) ||
+       bits.from_float(math.exp(negative_zero)) != u64(0x3FF0000000000000) {
+        return 1
+    }
+    if math.exp(infinity) != infinity || math.exp(negative_infinity) != 0.0 ||
+       math.exp(710.0) != infinity || math.exp(0.0 - 746.0) != 0.0 ||
+       !math.isnan(math.exp(quiet_nan)) {
+        return 2
+    }
+    if bits.from_float(math.log(1.0)) != u64(0) || math.log(0.0) != negative_infinity ||
+       math.log(negative_zero) != negative_infinity || math.log(infinity) != infinity {
+        return 3
+    }
+    if !math.isnan(math.log(negative_one)) || !math.isnan(math.log(negative_infinity)) ||
+       !math.isnan(math.log(quiet_nan)) {
+        return 4
+    }
+    // exp, f64
+    if !close64(math.exp(0.0), u64(0x3ff0000000000000)) ||
+       !close64(math.exp(0.0), u64(0x3ff0000000000000)) ||
+       !close64(math.exp(1.0e-10), u64(0x3ff000000006df38)) ||
+       !close64(math.exp(0.1), u64(0x3ff1aec7b35a00d4)) ||
+       !close64(math.exp(0.5), u64(0x3ffa61298e1e069c)) ||
+       !close64(math.exp(-0.5), u64(0x3fe368b2fc6f960a)) ||
+       !close64(math.exp(1.0), u64(0x4005bf0a8b145769)) ||
+       !close64(math.exp(-1.0), u64(0x3fd78b56362cef38)) ||
+       !close64(math.exp(2.5), u64(0x40285d6fd931e0bb)) ||
+       !close64(math.exp(10.0), u64(0x40d5829dcf950560)) ||
+       !close64(math.exp(-10.0), u64(0x3f07cd79b5647c9b)) ||
+       !close64(math.exp(100.0), u64(0x48f3494a9b171bf5)) ||
+       !close64(math.exp(-100.0), u64(0x36ea8c1f14e2af5d)) ||
+       !close64(math.exp(700.0), u64(0x7f0d945df4f8ec8e)) ||
+       !close64(math.exp(709.7), u64(0x7fed75ae7a50ee14)) ||
+       !close64(math.exp(709.78), u64(0x7fefe9ce5c4c52b4)) ||
+       !close64(math.exp(-708.5), u64(0xe6cf6d08897ac)) ||
+       !close64(math.exp(-720.0), u64(0x993b4dc95)) ||
+       !close64(math.exp(-745.0), u64(0x1)) ||
+       !close64(math.exp(0.3465), u64(0x3ff6a03146cf6ead)) ||
+       !close64(math.exp(-0.3465), u64(0x3fe6a10b883d5676)) ||
+       !close64(math.exp(0.3466), u64(0x3ff6a0c5906bc779)) ||
+       !close64(math.exp(1.0e-300), u64(0x3ff0000000000000)) ||
+       !close64(math.exp(3.5), u64(0x40408ec721396bdb)) ||
+       !close64(math.exp(-20.25), u64(0x3e1b93de1e27ca3b)) {
+        return 5
+    }
+    // log, f64
+    if !close64(math.log(5.0e-324), u64(0xc0874385446d71c3)) ||
+       !close64(math.log(1.0e-320), u64(0xc087069e3078e52d)) ||
+       !close64(math.log(1.0e-300), u64(0xc085963447f87fb5)) ||
+       !close64(math.log(0.5), u64(0xbfe62e42fefa39ef)) ||
+       !close64(math.log(0.7071), u64(0xbfd62e6b3842a25e)) ||
+       !close64(math.log(0.9999999), u64(0xbe7ad7f2b1049b9f)) ||
+       !close64(math.log(1.0000001), u64(0x3e7ad7f2847b6492)) ||
+       !close64(math.log(1.4142), u64(0x3fd62e1ac5b1d181)) ||
+       !close64(math.log(1.4143), u64(0x3fd62f4358c03e8a)) ||
+       !close64(math.log(2.0), u64(0x3fe62e42fefa39ef)) ||
+       !close64(math.log(2.718281828459045), u64(0x3ff0000000000000)) ||
+       !close64(math.log(10.0), u64(0x40026bb1bbb55516)) ||
+       !close64(math.log(12345.678), u64(0x4022d79559791e31)) ||
+       !close64(math.log(10000000000.0), u64(0x4037069e2aa2aa5b)) ||
+       !close64(math.log(1.0e+300), u64(0x4085963447f87fb5)) ||
+       !close64(math.log(1.7976931348623157e+308), u64(0x40862e42fefa39ef)) {
+        return 6
+    }
+    // exp, f32
+    if !close32(math.exp(f32(1.0)), u32(0x402df854)) ||
+       !close32(math.exp(f32(-1.0)), u32(0x3ebc5ab2)) ||
+       !close32(math.exp(f32(0.5)), u32(0x3fd3094c)) ||
+       !close32(math.exp(f32(10.0)), u32(0x46ac14ee)) ||
+       !close32(math.exp(f32(-10.0)), u32(0x383e6bce)) ||
+       !close32(math.exp(f32(50.0)), u32(0x638c881f)) ||
+       !close32(math.exp(f32(88.0)), u32(0x7ef882b7)) ||
+       !close32(math.exp(f32(88.69999694824219)), u32(0x7f7a37fc)) ||
+       !close32(math.exp(f32(-87.0)), u32(0xb33687)) ||
+       !close32(math.exp(f32(-100.0)), u32(0x1b)) ||
+       !close32(math.exp(f32(0.0010000000474974513)), u32(0x3f8020c9)) {
+        return 7
+    }
+    // log, f32
+    if !close32(math.log(f32(9.99994610111476e-41)), u32(0xc2b834f2)) ||
+       !close32(math.log(f32(0.5)), u32(0xbf317218)) ||
+       !close32(math.log(f32(0.75)), u32(0xbe934b11)) ||
+       !close32(math.log(f32(1.0000001192092896)), u32(0x33ffffff)) ||
+       !close32(math.log(f32(2.0)), u32(0x3f317218)) ||
+       !close32(math.log(f32(10.0)), u32(0x40135d8e)) ||
+       !close32(math.log(f32(1000.0)), u32(0x40dd0c55)) ||
+       !close32(math.log(f32(3.3999999521443642e+38)), u32(0x42b171ab)) {
+        return 8
+    }
+
+    // Function values select the same overloads.
+    exp64: (f64): f64 = math.exp
+    log64: (f64): f64 = math.log
+    exp32: (f32): f32 = math.exp
+    log32: (f32): f32 = math.log
+    if bits.from_float(exp64(0.0)) != u64(0x3FF0000000000000) || bits.from_float(log64(1.0)) != u64(0) ||
+       bits.from_float(exp32(f32(0.0))) != u32(0x3F800000) || bits.from_float(log32(f32(1.0))) != u32(0) {
+        return 9
+    }
+    // f32 overflow and gradual underflow round from the f64 result.
+    if math.exp(f32(89.0)) != f32(infinity) || bits.from_float(math.exp(f32(-104.0))) != u32(0) {
+        return 10
+    }
+    return 42
+}

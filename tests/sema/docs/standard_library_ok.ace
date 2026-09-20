@@ -54,6 +54,10 @@ rounding_examples(value: f64, single: f32): f64 {
     return math.floor(value) + math.ceil(value) + f64(length)
 }
 
+exponential_examples(value: f64, single: f32): f64 {
+    return math.exp(value) + math.log(value) + f64(math.exp(single)) + f64(math.log(single))
+}
+
 str_examples(): int {
     at: usize, found: bool = str.find("hello world", "world")
 

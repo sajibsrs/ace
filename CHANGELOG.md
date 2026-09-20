@@ -617,6 +617,14 @@ current normative rules, and Git preserves patch-level detail.
   checked in `sema.c`) lowering to in-place `fsqrt`, `frintm`, and `frintp` on
   the operand's FP temp, with the same instruction in the callable symbol. The
   intrinsic whitelist grew from `bits` to include these `math` overloads.
+- Added pure-Ace `math.exp` and `math.log` for `f32` and `f64`, within 1 ULP over
+  the whole finite domain. They use the fdlibm scheme: `exp` reduces by
+  `k * ln2` (split high/low) and evaluates a rational polynomial, scaling by
+  exact exponent-bit construction in two steps for subnormal results; `log`
+  splits the exponent, normalizes the significand into `[sqrt(2)/2, sqrt(2))`,
+  and evaluates a polynomial in `s = f / (2 + f)`. The `f32` overloads compute at
+  `f64` and round once. Verified against platform libm on 2.2M inputs with none
+  beyond 1 ULP; libm is a test reference only.
 - Fixed compound untyped constants under a float cast (`f32(-1.0)`,
   `f32(0.0 - 1.0)`, `f32(-3)`, `f32(2 * 3)`), which stored a wrong value or hit
   "untyped operand reached codegen": the cast check now settles the operand

@@ -43,6 +43,25 @@ They are compiler-provided instructions (`fsqrt`, `frintm`, `frintp`): no
 allocation, no libm call, no errno or flag. Converting the result to an integer
 remains an explicit cast.
 
+Exponential and logarithm are `f32` and `f64` overloads that return their
+operand's type:
+
+```ace
+growth: f64 = math.exp(0.5)
+level: f32 = math.log(single)
+```
+
+- Every `f64` result is within 1 ULP of the exact result over the whole finite
+  domain. An `f32` result is computed at `f64` and rounded once, so it is also
+  within 1 ULP.
+- `exp(±0)` is `1`, `exp(+inf)` is `+inf`, `exp(-inf)` is `0`; overflow gives
+  `+inf` and underflow is gradual through subnormals.
+- `log(±0)` is `-inf`, `log` of a negative value is a NaN, `log(1)` is `+0`, and
+  `log(+inf)` is `+inf`. A NaN operand returns a NaN.
+
+They are pure Ace: no libm call, no errno or floating-point flag, and the same
+result on every target. They currently run at about 30 ns per call.
+
 Float classification uses exact overloads for `f32` and `f64`:
 
 ```ace

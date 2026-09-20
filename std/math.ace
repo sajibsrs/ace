@@ -1,5 +1,9 @@
 /* math — minimal pure-Ace numeric helpers.
- * sqrt, floor, and ceil are compiler-backed exact IEEE operations.
+ * sqrt, floor, and ceil are compiler-backed exact IEEE operations. exp and log
+ * are pure Ace, within 1 ULP over the whole finite domain: exp reduces by
+ * k*ln2 and evaluates a rational polynomial, log splits the exponent and
+ * evaluates a polynomial in s = f/(2+f). Both use the classic fdlibm scheme
+ * with the ln2 constant split into a high and low part.
  */
 
 import bits
@@ -12,6 +16,27 @@ pub floor(value: f32): f32 intrinsic
 
 pub ceil(value: f64): f64 intrinsic
 pub ceil(value: f32): f32 intrinsic
+
+LN2_HI: const f64 = 6.93147180369123816490e-01
+LN2_LO: const f64 = 1.90821492927058770002e-10
+INV_LN2: const f64 = 1.44269504088896338700e+00
+
+EXP_OVERFLOW: const f64 = 7.09782712893383973096e+02
+EXP_UNDERFLOW: const f64 = -7.45133219101941108420e+02
+EXP_HALF_LN2: const f64 = 3.46573590279972643113e-01
+EXP_P1: const f64 = 1.66666666666666019037e-01
+EXP_P2: const f64 = -2.77777777770155933842e-03
+EXP_P3: const f64 = 6.61375632143793436117e-05
+EXP_P4: const f64 = -1.65339022054652515390e-06
+EXP_P5: const f64 = 4.13813679705723846039e-08
+
+LOG_L1: const f64 = 6.666666666666735130e-01
+LOG_L2: const f64 = 3.999999999940941908e-01
+LOG_L3: const f64 = 2.857142874366239149e-01
+LOG_L4: const f64 = 2.222219843214978396e-01
+LOG_L5: const f64 = 1.818357216161805012e-01
+LOG_L6: const f64 = 1.531383769920937332e-01
+LOG_L7: const f64 = 1.479819860511658591e-01
 
 pub isnan(value: f64): bool {
     raw: u64 = bits.from_float(value)
@@ -70,4 +95,96 @@ pub abs[T](x: T): T {
         return -x
     }
     return x
+}
+
+pub exp(value: f64): f64 {
+    if isnan(value) {
+        return value
+    }
+    if value > EXP_OVERFLOW {
+        return bits.to_float(u64(0x7FF0000000000000))
+    }
+    if value < EXP_UNDERFLOW {
+        return 0.0
+    }
+    high: f64 = value
+    low: f64 = 0.0
+    k: int = 0
+    if value <= -EXP_HALF_LN2 || value >= EXP_HALF_LN2 {
+        half: f64 = 0.5
+        if value < 0.0 {
+            half = -0.5
+        }
+        k = int(INV_LN2 * value + half)
+        scale: f64 = f64(k)
+        high = value - scale * LN2_HI
+        low = scale * LN2_LO
+    }
+    r: f64 = high - low
+    r2: f64 = r * r
+    c: f64 = r - r2 * (EXP_P1 + r2 * (EXP_P2 + r2 * (EXP_P3 + r2 * (EXP_P4 + r2 * EXP_P5))))
+    if k == 0 {
+        return 1.0 - ((r * c) / (c - 2.0) - r)
+    }
+    y: f64 = 1.0 - ((low - (r * c) / (2.0 - c)) - high)
+    if k == 1024 {
+        y = y * 2.0
+        k = 1023
+    }
+    if k >= -1021 {
+        return y * bits.to_float(u64(1023 + k) << 52)
+    }
+    // Subnormal result: scale in two exact steps so only the last one rounds.
+    return y * bits.to_float(u64(1023 + k + 1000) << 52) * bits.to_float(u64(23) << 52)
+}
+
+pub exp(value: f32): f32 {
+    return f32(exp(f64(value)))
+}
+
+pub log(value: f64): f64 {
+    if isnan(value) {
+        return value
+    }
+    if value < 0.0 {
+        return bits.to_float(u64(0x7FF8000000000000))
+    }
+    if value == 0.0 {
+        return -bits.to_float(u64(0x7FF0000000000000))
+    }
+    if isinf(value) {
+        return value
+    }
+    x: f64 = value
+    raw: u64 = bits.from_float(x)
+    k: int = 0
+    if (raw >> 52) == 0 {
+        // Subnormal: scale by 2^54 so the exponent field is meaningful.
+        k = -54
+        x = x * 18014398509481984.0
+        raw = bits.from_float(x)
+    }
+    k = k + int(raw >> 52) - 1023
+    mantissa: u64 = raw & u64(0x000FFFFFFFFFFFFF)
+    // Normalize the significand into [sqrt(2)/2, sqrt(2)).
+    if mantissa > u64(0x6A09E667F3BCD) {
+        mantissa = mantissa | (u64(1022) << 52)
+        k = k + 1
+    } else {
+        mantissa = mantissa | (u64(1023) << 52)
+    }
+    f: f64 = bits.to_float(mantissa) - 1.0
+    s: f64 = f / (2.0 + f)
+    z: f64 = s * s
+    w: f64 = z * z
+    t1: f64 = w * (LOG_L2 + w * (LOG_L4 + w * LOG_L6))
+    t2: f64 = z * (LOG_L1 + w * (LOG_L3 + w * (LOG_L5 + w * LOG_L7)))
+    r: f64 = t2 + t1
+    half_f2: f64 = 0.5 * f * f
+    dk: f64 = f64(k)
+    return dk * LN2_HI - ((half_f2 - (s * (half_f2 + r) + dk * LN2_LO)) - f)
+}
+
+pub log(value: f32): f32 {
+    return f32(log(f64(value)))
 }

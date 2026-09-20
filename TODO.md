@@ -250,12 +250,12 @@ foundations.
   prefixes for `fmt.printf`, especially fixed-width `%b`/`%o`/`%x` register
   displays; carve consistently across integer conversions from a hardware
   fixture rather than adding a binary-only modifier.
-- **Transcendental math functions** [open] — `exp`, `log`, `sin`, and `cos` are
-  carved in the Decision Queue; `pow` is uncarved (naive `exp(y * log(x))`
-  measured up to 36 ULP; it needs an extended-precision `log`). A C prototype
-  of the fdlibm-class algorithms ran 1.6x libm for `exp`/`log` and 3-5x for
-  `sin`/`cos`, all within 1 ULP of libm; the same `exp` in Ace ran 33 ns
-  against 5.4 ns in C and 3.2 ns for libm.
+- **Transcendental math functions** [open] — `exp` and `log` are implemented;
+  `sin` and `cos` are carved in the Decision Queue; `pow` is uncarved (naive
+  `exp(y * log(x))` measured up to 36 ULP; it needs an extended-precision
+  `log`). The fdlibm-class algorithms ran 1.6x libm for `exp`/`log` and 3-5x
+  for `sin`/`cos` in C, and the shipped Ace `exp` and `log` run 33 ns and 31 ns
+  per call against 5.4 ns in C and 3.2-3.4 ns for libm.
 - **Random source** [new].
 
 ## 5. Language questions and conveniences
