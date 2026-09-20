@@ -406,6 +406,8 @@ current normative rules, and Git preserves patch-level detail.
   analysis validates exact argument types and builds a format plan; emission
   calls typed helpers directly, with no runtime parser, argument tags, reflection,
   allocation, or C variadic formatter.
+- Zero-initialized every deferred-call record, which read uninitialized arena
+  memory under the sanitizer build.
 - Added `%b` binary and `%o` octal `fmt.printf` conversions for `uint` and
   `usize`, generalizing hexadecimal's private helper into one fixed-buffer
   unsigned-radix path. Prefixes, width, and zero padding remain explicit

@@ -289,9 +289,18 @@ typedef struct {
     int type_build_depth;
 } Ck;
 
+// Arena memory is not zeroed; every Pending field must start defined.
+static Pending* new_pending(Ck* k) {
+    Pending* pd = (Pending*)arena_alloc(sizeof(Pending));
+    memset(pd, 0, sizeof *pd);
+    pd->scope = k->scope;
+    pd->next = k->pending;
+    k->pending = pd;
+    return pd;
+}
+
 static SType* build_type(Ck* k, Node* t);
-static SType* instantiate_generic_type(Ck* k, Node* decl,
-                                       SType** args, int nargs);
+static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int nargs);
 
 static void ck_err(Ck* k, Node* n, const char* fmt, ...) {
     va_list ap;
@@ -4106,11 +4115,8 @@ static SType* check_call(Ck* k, Node* call) {
                 return T_ERR;   // never returns; poison keeps enclosing uses quiet
             }
             // forward top-level call — deferred like an emitter fixup
-            Pending* pd = (Pending*)arena_alloc(sizeof(Pending));
+            Pending* pd = new_pending(k);
             pd->call = call;
-            pd->scope = k->scope;
-            pd->next = k->pending;
-            k->pending = pd;
             return T_ERR; // poison; existence + args verified at end of file
         }
         if (s->kind == SYM_FUNC) {
@@ -4163,11 +4169,8 @@ static SType* check_call(Ck* k, Node* call) {
             finish_direct_call(k, call, chosen);
             return chosen->type->ret;
         }
-        Pending* pd = (Pending*)arena_alloc(sizeof(Pending));
+        Pending* pd = new_pending(k);
         pd->call = call;
-        pd->scope = k->scope;
-        pd->next = k->pending;
-        k->pending = pd;
         return T_ERR; // a matching overload may be declared later
     }
     // Slice-shaped identity cast or explicit pointer-plus-count construction.
@@ -4435,14 +4438,11 @@ static SType* check_call(Ck* k, Node* call) {
         }
         SType* r = check_method_call(k, call, b, qualified, 0);
         if (r) return r;
-        Pending* pd = (Pending*)arena_alloc(sizeof(Pending));
+        Pending* pd = new_pending(k);
         pd->call = call;
-        pd->scope = k->scope;
         pd->recv = b;
         pd->qualified = qualified;
         pd->method = 1;
-        pd->next = k->pending;
-        k->pending = pd;
         return T_ERR; // a method may be declared later
     }
     ck_err(k, call, "unsupported callee");
