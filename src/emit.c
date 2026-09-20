@@ -4317,6 +4317,77 @@ static void emit_math_exact(Em* e, int intrinsic, int is64, int reg) {
     ins(e, op | (is64 ? 0x00400000u : 0u) | ((uint32_t)reg << 5) | (uint32_t)reg);
 }
 
+/*
+ * Release-mode inlining of a call to a one-expression scalar function. Each
+ * argument is evaluated once, in order, into a temp; the body's identifiers
+ * read those temps through inl_val. A parameter read more than once would
+ * share one temp a consumer may overwrite, so it disqualifies the callee.
+ */
+#define INL_MAX 8
+#define INL_DEPTH 2
+static Node* inl_decl[INL_MAX];
+static EV    inl_val[INL_MAX];
+static int   inl_n, inl_depth;
+
+static int inl_uses(Node* n, Node* d) {
+    if (!n) return 0;
+    int c = 0;
+    if (n->kind == N_IDENT) {
+        Sym* s = node_sym(n);
+        if (s && s->decl == d) c++;
+    }
+    c += inl_uses(n->a, d) + inl_uses(n->b, d) + inl_uses(n->c, d);
+    for (int k = 0; k < n->nkids; k++) c += inl_uses(n->kids[k], d);
+    return c;
+}
+
+static int inl_scalar_same(SType* a, SType* b) {
+    a = a ? unwrap(a) : NULL;
+    b = b ? unwrap(b) : NULL;
+    return a && b && a->kind == SK_PRIM && b->kind == SK_PRIM && a->prim == b->prim && is_scalar(a);
+}
+
+static int try_inline(Em* e, Node* call, Sym* s, EV* out) {
+    Node* fd = s->decl;
+    if (e->mode == EMIT_CHECKED || !fd || call->a->kind != N_IDENT || s->is_extern || s->is_generic || s->spec_args ||
+        (fd->flags & (F_EXPO | F_METHOD)) || inl_depth >= INL_DEPTH || inl_n + call->nkids > INL_MAX)
+        return 0;
+    Node* b = fd->b;
+    if (!b || b->kind != N_BLOCK || b->nkids != 1 || b->kids[0]->kind != N_RETURN || !b->kids[0]->a) return 0;
+    Node* body = b->kids[0]->a;
+    if (fd->nkids != call->nkids) return 0;
+    for (int i = 0; i < fd->nkids; i++) {
+        Sym* ps = node_sym(fd->kids[i]);
+        if ((fd->kids[i]->flags & F_MUT) || call->kids[i]->kind == N_MUTARG) return 0;
+        if (!ps || !inl_scalar_same(ps->type, node_ty(call->kids[i]))) return 0;
+        if (inl_uses(body, fd->kids[i]) > 1) return 0;
+    }
+    SType* ft = s->type;
+    if (!ft || ft->kind != SK_FUNC || !inl_scalar_same(ft->ret, node_ty(body))) return 0;
+    int si = e->vti, sf = e->vtf, base = inl_n;
+    for (int i = 0; i < fd->nkids; i++) {
+        EV v = gen_expr(e, call->kids[i]);
+        inl_decl[inl_n] = fd->kids[i];
+        inl_val[inl_n++] = v;
+    }
+    inl_depth++;
+    EV r = gen_expr(e, body);
+    inl_depth--;
+    inl_n = base;
+    if (r.cls == CLS_FP) { // the result takes the first free temp, as a call's does
+        if (r.idx != sf) mov_fp(e, unwrap(ft->ret)->prim == P_F64, vreg(sf), vreg(r.idx));
+        e->vti = si;
+        e->vtf = sf + 1;
+        *out = (EV){ CLS_FP, sf };
+    } else {
+        if (r.idx != si) mov_int(e, 1, xreg(si), xreg(r.idx));
+        e->vti = si + 1;
+        e->vtf = sf;
+        *out = (EV){ CLS_INT, si };
+    }
+    return 1;
+}
+
 static EV gen_call(Em* e, Node* call) {
     Node* callee = call->a;
 
@@ -4756,6 +4827,8 @@ static EV gen_call(Em* e, Node* call) {
         }
 
         if (s->kind == SYM_FUNC) {
+            EV inlined;
+            if (try_inline(e, call, s, &inlined)) return inlined;
             CallTarget tgt = { 0, NULL, 0, 0 };
             int c_boundary = s->is_extern;
             if (s->is_extern) {
@@ -5028,6 +5101,8 @@ static EV gen_expr(Em* e, Node* x) {
             em_err(e, x, "unresolved name");
             return (EV){ CLS_INT, tmp_int(e) };
         }
+        for (int k = inl_n - 1; k >= 0; k--)
+            if (s->decl == inl_decl[k]) return inl_val[k];
         if (s->kind == SYM_FUNC) return (EV){ CLS_INT, gen_addr(e, x) };
         if (s->kind != SYM_VAR) {
             em_err(e, x, "not a value");

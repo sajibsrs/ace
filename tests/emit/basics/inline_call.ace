@@ -1,0 +1,80 @@
+/* A call to a one-expression scalar function is expanded in place in release
+ * builds. The result, argument evaluation order, and single evaluation of every
+ * argument match the call, including for callees the rule leaves as calls.
+ */
+
+// expect-exit: 42
+
+counter: int
+
+bump(): int {
+    counter = counter + 1
+    return counter
+}
+
+add_one(x: int): int {
+    return x + 1
+}
+
+first(x: int, y: int): int {
+    return x
+}
+
+minus(a: int, b: int): int {
+    return a - b
+}
+
+twice(x: int): int {
+    return x + x
+}
+
+set_to(mut x: int, v: int): int {
+    return v
+}
+
+scaled(x: f64): f64 {
+    return x * 2.0
+}
+
+add_two(x: int): int {
+    return add_one(add_one(x))
+}
+
+main(): int {
+    if add_one(41) != 42 || add_two(40) != 42 {
+        return 1
+    }
+    // an argument the body never reads is still evaluated, once
+    if first(7, bump()) != 7 || counter != 1 {
+        return 2
+    }
+    // arguments evaluate left to right
+    counter = 0
+    if minus(bump(), bump()) != -1 || counter != 2 {
+        return 3
+    }
+    // a parameter read twice, and a mut parameter, stay calls with the same result
+    counter = 0
+    if twice(bump()) != 2 || counter != 1 {
+        return 4
+    }
+    n: int = 5
+    if set_to(mut n, 9) != 9 {
+        return 5
+    }
+    // live temps around an inlined call survive it
+    a: f64 = 1.5
+    b: f64 = 4.0
+    c: f64 = 0.25
+    if a * scaled(b) + scaled(c) * a != 12.75 {
+        return 6
+    }
+    total: int = 0
+    for i: int in 0 .. 10 {
+        total = total + add_one(i) * add_one(total)
+    }
+    if total != 39916799 {
+        return 7
+    }
+    return 42
+}

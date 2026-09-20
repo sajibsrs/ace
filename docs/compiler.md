@@ -28,6 +28,10 @@ failure paths, tracking, assertion evaluation, and diagnostic data. The flags ar
 exclusive. Check-only, `--tokens`, and `--ast` runs accept either flag, but the
 choice cannot change their result because they emit no program.
 
+`--release` also expands a call to a function whose body is one `return` of a
+scalar expression in place, evaluating the arguments once and in order, so such
+helpers cost no call. Checked output keeps the call.
+
 The build target defaults from the compiler host and can be selected explicitly
 with `--target=NAME` (or `--target NAME`). The bootstrap compiler currently
 supports only `darwin-arm64`; any other target is rejected before compilation.

@@ -114,7 +114,13 @@ These are baseline observations, not performance promises.
   length in a register measured no parse gain even with registers free.
 - **Caller-saved promotion across calls** [new] — non-leaf functions still
   keep every promoted local in x19-x28; locals not live across any call could
-  use x9-x14 given per-call liveness.
+  use x9-x14 given per-call liveness. Its gain must be measured on top of
+  release-mode inlining, which already removes the calls to one-expression
+  helpers.
+- **Inlining beyond one expression** [new] — release-mode inlining covers
+  one-expression scalar functions only; a helper with locals such as
+  `math.isnan` still calls (about 7 ns of `pow` by hand-inlining), and so does
+  a callee that reads a parameter twice.
 - **Call and tuple-return plumbing** [new] — incoming aggregate parameters
   other than the read-only, leaf-read HFA and 8-byte-integer-leaf struct
   parameters of a call-free function (a parameter in a function with calls, a

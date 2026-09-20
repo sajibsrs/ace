@@ -40,6 +40,11 @@ current normative rules, and Git preserves patch-level detail.
   runtime-sized collection without boxing every element behind a pointer, e.g.
   `Json: union { none, object: []Pair }` followed by
   `Pair: struct { key: string, value: Json }`.
+- Implemented release-mode inlining of one-expression scalar functions at
+  emission: arguments evaluate once, in order, into temps that the callee's
+  parameter identifiers read, so no call frame and no spill and reload of live
+  temps around it. A math kernel calling one such helper seven times fell 24%
+  (193 to 146 ns); checked builds and all other callees keep the call.
 
 ## Core language
 
