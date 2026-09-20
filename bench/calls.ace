@@ -1,0 +1,194 @@
+/* Call-overhead benchmark paired with calls.c. Every workload feeds its result
+ * into the next call and reports a checksum, so the calls stay observable.
+ * Arithmetic is masked to stay bounded for checked builds.
+ */
+
+import fmt
+import time
+
+MASK: const usize = 0x7FFFFFFF
+ITERATIONS: const usize = 10000000
+FIB_INPUT: const usize = 32
+FIB_CALLS: const usize = 7049155 // 2 * fib(FIB_INPUT + 1) - 1
+
+Small: struct {
+    v: usize,
+}
+
+Pair: struct {
+    a: usize,
+    b: usize,
+}
+
+Triple: struct {
+    a: usize,
+    b: usize,
+    c: usize,
+}
+
+Octet: struct {
+    a: usize,
+    b: usize,
+    c: usize,
+    d: usize,
+    e: usize,
+    f: usize,
+    g: usize,
+    h: usize,
+}
+
+Vec3: struct {
+    x: f64,
+    y: f64,
+    z: f64,
+}
+
+Counter: struct {
+    value: usize,
+}
+
+call1(a: usize): usize {
+    return (a * 48271 + 1) & MASK
+}
+
+call4(a: usize, b: usize, c: usize, d: usize): usize {
+    return (a * 3 + b * 5 + c * 7 + d) & MASK
+}
+
+call8(a: usize, b: usize, c: usize, d: usize, e: usize, f: usize, g: usize,
+      h: usize): usize {
+    return (a + b * 2 + c * 3 + d * 5 + e * 7 + f * 11 + g * 13 + h * 17) & MASK
+}
+
+fib(n: usize): usize {
+    if n < 2 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+small_step(s: Small): Small {
+    return Small {v = (s.v * 48271 + 1) & MASK}
+}
+
+pair_step(p: Pair): Pair {
+    return Pair {a = (p.a * 48271 + p.b) & MASK, b = (p.b + 1) & MASK}
+}
+
+triple_step(t: Triple): Triple {
+    return Triple {a = (t.a * 48271 + t.b) & MASK, b = (t.b + t.c) & MASK,
+                   c = (t.c + 1) & MASK}
+}
+
+octet_step(o: Octet): Octet {
+    return Octet {a = (o.a * 48271 + o.h) & MASK, b = (o.b + o.a) & MASK,
+                  c = (o.c + o.b) & MASK, d = (o.d + o.c) & MASK,
+                  e = (o.e + o.d) & MASK, f = (o.f + o.e) & MASK,
+                  g = (o.g + o.f) & MASK, h = (o.h + 1) & MASK}
+}
+
+vec_add(a: Vec3, b: Vec3): Vec3 {
+    return Vec3 {x = a.x + b.x, y = a.y + b.y, z = a.z + b.z}
+}
+
+divmod(a: usize, b: usize): (usize, usize) {
+    return a / b, a % b
+}
+
+mut Counter.add(amount: usize) {
+    self.value = (self.value + amount) & MASK
+}
+
+report(name: string, elapsed: u64, operations: usize, checksum: usize) {
+    fmt.printf("%s %u %u %u\n", name, usize(elapsed), operations, checksum)
+}
+
+main(): int {
+    state: usize = 1
+    started: u64 = time.awake()
+    for i: usize in 0 .. ITERATIONS {
+        state = call1(state + i)
+    }
+    report("call-1", time.awake() - started, ITERATIONS, state)
+
+    state = 1
+    started = time.awake()
+    for i: usize in 0 .. ITERATIONS {
+        state = call4(state, i, state >> 3, 1)
+    }
+    report("call-4", time.awake() - started, ITERATIONS, state)
+
+    state = 1
+    started = time.awake()
+    for i: usize in 0 .. ITERATIONS {
+        state = call8(state, i, 1, 2, 3, 4, 5, 6)
+    }
+    report("call-8", time.awake() - started, ITERATIONS, state)
+
+    started = time.awake()
+    state = fib(FIB_INPUT)
+    report("fib-recursive", time.awake() - started, FIB_CALLS, state)
+
+    small: Small = Small {v = 1}
+    started = time.awake()
+    for i: usize in 0 .. ITERATIONS {
+        small = small_step(small)
+    }
+    report("struct-8", time.awake() - started, ITERATIONS, small.v)
+
+    pair: Pair = Pair {a = 1, b = 1}
+    started = time.awake()
+    for i: usize in 0 .. ITERATIONS {
+        pair = pair_step(pair)
+    }
+    report("struct-16", time.awake() - started, ITERATIONS, (pair.a + pair.b) & MASK)
+
+    triple: Triple = Triple {a = 1, b = 1, c = 1}
+    started = time.awake()
+    for i: usize in 0 .. ITERATIONS {
+        triple = triple_step(triple)
+    }
+    report("struct-24", time.awake() - started, ITERATIONS,
+           (triple.a + triple.b + triple.c) & MASK)
+
+    octet: Octet = Octet {a = 1, b = 1, c = 1, d = 1, e = 1, f = 1, g = 1, h = 1}
+    started = time.awake()
+    for i: usize in 0 .. ITERATIONS {
+        octet = octet_step(octet)
+    }
+    report("struct-64", time.awake() - started, ITERATIONS,
+           (octet.a + octet.b + octet.c + octet.d + octet.e + octet.f + octet.g +
+            octet.h) & MASK)
+
+    acc: Vec3 = Vec3 {x = 0.0, y = 0.0, z = 0.0}
+    step: Vec3 = Vec3 {x = 1.0, y = 2.0, z = 3.0}
+    started = time.awake()
+    for i: usize in 0 .. ITERATIONS {
+        acc = vec_add(acc, step)
+    }
+    report("struct-hfa", time.awake() - started, ITERATIONS, usize(acc.x + acc.y + acc.z))
+
+    state = 1
+    started = time.awake()
+    for i: usize in 0 .. ITERATIONS {
+        quotient: usize, remainder: usize = divmod(state + i + 1, 97)
+        state = (quotient * 3 + remainder) & MASK
+    }
+    report("tuple-return", time.awake() - started, ITERATIONS, state)
+
+    counter: Counter = Counter {value = 1}
+    started = time.awake()
+    for i: usize in 0 .. ITERATIONS {
+        mut counter.add(i)
+    }
+    report("method", time.awake() - started, ITERATIONS, counter.value)
+
+    callback: (usize): usize = call1
+    state = 1
+    started = time.awake()
+    for i: usize in 0 .. ITERATIONS {
+        state = callback(state + i)
+    }
+    report("function-value", time.awake() - started, ITERATIONS, state)
+    return 0
+}

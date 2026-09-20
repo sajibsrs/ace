@@ -11,7 +11,7 @@ Status tags:
 - **[new]** — absent from every existing deferred list; observed here first
 - **[unspecified]** — neither decided nor rejected in `SPEC.md`; support must be verified, then carved either way
 
-Territory rejected by design is excluded entirely: manual memory through one fixed strategy (no GC, ownership, or allocator values), no exceptions or propagation, no inference, no optional type operator, no COW, no iterator contracts, no comptime or reflection, no block-scoped defer, no hidden-capture closures (explicit contract values are the designated mechanism). Items appear only where the existing design leaves the question open.
+Territory rejected by design is excluded entirely: manual memory through one fixed strategy (no GC, ownership, or allocator values), no exceptions or propagation, no inference, no optional type operator, no COW, no iterator contracts, no comptime or reflection, no block-scoped defer, no `++`/`--`, no hidden-capture closures (explicit contract values are the designated mechanism). Items appear only where the existing design leaves the question open.
 
 The priority bands below are recommendations, not decisions. The active
 Decision Queue in `SPEC.md` always wins; dependencies within a band are listed
@@ -113,13 +113,24 @@ These are baseline observations, not performance promises.
 - **Call and tuple-return plumbing** [new] — aggregate and floating-point
   arguments still stage through spill slots, a `(f64, bool)` return is built in
   memory and reloaded, and `bool` locals and a string parameter's pointer and
-  length stay in stack slots inside loops.
+  length stay in stack slots inside loops. `bench/calls.ace` measures it:
+  by-value 8- and 16-byte structs, the three-`f64` aggregate, and tuple
+  returns run 2.1x to 9.6x noinline C `-O2`.
 - **Remaining immediate and destination forms** [new] — declarations with an
   initializer still compute through a temp, and a constant on the left of a
   compare or in the middle of a chain still takes a register.
+- **Tail-call optimization** [new] — a `return f(args)` still emits `bl` plus a
+  full epilogue, so tail recursion grows the stack linearly and overflows at
+  roughly 100M frames in checked and release builds alike. Candidate: lower a
+  self-recursive tail call to a jump past the prologue when no `defer` is
+  pending, all arguments and the result ride registers, and the function
+  creates no pointer or slice into its own frame; sibling tail calls to other
+  functions need callee-saved restoration and frame teardown first. Whether the
+  form becomes a normative guarantee or stays an unspecified optimization is
+  undecided.
 - **Float-parse optimization backlog** [new] — the canonical 80%-short /
-  20%-long `parse-f64` workload is 1.9x `strtod` (52 ns), at the roughly 2x
-  aspirational target, not a promise. Measured next steps, in order:
+  20%-long `parse-f64` workload is 1.9x `strtod` (52 ns); the goal is to close
+  the gap to C and surpass it where possible. Measured next steps, in order:
   1. Reduce syntax-scanning cost (47% of short-input time before argument
      placement; re-profile first). The `nan`/`inf` check gate measured no gain.
   2. Consider dropping the exact-small tier (10%) for the Eisel-Lemire step,
@@ -130,8 +141,9 @@ These are baseline observations, not performance promises.
      comparison baseline, not a ceiling; any stronger claim requires a local
      checksum-matched measurement.
 - **Broader performance corpus** [new] — add checksum-matched Ace/C fixtures for
-  calls, large aggregates, slices, branches, floating point, cache-heavy loops,
-  and compile/object size before making optimizer-wide claims. `noalias`-driven
+  slices, branches, floating-point kernels, cache-heavy loops, and
+  compile/object size before making optimizer-wide claims; `bench/calls.ace`
+  already covers calls and aggregate passing. `noalias`-driven
   auto-vectorization remains outside v1 as stated by Compiler #6.
 
 ## 3. Concurrency and process expansion

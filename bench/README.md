@@ -110,8 +110,8 @@ long-cohort calls; all calls reached SWAR, and the chunks covered 64.7% of the
 digit bytes counted by those paths.
 
 Further parser optimization is intentionally deferred. `TODO.md` records the
-measurement-ordered backlog and an aspirational next target of roughly 2x C;
-the canonical 6.8x result above remains the baseline until another carve lands.
+measurement-ordered backlog; the canonical 6.8x result above remains the
+baseline until another carve lands.
 
 ## CPU
 
@@ -285,6 +285,48 @@ and copy were unchanged, and the string benchmark's text fell 5.3%. Gating the
 `nan`/`inf` checks behind the first byte alone measured no change. Constant
 unguarded indexes and direct local-struct field stores landed in the same
 build and saved instructions without measurable time on their own.
+
+### Post-`time`/`mem.alloc_size` comparison checkpoint
+
+Five alternating runs of the string and CPU benchmarks, Ace release against C
+`-O2`, medians: `compare-4096` 0.67x, `compare-64` 6.7 ns (1.75x),
+`copy-4096` 1.08x, `copy-64` 1.73x, `find-4096` 0.65x, `parse-f64` 52.5 ns
+(1.85x `strtod`), `parse-f64-short` 47.8 ns (1.81x), `parse-f64-long` 71.9 ns
+(2.25x), and `format-f64-shortest` 261 ns (0.27x of `%.17g`, reference only).
+CPU measured 36.0 ms release (1.07x C `-O2` at 33.6 ms), 37.1 ms checked, and
+40.9 ms C `-O0`; all checksums matched. The remaining gaps are small-buffer
+compare and copy and float parsing; the goal is to close them and surpass C
+where possible.
+
+## Calls
+
+Run the call-overhead benchmark on Apple arm64:
+
+```sh
+./bench/run-calls.sh
+```
+
+The runner builds `bench/calls.ace` in release mode and `bench/calls.c` at
+`-O2` twice, checks that every checksum matches, and prints ns per operation.
+Each workload feeds its result into the next call: one-, four-, and
+eight-argument scalar calls, recursive `fib(32)`, by-value struct arguments and
+returns of 8, 16, 24, and 64 bytes, a three-`f64` homogeneous float aggregate, a
+two-value tuple return, a `mut self` method, and a call through a function
+value. The C functions have external linkage and `noinline`, so `-O2` keeps
+every call and cannot specialise it on constant arguments. The third column is
+the same C with inlining allowed: a reference Ace cannot match without an
+inliner, not the comparison target. The C function-value slot is `volatile` so
+the indirect call survives.
+
+Medians of three runs, Ace release against noinline C `-O2` (ns/op, ratio):
+`call-1` 5.80 vs 2.88 (2.01x), `call-4` 5.59 vs 3.40 (1.64x), `call-8` 4.92 vs
+4.33 (1.14x), `fib-recursive` 2.04 vs 1.21 (1.69x), `struct-8` 10.87 vs 2.40
+(4.53x), `struct-16` 8.97 vs 2.40 (3.74x), `struct-24` 7.61 vs 10.82 (0.70x),
+`struct-64` 16.18 vs 14.24 (1.14x), `struct-hfa` 13.75 vs 1.44 (9.55x),
+`tuple-return` 15.10 vs 7.19 (2.10x), `method` 1.92 vs 3.84 (0.50x), and
+`function-value` 6.00 vs 2.88 (2.08x). The largest gaps are small by-value
+aggregates and the float aggregate; the method and the 24-byte struct already
+beat noinline C.
 
 ## Memory
 
