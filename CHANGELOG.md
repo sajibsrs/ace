@@ -425,6 +425,13 @@ current normative rules, and Git preserves patch-level detail.
   operand as one bitmask-immediate instruction, and let call-free functions keep
   every used local and parameter in x9-x14 even when read once, removing the
   argument spill and reload from scalar leaf calls (`call-1` 5.7 to 3.2 ns).
+- Returned struct literals and tuples whose leaves are call-free scalars, one
+  whole 8-byte integer or float per result register (`gen_return_regs`),
+  evaluate straight into `x0`-`x1` or `d0`-`d3` instead of a frame temp that is
+  then reloaded; leaf w is computed with temp w free so earlier leaves stay live.
+  Other shapes (packed sub-8-byte fields, missing fields, call-bearing leaves,
+  sret) keep the temp path. `struct-8` 9.3 to 7.6, `struct-16` 9.8 to 7.5,
+  `struct-hfa` 13.7 to 12.3, `tuple-return` 16.4 to 12.9 ns.
 - Implemented `str` character/string operations and explicit
   `str.parse[T]` specializations in pure Ace where practical, with libc float
   conversion isolated in its selected target layer. `char` remains the

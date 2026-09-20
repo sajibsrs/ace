@@ -1135,6 +1135,25 @@ if [ -d tests/emit ]; then
             echo "FAIL: global integer consts must be folded to immediates"
             fail=1
         fi
+        # A struct literal or tuple returned in registers computes each leaf
+        # straight into its result register: no frame-temp address (`sub x0,
+        # x29, ...`) is formed to reload from, and the second and third leaves
+        # end in x1 / d2. The first function's label is the section, so bump()
+        # is left unasserted.
+        if ! otool -tv /tmp/ace_emit/basics/return_registers.o | awk '
+            /^_main:/ { exit }
+            /^[^0-9].*:$/ { fn = $0; next }
+            fn ~ /^__ace\$fn\$(small_step|pair_step|vec_add|vec2_scale|divmod)\$/ &&
+                $2 == "sub" && $3 == "x0," && $4 == "x29," { bad = 1 }
+            fn ~ /^__ace\$fn\$small_step\$/ && $2 == "and" && $3 == "x0," { small = 1 }
+            fn ~ /^__ace\$fn\$pair_step\$/ && $2 == "and" && $3 == "x1," { pair = 1 }
+            fn ~ /^__ace\$fn\$vec_add\$/ && $2 == "fadd" && $3 == "d2," { vec = 1 }
+            fn ~ /^__ace\$fn\$vec2_scale\$/ && $2 == "fmul" && $3 == "s1," { vec2 = 1 }
+            fn ~ /^__ace\$fn\$divmod\$/ && $2 == "msub" && $3 == "x1," { divmod = 1 }
+            END { exit bad || !small || !pair || !vec || !vec2 || !divmod }'; then
+            echo "FAIL: register-returned literals and tuples must skip the frame temp"
+            fail=1
+        fi
         # A call-free function promotes every used local, single-use ones
         # included, into x14 down: straight() takes x14 through x11 and saves
         # no callee-saved register.

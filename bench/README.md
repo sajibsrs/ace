@@ -319,11 +319,12 @@ inliner, not the comparison target. The C function-value slot is `volatile` so
 the indirect call survives.
 
 Ace release against noinline C `-O2` (ns/op, ratio), after constant and
-call-free-parameter promotion: `call-1` 3.20 vs 2.90 (1.11x), `call-4` 3.66 vs
-3.41 (1.07x), `call-8` 4.17 vs 4.35 (0.96x), `fib-recursive` 2.05 vs 1.21
-(1.69x), `struct-8` 9.33 vs 2.41 (3.88x), `struct-16` 9.78 vs 2.41 (4.06x),
-`struct-24` 6.75 vs 10.73 (0.63x), `struct-64` 15.47 vs 14.39 (1.07x),
-`struct-hfa` 13.77 vs 1.45 (9.50x), `tuple-return` 16.39 vs 7.24 (2.26x),
+call-free-parameter promotion and register returns: `call-1` 3.20 vs 2.90
+(1.11x), `call-4` 3.66 vs 3.41 (1.07x), `call-8` 4.17 vs 4.35 (0.96x),
+`fib-recursive` 2.05 vs 1.21 (1.69x), `struct-8` 7.64 vs 2.41 (3.17x),
+`struct-16` 7.52 vs 2.41 (3.12x), `struct-24` 6.75 vs 10.73 (0.63x),
+`struct-64` 15.47 vs 14.39 (1.07x), `struct-hfa` 12.29 vs 1.45 (8.48x),
+`tuple-return` 12.95 vs 7.24 (1.79x),
 `method` 1.82 vs 3.86 (0.47x), and `function-value` 3.62 vs 2.90 (1.25x).
 Before that change `call-1` was 5.72, `call-4` 5.61, `call-8` 4.93, and
 `function-value` 6.02. The largest remaining gaps are small by-value
@@ -342,10 +343,14 @@ forward on the critical path (the rest); both are gone, and the chain now runs
 at 2.94 ns.
 
 The aggregate and tuple workloads are bound by the same effect at more points:
-a callee builds its result in a frame temp and reloads it into `x0`/`d0`
-before returning, the caller stores the returned registers to a temp and copies
-them to the destination, and incoming HFA parameters are spilled and reloaded
-per use. Their timings also moved by up to about 2 ns across unrelated
+the caller stores the returned registers to a temp and copies them to the
+destination, and incoming HFA parameters are spilled and reloaded per use. A
+callee that returns a struct literal or tuple of call-free scalar leaves now
+computes each leaf straight into its result register; measured over five
+alternating runs against the previous compiler, `struct-8` fell from 9.3 to
+7.6, `struct-16` from 9.75 to 7.5, `struct-hfa` from 13.7 to 12.3, and
+`tuple-return` from 16.4 to 12.95 ns, with spreads under 0.1 ns within each
+build. Their timings also moved by up to about 2 ns across unrelated
 compiler changes (`struct-16` measured 8.97, 7.15, and 9.78 across three
 builds; `tuple-return` moved from 15.1 to 16.4 although its loop is now
 strictly shorter and `divmod` is byte-identical), so single-digit-nanosecond

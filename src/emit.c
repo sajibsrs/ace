@@ -5909,6 +5909,82 @@ static void emit_bits_field_assign(Em* e, Node* target, Node* rhs, TokKind op,
     store_scalar(e, whole, xreg(ta), 0, bits->base);
 }
 
+// an expression that emits no call: literals, names, field reads, and unary
+// or binary operators over scalars (aggregate operands compare through
+// mem_compare), so registers holding earlier results survive its evaluation
+static int call_free_scalar_expr(Node* n) {
+    if (!n) return 1;
+    switch (n->kind) {
+    case N_INT: case N_FLOAT: case N_CHAR: case N_BOOL: case N_IDENT:
+        return 1;
+    case N_FIELD_E:
+        return call_free_scalar_expr(n->a);
+    case N_UNARY:
+        return n->op != T_AMP && n->op != T_VOLATILE &&
+               call_free_scalar_expr(n->a);
+    case N_BINARY: {
+        SType* ta = node_ty(n->a);
+        SType* tb = node_ty(n->b);
+        if ((ta && !is_scalar(ta)) || (tb && !is_scalar(tb))) return 0;
+        return call_free_scalar_expr(n->a) && call_free_scalar_expr(n->b);
+    }
+    default:
+        return 0;
+    }
+}
+
+/*
+ * A struct literal or tuple returned in registers, one whole scalar leaf per
+ * result register (8-byte integer chunks, or one float per HFA member),
+ * evaluates each leaf straight into its register instead of a frame temp.
+ * Leaf w is computed with temp w free, so it lands in x<w>/d<w> with the
+ * earlier leaves still live below it; leaves that could emit a call stay on
+ * the temp path. Returns 0, having emitted nothing, when the shape does not fit.
+ */
+static int gen_return_regs(Em* e, Node* x, RetCls* rc) {
+    if (x->kind != N_STRUCTLIT && x->kind != N_TUPLE_E) return 0;
+    SType* t = node_ty(x);
+    if (!t || (t->kind != SK_STRUCT && t->kind != SK_TUPLE)) return 0;
+    if (rc->sret || rc->nunits < 1 || rc->nunits > 4) return 0;
+    if (t->nfields != rc->nunits || x->nkids != rc->nunits) return 0;
+    int positional = x->kind == N_STRUCTLIT && x->kids[0]->str == NULL;
+    Node* byunit[4] = {0};
+    for (int i = 0; i < x->nkids; i++) {
+        Node* fi = x->kids[i];
+        Node* value = x->kind == N_TUPLE_E ? fi : fi->a;
+        int fidx = i;
+        if (x->kind == N_STRUCTLIT && !positional)
+            fidx = find_field(t, fi->str, fi->len);
+        if (!value || fidx < 0 || fidx >= t->nfields) return 0;
+        SType* ft = t->fields[fidx].t;
+        if (!ft || !is_scalar(ft) || !call_free_scalar_expr(value)) return 0;
+        SType* vt = node_ty(value);
+        if (vt && ty_size(vt) != ty_size(ft)) return 0;
+        uint32_t fo = field_off(t, fidx);
+        int w = 0;
+        while (w < rc->nunits && rc->units[w].off != fo) w++;
+        if (w == rc->nunits || byunit[w]) return 0;
+        TU* u = &rc->units[w];
+        if ((u->kind == TU_VREG) != (is_floatt(ft) != 0)) return 0;
+        if (u->size != ty_size(ft)) return 0;
+        byunit[w] = value;
+    }
+    int svi = e->vti, svf = e->vtf;
+    for (int w = 0; w < rc->nunits; w++) {
+        TU* u = &rc->units[w];
+        int fp = u->kind == TU_VREG;
+        e->vti = fp ? 0 : w;
+        e->vtf = fp ? w : 0;
+        EV v = gen_expr(e, byunit[w]);
+        if (fp && v.cls == CLS_FP) mov_fp(e, u->size == 8, w, v.idx);
+        else if (!fp && v.cls == CLS_INT) mov_int(e, 1, w, xreg(v.idx));
+        else em_err(e, byunit[w], "return leaf has the wrong register class");
+    }
+    e->vti = svi;
+    e->vtf = svf;
+    return 1;
+}
+
 static void emit_stmt(Em* e, Node* s) {
     line_mark(e, s->kind == N_EXPRSTMT ? s->a : s);
     e->vti = 0; e->vtf = 0; // statement boundary
@@ -6619,6 +6695,11 @@ static void emit_stmt(Em* e, Node* s) {
             return;
         }
         if (rc.nunits >= 1) { // <=16B aggregate/multi-chunk
+            if (gen_return_regs(e, s->a, &rc)) {
+                emit_defers(e, rt);
+                emit_epilogue(e);
+                return;
+            }
             EV v = gen_expr(e, s->a);
             if (v.cls != CLS_ADDR) {
                 em_err(e, s, "aggregate return value must be in memory");
