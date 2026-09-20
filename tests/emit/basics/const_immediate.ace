@@ -1,0 +1,35 @@
+// expect-exit: 42
+// Global integer consts with compile-time initializers are read as immediates.
+
+MASK: const usize = 0x7FFFFFFF
+BIG: const u64 = 0xFFFFFFFFFFFFFFFF
+BYTE: const u8 = 200
+HALF: const u16 = 65535
+WORD: const u32 = 4000000000
+FLAG: const bool = true
+NEG: const int = -5
+NEG32: const i32 = -7
+NEG8: const i8 = -3
+POS8: const i8 = 100
+ALIAS: const usize = MASK
+
+masked(a: usize): usize {
+    return (a * 48271 + 1) & MASK
+}
+
+main(): int {
+    if masked(1) != 48272 { return 1 }
+    if BIG != 0xFFFFFFFFFFFFFFFF { return 2 }
+    if BYTE != 200 { return 3 }
+    if HALF != 65535 { return 4 }
+    if WORD != 4000000000 { return 5 }
+    if !FLAG { return 6 }
+    if NEG != -5 { return 7 }
+    if NEG32 != -7 { return 8 }
+    if NEG8 != -3 { return 9 }
+    if POS8 != 100 { return 10 }
+    if ALIAS != 0x7FFFFFFF { return 11 }
+    if int(NEG32) + int(NEG8) != -10 { return 12 }
+    if usize(BYTE) + usize(HALF) != 65735 { return 13 }
+    return 42
+}

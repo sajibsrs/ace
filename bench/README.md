@@ -318,15 +318,40 @@ the same C with inlining allowed: a reference Ace cannot match without an
 inliner, not the comparison target. The C function-value slot is `volatile` so
 the indirect call survives.
 
-Medians of three runs, Ace release against noinline C `-O2` (ns/op, ratio):
-`call-1` 5.80 vs 2.88 (2.01x), `call-4` 5.59 vs 3.40 (1.64x), `call-8` 4.92 vs
-4.33 (1.14x), `fib-recursive` 2.04 vs 1.21 (1.69x), `struct-8` 10.87 vs 2.40
-(4.53x), `struct-16` 8.97 vs 2.40 (3.74x), `struct-24` 7.61 vs 10.82 (0.70x),
-`struct-64` 16.18 vs 14.24 (1.14x), `struct-hfa` 13.75 vs 1.44 (9.55x),
-`tuple-return` 15.10 vs 7.19 (2.10x), `method` 1.92 vs 3.84 (0.50x), and
-`function-value` 6.00 vs 2.88 (2.08x). The largest gaps are small by-value
-aggregates and the float aggregate; the method and the 24-byte struct already
-beat noinline C.
+Ace release against noinline C `-O2` (ns/op, ratio), after constant and
+call-free-parameter promotion: `call-1` 3.20 vs 2.90 (1.11x), `call-4` 3.66 vs
+3.41 (1.07x), `call-8` 4.17 vs 4.35 (0.96x), `fib-recursive` 2.05 vs 1.21
+(1.69x), `struct-8` 9.33 vs 2.41 (3.88x), `struct-16` 9.78 vs 2.41 (4.06x),
+`struct-24` 6.75 vs 10.73 (0.63x), `struct-64` 15.47 vs 14.39 (1.07x),
+`struct-hfa` 13.77 vs 1.45 (9.50x), `tuple-return` 16.39 vs 7.24 (2.26x),
+`method` 1.82 vs 3.86 (0.47x), and `function-value` 3.62 vs 2.90 (1.25x).
+Before that change `call-1` was 5.72, `call-4` 5.61, `call-8` 4.93, and
+`function-value` 6.02. The largest remaining gaps are small by-value
+aggregates, the float aggregate, and the tuple return; the method and the
+24-byte struct beat noinline C.
+
+`call-1` and `fib` measure different things. `fib` is throughput-bound: its
+calls overlap in the out-of-order core, so 2 ns per call is a throughput
+figure. `call-1` feeds each result into the next call, so it measures the
+length of a loop-carried dependency chain. A separate 100M-iteration run put
+the bare arithmetic chain inline at 2.89 ns, `call1` in the chain at 5.78 ns,
+and `call1` with independent arguments at 1.44 ns. The extra 2.9 ns in the
+chain came from the constant `MASK` being loaded from memory (about 1.0 ns)
+and the callee spilling its single argument and reloading it, a store-to-load
+forward on the critical path (the rest); both are gone, and the chain now runs
+at 2.94 ns.
+
+The aggregate and tuple workloads are bound by the same effect at more points:
+a callee builds its result in a frame temp and reloads it into `x0`/`d0`
+before returning, the caller stores the returned registers to a temp and copies
+them to the destination, and incoming HFA parameters are spilled and reloaded
+per use. Their timings also moved by up to about 2 ns across unrelated
+compiler changes (`struct-16` measured 8.97, 7.15, and 9.78 across three
+builds; `tuple-return` moved from 15.1 to 16.4 although its loop is now
+strictly shorter and `divmod` is byte-identical), so single-digit-nanosecond
+changes on these rows are not evidence until the memory round trips are
+removed. `divmod` also computes its quotient twice because Ace has no
+common-subexpression elimination; that is left as is.
 
 ## Compile time
 

@@ -1123,21 +1123,33 @@ if [ -d tests/emit ]; then
             echo "FAIL: float locals must be promoted into d8-d15"
             fail=1
         fi
-        # Loop-free code promotes locals used at least twice and leaves
-        # single-use ones in their slots: call-free straight() takes exactly
-        # x14 and x13 and saves no callee-saved register.
+        # A global integer const with a compile-time initializer is an
+        # immediate: masked(), the only function before main, is one `and` with
+        # a bitmask immediate and reads no memory for MASK (its object's first
+        # label is the section, not its name).
+        if ! otool -tv /tmp/ace_emit/basics/const_immediate.o | awk '
+            /^_main:/ { exit }
+            $2 == "adrp" { bad = 1 }
+            $2 == "and" && $NF == "#0x7fffffff" { saw = 1 }
+            END { exit bad || !saw }'; then
+            echo "FAIL: global integer consts must be folded to immediates"
+            fail=1
+        fi
+        # A call-free function promotes every used local, single-use ones
+        # included, into x14 down: straight() takes x14 through x11 and saves
+        # no callee-saved register.
         if ! otool -tv /tmp/ace_emit/basics/register_locals.o | awk '
             /^[^0-9].*:$/ { fn = ($0 ~ /^__ace\$fn\$straight\$/); next }
             fn {
                 for (i = 3; i <= NF; i++) {
                     r = $i; gsub(/[][,]/, "", r)
-                    if (r == "x14") low = 1
-                    if (r == "x13") high = 1
-                    if (r ~ /^x(9|1[0-2]|19|2[0-8])$/) bad = 1
+                    if (r == "x14") high = 1
+                    if (r == "x11") low = 1
+                    if (r ~ /^x(9|10|19|2[0-8])$/) bad = 1
                 }
             }
             END { exit bad || !low || !high }'; then
-            echo "FAIL: loop-free locals must be promoted by use count"
+            echo "FAIL: call-free locals must all be promoted into x14 down"
             fail=1
         fi
         # A call-free function fills x14 down to x9 before x19-x28; one with a

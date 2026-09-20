@@ -317,8 +317,8 @@ alias_loop(): int {
     return xs[0] + xs[1] + xs[2]
 }
 
-// loop-free code promotes a local used at least twice (a, t); a single
-// use (b, u) keeps its slot
+// call-free loop-free code promotes every used local, single-use ones (b, u)
+// included, into x14 down
 straight(a: int, b: int): int {
     t: int = a * b
     u: int = t + a

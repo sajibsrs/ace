@@ -1,0 +1,223 @@
+// expect-exit: 42
+// Bitwise operators with a constant operand use the bitmask-immediate form
+// when it encodes; each result is checked against the register form through
+// a helper, for 64-, 32-, and 8-bit operands.
+
+and64(a: u64, b: u64): u64 {
+    return a & b
+}
+
+or64(a: u64, b: u64): u64 {
+    return a | b
+}
+
+xor64(a: u64, b: u64): u64 {
+    return a ^ b
+}
+
+and32(a: u32, b: u32): u32 {
+    return a & b
+}
+
+or32(a: u32, b: u32): u32 {
+    return a | b
+}
+
+xor32(a: u32, b: u32): u32 {
+    return a ^ b
+}
+
+and8(a: u8, b: u8): u8 {
+    return a & b
+}
+
+or8(a: u8, b: u8): u8 {
+    return a | b
+}
+
+xor8(a: u8, b: u8): u8 {
+    return a ^ b
+}
+
+probe64(p: u64): int {
+    bad: int = 0
+    if (p & 0x1) != and64(p, 0x1) { bad += 1 }
+    if (p | 0x1) != or64(p, 0x1) { bad += 1 }
+    if (p ^ 0x1) != xor64(p, 0x1) { bad += 1 }
+    if (p & 0x3) != and64(p, 0x3) { bad += 1 }
+    if (p | 0x3) != or64(p, 0x3) { bad += 1 }
+    if (p ^ 0x3) != xor64(p, 0x3) { bad += 1 }
+    if (p & 0xff) != and64(p, 0xff) { bad += 1 }
+    if (p | 0xff) != or64(p, 0xff) { bad += 1 }
+    if (p ^ 0xff) != xor64(p, 0xff) { bad += 1 }
+    if (p & 0x7fffffff) != and64(p, 0x7fffffff) { bad += 1 }
+    if (p | 0x7fffffff) != or64(p, 0x7fffffff) { bad += 1 }
+    if (p ^ 0x7fffffff) != xor64(p, 0x7fffffff) { bad += 1 }
+    if (p & 0xffffffff) != and64(p, 0xffffffff) { bad += 1 }
+    if (p | 0xffffffff) != or64(p, 0xffffffff) { bad += 1 }
+    if (p ^ 0xffffffff) != xor64(p, 0xffffffff) { bad += 1 }
+    if (p & 0x8000000000000000) != and64(p, 0x8000000000000000) { bad += 1 }
+    if (p | 0x8000000000000000) != or64(p, 0x8000000000000000) { bad += 1 }
+    if (p ^ 0x8000000000000000) != xor64(p, 0x8000000000000000) { bad += 1 }
+    if (p & 0x5555555555555555) != and64(p, 0x5555555555555555) { bad += 1 }
+    if (p | 0x5555555555555555) != or64(p, 0x5555555555555555) { bad += 1 }
+    if (p ^ 0x5555555555555555) != xor64(p, 0x5555555555555555) { bad += 1 }
+    if (p & 0xaaaaaaaaaaaaaaaa) != and64(p, 0xaaaaaaaaaaaaaaaa) { bad += 1 }
+    if (p | 0xaaaaaaaaaaaaaaaa) != or64(p, 0xaaaaaaaaaaaaaaaa) { bad += 1 }
+    if (p ^ 0xaaaaaaaaaaaaaaaa) != xor64(p, 0xaaaaaaaaaaaaaaaa) { bad += 1 }
+    if (p & 0xf0f0f0f0f0f0f0f0) != and64(p, 0xf0f0f0f0f0f0f0f0) { bad += 1 }
+    if (p | 0xf0f0f0f0f0f0f0f0) != or64(p, 0xf0f0f0f0f0f0f0f0) { bad += 1 }
+    if (p ^ 0xf0f0f0f0f0f0f0f0) != xor64(p, 0xf0f0f0f0f0f0f0f0) { bad += 1 }
+    if (p & 0xff00ff00ff00ff) != and64(p, 0xff00ff00ff00ff) { bad += 1 }
+    if (p | 0xff00ff00ff00ff) != or64(p, 0xff00ff00ff00ff) { bad += 1 }
+    if (p ^ 0xff00ff00ff00ff) != xor64(p, 0xff00ff00ff00ff) { bad += 1 }
+    if (p & 0xffff0000ffff) != and64(p, 0xffff0000ffff) { bad += 1 }
+    if (p | 0xffff0000ffff) != or64(p, 0xffff0000ffff) { bad += 1 }
+    if (p ^ 0xffff0000ffff) != xor64(p, 0xffff0000ffff) { bad += 1 }
+    if (p & 0xfffffffffffffffe) != and64(p, 0xfffffffffffffffe) { bad += 1 }
+    if (p | 0xfffffffffffffffe) != or64(p, 0xfffffffffffffffe) { bad += 1 }
+    if (p ^ 0xfffffffffffffffe) != xor64(p, 0xfffffffffffffffe) { bad += 1 }
+    if (p & 0x7fffffffffffffff) != and64(p, 0x7fffffffffffffff) { bad += 1 }
+    if (p | 0x7fffffffffffffff) != or64(p, 0x7fffffffffffffff) { bad += 1 }
+    if (p ^ 0x7fffffffffffffff) != xor64(p, 0x7fffffffffffffff) { bad += 1 }
+    if (p & 0xffff0000) != and64(p, 0xffff0000) { bad += 1 }
+    if (p | 0xffff0000) != or64(p, 0xffff0000) { bad += 1 }
+    if (p ^ 0xffff0000) != xor64(p, 0xffff0000) { bad += 1 }
+    if (p & 0xff0) != and64(p, 0xff0) { bad += 1 }
+    if (p | 0xff0) != or64(p, 0xff0) { bad += 1 }
+    if (p ^ 0xff0) != xor64(p, 0xff0) { bad += 1 }
+    if (p & 0x123456789) != and64(p, 0x123456789) { bad += 1 }
+    if (p | 0x123456789) != or64(p, 0x123456789) { bad += 1 }
+    if (p ^ 0x123456789) != xor64(p, 0x123456789) { bad += 1 }
+    if (p & 0x12345) != and64(p, 0x12345) { bad += 1 }
+    if (p | 0x12345) != or64(p, 0x12345) { bad += 1 }
+    if (p ^ 0x12345) != xor64(p, 0x12345) { bad += 1 }
+    if (p & 0xc0000000) != and64(p, 0xc0000000) { bad += 1 }
+    if (p | 0xc0000000) != or64(p, 0xc0000000) { bad += 1 }
+    if (p ^ 0xc0000000) != xor64(p, 0xc0000000) { bad += 1 }
+    if (p & 0xffffffff00000000) != and64(p, 0xffffffff00000000) { bad += 1 }
+    if (p | 0xffffffff00000000) != or64(p, 0xffffffff00000000) { bad += 1 }
+    if (p ^ 0xffffffff00000000) != xor64(p, 0xffffffff00000000) { bad += 1 }
+    if (p & 0x3333333333333333) != and64(p, 0x3333333333333333) { bad += 1 }
+    if (p | 0x3333333333333333) != or64(p, 0x3333333333333333) { bad += 1 }
+    if (p ^ 0x3333333333333333) != xor64(p, 0x3333333333333333) { bad += 1 }
+    if (p & 0x8000000000000001) != and64(p, 0x8000000000000001) { bad += 1 }
+    if (p | 0x8000000000000001) != or64(p, 0x8000000000000001) { bad += 1 }
+    if (p ^ 0x8000000000000001) != xor64(p, 0x8000000000000001) { bad += 1 }
+    return bad
+}
+
+probe32(p: u32): int {
+    bad: int = 0
+    if (p & 0x1) != and32(p, 0x1) { bad += 1 }
+    if (p | 0x1) != or32(p, 0x1) { bad += 1 }
+    if (p ^ 0x1) != xor32(p, 0x1) { bad += 1 }
+    if (p & 0x3) != and32(p, 0x3) { bad += 1 }
+    if (p | 0x3) != or32(p, 0x3) { bad += 1 }
+    if (p ^ 0x3) != xor32(p, 0x3) { bad += 1 }
+    if (p & 0xff) != and32(p, 0xff) { bad += 1 }
+    if (p | 0xff) != or32(p, 0xff) { bad += 1 }
+    if (p ^ 0xff) != xor32(p, 0xff) { bad += 1 }
+    if (p & 0x7fffffff) != and32(p, 0x7fffffff) { bad += 1 }
+    if (p | 0x7fffffff) != or32(p, 0x7fffffff) { bad += 1 }
+    if (p ^ 0x7fffffff) != xor32(p, 0x7fffffff) { bad += 1 }
+    if (p & 0x80000000) != and32(p, 0x80000000) { bad += 1 }
+    if (p | 0x80000000) != or32(p, 0x80000000) { bad += 1 }
+    if (p ^ 0x80000000) != xor32(p, 0x80000000) { bad += 1 }
+    if (p & 0x55555555) != and32(p, 0x55555555) { bad += 1 }
+    if (p | 0x55555555) != or32(p, 0x55555555) { bad += 1 }
+    if (p ^ 0x55555555) != xor32(p, 0x55555555) { bad += 1 }
+    if (p & 0xaaaaaaaa) != and32(p, 0xaaaaaaaa) { bad += 1 }
+    if (p | 0xaaaaaaaa) != or32(p, 0xaaaaaaaa) { bad += 1 }
+    if (p ^ 0xaaaaaaaa) != xor32(p, 0xaaaaaaaa) { bad += 1 }
+    if (p & 0xf0f0f0f0) != and32(p, 0xf0f0f0f0) { bad += 1 }
+    if (p | 0xf0f0f0f0) != or32(p, 0xf0f0f0f0) { bad += 1 }
+    if (p ^ 0xf0f0f0f0) != xor32(p, 0xf0f0f0f0) { bad += 1 }
+    if (p & 0xff00ff) != and32(p, 0xff00ff) { bad += 1 }
+    if (p | 0xff00ff) != or32(p, 0xff00ff) { bad += 1 }
+    if (p ^ 0xff00ff) != xor32(p, 0xff00ff) { bad += 1 }
+    if (p & 0xffff) != and32(p, 0xffff) { bad += 1 }
+    if (p | 0xffff) != or32(p, 0xffff) { bad += 1 }
+    if (p ^ 0xffff) != xor32(p, 0xffff) { bad += 1 }
+    if (p & 0xfffffffe) != and32(p, 0xfffffffe) { bad += 1 }
+    if (p | 0xfffffffe) != or32(p, 0xfffffffe) { bad += 1 }
+    if (p ^ 0xfffffffe) != xor32(p, 0xfffffffe) { bad += 1 }
+    if (p & 0xffff0000) != and32(p, 0xffff0000) { bad += 1 }
+    if (p | 0xffff0000) != or32(p, 0xffff0000) { bad += 1 }
+    if (p ^ 0xffff0000) != xor32(p, 0xffff0000) { bad += 1 }
+    if (p & 0x12345) != and32(p, 0x12345) { bad += 1 }
+    if (p | 0x12345) != or32(p, 0x12345) { bad += 1 }
+    if (p ^ 0x12345) != xor32(p, 0x12345) { bad += 1 }
+    if (p & 0xff0) != and32(p, 0xff0) { bad += 1 }
+    if (p | 0xff0) != or32(p, 0xff0) { bad += 1 }
+    if (p ^ 0xff0) != xor32(p, 0xff0) { bad += 1 }
+    if (p & 0xc0000000) != and32(p, 0xc0000000) { bad += 1 }
+    if (p | 0xc0000000) != or32(p, 0xc0000000) { bad += 1 }
+    if (p ^ 0xc0000000) != xor32(p, 0xc0000000) { bad += 1 }
+    if (p & 0x33333333) != and32(p, 0x33333333) { bad += 1 }
+    if (p | 0x33333333) != or32(p, 0x33333333) { bad += 1 }
+    if (p ^ 0x33333333) != xor32(p, 0x33333333) { bad += 1 }
+    if (p & 0x80000001) != and32(p, 0x80000001) { bad += 1 }
+    if (p | 0x80000001) != or32(p, 0x80000001) { bad += 1 }
+    if (p ^ 0x80000001) != xor32(p, 0x80000001) { bad += 1 }
+    return bad
+}
+
+probe8(p: u8): int {
+    bad: int = 0
+    if (p & 0x1) != and8(p, 0x1) { bad += 1 }
+    if (p | 0x1) != or8(p, 0x1) { bad += 1 }
+    if (p ^ 0x1) != xor8(p, 0x1) { bad += 1 }
+    if (p & 0x3) != and8(p, 0x3) { bad += 1 }
+    if (p | 0x3) != or8(p, 0x3) { bad += 1 }
+    if (p ^ 0x3) != xor8(p, 0x3) { bad += 1 }
+    if (p & 0xf) != and8(p, 0xf) { bad += 1 }
+    if (p | 0xf) != or8(p, 0xf) { bad += 1 }
+    if (p ^ 0xf) != xor8(p, 0xf) { bad += 1 }
+    if (p & 0x80) != and8(p, 0x80) { bad += 1 }
+    if (p | 0x80) != or8(p, 0x80) { bad += 1 }
+    if (p ^ 0x80) != xor8(p, 0x80) { bad += 1 }
+    if (p & 0xf0) != and8(p, 0xf0) { bad += 1 }
+    if (p | 0xf0) != or8(p, 0xf0) { bad += 1 }
+    if (p ^ 0xf0) != xor8(p, 0xf0) { bad += 1 }
+    if (p & 0x55) != and8(p, 0x55) { bad += 1 }
+    if (p | 0x55) != or8(p, 0x55) { bad += 1 }
+    if (p ^ 0x55) != xor8(p, 0x55) { bad += 1 }
+    if (p & 0xfe) != and8(p, 0xfe) { bad += 1 }
+    if (p | 0xfe) != or8(p, 0xfe) { bad += 1 }
+    if (p ^ 0xfe) != xor8(p, 0xfe) { bad += 1 }
+    if (p & 0x7f) != and8(p, 0x7f) { bad += 1 }
+    if (p | 0x7f) != or8(p, 0x7f) { bad += 1 }
+    if (p ^ 0x7f) != xor8(p, 0x7f) { bad += 1 }
+    if (p & 0x24) != and8(p, 0x24) { bad += 1 }
+    if (p | 0x24) != or8(p, 0x24) { bad += 1 }
+    if (p ^ 0x24) != xor8(p, 0x24) { bad += 1 }
+    return bad
+}
+
+main(): int {
+    bad: int = 0
+    bad += probe64(u64(0x0))
+    bad += probe64(u64(0x1))
+    bad += probe64(u64(0xffffffffffffffff))
+    bad += probe64(u64(0x123456789abcdef0))
+    bad += probe64(u64(0x8000000000000000))
+    bad += probe64(u64(0xf0f0f0f0f0f0f0f))
+    bad += probe64(u64(0xdeadbeefcafef00d))
+    bad += probe32(u32(0x0))
+    bad += probe32(u32(0x1))
+    bad += probe32(u32(0xffffffff))
+    bad += probe32(u32(0x12345678))
+    bad += probe32(u32(0x80000000))
+    bad += probe32(u32(0xf0f0f0f))
+    bad += probe32(u32(0xdeadbeef))
+    bad += probe8(u8(0x0))
+    bad += probe8(u8(0x1))
+    bad += probe8(u8(0xff))
+    bad += probe8(u8(0x5a))
+    bad += probe8(u8(0x80))
+    bad += probe8(u8(0xf))
+    bad += probe8(u8(0xa5))
+    if bad != 0 { return 1 + bad % 200 }
+    return 42
+}

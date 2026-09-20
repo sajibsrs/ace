@@ -745,6 +745,27 @@ static int const_int(Node* v, uint64_t* out) {
     return 1;
 }
 
+/*
+ * A read of a global const integer with a compile-time initializer is its
+ * value, not a load: yields the bits a slot load would produce. Narrow signed
+ * negatives are left to the load, whose extension differs from a plain move.
+ */
+static int const_global_imm(Sym* s, SType* t, Node* x, uint64_t* out) {
+    if (!s->is_global || !s->is_const || !s->init || !is_scalar(t) ||
+        is_floatt(t))
+        return 0;
+    SType* u = unwrap(t);
+    uint64_t c;
+    if (!u || u->kind != SK_PRIM || !const_int(x, &c)) return 0;
+    uint32_t size = ty_size(t);
+    if (size < 8) {
+        c &= (UINT64_C(1) << (size * 8)) - 1;
+        if (ty_is_signed(t) && (c >> (size * 8 - 1)) & 1) return 0;
+    }
+    *out = c;
+    return 1;
+}
+
 static void load_f64(Em* e, int is64, int vr, double d) {
     uint64_t bits = 0;
     if (is64) {
@@ -1592,6 +1613,56 @@ static int emit_arith_imm(Em* e, TokKind op, int rd, int ra, uint64_t imm,
     return 1;
 }
 
+/*
+ * AArch64 bitmask immediate: a run of ones rotated within a power-of-two
+ * element that is replicated across the register. Returns the N:immr:imms
+ * field (bits 22..10) or 0 when v is not encodable (0 and all-ones are not).
+ */
+static uint32_t logical_imm_field(uint64_t v, int sf) {
+    int width = sf ? 64 : 32;
+    uint64_t all = sf ? ~UINT64_C(0) : UINT64_C(0xFFFFFFFF);
+    v &= all;
+    if (v == 0 || v == all) return 0;
+    int size = width;
+    while (size > 2) {
+        int half = size / 2;
+        uint64_t mask = (UINT64_C(1) << half) - 1;
+        if (((v >> half) & mask) != (v & mask)) break;
+        size = half;
+    }
+    uint64_t mask = size == 64 ? ~UINT64_C(0) : (UINT64_C(1) << size) - 1;
+    uint64_t elem = v & mask;
+    int ones = __builtin_popcountll(elem);
+    uint64_t run = (UINT64_C(1) << ones) - 1; // ones < size: not all-ones
+    for (int r = 0; r < size; r++) {
+        uint64_t rol = r ? ((elem << r) | (elem >> (size - r))) & mask : elem;
+        if (rol != run) continue;
+        uint32_t n = size == 64 ? 1u : 0u;
+        uint32_t imms = (uint32_t)(((~(size - 1)) << 1) & 0x3F) |
+                        (uint32_t)(ones - 1);
+        return (n << 12) | ((uint32_t)r << 6) | imms;
+    }
+    return 0;
+}
+
+// rd = ra and/or/xor constant as one instruction; 0 when it does not encode
+static int emit_logical_imm(Em* e, TokKind op, int rd, int ra, uint64_t c,
+                            SType* t) {
+    int sf = scalar_bits(t) == 64;
+    uint32_t base;
+    switch (op) {
+    case T_AMP:   base = 0x12000000u; break;
+    case T_PIPE:  base = 0x32000000u; break;
+    case T_CARET: base = 0x52000000u; break;
+    default: return 0;
+    }
+    uint32_t field = logical_imm_field(c, sf);
+    if (!field) return 0;
+    ins(e, (sf ? 0x80000000u : 0) | base | (field << 10) |
+           ((uint32_t)ra << 5) | (uint32_t)rd);
+    return 1;
+}
+
 static void emit_cmp_imm(Em* e, int sf, int ra, uint64_t imm) {
     ins(e, (sf ? 0xF100001Fu : 0x7100001Fu) | ((uint32_t)imm << 10) |
            ((uint32_t)ra << 5));
@@ -1887,6 +1958,15 @@ static EV gen_binop(Em* e, Node* n) {
                 return (EV){ CLS_INT, d };
             }
             if (emit_arith_imm(e, op, xreg(d), ra, imm, t)) {
+                e->vti = d + 1;
+                return (EV){ CLS_INT, d };
+            }
+            if (a.idx < 0) e->vti = d; // release the unused result temp
+        }
+        if ((op == T_AMP || op == T_PIPE || op == T_CARET) &&
+            const_int(n->b, &imm)) {
+            int d = a.idx >= 0 ? a.idx : tmp_int(e);
+            if (emit_logical_imm(e, op, xreg(d), ra, imm, t)) {
                 e->vti = d + 1;
                 return (EV){ CLS_INT, d };
             }
@@ -4995,6 +5075,12 @@ static EV gen_expr(Em* e, Node* x) {
             em_err(e, x, "variable has no type");
             return (EV){ CLS_INT, tmp_int(e) };
         }
+        uint64_t folded;
+        if (const_global_imm(s, t, x, &folded)) {
+            int it = tmp_int(e);
+            load_imm(e, ty_size(t) == 8, xreg(it), folded);
+            return (EV){ CLS_INT, it };
+        }
         if (is_scalar(t)) return load_var(e, s, t, x);
         return (EV){ CLS_ADDR, gen_var_addr(e, s, x) };
     }
@@ -6871,7 +6957,8 @@ static int loop_regs_take(Em* e, Node* s) {
  * sum cannot overflow short of 131072 uses. A local below PROMO_MIN_WEIGHT
  * keeps its slot: one straight-line use costs a slot store and load, about
  * what saving and restoring a callee-saved register would, while every
- * further use is a round-trip through memory the register avoids.
+ * further use is a round-trip through memory the register avoids. The x9-x14
+ * class of a call-free function needs no save, so a single use qualifies there.
  */
 #define PROMO_MIN_WEIGHT 2
 
@@ -7037,11 +7124,11 @@ static void promo_scan(Em* e, Node* n, int depth) {
 }
 
 // heaviest remaining non-escaping candidate of one register class, taken
-static Node* promo_take(Em* e, int fp) {
+static Node* promo_take(Em* e, int fp, uint32_t min_weight) {
     PromoCand* best = NULL;
     for (int i = 0; i < e->npcands; i++) {
         PromoCand* c = &e->pcands[i];
-        if (!c->escaped && c->weight >= PROMO_MIN_WEIGHT &&
+        if (!c->escaped && c->weight >= min_weight &&
             is_floatt(node_sym(c->decl)->type) == fp &&
             (!best || c->weight > best->weight))
             best = c;
@@ -7071,13 +7158,15 @@ static void plan_promotion(Em* e, Node* f) {
     if (!e->scan_call) {
         int room = MAX_ITEMPS - temp_need(f->b) - TEMP_MARGIN;
         while (e->nxpreg < LEAF_REGS && e->nxpreg < room &&
-               (d = promo_take(e, 0)))
+               (d = promo_take(e, 0, 1)))
             e->xpreg_decl[e->nxpreg++] = d;
         e->vti_cap = MAX_ITEMPS - e->nxpreg;
     }
-    while (e->lreg_max + e->npreg < LOOP_REGS && (d = promo_take(e, 0)))
+    while (e->lreg_max + e->npreg < LOOP_REGS &&
+           (d = promo_take(e, 0, PROMO_MIN_WEIGHT)))
         e->preg_decl[e->npreg++] = d;
-    while (e->nfpreg < FP_PROMO_REGS && (d = promo_take(e, 1)))
+    while (e->nfpreg < FP_PROMO_REGS &&
+           (d = promo_take(e, 1, PROMO_MIN_WEIGHT)))
         e->fpreg_decl[e->nfpreg++] = d;
 }
 
