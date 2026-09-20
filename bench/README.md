@@ -37,6 +37,40 @@ reference: it does not implement Ace's exact shortest-format contract, so its
 checksum and output lengths are not semantic comparisons. Timings are manual
 measurements, not test-suite thresholds; run several times on an idle machine.
 
+### Current baseline
+
+Five consecutive `./bench/run-string.sh` runs on the reference Apple-arm64
+machine at `bf3fc42` (warm binaries, Ace release against C `-O2`). Each cell is
+the median; the range is the smallest to largest Ace/C over the five runs. Every
+parse checksum matched.
+
+| workload | Ace ns | C ns | Ace/C | range | C baseline |
+|---|---|---|---|---|---|
+| `compare-64` | 6.73 | 3.84 | 1.75x | 1.71–1.75x | `memcmp` |
+| `compare-4096` | 105.57 | 158.82 | 0.66x | 0.66–0.67x | `memcmp` |
+| `copy-64` | 6.08 | 3.38 | 1.80x | 1.65–1.83x | `memcpy` |
+| `copy-4096` | 79.93 | 74.07 | 1.08x | 1.03–1.11x | `memcpy` |
+| `find-4096` | 1,186.88 | 2,002.36 | 0.59x | 0.59x | `strstr` ¹ |
+| `parse-f64-short` | 46.05 | 26.70 | 1.72x | 1.72–1.74x | `strtod` |
+| `parse-f64-long` | 68.18 | 31.50 | 2.16x | 2.11–2.33x | `strtod` |
+| `parse-f64` | 51.77 | 27.92 | 1.85x | 1.80–1.91x | `strtod` |
+| `format-f64-shortest` | 224.83 | 801.82 | 0.28x | 0.28x | `snprintf("%.17g")` ² |
+
+¹ `strstr` scans a NUL-terminated string and has no length, so the ratio shows
+Ace's word-at-a-time search against a different contract, not parity with a
+length-aware search.
+² A different contract (see above): a reference cost, not a semantic comparison.
+
+The historical tables below are checkpoints for tracing when a number moved.
+Cells marked `≈` were not recorded then: an Ace time is the recorded ratio times
+the current C median (`compare-64` 3.84, `compare-4096` 159, `copy-64` 3.4,
+`copy-4096` 74, `find-4096` 2,002, `parse-f64` 27.9, `parse-f64-short` 26.7,
+`parse-f64-long` 31.5, `format-f64-shortest` 802 ns), and a ratio is the
+recorded Ace time over that C median. C's times held steady across every
+checkpoint that recorded them, so these derived cells carry the rounding of the
+recorded figure, not a new measurement. `compare-64`, `compare-4096`, and
+`copy-64` rows from before `e35a350` may be cold-run values (First-run cost).
+
 ### Initial string baseline
 
 Three consecutive runs on the reference Apple-arm64 development machine with
@@ -245,9 +279,9 @@ slots became per-temp, three runs each produced these medians:
 | workload | Ace | C `-O2` | Ace/C | was |
 |---|---|---|---|---|
 | CPU recurrence | 39.53 ms | 33.91 ms | 1.17x | 1.29x |
-| `find-4096` | | | 9.2x | |
-| `parse-f64` | | | 6.1x | |
-| `format-f64-shortest` | | | 0.60x | |
+| `find-4096` | ≈18,420 ns | ≈2,002 ns | 9.2x | not recorded |
+| `parse-f64` | ≈170 ns | ≈27.9 ns | 6.1x | not recorded |
+| `format-f64-shortest` | ≈481 ns | ≈802 ns | 0.60x | not recorded |
 
 The CPU loop body is at 37 instructions; `compare` and `copy` are unchanged
 within noise. `state` still round-trips through its slot every iteration.
@@ -257,12 +291,15 @@ within noise. `state` still round-trips through its slot every iteration.
 After compiler loop state moved to callee-saved registers, three runs each
 produced these string medians against C:
 
-| workload | Ace/C | was |
-|---|---|---|
-| `find-4096` | 5.77x | 9.15x |
-| `compare-4096` | 0.70x | 0.85x |
-| `copy-64` | about 1.9x | 2.2x |
-| `format-f64-shortest` | 0.57x | |
+| workload | Ace | Ace/C | was |
+|---|---|---|---|
+| `find-4096` | ≈11,550 ns | 5.77x | 9.15x |
+| `compare-4096` | ≈111 ns | 0.70x | 0.85x ¹ |
+| `copy-64` | ≈6.5 ns | about 1.9x | 2.2x |
+| `format-f64-shortest` | ≈457 ns | 0.57x | not recorded |
+
+¹ Probably a cold run: the Register-local checkpoint below measures 0.67x warm
+and 0.86x cold for this row.
 
 The CPU recurrence regressed in an alternating same-machine A/B, although its
 loop fell from 37 to 30 instructions:
@@ -292,10 +329,10 @@ three runs produced these medians:
 | workload | Ace | C `-O2` | Ace/C |
 |---|---|---|---|
 | CPU recurrence | 36.0 ms | 34.2 ms | 1.05x |
-| `find-4096` | | | 5.5x |
-| `copy-64` | | | 1.9x |
-| `parse-f64` | | | 5.2x |
-| `format-f64-shortest` | | | 0.49x |
+| `find-4096` | ≈11,010 ns | ≈2,002 ns | 5.5x |
+| `copy-64` | ≈6.5 ns | ≈3.4 ns | 1.9x |
+| `parse-f64` | ≈145 ns | ≈27.9 ns | 5.2x |
+| `format-f64-shortest` | ≈393 ns | ≈802 ns | 0.49x |
 
 That recovers the loop-register regression: `state` no longer round-trips
 through memory. `compare` alternates between two levels, and an alternating
@@ -357,8 +394,8 @@ unchanged:
 | workload | Ace | was | Ace/C | was |
 |---|---|---|---|---|
 | `parse-f64` | 101 ns | 141 ns | 3.6x | 5.0x |
-| `parse-f64-short` | 92 ns | 139 ns | | |
-| `format-f64-shortest` | 313 ns | 367 ns | | |
+| `parse-f64-short` | 92 ns | 139 ns | ≈3.4x | ≈5.2x |
+| `format-f64-shortest` | 313 ns | 367 ns | ≈0.39x | ≈0.46x |
 
 A sampled profile of short-input parse time before the change:
 
@@ -380,8 +417,8 @@ alternating runs produced these medians; format was unchanged:
 | workload | Ace | was | Ace/C | was |
 |---|---|---|---|---|
 | `parse-f64` | 87 ns | 100 ns | 3.2x | 3.6x |
-| `parse-f64-short` | 77 ns | 92 ns | | |
-| `parse-f64-long` | 112 ns | 118 ns | | |
+| `parse-f64-short` | 77 ns | 92 ns | ≈2.9x | ≈3.4x |
+| `parse-f64-long` | 112 ns | 118 ns | ≈3.6x | ≈3.7x |
 
 The exact-power tier takes four of the eight short inputs. A sampled profile
 of short inputs now reads:
@@ -403,9 +440,9 @@ and the string benchmark's text fell 1.3%:
 | workload | Ace | was | Ace/C | was |
 |---|---|---|---|---|
 | `parse-f64` | 61 ns | 87 ns | 2.2x | 3.2x |
-| `parse-f64-short` | 57 ns | 76 ns | | |
-| `parse-f64-long` | 79 ns | 112 ns | | |
-| `format-f64-shortest` | 303 ns | 314 ns | | |
+| `parse-f64-short` | 57 ns | 76 ns | ≈2.1x | ≈2.8x |
+| `parse-f64-long` | 79 ns | 112 ns | ≈2.5x | ≈3.6x |
+| `format-f64-shortest` | 303 ns | 314 ns | ≈0.38x | ≈0.39x |
 
 A sampled profile of short inputs now reads:
 
@@ -426,9 +463,9 @@ produced these medians; CPU, compare, and copy were unchanged:
 | workload | Ace | was | Ace/C |
 |---|---|---|---|
 | `find-4096` | 1,300 ns | 1,456 ns | 0.65x `strstr` |
-| `parse-f64-long` | 75 ns | 79 ns | |
-| `parse-f64` | 59 ns | 60 ns | |
-| `format-f64-shortest` | 297 ns | 303 ns | |
+| `parse-f64-long` | 75 ns | 79 ns | ≈2.4x |
+| `parse-f64` | 59 ns | 60 ns | ≈2.1x |
+| `format-f64-shortest` | 297 ns | 303 ns | ≈0.37x |
 
 Parse retired 7% fewer instructions in the earlier prototype with no cycle
 change, so its remaining cost is not instruction count.
@@ -441,10 +478,10 @@ against C `-O2`:
 | workload | Ace | Ace/C |
 |---|---|---|
 | `compare-64` | 11.5 ns | 3.0x ¹ |
-| `compare-4096` | | 0.85x ¹ |
-| `copy-64` | | 1.8x |
-| `copy-4096` | | 1.08x |
-| `find-4096` | | 0.65x |
+| `compare-4096` | ≈135 ns | 0.85x ¹ |
+| `copy-64` | ≈6.1 ns | 1.8x |
+| `copy-4096` | ≈80 ns | 1.08x |
+| `find-4096` | ≈1,300 ns | 0.65x |
 | `parse-f64` | 58.7 ns | 2.1x |
 | `parse-f64-short` | 54.9 ns | 2.1x |
 | `parse-f64-long` | 74.0 ns | 2.4x |
@@ -456,9 +493,9 @@ against C `-O2`:
 | CPU build | time | Ace/C |
 |---|---|---|
 | Ace release | 37.7 ms | 1.06x |
-| Ace checked | 35.5 ms | |
-| C `-O2` | 35.5 ms | |
-| C `-O0` | 41.4 ms | |
+| Ace checked | 35.5 ms | 1.00x |
+| C `-O2` | 35.5 ms | 1.00x |
+| C `-O0` | 41.4 ms | 1.17x |
 
 All checksums matched.
 
@@ -472,9 +509,9 @@ unchanged, and the string benchmark's text fell 5.3%:
 | workload | Ace | was | Ace/C | was |
 |---|---|---|---|---|
 | `parse-f64` | 52.4 ns | 58.8 ns | 1.9x | 2.1x |
-| `parse-f64-short` | 48.3 ns | 54.0 ns | | |
-| `parse-f64-long` | 71.0 ns | 74.3 ns | | |
-| `format-f64-shortest` | 262 ns | 296 ns | | |
+| `parse-f64-short` | 48.3 ns | 54.0 ns | ≈1.8x | ≈2.0x |
+| `parse-f64-long` | 71.0 ns | 74.3 ns | ≈2.3x | ≈2.4x |
+| `format-f64-shortest` | 262 ns | 296 ns | ≈0.33x | ≈0.37x |
 
 Gating the
 `nan`/`inf` checks behind the first byte alone measured no change. Constant
@@ -489,10 +526,10 @@ Five alternating runs of the string and CPU benchmarks, Ace release against C
 | workload | Ace | Ace/C |
 |---|---|---|
 | `compare-64` | 6.7 ns | 1.75x |
-| `compare-4096` | | 0.67x |
-| `copy-64` | | 1.73x |
-| `copy-4096` | | 1.08x |
-| `find-4096` | | 0.65x |
+| `compare-4096` | ≈107 ns | 0.67x |
+| `copy-64` | ≈5.9 ns | 1.73x |
+| `copy-4096` | ≈80 ns | 1.08x |
+| `find-4096` | ≈1,301 ns | 0.65x |
 | `parse-f64` | 52.5 ns | 1.85x `strtod` |
 | `parse-f64-short` | 47.8 ns | 1.81x |
 | `parse-f64-long` | 71.9 ns | 2.25x |
@@ -503,13 +540,15 @@ Five alternating runs of the string and CPU benchmarks, Ace release against C
 | CPU build | time | Ace/C |
 |---|---|---|
 | Ace release | 36.0 ms | 1.07x |
-| Ace checked | 37.1 ms | |
-| C `-O2` | 33.6 ms | |
-| C `-O0` | 40.9 ms | |
+| Ace checked | 37.1 ms | 1.10x |
+| C `-O2` | 33.6 ms | 1.00x |
+| C `-O0` | 40.9 ms | 1.22x |
 
 All checksums matched. The remaining gaps are small-buffer
-compare and copy and float parsing; the goal is to close them and surpass C
-where possible.
+compare and copy (1.75x and 1.80x, mostly benchmark-loop overhead) and float
+parsing (1.85x, 2.16x on long inputs); the goal is to close them and surpass C
+where possible. The Current baseline table at the top of this section is the
+comparison point for later changes.
 
 ## Calls
 
@@ -633,18 +672,22 @@ auto-vectorized `-O2` column is a reference, not a goal. Neither compiler
 vectorizes `dot-f64`'s reduction, because clang will not reassociate floating
 point without `-ffast-math`.
 
-### Initial hot-loop baseline
+### Current hot-loop baseline
 
-Five runs on the reference Apple-arm64 machine, medians in ns per element:
+Five runs on the reference Apple-arm64 machine at `bf3fc42`, medians in ns per
+element. `Ace/C` is against scalar C, the comparison target; `Ace/vector` is
+against auto-vectorized C, the ceiling explicit `simd` would chase:
 
-| workload | Ace | C scalar | Ace/C | C vector |
-|---|---|---|---|---|
-| `saxpy-f64` | 0.964 | 0.484 | 1.99x | 0.182 |
-| `saxpy-f32` | 0.965 | 0.484 | 1.99x | 0.092 |
-| `dot-f64` | 1.280 | 1.645 | 0.78x | 1.070 |
-| `particle-vec3` | 2.744 | 0.733 | 3.74x | 0.272 |
+| workload | Ace | C scalar | Ace/C | C vector | Ace/vector |
+|---|---|---|---|---|---|
+| `saxpy-f64` | 0.962 | 0.483 | 1.99x | 0.181 | 5.31x |
+| `saxpy-f32` | 0.962 | 0.483 | 1.99x | 0.092 | 10.46x |
+| `dot-f64` | 1.277 | 1.642 | 0.78x | 1.068 | 1.20x |
+| `particle-vec3` | 2.735 | 0.731 | 3.74x | 0.272 | 10.05x |
 
-Spreads were under 0.01 ns within each build. `dot-f64` is the one kernel where
+The first baseline (`283dc4f`: 0.964, 0.965, 1.280, and 2.744 ns for the four
+rows in order) is within 0.01 ns of these on every row, which is run-to-run
+noise, not a change. Spreads were under 0.005 ns within each build. `dot-f64` is the one kernel where
 neither compiler can vectorize and both are bound by the accumulator's
 dependency chain; Ace leads it. The `saxpy` pair reproduces the ad-hoc figures
 `TODO.md` records for this gap. `particle-vec3` is the widest: binding
