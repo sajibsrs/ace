@@ -161,6 +161,22 @@ These are baseline observations, not performance promises.
   compares. `x = x * 0.5 + 1.0` runs 2.7 ns against C's 1.7 because C fuses it
   into one `fmadd` (1.6 ns), not because of its constants. Whether Ace may fuse
   a multiply and add, which changes rounding, is undecided.
+- **Fused multiply-add** [new] — the backend never emits `fmadd`, so exact
+  products take Dekker splitting (about 17 flops; `math.pow` calls `trunc_low`
+  for it) and polynomial steps take two rounded operations. Carve: explicit
+  `math.fma(a, b, c)` as an `intrinsic` `f32`/`f64` overload set beside
+  `sqrt`, computing `a*b + c` with one rounding under round-to-nearest-even,
+  IEEE special values as the hardware gives them. It fuses nothing implicitly;
+  whether ordinary `a*b + c` may fuse stays the separate undecided question
+  above. arm64 lowers to `fmadd` (d or s); the existing intrinsics are unary and
+  in place, so a three-operand path evaluates operands left to right into temps
+  and returns in the first. Not constant-folded at first. Open: the x86-64
+  backend needs FMA3 or a correctly rounded software fallback; `fmsub` and
+  `fnmadd` forms are additive. Measured in C on this machine: an exact
+  product 2.7 ns with Dekker against 1.45 ns with `fma`, and a dependent
+  degree-8 Horner chain 24.7 against 16.8 ns (-32%). The `pow` gain is
+  estimated at 15-25% and unmeasured; a table-driven `pow` needs it, since its
+  accuracy proof assumes FMA.
 - **Hot-loop codegen gap** [new] — game and graphics kernels over global arrays
   run 1.1x (dot product) to 8x (by-value `Vec3` calls) scalar C `-O2` with
   vectorization off, and 2x to 30x C's NEON auto-vectorized output, which Ace
