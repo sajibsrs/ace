@@ -38,6 +38,47 @@ LOG_L5: const f64 = 1.818357216161805012e-01
 LOG_L6: const f64 = 1.531383769920937332e-01
 LOG_L7: const f64 = 1.479819860511658591e-01
 
+PIO4: const f64 = 7.85398163397448278999e-01
+SMALL_ARGUMENT: const f64 = 7.450580596923828125e-09
+MEDIUM_LIMIT: const f64 = 1647099.0
+INV_PIO2: const f64 = 6.36619772367581382433e-01
+PIO2_1: const f64 = 1.57079632673412561417e+00
+PIO2_1T: const f64 = 6.07710050650619224932e-11
+PIO2_2: const f64 = 6.07710050630396597660e-11
+PIO2_2T: const f64 = 2.02226624879595063154e-21
+PIO2_3: const f64 = 2.02226624871116645580e-21
+PIO2_3T: const f64 = 8.47842766036889956997e-32
+PIO2_A: const f64 = 1.5707963267948966
+PIO2_B: const f64 = 6.123233995736766e-17
+SPLIT: const f64 = 134217729.0
+
+SIN_S1: const f64 = -1.66666666666666324348e-01
+SIN_S2: const f64 = 8.33333333332248946124e-03
+SIN_S3: const f64 = -1.98412698298579493134e-04
+SIN_S4: const f64 = 2.75573137070700676789e-06
+SIN_S5: const f64 = -2.50507602534068634195e-08
+SIN_S6: const f64 = 1.58969099521155010221e-10
+
+COS_C1: const f64 = 4.16666666666666019037e-02
+COS_C2: const f64 = -1.38888888888741095749e-03
+COS_C3: const f64 = 2.48015872894767294178e-05
+COS_C4: const f64 = -2.75573143513906633035e-07
+COS_C5: const f64 = 2.08757232129817482790e-09
+COS_C6: const f64 = -1.13596475577881948265e-11
+
+/* 2/pi as 32-bit limbs of its binary fraction, most significant first: 1280 bits,
+ * enough for any finite f64 argument in the Payne-Hanek reduction below.
+ */
+TWO_OVER_PI: [40]u32 = [
+    0xA2F9836E, 0x4E441529, 0xFC2757D1, 0xF534DDC0, 0xDB629599, 0x3C439041,
+    0xFE5163AB, 0xDEBBC561, 0xB7246E3A, 0x424DD2E0, 0x06492EEA, 0x09D1921C,
+    0xFE1DEB1C, 0xB129A73E, 0xE88235F5, 0x2EBB4484, 0xE99C7026, 0xB45F7E41,
+    0x3991D639, 0x835339F4, 0x9C845F8B, 0xBDF9283B, 0x1FF897FF, 0xDE05980F,
+    0xEF2F118B, 0x5A0A6D1F, 0x6D367ECF, 0x27CB09B7, 0x4F463F66, 0x9E5FEA2D,
+    0x7527BAC7, 0xEBE5F17B, 0x3D0739F7, 0x8A5292EA, 0x6BFB5FB1, 0x1F8D5D08,
+    0x56033046, 0xFC7B6BAB, 0xF0CFBC20, 0x9AF4361D,
+]
+
 pub isnan(value: f64): bool {
     raw: u64 = bits.from_float(value)
     exponent: u64 = raw & u64(0x7FF0000000000000)
@@ -187,4 +228,232 @@ pub log(value: f64): f64 {
 
 pub log(value: f32): f32 {
     return f32(log(f64(value)))
+}
+
+kernel_sin(x: f64, y: f64, tail: bool): f64 {
+    z: f64 = x * x
+    v: f64 = z * x
+    r: f64 = SIN_S2 + z * (SIN_S3 + z * (SIN_S4 + z * (SIN_S5 + z * SIN_S6)))
+    if !tail {
+        return x + v * (SIN_S1 + z * r)
+    }
+    return x - ((z * (0.5 * y - v * r) - y) - v * SIN_S1)
+}
+
+kernel_cos(x: f64, y: f64): f64 {
+    z: f64 = x * x
+    r: f64 = z * (COS_C1 + z * (COS_C2 + z * (COS_C3 + z * (COS_C4 + z * (COS_C5 + z * COS_C6)))))
+    magnitude: f64 = x
+    if x < 0.0 {
+        magnitude = -x
+    }
+    if magnitude < 0.3 {
+        return 1.0 - (0.5 * z - (z * r - x * y))
+    }
+    qx: f64 = 0.28125
+    if magnitude <= 0.78125 {
+        // x/4 truncated to its high word, so the subtraction below stays exact.
+        qx = bits.to_float(((bits.from_float(magnitude) >> 32) - u64(0x00200000)) << 32)
+    }
+    hz: f64 = 0.5 * z - qx
+    return (1.0 - qx) - (hz - (z * r - x * y))
+}
+
+exponent_field(x: f64): int {
+    return int((bits.from_float(x) >> 52) & u64(0x7FF))
+}
+
+/* Cody-Waite reduction for 0 < x < 2^20 * pi/2: x = n * pi/2 + (y0 + y1). */
+reduce_medium(x: f64): (f64, f64, int) {
+    n: int = int(x * INV_PIO2 + 0.5)
+    fn: f64 = f64(n)
+    r: f64 = x - fn * PIO2_1
+    w: f64 = fn * PIO2_1T
+    a: f64 = r - w
+    j: int = exponent_field(x)
+    if j - exponent_field(a) > 16 {
+        t: f64 = r
+        w = fn * PIO2_2
+        r = t - w
+        w = fn * PIO2_2T - ((t - r) - w)
+        a = r - w
+        if j - exponent_field(a) > 49 {
+            t = r
+            w = fn * PIO2_3
+            r = t - w
+            w = fn * PIO2_3T - ((t - r) - w)
+            a = r - w
+        }
+    }
+    return a, (r - a) - w, n & 3
+}
+
+bit_at(limbs: []u64, k: int): u64 {
+    if k < 0 || k >= 320 {
+        return 0
+    }
+    return (limbs[usize(k / 32)] >> u64(k % 32)) & 1
+}
+
+/* Low part of the exact product a * b, given p = a * b rounded (Dekker). */
+product_error(a: f64, b: f64, p: f64): f64 {
+    ta: f64 = SPLIT * a
+    ah: f64 = ta - (ta - a)
+    al: f64 = a - ah
+    tb: f64 = SPLIT * b
+    bh: f64 = tb - (tb - b)
+    bl: f64 = b - bh
+    return ((ah * bh - p) + ah * bl + al * bh) + al * bl
+}
+
+/* Payne-Hanek reduction for x >= 2^20 * pi/2. With x = m * 2^e (m a 53-bit
+ * integer), x * 2/pi mod 4 needs only the limbs of 2/pi whose weight can reach
+ * the fraction or the two quotient bits; eight limbs give a 256-bit fixed-point
+ * sum whose truncation error, 2^-170 of the product, leaves over 100 good bits
+ * even when the fraction cancels to 2^-62 (the worst case for an f64).
+ */
+reduce_large(x: f64): (f64, f64, int) {
+    raw: u64 = bits.from_float(x)
+    e: int = exponent_field(x) - 1075
+    m: u64 = (raw & u64(0x000FFFFFFFFFFFFF)) | u64(0x0010000000000000)
+    ml: u64 = m & u64(0xFFFFFFFF)
+    mh: u64 = m >> 32
+    first: int = 0
+    if e >= 2 {
+        first = (e - 2) / 32
+    }
+    limbs: [10]u64 = [0 : 10]
+    for j: int in 0 .. 8 {
+        limb: u64 = u64(TWO_OVER_PI[usize(first + j)])
+        low: u64 = limb * ml
+        high: u64 = limb * mh
+        position: int = 7 - j
+        limbs[usize(position)] += low & u64(0xFFFFFFFF)
+        limbs[usize(position + 1)] += (low >> 32) + (high & u64(0xFFFFFFFF))
+        limbs[usize(position + 2)] += high >> 32
+    }
+    carry: u64 = 0
+    for j: int in 0 .. 10 {
+        sum: u64 = limbs[usize(j)] + carry
+        limbs[usize(j)] = sum & u64(0xFFFFFFFF)
+        carry = sum >> 32
+    }
+    // The product is an integer of weight 2^-fraction_bits; its bits at and
+    // above fraction_bits hold the quotient (only the low two matter).
+    fraction_bits: int = 256 + 32 * first - e
+    quotient: int = int(bit_at(limbs[..], fraction_bits) + 2 * bit_at(limbs[..], fraction_bits + 1))
+    negative: bool = bit_at(limbs[..], fraction_bits - 1) == 1
+    if negative {
+        // Fraction >= 1/2: round the quotient up and use 1 - fraction instead.
+        quotient = quotient + 1
+        carry = 1
+        for j: int in 0 .. 10 {
+            sum: u64 = (~limbs[usize(j)] & u64(0xFFFFFFFF)) + carry
+            limbs[usize(j)] = sum & u64(0xFFFFFFFF)
+            carry = sum >> 32
+        }
+    }
+    top: int = fraction_bits - 1
+    for top >= 0 && bit_at(limbs[..], top) == 0 {
+        top = top - 1
+    }
+    if top < 0 {
+        return 0.0, 0.0, quotient & 3
+    }
+    // The fraction as two exact 53-bit pieces, most significant first.
+    high_bits: u64 = 0
+    low_bits: u64 = 0
+    for t: int in 0 .. 53 {
+        high_bits = high_bits * 2 + bit_at(limbs[..], top - t)
+        low_bits = low_bits * 2 + bit_at(limbs[..], top - 53 - t)
+    }
+    fh: f64 = f64(high_bits) * bits.to_float(u64(1023 + top - 52 - fraction_bits) << 52)
+    fl: f64 = f64(low_bits) * bits.to_float(u64(1023 + top - 105 - fraction_bits) << 52)
+    // (fh + fl) * pi/2 as a double-double, using pi/2 = A + B + (C, negligible).
+    p: f64 = fh * PIO2_A
+    t: f64 = product_error(fh, PIO2_A, p) + (fh * PIO2_B + fl * PIO2_A)
+    y0: f64 = p + t
+    y1: f64 = t - (y0 - p)
+    if negative {
+        return -y0, -y1, quotient & 3
+    }
+    return y0, y1, quotient & 3
+}
+
+reduce(x: f64): (f64, f64, int) {
+    y0: f64 = 0.0
+    y1: f64 = 0.0
+    quarter: int = 0
+    if x < MEDIUM_LIMIT {
+        y0, y1, quarter = reduce_medium(x)
+    } else {
+        y0, y1, quarter = reduce_large(x)
+    }
+    return y0, y1, quarter
+}
+
+pub sin(value: f64): f64 {
+    if isnan(value) || isinf(value) {
+        return bits.to_float(u64(0x7FF8000000000000))
+    }
+    magnitude: f64 = value
+    if value < 0.0 {
+        magnitude = -value
+    }
+    if magnitude <= PIO4 {
+        if magnitude < SMALL_ARGUMENT {
+            return value
+        }
+        return kernel_sin(value, 0.0, false)
+    }
+    y0: f64, y1: f64, quarter: int = reduce(magnitude)
+    result: f64 = 0.0
+    if quarter == 0 {
+        result = kernel_sin(y0, y1, true)
+    } else if quarter == 1 {
+        result = kernel_cos(y0, y1)
+    } else if quarter == 2 {
+        result = -kernel_sin(y0, y1, true)
+    } else {
+        result = -kernel_cos(y0, y1)
+    }
+    if value < 0.0 {
+        return -result
+    }
+    return result
+}
+
+pub sin(value: f32): f32 {
+    return f32(sin(f64(value)))
+}
+
+pub cos(value: f64): f64 {
+    if isnan(value) || isinf(value) {
+        return bits.to_float(u64(0x7FF8000000000000))
+    }
+    magnitude: f64 = value
+    if value < 0.0 {
+        magnitude = -value
+    }
+    if magnitude <= PIO4 {
+        if magnitude < SMALL_ARGUMENT {
+            return 1.0
+        }
+        return kernel_cos(magnitude, 0.0)
+    }
+    y0: f64, y1: f64, quarter: int = reduce(magnitude)
+    if quarter == 0 {
+        return kernel_cos(y0, y1)
+    }
+    if quarter == 1 {
+        return -kernel_sin(y0, y1, true)
+    }
+    if quarter == 2 {
+        return -kernel_cos(y0, y1)
+    }
+    return kernel_sin(y0, y1, true)
+}
+
+pub cos(value: f32): f32 {
+    return f32(cos(f64(value)))
 }

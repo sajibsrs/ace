@@ -43,12 +43,14 @@ They are compiler-provided instructions (`fsqrt`, `frintm`, `frintp`): no
 allocation, no libm call, no errno or flag. Converting the result to an integer
 remains an explicit cast.
 
-Exponential and logarithm are `f32` and `f64` overloads that return their
-operand's type:
+Exponential, logarithm, sine, and cosine are `f32` and `f64` overloads that
+return their operand's type:
 
 ```ace
 growth: f64 = math.exp(0.5)
 level: f32 = math.log(single)
+height: f64 = math.sin(angle)   // radians
+across: f32 = math.cos(single)
 ```
 
 - Every `f64` result is within 1 ULP of the exact result over the whole finite
@@ -58,9 +60,15 @@ level: f32 = math.log(single)
   `+inf` and underflow is gradual through subnormals.
 - `log(±0)` is `-inf`, `log` of a negative value is a NaN, `log(1)` is `+0`, and
   `log(+inf)` is `+inf`. A NaN operand returns a NaN.
+- `sin(±0)` is `±0`, `cos(±0)` is `1`, and `sin` or `cos` of an infinity is a
+  NaN. Both cover the full finite domain: large arguments are reduced exactly
+  (Payne–Hanek) rather than approximately, so `sin(1.0e300)` is as accurate as
+  `sin(1.0)`.
 
 They are pure Ace: no libm call, no errno or floating-point flag, and the same
-result on every target. They currently run at about 30 ns per call.
+result on every target. They currently run at about 30 ns per call for `exp` and
+`log`, 25–50 ns for `sin` and `cos`, and several hundred ns for arguments beyond
+1.6e6.
 
 Float classification uses exact overloads for `f32` and `f64`:
 

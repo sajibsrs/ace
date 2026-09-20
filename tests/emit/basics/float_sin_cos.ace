@@ -1,0 +1,192 @@
+/* math.sin and math.cos are within 1 ULP over the whole finite domain, including exact Payne-Hanek reduction of huge
+ * and worst-case arguments, with C99 Annex F special cases, for both widths.
+ */
+
+// expect-exit: 42
+
+import bits
+import math
+
+close64(got: f64, want: u64): bool {
+    have: u64 = bits.from_float(got)
+    if have > want {
+        return have - want <= 1
+    }
+    return want - have <= 1
+}
+
+close32(got: f32, want: u32): bool {
+    have: u32 = bits.from_float(got)
+    if have > want {
+        return have - want <= 1
+    }
+    return want - have <= 1
+}
+
+main(): int {
+    infinity: f64 = bits.to_float(u64(0x7FF0000000000000))
+    negative_infinity: f64 = bits.to_float(u64(0xFFF0000000000000))
+    negative_zero: f64 = bits.to_float(u64(0x8000000000000000))
+    quiet_nan: f64 = bits.to_float(u64(0x7FF8000000000000))
+    smallest: f64 = bits.to_float(u64(1))
+
+    // Special cases: exact results, not tolerances.
+    if bits.from_float(math.sin(0.0)) != u64(0) ||
+       bits.from_float(math.sin(negative_zero)) != u64(0x8000000000000000) ||
+       bits.from_float(math.cos(0.0)) != u64(0x3FF0000000000000) ||
+       bits.from_float(math.cos(negative_zero)) != u64(0x3FF0000000000000) {
+        return 1
+    }
+    if !math.isnan(math.sin(infinity)) || !math.isnan(math.sin(negative_infinity)) ||
+       !math.isnan(math.cos(infinity)) || !math.isnan(math.cos(negative_infinity)) ||
+       !math.isnan(math.sin(quiet_nan)) || !math.isnan(math.cos(quiet_nan)) {
+        return 2
+    }
+    // Tiny arguments: sin(x) is x and cos(x) is 1.
+    if math.sin(smallest) != smallest || math.sin(0.0 - smallest) != 0.0 - smallest ||
+       math.cos(smallest) != 1.0 || math.sin(1.0e-10) != 1.0e-10 {
+        return 3
+    }
+
+    // sin, f64 (regular, negative, huge, and worst-case arguments)
+    if !close64(math.sin(0.1), u64(0x3fb98eaecb8bcb2c)) ||
+       !close64(math.sin(0.5), u64(0x3fdeaee8744b05f0)) ||
+       !close64(math.sin(0.7853981633974483), u64(0x3fe6a09e667f3bcc)) ||
+       !close64(math.sin(0.8), u64(0x3fe6f494c2bffecd)) ||
+       !close64(math.sin(1.0), u64(0x3feaed548f090cee)) ||
+       !close64(math.sin(1.5707963267948966), u64(0x3ff0000000000000)) ||
+       !close64(math.sin(2.0), u64(0x3fed18f6ead1b446)) ||
+       !close64(math.sin(3.0), u64(0x3fc210386db6d55b)) ||
+       !close64(math.sin(3.141592653589793), u64(0x3ca1a62633145c07)) ||
+       !close64(math.sin(4.0), u64(0xbfe837b9dddc1eae)) ||
+       !close64(math.sin(5.0), u64(0xbfeeaf81f5e09933)) ||
+       !close64(math.sin(6.283185307179586), u64(0xbcb1a62633145c07)) ||
+       !close64(math.sin(10.0), u64(0xbfe1689ef5f34f52)) ||
+       !close64(math.sin(100.0), u64(0xbfe03425b78c4db8)) ||
+       !close64(math.sin(1000.0), u64(0x3fea75cc150a206b)) ||
+       !close64(math.sin(12345.678), u64(0xbfe687d5890974a5)) ||
+       !close64(math.sin(100000.0), u64(0x3fa24daa9c527e96)) ||
+       !close64(math.sin(1000000.0), u64(0xbfd6664b2568d867)) ||
+       !close64(math.sin(1647098.9), u64(0xbfdaa193ef3e2661)) ||
+       !close64(math.sin(1647099.5), u64(0x3fc5c2b9114232e8)) ||
+       !close64(math.sin(2000000.0), u64(0xbfe4fb9c969ba6ef)) ||
+       !close64(math.sin(1000000000.0), u64(0x3fe1778cae83c69b)) ||
+       !close64(math.sin(1000000000000000.0), u64(0x3feb76f88136ceba)) ||
+       !close64(math.sin(1.0e22), u64(0xbfeb453ab76bf397)) ||
+       !close64(math.sin(1.0e100), u64(0xbfd85c5e5b929359)) ||
+       !close64(math.sin(1.0e200), u64(0xbfe49b644938c64c)) ||
+       !close64(math.sin(1.7976931348623157e308), u64(0x3f7452fc98b34e97)) ||
+       !close64(math.sin(1.0e-10), u64(0x3ddb7cdfd9d7bdbb)) ||
+       !close64(math.sin(2.5e-05), u64(0x3efa36e2eb1088c7)) ||
+       !close64(math.sin(-0.5), u64(0xbfdeaee8744b05f0)) ||
+       !close64(math.sin(-2.0), u64(0xbfed18f6ead1b446)) ||
+       !close64(math.sin(-1.0e22), u64(0x3feb453ab76bf397)) ||
+       !close64(math.sin(-1.0e300), u64(0x3fea2c16b010e385)) ||
+       !close64(math.sin(bits.to_float(u64(0x7506AC5B262CA1FF))), u64(0x3ff0000000000000)) ||
+       !close64(math.sin(bits.to_float(u64(0x7516AC5B262CA1FF))), u64(0xbc314ae72e6ba22f)) ||
+       !close64(math.sin(bits.to_float(u64(0x416B951F1572EBA5))), u64(0xbff0000000000000)) ||
+       !close64(math.sin(bits.to_float(u64(0x482504CAC51F1EAF))), u64(0xbff0000000000000)) ||
+       !close64(math.sin(bits.to_float(u64(0x7526AC5B262CA1FF))), u64(0x3c414ae72e6ba22f)) ||
+       !close64(math.sin(bits.to_float(u64(0x7DEE009C53148BE1))), u64(0x3ff0000000000000)) ||
+       !close64(math.sin(bits.to_float(u64(0x6404C96C11134D36))), u64(0xbff0000000000000)) ||
+       !close64(math.sin(bits.to_float(u64(0x75BCFE482285F8ED))), u64(0xbff0000000000000)) ||
+       !close64(math.sin(bits.to_float(u64(0x6A7DB41F3CB71D7B))), u64(0x3ff0000000000000)) ||
+       !close64(math.sin(bits.to_float(u64(0x4C4E7E44A78AC18C))), u64(0xbff0000000000000)) ||
+       !close64(math.sin(bits.to_float(u64(0x417B951F1572EBA5))), u64(0x3c4f54f5227a4e84)) ||
+       !close64(math.sin(bits.to_float(u64(0x526C45CD11154DFD))), u64(0x3ff0000000000000)) ||
+       !close64(math.sin(bits.to_float(u64(0x483504CAC51F1EAF))), u64(0x3c50cb604d34f341)) ||
+       !close64(math.sin(bits.to_float(u64(0x66583009E2E9E2EB))), u64(0x3ff0000000000000)) ||
+       !close64(math.sin(bits.to_float(u64(0x68B29888128E5D23))), u64(0x3ff0000000000000)) ||
+       !close64(math.sin(bits.to_float(u64(0x45305A5ACABF7F18))), u64(0xbd15d2c235373e42)) {
+        return 4
+    }
+    // cos, f64
+    if !close64(math.cos(0.1), u64(0x3fefd712f9a817c1)) ||
+       !close64(math.cos(0.5), u64(0x3fec1528065b7d50)) ||
+       !close64(math.cos(0.7853981633974483), u64(0x3fe6a09e667f3bcd)) ||
+       !close64(math.cos(0.8), u64(0x3fe64b6bde719865)) ||
+       !close64(math.cos(1.0), u64(0x3fe14a280fb5068c)) ||
+       !close64(math.cos(1.5707963267948966), u64(0x3c91a62633145c07)) ||
+       !close64(math.cos(2.0), u64(0xbfdaa22657537205)) ||
+       !close64(math.cos(3.0), u64(0xbfefae04be85e5d2)) ||
+       !close64(math.cos(3.141592653589793), u64(0xbff0000000000000)) ||
+       !close64(math.cos(4.0), u64(0xbfe4eaa606db24c1)) ||
+       !close64(math.cos(5.0), u64(0x3fd22785706b4ad9)) ||
+       !close64(math.cos(6.283185307179586), u64(0x3ff0000000000000)) ||
+       !close64(math.cos(10.0), u64(0xbfead9ac890c6b1f)) ||
+       !close64(math.cos(100.0), u64(0x3feb981dbf665fdf)) ||
+       !close64(math.cos(1000.0), u64(0x3fe1ff026793f1bb)) ||
+       !close64(math.cos(12345.678), u64(0x3fe6b94c3bbe24b8)) ||
+       !close64(math.cos(100000.0), u64(0xbfeffac3841b3da7)) ||
+       !close64(math.cos(1000000.0), u64(0x3fedf9df9906d32c)) ||
+       !close64(math.cos(1647098.9), u64(0x3fed19186ae7de36)) ||
+       !close64(math.cos(1647099.5), u64(0x3fef88c02ffc9f9e)) ||
+       !close64(math.cos(2000000.0), u64(0x3fe82908d6687144)) ||
+       !close64(math.cos(1000000000.0), u64(0x3feacff8c7364234)) ||
+       !close64(math.cos(1000000000000000.0), u64(0xbfe06c154609d33f)) ||
+       !close64(math.cos(1.0e22), u64(0x3fe0be2cef01c8f4)) ||
+       !close64(math.cos(1.0e100), u64(0x3fed9757496841f5)) ||
+       !close64(math.cos(1.0e200), u64(0x3fe87b4df51f679e)) ||
+       !close64(math.cos(1.7976931348623157e308), u64(0xbfefffe62ecfab75)) ||
+       !close64(math.cos(1.0e-10), u64(0x3ff0000000000000)) ||
+       !close64(math.cos(2.5e-05), u64(0x3fefffffffd50ce2)) ||
+       !close64(math.cos(-0.5), u64(0x3fec1528065b7d50)) ||
+       !close64(math.cos(-2.0), u64(0xbfdaa22657537205)) ||
+       !close64(math.cos(-1.0e22), u64(0x3fe0be2cef01c8f4)) ||
+       !close64(math.cos(-1.0e300), u64(0xbfe2699022adc4c1)) ||
+       !close64(math.cos(bits.to_float(u64(0x7506AC5B262CA1FF))), u64(0xbc214ae72e6ba22f)) ||
+       !close64(math.cos(bits.to_float(u64(0x7516AC5B262CA1FF))), u64(0xbff0000000000000)) ||
+       !close64(math.cos(bits.to_float(u64(0x416B951F1572EBA5))), u64(0xbc3f54f5227a4e84)) ||
+       !close64(math.cos(bits.to_float(u64(0x482504CAC51F1EAF))), u64(0xbc40cb604d34f341)) ||
+       !close64(math.cos(bits.to_float(u64(0x7526AC5B262CA1FF))), u64(0x3ff0000000000000)) ||
+       !close64(math.cos(bits.to_float(u64(0x7DEE009C53148BE1))), u64(0x3c4295a3b0a64b1d)) ||
+       !close64(math.cos(bits.to_float(u64(0x6404C96C11134D36))), u64(0x3c46ec67bcf77522)) ||
+       !close64(math.cos(bits.to_float(u64(0x75BCFE482285F8ED))), u64(0xbc4d08f59c32bfa3)) ||
+       !close64(math.cos(bits.to_float(u64(0x6A7DB41F3CB71D7B))), u64(0x3c4e09878d22e29d)) ||
+       !close64(math.cos(bits.to_float(u64(0x4C4E7E44A78AC18C))), u64(0x3c4ed415f54c8cb8)) ||
+       !close64(math.cos(bits.to_float(u64(0x417B951F1572EBA5))), u64(0xbff0000000000000)) ||
+       !close64(math.cos(bits.to_float(u64(0x526C45CD11154DFD))), u64(0x3c501242876d7c1b)) ||
+       !close64(math.cos(bits.to_float(u64(0x483504CAC51F1EAF))), u64(0xbff0000000000000)) ||
+       !close64(math.cos(bits.to_float(u64(0x66583009E2E9E2EB))), u64(0xbc5104830400912a)) ||
+       !close64(math.cos(bits.to_float(u64(0x68B29888128E5D23))), u64(0xbcc1a1b3ceaa69db)) ||
+       !close64(math.cos(bits.to_float(u64(0x45305A5ACABF7F18))), u64(0x3ff0000000000000)) {
+        return 5
+    }
+    // sin, f32
+    if !close32(math.sin(f32(1.0)), u32(0x3f576aa4)) ||
+       !close32(math.sin(f32(0.5)), u32(0x3ef57744)) ||
+       !close32(math.sin(f32(3.0)), u32(0x3e1081c3)) ||
+       !close32(math.sin(f32(100.0)), u32(0xbf01a12e)) ||
+       !close32(math.sin(f32(100000.0)), u32(0x3d126d55)) ||
+       !close32(math.sin(f32(10000000000.0)), u32(0xbef99a64)) ||
+       !close32(math.sin(f32(-2.5)), u32(0xbf193578)) {
+        return 6
+    }
+    // cos, f32
+    if !close32(math.cos(f32(1.0)), u32(0x3f0a5140)) ||
+       !close32(math.cos(f32(0.5)), u32(0x3f60a940)) ||
+       !close32(math.cos(f32(3.0)), u32(0xbf7d7026)) ||
+       !close32(math.cos(f32(100.0)), u32(0x3f5cc0ee)) ||
+       !close32(math.cos(f32(100000.0)), u32(0xbf7fd61c)) ||
+       !close32(math.cos(f32(10000000000.0)), u32(0x3f5f84c5)) ||
+       !close32(math.cos(f32(-2.5)), u32(0xbf4d17bf)) {
+        return 7
+    }
+
+    // Function values select the same overloads.
+    sin64: (f64): f64 = math.sin
+    cos64: (f64): f64 = math.cos
+    sin32: (f32): f32 = math.sin
+    cos32: (f32): f32 = math.cos
+    if bits.from_float(sin64(0.0)) != u64(0) || bits.from_float(cos64(0.0)) != u64(0x3FF0000000000000) ||
+       bits.from_float(sin32(f32(0.0))) != u32(0) || bits.from_float(cos32(f32(0.0))) != u32(0x3F800000) {
+        return 8
+    }
+    // Odd and even symmetry holds bit for bit.
+    x: f64 = 1.0e10
+    if bits.from_float(math.sin(0.0 - x)) != bits.from_float(0.0 - math.sin(x)) ||
+       bits.from_float(math.cos(0.0 - x)) != bits.from_float(math.cos(x)) {
+        return 9
+    }
+    return 42
+}
