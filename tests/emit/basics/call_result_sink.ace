@@ -1,0 +1,208 @@
+// expect-exit: 42
+// A register-returned call result is stored straight into a frame-resident
+// destination; other destinations and shapes keep the staged copy.
+
+MASK: const usize = 0x7FFFFFFF
+
+Small: struct {
+    v: usize,
+}
+
+Pair: struct {
+    a: usize,
+    b: usize,
+}
+
+Vec3: struct {
+    x: f64,
+    y: f64,
+    z: f64,
+}
+
+Vec2: struct {
+    x: f32,
+    y: f32,
+}
+
+Odd: struct {
+    a: u32,
+    b: u32,
+    c: u32,
+}
+
+Big: struct {
+    a: usize,
+    b: usize,
+    c: usize,
+}
+
+Outer: struct {
+    tag: usize,
+    p: Pair,
+}
+
+global_pair: Pair
+
+// The object's first function label is the section, so it stays a dummy.
+first(): usize {
+    return 0
+}
+
+small_step(s: Small): Small {
+    return Small {v = (s.v * 3 + 1) & MASK}
+}
+
+pair_step(p: Pair): Pair {
+    return Pair {a = (p.a * 3 + p.b) & MASK, b = (p.b + 1) & MASK}
+}
+
+swap(p: Pair): Pair {
+    return Pair {a = p.b, b = p.a}
+}
+
+vec_add(a: Vec3, b: Vec3): Vec3 {
+    return Vec3 {x = a.x + b.x, y = a.y + b.y, z = a.z + b.z}
+}
+
+vec2_add(a: Vec2, b: Vec2): Vec2 {
+    return Vec2 {x = a.x + b.x, y = a.y + b.y}
+}
+
+odd_step(o: Odd): Odd {
+    return Odd {a = o.a + 1, b = o.b + 2, c = o.c + 3}
+}
+
+big_step(b: Big): Big {
+    return Big {a = b.a + 1, b = b.b + 2, c = b.c + 3}
+}
+
+divmod(a: usize, b: usize): (usize, usize) {
+    return a / b, a % b
+}
+
+halves(a: f64): (f64, f64) {
+    return a / 2.0, a * 2.0
+}
+
+flagged(a: usize): (usize, bool) {
+    return a + 1, a > 5
+}
+
+sink_small(s: Small): Small {
+    t: Small = s
+    t = small_step(t)
+    return t
+}
+
+sink_pair(p: Pair): Pair {
+    t: Pair = p
+    t = pair_step(t)
+    return t
+}
+
+sink_vec(a: Vec3, b: Vec3): Vec3 {
+    t: Vec3 = a
+    t = vec_add(t, b)
+    return t
+}
+
+sink_divmod(a: usize, b: usize): (usize, usize) {
+    q: usize, r: usize = divmod(a, b)
+    return q + 1, r + 1
+}
+
+main(): int {
+    if first() != 0 {
+        return 100
+    }
+    sm: Small = sink_small(Small {v = 2})
+    sp: Pair = sink_pair(Pair {a = 2, b = 3})
+    sv: Vec3 = sink_vec(Vec3 {x = 1.0, y = 2.0, z = 3.0}, Vec3 {x = 1.0, y = 1.0, z = 1.0})
+    dq: usize, dr: usize = sink_divmod(100, 7)
+    if sm.v != 7 || sp.a != 9 || sp.b != 4 || sv.x != 2.0 || sv.y != 3.0 ||
+       sv.z != 4.0 || dq != 15 || dr != 3 {
+        return 101
+    }
+    s: Small = Small {v = 1}
+    s = small_step(s)
+    s = small_step(s)
+    if s.v != 13 {
+        return 1
+    }
+
+    p: Pair = Pair {a = 1, b = 2}
+    p = pair_step(p)
+    if p.a != 5 || p.b != 3 {
+        return 2
+    }
+    p = swap(p)
+    if p.a != 3 || p.b != 5 {
+        return 3
+    }
+    p = pair_step(pair_step(p))
+    if p.a != 48 || p.b != 7 {
+        return 4
+    }
+
+    a: Vec3 = Vec3 {x = 1.0, y = 2.0, z = 3.0}
+    a = vec_add(a, Vec3 {x = 10.0, y = 20.0, z = 30.0})
+    if a.x != 11.0 || a.y != 22.0 || a.z != 33.0 {
+        return 5
+    }
+
+    h: Vec2 = Vec2 {x = 1.5, y = 2.5}
+    h = vec2_add(h, h)
+    if h.x != 3.0 || h.y != 5.0 {
+        return 6
+    }
+
+    d: Pair = swap(Pair {a = 7, b = 9})
+    if d.a != 9 || d.b != 7 {
+        return 7
+    }
+
+    o: Outer = Outer {tag = 5, p = Pair {a = 2, b = 3}}
+    o.p = pair_step(o.p)
+    if o.tag != 5 || o.p.a != 9 || o.p.b != 4 {
+        return 8
+    }
+
+    global_pair = pair_step(Pair {a = 1, b = 1})
+    if global_pair.a != 4 || global_pair.b != 2 {
+        return 9
+    }
+
+    q: usize, r: usize = divmod(100, 7)
+    if q != 14 || r != 2 {
+        return 10
+    }
+    lo: f64, hi: f64 = halves(3.0)
+    if lo != 1.5 || hi != 6.0 {
+        return 11
+    }
+    n: usize, big: bool = flagged(9)
+    if n != 10 || !big {
+        return 12
+    }
+
+    od: Odd = Odd {a = 1, b = 2, c = 3}
+    od = odd_step(od)
+    if od.a != 2 || od.b != 4 || od.c != 6 {
+        return 13
+    }
+    bg: Big = Big {a = 1, b = 2, c = 3}
+    bg = big_step(bg)
+    if bg.a != 2 || bg.b != 4 || bg.c != 6 {
+        return 14
+    }
+
+    i: usize = 0
+    for k: usize in 0 .. 3 {
+        i = i + k
+        s = small_step(s)
+    }
+    if s.v != 364 {
+        return 15
+    }
+    return 42
+}

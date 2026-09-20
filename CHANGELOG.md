@@ -432,6 +432,15 @@ current normative rules, and Git preserves patch-level detail.
   Other shapes (packed sub-8-byte fields, missing fields, call-bearing leaves,
   sret) keep the temp path. `struct-8` 9.3 to 7.6, `struct-16` 9.8 to 7.5,
   `struct-hfa` 13.7 to 12.3, `tuple-return` 16.4 to 12.9 ns.
+- A call whose result returns in registers as whole 8-byte chunks (an HFA, or a
+  struct or tuple whose size is a multiple of 8) stores them straight into a
+  frame-resident local destination instead of a staged temp plus copy: `x = f()`
+  and `x: T = f()` into a plain local slot or a field of one, and typed tuple
+  destructuring into whole 8-byte scalar binders (`gen_call_to_slot`,
+  `gen_call_to_binders`). A one-shot `call_sink` armed by the statement is
+  consumed by `emit_call` only for the matching call node and return type, so
+  nested calls in arguments never take it. `struct-8` 7.6 to 6.1, `struct-16`
+  7.5 to 5.5, `struct-hfa` 12.3 to 9.8, `tuple-return` 13.0 to 11.6 ns.
 - Fixed a multi-register return with a pending `defer` returning a corrupted
   second register: `emit_defers` addressed save-area unit w above the slot
   (`retsave_off + w * 8`), which fell below `sp`, instead of within it

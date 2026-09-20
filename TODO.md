@@ -108,16 +108,19 @@ These are baseline observations, not performance promises.
 - **Caller-saved promotion across calls** [new] — non-leaf functions still
   keep every promoted local in x19-x28; locals not live across any call could
   use x9-x14 given per-call liveness.
-- **Call and tuple-return plumbing** [new] — the caller stores returned
-  registers to a temp and copies them to the destination, spills argument
+- **Call and tuple-return plumbing** [new] — the caller spills argument
   addresses to slots, and incoming HFA parameters are spilled and reloaded per
   use. A returned literal or tuple with packed sub-8-byte fields, a `(f64,
-  bool)` tuple, or a call in a leaf is still built in a frame temp and reloaded,
-  and `bool` locals and a string parameter's pointer and length stay in stack
-  slots inside loops.
+  bool)` tuple, or a call in a leaf is still built in a frame temp and reloaded.
+  A returned struct whose size is not a multiple of 8, a tuple with a
+  non-8-byte member, a call assigned to a non-local destination (a pointer
+  target, an index, a global), and `q, r = f()` into existing variables still
+  stage the result in a temp and copy it. `bool` locals and a string
+  parameter's pointer and length stay in stack slots inside loops.
   `bench/calls.ace` measures it: the by-value 8- and 16-byte structs, the
-  three-`f64` aggregate, and the tuple return run 1.8x to 8.5x noinline C
-  `-O2`. Next: write returned registers directly into a local destination.
+  three-`f64` aggregate, and the tuple return run 1.6x to 6.8x noinline C
+  `-O2`. Next: load frame-resident aggregate arguments straight from their
+  slots.
 - **Remaining immediate and destination forms** [new] — declarations with an
   initializer still compute through a temp, and a constant on the left of a
   compare or in the middle of a chain still takes a register.

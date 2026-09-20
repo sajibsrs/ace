@@ -225,15 +225,13 @@ typedef struct {
     uint32_t    offset, reloff;
 } Sec;
 
-static void reloc_add(Sec* s, uint32_t off, ESym* sym, int pcrel, int len,
-                      int ext, uint32_t type) {
+static void reloc_add(Sec* s, uint32_t off, ESym* sym, int pcrel, int len, int ext, uint32_t type) {
     if (s->nrl == s->crl) {
         s->crl = s->crl ? s->crl * 2 : 8;
         s->rl = realloc(s->rl, (size_t)s->crl * sizeof(Rel));
         if (!s->rl) oom();
     }
-    s->rl[s->nrl++] = (Rel){ off, sym, (uint8_t)!!pcrel, (uint8_t)len,
-                             (uint8_t)!!ext, (uint8_t)type };
+    s->rl[s->nrl++] = (Rel){ off, sym, (uint8_t)!!pcrel, (uint8_t)len, (uint8_t)!!ext, (uint8_t)type };
 }
 
 static uint32_t sym_hash(const char* p, uint32_t len) {
@@ -290,8 +288,7 @@ static ESym* sym_intern(SymTab* t, const char* p, uint32_t len) {
 }
 
 // Define at the section cursor; bss grows its size cursor instead of data.
-static ESym* sym_define(SymTab* t, Sec* secs, const char* p, uint32_t len,
-                        int ext, Sec* in) {
+static ESym* sym_define(SymTab* t, Sec* secs, const char* p, uint32_t len, int ext, Sec* in) {
     ESym* s = sym_intern(t, p, len);
     if (s->type) return s; // redefinition is a sema error; keep the first
     s->type = N_SECT_ | (ext ? N_EXT_ : 0);
@@ -429,6 +426,12 @@ typedef struct {
     struct { Node* call; Node* at; } *defers; // captured defers, source order
     int      ndefers, cdefers;
     uint32_t retsave_off; // result-register save area across deferred calls
+    // one-shot destination for a register-returned call result: emit_call
+    // stores unit w at frame depth sink_off[w] instead of staging a temp
+    Node*    sink_call;
+    SType*   sink_ret;
+    uint32_t sink_off[4];
+    int      sink_n, sink_done;
     LineRow* lines;
     int      nlines, clines;
     DebugFn* debug_fns;
@@ -438,9 +441,7 @@ typedef struct {
 
 static void em_err(Em* e, Node* n, const char* fmt, ...) {
     va_list ap;
-    fprintf(stderr, "%s:%d:%d: error: ",
-            n && n->path ? n->path : e->d->path,
-            n ? n->line : 0, n ? n->col : 0);
+    fprintf(stderr, "%s:%d:%d: error: ", n && n->path ? n->path : e->d->path, n ? n->line : 0, n ? n->col : 0);
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
@@ -498,8 +499,7 @@ static void line_mark(Em* e, Node* n) {
 static void debug_fn_add(Em* e, Node* f, uint32_t addr, uint32_t size) {
     if (e->ndebug_fns == e->cdebug_fns) {
         e->cdebug_fns = e->cdebug_fns ? e->cdebug_fns * 2 : 16;
-        e->debug_fns = realloc(e->debug_fns,
-                               (size_t)e->cdebug_fns * sizeof(DebugFn));
+        e->debug_fns = realloc(e->debug_fns, (size_t)e->cdebug_fns * sizeof(DebugFn));
         if (!e->debug_fns) oom();
     }
     e->debug_fns[e->ndebug_fns++] =
@@ -635,8 +635,7 @@ static uint32_t align_up(uint32_t v, uint32_t a);
  * or -1 when any leaf is not a float. `max` caps the flattening (callers
  * pass 5: five or more leaves is simply not an HFA).
  */
-static int hfa_leaves(SType* t, uint32_t off, uint32_t* offs, uint8_t* dbl,
-                      int n, int max) {
+static int hfa_leaves(SType* t, uint32_t off, uint32_t* offs, uint8_t* dbl, int n, int max) {
     t = unwrap(t);
     if (!t) return -1;
     if (t->kind == SK_PRIM && (t->prim == P_F32 || t->prim == P_F64)) {
@@ -932,36 +931,30 @@ static uint32_t spill_slot_fp(Em* e, int j) {
 // --- frame loads/stores (x29-relative) ---------------------------------------------
 
 static uint32_t stur_base(uint32_t w) {
-    return w == 1 ? 0x38000000u : w == 2 ? 0x78000000u :
-           w == 4 ? 0xB8000000u : 0xF8000000u;
+    return w == 1 ? 0x38000000u : w == 2 ? 0x78000000u : w == 4 ? 0xB8000000u : 0xF8000000u;
 }
 
 static uint32_t ldur_base(uint32_t w) {
-    return w == 1 ? 0x38400000u : w == 2 ? 0x78400000u :
-           w == 4 ? 0xB8400000u : 0xF8400000u;
+    return w == 1 ? 0x38400000u : w == 2 ? 0x78400000u : w == 4 ? 0xB8400000u : 0xF8400000u;
 }
 
 static void store_frame(Em* e, int rt, uint32_t off, uint32_t w) {
     uint32_t d = off;
     if (d <= 256) { // stur rt, [x29, #-d]
-        ins(e, stur_base(w) | ((((uint32_t)(0u - d)) & 0x1FFu) << 12) |
-               (29u << 5) | ((uint32_t)rt & 31u));
+        ins(e, stur_base(w) | ((((uint32_t)(0u - d)) & 0x1FFu) << 12) | (29u << 5) | ((uint32_t)rt & 31u));
         return;
     }
     int base = rt == 16 ? 17 : 16;
     frame_addr(e, base, off);
-    uint32_t b = w == 1 ? 0x39000000u : w == 2 ? 0x79000000u :
-                 w == 4 ? 0xB9000000u : 0xF9000000u;
+    uint32_t b = w == 1 ? 0x39000000u : w == 2 ? 0x79000000u : w == 4 ? 0xB9000000u : 0xF9000000u;
     ins(e, b | ((uint32_t)base << 5) | ((uint32_t)rt & 31u));
 }
 
 static void load_frame(Em* e, int rt, uint32_t off, uint32_t w, int signext) {
     uint32_t d = off;
     if (d <= 256) { // ldur rt, [x29, #-d]; ldursb/ldursh wt sign-extend narrow
-        uint32_t b = !signext || w >= 4 ? ldur_base(w)
-                   : w == 1 ? 0x38C00000u : 0x78C00000u;
-        ins(e, b | ((((uint32_t)(0u - d)) & 0x1FFu) << 12) |
-               (29u << 5) | ((uint32_t)rt & 31u));
+        uint32_t b = !signext || w >= 4 ? ldur_base(w) : w == 1 ? 0x38C00000u : 0x78C00000u;
+        ins(e, b | ((((uint32_t)(0u - d)) & 0x1FFu) << 12) | (29u << 5) | ((uint32_t)rt & 31u));
         return;
     }
     // The destination can also hold the computed address: `ldr rt, [rt]`.
@@ -971,19 +964,15 @@ static void load_frame(Em* e, int rt, uint32_t off, uint32_t w, int signext) {
     frame_addr(e, base, off);
     uint32_t b;
     if (!signext)
-        b = w == 1 ? 0x39400000u : w == 2 ? 0x79400000u :
-            w == 4 ? 0xB9400000u : 0xF9400000u;
+        b = w == 1 ? 0x39400000u : w == 2 ? 0x79400000u : w == 4 ? 0xB9400000u : 0xF9400000u;
     else
-        b = w == 1 ? 0x39C00000u : w == 2 ? 0x79C00000u :
-            w == 4 ? 0xB9400000u : 0xF8400000u;
+        b = w == 1 ? 0x39C00000u : w == 2 ? 0x79C00000u : w == 4 ? 0xB9400000u : 0xF8400000u;
     ins(e, b | ((uint32_t)base << 5) | ((uint32_t)rt & 31u));
 }
 
 static void store_frame_fp(Em* e, int vr, uint32_t off, int is64) {
     if (off <= 256) { // stur s|d, [x29, #-off]
-        ins(e, (is64 ? 0xFC000000u : 0xBC000000u) |
-               ((((uint32_t)(0u - off)) & 0x1FFu) << 12) | (29u << 5) |
-               (uint32_t)vr);
+        ins(e, (is64 ? 0xFC000000u : 0xBC000000u) | ((((uint32_t)(0u - off)) & 0x1FFu) << 12) | (29u << 5) | (uint32_t)vr);
         return;
     }
     frame_addr(e, 16, off);
@@ -992,9 +981,7 @@ static void store_frame_fp(Em* e, int vr, uint32_t off, int is64) {
 
 static void load_frame_fp(Em* e, int vr, uint32_t off, int is64) {
     if (off <= 256) { // ldur s|d, [x29, #-off]
-        ins(e, (is64 ? 0xFC400000u : 0xBC400000u) |
-               ((((uint32_t)(0u - off)) & 0x1FFu) << 12) | (29u << 5) |
-               (uint32_t)vr);
+        ins(e, (is64 ? 0xFC400000u : 0xBC400000u) | ((((uint32_t)(0u - off)) & 0x1FFu) << 12) | (29u << 5) | (uint32_t)vr);
         return;
     }
     frame_addr(e, 16, off);
@@ -1020,11 +1007,9 @@ static void reload_temps(Em* e, int ni, int nf) {
 static void ld_reg(Em* e, int rt, int base, uint32_t off, uint32_t w, int signext) {
     uint32_t b;
     if (!signext)
-        b = w == 1 ? 0x39400000u : w == 2 ? 0x79400000u :
-            w == 4 ? 0xB9400000u : 0xF9400000u;
+        b = w == 1 ? 0x39400000u : w == 2 ? 0x79400000u : w == 4 ? 0xB9400000u : 0xF9400000u;
     else
-        b = w == 1 ? 0x39C00000u : w == 2 ? 0x79C00000u :
-            w == 4 ? 0xB9400000u : 0xF8400000u;
+        b = w == 1 ? 0x39C00000u : w == 2 ? 0x79C00000u : w == 4 ? 0xB9400000u : 0xF8400000u;
     if (off % w == 0 && off / w < 4096)
         ins(e, b | ((off / w) << 10) | ((uint32_t)base << 5) |
                ((uint32_t)rt & 31u));
@@ -1032,13 +1017,10 @@ static void ld_reg(Em* e, int rt, int base, uint32_t off, uint32_t w, int signex
         load_imm(e, 1, 16, off);
         uint32_t rb;
         if (!signext)
-            rb = w == 1 ? 0x38606800u : w == 2 ? 0x78606800u :
-                 w == 4 ? 0xB8606800u : 0xF8606800u;
+            rb = w == 1 ? 0x38606800u : w == 2 ? 0x78606800u : w == 4 ? 0xB8606800u : 0xF8606800u;
         else
-            rb = w == 1 ? 0x38E06800u : w == 2 ? 0x78E06800u :
-                 w == 4 ? 0xB8606800u : 0xF8606800u;
-        ins(e, rb | (16u << 16) | ((uint32_t)base << 5) |
-               ((uint32_t)rt & 31u));
+            rb = w == 1 ? 0x38E06800u : w == 2 ? 0x78E06800u : w == 4 ? 0xB8606800u : 0xF8606800u;
+        ins(e, rb | (16u << 16) | ((uint32_t)base << 5) | ((uint32_t)rt & 31u));
     }
 }
 
@@ -2926,6 +2908,19 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
             int t = tmp_int(e);
             out = (EV){ CLS_INT, t };
         }
+    } else if (rc.nunits >= 1 && e->sink_call == at && e->sink_ret == ret &&
+               e->sink_n == rc.nunits) {
+        // the statement gave this call's result a frame destination
+        for (int w = 0; w < rc.nunits; w++) {
+            if (rc.units[w].kind == TU_XREG)
+                store_frame(e, rc.units[w].reg, e->sink_off[w], 8);
+            else
+                store_frame_fp(e, rc.units[w].reg, e->sink_off[w],
+                               rc.units[w].size == 8);
+        }
+        e->sink_done = 1;
+        reload_temps(e, si, sf);
+        e->vti = si; e->vtf = sf;
     } else if (rc.nunits >= 1) {
         // <=16B aggregate or multi-chunk return: materialize into a frame slot
         uint32_t off = temp_slot(e, align_up(ty_size(ret), 8), ty_align(ret));
@@ -5985,6 +5980,82 @@ static int gen_return_regs(Em* e, Node* x, RetCls* rc) {
     return 1;
 }
 
+/*
+ * A call whose result returns in registers as whole 8-byte chunks (an HFA, or
+ * a struct or tuple whose size is a multiple of 8) can store them straight
+ * into a frame destination; anything else keeps the staged temp.
+ */
+static int sink_shape(SType* ret, RetCls* rc) {
+    classify_ret(ret, rc);
+    if (!ret || is_scalar(ret) || rc->sret || rc->nunits < 1) return 0;
+    int fp = rc->units[0].kind == TU_VREG;
+    for (int w = 1; w < rc->nunits; w++)
+        if ((rc->units[w].kind == TU_VREG) != fp) return 0;
+    return fp || ty_size(ret) % 8 == 0;
+}
+
+static void sink_arm(Em* e, Node* call, SType* ret, RetCls* rc) {
+    e->sink_call = call;
+    e->sink_ret = ret;
+    e->sink_n = rc->nunits;
+    e->sink_done = 0;
+}
+
+// consume the one-shot sink; nonzero when emit_call stored the result
+static int sink_take(Em* e) {
+    int done = e->sink_done;
+    e->sink_call = NULL;
+    e->sink_ret = NULL;
+    e->sink_done = 0;
+    return done;
+}
+
+// evaluate `call` into the aggregate at frame depth `depth`, storing its
+// result registers directly when the return shape allows
+static void gen_call_to_slot(Em* e, Node* call, uint32_t depth, SType* t) {
+    SType* ret = node_ty(call);
+    RetCls rc;
+    if (ret && ty_size(ret) == ty_size(t) && sink_shape(ret, &rc)) {
+        sink_arm(e, call, ret, &rc);
+        for (int w = 0; w < rc.nunits; w++)
+            e->sink_off[w] = depth - rc.units[w].off;
+    }
+    EV v = gen_expr(e, call);
+    if (!sink_take(e)) store_to_slot(e, v, depth, t);
+}
+
+// typed destructuring of a tuple-returning call into the binders' slots: unit
+// i lands in binder i when each is one whole 8-byte scalar of its unit's
+// class. Returns 0, having emitted nothing, when the shape does not fit.
+static int gen_call_to_binders(Em* e, Node* call, SType** wants,
+                               uint32_t* offs, int nb) {
+    SType* tup = node_ty(call);
+    RetCls rc;
+    if (!tup || tup->kind != SK_TUPLE || tup->nfields != nb ||
+        !sink_shape(tup, &rc) || rc.nunits != nb)
+        return 0;
+    for (int i = 0; i < nb; i++) {
+        SType* ft = tup->fields[i].t;
+        TU* u = &rc.units[i];
+        int fp = u->kind == TU_VREG;
+        if (!ft || !is_scalar(ft) || u->off != field_off(tup, i) ||
+            fp != (is_floatt(ft) != 0) || ty_size(ft) != (fp ? u->size : 8) ||
+            ty_size(wants[i]) != ty_size(ft) ||
+            is_floatt(wants[i]) != is_floatt(ft))
+            return 0;
+    }
+    sink_arm(e, call, tup, &rc);
+    for (int i = 0; i < nb; i++) e->sink_off[i] = offs[i];
+    EV v = gen_expr(e, call);
+    if (sink_take(e)) return 1;
+    if (v.cls != CLS_ADDR) {
+        em_err(e, call, "destructuring initializer must be a tuple");
+        return 1;
+    }
+    for (int i = 0; i < nb; i++) store_member(e, xreg(v.idx), tup, i, offs[i]);
+    return 1;
+}
+
 static void emit_stmt(Em* e, Node* s) {
     line_mark(e, s->kind == N_EXPRSTMT ? s->a : s);
     e->vti = 0; e->vtf = 0; // statement boundary
@@ -6001,6 +6072,14 @@ static void emit_stmt(Em* e, Node* s) {
                 SType* t = node_sym(s->kids[i])->type;
                 offs[i] = slot_alloc(e, s->kids[i], ty_size(t), ty_align(t));
             }
+            int all_new = s->b->kind == N_CALL;
+            SType* bt[16] = {0};
+            for (int i = 0; i < s->nkids; i++) {
+                if (s->kids[i]->kind != N_PARAM) all_new = 0;
+                else bt[i] = node_sym(s->kids[i])->type;
+            }
+            if (all_new && gen_call_to_binders(e, s->b, bt, offs, s->nkids))
+                return;
             EV rhs = gen_expr(e, s->b);
             if (rhs.cls != CLS_ADDR) {
                 em_err(e, s, "mixed assignment right side must be a tuple");
@@ -6049,10 +6128,16 @@ static void emit_stmt(Em* e, Node* s) {
         }
         if (!s->b) return;
         if (nb == 1) {
+            if (s->b->kind == N_CALL && !is_scalar(wants[0])) {
+                gen_call_to_slot(e, s->b, offs[0], wants[0]);
+                return;
+            }
             EV v = gen_expr(e, s->b);
             store_to_slot(e, v, offs[0], wants[0]);
             return;
         }
+        if (s->b->kind == N_CALL && gen_call_to_binders(e, s->b, wants, offs, nb))
+            return;
         // typed destructuring: rhs is a tuple in memory
         EV rhs = gen_expr(e, s->b);
         if (rhs.cls != CLS_ADDR) {
@@ -6101,6 +6186,14 @@ static void emit_stmt(Em* e, Node* s) {
         SType* t = lvalue_type(e, s->kids[0]);
         if (!t) {
             em_err(e, s, "assignment target has no type");
+            return;
+        }
+        // a register-returned aggregate call assigned to a frame-resident
+        // local stores its result registers straight into it
+        uint32_t sdepth;
+        if (s->op == T_ASSIGN && !(s->flags & F_VOLATILE) && !is_scalar(t) &&
+            s->a->kind == N_CALL && frame_place(e, s->kids[0], &sdepth)) {
+            gen_call_to_slot(e, s->a, sdepth, t);
             return;
         }
         /*
@@ -7271,6 +7364,9 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen,
     e->fnbody = f->b;
     e->ndefers = 0;
     e->retsave_off = 0;
+    e->sink_call = NULL;
+    e->sink_ret = NULL;
+    e->sink_done = 0;
     e->nlreg_loops = 0;
     e->lreg_top = e->lreg_max = 0;
     e->fn_has_asm = 0;

@@ -1154,6 +1154,28 @@ if [ -d tests/emit ]; then
             echo "FAIL: register-returned literals and tuples must skip the frame temp"
             fail=1
         fi
+        # A register-returned call assigned to a frame-resident local or bound
+        # to typed binders stores its result registers straight into the
+        # destination: the instruction after the call is a direct stur of x0 or
+        # d0, not the address computation of a staged temp. The first function's
+        # label is the section, so first() is a dummy.
+        if ! otool -tv /tmp/ace_emit/basics/call_result_sink.o | awk '
+            /^_main:/ { exit }
+            /^[^0-9].*:$/ { fn = $0; next }
+            fn ~ /^__ace\$fn\$sink_/ && $2 == "bl" && $3 !~ /fail/ { want = 1; next }
+            want {
+                want = 0
+                if ($2 == "stur" && $3 ~ /^[xd]0,$/) {
+                    if (fn ~ /sink_small/) small = 1
+                    if (fn ~ /sink_pair/) pair = 1
+                    if (fn ~ /sink_vec/) vec = 1
+                    if (fn ~ /sink_divmod/) dm = 1
+                } else bad = 1
+            }
+            END { exit bad || !small || !pair || !vec || !dm }'; then
+            echo "FAIL: register-returned call results must be stored straight into the destination"
+            fail=1
+        fi
         # A call-free function promotes every used local, single-use ones
         # included, into x14 down: straight() takes x14 through x11 and saves
         # no callee-saved register.
