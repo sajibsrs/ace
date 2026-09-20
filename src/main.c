@@ -84,10 +84,8 @@ static void cli_error(const char* message) {
     exit(2);
 }
 
-static char* opt_value(int* i, int argc, char** argv, const char* option,
-                       const char* what) {
-    if (*i + 1 >= argc ||
-        (argv[*i + 1][0] == '-' && argv[*i + 1][1] != 0)) {
+static char* opt_value(int* i, int argc, char** argv, const char* option, const char* what) {
+    if (*i + 1 >= argc || (argv[*i + 1][0] == '-' && argv[*i + 1][1] != 0)) {
         fprintf(stderr, "ace: %s requires %s\n", option, what);
         exit(2);
     }
@@ -104,15 +102,12 @@ static int has_suffix(const char* s, const char* suffix) {
 static int same_path(const char* a, const char* b) {
     if (strcmp(a, b) == 0) return 1;
     struct stat sa, sb;
-    return stat(a, &sa) == 0 && stat(b, &sb) == 0 &&
-           sa.st_dev == sb.st_dev && sa.st_ino == sb.st_ino;
+    return stat(a, &sa) == 0 && stat(b, &sb) == 0 && sa.st_dev == sb.st_dev && sa.st_ino == sb.st_ino;
 }
 
-static void reject_output_collision(const char* output, const char* input,
-                                    const char* kind) {
+static void reject_output_collision(const char* output, const char* input, const char* kind) {
     if (!same_path(output, input)) return;
-    fprintf(stderr, "ace: %s '%s' would overwrite input '%s'\n",
-            kind, output, input);
+    fprintf(stderr, "ace: %s '%s' would overwrite input '%s'\n", kind, output, input);
     exit(2);
 }
 
@@ -171,8 +166,7 @@ static void print_report(CompileReport* report) {
     report_count("tokens:", report->tokens, "");
     report_count("machine code:", report->machine_code, " bytes");
     report_count("object file:", report->object_file, " bytes");
-    fprintf(stderr, "%-17s%.2f ms\n", "compile time:",
-            (double)report->compile_ns / 1000000.0);
+    fprintf(stderr, "%-17s%.2f ms\n", "compile time:", (double)report->compile_ns / 1000000.0);
 }
 
 static void dump_tokens(Token* toks, size_t n) {
@@ -193,10 +187,8 @@ static void dump_tokens(Token* toks, size_t n) {
             printf("\t\"%.*s\"", (int)t->len, t->str);
             break;
         case T_CHARLIT:
-            if (t->ival >= 33 && t->ival <= 126)
-                printf("\t'%c'", (char)t->ival);
-            else
-                printf("\t%llu", (unsigned long long)t->ival);
+            if (t->ival >= 33 && t->ival <= 126) printf("\t'%c'", (char)t->ival);
+            else printf("\t%llu", (unsigned long long)t->ival);
             break;
         default:
             break;
@@ -339,8 +331,7 @@ static int package_load_and_check(const char* dir, const char* argv0, const char
         }
     }
     if (rd.errors > 0) {
-        fprintf(stderr, "%s: %d error%s\n", root_package->root_file, rd.errors,
-                rd.errors == 1 ? "" : "s");
+        fprintf(stderr, "%s: %d error%s\n", root_package->root_file, rd.errors, rd.errors == 1 ? "" : "s");
         return 1;
     }
     *out_package = root_package;
@@ -420,8 +411,7 @@ static int package_cmd_add(int argc, char** argv, const char* argv0) {
         free(backup);
         return 1;
     }
-    return package_revalidate_or_restore(dir, argv0, manifest_path, backup, backup_len,
-                                         "added", name);
+    return package_revalidate_or_restore(dir, argv0, manifest_path, backup, backup_len, "added", name);
 }
 
 static int package_cmd_remove(int argc, char** argv, const char* argv0) {
@@ -448,8 +438,7 @@ static int package_cmd_remove(int argc, char** argv, const char* argv0) {
         fprintf(stderr, "ace: '%s' is not a dependency of '%s'\n", name, dir);
         return 1;
     }
-    return package_revalidate_or_restore(dir, argv0, manifest_path, backup, backup_len,
-                                         "removed", name);
+    return package_revalidate_or_restore(dir, argv0, manifest_path, backup, backup_len, "removed", name);
 }
 
 static int package_cmd_list(int argc, char** argv, const char* argv0) {
@@ -479,8 +468,7 @@ static int package_cmd_list(int argc, char** argv, const char* argv0) {
         else
             for (PackageDep* dep = root->deps; dep; dep = dep->next)
                 if (dep->package == pkg) { relation = "direct"; break; }
-        printf("%-16s %-4s %-10s %s\n", pkg->name, pkg->is_exe ? "exe" : "lib", relation,
-               pkg->dir);
+        printf("%-16s %-4s %-10s %s\n", pkg->name, pkg->is_exe ? "exe" : "lib", relation, pkg->dir);
     }
     free(order);
     return 0;
@@ -522,13 +510,11 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
     for (int i = 0; i < argc; i++) {
         char* a = argv[i];
         if (strcmp(a, "--checked") == 0) {
-            if (mode_seen && emit_mode != EMIT_CHECKED)
-                cli_error("--checked and --release are mutually exclusive");
+            if (mode_seen && emit_mode != EMIT_CHECKED) cli_error("--checked and --release are mutually exclusive");
             mode_seen = 1;
             emit_mode = EMIT_CHECKED;
         } else if (strcmp(a, "--release") == 0) {
-            if (mode_seen && emit_mode != EMIT_RELEASE)
-                cli_error("--checked and --release are mutually exclusive");
+            if (mode_seen && emit_mode != EMIT_RELEASE) cli_error("--checked and --release are mutually exclusive");
             mode_seen = 1;
             emit_mode = EMIT_RELEASE;
         } else if (strcmp(a, "--report") == 0) {
@@ -564,8 +550,7 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
     if (rc != 0) return rc;
 
     if (require_exe && !root_package->is_exe) {
-        fprintf(stderr, "ace: 'run' requires an exe package; '%s' is type 'lib'\n",
-                root_package->name);
+        fprintf(stderr, "ace: 'run' requires an exe package; '%s' is type 'lib'\n", root_package->name);
         free(order);
         return 2;
     }
@@ -585,8 +570,7 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
     char obj[4096];
     snprintf(obj, sizeof obj, "%s/%s.o", build_dir, root_package->name);
     if (out_bin_cap) snprintf(out_bin, out_bin_cap, "%s/%s", build_dir, root_package->name);
-    if (emit_object(file, &d, obj, show_report ? &report : NULL, emit_mode) != 0 ||
-        d.errors > 0) {
+    if (emit_object(file, &d, obj, show_report ? &report : NULL, emit_mode) != 0 || d.errors > 0) {
         free(order);
         return 1;
     }
@@ -603,8 +587,7 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
     ArgList cc = {0};
     arg_push(&cc, "cc");
     arg_push(&cc, obj);
-    for (int i = 0; i < nlinkargs; i++)
-        arg_push(&cc, link_args[i]);
+    for (int i = 0; i < nlinkargs; i++) arg_push(&cc, link_args[i]);
     free(link_args);
     arg_push(&cc, "-o");
     arg_push(&cc, out_bin);
@@ -672,8 +655,7 @@ static int package_cmd_init(int argc, char** argv) {
         snprintf(resolved, sizeof resolved, "%s", dir_arg);
     }
     size_t resolved_len = strlen(resolved);
-    while (resolved_len > 1 && resolved[resolved_len - 1] == '/')
-        resolved[--resolved_len] = 0;
+    while (resolved_len > 1 && resolved[resolved_len - 1] == '/') resolved[--resolved_len] = 0;
     const char* rslash = strrchr(resolved, '/');
     const char* base = rslash ? rslash + 1 : resolved;
     if (!package_valid_name(base, strlen(base))) {
@@ -744,8 +726,7 @@ static int package_main(int argc, char** argv, const char* argv0) {
 }
 
 int main(int argc, char** argv) {
-    if (argc >= 2 && strcmp(argv[1], "pkg") == 0)
-        return package_main(argc - 2, argv + 2, argv[0]);
+    if (argc >= 2 && strcmp(argv[1], "pkg") == 0) return package_main(argc - 2, argv + 2, argv[0]);
     int dump_tok = 0, dump_ast = 0, show_report = 0, opt_c = 0, opt_link = 0;
     int mode_seen = 0;
     EmitMode emit_mode = EMIT_CHECKED;
@@ -761,14 +742,12 @@ int main(int argc, char** argv) {
         if (strcmp(a, "--tokens") == 0) dump_tok = 1;
         else if (strcmp(a, "--ast") == 0) dump_ast = 1;
         else if (strcmp(a, "--checked") == 0) {
-            if (mode_seen && emit_mode != EMIT_CHECKED)
-                cli_error("--checked and --release are mutually exclusive");
+            if (mode_seen && emit_mode != EMIT_CHECKED) cli_error("--checked and --release are mutually exclusive");
             mode_seen = 1;
             emit_mode = EMIT_CHECKED;
         }
         else if (strcmp(a, "--release") == 0) {
-            if (mode_seen && emit_mode != EMIT_RELEASE)
-                cli_error("--checked and --release are mutually exclusive");
+            if (mode_seen && emit_mode != EMIT_RELEASE) cli_error("--checked and --release are mutually exclusive");
             mode_seen = 1;
             emit_mode = EMIT_RELEASE;
         }
@@ -777,8 +756,7 @@ int main(int argc, char** argv) {
             if (a[9] == 0) cli_error("--target requires a target name");
             target = a + 9;
         }
-        else if (strcmp(a, "--target") == 0)
-            target = opt_value(&i, argc, argv, "--target", "a target name");
+        else if (strcmp(a, "--target") == 0) target = opt_value(&i, argc, argv, "--target", "a target name");
         else if (strncmp(a, "--pkg-graph=", 12) == 0) {
             if (a[12] == 0) cli_error("--pkg-graph requires a directory");
             package_graph_dir = a + 12;
@@ -807,8 +785,7 @@ int main(int argc, char** argv) {
             arg_push(&link_args, name);
         }
         else if (strcmp(a, "-framework") == 0) {
-            char* name = opt_value(&i, argc, argv, "-framework",
-                                   "a framework name");
+            char* name = opt_value(&i, argc, argv, "-framework", "a framework name");
             arg_push(&link_args, a);
             arg_push(&link_args, name);
         }
@@ -835,8 +812,7 @@ int main(int argc, char** argv) {
         int norder = 0;
         Package* root = package_resolve(package_graph_dir, &pd, argv[0], &order, &norder);
         if (!root || pd.errors > 0) {
-            fprintf(stderr, "%s: %d error%s\n", package_graph_dir, pd.errors,
-                    pd.errors == 1 ? "" : "s");
+            fprintf(stderr, "%s: %d error%s\n", package_graph_dir, pd.errors, pd.errors == 1 ? "" : "s");
             return 1;
         }
         for (int i = 0; i < norder; i++)
@@ -853,14 +829,12 @@ int main(int argc, char** argv) {
         Package* root_package;
         Node* file;
         Diag d;
-        return package_load_and_check(package_check_dir, argv[0], target, NULL, &root_package, &file, &d,
-                                      NULL, NULL);
+        return package_load_and_check(package_check_dir, argv[0], target, NULL, &root_package, &file, &d, NULL, NULL);
     }
     // `-o <file>.ace` compiles that file in place: the executable is the stem.
     if (out_name && has_suffix(out_name, ".ace")) {
         size_t stem_len = strlen(out_name) - 4;
-        if (stem_len == 0)
-            cli_error("-o <file.ace> requires a name before '.ace'");
+        if (stem_len == 0) cli_error("-o <file.ace> requires a name before '.ace'");
         char* stem = malloc(stem_len + 1);
         if (!stem) {
             fprintf(stderr, "ace: out of memory\n");
@@ -868,16 +842,13 @@ int main(int argc, char** argv) {
         }
         memcpy(stem, out_name, stem_len);
         stem[stem_len] = 0;
-        if (path && strcmp(path, out_name) != 0)
-            cli_error("only one root .ace source may be compiled");
+        if (path && strcmp(path, out_name) != 0) cli_error("only one root .ace source may be compiled");
         path = out_name;
         out_name = stem;
     }
     if (!path) usage();
-    if (link_args.len > 0 && opt_c)
-        cli_error("additional link inputs cannot be used with -c");
-    if (link_args.len > 0 && !out_name)
-        cli_error("link inputs require -o");
+    if (link_args.len > 0 && opt_c) cli_error("additional link inputs cannot be used with -c");
+    if (link_args.len > 0 && !out_name) cli_error("link inputs require -o");
 
     uint64_t started = show_report ? monotonic_ns() : 0;
     CompileReport report = {0};
@@ -920,18 +891,15 @@ int main(int argc, char** argv) {
             }
             return 0;
         }
-        resolve_imports(file, &d, argv[0], target,
-                        show_report ? &report : NULL, NULL);
+        resolve_imports(file, &d, argv[0], target, show_report ? &report : NULL, NULL);
         if (d.errors > 0) goto done;
         sema_check(file, &d); // default mode: full semantic check
         if (d.errors > 0) goto done;
 
         if (opt_c || opt_link) { // codegen: Mach-O arm64 object
             char obj[4096];
-            if (opt_link)
-                snprintf(obj, sizeof obj, "%s.o", out_name);
-            else
-                obj_path(obj, sizeof obj, path);
+            if (opt_link) snprintf(obj, sizeof obj, "%s.o", out_name);
+            else obj_path(obj, sizeof obj, path);
             if (opt_link) {
                 reject_output_collision(obj, path, "generated object");
                 reject_output_collision(out_name, path, "linked output");
@@ -941,17 +909,13 @@ int main(int argc, char** argv) {
                     reject_output_collision(out_name, input, "linked output");
                 }
             }
-            if (emit_object(file, &d, obj, show_report ? &report : NULL,
-                            emit_mode) != 0 ||
-                d.errors > 0)
-                return 1;
+            if (emit_object(file, &d, obj, show_report ? &report : NULL, emit_mode) != 0 || d.errors > 0) return 1;
             uint64_t compile_done = show_report ? monotonic_ns() : 0;
             if (opt_link) {
                 ArgList cc = {0};
                 arg_push(&cc, "cc");
                 arg_push(&cc, obj);
-                for (size_t k = 0; k < link_args.len; k++)
-                    arg_push(&cc, link_args.items[k]);
+                for (size_t k = 0; k < link_args.len; k++) arg_push(&cc, link_args.items[k]);
                 arg_push(&cc, "-o");
                 arg_push(&cc, out_name);
                 arg_push(&cc, NULL);

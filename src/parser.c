@@ -111,13 +111,11 @@ static int at(P* p, TokKind k) { return tk(p)->kind == k; }
 // A conversion callee begins `[]` + a type: the tokens that may start the
 // element type after the brackets. A newline keeps the empty array literal.
 static int slice_type_start(TokKind k) {
-    return k == T_IDENT || k == T_MUT || k == T_STAR || k == T_LBRACK ||
-           k == T_LPAREN || k == T_CONST;
+    return k == T_IDENT || k == T_MUT || k == T_STAR || k == T_LBRACK || k == T_LPAREN || k == T_CONST;
 }
 
 static int ident_at(P* p, const char* s) {
-    return at(p, T_IDENT) && tk(p)->len == strlen(s) &&
-           memcmp(tk(p)->str, s, tk(p)->len) == 0;
+    return at(p, T_IDENT) && tk(p)->len == strlen(s) && memcmp(tk(p)->str, s, tk(p)->len) == 0;
 }
 
 static int ate(P* p, TokKind k) {
@@ -160,8 +158,7 @@ static void perr(P* p, const char* fmt, ...) {
 }
 
 static void bare_list_line(P* p, int line) {
-    if (tk(p)->line != line)
-        perr(p, "bare comma-separated lists must stay on one physical line");
+    if (tk(p)->line != line) perr(p, "bare comma-separated lists must stay on one physical line");
 }
 
 static void signing_list_line(P* p, int line) {
@@ -170,8 +167,7 @@ static void signing_list_line(P* p, int line) {
 }
 
 static Token* expect(P* p, TokKind k, const char* what) {
-    if (!at(p, k))
-        perr(p, "expected %s, got %s", what, gdesc(p));
+    if (!at(p, k)) perr(p, "expected %s, got %s", what, gdesc(p));
     return &p->toks[p->i++];
 }
 
@@ -264,8 +260,7 @@ static Node* type_atom(P* p) {
             t->a = type_atom(p);
             return t;
         }
-        if (at(p, T_IDENT) && tk(p)->len == 6 &&
-            memcmp(tk(p)->str, "string", 6) == 0 && kth(p, 1) != T_DOT) {
+        if (at(p, T_IDENT) && tk(p)->len == 6 && memcmp(tk(p)->str, "string", 6) == 0 && kth(p, 1) != T_DOT) {
             Token* s = tk(p); // mut string — writable bytes
             t = nd_tok(p, N_NAMED, s);
             t->str = s->str;
@@ -301,8 +296,7 @@ static Node* type_atom(P* p) {
         f->flags |= F_CABI;
         p->i++;
         Token* abi = expect(p, T_STR, "ABI string after 'extern'");
-        if (abi->len != 1 || memcmp(abi->str, "c", 1) != 0)
-            perr(p, "function types support only the 'c' ABI");
+        if (abi->len != 1 || memcmp(abi->str, "c", 1) != 0) perr(p, "function types support only the 'c' ABI");
         expect(p, T_LPAREN, "'(' after function type ABI");
         NV w = {0};
         if (!at(p, T_RPAREN)) {
@@ -369,13 +363,11 @@ static Node* type_atom(P* p) {
         return t;
     }
     if (at(p, T_IDENT)) { // named, qualified, generic-instantiated
-        if (tk(p)->len == 9 && memcmp(tk(p)->str, "StaticMap", 9) == 0 &&
-            kth(p, 1) == T_LBRACK) {
+        if (tk(p)->len == 9 && memcmp(tk(p)->str, "StaticMap", 9) == 0 && kth(p, 1) == T_LBRACK) {
             Node* map = nd_tok(p, N_STATICMAP_T, tk(p));
             p->i += 2;
             map->a = parse_type(p);
-            if (ate(p, T_COMMA))
-                perr(p, "StaticMap type is spelled StaticMap[K]V, not StaticMap[K, V]");
+            if (ate(p, T_COMMA)) perr(p, "StaticMap type is spelled StaticMap[K]V, not StaticMap[K, V]");
             expect(p, T_RBRACK, "']' after StaticMap key type");
             map->b = parse_type(p);
             return map;
@@ -655,8 +647,7 @@ static Node* expr_unary(P* p, int ctx) {
         // Type-position mut in expression-position type arguments:
         // Box[mut string], g[mut []u8]. No establishment form begins with
         // '*', '[', or the prim name followed by something other than '['.
-        int is_mut_string = kth(p, 1) == T_IDENT &&
-            tk(p)[1].len == 6 && memcmp(tk(p)[1].str, "string", 6) == 0;
+        int is_mut_string = kth(p, 1) == T_IDENT && tk(p)[1].len == 6 && memcmp(tk(p)[1].str, "string", 6) == 0;
         if (kth(p, 1) == T_STAR ||
             (kth(p, 1) == T_LBRACK && kth(p, 2) == T_RBRACK) ||
             (is_mut_string && kth(p, 2) != T_LBRACK)) {
@@ -774,8 +765,7 @@ static Node* expr_postfix_base(P* p, int ctx, Node* base) {
                 base = call;
                 continue;
             }
-            if (base->kind == N_IDENT && base->len == 8 &&
-                memcmp(base->str, "offsetof", 8) == 0) {
+            if (base->kind == N_IDENT && base->len == 8 && memcmp(base->str, "offsetof", 8) == 0) {
                 NV w = {0};
                 nv_push(p, &w, parse_type(p));
                 expect(p, T_COMMA, "',' after offsetof type");
@@ -1059,9 +1049,7 @@ static int for_head_typed_at(P* p) {
         TokKind k = p->toks[j].kind;
         if (depth == 0) {
             if (k == T_IN) return 1;
-            if (k == T_ASSIGN || k == T_SEMI || k == T_LBRACE || k == T_NL ||
-                k == T_EOF)
-                return 0;
+            if (k == T_ASSIGN || k == T_SEMI || k == T_LBRACE || k == T_NL || k == T_EOF) return 0;
         }
         if (k == T_LBRACK || k == T_LPAREN || k == T_LBRACE) depth++;
         else if (k == T_RBRACK || k == T_RPAREN || k == T_RBRACE) {
@@ -1074,8 +1062,7 @@ static int for_head_typed_at(P* p) {
 }
 
 static void for_semi(P* p, int hline, const char* what) {
-    if (tk(p)->line != hline)
-        perr(p, "for-head clauses must stay on one physical line");
+    if (tk(p)->line != hline) perr(p, "for-head clauses must stay on one physical line");
     expect(p, T_SEMI, what);
 }
 
@@ -1086,8 +1073,7 @@ static void for_tail(P* p, Node* n, int hline) {
     if (!at(p, T_SEMI) && !at(p, T_LBRACE)) n->b = expr(p, CTX_NOSLIT);
     for_semi(p, hline, "';' after the for-head condition");
     if (!at(p, T_LBRACE)) n->c = parse_expr_stmt(p, CTX_NOSLIT);
-    if (tk(p)->line != hline)
-        perr(p, "for-head clauses must stay on one physical line");
+    if (tk(p)->line != hline) perr(p, "for-head clauses must stay on one physical line");
     n->d = parse_block(p);
 }
 
@@ -1124,8 +1110,7 @@ static Node* parse_for_head(P* p, Node* n) {
             bare_list_line(p, line);
             p->i++;
             bare_list_line(p, line);
-            if (binders.n == 2)
-                perr(p, "for-in accepts at most index and value binders");
+            if (binders.n == 2) perr(p, "for-in accepts at most index and value binders");
         }
         set_kids(n, &binders);
         expect(p, T_IN, "'in'");
@@ -1198,8 +1183,7 @@ static size_t variant_binder_at(P* p) {
                 }
             }
         }
-        if (j + 1 < p->n && p->toks[j].kind == T_DOT &&
-            p->toks[j + 1].kind == T_IDENT) {
+        if (j + 1 < p->n && p->toks[j].kind == T_DOT && p->toks[j + 1].kind == T_IDENT) {
             j += 2;
             segments++;
             continue;
@@ -1311,11 +1295,9 @@ static Node* parse_switch(P* p) {
          * the ordinary identifier meaning. Position is checked by sema. */
         for (int i = 0; i < c->b->nkids; i++) {
             Node* st = c->b->kids[i];
-            if (st->kind != N_EXPRSTMT || !st->a || st->a->kind != N_IDENT)
-                continue;
+            if (st->kind != N_EXPRSTMT || !st->a || st->a->kind != N_IDENT) continue;
             Node* id = st->a;
-            if (id->len != 11 || memcmp(id->str, "fallthrough", 11) != 0)
-                continue;
+            if (id->len != 11 || memcmp(id->str, "fallthrough", 11) != 0) continue;
             st->kind = (uint8_t)N_FALLTHROUGH;
             st->a = NULL;
             st->str = id->str;
@@ -1353,8 +1335,7 @@ static Node* parse_asm(P* p) {
             klen = tk(p)->len;
             is_out = klen == 3 && memcmp(kind, "out", 3) == 0;
             is_clob = klen == 8 && memcmp(kind, "clobbers", 8) == 0;
-            if (!is_out && !is_clob)
-                perr(p, "expected in/out/clobbers binding, got '%.*s'", (int)klen, kind);
+            if (!is_out && !is_clob) perr(p, "expected in/out/clobbers binding, got '%.*s'", (int)klen, kind);
             p->i++;
         } else {
             perr(p, "expected in/out/clobbers binding, got %s", gdesc(p));
@@ -1375,8 +1356,7 @@ static Node* parse_asm(P* p) {
                     p->i++;
                     nv_push(p, &items, imm);
                 } else {
-                    nv_push(p, &items,
-                            ident_node(p, expect(p, T_IDENT, "value name")));
+                    nv_push(p, &items, ident_node(p, expect(p, T_IDENT, "value name")));
                 }
             }
             if (!ate(p, T_COMMA)) break;
@@ -1384,8 +1364,7 @@ static Node* parse_asm(P* p) {
         }
         set_kids(bnd, &items);
         nv_push(p, &binds, bnd);
-        if (!ate(p, T_NL) && !at(p, T_RBRACE))
-            perr(p, "expected newline or '}' after asm binding");
+        if (!ate(p, T_NL) && !at(p, T_RBRACE)) perr(p, "expected newline or '}' after asm binding");
         skipnl(p);
     }
     p->i++; // '}'
@@ -1445,8 +1424,7 @@ static Node* parse_stmt(P* p) {
     case T_RETURN: {
         Node* n = nd(p, N_RETURN);
         p->i++;
-        if (!at(p, T_NL) && !at(p, T_RBRACE) && !at(p, T_EOF))
-            n->a = expr_list(p, 0);
+        if (!at(p, T_NL) && !at(p, T_RBRACE) && !at(p, T_EOF)) n->a = expr_list(p, 0);
         return n;
     }
     case T_BREAK: {
@@ -1564,8 +1542,7 @@ static Node* parse_expr_stmt(P* p, int ctx) {
         Node* a = nd(p, N_ASSIGN);
         a->op = (uint8_t)tk(p)->kind;
         if (e->kind == N_UNARY && e->op == T_VOLATILE) {
-            if (a->op != T_ASSIGN)
-                perr(p, "volatile access supports only simple '=' assignment");
+            if (a->op != T_ASSIGN) perr(p, "volatile access supports only simple '=' assignment");
             a->flags |= F_VOLATILE;
             e = e->a;
         }
@@ -1647,8 +1624,7 @@ static Node* parse_ret(P* p) {
 static int named_attr_at(P* p, const char* name) {
     size_t n = strlen(name);
     if (!at(p, T_AT)) return 0;
-    return kth(p, 1) == T_IDENT && tk(p)[1].len == n &&
-           memcmp(tk(p)[1].str, name, n) == 0;
+    return kth(p, 1) == T_IDENT && tk(p)[1].len == n && memcmp(tk(p)[1].str, name, n) == 0;
 }
 
 /* Parse @align(expr), including its required terminating physical line. */
@@ -1661,8 +1637,7 @@ static Node* parse_align_attr(P* p) {
     expect(p, T_RPAREN, "')' after @align expression");
     int line = p->toks[p->i - 1].line;
     skipnl(p);
-    if (tk(p)->line == line)
-        perr(p, "@align must occupy its own line before a declaration or field");
+    if (tk(p)->line == line) perr(p, "@align must occupy its own line before a declaration or field");
     return value;
 }
 
@@ -1773,12 +1748,10 @@ static Node* parse_signing(P* p, Token* owner, Node* tp, int pub) {
             if (!ate(p, T_COMMA)) break;
             if (at(p, T_RPAREN)) break;
         }
-        if (tk(p)->line == signs->line)
-            perr(p, "parentheses after 'signs' are only for multiline contract lists");
+        if (tk(p)->line == signs->line) perr(p, "parentheses after 'signs' are only for multiline contract lists");
         expect(p, T_RPAREN, "')' to close signed contracts");
     } else {
-        if (at(p, T_NL) || at(p, T_EOF))
-            perr(p, "a signing needs at least one contract");
+        if (at(p, T_NL) || at(p, T_EOF)) perr(p, "a signing needs at least one contract");
         for (;;) {
             signing_list_line(p, signs->line);
             Node* c = nd(p, N_CONFORMANCE);
@@ -1840,8 +1813,7 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
                 Node* field_align = NULL;
                 if (named_attr_at(p, "align")) {
                     field_align = parse_align_attr(p);
-                    if (named_attr_at(p, "align"))
-                        perr(p, "a field accepts at most one @align attribute");
+                    if (named_attr_at(p, "align")) perr(p, "a field accepts at most one @align attribute");
                 } else if (at(p, T_AT)) {
                     perr(p, "only @align may modify a struct field");
                 }
@@ -1887,8 +1859,7 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
             m->nkids = ph->nkids;
             m->a = parse_ret(p);
             nv_push(p, &methods, m);
-            if (!ate(p, T_NL) && !at(p, T_RBRACE))
-                perr(p, "expected newline or '}' after method");
+            if (!ate(p, T_NL) && !at(p, T_RBRACE)) perr(p, "expected newline or '}' after method");
             skipnl(p);
         }
         p->i++;
@@ -1964,8 +1935,7 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
         return n;
     }
     default: { // contextual `error` domain, or global var / const
-        if (at(p, T_IDENT) && tk(p)->len == 5 &&
-            memcmp(tk(p)->str, "error", 5) == 0) {
+        if (at(p, T_IDENT) && tk(p)->len == 5 && memcmp(tk(p)->str, "error", 5) == 0) {
             p->i++;
             n = nd_tok(p, N_ERROR_DOMAIN, name);
             n->str = name->str;
@@ -1979,8 +1949,7 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
                     perr(p, "expected newline after '{' in error domain");
                 skipnl(p);
                 while (!at(p, T_RBRACE)) {
-                    if (at(p, T_EOF))
-                        perr(p, "unexpected end of file in error domain");
+                    if (at(p, T_EOF)) perr(p, "unexpected end of file in error domain");
                     Node* entry = nd(p, N_FIELD);
                     entry->a = expr(p, 0);
                     expect(p, T_COLON, "':' after error code");
@@ -1990,8 +1959,7 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
                     expect(p, T_ASSIGN, "'=' after error entry name");
                     entry->b = expr(p, 0);
                     nv_push(p, &entries, entry);
-                    if (!ate(p, T_NL))
-                        perr(p, "expected newline after error entry");
+                    if (!ate(p, T_NL)) perr(p, "expected newline after error entry");
                     skipnl(p);
                 }
                 p->i++;
@@ -2065,19 +2033,14 @@ static Node* parse_extern(P* p) {
         f->a = parse_ret(p);
         if (ate(p, T_ASSIGN)) { // optional link name: Ace binding != C symbol
             Token* link = expect(p, T_STR, "link name string after '='");
-            if (link->len == 0)
-                perr(p, "extern link name cannot be empty");
-            if (memchr(link->str, 0, link->len))
-                perr(p, "extern link name cannot contain NUL");
+            if (link->len == 0) perr(p, "extern link name cannot be empty");
+            if (memchr(link->str, 0, link->len)) perr(p, "extern link name cannot contain NUL");
             // emit.c prefixes the Mach-O underscore in a 512-byte buffer.
-            if (link->len > 510)
-                perr(p, "extern link name cannot exceed 510 bytes");
+            if (link->len > 510) perr(p, "extern link name cannot exceed 510 bytes");
             f->cname = link->str; // STR tokens are NUL-terminated arena copies
-        } else if (name->len > 510)
-            perr(p, "extern link name cannot exceed 510 bytes");
+        } else if (name->len > 510) perr(p, "extern link name cannot exceed 510 bytes");
         nv_push(p, &fns, f);
-        if (!ate(p, T_NL) && !at(p, T_RBRACE))
-            perr(p, "expected newline or '}' after extern declaration");
+        if (!ate(p, T_NL) && !at(p, T_RBRACE)) perr(p, "expected newline or '}' after extern declaration");
         skipnl(p);
     }
     p->i++;
@@ -2088,8 +2051,7 @@ static Node* parse_extern(P* p) {
 static Node* parse_internal_import(P* p) {
     expect(p, T_AT, "'@'");
     Token* name = expect(p, T_IDENT, "reserved module name after '@'");
-    if (at(p, T_DOT))
-        perr(p, "reserved module imports omit the .ace suffix");
+    if (at(p, T_DOT)) perr(p, "reserved module imports omit the .ace suffix");
     Node* path = nd(p, N_STR);
     path->str = name->str;
     path->len = name->len;
@@ -2122,8 +2084,7 @@ static Node* parse_import(P* p) {
 
     NV selected = {0};
     int parenthesized = ate(p, T_LPAREN);
-    Token* first = expect(p, T_IDENT,
-                          parenthesized ? "imported member name" : "module or member name after 'import'");
+    Token* first = expect(p, T_IDENT, parenthesized ? "imported member name" : "module or member name after 'import'");
     if (parenthesized || at(p, T_COMMA) || at(p, T_FROM)) {
         n->flags |= F_SELECT;
         nv_push(p, &selected, ident_node(p, first));
@@ -2172,8 +2133,7 @@ static Node* parse_import(P* p) {
         n->len = leaf->len;
     }
     if (ate(p, T_COLON)) {
-        if (n->flags & F_SELECT)
-            perr(p, "selective imports use 'from', not ':'");
+        if (n->flags & F_SELECT) perr(p, "selective imports use 'from', not ':'");
         if (at(p, T_IDENT)) { // import m: math — alias binding
             Token* target = tk(p);
             p->i++;
@@ -2191,8 +2151,7 @@ static Node* parse_import(P* p) {
             perr(p, "expected module name, path, or internal module after ':' in import");
         }
     }
-    if (!ate(p, T_NL) && !at(p, T_EOF))
-        perr(p, "expected newline after import");
+    if (!ate(p, T_NL) && !at(p, T_EOF)) perr(p, "expected newline after import");
     return n;
 }
 
@@ -2212,17 +2171,13 @@ static int when_primary(P* p) {
     if (ident_at(p, "target")) {
         p->i++;
         TokKind op = tk(p)->kind;
-        if (op != T_EQEQ && op != T_BANGEQ)
-            perr(p, "expected '==' or '!=' after target in @when expression");
+        if (op != T_EQEQ && op != T_BANGEQ) perr(p, "expected '==' or '!=' after target in @when expression");
         p->i++;
         Token* value = expect(p, T_STR, "target string after comparison");
-        int equal = strlen(p->target) == value->len &&
-                    memcmp(p->target, value->str, value->len) == 0;
+        int equal = strlen(p->target) == value->len && memcmp(p->target, value->str, value->len) == 0;
         return op == T_EQEQ ? equal : !equal;
     }
-    if (at(p, T_IDENT))
-        perr(p, "unknown @when compile-time name '%.*s'",
-             (int)tk(p)->len, tk(p)->str);
+    if (at(p, T_IDENT)) perr(p, "unknown @when compile-time name '%.*s'", (int)tk(p)->len, tk(p)->str);
     perr(p, "expected target comparison, boolean, or parenthesized @when expression");
     return 0;
 }
@@ -2264,8 +2219,7 @@ static int parse_when(P* p) {
     expect(p, T_RPAREN, "')' after @when expression");
     int attribute_line = p->toks[p->i - 1].line;
     skipnl(p);
-    if (tk(p)->line == attribute_line)
-        perr(p, "@when must occupy its own line before a declaration");
+    if (tk(p)->line == attribute_line) perr(p, "@when must occupy its own line before a declaration");
     if (at(p, T_EOF)) perr(p, "@when must be followed by a top-level declaration");
     return active;
 }
@@ -2278,8 +2232,7 @@ static void parse_layout_attrs(P* p, int* packed, Node** align) {
             p->i += 2;
             int line = p->toks[p->i - 1].line;
             skipnl(p);
-            if (tk(p)->line == line)
-                perr(p, "@packed must occupy its own line before a declaration");
+            if (tk(p)->line == line) perr(p, "@packed must occupy its own line before a declaration");
             *packed = 1;
             continue;
         }
@@ -2288,8 +2241,7 @@ static void parse_layout_attrs(P* p, int* packed, Node** align) {
             *align = parse_align_attr(p);
             continue;
         }
-        if (named_attr_at(p, "when"))
-            perr(p, "@when must precede layout attributes");
+        if (named_attr_at(p, "when")) perr(p, "@when must precede layout attributes");
         perr(p, "unknown top-level attribute");
     }
 }
@@ -2320,8 +2272,7 @@ static Node* parse_top(P* p) {
     if (!at(p, T_IDENT)) perr(p, "expected declaration, got %s", gdesc(p));
     Token* name = tk(p);
     p->i++;
-    if (name->len == 13 && memcmp(name->str, "static_assert", 13) == 0 &&
-        at(p, T_LPAREN)) {
+    if (name->len == 13 && memcmp(name->str, "static_assert", 13) == 0 && at(p, T_LPAREN)) {
         p->i--;
         Node* n = nd_tok(p, N_EXPRSTMT, name);
         n->a = expr(p, 0);
@@ -2365,12 +2316,10 @@ Node* parse(Token* toks, size_t ntok, Diag* d, const char* target) {
         if (named_attr_at(&p, "when")) active = parse_when(&p);
         parse_layout_attrs(&p, &packed, &explicit_align);
         if (at(&p, T_IMPORT)) {
-            if (packed || explicit_align)
-                perr(&p, "layout attributes do not apply to imports");
+            if (packed || explicit_align) perr(&p, "layout attributes do not apply to imports");
             Node* imp = parse_import(&p);
             if (active) {
-                if (saw_declaration)
-                    perr(&p, "imports must precede declarations");
+                if (saw_declaration) perr(&p, "imports must precede declarations");
                 nv_push(&p, &decls, imp);
             }
         } else {
@@ -2381,8 +2330,7 @@ Node* parse(Token* toks, size_t ntok, Diag* d, const char* target) {
                 if (packed) decl->flags |= F_PACKED;
                 decl->b = explicit_align;
             }
-            if (!ate(&p, T_NL) && !at(&p, T_EOF))
-                perr(&p, "expected newline after declaration, got %s", gdesc(&p));
+            if (!ate(&p, T_NL) && !at(&p, T_EOF)) perr(&p, "expected newline after declaration, got %s", gdesc(&p));
             if (active) {
                 nv_push(&p, &decls, decl);
                 saw_declaration = 1;
@@ -2431,8 +2379,7 @@ static void pnode(Node* x, int ind) {
     }
     printf("(%s", node_kind_name((NKind)x->kind));
     if (x->str) printf(" '%.*s'", (int)x->len, x->str);
-    if (x->kind == N_INT || x->kind == N_CHAR || x->kind == N_BOOL)
-        printf(" %llu", (unsigned long long)x->ival);
+    if (x->kind == N_INT || x->kind == N_CHAR || x->kind == N_BOOL) printf(" %llu", (unsigned long long)x->ival);
     if (x->kind == N_FLOAT) printf(" %g", x->fval);
     if (x->kind == N_BINARY || x->kind == N_UNARY || x->kind == N_ASSIGN ||
         x->kind == N_OP)

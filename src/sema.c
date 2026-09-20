@@ -46,8 +46,7 @@ static SType* st_new(uint8_t kind) {
 static SType* st_prim(int p) { return PRIMS[p]; }
 
 static int is_int(SType* t) {
-    return t->kind == SK_PRIM &&
-        ((t->prim >= P_I8 && t->prim <= P_U64) || t->prim == P_USIZE);
+    return t->kind == SK_PRIM && ((t->prim >= P_I8 && t->prim <= P_U64) || t->prim == P_USIZE);
 }
 static int is_float(SType* t) {
     return t->kind == SK_PRIM && (t->prim == P_F32 || t->prim == P_F64);
@@ -77,8 +76,7 @@ static int is_volatile_scalar(SType* t) {
     if (t->kind == SK_PTR) return 1;
     if (t->kind == SK_ENUM) return t->decl && t->decl->a;
     if (t->kind != SK_PRIM) return 0;
-    return (t->prim >= P_I8 && t->prim <= P_U64) ||
-           t->prim == P_F32 || t->prim == P_F64 || t->prim == P_USIZE;
+    return (t->prim >= P_I8 && t->prim <= P_U64) || t->prim == P_F32 || t->prim == P_F64 || t->prim == P_USIZE;
 }
 
 static const char* type_name(SType* t) {
@@ -104,14 +102,12 @@ static const char* type_name(SType* t) {
     case SK_PTR: return t->is_mut ? "mut *T" : "*T";
     case SK_SLICE: {
         char* out = bufs[bi = (bi + 1) & 7];
-        snprintf(out, sizeof bufs[0], "%s[]%s", t->is_mut ? "mut " : "",
-                 t->base ? type_name(t->base) : "?");
+        snprintf(out, sizeof bufs[0], "%s[]%s", t->is_mut ? "mut " : "", t->base ? type_name(t->base) : "?");
         return out;
     }
     case SK_ARRAY: {
         char* out = bufs[bi = (bi + 1) & 7];
-        snprintf(out, sizeof bufs[0], "[%llu]%s",
-                 (unsigned long long)t->count, t->base ? type_name(t->base) : "?");
+        snprintf(out, sizeof bufs[0], "[%llu]%s", (unsigned long long)t->count, t->base ? type_name(t->base) : "?");
         return out;
     }
     case SK_STATICMAP: {
@@ -146,8 +142,7 @@ static uint32_t align_to(uint32_t v, uint32_t a) { return a ? (v + a - 1) / a * 
 static int layout(SType* t) {
     if (t->invalid_layout) return 0;
     if (t->size) return 1;
-    if (t->calc || t->building || t->kind == SK_FORWARD)
-        return 0;
+    if (t->calc || t->building || t->kind == SK_FORWARD) return 0;
     switch (t->kind) {
     case SK_PRIM:
         switch (t->prim) {
@@ -313,9 +308,7 @@ static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int narg
 
 static void ck_err(Ck* k, Node* n, const char* fmt, ...) {
     va_list ap;
-    fprintf(stderr, "%s:%d:%d: error: ",
-            n && n->path ? n->path : k->d->path,
-            n ? n->line : 0, n ? n->col : 0);
+    fprintf(stderr, "%s:%d:%d: error: ", n && n->path ? n->path : k->d->path, n ? n->line : 0, n ? n->col : 0);
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
@@ -378,8 +371,7 @@ static void scope_push(Ck* k) {
 static void scope_pop(Ck* k) { k->scope = k->scope->parent; }
 
 static Sym* find_in(Sym* list, const char* name, uint32_t len) {
-    for (Sym* s = list; s; s = s->next)
-        if (s->len == len && memcmp(s->name, name, len) == 0) return s;
+    for (Sym* s = list; s; s = s->next) if (s->len == len && memcmp(s->name, name, len) == 0) return s;
     return NULL;
 }
 
@@ -432,25 +424,18 @@ static void scope_insert(Scope* sc, int types, Sym* s) {
 }
 
 static Sym* lookup_val(Ck* k, const char* name, uint32_t len) {
-    for (Scope* s = k->scope; s; s = s->parent) {
-        Sym* v = scope_find(s, 0, name, len);
-        if (v) return v;
-    }
+    for (Scope* s = k->scope; s; s = s->parent) { Sym* v = scope_find(s, 0, name, len); if (v) return v; }
     return NULL;
 }
 
 static Sym* lookup_type(Ck* k, const char* name, uint32_t len) {
-    for (Scope* s = k->scope; s; s = s->parent) {
-        Sym* v = scope_find(s, 1, name, len);
-        if (v) return v;
-    }
+    for (Scope* s = k->scope; s; s = s->parent) { Sym* v = scope_find(s, 1, name, len); if (v) return v; }
     return NULL;
 }
 
 static Sym* declare_val(Ck* k, Node* at, uint8_t kind, const char* name, uint32_t len) {
     if (is_panic_name(name, len) || is_assert_name(name, len) || is_static_assert_name(name, len)) {
-        ck_err(k, at, "'%.*s' is a reserved builtin name — no declaration may take it",
-               (int)len, name);
+        ck_err(k, at, "'%.*s' is a reserved builtin name — no declaration may take it", (int)len, name);
         return NULL;
     }
     if (scope_find(k->scope, 0, name, len)) {
@@ -468,17 +453,13 @@ static Sym* declare_type(Ck* k, Node* at, const char* name, uint32_t len) {
         return NULL;
     }
     if (is_panic_name(name, len) || is_assert_name(name, len) || is_static_assert_name(name, len)) {
-        ck_err(k, at, "'%.*s' is a reserved builtin name — no declaration may take it",
-               (int)len, name);
+        ck_err(k, at, "'%.*s' is a reserved builtin name — no declaration may take it", (int)len, name);
         return NULL;
     }
     Sym* old = scope_find(k->scope, 1, name, len);
     if (old && old->is_forward) {
-        if (old->decl && old->decl->path && at->path &&
-            strcmp(old->decl->path, at->path) != 0) {
-            ck_err(k, at,
-                   "forward type '%.*s' must be declared in the same module",
-                   (int)len, name);
+        if (old->decl && old->decl->path && at->path && strcmp(old->decl->path, at->path) != 0) {
+            ck_err(k, at, "forward type '%.*s' must be declared in the same module", (int)len, name);
             return NULL;
         }
         old->is_forward = 0;
@@ -564,8 +545,7 @@ static int same_type(SType* a, SType* b) {
     if (a->kind != b->kind) {
         SType* string = a->kind == SK_PRIM && a->prim == P_STRING ? a :
                         b->kind == SK_PRIM && b->prim == P_STRING ? b : NULL;
-        SType* slice = a->kind == SK_SLICE ? a :
-                       b->kind == SK_SLICE ? b : NULL;
+        SType* slice = a->kind == SK_SLICE ? a : b->kind == SK_SLICE ? b : NULL;
         return string && slice && string->is_mut == slice->is_mut &&
                slice->base && slice->base->kind == SK_PRIM &&
                slice->base->prim == P_U8;
@@ -580,19 +560,16 @@ static int same_type(SType* a, SType* b) {
         return same_type(a->base, b->base) && same_type(a->ret, b->ret);
     case SK_TUPLE:
         if (a->nfields != b->nfields) return 0;
-        for (int i = 0; i < a->nfields; i++)
-            if (!same_type(a->fields[i].t, b->fields[i].t)) return 0;
+        for (int i = 0; i < a->nfields; i++) if (!same_type(a->fields[i].t, b->fields[i].t)) return 0;
         return 1;
     case SK_FUNC:
         if (a->is_c_abi != b->is_c_abi || a->nparams != b->nparams) return 0;
-        for (int i = 0; i < a->nparams; i++)
-            if (!same_type(a->params[i], b->params[i])) return 0;
+        for (int i = 0; i < a->nparams; i++) if (!same_type(a->params[i], b->params[i])) return 0;
         return same_type(a->ret, b->ret);
     case SK_STRUCT: case SK_ENUM: case SK_BITS: case SK_CONTRACT: case SK_DISTINCT:
     case SK_ERROR_DOMAIN: case SK_UNION:
         if (a->decl != b->decl || a->nargs != b->nargs) return 0;
-        for (int i = 0; i < a->nargs; i++)
-            if (!same_type(a->args[i], b->args[i])) return 0;
+        for (int i = 0; i < a->nargs; i++) if (!same_type(a->args[i], b->args[i])) return 0;
         return 1; // nominal identity plus exact generic arguments
     case SK_ERROR: return 1;
     case SK_TYPEPARAM:
@@ -612,10 +589,8 @@ static int shrink_ok(SType* f, SType* t) {
     if (f->kind != t->kind) {
         SType* string = f->kind == SK_PRIM && f->prim == P_STRING ? f :
                         t->kind == SK_PRIM && t->prim == P_STRING ? t : NULL;
-        SType* slice = f->kind == SK_SLICE ? f :
-                       t->kind == SK_SLICE ? t : NULL;
-        return string && slice && slice->base &&
-               slice->base->kind == SK_PRIM && slice->base->prim == P_U8;
+        SType* slice = f->kind == SK_SLICE ? f : t->kind == SK_SLICE ? t : NULL;
+        return string && slice && slice->base && slice->base->kind == SK_PRIM && slice->base->prim == P_U8;
     }
     switch (f->kind) {
     case SK_PTR: case SK_SLICE:
@@ -633,9 +608,7 @@ static int same_modulo_shrink(SType* a, SType* b) {
 }
 
 static int same_param_signature(SType* a, Node* ad, SType* b, Node* bd) {
-    if (!a || !b || a->kind != SK_FUNC || b->kind != SK_FUNC ||
-        a->nparams != b->nparams)
-        return 0;
+    if (!a || !b || a->kind != SK_FUNC || b->kind != SK_FUNC || a->nparams != b->nparams) return 0;
     for (int i = 0; i < a->nparams; i++) {
         if (!same_type(a->params[i], b->params[i])) return 0;
         int am = ad && i < ad->nkids && (ad->kids[i]->flags & F_MUT);
@@ -657,11 +630,8 @@ static int castable(SType* f, SType* t) {
     if (shrink_ok(f, t)) return 1; // mut view casts to its plain form
     if (f->kind == SK_BITS) return same_type(f->base, t);
     if (t->kind == SK_BITS) return same_type(f, t->base);
-    if (f == T_UT_INT)
-        return is_num(t) || t->kind == SK_ENUM ||
-               (t->kind == SK_DISTINCT && castable(f, t->base));
-    if (f == T_UT_FLOAT)
-        return is_float(t) || (t->kind == SK_DISTINCT && castable(f, t->base));
+    if (f == T_UT_INT) return is_num(t) || t->kind == SK_ENUM || (t->kind == SK_DISTINCT && castable(f, t->base));
+    if (f == T_UT_FLOAT) return is_float(t) || (t->kind == SK_DISTINCT && castable(f, t->base));
     if (t->kind == SK_DISTINCT) return castable(f, t->base);
     if (f->kind == SK_DISTINCT) return castable(f->base, t);
     if (f->kind == SK_ENUM) return is_int(t);
@@ -669,9 +639,7 @@ static int castable(SType* f, SType* t) {
     if (f->kind == SK_PTR && t->kind == SK_PTR) return 1;
     // string/[]char/[]u8 aliases share a descriptor; fixed arrays still reach
     // that view only through explicit slicing.
-    if (t->kind == SK_PRIM && t->prim == P_STRING &&
-        f->kind == SK_SLICE && f->base == st_prim(P_U8))
-        return 1;
+    if (t->kind == SK_PRIM && t->prim == P_STRING && f->kind == SK_SLICE && f->base == st_prim(P_U8)) return 1;
     return is_num(f) && is_num(t);
 }
 
@@ -684,8 +652,7 @@ static int castable(SType* f, SType* t) {
  */
 static int64_t seq_const_len(Ck* k, Node* base, SType* t) {
     if (base->kind == N_STR) return (int64_t)base->len;
-    if (base->kind == N_ARRAYLIT)
-        return base->a ? (int64_t)base->ival : (int64_t)base->nkids;
+    if (base->kind == N_ARRAYLIT) return base->a ? (int64_t)base->ival : (int64_t)base->nkids;
     if (t->kind == SK_ARRAY) return (int64_t)t->count;
     if (base->kind == N_IDENT) {
         Sym* s = lookup_val(k, base->str, base->len);
@@ -702,8 +669,7 @@ static int64_t seq_const_len(Ck* k, Node* base, SType* t) {
  * itself provable. Returns 0 when the bound cannot be known at compile time.
  */
 static int bound_const(Node* n, int64_t* out) {
-    if (n->kind == N_FIELD_E && n->a && n->len == 3 &&
-        memcmp(n->str, "len", 3) == 0) {
+    if (n->kind == N_FIELD_E && n->a && n->len == 3 && memcmp(n->str, "len", 3) == 0) {
         if (n->a->kind == N_STR) {
             *out = (int64_t)n->a->len;
             return 1;
@@ -754,8 +720,7 @@ static void check_slice_bounds(Ck* k, Node* e, Node* base, SType* bt) {
     uint8_t* stored_proof = (uint8_t*)arena_alloc(1);
     *stored_proof = proof;
     e->aux = stored_proof;
-    if (proof == (BP_LO_NONNEG | BP_HI_NONNEG | BP_ORDER | BP_SOURCE))
-        e->flags |= F_BOUNDS_PROVEN;
+    if (proof == (BP_LO_NONNEG | BP_HI_NONNEG | BP_ORDER | BP_SOURCE)) e->flags |= F_BOUNDS_PROVEN;
 }
 
 /*
@@ -763,21 +728,18 @@ static void check_slice_bounds(Ck* k, Node* e, Node* base, SType* bt) {
  * a compile-time error when constants prove the index out of range, a
  * checked-build diagnostic otherwise, and release assumes it.
  */
-static void check_index_bounds(Ck* k, Node* e, Node* base, SType* bt,
-                               int write) {
+static void check_index_bounds(Ck* k, Node* e, Node* base, SType* bt, int write) {
     int64_t ix;
     if (!e->b || !bound_const(e->b, &ix)) return;
     if (ix < 0) {
-        ck_err(k, e->b, "%sindex %lld is negative", write ? "write " : "",
-               (long long)ix);
+        ck_err(k, e->b, "%sindex %lld is negative", write ? "write " : "", (long long)ix);
         return;
     }
     int64_t slen = seq_const_len(k, base, bt);
     if (slen >= 0 && ix >= slen)
         ck_err(k, e->b, "%sindex %lld exceeds source length %lld",
                write ? "write " : "", (long long)ix, (long long)slen);
-    else if (slen >= 0)
-        e->flags |= F_BOUNDS_PROVEN;
+    else if (slen >= 0) e->flags |= F_BOUNDS_PROVEN;
 }
 
 // --- forward decls -------------------------------------------------------------------
@@ -803,8 +765,7 @@ static Node* static_string_expr(Ck* k, Node* e);
 static int is_byte_sequence(SType* t) {
     if (!t) return 0;
     if (t->kind == SK_PRIM) return t->prim == P_STRING;
-    return (t->kind == SK_ARRAY || t->kind == SK_SLICE) && t->base &&
-           t->base->kind == SK_PRIM && t->base->prim == P_U8;
+    return (t->kind == SK_ARRAY || t->kind == SK_SLICE) && t->base && t->base->kind == SK_PRIM && t->base->prim == P_U8;
 }
 
 // --- tagged unions -----------------------------------------------------------------
@@ -833,9 +794,7 @@ static int union_supports_equality(SType* t) {
     case SK_ARRAY: case SK_SLICE:
         return 0;
     case SK_UNION:
-        for (int i = 0; i < t->nfields; i++)
-            if (t->fields[i].t && !union_supports_equality(t->fields[i].t))
-                return 0;
+        for (int i = 0; i < t->nfields; i++) if (t->fields[i].t && !union_supports_equality(t->fields[i].t)) return 0;
         return 1;
     default:
         return 0;
@@ -855,8 +814,7 @@ static SType* union_base_type(Ck* k, Node* base) {
         Sym* ts = lookup_type(k, base->str, base->len);
         if (!ts || !ts->type) return NULL;
         if (ts->is_generic) {
-            ck_err(k, base, "generic type '%.*s' needs explicit type arguments",
-                   (int)base->len, base->str);
+            ck_err(k, base, "generic type '%.*s' needs explicit type arguments", (int)base->len, base->str);
             return T_ERR;
         }
         t = ts->type;
@@ -875,8 +833,7 @@ static int union_variant_index(Ck* k, Node* at, SType* u, Node* name) {
         if ((uint32_t)strlen(u->fields[i].name) == name->len &&
             memcmp(u->fields[i].name, name->str, name->len) == 0)
             return i;
-    ck_err(k, at, "union %s has no variant '%.*s'", type_name(u),
-           (int)name->len, name->str);
+    ck_err(k, at, "union %s has no variant '%.*s'", type_name(u), (int)name->len, name->str);
     return -1;
 }
 
@@ -887,10 +844,8 @@ static int union_variant_index(Ck* k, Node* at, SType* u, Node* name) {
  * array literals type from the payload.
  */
 static void coerce_payload(Ck* k, Node* arg, SType* pt) {
-    if (pt->kind == SK_TUPLE && arg->kind == N_TUPLE_E &&
-        arg->nkids == pt->nfields) {
-        for (int i = 0; i < arg->nkids; i++)
-            coerce(k, arg->kids[i], pt->fields[i].t);
+    if (pt->kind == SK_TUPLE && arg->kind == N_TUPLE_E && arg->nkids == pt->nfields) {
+        for (int i = 0; i < arg->nkids; i++) coerce(k, arg->kids[i], pt->fields[i].t);
         arg->ty = pt; // emitter stores members at these widths
         return;
     }
@@ -995,9 +950,7 @@ static int usize_const(Node* e, uint64_t* out) {
 static int address_const(Node* e, uint64_t* out) {
     if (!e) return 0;
     if (e->kind == N_NULL) { *out = 0; return 1; }
-    if (e->kind == N_CALL && e->a && e->a->kind == N_PTR &&
-        e->nkids == 1)
-        return usize_const(e->kids[0], out);
+    if (e->kind == N_CALL && e->a && e->a->kind == N_PTR && e->nkids == 1) return usize_const(e->kids[0], out);
     return 0;
 }
 
@@ -1063,8 +1016,7 @@ static int compile_time_expr(Node* e) {
         return 1;
     case N_IDENT: {
         Sym* s = node_sym(e);
-        return s && s->is_const && s->is_global && s->init &&
-               compile_time_expr(s->init);
+        return s && s->is_const && s->is_global && s->init && compile_time_expr(s->init);
     }
     case N_FIELD_E: {
         if (e->len == 3 && memcmp(e->str, "len", 3) == 0 && e->a) {
@@ -1093,9 +1045,7 @@ static int compile_time_expr(Node* e) {
         return 1;
     case N_CALL:
         if (e->sym) return 0; // resolved ordinary function call
-        if (e->a && e->a->kind == N_IDENT && e->a->len == 6 &&
-            memcmp(e->a->str, "typeid", 6) == 0 && e->ival)
-            return 1;
+        if (e->a && e->a->kind == N_IDENT && e->a->len == 6 && memcmp(e->a->str, "typeid", 6) == 0 && e->ival) return 1;
         for (int i = 0; i < e->nkids; i++) if (!compile_time_expr(e->kids[i])) return 0;
         return 1; // type cast, layout/type builtin, or union construction
     default:
@@ -1114,8 +1064,7 @@ static int static_key_int(Node* e, uint64_t* out) {
         }
     }
     if (e->kind == N_CALL && !e->sym) {
-        if (e->a && e->a->kind == N_IDENT && e->a->len == 6 &&
-            memcmp(e->a->str, "typeid", 6) == 0 && e->ival) {
+        if (e->a && e->a->kind == N_IDENT && e->a->len == 6 && memcmp(e->a->str, "typeid", 6) == 0 && e->ival) {
             *out = e->ival;
             return 1;
         }
@@ -1123,8 +1072,7 @@ static int static_key_int(Node* e, uint64_t* out) {
     }
     if (e->kind == N_IDENT) {
         Sym* s = node_sym(e);
-        if (s && s->is_const && s->is_global && s->init)
-            return static_key_int(s->init, out);
+        if (s && s->is_const && s->is_global && s->init) return static_key_int(s->init, out);
     }
     int64_t v;
     if (!ut_const(e, &v)) return 0;
@@ -1137,11 +1085,9 @@ static Node* static_key_string(Node* e) {
     if (e->kind == N_STR) return e;
     if (e->kind == N_IDENT) {
         Sym* s = node_sym(e);
-        if (s && s->is_const && s->is_global && s->init)
-            return static_key_string(s->init);
+        if (s && s->is_const && s->is_global && s->init) return static_key_string(s->init);
     }
-    if (e->kind == N_CALL && !e->sym && e->nkids == 1)
-        return static_key_string(e->kids[0]);
+    if (e->kind == N_CALL && !e->sym && e->nkids == 1) return static_key_string(e->kids[0]);
     return NULL;
 }
 
@@ -1160,11 +1106,8 @@ static void check_staticmap(Ck* k, Node* lit, SType* map) {
         ck_err(k, lit, "StaticMap requires a brace literal of key: value entries");
         return;
     }
-    if (!staticmap_key_type(map->base))
-        ck_err(k, lit, "%s is not an allowed StaticMap key type", type_name(map->base));
-    if (!layout(map->ret))
-        ck_err(k, lit, "StaticMap value type %s must have a complete layout",
-               type_name(map->ret));
+    if (!staticmap_key_type(map->base)) ck_err(k, lit, "%s is not an allowed StaticMap key type", type_name(map->base));
+    if (!layout(map->ret)) ck_err(k, lit, "StaticMap value type %s must have a complete layout", type_name(map->ret));
     SType* key = map->base;
     while (key && key->kind == SK_DISTINCT) key = key->base;
     int strings = key && key->kind == SK_PRIM && key->prim == P_STRING;
@@ -1174,14 +1117,10 @@ static void check_staticmap(Ck* k, Node* lit, SType* map) {
         if (entry->b->kind == N_STRUCTLIT && !entry->b->a &&
             (map->ret->kind == SK_STRUCT || map->ret->kind == SK_BITS))
             check_structlit(k, entry->b, map->ret);
-        else if (entry->b->kind == N_ARRAYLIT && map->ret->kind == SK_ARRAY)
-            check_arraylit(k, entry->b, map->ret);
-        else
-            coerce(k, entry->b, map->ret);
-        if (!compile_time_expr(entry->a))
-            ck_err(k, entry->a, "StaticMap key must be a global constant expression");
-        if (!compile_time_expr(entry->b))
-            ck_err(k, entry->b, "StaticMap value must be a global constant expression");
+        else if (entry->b->kind == N_ARRAYLIT && map->ret->kind == SK_ARRAY) check_arraylit(k, entry->b, map->ret);
+        else coerce(k, entry->b, map->ret);
+        if (!compile_time_expr(entry->a)) ck_err(k, entry->a, "StaticMap key must be a global constant expression");
+        if (!compile_time_expr(entry->b)) ck_err(k, entry->b, "StaticMap value must be a global constant expression");
         uint64_t bits = 0;
         Node* text = strings ? static_key_string(entry->a) : NULL;
         if (strings ? !text : !static_key_int(entry->a, &bits)) {
@@ -1194,8 +1133,7 @@ static void check_staticmap(Ck* k, Node* lit, SType* map) {
             int equal = 0;
             if (strings) {
                 Node* ptext = static_key_string(prev->a);
-                equal = ptext && text && ptext->len == text->len &&
-                        memcmp(ptext->str, text->str, text->len) == 0;
+                equal = ptext && text && ptext->len == text->len && memcmp(ptext->str, text->str, text->len) == 0;
             } else {
                 equal = prev->ival == bits;
             }
@@ -1248,8 +1186,7 @@ static SType* indexed_named_type(Ck* k, Node* ix);
 
 static SType* build_named_ctx(Ck* k, Node* t, int path) {
     if (t->flags & F_MUT) { // `mut string` — the only mut-qualified named type
-        if (t->a || t->nkids ||
-            !(t->len == 6 && memcmp(t->str, "string", 6) == 0)) {
+        if (t->a || t->nkids || !(t->len == 6 && memcmp(t->str, "string", 6) == 0)) {
             ck_err(k, t,
                    "'mut' marks writable views ('mut *T', 'mut []T', 'mut string'), not '%.*s'",
                    (int)t->len, t->str);
@@ -1291,8 +1228,7 @@ static SType* build_named_ctx(Ck* k, Node* t, int path) {
         return instantiate_generic_type(k, s->type->decl, args, t->nkids);
     }
     if (s->is_generic) {
-        ck_err(k, t, "generic type '%.*s' needs explicit type arguments",
-               (int)t->len, t->str);
+        ck_err(k, t, "generic type '%.*s' needs explicit type arguments", (int)t->len, t->str);
         return T_ERR;
     }
     return s->type;
@@ -1329,8 +1265,7 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
             return T_ERR;
         }
         if (s->is_generic) {
-            ck_err(k, t, "generic type '%.*s' needs explicit type arguments",
-                   (int)t->len, t->str);
+            ck_err(k, t, "generic type '%.*s' needs explicit type arguments", (int)t->len, t->str);
             return T_ERR;
         }
         return s->type;
@@ -1343,16 +1278,14 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
         SType* it = indexed_named_type(k, t);
         if (it) return it;
         Sym* ts = lookup_type(k, t->a->str, t->a->len);
-        if (!ts || !ts->type)
-            ck_err(k, t->a, "unknown type '%.*s'", (int)t->a->len, t->a->str);
+        if (!ts || !ts->type) ck_err(k, t->a, "unknown type '%.*s'", (int)t->a->len, t->a->str);
         else if (ts->is_generic)
             ck_err(k, t, "generic type '%.*s' expects %d type argument%s",
                    (int)t->a->len, t->a->str,
                    ts->type->decl && ts->type->decl->c ? ts->type->decl->c->nkids : 0,
                    ts->type->decl && ts->type->decl->c &&
                    ts->type->decl->c->nkids == 1 ? "" : "s");
-        else
-            ck_err(k, t->a, "type '%.*s' is not generic", (int)t->a->len, t->a->str);
+        else ck_err(k, t->a, "type '%.*s' is not generic", (int)t->a->len, t->a->str);
         return T_ERR;
     }
     case N_PTR: {
@@ -1361,8 +1294,7 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
         int child_path = (path == 1 || path == 2) ? 1 : 0;
         p->base = build_type_ctx(k, t->a, child_path);
         if (p->base && p->base->kind == SK_FORWARD) {
-            Sym* s = lookup_type(k, p->base->name,
-                                 (uint32_t)strlen(p->base->name));
+            Sym* s = lookup_type(k, p->base->name, (uint32_t)strlen(p->base->name));
             if (s && s->is_forward) record_type_fix(k, s, &p->base, t->a);
         }
         return p;
@@ -1379,8 +1311,7 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
         int child_path = (path == 2) ? 1 : 0;
         s->base = build_type_ctx(k, t->a, child_path);
         if (s->base && s->base->kind == SK_FORWARD) {
-            Sym* sym = lookup_type(k, s->base->name,
-                                   (uint32_t)strlen(s->base->name));
+            Sym* sym = lookup_type(k, s->base->name, (uint32_t)strlen(s->base->name));
             if (sym && sym->is_forward) record_type_fix(k, sym, &s->base, t->a);
         }
         return s;
@@ -1424,8 +1355,7 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
         f->is_c_abi = (t->flags & F_CABI) != 0;
         f->nparams = t->nkids;
         f->params = (SType**)arena_alloc((size_t)(t->nkids ? t->nkids : 1) * sizeof(SType*));
-        for (int i = 0; i < t->nkids; i++)
-            f->params[i] = build_type_ctx(k, t->kids[i], 0);
+        for (int i = 0; i < t->nkids; i++) f->params[i] = build_type_ctx(k, t->kids[i], 0);
         f->ret = t->a ? build_type_ctx(k, t->a, 0) : NULL;
         if (f->is_c_abi) {
             SType* stack[512];
@@ -1481,8 +1411,7 @@ static SType* build_func_type(Ck* k, Node* f, SType** args, int nargs) {
     }
     SType* ft = st_new(SK_FUNC);
     ft->nparams = f->nkids;
-    ft->params = (SType**)arena_alloc(
-        (size_t)(f->nkids ? f->nkids : 1) * sizeof(SType*));
+    ft->params = (SType**)arena_alloc((size_t)(f->nkids ? f->nkids : 1) * sizeof(SType*));
     for (int i = 0; i < f->nkids; i++) {
         ft->params[i] = build_type(k, f->kids[i]->a);
         if (ft->params[i] && ft->params[i]->kind == SK_ERROR_DOMAIN)
@@ -1497,8 +1426,7 @@ static SType* build_func_type(Ck* k, Node* f, SType** args, int nargs) {
     return ft;
 }
 
-static const char* method_key(Node* owner, const char* name, uint32_t len,
-                              uint32_t* out_len) {
+static const char* method_key(Node* owner, const char* name, uint32_t len, uint32_t* out_len) {
     size_t olen = owner ? owner->len : 0;
     char* key = arena_alloc(olen + len + 2);
     if (olen) memcpy(key, owner->str, olen);
@@ -1520,8 +1448,7 @@ static const char* method_key(Node* owner, const char* name, uint32_t len,
 static int has_special_struct_layout(SType* t) {
     if (!t || t->kind != SK_STRUCT) return 0;
     if (t->is_packed || t->requested_align) return 1;
-    for (int i = 0; i < t->nfields; i++)
-        if (t->fields[i].requested_align) return 1;
+    for (int i = 0; i < t->nfields; i++) if (t->fields[i].requested_align) return 1;
     return 0;
 }
 
@@ -1544,16 +1471,12 @@ static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
     case SK_DISTINCT:
         return is_c_abi_type(t->base, pos, stack, nstack);
     case SK_ENUM:
-        return t->decl && t->decl->a &&
-               is_c_abi_type(t->base, pos, stack, nstack);
+        return t->decl && t->decl->a && is_c_abi_type(t->base, pos, stack, nstack);
     case SK_ARRAY:
-        return pos != CABI_DIRECT &&
-               is_c_abi_type(t->base, pos, stack, nstack);
+        return pos != CABI_DIRECT && is_c_abi_type(t->base, pos, stack, nstack);
     case SK_FUNC:
         if (!t->is_c_abi || pos != CABI_DIRECT) return 0;
-        for (int i = 0; i < t->nparams; i++)
-            if (!is_c_abi_type(t->params[i], CABI_DIRECT, stack, nstack))
-                return 0;
+        for (int i = 0; i < t->nparams; i++) if (!is_c_abi_type(t->params[i], CABI_DIRECT, stack, nstack)) return 0;
         return is_c_abi_type(t->ret, CABI_DIRECT, stack, nstack);
     case SK_STRUCT: {
         if (has_special_struct_layout(t) &&
@@ -1564,11 +1487,8 @@ static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
             if (stack[i] == t) return 1; // cycle through a pointer
         if (nstack >= 512) return 0;
         stack[nstack] = t;
-        int field_pos = pos == CABI_POINTEE || pos == CABI_POINTEE_FIELD
-            ? CABI_POINTEE_FIELD : CABI_FIELD;
-        for (int i = 0; i < t->nfields; i++)
-            if (!is_c_abi_type(t->fields[i].t, field_pos, stack, nstack + 1))
-                return 0;
+        int field_pos = pos == CABI_POINTEE || pos == CABI_POINTEE_FIELD ? CABI_POINTEE_FIELD : CABI_FIELD;
+        for (int i = 0; i < t->nfields; i++) if (!is_c_abi_type(t->fields[i].t, field_pos, stack, nstack + 1)) return 0;
         return 1;
     }
     default:
@@ -1630,15 +1550,12 @@ static int spec_conforms(SType* sub, Node* gdecl, SType* ft, Node* fdecl) {
  */
 static Sym* declare_specialization(Ck* k, Node* f, Sym* head) {
     if (f->flags & F_SPECIALIZED) {
-        ck_err(k, f,
-               "a specialization provides its own body — 'specialized' marks only a generic template");
+        ck_err(k, f, "a specialization provides its own body — 'specialized' marks only a generic template");
         return NULL;
     }
     int nargs = f->c->nkids;
-    SType** targs = (SType**)arena_alloc(
-        (size_t)(nargs ? nargs : 1) * sizeof(SType*));
-    for (int i = 0; i < nargs; i++)
-        targs[i] = build_type(k, f->c->kids[i]);
+    SType** targs = (SType**)arena_alloc((size_t)(nargs ? nargs : 1) * sizeof(SType*));
+    for (int i = 0; i < nargs; i++) targs[i] = build_type(k, f->c->kids[i]);
     SType* ft = build_func_type(k, f, targs, nargs);
     Sym* bind = NULL;
     int nbind = 0;
@@ -1695,10 +1612,8 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
     uint32_t key_len = f->len;
     const char* key = f->str;
     if (f->flags & F_METHOD) key = method_key(f->d, f->str, f->len, &key_len);
-    else if (is_panic_name(f->str, f->len) || is_assert_name(f->str, f->len) ||
-             is_static_assert_name(f->str, f->len)) {
-        ck_err(k, f, "'%.*s' is a reserved builtin name — no declaration may take it",
-               (int)f->len, f->str);
+    else if (is_panic_name(f->str, f->len) || is_assert_name(f->str, f->len) || is_static_assert_name(f->str, f->len)) {
+        ck_err(k, f, "'%.*s' is a reserved builtin name — no declaration may take it", (int)f->len, f->str);
         return NULL;
     }
     Sym* head = scope_find(k->scope, 0, key, key_len);
@@ -1711,8 +1626,7 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
         old_c_boundary |= old->is_extern ||
                           (old->decl && (old->decl->flags & F_EXPO));
     if (head && (is_extern || old_c_boundary || (f->flags & F_EXPO))) {
-        ck_err(k, f, "C-boundary function '%.*s' cannot be overloaded",
-               (int)f->len, f->str);
+        ck_err(k, f, "C-boundary function '%.*s' cannot be overloaded", (int)f->len, f->str);
         return NULL;
     }
     /*
@@ -1728,17 +1642,11 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
         Node* typed_ident = NULL;
         for (int i = 0; i < f->c->nkids && !typed_ident; i++) {
             Node* id = f->c->kids[i];
-            if (prim_by_name(id->str, id->len) ||
-                lookup_type(k, id->str, id->len))
-                typed_ident = id;
+            if (prim_by_name(id->str, id->len) || lookup_type(k, id->str, id->len)) typed_ident = id;
         }
         if (typed_ident) {
             int has_generic = 0;
-            for (Sym* old = head; old; old = old->overload)
-                if (old->is_generic) {
-                    has_generic = 1;
-                    break;
-                }
+            for (Sym* old = head; old; old = old->overload) if (old->is_generic) { has_generic = 1; break; }
             if (has_generic) return declare_specialization(k, f, head);
             ck_err(k, f,
                    "brackets after '%.*s' name the existing type '%.*s' — a specialization must follow a generic declaration of '%.*s'",
@@ -1748,24 +1656,18 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
         }
     }
     if ((f->flags & F_SPECIALIZED) && !f->c) {
-        ck_err(k, f,
-               "'specialized' marks a generic template; '%.*s' declares no type parameters",
-               (int)f->len, f->str);
+        ck_err(k, f, "'specialized' marks a generic template; '%.*s' declares no type parameters", (int)f->len, f->str);
         return NULL;
     }
     if (f->flags & F_INTRINSIC) {
         if (!f->ival) {
             ck_err(k, f, "'intrinsic' declarations are restricted to compiler-provided standard-library operations");
         }
-        if (!(f->flags & F_PUB))
-            ck_err(k, f, "intrinsic declaration '%.*s' must be public",
-                   (int)f->len, f->str);
+        if (!(f->flags & F_PUB)) ck_err(k, f, "intrinsic declaration '%.*s' must be public", (int)f->len, f->str);
         if (f->flags & (F_EXPO | F_METHOD))
             ck_err(k, f, "intrinsic declaration '%.*s' cannot be a method or C export",
                    (int)f->len, f->str);
-        if (f->c)
-            ck_err(k, f, "intrinsic declaration '%.*s' cannot be generic or specialized",
-                   (int)f->len, f->str);
+        if (f->c) ck_err(k, f, "intrinsic declaration '%.*s' cannot be generic or specialized", (int)f->len, f->str);
     }
     SType* ft = build_func_type(k, f, NULL, 0);
     ft->is_c_abi = is_extern || (f->flags & F_EXPO);
@@ -1812,8 +1714,7 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
     }
     if (is_extern || (f->flags & F_EXPO)) {
         if (f->c) {
-            ck_err(k, f, "C-boundary function '%.*s' cannot be generic",
-                   (int)f->len, f->str);
+            ck_err(k, f, "C-boundary function '%.*s' cannot be generic", (int)f->len, f->str);
         } else {
             SType* stack[512];
             if (ft->ret && ft->ret->kind != SK_ERR &&
@@ -1868,8 +1769,7 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
 
 static int ut_fits(Ck* k, Node* e, SType* want) {
     if (is_float(want)) {
-        double d = e->kind == N_FLOAT ? e->fval :
-                   e->kind == N_INT ? (double)e->ival : 0.0;
+        double d = e->kind == N_FLOAT ? e->fval : e->kind == N_INT ? (double)e->ival : 0.0;
         if (want->prim == P_F32 && (d > 3.402823466e38 || d < -3.402823466e38)) {
             ck_err(k, e, "float literal out of range for f32");
             return 0;
@@ -1885,13 +1785,10 @@ static int ut_fits(Ck* k, Node* e, SType* want) {
         if ((e->kind == N_INT && e->ival > 127) || v < -128 || v > 127) goto over;
         return 1;
     case P_I16:
-        if ((e->kind == N_INT && e->ival > 32767) || v < -32768 || v > 32767)
-            goto over;
+        if ((e->kind == N_INT && e->ival > 32767) || v < -32768 || v > 32767) goto over;
         return 1;
     case P_I32:
-        if ((e->kind == N_INT && e->ival > INT32_MAX) ||
-            v < INT32_MIN || v > INT32_MAX)
-            goto over;
+        if ((e->kind == N_INT && e->ival > INT32_MAX) || v < INT32_MIN || v > INT32_MAX) goto over;
         return 1;
     case P_I64: if (e->kind == N_INT && e->ival > INT64_MAX) goto over; return 1;
     case P_U8: if (u > 255) goto over; return 1;
@@ -1902,8 +1799,7 @@ static int ut_fits(Ck* k, Node* e, SType* want) {
     default: return 1;
     }
 over:
-    ck_err(k, e, "integer literal %lld out of range for %s", (long long)v,
-           type_name(want));
+    ck_err(k, e, "integer literal %lld out of range for %s", (long long)v, type_name(want));
     return 0;
 }
 
@@ -1915,9 +1811,7 @@ static int enum_backing_type(SType* t) {
 }
 
 static int enum_unsigned(SType* t) {
-    return t && t->kind == SK_PRIM &&
-           (t->prim == P_U8 || t->prim == P_U16 || t->prim == P_U32 ||
-            t->prim == P_U64);
+    return t && t->kind == SK_PRIM && (t->prim == P_U8 || t->prim == P_U16 || t->prim == P_U32 || t->prim == P_U64);
 }
 
 static uint64_t enum_max(SType* t) {
@@ -1936,8 +1830,7 @@ static uint64_t enum_max(SType* t) {
 static void check_enum_decl(Ck* k, Node* n, SType* t) {
     t->base = n->a ? build_type(k, n->a) : st_prim(P_I32);
     if (!enum_backing_type(t->base)) {
-        ck_err(k, n->a ? n->a : n,
-               "enum backing type must be i8, i16, i32, i64, u8, u16, u32, or u64");
+        ck_err(k, n->a ? n->a : n, "enum backing type must be i8, i16, i32, i64, u8, u16, u32, or u64");
         t->base = st_prim(P_I32);
     }
     int64_t previous = -1;
@@ -1952,16 +1845,14 @@ static void check_enum_decl(Ck* k, Node* n, SType* t) {
                 value = i == 0 ? 0 : (int64_t)((uint64_t)previous + 1);
                 valid = 0;
             } else if (enum_unsigned(t->base) && value < 0 && m->a->kind != N_INT) {
-                ck_err(k, m->a, "negative enum discriminant does not fit %s",
-                       type_name(t->base));
+                ck_err(k, m->a, "negative enum discriminant does not fit %s", type_name(t->base));
                 valid = 0;
             } else {
                 valid = ut_fits(k, m->a, t->base);
             }
         } else {
             if (i > 0 && (uint64_t)previous == enum_max(t->base)) {
-                ck_err(k, m, "implicit enum discriminant overflows %s",
-                       type_name(t->base));
+                ck_err(k, m, "implicit enum discriminant overflows %s", type_name(t->base));
                 value = previous;
                 valid = 0;
             } else {
@@ -1969,8 +1860,7 @@ static void check_enum_decl(Ck* k, Node* n, SType* t) {
             }
         }
         m->ival = (uint64_t)value;
-        if (valid && i == 0 && value != 0)
-            ck_err(k, m, "first enum member must have discriminant zero");
+        if (valid && i == 0 && value != 0) ck_err(k, m, "first enum member must have discriminant zero");
         for (int j = 0; valid && j < i; j++) if (n->kids[j]->ival == m->ival) {
             ck_err(k, m, "duplicate enum discriminant %lld", (long long)value);
             break;
@@ -2005,8 +1895,7 @@ static SType* materialize_expr_defaults(Ck* k, Node* e) {
         return def;
     }
     if (e->kind == N_TUPLE_E && t->kind == SK_TUPLE) {
-        for (int i = 0; i < e->nkids; i++)
-            t->fields[i].t = materialize_expr_defaults(k, e->kids[i]);
+        for (int i = 0; i < e->nkids; i++) t->fields[i].t = materialize_expr_defaults(k, e->kids[i]);
         e->ty = t;
     }
     return t;
@@ -2024,8 +1913,7 @@ static int coerce(Ck* k, Node* e, SType* want) {
     if (e->kind == N_TUPLE_E && want && want->kind == SK_TUPLE) {
         SType* t = materialize_expr_defaults(k, e);
         if (t->nfields != want->nfields) {
-            ck_err(k, e, "tuple has %d values where %d expected",
-                   t->nfields, want->nfields);
+            ck_err(k, e, "tuple has %d values where %d expected", t->nfields, want->nfields);
             return 0;
         }
         for (int i = 0; i < t->nfields; i++) {
@@ -2055,8 +1943,7 @@ static int coerce(Ck* k, Node* e, SType* want) {
                 found = s;
             }
             if (!found) {
-                ck_err(k, e, "no overload of '%.*s' has the required function type",
-                       (int)e->len, e->str);
+                ck_err(k, e, "no overload of '%.*s' has the required function type", (int)e->len, e->str);
                 e->ty = T_ERR;
                 return 0;
             }
@@ -2074,9 +1961,7 @@ static int coerce(Ck* k, Node* e, SType* want) {
         ck_err(k, e, "null is not a value of %s", type_name(want));
         return 0;
     }
-    if (t == T_UT_INT &&
-        (is_int(want) || want->kind == SK_ENUM ||
-         (want->kind == SK_DISTINCT && is_int(want->base)))) {
+    if (t == T_UT_INT && (is_int(want) || want->kind == SK_ENUM || (want->kind == SK_DISTINCT && is_int(want->base)))) {
         if (ut_fits(k, e, want->kind == SK_DISTINCT ? want->base : want)) {
             if (e->kind == N_BINARY) {
                 coerce(k, e->a, want);
@@ -2084,18 +1969,15 @@ static int coerce(Ck* k, Node* e, SType* want) {
             } else if (e->kind == N_UNARY) {
                 // the whole was range-checked above; a literal operand is a
                 // magnitude (i64 min negates 9223372036854775808)
-                if (e->a->kind == N_INT || e->a->kind == N_FLOAT)
-                    e->a->ty = want;
-                else
-                    coerce(k, e->a, want);
+                if (e->a->kind == N_INT || e->a->kind == N_FLOAT) e->a->ty = want;
+                else coerce(k, e->a, want);
             }
             e->ty = want; // untyped literal takes its expected type here
             return 1;
         }
         return 0;
     }
-    if (t == T_UT_FLOAT &&
-        (is_float(want) || (want->kind == SK_DISTINCT && is_float(want->base)))) {
+    if (t == T_UT_FLOAT && (is_float(want) || (want->kind == SK_DISTINCT && is_float(want->base)))) {
         if (ut_fits(k, e, want->kind == SK_DISTINCT ? want->base : want)) {
             if (e->kind == N_BINARY) {
                 coerce(k, e->a, want);
@@ -2103,18 +1985,15 @@ static int coerce(Ck* k, Node* e, SType* want) {
             } else if (e->kind == N_UNARY) {
                 // the whole was range-checked above; a literal operand is a
                 // magnitude (i64 min negates 9223372036854775808)
-                if (e->a->kind == N_INT || e->a->kind == N_FLOAT)
-                    e->a->ty = want;
-                else
-                    coerce(k, e->a, want);
+                if (e->a->kind == N_INT || e->a->kind == N_FLOAT) e->a->ty = want;
+                else coerce(k, e->a, want);
             }
             e->ty = want;
             return 1;
         }
         return 0;
     }
-    ck_err(k, e, "type mismatch: %s given where %s expected (casts are explicit)",
-           type_name(t), type_name(want));
+    ck_err(k, e, "type mismatch: %s given where %s expected (casts are explicit)", type_name(t), type_name(want));
     return 0;
 }
 
@@ -2127,8 +2006,7 @@ static int coerce(Ck* k, Node* e, SType* want) {
 static int settle_operand(Ck* k, Node* e, SType* want) {
     if (e->kind == N_UNARY && (e->a->kind == N_INT || e->a->kind == N_FLOAT))
         e->a->ty = want; // a negated literal is still a literal
-    else if (e->kind == N_BINARY || e->kind == N_UNARY)
-        return coerce(k, e, want);
+    else if (e->kind == N_BINARY || e->kind == N_UNARY) return coerce(k, e, want);
     e->ty = want; // literal materializes to the operand type
     return 1;
 }
@@ -2142,8 +2020,7 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
         if (!s) {
             if (is_panic_name(e->str, e->len) || is_assert_name(e->str, e->len) ||
                 is_static_assert_name(e->str, e->len)) {
-                ck_err(k, e, "'%.*s' is a builtin call, not a value",
-                       (int)e->len, e->str);
+                ck_err(k, e, "'%.*s' is a builtin call, not a value", (int)e->len, e->str);
                 return T_ERR;
             }
             ck_err(k, e, "unknown name '%.*s'", (int)e->len, e->str);
@@ -2155,8 +2032,7 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
             return T_ERR;
         }
         if (write) {
-            if (s->is_const)
-                ck_err(k, e, "cannot assign to const '%.*s'", (int)e->len, e->str);
+            if (s->is_const) ck_err(k, e, "cannot assign to const '%.*s'", (int)e->len, e->str);
             else if (s->is_param && !s->is_mut)
                 ck_err(k, e, "parameter '%.*s' is read-only — mark it 'mut' in the signature",
                        (int)e->len, e->str);
@@ -2178,13 +2054,10 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
         SType* b = expr_type(k, e->a);
         e->a->ty = b;
         SType* last_ptr = NULL;
-        for (SType* q = b; q && q->kind == SK_PTR; q = q->base)
-            last_ptr = q;
+        for (SType* q = b; q && q->kind == SK_PTR; q = q->base) last_ptr = q;
         if (write) {
             if (last_ptr) {
-                if (!last_ptr->is_mut)
-                    ck_err(k, e,
-                           "write through read-only pointer — use 'mut *T' and 'mut &value'");
+                if (!last_ptr->is_mut) ck_err(k, e, "write through read-only pointer — use 'mut *T' and 'mut &value'");
             } else {
                 // An ordinary aggregate field is part of its base storage.
                 // Re-check that base as a write so const/read-only params fail.
@@ -2196,18 +2069,13 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
         }
         if (b->kind == SK_ERR) return T_ERR;
         if (b->kind == SK_FORWARD) {
-            ck_err(k, e,
-                   "type '%s' is not declared yet; member access requires its declaration",
-                   type_name(b));
+            ck_err(k, e, "type '%s' is not declared yet; member access requires its declaration", type_name(b));
             return T_ERR;
         }
         if (b->kind == SK_ERROR) {
-            if (write)
-                ck_err(k, e, "Error fields are read-only");
-            if (e->len == 6 && memcmp(e->str, "domain", 6) == 0)
-                return st_prim(P_TYPEID);
-            if (e->len == 4 && memcmp(e->str, "code", 4) == 0)
-                return st_prim(P_I32);
+            if (write) ck_err(k, e, "Error fields are read-only");
+            if (e->len == 6 && memcmp(e->str, "domain", 6) == 0) return st_prim(P_TYPEID);
+            if (e->len == 4 && memcmp(e->str, "code", 4) == 0) return st_prim(P_I32);
             if ((e->len == 4 && memcmp(e->str, "name", 4) == 0) ||
                 (e->len == 7 && memcmp(e->str, "message", 7) == 0))
                 return st_prim(P_STRING);
@@ -2221,8 +2089,7 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
                     e->ival = (uint64_t)i;
                     return b->fields[i].t;
                 }
-            ck_err(k, e, "bits type %s has no accessible field '%.*s'",
-                   type_name(b), (int)e->len, e->str);
+            ck_err(k, e, "bits type %s has no accessible field '%.*s'", type_name(b), (int)e->len, e->str);
             return T_ERR;
         }
         if (b->kind != SK_STRUCT) {
@@ -2245,8 +2112,7 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
         SType* peek = check_lvalue(k, e->a, 0);
         SType* b = peek;
         if (peek->kind == SK_STATICMAP) {
-            ck_err(k, e, write ? "StaticMap entries are immutable" :
-                                "StaticMap lookup is not an assignable place");
+            ck_err(k, e, write ? "StaticMap entries are immutable" : "StaticMap lookup is not an assignable place");
             return T_ERR;
         }
         if (write && peek->kind == SK_SLICE) {
@@ -2295,13 +2161,9 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
                 ck_err(k, e, "'*' dereferences pointers, not %s", type_name(p));
                 return T_ERR;
             }
-            if (write && !p->is_mut)
-                ck_err(k, e,
-                       "write through read-only pointer — use 'mut *T' and 'mut &value'");
+            if (write && !p->is_mut) ck_err(k, e, "write through read-only pointer — use 'mut *T' and 'mut &value'");
             if (p->base->kind == SK_FORWARD) {
-                ck_err(k, e,
-                       "type '%s' is not declared yet; dereference requires its declaration",
-                       type_name(p->base));
+                ck_err(k, e, "type '%s' is not declared yet; dereference requires its declaration", type_name(p->base));
                 return T_ERR;
             }
             return p->base;
@@ -2376,17 +2238,14 @@ static void check_args(Ck* k, Node* call, SType* ft, int is_variadic) {
             // need the ordinary expression walk so identifiers resolve and
             // codegen receives complete type/symbol annotations.
             SType* t = expr_type(k, raw);
-            if (t == T_UT_FLOAT)
-                coerce(k, raw, st_prim(P_F64));
-            else if (t == T_UT_INT)
-                coerce(k, raw, st_prim(P_I64));
+            if (t == T_UT_FLOAT) coerce(k, raw, st_prim(P_F64));
+            else if (t == T_UT_INT) coerce(k, raw, st_prim(P_I64));
             t = node_ty(raw);
             if (!is_c_variadic_scalar(t))
                 ck_err(k, raw,
                        "variadic argument has type %s, which is not supported at the C boundary",
                        type_name(t));
-            if (am)
-                ck_err(k, arg, "'mut' marks declared parameters, not variadics");
+            if (am) ck_err(k, arg, "'mut' marks declared parameters, not variadics");
         }
     }
 }
@@ -2396,15 +2255,12 @@ static void check_mut_args(Ck* k, Node* call, Node* fndecl) {
     for (int i = 0; i < call->nkids && i < fndecl->nkids; i++) {
         int am = call->kids[i]->kind == N_MUTARG;
         int pm = (fndecl->kids[i]->flags & F_MUT) != 0;
-        if (am && !pm)
-            ck_err(k, call->kids[i], "'mut' marks mut parameters; parameter %d is read-only", i + 1);
-        else if (pm && !am)
-            ck_err(k, call->kids[i], "mut parameter needs 'mut' at the call site");
+        if (am && !pm) ck_err(k, call->kids[i], "'mut' marks mut parameters; parameter %d is read-only", i + 1);
+        else if (pm && !am) ck_err(k, call->kids[i], "mut parameter needs 'mut' at the call site");
         else if (am) { // mut passes the caller's address — the arg must have one
             check_lvalue(k, call->kids[i]->a, 0);
             Node* raw = call->kids[i]->a;
-            if (is_bits_field(raw, NULL, NULL))
-                ck_err(k, raw, "bit fields cannot supply mut arguments");
+            if (is_bits_field(raw, NULL, NULL)) ck_err(k, raw, "bit fields cannot supply mut arguments");
             if (raw->kind == N_IDENT) {
                 Sym* s = lookup_val(k, raw->str, raw->len);
                 if (s && s->is_const_backed)
@@ -2428,8 +2284,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         if (!s) {
             if (is_panic_name(e->str, e->len) || is_assert_name(e->str, e->len) ||
                 is_static_assert_name(e->str, e->len)) {
-                ck_err(k, e, "'%.*s' is a builtin call, not a value",
-                       (int)e->len, e->str);
+                ck_err(k, e, "'%.*s' is a builtin call, not a value", (int)e->len, e->str);
                 return T_ERR;
             }
             ck_err(k, e, "unknown name '%.*s'", (int)e->len, e->str);
@@ -2508,8 +2363,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         case T_MINUS:
             if (is_float(t)) return t;
             if (is_int(t)) {
-                if (t->prim == P_U8 || t->prim == P_U16 || t->prim == P_U32 ||
-                    t->prim == P_U64) {
+                if (t->prim == P_U8 || t->prim == P_U16 || t->prim == P_U32 || t->prim == P_U64) {
                     ck_err(k, e, "cannot negate unsigned %s", type_name(t));
                     return T_ERR;
                 }
@@ -2529,8 +2383,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         if (a->kind == SK_ERR || b->kind == SK_ERR) return T_ERR;
         if (op == T_ANDAND || op == T_OROR) {
             if (is_bool(a) && is_bool(b)) return st_prim(P_BOOL);
-            ck_err(k, e, "'%s' needs bool operands, got %s and %s",
-                   tok_disp(op), type_name(a), type_name(b));
+            ck_err(k, e, "'%s' needs bool operands, got %s and %s", tok_disp(op), type_name(a), type_name(b));
             return T_ERR;
         }
         if (a->kind == SK_PTR && (op == T_PLUS || op == T_MINUS)) {
@@ -2545,8 +2398,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                 e->b->ty = b;
             }
             if (b->kind != SK_PRIM || b->prim != P_USIZE) {
-                ck_err(k, e, "pointer '%s' offset must be usize, not %s",
-                       tok_disp(op), type_name(b));
+                ck_err(k, e, "pointer '%s' offset must be usize, not %s", tok_disp(op), type_name(b));
                 return T_ERR;
             }
             if (!layout(a->base) || !a->base->size) {
@@ -2555,10 +2407,8 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                 return T_ERR;
             }
             uint64_t offset;
-            if (usize_const(e->b, &offset) &&
-                offset > UINT64_MAX / a->base->size) {
-                ck_err(k, e->b, "pointer offset scaled by sizeof(%s) overflows usize",
-                       type_name(a->base));
+            if (usize_const(e->b, &offset) && offset > UINT64_MAX / a->base->size) {
+                ck_err(k, e->b, "pointer offset scaled by sizeof(%s) overflows usize", type_name(a->base));
                 return T_ERR;
             }
             if (e->a->kind == N_NULL) {
@@ -2588,8 +2438,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             b = a;
             if (!settle_operand(k, e->b, b)) return T_ERR;
         }
-        int cmp = op == T_EQEQ || op == T_BANGEQ || op == T_LT ||
-                  op == T_LE || op == T_GT || op == T_GE;
+        int cmp = op == T_EQEQ || op == T_BANGEQ || op == T_LT || op == T_LE || op == T_GT || op == T_GE;
         // Two untyped operands compare at their natural type (int or f64);
         // the result is bool, never an untyped constant.
         if (cmp && a == b && (a == T_UT_INT || a == T_UT_FLOAT)) {
@@ -2664,16 +2513,14 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         } else if (is_int(lo) && same_type(lo, hi)) {
             range = lo;
         } else {
-            ck_err(k, e, "range bounds must be one integer type, got %s and %s",
-                   type_name(lo), type_name(hi));
+            ck_err(k, e, "range bounds must be one integer type, got %s and %s", type_name(lo), type_name(hi));
             return T_ERR;
         }
         if (e->c) {
             if (!coerce(k, e->c, range)) return T_ERR;
             int64_t step;
             if (ut_const(e->c, &step) && step <= 0) {
-                ck_err(k, e->c, "range step must be positive, got %lld",
-                       (long long)step);
+                ck_err(k, e->c, "range step must be positive, got %lld", (long long)step);
                 return T_ERR;
             }
         }
@@ -2696,14 +2543,12 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         if (!want) want = st_prim(ut == T_UT_FLOAT ? P_F64 : P_I64);
         for (int i = 0; i < e->nkids; i++) {
             SType* u = node_ty(e->kids[i]);
-            if ((u == T_UT_INT && is_int(want)) ||
-                (u == T_UT_FLOAT && is_float(want))) {
+            if ((u == T_UT_INT && is_int(want)) || (u == T_UT_FLOAT && is_float(want))) {
                 if (!coerce(k, e->kids[i], want)) return T_ERR;
                 u = want;
             }
             if (!same_type(u, want) || !is_num(want)) {
-                ck_err(k, e, "comparison chain needs one numeric type, got %s and %s",
-                       type_name(want), type_name(u));
+                ck_err(k, e, "comparison chain needs one numeric type, got %s and %s", type_name(want), type_name(u));
                 return T_ERR;
             }
         }
@@ -2722,8 +2567,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                         return ts->type;
                     }
                 }
-                ck_err(k, e, "enum %s has no member '%.*s'", type_name(ts->type),
-                       (int)e->len, e->str);
+                ck_err(k, e, "enum %s has no member '%.*s'", type_name(ts->type), (int)e->len, e->str);
                 return T_ERR;
             }
             if (ts && ts->type && ts->type->kind == SK_ERROR_DOMAIN) {
@@ -2732,13 +2576,11 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                     if (m->len == e->len && memcmp(m->str, e->str, e->len) == 0) {
                         e->a->sym = ts;
                         e->a->ty = ts->type;
-                        e->ival = ((uint64_t)type_identity(ts->type) << 32) |
-                                  (uint32_t)m->ival;
+                        e->ival = ((uint64_t)type_identity(ts->type) << 32) | (uint32_t)m->ival;
                         return T_ERROR;
                     }
                 }
-                ck_err(k, e, "error domain %s has no entry '%.*s'",
-                       type_name(ts->type), (int)e->len, e->str);
+                ck_err(k, e, "error domain %s has no entry '%.*s'", type_name(ts->type), (int)e->len, e->str);
                 return T_ERR;
             }
             // union variant value (payloadless): Event.quit
@@ -2797,16 +2639,12 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         }
         while (b->kind == SK_PTR) b = b->base; // p.x auto-derefs
         if (b->kind == SK_FORWARD) {
-            ck_err(k, e,
-                   "type '%s' is not declared yet; member access requires its declaration",
-                   type_name(b));
+            ck_err(k, e, "type '%s' is not declared yet; member access requires its declaration", type_name(b));
             return T_ERR;
         }
         if (b->kind == SK_ERROR) {
-            if (e->len == 6 && memcmp(e->str, "domain", 6) == 0)
-                return st_prim(P_TYPEID);
-            if (e->len == 4 && memcmp(e->str, "code", 4) == 0)
-                return st_prim(P_I32);
+            if (e->len == 6 && memcmp(e->str, "domain", 6) == 0) return st_prim(P_TYPEID);
+            if (e->len == 4 && memcmp(e->str, "code", 4) == 0) return st_prim(P_I32);
             if ((e->len == 4 && memcmp(e->str, "name", 4) == 0) ||
                 (e->len == 7 && memcmp(e->str, "message", 7) == 0))
                 return st_prim(P_STRING);
@@ -2816,8 +2654,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         if (b->kind == SK_CONTRACT) {
             Node* m = contract_method(b, e->str, e->len);
             if (!m) {
-                ck_err(k, e, "contract %s has no method '%.*s'", type_name(b),
-                       (int)e->len, e->str);
+                ck_err(k, e, "contract %s has no method '%.*s'", type_name(b), (int)e->len, e->str);
                 return T_ERR;
             }
             SType* ft = contract_method_type(k, b, m);
@@ -2830,8 +2667,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                     e->ival = (uint64_t)i;
                     return b->fields[i].t;
                 }
-            ck_err(k, e, "bits type %s has no accessible field '%.*s'",
-                   type_name(b), (int)e->len, e->str);
+            ck_err(k, e, "bits type %s has no accessible field '%.*s'", type_name(b), (int)e->len, e->str);
             return T_ERR;
         }
         if (b->kind == SK_STRUCT) {
@@ -2848,14 +2684,12 @@ static SType* expr_type_raw(Ck* k, Node* e) {
     case N_INDEX: {
         SType* b = expr_type(k, e->a);
         if (b->kind == SK_STATICMAP) {
-            if (!e->a || e->a->kind != N_IDENT || !node_sym(e->a) ||
-                !node_sym(e->a)->is_global) {
+            if (!e->a || e->a->kind != N_IDENT || !node_sym(e->a) || !node_sym(e->a)->is_global) {
                 ck_err(k, e, "StaticMap lookup requires a module-level table binding");
                 return T_ERR;
             }
             SType* ix = expr_type(k, e->b);
-            if (ix == T_UT_INT || ix == T_UT_FLOAT || ix == T_UT_NULL)
-                coerce(k, e->b, b->base);
+            if (ix == T_UT_INT || ix == T_UT_FLOAT || ix == T_UT_NULL) coerce(k, e->b, b->base);
             else if (!same_type(ix, b->base))
                 ck_err(k, e->b, "StaticMap key is %s, not the table's exact key type %s",
                        type_name(ix), type_name(b->base));
@@ -2863,8 +2697,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         }
         SType* ix = expr_type(k, e->b);
         if (b->kind == SK_ERR || ix->kind == SK_ERR) return T_ERR;
-        if (!is_int(ix) && ix != T_UT_INT)
-            ck_err(k, e->b, "index must be an integer, not %s", type_name(ix));
+        if (!is_int(ix) && ix != T_UT_INT) ck_err(k, e->b, "index must be an integer, not %s", type_name(ix));
         if (b->kind == SK_PRIM && b->prim == P_STRING) {
             check_index_bounds(k, e, e->a, b, 0);
             return st_prim(P_U8);
@@ -2881,8 +2714,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         if (establish && e->a->kind == N_STR) {
             // Mutability #11: a literal cannot establish a writable view;
             // its bytes live in static read-only storage.
-            ck_err(k, e,
-                   "a string literal cannot establish 'mut string' — slice a writable string binding");
+            ck_err(k, e, "a string literal cannot establish 'mut string' — slice a writable string binding");
             return T_ERR;
         }
         SType* b = establish ? check_lvalue(k, e->a, 0) : expr_type(k, e->a);
@@ -2891,8 +2723,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         int is_string = b->kind == SK_PRIM && b->prim == P_STRING;
         int is_view = is_string || b->kind == SK_SLICE || b->kind == SK_ARRAY;
         if (!is_view) {
-            ck_err(k, e, "can only slice arrays, slices, and strings, not %s",
-                   type_name(b));
+            ck_err(k, e, "can only slice arrays, slices, and strings, not %s", type_name(b));
             return T_ERR;
         }
         if (establish) {
@@ -2917,8 +2748,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                     ck_err(k, e,
                            "'%.*s' is literal-backed and cannot establish a writable view",
                            (int)src->len, src->str);
-                else
-                    (void)check_lvalue(k, e->a, 1);
+                else (void)check_lvalue(k, e->a, 1);
             }
         }
         if (e->b) { SType* lo = expr_type(k, e->b);
@@ -2926,8 +2756,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         if (e->c) { SType* hi = expr_type(k, e->c);
             if (!is_int(hi) && hi != T_UT_INT) ck_err(k, e->c, "slice bound must be an integer"); }
         check_slice_bounds(k, e, e->a, b);
-        if (is_string)
-            return b->is_mut || establish ? T_MUT_STRING : st_prim(P_STRING);
+        if (is_string) return b->is_mut || establish ? T_MUT_STRING : st_prim(P_STRING);
         SType* s = st_new(SK_SLICE);
         s->is_mut = b->kind == SK_ARRAY ? establish : (b->is_mut || establish);
         s->base = b->base;
@@ -2965,13 +2794,11 @@ static SType* expr_type(Ck* k, Node* e) {
     return t;
 }
 
-static SType* instantiate_generic_func_args(Ck* k, Sym* gs, SType** args,
-                                            int nargs, Node* at) {
+static SType* instantiate_generic_func_args(Ck* k, Sym* gs, SType** args, int nargs, Node* at) {
     Node* f = gs->decl;
     Node* tp = f->c;
     if (!tp || tp->nkids != nargs) {
-        ck_err(k, at, "generic function expects %d type arguments, got %d",
-               tp ? tp->nkids : 0, nargs);
+        ck_err(k, at, "generic function expects %d type arguments, got %d", tp ? tp->nkids : 0, nargs);
         return T_ERR;
     }
     // memo (stored on the tparams node's spare pointer) before body check,
@@ -3009,8 +2836,7 @@ static SType* instantiate_generic_func_args(Ck* k, Sym* gs, SType** args,
 static SType* instantiate_generic_func(Ck* k, Sym* gs, Node* index_node) {
     int nargs = index_node->b ? 1 : index_node->nkids;
     SType** args = (SType**)arena_alloc((size_t)nargs * sizeof(SType*));
-    for (int i = 0; i < nargs; i++)
-        args[i] = build_type(k, index_node->b ? index_node->b : index_node->kids[i]);
+    for (int i = 0; i < nargs; i++) args[i] = build_type(k, index_node->b ? index_node->b : index_node->kids[i]);
     return instantiate_generic_func_args(k, gs, args, nargs, index_node);
 }
 
@@ -3036,20 +2862,16 @@ static int exact_arg_type(Node* arg, SType* actual, SType* param) {
         return raw->a ? raw->ival == param->count
                       : (uint64_t)raw->nkids == param->count;
     }
-    if (raw->kind == N_STRUCTLIT && !raw->a)
-        return param && (param->kind == SK_STRUCT || param->kind == SK_BITS);
+    if (raw->kind == N_STRUCTLIT && !raw->a) return param && (param->kind == SK_STRUCT || param->kind == SK_BITS);
     return same_type(actual, param);
 }
 
 static int call_exact_ft(Node* call, Node* decl, SType* ft, SType** actual) {
-    if (!ft || ft->kind != SK_FUNC || call->nkids != ft->nparams)
-        return 0;
+    if (!ft || ft->kind != SK_FUNC || call->nkids != ft->nparams) return 0;
     for (int i = 0; i < call->nkids; i++) {
         int am = call->kids[i]->kind == N_MUTARG;
-        int pm = decl && i < decl->nkids &&
-                 (decl->kids[i]->flags & F_MUT) != 0;
-        if (am != pm || !exact_arg_type(call->kids[i], actual[i], ft->params[i]))
-            return 0;
+        int pm = decl && i < decl->nkids && (decl->kids[i]->flags & F_MUT) != 0;
+        if (am != pm || !exact_arg_type(call->kids[i], actual[i], ft->params[i])) return 0;
     }
     return 1;
 }
@@ -3061,12 +2883,10 @@ static int call_exact_ft(Node* call, Node* decl, SType* ft, SType** actual) {
  * and distinct mut/plain overloads stay unambiguous.
  */
 static int call_shrink_ft(Node* call, Node* decl, SType* ft, SType** actual) {
-    if (!ft || ft->kind != SK_FUNC || call->nkids != ft->nparams)
-        return 0;
+    if (!ft || ft->kind != SK_FUNC || call->nkids != ft->nparams) return 0;
     for (int i = 0; i < call->nkids; i++) {
         int am = call->kids[i]->kind == N_MUTARG;
-        int pm = decl && i < decl->nkids &&
-                 (decl->kids[i]->flags & F_MUT) != 0;
+        int pm = decl && i < decl->nkids && (decl->kids[i]->flags & F_MUT) != 0;
         if (am != pm) return 0;
         if (exact_arg_type(call->kids[i], actual[i], ft->params[i])) continue;
         if (!shrink_ok(actual[i], ft->params[i])) return 0;
@@ -3075,21 +2895,18 @@ static int call_shrink_ft(Node* call, Node* decl, SType* ft, SType** actual) {
 }
 
 static int call_exact_match(Node* call, Sym* s, SType** actual) {
-    return s && !s->is_generic && !s->is_extern &&
-           call_exact_ft(call, s->decl, s->type, actual);
+    return s && !s->is_generic && !s->is_extern && call_exact_ft(call, s->decl, s->type, actual);
 }
 
 // Select a non-generic direct-call overload. During the source walk, no match
 // is deferred because a later declaration may add the matching overload.
 // At EOF, a sole declaration retains Ace's ordinary expected-literal typing;
 // a real overload set uses exact types and int/f64 literal defaults.
-static Sym* select_call_overload(Ck* k, Node* call, Sym* head, int final,
-                                 int* ambiguous) {
+static Sym* select_call_overload(Ck* k, Node* call, Sym* head, int final, int* ambiguous) {
     *ambiguous = 0;
     if (!head || head->kind != SYM_FUNC) return NULL;
     int nactual = call->nkids;
-    SType** actual = (SType**)arena_alloc(
-        (size_t)(nactual ? nactual : 1) * sizeof(SType*));
+    SType** actual = (SType**)arena_alloc((size_t)(nactual ? nactual : 1) * sizeof(SType*));
     for (int i = 0; i < nactual; i++) actual[i] = overload_arg_type(k, call->kids[i]);
 
     Sym* found = NULL;
@@ -3116,15 +2933,13 @@ static Sym* select_call_overload(Ck* k, Node* call, Sym* head, int final,
         }
     }
     if (!found && final && nongeneric == 1) {
-        for (Sym* s = head; s; s = s->overload)
-            if (!s->is_generic) return s;
+        for (Sym* s = head; s; s = s->overload) if (!s->is_generic) return s;
     }
     return found;
 }
 
 static void finish_direct_call(Ck* k, Node* call, Sym* s) {
-    int variadic = s->is_extern && s->decl &&
-                   (s->decl->flags & F_VARARGS) != 0;
+    int variadic = s->is_extern && s->decl && (s->decl->flags & F_VARARGS) != 0;
     check_args(k, call, s->type, variadic);
     check_mut_args(k, call, s->decl);
     call->sym = s;
@@ -3173,20 +2988,16 @@ static SType* check_contract_construct(Ck* k, Node* call, SType* contract) {
     }
     Node* conf = find_conformance(k, from->base, contract);
     if (!conf) {
-        ck_err(k, call, "type %s has not signed contract %s",
-               type_name(from->base), type_name(contract));
+        ck_err(k, call, "type %s has not signed contract %s", type_name(from->base), type_name(contract));
         return T_ERR;
     }
     Node* signing = from->base->decl->d;
-    if (signing->path && call->path && strcmp(signing->path, call->path) != 0 &&
-        !(signing->flags & F_PUB)) {
-        ck_err(k, call, "signing for %s is private",
-               type_name(from->base));
+    if (signing->path && call->path && strcmp(signing->path, call->path) != 0 && !(signing->flags & F_PUB)) {
+        ck_err(k, call, "signing for %s is private", type_name(from->base));
         return T_ERR;
     }
     call->d = conf;
-    if (arg->kind == N_UNARY && arg->op == T_AMP && const_lvalue(k, arg->a))
-        call->flags |= F_CONST;
+    if (arg->kind == N_UNARY && arg->op == T_AMP && const_lvalue(k, arg->a)) call->flags |= F_CONST;
     return contract;
 }
 
@@ -3238,8 +3049,7 @@ static void check_error_domain_decl(Ck* k, Node* n) {
         int exact = entry->a->kind == N_INT ||
                     (entry->a->kind == N_UNARY && entry->a->op == T_MINUS &&
                      entry->a->a && entry->a->a->kind == N_INT);
-        if (!exact || !ut_const(entry->a, &code))
-            ck_err(k, entry->a, "error code must be an exact integer literal");
+        if (!exact || !ut_const(entry->a, &code)) ck_err(k, entry->a, "error code must be an exact integer literal");
         else if (code < INT32_MIN || code > INT32_MAX)
             ck_err(k, entry->a, "error code %lld is outside i32", (long long)code);
         entry->ival = (uint64_t)code;
@@ -3252,8 +3062,7 @@ static void check_error_domain_decl(Ck* k, Node* n) {
                 memcmp(prior->str, entry->str, entry->len) == 0)
                 ck_err(k, entry, "duplicate error entry name '%.*s'",
                        (int)entry->len, entry->str);
-            if ((int64_t)prior->ival == code)
-                ck_err(k, entry, "duplicate error code %lld", (long long)code);
+            if ((int64_t)prior->ival == code) ck_err(k, entry, "duplicate error code %lld", (long long)code);
         }
     }
 }
@@ -3274,9 +3083,7 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         for (int i = 0; i < 2; i++) {
             Node* arg = call->kids[i];
             if (arg->kind == N_MUTARG) {
-                ck_err(k, arg,
-                       "'mut' marks mut parameters; mem.equal parameter %d is read-only",
-                       i + 1);
+                ck_err(k, arg, "'mut' marks mut parameters; mem.equal parameter %d is read-only", i + 1);
                 arg = arg->a;
             }
             SType* t = expr_type(k, arg);
@@ -3295,8 +3102,7 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         }
         Node* data = call->kids[0];
         if (data->kind == N_MUTARG) {
-            ck_err(k, data,
-                   "'mut' marks mut parameters; mem.alloc_size's argument is read-only");
+            ck_err(k, data, "'mut' marks mut parameters; mem.alloc_size's argument is read-only");
             data = data->a;
         }
         coerce(k, data, T_BYTE_SLICE);
@@ -3311,8 +3117,7 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         for (int i = 0; i < 2; i++) {
             Node* arg = call->kids[i];
             if (arg->kind == N_MUTARG) {
-                ck_err(k, arg,
-                       "'mut' marks mut parameters; mem.alloc arguments are read-only");
+                ck_err(k, arg, "'mut' marks mut parameters; mem.alloc arguments are read-only");
                 arg = arg->a;
             }
             coerce(k, arg, st_prim(P_I64));
@@ -3327,13 +3132,11 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         Node* data = call->kids[0];
         Node* size = call->kids[1];
         if (data->kind == N_MUTARG) {
-            ck_err(k, data,
-                   "'mut' marks mut parameters; mem.realloc arguments are read-only");
+            ck_err(k, data, "'mut' marks mut parameters; mem.realloc arguments are read-only");
             data = data->a;
         }
         if (size->kind == N_MUTARG) {
-            ck_err(k, size,
-                   "'mut' marks mut parameters; mem.realloc arguments are read-only");
+            ck_err(k, size, "'mut' marks mut parameters; mem.realloc arguments are read-only");
             size = size->a;
         }
         coerce(k, data, T_BYTE_SLICE);
@@ -3348,8 +3151,7 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
     if (intrinsic == BI_MEM_RELEASE) {
         Node* arg = call->kids[0];
         if (arg->kind != N_MUTARG) {
-            ck_err(k, arg,
-                   "mem.release needs 'mut' at the call site: release(mut data)");
+            ck_err(k, arg, "mem.release needs 'mut' at the call site: release(mut data)");
             return T_ERR;
         }
         Node* raw = arg->a;
@@ -3358,14 +3160,12 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         Sym* current = raw->kind == N_IDENT ? node_sym(raw) : NULL;
         Sym* original = current && current->decl ? node_sym(current->decl) : NULL;
         if (original && original->type) declared = original->type;
-        if (!same_type(declared, T_BYTE_SLICE) &&
-            !shrink_ok(declared, T_BYTE_SLICE)) {
+        if (!same_type(declared, T_BYTE_SLICE) && !shrink_ok(declared, T_BYTE_SLICE)) {
             if (declared->kind == SK_SLICE)
                 ck_err(k, raw,
                        "mem.release requires a mutable []u8 allocation variable — a typed slice "
                        "states its element type: mem.release[T](mut data)");
-            else
-                ck_err(k, raw, "mem.release requires a mutable []u8 allocation variable");
+            else ck_err(k, raw, "mem.release requires a mutable []u8 allocation variable");
             return T_ERR;
         }
         return T_VOID;
@@ -3377,8 +3177,7 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
                        intrinsic == BI_MEM_ZERO ? "zero" : "compare";
     int want = intrinsic == BI_MEM_ZERO ? 1 : 2;
     if (call->nkids != want) {
-        ck_err(k, call, "mem.%s takes exactly %d argument%s", name, want,
-               want == 1 ? "" : "s");
+        ck_err(k, call, "mem.%s takes exactly %d argument%s", name, want, want == 1 ? "" : "s");
         return T_ERR;
     }
 
@@ -3393,13 +3192,10 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
                 ck_err(k, arg,
                        "mem.%s's destination is a writable view — pass 'mut []u8'; no call-site 'mut'",
                        name);
-            else
-                ck_err(k, arg, "'mut' marks mut parameters; mem.%s parameter %d is read-only",
-                       name, i + 1);
+            else ck_err(k, arg, "'mut' marks mut parameters; mem.%s parameter %d is read-only", name, i + 1);
             arg = arg->a;
         }
-        SType* want_type = intrinsic == BI_MEM_FILL && i == 1
-                         ? st_prim(P_U8)
+        SType* want_type = intrinsic == BI_MEM_FILL && i == 1 ? st_prim(P_U8)
                          : (is_dst ? T_MUT_BYTE_SLICE : T_BYTE_SLICE);
         coerce(k, arg, want_type);
     }
@@ -3413,8 +3209,7 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
  * body, and are lowered directly by the emitter. The instantiation must name
  * exactly one element type whose layout the compiler can size.
  */
-static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn,
-                                        SType* elem, int intrinsic) {
+static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn, SType* elem, int intrinsic) {
     ensure_memory_types();
     Node* callee = call->a;
     callee->sym = fn;
@@ -3448,8 +3243,7 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn,
         }
         Node* count = call->kids[0];
         if (count->kind == N_MUTARG) {
-            ck_err(k, count,
-                   "'mut' marks mut parameters; %s arguments are read-only", what);
+            ck_err(k, count, "'mut' marks mut parameters; %s arguments are read-only", what);
             count = count->a;
         }
         coerce(k, count, st_prim(P_USIZE));
@@ -3463,13 +3257,11 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn,
         Node* data = call->kids[0];
         Node* count = call->kids[1];
         if (data->kind == N_MUTARG) {
-            ck_err(k, data,
-                   "'mut' marks mut parameters; %s data is read-only", what);
+            ck_err(k, data, "'mut' marks mut parameters; %s data is read-only", what);
             data = data->a;
         }
         if (count->kind == N_MUTARG) {
-            ck_err(k, count,
-                   "'mut' marks mut parameters; %s arguments are read-only", what);
+            ck_err(k, count, "'mut' marks mut parameters; %s arguments are read-only", what);
             count = count->a;
         }
         coerce(k, data, slice);
@@ -3511,8 +3303,7 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn,
  * selects the specialization whose type-argument tuple equals it. No name
  * composition remains.
  */
-static Sym* printf_helper(Ck* k, Sym* printf_fn, const char* generic,
-                          SType** targs, int nargs, Node* at) {
+static Sym* printf_helper(Ck* k, Sym* printf_fn, const char* generic, SType** targs, int nargs, Node* at) {
     if (!printf_fn || printf_fn->len < 6) return NULL;
     uint32_t prefix = printf_fn->len - 6; // canonical module prefix before "printf"
     char name[512];
@@ -3524,8 +3315,7 @@ static Sym* printf_helper(Ck* k, Sym* printf_fn, const char* generic,
             same = same_type(s->spec_args[i], targs[i]);
         if (same) return s;
     }
-    ck_err(k, at, "internal fmt.printf helper '%s%s' has no specialization",
-           name, spec_tuple_name(targs, nargs));
+    ck_err(k, at, "internal fmt.printf helper '%s%s' has no specialization", name, spec_tuple_name(targs, nargs));
     return NULL;
 }
 
@@ -3534,8 +3324,7 @@ static void printf_add_part(PrintfPlan* plan, int* cap, PrintfPart part) {
     plan->parts[plan->nparts++] = part;
 }
 
-static int printf_expected_type(Ck* k, Node* arg, int kind, SType** out,
-                                const char** expected) {
+static int printf_expected_type(Ck* k, Node* arg, int kind, SType** out, const char** expected) {
     int errors = k->d->errors;
     SType* t = expr_type(k, arg);
     // A call deferred to end of file is still poison here; picking a helper
@@ -3606,8 +3395,7 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
     if (!coerce(k, format_arg, st_prim(P_STRING))) return T_ERR;
     Node* format = static_string_expr(k, format_arg);
     if (!format) {
-        ck_err(k, format_arg,
-               "fmt.printf format must be a string literal or static-literal const global");
+        ck_err(k, format_arg, "fmt.printf format must be a string literal or static-literal const global");
         for (int i = 1; i < call->nkids; i++)
             (void)expr_type(k, call->kids[i]->kind == N_MUTARG
                                ? call->kids[i]->a : call->kids[i]);
@@ -3630,13 +3418,11 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
                 .off = literal, .len = i - literal });
         uint32_t conv_off = i++;
         if (i >= format->len) {
-            ck_err(k, format_arg,
-                   "incomplete fmt.printf conversion at decoded byte %u", conv_off);
+            ck_err(k, format_arg, "incomplete fmt.printf conversion at decoded byte %u", conv_off);
             return T_ERR;
         }
         if (format->str[i] == '%') {
-            printf_add_part(plan, &cap, (PrintfPart){ .kind = PF_PERCENT,
-                .off = conv_off, .len = 1 });
+            printf_add_part(plan, &cap, (PrintfPart){ .kind = PF_PERCENT, .off = conv_off, .len = 1 });
             i++;
             literal = i;
             continue;
@@ -3648,15 +3434,11 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
             has_precision = 1;
             i++;
             if (i < format->len && format->str[i] == '*') {
-                ck_err(k, format_arg,
-                       "fmt.printf dynamic '*' precision is not supported (decoded byte %u)",
-                       conv_off);
+                ck_err(k, format_arg, "fmt.printf dynamic '*' precision is not supported (decoded byte %u)", conv_off);
                 return T_ERR;
             }
             if (i >= format->len || format->str[i] < '0' || format->str[i] > '9') {
-                ck_err(k, format_arg,
-                       "fmt.printf precision needs decimal digits at decoded byte %u",
-                       conv_off);
+                ck_err(k, format_arg, "fmt.printf precision needs decimal digits at decoded byte %u", conv_off);
                 return T_ERR;
             }
             uint64_t p = 0;
@@ -3672,8 +3454,7 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
             }
             precision = (uint16_t)p;
             if (i >= format->len) {
-                ck_err(k, format_arg,
-                       "incomplete fmt.printf conversion at decoded byte %u", conv_off);
+                ck_err(k, format_arg, "incomplete fmt.printf conversion at decoded byte %u", conv_off);
                 return T_ERR;
             }
         } else if (format->str[i] == '*' || format->str[i] == '+' ||
@@ -3704,9 +3485,7 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
             return T_ERR;
         }
         if (has_precision && kind != PF_FIXED) {
-            ck_err(k, format_arg,
-                   "fmt.printf precision is supported only for %%f (decoded byte %u)",
-                   conv_off);
+            ck_err(k, format_arg, "fmt.printf precision is supported only for %%f (decoded byte %u)", conv_off);
             return T_ERR;
         }
         printf_add_part(plan, &cap, (PrintfPart){ .kind = (uint8_t)kind,
@@ -3790,8 +3569,7 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
  * returns NULL so the caller can defer the call to end of file, when every
  * method is declared; with final == 1 a miss is the "no method" error.
  */
-static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified,
-                                int final) {
+static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified, int final) {
     Node* callee = call->a;
     uint32_t key_len;
     const char* key = method_key(b->decl, callee->str, callee->len, &key_len);
@@ -3836,11 +3614,9 @@ static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified,
         for (int fi = 0; fi < b->nfields; fi++) {
             Node* fd = b->decl->kids[fi];
             SType* eb = b->fields[fi].t;
-            if (!(fd->flags & F_EMBED) || !eb || eb->kind != SK_STRUCT)
-                continue;
+            if (!(fd->flags & F_EMBED) || !eb || eb->kind != SK_STRUCT) continue;
             uint32_t ekey_len;
-            const char* ekey = method_key(eb->decl, callee->str, callee->len,
-                                          &ekey_len);
+            const char* ekey = method_key(eb->decl, callee->str, callee->len, &ekey_len);
             Sym* ehead = lookup_val(k, ekey, ekey_len);
             for (Sym* f = ehead; f; f = f->overload) {
                 SType* ft = f->is_generic && eb->nargs
@@ -3890,12 +3666,10 @@ static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified,
         }
     }
     if (found) {
-        SType* method_ft = found->is_generic
-            ? instantiate_generic_func_args(k, found, b->args, b->nargs, call)
+        SType* method_ft = found->is_generic ? instantiate_generic_func_args(k, found, b->args, b->nargs, call)
             : found->type;
         int rmut = (found->decl->flags & F_MUT) != 0;
-        Node* recv = qualified
-            ? (call->kids[0]->kind == N_MUTARG ? call->kids[0]->a : call->kids[0])
+        Node* recv = qualified ? (call->kids[0]->kind == N_MUTARG ? call->kids[0]->a : call->kids[0])
             : callee->a;
         if (rmut) check_lvalue(k, recv, 1);
         else coerce(k, recv, b);
@@ -3914,8 +3688,7 @@ static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified,
         return method_ft->ret;
     }
     if (!final) return NULL; // a later declaration may add the method
-    ck_err(k, call, "no method '%.*s' for %s", (int)callee->len, callee->str,
-           type_name(b));
+    ck_err(k, call, "no method '%.*s' for %s", (int)callee->len, callee->str, type_name(b));
     return T_ERR;
 }
 
@@ -3938,8 +3711,7 @@ static SType* check_call(Ck* k, Node* call) {
         SType* from = expr_type(k, call->kids[0]);
         if (from->kind == SK_ERR) return T_ERR;
         if (from->kind != SK_PRIM || from->prim != P_USIZE) {
-            ck_err(k, call, "data-pointer conversion requires usize, got %s",
-                   type_name(from));
+            ck_err(k, call, "data-pointer conversion requires usize, got %s", type_name(from));
             return T_ERR;
         }
         uint64_t address;
@@ -3973,8 +3745,7 @@ static SType* check_call(Ck* k, Node* call) {
             SType* prim = prim_by_name(callee->str, callee->len);
             Sym* ts = lookup_type(k, callee->str, callee->len);
             if (prim || ts) { // constructor-shaped cast or contract construction
-                if (ts && ts->type && ts->type->kind == SK_ERROR_DOMAIN)
-                    return check_error_construct(k, call, ts);
+                if (ts && ts->type && ts->type->kind == SK_ERROR_DOMAIN) return check_error_construct(k, call, ts);
                 if (call->nkids != 1) {
                     ck_err(k, call, "a cast takes exactly one argument");
                     return T_ERR;
@@ -3999,8 +3770,7 @@ static SType* check_call(Ck* k, Node* call) {
                     from->kind == SK_SLICE && from->base == st_prim(P_U8) &&
                     from->is_mut)
                     want = T_MUT_STRING;
-                if (want->kind == SK_PRIM && want->prim == P_USIZE &&
-                    from->kind == SK_PTR) {
+                if (want->kind == SK_PRIM && want->prim == P_USIZE && from->kind == SK_PTR) {
                     /* exact address extraction, including null */
                 } else if (!castable(from, want)) {
                     ck_err(k, call, "cannot cast %s to %s", type_name(from), type_name(want));
@@ -4028,9 +3798,7 @@ static SType* check_call(Ck* k, Node* call) {
                         if (t->kind == SK_ERR) return T_ERR;
                     }
                     if (t && t->kind == SK_FORWARD) {
-                        ck_err(k, arg,
-                               "type '%s' is not declared yet; sizeof requires its layout",
-                               type_name(t));
+                        ck_err(k, arg, "type '%s' is not declared yet; sizeof requires its layout", type_name(t));
                         return T_ERR;
                     }
                     if (t && t->kind == SK_ERROR_DOMAIN) {
@@ -4061,9 +3829,7 @@ static SType* check_call(Ck* k, Node* call) {
                         if (t->kind == SK_ERR) return T_ERR;
                     }
                     if (t && t->kind == SK_FORWARD) {
-                        ck_err(k, arg,
-                               "type '%s' is not declared yet; alignof requires its layout",
-                               type_name(t));
+                        ck_err(k, arg, "type '%s' is not declared yet; alignof requires its layout", type_name(t));
                         return T_ERR;
                     }
                     if (t && t->kind == SK_ERROR_DOMAIN) {
@@ -4122,13 +3888,11 @@ static SType* check_call(Ck* k, Node* call) {
             // reserved builtin: assert(condition: bool) — checked-only
             if (is_assert_name(callee->str, callee->len)) {
                 if (call->nkids != 1) {
-                    ck_err(k, call, "assert takes exactly one bool condition, got %d arguments",
-                           call->nkids);
+                    ck_err(k, call, "assert takes exactly one bool condition, got %d arguments", call->nkids);
                     return T_ERR;
                 }
                 if (call->kids[0]->kind == N_MUTARG) {
-                    ck_err(k, call->kids[0],
-                           "'mut' marks mut parameters; assert's condition is read-only");
+                    ck_err(k, call->kids[0], "'mut' marks mut parameters; assert's condition is read-only");
                     return T_ERR;
                 }
                 if (!coerce(k, call->kids[0], st_prim(P_BOOL))) return T_ERR;
@@ -4162,14 +3926,11 @@ static SType* check_call(Ck* k, Node* call) {
             // reserved builtin: panic(message: string) — never returns
             if (is_panic_name(callee->str, callee->len)) {
                 if (call->nkids != 1) {
-                    ck_err(k, call,
-                           "panic takes exactly one string message, got %d arguments",
-                           call->nkids);
+                    ck_err(k, call, "panic takes exactly one string message, got %d arguments", call->nkids);
                     return T_ERR;
                 }
                 if (call->kids[0]->kind == N_MUTARG) {
-                    ck_err(k, call->kids[0],
-                           "'mut' marks mut parameters; panic's message is read-only");
+                    ck_err(k, call->kids[0], "'mut' marks mut parameters; panic's message is read-only");
                     return T_ERR;
                 }
                 if (!coerce(k, call->kids[0], st_prim(P_STRING))) return T_ERR;
@@ -4196,8 +3957,7 @@ static SType* check_call(Ck* k, Node* call) {
                 }
             if (mi) return check_memory_call(k, call, mi, (int)mi->decl->ival);
         }
-        if (s->kind == SYM_FUNC && s->decl && s->decl->ival == BI_FMT_PRINTF)
-            return check_printf_call(k, call, s);
+        if (s->kind == SYM_FUNC && s->decl && s->decl->ival == BI_FMT_PRINTF) return check_printf_call(k, call, s);
         if (s->kind == SYM_VAR && s->type && s->type->kind == SK_FUNC) {
             check_args(k, call, s->type, 0);
             callee->sym = s;
@@ -4223,8 +3983,7 @@ static SType* check_call(Ck* k, Node* call) {
         int ambiguous = 0;
         Sym* chosen = select_call_overload(k, call, s, 0, &ambiguous);
         if (ambiguous) {
-            ck_err(k, call, "ambiguous call to overloaded function '%.*s'",
-                   (int)callee->len, callee->str);
+            ck_err(k, call, "ambiguous call to overloaded function '%.*s'", (int)callee->len, callee->str);
             return T_ERR;
         }
         if (chosen) {
@@ -4257,8 +4016,7 @@ static SType* check_call(Ck* k, Node* call) {
             }
             SType* count = expr_type(k, call->kids[1]);
             if (pointer->kind == SK_ERR || count->kind == SK_ERR) return T_ERR;
-            int exact_pointee = pointer->kind == SK_PTR &&
-                                same_type(pointer->base, want->base);
+            int exact_pointee = pointer->kind == SK_PTR && same_type(pointer->base, want->base);
             int permission = exact_pointee && (!want->is_mut || pointer->is_mut);
             if (!permission) {
                 ck_err(k, call->kids[0],
@@ -4268,17 +4026,14 @@ static SType* check_call(Ck* k, Node* call) {
                 return T_ERR;
             }
             if (count->kind != SK_PRIM || count->prim != P_USIZE) {
-                ck_err(k, call->kids[1], "slice element count must be usize, got %s",
-                       type_name(count));
+                ck_err(k, call->kids[1], "slice element count must be usize, got %s", type_name(count));
                 return T_ERR;
             }
             uint64_t n, address;
             int kn = usize_const(call->kids[1], &n);
             int ka = address_const(call->kids[0], &address);
             if (kn && n > UINT64_MAX / want->base->size) {
-                ck_err(k, call->kids[1],
-                       "slice byte extent count * sizeof(%s) overflows usize",
-                       type_name(want->base));
+                ck_err(k, call->kids[1], "slice byte extent count * sizeof(%s) overflows usize", type_name(want->base));
                 return T_ERR;
             }
             if (ka && kn && n && !address) {
@@ -4299,8 +4054,7 @@ static SType* check_call(Ck* k, Node* call) {
         }
         Node* arg = call->kids[0];
         if (arg->kind == N_MUTARG) {
-            ck_err(k, arg,
-                   "'mut' marks mut parameters; a cast takes no call-site 'mut'");
+            ck_err(k, arg, "'mut' marks mut parameters; a cast takes no call-site 'mut'");
             return T_ERR;
         }
         SType* from = expr_type(k, arg);
@@ -4322,14 +4076,10 @@ static SType* check_call(Ck* k, Node* call) {
         Sym* head = lookup_val(k, callee->a->str, callee->a->len);
         if (head && head->kind == SYM_FUNC) {
             int nargs = callee->b ? 1 : callee->nkids;
-            SType** targs = (SType**)arena_alloc(
-                (size_t)(nargs ? nargs : 1) * sizeof(SType*));
-            for (int i = 0; i < nargs; i++)
-                targs[i] = build_type(k, callee->b ? callee->b : callee->kids[i]);
-            SType** actual = (SType**)arena_alloc(
-                (size_t)(call->nkids ? call->nkids : 1) * sizeof(SType*));
-            for (int i = 0; i < call->nkids; i++)
-                actual[i] = overload_arg_type(k, call->kids[i]);
+            SType** targs = (SType**)arena_alloc((size_t)(nargs ? nargs : 1) * sizeof(SType*));
+            for (int i = 0; i < nargs; i++) targs[i] = build_type(k, callee->b ? callee->b : callee->kids[i]);
+            SType** actual = (SType**)arena_alloc((size_t)(call->nkids ? call->nkids : 1) * sizeof(SType*));
+            for (int i = 0; i < call->nkids; i++) actual[i] = overload_arg_type(k, call->kids[i]);
             // Generics #10: selection is exact — an instantiation resolves to
             // the specialization whose type-argument tuple equals the written
             // arguments, ahead of template stamping.
@@ -4437,8 +4187,7 @@ static SType* check_call(Ck* k, Node* call) {
                     return T_ERR;
                 }
                 if (call->kids[0]->kind == N_MUTARG) {
-                    ck_err(k, call->kids[0],
-                           "'mut' marks mut parameters; variant payloads are read-only");
+                    ck_err(k, call->kids[0], "'mut' marks mut parameters; variant payloads are read-only");
                     return T_ERR;
                 }
                 coerce_payload(k, call->kids[0], pt);
@@ -4469,8 +4218,7 @@ static SType* check_call(Ck* k, Node* call) {
         if (b->kind == SK_CONTRACT) {
             Node* m = contract_method(b, callee->str, callee->len);
             if (!m) {
-                ck_err(k, call, "contract %s has no method '%.*s'", type_name(b),
-                       (int)callee->len, callee->str);
+                ck_err(k, call, "contract %s has no method '%.*s'", type_name(b), (int)callee->len, callee->str);
                 return T_ERR;
             }
             int mmut = (m->flags & F_MUT) != 0;
@@ -4494,8 +4242,7 @@ static SType* check_call(Ck* k, Node* call) {
             return ft->ret;
         }
         if (b->kind != SK_STRUCT) {
-            ck_err(k, call, "no method '%.*s' for %s", (int)callee->len, callee->str,
-                   type_name(b));
+            ck_err(k, call, "no method '%.*s' for %s", (int)callee->len, callee->str, type_name(b));
             return T_ERR;
         }
         SType* r = check_method_call(k, call, b, qualified, 0);
@@ -4527,20 +4274,16 @@ static void check_union_switch(Ck* k, Node* s, SType* u) {
         if (c->flags & F_DEFAULT) {
             has_default = 1;
         } else {
-            if (c->nkids != 1)
-                ck_err(k, c, "union switch cases name exactly one variant");
+            if (c->nkids != 1) ck_err(k, c, "union switch cases name exactly one variant");
             for (int j = 0; j < c->nkids; j++) {
                 Node* pat = c->kids[j];
                 if (pat->kind == N_CALL) {
-                    ck_err(k, pat,
-                           "match the union variant, not a payload value: Type.variant(binder: type)");
+                    ck_err(k, pat, "match the union variant, not a payload value: Type.variant(binder: type)");
                     continue;
                 }
                 Node* ref = pat->kind == N_VARPAT ? pat->a : pat;
-                if (ref->kind != N_FIELD_E ||
-                    (ref->a->kind != N_IDENT && ref->a->kind != N_INDEX)) {
-                    ck_err(k, pat,
-                           "union switch cases must name %s variants (Type.variant)", type_name(u));
+                if (ref->kind != N_FIELD_E || (ref->a->kind != N_IDENT && ref->a->kind != N_INDEX)) {
+                    ck_err(k, pat, "union switch cases must name %s variants (Type.variant)", type_name(u));
                     continue;
                 }
                 SType* ub = union_base_type(k, ref->a);
@@ -4574,8 +4317,7 @@ static void check_union_switch(Ck* k, Node* s, SType* u) {
                     } else if (binder) {
                         SType* bt = build_type(k, binder->a);
                         if (!want) {
-                            ck_err(k, binder, "variant '%s' carries no payload",
-                                   u->fields[vi].name);
+                            ck_err(k, binder, "variant '%s' carries no payload", u->fields[vi].name);
                         } else if (!same_type(bt, want)) {
                             ck_err(k, binder,
                                    "variant '%s' payload is %s, binder is %s",
@@ -4626,12 +4368,9 @@ static void check_switch_fallthrough(Ck* k, Node* s, SType* t) {
         for (int j = 0; b && j < b->nkids; j++) {
             Node* st = b->kids[j];
             if (st->kind != N_FALLTHROUGH) continue;
-            if (j != b->nkids - 1)
-                ck_err(k, st, "fallthrough must be the final statement of a switch case");
-            if (i == s->nkids - 1)
-                ck_err(k, st, "fallthrough is not allowed in the final switch case");
-            if (t && t->kind == SK_UNION)
-                ck_err(k, st, "fallthrough is not allowed in a tagged-union switch");
+            if (j != b->nkids - 1) ck_err(k, st, "fallthrough must be the final statement of a switch case");
+            if (i == s->nkids - 1) ck_err(k, st, "fallthrough is not allowed in the final switch case");
+            if (t && t->kind == SK_UNION) ck_err(k, st, "fallthrough is not allowed in a tagged-union switch");
         }
     }
 }
@@ -4643,10 +4382,8 @@ static void check_stmt(Ck* k, Node* s) {
             /* Resolve every name against the scope as it stood before this
              * statement. Earlier binders in the list do not affect later ones. */
             SType* rt = expr_type(k, s->b);
-            SType** wants = (SType**)arena_alloc(
-                (size_t)(s->nkids ? s->nkids : 1) * sizeof(SType*));
-            Sym** old = (Sym**)arena_alloc(
-                (size_t)(s->nkids ? s->nkids : 1) * sizeof(Sym*));
+            SType** wants = (SType**)arena_alloc((size_t)(s->nkids ? s->nkids : 1) * sizeof(SType*));
+            Sym** old = (Sym**)arena_alloc((size_t)(s->nkids ? s->nkids : 1) * sizeof(Sym*));
             for (int i = 0; i < s->nkids; i++) {
                 Node* binder = s->kids[i];
                 old[i] = lookup_val(k, binder->str, binder->len);
@@ -4686,8 +4423,7 @@ static void check_stmt(Ck* k, Node* s) {
                 return;
             }
             if (s->b->kind == N_TUPLE_E) {
-                for (int i = 0; i < s->nkids; i++)
-                    coerce(k, s->b->kids[i], wants[i]);
+                for (int i = 0; i < s->nkids; i++) coerce(k, s->b->kids[i], wants[i]);
             } else {
                 for (int i = 0; i < s->nkids; i++)
                     if (wants[i]->kind != SK_ERR &&
@@ -4718,10 +4454,8 @@ static void check_stmt(Ck* k, Node* s) {
         if (!s->b) {
             if (wants[0]->kind == SK_STATICMAP)
                 ck_err(k, s, "StaticMap construction requires a module-level brace initializer");
-            else if (s->flags & F_CONST)
-                ck_err(k, s, "const declaration requires an initializer");
-            else if (s->nkids > 1)
-                ck_err(k, s, "destructuring declaration requires an initializer");
+            else if (s->flags & F_CONST) ck_err(k, s, "const declaration requires an initializer");
+            else if (s->nkids > 1) ck_err(k, s, "destructuring declaration requires an initializer");
             return;
         }
         if (s->nkids == 1) {
@@ -4731,24 +4465,19 @@ static void check_stmt(Ck* k, Node* s) {
                 check_staticmap(k, init, wants[0]);
             } else if (init->kind == N_STRUCTLIT && !init->a && (wants[0]->kind == SK_STRUCT || wants[0]->kind == SK_BITS))
                 check_structlit(k, init, wants[0]);
-            else if (init->kind == N_ARRAYLIT && wants[0]->kind == SK_ARRAY)
-                check_arraylit(k, init, wants[0]);
-            else
-                coerce(k, init, wants[0]);
+            else if (init->kind == N_ARRAYLIT && wants[0]->kind == SK_ARRAY) check_arraylit(k, init, wants[0]);
+            else coerce(k, init, wants[0]);
             Sym* v = lookup_val(k, s->kids[0]->str, s->kids[0]->len);
             if (v) {
-                if (wants[0]->kind == SK_CONTRACT && (init->flags & F_CONST))
-                    v->is_const_backed = 1;
+                if (wants[0]->kind == SK_CONTRACT && (init->flags & F_CONST)) v->is_const_backed = 1;
                 // Literal provenance for string bindings: a literal, another
                 // literal-backed binding, or a slice of one. The writable-view
                 // establishment reads this flag (Mutability #11).
-                if (wants[0]->kind == SK_PRIM && wants[0]->prim == P_STRING &&
-                    !wants[0]->is_mut) {
+                if (wants[0]->kind == SK_PRIM && wants[0]->prim == P_STRING && !wants[0]->is_mut) {
                     if (init->kind == N_STR) v->is_literal_backed = 1;
                     else if (init->kind == N_IDENT) {
                         Sym* src = node_sym(init);
-                        if (src && src->is_literal_backed)
-                            v->is_literal_backed = 1;
+                        if (src && src->is_literal_backed) v->is_literal_backed = 1;
                     } else if (init->kind == N_SLICE_E && init->a) {
                         if (init->a->kind == N_STR ||
                             (init->a->kind == N_IDENT &&
@@ -4768,8 +4497,7 @@ static void check_stmt(Ck* k, Node* s) {
             return;
         }
         if (s->b->kind == N_TUPLE_E) { // explicit tuple: coerce element-wise
-            for (int i = 0; i < s->nkids; i++)
-                coerce(k, s->b->kids[i], wants[i]);
+            for (int i = 0; i < s->nkids; i++) coerce(k, s->b->kids[i], wants[i]);
         } else { // multi-return call: binder types must equal return types
             for (int i = 0; i < s->nkids; i++)
                 if (!same_type(rt->fields[i].t, wants[i]))
@@ -4835,8 +4563,7 @@ static void check_stmt(Ck* k, Node* s) {
                 rhs->ty = rt;
             }
             if (rt->kind != SK_PRIM || rt->prim != P_USIZE) {
-                ck_err(k, rhs, "pointer compound-assignment offset must be usize, not %s",
-                       type_name(rt));
+                ck_err(k, rhs, "pointer compound-assignment offset must be usize, not %s", type_name(rt));
                 return;
             }
             if (!layout(t->base) || !t->base->size) {
@@ -4892,9 +4619,7 @@ static void check_stmt(Ck* k, Node* s) {
         // (if/for/switch case/label/bare block), while check_block pushes
         // none — so the innermost scope is the body scope exactly when the
         // defer sits at the top level.
-        if (!k->scope->is_fnbody)
-            ck_err(k, s,
-                   "defer statement must appear at the top level of the function body");
+        if (!k->scope->is_fnbody) ck_err(k, s, "defer statement must appear at the top level of the function body");
         if (s->a->kind != N_CALL) {
             ck_err(k, s->a, "defer operand must be a call");
             return;
@@ -4906,8 +4631,7 @@ static void check_stmt(Ck* k, Node* s) {
     }
     case N_IF: {
         SType* c = expr_type(k, s->a);
-        if (c->kind != SK_ERR && !is_bool(c))
-            ck_err(k, s->a, "if condition must be bool, not %s", type_name(c));
+        if (c->kind != SK_ERR && !is_bool(c)) ck_err(k, s->a, "if condition must be bool, not %s", type_name(c));
         scope_push(k);
         check_block(k, s->b);
         scope_pop(k);
@@ -4940,19 +4664,15 @@ static void check_stmt(Ck* k, Node* s) {
             return;
         }
         SType* binds[2] = {0};
-        for (int i = 0; i < s->nkids && i < 2; i++)
-            binds[i] = build_type(k, s->kids[i]->a);
+        for (int i = 0; i < s->nkids && i < 2; i++) binds[i] = build_type(k, s->kids[i]->a);
         SType* it = expr_type(k, s->b);
         if (it->kind != SK_ERR) {
             if (s->b->kind == N_RANGE) {
-                if (s->nkids != 1)
-                    ck_err(k, s, "range iteration accepts one value binder, not %d",
-                           s->nkids);
+                if (s->nkids != 1) ck_err(k, s, "range iteration accepts one value binder, not %d", s->nkids);
                 if (s->nkids > 0 && !is_int(binds[0]))
                     ck_err(k, s, "range loop variable must be an integer type, not %s",
                            type_name(binds[0]));
-            } else if (it->kind == SK_SLICE || it->kind == SK_ARRAY ||
-                       (it->kind == SK_PRIM && it->prim == P_STRING)) {
+            } else if (it->kind == SK_SLICE || it->kind == SK_ARRAY || (it->kind == SK_PRIM && it->prim == P_STRING)) {
                 SType* elem = it->kind == SK_PRIM ? st_prim(P_U8) : it->base;
                 int value = s->nkids == 2 ? 1 : 0;
                 if (s->nkids == 2 && !same_type(binds[0], st_prim(P_USIZE)))
@@ -4962,8 +4682,7 @@ static void check_stmt(Ck* k, Node* s) {
                     ck_err(k, s->kids[value], "loop value binder is %s but elements are %s",
                            type_name(binds[value]), type_name(elem));
             } else {
-                ck_err(k, s->b, "for-in iterates slices, arrays, strings, or ranges — not %s",
-                       type_name(it));
+                ck_err(k, s->b, "for-in iterates slices, arrays, strings, or ranges — not %s", type_name(it));
             }
         }
         if ((s->flags & F_MUT) && it->kind != SK_ERR) {
@@ -4973,8 +4692,7 @@ static void check_stmt(Ck* k, Node* s) {
             // storage needs no separate check; strings participate with no
             // special-casing (Iterations #16). Ranges have no elements.
             if (s->b->kind == N_RANGE) {
-                ck_err(k, s->b,
-                       "mut iteration requires writable array, slice, or string storage, not a range");
+                ck_err(k, s->b, "mut iteration requires writable array, slice, or string storage, not a range");
             } else {
                 int content_writable = (it->kind == SK_SLICE ||
                                         (it->kind == SK_PRIM && it->prim == P_STRING)) &&
@@ -5028,8 +4746,7 @@ static void check_stmt(Ck* k, Node* s) {
         SType* rt = k->ret;
         int nret = rt ? (rt->kind == SK_TUPLE ? rt->nfields : 1) : 0;
         if (!s->a) {
-            if (nret != 0)
-                ck_err(k, s, "function returns %d values; bare return returns none", nret);
+            if (nret != 0) ck_err(k, s, "function returns %d values; bare return returns none", nret);
             return;
         }
         if (s->a->kind == N_TUPLE_E) {
@@ -5038,12 +4755,10 @@ static void check_stmt(Ck* k, Node* s) {
                 return;
             }
             if (s->a->nkids != rt->nfields) {
-                ck_err(k, s, "function returns %d values, return has %d",
-                       rt->nfields, s->a->nkids);
+                ck_err(k, s, "function returns %d values, return has %d", rt->nfields, s->a->nkids);
                 return;
             }
-            for (int i = 0; i < s->a->nkids; i++)
-                coerce(k, s->a->kids[i], rt->fields[i].t);
+            for (int i = 0; i < s->a->nkids; i++) coerce(k, s->a->kids[i], rt->fields[i].t);
             s->a->ty = rt;
             return;
         }
@@ -5103,8 +4818,7 @@ static void check_stmt(Ck* k, Node* s) {
                 if (val->kind == N_IDENT) {
                     Sym* vs = lookup_val(k, val->str, val->len);
                     if (!vs) {
-                        ck_err(k, val, "asm binding '%.*s' is not a local or parameter",
-                               (int)val->len, val->str);
+                        ck_err(k, val, "asm binding '%.*s' is not a local or parameter", (int)val->len, val->str);
                         continue;
                     }
                     val->sym = vs; // emitter: storage for in/out moves
@@ -5188,13 +4902,11 @@ static void check_structlit(Ck* k, Node* lit, SType* want) {
                 if ((uint32_t)strlen(want->fields[j].name) == fi->len &&
                     memcmp(want->fields[j].name, fi->str, fi->len) == 0) { found = j; break; }
             if (found < 0) {
-                ck_err(k, fi, "type %s has no field '%.*s'", type_name(want),
-                       (int)fi->len, fi->str);
+                ck_err(k, fi, "type %s has no field '%.*s'", type_name(want), (int)fi->len, fi->str);
                 continue;
             }
             if (seen[found]) {
-                ck_err(k, fi, "duplicate field '%.*s' in %s literal",
-                       (int)fi->len, fi->str, type_name(want));
+                ck_err(k, fi, "duplicate field '%.*s' in %s literal", (int)fi->len, fi->str, type_name(want));
                 continue;
             }
             seen[found] = 1;
@@ -5206,8 +4918,7 @@ static void check_structlit(Ck* k, Node* lit, SType* want) {
                type_name(want), want->nfields, n);
     if (!positional) {
         int added = 0;
-        for (int i = 0; i < want->nfields; i++)
-            if (!seen[i] && want->fields[i].default_value) added++;
+        for (int i = 0; i < want->nfields; i++) if (!seen[i] && want->fields[i].default_value) added++;
         if (added) {
             Node** kids = (Node**)arena_alloc((size_t)(lit->nkids + added) * sizeof(Node*));
             memcpy(kids, lit->kids, (size_t)lit->nkids * sizeof(Node*));
@@ -5254,8 +4965,7 @@ static void check_arraylit(Ck* k, Node* lit, SType* want) {
         return;
     }
     if ((uint64_t)lit->nkids != want->count) {
-        ck_err(k, lit, "array length is %llu, literal has %d elements",
-               (unsigned long long)want->count, lit->nkids);
+        ck_err(k, lit, "array length is %llu, literal has %d elements", (unsigned long long)want->count, lit->nkids);
         return;
     }
     for (int i = 0; i < lit->nkids; i++) coerce(k, lit->kids[i], want->base);
@@ -5328,13 +5038,11 @@ static SType* init_shape(SType* t) {
 
 static int init_aggregate(SType* t) {
     t = init_shape(t);
-    return t && (t->kind == SK_STRUCT || t->kind == SK_ARRAY ||
-                 t->kind == SK_TUPLE);
+    return t && (t->kind == SK_STRUCT || t->kind == SK_ARRAY || t->kind == SK_TUPLE);
 }
 
 static InitPart* init_part(InitState* s, uint64_t key, int create) {
-    for (InitPart* p = s->parts; p; p = p->next)
-        if (p->key == key) return p;
+    for (InitPart* p = s->parts; p; p = p->next) if (p->key == key) return p;
     if (!create) return NULL;
     InitPart* p = (InitPart*)arena_alloc(sizeof(InitPart));
     memset(p, 0, sizeof *p);
@@ -5357,8 +5065,7 @@ static uint64_t init_part_count(SType* t) {
 static SType* init_part_type(SType* t, uint64_t key) {
     t = init_shape(t);
     if (!t) return NULL;
-    if ((t->kind == SK_STRUCT || t->kind == SK_TUPLE) && key < (uint64_t)t->nfields)
-        return t->fields[key].t;
+    if ((t->kind == SK_STRUCT || t->kind == SK_TUPLE) && key < (uint64_t)t->nfields) return t->fields[key].t;
     if (t->kind == SK_ARRAY && key < t->count) return t->base;
     return NULL;
 }
@@ -5410,8 +5117,7 @@ static InitState init_intersect(InitState* a, InitState* b, SType* t) {
 
 static InitVar* init_var(InitCk* k, Sym* sym, int create) {
     if (!sym || sym->kind != SYM_VAR || sym->is_global) return NULL;
-    for (InitVar* v = k->vars; v; v = v->next)
-        if (v->sym == sym) return v;
+    for (InitVar* v = k->vars; v; v = v->next) if (v->sym == sym) return v;
     if (!create) return NULL;
     InitVar* v = (InitVar*)arena_alloc(sizeof(InitVar));
     memset(v, 0, sizeof *v);
@@ -5428,11 +5134,7 @@ static InitSnap init_snapshot(InitCk* k) {
     s.n = n;
     s.v = (InitSnapEntry*)arena_alloc((size_t)(n ? n : 1) * sizeof(InitSnapEntry));
     int i = 0;
-    for (InitVar* v = k->vars; v; v = v->next) {
-        s.v[i].var = v;
-        s.v[i].state = init_clone(&v->state);
-        i++;
-    }
+    for (InitVar* v = k->vars; v; v = v->next) { s.v[i].var = v; s.v[i].state = init_clone(&v->state); i++; }
     return s;
 }
 
@@ -5526,8 +5228,7 @@ static int init_require_path(InitCk* k, Node* e) {
     InitVar* v = init_var(k, p.root, 0);
     if (!v) return 1;
     if (p.dynamic_index) {
-        if (!init_state_full(&v->state, p.root->type))
-            init_diag(k, e, &p, p.root->type);
+        if (!init_state_full(&v->state, p.root->type)) init_diag(k, e, &p, p.root->type);
         return 1;
     }
     InitState* s = init_path_state(v, &p, 0);
@@ -5665,15 +5366,13 @@ static void init_merge_snapshots(InitSnap* base, InitSnap* a, InitSnap* b) {
 static InitSnap init_intersect_snapshots(InitSnap* base, InitSnap* a, InitSnap* b) {
     InitSnap out = {0};
     out.n = base->n;
-    out.v = (InitSnapEntry*)arena_alloc(
-        (size_t)(out.n ? out.n : 1) * sizeof(InitSnapEntry));
+    out.v = (InitSnapEntry*)arena_alloc((size_t)(out.n ? out.n : 1) * sizeof(InitSnapEntry));
     for (int i = 0; i < out.n; i++) {
         InitVar* v = base->v[i].var;
         InitState* as = init_snap_state(a, v);
         InitState* bs = init_snap_state(b, v);
         out.v[i].var = v;
-        out.v[i].state = as && bs
-            ? init_intersect(as, bs, v->sym->type)
+        out.v[i].state = as && bs ? init_intersect(as, bs, v->sym->type)
             : (InitState){0};
     }
     return out;
@@ -5682,8 +5381,7 @@ static InitSnap init_intersect_snapshots(InitSnap* base, InitSnap* a, InitSnap* 
 static void init_exit_add(InitExit* x) {
     InitSnap now = {0};
     now.n = x->base.n;
-    now.v = (InitSnapEntry*)arena_alloc(
-        (size_t)(now.n ? now.n : 1) * sizeof(InitSnapEntry));
+    now.v = (InitSnapEntry*)arena_alloc((size_t)(now.n ? now.n : 1) * sizeof(InitSnapEntry));
     for (int i = 0; i < now.n; i++) {
         now.v[i].var = x->base.v[i].var;
         now.v[i].state = init_clone(&now.v[i].var->state);
@@ -5729,8 +5427,7 @@ static int init_stmt(InitCk* k, Node* s) {
     case N_ASSIGN:
         init_expr(k, s->a);
         for (int i = 0; i < s->nkids; i++) {
-            SType* base = s->kids[i]->kind == N_FIELD_E
-                ? init_shape(node_ty(s->kids[i]->a)) : NULL;
+            SType* base = s->kids[i]->kind == N_FIELD_E ? init_shape(node_ty(s->kids[i]->a)) : NULL;
             if (base && base->kind == SK_BITS)
                 init_expr(k, s->kids[i]->a); // preserving RMW reads the whole unit
             if (s->op != T_ASSIGN) init_expr(k, s->kids[i]);
@@ -5927,9 +5624,7 @@ static uint32_t checked_layout_align(Ck* k, Node* expr, const char* subject) {
         return 0;
     }
     if (value <= 0 || value > 16 || ((uint64_t)value & ((uint64_t)value - 1)) != 0) {
-        ck_err(k, expr,
-               "%s @align value must be a positive power of two no greater than 16",
-               subject);
+        ck_err(k, expr, "%s @align value must be a positive power of two no greater than 16", subject);
         return 0;
     }
     return (uint32_t)value;
@@ -5953,8 +5648,7 @@ static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
         t->fields[i].name = decl->kids[i]->str;
         t->fields[i].t = build_type_ctx(k, decl->kids[i]->a, 2);
         t->fields[i].default_value = decl->kids[i]->c;
-        t->fields[i].requested_align = checked_layout_align(
-            k, decl->kids[i]->b, "field");
+        t->fields[i].requested_align = checked_layout_align(k, decl->kids[i]->b, "field");
         if (t->fields[i].requested_align && !t->is_packed &&
             layout(t->fields[i].t) &&
             t->fields[i].requested_align < t->fields[i].t->align) {
@@ -5975,8 +5669,7 @@ static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
                 check_structlit(k, value, t->fields[i].t);
             else if (value->kind == N_ARRAYLIT && t->fields[i].t->kind == SK_ARRAY)
                 check_arraylit(k, value, t->fields[i].t);
-            else
-                coerce(k, value, t->fields[i].t);
+            else coerce(k, value, t->fields[i].t);
             if (!compile_time_expr(value))
                 ck_err(k, value, "default for field '%s' must be a compile-time expression",
                        t->fields[i].name);
@@ -5995,9 +5688,7 @@ static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
     }
     t->requested_align = checked_layout_align(k, decl->b, "struct");
     if (t->requested_align && t->requested_align < base_align) {
-        ck_err(k, decl->b,
-               "struct @align(%u) cannot reduce computed alignment %u",
-               t->requested_align, base_align);
+        ck_err(k, decl->b, "struct @align(%u) cannot reduce computed alignment %u", t->requested_align, base_align);
         t->requested_align = base_align;
     }
     t->building = 0;
@@ -6017,8 +5708,7 @@ static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
 static SType* fill_bits_type(Ck* k, Node* decl, SType* t) {
     t->kind = SK_BITS; t->name = decl->str; t->decl = decl;
     t->base = build_type(k, decl->a);
-    int valid_backing = t->base && t->base->kind == SK_PRIM &&
-        t->base->prim >= P_U8 && t->base->prim <= P_U64;
+    int valid_backing = t->base && t->base->kind == SK_PRIM && t->base->prim >= P_U8 && t->base->prim <= P_U64;
     if (!valid_backing) {
         ck_err(k, decl->a, "bits backing type must be exactly u8, u16, u32, or u64");
         t->base = st_prim(P_U8);
@@ -6051,8 +5741,7 @@ static SType* fill_bits_type(Ck* k, Node* decl, SType* t) {
 
 static SType* fill_union_type(Ck* k, Node* decl, SType* t) {
     k->type_build_depth++;
-    if (decl->nkids == 0)
-        ck_err(k, decl, "a union needs at least one variant");
+    if (decl->nkids == 0) ck_err(k, decl, "a union needs at least one variant");
     t->kind = SK_UNION;
     t->name = decl->str;
     t->decl = decl;
@@ -6065,8 +5754,7 @@ static SType* fill_union_type(Ck* k, Node* decl, SType* t) {
     memset(t->fields, 0, (size_t)(decl->nkids ? decl->nkids : 1) * sizeof(SField));
     for (int i = 0; i < decl->nkids; i++) {
         t->fields[i].name = decl->kids[i]->str;
-        t->fields[i].t = decl->kids[i]->a
-            ? build_type_ctx(k, decl->kids[i]->a, 2) : NULL;
+        t->fields[i].t = decl->kids[i]->a ? build_type_ctx(k, decl->kids[i]->a, 2) : NULL;
     }
     for (int i = 0; i < t->nfields; i++)
         for (int j = i + 1; j < t->nfields; j++)
@@ -6091,8 +5779,7 @@ static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int narg
     if (!decl || !decl->c) return T_ERR;
     Node* tp = decl->c;
     if (tp->nkids != nargs) {
-        ck_err(k, decl, "generic type expects %d type arguments, got %d",
-               tp->nkids, nargs);
+        ck_err(k, decl, "generic type expects %d type arguments, got %d", tp->nkids, nargs);
         return T_ERR;
     }
     STypeInst** head = (STypeInst**)&tp->b; // memo on the tparams node
@@ -6129,8 +5816,7 @@ static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int narg
         k->tnames = sn; k->ttypes = st; k->nsub = ns;
         return inst->result;
     }
-    SType* t = st_new(decl->kind == N_STRUCT ? SK_STRUCT :
-                      decl->kind == N_UNION ? SK_UNION : SK_CONTRACT);
+    SType* t = st_new(decl->kind == N_STRUCT ? SK_STRUCT : decl->kind == N_UNION ? SK_UNION : SK_CONTRACT);
     t->name = decl->str;
     t->decl = decl;
     t->nargs = nargs;
@@ -6167,8 +5853,7 @@ static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int narg
 static void register_signing(Ck* k, Node* signing) {
     Sym* cs = lookup_type(k, signing->a->str, signing->a->len);
     if (!cs || !cs->type || cs->type->kind != SK_STRUCT) {
-        ck_err(k, signing->a, "signing owner '%.*s' is not a declared struct",
-               (int)signing->a->len, signing->a->str);
+        ck_err(k, signing->a, "signing owner '%.*s' is not a declared struct", (int)signing->a->len, signing->a->str);
         return;
     }
     Node* decl = cs->type->decl;
@@ -6177,8 +5862,7 @@ static void register_signing(Ck* k, Node* signing) {
         return;
     }
     if (decl->d) {
-        ck_err(k, signing, "signing for %s was already declared once",
-               type_name(cs->type));
+        ck_err(k, signing, "signing for %s was already declared once", type_name(cs->type));
         return;
     }
     for (Sym* v = k->scope->values; v; v = v->next)
@@ -6190,8 +5874,7 @@ static void register_signing(Ck* k, Node* signing) {
                        type_name(cs->type));
     int want = decl->c ? decl->c->nkids : 0;
     int got = signing->c ? signing->c->nkids : 0;
-    if (want != got)
-        ck_err(k, signing, "signing owner must repeat the struct's %d type parameters", want);
+    if (want != got) ck_err(k, signing, "signing owner must repeat the struct's %d type parameters", want);
     else for (int i = 0; i < want; i++)
         if (decl->c->kids[i]->len != signing->c->kids[i]->len ||
             memcmp(decl->c->kids[i]->str, signing->c->kids[i]->str,
@@ -6284,8 +5967,7 @@ static void check_signing(Ck* k, Node* signing) {
                 for (int fi = 0; fi < conc->nfields; fi++) {
                     Node* fd = conc->decl->kids[fi];
                     SType* eb = conc->fields[fi].t;
-                    if (!(fd->flags & F_EMBED) || !eb || eb->kind != SK_STRUCT ||
-                        !eb->decl || !eb->decl->d) continue;
+                    if (!(fd->flags & F_EMBED) || !eb || eb->kind != SK_STRUCT || !eb->decl || !eb->decl->d) continue;
                     int base_signs = 0;
                     Node* bs = eb->decl->d;
                     if (bs->path && signing->path &&
@@ -6457,12 +6139,10 @@ int sema_check(Node* file, Diag* d) {
             if (n->flags & F_METHOD) {
                 Sym* owner = lookup_type(&k, n->d->str, n->d->len);
                 if (!owner || !owner->type || owner->type->kind != SK_STRUCT) {
-                    ck_err(&k, n->d, "method owner '%.*s' is not a declared struct",
-                           (int)n->d->len, n->d->str);
+                    ck_err(&k, n->d, "method owner '%.*s' is not a declared struct", (int)n->d->len, n->d->str);
                     break;
                 }
-                if (owner->type->decl->path && n->path &&
-                    strcmp(owner->type->decl->path, n->path) != 0) {
+                if (owner->type->decl->path && n->path && strcmp(owner->type->decl->path, n->path) != 0) {
                     ck_err(&k, n, "methods must be declared in the struct's defining module");
                     break;
                 }
@@ -6485,12 +6165,9 @@ int sema_check(Node* file, Diag* d) {
             }
             Sym* s = declare_func(&k, n, 0);
             if (!s) break;
-            if (s->is_generic)
-                s->decl_scope = is_root_node(d, n) ? &import_scope : &file_scope;
-            if (!(n->flags & F_METHOD) && n->len == 4 &&
-                memcmp(n->str, "main", 4) == 0) {
-                int spells_int = n->a && n->a->kind == N_NAMED &&
-                    n->a->len == 3 && memcmp(n->a->str, "int", 3) == 0;
+            if (s->is_generic) s->decl_scope = is_root_node(d, n) ? &import_scope : &file_scope;
+            if (!(n->flags & F_METHOD) && n->len == 4 && memcmp(n->str, "main", 4) == 0) {
+                int spells_int = n->a && n->a->kind == N_NAMED && n->a->len == 3 && memcmp(n->a->str, "int", 3) == 0;
                 Sym* head = scope_find(k.scope, 0, n->str, n->len);
                 if (s->is_generic || n->nkids != 0 || !spells_int ||
                     overload_count(head) != 1)
@@ -6531,24 +6208,19 @@ int sema_check(Node* file, Diag* d) {
                 int root = is_root_node(d, n);
                 if (root) k.scope = &import_scope;
                 if (t->kind == SK_STATICMAP) {
-                    if (n->flags & F_CONST)
-                        ck_err(&k, n, "const is not permitted on a StaticMap declaration");
+                    if (n->flags & F_CONST) ck_err(&k, n, "const is not permitted on a StaticMap declaration");
                     check_staticmap(&k, n->b, t);
                 } else if (n->b->kind == N_STRUCTLIT && !n->b->a && (t->kind == SK_STRUCT || t->kind == SK_BITS))
                     check_structlit(&k, n->b, t);
-                else if (n->b->kind == N_ARRAYLIT && t->kind == SK_ARRAY)
-                    check_arraylit(&k, n->b, t);
-                else
-                    coerce(&k, n->b, t);
+                else if (n->b->kind == N_ARRAYLIT && t->kind == SK_ARRAY) check_arraylit(&k, n->b, t);
+                else coerce(&k, n->b, t);
                 if (root) k.scope = &file_scope;
-                if (s && t->kind == SK_CONTRACT && (n->b->flags & F_CONST))
-                    s->is_const_backed = 1;
+                if (s && t->kind == SK_CONTRACT && (n->b->flags & F_CONST)) s->is_const_backed = 1;
                 if (s && t->kind == SK_PRIM && t->prim == P_STRING &&
                     !t->is_mut && n->b->kind == N_STR)
                     s->is_literal_backed = 1;
             } else if (t->kind == SK_STATICMAP) {
-                if (n->flags & F_CONST)
-                    ck_err(&k, n, "const is not permitted on a StaticMap declaration");
+                if (n->flags & F_CONST) ck_err(&k, n, "const is not permitted on a StaticMap declaration");
                 ck_err(&k, n, "StaticMap declaration requires a brace initializer");
             } else if (n->flags & F_CONST) {
                 ck_err(&k, n, "const declaration requires an initializer");
@@ -6609,9 +6281,7 @@ int sema_check(Node* file, Diag* d) {
             resolve_type_fixes(&k, s, t, n);
             t->base = build_type(&k, n->a);
             if (!layout(t)) {
-                ck_err(&k, n,
-                       "type '%s' has a recursive value layout; use a pointer to break the cycle",
-                       n->str);
+                ck_err(&k, n, "type '%s' has a recursive value layout; use a pointer to break the cycle", n->str);
                 t->size = t->align = 1;
                 t->calc = 0;
             }
@@ -6657,8 +6327,7 @@ int sema_check(Node* file, Diag* d) {
 
     // Contracts precede their methods; validate their complete method sets now.
     k.scope = &file_scope;
-    for (int i = 0; i < file->nkids; i++)
-        if (file->kids[i]->kind == N_SIGNING) check_signing(&k, file->kids[i]);
+    for (int i = 0; i < file->nkids; i++) if (file->kids[i]->kind == N_SIGNING) check_signing(&k, file->kids[i]);
 
     // forward top-level calls: verify existence and argument types
     k.scope = &file_scope;

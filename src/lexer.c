@@ -289,19 +289,15 @@ static void scan_number(Lex* L) {
             err(L, "float exponent requires a '.' — write 1.0e5, not 1e5");
     }
 
-    if (!seps_ok(s->buf + dstart, L->pos - dstart, base))
-        err(L, "malformed '_' separator (must sit between digits)");
-    if (dend == dstart)
-        err(L, "missing digits after base prefix");
-    else if (base == 2 && digval(cur(L), 10) >= 0)
-        err(L, "invalid binary digit '%c'", cur(L));
+    if (!seps_ok(s->buf + dstart, L->pos - dstart, base)) err(L, "malformed '_' separator (must sit between digits)");
+    if (dend == dstart) err(L, "missing digits after base prefix");
+    else if (base == 2 && digval(cur(L), 10) >= 0) err(L, "invalid binary digit '%c'", cur(L));
 
     if (is_float) {
         size_t n = L->pos - L->toff;
         char* clean = arena_alloc(n + 1);
         size_t j = 0;
-        for (size_t i = 0; i < n; i++)
-            if (s->buf[L->toff + i] != '_') clean[j++] = s->buf[L->toff + i];
+        for (size_t i = 0; i < n; i++) if (s->buf[L->toff + i] != '_') clean[j++] = s->buf[L->toff + i];
         clean[j] = 0;
         Token t = mktok(L, T_FLOAT);
         t.fval = strtod(clean, NULL);
@@ -495,12 +491,9 @@ static void scan_punct(Lex* L, char c) {
     case '@': adv(L); k = T_AT; break;
     default:
         adv(L);
-        if ((unsigned char)c >= 0x80)
-            err(L, "non-ASCII byte 0x%02X (identifiers are ASCII in v1)", (unsigned char)c);
-        else if (c > ' ' && c <= '~')
-            err(L, "unexpected character '%c'", c);
-        else
-            err(L, "unexpected byte 0x%02X", (unsigned char)c);
+        if ((unsigned char)c >= 0x80) err(L, "non-ASCII byte 0x%02X (identifiers are ASCII in v1)", (unsigned char)c);
+        else if (c > ' ' && c <= '~') err(L, "unexpected character '%c'", c);
+        else err(L, "unexpected byte 0x%02X", (unsigned char)c);
         return;
     }
     push(L, mktok(L, k));
@@ -539,8 +532,7 @@ Token* lex(Source* s, Diag* d, size_t* count) {
                 adv(&L); adv(&L);
                 for (;;) {
                     if (!cur(&L)) {
-                        fprintf(stderr, "%s:%d:%d: error: unterminated block comment\n",
-                                s->path, sl, sc);
+                        fprintf(stderr, "%s:%d:%d: error: unterminated block comment\n", s->path, sl, sc);
                         d->errors++;
                         break;
                     }

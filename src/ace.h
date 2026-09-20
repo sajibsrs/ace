@@ -268,8 +268,7 @@ int resolve_imports(Node* file, Diag* d, const char* compiler_path,
 // a Mach-O arm64 object. Returns 0 on success. Sets emit_has_main.
 typedef enum { EMIT_CHECKED, EMIT_RELEASE } EmitMode;
 
-int emit_object(Node* file, Diag* d, const char* out_path,
-                CompileReport* report, EmitMode mode);
+int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report, EmitMode mode);
 extern int emit_has_main;
 
 // --- Packages (ace.pkg manifests, Package System v1: local-path only) --------
@@ -317,8 +316,7 @@ struct Package {
 // d. On success, *order receives every loaded package (including the root)
 // in dependency-first order and *norder its count; the caller owns the
 // returned array (free) but not the Package storage (arena, stable).
-Package* package_resolve(const char* package_dir, Diag* d, const char* compiler_path,
-                         Package*** order, int* norder);
+Package* package_resolve(const char* package_dir, Diag* d, const char* compiler_path, Package*** order, int* norder);
 
 // Collects every package's declared [[link]] inputs across order
 // (dependency-first, from package_resolve) into direct-driver flag form —

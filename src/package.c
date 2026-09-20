@@ -76,15 +76,13 @@ static const char* trim(const char* s, size_t len, size_t* out_len) {
 static int is_ident(const char* s, size_t len) {
     if (!len) return 0;
     if (!(isalpha((unsigned char)s[0]) || s[0] == '_')) return 0;
-    for (size_t i = 0; i < len; i++)
-        if (!(isalnum((unsigned char)s[i]) || s[i] == '_')) return 0;
+    for (size_t i = 0; i < len; i++) if (!(isalnum((unsigned char)s[i]) || s[i] == '_')) return 0;
     return 1;
 }
 
 int package_valid_name(const char* s, size_t len) {
     if (!is_ident(s, len)) return 0;
-    for (size_t i = 0; i < len; i++)
-        if (isupper((unsigned char)s[i])) return 0;
+    for (size_t i = 0; i < len; i++) if (isupper((unsigned char)s[i])) return 0;
     return 1;
 }
 
@@ -243,14 +241,12 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
             else if (text_is(key, (uint32_t)kt, "library")) kind = LINK_LIBRARY;
             else if (text_is(key, (uint32_t)kt, "framework")) kind = LINK_FRAMEWORK;
             else {
-                package_err(L, manifest_path, line,
-                        "unknown [[link]] field '%.*s'", (int)kt, key);
+                package_err(L, manifest_path, line, "unknown [[link]] field '%.*s'", (int)kt, key);
                 ok = 0;
                 continue;
             }
             if (link_seen & (1 << kind)) {
-                package_err(L, manifest_path, line,
-                        "duplicate '%.*s' in this [[link]] record", (int)kt, key);
+                package_err(L, manifest_path, line, "duplicate '%.*s' in this [[link]] record", (int)kt, key);
                 ok = 0;
                 continue;
             }
@@ -291,14 +287,12 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
 }
 
 static int on_stack(PackageLoader* L, const char* canon) {
-    for (Package* p = L->loading; p; p = p->next)
-        if (strcmp(p->dir, canon) == 0) return 1;
+    for (Package* p = L->loading; p; p = p->next) if (strcmp(p->dir, canon) == 0) return 1;
     return 0;
 }
 
 static Package* already_loaded(PackageLoader* L, const char* canon) {
-    for (Package* p = L->loaded; p; p = p->next)
-        if (strcmp(p->dir, canon) == 0) return p;
+    for (Package* p = L->loaded; p; p = p->next) if (strcmp(p->dir, canon) == 0) return p;
     return NULL;
 }
 
@@ -308,8 +302,7 @@ static void report_cycle(PackageLoader* L, const char* manifest, int line, const
     char* chain = malloc(cap);
     size_t off = 0;
     off += (size_t)snprintf(chain + off, cap - off, "%s", canon);
-    for (Package* p = L->loading; p; p = p->next)
-        off += (size_t)snprintf(chain + off, cap - off, " -> %s", p->dir);
+    for (Package* p = L->loading; p; p = p->next) off += (size_t)snprintf(chain + off, cap - off, " -> %s", p->dir);
     package_err(L, manifest, line, "package dependency cycle: %s", chain);
     free(chain);
 }
@@ -332,14 +325,12 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
                          const char* dep_manifest, int dep_line) {
     const char* canon = canonicalize(dir_arg);
     if (!canon) {
-        package_err(L, dep_manifest ? dep_manifest : dir_arg, dep_line,
-                "cannot find package directory '%s'", dir_arg);
+        package_err(L, dep_manifest ? dep_manifest : dir_arg, dep_line, "cannot find package directory '%s'", dir_arg);
         return NULL;
     }
     struct stat st;
     if (stat(canon, &st) != 0 || !S_ISDIR(st.st_mode)) {
-        package_err(L, dep_manifest ? dep_manifest : dir_arg, dep_line,
-                "'%s' is not a directory", canon);
+        package_err(L, dep_manifest ? dep_manifest : dir_arg, dep_line, "'%s' is not a directory", canon);
         return NULL;
     }
     if (on_stack(L, canon)) {
@@ -352,8 +343,7 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
     const char* manifest = join_path(canon, "ace.pkg");
     struct stat mst;
     if (stat(manifest, &mst) != 0) {
-        package_err(L, dep_manifest ? dep_manifest : canon, dep_line,
-                "no ace.pkg at '%s'", canon);
+        package_err(L, dep_manifest ? dep_manifest : canon, dep_line, "no ace.pkg at '%s'", canon);
         return NULL;
     }
 
@@ -370,20 +360,17 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
     if (!ok) { free(rm.deps); free(rm.links); return NULL; }
 
     if (!package_valid_name(rm.name, strlen(rm.name))) {
-        package_err(L, manifest, rm.name_line,
-                "package name '%s' must be a lowercase identifier", rm.name);
+        package_err(L, manifest, rm.name_line, "package name '%s' must be a lowercase identifier", rm.name);
         ok = 0;
     }
     int vmaj = 0, vmin = 0, vpat = 0;
     if (!parse_version(rm.version, strlen(rm.version), &vmaj, &vmin, &vpat)) {
-        package_err(L, manifest, rm.version_line,
-                "version '%s' must be exactly major.minor.patch", rm.version);
+        package_err(L, manifest, rm.version_line, "version '%s' must be exactly major.minor.patch", rm.version);
         ok = 0;
     }
     int amaj = 0, amin = 0;
     if (!parse_ace_version(rm.ace, strlen(rm.ace), &amaj, &amin)) {
-        package_err(L, manifest, rm.ace_line,
-                "ace version '%s' must be exactly major.minor", rm.ace);
+        package_err(L, manifest, rm.ace_line, "ace version '%s' must be exactly major.minor", rm.ace);
         ok = 0;
     } else {
         if (!L->have_ace_version) {
@@ -448,13 +435,11 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
     }
     for (int i = 0; i < rm.ndeps; i++) {
         if (!is_ident(rm.deps[i].alias, strlen(rm.deps[i].alias))) {
-            package_err(L, manifest, rm.deps[i].line,
-                    "dependency alias '%s' must be an identifier", rm.deps[i].alias);
+            package_err(L, manifest, rm.deps[i].line, "dependency alias '%s' must be an identifier", rm.deps[i].alias);
             ok = 0;
         }
         if (!path_is_relative(rm.deps[i].path, strlen(rm.deps[i].path))) {
-            package_err(L, manifest, rm.deps[i].line,
-                    "dependency path '%s' must be a relative path", rm.deps[i].path);
+            package_err(L, manifest, rm.deps[i].line, "dependency path '%s' must be a relative path", rm.deps[i].path);
             ok = 0;
         }
     }
@@ -540,8 +525,7 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
     return package;
 }
 
-Package* package_resolve(const char* package_dir, Diag* d, const char* compiler_path,
-                         Package*** order, int* norder) {
+Package* package_resolve(const char* package_dir, Diag* d, const char* compiler_path, Package*** order, int* norder) {
     PackageLoader L = {0};
     L.d = d;
     L.compiler_path = compiler_path;
@@ -772,8 +756,7 @@ int package_manifest_remove_dep(const char* manifest_path, const char* name, int
     // right before it) exactly when `add` inserted this section itself;
     // swallow it too so the round trip stays idempotent.
     const char* del_start = header_line;
-    if (drop_header && del_start - s.buf >= 2 && del_start[-1] == '\n' && del_start[-2] == '\n')
-        del_start -= 1;
+    if (drop_header && del_start - s.buf >= 2 && del_start[-1] == '\n' && del_start[-2] == '\n') del_start -= 1;
 
     char* out = malloc(s.len + 1);
     if (!out) { fprintf(stderr, "ace: out of memory\n"); exit(1); }

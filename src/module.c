@@ -76,9 +76,7 @@ typedef struct {
 
 static void import_err(Diag* d, Node* n, const char* fmt, ...) {
     va_list ap;
-    fprintf(stderr, "%s:%d:%d: error: ",
-            n && n->path ? n->path : d->path,
-            n ? n->line : 0, n ? n->col : 0);
+    fprintf(stderr, "%s:%d:%d: error: ", n && n->path ? n->path : d->path, n ? n->line : 0, n ? n->col : 0);
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
@@ -169,15 +167,13 @@ const char* build_path(const char* path) {
     } else if (canon && build_root_dir) {
         // Longest shared prefix ending at a component boundary.
         size_t common = 0;
-        for (size_t i = 0; canon[i] && canon[i] == build_root_dir[i]; i++)
-            if (canon[i] == '/') common = i;
+        for (size_t i = 0; canon[i] && canon[i] == build_root_dir[i]; i++) if (canon[i] == '/') common = i;
         size_t rn = strlen(build_root_dir);
         if (strncmp(canon, build_root_dir, rn) == 0 && canon[rn] == '/') common = rn;
         int up = 0;
         if (common < rn) {
             up = 1;
-            for (size_t i = common + 1; i < rn; i++)
-                if (build_root_dir[i] == '/') up++;
+            for (size_t i = common + 1; i < rn; i++) if (build_root_dir[i] == '/') up++;
         }
         const char* rest = canon + common + 1;
         size_t need = (size_t)up * 3 + strlen(rest) + 1;
@@ -199,9 +195,7 @@ static int is_std_source(Loader* L, const char* canon) {
 static int is_std_internal(Loader* L, const char* canon) {
     if (!L->std_root) return 0;
     size_t n = strlen(L->std_root);
-    return strncmp(canon, L->std_root, n) == 0 &&
-           strcmp(canon + n, "/@") != 0 &&
-           strncmp(canon + n, "/@/", 3) == 0;
+    return strncmp(canon, L->std_root, n) == 0 && strcmp(canon + n, "/@") != 0 && strncmp(canon + n, "/@/", 3) == 0;
 }
 
 // Return the canonical root directory for the nearest enclosing std
@@ -305,8 +299,7 @@ static void collect_members(Loader* L, Module* m) {
             break;
         case N_VAR:
             check_reserved_name(L, n, n->kids[0]->str, n->kids[0]->len);
-            add_member(m, n->kids[0]->str, n->kids[0]->len, 0,
-                       (n->flags & F_PUB) != 0);
+            add_member(m, n->kids[0]->str, n->kids[0]->len, 0, (n->flags & F_PUB) != 0);
             break;
         case N_STRUCT: case N_BITS: case N_CONTRACT: case N_ENUM:
         case N_ALIAS: case N_DISTINCT: case N_ERROR_DOMAIN: case N_UNION:
@@ -350,15 +343,12 @@ static int is_std_named_module(Loader* L, const char* canon, const char* name) {
     return expected && strcmp(expected, canon) == 0;
 }
 
-static int is_std_internal_named_module(Loader* L, const char* canon,
-                                        const char* name) {
+static int is_std_internal_named_module(Loader* L, const char* canon, const char* name) {
     char dir[4096];
     compiler_dir(dir, sizeof dir, L->compiler_path);
     char path[4608];
-    if (strcmp(dir, ".") == 0)
-        snprintf(path, sizeof path, "std/@/%s.ace", name);
-    else
-        snprintf(path, sizeof path, "%s/std/@/%s.ace", dir, name);
+    if (strcmp(dir, ".") == 0) snprintf(path, sizeof path, "std/@/%s.ace", name);
+    else snprintf(path, sizeof path, "%s/std/@/%s.ace", dir, name);
     const char* expected = canonicalize(path);
     return expected && strcmp(expected, canon) == 0;
 }
@@ -378,22 +368,14 @@ static void mark_bits_intrinsics(Loader* L, Module* m) {
     for (int i = 0; i < m->file->nkids; i++) {
         Node* n = m->file->kids[i];
         if (n->kind != N_FUNC || !(n->flags & F_INTRINSIC)) continue;
-        if (text_is(n->str, n->len, "from_float"))
-            n->ival = BI_BITS_FROM_FLOAT;
-        else if (text_is(n->str, n->len, "to_float"))
-            n->ival = BI_BITS_TO_FLOAT;
-        else if (text_is(n->str, n->len, "pop_count"))
-            n->ival = BI_BITS_POP_COUNT;
-        else if (text_is(n->str, n->len, "lead_zeros"))
-            n->ival = BI_BITS_LEAD_ZEROS;
-        else if (text_is(n->str, n->len, "trail_zeros"))
-            n->ival = BI_BITS_TRAIL_ZEROS;
-        else if (text_is(n->str, n->len, "byte_swap"))
-            n->ival = BI_BITS_BYTE_SWAP;
-        else if (text_is(n->str, n->len, "rotate_left"))
-            n->ival = BI_BITS_ROTATE_LEFT;
-        else if (text_is(n->str, n->len, "rotate_right"))
-            n->ival = BI_BITS_ROTATE_RIGHT;
+        if (text_is(n->str, n->len, "from_float")) n->ival = BI_BITS_FROM_FLOAT;
+        else if (text_is(n->str, n->len, "to_float")) n->ival = BI_BITS_TO_FLOAT;
+        else if (text_is(n->str, n->len, "pop_count")) n->ival = BI_BITS_POP_COUNT;
+        else if (text_is(n->str, n->len, "lead_zeros")) n->ival = BI_BITS_LEAD_ZEROS;
+        else if (text_is(n->str, n->len, "trail_zeros")) n->ival = BI_BITS_TRAIL_ZEROS;
+        else if (text_is(n->str, n->len, "byte_swap")) n->ival = BI_BITS_BYTE_SWAP;
+        else if (text_is(n->str, n->len, "rotate_left")) n->ival = BI_BITS_ROTATE_LEFT;
+        else if (text_is(n->str, n->len, "rotate_right")) n->ival = BI_BITS_ROTATE_RIGHT;
     }
 }
 
@@ -404,20 +386,16 @@ static void mark_mem_intrinsics(Loader* L, Module* m) {
         if (n->kind != N_FUNC || !(n->flags & F_PUB)) continue;
         // The bracket parameter separates the typed generic overloads from
         // the raw byte forms; both stay compiler-backed with no emitted body.
-        if (text_is(n->str, n->len, "alloc"))
-            n->ival = n->c ? BI_MEM_ALLOC_T : BI_MEM_ALLOC;
-        else if (text_is(n->str, n->len, "realloc"))
-            n->ival = n->c ? BI_MEM_REALLOC_T : BI_MEM_REALLOC;
-        else if (text_is(n->str, n->len, "release"))
-            n->ival = n->c ? BI_MEM_RELEASE_T : BI_MEM_RELEASE;
+        if (text_is(n->str, n->len, "alloc")) n->ival = n->c ? BI_MEM_ALLOC_T : BI_MEM_ALLOC;
+        else if (text_is(n->str, n->len, "realloc")) n->ival = n->c ? BI_MEM_REALLOC_T : BI_MEM_REALLOC;
+        else if (text_is(n->str, n->len, "release")) n->ival = n->c ? BI_MEM_RELEASE_T : BI_MEM_RELEASE;
         else if (text_is(n->str, n->len, "copy")) n->ival = BI_MEM_COPY;
         else if (text_is(n->str, n->len, "move")) n->ival = BI_MEM_MOVE;
         else if (text_is(n->str, n->len, "fill")) n->ival = BI_MEM_FILL;
         else if (text_is(n->str, n->len, "zero")) n->ival = BI_MEM_ZERO;
         else if (text_is(n->str, n->len, "compare")) n->ival = BI_MEM_COMPARE;
         else if (text_is(n->str, n->len, "equal")) n->ival = BI_MEM_EQUAL;
-        else if (text_is(n->str, n->len, "alloc_size"))
-            n->ival = BI_MEM_ALLOC_SIZE;
+        else if (text_is(n->str, n->len, "alloc_size")) n->ival = BI_MEM_ALLOC_SIZE;
     }
 }
 
@@ -425,9 +403,7 @@ static void mark_fmt_intrinsics(Loader* L, Module* m) {
     if (!is_std_named_module(L, m->canon, "fmt")) return;
     for (int i = 0; i < m->file->nkids; i++) {
         Node* n = m->file->kids[i];
-        if (n->kind == N_FUNC && (n->flags & F_PUB) &&
-            text_is(n->str, n->len, "printf"))
-            n->ival = BI_FMT_PRINTF;
+        if (n->kind == N_FUNC && (n->flags & F_PUB) && text_is(n->str, n->len, "printf")) n->ival = BI_FMT_PRINTF;
     }
 }
 
@@ -466,8 +442,7 @@ static const char* assign_prefix(Loader* L, const char* canon) {
         if (n == 1) snprintf(candidate, sizeof candidate, "%.*s$", (int)blen, base);
         else snprintf(candidate, sizeof candidate, "%.*s%d$", (int)blen, base, n);
         int used = 0;
-        for (int i = 0; i < L->nprefixes; i++)
-            if (strcmp(L->prefixes[i], candidate) == 0) { used = 1; break; }
+        for (int i = 0; i < L->nprefixes; i++) if (strcmp(L->prefixes[i], candidate) == 0) { used = 1; break; }
         if (!used) break;
     }
     const char* out = arena_string(candidate);
@@ -490,8 +465,7 @@ static Module* module_new(Loader* L, const char* canon, Node* file) {
 }
 
 static int module_on_stack(Loader* L, const char* canon) {
-    for (Module* m = L->loading; m; m = m->next)
-        if (strcmp(m->canon, canon) == 0) return 1;
+    for (Module* m = L->loading; m; m = m->next) if (strcmp(m->canon, canon) == 0) return 1;
     return 0;
 }
 
@@ -501,8 +475,7 @@ static void report_cycle(Loader* L, Node* at, const char* canon) {
     char* chain = arena_alloc(cap);
     size_t off = 0;
     off += (size_t)snprintf(chain + off, cap - off, "%s", canon);
-    for (Module* m = L->loading; m; m = m->next)
-        off += (size_t)snprintf(chain + off, cap - off, " -> %s", m->canon);
+    for (Module* m = L->loading; m; m = m->next) off += (size_t)snprintf(chain + off, cap - off, " -> %s", m->canon);
     import_err(L->d, at, "import cycle: %s", chain);
 }
 
@@ -528,8 +501,7 @@ static void join_segs(char* buf, size_t cap, PathSeg* segs, int nsegs) {
 // Resolves `<root>/<leaf>` per the flat-file-vs-directory-module convention:
 // `<root>/<leaf>.ace` or `<root>/<leaf>/mod.ace`, erroring if both exist or
 // neither does. `kind` names what's being resolved, for diagnostics.
-static const char* resolve_leaf(Loader* L, Node* imp, const char* root,
-                                const char* kind, PathSeg leaf) {
+static const char* resolve_leaf(Loader* L, Node* imp, const char* root, const char* kind, PathSeg leaf) {
     char flat[4608], directory[4608];
     snprintf(flat, sizeof flat, "%s/%.*s.ace", root, (int)leaf.len, leaf.str);
     snprintf(directory, sizeof directory, "%s/%.*s/mod.ace", root, (int)leaf.len, leaf.str);
@@ -542,8 +514,7 @@ static const char* resolve_leaf(Loader* L, Node* imp, const char* root,
     }
     if (directory_canon) return directory_canon;
     if (flat_canon) return flat_canon;
-    import_err(L->d, imp, "%s '%.*s' not found (tried %s and %s)",
-               kind, (int)leaf.len, leaf.str, flat, directory);
+    import_err(L->d, imp, "%s '%.*s' not found (tried %s and %s)", kind, (int)leaf.len, leaf.str, flat, directory);
     return NULL;
 }
 
@@ -559,8 +530,7 @@ static const char* resolve_module_path(Loader* L, Node* imp, const char* root,
                                        const char* kind, PathSeg* segs, int nsegs) {
     for (int i = 0; i < nsegs; i++) {
         if (segs[i].len >= 400) {
-            import_err(L->d, imp, "module path segment '%.*s' is too long",
-                       (int)segs[i].len, segs[i].str);
+            import_err(L->d, imp, "module path segment '%.*s' is too long", (int)segs[i].len, segs[i].str);
             return NULL;
         }
     }
@@ -604,8 +574,7 @@ static const char* resolve_module_path(Loader* L, Node* imp, const char* root,
 // package owning the resolved file (the matched dependency, the importer's
 // own package for a same-package relative path, or NULL for
 // std/std-internal/non-package targets).
-static const char* import_target(Loader* L, Node* imp, const char* src_path,
-                                 Package** target_package) {
+static const char* import_target(Loader* L, Node* imp, const char* src_path, Package** target_package) {
     *target_package = L->loading ? L->loading->package : NULL;
     if (imp->a && imp->a->op == T_AT) {
         *target_package = NULL; // compiler-reserved, never package-owned
@@ -614,10 +583,8 @@ static const char* import_target(Loader* L, Node* imp, const char* src_path,
         compiler_dir(dir, sizeof dir, L->compiler_path);
         size_t need = strlen(dir) + p->len + 12;
         char* path = arena_alloc(need);
-        if (strcmp(dir, ".") == 0)
-            snprintf(path, need, "std/@/%.*s.ace", (int)p->len, p->str);
-        else
-            snprintf(path, need, "%s/std/@/%.*s.ace", dir, (int)p->len, p->str);
+        if (strcmp(dir, ".") == 0) snprintf(path, need, "std/@/%.*s.ace", (int)p->len, p->str);
+        else snprintf(path, need, "%s/std/@/%.*s.ace", dir, (int)p->len, p->str);
         return path;
     }
     if (imp->a) { // import util: "./util.ace" — path form
@@ -750,22 +717,19 @@ static const char* member_identity(Module* mod, const char* name, uint32_t len) 
     return out;
 }
 
-static void select_members(Loader* L, Node* imp, Module* mod,
-                           Binding* binds, Select** sels) {
+static void select_members(Loader* L, Node* imp, Module* mod, Binding* binds, Select** sels) {
     for (int i = 0; i < imp->nkids; i++) {
         Node* name = imp->kids[i];
         Member* vm = find_member(mod, name->str, name->len, 0);
         Member* tm = find_member(mod, name->str, name->len, 1);
         if (!vm && !tm) {
-            import_err(L->d, name, "module has no public member '%.*s'",
-                       (int)name->len, name->str);
+            import_err(L->d, name, "module has no public member '%.*s'", (int)name->len, name->str);
             continue;
         }
         int value_public = vm && vm->pub;
         int type_public = tm && tm->pub;
         if (!value_public && !type_public) {
-            import_err(L->d, name, "member '%.*s' is not public",
-                       (int)name->len, name->str);
+            import_err(L->d, name, "member '%.*s' is not public", (int)name->len, name->str);
             continue;
         }
         if (!value_public) vm = NULL;
@@ -781,8 +745,7 @@ static void select_members(Loader* L, Node* imp, Module* mod,
             if (vm && b->len == name->len &&
                 memcmp(b->name, name->str, name->len) == 0) dup_value = 1;
         if (dup_value || dup_type) {
-            import_err(L->d, name, "duplicate import binding '%.*s'",
-                       (int)name->len, name->str);
+            import_err(L->d, name, "duplicate import binding '%.*s'", (int)name->len, name->str);
             continue;
         }
         Select* s = (Select*)arena_alloc(sizeof(Select));
@@ -816,9 +779,7 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
         char* entry = arena_alloc(entry_len);
         snprintf(entry, entry_len, "%s/mod.ace", target_root);
         int is_entry = strcmp(canon, entry) == 0;
-        int same_module = importer &&
-                          (strcmp(importer, entry) == 0 ||
-                           path_beneath(importer, target_root));
+        int same_module = importer && (strcmp(importer, entry) == 0 || path_beneath(importer, target_root));
         if (!is_entry && !same_module) {
             import_err(L->d, imp,
                        "implementation file '%s' is private to directory module '%s'",
@@ -827,16 +788,14 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
             return NULL;
         }
     }
-    if (is_std_internal(L, canon) &&
-        (!importer || !is_std_source(L, importer))) {
+    if (is_std_internal(L, canon) && (!importer || !is_std_source(L, importer))) {
         import_err(L->d, imp,
                    "compiler-reserved standard-library implementation '%s' may be imported only by standard-library sources",
                    std_display_path(L, canon));
         return NULL;
     }
     if (is_std_internal(L, canon) && (!imp->a || imp->a->op != T_AT)) {
-        import_err(L->d, imp,
-                   "compiler-reserved standard-library implementation must use @name import syntax");
+        import_err(L->d, imp, "compiler-reserved standard-library implementation must use @name import syntax");
         return NULL;
     }
     if (module_on_stack(L, canon)) {
@@ -903,8 +862,7 @@ static void lower_named(Loader* L, Node* t, Binding* binds) {
         }
         return;
     }
-    import_err(L->d, t, "unknown module '%.*s' in qualified type",
-               (int)base->len, base->str);
+    import_err(L->d, t, "unknown module '%.*s' in qualified type", (int)base->len, base->str);
 }
 
 static Node* prefixed_ident(Node* from, const char* qname) {
@@ -1057,8 +1015,7 @@ static void lower_selected_node(Node* n, SelectLower* c);
 
 static void lower_selected_type(Node* t, SelectLower* c) {
     if (!t) return;
-    if (t->kind == N_NAMED && !t->a &&
-        !local_name(c, t->str, t->len, 1)) {
+    if (t->kind == N_NAMED && !t->a && !local_name(c, t->str, t->len, 1)) {
         Select* s = find_select(c->sels, t->str, t->len, 1);
         if (s) replace_name(t, s->type_name);
     }
@@ -1079,8 +1036,7 @@ static void lower_selected_type_ref(Node* n, SelectLower* c) {
         return;
     }
     Node* name = n->kind == N_INDEX ? n->a : n;
-    if (name && name->kind == N_IDENT &&
-        !local_name(c, name->str, name->len, 1)) {
+    if (name && name->kind == N_IDENT && !local_name(c, name->str, name->len, 1)) {
         Select* s = find_select(c->sels, name->str, name->len, 1);
         if (s) replace_name(name, s->type_name);
     }
@@ -1099,16 +1055,14 @@ static void lower_selected_block(Node* b, SelectLower* c) {
 static void lower_selected_func(Node* f, SelectLower* c) {
     select_scope_push(c);
     if (f->c) {
-        for (int i = 0; i < f->c->nkids; i++)
-            bind_local(c, f->c->kids[i]->str, f->c->kids[i]->len, 1);
+        for (int i = 0; i < f->c->nkids; i++) bind_local(c, f->c->kids[i]->str, f->c->kids[i]->len, 1);
     }
     if (f->d) lower_selected_type(f->d, c);
     for (int i = 0; i < f->nkids; i++) lower_selected_type(f->kids[i]->a, c);
     lower_selected_type(f->a, c);
     select_scope_push(c);
     if (f->flags & F_METHOD) bind_local(c, "self", 4, 0);
-    for (int i = 0; i < f->nkids; i++)
-        bind_local(c, f->kids[i]->str, f->kids[i]->len, 0);
+    for (int i = 0; i < f->nkids; i++) bind_local(c, f->kids[i]->str, f->kids[i]->len, 0);
     if (f->b) lower_selected_block(f->b, c);
     select_scope_pop(c);
     select_scope_pop(c);
@@ -1138,8 +1092,7 @@ static void lower_selected_node(Node* n, SelectLower* c) {
     case N_VAR:
         for (int i = 0; i < n->nkids; i++) lower_selected_type(n->kids[i]->a, c);
         lower_selected_node(n->b, c); // initializer precedes the new bindings
-        for (int i = 0; i < n->nkids; i++)
-            bind_local(c, n->kids[i]->str, n->kids[i]->len, 0);
+        for (int i = 0; i < n->nkids; i++) bind_local(c, n->kids[i]->str, n->kids[i]->len, 0);
         return;
     case N_FOR:
         if (n->flags & F_FORGEN) {
@@ -1153,20 +1106,16 @@ static void lower_selected_node(Node* n, SelectLower* c) {
             select_scope_pop(c);
             return;
         }
-        for (int i = 0; i < n->nkids; i++)
-            lower_selected_type(n->kids[i]->a, c);
+        for (int i = 0; i < n->nkids; i++) lower_selected_type(n->kids[i]->a, c);
         lower_selected_node(n->b, c);
         select_scope_push(c);
-        for (int i = 0; i < n->nkids; i++)
-            bind_local(c, n->kids[i]->str, n->kids[i]->len, 0);
+        for (int i = 0; i < n->nkids; i++) bind_local(c, n->kids[i]->str, n->kids[i]->len, 0);
         lower_selected_node(n->c, c);
         select_scope_pop(c);
         return;
     case N_STRUCT: case N_BITS: case N_CONTRACT: case N_ALIAS: case N_UNION:
         select_scope_push(c);
-        if (n->c)
-            for (int i = 0; i < n->c->nkids; i++)
-                bind_local(c, n->c->kids[i]->str, n->c->kids[i]->len, 1);
+        if (n->c) for (int i = 0; i < n->c->nkids; i++) bind_local(c, n->c->kids[i]->str, n->c->kids[i]->len, 1);
         if (n->kind == N_ALIAS || n->kind == N_BITS) lower_selected_type(n->a, c);
         else if (n->kind == N_UNION) {
             for (int i = 0; i < n->nkids; i++)
@@ -1174,8 +1123,7 @@ static void lower_selected_node(Node* n, SelectLower* c) {
         }
         else for (int i = 0; i < n->nkids; i++) {
             Node* member = n->kids[i];
-            for (int j = 0; j < member->nkids; j++)
-                lower_selected_type(member->kids[j]->a, c);
+            for (int j = 0; j < member->nkids; j++) lower_selected_type(member->kids[j]->a, c);
             lower_selected_type(member->a, c);
             if (n->kind == N_STRUCT) {
                 lower_selected_node(member->b, c); // field @align expression
@@ -1192,14 +1140,11 @@ static void lower_selected_node(Node* n, SelectLower* c) {
         return;
     case N_ENUM:
         lower_selected_type(n->a, c);
-        for (int i = 0; i < n->nkids; i++)
-            lower_selected_node(n->kids[i]->a, c);
+        for (int i = 0; i < n->nkids; i++) lower_selected_node(n->kids[i]->a, c);
         return; // member names themselves are declarations, not references
     case N_SIGNING:
         select_scope_push(c);
-        if (n->c)
-            for (int i = 0; i < n->c->nkids; i++)
-                bind_local(c, n->c->kids[i]->str, n->c->kids[i]->len, 1);
+        if (n->c) for (int i = 0; i < n->c->nkids; i++) bind_local(c, n->c->kids[i]->str, n->c->kids[i]->len, 1);
         lower_selected_type(n->a, c);
         for (int i = 0; i < n->nkids; i++) lower_selected_type(n->kids[i]->a, c);
         select_scope_pop(c);
@@ -1237,9 +1182,7 @@ static void lower_selected_node(Node* n, SelectLower* c) {
         for (int i = 0; i < n->nkids; i++) {
             Node* b = n->kids[i];
             int clob = b->len == 8 && memcmp(b->str, "clobbers", 8) == 0;
-            if (!clob)
-                for (int j = 1; j < b->nkids; j += 2)
-                    lower_selected_node(b->kids[j], c);
+            if (!clob) for (int j = 1; j < b->nkids; j += 2) lower_selected_node(b->kids[j], c);
         }
         return;
     default:
@@ -1262,8 +1205,7 @@ static int decl_namespace(Node* n) {
     return 0;
 }
 
-static void check_select_collisions(Loader* L, Node* file, Binding* binds,
-                                    Select* sels) {
+static void check_select_collisions(Loader* L, Node* file, Binding* binds, Select* sels) {
     for (Select* s = sels; s; s = s->next) {
         for (Binding* b = binds; b; b = b->next)
             if (s->value_name && b->len == s->len &&
@@ -1364,8 +1306,7 @@ static void rename_decls(Module* m, Renames* rs) {
             n->kind != N_ALIAS && n->kind != N_DISTINCT &&
             n->kind != N_ERROR_DOMAIN && n->kind != N_UNION)
             continue;
-        if (n->kind == N_ERROR_DOMAIN && !n->cname)
-            n->cname = arena_stringn(named->str, named->len);
+        if (n->kind == N_ERROR_DOMAIN && !n->cname) n->cname = arena_stringn(named->str, named->len);
         if ((n->flags & F_EXPO) && !n->cname) // `export` keeps its C name
             n->cname = arena_stringn(named->str, named->len);
         renames_add(rs, named->str, named->len, prefixed(m, named->str, named->len));
@@ -1375,9 +1316,7 @@ static void rename_decls(Module* m, Renames* rs) {
 }
 
 static Rename* find_rename(Renames* rs, const char* name, uint32_t len) {
-    for (int i = 0; i < rs->n; i++)
-        if (rs->v[i].flen == len && memcmp(rs->v[i].from, name, len) == 0)
-            return &rs->v[i];
+    for (int i = 0; i < rs->n; i++) if (rs->v[i].flen == len && memcmp(rs->v[i].from, name, len) == 0) return &rs->v[i];
     return NULL;
 }
 
@@ -1404,16 +1343,14 @@ static void rename_block_refs(Node* b, Renames* rs, SelectLower* c) {
 static void rename_func_refs(Node* f, Renames* rs, SelectLower* c) {
     select_scope_push(c);
     if (f->c) {
-        for (int i = 0; i < f->c->nkids; i++)
-            bind_local(c, f->c->kids[i]->str, f->c->kids[i]->len, 1);
+        for (int i = 0; i < f->c->nkids; i++) bind_local(c, f->c->kids[i]->str, f->c->kids[i]->len, 1);
     }
     if (f->d) rename_type_refs(f->d, rs, c);
     for (int i = 0; i < f->nkids; i++) rename_type_refs(f->kids[i]->a, rs, c);
     rename_type_refs(f->a, rs, c);
     select_scope_push(c);
     if (f->flags & F_METHOD) bind_local(c, "self", 4, 0);
-    for (int i = 0; i < f->nkids; i++)
-        bind_local(c, f->kids[i]->str, f->kids[i]->len, 0);
+    for (int i = 0; i < f->nkids; i++) bind_local(c, f->kids[i]->str, f->kids[i]->len, 0);
     if (f->b) rename_block_refs(f->b, rs, c);
     select_scope_pop(c);
     select_scope_pop(c);
@@ -1440,8 +1377,7 @@ static void rename_refs(Node* n, Renames* rs, SelectLower* c) {
     case N_VAR:
         for (int i = 0; i < n->nkids; i++) rename_type_refs(n->kids[i]->a, rs, c);
         rename_refs(n->b, rs, c); // initializer precedes the new bindings
-        for (int i = 0; i < n->nkids; i++)
-            bind_local(c, n->kids[i]->str, n->kids[i]->len, 0);
+        for (int i = 0; i < n->nkids; i++) bind_local(c, n->kids[i]->str, n->kids[i]->len, 0);
         return;
     case N_FOR:
         if (n->flags & F_FORGEN) {
@@ -1456,24 +1392,19 @@ static void rename_refs(Node* n, Renames* rs, SelectLower* c) {
         for (int i = 0; i < n->nkids; i++) rename_type_refs(n->kids[i]->a, rs, c);
         rename_refs(n->b, rs, c);
         select_scope_push(c);
-        for (int i = 0; i < n->nkids; i++)
-            bind_local(c, n->kids[i]->str, n->kids[i]->len, 0);
+        for (int i = 0; i < n->nkids; i++) bind_local(c, n->kids[i]->str, n->kids[i]->len, 0);
         rename_refs(n->c, rs, c);
         select_scope_pop(c);
         return;
     case N_STRUCT: case N_BITS: case N_CONTRACT: case N_ALIAS: case N_UNION:
         select_scope_push(c);
-        if (n->c)
-            for (int i = 0; i < n->c->nkids; i++)
-                bind_local(c, n->c->kids[i]->str, n->c->kids[i]->len, 1);
+        if (n->c) for (int i = 0; i < n->c->nkids; i++) bind_local(c, n->c->kids[i]->str, n->c->kids[i]->len, 1);
         if (n->kind == N_ALIAS || n->kind == N_BITS) rename_type_refs(n->a, rs, c);
         else if (n->kind == N_UNION) {
-            for (int i = 0; i < n->nkids; i++)
-                rename_type_refs(n->kids[i]->a, rs, c);
+            for (int i = 0; i < n->nkids; i++) rename_type_refs(n->kids[i]->a, rs, c);
         } else for (int i = 0; i < n->nkids; i++) {
             Node* member = n->kids[i];
-            for (int j = 0; j < member->nkids; j++)
-                rename_type_refs(member->kids[j]->a, rs, c);
+            for (int j = 0; j < member->nkids; j++) rename_type_refs(member->kids[j]->a, rs, c);
             rename_type_refs(member->a, rs, c);
             if (n->kind == N_STRUCT) {
                 rename_refs(member->b, rs, c); // field @align expression
@@ -1488,8 +1419,7 @@ static void rename_refs(Node* n, Renames* rs, SelectLower* c) {
         return;
     case N_ENUM:
         rename_type_refs(n->a, rs, c);
-        for (int i = 0; i < n->nkids; i++)
-            rename_refs(n->kids[i]->a, rs, c);
+        for (int i = 0; i < n->nkids; i++) rename_refs(n->kids[i]->a, rs, c);
         return;
     case N_ERROR_DOMAIN:
         return;
@@ -1559,9 +1489,7 @@ static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root
     }
 
     // lower qualified references with this file's bindings
-    for (int i = 0; i < file->nkids; i++)
-        if (file->kids[i]->kind != N_IMPORT)
-            lower_qualified(L, file->kids[i], binds);
+    for (int i = 0; i < file->nkids; i++) if (file->kids[i]->kind != N_IMPORT) lower_qualified(L, file->kids[i], binds);
     if (L->d->errors) return L->d->errors;
 
     for (int i = 0; i < file->nkids; i++) {
@@ -1583,12 +1511,10 @@ static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root
         // Drop this module's import nodes: qualified bindings and selected
         // aliases have both been lowered to private target identities.
         int ndecls = 0;
-        for (int i = 0; i < file->nkids; i++)
-            if (file->kids[i]->kind != N_IMPORT) ndecls++;
+        for (int i = 0; i < file->nkids; i++) if (file->kids[i]->kind != N_IMPORT) ndecls++;
         Node** kids = (Node**)arena_alloc((size_t)ndecls * sizeof(Node*));
         int at = 0;
-        for (int i = 0; i < file->nkids; i++)
-            if (file->kids[i]->kind != N_IMPORT) kids[at++] = file->kids[i];
+        for (int i = 0; i < file->nkids; i++) if (file->kids[i]->kind != N_IMPORT) kids[at++] = file->kids[i];
         file->kids = kids;
         file->nkids = ndecls;
         self->binds = binds;
@@ -1657,8 +1583,7 @@ int resolve_imports(Node* file, Diag* d, const char* compiler_path,
     for (int i = 0; i < nmods; i++)
         for (int j = 0; j < order[i]->file->nkids; j++)
             kids[at++] = order[i]->file->kids[j];
-    for (int i = 0; i < file->nkids; i++)
-        if (file->kids[i]->kind != N_IMPORT) kids[at++] = file->kids[i];
+    for (int i = 0; i < file->nkids; i++) if (file->kids[i]->kind != N_IMPORT) kids[at++] = file->kids[i];
     file->kids = kids;
     file->nkids = total;
     free(order);
