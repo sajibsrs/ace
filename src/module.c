@@ -1015,9 +1015,9 @@ static void lower_selected_node(Node* n, SelectLower* c);
 
 static void lower_selected_type(Node* t, SelectLower* c) {
     if (!t) return;
-    if (t->kind == N_NAMED && !t->a && !local_name(c, t->str, t->len, 1)) {
+    if (t->kind == N_NAMED && !t->a) { // few selections, many locals: look up the selection first
         Select* s = find_select(c->sels, t->str, t->len, 1);
-        if (s) replace_name(t, s->type_name);
+        if (s && !local_name(c, t->str, t->len, 1)) replace_name(t, s->type_name);
     }
     lower_selected_type(t->a, c);
     if (t->kind == N_STATICMAP_T) lower_selected_type(t->b, c);
@@ -1036,9 +1036,9 @@ static void lower_selected_type_ref(Node* n, SelectLower* c) {
         return;
     }
     Node* name = n->kind == N_INDEX ? n->a : n;
-    if (name && name->kind == N_IDENT && !local_name(c, name->str, name->len, 1)) {
+    if (name && name->kind == N_IDENT) {
         Select* s = find_select(c->sels, name->str, name->len, 1);
-        if (s) replace_name(name, s->type_name);
+        if (s && !local_name(c, name->str, name->len, 1)) replace_name(name, s->type_name);
     }
     if (n->kind == N_INDEX) {
         lower_selected_type_ref(n->b, c);
@@ -1074,12 +1074,12 @@ static void lower_selected_node(Node* n, SelectLower* c) {
     case N_IMPORT:
         return;
     case N_IDENT:
-        if (!local_name(c, n->str, n->len, 0)) {
-            Select* s = find_select(c->sels, n->str, n->len, 0);
-            if (!s) s = find_select(c->sels, n->str, n->len, 1);
-            if (s) replace_name(n, s->value_name ? s->value_name : s->type_name);
-        }
+    {
+        Select* s = find_select(c->sels, n->str, n->len, 0); // few selections, many locals: look up first
+        if (!s) s = find_select(c->sels, n->str, n->len, 1);
+        if (s && !local_name(c, n->str, n->len, 0)) replace_name(n, s->value_name ? s->value_name : s->type_name);
         return;
+    }
     case N_NAMED:
         lower_selected_type(n, c);
         return;

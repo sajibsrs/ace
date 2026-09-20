@@ -102,6 +102,20 @@ Token* lex(Source* s, Diag* d, size_t* count);
 // --- Arena (implemented in lexer.c; never freed, pointers are stable) --------
 char* arena_alloc(size_t n);
 
+// --- Pointer map (implemented in lexer.c) ------------------------------------
+// Open-addressing map from a non-NULL pointer to a nonzero uintptr_t, for
+// per-function lookups that would otherwise scan a list. A zeroed PtrMap is
+// empty; get returns 0 for an absent key; put replaces an existing key.
+typedef struct {
+    const void** key;
+    uintptr_t*   val;
+    size_t       cap, n;
+} PtrMap;
+uintptr_t ptrmap_get(const PtrMap* m, const void* key);
+void      ptrmap_put(PtrMap* m, const void* key, uintptr_t val);
+void      ptrmap_clear(PtrMap* m); // keeps the storage for reuse
+void      ptrmap_free(PtrMap* m);
+
 // --- AST ---------------------------------------------------------------------
 // Node kinds. X-macro: enum name, dump name. Per-kind layout is documented in
 // parser.c. Types, declarations, statements, and expressions are all Nodes.

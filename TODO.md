@@ -143,9 +143,12 @@ These are baseline observations, not performance promises.
 - **Remaining immediate and destination forms** [new] — declarations with an
   initializer still compute through a temp, and a constant on the left of a
   compare or in the middle of a chain still takes a register. Float compares
-  still copy promoted operands into temps, and a float constant is rebuilt with
-  `mov`/`movk`/`fmov` at every use although `0.5` and `1.0` encode as
-  `fmov d, #imm`; `x = x * 0.5 + 1.0` runs 2.7 ns against C's 1.7.
+  still copy promoted operands into temps; comparing the promoted registers in
+  place measured 1.63 to 1.32 ns per iteration (19%) on a loop with two
+  compares. `x = x * 0.5 + 1.0` runs 2.7 ns against C's 1.7 because C fuses it
+  into one `fmadd` (1.6 ns); `fmov d, #imm` for the constants alone gains 2%.
+  Whether Ace may fuse a multiply and add, which changes rounding, is
+  undecided.
 - **Tail-call optimization** [new] — a `return f(args)` still emits `bl` plus a
   full epilogue, so tail recursion grows the stack linearly and overflows at
   roughly 100M frames in checked and release builds alike. Candidate: lower a
@@ -155,12 +158,10 @@ These are baseline observations, not performance promises.
   functions need callee-saved restoration and frame teardown first. Whether the
   form becomes a normative guarantee or stays an unspecified optimization is
   undecided.
-- **Superlinear compile time in long functions** [new] — a single function
-  with 20,000 locals compiles in 2.3 s (14.6x for 4x the code from 5,000).
-  A sample points at sema's definite-initialization tracking (`init_var`) and
-  emit's `promo_scan` and `load_var`. The signing check that walks all module
-  values once per signing is also O(signings x declarations). Candidate: index
-  or cache these per-function lookups; measure with `bench/run-compile.sh`.
+- **Signing-check scaling** [new] — the check that walks all module values once
+  per signing is O(signings x declarations); not yet measured on a corpus with
+  many signings. Candidate: index values by signing; measure with
+  `bench/run-compile.sh`.
 - **Machine-code size** [new] — 5,000 generated functions emit 1.60 MB release
   and 2.07 MB checked against 1.10 MB for `cc -O2`.
 - **Float-parse optimization backlog** [new] — the canonical 80%-short /

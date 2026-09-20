@@ -410,6 +410,7 @@ typedef struct {
     uint32_t fpreg_save; // depth of the d8-d15 save area
     PromoCand* pcands;   // plan_promotion scratch
     int      npcands, cpcands;
+    PtrMap   pcand_ix;   // binder node -> index + 1 into pcands
     int      fn_has_asm;
     struct { Node* decl; uint32_t off; int reg; } phome[PARAM_HOMES]; // register-homed parameter leaves
     int      nphome, nfhome, nxhome; // all, v23-down float, and x14-down integer homes
@@ -417,6 +418,7 @@ typedef struct {
     uint32_t out_max;
     Slot*   slots;
     int     nslots, cslots;
+    PtrMap  slot_ix;     // slot key -> index + 1 into slots (first slot of a key)
     int     vti, vtf;
     uint32_t* lab;
     int      nlab, clab;
@@ -861,8 +863,8 @@ static uint32_t align_up(uint32_t v, uint32_t a) {
 }
 
 static Slot* slot_find(Em* e, Node* key) {
-    for (int i = 0; i < e->nslots; i++) if (e->slots[i].key == key) return &e->slots[i];
-    return NULL;
+    uintptr_t ix = ptrmap_get(&e->slot_ix, key);
+    return ix ? &e->slots[ix - 1] : NULL;
 }
 
 static uint32_t slot_alloc(Em* e, Node* key, uint32_t size, uint32_t align) {
@@ -875,6 +877,7 @@ static uint32_t slot_alloc(Em* e, Node* key, uint32_t size, uint32_t align) {
         e->slots = realloc(e->slots, (size_t)e->cslots * sizeof(Slot));
         if (!e->slots) oom();
     }
+    if (key && !ptrmap_get(&e->slot_ix, key)) ptrmap_put(&e->slot_ix, key, (uintptr_t)e->nslots + 1);
     e->slots[e->nslots++] = (Slot){ key, off, size, 0 };
     return off;
 }
@@ -6999,8 +7002,8 @@ static uint32_t use_weight(int depth) {
 static PromoCand* promo_find(Em* e, Node* x) {
     Sym* s = x && x->kind == N_IDENT ? node_sym(x) : NULL;
     if (!s || !s->decl) return NULL;
-    for (int i = 0; i < e->npcands; i++) if (e->pcands[i].decl == s->decl) return &e->pcands[i];
-    return NULL;
+    uintptr_t ix = ptrmap_get(&e->pcand_ix, s->decl);
+    return ix ? &e->pcands[ix - 1] : NULL;
 }
 
 // binder of a scalar local, loop binder, or by-value parameter
@@ -7012,6 +7015,7 @@ static void promo_add(Em* e, Node* binder) {
         e->pcands = realloc(e->pcands, (size_t)e->cpcands * sizeof(PromoCand));
         if (!e->pcands) oom();
     }
+    if (!ptrmap_get(&e->pcand_ix, binder)) ptrmap_put(&e->pcand_ix, binder, (uintptr_t)e->npcands + 1);
     e->pcands[e->npcands++] = (PromoCand){ binder, 0, 0 };
 }
 
@@ -7172,6 +7176,7 @@ static Node* promo_take(Em* e, int fp, uint32_t min_weight) {
  */
 static void plan_promotion(Em* e, Node* f) {
     e->npcands = 0;
+    ptrmap_clear(&e->pcand_ix);
     for (int i = 0; i < f->nkids; i++)
         if (!(f->kids[i]->flags & F_MUT) && !((f->flags & F_METHOD) && i == 0))
             promo_add(e, f->kids[i]);
@@ -7323,6 +7328,7 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
     memset(e->fp_spill, 0, sizeof e->fp_spill);
     e->out_max = 0;
     e->nslots = 0;
+    ptrmap_clear(&e->slot_ix);
     e->vti = e->vtf = 0;
     e->nlab = 0;
     e->nbp = 0;

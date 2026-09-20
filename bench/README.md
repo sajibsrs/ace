@@ -401,11 +401,11 @@ symbol per call. Scopes past 32 names now use a hash index and emit interns
 through a hash table.
 
 Other shapes, Ace checked ms at 1,000 / 5,000 / 20,000: `types` 22 / 76 / 287
-(3.5x and 3.8x growth, linear); `long` 20 / 161 / 2,347 (8.1x for 5x and 14.6x
-for 4x, still superlinear; `cc -O0` is also superlinear there at 15x and 13x).
-A sample of the 20,000-local case shows sema's definite-initialization tracking
-(`init_var`) and emit's `promo_scan` and `load_var` as the remaining
-hot spots. Machine code for 5,000 functions is 1.60 MB release and 2.07 MB
+(3.5x and 3.8x growth, linear); `long` 11 / 26 / 92 (2.4x for 5x and 3.5x for
+4x, linear; it was 20 / 161 / 2,347 before sema's definite-initialization
+variables, emit's frame slots and promotion candidates, and select lowering
+stopped scanning per-function lists; `cc -O0` is superlinear there at 15x and
+13x). Machine code for 5,000 functions is 1.60 MB release and 2.07 MB
 checked against 0.98 MB for `cc -O0` and 1.10 MB for `cc -O2`. Real programs
 compile in 9 to 16 ms for the 19- to 194-line benchmarks (mostly process start
 and standard-library loading) and 127 ms for the 2,150-line HTTP server demo

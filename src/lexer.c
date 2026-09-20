@@ -95,6 +95,51 @@ char* arena_alloc(size_t n) {
     return p;
 }
 
+// --- pointer map -------------------------------------------------------------------
+
+static size_t ptrmap_slot(const PtrMap* m, const void* key) {
+    size_t i = (size_t)(((uintptr_t)key >> 4) * 0x9E3779B97F4A7C15ull >> 32) & (m->cap - 1);
+    while (m->key[i] && m->key[i] != key) i = (i + 1) & (m->cap - 1);
+    return i;
+}
+
+uintptr_t ptrmap_get(const PtrMap* m, const void* key) {
+    if (!m->cap) return 0;
+    size_t i = ptrmap_slot(m, key);
+    return m->key[i] ? m->val[i] : 0;
+}
+
+void ptrmap_put(PtrMap* m, const void* key, uintptr_t val) {
+    if ((m->n + 1) * 2 > m->cap) { // keep the load factor at or below one half
+        PtrMap old = *m;
+        m->cap = old.cap ? old.cap * 2 : 64;
+        m->key = calloc(m->cap, sizeof *m->key);
+        m->val = calloc(m->cap, sizeof *m->val);
+        if (!m->key || !m->val) oom();
+        m->n = 0;
+        for (size_t i = 0; i < old.cap; i++) if (old.key[i]) ptrmap_put(m, old.key[i], old.val[i]);
+        free(old.key);
+        free(old.val);
+    }
+    size_t i = ptrmap_slot(m, key);
+    if (!m->key[i]) {
+        m->key[i] = key;
+        m->n++;
+    }
+    m->val[i] = val;
+}
+
+void ptrmap_clear(PtrMap* m) {
+    if (m->cap) memset(m->key, 0, m->cap * sizeof *m->key);
+    m->n = 0;
+}
+
+void ptrmap_free(PtrMap* m) {
+    free(m->key);
+    free(m->val);
+    *m = (PtrMap){0};
+}
+
 static const char* arena_copy(const char* p, size_t n) {
     char* q = arena_alloc(n + 1); // NUL-terminated: names are compared with strlen
     memcpy(q, p, n);

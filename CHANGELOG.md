@@ -420,6 +420,12 @@ current normative rules, and Git preserves patch-level detail.
   through a hash table, removing the quadratic scans that made 20,000 generated
   functions take 12.9 s (now 0.4 s). Added `bench/scaling-corpus.sh`, the
   20,000-function point, and growth columns to `bench/run-compile.sh`.
+- Removed the remaining per-function quadratic scans behind long-function
+  compile time: a `PtrMap` (open-addressing pointer hash in `lexer.c`) indexes
+  sema's definite-initialization variables and emit's frame slots and promotion
+  candidates, and select lowering looks a name up among the few selections
+  before it searches the locals. A 20,000-local function compiles in 92 ms
+  (was 2.35 s) with identical machine code.
 - Read a global integer `const` with a compile-time initializer as an immediate
   instead of a memory load, emit `and`/`orr`/`eor` with an encodable constant
   operand as one bitmask-immediate instruction, and let call-free functions keep

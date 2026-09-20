@@ -5001,6 +5001,7 @@ struct InitVar {
 typedef struct {
     Diag* d;
     InitVar* vars;
+    PtrMap var_ix; // Sym -> InitVar
     InitExit* exits;
 } InitCk;
 
@@ -5117,13 +5118,14 @@ static InitState init_intersect(InitState* a, InitState* b, SType* t) {
 
 static InitVar* init_var(InitCk* k, Sym* sym, int create) {
     if (!sym || sym->kind != SYM_VAR || sym->is_global) return NULL;
-    for (InitVar* v = k->vars; v; v = v->next) if (v->sym == sym) return v;
-    if (!create) return NULL;
+    InitVar* found = (InitVar*)ptrmap_get(&k->var_ix, sym);
+    if (found || !create) return found;
     InitVar* v = (InitVar*)arena_alloc(sizeof(InitVar));
     memset(v, 0, sizeof *v);
     v->sym = sym;
     v->next = k->vars;
     k->vars = v;
+    ptrmap_put(&k->var_ix, sym, (uintptr_t)v);
     return v;
 }
 
@@ -5573,6 +5575,7 @@ static void check_definite_initialization(Node* file, Diag* d) {
             if (v) v->state.full = 1;
         }
         (void)init_block(&k, f->b);
+        ptrmap_free(&k.var_ix);
     }
 }
 
