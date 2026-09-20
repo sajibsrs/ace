@@ -77,6 +77,7 @@
 //   ldp/stp x = 0xA9400000/0xA9000000|imm7<<15|rt2<<10|rn<<5|rt
 //   ldr/str d = 0xFD400000/0xFD000000 s = 0xBD4/0xBD0
 //   fmov s/d reg = 0x1E204000/0x1E604000  fmov d,x = 0x9E670000  s,w = 0x1E270000
+//   fmov s/d #imm8 = 0x1E201000/0x1E601000 | imm8 << 13
 //   fmov x,d = 0x9E660000  w,s = 0x1E260000
 //   fadd/fsub/fmul/fdiv s = 0x1E2028/38/08/18000 d = 0x1E60..  fneg =
 //   0x1E214000/0x1E614000  fcmp s/d = 0x1E202000/0x1E612000
@@ -771,6 +772,19 @@ static int const_global_imm(Sym* s, SType* t, Node* x, uint64_t* out) {
     return 1;
 }
 
+// imm8 of `fmov Vd, #imm` when the bit pattern is one of its 256 values (the
+// sign, three exponent bits, and four fraction bits of VFPExpandImm), else -1.
+static int fmov_imm8(uint64_t bits, int is64) {
+    int fbits = is64 ? 52 : 23, ebits = is64 ? 11 : 8, drop = fbits - 4;
+    if (bits & ((UINT64_C(1) << drop) - 1)) return -1; // fraction beyond four bits
+    uint32_t exp = (uint32_t)(bits >> fbits) & ((1u << ebits) - 1);
+    uint32_t b = (~exp >> (ebits - 1)) & 1; // top exponent bit is the inverse of the next
+    uint32_t mid = ((exp >> 2) & ((1u << (ebits - 3)) - 1)); // ebits-3 copies of b
+    if (mid != (b ? (1u << (ebits - 3)) - 1 : 0)) return -1;
+    return (int)(((bits >> (fbits + ebits)) & 1) << 7 | b << 6 | (exp & 3) << 4 |
+                 ((bits >> drop) & 15));
+}
+
 static void load_f64(Em* e, int is64, int vr, double d) {
     uint64_t bits = 0;
     if (is64) {
@@ -780,6 +794,11 @@ static void load_f64(Em* e, int is64, int vr, double d) {
         uint32_t b = 0;
         memcpy(&b, &f, 4);
         bits = b;
+    }
+    int imm8 = fmov_imm8(bits, is64);
+    if (imm8 >= 0) { // fmov Vd, #imm: no integer temp
+        ins(e, (is64 ? 0x1E601000u : 0x1E201000u) | ((uint32_t)imm8 << 13) | (uint32_t)vr);
+        return;
     }
     load_imm(e, 1, 16, bits);
     ins(e, (is64 ? 0x9E670000u : 0x1E270000u) | (16u << 5) | (uint32_t)vr);
@@ -1031,6 +1050,20 @@ static void ldrf_(Em* e, int vr, int base, uint32_t off, int is64) {
         load_imm(e, 1, 16, off);
         ins(e, (is64 ? 0xFD600000u : 0xBD600000u) | (16u << 16) | ((uint32_t)base << 5) | (uint32_t)vr);
     }
+}
+
+// Register-offset loads, Rt = [base, index, lsl #log2(w)]: the index is scaled
+// by the access width, so the address add folds into the load.
+static void ld_idx(Em* e, int rt, int base, int idx, uint32_t w, int signext) {
+    uint32_t rb;
+    if (!signext) rb = w == 1 ? 0x38606800u : w == 2 ? 0x78606800u : w == 4 ? 0xB8606800u : 0xF8606800u;
+    else rb = w == 1 ? 0x38E06800u : w == 2 ? 0x78E06800u : w == 4 ? 0xB8606800u : 0xF8606800u;
+    ins(e, rb | (w > 1 ? 1u << 12 : 0u) | ((uint32_t)idx << 16) | ((uint32_t)base << 5) | ((uint32_t)rt & 31u));
+}
+
+static void ldrf_idx(Em* e, int vr, int base, int idx, int is64) {
+    ins(e, (is64 ? 0xFC606800u : 0xBC606800u) | (1u << 12) | ((uint32_t)idx << 16) |
+           ((uint32_t)base << 5) | (uint32_t)vr);
 }
 
 static void strf_(Em* e, int vr, int base, uint32_t off, int is64) {
@@ -3367,6 +3400,108 @@ static SType* bits_field_owner(Node* x, int* fi) {
     return b;
 }
 
+/*
+ * Address of an indexed element. When fold_w is nonzero and equals the element
+ * size (1, 2, 4, or 8), the scaled index add is left out: the result is the
+ * sequence base and *fold_ri names the index register, still holding its value
+ * until the caller's next instruction, which must load [base, index, lsl n].
+ */
+static int index_addr(Em* e, Node* x, uint32_t fold_w, int* fold_ri) {
+    SType* bt = lvalue_type(e, x->a);
+    bt = bt ? unwrap(bt) : NULL;
+    SType* seq = bt;
+    int descriptor = bt && (bt->kind == SK_SLICE || (bt->kind == SK_PRIM && bt->prim == P_STRING));
+    uint32_t depth = 0;
+    int framed = descriptor && frame_place(e, x->a, &depth);
+    int ta;
+    if (framed) ta = tmp_int(e); // descriptor words load from the frame
+    else if (is_lvalue_node(x->a)) ta = gen_addr(e, x->a);
+    else {
+        EV v = gen_expr(e, x->a);
+        if (v.cls != CLS_ADDR) {
+            em_err(e, x, "cannot index this value");
+            return tmp_int(e);
+        }
+        ta = v.idx;
+    }
+    if (!bt) {
+        em_err(e, x, "no index base type");
+        return ta;
+    }
+    if (bt->kind == SK_PRIM && bt->prim == P_STRING) {
+        static SType byte = { .kind = SK_PRIM, .prim = P_U8,
+                              .size = 1, .align = 1 };
+        bt = &byte;
+    } else if (bt->kind == SK_SLICE) {
+        bt = bt->base;
+    } else if (bt->kind == SK_ARRAY) {
+        bt = bt->base;
+    } else if (bt->kind == SK_PTR) {
+        ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
+        emit_null_guard(e, xreg(ta));
+        bt = bt->base;
+    } else {
+        em_err(e, x, "cannot index this type");
+        return ta;
+    }
+    int need_guard = e->mode == EMIT_CHECKED && !(x->flags & F_BOUNDS_PROVEN);
+    uint32_t len_slot = 0;
+    if (descriptor) {
+        if (need_guard) {
+            len_slot = temp_slot(e, 8, 8);
+            if (framed) load_frame(e, 16, depth - 8, 8, 0);
+            else ld_reg(e, 16, xreg(ta), 8, 8, 0);
+            store_frame(e, 16, len_slot, 8);
+        }
+        if (framed) load_frame(e, xreg(ta), depth, 8, 0);
+        else ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
+    }
+    uint32_t esz = ty_size(bt);
+    uint64_t cidx;
+    if (!need_guard && const_int(x->b, &cidx) && cidx <= 4095 &&
+        cidx * esz <= 4095) { // constant unguarded index: one add or none
+        if (cidx)
+            ins(e, 0x91000000u | ((uint32_t)(cidx * esz) << 10) |
+                   ((uint32_t)xreg(ta) << 5) | (uint32_t)xreg(ta));
+        return ta;
+    }
+    int svi = e->vti, svf = e->vtf;
+    // A 64-bit index is only read, so a promoted one is used in place; a
+    // narrower one is widened in its register and needs its own temp.
+    SType* it = node_ty(x->b);
+    int narrow = it && it->kind != SK_UT && it->kind != SK_ERR && scalar_bits(it) != 64;
+    EV ix;
+    int ri;
+    if (narrow) {
+        ix = gen_expr(e, x->b);
+        ri = xreg(ix.idx);
+    } else ri = src_reg(e, x->b, &ix);
+    int lenreg = -1;
+    if (descriptor && need_guard) {
+        lenreg = 16;
+        load_frame(e, lenreg, len_slot, 8, 0);
+    }
+    emit_index_guard(e, x, ri, lenreg, seq && seq->kind == SK_ARRAY ? seq->count : 0);
+    if (e->mode != EMIT_CHECKED || (x->flags & F_BOUNDS_PROVEN)) widen_idx(e, x->b, ri);
+    if (fold_w && esz == fold_w && (esz == 1 || esz == 2 || esz == 4 || esz == 8)) {
+        *fold_ri = ri; // the consumer loads [ta, ri, lsl #log2(esz)]
+    } else if (esz == 1) {
+        ins(e, 0x8B000000u | ((uint32_t)ri << 16) | ((uint32_t)xreg(ta) << 5) | (uint32_t)xreg(ta));
+    } else if ((esz & (esz - 1)) == 0) {
+        int sh = 0;
+        while ((1u << sh) < esz) sh++;
+        ins(e, 0x8B000000u | ((uint32_t)sh << 10) |
+               ((uint32_t)ri << 16) |
+               ((uint32_t)xreg(ta) << 5) | (uint32_t)xreg(ta));
+    } else {
+        load_imm(e, 1, 16, esz);
+        ins(e, 0x9B007C00u | (16u << 16) | ((uint32_t)ri << 5) | 16u);
+        ins(e, 0x8B000000u | (16u << 16) | ((uint32_t)xreg(ta) << 5) | (uint32_t)xreg(ta));
+    }
+    e->vti = svi; e->vtf = svf; // index temp freed
+    return ta;
+}
+
 static int gen_addr(Em* e, Node* x) {
     switch (x->kind) {
     case N_IDENT: {
@@ -3472,99 +3607,8 @@ static int gen_addr(Em* e, Node* x) {
         }
         return ta;
     }
-    case N_INDEX: {
-        SType* bt = lvalue_type(e, x->a);
-        bt = bt ? unwrap(bt) : NULL;
-        SType* seq = bt;
-        int descriptor = bt && (bt->kind == SK_SLICE || (bt->kind == SK_PRIM && bt->prim == P_STRING));
-        uint32_t depth = 0;
-        int framed = descriptor && frame_place(e, x->a, &depth);
-        int ta;
-        if (framed) ta = tmp_int(e); // descriptor words load from the frame
-        else if (is_lvalue_node(x->a)) ta = gen_addr(e, x->a);
-        else {
-            EV v = gen_expr(e, x->a);
-            if (v.cls != CLS_ADDR) {
-                em_err(e, x, "cannot index this value");
-                return tmp_int(e);
-            }
-            ta = v.idx;
-        }
-        if (!bt) {
-            em_err(e, x, "no index base type");
-            return ta;
-        }
-        if (bt->kind == SK_PRIM && bt->prim == P_STRING) {
-            static SType byte = { .kind = SK_PRIM, .prim = P_U8,
-                                  .size = 1, .align = 1 };
-            bt = &byte;
-        } else if (bt->kind == SK_SLICE) {
-            bt = bt->base;
-        } else if (bt->kind == SK_ARRAY) {
-            bt = bt->base;
-        } else if (bt->kind == SK_PTR) {
-            ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
-            emit_null_guard(e, xreg(ta));
-            bt = bt->base;
-        } else {
-            em_err(e, x, "cannot index this type");
-            return ta;
-        }
-        int need_guard = e->mode == EMIT_CHECKED && !(x->flags & F_BOUNDS_PROVEN);
-        uint32_t len_slot = 0;
-        if (descriptor) {
-            if (need_guard) {
-                len_slot = temp_slot(e, 8, 8);
-                if (framed) load_frame(e, 16, depth - 8, 8, 0);
-                else ld_reg(e, 16, xreg(ta), 8, 8, 0);
-                store_frame(e, 16, len_slot, 8);
-            }
-            if (framed) load_frame(e, xreg(ta), depth, 8, 0);
-            else ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
-        }
-        uint32_t esz = ty_size(bt);
-        uint64_t cidx;
-        if (!need_guard && const_int(x->b, &cidx) && cidx <= 4095 &&
-            cidx * esz <= 4095) { // constant unguarded index: one add or none
-            if (cidx)
-                ins(e, 0x91000000u | ((uint32_t)(cidx * esz) << 10) |
-                       ((uint32_t)xreg(ta) << 5) | (uint32_t)xreg(ta));
-            return ta;
-        }
-        int svi = e->vti, svf = e->vtf;
-        // A 64-bit index is only read, so a promoted one is used in place; a
-        // narrower one is widened in its register and needs its own temp.
-        SType* it = node_ty(x->b);
-        int narrow = it && it->kind != SK_UT && it->kind != SK_ERR && scalar_bits(it) != 64;
-        EV ix;
-        int ri;
-        if (narrow) {
-            ix = gen_expr(e, x->b);
-            ri = xreg(ix.idx);
-        } else ri = src_reg(e, x->b, &ix);
-        int lenreg = -1;
-        if (descriptor && need_guard) {
-            lenreg = 16;
-            load_frame(e, lenreg, len_slot, 8, 0);
-        }
-        emit_index_guard(e, x, ri, lenreg, seq && seq->kind == SK_ARRAY ? seq->count : 0);
-        if (e->mode != EMIT_CHECKED || (x->flags & F_BOUNDS_PROVEN)) widen_idx(e, x->b, ri);
-        if (esz == 1) {
-            ins(e, 0x8B000000u | ((uint32_t)ri << 16) | ((uint32_t)xreg(ta) << 5) | (uint32_t)xreg(ta));
-        } else if ((esz & (esz - 1)) == 0) {
-            int sh = 0;
-            while ((1u << sh) < esz) sh++;
-            ins(e, 0x8B000000u | ((uint32_t)sh << 10) |
-                   ((uint32_t)ri << 16) |
-                   ((uint32_t)xreg(ta) << 5) | (uint32_t)xreg(ta));
-        } else {
-            load_imm(e, 1, 16, esz);
-            ins(e, 0x9B007C00u | (16u << 16) | ((uint32_t)ri << 5) | 16u);
-            ins(e, 0x8B000000u | (16u << 16) | ((uint32_t)xreg(ta) << 5) | (uint32_t)xreg(ta));
-        }
-        e->vti = svi; e->vtf = svf; // index temp freed
-        return ta;
-    }
+    case N_INDEX:
+        return index_addr(e, x, 0, NULL);
     default:
         break;
     }
@@ -5322,8 +5366,20 @@ static EV gen_expr(Em* e, Node* x) {
         if (bt && bt->kind == SK_STATICMAP) return gen_staticmap_lookup(e, x, bt);
         SType* t = node_ty(x);
         if (!t) t = lvalue_type(e, x);
-        int a = gen_addr(e, x);
+        uint32_t w = !t || !is_scalar(t) ? 0 : is_floatt(t) ? (unwrap(t)->prim == P_F64 ? 8u : 4u)
+                                                            : (uint32_t)((scalar_bits(t) + 7) / 8);
+        int ri = -1;
+        int a = index_addr(e, x, w, &ri);
         if (t && is_scalar(t)) {
+            if (ri >= 0) { // element size equals the access width: index folded into the load
+                if (is_floatt(t)) {
+                    int vt = tmp_fp(e);
+                    ldrf_idx(e, vreg(vt), xreg(a), ri, w == 8);
+                    return (EV){ CLS_FP, vt };
+                }
+                ld_idx(e, xreg(a), xreg(a), ri, w, ty_is_signed(t) && w < 8);
+                return (EV){ CLS_INT, a };
+            }
             return load_in_place(e, a, 0, t);
         }
         return (EV){ CLS_ADDR, a };

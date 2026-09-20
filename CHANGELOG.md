@@ -426,6 +426,13 @@ current normative rules, and Git preserves patch-level detail.
   candidates, and select lowering looks a name up among the few selections
   before it searches the locals. A 20,000-local function compiles in 92 ms
   (was 2.35 s) with identical machine code.
+- Materialized a float constant with `fmov Vd, #imm8` when it is one of the 256
+  encodable values (0.125 to 31.0 in sixteenths of a power of two, either sign),
+  and folded the scaled index into a scalar array or slice load as
+  `ldr Rt, [base, index, lsl #n]` when the element is 1, 2, 4, or 8 bytes wide
+  (`index_addr`; stores and other strides keep the separate add). On a `saxpy`
+  loop over `f64` arrays, 1.25 ns fell to 0.97; a branchy `f32` collision loop
+  fell 19%, a `u8` blend 9%, and a dot product 5%.
 - Read a global integer `const` with a compile-time initializer as an immediate
   instead of a memory load, emit `and`/`orr`/`eor` with an encodable constant
   operand as one bitmask-immediate instruction, and let call-free functions keep

@@ -1,0 +1,90 @@
+/* An indexed scalar load folds the scaled index into the load when the element
+ * size is 1, 2, 4, or 8 bytes. Every width (signed and unsigned), both float
+ * widths, narrow index types, arrays, slices, and elements that must not fold
+ * (3- and 12-byte strides) are read back here. */
+
+// expect-exit: 42
+
+Rgb: struct { r: u8, g: u8, b: u8 }
+Vec3: struct { x: f32, y: f32, z: f32 }
+
+u8s: [5]u8 = [1, 2, 200, 4, 255]
+i8s: [5]i8 = [-1, 2, -128, 127, -5]
+u16s: [5]u16 = [1, 2, 60000, 4, 65535]
+i16s: [5]i16 = [-1, 2, -32768, 32767, -5]
+u32s: [5]u32 = [1, 2, 4000000000, 4, 4294967295]
+i32s: [5]i32 = [-1, 2, -2147483648, 2147483647, -5]
+u64s: [5]u64 = [1, 2, 9000000000000000000, 4, 18446744073709551615]
+i64s: [5]i64 = [-1, 2, -9000000000000000000, 4, -5]
+f32s: [5]f32
+f64s: [5]f64
+rgbs: [5]Rgb
+vecs: [5]Vec3
+
+pick_u8(xs: []u8, i: usize): u8 {
+    return xs[i]
+}
+
+pick_i16(xs: []i16, i: usize): i16 {
+    return xs[i]
+}
+
+pick_f64(xs: []f64, i: usize): f64 {
+    return xs[i]
+}
+
+main(): int {
+    f32s = [0.5, 1.5, -2.5, 4.5, 0.25]
+    f64s = [0.5, 1.5, -2.5, 4.5, 0.25]
+    for i: usize in 0 .. 5 {
+        rgbs[i] = Rgb {r = u8(i), g = u8(i + 10), b = u8(i + 20)}
+        vecs[i] = Vec3 {x = f32(i), y = f32(i) + 0.5, z = f32(i) + 1.5}
+    }
+
+    i: usize = 2
+    if u8s[i] != 200 { return 1 }
+    if i8s[i] != -128 { return 2 }
+    if u16s[i] != 60000 { return 3 }
+    if i16s[i] != -32768 { return 4 }
+    if u32s[i] != 4000000000 { return 5 }
+    if i32s[i] != -2147483648 { return 6 }
+    if u64s[i] != 9000000000000000000 { return 7 }
+    if i64s[i] != -9000000000000000000 { return 8 }
+    if f32s[i] != -2.5 { return 9 }
+    if f64s[i] != -2.5 { return 10 }
+
+    j: usize = 4 // last element, all bits set
+    if u8s[j] != 255 || u16s[j] != 65535 || u32s[j] != 4294967295 { return 11 }
+    if u64s[j] != 18446744073709551615 { return 12 }
+    if i8s[j] != -5 || i16s[j] != -5 || i32s[j] != -5 || i64s[j] != -5 { return 13 }
+
+    // narrow index types are widened before the folded load
+    k8: u8 = 3
+    k16: u16 = 3
+    k32: u32 = 3
+    ki: i32 = 3
+    if u8s[k8] != 4 || i16s[k16] != 32767 || u32s[k32] != 4 || f64s[ki] != 4.5 { return 14 }
+
+    // slices go through the descriptor base
+    if pick_u8(u8s[..], 2) != 200 { return 15 }
+    if pick_i16(i16s[..], 2) != -32768 { return 16 }
+    if pick_f64(f64s[..], 3) != 4.5 { return 17 }
+
+    // non-power-of-two strides keep the explicit multiply
+    if rgbs[i].g != 12 || rgbs[i].b != 22 { return 18 }
+    if vecs[i].y != 2.5 || vecs[i].z != 3.5 { return 19 }
+
+    // a computed index and loads used as operands
+    sum: i64 = 0
+    for n: usize in 0 .. 5 {
+        sum += i64(i8s[n]) + i64(u16s[4 - n]) + i64(i64s[n])
+    }
+    if sum != -9000000000000000000 + 125537 { return 20 }
+
+    facc: f64 = 0.0
+    for n: usize in 0 .. 5 {
+        facc += f64(f32s[n]) * f64s[4 - n]
+    }
+    if facc != 0.125 + 1.5 * 4.5 + 6.25 + 6.75 + 0.125 { return 21 }
+    return 42
+}

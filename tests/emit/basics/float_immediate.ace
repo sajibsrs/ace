@@ -1,0 +1,59 @@
+/* Float constants that `fmov Vd, #imm8` encodes (0.125 to 31.0 in sixteenths
+ * of a power of two) must load exactly; neighbours it cannot encode still
+ * load through an integer register. The bit patterns are checked directly. */
+
+// expect-exit: 42
+
+import bits
+
+pass64(x: f64): f64 {
+    return x
+}
+
+pass32(x: f32): f32 {
+    return x
+}
+
+main(): int {
+    a: f64 = 0.125
+    if bits.from_float(a) != 0x3FC0000000000000 { return 1 }
+    b: f64 = 31.0
+    if bits.from_float(b) != 0x403F000000000000 { return 2 }
+    c: f64 = 32.0 // one exponent step past the encodable range
+    if bits.from_float(c) != 0x4040000000000000 { return 3 }
+    d: f64 = 0.1 // fraction longer than four bits
+    if bits.from_float(d) != 0x3FB999999999999A { return 4 }
+    e: f64 = 0.0
+    if bits.from_float(e) != 0 { return 5 }
+    f: f64 = -0.5
+    if bits.from_float(f) != 0xBFE0000000000000 { return 6 }
+    g: f64 = 1.9375 // largest fraction, four bits set
+    if bits.from_float(g) != 0x3FFF000000000000 { return 7 }
+    h: f64 = 0.1328125 // smallest exponent, one fraction bit
+    if bits.from_float(h) != 0x3FC1000000000000 { return 8 }
+    i: f64 = 0.0625 // below the encodable range
+    if bits.from_float(i) != 0x3FB0000000000000 { return 9 }
+    j: f64 = pass64(6.0)
+    if bits.from_float(j) != 0x4018000000000000 { return 10 }
+    k: f64 = pass64(0.75)
+    if bits.from_float(k) != 0x3FE8000000000000 { return 11 }
+
+    p: f32 = 0.125
+    if bits.from_float(p) != 0x3E000000 { return 12 }
+    q: f32 = 31.0
+    if bits.from_float(q) != 0x41F80000 { return 13 }
+    r: f32 = 32.0
+    if bits.from_float(r) != 0x42000000 { return 14 }
+    s: f32 = 0.1
+    if bits.from_float(s) != 0x3DCCCCCD { return 15 }
+    t: f32 = -0.75
+    if bits.from_float(t) != 0xBF400000 { return 16 }
+    u: f32 = 1.9375
+    if bits.from_float(u) != 0x3FF80000 { return 17 }
+    v: f32 = pass32(2.5)
+    if bits.from_float(v) != 0x40200000 { return 18 }
+
+    sum: f64 = 0.25 + 0.5 + 1.0 + 6.0
+    if sum != 7.75 { return 19 }
+    return 42
+}

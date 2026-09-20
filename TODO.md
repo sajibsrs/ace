@@ -146,9 +146,23 @@ These are baseline observations, not performance promises.
   still copy promoted operands into temps; comparing the promoted registers in
   place measured 1.63 to 1.32 ns per iteration (19%) on a loop with two
   compares. `x = x * 0.5 + 1.0` runs 2.7 ns against C's 1.7 because C fuses it
-  into one `fmadd` (1.6 ns); `fmov d, #imm` for the constants alone gains 2%.
-  Whether Ace may fuse a multiply and add, which changes rounding, is
-  undecided.
+  into one `fmadd` (1.6 ns), not because of its constants. Whether Ace may fuse
+  a multiply and add, which changes rounding, is undecided.
+- **Hot-loop codegen gap** [new] — game and graphics kernels over global arrays
+  run 1.1x (dot product) to 8x (by-value `Vec3` calls) scalar C `-O2` with
+  vectorization off, and 2x to 30x C's NEON auto-vectorized output, which Ace
+  leaves to explicit `simd`. What remains, measured on a `saxpy` loop (1.25 ns
+  then, 0.97 ns now, C 0.48): an array base is rebuilt with `adrp`/`add` at
+  every access and float constants are rebuilt at every use, and hoisting both
+  out of the loop measured 0.97 to 0.48 ns; a field of an indexed struct
+  element costs `add`, `add`, then a load with no offset (`ps[i].x` about
+  twelve times per particle); indexed stores still add the scaled index
+  separately; a 12-byte element strides by `mov`/`mul`; and a leaf call taking
+  by-value `Vec3`s copies every argument register and sets up a frame it does
+  not use. A bottom-tested loop measured 7.7% on `saxpy` and 31% on a short
+  branchy loop, but 8% slower on `for cond {}`; it is deferred until it can be
+  weighed on top of the address work. `math.sqrt` and `std/simd` are specified
+  and unimplemented.
 - **Tail-call optimization** [new] — a `return f(args)` still emits `bl` plus a
   full epilogue, so tail recursion grows the stack linearly and overflows at
   roughly 100M frames in checked and release builds alike. Candidate: lower a

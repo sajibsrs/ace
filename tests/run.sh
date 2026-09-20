@@ -1067,7 +1067,8 @@ if [ -d tests/emit ]; then
         # Promoted integer locals are operands in their own registers:
         # arithmetic, compares, bool tests, and 64-bit indexes read x19-x28
         # (or x9-x14 in these call-free functions) directly, and arith copies
-        # none of them into a temp.
+        # none of them into a temp. An index is read directly by the address
+        # add or by the folded register-offset load.
         if ! otool -tv /tmp/ace_emit/basics/register_operands.o | awk '
             /^[^0-9].*:$/ { fn = $0; next }
             {
@@ -1083,6 +1084,7 @@ if [ -d tests/emit ]; then
             fn ~ /^__ace\$fn\$narrow\$/ && $2 == "cmp" && n == 2 { cmp = 1 }
             fn ~ /^__ace\$fn\$narrow\$/ && $2 ~ /^cbn?z$/ && n == 1 { test = 1 }
             fn ~ /^__ace\$fn\$indexed\$/ && $2 == "add" && $NF == "#3" && n == 1 { idx = 1 }
+            fn ~ /^__ace\$fn\$indexed\$/ && $2 == "ldr" && $NF == "#3]" && n == 1 { idx = 1 }
             END { exit bad || !arith || !cmp || !test || !idx }'; then
             echo "FAIL: promoted locals must be read in place as operands"
             fail=1
