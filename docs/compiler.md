@@ -30,7 +30,9 @@ choice cannot change their result because they emit no program.
 
 `--release` also expands a call to a function whose body is one `return` of a
 scalar expression in place, evaluating the arguments once and in order, so such
-helpers cost no call. Checked output keeps the call.
+helpers cost no call. Checked output keeps the call. A function whose calls all
+expand this way emits none, and keeps its float locals in caller-saved registers
+that need no save.
 
 The build target defaults from the compiler host and can be selected explicitly
 with `--target=NAME` (or `--target NAME`). The bootstrap compiler currently

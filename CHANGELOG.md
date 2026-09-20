@@ -45,6 +45,15 @@ current normative rules, and Git preserves patch-level detail.
   parameter identifiers read, so no call frame and no spill and reload of live
   temps around it. A math kernel calling one such helper seven times fell 24%
   (193 to 146 ns); checked builds and all other callees keep the call.
+- Made register planning follow that inlining: a function whose calls all
+  expand in place is planned as call-free through the one `inline_body`
+  predicate emission also uses, counting the expanded body's temps. A call-free
+  function promotes up to eight float locals into the caller-saved d24-d31,
+  ahead of d8-d15 and never saved, unless it may reach the byte routines that
+  clobber v24-v31; a routine reached with such locals live is an internal
+  error, never wrong code. `math.log2_split` fell from 39 to 25 ns and
+  `math.pow` from 145 to 119 ns; hot-loop, call, and CPU benchmarks did not
+  move.
 
 ## Core language
 
@@ -654,7 +663,7 @@ current normative rules, and Git preserves patch-level detail.
   with integer exponents, bases within 2^-20 of 1 with exponents past 2^31,
   subnormal results, and 200K `f32` cases, the last bit-identical throughout),
   with every Annex F case and all 736 representable integer powers exact; libm
-  is a test reference only. It runs at about 145 ns per call against libm's
+  is a test reference only. It runs at about 119 ns per call against libm's
   9 ns, where the same algorithm is 33 ns compiled by clang at -O2 and 293 ns
   at -O0.
 - Fixed compound untyped constants under a float cast (`f32(-1.0)`,

@@ -1,7 +1,7 @@
 /*
  * Scalar locals and by-value parameters whose address never escapes live in
- * callee-saved registers (x19-x28, floats in d8-d15); every address-taking use
- * keeps a local in its slot.
+ * callee-saved registers (x19-x28, floats in d8-d15; d24-d31 in a call-free
+ * function); every address-taking use keeps a local in its slot.
  */
 
 // expect-exit: 42
@@ -210,7 +210,7 @@ fescapes(): int {
     return 0
 }
 
-// more hot float locals than d8-d15: the rest keep their slots
+// more hot float locals than d24-d31: the rest take d8 up
 fpressure(n: int): f64 {
     a: f64 = 1.0
     b: f64 = 2.0
