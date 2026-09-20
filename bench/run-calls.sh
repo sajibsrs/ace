@@ -12,6 +12,11 @@ make ace
 cc -std=c11 -O2 -o "$bench_tmp/calls-c" bench/calls.c
 cc -std=c11 -O2 -DALLOW_INLINE -o "$bench_tmp/calls-c-inline" bench/calls.c
 
+# Discard one run of each binary: see bench/README.md on first-run cost.
+"$bench_tmp/calls-ace" > /dev/null
+"$bench_tmp/calls-c" > /dev/null
+"$bench_tmp/calls-c-inline" > /dev/null
+
 "$bench_tmp/calls-ace" > "$bench_tmp/ace.txt"
 "$bench_tmp/calls-c" > "$bench_tmp/c.txt"
 "$bench_tmp/calls-c-inline" > "$bench_tmp/c-inline.txt"

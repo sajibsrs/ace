@@ -11,6 +11,11 @@ make ace
 ./ace --release --report -o "$bench_tmp/string-ace" bench/string.ace
 cc -std=c11 -O2 -o "$bench_tmp/string-c" bench/string.c
 
+# A process pays page-in and first-touch costs that the earliest timed
+# workloads absorb, so discard one run of each binary before the timed one.
+"$bench_tmp/string-ace" > /dev/null
+"$bench_tmp/string-c" > /dev/null
+
 "$bench_tmp/string-ace" > "$bench_tmp/ace.txt"
 "$bench_tmp/string-c" > "$bench_tmp/c.txt"
 

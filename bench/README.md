@@ -3,6 +3,23 @@
 These are manual measurements, not pass/fail performance thresholds. Close
 other expensive workloads and run several times before comparing results.
 
+## First-run cost
+
+A process pays page-in and first-touch costs that the earliest timed workloads
+in it absorb. Over six fresh builds of `bench/string.ace`, four runs each, a
+binary's first run cost 64% more than its warm runs on `compare-64`, 19% on
+`compare-4096`, and 5% on `copy-64`; every later workload was within noise. The
+effect tracks position in the program, not the code: the same binary is fast on
+its second run, and an alternating A/B of two compilers measures the same warm
+times for both. Every runner therefore discards one run of each binary before
+the timed run.
+
+Checkpoints below this change may report a cold `compare-64`, `compare-4096`,
+or `copy-64`, so those three rows are not comparable across checkpoints; the
+rest are. This is what earlier entries describe as `compare` alternating
+between two placements. True placement effects are separate and are measured
+at controlled offsets on byte-identical instructions.
+
 ## Strings and byte operations
 
 Run equivalent deterministic byte/string workloads through Ace release output
@@ -62,7 +79,7 @@ as much as instruction choice at this scale.
 The same holds for ordinary emitted code: `find-4096` measured 16.6 us with
 `str.index_from` 12 bytes into a 64-byte line and 19.5 us at 44 bytes, with
 byte-identical instructions. Compare string results across builds only when
-that placement is controlled.
+that placement is controlled and the binaries are warm.
 
 ### Native float-parser optimization checkpoint
 
@@ -195,8 +212,9 @@ three runs produced CPU medians of 36.0 ms release versus 34.2 ms C `-O2`
 (1.05x), recovering the loop-register regression: `state` no longer
 round-trips through memory. String medians: `find-4096` 5.5x, `copy-64`
 1.9x, `parse-f64` 5.2x, `format-f64-shortest` 0.49x. `compare` alternates
-between two placements (64-byte 1.8x or 3.1x, 4096-byte 0.67x or 0.86x);
-an alternating A/B against the previous compiler measured identical times.
+between two levels (64-byte 1.8x or 3.1x, 4096-byte 0.67x or 0.86x); an
+alternating A/B against the previous compiler measured identical times. The
+higher level of each pair is the first-run cost above, not a placement.
 
 ### Frame-access checkpoint
 
@@ -204,8 +222,8 @@ After loads landed in their destination and local aggregate fields,
 descriptors, and literal members moved to direct `x29` access, five
 alternating A/B runs produced string medians of `find-4096` 9,877 ns (from
 10,551), `format-f64-shortest` 373 ns (from 391), and `parse-f64` 144 ns
-(from 149); CPU was unchanged at 37.0 ms. `compare-64` moved to its slower
-placement (7.2 ns from 6.7) with an instruction-identical loop.
+(from 149); CPU was unchanged at 37.0 ms. `compare-64` measured 7.2 ns from
+6.7 with an instruction-identical loop, within its cold-to-warm range.
 
 ### Register-operand checkpoint
 
@@ -267,7 +285,7 @@ no cycle change, so its remaining cost is not instruction count.
 
 On the same compiler, three string runs and one CPU run produced these
 medians against C `-O2`: `compare-64` 11.5 ns (3.0x; 8.9–11.9 across runs,
-placement-dependent), `compare-4096` 0.85x, `copy-64` 1.8x, `copy-4096`
+cold), `compare-4096` 0.85x (cold), `copy-64` 1.8x, `copy-4096`
 1.08x, `find-4096` 0.65x, `parse-f64` 58.7 ns (2.1x), `parse-f64-short`
 54.9 ns (2.1x), `parse-f64-long` 74.0 ns (2.4x), and `format-f64-shortest`
 296 ns (0.37x of `%.17g`, reference only). CPU measured 37.7 ms release

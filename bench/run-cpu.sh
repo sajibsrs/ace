@@ -25,6 +25,7 @@ for variant in ace-checked ace-release c-o0 c-o2; do
     echo
     echo "$variant"
     echo "-----------"
+    $exe > /dev/null # discard one run: see bench/README.md on first-run cost
     output=$($exe)
     printf '%s\n' "$output"
     checksum=$(printf '%s\n' "$output" | awk '/^checksum:/ { print $2 }')
