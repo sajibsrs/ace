@@ -441,6 +441,13 @@ current normative rules, and Git preserves patch-level detail.
   consumed by `emit_call` only for the matching call node and return type, so
   nested calls in arguments never take it. `struct-8` 7.6 to 6.1, `struct-16`
   7.5 to 5.5, `struct-hfa` 12.3 to 9.8, `tuple-return` 13.0 to 11.6 ns.
+- A by-value aggregate argument that is a plain frame-resident local (or a
+  field of one) and rides registers is loaded straight from its slot at
+  marshal time (`ldur x<n>` / `ldur d<n>`) instead of through an address temp
+  that was spilled and reloaded; the calling-convention units are now computed
+  before the arguments are evaluated. Slice arguments keep the address temp in
+  checked builds for the `noalias` range check. Text of `bench/calls.ace`
+  fell 33,984 to 33,712 bytes; the call benchmarks moved within layout noise.
 - Fixed a multi-register return with a pending `defer` returning a corrupted
   second register: `emit_defers` addressed save-area unit w above the slot
   (`retsave_off + w * 8`), which fell below `sp`, instead of within it

@@ -527,6 +527,7 @@ static void plan_promotion(Em* e, Node* f);
 static int promo_reg(Em* e, Sym* s);
 static int gen_addr(Em* e, Node* x);
 static int is_lvalue_node(Node* x);
+static int frame_place(Em* e, Node* x, uint32_t* depth);
 static SType* lvalue_type(Em* e, Node* x);
 static void emit_asm(Em* e, Node* s);
 static void emit_epilogue(Em* e);
@@ -2576,6 +2577,14 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
               : is_floatt(node_ty(args[i].node)) ? default_f64()
                                                  : default_i64();
 
+    TU units[160];
+    uint32_t sbytes = assign_cc(eff, muts, n, internal, varargs_from, units);
+    if (sbytes > e->out_max) e->out_max = sbytes;
+
+    // by-value aggregate arguments read straight from a frame slot, by depth
+    uint8_t framed[40] = {0};
+    uint32_t fdepths[40] = {0};
+
     // evaluate arguments into temps
     for (int i = 0; i < n; i++) {
         if (args[i].pre) continue;
@@ -2613,6 +2622,17 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
                 args[i].val = v;
                 args[i].ptrval = 1; // the materialized address is what travels
             }
+            continue;
+        }
+        // a by-value aggregate that is a plain frame-resident local and rides
+        // registers is loaded from its slot at marshal time: no address temp
+        uint32_t fdepth;
+        if (!is_scalar(eff[i]) && units[i * 4].kind != TU_STACK_AGGR && (a->kind == N_IDENT || a->kind == N_FIELD_E) &&
+            !(e->mode == EMIT_CHECKED && eff[i]->kind == SK_SLICE) && node_ty(a) && ty_size(node_ty(a)) == arg_size &&
+            frame_place(e, a, &fdepth)) {
+            framed[i] = 1;
+            fdepths[i] = fdepth;
+            args[i].val = (EV){ CLS_FP, 0 }; // never spilled or compared
             continue;
         }
         args[i].val = gen_expr(e, a);
@@ -2680,10 +2700,6 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
         reload_temps(e, guard_ni, guard_nf);
     }
 
-    TU units[160];
-    uint32_t sbytes = assign_cc(eff, muts, n, internal, varargs_from, units);
-    if (sbytes > e->out_max) e->out_max = sbytes;
-
     RetCls rc;
     classify_ret(ret, &rc);
 
@@ -2718,6 +2734,14 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
     for (int j = 0; j < e->vtf; j++) store_frame_fp(e, vreg(j), spill_slot_fp(e, j), 1);
     for (int i = 0; i < n; i++) {
         if (placed[i]) continue;
+        if (framed[i]) { // aggregate leaves straight from their frame slot
+            for (int w = 0; w < 4; w++) {
+                TU* u = &units[i * 4 + w];
+                if (u->kind == TU_XREG && u->reg >= 0) load_frame(e, u->reg, fdepths[i] - u->off, 8, 0);
+                else if (u->kind == TU_VREG) load_frame_fp(e, u->reg, fdepths[i] - u->off, u->size == 8);
+            }
+            continue;
+        }
         EV v = args[i].val;
         int pass_addr = args[i].ptrval || args[i].val.cls == CLS_INT;
         int is_agg = v.cls == CLS_ADDR && !pass_addr;

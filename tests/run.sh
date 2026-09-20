@@ -1176,6 +1176,26 @@ if [ -d tests/emit ]; then
             echo "FAIL: register-returned call results must be stored straight into the destination"
             fail=1
         fi
+        # A by-value aggregate argument that is a frame-resident local is loaded
+        # straight from its slot: before the call no frame address is formed
+        # (`sub xN, x29, ...`), and use_pair loads x0/x1 and use_vec d0 through
+        # d5 with ldur. The first function's label is the section, so first()
+        # is a dummy.
+        if ! otool -tv /tmp/ace_emit/basics/call_frame_args.o | awk '
+            /^_main:/ { exit }
+            /^[^0-9].*:$/ { fn = $0; done = 0; next }
+            fn ~ /^__ace\$fn\$use_(pair|vec)\$/ && !done {
+                if ($2 == "bl" && $3 !~ /fail/) { done = 1; next }
+                if ($2 == "sub" && $4 == "x29,") bad = 1
+                if ($2 == "ldur" && fn ~ /use_pair/ && $3 == "x0,") p0 = 1
+                if ($2 == "ldur" && fn ~ /use_pair/ && $3 == "x1,") p1 = 1
+                if ($2 == "ldur" && fn ~ /use_vec/ && $3 == "d0,") v0 = 1
+                if ($2 == "ldur" && fn ~ /use_vec/ && $3 == "d5,") v5 = 1
+            }
+            END { exit bad || !p0 || !p1 || !v0 || !v5 }'; then
+            echo "FAIL: frame-resident aggregate arguments must load straight from their slots"
+            fail=1
+        fi
         # A call-free function promotes every used local, single-use ones
         # included, into x14 down: straight() takes x14 through x11 and saves
         # no callee-saved register.

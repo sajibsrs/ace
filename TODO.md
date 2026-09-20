@@ -108,19 +108,32 @@ These are baseline observations, not performance promises.
 - **Caller-saved promotion across calls** [new] — non-leaf functions still
   keep every promoted local in x19-x28; locals not live across any call could
   use x9-x14 given per-call liveness.
-- **Call and tuple-return plumbing** [new] — the caller spills argument
-  addresses to slots, and incoming HFA parameters are spilled and reloaded per
-  use. A returned literal or tuple with packed sub-8-byte fields, a `(f64,
-  bool)` tuple, or a call in a leaf is still built in a frame temp and reloaded.
+- **Call and tuple-return plumbing** [new] — incoming aggregate and HFA
+  parameters are spilled to slots and reloaded per use, and an aggregate
+  argument that is not a plain frame-resident local (a global, an rvalue, a
+  member behind a pointer) or that overflows the argument registers still
+  travels through an address temp. A returned literal or tuple with packed
+  sub-8-byte fields, a `(f64, bool)` tuple, or a call in a leaf is still built
+  in a frame temp and reloaded.
   A returned struct whose size is not a multiple of 8, a tuple with a
   non-8-byte member, a call assigned to a non-local destination (a pointer
   target, an index, a global), and `q, r = f()` into existing variables still
   stage the result in a temp and copy it. `bool` locals and a string
   parameter's pointer and length stay in stack slots inside loops.
   `bench/calls.ace` measures it: the by-value 8- and 16-byte structs, the
-  three-`f64` aggregate, and the tuple return run 1.6x to 6.8x noinline C
-  `-O2`. Next: load frame-resident aggregate arguments straight from their
-  slots.
+  three-`f64` aggregate, and the tuple return run 1.6x to 6.7x noinline C
+  `-O2`; what remains is bound by store-to-load forwards on the loop-carried
+  slot, so a further step needs its gain measured first (for example by
+  reading incoming HFA parameters from their registers instead of spilling
+  them).
+- **Unoptimized debug build mode** [new] — only the checked and release modes
+  exist, and both emit the same optimized code; the modes differ in runtime
+  guards alone. Local register promotion, immediates, and register returns are
+  always on, promoted locals have no frame slot, and objects carry line tables
+  but no variable locations, so a debugger cannot show a promoted local by
+  name. Candidate: a third mode (or a modifier on checked) that disables
+  promotion so every local keeps a slot, weighed against the cost of testing
+  another mode.
 - **Remaining immediate and destination forms** [new] — declarations with an
   initializer still compute through a temp, and a constant on the left of a
   compare or in the middle of a chain still takes a register.

@@ -36,6 +36,11 @@ history.
 - Judge a proposed change by the value it adds against that priority stack,
   never by whether it breaks with what's already decided or implemented.
   "That's not how it's currently done" is not a counterargument on its own.
+- Measure the probable gain of an optimization before proposing it (a
+  prototype, a hand-edited disassembly, or a microbenchmark against a saved
+  baseline, several runs) and state it in the proposal. If the gain is
+  negligible, do not implement it: the return on investment is low, and every
+  added line is more surface for bugs and more to extend and maintain.
 - Record current rules and rationale in `SPEC.md`, keeping only active decisions
   in its queue. Record implemented behavior and its essential approach once,
   briefly, in `CHANGELOG.md`. Keep `SPEC.md`, `CHANGELOG.md`, `GRAMMAR.md`, and
