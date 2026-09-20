@@ -127,8 +127,11 @@ These are baseline observations, not performance promises.
   three-`f64` aggregate, and the tuple return run 1.0x to 3.4x noinline C
   `-O2`; what remains is bound by store-to-load forwards on the loop-carried
   slot, so a further step needs its gain measured first (for example reading
-  HFA leaves in the incoming registers themselves, prototyped at about 0.7 ns
-  on `struct-hfa`, or the caller side of `struct-8`, still 1.6 ns above C).
+  HFA leaves in the incoming registers themselves, which measured 0.25 ns
+  faster on `dot` and `length2` but 10% slower on a `Vec3`-returning call for
+  a cause not yet found, or the caller side of `struct-8`, still 1.6 ns above
+  C). Float `fmov` between registers costs about 1 ns on a loop-carried chain,
+  so a promotion scheme that adds moves there loses most of its gain.
 - **Unoptimized debug build mode** [new] — only the checked and release modes
   exist, and both emit the same optimized code; the modes differ in runtime
   guards alone. Local register promotion, immediates, and register returns are
@@ -139,7 +142,10 @@ These are baseline observations, not performance promises.
   another mode.
 - **Remaining immediate and destination forms** [new] — declarations with an
   initializer still compute through a temp, and a constant on the left of a
-  compare or in the middle of a chain still takes a register.
+  compare or in the middle of a chain still takes a register. Float compares
+  still copy promoted operands into temps, and a float constant is rebuilt with
+  `mov`/`movk`/`fmov` at every use although `0.5` and `1.0` encode as
+  `fmov d, #imm`; `x = x * 0.5 + 1.0` runs 2.7 ns against C's 1.7.
 - **Tail-call optimization** [new] — a `return f(args)` still emits `bl` plus a
   full epilogue, so tail recursion grows the stack linearly and overflows at
   roughly 100M frames in checked and release builds alike. Candidate: lower a

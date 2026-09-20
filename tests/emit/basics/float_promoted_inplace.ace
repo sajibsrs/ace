@@ -1,0 +1,205 @@
+// expect-exit: 42
+// A promoted float local is read in its own register and an assignment to it
+// puts the final operation's result there directly; operands are read before
+// that one write, so every shape below keeps its exact value. Locals that
+// escape, and values live across a call, keep working.
+
+Vec3: struct {
+    x: f64,
+    y: f64,
+    z: f64,
+}
+
+xs: [8]f64
+ys: [8]f64
+
+// The object's first function label is the section, so it stays a dummy.
+first(): usize {
+    return 0
+}
+
+sum(): f64 {
+    total: f64 = 0.0
+    for i: usize in 0 .. 32 {
+        total = total + xs[i & 7]
+    }
+    return total
+}
+
+multiply_add(): f64 {
+    total: f64 = 0.0
+    for i: usize in 0 .. 32 {
+        total = total + xs[i & 7] * ys[i & 7]
+    }
+    return total
+}
+
+recurrence(): f64 {
+    x: f64 = 0.0
+    for i: usize in 0 .. 20 {
+        x = x * 0.5 + 1.0
+    }
+    return x
+}
+
+// the destination is also the right operand
+reverse_sub(): f64 {
+    x: f64 = 1.0
+    y: f64 = 10.0
+    for i: usize in 0 .. 5 {
+        x = y - x
+    }
+    return x
+}
+
+square(): f64 {
+    x: f64 = 1.5
+    for i: usize in 0 .. 3 {
+        x = x * x
+    }
+    return x
+}
+
+compound(): f64 {
+    x: f64 = 100.0
+    y: f64 = 4.0
+    for i: usize in 0 .. 2 {
+        x -= y
+        x /= 2.0
+        x *= 3.0
+        x += y
+    }
+    return x
+}
+
+two_accumulators(): f64 {
+    a: f64 = 0.0
+    b: f64 = 1.0
+    for i: usize in 0 .. 10 {
+        a = a + 1.0
+        b = b * 2.0
+    }
+    return a + b
+}
+
+// operands that are themselves expressions of the destination
+nested(): f64 {
+    x: f64 = 3.0
+    y: f64 = 1.0
+    z: f64 = 1.0
+    w: f64 = 2.0
+    k: f64 = 2.0
+    v: f64 = 8.0
+    for i: usize in 0 .. 2 {
+        x = (x + y) * (x - y)
+    }
+    for i: usize in 0 .. 3 {
+        z = k * (z + 1.0)
+        w = v / w
+    }
+    return x + z + w
+}
+
+sum32(): f32 {
+    total: f32 = 0.0
+    for i: usize in 0 .. 8 {
+        total = total + 0.5
+    }
+    return total
+}
+
+recurrence32(): f32 {
+    x: f32 = 0.0
+    for i: usize in 0 .. 10 {
+        x = x * 0.5 + 1.0
+    }
+    return x
+}
+
+twice(x: f64): f64 {
+    return x * 2.0
+}
+
+// a promoted float survives a call: d8 and up are callee-saved
+across_call(): f64 {
+    acc: f64 = 0.0
+    v: f64 = 1.0
+    for i: usize in 0 .. 3 {
+        acc = acc + twice(1.5)
+        v = twice(v) + v
+    }
+    return acc + v
+}
+
+// a homed parameter leaf and a promoted accumulator in the same expression
+leaf_dot(p: Vec3, q: Vec3): f64 {
+    acc: f64 = 0.0
+    for i: usize in 0 .. 3 {
+        acc = acc + p.x * q.y
+    }
+    return acc
+}
+
+bump(mut x: f64, by: f64) {
+    x = x + by
+}
+
+// an escaping local keeps its slot and the plain path
+escaped(): f64 {
+    x: f64 = 1.0
+    bump(mut x, 0.5)
+    for i: usize in 0 .. 4 {
+        x = x * 2.0 + 0.25
+        x += 1.0
+    }
+    return x
+}
+
+main(): int {
+    for k: usize in 0 .. 8 {
+        xs[k] = f64(k)
+        ys[k] = 2.0
+    }
+    if sum() != 112.0 {
+        return 1
+    }
+    if multiply_add() != 224.0 {
+        return 2
+    }
+    if recurrence() != 2.0 - 1.0 / 524288.0 {
+        return 3
+    }
+    if reverse_sub() != 9.0 {
+        return 4
+    }
+    if square() != 25.62890625 {
+        return 5
+    }
+    if compound() != 220.0 {
+        return 6
+    }
+    if two_accumulators() != 10.0 + 1024.0 {
+        return 7
+    }
+    // x: 3 -> 8 -> 63; z: 1 -> 4 -> 10 -> 22; w: 2 -> 4 -> 2 -> 4
+    if nested() != 63.0 + 22.0 + 4.0 {
+        return 8
+    }
+    if sum32() != 4.0 {
+        return 9
+    }
+    if recurrence32() != 1.998046875 {
+        return 10
+    }
+    // acc: 3 * 3.0; v: 1 -> 3 -> 9 -> 27
+    if across_call() != 9.0 + 27.0 {
+        return 11
+    }
+    if leaf_dot(Vec3 {x = 2.0, y = 0.0, z = 0.0}, Vec3 {x = 0.0, y = 3.0, z = 0.0}) != 18.0 {
+        return 12
+    }
+    if escaped() != 42.75 {
+        return 13
+    }
+    return 42
+}

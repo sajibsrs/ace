@@ -67,6 +67,10 @@ NOINLINE Vec3 vec_add(Vec3 a, Vec3 b) {
     return (Vec3){a.x + b.x, a.y + b.y, a.z + b.z};
 }
 
+NOINLINE double dot3(Vec3 a, Vec3 b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
 NOINLINE Divmod divmod(usize a, usize b) { return (Divmod){a / b, a % b}; }
 
 NOINLINE void counter_add(Counter* self, usize amount) {
@@ -133,6 +137,16 @@ int main(void) {
     for (usize i = 0; i < ITERATIONS; i++) acc = vec_add(acc, step);
     report("struct-hfa", now() - started, ITERATIONS,
            (usize)(acc.x + acc.y + acc.z));
+
+    double total = 0.0;
+    Vec3 probe = {0.0, 2.0, 3.0};
+    Vec3 weights = {4.0, 5.0, 6.0};
+    started = now();
+    for (usize i = 0; i < ITERATIONS; i++) {
+        probe.x = (double)(i & 15);
+        total = total + dot3(probe, weights);
+    }
+    report("float-acc", now() - started, ITERATIONS, (usize)total);
 
     state = 1;
     started = now();

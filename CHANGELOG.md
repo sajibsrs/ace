@@ -463,6 +463,14 @@ current normative rules, and Git preserves patch-level detail.
   within the int temps (`vti_cap`), and `src_reg` reads it in place. Packed or
   mixed-class structs and narrower leaves keep the slot. `struct-8` 6.5 to 3.9,
   `struct-16` 5.4 to 2.4 ns.
+- Float `+ - * /` reads a promoted float local or a register-homed parameter
+  leaf in its own register (`fsrc_reg`, the float twin of `src_reg`; the HFA
+  fast path in `gen_binop` now goes through it), and an assignment to a promoted
+  float local (`x = a op b`, `x op= y`) emits the final operation straight into
+  its register. The old `fmov` copy in and out cost about 1 ns each on a
+  loop-carried chain. Call-free sum 3.4 to 1.2, multiply-add 3.4 to 1.3,
+  `x = x * 0.5 + 1.0` 4.9 to 2.7 ns; the call-carried `float-acc` workload
+  4.8 to 2.4 ns.
 - Fixed a multi-register return with a pending `defer` returning a corrupted
   second register: `emit_defers` addressed save-area unit w above the slot
   (`retsave_off + w * 8`), which fell below `sp`, instead of within it

@@ -311,6 +311,7 @@ The runner builds `bench/calls.ace` in release mode and `bench/calls.c` at
 Each workload feeds its result into the next call: one-, four-, and
 eight-argument scalar calls, recursive `fib(32)`, by-value struct arguments and
 returns of 8, 16, 24, and 64 bytes, a three-`f64` homogeneous float aggregate, a
+float accumulator fed by a call whose arguments change every iteration, a
 two-value tuple return, a `mut self` method, and a call through a function
 value. The C functions have external linkage and `noinline`, so `-O2` keeps
 every call and cannot specialise it on constant arguments. The third column is
@@ -318,18 +319,18 @@ the same C with inlining allowed: a reference Ace cannot match without an
 inliner, not the comparison target. The C function-value slot is `volatile` so
 the indirect call survives.
 
-Ace release against noinline C `-O2` (ns/op, ratio), after constant and
-call-free-parameter promotion and register returns: `call-1` 3.20 vs 2.90
-(1.11x), `call-4` 3.66 vs 3.41 (1.07x), `call-8` 4.17 vs 4.35 (0.96x),
-`fib-recursive` 2.05 vs 1.21 (1.69x), `struct-8` 6.47 vs 2.41 (2.68x),
-`struct-16` 5.38 vs 2.41 (2.23x), `struct-24` 6.87 vs 10.73 (0.64x),
-`struct-64` 15.51 vs 14.39 (1.08x), `struct-hfa` 9.72 vs 1.45 (6.70x),
-`tuple-return` 11.55 vs 7.24 (1.60x),
-`method` 1.93 vs 3.86 (0.50x), and `function-value` 3.62 vs 2.90 (1.25x).
-Before that change `call-1` was 5.72, `call-4` 5.61, `call-8` 4.93, and
-`function-value` 6.02. The largest remaining gaps are small by-value
-aggregates, the float aggregate, and the tuple return; the method and the
-24-byte struct beat noinline C.
+Ace release against noinline C `-O2` (ns/op, ratio), after constant, parameter,
+and float-accumulator promotion and register returns: `call-1` 2.90 vs 2.88
+(1.00x), `call-4` 3.65 vs 3.41 (1.07x), `call-8` 4.16 vs 4.34 (0.96x),
+`fib-recursive` 2.05 vs 1.23 (1.66x), `struct-8` 3.85 vs 2.40 (1.60x),
+`struct-16` 2.42 vs 2.40 (1.00x), `struct-24` 6.92 vs 10.71 (0.65x),
+`struct-64` 15.52 vs 14.37 (1.08x), `struct-hfa` 4.92 vs 1.44 (3.41x),
+`float-acc` 2.40 vs 1.44 (1.67x), `tuple-return` 11.53 vs 7.21 (1.60x),
+`method` 2.08 vs 3.85 (0.54x), and `function-value` 3.61 vs 2.88 (1.25x).
+Before promotion `call-1` was 5.72, `call-4` 5.61, `call-8` 4.93, and
+`function-value` 6.02. The largest remaining gaps are the float aggregate, the
+tuple return, and the 8-byte struct; the method and the 24-byte struct beat
+noinline C.
 
 `call-1` and `fib` measure different things. `fib` is throughput-bound: its
 calls overlap in the out-of-order core, so 2 ns per call is a throughput

@@ -91,6 +91,10 @@ vec_add(a: Vec3, b: Vec3): Vec3 {
     return Vec3 {x = a.x + b.x, y = a.y + b.y, z = a.z + b.z}
 }
 
+dot3(a: Vec3, b: Vec3): f64 {
+    return a.x * b.x + a.y * b.y + a.z * b.z
+}
+
 divmod(a: usize, b: usize): (usize, usize) {
     return a / b, a % b
 }
@@ -167,6 +171,16 @@ main(): int {
         acc = vec_add(acc, step)
     }
     report("struct-hfa", time.awake() - started, ITERATIONS, usize(acc.x + acc.y + acc.z))
+
+    total: f64 = 0.0
+    probe: Vec3 = Vec3 {x = 0.0, y = 2.0, z = 3.0}
+    weights: Vec3 = Vec3 {x = 4.0, y = 5.0, z = 6.0}
+    started = time.awake()
+    for i: usize in 0 .. ITERATIONS {
+        probe.x = f64(i & 15)
+        total = total + dot3(probe, weights)
+    }
+    report("float-acc", time.awake() - started, ITERATIONS, usize(total))
 
     state = 1
     started = time.awake()

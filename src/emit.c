@@ -1821,6 +1821,35 @@ static int src_reg(Em* e, Node* x, EV* v) {
     return v->cls == CLS_FP ? vreg(v->idx) : xreg(v->idx);
 }
 
+/*
+ * The float twin of src_reg: a promoted float local or a register-homed
+ * parameter leaf is read in its own v register (v->idx = -1), anything else
+ * evaluates into a temp. Exact for the same reasons, and only consumers that
+ * never write their operand registers may call it. The caller checks
+ * v->cls == CLS_FP.
+ */
+static int fsrc_reg(Em* e, Node* x, EV* v) {
+    Sym* s = x->kind == N_IDENT ? node_sym(x) : NULL;
+    if (s && s->kind == SYM_VAR && s->type && is_floatt(s->type)) {
+        int pr = promo_reg(e, s);
+        if (pr >= 0) {
+            *v = (EV){ CLS_FP, -1 };
+            return pr;
+        }
+    }
+    int home = x->kind == N_FIELD_E ? param_home(e, x) : -1;
+    if (home >= 0 && is_floatt(node_ty(x))) {
+        *v = (EV){ CLS_FP, -1 };
+        return home;
+    }
+    *v = gen_expr(e, x);
+    return vreg(v->idx);
+}
+
+static int is_farith_op(TokKind op) {
+    return op == T_PLUS || op == T_MINUS || op == T_STAR || op == T_SLASH;
+}
+
 static EV gen_binop(Em* e, Node* n) {
     TokKind op = (TokKind)n->op;
     SType* t = node_ty(n->a);
@@ -1919,23 +1948,19 @@ static EV gen_binop(Em* e, Node* n) {
         return (EV){ CLS_INT, d };
     }
 
-    // a homed HFA parameter leaf is read in its own register, never copied
-    if (is_floatt(t) && (op == T_PLUS || op == T_MINUS || op == T_STAR || op == T_SLASH)) {
-        int ha = param_home(e, n->a), hb = param_home(e, n->b);
-        if (ha >= 0 || hb >= 0) {
-            EV a = { CLS_FP, -1 }, b = { CLS_FP, -1 };
-            if (ha < 0) a = gen_expr(e, n->a);
-            if (hb < 0) b = gen_expr(e, n->b);
-            if ((ha < 0 && a.cls != CLS_FP) || (hb < 0 && b.cls != CLS_FP)) {
-                em_err(e, n, "float operand did not produce a float");
-                return (EV){ CLS_INT, tmp_int(e) };
-            }
-            int d = ha < 0 ? a.idx : hb < 0 ? b.idx : tmp_fp(e);
-            emit_farith_raw(e, op, (uint32_t)vreg(d), ha >= 0 ? (uint32_t)ha : (uint32_t)vreg(a.idx),
-                            hb >= 0 ? (uint32_t)hb : (uint32_t)vreg(b.idx), unwrap(t)->prim == P_F64);
-            e->vtf = d + 1;
-            return (EV){ CLS_FP, d };
+    // float arithmetic reads promoted locals and homed parameter leaves in place
+    if (is_floatt(t) && is_farith_op(op)) {
+        EV a, b;
+        int ra = fsrc_reg(e, n->a, &a);
+        int rb = fsrc_reg(e, n->b, &b);
+        if (a.cls != CLS_FP || b.cls != CLS_FP) {
+            em_err(e, n, "float operand did not produce a float");
+            return (EV){ CLS_INT, tmp_int(e) };
         }
+        int d = a.idx >= 0 ? a.idx : b.idx >= 0 ? b.idx : tmp_fp(e);
+        emit_farith_raw(e, op, (uint32_t)vreg(d), (uint32_t)ra, (uint32_t)rb, unwrap(t)->prim == P_F64);
+        e->vtf = d + 1;
+        return (EV){ CLS_FP, d };
     }
 
     EV a = gen_expr(e, n->a);
@@ -6055,6 +6080,18 @@ static void emit_stmt(Em* e, Node* s) {
             }
             TokKind op = compound_op((TokKind)s->op);
             int pointer = t->kind == SK_PTR && (op == T_PLUS || op == T_MINUS);
+            if (pr >= 0 && is_floatt(t) && is_farith_op(op)) { // computed straight into the register
+                int svf = e->vtf;
+                EV rhs;
+                int rb = fsrc_reg(e, s->a, &rhs);
+                if (rhs.cls != CLS_FP) {
+                    em_err(e, s, "float operand did not produce a float");
+                    return;
+                }
+                emit_farith_raw(e, op, (uint32_t)pr, (uint32_t)pr, (uint32_t)rb, unwrap(t)->prim == P_F64);
+                e->vtf = svf;
+                return;
+            }
             // A promoted integer target is read in place and the result
             // computed into a fresh temp before it is stored back.
             int in_place = pr >= 0 && !is_floatt(t) && !pointer;
@@ -6128,6 +6165,23 @@ static void emit_stmt(Em* e, Node* s) {
                     }
                 }
                 em_err(e, s, "integer operand did not produce a scalar");
+                return;
+            }
+        }
+        if (pr >= 0 && is_floatt(t) && s->a->kind == N_BINARY && is_farith_op((TokKind)s->a->op)) {
+            Node* r = s->a; // x = a op b: the last operation targets x's register
+            SType* rt = node_ty(r->a);
+            if (rt && is_floatt(rt) && unwrap(rt)->prim == unwrap(t)->prim) {
+                int svf = e->vtf;
+                EV a, b;
+                int ra = fsrc_reg(e, r->a, &a);
+                int rb = fsrc_reg(e, r->b, &b);
+                if (a.cls != CLS_FP || b.cls != CLS_FP) {
+                    em_err(e, s, "float operand did not produce a float");
+                    return;
+                }
+                emit_farith_raw(e, (TokKind)r->op, (uint32_t)pr, (uint32_t)ra, (uint32_t)rb, unwrap(t)->prim == P_F64);
+                e->vtf = svf;
                 return;
             }
         }
