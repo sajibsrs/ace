@@ -114,8 +114,7 @@ These are baseline observations, not performance promises.
   use. A returned literal or tuple with packed sub-8-byte fields, a `(f64,
   bool)` tuple, or a call in a leaf is still built in a frame temp and reloaded,
   and `bool` locals and a string parameter's pointer and length stay in stack
-  slots inside loops. A multi-register return with a pending `defer` saves its
-  second register below the frame, so the deferred call overwrites it.
+  slots inside loops.
   `bench/calls.ace` measures it: the by-value 8- and 16-byte structs, the
   three-`f64` aggregate, and the tuple return run 1.8x to 8.5x noinline C
   `-O2`. Next: write returned registers directly into a local destination.

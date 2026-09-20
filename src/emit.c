@@ -5738,9 +5738,9 @@ static void emit_defers(Em* e, SType* ret) {
         for (int w = 0; w < rc.nunits; w++) {
             TU* u = &rc.units[w];
             if (u->kind == TU_XREG)
-                store_frame(e, u->reg, e->retsave_off + (uint32_t)w * 8, 8);
+                store_frame(e, u->reg, e->retsave_off - (uint32_t)w * 8, 8);
             else
-                store_frame_fp(e, u->reg, e->retsave_off + (uint32_t)w * 8,
+                store_frame_fp(e, u->reg, e->retsave_off - (uint32_t)w * 8,
                                u->size == 8);
         }
     }
@@ -5754,9 +5754,9 @@ static void emit_defers(Em* e, SType* ret) {
         for (int w = 0; w < rc.nunits; w++) {
             TU* u = &rc.units[w];
             if (u->kind == TU_XREG)
-                load_frame(e, u->reg, e->retsave_off + (uint32_t)w * 8, 8, 0);
+                load_frame(e, u->reg, e->retsave_off - (uint32_t)w * 8, 8, 0);
             else
-                load_frame_fp(e, u->reg, e->retsave_off + (uint32_t)w * 8,
+                load_frame_fp(e, u->reg, e->retsave_off - (uint32_t)w * 8,
                               u->size == 8);
         }
     }

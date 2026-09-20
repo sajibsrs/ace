@@ -1,0 +1,66 @@
+// expect-exit: 42
+// A pending defer keeps every result register of a multi-register return
+// intact: 16-byte integer aggregates, tuples, and HFAs, whether the value is
+// a literal or an existing local.
+
+Pair: struct {
+    a: usize,
+    b: usize,
+}
+
+Vec3: struct {
+    x: f64,
+    y: f64,
+    z: f64,
+}
+
+hits: usize
+
+clobber(a: usize, b: usize, c: f64, d: f64): usize {
+    hits = hits + a + b
+    return hits + usize(c) + usize(d)
+}
+
+pair(p: Pair): Pair {
+    defer clobber(90, 91, 1.5, 2.5)
+    return Pair {a = p.a + 1, b = p.b + 2}
+}
+
+pair_local(p: Pair): Pair {
+    defer clobber(90, 91, 1.5, 2.5)
+    r: Pair = Pair {a = p.a + 3, b = p.b + 4}
+    return r
+}
+
+tuple(a: usize, b: usize): (usize, usize) {
+    defer clobber(90, 91, 1.5, 2.5)
+    return a + 1, b + 2
+}
+
+vec(v: Vec3): Vec3 {
+    defer clobber(90, 91, 1.5, 2.5)
+    return Vec3 {x = v.x + 1.0, y = v.y + 2.0, z = v.z + 3.0}
+}
+
+main(): int {
+    p: Pair = pair(Pair {a = 1, b = 2})
+    if p.a != 2 || p.b != 4 {
+        return 1
+    }
+    l: Pair = pair_local(Pair {a = 1, b = 2})
+    if l.a != 4 || l.b != 6 {
+        return 2
+    }
+    x: usize, y: usize = tuple(10, 20)
+    if x != 11 || y != 22 {
+        return 3
+    }
+    v: Vec3 = vec(Vec3 {x = 1.0, y = 2.0, z = 3.0})
+    if v.x != 2.0 || v.y != 4.0 || v.z != 6.0 {
+        return 4
+    }
+    if hits != 4 * 181 {
+        return 5
+    }
+    return 42
+}

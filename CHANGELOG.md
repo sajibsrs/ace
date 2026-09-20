@@ -432,6 +432,10 @@ current normative rules, and Git preserves patch-level detail.
   Other shapes (packed sub-8-byte fields, missing fields, call-bearing leaves,
   sret) keep the temp path. `struct-8` 9.3 to 7.6, `struct-16` 9.8 to 7.5,
   `struct-hfa` 13.7 to 12.3, `tuple-return` 16.4 to 12.9 ns.
+- Fixed a multi-register return with a pending `defer` returning a corrupted
+  second register: `emit_defers` addressed save-area unit w above the slot
+  (`retsave_off + w * 8`), which fell below `sp`, instead of within it
+  (`retsave_off - w * 8`), so the deferred call's frame overwrote it.
 - Implemented `str` character/string operations and explicit
   `str.parse[T]` specializations in pure Ace where practical, with libc float
   conversion isolated in its selected target layer. `char` remains the
