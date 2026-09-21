@@ -287,8 +287,8 @@ choices that are not evident from the productions.
     before `*`, `[]`, or `string` it qualifies that view; otherwise parsing
     admits the relevant expression/call-site form and semantic analysis enforces
     the normative permission rules.
-11. Calls spelled `sizeof(` or `alignof(` parse their sole operand with the full
-    type grammar.
+11. Calls spelled `sizeof(`, `alignof(`, or `blank(` parse their sole operand with
+    the full type grammar.
 12. `offsetof(` parses a type, comma, and dot-separated field-name path.
     `static_assert` is additionally admitted in the top-level declaration list.
 13. A pointer or slice type is admitted as a primary only as the callee of its

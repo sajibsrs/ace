@@ -317,7 +317,7 @@ static void ck_err(Ck* k, Node* n, const char* fmt, ...) {
 }
 
 // `panic` and `assert` are reserved builtin names: no binding may take either
-// in any scope. Unlike them, sizeof/alignof/len/typeid are ordinary shadowable
+// in any scope. Unlike them, sizeof/alignof/len/typeid/blank are ordinary shadowable
 // names.
 static int is_panic_name(const char* name, uint32_t len) {
     return len == 5 && memcmp(name, "panic", 5) == 0;
@@ -3797,6 +3797,25 @@ static SType* check_call(Ck* k, Node* call) {
                     !ut_fits(k, call->kids[0], want->kind == SK_ENUM ? want : want->kind == SK_DISTINCT ? (is_int(want->base) ? want->base : st_prim(P_I64)) : want))
                     return T_ERR;
                 return want;
+            }
+            if (callee->len == 5 && memcmp(callee->str, "blank", 5) == 0) {
+                // blank(T): the canonical zero value of any laid-out type T
+                if (call->nkids != 1) {
+                    ck_err(k, call, "blank takes one type name");
+                    return T_ERR;
+                }
+                SType* t = build_type(k, call->kids[0]);
+                if (!t || t->kind == SK_ERR) return T_ERR;
+                if (t->kind == SK_FORWARD) {
+                    ck_err(k, call->kids[0], "type '%s' is not declared yet; blank requires its layout", type_name(t));
+                    return T_ERR;
+                }
+                if (t->kind == SK_ERROR_DOMAIN) {
+                    ck_err(k, call->kids[0], "error-domain names have no value layout; use Error");
+                    return T_ERR;
+                }
+                if (!layout(t)) return T_ERR;
+                return t;
             }
             if (callee->len == 6 && memcmp(callee->str, "sizeof", 6) == 0) {
                 if (call->nkids == 1) {

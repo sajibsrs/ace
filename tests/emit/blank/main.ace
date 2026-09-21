@@ -1,0 +1,35 @@
+/* blank(T) is the canonical zero value of any type: the all-bits-zero
+ * representation of scalars, floats, strings, slices, arrays, structs, enums,
+ * distinct types, pointers, and Error, inside and outside generic bodies.
+ */
+
+// expect-exit: 0
+
+P: struct { a: int, b: f64, c: string }
+Color: enum { red, green }
+Id: distinct u32
+
+zero_of[T](): T { return blank(T) }
+
+main(): int {
+    r: int = 0
+    if zero_of[int]() != 0 { r += 1 }
+    if zero_of[f64]() != 0.0 { r += 2 }
+    if zero_of[f32]() != 0.0 { r += 4 }
+    if zero_of[bool]() { r += 8 }
+    p: P = zero_of[P]()
+    if p.a != 0 || p.b != 0.0 || p.c.len != 0 { r += 16 }
+    s: string = zero_of[string]()
+    if s.len != 0 { r += 32 }
+    if zero_of[Color]() != Color.red { r += 64 }
+    if zero_of[Id]() != Id(0) { r += 128 }
+    e: Error = zero_of[Error]()
+    if e != null { r += 256 }
+    q: *int = blank(*int)
+    if q != null { r += 512 }
+    sl: []u8 = blank([]u8)
+    if sl.len != 0 { r += 1024 }
+    arr: [4]int = blank([4]int)
+    if arr[3] != 0 { r += 2048 }
+    return r
+}

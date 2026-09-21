@@ -4501,6 +4501,28 @@ static EV gen_call(Em* e, Node* call) {
         load_imm(e, 1, xreg(t), call->ival);
         return (EV){ CLS_INT, t };
     }
+    // blank builtin: the canonical zero of the stamped type, no runtime work
+    if (callee->kind == N_IDENT && !call->sym && callee->len == 5 && memcmp(callee->str, "blank", 5) == 0) {
+        SType* t = node_ty(call);
+        if (is_floatt(t)) {
+            int vt = tmp_fp(e);
+            load_f64(e, unwrap(t)->prim == P_F64, vreg(vt), 0.0);
+            return (EV){ CLS_FP, vt };
+        }
+        if (is_scalar(t)) {
+            int it = tmp_int(e);
+            load_imm(e, 1, xreg(it), 0);
+            return (EV){ CLS_INT, it };
+        }
+        uint32_t size = ty_size(t);
+        uint32_t off = temp_slot(e, size ? size : 8, 8);
+        int it = tmp_int(e);
+        frame_addr(e, 16, off);
+        for (uint32_t o = 0; o < size; o += 8)
+            st_reg(e, 31, 16, o, o + 8 <= size ? 8 : size - o);
+        frame_addr(e, xreg(it), off);
+        return (EV){ CLS_ADDR, it };
+    }
     // alignof builtin (constant folded by sema)
     if (callee->kind == N_IDENT && !call->sym && callee->len == 7 && memcmp(callee->str, "alignof", 7) == 0) {
         int t = tmp_int(e);
@@ -7157,7 +7179,7 @@ static int call_is_inline(Node* call) {
         SType* ct = node_ty(callee);
         if ((cs && cs->kind == SYM_TYPE) || (ct && ct->kind != SK_FUNC)) return 1;
         static const char* const names[] = {
-            "typeid", "sizeof", "alignof", "offsetof", "static_assert",
+            "typeid", "sizeof", "alignof", "blank", "offsetof", "static_assert",
             "assert", "panic",
         };
         for (size_t i = 0; i < sizeof names / sizeof names[0]; i++)

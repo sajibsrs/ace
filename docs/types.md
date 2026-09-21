@@ -351,6 +351,20 @@ pointer, calling a zero function, or dispatching through a zero contract is
 invalid. A zero `Error` is success and exposes zero domain/code bits. When zero is ordinary application data,
 represent presence explicitly with a struct containing a `present: bool` field.
 
+`blank(T)` spells the all-bits-zero value of any type, including a generic type
+parameter where `null` and literals cannot: `0` for `int`, `0.0` for floats,
+`false` for `bool`, and an all-zero struct, array, slice, or string. It takes one
+type in the full type grammar and does no work beyond zero-filling. It is a
+filler, not a marker of absence, so a function that has nothing to return
+pairs it with an `Error`:
+
+```ace
+pop(): (T, Error) {
+    if self.len == 0 { return blank(T), ArrayErr.empty }
+    ...
+}
+```
+
 The current bootstrap has checked/release emission modes for sequence bounds,
 but null-use diagnostics have not landed; invalid zero operations therefore
 still follow the unchecked path.

@@ -1,0 +1,6 @@
+/* err: blank(T) has type T, so it cannot initialize another type. */
+
+main(): int {
+    x: string = blank(int)
+    return x.len
+}

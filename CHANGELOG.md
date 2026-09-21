@@ -1523,6 +1523,10 @@ current normative rules, and Git preserves patch-level detail.
 - Renamed `mem.adjust[T]` to `mem.grow[T]`, which states what it does; the
   signature and behavior are unchanged, and every `std`, `pkg`, and demo caller
   now uses the new name.
+- Added the `blank(T)` builtin, the canonical zero of any type including a
+  generic type parameter. Sema resolves the operand as a type (parsed with the
+  full type grammar like `sizeof`) and types the call as `T`; the emitter
+  zero-fills a register or frame temp, so it costs nothing beyond the fill.
 
 ## Current frontier
 

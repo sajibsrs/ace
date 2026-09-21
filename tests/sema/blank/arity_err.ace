@@ -1,0 +1,6 @@
+/* err: blank takes exactly one type. */
+
+main(): int {
+    x: int = blank()
+    return x
+}
