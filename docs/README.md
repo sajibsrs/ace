@@ -35,7 +35,8 @@ must be corrected.
 - [`http`](http.md) — HTTP/1.1 framing and blocking client/server, the first
   standalone package under [`pkg/`](../pkg).
 - [`json`](json.md) — whole-document RFC 8259 parsing into a tagged `Json`
-  value owned by a `Parser`, and formatting back into caller storage.
+  value owned by a `Parser`, and a `Formatter` that writes JSON from runtime
+  data into a buffer it owns.
 
 ## Tooling
 

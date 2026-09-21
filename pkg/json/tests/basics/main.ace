@@ -231,6 +231,39 @@ accumulate(): int {
     return 0
 }
 
+/* `reset` invalidates earlier trees but keeps the storage, and the parser
+ * parses again, including a larger document than any before it.
+ */
+reuse(): int {
+    p: json.Parser = json.parser_new()
+    defer json.parser_wipe(mut p)
+
+    for i: int in 0 .. 3 {
+        v: json.Json, err: Error = mut p.parse("[1, {\"k\": \"v\"}, [true, null]]")
+
+        if err != null { return 70 }
+
+        switch v {
+            json.Json.array(items: []json.Json) {
+                if items.len != 3 { return 71 }
+            }
+            default { return 72 }
+        }
+        mut p.reset()
+    }
+    big: json.Json, berr: Error = mut p.parse("[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]")
+
+    if berr != null { return 73 }
+
+    switch big {
+        json.Json.array(items: []json.Json) {
+            if items.len != 20 { return 74 }
+        }
+        default { return 75 }
+    }
+    return 0
+}
+
 main(): int {
     code: int = scalars()
     if code != 0 { return 100 + code }
@@ -242,5 +275,7 @@ main(): int {
     if code != 0 { return 400 + code }
     code = accumulate()
     if code != 0 { return 500 + code }
+    code = reuse()
+    if code != 0 { return 600 + code }
     return 0
 }

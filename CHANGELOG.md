@@ -1498,6 +1498,23 @@ current normative rules, and Git preserves patch-level detail.
   now `ParseErr`, beside `FormatErr`, with `depth_exceeded` shortened to
   `depth`; it and the parser live in `inc/parsing.ace`, and `inc/value.ace`
   became `inc/document.ace`, holding only `Json` and `Pair`.
+- Added `json.Formatter` to `pkg/json` and removed the free `json.format`,
+  which could only serialize a finished `Json` tree and so could not produce
+  JSON from runtime data. `json.formatter_new()` and `json.formatter_wipe(mut
+  formatter)` pair like `parser_new` and `parser_wipe`. The formatter is the
+  earlier streaming state machine (one kind bit per open container, sticky
+  first error) writing into a buffer it owns and grows from 256 bytes, with
+  `value` and `field` overloads for `bool`, `int`, `uint`, `usize`, `f64`,
+  `string`, and `Json`, so integers keep their exact digits. `finish()`
+  returns the borrowed text. `FormatErr` is now `allocation`, `depth`,
+  `number`, and `structure`; `capacity` is gone because the buffer grows. A
+  formatter holds one document at a time and `reset` starts the next, keeping
+  the buffer. `Parser.reset` likewise drops every tree but keeps its blocks,
+  reusing any that is large enough, so results of both types are valid until
+  `reset` or `wipe`. On 139-byte documents reuse cut parse time from 2.73 to
+  2.07 us (24%) and format time from 1.68 to 1.55 us (8%). Added
+  `demo/json-format-file`, which formats runtime-computed records and writes
+  them to a file.
 
 ## Current frontier
 

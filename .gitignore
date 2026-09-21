@@ -4,6 +4,7 @@
 /tests/package_cli/*/build/
 /tests/package_cli/*/*/build/
 /demo/*/build/
+/demo/*/output.json
 /pkg/*/build/
 /pkg/*/tests/*/build/
 .DS_Store

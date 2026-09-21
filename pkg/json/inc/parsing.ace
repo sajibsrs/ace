@@ -40,12 +40,15 @@ Block: struct {
 }
 
 /* Owns the storage of every tree it parses. A returned `Json` borrows from
- * the parser and is valid until `parser_wipe`; trees accumulate until then.
- * `bytes`, `items`, and `pairs` are the block the current parse fills, and
- * `stack` and `pstack` hold finished children until their container closes.
+ * the parser and is valid until `reset` or `parser_wipe`; trees accumulate
+ * until then. `blocks` holds `kept` allocated blocks, of which `count` are in
+ * use since the last `reset`. `bytes`, `items`, and `pairs` are the block the
+ * current parse fills, and `stack` and `pstack` hold finished children until
+ * their container closes.
  */
 pub Parser: struct {
     blocks: mut []Block = null,
+    kept: usize,
     count: usize,
     bytes: mut []u8 = null,
     items: mut []Json = null,
@@ -62,12 +65,12 @@ pub Parser: struct {
 }
 
 pub parser_new(): Parser {
-    return Parser{count = 0, bat = 0, iat = 0, pat = 0, sat = 0, psat = 0, at = 0}
+    return Parser{kept = 0, count = 0, bat = 0, iat = 0, pat = 0, sat = 0, psat = 0, at = 0}
 }
 
 /* Releases every tree the parser produced. Call once none is still in use. */
 pub parser_wipe(mut parser: Parser) {
-    for i: usize in 0 .. parser.count {
+    for i: usize in 0 .. parser.kept {
         mem.release[u8](mut parser.blocks[i].bytes)
         mem.release[Json](mut parser.blocks[i].items)
         mem.release[Pair](mut parser.blocks[i].pairs)
@@ -75,12 +78,26 @@ pub parser_wipe(mut parser: Parser) {
     mem.release[Block](mut parser.blocks)
     mem.release[Json](mut parser.stack)
     mem.release[Pair](mut parser.pstack)
+    parser.kept = 0
     parser.count = 0
     parser.bytes = null
     parser.items = null
     parser.pairs = null
     parser.sat = 0
     parser.psat = 0
+}
+
+/* Drops every tree the parser produced but keeps its storage, so the next
+ * parses reuse the blocks that are large enough. Every `Json` from before is
+ * invalid afterwards.
+ */
+pub mut Parser.reset() {
+    self.count = 0
+    self.bytes = null
+    self.items = null
+    self.pairs = null
+    self.sat = 0
+    self.psat = 0
 }
 
 /* Parses the complete text as one JSON value. Trailing non-whitespace bytes
@@ -116,31 +133,41 @@ pub mut Parser.parse(text: string): (Json, Error) {
     return result, null
 }
 
-/* Allocates this parse's block and records it before anything is written, so
- * a later failure still leaves it owned by the parser. The sizes are bounds,
- * not counts: an array element owns its first byte and its trailing `,` or
- * `]`, and an object member owns its key's two quotes, its `:`, and its
- * trailing `,` or `}`, so text of n bytes holds at most n / 2 elements and
- * n / 4 members.
+/* Takes this parse's block, reusing a kept one that is large enough, and
+ * records it before anything is written, so a later failure still leaves it
+ * owned by the parser. The sizes are bounds, not counts: an array element owns
+ * its first byte and its trailing `,` or `]`, and an object member owns its
+ * key's two quotes, its `:`, and its trailing `,` or `}`, so text of n bytes
+ * holds at most n / 2 elements and n / 4 members.
  */
 mut Parser.reserve(): Error {
     items: usize = self.text.len / 2 + 1
     members: usize = self.text.len / 4 + 1
-    grown: mut []Block, ok: bool = mem.adjust[Block](self.blocks, self.count + 1)
-
-    if !ok {
-        return ParseErr.allocation
-    }
-    self.blocks = grown
     at: usize = self.count
-    self.count += 1
-    self.blocks[at] = Block{}
-    self.blocks[at].bytes = mem.alloc[u8](self.text.len)
-    self.blocks[at].items = mem.alloc[Json](items)
-    self.blocks[at].pairs = mem.alloc[Pair](members)
 
-    if self.blocks[at].bytes == null || self.blocks[at].items == null || self.blocks[at].pairs == null {
-        return ParseErr.allocation
+    if at == self.kept {
+        grown: mut []Block, ok: bool = mem.adjust[Block](self.blocks, at + 1)
+
+        if !ok {
+            return ParseErr.allocation
+        }
+        self.blocks = grown
+        self.blocks[at] = Block{}
+        self.kept += 1
+    }
+    self.count += 1
+
+    if self.blocks[at].bytes.len < self.text.len || self.blocks[at].items.len < items || self.blocks[at].pairs.len < members {
+        mem.release[u8](mut self.blocks[at].bytes)
+        mem.release[Json](mut self.blocks[at].items)
+        mem.release[Pair](mut self.blocks[at].pairs)
+        self.blocks[at].bytes = mem.alloc[u8](self.text.len)
+        self.blocks[at].items = mem.alloc[Json](items)
+        self.blocks[at].pairs = mem.alloc[Pair](members)
+
+        if self.blocks[at].bytes == null || self.blocks[at].items == null || self.blocks[at].pairs == null {
+            return ParseErr.allocation
+        }
     }
     self.bytes = self.blocks[at].bytes
     self.items = self.blocks[at].items

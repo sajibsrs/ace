@@ -1,0 +1,91 @@
+/* Formats runtime-computed readings with pkg/json and writes the text to
+ * output.json.
+ *
+ * output.json is created relative to the current working directory, not to
+ * this source file, so run from this directory:
+ *   ace pkg run
+ */
+
+import fmt
+import json
+import sys
+
+PATH: string = "output.json"
+
+/* 0644: the owner reads and writes, everyone else reads. */
+MODE: u32 = 0x1A4
+
+SENSORS: [4]string = ["north", "east", "south", "west"]
+
+Reading: struct {
+    sensor: string,
+    sample: int,
+    celsius: f64,
+    ok: bool,
+}
+
+/* Each type writes itself: the compiler picks the value overload from each
+ * field's type, so the call sites name no JSON types.
+ */
+write_reading(mut f: json.Formatter, r: Reading) {
+    mut f.object()
+    mut f.field("sensor", r.sensor)
+    mut f.field("sample", r.sample)
+    mut f.field("celsius", r.celsius)
+    mut f.field("ok", r.ok)
+    mut f.end()
+}
+
+/* Writes all of `data`, retrying short writes, and returns the bytes written. */
+write_all(fd: sys.Fd, data: []u8): (usize, Error) {
+    sent: usize = 0
+
+    for sent < data.len {
+        n: int, err: Error = sys.write(fd, data[sent..])
+
+        if err != null || n == 0 {
+            return sent, err
+        }
+        sent += usize(n)
+    }
+    return sent, null
+}
+
+main(): int {
+    count: int = 12
+    f: json.Formatter = json.formatter_new()
+    defer json.formatter_wipe(mut f)
+    mut f.array()
+
+    for i: int in 0 .. count {
+        reading: Reading = Reading{
+            sensor = SENSORS[i % 4],
+            sample = i,
+            celsius = 15.0 + 1.5 * f64(i),
+            ok = i % 5 != 0,
+        }
+        write_reading(mut f, reading)
+    }
+    mut f.end()
+    text: string, ferr: Error = f.finish()
+
+    if ferr != null {
+        fmt.printf("failed to format: error %d\n", int(ferr.code))
+        return 1
+    }
+    fd: sys.Fd, oerr: Error = sys.open(PATH, sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC, MODE)
+    defer sys.close(fd)
+
+    if oerr != null {
+        fmt.printf("failed to open %s: error %d\n", PATH, int(oerr.code))
+        return 1
+    }
+    sent: usize, werr: Error = write_all(fd, text)
+
+    if werr != null || sent != text.len {
+        fmt.printf("failed to write %s\n", PATH)
+        return 1
+    }
+    fmt.printf("wrote %d bytes to %s:\n%s\n", int(text.len), PATH, text)
+    return 0
+}
