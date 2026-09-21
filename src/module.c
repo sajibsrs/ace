@@ -387,6 +387,7 @@ static void mark_math_intrinsics(Loader* L, Module* m) {
         if (text_is(n->str, n->len, "sqrt")) n->ival = BI_MATH_SQRT;
         else if (text_is(n->str, n->len, "floor")) n->ival = BI_MATH_FLOOR;
         else if (text_is(n->str, n->len, "ceil")) n->ival = BI_MATH_CEIL;
+        else if (text_is(n->str, n->len, "fma")) n->ival = BI_MATH_FMA;
     }
 }
 

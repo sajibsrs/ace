@@ -1710,8 +1710,13 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
         int math_exact = f->ival >= BI_MATH_SQRT && f->ival <= BI_MATH_CEIL &&
             ft->nparams == 1 && p && r && p->kind == SK_PRIM && r->kind == SK_PRIM &&
             p->prim == r->prim && (p->prim == P_F32 || p->prim == P_F64);
+        int math_fused = f->ival == BI_MATH_FMA && ft->nparams == 3 && ip && r &&
+            ip->kind == SK_PRIM && r->kind == SK_PRIM && r->prim == ip->prim &&
+            (ip->prim == P_F32 || ip->prim == P_F64) &&
+            ft->params[1]->kind == SK_PRIM && ft->params[1]->prim == ip->prim &&
+            ft->params[2]->kind == SK_PRIM && ft->params[2]->prim == ip->prim;
         if (!(from64 || from32 || to64 || to32 || load64 || bit_count ||
-              bit_transform || bit_rotate || math_exact))
+              bit_transform || bit_rotate || math_exact || math_fused))
             ck_err(k, f, "intrinsic declaration '%.*s' does not match a compiler-provided signature",
                    (int)f->len, f->str);
     }

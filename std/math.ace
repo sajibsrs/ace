@@ -22,6 +22,9 @@ pub floor(value: f32): f32 intrinsic
 pub ceil(value: f64): f64 intrinsic
 pub ceil(value: f32): f32 intrinsic
 
+pub fma(a: f64, b: f64, c: f64): f64 intrinsic
+pub fma(a: f32, b: f32, c: f32): f32 intrinsic
+
 LN2_HI: const f64 = 6.93147180369123816490e-01
 LN2_LO: const f64 = 1.90821492927058770002e-10
 INV_LN2: const f64 = 1.44269504088896338700e+00

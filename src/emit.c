@@ -4317,6 +4317,16 @@ static void emit_math_exact(Em* e, int intrinsic, int is64, int reg) {
     ins(e, op | (is64 ? 0x00400000u : 0u) | ((uint32_t)reg << 5) | (uint32_t)reg);
 }
 
+/* fmadd: a*b + c rounded once, single or double, on physical FP registers. */
+static void emit_math_fused_raw(Em* e, uint32_t rd, uint32_t ra, uint32_t rb, uint32_t rc, int is64) {
+    ins(e, (is64 ? 0x1F400000u : 0x1F000000u) | (rb << 16) | (rc << 10) | (ra << 5) | rd);
+}
+
+static void emit_math_fused(Em* e, int dst, int a, int b, int c, int is64) {
+    emit_math_fused_raw(e, (uint32_t)vreg(dst), (uint32_t)vreg(a), (uint32_t)vreg(b),
+                        (uint32_t)vreg(c), is64);
+}
+
 static EV gen_call(Em* e, Node* call) {
     Node* callee = call->a;
 
@@ -4546,6 +4556,14 @@ static EV gen_call(Em* e, Node* call) {
         EV value = gen_expr(e, call->kids[0]);
         emit_math_exact(e, intrinsic->decl->ival, unwrap(node_ty(call))->prim == P_F64, vreg(value.idx));
         return value;
+    }
+    if (intrinsic && intrinsic->decl && intrinsic->decl->ival == BI_MATH_FMA) {
+        EV a = gen_expr(e, call->kids[0]);
+        EV b = gen_expr(e, call->kids[1]);
+        EV c = gen_expr(e, call->kids[2]);
+        emit_math_fused(e, a.idx, a.idx, b.idx, c.idx, unwrap(node_ty(call))->prim == P_F64);
+        e->vtf = a.idx + 1; // free b and c
+        return a;
     }
     if (intrinsic && intrinsic->decl && intrinsic->decl->ival == BI_BITS_TO_FLOAT) {
         EV bits = gen_expr(e, call->kids[0]);
@@ -7132,7 +7150,7 @@ static int call_is_inline(Node* call) {
         return 1;
     default:
         return (bi >= BI_BITS_POP_COUNT && bi <= BI_BITS_ROTATE_RIGHT) ||
-               (bi >= BI_MATH_SQRT && bi <= BI_MATH_CEIL);
+               (bi >= BI_MATH_SQRT && bi <= BI_MATH_FMA);
     }
 }
 
@@ -7547,6 +7565,8 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
             emit_bits_integer(e, f->ival, scalar_bits(pt[0]), 0, 1, 0);
         } else if (f->ival >= BI_MATH_SQRT && f->ival <= BI_MATH_CEIL) {
             emit_math_exact(e, f->ival, unwrap(pt[0])->prim == P_F64, 0);
+        } else if (f->ival == BI_MATH_FMA) {
+            emit_math_fused_raw(e, 0, 0, 1, 2, unwrap(pt[0])->prim == P_F64); // fmadd d0,d0,d1,d2
         }
         emit_epilogue(e);
         e->ended_return = 1;

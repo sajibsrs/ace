@@ -153,8 +153,9 @@ These are baseline observations, not performance promises.
   still copy promoted operands into temps; comparing the promoted registers in
   place measured 1.63 to 1.32 ns per iteration (19%) on a loop with two
   compares. `x = x * 0.5 + 1.0` runs 2.7 ns against C's 1.7 because C fuses it
-  into one `fmadd` (1.6 ns), not because of its constants. Whether Ace may fuse
-  a multiply and add, which changes rounding, is undecided.
+  into one `fmadd` (1.6 ns), not because of its constants. Ace does not contract
+  a multiply and add, since that changes rounding; `math.fma` is the explicit
+  spelling.
 - **Hot-loop codegen gap** [new] — game and graphics kernels over global arrays
   run 1.1x (dot product) to 8x (by-value `Vec3` calls) scalar C `-O2` with
   vectorization off, and 2x to 30x C's NEON auto-vectorized output, which Ace

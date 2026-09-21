@@ -670,6 +670,13 @@ current normative rules, and Git preserves patch-level detail.
   `pow(-inf, 0.5)` keep the general path). Results are correctly rounded and
   agree with the kernel within 1 ULP over 8M operands; the general path shows no
   measurable cost, and these exponents run at about 7 ns against 49 ns (`f64`).
+- Added `math.fma` for `f32` and `f64` as a compiler-provided intrinsic
+  (`BI_MATH_FMA`) lowering to `fmadd`: `a * b + c` with one rounding of the
+  exact product and sum. The three existing math intrinsics are one-operand and
+  write their result in place, so the three-operand form needed its own
+  signature clause in `sema.c`, its own emitter, and its own inline expansion,
+  which evaluates the operands into FP temps and frees the last two. An
+  ordinary `a * b + c` stays two instructions: nothing contracts it.
 - Restructured both `math.pow` kernels around the emitter's register promotion,
   which gives callee-saved float registers only to named locals used at least
   twice: a local that misses out costs a store where it is set and a load at

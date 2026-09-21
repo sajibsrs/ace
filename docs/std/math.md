@@ -39,9 +39,20 @@ up: f32 = math.ceil(single)     // toward positive infinity
 - `floor(value)` and `ceil(value)` round to an integral float. Zeros,
   infinities, and integral values are unchanged, and a NaN stays a NaN.
 
-They are compiler-provided instructions (`fsqrt`, `frintm`, `frintp`): no
-allocation, no libm call, no errno or flag. Converting the result to an integer
-remains an explicit cast.
+`math.fma(a, b, c)` is the fused multiply-add of the same family: it returns
+`a * b + c` with one rounding of the exact product and sum, both widths.
+
+```ace
+residual: f64 = math.fma(a, b, -(a * b))   // the part a * b lost to rounding
+```
+
+An ordinary `a * b + c` is never contracted into a fused operation, so the two
+spellings are different computations and each keeps the value its own text
+states. `fma(inf, 0, c)` is a NaN, since the exact product is undefined.
+
+They are compiler-provided instructions (`fsqrt`, `frintm`, `frintp`,
+`fmadd`): no allocation, no libm call, no errno or flag. Converting the result
+to an integer remains an explicit cast.
 
 Exponential, logarithm, power, sine, and cosine are `f32` and `f64` overloads
 that return their operands' type:

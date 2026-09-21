@@ -204,6 +204,7 @@ enum {
     BI_MATH_SQRT = 29,      // math.sqrt/floor/ceil: exact f32/f64 -> same type
     BI_MATH_FLOOR = 30,
     BI_MATH_CEIL = 31,
+    BI_MATH_FMA = 32,       // math.fma(a, b, c): a*b + c with one rounding
 };
 
 enum {
