@@ -125,9 +125,20 @@ These are baseline observations, not performance promises.
   for the whole body even when it is live for four instructions at the end.
   The same accounting makes recomputing a cheap register-only expression, and
   nesting a single-use value rather than naming it, the idioms that win in
-  `std/math`. Candidate: live ranges, or at minimum letting disjoint locals
-  share a register; it needs the same per-call liveness the caller-saved item
-  above wants.
+  `std/math`. Where it pays is the code that is actually starved: `pow` itself
+  saturates its sixteen float registers but loses only two candidates, both at
+  the minimum weight, while `math`'s `reduce_large` loses fifteen integer
+  locals and `float_shortest`'s `binary64` and `binary32` lose sixteen and
+  eighteen. Candidate: live ranges, or at minimum letting disjoint locals share
+  a register; it needs the same per-call liveness the caller-saved item above
+  wants.
+- **Wrapper calls cost a float spill** [new] — since promoted floats reach
+  `d24-d31`, which are caller-saved, every branch-with-link stores and reloads
+  them. A one-line dispatcher between two callers and two callees is therefore
+  not free: deleting `math`'s `reduce` was worth 28% of `sin`. Candidate: spill
+  only the promoted registers a call actually crosses, which needs the same
+  per-call liveness; until then, prefer folding a thin wrapper into its callers
+  in hot code.
 - **Call and tuple-return plumbing** [new] — incoming aggregate parameters
   other than the read-only, leaf-read HFA and 8-byte-integer-leaf struct
   parameters of a call-free function (a parameter in a function with calls, a
@@ -280,7 +291,16 @@ foundations.
   register ceiling, so its source-level lever is spent; what is left for it is
   the promotion and constant-materialization items in the compiler band above.
   Table-driven `exp`, `log`, `sin`, and `cos` are the same design applied to
-  the remaining fdlibm-class gaps.
+  the remaining fdlibm-class gaps, and are the next step for `exp` and `log`:
+  neither is register-starved, so what is left in them is algorithmic. `exp`
+  carries a division on its dependent chain and a five-term polynomial, `log` a
+  seven-term one, while `pow` already performs a table-driven logarithm and
+  exponential together in 23 ns over the two 128-entry tables in
+  `std/@/pow_tables.ace`, which a rewrite would reuse as they stand. `sin` and
+  `cos` would need their own tables and stay behind those two. Separately,
+  `reduce_large` loses fifteen integer locals to the promotion limit and
+  extracts its fraction one bit at a time, which is what makes arguments beyond
+  1.6e6 cost about 595 ns.
 - **Random source** [new].
 
 ## 5. Language questions and conveniences
