@@ -58,7 +58,6 @@ PIO2_3: const f64 = 2.02226624871116645580e-21
 PIO2_3T: const f64 = 8.47842766036889956997e-32
 PIO2_A: const f64 = 1.5707963267948966
 PIO2_B: const f64 = 6.123233995736766e-17
-SPLIT: const f64 = 134217729.0
 
 SIN_S1: const f64 = -1.66666666666666324348e-01
 SIN_S2: const f64 = 8.33333333332248946124e-03
@@ -440,14 +439,14 @@ pub pow(x: f32, y: f32): f32 {
 kernel_sin(x: f64, y: f64, tail: bool): f64 {
     z: f64 = x * x
     v: f64 = z * x
-    r: f64 = SIN_S2 + z * (SIN_S3 + z * (SIN_S4 + z * (SIN_S5 + z * SIN_S6)))
-    if !tail { return x + v * (SIN_S1 + z * r) }
+    r: f64 = fma(z, fma(z, fma(z, fma(z, SIN_S6, SIN_S5), SIN_S4), SIN_S3), SIN_S2)
+    if !tail { return fma(v, fma(z, r, SIN_S1), x) }
     return x - ((z * (0.5 * y - v * r) - y) - v * SIN_S1)
 }
 
 kernel_cos(x: f64, y: f64): f64 {
     z: f64 = x * x
-    r: f64 = z * (COS_C1 + z * (COS_C2 + z * (COS_C3 + z * (COS_C4 + z * (COS_C5 + z * COS_C6)))))
+    r: f64 = z * fma(z, fma(z, fma(z, fma(z, fma(z, COS_C6, COS_C5), COS_C4), COS_C3), COS_C2), COS_C1)
     magnitude: f64 = x
     if x < 0.0 { magnitude = -x }
     if magnitude < 0.3 { return 1.0 - (0.5 * z - (z * r - x * y)) }
@@ -456,8 +455,7 @@ kernel_cos(x: f64, y: f64): f64 {
         // x/4 truncated to its high word, so the subtraction below stays exact.
         qx = bits.to_float(((bits.from_float(magnitude) >> 32) - u64(0x00200000)) << 32)
     }
-    hz: f64 = 0.5 * z - qx
-    return (1.0 - qx) - (hz - (z * r - x * y))
+    return (1.0 - qx) - ((0.5 * z - qx) - (z * r - x * y))
 }
 
 exponent_field(x: f64): int { return int((bits.from_float(x) >> 52) & u64(0x7FF)) }
@@ -466,7 +464,7 @@ exponent_field(x: f64): int { return int((bits.from_float(x) >> 52) & u64(0x7FF)
 reduce_medium(x: f64): (f64, f64, int) {
     n: int = int(x * INV_PIO2 + 0.5)
     fn: f64 = f64(n)
-    r: f64 = x - fn * PIO2_1
+    r: f64 = fma(-fn, PIO2_1, x)
     w: f64 = fn * PIO2_1T
     a: f64 = r - w
     j: int = exponent_field(x)
@@ -490,17 +488,6 @@ reduce_medium(x: f64): (f64, f64, int) {
 bit_at(limbs: []u64, k: int): u64 {
     if k < 0 || k >= 320 { return 0 }
     return (limbs[usize(k / 32)] >> u64(k % 32)) & 1
-}
-
-/* Low part of the exact product a * b, given p = a * b rounded (Dekker). */
-product_error(a: f64, b: f64, p: f64): f64 {
-    ta: f64 = SPLIT * a
-    ah: f64 = ta - (ta - a)
-    al: f64 = a - ah
-    tb: f64 = SPLIT * b
-    bh: f64 = tb - (tb - b)
-    bl: f64 = b - bh
-    return ((ah * bh - p) + ah * bl + al * bh) + al * bl
 }
 
 /* Payne-Hanek reduction for x >= 2^20 * pi/2. With x = m * 2^e (m a 53-bit
@@ -562,23 +549,11 @@ reduce_large(x: f64): (f64, f64, int) {
     fl: f64 = f64(low_bits) * bits.to_float(u64(1023 + top - 105 - fraction_bits) << 52)
     // (fh + fl) * pi/2 as a double-double, using pi/2 = A + B + (C, negligible).
     p: f64 = fh * PIO2_A
-    t: f64 = product_error(fh, PIO2_A, p) + (fh * PIO2_B + fl * PIO2_A)
+    t: f64 = fma(fh, PIO2_A, -p) + (fh * PIO2_B + fl * PIO2_A)
     y0: f64 = p + t
     y1: f64 = t - (y0 - p)
     if negative { return -y0, -y1, quotient & 3 }
     return y0, y1, quotient & 3
-}
-
-reduce(x: f64): (f64, f64, int) {
-    y0: f64 = 0.0
-    y1: f64 = 0.0
-    quarter: int = 0
-    if x < MEDIUM_LIMIT {
-        y0, y1, quarter = reduce_medium(x)
-    } else {
-        y0, y1, quarter = reduce_large(x)
-    }
-    return y0, y1, quarter
 }
 
 pub sin(value: f64): f64 {
@@ -589,7 +564,14 @@ pub sin(value: f64): f64 {
         if magnitude < SMALL_ARGUMENT { return value }
         return kernel_sin(value, 0.0, false)
     }
-    y0: f64, y1: f64, quarter: int = reduce(magnitude)
+    y0: f64 = 0.0
+    y1: f64 = 0.0
+    quarter: int = 0
+    if magnitude < MEDIUM_LIMIT {
+        y0, y1, quarter = reduce_medium(magnitude)
+    } else {
+        y0, y1, quarter = reduce_large(magnitude)
+    }
     result: f64 = 0.0
     if quarter == 0 {
         result = kernel_sin(y0, y1, true)
@@ -614,7 +596,14 @@ pub cos(value: f64): f64 {
         if magnitude < SMALL_ARGUMENT { return 1.0 }
         return kernel_cos(magnitude, 0.0)
     }
-    y0: f64, y1: f64, quarter: int = reduce(magnitude)
+    y0: f64 = 0.0
+    y1: f64 = 0.0
+    quarter: int = 0
+    if magnitude < MEDIUM_LIMIT {
+        y0, y1, quarter = reduce_medium(magnitude)
+    } else {
+        y0, y1, quarter = reduce_large(magnitude)
+    }
     if quarter == 0 { return kernel_cos(y0, y1) }
     if quarter == 1 { return -kernel_sin(y0, y1, true) }
     if quarter == 2 { return -kernel_cos(y0, y1) }

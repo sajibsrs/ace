@@ -691,6 +691,28 @@ current normative rules, and Git preserves patch-level detail.
   unchanged at 0.8025 ULP for `exp` and 0.7517 ULP for `log`; 12 results move at
   all, none past 0.7 ULP, and each of `exp`'s seven lands closer to the exact
   value than before.
+- Gave `sin` and `cos` the same treatment, and folded away the `reduce`
+  dispatcher: `sin` and `cos` now choose between Cody-Waite and Payne-Hanek
+  reduction themselves. That wrapper was one call deep and returned a
+  three-value tuple, and since float promotion reaches `d24-d31` every call
+  spills and reloads those registers, so removing the layer was worth 28 per
+  cent of `sin` on its own while leaving every result bit-identical. On top of
+  it, both kernel polynomials moved to `math.fma`, `kernel_cos`'s single-use
+  `hz` folded into its one use, `reduce_medium`'s leading Cody-Waite product
+  fused (`fn * PIO2_1` is exact, so `r` cannot change), and `product_error`
+  disappeared: the low part of a product is by definition `fma(a, b, -p)`, one
+  instruction where Dekker's splitting took eleven, which also retires the
+  `SPLIT` constant. In the Cody-Waite band `sin` fell from 39.0 to 29.0 ns and
+  `cos` from 38.2 to 27.6 ns, below pi/4 from 13.4 to 13.1 and 15.8 to 11.5 ns,
+  and beyond 1.6e6 from 607 to 595 ns; the dependent chains fell about a fifth.
+  Against an exact reference built from Machin's pi and Taylor series, over
+  57,000 arguments spanning the finite domain and 24,000 of them placed within
+  a few ULP of a multiple of pi/2 where the reduced argument cancels hardest,
+  the worst case is unchanged at 0.7871 ULP for `sin` and 0.7884 ULP for `cos`;
+  only `sin` moves at all, on 96 of 33,000, and lands closer to the exact value
+  on 66 of those. Reassociating the kernels' accurate-tail expression onto
+  `fma` was measured too and rejected: it bought nothing and pushed the worst
+  case to 1.48 ULP, past the documented bound.
 - Widened float register promotion past the callee-saved eight: `d24-d31`,
   which nothing else reserves between statements, now take up to eight more
   promoted locals. They are caller-saved and the shared byte routines clobber

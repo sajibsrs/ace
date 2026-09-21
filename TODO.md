@@ -254,18 +254,16 @@ foundations.
 - **Transcendental math functions** [open] — `exp`, `log`, `pow`, `sin`, and
   `cos` are implemented. The fdlibm-class algorithms ran 1.6x libm for
   `exp`/`log` and 3-5x for `sin`/`cos` in C. Release throughput, best of seven
-  rounds over 4096 arguments: `exp` 14 ns, `log` 16 ns, `sin` and `cos` 39 ns
-  in the Cody-Waite band and 13 and 16 ns below pi/4, `pow` (table-driven)
-  23 ns (`f32`: 12 ns) against libm's 3-4 ns for the first four and 9.5 ns for
-  `pow`. Arguments beyond 1.6e6 take about 600 ns because the Payne-Hanek
-  fraction is extracted bit by bit; a word-at-a-time extraction would cut that.
-  Dependent-chain latency is two to three times throughput throughout, so these
-  kernels are latency-bound and only chain-shortening changes pay. The `pow`
-  gap to libm is backend quality: a local that wins no register is reached
-  through an address computed per access, and each constant load takes three
-  instructions. `exp` and `log` now evaluate their polynomials with `math.fma`;
-  `sin` and `cos` are still written without regard to the promotion limit and
-  use no `fma`, so the treatment `pow` had remains open for them.
+  rounds over 4096 arguments: `exp` 14 ns, `log` 16 ns, `sin` 29 ns and `cos`
+  28 ns in the Cody-Waite band and 13 and 11 ns below pi/4, `pow`
+  (table-driven) 23 ns (`f32`: 12 ns) against libm's 3-4 ns for the first four
+  and 9.5 ns for `pow`. Arguments beyond 1.6e6 take about 595 ns because the
+  Payne-Hanek fraction is extracted bit by bit; a word-at-a-time extraction
+  would cut that. Dependent-chain latency is two to three times throughput
+  throughout, so these kernels are latency-bound and only chain-shortening
+  changes pay. The `pow` gap to libm is backend quality: a local that wins no
+  register is reached through an address computed per access, and each constant
+  load takes three instructions.
   Table-driven `exp`, `log`, `sin`, and `cos` are the same design applied to
   the remaining fdlibm-class gaps.
 - **Random source** [new].
