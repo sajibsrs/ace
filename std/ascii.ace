@@ -5,17 +5,13 @@ import mem
 /* Reports whether `byte` is an ASCII control byte: 0x00 through 0x1F or
  * 0x7F.
  */
-pub is_control(byte: u8): bool {
-    return byte < ' ' || byte == '\x7F'
-}
+pub is_control(byte: u8): bool { return byte < ' ' || byte == '\x7F' }
 
 /* Converts an ASCII uppercase letter to lowercase. Every other byte is
  * returned unchanged.
  */
 pub to_lower(byte: u8): u8 {
-    if byte >= 'A' && byte <= 'Z' {
-        return byte + 32
-    }
+    if byte >= 'A' && byte <= 'Z' { return byte + 32 }
     return byte
 }
 
@@ -24,16 +20,10 @@ pub to_lower(byte: u8): u8 {
  * unchanged.
  */
 pub is_equal(a: string, b: string, sensitive: bool): bool {
-    if sensitive {
-        return mem.equal(a, b)
-    }
-    if a.len != b.len {
-        return false
-    }
+    if sensitive { return mem.equal(a, b) }
+    if a.len != b.len { return false }
     for i: usize in 0 .. a.len {
-        if to_lower(a[i]) != to_lower(b[i]) {
-            return false
-        }
+        if to_lower(a[i]) != to_lower(b[i]) { return false }
     }
     return true
 }

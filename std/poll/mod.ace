@@ -19,13 +19,9 @@ pub queue(): (Queue, Error) {
     return result, err
 }
 
-pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool): Error {
-    return os.watch(q, fd, readable, writable)
-}
+pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool): Error { return os.watch(q, fd, readable, writable) }
 
-pub unwatch(q: Queue, fd: sys.Fd): Error {
-    return os.unwatch(q, fd)
-}
+pub unwatch(q: Queue, fd: sys.Fd): Error { return os.unwatch(q, fd) }
 
 pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
     count: usize, err: Error = os.wait(q, events, timeout_ns)

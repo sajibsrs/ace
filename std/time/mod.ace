@@ -3,10 +3,6 @@
 @when(target == "darwin-arm64")
 import os: "./os/darwin-arm64.ace"
 
-pub elapsed(): u64 {
-    return os.elapsed()
-}
+pub elapsed(): u64 { return os.elapsed() }
 
-pub awake(): u64 {
-    return os.awake()
-}
+pub awake(): u64 { return os.awake() }

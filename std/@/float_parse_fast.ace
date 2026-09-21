@@ -28,9 +28,7 @@ integer_bits(value: u64, fraction_bits: int, bias: int): u64 {
         remainder: u64 = value & mask
         halfway: u64 = u64(1) << u64(removed - 1)
 
-        if remainder > halfway || (remainder == halfway && quotient % 2 != 0) {
-            quotient += 1
-        }
+        if remainder > halfway || (remainder == halfway && quotient % 2 != 0) { quotient += 1 }
         significand = quotient
 
         if significand == (u64(1) << u64(fraction_bits + 1)) {
@@ -49,9 +47,7 @@ integer_bits(value: u64, fraction_bits: int, bias: int): u64 {
  * rounds once, correctly, in the default round-to-nearest environment.
  */
 pub exact64(coefficient: u64, exponent10: int, mut raw: u64): bool {
-    if coefficient > (u64(1) << 53) || exponent10 < -22 || exponent10 > 22 {
-        return false
-    }
+    if coefficient > (u64(1) << 53) || exponent10 < -22 || exponent10 > 22 { return false }
     value: f64 = f64(coefficient)
 
     if exponent10 < 0 {
@@ -64,9 +60,7 @@ pub exact64(coefficient: u64, exponent10: int, mut raw: u64): bool {
 }
 
 pub exact32(coefficient: u64, exponent10: int, mut raw: u64): bool {
-    if coefficient > (u64(1) << 24) || exponent10 < -10 || exponent10 > 10 {
-        return false
-    }
+    if coefficient > (u64(1) << 24) || exponent10 < -10 || exponent10 > 10 { return false }
     value: f32 = f32(coefficient)
 
     if exponent10 < 0 {
@@ -80,9 +74,7 @@ pub exact32(coefficient: u64, exponent10: int, mut raw: u64): bool {
 
 pub small_integer(coefficient: u64, exponent10: int, fraction_bits: int, bias: int, mut raw: u64): bool {
     // Past 10^19 any nonzero value overflows; binary64/binary32 handle zero.
-    if exponent10 > 19 {
-        return false
-    }
+    if exponent10 > 19 { return false }
     value: u64 = coefficient
     exponent: int = exponent10
 
@@ -91,14 +83,10 @@ pub small_integer(coefficient: u64, exponent10: int, fraction_bits: int, bias: i
         exponent += 1
     }
 
-    if exponent < 0 {
-        return false
-    }
+    if exponent < 0 { return false }
 
     for exponent > 0 {
-        if value > u64(0xFFFFFFFFFFFFFFFF) / 10 {
-            return false
-        }
+        if value > u64(0xFFFFFFFFFFFFFFFF) / 10 { return false }
         value *= 10
         exponent -= 1
     }

@@ -28,9 +28,7 @@ pub stderr: const Fd = Fd(2)
 /* Terminate immediately with the requested process status. This does not
  * return, unwind, run defers, or invoke C-runtime exit handlers.
  */
-pub exit(code: int) {
-    c_exit(i32(code))
-}
+pub exit(code: int) { c_exit(i32(code)) }
 
 /* Per-operation error domains: the failing operation is readable from the
  * returned handle's domain; the raw errno is queried separately via errno().
@@ -347,9 +345,7 @@ path_copy(path: string, buf: mut []u8): bool {
         errno_set(63)
         return false
     }
-    for i: usize in 0 .. path.len {
-        buf[i] = path[i]
-    }
+    for i: usize in 0 .. path.len { buf[i] = path[i] }
     buf[path.len] = 0
     return true
 }
@@ -367,9 +363,7 @@ zero_dir(): Dir {
     return dir
 }
 
-zero_timespec(): DarwinTimespec {
-    return DarwinTimespec { seconds = 0, nanoseconds = 0 }
-}
+zero_timespec(): DarwinTimespec { return DarwinTimespec { seconds = 0, nanoseconds = 0 } }
 
 zero_stat(): DarwinStat {
     time: DarwinTimespec = zero_timespec()
@@ -397,31 +391,17 @@ zero_stat(): DarwinStat {
 
 file_type_from_mode(mode: u16): FileType {
     type_bits: u16 = mode & u16(0xf000)
-    if type_bits == u16(0x8000) {
-        return FileType.regular
-    }
-    if type_bits == u16(0x4000) {
-        return FileType.directory
-    }
-    if type_bits == u16(0xa000) {
-        return FileType.symlink
-    }
+    if type_bits == u16(0x8000) { return FileType.regular }
+    if type_bits == u16(0x4000) { return FileType.directory }
+    if type_bits == u16(0xa000) { return FileType.symlink }
     return FileType.other
 }
 
 file_type_from_dirent(dirent_type: u8): FileType {
-    if dirent_type == 8 {
-        return FileType.regular
-    }
-    if dirent_type == 4 {
-        return FileType.directory
-    }
-    if dirent_type == 10 {
-        return FileType.symlink
-    }
-    if dirent_type == 0 {
-        return FileType.unknown
-    }
+    if dirent_type == 8 { return FileType.regular }
+    if dirent_type == 4 { return FileType.directory }
+    if dirent_type == 10 { return FileType.symlink }
+    if dirent_type == 0 { return FileType.unknown }
     return FileType.other
 }
 
@@ -436,9 +416,7 @@ pub errno(): i32 {
 pub fork(): (Process, Error) {
     pid: i32 = c_fork()
 
-    if pid == -1 {
-        return Process(-1), ForkErr(errno())
-    }
+    if pid == -1 { return Process(-1), ForkErr(errno()) }
     return Process(pid), null
 }
 
@@ -471,41 +449,29 @@ pub wait(process: Process): (ProcessStatus, Error) {
 pub pipe(): (Fd, Fd, Error) {
     fds: [2]i32 = [i32(0) : 2]
 
-    if c_pipe(mut &fds[0]) == -1 {
-        return Fd(-1), Fd(-1), PipeErr(errno())
-    }
+    if c_pipe(mut &fds[0]) == -1 { return Fd(-1), Fd(-1), PipeErr(errno()) }
     return Fd(fds[0]), Fd(fds[1]), null
 }
 
 pub read(fd: Fd, buf: mut []u8): (int, Error) {
-    if buf.len == 0 {
-        return 0, null
-    }
+    if buf.len == 0 { return 0, null }
     n: i64 = c_read(i32(fd), mut &buf[0], buf.len)
 
-    if n < 0 {
-        return 0, ReadErr(errno())
-    }
+    if n < 0 { return 0, ReadErr(errno()) }
     return int(n), null
 }
 
 // Partial writes are legitimate results and are returned as-is; no retry.
 pub write(fd: Fd, data: []u8): (int, Error) {
-    if data.len == 0 {
-        return 0, null
-    }
+    if data.len == 0 { return 0, null }
     n: i64 = c_write(i32(fd), &data[0], data.len)
 
-    if n < 0 {
-        return 0, WriteErr(errno())
-    }
+    if n < 0 { return 0, WriteErr(errno()) }
     return int(n), null
 }
 
 pub close(fd: Fd): Error {
-    if c_close(i32(fd)) == -1 {
-        return CloseErr(errno())
-    }
+    if c_close(i32(fd)) == -1 { return CloseErr(errno()) }
     return null
 }
 
@@ -541,14 +507,10 @@ pub open(path: string, flags: i32): (Fd, Error) {
 pub open(path: string, flags: i32, mode: u32): (Fd, Error) {
     buf: [1024]u8
 
-    if !path_copy(path, mut buf[0..1024]) {
-        return Fd(-1), OpenErr.name_too_long
-    }
+    if !path_copy(path, mut buf[0..1024]) { return Fd(-1), OpenErr.name_too_long }
     fd: i32 = c_open(&buf[0], flags, mode)
 
-    if fd == -1 {
-        return Fd(-1), OpenErr(errno())
-    }
+    if fd == -1 { return Fd(-1), OpenErr(errno()) }
     return Fd(fd), null
 }
 
@@ -556,69 +518,45 @@ pub stat(path: string): (FileInfo, Error) {
     path_buf: [1024]u8
     zero: FileInfo = FileInfo { size = 0, file_type = FileType.unknown }
 
-    if !path_copy(path, mut path_buf[0..1024]) {
-        return zero, StatErr.name_too_long
-    }
+    if !path_copy(path, mut path_buf[0..1024]) { return zero, StatErr.name_too_long }
     raw: DarwinStat = zero_stat()
-    if c_stat(&path_buf[0], mut &raw) == -1 {
-        return zero, StatErr(errno())
-    }
+    if c_stat(&path_buf[0], mut &raw) == -1 { return zero, StatErr(errno()) }
     return FileInfo { size = u64(raw.size), file_type = file_type_from_mode(raw.mode) }, null
 }
 
 pub mkdir(path: string, mode: u32): Error {
     path_buf: [1024]u8
-    if !path_copy(path, mut path_buf[0..1024]) {
-        return MkdirErr.name_too_long
-    }
-    if c_mkdir(&path_buf[0], mode) == -1 {
-        return MkdirErr(errno())
-    }
+    if !path_copy(path, mut path_buf[0..1024]) { return MkdirErr.name_too_long }
+    if c_mkdir(&path_buf[0], mode) == -1 { return MkdirErr(errno()) }
     return null
 }
 
 /* Portable creation form: request all ordinary permissions and let the
  * process umask choose the effective platform permissions.
  */
-pub mkdir(path: string): Error {
-    return mkdir(path, S_IRWXU | S_IRWXG | S_IRWXO)
-}
+pub mkdir(path: string): Error { return mkdir(path, S_IRWXU | S_IRWXG | S_IRWXO) }
 
 pub rename(old_path: string, new_path: string): Error {
     from_buf: [1024]u8
     to_buf: [1024]u8
-    if !path_copy(old_path, mut from_buf[0..1024]) {
-        return RenameErr.name_too_long
-    }
-    if !path_copy(new_path, mut to_buf[0..1024]) {
-        return RenameErr.name_too_long
-    }
-    if c_rename(&from_buf[0], &to_buf[0]) == -1 {
-        return RenameErr(errno())
-    }
+    if !path_copy(old_path, mut from_buf[0..1024]) { return RenameErr.name_too_long }
+    if !path_copy(new_path, mut to_buf[0..1024]) { return RenameErr.name_too_long }
+    if c_rename(&from_buf[0], &to_buf[0]) == -1 { return RenameErr(errno()) }
     return null
 }
 
 pub unlink(path: string): Error {
     path_buf: [1024]u8
-    if !path_copy(path, mut path_buf[0..1024]) {
-        return UnlinkErr.name_too_long
-    }
-    if c_unlink(&path_buf[0]) == -1 {
-        return UnlinkErr(errno())
-    }
+    if !path_copy(path, mut path_buf[0..1024]) { return UnlinkErr.name_too_long }
+    if c_unlink(&path_buf[0]) == -1 { return UnlinkErr(errno()) }
     return null
 }
 
 pub open_dir(path: string): (Dir, Error) {
     path_buf: [1024]u8
-    if !path_copy(path, mut path_buf[0..1024]) {
-        return zero_dir(), OpenDirErr.name_too_long
-    }
+    if !path_copy(path, mut path_buf[0..1024]) { return zero_dir(), OpenDirErr.name_too_long }
     fd: i32 = c_open(&path_buf[0], O_RDONLY | O_DIRECTORY, u32(0))
-    if fd == -1 {
-        return zero_dir(), OpenDirErr(errno())
-    }
+    if fd == -1 { return zero_dir(), OpenDirErr(errno()) }
     dir: Dir = Dir {
         fd = Fd(fd),
         buffer = [u8(0) : 4096],
@@ -640,17 +578,13 @@ pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileType, bool, Error) {
         errno_set(9)
         return 0, FileType.unknown, false, ReadDirErr.inactive
     }
-    if dir.done {
-        return 0, FileType.unknown, true, null
-    }
+    if dir.done { return 0, FileType.unknown, true, null }
 
     for {
         if dir.next == dir.count {
             count: i32 = c_getdirentries64(i32(dir.fd), mut &dir.buffer[0],
                                            4096, mut &dir.base)
-            if count < 0 {
-                return 0, FileType.unknown, false, ReadDirErr(errno())
-            }
+            if count < 0 { return 0, FileType.unknown, false, ReadDirErr(errno()) }
             if count == 0 {
                 dir.done = true
                 return 0, FileType.unknown, true, null
@@ -685,9 +619,7 @@ pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileType, bool, Error) {
                 errno_set(34)
                 return 0, FileType.unknown, false, ReadDirErr.capacity
             }
-            for i: usize in 0 .. name_len {
-                name[i] = dir.buffer[at + 21 + i]
-            }
+            for i: usize in 0 .. name_len { name[i] = dir.buffer[at + 21 + i] }
             file_type: FileType = file_type_from_dirent(dir.buffer[at + 20])
             dir.next = at + record_len
             return name_len, file_type, false, null
@@ -702,8 +634,6 @@ pub close_dir(mut dir: Dir): Error {
     }
     fd: i32 = i32(dir.fd)
     dir = zero_dir()
-    if c_close(fd) == -1 {
-        return CloseDirErr(errno())
-    }
+    if c_close(fd) == -1 { return CloseDirErr(errno()) }
     return null
 }

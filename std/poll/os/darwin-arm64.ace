@@ -103,9 +103,7 @@ zero_kevent(): DarwinKevent {
 pub queue(): (Queue, Error) {
     fd: i32 = c_kqueue()
 
-    if fd == -1 {
-        return Queue(sys.Fd(-1)), QueueErr(sys.errno())
-    }
+    if fd == -1 { return Queue(sys.Fd(-1)), QueueErr(sys.errno()) }
     return Queue(sys.Fd(fd)), null
 }
 
@@ -117,13 +115,9 @@ pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool): Error {
     read_flags: u16 = EV_DELETE
     write_flags: u16 = EV_DELETE
 
-    if readable {
-        read_flags = EV_ADD | EV_ENABLE
-    }
+    if readable { read_flags = EV_ADD | EV_ENABLE }
 
-    if writable {
-        write_flags = EV_ADD | EV_ENABLE
-    }
+    if writable { write_flags = EV_ADD | EV_ENABLE }
 
     if change_filter(q, fd, EVFILT_READ, read_flags) == -1 &&
        !(read_flags == EV_DELETE && sys.errno() == ENOENT) {
@@ -174,9 +168,7 @@ pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
     }
     capacity: usize = events.len
 
-    if capacity > MAX_WAIT_EVENTS {
-        capacity = MAX_WAIT_EVENTS
-    }
+    if capacity > MAX_WAIT_EVENTS { capacity = MAX_WAIT_EVENTS }
 
     timeout: DarwinTimespec = DarwinTimespec {seconds = i64(0), nanoseconds = i64(0)}
     timeout_pointer: *DarwinTimespec = null
@@ -189,9 +181,7 @@ pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
     raw: [64]DarwinKevent = [zero_kevent() : 64]
     ready: i32 = c_kevent(i32(sys.Fd(q)), null, 0, mut &raw[0], i32(capacity), timeout_pointer)
 
-    if ready == -1 {
-        return usize(0), WaitErr(sys.errno())
-    }
+    if ready == -1 { return usize(0), WaitErr(sys.errno()) }
 
     written: usize = 0
 
@@ -200,9 +190,7 @@ pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
         slot: usize = written
 
         for candidate: usize in 0 .. written {
-            if events[candidate].fd == fd {
-                slot = candidate
-            }
+            if events[candidate].fd == fd { slot = candidate }
         }
 
         if slot == written {
@@ -216,21 +204,13 @@ pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
             written += usize(1)
         }
 
-        if raw[index].filter == EVFILT_READ {
-            events[slot].readable = true
-        }
+        if raw[index].filter == EVFILT_READ { events[slot].readable = true }
 
-        if raw[index].filter == EVFILT_WRITE {
-            events[slot].writable = true
-        }
+        if raw[index].filter == EVFILT_WRITE { events[slot].writable = true }
 
-        if (raw[index].flags & EV_ERROR) != 0 {
-            events[slot].error = true
-        }
+        if (raw[index].flags & EV_ERROR) != 0 { events[slot].error = true }
 
-        if (raw[index].flags & EV_EOF) != 0 {
-            events[slot].hangup = true
-        }
+        if (raw[index].flags & EV_EOF) != 0 { events[slot].hangup = true }
     }
     return written, null
 }

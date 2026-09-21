@@ -20,17 +20,11 @@ pub Wide: struct {
     high: u64,
 }
 
-log10_pow2(exponent: i32): u32 {
-    return (u32(exponent) * 78913) >> 18
-}
+log10_pow2(exponent: i32): u32 { return (u32(exponent) * 78913) >> 18 }
 
-log10_pow5(exponent: i32): u32 {
-    return (u32(exponent) * 732923) >> 20
-}
+log10_pow5(exponent: i32): u32 { return (u32(exponent) * 732923) >> 20 }
 
-pow5_bits(exponent: i32): i32 {
-    return i32((u32(exponent) * 1217359) >> 19) + 1
-}
+pow5_bits(exponent: i32): i32 { return i32((u32(exponent) * 1217359) >> 19) + 1 }
 
 pub multiply_wide(a: u64, b: u64): Wide {
     a_low: u32 = u32(a)
@@ -80,23 +74,17 @@ power5_factor(value: u64): u32 {
     for work != 0 {
         quotient: u64 = work / 5
 
-        if work - quotient * 5 != 0 {
-            break
-        }
+        if work - quotient * 5 != 0 { break }
         work = quotient
         count += 1
     }
     return count
 }
 
-multiple_power5(value: u64, power: u32): bool {
-    return power5_factor(value) >= power
-}
+multiple_power5(value: u64, power: u32): bool { return power5_factor(value) >= power }
 
 multiple_power2(value: u64, power: u32): bool {
-    if power == 0 {
-        return true
-    }
+    if power == 0 { return true }
     return (value & ((u64(1) << u64(power)) - 1)) == 0
 }
 
@@ -115,9 +103,7 @@ pub binary64(fraction: u64, exponent: u64): Floating {
     center: u64 = 4 * mantissa2
     lower_shift: u64 = 0
 
-    if fraction != 0 || exponent <= 1 {
-        lower_shift = 1
-    }
+    if fraction != 0 || exponent <= 1 { lower_shift = 1 }
     rounded: u64 = 0
     upper: u64 = 0
     lower: u64 = 0
@@ -128,9 +114,7 @@ pub binary64(fraction: u64, exponent: u64): Floating {
     if exponent2 >= 0 {
         q: u32 = log10_pow2(exponent2)
 
-        if exponent2 > 3 {
-            q -= 1
-        }
+        if exponent2 > 3 { q -= 1 }
         exponent10 = i32(q)
         k: i32 = 125 + pow5_bits(i32(q)) - 1
         shift: i32 = 0 - exponent2 + i32(q) + k
@@ -152,9 +136,7 @@ pub binary64(fraction: u64, exponent: u64): Floating {
         positive: i32 = 0 - exponent2
         q: u32 = log10_pow5(positive)
 
-        if positive > 1 {
-            q -= 1
-        }
+        if positive > 1 { q -= 1 }
         exponent10 = i32(q) + exponent2
         power: i32 = positive - i32(q)
         k: i32 = pow5_bits(power) - 125
@@ -202,14 +184,10 @@ pub binary64(fraction: u64, exponent: u64): Floating {
             }
         }
 
-        if rounded_zeros && last == 5 && rounded % 2 == 0 {
-            last = 4
-        }
+        if rounded_zeros && last == 5 && rounded % 2 == 0 { last = 4 }
         output = rounded
 
-        if (rounded == lower && (!accept_bounds || !lower_zeros)) || last >= 5 {
-            output += 1
-        }
+        if (rounded == lower && (!accept_bounds || !lower_zeros)) || last >= 5 { output += 1 }
     } else {
         round_up: bool = false
         upper100: u64 = upper / 100
@@ -233,9 +211,7 @@ pub binary64(fraction: u64, exponent: u64): Floating {
         }
         output = rounded
 
-        if rounded == lower || round_up {
-            output += 1
-        }
+        if rounded == lower || round_up { output += 1 }
     }
     return Floating { coefficient = output, exponent = exponent10 + removed }
 }
@@ -256,9 +232,7 @@ pub binary32(fraction: u32, exponent: u32): Floating {
     upper_source: u32 = center + 2
     lower_shift: u32 = 0
 
-    if fraction != 0 || exponent <= 1 {
-        lower_shift = 1
-    }
+    if fraction != 0 || exponent <= 1 { lower_shift = 1 }
     lower_source: u32 = center - 1 - lower_shift
     rounded: u32 = 0
     upper: u32 = 0
@@ -351,14 +325,10 @@ pub binary32(fraction: u32, exponent: u32): Floating {
             }
         }
 
-        if rounded_zeros && last == 5 && rounded % 2 == 0 {
-            last = 4
-        }
+        if rounded_zeros && last == 5 && rounded % 2 == 0 { last = 4 }
         output = rounded
 
-        if (rounded == lower && (!accept_bounds || !lower_zeros)) || last >= 5 {
-            output += 1
-        }
+        if (rounded == lower && (!accept_bounds || !lower_zeros)) || last >= 5 { output += 1 }
     } else {
         for upper / 10 > lower / 10 {
             last = u8(rounded % 10)
@@ -369,9 +339,7 @@ pub binary32(fraction: u32, exponent: u32): Floating {
         }
         output = rounded
 
-        if rounded == lower || last >= 5 {
-            output += 1
-        }
+        if rounded == lower || last >= 5 { output += 1 }
     }
     return Floating { coefficient = u64(output), exponent = exponent10 + removed }
 }

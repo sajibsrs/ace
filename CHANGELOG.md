@@ -772,6 +772,8 @@ current normative rules, and Git preserves patch-level detail.
   `str` back to `std/str.ace` after its final OS dependency was removed.
 - `math` currently contains only its minimal implemented integer/generic
   helpers; floating libm and SIMD remain open work.
+- Added `.acefmt` `single-statement-body = same-line-if-fits` (bodies of functions, `if`, `for`, `while` holding one
+  statement stay on the opener's line within 120 columns) and applied it across `std/`; `else` branches stay multi-line.
 
 ## Significant implementation corrections
 

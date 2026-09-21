@@ -27,9 +27,7 @@ write_shortest(value: ryu.Floating, out: mut []u8): (int, i32) {
         count += 1
     }
 
-    for i: int in 0 .. count {
-        out[i] = reversed[count - 1 - i]
-    }
+    for i: int in 0 .. count { out[i] = reversed[count - 1 - i] }
     return count, value.exponent + i32(count)
 }
 
@@ -40,9 +38,7 @@ pub binary64(value: f64, out: mut []u8): Decimal {
     fraction: u64 = raw & u64(0xFFFFFFFFFFFFF)
 
     if exponent == u64(0x7FF) {
-        if fraction == 0 {
-            return Decimal { count = 0, point = 0, negative = negative, number_type = Type.infinity }
-        }
+        if fraction == 0 { return Decimal { count = 0, point = 0, negative = negative, number_type = Type.infinity } }
         return Decimal { count = 0, point = 0, negative = false, number_type = Type.nan }
     }
 
@@ -61,9 +57,7 @@ pub binary32(value: f32, out: mut []u8): Decimal {
     fraction: u32 = raw & u32(0x7FFFFF)
 
     if exponent == u32(0xFF) {
-        if fraction == 0 {
-            return Decimal { count = 0, point = 0, negative = negative, number_type = Type.infinity }
-        }
+        if fraction == 0 { return Decimal { count = 0, point = 0, negative = negative, number_type = Type.infinity } }
         return Decimal { count = 0, point = 0, negative = false, number_type = Type.nan }
     }
 
@@ -89,14 +83,10 @@ fixed(mantissa: u64, exponent2: i32, precision: int,
     exact_count: int = big.decimal(exact_value, exact_view)
     point: i32 = i32(exact_count)
 
-    if exponent2 < 0 {
-        point += exponent2
-    }
+    if exponent2 < 0 { point += exponent2 }
     keep: int = int(point) + precision
 
-    if keep < 0 {
-        return Decimal { count = 0, point = point, negative = negative, number_type = Type.zero }
-    }
+    if keep < 0 { return Decimal { count = 0, point = point, negative = negative, number_type = Type.zero } }
 
     if keep == 0 {
         round_up: bool = exact_view[0] > 53
@@ -119,17 +109,11 @@ fixed(mantissa: u64, exponent2: i32, precision: int,
     }
     copied: int = keep
 
-    if copied > exact_count {
-        copied = exact_count
-    }
+    if copied > exact_count { copied = exact_count }
 
-    for i: int in 0 .. copied {
-        out[i] = exact_view[i]
-    }
+    for i: int in 0 .. copied { out[i] = exact_view[i] }
 
-    for i: int in copied .. keep {
-        out[i] = u8(48)
-    }
+    for i: int in copied .. keep { out[i] = u8(48) }
 
     if keep < exact_count {
         round_up: bool = exact_view[keep] > 53
@@ -142,9 +126,7 @@ fixed(mantissa: u64, exponent2: i32, precision: int,
                 }
             }
 
-            if !round_up && (out[keep - 1] - 48) % 2 != 0 {
-                round_up = true
-            }
+            if !round_up && (out[keep - 1] - 48) % 2 != 0 { round_up = true }
         }
 
         if round_up {
@@ -162,9 +144,7 @@ fixed(mantissa: u64, exponent2: i32, precision: int,
             }
 
             if carry {
-                for i: int in 0 .. keep {
-                    out[keep - i] = out[keep - 1 - i]
-                }
+                for i: int in 0 .. keep { out[keep - i] = out[keep - 1 - i] }
                 out[0] = u8(49)
                 keep += 1
                 point += 1
@@ -181,9 +161,7 @@ pub fixed64(value: f64, precision: usize, out: mut []u8): Decimal {
     fraction: u64 = raw & u64(0xFFFFFFFFFFFFF)
 
     if exponent == u64(0x7FF) {
-        if fraction == 0 {
-            return Decimal { count = 0, point = 0, negative = negative, number_type = Type.infinity }
-        }
+        if fraction == 0 { return Decimal { count = 0, point = 0, negative = negative, number_type = Type.infinity } }
         return Decimal { count = 0, point = 0, negative = false, number_type = Type.nan }
     }
 
@@ -207,9 +185,7 @@ pub fixed32(value: f32, precision: usize, out: mut []u8): Decimal {
     fraction: u32 = raw & u32(0x7FFFFF)
 
     if exponent == u32(0xFF) {
-        if fraction == 0 {
-            return Decimal { count = 0, point = 0, negative = negative, number_type = Type.infinity }
-        }
+        if fraction == 0 { return Decimal { count = 0, point = 0, negative = negative, number_type = Type.infinity } }
         return Decimal { count = 0, point = 0, negative = false, number_type = Type.nan }
     }
 

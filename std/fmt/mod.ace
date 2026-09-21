@@ -5,22 +5,16 @@ import os: "./os/darwin-arm64.ace"
 import decimal: @float_decimal
 
 pub print(text: string): int {
-    if text.len == 0 {
-        return 0
-    }
+    if text.len == 0 { return 0 }
     total: int = 0
 
     for attempt: int in 0 .. int(text.len) {
         n: int = os.write(&text[total], text.len - usize(total))
 
-        if n <= 0 {
-            return n
-        }
+        if n <= 0 { return n }
         total += n
 
-        if usize(total) == text.len {
-            return total
-        }
+        if usize(total) == text.len { return total }
     }
     return total
 }
@@ -42,9 +36,7 @@ pub print(value: int): int {
         }
         remaining = remaining / 10
 
-        if remaining == 0 {
-            break
-        }
+        if remaining == 0 { break }
     }
 
     if negative {
@@ -57,14 +49,10 @@ pub print(value: int): int {
     for attempt: int in 0 .. int(size) {
         n: int = os.write(&digits[at + total], size - usize(total))
 
-        if n <= 0 {
-            return n
-        }
+        if n <= 0 { return n }
         total += n
 
-        if usize(total) == size {
-            return total
-        }
+        if usize(total) == size { return total }
     }
     return total
 }
@@ -80,9 +68,7 @@ pub print(value: uint): int {
         digits[at] = u8(48 + remainder)
         remaining = remaining / 10
 
-        if remaining == 0 {
-            break
-        }
+        if remaining == 0 { break }
     }
     size: usize = usize(20 - at)
     total: int = 0
@@ -90,14 +76,10 @@ pub print(value: uint): int {
     for attempt: int in 0 .. int(size) {
         n: int = os.write(&digits[at + total], size - usize(total))
 
-        if n <= 0 {
-            return n
-        }
+        if n <= 0 { return n }
         total += n
 
-        if usize(total) == size {
-            return total
-        }
+        if usize(total) == size { return total }
     }
     return total
 }
@@ -113,9 +95,7 @@ pub print(value: usize): int {
         digits[at] = u8(48 + remainder)
         remaining = remaining / 10
 
-        if remaining == 0 {
-            break
-        }
+        if remaining == 0 { break }
     }
     size: usize = usize(20 - at)
     total: int = 0
@@ -123,14 +103,10 @@ pub print(value: usize): int {
     for attempt: int in 0 .. int(size) {
         n: int = os.write(&digits[at + total], size - usize(total))
 
-        if n <= 0 {
-            return n
-        }
+        if n <= 0 { return n }
         total += n
 
-        if usize(total) == size {
-            return total
-        }
+        if usize(total) == size { return total }
     }
     return total
 }
@@ -142,14 +118,10 @@ write_bytes(data: []u8): int {
     for attempt: int in 0 .. int(data.len) {
         n: int = os.write(&data[total], data.len - usize(total))
 
-        if n <= 0 {
-            return n
-        }
+        if n <= 0 { return n }
         total += n
 
-        if usize(total) == data.len {
-            return total
-        }
+        if usize(total) == data.len { return total }
     }
     return total
 }
@@ -255,31 +227,23 @@ pub print(value: f64): int {
     one: f64 = 1.0
     zero: f64 = 0.0
 
-    if value != value {
-        return print("nan")
-    }
+    if value != value { return print("nan") }
 
     if value - value != zero {
-        if value < zero {
-            return print("-inf")
-        }
+        if value < zero { return print("-inf") }
         return print("inf")
     }
     negative: bool = value < zero
     mag: f64 = value
 
-    if negative {
-        mag = zero - value
-    }
+    if negative { mag = zero - value }
 
     if mag == zero {
         /*
          * The comparison operators cannot see the sign of a zero, so the sign
          * bit is read through the reciprocal: 1/-0 is -inf.
          */
-        if one / value < zero {
-            return print("-0")
-        }
+        if one / value < zero { return print("-0") }
         return print("0")
     }
     digits: [24]u8
@@ -292,31 +256,23 @@ pub print(value: f32): int {
     pone: f32 = 1.0
     zero: f32 = 0.0
 
-    if value != value {
-        return print("nan")
-    }
+    if value != value { return print("nan") }
 
     if value - value != zero {
-        if value < zero {
-            return print("-inf")
-        }
+        if value < zero { return print("-inf") }
         return print("inf")
     }
     negative: bool = value < zero
     mag: f32 = value
 
-    if negative {
-        mag = zero - value
-    }
+    if negative { mag = zero - value }
 
     if mag == zero {
         /*
          * The comparison operators cannot see the sign of a zero, so the sign
          * bit is read through the reciprocal: 1/-0 is -inf.
          */
-        if pone / value < zero {
-            return print("-0")
-        }
+        if pone / value < zero { return print("-0") }
         return print("0")
     }
     digits: [24]u8
@@ -338,21 +294,13 @@ print_precision[T](value: T, precision: usize): int specialized
 
 print_radix[T](value: T, radix: u8, uppercase: bool): int specialized
 
-print_counted[string](text: string): int {
-    return print(text)
-}
+print_counted[string](text: string): int { return print(text) }
 
-print_counted[int](value: int): int {
-    return print(value)
-}
+print_counted[int](value: int): int { return print(value) }
 
-print_counted[uint](value: uint): int {
-    return print(value)
-}
+print_counted[uint](value: uint): int { return print(value) }
 
-print_counted[usize](value: usize): int {
-    return print(value)
-}
+print_counted[usize](value: usize): int { return print(value) }
 
 print_counted[u8](value: u8): int {
     out: [1]u8 = [value]
@@ -377,9 +325,7 @@ print_radix[uint](value: uint, radix: u8, uppercase: bool): int {
         }
         remaining = remaining / uint(radix)
 
-        if remaining == 0 {
-            break
-        }
+        if remaining == 0 { break }
     }
     return write_bytes(out[at..64])
 }
@@ -402,22 +348,16 @@ print_radix[usize](value: usize, radix: u8, uppercase: bool): int {
         }
         remaining = remaining / usize(radix)
 
-        if remaining == 0 {
-            break
-        }
+        if remaining == 0 { break }
     }
     return write_bytes(out[at..64])
 }
 
 write_fixed(value: decimal.Decimal, digits: []u8, precision: usize): int {
-    if value.number_type == decimal.Type.nan {
-        return print_counted[string]("nan")
-    }
+    if value.number_type == decimal.Type.nan { return print_counted[string]("nan") }
 
     if value.number_type == decimal.Type.infinity {
-        if value.negative {
-            return print_counted[string]("-inf")
-        }
+        if value.negative { return print_counted[string]("-inf") }
         return print_counted[string]("inf")
     }
     out: [640]u8
@@ -484,9 +424,7 @@ print_precision[f32](value: f32, precision: usize): int {
  * ordinary declaration. Calls are otherwise validated and lowered directly
  * by the compiler; this format-dependent function is never a first-class value.
  */
-pub printf(format: string): int {
-    return print_counted[string](format)
-}
+pub printf(format: string): int { return print_counted[string](format) }
 
 /*
  * Closes a println after a nonempty value write: a non-positive result is
@@ -495,40 +433,24 @@ pub printf(format: string): int {
  * The string overload handles its empty success before calling this helper.
  */
 finish_line(written: int): int {
-    if written <= 0 {
-        return written
-    }
+    if written <= 0 { return written }
     n: int = print("\n")
 
-    if n < 0 {
-        return n
-    }
+    if n < 0 { return n }
     return written + n
 }
 
 pub println(text: string): int {
-    if text.len == 0 {
-        return print("\n")
-    }
+    if text.len == 0 { return print("\n") }
     return finish_line(print(text))
 }
 
-pub println(value: int): int {
-    return finish_line(print(value))
-}
+pub println(value: int): int { return finish_line(print(value)) }
 
-pub println(value: uint): int {
-    return finish_line(print(value))
-}
+pub println(value: uint): int { return finish_line(print(value)) }
 
-pub println(value: usize): int {
-    return finish_line(print(value))
-}
+pub println(value: usize): int { return finish_line(print(value)) }
 
-pub println(value: f32): int {
-    return finish_line(print(value))
-}
+pub println(value: f32): int { return finish_line(print(value)) }
 
-pub println(value: f64): int {
-    return finish_line(print(value))
-}
+pub println(value: f64): int { return finish_line(print(value)) }

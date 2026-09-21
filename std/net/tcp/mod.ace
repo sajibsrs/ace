@@ -48,49 +48,31 @@ connection(sock: net.Socket, interest: Interest): Conn {
 
 with_read(interest: Interest, enabled: bool): Interest {
     if enabled {
-        if interest == Interest.write || interest == Interest.both {
-            return Interest.both
-        }
+        if interest == Interest.write || interest == Interest.both { return Interest.both }
         return Interest.read
     }
-    if interest == Interest.both {
-        return Interest.write
-    }
-    if interest == Interest.read {
-        return Interest.none
-    }
+    if interest == Interest.both { return Interest.write }
+    if interest == Interest.read { return Interest.none }
     return interest
 }
 
 with_write(interest: Interest, enabled: bool): Interest {
     if enabled {
-        if interest == Interest.read || interest == Interest.both {
-            return Interest.both
-        }
+        if interest == Interest.read || interest == Interest.both { return Interest.both }
         return Interest.write
     }
-    if interest == Interest.both {
-        return Interest.read
-    }
-    if interest == Interest.write {
-        return Interest.none
-    }
+    if interest == Interest.both { return Interest.read }
+    if interest == Interest.write { return Interest.none }
     return interest
 }
 
 pub listen(address: net.Addr4, backlog: usize): (Listener, Error) {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
-    if err != null {
-        return Listener {}, err
-    }
+    if err != null { return Listener {}, err }
     err = net.reuse_addr(sock, true)
-    if err == null {
-        err = net.bind(sock, address)
-    }
-    if err == null {
-        err = net.listen(sock, backlog)
-    }
+    if err == null { err = net.bind(sock, address) }
+    if err == null { err = net.listen(sock, backlog) }
     if err != null {
         sys.close(sock)
         return Listener {}, err
@@ -101,9 +83,7 @@ pub listen(address: net.Addr4, backlog: usize): (Listener, Error) {
 pub connect(address: net.Addr4): (Conn, Error) {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
-    if err != null {
-        return Conn {}, err
-    }
+    if err != null { return Conn {}, err }
     err = net.connect(sock, address)
     if err != null {
         sys.close(sock)
@@ -115,9 +95,7 @@ pub connect(address: net.Addr4): (Conn, Error) {
 pub connect_nonblock(address: net.Addr4): (Conn, Error) {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
-    if err != null {
-        return Conn {}, err
-    }
+    if err != null { return Conn {}, err }
     err = net.nonblock(sock, true)
     if err != null {
         sys.close(sock)
@@ -125,13 +103,9 @@ pub connect_nonblock(address: net.Addr4): (Conn, Error) {
     }
     connect_attempt: {
         err = net.connect(sock, address)
-        if err != null && err.domain == typeid(net.ConnectErr) && err.code == sys.EINTR {
-            continue connect_attempt
-        }
+        if err != null && err.domain == typeid(net.ConnectErr) && err.code == sys.EINTR { continue connect_attempt }
     }
-    if err == null {
-        return connection(sock, Interest.read), null
-    }
+    if err == null { return connection(sock, Interest.read), null }
     if err.domain == typeid(net.ConnectErr) && err.code == sys.EINPROGRESS {
         return connection(sock, Interest.write), null
     }
@@ -142,19 +116,11 @@ pub connect_nonblock(address: net.Addr4): (Conn, Error) {
 pub listen_nonblock(address: net.Addr4, backlog: usize): (Listener, Error) {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
-    if err != null {
-        return Listener {}, err
-    }
+    if err != null { return Listener {}, err }
     err = net.nonblock(sock, true)
-    if err == null {
-        err = net.reuse_addr(sock, true)
-    }
-    if err == null {
-        err = net.bind(sock, address)
-    }
-    if err == null {
-        err = net.listen(sock, backlog)
-    }
+    if err == null { err = net.reuse_addr(sock, true) }
+    if err == null { err = net.bind(sock, address) }
+    if err == null { err = net.listen(sock, backlog) }
     if err != null {
         sys.close(sock)
         return Listener {}, err
@@ -170,18 +136,14 @@ pub local(listener: Listener): (net.Addr4, Error) {
 pub accept(listener: Listener): (Conn, net.Addr4, Error) {
     sock: net.Socket, address: net.Addr4, err: Error = net.accept(listener.socket)
 
-    if err != null {
-        return Conn {}, address, err
-    }
+    if err != null { return Conn {}, address, err }
     return connection(sock, Interest.read), address, null
 }
 
 pub accept_nonblock(listener: Listener): (Conn, net.Addr4, Error) {
     sock: net.Socket, address: net.Addr4, err: Error = net.accept(listener.socket)
 
-    if err != null {
-        return Conn {}, address, err
-    }
+    if err != null { return Conn {}, address, err }
     err = net.nonblock(sock, true)
     if err != null {
         sys.close(sock)
@@ -190,9 +152,7 @@ pub accept_nonblock(listener: Listener): (Conn, net.Addr4, Error) {
     return connection(sock, Interest.read), address, null
 }
 
-pub interest(conn: Conn): Interest {
-    return conn.interest
-}
+pub interest(conn: Conn): Interest { return conn.interest }
 
 pub progress_connect(mut conn: Conn): Event {
     err: Error = net.pending_error(conn.socket)
@@ -212,17 +172,13 @@ pub progress_receive(mut conn: Conn, dest: mut []u8): Event {
     receive_attempt: {
         count: int, err: Error = net.receive(conn.socket, dest)
         if err != null {
-            if err.domain == typeid(net.ReceiveErr) && err.code == sys.EINTR {
-                continue receive_attempt
-            }
+            if err.domain == typeid(net.ReceiveErr) && err.code == sys.EINTR { continue receive_attempt }
             if err.domain == typeid(net.ReceiveErr) && (err.code == sys.EAGAIN || err.code == sys.EWOULDBLOCK) {
                 conn.interest = with_read(conn.interest, true)
                 return Event.none
             }
             conn.interest = Interest.none
-            if err.domain == typeid(net.ReceiveErr) && err.code == sys.ECONNRESET {
-                return Event.disconnected
-            }
+            if err.domain == typeid(net.ReceiveErr) && err.code == sys.ECONNRESET { return Event.disconnected }
             return Event.failed(err)
         }
         if count == 0 {
@@ -243,17 +199,13 @@ pub progress_send(mut conn: Conn, src: []u8): Event {
     send_attempt: {
         count: int, err: Error = net.send(conn.socket, src[conn.send_offset..])
         if err != null {
-            if err.domain == typeid(net.SendErr) && err.code == sys.EINTR {
-                continue send_attempt
-            }
+            if err.domain == typeid(net.SendErr) && err.code == sys.EINTR { continue send_attempt }
             if err.domain == typeid(net.SendErr) && (err.code == sys.EAGAIN || err.code == sys.EWOULDBLOCK) {
                 conn.interest = with_write(conn.interest, true)
                 return Event.none
             }
             conn.interest = Interest.none
-            if err.domain == typeid(net.SendErr) && err.code == sys.ECONNRESET {
-                return Event.disconnected
-            }
+            if err.domain == typeid(net.SendErr) && err.code == sys.ECONNRESET { return Event.disconnected }
             return Event.failed(err)
         }
         if count == 0 {
@@ -277,36 +229,26 @@ pub receive_all(connection: Conn, buffer: mut []u8): (usize, Error) {
     for received < buffer.len {
         count: int, err: Error = net.receive(connection.socket, buffer[received..])
         if err != null {
-            if err.domain == typeid(net.ReceiveErr) && err.code == sys.EINTR {
-                continue
-            }
+            if err.domain == typeid(net.ReceiveErr) && err.code == sys.EINTR { continue }
             return received, err
         }
-        if count == 0 {
-            return received, ReceiveAllErr.incomplete
-        }
+        if count == 0 { return received, ReceiveAllErr.incomplete }
         received += usize(count)
     }
     return received, null
 }
 
 pub send_all(connection: Conn, data: []u8): (usize, Error) {
-    if data.len == 0 {
-        return 0, null
-    }
+    if data.len == 0 { return 0, null }
     sent: usize = 0
 
     for sent < data.len {
         count: int, err: Error = net.send(connection.socket, data[sent..])
         if err != null {
-            if err.domain == typeid(net.SendErr) && err.code == sys.EINTR {
-                continue
-            }
+            if err.domain == typeid(net.SendErr) && err.code == sys.EINTR { continue }
             return sent, err
         }
-        if count == 0 {
-            return sent, SendAllErr.stalled
-        }
+        if count == 0 { return sent, SendAllErr.stalled }
         sent += usize(count)
     }
     return sent, null
@@ -316,18 +258,14 @@ pub send_all(connection: Conn, data: []u8): (usize, Error) {
  * precede the constructor's error check.
  */
 pub close(mut listener: Listener): Error {
-    if !listener.active {
-        return null
-    }
+    if !listener.active { return null }
     err: Error = sys.close(listener.socket)
     listener = Listener {}
     return err
 }
 
 pub close(mut connection: Conn): Error {
-    if !connection.active {
-        return null
-    }
+    if !connection.active { return null }
     err: Error = sys.close(connection.socket)
     connection = Conn {}
     return err

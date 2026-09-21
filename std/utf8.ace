@@ -9,25 +9,15 @@
  * Unicode scalar value.
  */
 pub width(value: u32): usize {
-    if value < 0x80 {
-        return 1
-    }
+    if value < 0x80 { return 1 }
 
-    if value < 0x800 {
-        return 2
-    }
+    if value < 0x800 { return 2 }
 
-    if value >= 0xD800 && value <= 0xDFFF {
-        return 0
-    }
+    if value >= 0xD800 && value <= 0xDFFF { return 0 }
 
-    if value < 0x10000 {
-        return 3
-    }
+    if value < 0x10000 { return 3 }
 
-    if value <= 0x10FFFF {
-        return 4
-    }
+    if value <= 0x10FFFF { return 4 }
     return 0
 }
 
@@ -38,9 +28,7 @@ pub width(value: u32): usize {
 pub encode(value: u32, destination: mut []char): (usize, bool) {
     n: usize = width(value)
 
-    if n == 0 || destination.len < n {
-        return 0, false
-    }
+    if n == 0 || destination.len < n { return 0, false }
 
     if n == 1 {
         destination[0] = u8(value)
@@ -66,14 +54,10 @@ pub encode(value: u32, destination: mut []char): (usize, bool) {
  * returns (0, 0, false).
  */
 pub decode(text: string, at: usize): (u32, usize, bool) {
-    if at >= text.len {
-        return 0, 0, false
-    }
+    if at >= text.len { return 0, 0, false }
     lead: u8 = text[at]
 
-    if lead < 0x80 {
-        return u32(lead), 1, true
-    }
+    if lead < 0x80 { return u32(lead), 1, true }
     n: usize = 0
     value: u32 = 0
 
@@ -90,9 +74,7 @@ pub decode(text: string, at: usize): (u32, usize, bool) {
         return 0, 1, false
     }
 
-    if text.len - at < n {
-        return 0, 1, false
-    }
+    if text.len - at < n { return 0, 1, false }
 
     /* The second byte's valid range, which some leads narrow. */
     low: u8 = 0x80
@@ -110,17 +92,13 @@ pub decode(text: string, at: usize): (u32, usize, bool) {
 
     second: u8 = text[at + 1]
 
-    if second < low || second > high {
-        return 0, 1, false
-    }
+    if second < low || second > high { return 0, 1, false }
     value = (value << 6) | u32(second & 0x3F)
 
     for i: usize in 2 .. n {
         next: u8 = text[at + i]
 
-        if next < 0x80 || next > 0xBF {
-            return 0, 1, false
-        }
+        if next < 0x80 || next > 0xBF { return 0, 1, false }
         value = (value << 6) | u32(next & 0x3F)
     }
     return value, n, true
@@ -135,9 +113,7 @@ pub is_valid(text: string): bool {
     for at < text.len {
         _: u32, n: usize, ok: bool = decode(text, at)
 
-        if !ok {
-            return false
-        }
+        if !ok { return false }
         at += n
     }
     return true

@@ -35,6 +35,7 @@ inside-if-chain = never
 [braces]
 space-before-open = always
 empty-body = same-line
+single-statement-body = same-line-if-fits
 
 [comments]
 file-header = block

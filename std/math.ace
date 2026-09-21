@@ -154,44 +154,30 @@ pub isfinite(value: f32): bool {
 }
 
 pub min[T](a: T, b: T): T {
-    if a < b {
-        return a
-    }
+    if a < b { return a }
     return b
 }
 
 pub max[T](a: T, b: T): T {
-    if a > b {
-        return a
-    }
+    if a > b { return a }
     return b
 }
 
 pub abs[T](x: T): T {
-    if x < 0 {
-        return -x
-    }
+    if x < 0 { return -x }
     return x
 }
 
 pub exp(value: f64): f64 {
-    if isnan(value) {
-        return value
-    }
-    if value > EXP_OVERFLOW {
-        return bits.to_float(u64(0x7FF0000000000000))
-    }
-    if value < EXP_UNDERFLOW {
-        return 0.0
-    }
+    if isnan(value) { return value }
+    if value > EXP_OVERFLOW { return bits.to_float(u64(0x7FF0000000000000)) }
+    if value < EXP_UNDERFLOW { return 0.0 }
     high: f64 = value
     low: f64 = 0.0
     k: int = 0
     if value <= -EXP_HALF_LN2 || value >= EXP_HALF_LN2 {
         half: f64 = 0.5
-        if value < 0.0 {
-            half = -0.5
-        }
+        if value < 0.0 { half = -0.5 }
         k = int(INV_LN2 * value + half)
         scale: f64 = f64(k)
         high = value - scale * LN2_HI
@@ -200,38 +186,24 @@ pub exp(value: f64): f64 {
     r: f64 = high - low
     r2: f64 = r * r
     c: f64 = r - r2 * (EXP_P1 + r2 * (EXP_P2 + r2 * (EXP_P3 + r2 * (EXP_P4 + r2 * EXP_P5))))
-    if k == 0 {
-        return 1.0 - ((r * c) / (c - 2.0) - r)
-    }
+    if k == 0 { return 1.0 - ((r * c) / (c - 2.0) - r) }
     y: f64 = 1.0 - ((low - (r * c) / (2.0 - c)) - high)
     if k == 1024 {
         y = y * 2.0
         k = 1023
     }
-    if k >= -1021 {
-        return y * bits.to_float(u64(1023 + k) << 52)
-    }
+    if k >= -1021 { return y * bits.to_float(u64(1023 + k) << 52) }
     // Subnormal result: scale in two exact steps so only the last one rounds.
     return y * bits.to_float(u64(1023 + k + 1000) << 52) * bits.to_float(u64(23) << 52)
 }
 
-pub exp(value: f32): f32 {
-    return f32(exp(f64(value)))
-}
+pub exp(value: f32): f32 { return f32(exp(f64(value))) }
 
 pub log(value: f64): f64 {
-    if isnan(value) {
-        return value
-    }
-    if value < 0.0 {
-        return bits.to_float(u64(0x7FF8000000000000))
-    }
-    if value == 0.0 {
-        return -bits.to_float(u64(0x7FF0000000000000))
-    }
-    if isinf(value) {
-        return value
-    }
+    if isnan(value) { return value }
+    if value < 0.0 { return bits.to_float(u64(0x7FF8000000000000)) }
+    if value == 0.0 { return -bits.to_float(u64(0x7FF0000000000000)) }
+    if isinf(value) { return value }
     x: f64 = value
     raw: u64 = bits.from_float(x)
     k: int = 0
@@ -262,34 +234,22 @@ pub log(value: f64): f64 {
     return dk * LN2_HI - ((half_f2 - (s * (half_f2 + r) + dk * LN2_LO)) - f)
 }
 
-pub log(value: f32): f32 {
-    return f32(log(f64(value)))
-}
+pub log(value: f32): f32 { return f32(log(f64(value))) }
 
 // Parity of the finite non-zero exponent with bits `raw`: 0 fractional, 1 odd, 2 even.
 integer_parity(raw: u64): int {
     e: u64 = (raw >> 52) & 0x7FF
-    if e < 0x3FF {
-        return 0
-    }
-    if e > 0x3FF + 52 {
-        return 2
-    }
+    if e < 0x3FF { return 0 }
+    if e > 0x3FF + 52 { return 2 }
     unit: u64 = u64(1) << (0x3FF + 52 - e)
-    if (raw & (unit - 1)) != 0 {
-        return 0
-    }
-    if (raw & unit) != 0 {
-        return 1
-    }
+    if (raw & (unit - 1)) != 0 { return 0 }
+    if (raw & unit) != 0 { return 1 }
     return 2
 }
 
 // A result of pow computed for |x|: negative when x is a negative base and y an odd integer.
 pow_signed(magnitude: f64, flip: u64): f64 {
-    if flip != 0 {
-        return -magnitude
-    }
+    if flip != 0 { return -magnitude }
     return magnitude
 }
 
@@ -306,21 +266,13 @@ pow_special(x: f64, y: f64): (bool, f64, i64, u64) {
     infinite: u64 = 0x7FF0000000000000
     infinity: f64 = bits.to_float(infinite)
     // Zero exponent and a base of +1 give 1 whatever the other operand is, a NaN included.
-    if ay == 0 || ix == one {
-        return true, 1.0, 0, 0
-    }
-    if ax > infinite || ay > infinite {
-        return true, x + y, 0, 0
-    }
+    if ay == 0 || ix == one { return true, 1.0, 0, 0 }
+    if ax > infinite || ay > infinite { return true, x + y, 0, 0 }
     grows: bool = ax > one
     y_positive: bool = (iy >> 63) == 0
     if ay == infinite {
-        if ax == one {
-            return true, 1.0, 0, 0
-        }
-        if grows == y_positive {
-            return true, infinity, 0, 0
-        }
+        if ax == one { return true, 1.0, 0, 0 }
+        if grows == y_positive { return true, infinity, 0, 0 }
         return true, 0.0, 0, 0
     }
     // y is finite and non-zero; a negative base needs its exponent's parity, and only an odd integer
@@ -330,36 +282,24 @@ pow_special(x: f64, y: f64): (bool, f64, i64, u64) {
     flip: u64 = 0
     if negative {
         parity = integer_parity(iy)
-        if parity == 1 {
-            flip = POW_SIGN
-        }
+        if parity == 1 { flip = POW_SIGN }
     }
     if ax == 0 || ax == infinite {
         // A zero base gives 0 for y > 0 and infinity for y < 0; an infinite base the reverse.
-        if (ax == 0) == y_positive {
-            return true, pow_signed(0.0, flip), 0, 0
-        }
+        if (ax == 0) == y_positive { return true, pow_signed(0.0, flip), 0, 0 }
         return true, pow_signed(infinity, flip), 0, 0
     }
     // A finite negative base with a fractional exponent has no real power.
-    if negative && parity == 0 {
-        return true, bits.to_float(u64(0x7FF8000000000000)), 0, 0
-    }
+    if negative && parity == 0 { return true, bits.to_float(u64(0x7FF8000000000000)), 0, 0 }
     // |y| < 2^-65 puts the result within 2^-54 of 1; |y| >= 2^63 overflows or underflows unless |x| = 1.
     ey: u64 = (iy >> 52) & 0x7FF
-    if ax == one || ey < 0x3BE {
-        return true, 1.0, 0, 0
-    }
+    if ax == one || ey < 0x3BE { return true, 1.0, 0, 0 }
     if ey >= 0x43E {
-        if grows == y_positive {
-            return true, infinity, 0, 0
-        }
+        if grows == y_positive { return true, infinity, 0, 0 }
         return true, 0.0, 0, 0
     }
     magnitude: i64 = i64(ax)
-    if (ax >> 52) == 0 {
-        magnitude = i64(bits.from_float(bits.to_float(ax) * POW_TWO_52)) - 234187180623265792
-    }
+    if (ax >> 52) == 0 { magnitude = i64(bits.from_float(bits.to_float(ax) * POW_TWO_52)) - 234187180623265792 }
     return false, 0.0, magnitude, flip
 }
 
@@ -368,12 +308,8 @@ pow_special(x: f64, y: f64): (bool, f64, i64, u64) {
 // otherwise scales in two steps so w keeps its precision and only the last multiply can round into
 // the subnormal range.
 pow_extreme(w: f64, n: i64): f64 {
-    if n > 1024 {
-        return bits.to_float(u64(0x7FF0000000000000))
-    }
-    if n == 1024 {
-        return (w * bits.to_float(u64(2046) << 52)) * 2.0
-    }
+    if n > 1024 { return bits.to_float(u64(0x7FF0000000000000)) }
+    if n == 1024 { return (w * bits.to_float(u64(2046) << 52)) * 2.0 }
     return (w * bits.to_float(u64(n + 1083) << 52)) * POW_TWO_M60
 }
 
@@ -387,18 +323,10 @@ pub pow(x: f64, y: f64): f64 {
     // An exponent of 2, 1, -1, or 0.5 (a zero mantissa selects the powers of two) has a cheaper exact
     // form. Only a positive base takes the square root: pow(-0, 0.5) is +0 and pow(-inf, 0.5) is +inf.
     if (iy << 12) == 0 {
-        if iy == 0x4000000000000000 {
-            return x * x
-        }
-        if iy == 0x3FF0000000000000 {
-            return x
-        }
-        if iy == 0xBFF0000000000000 {
-            return 1.0 / x
-        }
-        if iy == 0x3FE0000000000000 && ix < 0x7FF0000000000000 {
-            return sqrt(x)
-        }
+        if iy == 0x4000000000000000 { return x * x }
+        if iy == 0x3FF0000000000000 { return x }
+        if iy == 0xBFF0000000000000 { return 1.0 / x }
+        if iy == 0x3FE0000000000000 && ix < 0x7FF0000000000000 { return sqrt(x) }
     }
     top_x: u64 = ix >> 52
     top_y: u64 = (iy >> 52) & 0x7FF
@@ -408,21 +336,15 @@ pub pow(x: f64, y: f64): f64 {
         if top_x > 0x800 && top_x < 0xFFF && top_y >= 0x3BE && top_y < 0x43E {
             // A finite negative base and an ordinary exponent: only an integer exponent is defined, and
             // an odd one flips the sign. The units bit of y sits 0x433 - top_y places above bit 0.
-            if top_y < 0x3FF {
-                return bits.to_float(u64(0x7FF8000000000000))
-            }
+            if top_y < 0x3FF { return bits.to_float(u64(0x7FF8000000000000)) }
             if top_y <= 0x433 {
-                if (iy & ((u64(1) << (0x433 - top_y)) - 1)) != 0 {
-                    return bits.to_float(u64(0x7FF8000000000000))
-                }
+                if (iy & ((u64(1) << (0x433 - top_y)) - 1)) != 0 { return bits.to_float(u64(0x7FF8000000000000)) }
                 flip = (iy >> (0x433 - top_y)) << 63
             }
             xs = i64(ix & POW_ABS)
         } else {
             done: bool, result: f64, magnitude: i64, sign: u64 = pow_special(x, y)
-            if done {
-                return result
-            }
+            if done { return result }
             xs = magnitude
             flip = sign
         }
@@ -460,16 +382,10 @@ pub pow(x: f64, y: f64): f64 {
     // |er| <= ln2/256. Below 2^-54 the answer rounds to 1; beyond +-745.2 it overflows or underflows.
     // flip holds the sign bit a negative base's odd exponent sets, so xoring it in negates the result.
     top_e: u64 = (bits.from_float(e_hi) >> 52) & 0x7FF
-    if top_e < 0x3C9 {
-        return bits.to_float(u64(0x3FF0000000000000) ^ flip)
-    }
+    if top_e < 0x3C9 { return bits.to_float(u64(0x3FF0000000000000) ^ flip) }
     if top_e >= 0x408 {
-        if e_hi > POW_EXP_LIMIT {
-            return bits.to_float(u64(0x7FF0000000000000) ^ flip)
-        }
-        if e_hi < -POW_EXP_LIMIT {
-            return bits.to_float(flip)
-        }
+        if e_hi > POW_EXP_LIMIT { return bits.to_float(u64(0x7FF0000000000000) ^ flip) }
+        if e_hi < -POW_EXP_LIMIT { return bits.to_float(flip) }
     }
     shifted: f64 = POW_EXP_INV_LN2N * e_hi + POW_EXP_SHIFT
     n: i64 = i64(bits.from_float(shifted)) - POW_SHIFT_BITS
@@ -499,22 +415,12 @@ pub pow(x: f32, y: f32): f32 {
     ix: u32 = bits.from_float(x)
     iy: u32 = bits.from_float(y)
     if (iy << 9) == 0 {
-        if iy == 0x40000000 {
-            return x * x
-        }
-        if iy == 0x3F800000 {
-            return x
-        }
-        if iy == 0xBF800000 {
-            return 1.0 / x
-        }
-        if iy == 0x3F000000 && ix < 0x7F800000 {
-            return sqrt(x)
-        }
+        if iy == 0x40000000 { return x * x }
+        if iy == 0x3F800000 { return x }
+        if iy == 0xBF800000 { return 1.0 / x }
+        if iy == 0x3F000000 && ix < 0x7F800000 { return sqrt(x) }
     }
-    if ix < 1 || ix >= 0x7F800000 || (iy & 0x7FFFFFFF) >= 0x7F800000 {
-        return f32(pow(f64(x), f64(y)))
-    }
+    if ix < 1 || ix >= 0x7F800000 || (iy & 0x7FFFFFFF) >= 0x7F800000 { return f32(pow(f64(x), f64(y))) }
     xs: i64 = i64(bits.from_float(f64(x)))
     offset: i64 = xs - POW_LOG_OFF
     i: u64 = u64(offset >> 45) & 127
@@ -523,9 +429,7 @@ pub pow(x: f32, y: f32): f32 {
         r * r * (0.5 - r * (POW_LOG_C3 + r * (POW_LOG_C4 + r * POW_LOG_C5))))
     // Beyond |e| = 128 the result overflows or underflows to zero in f32.
     if ((bits.from_float(e) >> 52) & 0x7FF) >= 0x406 {
-        if e > 0.0 {
-            return bits.to_float(u32(0x7F800000))
-        }
+        if e > 0.0 { return bits.to_float(u32(0x7F800000)) }
         return 0.0
     }
     shifted: f64 = POW_EXP_INV_LN2N * e + POW_EXP_SHIFT
@@ -539,9 +443,7 @@ kernel_sin(x: f64, y: f64, tail: bool): f64 {
     z: f64 = x * x
     v: f64 = z * x
     r: f64 = SIN_S2 + z * (SIN_S3 + z * (SIN_S4 + z * (SIN_S5 + z * SIN_S6)))
-    if !tail {
-        return x + v * (SIN_S1 + z * r)
-    }
+    if !tail { return x + v * (SIN_S1 + z * r) }
     return x - ((z * (0.5 * y - v * r) - y) - v * SIN_S1)
 }
 
@@ -549,12 +451,8 @@ kernel_cos(x: f64, y: f64): f64 {
     z: f64 = x * x
     r: f64 = z * (COS_C1 + z * (COS_C2 + z * (COS_C3 + z * (COS_C4 + z * (COS_C5 + z * COS_C6)))))
     magnitude: f64 = x
-    if x < 0.0 {
-        magnitude = -x
-    }
-    if magnitude < 0.3 {
-        return 1.0 - (0.5 * z - (z * r - x * y))
-    }
+    if x < 0.0 { magnitude = -x }
+    if magnitude < 0.3 { return 1.0 - (0.5 * z - (z * r - x * y)) }
     qx: f64 = 0.28125
     if magnitude <= 0.78125 {
         // x/4 truncated to its high word, so the subtraction below stays exact.
@@ -564,9 +462,7 @@ kernel_cos(x: f64, y: f64): f64 {
     return (1.0 - qx) - (hz - (z * r - x * y))
 }
 
-exponent_field(x: f64): int {
-    return int((bits.from_float(x) >> 52) & u64(0x7FF))
-}
+exponent_field(x: f64): int { return int((bits.from_float(x) >> 52) & u64(0x7FF)) }
 
 /* Cody-Waite reduction for 0 < x < 2^20 * pi/2: x = n * pi/2 + (y0 + y1). */
 reduce_medium(x: f64): (f64, f64, int) {
@@ -594,9 +490,7 @@ reduce_medium(x: f64): (f64, f64, int) {
 }
 
 bit_at(limbs: []u64, k: int): u64 {
-    if k < 0 || k >= 320 {
-        return 0
-    }
+    if k < 0 || k >= 320 { return 0 }
     return (limbs[usize(k / 32)] >> u64(k % 32)) & 1
 }
 
@@ -624,9 +518,7 @@ reduce_large(x: f64): (f64, f64, int) {
     ml: u64 = m & u64(0xFFFFFFFF)
     mh: u64 = m >> 32
     first: int = 0
-    if e >= 2 {
-        first = (e - 2) / 32
-    }
+    if e >= 2 { first = (e - 2) / 32 }
     limbs: [10]u64 = [0 : 10]
     for j: int in 0 .. 8 {
         limb: u64 = u64(TWO_OVER_PI[usize(first + j)])
@@ -659,12 +551,8 @@ reduce_large(x: f64): (f64, f64, int) {
         }
     }
     top: int = fraction_bits - 1
-    for top >= 0 && bit_at(limbs[..], top) == 0 {
-        top = top - 1
-    }
-    if top < 0 {
-        return 0.0, 0.0, quotient & 3
-    }
+    for top >= 0 && bit_at(limbs[..], top) == 0 { top = top - 1 }
+    if top < 0 { return 0.0, 0.0, quotient & 3 }
     // The fraction as two exact 53-bit pieces, most significant first.
     high_bits: u64 = 0
     low_bits: u64 = 0
@@ -679,9 +567,7 @@ reduce_large(x: f64): (f64, f64, int) {
     t: f64 = product_error(fh, PIO2_A, p) + (fh * PIO2_B + fl * PIO2_A)
     y0: f64 = p + t
     y1: f64 = t - (y0 - p)
-    if negative {
-        return -y0, -y1, quotient & 3
-    }
+    if negative { return -y0, -y1, quotient & 3 }
     return y0, y1, quotient & 3
 }
 
@@ -698,17 +584,11 @@ reduce(x: f64): (f64, f64, int) {
 }
 
 pub sin(value: f64): f64 {
-    if isnan(value) || isinf(value) {
-        return bits.to_float(u64(0x7FF8000000000000))
-    }
+    if isnan(value) || isinf(value) { return bits.to_float(u64(0x7FF8000000000000)) }
     magnitude: f64 = value
-    if value < 0.0 {
-        magnitude = -value
-    }
+    if value < 0.0 { magnitude = -value }
     if magnitude <= PIO4 {
-        if magnitude < SMALL_ARGUMENT {
-            return value
-        }
+        if magnitude < SMALL_ARGUMENT { return value }
         return kernel_sin(value, 0.0, false)
     }
     y0: f64, y1: f64, quarter: int = reduce(magnitude)
@@ -722,43 +602,25 @@ pub sin(value: f64): f64 {
     } else {
         result = -kernel_cos(y0, y1)
     }
-    if value < 0.0 {
-        return -result
-    }
+    if value < 0.0 { return -result }
     return result
 }
 
-pub sin(value: f32): f32 {
-    return f32(sin(f64(value)))
-}
+pub sin(value: f32): f32 { return f32(sin(f64(value))) }
 
 pub cos(value: f64): f64 {
-    if isnan(value) || isinf(value) {
-        return bits.to_float(u64(0x7FF8000000000000))
-    }
+    if isnan(value) || isinf(value) { return bits.to_float(u64(0x7FF8000000000000)) }
     magnitude: f64 = value
-    if value < 0.0 {
-        magnitude = -value
-    }
+    if value < 0.0 { magnitude = -value }
     if magnitude <= PIO4 {
-        if magnitude < SMALL_ARGUMENT {
-            return 1.0
-        }
+        if magnitude < SMALL_ARGUMENT { return 1.0 }
         return kernel_cos(magnitude, 0.0)
     }
     y0: f64, y1: f64, quarter: int = reduce(magnitude)
-    if quarter == 0 {
-        return kernel_cos(y0, y1)
-    }
-    if quarter == 1 {
-        return -kernel_sin(y0, y1, true)
-    }
-    if quarter == 2 {
-        return -kernel_cos(y0, y1)
-    }
+    if quarter == 0 { return kernel_cos(y0, y1) }
+    if quarter == 1 { return -kernel_sin(y0, y1, true) }
+    if quarter == 2 { return -kernel_cos(y0, y1) }
     return kernel_sin(y0, y1, true)
 }
 
-pub cos(value: f32): f32 {
-    return f32(cos(f64(value)))
-}
+pub cos(value: f32): f32 { return f32(cos(f64(value))) }

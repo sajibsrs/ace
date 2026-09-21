@@ -24,9 +24,7 @@ pub from_u64(value: u64): Big {
 
 normalize(mut value: Big) {
     for value.used > 0 {
-        if value.limbs[value.used - 1] != 0 {
-            break
-        }
+        if value.limbs[value.used - 1] != 0 { break }
         value.used -= 1
     }
 }
@@ -51,9 +49,7 @@ pub multiply_small(mut value: Big, factor: u32) {
 }
 
 pub add_small(mut value: Big, addend: u32) {
-    if addend == 0 {
-        return
-    }
+    if addend == 0 { return }
     carry: u64 = u64(addend)
     at: int = 0
 
@@ -74,15 +70,11 @@ pub add_small(mut value: Big, addend: u32) {
 }
 
 pub multiply_power5(mut value: Big, power: int) {
-    for i: int in 0 .. power {
-        multiply_small(mut value, 5)
-    }
+    for i: int in 0 .. power { multiply_small(mut value, 5) }
 }
 
 pub shift_left(mut value: Big, count: int) {
-    if value.used == 0 || count == 0 {
-        return
-    }
+    if value.used == 0 || count == 0 { return }
     words: int = count / 32
     bits: int = count % 32
 
@@ -91,9 +83,7 @@ pub shift_left(mut value: Big, count: int) {
             source_index: int = value.used - 1 - i
             value.limbs[source_index + words] = value.limbs[source_index]
         }
-        for i: int in 0 .. words {
-            value.limbs[i] = 0
-        }
+        for i: int in 0 .. words { value.limbs[i] = 0 }
         value.used += words
     }
 
@@ -114,24 +104,16 @@ pub shift_left(mut value: Big, count: int) {
 }
 
 pub compare(a: Big, b: Big): int {
-    if a.used < b.used {
-        return -1
-    }
+    if a.used < b.used { return -1 }
 
-    if a.used > b.used {
-        return 1
-    }
+    if a.used > b.used { return 1 }
 
     for i: int in 0 .. a.used {
         at: int = a.used - 1 - i
 
-        if a.limbs[at] < b.limbs[at] {
-            return -1
-        }
+        if a.limbs[at] < b.limbs[at] { return -1 }
 
-        if a.limbs[at] > b.limbs[at] {
-            return 1
-        }
+        if a.limbs[at] > b.limbs[at] { return 1 }
     }
     return 0
 }

@@ -21,18 +21,14 @@ pub SendErr: type = os.SendErr
 pub ResolveErr: type = os.ResolveErr
 pub LocalErr: type = os.LocalErr
 
-zero_addr4(): Addr4 {
-    return Addr4 {ip = [0, 0, 0, 0], port = u16(0)}
-}
+zero_addr4(): Addr4 { return Addr4 {ip = [0, 0, 0, 0], port = u16(0)} }
 
 /* Strict dotted-decimal IPv4 endpoint parsing. */
 pub parse4(endpoint: string): (Addr4, bool) {
     address: Addr4 = zero_addr4()
     at: usize = 0
 
-    if endpoint.len == 0 {
-        return address, false
-    }
+    if endpoint.len == 0 { return address, false }
     for part: usize in 0 .. 4 {
         value: uint = 0
         digits: usize = 0
@@ -41,24 +37,16 @@ pub parse4(endpoint: string): (Addr4, bool) {
             value = value * 10 + uint(endpoint[at] - 48)
             digits += 1
             at += 1
-            if value > 255 {
-                return zero_addr4(), false
-            }
+            if value > 255 { return zero_addr4(), false }
         }
-        if digits == 0 {
-            return zero_addr4(), false
-        }
+        if digits == 0 { return zero_addr4(), false }
         address.ip[part] = u8(value)
         if part < 3 {
-            if at >= endpoint.len || endpoint[at] != 46 {
-                return zero_addr4(), false
-            }
+            if at >= endpoint.len || endpoint[at] != 46 { return zero_addr4(), false }
             at += 1
         }
     }
-    if at >= endpoint.len || endpoint[at] != 58 {
-        return zero_addr4(), false
-    }
+    if at >= endpoint.len || endpoint[at] != 58 { return zero_addr4(), false }
     at += 1
     port: uint = 0
     digits: usize = 0
@@ -66,13 +54,9 @@ pub parse4(endpoint: string): (Addr4, bool) {
         port = port * 10 + uint(endpoint[at] - 48)
         digits += 1
         at += 1
-        if port > 65535 {
-            return zero_addr4(), false
-        }
+        if port > 65535 { return zero_addr4(), false }
     }
-    if digits == 0 || at != endpoint.len {
-        return zero_addr4(), false
-    }
+    if digits == 0 || at != endpoint.len { return zero_addr4(), false }
     address.port = u16(port)
     return address, true
 }
@@ -82,38 +66,24 @@ pub socket(socket_type: SocketType): (Socket, Error) {
     return result, err
 }
 
-pub reuse_addr(sock: Socket, enabled: bool): Error {
-    return os.reuse_addr(sock, enabled)
-}
+pub reuse_addr(sock: Socket, enabled: bool): Error { return os.reuse_addr(sock, enabled) }
 
-pub reuse_port(sock: Socket, enabled: bool): Error {
-    return os.reuse_port(sock, enabled)
-}
+pub reuse_port(sock: Socket, enabled: bool): Error { return os.reuse_port(sock, enabled) }
 
-pub nonblock(sock: Socket, enabled: bool): Error {
-    return os.nonblock(sock, enabled)
-}
+pub nonblock(sock: Socket, enabled: bool): Error { return os.nonblock(sock, enabled) }
 
-pub bind(sock: Socket, address: Addr4): Error {
-    return os.bind(sock, address)
-}
+pub bind(sock: Socket, address: Addr4): Error { return os.bind(sock, address) }
 
-pub listen(sock: Socket, backlog: usize): Error {
-    return os.listen(sock, backlog)
-}
+pub listen(sock: Socket, backlog: usize): Error { return os.listen(sock, backlog) }
 
 pub accept(listener: Socket): (Socket, Addr4, Error) {
     accepted: Socket, address: Addr4, err: Error = os.accept(listener)
     return accepted, address, err
 }
 
-pub connect(sock: Socket, address: Addr4): Error {
-    return os.connect(sock, address)
-}
+pub connect(sock: Socket, address: Addr4): Error { return os.connect(sock, address) }
 
-pub pending_error(sock: Socket): Error {
-    return os.pending_error(sock)
-}
+pub pending_error(sock: Socket): Error { return os.pending_error(sock) }
 
 pub local(sock: Socket): (Addr4, Error) {
     address: Addr4, err: Error = os.local(sock)

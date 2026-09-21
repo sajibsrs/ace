@@ -25,21 +25,15 @@ pub Decimal: struct {
 }
 
 equal_text(text: string, expected: string): bool {
-    if text.len != expected.len {
-        return false
-    }
+    if text.len != expected.len { return false }
     for i: usize in 0 .. text.len {
-        if text[i] != expected[i] {
-            return false
-        }
+        if text[i] != expected[i] { return false }
     }
     return true
 }
 
 fast_decimal(text: string, mut result: FastDecimal) {
-    if text.len == 0 || text.len >= 512 {
-        return
-    }
+    if text.len == 0 || text.len >= 512 { return }
     if text.len == 3 {
         if text[0] == 110 && text[1] == 97 && text[2] == 110 {
             result.number_type = 2
@@ -62,9 +56,7 @@ fast_decimal(text: string, mut result: FastDecimal) {
         negative = true
         at = 1
     }
-    if at == text.len {
-        return
-    }
+    if at == text.len { return }
     coefficient: u64 = 0
     fractional: int = 0
     significant: int = 0
@@ -87,17 +79,13 @@ fast_decimal(text: string, mut result: FastDecimal) {
             non_digit: u64 = high_bad | low_bad
             run: int = 8
 
-            if non_digit != 0 {
-                run = int(bits.trail_zeros(non_digit)) / 8
-            }
+            if non_digit != 0 { run = int(bits.trail_zeros(non_digit)) / 8 }
 
             if run > 0 {
                 seen_digit = true
 
                 if run == 8 && seen_nonzero {
-                    if seen_dot {
-                        fractional += 8
-                    }
+                    if seen_dot { fractional += 8 }
                     significant += 8
 
                     if significant <= 19 {
@@ -116,16 +104,12 @@ fast_decimal(text: string, mut result: FastDecimal) {
                     for offset: int in 0 .. run {
                         c: u8 = text[at + usize(offset)]
 
-                        if seen_dot {
-                            fractional += 1
-                        }
+                        if seen_dot { fractional += 1 }
                         if c != 48 || seen_nonzero {
                             seen_nonzero = true
                             significant += 1
 
-                            if significant <= 19 {
-                                coefficient = coefficient * 10 + u64(c - 48)
-                            }
+                            if significant <= 19 { coefficient = coefficient * 10 + u64(c - 48) }
                         }
                     }
                 }
@@ -137,16 +121,12 @@ fast_decimal(text: string, mut result: FastDecimal) {
         if c >= '0' && c <= '9' {
             seen_digit = true
 
-            if seen_dot {
-                fractional += 1
-            }
+            if seen_dot { fractional += 1 }
             if c != 48 || seen_nonzero {
                 seen_nonzero = true
                 significant += 1
 
-                if significant <= 19 {
-                    coefficient = coefficient * 10 + u64(c - 48)
-                }
+                if significant <= 19 { coefficient = coefficient * 10 + u64(c - 48) }
             }
             at += 1
             continue
@@ -158,9 +138,7 @@ fast_decimal(text: string, mut result: FastDecimal) {
         }
         break
     }
-    if !seen_digit {
-        return
-    }
+    if !seen_digit { return }
     explicit: int = 0
 
     if at < text.len && (text[at] == 101 || text[at] == 69) {
@@ -174,27 +152,17 @@ fast_decimal(text: string, mut result: FastDecimal) {
         exponent_digits: int = 0
 
         for at < text.len && text[at] >= 48 && text[at] <= 57 {
-            if explicit < 10000 {
-                explicit = explicit * 10 + int(text[at] - 48)
-            }
+            if explicit < 10000 { explicit = explicit * 10 + int(text[at] - 48) }
             exponent_digits += 1
             at += 1
         }
-        if exponent_digits == 0 {
-            return
-        }
-        if exponent_negative {
-            explicit = 0 - explicit
-        }
+        if exponent_digits == 0 { return }
+        if exponent_negative { explicit = 0 - explicit }
     }
-    if at != text.len {
-        return
-    }
+    if at != text.len { return }
     exponent10: int = explicit - fractional
 
-    if significant > 19 {
-        exponent10 += significant - 19
-    }
+    if significant > 19 { exponent10 += significant - 19 }
     result.coefficient = coefficient
     result.exponent10 = exponent10
     result.negative = negative
@@ -206,9 +174,7 @@ decimal(text: string): Decimal {
     invalid: Decimal = Decimal { coefficient = big.from_u64(0), exponent10 = 0,
                                  negative = false, digits = 0, number_type = 3 }
 
-    if text.len == 0 || text.len >= 512 {
-        return invalid
-    }
+    if text.len == 0 || text.len >= 512 { return invalid }
     if equal_text(text, "nan") {
         return Decimal { coefficient = big.from_u64(0), exponent10 = 0,
                          negative = false, digits = 0, number_type = 2 }
@@ -229,9 +195,7 @@ decimal(text: string): Decimal {
         at = 1
     }
 
-    if at == text.len {
-        return invalid
-    }
+    if at == text.len { return invalid }
     coefficient: big.Big = big.from_u64(0)
     fractional: int = 0
     significant: int = 0
@@ -247,9 +211,7 @@ decimal(text: string): Decimal {
             big.multiply_small(mut coefficient, 10)
             big.add_small(mut coefficient, u32(c - 48))
 
-            if seen_dot {
-                fractional += 1
-            }
+            if seen_dot { fractional += 1 }
             if c != 48 || seen_nonzero {
                 seen_nonzero = true
                 significant += 1
@@ -266,9 +228,7 @@ decimal(text: string): Decimal {
         break
     }
 
-    if !seen_digit {
-        return invalid
-    }
+    if !seen_digit { return invalid }
     explicit: int = 0
 
     if at < text.len && (text[at] == 101 || text[at] == 69) {
@@ -282,24 +242,16 @@ decimal(text: string): Decimal {
         exponent_digits: int = 0
 
         for at < text.len && text[at] >= 48 && text[at] <= 57 {
-            if explicit < 10000 {
-                explicit = explicit * 10 + int(text[at] - 48)
-            }
+            if explicit < 10000 { explicit = explicit * 10 + int(text[at] - 48) }
             exponent_digits += 1
             at += 1
         }
 
-        if exponent_digits == 0 {
-            return invalid
-        }
-        if exponent_negative {
-            explicit = 0 - explicit
-        }
+        if exponent_digits == 0 { return invalid }
+        if exponent_negative { explicit = 0 - explicit }
     }
 
-    if at != text.len {
-        return invalid
-    }
+    if at != text.len { return invalid }
     return Decimal { coefficient = coefficient,
                      exponent10 = explicit - fractional,
                      negative = negative, digits = significant, number_type = 0 }
@@ -332,9 +284,7 @@ decode64(raw: u64): (u64, int) {
     exponent: u64 = (raw >> 52) & u64(0x7FF)
     fraction: u64 = raw & u64(0xFFFFFFFFFFFFF)
 
-    if exponent == 0 {
-        return fraction, -1074
-    }
+    if exponent == 0 { return fraction, -1074 }
     return fraction | u64(0x10000000000000), int(exponent) - 1023 - 52
 }
 
@@ -342,9 +292,7 @@ decode32(raw: u32): (u64, int) {
     exponent: u32 = (raw >> 23) & u32(0xFF)
     fraction: u32 = raw & u32(0x7FFFFF)
 
-    if exponent == 0 {
-        return u64(fraction), -149
-    }
+    if exponent == 0 { return u64(fraction), -149 }
     return u64(fraction | u32(0x800000)), int(exponent) - 127 - 23
 }
 
@@ -377,25 +325,17 @@ pub binary64(text: string): (f64, bool) {
     scanned.number_type = 3
     fast_decimal(text, mut scanned)
 
-    if scanned.number_type == 2 {
-        return bits.to_float(u64(0x7FF8000000000000)), true
-    }
+    if scanned.number_type == 2 { return bits.to_float(u64(0x7FF8000000000000)), true }
     if scanned.number_type == 1 {
         raw_inf: u64 = u64(0x7FF0000000000000)
 
-        if scanned.negative {
-            raw_inf |= u64(0x8000000000000000)
-        }
+        if scanned.negative { raw_inf |= u64(0x8000000000000000) }
         return bits.to_float(raw_inf), true
     }
-    if scanned.number_type == 3 {
-        return 0.0, false
-    }
+    if scanned.number_type == 3 { return 0.0, false }
     sign: u64 = 0
 
-    if scanned.negative {
-        sign = u64(0x8000000000000000)
-    }
+    if scanned.negative { sign = u64(0x8000000000000000) }
     if scanned.digits <= 19 {
         raw: u64 = 0
         handled: bool = fast.exact64(scanned.coefficient, scanned.exponent10,
@@ -405,22 +345,16 @@ pub binary64(text: string): (f64, bool) {
             handled = fast.small_integer(scanned.coefficient,
                                          scanned.exponent10, 52, 1023, mut raw)
         }
-        if !handled {
-            handled = fast.binary64(scanned.coefficient, scanned.exponent10, mut raw)
-        }
+        if !handled { handled = fast.binary64(scanned.coefficient, scanned.exponent10, mut raw) }
 
         if handled {
-            if raw == u64(0x7FF0000000000000) {
-                return 0.0, false
-            }
+            if raw == u64(0x7FF0000000000000) { return 0.0, false }
             return bits.to_float(sign | raw), true
         }
     }
     value: Decimal = decimal(text)
 
-    if value.digits == 0 || value.digits + value.exponent10 < -350 {
-        return bits.to_float(sign), true
-    }
+    if value.digits == 0 || value.digits + value.exponent10 < -350 { return bits.to_float(sign), true }
     if value.digits + value.exponent10 > 310 ||
        compare_binary(value, u64(0x3FFFFFFFFFFFFF), 970) >= 0 {
         return 0.0, false
@@ -444,9 +378,7 @@ pub binary64(text: string): (f64, bool) {
         upper: u64 = low + 1
         midpoint: int = midpoint64(value, upper)
 
-        if midpoint > 0 || (midpoint == 0 && (upper & 1) == 0) {
-            low = upper
-        }
+        if midpoint > 0 || (midpoint == 0 && (upper & 1) == 0) { low = upper }
     }
     return bits.to_float(sign | low), true
 }
@@ -460,25 +392,17 @@ pub binary32(text: string): (f32, bool) {
     scanned.number_type = 3
     fast_decimal(text, mut scanned)
 
-    if scanned.number_type == 2 {
-        return bits.to_float(u32(0x7FC00000)), true
-    }
+    if scanned.number_type == 2 { return bits.to_float(u32(0x7FC00000)), true }
     if scanned.number_type == 1 {
         raw_inf: u32 = u32(0x7F800000)
 
-        if scanned.negative {
-            raw_inf |= u32(0x80000000)
-        }
+        if scanned.negative { raw_inf |= u32(0x80000000) }
         return bits.to_float(raw_inf), true
     }
-    if scanned.number_type == 3 {
-        return 0.0, false
-    }
+    if scanned.number_type == 3 { return 0.0, false }
     sign: u32 = 0
 
-    if scanned.negative {
-        sign = u32(0x80000000)
-    }
+    if scanned.negative { sign = u32(0x80000000) }
     if scanned.digits <= 19 {
         wide_raw: u64 = 0
         handled: bool = fast.exact32(scanned.coefficient, scanned.exponent10,
@@ -488,24 +412,18 @@ pub binary32(text: string): (f32, bool) {
             handled = fast.small_integer(scanned.coefficient,
                                          scanned.exponent10, 23, 127, mut wide_raw)
         }
-        if !handled {
-            handled = fast.binary32(scanned.coefficient, scanned.exponent10, mut wide_raw)
-        }
+        if !handled { handled = fast.binary32(scanned.coefficient, scanned.exponent10, mut wide_raw) }
 
         if handled {
             raw: u32 = u32(wide_raw)
 
-            if raw == u32(0x7F800000) {
-                return 0.0, false
-            }
+            if raw == u32(0x7F800000) { return 0.0, false }
             return bits.to_float(sign | raw), true
         }
     }
     value: Decimal = decimal(text)
 
-    if value.digits == 0 || value.digits + value.exponent10 < -60 {
-        return bits.to_float(sign), true
-    }
+    if value.digits == 0 || value.digits + value.exponent10 < -60 { return bits.to_float(sign), true }
     if value.digits + value.exponent10 > 50 ||
        compare_binary(value, u64(0x1FFFFFF), 103) >= 0 {
         return 0.0, false
@@ -529,9 +447,7 @@ pub binary32(text: string): (f32, bool) {
         upper: u32 = low + 1
         midpoint: int = midpoint32(value, upper)
 
-        if midpoint > 0 || (midpoint == 0 && (upper & 1) == 0) {
-            low = upper
-        }
+        if midpoint > 0 || (midpoint == 0 && (upper & 1) == 0) { low = upper }
     }
     return bits.to_float(sign | low), true
 }

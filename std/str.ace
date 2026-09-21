@@ -53,13 +53,9 @@ pub has(text: string, needle: char): bool {
  * string part matches either boundary.
  */
 pub has(text: string, part: string, suffix: bool): bool {
-    if part.len > text.len {
-        return false
-    }
+    if part.len > text.len { return false }
 
-    if !suffix {
-        return mem.equal(text[..part.len], part)
-    }
+    if !suffix { return mem.equal(text[..part.len], part) }
     return mem.equal(text[text.len - part.len..], part)
 }
 
@@ -69,26 +65,18 @@ pub has(text: string, part: string, suffix: bool): bool {
 pub compare(a: string, b: string): int {
     n: usize = a.len
 
-    if b.len < n {
-        n = b.len
-    }
+    if b.len < n { n = b.len }
 
     for i: usize in 0 .. n {
         if a[i] != b[i] {
-            if a[i] < b[i] {
-                return -1
-            }
+            if a[i] < b[i] { return -1 }
             return 1
         }
     }
 
-    if a.len < b.len {
-        return -1
-    }
+    if a.len < b.len { return -1 }
 
-    if a.len > b.len {
-        return 1
-    }
+    if a.len > b.len { return 1 }
     return 0
 }
 
@@ -96,13 +84,9 @@ pub compare(a: string, b: string): int {
  * destination is unchanged and fails, and the unused suffix is untouched.
  */
 pub copy(text: string, noalias destination: mut []char): bool {
-    if text.len > destination.len {
-        return false
-    }
+    if text.len > destination.len { return false }
 
-    for i: usize in 0 .. text.len {
-        destination[i] = text[i]
-    }
+    for i: usize in 0 .. text.len { destination[i] = text[i] }
     return true
 }
 
@@ -114,9 +98,7 @@ pub concat(parts: []string, destination: mut []char): (usize, bool) {
     total: usize = 0
 
     for i: usize in 0 .. parts.len {
-        if total > destination.len || parts[i].len > destination.len - total {
-            return 0, false
-        }
+        if total > destination.len || parts[i].len > destination.len - total { return 0, false }
         total += parts[i].len
     }
 
@@ -136,9 +118,7 @@ pub concat(parts: []string, destination: mut []char): (usize, bool) {
  * are unchanged. An empty separator fails without writing.
  */
 pub split(text: string, separator: string, parts: mut []string): (usize, bool) {
-    if separator.len == 0 {
-        return 0, false
-    }
+    if separator.len == 0 { return 0, false }
     written: usize = 0
     start: usize = 0
     cursor: usize = 0
@@ -146,9 +126,7 @@ pub split(text: string, separator: string, parts: mut []string): (usize, bool) {
     for guard: usize in 0 .. text.len + 1 {
         at: usize, found: bool = index_from(text, separator, cursor)
 
-        if !found {
-            break
-        }
+        if !found { break }
 
         if written < parts.len {
             parts[written] = text[start..at]
@@ -179,38 +157,26 @@ pub split(text: string, separator: char, parts: mut []string): (usize, bool) {
  * succeeds without changing the view.
  */
 pub trim(text: string, part: string, suffix: bool): (string, bool) {
-    if part.len == 0 {
-        return text, true
-    }
+    if part.len == 0 { return text, true }
 
     if !suffix {
-        if part.len <= text.len && mem.equal(text[..part.len], part) {
-            return text[part.len..], true
-        }
+        if part.len <= text.len && mem.equal(text[..part.len], part) { return text[part.len..], true }
         return text, false
     }
 
-    if part.len <= text.len && mem.equal(text[text.len - part.len..], part) {
-        return text[..text.len - part.len], true
-    }
+    if part.len <= text.len && mem.equal(text[text.len - part.len..], part) { return text[..text.len - part.len], true }
     return text, false
 }
 
 pub trim(text: string, part: char, suffix: bool): (string, bool) {
-    if text.len == 0 {
-        return text, false
-    }
+    if text.len == 0 { return text, false }
 
     if !suffix {
-        if text[0] == part {
-            return text[1..], true
-        }
+        if text[0] == part { return text[1..], true }
         return text, false
     }
 
-    if text[text.len - 1] == part {
-        return text[..text.len - 1], true
-    }
+    if text[text.len - 1] == part { return text[..text.len - 1], true }
     return text, false
 }
 
@@ -276,9 +242,7 @@ pub format(destination: mut []char, value: int): (usize, bool) {
         }
         remaining = remaining / 10
 
-        if remaining == 0 {
-            break
-        }
+        if remaining == 0 { break }
     }
 
     if negative {
@@ -299,9 +263,7 @@ pub format(destination: mut []char, value: uint): (usize, bool) {
         digits[at] = u8(48 + remaining % 10)
         remaining = remaining / 10
 
-        if remaining == 0 {
-            break
-        }
+        if remaining == 0 { break }
     }
     n: usize, ok: bool = store_bytes(destination, mut digits[at..20])
     return n, ok
@@ -317,9 +279,7 @@ pub format(destination: mut []char, value: usize): (usize, bool) {
         digits[at] = u8(48 + remaining % 10)
         remaining = remaining / 10
 
-        if remaining == 0 {
-            break
-        }
+        if remaining == 0 { break }
     }
     n: usize, ok: bool = store_bytes(destination, mut digits[at..20])
     return n, ok
@@ -345,9 +305,7 @@ pub format(destination: mut []char, value: f64): (usize, bool) {
     negative: bool = value < zero
     mag: f64 = value
 
-    if negative {
-        mag = zero - value
-    }
+    if negative { mag = zero - value }
 
     if mag == zero {
         /* The comparison operators cannot see the sign of a zero, so the
@@ -389,9 +347,7 @@ pub format(destination: mut []char, value: f32): (usize, bool) {
     negative: bool = value < zero
     mag: f32 = value
 
-    if negative {
-        mag = zero - value
-    }
+    if negative { mag = zero - value }
 
     if mag == zero {
         /* The comparison operators cannot see the sign of a zero, so the
@@ -414,9 +370,7 @@ pub format(destination: mut []char, value: f32): (usize, bool) {
 }
 
 pub format(destination: mut []char, value: int, radix: u8): (usize, bool) {
-    if radix < 2 || radix > 36 {
-        return 0, false
-    }
+    if radix < 2 || radix > 36 { return 0, false }
     digits: [65]u8
     at: int = 65
     remaining: u64 = 0
@@ -441,9 +395,7 @@ pub format(destination: mut []char, value: int, radix: u8): (usize, bool) {
         }
         remaining = remaining / u64(radix)
 
-        if remaining == 0 {
-            break
-        }
+        if remaining == 0 { break }
     }
 
     if negative {
@@ -455,9 +407,7 @@ pub format(destination: mut []char, value: int, radix: u8): (usize, bool) {
 }
 
 pub format(destination: mut []char, value: uint, radix: u8): (usize, bool) {
-    if radix < 2 || radix > 36 {
-        return 0, false
-    }
+    if radix < 2 || radix > 36 { return 0, false }
     digits: [64]u8
     at: int = 64
     remaining: uint = value
@@ -473,18 +423,14 @@ pub format(destination: mut []char, value: uint, radix: u8): (usize, bool) {
         }
         remaining = remaining / uint(radix)
 
-        if remaining == 0 {
-            break
-        }
+        if remaining == 0 { break }
     }
     n2: usize, ok: bool = store_bytes(destination, mut digits[at..64])
     return n2, ok
 }
 
 pub format(destination: mut []char, value: usize, radix: u8): (usize, bool) {
-    if radix < 2 || radix > 36 {
-        return 0, false
-    }
+    if radix < 2 || radix > 36 { return 0, false }
     digits: [64]u8
     at: int = 64
     remaining: usize = value
@@ -500,9 +446,7 @@ pub format(destination: mut []char, value: usize, radix: u8): (usize, bool) {
         }
         remaining = remaining / usize(radix)
 
-        if remaining == 0 {
-            break
-        }
+        if remaining == 0 { break }
     }
     n2: usize, ok: bool = store_bytes(destination, mut digits[at..64])
     return n2, ok
@@ -510,25 +454,17 @@ pub format(destination: mut []char, value: usize, radix: u8): (usize, bool) {
 
 /* Writes the complete byte sequence into destination or nothing at all. */
 store_bytes(destination: mut []u8, source: []u8): (usize, bool) {
-    if source.len > destination.len {
-        return 0, false
-    }
+    if source.len > destination.len { return 0, false }
 
-    for i: usize in 0 .. source.len {
-        destination[i] = source[i]
-    }
+    for i: usize in 0 .. source.len { destination[i] = source[i] }
     return source.len, true
 }
 
 /* Writes the complete text into destination or nothing at all. */
 store_text(destination: mut []char, text: string): (usize, bool) {
-    if text.len > destination.len {
-        return 0, false
-    }
+    if text.len > destination.len { return 0, false }
 
-    for i: usize in 0 .. text.len {
-        destination[i] = text[i]
-    }
+    for i: usize in 0 .. text.len { destination[i] = text[i] }
     return text.len, true
 }
 
@@ -538,14 +474,10 @@ store_text(destination: mut []char, text: string): (usize, bool) {
  * each surviving candidate is confirmed whole.
  */
 index_from(text: string, needle: string, after: usize): (usize, bool) {
-    if needle.len == 0 {
-        return after, true
-    }
+    if needle.len == 0 { return after, true }
 
     // after past the last start would make the range below run downward
-    if needle.len > text.len || after > text.len - needle.len {
-        return 0, false
-    }
+    if needle.len > text.len || after > text.len - needle.len { return 0, false }
 
     if needle.len == 1 {
         index: usize, found: bool = index_byte_from(text, needle[0], after)
@@ -564,27 +496,21 @@ index_from(text: string, needle: string, after: usize): (usize, bool) {
         for hit != 0 {
             scan: usize = at + usize(bits.trail_zeros(hit) / 8)
 
-            if mem.equal(text[scan..scan + needle.len], needle) {
-                return scan, true
-            }
+            if mem.equal(text[scan..scan + needle.len], needle) { return scan, true }
             hit &= hit - 1
         }
         at += 8
     }
 
     for scan: usize in at .. text.len - last {
-        if text[scan] == needle[0] && mem.equal(text[scan..scan + needle.len], needle) {
-            return scan, true
-        }
+        if text[scan] == needle[0] && mem.equal(text[scan..scan + needle.len], needle) { return scan, true }
     }
     return 0, false
 }
 
 /* First occurrence of one byte at or after from, eight bytes per step. */
 index_byte_from(text: string, byte: char, after: usize): (usize, bool) {
-    if after >= text.len {
-        return 0, false
-    }
+    if after >= text.len { return 0, false }
     pattern: u64 = u64(byte) * ONES
     at: usize = after
 
@@ -592,41 +518,29 @@ index_byte_from(text: string, byte: char, after: usize): (usize, bool) {
         x: u64 = load.unaligned_u64(text, at) ^ pattern
         hit: u64 = ~(((x & LOW7) + LOW7) | x | LOW7)
 
-        if hit != 0 {
-            return at + usize(bits.trail_zeros(hit) / 8), true
-        }
+        if hit != 0 { return at + usize(bits.trail_zeros(hit) / 8), true }
         at += 8
     }
 
     for i: usize in at .. text.len {
-        if text[i] == byte {
-            return i, true
-        }
+        if text[i] == byte { return i, true }
     }
     return 0, false
 }
 
 /* The value of one ASCII digit and whether it is a digit at all. */
 digit_value(c: u8): (u64, bool) {
-    if c >= '0' && c <= '9' {
-        return u64(c - '0'), true
-    }
+    if c >= '0' && c <= '9' { return u64(c - '0'), true }
 
-    if c >= 'a' && c <= 'z' {
-        return u64(c - 87), true
-    }
+    if c >= 'a' && c <= 'z' { return u64(c - 87), true }
 
-    if c >= 'A' && c <= 'Z' {
-        return u64(c - 55), true
-    }
+    if c >= 'A' && c <= 'Z' { return u64(c - 55), true }
     return 0, false
 }
 
 /* Accumulates one digit with the overflow-before-multiply check. */
 accumulate(mag: u64, d: u64, radix: u8, limit: u64): (u64, bool) {
-    if mag > (limit - d) / u64(radix) {
-        return 0, false
-    }
+    if mag > (limit - d) / u64(radix) { return 0, false }
     return mag * u64(radix) + d, true
 }
 
@@ -635,77 +549,51 @@ accumulate(mag: u64, d: u64, radix: u8, limit: u64): (u64, bool) {
  * minimum; the unsigned forms reject the leading minus outright.
  */
 pub parse[int](text: string, radix: u8): (int, bool) {
-    if radix < 2 || radix > 36 {
-        return 0, false
-    }
+    if radix < 2 || radix > 36 { return 0, false }
 
-    if text.len == 0 {
-        return 0, false
-    }
+    if text.len == 0 { return 0, false }
     negative: bool = text[0] == 45
     at: usize = 0
 
-    if negative {
-        at = 1
-    }
+    if negative { at = 1 }
 
-    if at == text.len {
-        return 0, false
-    }
+    if at == text.len { return 0, false }
     limit: u64 = 9223372036854775807
 
-    if negative {
-        limit = 9223372036854775808
-    }
+    if negative { limit = 9223372036854775808 }
     mag: u64 = 0
 
     for i: usize in at .. text.len {
         d: u64, ok: bool = digit_value(text[i])
 
-        if !ok || d >= u64(radix) {
-            return 0, false
-        }
+        if !ok || d >= u64(radix) { return 0, false }
         mag, ok = accumulate(mag, d, radix, limit)
 
-        if !ok {
-            return 0, false
-        }
+        if !ok { return 0, false }
     }
 
     if negative {
-        if mag == 9223372036854775808 {
-            return int(mag), true
-        }
+        if mag == 9223372036854775808 { return int(mag), true }
         return 0 - int(mag), true
     }
     return int(mag), true
 }
 
 pub parse[uint](text: string, radix: u8): (uint, bool) {
-    if radix < 2 || radix > 36 {
-        return 0, false
-    }
+    if radix < 2 || radix > 36 { return 0, false }
 
-    if text.len == 0 {
-        return 0, false
-    }
+    if text.len == 0 { return 0, false }
 
-    if text[0] == 45 {
-        return 0, false
-    }
+    if text[0] == 45 { return 0, false }
     mag: u64 = 0
 
     for i: usize in 0 .. text.len {
         d: u64, ok: bool = digit_value(text[i])
 
-        if !ok || d >= u64(radix) {
-            return 0, false
-        }
+        if !ok || d >= u64(radix) { return 0, false }
         mag, ok = accumulate(mag, d, radix, 18446744073709551615)
 
-        if !ok {
-            return 0, false
-        }
+        if !ok { return 0, false }
     }
     return uint(mag), true
 }
@@ -714,9 +602,7 @@ pub parse[uint](text: string, radix: u8): (uint, bool) {
 pub parse[usize](text: string, radix: u8): (usize, bool) {
     v: uint, ok: bool = parse[uint](text, radix)
 
-    if !ok {
-        return 0, false
-    }
+    if !ok { return 0, false }
     return usize(v), true
 }
 
@@ -748,9 +634,7 @@ pub parse[f32](text: string): (f32, bool) {
 }
 
 /* True for exactly the ASCII whitespace bytes 0x09..0x0D and 0x20. */
-space_byte(c: u8): bool {
-    return (c >= '\t' && c <= '\r') || c == ' '
-}
+space_byte(c: u8): bool { return (c >= '\t' && c <= '\r') || c == ' ' }
 
 /* Renders the canonical notation into out: decimal for scientific exponents
  * -6 through 20, otherwise scientific like 1.5e-7. The sign comes first and
