@@ -37,3 +37,16 @@ pub rotate_right(value: u8, count: uint): u8 intrinsic
 pub rotate_right(value: u16, count: uint): u16 intrinsic
 pub rotate_right(value: u32, count: uint): u32 intrinsic
 pub rotate_right(value: u64, count: uint): u64 intrinsic
+
+pub wrap_add(a: u8, b: u8): u8 intrinsic
+pub wrap_add(a: u16, b: u16): u16 intrinsic
+pub wrap_add(a: u32, b: u32): u32 intrinsic
+pub wrap_add(a: u64, b: u64): u64 intrinsic
+pub wrap_sub(a: u8, b: u8): u8 intrinsic
+pub wrap_sub(a: u16, b: u16): u16 intrinsic
+pub wrap_sub(a: u32, b: u32): u32 intrinsic
+pub wrap_sub(a: u64, b: u64): u64 intrinsic
+pub wrap_mul(a: u8, b: u8): u8 intrinsic
+pub wrap_mul(a: u16, b: u16): u16 intrinsic
+pub wrap_mul(a: u32, b: u32): u32 intrinsic
+pub wrap_mul(a: u64, b: u64): u64 intrinsic

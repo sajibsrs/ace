@@ -1707,6 +1707,10 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
             r->kind == SK_PRIM && r->prim == ip->prim &&
             (f->ival == BI_BITS_ROTATE_LEFT ||
              f->ival == BI_BITS_ROTATE_RIGHT);
+        int bit_wrap = fixed_unsigned && ft->nparams == 2 && r &&
+            ft->params[1]->kind == SK_PRIM && ft->params[1]->prim == ip->prim &&
+            r->kind == SK_PRIM && r->prim == ip->prim &&
+            f->ival >= BI_BITS_WRAP_ADD && f->ival <= BI_BITS_WRAP_MUL;
         int math_exact = f->ival >= BI_MATH_SQRT && f->ival <= BI_MATH_CEIL &&
             ft->nparams == 1 && p && r && p->kind == SK_PRIM && r->kind == SK_PRIM &&
             p->prim == r->prim && (p->prim == P_F32 || p->prim == P_F64);
@@ -1716,7 +1720,7 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
             ft->params[1]->kind == SK_PRIM && ft->params[1]->prim == ip->prim &&
             ft->params[2]->kind == SK_PRIM && ft->params[2]->prim == ip->prim;
         if (!(from64 || from32 || to64 || to32 || load64 || bit_count ||
-              bit_transform || bit_rotate || math_exact || math_fused))
+              bit_transform || bit_rotate || bit_wrap || math_exact || math_fused))
             ck_err(k, f, "intrinsic declaration '%.*s' does not match a compiler-provided signature",
                    (int)f->len, f->str);
     }
@@ -3226,6 +3230,7 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn, SType* elem,
     call->ival = (uint64_t)intrinsic;
 
     const char* what = intrinsic == BI_MEM_ALLOC_T ? "mem.alloc[T]" :
+                       intrinsic == BI_MEM_ZALLOC_T ? "mem.zalloc[T]" :
                        intrinsic == BI_MEM_REALLOC_T ? "mem.realloc[T]" :
                                                        "mem.release[T]";
     if (!elem || elem->kind == SK_ERR) return T_ERR;
@@ -3244,7 +3249,7 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn, SType* elem,
     callee->ty = intrinsic == BI_MEM_RELEASE_T ? slice : mut_slice;
     // The emitter derives sizeof(T)/alignof(T) from the result slice.
 
-    if (intrinsic == BI_MEM_ALLOC_T) {
+    if (intrinsic == BI_MEM_ALLOC_T || intrinsic == BI_MEM_ZALLOC_T) {
         if (call->nkids != 1) {
             ck_err(k, call, "%s takes exactly one element count", what);
             return T_ERR;
@@ -4181,6 +4186,7 @@ static SType* check_call(Ck* k, Node* call) {
             }
             // typed allocation intrinsics: checked and lowered directly, no stamp
             if (chosen->decl->ival == BI_MEM_ALLOC_T ||
+                chosen->decl->ival == BI_MEM_ZALLOC_T ||
                 chosen->decl->ival == BI_MEM_REALLOC_T ||
                 chosen->decl->ival == BI_MEM_RELEASE_T)
                 return check_memory_generic_call(k, call, chosen, targs[0],

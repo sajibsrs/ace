@@ -1,0 +1,204 @@
+/* map — a hash map from keys to values over the process allocator.
+ *
+ * A Map holds `len` live entries in `slots`, whose length is the capacity: a
+ * power of two, or zero for the canonical zero value and the empty literal
+ * `Map[K, V]{}`, which are valid empty maps holding no storage. Entries live
+ * in open-addressed slots probed linearly from the key's hash; the table
+ * grows, doubling and rehashing into fresh storage, whenever an insertion
+ * would exceed three quarters full, and `unset` shifts later entries back
+ * over the hole, so no tombstones exist. Allocation failure is an `Error` and
+ * leaves the map unchanged. Iteration order is unspecified and iteration is
+ * not offered. Call `map_wipe` once the map is no longer used.
+ *
+ * The key type K is one of the integer types, `bool`, or `string`; `hash` and
+ * `same` are specialized for exactly those, and any other key type is a
+ * compile-time error at the instantiation.
+ */
+
+import bits
+import mem
+
+pub MapErr: error {
+    1: allocation = "map storage allocation failed"
+}
+
+pub Slot[K, V]: struct {
+    key: K,
+    value: V,
+    used: bool,
+}
+
+pub Map[K, V]: struct {
+    slots: mut []Slot[K, V] = null,
+    len: usize = 0,
+}
+
+hash[K](key: K): u64 specialized
+
+same[K](a: K, b: K): bool specialized
+
+/* Finalizer that spreads every input bit across the low bits used to index. */
+mix(value: u64): u64 {
+    x: u64 = value
+    x = bits.wrap_mul(x ^ (x >> 30), u64(0xbf58476d1ce4e5b9))
+    x = bits.wrap_mul(x ^ (x >> 27), u64(0x94d049bb133111eb))
+    return x ^ (x >> 31)
+}
+
+hash[i8](key: i8): u64 { return mix(u64(key)) }
+hash[i16](key: i16): u64 { return mix(u64(key)) }
+hash[i32](key: i32): u64 { return mix(u64(key)) }
+hash[i64](key: i64): u64 { return mix(u64(key)) }
+hash[u8](key: u8): u64 { return mix(u64(key)) }
+hash[u16](key: u16): u64 { return mix(u64(key)) }
+hash[u32](key: u32): u64 { return mix(u64(key)) }
+hash[u64](key: u64): u64 { return mix(key) }
+hash[usize](key: usize): u64 { return mix(u64(key)) }
+
+hash[bool](key: bool): u64 {
+    if key { return mix(1) }
+    return mix(0)
+}
+
+/* FNV-1a over the bytes, then the finalizer. */
+hash[string](key: string): u64 {
+    h: u64 = 0xcbf29ce484222325
+    for i: usize in 0 .. key.len {
+        h = bits.wrap_mul(h ^ u64(key[i]), u64(0x100000001b3))
+    }
+    return mix(h)
+}
+
+same[i8](a: i8, b: i8): bool { return a == b }
+same[i16](a: i16, b: i16): bool { return a == b }
+same[i32](a: i32, b: i32): bool { return a == b }
+same[i64](a: i64, b: i64): bool { return a == b }
+same[u8](a: u8, b: u8): bool { return a == b }
+same[u16](a: u16, b: u16): bool { return a == b }
+same[u32](a: u32, b: u32): bool { return a == b }
+same[u64](a: u64, b: u64): bool { return a == b }
+same[usize](a: usize, b: usize): bool { return a == b }
+same[bool](a: bool, b: bool): bool { return a == b }
+same[string](a: string, b: string): bool { return mem.equal(a, b) }
+
+/* The slot holding `key`, or else the empty slot where it belongs. `slots` is
+ * nonempty and never full, which the load limit guarantees.
+ */
+probe[K, V](slots: []Slot[K, V], key: K): usize {
+    mask: usize = slots.len - 1
+    at: usize = usize(hash[K](key)) & mask
+    for slots[at].used && !same[K](slots[at].key, key) {
+        at = (at + 1) & mask
+    }
+    return at
+}
+
+/* The smallest capacity that holds `count` entries within the load limit. */
+capacity_for(count: usize): usize {
+    capacity: usize = 8
+    for capacity * 3 < count * 4 { capacity *= 2 }
+    return capacity
+}
+
+/* Creates a map with room for `capacity` entries and none live. A zero
+ * capacity allocates nothing.
+ */
+pub map_new[K, V](capacity: usize): (Map[K, V], Error) {
+    map: Map[K, V] = Map[K, V]{}
+    if capacity == 0 { return map, null }
+    err: Error = mut map.rehash(capacity_for(capacity))
+    if err != null { return Map[K, V]{}, err }
+    return map, null
+}
+
+/* Releases the map's storage and leaves it empty. */
+pub map_wipe[K, V](mut map: Map[K, V]) {
+    mem.release[Slot[K, V]](mut map.slots)
+    map.len = 0
+}
+
+/* Moves every live entry into fresh storage of `capacity` slots, a power of
+ * two large enough for them.
+ */
+mut Map[K, V].rehash(capacity: usize): Error {
+    fresh: mut []Slot[K, V] = mem.zalloc[Slot[K, V]](capacity)
+    if fresh == null { return MapErr.allocation }
+    for i: usize in 0 .. self.slots.len {
+        if self.slots[i].used {
+            fresh[probe[K, V](fresh, self.slots[i].key)] = self.slots[i]
+        }
+    }
+    mem.release[Slot[K, V]](mut self.slots)
+    self.slots = fresh
+    return null
+}
+
+pub Map[K, V].has(key: K): bool {
+    if self.len == 0 { return false }
+    return self.slots[probe[K, V](self.slots, key)].used
+}
+
+/* The value stored for `key`. A missing key returns `blank(V)` and false. */
+pub Map[K, V].get(key: K): (V, bool) {
+    if self.len == 0 { return blank(V), false }
+    at: usize = probe[K, V](self.slots, key)
+    if !self.slots[at].used { return blank(V), false }
+    return self.slots[at].value, true
+}
+
+/* Stores `value` under `key`, replacing any earlier value, and grows storage
+ * when a new entry would exceed the load limit.
+ */
+pub mut Map[K, V].set(key: K, value: V): Error {
+    if self.len != 0 {
+        at: usize = probe[K, V](self.slots, key)
+        if self.slots[at].used {
+            self.slots[at].value = value
+            return null
+        }
+    }
+    if (self.len + 1) * 4 > self.slots.len * 3 {
+        err: Error = mut self.rehash(capacity_for(self.len + 1))
+        if err != null { return err }
+    }
+    at: usize = probe[K, V](self.slots, key)
+    self.slots[at] = Slot[K, V]{key = key, value = value, used = true}
+    self.len += 1
+    return null
+}
+
+/* Removes `key`, returning whether it was present. */
+pub mut Map[K, V].unset(key: K): bool {
+    if self.len == 0 { return false }
+    mask: usize = self.slots.len - 1
+    hole: usize = probe[K, V](self.slots, key)
+    if !self.slots[hole].used { return false }
+    at: usize = hole
+    for {
+        at = (at + 1) & mask
+        if !self.slots[at].used { break }
+        home: usize = usize(hash[K](self.slots[at].key)) & mask
+        // The entry may fill the hole unless its home lies cyclically in
+        // (hole, at], where the probe from home would no longer reach it.
+        if ((at + self.slots.len - home) & mask) >= ((at + self.slots.len - hole) & mask) {
+            self.slots[hole] = self.slots[at]
+            hole = at
+        }
+    }
+    self.slots[hole].used = false
+    self.len -= 1
+    return true
+}
+
+/* Ensures room for at least `count` entries in total. */
+pub mut Map[K, V].reserve(count: usize): Error {
+    capacity: usize = capacity_for(count)
+    if capacity <= self.slots.len { return null }
+    return mut self.rehash(capacity)
+}
+
+/* Drops every entry and keeps the storage. */
+pub mut Map[K, V].clear() {
+    for i: usize in 0 .. self.slots.len { self.slots[i].used = false }
+    self.len = 0
+}

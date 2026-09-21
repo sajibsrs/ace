@@ -19,6 +19,13 @@ pub release(mut data: []u8) { data = null }
 
 pub alloc[T](count: usize): mut []T { return null }
 
+/* Like `alloc[T]`, but every byte of the returned storage is zero, which is
+ * a valid `T` for every type. The bootstrap compiler lowers it directly to the
+ * platform's zero-filling allocator.
+ */
+
+pub zalloc[T](count: usize): mut []T { return null }
+
 pub realloc[T](data: []T, new_count: usize): mut []T { return null }
 
 pub release[T](mut data: []T) { data = null }

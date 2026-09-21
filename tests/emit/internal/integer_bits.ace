@@ -45,17 +45,28 @@ main(): int {
         return 6
     }
 
+    if bits.wrap_add(u8(250), u8(10)) != u8(4) ||
+       bits.wrap_sub(u16(0), u16(1)) != u16(65535) ||
+       bits.wrap_mul(u32(0x10001), u32(0x10001)) != u32(0x20001) ||
+       bits.wrap_mul(u64(0x100000001), u64(0x100000001)) != u64(0x200000001) {
+        return 8
+    }
+
     pop: (u64): uint = bits.pop_count
     lead: (u8): uint = bits.lead_zeros
     trail: (u16): uint = bits.trail_zeros
     swap: (u32): u32 = bits.byte_swap
     left: (u64, uint): u64 = bits.rotate_left
     right: (u8, uint): u8 = bits.rotate_right
+    add: (u16, u16): u16 = bits.wrap_add
+    mul: (u64, u64): u64 = bits.wrap_mul
 
     if pop(u64(0x101)) != 2 || lead(u8(1)) != 7 ||
        trail(u16(8)) != 3 || swap(u32(0x01020304)) != u32(0x04030201) ||
        left(u64(1), uint(63)) != u64(0x8000000000000000) ||
-       right(u8(1), uint(1)) != u8(0x80) {
+       right(u8(1), uint(1)) != u8(0x80) ||
+       add(u16(65535), u16(1)) != u16(0) ||
+       mul(u64(0xFFFFFFFFFFFFFFFF), u64(2)) != u64(0xFFFFFFFFFFFFFFFE) {
         return 7
     }
     return 42

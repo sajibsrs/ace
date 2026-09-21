@@ -44,6 +44,16 @@ overload as usual, so `uint` uses the `u64` overload on Apple arm64. Like the
 float representation operations, these operations allocate nothing, make no
 runtime-library call, and remain usable through exact function values.
 
+`wrap_add`, `wrap_sub`, and `wrap_mul` take two operands of one of the same four
+types and return that type modulo 2^width. The ordinary `+`, `-`, and `*`
+operators abort on overflow in checked builds; these never do, in any build mode:
+
+```ace
+h: u32 = u32(2166136261)
+h = bits.wrap_mul(h ^ u32(byte), u32(16777619)) // FNV-1a step
+tail: u8 = bits.wrap_add(u8(250), u8(10))       // 4
+```
+
 Representation access supports algorithms that deliberately operate on a
 float's encoding, including the classic fast inverse-square-root seed:
 
@@ -84,6 +94,8 @@ main(): int {
 - `alloc[T](count: usize): mut []T` — writable typed storage: `count * sizeof(T)` bytes, alignment
   taken from `T`, element length `count`, uninitialized storage, null on
   overflow/zero-size/failure.
+- `zalloc[T](count: usize): mut []T` — `alloc[T]` with every byte zero, lowered to the
+  platform's zero-filling allocator.
 - `realloc(data: []u8, new_size: int): mut []u8` — raw growth; failure leaves the
   original live.
 - `realloc[T](data: []T, new_count: usize): mut []T` — typed growth with the same

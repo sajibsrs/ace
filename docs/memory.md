@@ -228,6 +228,7 @@ typed slices, so values no longer need manual byte packing:
 
 ```ace
 mem.alloc[T](count: usize): mut []T
+mem.zalloc[T](count: usize): mut []T
 mem.realloc[T](data: []T, new_count: usize): mut []T
 mem.release[T](mut data: []T)
 ```
@@ -283,6 +284,15 @@ valid `T` in each element is the programmer's job under the ordinary
 definite-initialization model; the compiler adds no ownership, lifetime, or
 alias analysis, and reading an element before a valid `T` was established is
 programmer error.
+
+`mem.zalloc[T](count)` is the zero-filling form. It follows every other rule of
+`mem.alloc[T]`, but each byte of the storage is zero, which is a valid `T` for
+every type, so a container needs no initialization loop:
+
+```ace
+slots: mut []Slot = mem.zalloc[Slot](1024) // every Slot is all zero
+defer mem.release[Slot](mut slots)
+```
 
 A multiplication overflow, an unsupported type alignment, a zero byte-size
 request (`sizeof(T) == 0` or `count == 0`), or allocation failure returns the

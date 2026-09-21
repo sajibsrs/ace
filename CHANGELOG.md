@@ -1532,6 +1532,23 @@ current normative rules, and Git preserves patch-level detail.
   growing through `mem.grow`. `get`/`set` are checked against `len` by slicing
   the live prefix, so no new bounds machinery was added; `pop` on an empty array
   returns `blank(T)` and `ArrayErr.empty`.
+- Added `bits.wrap_add`, `wrap_sub`, and `wrap_mul` for `u8`..`u64`: bits
+  intrinsics (ids 33-35) emitting one plain `add`/`sub`/`mul`, re-truncated for
+  the narrow widths, so they wrap in checked builds where the operators abort.
+  `is_bits_integer_op` in `emit.c` now names the integer-intrinsic id set the
+  direct-call, callable-symbol, and inline-eligibility sites share.
+- Added `mem.zalloc[T](count)`, typed allocation with zero-filled storage: it
+  reuses `gen_alloc_typed_builtin` (same overflow, zero-size, and registry
+  rules) and calls `calloc(bytes, 1)` in place of `malloc(bytes)`. Darwin's
+  allocator never returned dirty recycled blocks in trials, so the suite checks
+  the `_calloc` reference in the object rather than block contents.
+- Added `std/map.ace`: a generic `Map[K, V]` with `get`, `has`, `set`, `unset`,
+  `reserve`, and `clear` methods plus `map_new`/`map_wipe`. Open addressing
+  with linear probing over a power-of-two slot array from `mem.zalloc`, grown
+  by rehash at 3/4 load, with backward-shift `unset`. Keys hash and compare
+  through private `specialized` `hash[K]`/`same[K]` for the fixed-width
+  integers, `usize`, `bool`, and `string`; the finalizer and FNV-1a step use
+  `bits.wrap_mul`, since ordinary `*` aborts on overflow in checked builds.
 
 ## Current frontier
 

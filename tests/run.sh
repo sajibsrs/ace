@@ -276,6 +276,7 @@ for want in \
     "mem.release requires a mutable []u8 allocation variable — a typed slice states its element type: mem.release[T](mut data)" \
     "type mismatch: mut []u8 given where []usize expected" \
     "mem.alloc[T] takes exactly one element count" \
+    "mem.zalloc[T] takes exactly one element count" \
     "mem.alloc takes exactly size and alignment"; do
     if ! printf '%s\n' "$mem_typed_errors" | grep -qF "$want"; then
         echo "FAIL: missing typed allocation diagnostic '$want'"
@@ -716,6 +717,12 @@ if ! "$ACE" --checked -o /tmp/ace_checked_features/arithmetic_valid \
     echo "FAIL: valid checked arithmetic fixture"
     fail=1
 fi
+if ! "$ACE" --checked -o /tmp/ace_checked_features/arithmetic_wrap \
+     tests/checked_arithmetic/wrap.ace ||
+   ! /tmp/ace_checked_features/arithmetic_wrap; then
+    echo "FAIL: bits wrapping arithmetic must not trap in checked builds"
+    fail=1
+fi
 for f in signed_add unsigned_mul narrow_mul div_zero neg_min shift_count compound \
          imm_signed_add imm_unsigned_sub imm_narrow_add \
          pointer_null pointer_scale pointer_add pointer_sub; do
@@ -979,6 +986,11 @@ if [ -d tests/emit ]; then
         byte_move_undef=$(nm -u /tmp/ace_emit/memory/copy_move.o 2>/dev/null)
         if printf '%s\n' "$byte_move_undef" | grep -Eq '^_(memcpy|memmove)$'; then
             echo "FAIL: byte copy and move must be emitted directly"
+            fail=1
+        fi
+        zeroed_undef=$(nm -u /tmp/ace_emit/allocation/zeroed.o 2>/dev/null)
+        if ! printf '%s\n' "$zeroed_undef" | grep -q '^_calloc$'; then
+            echo "FAIL: mem.zalloc must lower to the platform zero-filling allocator"
             fail=1
         fi
         bits_undef=$(nm -u /tmp/ace_emit/internal/float_bits.o 2>/dev/null)

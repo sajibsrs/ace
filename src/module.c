@@ -376,6 +376,9 @@ static void mark_bits_intrinsics(Loader* L, Module* m) {
         else if (text_is(n->str, n->len, "byte_swap")) n->ival = BI_BITS_BYTE_SWAP;
         else if (text_is(n->str, n->len, "rotate_left")) n->ival = BI_BITS_ROTATE_LEFT;
         else if (text_is(n->str, n->len, "rotate_right")) n->ival = BI_BITS_ROTATE_RIGHT;
+        else if (text_is(n->str, n->len, "wrap_add")) n->ival = BI_BITS_WRAP_ADD;
+        else if (text_is(n->str, n->len, "wrap_sub")) n->ival = BI_BITS_WRAP_SUB;
+        else if (text_is(n->str, n->len, "wrap_mul")) n->ival = BI_BITS_WRAP_MUL;
     }
 }
 
@@ -401,6 +404,7 @@ static void mark_mem_intrinsics(Loader* L, Module* m) {
         if (text_is(n->str, n->len, "alloc")) n->ival = n->c ? BI_MEM_ALLOC_T : BI_MEM_ALLOC;
         else if (text_is(n->str, n->len, "realloc")) n->ival = n->c ? BI_MEM_REALLOC_T : BI_MEM_REALLOC;
         else if (text_is(n->str, n->len, "release")) n->ival = n->c ? BI_MEM_RELEASE_T : BI_MEM_RELEASE;
+        else if (text_is(n->str, n->len, "zalloc") && n->c) n->ival = BI_MEM_ZALLOC_T;
         else if (text_is(n->str, n->len, "copy")) n->ival = BI_MEM_COPY;
         else if (text_is(n->str, n->len, "move")) n->ival = BI_MEM_MOVE;
         else if (text_is(n->str, n->len, "fill")) n->ival = BI_MEM_FILL;

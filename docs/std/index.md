@@ -8,6 +8,7 @@ module. How imports resolve, aliasing, and visibility are described in
 Today's modules:
 
 - [`array`](array.md) — growable sequence over the process allocator
+- [`map`](map.md) — hash map over the process allocator
 - [`bits`](bits.md) — explicit machine-representation access and operations
 - [`fmt`](fmt.md) — allocation-free text output
 - [`math`](math.md) — minimal generic helpers and float classification

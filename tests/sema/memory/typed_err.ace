@@ -17,5 +17,6 @@ main(): int {
     i: []usize = mem.alloc[usize](4, 8)
     j: []usize = mem.alloc[usize]()
     k: []usize = mem.alloc(4)
+    l: []usize = mem.zalloc[usize](4, 8)
     return 0
 }

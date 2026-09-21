@@ -262,8 +262,19 @@ foundations.
 
 ## 4. Practical standard-library capabilities
 
-- **Runtime hash-map module** [new] — composed from `mem` and explicit
-  generics; separate from the compiler-built static lookup map.
+- **Hash-map iteration and wider key types** [additive] — iteration (an
+  explicit cursor, with no mutation while iterating) and enum, distinct, and
+  composite keys, once specializations may live outside the generic's module
+  (Generics #14). String keys hash a byte at a time; measure a word-at-a-time
+  hash before adding one.
+- **`map` throughput** [new] — with 1,000,000 `int` keys, `set` with growth
+  takes 135–165 ms, `get` 49–76 ms, and `unset` 100–120 ms, against 85–93,
+  20–26, and 45–48 ms for the same algorithm, hash, and load factor in C `-O2`
+  (about 1.6×, 2.4–2.9×, and 2.2–2.5×). The suspected cause is that `probe`,
+  `hash`, `mix`, and `same` are real calls in Ace and inline in C, like the
+  `pkg/json` formatter gap below; it is not profiled. Shares its root question
+  with that entry, and no map-specific source change is planned until it is
+  answered. String keys and `--checked` are unmeasured.
 - **Fixed-width integer formatting** [additive] — width, zero padding, and base
   prefixes for `fmt.printf`, especially fixed-width `%b`/`%o`/`%x` register
   displays; carve consistently across integer conversions from a hardware

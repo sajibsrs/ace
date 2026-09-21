@@ -3854,7 +3854,7 @@ static EV gen_realloc_builtin(Em* e, Node* call) {
  * count), unsupported alignment, or OOM produces the null slice without
  * aborting and without calling the allocator on the overflow paths.
  */
-static EV gen_alloc_typed_builtin(Em* e, Node* call) {
+static EV gen_alloc_typed_builtin(Em* e, Node* call, int zeroed) {
     int si = e->vti, sf = e->vtf;
     uint32_t off = temp_slot(e, 16, 8);
     zero_slice_slot(e, off);
@@ -3883,11 +3883,22 @@ static EV gen_alloc_typed_builtin(Em* e, Node* call) {
     ins(e, 0x9B007C00u | ((uint32_t)xreg(scale) << 16) |
             ((uint32_t)xreg(count.idx) << 5) | (uint32_t)xreg(bytes)); // mul
 
-    CallArg arg = { NULL, { CLS_INT, bytes }, 1, 0 };
-    SType* param = default_i64();
-    uint8_t mut = 0;
-    CallTarget tgt = { TK_EXTERN, "_malloc", 7, 0 };
-    EV ptr = emit_call(e, call, &arg, 1, &param, &mut, 1, 0, -1, tgt, raw_pointer_type());
+    EV ptr;
+    if (zeroed) { // calloc(bytes, 1): the platform zero-fills, and overflow was ruled out above
+        int one = tmp_int(e);
+        load_imm(e, 1, xreg(one), 1);
+        CallArg args[2] = { { NULL, { CLS_INT, bytes }, 1, 0 }, { NULL, { CLS_INT, one }, 1, 0 } };
+        SType* params[2] = { default_i64(), default_i64() };
+        uint8_t muts[2] = { 0, 0 };
+        CallTarget tgt = { TK_EXTERN, "_calloc", 7, 0 };
+        ptr = emit_call(e, call, args, 2, params, muts, 2, 0, -1, tgt, raw_pointer_type());
+    } else {
+        CallArg arg = { NULL, { CLS_INT, bytes }, 1, 0 };
+        SType* param = default_i64();
+        uint8_t mut = 0;
+        CallTarget tgt = { TK_EXTERN, "_malloc", 7, 0 };
+        ptr = emit_call(e, call, &arg, 1, &param, &mut, 1, 0, -1, tgt, raw_pointer_type());
+    }
     cbz_(e, 1, xreg(ptr.idx), 0, done);
     registry_add(e, call, ptr.idx, bytes, eal, -1);
     frame_addr(e, 16, off);
@@ -4278,6 +4289,11 @@ static EV gen_printf_builtin(Em* e, Node* call) {
     return (EV){ CLS_INT, out };
 }
 
+static int is_bits_integer_op(int intrinsic) {
+    return (intrinsic >= BI_BITS_POP_COUNT && intrinsic <= BI_BITS_ROTATE_RIGHT) ||
+           (intrinsic >= BI_BITS_WRAP_ADD && intrinsic <= BI_BITS_WRAP_MUL);
+}
+
 /* Emit the exact Apple-arm64 scalar operation used by both direct intrinsic
  * calls and their ordinary callable symbols.  Narrow rotations duplicate the
  * source pattern through a 32-bit word, so rorv's hardware count reduction is
@@ -4308,6 +4324,18 @@ static void emit_bits_integer(Em* e, int intrinsic, int bits, int value, int cou
         else if (bits == 32) ins(e, 0x5AC00800u | ((uint32_t)value << 5) | (uint32_t)value);
         else if (bits == 64) ins(e, 0xDAC00C00u | ((uint32_t)value << 5) | (uint32_t)value);
         return;
+    case BI_BITS_WRAP_ADD:
+    case BI_BITS_WRAP_SUB:
+    case BI_BITS_WRAP_MUL: {
+        /* Operands are zero-extended in their registers; the 32/64-bit form
+         * wraps naturally and narrow results are re-truncated. */
+        uint32_t op = intrinsic == BI_BITS_WRAP_ADD ? (sf ? 0x8B000000u : 0x0B000000u) :
+                      intrinsic == BI_BITS_WRAP_SUB ? (sf ? 0xCB000000u : 0x4B000000u) :
+                                                      (sf ? 0x9B007C00u : 0x1B007C00u);
+        ins(e, op | ((uint32_t)count << 16) | ((uint32_t)value << 5) | (uint32_t)value);
+        if (bits < 32) ins(e, uxtw_of(bits) | ((uint32_t)value << 5) | (uint32_t)value);
+        return;
+    }
     case BI_BITS_ROTATE_LEFT:
     case BI_BITS_ROTATE_RIGHT:
         if (bits == 8) {
@@ -4551,7 +4579,10 @@ static EV gen_call(Em* e, Node* call) {
         return gen_release_builtin(e, call);
     if (intrinsic && intrinsic->decl &&
         intrinsic->decl->ival == BI_MEM_ALLOC_T && call->ival == BI_MEM_ALLOC_T)
-        return gen_alloc_typed_builtin(e, call);
+        return gen_alloc_typed_builtin(e, call, 0);
+    if (intrinsic && intrinsic->decl &&
+        intrinsic->decl->ival == BI_MEM_ZALLOC_T && call->ival == BI_MEM_ZALLOC_T)
+        return gen_alloc_typed_builtin(e, call, 1);
     if (intrinsic && intrinsic->decl &&
         intrinsic->decl->ival == BI_MEM_REALLOC_T && call->ival == BI_MEM_REALLOC_T)
         return gen_realloc_typed_builtin(e, call);
@@ -4616,9 +4647,7 @@ static EV gen_call(Em* e, Node* call) {
         e->vti = bits.idx;
         return (EV){ CLS_FP, value };
     }
-    if (intrinsic && intrinsic->decl &&
-        intrinsic->decl->ival >= BI_BITS_POP_COUNT &&
-        intrinsic->decl->ival <= BI_BITS_ROTATE_RIGHT) {
+    if (intrinsic && intrinsic->decl && is_bits_integer_op(intrinsic->decl->ival)) {
         int operation = intrinsic->decl->ival;
         EV value = gen_expr(e, call->kids[0]);
         EV count = { CLS_INT, 0 };
@@ -7197,7 +7226,7 @@ static int call_is_inline(Node* call) {
     case BI_BITS_FROM_FLOAT: case BI_BITS_TO_FLOAT: case BI_INTERNAL_LOAD_U64:
         return 1;
     default:
-        return (bi >= BI_BITS_POP_COUNT && bi <= BI_BITS_ROTATE_RIGHT) ||
+        return is_bits_integer_op((int)bi) ||
                (bi >= BI_MATH_SQRT && bi <= BI_MATH_FMA);
     }
 }
@@ -7623,7 +7652,7 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
         } else if (f->ival == BI_INTERNAL_LOAD_U64) {
             ins(e, 0x8B020000u); // add x0,x0,x2
             ins(e, 0xF9400000u); // ldr x0,[x0]
-        } else if (f->ival >= BI_BITS_POP_COUNT && f->ival <= BI_BITS_ROTATE_RIGHT) {
+        } else if (is_bits_integer_op(f->ival)) {
             emit_bits_integer(e, f->ival, scalar_bits(pt[0]), 0, 1, 0);
         } else if (f->ival >= BI_MATH_SQRT && f->ival <= BI_MATH_CEIL) {
             emit_math_exact(e, f->ival, unwrap(pt[0])->prim == P_F64, 0);
@@ -9364,7 +9393,8 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
                 n->ival == BI_MEM_MOVE || n->ival == BI_MEM_FILL ||
                 n->ival == BI_MEM_ZERO || n->ival == BI_MEM_COMPARE ||
                 n->ival == BI_MEM_EQUAL || n->ival == BI_MEM_ALLOC_SIZE ||
-                n->ival == BI_MEM_ALLOC_T || n->ival == BI_MEM_REALLOC_T ||
+                n->ival == BI_MEM_ALLOC_T || n->ival == BI_MEM_ZALLOC_T ||
+                n->ival == BI_MEM_REALLOC_T ||
                 n->ival == BI_MEM_RELEASE_T)
                 break; // compiler-backed std/mem declarations have no body symbol
             if (n->ival == BI_FMT_PRINTF ||
