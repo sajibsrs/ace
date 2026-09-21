@@ -187,8 +187,16 @@ These are baseline observations, not performance promises.
   not use. A bottom-tested loop measured 7.7% on `saxpy` and 31% on a short
   branchy loop, but 8% slower on `for cond {}`; it is deferred until it can be
   weighed on top of the address work. `bench/run-hotloop.sh` tracks the saxpy,
-  dot, and `Vec3` kernels. `std/simd` is specified and
-  unimplemented.
+  dot, and `Vec3` kernels. Latest ratios to scalar C `-O2`: saxpy 2x, particle
+  `Vec3` 3.64x, `Vec3` length 1.53x, floating dot 0.77x. `std/simd` is
+  specified and unimplemented. Candidate order: (1) scalar address and constant
+  work, meaning pooled float constants with one PC-relative `ldr` and the
+  scaled index and field offset folded into load and store addressing, measured
+  against a saved `bench/run-hotloop.sh` baseline over several runs; loop-invariant
+  hoisting into registers is the alternative but needs analysis the
+  single-pass design avoids; (2) the bottom-tested loop and by-value `Vec3`
+  leaf-call frame cost; (3) `std/simd` NEON intrinsics (`f32x4`, `i8x16`), the
+  only route past auto-vectorized C.
 - **Tail-call optimization** [new] — a `return f(args)` still emits `bl` plus a
   full epilogue, so tail recursion grows the stack linearly and overflows at
   roughly 100M frames in checked and release builds alike. Candidate: lower a
