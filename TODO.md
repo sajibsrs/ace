@@ -276,31 +276,28 @@ foundations.
   displays; carve consistently across integer conversions from a hardware
   fixture rather than adding a binary-only modifier.
 - **Transcendental math functions** [open] — `exp`, `log`, `pow`, `sin`, and
-  `cos` are implemented. The fdlibm-class algorithms ran 1.6x libm for
-  `exp`/`log` and 3-5x for `sin`/`cos` in C. Release throughput, best of seven
-  rounds over 4096 arguments: `exp` 14 ns, `log` 16 ns, `sin` 29 ns and `cos`
-  28 ns in the Cody-Waite band and 13 and 11 ns below pi/4, `pow`
-  (table-driven) 23 ns (`f32`: 12 ns) against libm's 3-4 ns for the first four
-  and 9.5 ns for `pow`. Arguments beyond 1.6e6 take about 595 ns because the
-  Payne-Hanek fraction is extracted bit by bit; a word-at-a-time extraction
-  would cut that. Dependent-chain latency is two to three times throughput
-  throughout, so these kernels are latency-bound and only chain-shortening
-  changes pay. The `pow` gap to libm is backend quality: a local that wins no
-  register is reached through an address computed per access, and each constant
-  load takes three instructions. `pow`'s hot path holds no call and is at the
-  register ceiling, so its source-level lever is spent; what is left for it is
-  the promotion and constant-materialization items in the compiler band above.
-  Table-driven `exp`, `log`, `sin`, and `cos` are the same design applied to
-  the remaining fdlibm-class gaps, and are the next step for `exp` and `log`:
-  neither is register-starved, so what is left in them is algorithmic. `exp`
-  carries a division on its dependent chain and a five-term polynomial, `log` a
-  seven-term one, while `pow` already performs a table-driven logarithm and
-  exponential together in 23 ns over the two 128-entry tables in
-  `std/@/pow_tables.ace`, which a rewrite would reuse as they stand. `sin` and
-  `cos` would need their own tables and stay behind those two. Separately,
-  `reduce_large` loses fifteen integer locals to the promotion limit and
-  extracts its fraction one bit at a time, which is what makes arguments beyond
-  1.6e6 cost about 595 ns.
+  `cos` are implemented, and `exp`, `log`, and `pow` are table-driven over the
+  two 128-entry tables in `std/@/pow_tables.ace`. Figures below come from one
+  harness: release build, 4096 arguments, 32 repeats, best of seven rounds,
+  glue-subtracted through a non-inlined identity, first run of each binary
+  discarded. Throughput: `exp` 5.8 ns, `log` 7.8 ns, `pow` 23 ns (`f32`: 12 ns),
+  `sin` 29 ns and `cos` 28 ns in the Cody-Waite band and 13 and 11 ns below
+  pi/4, against libm's 3-4 ns for the first four and 9.5 ns for `pow`.
+  Dependent-chain latency: `exp` 15.2 ns, `log` 23.8 ns. Arguments beyond 1.6e6
+  take about 595 ns because the Payne-Hanek fraction is extracted bit by bit; a
+  word-at-a-time extraction would cut that. Chain latency still runs two to
+  three times throughput for `sin`, `cos`, and `pow`, so those kernels are
+  latency-bound and only chain-shortening changes pay. The `pow` gap to libm is
+  backend quality: a local that wins no register is reached through an address
+  computed per access, and each constant load takes three instructions. `pow`'s
+  hot path holds no call and is at the register ceiling, so its source-level
+  lever is spent; what is left for it is the promotion and
+  constant-materialization items in the compiler band above. Table-driven `sin`
+  and `cos` are the same design applied to the remaining fdlibm-class gap, but
+  both would need their own tables rather than reusing `pow_tables`, so they
+  stay behind the other three. Separately, `reduce_large` loses fifteen integer
+  locals to the promotion limit and extracts its fraction one bit at a time,
+  which is what makes arguments beyond 1.6e6 cost about 595 ns.
 - **Random source** [new].
 
 ## 5. Language questions and conveniences

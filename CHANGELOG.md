@@ -713,6 +713,65 @@ current normative rules, and Git preserves patch-level detail.
   on 66 of those. Reassociating the kernels' accurate-tail expression onto
   `fma` was measured too and rejected: it bought nothing and pushed the worst
   case to 1.48 ULP, past the documented bound.
+- Rewrote `exp` and `log` as table-driven kernels over the two 128-entry tables
+  `pow` already uses, so all three now share `pow_tables`. `exp` reduces by
+  `n*ln2/128` instead of `k*ln2`, reads `2^(j/128)` from the table, and applies
+  a fifth-degree correction, which retires the rational form and with it the
+  division `(r*c)/(c-2.0)` that sat on the dependent chain; `log` splits the
+  exponent, takes `log(c)` from the table, and evaluates `log1p` of the residue,
+  which retires the seven-term polynomial in `s = f/(2+f)` and its division too.
+  `pow` carries its logarithm as a high and low double because the value must
+  survive multiplication by the exponent, and that is the bookkeeping a
+  standalone kernel does not need: `exp` and `log` return one rounded double, so
+  the low-word arithmetic collapses to a single compensation term. Two table
+  facts make the short form exact where it has to be. `z*invc - 1` is
+  representable for every entry, so one `fma(z, invc, -1.0)` replaces `pow`'s
+  split of `z` into halves and carries `r` with no error at all; and `1.0` sits
+  at the exact centre of entry 71, whose `invc`, `logc`, and `logctail` are
+  `1.0`, `0.0`, and `0.0`, so near 1 the kernel degenerates to a plain `log1p`
+  series with nothing to cancel and `log(1)` is `+0` by construction. Elsewhere
+  `w + r` does cancel, losing up to half an ulp of itself, and `(w - t) + r` is
+  that loss exactly; carrying it is what keeps a single rounded double honest,
+  and dropping it costs a full ULP. `|r| <= 0.00585`, so `log1p` needs the
+  series only to `r^8`: `LOG_C9` and `LOG_C10`, which `pow` still uses, do not
+  appear. Instruction counts barely move — `exp` 208 to 204 and `log` 196 to 192
+  — because the win is dependency-chain depth, not code size. Over 4096 inputs,
+  32 repeats, best of seven rounds, glue-subtracted through a non-inlined
+  identity: `exp`'s dependent chain fell from 38.3 to 15.2 ns over [-1, 1] and
+  from 50.7 to 15.2 ns over [-700, 700], its throughput from 13.1 to 5.8 ns;
+  `log`'s chain fell from 45.1 to 23.8 ns and its throughput from 15.5 to 7.8
+  ns. The old figures carry the wider spread: `exp`'s branch on `k == 0` makes
+  its cost input-dependent, so its baseline throughput ranges over 13-15 ns and
+  its chain over 38-53 ns run to run, while the table-driven kernels are
+  branch-free on the hot path and reproduce to 0.2 per cent. Accuracy improves,
+  so the 1 ULP guarantee is untouched: against an exact 90-digit reference over
+  48,216 inputs covering all 128 table-entry edges and their neighbours, 400 ULP
+  either side of 1, every power of two, subnormal inputs and subnormal results,
+  and both of `exp`'s boundaries, the worst case falls from 0.8050 to 0.7495 ULP
+  for `exp`, at -709.04535484224982, and from 0.8128 to 0.5000 ULP for `log`, at
+  0.99999999999999978. The `f32` overloads, which round the `f64` result once
+  more, are correctly rounded at 0.5000 ULP over 185,065 inputs covering every
+  `f32` exponent. `pow_special`'s literal `234187180623265792` became
+  `LOG_SUB_OFF`, which `log` shares for the same subnormal rescaling, and the
+  sixteen constants the old scheme needed — `LN2_HI`, `LN2_LO`, `INV_LN2`,
+  `EXP_HALF_LN2`, `EXP_P1`-`EXP_P5`, and `LOG_L1`-`LOG_L7` — are gone with it.
+  `exp`'s hot-path guard admits powers down to -1022, where the scale stops
+  being a normal double, rather than reusing `pow_extreme`'s -1000: the two are
+  output-identical over 18,139 inputs in the underflow band, because between
+  them the result is still normal and the two-step path's closing multiply by
+  2^-1000 is an exact shift rather than a second rounding, so the wider bound
+  was taken only for stating the guard's own limit. Spelling that guard as one
+  unsigned range test instead of two signed compares was measured and rejected:
+  0.7 per cent on the chain and 0.6 per cent against on throughput, a wash
+  either way. The constant block was regrouped to match: `POW_` named only one
+  of three callers once `exp` and `log` joined `pow` on the tables — nine of the
+  twenty-nine were pow-only against nineteen already shared — so the prefix now
+  states purpose instead. `LOG_*` covers the logarithm reduction and series,
+  `EXP_*` the exponential reduction, `TWO_52` and `TWO_M60` are bare powers of
+  two, and `POW_ABS` and `POW_SIGN` are all that pow alone still needs. The
+  rename is behaviour-preserving, checked rather than assumed: an
+  order-sensitive checksum over `exp`, `log`, `pow(f64)`, and `pow(f32)` across
+  four million arguments each is unchanged.
 - Widened float register promotion past the callee-saved eight: `d24-d31`,
   which nothing else reserves between statements, now take up to eight more
   promoted locals. They are caller-saved and the shared byte routines clobber

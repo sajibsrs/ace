@@ -1,13 +1,13 @@
 /* math — minimal pure-Ace numeric helpers.
- * sqrt, floor, and ceil are compiler-backed exact IEEE operations. exp and log
- * are pure Ace, within 1 ULP over the whole finite domain: exp reduces by
- * k*ln2 and evaluates a rational polynomial, log splits the exponent and
- * evaluates a polynomial in s = f/(2+f). Both use the classic fdlibm scheme
- * with the ln2 constant split into a high and low part. pow is table-driven:
- * it forms log(x) as a high and low double from a 128-entry table plus a
- * short series, multiplies by y in extended precision, and rebuilds the
- * result from a 128-entry 2^(i/128) table; the tables live in `pow_tables`. The f32
- * overload is a separate plain-f64 kernel over the same tables.
+ * sqrt, floor, and ceil are compiler-backed exact IEEE operations. exp, log, and pow are pure Ace,
+ * within 1 ULP over the whole finite domain, and all three are table-driven over the same two
+ * 128-entry tables in `pow_tables`: a logarithm table of invc/log(c) and a table of 2^(j/128).
+ * exp reduces by n*ln2/128, looks up 2^(j/128), and applies a fifth-degree correction; log splits
+ * the exponent, takes log(c) from the table, and evaluates log1p of the exact residue r = z*invc - 1.
+ * pow runs both halves back to back, carrying its logarithm as a high and low double because the
+ * value must survive multiplication by the exponent; exp and log return one rounded double and so
+ * keep only the single compensation term the cancelling add needs. The f32 pow overload is a
+ * separate plain-f64 kernel over the same tables; the other f32 overloads round the f64 result.
  */
 
 import bits
@@ -25,26 +25,8 @@ pub ceil(value: f32): f32 intrinsic
 pub fma(a: f64, b: f64, c: f64): f64 intrinsic
 pub fma(a: f32, b: f32, c: f32): f32 intrinsic
 
-LN2_HI: const f64 = 6.93147180369123816490e-01
-LN2_LO: const f64 = 1.90821492927058770002e-10
-INV_LN2: const f64 = 1.44269504088896338700e+00
-
 EXP_OVERFLOW: const f64 = 7.09782712893383973096e+02
 EXP_UNDERFLOW: const f64 = -7.45133219101941108420e+02
-EXP_HALF_LN2: const f64 = 3.46573590279972643113e-01
-EXP_P1: const f64 = 1.66666666666666019037e-01
-EXP_P2: const f64 = -2.77777777770155933842e-03
-EXP_P3: const f64 = 6.61375632143793436117e-05
-EXP_P4: const f64 = -1.65339022054652515390e-06
-EXP_P5: const f64 = 4.13813679705723846039e-08
-
-LOG_L1: const f64 = 6.666666666666735130e-01
-LOG_L2: const f64 = 3.999999999940941908e-01
-LOG_L3: const f64 = 2.857142874366239149e-01
-LOG_L4: const f64 = 2.222219843214978396e-01
-LOG_L5: const f64 = 1.818357216161805012e-01
-LOG_L6: const f64 = 1.531383769920937332e-01
-LOG_L7: const f64 = 1.479819860511658591e-01
 
 PIO4: const f64 = 7.85398163397448278999e-01
 SMALL_ARGUMENT: const f64 = 7.450580596923828125e-09
@@ -73,31 +55,44 @@ COS_C4: const f64 = -2.75573143513906633035e-07
 COS_C5: const f64 = 2.08757232129817482790e-09
 COS_C6: const f64 = -1.13596475577881948265e-11
 
-POW_LOG_OFF: const i64 = 4604666736195665920
-POW_HIGH32: const u64 = 0xFFFFFFFF00000000
-POW_LN2: const f64 = 6.931471805599453e-01
-POW_LN2_HI: const f64 = 6.931471805592082e-01
-POW_LN2_LO: const f64 = 7.371002565167799e-13
-POW_LOG_C3: const f64 = 0.3333333333333333
-POW_LOG_C4: const f64 = -0.25
-POW_LOG_C5: const f64 = 0.2
-POW_LOG_C6: const f64 = -0.16666666666666666
-POW_LOG_C7: const f64 = 0.14285714285714285
-POW_LOG_C8: const f64 = -0.125
-POW_LOG_C9: const f64 = 0.1111111111111111
-POW_LOG_C10: const f64 = -0.1
-POW_EXP_INV_LN2N: const f64 = 184.6649652337873
-POW_EXP_LN2_N: const f64 = 0.005415212348111709
-POW_EXP_NEG_LN2_HI_N: const f64 = -0.005415212347998022
-POW_EXP_NEG_LN2_LO_N: const f64 = -1.2655086083325438e-13
-POW_EXP_SHIFT: const f64 = 6755399441055744.0
-POW_EXP_C3: const f64 = 0.16666666666666666
-POW_EXP_C4: const f64 = 0.041666666666666664
-POW_EXP_C5: const f64 = 0.008333333333333333
-POW_TWO_52: const f64 = 4503599627370496.0
-POW_TWO_M60: const f64 = 8.673617379884035e-19
-POW_SHIFT_BITS: const i64 = 4843621399236968448
-POW_EXP_LIMIT: const f64 = 745.2
+// Logarithm reduction over the `pow_tables` log table, shared by log and pow: x = 2^k * z with z
+// in [OFF, 2*OFF); LOG_HIGH32 splits z for pow's exact product; C3..C10 carry log1p(r) - r + r^2/2
+// from r^3, of which log needs only C3..C8.
+LOG_OFF: const i64 = 4604666736195665920
+LOG_HIGH32: const u64 = 0xFFFFFFFF00000000
+LOG_LN2: const f64 = 6.931471805599453e-01
+LOG_LN2_HI: const f64 = 6.931471805592082e-01
+LOG_LN2_LO: const f64 = 7.371002565167799e-13
+LOG_C3: const f64 = 0.3333333333333333
+LOG_C4: const f64 = -0.25
+LOG_C5: const f64 = 0.2
+LOG_C6: const f64 = -0.16666666666666666
+LOG_C7: const f64 = 0.14285714285714285
+LOG_C8: const f64 = -0.125
+LOG_C9: const f64 = 0.1111111111111111
+LOG_C10: const f64 = -0.1
+// 52 * 2^52: lowers a bit pattern's exponent field by 52 after scaling a subnormal by 2^52.
+LOG_SUB_OFF: const i64 = 234187180623265792
+
+// Exponential reduction over the `pow_tables` 2^(j/128) table, shared by exp and pow: n = 128*k + j
+// is the argument times INV_LN2N, rounded by adding SHIFT and read back through SHIFT_BITS;
+// C3..C5 carry exp(r) - 1 - r - r^2/2 from r^3. EXP_LN2_N serves pow's shorter f32 kernel.
+EXP_INV_LN2N: const f64 = 184.6649652337873
+EXP_LN2_N: const f64 = 0.005415212348111709
+EXP_NEG_LN2_HI_N: const f64 = -0.005415212347998022
+EXP_NEG_LN2_LO_N: const f64 = -1.2655086083325438e-13
+EXP_SHIFT: const f64 = 6755399441055744.0
+EXP_SHIFT_BITS: const i64 = 4843621399236968448
+EXP_C3: const f64 = 0.16666666666666666
+EXP_C4: const f64 = 0.041666666666666664
+EXP_C5: const f64 = 0.008333333333333333
+EXP_LIMIT: const f64 = 745.2
+// 1023 << 52: the bit-pattern bias for a 2^1023 scale.
+EXP_TOP: const i64 = 4607182418800017408
+
+// Plain powers of two, and the sign machinery only pow needs.
+TWO_52: const f64 = 4503599627370496.0
+TWO_M60: const f64 = 8.673617379884035e-19
 POW_ABS: const u64 = 0x7FFFFFFFFFFFFFFF
 POW_SIGN: const u64 = 0x8000000000000000
 
@@ -171,29 +166,37 @@ pub exp(value: f64): f64 {
     if isnan(value) { return value }
     if value > EXP_OVERFLOW { return bits.to_float(u64(0x7FF0000000000000)) }
     if value < EXP_UNDERFLOW { return 0.0 }
-    high: f64 = value
-    low: f64 = 0.0
-    k: int = 0
-    if value <= -EXP_HALF_LN2 || value >= EXP_HALF_LN2 {
-        half: f64 = 0.5
-        if value < 0.0 { half = -0.5 }
-        k = int(INV_LN2 * value + half)
-        scale: f64 = f64(k)
-        high = value - scale * LN2_HI
-        low = scale * LN2_LO
-    }
-    r: f64 = high - low
+    // exp(x) = 2^k * 2^(j/128) * exp(r), where n = 128*k + j is x*128/ln2 rounded and read out of
+    // the shifted double, and r = x - n*ln2/128 with ln2/128 in two words, so |r| <= ln2/256.
+    shifted: f64 = fma(value, EXP_INV_LN2N, EXP_SHIFT)
+    n: i64 = i64(bits.from_float(shifted)) - EXP_SHIFT_BITS
+    r: f64 = fma(shifted - EXP_SHIFT, EXP_NEG_LN2_LO_N,
+        fma(shifted - EXP_SHIFT, EXP_NEG_LN2_HI_N, value))
     r2: f64 = r * r
-    c: f64 = fma(-r2, fma(r2, fma(r2, fma(r2, fma(r2, EXP_P5, EXP_P4), EXP_P3), EXP_P2), EXP_P1), r)
-    if k == 0 { return 1.0 - ((r * c) / (c - 2.0) - r) }
-    y: f64 = 1.0 - ((low - (r * c) / (2.0 - c)) - high)
-    if k == 1024 {
-        y = y * 2.0
-        k = 1023
+    j: u64 = u64(n) & 127
+    // 2^(j/128) is the table's s * (1 + tail), so the whole factor is s * (1 + correction) with
+    // correction = tail + r + r^2/2 + ... + r^5/120. The tail*r cross term is below 2^-62 relative.
+    correction: f64 = fma(r2, fma(r, EXP_C3, 0.5), table.two_tail[j] + r) +
+        (r2 * r2) * fma(r, EXP_C5, EXP_C4)
+    power: i64 = n >> 7
+    // -1022 is where the scale stops being a normal double, so this is the guard's own limit rather
+    // than a borrowed one. Widening to it is output-identical to `pow_extreme`'s -1000: in between,
+    // the result is still normal, so that path's closing multiply by 2^-1000 is an exact shift and
+    // never a second rounding. Only a genuinely subnormal result rounds twice, and both spellings
+    // send it below regardless.
+    if power >= -1022 && power <= 1023 {
+        scale: f64 = bits.to_float(u64(i64(table.two_bits[j]) + (power << 52)))
+        return fma(scale, correction, scale)
     }
-    if k >= -1021 { return y * bits.to_float(u64(1023 + k) << 52) }
+    // Past 1023 only k == 1024 reaches here, just under the overflow limit: scale at 2^1023 and
+    // double once, so the correction is applied while the scale is still a normal double.
+    if power > 1023 {
+        scale: f64 = bits.to_float(u64(i64(table.two_bits[j]) + EXP_TOP))
+        return fma(scale, correction, scale) * 2.0
+    }
     // Subnormal result: scale in two exact steps so only the last one rounds.
-    return y * bits.to_float(u64(1023 + k + 1000) << 52) * bits.to_float(u64(23) << 52)
+    scale: f64 = bits.to_float(u64(i64(table.two_bits[j]) + ((power + 1000) << 52)))
+    return fma(scale, correction, scale) * bits.to_float(u64(23) << 52)
 }
 
 pub exp(value: f32): f32 { return f32(exp(f64(value))) }
@@ -203,32 +206,25 @@ pub log(value: f64): f64 {
     if value < 0.0 { return bits.to_float(u64(0x7FF8000000000000)) }
     if value == 0.0 { return -bits.to_float(u64(0x7FF0000000000000)) }
     if isinf(value) { return value }
-    x: f64 = value
-    raw: u64 = bits.from_float(x)
-    k: int = 0
-    if (raw >> 52) == 0 {
-        // Subnormal: scale by 2^54 so the exponent field is meaningful.
-        k = -54
-        x = x * 18014398509481984.0
-        raw = bits.from_float(x)
+    // x = 2^k * z with z in [OFF, 2*OFF), k = offset >> 52 and z the bits in the shifted pattern;
+    // i selects the table entry, c = 1/invc lies near z, and log(x) = k*ln2 + log(c) + log1p(r).
+    xs: i64 = i64(bits.from_float(value))
+    if (bits.from_float(value) >> 52) == 0 {
+        xs = i64(bits.from_float(value * TWO_52)) - LOG_SUB_OFF
     }
-    k = k + int(raw >> 52) - 1023
-    mantissa: u64 = raw & u64(0x000FFFFFFFFFFFFF)
-    // Normalize the significand into [sqrt(2)/2, sqrt(2)).
-    if mantissa > u64(0x6A09E667F3BCD) {
-        mantissa = mantissa | (u64(1022) << 52)
-        k = k + 1
-    } else {
-        mantissa = mantissa | (u64(1023) << 52)
-    }
-    f: f64 = bits.to_float(mantissa) - 1.0
-    s: f64 = f / (2.0 + f)
-    z: f64 = s * s
-    w: f64 = z * z
-    r: f64 = fma(z, fma(w, fma(w, fma(w, LOG_L7, LOG_L5), LOG_L3), LOG_L1), w * fma(w, fma(w, LOG_L6, LOG_L4), LOG_L2))
-    half_f2: f64 = 0.5 * f * f
-    dk: f64 = f64(k)
-    return dk * LN2_HI - ((half_f2 - fma(s, half_f2 + r, dk * LN2_LO)) - f)
+    offset: i64 = xs - LOG_OFF
+    i: u64 = u64(offset >> 45) & 127
+    // z*invc - 1 is representable exactly, so one fma carries r with no error at all.
+    r: f64 = fma(bits.to_float(u64(xs - (offset & -4503599627370496))), table.log[i].invc, -1.0)
+    // k*ln2hi + logc is exact. Their sum with r cancels, so t loses up to half an ulp of itself;
+    // (w - t) + r is that loss exactly, and carrying it is what keeps a single rounded double honest.
+    w: f64 = f64(offset >> 52) * LOG_LN2_HI + table.log[i].logc
+    t: f64 = w + r
+    r2: f64 = r * r
+    // log1p(r) - r as a series from r^2 to r^8: |r| <= 0.00585, so the r^9 term is below 2^-70.
+    q: f64 = fma(r2 * r2, fma(r2, LOG_C8, fma(r, LOG_C7, LOG_C6)),
+        fma(r2, fma(r, LOG_C5, LOG_C4), fma(r, LOG_C3, -0.5)))
+    return t + ((w - t + r) + (fma(f64(offset >> 52), LOG_LN2_LO, table.log[i].logctail) + r2 * q))
 }
 
 pub log(value: f32): f32 { return f32(log(f64(value))) }
@@ -296,7 +292,7 @@ pow_special(x: f64, y: f64): (bool, f64, i64, u64) {
         return true, 0.0, 0, 0
     }
     magnitude: i64 = i64(ax)
-    if (ax >> 52) == 0 { magnitude = i64(bits.from_float(bits.to_float(ax) * POW_TWO_52)) - 234187180623265792 }
+    if (ax >> 52) == 0 { magnitude = i64(bits.from_float(bits.to_float(ax) * TWO_52)) - LOG_SUB_OFF }
     return false, 0.0, magnitude, flip
 }
 
@@ -307,7 +303,7 @@ pow_special(x: f64, y: f64): (bool, f64, i64, u64) {
 pow_extreme(w: f64, n: i64): f64 {
     if n > 1024 { return bits.to_float(u64(0x7FF0000000000000)) }
     if n == 1024 { return (w * bits.to_float(u64(2046) << 52)) * 2.0 }
-    return (w * bits.to_float(u64(n + 1083) << 52)) * POW_TWO_M60
+    return (w * bits.to_float(u64(n + 1083) << 52)) * TWO_M60
 }
 
 /* The body names as few locals as it can. A local that does not win one of the eight callee-saved
@@ -350,24 +346,24 @@ pub pow(x: f64, y: f64): f64 {
     // x = 2^k * z with z in [OFF, 2*OFF), k = offset >> 52 and z the bits in `scaled`; i selects the
     // table entry, c = 1/invc lies near z, and log(x) = k*ln2 + log(c) + log1p(r), with r = z*invc - 1
     // formed exactly as rhi + rlo from z's high 32 bits and the rest.
-    offset: i64 = xs - POW_LOG_OFF
+    offset: i64 = xs - LOG_OFF
     i: u64 = u64(offset >> 45) & 127
     scaled: u64 = u64(xs - (offset & -4503599627370496))
     invc: f64 = table.log[i].invc
-    rhi: f64 = bits.to_float((scaled + 2147483648) & POW_HIGH32) * invc - 1.0
-    rlo: f64 = (bits.to_float(scaled) - bits.to_float((scaled + 2147483648) & POW_HIGH32)) * invc
+    rhi: f64 = bits.to_float((scaled + 2147483648) & LOG_HIGH32) * invc - 1.0
+    rlo: f64 = (bits.to_float(scaled) - bits.to_float((scaled + 2147483648) & LOG_HIGH32)) * invc
     r: f64 = rhi + rlo
     // k*ln2 + logc is exact; each sum below keeps its rounding error in the low word.
-    t1: f64 = f64(offset >> 52) * POW_LN2_HI + table.log[i].logc
+    t1: f64 = f64(offset >> 52) * LOG_LN2_HI + table.log[i].logc
     t2: f64 = t1 + r
     // -r^2/2 = -rhi^2/2 + rlo * (-(r + rhi)/2), and rhi^2 is exact.
     hi: f64 = t2 + -0.5 * rhi * rhi
     r2: f64 = r * r
     // The last term is log1p(r) - r + r^2/2 as a series from r^3 to r^10.
-    lo: f64 = (f64(offset >> 52) * POW_LN2_LO + table.log[i].logctail) + (t1 - t2 + r) +
+    lo: f64 = (f64(offset >> 52) * LOG_LN2_LO + table.log[i].logctail) + (t1 - t2 + r) +
         rlo * (-0.5 * (r + rhi)) + (t2 - hi + -0.5 * rhi * rhi) +
-        r2 * r * ((POW_LOG_C3 + r * POW_LOG_C4) + r2 * (POW_LOG_C5 + r * POW_LOG_C6) +
-        r2 * r2 * ((POW_LOG_C7 + r * POW_LOG_C8) + r2 * (POW_LOG_C9 + r * POW_LOG_C10)))
+        r2 * r * ((LOG_C3 + r * LOG_C4) + r2 * (LOG_C5 + r * LOG_C6) +
+        r2 * r2 * ((LOG_C7 + r * LOG_C8) + r2 * (LOG_C9 + r * LOG_C10)))
     log_hi: f64 = hi + lo
 
     // y * log(x) as e_hi + e_lo. fma gives the product's rounding error exactly, so neither operand
@@ -381,27 +377,27 @@ pub pow(x: f64, y: f64): f64 {
     top_e: u64 = (bits.from_float(e_hi) >> 52) & 0x7FF
     if top_e < 0x3C9 { return bits.to_float(u64(0x3FF0000000000000) ^ flip) }
     if top_e >= 0x408 {
-        if e_hi > POW_EXP_LIMIT { return bits.to_float(u64(0x7FF0000000000000) ^ flip) }
-        if e_hi < -POW_EXP_LIMIT { return bits.to_float(flip) }
+        if e_hi > EXP_LIMIT { return bits.to_float(u64(0x7FF0000000000000) ^ flip) }
+        if e_hi < -EXP_LIMIT { return bits.to_float(flip) }
     }
-    shifted: f64 = POW_EXP_INV_LN2N * e_hi + POW_EXP_SHIFT
-    n: i64 = i64(bits.from_float(shifted)) - POW_SHIFT_BITS
-    er: f64 = e_hi + (shifted - POW_EXP_SHIFT) * POW_EXP_NEG_LN2_HI_N +
-        (shifted - POW_EXP_SHIFT) * POW_EXP_NEG_LN2_LO_N +
+    shifted: f64 = EXP_INV_LN2N * e_hi + EXP_SHIFT
+    n: i64 = i64(bits.from_float(shifted)) - EXP_SHIFT_BITS
+    er: f64 = e_hi + (shifted - EXP_SHIFT) * EXP_NEG_LN2_HI_N +
+        (shifted - EXP_SHIFT) * EXP_NEG_LN2_LO_N +
         (fma(y, log_hi, -e_hi) + y * (hi - log_hi + lo))
     j: u64 = u64(n) & 127
     power: i64 = n >> 7
     if power < -1000 || power > 1023 {
         s: f64 = bits.to_float(table.two_bits[j])
         er2: f64 = er * er
-        correction: f64 = table.two_tail[j] + er + er2 * (0.5 + er * POW_EXP_C3) +
-            er2 * er2 * (POW_EXP_C4 + er * POW_EXP_C5)
+        correction: f64 = table.two_tail[j] + er + er2 * (0.5 + er * EXP_C3) +
+            er2 * er2 * (EXP_C4 + er * EXP_C5)
         return bits.to_float(bits.from_float(pow_extreme(s + s * correction, power)) ^ flip)
     }
     scale: f64 = bits.to_float(u64(i64(table.two_bits[j]) + (power << 52)))
     return bits.to_float(bits.from_float(scale + scale * (table.two_tail[j] + er +
-        er * er * (0.5 + er * POW_EXP_C3) +
-        (er * er) * (er * er) * (POW_EXP_C4 + er * POW_EXP_C5))) ^ flip)
+        er * er * (0.5 + er * EXP_C3) +
+        (er * er) * (er * er) * (EXP_C4 + er * EXP_C5))) ^ flip)
 }
 
 // The f32 kernel needs only about 2^-30 relative accuracy, so it runs in plain f64: the same log table
@@ -419,21 +415,21 @@ pub pow(x: f32, y: f32): f32 {
     }
     if ix < 1 || ix >= 0x7F800000 || (iy & 0x7FFFFFFF) >= 0x7F800000 { return f32(pow(f64(x), f64(y))) }
     xs: i64 = i64(bits.from_float(f64(x)))
-    offset: i64 = xs - POW_LOG_OFF
+    offset: i64 = xs - LOG_OFF
     i: u64 = u64(offset >> 45) & 127
     r: f64 = bits.to_float(u64(xs - (offset & -4503599627370496))) * table.log[i].invc - 1.0
-    e: f64 = f64(y) * (f64(offset >> 52) * POW_LN2 + table.log[i].logc + r -
-        r * r * (0.5 - r * (POW_LOG_C3 + r * (POW_LOG_C4 + r * POW_LOG_C5))))
+    e: f64 = f64(y) * (f64(offset >> 52) * LOG_LN2 + table.log[i].logc + r -
+        r * r * (0.5 - r * (LOG_C3 + r * (LOG_C4 + r * LOG_C5))))
     // Beyond |e| = 128 the result overflows or underflows to zero in f32.
     if ((bits.from_float(e) >> 52) & 0x7FF) >= 0x406 {
         if e > 0.0 { return bits.to_float(u32(0x7F800000)) }
         return 0.0
     }
-    shifted: f64 = POW_EXP_INV_LN2N * e + POW_EXP_SHIFT
-    n: i64 = i64(bits.from_float(shifted)) - POW_SHIFT_BITS
-    er: f64 = e - (shifted - POW_EXP_SHIFT) * POW_EXP_LN2_N
+    shifted: f64 = EXP_INV_LN2N * e + EXP_SHIFT
+    n: i64 = i64(bits.from_float(shifted)) - EXP_SHIFT_BITS
+    er: f64 = e - (shifted - EXP_SHIFT) * EXP_LN2_N
     scale: f64 = bits.to_float(u64(i64(table.two_bits[u64(n) & 127]) + ((n >> 7) << 52)))
-    return f32(scale + scale * (er + er * er * (0.5 + er * POW_EXP_C3)))
+    return f32(scale + scale * (er + er * er * (0.5 + er * EXP_C3)))
 }
 
 kernel_sin(x: f64, y: f64, tail: bool): f64 {

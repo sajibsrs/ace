@@ -1,4 +1,5 @@
-/* Tables for math.pow: a 128-entry logarithm table and a 128-entry table of powers of 2.
+/* Tables for math.exp, math.log, and math.pow: a 128-entry logarithm table and a 128-entry
+ * table of powers of 2.
  *
  * Both are derived here from first principles with 100-digit arithmetic.
  *
