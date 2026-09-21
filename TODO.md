@@ -275,32 +275,6 @@ foundations.
   prefixes for `fmt.printf`, especially fixed-width `%b`/`%o`/`%x` register
   displays; carve consistently across integer conversions from a hardware
   fixture rather than adding a binary-only modifier.
-- **Transcendental math functions** [open] — `exp`, `log`, `pow`, `sin`, and
-  `cos` are implemented, and `exp`, `log`, and `pow` are table-driven over the
-  two 128-entry tables in `std/@/pow_tables.ace`. Figures below come from one
-  harness: release build, 4096 arguments, 32 repeats, best of seven rounds,
-  glue-subtracted through a non-inlined identity, first run of each binary
-  discarded. Throughput: `exp` 5.8 ns, `log` 7.8 ns, `pow` 23 ns (`f32`: 12
-  ns), `sin` 11.4 ns and `cos` 12.2 ns in the Cody-Waite band and 4.0 and 4.7
-  ns below pi/4, against libm's 3-4 ns for the first four and 9.5 ns for
-  `pow`. Dependent-chain latency: `exp` 15.2 ns, `log` 23.8 ns, `sin` 50.7 ns
-  and `cos` 51.8 ns in the Cody-Waite band, 11.7 and 24.6 ns below pi/4.
-  Arguments beyond 1.6e6 take about 590 ns because the Payne-Hanek fraction is
-  extracted bit by bit; a word-at-a-time extraction would cut that. Chain
-  latency runs between two and four times throughput throughout, so every one
-  of these kernels is latency-bound and only chain-shortening changes pay.
-  `sin` and `cos` now hold no call on either hot path, so what is left in
-  their chains is the Cody-Waite reduction itself, about seventy per cent of
-  it: a table-driven kernel shrinks the polynomial and needs a finer reduction
-  to do it, so it addresses the smaller half and is not the next step for
-  them. The `pow` gap to libm is backend quality: a local that wins no
-  register is reached through an address computed per access, and each
-  constant load takes three instructions. `pow`'s hot path holds no call and
-  is at the register ceiling, so its source-level lever is spent; what is left
-  for it is the promotion and constant-materialization items in the compiler
-  band above. Separately, `reduce_large` loses fifteen integer locals to the
-  promotion limit and extracts its fraction one bit at a time, which is what
-  makes arguments beyond 1.6e6 cost about 590 ns.
 - **Random source** [new].
 
 ## 5. Language questions and conveniences

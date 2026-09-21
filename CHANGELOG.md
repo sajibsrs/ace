@@ -1473,6 +1473,9 @@ current normative rules, and Git preserves patch-level detail.
   scalar field of a frame-resident local struct is a direct `stur`.
   `parse-f64` fell from 59 to 52 ns (1.9x C `strtod`), `format-f64-shortest`
   from 296 to 262 ns, and string-bench code by 5.3%; CPU was unchanged.
+- Renamed `std/@/pow_tables.ace` to `math_tables.ace` and moved the `sin`/`cos`
+  Payne-Hanek `2/pi` limb table into it as `two_over_pi`, so it is the single
+  home for `math`'s constant tables. Results and timings are unchanged.
 
 ## Current frontier
 

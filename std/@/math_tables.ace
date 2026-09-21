@@ -1,7 +1,7 @@
-/* Tables for math.exp, math.log, and math.pow: a 128-entry logarithm table and a 128-entry
- * table of powers of 2.
+/* Constant tables for math: a 128-entry logarithm table and a 128-entry table of powers of 2 for
+ * exp, log, and pow, and the bits of 2/pi for the sin and cos reduction of large arguments.
  *
- * Both are derived here from first principles with 100-digit arithmetic.
+ * The first two are derived here from first principles with 100-digit arithmetic.
  *
  * log: x = 2^k * z with z in [OFF, 2*OFF), OFF the bit pattern 0x3FE7100000000000, which puts
  * 1.0 inside one interval so that interval can use c = 1 exactly. Bits 45..51 of (bits(x) - OFF)
@@ -220,4 +220,17 @@ pub two_tail: const [128]f64 = [
     -3.266924100901318e-17, -4.3657593008079375e-17, 1.7963932659833022e-17, 3.4300925275214166e-17,
     -5.545065618639427e-17, -5.149009745457733e-17, 5.336805878514151e-17, 3.498978661192973e-17,
     4.5784915277060095e-17, -5.241934575393899e-17, 2.0414278897578303e-17, 4.124842848606488e-18,
+]
+
+/* 2/pi as 32-bit limbs of its binary fraction, most significant first: 1280 bits,
+ * enough for any finite f64 argument in the Payne-Hanek reduction below.
+ */
+pub two_over_pi: const [40]u32 = [
+    0xA2F9836E, 0x4E441529, 0xFC2757D1, 0xF534DDC0, 0xDB629599, 0x3C439041,
+    0xFE5163AB, 0xDEBBC561, 0xB7246E3A, 0x424DD2E0, 0x06492EEA, 0x09D1921C,
+    0xFE1DEB1C, 0xB129A73E, 0xE88235F5, 0x2EBB4484, 0xE99C7026, 0xB45F7E41,
+    0x3991D639, 0x835339F4, 0x9C845F8B, 0xBDF9283B, 0x1FF897FF, 0xDE05980F,
+    0xEF2F118B, 0x5A0A6D1F, 0x6D367ECF, 0x27CB09B7, 0x4F463F66, 0x9E5FEA2D,
+    0x7527BAC7, 0xEBE5F17B, 0x3D0739F7, 0x8A5292EA, 0x6BFB5FB1, 0x1F8D5D08,
+    0x56033046, 0xFC7B6BAB, 0xF0CFBC20, 0x9AF4361D,
 ]

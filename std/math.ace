@@ -1,7 +1,7 @@
 /* math — minimal pure-Ace numeric helpers.
  * sqrt, floor, and ceil are compiler-backed exact IEEE operations. exp, log, and pow are pure Ace,
  * within 1 ULP over the whole finite domain, and all three are table-driven over the same two
- * 128-entry tables in `pow_tables`: a logarithm table of invc/log(c) and a table of 2^(j/128).
+ * 128-entry tables in `math_tables`: a logarithm table of invc/log(c) and a table of 2^(j/128).
  * exp reduces by n*ln2/128, looks up 2^(j/128), and applies a fifth-degree correction; log splits
  * the exponent, takes log(c) from the table, and evaluates log1p of the exact residue r = z*invc - 1.
  * pow runs both halves back to back, carrying its logarithm as a high and low double because the
@@ -11,7 +11,7 @@
  */
 
 import bits
-import table: @pow_tables
+import table: @math_tables
 
 pub sqrt(value: f64): f64 intrinsic
 pub sqrt(value: f32): f32 intrinsic
@@ -55,7 +55,7 @@ COS_C4: const f64 = -2.75573143513906633035e-07
 COS_C5: const f64 = 2.08757232129817482790e-09
 COS_C6: const f64 = -1.13596475577881948265e-11
 
-// Logarithm reduction over the `pow_tables` log table, shared by log and pow: x = 2^k * z with z
+// Logarithm reduction over the `math_tables` log table, shared by log and pow: x = 2^k * z with z
 // in [OFF, 2*OFF); LOG_HIGH32 splits z for pow's exact product; C3..C10 carry log1p(r) - r + r^2/2
 // from r^3, of which log needs only C3..C8.
 LOG_OFF: const i64 = 4604666736195665920
@@ -74,7 +74,7 @@ LOG_C10: const f64 = -0.1
 // 52 * 2^52: lowers a bit pattern's exponent field by 52 after scaling a subnormal by 2^52.
 LOG_SUB_OFF: const i64 = 234187180623265792
 
-// Exponential reduction over the `pow_tables` 2^(j/128) table, shared by exp and pow: n = 128*k + j
+// Exponential reduction over the `math_tables` 2^(j/128) table, shared by exp and pow: n = 128*k + j
 // is the argument times INV_LN2N, rounded by adding SHIFT and read back through SHIFT_BITS;
 // C3..C5 carry exp(r) - 1 - r - r^2/2 from r^3. EXP_LN2_N serves pow's shorter f32 kernel.
 EXP_INV_LN2N: const f64 = 184.6649652337873
@@ -96,19 +96,6 @@ TWO_M60: const f64 = 8.673617379884035e-19
 ABS_BITS: const u64 = 0x7FFFFFFFFFFFFFFF
 INF_BITS: const u64 = 0x7FF0000000000000
 POW_SIGN: const u64 = 0x8000000000000000
-
-/* 2/pi as 32-bit limbs of its binary fraction, most significant first: 1280 bits,
- * enough for any finite f64 argument in the Payne-Hanek reduction below.
- */
-TWO_OVER_PI: [40]u32 = [
-    0xA2F9836E, 0x4E441529, 0xFC2757D1, 0xF534DDC0, 0xDB629599, 0x3C439041,
-    0xFE5163AB, 0xDEBBC561, 0xB7246E3A, 0x424DD2E0, 0x06492EEA, 0x09D1921C,
-    0xFE1DEB1C, 0xB129A73E, 0xE88235F5, 0x2EBB4484, 0xE99C7026, 0xB45F7E41,
-    0x3991D639, 0x835339F4, 0x9C845F8B, 0xBDF9283B, 0x1FF897FF, 0xDE05980F,
-    0xEF2F118B, 0x5A0A6D1F, 0x6D367ECF, 0x27CB09B7, 0x4F463F66, 0x9E5FEA2D,
-    0x7527BAC7, 0xEBE5F17B, 0x3D0739F7, 0x8A5292EA, 0x6BFB5FB1, 0x1F8D5D08,
-    0x56033046, 0xFC7B6BAB, 0xF0CFBC20, 0x9AF4361D,
-]
 
 pub isnan(value: f64): bool {
     raw: u64 = bits.from_float(value)
@@ -460,7 +447,7 @@ reduce_large(x: f64): (f64, f64, int) {
     if e >= 2 { first = (e - 2) / 32 }
     limbs: [10]u64 = [0 : 10]
     for j: int in 0 .. 8 {
-        limb: u64 = u64(TWO_OVER_PI[usize(first + j)])
+        limb: u64 = u64(table.two_over_pi[usize(first + j)])
         low: u64 = limb * ml
         high: u64 = limb * mh
         position: int = 7 - j
