@@ -277,7 +277,21 @@ foundations.
   fixture rather than adding a binary-only modifier.
 - **Random source** [new].
 
-## 5. Language questions and conveniences
+## 5. Packages
+
+- **`pkg/json` formatter throughput** [new] — a 139-byte document written
+  with about 30 `Formatter` calls takes 1145 ns without an `f64` field and
+  1595 ns with one, against 336 and 503 ns for the same state machine in C
+  `-O2` and about 600 and 780 ns in C `-fno-inline`. Sampled time is about 28%
+  in `put` and `reserve`, 23% in `escape` and `quote`, 12% in the `f64` path,
+  5% in `inside_object`, and 4% in `mem_copy`. Candidate source changes, none
+  measured: skip the `escape` call for bytes that need no escape, check
+  capacity inline in `put(byte)` and call `reserve` only when full, and cache
+  an "innermost container is an object" flag. Each needs its gain measured
+  first; inlining small functions is a compiler question bound by the
+  single-pass design.
+
+## 6. Language questions and conveniences
 
 Each item requires an owner decision and should wait for a motivating use case.
 
@@ -302,7 +316,7 @@ Each item requires an owner decision and should wait for a motivating use case.
   constant-fold-only today; either admission or permanent rejection should be
   stated explicitly.
 
-## 6. Later networking and protocol layers
+## 7. Later networking and protocol layers
 
 Resume after the higher-priority core work. Each layer keeps allocation,
 buffering, capacities, retries, timeouts, and ownership explicit.
@@ -350,7 +364,7 @@ nonblocking connect completion remain visible without callbacks or allocation.
   much server mechanism belongs in the language versus a framework built on
   top must happen before anything like the nonblocking core returns.
 
-## 7. Completed checked-build checkpoint
+## 8. Completed checked-build checkpoint
 
 The explicit `--checked`/`--release` modes and strict sequence bounds are
 implemented: emitted programs default to checked mode, while release strips
