@@ -10,8 +10,9 @@ same(output: []u8, n: usize, err: Error, expected: string): bool {
 
 /* Parses `text`, formats the tree, and checks the output equals `expected`. */
 round(text: string, expected: string): bool {
-    root: json.Json, perr: Error = json.parse(text)
-    defer json.wipe(root)
+    p: json.Parser = json.parser_new()
+    defer json.parser_wipe(mut p)
+    root: json.Json, perr: Error = mut p.parse(text)
 
     if perr != null {
         return false
@@ -95,8 +96,9 @@ failures(): int {
     if err != json.FormatErr.number { return 52 }
 
     /* A capacity failure inside a nested container still reports capacity. */
-    root: json.Json, perr: Error = json.parse("[[1,2,3],[4,5,6]]")
-    defer json.wipe(root)
+    p: json.Parser = json.parser_new()
+    defer json.parser_wipe(mut p)
+    root: json.Json, perr: Error = mut p.parse("[[1,2,3],[4,5,6]]")
 
     if perr != null {
         return 53

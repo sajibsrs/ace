@@ -22,7 +22,7 @@ read_file(path: string): (mut []u8, Error) {
     buffer: mut []u8 = mem.alloc[u8](usize(info.size))
 
     if buffer == null {
-        return null, json.JsonErr.allocation
+        return null, json.ParseErr.allocation
     }
     fd: sys.Fd, oerr: Error = sys.open(path, sys.O_RDONLY)
     defer sys.close(fd)
@@ -44,7 +44,7 @@ read_file(path: string): (mut []u8, Error) {
 
     if total != buffer.len {
         mem.release[u8](mut buffer)
-        return null, json.JsonErr.unexpected_token
+        return null, json.ParseErr.unexpected_token
     }
     return buffer, null
 }
@@ -115,8 +115,9 @@ main(): int {
         fmt.printf("failed to read %s: error %d\n", PATH, int(rerr.code))
         return 1
     }
-    root: json.Json, perr: Error = json.parse(data)
-    defer json.wipe(root)
+    parser: json.Parser = json.parser_new()
+    defer json.parser_wipe(mut parser)
+    root: json.Json, perr: Error = mut parser.parse(data)
 
     if perr != null {
         fmt.printf("failed to parse %s: error %d\n", PATH, int(perr.code))

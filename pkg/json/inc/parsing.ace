@@ -9,45 +9,146 @@
 import mem
 import str
 import utf8
-import jsonval: "./value.ace"
+import document: "./document.ace"
 
-Json: type = jsonval.Json
-Pair: type = jsonval.Pair
-JsonErr: type = jsonval.JsonErr
+Json: type = document.Json
+Pair: type = document.Pair
+
+pub ParseErr: error {
+    1: unexpected_token = "unexpected token"
+    2: unterminated_string = "unterminated string literal"
+    3: invalid_escape = "invalid string escape"
+    4: invalid_number = "invalid number literal"
+    5: depth = "nesting depth exceeded"
+    6: trailing_data = "unexpected trailing data after value"
+    7: empty_input = "empty input"
+    8: allocation = "allocation failed"
+}
 
 /* Recursion guard: the most containers that may nest, bounding stack depth on
  * adversarial input rather than risking overflow.
  */
 MAX_DEPTH: usize = 512
 
-Parser: struct {
-    text: string,
+/* The storage one parse fills: string bytes, array elements, and object
+ * members, each one block sized from the input.
+ */
+Block: struct {
+    bytes: mut []u8 = null,
+    items: mut []Json = null,
+    pairs: mut []Pair = null,
+}
+
+/* Owns the storage of every tree it parses. A returned `Json` borrows from
+ * the parser and is valid until `parser_wipe`; trees accumulate until then.
+ * `bytes`, `items`, and `pairs` are the block the current parse fills, and
+ * `stack` and `pstack` hold finished children until their container closes.
+ */
+pub Parser: struct {
+    blocks: mut []Block = null,
+    count: usize,
+    bytes: mut []u8 = null,
+    items: mut []Json = null,
+    pairs: mut []Pair = null,
+    bat: usize,
+    iat: usize,
+    pat: usize,
+    stack: mut []Json = null,
+    sat: usize,
+    pstack: mut []Pair = null,
+    psat: usize,
+    text: string = "",
     at: usize,
+}
+
+pub parser_new(): Parser {
+    return Parser{count = 0, bat = 0, iat = 0, pat = 0, sat = 0, psat = 0, at = 0}
+}
+
+/* Releases every tree the parser produced. Call once none is still in use. */
+pub parser_wipe(mut parser: Parser) {
+    for i: usize in 0 .. parser.count {
+        mem.release[u8](mut parser.blocks[i].bytes)
+        mem.release[Json](mut parser.blocks[i].items)
+        mem.release[Pair](mut parser.blocks[i].pairs)
+    }
+    mem.release[Block](mut parser.blocks)
+    mem.release[Json](mut parser.stack)
+    mem.release[Pair](mut parser.pstack)
+    parser.count = 0
+    parser.bytes = null
+    parser.items = null
+    parser.pairs = null
+    parser.sat = 0
+    parser.psat = 0
 }
 
 /* Parses the complete text as one JSON value. Trailing non-whitespace bytes
  * after the value are rejected, matching a whole-document parse rather than
- * a stream that tolerates more input after one value.
+ * a stream that tolerates more input after one value. A failed parse needs
+ * no cleanup: whatever it allocated stays owned by the parser.
  */
-pub parse(text: string): (Json, Error) {
-    p: Parser = Parser{text = text, at = 0}
-    mut p.skip_ws()
+pub mut Parser.parse(text: string): (Json, Error) {
+    self.text = text
+    self.at = 0
+    self.sat = 0
+    self.psat = 0
+    mut self.skip_ws()
 
-    if p.at == p.text.len {
-        return Json.none, JsonErr.empty_input
+    if self.at == self.text.len {
+        return Json.none, ParseErr.empty_input
     }
-    result: Json, err: Error = mut p.parse_value(0)
+    rerr: Error = mut self.reserve()
+
+    if rerr != null {
+        return Json.none, rerr
+    }
+    result: Json, err: Error = mut self.parse_value(0)
 
     if err != null {
         return Json.none, err
     }
-    mut p.skip_ws()
+    mut self.skip_ws()
 
-    if p.at != p.text.len {
-        jsonval.wipe(result)
-        return Json.none, JsonErr.trailing_data
+    if self.at != self.text.len {
+        return Json.none, ParseErr.trailing_data
     }
     return result, null
+}
+
+/* Allocates this parse's block and records it before anything is written, so
+ * a later failure still leaves it owned by the parser. The sizes are bounds,
+ * not counts: an array element owns its first byte and its trailing `,` or
+ * `]`, and an object member owns its key's two quotes, its `:`, and its
+ * trailing `,` or `}`, so text of n bytes holds at most n / 2 elements and
+ * n / 4 members.
+ */
+mut Parser.reserve(): Error {
+    items: usize = self.text.len / 2 + 1
+    members: usize = self.text.len / 4 + 1
+    grown: mut []Block, ok: bool = mem.adjust[Block](self.blocks, self.count + 1)
+
+    if !ok {
+        return ParseErr.allocation
+    }
+    self.blocks = grown
+    at: usize = self.count
+    self.count += 1
+    self.blocks[at] = Block{}
+    self.blocks[at].bytes = mem.alloc[u8](self.text.len)
+    self.blocks[at].items = mem.alloc[Json](items)
+    self.blocks[at].pairs = mem.alloc[Pair](members)
+
+    if self.blocks[at].bytes == null || self.blocks[at].items == null || self.blocks[at].pairs == null {
+        return ParseErr.allocation
+    }
+    self.bytes = self.blocks[at].bytes
+    self.items = self.blocks[at].items
+    self.pairs = self.blocks[at].pairs
+    self.bat = 0
+    self.iat = 0
+    self.pat = 0
+    return null
 }
 
 mut Parser.skip_ws() {
@@ -60,7 +161,7 @@ mut Parser.parse_value(depth: usize): (Json, Error) {
     mut self.skip_ws()
 
     if self.at == self.text.len {
-        return Json.none, JsonErr.unexpected_token
+        return Json.none, ParseErr.unexpected_token
     }
     c: u8 = self.text[self.at]
 
@@ -87,28 +188,28 @@ mut Parser.parse_value(depth: usize): (Json, Error) {
         if mut self.consume_literal("true") {
             return Json.bool(true), null
         }
-        return Json.none, JsonErr.unexpected_token
+        return Json.none, ParseErr.unexpected_token
     }
 
     if c == 'f' {
         if mut self.consume_literal("false") {
             return Json.bool(false), null
         }
-        return Json.none, JsonErr.unexpected_token
+        return Json.none, ParseErr.unexpected_token
     }
 
     if c == 'n' {
         if mut self.consume_literal("null") {
             return Json.none, null
         }
-        return Json.none, JsonErr.unexpected_token
+        return Json.none, ParseErr.unexpected_token
     }
 
     if c == '-' || is_digit(c) {
         result: Json, err: Error = mut self.parse_number()
         return result, err
     }
-    return Json.none, JsonErr.unexpected_token
+    return Json.none, ParseErr.unexpected_token
 }
 
 mut Parser.consume_literal(literal: string): bool {
@@ -133,14 +234,14 @@ mut Parser.parse_number(): (Json, Error) {
     }
 
     if self.at == self.text.len || !is_digit(self.text[self.at]) {
-        return Json.none, JsonErr.invalid_number
+        return Json.none, ParseErr.invalid_number
     }
 
     if self.text[self.at] == '0' {
         self.at += 1
 
         if self.at < self.text.len && is_digit(self.text[self.at]) {
-            return Json.none, JsonErr.invalid_number
+            return Json.none, ParseErr.invalid_number
         }
     } else {
         for self.at < self.text.len && is_digit(self.text[self.at]) {
@@ -152,7 +253,7 @@ mut Parser.parse_number(): (Json, Error) {
         self.at += 1
 
         if self.at == self.text.len || !is_digit(self.text[self.at]) {
-            return Json.none, JsonErr.invalid_number
+            return Json.none, ParseErr.invalid_number
         }
 
         for self.at < self.text.len && is_digit(self.text[self.at]) {
@@ -168,7 +269,7 @@ mut Parser.parse_number(): (Json, Error) {
         }
 
         if self.at == self.text.len || !is_digit(self.text[self.at]) {
-            return Json.none, JsonErr.invalid_number
+            return Json.none, ParseErr.invalid_number
         }
 
         for self.at < self.text.len && is_digit(self.text[self.at]) {
@@ -179,7 +280,7 @@ mut Parser.parse_number(): (Json, Error) {
     parsed: f64, ok: bool = str.parse[f64](raw)
 
     if !ok {
-        return Json.none, JsonErr.invalid_number
+        return Json.none, ParseErr.invalid_number
     }
     return Json.number(parsed), null
 }
@@ -190,56 +291,37 @@ mut Parser.parse_string(): (string, Error) {
     end: usize, closed: bool = find_string_end(self.text, start)
 
     if !closed {
-        return "", JsonErr.unterminated_string
+        return "", ParseErr.unterminated_string
     }
     upper: usize = end - start
-    buffer: mut []u8 = null
 
-    if upper != 0 {
-        buffer = mem.alloc[u8](upper)
-
-        if buffer == null {
-            return "", JsonErr.allocation
-        }
+    if upper == 0 {
+        self.at = end + 1
+        return "", null
     }
-    used: usize, err: Error = decode_string(self.text, start, end, buffer)
+    base: usize = self.bat
+    used: usize, err: Error = decode_string(self.text, start, end, self.bytes[base..base + upper])
 
     if err != null {
-        if upper != 0 {
-            mem.release[u8](mut buffer)
-        }
         return "", err
     }
     self.at = end + 1
-
-    if used == 0 {
-        return "", null
-    }
-
-    if used == upper {
-        return buffer, null
-    }
-    shrunk: mut []u8 = mem.realloc[u8](buffer, used)
-
-    if shrunk == null {
-        mem.release[u8](mut buffer)
-        return "", JsonErr.allocation
-    }
-    return shrunk, null
+    self.bat = base + used
+    return string(self.bytes[base..base + used]), null
 }
 
 mut Parser.parse_array(depth: usize): (Json, Error) {
     if depth >= MAX_DEPTH {
-        return Json.none, JsonErr.depth_exceeded
+        return Json.none, ParseErr.depth
     }
     self.at += 1
-    items: mut []Json = null
-    count: usize = 0
+    empty: mut []Json = null
+    base: usize = self.sat
     mut self.skip_ws()
 
     if self.at < self.text.len && self.text[self.at] == ']' {
         self.at += 1
-        return Json.array(items), null
+        return Json.array(empty), null
     }
 
     for {
@@ -247,24 +329,20 @@ mut Parser.parse_array(depth: usize): (Json, Error) {
         elem: Json, err: Error = mut self.parse_value(depth + 1)
 
         if err != null {
-            wipe_items(mut items, count)
             return Json.none, err
         }
-        grown: mut []Json, ok: bool = mem.adjust[Json](items, count + 1)
+        grown: mut []Json, ok: bool = mem.adjust[Json](self.stack, self.sat + 1)
 
         if !ok {
-            jsonval.wipe(elem)
-            wipe_items(mut items, count)
-            return Json.none, JsonErr.allocation
+            return Json.none, ParseErr.allocation
         }
-        items = grown
-        items[count] = elem
-        count += 1
+        self.stack = grown
+        self.stack[self.sat] = elem
+        self.sat += 1
         mut self.skip_ws()
 
         if self.at == self.text.len {
-            wipe_items(mut items, count)
-            return Json.none, JsonErr.unexpected_token
+            return Json.none, ParseErr.unexpected_token
         }
         c: u8 = self.text[self.at]
 
@@ -277,81 +355,68 @@ mut Parser.parse_array(depth: usize): (Json, Error) {
             self.at += 1
             break
         }
-        wipe_items(mut items, count)
-        return Json.none, JsonErr.unexpected_token
+        return Json.none, ParseErr.unexpected_token
     }
+    count: usize = self.sat - base
+    at: usize = self.iat
 
-    if count == 0 {
-        return Json.array(items), null
+    for i: usize in 0 .. count {
+        self.items[at + i] = self.stack[base + i]
     }
-    final: mut []Json = mem.realloc[Json](items, count)
-
-    if final == null {
-        wipe_items(mut items, count)
-        return Json.none, JsonErr.allocation
-    }
-    return Json.array(final), null
+    self.iat = at + count
+    self.sat = base
+    return Json.array(self.items[at..at + count]), null
 }
 
 mut Parser.parse_object(depth: usize): (Json, Error) {
     if depth >= MAX_DEPTH {
-        return Json.none, JsonErr.depth_exceeded
+        return Json.none, ParseErr.depth
     }
     self.at += 1
-    pairs: mut []Pair = null
-    count: usize = 0
+    empty: mut []Pair = null
+    base: usize = self.psat
     mut self.skip_ws()
 
     if self.at < self.text.len && self.text[self.at] == '}' {
         self.at += 1
-        return Json.object(pairs), null
+        return Json.object(empty), null
     }
 
     for {
         mut self.skip_ws()
 
         if self.at == self.text.len || self.text[self.at] != '"' {
-            wipe_pairs(mut pairs, count)
-            return Json.none, JsonErr.unexpected_token
+            return Json.none, ParseErr.unexpected_token
         }
         key: string, kerr: Error = mut self.parse_string()
 
         if kerr != null {
-            wipe_pairs(mut pairs, count)
             return Json.none, kerr
         }
         mut self.skip_ws()
 
         if self.at == self.text.len || self.text[self.at] != ':' {
-            mem.release[u8](mut key)
-            wipe_pairs(mut pairs, count)
-            return Json.none, JsonErr.unexpected_token
+            return Json.none, ParseErr.unexpected_token
         }
         self.at += 1
         mut self.skip_ws()
         elem: Json, verr: Error = mut self.parse_value(depth + 1)
 
         if verr != null {
-            mem.release[u8](mut key)
-            wipe_pairs(mut pairs, count)
             return Json.none, verr
         }
-        grown: mut []Pair, ok: bool = mem.adjust[Pair](pairs, count + 1)
+        grown: mut []Pair, ok: bool = mem.adjust[Pair](self.pstack, self.psat + 1)
 
         if !ok {
-            mem.release[u8](mut key)
-            jsonval.wipe(elem)
-            wipe_pairs(mut pairs, count)
-            return Json.none, JsonErr.allocation
+            return Json.none, ParseErr.allocation
         }
-        pairs = grown
-        pairs[count] = Pair{key = key, value = elem}
-        count += 1
+        self.pstack = grown
+        self.pstack[self.psat] = Pair{key = key, value = elem}
+        self.psat += 1
         mut self.skip_ws()
 
         if self.at == self.text.len {
-            wipe_pairs(mut pairs, count)
-            return Json.none, JsonErr.unexpected_token
+            return Json.none, ParseErr.unexpected_token
         }
         c: u8 = self.text[self.at]
 
@@ -364,47 +429,17 @@ mut Parser.parse_object(depth: usize): (Json, Error) {
             self.at += 1
             break
         }
-        wipe_pairs(mut pairs, count)
-        return Json.none, JsonErr.unexpected_token
+        return Json.none, ParseErr.unexpected_token
     }
+    count: usize = self.psat - base
+    at: usize = self.pat
 
-    if count == 0 {
-        return Json.object(pairs), null
-    }
-    final: mut []Pair = mem.realloc[Pair](pairs, count)
-
-    if final == null {
-        wipe_pairs(mut pairs, count)
-        return Json.none, JsonErr.allocation
-    }
-    return Json.object(final), null
-}
-
-/* Releases a partially built array on an error path: each collected
- * element's own allocations, then the backing storage itself.
- */
-wipe_items(mut items: mut []Json, count: usize) {
     for i: usize in 0 .. count {
-        jsonval.wipe(items[i])
+        self.pairs[at + i] = self.pstack[base + i]
     }
-
-    if items != null {
-        mem.release[Json](mut items)
-    }
-}
-
-/* Releases a partially built object on an error path: each collected key
- * and value, then the backing storage itself.
- */
-wipe_pairs(mut pairs: mut []Pair, count: usize) {
-    for i: usize in 0 .. count {
-        mem.release[u8](mut pairs[i].key)
-        jsonval.wipe(pairs[i].value)
-    }
-
-    if pairs != null {
-        mem.release[Pair](mut pairs)
-    }
+    self.pat = at + count
+    self.psat = base
+    return Json.object(self.pairs[at..at + count]), null
 }
 
 is_ws(c: u8): bool {
@@ -510,18 +545,18 @@ decode_string(text: string, start: usize, end: usize, buffer: mut []u8): (usize,
                 n: usize, fits: bool = utf8.encode(cp, mut buffer[out..])
 
                 if !fits {
-                    return 0, JsonErr.invalid_escape
+                    return 0, ParseErr.invalid_escape
                 }
                 out += n
                 i = next
             } else {
-                return 0, JsonErr.invalid_escape
+                return 0, ParseErr.invalid_escape
             }
             continue
         }
 
         if c < 32 {
-            return 0, JsonErr.unexpected_token
+            return 0, ParseErr.unexpected_token
         }
         buffer[out] = c
         out += 1
@@ -543,7 +578,7 @@ escape_codepoint(text: string, pos: usize, end: usize): (u32, usize, Error) {
 
     if unit >= 0xD800 && unit <= 0xDBFF {
         if next + 2 > end || text[next] != '\\' || text[next + 1] != 'u' {
-            return 0, 0, JsonErr.invalid_escape
+            return 0, 0, ParseErr.invalid_escape
         }
         low: u32, next2: usize, lerr: Error = read_hex4(text, next + 2, end)
 
@@ -552,21 +587,21 @@ escape_codepoint(text: string, pos: usize, end: usize): (u32, usize, Error) {
         }
 
         if low < 0xDC00 || low > 0xDFFF {
-            return 0, 0, JsonErr.invalid_escape
+            return 0, 0, ParseErr.invalid_escape
         }
         cp: u32 = 0x10000 + (unit - 0xD800) * 0x400 + (low - 0xDC00)
         return cp, next2, null
     }
 
     if unit >= 0xDC00 && unit <= 0xDFFF {
-        return 0, 0, JsonErr.invalid_escape
+        return 0, 0, ParseErr.invalid_escape
     }
     return unit, next, null
 }
 
 read_hex4(text: string, pos: usize, end: usize): (u32, usize, Error) {
     if pos + 4 > end {
-        return 0, 0, JsonErr.invalid_escape
+        return 0, 0, ParseErr.invalid_escape
     }
     value: u32 = 0
 
@@ -574,7 +609,7 @@ read_hex4(text: string, pos: usize, end: usize): (u32, usize, Error) {
         d: u32, ok: bool = hex_value(text[pos + i])
 
         if !ok {
-            return 0, 0, JsonErr.invalid_escape
+            return 0, 0, ParseErr.invalid_escape
         }
         value = value * 16 + d
     }

@@ -1484,6 +1484,20 @@ current normative rules, and Git preserves patch-level detail.
   errors are unchanged. `pkg/json/tests/writing` now goes through `format`,
   building a 513-deep tree by hand for the depth case. A streaming
   `encode`/`decode` API will be designed separately.
+- Reworked `pkg/json` ownership around a `Parser`: `json.parser_new()` makes
+  one, `mut parser.parse(text)` returns a `Json` borrowed from it, and one
+  `json.parser_wipe(mut parser)` releases every tree it produced. Each parse
+  takes one block per element type (string bytes, array elements, object
+  members) sized from the input length, since n bytes hold at most n / 2
+  elements and n / 4 members, and builds containers by pushing finished
+  children on parser-owned scratch stacks and copying them into the block at
+  the closing bracket. This replaces the free `json.parse`, the recursive
+  `json.wipe`, and every per-node allocation and unwind path; a failed parse
+  needs no cleanup. Parse plus release of a 280 KB document fell from about
+  6.3 to 4.1 ms (1.5x), with the same ratio at 1.4 KB and 28 KB. `JsonErr` is
+  now `ParseErr`, beside `FormatErr`, with `depth_exceeded` shortened to
+  `depth`; it and the parser live in `inc/parsing.ace`, and `inc/value.ace`
+  became `inc/document.ace`, holding only `Json` and `Pair`.
 
 ## Current frontier
 

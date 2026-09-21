@@ -1,21 +1,21 @@
 /* json — a whole-document JSON value model, RFC 8259 parser, and formatter. */
 
-import jsonval: "./inc/value.ace"
+import document: "./inc/document.ace"
 import parsing: "./inc/parsing.ace"
 import writing: "./inc/writing.ace"
 
-pub Json: type = jsonval.Json
-pub Pair: type = jsonval.Pair
-pub JsonErr: type = jsonval.JsonErr
+pub Json: type = document.Json
+pub Pair: type = document.Pair
+pub Parser: type = parsing.Parser
+pub ParseErr: type = parsing.ParseErr
 pub FormatErr: type = writing.FormatErr
 
-pub parse(text: string): (Json, Error) {
-    result: Json, err: Error = parsing.parse(text)
-    return result, err
+pub parser_new(): Parser {
+    return parsing.parser_new()
 }
 
-pub wipe(v: Json) {
-    jsonval.wipe(v)
+pub parser_wipe(mut parser: Parser) {
+    parsing.parser_wipe(mut parser)
 }
 
 pub format(value: Json, output: mut []u8): (usize, Error) {

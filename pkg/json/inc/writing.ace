@@ -6,10 +6,10 @@
 
 import mem
 import str
-import jsonval: "./value.ace"
+import document: "./document.ace"
 
-Json: type = jsonval.Json
-Pair: type = jsonval.Pair
+Json: type = document.Json
+Pair: type = document.Pair
 
 pub FormatErr: error {
     1: capacity = "output storage is too small"
