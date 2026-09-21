@@ -1022,6 +1022,7 @@ or making related facade and target APIs differ.
       TCP-only protocol. Byte-oriented parsing matches HTTP and permits UTF-8
       payloads to pass through unchanged without making Unicode text processing
       part of networking.
+18. Growable array (implemented) — `array` is a single-file pure-Ace module over `mem.grow`. `Array[T]: struct { items: mut []T = null, len: usize = 0 }` holds `len` live elements at the front of `items`, whose length is the capacity; the canonical zero value and `Array[T]{}` are valid empty arrays, and a zero-capacity array holds no storage. `array_new[T](capacity: usize): (Array[T], Error)` and `array_wipe[T](mut array: Array[T])` follow the `_new`/`_wipe` pairing. The methods are `push(value): Error`, `reserve(count): Error`, `pop(): (T, Error)`, `get(index): T`, `set(index, value)`, `view(): []T`, and `clear()`; mutating methods are called with `mut`. Allocation failure returns `ArrayErr.allocation` and leaves the array unchanged; `pop` on an empty array returns `blank(T)` and `ArrayErr.empty`. `get` and `set` are checked against `len`, not capacity, through a slice of the live prefix, adding no new mechanism. Element type arguments are bare named types (Generics #12).
 
 ## Conditions
 1. Chained comparisons: `lo <= x <= hi` — each operand evaluated once; no boolean-coercion trap (C's `a < b < c` meaning `(a<b)<c` is dead); lowers to two compares and a branch.

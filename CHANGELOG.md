@@ -1527,6 +1527,11 @@ current normative rules, and Git preserves patch-level detail.
   generic type parameter. Sema resolves the operand as a type (parsed with the
   full type grammar like `sizeof`) and types the call as `T`; the emitter
   zero-fills a register or frame temp, so it costs nothing beyond the fill.
+- Added `std/array.ace`: a generic `Array[T]` with `push`, `reserve`, `pop`,
+  `get`, `set`, `view`, and `clear` methods plus `array_new`/`array_wipe`,
+  growing through `mem.grow`. `get`/`set` are checked against `len` by slicing
+  the live prefix, so no new bounds machinery was added; `pop` on an empty array
+  returns `blank(T)` and `ArrayErr.empty`.
 
 ## Current frontier
 

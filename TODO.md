@@ -262,8 +262,8 @@ foundations.
 
 ## 4. Practical standard-library capabilities
 
-- **Dynamic array and runtime hash-map modules** [new] — composed from `mem`
-  and explicit generics; separate from the compiler-built static lookup map.
+- **Runtime hash-map module** [new] — composed from `mem` and explicit
+  generics; separate from the compiler-built static lookup map.
 - **Fixed-width integer formatting** [additive] — width, zero padding, and base
   prefixes for `fmt.printf`, especially fixed-width `%b`/`%o`/`%x` register
   displays; carve consistently across integer conversions from a hardware

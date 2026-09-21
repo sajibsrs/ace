@@ -1,0 +1,85 @@
+/* array: zero value is a usable empty array, push grows storage past the
+ * initial capacity, pop returns the last element and an empty-array error,
+ * reserve and clear keep storage, and views and element access follow len.
+ */
+
+// expect-exit: 0
+
+import array
+import mem
+
+Point: struct { x: int, y: int }
+
+check(ok: bool, code: int): int {
+    if ok { return 0 }
+    return code
+}
+
+main(): int {
+    r: int = 0
+    err: Error
+
+    // canonical zero: empty, no storage, first push allocates
+    a: array.Array[int] = array.Array[int]{}
+    r += check(a.len == 0 && a.items.len == 0, 1)
+    r += check(a.view().len == 0, 2)
+    err = mut a.push(10)
+    r += check(err == null, 3)
+    r += check(a.len == 1 && a.get(0) == 10, 4)
+
+    // growth well past the first allocation keeps every element
+    for i: int in 1..100 {
+        err = mut a.push(10 + i)
+        if err != null { return 5 }
+    }
+    r += check(a.len == 100 && a.items.len >= 100, 6)
+    ok: bool = true
+    for i: int in 0..100 {
+        if a.get(usize(i)) != 10 + i { ok = false }
+    }
+    r += check(ok, 7)
+
+    // set and view
+    mut a.set(3, -1)
+    r += check(a.get(3) == -1 && a.view()[3] == -1 && a.view().len == 100, 8)
+
+    // pop returns the last element and shrinks len only
+    last: int
+    last, err = mut a.pop()
+    r += check(err == null && last == 109 && a.len == 99, 9)
+
+    // clear keeps storage; reserve never shrinks and grants capacity
+    cap: usize = a.items.len
+    mut a.clear()
+    r += check(a.len == 0 && a.items.len == cap && a.view().len == 0, 10)
+    err = mut a.reserve(1000)
+    r += check(err == null && a.items.len >= 1000 && a.len == 0, 11)
+    err = mut a.reserve(1)
+    r += check(err == null && a.items.len >= 1000, 12)
+
+    // pop on empty reports the domain error and the blank element
+    gone: int
+    gone, err = mut a.pop()
+    r += check(err == array.ArrayErr.empty && gone == 0 && a.len == 0, 13)
+
+    array.array_wipe[int](mut a)
+    r += check(a.len == 0 && a.items.len == 0, 14)
+
+    // array_new: preallocated capacity, and zero capacity allocates nothing
+    b: array.Array[u8], berr: Error = array.array_new[u8](16)
+    r += check(berr == null && b.len == 0 && b.items.len >= 16, 15)
+    err = mut b.push(7)
+    r += check(err == null && b.get(0) == 7 && b.items.len >= 16, 16)
+    array.array_wipe[u8](mut b)
+    c: array.Array[u8], cerr: Error = array.array_new[u8](0)
+    r += check(cerr == null && c.items.len == 0, 17)
+    array.array_wipe[u8](mut c)
+
+    // aggregate elements
+    q: array.Array[Point] = array.Array[Point]{}
+    err = mut q.push(Point{x = 1, y = 2})
+    r += check(err == null, 18)
+    r += check(q.get(0).y == 2 && q.view().len == 1, 19)
+    array.array_wipe[Point](mut q)
+    return r
+}

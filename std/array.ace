@@ -1,0 +1,87 @@
+/* array — a growable sequence of elements over the process allocator.
+ *
+ * An Array holds `len` live elements at the front of `items`; `items.len` is
+ * its capacity. The canonical zero value and the empty literal `Array[T]{}` are
+ * valid empty arrays holding no storage, so an Array needs no constructor and
+ * grows on its first `push`.
+ * Growth goes through `mem.grow`, doubling storage; allocation failure is an
+ * `Error` and leaves the array unchanged. Element access is bounds-checked
+ * against `len`, not against capacity. Call `array_wipe` once the array is no
+ * longer used.
+ */
+
+import mem
+
+pub ArrayErr: error {
+    1: allocation = "array storage allocation failed"
+    2: empty = "array is empty"
+}
+
+pub Array[T]: struct {
+    items: mut []T = null,
+    len: usize = 0,
+}
+
+/* Creates an array with room for `capacity` elements and none live. A zero
+ * capacity allocates nothing.
+ */
+pub array_new[T](capacity: usize): (Array[T], Error) {
+    if capacity == 0 { return Array[T]{}, null }
+    items: mut []T = mem.alloc[T](capacity)
+    if items == null { return Array[T]{}, ArrayErr.allocation }
+    return Array[T]{items = items, len = 0}, null
+}
+
+/* Releases the array's storage and leaves it empty. */
+pub array_wipe[T](mut array: Array[T]) {
+    mem.release[T](mut array.items)
+    array.len = 0
+}
+
+/* The live elements. The view aliases the array's storage and is invalidated
+ * by any call that grows it.
+ */
+pub Array[T].view(): []T {
+    return self.items[..self.len]
+}
+
+pub Array[T].get(index: usize): T {
+    return self.items[..self.len][index]
+}
+
+pub mut Array[T].set(index: usize, value: T) {
+    live: mut []T = self.items[..self.len]
+    live[index] = value
+}
+
+/* Appends `value`, growing storage when full. */
+pub mut Array[T].push(value: T): Error {
+    grown: mut []T, ok: bool = mem.grow[T](self.items, self.len + 1)
+    if !ok { return ArrayErr.allocation }
+    self.items = grown
+    self.items[self.len] = value
+    self.len += 1
+    return null
+}
+
+/* Removes and returns the last element. An empty array returns `blank(T)` and
+ * `ArrayErr.empty`.
+ */
+pub mut Array[T].pop(): (T, Error) {
+    if self.len == 0 { return blank(T), ArrayErr.empty }
+    self.len -= 1
+    return self.items[self.len], null
+}
+
+/* Ensures capacity for at least `count` elements in total. */
+pub mut Array[T].reserve(count: usize): Error {
+    grown: mut []T, ok: bool = mem.grow[T](self.items, count)
+    if !ok { return ArrayErr.allocation }
+    self.items = grown
+    return null
+}
+
+/* Drops every live element and keeps the storage. */
+pub mut Array[T].clear() {
+    self.len = 0
+}
