@@ -90,6 +90,7 @@
 #include "ace.h"
 #include "sema.h"
 
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7670,6 +7671,217 @@ static int fold_float_target(SType* t) {
     return t->kind == SK_PRIM && (t->prim == P_F32 || t->prim == P_F64);
 }
 
+/*
+ * Constant arithmetic for global initializers. An integer expression folds at
+ * its destination's width and signedness (a null type stands for the untyped
+ * i64 that literals carry); a float expression folds at its destination's
+ * precision, rounding f32 after every operation as the runtime instruction
+ * does. Overflow, division or remainder by zero, and an out-of-range shift
+ * count are reported here, matching Safety & Checked Builds #4 and #6. Each
+ * folder returns 1 with a value, 0 when the shape is not foldable (the caller
+ * reports the generic diagnostic), or -1 after reporting its own.
+ */
+typedef __int128 Wide;
+typedef unsigned __int128 UWide;
+
+static int fold_int_prim(SType* t) {
+    t = unwrap(t);
+    return t && t->kind == SK_PRIM &&
+        ((t->prim >= P_I8 && t->prim <= P_U64) || t->prim == P_USIZE);
+}
+
+static int fold_float_prim(SType* t) {
+    t = unwrap(t);
+    return t && t->kind == SK_PRIM && (t->prim == P_F32 || t->prim == P_F64);
+}
+
+static unsigned fold_bits(SType* t) { return t ? ty_size(t) * 8 : 64; }
+
+static int fold_signed(SType* t) { return t ? ty_is_signed(t) : 1; }
+
+static int fold_fits(SType* t, Wide v) {
+    unsigned bits = fold_bits(t);
+    if (fold_signed(t)) {
+        Wide m = (Wide)1 << (bits - 1);
+        return v >= -m && v < m;
+    }
+    return v >= 0 && v < ((Wide)1 << bits);
+}
+
+static Wide fold_trunc(SType* t, Wide v) {
+    unsigned bits = fold_bits(t);
+    UWide u = (UWide)v & (((UWide)1 << bits) - 1);
+    if (fold_signed(t) && (u >> (bits - 1)) & 1) return (Wide)u - ((Wide)1 << bits);
+    return (Wide)u;
+}
+
+static int fold_float(Em* e, Node* v, SType* t, double* out);
+
+static int fold_int(Em* e, Node* v, SType* t, Wide* out) {
+    Wide a, b;
+    int r;
+    switch (v->kind) {
+    case N_INT: case N_CHAR:
+        *out = v->ival;
+        return fold_fits(t, *out);
+    case N_IDENT: {
+        Sym* s = node_sym(v);
+        SType* vt = unwrap(node_ty(v));
+        if (!s || !s->is_global || !s->is_const || !s->init || !vt || vt != unwrap(t)) return 0;
+        return fold_int(e, s->init, t, out);
+    }
+    case N_UNARY:
+        if (v->op != T_MINUS && v->op != T_TILDE) return 0;
+        if ((r = fold_int(e, v->a, t, &a)) != 1) return r;
+        if (v->op == T_TILDE) {
+            *out = fold_trunc(t, ~a);
+            return 1;
+        }
+        *out = -a;
+        if (!fold_fits(t, *out)) {
+            em_err(e, v, "constant integer overflow");
+            return -1;
+        }
+        return 1;
+    case N_BINARY: {
+        SType* ct = t;
+        if (v->op == T_SHL || v->op == T_SHR) {
+            SType* bt = unwrap(node_ty(v->b));
+            if (fold_int_prim(bt)) ct = bt;
+        }
+        if ((r = fold_int(e, v->a, t, &a)) != 1) return r;
+        if ((r = fold_int(e, v->b, ct, &b)) != 1) return r;
+        switch (v->op) {
+        case T_PLUS: *out = a + b; break;
+        case T_MINUS: *out = a - b; break;
+        case T_STAR: *out = a * b; break;
+        case T_SLASH: case T_PERCENT:
+            if (b == 0) {
+                em_err(e, v, "constant division by zero");
+                return -1;
+            }
+            if (fold_signed(t) && b == -1 && a == -((Wide)1 << (fold_bits(t) - 1))) {
+                em_err(e, v, "constant integer overflow");
+                return -1;
+            }
+            *out = v->op == T_SLASH ? a / b : a % b;
+            return 1;
+        case T_AMP: *out = a & b; return 1;
+        case T_PIPE: *out = a | b; return 1;
+        case T_CARET: *out = a ^ b; return 1;
+        case T_SHL: case T_SHR:
+            if (b < 0 || b >= (Wide)fold_bits(t)) {
+                em_err(e, v, "constant shift count out of range");
+                return -1;
+            }
+            *out = v->op == T_SHL ? fold_trunc(t, (Wide)((UWide)a << (int)b)) : a >> (int)b;
+            return 1;
+        default:
+            return 0;
+        }
+        if (!fold_fits(t, *out)) {
+            em_err(e, v, "constant integer overflow");
+            return -1;
+        }
+        return 1;
+    }
+    case N_CALL: {
+        if (v->sym || v->nkids != 1 || !v->a || v->a->kind != N_IDENT) return 0;
+        SType* want = unwrap(node_ty(v->a));
+        if (!fold_int_prim(want) || want != unwrap(t)) return 0;
+        SType* at = unwrap(node_ty(v->kids[0]));
+        if (!fold_int_prim(at)) at = want;
+        if ((r = fold_int(e, v->kids[0], at, &a)) != 1) return r;
+        *out = fold_trunc(want, a);
+        return 1;
+    }
+    default:
+        return 0;
+    }
+}
+
+static double fold_round(SType* t, double d) {
+    return unwrap(t)->prim == P_F32 ? (double)(float)d : d;
+}
+
+static int fold_float(Em* e, Node* v, SType* t, double* out) {
+    double a, b;
+    int r;
+    switch (v->kind) {
+    case N_FLOAT:
+        *out = fold_round(t, v->fval);
+        return 1;
+    case N_IDENT: {
+        Sym* s = node_sym(v);
+        SType* vt = unwrap(node_ty(v));
+        if (!s || !s->is_global || !s->is_const || !s->init || !vt || vt != unwrap(t)) return 0;
+        return fold_float(e, s->init, t, out);
+    }
+    case N_UNARY:
+        if (v->op != T_MINUS) return 0;
+        if ((r = fold_float(e, v->a, t, &a)) != 1) return r;
+        *out = -a;
+        return 1;
+    case N_BINARY:
+        if ((r = fold_float(e, v->a, t, &a)) != 1) return r;
+        if ((r = fold_float(e, v->b, t, &b)) != 1) return r;
+        switch (v->op) {
+        case T_PLUS: *out = fold_round(t, a + b); break;
+        case T_MINUS: *out = fold_round(t, a - b); break;
+        case T_STAR: *out = fold_round(t, a * b); break;
+        case T_SLASH: *out = fold_round(t, a / b); break;
+        default: return 0;
+        }
+        // a NaN's sign bit is host-dependent, so only finite results fold
+        return isfinite(*out) ? 1 : 0;
+    case N_CALL: {
+        if (v->sym || v->nkids != 1 || !v->a || v->a->kind != N_IDENT) return 0;
+        SType* want = unwrap(node_ty(v->a));
+        if (!fold_float_prim(want) || want != unwrap(t)) return 0;
+        Node* arg = v->kids[0];
+        SType* at = unwrap(node_ty(arg));
+        if (fold_float_prim(at)) {
+            if ((r = fold_float(e, arg, at, &a)) != 1) return r;
+            *out = fold_round(want, a);
+            return 1;
+        }
+        Wide w;
+        if (at && at->kind == SK_UT) at = NULL;
+        if (at && !fold_int_prim(at)) return 0;
+        if ((r = fold_int(e, arg, at, &w)) != 1) return r;
+        *out = want->prim == P_F32 ? (double)(float)w : (double)w;
+        return 1;
+    }
+    default:
+        return 0;
+    }
+}
+
+// Arithmetic or a cast of one over a primitive destination, written as its bytes.
+static int eval_fold(Em* e, Node* v, SType* t, Buf* out) {
+    if (fold_int_prim(t)) {
+        Wide x;
+        if (fold_int(e, v, t, &x) != 1) return 0;
+        put_u(out, (uint64_t)x, ty_size(t));
+        return 1;
+    }
+    if (fold_float_prim(t)) {
+        double d;
+        if (fold_float(e, v, t, &d) != 1) return 0;
+        if (t->prim == P_F64) {
+            put_u(out, 0, 8);
+            memcpy(out->d + out->len - 8, &d, 8);
+        } else {
+            float f = (float)d;
+            uint32_t bits = 0;
+            memcpy(&bits, &f, 4);
+            put_u(out, bits, 4);
+        }
+        return 1;
+    }
+    return 0;
+}
+
 static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels) {
     t = unwrap(t);
     if (!t) return 0;
@@ -7711,8 +7923,10 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels) {
                 (arg_float && fold_float_target(want)))
                 return eval_const(e, arg, want, out, rels);
         }
-        return 0;
+        return eval_fold(e, v, t, out);
     }
+    case N_BINARY:
+        return eval_fold(e, v, t, out);
     case N_INT: case N_BOOL: case N_CHAR: {
         uint64_t c;
         if (const_int(v, &c)) {
@@ -7785,7 +7999,7 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels) {
             literal.fval = -literal.fval;
             return eval_const(e, &literal, t, out, rels);
         }
-        return 0;
+        return eval_fold(e, v, t, out);
     case N_ARRAYLIT: case N_STRUCTLIT: {
         if (v->kind == N_STRUCTLIT && t->kind == SK_BITS) {
             uint64_t raw = 0;
@@ -8066,8 +8280,11 @@ static void emit_global(Em* e, Node* n) {
     }
     Buf bytes = {0};
     ConstRels rels = {0};
+    int errors_before = e->d->errors;
     if (!eval_const(e, n->b, t, &bytes, &rels)) {
-        if (t->kind == SK_UNION) em_err(e, n, "global union initializer must be a compile-time variant value");
+        // a fold error is already reported; otherwise the shape is not constant
+        if (e->d->errors != errors_before) {}
+        else if (t->kind == SK_UNION) em_err(e, n, "global union initializer must be a compile-time variant value");
         else em_err(e, n, "global initializer must be a compile-time constant");
         free(bytes.d);
         free(rels.v);

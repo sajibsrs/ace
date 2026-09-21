@@ -1515,6 +1515,11 @@ current normative rules, and Git preserves patch-level detail.
   2.07 us (24%) and format time from 1.68 to 1.55 us (8%). Added
   `demo/json-format-file`, which formats runtime-computed records and writes
   them to a file.
+- Folded constant arithmetic in global initializers (`fold_int`/`fold_float` in
+  `emit.c`, reached from `eval_const`): integers evaluate in 128-bit values
+  range-checked against the destination width, floats in `double` with `f32`
+  rounded per operation. Overflow, zero divisors, and bad shift counts are
+  emit errors; casts over foldable expressions, including int-to-float, fold.
 
 ## Current frontier
 

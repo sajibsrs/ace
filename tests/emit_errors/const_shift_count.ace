@@ -1,0 +1,12 @@
+/* err: a shift count at or beyond the left operand's bit width is rejected at
+ * compile time.
+ */
+
+// error: constant shift count out of range
+
+count: const u8 = 8
+bad: const u8 = u8(1) << count
+
+main(): int {
+    return int(bad)
+}

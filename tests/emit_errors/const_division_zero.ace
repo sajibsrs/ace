@@ -1,0 +1,11 @@
+/* err: division or remainder by a constant zero in a global initializer is
+ * rejected at compile time.
+ */
+
+// error: constant division by zero
+
+bad: const int = 7 % 0
+
+main(): int {
+    return bad
+}

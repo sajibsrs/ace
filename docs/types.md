@@ -30,10 +30,15 @@ constructor-shaped cast folds when the argument's family matches the target:
 integer, character, and boolean arguments (negated forms included) fold into
 integer primitives, enums, and distinct types over either, and float arguments
 fold into float primitives and distinct types over floats. Aliases resolve to
-their terminal type, so alias and primitive-cast constants fold directly. An
-int-to-float crossing does not fold, casts over strings, contracts, unions,
-`Error`, pointers, and aggregates never fold, and a same-named function still
-wins over the constructor shape.
+their terminal type, so alias and primitive-cast constants fold directly.
+Integer and float primitives also fold constant arithmetic (integers: `+ - * /
+% & | ^ << >>`, unary `-` and `~`; floats: `+ - * /`, unary `-`) over literals,
+initialized global constants, and casts, including an integer cast to a float;
+`G: f32 = f32(-3)` and `N: int = 2 * 3` are valid globals. Operations are
+evaluated at the destination's width, and overflow, division or remainder by
+zero, and an out-of-range shift count are compile errors. Casts over strings,
+contracts, unions, `Error`, pointers, and aggregates never fold, and a
+same-named function still wins over the constructor shape.
 
 ```ace
 A: type = u8
@@ -345,6 +350,7 @@ Zero-capable values may be compared directly with `null`. Dereferencing a zero
 pointer, calling a zero function, or dispatching through a zero contract is
 invalid. A zero `Error` is success and exposes zero domain/code bits. When zero is ordinary application data,
 represent presence explicitly with a struct containing a `present: bool` field.
+
 The current bootstrap has checked/release emission modes for sequence bounds,
 but null-use diagnostics have not landed; invalid zero operations therefore
 still follow the unchecked path.

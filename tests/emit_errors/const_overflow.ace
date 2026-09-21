@@ -1,0 +1,12 @@
+/* err: a global integer initializer whose operation leaves the destination
+ * type's range is rejected at compile time in every build mode.
+ */
+
+// error: constant integer overflow
+
+big: const u8 = 200
+bad: const u8 = big + big
+
+main(): int {
+    return int(bad)
+}
