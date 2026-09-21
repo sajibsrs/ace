@@ -76,7 +76,6 @@ COS_C6: const f64 = -1.13596475577881948265e-11
 
 POW_LOG_OFF: const i64 = 4604666736195665920
 POW_HIGH32: const u64 = 0xFFFFFFFF00000000
-POW_HIGH26: const u64 = 0xFFFFFFFFF8000000
 POW_LN2: const f64 = 6.931471805599453e-01
 POW_LN2_HI: const f64 = 6.931471805592082e-01
 POW_LN2_LO: const f64 = 7.371002565167799e-13
@@ -452,10 +451,10 @@ pub pow(x: f64, y: f64): f64 {
         r2 * r2 * ((POW_LOG_C7 + r * POW_LOG_C8) + r2 * (POW_LOG_C9 + r * POW_LOG_C10)))
     log_hi: f64 = hi + lo
 
-    // y * log(x) as e_hi + e_lo, with 26-bit halves so the leading product is exact. e_lo needs the
-    // low word of the logarithm, hi - log_hi + lo, and is formed in er below, its only use.
-    l_hi: f64 = bits.to_float(bits.from_float(log_hi) & POW_HIGH26)
-    e_hi: f64 = bits.to_float(iy & POW_HIGH26) * l_hi
+    // y * log(x) as e_hi + e_lo. fma gives the product's rounding error exactly, so neither operand
+    // needs splitting into halves; e_lo also takes the logarithm's low word, hi - log_hi + lo, and is
+    // formed in er below, its only use.
+    e_hi: f64 = y * log_hi
 
     // exp(e_hi + e_lo) = 2^e * 2^(j/128) * exp(er), where n = 128*e + j is e_hi/ln2*128 rounded and
     // |er| <= ln2/256. Below 2^-54 the answer rounds to 1; beyond +-745.2 it overflows or underflows.
@@ -476,7 +475,7 @@ pub pow(x: f64, y: f64): f64 {
     n: i64 = i64(bits.from_float(shifted)) - POW_SHIFT_BITS
     er: f64 = e_hi + (shifted - POW_EXP_SHIFT) * POW_EXP_NEG_LN2_HI_N +
         (shifted - POW_EXP_SHIFT) * POW_EXP_NEG_LN2_LO_N +
-        ((y - bits.to_float(iy & POW_HIGH26)) * l_hi + y * (log_hi - l_hi + (hi - log_hi + lo)))
+        (fma(y, log_hi, -e_hi) + y * (hi - log_hi + lo))
     j: u64 = u64(n) & 127
     power: i64 = n >> 7
     if power < -1000 || power > 1023 {

@@ -677,6 +677,20 @@ current normative rules, and Git preserves patch-level detail.
   signature clause in `sema.c`, its own emitter, and its own inline expansion,
   which evaluates the operands into FP temps and frees the last two. An
   ordinary `a * b + c` stays two instructions: nothing contracts it.
+- Rewrote `pow(f64)`'s extended-precision product on `math.fma`: `e_hi` is now
+  `y * log_hi` and its rounding error comes back exactly from
+  `fma(y, log_hi, -e_hi)`, which deletes the 26-bit splitting of both operands
+  along with `POW_HIGH26`, `y_hi`, and `l_hi` — the split existed only to make
+  the leading product exact without a fused multiply-add. 31 ns fell to 29 ns
+  and the dependent chain from 78.7 to 69.3 ns. Against an exact 80-digit
+  reference over 11,024 inputs covering near-1 bases, log-table entry edges,
+  subnormal results, and `y*log(x)` across -745..710, the worst error is
+  unchanged at 0.5031 ULP for normal results and 0.7325 in the subnormal range.
+  The two forms agree on all but 33 of 24M random operand pairs, each by one
+  step, and on those the fused form is the closer one 20 times to 13, with the
+  worst case improving from 0.5098 to 0.5071 ULP. Mechanically fusing the
+  remaining multiply-add pairs was measured separately at 3% with no effect on
+  the chain, and fusing the `f32` kernel at 1%; neither was kept.
 - Restructured both `math.pow` kernels around the emitter's register promotion,
   which gives callee-saved float registers only to named locals used at least
   twice: a local that misses out costs a store where it is set and a load at
