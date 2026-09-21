@@ -670,6 +670,22 @@ current normative rules, and Git preserves patch-level detail.
   `pow(-inf, 0.5)` keep the general path). Results are correctly rounded and
   agree with the kernel within 1 ULP over 8M operands; the general path shows no
   measurable cost, and these exponents run at about 7 ns against 49 ns (`f64`).
+- Restructured both `math.pow` kernels around the emitter's register promotion,
+  which gives callee-saved float registers only to named locals used at least
+  twice: a local that misses out costs a store where it is set and a load at
+  every mention. Single-use values are now nested in the expression that
+  consumes them, cheap ones (`kd`, `zhi`, the `-r^2/2` term, the 26-bit half of
+  `y`, `er^2`, the exponential's correction) are recomputed instead of named,
+  the power-of-two entry the extreme path needs moved into that branch, and the
+  `pow_signed` call became a sign-bit xor, since `flip` already holds that bit.
+  Every step preserves each rounding, so the results are bit-identical: 24M
+  `f64` and 6M `f32` random bit patterns plus all 576 special-value pairs agree
+  exactly, in checked and release mode alike. `pow(f64)` fell from 49.8 to
+  31.3 ns and `pow(f32)` from 13.7 to 11.6 ns; dependent-chain latency fell from
+  94.8 to 78.4 ns and 48.1 to 44.1 ns. Rebalancing the correction sums into
+  shallower trees, binding the log-table entry through a pointer, and reaching
+  the exact fast paths through the base's bits were all measured and gained
+  nothing.
 - Fixed `pow` returning a NaN for a negative zero or negative infinite base with
   a fractional exponent (`pow(-0, 0.5)`, `pow(-inf, 0.5)`): `pow_special` now
   settles zero and infinite bases before the fractional-exponent NaN, which

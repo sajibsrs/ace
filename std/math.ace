@@ -375,6 +375,10 @@ pow_extreme(w: f64, n: i64): f64 {
     return (w * bits.to_float(u64(n + 1083) << 52)) * POW_TWO_M60
 }
 
+/* The body names as few locals as it can. A local that does not win one of the eight callee-saved
+ * float registers costs a store where it is set and a load at every mention, so single-use values
+ * stay nested in the expression that consumes them and cheap ones are recomputed rather than named.
+ */
 pub pow(x: f64, y: f64): f64 {
     ix: u64 = bits.from_float(x)
     iy: u64 = bits.from_float(y)
@@ -422,71 +426,67 @@ pub pow(x: f64, y: f64): f64 {
         }
     }
 
-    // x = 2^k * z with z in [OFF, 2*OFF); i selects the table entry, c = 1/invc lies near z, and
-    // log(x) = k*ln2 + log(c) + log1p(r) with r = z*invc - 1 formed exactly as rhi + rlo.
+    // x = 2^k * z with z in [OFF, 2*OFF), k = offset >> 52 and z the bits in `scaled`; i selects the
+    // table entry, c = 1/invc lies near z, and log(x) = k*ln2 + log(c) + log1p(r), with r = z*invc - 1
+    // formed exactly as rhi + rlo from z's high 32 bits and the rest.
     offset: i64 = xs - POW_LOG_OFF
     i: u64 = u64(offset >> 45) & 127
-    k: i64 = offset >> 52
     scaled: u64 = u64(xs - (offset & -4503599627370496))
-    z: f64 = bits.to_float(scaled)
-    kd: f64 = f64(k)
     invc: f64 = table.log[i].invc
-    logc: f64 = table.log[i].logc
-    zhi: f64 = bits.to_float((scaled + 2147483648) & POW_HIGH32)
-    rhi: f64 = zhi * invc - 1.0
-    rlo: f64 = (z - zhi) * invc
+    rhi: f64 = bits.to_float((scaled + 2147483648) & POW_HIGH32) * invc - 1.0
+    rlo: f64 = (bits.to_float(scaled) - bits.to_float((scaled + 2147483648) & POW_HIGH32)) * invc
     r: f64 = rhi + rlo
     // k*ln2 + logc is exact; each sum below keeps its rounding error in the low word.
-    t1: f64 = kd * POW_LN2_HI + logc
+    t1: f64 = f64(offset >> 52) * POW_LN2_HI + table.log[i].logc
     t2: f64 = t1 + r
     // -r^2/2 = -rhi^2/2 + rlo * (-(r + rhi)/2), and rhi^2 is exact.
-    square_hi: f64 = -0.5 * rhi * rhi
-    hi: f64 = t2 + square_hi
+    hi: f64 = t2 + -0.5 * rhi * rhi
     r2: f64 = r * r
-    r4: f64 = r2 * r2
-    // log1p(r) - r + r^2/2 as a series from r^3 to r^10.
-    series: f64 = r2 * r * ((POW_LOG_C3 + r * POW_LOG_C4) + r2 * (POW_LOG_C5 + r * POW_LOG_C6) +
-        r4 * ((POW_LOG_C7 + r * POW_LOG_C8) + r2 * (POW_LOG_C9 + r * POW_LOG_C10)))
-    lo: f64 = (kd * POW_LN2_LO + table.log[i].logctail) + (t1 - t2 + r) + rlo * (-0.5 * (r + rhi)) +
-        (t2 - hi + square_hi) + series
+    // The last term is log1p(r) - r + r^2/2 as a series from r^3 to r^10.
+    lo: f64 = (f64(offset >> 52) * POW_LN2_LO + table.log[i].logctail) + (t1 - t2 + r) +
+        rlo * (-0.5 * (r + rhi)) + (t2 - hi + -0.5 * rhi * rhi) +
+        r2 * r * ((POW_LOG_C3 + r * POW_LOG_C4) + r2 * (POW_LOG_C5 + r * POW_LOG_C6) +
+        r2 * r2 * ((POW_LOG_C7 + r * POW_LOG_C8) + r2 * (POW_LOG_C9 + r * POW_LOG_C10)))
     log_hi: f64 = hi + lo
-    log_lo: f64 = hi - log_hi + lo
 
-    // y * log(x) as e_hi + e_lo, with 26-bit halves so the leading product is exact.
-    y_hi: f64 = bits.to_float(iy & POW_HIGH26)
+    // y * log(x) as e_hi + e_lo, with 26-bit halves so the leading product is exact. e_lo needs the
+    // low word of the logarithm, hi - log_hi + lo, and is formed in er below, its only use.
     l_hi: f64 = bits.to_float(bits.from_float(log_hi) & POW_HIGH26)
-    e_hi: f64 = y_hi * l_hi
-    e_lo: f64 = (y - y_hi) * l_hi + y * (log_hi - l_hi + log_lo)
+    e_hi: f64 = bits.to_float(iy & POW_HIGH26) * l_hi
 
     // exp(e_hi + e_lo) = 2^e * 2^(j/128) * exp(er), where n = 128*e + j is e_hi/ln2*128 rounded and
     // |er| <= ln2/256. Below 2^-54 the answer rounds to 1; beyond +-745.2 it overflows or underflows.
+    // flip holds the sign bit a negative base's odd exponent sets, so xoring it in negates the result.
     top_e: u64 = (bits.from_float(e_hi) >> 52) & 0x7FF
     if top_e < 0x3C9 {
-        return pow_signed(1.0, flip)
+        return bits.to_float(u64(0x3FF0000000000000) ^ flip)
     }
     if top_e >= 0x408 {
         if e_hi > POW_EXP_LIMIT {
-            return pow_signed(bits.to_float(u64(0x7FF0000000000000)), flip)
+            return bits.to_float(u64(0x7FF0000000000000) ^ flip)
         }
         if e_hi < -POW_EXP_LIMIT {
-            return pow_signed(0.0, flip)
+            return bits.to_float(flip)
         }
     }
     shifted: f64 = POW_EXP_INV_LN2N * e_hi + POW_EXP_SHIFT
     n: i64 = i64(bits.from_float(shifted)) - POW_SHIFT_BITS
-    kn: f64 = shifted - POW_EXP_SHIFT
-    er: f64 = e_hi + kn * POW_EXP_NEG_LN2_HI_N + kn * POW_EXP_NEG_LN2_LO_N + e_lo
+    er: f64 = e_hi + (shifted - POW_EXP_SHIFT) * POW_EXP_NEG_LN2_HI_N +
+        (shifted - POW_EXP_SHIFT) * POW_EXP_NEG_LN2_LO_N +
+        ((y - bits.to_float(iy & POW_HIGH26)) * l_hi + y * (log_hi - l_hi + (hi - log_hi + lo)))
     j: u64 = u64(n) & 127
     power: i64 = n >> 7
-    er2: f64 = er * er
-    correction: f64 = table.two_tail[j] + er + er2 * (0.5 + er * POW_EXP_C3) +
-        er2 * er2 * (POW_EXP_C4 + er * POW_EXP_C5)
-    s: f64 = bits.to_float(table.two_bits[j])
     if power < -1000 || power > 1023 {
-        return pow_signed(pow_extreme(s + s * correction, power), flip)
+        s: f64 = bits.to_float(table.two_bits[j])
+        er2: f64 = er * er
+        correction: f64 = table.two_tail[j] + er + er2 * (0.5 + er * POW_EXP_C3) +
+            er2 * er2 * (POW_EXP_C4 + er * POW_EXP_C5)
+        return bits.to_float(bits.from_float(pow_extreme(s + s * correction, power)) ^ flip)
     }
     scale: f64 = bits.to_float(u64(i64(table.two_bits[j]) + (power << 52)))
-    return pow_signed(scale + scale * correction, flip)
+    return bits.to_float(bits.from_float(scale + scale * (table.two_tail[j] + er +
+        er * er * (0.5 + er * POW_EXP_C3) +
+        (er * er) * (er * er) * (POW_EXP_C4 + er * POW_EXP_C5))) ^ flip)
 }
 
 // The f32 kernel needs only about 2^-30 relative accuracy, so it runs in plain f64: the same log table
@@ -516,11 +516,9 @@ pub pow(x: f32, y: f32): f32 {
     xs: i64 = i64(bits.from_float(f64(x)))
     offset: i64 = xs - POW_LOG_OFF
     i: u64 = u64(offset >> 45) & 127
-    z: f64 = bits.to_float(u64(xs - (offset & -4503599627370496)))
-    r: f64 = z * table.log[i].invc - 1.0
-    logx: f64 = f64(offset >> 52) * POW_LN2 + table.log[i].logc + r -
-        r * r * (0.5 - r * (POW_LOG_C3 + r * (POW_LOG_C4 + r * POW_LOG_C5)))
-    e: f64 = f64(y) * logx
+    r: f64 = bits.to_float(u64(xs - (offset & -4503599627370496))) * table.log[i].invc - 1.0
+    e: f64 = f64(y) * (f64(offset >> 52) * POW_LN2 + table.log[i].logc + r -
+        r * r * (0.5 - r * (POW_LOG_C3 + r * (POW_LOG_C4 + r * POW_LOG_C5))))
     // Beyond |e| = 128 the result overflows or underflows to zero in f32.
     if ((bits.from_float(e) >> 52) & 0x7FF) >= 0x406 {
         if e > 0.0 {
@@ -532,8 +530,7 @@ pub pow(x: f32, y: f32): f32 {
     n: i64 = i64(bits.from_float(shifted)) - POW_SHIFT_BITS
     er: f64 = e - (shifted - POW_EXP_SHIFT) * POW_EXP_LN2_N
     scale: f64 = bits.to_float(u64(i64(table.two_bits[u64(n) & 127]) + ((n >> 7) << 52)))
-    er2: f64 = er * er
-    return f32(scale + scale * (er + er2 * (0.5 + er * POW_EXP_C3)))
+    return f32(scale + scale * (er + er * er * (0.5 + er * POW_EXP_C3)))
 }
 
 kernel_sin(x: f64, y: f64, tail: bool): f64 {
