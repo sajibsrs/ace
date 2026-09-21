@@ -54,12 +54,12 @@ pub compare(a: []u8, b: []u8): int { return 0 }
  */
 pub equal(a: []u8, b: []u8): bool { return false }
 
-/* Adjusts `slice` to at least `needed` elements, doubling its length when that
+/* Grows `slice` to at least `needed` elements, doubling its length when that
  * is larger. A null slice allocates. On allocation failure or count overflow
  * the caller's slice is returned unchanged with false; the original stays
  * live, so check the flag before replacing the caller's slice.
  */
-pub adjust[T](slice: mut []T, needed: usize): (mut []T, bool) {
+pub grow[T](slice: mut []T, needed: usize): (mut []T, bool) {
     if slice.len >= needed { return slice, true }
     capacity: usize = slice.len * 2
     if capacity < slice.len { return slice, false }

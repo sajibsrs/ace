@@ -1520,6 +1520,9 @@ current normative rules, and Git preserves patch-level detail.
   range-checked against the destination width, floats in `double` with `f32`
   rounded per operation. Overflow, zero divisors, and bad shift counts are
   emit errors; casts over foldable expressions, including int-to-float, fold.
+- Renamed `mem.adjust[T]` to `mem.grow[T]`, which states what it does; the
+  signature and behavior are unchanged, and every `std`, `pkg`, and demo caller
+  now uses the new name.
 
 ## Current frontier
 

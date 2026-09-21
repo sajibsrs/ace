@@ -42,7 +42,7 @@ pub Storage: struct {
 pub connect_url(parsed: Url, mut storage: Storage, resize: bool): (tcp.Conn, Error) {
     zero: tcp.Conn = tcp.Conn {}
     if resize {
-        mem_addresses: mut []net.Addr4, addr_ok: bool = mem.adjust[net.Addr4](storage.addresses, 4)
+        mem_addresses: mut []net.Addr4, addr_ok: bool = mem.grow[net.Addr4](storage.addresses, 4)
         if !addr_ok { return zero, ClientErr.allocation }
         storage.addresses = mem_addresses
     }
@@ -79,7 +79,7 @@ pub exchange[C](connection: C,
     /* The request target is known exactly: size to fit before writing. */
     target_parts: [2]string = [parsed.path, parsed.query]
     if resize {
-        mem_target: mut []u8, target_ok: bool = mem.adjust[u8](storage.target, parsed.path.len + parsed.query.len)
+        mem_target: mut []u8, target_ok: bool = mem.grow[u8](storage.target, parsed.path.len + parsed.query.len)
         if !target_ok {
             return Response{}, ClientErr.allocation
         }
@@ -102,7 +102,7 @@ pub exchange[C](connection: C,
 
     output_count: usize, format_err: Error = request.format(mut storage.output[..])
     for resize && format_err == FormatErr.capacity {
-        mem_output: mut []u8, output_ok: bool = mem.adjust[u8](storage.output, storage.output.len + 1)
+        mem_output: mut []u8, output_ok: bool = mem.grow[u8](storage.output, storage.output.len + 1)
         if !output_ok {
             return Response{}, ClientErr.allocation
         }
@@ -132,7 +132,7 @@ pub exchange[C](connection: C,
                 if !resize {
                     return Response{}, ClientErr.response
                 }
-                mem_input: mut []u8, input_ok: bool = mem.adjust[u8](storage.input, storage.input.len + 1)
+                mem_input: mut []u8, input_ok: bool = mem.grow[u8](storage.input, storage.input.len + 1)
                 if !input_ok {
                     return Response{}, ClientErr.allocation
                 }
@@ -175,21 +175,21 @@ pub exchange[C](connection: C,
                     return Response{}, ClientErr.response
                 }
                 if capacity_type == ResponseCapacity.headers {
-                    mem_headers: mut []Header, headers_ok: bool = mem.adjust[Header](storage.headers, storage.headers.len + 1)
+                    mem_headers: mut []Header, headers_ok: bool = mem.grow[Header](storage.headers, storage.headers.len + 1)
                     if !headers_ok {
                         return Response{}, ClientErr.allocation
                     }
                     storage.headers = mem_headers
                 } else {
                     /* Body size is exact when the response states its length;
-                     * otherwise adjust by the pending bytes, doubled. */
+                     * otherwise grow by the pending bytes, doubled. */
                     needed: usize = parser.body_count + (occupied - parser.input_offset)
                     if parser.framing == ResponseFraming.content_length {
                         needed = parser.content_length
                     } else if parser.framing == ResponseFraming.chunked {
                         needed = parser.body_count + parser.chunk_remaining
                     }
-                    mem_body: mut []u8, body_ok: bool = mem.adjust[u8](storage.body, needed)
+                    mem_body: mut []u8, body_ok: bool = mem.grow[u8](storage.body, needed)
                     if !body_ok {
                         return Response{}, ClientErr.allocation
                     }

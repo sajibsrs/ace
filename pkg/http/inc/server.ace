@@ -26,7 +26,7 @@ RequestResult: type = parsing.RequestResult
 RequestProgress: type = parsing.RequestProgress
 
 /* Owns the buffers a `serve` loop reads requests into and writes responses
- * from, growing each one via `mem.adjust` as connections demand, plus the
+ * from, growing each one via `mem.grow` as connections demand, plus the
  * listen backlog `serve` binds with. Buffers start empty; there is no size
  * cap.
  */
@@ -51,7 +51,7 @@ pub context_wipe(mut context: Context) {
 }
 
 /* Reads exactly one complete request from `conn` into `context`, growing its
- * `input`/`headers`/`body` buffers via `mem.adjust` as the request demands.
+ * `input`/`headers`/`body` buffers via `mem.grow` as the request demands.
  * The second result is false on EOF, mid-read disconnect, allocation
  * failure, or parse failure — in every such case the caller responds to
  * nothing and just returns.
@@ -64,7 +64,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
     for {
         if !parse_pending {
             if occupied == context.input.len {
-                grown: mut []u8, ok: bool = mem.adjust[u8](context.input, context.input.len + 1)
+                grown: mut []u8, ok: bool = mem.grow[u8](context.input, context.input.len + 1)
                 if !ok {
                     return Request{method = null, target = null}, false
                 }
@@ -98,7 +98,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
             RequestResult.progress(value: RequestProgress) {}
             RequestResult.capacity(capacity_type: RequestCapacity) {
                 if capacity_type == RequestCapacity.headers {
-                    grown: mut []Header, ok: bool = mem.adjust[Header](context.headers, context.headers.len + 1)
+                    grown: mut []Header, ok: bool = mem.grow[Header](context.headers, context.headers.len + 1)
                     if !ok {
                         return Request{method = null, target = null}, false
                     }
@@ -110,7 +110,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
                     } else if parser.framing == RequestFraming.chunked {
                         needed = parser.body_count + parser.chunk_remaining
                     }
-                    grown: mut []u8, ok: bool = mem.adjust[u8](context.body, needed)
+                    grown: mut []u8, ok: bool = mem.grow[u8](context.body, needed)
                     if !ok {
                         return Request{method = null, target = null}, false
                     }
@@ -127,7 +127,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
 
 /* Writes `response` with a synthesized `Connection: close` (a handler-
  * supplied one is dropped along with the connection either way), growing
- * `context.headers`/`context.output` via `mem.adjust` as needed. A format
+ * `context.headers`/`context.output` via `mem.grow` as needed. A format
  * failure other than a capacity shortfall just skips the write; the caller
  * closes the connection regardless.
  */
@@ -139,7 +139,7 @@ respond_close(conn: tcp.Conn, response: Response, mut context: Context) {
     }
     needed: usize = response.headers.len + 1
     if needed > context.headers.len {
-        grown: mut []Header, ok: bool = mem.adjust[Header](context.headers, needed)
+        grown: mut []Header, ok: bool = mem.grow[Header](context.headers, needed)
         if !ok {
             return
         }
@@ -158,7 +158,7 @@ respond_close(conn: tcp.Conn, response: Response, mut context: Context) {
     }
     count: usize, format_err: Error = outgoing.format(mut context.output[..])
     for format_err == FormatErr.capacity {
-        grown: mut []u8, ok: bool = mem.adjust[u8](context.output, context.output.len + 1)
+        grown: mut []u8, ok: bool = mem.grow[u8](context.output, context.output.len + 1)
         if !ok {
             return
         }
@@ -203,7 +203,7 @@ listen_endpoint(endpoint: string, backlog: usize): (tcp.Listener, Error) {
  * reading exactly one request, dispatching it through `router`, writing the
  * response, and closing the connection — no poll queue, no session table.
  * `context` owns the buffers used across every connection, growing them via
- * `mem.adjust` as requests demand; wipe it with `context_wipe` once the
+ * `mem.grow` as requests demand; wipe it with `context_wipe` once the
  * server is no longer served. Returns only if the listener itself cannot be
  * created; a per-connection failure just drops that connection and the loop
  * continues.

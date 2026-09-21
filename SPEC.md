@@ -967,7 +967,7 @@ or making related facade and target APIs differ.
       prefix, ignoring any `?query` suffix, and returns a bare 404 when
       nothing matches. `Context` owns the `input`, `headers`, `body`, and
       `output` buffers used across every connection; each starts empty and
-      grows through `mem.adjust` as a request or response demands, with no
+      grows through `mem.grow` as a request or response demands, with no
       size cap. `Context.backlog` (default 512) is the one plain, non-growing
       field, passed once to `tcp.listen` when `serve` binds `endpoint`; it is
       not adjusted at runtime. There is no poll queue or session table.

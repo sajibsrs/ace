@@ -416,7 +416,7 @@ mut Formatter.reserve(extra: usize): bool {
     if need < MIN_BUFFER {
         need = MIN_BUFFER
     }
-    grown: mut []u8, ok: bool = mem.adjust[u8](self.buffer, need)
+    grown: mut []u8, ok: bool = mem.grow[u8](self.buffer, need)
 
     if !ok {
         mut self.fail(FormatErr.allocation)

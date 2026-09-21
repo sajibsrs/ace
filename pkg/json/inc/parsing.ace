@@ -146,7 +146,7 @@ mut Parser.reserve(): Error {
     at: usize = self.count
 
     if at == self.kept {
-        grown: mut []Block, ok: bool = mem.adjust[Block](self.blocks, at + 1)
+        grown: mut []Block, ok: bool = mem.grow[Block](self.blocks, at + 1)
 
         if !ok {
             return ParseErr.allocation
@@ -358,7 +358,7 @@ mut Parser.parse_array(depth: usize): (Json, Error) {
         if err != null {
             return Json.none, err
         }
-        grown: mut []Json, ok: bool = mem.adjust[Json](self.stack, self.sat + 1)
+        grown: mut []Json, ok: bool = mem.grow[Json](self.stack, self.sat + 1)
 
         if !ok {
             return Json.none, ParseErr.allocation
@@ -432,7 +432,7 @@ mut Parser.parse_object(depth: usize): (Json, Error) {
         if verr != null {
             return Json.none, verr
         }
-        grown: mut []Pair, ok: bool = mem.adjust[Pair](self.pstack, self.psat + 1)
+        grown: mut []Pair, ok: bool = mem.grow[Pair](self.pstack, self.psat + 1)
 
         if !ok {
             return Json.none, ParseErr.allocation
