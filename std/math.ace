@@ -6,7 +6,8 @@
  * with the ln2 constant split into a high and low part. pow is table-driven:
  * it forms log(x) as a high and low double from a 128-entry table plus a
  * short series, multiplies by y in extended precision, and rebuilds the
- * result from a 128-entry 2^(i/128) table; the tables live in `pow_tables`.
+ * result from a 128-entry 2^(i/128) table; the tables live in `pow_tables`. The f32
+ * overload is a separate plain-f64 kernel over the same tables.
  */
 
 import bits
@@ -73,6 +74,7 @@ COS_C6: const f64 = -1.13596475577881948265e-11
 POW_LOG_OFF: const i64 = 4604666736195665920
 POW_HIGH32: const u64 = 0xFFFFFFFF00000000
 POW_HIGH26: const u64 = 0xFFFFFFFFF8000000
+POW_LN2: const f64 = 6.931471805599453e-01
 POW_LN2_HI: const f64 = 6.931471805592082e-01
 POW_LN2_LO: const f64 = 7.371002565167799e-13
 POW_LOG_C3: const f64 = 0.3333333333333333
@@ -84,6 +86,7 @@ POW_LOG_C8: const f64 = -0.125
 POW_LOG_C9: const f64 = 0.1111111111111111
 POW_LOG_C10: const f64 = -0.1
 POW_EXP_INV_LN2N: const f64 = 184.6649652337873
+POW_EXP_LN2_N: const f64 = 0.005415212348111709
 POW_EXP_NEG_LN2_HI_N: const f64 = -0.005415212347998022
 POW_EXP_NEG_LN2_LO_N: const f64 = -1.2655086083325438e-13
 POW_EXP_SHIFT: const f64 = 6755399441055744.0
@@ -318,15 +321,13 @@ pow_special(x: f64, y: f64): (bool, f64, i64, u64) {
         }
         return true, 0.0, 0, 0
     }
-    // y is finite and non-zero; a negative base needs its exponent's parity.
+    // y is finite and non-zero; a negative base needs its exponent's parity, and only an odd integer
+    // exponent flips the sign.
     negative: bool = (ix >> 63) != 0
     parity: int = 0
     flip: u64 = 0
     if negative {
         parity = integer_parity(iy)
-        if parity == 0 {
-            return true, bits.to_float(u64(0x7FF8000000000000)), 0, 0
-        }
         if parity == 1 {
             flip = POW_SIGN
         }
@@ -337,6 +338,10 @@ pow_special(x: f64, y: f64): (bool, f64, i64, u64) {
             return true, pow_signed(0.0, flip), 0, 0
         }
         return true, pow_signed(infinity, flip), 0, 0
+    }
+    // A finite negative base with a fractional exponent has no real power.
+    if negative && parity == 0 {
+        return true, bits.to_float(u64(0x7FF8000000000000)), 0, 0
     }
     // |y| < 2^-65 puts the result within 2^-54 of 1; |y| >= 2^63 overflows or underflows unless |x| = 1.
     ey: u64 = (iy >> 52) & 0x7FF
@@ -373,17 +378,48 @@ pow_extreme(w: f64, n: i64): f64 {
 pub pow(x: f64, y: f64): f64 {
     ix: u64 = bits.from_float(x)
     iy: u64 = bits.from_float(y)
+    // An exponent of 2, 1, -1, or 0.5 (a zero mantissa selects the powers of two) has a cheaper exact
+    // form. Only a positive base takes the square root: pow(-0, 0.5) is +0 and pow(-inf, 0.5) is +inf.
+    if (iy << 12) == 0 {
+        if iy == 0x4000000000000000 {
+            return x * x
+        }
+        if iy == 0x3FF0000000000000 {
+            return x
+        }
+        if iy == 0xBFF0000000000000 {
+            return 1.0 / x
+        }
+        if iy == 0x3FE0000000000000 && ix < 0x7FF0000000000000 {
+            return sqrt(x)
+        }
+    }
     top_x: u64 = ix >> 52
     top_y: u64 = (iy >> 52) & 0x7FF
     xs: i64 = i64(ix)
     flip: u64 = 0
     if top_x < 1 || top_x >= 0x7FF || top_y < 0x3BE || top_y >= 0x43E {
-        done: bool, result: f64, magnitude: i64, sign: u64 = pow_special(x, y)
-        if done {
-            return result
+        if top_x > 0x800 && top_x < 0xFFF && top_y >= 0x3BE && top_y < 0x43E {
+            // A finite negative base and an ordinary exponent: only an integer exponent is defined, and
+            // an odd one flips the sign. The units bit of y sits 0x433 - top_y places above bit 0.
+            if top_y < 0x3FF {
+                return bits.to_float(u64(0x7FF8000000000000))
+            }
+            if top_y <= 0x433 {
+                if (iy & ((u64(1) << (0x433 - top_y)) - 1)) != 0 {
+                    return bits.to_float(u64(0x7FF8000000000000))
+                }
+                flip = (iy >> (0x433 - top_y)) << 63
+            }
+            xs = i64(ix & POW_ABS)
+        } else {
+            done: bool, result: f64, magnitude: i64, sign: u64 = pow_special(x, y)
+            if done {
+                return result
+            }
+            xs = magnitude
+            flip = sign
         }
-        xs = magnitude
-        flip = sign
     }
 
     // x = 2^k * z with z in [OFF, 2*OFF); i selects the table entry, c = 1/invc lies near z, and
@@ -453,8 +489,51 @@ pub pow(x: f64, y: f64): f64 {
     return pow_signed(scale + scale * correction, flip)
 }
 
+// The f32 kernel needs only about 2^-30 relative accuracy, so it runs in plain f64: the same log table
+// (no tail word), a series to r^5, and a degree-3 exponential; the final conversion rounds once, into
+// the subnormal range or to infinity when the result leaves f32. Every f32 magnitude is a normal f64,
+// so only zero, infinite, NaN, and negative bases and non-finite exponents take the f64 path.
 pub pow(x: f32, y: f32): f32 {
-    return f32(pow(f64(x), f64(y)))
+    ix: u32 = bits.from_float(x)
+    iy: u32 = bits.from_float(y)
+    if (iy << 9) == 0 {
+        if iy == 0x40000000 {
+            return x * x
+        }
+        if iy == 0x3F800000 {
+            return x
+        }
+        if iy == 0xBF800000 {
+            return 1.0 / x
+        }
+        if iy == 0x3F000000 && ix < 0x7F800000 {
+            return sqrt(x)
+        }
+    }
+    if ix < 1 || ix >= 0x7F800000 || (iy & 0x7FFFFFFF) >= 0x7F800000 {
+        return f32(pow(f64(x), f64(y)))
+    }
+    xs: i64 = i64(bits.from_float(f64(x)))
+    offset: i64 = xs - POW_LOG_OFF
+    i: u64 = u64(offset >> 45) & 127
+    z: f64 = bits.to_float(u64(xs - (offset & -4503599627370496)))
+    r: f64 = z * table.log[i].invc - 1.0
+    logx: f64 = f64(offset >> 52) * POW_LN2 + table.log[i].logc + r -
+        r * r * (0.5 - r * (POW_LOG_C3 + r * (POW_LOG_C4 + r * POW_LOG_C5)))
+    e: f64 = f64(y) * logx
+    // Beyond |e| = 128 the result overflows or underflows to zero in f32.
+    if ((bits.from_float(e) >> 52) & 0x7FF) >= 0x406 {
+        if e > 0.0 {
+            return bits.to_float(u32(0x7F800000))
+        }
+        return 0.0
+    }
+    shifted: f64 = POW_EXP_INV_LN2N * e + POW_EXP_SHIFT
+    n: i64 = i64(bits.from_float(shifted)) - POW_SHIFT_BITS
+    er: f64 = e - (shifted - POW_EXP_SHIFT) * POW_EXP_LN2_N
+    scale: f64 = bits.to_float(u64(i64(table.two_bits[u64(n) & 127]) + ((n >> 7) << 52)))
+    er2: f64 = er * er
+    return f32(scale + scale * (er + er2 * (0.5 + er * POW_EXP_C3)))
 }
 
 kernel_sin(x: f64, y: f64, tail: bool): f64 {

@@ -55,8 +55,7 @@ across: f32 = math.cos(single)
 ```
 
 - Every `f64` result is within 1 ULP of the exact result over the whole finite
-  domain. An `f32` result is computed at `f64` and rounded once, so it is also
-  within 1 ULP.
+  domain. An `f32` result is within 1 ULP too; `pow` has its own `f32` kernel.
 - `exp(±0)` is `1`, `exp(+inf)` is `+inf`, `exp(-inf)` is `0`; overflow gives
   `+inf` and underflow is gradual through subnormals.
 - `log(±0)` is `-inf`, `log` of a negative value is a NaN, `log(1)` is `+0`, and
@@ -73,14 +72,18 @@ across: f32 = math.cos(single)
   infinite bases follow the exponent's parity: `pow(-0.0, -3.0)` is `-inf`
   while `pow(-0.0, -2.0)` is `+inf`. An infinite exponent takes the limit, so
   `pow(0.5, +inf)` is `+0` and `pow(2.0, +inf)` is `+inf`. The `f64` result is
-  within 0.51 ULP of the exact power, or within 1 ULP when the result is subnormal.
+  within 0.51 ULP of the exact power, or within 1 ULP when the result is subnormal;
+  the `f32` result is within 0.51 ULP.
+  The exponents 2, 1, -1, and 0.5 take exact fast paths (`x * x`, `x`, `1 / x`,
+  `sqrt(x)` for a positive base) and are correctly rounded.
 
 They are pure Ace: no libm call, no errno or floating-point flag, and the same
 result on every target. They currently run at about 30 ns per call for `exp` and
 `log`, 25–50 ns for `sin` and `cos`, several hundred ns for arguments beyond
-1.6e6, and about 51 ns for `pow`, which is table-driven: it forms `log(x)` as a
+1.6e6, and about 51 ns for `pow(f64)` (17 ns for `pow(f32)`, about 7 ns for the exponents 2, 1, -1, and 0.5), which is table-driven: it forms `log(x)` as a
 high and low word, multiplies by the exponent in extended precision, and
-rebuilds the result from a table of powers of 2.
+rebuilds the result from a table of powers of 2. The `f32` kernel runs the same
+tables in plain `f64` with a shorter series.
 
 Float classification uses exact overloads for `f32` and `f64`:
 

@@ -91,6 +91,64 @@ main(): int {
        !close64(math.pow(-3.0, 7.0), u64(0xC0A1160000000000)) {
         return 6
     }
+    // Exponents 2, 1, -1, and 0.5 are exact forms with the Annex F special values intact, for both widths.
+    if bits.from_float(math.pow(negative_zero, 0.5)) != u64(0) ||
+       bits.from_float(math.pow(negative_infinity, 0.5)) != u64(0x7FF0000000000000) ||
+       bits.from_float(math.pow(negative_zero, -0.5)) != u64(0x7FF0000000000000) ||
+       bits.from_float(math.pow(negative_infinity, -0.5)) != u64(0) ||
+       bits.from_float(math.pow(negative_zero, 1.5)) != u64(0) ||
+       bits.from_float(math.pow(negative_infinity, -2.5)) != u64(0) ||
+       bits.from_float(math.pow(negative_zero, 0.3)) != u64(0) ||
+       bits.from_float(math.pow(negative_infinity, 4503599627370497.5)) != u64(0x7FF0000000000000) ||
+       bits.from_float(math.pow(bits.to_float(u32(0x80000000)), f32(0.5))) != u32(0) ||
+       bits.from_float(math.pow(-f32(infinity), f32(0.5))) != u32(0x7F800000) ||
+       bits.from_float(math.pow(bits.to_float(u32(0x80000000)), f32(-1.5))) != u32(0x7F800000) ||
+       !math.isnan(math.pow(-1.0, 0.5)) || !math.isnan(math.pow(-1.0, 1.5)) ||
+       !math.isnan(math.pow(f32(-1.0), f32(0.5))) {
+        return 16
+    }
+    if bits.from_float(math.pow(infinity, 0.5)) != u64(0x7FF0000000000000) ||
+       bits.from_float(math.pow(0.0, 0.5)) != u64(0) ||
+       !math.isnan(math.pow(-4.0, 0.5)) || !math.isnan(math.pow(quiet_nan, 0.5)) ||
+       bits.from_float(math.pow(6.25, 0.5)) != u64(0x4004000000000000) ||
+       bits.from_float(math.pow(negative_zero, -1.0)) != u64(0xFFF0000000000000) ||
+       bits.from_float(math.pow(negative_infinity, -1.0)) != u64(0x8000000000000000) ||
+       bits.from_float(math.pow(0.0, -1.0)) != u64(0x7FF0000000000000) ||
+       bits.from_float(math.pow(4.0, -1.0)) != u64(0x3FD0000000000000) ||
+       bits.from_float(math.pow(bits.to_float(u64(1)), -1.0)) != u64(0x7FF0000000000000) ||
+       bits.from_float(math.pow(negative_zero, 2.0)) != u64(0) ||
+       bits.from_float(math.pow(negative_infinity, 2.0)) != u64(0x7FF0000000000000) ||
+       bits.from_float(math.pow(1.5, 2.0)) != u64(0x4002000000000000) ||
+       bits.from_float(math.pow(1.0e200, 2.0)) != u64(0x7FF0000000000000) ||
+       bits.from_float(math.pow(negative_zero, 1.0)) != u64(0x8000000000000000) ||
+       bits.from_float(math.pow(-3.5, 1.0)) != u64(0xC00C000000000000) ||
+       bits.from_float(math.pow(0.1, 2.0)) != bits.from_float(0.1 * 0.1) ||
+       bits.from_float(math.pow(0.3, -1.0)) != bits.from_float(1.0 / 0.3) ||
+       bits.from_float(math.pow(0.3, 0.5)) != bits.from_float(math.sqrt(0.3)) ||
+       !math.isnan(math.pow(f32(-4.0), f32(0.5))) ||
+       bits.from_float(math.pow(f32(6.25), f32(0.5))) != u32(0x40200000) ||
+       bits.from_float(math.pow(f32(0.0), f32(-1.0))) != u32(0x7F800000) ||
+       bits.from_float(math.pow(f32(4.0), f32(-1.0))) != u32(0x3E800000) ||
+       bits.from_float(math.pow(f32(-3.5), f32(2.0))) != u32(0x41440000) ||
+       bits.from_float(math.pow(f32(-3.5), f32(1.0))) != u32(0xC0600000) ||
+       bits.from_float(math.pow(f32(0.3), f32(2.0))) != bits.from_float(f32(0.3) * f32(0.3)) {
+        return 15
+    }
+    // A finite negative base takes the inline path: a fractional exponent is a NaN, an odd integer
+    // exponent flips the sign, and exponents past 2^52 are even integers.
+    if !close64(math.pow(-2.5, 3.0), u64(0xC02F400000000000)) ||
+       !close64(math.pow(-2.5, -3.0), u64(0xBFB0624DD2F1A9FC)) ||
+       !close64(math.pow(-2.5, 2.0), u64(0x4019000000000000)) ||
+       bits.from_float(math.pow(-2.0, 1.0)) != u64(0xC000000000000000) ||
+       bits.from_float(math.pow(-2.0, -1.0)) != u64(0xBFE0000000000000) ||
+       bits.from_float(math.pow(-1.0, 4503599627370497.0)) != u64(0xBFF0000000000000) ||
+       bits.from_float(math.pow(-1.0, 4503599627370496.0)) != u64(0x3FF0000000000000) ||
+       bits.from_float(math.pow(-1.0, 9007199254740993.0)) != u64(0x3FF0000000000000) ||
+       !close64(math.pow(-1.0000000000000002, 9.0e15), u64(0x401D824ECC67D8C6)) ||
+       !math.isnan(math.pow(-2.0, 0.999999999999)) || !math.isnan(math.pow(-2.0, 2.5)) ||
+       !math.isnan(math.pow(-2.0, -4503599627370495.5)) {
+        return 14
+    }
     // A base within 2^-20 of 1 with an exponent past 2^31 takes the series path.
     if !close64(math.pow(1.0000001000000001, 3000000000.0), u64(0x5AFC05A56D6753A4)) ||
        !close64(math.pow(0.99999998999999995, -2500000000.0), u64(0x4230C3D3D8872ECF)) {
@@ -120,7 +178,40 @@ main(): int {
        !close64(math.pow(1.0000000000000002, -1.0e+18), u64(0x2BE93C23BAB34B75)) {
         return 11
     }
-    // The f32 overload computes at f64 and rounds once.
+    // The f32 overload has its own kernel: near-overflow, subnormal, huge-exponent, and exact cases.
+    huge: f32 = bits.to_float(u32(0x7F7FFFFF))
+    tiny: f32 = bits.to_float(u32(1))
+    if bits.from_float(math.pow(f32(2.0), f32(128.0))) != u32(0x7F800000) ||
+       bits.from_float(math.pow(f32(2.0), f32(-150.0))) != u32(0) ||
+       bits.from_float(math.pow(f32(2.0), f32(-149.0))) != u32(1) ||
+       bits.from_float(math.pow(f32(1.0), f32(3.0e38))) != u32(0x3F800000) ||
+       bits.from_float(math.pow(f32(1.0000001), f32(3.0e38))) != u32(0x7F800000) ||
+       bits.from_float(math.pow(f32(0.99999988), f32(3.0e38))) != u32(0) ||
+       bits.from_float(math.pow(huge, f32(1.0))) != u32(0x7F7FFFFF) ||
+       bits.from_float(math.pow(tiny, f32(1.0))) != u32(1) ||
+       bits.from_float(math.pow(f32(4.0), f32(0.5))) != u32(0x40000000) ||
+       bits.from_float(math.pow(f32(0.5), f32(10.0))) != u32(0x3A800000) ||
+       bits.from_float(math.pow(f32(-3.0), f32(3.0))) != u32(0xC1D80000) ||
+       !math.isnan(math.pow(f32(-3.0), f32(0.5))) {
+        return 12
+    }
+    for base: int in 2 .. 40 {
+        exact: f64 = 1.0
+        for power: int in 0 .. 60 {
+            if exact < 16777216.0 {
+                negated: f32 = f32(exact)
+                if power % 2 == 1 {
+                    negated = -negated
+                }
+                if math.pow(f32(base), f32(power)) != f32(exact) ||
+                   math.pow(-f32(base), f32(power)) != negated {
+                    return 13
+                }
+            }
+            exact = exact * f64(base)
+        }
+    }
+    // The f32 overload agrees with the f64 one within 1 ULP.
     if !close32(math.pow(f32(3.0), f32(7.3)), u32(0x453E0C82)) ||
        !close32(math.pow(f32(0.5), f32(-13.7)), u32(0x464FEFC4)) ||
        !close32(math.pow(f32(1.0000001), f32(30000.0)), u32(0x3F807566)) ||

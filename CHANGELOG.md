@@ -654,6 +654,26 @@ current normative rules, and Git preserves patch-level detail.
   libm 200K inputs match bit-for-bit or differ by 1 ULP. Exact integer powers,
   C99 Annex F cases, and subnormal and overflow edges are tests. `pow` runs at
   51 ns against libm's 9.5 ns; the remaining gap is backend code quality.
+- Added a dedicated `f32` `math.pow` kernel replacing `f32(pow(f64, f64))`:
+  plain-`f64` arithmetic over the same tables (no tail word), a log series to
+  `r^5`, a degree-3 exponential, and one final conversion that rounds into the
+  subnormal range or to infinity. Zero, infinite, NaN, and negative bases and
+  non-finite exponents defer to the `f64` overload. Worst error is 0.5025 ULP
+  over 59,890 inputs against a 60-digit exact reference; 54 ns fell to 17 ns.
+- Inlined finite negative bases with ordinary exponents into `pow(f64)`: the
+  units bit of `y` gives the parity by one shift, replacing the `pow_special`
+  call and its tuple return. Bit-identical to the old path over 400K operands;
+  negative-base integer powers went from 76 ns to 50 ns, positive bases unchanged.
+- Added exact fast paths to `pow` for both widths when the exponent is 2, 1,
+  -1, or 0.5: a zero-mantissa test selects the powers of two, then `x * x`, `x`,
+  `1 / x`, and `sqrt(x)` (positive bases only, so `pow(-0, 0.5)` and
+  `pow(-inf, 0.5)` keep the general path). Results are correctly rounded and
+  agree with the kernel within 1 ULP over 8M operands; the general path shows no
+  measurable cost, and these exponents run at about 7 ns against 49 ns (`f64`).
+- Fixed `pow` returning a NaN for a negative zero or negative infinite base with
+  a fractional exponent (`pow(-0, 0.5)`, `pow(-inf, 0.5)`): `pow_special` now
+  settles zero and infinite bases before the fractional-exponent NaN, which
+  applies only to finite negative bases, so they give `+0` or `+inf` per Annex F.
 - Fixed compound untyped constants under a float cast (`f32(-1.0)`,
   `f32(0.0 - 1.0)`, `f32(-3)`, `f32(2 * 3)`), which stored a wrong value or hit
   "untyped operand reached codegen": the cast check now settles the operand

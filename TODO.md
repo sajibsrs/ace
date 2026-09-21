@@ -254,7 +254,7 @@ foundations.
   `cos` are implemented. The fdlibm-class algorithms ran 1.6x libm for
   `exp`/`log` and 3-5x for `sin`/`cos` in C. Shipped Ace runs `exp` and `log` at
   33 and 31 ns, `sin` at 50 ns (medium) and `cos` at 24 ns (small) against
-  libm's 3-4 ns, `pow` (table-driven) at 51 ns against libm's 9.5 ns, and
+  libm's 3-4 ns, `pow` (table-driven) at 51 ns (`f32`: 17 ns) against libm's 9.5 ns, and
   arguments beyond 1.6e6 at about 600 ns
   because the Payne-Hanek fraction is extracted bit by bit; a word-at-a-time
   extraction would cut that. The `pow` gap to libm is backend quality: the
