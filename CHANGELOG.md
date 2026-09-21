@@ -677,6 +677,20 @@ current normative rules, and Git preserves patch-level detail.
   signature clause in `sema.c`, its own emitter, and its own inline expansion,
   which evaluates the operands into FP temps and frees the last two. An
   ordinary `a * b + c` stays two instructions: nothing contracts it.
+- Widened float register promotion past the callee-saved eight: `d24-d31`,
+  which nothing else reserves between statements, now take up to eight more
+  promoted locals. They are caller-saved and the shared byte routines clobber
+  them too, so `fp_leaves` stores and reloads them inside `emit_bl_internal`,
+  `emit_bl_extern`, and the indirect-call path — every branch-with-link the
+  emitter produces, so no call site can be missed. A function whose loop
+  carries a call, or a value of aggregate type over 32 bytes that copies
+  through `__ace$mem_copy`, keeps frame slots rather than pay that per
+  iteration. `pow(f64)` fell from 28.5 to 23.2 ns and its dependent chain from
+  69.3 to 59.0 ns, with slot address computations on its hot path down from 43
+  to 17; the `calls` and `hotloop` benchmarks moved within +-0.6% best-of-five,
+  and `pow` results are identical on 24M operand pairs and on 11,024 exact
+  cases. A promoted local held across a call had no test: one is added, and it
+  fails on a build that omits the save.
 - Rewrote `pow(f64)`'s extended-precision product on `math.fma`: `e_hi` is now
   `y * log_hi` and its rounding error comes back exactly from
   `fma(y, log_hi, -e_hi)`, which deletes the 26-bit splitting of both operands

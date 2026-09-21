@@ -364,6 +364,13 @@ typedef struct {
 #define MAX_FPTEMPS 16 // v0-v7, v16-v23
 #define LOOP_REGS 10   // x19-x28, callee-saved loop state and promoted locals
 #define FP_PROMO_REGS 8 // d8-d15, callee-saved promoted float locals
+/* d24-d31 hold nothing the emitter keeps between statements, so eight more
+ * float locals may live there. They are caller-saved, and the shared byte
+ * routines clobber them too, so every branch-with-link stores and reloads
+ * them: the cost lands on the calling paths, never on a call-free one. A
+ * function with any call or large aggregate inside a loop keeps its slots
+ * rather than pay that at every iteration. */
+#define FP_LEAF_REGS 8  // d24-d31, caller-saved promoted float locals
 #define PARAM_FHOMES 8 // v23 down: register-homed float leaves of incoming HFA parameters
 #define PARAM_HOMES (PARAM_FHOMES + LEAF_REGS) // plus x14 down: integer-class leaves
 
@@ -404,11 +411,14 @@ typedef struct {
     int      nxpreg;
     int      vti_cap;    // int temps available: MAX_ITEMPS less nxpreg
     int      scan_call;  // promo_scan met a call that may clobber x9-x14
+    int      scan_loop_branch; // promo_scan met a call or large aggregate inside a loop
     int      nsaved;     // callee-saved x registers the function saves and restores
     uint32_t lreg_save;  // depth of the callee-saved x save area
-    Node*    fpreg_decl[FP_PROMO_REGS]; // promoted float locals, d8 up
+    Node*    fpreg_decl[FP_PROMO_REGS + FP_LEAF_REGS]; // promoted float locals, d8 up then d24 up
     int      nfpreg;
+    int      nfpleaf;    // of nfpreg, the trailing ones living in d24-d31
     uint32_t fpreg_save; // depth of the d8-d15 save area
+    uint32_t fpleaf_save; // depth of the d24-d31 save area
     PromoCand* pcands;   // plan_promotion scratch
     int      npcands, cpcands;
     PtrMap   pcand_ix;   // binder node -> index + 1 into pcands
@@ -527,6 +537,7 @@ typedef struct {
 static EV gen_expr(Em* e, Node* x);
 static void mov_int(Em* e, int sf, int dst, int src);
 static void emit_bl_internal(Em* e, const char* p, uint32_t len);
+static void fp_leaves(Em* e, int load);
 static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels);
 static void emit_stmt(Em* e, Node* s);
 static int loop_regs_take(Em* e, Node* s);
@@ -2407,15 +2418,19 @@ static void classify_ret(SType* t, RetCls* r) {
 }
 
 static void emit_bl_internal(Em* e, const char* p, uint32_t len) {
+    fp_leaves(e, 0);
     ins(e, 0x94000000u); // bl .+0
     ESym* t = sym_intern(&e->syms, p, len);
     fix_add(e, FK_BRANCH, (uint32_t)(text(e)->len - 4), t);
+    fp_leaves(e, 1);
 }
 
 static void emit_bl_extern(Em* e, const char* p, uint32_t len) {
+    fp_leaves(e, 0);
     ins(e, 0x94000000u);
     ESym* t = sym_intern(&e->syms, p, len);
     reloc_add(&e->secs[SEC_TEXT], (uint32_t)(text(e)->len - 4), t, 1, 2, 1, RM_BRANCH26);
+    fp_leaves(e, 1);
 }
 
 static ESym* intern_string(Em* e, Node* s);
@@ -2893,7 +2908,9 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
     else { // target reloaded from its spill slot (marshaling cannot clobber it)
         load_frame(e, 16, spill_slot_int(e, tgt.reg), 8, 0);
         emit_null_guard(e, 16);
+        fp_leaves(e, 0);
         ins(e, 0xD63F0000u | (16u << 5)); // blr x16
+        fp_leaves(e, 1);
     }
 
     // stage results, reload spilled temps, produce the result EV
@@ -3108,7 +3125,8 @@ static int promo_reg(Em* e, Sym* s) {
     if (!s || !s->decl) return -1;
     for (int i = 0; i < e->npreg; i++) if (e->preg_decl[i] == s->decl) return 19 + e->lreg_max + i;
     for (int i = 0; i < e->nxpreg; i++) if (e->xpreg_decl[i] == s->decl) return 14 - i;
-    for (int i = 0; i < e->nfpreg; i++) if (e->fpreg_decl[i] == s->decl) return 8 + i;
+    for (int i = 0; i < e->nfpreg; i++)
+        if (e->fpreg_decl[i] == s->decl) return i < FP_PROMO_REGS ? 8 + i : 24 + (i - FP_PROMO_REGS);
     return -1;
 }
 
@@ -6979,9 +6997,16 @@ static void save_regs(Em* e, int first, int n, uint32_t depth, int fp, int load)
     }
 }
 
+/* Promoted float locals in the caller-saved d24-d31 do not survive a branch-
+ * with-link, so every one stores them first and reloads them on return. */
+static void fp_leaves(Em* e, int load) {
+    if (e->nfpleaf) save_regs(e, 24, e->nfpleaf, e->fpleaf_save, 1, load);
+}
+
 static void callee_saved(Em* e, int load) {
     if (e->nsaved) save_regs(e, 19, e->nsaved, e->lreg_save, 0, load);
-    if (e->nfpreg) save_regs(e, 8, e->nfpreg, e->fpreg_save, 1, load);
+    int own = e->nfpreg - e->nfpleaf;
+    if (own) save_regs(e, 8, own, e->fpreg_save, 1, load);
 }
 
 static void emit_epilogue(Em* e) {
@@ -7191,6 +7216,10 @@ static int temp_need(Node* n) {
  */
 static void promo_scan(Em* e, Node* n, int depth) {
     if (!n) return;
+    if (depth > 0 && !e->scan_loop_branch) {
+        SType* t = node_ty(n);
+        if (t && !is_scalar(t) && ty_size(t) > 32) e->scan_loop_branch = 1;
+    }
     switch (n->kind) {
     case N_IDENT: {
         PromoCand* c = promo_find(e, n);
@@ -7215,6 +7244,9 @@ static void promo_scan(Em* e, Node* n, int depth) {
         break;
     case N_CALL:
         if (!call_is_inline(n)) e->scan_call = 1;
+        // Any call inside a loop may branch: a real one, or an inline lowering
+        // that reaches a shared byte routine.
+        if (depth > 0) e->scan_loop_branch = 1;
         break;
     case N_FOR:
         if (n->flags & F_FORGEN) {
@@ -7270,7 +7302,7 @@ static void plan_promotion(Em* e, Node* f) {
     for (int i = 0; i < f->nkids; i++)
         if (!(f->kids[i]->flags & F_MUT) && !((f->flags & F_METHOD) && i == 0))
             promo_add(e, f->kids[i]);
-    e->scan_call = 0;
+    e->scan_call = e->scan_loop_branch = 0;
     promo_scan(e, f->b, 0);
     Node* d;
     if (!e->scan_call) {
@@ -7280,6 +7312,11 @@ static void plan_promotion(Em* e, Node* f) {
     }
     while (e->lreg_max + e->npreg < LOOP_REGS && (d = promo_take(e, 0, PROMO_MIN_WEIGHT))) e->preg_decl[e->npreg++] = d;
     while (e->nfpreg < FP_PROMO_REGS && (d = promo_take(e, 1, PROMO_MIN_WEIGHT))) e->fpreg_decl[e->nfpreg++] = d;
+    if (!e->scan_loop_branch)
+        while (e->nfpreg < FP_PROMO_REGS + FP_LEAF_REGS && (d = promo_take(e, 1, PROMO_MIN_WEIGHT))) {
+            e->fpreg_decl[e->nfpreg++] = d;
+            e->nfpleaf++;
+        }
 }
 
 typedef struct {
@@ -7436,7 +7473,7 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
     e->lreg_top = e->lreg_max = 0;
     e->fn_has_asm = 0;
     plan_loops(e, f->b);
-    e->npreg = e->nfpreg = e->nxpreg = 0;
+    e->npreg = e->nfpreg = e->nxpreg = e->nfpleaf = 0;
     e->vti_cap = MAX_ITEMPS;
     e->vtf_cap = MAX_FPTEMPS;
     e->nphome = e->nfhome = e->nxhome = 0;
@@ -7451,7 +7488,9 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
     if (is_main) emit_has_main = 1;
     emit_prologue(e);
     if (e->nsaved) e->lreg_save = slot_alloc(e, NULL, 8u * (uint32_t)e->nsaved, 8);
-    if (e->nfpreg) e->fpreg_save = slot_alloc(e, NULL, 8u * (uint32_t)e->nfpreg, 8);
+    if (e->nfpreg - e->nfpleaf)
+        e->fpreg_save = slot_alloc(e, NULL, 8u * (uint32_t)(e->nfpreg - e->nfpleaf), 8);
+    if (e->nfpleaf) e->fpleaf_save = slot_alloc(e, NULL, 8u * (uint32_t)e->nfpleaf, 8);
     callee_saved(e, 0);
 
     RetCls rc;

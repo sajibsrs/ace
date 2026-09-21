@@ -255,15 +255,14 @@ foundations.
   `cos` are implemented. The fdlibm-class algorithms ran 1.6x libm for
   `exp`/`log` and 3-5x for `sin`/`cos` in C. Shipped Ace runs `exp` and `log` at
   33 and 31 ns, `sin` at 50 ns (medium) and `cos` at 24 ns (small) against
-  libm's 3-4 ns, `pow` (table-driven) at 29 ns (`f32`: 12 ns) against libm's 9.5 ns, and
+  libm's 3-4 ns, `pow` (table-driven) at 23 ns (`f32`: 12 ns) against libm's 9.5 ns, and
   arguments beyond 1.6e6 at about 600 ns
   because the Payne-Hanek fraction is extracted bit by bit; a word-at-a-time
-  extraction would cut that. The `pow` gap to libm is backend quality: eight
-  callee-saved float registers do not cover the kernel's live `f64` values, a
-  local that misses one is reached through an address computed per access, and
+  extraction would cut that. The `pow` gap to libm is backend quality: a local
+  that wins no register is reached through an address computed per access, and
   each constant load takes three instructions. The other kernels are written
-  without regard to that promotion limit, and none of them uses `math.fma`;
-  both are worth the treatment `pow` had.
+  without regard to the promotion limit, and none of them uses `math.fma`; both
+  are worth the treatment `pow` had.
   Table-driven `exp`, `log`, `sin`, and `cos` are the same design applied to
   the remaining fdlibm-class gaps.
 - **Random source** [new].

@@ -1,0 +1,92 @@
+/* Float locals beyond the callee-saved eight live in the caller-saved d24-d31, which any callee is
+ * free to clobber, so the caller stores them around every call. A function whose loop carries a call
+ * keeps frame slots instead, and must still read every local correctly. Every value here is a small
+ * integer, so the arithmetic is exact.
+ */
+
+// expect-exit: 42
+
+// Promotes enough float locals of its own to reach d24-d31 and overwrite a caller's.
+mix(seed: f64): f64 {
+    v0: f64 = seed + 1.0
+    v1: f64 = seed + 2.0
+    v2: f64 = seed + 3.0
+    v3: f64 = seed + 4.0
+    v4: f64 = seed + 5.0
+    v5: f64 = seed + 6.0
+    v6: f64 = seed + 7.0
+    v7: f64 = seed + 8.0
+    v8: f64 = seed + 9.0
+    v9: f64 = seed + 10.0
+    v10: f64 = seed + 11.0
+    v11: f64 = seed + 12.0
+    v12: f64 = seed + 13.0
+    v13: f64 = seed + 14.0
+    return v0 * v0 + v1 * v1 + v2 * v2 + v3 * v3 + v4 * v4 + v5 * v5 + v6 * v6 +
+           v7 * v7 + v8 * v8 + v9 * v9 + v10 * v10 + v11 * v11 + v12 * v12 + v13 * v13
+}
+
+// Holds fourteen promoted locals across a call, so the ones in d24-d31 must be saved and restored.
+across(seed: f64): f64 {
+    w0: f64 = seed + 1.0
+    w1: f64 = seed + 2.0
+    w2: f64 = seed + 3.0
+    w3: f64 = seed + 4.0
+    w4: f64 = seed + 5.0
+    w5: f64 = seed + 6.0
+    w6: f64 = seed + 7.0
+    w7: f64 = seed + 8.0
+    w8: f64 = seed + 9.0
+    w9: f64 = seed + 10.0
+    w10: f64 = seed + 11.0
+    w11: f64 = seed + 12.0
+    w12: f64 = seed + 13.0
+    w13: f64 = seed + 14.0
+    inner: f64 = mix(seed + 100.0)
+    return w0 * w0 + w1 * w1 + w2 * w2 + w3 * w3 + w4 * w4 + w5 * w5 + w6 * w6 +
+           w7 * w7 + w8 * w8 + w9 * w9 + w10 * w10 + w11 * w11 + w12 * w12 + w13 * w13 + inner
+}
+
+// The same locals, but the call sits inside a loop: these keep their frame slots.
+in_loop(seed: f64, rounds: int): f64 {
+    total: f64 = 0.0
+    for r: int in 0 .. rounds {
+        u0: f64 = seed + 1.0
+        u1: f64 = seed + 2.0
+        u2: f64 = seed + 3.0
+        u3: f64 = seed + 4.0
+        u4: f64 = seed + 5.0
+        u5: f64 = seed + 6.0
+        u6: f64 = seed + 7.0
+        u7: f64 = seed + 8.0
+        u8: f64 = seed + 9.0
+        u9: f64 = seed + 10.0
+        u10: f64 = seed + 11.0
+        u11: f64 = seed + 12.0
+        u12: f64 = seed + 13.0
+        u13: f64 = seed + 14.0
+        scratch: f64 = mix(seed)
+        total = total + u0 * u0 + u1 * u1 + u2 * u2 + u3 * u3 + u4 * u4 + u5 * u5 + u6 * u6 +
+                u7 * u7 + u8 * u8 + u9 * u9 + u10 * u10 + u11 * u11 + u12 * u12 + u13 * u13 +
+                scratch * 0.0
+    }
+    return total
+}
+
+main(): int {
+    two: f64 = 2.0
+    if mix(102.0) != 168091.0 {
+        return 1
+    }
+    if across(two) != 169582.0 {
+        return 2
+    }
+    if in_loop(two, 4) != 5964.0 {
+        return 3
+    }
+    // A second call after the first must see the restored values, not the callee's.
+    if across(two) + across(two) != 339164.0 {
+        return 4
+    }
+    return 42
+}
