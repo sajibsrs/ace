@@ -1,6 +1,4 @@
-/* json — a whole-document JSON value model, RFC 8259 parser, and streaming
- * writer.
- */
+/* json — a whole-document JSON value model, RFC 8259 parser, and formatter. */
 
 import jsonval: "./inc/value.ace"
 import parsing: "./inc/parsing.ace"
@@ -9,7 +7,6 @@ import writing: "./inc/writing.ace"
 pub Json: type = jsonval.Json
 pub Pair: type = jsonval.Pair
 pub JsonErr: type = jsonval.JsonErr
-pub Writer: type = writing.Writer
 pub FormatErr: type = writing.FormatErr
 
 pub parse(text: string): (Json, Error) {
@@ -19,10 +16,6 @@ pub parse(text: string): (Json, Error) {
 
 pub wipe(v: Json) {
     jsonval.wipe(v)
-}
-
-pub writer(output: mut []u8): Writer {
-    return writing.writer(output)
 }
 
 pub format(value: Json, output: mut []u8): (usize, Error) {

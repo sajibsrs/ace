@@ -8,47 +8,32 @@ same(output: []u8, n: usize, err: Error, expected: string): bool {
     return str.compare(string(output[0..n]), expected) == 0
 }
 
-fields(): int {
-    buf: [128]u8
-    w: json.Writer = json.writer(mut buf[..])
-    mut w.object()
-    mut w.field("level", "info")
-    mut w.field("status", 200)
-    mut w.field("delta", 0 - 3)
-    mut w.field("size", uint(7))
-    mut w.field("len", buf.len)
-    mut w.field("ratio", 0.5)
-    mut w.field("ok", true)
-    mut w.key("parent")
-    mut w.none()
-    mut w.end()
-    n: usize, err: Error = w.finish()
-    expected: string = "{\"level\":\"info\",\"status\":200,\"delta\":-3,\"size\":7,\"len\":128,\"ratio\":0.5,\"ok\":true,\"parent\":null}"
+/* Parses `text`, formats the tree, and checks the output equals `expected`. */
+round(text: string, expected: string): bool {
+    root: json.Json, perr: Error = json.parse(text)
+    defer json.wipe(root)
 
-    if !same(buf[..], n, err, expected) {
+    if perr != null {
+        return false
+    }
+    buf: [128]u8
+    n: usize, err: Error = json.format(root, mut buf[..])
+    return same(buf[..], n, err, expected)
+}
+
+fields(): int {
+    text: string = "{\"level\":\"info\",\"status\":200,\"delta\":-3,\"ratio\":0.5,\"ok\":true,\"parent\":null}"
+
+    if !round(text, text) {
         return 1
     }
     return 0
 }
 
 nesting(): int {
-    buf: [128]u8
-    w: json.Writer = json.writer(mut buf[..])
-    mut w.object()
-    mut w.key("tags")
-    mut w.array()
-    mut w.value("a")
-    mut w.value("b")
-    mut w.array()
-    mut w.end()
-    mut w.object()
-    mut w.end()
-    mut w.end()
-    mut w.field("n", 1)
-    mut w.end()
-    n: usize, err: Error = w.finish()
+    text: string = "{\"tags\":[\"a\",\"b\",[],{}],\"n\":1}"
 
-    if !same(buf[..], n, err, "{\"tags\":[\"a\",\"b\",[],{}],\"n\":1}") {
+    if !round(text, text) {
         return 11
     }
     return 0
@@ -56,38 +41,39 @@ nesting(): int {
 
 scalar_root(): int {
     buf: [16]u8
-    w: json.Writer = json.writer(mut buf[..])
-    mut w.value(1.0e21)
-    n: usize, err: Error = w.finish()
+    n: usize
+    err: Error
+    n, err = json.format(json.Json.number(1.0e21), mut buf[..])
 
     if !same(buf[..], n, err, "1e21") {
         return 21
+    }
+    n, err = json.format(json.Json.none, mut buf[..])
+
+    if !same(buf[..], n, err, "null") {
+        return 22
+    }
+    n, err = json.format(json.Json.bool(false), mut buf[..])
+
+    if !same(buf[..], n, err, "false") {
+        return 23
     }
     return 0
 }
 
 tree(): int {
     text: string = "{\"a\":[1,2.5,true,null],\"b\":{\"c\":\"d\"},\"e\":[]}"
-    root: json.Json, perr: Error = json.parse(text)
-    defer json.wipe(root)
 
-    if perr != null {
+    if !round(text, text) {
         return 31
-    }
-    buf: [64]u8
-    n: usize, err: Error = json.format(root, mut buf[..])
-
-    if !same(buf[..], n, err, text) {
-        return 32
     }
     return 0
 }
 
 escapes(): int {
     buf: [64]u8
-    w: json.Writer = json.writer(mut buf[..])
-    mut w.value("q\"b\\n\nt\tc\x01é")
-    n: usize, err: Error = w.finish()
+    value: json.Json = json.Json.string("q\"b\\n\nt\tc\x01é")
+    n: usize, err: Error = json.format(value, mut buf[..])
 
     if !same(buf[..], n, err, "\"q\\\"b\\\\n\\nt\\tc\\u0001é\"") {
         return 41
@@ -96,75 +82,44 @@ escapes(): int {
 }
 
 failures(): int {
-    buf: [64]u8
     small: [4]u8
+    buf: [64]u8
     nan: f64 = 0.0 / 0.0
     n: usize
     err: Error
 
-    w: json.Writer = json.writer(mut small[..])
-    mut w.value("toolong")
-    n, err = w.finish()
+    n, err = json.format(json.Json.string("toolong"), mut small[..])
     if err != json.FormatErr.capacity { return 51 }
 
-    w = json.writer(mut buf[..])
-    mut w.value(nan)
-    n, err = w.finish()
+    n, err = json.format(json.Json.number(nan), mut buf[..])
     if err != json.FormatErr.number { return 52 }
 
-    w = json.writer(mut buf[..])
-    mut w.object()
-    mut w.value(1)
-    n, err = w.finish()
-    if err != json.FormatErr.structure { return 53 }
+    /* A capacity failure inside a nested container still reports capacity. */
+    root: json.Json, perr: Error = json.parse("[[1,2,3],[4,5,6]]")
+    defer json.wipe(root)
 
-    w = json.writer(mut buf[..])
-    mut w.array()
-    mut w.key("k")
-    n, err = w.finish()
-    if err != json.FormatErr.structure { return 54 }
-
-    w = json.writer(mut buf[..])
-    mut w.value(1)
-    mut w.value(2)
-    n, err = w.finish()
-    if err != json.FormatErr.structure { return 55 }
-
-    w = json.writer(mut buf[..])
-    mut w.array()
-    n, err = w.finish()
-    if err != json.FormatErr.structure { return 56 }
-
-    w = json.writer(mut buf[..])
-    mut w.end()
-    n, err = w.finish()
-    if err != json.FormatErr.structure { return 57 }
-
-    w = json.writer(mut buf[..])
-    n, err = w.finish()
-    if err != json.FormatErr.structure { return 58 }
-
-    w = json.writer(mut buf[..])
-    mut w.object()
-    mut w.key("k")
-    mut w.end()
-    n, err = w.finish()
-    if err != json.FormatErr.structure { return 59 }
-
-    deep: [1100]u8
-    w = json.writer(mut deep[..])
-    for i: int in 0 .. 513 {
-        mut w.array()
+    if perr != null {
+        return 53
     }
-    n, err = w.finish()
-    if err != json.FormatErr.depth { return 60 }
+    n, err = json.format(root, mut small[..])
+    if err != json.FormatErr.capacity || n != 0 { return 54 }
+    return 0
+}
 
-    /* The first error sticks: a later capacity failure does not replace it. */
-    w = json.writer(mut small[..])
-    mut w.value(nan)
-    mut w.value("toolong")
-    n, err = w.finish()
-    if err != json.FormatErr.number || n != 0 { return 61 }
+/* A tree 513 arrays deep, one past the parser's own limit, built by hand. */
+depth(): int {
+    levels: [513][1]json.Json
+    deep: [2000]u8
+    n: usize
+    err: Error
+    levels[512][0] = json.Json.none
+
+    for i: usize in 0 .. 512 {
+        level: usize = 511 - i
+        levels[level][0] = json.Json.array(levels[level + 1][..])
+    }
+    n, err = json.format(json.Json.array(levels[0][..]), mut deep[..])
+    if err != json.FormatErr.depth { return 61 }
     return 0
 }
 
@@ -178,6 +133,8 @@ main(): int {
     result = tree()
     if result != 0 { return result }
     result = failures()
+    if result != 0 { return result }
+    result = depth()
     if result != 0 { return result }
     return escapes()
 }

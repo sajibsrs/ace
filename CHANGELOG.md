@@ -1476,6 +1476,14 @@ current normative rules, and Git preserves patch-level detail.
 - Renamed `std/@/pow_tables.ace` to `math_tables.ace` and moved the `sin`/`cos`
   Payne-Hanek `2/pi` limb table into it as `two_over_pi`, so it is the single
   home for `math`'s constant tables. Results and timings are unchanged.
+- Removed the streaming `json.Writer` from `pkg/json`, along with
+  `json.writer` and `FormatErr.structure`; the non-streaming `json.format`
+  stays as the only writer. `format` is now a recursive tree writer whose
+  helpers take and return the write offset, so the first error unwinds without
+  shared state. Output, escaping, and the `capacity`, `depth`, and `number`
+  errors are unchanged. `pkg/json/tests/writing` now goes through `format`,
+  building a 513-deep tree by hand for the depth case. A streaming
+  `encode`/`decode` API will be designed separately.
 
 ## Current frontier
 

@@ -1,7 +1,7 @@
-/* Streaming JSON output into caller-owned storage. A Writer emits compact
- * RFC 8259 text call by call, with no allocation and no intermediate tree.
- * The first failure is kept and every later call is a no-op, so a sequence
- * of writes needs one error check, at finish.
+/* JSON output into caller-owned storage. `format` writes one value tree as
+ * compact RFC 8259 text, with no allocation. Each helper takes the write
+ * offset and returns the new one, so the first error unwinds the recursion
+ * without any shared state.
  */
 
 import mem
@@ -15,359 +15,136 @@ pub FormatErr: error {
     1: capacity = "output storage is too small"
     2: depth = "nesting depth exceeded"
     3: number = "number is not finite"
-    4: structure = "calls do not form exactly one JSON value"
 }
 
 /* The most containers that may be open at once, matching the parser. */
 MAX_DEPTH: usize = 512
 
-/* An open container needs only its kind: closing a child proves its parent
- * already holds a member, so just the innermost container tracks whether it
- * is still empty. `objects` holds one bit per level (MAX_DEPTH / 8 bytes);
- * a set bit marks an object, a clear bit an array.
+/* Serializes a complete value tree into caller-owned storage and returns the
+ * byte count. After an error the contents of the output storage are
+ * unspecified.
  */
-pub Writer: struct {
-    output: mut []u8,
-    at: usize,
-    depth: usize,
-    objects: [64]u8,
-    empty: bool,
-    keyed: bool,
-    done: bool,
-    err: Error,
+pub format(value: Json, output: mut []u8): (usize, Error) {
+    n: usize, err: Error = emit(value, output, 0, 0)
+
+    if err != null {
+        return 0, err
+    }
+    return n, null
 }
 
-pub writer(output: mut []u8): Writer {
-    return Writer{
-        output = output,
-        at = 0,
-        depth = 0,
-        objects = [u8(0) : 64],
-        empty = false,
-        keyed = false,
-        done = false,
-        err = null,
+/* Writes `value` at `at`, with `depth` containers already open around it. */
+emit(value: Json, output: mut []u8, at: usize, depth: usize): (usize, Error) {
+    pos: usize = at
+    err: Error = null
+
+    switch value {
+        Json.none {
+            pos, err = put(output, pos, "null")
+        }
+        Json.bool(flag: bool) {
+            if flag {
+                pos, err = put(output, pos, "true")
+            } else {
+                pos, err = put(output, pos, "false")
+            }
+        }
+        Json.number(number: f64) {
+            pos, err = write_number(output, pos, number)
+        }
+        Json.string(text: string) {
+            pos, err = quote(output, pos, text)
+        }
+        Json.array(items: []Json) {
+            if depth == MAX_DEPTH {
+                return pos, FormatErr.depth
+            }
+            pos, err = put(output, pos, '[')
+
+            if err != null {
+                return pos, err
+            }
+
+            for i: usize in 0 .. items.len {
+                if i != 0 {
+                    pos, err = put(output, pos, ',')
+
+                    if err != null {
+                        return pos, err
+                    }
+                }
+                pos, err = emit(items[i], output, pos, depth + 1)
+
+                if err != null {
+                    return pos, err
+                }
+            }
+            pos, err = put(output, pos, ']')
+        }
+        Json.object(pairs: []Pair) {
+            if depth == MAX_DEPTH {
+                return pos, FormatErr.depth
+            }
+            pos, err = put(output, pos, '{')
+
+            if err != null {
+                return pos, err
+            }
+
+            for i: usize in 0 .. pairs.len {
+                if i != 0 {
+                    pos, err = put(output, pos, ',')
+
+                    if err != null {
+                        return pos, err
+                    }
+                }
+                pos, err = quote(output, pos, pairs[i].key)
+
+                if err != null {
+                    return pos, err
+                }
+                pos, err = put(output, pos, ':')
+
+                if err != null {
+                    return pos, err
+                }
+                pos, err = emit(pairs[i].value, output, pos, depth + 1)
+
+                if err != null {
+                    return pos, err
+                }
+            }
+            pos, err = put(output, pos, '}')
+        }
     }
-}
-
-/* Returns the byte count of the one complete value written, or the first
- * error. After an error the contents of the output storage are unspecified.
- */
-pub Writer.finish(): (usize, Error) {
-    if self.err != null {
-        return 0, self.err
-    }
-
-    if self.depth != 0 || !self.done {
-        return 0, FormatErr.structure
-    }
-    return self.at, null
-}
-
-pub mut Writer.object() {
-    mut self.open(true)
-}
-
-pub mut Writer.array() {
-    mut self.open(false)
-}
-
-/* Closes the innermost open container, whichever kind it is. */
-pub mut Writer.end() {
-    if self.err != null {
-        return
-    }
-
-    if self.depth == 0 || self.keyed {
-        mut self.fail(FormatErr.structure)
-        return
-    }
-
-    if self.inside_object() {
-        mut self.put('}')
-    } else {
-        mut self.put(']')
-    }
-    self.depth -= 1
-    self.empty = false
-    mut self.close_value()
-}
-
-pub mut Writer.key(name: string) {
-    if self.err != null {
-        return
-    }
-
-    if self.depth == 0 || !self.inside_object() || self.keyed {
-        mut self.fail(FormatErr.structure)
-        return
-    }
-
-    if !self.empty {
-        mut self.put(',')
-    }
-    self.empty = false
-    mut self.quote(name)
-    mut self.put(':')
-    self.keyed = true
-}
-
-pub mut Writer.none() {
-    ok: bool = mut self.open_value()
-
-    if !ok {
-        return
-    }
-    mut self.put("null")
-    mut self.close_value()
-}
-
-pub mut Writer.value(flag: bool) {
-    ok: bool = mut self.open_value()
-
-    if !ok {
-        return
-    }
-
-    if flag {
-        mut self.put("true")
-    } else {
-        mut self.put("false")
-    }
-    mut self.close_value()
-}
-
-pub mut Writer.value(number: int) {
-    ok: bool = mut self.open_value()
-
-    if !ok {
-        return
-    }
-    n: usize, fit: bool = str.format(self.output[self.at..], number)
-    mut self.advance(n, fit)
-}
-
-pub mut Writer.value(number: uint) {
-    ok: bool = mut self.open_value()
-
-    if !ok {
-        return
-    }
-    n: usize, fit: bool = str.format(self.output[self.at..], number)
-    mut self.advance(n, fit)
-}
-
-pub mut Writer.value(number: usize) {
-    ok: bool = mut self.open_value()
-
-    if !ok {
-        return
-    }
-    n: usize, fit: bool = str.format(self.output[self.at..], number)
-    mut self.advance(n, fit)
+    return pos, err
 }
 
 /* NaN and the infinities have no JSON spelling and are rejected. */
-pub mut Writer.value(number: f64) {
+write_number(output: mut []u8, at: usize, number: f64): (usize, Error) {
     zero: f64 = 0.0
 
-    if self.err == null && (number != number || number - number != zero) {
-        mut self.fail(FormatErr.number)
-        return
+    if number != number || number - number != zero {
+        return at, FormatErr.number
     }
-    ok: bool = mut self.open_value()
+    n: usize, fit: bool = str.format(output[at..], number)
 
-    if !ok {
-        return
-    }
-    n: usize, fit: bool = str.format(self.output[self.at..], number)
-    mut self.advance(n, fit)
-}
-
-pub mut Writer.value(text: string) {
-    ok: bool = mut self.open_value()
-
-    if !ok {
-        return
-    }
-    mut self.quote(text)
-    mut self.close_value()
-}
-
-/* Writes a whole value tree through the same rules as the scalar calls. */
-pub mut Writer.value(tree: Json) {
-    switch tree {
-        Json.none {
-            mut self.none()
-        }
-        Json.bool(flag: bool) {
-            mut self.value(flag)
-        }
-        Json.number(number: f64) {
-            mut self.value(number)
-        }
-        Json.string(text: string) {
-            mut self.value(text)
-        }
-        Json.array(items: []Json) {
-            mut self.array()
-
-            for i: usize in 0 .. items.len {
-                if self.err != null {
-                    return
-                }
-                mut self.value(items[i])
-            }
-            mut self.end()
-        }
-        Json.object(pairs: []Pair) {
-            mut self.object()
-
-            for i: usize in 0 .. pairs.len {
-                if self.err != null {
-                    return
-                }
-                mut self.key(pairs[i].key)
-                mut self.value(pairs[i].value)
-            }
-            mut self.end()
-        }
-    }
-}
-
-pub mut Writer.field(name: string, flag: bool) {
-    mut self.key(name)
-    mut self.value(flag)
-}
-
-pub mut Writer.field(name: string, number: int) {
-    mut self.key(name)
-    mut self.value(number)
-}
-
-pub mut Writer.field(name: string, number: uint) {
-    mut self.key(name)
-    mut self.value(number)
-}
-
-pub mut Writer.field(name: string, number: usize) {
-    mut self.key(name)
-    mut self.value(number)
-}
-
-pub mut Writer.field(name: string, number: f64) {
-    mut self.key(name)
-    mut self.value(number)
-}
-
-pub mut Writer.field(name: string, text: string) {
-    mut self.key(name)
-    mut self.value(text)
-}
-
-pub mut Writer.field(name: string, tree: Json) {
-    mut self.key(name)
-    mut self.value(tree)
-}
-
-/* Serializes a complete value tree into caller-owned storage. */
-pub format(value: Json, output: mut []u8): (usize, Error) {
-    w: Writer = writer(output)
-    mut w.value(value)
-    n: usize, err: Error = w.finish()
-    return n, err
-}
-
-mut Writer.fail(err: Error) {
-    if self.err == null {
-        self.err = err
-    }
-}
-
-Writer.inside_object(): bool {
-    level: usize = self.depth - 1
-    mask: u8 = u8(1) << u8(level % 8)
-    return (self.objects[level / 8] & mask) != 0
-}
-
-mut Writer.open(object: bool) {
-    ok: bool = mut self.open_value()
-
-    if !ok {
-        return
-    }
-
-    if self.depth == MAX_DEPTH {
-        mut self.fail(FormatErr.depth)
-        return
-    }
-    level: usize = self.depth
-    mask: u8 = u8(1) << u8(level % 8)
-
-    if object {
-        self.objects[level / 8] = self.objects[level / 8] | mask
-        mut self.put('{')
-    } else {
-        self.objects[level / 8] = self.objects[level / 8] & ~mask
-        mut self.put('[')
-    }
-    self.depth += 1
-    self.empty = true
-    self.keyed = false
-}
-
-/* Places the separator a value needs and reports whether one may start here:
- * once at top level, after a key inside an object, or as the next element of
- * an array.
- */
-mut Writer.open_value(): bool {
-    if self.err != null {
-        return false
-    }
-
-    if self.depth == 0 {
-        if self.done {
-            mut self.fail(FormatErr.structure)
-            return false
-        }
-        return true
-    }
-
-    if self.inside_object() {
-        if !self.keyed {
-            mut self.fail(FormatErr.structure)
-            return false
-        }
-        self.keyed = false
-        return true
-    }
-
-    if !self.empty {
-        mut self.put(',')
-    }
-    self.empty = false
-    return true
-}
-
-mut Writer.close_value() {
-    if self.depth == 0 {
-        self.done = true
-    }
-}
-
-/* Accounts for a number `str.format` wrote in place at the cursor. */
-mut Writer.advance(n: usize, fit: bool) {
     if !fit {
-        mut self.fail(FormatErr.capacity)
-        return
+        return at, FormatErr.capacity
     }
-    self.at += n
-    mut self.close_value()
+    return at + n, null
 }
 
 /* Writes text as a quoted JSON string, copying unescaped runs whole. */
-mut Writer.quote(text: string) {
-    mut self.put('"')
+quote(output: mut []u8, at: usize, text: string): (usize, Error) {
+    pos: usize
+    err: Error
+    pos, err = put(output, at, '"')
+
+    if err != null {
+        return pos, err
+    }
     spelling: [6]u8
     start: usize = 0
 
@@ -375,13 +152,26 @@ mut Writer.quote(text: string) {
         n: usize = escape(text[i], mut spelling[..])
 
         if n != 0 {
-            mut self.put(text[start..i])
-            mut self.put(spelling[0..n])
+            pos, err = put(output, pos, text[start..i])
+
+            if err != null {
+                return pos, err
+            }
+            pos, err = put(output, pos, spelling[0..n])
+
+            if err != null {
+                return pos, err
+            }
             start = i + 1
         }
     }
-    mut self.put(text[start..text.len])
-    mut self.put('"')
+    pos, err = put(output, pos, text[start..text.len])
+
+    if err != null {
+        return pos, err
+    }
+    pos, err = put(output, pos, '"')
+    return pos, err
 }
 
 /* Writes the JSON escape for `byte` into `spelling` and returns its length,
@@ -420,28 +210,18 @@ escape(byte: u8, spelling: mut []u8): usize {
     return 6
 }
 
-mut Writer.put(byte: u8) {
-    if self.err != null {
-        return
+put(output: mut []u8, at: usize, byte: u8): (usize, Error) {
+    if at >= output.len {
+        return at, FormatErr.capacity
     }
-
-    if self.at >= self.output.len {
-        mut self.fail(FormatErr.capacity)
-        return
-    }
-    self.output[self.at] = byte
-    self.at += 1
+    output[at] = byte
+    return at + 1, null
 }
 
-mut Writer.put(text: string) {
-    if self.err != null {
-        return
+put(output: mut []u8, at: usize, text: string): (usize, Error) {
+    if text.len > output.len - at {
+        return at, FormatErr.capacity
     }
-
-    if text.len > self.output.len - self.at {
-        mut self.fail(FormatErr.capacity)
-        return
-    }
-    mem.copy(self.output[self.at..self.at + text.len], text)
-    self.at += text.len
+    mem.copy(output[at..at + text.len], text)
+    return at + text.len, null
 }
