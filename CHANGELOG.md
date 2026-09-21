@@ -772,6 +772,39 @@ current normative rules, and Git preserves patch-level detail.
   rename is behaviour-preserving, checked rather than assumed: an
   order-sensitive checksum over `exp`, `log`, `pow(f64)`, and `pow(f32)` across
   four million arguments each is unchanged.
+- Folded every hot-path call out of `sin` and `cos`. Each call was reaching
+  `isnan`, `isinf`, `reduce_medium` — which called `exponent_field` two or three
+  times of its own — and then `kernel_sin` or `kernel_cos`: five or six
+  branch-with-links, each storing and reloading `d24-d31`, against one in `exp`
+  and two in `log`. Splitting the cost by band first showed where a table would
+  and would not have helped: below pi/4, where only the kernel runs, `sin`'s
+  dependent chain was 19.8 ns, while in the Cody-Waite band it was 64.7 ns, so
+  the reduction was about seventy per cent of it. A table shrinks the kernel
+  polynomial and needs a finer reduction to do it, which is the smaller half and
+  the wrong direction; the calls were the larger half. `reduce_medium`,
+  `kernel_sin`, and `kernel_cos` are now inlined at each use and deleted,
+  `exponent_field`'s body is spelled out in the folded reduction and the helper
+  is left to its one remaining caller in `reduce_large`, and classification
+  collapses to a single `(raw & ABS_BITS) >= INF_BITS`, which covers NaN and
+  infinity together and yields the magnitude without a branch. `cos`'s
+  below-pi/4 path is specialized rather than sharing the folded kernel: the
+  unreduced argument has no tail, so every `y1` term drops out. That
+  specialization mattered — sharing the general kernel there had pushed `cos` to
+  456 instructions and regressed its small-angle chain from 28.1 to 32.0 ns,
+  promotion being whole-function, and specializing turned that into 24.6 ns.
+  Throughput fell from 31.8 to 11.4 ns for `sin` and 29.6 to 12.2 ns for `cos`
+  in the Cody-Waite band, and from 7.2 to 4.0 and 17.3 to 4.7 ns below pi/4; the
+  dependent chains fell from 64.7 to 50.7 and 63.0 to 51.8 ns in the band, and
+  19.8 to 11.7 and 28.1 to 24.6 ns below pi/4. Beyond 1.6e6 nothing moves, at
+  about 590 ns, since `reduce_large` is untouched and still the only call either
+  function makes. The cost is code size: `sin` grows from 180 to 392
+  instructions and `cos` from 164 to 432, because both kernels and the reduction
+  now appear in each. Every result is bit-identical to the previous
+  implementation over 48 million comparisons spanning the finite domain in both
+  signs, so the documented 0.7871 and 0.7884 ULP bounds carry over unchanged
+  rather than needing a fresh reference sweep. `POW_ABS` became `ABS_BITS` and
+  gained `INF_BITS` beside it, since the magnitude mask is no longer pow's
+  alone.
 - Widened float register promotion past the callee-saved eight: `d24-d31`,
   which nothing else reserves between statements, now take up to eight more
   promoted locals. They are caller-saved and the shared byte routines clobber

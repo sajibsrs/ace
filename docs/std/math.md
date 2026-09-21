@@ -90,18 +90,18 @@ across: f32 = math.cos(single)
 
 They are pure Ace: no libm call, no errno or floating-point flag, and the same
 result on every target. They currently run at about 6 ns per call for `exp` and
-8 ns for `log`, 25–50 ns for `sin` and `cos`, several hundred ns for arguments
-beyond 1.6e6, and about 23 ns for `pow(f64)` (12 ns for `pow(f32)`, about 7 ns
-for the exponents 2, 1, -1, and 0.5). `exp`, `log`, and `pow` are all
-table-driven over the same two 128-entry tables: a logarithm table of `invc`
-and `log(c)`, and a table of `2^(j/128)`. `pow` forms `log(x)` as a high and
-low word, multiplies by the exponent in extended precision, and rebuilds the
-result from the powers-of-2 table; `exp` and `log` return one rounded double
-each, so they keep only the single compensation term that arithmetic needs.
-`pow`'s `f32` kernel runs the same tables in plain `f64` with a shorter series.
-All of them name as few locals as they can, because the emitter promotes only
-named locals used at least twice and only eight of them reach a callee-saved
-float register.
+8 ns for `log`, 11–12 ns for `sin` and `cos` once the argument needs reducing
+and about 4 ns below pi/4, several hundred ns for arguments beyond 1.6e6, and
+about 23 ns for `pow(f64)` (12 ns for `pow(f32)`, about 7 ns for the exponents
+2, 1, -1, and 0.5). `exp`, `log`, and `pow` are all table-driven over the same
+two 128-entry tables: a logarithm table of `invc` and `log(c)`, and a table of
+`2^(j/128)`. `pow` forms `log(x)` as a high and low word, multiplies by the
+exponent in extended precision, and rebuilds the result from the powers-of-2
+table; `exp` and `log` return one rounded double each, so they keep only the
+single compensation term that arithmetic needs. `pow`'s `f32` kernel runs the
+same tables in plain `f64` with a shorter series. All of them name as few
+locals as they can, because the emitter promotes only named locals used at
+least twice and only eight of them reach a callee-saved float register.
 
 Float classification uses exact overloads for `f32` and `f64`:
 

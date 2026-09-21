@@ -90,10 +90,11 @@ EXP_LIMIT: const f64 = 745.2
 // 1023 << 52: the bit-pattern bias for a 2^1023 scale.
 EXP_TOP: const i64 = 4607182418800017408
 
-// Plain powers of two, and the sign machinery only pow needs.
+// Plain powers of two, the magnitude mask, and the sign bit only pow needs.
 TWO_52: const f64 = 4503599627370496.0
 TWO_M60: const f64 = 8.673617379884035e-19
-POW_ABS: const u64 = 0x7FFFFFFFFFFFFFFF
+ABS_BITS: const u64 = 0x7FFFFFFFFFFFFFFF
+INF_BITS: const u64 = 0x7FF0000000000000
 POW_SIGN: const u64 = 0x8000000000000000
 
 /* 2/pi as 32-bit limbs of its binary fraction, most significant first: 1280 bits,
@@ -253,8 +254,8 @@ pow_signed(magnitude: f64, flip: u64): f64 {
 pow_special(x: f64, y: f64): (bool, f64, i64, u64) {
     ix: u64 = bits.from_float(x)
     iy: u64 = bits.from_float(y)
-    ax: u64 = ix & POW_ABS
-    ay: u64 = iy & POW_ABS
+    ax: u64 = ix & ABS_BITS
+    ay: u64 = iy & ABS_BITS
     one: u64 = 0x3FF0000000000000
     infinite: u64 = 0x7FF0000000000000
     infinity: f64 = bits.to_float(infinite)
@@ -334,7 +335,7 @@ pub pow(x: f64, y: f64): f64 {
                 if (iy & ((u64(1) << (0x433 - top_y)) - 1)) != 0 { return bits.to_float(u64(0x7FF8000000000000)) }
                 flip = (iy >> (0x433 - top_y)) << 63
             }
-            xs = i64(ix & POW_ABS)
+            xs = i64(ix & ABS_BITS)
         } else {
             done: bool, result: f64, magnitude: i64, sign: u64 = pow_special(x, y)
             if done { return result }
@@ -432,54 +433,11 @@ pub pow(x: f32, y: f32): f32 {
     return f32(scale + scale * (er + er * er * (0.5 + er * EXP_C3)))
 }
 
-kernel_sin(x: f64, y: f64, tail: bool): f64 {
-    z: f64 = x * x
-    v: f64 = z * x
-    r: f64 = fma(z, fma(z, fma(z, fma(z, SIN_S6, SIN_S5), SIN_S4), SIN_S3), SIN_S2)
-    if !tail { return fma(v, fma(z, r, SIN_S1), x) }
-    return x - ((z * (0.5 * y - v * r) - y) - v * SIN_S1)
-}
 
-kernel_cos(x: f64, y: f64): f64 {
-    z: f64 = x * x
-    r: f64 = z * fma(z, fma(z, fma(z, fma(z, fma(z, COS_C6, COS_C5), COS_C4), COS_C3), COS_C2), COS_C1)
-    magnitude: f64 = x
-    if x < 0.0 { magnitude = -x }
-    if magnitude < 0.3 { return 1.0 - (0.5 * z - (z * r - x * y)) }
-    qx: f64 = 0.28125
-    if magnitude <= 0.78125 {
-        // x/4 truncated to its high word, so the subtraction below stays exact.
-        qx = bits.to_float(((bits.from_float(magnitude) >> 32) - u64(0x00200000)) << 32)
-    }
-    return (1.0 - qx) - ((0.5 * z - qx) - (z * r - x * y))
-}
 
 exponent_field(x: f64): int { return int((bits.from_float(x) >> 52) & u64(0x7FF)) }
 
 /* Cody-Waite reduction for 0 < x < 2^20 * pi/2: x = n * pi/2 + (y0 + y1). */
-reduce_medium(x: f64): (f64, f64, int) {
-    n: int = int(x * INV_PIO2 + 0.5)
-    fn: f64 = f64(n)
-    r: f64 = fma(-fn, PIO2_1, x)
-    w: f64 = fn * PIO2_1T
-    a: f64 = r - w
-    j: int = exponent_field(x)
-    if j - exponent_field(a) > 16 {
-        t: f64 = r
-        w = fn * PIO2_2
-        r = t - w
-        w = fn * PIO2_2T - ((t - r) - w)
-        a = r - w
-        if j - exponent_field(a) > 49 {
-            t = r
-            w = fn * PIO2_3
-            r = t - w
-            w = fn * PIO2_3T - ((t - r) - w)
-            a = r - w
-        }
-    }
-    return a, (r - a) - w, n & 3
-}
 
 bit_at(limbs: []u64, k: int): u64 {
     if k < 0 || k >= 320 { return 0 }
@@ -553,31 +511,69 @@ reduce_large(x: f64): (f64, f64, int) {
 }
 
 pub sin(value: f64): f64 {
-    if isnan(value) || isinf(value) { return bits.to_float(u64(0x7FF8000000000000)) }
-    magnitude: f64 = value
-    if value < 0.0 { magnitude = -value }
+    raw: u64 = bits.from_float(value)
+    if (raw & ABS_BITS) >= INF_BITS { return bits.to_float(u64(0x7FF8000000000000)) }
+    magnitude: f64 = bits.to_float(raw & ABS_BITS)
     if magnitude <= PIO4 {
         if magnitude < SMALL_ARGUMENT { return value }
-        return kernel_sin(value, 0.0, false)
+        z: f64 = value * value
+        return fma(z * value, fma(z, fma(z, fma(z, fma(z, fma(z, SIN_S6, SIN_S5), SIN_S4), SIN_S3),
+            SIN_S2), SIN_S1), value)
     }
     y0: f64 = 0.0
     y1: f64 = 0.0
     quarter: int = 0
-    if magnitude < MEDIUM_LIMIT {
-        y0, y1, quarter = reduce_medium(magnitude)
-    } else {
+    if magnitude >= MEDIUM_LIMIT {
         y0, y1, quarter = reduce_large(magnitude)
+    } else {
+        // Cody-Waite: x - n*pi/2 with pi/2 in two or three words, extended only as far as the
+        // cancellation in `a` demands. Inline because every call would spill the promoted floats.
+        n: int = int(magnitude * INV_PIO2 + 0.5)
+        fn: f64 = f64(n)
+        r: f64 = fma(-fn, PIO2_1, magnitude)
+        w: f64 = fn * PIO2_1T
+        a: f64 = r - w
+        j: int = int((raw >> 52) & u64(0x7FF))
+        if j - int((bits.from_float(a) >> 52) & u64(0x7FF)) > 16 {
+            t: f64 = r
+            w = fn * PIO2_2
+            r = t - w
+            w = fn * PIO2_2T - ((t - r) - w)
+            a = r - w
+            if j - int((bits.from_float(a) >> 52) & u64(0x7FF)) > 49 {
+                t = r
+                w = fn * PIO2_3
+                r = t - w
+                w = fn * PIO2_3T - ((t - r) - w)
+                a = r - w
+            }
+        }
+        y0 = a
+        y1 = (r - a) - w
+        quarter = n & 3
     }
     result: f64 = 0.0
-    if quarter == 0 {
-        result = kernel_sin(y0, y1, true)
-    } else if quarter == 1 {
-        result = kernel_cos(y0, y1)
-    } else if quarter == 2 {
-        result = -kernel_sin(y0, y1, true)
+    // An even quarter takes the sine kernel and an odd one the cosine kernel; the second bit of the
+    // quarter carries the sign, and sin is odd, so a negative argument flips the result once more.
+    if (quarter & 1) == 0 {
+        z: f64 = y0 * y0
+        v: f64 = z * y0
+        result = y0 - ((z * (0.5 * y1 - v * fma(z, fma(z, fma(z, fma(z, SIN_S6, SIN_S5), SIN_S4),
+            SIN_S3), SIN_S2)) - y1) - v * SIN_S1)
     } else {
-        result = -kernel_cos(y0, y1)
+        z: f64 = y0 * y0
+        r: f64 = z * fma(z, fma(z, fma(z, fma(z, fma(z, COS_C6, COS_C5), COS_C4), COS_C3), COS_C2), COS_C1)
+        reduced: f64 = bits.to_float(bits.from_float(y0) & ABS_BITS)
+        if reduced < 0.3 {
+            result = 1.0 - (0.5 * z - (z * r - y0 * y1))
+        } else {
+            qx: f64 = 0.28125
+            // y0/4 truncated to its high word, so the subtraction below stays exact.
+            if reduced <= 0.78125 { qx = bits.to_float(((bits.from_float(reduced) >> 32) - u64(0x00200000)) << 32) }
+            result = (1.0 - qx) - ((0.5 * z - qx) - (z * r - y0 * y1))
+        }
     }
+    if (quarter & 2) != 0 { result = -result }
     if value < 0.0 { return -result }
     return result
 }
@@ -585,25 +581,75 @@ pub sin(value: f64): f64 {
 pub sin(value: f32): f32 { return f32(sin(f64(value))) }
 
 pub cos(value: f64): f64 {
-    if isnan(value) || isinf(value) { return bits.to_float(u64(0x7FF8000000000000)) }
-    magnitude: f64 = value
-    if value < 0.0 { magnitude = -value }
+    raw: u64 = bits.from_float(value)
+    if (raw & ABS_BITS) >= INF_BITS { return bits.to_float(u64(0x7FF8000000000000)) }
+    magnitude: f64 = bits.to_float(raw & ABS_BITS)
     if magnitude <= PIO4 {
         if magnitude < SMALL_ARGUMENT { return 1.0 }
-        return kernel_cos(magnitude, 0.0)
+        // The unreduced argument carries no tail, so every y1 term of the kernel below drops out.
+        z: f64 = magnitude * magnitude
+        r: f64 = z * fma(z, fma(z, fma(z, fma(z, fma(z, COS_C6, COS_C5), COS_C4), COS_C3), COS_C2), COS_C1)
+        if magnitude < 0.3 { return 1.0 - (0.5 * z - z * r) }
+        qx: f64 = 0.28125
+        // magnitude/4 truncated to its high word, so the subtraction below stays exact.
+        if magnitude <= 0.78125 { qx = bits.to_float(((bits.from_float(magnitude) >> 32) - u64(0x00200000)) << 32) }
+        return (1.0 - qx) - ((0.5 * z - qx) - z * r)
     }
     y0: f64 = 0.0
     y1: f64 = 0.0
     quarter: int = 0
-    if magnitude < MEDIUM_LIMIT {
-        y0, y1, quarter = reduce_medium(magnitude)
-    } else {
+    if magnitude >= MEDIUM_LIMIT {
         y0, y1, quarter = reduce_large(magnitude)
+    } else {
+        // Cody-Waite: x - n*pi/2 with pi/2 in two or three words, extended only as far as the
+        // cancellation in `a` demands. Inline because every call would spill the promoted floats.
+        n: int = int(magnitude * INV_PIO2 + 0.5)
+        fn: f64 = f64(n)
+        r: f64 = fma(-fn, PIO2_1, magnitude)
+        w: f64 = fn * PIO2_1T
+        a: f64 = r - w
+        j: int = int((raw >> 52) & u64(0x7FF))
+        if j - int((bits.from_float(a) >> 52) & u64(0x7FF)) > 16 {
+            t: f64 = r
+            w = fn * PIO2_2
+            r = t - w
+            w = fn * PIO2_2T - ((t - r) - w)
+            a = r - w
+            if j - int((bits.from_float(a) >> 52) & u64(0x7FF)) > 49 {
+                t = r
+                w = fn * PIO2_3
+                r = t - w
+                w = fn * PIO2_3T - ((t - r) - w)
+                a = r - w
+            }
+        }
+        y0 = a
+        y1 = (r - a) - w
+        quarter = n & 3
     }
-    if quarter == 0 { return kernel_cos(y0, y1) }
-    if quarter == 1 { return -kernel_sin(y0, y1, true) }
-    if quarter == 2 { return -kernel_cos(y0, y1) }
-    return kernel_sin(y0, y1, true)
+    result: f64 = 0.0
+    // The quarters run cos, -sin, -cos, sin: an even one takes the cosine kernel, and the middle two
+    // are negative. cos is even, so the argument's sign never reaches the result.
+    if (quarter & 1) == 0 {
+        z: f64 = y0 * y0
+        r: f64 = z * fma(z, fma(z, fma(z, fma(z, fma(z, COS_C6, COS_C5), COS_C4), COS_C3), COS_C2), COS_C1)
+        reduced: f64 = bits.to_float(bits.from_float(y0) & ABS_BITS)
+        if reduced < 0.3 {
+            result = 1.0 - (0.5 * z - (z * r - y0 * y1))
+        } else {
+            qx: f64 = 0.28125
+            // y0/4 truncated to its high word, so the subtraction below stays exact.
+            if reduced <= 0.78125 { qx = bits.to_float(((bits.from_float(reduced) >> 32) - u64(0x00200000)) << 32) }
+            result = (1.0 - qx) - ((0.5 * z - qx) - (z * r - y0 * y1))
+        }
+    } else {
+        z: f64 = y0 * y0
+        v: f64 = z * y0
+        result = y0 - ((z * (0.5 * y1 - v * fma(z, fma(z, fma(z, fma(z, SIN_S6, SIN_S5), SIN_S4),
+            SIN_S3), SIN_S2)) - y1) - v * SIN_S1)
+    }
+    if quarter == 1 || quarter == 2 { return -result }
+    return result
 }
 
 pub cos(value: f32): f32 { return f32(cos(f64(value))) }
