@@ -677,6 +677,20 @@ current normative rules, and Git preserves patch-level detail.
   signature clause in `sema.c`, its own emitter, and its own inline expansion,
   which evaluates the operands into FP temps and frees the last two. An
   ordinary `a * b + c` stays two instructions: nothing contracts it.
+- Put `exp`'s and `log`'s polynomials on `math.fma` and nested `log`'s
+  single-use names: `exp`'s five-term Horner chain becomes five `fmadd`s, and
+  `log`'s `t1`, `t2`, and `r` collapse into one expression whose two Horner
+  chains and closing `s * (half_f2 + r) + dk * LN2_LO` step fuse as well. Both
+  kernels are latency-bound, their dependent chains running about three times
+  their throughput, so cutting a Horner step from a multiply plus an add to one
+  fused instruction pays on the chain and not on throughput: `exp` fell from
+  39.8 to 35.1 ns and `log` from 48.4 to 42.4 ns on a dependent chain, with
+  throughput unmoved. The nesting on its own is bit-identical. Against an exact
+  90-digit reference over 25,200 inputs covering the finite domain, both
+  reduction boundaries, and dense bands near zero and near 1, the worst case is
+  unchanged at 0.8025 ULP for `exp` and 0.7517 ULP for `log`; 12 results move at
+  all, none past 0.7 ULP, and each of `exp`'s seven lands closer to the exact
+  value than before.
 - Widened float register promotion past the callee-saved eight: `d24-d31`,
   which nothing else reserves between statements, now take up to eight more
   promoted locals. They are caller-saved and the shared byte routines clobber

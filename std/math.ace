@@ -185,7 +185,7 @@ pub exp(value: f64): f64 {
     }
     r: f64 = high - low
     r2: f64 = r * r
-    c: f64 = r - r2 * (EXP_P1 + r2 * (EXP_P2 + r2 * (EXP_P3 + r2 * (EXP_P4 + r2 * EXP_P5))))
+    c: f64 = fma(-r2, fma(r2, fma(r2, fma(r2, fma(r2, EXP_P5, EXP_P4), EXP_P3), EXP_P2), EXP_P1), r)
     if k == 0 { return 1.0 - ((r * c) / (c - 2.0) - r) }
     y: f64 = 1.0 - ((low - (r * c) / (2.0 - c)) - high)
     if k == 1024 {
@@ -226,12 +226,10 @@ pub log(value: f64): f64 {
     s: f64 = f / (2.0 + f)
     z: f64 = s * s
     w: f64 = z * z
-    t1: f64 = w * (LOG_L2 + w * (LOG_L4 + w * LOG_L6))
-    t2: f64 = z * (LOG_L1 + w * (LOG_L3 + w * (LOG_L5 + w * LOG_L7)))
-    r: f64 = t2 + t1
+    r: f64 = fma(z, fma(w, fma(w, fma(w, LOG_L7, LOG_L5), LOG_L3), LOG_L1), w * fma(w, fma(w, LOG_L6, LOG_L4), LOG_L2))
     half_f2: f64 = 0.5 * f * f
     dk: f64 = f64(k)
-    return dk * LN2_HI - ((half_f2 - (s * (half_f2 + r) + dk * LN2_LO)) - f)
+    return dk * LN2_HI - ((half_f2 - fma(s, half_f2 + r, dk * LN2_LO)) - f)
 }
 
 pub log(value: f32): f32 { return f32(log(f64(value))) }
