@@ -105,6 +105,21 @@ main(): int {
        bits.from_float(math.pow(-10.0, 401.0)) != u64(0xFFF0000000000000) {
         return 8
     }
+    // Subnormal and extreme bases, and bases on the edges of the logarithm table's intervals.
+    if !close64(math.pow(bits.to_float(u64(1)), 0.5), u64(0x1E60000000000000)) ||
+       !close64(math.pow(1.7976931348623157e+308, 1.0), u64(0x7FEFFFFFFFFFFFFF)) ||
+       !close64(math.pow(bits.to_float(u64(0x000FFFFFFFFFFFFF)), 0.9), u64(0x0672611186BAE622)) ||
+       !close64(math.pow(bits.to_float(u64(0x3FE7100000000000)), 3.7), u64(0x3FD30C9DEC7D51AB)) ||
+       !close64(math.pow(bits.to_float(u64(0x3FF70FFFFFFFFFFF)), -2.3), u64(0x3FDB9A9C8CE1807B)) ||
+       !close64(math.pow(bits.to_float(u64(0x3FEFFC0000000000)), 1000.5), u64(0x3FE3A17119A09233)) ||
+       !close64(math.pow(bits.to_float(u64(0x3FF0000000000001)), 1000000000000000.0), u64(0x3FF3FA60615291EE)) ||
+       !close64(math.pow(bits.to_float(u64(0x3FEFFFFFFFFFFFFF)), -1000000000000000.0), u64(0x3FF1E0F39D042FAF)) ||
+       !close64(math.pow(10.0, -320.5), u64(0x0000000000000280)) ||
+       !close64(math.pow(2.0, 1023.9999999999999), u64(0x7FEFFFFFFFFFFD3A)) ||
+       !close64(math.pow(bits.to_float(u64(0x0010000000000000)), -0.99999), u64(0x7FCFC62C58B5C2B4)) ||
+       !close64(math.pow(1.0000000000000002, -1.0e+18), u64(0x2BE93C23BAB34B75)) {
+        return 11
+    }
     // The f32 overload computes at f64 and rounds once.
     if !close32(math.pow(f32(3.0), f32(7.3)), u32(0x453E0C82)) ||
        !close32(math.pow(f32(0.5), f32(-13.7)), u32(0x464FEFC4)) ||

@@ -67,19 +67,20 @@ across: f32 = math.cos(single)
   `sin(1.0)`.
 - `pow(base, exponent)` is exact, not merely within 1 ULP, whenever the result
   is an exactly representable integer power: `pow(3.0, 5.0)` is `243` on the
-  nose. A zero exponent and a base of `1` win over everything
-  else — `pow(nan, 0.0)` and `pow(1.0, nan)` are both `1` — as does
-  `pow(-1.0, ±inf)`. A finite negative base with a finite non-integer exponent
-  is a NaN. Zero and infinite bases follow the exponent's parity:
-  `pow(-0.0, -3.0)` is `-inf` while `pow(-0.0, -2.0)` is `+inf`. An infinite
-  exponent takes the limit, so `pow(0.5, +inf)` is `+0` and `pow(2.0, +inf)`
-  is `+inf`.
+  nose. A zero exponent and a base of `1` win over everything else —
+  `pow(nan, 0.0)` and `pow(1.0, nan)` are both `1` — as does `pow(-1.0, ±inf)`.
+  A finite negative base with a finite non-integer exponent is a NaN. Zero and
+  infinite bases follow the exponent's parity: `pow(-0.0, -3.0)` is `-inf`
+  while `pow(-0.0, -2.0)` is `+inf`. An infinite exponent takes the limit, so
+  `pow(0.5, +inf)` is `+0` and `pow(2.0, +inf)` is `+inf`. The `f64` result is
+  within 0.51 ULP of the exact power, or within 1 ULP when the result is subnormal.
 
 They are pure Ace: no libm call, no errno or floating-point flag, and the same
 result on every target. They currently run at about 30 ns per call for `exp` and
 `log`, 25–50 ns for `sin` and `cos`, several hundred ns for arguments beyond
-1.6e6, and about 185 ns for `pow`, which carries an extended-precision `log2`
-of its own because composing `exp` and `log` loses hundreds of ULP.
+1.6e6, and about 51 ns for `pow`, which is table-driven: it forms `log(x)` as a
+high and low word, multiplies by the exponent in extended precision, and
+rebuilds the result from a table of powers of 2.
 
 Float classification uses exact overloads for `f32` and `f64`:
 

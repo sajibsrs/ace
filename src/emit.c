@@ -404,13 +404,10 @@ typedef struct {
     int      nxpreg;
     int      vti_cap;    // int temps available: MAX_ITEMPS less nxpreg
     int      scan_call;  // promo_scan met a call that may clobber x9-x14
-    int      scan_bytes; // promo_scan met a construct that may reach the byte-operation routines (clobber v24-v31)
     int      nsaved;     // callee-saved x registers the function saves and restores
     uint32_t lreg_save;  // depth of the callee-saved x save area
     Node*    fpreg_decl[FP_PROMO_REGS]; // promoted float locals, d8 up
     int      nfpreg;
-    Node*    fxreg_decl[8]; // call-free function: float locals in d24-d31, caller-saved and never saved
-    int      nfxreg;
     uint32_t fpreg_save; // depth of the d8-d15 save area
     PromoCand* pcands;   // plan_promotion scratch
     int      npcands, cpcands;
@@ -2410,10 +2407,6 @@ static void classify_ret(SType* t, RetCls* r) {
 }
 
 static void emit_bl_internal(Em* e, const char* p, uint32_t len) {
-    if (e->nfxreg && len > 9 && memcmp(p, "__ace$mem_", 10) == 0) { // the byte routines clobber v24-v31
-        e->d->errors++;
-        fprintf(stderr, "ace: byte-operation routine in a function with promoted v24-v31 locals\n");
-    }
     ins(e, 0x94000000u); // bl .+0
     ESym* t = sym_intern(&e->syms, p, len);
     fix_add(e, FK_BRANCH, (uint32_t)(text(e)->len - 4), t);
@@ -3109,15 +3102,13 @@ static void addr_of_sym(Em* e, int rd, ESym* sym) {
 /*
  * Register holding a promoted local, or -1 for slot storage: an x register
  * number for integer-class locals (x19 up, or x14 down in a call-free
- * function), a v register number for float locals: 8-15, or 24-31 in a
- * call-free function.
+ * function), a v register number (8-15) for float locals.
  */
 static int promo_reg(Em* e, Sym* s) {
     if (!s || !s->decl) return -1;
     for (int i = 0; i < e->npreg; i++) if (e->preg_decl[i] == s->decl) return 19 + e->lreg_max + i;
     for (int i = 0; i < e->nxpreg; i++) if (e->xpreg_decl[i] == s->decl) return 14 - i;
     for (int i = 0; i < e->nfpreg; i++) if (e->fpreg_decl[i] == s->decl) return 8 + i;
-    for (int i = 0; i < e->nfxreg; i++) if (e->fxreg_decl[i] == s->decl) return 24 + i;
     return -1;
 }
 
@@ -4326,100 +4317,6 @@ static void emit_math_exact(Em* e, int intrinsic, int is64, int reg) {
     ins(e, op | (is64 ? 0x00400000u : 0u) | ((uint32_t)reg << 5) | (uint32_t)reg);
 }
 
-/*
- * Release-mode inlining of a call to a one-expression scalar function. Each
- * argument is evaluated once, in order, into a temp; the body's identifiers
- * read those temps through inl_val. A parameter read more than once would
- * share one temp a consumer may overwrite, so it disqualifies the callee.
- */
-#define INL_MAX 8
-#define INL_DEPTH 2
-static Node* inl_decl[INL_MAX];
-static EV    inl_val[INL_MAX];
-static int   inl_n, inl_depth;
-
-static int inl_uses(Node* n, Node* d) {
-    if (!n) return 0;
-    int c = 0;
-    if (n->kind == N_IDENT) {
-        Sym* s = node_sym(n);
-        if (s && s->decl == d) c++;
-    }
-    c += inl_uses(n->a, d) + inl_uses(n->b, d) + inl_uses(n->c, d);
-    for (int k = 0; k < n->nkids; k++) c += inl_uses(n->kids[k], d);
-    return c;
-}
-
-static int inl_scalar_same(SType* a, SType* b) {
-    a = a ? unwrap(a) : NULL;
-    b = b ? unwrap(b) : NULL;
-    return a && b && a->kind == SK_PRIM && b->kind == SK_PRIM && a->prim == b->prim && is_scalar(a);
-}
-
-// a `&` or volatile access anywhere under n
-static int inl_addr_taken(Node* n) {
-    if (!n) return 0;
-    if (n->kind == N_UNARY && (n->op == T_AMP || n->op == T_VOLATILE)) return 1;
-    if (inl_addr_taken(n->a) || inl_addr_taken(n->b) || inl_addr_taken(n->c)) return 1;
-    for (int k = 0; k < n->nkids; k++) if (inl_addr_taken(n->kids[k])) return 1;
-    return 0;
-}
-
-/*
- * The returned expression of a call this emitter expands in place, else NULL.
- * The one eligibility test: promotion planning and emission both ask it, so a
- * function is planned as call-free exactly when its inlined calls emit no call.
- */
-static Node* inline_body(Em* e, Node* call, Sym* s) {
-    Node* fd = s->decl;
-    if (e->mode == EMIT_CHECKED || !fd || call->a->kind != N_IDENT || s->is_extern || s->is_generic || s->spec_args ||
-        (fd->flags & (F_EXPO | F_METHOD)))
-        return NULL;
-    Node* b = fd->b;
-    if (!b || b->kind != N_BLOCK || b->nkids != 1 || b->kids[0]->kind != N_RETURN || !b->kids[0]->a) return NULL;
-    Node* body = b->kids[0]->a;
-    if (fd->nkids != call->nkids || call->nkids > INL_MAX || inl_addr_taken(body)) return NULL;
-    for (int i = 0; i < fd->nkids; i++) {
-        Sym* ps = node_sym(fd->kids[i]);
-        if ((fd->kids[i]->flags & F_MUT) || call->kids[i]->kind == N_MUTARG) return NULL;
-        if (!ps || !inl_scalar_same(ps->type, node_ty(call->kids[i]))) return NULL;
-        if (inl_uses(body, fd->kids[i]) > 1) return NULL;
-    }
-    SType* ft = s->type;
-    if (!ft || ft->kind != SK_FUNC || !inl_scalar_same(ft->ret, node_ty(body))) return NULL;
-    return body;
-}
-
-static int try_inline(Em* e, Node* call, Sym* s, EV* out) {
-    Node* body = inline_body(e, call, s);
-    if (!body || inl_depth >= INL_DEPTH || inl_n + call->nkids > INL_MAX) return 0;
-    Node* fd = s->decl;
-    SType* ft = s->type;
-    int si = e->vti, sf = e->vtf, base = inl_n;
-    EV arg[INL_MAX];
-    for (int i = 0; i < fd->nkids; i++) arg[i] = gen_expr(e, call->kids[i]);
-    for (int i = 0; i < fd->nkids; i++) { // published after every argument, so nested calls see only the enclosing expansions
-        inl_decl[inl_n] = fd->kids[i];
-        inl_val[inl_n++] = arg[i];
-    }
-    inl_depth++;
-    EV r = gen_expr(e, body);
-    inl_depth--;
-    inl_n = base;
-    if (r.cls == CLS_FP) { // the result takes the first free temp, as a call's does
-        if (r.idx != sf) mov_fp(e, unwrap(ft->ret)->prim == P_F64, vreg(sf), vreg(r.idx));
-        e->vti = si;
-        e->vtf = sf + 1;
-        *out = (EV){ CLS_FP, sf };
-    } else {
-        if (r.idx != si) mov_int(e, 1, xreg(si), xreg(r.idx));
-        e->vti = si + 1;
-        e->vtf = sf;
-        *out = (EV){ CLS_INT, si };
-    }
-    return 1;
-}
-
 static EV gen_call(Em* e, Node* call) {
     Node* callee = call->a;
 
@@ -4859,8 +4756,6 @@ static EV gen_call(Em* e, Node* call) {
         }
 
         if (s->kind == SYM_FUNC) {
-            EV inlined;
-            if (try_inline(e, call, s, &inlined)) return inlined;
             CallTarget tgt = { 0, NULL, 0, 0 };
             int c_boundary = s->is_extern;
             if (s->is_extern) {
@@ -5133,8 +5028,6 @@ static EV gen_expr(Em* e, Node* x) {
             em_err(e, x, "unresolved name");
             return (EV){ CLS_INT, tmp_int(e) };
         }
-        for (int k = inl_n - 1; k >= 0; k--)
-            if (s->decl == inl_decl[k]) return inl_val[k];
         if (s->kind == SYM_FUNC) return (EV){ CLS_INT, gen_addr(e, x) };
         if (s->kind != SYM_VAR) {
             em_err(e, x, "not a value");
@@ -7250,9 +7143,7 @@ static int call_is_inline(Node* call) {
  * operand plus its result. Statements hold nothing across their parts.
  * Lowerings with internal temps can exceed it; see TEMP_MARGIN.
  */
-static int promo_inl;   // inlined-call nesting the planning walks are inside, mirroring inl_depth
-static int promo_inl_n; // parameters those expansions hold, mirroring inl_n
-static int temp_need(Em* e, Node* n) {
+static int temp_need(Node* n) {
     if (!n) return 0;
     Node* part[4] = { n->a, n->b, n->c, NULL };
     if (n->kind == N_FOR && (n->flags & F_FORGEN)) part[3] = n->d;
@@ -7263,23 +7154,12 @@ static int temp_need(Em* e, Node* n) {
     for (int i = 0; i < 4 + n->nkids; i++) {
         Node* k = i < 4 ? part[i] : n->kids[i - 4];
         if (!k) continue;
-        int kn = temp_need(e, k) + (stmt ? 0 : held);
+        int kn = temp_need(k) + (stmt ? 0 : held);
         if (kn > need) need = kn;
         held++;
         count++;
     }
     if (!stmt && count + 1 > need) need = count + 1;
-    if (n->kind == N_CALL && n->sym && !call_is_inline(n) && promo_inl < INL_DEPTH) {
-        Node* body = inline_body(e, n, node_sym(n)); // the expansion's expression runs above the argument temps
-        if (body && promo_inl_n + n->nkids <= INL_MAX) {
-            promo_inl++;
-            promo_inl_n += n->nkids;
-            int bn = count + temp_need(e, body);
-            promo_inl_n -= n->nkids;
-            promo_inl--;
-            if (bn > need) need = bn;
-        }
-    }
     return need;
 }
 
@@ -7291,20 +7171,8 @@ static int temp_need(Em* e, Node* n) {
  * assignment target, a sequence loop's iterable). Follows a/b/c/kids only; Node.d is read solely as a
  * general for's body, since sema's d links form cycles.
  */
-// an aggregate whose copy or comparison may go through the shared byte routines
-static int big_aggregate(SType* t) {
-    t = t ? unwrap(t) : NULL;
-    return t && (t->kind == SK_STRUCT || t->kind == SK_ARRAY || t->kind == SK_TUPLE || t->kind == SK_UNION) &&
-           ty_size(t) > 32;
-}
-
 static void promo_scan(Em* e, Node* n, int depth) {
     if (!n) return;
-    if (n->kind == N_ARRAYLIT || n->kind == N_SWITCH || big_aggregate(node_ty(n)) ||
-        (n->kind == N_BINARY && (n->op == T_EQEQ || n->op == T_BANGEQ) && n->a && node_ty(n->a) &&
-         !is_scalar(node_ty(n->a))) ||
-        (n->kind == N_INDEX && n->a && node_ty(n->a) && unwrap(node_ty(n->a))->kind == SK_STATICMAP))
-        e->scan_bytes = 1;
     switch (n->kind) {
     case N_IDENT: {
         PromoCand* c = promo_find(e, n);
@@ -7317,10 +7185,6 @@ static void promo_scan(Em* e, Node* n, int depth) {
         } else if (n->nkids == 1) {
             promo_add(e, n->kids[0]);
         }
-        for (int i = 0; i < n->nkids; i++) {
-            Sym* ks = node_sym(n->kids[i]);
-            if (ks && big_aggregate(ks->type)) e->scan_bytes = 1;
-        }
         break;
     case N_ASSIGN:
         if (n->nkids > 1 || (n->flags & F_VOLATILE)) for (int i = 0; i < n->nkids; i++) promo_escape(e, n->kids[i]);
@@ -7331,24 +7195,9 @@ static void promo_scan(Em* e, Node* n, int depth) {
     case N_MUTARG: case N_FIELD_E: case N_INDEX: case N_SLICE_E:
         promo_escape(e, n->a);
         break;
-    case N_CALL: {
-        Sym* cs = n->sym ? node_sym(n) : NULL;
-        int bi = cs && cs->decl ? cs->decl->ival : 0;
-        if (bi == BI_MEM_COPY || bi == BI_MEM_MOVE || bi == BI_MEM_FILL || bi == BI_MEM_ZERO ||
-            bi == BI_MEM_COMPARE || bi == BI_MEM_EQUAL)
-            e->scan_bytes = 1;
-        Node* body = cs && !call_is_inline(n) ? inline_body(e, n, cs) : NULL;
-        if (body && promo_inl < INL_DEPTH && promo_inl_n + n->nkids <= INL_MAX) { // expanded in place: its body is this function's
-            promo_inl++;
-            promo_inl_n += n->nkids;
-            promo_scan(e, body, depth);
-            promo_inl_n -= n->nkids;
-            promo_inl--;
-        } else if (!call_is_inline(n)) {
-            e->scan_call = 1;
-        }
+    case N_CALL:
+        if (!call_is_inline(n)) e->scan_call = 1;
         break;
-    }
     case N_FOR:
         if (n->flags & F_FORGEN) {
             promo_scan(e, n->a, depth);
@@ -7403,22 +7252,15 @@ static void plan_promotion(Em* e, Node* f) {
     for (int i = 0; i < f->nkids; i++)
         if (!(f->kids[i]->flags & F_MUT) && !((f->flags & F_METHOD) && i == 0))
             promo_add(e, f->kids[i]);
-    e->scan_call = e->scan_bytes = 0;
-    for (int i = 0; i < f->nkids; i++) {
-        Sym* ps = node_sym(f->kids[i]);
-        if (ps && big_aggregate(ps->type)) e->scan_bytes = 1;
-    }
+    e->scan_call = 0;
     promo_scan(e, f->b, 0);
     Node* d;
     if (!e->scan_call) {
-        int room = MAX_ITEMPS - temp_need(e, f->b) - TEMP_MARGIN;
+        int room = MAX_ITEMPS - temp_need(f->b) - TEMP_MARGIN;
         while (e->nxpreg < LEAF_REGS && e->nxpreg < room && (d = promo_take(e, 0, 1))) e->xpreg_decl[e->nxpreg++] = d;
         e->vti_cap = MAX_ITEMPS - e->nxpreg;
     }
     while (e->lreg_max + e->npreg < LOOP_REGS && (d = promo_take(e, 0, PROMO_MIN_WEIGHT))) e->preg_decl[e->npreg++] = d;
-    // A call-free function that cannot reach the byte routines has v24-v31 to itself: caller-saved, so no save.
-    if (!e->scan_call && !e->scan_bytes)
-        while (e->nfxreg < 8 && (d = promo_take(e, 1, PROMO_MIN_WEIGHT))) e->fxreg_decl[e->nfxreg++] = d;
     while (e->nfpreg < FP_PROMO_REGS && (d = promo_take(e, 1, PROMO_MIN_WEIGHT))) e->fpreg_decl[e->nfpreg++] = d;
 }
 
@@ -7501,9 +7343,9 @@ static void param_scan(Em* e, ParamPlan* p, Node* n) {
 static void plan_param_homes(Em* e, Node* f, SType** pt, const uint8_t* muts, TU* units, int np, uint8_t* homed) {
     e->nphome = e->nfhome = e->nxhome = 0;
     if (!f->b || e->fn_has_asm || e->scan_call) return;
-    int froom = MAX_FPTEMPS - temp_need(e, f->b) - TEMP_MARGIN;
+    int froom = MAX_FPTEMPS - temp_need(f->b) - TEMP_MARGIN;
     if (froom > PARAM_FHOMES) froom = PARAM_FHOMES;
-    int xroom = MAX_ITEMPS - temp_need(e, f->b) - TEMP_MARGIN;
+    int xroom = MAX_ITEMPS - temp_need(f->b) - TEMP_MARGIN;
     if (xroom > LEAF_REGS) xroom = LEAF_REGS;
     xroom -= e->nxpreg;
     if (froom <= 0 && xroom <= 0) return;
@@ -7576,7 +7418,7 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
     e->lreg_top = e->lreg_max = 0;
     e->fn_has_asm = 0;
     plan_loops(e, f->b);
-    e->npreg = e->nfpreg = e->nxpreg = e->nfxreg = 0;
+    e->npreg = e->nfpreg = e->nxpreg = 0;
     e->vti_cap = MAX_ITEMPS;
     e->vtf_cap = MAX_FPTEMPS;
     e->nphome = e->nfhome = e->nxhome = 0;

@@ -1109,52 +1109,20 @@ if [ -d tests/emit ]; then
             echo "FAIL: loop registers must be assigned innermost-first within x19-x28"
             fail=1
         fi
-        # Hot float locals of a call-free function fill d24-d31, then d8 up; a
-        # loop-free function saves none of the callee-saved registers.
+        # Hot float locals fill d8-d15; a loop-free function saves none of
+        # the callee-saved registers.
         if ! otool -tv /tmp/ace_emit/basics/register_locals.o | awk '
             /^[^0-9].*:$/ { fn = $0; next }
             {
                 for (i = 3; i <= NF; i++) {
                     r = $i; gsub(/[][,]/, "", r)
-                    if (r !~ /^([sd]([89]|1[0-5]|2[4-9]|3[01])|x(19|2[0-8]))$/) continue
-                    if (fn ~ /^__ace\$fn\$(id8|idf)\$/ && r !~ /^[sd](2[4-9]|3[01])$/) bad = 1
-                    if (fn ~ /^__ace\$fn\$fpressure\$/ && r == "d31") full = 1
-                    if (fn ~ /^__ace\$fn\$fpressure\$/ && r == "d9") spill = 1
+                    if (r !~ /^([sd]([89]|1[0-5])|x(19|2[0-8]))$/) continue
+                    if (fn ~ /^__ace\$fn\$(id8|idf)\$/) bad = 1
+                    if (fn ~ /^__ace\$fn\$fpressure\$/ && r == "d15") full = 1
                 }
             }
-            END { exit bad || !full || !spill }'; then
-            echo "FAIL: float locals must fill d24-d31, then d8 up, in a call-free function"
-            fail=1
-        fi
-        # A function whose calls all expand in place is call-free: its float
-        # locals take d24-d31 and it saves no d8-d15. One with a real call, or
-        # one that may reach the byte routines (which clobber d24-d31), stays off
-        # d24-d31; past sixteen registers the rest keep slots.
-        # Inlining is a release-mode expansion, so this file is built in release too.
-        rm -rf /tmp/ace_emit_release
-        mkdir -p /tmp/ace_emit_release
-        cp tests/emit/basics/leaf_float_regs.ace /tmp/ace_emit_release/
-        release_rc=0
-        (cd /tmp/ace_emit_release && "$ACE" --release -c leaf_float_regs.ace &&
-            cc leaf_float_regs.o -o leaf_float_regs && ./leaf_float_regs) >/dev/null 2>&1 || release_rc=$?
-        if [ "$release_rc" -ne 42 ]; then
-            echo "FAIL: leaf_float_regs must exit 42 in a release build, got $release_rc"
-            fail=1
-        fi
-        if ! otool -tv /tmp/ace_emit_release/leaf_float_regs.o | awk '
-            /^[^0-9].*:$/ { fn = $0; next }
-            {
-                for (i = 3; i <= NF; i++) {
-                    r = $i; gsub(/[][,]/, "", r)
-                    hi = r ~ /^d(2[4-9]|3[01])$/
-                    cs = r ~ /^d([89]|1[0-5])$/
-                    if (fn ~ /^__ace\$fn\$leaf_inlined\$/) { if (cs) bad = 1; if (hi) leaf = 1 }
-                    if (fn ~ /^__ace\$fn\$(leaf_nested|mix|tally)\$/ && hi) bad = 1
-                    if (fn ~ /^__ace\$fn\$fspill\$/) { if (hi) top = 1; if (r == "d8") low = 1 }
-                }
-            }
-            END { exit bad || !leaf || !top || !low }'; then
-            echo "FAIL: call-free float locals must use d24-d31 only when no call or byte routine can clobber them"
+            END { exit bad || !full }'; then
+            echo "FAIL: float locals must be promoted into d8-d15"
             fail=1
         fi
         # A global integer const with a compile-time initializer is an

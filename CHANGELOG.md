@@ -40,20 +40,6 @@ current normative rules, and Git preserves patch-level detail.
   runtime-sized collection without boxing every element behind a pointer, e.g.
   `Json: union { none, object: []Pair }` followed by
   `Pair: struct { key: string, value: Json }`.
-- Implemented release-mode inlining of one-expression scalar functions at
-  emission: arguments evaluate once, in order, into temps that the callee's
-  parameter identifiers read, so no call frame and no spill and reload of live
-  temps around it. A math kernel calling one such helper seven times fell 24%
-  (193 to 146 ns); checked builds and all other callees keep the call.
-- Made register planning follow that inlining: a function whose calls all
-  expand in place is planned as call-free through the one `inline_body`
-  predicate emission also uses, counting the expanded body's temps. A call-free
-  function promotes up to eight float locals into the caller-saved d24-d31,
-  ahead of d8-d15 and never saved, unless it may reach the byte routines that
-  clobber v24-v31; a routine reached with such locals live is an internal
-  error, never wrong code. `math.log2_split` fell from 39 to 25 ns and
-  `math.pow` from 145 to 119 ns; hot-loop, call, and CPU benchmarks did not
-  move.
 
 ## Core language
 
@@ -651,21 +637,23 @@ current normative rules, and Git preserves patch-level detail.
   exact big-integer arithmetic: 22K random arguments (worst 0.80 ULP) and 2.5K
   continued-fraction worst cases whose reduced fraction reaches 2^-62 (worst
   0.50 ULP).
-- Added pure-Ace `math.pow` for `f32` and `f64`, within 1 ULP over the whole
-  finite domain and exact for every representable integer power. Composing the
-  existing `exp` and `log` reaches hundreds of ULP, so `pow` carries a private
-  extended-precision `log2` in the fdlibm scheme: the significand is normalized
-  into one of two subintervals, around 1.0 and 1.5, and every step is kept as a
-  high part with its low 32 bits cleared plus a tail, so `y * log2(x)` is formed
-  from exact products; the `2^p` kernel then reuses `exp`'s polynomial
-  coefficients. C99 Annex F special cases are dispatched before the kernels.
-  Verified against platform libm on 966K comparisons (main path, negative bases
-  with integer exponents, bases within 2^-20 of 1 with exponents past 2^31,
-  subnormal results, and 200K `f32` cases, the last bit-identical throughout),
-  with every Annex F case and all 736 representable integer powers exact; libm
-  is a test reference only. It runs at about 119 ns per call against libm's
-  9 ns, where the same algorithm is 33 ns compiled by clang at -O2 and 293 ns
-  at -O0.
+- Added pure-Ace `math.pow` for `f32` and `f64`, table-driven, with tables and
+  constants derived in `std/@/pow_tables.ace` from 100-digit arithmetic.
+  `log(x)` is `k*ln2 + log(c) + log1p(r)` with `c = 1/invc` from a 128-entry
+  table whose interval holding 1 uses `c = 1`; `invc` is a short binary
+  fraction, so `r = z*invc - 1` splits into exact halves and `k*ln2hi + logc`
+  is exact. The log is a high and low word with a Taylor tail to `r^10`;
+  `y*log(x)` is formed in extended precision (26-bit halves); the result is
+  `2^e * 2^(j/128) * exp(er)` from a table of scales and relative corrections
+  with a degree-5 Taylor polynomial, where `n = 128e + j` is kept as a signed
+  integer so no unsigned wrap is needed. Sign is a final flip; exponents near
+  the ends of the range scale in two steps so only the last multiply rounds,
+  which keeps subnormal results within 1 ULP. `f32` computes at `f64` and
+  rounds once. Against an exact 70-digit reference the worst error is 0.506 ULP
+  over 93K normal-result inputs (0.61 ULP in the subnormal range); against
+  libm 200K inputs match bit-for-bit or differ by 1 ULP. Exact integer powers,
+  C99 Annex F cases, and subnormal and overflow edges are tests. `pow` runs at
+  51 ns against libm's 9.5 ns; the remaining gap is backend code quality.
 - Fixed compound untyped constants under a float cast (`f32(-1.0)`,
   `f32(0.0 - 1.0)`, `f32(-3)`, `f32(2 * 3)`), which stored a wrong value or hit
   "untyped operand reached codegen": the cast check now settles the operand

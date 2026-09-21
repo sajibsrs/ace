@@ -112,14 +112,9 @@ These are baseline observations, not performance promises.
 - **Read-only parameter load reuse** [queued] — exploit the existing parameter
   facts without adding global alias analysis. Keeping a string parameter's
   length in a register measured no parse gain even with registers free.
-- **Caller-saved promotion across calls** [new] — functions that emit a call
-  still keep every promoted local in x19-x28 and d8-d15; locals not live across
-  any call could use x9-x14 and d24-d31 given per-call liveness, as call-free
-  functions already do.
-- **Inlining beyond one expression** [new] — release-mode inlining covers
-  one-expression scalar functions only; a helper with locals such as
-  `math.isnan` still calls (about 7 ns of `pow` by hand-inlining), and so does
-  a callee that reads a parameter twice.
+- **Caller-saved promotion across calls** [new] — non-leaf functions still
+  keep every promoted local in x19-x28; locals not live across any call could
+  use x9-x14 given per-call liveness.
 - **Call and tuple-return plumbing** [new] — incoming aggregate parameters
   other than the read-only, leaf-read HFA and 8-byte-integer-leaf struct
   parameters of a call-free function (a parameter in a function with calls, a
@@ -159,28 +154,7 @@ These are baseline observations, not performance promises.
   place measured 1.63 to 1.32 ns per iteration (19%) on a loop with two
   compares. `x = x * 0.5 + 1.0` runs 2.7 ns against C's 1.7 because C fuses it
   into one `fmadd` (1.6 ns), not because of its constants. Whether Ace may fuse
-  a multiply and add, which changes rounding, is undecided. Constant shifts
-  still take the register form with a separate `mov`, and constants that fill
-  one halfword start with a needless `mov #0`; fixing both measured only 2% on
-  `math.log2_split`, since independent one-cycle instructions hide behind
-  out-of-order execution, while stack round trips on the dependency chain
-  do not.
-- **Fused multiply-add** [new] — the backend never emits `fmadd`, so exact
-  products take Dekker splitting (about 17 flops; `math.pow` calls `trunc_low`
-  for it) and polynomial steps take two rounded operations. Carve: explicit
-  `math.fma(a, b, c)` as an `intrinsic` `f32`/`f64` overload set beside
-  `sqrt`, computing `a*b + c` with one rounding under round-to-nearest-even,
-  IEEE special values as the hardware gives them. It fuses nothing implicitly;
-  whether ordinary `a*b + c` may fuse stays the separate undecided question
-  above. arm64 lowers to `fmadd` (d or s); the existing intrinsics are unary and
-  in place, so a three-operand path evaluates operands left to right into temps
-  and returns in the first. Not constant-folded at first. Open: the x86-64
-  backend needs FMA3 or a correctly rounded software fallback; `fmsub` and
-  `fnmadd` forms are additive. Measured in C on this machine: an exact
-  product 2.7 ns with Dekker against 1.45 ns with `fma`, and a dependent
-  degree-8 Horner chain 24.7 against 16.8 ns (-32%). The `pow` gain is
-  estimated at 15-25% and unmeasured; a table-driven `pow` needs it, since its
-  accuracy proof assumes FMA.
+  a multiply and add, which changes rounding, is undecided.
 - **Hot-loop codegen gap** [new] — game and graphics kernels over global arrays
   run 1.1x (dot product) to 8x (by-value `Vec3` calls) scalar C `-O2` with
   vectorization off, and 2x to 30x C's NEON auto-vectorized output, which Ace
@@ -276,20 +250,18 @@ foundations.
   prefixes for `fmt.printf`, especially fixed-width `%b`/`%o`/`%x` register
   displays; carve consistently across integer conversions from a hardware
   fixture rather than adding a binary-only modifier.
-- **Transcendental math functions** [new] — `exp`, `log`, `pow`, `sin`, and
+- **Transcendental math functions** [open] — `exp`, `log`, `pow`, `sin`, and
   `cos` are implemented. The fdlibm-class algorithms ran 1.6x libm for
-  `exp`/`log`, 3-5x for `sin`/`cos`, and 3.6x for `pow` in C. Shipped Ace runs
-  `exp` and `log` at 33 and 31 ns, `sin` at 50 ns (medium) and `cos` at 24 ns
-  (small) against libm's 3-4 ns, `pow` at 119 ns against libm's 9 ns, and
-  arguments beyond 1.6e6 at about 600 ns because the Payne-Hanek fraction is
-  extracted bit by bit; a word-at-a-time extraction would cut that. `pow` splits
-  into two independent gaps: libm's 9 ns comes from a different algorithm
-  (tables and FMA, no division), reaching 33 ns for the fdlibm kernel under
-  clang -O2, and the remaining 3.6x is backend quality, 293 ns at -O0. That
-  second gap is dominated by stack traffic and missing FMA rather than
-  constant materialization: `pow` and its helpers issue 405 loads/stores
-  against clang's 7 and no `fmadd` against 21. The kernel's two divisions are the next cost after
-  those; a table-driven variant trades about 4 KB for them.
+  `exp`/`log` and 3-5x for `sin`/`cos` in C. Shipped Ace runs `exp` and `log` at
+  33 and 31 ns, `sin` at 50 ns (medium) and `cos` at 24 ns (small) against
+  libm's 3-4 ns, `pow` (table-driven) at 51 ns against libm's 9.5 ns, and
+  arguments beyond 1.6e6 at about 600 ns
+  because the Payne-Hanek fraction is extracted bit by bit; a word-at-a-time
+  extraction would cut that. The `pow` gap to libm is backend quality: the
+  kernel keeps about two dozen live `f64` values against eight callee-saved
+  registers, so most spill, and each constant load takes three instructions.
+  Table-driven `exp`, `log`, `sin`, and `cos` are the same design applied to
+  the remaining fdlibm-class gaps.
 - **Random source** [new].
 
 ## 5. Language questions and conveniences
