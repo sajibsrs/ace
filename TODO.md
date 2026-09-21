@@ -115,6 +115,19 @@ These are baseline observations, not performance promises.
 - **Caller-saved promotion across calls** [new] — non-leaf functions still
   keep every promoted local in x19-x28; locals not live across any call could
   use x9-x14 given per-call liveness.
+- **Live-range-aware register promotion** [new] — promotion assigns a register
+  to a declaration for the whole function body (`promo_take` ranks candidates
+  by use-count weight and nothing else), so two locals with disjoint live
+  ranges can never share one. In a function that already saturates its
+  registers this inverts the usual advice: naming a repeated subexpression in
+  `pow` is bit-identical and saves five instructions, yet costs 5% throughput
+  and 15% dependent-chain latency, because the new name evicts a hotter value
+  for the whole body even when it is live for four instructions at the end.
+  The same accounting makes recomputing a cheap register-only expression, and
+  nesting a single-use value rather than naming it, the idioms that win in
+  `std/math`. Candidate: live ranges, or at minimum letting disjoint locals
+  share a register; it needs the same per-call liveness the caller-saved item
+  above wants.
 - **Call and tuple-return plumbing** [new] — incoming aggregate parameters
   other than the read-only, leaf-read HFA and 8-byte-integer-leaf struct
   parameters of a call-free function (a parameter in a function with calls, a
@@ -263,7 +276,9 @@ foundations.
   throughout, so these kernels are latency-bound and only chain-shortening
   changes pay. The `pow` gap to libm is backend quality: a local that wins no
   register is reached through an address computed per access, and each constant
-  load takes three instructions.
+  load takes three instructions. `pow`'s hot path holds no call and is at the
+  register ceiling, so its source-level lever is spent; what is left for it is
+  the promotion and constant-materialization items in the compiler band above.
   Table-driven `exp`, `log`, `sin`, and `cos` are the same design applied to
   the remaining fdlibm-class gaps.
 - **Random source** [new].
