@@ -8,13 +8,12 @@ its capacity. The canonical zero value and the empty literal `Array[T]{}` are
 valid empty arrays holding no storage, so no constructor is required and the
 first `push` allocates. Growth goes through `mem.grow`, which doubles storage.
 Type arguments are explicit, as everywhere: `array.Array[int]`,
-`array.array_new[int](8)`.
+`array.Array[int]::new(8)`.
 
-- `array_new[T](capacity: usize): (Array[T], Error)` creates an empty array
+- `Array[T]::new(capacity: usize): (Array[T], Error)` creates an empty array
   with room for `capacity` elements. Zero allocates nothing. Failure returns
   `ArrayErr.allocation`.
-- `array_wipe[T](mut array: Array[T])` releases the storage and leaves the array
-  empty.
+- `wipe()` releases the storage and leaves the array empty.
 - `push(value: T): Error` appends, growing when full. Failure returns
   `ArrayErr.allocation` and leaves the array unchanged.
 - `reserve(count: usize): Error` ensures capacity for at least `count` elements
@@ -27,8 +26,8 @@ Type arguments are explicit, as everywhere: `array.Array[int]`,
   invalidated by any call that grows the array.
 - `clear()` drops every live element and keeps the storage.
 
-`push`, `reserve`, `pop`, `set`, and `clear` mutate, so the call site states
-`mut`. Access is checked against `len`, not capacity: `get` and `set` at an
+`wipe`, `push`, `reserve`, `pop`, `set`, and `clear` mutate, so the call site
+states `mut`. Access is checked against `len`, not capacity: `get` and `set` at an
 index at or beyond `len` are bounds violations in checked builds and unchecked
 in release builds.
 
@@ -36,7 +35,7 @@ in release builds.
 import array
 
 items: array.Array[int] = array.Array[int]{}
-defer array.array_wipe[int](mut items)
+defer mut items.wipe()
 
 err: Error = mut items.push(42)
 

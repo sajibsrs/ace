@@ -6,7 +6,7 @@
  * grows on its first `push`.
  * Growth goes through `mem.grow`, doubling storage; allocation failure is an
  * `Error` and leaves the array unchanged. Element access is bounds-checked
- * against `len`, not against capacity. Call `array_wipe` once the array is no
+ * against `len`, not against capacity. Call `wipe` once the array is no
  * longer used.
  */
 
@@ -25,7 +25,7 @@ pub Array[T]: struct {
 /* Creates an array with room for `capacity` elements and none live. A zero
  * capacity allocates nothing.
  */
-pub array_new[T](capacity: usize): (Array[T], Error) {
+pub Array[T]::new(capacity: usize): (Array[T], Error) {
     if capacity == 0 { return Array[T]{}, null }
     items: mut []T = mem.alloc[T](capacity)
     if items == null { return Array[T]{}, ArrayErr.allocation }
@@ -33,9 +33,9 @@ pub array_new[T](capacity: usize): (Array[T], Error) {
 }
 
 /* Releases the array's storage and leaves it empty. */
-pub array_wipe[T](mut array: Array[T]) {
-    mem.release[T](mut array.items)
-    array.len = 0
+pub mut Array[T].wipe() {
+    mem.release[T](mut self.items)
+    self.len = 0
 }
 
 /* The live elements. The view aliases the array's storage and is invalidated

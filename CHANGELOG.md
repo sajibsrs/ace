@@ -1549,6 +1549,32 @@ current normative rules, and Git preserves patch-level detail.
   through private `specialized` `hash[K]`/`same[K]` for the fixed-width
   integers, `usize`, `bool`, and `string`; the finalizer and FNV-1a step use
   `bits.wrap_mul`, since ordinary `*` aborts on overflow in checked builds.
+- Migrated `array`, `map`, and `pkg/http`'s `Router`, `ClientContext`, and
+  `ServerContext` from `_new`/`_wipe` free functions to type-owned form:
+  `Array[T]::new`/`Map[K, V]::new`/`Router::new`/`Context::new` (in
+  `pkg/http/inc/client.ace` and `pkg/http/inc/server.ace`) as associated
+  functions, `wipe()` as an ordinary mutating method, every call site
+  updated. `pkg/http/mod.ace` drops its `router_new`/`router_wipe`,
+  `client_context_new`/`client_context_wipe`, and
+  `server_context_new`/`server_context_wipe` forwarding wrappers, since
+  `Router::new()`, `ClientContext::new()`, `ServerContext::new()`, and
+  `mut value.wipe()` now reach each type through its re-exported alias
+  exactly as `Router.handle`/`Router.dispatch` already did. Fixed a
+  cross-module gap this surfaced: `rename_decls`/`collect_members` in
+  `module.c` exempted `F_METHOD` declarations from the module-name-mangling
+  pass (a method's identity comes from its owner type, not a standalone
+  name) but were never extended to `F_ASSOC` when associated functions
+  landed, so an associated function's name was mangled with its declaring
+  module's prefix while callers built the lookup key from the unmangled
+  name — `Type::new()` resolved only within its declaring file. Both flags
+  are now exempted together. Also migrated `pkg/http`'s `parse_url`/
+  `parse_url_for` free functions in `parsing.ace` to two `Url::parse`
+  associated-function overloads (`Url::parse(url)` autodetecting the
+  scheme, `Url::parse(url, secure)` forcing it), dropping `mod.ace`'s
+  `parse_url` wrapper; this makes the previously package-internal
+  scheme-forcing overload part of `http`'s public surface, since an
+  associated function's visibility is gated by `pub`/receiver type, not by
+  `mod.ace`'s re-export list.
 
 ## Current frontier
 

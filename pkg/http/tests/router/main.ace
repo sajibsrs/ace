@@ -14,8 +14,8 @@ submit_route(request: http.Request): http.Response {
 }
 
 main(): int {
-    router: http.Router = http.router_new()
-    defer http.router_wipe(mut router)
+    router: http.Router = http.Router::new()
+    defer mut router.wipe()
 
     err: Error = mut router.handle(http.method_get, "/home", home_route)
     if err != null { return 1 }

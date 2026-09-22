@@ -8,7 +8,7 @@
  * would exceed three quarters full, and `unset` shifts later entries back
  * over the hole, so no tombstones exist. Allocation failure is an `Error` and
  * leaves the map unchanged. Iteration order is unspecified and iteration is
- * not offered. Call `map_wipe` once the map is no longer used.
+ * not offered. Call `wipe` once the map is no longer used.
  *
  * The key type K is one of the integer types, `bool`, or `string`; `hash` and
  * `same` are specialized for exactly those, and any other key type is a
@@ -103,7 +103,7 @@ capacity_for(count: usize): usize {
 /* Creates a map with room for `capacity` entries and none live. A zero
  * capacity allocates nothing.
  */
-pub map_new[K, V](capacity: usize): (Map[K, V], Error) {
+pub Map[K, V]::new(capacity: usize): (Map[K, V], Error) {
     map: Map[K, V] = Map[K, V]{}
     if capacity == 0 { return map, null }
     err: Error = mut map.rehash(capacity_for(capacity))
@@ -112,9 +112,9 @@ pub map_new[K, V](capacity: usize): (Map[K, V], Error) {
 }
 
 /* Releases the map's storage and leaves it empty. */
-pub map_wipe[K, V](mut map: Map[K, V]) {
-    mem.release[Slot[K, V]](mut map.slots)
-    map.len = 0
+pub mut Map[K, V].wipe() {
+    mem.release[Slot[K, V]](mut self.slots)
+    self.len = 0
 }
 
 /* Moves every live entry into fresh storage of `capacity` slots, a power of

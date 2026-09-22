@@ -67,7 +67,7 @@ top_decl      := ["pub"] top_body
 top_body      := var_decl | const_decl | func_decl | struct_decl
                | static_map_decl
                | bits_decl | contract_decl | enum_decl | union_decl | alias_decl | distinct_decl
-               | error_domain_decl | method_func_decl | signing_decl | extern_block
+               | error_domain_decl | method_func_decl | assoc_func_decl | signing_decl | extern_block
 
 binding       := ident ":" type
 eq_name       := ident [":" type]                       // typed declares; bare reassigns — Note #28
@@ -80,6 +80,9 @@ func_decl     := ident [bracket_args] "(" [params] ")" [ret_clause]
                  (block | "specialized" | "intrinsic")
                                                           // brackets = type params or specialization args — Notes #23
 method_func_decl := ["mut"] owner_type "." ident "(" [params] ")" [ret_clause] block
+assoc_func_decl := owner_type "::" ident "(" [params] ")" [ret_clause] block
+                                                          // no implicit self; no leading "mut" —
+                                                          // called only as Type::name(...), never through a value
 owner_type    := ident [type_params]                        // declares owner T names
 type_params   := "[" ident ("," ident)* "]"               // max[T] — type declarations always declare params
 params        := param ("," param)* [","]
@@ -210,6 +213,7 @@ postfix_part  := "(" [arg_list] ")"                       // call; ["mut"] expr 
                | "[" expr "]"                             // index
                | "[" [expr] ".." [expr] "]"               [P] slice expression
                | "." ident                                // field or built-in sequence .len
+               | "::" ident                               // associated-function reference (owner must be a type)
                | "[" type_list "]"                        // generic instantiation — see Notes
 
 arg_list      := arg ("," arg)*

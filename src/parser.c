@@ -14,7 +14,9 @@
 //   N_VAR       kids = binders (N_PARAM: typed declaration, N_IDENT: reassignment
 //               under mixed `=`); b = init (or N_TUPLE_E); F_CONST/F_MIXED
 //   N_FUNC      str = name; kids = params; a = ret; b = body; c = N_TPARAMS;
-//               d = owner type for methods; F_PUB/F_EXPO/F_METHOD/F_MUT;
+//               d = owner type for methods and associated functions;
+//               F_PUB/F_EXPO/F_METHOD/F_MUT/F_ASSOC (F_ASSOC: no implicit
+//               self, owner-qualified call only, e.g. `Type::new(...)`);
 //               F_SPECIALIZED/F_INTRINSIC mark bodyless declarations
 //   N_PARAM     str = name; a = type; F_MUT/F_NOALIAS (also used as var binder)
 //   N_STRUCT    str = name; kids = N_FIELD; b = optional @align expression;
@@ -872,6 +874,17 @@ static Node* expr_postfix_base(P* p, int ctx, Node* base) {
             base = fa;
             continue;
         }
+        case T_COLONCOLON: { // associated-function reference (Type::name)
+            p->i++;
+            Token* f = expect(p, T_IDENT, "associated-function name after '::'");
+            Node* fa = nd_tok(p, N_FIELD_E, f);
+            fa->a = base;
+            fa->str = f->str;
+            fa->len = f->len;
+            fa->flags |= F_ASSOC;
+            base = fa;
+            continue;
+        }
         case T_LBRACE: // typed struct literal (suppressed at statement/if/for heads)
             if (ctx & CTX_NOSLIT) return base;
             base = parse_structlit(p, base);
@@ -1712,6 +1725,15 @@ static Node* owner_type(P* p, Token* name, Node* tp) {
     return t;
 }
 
+static Node* parse_assoc_rest(P* p, Token* owner, Node* tp, int pub) {
+    expect(p, T_COLONCOLON, "'::' after associated-function owner");
+    Token* name = expect(p, T_IDENT, "associated-function name after '::'");
+    Node* f = parse_func_rest(p, name, tp, pub, 0);
+    f->flags |= F_ASSOC;
+    f->d = owner_type(p, owner, tp);
+    return f;
+}
+
 static Node* parse_method_rest(P* p, Token* owner, Node* tp, int pub, int mut) {
     expect(p, T_DOT, "'.' after method owner");
     Token* name = expect(p, T_IDENT, "method name after '.'");
@@ -2288,6 +2310,11 @@ static Node* parse_top(P* p) {
         if (expo) perr(p, "methods cannot be exported at the C boundary");
         return parse_method_rest(p, name, tp, pub, mut);
     }
+    if (at(p, T_COLONCOLON)) {
+        if (expo) perr(p, "associated functions cannot be exported at the C boundary");
+        if (mut) perr(p, "'mut' marks a mutating receiver; associated functions have none — mark individual 'mut' parameters instead");
+        return parse_assoc_rest(p, name, tp, pub);
+    }
     if (mut) perr(p, "'mut' before a top-level declaration requires a method owner");
     if (at(p, T_LPAREN)) return parse_func_rest(p, name, tp, pub, expo);
     if (at(p, T_COLON)) return parse_colon_decl(p, name, tp, pub);
@@ -2363,6 +2390,7 @@ static void pflags(Node* x) {
     if (x->flags & F_DEFAULT) printf(" default");
     if (x->flags & F_VARARGS) printf(" varargs");
     if (x->flags & F_METHOD) printf(" method");
+    if (x->flags & F_ASSOC) printf(" assoc");
     if (x->flags & F_SELECT) printf(" select");
     if (x->flags & F_EMBED) printf(" embed");
     if (x->flags & F_SPECIALIZED) printf(" specialized");

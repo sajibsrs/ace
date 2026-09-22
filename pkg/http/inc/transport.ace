@@ -205,7 +205,7 @@ pub exchange[C](connection: C,
 }
 
 pub get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Error) {
-    parsed: Url, url_err: Error = parsing.parse_url_for(url, false)
+    parsed: Url, url_err: Error = parsing.Url::parse(url, false)
     if url_err != null { return Response{}, url_err }
     connection: tcp.Conn, connect_err: Error = connect_url(parsed, mut storage, resize)
     defer tcp.close(mut connection)

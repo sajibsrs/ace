@@ -44,15 +44,7 @@ pub method_post: const string = message.method_post
 pub method_put: const string = message.method_put
 pub method_trace: const string = message.method_trace
 
-pub parse_url(value: string): (Url, Error) {
-    parsed: Url, err: Error = parsing.parse_url(value)
-    return parsed, err
-}
-
 pub status(code: u16): string { return message.status(code) }
-
-pub client_context_new(): ClientContext { return client.context_new() }
-pub client_context_wipe(mut context: ClientContext) { client.context_wipe(mut context) }
 
 pub get(value: string, mut context: ClientContext): (Response, Error) {
     response: Response, err: Error = client.get(value, mut context)
@@ -62,9 +54,3 @@ pub get(value: string, mut context: ClientContext): (Response, Error) {
 pub serve(endpoint: string, mut context: ServerContext, router: Router): Error {
     return server.serve(endpoint, mut context, router)
 }
-
-pub server_context_new(): ServerContext { return server.context_new() }
-pub server_context_wipe(mut context: ServerContext) { server.context_wipe(mut context) }
-
-pub router_new(): Router { return routing.router_new() }
-pub router_wipe(mut router: Router) { routing.router_wipe(mut router) }

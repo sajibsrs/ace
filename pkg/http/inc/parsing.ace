@@ -192,10 +192,11 @@ is_host(host: string): bool {
     return true
 }
 
-/* Parses an absolute plaintext HTTP URL into zero-copy host, path, and query
- * views. Returns `UrlErr` for unsupported or malformed input.
+/* Parses an absolute HTTP URL into zero-copy host, path, and query views,
+ * under an explicitly forced scheme rather than autodetecting one from
+ * `url`'s prefix. Returns `UrlErr` for unsupported or malformed input.
  */
-pub parse_url_for(url: string, secure: bool): (Url, Error) {
+pub Url::parse(url: string, secure: bool): (Url, Error) {
     scheme: string = "http://"
     start: usize = 7
     default_port: u16 = 80
@@ -268,9 +269,13 @@ pub parse_url_for(url: string, secure: bool): (Url, Error) {
     return Url {host = host, path = path, query = query, port = port}, null
 }
 
-pub parse_url(url: string): (Url, Error) {
+/* Parses an absolute plaintext HTTP URL, autodetecting `http://` or
+ * `https://` from `url`'s prefix. Returns `UrlErr` for unsupported or
+ * malformed input.
+ */
+pub Url::parse(url: string): (Url, Error) {
     secure: bool = url.len >= 8 && mem.equal(url[..8], "https://")
-    parsed: Url, err: Error = parse_url_for(url, secure)
+    parsed: Url, err: Error = Url::parse(url, secure)
     return parsed, err
 }
 

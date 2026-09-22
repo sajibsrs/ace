@@ -23,14 +23,14 @@ pub Router: struct {
     count: usize,
 }
 
-pub router_new(): Router {
+pub Router::new(): Router {
     return Router{count = 0}
 }
 
 /* Releases route storage. Call once the router is no longer served. */
-pub router_wipe(mut router: Router) {
-    mem.release[Route](mut router.routes)
-    router.count = 0
+pub mut Router.wipe() {
+    mem.release[Route](mut self.routes)
+    self.count = 0
 }
 
 /* Registers `handler` for exact `method` and path-segment prefix `path`.

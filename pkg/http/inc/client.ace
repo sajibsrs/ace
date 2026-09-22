@@ -20,7 +20,7 @@ pub Context: struct {
     redirects: RedirectPolicy,
 }
 
-pub context_new(): Context {
+pub Context::new(): Context {
     storage: mut []Storage = mem.alloc[Storage](1)
     if storage == null { return Context {storage = null, redirects = RedirectPolicy{}} }
     storage[0] = Storage {addresses = null, output = null, target = null,
@@ -28,17 +28,17 @@ pub context_new(): Context {
     return Context {storage = storage, redirects = RedirectPolicy{}}
 }
 
-pub context_wipe(mut context: Context) {
-    if context.storage == null { return }
-    mem.release[net.Addr4](mut context.storage[0].addresses)
-    mem.release[u8](mut context.storage[0].output)
-    mem.release[u8](mut context.storage[0].target)
-    mem.release[u8](mut context.storage[0].input)
-    mem.release[message.Header](mut context.storage[0].headers)
-    mem.release[u8](mut context.storage[0].body)
-    mem.release[u8](mut context.storage[0].url)
-    mem.release[Storage](mut context.storage)
-    context.redirects = RedirectPolicy{}
+pub mut Context.wipe() {
+    if self.storage == null { return }
+    mem.release[net.Addr4](mut self.storage[0].addresses)
+    mem.release[u8](mut self.storage[0].output)
+    mem.release[u8](mut self.storage[0].target)
+    mem.release[u8](mut self.storage[0].input)
+    mem.release[message.Header](mut self.storage[0].headers)
+    mem.release[u8](mut self.storage[0].body)
+    mem.release[u8](mut self.storage[0].url)
+    mem.release[Storage](mut self.storage)
+    self.redirects = RedirectPolicy{}
 }
 
 RedirectState: struct {
@@ -103,7 +103,7 @@ get_redirecting(url: string, policy: RedirectPolicy, mut context: Context): (Res
 
 pub get(url: string, mut context: Context): (Response, Error) {
     if context.storage == null { return Response{}, ClientErr.allocation }
-    _: Url, url_err: Error = parsing.parse_url(url)
+    _: Url, url_err: Error = parsing.Url::parse(url)
     if url_err != null { return Response{}, url_err }
     if context.redirects.limit == 0 {
         response: Response, err: Error = transport.get_with_storage(url, mut context.storage[0], true)

@@ -267,9 +267,10 @@ typedef struct Scope {
 typedef struct Pending {
     Node* call;
     Scope* scope;
-    SType* recv;   // method calls: struct receiver type
+    SType* recv;   // method/associated calls: struct owner type
     int qualified; // method calls: Type.method(recv, ...) spelling
     int method;    // method call awaiting its declaration
+    int assoc;     // associated-function call awaiting its declaration
     struct Pending* next;
 } Pending;
 
@@ -1611,7 +1612,7 @@ static Sym* declare_specialization(Ck* k, Node* f, Sym* head) {
 static Sym* declare_func(Ck* k, Node* f, int is_extern) {
     uint32_t key_len = f->len;
     const char* key = f->str;
-    if (f->flags & F_METHOD) key = method_key(f->d, f->str, f->len, &key_len);
+    if (f->flags & (F_METHOD | F_ASSOC)) key = method_key(f->d, f->str, f->len, &key_len);
     else if (is_panic_name(f->str, f->len) || is_assert_name(f->str, f->len) || is_static_assert_name(f->str, f->len)) {
         ck_err(k, f, "'%.*s' is a reserved builtin name — no declaration may take it", (int)f->len, f->str);
         return NULL;
@@ -1619,6 +1620,19 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
     Sym* head = scope_find(k->scope, 0, key, key_len);
     if (head && head->kind != SYM_FUNC) {
         ck_err(k, f, "duplicate name '%.*s' in this scope", (int)f->len, f->str);
+        return NULL;
+    }
+    /* A method and an associated function can never share owner+name: their
+     * overload chains are resolved on separate tracks ('.' vs '::') and mixing
+     * them would put a receiverless signature where method resolution expects
+     * a receiver in params[0]. Reject at declaration instead of leaving one
+     * side silently unreachable through the other's call syntax. */
+    if (head && (f->flags & (F_METHOD | F_ASSOC)) &&
+        ((head->decl->flags & F_ASSOC) != (f->flags & F_ASSOC))) {
+        ck_err(k, f, (f->flags & F_ASSOC)
+               ? "'%.*s' is already declared as a method on this type — associated functions and methods cannot share a name"
+               : "'%.*s' is already declared as an associated function on this type — associated functions and methods cannot share a name",
+               (int)f->len, f->str);
         return NULL;
     }
     int old_c_boundary = 0;
@@ -1635,10 +1649,10 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
      * follow a generic declaration of this name; identifiers naming no
      * existing type start a fresh type-parameter list (a further generic
      * overload). Existing-type names with no preceding generic are a compile
-     * error — never a silent new generic. Type-owned methods keep their
-     * owner-parameter shape and never specialize here.
+     * error — never a silent new generic. Type-owned methods and associated
+     * functions keep their owner-parameter shape and never specialize here.
      */
-    if (!is_extern && !(f->flags & (F_EXPO | F_METHOD)) && f->c) {
+    if (!is_extern && !(f->flags & (F_EXPO | F_METHOD | F_ASSOC)) && f->c) {
         Node* typed_ident = NULL;
         for (int i = 0; i < f->c->nkids && !typed_ident; i++) {
             Node* id = f->c->kids[i];
@@ -1664,8 +1678,8 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
             ck_err(k, f, "'intrinsic' declarations are restricted to compiler-provided standard-library operations");
         }
         if (!(f->flags & F_PUB)) ck_err(k, f, "intrinsic declaration '%.*s' must be public", (int)f->len, f->str);
-        if (f->flags & (F_EXPO | F_METHOD))
-            ck_err(k, f, "intrinsic declaration '%.*s' cannot be a method or C export",
+        if (f->flags & (F_EXPO | F_METHOD | F_ASSOC))
+            ck_err(k, f, "intrinsic declaration '%.*s' cannot be a method, associated function, or C export",
                    (int)f->len, f->str);
         if (f->c) ck_err(k, f, "intrinsic declaration '%.*s' cannot be generic or specialized", (int)f->len, f->str);
     }
@@ -3705,6 +3719,93 @@ static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified, int 
     return T_ERR;
 }
 
+/*
+ * A generic owner (Map[K, V]::new(...)) needs each candidate's signature
+ * rebuilt under the owner's actual type arguments before matching, exactly
+ * like check_method_call's generic branch — mirrored here without the
+ * receiver-shaped logic (rmut/cmut, embedding promotion) that doesn't apply
+ * to a receiverless call.
+ */
+static SType* check_generic_assoc_call(Ck* k, Node* call, SType* owner, Sym* head, int final) {
+    Node* callee = call->a;
+    Sym* found = NULL;
+    for (Sym* f = head; f; f = f->overload) {
+        SType* ft = f->is_generic ? build_func_type(k, f->decl, owner->args, owner->nargs) : f->type;
+        if (!ft || ft->nparams != call->nkids) continue;
+        int exact = 1;
+        for (int i = 0; i < ft->nparams; i++) {
+            Node* arg = call->kids[i];
+            SType* at = overload_arg_type(k, arg);
+            int am = arg->kind == N_MUTARG;
+            int pm = (f->decl->kids[i]->flags & F_MUT) != 0;
+            if (am != pm) exact = 0;
+            else if (!exact_arg_type(arg, at, ft->params[i]) && !shrink_ok(at, ft->params[i])) exact = 0;
+        }
+        if (!exact && overload_count(head) > 1) continue;
+        if (found) {
+            ck_err(k, call, "ambiguous associated-function call '%.*s'", (int)callee->len, callee->str);
+            return T_ERR;
+        }
+        found = f;
+    }
+    if (found) {
+        // instantiate_generic_func_args (not build_func_type) memoizes the
+        // instantiation and stamps its body once — emit later walks that same
+        // memo to generate one function per used (owner-args) tuple.
+        SType* found_ft = found->is_generic
+            ? instantiate_generic_func_args(k, found, owner->args, owner->nargs, call)
+            : found->type;
+        if (found_ft->kind == SK_ERR) return T_ERR;
+        for (int i = 0; i < call->nkids; i++) {
+            Node* arg = call->kids[i];
+            coerce(k, arg->kind == N_MUTARG ? arg->a : arg, found_ft->params[i]);
+        }
+        if (found->decl->path && call->path &&
+            strcmp(found->decl->path, call->path) != 0 && !found->is_pub)
+            ck_err(k, call, "associated function '%.*s' is private", (int)callee->len, callee->str);
+        call->sym = found;
+        callee->ty = found_ft;
+        call->flags |= F_ASSOC;
+        return found_ft->ret;
+    }
+    if (!final) return NULL;
+    ck_err(k, call, "no associated function '%.*s' for %s", (int)callee->len, callee->str, type_name(owner));
+    return T_ERR;
+}
+
+/*
+ * Associated-function calls (Type::name(...)) have no receiver. A non-generic
+ * owner resolves exactly like an ordinary direct call once found under the
+ * owner-namespaced key — select_call_overload/finish_direct_call already
+ * handle overload selection, literal defaulting, and the final-pass retry
+ * without any receiver-shaped logic to strip out. A generic owner needs
+ * per-candidate signature substitution instead (check_generic_assoc_call).
+ */
+static SType* check_assoc_call(Ck* k, Node* call, SType* owner, int final) {
+    Node* callee = call->a;
+    uint32_t key_len;
+    const char* key = method_key(owner->decl, callee->str, callee->len, &key_len);
+    Sym* head = lookup_val(k, key, key_len);
+    if (owner->nargs) return check_generic_assoc_call(k, call, owner, head, final);
+    int ambiguous = 0;
+    Sym* found = select_call_overload(k, call, head, final, &ambiguous);
+    if (ambiguous) {
+        ck_err(k, call, "ambiguous associated-function call '%.*s'", (int)callee->len, callee->str);
+        return T_ERR;
+    }
+    if (found) {
+        if (found->decl->path && call->path &&
+            strcmp(found->decl->path, call->path) != 0 && !found->is_pub)
+            ck_err(k, call, "associated function '%.*s' is private", (int)callee->len, callee->str);
+        finish_direct_call(k, call, found);
+        call->flags |= F_ASSOC; // emitter: no receiver to prepend, unlike an unqualified method call
+        return found->type->ret;
+    }
+    if (!final) return NULL; // a later declaration may add it
+    ck_err(k, call, "no associated function '%.*s' for %s", (int)callee->len, callee->str, type_name(owner));
+    return T_ERR;
+}
+
 static SType* check_call(Ck* k, Node* call) {
     Node* callee = call->a;
     /* Pointer types are conversion callees only for the exact usize-address
@@ -4201,6 +4302,44 @@ static SType* check_call(Ck* k, Node* call) {
         }
         ck_err(k, call, "'%.*s' is not a generic function", (int)callee->a->len, callee->a->str);
         return T_ERR;
+    }
+    // associated-function dispatch (Type::name(...)) — owner is always a
+    // type, never a value; '::' does not share '.'s value/type ambiguity.
+    // The owner may itself be generic (Map[K, V]::new(...)) via the ordinary
+    // indexed-type-name resolution shared with typeid and union-variant use.
+    if (callee->kind == N_FIELD_E && (callee->flags & F_ASSOC)) {
+        SType* owner = NULL;
+        if (callee->a->kind == N_IDENT) {
+            Sym* ts = lookup_type(k, callee->a->str, callee->a->len);
+            if (ts && ts->is_generic) {
+                ck_err(k, call, "generic type '%.*s' needs explicit type arguments",
+                       (int)callee->a->len, callee->a->str);
+                return T_ERR;
+            }
+            if (ts && ts->type && ts->type->kind == SK_STRUCT) owner = ts->type;
+        } else if (callee->a->kind == N_INDEX) {
+            owner = indexed_named_type(k, callee->a);
+            if (owner && owner->kind == SK_ERR) return T_ERR; // already diagnosed
+        }
+        if (!owner || owner->kind != SK_STRUCT) {
+            if (callee->a->kind == N_IDENT && lookup_val(k, callee->a->str, callee->a->len))
+                ck_err(k, call, "'::' follows a type name, not a value — did you mean '.'?");
+            else if (callee->a->kind == N_IDENT)
+                ck_err(k, call, "'%.*s' is not a declared struct", (int)callee->a->len, callee->a->str);
+            else
+                ck_err(k, call, "'::' owner is not a declared generic struct");
+            return T_ERR;
+        }
+        // stashed for the emitter: a generic owner has no receiver parameter
+        // to read its type arguments back from, unlike a method call
+        callee->a->ty = owner;
+        SType* r = check_assoc_call(k, call, owner, 0);
+        if (r) return r;
+        Pending* pd = new_pending(k);
+        pd->call = call;
+        pd->recv = owner;
+        pd->assoc = 1;
+        return T_ERR; // an associated function may be declared later
     }
     // method / contract dispatch
     if (callee->kind == N_FIELD_E) {
@@ -6179,20 +6318,21 @@ int sema_check(Node* file, Diag* d) {
             break;
         }
         case N_FUNC: {
-            if (n->flags & F_METHOD) {
+            if (n->flags & (F_METHOD | F_ASSOC)) {
+                const char* kindname = (n->flags & F_ASSOC) ? "associated-function" : "method";
                 Sym* owner = lookup_type(&k, n->d->str, n->d->len);
                 if (!owner || !owner->type || owner->type->kind != SK_STRUCT) {
-                    ck_err(&k, n->d, "method owner '%.*s' is not a declared struct", (int)n->d->len, n->d->str);
+                    ck_err(&k, n->d, "%s owner '%.*s' is not a declared struct", kindname, (int)n->d->len, n->d->str);
                     break;
                 }
                 if (owner->type->decl->path && n->path && strcmp(owner->type->decl->path, n->path) != 0) {
-                    ck_err(&k, n, "methods must be declared in the struct's defining module");
+                    ck_err(&k, n, "%ss must be declared in the struct's defining module", kindname);
                     break;
                 }
                 int want = owner->type->decl->c ? owner->type->decl->c->nkids : 0;
                 int got = n->c ? n->c->nkids : 0;
                 if (want != got) {
-                    ck_err(&k, n, "method owner must repeat the struct's %d type parameters", want);
+                    ck_err(&k, n, "%s owner must repeat the struct's %d type parameters", kindname, want);
                     break;
                 }
                 int mismatch = 0;
@@ -6202,14 +6342,14 @@ int sema_check(Node* file, Diag* d) {
                                n->c->kids[ti]->str, n->c->kids[ti]->len) != 0)
                         mismatch = 1;
                 if (mismatch) {
-                    ck_err(&k, n, "method owner must repeat the struct's type parameter names");
+                    ck_err(&k, n, "%s owner must repeat the struct's type parameter names", kindname);
                     break;
                 }
             }
             Sym* s = declare_func(&k, n, 0);
             if (!s) break;
             if (s->is_generic) s->decl_scope = is_root_node(d, n) ? &import_scope : &file_scope;
-            if (!(n->flags & F_METHOD) && n->len == 4 && memcmp(n->str, "main", 4) == 0) {
+            if (!(n->flags & (F_METHOD | F_ASSOC)) && n->len == 4 && memcmp(n->str, "main", 4) == 0) {
                 int spells_int = n->a && n->a->kind == N_NAMED && n->a->len == 3 && memcmp(n->a->str, "int", 3) == 0;
                 Sym* head = scope_find(k.scope, 0, n->str, n->len);
                 if (s->is_generic || n->nkids != 0 || !spells_int ||
@@ -6380,6 +6520,11 @@ int sema_check(Node* file, Diag* d) {
         k.scope = pd->scope;
         if (pd->method) {
             SType* r = check_method_call(&k, call, pd->recv, pd->qualified, 1);
+            call->ty = r;
+            continue;
+        }
+        if (pd->assoc) {
+            SType* r = check_assoc_call(&k, call, pd->recv, 1);
             call->ty = r;
             continue;
         }

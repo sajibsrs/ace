@@ -33,14 +33,14 @@ pub resolve(current: string, location: string, destination: mut []u8): (usize, b
     absolute: bool = (location.len >= 7 && mem.equal(location[..7], "http://")) ||
         (location.len >= 8 && mem.equal(location[..8], "https://"))
     if absolute {
-        _: Url, err: Error = parsing.parse_url(location)
+        _: Url, err: Error = parsing.Url::parse(location)
         if err != null || destination.len < location.len { return 0, false }
         mem.copy(destination[..location.len], location)
         return location.len, true
     }
 
     secure: bool = current.len >= 8 && mem.equal(current[..8], "https://")
-    base: Url, base_err: Error = parsing.parse_url_for(current, secure)
+    base: Url, base_err: Error = parsing.Url::parse(current, secure)
     if base_err != null { return 0, false }
 
     scheme: string = "http://"
@@ -95,7 +95,7 @@ pub resolve(current: string, location: string, destination: mut []u8): (usize, b
         }
     }
 
-    _: Url, result_err: Error = parsing.parse_url(destination[..at])
+    _: Url, result_err: Error = parsing.Url::parse(destination[..at])
     if result_err != null { return 0, false }
     return at, true
 }

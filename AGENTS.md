@@ -72,8 +72,9 @@ history.
   organizational only; `mod.ace` remains the sole external import surface
   regardless of where its implementation files sit.
 - A constructor carries the `_new` suffix exactly when a matching `_wipe`
-  releases what it returns (`router_new`/`router_wipe`). A constructor with
-  nothing to release takes the bare name.
+  releases what it returns (`parser_new`/`parser_wipe`). A constructor with
+  nothing to release takes the bare name. A type-owned pair instead uses
+  `Type::new(...)`/`mut Type.wipe()` (associated function and method).
 - Start strict and add conveniences later.
 - Release a resource that must be freed on every function exit with `defer`,
   placed immediately after its acquisition, before the error check (release

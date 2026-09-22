@@ -484,7 +484,10 @@ static void scan_punct(Lex* L, char c) {
     case '{': adv(L); k = T_LBRACE; break;
     case '}': adv(L); k = T_RBRACE; break;
     case ',': adv(L); k = T_COMMA; break;
-    case ':': adv(L); k = T_COLON; break;
+    case ':':
+        adv(L);
+        if (cur(L) == ':') { adv(L); k = T_COLONCOLON; } else k = T_COLON;
+        break;
     case '~': adv(L); k = T_TILDE; break;
     case '+': adv(L); k = cur(L) == '=' ? (adv(L), T_ADDEQ) : T_PLUS; break;
     case '-': adv(L); k = cur(L) == '=' ? (adv(L), T_SUBEQ) : T_MINUS; break;

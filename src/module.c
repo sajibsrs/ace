@@ -292,7 +292,7 @@ static void collect_members(Loader* L, Module* m) {
         Node* n = m->file->kids[i];
         switch (n->kind) {
         case N_FUNC:
-            if (!(n->flags & F_METHOD)) { // methods bind a qualified name
+            if (!(n->flags & (F_METHOD | F_ASSOC))) { // methods/associated functions bind a qualified name
                 check_reserved_name(L, n, n->str, n->len);
                 add_member(m, n->str, n->len, 0, (n->flags & F_PUB) != 0);
             }
@@ -1214,7 +1214,7 @@ static void lower_selected_node(Node* n, SelectLower* c) {
 }
 
 static int decl_namespace(Node* n) {
-    if (n->kind == N_FUNC && !(n->flags & F_METHOD)) return 1;
+    if (n->kind == N_FUNC && !(n->flags & (F_METHOD | F_ASSOC))) return 1;
     if (n->kind == N_VAR || n->kind == N_EXTERN) return 1;
     if (n->kind == N_STRUCT || n->kind == N_BITS || n->kind == N_CONTRACT || n->kind == N_ENUM ||
         n->kind == N_ALIAS || n->kind == N_DISTINCT ||
@@ -1298,8 +1298,9 @@ static const char* arena_stringn(const char* s, uint32_t len) {
 }
 
 // Collect every module-level declaration name (free functions, globals,
-// types, extern C bindings) and rename the declaration nodes. Methods derive
-// their private identity from their renamed owner type.
+// types, extern C bindings) and rename the declaration nodes. Methods and
+// associated functions derive their private identity from their renamed
+// owner type.
 // Externs/exported functions keep their linker spelling in Node.cname; error
 // domains keep their unqualified source spelling there for Error.name.
 static void rename_decls(Module* m, Renames* rs) {
@@ -1318,7 +1319,7 @@ static void rename_decls(Module* m, Renames* rs) {
             }
             continue;
         }
-        if (n->kind == N_FUNC && (n->flags & F_METHOD)) continue;
+        if (n->kind == N_FUNC && (n->flags & (F_METHOD | F_ASSOC))) continue;
         if (n->kind != N_FUNC && n->kind != N_VAR &&
             n->kind != N_STRUCT && n->kind != N_BITS && n->kind != N_CONTRACT && n->kind != N_ENUM &&
             n->kind != N_ALIAS && n->kind != N_DISTINCT &&
@@ -1495,7 +1496,7 @@ static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root
                                            (int)b->len, b->name);
                         continue;
                     }
-                    if (!(n->kind == N_FUNC && (n->flags & F_METHOD)) &&
+                    if (!(n->kind == N_FUNC && (n->flags & (F_METHOD | F_ASSOC))) &&
                         n->kind != N_SIGNING && text_is(named->str, named->len, b->name))
                         import_err(L->d, b->node,
                                    "import binding '%.*s' collides with a declaration in this module",

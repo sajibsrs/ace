@@ -84,22 +84,22 @@ main(): int {
     err = mut m.set(5, 50)
     value, found = m.get(5)
     r += check(err == null && value == 50 && found && m.len == 1, 17)
-    map.map_wipe[int, int](mut m)
+    mut m.wipe()
     r += check(m.len == 0 && m.slots.len == 0, 18)
 
-    // reserve and map_new size the table once
+    // reserve and Map::new size the table once
     err = mut m.reserve(100)
     r += check(err == null && m.slots.len >= 134 && m.len == 0, 19)
     capacity = m.slots.len
     for i: int in 0 .. 100 { err = mut m.set(i, i) }
     r += check(m.slots.len == capacity && m.len == 100, 20)
-    map.map_wipe[int, int](mut m)
+    mut m.wipe()
     sized: map.Map[int, int]
-    sized, err = map.map_new[int, int](10)
+    sized, err = map.Map[int, int]::new(10)
     r += check(err == null && sized.slots.len == 16 && sized.len == 0, 21)
-    map.map_wipe[int, int](mut sized)
+    mut sized.wipe()
     empty: map.Map[int, int]
-    empty, err = map.map_new[int, int](0)
+    empty, err = map.Map[int, int]::new(0)
     r += check(err == null && empty.slots.len == 0, 22)
 
     // string keys compare by content and values may be structs
@@ -118,7 +118,7 @@ main(): int {
     removed: bool = mut words.unset("beta")
     r += check(removed && !words.has("beta") && words.has("delta"), 26)
     r += check(words.len == 3, 27)
-    map.map_wipe[string, Point](mut words)
+    mut words.wipe()
 
     // a full narrow-integer key domain and bool keys
     bytes: map.Map[u8, u16] = map.Map[u8, u16]{}
@@ -129,14 +129,14 @@ main(): int {
         if !f || v != u16(i * 3) { ok = false }
     }
     r += check(ok, 28)
-    map.map_wipe[u8, u16](mut bytes)
+    mut bytes.wipe()
     flags: map.Map[bool, int] = map.Map[bool, int]{}
     err = mut flags.set(true, 1)
     err = mut flags.set(false, 2)
     t: int, tf: bool = flags.get(true)
     f: int, ff: bool = flags.get(false)
     r += check(tf && ff && t == 1 && f == 2 && flags.len == 2, 29)
-    map.map_wipe[bool, int](mut flags)
+    mut flags.wipe()
 
     // signed and usize keys
     negatives: map.Map[i32, int] = map.Map[i32, int]{}
@@ -145,12 +145,12 @@ main(): int {
     a: int, af: bool = negatives.get(-1)
     b: int, bf: bool = negatives.get(1)
     r += check(af && bf && a == 1 && b == 2, 30)
-    map.map_wipe[i32, int](mut negatives)
+    mut negatives.wipe()
     sizes: map.Map[usize, int] = map.Map[usize, int]{}
     err = mut sizes.set(usize(0xFFFFFFFFFFFFFFFF), 9)
     c: int, cf: bool = sizes.get(usize(0xFFFFFFFFFFFFFFFF))
     r += check(cf && c == 9, 31)
-    map.map_wipe[usize, int](mut sizes)
+    mut sizes.wipe()
 
     r += check(err == null, 32)
     return r

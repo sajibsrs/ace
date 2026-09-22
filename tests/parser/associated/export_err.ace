@@ -1,0 +1,7 @@
+/* Associated functions are Ace-internal only, like methods; no C-boundary export. */
+
+Router: struct { count: int }
+
+export Router::new(): Router {
+    return Router { count = 0 }
+}

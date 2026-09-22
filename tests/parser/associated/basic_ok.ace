@@ -1,0 +1,17 @@
+/* Associated (receiverless) type-owned function: declaration and call via '::'. */
+
+Router: struct { count: int }
+
+pub Router::new(): Router {
+    return Router { count = 0 }
+}
+
+pub Router::reset(mut r: Router): Router {
+    r.count = 0
+    return r
+}
+
+foo() {
+    r: Router = Router::new()
+    r = Router::reset(r)
+}

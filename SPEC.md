@@ -839,7 +839,7 @@ or making related facade and target APIs differ.
       contains zero-copy views into the input URL and a host-order port.
       Separating path and query makes a query-only URL representable without
       allocation: its path is the static `/` view and its query retains the
-      leading `?`. `parse_url(url:
+      leading `?`. `Url::parse(url:
       string): (Url, Error)` accepts an absolute `http` or `https` URL with a
       nonempty authority: `http://host` or `https://host`, an optional
       explicit decimal port, and an optional path/query request target. An
@@ -852,7 +852,7 @@ or making related facade and target APIs differ.
       schemes share this one parser even though the plaintext-only
       `get(url, mut context)` rejects an `https://` URL before connecting —
       it never silently falls back to plaintext — through its own
-      scheme-forced `parse_url_for(url, false)` call. Parsing
+      scheme-forced `Url::parse(url, false)` overload call. Parsing
       allocates nothing, performs no DNS lookup, preserves path/query bytes
       and percent escapes exactly, and never percent-decodes or
       Unicode-normalizes them.
@@ -930,8 +930,8 @@ or making related facade and target APIs differ.
       remains the internal neutral workspace for one HTTP exchange.
       `ClientContext: struct { storage: mut []Storage, redirects: RedirectPolicy }`
       owns and grows the plaintext workspace through `mem` and carries HTTP
-      policy. `client_context_new` constructs it and `client_context_wipe`
-      releases it. The exact public overload is
+      policy. `ClientContext::new` constructs it and `wipe` releases it. The
+      exact public overload is
       `get(url: string, mut context: ClientContext): (Response, Error)`, which
       accepts only plaintext HTTP. Allocation failure is explicit.
       Returned views remain valid only until the corresponding context
@@ -1022,8 +1022,8 @@ or making related facade and target APIs differ.
       TCP-only protocol. Byte-oriented parsing matches HTTP and permits UTF-8
       payloads to pass through unchanged without making Unicode text processing
       part of networking.
-18. Growable array (implemented) — `array` is a single-file pure-Ace module over `mem.grow`. `Array[T]: struct { items: mut []T = null, len: usize = 0 }` holds `len` live elements at the front of `items`, whose length is the capacity; the canonical zero value and `Array[T]{}` are valid empty arrays, and a zero-capacity array holds no storage. `array_new[T](capacity: usize): (Array[T], Error)` and `array_wipe[T](mut array: Array[T])` follow the `_new`/`_wipe` pairing. The methods are `push(value): Error`, `reserve(count): Error`, `pop(): (T, Error)`, `get(index): T`, `set(index, value)`, `view(): []T`, and `clear()`; mutating methods are called with `mut`. Allocation failure returns `ArrayErr.allocation` and leaves the array unchanged; `pop` on an empty array returns `blank(T)` and `ArrayErr.empty`. `get` and `set` are checked against `len`, not capacity, through a slice of the live prefix, adding no new mechanism. Element type arguments are bare named types (Generics #12).
-19. Runtime hash map (implemented) — `map` is a single-file pure-Ace module over `mem`. `Map[K, V]: struct { slots: mut []Slot[K, V] = null, len: usize = 0 }` holds `len` live entries in `slots`, whose length is the capacity, a power of two or zero; the canonical zero value and `Map[K, V]{}` are valid empty maps holding no storage. `Slot[K, V]` is `{ key: K, value: V, used: bool }`, and fresh slot arrays come from `mem.zalloc`, so every slot starts unused. `map_new[K, V](capacity: usize): (Map[K, V], Error)` and `map_wipe[K, V](mut map: Map[K, V])` follow the `_new`/`_wipe` pairing. The methods are `get(key): (V, bool)`, `has(key): bool`, `set(key, value): Error`, `unset(key): bool`, `reserve(count): Error`, and `clear()`; mutating methods are called with `mut`. `set` inserts or overwrites; `unset` reports whether the key was present; `get` on a missing key returns `blank(V)` and false. `MapErr.allocation` is the only error; on failure the map is unchanged. Storage is open addressing with linear probing, growing by rehash into a fresh allocation whenever an insertion would exceed 3/4 load; the load factor is fixed and not a knob. `unset` uses backward-shift deletion, so no tombstones exist. The key contract is two private `specialized` generics, `hash[K](key: K): u64` and `same[K](a: K, b: K): bool`, specialized exactly for `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `usize`, `bool`, and `string` (Generics #9–#14), which also covers `int`, `uint`, and `char` as transparent aliases; any other key type is a compile-time error at the instantiation, and enums, distinct types, and composite keys are additive once specializations outside the generic's module exist. `string` keys compare through `mem.equal`, never `==` (Values & Passing #11). Integer hashes are a 64-bit finalizer built on `bits.wrap_mul`, and a string hash is FNV-1a 64 followed by the same finalizer. Iteration order and iteration itself are absent from v1, as are value-address accessors, since growth would invalidate them; `get` and `set` copy. Rationale: direct specialized calls keep hash and equality inlinable and preserve a valid zero value, which function-valued fields would forfeit at one indirect call per operation.
+18. Growable array (implemented) — `array` is a single-file pure-Ace module over `mem.grow`. `Array[T]: struct { items: mut []T = null, len: usize = 0 }` holds `len` live elements at the front of `items`, whose length is the capacity; the canonical zero value and `Array[T]{}` are valid empty arrays, and a zero-capacity array holds no storage. `Array[T]::new(capacity: usize): (Array[T], Error)` is an associated function and `wipe()` an ordinary mutating method. The methods are `push(value): Error`, `reserve(count): Error`, `pop(): (T, Error)`, `get(index): T`, `set(index, value)`, `view(): []T`, `clear()`, and `wipe()`; mutating methods are called with `mut`. Allocation failure returns `ArrayErr.allocation` and leaves the array unchanged; `pop` on an empty array returns `blank(T)` and `ArrayErr.empty`. `get` and `set` are checked against `len`, not capacity, through a slice of the live prefix, adding no new mechanism. Element type arguments are bare named types (Generics #12).
+19. Runtime hash map (implemented) — `map` is a single-file pure-Ace module over `mem`. `Map[K, V]: struct { slots: mut []Slot[K, V] = null, len: usize = 0 }` holds `len` live entries in `slots`, whose length is the capacity, a power of two or zero; the canonical zero value and `Map[K, V]{}` are valid empty maps holding no storage. `Slot[K, V]` is `{ key: K, value: V, used: bool }`, and fresh slot arrays come from `mem.zalloc`, so every slot starts unused. `Map[K, V]::new(capacity: usize): (Map[K, V], Error)` is an associated function and `wipe()` an ordinary mutating method. The methods are `get(key): (V, bool)`, `has(key): bool`, `set(key, value): Error`, `unset(key): bool`, `reserve(count): Error`, `clear()`, and `wipe()`; mutating methods are called with `mut`. `set` inserts or overwrites; `unset` reports whether the key was present; `get` on a missing key returns `blank(V)` and false. `MapErr.allocation` is the only error; on failure the map is unchanged. Storage is open addressing with linear probing, growing by rehash into a fresh allocation whenever an insertion would exceed 3/4 load; the load factor is fixed and not a knob. `unset` uses backward-shift deletion, so no tombstones exist. The key contract is two private `specialized` generics, `hash[K](key: K): u64` and `same[K](a: K, b: K): bool`, specialized exactly for `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `usize`, `bool`, and `string` (Generics #9–#14), which also covers `int`, `uint`, and `char` as transparent aliases; any other key type is a compile-time error at the instantiation, and enums, distinct types, and composite keys are additive once specializations outside the generic's module exist. `string` keys compare through `mem.equal`, never `==` (Values & Passing #11). Integer hashes are a 64-bit finalizer built on `bits.wrap_mul`, and a string hash is FNV-1a 64 followed by the same finalizer. Iteration order and iteration itself are absent from v1, as are value-address accessors, since growth would invalidate them; `get` and `set` copy. Rationale: direct specialized calls keep hash and equality inlinable and preserve a valid zero value, which function-valued fields would forfeit at one indirect call per operation.
 
 ## Conditions
 1. Chained comparisons: `lo <= x <= hi` — each operand evaluated once; no boolean-coercion trap (C's `a < b < c` meaning `(a<b)<c` is dead); lowers to two compares and a branch.
@@ -1110,6 +1110,30 @@ Only active or trigger-gated decisions live here. Implemented history is recorde
 once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 
 ### Active
+
+- Type-owned associated functions (informally, "static methods"): a declaration
+  scoped to a type with no implicit `self`, closing the gap where a type has no
+  instance yet to call a method on — constructors (`new`), destructors (`wipe`),
+  and other factory-shaped operations that today are free functions
+  (`parser_new(): Parser`, `formatter_wipe(mut formatter: Formatter)`). Decided:
+  no new keyword; `::` replaces `.` in both the declaration and the call to mark a
+  type-owned function receiverless, and `.` stays reserved for anything with a
+  receiver (an instance method, whether reached through a value or the direct
+  disambiguated form). `pub Map[K, V]::new(capacity: usize): (Map[K, V],
+  Error)` declares it; `Map[K, V]::new(capacity)` calls it — never through a
+  value (`m::new()` is a compile error, since `::` only follows a type
+  expression), so it cannot collide with method resolution (Names & Scoping
+  #11) and never acquires a vtable slot — compile-time-only qualifier, zero
+  runtime cost. Unlike a declaration-only marker, the operator is visible at
+  every call site, not just the declaration, matching Ace's existing
+  visible-mutation principle (Principles #3) of marking behavior at both ends.
+  Precedent: C++ and Rust use the same `::`/`.` split for exactly this
+  distinction. Generic type arguments are spelled once, on the type, and
+  reused by the associated function's body, unlike the current free-function
+  form which repeats them. An associated function may declare its own
+  additional type parameters beyond the owning type's, under the ordinary
+  generic-function rules (Generics #4–8); it is constrained only by satisfying
+  its declared return signature, not by the owning type's parameter list.
 
 ### Trigger-gated
 

@@ -17,12 +17,15 @@ entry in its own `ace.pkg` naming a relative path to `pkg/http`); the bare
 examples.
 
 HTTPS/TLS support was removed pending a full redesign; see the TLS client
-transport item in `TODO.md`. `parse_url` still accepts an `https://` scheme
+transport item in `TODO.md`. `Url::parse` still accepts an `https://` scheme
 for syntax purposes, but every client entry point rejects it with
 `UrlErr.invalid`.
 
-`parse_url(url): (Url, Error)` accepts absolute `http://` and `https://` URLs.
-`Url { host, path, query, port }` contains byte views and a host-order port.
+`Url::parse(url): (Url, Error)` accepts absolute `http://` and `https://` URLs,
+autodetecting the scheme from `url`'s prefix. The overload
+`Url::parse(url, secure): (Url, Error)` forces the scheme instead of
+autodetecting it. `Url { host, path, query, port }` contains byte views and a
+host-order port.
 The default port is 80 and the default path is the static `/` view. A query
 without a written path is represented as that path plus a `query` view which
 includes `?`. DNS names up to 253 bytes with labels up to 63 bytes and dotted
@@ -32,23 +35,23 @@ port 80 and HTTPS to port 443. Path/query
 bytes and percent escapes are unchanged.
 
 `get(url, mut context)` accepts only `http://`. `ClientContext` owns reusable
-HTTP workspace and policy, is created with `client_context_new`, and is
-released with `client_context_wipe`.
+HTTP workspace and policy, is created with `ClientContext::new`, and is
+released with `wipe`.
 
 ```ace
 import fmt
 import http
 
 main(): int {
-    context: http.ClientContext = http.client_context_new()
+    context: http.ClientContext = http.ClientContext::new()
     response: http.Response, err: Error = http.get("http://example.com/", mut context)
     if err != null {
         fmt.printf("request failed: %d\n", int(err.code))
-        http.client_context_wipe(mut context)
+        mut context.wipe()
         return 1
     }
     fmt.printf("status %d, %d bytes\n", int(response.status), int(response.body.len))
-    http.client_context_wipe(mut context)
+    mut context.wipe()
     return 0
 }
 ```

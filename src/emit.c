@@ -4868,7 +4868,12 @@ static EV gen_call(Em* e, Node* call) {
                 if (!cft || cft->kind != SK_FUNC) cft = s->type;
                 SType** targs = NULL;
                 int ntargs = 0;
-                if (s->is_generic && cft && cft->nparams > 0) {
+                if (s->is_generic && (call->flags & F_ASSOC)) {
+                    // no receiver parameter to read args back from; the owner
+                    // expression's resolved type carries them instead
+                    SType* owner = callee->kind == N_FIELD_E ? node_ty(callee->a) : NULL;
+                    if (owner) { targs = owner->args; ntargs = owner->nargs; }
+                } else if (s->is_generic && cft && cft->nparams > 0) {
                     SType* recv = cft->params[0];
                     targs = recv->args;
                     ntargs = recv->nargs;
@@ -4889,7 +4894,7 @@ static EV gen_call(Em* e, Node* call) {
             int n = 0;
             int recv_mut = 0;
             if (callee->kind == N_FIELD_E && !s->is_extern &&
-                !(call->flags & F_METHOD)) { // instance method
+                !(call->flags & (F_METHOD | F_ASSOC))) { // instance method
                 argnodes[0] = callee->a;
                 recv_mut = (call->flags & F_MUT) != 0;
                 n = 1;
@@ -5723,7 +5728,7 @@ static void defer_capture(Em* e, Node* s) {
     // the implicit receiver (a SYM_VAR callee is a function-value field call
     // whose field expression is the callee itself, not a receiver)
     int instance = callee->kind == N_FIELD_E && tgt && tgt->kind == SYM_FUNC &&
-        !tgt->is_extern && !(call->flags & F_METHOD);
+        !tgt->is_extern && !(call->flags & (F_METHOD | F_ASSOC));
     SType* baset = callee->kind == N_FIELD_E ? node_ty(callee->a) : NULL;
     int contract = callee->kind == N_FIELD_E && !call->sym && baset && baset->kind == SK_CONTRACT;
     if (instance || contract) {
@@ -9415,7 +9420,7 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
                 }
                 break;
             }
-            int is_main = !(n->flags & F_METHOD) && n->len == 4 && memcmp(n->str, "main", 4) == 0;
+            int is_main = !(n->flags & (F_METHOD | F_ASSOC)) && n->len == 4 && memcmp(n->str, "main", 4) == 0;
             int export_c = (n->flags & F_EXPO) != 0;
             SType* ret = n->a ? sema_build_type(n->a) : NULL;
             if (is_main) {

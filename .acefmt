@@ -50,3 +50,4 @@ range-in-for = spaced
 slice-range = tight
 array-repeat = spaced
 declaration-elision = spaced
+assoc-function-ref = tight

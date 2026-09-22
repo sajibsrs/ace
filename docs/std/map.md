@@ -10,17 +10,16 @@ is required and the first `set` allocates. Entries live in open-addressed slots
 probed linearly from the key's hash. The table doubles and rehashes into fresh
 storage whenever an insertion would exceed three quarters full; the load factor
 is fixed. Type arguments are explicit, as everywhere: `map.Map[string, int]`,
-`map.map_new[string, int](64)`.
+`map.Map[string, int]::new(64)`.
 
 The key type is one of the integer types (`int`, `uint`, and `char` included),
 `usize`, `bool`, or `string`. Any other key type is a compile-time error at the
 instantiation. `string` keys compare by content.
 
-- `map_new[K, V](capacity: usize): (Map[K, V], Error)` creates an empty map
+- `Map[K, V]::new(capacity: usize): (Map[K, V], Error)` creates an empty map
   that holds `capacity` entries without growing. Zero allocates nothing.
   Failure returns `MapErr.allocation`.
-- `map_wipe[K, V](mut map: Map[K, V])` releases the storage and leaves the map
-  empty.
+- `wipe()` releases the storage and leaves the map empty.
 - `set(key: K, value: V): Error` stores `value`, replacing any earlier value
   for `key`. Failure returns `MapErr.allocation` and leaves the map unchanged.
 - `get(key: K): (V, bool)` returns the stored value and true. A missing key
@@ -31,15 +30,15 @@ instantiation. `string` keys compare by content.
   never shrinks.
 - `clear()` drops every entry and keeps the storage.
 
-`set`, `unset`, `reserve`, and `clear` mutate, so the call site states `mut`.
-`get` and `set` copy values, so no accessor hands out a slot address that
-growth could invalidate. `len` is readable directly.
+`wipe`, `set`, `unset`, `reserve`, and `clear` mutate, so the call site states
+`mut`. `get` and `set` copy values, so no accessor hands out a slot address
+that growth could invalidate. `len` is readable directly.
 
 ```ace
 import map
 
 ports: map.Map[string, int] = map.Map[string, int]{}
-defer map.map_wipe[string, int](mut ports)
+defer mut ports.wipe()
 
 err: Error = mut ports.set("http", 80)
 

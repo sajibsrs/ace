@@ -62,24 +62,24 @@ main(): int {
     gone, err = mut a.pop()
     r += check(err == array.ArrayErr.empty && gone == 0 && a.len == 0, 13)
 
-    array.array_wipe[int](mut a)
+    mut a.wipe()
     r += check(a.len == 0 && a.items.len == 0, 14)
 
-    // array_new: preallocated capacity, and zero capacity allocates nothing
-    b: array.Array[u8], berr: Error = array.array_new[u8](16)
+    // Array[T]::new: preallocated capacity, and zero capacity allocates nothing
+    b: array.Array[u8], berr: Error = array.Array[u8]::new(16)
     r += check(berr == null && b.len == 0 && b.items.len >= 16, 15)
     err = mut b.push(7)
     r += check(err == null && b.get(0) == 7 && b.items.len >= 16, 16)
-    array.array_wipe[u8](mut b)
-    c: array.Array[u8], cerr: Error = array.array_new[u8](0)
+    mut b.wipe()
+    c: array.Array[u8], cerr: Error = array.Array[u8]::new(0)
     r += check(cerr == null && c.items.len == 0, 17)
-    array.array_wipe[u8](mut c)
+    mut c.wipe()
 
     // aggregate elements
     q: array.Array[Point] = array.Array[Point]{}
     err = mut q.push(Point{x = 1, y = 2})
     r += check(err == null, 18)
     r += check(q.get(0).y == 2 && q.view().len == 1, 19)
-    array.array_wipe[Point](mut q)
+    mut q.wipe()
     return r
 }

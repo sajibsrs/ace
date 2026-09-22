@@ -12,8 +12,8 @@ import http
 main(): int {
     url: string = "http://example.com/"
 
-    context: http.ClientContext = http.client_context_new()
-    defer http.client_context_wipe(mut context)
+    context: http.ClientContext = http.ClientContext::new()
+    defer mut context.wipe()
 
     response: http.Response, err: Error = http.get(url, mut context)
     if err != null {

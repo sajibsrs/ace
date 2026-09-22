@@ -38,16 +38,16 @@ pub Context: struct {
     backlog: usize = 512,
 }
 
-pub context_new(): Context {
+pub Context::new(): Context {
     return Context{}
 }
 
 /* Releases buffer storage. Call once the context is no longer served. */
-pub context_wipe(mut context: Context) {
-    mem.release[u8](mut context.input)
-    mem.release[Header](mut context.headers)
-    mem.release[u8](mut context.body)
-    mem.release[u8](mut context.output)
+pub mut Context.wipe() {
+    mem.release[u8](mut self.input)
+    mem.release[Header](mut self.headers)
+    mem.release[u8](mut self.body)
+    mem.release[u8](mut self.output)
 }
 
 /* Reads exactly one complete request from `conn` into `context`, growing its
@@ -203,8 +203,8 @@ listen_endpoint(endpoint: string, backlog: usize): (tcp.Listener, Error) {
  * reading exactly one request, dispatching it through `router`, writing the
  * response, and closing the connection — no poll queue, no session table.
  * `context` owns the buffers used across every connection, growing them via
- * `mem.grow` as requests demand; wipe it with `context_wipe` once the
- * server is no longer served. Returns only if the listener itself cannot be
+ * `mem.grow` as requests demand; wipe it once the server is no longer
+ * served. Returns only if the listener itself cannot be
  * created; a per-connection failure just drops that connection and the loop
  * continues.
  */
