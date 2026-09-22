@@ -136,10 +136,10 @@ check_fill(target_all: mut []u8, zero: bool): bool {
 }
 
 main(): int {
-    source: [4200]u8 = [u8(0) : 4200]
-    target: [4200]u8 = [u8(0) : 4200]
-    expect: [4300]u8 = [u8(0) : 4300]
-    data: [4300]u8 = [u8(0) : 4300]
+    source: [4200]u8 = [0 : 4200]
+    target: [4200]u8 = [0 : 4200]
+    expect: [4300]u8 = [0 : 4300]
+    data: [4300]u8 = [0 : 4300]
 
     if !check_copy(mut source[..], mut target[..], false) {
         return 1

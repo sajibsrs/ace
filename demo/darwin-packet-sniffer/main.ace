@@ -103,7 +103,7 @@ main(): int {
         return 1
     }
     debug: bool = sys.argc() > 2 && mem.equal(sys.arg(2), "--debug")
-    interface_request: [32]u8 = [u8(0) : 32]
+    interface_request: [32]u8 = [0 : 32]
     for i: usize in 0 .. interface.len {
         interface_request[i] = interface[i]
     }
@@ -129,7 +129,7 @@ main(): int {
         return 1
     }
 
-    length_bytes: [4]u8 = [u8(0) : 4]
+    length_bytes: [4]u8 = [0 : 4]
     err = sys.ioctl(fd, sys.BIOCGBLEN, mut length_bytes[0..4])
     if err != null {
         report("BIOCGBLEN", err)

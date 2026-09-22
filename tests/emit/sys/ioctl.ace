@@ -11,7 +11,7 @@ main(): int {
        no_argument.code != 9 {
         return 1
     }
-    value: [4]u8 = [u8(0) : 4]
+    value: [4]u8 = [0 : 4]
     with_argument: Error = sys.ioctl(sys.Fd(-1), sys.BIOCGBLEN, mut value[0..4])
     if with_argument == null || with_argument.domain != typeid(sys.IoctlErr) ||
        with_argument.code != 9 {

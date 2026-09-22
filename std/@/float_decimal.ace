@@ -18,7 +18,7 @@ pub Decimal: struct {
 
 write_shortest(value: ryu.Floating, out: mut []u8): (int, i32) {
     coefficient: u64 = value.coefficient
-    reversed: [24]u8 = [u8(0) : 24]
+    reversed: [24]u8 = [0 : 24]
     count: int = 0
 
     for coefficient != 0 {

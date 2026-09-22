@@ -101,8 +101,8 @@ check_prefix(a_all: mut []u8, b_all: mut []u8): bool {
 }
 
 main(): int {
-    a: [4200]u8 = [u8(0) : 4200]
-    b: [4200]u8 = [u8(0) : 4200]
+    a: [4200]u8 = [0 : 4200]
+    b: [4200]u8 = [0 : 4200]
 
     if !check_order(mut a[..], mut b[..]) {
         return 1

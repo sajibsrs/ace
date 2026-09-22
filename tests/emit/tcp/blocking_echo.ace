@@ -25,7 +25,7 @@ client(port: u16): int {
         return 2
     }
 
-    storage: [13]u8 = [u8(0) : 13]
+    storage: [13]u8 = [0 : 13]
     reply: mut []u8 = mut storage[0..]
     received: usize
     received, err = tcp.receive_all(connection, reply)
@@ -67,7 +67,7 @@ main(): int {
         return 13
     }
 
-    storage: [13]u8 = [u8(0) : 13]
+    storage: [13]u8 = [0 : 13]
     request: mut []u8 = mut storage[0..]
     received: usize
     received, err = tcp.receive_all(connection, request)

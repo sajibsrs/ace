@@ -122,7 +122,7 @@ client(port: u16): int {
         }
     }
 
-    storage: [11]u8 = [u8(0) : 11]
+    storage: [11]u8 = [0 : 11]
     received: usize = 0
     for received < storage.len {
         destination: mut []u8 = mut storage[received..]
@@ -223,7 +223,7 @@ main(): int {
         return 14
     }
 
-    storage: [11]u8 = [u8(0) : 11]
+    storage: [11]u8 = [0 : 11]
     received: usize = 0
     for received < storage.len {
         destination: mut []u8 = mut storage[received..]

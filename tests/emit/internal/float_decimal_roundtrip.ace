@@ -6,7 +6,7 @@ import bits
 import str
 
 main(): int {
-    text: [64]u8 = [u8(0) : 64]
+    text: [64]u8 = [0 : 64]
     state64: u64 = u64(0x9E3779B97F4A7C15)
 
     for sample: int in 0 .. 4096 {

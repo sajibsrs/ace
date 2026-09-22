@@ -46,7 +46,7 @@ client(port: u16): int {
         sent += usize(count)
     }
 
-    storage: [16]u8 = [u8(0) : 16]
+    storage: [16]u8 = [0 : 16]
     received: usize = 0
 
     for received < request.len {
@@ -154,7 +154,7 @@ main(): int {
     event_storage: [4]poll.Event = [zero : 4]
     events: mut []poll.Event = mut event_storage[0..4]
     peer: net.Socket = net.Socket(-1)
-    buffer: [16]u8 = [u8(0) : 16]
+    buffer: [16]u8 = [0 : 16]
     received: usize = 0
     sent: usize = 0
     done: bool = false

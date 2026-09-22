@@ -223,7 +223,7 @@ primary       := literal | ident | location | "(" expr_list ")" | array_lit | st
                | ptr_type | slice_type
 location      := "@" ident                                // exact text "file" or "line"
 array_lit     := "[" [expr_list | array_repeat] "]"
-array_repeat  := expr ":" expr                          // [u8(0) : 12]; exact contextual array length
+array_repeat  := expr ":" expr                          // [0 : 12]; exact contextual array length
 struct_lit    := "{" [field_init ("," field_init)*] "}"   [P]
 field_init    := ident "=" expr
 static_map_lit := "{" [map_entry ("," map_entry)* [","]] "}"

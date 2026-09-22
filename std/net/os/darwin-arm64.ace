@@ -203,7 +203,7 @@ errno_set(value: i32) {
 to_darwin(address: Addr4): DarwinAddr4 {
     port: [2]u8 = [u8(address.port >> 8), u8(address.port)]
     ip: [4]u8 = [address.ip[0], address.ip[1], address.ip[2], address.ip[3]]
-    zero: [8]u8 = [u8(0) : 8]
+    zero: [8]u8 = [0 : 8]
 
     return DarwinAddr4 {
         length = u8(SOCKADDR4_SIZE),
@@ -289,12 +289,12 @@ pub listen(sock: Socket, backlog: usize): Error {
 }
 
 pub accept(listener: Socket): (Socket, Addr4, Error) {
-    port: [2]u8 = [u8(0) : 2]
-    ip: [4]u8 = [u8(0) : 4]
-    zero: [8]u8 = [u8(0) : 8]
+    port: [2]u8 = [0 : 2]
+    ip: [4]u8 = [0 : 4]
+    zero: [8]u8 = [0 : 8]
 
     raw: DarwinAddr4 = DarwinAddr4 {
-        length = u8(0), family = u8(0), port = port, ip = ip, zero = zero,
+        length = 0, family = 0, port = port, ip = ip, zero = zero,
     }
     length: u32 = SOCKADDR4_SIZE
     accepted: i32 = c_accept(i32(listener), mut &raw, mut &length)
@@ -324,11 +324,11 @@ pub pending_error(sock: Socket): Error {
 
 pub local(sock: Socket): (Addr4, Error) {
     raw: DarwinAddr4 = DarwinAddr4 {
-        length = u8(0),
-        family = u8(0),
-        port = [u8(0) : 2],
-        ip = [u8(0) : 4],
-        zero = [u8(0) : 8],
+        length = 0,
+        family = 0,
+        port = [0 : 2],
+        ip = [0 : 4],
+        zero = [0 : 8],
     }
     length: u32 = SOCKADDR4_SIZE
 

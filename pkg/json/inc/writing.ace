@@ -53,7 +53,7 @@ pub Formatter::new(): Formatter {
     return Formatter{
         at = 0,
         depth = 0,
-        objects = [u8(0) : 64],
+        objects = [0 : 64],
         empty = false,
         keyed = false,
         done = false,

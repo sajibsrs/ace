@@ -26,9 +26,9 @@ loopback(port: u16): net.Addr4 {
 zero_client(): Client {
     return Client {
         socket = net.Socket(-1),
-        input = [u8(0) : 8],
+        input = [0 : 8],
         input_count = 0,
-        output = [u8(0) : 8],
+        output = [0 : 8],
         output_count = 0,
         output_sent = 0,
     }
@@ -64,7 +64,7 @@ send_fragmented(sock: net.Socket, text: string): bool {
 }
 
 receive_exact(sock: net.Socket, expected: string): bool {
-    storage: [8]u8 = [u8(0) : 8]
+    storage: [8]u8 = [0 : 8]
     received: usize = 0
 
     for received < expected.len {

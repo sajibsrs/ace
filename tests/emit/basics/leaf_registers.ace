@@ -59,7 +59,7 @@ hot(n: int): int {
 // the out-of-line byte copy clobbers only x8 and x15-x17
 copy_live(): int {
     source: [64]u8 = [u8(7) : 64]
-    target: [64]u8 = [u8(0) : 64]
+    target: [64]u8 = [0 : 64]
     x: int = 3
     y: int = 5
     total: int = 0

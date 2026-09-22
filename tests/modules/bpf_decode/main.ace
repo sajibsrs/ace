@@ -38,7 +38,7 @@ put_frame(data: mut []u8, frame: usize, protocol: u8) {
 }
 
 main(): int {
-    bytes: [176]u8 = [u8(0) : 176]
+    bytes: [176]u8 = [0 : 176]
     view: mut []u8 = mut bytes[0..176]
 
     // Native-endian Darwin header: caplen@8, datalen@12, hdrlen@16.

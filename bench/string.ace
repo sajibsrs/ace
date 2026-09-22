@@ -38,8 +38,8 @@ main(): int {
         checksum += usize(mem.compare(large_a[..], large_b[..]) + 1) + i % 2
     }
     report("compare-4096", now() - started, iterations / 16, checksum)
-    copy_small: [64]u8 = [u8(0) : 64]
-    copy_large: [4096]u8 = [u8(0) : 4096]
+    copy_small: [64]u8 = [0 : 64]
+    copy_large: [4096]u8 = [0 : 4096]
     checksum = 0
     started = now()
 
@@ -134,7 +134,7 @@ main(): int {
         0.1, 1.5, 3.141592653589793, 1.0e-308,
         5.0e-324, 1.7976931348623157e308, (0.0 - 2.5e100), 6.02214076e23,
     ]
-    out: [64]u8 = [u8(0) : 64]
+    out: [64]u8 = [0 : 64]
     view: mut []u8 = mut out[..]
     checksum = 0
     started = now()

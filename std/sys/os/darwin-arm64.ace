@@ -520,7 +520,7 @@ pub open_dir(path: string): (Dir, Error) {
     if fd == -1 { return blank(Dir), OpenDirErr(errno()) }
     dir: Dir = Dir {
         fd = Fd(fd),
-        buffer = [u8(0) : 4096],
+        buffer = [0 : 4096],
         next = 0,
         count = 0,
         base = 0,
