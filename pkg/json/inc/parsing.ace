@@ -6,6 +6,7 @@
  * parse_array call each other recursively.
  */
 
+import array
 import mem
 import str
 import utf8
@@ -56,16 +57,17 @@ pub Parser: struct {
     bat: usize,
     iat: usize,
     pat: usize,
-    stack: mut []Json = null,
-    sat: usize,
-    pstack: mut []Pair = null,
-    psat: usize,
+    stack: array.Array[Json],
+    pstack: array.Array[Pair],
     text: string = "",
     at: usize,
 }
 
 pub Parser::new(): Parser {
-    return Parser{kept = 0, count = 0, bat = 0, iat = 0, pat = 0, sat = 0, psat = 0, at = 0}
+    return Parser{
+        kept = 0, count = 0, bat = 0, iat = 0, pat = 0,
+        stack = array.Array[Json]{}, pstack = array.Array[Pair]{}, at = 0,
+    }
 }
 
 /* Releases every tree the parser produced. Call once none is still in use. */
@@ -76,15 +78,13 @@ pub mut Parser.wipe() {
         mem.release[Pair](mut self.blocks[i].pairs)
     }
     mem.release[Block](mut self.blocks)
-    mem.release[Json](mut self.stack)
-    mem.release[Pair](mut self.pstack)
+    mut self.stack.wipe()
+    mut self.pstack.wipe()
     self.kept = 0
     self.count = 0
     self.bytes = null
     self.items = null
     self.pairs = null
-    self.sat = 0
-    self.psat = 0
 }
 
 /* Drops every tree the parser produced but keeps its storage, so the next
@@ -96,8 +96,8 @@ pub mut Parser.reset() {
     self.bytes = null
     self.items = null
     self.pairs = null
-    self.sat = 0
-    self.psat = 0
+    mut self.stack.clear()
+    mut self.pstack.clear()
 }
 
 /* Parses the complete text as one JSON value. Trailing non-whitespace bytes
@@ -108,8 +108,8 @@ pub mut Parser.reset() {
 pub mut Parser.parse(text: string): (Json, Error) {
     self.text = text
     self.at = 0
-    self.sat = 0
-    self.psat = 0
+    mut self.stack.clear()
+    mut self.pstack.clear()
     mut self.skip_ws()
 
     if self.at == self.text.len {
@@ -343,7 +343,7 @@ mut Parser.parse_array(depth: usize): (Json, Error) {
     }
     self.at += 1
     empty: mut []Json = null
-    base: usize = self.sat
+    base: usize = self.stack.len
     mut self.skip_ws()
 
     if self.at < self.text.len && self.text[self.at] == ']' {
@@ -358,14 +358,11 @@ mut Parser.parse_array(depth: usize): (Json, Error) {
         if err != null {
             return Json.none, err
         }
-        grown: mut []Json, ok: bool = mem.grow[Json](self.stack, self.sat + 1)
+        push_err: Error = mut self.stack.push(elem)
 
-        if !ok {
+        if push_err != null {
             return Json.none, ParseErr.allocation
         }
-        self.stack = grown
-        self.stack[self.sat] = elem
-        self.sat += 1
         mut self.skip_ws()
 
         if self.at == self.text.len {
@@ -384,14 +381,14 @@ mut Parser.parse_array(depth: usize): (Json, Error) {
         }
         return Json.none, ParseErr.unexpected_token
     }
-    count: usize = self.sat - base
+    count: usize = self.stack.len - base
     at: usize = self.iat
 
     for i: usize in 0 .. count {
-        self.items[at + i] = self.stack[base + i]
+        self.items[at + i] = self.stack.get(base + i)
     }
     self.iat = at + count
-    self.sat = base
+    mut self.stack.truncate(base)
     return Json.array(self.items[at..at + count]), null
 }
 
@@ -401,7 +398,7 @@ mut Parser.parse_object(depth: usize): (Json, Error) {
     }
     self.at += 1
     empty: mut []Pair = null
-    base: usize = self.psat
+    base: usize = self.pstack.len
     mut self.skip_ws()
 
     if self.at < self.text.len && self.text[self.at] == '}' {
@@ -432,14 +429,11 @@ mut Parser.parse_object(depth: usize): (Json, Error) {
         if verr != null {
             return Json.none, verr
         }
-        grown: mut []Pair, ok: bool = mem.grow[Pair](self.pstack, self.psat + 1)
+        push_err: Error = mut self.pstack.push(Pair{key = key, value = elem})
 
-        if !ok {
+        if push_err != null {
             return Json.none, ParseErr.allocation
         }
-        self.pstack = grown
-        self.pstack[self.psat] = Pair{key = key, value = elem}
-        self.psat += 1
         mut self.skip_ws()
 
         if self.at == self.text.len {
@@ -458,14 +452,14 @@ mut Parser.parse_object(depth: usize): (Json, Error) {
         }
         return Json.none, ParseErr.unexpected_token
     }
-    count: usize = self.psat - base
+    count: usize = self.pstack.len - base
     at: usize = self.pat
 
     for i: usize in 0 .. count {
-        self.pairs[at + i] = self.pstack[base + i]
+        self.pairs[at + i] = self.pstack.get(base + i)
     }
     self.pat = at + count
-    self.psat = base
+    mut self.pstack.truncate(base)
     return Json.object(self.pairs[at..at + count]), null
 }
 

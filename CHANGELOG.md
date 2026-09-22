@@ -1604,6 +1604,25 @@ current normative rules, and Git preserves patch-level detail.
   `parser_new`/`parser_wipe` and `formatter_new`/`formatter_wipe` forwarding
   wrappers, since `Parser::new()`, `Formatter::new()`, and `mut value.wipe()`
   now reach each type through its re-exported alias.
+- Replaced seven hand-rolled zero-value constructor functions predating
+  `blank(T)` with direct `blank(T)` calls at each call site: `zero_addr4`
+  (duplicated in `std/net`'s facade and its Darwin target), `zero_dir`,
+  `zero_timespec`, and `zero_stat` in `std/sys`'s Darwin target, `zero_kevent`
+  in `std/poll`'s Darwin target, and `zero_url` in `pkg/http`. Every one built
+  an all-zero-field struct literal by hand; no behavior change.
+- Backed `pkg/http`'s `Router.routes` with `array.Array[Route]` in place of a
+  hand-rolled `mem.grow`/index/increment loop, using `push`/`view`/`get`.
+  Dropped the private `RouterErr` domain, which only ever duplicated
+  `array.ArrayErr.allocation`.
+- Added `Array[T].truncate(count)` to `std/array.ace`: drops every live
+  element from `count` onward while keeping storage, bounds-checked against
+  `len` the same way as `get`/`set` (checked builds abort past `len`, release
+  assumes it). Converted `pkg/json`'s `Parser.stack`/`pstack` value/pair
+  stacks from hand-rolled `mem.grow` pairs (`sat`/`psat`) to
+  `array.Array[Json]`/`array.Array[Pair]`, using `push`/`get`/`truncate` for
+  the parse_array/parse_object step that rewinds a closed container's
+  temporary elements back to its watermark after copying them into the
+  block's permanent storage.
 
 ## Current frontier
 

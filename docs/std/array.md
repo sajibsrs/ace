@@ -25,11 +25,13 @@ Type arguments are explicit, as everywhere: `array.Array[int]`,
 - `view(): []T` is the live elements as a slice. It aliases the storage and is
   invalidated by any call that grows the array.
 - `clear()` drops every live element and keeps the storage.
+- `truncate(count: usize)` drops every live element from `count` onward and
+  keeps the storage.
 
-`wipe`, `push`, `reserve`, `pop`, `set`, and `clear` mutate, so the call site
-states `mut`. Access is checked against `len`, not capacity: `get` and `set` at an
-index at or beyond `len` are bounds violations in checked builds and unchecked
-in release builds.
+`wipe`, `push`, `reserve`, `pop`, `set`, `clear`, and `truncate` mutate, so the
+call site states `mut`. Access is checked against `len`, not capacity: `get`
+and `set` at an index at or beyond `len`, and `truncate` past `len`, are
+bounds violations in checked builds and unchecked in release builds.
 
 ```ace
 import array
@@ -49,4 +51,5 @@ last, err = mut items.pop()   /* 42, or 0 and ArrayErr.empty when empty */
 
 Element types are bare named types (Generics #12), so an array of slices or of
 another generic instantiation needs a named alias first. There is no
-`insert`, `remove`, sorting, or search; nothing copies elements implicitly.
+`insert` or single-element `remove`, sorting, or search; nothing copies
+elements implicitly.

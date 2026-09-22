@@ -85,3 +85,11 @@ pub mut Array[T].reserve(count: usize): Error {
 pub mut Array[T].clear() {
     self.len = 0
 }
+
+/* Drops every live element from index `count` onward, keeping storage. `count`
+ * follows the ordinary sequence bounds contract: checked builds diagnose a
+ * count past the current length and release assumes it.
+ */
+pub mut Array[T].truncate(count: usize) {
+    self.len = self.view()[..count].len
+}
