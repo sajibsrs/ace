@@ -35,7 +35,7 @@ NUMBER_MAX: usize = 32
  * a set bit marks an object, a clear bit an array.
  *
  * A Formatter holds one document at a time. The text `finish` returns is
- * borrowed from the buffer and is valid until `reset` or `formatter_wipe`;
+ * borrowed from the buffer and is valid until `reset` or `wipe`;
  * `reset` starts the next document and keeps the buffer.
  */
 pub Formatter: struct {
@@ -49,7 +49,7 @@ pub Formatter: struct {
     err: Error,
 }
 
-pub formatter_new(): Formatter {
+pub Formatter::new(): Formatter {
     return Formatter{
         at = 0,
         depth = 0,
@@ -62,14 +62,14 @@ pub formatter_new(): Formatter {
 }
 
 /* Releases the buffer. Call once no text from `finish` is still in use. */
-pub formatter_wipe(mut formatter: Formatter) {
-    mem.release[u8](mut formatter.buffer)
-    formatter.at = 0
-    formatter.depth = 0
-    formatter.empty = false
-    formatter.keyed = false
-    formatter.done = false
-    formatter.err = null
+pub mut Formatter.wipe() {
+    mem.release[u8](mut self.buffer)
+    self.at = 0
+    self.depth = 0
+    self.empty = false
+    self.keyed = false
+    self.done = false
+    self.err = null
 }
 
 /* Discards the current document and its error, keeping the buffer for the

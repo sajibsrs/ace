@@ -53,8 +53,8 @@ write_all(fd: sys.Fd, data: []u8): (usize, Error) {
 
 main(): int {
     count: int = 12
-    f: json.Formatter = json.formatter_new()
-    defer json.formatter_wipe(mut f)
+    f: json.Formatter = json.Formatter::new()
+    defer mut f.wipe()
     mut f.array()
 
     for i: int in 0 .. count {

@@ -10,19 +10,3 @@ pub Parser: type = parsing.Parser
 pub ParseErr: type = parsing.ParseErr
 pub Formatter: type = writing.Formatter
 pub FormatErr: type = writing.FormatErr
-
-pub parser_new(): Parser {
-    return parsing.parser_new()
-}
-
-pub parser_wipe(mut parser: Parser) {
-    parsing.parser_wipe(mut parser)
-}
-
-pub formatter_new(): Formatter {
-    return writing.formatter_new()
-}
-
-pub formatter_wipe(mut formatter: Formatter) {
-    writing.formatter_wipe(mut formatter)
-}

@@ -115,8 +115,8 @@ main(): int {
         fmt.printf("failed to read %s: error %d\n", PATH, int(rerr.code))
         return 1
     }
-    parser: json.Parser = json.parser_new()
-    defer json.parser_wipe(mut parser)
+    parser: json.Parser = json.Parser::new()
+    defer mut parser.wipe()
     root: json.Json, perr: Error = mut parser.parse(data)
 
     if perr != null {

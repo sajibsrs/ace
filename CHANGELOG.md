@@ -1597,6 +1597,13 @@ current normative rules, and Git preserves patch-level detail.
   scheme-forcing overload part of `http`'s public surface, since an
   associated function's visibility is gated by `pub`/receiver type, not by
   `mod.ace`'s re-export list.
+- Migrated `pkg/json`'s `Parser` and `Formatter` from `_new`/`_wipe` free
+  functions to type-owned form, the same as `pkg/http`: `Parser::new`/
+  `Formatter::new` as associated functions, `wipe()` as an ordinary mutating
+  method, every call site updated. `pkg/json/mod.ace` drops its
+  `parser_new`/`parser_wipe` and `formatter_new`/`formatter_wipe` forwarding
+  wrappers, since `Parser::new()`, `Formatter::new()`, and `mut value.wipe()`
+  now reach each type through its re-exported alias.
 
 ## Current frontier
 

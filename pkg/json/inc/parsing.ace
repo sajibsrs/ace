@@ -40,7 +40,7 @@ Block: struct {
 }
 
 /* Owns the storage of every tree it parses. A returned `Json` borrows from
- * the parser and is valid until `reset` or `parser_wipe`; trees accumulate
+ * the parser and is valid until `reset` or `wipe`; trees accumulate
  * until then. `blocks` holds `kept` allocated blocks, of which `count` are in
  * use since the last `reset`. `bytes`, `items`, and `pairs` are the block the
  * current parse fills, and `stack` and `pstack` hold finished children until
@@ -64,27 +64,27 @@ pub Parser: struct {
     at: usize,
 }
 
-pub parser_new(): Parser {
+pub Parser::new(): Parser {
     return Parser{kept = 0, count = 0, bat = 0, iat = 0, pat = 0, sat = 0, psat = 0, at = 0}
 }
 
 /* Releases every tree the parser produced. Call once none is still in use. */
-pub parser_wipe(mut parser: Parser) {
-    for i: usize in 0 .. parser.kept {
-        mem.release[u8](mut parser.blocks[i].bytes)
-        mem.release[Json](mut parser.blocks[i].items)
-        mem.release[Pair](mut parser.blocks[i].pairs)
+pub mut Parser.wipe() {
+    for i: usize in 0 .. self.kept {
+        mem.release[u8](mut self.blocks[i].bytes)
+        mem.release[Json](mut self.blocks[i].items)
+        mem.release[Pair](mut self.blocks[i].pairs)
     }
-    mem.release[Block](mut parser.blocks)
-    mem.release[Json](mut parser.stack)
-    mem.release[Pair](mut parser.pstack)
-    parser.kept = 0
-    parser.count = 0
-    parser.bytes = null
-    parser.items = null
-    parser.pairs = null
-    parser.sat = 0
-    parser.psat = 0
+    mem.release[Block](mut self.blocks)
+    mem.release[Json](mut self.stack)
+    mem.release[Pair](mut self.pstack)
+    self.kept = 0
+    self.count = 0
+    self.bytes = null
+    self.items = null
+    self.pairs = null
+    self.sat = 0
+    self.psat = 0
 }
 
 /* Drops every tree the parser produced but keeps its storage, so the next

@@ -7,7 +7,7 @@ value, and formats JSON text from runtime data with a `Formatter`. Parsing is
 eager and whole-document: it reads one buffer, returns one value, and rejects
 anything after it. Every failure is an explicit returned error. A `Parser`
 owns the storage of every tree it parses and a `Formatter` owns the buffer it
-writes, so one `parser_wipe` or `formatter_wipe` releases everything.
+writes, so one `wipe()` releases everything.
 
 `json` is a standalone package at [`pkg/json`](../pkg/json), not a `std`
 module. A consumer lists it under `[dependencies]` in its own `ace.pkg` with a
@@ -39,7 +39,7 @@ rather than merged.
 
 ## Parsing
 
-`json.parser_new(): Parser` makes a parser and `json.parser_wipe(mut parser)`
+`json.Parser::new(): Parser` makes a parser and `mut parser.wipe()`
 releases it. `mut parser.parse(text: string): (Json, Error)` parses `text` as
 exactly one value. Surrounding space, tab, line feed, and carriage return are
 skipped. On error it returns `Json.none` and an error from the `json.ParseErr`
@@ -64,18 +64,18 @@ Other bytes pass through unchanged and are not validated as UTF-8.
 The result never aliases `text`, so the input buffer may be released as soon
 as `parse` returns. Every string, array, and object lives in storage the
 parser allocated for that call. A `Json` is valid until `reset` or
-`parser_wipe`; using one afterwards is invalid. Trees from repeated `parse`
+`wipe`; using one afterwards is invalid. Trees from repeated `parse`
 calls accumulate and stay valid side by side until then, and a failed parse
 leaves nothing to clean up. An empty string, array, or object holds no
-storage. Release the parser with `defer` right after `parser_new`:
+storage. Release the parser with `defer` right after `Parser::new`:
 
 ```ace
 import fmt
 import json
 
 main(): int {
-    parser: json.Parser = json.parser_new()
-    defer json.parser_wipe(mut parser)
+    parser: json.Parser = json.Parser::new()
+    defer mut parser.wipe()
     root: json.Json, err: Error = mut parser.parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
 
     if err != null {
@@ -100,12 +100,12 @@ To parse many documents in turn, call `mut parser.reset()` between them. It
 drops every tree the parser produced but keeps its storage, so the next parses
 reuse it instead of allocating: about 24% faster than a fresh parser per
 document on 139-byte documents. Without `reset`, trees accumulate until
-`parser_wipe`.
+`wipe`.
 
 ## Writing
 
-`json.formatter_new(): Formatter` makes a formatter and
-`json.formatter_wipe(mut formatter)` releases it. A formatter writes compact
+`json.Formatter::new(): Formatter` makes a formatter and
+`mut formatter.wipe()` releases it. A formatter writes compact
 JSON one call at a time into a buffer it owns and grows. It needs no `Json`
 tree, so records are written straight from runtime data of any shape or size,
 and the compiler picks each `value` and `field` overload from the argument's
@@ -132,8 +132,8 @@ main(): int {
     readings: [2]Reading
     readings[0] = Reading{sensor = "north", celsius = 21.5, ok = true}
     readings[1] = Reading{sensor = "south", celsius = 19.0, ok = false}
-    f: json.Formatter = json.formatter_new()
-    defer json.formatter_wipe(mut f)
+    f: json.Formatter = json.Formatter::new()
+    defer mut f.wipe()
     mut f.array()
 
     for i: usize in 0 .. readings.len {
@@ -175,7 +175,7 @@ spelling (`0.5`, `1e21`).
 
 The first failure is kept and every later call does nothing, so a sequence of
 writes needs one check at `finish`. The text `finish` returns is borrowed from
-the formatter and is valid until `reset` or `formatter_wipe`. A formatter holds
+the formatter and is valid until `reset` or `wipe`. A formatter holds
 one document at a time: call `mut formatter.reset()` before starting the next,
 which keeps the buffer and so avoids an allocation per document (about 8%
 faster than a fresh formatter per document on 139-byte documents). Starting a
