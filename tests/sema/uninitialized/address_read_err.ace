@@ -1,0 +1,10 @@
+/* Uninitialized read-only address fixture. */
+
+Span: struct { start: usize, end: usize }
+
+peek(span: *Span): usize { return span.start }
+
+main(): int {
+    span: Span
+    return int(peek(&span))
+}

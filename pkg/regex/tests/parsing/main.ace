@@ -128,7 +128,8 @@ errors(): int {
 
 /* 512 nested groups parse; the 513th is rejected at its own `(`. */
 depth(): int {
-    text: [1026]u8
+    storage: [1026]u8
+    text: mut []u8 = mut storage[0..1026]
 
     for i: usize in 0 .. 512 {
         text[i] = '('
@@ -142,7 +143,8 @@ depth(): int {
         fmt.println("512 nested groups should parse")
         bad += 1
     }
-    deep: [513]u8
+    deep_storage: [513]u8
+    deep: mut []u8 = mut deep_storage[0..513]
 
     for i: usize in 0 .. 513 {
         deep[i] = '('

@@ -74,6 +74,18 @@ Human: struct {
     embed named: Named,
 }
 
+fill_prefix(bytes: mut []u8): usize {
+    bytes[0] = u8(97)
+    return 1
+}
+
+view_initialized(): int {
+    storage: [16]u8
+    bytes: mut []u8 = mut storage[0..16] // storage is now initialized
+    count: usize = fill_prefix(bytes)
+    return int(string(bytes[0..count]).len)
+}
+
 main(): int {
     explicit: int = 4
     number: int, message: string = 1, "old"

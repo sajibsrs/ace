@@ -354,7 +354,8 @@ pub send(sock: Socket, data: []u8): (int, Error) {
 
 pub resolve4(host: string, port: u16, addresses: mut []Addr4): (usize, Error) {
     if host.len > HOST_NAME_MAX || addresses.len == 0 { return usize(0), ResolveErr.invalid }
-    name: [254]u8
+    storage: [254]u8
+    name: mut []u8 = mut storage[0..254]
 
     for index: usize in usize(0) .. host.len {
         byte: u8 = host[index]

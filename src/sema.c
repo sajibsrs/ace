@@ -5434,6 +5434,20 @@ static void init_mark_path(InitCk* k, Node* e) {
     }
 }
 
+// A view of a local array is tracked whole: a read-only view reads the whole
+// array; a mut view initializes it only when it covers every element.
+static void init_array_view(InitCk* k, Node* e) {
+    if (!(e->flags & F_MUT)) {
+        (void)init_require_path(k, e->a);
+        return;
+    }
+    SType* bt = init_shape(node_ty(e->a));
+    uint64_t lo = 0, hi = bt->count;
+    if (e->b && !init_const_index(e->b, &lo)) return;
+    if (e->c && !init_const_index(e->c, &hi)) return;
+    if (lo == 0 && hi == bt->count) init_mark_path(k, e->a);
+}
+
 static void init_expr(InitCk* k, Node* e);
 static int init_stmt(InitCk* k, Node* s);
 
@@ -5494,14 +5508,24 @@ static void init_expr(InitCk* k, Node* e) {
     }
     case N_SLICE_E: {
         SType* bt = init_shape(node_ty(e->a));
-        if (!bt || bt->kind != SK_ARRAY) init_expr(k, e->a);
-        init_expr(k, e->b);
+        init_expr(k, e->b); // bounds are evaluated before the view is used
         init_expr(k, e->c);
+        if (!bt || bt->kind != SK_ARRAY) {
+            init_expr(k, e->a);
+        } else {
+            init_addr_parts(k, e->a);
+            init_array_view(k, e);
+        }
         return;
     }
     case N_UNARY:
-        if (e->op == T_AMP) init_addr_parts(k, e->a);
-        else init_expr(k, e->a);
+        if (e->op == T_AMP) {
+            init_addr_parts(k, e->a);
+            if (e->flags & F_MUT) init_mark_path(k, e->a);
+            else (void)init_require_path(k, e->a);
+        } else {
+            init_expr(k, e->a);
+        }
         return;
     case N_BINARY:
         init_expr(k, e->a); init_expr(k, e->b); return;

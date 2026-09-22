@@ -1,0 +1,10 @@
+/* Uninitialized slice fixture. */
+
+Span: struct { start: usize, end: usize }
+
+first(spans: []Span): usize { return spans[0].start }
+
+main(): int {
+    spans: [2]Span
+    return int(first(spans[0..2]))
+}

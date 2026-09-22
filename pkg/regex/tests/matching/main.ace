@@ -94,7 +94,8 @@ groups(pattern: string, text: string, want: string): int {
 every(pattern: string, text: string, want: string): int {
     re: regex.Regex = compile(pattern)
     defer mut re.wipe()
-    spans: [16]regex.Span
+    storage: [16]regex.Span
+    spans: mut []regex.Span = mut storage[0..16]
     count: usize = 0
     at: usize = 0
 
@@ -197,7 +198,8 @@ iteration(): int {
 /* Patterns that take exponential time under backtracking finish here. */
 linear(): int {
     bad: int = 0
-    text: [100000]u8
+    storage: [100000]u8
+    text: mut []u8 = mut storage[0..100000]
 
     for i: usize in 0 .. 100000 {
         text[i] = 'a'

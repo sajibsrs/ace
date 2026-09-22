@@ -389,9 +389,33 @@ main(): int {
 
 After a branch, an initialization fact survives only if every continuing path
 establishes it. A loop alone cannot establish initialization after the loop,
-because it may execute zero times. Taking an address does not read the value;
-pointer aliases, inline assembly, and extern code are programmer-trusted
-boundaries with no hidden alias analysis.
+because it may execute zero times.
+
+A view of a local is checked once, where it is created. A read-only view
+(`&path`, `array[lo..hi]`) reads what it may reach: a constant path exactly,
+and the whole array for a dynamic index or any array slice. A writable view
+(`mut &path`, `mut array[lo..hi]`) reads nothing and initializes a constant
+path, or the whole array when the slice spans every element; you promise the
+storage is written before it is read. A buffer filled by dynamic index is
+therefore filled through one full-range writable view:
+
+```ace
+fill_prefix(bytes: mut []u8): usize {
+    bytes[0] = u8(97)
+    return 1
+}
+
+main(): int {
+    storage: [16]u8
+    bytes: mut []u8 = mut storage[0..16] // storage is now initialized
+    count: usize = fill_prefix(bytes)
+    return int(string(bytes[0..count]).len)
+}
+```
+
+Nothing is tracked through a view afterwards: pointer aliases, inline
+assembly, and extern code are programmer-trusted boundaries with no hidden
+alias analysis.
 
 ## Arrays and slices
 

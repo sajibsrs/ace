@@ -1657,6 +1657,19 @@ current normative rules, and Git preserves patch-level detail.
   against a structure-for-structure C port of the matcher running the same
   programs (Ace/C 2.9-4.1x, just ahead of C `-O0`) with PCRE2 as an optional
   reference; `bench/README.md` records the baseline.
+- Closed the definite-initialization hole through views of a local: a slice
+  of a local array and a read-only `&` created no read, so an uninitialized
+  array passed as `first(spans[0..2])` compiled. A view is now judged once at
+  creation (`init_array_view`, the `&` case in `init_expr`): a read-only view
+  requires its constant path, or the whole array for a slice or dynamic index;
+  a writable view marks its constant path, or the whole array for a
+  full-range slice, as a trusted promise to fill it. Slice bounds are checked
+  before the base, so `buffer[0..render(mut buffer[0..n])]` holds. Per-element
+  slice precision was prototyped and left out: an unsorted `InitPart` list made
+  each branch join quadratic (a 4096-element partial range across 50 branches
+  took 1.85 s against 3.3 ms). Buffers filled by dynamic index in `std/fmt`,
+  `std/net`, the packet-sniffer demo, and `pkg/regex` tests now write through
+  one full-range `mut` view of their storage.
 
 ## Current frontier
 

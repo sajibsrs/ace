@@ -150,7 +150,8 @@ main(): int {
 
     fmt.printf("listening on %s with a %u-byte BPF buffer\n", interface, buffer_length)
 
-    storage: [524288]u8
+    backing: [524288]u8
+    storage: mut []u8 = mut backing[0..524288]
     for {
         count: int, read_error: Error = sys.read(fd, mut storage[0..buffer_length])
         if read_error != null {

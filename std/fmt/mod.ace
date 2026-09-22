@@ -20,7 +20,8 @@ pub print(text: string): int {
 }
 
 pub print(value: int): int {
-    digits: [20]u8
+    storage: [20]u8
+    digits: mut []u8 = mut storage[0..20]
     at: int = 20
     remaining: int = value
     negative: bool = value < 0
@@ -58,7 +59,8 @@ pub print(value: int): int {
 }
 
 pub print(value: uint): int {
-    digits: [20]u8
+    storage: [20]u8
+    digits: mut []u8 = mut storage[0..20]
     at: int = 20
     remaining: uint = value
 
@@ -85,7 +87,8 @@ pub print(value: uint): int {
 }
 
 pub print(value: usize): int {
-    digits: [20]u8
+    storage: [20]u8
+    digits: mut []u8 = mut storage[0..20]
     at: int = 20
     remaining: usize = value
 
@@ -132,7 +135,8 @@ write_bytes(data: []u8): int {
  * The sign comes first; no trailing zeros are added.
  */
 format_float(negative: bool, digits: []u8, count: int, decpt: i32): int {
-    out: [48]u8
+    storage: [48]u8
+    out: mut []u8 = mut storage[0..48]
     at: int = 0
 
     if negative {
@@ -308,7 +312,8 @@ print_counted[u8](value: u8): int {
 }
 
 print_radix[uint](value: uint, radix: u8, uppercase: bool): int {
-    out: [64]u8
+    storage: [64]u8
+    out: mut []u8 = mut storage[0..64]
     at: int = 64
     remaining: uint = value
 
@@ -331,7 +336,8 @@ print_radix[uint](value: uint, radix: u8, uppercase: bool): int {
 }
 
 print_radix[usize](value: usize, radix: u8, uppercase: bool): int {
-    out: [64]u8
+    storage: [64]u8
+    out: mut []u8 = mut storage[0..64]
     at: int = 64
     remaining: usize = value
 
@@ -360,7 +366,8 @@ write_fixed(value: decimal.Decimal, digits: []u8, precision: usize): int {
         if value.negative { return print_counted[string]("-inf") }
         return print_counted[string]("inf")
     }
-    out: [640]u8
+    storage: [640]u8
+    out: mut []u8 = mut storage[0..640]
     at: int = 0
 
     if value.negative {

@@ -31,18 +31,6 @@ blockers for the current sequential core.
 Found by writing `pkg/regex` (parser, compiler, Pike VM, benchmark); explore
 next, in this order.
 
-- **Uninitialized local array readable through a slice** [defect] — `spans:
-  [2]Span` followed by `first(spans[0..2])`, with no write in between,
-  compiles cleanly, though Values #7 forbids reading a local before it is
-  definitely initialized; a direct `spans[0].start` is correctly rejected.
-  Slicing the whole local escapes the check.
-- **Initialization through a writable slice** [unspecified] — after
-  `fill(mut spans[0..2])` writes every element, `spans[0].start` is still
-  rejected, because no write through a view is tracked, so the caller must
-  pre-fill with `[blank(T) : N]` (`bench/regex`). Whether establishing or
-  passing a writable view of a whole local counts as initializing it is open;
-  any answer must add no alias analysis, and it shares its root with the
-  defect above.
 - **`from` as a contextual word** [unspecified] — `from` is reserved only for
   `import names from source`, yet it blocks the natural name for a search
   start (`pkg/regex` uses `after`, as `str` does). `when`, `step`, and
