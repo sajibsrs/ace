@@ -223,11 +223,6 @@ from_darwin(address: DarwinAddr4): Addr4 {
     }
 }
 
-zero_addr4(): Addr4 {
-    ip: [4]u8 = [u8(0) : 4]
-    return Addr4 {ip = ip, port = u16(0)}
-}
-
 pub socket(socket_type: SocketType): (Socket, Error) {
     // tcp is the only initial type; its enum zero maps to SOCK_STREAM.
     if socket_type != SocketType.tcp {
@@ -304,7 +299,7 @@ pub accept(listener: Socket): (Socket, Addr4, Error) {
     length: u32 = SOCKADDR4_SIZE
     accepted: i32 = c_accept(i32(listener), mut &raw, mut &length)
 
-    if accepted == -1 { return Socket(-1), zero_addr4(), AcceptErr(sys.errno()) }
+    if accepted == -1 { return Socket(-1), blank(Addr4), AcceptErr(sys.errno()) }
     return Socket(accepted), from_darwin(raw), null
 }
 
@@ -337,7 +332,7 @@ pub local(sock: Socket): (Addr4, Error) {
     }
     length: u32 = SOCKADDR4_SIZE
 
-    if c_getsockname(i32(sock), mut &raw, mut &length) == -1 { return zero_addr4(), LocalErr(sys.errno()) }
+    if c_getsockname(i32(sock), mut &raw, mut &length) == -1 { return blank(Addr4), LocalErr(sys.errno()) }
     return from_darwin(raw), null
 }
 

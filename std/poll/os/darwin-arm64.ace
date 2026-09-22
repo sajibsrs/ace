@@ -89,17 +89,6 @@ kevent_change(fd: sys.Fd, filter: i16, flags: u16): DarwinKevent {
     }
 }
 
-zero_kevent(): DarwinKevent {
-    return DarwinKevent {
-        ident = usize(0),
-        filter = i16(0),
-        flags = u16(0),
-        fflags = u32(0),
-        data = i64(0),
-        udata = null,
-    }
-}
-
 pub queue(): (Queue, Error) {
     fd: i32 = c_kqueue()
 
@@ -178,7 +167,7 @@ pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
         timeout.nanoseconds = i64(timeout_ns % NSEC_PER_SEC)
         timeout_pointer = &timeout
     }
-    raw: [64]DarwinKevent = [zero_kevent() : 64]
+    raw: [64]DarwinKevent = [blank(DarwinKevent) : 64]
     ready: i32 = c_kevent(i32(sys.Fd(q)), null, 0, mut &raw[0], i32(capacity), timeout_pointer)
 
     if ready == -1 { return usize(0), WaitErr(sys.errno()) }

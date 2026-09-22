@@ -134,10 +134,6 @@ pub ResponseResult: union {
     framing,
 }
 
-zero_url(): Url {
-    return Url {host = null, path = null, query = null, port = u16(0)}
-}
-
 /* Reports whether `byte` is permitted by the HTTP token grammar. */
 is_host(host: string): bool {
     if host.len == 0 || host.len > 253 {
@@ -206,11 +202,11 @@ pub Url::parse(url: string, secure: bool): (Url, Error) {
         default_port = 443
     }
     if url.len < start || !mem.equal(url[..start], scheme) {
-        return zero_url(), UrlErr.invalid
+        return blank(Url), UrlErr.invalid
     }
     for i: usize in 0 .. url.len {
         if ascii.is_control(url[i]) || url[i] == 35 {
-            return zero_url(), UrlErr.invalid
+            return blank(Url), UrlErr.invalid
         }
     }
     authority_end: usize = url.len
@@ -222,14 +218,14 @@ pub Url::parse(url: string, secure: bool): (Url, Error) {
     }
     for i: usize in start .. authority_end {
         if url[i] == 64 || url[i] == 91 || url[i] == 93 {
-            return zero_url(), UrlErr.invalid
+            return blank(Url), UrlErr.invalid
         }
     }
     colon: usize = authority_end
     for i: usize in start .. authority_end {
         if url[i] == 58 {
             if colon != authority_end {
-                return zero_url(), UrlErr.invalid
+                return blank(Url), UrlErr.invalid
             }
             colon = i
         }
@@ -237,13 +233,13 @@ pub Url::parse(url: string, secure: bool): (Url, Error) {
     host_end: usize = colon
     host: string = url[start..host_end]
     if !is_host(host) {
-        return zero_url(), UrlErr.invalid
+        return blank(Url), UrlErr.invalid
     }
     port: u16 = default_port
     if colon != authority_end {
         parsed_port: uint, parsed: bool = str.parse[uint](url[colon + 1..authority_end])
         if !parsed || parsed_port > 65535 {
-            return zero_url(), UrlErr.invalid
+            return blank(Url), UrlErr.invalid
         }
         port = u16(parsed_port)
     }

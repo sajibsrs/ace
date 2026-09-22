@@ -21,11 +21,9 @@ pub SendErr: type = os.SendErr
 pub ResolveErr: type = os.ResolveErr
 pub LocalErr: type = os.LocalErr
 
-zero_addr4(): Addr4 { return Addr4 {ip = [0, 0, 0, 0], port = u16(0)} }
-
 /* Strict dotted-decimal IPv4 endpoint parsing. */
 pub parse4(endpoint: string): (Addr4, bool) {
-    address: Addr4 = zero_addr4()
+    address: Addr4 = blank(Addr4)
     at: usize = 0
 
     if endpoint.len == 0 { return address, false }
@@ -37,16 +35,16 @@ pub parse4(endpoint: string): (Addr4, bool) {
             value = value * 10 + uint(endpoint[at] - 48)
             digits += 1
             at += 1
-            if value > 255 { return zero_addr4(), false }
+            if value > 255 { return blank(Addr4), false }
         }
-        if digits == 0 { return zero_addr4(), false }
+        if digits == 0 { return blank(Addr4), false }
         address.ip[part] = u8(value)
         if part < 3 {
-            if at >= endpoint.len || endpoint[at] != 46 { return zero_addr4(), false }
+            if at >= endpoint.len || endpoint[at] != 46 { return blank(Addr4), false }
             at += 1
         }
     }
-    if at >= endpoint.len || endpoint[at] != 58 { return zero_addr4(), false }
+    if at >= endpoint.len || endpoint[at] != 58 { return blank(Addr4), false }
     at += 1
     port: uint = 0
     digits: usize = 0
@@ -54,9 +52,9 @@ pub parse4(endpoint: string): (Addr4, bool) {
         port = port * 10 + uint(endpoint[at] - 48)
         digits += 1
         at += 1
-        if port > 65535 { return zero_addr4(), false }
+        if port > 65535 { return blank(Addr4), false }
     }
-    if digits == 0 || at != endpoint.len { return zero_addr4(), false }
+    if digits == 0 || at != endpoint.len { return blank(Addr4), false }
     address.port = u16(port)
     return address, true
 }
