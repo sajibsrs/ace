@@ -1,0 +1,52 @@
+/* Integer payload binders live in registers: each loads its payload at the
+   exact width a slot store and reload would leave, sign-extending narrow
+   signed payloads, and one read after a call keeps a register the call
+   preserves. */
+
+// expect-exit: 0
+
+Val: union {
+    tiny: i8,
+    short: i16,
+    half: u16,
+    word: i32,
+    flag: bool,
+}
+
+twice(x: int): int {
+    return x * 2
+}
+
+// payloads in the arms of a loop: each binder is read several times
+weigh(v: Val): int {
+    total: int = 0
+    for r: int in 0 .. 3 {
+        switch v {
+            Val.tiny(t: i8) { total += int(t) * 2 + int(t) }
+            Val.short(s: i16) { total += int(s) + int(s >> 1) }
+            Val.half(h: u16) { total += int(h) - int(h / 2) }
+            Val.word(w: i32) { total += int(w) + int(w % 7) }
+            Val.flag(f: bool) { if f { total += 5 } }
+        }
+    }
+    return total
+}
+
+// the binder is read after a call returns
+across(v: Val): int {
+    switch v {
+        Val.tiny(t: i8) { return twice(1) + int(t) }
+        default { return 0 }
+    }
+    return -1
+}
+
+main(): int {
+    if weigh(Val.tiny(-100)) != -900 { return 1 }
+    if weigh(Val.short(-30000)) != -135000 { return 2 }
+    if weigh(Val.half(65535)) != 98304 { return 3 }
+    if weigh(Val.word(-2000000000)) != -6000000015 { return 4 }
+    if weigh(Val.flag(true)) != 15 { return 5 }
+    if across(Val.tiny(-5)) != -3 { return 6 }
+    return 0
+}

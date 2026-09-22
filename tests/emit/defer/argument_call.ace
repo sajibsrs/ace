@@ -1,0 +1,29 @@
+/* A call in a deferred argument runs at the defer statement, so a local live
+ * across it must not sit in a register that call clobbers. */
+
+// expect-exit: 40
+
+seen: int
+
+keep(x: int) {
+    seen = x
+}
+
+// call-free: its locals take x14 down
+scratch(): int {
+    a: int = 1
+    b: int = 2
+    c: int = 3
+    d: int = 4
+    return a + b * c - d
+}
+
+run(n: int): int {
+    k: int = n * 3
+    defer keep(scratch())
+    return k + n
+}
+
+main(): int {
+    return run(10)
+}

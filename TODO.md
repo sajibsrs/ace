@@ -134,34 +134,31 @@ These are baseline observations, not performance promises.
 - **Read-only parameter load reuse** [queued] — exploit the existing parameter
   facts without adding global alias analysis. Keeping a string parameter's
   length in a register measured no parse gain even with registers free.
-- **Caller-saved promotion across calls** [new] — non-leaf functions still
-  keep every promoted local in x19-x28; locals not live across any call could
-  use x9-x14 given per-call liveness.
-- **Live-range-aware register promotion** [new] — promotion assigns a register
-  to a declaration for the whole function body (`promo_take` ranks candidates
-  by use-count weight and nothing else), so two locals with disjoint live
-  ranges can never share one. In a function that already saturates its
-  registers this inverts the usual advice: naming a repeated subexpression in
-  `pow` is bit-identical and saves five instructions, yet costs 5% throughput
-  and 15% dependent-chain latency, because the new name evicts a hotter value
-  for the whole body even when it is live for four instructions at the end.
-  The same accounting makes recomputing a cheap register-only expression, and
-  nesting a single-use value rather than naming it, the idioms that win in
-  `std/math`. Where it pays is the code that is actually starved: `pow` itself
-  saturates its sixteen float registers but loses only two candidates, both at
-  the minimum weight, while `math`'s `reduce_large` loses fifteen integer
-  locals and `float_shortest`'s `binary64` and `binary32` lose sixteen and
-  eighteen. Candidate: live ranges, or at minimum letting disjoint locals share
-  a register; it needs the same per-call liveness the caller-saved item above
-  wants.
-- **Promoted registers are copied before use** [new] — every expression
-  result takes a fresh temp, so a promoted value is copied (`mov`) into one
-  before it is read. Promoting a by-reference parameter's pointer (method
-  receivers, `mut` parameters) in a `pkg/regex` prototype cut frame-slot
-  accesses in `Matcher.add` from 77 to 62 but retired about 2% more
-  instructions, each slot load becoming a copy. Candidate: let an address or
-  operand read a promoted register in place, as `src_reg` already does for
-  integer operands; it bounds any further promotion work.
+- **Caller-saved promotion across calls** [new] — an integer local whose live
+  interval crosses a call still takes x19-x28, or its slot below
+  `PROMO_MIN_WEIGHT`; x9-x14 would need a save and reload around each call it
+  spans.
+- **Float promotion ignores live ranges** [new] — integer locals share
+  registers by live interval, but float locals still hold d8-d15 or d24-d31
+  for the whole body (`promo_take` ranks them by use-count weight alone), so
+  two with disjoint live ranges can never share one. In a function that already
+  saturates its float registers this inverts the usual advice: naming a
+  repeated subexpression in `pow` is bit-identical and saves five
+  instructions, yet costs 5% throughput and 15% dependent-chain latency,
+  because the new name evicts a hotter value for the whole body even when it
+  is live for four instructions at the end. The same accounting makes
+  recomputing a cheap register-only expression, and nesting a single-use value
+  rather than naming it, the idioms that win in `std/math`. `pow` saturates
+  its sixteen float registers but loses only two candidates, both at the
+  minimum weight. Candidate: extend the integer intervals to the float
+  classes.
+- **By-reference parameters are copied before use** [new] — a promoted value
+  is read in place as an operand, and a result is computed straight into its
+  promoted register, but a by-reference parameter's pointer (method receivers,
+  `mut` parameters) stays in its slot. Promoting it in a `pkg/regex` prototype
+  cut frame-slot accesses in `Matcher.add` from 77 to 62 but retired about 2%
+  more instructions, each slot load becoming a copy into the temp an address
+  needs. Candidate: let an address read a promoted pointer register in place.
 - **Wrapper calls cost a float spill** [new] — since promoted floats reach
   `d24-d31`, which are caller-saved, every branch-with-link stores and reloads
   them. A one-line dispatcher between two callers and two callees is therefore

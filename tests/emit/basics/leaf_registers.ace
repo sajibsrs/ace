@@ -1,6 +1,7 @@
-/* A function that makes no call keeps its heaviest locals in x14 down to x9
- * before x19-x28; byte helpers, union payload copies, and deep expressions
- * leave them intact, and a function-value call keeps locals callee-saved. */
+/* A local whose live range crosses no call keeps its register in x14 down to
+ * x9 before x19-x28; byte helpers, union payload copies, and deep expressions
+ * leave them intact, and a local live across a function-value call stays
+ * callee-saved. */
 
 // expect-exit: 42
 
@@ -106,7 +107,8 @@ deep(): int {
     return total
 }
 
-// a function-value call clobbers x9-x14, so its locals stay callee-saved
+// a function-value call clobbers x9-x14, so the locals live across it stay
+// callee-saved; n, read only by the range head, takes x14
 with_call(f: (int): int, n: int): int {
     a: int = 1
     b: int = 2

@@ -1211,39 +1211,44 @@ if [ -d tests/emit ]; then
             fail=1
         fi
         # A call-free function promotes every used local, single-use ones
-        # included, into x14 down: straight() takes x14 through x11 and saves
-        # no callee-saved register.
+        # included, into x14 down, and locals whose live ranges do not overlap
+        # share a register: straight()'s four take only x14 and x13 and it
+        # saves no callee-saved register.
         if ! otool -tv /tmp/ace_emit/basics/register_locals.o | awk '
             /^[^0-9].*:$/ { fn = ($0 ~ /^__ace\$fn\$straight\$/); next }
             fn {
                 for (i = 3; i <= NF; i++) {
                     r = $i; gsub(/[][,]/, "", r)
                     if (r == "x14") high = 1
-                    if (r == "x11") low = 1
-                    if (r ~ /^x(9|10|19|2[0-8])$/) bad = 1
+                    if (r == "x13") low = 1
+                    if (r ~ /^x(9|1[0-2]|19|2[0-8])$/) bad = 1
                 }
             }
             END { exit bad || !low || !high }'; then
-            echo "FAIL: call-free locals must all be promoted into x14 down"
+            echo "FAIL: call-free locals must share x14 down by live range"
             fail=1
         fi
-        # A call-free function fills x14 down to x9 before x19-x28; one with a
-        # function-value call keeps its locals out of the caller-saved x9-x14.
+        # A call-free function fills x14 down to x9 before x19-x28. In one with
+        # a function-value call, a local whose live range ends before the call
+        # (with_call's n) takes x14, while those live across it stay out of the
+        # caller-saved x9-x14.
         if ! otool -tv /tmp/ace_emit/basics/leaf_registers.o | awk '
             /^[^0-9].*:$/ {
                 fn = ($0 ~ /^__ace\$fn\$hot\$/) ? 1 : ($0 ~ /^__ace\$fn\$with_call\$/) ? 2 : 0
                 next
             }
             fn {
+                if (fn == 2 && $2 == "blr") called = 1
                 for (i = 3; i <= NF; i++) {
                     r = $i; gsub(/[][,]/, "", r)
                     if (fn == 1 && r == "x9") low = 1
                     if (fn == 1 && r == "x19") spill = 1
-                    if (fn == 2 && r ~ /^x(9|1[0-4])$/) bad = 1
+                    if (fn == 2 && r == "x14") before = 1
+                    if (fn == 2 && called && r ~ /^x(9|1[0-4])$/) bad = 1
                 }
             }
-            END { exit bad || !low || !spill }'; then
-            echo "FAIL: call-free functions must promote into x14-x9 first"
+            END { exit bad || !low || !spill || !before || !called }'; then
+            echo "FAIL: only locals whose live range crosses no call may use x14-x9"
             fail=1
         fi
         # Small constants are immediates: the digit scan compares against #0x30

@@ -766,6 +766,29 @@ code-layout noise here: removing only range-loop setup instructions measured
 6% slower on `word-ing`. Instructions retired (`/usr/bin/time -l`) are
 deterministic and fell 5.7-5.9% on every regex workload.
 
+### Regex after live-interval promotion
+
+Five runs at `d7b5c7d` plus live-interval register promotion in `src/emit.c`,
+medians in ns per byte:
+
+| workload | Ace | C | Ace/C | PCRE2 | PCRE2 JIT |
+|---|---|---|---|---|---|
+| `literal` | 38.61 | 11.29 | 3.42x | 1.48 | 0.06 |
+| `word-ing` | 72.76 | 27.48 | 2.65x | 50.72 | 5.50 |
+| `captures` | 78.99 | 33.41 | 2.36x | 12.43 | 3.55 |
+| `pathological` | 193.62 | 73.78 | 2.62x | 11865.48 | 967.15 |
+
+Ace spreads were 1.2-4.1 ns except `pathological` at 10.6. Instructions
+retired per workload, each looped 40 times in its own driver, fell from
+26.34, 42.58, 47.35, and 19.19 billion to 24.16, 39.18, 43.92, and 17.68 in
+row order (7.2-8.3%), with every checksum matching C; the whole bench retires
+3.17 billion against C's 1.02 (3.10x, from 3.36x). Most of the gain is sharing
+registers between locals whose live ranges do not overlap (3.4%) and computing
+results straight into a promoted register instead of copying them (2.8%);
+`x9`-`x14` for locals no call clobbers and register payload binders add about
+0.9% and 0.8%. `Matcher.run` fell from 469 to 433 instructions and
+`Matcher.add` from 302 to 283.
+
 ## Compile time
 
 Run the compile-time benchmark on Apple arm64:

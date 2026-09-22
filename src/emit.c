@@ -337,7 +337,12 @@ typedef struct { // register-promotion candidate: a scalar local or parameter
     Node*    decl;    // binder node (the Sym's decl)
     uint32_t weight;  // use_weight summed over its uses
     uint8_t  escaped; // its address is taken somewhere; stays in its slot
+    uint8_t  crosses; // a clobbering call lies strictly inside its interval
+    int      pend;    // outermost enclosing loop it must stay live through, or -1
+    uint32_t first, last; // live interval in promo_scan positions
 } PromoCand;
+
+typedef struct { Node* decl; int reg; uint32_t first, last; } PromoAsg; // a promoted binder's register
 
 typedef struct { // loop / labeled-block context stack
     int         brk, cont; // labels; cont = -1 for non-loops
@@ -356,7 +361,7 @@ typedef struct {
 } TU;
 
 #define MAX_ITEMPS 14  // x0-x7, x9-x14
-#define LEAF_REGS 6    // x14 down to x9: promoted locals of a call-free function
+#define LEAF_REGS 6    // x14 down to x9: promoted locals whose live range crosses no call
 /* temp_need counts operands, not the internal temps some lowerings add (a
  * static-map probe, a byte-sequence compare); the largest shortfall across
  * the std, test, bench, and package corpus is 2, so leaf promotion leaves 3
@@ -406,12 +411,26 @@ typedef struct {
     int      nlreg_loops, clreg_loops;
     int      lreg_top;   // next free loop register, as an offset from x19
     int      lreg_max;   // loop registers x19..x19+lreg_max-1
-    Node*    preg_decl[LOOP_REGS]; // promoted locals, from x19+lreg_max up
-    int      npreg;
-    Node*    xpreg_decl[LEAF_REGS]; // leaf-function promoted locals, x14 down
-    int      nxpreg;
+    PromoAsg* pasg;      // promoted integer-class binders and their registers
+    int      npasg, cpasg;
+    int      npreg;      // registers promotion opened from x19+lreg_max up
+    int      nxpreg;     // registers promotion used from x14 down
     int      vti_cap;    // int temps available: MAX_ITEMPS less nxpreg
     int      scan_call;  // promo_scan met a call that may clobber x9-x14
+    uint32_t scan_pos;   // promo_scan position counter
+    uint32_t scan_loop[64]; // start positions of the enclosing loops
+    int      nscan_loop;
+    int      scan_defer; // inside a defer statement
+    Node*    scan_deferred; // that statement's call, which runs at exits
+    uint32_t* scan_calls; // positions of clobbering calls, ascending
+    int      nscan_calls, cscan_calls;
+    PtrMap   call_pos;   // call node -> scan position + 1
+    int*     scan_pend;  // candidates read since the innermost open frame
+    int      nscan_pend, cscan_pend;
+    int*     scan_frame; // nscan_pend at each open frame
+    int      nscan_frame, cscan_frame;
+    int      in_defers;  // emit_defers is expanding exit-time calls
+    uint32_t bound_at;   // text offset of the last bound label
     int      scan_loop_branch; // promo_scan met a call or large aggregate inside a loop
     int      nsaved;     // callee-saved x registers the function saves and restores
     uint32_t lreg_save;  // depth of the callee-saved x save area
@@ -835,6 +854,7 @@ static int new_label(Em* e) {
 
 static void bind_label(Em* e, int l) {
     e->lab[l] = (uint32_t)text(e)->len;
+    e->bound_at = e->lab[l]; // a join point: store_preg folds nothing across it
     // Every bound label is a join point with an inbound branch, so linear
     // control reaches here again and the fall-off epilogue must come back.
     e->ended_return = 0;
@@ -2674,9 +2694,17 @@ static SType* raw_pointer_type(void) {
 static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
                     SType** params, uint8_t* muts, int nparams, int internal,
                     int varargs_from, CallTarget tgt, SType* ret) {
-    if (e->nxpreg) { // call_is_inline let a clobbering call into a leaf
-        e->d->errors++;
-        fprintf(stderr, "ace: call in a leaf-register function\n");
+    // No x9-x14 interval may span this bl. Exit-time defer calls are exempt:
+    // nothing promoted is read after the function exits.
+    if (e->nxpreg && !e->in_defers) {
+        uintptr_t cp = at ? ptrmap_get(&e->call_pos, at) : 0;
+        int bad = !cp; // a call promo_scan never saw
+        for (int i = 0; cp && i < e->npasg; i++)
+            if (e->pasg[i].reg <= 14 && e->pasg[i].first < cp - 1 && cp - 1 < e->pasg[i].last) bad = 1;
+        if (bad) {
+            e->d->errors++;
+            fprintf(stderr, "ace: call inside a caller-saved promoted local's live range\n");
+        }
     }
     int si = e->vti, sf = e->vtf;
     spill_temps(e);
@@ -3119,13 +3147,12 @@ static void addr_of_sym(Em* e, int rd, ESym* sym) {
 
 /*
  * Register holding a promoted local, or -1 for slot storage: an x register
- * number for integer-class locals (x19 up, or x14 down in a call-free
- * function), a v register number (8-15) for float locals.
+ * number for integer-class locals (x19 up, or x14 down), a v register number
+ * (8-15, 24-31) for float locals.
  */
 static int promo_reg(Em* e, Sym* s) {
     if (!s || !s->decl) return -1;
-    for (int i = 0; i < e->npreg; i++) if (e->preg_decl[i] == s->decl) return 19 + e->lreg_max + i;
-    for (int i = 0; i < e->nxpreg; i++) if (e->xpreg_decl[i] == s->decl) return 14 - i;
+    for (int i = 0; i < e->npasg; i++) if (e->pasg[i].decl == s->decl) return e->pasg[i].reg;
     for (int i = 0; i < e->nfpreg; i++)
         if (e->fpreg_decl[i] == s->decl) return i < FP_PROMO_REGS ? 8 + i : 24 + (i - FP_PROMO_REGS);
     return -1;
@@ -3155,10 +3182,52 @@ static void set_preg(Em* e, int r, int src, SType* t) {
     }
 }
 
+/*
+ * Retarget the instruction just emitted, which produced dead register src, to
+ * write promoted register r directly instead of copying after it. Only when
+ * no label is bound here (a branch could arrive with src already written),
+ * the instruction takes no input from its destination (not movk, bfm, or
+ * ccmp/ccmn, whose low bits are flags), and its result already has exactly
+ * the form set_preg would leave at the type's width.
+ */
+static int fold_preg(Em* e, int r, int src, SType* t) {
+    Buf* b = text(e);
+    if (b->len < 4 || e->bound_at == (uint32_t)b->len || src == 31) return 0;
+    uint32_t x;
+    memcpy(&x, b->d + b->len - 4, 4);
+    if ((int)(x & 31u) != src) return 0;
+    int dpi = ((x >> 26) & 7u) == 4u, dpr = ((x >> 25) & 7u) == 5u;
+    if (dpi && ((x >> 24) & 3u) == 0u) return 0;                             // adr/adrp
+    if (dpi && ((x >> 23) & 7u) == 5u && ((x >> 29) & 3u) == 3u) return 0;   // movk
+    if (dpi && ((x >> 23) & 7u) == 6u && ((x >> 29) & 3u) == 1u) return 0;   // bfm
+    if (dpr && (x & 0x1FE00000u) == 0x1A400000u) return 0;                   // ccmp/ccmn
+    uint32_t size = x >> 30, opc = (x >> 22) & 3u, mode = (x >> 10) & 3u;
+    int ldst = (x & 0x3B000000u) == 0x39000000u ||                           // unsigned offset
+               ((x & 0x3B000000u) == 0x38000000u &&                           // ldur, register offset
+                (mode == 0u ? !((x >> 21) & 1u) : mode == 2u && ((x >> 21) & 1u)));
+    int load = ldst && !((x >> 26) & 1u) && opc != 0u && !(size == 3u && opc == 2u); // not prfm
+    if (!dpi && !dpr && !load) return 0;
+    uint32_t w = (uint32_t)((scalar_bits(t) + 7) / 8);
+    int ok;
+    if (w >= 8) ok = 1;
+    else if (w == 4) ok = load ? (opc == 1u && size <= 2u) || (opc == 3u && size <= 1u) : !(x >> 31);
+    else if (load) ok = (ty_is_signed(t) ? opc == 3u : opc == 1u) && size + 1u <= w;
+    else if ((x & 0xFFFF0FE0u) == 0x1A9F07E0u) ok = 1;                        // cset: 0 or 1
+    else if ((x & 0xFFE00000u) == 0x52800000u) {                               // movz w, #imm16
+        uint32_t imm = (x >> 5) & 0xFFFFu;
+        ok = imm < (ty_is_signed(t) ? (w == 1 ? 0x80u : 0x8000u) : (w == 1 ? 0x100u : 0x10000u));
+    } else ok = 0;
+    if (!ok) return 0;
+    x = (x & ~31u) | (uint32_t)r;
+    memcpy(b->d + b->len - 4, &x, 4);
+    return 1;
+}
+
+// store a value into promoted register r; v's temp is dead afterwards
 static void store_preg(Em* e, int r, EV v, SType* t) {
     if (v.cls == CLS_ADDR) v = load_scalar(e, xreg(v.idx), 0, t);
     if (!is_floatt(t)) {
-        set_preg(e, r, xreg(v.idx), t);
+        if (!fold_preg(e, r, xreg(v.idx), t)) set_preg(e, r, xreg(v.idx), t);
         return;
     }
     int is64 = unwrap(t)->prim == P_F64;
@@ -5806,7 +5875,9 @@ static void emit_defers(Em* e, SType* ret) {
         line_mark(e, e->defers[i].at); // exit-time marks cite the defer line
         e->vti = 0;
         e->vtf = 0;
+        e->in_defers++;
         gen_expr(e, e->defers[i].call); // results discarded
+        e->in_defers--;
     }
     if (save) {
         for (int w = 0; w < rc.nunits; w++) {
@@ -5844,7 +5915,8 @@ static int case_falls_through(Node* c) {
  * Union switch: the scrutinee's address is parked in a stack slot (arm bodies
  * reuse the temp registers), the i32 tag is loaded once and each pattern
  * compares it, and matching
- * arms copy their payload binder before running the body. An unmatched tag
+ * arms copy their payload binder, or load a promoted one into its register,
+ * before running the body. An unmatched tag
  * always jumps explicitly, to the else arm if present or past the switch
  * otherwise; it never falls through into the first case.
  */
@@ -5890,9 +5962,16 @@ static void emit_union_switch(Em* e, Node* s, SType* ut) {
                 SType* pt = vi < ut->nfields ? ut->fields[vi].t : NULL;
                 if (!pt) continue;
                 Sym* bs = node_sym(pat->b);
-                uint32_t bslot = slot_alloc(e, bs && bs->decl ? bs->decl : pat->b, ty_size(pt), ty_align(pt));
                 int base = tmp_int(e); // scrutinee, outside copy_mem's x15-x17
                 load_frame(e, xreg(base), sslot, 8, 0);
+                int bpr = is_scalar(pt) && !is_floatt(pt) ? promo_reg(e, bs) : -1;
+                if (bpr >= 0) { // promoted binder: the payload loads straight into its register
+                    uint32_t w = (uint32_t)((scalar_bits(pt) + 7) / 8);
+                    ld_reg(e, bpr, xreg(base), poff, w, ty_is_signed(pt) && w < 4);
+                    e->vti = base;
+                    continue;
+                }
+                uint32_t bslot = slot_alloc(e, bs && bs->decl ? bs->decl : pat->b, ty_size(pt), ty_align(pt));
                 frame_addr(e, 15, bslot);
                 copy_mem(e, 15, 0, xreg(base), poff, ty_size(pt)); // binder = payload copy
                 e->vti = base;
@@ -7173,8 +7252,8 @@ static int loop_regs_take(Em* e, Node* s) {
  * sum cannot overflow short of 131072 uses. A local below PROMO_MIN_WEIGHT
  * keeps its slot: one straight-line use costs a slot store and load, about
  * what saving and restoring a callee-saved register would, while every
- * further use is a round-trip through memory the register avoids. The x9-x14
- * class of a call-free function needs no save, so a single use qualifies there.
+ * further use is a round-trip through memory the register avoids. x9-x14
+ * need no save, so a single use qualifies there for a local no call clobbers.
  */
 #define PROMO_MIN_WEIGHT 2
 
@@ -7200,7 +7279,8 @@ static void promo_add(Em* e, Node* binder) {
         if (!e->pcands) oom();
     }
     if (!ptrmap_get(&e->pcand_ix, binder)) ptrmap_put(&e->pcand_ix, binder, (uintptr_t)e->npcands + 1);
-    e->pcands[e->npcands++] = (PromoCand){ binder, 0, 0 };
+    uint32_t at = ++e->scan_pos; // defined here: after its initializer, at entry for a parameter
+    e->pcands[e->npcands++] = (PromoCand){ binder, 0, 0, 0, -1, at, at };
 }
 
 static void promo_escape(Em* e, Node* x) {
@@ -7213,7 +7293,8 @@ static void promo_escape(Em* e, Node* x) {
  * constructors, compile-time builtins, assert/panic (which never return), and
  * intrinsics that emit inline code or the x8/x15-x17-only byte helpers. This
  * mirrors gen_call's dispatch conservatively; emit_call rejects any real call
- * made while leaf registers hold locals, so a missed case cannot miscompile.
+ * inside the live range of a local promoted to x9-x14, so a missed case cannot
+ * miscompile.
  */
 static int call_is_inline(Node* call) {
     Node* callee = call->a;
@@ -7276,13 +7357,95 @@ static int temp_need(Node* n) {
     return need;
 }
 
+// pending in-place reads are resolved when the innermost frame closes
+static void scan_open(Em* e) {
+    if (e->nscan_frame == e->cscan_frame) {
+        e->cscan_frame = e->cscan_frame ? e->cscan_frame * 2 : 64;
+        e->scan_frame = realloc(e->scan_frame, (size_t)e->cscan_frame * sizeof(int));
+        if (!e->scan_frame) oom();
+    }
+    e->scan_frame[e->nscan_frame++] = e->nscan_pend;
+}
+
+// the reads made since the frame opened stay live to position `at`
+static void scan_close(Em* e, uint32_t at) {
+    int start = e->scan_frame[--e->nscan_frame];
+    for (int i = start; i < e->nscan_pend; i++) {
+        PromoCand* c = &e->pcands[e->scan_pend[i]];
+        if (c->last < at) c->last = at;
+    }
+    e->nscan_pend = start;
+}
+
+static void promo_scan(Em* e, Node* n, int depth);
+
+// one statement part: the emitter reads promoted operands in place by its end
+static void scan_part(Em* e, Node* n, int depth) {
+    if (!n) return;
+    scan_open(e);
+    promo_scan(e, n, depth);
+    scan_close(e, ++e->scan_pos);
+}
+
+// a loop, or a labeled block `continue` may restart
+static void scan_loop_push(Em* e) {
+    uint32_t at = ++e->scan_pos;
+    if (e->nscan_loop < 64) e->scan_loop[e->nscan_loop] = at; // deeper nesting fails in emission
+    e->nscan_loop++;
+}
+
+// a value defined before the loop and used in it stays live to its back edge
+static void scan_loop_pop(Em* e) {
+    uint32_t end = ++e->scan_pos;
+    int k = --e->nscan_loop;
+    for (int i = 0; i < e->npcands; i++) {
+        PromoCand* c = &e->pcands[i];
+        if (c->pend < k) continue;
+        if (c->last < end) c->last = end;
+        c->pend = -1;
+    }
+}
+
+static void scan_use(Em* e, PromoCand* c, int depth) {
+    c->weight += use_weight(depth);
+    uint32_t at = ++e->scan_pos;
+    if (e->scan_defer) { // read again at every exit, after other defers' calls
+        c->last = UINT32_MAX;
+        c->crosses = 1;
+    } else {
+        if (c->last < at) c->last = at;
+        if (e->nscan_pend == e->cscan_pend) {
+            e->cscan_pend = e->cscan_pend ? e->cscan_pend * 2 : 64;
+            e->scan_pend = realloc(e->scan_pend, (size_t)e->cscan_pend * sizeof(int));
+            if (!e->scan_pend) oom();
+        }
+        e->scan_pend[e->nscan_pend++] = (int)(c - e->pcands);
+    }
+    int nl = e->nscan_loop < 64 ? e->nscan_loop : 64;
+    for (int k = 0; k < nl; k++) // the outermost loop begun after its definition
+        if (e->scan_loop[k] > c->first) {
+            if (c->pend < 0 || k < c->pend) c->pend = k;
+            break;
+        }
+}
+
 /*
  * One walk over a function body before it is emitted: collect single-binder
- * scalar declarations and loop binders, weight every use by its loop depth, and mark each
- * place the emitter takes a variable's address or needs its storage (&x, a
- * volatile read or store, a mut argument, a field/index/slice base, a tuple
- * assignment target, a sequence loop's iterable). Follows a/b/c/kids only; Node.d is read solely as a
+ * scalar declarations, loop binders, and integer union payload binders,
+ * weight every use by its loop depth, and mark each place the emitter takes a
+ * variable's address or needs its storage (&x, a volatile read or store, a mut
+ * argument, a field/index/slice base, a tuple assignment target, a sequence
+ * loop's iterable). Follows a/b/c/kids only; Node.d is read solely as a
  * general for's body, since sema's d links form cycles.
+ *
+ * The walk numbers positions in emission order and gives every candidate a
+ * live interval [first, last]. A use extends it to where the emitter last
+ * reads the value, which for an operand read in place is its consumer: a
+ * direct call argument is consumed by that call's bl, any other use by the end
+ * of its statement part. A use inside a loop begun after the definition
+ * extends it to that loop's end. A real call is recorded at its bl, after its
+ * arguments; a deferred call runs at the exits instead, and a use inside a
+ * defer is live to them.
  */
 static void promo_scan(Em* e, Node* n, int depth) {
     if (!n) return;
@@ -7293,17 +7456,20 @@ static void promo_scan(Em* e, Node* n, int depth) {
     switch (n->kind) {
     case N_IDENT: {
         PromoCand* c = promo_find(e, n);
-        if (c) c->weight += use_weight(depth);
+        if (c) scan_use(e, c, depth);
         return;
     }
     case N_VAR:
         if (n->flags & F_MIXED) {
             for (int i = 0; i < n->nkids; i++) if (n->kids[i]->kind != N_PARAM) promo_escape(e, n->kids[i]);
         } else if (n->nkids == 1) {
+            scan_part(e, n->b, depth);
             promo_add(e, n->kids[0]);
+            promo_scan(e, n->kids[0], depth);
+            return;
         }
         break;
-    case N_ASSIGN:
+    case N_ASSIGN: // one frame: the target's read and write order varies
         if (n->nkids > 1 || (n->flags & F_VOLATILE)) for (int i = 0; i < n->nkids; i++) promo_escape(e, n->kids[i]);
         break;
     case N_UNARY:
@@ -7312,26 +7478,77 @@ static void promo_scan(Em* e, Node* n, int depth) {
     case N_MUTARG: case N_FIELD_E: case N_INDEX: case N_SLICE_E:
         promo_escape(e, n->a);
         break;
-    case N_CALL:
-        if (!call_is_inline(n)) e->scan_call = 1;
+    case N_CALL: {
+        int real = !call_is_inline(n);
+        if (real) e->scan_call = 1;
         // Any call inside a loop may branch: a real one, or an inline lowering
         // that reaches a shared byte routine.
         if (depth > 0) e->scan_loop_branch = 1;
+        scan_open(e);
+        promo_scan(e, n->a, depth);
+        promo_scan(e, n->b, depth);
+        promo_scan(e, n->c, depth);
+        for (int i = 0; i < n->nkids; i++) promo_scan(e, n->kids[i], depth);
+        uint32_t at = ++e->scan_pos;
+        scan_close(e, at);
+        ptrmap_put(&e->call_pos, n, (uintptr_t)at + 1);
+        if (real && n != e->scan_deferred) {
+            if (e->nscan_calls == e->cscan_calls) {
+                e->cscan_calls = e->cscan_calls ? e->cscan_calls * 2 : 64;
+                e->scan_calls = realloc(e->scan_calls, (size_t)e->cscan_calls * sizeof(uint32_t));
+                if (!e->scan_calls) oom();
+            }
+            e->scan_calls[e->nscan_calls++] = at;
+        }
+        return;
+    }
+    case N_DEFER: { // its arguments are captured here, but its call runs at exits
+        Node* outer = e->scan_deferred;
+        e->scan_defer++;
+        e->scan_deferred = n->a;
+        scan_part(e, n->a, depth);
+        e->scan_deferred = outer;
+        e->scan_defer--;
+        return;
+    }
+    case N_LABEL:
+        scan_loop_push(e);
+        scan_part(e, n->a, depth);
+        scan_loop_pop(e);
+        return;
+    case N_CASE: // patterns bind before the body runs
+        for (int i = 0; i < n->nkids; i++) scan_part(e, n->kids[i], depth);
+        scan_part(e, n->a, depth);
+        scan_part(e, n->b, depth);
+        scan_part(e, n->c, depth);
+        return;
+    case N_VARPAT:
+        if (n->b && node_sym(n->b) && !is_floatt(node_sym(n->b)->type)) promo_add(e, n->b);
         break;
     case N_FOR:
         if (n->flags & F_FORGEN) {
-            promo_scan(e, n->a, depth);
-            promo_scan(e, n->b, depth + 1);
-            promo_scan(e, n->c, depth + 1);
-            promo_scan(e, n->d, depth + 1);
+            scan_part(e, n->a, depth);
+            scan_loop_push(e);
+            scan_part(e, n->b, depth + 1);
+            scan_part(e, n->c, depth + 1);
+            scan_part(e, n->d, depth + 1);
+            scan_loop_pop(e);
         } else {
             // binders are per-iteration copies, except an `in mut` value alias
             int alias = (n->flags & F_MUT) && n->b->kind != N_RANGE;
-            for (int i = 0; i < n->nkids; i++) if (!(alias && i == n->nkids - 1)) promo_add(e, n->kids[i]);
             if (n->b->kind != N_RANGE) promo_escape(e, n->b);
-            promo_scan(e, n->b, depth);
-            promo_scan(e, n->c, depth + 1);
+            scan_part(e, n->b, depth);
+            scan_loop_push(e);
+            for (int i = 0; i < n->nkids; i++) if (!(alias && i == n->nkids - 1)) promo_add(e, n->kids[i]);
+            scan_part(e, n->c, depth + 1);
+            scan_loop_pop(e);
         }
+        return;
+    case N_BLOCK: case N_IF: case N_SWITCH:
+        scan_part(e, n->a, depth);
+        scan_part(e, n->b, depth);
+        scan_part(e, n->c, depth);
+        for (int i = 0; i < n->nkids; i++) scan_part(e, n->kids[i], depth);
         return;
     default:
         break;
@@ -7342,8 +7559,9 @@ static void promo_scan(Em* e, Node* n, int depth) {
     for (int i = 0; i < n->nkids; i++) promo_scan(e, n->kids[i], depth);
 }
 
-// heaviest remaining non-escaping candidate of one register class, taken
-static Node* promo_take(Em* e, int fp, uint32_t min_weight) {
+// heaviest remaining non-escaping candidate of one register class; the
+// caller takes it by clearing its weight
+static PromoCand* promo_take(Em* e, int fp, uint32_t min_weight) {
     PromoCand* best = NULL;
     for (int i = 0; i < e->npcands; i++) {
         PromoCand* c = &e->pcands[i];
@@ -7352,39 +7570,87 @@ static Node* promo_take(Em* e, int fp, uint32_t min_weight) {
             (!best || c->weight > best->weight))
             best = c;
     }
-    if (!best) return NULL;
-    best->weight = 0;
-    return best->decl;
+    return best;
+}
+
+// whether a recorded call lies strictly inside (first, last)
+static int scan_crosses(Em* e, uint32_t first, uint32_t last) {
+    int lo = 0, hi = e->nscan_calls; // the first call after `first`
+    while (lo < hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (e->scan_calls[mid] <= first) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo < e->nscan_calls && e->scan_calls[lo] < last;
+}
+
+// give c register r, if no interval already there overlaps c's
+static int promo_assign(Em* e, PromoCand* c, int r) {
+    for (int i = 0; i < e->npasg; i++)
+        if (e->pasg[i].reg == r && e->pasg[i].first <= c->last && c->first <= e->pasg[i].last) return 0;
+    if (e->npasg == e->cpasg) {
+        e->cpasg = e->cpasg ? e->cpasg * 2 : 32;
+        e->pasg = realloc(e->pasg, (size_t)e->cpasg * sizeof(PromoAsg));
+        if (!e->pasg) oom();
+    }
+    e->pasg[e->npasg++] = (PromoAsg){ c->decl, r, c->first, c->last };
+    return 1;
 }
 
 /*
- * Choose the locals that live in registers: integer-class ones in the x19-x28
- * registers loop state leaves free, float ones in d8-d15. A function that
- * makes no call first gives its heaviest integer locals x14 down to x9, which
- * nothing else clobbers and which need no save: as many as its expressions'
- * temp bound leaves above the temps. Within each class, non-escaping
- * candidates go by descending weight, ties in declaration order. Parameters
- * passed by reference (mut, method receivers) never qualify.
+ * Choose the locals that live in registers, heaviest first, ties in
+ * declaration order. An integer-class local whose interval crosses no call
+ * takes x14 down to x9, which need no save: as many as the body's temp bound
+ * leaves above the temps. Otherwise, at PROMO_MIN_WEIGHT, it takes the
+ * x19-x28 registers loop state leaves free. Either way it shares a register
+ * already in use when their intervals do not overlap. Float locals get d8-d15
+ * and then d24-d31 for the whole body. Parameters passed by reference (mut,
+ * method receivers) never qualify.
  */
 static void plan_promotion(Em* e, Node* f) {
-    e->npcands = 0;
+    e->npcands = e->npasg = 0;
+    e->scan_pos = 0;
+    e->nscan_loop = e->scan_defer = 0;
+    e->scan_deferred = NULL;
+    e->nscan_calls = e->nscan_pend = e->nscan_frame = 0;
     ptrmap_clear(&e->pcand_ix);
+    ptrmap_clear(&e->call_pos);
     for (int i = 0; i < f->nkids; i++)
         if (!(f->kids[i]->flags & F_MUT) && !((f->flags & F_METHOD) && i == 0))
             promo_add(e, f->kids[i]);
     e->scan_call = e->scan_loop_branch = 0;
-    promo_scan(e, f->b, 0);
-    Node* d;
-    if (!e->scan_call) {
-        int room = MAX_ITEMPS - temp_need(f->b) - TEMP_MARGIN;
-        while (e->nxpreg < LEAF_REGS && e->nxpreg < room && (d = promo_take(e, 0, 1))) e->xpreg_decl[e->nxpreg++] = d;
-        e->vti_cap = MAX_ITEMPS - e->nxpreg;
+    scan_part(e, f->b, 0);
+    for (int i = 0; i < e->npcands; i++) {
+        PromoCand* c = &e->pcands[i];
+        if (scan_crosses(e, c->first, c->last)) c->crosses = 1;
     }
-    while (e->lreg_max + e->npreg < LOOP_REGS && (d = promo_take(e, 0, PROMO_MIN_WEIGHT))) e->preg_decl[e->npreg++] = d;
-    while (e->nfpreg < FP_PROMO_REGS && (d = promo_take(e, 1, PROMO_MIN_WEIGHT))) e->fpreg_decl[e->nfpreg++] = d;
+    int room = MAX_ITEMPS - temp_need(f->b) - TEMP_MARGIN;
+    if (room > LEAF_REGS) room = LEAF_REGS;
+    PromoCand* c;
+    while ((c = promo_take(e, 0, 1))) {
+        uint32_t weight = c->weight;
+        c->weight = 0;
+        int got = 0;
+        for (int k = 0; !c->crosses && !got && k < room; k++) {
+            got = promo_assign(e, c, 14 - k);
+            if (got && k + 1 > e->nxpreg) e->nxpreg = k + 1;
+        }
+        if (got || weight < PROMO_MIN_WEIGHT) continue;
+        for (int k = 0; !got && k < e->npreg; k++) got = promo_assign(e, c, 19 + e->lreg_max + k);
+        if (!got && e->lreg_max + e->npreg < LOOP_REGS) {
+            promo_assign(e, c, 19 + e->lreg_max + e->npreg);
+            e->npreg++;
+        }
+    }
+    e->vti_cap = MAX_ITEMPS - e->nxpreg;
+    while (e->nfpreg < FP_PROMO_REGS && (c = promo_take(e, 1, PROMO_MIN_WEIGHT))) {
+        c->weight = 0;
+        e->fpreg_decl[e->nfpreg++] = c->decl;
+    }
     if (!e->scan_loop_branch)
-        while (e->nfpreg < FP_PROMO_REGS + FP_LEAF_REGS && (d = promo_take(e, 1, PROMO_MIN_WEIGHT))) {
-            e->fpreg_decl[e->nfpreg++] = d;
+        while (e->nfpreg < FP_PROMO_REGS + FP_LEAF_REGS && (c = promo_take(e, 1, PROMO_MIN_WEIGHT))) {
+            c->weight = 0;
+            e->fpreg_decl[e->nfpreg++] = c->decl;
             e->nfpleaf++;
         }
 }
@@ -7543,7 +7809,7 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
     e->lreg_top = e->lreg_max = 0;
     e->fn_has_asm = 0;
     plan_loops(e, f->b);
-    e->npreg = e->nfpreg = e->nxpreg = e->nfpleaf = 0;
+    e->npreg = e->nfpreg = e->nxpreg = e->nfpleaf = e->npasg = 0;
     e->vti_cap = MAX_ITEMPS;
     e->vtf_cap = MAX_FPTEMPS;
     e->nphome = e->nfhome = e->nxhome = 0;

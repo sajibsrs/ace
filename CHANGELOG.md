@@ -503,6 +503,25 @@ current normative rules, and Git preserves patch-level detail.
   `gen_addr`). The regex bench retires about 5.8% fewer instructions and runs
   3-11% faster (`pathological` 244 to 216, `word-ing` 89 to 79 ns/B); `calls`
   retires 3.3% fewer.
+- Register promotion plans integer-class locals by live interval instead of
+  for the whole function (`plan_promotion`). `promo_scan` numbers positions in
+  emission order and gives each candidate [first, last]: a local is defined
+  after its initializer, a parameter at entry; an operand the emitter reads in
+  place lives until its consumer runs, a direct call argument to that call's
+  `bl` and any other use to the end of its statement part; a use in a loop (or
+  labeled block) begun after the definition extends to its end; a use inside a
+  `defer` lives to the exits. Real calls are recorded at their `bl`, except the
+  deferred call itself, whose arguments still run at the statement. Candidates
+  go heaviest first into a register holding no overlapping interval: x14 down
+  to x9 in any function when the interval crosses no call, else x19 up.
+  `emit_call` errors if a call lies strictly inside an x9-x14 interval or was
+  never scanned, except for exit-time defer calls. `store_preg` retargets the
+  instruction that just produced a value to write the promoted register
+  instead of copying after it, when no label is bound in between and the
+  result already has `set_preg`'s width (`fold_preg`). Integer union payload
+  binders are promoted and load their payload straight into the register.
+  The regex bench retires 7.2-8.3% fewer instructions per workload and runs
+  8-17% faster; `calls` retires 1.6% fewer and `cpu` 3.3%.
 - Implemented `str` character/string operations and explicit
   `str.parse[T]` specializations in pure Ace where practical, with libc float
   conversion isolated in its selected target layer. `char` remains the
