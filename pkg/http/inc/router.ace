@@ -1,12 +1,9 @@
 /* HTTP request routing: a growable, longest-prefix route table. */
 
+import array
 import mem
 import str
 import message: "./message.ace"
-
-RouterErr: error {
-    1: allocation = "route storage allocation failed"
-}
 
 Header: type = message.Header
 Request: type = message.Request
@@ -19,32 +16,23 @@ Route: struct {
 }
 
 pub Router: struct {
-    routes: mut []Route = null,
-    count: usize,
+    routes: array.Array[Route],
 }
 
 pub Router::new(): Router {
-    return Router{count = 0}
+    return Router{routes = array.Array[Route]{}}
 }
 
 /* Releases route storage. Call once the router is no longer served. */
 pub mut Router.wipe() {
-    mem.release[Route](mut self.routes)
-    self.count = 0
+    mut self.routes.wipe()
 }
 
 /* Registers `handler` for exact `method` and path-segment prefix `path`.
  * Grows route storage as needed; fails only if that growth fails.
  */
 pub mut Router.handle(method: string, path: string, handler: (Request): Response): Error {
-    grown: mut []Route, ok: bool = mem.grow[Route](self.routes, self.count + 1)
-    if !ok {
-        return RouterErr.allocation
-    }
-    self.routes = grown
-    self.routes[self.count] = Route{method = method, path = path, handler = handler}
-    self.count += 1
-    return null
+    return mut self.routes.push(Route{method = method, path = path, handler = handler})
 }
 
 /* True when `prefix` matches `target` on a path-segment boundary: "/home"
@@ -74,8 +62,7 @@ pub Router.dispatch(request: Request): Response {
     best: usize = 0
     best_len: usize = 0
     matched: bool = false
-    for i: usize in 0 .. self.count {
-        route: Route = self.routes[i]
+    for i: usize, route: Route in self.routes.view() {
         if !mem.equal(route.method, request.method) {
             continue
         }
@@ -90,7 +77,7 @@ pub Router.dispatch(request: Request): Response {
     }
 
     if matched {
-        handler: (Request): Response = self.routes[best].handler
+        handler: (Request): Response = self.routes.get(best).handler
         return handler(request)
     }
 
