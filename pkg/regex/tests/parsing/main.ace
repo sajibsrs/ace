@@ -1,0 +1,161 @@
+import fmt
+import mem
+import regex
+
+/* Parses `pattern` and compares its canonical text with `want`, printing both
+ * on a mismatch.
+ */
+tree(pattern: string, want: string): int {
+    s: regex.Syntax, err: Error, at: usize = regex.Syntax::parse(pattern)
+    defer mut s.wipe()
+
+    if err != null {
+        fmt.print("parse failed: ")
+        fmt.print(pattern)
+        fmt.print(": ")
+        fmt.println(err.message)
+        return 1
+    }
+    buffer: [512]u8
+    n: usize, ok: bool = s.format(mut buffer[0..512])
+
+    if !ok || !mem.equal(buffer[0..n], want) {
+        fmt.print(pattern)
+        fmt.print(": got ")
+        fmt.print(string(buffer[0..n]))
+        fmt.print(", want ")
+        fmt.println(want)
+        return 1
+    }
+    return 0
+}
+
+/* Expects `pattern` to fail with `want` at byte offset `offset`. */
+fails(pattern: string, want: Error, offset: usize): int {
+    s: regex.Syntax, err: Error, at: usize = regex.Syntax::parse(pattern)
+    defer mut s.wipe()
+
+    if err != want || at != offset {
+        fmt.print(pattern)
+        fmt.print(": got ")
+        fmt.print(err.name)
+        fmt.print(" at ")
+        fmt.print(at)
+        fmt.print(", want ")
+        fmt.print(want.name)
+        fmt.print(" at ")
+        fmt.println(offset)
+        return 1
+    }
+    return 0
+}
+
+structure(): int {
+    bad: int = 0
+    bad += tree("", "emp{}")
+    bad += tree("a", "lit{a}")
+    bad += tree("abc", "cat{lit{a} lit{b} lit{c}}")
+    bad += tree("a|b|c", "alt{lit{a} lit{b} lit{c}}")
+    bad += tree("a|", "alt{lit{a} emp{}}")
+    bad += tree("ab|cd", "alt{cat{lit{a} lit{b}} cat{lit{c} lit{d}}}")
+    bad += tree("a(b|c)*?", "cat{lit{a} star?{cap1{alt{lit{b} lit{c}}}}}")
+    bad += tree("(?:ab)+", "plus{grp{cat{lit{a} lit{b}}}}")
+    bad += tree("(a)(b(c))", "cat{cap1{lit{a}} cap2{cat{lit{b} cap3{lit{c}}}}}")
+    bad += tree("()", "cap1{emp{}}")
+    bad += tree("^a.$", "cat{bol{} lit{a} dot{} eol{}}")
+    bad += tree("\\bx\\B", "cat{wb{} lit{x} nwb{}}")
+    bad += tree("a}]", "cat{lit{a} lit{\\x7D} lit{]}}")
+    return bad
+}
+
+repetition(): int {
+    bad: int = 0
+    bad += tree("x??", "que?{lit{x}}")
+    bad += tree("a{3}", "rep{3 lit{a}}")
+    bad += tree("a{2,}", "rep{2, lit{a}}")
+    bad += tree("a{2,5}?", "rep?{2,5 lit{a}}")
+    bad += tree("a{0,}", "star{lit{a}}")
+    bad += tree("a{1,}", "plus{lit{a}}")
+    bad += tree("a{0,1}", "que{lit{a}}")
+    bad += tree("a{1000}", "rep{1000 lit{a}}")
+    bad += tree("ab*", "cat{lit{a} star{lit{b}}}")
+    return bad
+}
+
+classes(): int {
+    bad: int = 0
+    bad += tree("[a-c_]", "cc{_ a-c}")
+    bad += tree("[-a]", "cc{\\x2D a}")
+    bad += tree("[a-]", "cc{\\x2D a}")
+    bad += tree("[^\\n]", "cc{\\x00-\\x09 \\x0B-\\xFF}")
+    bad += tree("\\d", "cc{0-9}")
+    bad += tree("\\D", "cc{\\x00-/ :-\\xFF}")
+    bad += tree("\\s", "cc{\\x09-\\x0A \\x0C-\\x0D \\x20}")
+    bad += tree("[\\w]", "cc{0-9 A-Z _ a-z}")
+    bad += tree("[\\]\\-x]", "cc{\\x2D ] x}")
+    bad += tree("[\\x00-\\x02]", "cc{\\x00-\\x02}")
+    bad += tree("\\x41\\.\\-", "cat{lit{A} lit{.} lit{\\x2D}}")
+    return bad
+}
+
+errors(): int {
+    bad: int = 0
+    bad += fails("(ab", regex.ParseErr.missing_paren, 0)
+    bad += fails("a(b(c)", regex.ParseErr.missing_paren, 1)
+    bad += fails("ab)", regex.ParseErr.unexpected_paren, 2)
+    bad += fails("*a", regex.ParseErr.missing_operand, 0)
+    bad += fails("a**", regex.ParseErr.missing_operand, 2)
+    bad += fails("a|*", regex.ParseErr.missing_operand, 2)
+    bad += fails("(*)", regex.ParseErr.missing_operand, 1)
+    bad += fails("{2}", regex.ParseErr.missing_operand, 0)
+    bad += fails("(?i)a", regex.ParseErr.missing_operand, 1)
+    bad += fails("a{3,1}", regex.ParseErr.invalid_repeat, 1)
+    bad += fails("a{1001}", regex.ParseErr.invalid_repeat, 1)
+    bad += fails("a{,2}", regex.ParseErr.invalid_repeat, 1)
+    bad += fails("a{2", regex.ParseErr.invalid_repeat, 1)
+    bad += fails("[z-a]", regex.ParseErr.invalid_range, 1)
+    bad += fails("[a-\\d]", regex.ParseErr.invalid_range, 1)
+    bad += fails("[abc", regex.ParseErr.unterminated_class, 0)
+    bad += fails("[a\\]", regex.ParseErr.unterminated_class, 0)
+    bad += fails("\\q", regex.ParseErr.invalid_escape, 0)
+    bad += fails("a\\", regex.ParseErr.invalid_escape, 1)
+    bad += fails("\\x4", regex.ParseErr.invalid_escape, 0)
+    bad += fails("\\xZZ", regex.ParseErr.invalid_escape, 0)
+    bad += fails("[\\b]", regex.ParseErr.invalid_escape, 1)
+    bad += fails("\\1", regex.ParseErr.invalid_escape, 0)
+    return bad
+}
+
+/* 512 nested groups parse; the 513th is rejected at its own `(`. */
+depth(): int {
+    text: [1026]u8
+
+    for i: usize in 0 .. 512 {
+        text[i] = '('
+        text[1024 - 1 - i] = ')'
+    }
+    bad: int = 0
+    s: regex.Syntax, err: Error, at: usize = regex.Syntax::parse(string(text[0..1024]))
+    mut s.wipe()
+
+    if err != null {
+        fmt.println("512 nested groups should parse")
+        bad += 1
+    }
+    deep: [513]u8
+
+    for i: usize in 0 .. 513 {
+        deep[i] = '('
+    }
+    bad += fails(string(deep[0..513]), regex.ParseErr.depth, 512)
+    return bad
+}
+
+main(): int {
+    bad: int = structure() + repetition() + classes() + errors() + depth()
+
+    if bad != 0 {
+        return 1
+    }
+    return 0
+}

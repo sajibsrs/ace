@@ -1,0 +1,339 @@
+/* Regular-expression programs: Thompson construction from a syntax tree to a
+ * flat instruction array for a Pike VM.
+ *
+ * Leftmost-first priority lives entirely in `split`: the VM explores `x`
+ * before `y`, so a greedy repetition lists its body first and a lazy one its
+ * exit. Instructions name jump targets by index. Forward targets are emitted
+ * as placeholders and patched once known, and a run of placeholders that all
+ * need the same target is threaded into a linked list through their own
+ * target fields, so patching needs no side storage.
+ *
+ * The program is anchored: it matches only at the position the VM starts it
+ * from. Searching belongs to the VM.
+ */
+
+import array
+import output: "./output.ace"
+import syntax: "./syntax.ace"
+
+Class: type = syntax.Class
+Group: type = syntax.Group
+List: type = syntax.List
+Node: type = syntax.Node
+Repeat: type = syntax.Repeat
+Syntax: type = syntax.Syntax
+
+UNBOUNDED: const u32 = syntax.UNBOUNDED
+
+pub CompileErr: error {
+    1: too_large = "program exceeds the instruction limit"
+    2: allocation = "allocation failed"
+}
+
+/* The most instructions a program may hold. Counted repetitions multiply
+ * (`((a{1000}){1000}){1000}`), and match memory grows with program size, so
+ * the bound caps both.
+ */
+MAX_INSTS: usize = 65536
+
+/* Ends a list of placeholders threaded through their target fields. */
+NIL: u32 = 0xFFFFFFFF
+
+/* Two continuations, `x` preferred over `y`. */
+pub Fork: struct {
+    x: u32,
+    y: u32,
+}
+
+pub Inst: union {
+    match,
+    byte: u8,
+    any,
+    class: u32,
+    bol,
+    eol,
+    word,
+    not_word,
+    save: u32,
+    jmp: u32,
+    split: Fork,
+}
+
+/* A compiled pattern. `insts[0]` is the entry, `class` instructions index
+ * `classes`, and `slots` is the number of capture positions: two per group,
+ * group 0 being the whole match. The canonical zero value holds no storage.
+ */
+pub Program: struct {
+    insts: array.Array[Inst],
+    classes: array.Array[Class],
+    slots: u32,
+}
+
+/* One compilation in progress. The first failure is kept in `err` and every
+ * later emission is a no-op, so the walk needs one error check, at the end.
+ */
+Compiler: struct {
+    syntax: Syntax,
+    insts: array.Array[Inst],
+    err: Error,
+}
+
+/* A split toward `body` and `out`, preferring `body` when greedy. */
+fork(body: u32, out: u32, greedy: bool): Inst {
+    if greedy {
+        return Inst.split(Fork{x = body, y = out})
+    }
+    return Inst.split(Fork{x = out, y = body})
+}
+
+/* Compiles `tree` into a program that owns its own copy of the classes, so
+ * `tree` may be wiped afterward. A failed compilation holds no storage.
+ */
+pub Program::compile(tree: Syntax): (Program, Error) {
+    c: Compiler = Compiler{syntax = tree, insts = array.Array[Inst]{}, err = null}
+    mut c.emit(Inst.save(0))
+    mut c.node(tree.root)
+    mut c.emit(Inst.save(1))
+    mut c.emit(Inst.match)
+    classes: array.Array[Class] = array.Array[Class]{}
+
+    for set: Class in tree.classes.view() {
+        if c.err != null {
+            break
+        }
+
+        if mut classes.push(set) != null {
+            c.err = CompileErr.allocation
+        }
+    }
+
+    if c.err != null {
+        mut c.insts.wipe()
+        mut classes.wipe()
+        return blank(Program), c.err
+    }
+    return Program{insts = c.insts, classes = classes, slots = 2 * (tree.groups + 1)}, null
+}
+
+/* Releases the program and leaves it empty. */
+pub mut Program.wipe() {
+    mut self.insts.wipe()
+    mut self.classes.wipe()
+    self.slots = 0
+}
+
+/* Writes the program one instruction per line, `index op operands`, for tests
+ * and diagnostics: `match`, `byte a`, `any`, `class 0`, `bol`, `eol`, `wb`,
+ * `nwb`, `save 2`, `jmp 4`, and `split 3 7` (preferred target first). Bytes
+ * print as in `Syntax.format`. Returns the length written and true, or zero
+ * and false when `destination` is too small.
+ */
+pub Program.format(destination: mut []char): (usize, bool) {
+    out: output.Output = output.Output::new(destination)
+
+    for index: usize, inst: Inst in self.insts.view() {
+        mut out.number(u32(index))
+        mut out.put(' ')
+
+        switch inst {
+            Inst.match { mut out.text("match") }
+            Inst.byte(byte: u8) {
+                mut out.text("byte ")
+                mut out.byte(byte)
+            }
+            Inst.any { mut out.text("any") }
+            Inst.class(class: u32) {
+                mut out.text("class ")
+                mut out.number(class)
+            }
+            Inst.bol { mut out.text("bol") }
+            Inst.eol { mut out.text("eol") }
+            Inst.word { mut out.text("wb") }
+            Inst.not_word { mut out.text("nwb") }
+            Inst.save(slot: u32) {
+                mut out.text("save ")
+                mut out.number(slot)
+            }
+            Inst.jmp(target: u32) {
+                mut out.text("jmp ")
+                mut out.number(target)
+            }
+            Inst.split(targets: Fork) {
+                mut out.text("split ")
+                mut out.number(targets.x)
+                mut out.put(' ')
+                mut out.number(targets.y)
+            }
+        }
+        mut out.put('\n')
+    }
+    n: usize, ok: bool = out.finish()
+    return n, ok
+}
+
+/* The index the next instruction will take. */
+Compiler.pc(): u32 {
+    return u32(self.insts.len)
+}
+
+mut Compiler.emit(inst: Inst) {
+    if self.err != null {
+        return
+    }
+
+    if self.insts.len == MAX_INSTS {
+        self.err = CompileErr.too_large
+        return
+    }
+
+    if mut self.insts.push(inst) != null {
+        self.err = CompileErr.allocation
+    }
+}
+
+mut Compiler.patch(at: u32, inst: Inst) {
+    if self.err != null {
+        return
+    }
+    mut self.insts.set(usize(at), inst)
+}
+
+mut Compiler.node(index: u32) {
+    if self.err != null {
+        return
+    }
+    node: Node = self.syntax.nodes.get(usize(index))
+
+    switch node {
+        Node.empty {}
+        Node.any { mut self.emit(Inst.any) }
+        Node.bol { mut self.emit(Inst.bol) }
+        Node.eol { mut self.emit(Inst.eol) }
+        Node.word { mut self.emit(Inst.word) }
+        Node.not_word { mut self.emit(Inst.not_word) }
+        Node.byte(byte: u8) { mut self.emit(Inst.byte(byte)) }
+        Node.class(class: u32) { mut self.emit(Inst.class(class)) }
+        Node.group(group: Group) {
+            if group.index == 0 {
+                mut self.node(group.child)
+                return
+            }
+            mut self.emit(Inst.save(2 * group.index))
+            mut self.node(group.child)
+            mut self.emit(Inst.save(2 * group.index + 1))
+        }
+        Node.repeat(r: Repeat) { mut self.repeat(r) }
+        Node.concat(list: List) {
+            for i: u32 in 0 .. list.count {
+                mut self.node(self.syntax.children.get(usize(list.first + i)))
+            }
+        }
+        Node.alt(list: List) { mut self.alt(list) }
+    }
+}
+
+/* Each branch but the last is `split branch, next` · branch · `jmp end`; the
+ * `jmp` placeholders form a list patched to the end once it is known.
+ */
+mut Compiler.alt(list: List) {
+    pending: u32 = NIL
+
+    for i: u32 in 0 .. list.count {
+        child: u32 = self.syntax.children.get(usize(list.first + i))
+
+        if i + 1 == list.count {
+            mut self.node(child)
+            break
+        }
+        at: u32 = self.pc()
+        mut self.emit(Inst.split(Fork{x = 0, y = 0}))
+        mut self.node(child)
+        jump: u32 = self.pc()
+        mut self.emit(Inst.jmp(pending))
+        pending = jump
+        mut self.patch(at, Inst.split(Fork{x = at + 1, y = self.pc()}))
+    }
+    end: u32 = self.pc()
+
+    for self.err == null && pending != NIL {
+        next: u32 = NIL
+
+        switch self.insts.get(usize(pending)) {
+            Inst.jmp(link: u32) { next = link }
+            default {}
+        }
+        mut self.patch(pending, Inst.jmp(end))
+        pending = next
+    }
+}
+
+mut Compiler.repeat(r: Repeat) {
+    if r.max == UNBOUNDED && r.min == 0 {
+        // L: split body, out · body · jmp L · out:
+        at: u32 = self.pc()
+        mut self.emit(Inst.split(Fork{x = 0, y = 0}))
+        mut self.node(r.child)
+        mut self.emit(Inst.jmp(at))
+        mut self.patch(at, fork(at + 1, self.pc(), r.greedy))
+        return
+    }
+
+    if r.max == UNBOUNDED {
+        // min - 1 copies, then L: body · split L, out · out:
+        mut self.copies(r.child, r.min - 1)
+        loop: u32 = self.pc()
+        mut self.node(r.child)
+        at: u32 = self.pc()
+        mut self.emit(fork(loop, at + 1, r.greedy))
+        return
+    }
+    mut self.copies(r.child, r.min)
+    mut self.optional(r.child, r.max - r.min, r.greedy)
+}
+
+/* `count` consecutive copies of `child`. A child that emits nothing emits
+ * nothing every time, so the loop stops after the first empty copy rather
+ * than spinning through nested counts like `(?:(?:){1000}){1000}`.
+ */
+mut Compiler.copies(child: u32, count: u32) {
+    for i: u32 in 0 .. count {
+        before: u32 = self.pc()
+        mut self.node(child)
+
+        if self.err != null || self.pc() == before {
+            return
+        }
+    }
+}
+
+/* `count` nested optional copies, `(x(x(x)?)?)?`: every `split body, end`
+ * skips straight to the end rather than to the next copy, so the VM reaches
+ * each copy by one path only. The skip targets are threaded as a list through
+ * the placeholders' `y` fields until the end is known.
+ */
+mut Compiler.optional(child: u32, count: u32, greedy: bool) {
+    pending: u32 = NIL
+
+    for i: u32 in 0 .. count {
+        at: u32 = self.pc()
+        mut self.emit(Inst.split(Fork{x = at + 1, y = pending}))
+        pending = at
+        mut self.node(child)
+
+        if self.err != null {
+            return
+        }
+    }
+    end: u32 = self.pc()
+
+    for self.err == null && pending != NIL {
+        next: u32 = NIL
+
+        switch self.insts.get(usize(pending)) {
+            Inst.split(link: Fork) { next = link.y }
+            default {}
+        }
+        mut self.patch(pending, fork(pending + 1, end, greedy))
+        pending = next
+    }
+}

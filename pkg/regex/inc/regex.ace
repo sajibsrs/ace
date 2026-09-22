@@ -1,0 +1,98 @@
+/* A compiled pattern together with the scratch state its searches reuse.
+ * Searches take the complete text and a start position rather than a
+ * subslice, so `^`, `$`, and `\b` see the text's true ends and the bytes
+ * around the start. Searching mutates the scratch state, so every search
+ * method takes `mut self`; none allocates or fails.
+ */
+
+import matcher: "./matcher.ace"
+import program: "./program.ace"
+import syntax: "./syntax.ace"
+
+Matcher: type = matcher.Matcher
+Program: type = program.Program
+Syntax: type = syntax.Syntax
+
+UNSET: const usize = matcher.UNSET
+
+/* The bytes `text[start..end]` of a match or group. Both ends are `UNSET`
+ * for a group that took no part in the match.
+ */
+pub Span: struct {
+    start: usize,
+    end: usize,
+}
+
+pub Regex: struct {
+    code: Program,
+    run: Matcher,
+}
+
+/* Parses and compiles `pattern`. On failure the offset is the pattern byte a
+ * `ParseErr` reports, and zero for a `CompileErr`.
+ */
+pub Regex::new(pattern: string): (Regex, Error, usize) {
+    tree: Syntax, err: Error, at: usize = Syntax::parse(pattern)
+    defer mut tree.wipe()
+
+    if err != null {
+        return blank(Regex), err, at
+    }
+    code: Program, code_err: Error = Program::compile(tree)
+
+    if code_err != null {
+        return blank(Regex), code_err, 0
+    }
+    run: Matcher, run_err: Error = Matcher::new(code)
+
+    if run_err != null {
+        mut code.wipe()
+        return blank(Regex), run_err, 0
+    }
+    return Regex{code = code, run = run}, null, 0
+}
+
+pub mut Regex.wipe() {
+    mut self.code.wipe()
+    mut self.run.wipe()
+}
+
+/* The number of capturing groups, not counting the whole match. */
+pub Regex.groups(): u32 {
+    return self.code.slots / 2 - 1
+}
+
+/* Whether the pattern matches anywhere in `text`. */
+pub mut Regex.is_match(text: string): bool {
+    return mut self.run.run(self.code, text, 0, true)
+}
+
+/* The leftmost-first match that starts at byte `after` or later. */
+pub mut Regex.find(text: string, after: usize): (Span, bool) {
+    if !mut self.run.run(self.code, text, after, false) {
+        return Span{start = UNSET, end = UNSET}, false
+    }
+    return Span{start = self.run.best[0], end = self.run.best[1]}, true
+}
+
+/* Finds the leftmost-first match that starts at byte `after` or later and
+ * writes the whole match to `spans[0]` and group k to `spans[k]`. Entries
+ * past the last group, and groups that took no part, are `UNSET`; a shorter
+ * `spans` receives only its prefix. Returns false, writing nothing, when
+ * there is no match.
+ */
+pub mut Regex.captures(text: string, after: usize, spans: mut []Span): bool {
+    if !mut self.run.run(self.code, text, after, false) {
+        return false
+    }
+    count: usize = self.run.slots / 2
+
+    for i: usize in 0 .. spans.len {
+        if i < count {
+            spans[i] = Span{start = self.run.best[2 * i], end = self.run.best[2 * i + 1]}
+        } else {
+            spans[i] = Span{start = UNSET, end = UNSET}
+        }
+    }
+    return true
+}

@@ -26,6 +26,47 @@ reopening of Ace's fixed explicit-type, copy, mutation, or allocation rules.
 Wider fixed-array/view bridges remain additive conveniences; they are not
 blockers for the current sequential core.
 
+### Findings from the `pkg/regex` stress test
+
+Found by writing `pkg/regex` (parser, compiler, Pike VM, benchmark); explore
+next, in this order.
+
+- **Uninitialized local array readable through a slice** [defect] — `spans:
+  [2]Span` followed by `first(spans[0..2])`, with no write in between,
+  compiles cleanly, though Values #7 forbids reading a local before it is
+  definitely initialized; a direct `spans[0].start` is correctly rejected.
+  Slicing the whole local escapes the check.
+- **Initialization through a writable slice** [unspecified] — after
+  `fill(mut spans[0..2])` writes every element, `spans[0].start` is still
+  rejected, because no write through a view is tracked, so the caller must
+  pre-fill with `[blank(T) : N]` (`bench/regex`). Whether establishing or
+  passing a writable view of a whole local counts as initializing it is open;
+  any answer must add no alias analysis, and it shares its root with the
+  defect above.
+- **`from` as a contextual word** [unspecified] — `from` is reserved only for
+  `import names from source`, yet it blocks the natural name for a search
+  start (`pkg/regex` uses `after`, as `str` does). `when`, `step`, and
+  `fallthrough` are already contextual; whether `from` joins them is open.
+- **Failure position alongside `Error`** [unspecified] — `Error` carries only
+  its domain, code, name, and message (Errors #9), so a parser that reports
+  where it failed returns a separate value: `regex.Syntax::parse` returns
+  `(Syntax, Error, usize)`, while `pkg/json` reports no position at all.
+  Whether this becomes a standard-library convention (return shape, value on
+  success, which layers report it) is open.
+- **Typed element copy** [new] — the `mem` byte operations take only `[]u8`
+  (Memory #15), so the Pike VM copies each `[]usize` capture row (2–10 words
+  per thread step) with a hand loop where C uses `memcpy`. Measure a typed
+  copy against the loop at those sizes before proposing one.
+- **Methods on enums and unions** [unspecified] — `pkg/regex` dispatches over
+  its `Node` and `Inst` unions at every site with one `switch` inside a method
+  of the struct owning the arrays, and never needed a method on a union. Wait
+  for a use case where the union itself owns the behavior.
+- **`pkg/regex` search prefilter** [new] — the Pike VM seeds a thread at
+  every byte, while PCRE2 skips to candidate positions: `literal` runs at
+  46.94 ns/B against PCRE2's 1.47 (`bench/README.md`), which bounds the gain.
+  Candidate: skip ahead with `str`'s word-at-a-time search to the pattern's
+  required first byte or first-byte class. Measure first.
+
 ### Other compile-time machine facilities
 
 - **Binary data embedding (`embed "file"`)** [new] — static read-only storage
@@ -315,7 +356,6 @@ Each item requires an owner decision and should wait for a motivating use case.
   `f32`, useful for ML training-style workloads and straightforward conversion
   to and from `f32`.
 
-- **Methods on enums and unions** [unspecified].
 - **Deferred cleanup-result handling** [unspecified] — `defer` currently
   executes its call at function exit and discards every returned value,
   including `Error`; no exception or propagation occurs. Revisit only when a

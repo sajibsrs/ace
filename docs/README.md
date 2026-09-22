@@ -37,6 +37,9 @@ must be corrected.
 - [`json`](json.md) — whole-document RFC 8259 parsing into a tagged `Json`
   value owned by a `Parser`, and a `Formatter` that writes JSON from runtime
   data into a buffer it owns.
+- [`regex`](regex.md) — byte-oriented regular expressions with
+  leftmost-first matching and captures, run by a Pike VM in time linear in
+  the text.
 
 ## Tooling
 

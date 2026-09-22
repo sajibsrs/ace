@@ -1,0 +1,249 @@
+import fmt
+import mem
+import regex
+import str
+
+/* Writes spans as `start-end` separated by spaces, `-` for an unset group. */
+render(spans: []regex.Span, out: mut []char): usize {
+    at: usize = 0
+
+    for i: usize, span: regex.Span in spans {
+        if i > 0 {
+            out[at] = ' '
+            at += 1
+        }
+
+        if span.start == regex.UNSET {
+            out[at] = '-'
+            at += 1
+            continue
+        }
+        n: usize, ok: bool = str.format(mut out[at..out.len], span.start)
+        at += n
+        out[at] = '-'
+        at += 1
+        n, ok = str.format(mut out[at..out.len], span.end)
+        at += n
+    }
+    return at
+}
+
+compile(pattern: string): regex.Regex {
+    re: regex.Regex, err: Error, at: usize = regex.Regex::new(pattern)
+
+    if err != null {
+        fmt.print(pattern)
+        fmt.print(": ")
+        fmt.println(err.message)
+    }
+    return re
+}
+
+report(pattern: string, text: string, got: string, want: string) {
+    fmt.print(pattern)
+    fmt.print(" on \"")
+    fmt.print(text)
+    fmt.print("\": got ")
+    fmt.print(got)
+    fmt.print(", want ")
+    fmt.println(want)
+}
+
+/* The match starting at `after` or later, as rendered spans; `none` for no
+ * match.
+ */
+found(pattern: string, text: string, after: usize, want: string): int {
+    re: regex.Regex = compile(pattern)
+    defer mut re.wipe()
+    span: regex.Span, ok: bool = mut re.find(text, after)
+    buffer: [64]u8
+    got: string = "none"
+
+    if ok {
+        spans: [1]regex.Span = [span]
+        got = string(buffer[0..render(spans[0..1], mut buffer[0..64])])
+    }
+
+    if !mem.equal(got, want) {
+        report(pattern, text, got, want)
+        return 1
+    }
+    return 0
+}
+
+/* Every group of the first match, rendered, into four spans. */
+groups(pattern: string, text: string, want: string): int {
+    re: regex.Regex = compile(pattern)
+    defer mut re.wipe()
+    spans: [4]regex.Span
+    buffer: [128]u8
+    got: string = "none"
+
+    if mut re.captures(text, 0, mut spans[0..4]) {
+        got = string(buffer[0..render(spans[0..4], mut buffer[0..128])])
+    }
+
+    if !mem.equal(got, want) {
+        report(pattern, text, got, want)
+        return 1
+    }
+    return 0
+}
+
+/* Every match, found by the cursor loop that steps past empty matches. */
+every(pattern: string, text: string, want: string): int {
+    re: regex.Regex = compile(pattern)
+    defer mut re.wipe()
+    spans: [16]regex.Span
+    count: usize = 0
+    at: usize = 0
+
+    for at <= text.len && count < 16 {
+        span: regex.Span, ok: bool = mut re.find(text, at)
+
+        if !ok {
+            break
+        }
+        spans[count] = span
+        count += 1
+        at = span.end
+
+        if span.end == span.start {
+            at += 1
+        }
+    }
+    buffer: [256]u8
+    got: string = string(buffer[0..render(spans[0..count], mut buffer[0..256])])
+
+    if !mem.equal(got, want) {
+        report(pattern, text, got, want)
+        return 1
+    }
+    return 0
+}
+
+basics(): int {
+    bad: int = 0
+    bad += found("abc", "xxabcxx", 0, "2-5")
+    bad += found("abc", "abd", 0, "none")
+    bad += found("a", "", 0, "none")
+    bad += found("x*", "", 0, "0-0")
+    bad += found("a*", "baaa", 0, "0-0")
+    bad += found("a+", "baaab", 0, "1-4")
+    bad += found("a+?", "baaab", 0, "1-2")
+    bad += found("a{2,4}", "aaaaa", 0, "0-4")
+    bad += found("a{2,4}?", "aaaaa", 0, "0-2")
+    bad += found("[0-9]+", "ab123c", 0, "2-5")
+    bad += found(".", "\n\nz", 0, "2-3")
+    bad += found("\\d+-\\d+", "tel 12-345", 0, "4-10")
+    bad += found("[^a-c]+", "abxyc", 0, "2-4")
+    return bad
+}
+
+/* Leftmost wins first; among matches at one start, the preferred branch. */
+priority(): int {
+    bad: int = 0
+    bad += found("a|ab", "ab", 0, "0-1")
+    bad += found("ab|a", "ab", 0, "0-2")
+    bad += found("b|ab", "xab", 0, "1-3")
+    bad += found("(a|ab)(c|bcd)", "abcd", 0, "0-4")
+    bad += found("a*?b", "aab", 0, "0-3")
+    return bad
+}
+
+/* Assertions see the whole text, not the text from `after` on. */
+anchors(): int {
+    bad: int = 0
+    bad += found("^a", "ab", 0, "0-1")
+    bad += found("^a", "ba", 0, "none")
+    bad += found("^b", "ab", 1, "none")
+    bad += found("a$", "aba", 0, "2-3")
+    bad += found("a$", "ab", 0, "none")
+    bad += found("$", "abc", 0, "3-3")
+    bad += found("\\bfoo\\b", "a foo b", 0, "2-5")
+    bad += found("\\bfoo\\b", "afoo", 0, "none")
+    bad += found("\\Boo", "foo", 0, "1-3")
+    bad += found("\\bb", "ab", 1, "none")
+    bad += found("a", "aXa", 1, "2-3")
+    bad += found("a", "aXa", 3, "none")
+    bad += found("a", "aXa", 4, "none")
+    return bad
+}
+
+captures(): int {
+    bad: int = 0
+    bad += groups("(a)|(b)", "b", "0-1 - 0-1 -")
+    bad += groups("(a|b)*", "ab", "0-2 1-2 - -")
+    bad += groups("(\\d+)-(\\d+)", "x 12-345", "2-8 2-4 5-8 -")
+    bad += groups("(a)(b)?", "a", "0-1 0-1 - -")
+    bad += groups("(a+?)(a*)", "aaa", "0-3 0-1 1-3 -")
+    bad += groups("((a)b)+", "abab", "0-4 2-4 2-3 -")
+    bad += groups("(?:x(y))+", "xyxy", "0-4 3-4 - -")
+    bad += groups("(a)(b)(c)(d)", "abcd", "0-4 0-1 1-2 2-3")
+    bad += groups("(a)", "b", "none")
+    bad += groups("(a*)*", "b", "0-0 - - -")
+    return bad
+}
+
+iteration(): int {
+    bad: int = 0
+    bad += every("a*", "baaa", "0-0 1-4 4-4")
+    bad += every("\\d+", "a1b22c333", "1-2 3-5 6-9")
+    bad += every("x", "abc", "")
+    bad += every("", "ab", "0-0 1-1 2-2")
+    return bad
+}
+
+/* Patterns that take exponential time under backtracking finish here. */
+linear(): int {
+    bad: int = 0
+    text: [100000]u8
+
+    for i: usize in 0 .. 100000 {
+        text[i] = 'a'
+    }
+    bad += found("(a*)*b", string(text[0..100000]), 0, "none")
+    bad += found("(a|aa)*c", string(text[0..100000]), 0, "none")
+    bad += found("(a*)*", "b", 0, "0-0")
+    return bad
+}
+
+surface(): int {
+    bad: int = 0
+    re: regex.Regex = compile("(a)(?:b)(c)")
+    defer mut re.wipe()
+
+    if re.groups() != 2 {
+        fmt.println("(a)(?:b)(c) should have 2 groups")
+        bad += 1
+    }
+
+    if !mut re.is_match("xxabcx") || mut re.is_match("xxabx") {
+        fmt.println("is_match disagrees with (a)(?:b)(c)")
+        bad += 1
+    }
+    q: regex.Regex, err: Error, at: usize = regex.Regex::new("a(")
+    mut q.wipe()
+
+    if err != regex.ParseErr.missing_paren || at != 1 {
+        fmt.println("a( should fail with missing_paren at 1")
+        bad += 1
+    }
+    q, err, at = regex.Regex::new("((a{1000}){1000}){1000}")
+    mut q.wipe()
+
+    if err != regex.CompileErr.too_large || at != 0 {
+        fmt.println("nested counts should fail with too_large at 0")
+        bad += 1
+    }
+    return bad
+}
+
+main(): int {
+    bad: int = basics() + priority() + anchors() + captures() + iteration() + linear() + surface()
+
+    if bad != 0 {
+        return 1
+    }
+    return 0
+}

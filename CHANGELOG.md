@@ -1623,6 +1623,40 @@ current normative rules, and Git preserves patch-level detail.
   the parse_array/parse_object step that rewinds a closed container's
   temporary elements back to its watermark after copying them into the
   block's permanent storage.
+- Added the standalone package `pkg/regex` (`type: lib`), a byte-oriented
+  regular-expression engine. `Syntax::parse(pattern): (Syntax,
+  Error, usize)` builds a syntax tree or returns a `ParseErr` with the byte
+  offset where parsing failed (an unclosed group or class reports its opening
+  delimiter). Nodes sit in one `Array[Node]` and name children by `u32`
+  index; concatenation and alternation are n-ary runs of a shared `children`
+  array, so tree depth follows group nesting (capped at 512), not pattern
+  length. Classes are 256-bit `[4]u64` bitmaps; `{m,n}` is capped at 1000.
+  Escapes must name a metacharacter, `\n \t \r \xHH`, `\d \w \s` and
+  their complements, or `\b \B`; anything else, including backreference
+  digits, is rejected. `Program::compile(tree): (Program, Error)` lowers the
+  tree by Thompson construction to a flat, anchored `Array[Inst]` for a Pike
+  VM, encoding leftmost-first priority in `split` order (lazy forms swap it);
+  `{m,n}` becomes m copies plus n-m nested optional copies. Forward targets
+  are patched in place, and runs of placeholders sharing one target are
+  threaded as a list through their own target fields. A subtree that emits
+  nothing stops its copy loop, and programs cap at 65,536 instructions
+  (`CompileErr.too_large`). `Syntax.format` and `Program.format` write
+  canonical dumps through a shared `Output` sink. `Regex::new(pattern)`
+  parses and compiles, and `is_match`, `find(text, after)`, and
+  `captures(text, after, spans)` run a Pike VM: threads step in lockstep per
+  input byte in a sparse-set queue, a new lowest-priority thread is seeded at
+  each position until a match is found (leftmost-first in one pass), and
+  `jmp`/`split`/`save`/assertions are followed with an explicit stack whose
+  restore frames undo a `save` before a deferred sibling branch runs. Every
+  buffer is sized from the program in `Regex::new`, so searches take `mut
+  self` but never allocate or fail. Searches take the whole text and a start
+  byte, so assertions see the true context; unset groups are `UNSET` spans.
+  `pkg/regex/tests/parsing`, `compiling`, and `matching` run under `make
+  test-packages`, and `docs/regex.md` documents the package.
+  `bench/run-regex.sh` times four find-all and pathological workloads
+  against a structure-for-structure C port of the matcher running the same
+  programs (Ace/C 2.9-4.1x, just ahead of C `-O0`) with PCRE2 as an optional
+  reference; `bench/README.md` records the baseline.
 
 ## Current frontier
 

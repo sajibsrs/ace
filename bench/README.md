@@ -701,6 +701,54 @@ dependency chain; Ace leads it. The `saxpy` pair reproduces the ad-hoc figures
 measured 2.551 ns against 2.744, so about 7% of that row is repeated address
 computation and the rest is elsewhere.
 
+## Regular expressions
+
+Run `pkg/regex` against the same Pike VM written in C, with PCRE2 as a
+reference:
+
+```sh
+./bench/run-regex.sh
+```
+
+Four workloads over the same 1 MiB of generated letters, digits, dashes,
+spaces, and newlines: `literal` finds every `zqxj`, `word-ing` every
+`[a-z]+ing`, and `captures` every `(\d+)-(\d+)` with both groups; each is a
+find-all loop over the whole text. `pathological` runs `(a|aa)*c` 10,000 times
+against 14 `a`s, a `b`, and a `c`, which a backtracker explores exponentially.
+Times are nanoseconds per input byte.
+
+The Ace side is the package `bench/regex`, built with `ace pkg build
+--release`. `bench/regex.c` is the comparison target: it mirrors
+`pkg/regex/inc/matcher.ace` structure for structure and runs the exact
+programs `Program::compile` emits, copied from `Program.format`, so the ratio
+measures code generation rather than algorithm. The runner fails if Ace and C
+disagree on any checksum. `bench/regex-pcre2.c` runs the same workloads
+through PCRE2, interpreted and JIT-compiled, when `pcre2-config` is on the
+path. PCRE2 is also leftmost-first, so its checksums must agree too, but it is
+a reference, not a target: it is a backtracker with literal and first-byte
+prefilters the Pike VM does not have.
+
+### Initial regex baseline
+
+Five runs on the reference Apple-arm64 machine at `e55a389` plus the
+uncommitted `pkg/regex`, medians in ns per byte:
+
+| workload | Ace | C | Ace/C | PCRE2 | PCRE2 JIT |
+|---|---|---|---|---|---|
+| `literal` | 46.94 | 11.33 | 4.14x | 1.47 | 0.06 |
+| `word-ing` | 89.22 | 27.57 | 3.24x | 50.33 | 5.46 |
+| `captures` | 96.78 | 33.75 | 2.87x | 12.40 | 3.54 |
+| `pathological` | 243.09 | 72.84 | 3.34x | 11717.08 | 951.74 |
+
+Ace spreads were under 4 ns on every row. The same C source at `-O0` measured
+53.42, 99.80, 103.60, and 261.08 ns in row order, so Ace release sits just
+ahead of unoptimized C here, as it does in the CPU baseline; the Ace/C gap is
+the general optimization gap `TODO.md` tracks, not a regex-specific cost. C at
+`-O1` is within 15% of the `-O2` column. PCRE2 wins every linear workload by
+skipping ahead to candidate positions, which the Pike VM, seeding a thread at
+every byte, does not do; `pathological` is where its backtracking costs 48x
+(interpreted) to 4x (JIT) the Ace VM.
+
 ## Compile time
 
 Run the compile-time benchmark on Apple arm64:

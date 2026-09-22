@@ -1,0 +1,317 @@
+/* A Pike VM: runs a program over text by stepping every live thread in
+ * lockstep, one input byte at a time, so matching is linear in the text
+ * whatever the pattern.
+ *
+ * A thread is a program index plus a row of capture positions. Threads sit
+ * in a queue in priority order; the queue is a sparse set, so adding,
+ * testing, and clearing are all constant time, and no instruction is queued
+ * twice in one step. A new thread is seeded at every position at the lowest
+ * priority until a match is found, so an earlier start outranks a later one
+ * and one pass yields the leftmost-first match.
+ *
+ * Every buffer is sized from the program when the Matcher is created, so a
+ * run never allocates and cannot fail.
+ */
+
+import mem
+import program: "./program.ace"
+import syntax: "./syntax.ace"
+
+Class: type = syntax.Class
+Fork: type = program.Fork
+Inst: type = program.Inst
+Program: type = program.Program
+CompileErr: type = program.CompileErr
+
+/* A capture position that was never recorded. */
+pub UNSET: const usize = 0xFFFFFFFFFFFFFFFF
+
+/* Marks a stack frame that explores an instruction rather than restoring a
+ * slot.
+ */
+NIL: u32 = 0xFFFFFFFF
+
+/* The threads of one step, in priority order: `dense[0..count]` holds their
+ * instructions, `sparse` maps an instruction back to its index in `dense`,
+ * and `caps` holds one row of `slots` positions per instruction.
+ */
+Queue: struct {
+    dense: mut []u32 = null,
+    sparse: mut []u32 = null,
+    caps: mut []usize = null,
+    count: usize,
+}
+
+/* A pending exploration of `pc`, or, when `slot` is not NIL, the restoration
+ * of `slot` to `value` once the branch that overwrote it is explored.
+ */
+Frame: struct {
+    pc: u32,
+    slot: u32,
+    value: usize,
+}
+
+/* The scratch state of one program's runs. After a successful `run`, `best`
+ * holds the match's capture positions.
+ */
+pub Matcher: struct {
+    current: Queue,
+    next: Queue,
+    stack: mut []Frame = null,
+    work: mut []usize = null,
+    best: mut []usize = null,
+    slots: usize,
+}
+
+Queue::new(size: usize, slots: usize): (Queue, bool) {
+    q: Queue = Queue{
+        dense = mem.alloc[u32](size),
+        sparse = mem.zalloc[u32](size),
+        caps = mem.alloc[usize](size * slots),
+        count = 0,
+    }
+
+    if q.dense == null || q.sparse == null || q.caps == null {
+        mut q.wipe()
+        return blank(Queue), false
+    }
+    return q, true
+}
+
+mut Queue.wipe() {
+    mem.release[u32](mut self.dense)
+    mem.release[u32](mut self.sparse)
+    mem.release[usize](mut self.caps)
+    self.count = 0
+}
+
+/* `sparse` may hold a stale index; it counts only when `dense` agrees. */
+Queue.has(pc: u32): bool {
+    at: u32 = self.sparse[usize(pc)]
+    return usize(at) < self.count && self.dense[usize(at)] == pc
+}
+
+mut Queue.insert(pc: u32) {
+    self.sparse[usize(pc)] = u32(self.count)
+    self.dense[self.count] = pc
+    self.count += 1
+}
+
+is_word(byte: u8): bool {
+    return '0' <= byte <= '9' || 'A' <= byte <= 'Z' || 'a' <= byte <= 'z' || byte == '_'
+}
+
+/* Whether `at` sits between a word byte and a non-word byte, the text's ends
+ * counting as non-word.
+ */
+is_boundary(text: string, at: usize): bool {
+    before: bool = at > 0 && is_word(text[at - 1])
+    after: bool = at < text.len && is_word(text[at])
+    return before != after
+}
+
+pub Matcher::new(code: Program): (Matcher, Error) {
+    size: usize = code.insts.len
+    slots: usize = usize(code.slots)
+    current: Queue, ok: bool = Queue::new(size, slots)
+    next: Queue, next_ok: bool = Queue::new(size, slots)
+    m: Matcher = Matcher{
+        current = current,
+        next = next,
+        stack = mem.alloc[Frame](size + 1),
+        work = mem.alloc[usize](slots),
+        best = mem.alloc[usize](slots),
+        slots = slots,
+    }
+
+    if !ok || !next_ok || m.stack == null || m.work == null || m.best == null {
+        mut m.wipe()
+        return blank(Matcher), CompileErr.allocation
+    }
+    return m, null
+}
+
+pub mut Matcher.wipe() {
+    mut self.current.wipe()
+    mut self.next.wipe()
+    mem.release[Frame](mut self.stack)
+    mem.release[usize](mut self.work)
+    mem.release[usize](mut self.best)
+    self.slots = 0
+}
+
+/* Queues the thread at `start`, with the capture positions in `work`, into
+ * `next` when `into_next` and `current` otherwise, following every
+ * instruction that consumes no input. `jmp`, `save`, and passing assertions
+ * continue in place; `split` defers `y` on the stack and continues with `x`,
+ * so `x` and everything it reaches is queued first. A `save` pushes its old
+ * value beneath the frames its branch adds, restoring `work` before a
+ * deferred sibling runs. A consuming instruction or `match` takes a copy of
+ * `work` as its row.
+ */
+mut Matcher.add(code: []Inst, into_next: bool, start: u32, text: string, at: usize) {
+    top: usize = 1
+    self.stack[0] = Frame{pc = start, slot = NIL, value = 0}
+
+    for top > 0 {
+        top -= 1
+        frame: Frame = self.stack[top]
+
+        if frame.slot != NIL {
+            self.work[usize(frame.slot)] = frame.value
+            continue
+        }
+        pc: u32 = frame.pc
+
+        explore: {
+            queued: bool = false
+
+            if into_next {
+                queued = self.next.has(pc)
+            } else {
+                queued = self.current.has(pc)
+            }
+
+            if queued {
+                break explore
+            }
+
+            if into_next {
+                mut self.next.insert(pc)
+            } else {
+                mut self.current.insert(pc)
+            }
+
+            switch code[usize(pc)] {
+                Inst.jmp(target: u32) {
+                    pc = target
+                    continue explore
+                }
+                Inst.split(targets: Fork) {
+                    self.stack[top] = Frame{pc = targets.y, slot = NIL, value = 0}
+                    top += 1
+                    pc = targets.x
+                    continue explore
+                }
+                Inst.save(slot: u32) {
+                    self.stack[top] = Frame{pc = 0, slot = slot, value = self.work[usize(slot)]}
+                    top += 1
+                    self.work[usize(slot)] = at
+                    pc += 1
+                    continue explore
+                }
+                Inst.bol {
+                    if at == 0 {
+                        pc += 1
+                        continue explore
+                    }
+                }
+                Inst.eol {
+                    if at == text.len {
+                        pc += 1
+                        continue explore
+                    }
+                }
+                Inst.word {
+                    if is_boundary(text, at) {
+                        pc += 1
+                        continue explore
+                    }
+                }
+                Inst.not_word {
+                    if !is_boundary(text, at) {
+                        pc += 1
+                        continue explore
+                    }
+                }
+                default {
+                    row: usize = usize(pc) * self.slots
+
+                    for i: usize in 0 .. self.slots {
+                        if into_next {
+                            self.next.caps[row + i] = self.work[i]
+                        } else {
+                            self.current.caps[row + i] = self.work[i]
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* Searches `text` for the leftmost-first match that starts at byte `after`
+ * or later, leaving its capture positions in `best`. With `earliest`, returns
+ * at the first match any thread reaches, whose positions need not be
+ * leftmost-first; that suffices when only existence matters.
+ */
+pub mut Matcher.run(code: Program, text: string, after: usize, earliest: bool): bool {
+    if after > text.len {
+        return false
+    }
+    insts: []Inst = code.insts.view()
+    classes: []Class = code.classes.view()
+    self.current.count = 0
+    matched: bool = false
+    at: usize = after
+
+    for {
+        if !matched {
+            for i: usize in 0 .. self.slots {
+                self.work[i] = UNSET
+            }
+            mut self.add(insts, false, 0, text, at)
+        }
+
+        if self.current.count == 0 {
+            break
+        }
+        self.next.count = 0
+
+        for i: usize in 0 .. self.current.count {
+            pc: u32 = self.current.dense[i]
+            row: usize = usize(pc) * self.slots
+            advance: bool = false
+
+            switch insts[usize(pc)] {
+                Inst.byte(byte: u8) {
+                    advance = at < text.len && text[at] == byte
+                }
+                Inst.any {
+                    advance = at < text.len && text[at] != '\n'
+                }
+                Inst.class(index: u32) {
+                    advance = at < text.len && classes[usize(index)].has(text[at])
+                }
+                Inst.match {
+                    for s: usize in 0 .. self.slots {
+                        self.best[s] = self.current.caps[row + s]
+                    }
+                    matched = true
+
+                    if earliest {
+                        return true
+                    }
+                    break
+                }
+                default {}
+            }
+
+            if advance {
+                for s: usize in 0 .. self.slots {
+                    self.work[s] = self.current.caps[row + s]
+                }
+                mut self.add(insts, true, pc + 1, text, at + 1)
+            }
+        }
+
+        if at == text.len {
+            break
+        }
+        at += 1
+        swap: Queue = self.current
+        self.current = self.next
+        self.next = swap
+    }
+    return matched
+}

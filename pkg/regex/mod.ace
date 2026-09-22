@@ -1,0 +1,25 @@
+/* regex — byte-oriented regular expressions matched by a Pike VM in time
+ * linear in the text.
+ */
+
+import matcher: "./inc/matcher.ace"
+import program: "./inc/program.ace"
+import regex: "./inc/regex.ace"
+import syntax: "./inc/syntax.ace"
+
+pub Regex: type = regex.Regex
+pub Span: type = regex.Span
+pub UNSET: const usize = matcher.UNSET
+
+pub Syntax: type = syntax.Syntax
+pub Node: type = syntax.Node
+pub Class: type = syntax.Class
+pub Group: type = syntax.Group
+pub Repeat: type = syntax.Repeat
+pub List: type = syntax.List
+pub ParseErr: type = syntax.ParseErr
+pub UNBOUNDED: const u32 = syntax.UNBOUNDED
+pub Program: type = program.Program
+pub Inst: type = program.Inst
+pub Fork: type = program.Fork
+pub CompileErr: type = program.CompileErr

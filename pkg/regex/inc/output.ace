@@ -1,0 +1,59 @@
+/* Canonical dump text into caller-owned storage, shared by the syntax-tree
+ * and program dumps. The first write past the end clears `ok`, and every
+ * later write is a no-op, so a dump needs one check at the end.
+ */
+
+import str
+
+pub Output: struct {
+    out: mut []char = null,
+    at: usize,
+    ok: bool,
+}
+
+pub Output::new(destination: mut []char): Output {
+    return Output{out = destination, at = 0, ok = true}
+}
+
+pub mut Output.put(byte: u8) {
+    if self.at == self.out.len {
+        self.ok = false
+        return
+    }
+    self.out[self.at] = byte
+    self.at += 1
+}
+
+pub mut Output.text(text: string) {
+    for byte: u8 in text {
+        mut self.put(byte)
+    }
+}
+
+pub mut Output.number(value: u32) {
+    digits: [10]u8
+    n: usize, ok: bool = str.format(mut digits[0..10], uint(value))
+    mut self.text(string(digits[0..n]))
+}
+
+/* One pattern byte: printable ASCII as itself, except `{`, `}`, `\`, and
+ * `-`, which the dumps use as syntax; everything else as `\xHH`.
+ */
+pub mut Output.byte(byte: u8) {
+    if '!' <= byte <= '~' && byte != '{' && byte != '}' && byte != '\\' && byte != '-' {
+        mut self.put(byte)
+        return
+    }
+    hex: string = "0123456789ABCDEF"
+    mut self.text("\\x")
+    mut self.put(hex[usize(byte >> 4)])
+    mut self.put(hex[usize(byte & 15)])
+}
+
+/* The dump's length and true, or zero and false when it did not fit. */
+pub Output.finish(): (usize, bool) {
+    if !self.ok {
+        return 0, false
+    }
+    return self.at, true
+}
