@@ -21,10 +21,14 @@ history.
 ## Process
 
 - Work on one topic at a time in Decision Queue order.
-- Propose the issue and recommended solution before changing code, and obtain
-  owner permission. Present viable alternatives when relevant. No code is
-  modified or implemented without the owner's explicit permission, even when a
-  future change is already agreed in principle (e.g. noted in `TODO.md`).
+- Implement every code change (`src/`, `std/`, `pkg/`, `tests/`, `bench/`) on
+  its own branch named after the feature (`live-interval-promotion`), never in
+  a throwaway prototype or directly on `master`. Implement, test, and measure
+  there, then present the result with viable alternatives. `master` changes
+  only by a merge the owner explicitly permits, even when the change is already
+  agreed in principle (e.g. noted in `TODO.md`). Propose language-design
+  decisions (semantics, syntax) before implementing them. Documentation-only
+  edits the owner asks for go directly to `master`.
 - The owner resolves `[open]` and `[controversial]` items and removes those
   markers. Provisional spelling may change; semantics may not.
 - Confirm each step before proceeding. Implement only what was explicitly
@@ -36,11 +40,11 @@ history.
 - Judge a proposed change by the value it adds against that priority stack,
   never by whether it breaks with what's already decided or implemented.
   "That's not how it's currently done" is not a counterargument on its own.
-- Measure the probable gain of an optimization before proposing it (a
-  prototype, a hand-edited disassembly, or a microbenchmark against a saved
-  baseline, several runs) and state it in the proposal. If the gain is
-  negligible, do not implement it: the return on investment is low, and every
-  added line is more surface for bugs and more to extend and maintain.
+- Measure an optimization's gain on its branch against `master` (several
+  runs; a hand-edited disassembly or microbenchmark against a saved baseline
+  for a quick first estimate) and state it when presenting the branch. If the
+  gain is negligible, drop the branch: the return on investment is low, and
+  every added line is more surface for bugs and more to extend and maintain.
 - Record current rules and rationale in `SPEC.md`, keeping only active decisions
   in its queue. Record implemented behavior and its essential approach once,
   briefly, in `CHANGELOG.md`. Keep `SPEC.md`, `CHANGELOG.md`, `GRAMMAR.md`, and
@@ -55,7 +59,9 @@ history.
   as the change they describe, not a follow-up.
 - Split work likely to exceed 100k tokens into 2–3 owner-approved steps; each
   step must compile and pass relevant tests.
-- Do not commit unless explicitly asked. Every commit message is exactly one
+- Commit to a feature branch freely, one commit per measured step. Commit to
+  `master` only when explicitly asked, by squash-merging the branch into one
+  commit and then deleting the branch. Every commit message is exactly one
   imperative subject line, full stop — no body paragraph, no rationale, no
   bullet list, even when the change feels like it needs explaining. That
   explanation belongs in `CHANGELOG.md`, not the commit.
