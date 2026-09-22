@@ -1,0 +1,46 @@
+/* A scalar field read folds the field's byte offset into its load: fields at
+   small, large, and unaligned offsets, in every scalar width, read through a
+   pointer, a mut parameter, a method receiver, and a nested chain. */
+
+// expect-exit: 0
+
+Inner: struct { a: u8, s: i8, b: u16, c: u32, d: i64, f: f64, g: f32 }
+
+Wide: struct { pad: [5000]u8, small: u8, inner: Inner, tail: i32 }
+
+@packed
+Packed: struct { prefix: u8, word: u32, half: u16, big: u64 }
+
+Wide.sum(): i64 {
+    return i64(self.small) + i64(self.inner.c) + i64(self.inner.s) + i64(self.tail)
+}
+
+bump(mut w: Wide) {
+    w.tail = w.tail + i32(w.inner.b)
+}
+
+read(p: *Wide): i64 {
+    return p.inner.d + i64(p.small)
+}
+
+main(): int {
+    w: Wide = Wide{
+        pad = [0 : 5000],
+        small = 7,
+        inner = Inner{a = 200, s = -5, b = 60000, c = 4000000000, d = -9, f = 2.5, g = 0.25},
+        tail = -3,
+    }
+
+    if w.sum() != 7 + 4000000000 - 5 - 3 { return 1 }
+    if read(&w) != -2 { return 2 }
+    if w.inner.a != 200 || w.inner.f != 2.5 || w.inner.g != 0.25 { return 3 }
+    bump(mut w)
+    if w.tail != 59997 { return 4 }
+
+    p: Packed = Packed{prefix = 1, word = 0xDEADBEEF, half = 0xBEEF, big = 0x0123456789ABCDEF}
+    q: *Packed = &p
+    if q.word != 0xDEADBEEF || q.half != 0xBEEF || q.big != 0x0123456789ABCDEF || q.prefix != 1 {
+        return 5
+    }
+    return 0
+}

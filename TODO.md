@@ -154,6 +154,14 @@ These are baseline observations, not performance promises.
   eighteen. Candidate: live ranges, or at minimum letting disjoint locals share
   a register; it needs the same per-call liveness the caller-saved item above
   wants.
+- **Promoted registers are copied before use** [new] — every expression
+  result takes a fresh temp, so a promoted value is copied (`mov`) into one
+  before it is read. Promoting a by-reference parameter's pointer (method
+  receivers, `mut` parameters) in a `pkg/regex` prototype cut frame-slot
+  accesses in `Matcher.add` from 77 to 62 but retired about 2% more
+  instructions, each slot load becoming a copy. Candidate: let an address or
+  operand read a promoted register in place, as `src_reg` already does for
+  integer operands; it bounds any further promotion work.
 - **Wrapper calls cost a float spill** [new] — since promoted floats reach
   `d24-d31`, which are caller-saved, every branch-with-link stores and reloads
   them. A one-line dispatcher between two callers and two callees is therefore

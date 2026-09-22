@@ -749,6 +749,23 @@ skipping ahead to candidate positions, which the Pike VM, seeding a thread at
 every byte, does not do; `pathological` is where its backtracking costs 48x
 (interpreted) to 4x (JIT) the Ace VM.
 
+### Regex after union-switch and field-offset lowering
+
+Five runs at `23b6d22` plus the union-switch tag load and field-offset
+folding in `src/emit.c`, medians in ns per byte:
+
+| workload | Ace | C | Ace/C | PCRE2 | PCRE2 JIT |
+|---|---|---|---|---|---|
+| `literal` | 44.22 | 11.28 | 3.92x | 1.48 | 0.06 |
+| `word-ing` | 79.35 | 27.19 | 2.92x | 49.92 | 5.47 |
+| `captures` | 95.15 | 33.21 | 2.87x | 12.38 | 3.53 |
+| `pathological` | 216.01 | 71.68 | 3.01x | 11677.42 | 947.30 |
+
+Wall-clock differences below about 5% between two builds are within
+code-layout noise here: removing only range-loop setup instructions measured
+6% slower on `word-ing`. Instructions retired (`/usr/bin/time -l`) are
+deterministic and fell 5.7-5.9% on every regex workload.
+
 ## Compile time
 
 Run the compile-time benchmark on Apple arm64:

@@ -495,6 +495,14 @@ current normative rules, and Git preserves patch-level detail.
   second register: `emit_defers` addressed save-area unit w above the slot
   (`retsave_off + w * 8`), which fell below `sp`, instead of within it
   (`retsave_off - w * 8`), so the deferred call's frame overwrote it.
+- A union `switch` loads the scrutinee's tag once, before its compare chain,
+  instead of reloading the parked address and the tag for every pattern
+  (`emit_union_switch`). A scalar field read folds the field's constant offset
+  into its load, `ldr Rt, [base, #off]` or the register-offset form past the
+  scaled `imm12`, instead of a separate `add` (`field_base`, shared with
+  `gen_addr`). The regex bench retires about 5.8% fewer instructions and runs
+  3-11% faster (`pathological` 244 to 216, `word-ing` 89 to 79 ns/B); `calls`
+  retires 3.3% fewer.
 - Implemented `str` character/string operations and explicit
   `str.parse[T]` specializations in pure Ace where practical, with libc float
   conversion isolated in its selected target layer. `char` remains the

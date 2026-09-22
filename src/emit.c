@@ -3521,6 +3521,66 @@ static int index_addr(Em* e, Node* x, uint32_t fold_w, int* fold_ri) {
     return ta;
 }
 
+/*
+ * A field's address as a base register plus a constant byte offset, so a
+ * scalar read can fold the offset into its load; gen_addr adds it instead.
+ * The offset is zero for bit-field projections and error handles.
+ */
+static int field_base(Em* e, Node* x, uint32_t* off) {
+    *off = 0;
+    if (param_home(e, x) >= 0) {
+        em_err(e, x, "internal: register-homed parameter leaf has no address");
+        return tmp_int(e);
+    }
+    SType* bt = lvalue_type(e, x->a);
+    if (!bt) bt = node_ty(x->a);
+    bt = unwrap(bt);
+    int error_handle = bt && bt->kind == SK_ERROR;
+    int direct_pointer = 0;
+    int ta;
+    if (is_lvalue_node(x->a)) ta = gen_addr(e, x->a);
+    else {
+        EV v = gen_expr(e, x->a);
+        if (error_handle && v.cls == CLS_INT) {
+            ta = v.idx;
+        } else if (bt && bt->kind == SK_PTR && v.cls == CLS_INT) {
+            ta = v.idx;
+            direct_pointer = 1;
+        } else if (v.cls != CLS_ADDR) {
+            em_err(e, x, "cannot address this value");
+            return tmp_int(e);
+        } else {
+            ta = v.idx;
+        }
+    }
+    if (!bt) {
+        em_err(e, x, "no field base type");
+        return ta;
+    }
+    if (error_handle) {
+        if (is_lvalue_node(x->a)) ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
+        bt = bt->base;
+    }
+    while (bt->kind == SK_PTR) { // auto-deref p.x
+        if (direct_pointer) direct_pointer = 0;
+        else ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
+        emit_null_guard(e, xreg(ta));
+        bt = bt->base;
+    }
+    if (bt->kind == SK_BITS) return ta; // field projection shares backing address
+    if (bt->kind != SK_STRUCT) {
+        em_err(e, x, "field access on a non-struct");
+        return ta;
+    }
+    int fi = find_field(bt, x->str, x->len);
+    if (fi < 0) {
+        em_err(e, x, "no such field");
+        return ta;
+    }
+    *off = field_off(bt, fi);
+    return ta;
+}
+
 static int gen_addr(Em* e, Node* x) {
     switch (x->kind) {
     case N_IDENT: {
@@ -3567,56 +3627,8 @@ static int gen_addr(Em* e, Node* x) {
         }
         break;
     case N_FIELD_E: {
-        if (param_home(e, x) >= 0) {
-            em_err(e, x, "internal: register-homed parameter leaf has no address");
-            return tmp_int(e);
-        }
-        SType* bt = lvalue_type(e, x->a);
-        if (!bt) bt = node_ty(x->a);
-        bt = unwrap(bt);
-        int error_handle = bt && bt->kind == SK_ERROR;
-        int direct_pointer = 0;
-        int ta;
-        if (is_lvalue_node(x->a)) ta = gen_addr(e, x->a);
-        else {
-            EV v = gen_expr(e, x->a);
-            if (error_handle && v.cls == CLS_INT) {
-                ta = v.idx;
-            } else if (bt && bt->kind == SK_PTR && v.cls == CLS_INT) {
-                ta = v.idx;
-                direct_pointer = 1;
-            } else if (v.cls != CLS_ADDR) {
-                em_err(e, x, "cannot address this value");
-                return tmp_int(e);
-            } else {
-                ta = v.idx;
-            }
-        }
-        if (!bt) {
-            em_err(e, x, "no field base type");
-            return ta;
-        }
-        if (error_handle) {
-            if (is_lvalue_node(x->a)) ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
-            bt = bt->base;
-        }
-        while (bt->kind == SK_PTR) { // auto-deref p.x
-            if (direct_pointer) direct_pointer = 0;
-            else ld_reg(e, xreg(ta), xreg(ta), 0, 8, 0);
-            emit_null_guard(e, xreg(ta));
-            bt = bt->base;
-        }
-        if (bt->kind == SK_BITS) return ta; // field projection shares backing address
-        if (bt->kind != SK_STRUCT) {
-            em_err(e, x, "field access on a non-struct");
-            return ta;
-        }
-        int fi = find_field(bt, x->str, x->len);
-        if (fi < 0) {
-            em_err(e, x, "no such field");
-            return ta;
-        }
-        uint32_t off = field_off(bt, fi);
+        uint32_t off;
+        int ta = field_base(e, x, &off);
         if (off) {
             if (off <= 4095) ins(e, 0x91000000u | (off << 10) | ((uint32_t)xreg(ta) << 5) | (uint32_t)xreg(ta));
             else {
@@ -5463,11 +5475,12 @@ static EV gen_expr(Em* e, Node* x) {
         }
         uint32_t depth;
         if (t && is_scalar(t) && frame_place(e, x, &depth)) return load_frame_value(e, depth, t);
-        int a = gen_addr(e, x);
         if (t && is_scalar(t)) {
-            return load_in_place(e, a, 0, t);
+            uint32_t off;
+            int a = field_base(e, x, &off);
+            return load_in_place(e, a, off, t);
         }
-        return (EV){ CLS_ADDR, a };
+        return (EV){ CLS_ADDR, gen_addr(e, x) };
     }
     case N_INDEX: {
         SType* bt = node_ty(x->a);
@@ -5829,7 +5842,8 @@ static int case_falls_through(Node* c) {
 
 /*
  * Union switch: the scrutinee's address is parked in a stack slot (arm bodies
- * reuse the temp registers), each pattern compares the i32 tag, and matching
+ * reuse the temp registers), the i32 tag is loaded once and each pattern
+ * compares it, and matching
  * arms copy their payload binder before running the body. An unmatched tag
  * always jumps explicitly, to the else arm if present or past the switch
  * otherwise; it never falls through into the first case.
@@ -5849,6 +5863,7 @@ static void emit_union_switch(Em* e, Node* s, SType* ut) {
     }
     int lcase[64], lend = new_label(e);
     int has_default = 0, default_idx = -1;
+    ld_reg(e, 17, xreg(v.idx), 0, 4, 0); // tag, loaded once for every pattern
     for (int i = 0; i < s->nkids; i++) {
         lcase[i] = new_label(e);
         if (s->kids[i]->flags & F_DEFAULT) {
@@ -5859,8 +5874,6 @@ static void emit_union_switch(Em* e, Node* s, SType* ut) {
         for (int j = 0; j < s->kids[i]->nkids; j++) {
             Node* pat = s->kids[i]->kids[j];
             uint32_t vi = (uint32_t)pat->ival;
-            load_frame(e, 16, sslot, 8, 0);
-            ld_reg(e, 17, 16, 0, 4, 0); // tag
             ins(e, 0x7100001Fu | ((vi & 0xFFFu) << 10) | (17u << 5)); // cmp w17, #vi
             bcond_(e, C_EQ, lcase[i]);
         }
