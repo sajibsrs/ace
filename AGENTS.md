@@ -59,9 +59,11 @@ history.
   as the change they describe, not a follow-up.
 - Split work likely to exceed 100k tokens into 2–3 owner-approved steps; each
   step must compile and pass relevant tests.
-- Commit to a feature branch freely, one commit per measured step. Commit to
-  `master` only when explicitly asked, by squash-merging the branch into one
-  commit and then deleting the branch. Every commit message is exactly one
+- Commit to the feature branch freely, one commit per measured step. Once the
+  branch is tested, bring it onto `master` uncommitted
+  (`git merge --squash <branch>`) for the owner's review. Commit on `master`
+  only after that review and the owner's explicit permission, as one commit,
+  then delete the branch. Every commit message is exactly one
   imperative subject line, full stop — no body paragraph, no rationale, no
   bullet list, even when the change feels like it needs explaining. That
   explanation belongs in `CHANGELOG.md`, not the commit.
