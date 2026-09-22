@@ -625,6 +625,7 @@ Carved (contract value layout):
 12. Signings and methods are private by default. `pub Circle signs Shape, Color` exports every conformance in that canonical signing; `pub Circle.area()` exports a method for direct external calls. A public signing may use private methods internally.
 13. Generic signings ride the bracket rules: `Box[T] signs Value[T]`. Both sides are explicitly instantiated at use (`Value[int](&box)`), and each used exact pair gets its own stamped vtable. The one-signing rule applies to the nominal generic struct; per-instantiation/conditional signings are rejected.
 14. Contract promotion is one-way from an explicitly embedded base to its embedder, never in reverse. If the base signs the same contract, its promoted exact methods may satisfy the embedder's explicit signing. Dispatch uses a compiler-generated fixed-offset receiver thunk; it adds no object metadata or allocation. Embedding never makes the base satisfy contracts signed only by the embedder, never creates a subtype relation, and never searches beyond the directly embedded field.
+15. Type-owned associated functions (`Type::name(...)`, informally "static methods"): a declaration scoped to a type with no implicit `self`, for constructors, destructors, and other factory-shaped operations with no receiver to dispatch on. `::` replaces `.` in both declaration and call to mark a function receiverless; `.` stays reserved for anything with a receiver. `pub Map[K, V]::new(capacity: usize): (Map[K, V], Error)` declares it; `Map[K, V]::new(capacity)` calls it, never through a value (`m::new()` is a compile error, since `::` only follows a type expression). A generic owner's type arguments are spelled once, on the type, and reused by the function's body rather than repeated on the function itself. `::` is a compile-time-only qualifier: it never acquires a vtable slot. A method and an associated function may never share owner+name. An associated function's own additional type parameters, beyond the owner's, are additive and not yet supported.
 
 ## Tagged Unions
 Decision: closed inline sums with explicit construction and exhaustive inspection.
@@ -1110,30 +1111,6 @@ Only active or trigger-gated decisions live here. Implemented history is recorde
 once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 
 ### Active
-
-- Type-owned associated functions (informally, "static methods"): a declaration
-  scoped to a type with no implicit `self`, closing the gap where a type has no
-  instance yet to call a method on — constructors (`new`), destructors (`wipe`),
-  and other factory-shaped operations that today are free functions
-  (`parser_new(): Parser`, `formatter_wipe(mut formatter: Formatter)`). Decided:
-  no new keyword; `::` replaces `.` in both the declaration and the call to mark a
-  type-owned function receiverless, and `.` stays reserved for anything with a
-  receiver (an instance method, whether reached through a value or the direct
-  disambiguated form). `pub Map[K, V]::new(capacity: usize): (Map[K, V],
-  Error)` declares it; `Map[K, V]::new(capacity)` calls it — never through a
-  value (`m::new()` is a compile error, since `::` only follows a type
-  expression), so it cannot collide with method resolution (Names & Scoping
-  #11) and never acquires a vtable slot — compile-time-only qualifier, zero
-  runtime cost. Unlike a declaration-only marker, the operator is visible at
-  every call site, not just the declaration, matching Ace's existing
-  visible-mutation principle (Principles #3) of marking behavior at both ends.
-  Precedent: C++ and Rust use the same `::`/`.` split for exactly this
-  distinction. Generic type arguments are spelled once, on the type, and
-  reused by the associated function's body, unlike the current free-function
-  form which repeats them. An associated function may declare its own
-  additional type parameters beyond the owning type's, under the ordinary
-  generic-function rules (Generics #4–8); it is constrained only by satisfying
-  its declared return signature, not by the owning type's parameter list.
 
 ### Trigger-gated
 

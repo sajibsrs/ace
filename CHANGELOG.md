@@ -1549,6 +1549,28 @@ current normative rules, and Git preserves patch-level detail.
   through private `specialized` `hash[K]`/`same[K]` for the fixed-width
   integers, `usize`, `bool`, and `string`; the finalizer and FNV-1a step use
   `bits.wrap_mul`, since ordinary `*` aborts on overflow in checked builds.
+- Added type-owned associated functions, `Type::name(...)`: a new
+  `T_COLONCOLON` token and an `F_ASSOC` flag parallel to `F_METHOD`, with
+  `N_FIELD_E` postfix parsing for `::` mirroring `.`. Declaration and lookup
+  reuse `declare_func`/`method_key`'s existing owner-namespaced-key path, so
+  a method and an associated function can never share owner+name (rejected
+  at declaration). A non-generic owner resolves through the ordinary
+  direct-call machinery once found under its namespaced key; a generic
+  owner (`Map[K, V]::new(...)`) goes through a new
+  `check_generic_assoc_call`, mirroring `check_method_call`'s generic
+  branch minus the receiver-shaped logic (no `rmut`/`cmut`, no embedding
+  promotion), substituting the owner's own type arguments — read from the
+  call-site type expression, not a receiver parameter — into each overload
+  candidate before matching. An unresolved call defers through the same
+  end-of-file `Pending` fixup plain and method calls already use, so
+  associated functions may call each other in any declaration order. The
+  emitter reads a generic call's type arguments from the resolved owner
+  type instead of a receiver (`gen_call`), and treats `F_ASSOC` like
+  `F_METHOD` everywhere a receiver argument would otherwise be assumed
+  (defer capture, `main` detection). `::` is compile-time-only: it acquires
+  no vtable slot and cannot be reached through a value (`m::new()` is a
+  compile error, since `::` only follows a type expression). An associated
+  function's own type parameters beyond the owner's are not yet supported.
 - Migrated `array`, `map`, and `pkg/http`'s `Router`, `ClientContext`, and
   `ServerContext` from `_new`/`_wipe` free functions to type-owned form:
   `Array[T]::new`/`Map[K, V]::new`/`Router::new`/`Context::new` (in
