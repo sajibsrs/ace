@@ -1627,6 +1627,15 @@ if ! printf '%s\n' "$uninitialized_struct" | grep -qF \
     echo "FAIL: aggregate definite-initialization diagnostic"
     fail=1
 fi
+uninitialized_spec=$("$ACE" tests/sema/uninitialized/specialization_err.ace 2>&1)
+for expect in \
+    "specialization_err.ace:7:12: error: 'x' was not initialized before use" \
+    "specialization_err.ace:11:12: error: 'unused' was not initialized before use"; do
+    if ! printf '%s\n' "$uninitialized_spec" | grep -qF "$expect"; then
+        echo "FAIL: specialization-body definite-initialization diagnostic: $expect"
+        fail=1
+    fi
+done
 mixed_redecl=$("$ACE" tests/sema/mixed_assignment/typed_exists_err.ace 2>&1)
 if ! printf '%s\n' "$mixed_redecl" | grep -qF \
     "error: redeclaration of 'err': a typed name under '=' must be new"; then

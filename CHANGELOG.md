@@ -1670,6 +1670,13 @@ current normative rules, and Git preserves patch-level detail.
   took 1.85 s against 3.3 ms). Buffers filled by dynamic index in `std/fmt`,
   `std/net`, the packet-sniffer demo, and `pkg/regex` tests now write through
   one full-range `mut` view of their storage.
+- Definite initialization now checks specialization bodies. The pass skipped
+  every function with a bracket list and no instantiations to exclude
+  unstamped templates, but a specialization's list holds its type arguments
+  and never gains instantiations, so its body went unchecked (this let the
+  uninitialized `std/fmt` buffers compile). A specialization is recognized by
+  its symbol's `spec_args` and checked like any ordinary function, called or
+  not.
 
 ## Current frontier
 

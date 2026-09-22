@@ -5770,7 +5770,10 @@ static int init_stmt(InitCk* k, Node* s) {
 static void check_definite_initialization(Node* file, Diag* d) {
     for (int i = 0; i < file->nkids; i++) {
         Node* f = file->kids[i];
-        if (f->kind != N_FUNC || !f->b || (f->c && !sema_insts(f))) continue;
+        if (f->kind != N_FUNC || !f->b) continue;
+        Sym* fs = node_sym(f);
+        int is_spec = fs && fs->spec_args; // f->c holds its type arguments
+        if (f->c && !is_spec && !sema_insts(f)) continue;
         InitCk k = { .d = d };
         for (int p = 0; p < f->nkids; p++) {
             Sym* sym = node_sym(f->kids[p]);

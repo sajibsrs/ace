@@ -1,0 +1,19 @@
+/* Uninitialized specialization-body fixture: a specialization is an ordinary
+ * function, checked whether or not it is called. */
+
+get[T](value: T): int specialized
+get[int](value: int): int {
+    x: int
+    return x
+}
+get[u8](value: u8): int {
+    unused: int
+    return unused
+}
+
+gen[T](value: T): int {
+    y: int = 0
+    return y
+}
+
+main(): int { return get[int](1) + gen[int](2) }
