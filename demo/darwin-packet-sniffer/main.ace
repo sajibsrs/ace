@@ -140,6 +140,7 @@ main(): int {
                            (usize(length_bytes[1]) << 8) |
                            (usize(length_bytes[2]) << 16) |
                            (usize(length_bytes[3]) << 24)
+
     if buffer_length == 0 || buffer_length > CAPTURE_CAPACITY {
         fmt.printf("BIOCGBLEN returned unsupported size %u: error %d\n",
                    buffer_length, 22)
