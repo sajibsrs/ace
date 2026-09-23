@@ -1704,6 +1704,23 @@ current normative rules, and Git preserves patch-level detail.
   uninitialized `std/fmt` buffers compile). A specialization is recognized by
   its symbol's `spec_args` and checked like any ordinary function, called or
   not.
+- Closed the unchecked-result hole of calls resolved at end of file. A forward
+  call, or one whose untyped argument waits for the complete overload set
+  (`f(5)` against `f(a: u64)`), returned the poison type, and only the call
+  was resolved later: `y: u8 = f(300)` and `s: string = later()` compiled, and
+  a cast or nested operator over such a call failed in codegen. Each function
+  body (per generic stamp) that made a pending call is now re-checked in a
+  final mode after resolution, and emit-time stamping resolves in that mode.
+  Every `Sym` carries a declaration sequence number; the re-check sees only
+  symbols up to the body's first-check point or created during the re-check,
+  and overload chains, appended in declaration order, are cut at the same
+  point, so name lookup, builtin shadowing, and overload selection match the
+  first check. Calls that were pending (`F_PENDING`) see every declaration.
+  A call is flagged when it goes pending, so `compile_time_expr` rejects it
+  like a resolved call: a forward call in a field default was taken for a cast
+  and reached codegen. Two checked-bounds fixtures returning `i32` from
+  `main(): int` relied on the hole and now convert explicitly. The regex app's check costs 1.2% more
+  instructions.
 
 ## Current frontier
 

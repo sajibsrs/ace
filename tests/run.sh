@@ -77,6 +77,21 @@ for f in $(find tests/sema -name '*_err.ace' | sort); do
     fi
 done
 
+# A call resolved at end of file is checked where its value lands, not
+# accepted for its poison type.
+for f in pending_result_decl pending_result_return forward_result_decl; do
+    if ! "$ACE" "tests/sema/functions/${f}_err.ace" 2>&1 |
+         grep -qF "type mismatch: u64 given where"; then
+        echo "FAIL: a pending call's result must meet its consumer's type: $f"
+        fail=1
+    fi
+done
+if ! "$ACE" tests/sema/types/forward_call_default_err.ace 2>&1 |
+     grep -qF "default for field 'v' must be a compile-time expression"; then
+    echo "FAIL: a field default must not call a function declared later"
+    fail=1
+fi
+
 untyped_float_mix=$("$ACE" tests/sema/operators/untyped_float_mix_err.ace 2>&1)
 if ! printf '%s\n' "$untyped_float_mix" | grep -qF \
     "type mismatch: integer literal given where f64 expected (casts are explicit)"; then

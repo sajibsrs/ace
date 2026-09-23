@@ -1,0 +1,12 @@
+/* A field default cannot call a function, even one declared later. */
+
+Box: struct { v: u64 = later() }
+
+main(): int {
+    b: Box = Box {}
+    return int(b.v)
+}
+
+later(): u64 {
+    return 300
+}

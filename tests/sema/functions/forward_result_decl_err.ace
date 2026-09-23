@@ -1,0 +1,11 @@
+/* A forward call's result is checked against its binding once the callee
+ * is declared. */
+
+main(): int {
+    s: string = later()
+    return int(s.len)
+}
+
+later(): u64 {
+    return 300
+}

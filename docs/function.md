@@ -294,7 +294,12 @@ is per-type specializations (see [str](std/str.md)).
 Names normally follow declaration-before-use. Top-level function calls are the
 exception: calls to functions, and method calls on a struct, declared later are
 recorded and resolved at the end of the file. This supports forward and mutual
-calls without prototypes. A deferred call's result is untyped until then.
+calls without prototypes. A call whose untyped argument needs the complete
+overload set, such as `f(5)` against a single `f(a: u64)`, is resolved the same
+way. Every function body that made such a call is then checked once more, with
+the same declarations in view as before except that the deferred calls see the
+whole file, so each use of their results is checked at its real type:
+`y: u8 = later()` is an error when `later` returns `u64`.
 
 ## Entry point
 

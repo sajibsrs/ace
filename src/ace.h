@@ -169,6 +169,7 @@ enum {
     F_EMBED = 512, F_SPECIALIZED = 1024, F_FORGEN = 2048, F_MIXED = 4096,
     F_BOUNDS_PROVEN = 8192, F_INTRINSIC = 16384, F_PACKED = 32768,
     F_VOLATILE = 65536, F_CABI = 131072, F_ASSOC = 262144,
+    F_PENDING = 524288, // a call deferred to end of file
 };
 
 // Compiler-backed standard-module functions. These markers live only on the
