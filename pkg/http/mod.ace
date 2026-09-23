@@ -34,15 +34,15 @@ pub ClientContext: type = client.Context
 pub Router: type = routing.Router
 pub ServerContext: type = server.Context
 
-pub method_connect: const string = message.method_connect
-pub method_delete: const string = message.method_delete
-pub method_get: const string = message.method_get
-pub method_head: const string = message.method_head
-pub method_options: const string = message.method_options
-pub method_patch: const string = message.method_patch
-pub method_post: const string = message.method_post
-pub method_put: const string = message.method_put
-pub method_trace: const string = message.method_trace
+pub CONNECT: const string = message.CONNECT
+pub DELETE: const string = message.DELETE
+pub GET: const string = message.GET
+pub HEAD: const string = message.HEAD
+pub OPTIONS: const string = message.OPTIONS
+pub PATCH: const string = message.PATCH
+pub POST: const string = message.POST
+pub PUT: const string = message.PUT
+pub TRACE: const string = message.TRACE
 
 pub status(code: u16): string { return message.status(code) }
 

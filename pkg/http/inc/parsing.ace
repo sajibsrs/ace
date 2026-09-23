@@ -134,7 +134,7 @@ pub ResponseResult: union {
     framing,
 }
 
-/* Reports whether `byte` is permitted by the HTTP token grammar. */
+/* Validates a bounded ASCII DNS name or a four-part dotted-decimal IPv4 host. */
 is_host(host: string): bool {
     if host.len == 0 || host.len > 253 { return false }
     label_start: usize = 0
@@ -341,7 +341,7 @@ is_chunk_ext(text: string): bool {
         at += 1
         at = skip_ows(text, at)
         start: usize = at
-        for at < text.len && message.is_token(text[at]) { at += 1 }
+        for at < text.len && message.tchar(text[at]) { at += 1 }
         if at == start { return false }
         at = skip_ows(text, at)
         if at < text.len && text[at] == 61 {
@@ -369,7 +369,7 @@ is_chunk_ext(text: string): bool {
                 if !closed { return false }
             } else {
                 start = at
-                for at < text.len && message.is_token(text[at]) { at += 1 }
+                for at < text.len && message.tchar(text[at]) { at += 1 }
                 if at == start { return false }
             }
             at = skip_ows(text, at)
@@ -437,7 +437,7 @@ pub mut RequestParser.parse(input: string, headers: mut []Header, body: mut []u8
             method: string = input[self.line_start..first]
             target: string = input[first + 1..second]
             for i: usize in 0 .. method.len {
-                if !message.is_token(method[i]) { return mut self.syntax_failure() }
+                if !message.tchar(method[i]) { return mut self.syntax_failure() }
             }
             for i: usize in 0 .. target.len {
                 if target[i] <= 32 || target[i] == 127 { return mut self.syntax_failure() }
@@ -483,7 +483,7 @@ pub mut RequestParser.parse(input: string, headers: mut []Header, body: mut []u8
             name: string = input[self.line_start..colon]
             raw: string = input[colon + 1..self.line_stop]
             for i: usize in 0 .. name.len {
-                if !message.is_token(name[i]) { return mut self.syntax_failure() }
+                if !message.tchar(name[i]) { return mut self.syntax_failure() }
             }
             for i: usize in 0 .. raw.len {
                 if (raw[i] < 32 && raw[i] != 9) || raw[i] == 127 { return mut self.syntax_failure() }
@@ -628,7 +628,7 @@ pub mut RequestParser.parse(input: string, headers: mut []Header, body: mut []u8
             }
             if colon == self.line_start || colon == self.line_stop { return mut self.syntax_failure() }
             for i: usize in self.line_start .. colon {
-                if !message.is_token(input[i]) { return mut self.syntax_failure() }
+                if !message.tchar(input[i]) { return mut self.syntax_failure() }
             }
             for i: usize in colon + 1 .. self.line_stop {
                 if (input[i] < 32 && input[i] != 9) || input[i] == 127 { return mut self.syntax_failure() }
@@ -772,7 +772,7 @@ pub mut ResponseParser.parse(
             name: string = input[self.line_start..colon]
             raw: string = input[colon + 1..self.line_stop]
             for i: usize in 0 .. name.len {
-                if !message.is_token(name[i]) { return mut self.syntax_failure() }
+                if !message.tchar(name[i]) { return mut self.syntax_failure() }
             }
             for i: usize in 0 .. raw.len {
                 if (raw[i] < 32 && raw[i] != 9) || raw[i] == 127 { return mut self.syntax_failure() }
@@ -935,7 +935,7 @@ pub mut ResponseParser.parse(
             }
             if colon == self.line_start || colon == self.line_stop { return mut self.syntax_failure() }
             for i: usize in self.line_start .. colon {
-                if !message.is_token(input[i]) { return mut self.syntax_failure() }
+                if !message.tchar(input[i]) { return mut self.syntax_failure() }
             }
             for i: usize in colon + 1 .. self.line_stop {
                 if (input[i] < 32 && input[i] != 9) || input[i] == 127 { return mut self.syntax_failure() }

@@ -87,10 +87,10 @@ required. Every `Response` field has a construction default: HTTP/1.1, status
 200, and null reason, headers, and body. A null reason formats with the
 conventional phrase for a named status, or an empty phrase for another valid
 status; an explicit reason, including `""`, is preserved. The nine common
-request methods are public string constants such as `method_get` and
-`method_patch`. Response statuses remain plain `u16` numbers. `status(code)`
-returns the conventional phrase for a known code and `""` for an unknown code;
-it does not restrict extension statuses in `100...999`.
+request methods are public string constants spelled as their tokens,
+such as `http.GET` and `http.PATCH`. Response statuses remain plain `u16`
+numbers. `status(code)` returns the conventional phrase for a known code and `""`
+for an unknown code; it does not restrict extension statuses in `100...999`.
 
 `mut parser.parse(input, headers, body, eof)` on `RequestParser` and
 `mut parser.parse(input, headers, body, eof, no_body)` on `ResponseParser`

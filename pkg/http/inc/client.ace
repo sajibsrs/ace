@@ -87,7 +87,7 @@ redirect_next(
     mut state: RedirectState,
     mut storage: Storage,
 ): (bool, Error) {
-    if !redirection.is_redirect(response.status) { return false, null }
+    if !redirection.redirects(response.status) { return false, null }
     location: string = redirection.location(response)
     if location == null || location.len == 0 { return false, null }
 
@@ -123,7 +123,7 @@ get_redirecting(url: string, policy: RedirectPolicy, mut context: Context): (Res
     if start_err != null { return Response {}, start_err }
 
     for {
-        response: Response, err: Error = transport.get_with_storage(
+        response: Response, err: Error = transport.get(
             context.storage[0].url[..state.current_count],
             mut context.storage[0],
             true,
@@ -142,7 +142,7 @@ pub get(url: string, mut context: Context): (Response, Error) {
     if url_err != null { return Response {}, url_err }
 
     if context.redirects.limit == 0 {
-        response: Response, err: Error = transport.get_with_storage(url, mut context.storage[0], true)
+        response: Response, err: Error = transport.get(url, mut context.storage[0], true)
         return response, err
     }
     response: Response, err: Error = get_redirecting(url, context.redirects, mut context)

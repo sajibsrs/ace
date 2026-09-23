@@ -1054,6 +1054,11 @@ current normative rules, and Git preserves patch-level detail.
   `closedir` and `net.reuseaddr`/`reuseport`, with their error domains and
   private `os/` twins. `tcp`'s `*_nonblock`, `progress_*`, and `*_all` forms
   and `net.pending_error` keep their identifying word.
+- Applied the same rule to `pkg/http`: the method constants are the method
+  tokens themselves (`http.GET`, `http.POST`, …), and the internal helpers are
+  `message.tchar` (RFC 9110's term), `transport.connect`/`get`, and
+  `redirection.redirects`. Removed `redirection`'s unused method-constant
+  duplicates and `transport`'s private `GET` alias.
 
 ## Significant implementation corrections
 

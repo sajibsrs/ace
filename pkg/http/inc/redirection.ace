@@ -14,9 +14,6 @@ pub RedirectErr: error {
     1: limit = "HTTP redirect limit was exceeded"
 }
 
-pub method_connect: const string = "CONNECT"
-pub method_delete: const string = "DELETE"
-
 pub RedirectPolicy: struct {
     /* Zero preserves the strict one-response default. */
     limit: usize = 0,
@@ -108,7 +105,7 @@ pub location(response: Response): string {
     return null
 }
 
-pub is_redirect(status_code: u16): bool {
+pub redirects(status_code: u16): bool {
     return status_code == 301 || status_code == 302 || status_code == 303 ||
         status_code == 307 || status_code == 308
 }

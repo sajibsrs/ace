@@ -26,13 +26,13 @@ main(): int {
     router: http.Router = http.Router::new()
     defer mut router.wipe()
 
-    err: Error = mut router.handle(http.method_get, "/home", home_route)
+    err: Error = mut router.handle(http.GET, "/home", home_route)
     if err != null { return 1 }
 
-    err = mut router.handle(http.method_get, "/home/about", about_route)
+    err = mut router.handle(http.GET, "/home/about", about_route)
     if err != null { return 2 }
 
-    err = mut router.handle(http.method_post, "/submit", submit_route)
+    err = mut router.handle(http.POST, "/submit", submit_route)
     if err != null { return 3 }
 
     response: http.Response = router.dispatch(http.Request {

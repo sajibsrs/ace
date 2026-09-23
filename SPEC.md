@@ -908,7 +908,7 @@ or making related facade and target APIs differ.
       one final response. Header names compare case-insensitively as ASCII;
       field values are otherwise preserved.
     - The nine standard request methods are public `string` constants spelled
-      `method_get`, `method_post`, and so on. Statuses remain plain `u16`
+      as their method tokens (`GET`, `POST`, …). Statuses remain plain `u16`
       numbers: response handling accepts every status in `100...999`, without
       duplicating the protocol catalogue as public numeric constants.
       `status(code: u16): string` returns the static conventional

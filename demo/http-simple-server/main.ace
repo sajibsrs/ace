@@ -32,7 +32,7 @@ main(): int {
 
     router: http.Router = http.Router::new()
     defer mut router.wipe()
-    route_err: Error = mut router.handle(http.method_get, "/", handle)
+    route_err: Error = mut router.handle(http.GET, "/", handle)
     if route_err != null {
         fmt.printf("failed to register route: error %d\n", int(route_err.code))
         return 1

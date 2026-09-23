@@ -14,15 +14,15 @@ pub FormatErr: error {
     8: reason = "invalid HTTP reason phrase"
 }
 
-pub method_connect: const string = "CONNECT"
-pub method_delete: const string = "DELETE"
-pub method_get: const string = "GET"
-pub method_head: const string = "HEAD"
-pub method_options: const string = "OPTIONS"
-pub method_patch: const string = "PATCH"
-pub method_post: const string = "POST"
-pub method_put: const string = "PUT"
-pub method_trace: const string = "TRACE"
+pub CONNECT: const string = "CONNECT"
+pub DELETE: const string = "DELETE"
+pub GET: const string = "GET"
+pub HEAD: const string = "HEAD"
+pub OPTIONS: const string = "OPTIONS"
+pub PATCH: const string = "PATCH"
+pub POST: const string = "POST"
+pub PUT: const string = "PUT"
+pub TRACE: const string = "TRACE"
 
 pub Header: struct {
     name: string,
@@ -44,7 +44,8 @@ pub Response: struct {
     body: []u8 = null,
 }
 
-pub is_token(byte: u8): bool {
+/* Reports whether `byte` is permitted by the HTTP token grammar. */
+pub tchar(byte: u8): bool {
     if (byte >= '0' && byte <= '9') || (byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z') { return true }
     return byte == '!' || byte == '#' || byte == '$' || byte == '%' ||
         byte == '&' || byte == '\'' || byte == '*' || byte == '+' ||
@@ -52,7 +53,6 @@ pub is_token(byte: u8): bool {
         byte == '`' || byte == '|' || byte == '~'
 }
 
-/* Validates a bounded ASCII DNS name or a four-part dotted-decimal IPv4 host. */
 add_size(total: usize, amount: usize, capacity: usize): (usize, bool) {
     if total > capacity || amount > capacity - total { return usize(0), false }
     return total + amount, true
@@ -100,7 +100,7 @@ pub status(code: u16): string {
 pub Request.format(output: mut []u8): (usize, Error) {
     if self.method.len == 0 { return 0, FormatErr.method }
     for i: usize in 0 .. self.method.len {
-        if !is_token(self.method[i]) { return 0, FormatErr.method }
+        if !tchar(self.method[i]) { return 0, FormatErr.method }
     }
     if self.target.len == 0 { return 0, FormatErr.target }
     for i: usize in 0 .. self.target.len {
@@ -117,7 +117,7 @@ pub Request.format(output: mut []u8): (usize, Error) {
         header: Header = self.headers[i]
         if header.name.len == 0 { return 0, FormatErr.header_name }
         for j: usize in 0 .. header.name.len {
-            if !is_token(header.name[j]) { return 0, FormatErr.header_name }
+            if !tchar(header.name[j]) { return 0, FormatErr.header_name }
         }
         for j: usize in 0 .. header.value.len {
             if header.value[j] == 0 || header.value[j] == 10 || header.value[j] == 13 {
@@ -175,7 +175,7 @@ pub Response.format(output: mut []u8): (usize, Error) {
         header: Header = self.headers[i]
         if header.name.len == 0 { return 0, FormatErr.header_name }
         for j: usize in 0 .. header.name.len {
-            if !is_token(header.name[j]) { return 0, FormatErr.header_name }
+            if !tchar(header.name[j]) { return 0, FormatErr.header_name }
         }
         for j: usize in 0 .. header.value.len {
             if header.value[j] == 0 || header.value[j] == 10 || header.value[j] == 13 {

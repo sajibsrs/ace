@@ -120,7 +120,7 @@ main(): int {
     }
 
     default_request: http.Request = http.Request {
-        method = http.method_get,
+        method = http.GET,
         target = "/health",
     }
     written, err = default_request.format(mut output_storage[..])

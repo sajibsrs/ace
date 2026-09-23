@@ -21,12 +21,12 @@ check(
         },
     ]
     request: http.Request = http.Request {
-        method = http.method_get,
+        method = http.GET,
         target = "/",
         headers = request_headers[..],
     }
     empty_request: http.Request = http.Request {
-        method = http.method_head,
+        method = http.HEAD,
         target = "/",
     }
     default_response: http.Response = http.Response {}

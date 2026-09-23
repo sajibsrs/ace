@@ -20,7 +20,6 @@ pub Url: type = parsing.Url
 pub UrlErr: type = parsing.UrlErr
 
 FormatErr: type = message.FormatErr
-method_get: const string = message.method_get
 
 pub ClientErr: error {
     1: address = "no usable address was resolved"
@@ -39,7 +38,7 @@ pub Storage: struct {
     url: mut []u8 = null,
 }
 
-pub connect_url(parsed: Url, mut storage: Storage, resize: bool): (tcp.Conn, Error) {
+pub connect(parsed: Url, mut storage: Storage, resize: bool): (tcp.Conn, Error) {
     zero: tcp.Conn = tcp.Conn {}
     if resize {
         mem_addresses: mut []net.Addr4, addr_ok: bool = mem.grow[net.Addr4](storage.addresses, 4)
@@ -103,7 +102,7 @@ pub exchange[C](
         },
     ]
     request: Request = Request {
-        method = method_get,
+        method = message.GET,
         target = storage.target[..target_count],
         headers = fields[..],
     }
@@ -202,11 +201,11 @@ pub exchange[C](
     }
 }
 
-pub get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Error) {
+pub get(url: string, mut storage: Storage, resize: bool): (Response, Error) {
     parsed: Url, url_err: Error = parsing.Url::parse(url, false)
     if url_err != null { return Response {}, url_err }
 
-    connection: tcp.Conn, connect_err: Error = connect_url(parsed, mut storage, resize)
+    connection: tcp.Conn, connect_err: Error = connect(parsed, mut storage, resize)
     defer tcp.close(mut connection)
     if connect_err != null { return Response {}, connect_err }
 
