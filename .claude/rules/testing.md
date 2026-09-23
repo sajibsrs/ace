@@ -9,7 +9,8 @@ paths:
 
 # Testing
 
-- Run the smallest relevant checks first.
+- Run the smallest relevant checks first; run the full suites only after
+  the owner approves and reviews the change (see `AGENTS.md` Process).
 - Tests are grouped under `tests/`: lexer/parser tests parse; sema tests check
   diagnostics; emit and module tests compile/link/run; stdlib-module tests use a
   synthetic std tree; emit-errors fail during `-c`; driver tests exercise

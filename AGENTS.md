@@ -39,6 +39,10 @@ history.
 - Judge a proposed change by the value it adds against that priority stack,
   never by whether it breaks with what's already decided or implemented.
   "That's not how it's currently done" is not a counterargument on its own.
+- While a change is under review, run only the checks it touches (one
+  package's `tests/run.sh`, a demo, a doc example). Run the full suites
+  (`make test`, `make test-packages`) only after the owner has approved the
+  design and reviewed the change, before the commit; they are slow.
 - Measure an optimization's gain against `HEAD` (several runs; a hand-edited
   disassembly or microbenchmark against a saved baseline for a quick first
   estimate) and state it when presenting the change. If the gain is
