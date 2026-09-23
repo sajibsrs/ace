@@ -390,7 +390,7 @@ typedef struct {
  * function with any call or large aggregate inside a loop keeps its slots
  * rather than pay that at every iteration. */
 #define FP_LEAF_REGS 8  // d24-d31, caller-saved promoted float locals
-#define PARAM_FHOMES 8 // v23 down: register-homed float leaves of incoming HFA parameters
+#define PARAM_FHOMES 8 // register-homed float leaves of incoming HFA parameters, in their argument registers
 #define PARAM_HOMES (PARAM_FHOMES + LEAF_REGS) // plus x14 down: integer-class leaves
 
 typedef struct {
@@ -469,8 +469,9 @@ typedef struct {
     int      nleaf_span, cleaf_span;
     int      fn_has_asm;
     struct { Node* decl; uint32_t off; int reg; } phome[PARAM_HOMES]; // register-homed parameter leaves
-    int      nphome, nfhome, nxhome; // all, v23-down float, and x14-down integer homes
+    int      nphome, nfhome, nxhome; // all, argument-register float, and x14-down integer homes
     int      vtf_cap;    // fp temps available: MAX_FPTEMPS less nfhome
+    uint8_t  vmap[MAX_FPTEMPS]; // fp temp index -> v register (vreg)
     uint32_t out_max;
     Slot*   slots;
     int     nslots, cslots;
@@ -609,7 +610,12 @@ static void align_code(Em* e, uint32_t bytes) {
 }
 
 static int xreg(int t) { return t < 8 ? t : t + 1; }
-static int vreg(int t) { return t < 8 ? t : t + 8; }
+// fp temp t's v register: v0-v7 then v16-v23, less the homes plan_param_homes swaps in
+static int vreg(Em* e, int t) { return e->vmap[t]; }
+
+static void vmap_reset(Em* e) {
+    for (int t = 0; t < MAX_FPTEMPS; t++) e->vmap[t] = (uint8_t)(t < 8 ? t : t + 8);
+}
 
 static const char* arena_copy(const char* s, size_t n) {
     char* p = arena_alloc(n + 1);
@@ -1150,12 +1156,12 @@ static void load_frame_fp(Em* e, int vr, uint32_t off, int is64) {
 
 static void spill_temps(Em* e) {
     for (int i = 0; i < e->vti; i++) store_frame(e, xreg(i), spill_slot_int(e, i), 8);
-    for (int j = 0; j < e->vtf; j++) store_frame_fp(e, vreg(j), spill_slot_fp(e, j), 1);
+    for (int j = 0; j < e->vtf; j++) store_frame_fp(e, vreg(e, j), spill_slot_fp(e, j), 1);
 }
 
 static void reload_temps(Em* e, int ni, int nf) {
     for (int i = 0; i < ni; i++) load_frame(e, xreg(i), spill_slot_int(e, i), 8, 0);
-    for (int j = 0; j < nf; j++) load_frame_fp(e, vreg(j), spill_slot_fp(e, j), 1);
+    for (int j = 0; j < nf; j++) load_frame_fp(e, vreg(e, j), spill_slot_fp(e, j), 1);
 }
 
 // --- memory access via address register ---------------------------------------------
@@ -1283,14 +1289,14 @@ static void mov_int(Em* e, int sf, int dst, int src) {
 
 static void mov_fp(Em* e, int is64, int dst, int src) {
     if (dst == src) return;
-    ins(e, (is64 ? 0x1E604000u : 0x1E204000u) | ((uint32_t)vreg(src) << 5) | (uint32_t)vreg(dst));
+    ins(e, (is64 ? 0x1E604000u : 0x1E204000u) | ((uint32_t)vreg(e, src) << 5) | (uint32_t)vreg(e, dst));
 }
 
 // load a scalar of type t from [base+off] into a fresh temp
 static EV load_scalar(Em* e, int base, uint32_t off, SType* t) {
     if (is_floatt(t)) {
         int vt = tmp_fp(e);
-        ldrf_(e, vreg(vt), base, off, unwrap(t)->prim == P_F64);
+        ldrf_(e, vreg(e, vt), base, off, unwrap(t)->prim == P_F64);
         return (EV){ CLS_FP, vt };
     }
     int it = tmp_int(e);
@@ -1300,7 +1306,7 @@ static EV load_scalar(Em* e, int base, uint32_t off, SType* t) {
 }
 
 static void store_scalar(Em* e, EV v, int base, uint32_t off, SType* t) {
-    if (v.cls == CLS_FP) strf_(e, vreg(v.idx), base, off, unwrap(t)->prim == P_F64);
+    if (v.cls == CLS_FP) strf_(e, vreg(e, v.idx), base, off, unwrap(t)->prim == P_F64);
     else st_reg(e, xreg(v.idx), base, off, (uint32_t)((scalar_bits(t) + 7) / 8));
 }
 
@@ -1350,7 +1356,7 @@ static EV gen_cast(Em* e, EV v, SType* from, SType* to) {
     if (is_floatt(from) && is_floatt(to)) { // f32 <-> f64
         int a64 = unwrap(from)->prim == P_F64, b64 = unwrap(to)->prim == P_F64;
         if (a64 == b64) return v;
-        ins(e, (b64 ? 0x1E22C000u : 0x1E624000u) | ((uint32_t)vreg(v.idx) << 5) | (uint32_t)vreg(v.idx));
+        ins(e, (b64 ? 0x1E22C000u : 0x1E624000u) | ((uint32_t)vreg(e, v.idx) << 5) | (uint32_t)vreg(e, v.idx));
         return v;
     }
     if ((is_intt(from) || is_boolt(from)) && is_floatt(to)) { // scvtf/ucvtf
@@ -1365,7 +1371,7 @@ static EV gen_cast(Em* e, EV v, SType* from, SType* to) {
          * their registers independently).
          */
         int t = tmp_fp(e);
-        ins(e, base | ((uint32_t)xreg(v.idx) << 5) | (uint32_t)vreg(t));
+        ins(e, base | ((uint32_t)xreg(v.idx) << 5) | (uint32_t)vreg(e, t));
         e->vti = v.idx; // the int temp is consumed
         return (EV){ CLS_FP, t };
     }
@@ -1376,7 +1382,7 @@ static EV gen_cast(Em* e, EV v, SType* from, SType* to) {
             : (dst64 ? 0x9E380000u : 0x1E380000u);
         if (!ty_is_signed(to)) base |= 0x10000u;
         int t = tmp_int(e);
-        ins(e, base | ((uint32_t)vreg(v.idx) << 5) | (uint32_t)xreg(t));
+        ins(e, base | ((uint32_t)vreg(e, v.idx) << 5) | (uint32_t)xreg(t));
         e->vtf = v.idx; // the fp temp is consumed
         return (EV){ CLS_INT, t };
     }
@@ -1843,11 +1849,11 @@ static void emit_farith_raw(Em* e, TokKind op, uint32_t rd, uint32_t ra, uint32_
 }
 
 static void emit_farith(Em* e, TokKind op, int dst, int a, int b, int is64) {
-    emit_farith_raw(e, op, (uint32_t)vreg(dst), (uint32_t)vreg(a), (uint32_t)vreg(b), is64);
+    emit_farith_raw(e, op, (uint32_t)vreg(e, dst), (uint32_t)vreg(e, a), (uint32_t)vreg(e, b), is64);
 }
 
 static void emit_fcmp(Em* e, int a, int b, int is64) {
-    ins(e, (is64 ? 0x1E602000u : 0x1E202000u) | (vreg(b) << 16) | (vreg(a) << 5));
+    ins(e, (is64 ? 0x1E602000u : 0x1E202000u) | (vreg(e, b) << 16) | (vreg(e, a) << 5));
 }
 
 // --- tagged unions -----------------------------------------------------------------
@@ -1934,8 +1940,8 @@ static EV gen_union_eq(Em* e, Node* n, EV a, EV b, SType* ut, int eq) {
             t2 = tmp_int(e);
             int is64 = unwrap(pt)->prim == P_F64;
             int v0 = tmp_fp(e), v1 = tmp_fp(e);
-            ldrf_(e, vreg(v0), xreg(a.idx), poff, is64);
-            ldrf_(e, vreg(v1), xreg(b.idx), poff, is64);
+            ldrf_(e, vreg(e, v0), xreg(a.idx), poff, is64);
+            ldrf_(e, vreg(e, v1), xreg(b.idx), poff, is64);
             emit_fcmp(e, v0, v1, is64);
             cset_(e, 0, C_EQ, xreg(t2));
         } else {
@@ -1998,7 +2004,7 @@ static int src_reg(Em* e, Node* x, EV* v) {
         return home;
     }
     *v = gen_expr(e, x);
-    return v->cls == CLS_FP ? vreg(v->idx) : xreg(v->idx);
+    return v->cls == CLS_FP ? vreg(e, v->idx) : xreg(v->idx);
 }
 
 /*
@@ -2024,7 +2030,7 @@ static int fsrc_reg(Em* e, Node* x, EV* v) {
         return home;
     }
     *v = gen_expr(e, x);
-    return vreg(v->idx);
+    return vreg(e, v->idx);
 }
 
 static int is_farith_op(TokKind op) {
@@ -2139,7 +2145,7 @@ static EV gen_binop(Em* e, Node* n) {
             return (EV){ CLS_INT, tmp_int(e) };
         }
         int d = a.idx >= 0 ? a.idx : b.idx >= 0 ? b.idx : tmp_fp(e);
-        emit_farith_raw(e, op, (uint32_t)vreg(d), (uint32_t)ra, (uint32_t)rb, unwrap(t)->prim == P_F64);
+        emit_farith_raw(e, op, (uint32_t)vreg(e, d), (uint32_t)ra, (uint32_t)rb, unwrap(t)->prim == P_F64);
         e->vtf = d + 1;
         return (EV){ CLS_FP, d };
     }
@@ -3032,7 +3038,7 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
         if (v.idx >= si) skip_spill[v.idx] = 1;
     }
     for (int t = si; t < e->vti; t++) if (!(t < 64 && skip_spill[t])) store_frame(e, xreg(t), spill_slot_int(e, t), 8);
-    for (int j = 0; j < e->vtf; j++) store_frame_fp(e, vreg(j), spill_slot_fp(e, j), 1);
+    for (int j = 0; j < e->vtf; j++) store_frame_fp(e, vreg(e, j), spill_slot_fp(e, j), 1);
     for (int i = 0; i < n; i++) {
         if (placed[i]) continue;
         if (splits[i]) {
@@ -3443,6 +3449,37 @@ static int fold_preg(Em* e, int r, int src, SType* t) {
     return 1;
 }
 
+/*
+ * fold_preg's float counterpart: retarget the FP instruction just emitted,
+ * which produced dead v register src, to write v register r. Only a scalar
+ * FP data-processing op, fmov immediate, int-to-float conversion, or FP load,
+ * none of which reads its destination.
+ */
+static int fold_fp(Em* e, int r, int src) {
+    Buf* b = text(e);
+    if (b->len < 4 || e->bound_at == (uint32_t)b->len) return 0;
+    uint32_t x;
+    memcpy(&x, b->d + b->len - 4, 4);
+    if ((int)(x & 31u) != src) return 0;
+    int op = (x & 0xFF200C00u) == 0x1E200800u ||   // 2-source
+             (x & 0xFF207C00u) == 0x1E204000u ||   // 1-source
+             (x & 0xFF000000u) == 0x1F000000u ||   // 3-source
+             (x & 0xFF201FE0u) == 0x1E201000u ||   // fmov immediate
+             (x & 0x7F3E0000u) == 0x1E220000u ||   // scvtf/ucvtf
+             (x & 0x3F400000u) == 0x3D400000u ||   // ldr, unsigned offset
+             (x & 0x3F600C00u) == 0x3C400000u ||   // ldur
+             (x & 0x3F600C00u) == 0x3C600800u;     // ldr, register offset
+    if (!op) return 0;
+    x = (x & ~31u) | (uint32_t)r;
+    if ((x & 0xFF3FFC00u) == 0x1E204000u && (int)((x >> 5) & 31u) == r &&
+        e->peep_bar < (uint32_t)b->len - 4) { // fmov r, r: drop it
+        b->len -= 4;
+        return 1;
+    }
+    memcpy(b->d + b->len - 4, &x, 4);
+    return 1;
+}
+
 // store a value into promoted register r; v's temp is dead afterwards
 static void store_preg(Em* e, int r, EV v, SType* t) {
     if (v.cls == CLS_ADDR) v = load_scalar(e, xreg(v.idx), 0, t);
@@ -3452,7 +3489,7 @@ static void store_preg(Em* e, int r, EV v, SType* t) {
     }
     int is64 = unwrap(t)->prim == P_F64;
     if (v.cls == CLS_FP) // fmov s keeps the low 32 bits, as a slot would
-        fmov_raw(e, is64, r, vreg(v.idx));
+        fmov_raw(e, is64, r, vreg(e, v.idx));
     else // raw bits in an int temp: fmov d, x / s, w
         ins(e, (is64 ? 0x9E670000u : 0x1E270000u) |
                ((uint32_t)xreg(v.idx) << 5) | (uint32_t)r);
@@ -3509,7 +3546,7 @@ static Slot* local_slot(Em* e, Sym* s) {
 static EV load_frame_value(Em* e, uint32_t depth, SType* t) {
     if (is_floatt(t)) {
         int vt = tmp_fp(e);
-        load_frame_fp(e, vreg(vt), depth, unwrap(t)->prim == P_F64);
+        load_frame_fp(e, vreg(e, vt), depth, unwrap(t)->prim == P_F64);
         return (EV){ CLS_FP, vt };
     }
     int it = tmp_int(e);
@@ -3554,9 +3591,9 @@ static int frame_place(Em* e, Node* x, uint32_t* depth) {
 /*
  * A read-only by-value struct parameter that arrives in registers and whose
  * every use is a constant field read of one whole leaf keeps the leaves it
- * reads in registers: float leaves of an HFA in v23 downward, 8-byte integer
- * leaves of a struct of at most 16 bytes in x14 downward, copied once from the
- * incoming argument registers and never spilled to a slot. `p.f.g` over
+ * reads in registers: float leaves of an HFA in the argument registers they
+ * arrive in, 8-byte integer leaves of a struct of at most 16 bytes in x14
+ * downward, copied once from theirs, and never spilled to a slot. `p.f.g` over
  * struct fields resolves to its base declaration and byte offset.
  */
 static Node* param_chain(Em* e, Node* x, uint32_t* off) {
@@ -3606,7 +3643,7 @@ static int param_home(Em* e, Node* x) {
 static EV load_preg(Em* e, int r, SType* t) {
     if (is_floatt(t)) {
         int vt = tmp_fp(e);
-        fmov_raw(e, unwrap(t)->prim == P_F64, vreg(vt), r);
+        fmov_raw(e, unwrap(t)->prim == P_F64, vreg(e, vt), r);
         return (EV){ CLS_FP, vt };
     }
     int it = tmp_int(e);
@@ -3632,7 +3669,7 @@ static EV load_var(Em* e, Sym* s, SType* t, Node* at) {
     if (br < 0) load_frame(e, p, sl->off, 8, 0); // slot holds the pointer
     if (is_floatt(t)) {
         int vt = tmp_fp(e);
-        ldrf_(e, vreg(vt), p, 0, is64);
+        ldrf_(e, vreg(e, vt), p, 0, is64);
         e->vti--;
         return (EV){ CLS_FP, vt };
     }
@@ -4692,8 +4729,8 @@ static void emit_math_fused_raw(Em* e, uint32_t rd, uint32_t ra, uint32_t rb, ui
 }
 
 static void emit_math_fused(Em* e, int dst, int a, int b, int c, int is64) {
-    emit_math_fused_raw(e, (uint32_t)vreg(dst), (uint32_t)vreg(a), (uint32_t)vreg(b),
-                        (uint32_t)vreg(c), is64);
+    emit_math_fused_raw(e, (uint32_t)vreg(e, dst), (uint32_t)vreg(e, a), (uint32_t)vreg(e, b),
+                        (uint32_t)vreg(e, c), is64);
 }
 
 static EV gen_call(Em* e, Node* call) {
@@ -4834,11 +4871,11 @@ static EV gen_call(Em* e, Node* call) {
             (arg->kind == N_INT || arg->kind == N_FLOAT)) {
             int vt = tmp_fp(e);
             if (arg->kind == N_FLOAT) {
-                load_f64(e, unwrap(node_ty(call))->prim == P_F64, vreg(vt), arg->fval);
+                load_f64(e, unwrap(node_ty(call))->prim == P_F64, vreg(e, vt), arg->fval);
             } else {
                 load_imm(e, 1, 16, (uint64_t)arg->ival);
                 uint32_t scvtf = unwrap(node_ty(call))->prim == P_F64 ? 0x9E620000u : 0x9E220000u;
-                ins(e, scvtf | (16u << 5) | (uint32_t)vreg(vt));
+                ins(e, scvtf | (16u << 5) | (uint32_t)vreg(e, vt));
             }
             return (EV){ CLS_FP, vt };
         }
@@ -4856,7 +4893,7 @@ static EV gen_call(Em* e, Node* call) {
         SType* t = node_ty(call);
         if (is_floatt(t)) {
             int vt = tmp_fp(e);
-            load_f64(e, unwrap(t)->prim == P_F64, vreg(vt), 0.0);
+            load_f64(e, unwrap(t)->prim == P_F64, vreg(e, vt), 0.0);
             return (EV){ CLS_FP, vt };
         }
         if (is_scalar(t)) {
@@ -4940,7 +4977,7 @@ static EV gen_call(Em* e, Node* call) {
         int bits = tmp_int(e);
         int is64 = unwrap(node_ty(call->kids[0]))->prim == P_F64;
         uint32_t op = is64 ? 0x9E660000u : 0x1E260000u;
-        ins(e, op | ((uint32_t)vreg(value.idx) << 5) |
+        ins(e, op | ((uint32_t)vreg(e, value.idx) << 5) |
                (uint32_t)xreg(bits)); // fmov integer bits from fp register
         e->vtf = value.idx;
         return (EV){ CLS_INT, bits };
@@ -4948,7 +4985,7 @@ static EV gen_call(Em* e, Node* call) {
     if (intrinsic && intrinsic->decl &&
         intrinsic->decl->ival >= BI_MATH_SQRT && intrinsic->decl->ival <= BI_MATH_CEIL) {
         EV value = gen_expr(e, call->kids[0]);
-        emit_math_exact(e, intrinsic->decl->ival, unwrap(node_ty(call))->prim == P_F64, vreg(value.idx));
+        emit_math_exact(e, intrinsic->decl->ival, unwrap(node_ty(call))->prim == P_F64, vreg(e, value.idx));
         return value;
     }
     if (intrinsic && intrinsic->decl && intrinsic->decl->ival == BI_MATH_FMA) {
@@ -4965,7 +5002,7 @@ static EV gen_call(Em* e, Node* call) {
         int is64 = unwrap(node_ty(call))->prim == P_F64;
         uint32_t op = is64 ? 0x9E670000u : 0x1E270000u;
         ins(e, op | ((uint32_t)xreg(bits.idx) << 5) |
-               (uint32_t)vreg(value)); // fmov fp value from integer bits
+               (uint32_t)vreg(e, value)); // fmov fp value from integer bits
         e->vti = bits.idx;
         return (EV){ CLS_FP, value };
     }
@@ -4976,7 +5013,7 @@ static EV gen_call(Em* e, Node* call) {
         if (call->nkids == 2) count = gen_expr(e, call->kids[1]);
         int vector = 0;
         int saved_vtf = e->vtf;
-        if (operation == BI_BITS_POP_COUNT) vector = vreg(tmp_fp(e));
+        if (operation == BI_BITS_POP_COUNT) vector = vreg(e, tmp_fp(e));
         emit_bits_integer(e, operation, scalar_bits(node_ty(call->kids[0])), xreg(value.idx), xreg(count.idx), vector);
         e->vtf = saved_vtf;
         e->vti = value.idx + 1;
@@ -5355,7 +5392,7 @@ static EV gen_staticmap_lookup(Em* e, Node* x, SType* map) {
     bind_label(e, miss);
     if (is_scalar(map->ret)) {
         if (is_floatt(map->ret)) {
-            ldrf_(e, vreg(svf), xreg(out), 0, unwrap(map->ret)->prim == P_F64);
+            ldrf_(e, vreg(e, svf), xreg(out), 0, unwrap(map->ret)->prim == P_F64);
             e->vti = svi;
             e->vtf = svf + 1;
             return (EV){ CLS_FP, svf };
@@ -5386,7 +5423,7 @@ static EV gen_expr(Em* e, Node* x) {
          */
         if (t && t->kind != SK_UT && is_floatt(t)) {
             int vt = tmp_fp(e);
-            load_f64(e, unwrap(t)->prim == P_F64, vreg(vt), (double)x->ival);
+            load_f64(e, unwrap(t)->prim == P_F64, vreg(e, vt), (double)x->ival);
             return (EV){ CLS_FP, vt };
         }
         int sf = !t || t->kind == SK_UT || t->size == 8;
@@ -5403,7 +5440,7 @@ static EV gen_expr(Em* e, Node* x) {
         SType* t = node_ty(x);
         int is64 = !t || t->kind == SK_UT || unwrap(t)->prim == P_F64;
         int vt = tmp_fp(e);
-        load_f64(e, is64, vreg(vt), x->fval);
+        load_f64(e, is64, vreg(e, vt), x->fval);
         return (EV){ CLS_FP, vt };
     }
     case N_STR: {
@@ -5651,7 +5688,7 @@ static EV gen_expr(Em* e, Node* x) {
             EV v = gen_expr(e, x->a);
             if (v.cls == CLS_FP) {
                 int is64 = !t || unwrap(t)->prim == P_F64;
-                ins(e, (is64 ? 0x1E614000u : 0x1E214000u) | ((uint32_t)vreg(v.idx) << 5) | (uint32_t)vreg(v.idx));
+                ins(e, (is64 ? 0x1E614000u : 0x1E214000u) | ((uint32_t)vreg(e, v.idx) << 5) | (uint32_t)vreg(e, v.idx));
                 return v;
             }
             int sf = !t || scalar_bits(t) == 64;
@@ -5777,7 +5814,7 @@ static EV gen_expr(Em* e, Node* x) {
         int home = param_home(e, x);
         if (home >= 0 && is_floatt(t)) {
             int vt = tmp_fp(e);
-            fmov_raw(e, unwrap(t)->prim == P_F64, vreg(vt), home);
+            fmov_raw(e, unwrap(t)->prim == P_F64, vreg(e, vt), home);
             return (EV){ CLS_FP, vt };
         }
         if (home >= 0) {
@@ -5807,7 +5844,7 @@ static EV gen_expr(Em* e, Node* x) {
             if (ri >= 0) { // element size equals the access width: index folded into the load
                 if (is_floatt(t)) {
                     int vt = tmp_fp(e);
-                    ldrf_idx(e, vreg(vt), xreg(a), ri, w == 8);
+                    ldrf_idx(e, vreg(e, vt), xreg(a), ri, w == 8);
                     return (EV){ CLS_FP, vt };
                 }
                 ld_idx(e, xreg(a), xreg(a), ri, w, ty_is_signed(t) && w < 8);
@@ -5930,7 +5967,7 @@ static void store_to_slot(Em* e, EV v, uint32_t off, SType* t) {
         frame_addr(e, 15, off);
         copy_mem(e, 15, 0, xreg(v.idx), 0, ty_size(t));
     } else if (v.cls == CLS_FP) {
-        store_frame_fp(e, vreg(v.idx), off, is_scalar(t) ? unwrap(t)->prim == P_F64 : 1);
+        store_frame_fp(e, vreg(e, v.idx), off, is_scalar(t) ? unwrap(t)->prim == P_F64 : 1);
     } else {
         store_frame(e, xreg(v.idx), off, (uint32_t)((scalar_bits(t) + 7) / 8));
     }
@@ -6352,7 +6389,7 @@ static void store_member(Em* e, int ra, SType* tup, int i, uint32_t off) {
     }
     if (is_scalar(ft)) {
         EV v = load_scalar(e, ra, mo, ft);
-        if (v.cls == CLS_FP) store_frame_fp(e, vreg(v.idx), off, unwrap(ft)->prim == P_F64);
+        if (v.cls == CLS_FP) store_frame_fp(e, vreg(e, v.idx), off, unwrap(ft)->prim == P_F64);
         else store_frame(e, xreg(v.idx), off, (uint32_t)((scalar_bits(ft) + 7) / 8));
     } else {
         frame_addr(e, 15, off);
@@ -6532,12 +6569,22 @@ static int call_free_scalar_expr(Node* n) {
     }
 }
 
+// whether x reads the float parameter leaf homed in v<r>
+static int reads_home(Em* e, Node* x, int r) {
+    if (!x) return 0;
+    if (x->kind == N_FIELD_E && param_home(e, x) == r) return 1;
+    if (reads_home(e, x->a, r) || reads_home(e, x->b, r) || reads_home(e, x->c, r)) return 1;
+    for (int i = 0; i < x->nkids; i++) if (reads_home(e, x->kids[i], r)) return 1;
+    return 0;
+}
+
 /*
  * A struct literal or tuple returned in registers, one whole scalar leaf per
  * result register (8-byte integer chunks, or one float per HFA member),
  * evaluates each leaf straight into its register instead of a frame temp.
  * Leaf w is computed with temp w free, so it lands in x<w>/d<w> with the
- * earlier leaves still live below it; leaves that could emit a call stay on
+ * earlier leaves still live below it, the instruction that computed a float
+ * leaf retargeted there when it can be; leaves that could emit a call stay on
  * the temp path. Returns 0, having emitted nothing, when the shape does not fit.
  */
 static int gen_return_regs(Em* e, Node* x, RetCls* rc) {
@@ -6568,16 +6615,29 @@ static int gen_return_regs(Em* e, Node* x, RetCls* rc) {
         byunit[w] = value;
     }
     int svi = e->vti, svf = e->vtf;
+    int later[4] = {-1, -1, -1, -1};
     for (int w = 0; w < rc->nunits; w++) {
         TU* u = &rc->units[w];
         int fp = u->kind == TU_VREG;
         e->vti = fp ? 0 : w;
         e->vtf = fp ? w : 0;
         EV v = gen_expr(e, byunit[w]);
-        if (fp && v.cls == CLS_FP) mov_fp(e, u->size == 8, w, v.idx);
+        if (fp && v.cls == CLS_FP) {
+            // d<w> may be the home of a leaf a later value reads: the value
+            // then waits in its temp, which that home's swap put in v16-v23
+            int keep = 0;
+            for (int k = w + 1; k < rc->nunits && !keep; k++) keep = reads_home(e, byunit[k], w);
+            if (keep) { // parked in temp w, which the next leaf leaves alone
+                if (v.idx != w) fmov_raw(e, u->size == 8, vreg(e, w), vreg(e, v.idx));
+                later[w] = vreg(e, w);
+            }
+            else if (!fold_fp(e, w, vreg(e, v.idx))) fmov_raw(e, u->size == 8, w, vreg(e, v.idx));
+        }
         else if (!fp && v.cls == CLS_INT) mov_int(e, 1, w, xreg(v.idx));
         else em_err(e, byunit[w], "return leaf has the wrong register class");
     }
+    for (int w = 0; w < rc->nunits; w++)
+        if (later[w] >= 0) fmov_raw(e, rc->units[w].size == 8, w, later[w]);
     e->vti = svi;
     e->vtf = svf;
     return 1;
@@ -7483,7 +7543,8 @@ static void emit_stmt(Em* e, Node* s) {
         }
         if (rc.nunits == 1 && is_scalar(rt)) {
             EV v = gen_expr(e, s->a);
-            if (v.cls == CLS_FP) mov_fp(e, unwrap(rt)->prim == P_F64, 0, v.idx);
+            if (v.cls == CLS_FP && !fold_fp(e, 0, vreg(e, v.idx)))
+                fmov_raw(e, unwrap(rt)->prim == P_F64, 0, vreg(e, v.idx));
             else mov_int(e, scalar_bits(rt) == 64, 0, xreg(v.idx));
             emit_defers(e, rt);
             emit_epilogue(e);
@@ -8595,8 +8656,10 @@ static void param_scan(Em* e, ParamPlan* p, Node* n) {
 /*
  * Choose the struct parameters that live in registers: a call-free function's
  * read-only by-value parameters that arrive whole in registers and are only
- * read leaf by leaf. Float leaves of an HFA get v23 down, within the fp temps
- * the body's expressions leave free; 8-byte integer leaves of a struct of at
+ * read leaf by leaf. Float leaves of an HFA stay in their argument registers:
+ * each home's temp index, from the top of the fp temps the body's expressions
+ * leave free, trades v registers with its argument register's index, so a
+ * temp never lands on a live home. 8-byte integer leaves of a struct of at
  * most 16 bytes get the x14-down registers leaf promotion leaves unused,
  * within the int temps. A parameter that does not fit whole keeps its slot.
  */
@@ -8643,7 +8706,14 @@ static void plan_param_homes(Em* e, Node* f, SType** pt, const uint8_t* muts, TU
             if (!(p.mask[i] & (1u << w))) continue;
             e->phome[e->nphome].decl = f->kids[i];
             e->phome[e->nphome].off = units[i * 4 + w].off;
-            e->phome[e->nphome].reg = p.fp[i] ? 23 - e->nfhome++ : 14 - e->nxpreg - e->nxhome++;
+            if (p.fp[i]) { // the leaf stays in its argument register, whose temp takes v23 down
+                int in = units[i * 4 + w].reg, top = MAX_FPTEMPS - 1 - e->nfhome++;
+                e->vmap[in] = e->vmap[top];
+                e->vmap[top] = (uint8_t)in;
+                e->phome[e->nphome].reg = in;
+            } else {
+                e->phome[e->nphome].reg = 14 - e->nxpreg - e->nxhome++;
+            }
             e->nphome++;
         }
     }
@@ -8683,6 +8753,7 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
     e->vti_cap = MAX_ITEMPS;
     e->vtf_cap = MAX_FPTEMPS;
     e->nphome = e->nfhome = e->nxhome = 0;
+    vmap_reset(e);
     e->nsplits = 0;
     ptrmap_clear(&e->split_ix);
     if (e->fn_has_asm) { // asm bindings may name any x register
@@ -8729,7 +8800,7 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
     uint8_t homed[40] = {0};
     plan_param_homes(e, f, pt, muts, units, np, homed);
     for (int i = 0; i < np; i++) {
-        if (homed[i]) { // leaves read in place: copy each into its home, no slot
+        if (homed[i]) { // leaves read in place: an integer leaf moves to its home, no slot
             for (int w = 0; w < 4; w++) {
                 TU* u = &units[i * 4 + w];
                 int home = (u->kind == TU_VREG || u->kind == TU_XREG) && u->reg >= 0 ? param_reg(e, f->kids[i], u->off) : -1;
@@ -8788,9 +8859,9 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
                 store_frame_fp(e, u->reg, slot - u->off, u->size == 8);
             } else if (u->kind == TU_STACK) {
                 incoming_addr(e, 16, u->soff);
-                if (is_floatt(t)) {
-                    ldrf_(e, 0, 16, 0, u->size == 8);
-                    store_frame_fp(e, 0, slot, u->size == 8);
+                if (is_floatt(t)) { // v16: no argument register, which may be a home
+                    ldrf_(e, 16, 16, 0, u->size == 8);
+                    store_frame_fp(e, 16, slot, u->size == 8);
                 } else {
                     // u->size is the ABI stack-slot width (Darwin pads to a
                     // 4-byte minimum); homing into the frame must only copy
@@ -10540,6 +10611,7 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
 
     Em e;
     memset(&e, 0, sizeof e);
+    vmap_reset(&e);
     e.vti_cap = MAX_ITEMPS;
     e.vtf_cap = MAX_FPTEMPS;
     e.d = d;

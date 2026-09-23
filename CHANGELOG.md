@@ -622,6 +622,20 @@ current normative rules, and Git preserves patch-level detail.
   through a `Fork` payload's field ran at 1.00 ns per iteration, from 3.49 ns,
   and `pkg/regex`'s `Matcher.add` no longer stores and reloads its split
   targets; the regex bench is unchanged at four controlled code placements.
+- A register-homed float leaf of an HFA parameter now stays in the argument
+  register it arrives in instead of being copied to v23 down. Float temps map
+  through a per-function table (`vreg`, `vmap`), and `plan_param_homes` swaps
+  each home's top temp index with its argument register's index, so no temp
+  ever lands on a live home. A float result that the last instruction
+  computed into a dead temp is retargeted to its result register (`fold_fp`,
+  deleting an `fmov` that becomes `fmov d, d`), for a scalar return and each
+  leaf of a returned literal (`gen_return_regs`). A literal leaf whose result
+  register is the home of a parameter leaf a later leaf reads waits in its
+  temp, which the swap placed in v16-v23, and moves after every leaf is
+  computed. `vec_add` is three `fadd`s, and `calls` runs `struct-hfa` at 3.39
+  from 4.42 ns and `float-acc` at 1.93 from 2.41 ns at eight controlled code
+  placements, with every other row and the `cpu`, `string`, `hotloop`,
+  `memory`, and regex code unchanged.
 - Implemented `str` character/string operations and explicit
   `str.parse[T]` specializations in pure Ace where practical, with libc float
   conversion isolated in its selected target layer. `char` remains the

@@ -211,14 +211,15 @@ These are baseline observations, not performance promises.
   stage the result in a temp and copy it. `bool` locals and a string
   parameter's pointer and length stay in stack slots inside loops.
   `bench/calls.ace` measures it: the by-value 8- and 16-byte structs, the
-  three-`f64` aggregate, and the tuple return run 1.0x to 3.1x noinline C
-  `-O2`. The callers of the struct cases now keep them in registers, so the
-  `struct-hfa` gap sits in the callee, which builds a frame and copies each
-  incoming leaf into v18-v23 before three `fadd`s; a further step needs its
-  gain measured first (for example reading HFA leaves in the incoming
-  registers themselves, which measured 0.25 ns faster on `dot` and `length2`
-  but 10% slower on a `Vec3`-returning call for a cause not yet found). Float `fmov` between registers costs about 1 ns on a loop-carried chain,
-  so a promotion scheme that adds moves there loses most of its gain.
+  three-`f64` aggregate, and the tuple return run 1.0x to 2.35x noinline C
+  `-O2`. `vec_add` is now three `fadd`s on its argument registers, so the
+  `struct-hfa` gap sits in the caller, which moves `acc` and `step` between
+  d8-d15 and d0-d5 around every call where C leaves them in the argument
+  registers. Float `fmov` between registers costs about 1 ns on a
+  loop-carried chain, so a promotion scheme that adds moves there loses most
+  of its gain. Integer struct leaves are still copied to x14 down; reading
+  them in place measured 0.04 ns on `struct-16`, and dropping a leaf's frame
+  measured nothing on `call-1` or `struct-hfa` (`bench/README.md`).
 - **Unoptimized debug build mode** [new] — only the checked and release modes
   exist, and both emit the same optimized code; the modes differ in runtime
   guards alone. Local register promotion, immediates, and register returns are

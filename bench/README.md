@@ -572,8 +572,8 @@ inliner, not the comparison target. The C function-value slot is `volatile` so
 the indirect call survives.
 
 Ace release against noinline C `-O2` in ns/op, after constant, parameter, and
-float-accumulator promotion, register returns, and small struct locals in
-registers:
+float-accumulator promotion, register returns, small struct locals in
+registers, and float parameter leaves read in their argument registers:
 
 | workload | Ace | C noinline | Ace/C | Ace before promotion |
 |---|---|---|---|---|
@@ -585,8 +585,8 @@ registers:
 | `struct-16` | 2.62 | 2.40 | 1.09x | |
 | `struct-24` | 6.47 | 10.74 | 0.60x | |
 | `struct-64` | 15.50 | 14.36 | 1.08x | |
-| `struct-hfa` | 4.43 | 1.44 | 3.07x | |
-| `float-acc` | 2.41 | 1.44 | 1.67x | |
+| `struct-hfa` | 3.39 | 1.44 | 2.35x | |
+| `float-acc` | 1.93 | 1.44 | 1.34x | |
 | `tuple-return` | 11.58 | 7.23 | 1.60x | |
 | `method` | 1.44 | 3.87 | 0.37x | |
 | `function-value` | 3.38 | 2.89 | 1.17x | |
@@ -611,7 +611,20 @@ Ace moves it to x23 and x24 and back around every call:
 | leaf, parameters read in place | 2.60 | 2.40 |
 
 So removing the callee's frame helps only when the callee also stops copying
-its parameters.
+its parameters. The same hand-written model of the `struct-hfa` and `call-1`
+loops, in ns/op:
+
+| callee | `struct-hfa` | `call-1` |
+|---|---|---|
+| framed, parameters copied | 4.42 | 2.89 |
+| framed, parameters read in place | 3.39 | 2.92 |
+| leaf, parameters copied | 4.39 | 2.89 |
+| leaf, parameters read in place | 3.44 | 2.89 |
+
+`vec_add` and `dot3` now read their float leaves in place, and `struct-hfa`
+measures the modelled 3.39 ns. Dropping the frame adds nothing to either
+loop, and what remains of `struct-hfa`'s gap is the caller moving `acc` and
+`step` to and from the argument registers around each call.
 
 `call-1` and `fib` measure different things. `fib` is throughput-bound: its
 calls overlap in the out-of-order core, so 2 ns per call is a throughput

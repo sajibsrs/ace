@@ -1,7 +1,9 @@
 // expect-exit: 42
-// A call-free function reads a by-value HFA parameter's float leaves from
-// registers when every use is a constant leaf read; any whole-value use, a
-// runtime index, a call in the body, or too many leaves keeps the slot.
+// A call-free function reads a by-value HFA parameter's float leaves in the
+// argument registers they arrive in when every use is a constant leaf read;
+// any whole-value use, a runtime index, a call in the body, or too many
+// leaves keeps the slot. A returned leaf whose result register a later leaf
+// still reads as a parameter waits in a temp until every leaf is computed.
 
 Vec3: struct {
     x: f64,
@@ -40,6 +42,25 @@ vec_add(a: Vec3, b: Vec3): Vec3 {
 // result registers d0-d2 are the incoming argument registers
 rotate(a: Vec3): Vec3 {
     return Vec3 {x = a.z, y = a.x, z = a.y}
+}
+
+// only x waits: d0 still holds a.x for y
+partial(a: Vec3, b: Vec3): Vec3 {
+    return Vec3 {x = a.x + b.x, y = a.x * b.y, z = a.z}
+}
+
+// a leaf reads its own result register's parameter twice
+twice_x(a: Vec3, b: Vec3): Vec3 {
+    return Vec3 {x = a.x * b.x + a.x, y = a.y, z = a.z - a.x}
+}
+
+swap2(a: Vec2): Vec2 {
+    return Vec2 {x = a.y, y = a.x}
+}
+
+// s arrives on the stack, past d0-d7, and is read after the homed leaves
+stacked(a: Vec3, b: Vec3, c: f64, d: f64, s: f64): f64 {
+    return a.x + b.z + c + d + s
 }
 
 dot(a: Vec3, b: Vec3): f64 {
@@ -176,6 +197,28 @@ main(): int {
     }
     if in_loop(a) != 4.0 * (2.0 - 4.0) {
         return 16
+    }
+    q: Vec3 = partial(a, b)
+    if q.x != 9.0 || q.y != 16.0 || q.z != 4.0 {
+        return 18
+    }
+    t: Vec3 = twice_x(a, b)
+    if t.x != 9.0 || t.y != 2.0 || t.z != 3.0 {
+        return 19
+    }
+    w: Vec2 = swap2(Vec2 {x = 1.5, y = -2.5})
+    if w.x != -2.5 || w.y != 1.5 {
+        return 20
+    }
+    if stacked(a, b, 64.0, 128.0, 256.0) != 1.0 + 32.0 + 64.0 + 128.0 + 256.0 {
+        return 21
+    }
+    acc: Vec3 = Vec3 {x = 0.0, y = 0.0, z = 0.0}
+    for i: usize in 0 .. 3 {
+        acc = vec_add(rotate(acc), a)
+    }
+    if acc.x != 7.0 || acc.y != 7.0 || acc.z != 7.0 {
+        return 22
     }
     if deep(a) != 1.0 * (2.0 + (4.0 * (1.0 + (2.0 * (4.0 + (1.0 * (2.0 + 4.0))))))) {
         return 17
