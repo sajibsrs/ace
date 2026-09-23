@@ -1,0 +1,371 @@
+/*
+ * A struct local of at most four scalar fields and no padding whose address
+ * never escapes lives field by field in registers: each field competes for a
+ * register as a scalar local does, and whole-struct reads and writes move one
+ * field at a time. A field that loses stays in the struct's slot; any use
+ * that needs the struct whole in memory keeps all of it there. Passed by
+ * value, returned, or assigned from a call, it moves field by field between
+ * its registers and the argument or result registers, packing narrow and
+ * float fields into integer chunks with bfi and splitting them with ubfx.
+ * A literal of such a struct assigned to a place in memory evaluates every
+ * field and stores each straight into the place.
+ */
+
+// expect-exit: 42
+
+import mem
+
+Pair: struct { a: usize, b: usize }
+Vec3: struct { x: f64, y: f64, z: f64 }
+Mixed: struct { n: u32, r: f32, w: i64 }
+Frame: struct { pc: u32, slot: u32, value: usize }
+Narrow: struct { a: i8, b: u8, c: i16, d: i32 }
+Quad: struct { a: usize, b: usize, c: usize, d: usize }
+Vec4: struct { x: f64, y: f64, z: f64, w: f64 }
+Link: struct { next: mut *Pair, tag: usize }
+
+G: Pair = Pair {a = 5, b = 6}
+
+keep(x: usize): usize {
+    return x
+}
+
+keepf(x: f64): f64 {
+    return x
+}
+
+check(p: Pair) {
+    if p.a + p.b != 42 {
+        G.a = 1000
+    }
+}
+
+touch(p: mut *Pair) {
+    p.a += 1
+}
+
+Pair.sum(): usize {
+    return self.a + self.b
+}
+
+// integer fields: literal init, field writes, compound ops, a self-reading
+// literal that swaps, and a loop
+ints(): int {
+    p: Pair = Pair {a = 3, b = 4}
+    p.a += 10
+    p.b = p.b * 2
+    p = Pair {a = p.b, b = p.a}
+    for i: usize in 0 .. 5 {
+        p.a += i
+    }
+    if p.a != 18 || p.b != 13 { return 1 }
+    return 0
+}
+
+// float fields in registers, through compound ops and a loop
+floats(): int {
+    v: Vec3 = Vec3 {x = 1.0, y = 2.0, z = 3.0}
+    for i: int in 0 .. 4 {
+        v.x += 0.5
+        v.y = v.y * 2.0
+        v = Vec3 {x = v.z, y = v.y, z = v.x}
+    }
+    if v.x != 2.0 || v.y != 32.0 || v.z != 4.0 { return 1 }
+    return 0
+}
+
+// integer and float fields together
+mixed(): int {
+    m: Mixed = Mixed {n = 4000000000, r = 0.25, w = -7}
+    m.n += 1
+    m.r *= 4.0
+    m.w -= 1
+    if m.n != 4000000001 || m.r != 1.0 || m.w != -8 { return 1 }
+    return 0
+}
+
+// narrow fields keep their width and sign in registers
+narrow(): int {
+    n: Narrow = Narrow {a = -3, b = 250, c = -300, d = -70000}
+    n.a -= 1
+    n.b -= 246
+    n.c -= 1
+    if n.a != -4 || n.b != 4 || n.c != -301 || n.d != -70000 { return 1 }
+    if i64(n.a) + i64(n.c) + i64(n.d) != -70305 { return 1 }
+    return 0
+}
+
+// element loads at each field's own width, and whole stores back
+frames(stack: mut []Frame): int {
+    total: usize = 0
+    top: usize = stack.len
+    for top > 0 {
+        top -= 1
+        f: Frame = stack[top]
+        if f.slot != 7 {
+            total += f.value + usize(f.pc)
+            continue
+        }
+        f.value += 100
+        stack[top] = f
+    }
+    if total != 11 + 22 || stack[1].value != 102 { return 1 }
+    moved: Frame = Frame {pc = 1, slot = 2, value = 3}
+    stack[0] = moved
+    if stack[0].pc != 1 || stack[0].slot != 2 || stack[0].value != 3 { return 1 }
+    return 0
+}
+
+// assignment from a pointer, a global, and another split local, and stores
+// through a pointer and into a global
+places(p: mut *Pair): int {
+    a: Pair = *p
+    b: Pair = G
+    c: Pair = a
+    a = b
+    b = c
+    if a.a != 5 || a.b != 6 || b.a != 1 || b.b != 2 { return 1 }
+    *p = a
+    G = b
+    if p.a != 5 || G.b != 2 { return 1 }
+    return 0
+}
+
+// a split local copied into one whose interval starts where its own ends:
+// the two may share registers, crossed
+crossed(): int {
+    x: Pair = Pair {a = keep(1), b = keep(2)}
+    y: Pair = Pair {a = x.b, b = x.a}
+    z: Pair = y
+    if z.a != 2 || z.b != 1 { return 1 }
+    return 0
+}
+
+// fields live across calls take callee-saved registers
+across(): int {
+    p: Pair = Pair {a = 1, b = 2}
+    v: Vec3 = Vec3 {x = 1.0, y = 2.0, z = 3.0}
+    for i: usize in 0 .. 3 {
+        p.a = keep(p.a + p.b)
+        v.x = keepf(v.x + v.z)
+    }
+    if p.a != 7 || p.b != 2 || v.x != 10.0 { return 1 }
+    return 0
+}
+
+// more live fields across calls than registers: the rest stay in the slot
+pressure(): int {
+    q: Quad = Quad {a = 1, b = 2, c = 3, d = 4}
+    r: Quad = Quad {a = 5, b = 6, c = 7, d = 8}
+    s: Quad = Quad {a = 9, b = 10, c = 11, d = 12}
+    u: Vec4 = Vec4 {x = 1.0, y = 2.0, z = 3.0, w = 4.0}
+    t: Vec4 = Vec4 {x = 5.0, y = 6.0, z = 7.0, w = 8.0}
+    o: Vec4 = Vec4 {x = 9.0, y = 10.0, z = 11.0, w = 12.0}
+    for i: usize in 0 .. 2 {
+        q.a = keep(q.a + r.b + s.c + q.d)
+        r.c = keep(r.a + s.b + q.c + r.d)
+        s.d = keep(s.a + q.b + r.c + s.d)
+        u.x = keepf(u.x + t.y + o.z + u.w)
+        t.z = keepf(t.x + o.y + u.z + t.w)
+        o.w = keepf(o.x + u.y + t.z + o.w)
+    }
+    if q.a != 43 || r.c != 26 || s.d != 86 { return 1 }
+    if u.x != 43.0 || t.z != 26.0 || o.w != 86.0 { return 1 }
+    return 0
+}
+
+// a deferred call reads a field at the defer statement
+deferred(out: mut *usize): int {
+    p: Pair = Pair {a = 40, b = 2}
+    defer touch(mut &G)
+    *out = p.a + p.b
+    p.a = 0
+    return 0
+}
+
+pair_step(p: Pair): Pair {
+    return Pair {a = p.a * 3 + p.b, b = p.b + 1}
+}
+
+vec_add(a: Vec3, b: Vec3): Vec3 {
+    return Vec3 {x = a.x + b.x, y = a.y + b.y, z = a.z + b.z}
+}
+
+frame_step(f: Frame): Frame {
+    return Frame {pc = f.slot + 1, slot = f.pc + 2, value = f.value + usize(f.pc)}
+}
+
+mixed_step(m: Mixed): Mixed {
+    return Mixed {n = m.n + 1, r = m.r * 2.0, w = m.w - i64(m.n)}
+}
+
+narrow_step(n: Narrow): Narrow {
+    return Narrow {a = n.a - 1, b = n.b + 1, c = n.c * 2, d = n.d + i32(n.a)}
+}
+
+quad_step(q: Quad): Quad {
+    return Quad {a = q.d, b = q.a + 1, c = q.b + 2, d = q.c + 3}
+}
+
+// many arguments: the struct overflows the argument registers to the stack
+spill_args(a: usize, b: usize, c: usize, d: usize, e: usize, f: usize, g: usize, p: Pair): usize {
+    return a + b + c + d + e + f + g + p.a * 100 + p.b * 1000
+}
+
+spill_floats(a: Vec4, b: Vec4, c: Vec3): f64 {
+    return a.x + b.w + c.x * 10.0 + c.z * 100.0
+}
+
+// arguments, results, and call sinks of every shape
+calls(): int {
+    p: Pair = Pair {a = 1, b = 2}
+    for i: usize in 0 .. 3 {
+        p = pair_step(p)
+    }
+    if p.a != 58 || p.b != 5 { return 1 }
+    v: Vec3 = Vec3 {x = 1.0, y = 2.0, z = 3.0}
+    step: Vec3 = Vec3 {x = 0.5, y = 0.25, z = 2.0}
+    for i: usize in 0 .. 4 {
+        v = vec_add(v, step)
+    }
+    if v.x != 3.0 || v.y != 3.0 || v.z != 11.0 { return 1 }
+    f: Frame = frame_step(Frame {pc = 3, slot = 4000000000, value = 7})
+    f = frame_step(f)
+    if f.pc != 6 || f.slot != 4000000003 || f.value != 4000000011 { return 1 }
+    m: Mixed = Mixed {n = 4294967294, r = -1.5, w = 10}
+    m = mixed_step(m)
+    if m.n != 4294967295 || m.r != -3.0 || m.w != 10 - 4294967294 { return 1 }
+    n: Narrow = Narrow {a = -5, b = 3, c = -7, d = -9}
+    n = narrow_step(n)
+    n = narrow_step(n)
+    if n.a != -7 || n.b != 5 || n.c != -28 || n.d != -20 { return 1 }
+    q: Quad = Quad {a = 1, b = 2, c = 3, d = 4}
+    r: Quad = quad_step(q)
+    q = quad_step(r)
+    if q.a != 6 || q.b != 5 || q.c != 4 || q.d != 7 || r.a != 4 { return 1 }
+    if spill_args(1, 2, 3, 4, 5, 6, 7, p) != 28 + 5800 + 5000 { return 1 }
+    a4: Vec4 = Vec4 {x = 1.0, y = 0.0, z = 0.0, w = 0.0}
+    b4: Vec4 = Vec4 {x = 0.0, y = 0.0, z = 0.0, w = 2.0}
+    if spill_floats(a4, b4, v) != 3.0 + 30.0 + 1100.0 { return 1 }
+    through: (Pair): Pair = pair_step
+    p = through(p)
+    if p.a != 179 || p.b != 6 { return 1 }
+    return 0
+}
+
+// the calls bench's struct-hfa shape: acc and step stay in d8-d13
+hfa_loop(n: usize): f64 {
+    acc: Vec3 = Vec3 {x = 0.0, y = 0.0, z = 0.0}
+    step: Vec3 = Vec3 {x = 1.0, y = 2.0, z = 3.0}
+    for i: usize in 0 .. n {
+        acc = vec_add(acc, step)
+    }
+    return acc.x + acc.y + acc.z
+}
+
+// a returned split local, in result registers or the caller's buffer
+made_frame(pc: u32, value: usize): Frame {
+    f: Frame = Frame {pc = pc, slot = pc + 1, value = value}
+    f.value += 1
+    return f
+}
+
+made_narrow(a: i8): Narrow {
+    n: Narrow = Narrow {a = a, b = 200, c = -2, d = -3}
+    n.c -= 1
+    return n
+}
+
+made_mixed(k: u32): Mixed {
+    m: Mixed = Mixed {n = k, r = 0.5, w = -1}
+    m.r += 1.0
+    return m
+}
+
+made_quad(k: usize): Quad {
+    q: Quad = Quad {a = k, b = k + 1, c = k + 2, d = k + 3}
+    q.d += 10
+    return q
+}
+
+returns(): int {
+    f: Frame = made_frame(9, 30)
+    if f.pc != 9 || f.slot != 10 || f.value != 31 { return 1 }
+    n: Narrow = made_narrow(-100)
+    if n.a != -100 || n.b != 200 || n.c != -3 || n.d != -3 { return 1 }
+    m: Mixed = made_mixed(77)
+    if m.n != 77 || m.r != 1.5 || m.w != -1 { return 1 }
+    q: Quad = made_quad(5)
+    if q.a != 5 || q.b != 6 || q.c != 7 || q.d != 18 { return 1 }
+    return 0
+}
+
+Outer: struct { tag: usize, p: Pair }
+
+// the regex matcher's push: fields stored straight into the element
+push(stack: mut []Frame, top: usize, pc: u32, value: usize) {
+    stack[top] = Frame {pc = pc, slot = pc + 1, value = value}
+}
+
+set_pair(p: mut *Pair) {
+    *p = Pair {a = p.b, b = p.a}
+}
+
+// literals stored into elements, through pointers, and into a field; each
+// value is read before any store
+literal_places(): int {
+    stack: mut []Frame = mem.alloc[Frame](2)
+    defer mem.release[Frame](mut stack)
+    push(stack, 0, 5, 50)
+    push(stack, 1, 6, 60)
+    stack[1] = Frame {pc = stack[1].slot, slot = stack[1].pc, value = stack[0].value + 1}
+    if stack[0].pc != 5 || stack[0].slot != 6 || stack[0].value != 50 { return 1 }
+    if stack[1].pc != 7 || stack[1].slot != 6 || stack[1].value != 51 { return 1 }
+    p: Pair = Pair {a = 1, b = 2}
+    set_pair(mut &p)
+    if p.a != 2 || p.b != 1 { return 1 }
+    o: Outer = Outer {tag = 3, p = Pair {a = 0, b = 0}}
+    o.p = Pair {a = o.tag, b = o.tag * 2}
+    if o.p.a != 3 || o.p.b != 6 || o.tag != 3 { return 1 }
+    ms: mut []Mixed = mem.alloc[Mixed](1)
+    defer mem.release[Mixed](mut ms)
+    ms[0] = Mixed {n = 7, r = 2.5, w = -9}
+    if ms[0].n != 7 || ms[0].r != 2.5 || ms[0].w != -9 { return 1 }
+    ns: mut []Narrow = mem.alloc[Narrow](1)
+    defer mem.release[Narrow](mut ns)
+    ns[0] = Narrow {a = -1, b = 255, c = -2, d = -3}
+    if ns[0].a != -1 || ns[0].b != 255 || ns[0].c != -2 || ns[0].d != -3 { return 1 }
+    return 0
+}
+
+// uses that need the struct whole in memory keep it in its slot
+escapes(): int {
+    a: Pair = Pair {a = 1, b = 2}
+    touch(mut &a)
+    b: Pair = Pair {a = 3, b = 4}
+    pb: *Pair = &b
+    c: Pair = Pair {a = 5, b = 6}
+    e: Pair = Pair {a = 7, b = 8}
+    l: Link = Link {next = mut &e, tag = 1}
+    l.next.a += 1
+    captured: Pair = Pair {a = 20, b = 22}
+    defer check(captured)
+    captured.a = 0
+    if a.a != 2 || pb.b != 4 || c.sum() != 11 || e.a != 8 { return 1 }
+    return 0
+}
+
+main(): int {
+    stack: mut []Frame = mem.alloc[Frame](3)
+    defer mem.release[Frame](mut stack)
+    stack[0] = Frame {pc = 1, slot = 0, value = 10}
+    stack[1] = Frame {pc = 9, slot = 7, value = 2}
+    stack[2] = Frame {pc = 2, slot = 3, value = 20}
+    pair: Pair = Pair {a = 1, b = 2}
+    out: usize = 0
+    bad: int = ints() + floats() + mixed() + narrow() + frames(stack) + places(mut &pair) +
+               crossed() + across() + pressure() + deferred(mut &out) + escapes() + calls() + returns() +
+               literal_places()
+    if out != 42 || G.a >= 1000 || hfa_loop(4) != 24.0 { bad += 1 }
+    return 42 - bad
+}

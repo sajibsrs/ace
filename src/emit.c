@@ -344,6 +344,15 @@ typedef struct { // register-promotion candidate: a scalar local or parameter
     int      lnext;   // next candidate pending on the same loop, or -1
 } PromoCand;
 
+typedef struct { // a struct local replaced by its scalar fields
+    Node*   decl;     // the struct binder
+    SType*  type;     // its struct type, unwrapped
+    Node*   field[4]; // one placeholder binder per field, each a promotion candidate
+    int     n;
+    uint8_t bad;      // some use needs the struct whole in memory
+    uint8_t regs;     // after planning: some field won a register
+} Split;
+
 typedef struct { Node* decl; int reg; uint32_t first, last; uint8_t byref; } PromoAsg; // a promoted binder's register
 typedef struct { uint32_t weight; int ix; } PromoRank; // a candidate in promotion order
 #define PASG_SCAN 16 // pasg_find scans at most this many assignments before indexing them
@@ -450,7 +459,10 @@ typedef struct {
     int      npcands, cpcands;
     PtrMap   pcand_ix;   // binder node -> index + 1 into pcands
     PtrMap   pasg_ix;    // binder node -> index + 1 into pasg, once npasg passes PASG_SCAN
-    PromoRank* prank;    // plan_promotion scratch, capacity cprank
+    Split*   splits;     // struct locals promo_scan considered for field-by-field promotion
+    int      nsplits, csplits;
+    PtrMap   split_ix;   // struct binder -> index + 1 into splits
+    PromoRank* prank;   // plan_promotion scratch, capacity cprank
     int      cprank;
     struct { uint32_t* iv; int n, cap; } reg_iv[32]; // each x register's promoted intervals as sorted disjoint [first, last] pairs
     uint32_t* leaf_span; // merged interiors of x9-x14 intervals, as [lo, hi] pairs
@@ -483,6 +495,7 @@ typedef struct {
     SType*   sink_ret;
     uint32_t sink_off[4];
     int      sink_n, sink_done;
+    Split*   sink_split; // or moves the units into this split local's fields
     LineRow* lines;
     int      nlines, clines;
     DebugFn* debug_fns;
@@ -660,6 +673,11 @@ static int gen_addr(Em* e, Node* x);
 static int is_lvalue_node(Node* x);
 static int frame_place(Em* e, Node* x, uint32_t* depth);
 static int param_home(Em* e, Node* x);
+static int split_reg(Em* e, Node* x);
+static int split_type(SType* t);
+static Split* split_live(Em* e, Node* x);
+static void split_store_at(Em* e, Split* sp, int base, uint32_t off);
+static void split_unit(Em* e, Split* sp, TU* u, int dst);
 static SType* lvalue_type(Em* e, Node* x);
 static void emit_asm(Em* e, Node* s);
 static void emit_epilogue(Em* e);
@@ -1974,6 +1992,7 @@ static int src_reg(Em* e, Node* x, EV* v) {
         }
     }
     int home = x->kind == N_FIELD_E ? param_home(e, x) : -1;
+    if (home < 0) home = split_reg(e, x); // a split local's field, exact as a promoted local
     if (home >= 0 && !is_floatt(node_ty(x))) { // a homed parameter leaf is read-only, so equally exact
         *v = (EV){ CLS_INT, -1 };
         return home;
@@ -1999,6 +2018,7 @@ static int fsrc_reg(Em* e, Node* x, EV* v) {
         }
     }
     int home = x->kind == N_FIELD_E ? param_home(e, x) : -1;
+    if (home < 0) home = split_reg(e, x);
     if (home >= 0 && is_floatt(node_ty(x))) {
         *v = (EV){ CLS_FP, -1 };
         return home;
@@ -2511,6 +2531,8 @@ typedef struct {
     TU units[4];
 } RetCls;
 
+static void split_take(Em* e, Split* sp, RetCls* rc);
+
 static void classify_ret(SType* t, RetCls* r) {
     memset(r, 0, sizeof *r);
     if (!t) return;
@@ -2838,9 +2860,11 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
     uint32_t sbytes = assign_cc(eff, muts, n, internal, varargs_from, units);
     if (sbytes > e->out_max) e->out_max = sbytes;
 
-    // by-value aggregate arguments read straight from a frame slot, by depth
+    // by-value aggregate arguments read straight from a frame slot, by depth,
+    // or built from a split local's fields
     uint8_t framed[40] = {0};
     uint32_t fdepths[40] = {0};
+    Split* splits[40] = {0};
 
     // evaluate arguments into temps
     for (int i = 0; i < n; i++) {
@@ -2851,6 +2875,26 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
         uint8_t hfa_dbl[5];
         int is_hfa = classify_hfa(eff[i], hfa_offs, hfa_dbl) >= 0;
         int byref = (internal && muts && i < nparams && muts[i]) || (arg_size > 16 && !is_hfa);
+        Split* sp = a && node_ty(a) && ty_size(node_ty(a)) == arg_size ? split_live(e, a) : NULL;
+        if (sp) {
+            int regs = !byref;
+            for (int w = 0; regs && w < 4; w++) {
+                TU* u = &units[i * 4 + w];
+                if (u->kind == TU_STACK || u->kind == TU_STACK_AGGR) regs = 0;
+            }
+            if (regs) { // units built from the fields at marshal time
+                splits[i] = sp;
+                args[i].val = (EV){ CLS_FP, 0 }; // never spilled or compared
+                continue;
+            }
+            // a copy in memory: its address travels, or its bytes are staged
+            uint32_t copy = temp_slot(e, ty_size(sp->type), ty_align(sp->type));
+            int p = tmp_int(e);
+            frame_addr(e, xreg(p), copy);
+            split_store_at(e, sp, xreg(p), 0);
+            args[i].val = (EV){ byref ? CLS_INT : CLS_ADDR, p };
+            continue;
+        }
         if (byref) { // the argument's address travels in an int temp
             if (!internal && arg_size > 16) {
                 // AAPCS64 passes a >16-byte composite indirectly, but C value
@@ -2991,6 +3035,13 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
     for (int j = 0; j < e->vtf; j++) store_frame_fp(e, vreg(j), spill_slot_fp(e, j), 1);
     for (int i = 0; i < n; i++) {
         if (placed[i]) continue;
+        if (splits[i]) {
+            for (int w = 0; w < 4; w++) {
+                TU* u = &units[i * 4 + w];
+                if ((u->kind == TU_XREG && u->reg >= 0) || u->kind == TU_VREG) split_unit(e, splits[i], u, u->reg);
+            }
+            continue;
+        }
         if (framed[i]) { // aggregate leaves straight from their frame slot
             for (int w = 0; w < 4; w++) {
                 TU* u = &units[i * 4 + w];
@@ -3085,8 +3136,9 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
             out = (EV){ CLS_INT, t };
         }
     } else if (rc.nunits >= 1 && e->sink_call == at && e->sink_ret == ret && e->sink_n == rc.nunits) {
-        // the statement gave this call's result a frame destination
-        for (int w = 0; w < rc.nunits; w++) {
+        // the statement gave this call's result a frame destination or split local
+        if (e->sink_split) split_take(e, e->sink_split, &rc);
+        else for (int w = 0; w < rc.nunits; w++) {
             if (rc.units[w].kind == TU_XREG) store_frame(e, rc.units[w].reg, e->sink_off[w], 8);
             else store_frame_fp(e, rc.units[w].reg, e->sink_off[w], rc.units[w].size == 8);
         }
@@ -3295,6 +3347,37 @@ static int bref_reg(Em* e, Sym* s) {
     return a && a->byref ? a->reg : -1;
 }
 
+// the split record of a struct binder, or NULL
+static Split* split_at(Em* e, Node* decl) {
+    uintptr_t ix = decl ? ptrmap_get(&e->split_ix, decl) : 0;
+    return ix ? &e->splits[ix - 1] : NULL;
+}
+
+// the split record of the struct local x names, or NULL
+static Split* split_of(Em* e, Node* x) {
+    Sym* s = x && x->kind == N_IDENT ? node_sym(x) : NULL;
+    return s && s->kind == SYM_VAR ? split_at(e, s->decl) : NULL;
+}
+
+// a struct local emitted field by field: some field lives in a register
+static Split* split_live(Em* e, Node* x) {
+    Split* sp = split_of(e, x);
+    return sp && sp->regs ? sp : NULL;
+}
+
+// register holding field f of a split local, or -1 for the struct's slot
+static int split_freg(Em* e, Split* sp, int f) {
+    return promo_reg(e, node_sym(sp->field[f]));
+}
+
+// register holding the field `x.f` names over a split local, or -1
+static int split_reg(Em* e, Node* x) {
+    if (!x || x->kind != N_FIELD_E) return -1;
+    Split* sp = split_live(e, x->a);
+    int f = sp ? find_field(sp->type, x->str, x->len) : -1;
+    return f >= 0 ? split_freg(e, sp, f) : -1;
+}
+
 // fmov between raw v registers (mov_fp takes temp indices)
 static void fmov_raw(Em* e, int is64, int dst, int src) {
     if (dst == src) return;
@@ -3375,20 +3458,22 @@ static void store_preg(Em* e, int r, EV v, SType* t) {
                ((uint32_t)xreg(v.idx) << 5) | (uint32_t)r);
 }
 
-// a promoted sequence-loop value binder takes the element at [p] directly
-static void load_binder(Em* e, int r, int p, SType* t) {
+// a promoted sequence-loop value binder, or a split local's field, takes
+// the scalar at [p+off] directly
+static void load_binder(Em* e, int r, int p, uint32_t off, SType* t) {
     if (is_floatt(t)) {
-        ldrf_(e, r, p, 0, unwrap(t)->prim == P_F64);
+        ldrf_(e, r, p, off, unwrap(t)->prim == P_F64);
         return;
     }
     uint32_t w = (uint32_t)((scalar_bits(t) + 7) / 8);
-    ld_reg(e, r, p, 0, w, ty_is_signed(t) && w < 4); // ldrsb/ldrsh w, as a slot reload
+    ld_reg(e, r, p, off, w, ty_is_signed(t) && w < 4); // ldrsb/ldrsh w, as a slot reload
 }
 
 // address of a variable's storage in a fresh int temp
 static int gen_var_addr(Em* e, Sym* s, Node* at) {
     int t = tmp_int(e);
-    if (promo_reg(e, s) >= 0) { // plan_promotion missed an escape
+    Split* sp = s->kind == SYM_VAR ? split_at(e, s->decl) : NULL;
+    if (promo_reg(e, s) >= 0 || (sp && sp->regs)) { // plan_promotion missed an escape
         em_err(e, at, "internal compiler error: address of register local '%.*s'", (int)s->len, s->name);
         return t;
     }
@@ -3441,13 +3526,21 @@ static EV load_frame_value(Em* e, uint32_t depth, SType* t) {
 static int frame_place(Em* e, Node* x, uint32_t* depth) {
     if (x->kind == N_IDENT) {
         Sym* s = node_sym(x);
-        if (!s || s->kind != SYM_VAR || promo_reg(e, s) >= 0) return 0;
+        if (!s || s->kind != SYM_VAR || promo_reg(e, s) >= 0 || split_live(e, x)) return 0;
         Slot* sl = local_slot(e, s);
         if (!sl || sl->byref) return 0;
         *depth = sl->off;
         return 1;
     }
     if (x->kind != N_FIELD_E || !is_lvalue_node(x)) return 0;
+    Split* sp = split_live(e, x->a);
+    if (sp) { // a field left in the struct's slot, which exists only for such fields
+        int f = find_field(sp->type, x->str, x->len);
+        Slot* sl = local_slot(e, node_sym(x->a));
+        if (f < 0 || split_freg(e, sp, f) >= 0 || !sl) return 0;
+        *depth = sl->off - field_off(sp->type, f);
+        return 1;
+    }
     SType* bt = lvalue_type(e, x->a);
     if (!bt) bt = node_ty(x->a);
     bt = bt ? unwrap(bt) : NULL;
@@ -3509,18 +3602,21 @@ static int param_home(Em* e, Node* x) {
  * value through its pointer register, or loads its pointer from the slot and
  * then the value into the same register.
  */
-static EV load_var(Em* e, Sym* s, SType* t, Node* at) {
-    int pr = promo_reg(e, s);
-    if (pr >= 0 && is_floatt(t)) {
+// a promoted register's value, copied into a fresh temp
+static EV load_preg(Em* e, int r, SType* t) {
+    if (is_floatt(t)) {
         int vt = tmp_fp(e);
-        fmov_raw(e, unwrap(t)->prim == P_F64, vreg(vt), pr);
+        fmov_raw(e, unwrap(t)->prim == P_F64, vreg(vt), r);
         return (EV){ CLS_FP, vt };
     }
-    if (pr >= 0) {
-        int it = tmp_int(e);
-        mov_int(e, 1, xreg(it), pr);
-        return (EV){ CLS_INT, it };
-    }
+    int it = tmp_int(e);
+    mov_int(e, 1, xreg(it), r);
+    return (EV){ CLS_INT, it };
+}
+
+static EV load_var(Em* e, Sym* s, SType* t, Node* at) {
+    int pr = promo_reg(e, s);
+    if (pr >= 0) return load_preg(e, pr, t);
     Slot* sl = local_slot(e, s);
     int br = bref_reg(e, s);
     if (!sl && br < 0) {
@@ -3742,8 +3838,8 @@ static int index_addr(Em* e, Node* x, uint32_t fold_w, int* fold_ri) {
  */
 static int field_base(Em* e, Node* x, uint32_t* off) {
     *off = 0;
-    if (param_home(e, x) >= 0) {
-        em_err(e, x, "internal: register-homed parameter leaf has no address");
+    if (param_home(e, x) >= 0 || split_reg(e, x) >= 0) {
+        em_err(e, x, "internal: register-held field has no address");
         return tmp_int(e);
     }
     SType* bt = lvalue_type(e, x->a);
@@ -5676,6 +5772,8 @@ static EV gen_expr(Em* e, Node* x) {
         }
         SType* t = node_ty(x);
         if (!t) t = lvalue_type(e, x);
+        int sr = split_reg(e, x);
+        if (sr >= 0) return load_preg(e, sr, t);
         int home = param_home(e, x);
         if (home >= 0 && is_floatt(t)) {
             int vt = tmp_fp(e);
@@ -5844,6 +5942,217 @@ static void store_target(Em* e, EV v, int direct, uint32_t doff, int ta, SType* 
     if (direct == 2) store_preg(e, (int)doff, v, t);
     else if (direct) store_to_slot(e, v, doff, t);
     else store_scalar(e, v, xreg(ta), 0, t);
+}
+
+// frame depth of field f of a split local, in the slot its unpromoted fields keep
+static uint32_t split_depth(Em* e, Split* sp, int f) {
+    Slot* sl = slot_find(e, sp->decl);
+    return sl ? sl->off - field_off(sp->type, f) : 0;
+}
+
+// field f of a split local in a fresh temp
+static EV split_get(Em* e, Split* sp, int f) {
+    SType* ft = sp->type->fields[f].t;
+    int r = split_freg(e, sp, f);
+    return r >= 0 ? load_preg(e, r, ft) : load_frame_value(e, split_depth(e, sp, f), ft);
+}
+
+// write field f of a split local from v
+static void split_set(Em* e, Split* sp, int f, EV v) {
+    SType* ft = sp->type->fields[f].t;
+    int r = split_freg(e, sp, f);
+    if (r >= 0) store_preg(e, r, v, ft);
+    else store_to_slot(e, v, split_depth(e, sp, f), ft);
+}
+
+static void sink_arm(Em* e, Node* call, SType* ret, RetCls* rc);
+static int sink_take(Em* e);
+
+// evaluate a struct literal's field values into temps, in source order,
+// indexed by field; sema completes it with every field
+static void lit_values(Em* e, Node* lit, SType* t, EV* vals, uint8_t* have) {
+    int positional = lit->nkids > 0 && lit->kids[0]->str == NULL;
+    for (int i = 0; i < lit->nkids; i++) {
+        Node* fi = lit->kids[i];
+        int f = positional ? i : find_field(t, fi->str, fi->len);
+        if (f < 0 || f >= t->nfields || f >= 4) {
+            em_err(e, fi, "no such field");
+            continue;
+        }
+        vals[f] = gen_expr(e, fi->a);
+        have[f] = 1;
+    }
+}
+
+/*
+ * `place = T{...}` for a struct of split_type, with the place's address in
+ * base: every value is evaluated before any store, as building the literal
+ * in a temp would, then stored straight into the place at its field's width.
+ * Nothing is staged, so a later whole-word load of the place is not left
+ * waiting on narrower stores it cannot forward from.
+ */
+static void lit_store_at(Em* e, Node* lit, SType* t, int base) {
+    int svi = e->vti, svf = e->vtf;
+    EV vals[4];
+    uint8_t have[4] = {0};
+    lit_values(e, lit, t, vals, have);
+    for (int f = 0; f < t->nfields; f++) {
+        if (have[f]) store_scalar(e, vals[f], base, field_off(t, f), t->fields[f].t);
+        else em_err(e, lit, "struct literal is missing a field");
+    }
+    e->vti = svi; e->vtf = svf;
+}
+
+/*
+ * `x = rhs` for a split local. A literal, which sema completes with every
+ * field, evaluates every value before writing any, since a value may read x.
+ * A call returning in registers moves its units straight into the fields
+ * (split_take). Another
+ * split local is read whole before any write, since the two may share
+ * registers where one's interval ends as the other's begins. Anything else
+ * materializes an address the fields load from, each at its own width.
+ */
+static void split_write(Em* e, Split* sp, Node* rhs) {
+    int svi = e->vti, svf = e->vtf;
+    EV vals[4];
+    uint8_t have[4] = {0};
+    Split* src = split_live(e, rhs);
+    if (rhs->kind == N_STRUCTLIT) {
+        lit_values(e, rhs, sp->type, vals, have);
+    } else if (src) {
+        for (int f = 0; f < sp->n; f++) {
+            vals[f] = split_get(e, src, f);
+            have[f] = 1;
+        }
+    } else {
+        RetCls rc;
+        SType* ret = rhs->kind == N_CALL ? node_ty(rhs) : NULL;
+        if (ret) classify_ret(ret, &rc);
+        if (ret && !rc.sret && rc.nunits >= 1 && ty_size(ret) == ty_size(sp->type)) {
+            sink_arm(e, rhs, ret, &rc);
+            e->sink_split = sp;
+        }
+        EV v = gen_expr(e, rhs);
+        if (sink_take(e)) {
+            e->vti = svi; e->vtf = svf;
+            return;
+        }
+        if (v.cls != CLS_ADDR) {
+            em_err(e, rhs, "struct value did not materialize in memory");
+            return;
+        }
+        for (int f = 0; f < sp->n; f++) {
+            SType* ft = sp->type->fields[f].t;
+            uint32_t fo = field_off(sp->type, f);
+            int r = split_freg(e, sp, f);
+            if (r >= 0) {
+                load_binder(e, r, xreg(v.idx), fo, ft);
+                continue;
+            }
+            int si = e->vti, sf = e->vtf;
+            EV fv = load_scalar(e, xreg(v.idx), fo, ft);
+            store_to_slot(e, fv, split_depth(e, sp, f), ft);
+            e->vti = si; e->vtf = sf;
+        }
+        e->vti = svi; e->vtf = svf;
+        return;
+    }
+    for (int f = 0; f < sp->n; f++) {
+        if (have[f]) split_set(e, sp, f, vals[f]);
+        else em_err(e, rhs, "struct literal is missing a field");
+    }
+    e->vti = svi; e->vtf = svf;
+}
+
+// store a split local whole to [base+off], one store per field
+static void split_store_at(Em* e, Split* sp, int base, uint32_t off) {
+    for (int f = 0; f < sp->n; f++) {
+        SType* ft = sp->type->fields[f].t;
+        uint32_t fo = off + field_off(sp->type, f);
+        int r = split_freg(e, sp, f);
+        if (r >= 0 && is_floatt(ft)) strf_(e, r, base, fo, unwrap(ft)->prim == P_F64);
+        else if (r >= 0) st_reg(e, r, base, fo, (uint32_t)((scalar_bits(ft) + 7) / 8));
+        else { // raw bits through x17, which touches no temp or argument register
+            uint32_t w = ty_size(ft);
+            load_frame(e, 17, split_depth(e, sp, f), w, 0);
+            st_reg(e, 17, base, fo, w);
+        }
+    }
+}
+
+/*
+ * Build argument or result unit u of a split local in register dst: an HFA
+ * leaf is its float field; an integer-class chunk packs the fields within its
+ * 8 bytes, the first by mov and the rest by bfi (a narrow field's canonical
+ * form may carry sign bits above it, which the next insert overwrites). Only
+ * x16 and x17 are scratch, so no temp or argument register is disturbed.
+ */
+static void split_unit(Em* e, Split* sp, TU* u, int dst) {
+    for (int f = 0; f < sp->n; f++) {
+        SType* ft = sp->type->fields[f].t;
+        uint32_t fo = field_off(sp->type, f), w = ty_size(ft);
+        int r = split_freg(e, sp, f);
+        if (u->kind == TU_VREG) {
+            if (fo != u->off) continue;
+            if (r >= 0) fmov_raw(e, w == 8, dst, r);
+            else load_frame_fp(e, dst, split_depth(e, sp, f), w == 8);
+            return;
+        }
+        if (fo < u->off || fo >= u->off + 8) continue;
+        int src = r;
+        if (r >= 0 && is_floatt(ft)) { // fmov x16, d | w16, s
+            ins(e, (w == 8 ? 0x9E660000u : 0x1E260000u) | ((uint32_t)r << 5) | 16u);
+            src = 16;
+        } else if (r < 0) {
+            load_frame(e, 16, split_depth(e, sp, f), w, 0);
+            src = 16;
+        }
+        uint32_t lsb = (fo - u->off) * 8;
+        if (!lsb) mov_int(e, 1, dst, src);
+        else // bfi dst, src, #lsb, #width
+            ins(e, 0xB3400000u | (((64u - lsb) & 63u) << 16) | ((w * 8 - 1) << 10) |
+                   ((uint32_t)src << 5) | (uint32_t)dst);
+    }
+}
+
+/*
+ * The inverse for a call result: move each field out of the unit holding
+ * it, an integer field by ubfx at its width (then sxtb/sxth for a narrow
+ * signed one, as a slot reload leaves it) and a float from an HFA leaf or
+ * from the chunk's bits.
+ */
+static void split_take(Em* e, Split* sp, RetCls* rc) {
+    for (int f = 0; f < sp->n; f++) {
+        SType* ft = sp->type->fields[f].t;
+        uint32_t fo = field_off(sp->type, f), w = ty_size(ft);
+        int r = split_freg(e, sp, f);
+        TU* u = NULL;
+        for (int k = 0; k < rc->nunits && !u; k++)
+            if (rc->units[k].kind == TU_VREG ? rc->units[k].off == fo
+                                             : fo >= rc->units[k].off && fo < rc->units[k].off + 8)
+                u = &rc->units[k];
+        if (!u) {
+            em_err(e, sp->decl, "internal: no result unit holds a field");
+            return;
+        }
+        if (u->kind == TU_VREG) {
+            if (r >= 0) fmov_raw(e, w == 8, r, u->reg);
+            else store_frame_fp(e, u->reg, split_depth(e, sp, f), w == 8);
+            continue;
+        }
+        uint32_t lsb = (fo - u->off) * 8;
+        int src = u->reg;
+        if (lsb || (r >= 0 && w < 8 && !is_floatt(ft))) { // ubfx x16|r, chunk, #lsb, #width
+            int d = r >= 0 && !is_floatt(ft) ? r : 16;
+            ins(e, 0xD3400000u | (lsb << 16) | ((lsb + w * 8 - 1) << 10) | ((uint32_t)src << 5) | (uint32_t)d);
+            src = d;
+        }
+        if (r < 0) store_frame(e, src, split_depth(e, sp, f), w);
+        else if (is_floatt(ft)) // fmov d, x | s, w
+            ins(e, (w == 8 ? 0x9E670000u : 0x1E270000u) | ((uint32_t)src << 5) | (uint32_t)r);
+        else if (w < 4 && ty_is_signed(ft)) set_preg(e, r, r, ft);
+        else mov_int(e, 1, r, src);
+    }
 }
 
 static void emit_block(Em* e, Node* b) {
@@ -6272,6 +6581,7 @@ static void sink_arm(Em* e, Node* call, SType* ret, RetCls* rc) {
     e->sink_ret = ret;
     e->sink_n = rc->nunits;
     e->sink_done = 0;
+    e->sink_split = NULL;
 }
 
 // consume the one-shot sink; nonzero when emit_call stored the result
@@ -6280,6 +6590,7 @@ static int sink_take(Em* e) {
     e->sink_call = NULL;
     e->sink_ret = NULL;
     e->sink_done = 0;
+    e->sink_split = NULL;
     return done;
 }
 
@@ -6386,6 +6697,16 @@ static void emit_stmt(Em* e, Node* s) {
             if (s->b) store_preg(e, pr, gen_expr(e, s->b), node_sym(s->kids[0])->type);
             return;
         }
+        Split* sp = nb == 1 ? split_at(e, s->kids[0]) : NULL;
+        if (sp && sp->regs) { // field by field: a slot only for fields left out of registers
+            for (int f = 0; f < sp->n; f++)
+                if (split_freg(e, sp, f) < 0) {
+                    slot_alloc(e, s->kids[0], ty_size(sp->type), ty_align(sp->type));
+                    break;
+                }
+            if (s->b) split_write(e, sp, s->b);
+            return;
+        }
         for (int i = 0; i < nb; i++) {
             Node* binder = s->kids[i];
             Sym* vs = node_sym(binder);
@@ -6394,6 +6715,13 @@ static void emit_stmt(Em* e, Node* s) {
         }
         if (!s->b) return;
         if (nb == 1) {
+            Split* src = split_live(e, s->b);
+            if (src) {
+                int ta = tmp_int(e);
+                frame_addr(e, xreg(ta), offs[0]);
+                split_store_at(e, src, xreg(ta), 0);
+                return;
+            }
             if (s->b->kind == N_CALL && !is_scalar(wants[0])) {
                 gen_call_to_slot(e, s->b, offs[0], wants[0]);
                 return;
@@ -6450,6 +6778,18 @@ static void emit_stmt(Em* e, Node* s) {
             em_err(e, s, "assignment target has no type");
             return;
         }
+        if (s->op == T_ASSIGN && !(s->flags & F_VOLATILE)) { // a split local, whole
+            Split* sp = split_live(e, s->kids[0]);
+            if (sp) {
+                split_write(e, sp, s->a);
+                return;
+            }
+            if ((sp = split_live(e, s->a))) {
+                int ta = gen_addr(e, s->kids[0]);
+                split_store_at(e, sp, xreg(ta), 0);
+                return;
+            }
+        }
         // a register-returned aggregate call assigned to a frame-resident
         // local stores its result registers straight into it
         uint32_t sdepth;
@@ -6466,7 +6806,7 @@ static void emit_stmt(Em* e, Node* s) {
         Node* lhs = s->kids[0];
         Sym* ls = lhs->kind == N_IDENT ? node_sym(lhs) : NULL;
         int local = ls && ls->kind == SYM_VAR && is_scalar(t);
-        int pr = local ? promo_reg(e, ls) : -1;
+        int pr = local ? promo_reg(e, ls) : is_scalar(t) ? split_reg(e, lhs) : -1;
         Slot* lsl = local && pr < 0 ? local_slot(e, ls) : NULL;
         int direct = pr >= 0 ? 2 : lsl && !lsl->byref;
         uint32_t doff = pr >= 0 ? (uint32_t)pr : direct ? lsl->off : 0;
@@ -6509,6 +6849,7 @@ static void emit_stmt(Em* e, Node* s) {
                 return;
             }
             EV old = in_place ? (EV){ CLS_INT, tmp_int(e) }
+                   : direct == 2 ? load_preg(e, pr, t)
                    : direct ? load_var(e, ls, t, lhs)
                             : load_scalar(e, xreg(ta), 0, t);
             int ra = in_place ? pr : xreg(old.idx);
@@ -6588,6 +6929,10 @@ static void emit_stmt(Em* e, Node* s) {
                 e->vtf = svf;
                 return;
             }
+        }
+        if (!direct && !(s->flags & F_VOLATILE) && s->a->kind == N_STRUCTLIT && split_type(t)) {
+            lit_store_at(e, s->a, unwrap(t), xreg(ta));
+            return;
         }
         EV v = gen_expr(e, s->a);
         if (direct) {
@@ -6939,7 +7284,7 @@ static void emit_stmt(Em* e, Node* s) {
             bind_label(e, lcond);
             ins(e, 0xEB00001Fu | ((uint32_t)rend << 16) | ((uint32_t)rp << 5));
             bcond_(e, C_HS, lbreak);
-            if (vpr >= 0) load_binder(e, vpr, rp, elem);
+            if (vpr >= 0) load_binder(e, vpr, rp, 0, elem);
             else if (mut_iter) store_frame(e, rp, vs, 8);
             else {
                 frame_addr(e, 15, vs);
@@ -6993,7 +7338,7 @@ static void emit_stmt(Em* e, Node* s) {
         bcond_(e, C_HS, lbreak);
         // loop variable = element copy at [p]; under `in mut`, the alias slot
         // receives the cursor itself (the element address)
-        if (vpr >= 0) load_binder(e, vpr, xreg(tp), elem);
+        if (vpr >= 0) load_binder(e, vpr, xreg(tp), 0, elem);
         else if (mut_iter) store_frame(e, xreg(tp), vs, 8);
         else {
             frame_addr(e, 15, vs);
@@ -7090,6 +7435,20 @@ static void emit_stmt(Em* e, Node* s) {
         RetCls rc;
         classify_ret(rt, &rc);
         if (!s->a) {
+            emit_defers(e, rt);
+            emit_epilogue(e);
+            return;
+        }
+        Split* sp = split_live(e, s->a);
+        if (sp && rc.sret) { // field by field into the caller's buffer
+            load_frame(e, 15, e->sret_slot, 8, 0);
+            split_store_at(e, sp, 15, 0);
+            emit_defers(e, rt);
+            emit_epilogue(e);
+            return;
+        }
+        if (sp && rc.nunits >= 1) { // each result register built from the fields
+            for (int w = 0; w < rc.nunits; w++) split_unit(e, sp, &rc.units[w], rc.units[w].reg);
             emit_defers(e, rt);
             emit_epilogue(e);
             return;
@@ -7519,8 +7878,68 @@ static void promo_add(Em* e, Node* binder, uint8_t byref) {
     e->pcands[e->npcands++] = (PromoCand){ binder, 0, 0, 0, byref, -1, at, at, -1 };
 }
 
+// the candidate of a split local's field placeholder
+static PromoCand* promo_cand(Em* e, Node* decl) {
+    uintptr_t ix = ptrmap_get(&e->pcand_ix, decl);
+    return ix ? &e->pcands[ix - 1] : NULL;
+}
+
+// a struct with at most four direct scalar fields and no padding
+static int split_type(SType* t) {
+    t = unwrap(t);
+    if (!t || t->kind != SK_STRUCT || t->nfields < 1 || t->nfields > 4 || t->is_packed || t->requested_align) return 0;
+    uint32_t sum = 0;
+    for (int i = 0; i < t->nfields; i++) {
+        if (!is_scalar(t->fields[i].t) || t->fields[i].requested_align) return 0;
+        sum += ty_size(t->fields[i].t);
+    }
+    return sum == ty_size(t);
+}
+
+/*
+ * Binder of a single-binder struct local of split_type: each field gets a
+ * placeholder binder of its own type that competes for a register as any
+ * scalar local does. A use that needs the struct whole in memory marks it bad,
+ * and its fields keep the slot.
+ */
+static void split_add(Em* e, Node* binder) {
+    Sym* s = node_sym(binder);
+    if (!s || s->kind != SYM_VAR || s->is_global || s->decl != binder || !split_type(s->type)) return;
+    if (e->nsplits == e->csplits) {
+        e->csplits = e->csplits ? e->csplits * 2 : 16;
+        e->splits = realloc(e->splits, (size_t)e->csplits * sizeof(Split));
+        if (!e->splits) oom();
+    }
+    SType* t = unwrap(s->type);
+    Split* sp = &e->splits[e->nsplits];
+    *sp = (Split){ binder, t, {0}, t->nfields, 0, 0 };
+    for (int i = 0; i < t->nfields; i++) {
+        Node* ph = (Node*)arena_alloc(sizeof(Node));
+        Sym* fs = (Sym*)arena_alloc(sizeof(Sym));
+        memset(ph, 0, sizeof *ph);
+        memset(fs, 0, sizeof *fs);
+        ph->kind = N_PARAM;
+        ph->path = binder->path;
+        ph->line = binder->line;
+        ph->col = binder->col;
+        fs->name = s->name;
+        fs->len = s->len;
+        fs->kind = SYM_VAR;
+        fs->type = t->fields[i].t;
+        fs->decl = ph;
+        ph->sym = fs;
+        ph->ty = fs->type;
+        sp->field[i] = ph;
+        promo_add(e, ph, 0);
+    }
+    ptrmap_put(&e->split_ix, binder, (uintptr_t)++e->nsplits);
+}
+
 // an address use needs the slot; a by-reference pointer is that address already
 static void promo_escape(Em* e, Node* x) {
+    Split* sp = split_of(e, x); // the struct itself, or a field as a place (&x.f, x.p.g)
+    if (!sp && x && x->kind == N_FIELD_E) sp = split_of(e, x->a);
+    if (sp) sp->bad = 1;
     PromoCand* c = promo_find(e, x);
     if (c && !c->byref) c->escaped = 1;
 }
@@ -7615,6 +8034,37 @@ static void scan_close(Em* e, uint32_t at) {
 }
 
 static void promo_scan(Em* e, Node* n, int depth);
+static void scan_use(Em* e, PromoCand* c, int depth);
+
+/*
+ * Whether gen_call passes `call`'s arguments through emit_call, which builds
+ * a split local's argument units from its fields: a direct call to a
+ * non-builtin function, a generic stamp, a function value, or a contract
+ * method. Casts, constructors, and builtins evaluate their operands otherwise.
+ */
+static int split_call_ok(Node* call) {
+    Node* callee = call->a;
+    if (call_is_inline(call) || (call->d && call->d->kind == N_CONFORMANCE)) return 0;
+    if (callee->kind == N_INDEX) return callee->sym != NULL;
+    if (!call->sym) {
+        SType* bt = callee->kind == N_FIELD_E ? node_ty(callee->a) : NULL;
+        return bt && bt->kind == SK_CONTRACT;
+    }
+    Sym* s = node_sym(call);
+    return s->kind == SYM_VAR || (s->kind == SYM_FUNC && s->decl && !s->decl->ival);
+}
+
+// a whole-struct read or write of a split local uses every field
+static void split_use(Em* e, Split* sp, int depth) {
+    for (int i = 0; i < sp->n; i++) scan_use(e, promo_cand(e, sp->field[i]), depth);
+}
+
+// a value a whole-struct assignment reads: a split local is read field by field
+static void scan_value(Em* e, Node* n, int depth) {
+    Split* sp = split_of(e, n);
+    if (sp) split_use(e, sp, depth);
+    else promo_scan(e, n, depth);
+}
 
 // one statement part: the emitter reads promoted operands in place by its end
 static void scan_part(Em* e, Node* n, int depth) {
@@ -7702,6 +8152,11 @@ static void promo_scan(Em* e, Node* n, int depth) {
     }
     switch (n->kind) {
     case N_IDENT: {
+        Split* sp = split_of(e, n);
+        if (sp) { // a struct local anywhere split_use does not cover
+            sp->bad = 1;
+            return;
+        }
         PromoCand* c = promo_find(e, n);
         if (c) scan_use(e, c, depth);
         return;
@@ -7710,22 +8165,50 @@ static void promo_scan(Em* e, Node* n, int depth) {
         if (n->flags & F_MIXED) {
             for (int i = 0; i < n->nkids; i++) if (n->kids[i]->kind != N_PARAM) promo_escape(e, n->kids[i]);
         } else if (n->nkids == 1) {
-            scan_part(e, n->b, depth);
+            if (n->b) {
+                scan_open(e);
+                scan_value(e, n->b, depth);
+                scan_close(e, ++e->scan_pos);
+            }
             promo_add(e, n->kids[0], 0);
+            split_add(e, n->kids[0]);
             promo_scan(e, n->kids[0], depth);
             return;
         }
         break;
     case N_ASSIGN: // one frame: the target's read and write order varies
-        if (n->nkids > 1 || (n->flags & F_VOLATILE)) for (int i = 0; i < n->nkids; i++) promo_escape(e, n->kids[i]);
+        if (n->nkids > 1 || (n->flags & F_VOLATILE)) {
+            for (int i = 0; i < n->nkids; i++) promo_escape(e, n->kids[i]);
+        } else if (n->op == T_ASSIGN && (split_of(e, n->kids[0]) || split_of(e, n->a))) {
+            Split* dst = split_of(e, n->kids[0]);
+            scan_value(e, n->a, depth);
+            if (dst) split_use(e, dst, depth);
+            else promo_scan(e, n->kids[0], depth);
+            return;
+        }
         break;
     case N_UNARY:
         if (n->op == T_AMP || n->op == T_VOLATILE) promo_escape(e, n->a);
         break;
-    case N_MUTARG: case N_FIELD_E: case N_INDEX: case N_SLICE_E:
+    case N_FIELD_E: {
+        Split* sp = split_of(e, n->a);
+        if (sp) { // one field's own use; a method or anything else needs the struct
+            int f = find_field(sp->type, n->str, n->len);
+            if (f < 0) sp->bad = 1;
+            else scan_use(e, promo_cand(e, sp->field[f]), depth);
+            return;
+        }
+        promo_escape(e, n->a);
+        break;
+    }
+    case N_MUTARG: case N_INDEX: case N_SLICE_E:
         promo_escape(e, n->a);
         break;
     case N_CALL: {
+        if (n->a && n->a->kind == N_FIELD_E) { // a callee field: the call takes it as a place
+            Split* sp = split_of(e, n->a->a);
+            if (sp) sp->bad = 1;
+        }
         int real = !call_is_inline(n);
         if (real) e->scan_call = 1;
         // Any call inside a loop may branch: a real one, or an inline lowering
@@ -7735,7 +8218,19 @@ static void promo_scan(Em* e, Node* n, int depth) {
         promo_scan(e, n->a, depth);
         promo_scan(e, n->b, depth);
         promo_scan(e, n->c, depth);
-        for (int i = 0; i < n->nkids; i++) promo_scan(e, n->kids[i], depth);
+        // a split local passed by value is read field by field at the bl,
+        // except in a defer, whose arguments are captured into slots, and
+        // except when the ABI passes it by address: kept whole in its slot,
+        // that address travels without a copy
+        int by_value = !e->scan_defer && split_call_ok(n);
+        for (int i = 0; i < n->nkids; i++) {
+            Split* sp = by_value ? split_of(e, n->kids[i]) : NULL;
+            uint32_t offs[5];
+            uint8_t dbl[5];
+            if (sp && ty_size(sp->type) > 16 && classify_hfa(sp->type, offs, dbl) < 1) sp->bad = 1;
+            else if (by_value) scan_value(e, n->kids[i], depth);
+            else promo_scan(e, n->kids[i], depth);
+        }
         uint32_t at = ++e->scan_pos;
         scan_close(e, at);
         ptrmap_put(&e->call_pos, n, (uintptr_t)at + 1);
@@ -7763,6 +8258,12 @@ static void promo_scan(Em* e, Node* n, int depth) {
         scan_part(e, n->a, depth);
         scan_loop_pop(e);
         return;
+    case N_RETURN:
+        if (split_of(e, n->a)) { // returned field by field
+            split_use(e, split_of(e, n->a), depth);
+            return;
+        }
+        break;
     case N_CASE: // patterns bind before the body runs
         for (int i = 0; i < n->nkids; i++) scan_part(e, n->kids[i], depth);
         scan_part(e, n->a, depth);
@@ -7947,6 +8448,8 @@ static void plan_promotion(Em* e, Node* f, int export_c) {
     for (int r = 0; r < 32; r++) e->reg_iv[r].n = 0;
     ptrmap_clear(&e->pcand_ix);
     ptrmap_clear(&e->call_pos);
+    e->nsplits = 0;
+    ptrmap_clear(&e->split_ix);
     for (int i = 0; i < f->nkids; i++)
         if (!(f->kids[i]->flags & F_MUT) && !((f->flags & F_METHOD) && i == 0))
             promo_add(e, f->kids[i], 0);
@@ -7954,6 +8457,9 @@ static void plan_promotion(Em* e, Node* f, int export_c) {
             promo_add(e, f->kids[i], 1);
     e->scan_call = e->scan_loop_branch = 0;
     scan_part(e, f->b, 0);
+    for (int i = 0; i < e->nsplits; i++)
+        for (int f = 0; e->splits[i].bad && f < e->splits[i].n; f++)
+            promo_cand(e, e->splits[i].field[f])->escaped = 1;
     for (int i = 0; i < e->npcands; i++) {
         PromoCand* c = &e->pcands[i];
         if (scan_crosses(e, c->first, c->last)) c->crosses = 1;
@@ -7992,6 +8498,9 @@ static void plan_promotion(Em* e, Node* f, int export_c) {
             e->fpreg_decl[e->nfpreg++] = e->pcands[e->prank[r].ix].decl;
             e->nfpleaf++;
         }
+    for (int i = 0; i < e->nsplits; i++)
+        for (int f = 0; f < e->splits[i].n; f++)
+            if (split_freg(e, &e->splits[i], f) >= 0) e->splits[i].regs = 1;
 }
 
 typedef struct {
@@ -8144,6 +8653,7 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
     e->sink_call = NULL;
     e->sink_ret = NULL;
     e->sink_done = 0;
+    e->sink_split = NULL;
     e->nlreg_loops = 0;
     e->lreg_top = e->lreg_max = 0;
     e->fn_has_asm = 0;
@@ -8152,6 +8662,8 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
     e->vti_cap = MAX_ITEMPS;
     e->vtf_cap = MAX_FPTEMPS;
     e->nphome = e->nfhome = e->nxhome = 0;
+    e->nsplits = 0;
+    ptrmap_clear(&e->split_ix);
     if (e->fn_has_asm) { // asm bindings may name any x register
         e->nlreg_loops = 0;
         e->lreg_max = 0;

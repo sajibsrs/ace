@@ -1243,8 +1243,9 @@ if [ -d tests/emit ]; then
         # A register-returned call assigned to a frame-resident local or bound
         # to typed binders stores its result registers straight into the
         # destination: the instruction after the call is a direct stur of x0 or
-        # d0, not the address computation of a staged temp. The first function's
-        # label is the section, so first() is a dummy.
+        # d0, not the address computation of a staged temp. Assigned to a
+        # small struct local it moves them into the fields' registers. The
+        # first function's label is the section, so first() is a dummy.
         if ! otool -tv /tmp/ace_emit/basics/call_result_sink.o | awk '
             /^_main:/ { exit }
             /^[^0-9].*:$/ { fn = $0; next }
@@ -1252,13 +1253,15 @@ if [ -d tests/emit ]; then
             want {
                 want = 0
                 if ($2 == "stur" && $3 ~ /^[xd]0,$/) {
+                    if (fn ~ /sink_padded/) padded = 1
+                    if (fn ~ /sink_divmod/) dm = 1
+                } else if ($2 ~ /^f?mov$/ && $4 ~ /^[xd]0$/) {
                     if (fn ~ /sink_small/) small = 1
                     if (fn ~ /sink_pair/) pair = 1
                     if (fn ~ /sink_vec/) vec = 1
-                    if (fn ~ /sink_divmod/) dm = 1
                 } else bad = 1
             }
-            END { exit bad || !small || !pair || !vec || !dm }'; then
+            END { exit bad || !small || !pair || !vec || !padded || !dm }'; then
             echo "FAIL: register-returned call results must be stored straight into the destination"
             fail=1
         fi
@@ -1298,6 +1301,43 @@ if [ -d tests/emit ]; then
             }
             END { exit bad || !low || !high }'; then
             echo "FAIL: call-free locals must share x14 down by live range"
+            fail=1
+        fi
+        # A small struct local popped from a slice loads each field straight
+        # into its register at the field's own width, and a whole store back
+        # writes each field: no copy through x16 and no narrow slot reload.
+        if ! otool -tv /tmp/ace_emit/basics/struct_registers.o | awk '
+            /^[^0-9].*:$/ { fn = ($0 ~ /^__ace\$fn\$frames\$/); next }
+            fn && $2 ~ /^(ldr|str)$/ && $3 == "x16," { bad = 1 }
+            fn && $2 ~ /^(ldur|stur)$/ && $3 ~ /^w/ { bad = 1 }
+            fn && $2 == "ldr" && $3 ~ /^w/ && $5 == "#0x4]" { narrow = 1 }
+            fn && $2 == "ldr" && $3 ~ /^x/ && $5 == "#0x8]" { wide = 1 }
+            fn && $2 == "str" && $3 ~ /^w/ && $5 == "#0x4]" { store = 1 }
+            END { exit bad || !narrow || !wide || !store }'; then
+            echo "FAIL: a small struct local must load and store field by field"
+            fail=1
+        fi
+        # A literal assigned to an element is stored field by field straight
+        # into it: no temp built and copied through x16.
+        if ! otool -tv /tmp/ace_emit/basics/struct_registers.o | awk '
+            /^[^0-9].*:$/ { fn = ($0 ~ /^__ace\$fn\$push\$/); next }
+            fn && $2 ~ /^(ldr|str)$/ && $3 == "x16," { bad = 1 }
+            fn && $2 == "str" && $3 ~ /^w/ && $5 == "#0x4]" { narrow = 1 }
+            fn && $2 == "str" && $3 ~ /^x/ && $5 == "#0x8]" { wide = 1 }
+            END { exit bad || !narrow || !wide }'; then
+            echo "FAIL: a struct literal must store straight into its destination"
+            fail=1
+        fi
+        # Passed to and assigned from a call returning an HFA, a Vec3 local
+        # moves between d8-d13 and d0-d5 by fmov: no float goes through the
+        # frame (the callee-saved area uses stp/ldp).
+        if ! otool -tv /tmp/ace_emit/basics/struct_registers.o | awk '
+            /^[^0-9].*:$/ { fn = ($0 ~ /^__ace\$fn\$hfa_loop\$/); next }
+            fn && $2 ~ /^(ldur|stur|ldr|str)$/ && $3 ~ /^d/ { bad = 1 }
+            fn && $2 == "bl" { called = 1 }
+            fn && called && $2 == "fmov" && $3 == "d8," && $4 == "d0" { back = 1 }
+            END { exit bad || !back }'; then
+            echo "FAIL: an HFA struct local must stay in registers across calls"
             fail=1
         fi
         # A call-free function fills x14 down to x9 before x19-x28. In one with

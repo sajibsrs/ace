@@ -181,24 +181,17 @@ These are baseline observations, not performance promises.
   measured on its own: compute the bounds and step in registers with no
   division for a step of one; then let a value binder the body never assigns
   share the cursor register (one copy per iteration).
-- **A struct kept in slots across a call stalls** [new] — `pair =
-  pair_step(pair)` in a loop stores the returned registers to the struct's
-  slots and reloads them for the next call. With the slots within `ldur`
-  reach the `calls` bench's `struct-16` case runs 24-41 ms depending only on
-  frame layout, against 24 ms when each access needs a `sub` first; `struct-8`
-  sits at the slow end already. Candidate: keep small struct locals in
-  registers, or find which store-reload distance triggers the stall.
-- **Whole-struct stores into array elements** [new] — `self.stack[top] =
-  Frame{...}` builds the struct in a temp with one store per field and copies
-  it with 8-byte loads, and `frame: Frame = self.stack[top]` copies an element
-  to a slot before reading two fields. An 8-byte load spanning two 4-byte
-  stores cannot be forwarded, so a by-hand `pkg/regex` emulation gains only
-  when it does both: field stores into the element alone cost 1.6% more
-  cycles, and in-place reads alone 0.7% more, since each moves the stall to
-  the other side; together they cut `captures` 4% and the whole bench 0-2.5%.
-  Candidate: build a literal straight into its destination after evaluating
-  every field, and scalar-replace a small struct local whose address never
-  escapes, loading each field into its own promoted register.
+- **An unused loop binder is stored every iteration** [new] — `for i: usize
+  in 0 .. n` whose body never reads `i` still gives `i` a slot and stores the
+  cursor to it each iteration. With the struct in registers it is the only
+  memory access in the `calls` bench's `struct-8` and `struct-16` loops, and
+  whether its slot is within `ldur` reach moves `struct-16` between 2.41 and
+  2.62 ns. Candidate: skip the store for a binder nothing reads.
+- **Struct union payload binders copy to a slot** [new] — `Inst.split(targets:
+  Fork)` in `pkg/regex` copies the payload into the binder's slot field by
+  field before reading `targets.x` and `targets.y`. Candidate: scalar-replace
+  a small struct payload binder as a small struct local is, loading each field
+  from the payload.
 - **Wrapper calls cost a float spill** [new] — since promoted floats reach
   `d24-d31`, which are caller-saved, every branch-with-link stores and reloads
   them. A one-line dispatcher between two callers and two callees is therefore
@@ -211,9 +204,9 @@ These are baseline observations, not performance promises.
   parameters of a call-free function (a parameter in a function with calls, a
   packed or mixed-class struct, a tuple) are spilled to slots and reloaded per
   use, and an aggregate
-  argument that is not a plain frame-resident local (a global, an rvalue, a
-  member behind a pointer) or that overflows the argument registers still
-  travels through an address temp. A returned literal or tuple with packed
+  argument that is not a plain frame-resident local or a small struct local
+  in registers (a global, an rvalue, a member behind a pointer) or that
+  overflows the argument registers still travels through an address temp. A returned literal or tuple with packed
   sub-8-byte fields, a `(f64, bool)` tuple, or a call in a leaf is still built
   in a frame temp and reloaded.
   A returned struct whose size is not a multiple of 8, a tuple with a
@@ -222,13 +215,13 @@ These are baseline observations, not performance promises.
   stage the result in a temp and copy it. `bool` locals and a string
   parameter's pointer and length stay in stack slots inside loops.
   `bench/calls.ace` measures it: the by-value 8- and 16-byte structs, the
-  three-`f64` aggregate, and the tuple return run 1.0x to 3.4x noinline C
-  `-O2`; what remains is bound by store-to-load forwards on the loop-carried
-  slot, so a further step needs its gain measured first (for example reading
-  HFA leaves in the incoming registers themselves, which measured 0.25 ns
-  faster on `dot` and `length2` but 10% slower on a `Vec3`-returning call for
-  a cause not yet found, or the caller side of `struct-8`, still 1.6 ns above
-  C). Float `fmov` between registers costs about 1 ns on a loop-carried chain,
+  three-`f64` aggregate, and the tuple return run 1.0x to 3.1x noinline C
+  `-O2`. The callers of the struct cases now keep them in registers, so the
+  `struct-hfa` gap sits in the callee, which builds a frame and copies each
+  incoming leaf into v18-v23 before three `fadd`s; a further step needs its
+  gain measured first (for example reading HFA leaves in the incoming
+  registers themselves, which measured 0.25 ns faster on `dot` and `length2`
+  but 10% slower on a `Vec3`-returning call for a cause not yet found). Float `fmov` between registers costs about 1 ns on a loop-carried chain,
   so a promotion scheme that adds moves there loses most of its gain.
 - **Unoptimized debug build mode** [new] — only the checked and release modes
   exist, and both emit the same optimized code; the modes differ in runtime

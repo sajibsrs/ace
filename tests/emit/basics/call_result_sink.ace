@@ -1,6 +1,7 @@
 // expect-exit: 42
 // A register-returned call result is stored straight into a frame-resident
-// destination; other destinations and shapes keep the staged copy.
+// destination, or moved into a small struct local's field registers; other
+// destinations and shapes keep the staged copy.
 
 MASK: const usize = 0x7FFFFFFF
 
@@ -34,6 +35,12 @@ Big: struct {
     a: usize,
     b: usize,
     c: usize,
+}
+
+// padded, so kept whole in its frame slot
+Padded: struct {
+    a: u32,
+    b: usize,
 }
 
 Outer: struct {
@@ -76,6 +83,10 @@ big_step(b: Big): Big {
     return Big {a = b.a + 1, b = b.b + 2, c = b.c + 3}
 }
 
+padded_step(p: Padded): Padded {
+    return Padded {a = p.a + 1, b = p.b + 2}
+}
+
 divmod(a: usize, b: usize): (usize, usize) {
     return a / b, a % b
 }
@@ -106,6 +117,12 @@ sink_vec(a: Vec3, b: Vec3): Vec3 {
     return t
 }
 
+sink_padded(p: Padded): Padded {
+    t: Padded = p
+    t = padded_step(t)
+    return t
+}
+
 sink_divmod(a: usize, b: usize): (usize, usize) {
     q: usize, r: usize = divmod(a, b)
     return q + 1, r + 1
@@ -119,8 +136,9 @@ main(): int {
     sp: Pair = sink_pair(Pair {a = 2, b = 3})
     sv: Vec3 = sink_vec(Vec3 {x = 1.0, y = 2.0, z = 3.0}, Vec3 {x = 1.0, y = 1.0, z = 1.0})
     dq: usize, dr: usize = sink_divmod(100, 7)
+    pd: Padded = sink_padded(Padded {a = 1, b = 2})
     if sm.v != 7 || sp.a != 9 || sp.b != 4 || sv.x != 2.0 || sv.y != 3.0 ||
-       sv.z != 4.0 || dq != 15 || dr != 3 {
+       sv.z != 4.0 || dq != 15 || dr != 3 || pd.a != 2 || pd.b != 4 {
         return 101
     }
     s: Small = Small {v = 1}

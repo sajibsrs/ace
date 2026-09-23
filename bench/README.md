@@ -572,26 +572,32 @@ inliner, not the comparison target. The C function-value slot is `volatile` so
 the indirect call survives.
 
 Ace release against noinline C `-O2` in ns/op, after constant, parameter, and
-float-accumulator promotion and register returns:
+float-accumulator promotion, register returns, and small struct locals in
+registers:
 
 | workload | Ace | C noinline | Ace/C | Ace before promotion |
 |---|---|---|---|---|
-| `call-1` | 2.90 | 2.88 | 1.00x | 5.72 |
-| `call-4` | 3.65 | 3.41 | 1.07x | 5.61 |
-| `call-8` | 4.16 | 4.34 | 0.96x | 4.93 |
-| `fib-recursive` | 2.05 | 1.23 | 1.66x | |
-| `struct-8` | 3.85 | 2.40 | 1.60x | |
-| `struct-16` | 2.42 | 2.40 | 1.00x | |
-| `struct-24` | 6.92 | 10.71 | 0.65x | |
-| `struct-64` | 15.52 | 14.37 | 1.08x | |
-| `struct-hfa` | 4.92 | 1.44 | 3.41x | |
-| `float-acc` | 2.40 | 1.44 | 1.67x | |
-| `tuple-return` | 11.53 | 7.21 | 1.60x | |
-| `method` | 2.08 | 3.85 | 0.54x | |
-| `function-value` | 3.61 | 2.88 | 1.25x | 6.02 |
+| `call-1` | 2.90 | 2.90 | 1.00x | 5.72 |
+| `call-4` | 3.67 | 3.42 | 1.07x | 5.61 |
+| `call-8` | 4.19 | 4.35 | 0.96x | 4.93 |
+| `fib-recursive` | 2.05 | 1.16 | 1.76x | |
+| `struct-8` | 2.91 | 2.41 | 1.21x | |
+| `struct-16` | 2.62 | 2.40 | 1.09x | |
+| `struct-24` | 6.47 | 10.74 | 0.60x | |
+| `struct-64` | 15.50 | 14.36 | 1.08x | |
+| `struct-hfa` | 4.43 | 1.44 | 3.07x | |
+| `float-acc` | 2.41 | 1.44 | 1.67x | |
+| `tuple-return` | 11.58 | 7.23 | 1.60x | |
+| `method` | 1.44 | 3.87 | 0.37x | |
+| `function-value` | 3.38 | 2.89 | 1.17x | |
 
-The largest remaining gaps are the float aggregate, the tuple return, and the
-8-byte struct; the method and the 24-byte struct beat noinline C.
+The largest remaining gaps are the float aggregate, recursive `fib`, the float
+accumulator, and the tuple return; the method and the 24-byte struct beat
+noinline C. With `pair` and `acc` in registers, the `struct-8`, `struct-16`,
+and `struct-hfa` callers pass and take their fields by register moves alone
+(3.85, 2.42, and 4.92 ns before). `struct-16` still moves between 2.41 and 2.62
+ns with frame layout through the one store left in its loop, the unused loop
+binder, and `struct-hfa`'s remaining cost is in its callee.
 
 `call-1` and `fib` measure different things. `fib` is throughput-bound: its
 calls overlap in the out-of-order core, so 2 ns per call is a throughput
@@ -862,6 +868,31 @@ compare. Instructions retired per looped workload fell from 18.78, 30.43,
 (1.2-2.1%), with every checksum matching C; the whole bench retires 2.44
 billion against C's 1.02 (2.39x, from 2.43x). Cycles fell 1.3%, 0.3%, 0.3%,
 and 1.0% over ten interleaved runs.
+
+### Regex after struct locals in registers
+
+Five runs at `c45dd24` plus small struct locals in registers and struct
+literals stored straight into their destination, in `src/emit.c`, medians in
+ns per byte:
+
+| workload | Ace | C | Ace/C | PCRE2 | PCRE2 JIT |
+|---|---|---|---|---|---|
+| `literal` | 32.27 | 11.61 | 2.78x | 1.49 | 0.06 |
+| `word-ing` | 59.90 | 27.64 | 2.17x | 49.86 | 5.48 |
+| `captures` | 68.08 | 32.42 | 2.10x | 12.32 | 3.54 |
+| `pathological` | 184.74 | 75.38 | 2.45x | 11835.18 | 943.02 |
+
+Ace spreads were 3.4-4.9 ns except `pathological` at 7.2, so the ten
+interleaved harness runs carry the comparison. `Matcher.add` pops a frame by
+loading each field into its register at its width and pushes one by storing
+each field into the element, where it used to build the literal in a temp with
+4-byte stores, copy it in 8-byte words, and copy the popped element to a slot
+before reading its fields. Instructions retired per looped workload fell from
+18.48, 29.89, 34.11, and 13.37 billion to 17.88, 28.99, 32.96, and 12.99 in row
+order (2.9-3.4%), with every checksum matching C; the whole bench retires 2.37
+billion against C's 1.02 (2.31x, from 2.39x). Cycles fell 2.1%, 0.4%, and
+7.0% on the first three rows with `pathological` 0.2% up (3.0% down for the
+whole bench), and 0.5%, 0.9%, 6.9%, and 0.1% (3.5%) in a second round.
 
 ## Compile time
 

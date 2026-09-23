@@ -586,6 +586,34 @@ current normative rules, and Git preserves patch-level detail.
   ten interleaved runs; `calls` and `cpu` are unchanged. Settling the last
   operand through a branch too measured no better; a by-hand nested-`if`
   rewrite stays about two points faster in cycles, unexplained.
+- A single-binder local of a struct with at most four direct scalar fields
+  and no padding (not packed or over-aligned) lives in registers field by
+  field. Each field gets a placeholder binder that competes for a register as
+  a scalar local does (`split_add` in `promo_scan`), so live intervals, call
+  crossing, and the `emit_call` x9-x14 check apply per field; a field that
+  loses stays in the struct's slot, allocated only then. A field read or
+  write uses its register (`split_reg`, read in place by `src_reg`). Whole
+  assignments go field by field (`split_write`): a literal evaluates every
+  value before writing any, a copy from another such local reads all fields
+  first since the two may share registers, and any other source loads each
+  field at its own width from its address; a store to a place is one store
+  per field (`split_store_at`). Passed by value, returned, or assigned from a
+  register-returned call, the fields move straight between their registers
+  and the argument or result registers, packed with `bfi` and split with
+  `ubfx` (`split_unit`, and `split_take` through the call sink). Any other
+  use keeps the struct whole in its slot: an address, `mut`, a method
+  receiver, a field used as a place, `==`, a deferred argument, or passing a
+  struct the ABI sends by address (over 16 bytes, not an HFA), which as
+  fields would be copied to a temp at every call. `place = T{...}` of such a
+  type stores each evaluated field straight into the place instead of
+  building a temp and copying it (`lit_store_at`). The `pkg/regex` matcher
+  now loads each popped frame field at its width and stores each pushed
+  field. The regex bench retires 2.9-3.4% fewer instructions per workload
+  and spends 7% fewer cycles on `captures` and 3.0-3.5% for the whole bench
+  over two interleaved rounds (`pathological` flat); `calls` retires 2.3%
+  fewer and spends 3.6% fewer cycles, with `struct-8` at 1.20x noinline C
+  from 1.70x, `struct-16` 1.00-1.09x from 1.38x, `struct-hfa` 3.06x from
+  3.38x, and `struct-24` unchanged.
 - Implemented `str` character/string operations and explicit
   `str.parse[T]` specializations in pure Ace where practical, with libc float
   conversion isolated in its selected target layer. `char` remains the
