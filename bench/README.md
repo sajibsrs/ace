@@ -39,22 +39,24 @@ measurements, not test-suite thresholds; run several times on an idle machine.
 
 ### Current baseline
 
-Five consecutive `./bench/run-string.sh` runs on the reference Apple-arm64
-machine at `bf3fc42` (warm binaries, Ace release against C `-O2`). Each cell is
-the median; the range is the smallest to largest Ace/C over the five runs. Every
-parse checksum matched.
+Five consecutive runs of the Ace side of `./bench/run-string.sh` on the
+reference Apple-arm64 machine at `22fdbed` (warm binaries, Ace release against
+C `-O2`). C was not rerun: its column is the `bf3fc42` median, steady across
+every checkpoint that recorded it, and each ratio divides by it. Each Ace cell
+is the median; the range is the smallest to largest Ace/C over the five runs.
+The last column is the Ace median at `bf3fc42`, the previous baseline.
 
-| workload | Ace ns | C ns | Ace/C | range | C baseline |
-|---|---|---|---|---|---|
-| `compare-64` | 6.73 | 3.84 | 1.75x | 1.71–1.75x | `memcmp` |
-| `compare-4096` | 105.57 | 158.82 | 0.66x | 0.66–0.67x | `memcmp` |
-| `copy-64` | 6.08 | 3.38 | 1.80x | 1.65–1.83x | `memcpy` |
-| `copy-4096` | 79.93 | 74.07 | 1.08x | 1.03–1.11x | `memcpy` |
-| `find-4096` | 1,186.88 | 2,002.36 | 0.59x | 0.59x | `strstr` ¹ |
-| `parse-f64-short` | 46.05 | 26.70 | 1.72x | 1.72–1.74x | `strtod` |
-| `parse-f64-long` | 68.18 | 31.50 | 2.16x | 2.11–2.33x | `strtod` |
-| `parse-f64` | 51.77 | 27.92 | 1.85x | 1.80–1.91x | `strtod` |
-| `format-f64-shortest` | 224.83 | 801.82 | 0.28x | 0.28x | `snprintf("%.17g")` ² |
+| workload | Ace ns | C ns | Ace/C | range | C baseline | `bf3fc42` |
+|---|---|---|---|---|---|---|
+| `compare-64` | 6.72 | 3.84 | 1.75x | 1.70–1.75x | `memcmp` | 6.73 |
+| `compare-4096` | 104.68 | 158.82 | 0.66x | 0.66–0.67x | `memcmp` | 105.57 |
+| `copy-64` | 5.75 | 3.38 | 1.70x | 1.69–1.70x | `memcpy` | 6.08 |
+| `copy-4096` | 78.92 | 74.07 | 1.07x | 1.06–1.07x | `memcpy` | 79.93 |
+| `find-4096` | 1,014.88 | 2,002.36 | 0.51x | 0.51x | `strstr` ¹ | 1,186.88 |
+| `parse-f64-short` | 36.31 | 26.70 | 1.36x | 1.34–1.39x | `strtod` | 46.05 |
+| `parse-f64-long` | 54.35 | 31.50 | 1.73x | 1.68–1.76x | `strtod` | 68.18 |
+| `parse-f64` | 40.90 | 27.92 | 1.46x | 1.44–1.50x | `strtod` | 51.77 |
+| `format-f64-shortest` | 153.38 | 801.82 | 0.19x | 0.19–0.20x | `snprintf("%.17g")` ² | 224.83 |
 
 ¹ `strstr` scans a NUL-terminated string and has no length, so the ratio shows
 Ace's word-at-a-time search against a different contract, not parity with a
@@ -708,25 +710,27 @@ point without `-ffast-math`.
 
 ### Current hot-loop baseline
 
-Five runs on the reference Apple-arm64 machine at `bf3fc42`, medians in ns per
-element. `Ace/C` is against scalar C, the comparison target; `Ace/vector` is
-against auto-vectorized C, the ceiling explicit `simd` would chase:
+Five runs of the Ace side on the reference Apple-arm64 machine at `22fdbed`,
+medians in ns per element; both C columns are the `bf3fc42` medians, not rerun.
+`Ace/C` is against scalar C, the comparison target; `Ace/vector` is against
+auto-vectorized C, the ceiling explicit `simd` would chase. The last column is
+the Ace median at `bf3fc42`, the previous baseline:
 
-| workload | Ace | C scalar | Ace/C | C vector | Ace/vector |
-|---|---|---|---|---|---|
-| `saxpy-f64` | 0.962 | 0.483 | 1.99x | 0.181 | 5.31x |
-| `saxpy-f32` | 0.962 | 0.483 | 1.99x | 0.092 | 10.46x |
-| `dot-f64` | 1.277 | 1.642 | 0.78x | 1.068 | 1.20x |
-| `particle-vec3` | 2.735 | 0.731 | 3.74x | 0.272 | 10.05x |
-| `length-vec3` | 2.556 | 1.650 | 1.55x | 1.104 | 2.31x |
+| workload | Ace | C scalar | Ace/C | C vector | Ace/vector | `bf3fc42` |
+|---|---|---|---|---|---|---|
+| `saxpy-f64` | 0.966 | 0.483 | 2.00x | 0.181 | 5.34x | 0.962 |
+| `saxpy-f32` | 0.965 | 0.483 | 2.00x | 0.092 | 10.49x | 0.962 |
+| `dot-f64` | 1.303 | 1.642 | 0.79x | 1.068 | 1.22x | 1.277 |
+| `particle-vec3` | 2.648 | 0.731 | 3.62x | 0.272 | 9.74x | 2.735 |
+| `length-vec3` | 2.363 | 1.650 | 1.43x | 1.104 | 2.14x | 2.556 ³ |
 
-`length-vec3` was added with `math.sqrt` on the same machine (five runs, spread
-under 0.003 ns for Ace); it has no `bf3fc42` measurement, and its row is the
-inline `fsqrt`, not a call.
+³ Measured when `length-vec3` was added, just after `bf3fc42`.
 
-The first baseline (`283dc4f`: 0.964, 0.965, 1.280, and 2.744 ns for the four
-rows in order) is within 0.01 ns of these on every row, which is run-to-run
-noise, not a change. Spreads were under 0.005 ns within each build. `dot-f64` is the one kernel where
+`length-vec3`'s row is the inline `fsqrt` of `math.sqrt`, not a call.
+
+The first baseline (`283dc4f`: 0.964, 0.965, 1.280, and 2.744 ns for the first
+four rows) is within 0.01 ns of `bf3fc42` on every row. Spreads were under
+0.01 ns within each build. `dot-f64` is the one kernel where
 neither compiler can vectorize and both are bound by the accumulator's
 dependency chain; Ace leads it. The `saxpy` pair reproduces the ad-hoc figures
 `TODO.md` records for this gap. `particle-vec3` is the widest: binding
