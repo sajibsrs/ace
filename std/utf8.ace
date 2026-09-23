@@ -27,9 +27,7 @@ pub width(value: u32): usize {
  */
 pub encode(value: u32, destination: mut []char): (usize, bool) {
     n: usize = width(value)
-
     if n == 0 || destination.len < n { return 0, false }
-
     if n == 1 {
         destination[0] = u8(value)
     } else if n == 2 {
@@ -45,6 +43,7 @@ pub encode(value: u32, destination: mut []char): (usize, bool) {
         destination[2] = u8(0x80 | ((value >> 6) & 0x3F))
         destination[3] = u8(0x80 | (value & 0x3F))
     }
+
     return n, true
 }
 
@@ -112,8 +111,8 @@ pub is_valid(text: string): bool {
 
     for at < text.len {
         _: u32, n: usize, ok: bool = decode(text, at)
-
         if !ok { return false }
+
         at += n
     }
     return true

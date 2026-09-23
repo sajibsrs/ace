@@ -209,17 +209,16 @@ pub Syntax::parse(pattern: string): (Syntax, Error, usize) {
     }
     defer mut p.stack.wipe()
     root: u32, err: Error = mut p.parse_alt(0)
-
     if err == null && p.at < p.text.len {
         err = ParseErr.unexpected_paren
     }
-
     if err != null {
         mut p.nodes.wipe()
         mut p.children.wipe()
         mut p.classes.wipe()
         return blank(Syntax), err, p.at
     }
+
     return Syntax{nodes = p.nodes, children = p.children, classes = p.classes, root = root, groups = p.groups}, null, 0
 }
 
@@ -251,20 +250,20 @@ pub Syntax.format(destination: mut []char): (usize, bool) {
 mut Parser.add(node: Node): (u32, Error) {
     index: u32 = u32(self.nodes.len)
     err: Error = mut self.nodes.push(node)
-
     if err != null {
         return 0, ParseErr.allocation
     }
+
     return index, null
 }
 
 mut Parser.add_class(set: Class): (u32, Error) {
     index: u32 = u32(self.classes.len)
     err: Error = mut self.classes.push(set)
-
     if err != null {
         return 0, ParseErr.allocation
     }
+
     result: u32, add_err: Error = mut self.add(Node.class(index))
     return result, add_err
 }
@@ -290,7 +289,6 @@ mut Parser.collect(base: usize, alternate: bool): (u32, Error) {
 
     for i: usize in base .. self.stack.len {
         err: Error = mut self.children.push(self.stack.get(i))
-
         if err != null {
             return 0, ParseErr.allocation
         }
@@ -312,12 +310,11 @@ mut Parser.parse_alt(depth: usize): (u32, Error) {
 
     for {
         branch: u32, err: Error = mut self.parse_concat(depth)
-
         if err != null {
             return 0, err
         }
-        err = mut self.stack.push(branch)
 
+        err = mut self.stack.push(branch)
         if err != null {
             return 0, ParseErr.allocation
         }
@@ -337,12 +334,11 @@ mut Parser.parse_concat(depth: usize): (u32, Error) {
 
     for self.at < self.text.len && self.text[self.at] != '|' && self.text[self.at] != ')' {
         item: u32, err: Error = mut self.parse_repeat(depth)
-
         if err != null {
             return 0, err
         }
-        err = mut self.stack.push(item)
 
+        err = mut self.stack.push(item)
         if err != null {
             return 0, ParseErr.allocation
         }
@@ -359,7 +355,6 @@ mut Parser.parse_repeat(depth: usize): (u32, Error) {
         return 0, ParseErr.missing_operand
     }
     atom: u32, err: Error = mut self.parse_atom(depth)
-
     if err != null {
         return 0, err
     }
@@ -368,10 +363,10 @@ mut Parser.parse_repeat(depth: usize): (u32, Error) {
         return atom, null
     }
     min: u32, max: u32, count_err: Error = mut self.parse_quantifier()
-
     if count_err != null {
         return 0, count_err
     }
+
     greedy: bool = true
 
     if self.at < self.text.len && self.text[self.at] == '?' {
@@ -426,10 +421,10 @@ mut Parser.parse_count(): (u32, bool) {
         self.at += 1
     }
     value: uint, ok: bool = str.parse[uint](self.text[start..self.at])
-
     if !ok || value > MAX_REPEAT {
         return 0, false
     }
+
     return u32(value), true
 }
 
@@ -488,7 +483,6 @@ mut Parser.parse_group(depth: usize): (u32, Error) {
         index = self.groups
     }
     child: u32, err: Error = mut self.parse_alt(depth + 1)
-
     if err != null {
         return 0, err
     }
@@ -518,15 +512,14 @@ mut Parser.parse_escape(): (u32, Error) {
         return result, err
     }
     byte: u8, set: Class, is_set: bool, err: Error = mut self.parse_item()
-
     if err != null {
         return 0, err
     }
-
     if is_set {
         result: u32, add_err: Error = mut self.add_class(set)
         return result, add_err
     }
+
     result: u32, add_err: Error = mut self.add(Node.byte(byte))
     return result, add_err
 }
@@ -557,25 +550,22 @@ mut Parser.parse_class(): (u32, Error) {
         }
         start: usize = self.at
         lo: u8, set: Class, is_set: bool, err: Error = mut self.parse_item()
-
         if err != null {
             return 0, err
         }
-
         if is_set {
             mut members.add(set)
             continue
         }
+
         hi: u8 = lo
 
         if self.at + 1 < self.text.len && self.text[self.at] == '-' && self.text[self.at + 1] != ']' {
             self.at += 1
             hi, set, is_set, err = mut self.parse_item()
-
             if err != null {
                 return 0, err
             }
-
             if is_set || hi < lo {
                 self.at = start
                 return 0, ParseErr.invalid_range
@@ -610,7 +600,6 @@ mut Parser.parse_item(): (u8, Class, bool, Error) {
     letter: u8 = self.text[self.at]
     self.at += 1
     set: Class, ok: bool = perl_class(letter)
-
     if ok {
         return 0, set, true, null
     }
@@ -622,7 +611,6 @@ mut Parser.parse_item(): (u8, Class, bool, Error) {
         'x' {
             if self.at + 2 <= self.text.len {
                 value: uint, hex: bool = str.parse[uint](self.text[self.at..self.at + 2], u8(16))
-
                 if hex {
                     self.at += 2
                     return u8(value), blank(Class), false, null

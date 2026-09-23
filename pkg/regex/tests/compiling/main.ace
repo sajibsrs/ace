@@ -6,10 +6,10 @@ import regex
 compile(pattern: string): (regex.Program, Error) {
     s: regex.Syntax, err: Error, at: usize = regex.Syntax::parse(pattern)
     defer mut s.wipe()
-
     if err != null {
         return blank(regex.Program), err
     }
+
     p: regex.Program, cerr: Error = regex.Program::compile(s)
     return p, cerr
 }
@@ -18,16 +18,15 @@ compile(pattern: string): (regex.Program, Error) {
 program(pattern: string, want: string): int {
     p: regex.Program, err: Error = compile(pattern)
     defer mut p.wipe()
-
     if err != null {
         fmt.print(pattern)
         fmt.print(": ")
         fmt.println(err.message)
         return 1
     }
+
     buffer: [1024]u8
     n: usize, ok: bool = p.format(mut buffer[0..1024])
-
     if !ok || !mem.equal(buffer[0..n], want) {
         fmt.print(pattern)
         fmt.println(": got")
@@ -36,13 +35,13 @@ program(pattern: string, want: string): int {
         fmt.print(want)
         return 1
     }
+
     return 0
 }
 
 fails(pattern: string, want: Error): int {
     p: regex.Program, err: Error = compile(pattern)
     defer mut p.wipe()
-
     if err != want {
         fmt.print(pattern)
         fmt.print(": got ")
@@ -51,6 +50,7 @@ fails(pattern: string, want: Error): int {
         fmt.println(want.name)
         return 1
     }
+
     return 0
 }
 
@@ -85,26 +85,26 @@ limits(): int {
     bad += fails("((a{1000}){1000}){1000}", regex.CompileErr.too_large)
     p: regex.Program, err: Error = compile("(?:a{1000}){65}")
     defer mut p.wipe()
-
     if err != null || p.insts.len != 65003 {
         fmt.println("(?:a{1000}){65} should compile to 65003 instructions")
         bad += 1
     }
+
     q: regex.Program, qerr: Error = compile("(a)(b(c))")
     defer mut q.wipe()
-
     if qerr != null || q.slots != 8 {
         fmt.println("(a)(b(c)) should have 8 capture slots")
         bad += 1
     }
+
     return bad
 }
 
 main(): int {
     bad: int = basics() + repetition() + limits()
-
     if bad != 0 {
         return 1
     }
+
     return 0
 }

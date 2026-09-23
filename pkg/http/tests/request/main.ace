@@ -192,5 +192,6 @@ main(): int {
     small: [4]u8 = [7 : 4]
     count, err = response.format(mut small[..])
     if count != 0 || err == null || small[0] != 7 || small[3] != 7 { return 9 }
+
     return 0
 }

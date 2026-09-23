@@ -353,12 +353,12 @@ pub binary64(text: string): (f64, bool) {
         }
     }
     value: Decimal = decimal(text)
-
     if value.digits == 0 || value.digits + value.exponent10 < -350 { return bits.to_float(sign), true }
     if value.digits + value.exponent10 > 310 ||
        compare_binary(value, u64(0x3FFFFFFFFFFFFF), 970) >= 0 {
         return 0.0, false
     }
+
     low: u64 = 0
     high: u64 = u64(0x7FEFFFFFFFFFFFFF)
 
@@ -377,7 +377,6 @@ pub binary64(text: string): (f64, bool) {
     if compare_binary(value, mantissa, exponent2) != 0 {
         upper: u64 = low + 1
         midpoint: int = midpoint64(value, upper)
-
         if midpoint > 0 || (midpoint == 0 && (upper & 1) == 0) { low = upper }
     }
     return bits.to_float(sign | low), true
@@ -416,18 +415,18 @@ pub binary32(text: string): (f32, bool) {
 
         if handled {
             raw: u32 = u32(wide_raw)
-
             if raw == u32(0x7F800000) { return 0.0, false }
+
             return bits.to_float(sign | raw), true
         }
     }
     value: Decimal = decimal(text)
-
     if value.digits == 0 || value.digits + value.exponent10 < -60 { return bits.to_float(sign), true }
     if value.digits + value.exponent10 > 50 ||
        compare_binary(value, u64(0x1FFFFFF), 103) >= 0 {
         return 0.0, false
     }
+
     low: u32 = 0
     high: u32 = u32(0x7F7FFFFF)
 
@@ -446,7 +445,6 @@ pub binary32(text: string): (f32, bool) {
     if compare_binary(value, mantissa, exponent2) != 0 {
         upper: u32 = low + 1
         midpoint: int = midpoint32(value, upper)
-
         if midpoint > 0 || (midpoint == 0 && (upper & 1) == 0) { low = upper }
     }
     return bits.to_float(sign | low), true

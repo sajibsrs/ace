@@ -1046,6 +1046,13 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Significant implementation corrections
 
+- Added `.acefmt` `result-group = adjacent` and `after-result-group = always`:
+  a statement binding a call's result, its `defer`, and the checks of that
+  result form one group with no blank line inside, even before a multi-line
+  check body, and a blank line follows the group unless its block closes.
+  Applied across `std/`, `pkg/`, `demo/`, and `bench/`; `file.read` now
+  places its descriptor `defer` before the check, as the `AGENTS.md` release
+  rule requires.
 - Extended global constant emission to carry pointer relocations recursively
   through arrays, structs, repeated elements, aliases, and union payloads, so
   string-bearing aggregates remain static data without runtime initialization.

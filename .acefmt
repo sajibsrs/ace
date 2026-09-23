@@ -31,6 +31,8 @@ declaration-group = preserve
 nested-first-body = never
 after-closing-brace = only-before-next-body
 inside-if-chain = never
+result-group = adjacent
+after-result-group = always
 
 [braces]
 space-before-open = always

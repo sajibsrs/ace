@@ -74,10 +74,10 @@ tree(): int {
     p: json.Parser = json.Parser::new()
     defer mut p.wipe()
     root: json.Json, perr: Error = mut p.parse(text)
-
     if perr != null {
         return 31
     }
+
     f: json.Formatter = json.Formatter::new()
     defer mut f.wipe()
     mut f.value(root)
@@ -164,6 +164,7 @@ failures(): int {
     mut f.value("again")
     text, err = f.finish()
     if err != json.FormatErr.number { return 61 }
+
     return 0
 }
 
@@ -181,14 +182,13 @@ growth(): int {
     }
     mut f.end()
     text: string, err: Error = f.finish()
-
     if err != null || text.len < 100000 {
         return 71
     }
+
     p: json.Parser = json.Parser::new()
     defer mut p.wipe()
     root: json.Json, perr: Error = mut p.parse(text)
-
     if perr != null {
         return 72
     }
@@ -239,6 +239,7 @@ reuse(): int {
     mut f.value(2)
     text, err = f.finish()
     if err != json.FormatErr.structure { return 82 }
+
     return 0
 }
 
@@ -269,19 +270,27 @@ runtime(): int {
 main(): int {
     result: int = fields()
     if result != 0 { return result }
+
     result = nesting()
     if result != 0 { return result }
+
     result = scalar_root()
     if result != 0 { return result }
+
     result = tree()
     if result != 0 { return result }
+
     result = failures()
     if result != 0 { return result }
+
     result = growth()
     if result != 0 { return result }
+
     result = reuse()
     if result != 0 { return result }
+
     result = runtime()
     if result != 0 { return result }
+
     return escapes()
 }

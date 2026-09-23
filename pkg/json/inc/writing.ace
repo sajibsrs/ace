@@ -148,17 +148,16 @@ pub mut Formatter.key(name: string) {
 
 pub mut Formatter.none() {
     ok: bool = mut self.open_value()
-
     if !ok {
         return
     }
+
     mut self.put("null")
     mut self.close_value()
 }
 
 pub mut Formatter.value(flag: bool) {
     ok: bool = mut self.open_value()
-
     if !ok {
         return
     }
@@ -173,30 +172,30 @@ pub mut Formatter.value(flag: bool) {
 
 pub mut Formatter.value(number: int) {
     ok: bool = mut self.open_number()
-
     if !ok {
         return
     }
+
     n: usize, fit: bool = str.format(self.buffer[self.at..], number)
     mut self.advance(n, fit)
 }
 
 pub mut Formatter.value(number: uint) {
     ok: bool = mut self.open_number()
-
     if !ok {
         return
     }
+
     n: usize, fit: bool = str.format(self.buffer[self.at..], number)
     mut self.advance(n, fit)
 }
 
 pub mut Formatter.value(number: usize) {
     ok: bool = mut self.open_number()
-
     if !ok {
         return
     }
+
     n: usize, fit: bool = str.format(self.buffer[self.at..], number)
     mut self.advance(n, fit)
 }
@@ -210,20 +209,20 @@ pub mut Formatter.value(number: f64) {
         return
     }
     ok: bool = mut self.open_number()
-
     if !ok {
         return
     }
+
     n: usize, fit: bool = str.format(self.buffer[self.at..], number)
     mut self.advance(n, fit)
 }
 
 pub mut Formatter.value(text: string) {
     ok: bool = mut self.open_value()
-
     if !ok {
         return
     }
+
     mut self.quote(text)
     mut self.close_value()
 }
@@ -318,7 +317,6 @@ Formatter.inside_object(): bool {
 
 mut Formatter.open(object: bool) {
     ok: bool = mut self.open_value()
-
     if !ok {
         return
     }
@@ -380,10 +378,10 @@ mut Formatter.open_value(): bool {
  */
 mut Formatter.open_number(): bool {
     ok: bool = mut self.open_value()
-
     if !ok {
         return false
     }
+
     return mut self.reserve(NUMBER_MAX)
 }
 
@@ -417,11 +415,11 @@ mut Formatter.reserve(extra: usize): bool {
         need = MIN_BUFFER
     }
     grown: mut []u8, ok: bool = mem.grow[u8](self.buffer, need)
-
     if !ok {
         mut self.fail(FormatErr.allocation)
         return false
     }
+
     self.buffer = grown
     return true
 }
@@ -434,7 +432,6 @@ mut Formatter.quote(text: string) {
 
     for i: usize in 0 .. text.len {
         n: usize = escape(text[i], mut spelling[..])
-
         if n != 0 {
             mut self.put(text[start..i])
             mut self.put(spelling[0..n])
@@ -486,10 +483,10 @@ mut Formatter.put(byte: u8) {
         return
     }
     ok: bool = mut self.reserve(1)
-
     if !ok {
         return
     }
+
     self.buffer[self.at] = byte
     self.at += 1
 }
@@ -499,10 +496,10 @@ mut Formatter.put(text: string) {
         return
     }
     ok: bool = mut self.reserve(text.len)
-
     if !ok {
         return
     }
+
     mem.copy(self.buffer[self.at..self.at + text.len], text)
     self.at += text.len
 }

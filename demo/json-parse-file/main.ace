@@ -74,19 +74,19 @@ show(value: json.Json, depth: usize) {
 main(): int {
     data: mut []u8, rerr: Error = file.read(PATH)
     defer mem.release[u8](mut data)
-
     if rerr != null {
         fmt.printf("failed to read %s: %s\n", PATH, rerr.message)
         return 1
     }
+
     parser: json.Parser = json.Parser::new()
     defer mut parser.wipe()
     root: json.Json, perr: Error = mut parser.parse(data)
-
     if perr != null {
         fmt.printf("failed to parse %s: error %d\n", PATH, int(perr.code))
         return 1
     }
+
     show(root, 0)
     return 0
 }

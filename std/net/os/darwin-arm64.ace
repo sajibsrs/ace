@@ -230,8 +230,8 @@ pub socket(socket_type: SocketType): (Socket, Error) {
         return Socket(-1), SocketErr.invalid
     }
     raw: i32 = c_socket(AF_INET, SOCK_STREAM, 0)
-
     if raw == -1 { return Socket(-1), SocketErr(sys.errno()) }
+
     return Socket(raw), null
 }
 
@@ -258,7 +258,6 @@ pub reuse_port(sock: Socket, enabled: bool): Error {
 
 pub nonblock(sock: Socket, enabled: bool): Error {
     flags: i32 = c_fcntl(i32(sock), F_GETFL)
-
     if flags == -1 { return NonblockErr(sys.errno()) }
 
     if enabled {
@@ -298,8 +297,8 @@ pub accept(listener: Socket): (Socket, Addr4, Error) {
     }
     length: u32 = SOCKADDR4_SIZE
     accepted: i32 = c_accept(i32(listener), mut &raw, mut &length)
-
     if accepted == -1 { return Socket(-1), blank(Addr4), AcceptErr(sys.errno()) }
+
     return Socket(accepted), from_darwin(raw), null
 }
 
@@ -339,16 +338,16 @@ pub local(sock: Socket): (Addr4, Error) {
 pub receive(sock: Socket, buffer: mut []u8): (int, Error) {
     if buffer.len == 0 { return 0, null }
     count: i64 = c_recv(i32(sock), mut &buffer[0], buffer.len, 0)
-
     if count < 0 { return 0, ReceiveErr(sys.errno()) }
+
     return int(count), null
 }
 
 pub send(sock: Socket, data: []u8): (int, Error) {
     if data.len == 0 { return 0, null }
     count: i64 = c_send(i32(sock), &data[0], data.len, MSG_NOSIGNAL)
-
     if count < 0 { return 0, SendErr(sys.errno()) }
+
     return int(count), null
 }
 
@@ -378,7 +377,6 @@ pub resolve4(host: string, port: u16, addresses: mut []Addr4): (usize, Error) {
     result: *DarwinAddrInfo = null
 
     status: i32 = c_getaddrinfo(&name[0], null, &hints, mut &result)
-
     if status != 0 || result == null {
         if status == 0 { status = ResolveErr.invalid.code }
         return usize(0), ResolveErr(status)

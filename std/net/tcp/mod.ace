@@ -68,8 +68,8 @@ with_write(interest: Interest, enabled: bool): Interest {
 
 pub listen(address: net.Addr4, backlog: usize): (Listener, Error) {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
-
     if err != null { return Listener {}, err }
+
     err = net.reuse_addr(sock, true)
     if err == null { err = net.bind(sock, address) }
     if err == null { err = net.listen(sock, backlog) }
@@ -77,30 +77,33 @@ pub listen(address: net.Addr4, backlog: usize): (Listener, Error) {
         sys.close(sock)
         return Listener {}, err
     }
+
     return Listener {socket = sock, active = true}, null
 }
 
 pub connect(address: net.Addr4): (Conn, Error) {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
-
     if err != null { return Conn {}, err }
+
     err = net.connect(sock, address)
     if err != null {
         sys.close(sock)
         return Conn {}, err
     }
+
     return connection(sock, Interest.read), null
 }
 
 pub connect_nonblock(address: net.Addr4): (Conn, Error) {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
-
     if err != null { return Conn {}, err }
+
     err = net.nonblock(sock, true)
     if err != null {
         sys.close(sock)
         return Conn {}, err
     }
+
     connect_attempt: {
         err = net.connect(sock, address)
         if err != null && err.domain == typeid(net.ConnectErr) && err.code == sys.EINTR { continue connect_attempt }
@@ -115,8 +118,8 @@ pub connect_nonblock(address: net.Addr4): (Conn, Error) {
 
 pub listen_nonblock(address: net.Addr4, backlog: usize): (Listener, Error) {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
-
     if err != null { return Listener {}, err }
+
     err = net.nonblock(sock, true)
     if err == null { err = net.reuse_addr(sock, true) }
     if err == null { err = net.bind(sock, address) }
@@ -125,6 +128,7 @@ pub listen_nonblock(address: net.Addr4, backlog: usize): (Listener, Error) {
         sys.close(sock)
         return Listener {}, err
     }
+
     return Listener {socket = sock, active = true}, null
 }
 
@@ -135,20 +139,21 @@ pub local(listener: Listener): (net.Addr4, Error) {
 
 pub accept(listener: Listener): (Conn, net.Addr4, Error) {
     sock: net.Socket, address: net.Addr4, err: Error = net.accept(listener.socket)
-
     if err != null { return Conn {}, address, err }
+
     return connection(sock, Interest.read), address, null
 }
 
 pub accept_nonblock(listener: Listener): (Conn, net.Addr4, Error) {
     sock: net.Socket, address: net.Addr4, err: Error = net.accept(listener.socket)
-
     if err != null { return Conn {}, address, err }
+
     err = net.nonblock(sock, true)
     if err != null {
         sys.close(sock)
         return Conn {}, address, err
     }
+
     return connection(sock, Interest.read), address, null
 }
 
@@ -160,6 +165,7 @@ pub progress_connect(mut conn: Conn): Event {
         conn.interest = Interest.read
         return Event.connected
     }
+
     conn.interest = Interest.none
     return Event.failed(err)
 }
@@ -185,6 +191,7 @@ pub progress_receive(mut conn: Conn, dest: mut []u8): Event {
             conn.interest = Interest.none
             return Event.disconnected
         }
+
         conn.interest = with_read(conn.interest, false)
         return Event.data(usize(count))
     }
@@ -212,6 +219,7 @@ pub progress_send(mut conn: Conn, src: []u8): Event {
             conn.interest = with_write(conn.interest, true)
             return Event.none
         }
+
         conn.send_offset += usize(count)
         if conn.send_offset == src.len {
             conn.send_offset = usize(0)
@@ -233,6 +241,7 @@ pub receive_all(connection: Conn, buffer: mut []u8): (usize, Error) {
             return received, err
         }
         if count == 0 { return received, ReceiveAllErr.incomplete }
+
         received += usize(count)
     }
     return received, null
@@ -249,6 +258,7 @@ pub send_all(connection: Conn, data: []u8): (usize, Error) {
             return sent, err
         }
         if count == 0 { return sent, SendAllErr.stalled }
+
         sent += usize(count)
     }
     return sent, null

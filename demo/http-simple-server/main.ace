@@ -39,5 +39,6 @@ main(): int {
         fmt.printf("failed to start server on %s: error %d\n", endpoint, int(err.code))
         return 1
     }
+
     return 0
 }

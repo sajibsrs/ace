@@ -44,6 +44,7 @@ pub connect_url(parsed: Url, mut storage: Storage, resize: bool): (tcp.Conn, Err
     if resize {
         mem_addresses: mut []net.Addr4, addr_ok: bool = mem.grow[net.Addr4](storage.addresses, 4)
         if !addr_ok { return zero, ClientErr.allocation }
+
         storage.addresses = mem_addresses
     }
 
@@ -83,6 +84,7 @@ pub exchange[C](connection: C,
         if !target_ok {
             return Response{}, ClientErr.allocation
         }
+
         storage.target = mem_target
     }
     target_count: usize, fit: bool = str.concat(target_parts[..], mut storage.target[..])
@@ -106,6 +108,7 @@ pub exchange[C](connection: C,
         if !output_ok {
             return Response{}, ClientErr.allocation
         }
+
         storage.output = mem_output
         output_count, format_err = request.format(mut storage.output[..])
     }
@@ -136,6 +139,7 @@ pub exchange[C](connection: C,
                 if !input_ok {
                     return Response{}, ClientErr.allocation
                 }
+
                 storage.input = mem_input
 
                 /* Header views point into input. Reparse the retained bytes
@@ -152,6 +156,7 @@ pub exchange[C](connection: C,
             if recv_err != null {
                 return Response{}, recv_err
             }
+
             occupied += usize(received)
             eof = received == 0
         }
@@ -179,6 +184,7 @@ pub exchange[C](connection: C,
                     if !headers_ok {
                         return Response{}, ClientErr.allocation
                     }
+
                     storage.headers = mem_headers
                 } else {
                     /* Body size is exact when the response states its length;
@@ -193,6 +199,7 @@ pub exchange[C](connection: C,
                     if !body_ok {
                         return Response{}, ClientErr.allocation
                     }
+
                     storage.body = mem_body
                 }
                 parse_pending = true
@@ -207,9 +214,11 @@ pub exchange[C](connection: C,
 pub get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Error) {
     parsed: Url, url_err: Error = parsing.Url::parse(url, false)
     if url_err != null { return Response{}, url_err }
+
     connection: tcp.Conn, connect_err: Error = connect_url(parsed, mut storage, resize)
     defer tcp.close(mut connection)
     if connect_err != null { return Response{}, connect_err }
+
     response: Response, err: Error = exchange[tcp.Conn](connection,
         tcp.send_all, tcp_receive, parsed, mut storage, resize)
     return response, err

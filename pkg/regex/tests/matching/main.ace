@@ -30,12 +30,12 @@ render(spans: []regex.Span, out: mut []char): usize {
 
 compile(pattern: string): regex.Regex {
     re: regex.Regex, err: Error = regex.Regex::new(pattern)
-
     if err != null {
         fmt.print(pattern)
         fmt.print(": ")
         fmt.println(err.message)
     }
+
     return re
 }
 
@@ -203,7 +203,6 @@ surface(): int {
     bad: int = 0
     re: regex.Regex = compile("(a)(?:b)(c)")
     defer mut re.wipe()
-
     if re.groups() != 2 {
         fmt.println("(a)(?:b)(c) should have 2 groups")
         bad += 1
@@ -279,9 +278,9 @@ counting(): int {
 
 main(): int {
     bad: int = basics() + priority() + anchors() + captures() + iteration() + linear() + surface() + counting()
-
     if bad != 0 {
         return 1
     }
+
     return 0
 }

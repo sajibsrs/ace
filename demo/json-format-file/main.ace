@@ -50,17 +50,17 @@ main(): int {
     }
     mut f.end()
     text: string, ferr: Error = f.finish()
-
     if ferr != null {
         fmt.printf("failed to format: error %d\n", int(ferr.code))
         return 1
     }
-    werr: Error = file.write(PATH, text)
 
+    werr: Error = file.write(PATH, text)
     if werr != null {
         fmt.printf("failed to write %s: %s\n", PATH, werr.message)
         return 1
     }
+
     fmt.printf("wrote %d bytes to %s:\n%s\n", int(text.len), PATH, text)
     return 0
 }

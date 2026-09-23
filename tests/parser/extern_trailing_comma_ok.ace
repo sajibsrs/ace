@@ -1,0 +1,11 @@
+/* A multiline extern parameter list ends with a trailing comma, as every
+ * other delimited list may.
+ */
+
+extern "c" {
+    c_write(
+        fd: i32,
+        data: *u8,
+        count: usize,
+    ): int = "write"
+}

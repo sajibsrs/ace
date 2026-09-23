@@ -241,6 +241,7 @@ pub Url::parse(url: string, secure: bool): (Url, Error) {
         if !parsed || parsed_port > 65535 {
             return blank(Url), UrlErr.invalid
         }
+
         port = u16(parsed_port)
     }
     path: string = "/"
@@ -374,6 +375,7 @@ is_chunk_ext(text: string): bool {
         if at >= text.len || text[at] != 59 {
             return false
         }
+
         at += 1
         at = skip_ows(text, at)
         start: usize = at
@@ -479,6 +481,7 @@ pub mut RequestParser.parse(
                 return self.progress()
             }
             if status == LineStatus.malformed { return mut self.syntax_failure() }
+
             first: usize = self.line_stop
             second: usize = self.line_stop
             for i: usize in self.line_start .. self.line_stop {
@@ -522,6 +525,7 @@ pub mut RequestParser.parse(
                 return self.progress()
             }
             if status == LineStatus.malformed { return mut self.syntax_failure() }
+
             if self.line_stop == self.line_start {
                 mut self.consume_line()
                 if self.framing == RequestFraming.undecided {
@@ -560,6 +564,7 @@ pub mut RequestParser.parse(
                 if self.framing == RequestFraming.chunked { return mut self.framing_failure() }
                 length: usize, valid: bool = str.parse[usize](value)
                 if !valid { return mut self.framing_failure() }
+
                 if self.framing == RequestFraming.content_length &&
                     length != self.content_length { return mut self.framing_failure() }
                 if full { return RequestResult.capacity(RequestCapacity.headers) }
@@ -607,6 +612,7 @@ pub mut RequestParser.parse(
                 return self.progress()
             }
             if status == LineStatus.malformed { return mut self.syntax_failure() }
+
             semicolon: usize = self.line_stop
             for i: usize in self.line_start .. self.line_stop {
                 if input[i] == 59 {
@@ -619,6 +625,7 @@ pub mut RequestParser.parse(
                 !is_chunk_ext(input[semicolon..self.line_stop])) {
                 return mut self.syntax_failure()
             }
+
             self.chunk_remaining = chunk
             mut self.consume_line()
             if chunk == 0 {
@@ -659,6 +666,7 @@ pub mut RequestParser.parse(
             if status == LineStatus.malformed || self.line_stop != self.line_start {
                 return mut self.syntax_failure()
             }
+
             mut self.consume_line()
             self.phase = RequestPhase.chunk_size
             continue parse_loop
@@ -670,6 +678,7 @@ pub mut RequestParser.parse(
                 return self.progress()
             }
             if status == LineStatus.malformed { return mut self.syntax_failure() }
+
             if self.line_stop == self.line_start {
                 mut self.consume_line()
                 self.phase = RequestPhase.complete
@@ -763,6 +772,7 @@ pub mut ResponseParser.parse(
                 return self.progress()
             }
             if line_status == LineStatus.malformed { return mut self.syntax_failure() }
+
             count: usize = self.line_stop - self.line_start
             if count < 12 { return mut self.syntax_failure() }
             start: usize = self.line_start
@@ -803,6 +813,7 @@ pub mut ResponseParser.parse(
                 return self.progress()
             }
             if line_status == LineStatus.malformed { return mut self.syntax_failure() }
+
             if self.line_stop == self.line_start {
                 mut self.consume_line()
                 if self.status >= 100 && self.status < 200 {
@@ -853,6 +864,7 @@ pub mut ResponseParser.parse(
                 if self.framing == ResponseFraming.chunked { return mut self.framing_failure() }
                 length: usize, valid: bool = str.parse[usize](value)
                 if !valid { return mut self.framing_failure() }
+
                 if self.framing == ResponseFraming.content_length &&
                     length != self.content_length { return mut self.framing_failure() }
                 if full { return ResponseResult.capacity(ResponseCapacity.headers) }
@@ -917,6 +929,7 @@ pub mut ResponseParser.parse(
                 return self.progress()
             }
             if line_status == LineStatus.malformed { return mut self.syntax_failure() }
+
             semicolon: usize = self.line_stop
             for i: usize in self.line_start .. self.line_stop {
                 if input[i] == 59 {
@@ -929,6 +942,7 @@ pub mut ResponseParser.parse(
                 !is_chunk_ext(input[semicolon..self.line_stop])) {
                 return mut self.syntax_failure()
             }
+
             self.chunk_remaining = chunk
             mut self.consume_line()
             if chunk == 0 {
@@ -969,6 +983,7 @@ pub mut ResponseParser.parse(
             if line_status == LineStatus.malformed || self.line_stop != self.line_start {
                 return mut self.syntax_failure()
             }
+
             mut self.consume_line()
             self.phase = ResponsePhase.chunk_size
             continue parse_loop
@@ -980,6 +995,7 @@ pub mut ResponseParser.parse(
                 return self.progress()
             }
             if line_status == LineStatus.malformed { return mut self.syntax_failure() }
+
             if self.line_stop == self.line_start {
                 mut self.consume_line()
                 self.phase = ResponsePhase.complete

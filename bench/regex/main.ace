@@ -56,10 +56,10 @@ fill(text: mut []u8) {
 
 compile(pattern: string): regex.Regex {
     re: regex.Regex, err: Error = regex.Regex::new(pattern)
-
     if err != null {
         fmt.println(err.message)
     }
+
     return re
 }
 
@@ -115,10 +115,10 @@ pathological() {
 main(): int {
     text: mut []u8 = mem.alloc[u8](SIZE)
     defer mem.release[u8](mut text)
-
     if text == null {
         return 1
     }
+
     fill(text)
     find_all("literal", "zqxj", string(text))
     find_all("word-ing", "[a-z]+ing", string(text))

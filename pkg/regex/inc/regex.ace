@@ -44,12 +44,13 @@ pub Regex::new(pattern: string): (Regex, Error) {
 
     code: Program, code_err: Error = Program::compile(tree)
     if code_err != null { return blank(Regex), code_err }
-    run: Matcher, run_err: Error = Matcher::new(code)
 
+    run: Matcher, run_err: Error = Matcher::new(code)
     if run_err != null {
         mut code.wipe()
         return blank(Regex), run_err
     }
+
     return Regex{code = code, run = run}, null
 }
 
@@ -114,5 +115,6 @@ pub Regex.span(k: u32): Span {
 pub Regex.group(k: u32): string {
     span: Span = self.span(k)
     if span.start == UNSET { return null }
+
     return self.text[span.start..span.end]
 }

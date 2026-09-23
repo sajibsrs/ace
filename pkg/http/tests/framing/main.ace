@@ -280,13 +280,18 @@ failures(): int {
 main(): int {
     code: int = fragmented_length()
     if code != 0 { return 10 + code }
+
     code = chunked()
     if code != 0 { return 20 + code }
+
     code = informational_and_none()
     if code != 0 { return 30 + code }
+
     code = close_body()
     if code != 0 { return 40 + code }
+
     code = failures()
     if code != 0 { return 50 + code }
+
     return 0
 }

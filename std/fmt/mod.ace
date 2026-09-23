@@ -10,8 +10,8 @@ pub print(text: string): int {
 
     for attempt: int in 0 .. int(text.len) {
         n: int = os.write(&text[total], text.len - usize(total))
-
         if n <= 0 { return n }
+
         total += n
 
         if usize(total) == text.len { return total }
@@ -49,8 +49,8 @@ pub print(value: int): int {
 
     for attempt: int in 0 .. int(size) {
         n: int = os.write(&digits[at + total], size - usize(total))
-
         if n <= 0 { return n }
+
         total += n
 
         if usize(total) == size { return total }
@@ -77,8 +77,8 @@ pub print(value: uint): int {
 
     for attempt: int in 0 .. int(size) {
         n: int = os.write(&digits[at + total], size - usize(total))
-
         if n <= 0 { return n }
+
         total += n
 
         if usize(total) == size { return total }
@@ -105,8 +105,8 @@ pub print(value: usize): int {
 
     for attempt: int in 0 .. int(size) {
         n: int = os.write(&digits[at + total], size - usize(total))
-
         if n <= 0 { return n }
+
         total += n
 
         if usize(total) == size { return total }
@@ -120,8 +120,8 @@ write_bytes(data: []u8): int {
 
     for attempt: int in 0 .. int(data.len) {
         n: int = os.write(&data[total], data.len - usize(total))
-
         if n <= 0 { return n }
+
         total += n
 
         if usize(total) == data.len { return total }
@@ -442,8 +442,8 @@ pub printf(format: string): int { return print_counted[string](format) }
 finish_line(written: int): int {
     if written <= 0 { return written }
     n: int = print("\n")
-
     if n < 0 { return n }
+
     return written + n
 }
 

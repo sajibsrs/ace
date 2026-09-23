@@ -326,6 +326,7 @@ pub pow(x: f64, y: f64): f64 {
         } else {
             done: bool, result: f64, magnitude: i64, sign: u64 = pow_special(x, y)
             if done { return result }
+
             xs = magnitude
             flip = sign
         }
@@ -507,6 +508,7 @@ pub sin(value: f64): f64 {
         return fma(z * value, fma(z, fma(z, fma(z, fma(z, fma(z, SIN_S6, SIN_S5), SIN_S4), SIN_S3),
             SIN_S2), SIN_S1), value)
     }
+
     y0: f64 = 0.0
     y1: f64 = 0.0
     quarter: int = 0
@@ -535,6 +537,7 @@ pub sin(value: f64): f64 {
                 a = r - w
             }
         }
+
         y0 = a
         y1 = (r - a) - w
         quarter = n & 3
@@ -582,6 +585,7 @@ pub cos(value: f64): f64 {
         if magnitude <= 0.78125 { qx = bits.to_float(((bits.from_float(magnitude) >> 32) - u64(0x00200000)) << 32) }
         return (1.0 - qx) - ((0.5 * z - qx) - z * r)
     }
+
     y0: f64 = 0.0
     y1: f64 = 0.0
     quarter: int = 0
@@ -610,6 +614,7 @@ pub cos(value: f64): f64 {
                 a = r - w
             }
         }
+
         y0 = a
         y1 = (r - a) - w
         quarter = n & 3

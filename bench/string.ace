@@ -65,7 +65,6 @@ main(): int {
 
     for i: usize in 0 .. iterations / 32 {
         at: usize, found: bool = str.find(haystack, "xyz")
-
         if found {
             checksum += at + i % 2
         }
@@ -81,7 +80,6 @@ main(): int {
 
     for i: usize in 0 .. float_iterations {
         value: f64, ok: bool = str.parse[f64](decimal_inputs[i % 8])
-
         if ok {
             raw_sum ^= bits.from_float(value) + u64(i)
         }
@@ -98,7 +96,6 @@ main(): int {
 
     for i: usize in 0 .. float_iterations {
         value: f64, ok: bool = str.parse[f64](long_decimal_inputs[i % 8])
-
         if ok {
             raw_sum ^= bits.from_float(value) + u64(i)
         }
@@ -124,7 +121,6 @@ main(): int {
 
     for i: usize in 0 .. float_iterations {
         value: f64, ok: bool = str.parse[f64](blended_decimal_inputs[i % 40])
-
         if ok {
             raw_sum ^= bits.from_float(value) + u64(i)
         }
@@ -141,7 +137,6 @@ main(): int {
 
     for i: usize in 0 .. iterations / 10 {
         count: usize, ok: bool = str.format(view, values[i % 8])
-
         if ok {
             checksum += count + usize(out[0])
         }

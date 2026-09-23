@@ -16,6 +16,7 @@ read_request(connection: tcp.Conn, expected: string): Error {
         count: int, err: Error = net.receive(connection.socket, mut bytes[occupied..])
         if err != null { return err }
         if count == 0 { return http.ClientErr.response }
+
         occupied += usize(count)
         if str.has(bytes[..occupied], "\r\n\r\n") { break }
         if occupied == bytes.len { return http.ClientErr.response }
@@ -33,17 +34,20 @@ read_request(connection: tcp.Conn, expected: string): Error {
     if !fit || !mem.equal(bytes[..first_end], line[..line_count]) {
         return http.ClientErr.response
     }
+
     return null
 }
 
 serve(listener: tcp.Listener, expected: string, response: string): Error {
     connection: tcp.Conn, _: net.Addr4, err: Error = tcp.accept(listener)
     if err != null { return err }
+
     err = read_request(connection, expected)
     if err == null {
         sent: usize
         sent, err = tcp.send_all(connection, response)
     }
+
     close_err: Error = tcp.close(mut connection)
     if err != null { return err }
     return close_err
@@ -53,11 +57,13 @@ client(port: u16): int {
     port_bytes: [8]u8 = [0 : 8]
     port_count: usize, ok: bool = str.format(mut port_bytes[..], uint(port))
     if !ok { return 1 }
+
     parts: [3]string = ["http://127.0.0.1:", port_bytes[..port_count], "/a/b/start"]
     url_bytes: [96]u8 = [0 : 96]
     url_count: usize
     url_count, ok = str.concat(parts[..], mut url_bytes[..])
     if !ok { return 2 }
+
     context: http.ClientContext = http.ClientContext::new()
     defer mut context.wipe()
     context.redirects = http.RedirectPolicy {limit = 10}
@@ -74,6 +80,7 @@ main(): int {
     listener: tcp.Listener, err: Error = tcp.listen(loopback(u16(0)), usize(8))
     defer tcp.close(mut listener)
     if err != null { return 10 }
+
     address: net.Addr4
     address, err = tcp.local(listener)
     if err != null { return 11 }
@@ -99,6 +106,7 @@ main(): int {
     location_count: usize
     location_count, ok = str.concat(location_parts[..], mut scheme_response[at..])
     if !ok { return 13 }
+
     at += location_count
     mem.copy(mut scheme_response[at..at + 21], "Content-Length: 0\r\n\r\n")
     at += 21

@@ -23,6 +23,7 @@ pub Context: struct {
 pub Context::new(): Context {
     storage: mut []Storage = mem.alloc[Storage](1)
     if storage == null { return Context {storage = null, redirects = RedirectPolicy{}} }
+
     storage[0] = Storage {addresses = null, output = null, target = null,
         input = null, headers = null, body = null, url = null}
     return Context {storage = storage, redirects = RedirectPolicy{}}
@@ -51,6 +52,7 @@ redirect_start(url: string, mut storage: Storage): (RedirectState, Error) {
     if !url_ok {
         return RedirectState {current_count = 0, followed = 0}, ClientErr.allocation
     }
+
     storage.url = mem_url
     mem.copy(storage.url[..url.len], url)
     return RedirectState {current_count = url.len, followed = 0}, null
@@ -61,6 +63,7 @@ redirect_next(response: Response, policy: RedirectPolicy,
     if !redirection.is_redirect(response.status) { return false, null }
     location: string = redirection.location(response)
     if location == null || location.len == 0 { return false, null }
+
     needed: usize = state.current_count * 2
     if needed < state.current_count { return false, ClientErr.allocation }
     with_location: usize = needed + location.len
@@ -69,6 +72,7 @@ redirect_next(response: Response, policy: RedirectPolicy,
     if needed < with_location { return false, ClientErr.allocation }
     larger: mut []u8, larger_ok: bool = mem.grow[u8](storage.url, needed)
     if !larger_ok { return false, ClientErr.allocation }
+
     storage.url = larger
     shifted_at: usize = storage.url.len - state.current_count
     for i: usize in 0 .. state.current_count {
@@ -90,6 +94,7 @@ redirect_next(response: Response, policy: RedirectPolicy,
 get_redirecting(url: string, policy: RedirectPolicy, mut context: Context): (Response, Error) {
     state: RedirectState, start_err: Error = redirect_start(url, mut context.storage[0])
     if start_err != null { return Response{}, start_err }
+
     for {
         response: Response, err: Error = transport.get_with_storage(
             context.storage[0].url[..state.current_count], mut context.storage[0], true)
@@ -105,6 +110,7 @@ pub get(url: string, mut context: Context): (Response, Error) {
     if context.storage == null { return Response{}, ClientErr.allocation }
     _: Url, url_err: Error = parsing.Url::parse(url)
     if url_err != null { return Response{}, url_err }
+
     if context.redirects.limit == 0 {
         response: Response, err: Error = transport.get_with_storage(url, mut context.storage[0], true)
         return response, err

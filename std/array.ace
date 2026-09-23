@@ -29,6 +29,7 @@ pub Array[T]::new(capacity: usize): (Array[T], Error) {
     if capacity == 0 { return Array[T]{}, null }
     items: mut []T = mem.alloc[T](capacity)
     if items == null { return Array[T]{}, ArrayErr.allocation }
+
     return Array[T]{items = items, len = 0}, null
 }
 
@@ -58,6 +59,7 @@ pub mut Array[T].set(index: usize, value: T) {
 pub mut Array[T].push(value: T): Error {
     grown: mut []T, ok: bool = mem.grow[T](self.items, self.len + 1)
     if !ok { return ArrayErr.allocation }
+
     self.items = grown
     self.items[self.len] = value
     self.len += 1
@@ -77,6 +79,7 @@ pub mut Array[T].pop(): (T, Error) {
 pub mut Array[T].reserve(count: usize): Error {
     grown: mut []T, ok: bool = mem.grow[T](self.items, count)
     if !ok { return ArrayErr.allocation }
+
     self.items = grown
     return null
 }

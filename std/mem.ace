@@ -75,9 +75,11 @@ pub grow[T](slice: mut []T, needed: usize): (mut []T, bool) {
     if slice == null {
         fresh: mut []T = alloc[T](capacity)
         if fresh == null { return slice, false }
+
         return fresh, true
     }
     bigger: mut []T = realloc[T](slice, capacity)
     if bigger == null { return slice, false }
+
     return bigger, true
 }

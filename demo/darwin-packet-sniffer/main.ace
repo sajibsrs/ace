@@ -77,6 +77,7 @@ main(): int {
         if open_error == null {
             break
         }
+
         last_open_error = open_error
         if open_error.code == sys.EACCES {
             report(paths[i], open_error)
@@ -136,6 +137,7 @@ main(): int {
         sys.close(fd)
         return 1
     }
+
     buffer_length: usize = usize(length_bytes[0]) |
                            (usize(length_bytes[1]) << 8) |
                            (usize(length_bytes[2]) << 16) |
@@ -162,6 +164,7 @@ main(): int {
         if count == 0 {
             continue
         }
+
         bytes: usize = usize(count)
         captured: []u8 = storage[0..bytes]
         if debug {
@@ -186,6 +189,7 @@ main(): int {
                 }
                 break
             }
+
             packet: bpf.Packet, is_ipv4: bool = bpf.decode_ipv4(captured, record)
             if is_ipv4 {
                 print_packet(packet)
@@ -196,6 +200,7 @@ main(): int {
                 }
                 return 0
             }
+
             if debug {
                 fmt.printf("skipped record at byte %u with captured length %u\n", at, record.captured_length)
             }

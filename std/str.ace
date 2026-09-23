@@ -125,7 +125,6 @@ pub split(text: string, separator: string, parts: mut []string): (usize, bool) {
 
     for guard: usize in 0 .. text.len + 1 {
         at: usize, found: bool = index_from(text, separator, cursor)
-
         if !found { break }
 
         if written < parts.len {
@@ -565,10 +564,9 @@ pub parse[int](text: string, radix: u8): (int, bool) {
 
     for i: usize in at .. text.len {
         d: u64, ok: bool = digit_value(text[i])
-
         if !ok || d >= u64(radix) { return 0, false }
-        mag, ok = accumulate(mag, d, radix, limit)
 
+        mag, ok = accumulate(mag, d, radix, limit)
         if !ok { return 0, false }
     }
 
@@ -589,10 +587,9 @@ pub parse[uint](text: string, radix: u8): (uint, bool) {
 
     for i: usize in 0 .. text.len {
         d: u64, ok: bool = digit_value(text[i])
-
         if !ok || d >= u64(radix) { return 0, false }
-        mag, ok = accumulate(mag, d, radix, 18446744073709551615)
 
+        mag, ok = accumulate(mag, d, radix, 18446744073709551615)
         if !ok { return 0, false }
     }
     return uint(mag), true
@@ -601,8 +598,8 @@ pub parse[uint](text: string, radix: u8): (uint, bool) {
 /* usize is u64-wide on the v1 target, so its range matches uint exactly. */
 pub parse[usize](text: string, radix: u8): (usize, bool) {
     v: uint, ok: bool = parse[uint](text, radix)
-
     if !ok { return 0, false }
+
     return usize(v), true
 }
 

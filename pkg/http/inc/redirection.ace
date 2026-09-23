@@ -35,6 +35,7 @@ pub resolve(current: string, location: string, destination: mut []u8): (usize, b
     if absolute {
         _: Url, err: Error = parsing.Url::parse(location)
         if err != null || destination.len < location.len { return 0, false }
+
         mem.copy(destination[..location.len], location)
         return location.len, true
     }
@@ -69,6 +70,7 @@ pub resolve(current: string, location: string, destination: mut []u8): (usize, b
             at += 1
             port_count: usize, port_ok: bool = str.format(mut destination[at..], uint(base.port))
             if !port_ok { return 0, false }
+
             at += port_count
         }
 
@@ -97,6 +99,7 @@ pub resolve(current: string, location: string, destination: mut []u8): (usize, b
 
     _: Url, result_err: Error = parsing.Url::parse(destination[..at])
     if result_err != null { return 0, false }
+
     return at, true
 }
 

@@ -18,24 +18,27 @@ pub FileErr: error {
  */
 pub read(path: string): (mut []u8, Error) {
     fd: sys.Fd, err: Error = sys.open(path, sys.O_RDONLY)
-    if err != null { return null, err }
     defer sys.close(fd)
+    if err != null { return null, err }
+
     info: sys.FileInfo
     info, err = sys.stat(path)
     if err != null { return null, err }
+
     data: mut []u8 = mem.alloc[u8](usize(info.size))
     if data == null && info.size != 0 { return null, FileErr.allocation }
+
     total: usize = 0
 
     for total < data.len {
         count: int, rerr: Error = sys.read(fd, data[total..])
         if rerr == sys.ReadErr.interrupted { continue }
         if rerr == null && count == 0 { rerr = FileErr.truncated }
-
         if rerr != null {
             mem.release[u8](mut data)
             return null, rerr
         }
+
         total += usize(count)
     }
     return data, null
@@ -49,11 +52,11 @@ pub write(path: string, data: []u8): Error {
     mode: u32 = sys.S_IRUSR | sys.S_IWUSR | sys.S_IRGRP | sys.S_IWGRP | sys.S_IROTH | sys.S_IWOTH
     fd: sys.Fd, err: Error = sys.open(path, sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC, mode)
     if err != null { return err }
+
     total: usize = 0
 
     for total < data.len && err == null {
         count: int, werr: Error = sys.write(fd, data[total..])
-
         if werr == null {
             total += usize(count)
         } else if werr != sys.WriteErr.interrupted {

@@ -5,6 +5,7 @@ import net
 main(): int {
     context: http.ClientContext = http.ClientContext::new()
     if context.storage == null { return 98 }
+
     context.redirects = http.RedirectPolicy {limit = 4}
     mut context.wipe()
     if context.storage != null || context.redirects.limit != 0 { return 99 }
@@ -40,22 +41,27 @@ main(): int {
     if !valid || address.ip[0] != 127 || address.ip[3] != 1 || address.port != 8080 {
         return 1
     }
+
     address, valid = net.parse4("256.0.0.1:80")
     if valid || address.port != 0 {
         return 2
     }
+
     address, valid = net.parse4("1.2.3.4:65535")
     if !valid || address.port != 65535 {
         return 21
     }
+
     address, valid = net.parse4("1.2.3:80")
     if valid {
         return 22
     }
+
     address, valid = net.parse4("1.2.3.4:65536")
     if valid {
         return 23
     }
+
     address, valid = net.parse4("1.2.3.4:80x")
     if valid {
         return 24
@@ -67,27 +73,33 @@ main(): int {
         url.port != 8080 {
         return 3
     }
+
     url, err = http.Url::parse("http://127.0.0.1/")
     if err != null || !mem.equal(url.path, "/") || url.query.len != 0 {
         return 31
     }
+
     url, err = http.Url::parse("https://example.com/")
     if err != null || !mem.equal(url.host, "example.com") ||
         !mem.equal(url.path, "/") || url.port != 443 {
         return 32
     }
+
     url, err = http.Url::parse("http://user@example.com/")
     if err == null {
         return 33
     }
+
     url, err = http.Url::parse("http://example.com:65536/")
     if err == null {
         return 34
     }
+
     url, err = http.Url::parse("http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com/")
     if err == null {
         return 35
     }
+
     url, err = http.Url::parse("http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com:65535/")
     if err != null || url.port != 65535 {
         return 36
@@ -118,6 +130,7 @@ main(): int {
         small[0] != 7 || small[3] != 7 {
         return 41
     }
+
     bad_headers: [1]http.Header = [
         http.Header {name = "Bad Name", value = "x"},
     ]
@@ -142,16 +155,19 @@ main(): int {
     if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 200 OK\r\n\r\n") {
         return 44
     }
+
     default_response.status = 404
     written, err = default_response.format(mut output_storage[..])
     if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 404 Not Found\r\n\r\n") {
         return 45
     }
+
     default_response.status = u16(599)
     written, err = default_response.format(mut output_storage[..])
     if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 599 \r\n\r\n") {
         return 46
     }
+
     default_response.status = 200
     default_response.reason = ""
     written, err = default_response.format(mut output_storage[..])

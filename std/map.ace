@@ -108,6 +108,7 @@ pub Map[K, V]::new(capacity: usize): (Map[K, V], Error) {
     if capacity == 0 { return map, null }
     err: Error = mut map.rehash(capacity_for(capacity))
     if err != null { return Map[K, V]{}, err }
+
     return map, null
 }
 
@@ -194,6 +195,7 @@ pub mut Map[K, V].unset(key: K): bool {
 pub mut Map[K, V].reserve(count: usize): Error {
     capacity: usize = capacity_for(count)
     if capacity <= self.slots.len { return null }
+
     return mut self.rehash(capacity)
 }
 

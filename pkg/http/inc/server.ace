@@ -68,6 +68,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
                 if !ok {
                     return Request{method = null, target = null}, false
                 }
+
                 context.input = grown
 
                 /* Header and target views point into input. Reparse the
@@ -86,6 +87,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
             if received == 0 {
                 return Request{method = null, target = null}, false
             }
+
             occupied += usize(received)
         }
         parse_pending = false
@@ -102,6 +104,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
                     if !ok {
                         return Request{method = null, target = null}, false
                     }
+
                     context.headers = grown
                 } else {
                     needed: usize = parser.body_count + (occupied - parser.input_offset)
@@ -114,6 +117,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
                     if !ok {
                         return Request{method = null, target = null}, false
                     }
+
                     context.body = grown
                 }
                 parse_pending = true
@@ -143,6 +147,7 @@ respond_close(conn: tcp.Conn, response: Response, mut context: Context) {
         if !ok {
             return
         }
+
         context.headers = grown
     }
     for i: usize in 0 .. response.headers.len {
@@ -162,6 +167,7 @@ respond_close(conn: tcp.Conn, response: Response, mut context: Context) {
         if !ok {
             return
         }
+
         context.output = grown
         count, format_err = outgoing.format(mut context.output[..])
     }
@@ -179,10 +185,12 @@ serve_one(listener: tcp.Listener, router: Router, mut context: Context) {
     if accept_err != null {
         return
     }
+
     request: Request, ok: bool = read_request(conn, mut context)
     if !ok {
         return
     }
+
     respond_close(conn, router.dispatch(request), mut context)
 }
 
@@ -194,6 +202,7 @@ listen_endpoint(endpoint: string, backlog: usize): (tcp.Listener, Error) {
     if !parsed {
         return tcp.Listener {}, ServerErr.capacity
     }
+
     listener: tcp.Listener, listen_err: Error = tcp.listen(address, backlog)
     return listener, listen_err
 }

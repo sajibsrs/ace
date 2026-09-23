@@ -36,6 +36,7 @@ check(
     count: usize
     count, err = request.format(output)
     if err != null && err.domain != typeid(http.FormatErr) { return 2 }
+
     request_result: http.RequestResult = mut request_parser.parse(
         "GET / HTTP/1.1\r\n\r\n",
         headers,

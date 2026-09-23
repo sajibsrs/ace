@@ -42,6 +42,7 @@ pub decode_record(data: []u8, at: usize): (Record, bool) {
     if header < 18 {
         return blank(Record), false
     }
+
     total: usize = header + captured
     remaining: usize = data.len - at
     if total > remaining {
@@ -85,6 +86,7 @@ pub decode_ipv4(data: []u8, record: Record): (Packet, bool) {
     if total_length < header_length || total_length > record.captured_length - 14 {
         return blank(Packet), false
     }
+
     packet: Packet = blank(Packet)
     for i: usize in 0 .. 6 {
         packet.destination_mac[i] = data[frame + i]

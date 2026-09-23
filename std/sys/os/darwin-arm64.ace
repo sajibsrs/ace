@@ -376,8 +376,8 @@ pub errno(): i32 {
 
 pub fork(): (Process, Error) {
     pid: i32 = c_fork()
-
     if pid == -1 { return Process(-1), ForkErr(errno()) }
+
     return Process(pid), null
 }
 
@@ -395,7 +395,6 @@ pub wait(process: Process): (ProcessStatus, Error) {
         return zero, WaitErr(errno())
     }
     signal: int = int(raw & 0x7f)
-
     if signal == 0 {
         status: ProcessStatus = ProcessStatus {
             exited = true,
@@ -404,6 +403,7 @@ pub wait(process: Process): (ProcessStatus, Error) {
         }
         return status, null
     }
+
     return ProcessStatus {exited = false, code = 0, signal = signal}, null
 }
 
@@ -417,8 +417,8 @@ pub pipe(): (Fd, Fd, Error) {
 pub read(fd: Fd, buf: mut []u8): (int, Error) {
     if buf.len == 0 { return 0, null }
     n: i64 = c_read(i32(fd), mut &buf[0], buf.len)
-
     if n < 0 { return 0, ReadErr(errno()) }
+
     return int(n), null
 }
 
@@ -426,8 +426,8 @@ pub read(fd: Fd, buf: mut []u8): (int, Error) {
 pub write(fd: Fd, data: []u8): (int, Error) {
     if data.len == 0 { return 0, null }
     n: i64 = c_write(i32(fd), &data[0], data.len)
-
     if n < 0 { return 0, WriteErr(errno()) }
+
     return int(n), null
 }
 
@@ -470,8 +470,8 @@ pub open(path: string, flags: i32, mode: u32): (Fd, Error) {
 
     if !path_copy(path, mut buf[0..1024]) { return Fd(-1), OpenErr.name_too_long }
     fd: i32 = c_open(&buf[0], flags, mode)
-
     if fd == -1 { return Fd(-1), OpenErr(errno()) }
+
     return Fd(fd), null
 }
 
@@ -518,6 +518,7 @@ pub open_dir(path: string): (Dir, Error) {
     if !path_copy(path, mut path_buf[0..1024]) { return blank(Dir), OpenDirErr.name_too_long }
     fd: i32 = c_open(&path_buf[0], O_RDONLY | O_DIRECTORY, u32(0))
     if fd == -1 { return blank(Dir), OpenDirErr(errno()) }
+
     dir: Dir = Dir {
         fd = Fd(fd),
         buffer = [0 : 4096],

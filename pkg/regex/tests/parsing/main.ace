@@ -8,7 +8,6 @@ import regex
 tree(pattern: string, want: string): int {
     s: regex.Syntax, err: Error, at: usize = regex.Syntax::parse(pattern)
     defer mut s.wipe()
-
     if err != null {
         fmt.print("parse failed: ")
         fmt.print(pattern)
@@ -16,9 +15,9 @@ tree(pattern: string, want: string): int {
         fmt.println(err.message)
         return 1
     }
+
     buffer: [512]u8
     n: usize, ok: bool = s.format(mut buffer[0..512])
-
     if !ok || !mem.equal(buffer[0..n], want) {
         fmt.print(pattern)
         fmt.print(": got ")
@@ -27,6 +26,7 @@ tree(pattern: string, want: string): int {
         fmt.println(want)
         return 1
     }
+
     return 0
 }
 
@@ -34,7 +34,6 @@ tree(pattern: string, want: string): int {
 fails(pattern: string, want: Error, offset: usize): int {
     s: regex.Syntax, err: Error, at: usize = regex.Syntax::parse(pattern)
     defer mut s.wipe()
-
     if err != want || at != offset {
         fmt.print(pattern)
         fmt.print(": got ")
@@ -47,6 +46,7 @@ fails(pattern: string, want: Error, offset: usize): int {
         fmt.println(offset)
         return 1
     }
+
     return 0
 }
 
@@ -155,9 +155,9 @@ depth(): int {
 
 main(): int {
     bad: int = structure() + repetition() + classes() + errors() + depth()
-
     if bad != 0 {
         return 1
     }
+
     return 0
 }
