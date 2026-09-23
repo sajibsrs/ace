@@ -1,0 +1,13 @@
+/* mem.usable diagnostics fixture. */
+
+import mem
+
+main(): int {
+    data: mut []u8 = mem.alloc(16, 8)
+    words: []usize = mem.alloc[usize](4)
+    a: usize = mem.usable()
+    b: usize = mem.usable(data, data)
+    c: usize = mem.usable(mut data)
+    d: usize = mem.usable(words)
+    return 0
+}

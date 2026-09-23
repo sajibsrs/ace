@@ -34,8 +34,8 @@ serve_one(): int {
 }
 ```
 
-`listen(address, backlog)` performs `socket(tcp)`, `reuse_addr(true)`, `bind`,
-then `listen`; it never enables `reuse_port`. `connect(address)` performs socket
+`listen(address, backlog)` performs `socket(tcp)`, `reuseaddr(true)`, `bind`,
+then `listen`; it never enables `reuseport`. `connect(address)` performs socket
 creation followed by blocking connect. Both close a created socket after later
 setup failure, return the original setup error even if cleanup fails, and return
 a canonical-zero wrapper on failure. `local(listener)` queries the bound local

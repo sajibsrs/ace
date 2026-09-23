@@ -62,7 +62,7 @@ check_cleanup(): int {
     listener: tcp.Listener, err: Error = tcp.listen(loopback(u16(0)), usize(0x80000000))
     if err == null { return 1 }
     if err.domain != typeid(net.ListenErr) {
-        if err.domain == typeid(net.ReuseAddrErr) { return 41 }
+        if err.domain == typeid(net.ReuseaddrErr) { return 41 }
         if err.domain == typeid(net.BindErr) { return 42 }
         return 43
     }

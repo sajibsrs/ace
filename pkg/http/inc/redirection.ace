@@ -25,7 +25,7 @@ pub RedirectPolicy: struct {
 pub resolve(current: string, location: string, destination: mut []u8): (usize, bool) {
     if location.len == 0 { return 0, false }
     for i: usize in 0 .. location.len {
-        if ascii.is_control(location[i]) || location[i] == 35 { return 0, false }
+        if ascii.control(location[i]) || location[i] == 35 { return 0, false }
     }
 
     absolute: bool = (location.len >= 7 && mem.equal(location[..7], "http://")) ||
@@ -103,7 +103,7 @@ pub resolve(current: string, location: string, destination: mut []u8): (usize, b
 
 pub location(response: Response): string {
     for i: usize in 0 .. response.headers.len {
-        if ascii.is_equal(response.headers[i].name, "Location", false) { return response.headers[i].value }
+        if ascii.equal(response.headers[i].name, "Location", false) { return response.headers[i].value }
     }
     return null
 }

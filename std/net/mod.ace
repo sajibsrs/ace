@@ -8,8 +8,8 @@ pub SocketType: type = os.SocketType
 pub Addr4: type = os.Addr4
 
 pub SocketErr: type = os.SocketErr
-pub ReuseAddrErr: type = os.ReuseAddrErr
-pub ReusePortErr: type = os.ReusePortErr
+pub ReuseaddrErr: type = os.ReuseaddrErr
+pub ReuseportErr: type = os.ReuseportErr
 pub NonblockErr: type = os.NonblockErr
 pub BindErr: type = os.BindErr
 pub ListenErr: type = os.ListenErr
@@ -64,9 +64,9 @@ pub socket(socket_type: SocketType): (Socket, Error) {
     return result, err
 }
 
-pub reuse_addr(sock: Socket, enabled: bool): Error { return os.reuse_addr(sock, enabled) }
+pub reuseaddr(sock: Socket, enabled: bool): Error { return os.reuseaddr(sock, enabled) }
 
-pub reuse_port(sock: Socket, enabled: bool): Error { return os.reuse_port(sock, enabled) }
+pub reuseport(sock: Socket, enabled: bool): Error { return os.reuseport(sock, enabled) }
 
 pub nonblock(sock: Socket, enabled: bool): Error { return os.nonblock(sock, enabled) }
 

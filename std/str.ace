@@ -493,7 +493,7 @@ index_from(text: string, needle: string, after: usize): (usize, bool) {
         hit: u64 = ~(((a & LOW7) + LOW7) | a | ((b & LOW7) + LOW7) | b | LOW7)
 
         for hit != 0 {
-            scan: usize = at + usize(bits.trail_zeros(hit) / 8)
+            scan: usize = at + usize(bits.ctz(hit) / 8)
 
             if mem.equal(text[scan..scan + needle.len], needle) { return scan, true }
             hit &= hit - 1
@@ -517,7 +517,7 @@ index_byte_from(text: string, byte: char, after: usize): (usize, bool) {
         x: u64 = load.unaligned_u64(text, at) ^ pattern
         hit: u64 = ~(((x & LOW7) + LOW7) | x | LOW7)
 
-        if hit != 0 { return at + usize(bits.trail_zeros(hit) / 8), true }
+        if hit != 0 { return at + usize(bits.ctz(hit) / 8), true }
         at += 8
     }
 

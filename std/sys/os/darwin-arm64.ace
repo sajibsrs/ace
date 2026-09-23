@@ -123,7 +123,7 @@ pub UnlinkErr: error {
     63: name_too_long = "path is too long"
 }
 
-pub OpenDirErr: error {
+pub OpendirErr: error {
     2: not_found = "directory does not exist"
     13: access = "permission denied"
     20: not_directory = "path is not a directory"
@@ -133,13 +133,13 @@ pub OpenDirErr: error {
     63: name_too_long = "path is too long"
 }
 
-pub ReadDirErr: error {
+pub ReaddirErr: error {
     5: malformed = "operating-system directory data is malformed"
     9: inactive = "directory is not active"
     34: capacity = "name storage is too small"
 }
 
-pub CloseDirErr: error {
+pub ClosedirErr: error {
     9: inactive = "directory is not active"
 }
 
@@ -533,11 +533,11 @@ pub unlink(path: string): Error {
     return null
 }
 
-pub open_dir(path: string): (Dir, Error) {
+pub opendir(path: string): (Dir, Error) {
     path_buf: [1024]u8
-    if !path_copy(path, mut path_buf[0..1024]) { return blank(Dir), OpenDirErr.name_too_long }
+    if !path_copy(path, mut path_buf[0..1024]) { return blank(Dir), OpendirErr.name_too_long }
     fd: i32 = c_open(&path_buf[0], O_RDONLY | O_DIRECTORY, u32(0))
-    if fd == -1 { return blank(Dir), OpenDirErr(errno()) }
+    if fd == -1 { return blank(Dir), OpendirErr(errno()) }
 
     dir: Dir = Dir {
         fd = Fd(fd),
@@ -555,17 +555,17 @@ pub open_dir(path: string): (Dir, Error) {
  * namlen:u16, type:u8, then the name bytes. Entries are retained when the
  * caller's name buffer is too small, so the caller may retry.
  */
-pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileType, bool, Error) {
+pub readdir(mut dir: Dir, name: mut []u8): (usize, FileType, bool, Error) {
     if !dir.active {
         errno_set(9)
-        return 0, FileType.unknown, false, ReadDirErr.inactive
+        return 0, FileType.unknown, false, ReaddirErr.inactive
     }
     if dir.done { return 0, FileType.unknown, true, null }
 
     for {
         if dir.next == dir.count {
             count: i32 = c_getdirentries64(i32(dir.fd), mut &dir.buffer[0], 4096, mut &dir.base)
-            if count < 0 { return 0, FileType.unknown, false, ReadDirErr(errno()) }
+            if count < 0 { return 0, FileType.unknown, false, ReaddirErr(errno()) }
             if count == 0 {
                 dir.done = true
                 return 0, FileType.unknown, true, null
@@ -578,7 +578,7 @@ pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileType, bool, Error) {
         at: usize = dir.next
         if at + 21 > dir.count {
             errno_set(5)
-            return 0, FileType.unknown, false, ReadDirErr.malformed
+            return 0, FileType.unknown, false, ReaddirErr.malformed
         }
         record_len: usize = usize(dir.buffer[at + 16]) |
                             (usize(dir.buffer[at + 17]) << 8)
@@ -587,7 +587,7 @@ pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileType, bool, Error) {
         if record_len < 21 || at + record_len > dir.count ||
            name_len > record_len - 21 {
             errno_set(5)
-            return 0, FileType.unknown, false, ReadDirErr.malformed
+            return 0, FileType.unknown, false, ReaddirErr.malformed
         }
 
         is_dot: bool = name_len == 1 && dir.buffer[at + 21] == u8('.')
@@ -599,7 +599,7 @@ pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileType, bool, Error) {
         } else {
             if name.len < name_len {
                 errno_set(34)
-                return 0, FileType.unknown, false, ReadDirErr.capacity
+                return 0, FileType.unknown, false, ReaddirErr.capacity
             }
             for i: usize in 0 .. name_len { name[i] = dir.buffer[at + 21 + i] }
             file_type: FileType = file_type_from_dirent(dir.buffer[at + 20])
@@ -609,13 +609,13 @@ pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileType, bool, Error) {
     }
 }
 
-pub close_dir(mut dir: Dir): Error {
+pub closedir(mut dir: Dir): Error {
     if !dir.active {
         errno_set(9)
-        return CloseDirErr.inactive
+        return ClosedirErr.inactive
     }
     fd: i32 = i32(dir.fd)
     dir = blank(Dir)
-    if c_close(fd) == -1 { return CloseDirErr(errno()) }
+    if c_close(fd) == -1 { return ClosedirErr(errno()) }
     return null
 }

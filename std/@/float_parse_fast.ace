@@ -14,7 +14,7 @@ EXACT_POWERS64: const [23]f64 = [
 EXACT_POWERS32: const [11]f32 = [1.0e0, 1.0e1, 1.0e2, 1.0e3, 1.0e4, 1.0e5, 1.0e6, 1.0e7, 1.0e8, 1.0e9, 1.0e10]
 
 integer_bits(value: u64, fraction_bits: int, bias: int): u64 {
-    length: int = 64 - int(bits.lead_zeros(value))
+    length: int = 64 - int(bits.clz(value))
     significand: u64 = value
 
     if length > fraction_bits + 1 {
@@ -51,7 +51,7 @@ pub exact64(coefficient: u64, exponent10: int, mut raw: u64): bool {
     } else {
         value = value * EXACT_POWERS64[exponent10]
     }
-    raw = bits.from_float(value)
+    raw = bits.cast(value)
     return true
 }
 
@@ -64,7 +64,7 @@ pub exact32(coefficient: u64, exponent10: int, mut raw: u64): bool {
     } else {
         value = value * EXACT_POWERS32[exponent10]
     }
-    raw = u64(bits.from_float(value))
+    raw = u64(bits.cast(value))
     return true
 }
 
@@ -104,7 +104,7 @@ pub binary64(coefficient: u64, exponent10: int, mut raw: u64): bool {
         raw = u64(2047) << 52
         return true
     }
-    zeros: int = int(bits.lead_zeros(coefficient))
+    zeros: int = int(bits.clz(coefficient))
     normalized: u64 = coefficient << u64(zeros)
     index: int = 2 * (exponent10 + 342)
     factor: u64 = table.powers[index]
@@ -196,7 +196,7 @@ pub binary32(coefficient: u64, exponent10: int, mut raw: u64): bool {
         raw = u64(255) << 23
         return true
     }
-    zeros: int = int(bits.lead_zeros(coefficient))
+    zeros: int = int(bits.clz(coefficient))
     normalized: u64 = coefficient << u64(zeros)
     index: int = 2 * (exponent10 + 342)
     factor: u64 = table.powers[index]

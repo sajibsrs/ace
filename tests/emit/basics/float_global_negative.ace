@@ -23,18 +23,18 @@ ORIGIN: Point = Point {
 TABLE: [3]f32 = [-1.0, 0.5, -0.5]
 
 main(): int {
-    if bits.from_float(G64) != u64(0xC004000000000000) { return 1 }
-    if bits.from_float(G32) != u32(0xBFC00000) ||
-       bits.from_float(CAST32) != u32(0xC0200000) {
+    if bits.cast(G64) != u64(0xC004000000000000) { return 1 }
+    if bits.cast(G32) != u32(0xBFC00000) ||
+       bits.cast(CAST32) != u32(0xC0200000) {
         return 2
     }
-    if bits.from_float(CAST64) != u64(0xBFE8000000000000) ||
-       bits.from_float(ZERO) != u64(0x8000000000000000) {
+    if bits.cast(CAST64) != u64(0xBFE8000000000000) ||
+       bits.cast(ZERO) != u64(0x8000000000000000) {
         return 3
     }
-    if bits.from_float(FROM_CONST) != u64(0xBFD0000000000000) { return 4 }
-    if bits.from_float(f32(LENGTH)) != u32(0xC0600000) { return 5 }
-    if bits.from_float(ORIGIN.x) != u32(0xBF800000) || bits.from_float(ORIGIN.y) != u32(0x40000000) { return 6 }
-    if bits.from_float(TABLE[0]) != u32(0xBF800000) || bits.from_float(TABLE[2]) != u32(0xBF000000) { return 7 }
+    if bits.cast(FROM_CONST) != u64(0xBFD0000000000000) { return 4 }
+    if bits.cast(f32(LENGTH)) != u32(0xC0600000) { return 5 }
+    if bits.cast(ORIGIN.x) != u32(0xBF800000) || bits.cast(ORIGIN.y) != u32(0x40000000) { return 6 }
+    if bits.cast(TABLE[0]) != u32(0xBF800000) || bits.cast(TABLE[2]) != u32(0xBF000000) { return 7 }
     return 42
 }

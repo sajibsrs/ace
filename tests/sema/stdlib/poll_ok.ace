@@ -8,7 +8,7 @@ import (
     WatchErr,
     queue,
     wait,
-    wait_forever,
+    FOREVER,
     watch,
 ) from poll
 
@@ -28,7 +28,7 @@ check(fd: sys.Fd): int {
     }
     storage: [1]Event = [zero]
     events: mut []Event = mut storage[0..1]
-    count: usize, wait_err: Error = wait(q, events, wait_forever)
+    count: usize, wait_err: Error = wait(q, events, FOREVER)
 
     if count == 0 && wait_err != null && wait_err.domain != typeid(WaitErr) { return 3 }
     return 0

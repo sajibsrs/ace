@@ -1,4 +1,4 @@
-/* bits.wrap_add, wrap_sub, and wrap_mul wrap at the operand width in checked
+/* bits.wradd, wrsub, and wrmul wrap at the operand width in checked
  * builds too: the same overflows through the ordinary operators would abort.
  */
 
@@ -7,28 +7,28 @@ import bits
 runtime_u64(value: u64): u64 { return value }
 
 main(): int {
-    if bits.wrap_add(u8(250), u8(10)) != u8(4) ||
-       bits.wrap_add(u16(65535), u16(2)) != u16(1) ||
-       bits.wrap_add(u32(0xFFFFFFFF), u32(3)) != u32(2) ||
-       bits.wrap_add(runtime_u64(0xFFFFFFFFFFFFFFFF), u64(2)) != u64(1) {
+    if bits.wradd(u8(250), u8(10)) != u8(4) ||
+       bits.wradd(u16(65535), u16(2)) != u16(1) ||
+       bits.wradd(u32(0xFFFFFFFF), u32(3)) != u32(2) ||
+       bits.wradd(runtime_u64(0xFFFFFFFFFFFFFFFF), u64(2)) != u64(1) {
         return 1
     }
-    if bits.wrap_sub(u8(3), u8(5)) != u8(254) ||
-       bits.wrap_sub(u16(0), u16(1)) != u16(65535) ||
-       bits.wrap_sub(u32(1), u32(2)) != u32(0xFFFFFFFF) ||
-       bits.wrap_sub(runtime_u64(0), u64(1)) != u64(0xFFFFFFFFFFFFFFFF) {
+    if bits.wrsub(u8(3), u8(5)) != u8(254) ||
+       bits.wrsub(u16(0), u16(1)) != u16(65535) ||
+       bits.wrsub(u32(1), u32(2)) != u32(0xFFFFFFFF) ||
+       bits.wrsub(runtime_u64(0), u64(1)) != u64(0xFFFFFFFFFFFFFFFF) {
         return 2
     }
-    if bits.wrap_mul(u8(16), u8(17)) != u8(16) ||
-       bits.wrap_mul(u16(256), u16(257)) != u16(256) ||
-       bits.wrap_mul(u32(0x10001), u32(0x10001)) != u32(0x20001) ||
-       bits.wrap_mul(runtime_u64(0x100000001), u64(0x100000001)) != u64(0x200000001) {
+    if bits.wrmul(u8(16), u8(17)) != u8(16) ||
+       bits.wrmul(u16(256), u16(257)) != u16(256) ||
+       bits.wrmul(u32(0x10001), u32(0x10001)) != u32(0x20001) ||
+       bits.wrmul(runtime_u64(0x100000001), u64(0x100000001)) != u64(0x200000001) {
         return 3
     }
     // no overflow: identical to the ordinary operators
-    if bits.wrap_add(u8(1), u8(2)) != u8(3) ||
-       bits.wrap_sub(u32(9), u32(4)) != u32(5) ||
-       bits.wrap_mul(u64(6), u64(7)) != u64(42) {
+    if bits.wradd(u8(1), u8(2)) != u8(3) ||
+       bits.wrsub(u32(9), u32(4)) != u32(5) ||
+       bits.wrmul(u64(6), u64(7)) != u64(42) {
         return 4
     }
     return 0

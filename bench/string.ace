@@ -71,7 +71,7 @@ main(): int {
 
     for i: usize in 0 .. float_iterations {
         value: f64, ok: bool = str.parse[f64](decimal_inputs[i % 8])
-        if ok { raw_sum ^= bits.from_float(value) + u64(i) }
+        if ok { raw_sum ^= bits.cast(value) + u64(i) }
     }
     report("parse-f64-short", now() - started, float_iterations, usize(raw_sum))
     long_decimal_inputs: [8]string = [
@@ -83,7 +83,7 @@ main(): int {
 
     for i: usize in 0 .. float_iterations {
         value: f64, ok: bool = str.parse[f64](long_decimal_inputs[i % 8])
-        if ok { raw_sum ^= bits.from_float(value) + u64(i) }
+        if ok { raw_sum ^= bits.cast(value) + u64(i) }
     }
     report("parse-f64-long", now() - started, float_iterations, usize(raw_sum))
     // Canonical workload assumption: 80% common/short, 20% long/scientific.
@@ -134,7 +134,7 @@ main(): int {
 
     for i: usize in 0 .. float_iterations {
         value: f64, ok: bool = str.parse[f64](blended_decimal_inputs[i % 40])
-        if ok { raw_sum ^= bits.from_float(value) + u64(i) }
+        if ok { raw_sum ^= bits.cast(value) + u64(i) }
     }
     report("parse-f64", now() - started, float_iterations, usize(raw_sum))
     values: [8]f64 = [

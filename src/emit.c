@@ -4377,7 +4377,7 @@ static EV gen_release_builtin(Em* e, Node* call) {
 static EV gen_alloc_size_builtin(Em* e, Node* call) {
     EV data = gen_expr(e, call->kids[0]);
     if (data.cls != CLS_ADDR) {
-        em_err(e, call->kids[0], "mem.alloc_size data must materialize as a slice");
+        em_err(e, call->kids[0], "mem.usable data must materialize as a slice");
         int zero = tmp_int(e);
         load_imm(e, 1, xreg(zero), 0);
         return (EV){ CLS_INT, zero };

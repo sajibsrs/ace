@@ -79,7 +79,7 @@ fast_decimal(text: string, mut result: FastDecimal) {
             non_digit: u64 = high_bad | low_bad
             run: int = 8
 
-            if non_digit != 0 { run = int(bits.trail_zeros(non_digit)) / 8 }
+            if non_digit != 0 { run = int(bits.ctz(non_digit)) / 8 }
 
             if run > 0 {
                 seen_digit = true
@@ -349,12 +349,12 @@ pub binary64(text: string): (f64, bool) {
     scanned.number_type = 3
     fast_decimal(text, mut scanned)
 
-    if scanned.number_type == 2 { return bits.to_float(u64(0x7FF8000000000000)), true }
+    if scanned.number_type == 2 { return bits.cast(u64(0x7FF8000000000000)), true }
     if scanned.number_type == 1 {
         raw_inf: u64 = u64(0x7FF0000000000000)
 
         if scanned.negative { raw_inf |= u64(0x8000000000000000) }
-        return bits.to_float(raw_inf), true
+        return bits.cast(raw_inf), true
     }
     if scanned.number_type == 3 { return 0.0, false }
     sign: u64 = 0
@@ -367,11 +367,11 @@ pub binary64(text: string): (f64, bool) {
         if !handled { handled = fast.binary64(scanned.coefficient, scanned.exponent10, mut raw) }
         if handled {
             if raw == u64(0x7FF0000000000000) { return 0.0, false }
-            return bits.to_float(sign | raw), true
+            return bits.cast(sign | raw), true
         }
     }
     value: Decimal = decimal(text)
-    if value.digits == 0 || value.digits + value.exponent10 < -350 { return bits.to_float(sign), true }
+    if value.digits == 0 || value.digits + value.exponent10 < -350 { return bits.cast(sign), true }
     if value.digits + value.exponent10 > 310 ||
        compare_binary(value, u64(0x3FFFFFFFFFFFFF), 970) >= 0 {
         return 0.0, false
@@ -397,7 +397,7 @@ pub binary64(text: string): (f64, bool) {
         midpoint: int = midpoint64(value, upper)
         if midpoint > 0 || (midpoint == 0 && (upper & 1) == 0) { low = upper }
     }
-    return bits.to_float(sign | low), true
+    return bits.cast(sign | low), true
 }
 
 pub binary32(text: string): (f32, bool) {
@@ -409,12 +409,12 @@ pub binary32(text: string): (f32, bool) {
     scanned.number_type = 3
     fast_decimal(text, mut scanned)
 
-    if scanned.number_type == 2 { return bits.to_float(u32(0x7FC00000)), true }
+    if scanned.number_type == 2 { return bits.cast(u32(0x7FC00000)), true }
     if scanned.number_type == 1 {
         raw_inf: u32 = u32(0x7F800000)
 
         if scanned.negative { raw_inf |= u32(0x80000000) }
-        return bits.to_float(raw_inf), true
+        return bits.cast(raw_inf), true
     }
     if scanned.number_type == 3 { return 0.0, false }
     sign: u32 = 0
@@ -429,11 +429,11 @@ pub binary32(text: string): (f32, bool) {
             raw: u32 = u32(wide_raw)
             if raw == u32(0x7F800000) { return 0.0, false }
 
-            return bits.to_float(sign | raw), true
+            return bits.cast(sign | raw), true
         }
     }
     value: Decimal = decimal(text)
-    if value.digits == 0 || value.digits + value.exponent10 < -60 { return bits.to_float(sign), true }
+    if value.digits == 0 || value.digits + value.exponent10 < -60 { return bits.cast(sign), true }
     if value.digits + value.exponent10 > 50 ||
        compare_binary(value, u64(0x1FFFFFF), 103) >= 0 {
         return 0.0, false
@@ -459,5 +459,5 @@ pub binary32(text: string): (f32, bool) {
         midpoint: int = midpoint32(value, upper)
         if midpoint > 0 || (midpoint == 0 && (upper & 1) == 0) { low = upper }
     }
-    return bits.to_float(sign | low), true
+    return bits.cast(sign | low), true
 }

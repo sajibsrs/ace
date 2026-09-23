@@ -202,12 +202,12 @@ enum {
     BI_BITS_BYTE_SWAP = 25,
     BI_BITS_ROTATE_LEFT = 26,
     BI_BITS_ROTATE_RIGHT = 27,
-    BI_MEM_ALLOC_SIZE = 28, // mem.alloc_size(data: []u8): usize
+    BI_MEM_ALLOC_SIZE = 28, // mem.usable(data: []u8): usize
     BI_MATH_SQRT = 29,      // math.sqrt/floor/ceil: exact f32/f64 -> same type
     BI_MATH_FLOOR = 30,
     BI_MATH_CEIL = 31,
     BI_MATH_FMA = 32,       // math.fma(a, b, c): a*b + c with one rounding
-    BI_BITS_WRAP_ADD = 33,  // bits.wrap_add/wrap_sub/wrap_mul: unchecked fixed-width arithmetic
+    BI_BITS_WRAP_ADD = 33,  // bits.wradd/wrsub/wrmul: unchecked fixed-width arithmetic
     BI_BITS_WRAP_SUB = 34,
     BI_BITS_WRAP_MUL = 35,
     BI_MEM_ZALLOC_T = 36,   // mem.zalloc[T](count: usize): mut []T, zero-filled

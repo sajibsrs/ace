@@ -207,7 +207,7 @@ call-site `mut` mark makes the descriptor mutation visible:
 mem.release(mut data)
 ```
 
-`mem.alloc_size(data: []u8): usize` reports the usable size of the live
+`mem.usable(data: []u8): usize` reports the usable size of the live
 allocation whose base pointer `data` holds. It is at least the requested
 length and allocator-defined beyond it, so it exposes allocator overhead. Null
 slices, pointers the allocator does not own, and interior pointers report 0.
@@ -216,7 +216,7 @@ The argument is read-only and takes no call-site `mut`.
 ```ace
 data: mut []u8 = mem.alloc(100, 16)
 if data != null {
-    usable: usize = mem.alloc_size(data) // >= 100
+    usable: usize = mem.usable(data) // >= 100
     mem.release(mut data)
 }
 ```

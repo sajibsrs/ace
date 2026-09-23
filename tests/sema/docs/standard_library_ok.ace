@@ -24,16 +24,16 @@ WOULD_BLOCK: const i32 = sys.EWOULDBLOCK
 TRY_AGAIN: const i32 = sys.EAGAIN
 
 bits_examples(): int {
-    raw: u32 = bits.from_float(f32(1.0))
-    restore: (u32): f32 = bits.to_float
-    ones: uint = bits.pop_count(u32(0xF00F))
-    high: uint = bits.lead_zeros(u16(1))
-    low: uint = bits.trail_zeros(u64(8))
-    reversed: u32 = bits.byte_swap(u32(0x12345678))
-    rotated: u8 = bits.rotate_left(u8(0x81), uint(1))
-    wrapped: u8 = bits.wrap_add(u8(250), u8(10))
+    raw: u32 = bits.cast(f32(1.0))
+    restore: (u32): f32 = bits.cast
+    ones: uint = bits.popcount(u32(0xF00F))
+    high: uint = bits.clz(u16(1))
+    low: uint = bits.ctz(u64(8))
+    reversed: u32 = bits.bswap(u32(0x12345678))
+    rotated: u8 = bits.rotl(u8(0x81), uint(1))
+    wrapped: u8 = bits.wradd(u8(250), u8(10))
 
-    if bits.from_float(restore(raw)) != raw || ones != 8 || high != 15 ||
+    if bits.cast(restore(raw)) != raw || ones != 8 || high != 15 ||
        low != 3 || reversed != u32(0x78563412) || rotated != u8(3) ||
        wrapped != u8(4) {
         return 1
@@ -42,9 +42,9 @@ bits_examples(): int {
 }
 
 fast_inverse_sqrt_seed(value: f32): f32 {
-    raw: u32 = bits.from_float(value)
+    raw: u32 = bits.cast(value)
     raw = u32(0x5F3759DF) - (raw >> 1)
-    return bits.to_float(raw)
+    return bits.cast(raw)
 }
 
 math_examples(value: f64): bool { return math.isnan(value) || math.isinf(value) || math.isfinite(value) }
@@ -145,16 +145,16 @@ filesystem_examples(): int {
     remove_err: Error = sys.unlink("/tmp/new")
     if make_err != null || move_err != null || remove_err != null { return 2 }
 
-    dir: sys.Dir, open_err: Error = sys.open_dir("/tmp")
+    dir: sys.Dir, open_err: Error = sys.opendir("/tmp")
     if open_err != null { return 3 }
     storage: [256]u8 = [0 : 256]
     name: mut []u8 = mut storage[0..256]
-    count: usize, file_type: sys.FileType, done: bool, read_err: Error = sys.read_dir(mut dir, name)
+    count: usize, file_type: sys.FileType, done: bool, read_err: Error = sys.readdir(mut dir, name)
     if read_err != null || (!done && count == 0) || file_type == sys.FileType.symlink {
-        sys.close_dir(mut dir)
+        sys.closedir(mut dir)
         return 4
     }
-    if sys.close_dir(mut dir) != null { return 5 }
+    if sys.closedir(mut dir) != null { return 5 }
     return 0
 }
 
@@ -226,7 +226,7 @@ net_example(): int {
         port = u16(0),
     }
 
-    if net.reuse_addr(sock, true) != null ||
+    if net.reuseaddr(sock, true) != null ||
        net.bind(sock, address) != null ||
        net.listen(sock, usize(128)) != null {
         sys.close(sock)
@@ -315,7 +315,7 @@ readiness_example(fd: sys.Fd): int {
     }
     storage: [16]poll.Event = [zero : 16]
     events: mut []poll.Event = mut storage[0..16]
-    count: usize, wait_err: Error = poll.wait(q, events, poll.wait_forever)
+    count: usize, wait_err: Error = poll.wait(q, events, poll.FOREVER)
 
     if wait_err == null {
         for index: usize in 0 .. count {

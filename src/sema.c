@@ -3160,12 +3160,12 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
 
     if (intrinsic == BI_MEM_ALLOC_SIZE) {
         if (call->nkids != 1) {
-            ck_err(k, call, "mem.alloc_size takes exactly one allocation slice");
+            ck_err(k, call, "mem.usable takes exactly one allocation slice");
             return T_ERR;
         }
         Node* data = call->kids[0];
         if (data->kind == N_MUTARG) {
-            ck_err(k, data, "'mut' marks mut parameters; mem.alloc_size's argument is read-only");
+            ck_err(k, data, "'mut' marks mut parameters; mem.usable's argument is read-only");
             data = data->a;
         }
         coerce(k, data, T_BYTE_SLICE);

@@ -3,17 +3,17 @@
 import ascii
 
 main(): int {
-    if !ascii.is_control(u8(0)) || !ascii.is_control(u8(31)) ||
-        !ascii.is_control(u8(127)) || ascii.is_control(u8(32)) {
+    if !ascii.control(u8(0)) || !ascii.control(u8(31)) ||
+        !ascii.control(u8(127)) || ascii.control(u8(32)) {
         return 1
     }
-    if ascii.to_lower(u8('A')) != u8('a') || ascii.to_lower(u8('z')) != u8('z') ||
-        ascii.to_lower(u8(200)) != u8(200) {
+    if ascii.lower(u8('A')) != u8('a') || ascii.lower(u8('z')) != u8('z') ||
+        ascii.lower(u8(200)) != u8(200) {
         return 2
     }
-    if !ascii.is_equal("Ace", "Ace", true) || ascii.is_equal("Ace", "ace", true) ||
-        !ascii.is_equal("Ace", "aCE", false) || ascii.is_equal("Ace", "Aces", false) ||
-        ascii.is_equal("\xC0", "\xE0", false) {
+    if !ascii.equal("Ace", "Ace", true) || ascii.equal("Ace", "ace", true) ||
+        !ascii.equal("Ace", "aCE", false) || ascii.equal("Ace", "Aces", false) ||
+        ascii.equal("\xC0", "\xE0", false) {
         return 3
     }
     return 0

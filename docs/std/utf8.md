@@ -19,7 +19,7 @@ continuation bytes are invalid.
   or a destination that is too short returns `(0, false)` and writes nothing.
 - `width(value: u32): usize` returns the encoded width, or 0 for an invalid
   code point.
-- `is_valid(text: string): bool` reports whether the whole text is well-formed.
+- `valid(text: string): bool` reports whether the whole text is well-formed.
   Empty text is valid.
 
 ```ace

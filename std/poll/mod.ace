@@ -12,7 +12,7 @@ pub WatchErr: type = os.WatchErr
 pub UnwatchErr: type = os.UnwatchErr
 pub WaitErr: type = os.WaitErr
 
-pub wait_forever: const u64 = 0xffffffffffffffff
+pub FOREVER: const u64 = 0xffffffffffffffff
 
 pub queue(): (Queue, Error) {
     result: Queue, err: Error = os.queue()

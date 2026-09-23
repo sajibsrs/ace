@@ -74,7 +74,7 @@ pub listen(address: net.Addr4, backlog: usize): (Listener, Error) {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
     if err != null { return Listener {}, err }
 
-    err = net.reuse_addr(sock, true)
+    err = net.reuseaddr(sock, true)
     if err == null { err = net.bind(sock, address) }
     if err == null { err = net.listen(sock, backlog) }
     if err != null {
@@ -129,7 +129,7 @@ pub listen_nonblock(address: net.Addr4, backlog: usize): (Listener, Error) {
     if err != null { return Listener {}, err }
 
     err = net.nonblock(sock, true)
-    if err == null { err = net.reuse_addr(sock, true) }
+    if err == null { err = net.reuseaddr(sock, true) }
     if err == null { err = net.bind(sock, address) }
     if err == null { err = net.listen(sock, backlog) }
     if err != null {

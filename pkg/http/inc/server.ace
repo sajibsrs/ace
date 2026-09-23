@@ -136,7 +136,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
  */
 respond_close(conn: tcp.Conn, response: Response, mut context: Context) {
     for i: usize in 0 .. response.headers.len {
-        if ascii.is_equal(response.headers[i].name, "connection", false) { return }
+        if ascii.equal(response.headers[i].name, "connection", false) { return }
     }
     needed: usize = response.headers.len + 1
     if needed > context.headers.len {

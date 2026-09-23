@@ -20,7 +20,7 @@ main(): int {
     }
     ip: [4]u8 = [u8(127), u8(0), u8(0), u8(1)]
     address: net.Addr4 = net.Addr4{ip = ip, port = u16(8080)}
-    if net.reuse_addr(sock, true) != null ||
+    if net.reuseaddr(sock, true) != null ||
        net.bind(sock, address) != null ||
        net.listen(sock, usize(128)) != null {
         sys.close(sock)
@@ -46,7 +46,7 @@ The core socket operations each perform one explicit operation and never
 allocate, buffer, retry, close, or replace a socket on failure:
 
 - `socket(SocketType.tcp): (Socket, Error)` creates an IPv4 TCP socket.
-- `reuse_addr` and `reuse_port` reversibly set their named option.
+- `reuseaddr` and `reuseport` reversibly set their named option.
 - `nonblock(socket, enabled): Error` reversibly changes blocking mode.
 - `bind(socket, Addr4): Error` binds without enabling options implicitly.
 - `listen(socket, backlog: usize): Error` starts listening. The OS may cap the
@@ -93,7 +93,7 @@ implementation, richer diagnostics, truncation discovery, IPv6, asynchronous
 resolution, caching, and resolver-policy controls remain future improvements.
 
 Every network error is last and null on success. The operation-specific public
-domains are `SocketErr`, `ReuseAddrErr`, `ReusePortErr`,
+domains are `SocketErr`, `ReuseaddrErr`, `ReuseportErr`,
 `NonblockErr`, `BindErr`, `ListenErr`, `AcceptErr`, `ConnectErr`,
 `PendingErrorErr`, `ReceiveErr`, `SendErr`, `ResolveErr`, and `LocalErr`. Compare `error.domain`
 with the corresponding `typeid(net.*Err)`. For socket-operation errors,

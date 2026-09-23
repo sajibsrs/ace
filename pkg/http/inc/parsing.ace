@@ -189,7 +189,7 @@ pub Url::parse(url: string, secure: bool): (Url, Error) {
     }
     if url.len < start || !mem.equal(url[..start], scheme) { return blank(Url), UrlErr.invalid }
     for i: usize in 0 .. url.len {
-        if ascii.is_control(url[i]) || url[i] == 35 { return blank(Url), UrlErr.invalid }
+        if ascii.control(url[i]) || url[i] == 35 { return blank(Url), UrlErr.invalid }
     }
     authority_end: usize = url.len
     for i: usize in start .. url.len {
@@ -360,8 +360,8 @@ is_chunk_ext(text: string): bool {
                     }
                     if byte == '\\' {
                         at += 1
-                        if at >= text.len || (ascii.is_control(text[at]) && text[at] != '\t') { return false }
-                    } else if (ascii.is_control(byte) && byte != '\t') {
+                        if at >= text.len || (ascii.control(text[at]) && text[at] != '\t') { return false }
+                    } else if (ascii.control(byte) && byte != '\t') {
                         return false
                     }
                     at += 1
@@ -490,7 +490,7 @@ pub mut RequestParser.parse(input: string, headers: mut []Header, body: mut []u8
             }
             value: string = trim_ows(raw)
             full: bool = self.header_count >= headers.len
-            if ascii.is_equal(name, "content-length", false) {
+            if ascii.equal(name, "content-length", false) {
                 if self.framing == RequestFraming.chunked { return mut self.framing_failure() }
                 length: usize, valid: bool = str.parse[usize](value)
                 if !valid { return mut self.framing_failure() }
@@ -501,9 +501,9 @@ pub mut RequestParser.parse(input: string, headers: mut []Header, body: mut []u8
                 self.framing = RequestFraming.content_length
                 self.content_length = length
             }
-            if ascii.is_equal(name, "transfer-encoding", false) {
+            if ascii.equal(name, "transfer-encoding", false) {
                 if self.framing != RequestFraming.undecided ||
-                    !ascii.is_equal(value, "chunked", false) {
+                    !ascii.equal(value, "chunked", false) {
                     return mut self.framing_failure()
                 }
                 if full { return RequestResult.capacity(RequestCapacity.headers) }
@@ -779,7 +779,7 @@ pub mut ResponseParser.parse(
             }
             value: string = trim_ows(raw)
             full: bool = (self.status < 100 || self.status >= 200) && self.header_count >= headers.len
-            if ascii.is_equal(name, "content-length", false) {
+            if ascii.equal(name, "content-length", false) {
                 if self.framing == ResponseFraming.chunked { return mut self.framing_failure() }
                 length: usize, valid: bool = str.parse[usize](value)
                 if !valid { return mut self.framing_failure() }
@@ -790,9 +790,9 @@ pub mut ResponseParser.parse(
                 self.framing = ResponseFraming.content_length
                 self.content_length = length
             }
-            if ascii.is_equal(name, "transfer-encoding", false) {
+            if ascii.equal(name, "transfer-encoding", false) {
                 if self.framing != ResponseFraming.undecided ||
-                    !ascii.is_equal(value, "chunked", false) {
+                    !ascii.equal(value, "chunked", false) {
                     return mut self.framing_failure()
                 }
                 if full { return ResponseResult.capacity(ResponseCapacity.headers) }

@@ -39,7 +39,7 @@ main(): int {
     }
     storage: [16]poll.Event = [zero : 16]
     events: mut []poll.Event = mut storage[0..16]
-    count: usize, wait_err: Error = poll.wait(q, events, poll.wait_forever)
+    count: usize, wait_err: Error = poll.wait(q, events, poll.FOREVER)
 
     if wait_err == null {
         for index: usize in 0 .. count {
@@ -77,7 +77,7 @@ bytes. Hangup may coexist with readable buffered data. Error supplies no
 errno value and may coexist with every other condition. Error and hangup need
 no registered interest.
 
-A timeout of `0` polls without blocking. `poll.wait_forever` waits without a
+A timeout of `0` polls without blocking. `poll.FOREVER` waits without a
 timeout; every other value is a finite nanosecond duration. An interrupted
 wait returns `WaitErr`; it is never restarted privately. A successful zero
 count means that the timeout expired or a poll found no readiness.

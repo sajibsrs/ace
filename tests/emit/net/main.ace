@@ -18,9 +18,9 @@ check_error(err: Error, domain: typeid): bool { return err != null && err.domain
 check_failures(): int {
     invalid: net.Socket = net.Socket(-1)
 
-    if !check_error(net.reuse_addr(invalid, true), typeid(net.ReuseAddrErr)) { return 1 }
+    if !check_error(net.reuseaddr(invalid, true), typeid(net.ReuseaddrErr)) { return 1 }
 
-    if !check_error(net.reuse_port(invalid, true), typeid(net.ReusePortErr)) { return 2 }
+    if !check_error(net.reuseport(invalid, true), typeid(net.ReuseportErr)) { return 2 }
 
     if !check_error(net.nonblock(invalid, true), typeid(net.NonblockErr)) { return 3 }
 
@@ -149,11 +149,11 @@ main(): int {
 
     if err != null { return 20 }
 
-    if net.reuse_addr(listener, true) != null ||
-       net.reuse_addr(listener, false) != null ||
-       net.reuse_addr(listener, true) != null ||
-       net.reuse_port(listener, true) != null ||
-       net.reuse_port(listener, false) != null ||
+    if net.reuseaddr(listener, true) != null ||
+       net.reuseaddr(listener, false) != null ||
+       net.reuseaddr(listener, true) != null ||
+       net.reuseport(listener, true) != null ||
+       net.reuseport(listener, false) != null ||
        net.bind(listener, loopback(u16(0))) != null {
         sys.close(listener)
         return 21

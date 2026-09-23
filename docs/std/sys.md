@@ -76,7 +76,7 @@ main(): int {
 Directory traversal keeps its buffer and cursor in a caller-owned `Dir` value:
 
 ```ace
-dir: sys.Dir, err: Error = sys.open_dir("/tmp")
+dir: sys.Dir, err: Error = sys.opendir("/tmp")
 if err != null {
     return 1
 }
@@ -84,9 +84,9 @@ name_storage: [256]u8
 name: mut []u8 = mut name_storage[0..256]
 done: bool = false
 for !done {
-    count: usize, file_type: sys.FileType, at_end: bool, read_err: Error = sys.read_dir(mut dir, name)
+    count: usize, file_type: sys.FileType, at_end: bool, read_err: Error = sys.readdir(mut dir, name)
     if read_err != null {
-        sys.close_dir(mut dir)
+        sys.closedir(mut dir)
         return 2
     }
     done = at_end
@@ -94,22 +94,22 @@ for !done {
         // The entry name is name[0..count]; no NUL byte is appended.
     }
 }
-if sys.close_dir(mut dir) != null {
+if sys.closedir(mut dir) != null {
     return 3
 }
 return 0
 ```
 
-`read_dir` skips `.` and `..` and returns values in the fixed order name byte
+`readdir` skips `.` and `..` and returns values in the fixed order name byte
 count, file type, end flag, and `Error`. End is `(0, unknown, true, null)`. A file
 type may be `unknown`; use `stat` when classification is required. If the name
-buffer is too small, `ReadDirErr` reports `ERANGE`, leaves the entry pending,
+buffer is too small, `ReaddirErr` reports `ERANGE`, leaves the entry pending,
 and writes no truncated name. Enumeration retains operating-system order.
 
-The call-site mark in `read_dir(mut dir, name)` permits updating the caller's
+The call-site mark in `readdir(mut dir, name)` permits updating the caller's
 iteration state. It is independent of the type-position `mut` in
 `name: mut []u8`, which permits writing the supplied bytes. Likewise,
-`close_dir(mut dir)` closes the descriptor and replaces that caller's complete
+`closedir(mut dir)` closes the descriptor and replaces that caller's complete
 `Dir` value with canonical zero. Copying a `Dir` creates an unmanaged alias;
 closing one copy does not find or invalidate the others.
 
@@ -186,7 +186,7 @@ errno captured at the failing call.
 Each failing operation returns an ordinary packed `Error` whose domain names
 the operation — `sys.OpenErr`, `sys.ReadErr`, `sys.WriteErr`, `sys.CloseErr`,
 `sys.StatErr`, `sys.MkdirErr`, `sys.RenameErr`, `sys.UnlinkErr`,
-`sys.OpenDirErr`, `sys.ReadDirErr`, `sys.CloseDirErr`, `sys.ForkErr`,
+`sys.OpendirErr`, `sys.ReaddirErr`, `sys.ClosedirErr`, `sys.ForkErr`,
 `sys.WaitErr`, `sys.PipeErr`, or `sys.IoctlErr` —
 so `err.domain == typeid(sys.ReadErr)` identifies what failed, and `err.code`
 is the errno captured at the failure:

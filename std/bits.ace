@@ -2,51 +2,50 @@
  * Compiler-backed target instructions; no numeric conversion or runtime calls.
  */
 
-pub from_float(value: f64): u64 intrinsic
-pub from_float(value: f32): u32 intrinsic
+pub cast(value: f64): u64 intrinsic
+pub cast(value: f32): u32 intrinsic
+pub cast(value: u64): f64 intrinsic
+pub cast(value: u32): f32 intrinsic
 
-pub to_float(value: u64): f64 intrinsic
-pub to_float(value: u32): f32 intrinsic
+pub popcount(value: u8): uint intrinsic
+pub popcount(value: u16): uint intrinsic
+pub popcount(value: u32): uint intrinsic
+pub popcount(value: u64): uint intrinsic
 
-pub pop_count(value: u8): uint intrinsic
-pub pop_count(value: u16): uint intrinsic
-pub pop_count(value: u32): uint intrinsic
-pub pop_count(value: u64): uint intrinsic
+pub clz(value: u8): uint intrinsic
+pub clz(value: u16): uint intrinsic
+pub clz(value: u32): uint intrinsic
+pub clz(value: u64): uint intrinsic
 
-pub lead_zeros(value: u8): uint intrinsic
-pub lead_zeros(value: u16): uint intrinsic
-pub lead_zeros(value: u32): uint intrinsic
-pub lead_zeros(value: u64): uint intrinsic
+pub ctz(value: u8): uint intrinsic
+pub ctz(value: u16): uint intrinsic
+pub ctz(value: u32): uint intrinsic
+pub ctz(value: u64): uint intrinsic
 
-pub trail_zeros(value: u8): uint intrinsic
-pub trail_zeros(value: u16): uint intrinsic
-pub trail_zeros(value: u32): uint intrinsic
-pub trail_zeros(value: u64): uint intrinsic
+pub bswap(value: u8): u8 intrinsic
+pub bswap(value: u16): u16 intrinsic
+pub bswap(value: u32): u32 intrinsic
+pub bswap(value: u64): u64 intrinsic
 
-pub byte_swap(value: u8): u8 intrinsic
-pub byte_swap(value: u16): u16 intrinsic
-pub byte_swap(value: u32): u32 intrinsic
-pub byte_swap(value: u64): u64 intrinsic
+pub rotl(value: u8, count: uint): u8 intrinsic
+pub rotl(value: u16, count: uint): u16 intrinsic
+pub rotl(value: u32, count: uint): u32 intrinsic
+pub rotl(value: u64, count: uint): u64 intrinsic
 
-pub rotate_left(value: u8, count: uint): u8 intrinsic
-pub rotate_left(value: u16, count: uint): u16 intrinsic
-pub rotate_left(value: u32, count: uint): u32 intrinsic
-pub rotate_left(value: u64, count: uint): u64 intrinsic
+pub rotr(value: u8, count: uint): u8 intrinsic
+pub rotr(value: u16, count: uint): u16 intrinsic
+pub rotr(value: u32, count: uint): u32 intrinsic
+pub rotr(value: u64, count: uint): u64 intrinsic
 
-pub rotate_right(value: u8, count: uint): u8 intrinsic
-pub rotate_right(value: u16, count: uint): u16 intrinsic
-pub rotate_right(value: u32, count: uint): u32 intrinsic
-pub rotate_right(value: u64, count: uint): u64 intrinsic
-
-pub wrap_add(a: u8, b: u8): u8 intrinsic
-pub wrap_add(a: u16, b: u16): u16 intrinsic
-pub wrap_add(a: u32, b: u32): u32 intrinsic
-pub wrap_add(a: u64, b: u64): u64 intrinsic
-pub wrap_sub(a: u8, b: u8): u8 intrinsic
-pub wrap_sub(a: u16, b: u16): u16 intrinsic
-pub wrap_sub(a: u32, b: u32): u32 intrinsic
-pub wrap_sub(a: u64, b: u64): u64 intrinsic
-pub wrap_mul(a: u8, b: u8): u8 intrinsic
-pub wrap_mul(a: u16, b: u16): u16 intrinsic
-pub wrap_mul(a: u32, b: u32): u32 intrinsic
-pub wrap_mul(a: u64, b: u64): u64 intrinsic
+pub wradd(a: u8, b: u8): u8 intrinsic
+pub wradd(a: u16, b: u16): u16 intrinsic
+pub wradd(a: u32, b: u32): u32 intrinsic
+pub wradd(a: u64, b: u64): u64 intrinsic
+pub wrsub(a: u8, b: u8): u8 intrinsic
+pub wrsub(a: u16, b: u16): u16 intrinsic
+pub wrsub(a: u32, b: u32): u32 intrinsic
+pub wrsub(a: u64, b: u64): u64 intrinsic
+pub wrmul(a: u8, b: u8): u8 intrinsic
+pub wrmul(a: u16, b: u16): u16 intrinsic
+pub wrmul(a: u32, b: u32): u32 intrinsic
+pub wrmul(a: u64, b: u64): u64 intrinsic

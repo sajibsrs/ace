@@ -37,7 +37,7 @@ pub release[T](mut data: []T) { data = null }
  * allocator's size query.
  */
 
-pub alloc_size(data: []u8): usize { return 0 }
+pub usable(data: []u8): usize { return 0 }
 
 /* Byte operations use complete slice views as their ranges. Write destinations
  * carry type-position `mut` (Mutability #10): their argument must be a

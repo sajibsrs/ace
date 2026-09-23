@@ -38,14 +38,14 @@ main(): int {
     if file_stat_err != null || file_info.file_type != sys.FileType.regular || file_info.size != 10 { return 5 }
     if sys.rename(OLD_PATH, NEW_PATH) != null { return 6 }
 
-    dir: sys.Dir, dir_err: Error = sys.open_dir(DIR_PATH)
+    dir: sys.Dir, dir_err: Error = sys.opendir(DIR_PATH)
     if dir_err != null { return 7 }
     name_storage: [256]u8
     name: mut []u8 = mut name_storage[0..256]
     found: bool = false
     finished: bool = false
     for !finished {
-        count: usize, file_type: sys.FileType, done: bool, read_err: Error = sys.read_dir(mut dir, name)
+        count: usize, file_type: sys.FileType, done: bool, read_err: Error = sys.readdir(mut dir, name)
         if read_err != null { return 8 }
         if done {
             finished = true
@@ -55,7 +55,7 @@ main(): int {
         }
     }
     if !found { return 10 }
-    if sys.close_dir(mut dir) != null || dir.active { return 11 }
+    if sys.closedir(mut dir) != null || dir.active { return 11 }
     if sys.unlink(NEW_PATH) != null { return 12 }
     missing: sys.FileInfo, missing_err: Error = sys.stat(NEW_PATH)
     if missing_err == null || missing_err.domain != typeid(sys.StatErr) { return 13 }

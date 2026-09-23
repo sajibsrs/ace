@@ -34,7 +34,7 @@ fill(text: mut []u8) {
     x: u64 = 88172645463325252
 
     for i: usize in 0 .. text.len {
-        x = bits.wrap_add(bits.wrap_mul(x, u64(6364136223846793005)), u64(1442695040888963407))
+        x = bits.wradd(bits.wrmul(x, u64(6364136223846793005)), u64(1442695040888963407))
         r: u64 = x >> 33
         kind: u64 = r % 16
 

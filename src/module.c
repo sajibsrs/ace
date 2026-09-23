@@ -368,17 +368,23 @@ static void mark_bits_intrinsics(Loader* L, Module* m) {
     for (int i = 0; i < m->file->nkids; i++) {
         Node* n = m->file->kids[i];
         if (n->kind != N_FUNC || !(n->flags & F_INTRINSIC)) continue;
-        if (text_is(n->str, n->len, "from_float")) n->ival = BI_BITS_FROM_FLOAT;
-        else if (text_is(n->str, n->len, "to_float")) n->ival = BI_BITS_TO_FLOAT;
-        else if (text_is(n->str, n->len, "pop_count")) n->ival = BI_BITS_POP_COUNT;
-        else if (text_is(n->str, n->len, "lead_zeros")) n->ival = BI_BITS_LEAD_ZEROS;
-        else if (text_is(n->str, n->len, "trail_zeros")) n->ival = BI_BITS_TRAIL_ZEROS;
-        else if (text_is(n->str, n->len, "byte_swap")) n->ival = BI_BITS_BYTE_SWAP;
-        else if (text_is(n->str, n->len, "rotate_left")) n->ival = BI_BITS_ROTATE_LEFT;
-        else if (text_is(n->str, n->len, "rotate_right")) n->ival = BI_BITS_ROTATE_RIGHT;
-        else if (text_is(n->str, n->len, "wrap_add")) n->ival = BI_BITS_WRAP_ADD;
-        else if (text_is(n->str, n->len, "wrap_sub")) n->ival = BI_BITS_WRAP_SUB;
-        else if (text_is(n->str, n->len, "wrap_mul")) n->ival = BI_BITS_WRAP_MUL;
+        if (text_is(n->str, n->len, "cast")) {
+            // A float parameter reads the representation out; any other
+            // parameter writes it back. Sema checks the exact signature.
+            Node* t = n->nkids == 1 ? n->kids[0]->a : NULL;
+            int from = t && t->kind == N_NAMED &&
+                (text_is(t->str, t->len, "f64") || text_is(t->str, t->len, "f32"));
+            n->ival = from ? BI_BITS_FROM_FLOAT : BI_BITS_TO_FLOAT;
+        }
+        else if (text_is(n->str, n->len, "popcount")) n->ival = BI_BITS_POP_COUNT;
+        else if (text_is(n->str, n->len, "clz")) n->ival = BI_BITS_LEAD_ZEROS;
+        else if (text_is(n->str, n->len, "ctz")) n->ival = BI_BITS_TRAIL_ZEROS;
+        else if (text_is(n->str, n->len, "bswap")) n->ival = BI_BITS_BYTE_SWAP;
+        else if (text_is(n->str, n->len, "rotl")) n->ival = BI_BITS_ROTATE_LEFT;
+        else if (text_is(n->str, n->len, "rotr")) n->ival = BI_BITS_ROTATE_RIGHT;
+        else if (text_is(n->str, n->len, "wradd")) n->ival = BI_BITS_WRAP_ADD;
+        else if (text_is(n->str, n->len, "wrsub")) n->ival = BI_BITS_WRAP_SUB;
+        else if (text_is(n->str, n->len, "wrmul")) n->ival = BI_BITS_WRAP_MUL;
     }
 }
 
@@ -411,7 +417,7 @@ static void mark_mem_intrinsics(Loader* L, Module* m) {
         else if (text_is(n->str, n->len, "zero")) n->ival = BI_MEM_ZERO;
         else if (text_is(n->str, n->len, "compare")) n->ival = BI_MEM_COMPARE;
         else if (text_is(n->str, n->len, "equal")) n->ival = BI_MEM_EQUAL;
-        else if (text_is(n->str, n->len, "alloc_size")) n->ival = BI_MEM_ALLOC_SIZE;
+        else if (text_is(n->str, n->len, "usable")) n->ival = BI_MEM_ALLOC_SIZE;
     }
 }
 

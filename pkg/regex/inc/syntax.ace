@@ -152,7 +152,7 @@ pub Class.has(byte: u8): bool { return ((self.bits[usize(byte >> 6)] >> u64(byte
 perl_class(letter: u8): (Class, bool) {
     set: Class = blank(Class)
 
-    switch ascii.to_lower(letter) {
+    switch ascii.lower(letter) {
         'd' {
             mut set.add_range('0', '9')
         }

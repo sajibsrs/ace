@@ -15,9 +15,9 @@ pub StatErr: type = os.StatErr
 pub MkdirErr: type = os.MkdirErr
 pub RenameErr: type = os.RenameErr
 pub UnlinkErr: type = os.UnlinkErr
-pub OpenDirErr: type = os.OpenDirErr
-pub ReadDirErr: type = os.ReadDirErr
-pub CloseDirErr: type = os.CloseDirErr
+pub OpendirErr: type = os.OpendirErr
+pub ReaddirErr: type = os.ReaddirErr
+pub ClosedirErr: type = os.ClosedirErr
 pub ForkErr: type = os.ForkErr
 pub WaitErr: type = os.WaitErr
 pub PipeErr: type = os.PipeErr
@@ -149,14 +149,14 @@ pub rename(old_path: string, new_path: string): Error { return os.rename(old_pat
 
 pub unlink(path: string): Error { return os.unlink(path) }
 
-pub open_dir(path: string): (Dir, Error) {
-    dir: Dir, err: Error = os.open_dir(path)
+pub opendir(path: string): (Dir, Error) {
+    dir: Dir, err: Error = os.opendir(path)
     return dir, err
 }
 
-pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileType, bool, Error) {
-    length: usize, file_type: FileType, done: bool, err: Error = os.read_dir(mut dir, name)
+pub readdir(mut dir: Dir, name: mut []u8): (usize, FileType, bool, Error) {
+    length: usize, file_type: FileType, done: bool, err: Error = os.readdir(mut dir, name)
     return length, file_type, done, err
 }
 
-pub close_dir(mut dir: Dir): Error { return os.close_dir(mut dir) }
+pub closedir(mut dir: Dir): Error { return os.closedir(mut dir) }

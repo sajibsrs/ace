@@ -37,7 +37,7 @@ pub WaitErr: error {
     22: invalid = "event storage must not be empty"
 }
 
-pub wait_forever: const u64 = 0xffffffffffffffff
+pub FOREVER: const u64 = 0xffffffffffffffff
 
 DarwinKevent: struct {
     ident: usize,
@@ -168,7 +168,7 @@ pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
     }
     timeout_pointer: *DarwinTimespec = null
 
-    if timeout_ns != wait_forever {
+    if timeout_ns != FOREVER {
         timeout.seconds = i64(timeout_ns / NSEC_PER_SEC)
         timeout.nanoseconds = i64(timeout_ns % NSEC_PER_SEC)
         timeout_pointer = &timeout

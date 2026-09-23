@@ -272,7 +272,7 @@ The trailing `intrinsic` marker replaces a function body only for an exact
 compiler-provided standard-library operation:
 
 ```ace
-pub from_float(value: f64): u64 intrinsic
+pub cast(value: f64): u64 intrinsic
 ```
 
 It is not a user-extensible foreign-function or assembly mechanism. The

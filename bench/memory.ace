@@ -83,7 +83,7 @@ main(): int {
         }
     }
 
-    // Probe live allocator usage outside the timed loops. mem.alloc_size reports
+    // Probe live allocator usage outside the timed loops. mem.usable reports
     // the usable size supplied by the platform allocator for each allocation.
     requested_live: usize = 0
     usable_live: usize = 0
@@ -93,7 +93,7 @@ main(): int {
             block[0] = u8(i % 251)
             block[grown_size - 1] = u8((i + 1) % 251)
             requested_live += block.len
-            usable_live += mem.alloc_size(block)
+            usable_live += mem.usable(block)
         } else {
             failures += 1
         }

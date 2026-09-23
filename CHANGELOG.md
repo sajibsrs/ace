@@ -1046,6 +1046,14 @@ current normative rules, and Git preserves patch-level detail.
   `tests/`; `else` branches, every branch of an `if`/`else` chain, and a body whose statement is itself a body stay
   multi-line. Fixtures whose line layout is under test (`tests/emit/basics/main.ace` for DWARF rows,
   `tests/modules/location` for `@line`) keep their layout.
+- Applied the one-word naming rule to std: `ascii.control`/`lower`/`equal`,
+  `utf8.valid`, `mem.usable`, `poll.FOREVER`; `bits.popcount`/`clz`/`ctz`/
+  `bswap`/`rotl`/`rotr`/`wradd`/`wrsub`/`wrmul`, and one `bits.cast` overload
+  set whose declared parameter type (float or unsigned) selects the existing
+  read or write intrinsic; the POSIX spellings `sys.opendir`/`readdir`/
+  `closedir` and `net.reuseaddr`/`reuseport`, with their error domains and
+  private `os/` twins. `tcp`'s `*_nonblock`, `progress_*`, and `*_all` forms
+  and `net.pending_error` keep their identifying word.
 
 ## Significant implementation corrections
 

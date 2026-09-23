@@ -1024,7 +1024,7 @@ The runner builds `bench/memory.ace` in checked and release modes with compiler
 reports enabled, then runs each under macOS `/usr/bin/time -l`. The Ace program checks allocation,
 reallocation payload preservation, and release nulling. It reports operation
 counts, nanoseconds per operation, requested live bytes, allocator-usable live
-bytes from `mem.alloc_size`, allocator overhead, a checksum, and failures.
+bytes from `mem.usable`, allocator overhead, a checksum, and failures.
 
 The external timing report adds process-level statistics such as peak resident
 set size. Checked results include bounds, arithmetic, and allocator diagnostics;

@@ -237,7 +237,7 @@ main(): int {
     listener: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
     if err != null { return 10 }
-    if net.reuse_addr(listener, true) != null {
+    if net.reuseaddr(listener, true) != null {
         sys.close(listener)
         return 11
     }

@@ -78,7 +78,7 @@ main(): int {
 
     if listener_err != null { return 10 }
 
-    if net.reuse_addr(listener, true) != null ||
+    if net.reuseaddr(listener, true) != null ||
        net.bind(listener, loopback(u16(0))) != null {
         sys.close(listener)
         return 11

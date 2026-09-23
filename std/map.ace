@@ -40,8 +40,8 @@ same[K](a: K, b: K): bool specialized
 /* Finalizer that spreads every input bit across the low bits used to index. */
 mix(value: u64): u64 {
     x: u64 = value
-    x = bits.wrap_mul(x ^ (x >> 30), u64(0xbf58476d1ce4e5b9))
-    x = bits.wrap_mul(x ^ (x >> 27), u64(0x94d049bb133111eb))
+    x = bits.wrmul(x ^ (x >> 30), u64(0xbf58476d1ce4e5b9))
+    x = bits.wrmul(x ^ (x >> 27), u64(0x94d049bb133111eb))
     return x ^ (x >> 31)
 }
 
@@ -63,7 +63,7 @@ hash[bool](key: bool): u64 {
 /* FNV-1a over the bytes, then the finalizer. */
 hash[string](key: string): u64 {
     h: u64 = 0xcbf29ce484222325
-    for i: usize in 0 .. key.len { h = bits.wrap_mul(h ^ u64(key[i]), u64(0x100000001b3)) }
+    for i: usize in 0 .. key.len { h = bits.wrmul(h ^ u64(key[i]), u64(0x100000001b3)) }
     return mix(h)
 }
 
