@@ -20,8 +20,9 @@ main(): int {
         return 1
     }
 
-    doc: json.Json, perr: Error = json.Json::parse(data)
+    doc: json.Json = json.Json::new()
     defer mut doc.wipe()
+    perr: Error = mut doc.parse(data)
     if perr != null { return 1 }
 
     fmt.println(doc.string("/first_name"))

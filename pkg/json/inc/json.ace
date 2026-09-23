@@ -20,7 +20,7 @@ pub Json: struct {
     formatter: Formatter,
 }
 
-/* An empty document to write into. */
+/* An empty `Json` to parse into or write with. */
 pub Json::new(): Json {
     return Json {
         root = Value.none,
@@ -29,19 +29,16 @@ pub Json::new(): Json {
     }
 }
 
-/* Parses `text` as one JSON value into `root`. The error is a `ParseErr`,
- * and a failed parse leaves nothing to release.
+/* Parses `text` as one JSON value into `root`, reusing the storage of the
+ * previous parse, so the previous `root` and every string read from it are
+ * invalid afterwards. On failure `root` is `Value.none` and the error is a
+ * `ParseErr`; the storage stays owned until `wipe`.
  */
-pub Json::parse(text: string): (Json, Error) {
-    document: Json = Json::new()
-    root: Value, err: Error = mut document.parser.parse(text)
-    if err != null {
-        mut document.wipe()
-        return blank(Json), err
-    }
-
-    document.root = root
-    return document, null
+pub mut Json.parse(text: string): Error {
+    mut self.parser.reset()
+    root: Value, err: Error = mut self.parser.parse(text)
+    self.root = root
+    return err
 }
 
 pub mut Json.wipe() {

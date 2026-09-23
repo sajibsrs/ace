@@ -3,8 +3,9 @@ import mem
 
 /* Parses a document, reads it, and formats it back. */
 round_trip(): int {
-    doc: json.Json, err: Error = json.Json::parse(" {\"name\": \"ace\", \"tags\": [1, 2.5, true, null]} ")
+    doc: json.Json = json.Json::new()
     defer mut doc.wipe()
+    err: Error = mut doc.parse(" {\"name\": \"ace\", \"tags\": [1, 2.5, true, null]} ")
     if err != null { return 1 }
 
     switch doc.root {
@@ -32,10 +33,11 @@ round_trip(): int {
     return 0
 }
 
-/* A failed parse returns the parse error and a blank document to wipe. */
+/* A failed parse returns the parse error and leaves `root` as `none`. */
 failure(): int {
-    doc: json.Json, err: Error = json.Json::parse("[1, 2")
+    doc: json.Json = json.Json::new()
     defer mut doc.wipe()
+    err: Error = mut doc.parse("[1, 2")
     if err != json.ParseErr.unexpected_token { return 10 }
 
     switch doc.root {
@@ -49,8 +51,9 @@ failure(): int {
 
 /* A root assigned by hand writes like a parsed one. */
 assigned(): int {
-    doc: json.Json, err: Error = json.Json::parse("0")
+    doc: json.Json = json.Json::new()
     defer mut doc.wipe()
+    err: Error = mut doc.parse("0")
     if err != null { return 20 }
 
     doc.root = json.Value.string("a\"b")
@@ -94,6 +97,24 @@ written(): int {
     return 0
 }
 
+/* One `Json` parses document after document, each replacing the last, and a
+ * failure in between leaves the next parse unaffected.
+ */
+reuse(): int {
+    doc: json.Json = json.Json::new()
+    defer mut doc.wipe()
+    texts: [4]string = ["{\"id\": \"a\"}", "{\"id\": \"bb\", \"pad\": [1, 2, 3, 4, 5, 6, 7, 8]}", "{\"id\"", "{\"id\": \"c\"}"]
+    want: [4]string = ["a", "bb", null, "c"]
+
+    for i: usize in 0 .. texts.len {
+        err: Error = mut doc.parse(texts[i])
+        if (err == null) != (want[i] != null) { return 40 + int(i) }
+
+        if want[i] != null && !mem.equal(doc.string("/id"), want[i]) { return 44 + int(i) }
+    }
+    return 0
+}
+
 main(): int {
     code: int = round_trip()
     if code != 0 { return code }
@@ -102,6 +123,9 @@ main(): int {
     if code != 0 { return code }
 
     code = assigned()
+    if code != 0 { return code }
+
+    code = reuse()
     if code != 0 { return code }
     return written()
 }

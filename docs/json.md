@@ -47,7 +47,7 @@ rather than merged.
 A `Json` holds two independent things: `root`, the tree `parse` produced,
 which is input read by path; and the text its write calls produce, which is
 output that `format` returns. `mut doc.wipe()` releases both, so `defer` it
-right after `parse` or `new`.
+right after `new`.
 
 ### Reading
 
@@ -56,8 +56,9 @@ import fmt
 import json
 
 main(): int {
-    doc: json.Json, err: Error = json.Json::parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
+    doc: json.Json = json.Json::new()
     defer mut doc.wipe()
+    err: Error = mut doc.parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
     if err != null { return 1 }
 
     fmt.println(doc.string("/name"))  // ace
@@ -66,9 +67,23 @@ main(): int {
 }
 ```
 
-`json.Json::parse(text: string): (Json, Error)` parses `text` as one value
-into `doc.root`. A failed parse returns a blank `Json` and a `json.ParseErr`,
-with nothing left to release.
+`json.Json::new(): Json` makes an empty `Json`, and `mut doc.parse(text:
+string): Error` parses `text` as one value into `doc.root`. On failure `root`
+is `Value.none` and the error is a `json.ParseErr`. Each `parse` reuses the
+storage of the one before, so the previous `root` and every string read from
+it are invalid afterwards. Parse many documents with one `Json`:
+
+```ace
+for i: usize in 0 .. texts.len {
+    err: Error = mut doc.parse(texts[i])
+    if err != null { continue }
+
+    fmt.println(doc.string("/id"))
+}
+```
+
+Reusing one `Json` takes about 36% less time per document than a fresh `Json`
+for each on 114-byte documents, and about 21% less on 460-byte ones.
 
 Values are read by [JSON Pointer](https://www.rfc-editor.org/rfc/rfc6901):
 `""` is the whole tree, and each `/token` steps into an object member or an
@@ -82,7 +97,8 @@ with no leading zero. An object step takes the first member with that key.
 | `number(path)` | the number, or `0` when absent or not a number |
 | `bool(path)` | the boolean, or `false` when absent or not a boolean |
 
-Strings read from a `Json` are valid until `wipe`. `root` may be reassigned.
+Strings read from a `Json` are valid until the next `parse` or `wipe`. `root`
+may be reassigned.
 The pointer walk is the core function `json.get(tree: Value, path: string):
 (Value, bool)`, which works on any tree, including one from a `Parser`.
 
@@ -106,10 +122,9 @@ main(): int {
 }
 ```
 
-`json.Json::new(): Json` makes an empty `Json`. Its write calls are exactly
-the `Formatter` calls below (`object`, `array`, `end`, `key`, `none`,
-`value`, `field`), each forwarded to the `Formatter` it holds, and
-`doc.format(): (string, Error)` is `finish`: the one value written, or the
+A `Json`'s write calls are exactly the `Formatter` calls below (`object`,
+`array`, `end`, `key`, `none`, `value`, `field`), each forwarded to the
+`Formatter` it holds, and `doc.format(): (string, Error)` is `finish`: the one value written, or the
 first `json.FormatErr`. `format` returns only what the write calls wrote,
 never `root` on its own, so writing a parsed tree back is explicit:
 
@@ -123,9 +138,6 @@ The text is borrowed from the `Json` and valid until `reset` or `wipe`.
 `root` unchanged. Each forwarded call costs one extra call: writing a
 12-record, 648-byte document takes about 3.5% longer than the same calls on a
 `Formatter`.
-
-Each `Json` owns a fresh parser. To parse many documents in turn, use a
-`Parser` with `reset` instead (below).
 
 ## Parsing
 

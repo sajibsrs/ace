@@ -1440,6 +1440,11 @@ current normative rules, and Git preserves patch-level detail.
   tokens in place and allocates nothing. `demo/json-parse-file` reads four
   fields by pointer instead of walking the tree (87 to 32 lines), and
   `demo/json-format-file` writes through `Json` inline (66 to 42 lines).
+- Replaced `pkg/json`'s `Json::parse(text): (Json, Error)` with the method
+  `mut Json.parse(text): Error`, so parsing and writing both start from
+  `Json::new()`. Each parse resets the parser and reuses its storage, which
+  a fresh `Json` per document could not: about 36% less time per document at
+  114 bytes and 21% at 460. On failure `root` is `Value.none`.
 - Added `demo/regex-search-file`, an `exe` package over `pkg/regex` that reads
   `SPEC.md` with `file.read` and prints every `Decision:` line through a
   `next` loop.
