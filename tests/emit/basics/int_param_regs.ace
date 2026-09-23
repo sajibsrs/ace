@@ -43,16 +43,22 @@ first(): usize {
 }
 
 small_step(s: Small): Small {
-    return Small {v = (s.v * 3 + 1) & 0xFFFF}
+    return Small { v = (s.v * 3 + 1) & 0xFFFF }
 }
 
 pair_step(p: Pair): Pair {
-    return Pair {a = (p.a * 3 + p.b) & 0xFFFF, b = (p.b + 1) & 0xFFFF}
+    return Pair {
+        a = (p.a * 3 + p.b) & 0xFFFF,
+        b = (p.b + 1) & 0xFFFF,
+    }
 }
 
 // result registers x0-x1 are the incoming argument registers
 swap(p: Pair): Pair {
-    return Pair {a = p.b, b = p.a}
+    return Pair {
+        a = p.b,
+        b = p.a,
+    }
 }
 
 second(p: Pair): usize {
@@ -154,68 +160,155 @@ deep(p: Pair): usize {
 }
 
 main(): int {
-    s: Small = small_step(Small {v = 5})
+    s: Small = small_step(Small { v = 5 })
     if s.v != 16 {
         return 1
     }
-    p: Pair = pair_step(Pair {a = 2, b = 7})
+    p: Pair = pair_step(Pair {
+        a = 2,
+        b = 7,
+    })
     if p.a != 13 || p.b != 8 {
         return 2
     }
-    w: Pair = swap(Pair {a = 3, b = 9})
+    w: Pair = swap(Pair {
+        a = 3,
+        b = 9,
+    })
     if w.a != 9 || w.b != 3 {
         return 3
     }
-    if second(Pair {a = 1, b = 6}) != 6 || unused(Pair {a = 1, b = 2}, Pair {a = 8, b = 9}) != 8 {
+    if second(Pair {
+        a = 1,
+        b = 6,
+    }) != 6 || unused(Pair {
+        a = 1,
+        b = 2,
+    }, Pair {
+        a = 8,
+        b = 9,
+    }) != 8 {
         return 4
     }
     // (50 - 3) / 7 + 12 % 5 + (50 << 2) - (12 >> 1) = 6 + 2 + 200 - 6
-    if order(Pair {a = 50, b = 12}) != 202 {
+    if order(Pair {
+        a = 50,
+        b = 12,
+    }) != 202 {
         return 5
     }
-    if !bigger(Pair {a = 5, b = 1}, Pair {a = 2, b = 4}) || bigger(Pair {a = 5, b = 1}, Pair {a = 1, b = 4}) {
+    if !bigger(Pair {
+        a = 5,
+        b = 1,
+    }, Pair {
+        a = 2,
+        b = 4,
+    }) || bigger(Pair {
+        a = 5,
+        b = 1,
+    }, Pair {
+        a = 1,
+        b = 4,
+    }) {
         return 6
     }
-    if branchy(Pair {a = 9, b = 4}) != 5 || branchy(Pair {a = 0, b = 4}) != 100 || branchy(Pair {a = 2, b = 9}) != 7 {
+    if branchy(Pair {
+        a = 9,
+        b = 4,
+    }) != 5 || branchy(Pair {
+        a = 0,
+        b = 4,
+    }) != 100 || branchy(Pair {
+        a = 2,
+        b = 9,
+    }) != 7 {
         return 7
     }
-    if nested(Nest {inner = Small {v = 4}, w = 3}) != 43 {
+    if nested(Nest {
+        inner = Small { v = 4 },
+        w = 3,
+    }) != 43 {
         return 8
     }
-    if wide_a(Wide {a = 10, b = 99}) != 11 || wide_b(Wide {a = 10, b = 99}) != 109 {
+    if wide_a(Wide {
+        a = 10,
+        b = 99,
+    }) != 11 || wide_b(Wide {
+        a = 10,
+        b = 99,
+    }) != 109 {
         return 9
     }
-    if packed(Packed {a = 3, b = 4}) != 7 {
+    if packed(Packed {
+        a = 3,
+        b = 4,
+    }) != 7 {
         return 10
     }
-    if mixed(Mix {a = 3, b = 0.5}) != 3.5 {
+    if mixed(Mix {
+        a = 3,
+        b = 0.5,
+    }) != 3.5 {
         return 11
     }
-    q: Pair = pass(Pair {a = 6, b = 7})
+    q: Pair = pass(Pair {
+        a = 6,
+        b = 7,
+    })
     if q.a != 6 || q.b != 7 {
         return 12
     }
-    if copy_sum(Pair {a = 1, b = 2}, Pair {a = 30, b = 40}) != 41 {
+    if copy_sum(Pair {
+        a = 1,
+        b = 2,
+    }, Pair {
+        a = 30,
+        b = 40,
+    }) != 41 {
         return 13
     }
-    arr: Arr = Arr {v = [3, 5]}
+    arr: Arr = Arr { v = [3, 5] }
     if pick(arr, 0) != 3 || pick(arr, 1) != 5 {
         return 14
     }
-    if lookup(Pair {a = 1, b = 3}) != 60 {
+    if lookup(Pair {
+        a = 1,
+        b = 3,
+    }) != 60 {
         return 15
     }
-    if after_call(Pair {a = 4, b = 5}) != 13 {
+    if after_call(Pair {
+        a = 4,
+        b = 5,
+    }) != 13 {
         return 16
     }
-    if sum4(Pair {a = 1, b = 2}, Pair {a = 3, b = 4}, Pair {a = 5, b = 6}, Pair {a = 7, b = 8}) != 21 + 700 + 8000 {
+    if sum4(Pair {
+        a = 1,
+        b = 2,
+    }, Pair {
+        a = 3,
+        b = 4,
+    }, Pair {
+        a = 5,
+        b = 6,
+    }, Pair {
+        a = 7,
+        b = 8,
+    }) != 21 + 700 + 8000 {
         return 17
     }
     // sum over i in 0..4 of (a*i + b + k), k = 1..4: 3*6 + 4*5 + 10
-    if in_loop(Pair {a = 3, b = 5}) != 18 + 20 + 10 {
+    if in_loop(Pair {
+        a = 3,
+        b = 5,
+    }) != 18 + 20 + 10 {
         return 18
     }
-    if deep(Pair {a = 2, b = 3}) != 2 * (3 + (2 * (3 + (2 * (3 + (2 * (3 + 2))))))) {
+    if deep(Pair {
+        a = 2,
+        b = 3,
+    }) != 2 * (3 + (2 * (3 + (2 * (3 + (2 * (3 + 2))))))) {
         return 19
     }
     return 42

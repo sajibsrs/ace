@@ -20,7 +20,7 @@ Parser.array(n: int): int {
 }
 
 main(): int {
-    p: Parser = Parser {depth = 0}
+    p: Parser = Parser { depth = 0 }
     if p.value(2) != 6 {
         return 1
     }

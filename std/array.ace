@@ -26,11 +26,11 @@ pub Array[T]: struct {
  * capacity allocates nothing.
  */
 pub Array[T]::new(capacity: usize): (Array[T], Error) {
-    if capacity == 0 { return Array[T]{}, null }
+    if capacity == 0 { return Array[T] {}, null }
     items: mut []T = mem.alloc[T](capacity)
-    if items == null { return Array[T]{}, ArrayErr.allocation }
+    if items == null { return Array[T] {}, ArrayErr.allocation }
 
-    return Array[T]{items = items, len = 0}, null
+    return Array[T] { items = items }, null
 }
 
 /* Releases the array's storage and leaves it empty. */

@@ -10,13 +10,13 @@ import http
 main(): int {
     context: http.ClientContext = http.ClientContext::new()
     defer mut context.wipe()
-    mismatch: http.Response, mismatch_err: Error = http.get(
-        "https://example.com/", mut context)
+    mismatch: http.Response, mismatch_err: Error = http.get("https://example.com/", mut context)
     if mismatch_err == null || mismatch_err.domain != typeid(http.UrlErr) {
         return int(mismatch.status) + 1
     }
-    response: http.Response, err: Error = http.get(
-        "http://nonexistent.invalid/", mut context)
+
+    response: http.Response, err: Error = http.get("http://nonexistent.invalid/", mut context)
     if err == null { return int(response.status) }
+
     return 0
 }

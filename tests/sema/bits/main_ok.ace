@@ -9,7 +9,10 @@ main(): int {
     flags: Flags = Flags { enabled = 1 }
     raw: u32 = u32(flags)
     same: Flags = Flags(raw)
-    box: Box = Box { flags = same, values = [flags, copy(flags)] }
+    box: Box = Box {
+        flags = same,
+        values = [flags, copy(flags)],
+    }
     if box.flags == box.values[0] && box.flags != Flags(u32(0)) { return 0 }
     return 1
 }

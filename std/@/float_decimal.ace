@@ -38,16 +38,38 @@ pub binary64(value: f64, out: mut []u8): Decimal {
     fraction: u64 = raw & u64(0xFFFFFFFFFFFFF)
 
     if exponent == u64(0x7FF) {
-        if fraction == 0 { return Decimal { count = 0, point = 0, negative = negative, number_type = Type.infinity } }
-        return Decimal { count = 0, point = 0, negative = false, number_type = Type.nan }
+        if fraction == 0 {
+            return Decimal {
+                count = 0,
+                point = 0,
+                negative = negative,
+                number_type = Type.infinity,
+            }
+        }
+        return Decimal {
+            count = 0,
+            point = 0,
+            negative = false,
+            number_type = Type.nan,
+        }
     }
 
     if exponent == 0 && fraction == 0 {
-        return Decimal { count = 0, point = 0, negative = negative, number_type = Type.zero }
+        return Decimal {
+            count = 0,
+            point = 0,
+            negative = negative,
+            number_type = Type.zero,
+        }
     }
     converted: ryu.Floating = ryu.binary64(fraction, exponent)
     count: int, point: i32 = write_shortest(converted, out)
-    return Decimal { count = count, point = point, negative = negative, number_type = Type.finite }
+    return Decimal {
+        count = count,
+        point = point,
+        negative = negative,
+        number_type = Type.finite,
+    }
 }
 
 pub binary32(value: f32, out: mut []u8): Decimal {
@@ -57,20 +79,41 @@ pub binary32(value: f32, out: mut []u8): Decimal {
     fraction: u32 = raw & u32(0x7FFFFF)
 
     if exponent == u32(0xFF) {
-        if fraction == 0 { return Decimal { count = 0, point = 0, negative = negative, number_type = Type.infinity } }
-        return Decimal { count = 0, point = 0, negative = false, number_type = Type.nan }
+        if fraction == 0 {
+            return Decimal {
+                count = 0,
+                point = 0,
+                negative = negative,
+                number_type = Type.infinity,
+            }
+        }
+        return Decimal {
+            count = 0,
+            point = 0,
+            negative = false,
+            number_type = Type.nan,
+        }
     }
 
     if exponent == 0 && fraction == 0 {
-        return Decimal { count = 0, point = 0, negative = negative, number_type = Type.zero }
+        return Decimal {
+            count = 0,
+            point = 0,
+            negative = negative,
+            number_type = Type.zero,
+        }
     }
     converted: ryu.Floating = ryu.binary32(fraction, exponent)
     count: int, point: i32 = write_shortest(converted, out)
-    return Decimal { count = count, point = point, negative = negative, number_type = Type.finite }
+    return Decimal {
+        count = count,
+        point = point,
+        negative = negative,
+        number_type = Type.finite,
+    }
 }
 
-fixed(mantissa: u64, exponent2: i32, precision: int,
-      negative: bool, out: mut []u8): Decimal {
+fixed(mantissa: u64, exponent2: i32, precision: int, negative: bool, out: mut []u8): Decimal {
     exact_value: big.Big = big.from_u64(mantissa)
 
     if exponent2 >= 0 {
@@ -86,7 +129,14 @@ fixed(mantissa: u64, exponent2: i32, precision: int,
     if exponent2 < 0 { point += exponent2 }
     keep: int = int(point) + precision
 
-    if keep < 0 { return Decimal { count = 0, point = point, negative = negative, number_type = Type.zero } }
+    if keep < 0 {
+        return Decimal {
+            count = 0,
+            point = point,
+            negative = negative,
+            number_type = Type.zero,
+        }
+    }
 
     if keep == 0 {
         round_up: bool = exact_view[0] > 53
@@ -102,10 +152,19 @@ fixed(mantissa: u64, exponent2: i32, precision: int,
 
         if round_up {
             out[0] = u8(49)
-            return Decimal { count = 1, point = i32(1 - precision),
-                             negative = negative, number_type = Type.finite }
+            return Decimal {
+                count = 1,
+                point = i32(1 - precision),
+                negative = negative,
+                number_type = Type.finite,
+            }
         }
-        return Decimal { count = 0, point = point, negative = negative, number_type = Type.zero }
+        return Decimal {
+            count = 0,
+            point = point,
+            negative = negative,
+            number_type = Type.zero,
+        }
     }
     copied: int = keep
 
@@ -151,7 +210,12 @@ fixed(mantissa: u64, exponent2: i32, precision: int,
             }
         }
     }
-    return Decimal { count = keep, point = point, negative = negative, number_type = Type.finite }
+    return Decimal {
+        count = keep,
+        point = point,
+        negative = negative,
+        number_type = Type.finite,
+    }
 }
 
 pub fixed64(value: f64, precision: usize, out: mut []u8): Decimal {
@@ -161,12 +225,29 @@ pub fixed64(value: f64, precision: usize, out: mut []u8): Decimal {
     fraction: u64 = raw & u64(0xFFFFFFFFFFFFF)
 
     if exponent == u64(0x7FF) {
-        if fraction == 0 { return Decimal { count = 0, point = 0, negative = negative, number_type = Type.infinity } }
-        return Decimal { count = 0, point = 0, negative = false, number_type = Type.nan }
+        if fraction == 0 {
+            return Decimal {
+                count = 0,
+                point = 0,
+                negative = negative,
+                number_type = Type.infinity,
+            }
+        }
+        return Decimal {
+            count = 0,
+            point = 0,
+            negative = false,
+            number_type = Type.nan,
+        }
     }
 
     if exponent == 0 && fraction == 0 {
-        return Decimal { count = 0, point = 0, negative = negative, number_type = Type.zero }
+        return Decimal {
+            count = 0,
+            point = 0,
+            negative = negative,
+            number_type = Type.zero,
+        }
     }
     mantissa: u64 = fraction
     exponent2: i32 = -1074
@@ -185,12 +266,29 @@ pub fixed32(value: f32, precision: usize, out: mut []u8): Decimal {
     fraction: u32 = raw & u32(0x7FFFFF)
 
     if exponent == u32(0xFF) {
-        if fraction == 0 { return Decimal { count = 0, point = 0, negative = negative, number_type = Type.infinity } }
-        return Decimal { count = 0, point = 0, negative = false, number_type = Type.nan }
+        if fraction == 0 {
+            return Decimal {
+                count = 0,
+                point = 0,
+                negative = negative,
+                number_type = Type.infinity,
+            }
+        }
+        return Decimal {
+            count = 0,
+            point = 0,
+            negative = false,
+            number_type = Type.nan,
+        }
     }
 
     if exponent == 0 && fraction == 0 {
-        return Decimal { count = 0, point = 0, negative = negative, number_type = Type.zero }
+        return Decimal {
+            count = 0,
+            point = 0,
+            negative = negative,
+            number_type = Type.zero,
+        }
     }
     mantissa: u64 = u64(fraction)
     exponent2: i32 = -149

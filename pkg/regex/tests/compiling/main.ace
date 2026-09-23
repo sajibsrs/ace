@@ -59,8 +59,14 @@ basics(): int {
     bad += program("", "0 save 0\n1 save 1\n2 match\n")
     bad += program("a", "0 save 0\n1 byte a\n2 save 1\n3 match\n")
     bad += program("^\\b.[x]\\B$", "0 save 0\n1 bol\n2 wb\n3 any\n4 class 0\n5 nwb\n6 eol\n7 save 1\n8 match\n")
-    bad += program("a|b|c", "0 save 0\n1 split 2 4\n2 byte a\n3 jmp 8\n4 split 5 7\n5 byte b\n6 jmp 8\n7 byte c\n8 save 1\n9 match\n")
-    bad += program("(?:ab)|(c)", "0 save 0\n1 split 2 5\n2 byte a\n3 byte b\n4 jmp 8\n5 save 2\n6 byte c\n7 save 3\n8 save 1\n9 match\n")
+    bad += program(
+        "a|b|c",
+        "0 save 0\n1 split 2 4\n2 byte a\n3 jmp 8\n4 split 5 7\n5 byte b\n6 jmp 8\n7 byte c\n8 save 1\n9 match\n",
+    )
+    bad += program(
+        "(?:ab)|(c)",
+        "0 save 0\n1 split 2 5\n2 byte a\n3 byte b\n4 jmp 8\n5 save 2\n6 byte c\n7 save 3\n8 save 1\n9 match\n",
+    )
     return bad
 }
 
@@ -72,7 +78,10 @@ repetition(): int {
     bad += program("a+?", "0 save 0\n1 byte a\n2 split 3 1\n3 save 1\n4 match\n")
     bad += program("a?", "0 save 0\n1 split 2 3\n2 byte a\n3 save 1\n4 match\n")
     bad += program("a??", "0 save 0\n1 split 3 2\n2 byte a\n3 save 1\n4 match\n")
-    bad += program("a{2,4}", "0 save 0\n1 byte a\n2 byte a\n3 split 4 7\n4 byte a\n5 split 6 7\n6 byte a\n7 save 1\n8 match\n")
+    bad += program(
+        "a{2,4}",
+        "0 save 0\n1 byte a\n2 byte a\n3 split 4 7\n4 byte a\n5 split 6 7\n6 byte a\n7 save 1\n8 match\n",
+    )
     bad += program("a{2,}", "0 save 0\n1 byte a\n2 byte a\n3 split 2 4\n4 save 1\n5 match\n")
     bad += program("a{0}", "0 save 0\n1 save 1\n2 match\n")
     bad += program("(?:(?:(?:){1000}){1000}){1000}", "0 save 0\n1 save 1\n2 match\n")

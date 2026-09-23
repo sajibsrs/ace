@@ -7,7 +7,10 @@ pub Point: struct {
 
 pub Color: enum { red, blue }
 
-pub origin: Point = Point { x = 10, y = 20 }
+pub origin: Point = Point {
+    x = 10,
+    y = 20,
+}
 
 pub score(value: int): int {
     return value + 1

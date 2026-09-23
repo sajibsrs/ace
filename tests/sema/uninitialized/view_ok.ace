@@ -6,7 +6,10 @@ first(spans: []Span): usize { return spans[0].start }
 
 fill(spans: mut []Span) {
     for i: usize in usize(0) .. spans.len {
-        spans[i] = Span { start = i, end = i }
+        spans[i] = Span {
+            start = i,
+            end = i,
+        }
     }
 }
 

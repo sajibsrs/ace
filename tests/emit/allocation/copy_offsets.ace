@@ -20,7 +20,7 @@ U24: union {
     triple: Triple,
 }
 
-global: const U24 = U24.triple({ first = 7.0, second = 8.0, third = 9.0 })
+global: const U24 = U24.triple( { first = 7.0, second = 8.0, third = 9.0 })
 
 pair(value: Triple): (int, Triple) {
     return 11, value

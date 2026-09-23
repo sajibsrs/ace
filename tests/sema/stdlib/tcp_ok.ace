@@ -54,7 +54,10 @@ check(address: net.Addr4, listener: Listener, connection: Conn, bytes: mut []u8,
 }
 
 main(): int {
-    address: net.Addr4 = net.Addr4 {ip = [127, 0, 0, 1], port = u16(0)}
+    address: net.Addr4 = net.Addr4 {
+        ip = [127, 0, 0, 1],
+        port = u16(0),
+    }
     listener: Listener, listen_err: Error = listen(address, usize(8))
     connection: Conn, connect_err: Error = connect(address)
     pending: Conn, pending_err: Error = connect_nonblock(address)

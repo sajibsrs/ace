@@ -12,18 +12,10 @@ increment(mut value: int) {
 }
 
 divide(value: int, by: int): (int, int) {
-    return (
-        value / by,
-        value % by,
-    )
+    return (value / by, value % by)
 }
 
-long_parameter_list(
-    url: string,
-    config: int,
-    policy: int,
-    mut client: int,
-): int {
+long_parameter_list(url: string, config: int, policy: int, mut client: int): int {
     client += config + policy
     return int(url.len) + client
 }

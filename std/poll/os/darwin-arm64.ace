@@ -67,9 +67,14 @@ MAX_WAIT_EVENTS: const usize = 64
 
 extern "c" {
     c_kqueue(): i32 = "kqueue"
-    c_kevent(queue: i32, changes: *DarwinKevent, change_count: i32,
-             events: mut *DarwinKevent, event_count: i32,
-             timeout: *DarwinTimespec): i32 = "kevent"
+    c_kevent(
+        queue: i32,
+        changes: *DarwinKevent,
+        change_count: i32,
+        events: mut *DarwinKevent,
+        event_count: i32,
+        timeout: *DarwinTimespec,
+    ): i32 = "kevent"
     c_errno(): mut *i32 = "__error"
 }
 
@@ -157,7 +162,10 @@ pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
 
     if capacity > MAX_WAIT_EVENTS { capacity = MAX_WAIT_EVENTS }
 
-    timeout: DarwinTimespec = DarwinTimespec {seconds = i64(0), nanoseconds = i64(0)}
+    timeout: DarwinTimespec = DarwinTimespec {
+        seconds = i64(0),
+        nanoseconds = i64(0),
+    }
     timeout_pointer: *DarwinTimespec = null
 
     if timeout_ns != wait_forever {

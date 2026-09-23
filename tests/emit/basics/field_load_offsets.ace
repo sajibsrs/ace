@@ -24,10 +24,18 @@ read(p: *Wide): i64 {
 }
 
 main(): int {
-    w: Wide = Wide{
+    w: Wide = Wide {
         pad = [0 : 5000],
         small = 7,
-        inner = Inner{a = 200, s = -5, b = 60000, c = 4000000000, d = -9, f = 2.5, g = 0.25},
+        inner = Inner {
+            a = 200,
+            s = -5,
+            b = 60000,
+            c = 4000000000,
+            d = -9,
+            f = 2.5,
+            g = 0.25,
+        },
         tail = -3,
     }
 
@@ -37,7 +45,12 @@ main(): int {
     bump(mut w)
     if w.tail != 59997 { return 4 }
 
-    p: Packed = Packed{prefix = 1, word = 0xDEADBEEF, half = 0xBEEF, big = 0x0123456789ABCDEF}
+    p: Packed = Packed {
+        prefix = 1,
+        word = 0xDEADBEEF,
+        half = 0xBEEF,
+        big = 0x0123456789ABCDEF,
+    }
     q: *Packed = &p
     if q.word != 0xDEADBEEF || q.half != 0xBEEF || q.big != 0x0123456789ABCDEF || q.prefix != 1 {
         return 5

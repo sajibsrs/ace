@@ -17,7 +17,11 @@ value(): u8 {
 }
 
 main(): int {
-    registers: Registers = Registers { prefix = 0, status = 1, control = 2 }
+    registers: Registers = Registers {
+        prefix = 0,
+        status = 1,
+        control = 2,
+    }
 
     if registers.control != 2 {
         return 4

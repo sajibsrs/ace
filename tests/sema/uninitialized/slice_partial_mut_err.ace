@@ -4,7 +4,10 @@ Span: struct { start: usize, end: usize }
 
 fill(spans: mut []Span) {
     for i: usize in usize(0) .. spans.len {
-        spans[i] = Span { start = i, end = i }
+        spans[i] = Span {
+            start = i,
+            end = i,
+        }
     }
 }
 

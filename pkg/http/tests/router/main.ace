@@ -2,15 +2,24 @@ import http
 import mem
 
 home_route(request: http.Request): http.Response {
-    return http.Response {status = 200, body = "home"}
+    return http.Response {
+        status = 200,
+        body = "home",
+    }
 }
 
 about_route(request: http.Request): http.Response {
-    return http.Response {status = 200, body = "about"}
+    return http.Response {
+        status = 200,
+        body = "about",
+    }
 }
 
 submit_route(request: http.Request): http.Response {
-    return http.Response {status = 200, body = "submit"}
+    return http.Response {
+        status = 200,
+        body = "submit",
+    }
 }
 
 main(): int {
@@ -26,28 +35,52 @@ main(): int {
     err = mut router.handle(http.method_post, "/submit", submit_route)
     if err != null { return 3 }
 
-    response: http.Response = router.dispatch(http.Request {method = "GET", target = "/home"})
+    response: http.Response = router.dispatch(http.Request {
+        method = "GET",
+        target = "/home",
+    })
     if response.status != 200 || !mem.equal(response.body, "home") { return 10 }
 
-    response = router.dispatch(http.Request {method = "GET", target = "/home/about"})
+    response = router.dispatch(http.Request {
+        method = "GET",
+        target = "/home/about",
+    })
     if response.status != 200 || !mem.equal(response.body, "about") { return 11 }
 
-    response = router.dispatch(http.Request {method = "GET", target = "/home/42"})
+    response = router.dispatch(http.Request {
+        method = "GET",
+        target = "/home/42",
+    })
     if response.status != 200 || !mem.equal(response.body, "home") { return 12 }
 
-    response = router.dispatch(http.Request {method = "GET", target = "/homework"})
+    response = router.dispatch(http.Request {
+        method = "GET",
+        target = "/homework",
+    })
     if response.status != 404 { return 13 }
 
-    response = router.dispatch(http.Request {method = "GET", target = "/home?x=1"})
+    response = router.dispatch(http.Request {
+        method = "GET",
+        target = "/home?x=1",
+    })
     if response.status != 200 || !mem.equal(response.body, "home") { return 14 }
 
-    response = router.dispatch(http.Request {method = "POST", target = "/home"})
+    response = router.dispatch(http.Request {
+        method = "POST",
+        target = "/home",
+    })
     if response.status != 404 { return 15 }
 
-    response = router.dispatch(http.Request {method = "GET", target = "/nope"})
+    response = router.dispatch(http.Request {
+        method = "GET",
+        target = "/nope",
+    })
     if response.status != 404 || !mem.equal(response.reason, "Not Found") { return 16 }
 
-    response = router.dispatch(http.Request {method = "POST", target = "/submit"})
+    response = router.dispatch(http.Request {
+        method = "POST",
+        target = "/submit",
+    })
     if response.status != 200 || !mem.equal(response.body, "submit") { return 17 }
 
     return 0

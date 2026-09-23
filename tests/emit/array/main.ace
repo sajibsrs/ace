@@ -21,7 +21,7 @@ main(): int {
     err: Error
 
     // canonical zero: empty, no storage, first push allocates
-    a: array.Array[int] = array.Array[int]{}
+    a: array.Array[int] = array.Array[int] {}
     r += check(a.len == 0 && a.items.len == 0, 1)
     r += check(a.view().len == 0, 2)
     err = mut a.push(10)
@@ -86,8 +86,11 @@ main(): int {
     mut c.wipe()
 
     // aggregate elements
-    q: array.Array[Point] = array.Array[Point]{}
-    err = mut q.push(Point{x = 1, y = 2})
+    q: array.Array[Point] = array.Array[Point] {}
+    err = mut q.push(Point {
+        x = 1,
+        y = 2,
+    })
     r += check(err == null, 21)
     r += check(q.get(0).y == 2 && q.view().len == 1, 22)
     mut q.wipe()

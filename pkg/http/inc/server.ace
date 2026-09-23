@@ -39,7 +39,7 @@ pub Context: struct {
 }
 
 pub Context::new(): Context {
-    return Context{}
+    return Context {}
 }
 
 /* Releases buffer storage. Call once the context is no longer served. */
@@ -57,7 +57,10 @@ pub mut Context.wipe() {
  * nothing and just returns.
  */
 read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
-    parser: RequestParser = RequestParser {phase = RequestPhase.request, framing = RequestFraming.undecided}
+    parser: RequestParser = RequestParser {
+        phase = RequestPhase.request,
+        framing = RequestFraming.undecided,
+    }
     occupied: usize = 0
     parse_pending: bool = false
 
@@ -66,7 +69,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
             if occupied == context.input.len {
                 grown: mut []u8, ok: bool = mem.grow[u8](context.input, context.input.len + 1)
                 if !ok {
-                    return Request{method = null, target = null}, false
+                    return blank(Request), false
                 }
 
                 context.input = grown
@@ -74,7 +77,10 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
                 /* Header and target views point into input. Reparse the
                  * retained bytes after a moving reallocation before
                  * exposing any views. */
-                parser = RequestParser {phase = RequestPhase.request, framing = RequestFraming.undecided}
+                parser = RequestParser {
+                    phase = RequestPhase.request,
+                    framing = RequestFraming.undecided,
+                }
             }
 
             received: int, recv_err: Error = net.receive(conn.socket, mut context.input[occupied..])
@@ -82,17 +88,22 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
                 if recv_err.domain == typeid(net.ReceiveErr) && recv_err.code == sys.EINTR {
                     continue
                 }
-                return Request{method = null, target = null}, false
+                return blank(Request), false
             }
             if received == 0 {
-                return Request{method = null, target = null}, false
+                return blank(Request), false
             }
 
             occupied += usize(received)
         }
         parse_pending = false
 
-        result: RequestResult = mut parser.parse(context.input[..occupied], mut context.headers[..], mut context.body[..], false)
+        result: RequestResult = mut parser.parse(
+            context.input[..occupied],
+            mut context.headers[..],
+            mut context.body[..],
+            false,
+        )
         switch result {
             RequestResult.complete(request: Request) {
                 return request, true
@@ -102,7 +113,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
                 if capacity_type == RequestCapacity.headers {
                     grown: mut []Header, ok: bool = mem.grow[Header](context.headers, context.headers.len + 1)
                     if !ok {
-                        return Request{method = null, target = null}, false
+                        return blank(Request), false
                     }
 
                     context.headers = grown
@@ -115,7 +126,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
                     }
                     grown: mut []u8, ok: bool = mem.grow[u8](context.body, needed)
                     if !ok {
-                        return Request{method = null, target = null}, false
+                        return blank(Request), false
                     }
 
                     context.body = grown
@@ -123,7 +134,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
                 parse_pending = true
             }
             default {
-                return Request{method = null, target = null}, false
+                return blank(Request), false
             }
         }
     }
@@ -153,7 +164,10 @@ respond_close(conn: tcp.Conn, response: Response, mut context: Context) {
     for i: usize in 0 .. response.headers.len {
         context.headers[i] = response.headers[i]
     }
-    context.headers[response.headers.len] = Header {name = "Connection", value = "close"}
+    context.headers[response.headers.len] = Header {
+        name = "Connection",
+        value = "close",
+    }
     outgoing: Response = Response {
         version_minor = response.version_minor,
         status = response.status,

@@ -13,7 +13,6 @@ main(): int {
     }
     elapsed: u64 = time.awake() - started
 
-    fmt.printf("iterations: %u\nelapsed ns: %u\nchecksum: %u\n",
-               iterations, usize(elapsed), state)
+    fmt.printf("iterations: %u\nelapsed ns: %u\nchecksum: %u\n", iterations, usize(elapsed), state)
     return 0
 }

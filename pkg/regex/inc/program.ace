@@ -81,21 +81,31 @@ Compiler: struct {
 /* A split toward `body` and `out`, preferring `body` when greedy. */
 fork(body: u32, out: u32, greedy: bool): Inst {
     if greedy {
-        return Inst.split(Fork{x = body, y = out})
+        return Inst.split(Fork {
+            x = body,
+            y = out,
+        })
     }
-    return Inst.split(Fork{x = out, y = body})
+    return Inst.split(Fork {
+        x = out,
+        y = body,
+    })
 }
 
 /* Compiles `tree` into a program that owns its own copy of the classes, so
  * `tree` may be wiped afterward. A failed compilation holds no storage.
  */
 pub Program::compile(tree: Syntax): (Program, Error) {
-    c: Compiler = Compiler{syntax = tree, insts = array.Array[Inst]{}, err = null}
+    c: Compiler = Compiler {
+        syntax = tree,
+        insts = array.Array[Inst] {},
+        err = null,
+    }
     mut c.emit(Inst.save(0))
     mut c.node(tree.root)
     mut c.emit(Inst.save(1))
     mut c.emit(Inst.match)
-    classes: array.Array[Class] = array.Array[Class]{}
+    classes: array.Array[Class] = array.Array[Class] {}
 
     for set: Class in tree.classes.view() {
         if c.err != null {
@@ -112,7 +122,12 @@ pub Program::compile(tree: Syntax): (Program, Error) {
         mut classes.wipe()
         return blank(Program), c.err
     }
-    return Program{insts = c.insts, classes = classes, slots = 2 * (tree.groups + 1)}, null
+    code: Program = Program {
+        insts = c.insts,
+        classes = classes,
+        slots = 2 * (tree.groups + 1),
+    }
+    return code, null
 }
 
 /* Releases the program and leaves it empty. */
@@ -246,12 +261,18 @@ mut Compiler.alt(list: List) {
             break
         }
         at: u32 = self.pc()
-        mut self.emit(Inst.split(Fork{x = 0, y = 0}))
+        mut self.emit(Inst.split(Fork {
+            x = 0,
+            y = 0,
+        }))
         mut self.node(child)
         jump: u32 = self.pc()
         mut self.emit(Inst.jmp(pending))
         pending = jump
-        mut self.patch(at, Inst.split(Fork{x = at + 1, y = self.pc()}))
+        mut self.patch(at, Inst.split(Fork {
+            x = at + 1,
+            y = self.pc(),
+        }))
     }
     end: u32 = self.pc()
 
@@ -271,7 +292,10 @@ mut Compiler.repeat(r: Repeat) {
     if r.max == UNBOUNDED && r.min == 0 {
         // L: split body, out · body · jmp L · out:
         at: u32 = self.pc()
-        mut self.emit(Inst.split(Fork{x = 0, y = 0}))
+        mut self.emit(Inst.split(Fork {
+            x = 0,
+            y = 0,
+        }))
         mut self.node(r.child)
         mut self.emit(Inst.jmp(at))
         mut self.patch(at, fork(at + 1, self.pc(), r.greedy))
@@ -316,7 +340,10 @@ mut Compiler.optional(child: u32, count: u32, greedy: bool) {
 
     for i: u32 in 0 .. count {
         at: u32 = self.pc()
-        mut self.emit(Inst.split(Fork{x = at + 1, y = pending}))
+        mut self.emit(Inst.split(Fork {
+            x = at + 1,
+            y = pending,
+        }))
         pending = at
         mut self.node(child)
 

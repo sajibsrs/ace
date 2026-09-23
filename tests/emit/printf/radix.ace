@@ -8,8 +8,7 @@ import fmt
 main(): int {
     value: uint = 101
     maximum: uint = uint(0xFFFFFFFFFFFFFFFF)
-    written: int = fmt.printf("%b %b %o %b %o", uint(0), value, value,
-                              maximum, usize(maximum))
+    written: int = fmt.printf("%b %b %o %b %o", uint(0), value, value, maximum, usize(maximum))
 
     if written != 101 {
         return 1

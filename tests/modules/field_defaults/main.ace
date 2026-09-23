@@ -22,7 +22,7 @@ main(): int {
     if alignof(shapes.Box) != 16 || offsetof(shapes.Box, tag) % 16 != 0 {
         return 2
     }
-    pair: Pair = Pair {a = 1}
+    pair: Pair = Pair { a = 1 }
     if pair.n != 8 || alignof(Pair) != 8 {
         return 3
     }

@@ -56,35 +56,59 @@ first(): usize {
 }
 
 small_step(s: Small): Small {
-    return Small {v = (s.v * 3 + 1) & MASK}
+    return Small { v = (s.v * 3 + 1) & MASK }
 }
 
 pair_step(p: Pair): Pair {
-    return Pair {a = (p.a * 3 + p.b) & MASK, b = (p.b + 1) & MASK}
+    return Pair {
+        a = (p.a * 3 + p.b) & MASK,
+        b = (p.b + 1) & MASK,
+    }
 }
 
 swap(p: Pair): Pair {
-    return Pair {a = p.b, b = p.a}
+    return Pair {
+        a = p.b,
+        b = p.a,
+    }
 }
 
 vec_add(a: Vec3, b: Vec3): Vec3 {
-    return Vec3 {x = a.x + b.x, y = a.y + b.y, z = a.z + b.z}
+    return Vec3 {
+        x = a.x + b.x,
+        y = a.y + b.y,
+        z = a.z + b.z,
+    }
 }
 
 vec2_add(a: Vec2, b: Vec2): Vec2 {
-    return Vec2 {x = a.x + b.x, y = a.y + b.y}
+    return Vec2 {
+        x = a.x + b.x,
+        y = a.y + b.y,
+    }
 }
 
 odd_step(o: Odd): Odd {
-    return Odd {a = o.a + 1, b = o.b + 2, c = o.c + 3}
+    return Odd {
+        a = o.a + 1,
+        b = o.b + 2,
+        c = o.c + 3,
+    }
 }
 
 big_step(b: Big): Big {
-    return Big {a = b.a + 1, b = b.b + 2, c = b.c + 3}
+    return Big {
+        a = b.a + 1,
+        b = b.b + 2,
+        c = b.c + 3,
+    }
 }
 
 padded_step(p: Padded): Padded {
-    return Padded {a = p.a + 1, b = p.b + 2}
+    return Padded {
+        a = p.a + 1,
+        b = p.b + 2,
+    }
 }
 
 divmod(a: usize, b: usize): (usize, usize) {
@@ -132,23 +156,40 @@ main(): int {
     if first() != 0 {
         return 100
     }
-    sm: Small = sink_small(Small {v = 2})
-    sp: Pair = sink_pair(Pair {a = 2, b = 3})
-    sv: Vec3 = sink_vec(Vec3 {x = 1.0, y = 2.0, z = 3.0}, Vec3 {x = 1.0, y = 1.0, z = 1.0})
+    sm: Small = sink_small(Small { v = 2 })
+    sp: Pair = sink_pair(Pair {
+        a = 2,
+        b = 3,
+    })
+    sv: Vec3 = sink_vec(Vec3 {
+        x = 1.0,
+        y = 2.0,
+        z = 3.0,
+    }, Vec3 {
+        x = 1.0,
+        y = 1.0,
+        z = 1.0,
+    })
     dq: usize, dr: usize = sink_divmod(100, 7)
-    pd: Padded = sink_padded(Padded {a = 1, b = 2})
+    pd: Padded = sink_padded(Padded {
+        a = 1,
+        b = 2,
+    })
     if sm.v != 7 || sp.a != 9 || sp.b != 4 || sv.x != 2.0 || sv.y != 3.0 ||
        sv.z != 4.0 || dq != 15 || dr != 3 || pd.a != 2 || pd.b != 4 {
         return 101
     }
-    s: Small = Small {v = 1}
+    s: Small = Small { v = 1 }
     s = small_step(s)
     s = small_step(s)
     if s.v != 13 {
         return 1
     }
 
-    p: Pair = Pair {a = 1, b = 2}
+    p: Pair = Pair {
+        a = 1,
+        b = 2,
+    }
     p = pair_step(p)
     if p.a != 5 || p.b != 3 {
         return 2
@@ -162,30 +203,53 @@ main(): int {
         return 4
     }
 
-    a: Vec3 = Vec3 {x = 1.0, y = 2.0, z = 3.0}
-    a = vec_add(a, Vec3 {x = 10.0, y = 20.0, z = 30.0})
+    a: Vec3 = Vec3 {
+        x = 1.0,
+        y = 2.0,
+        z = 3.0,
+    }
+    a = vec_add(a, Vec3 {
+        x = 10.0,
+        y = 20.0,
+        z = 30.0,
+    })
     if a.x != 11.0 || a.y != 22.0 || a.z != 33.0 {
         return 5
     }
 
-    h: Vec2 = Vec2 {x = 1.5, y = 2.5}
+    h: Vec2 = Vec2 {
+        x = 1.5,
+        y = 2.5,
+    }
     h = vec2_add(h, h)
     if h.x != 3.0 || h.y != 5.0 {
         return 6
     }
 
-    d: Pair = swap(Pair {a = 7, b = 9})
+    d: Pair = swap(Pair {
+        a = 7,
+        b = 9,
+    })
     if d.a != 9 || d.b != 7 {
         return 7
     }
 
-    o: Outer = Outer {tag = 5, p = Pair {a = 2, b = 3}}
+    o: Outer = Outer {
+        tag = 5,
+        p = Pair {
+            a = 2,
+            b = 3,
+        },
+    }
     o.p = pair_step(o.p)
     if o.tag != 5 || o.p.a != 9 || o.p.b != 4 {
         return 8
     }
 
-    global_pair = pair_step(Pair {a = 1, b = 1})
+    global_pair = pair_step(Pair {
+        a = 1,
+        b = 1,
+    })
     if global_pair.a != 4 || global_pair.b != 2 {
         return 9
     }
@@ -203,12 +267,20 @@ main(): int {
         return 12
     }
 
-    od: Odd = Odd {a = 1, b = 2, c = 3}
+    od: Odd = Odd {
+        a = 1,
+        b = 2,
+        c = 3,
+    }
     od = odd_step(od)
     if od.a != 2 || od.b != 4 || od.c != 6 {
         return 13
     }
-    bg: Big = Big {a = 1, b = 2, c = 3}
+    bg: Big = Big {
+        a = 1,
+        b = 2,
+        c = 3,
+    }
     bg = big_step(bg)
     if bg.a != 2 || bg.b != 4 || bg.c != 6 {
         return 14

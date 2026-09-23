@@ -63,9 +63,7 @@ chunked(): int {
     headers: [3]http.Header
     body: [16]u8 = [0 : 16]
     message: string = "HTTP/1.1 200 OK\r\nTransfer-Encoding: Chunked\r\n\r\n3;foo=bar\r\nabc\r\n2\r\nde\r\n0\r\nX-End: yes\r\n\r\n"
-    result: http.ResponseResult = mut state.parse(
-        message, mut headers[..], mut body[..], false, false,
-    )
+    result: http.ResponseResult = mut state.parse(message, mut headers[..], mut body[..], false, false)
     switch result {
         http.ResponseResult.complete(response: http.Response) {
             if !mem.equal(response.body, "abcde") {
@@ -82,9 +80,7 @@ informational_and_none(): int {
     headers: [2]http.Header
     body: [1]u8 = [0]
     message: string = "HTTP/1.1 103 Early Hints\r\nLink: </x>\r\n\r\nHTTP/1.1 304 Not Modified\r\nContent-Length: 99\r\n\r\n"
-    result: http.ResponseResult = mut state.parse(
-        message, mut headers[..], mut body[..], false, false,
-    )
+    result: http.ResponseResult = mut state.parse(message, mut headers[..], mut body[..], false, false)
     switch result {
         http.ResponseResult.complete(response: http.Response) {
             if response.status != 304 || response.body.len != 0 ||
@@ -102,9 +98,7 @@ close_body(): int {
     headers: [1]http.Header
     body: [8]u8 = [0 : 8]
     message: string = "HTTP/1.0 200 OK\r\n\r\nbye"
-    result: http.ResponseResult = mut state.parse(
-        message, mut headers[..], mut body[..], true, false,
-    )
+    result: http.ResponseResult = mut state.parse(message, mut headers[..], mut body[..], true, false)
     if state.body_count != 3 { return 8 }
     if body[0] != 98 { return int(body[0]) }
     if !mem.equal(body[..3], "bye") { return 9 }
@@ -176,13 +170,7 @@ failures(): int {
         default { return 6 }
     }
     state = new_state()
-    result = mut state.parse(
-        "HTTP/1.1 xxx Bad\r\n\r\n",
-        mut one_header[..],
-        mut body[..],
-        false,
-        false,
-    )
+    result = mut state.parse("HTTP/1.1 xxx Bad\r\n\r\n", mut one_header[..], mut body[..], false, false)
     switch result {
         http.ResponseResult.syntax {}
         default { return 7 }
@@ -214,13 +202,7 @@ failures(): int {
         default { return 11 }
     }
     state = new_state()
-    result = mut state.parse(
-        "HTTP/1.1 101 Switching Protocols\r\n\r\n",
-        mut one_header[..],
-        mut body[..],
-        false,
-        false,
-    )
+    result = mut state.parse("HTTP/1.1 101 Switching Protocols\r\n\r\n", mut one_header[..], mut body[..], false, false)
     switch result {
         http.ResponseResult.framing {}
         default { return 12 }

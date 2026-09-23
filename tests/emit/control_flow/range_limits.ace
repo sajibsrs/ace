@@ -82,7 +82,10 @@ ends(): int {
         g = g * 10 + int(i) + 1
     }
     if g != 123 { return 7 }
-    h: Header = Header { tag = 9, len = 5 }
+    h: Header = Header {
+        tag = 9,
+        len = 5,
+    }
     k: int = 0
     for i: u16 in 0 .. h.len {
         k += int(i)

@@ -25,7 +25,7 @@ main(): int {
     b: Box[int] = make_box()
     if b.value != 9 { return 2 }
 
-    if take_point({ x = 3, y = 4 }) != 7 { return 3 }
-    if take_box({ value = 5 }) != 5 { return 4 }
+    if take_point( { x = 3, y = 4 }) != 7 { return 3 }
+    if take_box( { value = 5 }) != 5 { return 4 }
     return 0
 }

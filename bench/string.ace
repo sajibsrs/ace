@@ -71,8 +71,7 @@ main(): int {
     }
     report("find-4096", now() - started, iterations / 32, checksum)
     decimal_inputs: [8]string = [
-        "0.1", "1.5", "3.141592653589793", "1e-308",
-        "5e-324", "1.7976931348623157e308", "-2.5e100", "6.02214076e23",
+        "0.1", "1.5", "3.141592653589793", "1e-308", "5e-324", "1.7976931348623157e308", "-2.5e100", "6.02214076e23",
     ]
     float_iterations: usize = 20000
     raw_sum: u64 = 0
@@ -86,10 +85,8 @@ main(): int {
     }
     report("parse-f64-short", now() - started, float_iterations, usize(raw_sum))
     long_decimal_inputs: [8]string = [
-        "1234567890123456", "1234567890123456789",
-        "0.1234567890123456789", "1234567890123456.5",
-        "1.234567890123456e+308", "-9876543210987654e-200",
-        "0.000000000000000123456789012345", "3141592653589793238",
+        "1234567890123456", "1234567890123456789", "0.1234567890123456789", "1234567890123456.5",
+        "1.234567890123456e+308", "-9876543210987654e-200", "0.000000000000000123456789012345", "3141592653589793238",
     ]
     raw_sum = 0
     started = now()
@@ -103,18 +100,46 @@ main(): int {
     report("parse-f64-long", now() - started, float_iterations, usize(raw_sum))
     // Canonical workload assumption: 80% common/short, 20% long/scientific.
     blended_decimal_inputs: [40]string = [
-        decimal_inputs[0], decimal_inputs[1], decimal_inputs[2], decimal_inputs[3],
-        decimal_inputs[4], decimal_inputs[5], decimal_inputs[6], decimal_inputs[7],
-        decimal_inputs[0], decimal_inputs[1], decimal_inputs[2], decimal_inputs[3],
-        decimal_inputs[4], decimal_inputs[5], decimal_inputs[6], decimal_inputs[7],
-        decimal_inputs[0], decimal_inputs[1], decimal_inputs[2], decimal_inputs[3],
-        decimal_inputs[4], decimal_inputs[5], decimal_inputs[6], decimal_inputs[7],
-        decimal_inputs[0], decimal_inputs[1], decimal_inputs[2], decimal_inputs[3],
-        decimal_inputs[4], decimal_inputs[5], decimal_inputs[6], decimal_inputs[7],
-        long_decimal_inputs[0], long_decimal_inputs[1],
-        long_decimal_inputs[2], long_decimal_inputs[3],
-        long_decimal_inputs[4], long_decimal_inputs[5],
-        long_decimal_inputs[6], long_decimal_inputs[7],
+        decimal_inputs[0],
+        decimal_inputs[1],
+        decimal_inputs[2],
+        decimal_inputs[3],
+        decimal_inputs[4],
+        decimal_inputs[5],
+        decimal_inputs[6],
+        decimal_inputs[7],
+        decimal_inputs[0],
+        decimal_inputs[1],
+        decimal_inputs[2],
+        decimal_inputs[3],
+        decimal_inputs[4],
+        decimal_inputs[5],
+        decimal_inputs[6],
+        decimal_inputs[7],
+        decimal_inputs[0],
+        decimal_inputs[1],
+        decimal_inputs[2],
+        decimal_inputs[3],
+        decimal_inputs[4],
+        decimal_inputs[5],
+        decimal_inputs[6],
+        decimal_inputs[7],
+        decimal_inputs[0],
+        decimal_inputs[1],
+        decimal_inputs[2],
+        decimal_inputs[3],
+        decimal_inputs[4],
+        decimal_inputs[5],
+        decimal_inputs[6],
+        decimal_inputs[7],
+        long_decimal_inputs[0],
+        long_decimal_inputs[1],
+        long_decimal_inputs[2],
+        long_decimal_inputs[3],
+        long_decimal_inputs[4],
+        long_decimal_inputs[5],
+        long_decimal_inputs[6],
+        long_decimal_inputs[7],
     ]
     raw_sum = 0
     started = now()
@@ -127,8 +152,14 @@ main(): int {
     }
     report("parse-f64", now() - started, float_iterations, usize(raw_sum))
     values: [8]f64 = [
-        0.1, 1.5, 3.141592653589793, 1.0e-308,
-        5.0e-324, 1.7976931348623157e308, (0.0 - 2.5e100), 6.02214076e23,
+        0.1,
+        1.5,
+        3.141592653589793,
+        1.0e-308,
+        5.0e-324,
+        1.7976931348623157e308,
+        (0.0 - 2.5e100),
+        6.02214076e23,
     ]
     out: [64]u8 = [0 : 64]
     view: mut []u8 = mut out[..]

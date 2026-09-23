@@ -43,7 +43,11 @@ pub SendAllErr: error {
 }
 
 connection(sock: net.Socket, interest: Interest): Conn {
-    return Conn {socket = sock, interest = interest, active = true}
+    return Conn {
+        socket = sock,
+        interest = interest,
+        active = true,
+    }
 }
 
 with_read(interest: Interest, enabled: bool): Interest {
@@ -78,7 +82,11 @@ pub listen(address: net.Addr4, backlog: usize): (Listener, Error) {
         return Listener {}, err
     }
 
-    return Listener {socket = sock, active = true}, null
+    listener: Listener = Listener {
+        socket = sock,
+        active = true,
+    }
+    return listener, null
 }
 
 pub connect(address: net.Addr4): (Conn, Error) {
@@ -129,7 +137,11 @@ pub listen_nonblock(address: net.Addr4, backlog: usize): (Listener, Error) {
         return Listener {}, err
     }
 
-    return Listener {socket = sock, active = true}, null
+    listener: Listener = Listener {
+        socket = sock,
+        active = true,
+    }
+    return listener, null
 }
 
 pub local(listener: Listener): (net.Addr4, Error) {

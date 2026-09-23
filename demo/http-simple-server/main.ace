@@ -15,9 +15,15 @@ import mem
 
 handle(request: http.Request): http.Response {
     if mem.equal(request.target, "/") {
-        return http.Response {status = 200, body = "Hello from Ace!\n"}
+        return http.Response {
+            status = 200,
+            body = "Hello from Ace!\n",
+        }
     }
-    return http.Response {status = 404, body = "not found\n"}
+    return http.Response {
+        status = 404,
+        body = "not found\n",
+    }
 }
 
 main(): int {

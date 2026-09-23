@@ -122,7 +122,14 @@ with_call(f: (int): int, n: int): int {
 main(): int {
     if hot(20) != 68 { return 1 }
     if copy_live() != 182 { return 2 }
-    if pick(Shape.wide(Wide { a = 1, b = 0, c = 0, d = 0, e = 0, f = 10 }), 5) != 98 {
+    if pick(Shape.wide(Wide {
+        a = 1,
+        b = 0,
+        c = 0,
+        d = 0,
+        e = 0,
+        f = 10,
+    }), 5) != 98 {
         return 3
     }
     if pick(Shape.none, 5) != 2 { return 4 }

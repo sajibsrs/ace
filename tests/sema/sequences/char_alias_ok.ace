@@ -68,7 +68,7 @@ main(): int {
     if typeid(Text) != typeid(Bytes) {
         return 12
     }
-    text_box: View[string] = View[string] {value = text}
+    text_box: View[string] = View[string] { value = text }
     bytes_box: View[[]u8] = text_box
 
     if bytes_box.value.len != 2 {

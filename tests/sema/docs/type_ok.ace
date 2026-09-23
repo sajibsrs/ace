@@ -98,11 +98,17 @@ main(): int {
     count: Count = 13
     distance: Meters = Meters(12.5)
     raw: f64 = f64(distance)
-    point: Point = Point { x = 13, y = 29 }
+    point: Point = Point {
+        x = 13,
+        y = 29,
+    }
     pointer: *Point = &point
     writable: mut *Point = mut &point
     set_x(writable, 14)
-    other: Point = Point { x = 15, y = 31 }
+    other: Point = Point {
+        x = 15,
+        y = 31,
+    }
     retarget(mut pointer, &other)
     outer: *mut *Point = &writable
     outer.x = 16
@@ -127,7 +133,7 @@ main(): int {
     }
     operation: (int, int): int = add
     state: State = State.running
-    event: Event = Event.point({ x = 3, y = 4 })
+    event: Event = Event.point( { x = 3, y = 4 })
 
     switch event {
         Event.point(payload: Point) {

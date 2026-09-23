@@ -64,7 +64,7 @@ pub Matcher: struct {
 }
 
 Queue::new(size: usize, slots: usize): (Queue, bool) {
-    q: Queue = Queue{
+    q: Queue = Queue {
         dense = mem.alloc[u32](size),
         sparse = mem.zalloc[u32](size),
         caps = mem.alloc[usize](size * slots),
@@ -115,7 +115,7 @@ pub Matcher::new(code: Program): (Matcher, Error) {
     slots: usize = usize(code.slots)
     current: Queue, ok: bool = Queue::new(size, slots)
     next: Queue, next_ok: bool = Queue::new(size, slots)
-    m: Matcher = Matcher{
+    m: Matcher = Matcher {
         current = current,
         next = next,
         stack = mem.alloc[Frame](size + 1),
@@ -151,7 +151,11 @@ pub mut Matcher.wipe() {
  */
 mut Matcher.add(code: []Inst, into_next: bool, start: u32, text: string, at: usize) {
     top: usize = 1
-    self.stack[0] = Frame{pc = start, slot = NIL, value = 0}
+    self.stack[0] = Frame {
+        pc = start,
+        slot = NIL,
+        value = 0,
+    }
 
     for top > 0 {
         top -= 1
@@ -188,13 +192,21 @@ mut Matcher.add(code: []Inst, into_next: bool, start: u32, text: string, at: usi
                     continue explore
                 }
                 Inst.split(targets: Fork) {
-                    self.stack[top] = Frame{pc = targets.y, slot = NIL, value = 0}
+                    self.stack[top] = Frame {
+                        pc = targets.y,
+                        slot = NIL,
+                        value = 0,
+                    }
                     top += 1
                     pc = targets.x
                     continue explore
                 }
                 Inst.save(slot: u32) {
-                    self.stack[top] = Frame{pc = 0, slot = slot, value = self.work[usize(slot)]}
+                    self.stack[top] = Frame {
+                        pc = 0,
+                        slot = slot,
+                        value = self.work[usize(slot)],
+                    }
                     top += 1
                     self.work[usize(slot)] = at
                     pc += 1

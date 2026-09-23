@@ -37,8 +37,16 @@ main(): int {
     f32s = [0.5, 1.5, -2.5, 4.5, 0.25]
     f64s = [0.5, 1.5, -2.5, 4.5, 0.25]
     for i: usize in 0 .. 5 {
-        rgbs[i] = Rgb {r = u8(i), g = u8(i + 10), b = u8(i + 20)}
-        vecs[i] = Vec3 {x = f32(i), y = f32(i) + 0.5, z = f32(i) + 1.5}
+        rgbs[i] = Rgb {
+            r = u8(i),
+            g = u8(i + 10),
+            b = u8(i + 20),
+        }
+        vecs[i] = Vec3 {
+            x = f32(i),
+            y = f32(i) + 0.5,
+            z = f32(i) + 1.5,
+        }
     }
 
     i: usize = 2

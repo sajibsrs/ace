@@ -1053,6 +1053,28 @@ current normative rules, and Git preserves patch-level detail.
   Applied across `std/`, `pkg/`, `demo/`, and `bench/`; `file.read` now
   places its descriptor `defer` before the check, as the `AGENTS.md` release
   rule requires.
+- Added `.acefmt` list and literal layout rules and applied them across
+  `std/`, `pkg/`, `demo/`, `bench/`, and `tests/` outside the lexer and parser
+  fixtures. `struct-literal = field-per-line`: a struct literal with two or
+  more fields puts one field per line with a trailing comma, and a one-line
+  body holding one becomes a block. `struct-literal-in-bare-list =
+  named-local`: because a bare comma list stays on one line, such a literal in
+  a multi-value `return` is first bound to a local; the six empty
+  `Request {method = null, target = null}` failures became `blank(Request)`.
+  `dense-list = whole-items-per-row`: an array literal of plain values or
+  struct literals of plain values packs the same number of whole elements on
+  every row, the most that fit in 120 columns, and `dense-list-columns =
+  aligned` pads each element, or each struct-row field but the last, to its
+  column's widest so the columns line up. The `std/@` tables follow it, with
+  their exact-power runs deliberately grouped (six per row in
+  `float_parse_tables`, two per row in `float_shortest_tables`). `multiline-trailing-comma = always` now holds
+  for every multi-line delimited list, and struct literals take the space
+  before `{`; a one-line nonempty `{ }` has inner spaces while `()` and `[]`
+  stay tight. `nested-overlong-list = named-local`: an overlong call nested
+  inside a larger expression is bound to a local rather than broken
+  mid-expression, as `sin` and `cos` now do with their polynomial (results
+  bit-identical). The parser accepts a trailing comma in `extern` parameter lists,
+  the one list that rejected it (`tests/parser/extern_trailing_comma_ok.ace`).
 - Extended global constant emission to carry pointer relocations recursively
   through arrays, structs, repeated elements, aliases, and union payloads, so
   string-bearing aggregates remain static data without runtime initialization.

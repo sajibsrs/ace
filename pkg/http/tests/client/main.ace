@@ -6,7 +6,7 @@ main(): int {
     context: http.ClientContext = http.ClientContext::new()
     if context.storage == null { return 98 }
 
-    context.redirects = http.RedirectPolicy {limit = 4}
+    context.redirects = http.RedirectPolicy { limit = 4 }
     mut context.wipe()
     if context.storage != null || context.redirects.limit != 0 { return 99 }
     mut context.wipe()
@@ -106,8 +106,7 @@ main(): int {
     }
 
     header_storage: [2]http.Header = [
-        http.Header {name = "Host", value = "example.com"},
-        http.Header {name = "X-Test", value = "caf\xC3\xA9"},
+        http.Header { name = "Host", value = "example.com" }, http.Header { name = "X-Test", value = "caf\xC3\xA9" },
     ]
     request: http.Request = http.Request {
         method = "POST",
@@ -132,7 +131,10 @@ main(): int {
     }
 
     bad_headers: [1]http.Header = [
-        http.Header {name = "Bad Name", value = "x"},
+        http.Header {
+            name = "Bad Name",
+            value = "x",
+        },
     ]
     request.headers = bad_headers[..]
     written, err = request.format(mut output_storage[..])

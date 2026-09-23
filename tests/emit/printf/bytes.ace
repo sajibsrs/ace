@@ -11,8 +11,7 @@ extern "c" {
 
 main(): int {
     path: string = "/tmp/ace_printf_bytes"
-    fd: sys.Fd, err: Error = sys.open(path,
-        sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC, u32(0x180))
+    fd: sys.Fd, err: Error = sys.open(path, sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC, u32(0x180))
 
     if err != null {
         return 1

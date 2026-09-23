@@ -8,7 +8,10 @@ import poll
 import sys
 
 loopback(port: u16): net.Addr4 {
-    return net.Addr4 {ip = [127, 0, 0, 1], port = port}
+    return net.Addr4 {
+        ip = [127, 0, 0, 1],
+        port = port,
+    }
 }
 
 close_all(q: poll.Queue, listener: net.Socket, peer: net.Socket) {

@@ -78,12 +78,18 @@ deferred(mut c: Counter, n: int): int {
 }
 
 main(): int {
-    c: Counter = Counter { value = 0, steps = 0 }
+    c: Counter = Counter {
+        value = 0,
+        steps = 0,
+    }
     mut c.run(10)
     if c.value != 45 || c.steps != 10 {
         return 1
     }
-    d: Counter = Counter { value = 1, steps = 0 }
+    d: Counter = Counter {
+        value = 1,
+        steps = 0,
+    }
     if mut d.relay(4) != 7 || d.steps != 4 || seen != 1 + 1 + 2 + 4 {
         return 2
     }
@@ -100,7 +106,10 @@ main(): int {
         return 5
     }
     seen = 0
-    e: Counter = Counter { value = 3, steps = 0 }
+    e: Counter = Counter {
+        value = 3,
+        steps = 0,
+    }
     if deferred(mut e, 4) != 7 || e.value != 7 || e.steps != 12 || seen != 1 {
         return 6
     }

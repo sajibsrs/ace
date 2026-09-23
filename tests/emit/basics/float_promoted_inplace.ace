@@ -195,7 +195,15 @@ main(): int {
     if across_call() != 9.0 + 27.0 {
         return 11
     }
-    if leaf_dot(Vec3 {x = 2.0, y = 0.0, z = 0.0}, Vec3 {x = 0.0, y = 3.0, z = 0.0}) != 18.0 {
+    if leaf_dot(Vec3 {
+        x = 2.0,
+        y = 0.0,
+        z = 0.0,
+    }, Vec3 {
+        x = 0.0,
+        y = 3.0,
+        z = 0.0,
+    }) != 18.0 {
         return 12
     }
     if escaped() != 42.75 {

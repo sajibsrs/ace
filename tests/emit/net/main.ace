@@ -7,7 +7,10 @@ import net
 import sys
 
 loopback(port: u16): net.Addr4 {
-    return net.Addr4 {ip = [127, 0, 0, 1], port = port}
+    return net.Addr4 {
+        ip = [127, 0, 0, 1],
+        port = port,
+    }
 }
 
 check_error(err: Error, domain: typeid): bool {
@@ -17,18 +20,15 @@ check_error(err: Error, domain: typeid): bool {
 check_failures(): int {
     invalid: net.Socket = net.Socket(-1)
 
-    if !check_error(net.reuse_addr(invalid, true),
-                    typeid(net.ReuseAddrErr)) {
+    if !check_error(net.reuse_addr(invalid, true), typeid(net.ReuseAddrErr)) {
         return 1
     }
 
-    if !check_error(net.reuse_port(invalid, true),
-                    typeid(net.ReusePortErr)) {
+    if !check_error(net.reuse_port(invalid, true), typeid(net.ReusePortErr)) {
         return 2
     }
 
-    if !check_error(net.nonblock(invalid, true),
-                    typeid(net.NonblockErr)) {
+    if !check_error(net.nonblock(invalid, true), typeid(net.NonblockErr)) {
         return 3
     }
 
@@ -58,8 +58,7 @@ check_failures(): int {
         return 7
     }
 
-    if !check_error(net.connect(invalid, loopback(u16(1))),
-                    typeid(net.ConnectErr)) {
+    if !check_error(net.connect(invalid, loopback(u16(1))), typeid(net.ConnectErr)) {
         return 8
     }
     local: net.Addr4, local_err: Error = net.local(invalid)
@@ -219,8 +218,7 @@ main(): int {
         return 24
     }
 
-    if !check_error(net.listen(listener, usize(0x80000000)),
-                    typeid(net.ListenErr)) {
+    if !check_error(net.listen(listener, usize(0x80000000)), typeid(net.ListenErr)) {
         sys.close(listener)
         return 25
     }

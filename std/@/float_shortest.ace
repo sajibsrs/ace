@@ -39,7 +39,10 @@ pub multiply_wide(a: u64, b: u64): Wide {
     mid2: u64 = p01 + u64(u32(mid1))
     high: u64 = p11 + (mid1 >> 32) + (mid2 >> 32)
     low: u64 = (u64(u32(mid2)) << 32) | u64(u32(p00))
-    return Wide { low = low, high = high }
+    return Wide {
+        low = low,
+        high = high,
+    }
 }
 
 shift_wide(value: Wide, distance: i32): u64 {
@@ -55,7 +58,10 @@ multiply_shift64(value: u64, factor: table.Power, shift: i32): u64 {
                     (low_sum >> 32)
     middle: u64 = (u64(u32(high_sum)) << 32) | u64(u32(low_sum))
     high: u64 = upper.high + (high_sum >> 32)
-    return shift_wide(Wide { low = middle, high = high }, shift - 64)
+    return shift_wide(Wide {
+        low = middle,
+        high = high,
+    }, shift - 64)
 }
 
 multiply_shift32(value: u32, factor: u64, shift: i32): u32 {
@@ -213,7 +219,10 @@ pub binary64(fraction: u64, exponent: u64): Floating {
 
         if rounded == lower || round_up { output += 1 }
     }
-    return Floating { coefficient = output, exponent = exponent10 + removed }
+    return Floating {
+        coefficient = output,
+        exponent = exponent10 + removed,
+    }
 }
 
 pub binary32(fraction: u32, exponent: u32): Floating {
@@ -256,8 +265,7 @@ pub binary32(fraction: u32, exponent: u32): Floating {
             previous: u32 = q - 1
             previous_k: i32 = 61 + pow5_bits(i32(previous)) - 1
             previous_factor: u64 = table.inverse[int(previous)].high + 1
-            last = u8(multiply_shift32(center, previous_factor,
-                       0 - exponent2 + i32(previous) + previous_k) % 10)
+            last = u8(multiply_shift32(center, previous_factor, 0 - exponent2 + i32(previous) + previous_k) % 10)
         }
 
         if q <= 9 {
@@ -284,8 +292,7 @@ pub binary32(fraction: u32, exponent: u32): Floating {
         if q != 0 && (upper - 1) / 10 <= lower / 10 {
             next_index: i32 = power_index + 1
             next_shift: i32 = i32(q) - 1 - (pow5_bits(next_index) - 61)
-            last = u8(multiply_shift32(center, table.power[next_index].high,
-                       next_shift) % 10)
+            last = u8(multiply_shift32(center, table.power[next_index].high, next_shift) % 10)
         }
 
         if q <= 1 {
@@ -341,5 +348,8 @@ pub binary32(fraction: u32, exponent: u32): Floating {
 
         if rounded == lower || last >= 5 { output += 1 }
     }
-    return Floating { coefficient = u64(output), exponent = exponent10 + removed }
+    return Floating {
+        coefficient = u64(output),
+        exponent = exponent10 + removed,
+    }
 }

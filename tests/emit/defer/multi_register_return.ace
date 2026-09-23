@@ -23,12 +23,18 @@ clobber(a: usize, b: usize, c: f64, d: f64): usize {
 
 pair(p: Pair): Pair {
     defer clobber(90, 91, 1.5, 2.5)
-    return Pair {a = p.a + 1, b = p.b + 2}
+    return Pair {
+        a = p.a + 1,
+        b = p.b + 2,
+    }
 }
 
 pair_local(p: Pair): Pair {
     defer clobber(90, 91, 1.5, 2.5)
-    r: Pair = Pair {a = p.a + 3, b = p.b + 4}
+    r: Pair = Pair {
+        a = p.a + 3,
+        b = p.b + 4,
+    }
     return r
 }
 
@@ -39,15 +45,25 @@ tuple(a: usize, b: usize): (usize, usize) {
 
 vec(v: Vec3): Vec3 {
     defer clobber(90, 91, 1.5, 2.5)
-    return Vec3 {x = v.x + 1.0, y = v.y + 2.0, z = v.z + 3.0}
+    return Vec3 {
+        x = v.x + 1.0,
+        y = v.y + 2.0,
+        z = v.z + 3.0,
+    }
 }
 
 main(): int {
-    p: Pair = pair(Pair {a = 1, b = 2})
+    p: Pair = pair(Pair {
+        a = 1,
+        b = 2,
+    })
     if p.a != 2 || p.b != 4 {
         return 1
     }
-    l: Pair = pair_local(Pair {a = 1, b = 2})
+    l: Pair = pair_local(Pair {
+        a = 1,
+        b = 2,
+    })
     if l.a != 4 || l.b != 6 {
         return 2
     }
@@ -55,7 +71,11 @@ main(): int {
     if x != 11 || y != 22 {
         return 3
     }
-    v: Vec3 = vec(Vec3 {x = 1.0, y = 2.0, z = 3.0})
+    v: Vec3 = vec(Vec3 {
+        x = 1.0,
+        y = 2.0,
+        z = 3.0,
+    })
     if v.x != 2.0 || v.y != 4.0 || v.z != 6.0 {
         return 4
     }

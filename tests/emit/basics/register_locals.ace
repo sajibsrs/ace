@@ -76,8 +76,7 @@ widths(): int {
 
 // ten parameters: the last two arrive on the stack, one of them narrow, and
 // only they are used inside the loop, so they rank first
-many(p0: int, p1: int, p2: int, p3: int, p4: int, p5: int, p6: int,
-     p7: int, p8: int, p9: i8): int {
+many(p0: int, p1: int, p2: int, p3: int, p4: int, p5: int, p6: int, p7: int, p8: int, p9: i8): int {
     total: int = p0 + p1 + p2 + p3 + p4 + p5 + p6 + p7
     for i: int in 0 .. 2 {
         total += p8 + int(p9)
@@ -111,7 +110,10 @@ escapes(): int {
     set(mut &x, 5)
     v: int = 1
     bump(mut v, 2)
-    pt: Point = Point { x = 7, y = 0 }
+    pt: Point = Point {
+        x = 7,
+        y = 0,
+    }
     q: *Point = &pt
     first: int = 0
     second: int = 0
@@ -185,8 +187,7 @@ floats(): int {
 }
 
 // eight float parameters in v0-v7, the last two on the stack
-fsum(a0: f64, a1: f64, a2: f64, a3: f64, a4: f64, a5: f64, a6: f64,
-     a7: f64, a8: f64, a9: f32): f64 {
+fsum(a0: f64, a1: f64, a2: f64, a3: f64, a4: f64, a5: f64, a6: f64, a7: f64, a8: f64, a9: f32): f64 {
     total: f64 = a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7
     for i: int in 0 .. 2 {
         total += a8 + f64(a9)

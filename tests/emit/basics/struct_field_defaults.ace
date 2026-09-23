@@ -6,7 +6,10 @@ Inner: struct { low: u8 = u8(3), high: u8 = u8(4) }
 Outer: struct { tag: int, inner: Inner = Inner {} }
 Box[T]: struct { value: T = 11 }
 
-static_outer: Outer = Outer { inner = Inner { high = u8(9) }, tag = 5 }
+static_outer: Outer = Outer {
+    inner = Inner { high = u8(9) },
+    tag = 5,
+}
 canonical_zero: Inner
 
 main(): int {

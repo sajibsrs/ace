@@ -20,7 +20,7 @@ pub Router: struct {
 }
 
 pub Router::new(): Router {
-    return Router{routes = array.Array[Route]{}}
+    return Router { routes = array.Array[Route] {} }
 }
 
 /* Releases route storage. Call once the router is no longer served. */
@@ -32,7 +32,11 @@ pub mut Router.wipe() {
  * Grows route storage as needed; fails only if that growth fails.
  */
 pub mut Router.handle(method: string, path: string, handler: (Request): Response): Error {
-    return mut self.routes.push(Route{method = method, path = path, handler = handler})
+    return mut self.routes.push(Route {
+        method = method,
+        path = path,
+        handler = handler,
+    })
 }
 
 /* True when `prefix` matches `target` on a path-segment boundary: "/home"
@@ -81,5 +85,8 @@ pub Router.dispatch(request: Request): Response {
         return handler(request)
     }
 
-    return Response{status = 404, reason = message.status(404)}
+    return Response {
+        status = 404,
+        reason = message.status(404),
+    }
 }

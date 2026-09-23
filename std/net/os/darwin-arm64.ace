@@ -178,19 +178,16 @@ HOST_NAME_MAX: const usize = 253
 extern "c" {
     c_socket(domain: i32, socket_type: i32, protocol: i32): i32 = "socket"
     c_setsockopt(socket: i32, level: i32, option: i32, value: *i32, length: u32): i32 = "setsockopt"
-    c_getsockopt(socket: i32, level: i32, option: i32, value: mut *i32,
-                 length: mut *u32): i32 = "getsockopt"
+    c_getsockopt(socket: i32, level: i32, option: i32, value: mut *i32, length: mut *u32): i32 = "getsockopt"
     c_bind(socket: i32, address: *DarwinAddr4, length: u32): i32 = "bind"
     c_listen(socket: i32, backlog: i32): i32 = "listen"
     c_accept(socket: i32, address: mut *DarwinAddr4, length: mut *u32): i32 = "accept"
     c_connect(socket: i32, address: *DarwinAddr4, length: u32): i32 = "connect"
-    c_getsockname(socket: i32, address: mut *DarwinAddr4,
-                  length: mut *u32): i32 = "getsockname"
+    c_getsockname(socket: i32, address: mut *DarwinAddr4, length: mut *u32): i32 = "getsockname"
     c_recv(socket: i32, buffer: mut *u8, length: usize, flags: i32): i64 = "recv"
     c_send(socket: i32, data: *u8, length: usize, flags: i32): i64 = "send"
     c_fcntl(socket: i32, command: i32, ...): i32 = "fcntl"
-    c_getaddrinfo(host: *u8, service: *u8, hints: *DarwinAddrInfo,
-                  result: mut **DarwinAddrInfo): i32 = "getaddrinfo"
+    c_getaddrinfo(host: *u8, service: *u8, hints: *DarwinAddrInfo, result: mut **DarwinAddrInfo): i32 = "getaddrinfo"
     c_freeaddrinfo(result: *DarwinAddrInfo) = "freeaddrinfo"
     c_errno(): mut *i32 = "__error"
 }
@@ -293,7 +290,11 @@ pub accept(listener: Socket): (Socket, Addr4, Error) {
     zero: [8]u8 = [0 : 8]
 
     raw: DarwinAddr4 = DarwinAddr4 {
-        length = 0, family = 0, port = port, ip = ip, zero = zero,
+        length = 0,
+        family = 0,
+        port = port,
+        ip = ip,
+        zero = zero,
     }
     length: u32 = SOCKADDR4_SIZE
     accepted: i32 = c_accept(i32(listener), mut &raw, mut &length)
@@ -313,8 +314,7 @@ pub pending_error(sock: Socket): Error {
     value: i32 = 0
     length: u32 = u32(sizeof(i32))
 
-    if c_getsockopt(i32(sock), SOL_SOCKET, SO_ERROR, mut &value,
-                    mut &length) == -1 {
+    if c_getsockopt(i32(sock), SOL_SOCKET, SO_ERROR, mut &value, mut &length) == -1 {
         return PendingErrorErr(sys.errno())
     }
     if value != 0 { return ConnectErr(value) }

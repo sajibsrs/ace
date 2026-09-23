@@ -20,7 +20,10 @@ Client: struct {
 }
 
 loopback(port: u16): net.Addr4 {
-    return net.Addr4 {ip = [127, 0, 0, 1], port = port}
+    return net.Addr4 {
+        ip = [127, 0, 0, 1],
+        port = port,
+    }
 }
 
 zero_client(): Client {
@@ -71,8 +74,7 @@ receive_exact(sock: net.Socket, expected: string): bool {
         /* Bound each receive to one byte so message assembly necessarily
          * retains partial progress across multiple operations.
          */
-        count: int, err: Error = net.receive(
-            sock, mut storage[received..received + 1])
+        count: int, err: Error = net.receive(sock, mut storage[received..received + 1])
 
         if err != null || count != 1 {
             return false
@@ -155,9 +157,15 @@ client_c(port: u16, gate: sys.Fd): int {
     return 0
 }
 
-fork_client(client_type: int, port: u16, gate_read: sys.Fd, gate_write: sys.Fd,
-            q: poll.Queue, listener: net.Socket,
-            clients: []Client): (sys.Process, Error) {
+fork_client(
+    client_type: int,
+    port: u16,
+    gate_read: sys.Fd,
+    gate_write: sys.Fd,
+    q: poll.Queue,
+    listener: net.Socket,
+    clients: []Client,
+): (sys.Process, Error) {
     process: sys.Process, err: Error = sys.fork()
 
     if err != null || process != 0 {
@@ -308,8 +316,7 @@ main(): int {
         sys.close(sys.Fd(q))
         return 17
     }
-    processes[0], err = fork_client(0, local.port, gate_read, gate_write,
-                                    q, listener, clients[0..2])
+    processes[0], err = fork_client(0, local.port, gate_read, gate_write, q, listener, clients[0..2])
     if err != null || processes[0] == -1 {
         sys.close(gate_read)
         sys.close(gate_write)
@@ -321,8 +328,11 @@ main(): int {
     gates[0] = gate_write
 
     zero_event: poll.Event = poll.Event {
-        fd = sys.Fd(0), readable = false, writable = false,
-        error = false, hangup = false,
+        fd = sys.Fd(0),
+        readable = false,
+        writable = false,
+        error = false,
+        hangup = false,
     }
     event_storage: [4]poll.Event = [zero_event : 4]
     events: mut []poll.Event = mut event_storage[0..4]
@@ -370,9 +380,7 @@ main(): int {
                         failure = 23
                         break
                     }
-                    processes[1], err = fork_client(
-                        1, local.port, gate_read, gate_write,
-                        q, listener, clients[0..2])
+                    processes[1], err = fork_client(1, local.port, gate_read, gate_write, q, listener, clients[0..2])
                     if err != null || processes[1] == -1 {
                         failure = 24
                         break
@@ -412,7 +420,8 @@ main(): int {
                     begin: usize = clients[slot].input_count
                     amount: int, receive_err: Error = net.receive(
                         clients[slot].socket,
-                        mut clients[slot].input[begin..begin + 1])
+                        mut clients[slot].input[begin..begin + 1],
+                    )
 
                     if receive_err != null {
                         if receive_err.code != sys.EWOULDBLOCK {
@@ -435,8 +444,14 @@ main(): int {
                                 break
                             }
                             processes[2], err = fork_client(
-                                2, local.port, gate_read, gate_write,
-                                q, listener, clients[0..2])
+                                2,
+                                local.port,
+                                gate_read,
+                                gate_write,
+                                q,
+                                listener,
+                                clients[0..2],
+                            )
                             if err != null || processes[2] == -1 {
                                 failure = 32
                                 break
@@ -449,8 +464,7 @@ main(): int {
                     } else {
                         clients[slot].input_count += usize(amount)
                         if clients[slot].input_count == 2 {
-                            if !broadcast(mut clients[0..2],
-                                          clients[slot].input[0..2]) {
+                            if !broadcast(mut clients[0..2], clients[slot].input[0..2]) {
                                 failure = 33
                                 break
                             }
@@ -488,7 +502,8 @@ main(): int {
                      */
                     amount: int, send_err: Error = net.send(
                         clients[slot].socket,
-                        clients[slot].output[begin..begin + 1])
+                        clients[slot].output[begin..begin + 1],
+                    )
                     if send_err != null {
                         if send_err.code != sys.EWOULDBLOCK {
                             failure = 36

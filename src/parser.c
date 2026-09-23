@@ -2049,6 +2049,7 @@ static Node* parse_extern(P* p) {
                     f->flags |= F_VARARGS;
                     break;
                 }
+                if (at(p, T_RPAREN)) break; // trailing comma
             }
             set_kids(f, &params);
         }

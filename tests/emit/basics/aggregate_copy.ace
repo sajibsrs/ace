@@ -39,7 +39,14 @@ ramp100(): [100]u8 {
 }
 
 big(seed: i64): Big {
-    return Big { a = seed, b = seed + 1, c = seed + 2, d = seed + 3, e = seed + 4, f = seed + 5 }
+    return Big {
+        a = seed,
+        b = seed + 1,
+        c = seed + 2,
+        d = seed + 3,
+        e = seed + 4,
+        f = seed + 5,
+    }
 }
 
 big_ok(x: Big, seed: i64): bool {
@@ -143,7 +150,10 @@ aggregates(): int {
     }
 
     // A field past 4095 bytes needs the shifted-immediate address form.
-    far: Far = Far { pad = [0 : 4100], tail = big(50) }
+    far: Far = Far {
+        pad = [0 : 4100],
+        tail = big(50),
+    }
     near: Big = far.tail
     far.tail = big(60)
     if !big_ok(near, 50) || !big_ok(far.tail, 60) {

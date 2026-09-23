@@ -61,7 +61,13 @@ main(): int {
     if narrow(a, 3) != 12885032953 {
         return 1
     }
-    o: Outer = Outer { pad = [1, 2, 3, 4, 5], inner = Inner { x = 1, y = 3 } }
+    o: Outer = Outer {
+        pad = [1, 2, 3, 4, 5],
+        inner = Inner {
+            x = 1,
+            y = 3,
+        },
+    }
     if deep(&o, 5) != 15 {
         return 2
     }

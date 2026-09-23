@@ -263,7 +263,13 @@ pub Url::parse(url: string, secure: bool): (Url, Error) {
             }
         }
     }
-    return Url {host = host, path = path, query = query, port = port}, null
+    result: Url = Url {
+        host = host,
+        path = path,
+        query = query,
+        port = port,
+    }
+    return result, null
 }
 
 /* Parses an absolute plaintext HTTP URL, autodetecting `http://` or
@@ -447,12 +453,7 @@ mut RequestParser.framing_failure(): RequestResult {
     return RequestResult.framing
 }
 
-request_complete_result(
-    method: string,
-    target: string,
-    headers: []Header,
-    body: []u8,
-): RequestResult {
+request_complete_result(method: string, target: string, headers: []Header, body: []u8): RequestResult {
     return RequestResult.complete(Request {
         method = method,
         target = target,
@@ -464,12 +465,7 @@ request_complete_result(
 /* Resumes request parsing at the saved phase and scans only newly appended
  * input bytes.
  */
-pub mut RequestParser.parse(
-    input: string,
-    headers: mut []Header,
-    body: mut []u8,
-    eof: bool,
-): RequestResult {
+pub mut RequestParser.parse(input: string, headers: mut []Header, body: mut []u8, eof: bool): RequestResult {
     if input.len < self.input_offset || input.len < self.scan_offset {
         return mut self.syntax_failure()
     }
@@ -580,7 +576,10 @@ pub mut RequestParser.parse(
                 self.framing = RequestFraming.chunked
             }
             if full { return RequestResult.capacity(RequestCapacity.headers) }
-            headers[self.header_count] = Header {name = name, value = value}
+            headers[self.header_count] = Header {
+                name = name,
+                value = value,
+            }
             self.header_count += 1
             mut self.consume_line()
             continue parse_loop
@@ -593,8 +592,10 @@ pub mut RequestParser.parse(
             count: usize = input.len - self.input_offset
             if count > remaining { count = remaining }
             if count > 0 {
-                mem.copy(body[self.body_count..self.body_count + count],
-                    input[self.input_offset..self.input_offset + count])
+                mem.copy(
+                    body[self.body_count..self.body_count + count],
+                    input[self.input_offset..self.input_offset + count],
+                )
                 self.body_count += count
                 self.input_offset += count
             }
@@ -642,8 +643,10 @@ pub mut RequestParser.parse(
             count: usize = input.len - self.input_offset
             if count > self.chunk_remaining { count = self.chunk_remaining }
             if count > 0 {
-                mem.copy(body[self.body_count..self.body_count + count],
-                    input[self.input_offset..self.input_offset + count])
+                mem.copy(
+                    body[self.body_count..self.body_count + count],
+                    input[self.input_offset..self.input_offset + count],
+                )
                 self.body_count += count
                 self.input_offset += count
                 self.chunk_remaining -= count
@@ -709,7 +712,9 @@ pub mut RequestParser.parse(
             return request_complete_result(
                 input[self.method_start..self.method_start + self.method_count],
                 input[self.target_start..self.target_start + self.target_count],
-                headers[..self.header_count], body[..self.body_count])
+                headers[..self.header_count],
+                body[..self.body_count],
+            )
         }
         return RequestResult.syntax
     }
@@ -735,13 +740,7 @@ mut ResponseParser.framing_failure(): ResponseResult {
 }
 
 /* Packages a completed response over the caller-owned header and body views. */
-complete_result(
-    version_minor: u8,
-    status: u16,
-    reason: string,
-    headers: []Header,
-    body: []u8,
-): ResponseResult {
+complete_result(version_minor: u8, status: u16, reason: string, headers: []Header, body: []u8): ResponseResult {
     return ResponseResult.complete(Response {
         version_minor = version_minor,
         status = status,
@@ -881,7 +880,10 @@ pub mut ResponseParser.parse(
             }
             if full { return ResponseResult.capacity(ResponseCapacity.headers) }
             if self.status < 100 || self.status >= 200 {
-                headers[self.header_count] = Header {name = name, value = value}
+                headers[self.header_count] = Header {
+                    name = name,
+                    value = value,
+                }
                 self.header_count += 1
             }
             mut self.consume_line()
@@ -896,8 +898,10 @@ pub mut ResponseParser.parse(
                 count: usize = input.len - self.input_offset
                 if count > remaining { count = remaining }
                 if count > 0 {
-                    mem.copy(body[self.body_count..self.body_count + count],
-                        input[self.input_offset..self.input_offset + count])
+                    mem.copy(
+                        body[self.body_count..self.body_count + count],
+                        input[self.input_offset..self.input_offset + count],
+                    )
                     self.body_count += count
                     self.input_offset += count
                 }
@@ -913,8 +917,7 @@ pub mut ResponseParser.parse(
                 return ResponseResult.capacity(ResponseCapacity.body)
             }
             if available > 0 {
-                mem.copy(body[self.body_count..self.body_count + available],
-                    input[self.input_offset..])
+                mem.copy(body[self.body_count..self.body_count + available], input[self.input_offset..])
                 self.body_count += available
                 self.input_offset = input.len
             }
@@ -959,8 +962,10 @@ pub mut ResponseParser.parse(
             count: usize = input.len - self.input_offset
             if count > self.chunk_remaining { count = self.chunk_remaining }
             if count > 0 {
-                mem.copy(body[self.body_count..self.body_count + count],
-                    input[self.input_offset..self.input_offset + count])
+                mem.copy(
+                    body[self.body_count..self.body_count + count],
+                    input[self.input_offset..self.input_offset + count],
+                )
                 self.body_count += count
                 self.input_offset += count
                 self.chunk_remaining -= count

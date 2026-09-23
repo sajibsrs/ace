@@ -36,26 +36,45 @@ first(): usize {
 }
 
 vec_add(a: Vec3, b: Vec3): Vec3 {
-    return Vec3 {x = a.x + b.x, y = a.y + b.y, z = a.z + b.z}
+    return Vec3 {
+        x = a.x + b.x,
+        y = a.y + b.y,
+        z = a.z + b.z,
+    }
 }
 
 // result registers d0-d2 are the incoming argument registers
 rotate(a: Vec3): Vec3 {
-    return Vec3 {x = a.z, y = a.x, z = a.y}
+    return Vec3 {
+        x = a.z,
+        y = a.x,
+        z = a.y,
+    }
 }
 
 // only x waits: d0 still holds a.x for y
 partial(a: Vec3, b: Vec3): Vec3 {
-    return Vec3 {x = a.x + b.x, y = a.x * b.y, z = a.z}
+    return Vec3 {
+        x = a.x + b.x,
+        y = a.x * b.y,
+        z = a.z,
+    }
 }
 
 // a leaf reads its own result register's parameter twice
 twice_x(a: Vec3, b: Vec3): Vec3 {
-    return Vec3 {x = a.x * b.x + a.x, y = a.y, z = a.z - a.x}
+    return Vec3 {
+        x = a.x * b.x + a.x,
+        y = a.y,
+        z = a.z - a.x,
+    }
 }
 
 swap2(a: Vec2): Vec2 {
-    return Vec2 {x = a.y, y = a.x}
+    return Vec2 {
+        x = a.y,
+        y = a.x,
+    }
 }
 
 // s arrives on the stack, past d0-d7, and is read after the homed leaves
@@ -142,8 +161,16 @@ deep(a: Vec3): f64 {
 }
 
 main(): int {
-    a: Vec3 = Vec3 {x = 1.0, y = 2.0, z = 4.0}
-    b: Vec3 = Vec3 {x = 8.0, y = 16.0, z = 32.0}
+    a: Vec3 = Vec3 {
+        x = 1.0,
+        y = 2.0,
+        z = 4.0,
+    }
+    b: Vec3 = Vec3 {
+        x = 8.0,
+        y = 16.0,
+        z = 32.0,
+    }
 
     s: Vec3 = vec_add(a, b)
     if s.x != 9.0 || s.y != 18.0 || s.z != 36.0 {
@@ -159,17 +186,39 @@ main(): int {
     if second(b) != 16.0 || unused(a, b) != 32.0 {
         return 4
     }
-    if sum2(Vec2 {x = 1.5, y = 2.5}, Vec2 {x = 10.0, y = 20.0}) != 21.5 {
+    if sum2(Vec2 {
+        x = 1.5,
+        y = 2.5,
+    }, Vec2 {
+        x = 10.0,
+        y = 20.0,
+    }) != 21.5 {
         return 5
     }
-    if widen(Vec2 {x = 0.25, y = 0.5}) != 0.75 {
+    if widen(Vec2 {
+        x = 0.25,
+        y = 0.5,
+    }) != 0.75 {
         return 6
     }
-    rc: Rect = Rect {min = Pt {x = 1.0, y = 2.0}, max = Pt {x = 4.0, y = 10.0}}
+    rc: Rect = Rect {
+        min = Pt {
+            x = 1.0,
+            y = 2.0,
+        },
+        max = Pt {
+            x = 4.0,
+            y = 10.0,
+        },
+    }
     if area(rc) != 24.0 {
         return 7
     }
-    if order(Vec3 {x = 1.0, y = 4.0, z = 8.0}) != 0.25 - 4.0 {
+    if order(Vec3 {
+        x = 1.0,
+        y = 4.0,
+        z = 8.0,
+    }) != 0.25 - 4.0 {
         return 8
     }
     if negate(a) != 1.0 {
@@ -185,7 +234,7 @@ main(): int {
     if mixed(a, b) != 17.0 {
         return 12
     }
-    arr: Arr = Arr {v = [3.0, 5.0]}
+    arr: Arr = Arr { v = [3.0, 5.0] }
     if pick(arr, 0) != 3.0 || pick(arr, 1) != 5.0 {
         return 13
     }
@@ -206,14 +255,21 @@ main(): int {
     if t.x != 9.0 || t.y != 2.0 || t.z != 3.0 {
         return 19
     }
-    w: Vec2 = swap2(Vec2 {x = 1.5, y = -2.5})
+    w: Vec2 = swap2(Vec2 {
+        x = 1.5,
+        y = -2.5,
+    })
     if w.x != -2.5 || w.y != 1.5 {
         return 20
     }
     if stacked(a, b, 64.0, 128.0, 256.0) != 1.0 + 32.0 + 64.0 + 128.0 + 256.0 {
         return 21
     }
-    acc: Vec3 = Vec3 {x = 0.0, y = 0.0, z = 0.0}
+    acc: Vec3 = Vec3 {
+        x = 0.0,
+        y = 0.0,
+        z = 0.0,
+    }
     for i: usize in 0 .. 3 {
         acc = vec_add(rotate(acc), a)
     }

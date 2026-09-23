@@ -6,7 +6,10 @@ import sys
 import net/tcp
 
 loopback(port: u16): net.Addr4 {
-    return net.Addr4 {ip = [127, 0, 0, 1], port = port}
+    return net.Addr4 {
+        ip = [127, 0, 0, 1],
+        port = port,
+    }
 }
 
 read_request(connection: tcp.Conn, expected: string): Error {
@@ -66,9 +69,8 @@ client(port: u16): int {
 
     context: http.ClientContext = http.ClientContext::new()
     defer mut context.wipe()
-    context.redirects = http.RedirectPolicy {limit = 10}
-    response: http.Response, err: Error = http.get(
-        url_bytes[..url_count], mut context)
+    context.redirects = http.RedirectPolicy { limit = 10 }
+    response: http.Response, err: Error = http.get(url_bytes[..url_count], mut context)
     result: int = 0
     if err != null || response.status != 200 || !mem.equal(response.body, "done") {
         result = 3
@@ -94,11 +96,7 @@ main(): int {
 
     port_bytes: [8]u8 = [0 : 8]
     port_count: usize, ok: bool = str.format(mut port_bytes[..], uint(address.port))
-    location_parts: [3]string = [
-        "Location: //127.0.0.1:",
-        port_bytes[..port_count],
-        "/scheme\r\n",
-    ]
+    location_parts: [3]string = ["Location: //127.0.0.1:", port_bytes[..port_count], "/scheme\r\n"]
     scheme_response: [160]u8 = [0 : 160]
     scheme_prefix: string = "HTTP/1.1 307 Temporary Redirect\r\n"
     at: usize = scheme_prefix.len
@@ -122,8 +120,16 @@ main(): int {
     if !ok { return 14 }
 
     err = serve(listener, "/a/b/start", "HTTP/1.1 301 Moved Permanently\r\nLocation: next\r\nContent-Length: 0\r\n\r\n")
-    if err == null { err = serve(listener, "/a/b/next", "HTTP/1.1 302 Found\r\nLocation: ?q=1\r\nContent-Length: 0\r\n\r\n") }
-    if err == null { err = serve(listener, "/a/b/next?q=1", "HTTP/1.1 303 See Other\r\nLocation: /root\r\nContent-Length: 0\r\n\r\n") }
+    if err == null { err = serve(
+        listener,
+        "/a/b/next",
+        "HTTP/1.1 302 Found\r\nLocation: ?q=1\r\nContent-Length: 0\r\n\r\n",
+    ) }
+    if err == null { err = serve(
+        listener,
+        "/a/b/next?q=1",
+        "HTTP/1.1 303 See Other\r\nLocation: /root\r\nContent-Length: 0\r\n\r\n",
+    ) }
     if err == null { err = serve(listener, "/root", scheme_response[..at]) }
     if err == null { err = serve(listener, "/scheme", absolute_response[..absolute_count]) }
     if err == null { err = serve(listener, "/final", "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\ndone") }

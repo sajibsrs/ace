@@ -8,7 +8,10 @@ import sys
 import net/tcp
 
 loopback(port: u16): net.Addr4 {
-    return net.Addr4 {ip = [127, 0, 0, 1], port = port}
+    return net.Addr4 {
+        ip = [127, 0, 0, 1],
+        port = port,
+    }
 }
 
 is_error(err: Error, domain: typeid): bool {
@@ -110,13 +113,19 @@ check_cleanup(): int {
         return 8
     }
 
-    invalid_connection: tcp.Conn = tcp.Conn {socket = net.Socket(-1), active = true}
+    invalid_connection: tcp.Conn = tcp.Conn {
+        socket = net.Socket(-1),
+        active = true,
+    }
     err = tcp.close(mut invalid_connection)
     if !is_error(err, typeid(sys.CloseErr)) || invalid_connection.active ||
        invalid_connection.socket != 0 {
         return 9
     }
-    invalid_listener: tcp.Listener = tcp.Listener {socket = net.Socket(-1), active = true}
+    invalid_listener: tcp.Listener = tcp.Listener {
+        socket = net.Socket(-1),
+        active = true,
+    }
     err = tcp.close(mut invalid_listener)
     if !is_error(err, typeid(sys.CloseErr)) || invalid_listener.active ||
        invalid_listener.socket != 0 {
@@ -133,7 +142,7 @@ check_cleanup(): int {
     if socket_err != null {
         return 12
     }
-    inactive: tcp.Conn = tcp.Conn {socket = probe}
+    inactive: tcp.Conn = tcp.Conn { socket = probe }
     if tcp.close(mut inactive) != null || inactive.socket != probe || sys.close(probe) != null {
         return 13
     }

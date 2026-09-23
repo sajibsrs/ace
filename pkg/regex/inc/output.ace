@@ -12,7 +12,11 @@ pub Output: struct {
 }
 
 pub Output::new(destination: mut []char): Output {
-    return Output{out = destination, at = 0, ok = true}
+    return Output {
+        out = destination,
+        at = 0,
+        ok = true,
+    }
 }
 
 pub mut Output.put(byte: u8) {

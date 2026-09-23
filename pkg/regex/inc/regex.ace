@@ -51,7 +51,11 @@ pub Regex::new(pattern: string): (Regex, Error) {
         return blank(Regex), run_err
     }
 
-    return Regex{code = code, run = run}, null
+    regex: Regex = Regex {
+        code = code,
+        run = run,
+    }
+    return regex, null
 }
 
 pub mut Regex.wipe() {
@@ -105,8 +109,16 @@ pub mut Regex.count(text: string): usize {
  * `groups()`, or the last search found nothing.
  */
 pub Regex.span(k: u32): Span {
-    if !self.found || k > self.groups() { return Span{start = UNSET, end = UNSET} }
-    return Span{start = self.run.best[2 * usize(k)], end = self.run.best[2 * usize(k) + 1]}
+    if !self.found || k > self.groups() {
+        return Span {
+            start = UNSET,
+            end = UNSET,
+        }
+    }
+    return Span {
+        start = self.run.best[2 * usize(k)],
+        end = self.run.best[2 * usize(k) + 1],
+    }
 }
 
 /* The text of `span(k)`: a view into the searched text, valid while that text

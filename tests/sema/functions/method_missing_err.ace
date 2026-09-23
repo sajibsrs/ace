@@ -7,6 +7,6 @@ Box.get(): int {
 }
 
 main(): int {
-    b: Box = Box {n = 1}
+    b: Box = Box { n = 1 }
     return b.get()
 }

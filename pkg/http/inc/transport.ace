@@ -72,29 +72,39 @@ tcp_receive(connection: tcp.Conn, destination: mut []u8): (int, Error) {
     return count, err
 }
 
-pub exchange[C](connection: C,
+pub exchange[C](
+    connection: C,
     send: (C, []u8): (usize, Error),
     receive: (C, mut []u8): (int, Error),
-    parsed: Url, mut storage: Storage, resize: bool): (Response, Error) {
+    parsed: Url,
+    mut storage: Storage,
+    resize: bool,
+): (Response, Error) {
 
     /* The request target is known exactly: size to fit before writing. */
     target_parts: [2]string = [parsed.path, parsed.query]
     if resize {
         mem_target: mut []u8, target_ok: bool = mem.grow[u8](storage.target, parsed.path.len + parsed.query.len)
         if !target_ok {
-            return Response{}, ClientErr.allocation
+            return Response {}, ClientErr.allocation
         }
 
         storage.target = mem_target
     }
     target_count: usize, fit: bool = str.concat(target_parts[..], mut storage.target[..])
     if !fit {
-        return Response{}, ClientErr.target_capacity
+        return Response {}, ClientErr.target_capacity
     }
 
     fields: [2]Header = [
-        Header {name = "Host", value = parsed.host},
-        Header {name = "Connection", value = "close"},
+        Header {
+            name = "Host",
+            value = parsed.host,
+        },
+        Header {
+            name = "Connection",
+            value = "close",
+        },
     ]
     request: Request = Request {
         method = method_get,
@@ -106,19 +116,19 @@ pub exchange[C](connection: C,
     for resize && format_err == FormatErr.capacity {
         mem_output: mut []u8, output_ok: bool = mem.grow[u8](storage.output, storage.output.len + 1)
         if !output_ok {
-            return Response{}, ClientErr.allocation
+            return Response {}, ClientErr.allocation
         }
 
         storage.output = mem_output
         output_count, format_err = request.format(mut storage.output[..])
     }
     if format_err != null {
-        return Response{}, format_err
+        return Response {}, format_err
     }
 
     _: usize, send_err: Error = send(connection, storage.output[..output_count])
     if send_err != null {
-        return Response{}, send_err
+        return Response {}, send_err
     }
 
     occupied: usize = 0
@@ -133,11 +143,11 @@ pub exchange[C](connection: C,
         if !parse_pending {
             if occupied == storage.input.len {
                 if !resize {
-                    return Response{}, ClientErr.response
+                    return Response {}, ClientErr.response
                 }
                 mem_input: mut []u8, input_ok: bool = mem.grow[u8](storage.input, storage.input.len + 1)
                 if !input_ok {
-                    return Response{}, ClientErr.allocation
+                    return Response {}, ClientErr.allocation
                 }
 
                 storage.input = mem_input
@@ -154,7 +164,7 @@ pub exchange[C](connection: C,
             received: int
             received, recv_err: Error = receive(connection, mut storage.input[occupied..])
             if recv_err != null {
-                return Response{}, recv_err
+                return Response {}, recv_err
             }
 
             occupied += usize(received)
@@ -177,12 +187,15 @@ pub exchange[C](connection: C,
             ResponseResult.progress(value: ResponseProgress) {}
             ResponseResult.capacity(capacity_type: ResponseCapacity) {
                 if !resize {
-                    return Response{}, ClientErr.response
+                    return Response {}, ClientErr.response
                 }
                 if capacity_type == ResponseCapacity.headers {
-                    mem_headers: mut []Header, headers_ok: bool = mem.grow[Header](storage.headers, storage.headers.len + 1)
+                    mem_headers: mut []Header, headers_ok: bool = mem.grow[Header](
+                        storage.headers,
+                        storage.headers.len + 1,
+                    )
                     if !headers_ok {
-                        return Response{}, ClientErr.allocation
+                        return Response {}, ClientErr.allocation
                     }
 
                     storage.headers = mem_headers
@@ -197,7 +210,7 @@ pub exchange[C](connection: C,
                     }
                     mem_body: mut []u8, body_ok: bool = mem.grow[u8](storage.body, needed)
                     if !body_ok {
-                        return Response{}, ClientErr.allocation
+                        return Response {}, ClientErr.allocation
                     }
 
                     storage.body = mem_body
@@ -205,7 +218,7 @@ pub exchange[C](connection: C,
                 parse_pending = true
             }
             default {
-                return Response{}, ClientErr.response
+                return Response {}, ClientErr.response
             }
         }
     }
@@ -213,13 +226,19 @@ pub exchange[C](connection: C,
 
 pub get_with_storage(url: string, mut storage: Storage, resize: bool): (Response, Error) {
     parsed: Url, url_err: Error = parsing.Url::parse(url, false)
-    if url_err != null { return Response{}, url_err }
+    if url_err != null { return Response {}, url_err }
 
     connection: tcp.Conn, connect_err: Error = connect_url(parsed, mut storage, resize)
     defer tcp.close(mut connection)
-    if connect_err != null { return Response{}, connect_err }
+    if connect_err != null { return Response {}, connect_err }
 
-    response: Response, err: Error = exchange[tcp.Conn](connection,
-        tcp.send_all, tcp_receive, parsed, mut storage, resize)
+    response: Response, err: Error = exchange[tcp.Conn](
+        connection,
+        tcp.send_all,
+        tcp_receive,
+        parsed,
+        mut storage,
+        resize,
+    )
     return response, err
 }

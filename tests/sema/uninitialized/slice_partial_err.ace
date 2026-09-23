@@ -6,6 +6,9 @@ first(spans: []Span): usize { return spans[0].start }
 
 main(): int {
     spans: [4]Span
-    spans[0] = Span { start = 1, end = 1 }
+    spans[0] = Span {
+        start = 1,
+        end = 1,
+    }
     return int(first(spans[0..1]))
 }

@@ -386,12 +386,20 @@ pub wait(process: Process): (ProcessStatus, Error) {
 
     if i32(process) <= 0 {
         errno_set(22)
-        zero: ProcessStatus = ProcessStatus {exited = false, code = 0, signal = 0}
+        zero: ProcessStatus = ProcessStatus {
+            exited = false,
+            code = 0,
+            signal = 0,
+        }
         return zero, WaitErr.invalid
     }
 
     if c_waitpid(i32(process), mut &raw, 0) == -1 {
-        zero: ProcessStatus = ProcessStatus {exited = false, code = 0, signal = 0}
+        zero: ProcessStatus = ProcessStatus {
+            exited = false,
+            code = 0,
+            signal = 0,
+        }
         return zero, WaitErr(errno())
     }
     signal: int = int(raw & 0x7f)
@@ -404,7 +412,12 @@ pub wait(process: Process): (ProcessStatus, Error) {
         return status, null
     }
 
-    return ProcessStatus {exited = false, code = 0, signal = signal}, null
+    process_status: ProcessStatus = ProcessStatus {
+        exited = false,
+        code = 0,
+        signal = signal,
+    }
+    return process_status, null
 }
 
 pub pipe(): (Fd, Fd, Error) {
@@ -477,12 +490,19 @@ pub open(path: string, flags: i32, mode: u32): (Fd, Error) {
 
 pub stat(path: string): (FileInfo, Error) {
     path_buf: [1024]u8
-    zero: FileInfo = FileInfo { size = 0, file_type = FileType.unknown }
+    zero: FileInfo = FileInfo {
+        size = 0,
+        file_type = FileType.unknown,
+    }
 
     if !path_copy(path, mut path_buf[0..1024]) { return zero, StatErr.name_too_long }
     raw: DarwinStat = blank(DarwinStat)
     if c_stat(&path_buf[0], mut &raw) == -1 { return zero, StatErr(errno()) }
-    return FileInfo { size = u64(raw.size), file_type = file_type_from_mode(raw.mode) }, null
+    info: FileInfo = FileInfo {
+        size = u64(raw.size),
+        file_type = file_type_from_mode(raw.mode),
+    }
+    return info, null
 }
 
 pub mkdir(path: string, mode: u32): Error {
@@ -544,13 +564,13 @@ pub read_dir(mut dir: Dir, name: mut []u8): (usize, FileType, bool, Error) {
 
     for {
         if dir.next == dir.count {
-            count: i32 = c_getdirentries64(i32(dir.fd), mut &dir.buffer[0],
-                                           4096, mut &dir.base)
+            count: i32 = c_getdirentries64(i32(dir.fd), mut &dir.buffer[0], 4096, mut &dir.base)
             if count < 0 { return 0, FileType.unknown, false, ReadDirErr(errno()) }
             if count == 0 {
                 dir.done = true
                 return 0, FileType.unknown, true, null
             }
+
             dir.next = 0
             dir.count = usize(count)
         }

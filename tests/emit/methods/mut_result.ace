@@ -14,7 +14,7 @@ twice(value: int): int {
 }
 
 main(): int {
-    counter: Counter = Counter {value = 1}
+    counter: Counter = Counter { value = 1 }
     result: int = mut counter.add(2)
     result = mut counter.add(3)
     nested: int = twice(mut counter.add(4))

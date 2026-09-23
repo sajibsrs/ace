@@ -59,11 +59,26 @@ main(): int {
     if either(0, 5) && either(5, 0) && !either(5, 5) {
         score += 1
     }
-    if stored(Flags{ready = true, open = true}) && !stored(Flags{ready = true, open = false}) &&
-       !stored(Flags{ready = false, open = true}) {
+    if stored(Flags {
+        ready = true,
+        open = true,
+    }) && !stored(Flags {
+        ready = true,
+        open = false,
+    }) &&
+       !stored(Flags {
+           ready = false,
+           open = true,
+       }) {
         score += 1
     }
-    if stored_or(Flags{ready = false, open = true}) && !stored_or(Flags{ready = false, open = false}) {
+    if stored_or(Flags {
+        ready = false,
+        open = true,
+    }) && !stored_or(Flags {
+        ready = false,
+        open = false,
+    }) {
         score += 1
     }
     if nested(1, 2, 0) && !nested(0, 1, 0) && !nested(3, 2, 1) && nested(2, 1, 5) {
@@ -92,7 +107,10 @@ main(): int {
             n += 1
         }
     }
-    if n == 4 && both(1, 2) == true && stored(Flags{ready = true, open = true}) == true &&
+    if n == 4 && both(1, 2) == true && stored(Flags {
+        ready = true,
+        open = true,
+    }) == true &&
        both(1, 2) == either(0, 1) {
         score += 1
     }

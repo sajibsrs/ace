@@ -65,8 +65,7 @@ print_packet(packet: bpf.Packet) {
 
 main(): int {
     paths: [8]string = [
-        "/dev/bpf0", "/dev/bpf1", "/dev/bpf2", "/dev/bpf3",
-        "/dev/bpf4", "/dev/bpf5", "/dev/bpf6", "/dev/bpf7",
+        "/dev/bpf0", "/dev/bpf1", "/dev/bpf2", "/dev/bpf3", "/dev/bpf4", "/dev/bpf5", "/dev/bpf6", "/dev/bpf7",
     ]
     fd: sys.Fd = sys.Fd(-1)
     last_open_error: Error = null
@@ -144,8 +143,7 @@ main(): int {
                            (usize(length_bytes[3]) << 24)
 
     if buffer_length == 0 || buffer_length > CAPTURE_CAPACITY {
-        fmt.printf("BIOCGBLEN returned unsupported size %u: error %d\n",
-                   buffer_length, 22)
+        fmt.printf("BIOCGBLEN returned unsupported size %u: error %d\n", buffer_length, 22)
         sys.close(fd)
         return 1
     }

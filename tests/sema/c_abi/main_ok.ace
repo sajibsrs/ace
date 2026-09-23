@@ -8,9 +8,21 @@ Opcode: enum u8 { none, load = 16, store }
 EnumPacket: struct { opcode: Opcode, value: u16 }
 
 extern "c" {
-    accept_scalars(a: i8, b: i16, c: i32, d: i64,
-                   e: u8, f: u16, g: u32, h: u64,
-                   i: int, j: uint, k: usize, x: f32, y: f64)
+    accept_scalars(
+        a: i8,
+        b: i16,
+        c: i32,
+        d: i64,
+        e: u8,
+        f: u16,
+        g: u32,
+        h: u64,
+        i: int,
+        j: uint,
+        k: usize,
+        x: f32,
+        y: f64,
+    )
     accept_shapes(packet: Packet, code: Code, pointer: PacketPtr): Packet
     accept_array_pointer(values: *[4]u16)
     accept_explicit_enum(opcode: Opcode, packet: EnumPacket): Opcode

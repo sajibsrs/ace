@@ -40,7 +40,7 @@ main(): int {
     mut f.array()
 
     for i: int in 0 .. count {
-        reading: Reading = Reading{
+        reading: Reading = Reading {
             sensor = SENSORS[i % 4],
             sample = i,
             celsius = 15.0 + 1.5 * f64(i),

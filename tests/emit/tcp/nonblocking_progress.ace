@@ -8,24 +8,31 @@ import sys
 import net/tcp
 
 loopback(port: u16): net.Addr4 {
-    return net.Addr4 {ip = [127, 0, 0, 1], port = port}
+    return net.Addr4 {
+        ip = [127, 0, 0, 1],
+        port = port,
+    }
 }
 
 watch_connection(q: poll.Queue, connection: tcp.Conn): Error {
     interest: tcp.Interest = tcp.interest(connection)
-    return poll.watch(q, connection.socket,
-                      interest == tcp.Interest.read ||
-                      interest == tcp.Interest.both,
-                      interest == tcp.Interest.write ||
-                      interest == tcp.Interest.both)
+    return poll.watch(
+        q,
+        connection.socket,
+        interest == tcp.Interest.read || interest == tcp.Interest.both,
+        interest == tcp.Interest.write || interest == tcp.Interest.both,
+    )
 }
 
 wait_one(q: poll.Queue, storage: mut []poll.Event): (poll.Event, Error) {
     count: usize, err: Error = poll.wait(q, storage, u64(1000000000))
     if err != null || count != 1 {
         zero: poll.Event = poll.Event {
-            fd = sys.Fd(0), readable = false, writable = false,
-            error = false, hangup = false,
+            fd = sys.Fd(0),
+            readable = false,
+            writable = false,
+            error = false,
+            hangup = false,
         }
         if err == null {
             return zero, poll.WaitErr(0)
@@ -73,8 +80,11 @@ client(port: u16): int {
             return 3
         }
         zero: poll.Event = poll.Event {
-            fd = sys.Fd(0), readable = false, writable = false,
-            error = false, hangup = false,
+            fd = sys.Fd(0),
+            readable = false,
+            writable = false,
+            error = false,
+            hangup = false,
         }
         event_storage: [1]poll.Event = [zero]
         events: mut []poll.Event = mut event_storage[0..]
@@ -108,8 +118,11 @@ client(port: u16): int {
                 return 6
             }
             zero: poll.Event = poll.Event {
-                fd = sys.Fd(0), readable = false, writable = false,
-                error = false, hangup = false,
+                fd = sys.Fd(0),
+                readable = false,
+                writable = false,
+                error = false,
+                hangup = false,
             }
             event_storage: [1]poll.Event = [zero]
             events: mut []poll.Event = mut event_storage[0..]
@@ -146,8 +159,11 @@ client(port: u16): int {
                 return 7
             }
             zero: poll.Event = poll.Event {
-                fd = sys.Fd(0), readable = false, writable = false,
-                error = false, hangup = false,
+                fd = sys.Fd(0),
+                readable = false,
+                writable = false,
+                error = false,
+                hangup = false,
             }
             event_storage: [1]poll.Event = [zero]
             events: mut []poll.Event = mut event_storage[0..]
@@ -245,8 +261,11 @@ main(): int {
                 return 15
             }
             zero: poll.Event = poll.Event {
-                fd = sys.Fd(0), readable = false, writable = false,
-                error = false, hangup = false,
+                fd = sys.Fd(0),
+                readable = false,
+                writable = false,
+                error = false,
+                hangup = false,
             }
             event_storage: [1]poll.Event = [zero]
             events: mut []poll.Event = mut event_storage[0..]
@@ -268,8 +287,11 @@ main(): int {
                 return 17
             }
             zero: poll.Event = poll.Event {
-                fd = sys.Fd(0), readable = false, writable = false,
-                error = false, hangup = false,
+                fd = sys.Fd(0),
+                readable = false,
+                writable = false,
+                error = false,
+                hangup = false,
             }
             event_storage: [1]poll.Event = [zero]
             events: mut []poll.Event = mut event_storage[0..]

@@ -75,7 +75,11 @@ doubled(): int {
     halves: [33]f64 = [1.5 : 33]
     pairs: [100]Pair = [Pair { a = 1, b = 2 } : 100]
     single: [1]i32 = [i32(9) : 1]
-    held: Holder = Holder { head = 99, data = [Pair { a = 5, b = 6 } : 3], tail = 98 }
+    held: Holder = Holder {
+        head = 99,
+        data = [Pair { a = 5, b = 6 } : 3],
+        tail = 98,
+    }
     guard_hi: u64 = 0x0807060504030201
 
     if calls != 1 {

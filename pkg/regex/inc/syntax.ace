@@ -198,11 +198,11 @@ is_quantifier(c: u8): bool {
  * parse holds no storage.
  */
 pub Syntax::parse(pattern: string): (Syntax, Error, usize) {
-    p: Parser = Parser{
-        nodes = array.Array[Node]{},
-        children = array.Array[u32]{},
-        classes = array.Array[Class]{},
-        stack = array.Array[u32]{},
+    p: Parser = Parser {
+        nodes = array.Array[Node] {},
+        children = array.Array[u32] {},
+        classes = array.Array[Class] {},
+        stack = array.Array[u32] {},
         text = pattern,
         at = 0,
         groups = 0,
@@ -219,7 +219,14 @@ pub Syntax::parse(pattern: string): (Syntax, Error, usize) {
         return blank(Syntax), err, p.at
     }
 
-    return Syntax{nodes = p.nodes, children = p.children, classes = p.classes, root = root, groups = p.groups}, null, 0
+    syntax: Syntax = Syntax {
+        nodes = p.nodes,
+        children = p.children,
+        classes = p.classes,
+        root = root,
+        groups = p.groups,
+    }
+    return syntax, null, 0
 }
 
 /* Releases the tree and leaves it empty. */
@@ -240,7 +247,10 @@ pub mut Syntax.wipe() {
  * `destination` is too small.
  */
 pub Syntax.format(destination: mut []char): (usize, bool) {
-    w: Writer = Writer{syntax = self, out = output.Output::new(destination)}
+    w: Writer = Writer {
+        syntax = self,
+        out = output.Output::new(destination),
+    }
     mut w.node(self.root)
     n: usize, ok: bool = w.out.finish()
     return n, ok
@@ -294,7 +304,10 @@ mut Parser.collect(base: usize, alternate: bool): (u32, Error) {
         }
     }
     mut self.stack.truncate(base)
-    list: List = List{first = first, count = u32(count)}
+    list: List = List {
+        first = first,
+        count = u32(count),
+    }
 
     if alternate {
         result: u32, err: Error = mut self.add(Node.alt(list))
@@ -377,7 +390,12 @@ mut Parser.parse_repeat(depth: usize): (u32, Error) {
     if self.at < self.text.len && is_quantifier(self.text[self.at]) {
         return 0, ParseErr.missing_operand
     }
-    result: u32, add_err: Error = mut self.add(Node.repeat(Repeat{child = atom, min = min, max = max, greedy = greedy}))
+    result: u32, add_err: Error = mut self.add(Node.repeat(Repeat {
+        child = atom,
+        min = min,
+        max = max,
+        greedy = greedy,
+    }))
     return result, add_err
 }
 
@@ -492,7 +510,10 @@ mut Parser.parse_group(depth: usize): (u32, Error) {
         return 0, ParseErr.missing_paren
     }
     self.at += 1
-    result: u32, add_err: Error = mut self.add(Node.group(Group{index = index, child = child}))
+    result: u32, add_err: Error = mut self.add(Node.group(Group {
+        index = index,
+        child = child,
+    }))
     return result, add_err
 }
 

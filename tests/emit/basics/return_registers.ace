@@ -37,27 +37,43 @@ bump(): usize {
 }
 
 small_step(s: Small): Small {
-    return Small {v = (s.v * 48271 + 1) & MASK}
+    return Small { v = (s.v * 48271 + 1) & MASK }
 }
 
 pair_step(p: Pair): Pair {
-    return Pair {a = (p.a * 48271 + p.b) & MASK, b = (p.b + 1) & MASK}
+    return Pair {
+        a = (p.a * 48271 + p.b) & MASK,
+        b = (p.b + 1) & MASK,
+    }
 }
 
 swap(p: Pair): Pair {
-    return Pair {b = p.a, a = p.b}
+    return Pair {
+        b = p.a,
+        a = p.b,
+    }
 }
 
 vec_add(a: Vec3, b: Vec3): Vec3 {
-    return Vec3 {x = a.x + b.x, y = a.y + b.y, z = a.z + b.z}
+    return Vec3 {
+        x = a.x + b.x,
+        y = a.y + b.y,
+        z = a.z + b.z,
+    }
 }
 
 vec2_scale(v: Vec2, k: f32): Vec2 {
-    return Vec2 {x = v.x * k, y = v.y * k}
+    return Vec2 {
+        x = v.x * k,
+        y = v.y * k,
+    }
 }
 
 packed(p: Packed): Packed {
-    return Packed {a = p.b + 1, b = p.a + 2}
+    return Packed {
+        a = p.b + 1,
+        b = p.a + 2,
+    }
 }
 
 divmod(a: usize, b: usize): (usize, usize) {
@@ -66,31 +82,51 @@ divmod(a: usize, b: usize): (usize, usize) {
 
 deferred(s: Small): Small {
     defer bump()
-    return Small {v = s.v + 5}
+    return Small { v = s.v + 5 }
 }
 
 main(): int {
-    s: Small = small_step(Small {v = 7})
+    s: Small = small_step(Small { v = 7 })
     if s.v != ((7 * 48271 + 1) & MASK) {
         return 1
     }
-    p: Pair = pair_step(Pair {a = 3, b = 5})
+    p: Pair = pair_step(Pair {
+        a = 3,
+        b = 5,
+    })
     if p.a != ((3 * 48271 + 5) & MASK) || p.b != 6 {
         return 2
     }
-    w: Pair = swap(Pair {a = 11, b = 22})
+    w: Pair = swap(Pair {
+        a = 11,
+        b = 22,
+    })
     if w.a != 22 || w.b != 11 {
         return 3
     }
-    v: Vec3 = vec_add(Vec3 {x = 1.0, y = 2.0, z = 3.0}, Vec3 {x = 10.0, y = 20.0, z = 30.0})
+    v: Vec3 = vec_add(Vec3 {
+        x = 1.0,
+        y = 2.0,
+        z = 3.0,
+    }, Vec3 {
+        x = 10.0,
+        y = 20.0,
+        z = 30.0,
+    })
     if v.x != 11.0 || v.y != 22.0 || v.z != 33.0 {
         return 4
     }
-    h: Vec2 = vec2_scale(Vec2 {x = 1.5, y = 2.5}, 2.0)
+    h: Vec2 = vec2_scale(Vec2 {
+        x = 1.5,
+        y = 2.5,
+    }, 2.0)
     if h.x != 3.0 || h.y != 5.0 {
         return 5
     }
-    k: Packed = packed(Packed {a = 1, b = 2})
+    k: Packed = packed(Packed {
+        a = 1,
+        b = 2,
+    })
     if k.a != 3 || k.b != 3 {
         return 6
     }
@@ -98,7 +134,7 @@ main(): int {
     if q != 14 || r != 2 {
         return 7
     }
-    d: Small = deferred(Small {v = 1})
+    d: Small = deferred(Small { v = 1 })
     if d.v != 6 || hits != 1 {
         return 8
     }

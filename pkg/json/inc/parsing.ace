@@ -64,9 +64,15 @@ pub Parser: struct {
 }
 
 pub Parser::new(): Parser {
-    return Parser{
-        kept = 0, count = 0, bat = 0, iat = 0, pat = 0,
-        stack = array.Array[Json]{}, pstack = array.Array[Pair]{}, at = 0,
+    return Parser {
+        kept = 0,
+        count = 0,
+        bat = 0,
+        iat = 0,
+        pat = 0,
+        stack = array.Array[Json] {},
+        pstack = array.Array[Pair] {},
+        at = 0,
     }
 }
 
@@ -152,7 +158,7 @@ mut Parser.reserve(): Error {
         }
 
         self.blocks = grown
-        self.blocks[at] = Block{}
+        self.blocks[at] = Block {}
         self.kept += 1
     }
     self.count += 1
@@ -429,7 +435,10 @@ mut Parser.parse_object(depth: usize): (Json, Error) {
             return Json.none, verr
         }
 
-        push_err: Error = mut self.pstack.push(Pair{key = key, value = elem})
+        push_err: Error = mut self.pstack.push(Pair {
+            key = key,
+            value = elem,
+        })
         if push_err != null {
             return Json.none, ParseErr.allocation
         }

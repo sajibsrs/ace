@@ -75,10 +75,7 @@ main(): int {
     }
     concat_parts: [4]string = ["ace", "", " ", "lang"]
     concat_buffer: [12]u8 = [7 : 12]
-    concat_count: usize, concat_ok: bool = str.concat(
-        concat_parts[..],
-        mut concat_buffer[..],
-    )
+    concat_count: usize, concat_ok: bool = str.concat(concat_parts[..], mut concat_buffer[..])
     if !concat_ok || concat_count != 8 ||
        !mem.equal(concat_buffer[..concat_count], "ace lang") ||
        concat_buffer[8] != 7 || concat_buffer[11] != 7 {

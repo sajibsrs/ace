@@ -118,12 +118,7 @@ main(): int {
     previous_scan: usize = 0
     previous_body: usize = 0
     for occupied: usize in 1 .. request_text.len + 1 {
-        result = mut parser.parse(
-            request_text[..occupied],
-            mut headers[..],
-            mut body[..],
-            false,
-        )
+        result = mut parser.parse(request_text[..occupied], mut headers[..], mut body[..], false)
         if parser.scan_offset < previous_scan || parser.body_count < previous_body {
             return 10
         }
@@ -175,7 +170,10 @@ main(): int {
     }
 
     response_headers: [1]http.Header = [
-        http.Header {name = "Content-Length", value = "2"},
+        http.Header {
+            name = "Content-Length",
+            value = "2",
+        },
     ]
     response: http.Response = http.Response {
         version_minor = u8(1),

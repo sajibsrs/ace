@@ -102,12 +102,26 @@ escape(v: Val): int {
 }
 
 main(): int {
-    f: Val = Val.fork(Fork{x = 7, y = 4000000000})
+    f: Val = Val.fork(Fork {
+        x = 7,
+        y = 4000000000,
+    })
     if weigh(f) != 3 * (14 + 4000000000) { return 1 }
-    if weigh(Val.narrow(Narrow{a = -100, b = 200, c = -30000, d = -2000000000})) !=
+    if weigh(Val.narrow(Narrow {
+        a = -100,
+        b = 200,
+        c = -30000,
+        d = -2000000000,
+    })) !=
        3 * (-100 + 200 - 30000 - 2000000000) { return 2 }
-    if weigh(Val.point(Point{x = 1.5, y = -4.0})) != -12 { return 3 }
-    if weigh(Val.mixed(Mixed{f = 2.25, n = -9})) != -42 { return 4 }
+    if weigh(Val.point(Point {
+        x = 1.5,
+        y = -4.0,
+    })) != -12 { return 3 }
+    if weigh(Val.mixed(Mixed {
+        f = 2.25,
+        n = -9,
+    })) != -42 { return 4 }
     if weigh(Val.none) != 3 { return 5 }
     if bump(f) != 17 + 4000000000 + 17 { return 6 }
     if split_slot(f) != 28 + 6 + 2 + 4000000000 { return 7 }

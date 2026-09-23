@@ -27,20 +27,53 @@ Flag: union { none, byte: u8 }               // small tagged union, register
 Box[T]: struct { value: T }
 
 sum_pair(p: Pair): i64 { return p.a + i64(p.b) }
-bump_pair(p: Pair): Pair { return Pair { a = p.a + 1, b = p.b + 2 } }
+bump_pair(p: Pair): Pair {
+    return Pair {
+        a = p.a + 1,
+        b = p.b + 2,
+    }
+}
 
 sum_triple(t: Triple): i64 { return t.a + t.b + i64(t.c) }
-bump_triple(t: Triple): Triple { return Triple { a = t.a + 1, b = t.b + 2, c = t.c + 3 } }
+bump_triple(t: Triple): Triple {
+    return Triple {
+        a = t.a + 1,
+        b = t.b + 2,
+        c = t.c + 3,
+    }
+}
 
 bump_h1(h: H1): H1 { return H1 { a = h.a + 1.0 } }
-bump_h2(h: H2): H2 { return H2 { a = h.a + 1.0, b = h.b + 2.0 } }
-bump_h3(h: H3): H3 { return H3 { a = h.a + 1.0, b = h.b + 2.0, c = h.c + 3.0 } }
+bump_h2(h: H2): H2 {
+    return H2 {
+        a = h.a + 1.0,
+        b = h.b + 2.0,
+    }
+}
+bump_h3(h: H3): H3 {
+    return H3 {
+        a = h.a + 1.0,
+        b = h.b + 2.0,
+        c = h.c + 3.0,
+    }
+}
 bump_h4(h: H4): H4 {
-    return H4 { a = h.a + 1.0, b = h.b + 2.0, c = h.c + 3.0, d = h.d + 4.0 }
+    return H4 {
+        a = h.a + 1.0,
+        b = h.b + 2.0,
+        c = h.c + 3.0,
+        d = h.d + 4.0,
+    }
 }
 
 bump_outer(o: Outer): Outer {
-    return Outer { inner = Inner { x = o.inner.x + 1, y = o.inner.y + 2 }, tag = o.tag + 3 }
+    return Outer {
+        inner = Inner {
+            x = o.inner.x + 1,
+            y = o.inner.y + 2,
+        },
+        tag = o.tag + 3,
+    }
 }
 
 bump_vec3(v: Vec3): Vec3 {
@@ -49,8 +82,14 @@ bump_vec3(v: Vec3): Vec3 {
 }
 
 bump_grid(g: Grid): Grid {
-    return Grid { cells = [Cell { a = g.cells[0].a + 1, b = g.cells[0].b + 2 },
-                           Cell { a = g.cells[1].a + 3, b = g.cells[1].b + 4 }] }
+    return Grid { cells = [Cell {
+        a = g.cells[0].a + 1,
+        b = g.cells[0].b + 2,
+    },
+                           Cell {
+                               a = g.cells[1].a + 3,
+                               b = g.cells[1].b + 4,
+                           }] }
 }
 
 sum_msg(m: Msg): i64 {
@@ -70,12 +109,19 @@ sum_flag(f: Flag): u8 {
 
 sum_box_pair(b: Box[Pair]): i64 { return b.value.a + i64(b.value.b) }
 bump_box_h2(b: Box[H2]): Box[H2] {
-    return Box[H2] { value = H2 { a = b.value.a + 1.0, b = b.value.b + 2.0 } }
+    return Box[H2] { value = H2 {
+        a = b.value.a + 1.0,
+        b = b.value.b + 2.0,
+    } }
 }
 sum_box_triple(b: Box[Triple]): i64 { return b.value.a + b.value.b + i64(b.value.c) }
 
 split_pair(): (Pair, i32) {
-    return Pair { a = 5, b = 6 }, 7
+    pair: Pair = Pair {
+        a = 5,
+        b = 6,
+    }
+    return pair, 7
 }
 
 many_int_then_pair(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, p: Pair, tail: i32): i64 {
@@ -87,24 +133,56 @@ many_float_then_hfa(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: f
 }
 
 main(): int {
-    if sum_pair(Pair { a = 10, b = 3 }) != 13 { return 1 }
-    bp: Pair = bump_pair(Pair { a = 10, b = 3 })
+    if sum_pair(Pair {
+        a = 10,
+        b = 3,
+    }) != 13 { return 1 }
+    bp: Pair = bump_pair(Pair {
+        a = 10,
+        b = 3,
+    })
     if bp.a != 11 || bp.b != 5 { return 2 }
 
-    if sum_triple(Triple { a = 1, b = 2, c = 3 }) != 6 { return 3 }
-    bt: Triple = bump_triple(Triple { a = 1, b = 2, c = 3 })
+    if sum_triple(Triple {
+        a = 1,
+        b = 2,
+        c = 3,
+    }) != 6 { return 3 }
+    bt: Triple = bump_triple(Triple {
+        a = 1,
+        b = 2,
+        c = 3,
+    })
     if bt.a != 2 || bt.b != 4 || bt.c != 6 { return 4 }
 
     h1: H1 = bump_h1(H1 { a = 1.0 })
     if h1.a != 2.0 { return 5 }
-    h2: H2 = bump_h2(H2 { a = 1.0, b = 2.0 })
+    h2: H2 = bump_h2(H2 {
+        a = 1.0,
+        b = 2.0,
+    })
     if h2.a != 2.0 || h2.b != 4.0 { return 6 }
-    h3: H3 = bump_h3(H3 { a = 1.0, b = 2.0, c = 3.0 })
+    h3: H3 = bump_h3(H3 {
+        a = 1.0,
+        b = 2.0,
+        c = 3.0,
+    })
     if h3.a != 2.0 || h3.b != 4.0 || h3.c != 6.0 { return 7 }
-    h4: H4 = bump_h4(H4 { a = 1.0, b = 2.0, c = 3.0, d = 4.0 })
+    h4: H4 = bump_h4(H4 {
+        a = 1.0,
+        b = 2.0,
+        c = 3.0,
+        d = 4.0,
+    })
     if h4.a != 2.0 || h4.b != 4.0 || h4.c != 6.0 || h4.d != 8.0 { return 8 }
 
-    outer: Outer = bump_outer(Outer { inner = Inner { x = 1, y = 2 }, tag = 3 })
+    outer: Outer = bump_outer(Outer {
+        inner = Inner {
+            x = 1,
+            y = 2,
+        },
+        tag = 3,
+    })
     if outer.inner.x != 2 || outer.inner.y != 4 || outer.tag != 6 { return 9 }
 
     vec_values: [3]f32 = [1.0, 2.0, 3.0]
@@ -116,20 +194,48 @@ main(): int {
         return 11
     }
 
-    if sum_msg(Msg.pair(Pair { a = 10, b = 3 })) != 13 { return 12 }
-    if sum_msg(Msg.big(Triple { a = 1, b = 2, c = 3 })) != 6 { return 13 }
+    if sum_msg(Msg.pair(Pair {
+        a = 10,
+        b = 3,
+    })) != 13 { return 12 }
+    if sum_msg(Msg.big(Triple {
+        a = 1,
+        b = 2,
+        c = 3,
+    })) != 6 { return 13 }
     if sum_flag(Flag.byte(u8(9))) != 9 { return 14 }
 
-    if sum_box_pair(Box[Pair] { value = Pair { a = 10, b = 3 } }) != 13 { return 15 }
-    boxed_h2: Box[H2] = bump_box_h2(Box[H2] { value = H2 { a = 1.0, b = 2.0 } })
+    if sum_box_pair(Box[Pair] {
+        value = Pair {
+            a = 10,
+            b = 3,
+        } }) != 13 { return 15
+    }
+    boxed_h2: Box[H2] = bump_box_h2(Box[H2] { value = H2 {
+        a = 1.0,
+        b = 2.0,
+    } })
     if boxed_h2.value.a != 2.0 || boxed_h2.value.b != 4.0 { return 16 }
-    if sum_box_triple(Box[Triple] { value = Triple { a = 1, b = 2, c = 3 } }) != 6 { return 17 }
+    if sum_box_triple(Box[Triple] {
+        value = Triple {
+            a = 1,
+            b = 2,
+            c = 3,
+        } }) != 6 { return 17
+    }
 
     split_p: Pair, split_tail: i32 = split_pair()
     if split_p.a != 5 || split_p.b != 6 || split_tail != 7 { return 18 }
 
-    if many_int_then_pair(1, 2, 3, 4, 5, 6, 7, Pair { a = 8, b = 9 }, 10) != 55 { return 19 }
-    if many_float_then_hfa(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, H3 { a = 9.0, b = 10.0, c = 11.0 }, 12.0) != 78.0 {
+    if many_int_then_pair(1, 2, 3, 4, 5, 6, 7, Pair {
+        a = 8,
+        b = 9,
+    }, 10) != 55 { return 19 }
+    if many_float_then_hfa(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, H3 {
+        a = 9.0,
+        b = 10.0,
+        c = 11.0,
+    }, 12.0) != 78.0 {
         return 20
     }
     return 0

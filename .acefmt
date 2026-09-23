@@ -13,6 +13,11 @@ indent-width = 4
 continuation-alignment = open-delimiter
 delimited-list = single-line-if-fits
 multiline-trailing-comma = always
+dense-list = whole-items-per-row
+dense-list-columns = aligned
+struct-literal = field-per-line
+struct-literal-in-bare-list = named-local
+nested-overlong-list = named-local
 
 [declarations]
 public-before-private = dependency-order
@@ -36,6 +41,7 @@ after-result-group = always
 
 [braces]
 space-before-open = always
+inner-space = one-line-nonempty
 empty-body = same-line
 single-statement-body = same-line-if-fits
 
@@ -50,6 +56,7 @@ doc-adjacency = strict
 [tokens]
 range-in-for = spaced
 slice-range = tight
+paren-bracket-inner = tight
 array-repeat = spaced
 declaration-elision = spaced
 assoc-function-ref = tight

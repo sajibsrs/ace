@@ -19,8 +19,8 @@ pub Status: union {
 pub idle: const Status = Status.idle
 pub answer: const Status = Status.answer(42)
 pub greeting: const Status = Status.text("hello")
-pub origin: const Event = Event.cursor({ x = 3, y = 4 })
+pub origin: const Event = Event.cursor( { x = 3, y = 4 })
 
 pub cursor(x: int, y: int): Event {
-    return Event.cursor({ x = x, y = y })
+    return Event.cursor( { x = x, y = y })
 }

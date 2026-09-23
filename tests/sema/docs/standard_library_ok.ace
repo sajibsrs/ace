@@ -119,10 +119,11 @@ mem_examples(): int {
 }
 
 write_note(): int {
-    fd: sys.Fd, err: Error = sys.open("/tmp/notes.txt",
-                                      sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC,
-                                      sys.S_IRUSR | sys.S_IWUSR |
-                                      sys.S_IRGRP | sys.S_IROTH)
+    fd: sys.Fd, err: Error = sys.open(
+        "/tmp/notes.txt",
+        sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC,
+        sys.S_IRUSR | sys.S_IWUSR | sys.S_IRGRP | sys.S_IROTH,
+    )
 
     if err != null {
         return 1
@@ -226,15 +227,13 @@ printf_examples(): int {
     name: string = "Ace"
     count: int = 3
     ratio: f64 = 1.25
-    written: int = fmt.printf("name=%s count=%d ratio=%.2f\n",
-                              name, count, ratio)
+    written: int = fmt.printf("name=%s count=%d ratio=%.2f\n", name, count, ratio)
 
     if written != 28 {
         return 1
     }
     byte: u8 = u8(65)
-    fmt.printf("%u %x %X %f %c %%", uint(7), usize(15), uint(15),
-               f32(0.5), byte)
+    fmt.printf("%u %x %X %f %c %%", uint(7), usize(15), uint(15), f32(0.5), byte)
     return 0
 }
 
@@ -278,7 +277,10 @@ net_example(): int {
         return 1
     }
     ip: [4]u8 = [u8(127), u8(0), u8(0), u8(1)]
-    address: net.Addr4 = net.Addr4 {ip = ip, port = u16(0)}
+    address: net.Addr4 = net.Addr4 {
+        ip = ip,
+        port = u16(0),
+    }
 
     if net.reuse_addr(sock, true) != null ||
        net.bind(sock, address) != null ||

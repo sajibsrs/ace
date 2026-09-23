@@ -3,7 +3,10 @@
 Pair[A, B]: struct { first: A, second: B }
 
 pub Pair[A, B]::new(a: A, b: B): Pair[A, B] {
-    return Pair[A, B] { first = a, second = b }
+    return Pair[A, B] {
+        first = a,
+        second = b,
+    }
 }
 
 main(): int {

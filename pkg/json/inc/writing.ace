@@ -50,7 +50,7 @@ pub Formatter: struct {
 }
 
 pub Formatter::new(): Formatter {
-    return Formatter{
+    return Formatter {
         at = 0,
         depth = 0,
         objects = [0 : 64],

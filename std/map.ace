@@ -104,10 +104,10 @@ capacity_for(count: usize): usize {
  * capacity allocates nothing.
  */
 pub Map[K, V]::new(capacity: usize): (Map[K, V], Error) {
-    map: Map[K, V] = Map[K, V]{}
+    map: Map[K, V] = Map[K, V] {}
     if capacity == 0 { return map, null }
     err: Error = mut map.rehash(capacity_for(capacity))
-    if err != null { return Map[K, V]{}, err }
+    if err != null { return Map[K, V] {}, err }
 
     return map, null
 }
@@ -163,7 +163,11 @@ pub mut Map[K, V].set(key: K, value: V): Error {
         if err != null { return err }
     }
     at: usize = probe[K, V](self.slots, key)
-    self.slots[at] = Slot[K, V]{key = key, value = value, used = true}
+    self.slots[at] = Slot[K, V] {
+        key = key,
+        value = value,
+        used = true,
+    }
     self.len += 1
     return null
 }

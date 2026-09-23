@@ -88,7 +88,10 @@ main(): int {
     }
 
     // Struct fields hold mut-qualified views.
-    store: Store = Store { bytes = backing[0..4], text = ms }
+    store: Store = Store {
+        bytes = backing[0..4],
+        text = ms,
+    }
     if store.bytes.len != 4 || store.text.len != 3 {
         return 10
     }
