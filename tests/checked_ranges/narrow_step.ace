@@ -1,0 +1,9 @@
+/* A negative i8 step is tested at its own width, not as a zero-extended byte. */
+main(): int {
+    step: i8 = -1
+    n: int = 0
+    for i: i8 in 0 .. i8(5) step step {
+        n += 1
+    }
+    return n
+}

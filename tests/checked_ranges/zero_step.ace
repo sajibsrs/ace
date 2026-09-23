@@ -1,0 +1,9 @@
+/* A runtime zero step over an unsigned range aborts at loop entry. */
+main(): int {
+    step: usize = 0
+    n: int = 0
+    for i: usize in 0 .. usize(5) step step {
+        n += 1
+    }
+    return n
+}

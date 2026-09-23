@@ -1,0 +1,23 @@
+/* Positive runtime steps pass the entry check at every width, including a u8
+ * step above 127 and a step larger than the interval. */
+main(): int {
+    a: u8 = 200
+    n: int = 0
+    for i: u8 in 0 .. u8(255) step a {
+        n += 1
+    }
+    if n != 2 { return 1 }
+    b: i16 = 3
+    s: int = 0
+    for i: i16 in 9 .. i16(-3) step b {
+        s = s * 10 + int(i) + 3
+    }
+    if s != 9630 { return 2 }
+    c: i64 = 100
+    m: int = 0
+    for i: i64 in 0 .. i64(5) step c {
+        m += 1
+    }
+    if m != 1 { return 3 }
+    return 42
+}

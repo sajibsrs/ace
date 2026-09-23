@@ -2539,12 +2539,16 @@ static void emit_bl_extern(Em* e, const char* p, uint32_t len) {
 static ESym* intern_string(Em* e, Node* s);
 static void addr_of_sym(Em* e, int rd, ESym* sym);
 
-static void emit_bounds_fail_call(Em* e, Node* at) {
+/*
+ * Write "path:line:col: <what>" for the node at and abort. The shared
+ * __ace$bounds_fail helper writes whatever message it is handed.
+ */
+static void emit_located_fail_call(Em* e, Node* at, const char* what) {
     e->bounds_fail_used = 1;
     const char* path = at && at->path ? at->path : "<source>";
-    size_t need = strlen(path) + 80;
+    size_t need = strlen(path) + strlen(what) + 64;
     char* diagnostic = (char*)arena_alloc(need);
-    int n = snprintf(diagnostic, need, "%s:%d:%d: bounds violation\n", path, at ? at->line : 0, at ? at->col : 0);
+    int n = snprintf(diagnostic, need, "%s:%d:%d: %s\n", path, at ? at->line : 0, at ? at->col : 0, what);
     Node message;
     memset(&message, 0, sizeof message);
     message.kind = N_STR;
@@ -2555,6 +2559,10 @@ static void emit_bounds_fail_call(Em* e, Node* at) {
     addr_of_sym(e, 1, msg);
     load_imm(e, 1, 2, (uint64_t)n);
     emit_bl_internal(e, "__ace$bounds_fail", 17);
+}
+
+static void emit_bounds_fail_call(Em* e, Node* at) {
+    emit_located_fail_call(e, at, "bounds violation");
 }
 
 static void emit_arithmetic_fail_call(Em* e) {
@@ -6691,6 +6699,20 @@ static void emit_stmt(Em* e, Node* s) {
             store_frame(e, xreg(hi.idx), hslot, rsz);
             if (s->b->c) {
                 EV step = gen_expr(e, s->b->c);
+                uint64_t sc;
+                if (e->mode == EMIT_CHECKED && !const_int(s->b->c, &sc)) {
+                    // a runtime step must be a positive magnitude: checked once at entry
+                    int ok = new_label(e);
+                    uint32_t x = (uint32_t)xreg(step.idx);
+                    if (rbits < 64) {
+                        ins(e, (ty_is_signed(rt) ? sxtw_of(rbits) : uxtw_of(rbits)) | (x << 5) | 16u);
+                        x = 16;
+                    }
+                    ins(e, 0xF100001Fu | (x << 5)); // cmp step, #0
+                    bcond_(e, ty_is_signed(rt) ? C_GT : C_NE, ok);
+                    emit_located_fail_call(e, s->b->c, "range step violation");
+                    bind_label(e, ok);
+                }
                 store_frame(e, xreg(step.idx), sslot, 8);
             } else {
                 load_imm(e, 1, 16, 1);

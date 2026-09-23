@@ -1,0 +1,9 @@
+/* A runtime negative step over a signed range aborts at loop entry. */
+main(): int {
+    step: int = -2
+    n: int = 0
+    for i: int in 10 .. 0 step step {
+        n += 1
+    }
+    return n
+}

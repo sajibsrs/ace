@@ -104,9 +104,9 @@ for i: int in 9 .. 0 step step {
 The step has exactly the bounds' integer type and may be an arbitrary
 expression. It is evaluated once after both endpoints, including for an empty
 range. A statically known zero or negative step is rejected. Runtime-computed
-steps must also be positive. The compiler now has emission modes, but range-step
-diagnostics are not part of the implemented bounds stage, so both modes
-currently assume that precondition.
+steps must also be positive: checked output tests the step once at loop entry
+and aborts with `file:line:col: range step violation` naming the step, while
+release output assumes the precondition and adds no check.
 
 Range bounds are ordinary captured values, not aliases to expressions used to
 produce them. If a slice variable is resliced or reassigned inside an index

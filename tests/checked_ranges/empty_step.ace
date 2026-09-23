@@ -1,0 +1,9 @@
+/* The step is checked even when the interval is empty. */
+main(): int {
+    step: u32 = 0
+    n: int = 0
+    for i: u32 in 3 .. u32(3) step step {
+        n += 1
+    }
+    return n
+}

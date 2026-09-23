@@ -554,6 +554,13 @@ current normative rules, and Git preserves patch-level detail.
   `captures`, flat; `calls` retires 1.2% fewer but spends 1.7% more cycles, all
   in two cases whose smaller frame puts a struct's slots within `ldur` reach
   (see `TODO.md`).
+- Checked builds test a runtime range step once at loop entry, after both
+  bounds and even over an empty interval: at the step's own width (narrow
+  steps extended by the type's signedness), a signed step must be above zero
+  and an unsigned one nonzero, or the loop aborts with `file:line:col: range
+  step violation` at the step. The located-diagnostic writer behind bounds
+  failures is shared (`emit_located_fail_call`). Constant steps, already
+  checked by sema, and release builds emit nothing.
 - Implemented `str` character/string operations and explicit
   `str.parse[T]` specializations in pure Ace where practical, with libc float
   conversion isolated in its selected target layer. `char` remains the

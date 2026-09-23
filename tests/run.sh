@@ -780,6 +780,33 @@ else
         fail=1
     fi
 fi
+# A runtime range step must be positive: checked builds test it once at loop
+# entry, at the step's own width and even over an empty interval, and name
+# the step's position.
+for f in zero_step negative_step narrow_step empty_step; do
+    if ! "$ACE" --checked -o "/tmp/ace_checked_features/range_$f" \
+         "tests/checked_ranges/$f.ace" >/dev/null 2>/tmp/ace_test_errs ||
+       "/tmp/ace_checked_features/range_$f" >/dev/null 2>/tmp/ace_test_errs ||
+       ! grep -qF "tests/checked_ranges/$f.ace:5:" /tmp/ace_test_errs ||
+       ! grep -qF ": range step violation" /tmp/ace_test_errs; then
+        echo "FAIL: checked range-step fixture $f"
+        fail=1
+    fi
+done
+for mode in --checked --release; do
+    if ! "$ACE" "$mode" -o /tmp/ace_checked_features/range_valid \
+         tests/checked_ranges/valid.ace; then
+        echo "FAIL: valid range-step fixture did not compile in $mode"
+        fail=1
+    else
+        /tmp/ace_checked_features/range_valid
+        status=$?
+        if [ "$status" -ne 42 ]; then
+            echo "FAIL: valid range-step fixture exited $status in $mode, want 42"
+            fail=1
+        fi
+    fi
+done
 for f in pointer function c_function; do
     if ! "$ACE" --checked -o "/tmp/ace_checked_features/null_$f" \
          "tests/checked_null/$f.ace" >/dev/null 2>/tmp/ace_test_errs ||
