@@ -183,15 +183,11 @@ These are baseline observations, not performance promises.
   share the cursor register (one copy per iteration).
 - **An unused loop binder is stored every iteration** [new] — `for i: usize
   in 0 .. n` whose body never reads `i` still gives `i` a slot and stores the
-  cursor to it each iteration. With the struct in registers it is the only
-  memory access in the `calls` bench's `struct-8` and `struct-16` loops, and
-  whether its slot is within `ldur` reach moves `struct-16` between 2.41 and
-  2.62 ns. Candidate: skip the store for a binder nothing reads.
-- **Struct union payload binders copy to a slot** [new] — `Inst.split(targets:
-  Fork)` in `pkg/regex` copies the payload into the binder's slot field by
-  field before reading `targets.x` and `targets.y`. Candidate: scalar-replace
-  a small struct payload binder as a small struct local is, loading each field
-  from the payload.
+  cursor to it each iteration. Skipping the store measured slower on the
+  `calls` bench (`struct-16` 2.62 to 2.77 ns, `struct-hfa` 4.42 to 4.69 ns) at
+  every placement, because the loop around the call moves the struct out of
+  and back into the argument registers (see `bench/README.md`). Revisit it
+  once that loop keeps the struct in the argument registers.
 - **Wrapper calls cost a float spill** [new] — since promoted floats reach
   `d24-d31`, which are caller-saved, every branch-with-link stores and reloads
   them. A one-line dispatcher between two callers and two callees is therefore

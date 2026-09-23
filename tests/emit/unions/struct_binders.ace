@@ -1,0 +1,116 @@
+/* A small struct payload binder is split like a small struct local: each field
+   that wins a register loads straight from the payload at the width a slot
+   reload would leave, and only fields left out of registers get a slot. A
+   binder whose address is taken keeps the whole copy. */
+
+// expect-exit: 0
+
+Fork: struct {
+    x: u32,
+    y: u32,
+}
+
+Narrow: struct {
+    a: i8,
+    b: u8,
+    c: i16,
+    d: i32,
+}
+
+Point: struct {
+    x: f64,
+    y: f64,
+}
+
+Mixed: struct {
+    f: f32,
+    n: i32,
+}
+
+Val: union {
+    fork: Fork,
+    narrow: Narrow,
+    point: Point,
+    mixed: Mixed,
+    none,
+}
+
+twice(x: int): int {
+    return x * 2
+}
+
+sum_fork(f: Fork): int {
+    return int(f.x) + int(f.y)
+}
+
+peek(p: *Fork): int {
+    return int(p.x)
+}
+
+// every field read several times in a loop
+weigh(v: Val): int {
+    total: int = 0
+    for r: int in 0 .. 3 {
+        switch v {
+            Val.fork(t: Fork) { total += int(t.x) * 3 + int(t.y) - int(t.x) }
+            Val.narrow(n: Narrow) {
+                total += int(n.a) * 2 + int(n.b) + int(n.c) + int(n.d) - int(n.a)
+            }
+            Val.point(p: Point) { total += int(p.x * p.y + p.x) }
+            Val.mixed(m: Mixed) { total += int(m.f * 2.0) + int(m.n) + int(m.n) }
+            Val.none { total += 1 }
+        }
+    }
+    return total
+}
+
+// a field written in the arm, then the whole struct passed by value
+bump(v: Val): int {
+    switch v {
+        Val.fork(t: Fork) {
+            t.x += 10
+            return sum_fork(t) + int(t.x)
+        }
+        default { return 0 }
+    }
+    return -1
+}
+
+// `y` is read once, after a call, so it stays in the binder's slot while
+// `x`, read in a loop, takes a register
+split_slot(v: Val): int {
+    switch v {
+        Val.fork(t: Fork) {
+            total: int = 0
+            for i: int in 0 .. 4 {
+                total += int(t.x) + i
+            }
+            return total + twice(1) + int(t.y)
+        }
+        default { return 0 }
+    }
+    return -1
+}
+
+// an escaping binder keeps the whole payload copy
+escape(v: Val): int {
+    switch v {
+        Val.fork(t: Fork) { return peek(&t) + int(t.y) }
+        default { return 0 }
+    }
+    return -1
+}
+
+main(): int {
+    f: Val = Val.fork(Fork{x = 7, y = 4000000000})
+    if weigh(f) != 3 * (14 + 4000000000) { return 1 }
+    if weigh(Val.narrow(Narrow{a = -100, b = 200, c = -30000, d = -2000000000})) !=
+       3 * (-100 + 200 - 30000 - 2000000000) { return 2 }
+    if weigh(Val.point(Point{x = 1.5, y = -4.0})) != -12 { return 3 }
+    if weigh(Val.mixed(Mixed{f = 2.25, n = -9})) != -42 { return 4 }
+    if weigh(Val.none) != 3 { return 5 }
+    if bump(f) != 17 + 4000000000 + 17 { return 6 }
+    if split_slot(f) != 28 + 6 + 2 + 4000000000 { return 7 }
+    if escape(f) != 7 + 4000000000 { return 8 }
+    return 0
+}

@@ -595,9 +595,23 @@ The largest remaining gaps are the float aggregate, recursive `fib`, the float
 accumulator, and the tuple return; the method and the 24-byte struct beat
 noinline C. With `pair` and `acc` in registers, the `struct-8`, `struct-16`,
 and `struct-hfa` callers pass and take their fields by register moves alone
-(3.85, 2.42, and 4.92 ns before). `struct-16` still moves between 2.41 and 2.62
-ns with frame layout through the one store left in its loop, the unused loop
-binder, and `struct-hfa`'s remaining cost is in its callee.
+(3.85, 2.42, and 4.92 ns before). The unused loop binder's store is the one
+memory access left in the `struct-16` and `struct-hfa` loops, yet dropping it
+made both slower (2.62 to 2.77 and 4.42 to 4.69 ns) at every code placement
+and stack offset tried. A hand-written loop of the same shape reproduces
+that: the store speeds it by 0.05 to 0.15 ns whatever the callee's form. What
+separates `struct-16` from C is the loop shape. C keeps `pair` in x0 and x1
+across the call, which runs at 2.40 ns with any of the callee forms below;
+Ace moves it to x23 and x24 and back around every call:
+
+| callee | Ace loop shape | C loop shape |
+|---|---|---|
+| framed, parameters copied (Ace today) | 2.77 | 2.41 |
+| leaf, parameters copied | 2.98 | 2.40 |
+| leaf, parameters read in place | 2.60 | 2.40 |
+
+So removing the callee's frame helps only when the callee also stops copying
+its parameters.
 
 `call-1` and `fib` measure different things. `fib` is throughput-bound: its
 calls overlap in the out-of-order core, so 2 ns per call is a throughput

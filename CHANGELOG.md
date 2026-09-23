@@ -614,6 +614,14 @@ current normative rules, and Git preserves patch-level detail.
   fewer and spends 3.6% fewer cycles, with `struct-8` at 1.20x noinline C
   from 1.70x, `struct-16` 1.00-1.09x from 1.38x, `struct-hfa` 3.06x from
   3.38x, and `struct-24` unchanged.
+- A union payload binder of such a struct type is split the same way
+  (`split_add` at its `N_VARPAT`): the matching arm loads each field that won
+  a register straight from the payload, copies only the remaining fields to
+  the binder's slot, and allocates that slot only for them. An address or
+  other whole-struct use keeps the full payload copy. A loop whose `pc` feeds
+  through a `Fork` payload's field ran at 1.00 ns per iteration, from 3.49 ns,
+  and `pkg/regex`'s `Matcher.add` no longer stores and reloads its split
+  targets; the regex bench is unchanged at four controlled code placements.
 - Implemented `str` character/string operations and explicit
   `str.parse[T]` specializations in pure Ace where practical, with libc float
   conversion isolated in its selected target layer. `char` remains the

@@ -6369,8 +6369,8 @@ static int case_falls_through(Node* c) {
  * Union switch: the scrutinee's address is parked in a stack slot (arm bodies
  * reuse the temp registers), the i32 tag is loaded once and each pattern
  * compares it, and matching
- * arms copy their payload binder, or load a promoted one into its register,
- * before running the body. An unmatched tag
+ * arms copy their payload binder, or load a promoted one (or a split one's
+ * register fields) straight from the payload, before running the body. An unmatched tag
  * always jumps explicitly, to the else arm if present or past the switch
  * otherwise; it never falls through into the first case.
  */
@@ -6422,6 +6422,26 @@ static void emit_union_switch(Em* e, Node* s, SType* ut) {
                 if (bpr >= 0) { // promoted binder: the payload loads straight into its register
                     uint32_t w = (uint32_t)((scalar_bits(pt) + 7) / 8);
                     ld_reg(e, bpr, xreg(base), poff, w, ty_is_signed(pt) && w < 4);
+                    e->vti = base;
+                    continue;
+                }
+                Split* sp = bs ? split_at(e, bs->decl) : NULL;
+                if (sp && sp->regs) { // field by field: a slot only for fields left out of registers
+                    for (int f = 0; f < sp->n; f++)
+                        if (split_freg(e, sp, f) < 0) {
+                            slot_alloc(e, bs->decl, ty_size(pt), ty_align(pt));
+                            break;
+                        }
+                    for (int f = 0; f < sp->n; f++) {
+                        SType* ft = sp->type->fields[f].t;
+                        uint32_t fo = poff + field_off(sp->type, f);
+                        int r = split_freg(e, sp, f);
+                        if (r >= 0) load_binder(e, r, xreg(base), fo, ft);
+                        else { // raw bits through x17
+                            ld_reg(e, 17, xreg(base), fo, ty_size(ft), 0);
+                            store_frame(e, 17, split_depth(e, sp, f), ty_size(ft));
+                        }
+                    }
                     e->vti = base;
                     continue;
                 }
@@ -8272,6 +8292,7 @@ static void promo_scan(Em* e, Node* n, int depth) {
         return;
     case N_VARPAT:
         if (n->b && node_sym(n->b) && !is_floatt(node_sym(n->b)->type)) promo_add(e, n->b, 0);
+        if (n->b) split_add(e, n->b);
         break;
     case N_FOR:
         if (n->flags & F_FORGEN) {
