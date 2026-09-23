@@ -338,11 +338,12 @@ typedef struct { // register-promotion candidate: a scalar local or parameter
     uint32_t weight;  // use_weight summed over its uses
     uint8_t  escaped; // its address is taken somewhere; stays in its slot
     uint8_t  crosses; // a clobbering call lies strictly inside its interval
+    uint8_t  byref;   // a by-reference parameter: the register holds its pointer
     int      pend;    // outermost enclosing loop it must stay live through, or -1
     uint32_t first, last; // live interval in promo_scan positions
 } PromoCand;
 
-typedef struct { Node* decl; int reg; uint32_t first, last; } PromoAsg; // a promoted binder's register
+typedef struct { Node* decl; int reg; uint32_t first, last; uint8_t byref; } PromoAsg; // a promoted binder's register
 
 typedef struct { // loop / labeled-block context stack
     int         brk, cont; // labels; cont = -1 for non-loops
@@ -431,6 +432,8 @@ typedef struct {
     int      nscan_frame, cscan_frame;
     int      in_defers;  // emit_defers is expanding exit-time calls
     uint32_t bound_at;   // text offset of the last bound label
+    uint32_t peep_bar;   // text offset of the last recorded site: peep folds nothing across it
+    int      peep_on;    // peep may rewrite: inside a function body without asm
     int      scan_loop_branch; // promo_scan met a call or large aggregate inside a loop
     int      nsaved;     // callee-saved x registers the function saves and restores
     uint32_t lreg_save;  // depth of the callee-saved x save area
@@ -487,6 +490,16 @@ static void em_err(Em* e, Node* n, const char* fmt, ...) {
     e->d->errors++;
 }
 
+static Buf* text(Em* e) { return &e->secs[SEC_TEXT].data; }
+
+/*
+ * A text offset something recorded (a relocation, fixup, or branch site):
+ * peep neither absorbs the instruction emitted here into the one before it
+ * nor rewrites the one before it. Called right after the site's instruction
+ * is emitted, or right before it when the site is recorded first.
+ */
+static void peep_barrier(Em* e) { e->peep_bar = (uint32_t)text(e)->len; }
+
 static void fix_add(Em* e, uint8_t kind, uint32_t site, ESym* target) {
     if (e->nfix == e->capfix) {
         e->capfix = e->capfix ? e->capfix * 2 : 16;
@@ -494,10 +507,74 @@ static void fix_add(Em* e, uint8_t kind, uint32_t site, ESym* target) {
         if (!e->fix) oom();
     }
     e->fix[e->nfix++] = (Fixup){ kind, site, target, 0 };
+    peep_barrier(e);
 }
 
-static Buf* text(Em* e) { return &e->secs[SEC_TEXT].data; }
-static void ins(Em* e, uint32_t w) { buf_put32(text(e), w); }
+/*
+ * Rewrite the instruction just emitted to absorb w, when no label is bound
+ * and no site recorded between them. Returns 1 when w was absorbed.
+ *   mov t, p ; op t, ..t..         -> op t, ..p..    (op overwrites t: the copy is dead)
+ *   add t, s, #a ; ldr t, [t, #b]  -> ldr t, [s, #a+b]
+ *   add t, s, #a ; add t, t, #b    -> add t, s, #a+b
+ * op is an add/sub or logical immediate, sbfm/ubfm, a shifted add/sub, a
+ * logical register op other than the mov alias, a 2- or 3-source op, or an
+ * integer load by unsigned or register offset. A 32-bit mov feeds only 32-bit
+ * ops: a 64-bit read of t would see the zero-extended copy, not p.
+ */
+static int peep(Em* e, uint32_t w) {
+    Buf* b = text(e);
+    uint32_t len = (uint32_t)b->len;
+    if (!e->peep_on || len < 4 || e->bound_at == len || e->peep_bar == len) return 0;
+    uint32_t prev;
+    memcpy(&prev, b->d + len - 4, 4);
+    uint32_t rd = w & 31u, rn = (w >> 5) & 31u, rm = (w >> 16) & 31u, ra = (w >> 10) & 31u;
+    uint32_t size = w >> 30, opc = (w >> 22) & 3u;
+    int ld = !((w >> 26) & 1u) && opc != 0u && !(size == 3u && opc == 2u); // integer load, not prfm
+    int ld_uimm = ld && (w & 0x3B000000u) == 0x39000000u;
+    int ld_roff = ld && (w & 0x3B200C00u) == 0x38200800u;
+    uint32_t t = prev & 31u;
+    if (t == 31 || rd != t) return 0;
+    if ((prev & 0x7FE0FFE0u) == 0x2A0003E0u) { // mov t, p
+        uint32_t p = (prev >> 16) & 31u, sf = w >> 31, nw = w;
+        if (p == 31) return 0;
+        int src1 = ((w >> 23) & 0x3Fu) == 0x22u || ((w >> 23) & 0x3Fu) == 0x24u ||   // add/sub, logical imm
+                   (((w >> 23) & 0x3Fu) == 0x26u && ((w >> 29) & 3u) != 1u);       // sbfm/ubfm
+        int src2 = (((w >> 24) & 0x1Fu) == 0x0Bu && !((w >> 21) & 1u)) ||            // shifted add/sub
+                   (((w >> 24) & 0x1Fu) == 0x0Au && (w & 0x7FE0FFE0u) != 0x2A0003E0u) || // logical, not mov
+                   (w & 0x7FE00000u) == 0x1AC00000u;                                  // 2-source
+        int src3 = ((w >> 24) & 0x1Fu) == 0x1Bu;                                      // 3-source
+        if (src1 || src2 || src3) {
+            if (!(prev >> 31) && sf) return 0;
+        } else if (ld_uimm || ld_roff) {
+            if (!(prev >> 31)) return 0; // the base is always 64-bit
+        } else return 0;
+        if (rn == t) nw = (nw & ~(31u << 5)) | (p << 5);
+        if ((src2 || src3 || ld_roff) && rm == t) nw = (nw & ~(31u << 16)) | (p << 16);
+        if (src3 && ra == t) nw = (nw & ~(31u << 10)) | (p << 10);
+        if (nw == w) return 0; // w does not read t
+        memcpy(b->d + len - 4, &nw, 4);
+        return 1;
+    }
+    if ((prev & 0xFFC00000u) == 0x91000000u && rn == t) { // add xt, xs, #a
+        uint32_t s = (prev >> 5) & 31u, a = (prev >> 10) & 0xFFFu, nw;
+        if (ld_uimm) {
+            uint32_t tot = a + (((w >> 10) & 0xFFFu) << size);
+            if (tot & ((1u << size) - 1u) || (tot >> size) > 0xFFFu) return 0;
+            nw = (w & ~(0xFFFu << 10) & ~(31u << 5)) | ((tot >> size) << 10) | (s << 5);
+        } else if ((w & 0xFFC00000u) == 0x91000000u) {
+            uint32_t tot = a + ((w >> 10) & 0xFFFu);
+            if (tot > 0xFFFu) return 0;
+            nw = 0x91000000u | (tot << 10) | (s << 5) | t;
+        } else return 0;
+        memcpy(b->d + len - 4, &nw, 4);
+        return 1;
+    }
+    return 0;
+}
+
+static void ins(Em* e, uint32_t w) {
+    if (!peep(e, w)) buf_put32(text(e), w);
+}
 
 // Pad with nops to a code boundary; __text is 64-byte aligned, so the
 // boundary holds after linking. Function entries and loop heads start on one
@@ -521,6 +598,7 @@ static const char* arena_copy(const char* s, size_t n) {
 static void line_mark(Em* e, Node* n) {
     if (!n || n->line <= 0) return;
     uint32_t addr = (uint32_t)text(e)->len;
+    e->peep_bar = addr; // a line row's first instruction stays its own
     const char* path = n->path ? n->path : e->d->path;
     if (e->nlines && e->lines[e->nlines - 1].addr == addr) {
         e->lines[e->nlines - 1] = (LineRow){ addr, n->line, n->col, path };
@@ -562,7 +640,7 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels);
 static void emit_stmt(Em* e, Node* s);
 static int loop_regs_take(Em* e, Node* s);
 static int loop_own_regs(Node* s);
-static void plan_promotion(Em* e, Node* f);
+static void plan_promotion(Em* e, Node* f, int export_c);
 static int promo_reg(Em* e, Sym* s);
 static int gen_addr(Em* e, Node* x);
 static int is_lvalue_node(Node* x);
@@ -870,6 +948,7 @@ static void bp_add(Em* e, int kind, int lab) {
     e->bp[e->nbp].lab = lab;
     e->bp[e->nbp].kind = (uint8_t)kind;
     e->nbp++;
+    peep_barrier(e);
 }
 
 static void br_(Em* e, int lab) {
@@ -2451,6 +2530,7 @@ static void emit_bl_extern(Em* e, const char* p, uint32_t len) {
     ins(e, 0x94000000u);
     ESym* t = sym_intern(&e->syms, p, len);
     reloc_add(&e->secs[SEC_TEXT], (uint32_t)(text(e)->len - 4), t, 1, 2, 1, RM_BRANCH26);
+    peep_barrier(e);
     fp_leaves(e, 1);
 }
 
@@ -3140,9 +3220,11 @@ static void addr_of_sym(Em* e, int rd, ESym* sym) {
     uint32_t site = (uint32_t)text(e)->len;
     ins(e, 0x90000000u | ((uint32_t)rd & 31u));
     reloc_add(&e->secs[SEC_TEXT], site, sym, 1, 2, 1, RM_PAGE21);
+    peep_barrier(e);
     site = (uint32_t)text(e)->len;
     ins(e, 0x91000000u | ((uint32_t)rd << 5) | ((uint32_t)rd & 31u));
     reloc_add(&e->secs[SEC_TEXT], site, sym, 0, 2, 1, RM_PAGEOFF12);
+    peep_barrier(e);
 }
 
 /*
@@ -3152,9 +3234,16 @@ static void addr_of_sym(Em* e, int rd, ESym* sym) {
  */
 static int promo_reg(Em* e, Sym* s) {
     if (!s || !s->decl) return -1;
-    for (int i = 0; i < e->npasg; i++) if (e->pasg[i].decl == s->decl) return e->pasg[i].reg;
+    for (int i = 0; i < e->npasg; i++) if (e->pasg[i].decl == s->decl && !e->pasg[i].byref) return e->pasg[i].reg;
     for (int i = 0; i < e->nfpreg; i++)
         if (e->fpreg_decl[i] == s->decl) return i < FP_PROMO_REGS ? 8 + i : 24 + (i - FP_PROMO_REGS);
+    return -1;
+}
+
+// x register holding a by-reference parameter's pointer, or -1 for its slot
+static int bref_reg(Em* e, Sym* s) {
+    if (!s || !s->decl) return -1;
+    for (int i = 0; i < e->npasg; i++) if (e->pasg[i].decl == s->decl && e->pasg[i].byref) return e->pasg[i].reg;
     return -1;
 }
 
@@ -3260,6 +3349,11 @@ static int gen_var_addr(Em* e, Sym* s, Node* at) {
         addr_of_sym(e, xreg(t), g);
         return t;
     }
+    int br = bref_reg(e, s);
+    if (br >= 0) { // the pointer lives in a register
+        mov_int(e, 1, xreg(t), br);
+        return t;
+    }
     Slot* sl = s->decl ? slot_find(e, s->decl) : NULL;
     if (!sl) {
         em_err(e, at, "no storage for '%.*s'", (int)s->len, s->name);
@@ -3363,8 +3457,9 @@ static int param_home(Em* e, Node* x) {
 
 /*
  * Scalar variable read without a separate address temp: a plain slot loads
- * directly (one ldur within x29 - 256); a by-reference slot loads its pointer
- * and then the value into the same register.
+ * directly (one ldur within x29 - 256); a by-reference parameter loads the
+ * value through its pointer register, or loads its pointer from the slot and
+ * then the value into the same register.
  */
 static EV load_var(Em* e, Sym* s, SType* t, Node* at) {
     int pr = promo_reg(e, s);
@@ -3379,23 +3474,25 @@ static EV load_var(Em* e, Sym* s, SType* t, Node* at) {
         return (EV){ CLS_INT, it };
     }
     Slot* sl = local_slot(e, s);
-    if (!sl) {
+    int br = bref_reg(e, s);
+    if (!sl && br < 0) {
         int a = gen_var_addr(e, s, at);
         return load_in_place(e, a, 0, t);
     }
-    if (!sl->byref) return load_frame_value(e, sl->off, t);
+    if (br < 0 && !sl->byref) return load_frame_value(e, sl->off, t);
     int is64 = unwrap(t)->prim == P_F64;
     uint32_t w = (uint32_t)((scalar_bits(t) + 7) / 8);
     int signext = ty_is_signed(t) && w < 8;
     int it = tmp_int(e);
-    load_frame(e, xreg(it), sl->off, 8, 0); // slot holds the pointer
+    int p = br >= 0 ? br : xreg(it);
+    if (br < 0) load_frame(e, p, sl->off, 8, 0); // slot holds the pointer
     if (is_floatt(t)) {
         int vt = tmp_fp(e);
-        ldrf_(e, vreg(vt), xreg(it), 0, is64);
+        ldrf_(e, vreg(vt), p, 0, is64);
         e->vti--;
         return (EV){ CLS_FP, vt };
     }
-    ld_reg(e, xreg(it), xreg(it), 0, w, signext);
+    ld_reg(e, xreg(it), p, 0, w, signext);
     return (EV){ CLS_INT, it };
 }
 
@@ -7269,10 +7366,11 @@ static PromoCand* promo_find(Em* e, Node* x) {
     return ix ? &e->pcands[ix - 1] : NULL;
 }
 
-// binder of a scalar local, loop binder, or by-value parameter
-static void promo_add(Em* e, Node* binder) {
+// binder of a scalar local, loop binder, or by-value parameter; with byref, a
+// by-reference parameter of any type, whose pointer is the candidate
+static void promo_add(Em* e, Node* binder, uint8_t byref) {
     Sym* s = node_sym(binder);
-    if (!s || s->kind != SYM_VAR || s->is_global || s->decl != binder || !is_scalar(s->type)) return;
+    if (!s || s->kind != SYM_VAR || s->is_global || s->decl != binder || (!byref && !is_scalar(s->type))) return;
     if (e->npcands == e->cpcands) {
         e->cpcands = e->cpcands ? e->cpcands * 2 : 16;
         e->pcands = realloc(e->pcands, (size_t)e->cpcands * sizeof(PromoCand));
@@ -7280,12 +7378,13 @@ static void promo_add(Em* e, Node* binder) {
     }
     if (!ptrmap_get(&e->pcand_ix, binder)) ptrmap_put(&e->pcand_ix, binder, (uintptr_t)e->npcands + 1);
     uint32_t at = ++e->scan_pos; // defined here: after its initializer, at entry for a parameter
-    e->pcands[e->npcands++] = (PromoCand){ binder, 0, 0, 0, -1, at, at };
+    e->pcands[e->npcands++] = (PromoCand){ binder, 0, 0, 0, byref, -1, at, at };
 }
 
+// an address use needs the slot; a by-reference pointer is that address already
 static void promo_escape(Em* e, Node* x) {
     PromoCand* c = promo_find(e, x);
-    if (c) c->escaped = 1;
+    if (c && !c->byref) c->escaped = 1;
 }
 
 /*
@@ -7464,7 +7563,7 @@ static void promo_scan(Em* e, Node* n, int depth) {
             for (int i = 0; i < n->nkids; i++) if (n->kids[i]->kind != N_PARAM) promo_escape(e, n->kids[i]);
         } else if (n->nkids == 1) {
             scan_part(e, n->b, depth);
-            promo_add(e, n->kids[0]);
+            promo_add(e, n->kids[0], 0);
             promo_scan(e, n->kids[0], depth);
             return;
         }
@@ -7523,7 +7622,7 @@ static void promo_scan(Em* e, Node* n, int depth) {
         scan_part(e, n->c, depth);
         return;
     case N_VARPAT:
-        if (n->b && node_sym(n->b) && !is_floatt(node_sym(n->b)->type)) promo_add(e, n->b);
+        if (n->b && node_sym(n->b) && !is_floatt(node_sym(n->b)->type)) promo_add(e, n->b, 0);
         break;
     case N_FOR:
         if (n->flags & F_FORGEN) {
@@ -7539,7 +7638,7 @@ static void promo_scan(Em* e, Node* n, int depth) {
             if (n->b->kind != N_RANGE) promo_escape(e, n->b);
             scan_part(e, n->b, depth);
             scan_loop_push(e);
-            for (int i = 0; i < n->nkids; i++) if (!(alias && i == n->nkids - 1)) promo_add(e, n->kids[i]);
+            for (int i = 0; i < n->nkids; i++) if (!(alias && i == n->nkids - 1)) promo_add(e, n->kids[i], 0);
             scan_part(e, n->c, depth + 1);
             scan_loop_pop(e);
         }
@@ -7559,14 +7658,15 @@ static void promo_scan(Em* e, Node* n, int depth) {
     for (int i = 0; i < n->nkids; i++) promo_scan(e, n->kids[i], depth);
 }
 
-// heaviest remaining non-escaping candidate of one register class; the
-// caller takes it by clearing its weight
+// heaviest remaining non-escaping candidate of one register class (a
+// by-reference pointer is integer-class); the caller takes it by clearing its
+// weight
 static PromoCand* promo_take(Em* e, int fp, uint32_t min_weight) {
     PromoCand* best = NULL;
     for (int i = 0; i < e->npcands; i++) {
         PromoCand* c = &e->pcands[i];
         if (!c->escaped && c->weight >= min_weight &&
-            is_floatt(node_sym(c->decl)->type) == fp &&
+            (!c->byref && is_floatt(node_sym(c->decl)->type)) == fp &&
             (!best || c->weight > best->weight))
             best = c;
     }
@@ -7593,7 +7693,7 @@ static int promo_assign(Em* e, PromoCand* c, int r) {
         e->pasg = realloc(e->pasg, (size_t)e->cpasg * sizeof(PromoAsg));
         if (!e->pasg) oom();
     }
-    e->pasg[e->npasg++] = (PromoAsg){ c->decl, r, c->first, c->last };
+    e->pasg[e->npasg++] = (PromoAsg){ c->decl, r, c->first, c->last, c->byref };
     return 1;
 }
 
@@ -7604,10 +7704,10 @@ static int promo_assign(Em* e, PromoCand* c, int r) {
  * leaves above the temps. Otherwise, at PROMO_MIN_WEIGHT, it takes the
  * x19-x28 registers loop state leaves free. Either way it shares a register
  * already in use when their intervals do not overlap. Float locals get d8-d15
- * and then d24-d31 for the whole body. Parameters passed by reference (mut,
- * method receivers) never qualify.
+ * and then d24-d31 for the whole body. A parameter the internal ABI passes by
+ * reference (mut, method receivers) competes as its pointer, integer-class.
  */
-static void plan_promotion(Em* e, Node* f) {
+static void plan_promotion(Em* e, Node* f, int export_c) {
     e->npcands = e->npasg = 0;
     e->scan_pos = 0;
     e->nscan_loop = e->scan_defer = 0;
@@ -7617,7 +7717,9 @@ static void plan_promotion(Em* e, Node* f) {
     ptrmap_clear(&e->call_pos);
     for (int i = 0; i < f->nkids; i++)
         if (!(f->kids[i]->flags & F_MUT) && !((f->flags & F_METHOD) && i == 0))
-            promo_add(e, f->kids[i]);
+            promo_add(e, f->kids[i], 0);
+        else if (!export_c)
+            promo_add(e, f->kids[i], 1);
     e->scan_call = e->scan_loop_branch = 0;
     scan_part(e, f->b, 0);
     for (int i = 0; i < e->npcands; i++) {
@@ -7817,12 +7919,13 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
         e->nlreg_loops = 0;
         e->lreg_max = 0;
     } else {
-        plan_promotion(e, f);
+        plan_promotion(e, f, export_c);
     }
     e->nsaved = e->lreg_max + e->npreg;
     sym_define(&e->syms, e->secs, symname, symlen, is_main || export_c, &e->secs[SEC_TEXT]);
     if (is_main) emit_has_main = 1;
     emit_prologue(e);
+    e->peep_on = !e->fn_has_asm;
     if (e->nsaved) e->lreg_save = slot_alloc(e, NULL, 8u * (uint32_t)e->nsaved, 8);
     if (e->nfpreg - e->nfpleaf)
         e->fpreg_save = slot_alloc(e, NULL, 8u * (uint32_t)(e->nfpreg - e->nfpleaf), 8);
@@ -7872,6 +7975,17 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
         uint8_t hfa_dbl[5];
         int is_hfa = classify_hfa(t, hfa_offs, hfa_dbl) >= 0;
         int byref = (!export_c && muts[i]) || (size > 16 && !is_hfa);
+        int br = byref ? bref_reg(e, node_sym(f->kids[i])) : -1;
+        if (br >= 0) { // the incoming pointer moves into its register: no slot
+            TU* u = &units[i * 4];
+            if (u->kind == TU_XREG) {
+                mov_int(e, 1, br, u->reg);
+            } else {
+                incoming_addr(e, 16, u->soff);
+                ld_reg(e, br, 16, 0, 8, 0);
+            }
+            continue;
+        }
         int pr = promo_reg(e, node_sym(f->kids[i]));
         if (pr >= 0) { // promoted scalar: one register or stack unit
             TU* u = &units[i * 4];
@@ -7961,6 +8075,7 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
         }
         emit_epilogue(e);
     }
+    e->peep_on = 0;
     e->fix[e->subsp_fix].frame = align_up(e->frame + e->out_max, 16);
     patch_branches(e);
     debug_fn_add(e, f, debug_addr, (uint32_t)text(e)->len - debug_addr);

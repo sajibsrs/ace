@@ -1,0 +1,75 @@
+/* The instruction just emitted absorbs the next one: a copy into a temp
+ * folds into the op that reads and overwrites it, and an address add folds
+ * into a following load or add. Nothing folds across a bound label or into a
+ * relocated instruction. */
+
+// expect-exit: 42
+
+Inner: struct {
+    x: int,
+    y: int,
+}
+
+Outer: struct {
+    pad: [5]int,
+    inner: Inner,
+}
+
+table: Outer
+
+// first in the file, so each function below keeps its own symbol
+first(x: int): int {
+    return x
+}
+
+// mov t, p ; ubfx t, t -> ubfx t, p
+narrow(a: u64, n: int): u64 {
+    s: u64 = 0
+    for i: int in 0 .. n {
+        s = s + u64(u32(a)) + u64(u16(s))
+    }
+    return s
+}
+
+// add t, o, #0x28 ; ldr t, [t, #8] -> ldr t, [o, #0x30]
+deep(o: *Outer, n: int): int {
+    s: int = 0
+    for i: int in 0 .. n {
+        s = s + o.inner.y
+    }
+    return s
+}
+
+// the copy of b ends before the join label, which the add follows
+join(c: bool, a: int, b: int): int {
+    t: int = a
+    if c {
+        t = b
+    }
+    t = t + 1
+    return t
+}
+
+// each relocated adrp/add pair stays intact ahead of the field offset
+global_field(v: int): int {
+    table.inner.y = v
+    return table.inner.y
+}
+
+main(): int {
+    a: u64 = 0xFFFFFFFF
+    if narrow(a, 3) != 12885032953 {
+        return 1
+    }
+    o: Outer = Outer { pad = [1, 2, 3, 4, 5], inner = Inner { x = 1, y = 3 } }
+    if deep(&o, 5) != 15 {
+        return 2
+    }
+    if join(false, 10, 20) != 11 || join(true, 10, 20) != 21 {
+        return 3
+    }
+    if global_field(7) != 7 || table.pad[4] != 0 || table.inner.x != 0 {
+        return 4
+    }
+    return first(42)
+}

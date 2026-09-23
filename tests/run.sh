@@ -1286,6 +1286,56 @@ if [ -d tests/emit ]; then
             echo "FAIL: small constants must be immediates computed into promoted registers"
             fail=1
         fi
+        # The instruction just emitted absorbs the next one: narrow() converts
+        # straight from its promoted registers with no copy ahead of the ubfx,
+        # deep() loads the nested field at the summed offset, and global_field()
+        # keeps each relocated adrp/add pair intact ahead of the field access.
+        if ! otool -tv /tmp/ace_emit/basics/peephole.o | awk '
+            /^[^0-9].*:$/ {
+                fn = 0
+                if ($0 ~ /^__ace\$fn\$narrow\$/) fn = 1
+                else if ($0 ~ /^__ace\$fn\$deep\$/) fn = 2
+                else if ($0 ~ /^__ace\$fn\$global_field\$/) fn = 3
+                last = ""; next
+            }
+            fn == 1 && $2 == "ubfx" {
+                if ($3 != $4) direct++
+                if (last == "mov " $3) bad = 1
+            }
+            fn == 2 && $2 == "ldr" && $5 == "#0x30]" { summed = 1 }
+            fn == 3 && reloc {
+                if ($2 != "add" || $3 != reloc || $4 != reloc || $5 != "#0x0") bad = 1
+                pairs++
+            }
+            fn == 3 && $2 == "ldr" && $5 == "#0x30]" { field = 1 }
+            fn { reloc = ($2 == "adrp") ? $3 : ""; last = $2 " " $3 }
+            END { exit bad || direct < 2 || !summed || pairs < 2 || !field }'; then
+            echo "FAIL: the peephole must fold adjacent pairs but never a relocated instruction"
+            fail=1
+        fi
+        # A by-reference parameter's pointer lives in a register: the hot
+        # Counter.run loop loads the receiver's fields through it and never
+        # reloads a frame slot, and share() hands its register to the local
+        # declared after the pointer's last use.
+        if ! otool -tv /tmp/ace_emit/basics/byref_registers.o | awk '
+            /^[^0-9].*:$/ {
+                fn = 0; loop = 0
+                if ($0 ~ /^__ace\$fn\$Counter\$run\$/) fn = 1
+                else if ($0 ~ /^__ace\$fn\$share\$/) fn = 2
+                next
+            }
+            fn == 1 && $2 ~ /^cbn?z$/ { loop = 1; next }
+            fn == 1 && loop && $2 == "b" { loop = 0 }
+            fn == 1 && loop && $2 ~ /^ldu?r$/ {
+                if ($4 ~ /^\[x29/) bad = 1
+                else if ($4 ~ /^\[x(9|1[0-4])[],]/) direct++
+            }
+            fn == 2 && $2 == "ldr" && $4 ~ /^\[x14[],]/ { based = 1 }
+            fn == 2 && based && $2 == "mov" && $3 == "x14," { shared = 1 }
+            END { exit bad || direct < 2 || !shared }'; then
+            echo "FAIL: by-reference parameter pointers must stay in registers"
+            fail=1
+        fi
     fi
     # -o mode drives the same pipeline through the cc link step
     "$ACE" -o /tmp/ace_emit/direct tests/emit/basics/main.ace && /tmp/ace_emit/direct

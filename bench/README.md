@@ -789,6 +789,35 @@ results straight into a promoted register instead of copying them (2.8%);
 0.9% and 0.8%. `Matcher.run` fell from 469 to 433 instructions and
 `Matcher.add` from 302 to 283.
 
+### Regex after the peephole and by-reference pointer registers
+
+Five runs at `ef31af4` plus the previous-instruction peephole and
+by-reference parameter promotion in `src/emit.c`, medians in ns per byte:
+
+| workload | Ace | C | Ace/C | PCRE2 | PCRE2 JIT |
+|---|---|---|---|---|---|
+| `literal` | 36.25 | 12.17 | 2.98x | 1.46 | 0.06 |
+| `word-ing` | 68.98 | 27.35 | 2.52x | 49.92 | 5.47 |
+| `captures` | 78.68 | 32.26 | 2.44x | 12.43 | 3.54 |
+| `pathological` | 193.97 | 72.93 | 2.66x | 11679.23 | 953.18 |
+
+Ace spreads were 2.3 and 3.8 ns on `literal` and `word-ing`, and 17.1 and
+13.0 on `captures` and `pathological`, each widened by one outlying run.
+Instructions retired per looped workload fell from 24.16, 39.17, 43.91, and
+17.67 billion to 21.47, 34.63, 37.93, and 15.19 in row order (11.1-14.0%),
+with every checksum matching C; the whole bench retires 2.78 billion against
+C's 1.02 (2.72x, from 3.10x). Cycles fell 7.2%, 6.0%, 2.3%, and 1.9% in row
+order (3.4% for the whole bench), within 0.6 points in a second interleaved
+round. The peephole alone saved 5.6-7.4% of instructions but no time: cycles
+rose 2-4% on `word-ing` and `captures`, the saved instructions mostly copies
+the core already overlapped (chiefly a promoted value copied into a temp and
+then narrowed, `mov x1, x11` then `ubfx x1, x1, #0, #32`, 110 sites). Keeping
+a receiver's or `mut` parameter's pointer in a register removes the
+frame-slot load at each use, and the peephole folds the copy into the
+consuming field load (`ldr x1, [x14, #0x8]`); `word-ing` cycles fell 10% from
+the peephole-only build. `Matcher.run` fell from 433 to 412 instructions (137
+to 120 frame accesses) and `Matcher.add` from 283 to 254 (72 to 56).
+
 ## Compile time
 
 Run the compile-time benchmark on Apple arm64:

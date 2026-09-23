@@ -159,13 +159,15 @@ These are baseline observations, not performance promises.
   its sixteen float registers but loses only two candidates, both at the
   minimum weight. Candidate: extend the integer intervals to the float
   classes.
-- **By-reference parameters are copied before use** [new] — a promoted value
-  is read in place as an operand, and a result is computed straight into its
-  promoted register, but a by-reference parameter's pointer (method receivers,
-  `mut` parameters) stays in its slot. Promoting it in a `pkg/regex` prototype
-  cut frame-slot accesses in `Matcher.add` from 77 to 62 but retired about 2%
-  more instructions, each slot load becoming a copy into the temp an address
-  needs. Candidate: let an address read a promoted pointer register in place.
+- **Stores through a by-reference pointer copy it first** [new] — a promoted
+  pointer is copied into the address temp (`mov x0, x14` then
+  `str x1, [x0]`), and the peephole folds only a load that consumes it.
+  Candidate: address a scalar store through the pointer register directly.
+  Removing copies alone saved no time before, so measure first.
+- **Large read-only parameters reload their address** [new] — a read-only
+  parameter over 16 bytes (not an HFA) also arrives by address but keeps it in
+  a slot. Candidate: make it a by-reference promotion candidate like `mut`
+  parameters and receivers.
 - **Wrapper calls cost a float spill** [new] — since promoted floats reach
   `d24-d31`, which are caller-saved, every branch-with-link stores and reloads
   them. A one-line dispatcher between two callers and two callees is therefore

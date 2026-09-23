@@ -522,6 +522,26 @@ current normative rules, and Git preserves patch-level detail.
   binders are promoted and load their payload straight into the register.
   The regex bench retires 7.2-8.3% fewer instructions per workload and runs
   8-17% faster; `calls` retires 1.6% fewer and `cpu` 3.3%.
+- `ins` rewrites the instruction just emitted to absorb the next one when no
+  label is bound and no site recorded between them (`peep`): `mov t, p` folds
+  into a following op that reads and overwrites `t` (add/sub and logical
+  immediates, `sbfm`/`ubfm`, shifted add/sub, logical register ops other than
+  the mov alias, 2- and 3-source ops, integer loads by unsigned or register
+  offset; a 32-bit copy feeds only 32-bit ops), and `add t, s, #a` folds into
+  a following `ldr t, [t, #b]` or `add t, t, #b` when the sum fits. Fixups,
+  branch sites, relocations, and line rows set `peep_bar`, and it runs only
+  inside a function body without `asm`.
+- A by-reference parameter's pointer (method receivers, `mut` parameters
+  under the internal ABI) is an integer-class promotion candidate: it never
+  escapes, takes part in interval sharing, call crossing, and the `emit_call`
+  x9-x14 check like any local, and at entry moves from its argument register
+  or stack word into its register with no slot. Addressing copies it into a
+  temp (`bref_reg`), which `peep` folds into the consuming load, and a scalar
+  read loads straight through it. With the peephole, the regex bench retires
+  11.1-14.0% fewer instructions per workload (the whole bench 2.72x C, from
+  3.10x) and spends 1.9-7.4% fewer cycles, repeatable across two interleaved
+  rounds; the peephole alone had saved 5.6-7.4% of instructions but no time.
+  `calls` and `cpu` are unchanged.
 - Implemented `str` character/string operations and explicit
   `str.parse[T]` specializations in pure Ace where practical, with libc float
   conversion isolated in its selected target layer. `char` remains the
