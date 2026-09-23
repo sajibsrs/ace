@@ -8,6 +8,7 @@ import regex: "./inc/regex.ace"
 import syntax: "./inc/syntax.ace"
 
 pub Regex: type = regex.Regex
+pub Matcher: type = matcher.Matcher
 pub Span: type = regex.Span
 pub UNSET: const usize = matcher.UNSET
 

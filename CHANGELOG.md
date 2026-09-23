@@ -1371,6 +1371,18 @@ current normative rules, and Git preserves patch-level detail.
   every imported function is linked, so an allocating `sys` function would
   pull `malloc` into every `sys` user. `demo/json-parse-file` and
   `demo/json-format-file` use it in place of their own read and write loops.
+- Gave `pkg/regex`'s `Regex` a convenience surface over a now-public core:
+  `Matcher` is exported, and `Regex` uses only public core operations.
+  `Regex::new` returns `(Regex, Error)`, leaving the pattern offset to
+  `Syntax::parse`; `is_match` is `match`; `find` returns `bool` and records
+  the match with its searched text; `next(text, mut at)` finds and advances
+  past the match, stepping over an empty one; `count` loops `next`; `group(k)`
+  and `span(k)` read the recorded match, replacing `captures`. `bench/regex`
+  checksums are unchanged and every workload is within 1.2% of the previous
+  build, inside run-to-run spread.
+- Added `demo/regex-search-file`, an `exe` package over `pkg/regex` that reads
+  `SPEC.md` with `file.read` and prints every `Decision:` line through a
+  `next` loop.
 - Renamed `sys.FileKind` and `net.SocketKind` to `sys.FileType` and
   `net.SocketType`, matching POSIX file/socket-type vocabulary. Because `type`
   is a keyword, the `FileInfo` field, the `socket` parameter, and the

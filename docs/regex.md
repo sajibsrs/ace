@@ -8,62 +8,68 @@ is leftmost-first, as in Perl and RE2, and runs as a Pike VM in time linear in
 the text whatever the pattern, so there is no catastrophic backtracking; the
 price is that backreferences and lookaround do not exist.
 
-Most code needs only `Regex`. The lower layers, `Syntax` (the parsed tree) and
-`Program` (the compiled instructions), are public for tests and tooling.
+Most code needs only `Regex`, the convenience layer. It is built entirely
+from the public core beneath it — `Syntax` (the parsed tree), `Program` (the
+compiled instructions), and `Matcher` (the VM that runs a program) — so a
+caller who needs different control can compose those directly.
 
 `regex` is a standalone package at [`pkg/regex`](../pkg/regex), not a `std`
 module. A consumer lists it under `[dependencies]` in its own `ace.pkg` with a
 relative path to `pkg/regex`; the source then writes a plain `import regex`.
+See [`demo/regex-search-file`](../demo/regex-search-file) for a consuming
+example.
 
 ## Matching
 
 ```ace
-re: regex.Regex, err: Error, at: usize = regex.Regex::new("(\\d+)-(\\d+)")
+re: regex.Regex, err: Error = regex.Regex::new("(\\d+)-(\\d+)")
 defer mut re.wipe()
+if err != null { return 1 }   // a regex.ParseErr or a regex.CompileErr
 
-if err != null {
-    // a regex.ParseErr with `at` its pattern offset, or a regex.CompileErr
+if mut re.find("call 12-345", 0) {
+    fmt.println(re.group(2))           // 345
 }
-span: regex.Span, found: bool = mut re.find("call 12-345", 0)   // 5..11
+
+at: usize = 0
+for mut re.next(text, mut at) {
+    fmt.println(re.group(0))           // every match in turn
+}
 ```
 
 `Regex::new` parses and compiles the pattern and sizes every buffer a search
-needs, so it is the only call that allocates or fails. A search reuses that
-scratch state, which is why each search method takes `mut self`; none of them
-allocates or can fail.
+needs, so it is the only call that allocates or fails. When it fails with a
+`ParseErr`, `Syntax::parse` on the same pattern reports the byte offset. A
+search reuses that scratch state, which is why each search method takes
+`mut self`; none of them allocates or can fail.
 
-| Method                              | Result                                      |
-| ----------------------------------- | ------------------------------------------- |
-| `is_match(text): bool`              | whether the pattern matches anywhere        |
-| `find(text, after): (Span, bool)`   | the leftmost-first match starting at `after` or later |
-| `captures(text, after, spans): bool`| that match and its groups, written to `spans` |
-| `groups(): u32`                     | the number of capturing groups              |
+| Method                          | Result                                                     |
+| ------------------------------- | ---------------------------------------------------------- |
+| `match(text): bool`             | whether the pattern matches anywhere                       |
+| `find(text, after): bool`       | whether a leftmost-first match starts at `after` or later  |
+| `next(text, mut at): bool`      | `find` from `at`, then moves `at` past the match           |
+| `count(text): usize`            | the number of matches `next` visits                        |
+| `group(k): string`              | the text of group k of the last match, 0 the whole match   |
+| `span(k): Span`                 | the bytes `start..end` of that group                       |
+| `groups(): u32`                 | the number of capturing groups                             |
 
-A `Span` is `{ start: usize, end: usize }`, the bytes `text[start..end]`.
-`captures` writes the whole match to `spans[0]` and group k to `spans[k]`. A
-group that took no part in the match, and any entry past the last group, is
-`Span{start = regex.UNSET, end = regex.UNSET}`; a `spans` shorter than the
-group count receives only its prefix. Inside a repetition a group reports its
-last iteration: `(a|b)*` on `ab` gives group 1 = `1..2`. An iteration that
-matches only the empty string does not count, so `(a*)*` on `b` matches the
-empty span `0..0` with group 1 unset; PCRE instead reports group 1 as `0..0`.
+`find` and `next` record the match they find; `group` and `span` read it back
+until the next search. `group` returns a view into the searched text, valid
+only while that text is. A group that took no part in the match, a `k` past
+`groups()`, or a search that found nothing gives a null `group` and a `span`
+of `UNSET` ends; a group that matched the empty string is an empty non-null
+view. `match` stops at the first match any thread reaches rather than the
+leftmost-first one, so it records nothing.
+
+Inside a repetition a group reports its last iteration: `(a|b)*` on `ab` gives
+group 1 = `1..2`. An iteration that matches only the empty string does not
+count, so `(a*)*` on `b` matches the empty span `0..0` with group 1 unset;
+PCRE instead reports group 1 as `0..0`.
 
 A search takes the complete text and a start byte rather than a subslice, so
 `^`, `$`, and `\b` see the text's real ends and the bytes around the start:
 `^b` does not match `ab` from byte 1, and `\bb` does not either, since `a`
-before it is a word byte. The same start byte makes a find-all loop, with no
-iterator type; step past an empty match so the loop advances:
-
-```ace
-at: usize = 0
-for at <= text.len {
-    span: regex.Span, found: bool = mut re.find(text, at)
-    if !found { break }
-    // use text[span.start..span.end]
-    at = span.end
-    if span.end == span.start { at += 1 }
-}
-```
+before it is a word byte. `next` moves `at` to the end of each match, or one
+byte past an empty one, so a loop over it visits every match once and ends.
 
 Leftmost-first means the earliest starting position wins, and among matches
 starting there the pattern's own preferences decide: the left alternative
@@ -83,7 +89,7 @@ thousand `a`s finishes like any other search.
 A new thread is seeded at each position with the lowest priority until a match
 is found, so a thread that started earlier always outranks one that started
 later, and one pass over the text yields the leftmost-first match. When a
-thread reaches `match`, every lower-priority thread is dropped. `is_match`
+thread reaches `match`, every lower-priority thread is dropped. `Regex.match`
 instead stops at the first match any thread reaches.
 
 ## Parsing
@@ -240,3 +246,22 @@ a{2,4}   0 save 0
          7 save 1
          8 match
 ```
+
+## Matcher
+
+```ace
+m: regex.Matcher, err: Error = regex.Matcher::new(p)
+defer mut m.wipe()
+
+if mut m.run(p, text, 0, false) {
+    // m.best[2k] .. m.best[2k + 1] bound group k
+}
+```
+
+`Matcher::new` sizes every buffer the VM needs from a program, so
+`run(code, text, after, earliest)` never allocates or fails. It searches from
+`after` and returns whether a match was found; `earliest` stops at the first
+match any thread reaches instead of the leftmost-first one. After a
+leftmost-first run, `best` holds the match's `Program.slots` capture
+positions, `UNSET` for a group that took no part. One `Program` may be run by
+several `Matcher`s, each sized from it.

@@ -23,76 +23,96 @@ pub Span: struct {
     end: usize,
 }
 
+/* The convenience layer over the public core: a compiled `Program` with the
+ * `Matcher` its searches reuse, plus the last successful search, which
+ * `group` and `span` read back.
+ */
 pub Regex: struct {
     code: Program,
     run: Matcher,
+    text: string = null,
+    found: bool = false,
 }
 
-/* Parses and compiles `pattern`. On failure the offset is the pattern byte a
- * `ParseErr` reports, and zero for a `CompileErr`.
+/* Parses and compiles `pattern`. The error is a `ParseErr` or a
+ * `CompileErr`; `Syntax::parse` reports the pattern offset of a `ParseErr`.
  */
-pub Regex::new(pattern: string): (Regex, Error, usize) {
+pub Regex::new(pattern: string): (Regex, Error) {
     tree: Syntax, err: Error, at: usize = Syntax::parse(pattern)
     defer mut tree.wipe()
+    if err != null { return blank(Regex), err }
 
-    if err != null {
-        return blank(Regex), err, at
-    }
     code: Program, code_err: Error = Program::compile(tree)
-
-    if code_err != null {
-        return blank(Regex), code_err, 0
-    }
+    if code_err != null { return blank(Regex), code_err }
     run: Matcher, run_err: Error = Matcher::new(code)
 
     if run_err != null {
         mut code.wipe()
-        return blank(Regex), run_err, 0
+        return blank(Regex), run_err
     }
-    return Regex{code = code, run = run}, null, 0
+    return Regex{code = code, run = run}, null
 }
 
 pub mut Regex.wipe() {
     mut self.code.wipe()
     mut self.run.wipe()
+    self.text = null
+    self.found = false
 }
 
 /* The number of capturing groups, not counting the whole match. */
-pub Regex.groups(): u32 {
-    return self.code.slots / 2 - 1
-}
+pub Regex.groups(): u32 { return self.code.slots / 2 - 1 }
 
-/* Whether the pattern matches anywhere in `text`. */
-pub mut Regex.is_match(text: string): bool {
+/* Whether the pattern matches anywhere in `text`. It stops at the first match
+ * any thread reaches, so it records no match for `group` and `span`.
+ */
+pub mut Regex.match(text: string): bool {
+    self.found = false
     return mut self.run.run(self.code, text, 0, true)
 }
 
-/* The leftmost-first match that starts at byte `after` or later. */
-pub mut Regex.find(text: string, after: usize): (Span, bool) {
-    if !mut self.run.run(self.code, text, after, false) {
-        return Span{start = UNSET, end = UNSET}, false
-    }
-    return Span{start = self.run.best[0], end = self.run.best[1]}, true
+/* Finds the leftmost-first match that starts at byte `after` or later and
+ * records it for `group` and `span`.
+ */
+pub mut Regex.find(text: string, after: usize): bool {
+    self.text = text
+    self.found = mut self.run.run(self.code, text, after, false)
+    return self.found
 }
 
-/* Finds the leftmost-first match that starts at byte `after` or later and
- * writes the whole match to `spans[0]` and group k to `spans[k]`. Entries
- * past the last group, and groups that took no part, are `UNSET`; a shorter
- * `spans` receives only its prefix. Returns false, writing nothing, when
- * there is no match.
+/* Finds the next match from `at`, as `find` does, and moves `at` past it:
+ * to its end, or one byte further after an empty match, so a loop over
+ * `next` visits every match once and ends.
  */
-pub mut Regex.captures(text: string, after: usize, spans: mut []Span): bool {
-    if !mut self.run.run(self.code, text, after, false) {
-        return false
-    }
-    count: usize = self.run.slots / 2
-
-    for i: usize in 0 .. spans.len {
-        if i < count {
-            spans[i] = Span{start = self.run.best[2 * i], end = self.run.best[2 * i + 1]}
-        } else {
-            spans[i] = Span{start = UNSET, end = UNSET}
-        }
-    }
+pub mut Regex.next(text: string, mut at: usize): bool {
+    if !mut self.find(text, at) { return false }
+    at = self.run.best[1]
+    if at == self.run.best[0] { at += 1 }
     return true
+}
+
+/* The number of matches `next` visits in `text`. */
+pub mut Regex.count(text: string): usize {
+    total: usize = 0
+    at: usize = 0
+    for mut self.next(text, mut at) { total += 1 }
+    return total
+}
+
+/* Group `k` of the last match found, 0 being the whole match: its bytes
+ * `start..end`, both `UNSET` when the group took no part, `k` exceeds
+ * `groups()`, or the last search found nothing.
+ */
+pub Regex.span(k: u32): Span {
+    if !self.found || k > self.groups() { return Span{start = UNSET, end = UNSET} }
+    return Span{start = self.run.best[2 * usize(k)], end = self.run.best[2 * usize(k) + 1]}
+}
+
+/* The text of `span(k)`: a view into the searched text, valid while that text
+ * is, and null when the group is unset.
+ */
+pub Regex.group(k: u32): string {
+    span: Span = self.span(k)
+    if span.start == UNSET { return null }
+    return self.text[span.start..span.end]
 }

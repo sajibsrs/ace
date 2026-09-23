@@ -29,7 +29,7 @@ render(spans: []regex.Span, out: mut []char): usize {
 }
 
 compile(pattern: string): regex.Regex {
-    re: regex.Regex, err: Error, at: usize = regex.Regex::new(pattern)
+    re: regex.Regex, err: Error = regex.Regex::new(pattern)
 
     if err != null {
         fmt.print(pattern)
@@ -55,12 +55,11 @@ report(pattern: string, text: string, got: string, want: string) {
 found(pattern: string, text: string, after: usize, want: string): int {
     re: regex.Regex = compile(pattern)
     defer mut re.wipe()
-    span: regex.Span, ok: bool = mut re.find(text, after)
     buffer: [64]u8
     got: string = "none"
 
-    if ok {
-        spans: [1]regex.Span = [span]
+    if mut re.find(text, after) {
+        spans: [1]regex.Span = [re.span(0)]
         got = string(buffer[0..render(spans[0..1], mut buffer[0..64])])
     }
 
@@ -71,15 +70,15 @@ found(pattern: string, text: string, after: usize, want: string): int {
     return 0
 }
 
-/* Every group of the first match, rendered, into four spans. */
+/* The first match's groups 0 to 3, rendered; groups past the last are unset. */
 groups(pattern: string, text: string, want: string): int {
     re: regex.Regex = compile(pattern)
     defer mut re.wipe()
-    spans: [4]regex.Span
     buffer: [128]u8
     got: string = "none"
 
-    if mut re.captures(text, 0, mut spans[0..4]) {
+    if mut re.find(text, 0) {
+        spans: [4]regex.Span = [re.span(0), re.span(1), re.span(2), re.span(3)]
         got = string(buffer[0..render(spans[0..4], mut buffer[0..128])])
     }
 
@@ -90,7 +89,7 @@ groups(pattern: string, text: string, want: string): int {
     return 0
 }
 
-/* Every match, found by the cursor loop that steps past empty matches. */
+/* Every match `next` visits, which steps past empty matches. */
 every(pattern: string, text: string, want: string): int {
     re: regex.Regex = compile(pattern)
     defer mut re.wipe()
@@ -99,19 +98,9 @@ every(pattern: string, text: string, want: string): int {
     count: usize = 0
     at: usize = 0
 
-    for at <= text.len && count < 16 {
-        span: regex.Span, ok: bool = mut re.find(text, at)
-
-        if !ok {
-            break
-        }
-        spans[count] = span
+    for count < 16 && mut re.next(text, mut at) {
+        spans[count] = re.span(0)
         count += 1
-        at = span.end
-
-        if span.end == span.start {
-            at += 1
-        }
     }
     buffer: [256]u8
     got: string = string(buffer[0..render(spans[0..count], mut buffer[0..256])])
@@ -220,29 +209,76 @@ surface(): int {
         bad += 1
     }
 
-    if !mut re.is_match("xxabcx") || mut re.is_match("xxabx") {
-        fmt.println("is_match disagrees with (a)(?:b)(c)")
+    if !mut re.match("xxabcx") || mut re.match("xxabx") {
+        fmt.println("match disagrees with (a)(?:b)(c)")
         bad += 1
     }
-    q: regex.Regex, err: Error, at: usize = regex.Regex::new("a(")
-    mut q.wipe()
 
-    if err != regex.ParseErr.missing_paren || at != 1 {
-        fmt.println("a( should fail with missing_paren at 1")
+    if mut re.find("xxabcx", 0) && (!mem.equal(re.group(0), "abc") || !mem.equal(re.group(2), "c")) {
+        fmt.println("group should read abc and c from xxabcx")
         bad += 1
     }
-    q, err, at = regex.Regex::new("((a{1000}){1000}){1000}")
+
+    if re.group(3) != null || re.span(3).start != regex.UNSET {
+        fmt.println("a group past the last should be unset")
+        bad += 1
+    }
+
+    if mut re.match("xxabcx") && re.group(0) != null {
+        fmt.println("match should record no match for group")
+        bad += 1
+    }
+
+    if mut re.find("xxabx", 0) || re.group(0) != null {
+        fmt.println("a failed find should leave no match for group")
+        bad += 1
+    }
+    q: regex.Regex, err: Error = regex.Regex::new("a(")
     mut q.wipe()
 
-    if err != regex.CompileErr.too_large || at != 0 {
-        fmt.println("nested counts should fail with too_large at 0")
+    if err != regex.ParseErr.missing_paren {
+        fmt.println("a( should fail with missing_paren")
+        bad += 1
+    }
+    q, err = regex.Regex::new("((a{1000}){1000}){1000}")
+    mut q.wipe()
+
+    if err != regex.CompileErr.too_large {
+        fmt.println("nested counts should fail with too_large")
+        bad += 1
+    }
+    return bad
+}
+
+/* `count` agrees with `next`, empty matches included, and `group` of an
+ * unset group is null while an empty group is an empty non-null view.
+ */
+counting(): int {
+    bad: int = 0
+    re: regex.Regex = compile("(x)?(y*)")
+    defer mut re.wipe()
+
+    if mut re.count("zxyz") != 4 {
+        fmt.println("(x)?(y*) should match 4 times in zxyz")
+        bad += 1
+    }
+
+    if !mut re.find("z", 0) || re.group(1) != null || re.group(2) == null || re.group(2).len != 0 {
+        fmt.println("(x)?(y*) on z should leave group 1 null and group 2 empty")
+        bad += 1
+    }
+    digits: regex.Regex = compile("\\d+")
+    defer mut digits.wipe()
+
+    if mut digits.count("a1b22c333") != 3 || mut digits.count("") != 0 {
+        fmt.println("\\d+ counts should be 3 and 0")
         bad += 1
     }
     return bad
 }
 
 main(): int {
-    bad: int = basics() + priority() + anchors() + captures() + iteration() + linear() + surface()
+    bad: int = basics() + priority() + anchors() + captures() + iteration() + linear() + surface() + counting()
 
     if bad != 0 {
         return 1

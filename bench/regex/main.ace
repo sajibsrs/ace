@@ -55,7 +55,7 @@ fill(text: mut []u8) {
 }
 
 compile(pattern: string): regex.Regex {
-    re: regex.Regex, err: Error, at: usize = regex.Regex::new(pattern)
+    re: regex.Regex, err: Error = regex.Regex::new(pattern)
 
     if err != null {
         fmt.println(err.message)
@@ -63,7 +63,7 @@ compile(pattern: string): regex.Regex {
     return re
 }
 
-/* Every match of `pattern`, stepping past empty ones. */
+/* Every match of `pattern`, as `next` visits them. */
 find_all(name: string, pattern: string, text: string) {
     re: regex.Regex = compile(pattern)
     defer mut re.wipe()
@@ -71,18 +71,9 @@ find_all(name: string, pattern: string, text: string) {
     at: usize = 0
     started: u64 = now()
 
-    for at <= text.len {
-        span: regex.Span, found: bool = mut re.find(text, at)
-
-        if !found {
-            break
-        }
+    for mut re.next(text, mut at) {
+        span: regex.Span = re.span(0)
         checksum += 1 + span.start + span.end
-        at = span.end
-
-        if span.end == span.start {
-            at += 1
-        }
     }
     report(name, now() - started, text.len, checksum)
 }
@@ -91,17 +82,16 @@ find_all(name: string, pattern: string, text: string) {
 captures(text: string) {
     re: regex.Regex = compile("(\\d+)-(\\d+)")
     defer mut re.wipe()
-    spans: [3]regex.Span = [blank(regex.Span) : 3]
     checksum: usize = 0
     at: usize = 0
     started: u64 = now()
 
     for at <= text.len {
-        if !mut re.captures(text, at, mut spans[0..3]) {
+        if !mut re.find(text, at) {
             break
         }
-        checksum += 1 + spans[1].start + spans[2].end
-        at = spans[0].end
+        checksum += 1 + re.span(1).start + re.span(2).end
+        at = re.span(0).end
     }
     report("captures", now() - started, text.len, checksum)
 }
@@ -114,9 +104,8 @@ pathological() {
     started: u64 = now()
 
     for i: usize in 0 .. CALLS {
-        span: regex.Span, found: bool = mut re.find(text, 0)
-
-        if found {
+        if mut re.find(text, 0) {
+            span: regex.Span = re.span(0)
             checksum += 1 + span.start + span.end
         }
     }
