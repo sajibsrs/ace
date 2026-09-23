@@ -115,6 +115,13 @@ the remaining proof points explicit:
   currently emits objects and executables only.
 - **Per-module objects and incremental rebuilds** [queued] — the merged-unit
   loader deliberately defers both.
+- **Definite initialization inside the checker pass** [new] — the check is a
+  separate whole-file walk after sema (`check_definite_initialization`), the
+  only traversal beyond lex, parse, check, and emit. Folding it into the
+  in-order check would drop that walk (estimated 2–5% of compile time, not
+  measured), but initialization state would then be tracked while some calls
+  are still pending and would have to stay consistent through the end-of-file
+  re-check.
 - **Richer DWARF** [additive] — variable/type DIEs and unwind tables.
 
 ### Deferred optimization work
