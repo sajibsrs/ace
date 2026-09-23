@@ -1,0 +1,31 @@
+/* Whole-file read and write: round trip, truncating overwrite, empty file, and
+ * failures passed through from open and read.
+ */
+
+// expect-exit: 42
+
+import file
+import mem
+import sys
+
+PATH: string = "/tmp/ace_file_whole"
+
+main(): int {
+    if file.write(PATH, "first, longer contents") != null { return 1 }
+    if file.write(PATH, "second") != null { return 2 }
+    data: mut []u8, err: Error = file.read(PATH)
+    defer mem.release[u8](mut data)
+    if err != null || !mem.equal(data, "second") { return 3 }
+
+    if file.write(PATH, "") != null { return 4 }
+    empty: mut []u8, empty_err: Error = file.read(PATH)
+    if empty_err != null || empty != null { return 5 }
+    sys.unlink(PATH)
+
+    missing: mut []u8, missing_err: Error = file.read(PATH)
+    if missing != null || missing_err != sys.OpenErr.not_found { return 6 }
+
+    directory: mut []u8, directory_err: Error = file.read("/tmp")
+    if directory != null || directory_err != sys.ReadErr.directory { return 7 }
+    return 42
+}

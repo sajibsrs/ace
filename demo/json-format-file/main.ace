@@ -6,14 +6,11 @@
  *   ace pkg run
  */
 
+import file
 import fmt
 import json
-import sys
 
 PATH: string = "output.json"
-
-/* 0644: the owner reads and writes, everyone else reads. */
-MODE: u32 = 0x1A4
 
 SENSORS: [4]string = ["north", "east", "south", "west"]
 
@@ -34,21 +31,6 @@ write_reading(mut f: json.Formatter, r: Reading) {
     mut f.field("celsius", r.celsius)
     mut f.field("ok", r.ok)
     mut f.end()
-}
-
-/* Writes all of `data`, retrying short writes, and returns the bytes written. */
-write_all(fd: sys.Fd, data: []u8): (usize, Error) {
-    sent: usize = 0
-
-    for sent < data.len {
-        n: int, err: Error = sys.write(fd, data[sent..])
-
-        if err != null || n == 0 {
-            return sent, err
-        }
-        sent += usize(n)
-    }
-    return sent, null
 }
 
 main(): int {
@@ -73,17 +55,10 @@ main(): int {
         fmt.printf("failed to format: error %d\n", int(ferr.code))
         return 1
     }
-    fd: sys.Fd, oerr: Error = sys.open(PATH, sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC, MODE)
-    defer sys.close(fd)
+    werr: Error = file.write(PATH, text)
 
-    if oerr != null {
-        fmt.printf("failed to open %s: error %d\n", PATH, int(oerr.code))
-        return 1
-    }
-    sent: usize, werr: Error = write_all(fd, text)
-
-    if werr != null || sent != text.len {
-        fmt.printf("failed to write %s\n", PATH)
+    if werr != null {
+        fmt.printf("failed to write %s: %s\n", PATH, werr.message)
         return 1
     }
     fmt.printf("wrote %d bytes to %s:\n%s\n", int(text.len), PATH, text)

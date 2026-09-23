@@ -6,48 +6,12 @@
  *   ace pkg run
  */
 
+import file
 import fmt
 import json
 import mem
-import sys
 
 PATH: string = "data.json"
-
-read_file(path: string): (mut []u8, Error) {
-    info: sys.FileInfo, serr: Error = sys.stat(path)
-
-    if serr != null {
-        return null, serr
-    }
-    buffer: mut []u8 = mem.alloc[u8](usize(info.size))
-
-    if buffer == null {
-        return null, json.ParseErr.allocation
-    }
-    fd: sys.Fd, oerr: Error = sys.open(path, sys.O_RDONLY)
-    defer sys.close(fd)
-
-    if oerr != null {
-        mem.release[u8](mut buffer)
-        return null, oerr
-    }
-    total: usize = 0
-
-    for total < buffer.len {
-        n: int, rerr: Error = sys.read(fd, buffer[total..])
-
-        if rerr != null || n == 0 {
-            break
-        }
-        total += usize(n)
-    }
-
-    if total != buffer.len {
-        mem.release[u8](mut buffer)
-        return null, json.ParseErr.unexpected_token
-    }
-    return buffer, null
-}
 
 indent(depth: usize) {
     for i: usize in 0 .. depth {
@@ -108,11 +72,11 @@ show(value: json.Json, depth: usize) {
 }
 
 main(): int {
-    data: mut []u8, rerr: Error = read_file(PATH)
+    data: mut []u8, rerr: Error = file.read(PATH)
     defer mem.release[u8](mut data)
 
     if rerr != null {
-        fmt.printf("failed to read %s: error %d\n", PATH, int(rerr.code))
+        fmt.printf("failed to read %s: %s\n", PATH, rerr.message)
         return 1
     }
     parser: json.Parser = json.Parser::new()

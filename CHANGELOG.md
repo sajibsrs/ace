@@ -1363,6 +1363,14 @@ current normative rules, and Git preserves patch-level detail.
 - Dropped the dependency-free `demo/darwin-packet-sniffer/ace.pkg`; the demo
   builds with plain `ace`. Demos, benches, and tests carry a manifest only to
   depend on a `pkg/` package or to test the package system.
+- Added the single-file std module `file`: `file.read` composes
+  `sys.open`/`stat`/`read` into one `mem.alloc` buffer released by
+  `mem.release`, and `file.write` composes `open`/`write`/`close`, creating
+  with `0o666` less the umask; both retry `EINTR`, and `FileErr` covers
+  allocation failure and a shrinking file. It is a module of its own because
+  every imported function is linked, so an allocating `sys` function would
+  pull `malloc` into every `sys` user. `demo/json-parse-file` and
+  `demo/json-format-file` use it in place of their own read and write loops.
 - Renamed `sys.FileKind` and `net.SocketKind` to `sys.FileType` and
   `net.SocketType`, matching POSIX file/socket-type vocabulary. Because `type`
   is a keyword, the `FileInfo` field, the `socket` parameter, and the
