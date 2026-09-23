@@ -168,6 +168,32 @@ These are baseline observations, not performance promises.
   parameter over 16 bytes (not an HFA) also arrives by address but keeps it in
   a slot. Candidate: make it a by-reference promotion candidate like `mut`
   parameters and receivers.
+- **Counted range loops** [new] — a range whose direction or step is not
+  known at compile time (a signed `0 .. n`, a descending or explicit step)
+  stores its bounds and step to frame slots, branches on direction, and
+  divides for its trip count: about 27 setup instructions. Candidates, each
+  measured on its own: compute the bounds and step in registers with no
+  division for a step of one; then let a value binder the body never assigns
+  share the cursor register (one copy per iteration).
+- **A struct kept in slots across a call stalls** [new] — `pair =
+  pair_step(pair)` in a loop stores the returned registers to the struct's
+  slots and reloads them for the next call. With the slots within `ldur`
+  reach the `calls` bench's `struct-16` case runs 24-41 ms depending only on
+  frame layout, against 24 ms when each access needs a `sub` first; `struct-8`
+  sits at the slow end already. Candidate: keep small struct locals in
+  registers, or find which store-reload distance triggers the stall.
+- **Whole-struct stores into array elements** [new] — `self.stack[top] =
+  Frame{...}` builds the struct in a temp and copies it, and
+  `frame: Frame = self.stack[top]` copies an element out before reading two
+  fields. Candidate: build a literal straight into the element and read an
+  element's fields in place. A `pkg/regex` emulation doing both by hand,
+  together with the next entry, cut the bench's cycles 7.6% on the earlier
+  live-interval prototype.
+- **`&&` as a value materializes both sides** [new] — `advance = at <
+  text.len && text[at] == byte` computes a flag rather than branching; the
+  same emulation wrote it as nested `if`s. Candidate: lower a value `&&`/`||`
+  whose operands are cheap loads and compares through branches, or measure
+  which form wins.
 - **Wrapper calls cost a float spill** [new] — since promoted floats reach
   `d24-d31`, which are caller-saved, every branch-with-link stores and reloads
   them. A one-line dispatcher between two callers and two callees is therefore

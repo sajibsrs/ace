@@ -17,13 +17,14 @@ rec(n: int): int {
     return total
 }
 
-// four nested range loops need 12 registers: the outermost uses slots
-nested(): int {
+// four nested range loops over a signed bound need 12 registers: the
+// outermost uses slots
+nested(n: int): int {
     count: int = 0
-    for a: int in 0 .. 3 {
-        for b: int in 0 .. 3 {
-            for c: int in 0 .. 3 {
-                for d: int in 0 .. 3 {
+    for a: int in 0 .. n {
+        for b: int in 0 .. n {
+            for c: int in 0 .. n {
+                for d: int in 0 .. n {
                     count += a * 27 + b * 9 + c * 3 + d + 1
                 }
             }
@@ -150,7 +151,7 @@ with_asm(n: int): int {
 
 main(): int {
     if rec(5) != 32 { return 11 }
-    if nested() != 3321 { return 12 }
+    if nested(3) != 3321 { return 12 }
     if find(47) != 407 || find(100) != -1 { return 13 }
     if exits() != 66 { return 14 }
     if siblings() != 45 { return 15 }

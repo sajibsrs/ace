@@ -542,6 +542,18 @@ current normative rules, and Git preserves patch-level detail.
   3.10x) and spends 1.9-7.4% fewer cycles, repeatable across two interleaved
   rounds; the peephole alone had saved 5.6-7.4% of instructions but no time.
   `calls` and `cpu` are unchanged.
+- A register range loop that ascends by one (`range_up`: step omitted or a
+  constant 1, starting at a constant zero over an unsigned type or between
+  two constant endpoints in order) loads its start into the cursor and its
+  end into a second register, or a cmp immediate up to 4095, and runs
+  `cmp`/`b.hs` (`b.ge` when signed) then `add #1`: no bound slots, direction
+  test, or division, and one or two loop registers rather than three
+  (`loop_own_regs`). Every other range keeps the counted lowering. The regex
+  bench retires 7.6-11.0% fewer instructions per workload (the whole bench
+  2.47x C, from 2.72x) and spends 5.1-11.2% fewer cycles on all but
+  `captures`, flat; `calls` retires 1.2% fewer but spends 1.7% more cycles, all
+  in two cases whose smaller frame puts a struct's slots within `ldur` reach
+  (see `TODO.md`).
 - Implemented `str` character/string operations and explicit
   `str.parse[T]` specializations in pure Ace where practical, with libc float
   conversion isolated in its selected target layer. `char` remains the

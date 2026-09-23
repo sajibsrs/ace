@@ -818,6 +818,29 @@ consuming field load (`ldr x1, [x14, #0x8]`); `word-ing` cycles fell 10% from
 the peephole-only build. `Matcher.run` fell from 433 to 412 instructions (137
 to 120 frame accesses) and `Matcher.add` from 283 to 254 (72 to 56).
 
+### Regex after ascending range loops
+
+Five runs at `fe13974` plus the ascending step-one range lowering in
+`src/emit.c`, medians in ns per byte:
+
+| workload | Ace | C | Ace/C | PCRE2 | PCRE2 JIT |
+|---|---|---|---|---|---|
+| `literal` | 34.44 | 11.34 | 3.04x | 1.48 | 0.06 |
+| `word-ing` | 59.92 | 27.33 | 2.19x | 50.87 | 5.45 |
+| `captures` | 76.06 | 32.20 | 2.36x | 12.40 | 3.52 |
+| `pathological` | 184.08 | 75.32 | 2.44x | 11720.77 | 984.92 |
+
+Ace spreads were 2.8-3.9 ns except `pathological` at 7.8. Every `pkg/regex`
+range loop that runs per byte is `0 .. count` over `usize` or `u32`, so each
+now sets up in two instructions instead of about 27. Instructions retired per
+looped workload fell from 21.47, 34.63, 37.93, and 15.19 billion to 19.12,
+31.04, 35.06, and 13.89 in row order (7.6-11.0%), with every checksum matching
+C; the whole bench retires 2.53 billion against C's 1.02 (2.47x, from 2.72x).
+Cycles fell 7.3%, 10.9%, 0.0%, and 5.4% in row order (6.3% for the whole
+bench), within 1.5 points in a second interleaved round. `Matcher.run` fell
+from 412 to 243 instructions (120 to 68 frame accesses, and 24 to 2 far
+frame offsets as its frame shrank) and `Matcher.add` from 254 to 217.
+
 ## Compile time
 
 Run the compile-time benchmark on Apple arm64:

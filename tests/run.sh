@@ -1136,6 +1136,25 @@ if [ -d tests/emit ]; then
             echo "FAIL: loop registers must be assigned innermost-first within x19-x28"
             fail=1
         fi
+        # A range that ascends by one from a constant zero over an unsigned
+        # type compares its cursor with the end register: no frame slot, trip
+        # count, division, or direction test. A constant end within 4095 is a
+        # cmp immediate.
+        if ! otool -tv /tmp/ace_emit/control_flow/range_limits.o | awk '
+            /^[^0-9].*:$/ {
+                fn = 0
+                if ($0 ~ /^__ace\$fn\$lean\$/) fn = 1
+                else if ($0 ~ /^__ace\$fn\$fixed\$/) fn = 2
+                next
+            }
+            fn && $2 ~ /^(udiv|mul|cbz|b\.hi|b\.gt)$/ { bad = 1 }
+            fn && $2 ~ /^(ldur|stur)$/ && $3 !~ /^x(19|2[0-8]),$/ { bad = 1 }
+            fn == 1 && $2 == "cmp" && $3 ~ /^x(19|2[0-8]),$/ && $4 ~ /^x(19|2[0-8])$/ { reg = 1 }
+            fn == 2 && $2 == "cmp" && $3 ~ /^x(19|2[0-8]),$/ && $4 == "#0x4" { imm = 1 }
+            END { exit bad || !reg || !imm }'; then
+            echo "FAIL: ascending step-one ranges must compare the cursor with the end"
+            fail=1
+        fi
         # Hot float locals fill d8-d15; a loop-free function saves none of
         # the callee-saved registers.
         if ! otool -tv /tmp/ace_emit/basics/register_locals.o | awk '

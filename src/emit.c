@@ -640,6 +640,8 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels);
 static void emit_stmt(Em* e, Node* s);
 static int loop_regs_take(Em* e, Node* s);
 static int loop_own_regs(Node* s);
+static int range_up(Node* r, uint64_t* end);
+static uint64_t range_value(uint64_t v, SType* rt);
 static void plan_promotion(Em* e, Node* f, int export_c);
 static int promo_reg(Em* e, Sym* s);
 static int gen_addr(Em* e, Node* x);
@@ -6636,6 +6638,45 @@ static void emit_stmt(Em* e, Node* s) {
             if (!rt || rt->kind == SK_UT) rt = default_i64();
             uint32_t rsz = ty_size(rt);
             int rbits = scalar_bits(rt);
+            uint64_t endc;
+            int up = lr >= 0 ? range_up(s->b, &endc) : 0;
+            if (up) {
+                // Ascending by one: the cursor runs from the start to the end
+                // held in a register or an immediate, with no trip count.
+                int rcur = lr, rend = lr + 1;
+                uint64_t loc;
+                const_int(s->b->a, &loc);
+                load_imm(e, 1, rcur, range_value(loc, rt));
+                if (up == 1 && const_int(s->b->b, &endc)) {
+                    load_imm(e, 1, rend, range_value(endc, rt));
+                } else if (up == 1) { // an unsigned end, zero-extended
+                    int svi = e->vti;
+                    EV hi = gen_expr(e, s->b->b);
+                    if (!fold_preg(e, rend, xreg(hi.idx), rt)) set_preg(e, rend, xreg(hi.idx), rt);
+                    e->vti = svi;
+                }
+                align_code(e, LOOP_ALIGN);
+                bind_label(e, lcond);
+                if (up == 2) ins(e, 0xF100001Fu | ((uint32_t)endc << 10) | ((uint32_t)rcur << 5)); // cmp cursor, #end
+                else ins(e, 0xEB00001Fu | ((uint32_t)rend << 16) | ((uint32_t)rcur << 5));        // cmp cursor, end
+                bcond_(e, ty_is_signed(rt) ? C_GE : C_HS, lbreak);
+                if (vpr >= 0) set_preg(e, vpr, rcur, elem);
+                else store_frame(e, rcur, vs, (uint32_t)((scalar_bits(elem) + 7) / 8));
+                e->vti = 0; e->vtf = 0;
+                if (e->nctx >= 64) {
+                    em_err(e, s, "control flow nested too deeply");
+                    return;
+                }
+                e->ctx[e->nctx++] = (Ctx){ lbreak, lcont, s->str, s->len, 1 };
+                emit_block(e, s->c);
+                e->nctx--;
+                bind_label(e, lcont);
+                ins(e, 0x91000400u | ((uint32_t)rcur << 5) | (uint32_t)rcur); // add cursor, #1
+                e->lreg_top -= loop_own_regs(s);
+                br_(e, lcond);
+                bind_label(e, lbreak);
+                return;
+            }
             uint32_t islot = temp_slot(e, rsz, 8), hslot = temp_slot(e, rsz, 8);
             uint32_t cslot = lr < 0 ? temp_slot(e, 8, 8) : 0;
             uint32_t dslot = lr < 0 ? temp_slot(e, 8, 8) : 0;
@@ -7279,10 +7320,47 @@ static void incoming_addr(Em* e, int rd, uint32_t soff) {
 
 // --- loop registers --------------------------------------------------------------------
 
+// a range endpoint's constant as the exact 64-bit value its register holds
+static uint64_t range_value(uint64_t v, SType* rt) {
+    uint32_t bits = 8u * ty_size(rt);
+    if (bits >= 64) return v;
+    v &= (UINT64_C(1) << bits) - 1;
+    if (ty_is_signed(rt) && (v >> (bits - 1)) & 1) v |= ~((UINT64_C(1) << bits) - 1);
+    return v;
+}
+
+/*
+ * A range loop that counts up from its start with no direction test or trip
+ * count: its step is one (omitted or a constant 1), and it ascends by
+ * construction, from a constant zero over an unsigned type or between two
+ * constant endpoints in order. Returns 0 for the general lowering, 1 when the
+ * end is held in a register, and 2 when *end is a cmp immediate.
+ */
+static int range_up(Node* r, uint64_t* end) {
+    SType* rt = node_ty(r);
+    if (!rt || rt->kind == SK_UT) rt = default_i64();
+    uint64_t lo, hi, step;
+    if (r->c && (!const_int(r->c, &step) || range_value(step, rt) != 1)) return 0;
+    if (!const_int(r->a, &lo)) return 0;
+    lo = range_value(lo, rt);
+    int sig = ty_is_signed(rt);
+    if (const_int(r->b, &hi)) {
+        hi = range_value(hi, rt);
+        if (sig ? (int64_t)lo > (int64_t)hi : lo > hi) return 0;
+        *end = hi;
+        return hi <= 4095 ? 2 : 1;
+    }
+    return !sig && lo == 0;
+}
+
 // registers a range or sequence loop keeps in x19-x28 (0: general loop)
 static int loop_own_regs(Node* s) {
     if (s->kind != N_FOR || (s->flags & F_FORGEN)) return 0;
-    if (s->b->kind == N_RANGE) return 3;    // cursor, remaining count, step
+    if (s->b->kind == N_RANGE) {
+        uint64_t end;
+        int up = range_up(s->b, &end);
+        return up == 2 ? 1 : up ? 2 : 3; // cursor [, end] or cursor, count, step
+    }
     return s->nkids == 2 ? 3 : 2;           // cursor, end [, index]
 }
 
