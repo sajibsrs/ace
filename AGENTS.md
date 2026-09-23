@@ -94,6 +94,10 @@ history.
 - `.acefmt` is normative; update it with formatting-rule changes.
 - File names are nouns, matching their own import alias (`parsing.ace` as
   `parsing`, not `parse.ace`).
+- Keep `demo/`, `bench/`, and `tests/` structurally minimal: a plain `.ace`
+  file when `std` suffices, a directory of exact `.ace` path imports when it
+  needs several files. Add an `ace.pkg` only to depend on a `pkg/` package or
+  to test the package system, and a `mod.ace` only to test directory modules.
 
 ## Scoped rules
 

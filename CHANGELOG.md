@@ -1360,6 +1360,9 @@ current normative rules, and Git preserves patch-level detail.
   `exe` (`lib` unchanged). The parser reads keys as plain text, so `type` is
   not affected by the reserved keyword. `kind:` and `type: app` are now
   errors with no alias; `ace pkg init`, `list`, and `--pkg-graph` use `exe`.
+- Dropped the dependency-free `demo/darwin-packet-sniffer/ace.pkg`; the demo
+  builds with plain `ace`. Demos, benches, and tests carry a manifest only to
+  depend on a `pkg/` package or to test the package system.
 - Renamed `sys.FileKind` and `net.SocketKind` to `sys.FileType` and
   `net.SocketType`, matching POSIX file/socket-type vocabulary. Because `type`
   is a keyword, the `FileInfo` field, the `socket` parameter, and the
