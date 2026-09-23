@@ -29,7 +29,7 @@ pub UNSET: const usize = 0xFFFFFFFFFFFFFFFF
 /* Marks a stack frame that explores an instruction rather than restoring a
  * slot.
  */
-NIL: u32 = 0xFFFFFFFF
+NIL: const u32 = 0xFFFFFFFF
 
 /* The threads of one step, in priority order: `dense[0..count]` holds their
  * instructions, `sparse` maps an instruction back to its index in `dense`,

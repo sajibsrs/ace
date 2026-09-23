@@ -37,7 +37,7 @@ pub CompileErr: error {
 MAX_INSTS: usize = 65536
 
 /* Ends a list of placeholders threaded through their target fields. */
-NIL: u32 = 0xFFFFFFFF
+NIL: const u32 = 0xFFFFFFFF
 
 /* Two continuations, `x` preferred over `y`. */
 pub Fork: struct {

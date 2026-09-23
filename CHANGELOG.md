@@ -561,6 +561,10 @@ current normative rules, and Git preserves patch-level detail.
   step violation` at the step. The located-diagnostic writer behind bounds
   failures is shared (`emit_located_fail_call`). Constant steps, already
   checked by sema, and release builds emit nothing.
+- `pkg/regex` declares its `NIL` sentinels (`matcher.ace`, `program.ace`) as
+  `const`, so each read is an immediate rather than a global load. The regex
+  bench retires 1.5-1.9% fewer instructions per workload, with cycles within
+  1% on each and 2.9-3.3% lower for the whole bench across two rounds.
 - Implemented `str` character/string operations and explicit
   `str.parse[T]` specializations in pure Ace where practical, with libc float
   conversion isolated in its selected target layer. `char` remains the
