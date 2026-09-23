@@ -71,7 +71,7 @@ done
 for shape in long types; do
     echo
     echo "Scaling shape '$shape': median of $runs runs, wall-clock ms per compile-to-object"
-    printf '%-8s %8s %12s %10s %8s\n' "count" "lines" "Ace checked" "cc -O0" "growth"
+    printf '%-8s %8s %12s %10s %10s %8s\n' "count" "lines" "Ace checked" "cc -O0" "cc -O2" "growth"
     prev=0
     for n in 1000 5000 20000; do
         dir=$bench_tmp/$shape$n
@@ -79,8 +79,11 @@ for shape in long types; do
         lines=$(wc -l < "$dir/corpus.ace" | tr -d ' ')
         ace_checked=$(cd "$dir" && median_ms "$ace" -c corpus.ace)
         cc_o0=$(cd "$dir" && median_ms cc -std=c11 -O0 -c corpus.c -o corpus-o0.o)
-        printf '%-8s %8s %12.2f %10.2f %8s\n' "$n" "$lines" "$ace_checked" "$cc_o0" \
-            "$(growth "$ace_checked" "$prev")"
+        # clang -O2 crashes on the largest 'long' corpus; say so, not 0.00
+        cc_o2=$(cd "$dir" && median_ms cc -std=c11 -O2 -c corpus.c -o corpus-o2.o)
+        [ -n "$cc_o2" ] || cc_o2=failed
+        printf '%-8s %8s %12.2f %10.2f %10s %8s\n' "$n" "$lines" "$ace_checked" "$cc_o0" \
+            "$cc_o2" "$(growth "$ace_checked" "$prev")"
         prev=$ace_checked
     done
 done

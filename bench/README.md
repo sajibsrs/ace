@@ -859,8 +859,9 @@ print the same checksum. The runner compiles each size to an object, timing
 whole-process wall clock (median of three runs) for `ace -c` in checked and
 release modes against `cc -O0 -c` and `cc -O2 -c`, prints a growth column (time
 over the previous size's time; linear code growth is 10x for 100 to 1,000 and
-4x for the later steps shown), then reports machine-code bytes and times a few
-real programs.
+4x for the later steps shown), then times the scaling shapes in checked mode
+against both `cc` levels, reports machine-code bytes, and times a few real
+programs.
 
 The small-size comparison against `cc` flatters Ace: `cc` pays process startup
 and header parsing that a 100-function corpus barely amortizes, so the growth
@@ -870,12 +871,12 @@ Function-count corpus, medians in ms:
 
 | functions | lines | Ace checked | `cc -O0` | `cc -O2` |
 |---|---|---|---|---|
-| 100 | 1,053 | 10.2 | 54.7 | 206.4 |
-| 1,000 | 10,353 | 29.0 | 215.6 | 1,575 |
-| 5,000 | 51,684 | 111 | 937 | 7,736 |
-| 20,000 | 206,684 | 409 | 3,626 | 31,014 |
+| 100 | 1,053 | 10.4 | 55.1 | 206.4 |
+| 1,000 | 10,353 | 27.7 | 215.0 | 1,611 |
+| 5,000 | 51,684 | 100 | 934 | 7,758 |
+| 20,000 | 206,684 | 388 | 3,608 | 30,919 |
 
-Growth is 3.8x for 5x the code and 3.7x for 4x, so this shape is now linear.
+Growth is 3.6x for 5x the code and 3.9x for 4x, so this shape is now linear.
 Before scope symbols were indexed:
 
 | functions | Ace checked | was |
@@ -887,17 +888,27 @@ A profile then put about 78% in `find_in`, `lookup_val`, and `declare_func`,
 and emit's symbol interning scanned every symbol per call. Scopes past 32 names
 now use a hash index and emit interns through a hash table.
 
-Other shapes, Ace checked ms, all linear:
+Other shapes in ms, Ace checked linear on both:
 
-| shape | 1,000 | 5,000 | 20,000 | growth for 5x code | for 4x code |
-|---|---|---|---|---|---|
-| `types` | 22 | 76 | 287 | 3.5x | 3.8x |
-| `long` | 11 | 26 | 92 | 2.4x | 3.5x |
-| `long`, before | 20 | 161 | 2,347 | | |
+| shape | compiler | 1,000 | 5,000 | 20,000 | growth for 5x code | for 4x code |
+|---|---|---|---|---|---|---|
+| `types` | Ace checked | 21 | 70 | 261 | 3.3x | 3.7x |
+| `types` | `cc -O0` | 141 | 574 | 2,194 | 4.1x | 3.8x |
+| `types` | `cc -O2` | 394 | 1,874 | 7,617 | 4.8x | 4.1x |
+| `long` | Ace checked | 12 | 27 | 87 | 2.2x | 3.2x |
+| `long` | `cc -O0` | 106 | 1,584 | 20,154 | 15x | 13x |
+| `long` | `cc -O2` | 229 | 1,101 | crash ¹ | 4.8x | |
+| `long`, before | Ace checked | 20 | 161 | 2,347 | | |
+
+¹ Apple clang 21 aborts with "Illegal instruction: 4"; the runner prints
+`failed`.
 
 `long` improved once sema's definite-initialization variables, emit's frame
 slots and promotion candidates, and select lowering stopped scanning
-per-function lists. `cc -O0` is superlinear on that shape at 15x and 13x.
+per-function lists, and stays linear now that register promotion ranks its
+candidates once and searches each register's sorted intervals. It had reached
+1.60 s at 20,000 when live-interval sharing let most of those locals hold
+registers.
 Machine code for 5,000 functions:
 
 | build | machine code |
@@ -912,7 +923,7 @@ Real programs:
 | program | lines | compile time |
 |---|---|---|
 | benchmarks | 19 to 194 | 9 to 16 ms ¹ |
-| HTTP server demo | 2,150 | 127 ms ² |
+| HTTP server demo | 2,124 | 118 ms ² |
 
 ¹ mostly process start and standard-library loading.
 ² including its link step.

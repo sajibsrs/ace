@@ -341,9 +341,12 @@ typedef struct { // register-promotion candidate: a scalar local or parameter
     uint8_t  byref;   // a by-reference parameter: the register holds its pointer
     int      pend;    // outermost enclosing loop it must stay live through, or -1
     uint32_t first, last; // live interval in promo_scan positions
+    int      lnext;   // next candidate pending on the same loop, or -1
 } PromoCand;
 
 typedef struct { Node* decl; int reg; uint32_t first, last; uint8_t byref; } PromoAsg; // a promoted binder's register
+typedef struct { uint32_t weight; int ix; } PromoRank; // a candidate in promotion order
+#define PASG_SCAN 16 // pasg_find scans at most this many assignments before indexing them
 
 typedef struct { // loop / labeled-block context stack
     int         brk, cont; // labels; cont = -1 for non-loops
@@ -420,6 +423,7 @@ typedef struct {
     int      scan_call;  // promo_scan met a call that may clobber x9-x14
     uint32_t scan_pos;   // promo_scan position counter
     uint32_t scan_loop[64]; // start positions of the enclosing loops
+    int      scan_lpend[64]; // first candidate each loop keeps live to its end, or -1
     int      nscan_loop;
     int      scan_defer; // inside a defer statement
     Node*    scan_deferred; // that statement's call, which runs at exits
@@ -445,6 +449,12 @@ typedef struct {
     PromoCand* pcands;   // plan_promotion scratch
     int      npcands, cpcands;
     PtrMap   pcand_ix;   // binder node -> index + 1 into pcands
+    PtrMap   pasg_ix;    // binder node -> index + 1 into pasg, once npasg passes PASG_SCAN
+    PromoRank* prank;    // plan_promotion scratch, capacity cprank
+    int      cprank;
+    struct { uint32_t* iv; int n, cap; } reg_iv[32]; // each x register's promoted intervals as sorted disjoint [first, last] pairs
+    uint32_t* leaf_span; // merged interiors of x9-x14 intervals, as [lo, hi] pairs
+    int      nleaf_span, cleaf_span;
     int      fn_has_asm;
     struct { Node* decl; uint32_t off; int reg; } phome[PARAM_HOMES]; // register-homed parameter leaves
     int      nphome, nfhome, nxhome; // all, v23-down float, and x14-down integer homes
@@ -643,6 +653,7 @@ static int loop_own_regs(Node* s);
 static int range_up(Node* r, uint64_t* end);
 static uint64_t range_value(uint64_t v, SType* rt);
 static void plan_promotion(Em* e, Node* f, int export_c);
+static int leaf_spanned(Em* e, uint32_t p);
 static int promo_reg(Em* e, Sym* s);
 static int gen_addr(Em* e, Node* x);
 static int is_lvalue_node(Node* x);
@@ -2788,10 +2799,7 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
     // nothing promoted is read after the function exits.
     if (e->nxpreg && !e->in_defers) {
         uintptr_t cp = at ? ptrmap_get(&e->call_pos, at) : 0;
-        int bad = !cp; // a call promo_scan never saw
-        for (int i = 0; cp && i < e->npasg; i++)
-            if (e->pasg[i].reg <= 14 && e->pasg[i].first < cp - 1 && cp - 1 < e->pasg[i].last) bad = 1;
-        if (bad) {
+        if (!cp || leaf_spanned(e, (uint32_t)(cp - 1))) { // or a call promo_scan never saw
             e->d->errors++;
             fprintf(stderr, "ace: call inside a caller-saved promoted local's live range\n");
         }
@@ -3237,6 +3245,16 @@ static void addr_of_sym(Em* e, int rd, ESym* sym) {
     peep_barrier(e);
 }
 
+// a binder's promotion register assignment, or NULL
+static PromoAsg* pasg_find(Em* e, Node* decl) {
+    if (e->npasg <= PASG_SCAN) {
+        for (int i = 0; i < e->npasg; i++) if (e->pasg[i].decl == decl) return &e->pasg[i];
+        return NULL;
+    }
+    uintptr_t ix = ptrmap_get(&e->pasg_ix, decl);
+    return ix ? &e->pasg[ix - 1] : NULL;
+}
+
 /*
  * Register holding a promoted local, or -1 for slot storage: an x register
  * number for integer-class locals (x19 up, or x14 down), a v register number
@@ -3244,7 +3262,8 @@ static void addr_of_sym(Em* e, int rd, ESym* sym) {
  */
 static int promo_reg(Em* e, Sym* s) {
     if (!s || !s->decl) return -1;
-    for (int i = 0; i < e->npasg; i++) if (e->pasg[i].decl == s->decl && !e->pasg[i].byref) return e->pasg[i].reg;
+    PromoAsg* a = pasg_find(e, s->decl);
+    if (a && !a->byref) return a->reg;
     for (int i = 0; i < e->nfpreg; i++)
         if (e->fpreg_decl[i] == s->decl) return i < FP_PROMO_REGS ? 8 + i : 24 + (i - FP_PROMO_REGS);
     return -1;
@@ -3253,8 +3272,8 @@ static int promo_reg(Em* e, Sym* s) {
 // x register holding a by-reference parameter's pointer, or -1 for its slot
 static int bref_reg(Em* e, Sym* s) {
     if (!s || !s->decl) return -1;
-    for (int i = 0; i < e->npasg; i++) if (e->pasg[i].decl == s->decl && e->pasg[i].byref) return e->pasg[i].reg;
-    return -1;
+    PromoAsg* a = pasg_find(e, s->decl);
+    return a && a->byref ? a->reg : -1;
 }
 
 // fmov between raw v registers (mov_fp takes temp indices)
@@ -7478,7 +7497,7 @@ static void promo_add(Em* e, Node* binder, uint8_t byref) {
     }
     if (!ptrmap_get(&e->pcand_ix, binder)) ptrmap_put(&e->pcand_ix, binder, (uintptr_t)e->npcands + 1);
     uint32_t at = ++e->scan_pos; // defined here: after its initializer, at entry for a parameter
-    e->pcands[e->npcands++] = (PromoCand){ binder, 0, 0, 0, byref, -1, at, at };
+    e->pcands[e->npcands++] = (PromoCand){ binder, 0, 0, 0, byref, -1, at, at, -1 };
 }
 
 // an address use needs the slot; a by-reference pointer is that address already
@@ -7589,19 +7608,25 @@ static void scan_part(Em* e, Node* n, int depth) {
 // a loop, or a labeled block `continue` may restart
 static void scan_loop_push(Em* e) {
     uint32_t at = ++e->scan_pos;
-    if (e->nscan_loop < 64) e->scan_loop[e->nscan_loop] = at; // deeper nesting fails in emission
+    if (e->nscan_loop < 64) { // deeper nesting fails in emission
+        e->scan_loop[e->nscan_loop] = at;
+        e->scan_lpend[e->nscan_loop] = -1;
+    }
     e->nscan_loop++;
 }
 
-// a value defined before the loop and used in it stays live to its back edge
+// A value defined before the loop and used in it stays live to its back edge.
+// Its pend names that loop from its first such use until the loop closes, so
+// each candidate waits on at most one loop's list.
 static void scan_loop_pop(Em* e) {
     uint32_t end = ++e->scan_pos;
     int k = --e->nscan_loop;
-    for (int i = 0; i < e->npcands; i++) {
+    if (k >= 64) return;
+    for (int i = e->scan_lpend[k]; i >= 0; ) {
         PromoCand* c = &e->pcands[i];
-        if (c->pend < k) continue;
         if (c->last < end) c->last = end;
         c->pend = -1;
+        i = c->lnext;
     }
 }
 
@@ -7623,7 +7648,11 @@ static void scan_use(Em* e, PromoCand* c, int depth) {
     int nl = e->nscan_loop < 64 ? e->nscan_loop : 64;
     for (int k = 0; k < nl; k++) // the outermost loop begun after its definition
         if (e->scan_loop[k] > c->first) {
-            if (c->pend < 0 || k < c->pend) c->pend = k;
+            if (c->pend < 0) {
+                c->pend = k;
+                c->lnext = e->scan_lpend[k];
+                e->scan_lpend[k] = (int)(c - e->pcands);
+            }
             break;
         }
 }
@@ -7758,19 +7787,26 @@ static void promo_scan(Em* e, Node* n, int depth) {
     for (int i = 0; i < n->nkids; i++) promo_scan(e, n->kids[i], depth);
 }
 
-// heaviest remaining non-escaping candidate of one register class (a
-// by-reference pointer is integer-class); the caller takes it by clearing its
-// weight
-static PromoCand* promo_take(Em* e, int fp, uint32_t min_weight) {
-    PromoCand* best = NULL;
+// heaviest first, ties in declaration order
+static int promo_rank_cmp(const void* a, const void* b) {
+    const PromoRank* x = a;
+    const PromoRank* y = b;
+    if (x->weight != y->weight) return x->weight > y->weight ? -1 : 1;
+    return (x->ix > y->ix) - (x->ix < y->ix);
+}
+
+// the non-escaping candidates of one register class (a by-reference pointer
+// is integer-class) weighing at least min_weight, heaviest first
+static int promo_rank(Em* e, int fp, uint32_t min_weight, PromoRank* out) {
+    int n = 0;
     for (int i = 0; i < e->npcands; i++) {
         PromoCand* c = &e->pcands[i];
         if (!c->escaped && c->weight >= min_weight &&
-            (!c->byref && is_floatt(node_sym(c->decl)->type)) == fp &&
-            (!best || c->weight > best->weight))
-            best = c;
+            (!c->byref && is_floatt(node_sym(c->decl)->type)) == fp)
+            out[n++] = (PromoRank){ c->weight, i };
     }
-    return best;
+    qsort(out, (size_t)n, sizeof *out, promo_rank_cmp);
+    return n;
 }
 
 // whether a recorded call lies strictly inside (first, last)
@@ -7786,15 +7822,90 @@ static int scan_crosses(Em* e, uint32_t first, uint32_t last) {
 
 // give c register r, if no interval already there overlaps c's
 static int promo_assign(Em* e, PromoCand* c, int r) {
-    for (int i = 0; i < e->npasg; i++)
-        if (e->pasg[i].reg == r && e->pasg[i].first <= c->last && c->first <= e->pasg[i].last) return 0;
+    // Disjoint intervals sorted by start also end in order, so only the last
+    // one starting by c's end can reach c's start.
+    uint32_t* iv = e->reg_iv[r].iv;
+    int lo = 0, hi = e->reg_iv[r].n; // the first interval starting after c's end
+    while (lo < hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (iv[2 * mid] <= c->last) lo = mid + 1;
+        else hi = mid;
+    }
+    if (lo > 0 && iv[2 * lo - 1] >= c->first) return 0;
+    if (e->reg_iv[r].n * 2 + 2 > e->reg_iv[r].cap) {
+        e->reg_iv[r].cap = e->reg_iv[r].cap ? e->reg_iv[r].cap * 2 : 32;
+        e->reg_iv[r].iv = iv = realloc(iv, (size_t)e->reg_iv[r].cap * sizeof(uint32_t));
+        if (!iv) oom();
+    }
+    memmove(&iv[2 * lo + 2], &iv[2 * lo], (size_t)(e->reg_iv[r].n - lo) * 2 * sizeof(uint32_t));
+    iv[2 * lo] = c->first;
+    iv[2 * lo + 1] = c->last;
+    e->reg_iv[r].n++;
     if (e->npasg == e->cpasg) {
         e->cpasg = e->cpasg ? e->cpasg * 2 : 32;
         e->pasg = realloc(e->pasg, (size_t)e->cpasg * sizeof(PromoAsg));
         if (!e->pasg) oom();
     }
     e->pasg[e->npasg++] = (PromoAsg){ c->decl, r, c->first, c->last, c->byref };
+    if (e->npasg == PASG_SCAN + 1) { // past a short scan: index every binder
+        ptrmap_clear(&e->pasg_ix);
+        for (int i = 0; i < e->npasg; i++) ptrmap_put(&e->pasg_ix, e->pasg[i].decl, (uintptr_t)i + 1);
+    } else if (e->npasg > PASG_SCAN + 1) {
+        ptrmap_put(&e->pasg_ix, c->decl, (uintptr_t)e->npasg);
+    }
     return 1;
+}
+
+static int span_cmp(const void* a, const void* b) {
+    uint32_t x = *(const uint32_t*)a, y = *(const uint32_t*)b;
+    return (x > y) - (x < y);
+}
+
+// the positions strictly inside some x9-x14 interval, as sorted disjoint
+// [lo, hi] pairs for leaf_spanned
+static void leaf_spans(Em* e) {
+    int n = 0;
+    for (int i = 0; i < e->npasg; i++) {
+        PromoAsg* a = &e->pasg[i];
+        if (a->reg > 14 || a->last - a->first < 2) continue;
+        if (2 * n + 2 > e->cleaf_span) {
+            e->cleaf_span = e->cleaf_span ? e->cleaf_span * 2 : 64;
+            e->leaf_span = realloc(e->leaf_span, (size_t)e->cleaf_span * sizeof(uint32_t));
+            if (!e->leaf_span) oom();
+        }
+        e->leaf_span[2 * n] = a->first + 1;
+        e->leaf_span[2 * n + 1] = a->last - 1;
+        n++;
+    }
+    qsort(e->leaf_span, (size_t)n, 2 * sizeof(uint32_t), span_cmp);
+    int m = 0;
+    for (int i = 0; i < n; i++) {
+        uint32_t lo = e->leaf_span[2 * i], hi = e->leaf_span[2 * i + 1];
+        if (m && lo <= e->leaf_span[2 * m - 1]) {
+            if (hi > e->leaf_span[2 * m - 1]) e->leaf_span[2 * m - 1] = hi;
+            continue;
+        }
+        e->leaf_span[2 * m] = lo;
+        e->leaf_span[2 * m + 1] = hi;
+        m++;
+    }
+    e->nleaf_span = m;
+}
+
+// whether position p lies strictly inside some x9-x14 interval
+static int leaf_spanned(Em* e, uint32_t p) {
+    if (e->npasg <= PASG_SCAN) {
+        for (int i = 0; i < e->npasg; i++)
+            if (e->pasg[i].reg <= 14 && e->pasg[i].first < p && p < e->pasg[i].last) return 1;
+        return 0;
+    }
+    int lo = 0, hi = e->nleaf_span; // the first span starting after p
+    while (lo < hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (e->leaf_span[2 * mid] <= p) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo > 0 && p <= e->leaf_span[2 * lo - 1];
 }
 
 /*
@@ -7813,6 +7924,8 @@ static void plan_promotion(Em* e, Node* f, int export_c) {
     e->nscan_loop = e->scan_defer = 0;
     e->scan_deferred = NULL;
     e->nscan_calls = e->nscan_pend = e->nscan_frame = 0;
+    e->nleaf_span = 0;
+    for (int r = 0; r < 32; r++) e->reg_iv[r].n = 0;
     ptrmap_clear(&e->pcand_ix);
     ptrmap_clear(&e->call_pos);
     for (int i = 0; i < f->nkids; i++)
@@ -7828,10 +7941,15 @@ static void plan_promotion(Em* e, Node* f, int export_c) {
     }
     int room = MAX_ITEMPS - temp_need(f->b) - TEMP_MARGIN;
     if (room > LEAF_REGS) room = LEAF_REGS;
-    PromoCand* c;
-    while ((c = promo_take(e, 0, 1))) {
+    if (e->npcands > e->cprank) {
+        e->cprank = e->npcands;
+        e->prank = realloc(e->prank, (size_t)e->cprank * sizeof(PromoRank));
+        if (!e->prank) oom();
+    }
+    int nrank = promo_rank(e, 0, 1, e->prank);
+    for (int r = 0; r < nrank; r++) {
+        PromoCand* c = &e->pcands[e->prank[r].ix];
         uint32_t weight = c->weight;
-        c->weight = 0;
         int got = 0;
         for (int k = 0; !c->crosses && !got && k < room; k++) {
             got = promo_assign(e, c, 14 - k);
@@ -7845,14 +7963,14 @@ static void plan_promotion(Em* e, Node* f, int export_c) {
         }
     }
     e->vti_cap = MAX_ITEMPS - e->nxpreg;
-    while (e->nfpreg < FP_PROMO_REGS && (c = promo_take(e, 1, PROMO_MIN_WEIGHT))) {
-        c->weight = 0;
-        e->fpreg_decl[e->nfpreg++] = c->decl;
-    }
+    if (e->nxpreg && e->npasg > PASG_SCAN) leaf_spans(e);
+    nrank = promo_rank(e, 1, PROMO_MIN_WEIGHT, e->prank);
+    int r = 0;
+    for (; r < nrank && e->nfpreg < FP_PROMO_REGS; r++)
+        e->fpreg_decl[e->nfpreg++] = e->pcands[e->prank[r].ix].decl;
     if (!e->scan_loop_branch)
-        while (e->nfpreg < FP_PROMO_REGS + FP_LEAF_REGS && (c = promo_take(e, 1, PROMO_MIN_WEIGHT))) {
-            c->weight = 0;
-            e->fpreg_decl[e->nfpreg++] = c->decl;
+        for (; r < nrank && e->nfpreg < FP_PROMO_REGS + FP_LEAF_REGS; r++) {
+            e->fpreg_decl[e->nfpreg++] = e->pcands[e->prank[r].ix].decl;
             e->nfpleaf++;
         }
 }

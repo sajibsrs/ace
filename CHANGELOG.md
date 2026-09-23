@@ -565,6 +565,17 @@ current normative rules, and Git preserves patch-level detail.
   `const`, so each read is an immediate rather than a global load. The regex
   bench retires 1.5-1.9% fewer instructions per workload, with cycles within
   1% on each and 2.9-3.3% lower for the whole bench across two rounds.
+- Removed the quadratic scans live-interval promotion brought back to
+  long-function compile time, where interval sharing lets thousands of locals
+  hold registers: candidates are ranked once by weight (ties in declaration
+  order) instead of rescanned per pick; each register keeps its intervals
+  sorted, so an overlap test is one binary search; a loop keeps the list of
+  candidates it holds live instead of `scan_loop_pop` visiting all of them;
+  and past 16 assignments `promo_reg`/`bref_reg` look a binder up through a
+  `PtrMap` and the `emit_call` x9-x14 check searches merged interval
+  interiors. Machine code is byte-identical. A 20,000-local function compiles
+  in 87-91 ms again, from 1.60 s; the function and type corpora are unchanged.
+  `bench/run-compile.sh` times `cc -O2` for the scaling shapes too.
 - Implemented `str` character/string operations and explicit
   `str.parse[T]` specializations in pure Ace where practical, with libc float
   conversion isolated in its selected target layer. `char` remains the
