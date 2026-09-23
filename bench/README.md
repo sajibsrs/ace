@@ -841,6 +841,28 @@ bench), within 1.5 points in a second interleaved round. `Matcher.run` fell
 from 412 to 243 instructions (120 to 68 frame accesses, and 24 to 2 far
 frame offsets as its frame shrank) and `Matcher.add` from 254 to 217.
 
+### Regex after branching value `&&`
+
+Five runs at `5eebfeb` plus the value `&&`/`||` lowering in `src/emit.c`,
+medians in ns per byte:
+
+| workload | Ace | C | Ace/C | PCRE2 | PCRE2 JIT |
+|---|---|---|---|---|---|
+| `literal` | 31.44 | 11.64 | 2.65x | 1.50 | 0.06 |
+| `word-ing` | 60.82 | 27.64 | 2.20x | 49.64 | 5.47 |
+| `captures` | 70.74 | 31.88 | 2.19x | 12.36 | 3.54 |
+| `pathological` | 183.22 | 71.43 | 2.52x | 11792.24 | 960.03 |
+
+Ace spreads were 1.5-2.0 ns except `pathological` at 23.4. The rows between
+this and the previous checkpoint also include the `NIL` constants. The
+per-byte `advance = at < text.len && text[at] == byte` and `Queue.has` now
+branch on their bounds compare and materialize only the byte or element
+compare. Instructions retired per looped workload fell from 18.78, 30.43,
+34.53, and 13.66 billion to 18.48, 29.89, 34.11, and 13.37 in row order
+(1.2-2.1%), with every checksum matching C; the whole bench retires 2.44
+billion against C's 1.02 (2.39x, from 2.43x). Cycles fell 1.3%, 0.3%, 0.3%,
+and 1.0% over ten interleaved runs.
+
 ## Compile time
 
 Run the compile-time benchmark on Apple arm64:

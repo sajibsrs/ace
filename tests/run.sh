@@ -1182,6 +1182,17 @@ if [ -d tests/emit ]; then
             echo "FAIL: ascending step-one ranges must compare the cursor with the end"
             fail=1
         fi
+        # A value && branches on its left compare's flags; only the last
+        # compare materializes a bool.
+        if ! otool -tv /tmp/ace_emit/basics/logical_values.o | awk '
+            /^[^0-9].*:$/ { fn = $0 ~ /^__ace\$fn\$has\$/; next }
+            fn && $2 ~ /^(cbz|cbnz)$/ { bad = 1 }
+            fn && $2 == "cset" { sets++ }
+            fn && $2 == "b.hs" { branch = 1 }
+            END { exit bad || sets != 1 || !branch }'; then
+            echo "FAIL: a value && must branch on its left compare"
+            fail=1
+        fi
         # Hot float locals fill d8-d15; a loop-free function saves none of
         # the callee-saved registers.
         if ! otool -tv /tmp/ace_emit/basics/register_locals.o | awk '

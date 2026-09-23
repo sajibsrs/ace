@@ -576,6 +576,16 @@ current normative rules, and Git preserves patch-level detail.
   interiors. Machine code is byte-identical. A 20,000-local function compiles
   in 87-91 ms again, from 1.60 s; the function and type corpora are unchanged.
   `bench/run-compile.sh` times `cc -O2` for the scaling shapes too.
+- `&&` and `||` as a value branch on each operand but the last as a condition
+  (`gen_branch`, flags straight to `b.cond`) to the short-circuit constant,
+  and take the last operand's own 0 or 1 as the result: only the final
+  compare materializes a bool, and a stored bool is normalized as `!` does
+  (`bool_exact`). `Queue.has` in `pkg/regex` falls from 23 to 17
+  instructions. The regex bench retires 1.2-2.1% fewer instructions per
+  workload and spends 0.3-1.3% fewer cycles (1.4% for the whole bench) over
+  ten interleaved runs; `calls` and `cpu` are unchanged. Settling the last
+  operand through a branch too measured no better; a by-hand nested-`if`
+  rewrite stays about two points faster in cycles, unexplained.
 - Implemented `str` character/string operations and explicit
   `str.parse[T]` specializations in pure Ace where practical, with libc float
   conversion isolated in its selected target layer. `char` remains the

@@ -654,6 +654,7 @@ static int range_up(Node* r, uint64_t* end);
 static uint64_t range_value(uint64_t v, SType* rt);
 static void plan_promotion(Em* e, Node* f, int export_c);
 static int leaf_spanned(Em* e, uint32_t p);
+static void gen_branch(Em* e, Node* x, int jump_if, int lab);
 static int promo_reg(Em* e, Sym* s);
 static int gen_addr(Em* e, Node* x);
 static int is_lvalue_node(Node* x);
@@ -2181,31 +2182,49 @@ static EV gen_binop(Em* e, Node* n) {
     return a;
 }
 
+// whether gen_expr leaves x as exactly 0 or 1 (a cset or a constant)
+static int bool_exact(Node* x) {
+    switch (x->kind) {
+    case N_BOOL: case N_CMPCHAIN:
+        return 1;
+    case N_UNARY:
+        return x->op == T_BANG;
+    case N_BINARY: {
+        if (x->op == T_ANDAND || x->op == T_OROR) return 1;
+        SType* t = node_ty(x->a);
+        return t && is_scalar(t) && tok_cond((TokKind)x->op, t) >= 0;
+    }
+    default:
+        return 0;
+    }
+}
+
+/*
+ * A && b as a value: the left operand branches on its flags as a condition
+ * (gen_branch) to the short-circuit result, and the right operand's own 0 or
+ * 1 is the result otherwise, so only the last compare materializes a bool.
+ */
 static EV gen_shortcircuit(Em* e, Node* n) {
     int is_and = n->op == T_ANDAND;
-    EV a = gen_expr(e, n->a);
-    if (a.cls != CLS_INT) {
-        em_err(e, n, "short-circuit operands must be bool");
-        return a;
-    }
-    int si = a.idx;
+    int si = e->vti;
     int lf = new_label(e), lend = new_label(e);
-    cbz_(e, 0, xreg(si), !is_and, lf); // AND: zero short-circuits false; OR: nonzero short-circuits true
-    e->vti = si; // reuse the slot for b
+    gen_branch(e, n->a, !is_and, lf); // AND: false short-circuits; OR: true does
     EV b = gen_expr(e, n->b);
     if (b.cls != CLS_INT) {
-        em_err(e, n->b, "unexpected operand shape in short-circuit");
+        em_err(e, n->b, "short-circuit operands must be bool");
+        return b;
+    }
+    if (!bool_exact(n->b)) { // a stored bool: test it like `!` does
+        ins(e, 0x7100001Fu | ((uint32_t)xreg(b.idx) << 5)); // cmp w, #0
+        cset_(e, 0, C_NE, xreg(si));
     } else if (b.idx != si) {
         mov_int(e, 0, xreg(si), xreg(b.idx));
     }
     e->vti = si + 1;
-    cbz_(e, 0, xreg(si), !is_and, lf);
-    load_imm(e, 0, xreg(si), is_and);
     br_(e, lend);
     bind_label(e, lf);
     load_imm(e, 0, xreg(si), !is_and);
     bind_label(e, lend);
-    e->vti = si + 1;
     return (EV){ CLS_INT, si };
 }
 

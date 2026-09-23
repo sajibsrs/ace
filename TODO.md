@@ -189,17 +189,16 @@ These are baseline observations, not performance promises.
   sits at the slow end already. Candidate: keep small struct locals in
   registers, or find which store-reload distance triggers the stall.
 - **Whole-struct stores into array elements** [new] — `self.stack[top] =
-  Frame{...}` builds the struct in a temp and copies it, and
-  `frame: Frame = self.stack[top]` copies an element out before reading two
-  fields. Candidate: build a literal straight into the element and read an
-  element's fields in place. A `pkg/regex` emulation doing both by hand,
-  together with the next entry, cut the bench's cycles 7.6% on the earlier
-  live-interval prototype.
-- **`&&` as a value materializes both sides** [new] — `advance = at <
-  text.len && text[at] == byte` computes a flag rather than branching; the
-  same emulation wrote it as nested `if`s. Candidate: lower a value `&&`/`||`
-  whose operands are cheap loads and compares through branches, or measure
-  which form wins.
+  Frame{...}` builds the struct in a temp with one store per field and copies
+  it with 8-byte loads, and `frame: Frame = self.stack[top]` copies an element
+  to a slot before reading two fields. An 8-byte load spanning two 4-byte
+  stores cannot be forwarded, so a by-hand `pkg/regex` emulation gains only
+  when it does both: field stores into the element alone cost 1.6% more
+  cycles, and in-place reads alone 0.7% more, since each moves the stall to
+  the other side; together they cut `captures` 4% and the whole bench 0-2.5%.
+  Candidate: build a literal straight into its destination after evaluating
+  every field, and scalar-replace a small struct local whose address never
+  escapes, loading each field into its own promoted register.
 - **Wrapper calls cost a float spill** [new] — since promoted floats reach
   `d24-d31`, which are caller-saved, every branch-with-link stores and reloads
   them. A one-line dispatcher between two callers and two callees is therefore
