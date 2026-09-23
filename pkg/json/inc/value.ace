@@ -1,0 +1,15 @@
+/* json value: a closed tagged union over the seven JSON value shapes. */
+
+pub Value: union {
+    none,
+    bool: bool,
+    number: f64,
+    string: string,
+    array: []Value,
+    object: []Pair,
+}
+
+pub Pair: struct {
+    key: string,
+    value: Value,
+}

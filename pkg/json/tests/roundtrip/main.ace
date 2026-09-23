@@ -1,0 +1,107 @@
+import json
+import mem
+
+/* Parses a document, reads it, and formats it back. */
+round_trip(): int {
+    doc: json.Json, err: Error = json.Json::parse(" {\"name\": \"ace\", \"tags\": [1, 2.5, true, null]} ")
+    defer mut doc.wipe()
+    if err != null { return 1 }
+
+    switch doc.root {
+        json.Value.object(pairs: []json.Pair) {
+            if pairs.len != 2 || !mem.equal(pairs[0].key, "name") { return 2 }
+        }
+        default {
+            return 3
+        }
+    }
+    mut doc.value(doc.root)
+    text: string, ferr: Error = doc.format()
+    if ferr != null { return 4 }
+
+    if !mem.equal(text, "{\"name\":\"ace\",\"tags\":[1,2.5,true,null]}") { return 5 }
+
+    mut doc.reset()
+    mut doc.value(doc.root)
+    again: string, aerr: Error = doc.format()
+    if aerr != null || !mem.equal(again, text) { return 6 }
+
+    mut doc.value(doc.root)
+    extra: string, xerr: Error = doc.format()
+    if xerr != json.FormatErr.structure { return 7 }
+    return 0
+}
+
+/* A failed parse returns the parse error and a blank document to wipe. */
+failure(): int {
+    doc: json.Json, err: Error = json.Json::parse("[1, 2")
+    defer mut doc.wipe()
+    if err != json.ParseErr.unexpected_token { return 10 }
+
+    switch doc.root {
+        json.Value.none {}
+        default {
+            return 11
+        }
+    }
+    return 0
+}
+
+/* A root assigned by hand writes like a parsed one. */
+assigned(): int {
+    doc: json.Json, err: Error = json.Json::parse("0")
+    defer mut doc.wipe()
+    if err != null { return 20 }
+
+    doc.root = json.Value.string("a\"b")
+    mut doc.value(doc.root)
+    text: string, ferr: Error = doc.format()
+    if ferr != null || !mem.equal(text, "\"a\\\"b\"") { return 21 }
+    return 0
+}
+
+/* A new document writes through the forwarded calls, never its empty root. */
+written(): int {
+    doc: json.Json = json.Json::new()
+    defer mut doc.wipe()
+    empty: string, eerr: Error = doc.format()
+    if eerr != json.FormatErr.structure { return 30 }
+
+    mut doc.object()
+    mut doc.field("s", "x")
+    mut doc.field("i", -1)
+    mut doc.field("u", uint(2))
+    mut doc.field("z", usize(3))
+    mut doc.field("f", 0.5)
+    mut doc.field("b", true)
+    mut doc.field("t", json.Value.none)
+    mut doc.key("a")
+    mut doc.array()
+    mut doc.none()
+    mut doc.value(false)
+    mut doc.value(4)
+    mut doc.value(uint(5))
+    mut doc.value(usize(6))
+    mut doc.value(1.5)
+    mut doc.value("y")
+    mut doc.value(json.Value.number(7.0))
+    mut doc.end()
+    mut doc.end()
+    text: string, err: Error = doc.format()
+    if err != null { return 31 }
+
+    if !mem.equal(text, "{\"s\":\"x\",\"i\":-1,\"u\":2,\"z\":3,\"f\":0.5,\"b\":true,\"t\":null,\"a\":[null,false,4,5,6,1.5,\"y\",7]}") { return 32 }
+    return 0
+}
+
+main(): int {
+    code: int = round_trip()
+    if code != 0 { return code }
+
+    code = failure()
+    if code != 0 { return code }
+
+    code = assigned()
+    if code != 0 { return code }
+    return written()
+}

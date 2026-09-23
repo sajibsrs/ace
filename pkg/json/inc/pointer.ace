@@ -1,0 +1,96 @@
+/* JSON Pointer lookup (RFC 6901). A pointer is `""` for the whole tree or a
+ * sequence of `/token` steps: an object step matches the first member whose
+ * key equals the token, where `~1` spells `/` and `~0` spells `~`, and an
+ * array step is a decimal index with no leading zero. Lookup reads the tree
+ * in place and allocates nothing.
+ */
+
+import value: "./value.ace"
+
+Value: type = value.Value
+Pair: type = value.Pair
+
+/* The value `path` names in `tree`, or `Value.none` and false when a step is
+ * missing, malformed, or crosses a scalar.
+ */
+pub get(tree: Value, path: string): (Value, bool) {
+    if path.len == 0 { return tree, true }
+
+    if path[0] != '/' { return Value.none, false }
+    node: Value = tree
+    start: usize = 1
+
+    for {
+        end: usize = start
+        for end < path.len && path[end] != '/' { end += 1 }
+        token: string = path[start..end]
+        next: Value, ok: bool = step(node, token)
+        if !ok { return Value.none, false }
+
+        node = next
+        if end == path.len { return node, true }
+
+        start = end + 1
+    }
+    return Value.none, false
+}
+
+step(node: Value, token: string): (Value, bool) {
+    switch node {
+        Value.object(pairs: []Pair) {
+            for i: usize in 0 .. pairs.len {
+                if same(pairs[i].key, token) { return pairs[i].value, true }
+            }
+        }
+        Value.array(items: []Value) {
+            index: usize, ok: bool = parse_index(token, items.len)
+            if ok { return items[index], true }
+        }
+        default {}
+    }
+    return Value.none, false
+}
+
+/* Whether `key` equals the unescaped `token`, compared in place. */
+same(key: string, token: string): bool {
+    k: usize = 0
+    t: usize = 0
+
+    for t < token.len {
+        c: u8 = token[t]
+
+        if c == '~' {
+            if t + 1 == token.len { return false }
+            e: u8 = token[t + 1]
+
+            if e == '0' {
+                c = '~'
+            } else if e == '1' {
+                c = '/'
+            } else {
+                return false
+            }
+            t += 1
+        }
+
+        if k == key.len || key[k] != c { return false }
+        k += 1
+        t += 1
+    }
+    return k == key.len
+}
+
+/* Parses `token` as an index below `count`. */
+parse_index(token: string, count: usize): (usize, bool) {
+    if token.len == 0 || token.len > 1 && token[0] == '0' { return 0, false }
+    index: usize = 0
+
+    for i: usize in 0 .. token.len {
+        c: u8 = token[i]
+        if c < '0' || c > '9' { return 0, false }
+
+        index = index * 10 + usize(c - '0')
+        if index >= count { return 0, false }
+    }
+    return index, true
+}

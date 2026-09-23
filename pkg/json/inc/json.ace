@@ -1,0 +1,139 @@
+/* The convenience layer over the public core: one `Json` reads a parsed tree
+ * and writes JSON text. `root` is input: what `parse` produced, read by JSON
+ * Pointer and valid until `wipe`. The write calls are output: they forward
+ * to the `Formatter`, and `format` returns only what they wrote, never
+ * `root` on its own, so writing a parsed tree back is `value(root)`.
+ */
+
+import parsing: "./parsing.ace"
+import pointer: "./pointer.ace"
+import value: "./value.ace"
+import writing: "./writing.ace"
+
+Value: type = value.Value
+Parser: type = parsing.Parser
+Formatter: type = writing.Formatter
+
+pub Json: struct {
+    root: Value,
+    parser: Parser,
+    formatter: Formatter,
+}
+
+/* An empty document to write into. */
+pub Json::new(): Json {
+    return Json {
+        root = Value.none,
+        parser = Parser::new(),
+        formatter = Formatter::new(),
+    }
+}
+
+/* Parses `text` as one JSON value into `root`. The error is a `ParseErr`,
+ * and a failed parse leaves nothing to release.
+ */
+pub Json::parse(text: string): (Json, Error) {
+    document: Json = Json::new()
+    root: Value, err: Error = mut document.parser.parse(text)
+    if err != null {
+        mut document.wipe()
+        return blank(Json), err
+    }
+
+    document.root = root
+    return document, null
+}
+
+pub mut Json.wipe() {
+    mut self.parser.wipe()
+    mut self.formatter.wipe()
+    self.root = Value.none
+}
+
+/* Returns the text of the one complete value written, or the first
+ * `FormatErr`. The text is borrowed from the document and is valid until
+ * `reset` or `wipe`.
+ */
+pub Json.format(): (string, Error) {
+    text: string, err: Error = self.formatter.finish()
+    return text, err
+}
+
+/* Discards the written text and its error, keeping the buffer; `root` is
+ * unchanged.
+ */
+pub mut Json.reset() { mut self.formatter.reset() }
+
+pub mut Json.object() { mut self.formatter.object() }
+
+pub mut Json.array() { mut self.formatter.array() }
+
+pub mut Json.end() { mut self.formatter.end() }
+
+pub mut Json.key(name: string) { mut self.formatter.key(name) }
+
+pub mut Json.none() { mut self.formatter.none() }
+
+pub mut Json.value(flag: bool) { mut self.formatter.value(flag) }
+
+pub mut Json.value(number: int) { mut self.formatter.value(number) }
+
+pub mut Json.value(number: uint) { mut self.formatter.value(number) }
+
+pub mut Json.value(number: usize) { mut self.formatter.value(number) }
+
+pub mut Json.value(number: f64) { mut self.formatter.value(number) }
+
+pub mut Json.value(text: string) { mut self.formatter.value(text) }
+
+pub mut Json.value(tree: Value) { mut self.formatter.value(tree) }
+
+pub mut Json.field(name: string, flag: bool) { mut self.formatter.field(name, flag) }
+
+pub mut Json.field(name: string, number: int) { mut self.formatter.field(name, number) }
+
+pub mut Json.field(name: string, number: uint) { mut self.formatter.field(name, number) }
+
+pub mut Json.field(name: string, number: usize) { mut self.formatter.field(name, number) }
+
+pub mut Json.field(name: string, number: f64) { mut self.formatter.field(name, number) }
+
+pub mut Json.field(name: string, text: string) { mut self.formatter.field(name, text) }
+
+pub mut Json.field(name: string, tree: Value) { mut self.formatter.field(name, tree) }
+
+/* The value at JSON Pointer `path`, or `Value.none` and false when absent. */
+pub Json.get(path: string): (Value, bool) {
+    node: Value, ok: bool = pointer.get(self.root, path)
+    return node, ok
+}
+
+/* The string at `path`, or null when it is absent or not a string. */
+pub Json.string(path: string): string {
+    node: Value, ok: bool = pointer.get(self.root, path)
+    switch node {
+        Value.string(text: string) { return text }
+        default {}
+    }
+    return null
+}
+
+/* The number at `path`, or 0 when it is absent or not a number. */
+pub Json.number(path: string): f64 {
+    node: Value, ok: bool = pointer.get(self.root, path)
+    switch node {
+        Value.number(number: f64) { return number }
+        default {}
+    }
+    return 0.0
+}
+
+/* The boolean at `path`, or false when it is absent or not a boolean. */
+pub Json.bool(path: string): bool {
+    node: Value, ok: bool = pointer.get(self.root, path)
+    switch node {
+        Value.bool(flag: bool) { return flag }
+        default {}
+    }
+    return false
+}

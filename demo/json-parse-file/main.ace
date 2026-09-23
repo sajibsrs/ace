@@ -1,5 +1,4 @@
-/* Parses data.json with pkg/json and prints every key with its value to
- * standard output, indenting nested objects and arrays.
+/* Reads data.json with pkg/json and prints a few fields by JSON Pointer.
  *
  * data.json is opened relative to the current working directory, not to this
  * source file, so run from this directory:
@@ -13,76 +12,21 @@ import mem
 
 PATH: string = "data.json"
 
-indent(depth: usize) {
-    for i: usize in 0 .. depth { fmt.print("  ") }
-}
-
-newline_unless_root(depth: usize) {
-    if depth > 0 { fmt.print("\n") }
-}
-
-/* Prints one value after its "key:" or "-" label. A scalar continues the
- * label's line; a container starts a fresh line (except the root) and lists
- * its children at `depth`, one level in per nesting.
- */
-show(value: json.Json, depth: usize) {
-    switch value {
-        json.Json.none {
-            fmt.println(" null")
-        }
-        json.Json.bool(b: bool) {
-            if b {
-                fmt.println(" true")
-            } else {
-                fmt.println(" false")
-            }
-        }
-        json.Json.number(n: f64) {
-            fmt.print(" ")
-            fmt.println(n)
-        }
-        json.Json.string(s: string) {
-            fmt.print(" ")
-            fmt.println(s)
-        }
-        json.Json.array(items: []json.Json) {
-            newline_unless_root(depth)
-
-            for i: usize in 0 .. items.len {
-                indent(depth)
-                fmt.print("-")
-                show(items[i], depth + 1)
-            }
-        }
-        json.Json.object(pairs: []json.Pair) {
-            newline_unless_root(depth)
-
-            for i: usize in 0 .. pairs.len {
-                indent(depth)
-                fmt.print(pairs[i].key)
-                fmt.print(":")
-                show(pairs[i].value, depth + 1)
-            }
-        }
-    }
-}
-
 main(): int {
-    data: mut []u8, rerr: Error = file.read(PATH)
+    data: mut []u8, err: Error = file.read(PATH)
     defer mem.release[u8](mut data)
-    if rerr != null {
-        fmt.printf("failed to read %s: %s\n", PATH, rerr.message)
+    if err != null {
+        fmt.printf("failed to read %s: %s\n", PATH, err.message)
         return 1
     }
 
-    parser: json.Parser = json.Parser::new()
-    defer mut parser.wipe()
-    root: json.Json, perr: Error = mut parser.parse(data)
-    if perr != null {
-        fmt.printf("failed to parse %s: error %d\n", PATH, int(perr.code))
-        return 1
-    }
+    doc: json.Json, perr: Error = json.Json::parse(data)
+    defer mut doc.wipe()
+    if perr != null { return 1 }
 
-    show(root, 0)
+    fmt.println(doc.string("/first_name"))
+    fmt.println(doc.number("/age"))
+    fmt.println(doc.string("/address/city"))
+    fmt.println(doc.string("/phone_numbers/1/number"))
     return 0
 }

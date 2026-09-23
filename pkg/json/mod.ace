@@ -1,12 +1,21 @@
 /* json — a whole-document JSON value model, RFC 8259 parser, and formatter. */
 
-import document: "./inc/document.ace"
+import json: "./inc/json.ace"
 import parsing: "./inc/parsing.ace"
+import pointer: "./inc/pointer.ace"
+import value: "./inc/value.ace"
 import writing: "./inc/writing.ace"
 
-pub Json: type = document.Json
-pub Pair: type = document.Pair
+pub Json: type = json.Json
+pub Value: type = value.Value
+pub Pair: type = value.Pair
 pub Parser: type = parsing.Parser
 pub ParseErr: type = parsing.ParseErr
 pub Formatter: type = writing.Formatter
 pub FormatErr: type = writing.FormatErr
+
+/* The value at JSON Pointer `path` in `tree` (RFC 6901). */
+pub get(tree: Value, path: string): (Value, bool) {
+    node: Value, ok: bool = pointer.get(tree, path)
+    return node, ok
+}

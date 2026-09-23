@@ -6,10 +6,10 @@
 
 import mem
 import str
-import document: "./document.ace"
+import value: "./value.ace"
 
-Json: type = document.Json
-Pair: type = document.Pair
+Value: type = value.Value
+Pair: type = value.Pair
 
 pub FormatErr: error {
     1: allocation = "allocation failed"
@@ -200,21 +200,21 @@ pub mut Formatter.value(text: string) {
 }
 
 /* Writes a whole value tree through the same rules as the scalar calls. */
-pub mut Formatter.value(tree: Json) {
+pub mut Formatter.value(tree: Value) {
     switch tree {
-        Json.none {
+        Value.none {
             mut self.none()
         }
-        Json.bool(flag: bool) {
+        Value.bool(flag: bool) {
             mut self.value(flag)
         }
-        Json.number(number: f64) {
+        Value.number(number: f64) {
             mut self.value(number)
         }
-        Json.string(text: string) {
+        Value.string(text: string) {
             mut self.value(text)
         }
-        Json.array(items: []Json) {
+        Value.array(items: []Value) {
             mut self.array()
 
             for i: usize in 0 .. items.len {
@@ -223,7 +223,7 @@ pub mut Formatter.value(tree: Json) {
             }
             mut self.end()
         }
-        Json.object(pairs: []Pair) {
+        Value.object(pairs: []Pair) {
             mut self.object()
 
             for i: usize in 0 .. pairs.len {
@@ -266,7 +266,7 @@ pub mut Formatter.field(name: string, text: string) {
     mut self.value(text)
 }
 
-pub mut Formatter.field(name: string, tree: Json) {
+pub mut Formatter.field(name: string, tree: Value) {
     mut self.key(name)
     mut self.value(tree)
 }

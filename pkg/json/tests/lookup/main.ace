@@ -1,0 +1,38 @@
+import json
+import mem
+
+/* JSON Pointer steps, escapes, and every way a lookup misses. */
+lookup(): int {
+    doc: json.Json, err: Error = json.Json::parse("{\"a\": {\"b/c\": [10, true, \"x\"], \"m~n\": 1, \"\": 2}, \"d\": 1, \"d\": 2}")
+    defer mut doc.wipe()
+    if err != null { return 30 }
+
+    if doc.number("/a/b~1c/0") != 10.0 || !doc.bool("/a/b~1c/1") { return 31 }
+
+    if !mem.equal(doc.string("/a/b~1c/2"), "x") { return 32 }
+
+    if doc.number("/a/m~0n") != 1.0 || doc.number("/a/") != 2.0 || doc.number("/d") != 1.0 { return 33 }
+    whole: json.Value, ok: bool = doc.get("")
+    switch whole {
+        json.Value.object(pairs: []json.Pair) {
+            if !ok || pairs.len != 3 { return 34 }
+        }
+        default {
+            return 35
+        }
+    }
+    misses: [9]string = ["a", "/z", "/a/b~1c/3", "/a/b~1c/01", "/a/b~1c/-", "/d/x", "/a/m~2n", "/a/b~", "/a/b~1c/1x"]
+
+    for i: usize in 0 .. misses.len {
+        node: json.Value, found: bool = doc.get(misses[i])
+        if found { return 36 + int(i) }
+    }
+
+    if doc.string("/d") != null || doc.number("/a/b~1c/2") != 0.0 || doc.bool("/z") { return 50 }
+
+    tree: json.Value, hit: bool = json.get(doc.root, "/a/b~1c/2")
+    if !hit { return 51 }
+    return 0
+}
+
+main(): int { return lookup() }

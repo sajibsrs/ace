@@ -14,46 +14,22 @@ PATH: string = "output.json"
 
 SENSORS: [4]string = ["north", "east", "south", "west"]
 
-Reading: struct {
-    sensor: string,
-    sample: int,
-    celsius: f64,
-    ok: bool,
-}
-
-/* Each type writes itself: the compiler picks the value overload from each
- * field's type, so the call sites name no JSON types.
- */
-write_reading(mut f: json.Formatter, r: Reading) {
-    mut f.object()
-    mut f.field("sensor", r.sensor)
-    mut f.field("sample", r.sample)
-    mut f.field("celsius", r.celsius)
-    mut f.field("ok", r.ok)
-    mut f.end()
-}
-
 main(): int {
-    count: int = 12
-    f: json.Formatter = json.Formatter::new()
-    defer mut f.wipe()
-    mut f.array()
+    doc: json.Json = json.Json::new()
+    defer mut doc.wipe()
+    mut doc.array()
 
-    for i: int in 0 .. count {
-        reading: Reading = Reading {
-            sensor = SENSORS[i % 4],
-            sample = i,
-            celsius = 15.0 + 1.5 * f64(i),
-            ok = i % 5 != 0,
-        }
-        write_reading(mut f, reading)
+    for i: int in 0 .. 12 {
+        mut doc.object()
+        mut doc.field("sensor", SENSORS[i % 4])
+        mut doc.field("sample", i)
+        mut doc.field("celsius", 15.0 + 1.5 * f64(i))
+        mut doc.field("ok", i % 5 != 0)
+        mut doc.end()
     }
-    mut f.end()
-    text: string, ferr: Error = f.finish()
-    if ferr != null {
-        fmt.printf("failed to format: error %d\n", int(ferr.code))
-        return 1
-    }
+    mut doc.end()
+    text: string, err: Error = doc.format()
+    if err != null { return 1 }
 
     werr: Error = file.write(PATH, text)
     if werr != null {

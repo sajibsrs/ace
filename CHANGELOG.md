@@ -1425,6 +1425,21 @@ current normative rules, and Git preserves patch-level detail.
   and `span(k)` read the recorded match, replacing `captures`. `bench/regex`
   checksums are unchanged and every workload is within 1.2% of the previous
   build, inside run-to-run spread.
+- Gave `pkg/json` a convenience layer over its public core. The tagged union
+  is now `Value` (in `inc/value.ace`), and `Json` (in `inc/json.ace`, matching
+  `regex.Regex`) holds a `Parser`, a `Formatter`, and `root`: the input tree.
+  `Json::parse(text)` returns `(Json, Error)` and wipes itself on failure;
+  `get`, `string`, `number`, and `bool` read `root` by RFC 6901 JSON Pointer,
+  the typed ones returning the zero value when it is absent or of another
+  type. `Json::new()` makes an empty `Json` for writing: every `Formatter`
+  write call is forwarded one to one, `format()` is `finish`, and `reset`
+  starts the next text. `format` returns only what was written, never `root`
+  implicitly; writing a parsed tree back is `value(root)`. Forwarding costs
+  one extra call per write, about 3.5% on a 648-byte document. The pointer
+  walk is the new core function `json.get(tree, path)`, which compares escaped
+  tokens in place and allocates nothing. `demo/json-parse-file` reads four
+  fields by pointer instead of walking the tree (87 to 32 lines), and
+  `demo/json-format-file` writes through `Json` inline (66 to 42 lines).
 - Added `demo/regex-search-file`, an `exe` package over `pkg/regex` that reads
   `SPEC.md` with `file.read` and prints every `Decision:` line through a
   `next` loop.

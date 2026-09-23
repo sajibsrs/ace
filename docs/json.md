@@ -2,12 +2,17 @@
 
 [Documentation](README.md)
 
-`json` parses a complete in-memory RFC 8259 document into a tagged `Json`
-value, and formats JSON text from runtime data with a `Formatter`. Parsing is
+`json` parses a complete in-memory RFC 8259 document into a tagged `Value`,
+and formats JSON text from runtime data with a `Formatter`. Parsing is
 eager and whole-document: it reads one buffer, returns one value, and rejects
 anything after it. Every failure is an explicit returned error. A `Parser`
 owns the storage of every tree it parses and a `Formatter` owns the buffer it
 writes, so one `wipe()` releases everything.
+
+`Json` is the one-object surface: it parses a document and reads it by path,
+and it writes JSON text. `Parser` and `Formatter` are the core it composes;
+use them directly to reuse storage across many parses or to skip `Json`'s
+extra call per write.
 
 `json` is a standalone package at [`pkg/json`](../pkg/json), not a `std`
 module. A consumer lists it under `[dependencies]` in its own `ace.pkg` with a
@@ -18,31 +23,116 @@ relative path to `pkg/json`; the source then writes a plain `import json`. See
 ## Values
 
 ```ace
-Json: union {
+Value: union {
     none,
     bool: bool,
     number: f64,
     string: string,
-    array: []Json,
+    array: []Value,
     object: []Pair,
 }
 
 Pair: struct {
     key: string,
-    value: Json,
+    value: Value,
 }
 ```
 
-JSON `null` is `Json.none`, which is also the zero value. Every number is an
+JSON `null` is `Value.none`, which is also the zero value. Every number is an
 `f64`. Objects keep their pairs in source order, and duplicate keys are kept
 rather than merged.
+
+## Json
+
+A `Json` holds two independent things: `root`, the tree `parse` produced,
+which is input read by path; and the text its write calls produce, which is
+output that `format` returns. `mut doc.wipe()` releases both, so `defer` it
+right after `parse` or `new`.
+
+### Reading
+
+```ace
+import fmt
+import json
+
+main(): int {
+    doc: json.Json, err: Error = json.Json::parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
+    defer mut doc.wipe()
+    if err != null { return 1 }
+
+    fmt.println(doc.string("/name"))  // ace
+    fmt.println(doc.number("/tags/1")) // 2
+    return 0
+}
+```
+
+`json.Json::parse(text: string): (Json, Error)` parses `text` as one value
+into `doc.root`. A failed parse returns a blank `Json` and a `json.ParseErr`,
+with nothing left to release.
+
+Values are read by [JSON Pointer](https://www.rfc-editor.org/rfc/rfc6901):
+`""` is the whole tree, and each `/token` steps into an object member or an
+array index. `~1` spells `/` and `~0` spells `~` in a key; an index is decimal
+with no leading zero. An object step takes the first member with that key.
+
+| Call | Returns |
+| --- | --- |
+| `get(path)` | `(Value, bool)`: the value, or `Value.none` and false when absent |
+| `string(path)` | the string, or `null` when absent or not a string |
+| `number(path)` | the number, or `0` when absent or not a number |
+| `bool(path)` | the boolean, or `false` when absent or not a boolean |
+
+Strings read from a `Json` are valid until `wipe`. `root` may be reassigned.
+The pointer walk is the core function `json.get(tree: Value, path: string):
+(Value, bool)`, which works on any tree, including one from a `Parser`.
+
+### Writing
+
+```ace
+import json
+
+main(): int {
+    doc: json.Json = json.Json::new()
+    defer mut doc.wipe()
+    mut doc.object()
+    mut doc.field("name", "ace")
+    mut doc.field("version", 1)
+    mut doc.end()
+    text: string, err: Error = doc.format()
+    if err != null { return 1 }
+
+    // text is {"name":"ace","version":1}
+    return 0
+}
+```
+
+`json.Json::new(): Json` makes an empty `Json`. Its write calls are exactly
+the `Formatter` calls below (`object`, `array`, `end`, `key`, `none`,
+`value`, `field`), each forwarded to the `Formatter` it holds, and
+`doc.format(): (string, Error)` is `finish`: the one value written, or the
+first `json.FormatErr`. `format` returns only what the write calls wrote,
+never `root` on its own, so writing a parsed tree back is explicit:
+
+```ace
+mut doc.value(doc.root)
+text: string, err: Error = doc.format()
+```
+
+The text is borrowed from the `Json` and valid until `reset` or `wipe`.
+`mut doc.reset()` discards the written text to start the next one and leaves
+`root` unchanged. Each forwarded call costs one extra call: writing a
+12-record, 648-byte document takes about 3.5% longer than the same calls on a
+`Formatter`.
+
+Each `Json` owns a fresh parser. To parse many documents in turn, use a
+`Parser` with `reset` instead (below).
 
 ## Parsing
 
 `json.Parser::new(): Parser` makes a parser and `mut parser.wipe()`
-releases it. `mut parser.parse(text: string): (Json, Error)` parses `text` as
+releases it. `mut parser.parse(text: string): (Value, Error)` parses `text` as
 exactly one value. Surrounding space, tab, line feed, and carriage return are
-skipped. On error it returns `Json.none` and an error from the `json.ParseErr`
+skipped. On error it returns `Value.none` and an error from the `json.ParseErr`
 domain:
 
 | Error | Meaning |
@@ -63,7 +153,7 @@ Other bytes pass through unchanged and are not validated as UTF-8.
 
 The result never aliases `text`, so the input buffer may be released as soon
 as `parse` returns. Every string, array, and object lives in storage the
-parser allocated for that call. A `Json` is valid until `reset` or
+parser allocated for that call. A `Value` is valid until `reset` or
 `wipe`; using one afterwards is invalid. Trees from repeated `parse`
 calls accumulate and stay valid side by side until then, and a failed parse
 leaves nothing to clean up. An empty string, array, or object holds no
@@ -76,7 +166,7 @@ import json
 main(): int {
     parser: json.Parser = json.Parser::new()
     defer mut parser.wipe()
-    root: json.Json, err: Error = mut parser.parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
+    root: json.Value, err: Error = mut parser.parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
 
     if err != null {
         fmt.printf("parse failed: %d\n", int(err.code))
@@ -84,7 +174,7 @@ main(): int {
     }
 
     switch root {
-        json.Json.object(pairs: []json.Pair) {
+        json.Value.object(pairs: []json.Pair) {
             fmt.printf("%d keys\n", int(pairs.len))
         }
         default {}
@@ -106,7 +196,7 @@ document on 139-byte documents. Without `reset`, trees accumulate until
 
 `json.Formatter::new(): Formatter` makes a formatter and
 `mut formatter.wipe()` releases it. A formatter writes compact
-JSON one call at a time into a buffer it owns and grows. It needs no `Json`
+JSON one call at a time into a buffer it owns and grows. It needs no `Value`
 tree, so records are written straight from runtime data of any shape or size,
 and the compiler picks each `value` and `field` overload from the argument's
 type:
@@ -158,7 +248,7 @@ Mapping your own types to JSON is explicit: write one function per type, as
 | `object()`, `array()` | opens a container |
 | `end()` | closes the innermost container, `}` or `]` as its kind requires |
 | `key(name)` | an object member's name |
-| `value(x)` | a value: `string`, `int`, `uint`, `usize`, `f64`, `bool`, or a whole `Json` tree |
+| `value(x)` | a value: `string`, `int`, `uint`, `usize`, `f64`, `bool`, or a whole `Value` tree |
 | `none()` | `null` |
 | `field(name, x)` | `key(name)` then `value(x)`, for the same value types |
 | `finish()` | returns `(string, Error)`: the text of the one complete value, or the first error |
