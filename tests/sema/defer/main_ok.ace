@@ -4,13 +4,9 @@
 
 Counter: struct { value: int }
 
-mut Counter.add(amount: int) {
-    self.value = self.value + amount
-}
+mut Counter.add(amount: int) { self.value = self.value + amount }
 
-record(): (int, Error) {
-    return 0, null
-}
+record(): (int, Error) { return 0, null }
 
 begin(): int {
     defer record()
@@ -26,9 +22,7 @@ several(): int {
     defer record()
     counter: Counter = Counter { value = 5 }
     defer mut counter.add(1)
-    if false {
-        return 9
-    }
+    if false { return 9 }
     defer record()
     return 3
 }

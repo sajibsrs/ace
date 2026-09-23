@@ -1042,7 +1042,10 @@ current normative rules, and Git preserves patch-level detail.
 - `math` currently contains only its minimal implemented integer/generic
   helpers; floating libm and SIMD remain open work.
 - Added `.acefmt` `single-statement-body = same-line-if-fits` (bodies of functions, `if`, `for`, `while` holding one
-  statement stay on the opener's line within 120 columns) and applied it across `std/`; `else` branches stay multi-line.
+  statement stay on the opener's line within 120 columns) and applied it across `std/`, `pkg/`, `demo/`, `bench/`, and
+  `tests/`; `else` branches, every branch of an `if`/`else` chain, and a body whose statement is itself a body stay
+  multi-line. Fixtures whose line layout is under test (`tests/emit/basics/main.ace` for DWARF rows,
+  `tests/modules/location` for `@line`) keep their layout.
 
 ## Significant implementation corrections
 

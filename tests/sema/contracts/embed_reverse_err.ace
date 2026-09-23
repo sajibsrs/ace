@@ -14,9 +14,7 @@ Outer: struct {
 
 Outer signs Value
 
-Outer.value(): int {
-    return self.base.n
-}
+Outer.value(): int { return self.base.n }
 
 bad(): Value {
     base: Base = Base { n = 1 }

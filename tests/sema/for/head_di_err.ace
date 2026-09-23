@@ -3,8 +3,6 @@
 
 main(): int {
     total: int = 0
-    for x: int; x < 3; x += 1 {
-        total += x
-    }
+    for x: int; x < 3; x += 1 { total += x }
     return total
 }

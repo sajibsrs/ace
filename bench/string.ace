@@ -8,9 +8,7 @@ import mem
 import str
 import time
 
-now(): u64 {
-    return time.awake()
-}
+now(): u64 { return time.awake() }
 
 report(name: string, elapsed: u64, operations: usize, checksum: usize) {
     fmt.printf("%s %u %u %u\n", name, usize(elapsed), operations, checksum)
@@ -27,16 +25,12 @@ main(): int {
     checksum: usize = 0
     started: u64 = now()
 
-    for i: usize in 0 .. iterations {
-        checksum += usize(mem.compare(small_a[..], small_b[..]) + 1) + i % 2
-    }
+    for i: usize in 0 .. iterations { checksum += usize(mem.compare(small_a[..], small_b[..]) + 1) + i % 2 }
     report("compare-64", now() - started, iterations, checksum)
     checksum = 0
     started = now()
 
-    for i: usize in 0 .. iterations / 16 {
-        checksum += usize(mem.compare(large_a[..], large_b[..]) + 1) + i % 2
-    }
+    for i: usize in 0 .. iterations / 16 { checksum += usize(mem.compare(large_a[..], large_b[..]) + 1) + i % 2 }
     report("compare-4096", now() - started, iterations / 16, checksum)
     copy_small: [64]u8 = [0 : 64]
     copy_large: [4096]u8 = [0 : 4096]
@@ -65,9 +59,7 @@ main(): int {
 
     for i: usize in 0 .. iterations / 32 {
         at: usize, found: bool = str.find(haystack, "xyz")
-        if found {
-            checksum += at + i % 2
-        }
+        if found { checksum += at + i % 2 }
     }
     report("find-4096", now() - started, iterations / 32, checksum)
     decimal_inputs: [8]string = [
@@ -79,9 +71,7 @@ main(): int {
 
     for i: usize in 0 .. float_iterations {
         value: f64, ok: bool = str.parse[f64](decimal_inputs[i % 8])
-        if ok {
-            raw_sum ^= bits.from_float(value) + u64(i)
-        }
+        if ok { raw_sum ^= bits.from_float(value) + u64(i) }
     }
     report("parse-f64-short", now() - started, float_iterations, usize(raw_sum))
     long_decimal_inputs: [8]string = [
@@ -93,9 +83,7 @@ main(): int {
 
     for i: usize in 0 .. float_iterations {
         value: f64, ok: bool = str.parse[f64](long_decimal_inputs[i % 8])
-        if ok {
-            raw_sum ^= bits.from_float(value) + u64(i)
-        }
+        if ok { raw_sum ^= bits.from_float(value) + u64(i) }
     }
     report("parse-f64-long", now() - started, float_iterations, usize(raw_sum))
     // Canonical workload assumption: 80% common/short, 20% long/scientific.
@@ -146,9 +134,7 @@ main(): int {
 
     for i: usize in 0 .. float_iterations {
         value: f64, ok: bool = str.parse[f64](blended_decimal_inputs[i % 40])
-        if ok {
-            raw_sum ^= bits.from_float(value) + u64(i)
-        }
+        if ok { raw_sum ^= bits.from_float(value) + u64(i) }
     }
     report("parse-f64", now() - started, float_iterations, usize(raw_sum))
     values: [8]f64 = [
@@ -168,9 +154,7 @@ main(): int {
 
     for i: usize in 0 .. iterations / 10 {
         count: usize, ok: bool = str.format(view, values[i % 8])
-        if ok {
-            checksum += count + usize(out[0])
-        }
+        if ok { checksum += count + usize(out[0]) }
     }
     report("format-f64-shortest", now() - started, iterations / 10, checksum)
     return 0

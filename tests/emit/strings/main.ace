@@ -10,59 +10,39 @@ greeting: const string = "hello"
 sum(text: string): int {
     total: int = 0
 
-    for c: u8 in text {
-        total += int(c)
-    }
+    for c: u8 in text { total += int(c) }
     return total
 }
 
 main(): int {
     a: string = greeting[1..4]
 
-    if !mem.equal(a, "ell") {
-        return 1
-    }
+    if !mem.equal(a, "ell") { return 1 }
 
     if !mem.equal(greeting[..2], "he") || !mem.equal(greeting[3..], "lo") ||
        greeting[..].len != 5 {
         return 2
     }
 
-    if greeting[2..2].len != 0 {
-        return 3
-    }
+    if greeting[2..2].len != 0 { return 3 }
 
-    if !mem.equal(greeting[5..], "") {
-        return 4
-    }
+    if !mem.equal(greeting[5..], "") { return 4 }
 
-    if !mem.equal(greeting[1..4][1..], "ll") {
-        return 5
-    }
+    if !mem.equal(greeting[1..4][1..], "ll") { return 5 }
     arr: [3]u8 = [u8('o'), u8('k'), u8('!')]
     view: string = arr[0..3]
 
-    if !mem.equal(view, "ok!") || view.len != 3 {
-        return 6
-    }
+    if !mem.equal(view, "ok!") || view.len != 3 { return 6 }
     arr[0] = u8('n')
 
-    if !mem.equal(view, "nk!") {
-        return 7
-    }
+    if !mem.equal(view, "nk!") { return 7 }
 
-    if sum(view) != int('n') + int('k') + int('!') {
-        return 8
-    }
+    if sum(view) != int('n') + int('k') + int('!') { return 8 }
     total: int = 0
 
-    for i: usize, c: char in view {
-        total += int(c) + int(i)
-    }
+    for i: usize, c: char in view { total += int(c) + int(i) }
 
-    if total != int('n') + int('k') + int('!') + 3 {
-        return 9
-    }
+    if total != int('n') + int('k') + int('!') + 3 { return 9 }
 
     if sizeof([]char) != 16 || sizeof([]u8) != 16 || sizeof([3]char) != 3 ||
        sizeof(char) != 1 {
@@ -71,12 +51,8 @@ main(): int {
     c: char = 'A'
     u: u8 = c
 
-    if u != 65 || c != u {
-        return 11
-    }
+    if u != 65 || c != u { return 11 }
 
-    if !mem.equal("hello"[1..3], "el") {
-        return 12
-    }
+    if !mem.equal("hello"[1..3], "el") { return 12 }
     return 0
 }

@@ -3,6 +3,4 @@ pub FileError: error {
 }
 pub Alias: type = FileError
 
-pub fail(code: i32): Error {
-    return FileError(code)
-}
+pub fail(code: i32): Error { return FileError(code) }

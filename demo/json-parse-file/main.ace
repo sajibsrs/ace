@@ -14,15 +14,11 @@ import mem
 PATH: string = "data.json"
 
 indent(depth: usize) {
-    for i: usize in 0 .. depth {
-        fmt.print("  ")
-    }
+    for i: usize in 0 .. depth { fmt.print("  ") }
 }
 
 newline_unless_root(depth: usize) {
-    if depth > 0 {
-        fmt.print("\n")
-    }
+    if depth > 0 { fmt.print("\n") }
 }
 
 /* Prints one value after its "key:" or "-" label. A scalar continues the

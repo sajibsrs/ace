@@ -24,9 +24,7 @@ main(): int {
     }
     volatile packet.packet_type = 3
     packet_type: u8 = volatile packet.packet_type
-    if packet_type != 3 {
-        return 4
-    }
+    if packet_type != 3 { return 4 }
     values: [4]u8 = [10, 20, 30, 40]
     count: usize = values.len
     pointer: mut *u8 = mut &values[0]
@@ -34,9 +32,7 @@ main(): int {
     restored: mut *u8 = mut *u8(address)
     constructed: mut []u8 = mut []u8(restored, count)
 
-    if count != 4 || constructed.len != 4 {
-        return 1
-    }
+    if count != 4 || constructed.len != 4 { return 1 }
 
     storage: mut []u8 = mem.alloc(16, 8)
 
@@ -49,9 +45,7 @@ main(): int {
         }
         mem.release(mut storage)
 
-        if storage != null {
-            return 3
-        }
+        if storage != null { return 3 }
     }
 
     source_array: [3]u8 = [10, 20, 30]
@@ -60,12 +54,8 @@ main(): int {
     target: mut []u8 = mut target_array[0..3]
     mem.copy(target, source)
 
-    if mem.compare(target, source) != 0 {
-        return 4
-    }
-    if !mem.equal(target, source_array) {
-        return 9
-    }
+    if mem.compare(target, source) != 0 { return 4 }
+    if !mem.equal(target, source_array) { return 9 }
     mem.fill(target, 7)
     mem.zero(target)
 
@@ -88,15 +78,11 @@ main(): int {
         }
         mem.release[usize](mut numbers)
 
-        if numbers != null {
-            return 7
-        }
+        if numbers != null { return 7 }
     }
 
     empty: []usize = mem.alloc[usize](0)
 
-    if empty != null {
-        return 8
-    }
+    if empty != null { return 8 }
     return 0
 }

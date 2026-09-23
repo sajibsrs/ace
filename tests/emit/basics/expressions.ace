@@ -15,13 +15,9 @@ main(): int {
     x &= 63
     x ^= 7
 
-    if 0 <= x <= 40 && !false && INVERTED == 42 {
-        x += 2
-    }
+    if 0 <= x <= 40 && !false && INVERTED == 42 { x += 2 }
     f: f64 = 1.5 + 2.5
 
-    if f == 4.0 {
-        x += 1
-    }
+    if f == 4.0 { x += 1 }
     return int(x)
 }

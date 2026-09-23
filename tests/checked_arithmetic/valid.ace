@@ -10,26 +10,16 @@ imm_range(): int {
         u = u - 1
         b += 1
     }
-    if s != 2147483647 || u != 0 || b != 252 {
-        return 1
-    }
+    if s != 2147483647 || u != 0 || b != 252 { return 1 }
     return 0
 }
 
 main(): int {
     a: i64 = runtime_i64(40)
     b: i64 = runtime_i64(2)
-    if a + b != 42 || a - b != 38 {
-        return 1
-    }
-    if a * b != 80 || a / b != 20 {
-        return 2
-    }
-    if a % b != 0 || a << b != 160 || a >> b != 10 {
-        return 3
-    }
-    if imm_range() != 0 {
-        return 4
-    }
+    if a + b != 42 || a - b != 38 { return 1 }
+    if a * b != 80 || a / b != 20 { return 2 }
+    if a % b != 0 || a << b != 160 || a >> b != 10 { return 3 }
+    if imm_range() != 0 { return 4 }
     return 0
 }

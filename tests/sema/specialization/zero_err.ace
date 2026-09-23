@@ -3,6 +3,4 @@
 
 lonely[T](v: T): T specialized
 
-main(): int {
-    return 0
-}
+main(): int { return 0 }

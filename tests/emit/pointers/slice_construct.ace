@@ -11,8 +11,6 @@ main(): int {
     plain: []Pair = []Pair(pointer, usize(3))
     empty: []Pair = []Pair(pointer + 3, usize(0))
     zero: []Pair = []Pair(null, usize(0))
-    if plain.len != 3 || empty.len != 0 || empty == null || zero != null {
-        return 1
-    }
+    if plain.len != 3 || empty.len != 0 || empty == null || zero != null { return 1 }
     return plain[1].first + plain[1].second
 }

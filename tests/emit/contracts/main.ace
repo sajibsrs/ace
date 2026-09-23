@@ -20,21 +20,13 @@ Circle signs (
     Metric,
 )
 
-Circle.area(): i32 {
-    return self.radius * self.radius * 3
-}
+Circle.area(): i32 { return self.radius * self.radius * 3 }
 
-mut Circle.scale(k: i32) {
-    self.radius = self.radius * k
-}
+mut Circle.scale(k: i32) { self.radius = self.radius * k }
 
-Circle.value(k: int): int {
-    return int(self.radius) + k
-}
+Circle.value(k: int): int { return int(self.radius) + k }
 
-Circle.value(k: f64): f64 {
-    return k + 1.0
-}
+Circle.value(k: f64): f64 { return k + 1.0 }
 
 main(): int {
     circle: Circle = Circle { radius = 3 }
@@ -46,12 +38,8 @@ main(): int {
     measured: int = metric.value(36)
     floating: f64 = circle.value(1.0)
 
-    if direct != 42 {
-        return 1
-    }
+    if direct != 42 { return 1 }
 
-    if int(floating) != 2 {
-        return 2
-    }
+    if int(floating) != 2 { return 2 }
     return measured
 }

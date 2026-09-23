@@ -75,18 +75,10 @@ in_loop(seed: f64, rounds: int): f64 {
 
 main(): int {
     two: f64 = 2.0
-    if mix(102.0) != 168091.0 {
-        return 1
-    }
-    if across(two) != 169582.0 {
-        return 2
-    }
-    if in_loop(two, 4) != 5964.0 {
-        return 3
-    }
+    if mix(102.0) != 168091.0 { return 1 }
+    if across(two) != 169582.0 { return 2 }
+    if in_loop(two, 4) != 5964.0 { return 3 }
     // A second call after the first must see the restored values, not the callee's.
-    if across(two) + across(two) != 339164.0 {
-        return 4
-    }
+    if across(two) + across(two) != 339164.0 { return 4 }
     return 42
 }

@@ -19,8 +19,6 @@ work(): int {
 }
 
 main(): int {
-    if work() != 0 {
-        return 1
-    }
+    if work() != 0 { return 1 }
     return 0
 }

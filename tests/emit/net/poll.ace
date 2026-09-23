@@ -6,16 +6,12 @@ import mem
 import poll
 import sys
 
-has_error(err: Error, domain: typeid): bool {
-    return err != null && err.domain == domain && err.code != 0
-}
+has_error(err: Error, domain: typeid): bool { return err != null && err.domain == domain && err.code != 0 }
 
 main(): int {
     q: poll.Queue, err: Error = poll.queue()
 
-    if err != null || q == -1 {
-        return 1
-    }
+    if err != null || q == -1 { return 1 }
 
     watch_err: Error = poll.watch(q, sys.Fd(0), false, false)
     if watch_err != poll.WatchErr.invalid || sys.errno() != 22 ||
@@ -60,9 +56,7 @@ main(): int {
     writable: bool = false
 
     for index: usize in 0 .. count {
-        if events[index].fd == write_fd && events[index].writable {
-            writable = true
-        }
+        if events[index].fd == write_fd && events[index].writable { writable = true }
     }
 
     if !writable {
@@ -93,9 +87,7 @@ main(): int {
     readable: bool = false
 
     for index: usize in 0 .. count {
-        if events[index].fd == read_fd && events[index].readable {
-            readable = true
-        }
+        if events[index].fd == read_fd && events[index].readable { readable = true }
     }
 
     if !readable {

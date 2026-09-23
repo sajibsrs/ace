@@ -18,13 +18,9 @@ total: int
 gs: int
 gm: int
 
-snatch_ref(mut x: int) {
-    seen = x
-}
+snatch_ref(mut x: int) { seen = x }
 
-bump(mut x: int, by: int) {
-    x = x + by
-}
+bump(mut x: int, by: int) { x = x + by }
 
 Counter: struct { n: int }
 
@@ -38,9 +34,7 @@ mut Counter.note_mut(): int {
     return 0
 }
 
-mut Counter.add(by: int) {
-    self.n = self.n + by
-}
+mut Counter.add(by: int) { self.n = self.n + by }
 
 gc: Counter = Counter { n = 0 }
 
@@ -80,32 +74,22 @@ main(): int {
     mut_arg()
     fmt.print("address ")
     fmt.println(seen)
-    if seen != 4 {
-        return 1
-    }
+    if seen != 4 { return 1 }
     global_mut()
     fmt.print("after-return ")
     fmt.println(total)
-    if total != 5 {
-        return 2
-    }
+    if total != 5 { return 2 }
     recv_snapshot()
     fmt.print("recv-snapshot ")
     fmt.println(gs)
-    if gs != 1 {
-        return 3
-    }
+    if gs != 1 { return 3 }
     recv_address()
     fmt.print("recv-address ")
     fmt.println(gm)
-    if gm != 2 {
-        return 4
-    }
+    if gm != 2 { return 4 }
     recv_write()
     fmt.print("recv-write ")
     fmt.println(gc.n)
-    if gc.n != 15 {
-        return 5
-    }
+    if gc.n != 15 { return 5 }
     return 0
 }

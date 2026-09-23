@@ -10,8 +10,6 @@ main(): int {
     maximum: uint = uint(0xFFFFFFFFFFFFFFFF)
     written: int = fmt.printf("%b %b %o %b %o", uint(0), value, value, maximum, usize(maximum))
 
-    if written != 101 {
-        return 1
-    }
+    if written != 101 { return 1 }
     return 0
 }

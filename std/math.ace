@@ -196,9 +196,7 @@ pub log(value: f64): f64 {
     // x = 2^k * z with z in [OFF, 2*OFF), k = offset >> 52 and z the bits in the shifted pattern;
     // i selects the table entry, c = 1/invc lies near z, and log(x) = k*ln2 + log(c) + log1p(r).
     xs: i64 = i64(bits.from_float(value))
-    if (bits.from_float(value) >> 52) == 0 {
-        xs = i64(bits.from_float(value * TWO_52)) - LOG_SUB_OFF
-    }
+    if (bits.from_float(value) >> 52) == 0 { xs = i64(bits.from_float(value * TWO_52)) - LOG_SUB_OFF }
     offset: i64 = xs - LOG_OFF
     i: u64 = u64(offset >> 45) & 127
     // z*invc - 1 is representable exactly, so one fma carries r with no error at all.

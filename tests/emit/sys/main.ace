@@ -10,17 +10,11 @@ LONG: string = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 check_missing(): int {
     fd: sys.Fd, err: Error = sys.open("/tmp/ace_sys_io_missing", sys.O_RDONLY)
 
-    if err == null {
-        return 1
-    }
+    if err == null { return 1 }
 
-    if err.domain != typeid(sys.OpenErr) {
-        return 2
-    }
+    if err.domain != typeid(sys.OpenErr) { return 2 }
 
-    if sys.errno() != 2 {
-        return 3
-    }
+    if sys.errno() != 2 { return 3 }
     return 0
 }
 
@@ -28,92 +22,62 @@ check_roundtrip(): int {
     mode: u32 = sys.S_IRUSR | sys.S_IWUSR | sys.S_IRGRP | sys.S_IROTH
     wfd: sys.Fd, werr: Error = sys.open(PATH, sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC, mode)
 
-    if werr != null {
-        return 1
-    }
+    if werr != null { return 1 }
     payload: string = "hello sys"
     n: int, werr2: Error = sys.write(wfd, payload)
 
-    if werr2 != null || n != 9 {
-        return 2
-    }
+    if werr2 != null || n != 9 { return 2 }
 
-    if sys.close(wfd) != null {
-        return 3
-    }
+    if sys.close(wfd) != null { return 3 }
 
     rfd: sys.Fd, rerr: Error = sys.open(PATH, sys.O_RDONLY)
 
-    if rerr != null {
-        return 4
-    }
+    if rerr != null { return 4 }
     buf: [64]u8
     view: mut []u8 = mut buf[0..64]
     got: int, rerr2: Error = sys.read(rfd, view)
 
-    if rerr2 != null || got != 9 {
-        return 5
-    }
+    if rerr2 != null || got != 9 { return 5 }
 
     for i: usize in 0 .. 9 {
-        if view[i] != payload[i] {
-            return 6
-        }
+        if view[i] != payload[i] { return 6 }
     }
     more: int, rerr3: Error = sys.read(rfd, view)
 
-    if rerr3 != null || more != 0 {
-        return 7
-    }
+    if rerr3 != null || more != 0 { return 7 }
 
-    if sys.close(rfd) != null {
-        return 8
-    }
+    if sys.close(rfd) != null { return 8 }
 
     // Reading through a closed descriptor reports ReadErr with EBADF.
     bad: int, baderr: Error = sys.read(rfd, view)
 
-    if baderr == null || baderr.domain != typeid(sys.ReadErr) || baderr.code != 9 {
-        return 9
-    }
+    if baderr == null || baderr.domain != typeid(sys.ReadErr) || baderr.code != 9 { return 9 }
 
     // The O_EXCL|O_CREAT pair fails on the existing file with EEXIST (17).
     xfd: sys.Fd, xerr: Error = sys.open(PATH, sys.O_WRONLY | sys.O_CREAT | sys.O_EXCL, mode)
 
-    if xerr == null || xerr.domain != typeid(sys.OpenErr) || xerr.code != 17 {
-        return 10
-    }
+    if xerr == null || xerr.domain != typeid(sys.OpenErr) || xerr.code != 17 { return 10 }
     return 0
 }
 
 check_long_path(): int {
     fd: sys.Fd, err: Error = sys.open(LONG, sys.O_RDONLY)
 
-    if err == null || err.domain != typeid(sys.OpenErr) {
-        return 1
-    }
+    if err == null || err.domain != typeid(sys.OpenErr) { return 1 }
 
-    if err.code != 63 {
-        return 2
-    }
+    if err.code != 63 { return 2 }
     return 0
 }
 
 main(): int {
     code: int = check_missing()
 
-    if code != 0 {
-        return code
-    }
+    if code != 0 { return code }
     code = check_roundtrip()
 
-    if code != 0 {
-        return 100 + code
-    }
+    if code != 0 { return 100 + code }
     code = check_long_path()
 
-    if code != 0 {
-        return 200 + code
-    }
+    if code != 0 { return 200 + code }
     return 42
 }

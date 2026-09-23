@@ -13,54 +13,34 @@ loopback(port: u16): net.Addr4 {
     }
 }
 
-check_error(err: Error, domain: typeid): bool {
-    return err != null && err.domain == domain && err.code != 0
-}
+check_error(err: Error, domain: typeid): bool { return err != null && err.domain == domain && err.code != 0 }
 
 check_failures(): int {
     invalid: net.Socket = net.Socket(-1)
 
-    if !check_error(net.reuse_addr(invalid, true), typeid(net.ReuseAddrErr)) {
-        return 1
-    }
+    if !check_error(net.reuse_addr(invalid, true), typeid(net.ReuseAddrErr)) { return 1 }
 
-    if !check_error(net.reuse_port(invalid, true), typeid(net.ReusePortErr)) {
-        return 2
-    }
+    if !check_error(net.reuse_port(invalid, true), typeid(net.ReusePortErr)) { return 2 }
 
-    if !check_error(net.nonblock(invalid, true), typeid(net.NonblockErr)) {
-        return 3
-    }
+    if !check_error(net.nonblock(invalid, true), typeid(net.NonblockErr)) { return 3 }
 
-    if !check_error(net.bind(invalid, loopback(u16(1))), typeid(net.BindErr)) {
-        return 4
-    }
+    if !check_error(net.bind(invalid, loopback(u16(1))), typeid(net.BindErr)) { return 4 }
 
-    if !check_error(net.listen(invalid, usize(1)), typeid(net.ListenErr)) {
-        return 5
-    }
+    if !check_error(net.listen(invalid, usize(1)), typeid(net.ListenErr)) { return 5 }
     accepted: net.Socket, address: net.Addr4, aerr: Error = net.accept(invalid)
 
-    if accepted != -1 {
-        return 6
-    }
+    if accepted != -1 { return 6 }
 
-    if aerr == null {
-        return 14
-    }
+    if aerr == null { return 14 }
 
-    if !check_error(aerr, typeid(net.AcceptErr)) {
-        return 13
-    }
+    if !check_error(aerr, typeid(net.AcceptErr)) { return 13 }
 
     if address.ip[0] != 0 || address.ip[1] != 0 || address.ip[2] != 0 ||
        address.ip[3] != 0 || address.port != 0 {
         return 7
     }
 
-    if !check_error(net.connect(invalid, loopback(u16(1))), typeid(net.ConnectErr)) {
-        return 8
-    }
+    if !check_error(net.connect(invalid, loopback(u16(1))), typeid(net.ConnectErr)) { return 8 }
     local: net.Addr4, local_err: Error = net.local(invalid)
 
     if local.ip[0] != 0 || local.ip[1] != 0 || local.ip[2] != 0 ||
@@ -73,19 +53,13 @@ check_failures(): int {
     view: mut []u8 = mut bytes[0..1]
     count: int, rerr: Error = net.receive(invalid, view)
 
-    if count != 0 || !check_error(rerr, typeid(net.ReceiveErr)) {
-        return 9
-    }
+    if count != 0 || !check_error(rerr, typeid(net.ReceiveErr)) { return 9 }
     count, rerr = net.send(invalid, "x")
 
-    if count != 0 || !check_error(rerr, typeid(net.SendErr)) {
-        return 10
-    }
+    if count != 0 || !check_error(rerr, typeid(net.SendErr)) { return 10 }
     count, rerr = net.send(invalid, view)
 
-    if count != 0 || !check_error(rerr, typeid(net.SendErr)) {
-        return 11
-    }
+    if count != 0 || !check_error(rerr, typeid(net.SendErr)) { return 11 }
 
     bad: net.Socket, serr: Error = net.socket(net.SocketType(1))
 
@@ -104,9 +78,7 @@ check_resolution(): int {
 
     count: usize, err: Error = net.resolve4("localhost", u16(8080), first)
 
-    if err != null || count != 1 {
-        return 1
-    }
+    if err != null || count != 1 { return 1 }
 
     if storage[0].ip[0] != 127 || storage[0].ip[1] != 0 ||
        storage[0].ip[2] != 0 || storage[0].ip[3] != 1 ||
@@ -114,9 +86,7 @@ check_resolution(): int {
         return 2
     }
 
-    if storage[1].port != 54321 {
-        return 3
-    }
+    if storage[1].port != 54321 { return 3 }
 
     empty: mut []net.Addr4 = null
     count, err = net.resolve4("localhost", u16(80), empty)
@@ -138,9 +108,7 @@ check_resolution(): int {
 child(port: u16): int {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
-    if err != null {
-        return 1
-    }
+    if err != null { return 1 }
     err = net.connect(sock, loopback(port))
 
     if err != null {
@@ -162,32 +130,24 @@ child(port: u16): int {
         return 4
     }
 
-    if sys.close(sock) != null {
-        return 5
-    }
+    if sys.close(sock) != null { return 5 }
     return 0
 }
 
 main(): int {
     failure: int = check_failures()
 
-    if failure != 0 {
-        return failure
-    }
+    if failure != 0 { return failure }
     failure = check_resolution()
 
-    if failure != 0 {
-        return 40 + failure
-    }
+    if failure != 0 { return 40 + failure }
 
     listener: net.Socket = net.Socket(-1)
     selected: u16 = 0
     err: Error
     listener, err = net.socket(net.SocketType.tcp)
 
-    if err != null {
-        return 20
-    }
+    if err != null { return 20 }
 
     if net.reuse_addr(listener, true) != null ||
        net.reuse_addr(listener, false) != null ||
@@ -267,14 +227,10 @@ main(): int {
         return 30
     }
 
-    if sys.close(peer) != null || sys.close(listener) != null {
-        return 31
-    }
+    if sys.close(peer) != null || sys.close(listener) != null { return 31 }
 
     status: sys.ProcessStatus, wait_err: Error = sys.wait(process)
 
-    if wait_err != null || !status.exited || status.code != 0 {
-        return 32
-    }
+    if wait_err != null || !status.exited || status.code != 0 { return 32 }
     return 0
 }

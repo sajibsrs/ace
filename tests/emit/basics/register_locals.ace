@@ -7,41 +7,23 @@
 // expect-exit: 42
 
 Point: struct { x: int, y: int }
-id8(x: i8): i8 {
-    return x
-}
+id8(x: i8): i8 { return x }
 
-set(p: mut *int, v: int) {
-    *p = v
-}
+set(p: mut *int, v: int) { *p = v }
 
-bump(mut x: int, by: int) {
-    x = x + by
-}
+bump(mut x: int, by: int) { x = x + by }
 
-idf(x: f64): f64 {
-    return x
-}
+idf(x: f64): f64 { return x }
 
-setf(p: mut *f64, v: f64) {
-    *p = v
-}
+setf(p: mut *f64, v: f64) { *p = v }
 
-bumpf(mut x: f64, by: f64) {
-    x = x + by
-}
+bumpf(mut x: f64, by: f64) { x = x + by }
 
-peek(p: *int): int {
-    return *p
-}
+peek(p: *int): int { return *p }
 
-pair(): (int, int) {
-    return (3, 4)
-}
+pair(): (int, int) { return (3, 4) }
 
-read_x(p: *Point): int {
-    return p.x
-}
+read_x(p: *Point): int { return p.x }
 
 // narrow locals keep their width through register moves and calls
 widths(): int {
@@ -78,9 +60,7 @@ widths(): int {
 // only they are used inside the loop, so they rank first
 many(p0: int, p1: int, p2: int, p3: int, p4: int, p5: int, p6: int, p7: int, p8: int, p9: i8): int {
     total: int = p0 + p1 + p2 + p3 + p4 + p5 + p6 + p7
-    for i: int in 0 .. 2 {
-        total += p8 + int(p9)
-    }
+    for i: int in 0 .. 2 { total += p8 + int(p9) }
     return total
 }
 
@@ -98,9 +78,7 @@ countdown(n: int): int {
 
 nested_calls(): int {
     acc: int = 0
-    for i: int in 0 .. 3 {
-        acc += countdown(4) + i
-    }
+    for i: int in 0 .. 3 { acc += countdown(4) + i }
     return acc
 }
 
@@ -161,9 +139,7 @@ pressure(n: int): int {
 // callee-saved registers survive recursion
 walk(n: int): int {
     total: int = 0
-    for i: int in 0 .. n {
-        total += walk(i) + 1
-    }
+    for i: int in 0 .. n { total += walk(i) + 1 }
     return total
 }
 
@@ -189,9 +165,7 @@ floats(): int {
 // eight float parameters in v0-v7, the last two on the stack
 fsum(a0: f64, a1: f64, a2: f64, a3: f64, a4: f64, a5: f64, a6: f64, a7: f64, a8: f64, a9: f32): f64 {
     total: f64 = a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7
-    for i: int in 0 .. 2 {
-        total += a8 + f64(a9)
-    }
+    for i: int in 0 .. 2 { total += a8 + f64(a9) }
     return total
 }
 
@@ -241,9 +215,7 @@ fpressure(n: int): f64 {
 // the running total is read after each recursive call returns
 fwalk(n: int): f64 {
     total: f64 = 0.0
-    for i: int in 0 .. n {
-        total = fwalk(i) + total + 1.0
-    }
+    for i: int in 0 .. n { total = fwalk(i) + total + 1.0 }
     return total
 }
 
@@ -264,9 +236,7 @@ fnested(): f64 {
     acc: f64 = 0.0
     b: f64 = 1.0
     c: f64 = 2.0
-    for i: int in 0 .. 3 {
-        acc = fdown(4.0, 1.0) + acc + b * c + f64(i)
-    }
+    for i: int in 0 .. 3 { acc = fdown(4.0, 1.0) + acc + b * c + f64(i) }
     return acc
 }
 
@@ -279,14 +249,10 @@ binders(): int {
     }
     if total != 100 { return 24 }
     narrow: int = 0
-    for b: i8 in 3 .. -4 step 2 {
-        narrow += int(b) * 3
-    }
+    for b: i8 in 3 .. -4 step 2 { narrow += int(b) * 3 }
     if narrow != -12 { return 25 }
     wide: int = 0
-    for u: u16 in 65530 .. 65535 {
-        wide += int(u)
-    }
+    for u: u16 in 65530 .. 65535 { wide += int(u) }
     if wide != 327660 { return 26 }
     xs: [4]i16 = [-1, 2, -3, 4]
     seq: int = 0
@@ -297,14 +263,10 @@ binders(): int {
     if seq != 16 || xs[2] != -3 { return 27 }
     fs: [3]f32 = [0.5, 1.5, 2.5]
     fsum: f32 = 0.0
-    for f: f32 in fs {
-        fsum += f * 2.0
-    }
+    for f: f32 in fs { fsum += f * 2.0 }
     if fsum != 9.0 { return 28 }
     esc: int = 0
-    for j: int in 0 .. 3 {
-        esc += peek(&j)
-    }
+    for j: int in 0 .. 3 { esc += peek(&j) }
     if esc != 3 { return 29 }
     return 0
 }
@@ -312,9 +274,7 @@ binders(): int {
 // an `in mut` value binder aliases the element and is never promoted
 alias_loop(): int {
     xs: [3]int = [1, 2, 3]
-    for v: int in mut xs {
-        v = v * 5
-    }
+    for v: int in mut xs { v = v * 5 }
     return xs[0] + xs[1] + xs[2]
 }
 
@@ -334,9 +294,7 @@ deep_nest(): int {
     for a: int in 0 .. 2 {
         for b: int in 0 .. 2 {
             for c: int in 0 .. 2 {
-                for d: int in 0 .. 2 {
-                    bump(mut hits, a)
-                }
+                for d: int in 0 .. 2 { bump(mut hits, a) }
             }
         }
     }

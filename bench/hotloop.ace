@@ -23,9 +23,7 @@ ys32: [4096]f32
 positions: [4096]Vec3
 velocities: [4096]Vec3
 
-now(): u64 {
-    return time.awake()
-}
+now(): u64 { return time.awake() }
 
 report(name: string, elapsed: u64, operations: usize, checksum: usize) {
     fmt.printf("%s %u %u %u\n", name, usize(elapsed), operations, checksum)
@@ -35,25 +33,19 @@ report(name: string, elapsed: u64, operations: usize, checksum: usize) {
 // kernel (some particles have zero velocity) and would check nothing.
 sum64(v: []f64): usize {
     acc: f64 = 0.0
-    for i: usize in 0 .. COUNT {
-        acc += v[i]
-    }
+    for i: usize in 0 .. COUNT { acc += v[i] }
     return usize(bits.from_float(acc))
 }
 
 sum32(v: []f32): usize {
     acc: f64 = 0.0
-    for i: usize in 0 .. COUNT {
-        acc += f64(v[i])
-    }
+    for i: usize in 0 .. COUNT { acc += f64(v[i]) }
     return usize(bits.from_float(acc))
 }
 
 sum_particles(): usize {
     acc: f64 = 0.0
-    for i: usize in 0 .. COUNT {
-        acc += f64(positions[i].x) + f64(positions[i].y) + f64(positions[i].z)
-    }
+    for i: usize in 0 .. COUNT { acc += f64(positions[i].x) + f64(positions[i].y) + f64(positions[i].z) }
     return usize(bits.from_float(acc))
 }
 
@@ -76,26 +68,20 @@ main(): int {
 
     started: u64 = now()
     for r: usize in 0 .. REPEATS {
-        for i: usize in 0 .. COUNT {
-            ys64[i] = 0.5 * xs64[i] + ys64[i]
-        }
+        for i: usize in 0 .. COUNT { ys64[i] = 0.5 * xs64[i] + ys64[i] }
     }
     report("saxpy-f64", now() - started, saxpy_ops, sum64(ys64[..]))
 
     started = now()
     for r: usize in 0 .. REPEATS {
-        for i: usize in 0 .. COUNT {
-            ys32[i] = 0.5 * xs32[i] + ys32[i]
-        }
+        for i: usize in 0 .. COUNT { ys32[i] = 0.5 * xs32[i] + ys32[i] }
     }
     report("saxpy-f32", now() - started, saxpy_ops, sum32(ys32[..]))
 
     acc: f64 = 0.0
     started = now()
     for r: usize in 0 .. REPEATS {
-        for i: usize in 0 .. COUNT {
-            acc += xs64[i] * ys64[i]
-        }
+        for i: usize in 0 .. COUNT { acc += xs64[i] * ys64[i] }
     }
     report("dot-f64", now() - started, saxpy_ops, usize(bits.from_float(acc)))
 

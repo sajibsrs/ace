@@ -6,9 +6,7 @@ FileError: error {
 }
 Alias: type = FileError
 fs_read(path: string): ([]u8, Error) {
-    if path.len == 0 {
-        return null, FileError(2)
-    }
+    if path.len == 0 { return null, FileError(2) }
     return null, null
 }
 check(error: Error, file: string, line: usize) {
@@ -22,18 +20,10 @@ check(error: Error, file: string, line: usize) {
 }
 main(): int {
     data: []u8, error: Error = fs_read("")
-    if error != null && error.domain == typeid(FileError) && error.code == 2 {
-        data = null
-    }
-    if sizeof(Error) != 8 || typeid(FileError) != typeid(Alias) {
-        panic("invalid Error representation")
-    }
-    if FileError.not_found != FileError(2) || FileError.unknown == null {
-        panic("invalid named Error entry")
-    }
-    if error.name.len != 9 || error.message.len != 14 {
-        panic("invalid Error description")
-    }
+    if error != null && error.domain == typeid(FileError) && error.code == 2 { data = null }
+    if sizeof(Error) != 8 || typeid(FileError) != typeid(Alias) { panic("invalid Error representation") }
+    if FileError.not_found != FileError(2) || FileError.unknown == null { panic("invalid named Error entry") }
+    if error.name.len != 9 || error.message.len != 14 { panic("invalid Error description") }
     check(null, @file, @line)
     return int(data.len)
 }

@@ -1,5 +1,3 @@
 /* Companion module for the Private fixture. */
 
-secret(): int {
-    return 1
-}
+secret(): int { return 1 }

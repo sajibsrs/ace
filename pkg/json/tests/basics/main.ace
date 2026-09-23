@@ -5,9 +5,7 @@ scalars(): int {
     p: json.Parser = json.Parser::new()
     defer mut p.wipe()
     v: json.Json, err: Error = mut p.parse("null")
-    if err != null {
-        return 1
-    }
+    if err != null { return 1 }
 
     switch v {
         json.Json.none {}
@@ -53,9 +51,7 @@ string_case(): int {
     p: json.Parser = json.Parser::new()
     defer mut p.wipe()
     v: json.Json, err: Error = mut p.parse("\"a\\u00e9\\n\\\"\"")
-    if err != null {
-        return 11
-    }
+    if err != null { return 11 }
 
     switch v {
         json.Json.string(s: string) {
@@ -68,9 +64,7 @@ string_case(): int {
 
 containers(): int {
     code: int = array_case()
-    if code != 0 {
-        return code
-    }
+    if code != 0 { return code }
 
     return object_case()
 }
@@ -79,9 +73,7 @@ array_case(): int {
     p: json.Parser = json.Parser::new()
     defer mut p.wipe()
     v: json.Json, err: Error = mut p.parse("[1, 2, [3, 4], \"x\"]")
-    if err != null {
-        return 20
-    }
+    if err != null { return 20 }
 
     switch v {
         json.Json.array(items: []json.Json) {
@@ -103,9 +95,7 @@ object_case(): int {
     p: json.Parser = json.Parser::new()
     defer mut p.wipe()
     v: json.Json, err: Error = mut p.parse("{\"a\": 1, \"b\": {\"c\": true}, \"d\": []}")
-    if err != null {
-        return 25
-    }
+    if err != null { return 25 }
 
     switch v {
         json.Json.object(pairs: []json.Pair) {
@@ -158,9 +148,7 @@ failures(): int {
 
 nested(depth: usize): (mut []u8, Error) {
     text: mut []u8 = mem.alloc[u8](depth * 2)
-    if text == null {
-        return null, json.ParseErr.allocation
-    }
+    if text == null { return null, json.ParseErr.allocation }
 
     for i: usize in 0 .. depth {
         text[i] = '['

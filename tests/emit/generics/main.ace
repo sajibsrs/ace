@@ -5,20 +5,12 @@
 
 count_of[T](v: T): int specialized
 
-count_of[int](v: int): int {
-    return 8
-}
+count_of[int](v: int): int { return 8 }
 
-count_of[f64](v: f64): int {
-    return 4
-}
+count_of[f64](v: f64): int { return 4 }
 
 main(): int {
-    if count_of[int](0) != 8 {
-        return 1
-    }
-    if count_of[f64](0.5) != 4 {
-        return 2
-    }
+    if count_of[int](0) != 8 { return 1 }
+    if count_of[f64](0.5) != 4 { return 2 }
     return 42
 }

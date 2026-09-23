@@ -1,9 +1,5 @@
 /* Overload export fixture. */
 
-export consume(value: int): int {
-    return value
-}
+export consume(value: int): int { return value }
 
-consume(value: string): int {
-    return int(value.len)
-}
+consume(value: string): int { return int(value.len) }

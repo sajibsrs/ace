@@ -2,6 +2,4 @@
 
 import outer/inner
 
-main(): int {
-    return outer.sentinel
-}
+main(): int { return outer.sentinel }

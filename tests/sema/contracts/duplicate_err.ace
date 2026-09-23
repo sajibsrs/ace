@@ -7,10 +7,6 @@ Writable: contract { mut write(value: int) }
 Thing signs Readable
 Thing signs Writable
 
-Thing.read(): int {
-    return self.value
-}
+Thing.read(): int { return self.value }
 
-mut Thing.write(value: int) {
-    self.value = value
-}
+mut Thing.write(value: int) { self.value = value }

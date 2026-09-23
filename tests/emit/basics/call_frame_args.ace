@@ -38,57 +38,35 @@ Big: struct {
 global_pair: Pair
 
 // The object's first function label is the section, so it stays a dummy.
-first(): usize {
-    return 0
-}
+first(): usize { return 0 }
 
-pair_sum(p: Pair, k: usize): usize {
-    return p.a + p.b * 10 + k * 100
-}
+pair_sum(p: Pair, k: usize): usize { return p.a + p.b * 10 + k * 100 }
 
-vec_sum(v: Vec3, w: Vec3): f64 {
-    return v.x + v.y * 2.0 + v.z * 3.0 + w.x * 4.0 + w.y * 5.0 + w.z * 6.0
-}
+vec_sum(v: Vec3, w: Vec3): f64 { return v.x + v.y * 2.0 + v.z * 3.0 + w.x * 4.0 + w.y * 5.0 + w.z * 6.0 }
 
-vec2_sum(v: Vec2, k: f32): f32 {
-    return v.x + v.y * 2.0 + k
-}
+vec2_sum(v: Vec2, k: f32): f32 { return v.x + v.y * 2.0 + k }
 
-odd_sum(o: Odd, k: usize): usize {
-    return usize(o.a) + usize(o.b) * 10 + usize(o.c) * 100 + k * 1000
-}
+odd_sum(o: Odd, k: usize): usize { return usize(o.a) + usize(o.b) * 10 + usize(o.c) * 100 + k * 1000 }
 
 five(a: Pair, b: Pair, c: Pair, d: Pair, e: Pair): usize {
     return a.a + b.a + c.a + d.a + e.a + (a.b + b.b + c.b + d.b + e.b) * 100
 }
 
-mixed(a: usize, p: Pair, x: f64, v: Vec2, b: usize): f64 {
-    return f64(a + p.a + p.b + b) + x + f64(v.x) + f64(v.y)
-}
+mixed(a: usize, p: Pair, x: f64, v: Vec2, b: usize): f64 { return f64(a + p.a + p.b + b) + x + f64(v.x) + f64(v.y) }
 
-big_sum(b: Big): usize {
-    return b.a + b.b * 10 + b.c * 100
-}
+big_sum(b: Big): usize { return b.a + b.b * 10 + b.c * 100 }
 
-use_pair(p: Pair, k: usize): usize {
-    return pair_sum(p, k)
-}
+use_pair(p: Pair, k: usize): usize { return pair_sum(p, k) }
 
-use_vec(v: Vec3): f64 {
-    return vec_sum(v, v)
-}
+use_vec(v: Vec3): f64 { return vec_sum(v, v) }
 
 main(): int {
-    if first() != 0 {
-        return 100
-    }
+    if first() != 0 { return 100 }
     p: Pair = Pair {
         a = 1,
         b = 2,
     }
-    if pair_sum(p, 3) != 321 || use_pair(p, 3) != 321 {
-        return 1
-    }
+    if pair_sum(p, 3) != 321 || use_pair(p, 3) != 321 { return 1 }
     v: Vec3 = Vec3 {
         x = 1.0,
         y = 1.0,
@@ -101,36 +79,26 @@ main(): int {
     }
     vs: f64 = vec_sum(v, w)
     uv: f64 = use_vec(v)
-    if vs != 36.0 || uv != 21.0 {
-        return 2
-    }
+    if vs != 36.0 || uv != 21.0 { return 2 }
     h: Vec2 = Vec2 {
         x = 1.5,
         y = 2.5,
     }
     r: f32 = vec2_sum(h, 0.5)
-    if r != 7.0 {
-        return 3
-    }
+    if r != 7.0 { return 3 }
     o: Odd = Odd {
         a = 1,
         b = 2,
         c = 3,
     }
-    if odd_sum(o, 4) != 4321 {
-        return 4
-    }
+    if odd_sum(o, 4) != 4321 { return 4 }
     q: Pair = Pair {
         a = 2,
         b = 3,
     }
-    if five(p, q, p, q, p) != 1207 {
-        return 5
-    }
+    if five(p, q, p, q, p) != 1207 { return 5 }
     m: f64 = mixed(1, p, 0.5, h, 2)
-    if m != 10.5 {
-        return 6
-    }
+    if m != 10.5 { return 6 }
     out: Outer = Outer {
         tag = 9,
         p = Pair {
@@ -138,9 +106,7 @@ main(): int {
             b = 5,
         },
     }
-    if pair_sum(out.p, 1) != 154 {
-        return 7
-    }
+    if pair_sum(out.p, 1) != 154 { return 7 }
     global_pair = Pair {
         a = 6,
         b = 7,
@@ -151,20 +117,14 @@ main(): int {
     }, 1) != 111 {
         return 8
     }
-    if pair_sum(p, pair_sum(p, 0)) != 1 + 20 + 2100 {
-        return 9
-    }
+    if pair_sum(p, pair_sum(p, 0)) != 1 + 20 + 2100 { return 9 }
     b: Big = Big {
         a = 1,
         b = 2,
         c = 3,
     }
-    if big_sum(b) != 321 {
-        return 10
-    }
+    if big_sum(b) != 321 { return 10 }
     p.a = 5
-    if pair_sum(p, 0) != 25 {
-        return 11
-    }
+    if pair_sum(p, 0) != 25 { return 11 }
     return 42
 }

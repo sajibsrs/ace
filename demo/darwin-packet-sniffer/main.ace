@@ -15,9 +15,7 @@ import bpf: "./packet.ace"
 
 CAPTURE_CAPACITY: const usize = 524288
 
-report(context: string, err: Error) {
-    fmt.printf("%s: error %d\n", context, int(err.code))
-}
+report(context: string, err: Error) { fmt.printf("%s: error %d\n", context, int(err.code)) }
 
 print_hex_byte(value: u8) {
     digits: string = "0123456789abcdef"
@@ -26,18 +24,14 @@ print_hex_byte(value: u8) {
 
 print_mac(address: [6]u8) {
     for i: usize in 0 .. 6 {
-        if i != 0 {
-            fmt.print(":")
-        }
+        if i != 0 { fmt.print(":") }
         print_hex_byte(address[i])
     }
 }
 
 print_ip(address: [4]u8) {
     for i: usize in 0 .. 4 {
-        if i != 0 {
-            fmt.print(".")
-        }
+        if i != 0 { fmt.print(".") }
         fmt.print(uint(address[i]))
     }
 }
@@ -73,9 +67,7 @@ main(): int {
     for i: usize in 0 .. 8 {
         open_error: Error
         fd, open_error = sys.open(paths[i], sys.O_RDWR)
-        if open_error == null {
-            break
-        }
+        if open_error == null { break }
 
         last_open_error = open_error
         if open_error.code == sys.EACCES {
@@ -94,9 +86,7 @@ main(): int {
     }
 
     interface: string = "en0"
-    if sys.argc() > 1 {
-        interface = sys.arg(1)
-    }
+    if sys.argc() > 1 { interface = sys.arg(1) }
     if interface.len == 0 || interface.len > 15 {
         fmt.printf("interface name must contain 1 through 15 bytes: error %d\n", 22)
         sys.close(fd)
@@ -104,9 +94,7 @@ main(): int {
     }
     debug: bool = sys.argc() > 2 && mem.equal(sys.arg(2), "--debug")
     interface_request: [32]u8 = [0 : 32]
-    for i: usize in 0 .. interface.len {
-        interface_request[i] = interface[i]
-    }
+    for i: usize in 0 .. interface.len { interface_request[i] = interface[i] }
     err: Error = sys.ioctl(fd, sys.BIOCSETIF, mut interface_request[0..32])
     if err != null {
         fmt.printf("BIOCSETIF %s: error %d\n", interface, int(err.code))
@@ -159,18 +147,14 @@ main(): int {
             sys.close(fd)
             return 1
         }
-        if count == 0 {
-            continue
-        }
+        if count == 0 { continue }
 
         bytes: usize = usize(count)
         captured: []u8 = storage[0..bytes]
         if debug {
             fmt.printf("BPF read returned %u bytes\n", bytes)
             shown: usize = bytes
-            if shown > 24 {
-                shown = 24
-            }
+            if shown > 24 { shown = 24 }
             fmt.print("header bytes:")
             for i: usize in 0 .. shown {
                 fmt.print(" ")
@@ -182,9 +166,7 @@ main(): int {
         for at < bytes {
             record: bpf.Record, complete: bool = bpf.decode_record(captured, at)
             if !complete {
-                if debug {
-                    fmt.printf("truncated or malformed BPF record at byte %u\n", at)
-                }
+                if debug { fmt.printf("truncated or malformed BPF record at byte %u\n", at) }
                 break
             }
 
@@ -199,9 +181,7 @@ main(): int {
                 return 0
             }
 
-            if debug {
-                fmt.printf("skipped record at byte %u with captured length %u\n", at, record.captured_length)
-            }
+            if debug { fmt.printf("skipped record at byte %u with captured length %u\n", at, record.captured_length) }
             at = record.next
         }
     }

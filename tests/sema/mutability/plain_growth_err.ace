@@ -5,6 +5,4 @@ grow(mut bytes: []u8, mut text: string) {
     writable_text: mut string = mut text[0..]
 }
 
-main(): int {
-    return 0
-}
+main(): int { return 0 }

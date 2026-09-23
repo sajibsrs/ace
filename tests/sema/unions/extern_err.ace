@@ -9,6 +9,4 @@ extern "c" {
     use_event(e: Event): i32
 }
 
-main(): int {
-    return 0
-}
+main(): int { return 0 }

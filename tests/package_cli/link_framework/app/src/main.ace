@@ -1,5 +1,3 @@
 import greeter
 
-main(): int {
-    return greeter.greet()
-}
+main(): int { return greeter.greet() }

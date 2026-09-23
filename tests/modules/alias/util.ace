@@ -1,9 +1,5 @@
 /* Companion module for the Alias fixture. */
 
-pub over(x: int): int {
-    return 1
-}
+pub over(x: int): int { return 1 }
 
-pub over(x: i32): int {
-    return 2
-}
+pub over(x: i32): int { return 2 }

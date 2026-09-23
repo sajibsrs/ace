@@ -29,9 +29,7 @@ pub mut Output.put(byte: u8) {
 }
 
 pub mut Output.text(text: string) {
-    for byte: u8 in text {
-        mut self.put(byte)
-    }
+    for byte: u8 in text { mut self.put(byte) }
 }
 
 pub mut Output.number(value: u32) {
@@ -56,8 +54,6 @@ pub mut Output.byte(byte: u8) {
 
 /* The dump's length and true, or zero and false when it did not fit. */
 pub Output.finish(): (usize, bool) {
-    if !self.ok {
-        return 0, false
-    }
+    if !self.ok { return 0, false }
     return self.at, true
 }

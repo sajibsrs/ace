@@ -1,5 +1,3 @@
 import helper: "./copied/shared.ace"
 
-main(): int {
-    return helper.value() - 39
-}
+main(): int { return helper.value() - 39 }

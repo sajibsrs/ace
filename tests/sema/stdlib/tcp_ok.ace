@@ -30,15 +30,9 @@ check(address: net.Addr4, listener: Listener, connection: Conn, bytes: mut []u8,
     sent: usize, send_err: Error = send_all(connection, text)
     interest: Interest = interest(connection)
 
-    if receive_err != null && receive_err.domain == typeid(ReceiveAllErr) {
-        received = usize(receive_err.code)
-    }
-    if send_err != null && send_err.domain == typeid(SendAllErr) {
-        sent = usize(send_err.code)
-    }
-    if local_err != null || accept_err != null || bound.port == peer.port {
-        return int(received + sent)
-    }
+    if receive_err != null && receive_err.domain == typeid(ReceiveAllErr) { received = usize(receive_err.code) }
+    if send_err != null && send_err.domain == typeid(SendAllErr) { sent = usize(send_err.code) }
+    if local_err != null || accept_err != null || bound.port == peer.port { return int(received + sent) }
     if interest == Interest.none {
         event: Event = progress_receive(mut accepted, bytes)
         switch event {
@@ -61,15 +55,9 @@ main(): int {
     listener: Listener, listen_err: Error = listen(address, usize(8))
     connection: Conn, connect_err: Error = connect(address)
     pending: Conn, pending_err: Error = connect_nonblock(address)
-    if listen_err == null {
-        close(mut listener)
-    }
-    if connect_err == null {
-        close(mut connection)
-    }
-    if pending_err == null {
-        close(mut pending)
-    }
+    if listen_err == null { close(mut listener) }
+    if connect_err == null { close(mut connection) }
+    if pending_err == null { close(mut pending) }
     interrupted: i32 = sys.EINTR
     return int(interrupted - interrupted)
 }

@@ -1,5 +1,3 @@
 import leaf: @leaf
 
-pub value(): int {
-    return leaf.value()
-}
+pub value(): int { return leaf.value() }

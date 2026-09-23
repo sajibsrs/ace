@@ -6,6 +6,4 @@
 
 bad: const int = 7 % 0
 
-main(): int {
-    return bad
-}
+main(): int { return bad }

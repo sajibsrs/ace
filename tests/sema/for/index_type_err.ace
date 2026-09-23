@@ -3,8 +3,6 @@
 main(): int {
     values: [2]i32 = [1, 2]
 
-    for index: i32, value: i32 in values {
-        return index + value
-    }
+    for index: i32, value: i32 in values { return index + value }
     return 0
 }

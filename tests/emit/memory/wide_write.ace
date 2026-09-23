@@ -10,20 +10,14 @@ import mem
 GUARD: u8 = 238
 
 seed(data: mut []u8, salt: usize) {
-    for i: usize in 0 .. data.len {
-        data[i] = u8((i * 7 + salt) % 251)
-    }
+    for i: usize in 0 .. data.len { data[i] = u8((i * 7 + salt) % 251) }
 }
 
 // Lengths 0..130 cross every size class; 300 and 4096 run the 32-byte loops.
 length_at(i: usize): usize {
-    if i <= 130 {
-        return i
-    }
+    if i <= 130 { return i }
 
-    if i == 131 {
-        return 300
-    }
+    if i == 131 { return 300 }
     return 4096
 }
 
@@ -35,9 +29,7 @@ check_copy(source_all: mut []u8, target_all: mut []u8, move: bool): bool {
 
         for so: usize in 0 .. 16 {
             for dof: usize in 0 .. 16 {
-                if count > 130 && so != dof && so != 3 {
-                    continue
-                }
+                if count > 130 && so != dof && so != 3 { continue }
                 seed(source, so + count)
                 mem.fill(target, GUARD)
                 view: []u8 = source[so .. so + count]
@@ -52,13 +44,9 @@ check_copy(source_all: mut []u8, target_all: mut []u8, move: bool): bool {
                 for i: usize in 0 .. target.len {
                     want: u8 = GUARD
 
-                    if i >= dof + 32 && i < dof + 32 + count {
-                        want = source[so + i - dof - 32]
-                    }
+                    if i >= dof + 32 && i < dof + 32 + count { want = source[so + i - dof - 32] }
 
-                    if target[i] != want {
-                        return false
-                    }
+                    if target[i] != want { return false }
                 }
             }
         }
@@ -75,27 +63,19 @@ check_overlap(data_all: mut []u8, expect_all: mut []u8, scratch: mut []u8): bool
         expect: mut []u8 = mut expect_all[0 .. count + 128]
 
         for shift: usize in 0 .. 81 {
-            if count > 130 && shift % 8 != 1 {
-                continue
-            }
+            if count > 130 && shift % 8 != 1 { continue }
             // shift 40 is in place; below moves left, above moves right.
             dst: usize = base + shift - 40
             seed(data, count + shift)
             seed(expect, count + shift)
 
-            for i: usize in 0 .. count {
-                scratch[i] = expect[base + i]
-            }
+            for i: usize in 0 .. count { scratch[i] = expect[base + i] }
 
-            for i: usize in 0 .. count {
-                expect[dst + i] = scratch[i]
-            }
+            for i: usize in 0 .. count { expect[dst + i] = scratch[i] }
             mem.move(mut data[dst .. dst + count], data[base .. base + count])
 
             for i: usize in 0 .. data.len {
-                if data[i] != expect[i] {
-                    return false
-                }
+                if data[i] != expect[i] { return false }
             }
         }
     }
@@ -122,13 +102,9 @@ check_fill(target_all: mut []u8, zero: bool): bool {
             for i: usize in 0 .. target.len {
                 want: u8 = GUARD
 
-                if i >= dof + 32 && i < dof + 32 + count {
-                    want = value
-                }
+                if i >= dof + 32 && i < dof + 32 + count { want = value }
 
-                if target[i] != want {
-                    return false
-                }
+                if target[i] != want { return false }
             }
         }
     }
@@ -141,24 +117,14 @@ main(): int {
     expect: [4300]u8 = [0 : 4300]
     data: [4300]u8 = [0 : 4300]
 
-    if !check_copy(mut source[..], mut target[..], false) {
-        return 1
-    }
+    if !check_copy(mut source[..], mut target[..], false) { return 1 }
 
-    if !check_copy(mut source[..], mut target[..], true) {
-        return 2
-    }
+    if !check_copy(mut source[..], mut target[..], true) { return 2 }
 
-    if !check_overlap(mut data[..], mut expect[..], mut target[..]) {
-        return 3
-    }
+    if !check_overlap(mut data[..], mut expect[..], mut target[..]) { return 3 }
 
-    if !check_fill(mut target[..], false) {
-        return 4
-    }
+    if !check_fill(mut target[..], false) { return 4 }
 
-    if !check_fill(mut target[..], true) {
-        return 5
-    }
+    if !check_fill(mut target[..], true) { return 5 }
     return 42
 }

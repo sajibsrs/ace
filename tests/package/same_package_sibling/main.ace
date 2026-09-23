@@ -1,5 +1,3 @@
 import lib_a
 
-main(): int {
-    return lib_a.a()
-}
+main(): int { return lib_a.a() }

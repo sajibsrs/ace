@@ -34,9 +34,7 @@ wait_one(q: poll.Queue, storage: mut []poll.Event): (poll.Event, Error) {
             error = false,
             hangup = false,
         }
-        if err == null {
-            return zero, poll.WaitErr(0)
-        }
+        if err == null { return zero, poll.WaitErr(0) }
         return zero, err
     }
     return storage[0], null
@@ -65,9 +63,7 @@ is_none(event: tcp.Event): bool {
 
 client(port: u16): int {
     connection: tcp.Conn, err: Error = tcp.connect_nonblock(loopback(port))
-    if err != null {
-        return 1
-    }
+    if err != null { return 1 }
     q: poll.Queue, queue_err: Error = poll.queue()
     if queue_err != null {
         tcp.close(mut connection)
@@ -176,16 +172,10 @@ client(port: u16): int {
         }
     }
     for index: usize in 0 .. storage.len {
-        if storage[index] != request[index] {
-            return 50 + int(index)
-        }
+        if storage[index] != request[index] { return 50 + int(index) }
     }
-    if tcp.close(mut connection) != null {
-        return 10
-    }
-    if sys.close(sys.Fd(q)) != null {
-        return 11
-    }
+    if tcp.close(mut connection) != null { return 10 }
+    if sys.close(sys.Fd(q)) != null { return 11 }
     return 0
 }
 
@@ -208,9 +198,7 @@ main(): int {
     }
 
     listener: tcp.Listener, err: Error = tcp.listen(loopback(u16(0)), usize(8))
-    if err != null {
-        return 10
-    }
+    if err != null { return 10 }
     address: net.Addr4
     address, err = tcp.local(listener)
     if err != null || address.port == 0 {
@@ -257,9 +245,7 @@ main(): int {
         if receive_advanced {
             received += receive_amount
         } else {
-            if watch_connection(q, connection) != null {
-                return 15
-            }
+            if watch_connection(q, connection) != null { return 15 }
             zero: poll.Event = poll.Event {
                 fd = sys.Fd(0),
                 readable = false,
@@ -270,9 +256,7 @@ main(): int {
             event_storage: [1]poll.Event = [zero]
             events: mut []poll.Event = mut event_storage[0..]
             ready: poll.Event, wait_err: Error = wait_one(q, events)
-            if wait_err != null || !ready.readable {
-                return 16
-            }
+            if wait_err != null || !ready.readable { return 16 }
         }
     }
 
@@ -283,9 +267,7 @@ main(): int {
         if send_advanced {
             flushed += send_amount
         } else {
-            if watch_connection(q, connection) != null {
-                return 17
-            }
+            if watch_connection(q, connection) != null { return 17 }
             zero: poll.Event = poll.Event {
                 fd = sys.Fd(0),
                 readable = false,
@@ -296,25 +278,17 @@ main(): int {
             event_storage: [1]poll.Event = [zero]
             events: mut []poll.Event = mut event_storage[0..]
             ready: poll.Event, wait_err: Error = wait_one(q, events)
-            if wait_err != null || !ready.writable {
-                return 18
-            }
+            if wait_err != null || !ready.writable { return 18 }
         }
     }
-    if connection.send_offset != 0 || tcp.interest(connection) != tcp.Interest.none {
-        return 19
-    }
+    if connection.send_offset != 0 || tcp.interest(connection) != tcp.Interest.none { return 19 }
 
     tcp.close(mut connection)
     tcp.close(mut listener)
     sys.close(sys.Fd(q))
     status: sys.ProcessStatus, wait_err: Error = sys.wait(process)
-    if wait_err != null || !status.exited {
-        return 20
-    }
-    if status.code != 0 {
-        return status.code
-    }
+    if wait_err != null || !status.exited { return 20 }
+    if status.code != 0 { return status.code }
 
     invalid: tcp.Conn = tcp.Conn {
         socket = net.Socket(-1),
@@ -324,9 +298,7 @@ main(): int {
     failed: tcp.Event = tcp.progress_connect(mut invalid)
     switch failed {
         tcp.Event.failed(query_err: Error) {
-            if query_err.domain != typeid(net.PendingErrorErr) || invalid.interest != tcp.Interest.none {
-                return 21
-            }
+            if query_err.domain != typeid(net.PendingErrorErr) || invalid.interest != tcp.Interest.none { return 21 }
         }
         default { return 22 }
     }

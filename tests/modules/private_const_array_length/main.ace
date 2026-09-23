@@ -3,8 +3,6 @@
 import lib: "./lib.ace"
 
 main(): int {
-    if lib.make() != 4 {
-        return 1
-    }
+    if lib.make() != 4 { return 1 }
     return 42
 }

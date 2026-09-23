@@ -7,13 +7,9 @@ import sys
 main(): int {
     process: sys.Process, fork_err: Error = sys.fork()
 
-    if fork_err != null || process == -1 {
-        return 1
-    }
+    if fork_err != null || process == -1 { return 1 }
 
-    if process == 0 {
-        sys.exit(37)
-    }
+    if process == 0 { sys.exit(37) }
 
     status: sys.ProcessStatus, wait_err: Error = sys.wait(process)
 

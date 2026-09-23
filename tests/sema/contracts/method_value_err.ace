@@ -2,9 +2,7 @@
 
 Circle: struct { radius: int }
 
-Circle.area(): int {
-    return self.radius
-}
+Circle.area(): int { return self.radius }
 
 main(): int {
     Circle.area

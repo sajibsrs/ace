@@ -34,9 +34,7 @@ read_request(connection: tcp.Conn, expected: string): Error {
     prefix: [3]string = ["GET ", expected, " HTTP/1.1"]
     line: [256]u8 = [0 : 256]
     line_count: usize, fit: bool = str.concat(prefix[..], mut line[..])
-    if !fit || !mem.equal(bytes[..first_end], line[..line_count]) {
-        return http.ClientErr.response
-    }
+    if !fit || !mem.equal(bytes[..first_end], line[..line_count]) { return http.ClientErr.response }
 
     return null
 }
@@ -72,9 +70,7 @@ client(port: u16): int {
     context.redirects = http.RedirectPolicy { limit = 10 }
     response: http.Response, err: Error = http.get(url_bytes[..url_count], mut context)
     result: int = 0
-    if err != null || response.status != 200 || !mem.equal(response.body, "done") {
-        result = 3
-    }
+    if err != null || response.status != 200 || !mem.equal(response.body, "done") { result = 3 }
     return result
 }
 

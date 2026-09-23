@@ -15,21 +15,13 @@ main(): int {
     storage: [8]u8
     text: mut string = mut storage[0..]
     set_bytes(text)
-    if text[0] != 72 || text[1] != 105 {
-        return 1
-    }
+    if text[0] != 72 || text[1] != 105 { return 1 }
     tail: mut string = text[2..] // slicing propagates the permission
     tail[0] = '!'
-    if text[2] != 33 {
-        return 2
-    }
+    if text[2] != 33 { return 2 }
     text[3] += 1 // compound writes re-read through the view
-    if text[3] != 1 {
-        return 3
-    }
+    if text[3] != 1 { return 3 }
     bump(mut &text[4]) // mut & yields a writable pointer into the bytes
-    if text[4] != 1 {
-        return 4
-    }
+    if text[4] != 1 { return 4 }
     return 0
 }

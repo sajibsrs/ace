@@ -5,17 +5,11 @@
 
 import util: "./util.ace"
 
-pick[T](x: T, n: int): int {
-    return util.twice(n)
-}
+pick[T](x: T, n: int): int { return util.twice(n) }
 
-wrap[T](x: T): int {
-    return pick[T](x, 21)
-}
+wrap[T](x: T): int { return pick[T](x, 21) }
 
 main(): int {
-    if pick[int](1, 21) != 42 || wrap[bool](true) != 42 {
-        return 1
-    }
+    if pick[int](1, 21) != 42 || wrap[bool](true) != 42 { return 1 }
     return 0
 }

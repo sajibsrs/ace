@@ -3,9 +3,7 @@
 Thing: struct { value: int }
 Readable: contract { read(): int }
 
-Thing.read(): int {
-    return self.value
-}
+Thing.read(): int { return self.value }
 
 main(): int {
     thing: Thing = Thing { value = 1 }

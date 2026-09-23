@@ -18,40 +18,28 @@ pub Packet: struct {
     protocol: u8,
 }
 
-native_u16(data: []u8, at: usize): u16 {
-    return u16(data[at]) | (u16(data[at + 1]) << 8)
-}
+native_u16(data: []u8, at: usize): u16 { return u16(data[at]) | (u16(data[at + 1]) << 8) }
 
 native_u32(data: []u8, at: usize): u32 {
     return u32(data[at]) | (u32(data[at + 1]) << 8) | (u32(data[at + 2]) << 16) | (u32(data[at + 3]) << 24)
 }
 
-network_u16(data: []u8, at: usize): u16 {
-    return (u16(data[at]) << 8) | u16(data[at + 1])
-}
+network_u16(data: []u8, at: usize): u16 { return (u16(data[at]) << 8) | u16(data[at + 1]) }
 
 /* Decode one complete Darwin bpf_hdr plus frame and BPF_WORDALIGN padding.
  * A false result never exposes partially decoded offsets.
  */
 pub decode_record(data: []u8, at: usize): (Record, bool) {
-    if at > data.len || data.len - at < 18 {
-        return blank(Record), false
-    }
+    if at > data.len || data.len - at < 18 { return blank(Record), false }
     captured: usize = usize(native_u32(data, at + 8))
     header: usize = usize(native_u16(data, at + 16))
-    if header < 18 {
-        return blank(Record), false
-    }
+    if header < 18 { return blank(Record), false }
 
     total: usize = header + captured
     remaining: usize = data.len - at
-    if total > remaining {
-        return blank(Record), false
-    }
+    if total > remaining { return blank(Record), false }
     padding: usize = (4 - (total & 3)) & 3
-    if padding > remaining - total {
-        return blank(Record), false
-    }
+    if padding > remaining - total { return blank(Record), false }
     record: Record = Record {
         frame_start = at + header,
         captured_length = captured,
@@ -70,22 +58,14 @@ pub decode_ipv4(data: []u8, record: Record): (Packet, bool) {
         return blank(Packet), false
     }
     frame: usize = record.frame_start
-    if network_u16(data, frame + 12) != u16(0x0800) {
-        return blank(Packet), false
-    }
+    if network_u16(data, frame + 12) != u16(0x0800) { return blank(Packet), false }
     ip: usize = frame + 14
     version_ihl: u8 = data[ip]
-    if version_ihl >> 4 != 4 {
-        return blank(Packet), false
-    }
+    if version_ihl >> 4 != 4 { return blank(Packet), false }
     header_length: usize = usize(version_ihl & 0x0f) * 4
-    if header_length < 20 || header_length > record.captured_length - 14 {
-        return blank(Packet), false
-    }
+    if header_length < 20 || header_length > record.captured_length - 14 { return blank(Packet), false }
     total_length: usize = usize(network_u16(data, ip + 2))
-    if total_length < header_length || total_length > record.captured_length - 14 {
-        return blank(Packet), false
-    }
+    if total_length < header_length || total_length > record.captured_length - 14 { return blank(Packet), false }
 
     packet: Packet = blank(Packet)
     for i: usize in 0 .. 6 {

@@ -20,11 +20,7 @@ main(): int {
     }
 
     // v: 1, 2, 4, 8, 16, 32, 34, 68, then 136 exits
-    if v != 136 {
-        return 1
-    }
-    if hops != 8 {
-        return 3
-    }
+    if v != 136 { return 1 }
+    if hops != 8 { return 3 }
     return 0
 }

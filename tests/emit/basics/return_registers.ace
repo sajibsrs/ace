@@ -36,9 +36,7 @@ bump(): usize {
     return hits + 100
 }
 
-small_step(s: Small): Small {
-    return Small { v = (s.v * 48271 + 1) & MASK }
-}
+small_step(s: Small): Small { return Small { v = (s.v * 48271 + 1) & MASK } }
 
 pair_step(p: Pair): Pair {
     return Pair {
@@ -76,9 +74,7 @@ packed(p: Packed): Packed {
     }
 }
 
-divmod(a: usize, b: usize): (usize, usize) {
-    return a / b, a % b
-}
+divmod(a: usize, b: usize): (usize, usize) { return a / b, a % b }
 
 deferred(s: Small): Small {
     defer bump()
@@ -87,23 +83,17 @@ deferred(s: Small): Small {
 
 main(): int {
     s: Small = small_step(Small { v = 7 })
-    if s.v != ((7 * 48271 + 1) & MASK) {
-        return 1
-    }
+    if s.v != ((7 * 48271 + 1) & MASK) { return 1 }
     p: Pair = pair_step(Pair {
         a = 3,
         b = 5,
     })
-    if p.a != ((3 * 48271 + 5) & MASK) || p.b != 6 {
-        return 2
-    }
+    if p.a != ((3 * 48271 + 5) & MASK) || p.b != 6 { return 2 }
     w: Pair = swap(Pair {
         a = 11,
         b = 22,
     })
-    if w.a != 22 || w.b != 11 {
-        return 3
-    }
+    if w.a != 22 || w.b != 11 { return 3 }
     v: Vec3 = vec_add(Vec3 {
         x = 1.0,
         y = 2.0,
@@ -113,30 +103,20 @@ main(): int {
         y = 20.0,
         z = 30.0,
     })
-    if v.x != 11.0 || v.y != 22.0 || v.z != 33.0 {
-        return 4
-    }
+    if v.x != 11.0 || v.y != 22.0 || v.z != 33.0 { return 4 }
     h: Vec2 = vec2_scale(Vec2 {
         x = 1.5,
         y = 2.5,
     }, 2.0)
-    if h.x != 3.0 || h.y != 5.0 {
-        return 5
-    }
+    if h.x != 3.0 || h.y != 5.0 { return 5 }
     k: Packed = packed(Packed {
         a = 1,
         b = 2,
     })
-    if k.a != 3 || k.b != 3 {
-        return 6
-    }
+    if k.a != 3 || k.b != 3 { return 6 }
     q: usize, r: usize = divmod(100, 7)
-    if q != 14 || r != 2 {
-        return 7
-    }
+    if q != 14 || r != 2 { return 7 }
     d: Small = deferred(Small { v = 1 })
-    if d.v != 6 || hits != 1 {
-        return 8
-    }
+    if d.v != 6 || hits != 1 { return 8 }
     return 42
 }

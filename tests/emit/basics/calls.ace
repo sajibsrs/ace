@@ -2,13 +2,9 @@
 
 // expect-exit: 42
 
-bump(mut x: i32, by: i32) {
-    x += by
-}
+bump(mut x: i32, by: i32) { x += by }
 
-pair(): (i32, i32) {
-    return 7, 3
-}
+pair(): (i32, i32) { return 7, 3 }
 
 main(): int {
     x: i32 = 40

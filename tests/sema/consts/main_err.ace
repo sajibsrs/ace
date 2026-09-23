@@ -4,12 +4,8 @@
 
 N: type = u8
 
-N(v: u8): i32 {
-    return i32(v)
-}
+N(v: u8): i32 { return i32(v) }
 
 n: const N = N(u8(5))
 
-main(): int {
-    return 0
-}
+main(): int { return 0 }

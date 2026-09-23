@@ -14,9 +14,7 @@ seven(): i32 {
     return 7
 }
 
-byte_of(x: int): u8 {
-    return u8(x)
-}
+byte_of(x: int): u8 { return u8(x) }
 
 bytes(): int {
     guard_lo: u64 = 0x1122334455667788
@@ -25,18 +23,12 @@ bytes(): int {
     guard_hi: u64 = 0x8877665544332211
 
     for i: usize in 0 .. 1000 {
-        if runtime[i] != 3 {
-            return 1
-        }
+        if runtime[i] != 3 { return 1 }
     }
     for i: usize in 0 .. 4096 {
-        if constant[i] != 97 {
-            return 2
-        }
+        if constant[i] != 97 { return 2 }
     }
-    if guard_lo != 0x1122334455667788 || guard_hi != 0x8877665544332211 {
-        return 3
-    }
+    if guard_lo != 0x1122334455667788 || guard_hi != 0x8877665544332211 { return 3 }
     return 0
 }
 
@@ -47,24 +39,16 @@ uniform(): int {
     flat: [9]f64 = [0.0 : 9]
 
     for i: usize in 0 .. 1000 {
-        if zeros[i] != 0 {
-            return 4
-        }
+        if zeros[i] != 0 { return 4 }
     }
     for i: usize in 0 .. 37 {
-        if ones[i] != -1 {
-            return 5
-        }
+        if ones[i] != -1 { return 5 }
     }
     for i: usize in 0 .. 5 {
-        if same[i] != 257 {
-            return 6
-        }
+        if same[i] != 257 { return 6 }
     }
     for i: usize in 0 .. 9 {
-        if flat[i] != 0.0 {
-            return 7
-        }
+        if flat[i] != 0.0 { return 7 }
     }
     return 0
 }
@@ -82,55 +66,33 @@ doubled(): int {
     }
     guard_hi: u64 = 0x0807060504030201
 
-    if calls != 1 {
-        return 8
-    }
+    if calls != 1 { return 8 }
     for i: usize in 0 .. 1000 {
-        if counted[i] != 7 {
-            return 9
-        }
+        if counted[i] != 7 { return 9 }
     }
     for i: usize in 0 .. 33 {
-        if halves[i] != 1.5 {
-            return 10
-        }
+        if halves[i] != 1.5 { return 10 }
     }
     for i: usize in 0 .. 100 {
-        if pairs[i].a != 1 || pairs[i].b != 2 {
-            return 11
-        }
+        if pairs[i].a != 1 || pairs[i].b != 2 { return 11 }
     }
-    if single[0] != 9 {
-        return 12
-    }
+    if single[0] != 9 { return 12 }
     // The last doubling copy stops at the array end; the struct literal's
     // already-stored head sits directly above the repeat's temporary.
-    if held.head != 99 || held.tail != 98 {
-        return 14
-    }
+    if held.head != 99 || held.tail != 98 { return 14 }
     for i: usize in 0 .. 3 {
-        if held.data[i].a != 5 || held.data[i].b != 6 {
-            return 15
-        }
+        if held.data[i].a != 5 || held.data[i].b != 6 { return 15 }
     }
-    if guard_lo != 0x0102030405060708 || guard_hi != 0x0807060504030201 {
-        return 13
-    }
+    if guard_lo != 0x0102030405060708 || guard_hi != 0x0807060504030201 { return 13 }
     return 0
 }
 
 main(): int {
     failed: int = bytes()
-    if failed != 0 {
-        return failed
-    }
+    if failed != 0 { return failed }
     failed = uniform()
-    if failed != 0 {
-        return failed
-    }
+    if failed != 0 { return failed }
     failed = doubled()
-    if failed != 0 {
-        return failed
-    }
+    if failed != 0 { return failed }
     return 42
 }

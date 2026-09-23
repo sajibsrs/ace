@@ -2,6 +2,4 @@
 
 import absent_module_probe
 
-main(): int {
-    return 0
-}
+main(): int { return 0 }

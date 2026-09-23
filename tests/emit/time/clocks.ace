@@ -12,23 +12,17 @@ extern "c" {
     c_usleep(micros: u32): i32 = "usleep"
 }
 
-wait_us(micros: u32) {
-    c_usleep(micros)
-}
+wait_us(micros: u32) { c_usleep(micros) }
 
 check_nondecreasing(): int {
     asleep1: u64 = time.elapsed()
     asleep2: u64 = time.elapsed()
 
-    if asleep2 < asleep1 {
-        return 1
-    }
+    if asleep2 < asleep1 { return 1 }
     awake1: u64 = time.awake()
     awake2: u64 = time.awake()
 
-    if awake2 < awake1 {
-        return 2
-    }
+    if awake2 < awake1 { return 2 }
     return 0
 }
 
@@ -40,13 +34,9 @@ check_elapsed_advance(): int {
 
     /* The 150 ms wait must move the clock; the bounds stay generous for
      * loaded CI machines. */
-    if elapsed < 100_000_000 {
-        return 1
-    }
+    if elapsed < 100_000_000 { return 1 }
 
-    if elapsed > 5_000_000_000 {
-        return 2
-    }
+    if elapsed > 5_000_000_000 { return 2 }
     return 0
 }
 
@@ -58,13 +48,9 @@ check_awake_advance(): int {
 
     /* The 150 ms wait must move the clock; the bounds stay generous for
      * loaded CI machines. */
-    if elapsed < 100_000_000 {
-        return 1
-    }
+    if elapsed < 100_000_000 { return 1 }
 
-    if elapsed > 5_000_000_000 {
-        return 2
-    }
+    if elapsed > 5_000_000_000 { return 2 }
     return 0
 }
 
@@ -72,32 +58,22 @@ check_selective(): int {
     start: u64 = awake()
     end: u64 = awake()
 
-    if end < start {
-        return 1
-    }
+    if end < start { return 1 }
     return 0
 }
 
 main(): int {
     code: int = check_nondecreasing()
 
-    if code != 0 {
-        return code
-    }
+    if code != 0 { return code }
     code = check_elapsed_advance()
 
-    if code != 0 {
-        return 100 + code
-    }
+    if code != 0 { return 100 + code }
     code = check_awake_advance()
 
-    if code != 0 {
-        return 200 + code
-    }
+    if code != 0 { return 200 + code }
     code = check_selective()
 
-    if code != 0 {
-        return 300 + code
-    }
+    if code != 0 { return 300 + code }
     return 42
 }

@@ -3,8 +3,6 @@
 main(): int {
     step: i64 = 2
 
-    for value: i32 in i32(0) .. i32(10) step step {
-        return int(value)
-    }
+    for value: i32 in i32(0) .. i32(10) step step { return int(value) }
     return 0
 }

@@ -7,9 +7,7 @@ import events: "./events.ace"
 main(): int {
     switch events.greeting {
         events.Status.text(text: string) {
-            if text.len != 5 || text[0] != u8(104) || text[4] != u8(111) {
-                return 6
-            }
+            if text.len != 5 || text[0] != u8(104) || text[4] != u8(111) { return 6 }
         }
         default {
             return 7
@@ -18,9 +16,7 @@ main(): int {
 
     switch events.origin {
         events.Event.cursor(point: events.Point) {
-            if point.x != 3 || point.y != 4 {
-                return 8
-            }
+            if point.x != 3 || point.y != 4 { return 8 }
         }
         default {
             return 9
@@ -30,9 +26,7 @@ main(): int {
 
     switch event {
         events.Event.cursor(point: events.Point) {
-            if point.x + point.y != 30 {
-                return 4
-            }
+            if point.x + point.y != 30 { return 4 }
         }
         default {
             return 5

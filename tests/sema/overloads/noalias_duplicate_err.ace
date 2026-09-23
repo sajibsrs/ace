@@ -1,9 +1,5 @@
 /* Overload noalias duplicate fixture. */
 
-process(noalias value: []u8): int {
-    return int(value.len)
-}
+process(noalias value: []u8): int { return int(value.len) }
 
-process(value: []u8): int {
-    return int(value.len)
-}
+process(value: []u8): int { return int(value.len) }

@@ -5,29 +5,19 @@
 
 // expect-exit: 42
 
-bump(mut n: i32) {
-    n += 5
-}
+bump(mut n: i32) { n += 5 }
 
-poke(p: mut *i32) {
-    *p += 100
-}
+poke(p: mut *i32) { *p += 100 }
 
 Point: struct { x: i32, y: i32 }
 
 main(): int {
     // writes land in backing storage: [10, 20, 30, 40]
     xs: [4]i32 = [1, 2, 3, 4]
-    for item: i32 in mut xs {
-        item *= 10
-    }
+    for item: i32 in mut xs { item *= 10 }
     sum: i32 = 0
-    for v: i32 in xs {
-        sum += v
-    }
-    if sum != 100 {
-        return 1
-    }
+    for v: i32 in xs { sum += v }
+    if sum != 100 { return 1 }
 
     // the alias sees its own write within the same iteration
     hit: i32 = 0
@@ -36,17 +26,11 @@ main(): int {
         hit = item
         break
     }
-    if hit != 11 || xs[0] != 11 {
-        return 2
-    }
+    if hit != 11 || xs[0] != 11 { return 2 }
 
     // two-binder mut: value writes land, [11, 2, 3, 4] + index
-    for i: usize, item: i32 in mut xs {
-        item += i32(i)
-    }
-    if xs[3] != 43 || xs[1] != 21 {
-        return 3
-    }
+    for i: usize, item: i32 in mut xs { item += i32(i) }
+    if xs[3] != 43 || xs[1] != 21 { return 3 }
 
     // the index binder is a plain copy: overwriting it cannot move the
     // cursor, so every element is still visited and written
@@ -56,42 +40,24 @@ main(): int {
         item = 1
         seen += 1
     }
-    if seen != 4 || xs[2] != 1 {
-        return 4
-    }
+    if seen != 4 || xs[2] != 1 { return 4 }
 
     // call-site mut passes the alias itself; writes land in storage
-    for item: i32 in mut xs {
-        bump(mut item)
-    }
-    if xs[0] != 6 {
-        return 5
-    }
+    for item: i32 in mut xs { bump(mut item) }
+    if xs[0] != 6 { return 5 }
 
     // mut &item is a mut *i32 into the backing storage
-    for item: i32 in mut xs {
-        poke(mut &item)
-    }
-    if xs[1] != 106 {
-        return 6
-    }
+    for item: i32 in mut xs { poke(mut &item) }
+    if xs[1] != 106 { return 6 }
 
     // aggregate elements alias too: field writes reach the array
     ps: [2]Point = [Point { x = 1, y = 2 }, Point { x = 3, y = 4 }]
-    for p: Point in mut ps {
-        p.x = 9
-    }
-    if ps[0].x != 9 || ps[1].x != 9 {
-        return 7
-    }
+    for p: Point in mut ps { p.x = 9 }
+    if ps[0].x != 9 || ps[1].x != 9 { return 7 }
 
     // plain iteration still copies: binder writes leave the array unchanged
-    for v: i32 in xs {
-        v = 99
-    }
-    if xs[0] != 106 || xs[1] != 106 {
-        return 8
-    }
+    for v: i32 in xs { v = 99 }
+    if xs[0] != 106 || xs[1] != 106 { return 8 }
 
     // reslicing the variable mid-loop changes neither the captured
     // descriptor nor the alias target of the running loop
@@ -100,9 +66,7 @@ main(): int {
         item = 2
         view = xs[0..1] // would truncate a cursor-driven loop to one visit
     }
-    if xs[3] != 2 {
-        return 9
-    }
+    if xs[3] != 2 { return 9 }
 
     // labeled continue and break on mut loops: continue rewrites every
     // element to 0; the scan breaks out through two mut loops after the
@@ -114,15 +78,11 @@ main(): int {
     scan: for item: i32 in mut xs {
         inner: for w: i32 in mut view {
             w = 5
-            if w == 5 {
-                break scan
-            }
+            if w == 5 { break scan }
         }
         item = 7
     }
-    if xs[0] != 5 || xs[2] != 0 || view[0] != 5 {
-        return 10
-    }
+    if xs[0] != 5 || xs[2] != 0 || view[0] != 5 { return 10 }
 
     return 42
 }

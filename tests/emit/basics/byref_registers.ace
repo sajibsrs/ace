@@ -13,9 +13,7 @@ Counter: struct {
 
 seen: int
 
-note(x: int) {
-    seen = seen + x
-}
+note(x: int) { seen = seen + x }
 
 // the loop reads the receiver's fields straight through its register
 mut Counter.run(n: int) {
@@ -40,17 +38,13 @@ mut Counter.relay(n: int): int {
     return self.value
 }
 
-bump(mut c: Counter, by: int) {
-    c.steps = c.steps + by
-}
+bump(mut c: Counter, by: int) { c.steps = c.steps + by }
 
 // the pointer's last use precedes the local, which may take its register
 share(mut c: Counter, n: int): int {
     c.value = c.value + n
     t: int = 0
-    for i: int in 0 .. n {
-        t = t + i * 2
-    }
+    for i: int in 0 .. n { t = t + i * 2 }
     return t
 }
 
@@ -67,9 +61,7 @@ ninth(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int, mut k: Cou
 }
 
 // a deferred mut call captures the pointer at the defer statement
-finish(mut c: Counter, x: int) {
-    c.steps = c.steps + x
-}
+finish(mut c: Counter, x: int) { c.steps = c.steps + x }
 
 deferred(mut c: Counter, n: int): int {
     defer finish(mut c, share(mut c, n))
@@ -83,35 +75,23 @@ main(): int {
         steps = 0,
     }
     mut c.run(10)
-    if c.value != 45 || c.steps != 10 {
-        return 1
-    }
+    if c.value != 45 || c.steps != 10 { return 1 }
     d: Counter = Counter {
         value = 1,
         steps = 0,
     }
-    if mut d.relay(4) != 7 || d.steps != 4 || seen != 1 + 1 + 2 + 4 {
-        return 2
-    }
-    if share(mut d, 5) != 20 || d.value != 12 {
-        return 3
-    }
+    if mut d.relay(4) != 7 || d.steps != 4 || seen != 1 + 1 + 2 + 4 { return 2 }
+    if share(mut d, 5) != 20 || d.value != 12 { return 3 }
     x: int = 6
     f: f64 = 1.5
     scale(mut x, mut f, 7)
-    if x != 42 || f != 3.0 {
-        return 4
-    }
-    if ninth(1, 2, 3, 4, 5, 6, 7, 8, mut d) != 48 || d.value != 48 {
-        return 5
-    }
+    if x != 42 || f != 3.0 { return 4 }
+    if ninth(1, 2, 3, 4, 5, 6, 7, 8, mut d) != 48 || d.value != 48 { return 5 }
     seen = 0
     e: Counter = Counter {
         value = 3,
         steps = 0,
     }
-    if deferred(mut e, 4) != 7 || e.value != 7 || e.steps != 12 || seen != 1 {
-        return 6
-    }
+    if deferred(mut e, 4) != 7 || e.value != 7 || e.steps != 12 || seen != 1 { return 6 }
     return x
 }

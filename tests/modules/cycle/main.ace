@@ -2,6 +2,4 @@
 
 import a: "./a.ace"
 
-main(): int {
-    return a.fa()
-}
+main(): int { return a.fa() }

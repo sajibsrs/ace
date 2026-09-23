@@ -11,9 +11,7 @@ main(): int {
     }
 
     storage: mut []u8 = mem.alloc(int(sizeof(Point)), int(alignof(Point)))
-    if storage == null {
-        return 2
-    }
+    if storage == null { return 2 }
     mem.release(mut storage)
     return 0
 }

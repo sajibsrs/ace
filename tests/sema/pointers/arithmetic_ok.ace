@@ -2,13 +2,9 @@
 
 Pair: struct { first: int, second: int }
 
-read(pointer: *Pair, offset: usize): int {
-    return (pointer + offset).first
-}
+read(pointer: *Pair, offset: usize): int { return (pointer + offset).first }
 
-write(pointer: mut *Pair, offset: usize, value: int) {
-    (pointer + offset).first = value
-}
+write(pointer: mut *Pair, offset: usize, value: int) { (pointer + offset).first = value }
 
 main(): int {
     values: [3]Pair

@@ -3,6 +3,4 @@
 import fmt: fmt
 import fmt: "./util.ace"
 
-main(): int {
-    return fmt.ten()
-}
+main(): int { return fmt.ten() }

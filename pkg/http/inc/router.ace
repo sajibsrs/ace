@@ -19,14 +19,10 @@ pub Router: struct {
     routes: array.Array[Route],
 }
 
-pub Router::new(): Router {
-    return Router { routes = array.Array[Route] {} }
-}
+pub Router::new(): Router { return Router { routes = array.Array[Route] {} } }
 
 /* Releases route storage. Call once the router is no longer served. */
-pub mut Router.wipe() {
-    mut self.routes.wipe()
-}
+pub mut Router.wipe() { mut self.routes.wipe() }
 
 /* Registers `handler` for exact `method` and path-segment prefix `path`.
  * Grows route storage as needed; fails only if that growth fails.
@@ -43,12 +39,8 @@ pub mut Router.handle(method: string, path: string, handler: (Request): Response
  * matches "/home" and "/home/about" but not "/homework".
  */
 path_matches(prefix: string, target: string): bool {
-    if prefix.len > target.len {
-        return false
-    }
-    if !mem.equal(prefix, target[..prefix.len]) {
-        return false
-    }
+    if prefix.len > target.len { return false }
+    if !mem.equal(prefix, target[..prefix.len]) { return false }
     return prefix.len == target.len || target[prefix.len] == 47
 }
 
@@ -59,20 +51,14 @@ path_matches(prefix: string, target: string): bool {
 pub Router.dispatch(request: Request): Response {
     query_at: usize, has_query: bool = str.find(request.target, '?')
     path: string = request.target
-    if has_query {
-        path = request.target[..query_at]
-    }
+    if has_query { path = request.target[..query_at] }
 
     best: usize = 0
     best_len: usize = 0
     matched: bool = false
     for i: usize, route: Route in self.routes.view() {
-        if !mem.equal(route.method, request.method) {
-            continue
-        }
-        if !path_matches(route.path, path) {
-            continue
-        }
+        if !mem.equal(route.method, request.method) { continue }
+        if !path_matches(route.path, path) { continue }
         if !matched || route.path.len > best_len {
             best = i
             best_len = route.path.len

@@ -1,5 +1,3 @@
 import shared: @shared
 
-pub second(): int {
-    return shared.value() + 2
-}
+pub second(): int { return shared.value() + 2 }

@@ -14,40 +14,28 @@ clone[T](values: []T): []T {
 
 main(): int {
     uninitialized: [7]u8
-    if uninitialized.len != 7 {
-        return 90
-    }
+    if uninitialized.len != 7 { return 90 }
     numbers: mut []usize = mem.alloc[usize](4)
 
-    if numbers == null {
-        return 1
-    }
+    if numbers == null { return 1 }
 
     points: mut []Point = mem.alloc[Point](2)
 
-    if points == null {
-        return 2
-    }
+    if points == null { return 2 }
     points[1] = Point {
         x = 3,
         y = 4,
     }
     grown: mut []Point = mem.realloc[Point](points, 4)
 
-    if grown == null || grown.len != 4 {
-        return 3
-    }
+    if grown == null || grown.len != 4 { return 3 }
 
-    if grown[1].x + grown[1].y != 7 {
-        return 4
-    }
+    if grown[1].x + grown[1].y != 7 { return 4 }
     mem.release[Point](mut grown)
 
     pairs: mut []Pair[i32] = mem.alloc[Pair[i32]](2)
 
-    if pairs == null {
-        return 5
-    }
+    if pairs == null { return 5 }
     pairs[0] = Pair[i32] {
         first = 1,
         second = 2,
@@ -56,17 +44,13 @@ main(): int {
 
     words: mut []string = mem.alloc[string](2)
 
-    if words == null {
-        return 6
-    }
+    if words == null { return 6 }
     words[0] = "typed"
     mem.release[string](mut words)
 
     copied: []usize = clone[usize](numbers)
 
-    if copied == null {
-        return 7
-    }
+    if copied == null { return 7 }
     mem.release[usize](mut copied)
     mem.release[usize](mut numbers)
 

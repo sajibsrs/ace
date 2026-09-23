@@ -4,8 +4,6 @@
 
 main(): int {
     text: string = "hi"
-    for c: u8 in mut text {
-        return 0
-    }
+    for c: u8 in mut text { return 0 }
     return 1
 }

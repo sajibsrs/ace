@@ -3,9 +3,7 @@
 
 total(xs: []i32): i32 {
     s: i32 = 0
-    for v: i32 in mut xs {
-        s += v
-    }
+    for v: i32 in mut xs { s += v }
     return s
 }
 

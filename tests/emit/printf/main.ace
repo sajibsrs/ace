@@ -22,8 +22,6 @@ main(): int {
         byte,
     )
 
-    if written != 68 {
-        return 1
-    }
+    if written != 68 { return 1 }
     return 0
 }

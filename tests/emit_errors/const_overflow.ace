@@ -7,6 +7,4 @@
 big: const u8 = 200
 bad: const u8 = big + big
 
-main(): int {
-    return int(bad)
-}
+main(): int { return int(bad) }

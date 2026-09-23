@@ -10,9 +10,7 @@ import mem
 import str
 
 show(buf: []u8, n: usize, ok: bool) {
-    if ok {
-        fmt.print(buf[0..n])
-    }
+    if ok { fmt.print(buf[0..n]) }
 }
 
 main(): int {
@@ -26,9 +24,7 @@ main(): int {
     fmt.print("|")
     n, ok = str.format(dst, -9223372036854775807 - 1)
 
-    if !ok || !mem.equal(dst[0..n], "-9223372036854775808") {
-        return 4
-    }
+    if !ok || !mem.equal(dst[0..n], "-9223372036854775808") { return 4 }
     u: uint = 4294967295
     n, ok = str.format(dst, u)
     show(dst, n, ok)
@@ -36,9 +32,7 @@ main(): int {
     z: usize = 18446744073709551615
     n, ok = str.format(dst, z)
 
-    if !ok || !mem.equal(dst[0..n], "18446744073709551615") {
-        return 5
-    }
+    if !ok || !mem.equal(dst[0..n], "18446744073709551615") { return 5 }
     n, ok = str.format(dst, 255, u8(16))
     show(dst, n, ok)
     fmt.print("|")
@@ -67,15 +61,11 @@ main(): int {
     f = 1.0 / 3.0
     n, ok = str.format(dst, f)
 
-    if !ok || !mem.equal(dst[0..n], "0.3333333333333333") {
-        return 6
-    }
+    if !ok || !mem.equal(dst[0..n], "0.3333333333333333") { return 6 }
     f = 100000000000000000000.0
     n, ok = str.format(dst, f)
 
-    if !ok || !mem.equal(dst[0..n], "100000000000000000000") {
-        return 7
-    }
+    if !ok || !mem.equal(dst[0..n], "100000000000000000000") { return 7 }
     f = 1.5e-7
     n, ok = str.format(dst, f)
     show(dst, n, ok)
@@ -92,18 +82,12 @@ main(): int {
     sdst: mut []u8 = mut small[0..2]
     n, ok = str.format(sdst, 12345)
 
-    if ok || n != 0 || small[0] != 0 || small[1] != 0 {
-        return 1
-    }
+    if ok || n != 0 || small[0] != 0 || small[1] != 0 { return 1 }
     n, ok = str.format(dst, 1, u8(1))
 
-    if ok || n != 0 {
-        return 2
-    }
+    if ok || n != 0 { return 2 }
     n, ok = str.format(dst, 1, u8(37))
 
-    if ok || n != 0 {
-        return 3
-    }
+    if ok || n != 0 { return 3 }
     return 0
 }

@@ -7,14 +7,10 @@ Text: type = string
 Bytes: type = []u8
 View[T]: struct { value: T }
 
-byte_it(x: u8): u8 {
-    return x
-}
+byte_it(x: u8): u8 { return x }
 
 pick(a: u8, b: u8): u8 {
-    if a < b {
-        return a
-    }
+    if a < b { return a }
     return b
 }
 
@@ -22,18 +18,12 @@ main(): int {
     c: char = 'A'
     b: u8 = c
 
-    if b != 65 {
-        return 1
-    }
+    if b != 65 { return 1 }
     d: char = b
 
-    if d != c {
-        return 2
-    }
+    if d != c { return 2 }
 
-    if sizeof(char) != 1 {
-        return 3
-    }
+    if sizeof(char) != 1 { return 3 }
 
     if sizeof([]char) != 16 || sizeof([]u8) != 16 || sizeof([3]char) != 3 ||
        sizeof([2]u8) != 2 || sizeof(string) != 16 {
@@ -42,50 +32,32 @@ main(): int {
     bytes: [2]u8 = [u8('x'), u8('y')]
     view: []char = bytes[0..2]
 
-    if view.len != 2 || view[0] != 'x' {
-        return 5
-    }
+    if view.len != 2 || view[0] != 'x' { return 5 }
     wide: []u8 = view
 
-    if wide[1] != 'y' {
-        return 6
-    }
+    if wide[1] != 'y' { return 6 }
     text: string = wide
     bytes_again: []u8 = text
 
-    if text.len != 2 || bytes_again[0] != 'x' {
-        return 10
-    }
+    if text.len != 2 || bytes_again[0] != 'x' { return 10 }
 
     letters: [2]char = ['o', 'k']
     writable_text: mut string = mut letters[..]
     writable_bytes: mut []u8 = writable_text
     writable_bytes[0] = 'O'
 
-    if writable_text[0] != 'O' {
-        return 11
-    }
-    if typeid(Text) != typeid(Bytes) {
-        return 12
-    }
+    if writable_text[0] != 'O' { return 11 }
+    if typeid(Text) != typeid(Bytes) { return 12 }
     text_box: View[string] = View[string] { value = text }
     bytes_box: View[[]u8] = text_box
 
-    if bytes_box.value.len != 2 {
-        return 13
-    }
+    if bytes_box.value.len != 2 { return 13 }
 
-    if byte_it(c) != 'A' {
-        return 7
-    }
+    if byte_it(c) != 'A' { return 7 }
 
-    if pick('b', 'a') != 'a' {
-        return 8
-    }
+    if pick('b', 'a') != 'a' { return 8 }
     box: Box = Box { tag = 'Z' }
 
-    if box.tag != 90 {
-        return 9
-    }
+    if box.tag != 90 { return 9 }
     return 0
 }

@@ -63,9 +63,7 @@ hash[bool](key: bool): u64 {
 /* FNV-1a over the bytes, then the finalizer. */
 hash[string](key: string): u64 {
     h: u64 = 0xcbf29ce484222325
-    for i: usize in 0 .. key.len {
-        h = bits.wrap_mul(h ^ u64(key[i]), u64(0x100000001b3))
-    }
+    for i: usize in 0 .. key.len { h = bits.wrap_mul(h ^ u64(key[i]), u64(0x100000001b3)) }
     return mix(h)
 }
 
@@ -87,9 +85,7 @@ same[string](a: string, b: string): bool { return mem.equal(a, b) }
 probe[K, V](slots: []Slot[K, V], key: K): usize {
     mask: usize = slots.len - 1
     at: usize = usize(hash[K](key)) & mask
-    for slots[at].used && !same[K](slots[at].key, key) {
-        at = (at + 1) & mask
-    }
+    for slots[at].used && !same[K](slots[at].key, key) { at = (at + 1) & mask }
     return at
 }
 
@@ -125,9 +121,7 @@ mut Map[K, V].rehash(capacity: usize): Error {
     fresh: mut []Slot[K, V] = mem.zalloc[Slot[K, V]](capacity)
     if fresh == null { return MapErr.allocation }
     for i: usize in 0 .. self.slots.len {
-        if self.slots[i].used {
-            fresh[probe[K, V](fresh, self.slots[i].key)] = self.slots[i]
-        }
+        if self.slots[i].used { fresh[probe[K, V](fresh, self.slots[i].key)] = self.slots[i] }
     }
     mem.release[Slot[K, V]](mut self.slots)
     self.slots = fresh

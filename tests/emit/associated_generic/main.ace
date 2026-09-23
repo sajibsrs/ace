@@ -12,8 +12,6 @@ pub Pair[A, B]::new(a: A, b: B): Pair[A, B] {
 main(): int {
     p1: Pair[int, int] = Pair[int, int]::new(10, 5)
     p2: Pair[int, string] = Pair[int, string]::new(3, "hi")
-    if p2.second.len != 2 {
-        return 99
-    }
+    if p2.second.len != 2 { return 99 }
     return p1.first + p1.second + p2.first
 }

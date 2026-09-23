@@ -1,3 +1,1 @@
-pub noop(): int {
-    return 0
-}
+pub noop(): int { return 0 }

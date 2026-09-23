@@ -190,9 +190,7 @@ linear(): int {
     storage: [100000]u8
     text: mut []u8 = mut storage[0..100000]
 
-    for i: usize in 0 .. 100000 {
-        text[i] = 'a'
-    }
+    for i: usize in 0 .. 100000 { text[i] = 'a' }
     bad += found("(a*)*b", string(text[0..100000]), 0, "none")
     bad += found("(a|aa)*c", string(text[0..100000]), 0, "none")
     bad += found("(a*)*", "b", 0, "0-0")
@@ -278,9 +276,7 @@ counting(): int {
 
 main(): int {
     bad: int = basics() + priority() + anchors() + captures() + iteration() + linear() + surface() + counting()
-    if bad != 0 {
-        return 1
-    }
+    if bad != 0 { return 1 }
 
     return 0
 }

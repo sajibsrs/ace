@@ -20,8 +20,6 @@ main(): int {
     volatile *p = 11
     control: u32 = volatile *p
 
-    if status != 7 || control != 11 || word != Word(9) || state != Backed.zero {
-        return 1
-    }
+    if status != 7 || control != 11 || word != Word(9) || state != Backed.zero { return 1 }
     return 0
 }

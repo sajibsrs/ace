@@ -85,16 +85,12 @@ pub exchange[C](
     target_parts: [2]string = [parsed.path, parsed.query]
     if resize {
         mem_target: mut []u8, target_ok: bool = mem.grow[u8](storage.target, parsed.path.len + parsed.query.len)
-        if !target_ok {
-            return Response {}, ClientErr.allocation
-        }
+        if !target_ok { return Response {}, ClientErr.allocation }
 
         storage.target = mem_target
     }
     target_count: usize, fit: bool = str.concat(target_parts[..], mut storage.target[..])
-    if !fit {
-        return Response {}, ClientErr.target_capacity
-    }
+    if !fit { return Response {}, ClientErr.target_capacity }
 
     fields: [2]Header = [
         Header {
@@ -115,21 +111,15 @@ pub exchange[C](
     output_count: usize, format_err: Error = request.format(mut storage.output[..])
     for resize && format_err == FormatErr.capacity {
         mem_output: mut []u8, output_ok: bool = mem.grow[u8](storage.output, storage.output.len + 1)
-        if !output_ok {
-            return Response {}, ClientErr.allocation
-        }
+        if !output_ok { return Response {}, ClientErr.allocation }
 
         storage.output = mem_output
         output_count, format_err = request.format(mut storage.output[..])
     }
-    if format_err != null {
-        return Response {}, format_err
-    }
+    if format_err != null { return Response {}, format_err }
 
     _: usize, send_err: Error = send(connection, storage.output[..output_count])
-    if send_err != null {
-        return Response {}, send_err
-    }
+    if send_err != null { return Response {}, send_err }
 
     occupied: usize = 0
     parser: ResponseParser = ResponseParser {
@@ -142,13 +132,9 @@ pub exchange[C](
     for {
         if !parse_pending {
             if occupied == storage.input.len {
-                if !resize {
-                    return Response {}, ClientErr.response
-                }
+                if !resize { return Response {}, ClientErr.response }
                 mem_input: mut []u8, input_ok: bool = mem.grow[u8](storage.input, storage.input.len + 1)
-                if !input_ok {
-                    return Response {}, ClientErr.allocation
-                }
+                if !input_ok { return Response {}, ClientErr.allocation }
 
                 storage.input = mem_input
 
@@ -163,9 +149,7 @@ pub exchange[C](
 
             received: int
             received, recv_err: Error = receive(connection, mut storage.input[occupied..])
-            if recv_err != null {
-                return Response {}, recv_err
-            }
+            if recv_err != null { return Response {}, recv_err }
 
             occupied += usize(received)
             eof = received == 0
@@ -186,17 +170,13 @@ pub exchange[C](
             }
             ResponseResult.progress(value: ResponseProgress) {}
             ResponseResult.capacity(capacity_type: ResponseCapacity) {
-                if !resize {
-                    return Response {}, ClientErr.response
-                }
+                if !resize { return Response {}, ClientErr.response }
                 if capacity_type == ResponseCapacity.headers {
                     mem_headers: mut []Header, headers_ok: bool = mem.grow[Header](
                         storage.headers,
                         storage.headers.len + 1,
                     )
-                    if !headers_ok {
-                        return Response {}, ClientErr.allocation
-                    }
+                    if !headers_ok { return Response {}, ClientErr.allocation }
 
                     storage.headers = mem_headers
                 } else {
@@ -209,9 +189,7 @@ pub exchange[C](
                         needed = parser.body_count + parser.chunk_remaining
                     }
                     mem_body: mut []u8, body_ok: bool = mem.grow[u8](storage.body, needed)
-                    if !body_ok {
-                        return Response {}, ClientErr.allocation
-                    }
+                    if !body_ok { return Response {}, ClientErr.allocation }
 
                     storage.body = mem_body
                 }

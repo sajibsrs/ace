@@ -9,29 +9,17 @@ Box[T]: struct { v: T }
 
 Store: struct { bytes: mut []u8, text: mut string }
 
-plain_len(s: string): int {
-    return int(s.len)
-}
+plain_len(s: string): int { return int(s.len) }
 
-mut_len(s: mut string): int {
-    return int(s.len)
-}
+mut_len(s: mut string): int { return int(s.len) }
 
-pick(s: string): int {
-    return 1
-}
+pick(s: string): int { return 1 }
 
-pick(s: mut string): int {
-    return 2
-}
+pick(s: mut string): int { return 2 }
 
-first[T](values: []T): T {
-    return values[0]
-}
+first[T](values: []T): T { return values[0] }
 
-id(text: string): string {
-    return text
-}
+id(text: string): string { return text }
 
 main(): int {
     // Establishment from writable-lvalue sources; literals cannot establish.
@@ -42,82 +30,52 @@ main(): int {
 
     // Permission shrink is implicit; widening is not.
     r: []u8 = w
-    if plain_len_of(w) != 0 {
-        return 1
-    }
+    if plain_len_of(w) != 0 { return 1 }
 
     // Slicing propagates permission in the type, no new marker.
     tail: mut []u8 = w[2..4]
     tail[0] = 42
-    if backing[2] != 42 {
-        return 2
-    }
+    if backing[2] != 42 { return 2 }
     plain_tail: []u8 = w[2..4]
 
     // mut string exists: same .len, explicit content comparison, and null semantics.
     source: string = id("ace")
     letters: [3]u8 = [u8('a'), u8('c'), u8('e')]
     ms: mut string = mut letters[0..]
-    if ms.len != 3 {
-        return 3
-    }
-    if !mem.equal(ms, source) || !mem.equal(source, ms) {
-        return 4
-    }
-    if ms == null {
-        return 5
-    }
+    if ms.len != 3 { return 3 }
+    if !mem.equal(ms, source) || !mem.equal(source, ms) { return 4 }
+    if ms == null { return 5 }
     ms_slice: mut string = ms[1..]
-    if plain_len(ms_slice) != 2 {
-        return 6
-    }
-    if mut_len(ms) != 3 {
-        return 7
-    }
+    if plain_len(ms_slice) != 2 { return 6 }
+    if mut_len(ms) != 3 { return 7 }
 
     // Overloads distinguish the mut-qualified type distinctly.
-    if pick(source) != 1 || pick(ms) != 2 {
-        return 8
-    }
+    if pick(source) != 1 || pick(ms) != 2 { return 8 }
 
     // Generic instantiations are distinct types.
     a: Box[string] = Box[string] { v = source }
     b: Box[mut string] = Box[mut string] { v = ms }
-    if a.v.len != 3 || b.v.len != 3 {
-        return 9
-    }
+    if a.v.len != 3 || b.v.len != 3 { return 9 }
 
     // Struct fields hold mut-qualified views.
     store: Store = Store {
         bytes = backing[0..4],
         text = ms,
     }
-    if store.bytes.len != 4 || store.text.len != 3 {
-        return 10
-    }
+    if store.bytes.len != 4 || store.text.len != 3 { return 10 }
 
     // in mut iteration over a mut slice aliases without a storage check.
     total: int = 0
-    for x: u8 in mut w {
-        total += int(x)
-    }
-    if total != 84 {
-        return 11
-    }
+    for x: u8 in mut w { total += int(x) }
+    if total != 84 { return 11 }
 
     // Plain and mut byte views compare explicitly by content.
-    if !mem.equal(w, r) || !mem.equal(tail, plain_tail) {
-        return 12
-    }
+    if !mem.equal(w, r) || !mem.equal(tail, plain_tail) { return 12 }
 
     // Generic function instantiation keeps explicit type arguments.
     names: [1]string = ["x"]
-    if !mem.equal(first[string](names[0..1]), "x") {
-        return 13
-    }
+    if !mem.equal(first[string](names[0..1]), "x") { return 13 }
     return 0
 }
 
-plain_len_of(v: []u8): int {
-    return int(v.len)
-}
+plain_len_of(v: []u8): int { return int(v.len) }

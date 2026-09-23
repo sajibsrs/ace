@@ -8,9 +8,7 @@ main(): int {
     state: usize = 1
 
     started: u64 = time.awake()
-    for i: usize in 0 .. iterations {
-        state = (state * 48271 + (i % 97)) % 2147483647
-    }
+    for i: usize in 0 .. iterations { state = (state * 48271 + (i % 97)) % 2147483647 }
     elapsed: u64 = time.awake() - started
 
     fmt.printf("iterations: %u\nelapsed ns: %u\nchecksum: %u\n", iterations, usize(elapsed), state)

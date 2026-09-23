@@ -31,9 +31,7 @@ nan_branches(): int {
     small: f32 = f32(nan)
     if small > f32(1.0) || small <= f32(1.0) { return 9 }
     count: int = 0
-    for !(nan > one) && count < 3 {
-        count += 1
-    }
+    for !(nan > one) && count < 3 { count += 1 }
     if count != 3 { return 10 }
     return 0
 }
@@ -80,9 +78,7 @@ short_circuit(): int {
     if order != 123 { return 30 }
     order = 0
     i: int = 0
-    for i < 2 && note(5, true) {
-        i += 1
-    }
+    for i < 2 && note(5, true) { i += 1 }
     if order != 55 { return 31 }
     return 0
 }

@@ -5,6 +5,4 @@ Hidden: union {
     value: int,
 }
 
-pub make(): Hidden {
-    return Hidden.value(1)
-}
+pub make(): Hidden { return Hidden.value(1) }

@@ -7,9 +7,7 @@ import bits
 Meters: distinct f32
 
 main(): int {
-    if bits.from_float(f32(-1.0)) != u32(0xBF800000) {
-        return 1
-    }
+    if bits.from_float(f32(-1.0)) != u32(0xBF800000) { return 1 }
     if bits.from_float(f32(0.0 - 1.0)) != u32(0xBF800000) ||
        bits.from_float(f32(1.0 - 0.5)) != u32(0x3F000000) ||
        bits.from_float(f32(-1.0 + 2.5)) != u32(0x3FC00000) {
@@ -31,13 +29,9 @@ main(): int {
         return 5
     }
     length: Meters = Meters(-1.5)
-    if bits.from_float(f32(length)) != u32(0xBFC00000) {
-        return 6
-    }
+    if bits.from_float(f32(length)) != u32(0xBFC00000) { return 6 }
     // Float arithmetic runs at the target width, as in a typed declaration.
     third: f32 = 1.0 / 3.0
-    if bits.from_float(f32(1.0 / 3.0)) != bits.from_float(third) {
-        return 7
-    }
+    if bits.from_float(f32(1.0 / 3.0)) != bits.from_float(third) { return 7 }
     return 42
 }

@@ -3,12 +3,8 @@ import errors: "./error_lib.ace"
 
 main(): int {
     error: Error = errors.fail(2)
-    if error.domain != typeid(errors.FileError) || error.code != 2 {
-        return 1
-    }
-    if typeid(errors.FileError) != typeid(errors.Alias) {
-        return 2
-    }
+    if error.domain != typeid(errors.FileError) || error.code != 2 { return 1 }
+    if typeid(errors.FileError) != typeid(errors.Alias) { return 2 }
     if errors.Alias.not_found != error || error.name.len != 9 ||
        error.message.len != 14 {
         return 3

@@ -108,13 +108,9 @@ pub Program::compile(tree: Syntax): (Program, Error) {
     classes: array.Array[Class] = array.Array[Class] {}
 
     for set: Class in tree.classes.view() {
-        if c.err != null {
-            break
-        }
+        if c.err != null { break }
 
-        if mut classes.push(set) != null {
-            c.err = CompileErr.allocation
-        }
+        if mut classes.push(set) != null { c.err = CompileErr.allocation }
     }
 
     if c.err != null {
@@ -187,36 +183,26 @@ pub Program.format(destination: mut []char): (usize, bool) {
 }
 
 /* The index the next instruction will take. */
-Compiler.pc(): u32 {
-    return u32(self.insts.len)
-}
+Compiler.pc(): u32 { return u32(self.insts.len) }
 
 mut Compiler.emit(inst: Inst) {
-    if self.err != null {
-        return
-    }
+    if self.err != null { return }
 
     if self.insts.len == MAX_INSTS {
         self.err = CompileErr.too_large
         return
     }
 
-    if mut self.insts.push(inst) != null {
-        self.err = CompileErr.allocation
-    }
+    if mut self.insts.push(inst) != null { self.err = CompileErr.allocation }
 }
 
 mut Compiler.patch(at: u32, inst: Inst) {
-    if self.err != null {
-        return
-    }
+    if self.err != null { return }
     mut self.insts.set(usize(at), inst)
 }
 
 mut Compiler.node(index: u32) {
-    if self.err != null {
-        return
-    }
+    if self.err != null { return }
     node: Node = self.syntax.nodes.get(usize(index))
 
     switch node {
@@ -239,9 +225,7 @@ mut Compiler.node(index: u32) {
         }
         Node.repeat(r: Repeat) { mut self.repeat(r) }
         Node.concat(list: List) {
-            for i: u32 in 0 .. list.count {
-                mut self.node(self.syntax.children.get(usize(list.first + i)))
-            }
+            for i: u32 in 0 .. list.count { mut self.node(self.syntax.children.get(usize(list.first + i))) }
         }
         Node.alt(list: List) { mut self.alt(list) }
     }
@@ -324,9 +308,7 @@ mut Compiler.copies(child: u32, count: u32) {
         before: u32 = self.pc()
         mut self.node(child)
 
-        if self.err != null || self.pc() == before {
-            return
-        }
+        if self.err != null || self.pc() == before { return }
     }
 }
 
@@ -347,9 +329,7 @@ mut Compiler.optional(child: u32, count: u32, greedy: bool) {
         pending = at
         mut self.node(child)
 
-        if self.err != null {
-            return
-        }
+        if self.err != null { return }
     }
     end: u32 = self.pc()
 

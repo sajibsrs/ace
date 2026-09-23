@@ -3,41 +3,23 @@
 // when it encodes; each result is checked against the register form through
 // a helper, for 64-, 32-, and 8-bit operands.
 
-and64(a: u64, b: u64): u64 {
-    return a & b
-}
+and64(a: u64, b: u64): u64 { return a & b }
 
-or64(a: u64, b: u64): u64 {
-    return a | b
-}
+or64(a: u64, b: u64): u64 { return a | b }
 
-xor64(a: u64, b: u64): u64 {
-    return a ^ b
-}
+xor64(a: u64, b: u64): u64 { return a ^ b }
 
-and32(a: u32, b: u32): u32 {
-    return a & b
-}
+and32(a: u32, b: u32): u32 { return a & b }
 
-or32(a: u32, b: u32): u32 {
-    return a | b
-}
+or32(a: u32, b: u32): u32 { return a | b }
 
-xor32(a: u32, b: u32): u32 {
-    return a ^ b
-}
+xor32(a: u32, b: u32): u32 { return a ^ b }
 
-and8(a: u8, b: u8): u8 {
-    return a & b
-}
+and8(a: u8, b: u8): u8 { return a & b }
 
-or8(a: u8, b: u8): u8 {
-    return a | b
-}
+or8(a: u8, b: u8): u8 { return a | b }
 
-xor8(a: u8, b: u8): u8 {
-    return a ^ b
-}
+xor8(a: u8, b: u8): u8 { return a ^ b }
 
 probe64(p: u64): int {
     bad: int = 0

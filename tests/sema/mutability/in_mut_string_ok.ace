@@ -3,9 +3,7 @@
  * through the alias, and the index binder stays a plain usize copy. */
 
 fill(text: mut string, value: u8) {
-    for b: u8 in mut text {
-        b = value
-    }
+    for b: u8 in mut text { b = value }
 }
 
 main(): int {
@@ -22,14 +20,10 @@ main(): int {
             continue // address-of the alias is valid; nullness is not implied
         }
     }
-    if text[2] != 9 || total != 15 {
-        return 1
-    }
+    if text[2] != 9 || total != 15 { return 1 }
     for c: u8 in mut text[3..] { // re-sliced views stay writable
         c = 1
     }
-    if text[3] != 1 {
-        return 2
-    }
+    if text[3] != 1 { return 2 }
     return 0
 }

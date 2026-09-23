@@ -9,8 +9,6 @@ import d: "./d.ace"
 
 main(): int {
     n: int, ok: bool = str.parse[int]("42")
-    if !ok || n != 42 {
-        return 1
-    }
+    if !ok || n != 42 { return 1 }
     return d.value()
 }

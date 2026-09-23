@@ -6,9 +6,7 @@ import regex
 compile(pattern: string): (regex.Program, Error) {
     s: regex.Syntax, err: Error, at: usize = regex.Syntax::parse(pattern)
     defer mut s.wipe()
-    if err != null {
-        return blank(regex.Program), err
-    }
+    if err != null { return blank(regex.Program), err }
 
     p: regex.Program, cerr: Error = regex.Program::compile(s)
     return p, cerr
@@ -111,9 +109,7 @@ limits(): int {
 
 main(): int {
     bad: int = basics() + repetition() + limits()
-    if bad != 0 {
-        return 1
-    }
+    if bad != 0 { return 1 }
 
     return 0
 }

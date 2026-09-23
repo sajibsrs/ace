@@ -2,6 +2,4 @@
 
 import absent from "./util.ace"
 
-main(): int {
-    return absent()
-}
+main(): int { return absent() }

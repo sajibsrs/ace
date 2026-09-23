@@ -1,3 +1,1 @@
-pub value(): int {
-    return 39
-}
+pub value(): int { return 39 }

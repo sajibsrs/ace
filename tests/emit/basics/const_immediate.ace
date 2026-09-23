@@ -13,9 +13,7 @@ NEG8: const i8 = -3
 POS8: const i8 = 100
 ALIAS: const usize = MASK
 
-masked(a: usize): usize {
-    return (a * 48271 + 1) & MASK
-}
+masked(a: usize): usize { return (a * 48271 + 1) & MASK }
 
 main(): int {
     if masked(1) != 48272 { return 1 }

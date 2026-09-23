@@ -16,9 +16,7 @@ loopback(port: u16): net.Addr4 {
 
 client(port: u16): int {
     connection: tcp.Conn, err: Error = tcp.connect(loopback(port))
-    if err != null {
-        return 1
-    }
+    if err != null { return 1 }
 
     request: string = "blocking echo"
     sent: usize
@@ -36,17 +34,13 @@ client(port: u16): int {
         tcp.close(mut connection)
         return 3
     }
-    if tcp.close(mut connection) != null {
-        return 4
-    }
+    if tcp.close(mut connection) != null { return 4 }
     return 0
 }
 
 main(): int {
     listener: tcp.Listener, err: Error = tcp.listen(loopback(u16(0)), usize(8))
-    if err != null {
-        return 10
-    }
+    if err != null { return 10 }
     address: net.Addr4
     address, err = tcp.local(listener)
     if err != null || address.port == 0 {

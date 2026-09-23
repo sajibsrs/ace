@@ -47,28 +47,20 @@ Counter: struct {
     value: usize,
 }
 
-call1(a: usize): usize {
-    return (a * 48271 + 1) & MASK
-}
+call1(a: usize): usize { return (a * 48271 + 1) & MASK }
 
-call4(a: usize, b: usize, c: usize, d: usize): usize {
-    return (a * 3 + b * 5 + c * 7 + d) & MASK
-}
+call4(a: usize, b: usize, c: usize, d: usize): usize { return (a * 3 + b * 5 + c * 7 + d) & MASK }
 
 call8(a: usize, b: usize, c: usize, d: usize, e: usize, f: usize, g: usize, h: usize): usize {
     return (a + b * 2 + c * 3 + d * 5 + e * 7 + f * 11 + g * 13 + h * 17) & MASK
 }
 
 fib(n: usize): usize {
-    if n < 2 {
-        return n
-    }
+    if n < 2 { return n }
     return fib(n - 1) + fib(n - 2)
 }
 
-small_step(s: Small): Small {
-    return Small { v = (s.v * 48271 + 1) & MASK }
-}
+small_step(s: Small): Small { return Small { v = (s.v * 48271 + 1) & MASK } }
 
 pair_step(p: Pair): Pair {
     return Pair {
@@ -106,17 +98,11 @@ vec_add(a: Vec3, b: Vec3): Vec3 {
     }
 }
 
-dot3(a: Vec3, b: Vec3): f64 {
-    return a.x * b.x + a.y * b.y + a.z * b.z
-}
+dot3(a: Vec3, b: Vec3): f64 { return a.x * b.x + a.y * b.y + a.z * b.z }
 
-divmod(a: usize, b: usize): (usize, usize) {
-    return a / b, a % b
-}
+divmod(a: usize, b: usize): (usize, usize) { return a / b, a % b }
 
-mut Counter.add(amount: usize) {
-    self.value = (self.value + amount) & MASK
-}
+mut Counter.add(amount: usize) { self.value = (self.value + amount) & MASK }
 
 report(name: string, elapsed: u64, operations: usize, checksum: usize) {
     fmt.printf("%s %u %u %u\n", name, usize(elapsed), operations, checksum)
@@ -125,23 +111,17 @@ report(name: string, elapsed: u64, operations: usize, checksum: usize) {
 main(): int {
     state: usize = 1
     started: u64 = time.awake()
-    for i: usize in 0 .. ITERATIONS {
-        state = call1(state + i)
-    }
+    for i: usize in 0 .. ITERATIONS { state = call1(state + i) }
     report("call-1", time.awake() - started, ITERATIONS, state)
 
     state = 1
     started = time.awake()
-    for i: usize in 0 .. ITERATIONS {
-        state = call4(state, i, state >> 3, 1)
-    }
+    for i: usize in 0 .. ITERATIONS { state = call4(state, i, state >> 3, 1) }
     report("call-4", time.awake() - started, ITERATIONS, state)
 
     state = 1
     started = time.awake()
-    for i: usize in 0 .. ITERATIONS {
-        state = call8(state, i, 1, 2, 3, 4, 5, 6)
-    }
+    for i: usize in 0 .. ITERATIONS { state = call8(state, i, 1, 2, 3, 4, 5, 6) }
     report("call-8", time.awake() - started, ITERATIONS, state)
 
     started = time.awake()
@@ -150,9 +130,7 @@ main(): int {
 
     small: Small = Small { v = 1 }
     started = time.awake()
-    for i: usize in 0 .. ITERATIONS {
-        small = small_step(small)
-    }
+    for i: usize in 0 .. ITERATIONS { small = small_step(small) }
     report("struct-8", time.awake() - started, ITERATIONS, small.v)
 
     pair: Pair = Pair {
@@ -160,9 +138,7 @@ main(): int {
         b = 1,
     }
     started = time.awake()
-    for i: usize in 0 .. ITERATIONS {
-        pair = pair_step(pair)
-    }
+    for i: usize in 0 .. ITERATIONS { pair = pair_step(pair) }
     report("struct-16", time.awake() - started, ITERATIONS, (pair.a + pair.b) & MASK)
 
     triple: Triple = Triple {
@@ -171,9 +147,7 @@ main(): int {
         c = 1,
     }
     started = time.awake()
-    for i: usize in 0 .. ITERATIONS {
-        triple = triple_step(triple)
-    }
+    for i: usize in 0 .. ITERATIONS { triple = triple_step(triple) }
     report("struct-24", time.awake() - started, ITERATIONS, (triple.a + triple.b + triple.c) & MASK)
 
     octet: Octet = Octet {
@@ -187,9 +161,7 @@ main(): int {
         h = 1,
     }
     started = time.awake()
-    for i: usize in 0 .. ITERATIONS {
-        octet = octet_step(octet)
-    }
+    for i: usize in 0 .. ITERATIONS { octet = octet_step(octet) }
     report(
         "struct-64",
         time.awake() - started,
@@ -208,9 +180,7 @@ main(): int {
         z = 3.0,
     }
     started = time.awake()
-    for i: usize in 0 .. ITERATIONS {
-        acc = vec_add(acc, step)
-    }
+    for i: usize in 0 .. ITERATIONS { acc = vec_add(acc, step) }
     report("struct-hfa", time.awake() - started, ITERATIONS, usize(acc.x + acc.y + acc.z))
 
     total: f64 = 0.0
@@ -241,17 +211,13 @@ main(): int {
 
     counter: Counter = Counter { value = 1 }
     started = time.awake()
-    for i: usize in 0 .. ITERATIONS {
-        mut counter.add(i)
-    }
+    for i: usize in 0 .. ITERATIONS { mut counter.add(i) }
     report("method", time.awake() - started, ITERATIONS, counter.value)
 
     callback: (usize): usize = call1
     state = 1
     started = time.awake()
-    for i: usize in 0 .. ITERATIONS {
-        state = callback(state + i)
-    }
+    for i: usize in 0 .. ITERATIONS { state = callback(state + i) }
     report("function-value", time.awake() - started, ITERATIONS, state)
     return 0
 }

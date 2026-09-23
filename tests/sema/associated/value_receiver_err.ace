@@ -1,8 +1,6 @@
 Router: struct { count: int }
 
-pub Router::new(): Router {
-    return Router { count = 0 }
-}
+pub Router::new(): Router { return Router { count = 0 } }
 
 main(): int {
     r: Router = Router::new()

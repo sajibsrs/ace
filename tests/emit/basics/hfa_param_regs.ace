@@ -31,9 +31,7 @@ Arr: struct {
 }
 
 // The object's first function label is the section, so it stays a dummy.
-first(): usize {
-    return 0
-}
+first(): usize { return 0 }
 
 vec_add(a: Vec3, b: Vec3): Vec3 {
     return Vec3 {
@@ -78,51 +76,29 @@ swap2(a: Vec2): Vec2 {
 }
 
 // s arrives on the stack, past d0-d7, and is read after the homed leaves
-stacked(a: Vec3, b: Vec3, c: f64, d: f64, s: f64): f64 {
-    return a.x + b.z + c + d + s
-}
+stacked(a: Vec3, b: Vec3, c: f64, d: f64, s: f64): f64 { return a.x + b.z + c + d + s }
 
-dot(a: Vec3, b: Vec3): f64 {
-    return a.x * b.x + a.y * b.y + a.z * b.z
-}
+dot(a: Vec3, b: Vec3): f64 { return a.x * b.x + a.y * b.y + a.z * b.z }
 
-second(a: Vec3): f64 {
-    return a.y
-}
+second(a: Vec3): f64 { return a.y }
 
-unused(a: Vec3, b: Vec3): f64 {
-    return b.z
-}
+unused(a: Vec3, b: Vec3): f64 { return b.z }
 
-sum2(a: Vec2, b: Vec2): f32 {
-    return a.x + b.y
-}
+sum2(a: Vec2, b: Vec2): f32 { return a.x + b.y }
 
-widen(a: Vec2): f64 {
-    return f64(a.x) + f64(a.y)
-}
+widen(a: Vec2): f64 { return f64(a.x) + f64(a.y) }
 
-area(r: Rect): f64 {
-    return (r.max.x - r.min.x) * (r.max.y - r.min.y)
-}
+area(r: Rect): f64 { return (r.max.x - r.min.x) * (r.max.y - r.min.y) }
 
 // operand order and literals on either side
-order(a: Vec3): f64 {
-    return (2.0 - a.x) / a.y - a.z * 0.5
-}
+order(a: Vec3): f64 { return (2.0 - a.x) / a.y - a.z * 0.5 }
 
-negate(a: Vec3): f64 {
-    return -a.x + a.y
-}
+negate(a: Vec3): f64 { return -a.x + a.y }
 
-bigger(a: Vec3, b: Vec3): bool {
-    return a.x > b.x
-}
+bigger(a: Vec3, b: Vec3): bool { return a.x > b.x }
 
 // a whole-value use keeps the slot; the other parameter still qualifies
-pass(a: Vec3): Vec3 {
-    return a
-}
+pass(a: Vec3): Vec3 { return a }
 
 mixed(a: Vec3, b: Vec3): f64 {
     c: Vec3 = b
@@ -130,35 +106,23 @@ mixed(a: Vec3, b: Vec3): f64 {
 }
 
 // a runtime index needs the array in memory
-pick(a: Arr, i: usize): f64 {
-    return a.v[i]
-}
+pick(a: Arr, i: usize): f64 { return a.v[i] }
 
 // a call clobbers the registers, so a non-leaf keeps its slots
-twice(x: f64): f64 {
-    return x * 2.0
-}
+twice(x: f64): f64 { return x * 2.0 }
 
-after_call(a: Vec3): f64 {
-    return twice(a.x) + a.y
-}
+after_call(a: Vec3): f64 { return twice(a.x) + a.y }
 
 // three parameters exceed the register budget: the last keeps its slot
-sum3(a: Vec3, b: Vec3, c: Vec3): f64 {
-    return a.x + a.y + a.z + b.x + b.y + b.z + c.x + c.y + c.z
-}
+sum3(a: Vec3, b: Vec3, c: Vec3): f64 { return a.x + a.y + a.z + b.x + b.y + b.z + c.x + c.y + c.z }
 
 in_loop(a: Vec3): f64 {
     acc: f64 = 0.0
-    for i: usize in 0 .. 4 {
-        acc = acc + a.x * a.y - a.z
-    }
+    for i: usize in 0 .. 4 { acc = acc + a.x * a.y - a.z }
     return acc
 }
 
-deep(a: Vec3): f64 {
-    return a.x * (a.y + (a.z * (a.x + (a.y * (a.z + (a.x * (a.y + a.z)))))))
-}
+deep(a: Vec3): f64 { return a.x * (a.y + (a.z * (a.x + (a.y * (a.z + (a.x * (a.y + a.z))))))) }
 
 main(): int {
     a: Vec3 = Vec3 {
@@ -173,19 +137,11 @@ main(): int {
     }
 
     s: Vec3 = vec_add(a, b)
-    if s.x != 9.0 || s.y != 18.0 || s.z != 36.0 {
-        return 1
-    }
+    if s.x != 9.0 || s.y != 18.0 || s.z != 36.0 { return 1 }
     r: Vec3 = rotate(a)
-    if r.x != 4.0 || r.y != 1.0 || r.z != 2.0 {
-        return 2
-    }
-    if dot(a, b) != 8.0 + 32.0 + 128.0 {
-        return 3
-    }
-    if second(b) != 16.0 || unused(a, b) != 32.0 {
-        return 4
-    }
+    if r.x != 4.0 || r.y != 1.0 || r.z != 2.0 { return 2 }
+    if dot(a, b) != 8.0 + 32.0 + 128.0 { return 3 }
+    if second(b) != 16.0 || unused(a, b) != 32.0 { return 4 }
     if sum2(Vec2 {
         x = 1.5,
         y = 2.5,
@@ -211,9 +167,7 @@ main(): int {
             y = 10.0,
         },
     }
-    if area(rc) != 24.0 {
-        return 7
-    }
+    if area(rc) != 24.0 { return 7 }
     if order(Vec3 {
         x = 1.0,
         y = 4.0,
@@ -221,63 +175,33 @@ main(): int {
     }) != 0.25 - 4.0 {
         return 8
     }
-    if negate(a) != 1.0 {
-        return 9
-    }
-    if !bigger(b, a) || bigger(a, b) {
-        return 10
-    }
+    if negate(a) != 1.0 { return 9 }
+    if !bigger(b, a) || bigger(a, b) { return 10 }
     p: Vec3 = pass(b)
-    if p.x != 8.0 || p.y != 16.0 || p.z != 32.0 {
-        return 11
-    }
-    if mixed(a, b) != 17.0 {
-        return 12
-    }
+    if p.x != 8.0 || p.y != 16.0 || p.z != 32.0 { return 11 }
+    if mixed(a, b) != 17.0 { return 12 }
     arr: Arr = Arr { v = [3.0, 5.0] }
-    if pick(arr, 0) != 3.0 || pick(arr, 1) != 5.0 {
-        return 13
-    }
-    if after_call(a) != 4.0 {
-        return 14
-    }
-    if sum3(a, b, s) != 7.0 + 56.0 + 63.0 {
-        return 15
-    }
-    if in_loop(a) != 4.0 * (2.0 - 4.0) {
-        return 16
-    }
+    if pick(arr, 0) != 3.0 || pick(arr, 1) != 5.0 { return 13 }
+    if after_call(a) != 4.0 { return 14 }
+    if sum3(a, b, s) != 7.0 + 56.0 + 63.0 { return 15 }
+    if in_loop(a) != 4.0 * (2.0 - 4.0) { return 16 }
     q: Vec3 = partial(a, b)
-    if q.x != 9.0 || q.y != 16.0 || q.z != 4.0 {
-        return 18
-    }
+    if q.x != 9.0 || q.y != 16.0 || q.z != 4.0 { return 18 }
     t: Vec3 = twice_x(a, b)
-    if t.x != 9.0 || t.y != 2.0 || t.z != 3.0 {
-        return 19
-    }
+    if t.x != 9.0 || t.y != 2.0 || t.z != 3.0 { return 19 }
     w: Vec2 = swap2(Vec2 {
         x = 1.5,
         y = -2.5,
     })
-    if w.x != -2.5 || w.y != 1.5 {
-        return 20
-    }
-    if stacked(a, b, 64.0, 128.0, 256.0) != 1.0 + 32.0 + 64.0 + 128.0 + 256.0 {
-        return 21
-    }
+    if w.x != -2.5 || w.y != 1.5 { return 20 }
+    if stacked(a, b, 64.0, 128.0, 256.0) != 1.0 + 32.0 + 64.0 + 128.0 + 256.0 { return 21 }
     acc: Vec3 = Vec3 {
         x = 0.0,
         y = 0.0,
         z = 0.0,
     }
-    for i: usize in 0 .. 3 {
-        acc = vec_add(rotate(acc), a)
-    }
-    if acc.x != 7.0 || acc.y != 7.0 || acc.z != 7.0 {
-        return 22
-    }
-    if deep(a) != 1.0 * (2.0 + (4.0 * (1.0 + (2.0 * (4.0 + (1.0 * (2.0 + 4.0))))))) {
-        return 17
-    }
+    for i: usize in 0 .. 3 { acc = vec_add(rotate(acc), a) }
+    if acc.x != 7.0 || acc.y != 7.0 || acc.z != 7.0 { return 22 }
+    if deep(a) != 1.0 * (2.0 + (4.0 * (1.0 + (2.0 * (4.0 + (1.0 * (2.0 + 4.0))))))) { return 17 }
     return 42
 }

@@ -1,5 +1,3 @@
 /* Return counts must match the signature. */
 
-main(): int {
-    return 1, 2
-}
+main(): int { return 1, 2 }

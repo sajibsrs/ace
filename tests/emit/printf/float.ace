@@ -38,8 +38,6 @@ main(): int {
     )
     fesetround(original_rounding)
 
-    if written != 50 {
-        return 1
-    }
+    if written != 50 { return 1 }
     return 0
 }

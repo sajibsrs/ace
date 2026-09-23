@@ -10,6 +10,4 @@ pub Circle: struct {
 
 Circle signs Shape
 
-Circle.area(): int {
-    return self.radius * self.radius
-}
+Circle.area(): int { return self.radius * self.radius }

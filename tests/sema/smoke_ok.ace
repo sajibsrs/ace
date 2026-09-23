@@ -13,28 +13,18 @@ Shape: contract {
 
 Point signs Shape
 
-Point.area(): f32 {
-    return self.x
-}
+Point.area(): f32 { return self.x }
 
-mut Point.scale(k: f32) {
-    self.x = self.x * k
-}
+mut Point.scale(k: f32) { self.x = self.x * k }
 
-add(a: int, b: int): int {
-    return a + b
-}
+add(a: int, b: int): int { return a + b }
 
 bigger[T](a: T, b: T): T {
-    if b < a {
-        return a
-    }
+    if b < a { return a }
     return b
 }
 
-read(): (int, bool) {
-    return 7, true
-}
+read(): (int, bool) { return 7, true }
 
 g: int = 40
 
@@ -61,24 +51,16 @@ main(): int {
 
     scan: {
         for b: int in arr {
-            if b == 2 {
-                continue
-            }
+            if b == 2 { continue }
 
-            if b == 3 {
-                break scan
-            }
+            if b == 3 { break scan }
             total += b
         }
     }
 
-    for i: int in 0 .. 10 {
-        total += i
-    }
+    for i: int in 0 .. 10 { total += i }
 
-    if 0 <= n <= 100 {
-        total |= 1
-    }
+    if 0 <= n <= 100 { total |= 1 }
 
     switch c {
         Color.red { total = 1 }

@@ -37,9 +37,7 @@ main(): int {
         for i: int in 0 .. slots {
             block: mut []u8 = blocks[i]
             mem.release(mut block)
-            if block != null {
-                failures += 1
-            }
+            if block != null { failures += 1 }
             blocks[i] = block
         }
         release_elapsed += usize(time.awake() - release_started)
@@ -67,12 +65,8 @@ main(): int {
             if block != null {
                 grown: mut []u8 = mem.realloc(block, grown_size)
                 if grown != null {
-                    if grown[0] != u8((round + i) % 251) {
-                        failures += 1
-                    }
-                    if grown[initial_size - 1] != u8((round + i + 1) % 251) {
-                        failures += 1
-                    }
+                    if grown[0] != u8((round + i) % 251) { failures += 1 }
+                    if grown[initial_size - 1] != u8((round + i + 1) % 251) { failures += 1 }
                     block = grown
                 } else {
                     failures += 1
@@ -114,9 +108,7 @@ main(): int {
             checksum += usize(block[grown_size - 1])
         }
         mem.release(mut block)
-        if block != null {
-            failures += 1
-        }
+        if block != null { failures += 1 }
         blocks[i] = block
     }
 
@@ -156,8 +148,6 @@ main(): int {
     fmt.print(failures)
     fmt.print("\n")
 
-    if failures != 0 {
-        return 1
-    }
+    if failures != 0 { return 1 }
     return 0
 }

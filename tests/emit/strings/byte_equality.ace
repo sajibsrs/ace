@@ -30,39 +30,17 @@ main(): int {
     zero_slice: []u8 = null
     zero_text: string = null
 
-    if !mem.equal(first, second) || mem.equal(first, other) {
-        return 1
-    }
-    if mem.equal(first, longer) || mem.equal(longer, first) {
-        return 2
-    }
-    if !mem.equal(first, second_view) || !mem.equal(second_view, first) {
-        return 3
-    }
-    if !mem.equal(first, text) || !mem.equal(text, first) {
-        return 4
-    }
-    if !mem.equal(first_view, second_view) || mem.equal(first_view, short_view) {
-        return 5
-    }
-    if !mem.equal(first_view, text) || !mem.equal(text, first_view) {
-        return 6
-    }
-    if !mem.equal(text, "Ace\x00") || mem.equal(text, "Ace\xFF") {
-        return 7
-    }
-    if !mem.equal(other, "Ace\xFF") || !mem.equal("Ace\xFF", other) {
-        return 8
-    }
-    if !mem.equal(empty_slice, zero_slice) || !mem.equal(empty_slice, zero_text) {
-        return 9
-    }
-    if mem.equal(empty_slice, first) || mem.equal(zero_text, first) {
-        return 10
-    }
-    if !mem.equal(make_array(), make_string()) || left_calls != 1 || right_calls != 1 {
-        return 11
-    }
+    if !mem.equal(first, second) || mem.equal(first, other) { return 1 }
+    if mem.equal(first, longer) || mem.equal(longer, first) { return 2 }
+    if !mem.equal(first, second_view) || !mem.equal(second_view, first) { return 3 }
+    if !mem.equal(first, text) || !mem.equal(text, first) { return 4 }
+    if !mem.equal(first_view, second_view) || mem.equal(first_view, short_view) { return 5 }
+    if !mem.equal(first_view, text) || !mem.equal(text, first_view) { return 6 }
+    if !mem.equal(text, "Ace\x00") || mem.equal(text, "Ace\xFF") { return 7 }
+    if !mem.equal(other, "Ace\xFF") || !mem.equal("Ace\xFF", other) { return 8 }
+    if !mem.equal(empty_slice, zero_slice) || !mem.equal(empty_slice, zero_text) { return 9 }
+    if mem.equal(empty_slice, first) || mem.equal(zero_text, first) { return 10 }
+    if !mem.equal(make_array(), make_string()) || left_calls != 1 || right_calls != 1 { return 11 }
     if mem.compare(first_view, second_view) != 0 ||
        mem.compare(short_view, first_view) >= 0 ||
        mem.compare(first_view, short_view) <= 0 {
@@ -70,8 +48,6 @@ main(): int {
     }
     high: [1]u8 = [255]
     low: [1]u8 = [1]
-    if mem.compare(high[..], low[..]) <= 0 || mem.compare(low[..], high[..]) >= 0 {
-        return 13
-    }
+    if mem.compare(high[..], low[..]) <= 0 || mem.compare(low[..], high[..]) >= 0 { return 13 }
     return 42
 }

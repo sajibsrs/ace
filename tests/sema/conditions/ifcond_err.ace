@@ -1,8 +1,6 @@
 /* An if condition must be a bool. */
 
 main(): int {
-    if 1 {
-        return 1
-    }
+    if 1 { return 1 }
     return 0
 }

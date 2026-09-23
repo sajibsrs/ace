@@ -7,18 +7,12 @@ import str
 main(): int {
     b: bool, ok1: bool = str.parse[bool]("1")
 
-    if ok1 {
-        return 1
-    }
+    if ok1 { return 1 }
     f: f64, ok2: bool = str.parse[f64]("10", u8(2))
 
-    if ok2 {
-        return 2
-    }
+    if ok2 { return 2 }
     i: char, ok3: bool = str.parse[char]("7")
 
-    if ok3 {
-        return 3
-    }
+    if ok3 { return 3 }
     return 0
 }

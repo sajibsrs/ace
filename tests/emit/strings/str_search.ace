@@ -19,27 +19,19 @@ next(bound: u64): u64 {
 }
 
 reference(text: string, needle: string): (usize, bool) {
-    if needle.len == 0 {
-        return 0, true
-    }
+    if needle.len == 0 { return 0, true }
 
-    if needle.len > text.len {
-        return 0, false
-    }
+    if needle.len > text.len { return 0, false }
 
     for scan: usize in 0 .. text.len - needle.len + 1 {
-        if mem.equal(text[scan..scan + needle.len], needle) {
-            return scan, true
-        }
+        if mem.equal(text[scan..scan + needle.len], needle) { return scan, true }
     }
     return 0, false
 }
 
 reference(text: string, byte: char): (usize, bool) {
     for i: usize in 0 .. text.len {
-        if text[i] == byte {
-            return i, true
-        }
+        if text[i] == byte { return i, true }
     }
     return 0, false
 }
@@ -51,17 +43,13 @@ agree(text: string, needle: string): bool {
         at: usize, found: bool = str.find(view, needle)
         want: usize, hit: bool = reference(view, needle)
 
-        if found != hit || at != want {
-            return false
-        }
+        if found != hit || at != want { return false }
 
         if needle.len == 1 {
             at, found = str.find(view, needle[0])
             want, hit = reference(view, needle[0])
 
-            if found != hit || at != want {
-                return false
-            }
+            if found != hit || at != want { return false }
         }
     }
     return true
@@ -88,9 +76,7 @@ main(): int {
                 offset: u64 = next(u64(size - length + 1))
                 cut: usize = usize(offset)
 
-                if !agree(text, text[cut..cut + length]) {
-                    return 1
-                }
+                if !agree(text, text[cut..cut + length]) { return 1 }
             }
 
             for i: usize in 0 .. length {
@@ -98,9 +84,7 @@ main(): int {
                 probe[i] = ALPHABET[pick]
             }
 
-            if !agree(text, probe[0..length]) {
-                return 2
-            }
+            if !agree(text, probe[0..length]) { return 2 }
         }
     }
 
@@ -112,18 +96,12 @@ main(): int {
     long[4095] = 122
     at: usize, found: bool = str.find(long[..], "xyz")
 
-    if !found || at != 4093 {
-        return 3
-    }
+    if !found || at != 4093 { return 3 }
     at, found = str.find(long[..], "aax")
 
-    if !found || at != 4091 {
-        return 4
-    }
+    if !found || at != 4091 { return 4 }
     at, found = str.find(long[..], "xya")
 
-    if found {
-        return 5
-    }
+    if found { return 5 }
     return 0
 }

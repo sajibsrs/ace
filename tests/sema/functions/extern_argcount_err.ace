@@ -4,6 +4,4 @@ extern "c" {
     fixed(value: i32): i32
 }
 
-main(): int {
-    return int(fixed(1, 2))
-}
+main(): int { return int(fixed(1, 2)) }

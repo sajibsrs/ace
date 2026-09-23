@@ -45,9 +45,7 @@ pub Response: struct {
 }
 
 pub is_token(byte: u8): bool {
-    if (byte >= '0' && byte <= '9') || (byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z') {
-        return true
-    }
+    if (byte >= '0' && byte <= '9') || (byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z') { return true }
     return byte == '!' || byte == '#' || byte == '$' || byte == '%' ||
         byte == '&' || byte == '\'' || byte == '*' || byte == '+' ||
         byte == '-' || byte == '.' || byte == '^' || byte == '_' ||
@@ -56,9 +54,7 @@ pub is_token(byte: u8): bool {
 
 /* Validates a bounded ASCII DNS name or a four-part dotted-decimal IPv4 host. */
 add_size(total: usize, amount: usize, capacity: usize): (usize, bool) {
-    if total > capacity || amount > capacity - total {
-        return usize(0), false
-    }
+    if total > capacity || amount > capacity - total { return usize(0), false }
     return total + amount, true
 }
 
@@ -102,21 +98,13 @@ pub status(code: u16): string {
  * the request's method, target, headers, or body.
  */
 pub Request.format(output: mut []u8): (usize, Error) {
-    if self.method.len == 0 {
-        return 0, FormatErr.method
-    }
+    if self.method.len == 0 { return 0, FormatErr.method }
     for i: usize in 0 .. self.method.len {
-        if !is_token(self.method[i]) {
-            return 0, FormatErr.method
-        }
+        if !is_token(self.method[i]) { return 0, FormatErr.method }
     }
-    if self.target.len == 0 {
-        return 0, FormatErr.target
-    }
+    if self.target.len == 0 { return 0, FormatErr.target }
     for i: usize in 0 .. self.target.len {
-        if self.target[i] <= 32 || self.target[i] == 127 {
-            return 0, FormatErr.target
-        }
+        if self.target[i] <= 32 || self.target[i] == 127 { return 0, FormatErr.target }
     }
     total: usize = 0
     ok: bool
@@ -127,13 +115,9 @@ pub Request.format(output: mut []u8): (usize, Error) {
 
     for i: usize in 0 .. self.headers.len {
         header: Header = self.headers[i]
-        if header.name.len == 0 {
-            return 0, FormatErr.header_name
-        }
+        if header.name.len == 0 { return 0, FormatErr.header_name }
         for j: usize in 0 .. header.name.len {
-            if !is_token(header.name[j]) {
-                return 0, FormatErr.header_name
-            }
+            if !is_token(header.name[j]) { return 0, FormatErr.header_name }
         }
         for j: usize in 0 .. header.value.len {
             if header.value[j] == 0 || header.value[j] == 10 || header.value[j] == 13 {
@@ -147,9 +131,7 @@ pub Request.format(output: mut []u8): (usize, Error) {
     }
     if ok { total, ok = add_size(total, 2, output.len) }
     if ok { total, ok = add_size(total, self.body.len, output.len) }
-    if !ok {
-        return 0, FormatErr.capacity
-    }
+    if !ok { return 0, FormatErr.capacity }
 
     at: usize = 0
     start: [4]string = [self.method, " ", self.target, " HTTP/1.1\r\n"]
@@ -177,20 +159,12 @@ pub Request.format(output: mut []u8): (usize, Error) {
  * success; on `FormatErr`, `output` is unchanged.
  */
 pub Response.format(output: mut []u8): (usize, Error) {
-    if self.version_minor > 1 {
-        return 0, FormatErr.version
-    }
-    if self.status < 100 || self.status > 999 {
-        return 0, FormatErr.status
-    }
+    if self.version_minor > 1 { return 0, FormatErr.version }
+    if self.status < 100 || self.status > 999 { return 0, FormatErr.status }
     reason: string = self.reason
-    if reason == null {
-        reason = status(self.status)
-    }
+    if reason == null { reason = status(self.status) }
     for i: usize in 0 .. reason.len {
-        if (reason[i] < 32 && reason[i] != 9) || reason[i] == 127 {
-            return 0, FormatErr.reason
-        }
+        if (reason[i] < 32 && reason[i] != 9) || reason[i] == 127 { return 0, FormatErr.reason }
     }
     total: usize = 13
     ok: bool = total <= output.len
@@ -199,13 +173,9 @@ pub Response.format(output: mut []u8): (usize, Error) {
 
     for i: usize in 0 .. self.headers.len {
         header: Header = self.headers[i]
-        if header.name.len == 0 {
-            return 0, FormatErr.header_name
-        }
+        if header.name.len == 0 { return 0, FormatErr.header_name }
         for j: usize in 0 .. header.name.len {
-            if !is_token(header.name[j]) {
-                return 0, FormatErr.header_name
-            }
+            if !is_token(header.name[j]) { return 0, FormatErr.header_name }
         }
         for j: usize in 0 .. header.value.len {
             if header.value[j] == 0 || header.value[j] == 10 || header.value[j] == 13 {
@@ -219,9 +189,7 @@ pub Response.format(output: mut []u8): (usize, Error) {
     }
     if ok { total, ok = add_size(total, 2, output.len) }
     if ok { total, ok = add_size(total, self.body.len, output.len) }
-    if !ok {
-        return 0, FormatErr.capacity
-    }
+    if !ok { return 0, FormatErr.capacity }
 
     at: usize = 0
     mem.copy(output[at..at + 7], "HTTP/1.")

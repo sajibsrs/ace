@@ -23,6 +23,4 @@ extern "c" {
     bad_field_aligned(value: FieldAlignedByValue)
 }
 
-main(): int {
-    return 0
-}
+main(): int { return 0 }

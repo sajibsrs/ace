@@ -3,6 +3,4 @@
 // error: 'intrinsic' declarations are restricted to compiler-provided standard-library operations
 pub fake(value: u64): u64 intrinsic
 
-main(): int {
-    return int(fake(1))
-}
+main(): int { return int(fake(1)) }

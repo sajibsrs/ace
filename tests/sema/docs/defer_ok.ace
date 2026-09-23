@@ -2,13 +2,9 @@
 
 import fmt
 
-cleanup() {
-    fmt.println("cleanup")
-}
+cleanup() { fmt.println("cleanup") }
 
-task() {
-    fmt.println("task")
-}
+task() { fmt.println("task") }
 
 scheduled(): int {
     defer cleanup()
@@ -22,9 +18,7 @@ ordered(): int {
     return 0 // prints "second", then "first"
 }
 
-report(value: int) {
-    fmt.println(value)
-}
+report(value: int) { fmt.println(value) }
 
 snapshot(): int {
     n: int = 1
@@ -35,9 +29,7 @@ snapshot(): int {
 
 total: int
 
-bump(mut n: int) {
-    n += 1
-}
+bump(mut n: int) { n += 1 }
 
 address(): int {
     defer bump(mut total) // captures the global itself, not its value
@@ -69,12 +61,8 @@ main(): int {
     ordered()
     snapshot()
     address()
-    if total != 11 {
-        return 1
-    }
+    if total != 11 { return 1 }
     callee_snapshot()
-    if picked != 1 {
-        return 2
-    }
+    if picked != 1 { return 2 }
     return 0
 }

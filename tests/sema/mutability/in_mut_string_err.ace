@@ -5,8 +5,6 @@
 main(): int {
     s: string = "abc"
     total: int = 0
-    for c: u8 in mut s {
-        total += int(c)
-    }
+    for c: u8 in mut s { total += int(c) }
     return 0
 }

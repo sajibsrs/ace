@@ -13,13 +13,9 @@ Base: struct {
 
 Base signs Value
 
-Base.get(): int {
-    return self.value
-}
+Base.get(): int { return self.value }
 
-mut Base.add(amount: int) {
-    self.value = self.value + amount
-}
+mut Base.add(amount: int) { self.value = self.value + amount }
 
 Outer: struct {
     prefix: int,
@@ -33,14 +29,10 @@ main(): int {
     outer.prefix = 2
     outer.base.value = 10
 
-    if outer.base.value != 10 {
-        return 1
-    }
+    if outer.base.value != 10 { return 1 }
     value: Value = Value(&outer)
     mut value.add(30)
 
-    if outer.get() != 40 {
-        return 2
-    }
+    if outer.get() != 40 { return 2 }
     return outer.prefix + outer.base.value
 }

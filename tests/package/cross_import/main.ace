@@ -1,5 +1,3 @@
 import lib
 
-main(): int {
-    return lib.hello()
-}
+main(): int { return lib.hello() }

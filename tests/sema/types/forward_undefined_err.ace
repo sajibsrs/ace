@@ -1,5 +1,3 @@
 /* A forward type left undefined is rejected. */
 
-main(): int {
-    return nope()
-}
+main(): int { return nope() }

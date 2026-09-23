@@ -7,6 +7,4 @@ main(): int {
     return int(b.v)
 }
 
-later(): u64 {
-    return 300
-}
+later(): u64 { return 300 }

@@ -1,9 +1,5 @@
 /* Overload generic duplicate fixture. */
 
-identity[T](value: T): T {
-    return value
-}
+identity[T](value: T): T { return value }
 
-identity[U](value: U): U {
-    return value
-}
+identity[U](value: U): U { return value }

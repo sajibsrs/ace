@@ -2,9 +2,7 @@
 
 import fmt
 
-dynamic_byte(text: string, index: i32): u8 {
-    return text[index]
-}
+dynamic_byte(text: string, index: i32): u8 { return text[index] }
 
 main(): int {
     signed_word: int = 13
@@ -35,9 +33,7 @@ main(): int {
     second: u8 = dynamic_byte(message, 1)
     id: typeid = null
 
-    if int(as_byte) != 65 || back != direct {
-        return 90
-    }
+    if int(as_byte) != 65 || back != direct { return 90 }
     return signed_word + int(unsigned_word) + int(byte_value) + wide +
         int(unsigned) + int(double) + int(default_width) - int(same_identity) +
         int(same_identity_back) + int(converted) + int(letter) +

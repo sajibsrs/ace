@@ -2,10 +2,6 @@
 
 import exit from sys
 
-stop(code: int) {
-    exit(code)
-}
+stop(code: int) { exit(code) }
 
-main(): int {
-    return 0
-}
+main(): int { return 0 }

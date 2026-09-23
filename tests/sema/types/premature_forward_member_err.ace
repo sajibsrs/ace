@@ -4,14 +4,10 @@ A: struct {
     b: *B,
 }
 
-read(a: *A): int {
-    return a.b.value
-}
+read(a: *A): int { return a.b.value }
 
 B: struct {
     value: int,
 }
 
-main(): int {
-    return 0
-}
+main(): int { return 0 }

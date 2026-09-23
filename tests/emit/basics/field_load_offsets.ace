@@ -11,17 +11,11 @@ Wide: struct { pad: [5000]u8, small: u8, inner: Inner, tail: i32 }
 @packed
 Packed: struct { prefix: u8, word: u32, half: u16, big: u64 }
 
-Wide.sum(): i64 {
-    return i64(self.small) + i64(self.inner.c) + i64(self.inner.s) + i64(self.tail)
-}
+Wide.sum(): i64 { return i64(self.small) + i64(self.inner.c) + i64(self.inner.s) + i64(self.tail) }
 
-bump(mut w: Wide) {
-    w.tail = w.tail + i32(w.inner.b)
-}
+bump(mut w: Wide) { w.tail = w.tail + i32(w.inner.b) }
 
-read(p: *Wide): i64 {
-    return p.inner.d + i64(p.small)
-}
+read(p: *Wide): i64 { return p.inner.d + i64(p.small) }
 
 main(): int {
     w: Wide = Wide {
@@ -52,8 +46,6 @@ main(): int {
         big = 0x0123456789ABCDEF,
     }
     q: *Packed = &p
-    if q.word != 0xDEADBEEF || q.half != 0xBEEF || q.big != 0x0123456789ABCDEF || q.prefix != 1 {
-        return 5
-    }
+    if q.word != 0xDEADBEEF || q.half != 0xBEEF || q.big != 0x0123456789ABCDEF || q.prefix != 1 { return 5 }
     return 0
 }

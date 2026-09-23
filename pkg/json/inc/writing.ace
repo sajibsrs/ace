@@ -88,29 +88,19 @@ pub mut Formatter.reset() {
  * text is borrowed from the formatter.
  */
 pub Formatter.finish(): (string, Error) {
-    if self.err != null {
-        return "", self.err
-    }
+    if self.err != null { return "", self.err }
 
-    if self.depth != 0 || !self.done {
-        return "", FormatErr.structure
-    }
+    if self.depth != 0 || !self.done { return "", FormatErr.structure }
     return string(self.buffer[0..self.at]), null
 }
 
-pub mut Formatter.object() {
-    mut self.open(true)
-}
+pub mut Formatter.object() { mut self.open(true) }
 
-pub mut Formatter.array() {
-    mut self.open(false)
-}
+pub mut Formatter.array() { mut self.open(false) }
 
 /* Closes the innermost open container, whichever kind it is. */
 pub mut Formatter.end() {
-    if self.err != null {
-        return
-    }
+    if self.err != null { return }
 
     if self.depth == 0 || self.keyed {
         mut self.fail(FormatErr.structure)
@@ -128,18 +118,14 @@ pub mut Formatter.end() {
 }
 
 pub mut Formatter.key(name: string) {
-    if self.err != null {
-        return
-    }
+    if self.err != null { return }
 
     if self.depth == 0 || !self.inside_object() || self.keyed {
         mut self.fail(FormatErr.structure)
         return
     }
 
-    if !self.empty {
-        mut self.put(',')
-    }
+    if !self.empty { mut self.put(',') }
     self.empty = false
     mut self.quote(name)
     mut self.put(':')
@@ -148,9 +134,7 @@ pub mut Formatter.key(name: string) {
 
 pub mut Formatter.none() {
     ok: bool = mut self.open_value()
-    if !ok {
-        return
-    }
+    if !ok { return }
 
     mut self.put("null")
     mut self.close_value()
@@ -158,9 +142,7 @@ pub mut Formatter.none() {
 
 pub mut Formatter.value(flag: bool) {
     ok: bool = mut self.open_value()
-    if !ok {
-        return
-    }
+    if !ok { return }
 
     if flag {
         mut self.put("true")
@@ -172,9 +154,7 @@ pub mut Formatter.value(flag: bool) {
 
 pub mut Formatter.value(number: int) {
     ok: bool = mut self.open_number()
-    if !ok {
-        return
-    }
+    if !ok { return }
 
     n: usize, fit: bool = str.format(self.buffer[self.at..], number)
     mut self.advance(n, fit)
@@ -182,9 +162,7 @@ pub mut Formatter.value(number: int) {
 
 pub mut Formatter.value(number: uint) {
     ok: bool = mut self.open_number()
-    if !ok {
-        return
-    }
+    if !ok { return }
 
     n: usize, fit: bool = str.format(self.buffer[self.at..], number)
     mut self.advance(n, fit)
@@ -192,9 +170,7 @@ pub mut Formatter.value(number: uint) {
 
 pub mut Formatter.value(number: usize) {
     ok: bool = mut self.open_number()
-    if !ok {
-        return
-    }
+    if !ok { return }
 
     n: usize, fit: bool = str.format(self.buffer[self.at..], number)
     mut self.advance(n, fit)
@@ -209,9 +185,7 @@ pub mut Formatter.value(number: f64) {
         return
     }
     ok: bool = mut self.open_number()
-    if !ok {
-        return
-    }
+    if !ok { return }
 
     n: usize, fit: bool = str.format(self.buffer[self.at..], number)
     mut self.advance(n, fit)
@@ -219,9 +193,7 @@ pub mut Formatter.value(number: f64) {
 
 pub mut Formatter.value(text: string) {
     ok: bool = mut self.open_value()
-    if !ok {
-        return
-    }
+    if !ok { return }
 
     mut self.quote(text)
     mut self.close_value()
@@ -246,9 +218,7 @@ pub mut Formatter.value(tree: Json) {
             mut self.array()
 
             for i: usize in 0 .. items.len {
-                if self.err != null {
-                    return
-                }
+                if self.err != null { return }
                 mut self.value(items[i])
             }
             mut self.end()
@@ -257,9 +227,7 @@ pub mut Formatter.value(tree: Json) {
             mut self.object()
 
             for i: usize in 0 .. pairs.len {
-                if self.err != null {
-                    return
-                }
+                if self.err != null { return }
                 mut self.key(pairs[i].key)
                 mut self.value(pairs[i].value)
             }
@@ -304,9 +272,7 @@ pub mut Formatter.field(name: string, tree: Json) {
 }
 
 mut Formatter.fail(err: Error) {
-    if self.err == null {
-        self.err = err
-    }
+    if self.err == null { self.err = err }
 }
 
 Formatter.inside_object(): bool {
@@ -317,9 +283,7 @@ Formatter.inside_object(): bool {
 
 mut Formatter.open(object: bool) {
     ok: bool = mut self.open_value()
-    if !ok {
-        return
-    }
+    if !ok { return }
 
     if self.depth == MAX_DEPTH {
         mut self.fail(FormatErr.depth)
@@ -345,9 +309,7 @@ mut Formatter.open(object: bool) {
  * an array.
  */
 mut Formatter.open_value(): bool {
-    if self.err != null {
-        return false
-    }
+    if self.err != null { return false }
 
     if self.depth == 0 {
         if self.done {
@@ -366,9 +328,7 @@ mut Formatter.open_value(): bool {
         return true
     }
 
-    if !self.empty {
-        mut self.put(',')
-    }
+    if !self.empty { mut self.put(',') }
     self.empty = false
     return true
 }
@@ -378,17 +338,13 @@ mut Formatter.open_value(): bool {
  */
 mut Formatter.open_number(): bool {
     ok: bool = mut self.open_value()
-    if !ok {
-        return false
-    }
+    if !ok { return false }
 
     return mut self.reserve(NUMBER_MAX)
 }
 
 mut Formatter.close_value() {
-    if self.depth == 0 {
-        self.done = true
-    }
+    if self.depth == 0 { self.done = true }
 }
 
 /* Accounts for a number `str.format` wrote in place at the cursor. The
@@ -407,13 +363,9 @@ mut Formatter.advance(n: usize, fit: bool) {
 mut Formatter.reserve(extra: usize): bool {
     need: usize = self.at + extra
 
-    if need <= self.buffer.len {
-        return true
-    }
+    if need <= self.buffer.len { return true }
 
-    if need < MIN_BUFFER {
-        need = MIN_BUFFER
-    }
+    if need < MIN_BUFFER { need = MIN_BUFFER }
     grown: mut []u8, ok: bool = mem.grow[u8](self.buffer, need)
     if !ok {
         mut self.fail(FormatErr.allocation)
@@ -479,26 +431,18 @@ escape(byte: u8, spelling: mut []u8): usize {
 }
 
 mut Formatter.put(byte: u8) {
-    if self.err != null {
-        return
-    }
+    if self.err != null { return }
     ok: bool = mut self.reserve(1)
-    if !ok {
-        return
-    }
+    if !ok { return }
 
     self.buffer[self.at] = byte
     self.at += 1
 }
 
 mut Formatter.put(text: string) {
-    if self.err != null {
-        return
-    }
+    if self.err != null { return }
     ok: bool = mut self.reserve(text.len)
-    if !ok {
-        return
-    }
+    if !ok { return }
 
     mem.copy(self.buffer[self.at..self.at + text.len], text)
     self.at += text.len

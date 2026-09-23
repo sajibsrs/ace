@@ -9,17 +9,13 @@ import math
 
 close64(got: f64, want: u64): bool {
     have: u64 = bits.from_float(got)
-    if have > want {
-        return have - want <= 1
-    }
+    if have > want { return have - want <= 1 }
     return want - have <= 1
 }
 
 close32(got: f32, want: u32): bool {
     have: u32 = bits.from_float(got)
-    if have > want {
-        return have - want <= 1
-    }
+    if have > want { return have - want <= 1 }
     return want - have <= 1
 }
 

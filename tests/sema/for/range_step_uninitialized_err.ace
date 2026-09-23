@@ -3,8 +3,6 @@
 main(): int {
     step: int
 
-    for value: int in 0 .. 10 step step {
-        return value
-    }
+    for value: int in 0 .. 10 step step { return value }
     return 0
 }

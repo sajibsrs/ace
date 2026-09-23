@@ -19,14 +19,10 @@ main(): int {
             value: f64 = bits.to_float(state64)
             count: usize, ok: bool = str.format(mut text[0..64], value)
 
-            if !ok {
-                return 1
-            }
+            if !ok { return 1 }
             parsed: f64, parsed_ok: bool = str.parse[f64](text[0..count])
 
-            if !parsed_ok || bits.from_float(parsed) != state64 {
-                return 2
-            }
+            if !parsed_ok || bits.from_float(parsed) != state64 { return 2 }
         }
     }
     state32: u32 = u32(0x9E3779B9)
@@ -41,14 +37,10 @@ main(): int {
             value: f32 = bits.to_float(state32)
             count: usize, ok: bool = str.format(mut text[0..64], value)
 
-            if !ok {
-                return 3
-            }
+            if !ok { return 3 }
             parsed: f32, parsed_ok: bool = str.parse[f32](text[0..count])
 
-            if !parsed_ok || bits.from_float(parsed) != state32 {
-                return 4
-            }
+            if !parsed_ok || bits.from_float(parsed) != state32 { return 4 }
         }
     }
     return 42

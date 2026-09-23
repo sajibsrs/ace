@@ -2,6 +2,4 @@
 
 import outer/inner
 
-main(): int {
-    return inner.value - 7
-}
+main(): int { return inner.value - 7 }

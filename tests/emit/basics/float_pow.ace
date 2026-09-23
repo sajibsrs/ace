@@ -9,17 +9,13 @@ import math
 
 close64(got: f64, want: u64): bool {
     have: u64 = bits.from_float(got)
-    if have > want {
-        return have - want <= 1
-    }
+    if have > want { return have - want <= 1 }
     return want - have <= 1
 }
 
 close32(got: f32, want: u32): bool {
     have: u32 = bits.from_float(got)
-    if have > want {
-        return have - want <= 1
-    }
+    if have > want { return have - want <= 1 }
     return want - have <= 1
 }
 
@@ -70,9 +66,7 @@ main(): int {
         for power: int in 0 .. 60 {
             if exact < 9007199254740992.0 {
                 negated: f64 = exact
-                if power % 2 == 1 {
-                    negated = -exact
-                }
+                if power % 2 == 1 { negated = -exact }
                 if math.pow(f64(base), f64(power)) != exact ||
                    math.pow(-f64(base), f64(power)) != negated {
                     return 5
@@ -200,9 +194,7 @@ main(): int {
         for power: int in 0 .. 60 {
             if exact < 16777216.0 {
                 negated: f32 = f32(exact)
-                if power % 2 == 1 {
-                    negated = -negated
-                }
+                if power % 2 == 1 { negated = -negated }
                 if math.pow(f32(base), f32(power)) != f32(exact) ||
                    math.pow(-f32(base), f32(power)) != negated {
                     return 13

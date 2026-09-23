@@ -1,8 +1,6 @@
 Item: struct { value: int }
 
-restore(address: usize): *Item {
-    return *Item(address)
-}
+restore(address: usize): *Item { return *Item(address) }
 
 main(): int {
     pointer: *Item = restore(usize(3))

@@ -25,9 +25,7 @@ main(): int {
     // i=0,1,2: j counts 0,1,2,4 then +1000 -> 4*3 + 3000 = 3012
     // i=3: j=0 hits continue outer (i += 1)
     // i=4: j=0,1 count, j=2 breaks outer
-    if total != 3014 {
-        return 1
-    }
+    if total != 3014 { return 1 }
 
     // plain break/continue in the inner loop provably leave the outer loop
     // untouched: the outer still runs every iteration and its post advances
@@ -44,9 +42,7 @@ main(): int {
         }
     }
     // per a: b=0 counts, b=1 continues, b=2 breaks -> 1 per outer pass
-    if pairs != 3 {
-        return 2
-    }
+    if pairs != 3 { return 2 }
 
     // the head variable is invisible after the loop: this fresh declaration
     // would be a redeclaration error if the head binding leaked
@@ -54,9 +50,7 @@ main(): int {
     }
     i: int = 41
     i += 1
-    if i != 42 {
-        return 3
-    }
+    if i != 42 { return 3 }
 
     return 0
 }

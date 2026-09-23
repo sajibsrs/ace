@@ -30,13 +30,9 @@ main(): int {
 
     if ready { return 3 }
 
-    if state != State.idle {
-        return 4
-    }
+    if state != State.idle { return 4 }
 
-    if point.x != 0 || point.y != 0 || values[0] != 0 || values[1] != 0 {
-        return 5
-    }
+    if point.x != 0 || point.y != 0 || values[0] != 0 || values[1] != 0 { return 5 }
 
     if pointer != null { return 6 }
 
@@ -50,12 +46,8 @@ main(): int {
 
     if error != null { return 11 }
 
-    if domain != null {
-        return 12
-    }
+    if domain != null { return 12 }
 
-    if view != null || text != null || contract_value != null || error != null {
-        return 13
-    }
+    if view != null || text != null || contract_value != null || error != null { return 13 }
     return 42
 }

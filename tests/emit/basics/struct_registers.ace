@@ -29,27 +29,17 @@ G: Pair = Pair {
     b = 6,
 }
 
-keep(x: usize): usize {
-    return x
-}
+keep(x: usize): usize { return x }
 
-keepf(x: f64): f64 {
-    return x
-}
+keepf(x: f64): f64 { return x }
 
 check(p: Pair) {
-    if p.a + p.b != 42 {
-        G.a = 1000
-    }
+    if p.a + p.b != 42 { G.a = 1000 }
 }
 
-touch(p: mut *Pair) {
-    p.a += 1
-}
+touch(p: mut *Pair) { p.a += 1 }
 
-Pair.sum(): usize {
-    return self.a + self.b
-}
+Pair.sum(): usize { return self.a + self.b }
 
 // integer fields: literal init, field writes, compound ops, a self-reading
 // literal that swaps, and a loop
@@ -64,9 +54,7 @@ ints(): int {
         a = p.b,
         b = p.a,
     }
-    for i: usize in 0 .. 5 {
-        p.a += i
-    }
+    for i: usize in 0 .. 5 { p.a += i }
     if p.a != 18 || p.b != 13 { return 1 }
     return 0
 }
@@ -313,9 +301,7 @@ spill_args(a: usize, b: usize, c: usize, d: usize, e: usize, f: usize, g: usize,
     return a + b + c + d + e + f + g + p.a * 100 + p.b * 1000
 }
 
-spill_floats(a: Vec4, b: Vec4, c: Vec3): f64 {
-    return a.x + b.w + c.x * 10.0 + c.z * 100.0
-}
+spill_floats(a: Vec4, b: Vec4, c: Vec3): f64 { return a.x + b.w + c.x * 10.0 + c.z * 100.0 }
 
 // arguments, results, and call sinks of every shape
 calls(): int {
@@ -323,9 +309,7 @@ calls(): int {
         a = 1,
         b = 2,
     }
-    for i: usize in 0 .. 3 {
-        p = pair_step(p)
-    }
+    for i: usize in 0 .. 3 { p = pair_step(p) }
     if p.a != 58 || p.b != 5 { return 1 }
     v: Vec3 = Vec3 {
         x = 1.0,
@@ -337,9 +321,7 @@ calls(): int {
         y = 0.25,
         z = 2.0,
     }
-    for i: usize in 0 .. 4 {
-        v = vec_add(v, step)
-    }
+    for i: usize in 0 .. 4 { v = vec_add(v, step) }
     if v.x != 3.0 || v.y != 3.0 || v.z != 11.0 { return 1 }
     f: Frame = frame_step(Frame {
         pc = 3,
@@ -405,9 +387,7 @@ hfa_loop(n: usize): f64 {
         y = 2.0,
         z = 3.0,
     }
-    for i: usize in 0 .. n {
-        acc = vec_add(acc, step)
-    }
+    for i: usize in 0 .. n { acc = vec_add(acc, step) }
     return acc.x + acc.y + acc.z
 }
 

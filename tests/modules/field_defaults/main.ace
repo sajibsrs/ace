@@ -16,15 +16,9 @@ Pair: struct {
 
 main(): int {
     box: shapes.Box = shapes.Box {}
-    if box.mode != shapes.Mode.on || box.size != 7 || box.tag != 3 {
-        return 1
-    }
-    if alignof(shapes.Box) != 16 || offsetof(shapes.Box, tag) % 16 != 0 {
-        return 2
-    }
+    if box.mode != shapes.Mode.on || box.size != 7 || box.tag != 3 { return 1 }
+    if alignof(shapes.Box) != 16 || offsetof(shapes.Box, tag) % 16 != 0 { return 2 }
     pair: Pair = Pair { a = 1 }
-    if pair.n != 8 || alignof(Pair) != 8 {
-        return 3
-    }
+    if pair.n != 8 || alignof(Pair) != 8 { return 3 }
     return 42
 }

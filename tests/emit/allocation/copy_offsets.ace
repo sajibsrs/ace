@@ -22,9 +22,7 @@ U24: union {
 
 global: const U24 = U24.triple( { first = 7.0, second = 8.0, third = 9.0 })
 
-pair(value: Triple): (int, Triple) {
-    return 11, value
-}
+pair(value: Triple): (int, Triple) { return 11, value }
 
 main(): int {
     bytes: [17]u8 = [u8(3) : 17]
@@ -32,9 +30,7 @@ main(): int {
 
     switch u17 {
         U17.bytes(value: [17]u8) {
-            if value[0] != 3 || value[16] != 3 {
-                return 1
-            }
+            if value[0] != 3 || value[16] != 3 { return 1 }
         }
         default {
             return 2
@@ -46,9 +42,7 @@ main(): int {
 
     switch u24 {
         U24.triple(value: Triple) {
-            if value.first != 1.0 || value.second != 2.0 || value.third != 3.0 {
-                return 3
-            }
+            if value.first != 1.0 || value.second != 2.0 || value.third != 3.0 { return 3 }
         }
         default {
             return 4
@@ -57,9 +51,7 @@ main(): int {
 
     switch global {
         U24.triple(value: Triple) {
-            if value.first != 7.0 || value.second != 8.0 || value.third != 9.0 {
-                return 5
-            }
+            if value.first != 7.0 || value.second != 8.0 || value.third != 9.0 { return 5 }
         }
         default {
             return 6
@@ -68,8 +60,6 @@ main(): int {
 
     marker: int, copied: Triple = pair(triple)
 
-    if marker != 11 || copied.first != 1.0 || copied.second != 2.0 || copied.third != 3.0 {
-        return 7
-    }
+    if marker != 11 || copied.first != 1.0 || copied.second != 2.0 || copied.third != 3.0 { return 7 }
     return 0
 }

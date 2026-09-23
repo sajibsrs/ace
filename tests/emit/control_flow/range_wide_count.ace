@@ -11,9 +11,7 @@ main(): int {
         break
     }
 
-    if hits != 1 {
-        return 1
-    }
+    if hits != 1 { return 1 }
 
     wider: usize = 4294967301
     hits = 0
@@ -21,14 +19,10 @@ main(): int {
     for i: usize in 0 .. wider {
         hits += 1
 
-        if hits == 6 {
-            break
-        }
+        if hits == 6 { break }
     }
 
-    if hits != 6 {
-        return 2
-    }
+    if hits != 6 { return 2 }
 
     hits = 0
 
@@ -37,8 +31,6 @@ main(): int {
         break
     }
 
-    if hits != 1 {
-        return 3
-    }
+    if hits != 1 { return 3 }
     return 42
 }

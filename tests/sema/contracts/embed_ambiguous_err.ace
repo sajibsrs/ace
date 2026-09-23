@@ -3,19 +3,13 @@
 A: struct {}
 B: struct {}
 
-A.value(): int {
-    return 1
-}
+A.value(): int { return 1 }
 
-B.value(): int {
-    return 2
-}
+B.value(): int { return 2 }
 
 Both: struct {
     embed a: A,
     embed b: B,
 }
 
-test(value: Both): int {
-    return value.value()
-}
+test(value: Both): int { return value.value() }

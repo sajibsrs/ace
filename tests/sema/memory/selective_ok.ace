@@ -9,9 +9,7 @@ Item: struct { tag: u32 }
 main(): int {
     numbers: []usize = alloc[usize](4)
 
-    if numbers == null {
-        return 1
-    }
+    if numbers == null { return 1 }
 
     if numbers.len != 4 {
         release[usize](mut numbers)
@@ -20,16 +18,12 @@ main(): int {
 
     grown: []usize = realloc[usize](numbers, 8)
 
-    if grown == null || grown.len != 8 {
-        return 3
-    }
+    if grown == null || grown.len != 8 { return 3 }
     release[usize](mut grown)
 
     items: mut []Item = alloc[Item](2)
 
-    if items == null {
-        return 4
-    }
+    if items == null { return 4 }
     writable_items: mut []Item = items[0..2]
     writable_items[0] = Item { tag = 7 }
 
@@ -41,9 +35,7 @@ main(): int {
 
     raw: []u8 = alloc(8, 8)
 
-    if raw == null {
-        return 6
-    }
+    if raw == null { return 6 }
     release(mut raw)
     return 0
 }

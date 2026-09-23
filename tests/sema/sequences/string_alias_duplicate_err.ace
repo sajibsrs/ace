@@ -7,6 +7,4 @@ write(text: string) {}
 scan(data: []char) {}
 scan(text: string) {}
 
-main(): int {
-    return 0
-}
+main(): int { return 0 }

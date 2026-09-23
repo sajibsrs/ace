@@ -58,14 +58,10 @@ main(): int {
     snapshot_callee()
     fmt.print("callee ")
     fmt.println(seen)
-    if seen != 105 {
-        return 1
-    }
+    if seen != 105 { return 1 }
     snapshot_callee_and_args()
     fmt.print("args ")
     fmt.println(sum)
-    if sum != 1030 {
-        return 2
-    }
+    if sum != 1030 { return 2 }
     return 0
 }

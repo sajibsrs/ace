@@ -1,5 +1,3 @@
 import value from @shared
 
-pub first(): int {
-    return value() + 1
-}
+pub first(): int { return value() + 1 }

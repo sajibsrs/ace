@@ -1,15 +1,11 @@
 /* Fallthrough context fixture. */
 
-fallthrough(): int {
-    return 1
-}
+fallthrough(): int { return 1 }
 
 ordinary_identifier(): int {
     fallthrough: int = 1
 
-    if fallthrough == 1 {
-        fallthrough
-    }
+    if fallthrough == 1 { fallthrough }
     return fallthrough
 }
 

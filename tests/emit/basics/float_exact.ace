@@ -5,13 +5,9 @@
 import bits
 import math
 
-same(a: f64, b: f64): bool {
-    return bits.from_float(a) == bits.from_float(b)
-}
+same(a: f64, b: f64): bool { return bits.from_float(a) == bits.from_float(b) }
 
-same32(a: f32, b: f32): bool {
-    return bits.from_float(a) == bits.from_float(b)
-}
+same32(a: f32, b: f32): bool { return bits.from_float(a) == bits.from_float(b) }
 
 main(): int {
     negative_zero: f64 = bits.to_float(u64(0x8000000000000000))
@@ -20,16 +16,12 @@ main(): int {
     negative_one: f64 = 0.0 - 1.0
     negative_one32: f32 = f32(negative_one)
 
-    if math.sqrt(4.0) != 2.0 || math.sqrt(2.0) != 1.4142135623730951 {
-        return 1
-    }
+    if math.sqrt(4.0) != 2.0 || math.sqrt(2.0) != 1.4142135623730951 { return 1 }
     if !same(math.sqrt(negative_zero), negative_zero) || !same(math.sqrt(0.0), 0.0) ||
        math.sqrt(infinity) != infinity {
         return 2
     }
-    if !math.isnan(math.sqrt(negative_one)) || !math.isnan(math.sqrt(negative_infinity)) {
-        return 3
-    }
+    if !math.isnan(math.sqrt(negative_one)) || !math.isnan(math.sqrt(negative_infinity)) { return 3 }
 
     if math.floor(2.5) != 2.0 || math.floor(negative_one - 0.5) != negative_one - 1.0 ||
        math.ceil(2.5) != 3.0 || math.ceil(negative_one - 0.5) != negative_one {
@@ -50,9 +42,7 @@ main(): int {
         return 7
     }
     // The f32 square root is rounded once at f32 precision, not the f64 result narrowed.
-    if !same32(math.sqrt(f32(2.0)), f32(1.41421354)) || !math.isnan(math.sqrt(negative_one32)) {
-        return 8
-    }
+    if !same32(math.sqrt(f32(2.0)), f32(1.41421354)) || !math.isnan(math.sqrt(negative_one32)) { return 8 }
 
     root64: (f64): f64 = math.sqrt
     down64: (f64): f64 = math.floor
@@ -96,11 +86,7 @@ main(): int {
     }
 
     total: f64 = 0.0
-    for index: int in 0 .. 10 {
-        total = total + math.sqrt(f64(index * index)) + math.floor(f64(index) + 0.5)
-    }
-    if total != 90.0 {
-        return 10
-    }
+    for index: int in 0 .. 10 { total = total + math.sqrt(f64(index * index)) + math.floor(f64(index) + 0.5) }
+    if total != 90.0 { return 10 }
     return 42
 }

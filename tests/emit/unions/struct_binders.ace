@@ -35,17 +35,11 @@ Val: union {
     none,
 }
 
-twice(x: int): int {
-    return x * 2
-}
+twice(x: int): int { return x * 2 }
 
-sum_fork(f: Fork): int {
-    return int(f.x) + int(f.y)
-}
+sum_fork(f: Fork): int { return int(f.x) + int(f.y) }
 
-peek(p: *Fork): int {
-    return int(p.x)
-}
+peek(p: *Fork): int { return int(p.x) }
 
 // every field read several times in a loop
 weigh(v: Val): int {
@@ -82,9 +76,7 @@ split_slot(v: Val): int {
     switch v {
         Val.fork(t: Fork) {
             total: int = 0
-            for i: int in 0 .. 4 {
-                total += int(t.x) + i
-            }
+            for i: int in 0 .. 4 { total += int(t.x) + i }
             return total + twice(1) + int(t.y)
         }
         default { return 0 }

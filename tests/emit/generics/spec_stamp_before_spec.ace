@@ -4,17 +4,13 @@
 
 // expect-exit: 42
 
-g[T](v: T): T {
-    return v
-}
+g[T](v: T): T { return v }
 
 stamp_first(): int {
     return g[int](1) // checked before the [int] specialization exists: stamps
 }
 
-g[int](v: int): int {
-    return 100
-}
+g[int](v: int): int { return 100 }
 
 main(): int {
     if stamp_first() != 1 {

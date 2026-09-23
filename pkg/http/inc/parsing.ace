@@ -136,48 +136,34 @@ pub ResponseResult: union {
 
 /* Reports whether `byte` is permitted by the HTTP token grammar. */
 is_host(host: string): bool {
-    if host.len == 0 || host.len > 253 {
-        return false
-    }
+    if host.len == 0 || host.len > 253 { return false }
     label_start: usize = 0
     digits_dots: bool = true
     for i: usize in 0 .. host.len {
         byte: u8 = host[i]
-        if !((byte >= '0' && byte <= '9') || byte == '.') {
-            digits_dots = false
-        }
+        if !((byte >= '0' && byte <= '9') || byte == '.') { digits_dots = false }
         if byte == '.' {
-            if i == label_start || i - label_start > 63 || host[i - 1] == '-' {
-                return false
-            }
+            if i == label_start || i - label_start > 63 || host[i - 1] == '-' { return false }
             label_start = i + 1
         } else {
             if !((byte >= '0' && byte <= '9') || (byte >= 'A' && byte <= 'Z') ||
                 (byte >= 'a' && byte <= 'z') || byte == '-') {
                 return false
             }
-            if i == label_start && byte == '-' {
-                return false
-            }
+            if i == label_start && byte == '-' { return false }
         }
     }
-    if label_start == host.len || host.len - label_start > 63 || host[host.len - 1] == '-' {
-        return false
-    }
+    if label_start == host.len || host.len - label_start > 63 || host[host.len - 1] == '-' { return false }
     if digits_dots {
         parts: usize = 0
         start: usize = 0
         for i: usize in 0 .. host.len + 1 {
             if i == host.len || host[i] == '.' {
-                if i == start {
-                    return false
-                }
+                if i == start { return false }
                 value: uint = 0
                 for j: usize in start .. i {
                     value = value * 10 + uint(host[j] - '0')
-                    if value > 255 {
-                        return false
-                    }
+                    if value > 255 { return false }
                 }
                 parts += 1
                 start = i + 1
@@ -201,13 +187,9 @@ pub Url::parse(url: string, secure: bool): (Url, Error) {
         start = 8
         default_port = 443
     }
-    if url.len < start || !mem.equal(url[..start], scheme) {
-        return blank(Url), UrlErr.invalid
-    }
+    if url.len < start || !mem.equal(url[..start], scheme) { return blank(Url), UrlErr.invalid }
     for i: usize in 0 .. url.len {
-        if ascii.is_control(url[i]) || url[i] == 35 {
-            return blank(Url), UrlErr.invalid
-        }
+        if ascii.is_control(url[i]) || url[i] == 35 { return blank(Url), UrlErr.invalid }
     }
     authority_end: usize = url.len
     for i: usize in start .. url.len {
@@ -217,30 +199,22 @@ pub Url::parse(url: string, secure: bool): (Url, Error) {
         }
     }
     for i: usize in start .. authority_end {
-        if url[i] == 64 || url[i] == 91 || url[i] == 93 {
-            return blank(Url), UrlErr.invalid
-        }
+        if url[i] == 64 || url[i] == 91 || url[i] == 93 { return blank(Url), UrlErr.invalid }
     }
     colon: usize = authority_end
     for i: usize in start .. authority_end {
         if url[i] == 58 {
-            if colon != authority_end {
-                return blank(Url), UrlErr.invalid
-            }
+            if colon != authority_end { return blank(Url), UrlErr.invalid }
             colon = i
         }
     }
     host_end: usize = colon
     host: string = url[start..host_end]
-    if !is_host(host) {
-        return blank(Url), UrlErr.invalid
-    }
+    if !is_host(host) { return blank(Url), UrlErr.invalid }
     port: u16 = default_port
     if colon != authority_end {
         parsed_port: uint, parsed: bool = str.parse[uint](url[colon + 1..authority_end])
-        if !parsed || parsed_port > 65535 {
-            return blank(Url), UrlErr.invalid
-        }
+        if !parsed || parsed_port > 65535 { return blank(Url), UrlErr.invalid }
 
         port = u16(parsed_port)
     }
@@ -258,9 +232,7 @@ pub Url::parse(url: string, secure: bool): (Url, Error) {
                 }
             }
             path = url[authority_end..query_at]
-            if query_at < url.len {
-                query = url[query_at..]
-            }
+            if query_at < url.len { query = url[query_at..] }
         }
     }
     result: Url = Url {
@@ -294,16 +266,10 @@ LineStatus: enum {
  */
 scan_line(input: string, scan_offset: usize): (usize, usize, usize, LineStatus) {
     for i: usize in scan_offset .. input.len {
-        if input[i] == 10 {
-            return 0, 0, i, LineStatus.malformed
-        }
+        if input[i] == 10 { return 0, 0, i, LineStatus.malformed }
         if input[i] == 13 {
-            if i + 1 >= input.len {
-                return 0, 0, i, LineStatus.incomplete
-            }
-            if input[i + 1] != 10 {
-                return 0, 0, i, LineStatus.malformed
-            }
+            if i + 1 >= input.len { return 0, 0, i, LineStatus.incomplete }
+            if input[i + 1] != 10 { return 0, 0, i, LineStatus.malformed }
             return i, i + 2, i + 2, LineStatus.complete
         }
     }
@@ -311,9 +277,7 @@ scan_line(input: string, scan_offset: usize): (usize, usize, usize, LineStatus) 
 }
 
 mut RequestParser.prepare_line(input: string): LineStatus {
-    if self.line_ready {
-        return LineStatus.complete
-    }
+    if self.line_ready { return LineStatus.complete }
     stop: usize, next: usize, scan: usize, status: LineStatus =
         scan_line(input, self.scan_offset)
     self.scan_offset = scan
@@ -333,9 +297,7 @@ mut RequestParser.consume_line() {
 }
 
 mut ResponseParser.prepare_line(input: string): LineStatus {
-    if self.line_ready {
-        return LineStatus.complete
-    }
+    if self.line_ready { return LineStatus.complete }
     stop: usize, next: usize, scan: usize, status: LineStatus =
         scan_line(input, self.scan_offset)
     self.scan_offset = scan
@@ -357,9 +319,7 @@ mut ResponseParser.consume_line() {
 /* Advances from `at` over HTTP optional whitespace. */
 skip_ows(text: string, at: usize): usize {
     cursor: usize = at
-    for cursor < text.len && (text[cursor] == 32 || text[cursor] == 9) {
-        cursor += 1
-    }
+    for cursor < text.len && (text[cursor] == 32 || text[cursor] == 9) { cursor += 1 }
     return cursor
 }
 
@@ -367,9 +327,7 @@ skip_ows(text: string, at: usize): usize {
 trim_ows(value: string): string {
     first: usize = skip_ows(value, 0)
     last: usize = value.len
-    for last > first && (value[last - 1] == 32 || value[last - 1] == 9) {
-        last -= 1
-    }
+    for last > first && (value[last - 1] == 32 || value[last - 1] == 9) { last -= 1 }
     return value[first..last]
 }
 
@@ -378,26 +336,18 @@ is_chunk_ext(text: string): bool {
     at: usize = 0
     for at < text.len {
         at = skip_ows(text, at)
-        if at >= text.len || text[at] != 59 {
-            return false
-        }
+        if at >= text.len || text[at] != 59 { return false }
 
         at += 1
         at = skip_ows(text, at)
         start: usize = at
-        for at < text.len && message.is_token(text[at]) {
-            at += 1
-        }
-        if at == start {
-            return false
-        }
+        for at < text.len && message.is_token(text[at]) { at += 1 }
+        if at == start { return false }
         at = skip_ows(text, at)
         if at < text.len && text[at] == 61 {
             at += 1
             at = skip_ows(text, at)
-            if at >= text.len {
-                return false
-            }
+            if at >= text.len { return false }
             if text[at] == '"' {
                 at += 1
                 closed: bool = false
@@ -410,25 +360,17 @@ is_chunk_ext(text: string): bool {
                     }
                     if byte == '\\' {
                         at += 1
-                        if at >= text.len || (ascii.is_control(text[at]) && text[at] != '\t') {
-                            return false
-                        }
+                        if at >= text.len || (ascii.is_control(text[at]) && text[at] != '\t') { return false }
                     } else if (ascii.is_control(byte) && byte != '\t') {
                         return false
                     }
                     at += 1
                 }
-                if !closed {
-                    return false
-                }
+                if !closed { return false }
             } else {
                 start = at
-                for at < text.len && message.is_token(text[at]) {
-                    at += 1
-                }
-                if at == start {
-                    return false
-                }
+                for at < text.len && message.is_token(text[at]) { at += 1 }
+                if at == start { return false }
             }
             at = skip_ows(text, at)
         }
@@ -466,9 +408,7 @@ request_complete_result(method: string, target: string, headers: []Header, body:
  * input bytes.
  */
 pub mut RequestParser.parse(input: string, headers: mut []Header, body: mut []u8, eof: bool): RequestResult {
-    if input.len < self.input_offset || input.len < self.scan_offset {
-        return mut self.syntax_failure()
-    }
+    if input.len < self.input_offset || input.len < self.scan_offset { return mut self.syntax_failure() }
     parse_loop: {
         if self.phase == RequestPhase.request {
             status: LineStatus = mut self.prepare_line(input)
@@ -503,9 +443,7 @@ pub mut RequestParser.parse(input: string, headers: mut []Header, body: mut []u8
                 if target[i] <= 32 || target[i] == 127 { return mut self.syntax_failure() }
             }
             version: string = input[second + 1..self.line_stop]
-            if !mem.equal(version, "HTTP/1.0") && !mem.equal(version, "HTTP/1.1") {
-                return mut self.syntax_failure()
-            }
+            if !mem.equal(version, "HTTP/1.0") && !mem.equal(version, "HTTP/1.1") { return mut self.syntax_failure() }
             self.method_start = self.line_start
             self.method_count = first - self.line_start
             self.target_start = first + 1
@@ -541,18 +479,14 @@ pub mut RequestParser.parse(input: string, headers: mut []Header, body: mut []u8
                     break
                 }
             }
-            if colon == self.line_start || colon == self.line_stop {
-                return mut self.syntax_failure()
-            }
+            if colon == self.line_start || colon == self.line_stop { return mut self.syntax_failure() }
             name: string = input[self.line_start..colon]
             raw: string = input[colon + 1..self.line_stop]
             for i: usize in 0 .. name.len {
                 if !message.is_token(name[i]) { return mut self.syntax_failure() }
             }
             for i: usize in 0 .. raw.len {
-                if (raw[i] < 32 && raw[i] != 9) || raw[i] == 127 {
-                    return mut self.syntax_failure()
-                }
+                if (raw[i] < 32 && raw[i] != 9) || raw[i] == 127 { return mut self.syntax_failure() }
             }
             value: string = trim_ows(raw)
             full: bool = self.header_count >= headers.len
@@ -666,9 +600,7 @@ pub mut RequestParser.parse(input: string, headers: mut []Header, body: mut []u8
                 if eof { return mut self.framing_failure() }
                 return self.progress()
             }
-            if status == LineStatus.malformed || self.line_stop != self.line_start {
-                return mut self.syntax_failure()
-            }
+            if status == LineStatus.malformed || self.line_stop != self.line_start { return mut self.syntax_failure() }
 
             mut self.consume_line()
             self.phase = RequestPhase.chunk_size
@@ -694,16 +626,12 @@ pub mut RequestParser.parse(input: string, headers: mut []Header, body: mut []u8
                     break
                 }
             }
-            if colon == self.line_start || colon == self.line_stop {
-                return mut self.syntax_failure()
-            }
+            if colon == self.line_start || colon == self.line_stop { return mut self.syntax_failure() }
             for i: usize in self.line_start .. colon {
                 if !message.is_token(input[i]) { return mut self.syntax_failure() }
             }
             for i: usize in colon + 1 .. self.line_stop {
-                if (input[i] < 32 && input[i] != 9) || input[i] == 127 {
-                    return mut self.syntax_failure()
-                }
+                if (input[i] < 32 && input[i] != 9) || input[i] == 127 { return mut self.syntax_failure() }
             }
             mut self.consume_line()
             continue parse_loop
@@ -760,9 +688,7 @@ pub mut ResponseParser.parse(
     eof: bool,
     no_body: bool,
 ): ResponseResult {
-    if input.len < self.input_offset || input.len < self.scan_offset {
-        return mut self.syntax_failure()
-    }
+    if input.len < self.input_offset || input.len < self.scan_offset { return mut self.syntax_failure() }
     parse_loop: {
         if self.phase == ResponsePhase.status {
             line_status: LineStatus = mut self.prepare_line(input)
@@ -787,9 +713,7 @@ pub mut ResponseParser.parse(
                 input[start + 11] < '0' || input[start + 11] > '9' {
                 return mut self.syntax_failure()
             }
-            if count > 12 && input[start + 12] != ' ' {
-                return mut self.syntax_failure()
-            }
+            if count > 12 && input[start + 12] != ' ' { return mut self.syntax_failure() }
             self.status = u16(input[start + 9] - '0') * 100 +
                 u16(input[start + 10] - '0') * 10 + u16(input[start + 11] - '0')
             if count > 12 {
@@ -844,18 +768,14 @@ pub mut ResponseParser.parse(
                     break
                 }
             }
-            if colon == self.line_start || colon == self.line_stop {
-                return mut self.syntax_failure()
-            }
+            if colon == self.line_start || colon == self.line_stop { return mut self.syntax_failure() }
             name: string = input[self.line_start..colon]
             raw: string = input[colon + 1..self.line_stop]
             for i: usize in 0 .. name.len {
                 if !message.is_token(name[i]) { return mut self.syntax_failure() }
             }
             for i: usize in 0 .. raw.len {
-                if (raw[i] < 32 && raw[i] != 9) || raw[i] == 127 {
-                    return mut self.syntax_failure()
-                }
+                if (raw[i] < 32 && raw[i] != 9) || raw[i] == 127 { return mut self.syntax_failure() }
             }
             value: string = trim_ows(raw)
             full: bool = (self.status < 100 || self.status >= 200) && self.header_count >= headers.len
@@ -1013,16 +933,12 @@ pub mut ResponseParser.parse(
                     break
                 }
             }
-            if colon == self.line_start || colon == self.line_stop {
-                return mut self.syntax_failure()
-            }
+            if colon == self.line_start || colon == self.line_stop { return mut self.syntax_failure() }
             for i: usize in self.line_start .. colon {
                 if !message.is_token(input[i]) { return mut self.syntax_failure() }
             }
             for i: usize in colon + 1 .. self.line_stop {
-                if (input[i] < 32 && input[i] != 9) || input[i] == 127 {
-                    return mut self.syntax_failure()
-                }
+                if (input[i] < 32 && input[i] != 9) || input[i] == 127 { return mut self.syntax_failure() }
             }
             mut self.consume_line()
             continue parse_loop

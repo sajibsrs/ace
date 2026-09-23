@@ -10,8 +10,6 @@ main(): int {
     size: usize = usize(0xFFFFFFFFFFFFFFFF)
     written: int = fmt.printf("%x %X %u", unsigned, size, size)
 
-    if written != 54 {
-        return 1
-    }
+    if written != 54 { return 1 }
     return 0
 }

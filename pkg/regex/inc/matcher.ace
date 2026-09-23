@@ -97,9 +97,7 @@ mut Queue.insert(pc: u32) {
     self.count += 1
 }
 
-is_word(byte: u8): bool {
-    return '0' <= byte <= '9' || 'A' <= byte <= 'Z' || 'a' <= byte <= 'z' || byte == '_'
-}
+is_word(byte: u8): bool { return '0' <= byte <= '9' || 'A' <= byte <= 'Z' || 'a' <= byte <= 'z' || byte == '_' }
 
 /* Whether `at` sits between a word byte and a non-word byte, the text's ends
  * counting as non-word.
@@ -176,9 +174,7 @@ mut Matcher.add(code: []Inst, into_next: bool, start: u32, text: string, at: usi
                 queued = self.current.has(pc)
             }
 
-            if queued {
-                break explore
-            }
+            if queued { break explore }
 
             if into_next {
                 mut self.next.insert(pc)
@@ -258,9 +254,7 @@ mut Matcher.add(code: []Inst, into_next: bool, start: u32, text: string, at: usi
  * leftmost-first; that suffices when only existence matters.
  */
 pub mut Matcher.run(code: Program, text: string, after: usize, earliest: bool): bool {
-    if after > text.len {
-        return false
-    }
+    if after > text.len { return false }
     insts: []Inst = code.insts.view()
     classes: []Class = code.classes.view()
     self.current.count = 0
@@ -269,15 +263,11 @@ pub mut Matcher.run(code: Program, text: string, after: usize, earliest: bool): 
 
     for {
         if !matched {
-            for i: usize in 0 .. self.slots {
-                self.work[i] = UNSET
-            }
+            for i: usize in 0 .. self.slots { self.work[i] = UNSET }
             mut self.add(insts, false, 0, text, at)
         }
 
-        if self.current.count == 0 {
-            break
-        }
+        if self.current.count == 0 { break }
         self.next.count = 0
 
         for i: usize in 0 .. self.current.count {
@@ -296,30 +286,22 @@ pub mut Matcher.run(code: Program, text: string, after: usize, earliest: bool): 
                     advance = at < text.len && classes[usize(index)].has(text[at])
                 }
                 Inst.match {
-                    for s: usize in 0 .. self.slots {
-                        self.best[s] = self.current.caps[row + s]
-                    }
+                    for s: usize in 0 .. self.slots { self.best[s] = self.current.caps[row + s] }
                     matched = true
 
-                    if earliest {
-                        return true
-                    }
+                    if earliest { return true }
                     break
                 }
                 default {}
             }
 
             if advance {
-                for s: usize in 0 .. self.slots {
-                    self.work[s] = self.current.caps[row + s]
-                }
+                for s: usize in 0 .. self.slots { self.work[s] = self.current.caps[row + s] }
                 mut self.add(insts, true, pc + 1, text, at + 1)
             }
         }
 
-        if at == text.len {
-            break
-        }
+        if at == text.len { break }
         at += 1
         swap: Queue = self.current
         self.current = self.next

@@ -36,6 +36,4 @@ H: struct {
     value: int,
 }
 
-main(): int {
-    return 0
-}
+main(): int { return 0 }

@@ -21,9 +21,7 @@ SIZE: usize = 1048576
  */
 CALLS: usize = 10000
 
-now(): u64 {
-    return time.awake()
-}
+now(): u64 { return time.awake() }
 
 report(name: string, elapsed: u64, operations: usize, checksum: usize) {
     fmt.printf("%s %u %u %u\n", name, usize(elapsed), operations, checksum)
@@ -56,9 +54,7 @@ fill(text: mut []u8) {
 
 compile(pattern: string): regex.Regex {
     re: regex.Regex, err: Error = regex.Regex::new(pattern)
-    if err != null {
-        fmt.println(err.message)
-    }
+    if err != null { fmt.println(err.message) }
 
     return re
 }
@@ -87,9 +83,7 @@ captures(text: string) {
     started: u64 = now()
 
     for at <= text.len {
-        if !mut re.find(text, at) {
-            break
-        }
+        if !mut re.find(text, at) { break }
         checksum += 1 + re.span(1).start + re.span(2).end
         at = re.span(0).end
     }
@@ -115,9 +109,7 @@ pathological() {
 main(): int {
     text: mut []u8 = mem.alloc[u8](SIZE)
     defer mem.release[u8](mut text)
-    if text == null {
-        return 1
-    }
+    if text == null { return 1 }
 
     fill(text)
     find_all("literal", "zqxj", string(text))

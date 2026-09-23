@@ -27,9 +27,7 @@ close_all(q: poll.Queue, listener: net.Socket, peer: net.Socket) {
 client(port: u16): int {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
-    if err != null {
-        return 1
-    }
+    if err != null { return 1 }
 
     if net.connect(sock, loopback(port)) != null {
         sys.close(sock)
@@ -68,9 +66,7 @@ client(port: u16): int {
         return 5
     }
 
-    if sys.close(sock) != null {
-        return 6
-    }
+    if sys.close(sock) != null { return 6 }
     return 0
 }
 
@@ -80,9 +76,7 @@ main(): int {
     listener_err: Error
     listener, listener_err = net.socket(net.SocketType.tcp)
 
-    if listener_err != null {
-        return 10
-    }
+    if listener_err != null { return 10 }
 
     if net.reuse_addr(listener, true) != null ||
        net.bind(listener, loopback(u16(0))) != null {
@@ -180,9 +174,7 @@ main(): int {
                 if err != null || accepted == -1 || address.ip[0] != 127 ||
                    net.nonblock(accepted, true) != null ||
                    poll.watch(q, accepted, true, false) != null {
-                    if accepted != -1 {
-                        sys.close(accepted)
-                    }
+                    if accepted != -1 { sys.close(accepted) }
                     failure = 21
                     break
                 }
@@ -227,9 +219,7 @@ main(): int {
                     }
                     sent += usize(amount)
 
-                    if sent == buffer.len {
-                        done = true
-                    }
+                    if sent == buffer.len { done = true }
                 }
             }
         }
@@ -238,12 +228,8 @@ main(): int {
     close_all(q, listener, peer)
     status: sys.ProcessStatus, wait_err: Error = sys.wait(process)
 
-    if wait_err != null || !status.exited || status.code != 0 {
-        return 30
-    }
+    if wait_err != null || !status.exited || status.code != 0 { return 30 }
 
-    if failure != 0 {
-        return failure
-    }
+    if failure != 0 { return failure }
     return 0
 }

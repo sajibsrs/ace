@@ -24,17 +24,13 @@ bigs: StaticMap[u8]Big = {
 
 ramp33(): [33]u8 {
     out: [33]u8 = [0 : 33]
-    for i: usize in 0 .. 33 {
-        out[i] = u8(i + 1)
-    }
+    for i: usize in 0 .. 33 { out[i] = u8(i + 1) }
     return out
 }
 
 ramp100(): [100]u8 {
     out: [100]u8 = [0 : 100]
-    for i: usize in 0 .. 100 {
-        out[i] = u8(i + 1)
-    }
+    for i: usize in 0 .. 100 { out[i] = u8(i + 1) }
     return out
 }
 
@@ -56,96 +52,64 @@ big_ok(x: Big, seed: i64): bool {
 
 ramp33_ok(x: [33]u8): bool {
     for i: usize in 0 .. 33 {
-        if x[i] != u8(i + 1) {
-            return false
-        }
+        if x[i] != u8(i + 1) { return false }
     }
     return true
 }
 
 ramp100_ok(x: [100]u8): bool {
     for i: usize in 0 .. 100 {
-        if x[i] != u8(i + 1) {
-            return false
-        }
+        if x[i] != u8(i + 1) { return false }
     }
     return true
 }
 
-split(): (Big, [33]u8) {
-    return big(10), ramp33()
-}
+split(): (Big, [33]u8) { return big(10), ramp33() }
 
-far_split(): ([4100]u8, Big) {
-    return [0 : 4100], big(80)
-}
+far_split(): ([4100]u8, Big) { return [0 : 4100], big(80) }
 
 sizes(): int {
     source: [4096]u8 = [0 : 4096]
-    for i: usize in 0 .. 4096 {
-        source[i] = u8(i % 251)
-    }
+    for i: usize in 0 .. 4096 { source[i] = u8(i % 251) }
     copied: [4096]u8 = source
     for i: usize in 0 .. 4096 {
-        if copied[i] != u8(i % 251) {
-            return 1
-        }
+        if copied[i] != u8(i % 251) { return 1 }
     }
 
     a17: [17]u8 = [0 : 17]
     a24: [3]i64 = [i64(0) : 3]
     a32: [4]i64 = [i64(0) : 4]
-    for i: usize in 0 .. 17 {
-        a17[i] = u8(i + 1)
-    }
-    for i: usize in 0 .. 3 {
-        a24[i] = i64(i + 1)
-    }
-    for i: usize in 0 .. 4 {
-        a32[i] = i64(i + 1)
-    }
+    for i: usize in 0 .. 17 { a17[i] = u8(i + 1) }
+    for i: usize in 0 .. 3 { a24[i] = i64(i + 1) }
+    for i: usize in 0 .. 4 { a32[i] = i64(i + 1) }
     b17: [17]u8 = a17
     b24: [3]i64 = a24
     b32: [4]i64 = a32
-    if b17[0] != 1 || b17[16] != 17 || b24[2] != 3 || b32[0] != 1 || b32[3] != 4 {
-        return 2
-    }
+    if b17[0] != 1 || b17[16] != 17 || b24[2] != 3 || b32[0] != 1 || b32[3] != 4 { return 2 }
 
     c33: [33]u8 = ramp33()
     c100: [100]u8 = ramp100()
-    if !ramp33_ok(c33) || !ramp100_ok(c100) {
-        return 3
-    }
+    if !ramp33_ok(c33) || !ramp100_ok(c100) { return 3 }
     c33 = c33
     c100 = c100
-    if !ramp33_ok(c33) || !ramp100_ok(c100) {
-        return 4
-    }
+    if !ramp33_ok(c33) || !ramp100_ok(c100) { return 4 }
     d100: [100]u8 = [0 : 100]
     d100 = c100
-    if !ramp100_ok(d100) {
-        return 5
-    }
+    if !ramp100_ok(d100) { return 5 }
     return 0
 }
 
 aggregates(): int {
     g: Big = big(1)
     h: Big = g
-    if !big_ok(h, 1) {
-        return 6
-    }
+    if !big_ok(h, 1) { return 6 }
     h = big(7)
-    if !big_ok(h, 7) {
-        return 7
-    }
+    if !big_ok(h, 7) { return 7 }
 
     list: [3]Big = [big(20), big(30), big(40)]
     seed: i64 = 20
     for item: Big in list {
-        if !big_ok(item, seed) {
-            return 8
-        }
+        if !big_ok(item, seed) { return 8 }
         seed += 10
     }
 
@@ -156,32 +120,22 @@ aggregates(): int {
     }
     near: Big = far.tail
     far.tail = big(60)
-    if !big_ok(near, 50) || !big_ok(far.tail, 60) {
-        return 16
-    }
+    if !big_ok(near, 50) || !big_ok(far.tail, 60) { return 16 }
 
     // A tuple member past 4095 bytes copies from a shifted-immediate offset.
     skipped: [4100]u8, far_part: Big = far_split()
-    if !big_ok(far_part, 80) {
-        return 17
-    }
+    if !big_ok(far_part, 80) { return 17 }
 
     part: Big, bytes: [33]u8 = split()
-    if !big_ok(part, 10) || !ramp33_ok(bytes) {
-        return 9
-    }
+    if !big_ok(part, 10) || !ramp33_ok(bytes) { return 9 }
 
     wide: Wide = Wide { v = [0 : 9] }
-    for i: usize in 0 .. 9 {
-        wide.v[i] = i32(i * 3)
-    }
+    for i: usize in 0 .. 9 { wide.v[i] = i32(i * 3) }
     held: Holder = Holder.wide(wide)
     switch held {
         Holder.wide(w: Wide) {
             for i: usize in 0 .. 9 {
-                if w.v[i] != i32(i * 3) {
-                    return 10
-                }
+                if w.v[i] != i32(i * 3) { return 10 }
             }
         }
         default {
@@ -192,38 +146,22 @@ aggregates(): int {
 }
 
 lookups(): int {
-    if keys["abcdefghijklmnopqrstu"] != 1 || keys["Xbcdefghijklmnopqrstu"] != 2 {
-        return 12
-    }
-    if keys["abcdefghijXlmnopqrstu"] != 3 || keys["abcdefghijklmnopqrstX"] != 4 {
-        return 13
-    }
-    if keys["ab"] != 5 || keys["aX"] != 6 {
-        return 14
-    }
+    if keys["abcdefghijklmnopqrstu"] != 1 || keys["Xbcdefghijklmnopqrstu"] != 2 { return 12 }
+    if keys["abcdefghijXlmnopqrstu"] != 3 || keys["abcdefghijklmnopqrstX"] != 4 { return 13 }
+    if keys["ab"] != 5 || keys["aX"] != 6 { return 14 }
     // Map values larger than the inline limit copy from the x15 source.
     found: Big = bigs[u8(1)]
-    if !big_ok(found, 70) {
-        return 18
-    }
-    if keys["abcdefghijklmnopqrstY"] != 0 || keys["Yb"] != 0 || keys["aY"] != 0 {
-        return 15
-    }
+    if !big_ok(found, 70) { return 18 }
+    if keys["abcdefghijklmnopqrstY"] != 0 || keys["Yb"] != 0 || keys["aY"] != 0 { return 15 }
     return 0
 }
 
 main(): int {
     failed: int = sizes()
-    if failed != 0 {
-        return failed
-    }
+    if failed != 0 { return failed }
     failed = aggregates()
-    if failed != 0 {
-        return failed
-    }
+    if failed != 0 { return failed }
     failed = lookups()
-    if failed != 0 {
-        return failed
-    }
+    if failed != 0 { return failed }
     return 42
 }

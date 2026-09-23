@@ -38,13 +38,9 @@ Arr: struct {
 }
 
 // The object's first function label is the section, so it stays a dummy.
-first(): usize {
-    return 0
-}
+first(): usize { return 0 }
 
-small_step(s: Small): Small {
-    return Small { v = (s.v * 3 + 1) & 0xFFFF }
-}
+small_step(s: Small): Small { return Small { v = (s.v * 3 + 1) & 0xFFFF } }
 
 pair_step(p: Pair): Pair {
     return Pair {
@@ -61,58 +57,34 @@ swap(p: Pair): Pair {
     }
 }
 
-second(p: Pair): usize {
-    return p.b
-}
+second(p: Pair): usize { return p.b }
 
-unused(p: Pair, q: Pair): usize {
-    return q.a
-}
+unused(p: Pair, q: Pair): usize { return q.a }
 
-order(p: Pair): usize {
-    return (p.a - 3) / 7 + p.b % 5 + (p.a << 2) - (p.b >> 1)
-}
+order(p: Pair): usize { return (p.a - 3) / 7 + p.b % 5 + (p.a << 2) - (p.b >> 1) }
 
-bigger(p: Pair, q: Pair): bool {
-    return p.a > q.b && p.b != q.a
-}
+bigger(p: Pair, q: Pair): bool { return p.a > q.b && p.b != q.a }
 
 branchy(p: Pair): usize {
-    if p.a > p.b {
-        return p.a - p.b
-    }
-    if p.a == 0 {
-        return 100
-    }
+    if p.a > p.b { return p.a - p.b }
+    if p.a == 0 { return 100 }
     return p.b - p.a
 }
 
-nested(n: Nest): usize {
-    return n.inner.v * 10 + n.w
-}
+nested(n: Nest): usize { return n.inner.v * 10 + n.w }
 
 // only the 8-byte leaf is read; the u32 tail never is
-wide_a(w: Wide): usize {
-    return w.a + 1
-}
+wide_a(w: Wide): usize { return w.a + 1 }
 
 // reading the u32 leaf keeps the slot
-wide_b(w: Wide): usize {
-    return w.a + usize(w.b)
-}
+wide_b(w: Wide): usize { return w.a + usize(w.b) }
 
-packed(p: Packed): u32 {
-    return p.a + p.b
-}
+packed(p: Packed): u32 { return p.a + p.b }
 
-mixed(m: Mix): f64 {
-    return f64(m.a) + m.b
-}
+mixed(m: Mix): f64 { return f64(m.a) + m.b }
 
 // a whole-value use keeps the slot; the other parameter still qualifies
-pass(p: Pair): Pair {
-    return p
-}
+pass(p: Pair): Pair { return p }
 
 copy_sum(p: Pair, q: Pair): usize {
     c: Pair = q
@@ -120,9 +92,7 @@ copy_sum(p: Pair, q: Pair): usize {
 }
 
 // a runtime index needs the array in memory
-pick(a: Arr, i: usize): usize {
-    return a.v[i]
-}
+pick(a: Arr, i: usize): usize { return a.v[i] }
 
 // a homed leaf as an index
 lookup(p: Pair): usize {
@@ -131,18 +101,12 @@ lookup(p: Pair): usize {
 }
 
 // a call clobbers the registers, so a non-leaf keeps its slots
-twice(x: usize): usize {
-    return x * 2
-}
+twice(x: usize): usize { return x * 2 }
 
-after_call(p: Pair): usize {
-    return twice(p.a) + p.b
-}
+after_call(p: Pair): usize { return twice(p.a) + p.b }
 
 // four parameters exceed the register budget: the last keeps its slot
-sum4(a: Pair, b: Pair, c: Pair, d: Pair): usize {
-    return a.a + a.b + b.a + b.b + c.a + c.b + d.a * 100 + d.b * 1000
-}
+sum4(a: Pair, b: Pair, c: Pair, d: Pair): usize { return a.a + a.b + b.a + b.b + c.a + c.b + d.a * 100 + d.b * 1000 }
 
 // promoted locals and homed leaves share x14 down
 in_loop(p: Pair): usize {
@@ -155,29 +119,21 @@ in_loop(p: Pair): usize {
     return acc
 }
 
-deep(p: Pair): usize {
-    return p.a * (p.b + (p.a * (p.b + (p.a * (p.b + (p.a * (p.b + p.a)))))))
-}
+deep(p: Pair): usize { return p.a * (p.b + (p.a * (p.b + (p.a * (p.b + (p.a * (p.b + p.a))))))) }
 
 main(): int {
     s: Small = small_step(Small { v = 5 })
-    if s.v != 16 {
-        return 1
-    }
+    if s.v != 16 { return 1 }
     p: Pair = pair_step(Pair {
         a = 2,
         b = 7,
     })
-    if p.a != 13 || p.b != 8 {
-        return 2
-    }
+    if p.a != 13 || p.b != 8 { return 2 }
     w: Pair = swap(Pair {
         a = 3,
         b = 9,
     })
-    if w.a != 9 || w.b != 3 {
-        return 3
-    }
+    if w.a != 9 || w.b != 3 { return 3 }
     if second(Pair {
         a = 1,
         b = 6,
@@ -255,9 +211,7 @@ main(): int {
         a = 6,
         b = 7,
     })
-    if q.a != 6 || q.b != 7 {
-        return 12
-    }
+    if q.a != 6 || q.b != 7 { return 12 }
     if copy_sum(Pair {
         a = 1,
         b = 2,
@@ -268,9 +222,7 @@ main(): int {
         return 13
     }
     arr: Arr = Arr { v = [3, 5] }
-    if pick(arr, 0) != 3 || pick(arr, 1) != 5 {
-        return 14
-    }
+    if pick(arr, 0) != 3 || pick(arr, 1) != 5 { return 14 }
     if lookup(Pair {
         a = 1,
         b = 3,

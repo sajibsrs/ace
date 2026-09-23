@@ -363,9 +363,7 @@ pub binary64(text: string): (f64, bool) {
     if scanned.digits <= 19 {
         raw: u64 = 0
         handled: bool = fast.exact64(scanned.coefficient, scanned.exponent10, mut raw)
-        if !handled {
-            handled = fast.small_integer(scanned.coefficient, scanned.exponent10, 52, 1023, mut raw)
-        }
+        if !handled { handled = fast.small_integer(scanned.coefficient, scanned.exponent10, 52, 1023, mut raw) }
         if !handled { handled = fast.binary64(scanned.coefficient, scanned.exponent10, mut raw) }
         if handled {
             if raw == u64(0x7FF0000000000000) { return 0.0, false }
@@ -425,9 +423,7 @@ pub binary32(text: string): (f32, bool) {
     if scanned.digits <= 19 {
         wide_raw: u64 = 0
         handled: bool = fast.exact32(scanned.coefficient, scanned.exponent10, mut wide_raw)
-        if !handled {
-            handled = fast.small_integer(scanned.coefficient, scanned.exponent10, 23, 127, mut wide_raw)
-        }
+        if !handled { handled = fast.small_integer(scanned.coefficient, scanned.exponent10, 23, 127, mut wide_raw) }
         if !handled { handled = fast.binary32(scanned.coefficient, scanned.exponent10, mut wide_raw) }
         if handled {
             raw: u32 = u32(wide_raw)

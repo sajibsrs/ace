@@ -10,8 +10,6 @@ main(): int {
     negative: f64 = zero - largest
     written: int = fmt.printf("%.324f", negative)
 
-    if written != 635 {
-        return 1
-    }
+    if written != 635 { return 1 }
     return 0
 }

@@ -5,6 +5,4 @@ Readable: contract { read(): bool }
 
 Thing signs Readable
 
-Thing.read(): int {
-    return self.value
-}
+Thing.read(): int { return self.value }

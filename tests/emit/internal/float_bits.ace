@@ -5,28 +5,16 @@
 import bits
 
 main(): int {
-    if bits.from_float(1.0) != u64(0x3FF0000000000000) {
-        return 1
-    }
+    if bits.from_float(1.0) != u64(0x3FF0000000000000) { return 1 }
     negative: f64 = 0.0 - 1.0
-    if bits.from_float(negative) != u64(0xBFF0000000000000) {
-        return 2
-    }
-    if bits.from_float(f32(0.5)) != u32(0x3F000000) {
-        return 3
-    }
+    if bits.from_float(negative) != u64(0xBFF0000000000000) { return 2 }
+    if bits.from_float(f32(0.5)) != u32(0x3F000000) { return 3 }
     negative_zero64: u64 = u64(0x8000000000000000)
-    if bits.from_float(bits.to_float(negative_zero64)) != negative_zero64 {
-        return 4
-    }
+    if bits.from_float(bits.to_float(negative_zero64)) != negative_zero64 { return 4 }
     payload64: u64 = u64(0x7FF8000000001234)
-    if bits.from_float(bits.to_float(payload64)) != payload64 {
-        return 5
-    }
+    if bits.from_float(bits.to_float(payload64)) != payload64 { return 5 }
     payload32: u32 = u32(0x7FC01234)
-    if bits.from_float(bits.to_float(payload32)) != payload32 {
-        return 6
-    }
+    if bits.from_float(bits.to_float(payload32)) != payload32 { return 6 }
     from64: (f64): u64 = bits.from_float
     to64: (u64): f64 = bits.to_float
     from32: (f32): u32 = bits.from_float

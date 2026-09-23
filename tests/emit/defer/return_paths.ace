@@ -25,14 +25,8 @@ pick(n: int): int {
 }
 
 main(): int {
-    if pick(1) != 10 {
-        return 1
-    }
-    if pick(2) != 20 {
-        return 2
-    }
-    if pick(3) != 30 {
-        return 3
-    }
+    if pick(1) != 10 { return 1 }
+    if pick(2) != 20 { return 2 }
+    if pick(3) != 30 { return 3 }
     return 0
 }

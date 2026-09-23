@@ -15,9 +15,7 @@ choose(flag: bool): int {
     return answer
 }
 
-sum(point: Point): int {
-    return point.x + point.y
-}
+sum(point: Point): int { return point.x + point.y }
 
 main(): int {
     point: Point

@@ -190,9 +190,7 @@ main(): int {
     if vec.v[0] != 2.0 || vec.v[1] != 4.0 || vec.v[2] != 6.0 { return 10 }
 
     grid: Grid = bump_grid(Grid { cells = [Cell { a = 1, b = 2 }, Cell { a = 3, b = 4 }] })
-    if grid.cells[0].a != 2 || grid.cells[0].b != 4 || grid.cells[1].a != 6 || grid.cells[1].b != 8 {
-        return 11
-    }
+    if grid.cells[0].a != 2 || grid.cells[0].b != 4 || grid.cells[1].a != 6 || grid.cells[1].b != 8 { return 11 }
 
     if sum_msg(Msg.pair(Pair {
         a = 10,

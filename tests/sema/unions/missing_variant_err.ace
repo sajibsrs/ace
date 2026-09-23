@@ -10,6 +10,4 @@ handle(e: Event): int {
     return -1
 }
 
-main(): int {
-    return handle(Event.none)
-}
+main(): int { return handle(Event.none) }

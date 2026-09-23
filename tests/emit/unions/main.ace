@@ -60,22 +60,14 @@ quit_status: const Status = Status.quit
 key_status: const Status = Status.key(42)
 text_value: const Scalar = Scalar.text("union")
 
-round_trip(event: Event): Event {
-    return event
-}
+round_trip(event: Event): Event { return event }
 
 main(): int {
-    if default_status != Status.none {
-        return 1
-    }
+    if default_status != Status.none { return 1 }
 
-    if quit_status != Status.quit {
-        return 2
-    }
+    if quit_status != Status.quit { return 2 }
 
-    if key_status == Status.quit {
-        return 3
-    }
+    if key_status == Status.quit { return 3 }
     key: u32 = 0
 
     switch key_status {
@@ -87,18 +79,14 @@ main(): int {
         }
     }
 
-    if key != 42 {
-        return 5
-    }
+    if key != 42 { return 5 }
 
     event: Event = Event.cursor( { x = 10, y = 20 })
     event = round_trip(event)
 
     switch event {
         Event.cursor(point: Point) {
-            if point.x + point.y != 30 {
-                return 6
-            }
+            if point.x + point.y != 30 { return 6 }
             point.x = 99
         }
         default {
@@ -108,9 +96,7 @@ main(): int {
 
     switch event {
         Event.cursor(point: Point) {
-            if point.x != 10 {
-                return 8
-            }
+            if point.x != 10 { return 8 }
         }
         default {
             return 9
@@ -119,9 +105,7 @@ main(): int {
 
     switch text_value {
         Scalar.text(text: string) {
-            if text.len != 5 || text[0] != u8(117) || text[4] != u8(110) {
-                return 17
-            }
+            if text.len != 5 || text[0] != u8(117) || text[4] != u8(110) { return 17 }
         }
         default {
             return 18
@@ -132,9 +116,7 @@ main(): int {
 
     switch small {
         Small.bytes(bytes: Tiny) {
-            if bytes.a != 1 || bytes.b != 2 || bytes.c != 3 {
-                return 12
-            }
+            if bytes.a != 1 || bytes.b != 2 || bytes.c != 3 { return 12 }
         }
         default {
             return 13
@@ -145,26 +127,20 @@ main(): int {
 
     switch result {
         Result[int].value(value: int) {
-            if value != 9 {
-                return 14
-            }
+            if value != 9 { return 14 }
         }
         default {
             return 15
         }
     }
 
-    if sizeof(Event) != 24 || sizeof(Small) != 8 {
-        return 16
-    }
+    if sizeof(Event) != 24 || sizeof(Small) != 8 { return 16 }
     left: Outer = Outer.inner(Inner.value(1))
     left = Outer.inner(Inner.none)
     right: Outer = Outer.inner(Inner.value(2))
     right = Outer.inner(Inner.none)
 
-    if left != right {
-        return 19
-    }
+    if left != right { return 19 }
     fmt.println("union ok")
     return 0
 }

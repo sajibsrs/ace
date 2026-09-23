@@ -58,9 +58,7 @@ send_fragmented(sock: net.Socket, text: string): bool {
          */
         count: int, err: Error = net.send(sock, text[sent..sent + 1])
 
-        if err != null || count != 1 {
-            return false
-        }
+        if err != null || count != 1 { return false }
         sent += 1
     }
     return true
@@ -76,9 +74,7 @@ receive_exact(sock: net.Socket, expected: string): bool {
          */
         count: int, err: Error = net.receive(sock, mut storage[received..received + 1])
 
-        if err != null || count != 1 {
-            return false
-        }
+        if err != null || count != 1 { return false }
         received += 1
     }
     return mem.equal(storage[0..received], expected)
@@ -88,9 +84,7 @@ connect_client(port: u16): (net.Socket, bool) {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
     if err != null || net.connect(sock, loopback(port)) != null {
-        if sock != -1 {
-            sys.close(sock)
-        }
+        if sock != -1 { sys.close(sock) }
         return net.Socket(-1), false
     }
     return sock, true
@@ -99,9 +93,7 @@ connect_client(port: u16): (net.Socket, bool) {
 client_a(port: u16, gate: sys.Fd): int {
     sock: net.Socket, ok: bool = connect_client(port)
 
-    if !ok {
-        return 1
-    }
+    if !ok { return 1 }
     if !read_token(gate) || !send_fragmented(sock, "A!") ||
        !receive_exact(sock, "A!") {
         sys.close(sock)
@@ -112,18 +104,14 @@ client_a(port: u16, gate: sys.Fd): int {
         sys.close(sock)
         return 3
     }
-    if sys.close(sock) != null {
-        return 4
-    }
+    if sys.close(sock) != null { return 4 }
     return 0
 }
 
 client_b(port: u16, gate: sys.Fd): int {
     sock: net.Socket, ok: bool = connect_client(port)
 
-    if !ok {
-        return 1
-    }
+    if !ok { return 1 }
     if !read_token(gate) || !receive_exact(sock, "A!") ||
        !send_fragmented(sock, "B?") || !receive_exact(sock, "B?") {
         sys.close(sock)
@@ -134,26 +122,20 @@ client_b(port: u16, gate: sys.Fd): int {
         sys.close(sock)
         return 3
     }
-    if sys.close(sock) != null {
-        return 4
-    }
+    if sys.close(sock) != null { return 4 }
     return 0
 }
 
 client_c(port: u16, gate: sys.Fd): int {
     sock: net.Socket, ok: bool = connect_client(port)
 
-    if !ok {
-        return 1
-    }
+    if !ok { return 1 }
     if !read_token(gate) || !receive_exact(sock, "B2") ||
        !send_fragmented(sock, "C3") || !receive_exact(sock, "C3") {
         sys.close(sock)
         return 2
     }
-    if sys.close(sock) != null {
-        return 3
-    }
+    if sys.close(sock) != null { return 3 }
     return 0
 }
 
@@ -168,17 +150,13 @@ fork_client(
 ): (sys.Process, Error) {
     process: sys.Process, err: Error = sys.fork()
 
-    if err != null || process != 0 {
-        return process, err
-    }
+    if err != null || process != 0 { return process, err }
 
     sys.close(gate_write)
     sys.close(sys.Fd(q))
     sys.close(listener)
     for client: Client in clients {
-        if client.socket != -1 {
-            sys.close(client.socket)
-        }
+        if client.socket != -1 { sys.close(client.socket) }
     }
 
     code: int = 90
@@ -196,18 +174,14 @@ fork_client(
 
 find_client(clients: []Client, fd: sys.Fd): usize {
     for index: usize in 0 .. clients.len {
-        if clients[index].socket == fd {
-            return index
-        }
+        if clients[index].socket == fd { return index }
     }
     return clients.len
 }
 
 find_free(clients: []Client): usize {
     for index: usize in 0 .. clients.len {
-        if clients[index].socket == -1 {
-            return index
-        }
+        if clients[index].socket == -1 { return index }
     }
     return clients.len
 }
@@ -219,9 +193,7 @@ broadcast(clients: mut []Client, message: []u8): bool {
                message.len > BUFFER_CAPACITY {
                 return false
             }
-            for byte_index: usize in 0 .. message.len {
-                clients[index].output[byte_index] = message[byte_index]
-            }
+            for byte_index: usize in 0 .. message.len { clients[index].output[byte_index] = message[byte_index] }
             clients[index].output_count = message.len
             clients[index].output_sent = 0
         }
@@ -244,18 +216,14 @@ close_client(q: poll.Queue, mut client: Client) {
 
 all_flushed(clients: []Client): bool {
     for client: Client in clients {
-        if client.socket != -1 && client.output_sent < client.output_count {
-            return false
-        }
+        if client.socket != -1 && client.output_sent < client.output_count { return false }
     }
     return true
 }
 
 all_closed(clients: []Client): bool {
     for client: Client in clients {
-        if client.socket != -1 {
-            return false
-        }
+        if client.socket != -1 { return false }
     }
     return true
 }
@@ -268,9 +236,7 @@ wait_child(process: sys.Process): bool {
 main(): int {
     listener: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
-    if err != null {
-        return 10
-    }
+    if err != null { return 10 }
     if net.reuse_addr(listener, true) != null {
         sys.close(listener)
         return 11
@@ -298,9 +264,7 @@ main(): int {
     q, err = poll.queue()
     if err != null || poll.watch(q, listener, true, false) != null {
         sys.close(listener)
-        if err == null {
-            sys.close(sys.Fd(q))
-        }
+        if err == null { sys.close(sys.Fd(q)) }
         return 16
     }
 
@@ -359,9 +323,7 @@ main(): int {
 
                 if slot == CLIENT_CAPACITY || accept_err != null || accepted == -1 ||
                    address.ip[0] != 127 || net.nonblock(accepted, true) != null {
-                    if accepted != -1 {
-                        sys.close(accepted)
-                    }
+                    if accepted != -1 { sys.close(accepted) }
                     failure = 21
                     break
                 }
@@ -475,9 +437,7 @@ main(): int {
                                     failure = 34
                                 }
                             }
-                            if failure != 0 {
-                                break
-                            }
+                            if failure != 0 { break }
                             if stage == 1 {
                                 stage = 2
                             } else if stage == 6 {
@@ -552,29 +512,17 @@ main(): int {
         }
     }
 
-    for index: usize in 0 .. CLIENT_CAPACITY {
-        close_client(q, mut clients[index])
-    }
+    for index: usize in 0 .. CLIENT_CAPACITY { close_client(q, mut clients[index]) }
     poll.unwatch(q, listener)
     sys.close(listener)
     sys.close(sys.Fd(q))
     for index: usize in 0 .. usize(3) {
-        if gates[index] != -1 {
-            sys.close(gates[index])
-        }
+        if gates[index] != -1 { sys.close(gates[index]) }
     }
 
-    if processes[1] != -1 && !wait_child(processes[1]) {
-        return 50
-    }
-    if processes[2] != -1 && !wait_child(processes[2]) {
-        return 51
-    }
-    if failure != 0 {
-        return failure
-    }
-    if reused_slot != first_slot {
-        return 52
-    }
+    if processes[1] != -1 && !wait_child(processes[1]) { return 50 }
+    if processes[2] != -1 && !wait_child(processes[2]) { return 51 }
+    if failure != 0 { return failure }
+    if reused_slot != first_slot { return 52 }
     return 0
 }

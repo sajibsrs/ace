@@ -119,9 +119,7 @@ main(): int {
     previous_body: usize = 0
     for occupied: usize in 1 .. request_text.len + 1 {
         result = mut parser.parse(request_text[..occupied], mut headers[..], mut body[..], false)
-        if parser.scan_offset < previous_scan || parser.body_count < previous_body {
-            return 10
-        }
+        if parser.scan_offset < previous_scan || parser.body_count < previous_body { return 10 }
         previous_scan = parser.scan_offset
         previous_body = parser.body_count
         switch result {
@@ -129,9 +127,7 @@ main(): int {
                 if occupied == request_text.len { return 11 }
             }
             http.RequestResult.complete(request: http.Request) {
-                if occupied != request_text.len || !mem.equal(request.body, "one") {
-                    return 12
-                }
+                if occupied != request_text.len || !mem.equal(request.body, "one") { return 12 }
             }
             default { return 13 }
         }
@@ -161,9 +157,7 @@ main(): int {
                 if occupied == response_text.len { return 15 }
             }
             http.ResponseResult.complete(parsed: http.Response) {
-                if occupied != response_text.len || !mem.equal(parsed.body, "two") {
-                    return 16
-                }
+                if occupied != response_text.len || !mem.equal(parsed.body, "two") { return 16 }
             }
             default { return 17 }
         }

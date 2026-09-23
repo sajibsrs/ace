@@ -38,9 +38,7 @@ pub Context: struct {
     backlog: usize = 512,
 }
 
-pub Context::new(): Context {
-    return Context {}
-}
+pub Context::new(): Context { return Context {} }
 
 /* Releases buffer storage. Call once the context is no longer served. */
 pub mut Context.wipe() {
@@ -68,9 +66,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
         if !parse_pending {
             if occupied == context.input.len {
                 grown: mut []u8, ok: bool = mem.grow[u8](context.input, context.input.len + 1)
-                if !ok {
-                    return blank(Request), false
-                }
+                if !ok { return blank(Request), false }
 
                 context.input = grown
 
@@ -85,14 +81,10 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
 
             received: int, recv_err: Error = net.receive(conn.socket, mut context.input[occupied..])
             if recv_err != null {
-                if recv_err.domain == typeid(net.ReceiveErr) && recv_err.code == sys.EINTR {
-                    continue
-                }
+                if recv_err.domain == typeid(net.ReceiveErr) && recv_err.code == sys.EINTR { continue }
                 return blank(Request), false
             }
-            if received == 0 {
-                return blank(Request), false
-            }
+            if received == 0 { return blank(Request), false }
 
             occupied += usize(received)
         }
@@ -112,9 +104,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
             RequestResult.capacity(capacity_type: RequestCapacity) {
                 if capacity_type == RequestCapacity.headers {
                     grown: mut []Header, ok: bool = mem.grow[Header](context.headers, context.headers.len + 1)
-                    if !ok {
-                        return blank(Request), false
-                    }
+                    if !ok { return blank(Request), false }
 
                     context.headers = grown
                 } else {
@@ -125,9 +115,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
                         needed = parser.body_count + parser.chunk_remaining
                     }
                     grown: mut []u8, ok: bool = mem.grow[u8](context.body, needed)
-                    if !ok {
-                        return blank(Request), false
-                    }
+                    if !ok { return blank(Request), false }
 
                     context.body = grown
                 }
@@ -148,22 +136,16 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
  */
 respond_close(conn: tcp.Conn, response: Response, mut context: Context) {
     for i: usize in 0 .. response.headers.len {
-        if ascii.is_equal(response.headers[i].name, "connection", false) {
-            return
-        }
+        if ascii.is_equal(response.headers[i].name, "connection", false) { return }
     }
     needed: usize = response.headers.len + 1
     if needed > context.headers.len {
         grown: mut []Header, ok: bool = mem.grow[Header](context.headers, needed)
-        if !ok {
-            return
-        }
+        if !ok { return }
 
         context.headers = grown
     }
-    for i: usize in 0 .. response.headers.len {
-        context.headers[i] = response.headers[i]
-    }
+    for i: usize in 0 .. response.headers.len { context.headers[i] = response.headers[i] }
     context.headers[response.headers.len] = Header {
         name = "Connection",
         value = "close",
@@ -178,16 +160,12 @@ respond_close(conn: tcp.Conn, response: Response, mut context: Context) {
     count: usize, format_err: Error = outgoing.format(mut context.output[..])
     for format_err == FormatErr.capacity {
         grown: mut []u8, ok: bool = mem.grow[u8](context.output, context.output.len + 1)
-        if !ok {
-            return
-        }
+        if !ok { return }
 
         context.output = grown
         count, format_err = outgoing.format(mut context.output[..])
     }
-    if format_err == null {
-        tcp.send_all(conn, context.output[..count])
-    }
+    if format_err == null { tcp.send_all(conn, context.output[..count]) }
 }
 
 /* Accepts one connection from `listener`, reads exactly one request from it,
@@ -196,14 +174,10 @@ respond_close(conn: tcp.Conn, response: Response, mut context: Context) {
 serve_one(listener: tcp.Listener, router: Router, mut context: Context) {
     conn: tcp.Conn, _: net.Addr4, accept_err: Error = tcp.accept(listener)
     defer tcp.close(mut conn)
-    if accept_err != null {
-        return
-    }
+    if accept_err != null { return }
 
     request: Request, ok: bool = read_request(conn, mut context)
-    if !ok {
-        return
-    }
+    if !ok { return }
 
     respond_close(conn, router.dispatch(request), mut context)
 }
@@ -213,9 +187,7 @@ serve_one(listener: tcp.Listener, router: Router, mut context: Context) {
  */
 listen_endpoint(endpoint: string, backlog: usize): (tcp.Listener, Error) {
     address: net.Addr4, parsed: bool = net.parse4(endpoint)
-    if !parsed {
-        return tcp.Listener {}, ServerErr.capacity
-    }
+    if !parsed { return tcp.Listener {}, ServerErr.capacity }
 
     listener: tcp.Listener, listen_err: Error = tcp.listen(address, backlog)
     return listener, listen_err
@@ -234,11 +206,7 @@ listen_endpoint(endpoint: string, backlog: usize): (tcp.Listener, Error) {
 pub serve(endpoint: string, mut context: Context, router: Router): Error {
     listener: tcp.Listener, listen_err: Error = listen_endpoint(endpoint, context.backlog)
     defer tcp.close(mut listener)
-    if listen_err != null {
-        return listen_err
-    }
+    if listen_err != null { return listen_err }
 
-    for {
-        serve_one(listener, router, mut context)
-    }
+    for { serve_one(listener, router, mut context) }
 }

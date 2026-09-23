@@ -2,6 +2,4 @@
 
 import impl: "../std/directory_probe/impl.ace"
 
-main(): int {
-    return impl.value
-}
+main(): int { return impl.value }

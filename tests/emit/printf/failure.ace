@@ -19,16 +19,10 @@ main(): int {
     ignored: i32 = close(1)
     result: int = fmt.printf("%d%d", capture(1), capture(2))
 
-    if ignored != 0 {
-        return 1
-    }
+    if ignored != 0 { return 1 }
 
-    if result >= 0 {
-        return 2
-    }
+    if result >= 0 { return 2 }
 
-    if counter != 12 {
-        return 3
-    }
+    if counter != 12 { return 3 }
     return 0
 }

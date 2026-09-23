@@ -18,47 +18,27 @@ Flags: struct {
 }
 
 // the shape the matcher reads: a bounds test guarding a load
-has(dense: []u32, count: usize, at: u32, pc: u32): bool {
-    return usize(at) < count && dense[usize(at)] == pc
-}
+has(dense: []u32, count: usize, at: u32, pc: u32): bool { return usize(at) < count && dense[usize(at)] == pc }
 
-both(a: int, b: int): bool {
-    return a < b && b < 10
-}
+both(a: int, b: int): bool { return a < b && b < 10 }
 
-either(a: int, b: int): bool {
-    return a == 0 || b == 0
-}
+either(a: int, b: int): bool { return a == 0 || b == 0 }
 
-stored(f: Flags): bool {
-    return f.ready && f.open
-}
+stored(f: Flags): bool { return f.ready && f.open }
 
-stored_or(f: Flags): bool {
-    return f.ready || f.open
-}
+stored_or(f: Flags): bool { return f.ready || f.open }
 
-nested(a: int, b: int, c: int): bool {
-    return (a < b || b < c) && !(a == c && c == 0)
-}
+nested(a: int, b: int, c: int): bool { return (a < b || b < c) && !(a == c && c == 0) }
 
-less(x: f64, y: f64): bool {
-    return x < y && y < 100.0
-}
+less(x: f64, y: f64): bool { return x < y && y < 100.0 }
 
 main(): int {
     score: int = 0
     dense: [4]u32 = [7, 8, 9, 10]
 
-    if has(dense[..], 4, 2, 9) && !has(dense[..], 4, 2, 8) && !has(dense[..], 2, 3, 10) {
-        score += 1
-    }
-    if both(1, 2) && !both(2, 1) && !both(1, 12) {
-        score += 1
-    }
-    if either(0, 5) && either(5, 0) && !either(5, 5) {
-        score += 1
-    }
+    if has(dense[..], 4, 2, 9) && !has(dense[..], 4, 2, 8) && !has(dense[..], 2, 3, 10) { score += 1 }
+    if both(1, 2) && !both(2, 1) && !both(1, 12) { score += 1 }
+    if either(0, 5) && either(5, 0) && !either(5, 5) { score += 1 }
     if stored(Flags {
         ready = true,
         open = true,
@@ -81,31 +61,23 @@ main(): int {
     }) {
         score += 1
     }
-    if nested(1, 2, 0) && !nested(0, 1, 0) && !nested(3, 2, 1) && nested(2, 1, 5) {
-        score += 1
-    }
+    if nested(1, 2, 0) && !nested(0, 1, 0) && !nested(3, 2, 1) && nested(2, 1, 5) { score += 1 }
 
     nan: f64 = 0.0 / 0.0
-    if less(1.0, 2.0) && !less(nan, 2.0) && !less(1.0, nan) && !less(1.0, 200.0) {
-        score += 1
-    }
+    if less(1.0, 2.0) && !less(nan, 2.0) && !less(1.0, nan) && !less(1.0, 200.0) { score += 1 }
 
     // the right operand runs only when the left one does not settle it
     a: bool = yes(false) && yes(true)
     b: bool = yes(true) || yes(false)
     c: bool = yes(true) && yes(true)
     d: bool = yes(false) || yes(false)
-    if calls == 6 && !a && b && c && !d {
-        score += 1
-    }
+    if calls == 6 && !a && b && c && !d { score += 1 }
 
     // a value is exactly true or false: it compares equal to the literal
     n: int = 0
     for i: int in 0 .. 10 {
         inside: bool = i > 2 && i < 7
-        if inside == true {
-            n += 1
-        }
+        if inside == true { n += 1 }
     }
     if n == 4 && both(1, 2) == true && stored(Flags {
         ready = true,

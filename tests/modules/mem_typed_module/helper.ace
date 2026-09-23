@@ -9,6 +9,4 @@ pub make_points(count: usize): mut []Point {
     return points
 }
 
-pub drop_points(mut points: []Point) {
-    release[Point](mut points)
-}
+pub drop_points(mut points: []Point) { release[Point](mut points) }

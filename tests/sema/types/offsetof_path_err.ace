@@ -1,5 +1,3 @@
 Node: struct { next: *Node, value: u32 }
 
-main(): int {
-    return int(offsetof(Node, next.value))
-}
+main(): int { return int(offsetof(Node, next.value)) }

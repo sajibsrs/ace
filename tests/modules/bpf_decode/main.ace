@@ -47,9 +47,7 @@ main(): int {
     put_native_u16(view, 16, 18)
     put_frame(view, 18, 6)
     first: bpf.Record, ok: bool = bpf.decode_record(bytes[0..52], 0)
-    if !ok || first.frame_start != 18 || first.captured_length != 34 || first.next != 52 {
-        return 1
-    }
+    if !ok || first.frame_start != 18 || first.captured_length != 34 || first.next != 52 { return 1 }
     tcp: bpf.Packet, tcp_ok: bool = bpf.decode_ipv4(bytes[0..52], first)
     if !tcp_ok || tcp.protocol != 6 || tcp.source_mac[0] != 0x20 ||
        tcp.destination_mac[5] != 0x15 || tcp.source_ip[2] != 2 ||
@@ -63,64 +61,42 @@ main(): int {
     put_native_u16(view, 68, 18)
     put_frame(view, 70, 17)
     second: bpf.Record, second_ok: bool = bpf.decode_record(bytes[0..108], 52)
-    if !second_ok || second.frame_start != 70 || second.next != 108 {
-        return 3
-    }
+    if !second_ok || second.frame_start != 70 || second.next != 108 { return 3 }
     udp: bpf.Packet, udp_ok: bool = bpf.decode_ipv4(bytes[0..108], second)
-    if !udp_ok || udp.protocol != 17 {
-        return 4
-    }
+    if !udp_ok || udp.protocol != 17 { return 4 }
 
     put_native_u32(view, 116, 34)
     put_native_u16(view, 124, 18)
     put_frame(view, 126, 1)
     third: bpf.Record, third_ok: bool = bpf.decode_record(bytes[0..160], 108)
-    if !third_ok {
-        return 5
-    }
+    if !third_ok { return 5 }
     icmp: bpf.Packet, icmp_ok: bool = bpf.decode_ipv4(bytes[0..160], third)
-    if !icmp_ok || icmp.protocol != 1 {
-        return 6
-    }
+    if !icmp_ok || icmp.protocol != 1 { return 6 }
 
     ignored: bpf.Record, valid: bool = bpf.decode_record(bytes[0..19], 0)
-    if valid {
-        return 7
-    }
+    if valid { return 7 }
     put_native_u16(view, 16, 17)
     ignored, valid = bpf.decode_record(bytes[0..52], 0)
-    if valid {
-        return 8
-    }
+    if valid { return 8 }
     put_native_u16(view, 16, 18)
     put_native_u32(view, 8, 80)
     ignored, valid = bpf.decode_record(bytes[0..52], 0)
-    if valid {
-        return 9
-    }
+    if valid { return 9 }
     put_native_u32(view, 8, 34)
     first, valid = bpf.decode_record(bytes[0..51], 0)
-    if valid {
-        return 10
-    }
+    if valid { return 10 }
 
     first, valid = bpf.decode_record(bytes[0..52], 0)
-    if !valid {
-        return 11
-    }
+    if !valid { return 11 }
 
     bytes[30] = 0x86
     bytes[31] = 0xdd
     ignored_packet: bpf.Packet, packet_ok: bool = bpf.decode_ipv4(bytes[0..52], first)
-    if packet_ok {
-        return 12
-    }
+    if packet_ok { return 12 }
     bytes[30] = 0x08
     bytes[31] = 0x00
     bytes[32] = 0x46
     ignored_packet, packet_ok = bpf.decode_ipv4(bytes[0..52], first)
-    if packet_ok {
-        return 13
-    }
+    if packet_ok { return 13 }
     return 0
 }

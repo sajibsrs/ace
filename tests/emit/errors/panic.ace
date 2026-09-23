@@ -1,12 +1,8 @@
 // expect-exit: 134
 DiskError: error
-read(): Error {
-    return DiskError(5)
-}
+read(): Error { return DiskError(5) }
 main(): int {
     error: Error = read()
-    if error != null {
-        panic("disk read failed")
-    }
+    if error != null { panic("disk read failed") }
     return 0
 }

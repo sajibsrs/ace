@@ -51,9 +51,7 @@ main(): int {
     generic_holder: GenericHolder = { future = null }
     node.next = &node
 
-    if recursive_union == RecursiveUnion.none || holder == Holder.none {
-        return 0
-    }
+    if recursive_union == RecursiveUnion.none || holder == Holder.none { return 0 }
     generic_holder.future = null
     return a.b.value + box.value
 }

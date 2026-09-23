@@ -15,14 +15,10 @@ import (
 check(fd: sys.Fd): int {
     q: Queue, queue_err: Error = queue()
 
-    if queue_err != null {
-        return 1
-    }
+    if queue_err != null { return 1 }
     watch_err: Error = watch(q, fd, true, false)
 
-    if watch_err != null && watch_err.domain != typeid(WatchErr) {
-        return 2
-    }
+    if watch_err != null && watch_err.domain != typeid(WatchErr) { return 2 }
     zero: Event = Event {
         fd = fd,
         readable = false,
@@ -34,12 +30,8 @@ check(fd: sys.Fd): int {
     events: mut []Event = mut storage[0..1]
     count: usize, wait_err: Error = wait(q, events, wait_forever)
 
-    if count == 0 && wait_err != null && wait_err.domain != typeid(WaitErr) {
-        return 3
-    }
+    if count == 0 && wait_err != null && wait_err.domain != typeid(WaitErr) { return 3 }
     return 0
 }
 
-main(): int {
-    return 0
-}
+main(): int { return 0 }

@@ -57,30 +57,20 @@ main(): int {
         a = 1,
         b = 2,
     })
-    if p.a != 2 || p.b != 4 {
-        return 1
-    }
+    if p.a != 2 || p.b != 4 { return 1 }
     l: Pair = pair_local(Pair {
         a = 1,
         b = 2,
     })
-    if l.a != 4 || l.b != 6 {
-        return 2
-    }
+    if l.a != 4 || l.b != 6 { return 2 }
     x: usize, y: usize = tuple(10, 20)
-    if x != 11 || y != 22 {
-        return 3
-    }
+    if x != 11 || y != 22 { return 3 }
     v: Vec3 = vec(Vec3 {
         x = 1.0,
         y = 2.0,
         z = 3.0,
     })
-    if v.x != 2.0 || v.y != 4.0 || v.z != 6.0 {
-        return 4
-    }
-    if hits != 4 * 181 {
-        return 5
-    }
+    if v.x != 2.0 || v.y != 4.0 || v.z != 6.0 { return 4 }
+    if hits != 4 * 181 { return 5 }
     return 42
 }

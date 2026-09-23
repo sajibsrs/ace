@@ -39,27 +39,17 @@ main(): int {
 
     // round 1: probe adds 1 (then breaks at 2... total=2), k adds 10+10,
     // total = 22 -> break outer
-    if total != 22 {
-        return 1
-    }
-    if rounds != 1 {
-        return 3
-    }
+    if total != 22 { return 1 }
+    if rounds != 1 { return 3 }
 
     // a typed loop under the same label rules
     sum: int = 0
     walk: for v: i32 in 0 .. 5 {
-        if v == 3 {
-            continue walk
-        }
-        if v == 4 {
-            break walk
-        }
+        if v == 3 { continue walk }
+        if v == 4 { break walk }
         sum += int(v)
     }
-    if sum != 3 {
-        return 4
-    }
+    if sum != 3 { return 4 }
 
     return 0
 }

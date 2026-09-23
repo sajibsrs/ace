@@ -146,18 +146,14 @@ depth(): int {
     deep_storage: [513]u8
     deep: mut []u8 = mut deep_storage[0..513]
 
-    for i: usize in 0 .. 513 {
-        deep[i] = '('
-    }
+    for i: usize in 0 .. 513 { deep[i] = '(' }
     bad += fails(string(deep[0..513]), regex.ParseErr.depth, 512)
     return bad
 }
 
 main(): int {
     bad: int = structure() + repetition() + classes() + errors() + depth()
-    if bad != 0 {
-        return 1
-    }
+    if bad != 0 { return 1 }
 
     return 0
 }

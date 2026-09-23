@@ -5,13 +5,9 @@
 
 import fmt
 
-id(x: f64): f64 {
-    return x
-}
+id(x: f64): f64 { return x }
 
-id32(x: f32): f32 {
-    return x
-}
+id32(x: f32): f32 { return x }
 
 main(): int {
     one: f64 = 1.0
@@ -52,8 +48,6 @@ main(): int {
     fmt.print(pzero / pzero)
 
     // bytes-written contract: 0.5 writes three bytes
-    if fmt.print(0.5) != 3 {
-        return 1
-    }
+    if fmt.print(0.5) != 3 { return 1 }
     return 0
 }

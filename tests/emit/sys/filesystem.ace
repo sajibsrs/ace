@@ -10,27 +10,19 @@ NEW_PATH: string = "/tmp/ace_sys_fs_directory/new-entry"
 ENTRY: string = "new-entry"
 
 name_is(buf: []u8, count: usize, text: string): bool {
-    if count != text.len {
-        return false
-    }
+    if count != text.len { return false }
     for i: usize in 0 .. count {
-        if buf[i] != text[i] {
-            return false
-        }
+        if buf[i] != text[i] { return false }
     }
     return true
 }
 
 main(): int {
     make_err: Error = sys.mkdir(DIR_PATH)
-    if make_err != null && make_err.code != 17 {
-        return 1
-    }
+    if make_err != null && make_err.code != 17 { return 1 }
 
     dir_info: sys.FileInfo, stat_err: Error = sys.stat(DIR_PATH)
-    if stat_err != null || dir_info.file_type != sys.FileType.directory {
-        return 2
-    }
+    if stat_err != null || dir_info.file_type != sys.FileType.directory { return 2 }
 
     // Make the fixture repeatable after an interrupted or earlier run.
     sys.unlink(OLD_PATH)
@@ -38,56 +30,34 @@ main(): int {
 
     file_mode: u32 = sys.S_IRUSR | sys.S_IWUSR | sys.S_IRGRP | sys.S_IROTH
     fd: sys.Fd, open_err: Error = sys.open(OLD_PATH, sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC, file_mode)
-    if open_err != null {
-        return 3
-    }
+    if open_err != null { return 3 }
     written: int, write_err: Error = sys.write(fd, "filesystem")
-    if write_err != null || written != 10 || sys.close(fd) != null {
-        return 4
-    }
+    if write_err != null || written != 10 || sys.close(fd) != null { return 4 }
 
     file_info: sys.FileInfo, file_stat_err: Error = sys.stat(OLD_PATH)
-    if file_stat_err != null || file_info.file_type != sys.FileType.regular || file_info.size != 10 {
-        return 5
-    }
-    if sys.rename(OLD_PATH, NEW_PATH) != null {
-        return 6
-    }
+    if file_stat_err != null || file_info.file_type != sys.FileType.regular || file_info.size != 10 { return 5 }
+    if sys.rename(OLD_PATH, NEW_PATH) != null { return 6 }
 
     dir: sys.Dir, dir_err: Error = sys.open_dir(DIR_PATH)
-    if dir_err != null {
-        return 7
-    }
+    if dir_err != null { return 7 }
     name_storage: [256]u8
     name: mut []u8 = mut name_storage[0..256]
     found: bool = false
     finished: bool = false
     for !finished {
         count: usize, file_type: sys.FileType, done: bool, read_err: Error = sys.read_dir(mut dir, name)
-        if read_err != null {
-            return 8
-        }
+        if read_err != null { return 8 }
         if done {
             finished = true
         } else if name_is(name, count, ENTRY) {
-            if file_type != sys.FileType.regular && file_type != sys.FileType.unknown {
-                return 9
-            }
+            if file_type != sys.FileType.regular && file_type != sys.FileType.unknown { return 9 }
             found = true
         }
     }
-    if !found {
-        return 10
-    }
-    if sys.close_dir(mut dir) != null || dir.active {
-        return 11
-    }
-    if sys.unlink(NEW_PATH) != null {
-        return 12
-    }
+    if !found { return 10 }
+    if sys.close_dir(mut dir) != null || dir.active { return 11 }
+    if sys.unlink(NEW_PATH) != null { return 12 }
     missing: sys.FileInfo, missing_err: Error = sys.stat(NEW_PATH)
-    if missing_err == null || missing_err.domain != typeid(sys.StatErr) {
-        return 13
-    }
+    if missing_err == null || missing_err.domain != typeid(sys.StatErr) { return 13 }
     return 42
 }

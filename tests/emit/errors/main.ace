@@ -7,38 +7,20 @@ Alias: type = FileError
 global_error: const Error = FileError(11)
 
 read(fail: bool, code: i32): (usize, Error) {
-    if fail {
-        return usize(0), FileError(code)
-    }
+    if fail { return usize(0), FileError(code) }
     return usize(9), null
 }
 
 main(): int {
-    if sizeof(Error) != 8 || typeid(FileError) == null {
-        return 1
-    }
-    if typeid(FileError) != typeid(Alias) || typeid(FileError) == typeid(NetworkError) {
-        return 2
-    }
-    if global_error.domain != typeid(FileError) || global_error.code != 11 {
-        return 7
-    }
+    if sizeof(Error) != 8 || typeid(FileError) == null { return 1 }
+    if typeid(FileError) != typeid(Alias) || typeid(FileError) == typeid(NetworkError) { return 2 }
+    if global_error.domain != typeid(FileError) || global_error.code != 11 { return 7 }
     count: usize, error: Error = read(true, -7)
-    if count != 0 || error == null {
-        return 3
-    }
-    if error.domain != typeid(FileError) {
-        return 41
-    }
-    if error.code != -7 {
-        return 42
-    }
-    if error != FileError(-7) || error == FileError(0) || error == NetworkError(-7) {
-        return 5
-    }
+    if count != 0 || error == null { return 3 }
+    if error.domain != typeid(FileError) { return 41 }
+    if error.code != -7 { return 42 }
+    if error != FileError(-7) || error == FileError(0) || error == NetworkError(-7) { return 5 }
     count, error = read(false, 0)
-    if count != 9 || error != null {
-        return 6
-    }
+    if count != 9 || error != null { return 6 }
     return 0
 }

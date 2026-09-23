@@ -2,17 +2,11 @@
 
 // expect-exit: 42
 
-id8(x: i8): i8 {
-    return x
-}
+id8(x: i8): i8 { return x }
 
-idi(x: int): int {
-    return x
-}
+idi(x: int): int { return x }
 
-idf(x: f64): f64 {
-    return x
-}
+idf(x: f64): f64 { return x }
 
 // narrow signed locals sign-extend when read after a call
 narrow(): int {
@@ -87,9 +81,7 @@ spilled(): int {
 
 hot(n: int): int {
     state: int = 1
-    for i: int in 0 .. n {
-        state = (state * 3 + i) % 1000
-    }
+    for i: int in 0 .. n { state = (state * 3 + i) % 1000 }
     return state
 }
 

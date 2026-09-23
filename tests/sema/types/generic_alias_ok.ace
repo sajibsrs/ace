@@ -4,9 +4,7 @@ Pair[T]: type = (T, T)
 Nested[T]: type = Pair[Pair[T]]
 IntPair: type = (int, int)
 
-make_pair(): (int, int) {
-    return (10, 20)
-}
+make_pair(): (int, int) { return (10, 20) }
 
 take_pair(value: (int, int)): int {
     first: int

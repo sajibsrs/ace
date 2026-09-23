@@ -39,9 +39,7 @@ main(): int {
     view: []Op = ops[0..5]
 
     for i: usize in 0 .. 5 {
-        if code(view[i]) != want[i] {
-            return int(i) + 1
-        }
+        if code(view[i]) != want[i] { return int(i) + 1 }
     }
     return 0
 }

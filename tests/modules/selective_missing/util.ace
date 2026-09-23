@@ -1,5 +1,3 @@
 /* Companion module for the Selective missing fixture. */
 
-pub present(): int {
-    return 1
-}
+pub present(): int { return 1 }

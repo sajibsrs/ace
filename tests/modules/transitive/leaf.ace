@@ -1,5 +1,3 @@
 /* Companion module for the Transitive fixture. */
 
-pub leaf(): int {
-    return 7
-}
+pub leaf(): int { return 7 }

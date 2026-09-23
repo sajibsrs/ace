@@ -14,8 +14,6 @@ main(): int {
     running: bool = false
     stopped: bool = !running
 
-    if product != 49 || inverted != 42 || !stopped {
-        return 1
-    }
+    if product != 49 || inverted != 42 || !stopped { return 1 }
     return 0
 }

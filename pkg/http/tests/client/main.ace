@@ -38,34 +38,22 @@ main(): int {
     }
 
     address: net.Addr4, valid: bool = net.parse4("127.0.0.1:8080")
-    if !valid || address.ip[0] != 127 || address.ip[3] != 1 || address.port != 8080 {
-        return 1
-    }
+    if !valid || address.ip[0] != 127 || address.ip[3] != 1 || address.port != 8080 { return 1 }
 
     address, valid = net.parse4("256.0.0.1:80")
-    if valid || address.port != 0 {
-        return 2
-    }
+    if valid || address.port != 0 { return 2 }
 
     address, valid = net.parse4("1.2.3.4:65535")
-    if !valid || address.port != 65535 {
-        return 21
-    }
+    if !valid || address.port != 65535 { return 21 }
 
     address, valid = net.parse4("1.2.3:80")
-    if valid {
-        return 22
-    }
+    if valid { return 22 }
 
     address, valid = net.parse4("1.2.3.4:65536")
-    if valid {
-        return 23
-    }
+    if valid { return 23 }
 
     address, valid = net.parse4("1.2.3.4:80x")
-    if valid {
-        return 24
-    }
+    if valid { return 24 }
 
     url: http.Url, err: Error = http.Url::parse("http://example.com:8080?x=%2f")
     if err != null || !mem.equal(url.host, "example.com") ||
@@ -75,9 +63,7 @@ main(): int {
     }
 
     url, err = http.Url::parse("http://127.0.0.1/")
-    if err != null || !mem.equal(url.path, "/") || url.query.len != 0 {
-        return 31
-    }
+    if err != null || !mem.equal(url.path, "/") || url.query.len != 0 { return 31 }
 
     url, err = http.Url::parse("https://example.com/")
     if err != null || !mem.equal(url.host, "example.com") ||
@@ -86,24 +72,16 @@ main(): int {
     }
 
     url, err = http.Url::parse("http://user@example.com/")
-    if err == null {
-        return 33
-    }
+    if err == null { return 33 }
 
     url, err = http.Url::parse("http://example.com:65536/")
-    if err == null {
-        return 34
-    }
+    if err == null { return 34 }
 
     url, err = http.Url::parse("http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com/")
-    if err == null {
-        return 35
-    }
+    if err == null { return 35 }
 
     url, err = http.Url::parse("http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com:65535/")
-    if err != null || url.port != 65535 {
-        return 36
-    }
+    if err != null || url.port != 65535 { return 36 }
 
     header_storage: [2]http.Header = [
         http.Header { name = "Host", value = "example.com" }, http.Header { name = "X-Test", value = "caf\xC3\xA9" },
@@ -118,9 +96,7 @@ main(): int {
     written: usize
     written, err = request.format(mut output_storage[..])
     expected: string = "POST /submit HTTP/1.1\r\nHost: example.com\r\nX-Test: caf\xC3\xA9\r\n\r\nok"
-    if err != null || !mem.equal(output_storage[..written], expected) {
-        return 4
-    }
+    if err != null || !mem.equal(output_storage[..written], expected) { return 4 }
     small: [4]u8 = [7 : 4]
     written, err = request.format(mut small[..])
     if written != 0 || err != http.FormatErr.capacity ||
@@ -148,34 +124,24 @@ main(): int {
         target = "/health",
     }
     written, err = default_request.format(mut output_storage[..])
-    if err != null || !mem.equal(output_storage[..written], "GET /health HTTP/1.1\r\n\r\n") {
-        return 43
-    }
+    if err != null || !mem.equal(output_storage[..written], "GET /health HTTP/1.1\r\n\r\n") { return 43 }
 
     default_response: http.Response = http.Response {}
     written, err = default_response.format(mut output_storage[..])
-    if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 200 OK\r\n\r\n") {
-        return 44
-    }
+    if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 200 OK\r\n\r\n") { return 44 }
 
     default_response.status = 404
     written, err = default_response.format(mut output_storage[..])
-    if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 404 Not Found\r\n\r\n") {
-        return 45
-    }
+    if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 404 Not Found\r\n\r\n") { return 45 }
 
     default_response.status = u16(599)
     written, err = default_response.format(mut output_storage[..])
-    if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 599 \r\n\r\n") {
-        return 46
-    }
+    if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 599 \r\n\r\n") { return 46 }
 
     default_response.status = 200
     default_response.reason = ""
     written, err = default_response.format(mut output_storage[..])
-    if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 200 \r\n\r\n") {
-        return 47
-    }
+    if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 200 \r\n\r\n") { return 47 }
 
     response_headers: [4]http.Header
     response_body: [16]u8 = [0 : 16]

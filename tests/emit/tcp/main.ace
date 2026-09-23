@@ -14,15 +14,11 @@ loopback(port: u16): net.Addr4 {
     }
 }
 
-is_error(err: Error, domain: typeid): bool {
-    return err != null && err.domain == domain
-}
+is_error(err: Error, domain: typeid): bool { return err != null && err.domain == domain }
 
 client(port: u16): int {
     connection: tcp.Conn, err: Error = tcp.connect(loopback(port))
-    if err != null {
-        return 1
-    }
+    if err != null { return 1 }
 
     // Separate one-attempt sends let receive_all prove retained progress.
     count: int, ioerr: Error = net.send(connection.socket, "pi")
@@ -45,73 +41,49 @@ client(port: u16): int {
         tcp.close(mut connection)
         return 4
     }
-    if tcp.close(mut connection) != null || connection.active {
-        return 5
-    }
+    if tcp.close(mut connection) != null || connection.active { return 5 }
     return 0
 }
 
 eof_client(port: u16): int {
     connection: tcp.Conn, err: Error = tcp.connect(loopback(port))
-    if err != null {
-        return 1
-    }
+    if err != null { return 1 }
     sent: usize
     sent, err = tcp.send_all(connection, "ok")
     if err != null || sent != 2 {
         tcp.close(mut connection)
         return 2
     }
-    if tcp.close(mut connection) != null {
-        return 3
-    }
+    if tcp.close(mut connection) != null { return 3 }
     return 0
 }
 
 check_cleanup(): int {
     listener: tcp.Listener, err: Error = tcp.listen(loopback(u16(0)), usize(0x80000000))
-    if err == null {
-        return 1
-    }
+    if err == null { return 1 }
     if err.domain != typeid(net.ListenErr) {
-        if err.domain == typeid(net.ReuseAddrErr) {
-            return 41
-        }
-        if err.domain == typeid(net.BindErr) {
-            return 42
-        }
+        if err.domain == typeid(net.ReuseAddrErr) { return 41 }
+        if err.domain == typeid(net.BindErr) { return 42 }
         return 43
     }
-    if listener.active {
-        return 3
-    }
+    if listener.active { return 3 }
 
     // A failed constructor closed its created fd: the next kernel allocation
     // reuses the lowest available descriptor deterministically in this process.
     first: net.Socket, socket_err: Error = net.socket(net.SocketType.tcp)
-    if socket_err != null {
-        return 4
-    }
-    if sys.close(first) != null {
-        return 5
-    }
+    if socket_err != null { return 4 }
+    if sys.close(first) != null { return 5 }
 
     connection: tcp.Conn
     connection, err = tcp.connect(loopback(u16(0)))
-    if !is_error(err, typeid(net.ConnectErr)) || connection.active {
-        return 6
-    }
+    if !is_error(err, typeid(net.ConnectErr)) || connection.active { return 6 }
     second: net.Socket
     second, socket_err = net.socket(net.SocketType.tcp)
     if socket_err != null || second != first {
-        if socket_err == null {
-            sys.close(second)
-        }
+        if socket_err == null { sys.close(second) }
         return 7
     }
-    if sys.close(second) != null {
-        return 8
-    }
+    if sys.close(second) != null { return 8 }
 
     invalid_connection: tcp.Conn = tcp.Conn {
         socket = net.Socket(-1),
@@ -134,26 +106,18 @@ check_cleanup(): int {
 
     // Closing an inactive handle is a silent no-op that never reaches the
     // descriptor it holds: canonical zero carries descriptor zero.
-    if tcp.close(mut invalid_connection) != null || tcp.close(mut invalid_listener) != null {
-        return 11
-    }
+    if tcp.close(mut invalid_connection) != null || tcp.close(mut invalid_listener) != null { return 11 }
     probe: net.Socket
     probe, socket_err = net.socket(net.SocketType.tcp)
-    if socket_err != null {
-        return 12
-    }
+    if socket_err != null { return 12 }
     inactive: tcp.Conn = tcp.Conn { socket = probe }
-    if tcp.close(mut inactive) != null || inactive.socket != probe || sys.close(probe) != null {
-        return 13
-    }
+    if tcp.close(mut inactive) != null || inactive.socket != probe || sys.close(probe) != null { return 13 }
     return 0
 }
 
 main(): int {
     cleanup: int = check_cleanup()
-    if cleanup != 0 {
-        return cleanup
-    }
+    if cleanup != 0 { return cleanup }
 
     invalid: tcp.Conn = tcp.Conn {
         socket = net.Socket(-1),
@@ -163,23 +127,15 @@ main(): int {
     one: [1]u8 = [0]
     writable: mut []u8 = mut one[0..]
     count: usize, err: Error = tcp.receive_all(invalid, writable)
-    if count != 0 || !is_error(err, typeid(net.ReceiveErr)) {
-        return 10
-    }
+    if count != 0 || !is_error(err, typeid(net.ReceiveErr)) { return 10 }
     count, err = tcp.send_all(invalid, "x")
-    if count != 0 || !is_error(err, typeid(net.SendErr)) {
-        return 11
-    }
+    if count != 0 || !is_error(err, typeid(net.SendErr)) { return 11 }
     count, err = tcp.send_all(invalid, "")
-    if count != 0 || err != null {
-        return 12
-    }
+    if count != 0 || err != null { return 12 }
 
     listener: tcp.Listener
     listener, err = tcp.listen(loopback(u16(0)), usize(8))
-    if err != null {
-        return 20
-    }
+    if err != null { return 20 }
     address: net.Addr4
     address, err = tcp.local(listener)
     if err != null || address.port == 0 {
@@ -191,9 +147,7 @@ main(): int {
         tcp.close(mut listener)
         return 22
     }
-    if process == 0 {
-        sys.exit(client(address.port))
-    }
+    if process == 0 { sys.exit(client(address.port)) }
 
     connection: tcp.Conn, peer: net.Addr4, accept_err: Error = tcp.accept(listener)
     err = accept_err
@@ -230,9 +184,7 @@ main(): int {
         tcp.close(mut listener)
         return 28
     }
-    if process == 0 {
-        sys.exit(eof_client(address.port))
-    }
+    if process == 0 { sys.exit(eof_client(address.port)) }
     connection, peer, err = tcp.accept(listener)
     if err != null {
         tcp.close(mut listener)
@@ -253,8 +205,6 @@ main(): int {
         tcp.close(mut listener)
         return 31
     }
-    if tcp.close(mut listener) != null || listener.active {
-        return 32
-    }
+    if tcp.close(mut listener) != null || listener.active { return 32 }
     return 0
 }

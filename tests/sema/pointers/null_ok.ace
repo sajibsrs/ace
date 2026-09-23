@@ -3,9 +3,7 @@
 Point: struct { x: f32 }
 
 maybe(p: *Point): f32 {
-    if p != null {
-        return p.x
-    }
+    if p != null { return p.x }
     return 0.0
 }
 

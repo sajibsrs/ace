@@ -47,9 +47,7 @@ fast_inverse_sqrt_seed(value: f32): f32 {
     return bits.to_float(raw)
 }
 
-math_examples(value: f64): bool {
-    return math.isnan(value) || math.isinf(value) || math.isfinite(value)
-}
+math_examples(value: f64): bool { return math.isnan(value) || math.isinf(value) || math.isfinite(value) }
 
 rounding_examples(value: f64, single: f32): f64 {
     length: f32 = math.sqrt(single)
@@ -60,9 +58,7 @@ exponential_examples(value: f64, single: f32): f64 {
     return math.exp(value) + math.log(value) + f64(math.exp(single)) + f64(math.log(single))
 }
 
-power_examples(value: f64, single: f32): f64 {
-    return math.pow(2.0, value) + f64(math.pow(single, f32(0.5)))
-}
+power_examples(value: f64, single: f32): f64 { return math.pow(2.0, value) + f64(math.pow(single, f32(0.5))) }
 
 trigonometry_examples(angle: f64, single: f32): f64 {
     return math.sin(angle) + math.cos(angle) + f64(math.sin(single)) + f64(math.cos(single))
@@ -71,47 +67,33 @@ trigonometry_examples(angle: f64, single: f32): f64 {
 str_examples(): int {
     at: usize, found: bool = str.find("hello world", "world")
 
-    if !found {
-        return 1
-    }
+    if !found { return 1 }
     trimmed: string, hit: bool = str.trim("hello world", "world", true)
 
-    if !hit || !mem.equal(trimmed, "hello ") {
-        return 2
-    }
+    if !hit || !mem.equal(trimmed, "hello ") { return 2 }
     n: int, ok: bool = str.parse[int]("-42")
 
-    if !ok || n != -42 {
-        return 3
-    }
+    if !ok || n != -42 { return 3 }
     r: usize, radix_ok: bool = str.parse[usize]("ff", u8(16))
 
-    if !radix_ok || r != 255 {
-        return 4
-    }
+    if !radix_ok || r != 255 { return 4 }
     buf: [32]u8 = [0 : 32]
     dst: mut []u8 = mut buf[0..32]
     count: usize, fit: bool = str.format(dst, n)
 
-    if !fit || count != 4 {
-        return 5
-    }
+    if !fit || count != 4 { return 5 }
     return 0
 }
 
 mem_examples(): int {
     data: mut []u8 = mem.alloc(64, 8)
 
-    if data == null {
-        return 1
-    }
+    if data == null { return 1 }
     mem.release(mut data)
 
     numbers: mut []usize = mem.alloc[usize](4)
 
-    if numbers == null {
-        return 2
-    }
+    if numbers == null { return 2 }
 
     numbers[0] = 42
     mem.release[usize](mut numbers)
@@ -125,18 +107,12 @@ write_note(): int {
         sys.S_IRUSR | sys.S_IWUSR | sys.S_IRGRP | sys.S_IROTH,
     )
 
-    if err != null {
-        return 1
-    }
+    if err != null { return 1 }
     n: int, werr: Error = sys.write(fd, "hello sys")
 
-    if werr != null {
-        return 2
-    }
+    if werr != null { return 2 }
 
-    if sys.close(fd) != null {
-        return 3
-    }
+    if sys.close(fd) != null { return 3 }
     return 0
 }
 
@@ -145,14 +121,10 @@ standard_descriptors(): int {
     buf: mut []u8 = mut storage[0..8]
     n: int, rerr: Error = sys.read(sys.stdin, buf)
 
-    if rerr != null {
-        return 1
-    }
+    if rerr != null { return 1 }
     w: int, werr: Error = sys.write(sys.stderr, "oops")
 
-    if werr != null || w != 4 {
-        return 2
-    }
+    if werr != null || w != 4 { return 2 }
     return 0
 }
 
@@ -160,29 +132,21 @@ check_missing(): int {
     fd: sys.Fd, err: Error = sys.open("/tmp/missing", sys.O_RDONLY)
 
     if err != null {
-        if sys.errno() == 2 {
-            return 1
-        }
+        if sys.errno() == 2 { return 1 }
     }
     return 0
 }
 
 filesystem_examples(): int {
     info: sys.FileInfo, stat_err: Error = sys.stat("/tmp")
-    if stat_err != null || info.file_type != sys.FileType.directory {
-        return 1
-    }
+    if stat_err != null || info.file_type != sys.FileType.directory { return 1 }
     make_err: Error = sys.mkdir("/tmp/example")
     move_err: Error = sys.rename("/tmp/old", "/tmp/new")
     remove_err: Error = sys.unlink("/tmp/new")
-    if make_err != null || move_err != null || remove_err != null {
-        return 2
-    }
+    if make_err != null || move_err != null || remove_err != null { return 2 }
 
     dir: sys.Dir, open_err: Error = sys.open_dir("/tmp")
-    if open_err != null {
-        return 3
-    }
+    if open_err != null { return 3 }
     storage: [256]u8 = [0 : 256]
     name: mut []u8 = mut storage[0..256]
     count: usize, file_type: sys.FileType, done: bool, read_err: Error = sys.read_dir(mut dir, name)
@@ -190,9 +154,7 @@ filesystem_examples(): int {
         sys.close_dir(mut dir)
         return 4
     }
-    if sys.close_dir(mut dir) != null {
-        return 5
-    }
+    if sys.close_dir(mut dir) != null { return 5 }
     return 0
 }
 
@@ -212,14 +174,10 @@ println_examples(): int {
     fmt.println(42)
     fmt.println(0.5)
 
-    if fmt.println("") != 1 {
-        return 1
-    }
+    if fmt.println("") != 1 { return 1 }
     narrow: u16 = 7
 
-    if fmt.println(int(narrow)) != 3 {
-        return 2
-    }
+    if fmt.println(int(narrow)) != 3 { return 2 }
     return 0
 }
 
@@ -229,9 +187,7 @@ printf_examples(): int {
     ratio: f64 = 1.25
     written: int = fmt.printf("name=%s count=%d ratio=%.2f\n", name, count, ratio)
 
-    if written != 28 {
-        return 1
-    }
+    if written != 28 { return 1 }
     byte: u8 = u8(65)
     fmt.printf("%u %x %X %f %c %%", uint(7), usize(15), uint(15), f32(0.5), byte)
     return 0
@@ -241,41 +197,29 @@ awake_example(): int {
     start: u64 = time.awake()
     sum: int = 0
 
-    for i: int in 0 .. 1_000_000 {
-        sum += i
-    }
+    for i: int in 0 .. 1_000_000 { sum += i }
     elapsed_ns: u64 = time.awake() - start
 
-    if elapsed_ns == 0 {
-        return 1
-    }
+    if elapsed_ns == 0 { return 1 }
     return 0
 }
 
 process_example(): int {
     process: sys.Process, fork_err: Error = sys.fork()
 
-    if fork_err != null {
-        return 1
-    }
+    if fork_err != null { return 1 }
 
-    if process == 0 {
-        sys.exit(0)
-    }
+    if process == 0 { sys.exit(0) }
     status: sys.ProcessStatus, wait_err: Error = sys.wait(process)
 
-    if wait_err != null || !status.exited {
-        return 2
-    }
+    if wait_err != null || !status.exited { return 2 }
     return status.code
 }
 
 net_example(): int {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
 
-    if err != null {
-        return 1
-    }
+    if err != null { return 1 }
     ip: [4]u8 = [u8(127), u8(0), u8(0), u8(1)]
     address: net.Addr4 = net.Addr4 {
         ip = ip,
@@ -295,9 +239,7 @@ net_example(): int {
         return 4
     }
 
-    if sys.close(sock) != null {
-        return 3
-    }
+    if sys.close(sock) != null { return 3 }
 
     storage: [8]net.Addr4
     addresses: mut []net.Addr4 = mut storage[0..8]
@@ -316,9 +258,7 @@ net_example(): int {
 
 tcp_example(address: net.Addr4): int {
     listener: tcp.Listener, err: Error = tcp.listen(address, usize(128))
-    if err != null {
-        return 1
-    }
+    if err != null { return 1 }
     local: net.Addr4, local_err: Error = tcp.local(listener)
     if local_err != null || local.port == 0 {
         tcp.close(mut listener)
@@ -329,9 +269,7 @@ tcp_example(address: net.Addr4): int {
         storage: [4]u8 = [0 : 4]
         buffer: mut []u8 = mut storage[0..]
         count: usize, ioerr: Error = tcp.receive_all(connection, buffer)
-        if ioerr == null && count == 4 {
-            count, ioerr = tcp.send_all(connection, "pong")
-        }
+        if ioerr == null && count == 4 { count, ioerr = tcp.send_all(connection, "pong") }
         tcp.close(mut connection)
     }
     tcp.close(mut listener)
@@ -340,9 +278,7 @@ tcp_example(address: net.Addr4): int {
 
 tcp_nonblocking_example(address: net.Addr4): int {
     connection: tcp.Conn, err: Error = tcp.connect_nonblock(address)
-    if err != null {
-        return 1
-    }
+    if err != null { return 1 }
     if tcp.interest(connection) == tcp.Interest.write {
         event: tcp.Event = tcp.progress_connect(mut connection)
         switch event {
@@ -363,9 +299,7 @@ tcp_nonblocking_example(address: net.Addr4): int {
 readiness_example(fd: sys.Fd): int {
     q: poll.Queue, err: Error = poll.queue()
 
-    if err != null {
-        return 1
-    }
+    if err != null { return 1 }
 
     if poll.watch(q, fd, true, false) != null {
         sys.close(sys.Fd(q))
@@ -385,9 +319,7 @@ readiness_example(fd: sys.Fd): int {
 
     if wait_err == null {
         for index: usize in 0 .. count {
-            if events[index].readable {
-                count = index
-            }
+            if events[index].readable { count = index }
         }
     }
 
@@ -399,62 +331,40 @@ readiness_example(fd: sys.Fd): int {
 main(): int {
     code: int = mem_examples()
 
-    if code != 0 {
-        return code
-    }
+    if code != 0 { return code }
     code = write_note()
 
-    if code != 0 {
-        return code
-    }
+    if code != 0 { return code }
     code = check_missing()
 
-    if code != 0 {
-        return 10 + code
-    }
+    if code != 0 { return 10 + code }
     code = standard_descriptors()
 
-    if code != 0 {
-        return 60 + code
-    }
+    if code != 0 { return 60 + code }
     argument_count: usize = sys.argc()
     if argument_count > 0 {
         program: string = sys.arg(0)
-        if program.len == 0 {
-            return 61
-        }
+        if program.len == 0 { return 61 }
     }
     environment_count: usize = sys.envc()
     if environment_count > 0 {
         entry: string = sys.env(0)
-        if entry.len == 0 {
-            return 62
-        }
+        if entry.len == 0 { return 62 }
     }
     code = bits_examples()
 
-    if code != 0 {
-        return 10 + code
-    }
+    if code != 0 { return 10 + code }
     code = print_examples()
 
-    if code != 0 {
-        return 20 + code
-    }
+    if code != 0 { return 20 + code }
     code = println_examples()
 
-    if code != 0 {
-        return 30 + code
-    }
+    if code != 0 { return 30 + code }
     code = printf_examples()
 
-    if code != 0 {
-        return 40 + code
-    }
+    if code != 0 { return 40 + code }
     code = str_examples()
 
-    if code != 0 {
-        return 50 + code
-    }
+    if code != 0 { return 50 + code }
     return awake_example()
 }

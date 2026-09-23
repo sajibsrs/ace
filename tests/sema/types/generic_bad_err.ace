@@ -1,12 +1,8 @@
 /* Malformed generic instantiation is rejected. */
 
 bigger[T](a: T, b: T): T {
-    if b < a {
-        return a
-    }
+    if b < a { return a }
     return b
 }
 
-main(): int {
-    return bigger[bool](true, false)
-}
+main(): int { return bigger[bool](true, false) }

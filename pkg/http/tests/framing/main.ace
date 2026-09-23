@@ -49,9 +49,7 @@ fragmented_length(): int {
     )
     switch result {
         http.ResponseResult.complete(response: http.Response) {
-            if response.status != 200 || !mem.equal(response.body, "a\xC3\xA9b") {
-                return 3
-            }
+            if response.status != 200 || !mem.equal(response.body, "a\xC3\xA9b") { return 3 }
         }
         default { return 4 }
     }
@@ -66,9 +64,7 @@ chunked(): int {
     result: http.ResponseResult = mut state.parse(message, mut headers[..], mut body[..], false, false)
     switch result {
         http.ResponseResult.complete(response: http.Response) {
-            if !mem.equal(response.body, "abcde") {
-                return 1
-            }
+            if !mem.equal(response.body, "abcde") { return 1 }
         }
         default { return 2 }
     }

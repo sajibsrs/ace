@@ -7,20 +7,14 @@ main(): int {
     default_width: float = ratio
     canonical_width: f64 = default_width
 
-    if sizeof(float) != sizeof(f64) || canonical_width * 100 != 150.0 {
-        return 1
-    }
+    if sizeof(float) != sizeof(f64) || canonical_width * 100 != 150.0 { return 1 }
     narrowed: int = int(ratio)
     widened: f64 = f64(narrowed)
 
-    if narrowed != 1 || widened != 1.0 {
-        return 2
-    }
+    if narrowed != 1 || widened != 1.0 { return 2 }
     small: f32 = f32(2)
     converted: int = int(small)
 
-    if converted != 2 {
-        return 3
-    }
+    if converted != 2 { return 3 }
     return 0
 }

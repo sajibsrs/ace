@@ -2,9 +2,7 @@
 
 import fmt
 
-runtime(format: string): int {
-    return fmt.printf(format)
-}
+runtime(format: string): int { return fmt.printf(format) }
 
 bad(): int {
     a: int = fmt.printf("trailing %")
