@@ -102,6 +102,10 @@ history.
   file when `std` suffices, a directory of exact `.ace` path imports when it
   needs several files. Add an `ace.pkg` only to depend on a `pkg/` package or
   to test the package system, and a `mod.ace` only to test directory modules.
+- Place each benchmark in the `bench/` section whose code it measures:
+  `compiler/` (the compiler's own speed), `core/` (generated code for
+  language features), `std/` (standard-library operations), or `pkg/`
+  (first-party packages). Benchmarks never live under `tests/`.
 
 ## Scoped rules
 

@@ -1,0 +1,88 @@
+/* pkg/json benchmark: writes a 32-record document through `Json`, parses the
+ * written text back, and reads fields by JSON Pointer. Ace-only; the runner
+ * compares builds, not languages. Checksums keep every result observable.
+ */
+
+import fmt
+import json
+import time
+
+RECORDS: const int = 32
+TAGS: [4]string = ["admin", "ops", "dev", "billing"]
+NAMES: [4]string = ["Ada Lovelace", "Grace Hopper", "Linus \"L\" Torvalds", "Barbara Liskov"]
+PATHS: [4]string = ["/7/id", "/19/score", "/31/tags/1", "/0/name"]
+
+now(): u64 {
+    return time.awake()
+}
+
+report(name: string, elapsed: u64, operations: usize, bytes: usize, checksum: usize) {
+    fmt.printf("%s %u %u %u %u\n", name, usize(elapsed), operations, bytes, checksum)
+}
+
+write_document(mut doc: json.Json, salt: int) {
+    mut doc.reset()
+    mut doc.array()
+    for i: int in 0 .. RECORDS {
+        mut doc.object()
+        mut doc.field("id", i * 1000 + salt)
+        mut doc.field("name", NAMES[i % 4])
+        mut doc.field("active", i % 3 != 0)
+        mut doc.field("score", f64(i) * 1.25 + 0.5)
+        mut doc.key("tags")
+        mut doc.array()
+        for t: int in 0 .. i % 4 + 1 { mut doc.value(TAGS[(i + t) % 4]) }
+        mut doc.end()
+        mut doc.end()
+    }
+    mut doc.end()
+}
+
+main(): int {
+    iterations: usize = 20000
+    writer: json.Json = json.Json::new()
+    defer mut writer.wipe()
+    checksum: usize = 0
+    bytes: usize = 0
+    started: u64 = now()
+
+    for i: usize in 0 .. iterations {
+        write_document(mut writer, int(i % 7))
+        text: string, err: Error = writer.format()
+        if err != null { return 1 }
+
+        bytes += text.len
+        checksum += text.len + usize(text[text.len / 2])
+    }
+    report("format", now() - started, iterations, bytes, checksum)
+
+    write_document(mut writer, 0)
+    document: string, err: Error = writer.format()
+    if err != null { return 2 }
+
+    reader: json.Json = json.Json::new()
+    defer mut reader.wipe()
+    checksum = 0
+    started = now()
+
+    for i: usize in 0 .. iterations {
+        perr: Error = mut reader.parse(document)
+        if perr != null { return 3 }
+    }
+    report("parse", now() - started, iterations, document.len * iterations, document.len)
+
+    checksum = 0
+    started = now()
+
+    for i: usize in 0 .. iterations * 8 {
+        path: string = PATHS[i % 4]
+        switch i % 4 {
+            0 { checksum += usize(reader.number(path)) }
+            1 { checksum += usize(reader.number(path) * 4.0) }
+            2 { checksum += reader.string(path).len }
+            default { checksum += reader.string(path).len + 1 }
+        }
+    }
+    report("lookup", now() - started, iterations * 8, 0, checksum)
+    return 0
+}

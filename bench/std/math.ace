@@ -1,0 +1,93 @@
+/* Floating-point math benchmark paired with math.c, which calls the platform
+ * libm on identical inputs. Classification must agree exactly; transcendental
+ * results may differ from libm in the last bits, so their checksums are
+ * reported rather than required to match.
+ */
+
+import bits
+import fmt
+import math
+import time
+
+now(): u64 {
+    return time.awake()
+}
+
+report(name: string, elapsed: u64, operations: usize, checksum: u64) {
+    fmt.printf("%s %u %u %u\n", name, usize(elapsed), operations, usize(checksum))
+}
+
+main(): int {
+    n: usize = 2000000
+    wide: [256]f64 = [0.0 : 256]
+    positive: [256]f64 = [0.0 : 256]
+    unit: [256]f64 = [0.0 : 256]
+    classify: [64]f64 = [0.0 : 64]
+    wide32: [256]f32 = [0.0 : 256]
+    positive32: [256]f32 = [0.0 : 256]
+
+    for i: usize in 0 .. 256 {
+        wide[i] = f64(i) * 0.078125 - 10.0
+        positive[i] = f64(i + 1) * 3.90625
+        unit[i] = f64(i) * 0.01171875 - 1.5
+        wide32[i] = f32(wide[i])
+        positive32[i] = f32(positive[i])
+    }
+    for i: usize in 0 .. 64 { classify[i] = f64(i) * 1.5 - 20.0 }
+    classify[3] = 0.0 / 0.0
+    classify[9] = 1.0 / 0.0
+    classify[17] = -1.0 / 0.0
+
+    count: u64 = 0
+    started: u64 = now()
+    for i: usize in 0 .. n {
+        x: f64 = classify[i % 64]
+        if math.isnan(x) { count += 1 }
+        if math.isinf(x) { count += 2 }
+        if math.isfinite(x) { count += 4 }
+    }
+    report("classify", now() - started, n, count)
+
+    total: f64 = 0.0
+    started = now()
+    for i: usize in 0 .. n { total += math.exp(wide[i % 256]) }
+    report("exp-f64", now() - started, n, bits.cast(total))
+    total = 0.0
+    started = now()
+    for i: usize in 0 .. n { total += math.log(positive[i % 256]) }
+    report("log-f64", now() - started, n, bits.cast(total))
+    total = 0.0
+    started = now()
+    for i: usize in 0 .. n { total += math.pow(positive[i % 256], unit[(i * 7) % 256]) }
+    report("pow-f64", now() - started, n, bits.cast(total))
+    total = 0.0
+    started = now()
+    for i: usize in 0 .. n { total += math.sin(wide[i % 256]) }
+    report("sin-f64", now() - started, n, bits.cast(total))
+    total = 0.0
+    started = now()
+    for i: usize in 0 .. n { total += math.cos(wide[i % 256]) }
+    report("cos-f64", now() - started, n, bits.cast(total))
+    total = 0.0
+    started = now()
+    for i: usize in 0 .. n / 10 { total += math.sin(f64(i + 1) * 1.0e7) }
+    report("sin-large", now() - started, n / 10, bits.cast(total))
+
+    total32: f32 = 0.0
+    started = now()
+    for i: usize in 0 .. n { total32 += math.exp(wide32[i % 256] * 0.25) }
+    report("exp-f32", now() - started, n, u64(bits.cast(total32)))
+    total32 = 0.0
+    started = now()
+    for i: usize in 0 .. n { total32 += math.log(positive32[i % 256]) }
+    report("log-f32", now() - started, n, u64(bits.cast(total32)))
+    total32 = 0.0
+    started = now()
+    for i: usize in 0 .. n { total32 += math.sin(wide32[i % 256]) }
+    report("sin-f32", now() - started, n, u64(bits.cast(total32)))
+    total32 = 0.0
+    started = now()
+    for i: usize in 0 .. n { total32 += math.cos(wide32[i % 256]) }
+    report("cos-f32", now() - started, n, u64(bits.cast(total32)))
+    return 0
+}

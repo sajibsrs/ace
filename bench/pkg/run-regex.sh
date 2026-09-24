@@ -1,24 +1,24 @@
 #!/bin/sh
 set -eu
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 bench_tmp=$(mktemp -d "${TMPDIR:-/tmp}/ace-regex.XXXXXX")
-trap 'rm -rf "$bench_tmp" "$repo_dir/bench/regex/build"' EXIT HUP INT TERM
+trap 'rm -rf "$bench_tmp" "$repo_dir/bench/pkg/regex/build"' EXIT HUP INT TERM
 
 cd "$repo_dir"
 make ace
 
 # The Ace side imports pkg/regex, so it is a package built in release mode.
-(cd bench/regex && ../../ace pkg build --release > /dev/null)
-cp bench/regex/build/regex_bench "$bench_tmp/regex-ace"
-cc -std=c11 -O2 -o "$bench_tmp/regex-c" bench/regex.c
+(cd bench/pkg/regex && ../../../ace pkg build --release > /dev/null)
+cp bench/pkg/regex/build/regex_bench "$bench_tmp/regex-ace"
+cc -std=c11 -O2 -o "$bench_tmp/regex-c" bench/pkg/regex.c
 
 # PCRE2 is an optional reference column: skipped when not installed.
 pcre2=no
 if command -v pcre2-config > /dev/null 2>&1; then
     # shellcheck disable=SC2046
     cc -std=c11 -O2 $(pcre2-config --cflags) -o "$bench_tmp/regex-pcre2" \
-        bench/regex-pcre2.c $(pcre2-config --libs8)
+        bench/pkg/regex-pcre2.c $(pcre2-config --libs8)
     pcre2=yes
 fi
 

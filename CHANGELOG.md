@@ -1491,6 +1491,20 @@ current normative rules, and Git preserves patch-level detail.
   and rejected inputs 24%. Hoisting the per-digit overflow division into a
   per-parse cutoff and remainder gained nothing: the division depends only on
   the digit and overlaps the multiply-add chain.
+- Grouped `bench/` into four sections, each a directory with its own runners:
+  `compiler/` (compile time), `core/` (`calls`, `cpu`, `hotloop`), `std/`
+  (`string`, `memory`), and `pkg/` (`regex`). `bench/README.md` follows the
+  same grouping; recorded results are unchanged.
+- Added standard-library and package benchmarks. `bench/std/string` gains
+  integer parsing, trimming, case-insensitive comparison, and UTF-8 validation
+  against `strtoll`, `strtoull`, `strncasecmp`, and hand-written C, with one
+  checksum check covering every row that shares a contract.
+  `bench/std/collections` runs `Array` and `Map` against the same containers
+  in C, and `bench/std/math` runs `math` against libm; both build C without
+  auto-vectorization. `bench/pkg/json` measures writing, parsing, and pointer
+  lookup, Ace-only. The first baselines put UTF-8 validation at 6.3x C,
+  large-argument `sin` at 47x, `Array` access at 4-5.5x, and the other rows at
+  1.1-3.5x.
 - Gave `pkg/json` a convenience layer over its public core. The tagged union
   is now `Value` (in `inc/value.ace`), and `Json` (in `inc/json.ace`, matching
   `regex.Regex`) holds a `Parser`, a `Formatter`, and `root`: the input tree.

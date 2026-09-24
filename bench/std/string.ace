@@ -2,11 +2,13 @@
  * consumed into checksums so the work remains observable.
  */
 
+import ascii
 import bits
 import fmt
 import mem
 import str
 import time
+import utf8
 
 now(): u64 {
     return time.awake()
@@ -159,5 +161,56 @@ main(): int {
         if ok { checksum += count + usize(out[0]) }
     }
     report("format-f64-shortest", now() - started, iterations / 10, checksum)
+    decimal_ints: [8]string = [
+        "0", "7", "42", "-1234", "65535", "-2147483648", "9223372036854775807", "123456789012",
+    ]
+    raw_sum = 0
+    started = now()
+
+    for i: usize in 0 .. iterations {
+        value: int, ok: bool = str.parse[int](decimal_ints[i % 8])
+        if ok { raw_sum = bits.wradd(raw_sum, u64(value)) }
+    }
+    report("parse-int", now() - started, iterations, usize(raw_sum))
+    hex_ints: [8]string = ["ff", "DEADbeef", "7fffffffffffffff", "10", "0", "abc123", "FFFFFFFFFFFFFFFF", "1234abcd"]
+    raw_sum = 0
+    started = now()
+
+    for i: usize in 0 .. iterations {
+        value: uint, ok: bool = str.parse[uint](hex_ints[i % 8], u8(16))
+        if ok { raw_sum = bits.wradd(raw_sum, u64(value)) }
+    }
+    report("parse-hex", now() - started, iterations, usize(raw_sum))
+    padded: [4]string = ["   hello, world   ", "\t\r\nkey: value\n", "no-padding-at-all", "        \t  indented line"]
+    checksum = 0
+    started = now()
+
+    for i: usize in 0 .. iterations {
+        checksum += str.trim(padded[i % 4]).len
+    }
+    report("trim", now() - started, iterations, checksum)
+    header: string = "Content-Type: Application/JSON; Charset=UTF-8; X-Request-Id: A7f"
+    headers: [2]string = [
+        "content-type: application/json; charset=utf-8; x-request-id: a7F",
+        "content-type: application/json; charset=utf-8; x-request-id: a7G",
+    ]
+    checksum = 0
+    started = now()
+
+    for i: usize in 0 .. iterations {
+        if ascii.equal(header, headers[i % 2], false) { checksum += 1 + i % 3 }
+    }
+    report("ascii-fold-64", now() - started, iterations, checksum)
+    texts: [2]string = [
+        "Gr\xC3\xBC\xC3\x9Fe, \xE4\xB8\x96\xE7\x95\x8C! \xCE\xA9mega \xE2\x86\x92 \xF0\x9D\x84\x9E na\xC3\xAFve caf\xC3\xA9 plain ascii tail text 0123456789",
+        "Gr\xC3\xBC\xC3\x9Fe, \xE4\xB8\x96\xE7\x95\x8C! \xCE\xA9mega \xE2\x86\x92 \xF0\x9D\x84\x9E na\xC3\xAFve caf\xC3\xA9 plain ascii tail text 012345678\xC0",
+    ]
+    checksum = 0
+    started = now()
+
+    for i: usize in 0 .. iterations {
+        if utf8.valid(texts[i % 2]) { checksum += texts[i % 2].len + i % 3 }
+    }
+    report("utf8-valid", now() - started, iterations, checksum)
     return 0
 }

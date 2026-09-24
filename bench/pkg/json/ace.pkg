@@ -1,8 +1,8 @@
-name: regex_bench
+name: json_bench
 version: 0.1.0
 ace: 0.1
 type: exe
 root: main.ace
 
 [dependencies]
-regex: ../../pkg/regex
+json: ../../../pkg/json

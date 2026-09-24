@@ -1,19 +1,19 @@
 #!/bin/sh
 set -eu
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 bench_tmp=$(mktemp -d "${TMPDIR:-/tmp}/ace-hotloop.XXXXXX")
 trap 'rm -rf "$bench_tmp"' EXIT HUP INT TERM
 
 cd "$repo_dir"
 make ace
 
-./ace --release --report -o "$bench_tmp/hotloop-ace" bench/hotloop.ace
+./ace --release --report -o "$bench_tmp/hotloop-ace" bench/core/hotloop.ace
 # Ace leaves vectorization to explicit `simd`, so scalar C is the comparison
 # target; the auto-vectorized build is a reference column, not a goal.
 cc -std=c11 -O2 -fno-vectorize -fno-slp-vectorize \
-    -o "$bench_tmp/hotloop-c" bench/hotloop.c
-cc -std=c11 -O2 -o "$bench_tmp/hotloop-c-vector" bench/hotloop.c
+    -o "$bench_tmp/hotloop-c" bench/core/hotloop.c
+cc -std=c11 -O2 -o "$bench_tmp/hotloop-c-vector" bench/core/hotloop.c
 
 # Discard one run of each binary: see bench/README.md on first-run cost.
 "$bench_tmp/hotloop-ace" > /dev/null

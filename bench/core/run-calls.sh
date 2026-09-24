@@ -1,16 +1,16 @@
 #!/bin/sh
 set -eu
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 bench_tmp=$(mktemp -d "${TMPDIR:-/tmp}/ace-calls.XXXXXX")
 trap 'rm -rf "$bench_tmp"' EXIT HUP INT TERM
 
 cd "$repo_dir"
 make ace
 
-./ace --release --report -o "$bench_tmp/calls-ace" bench/calls.ace
-cc -std=c11 -O2 -o "$bench_tmp/calls-c" bench/calls.c
-cc -std=c11 -O2 -DALLOW_INLINE -o "$bench_tmp/calls-c-inline" bench/calls.c
+./ace --release --report -o "$bench_tmp/calls-ace" bench/core/calls.ace
+cc -std=c11 -O2 -o "$bench_tmp/calls-c" bench/core/calls.c
+cc -std=c11 -O2 -DALLOW_INLINE -o "$bench_tmp/calls-c-inline" bench/core/calls.c
 
 # Discard one run of each binary: see bench/README.md on first-run cost.
 "$bench_tmp/calls-ace" > /dev/null

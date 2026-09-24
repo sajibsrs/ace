@@ -210,7 +210,7 @@ These are baseline observations, not performance promises.
   target, an index, a global), and `q, r = f()` into existing variables still
   stage the result in a temp and copy it. `bool` locals and a string
   parameter's pointer and length stay in stack slots inside loops.
-  `bench/calls.ace` measures it: the by-value 8- and 16-byte structs, the
+  `bench/core/calls.ace` measures it: the by-value 8- and 16-byte structs, the
   three-`f64` aggregate, and the tuple return run 1.0x to 2.35x noinline C
   `-O2`. `vec_add` is now three `fadd`s on its argument registers, so the
   `struct-hfa` gap sits in the caller, which moves `acc` and `step` between
@@ -250,13 +250,13 @@ These are baseline observations, not performance promises.
   by-value `Vec3`s copies every argument register and sets up a frame it does
   not use. A bottom-tested loop measured 7.7% on `saxpy` and 31% on a short
   branchy loop, but 8% slower on `for cond {}`; it is deferred until it can be
-  weighed on top of the address work. `bench/run-hotloop.sh` tracks the saxpy,
+  weighed on top of the address work. `bench/core/run-hotloop.sh` tracks the saxpy,
   dot, and `Vec3` kernels. Latest ratios to scalar C `-O2`: saxpy 2x, particle
   `Vec3` 3.64x, `Vec3` length 1.53x, floating dot 0.77x. `std/simd` is
   specified and unimplemented. Candidate order: (1) scalar address and constant
   work, meaning pooled float constants with one PC-relative `ldr` and the
   scaled index and field offset folded into load and store addressing, measured
-  against a saved `bench/run-hotloop.sh` baseline over several runs; loop-invariant
+  against a saved `bench/core/run-hotloop.sh` baseline over several runs; loop-invariant
   hoisting into registers is the alternative but needs analysis the
   single-pass design avoids; (2) the bottom-tested loop and by-value `Vec3`
   leaf-call frame cost; (3) `std/simd` NEON intrinsics (`f32x4`, `i8x16`), the
@@ -288,11 +288,12 @@ These are baseline observations, not performance promises.
   `exp`), where C loads it from a literal pool or hoists it. A pure-Ace `exp`
   runs 6x the same algorithm compiled by clang. Candidate: pool float
   constants per function or module and load them with one PC-relative `ldr`;
-  measure on the transcendental prototypes and `bench/run-hotloop.sh`.
+  measure on the transcendental prototypes, `bench/core/run-hotloop.sh`, and
+  `bench/std/run-math.sh`.
 - **Signing-check scaling** [new] — the check that walks all module values once
   per signing is O(signings x declarations); not yet measured on a corpus with
   many signings. Candidate: index values by signing; measure with
-  `bench/run-compile.sh`.
+  `bench/compiler/run-compile.sh`.
 - **Machine-code size** [new] — 5,000 generated functions emit 1.60 MB release
   and 2.07 MB checked against 1.10 MB for `cc -O2`.
 - **Float-parse optimization backlog** [new] — the canonical 80%-short /
@@ -309,8 +310,8 @@ These are baseline observations, not performance promises.
      checksum-matched measurement.
 - **Broader performance corpus** [new] — add checksum-matched Ace/C fixtures for
   slices, branches, floating-point kernels, and cache-heavy loops before
-  making optimizer-wide claims; `bench/calls.ace` covers calls and aggregate
-  passing, and `bench/run-compile.sh` covers compile time and code size. `noalias`-driven
+  making optimizer-wide claims; `bench/core/calls.ace` covers calls and aggregate
+  passing, and `bench/compiler/run-compile.sh` covers compile time and code size. `noalias`-driven
   auto-vectorization remains outside v1 as stated by Compiler #6.
 
 ## 3. Concurrency and process expansion
@@ -358,7 +359,24 @@ foundations.
   for the same algorithm, hash, and load factor in C `-O2`. Hand-inlined
   source reaches 44.3, 10.2, and 20.5 ns; the rest of that gap is the
   inline-expansion leftovers (section 2). String keys and `--checked` are
-  unmeasured.
+  unmeasured. `bench/std/run-collections.sh` tracks the gap.
+- **`Array` element access** [new] — `set` and `get` run 5.5x and 4x a scalar
+  C array, and `push` 3.7x the same growth policy in C
+  (`bench/std/run-collections.sh`); the cause is not yet diagnosed. Inspect
+  the expanded `set`, which re-slices `items` to `len`, before choosing a fix.
+- **UTF-8 validation throughput** [new] — `utf8.valid` over 78 mixed bytes
+  runs 6.3x a strict C validator with the same rules
+  (`bench/std/run-string.sh`). It calls `decode`, which returns
+  `(u32, usize, bool)` per sequence. Candidate: validate without decoding, or a
+  scalar-result decode step; measure both.
+- **Large-argument `sin`/`cos`** [new] — past the Cody-Waite cutoff, `sin`
+  takes 366 ns against libm's 7.8 (47x, `bench/std/run-math.sh`). Profile the
+  Payne-Hanek path before choosing a candidate.
+- **`f32` transcendental functions** [new] — the `f32` `exp`, `log`, `sin`,
+  and `cos` convert to `f64`, call the `f64` function, and round back, running
+  3.3-5.3x libm's `expf`, `logf`, `sinf`, and `cosf` against 2.1-3.1x for the
+  `f64` forms (`bench/std/run-math.sh`). Candidate: `f32` kernels with
+  `f32`-sized polynomials that keep the 1-ULP bound (Stdlib #8).
 - **Fixed-width integer formatting** [additive] — width, zero padding, and base
   prefixes for `fmt.printf`, especially fixed-width `%b`/`%o`/`%x` register
   displays; carve consistently across integer conversions from a hardware

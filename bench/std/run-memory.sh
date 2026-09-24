@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 bench_tmp=$(mktemp -d "${TMPDIR:-/tmp}/ace-memory.XXXXXX")
 trap 'rm -rf "$bench_tmp"' EXIT HUP INT TERM
 
@@ -11,7 +11,7 @@ make ace
 for mode in checked release; do
     echo "Ace $mode compiler report"
     echo "--------------------------"
-    ./ace "--$mode" --report -o "$bench_tmp/memory-$mode" bench/memory.ace
+    ./ace "--$mode" --report -o "$bench_tmp/memory-$mode" bench/std/memory.ace
 
     echo
     echo "Ace $mode runtime and allocator report"

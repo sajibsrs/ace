@@ -435,8 +435,8 @@ The examples on this page are checked by
 behavior is covered by `tests/emit/allocation/main.ace`,
 `tests/emit/allocation/typed.ace`, and `tests/emit/allocation/bytes.ace`. For manual
 performance and process-memory measurement on Apple arm64, run
-`./bench/run-memory.sh`; it reports checked and release allocator timings,
+`./bench/std/run-memory.sh`; it reports checked and release allocator timings,
 usable bytes, compiler statistics, peak resident size, and related macOS
 process counters without turning variable benchmark numbers into test
-thresholds. `./bench/run-cpu.sh` compares one bounded integer workload across
+thresholds. `./bench/core/run-cpu.sh` compares one bounded integer workload across
 Ace checked/release output and equivalent C `-O0`/`-O2` builds.

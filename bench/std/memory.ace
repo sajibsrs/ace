@@ -1,5 +1,5 @@
 // Manual-memory v1 benchmark and smoke test.
-// Run with: ./bench/run-memory.sh
+// Run with: ./bench/std/run-memory.sh
 import fmt
 import mem
 import time

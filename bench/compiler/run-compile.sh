@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 bench_tmp=$(mktemp -d "${TMPDIR:-/tmp}/ace-compile.XXXXXX")
 trap 'rm -rf "$bench_tmp"' EXIT HUP INT TERM
 runs=3
@@ -52,7 +52,7 @@ printf '%-8s %8s %12s %12s %10s %10s %10s %10s %8s\n' \
 prev=0
 for n in 100 1000 5000 20000; do
     dir=$bench_tmp/n$n
-    ./bench/compile-corpus.sh "$n" "$dir"
+    ./bench/compiler/compile-corpus.sh "$n" "$dir"
     lines=$(wc -l < "$dir/corpus.ace" | tr -d ' ')
     ace_checked=$(cd "$dir" && median_ms "$ace" -c corpus.ace)
     ace_release=$(cd "$dir" && median_ms "$ace" --release -c corpus.ace)
@@ -75,7 +75,7 @@ for shape in long types; do
     prev=0
     for n in 1000 5000 20000; do
         dir=$bench_tmp/$shape$n
-        ./bench/scaling-corpus.sh "$shape" "$n" "$dir"
+        ./bench/compiler/scaling-corpus.sh "$shape" "$n" "$dir"
         lines=$(wc -l < "$dir/corpus.ace" | tr -d ' ')
         ace_checked=$(cd "$dir" && median_ms "$ace" -c corpus.ace)
         cc_o0=$(cd "$dir" && median_ms cc -std=c11 -O0 -c corpus.c -o corpus-o0.o)
@@ -99,7 +99,7 @@ printf '%-14s %10s\n' "Ace checked" "$ace_bytes" "Ace release" "$release_bytes" 
 echo
 echo "Ace-only real programs (checked, -c), median of $runs runs"
 printf '%-34s %8s %10s\n' "program" "lines" "ms"
-for f in bench/cpu.ace bench/calls.ace bench/string.ace bench/memory.ace; do
+for f in bench/core/cpu.ace bench/core/calls.ace bench/std/string.ace bench/std/memory.ace; do
     lines=$(wc -l < "$f" | tr -d ' ')
     cp "$f" "$bench_tmp/prog.ace"
     ms=$(cd "$bench_tmp" && median_ms "$ace" -c prog.ace)
