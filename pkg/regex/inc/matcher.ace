@@ -139,15 +139,14 @@ pub mut Matcher.wipe() {
 }
 
 /* Queues the thread at `start`, with the capture positions in `work`, into
- * `next` when `into_next` and `current` otherwise, following every
- * instruction that consumes no input. `jmp`, `save`, and passing assertions
- * continue in place; `split` defers `y` on the stack and continues with `x`,
- * so `x` and everything it reaches is queued first. A `save` pushes its old
- * value beneath the frames its branch adds, restoring `work` before a
- * deferred sibling runs. A consuming instruction or `match` takes a copy of
- * `work` as its row.
+ * `current`, following every instruction that consumes no input. `jmp`,
+ * `save`, and passing assertions continue in place; `split` defers `y` on the
+ * stack and continues with `x`, so `x` and everything it reaches is queued
+ * first. A `save` pushes its old value beneath the frames its branch adds,
+ * restoring `work` before a deferred sibling runs. A consuming instruction or
+ * `match` takes a copy of `work` as its row.
  */
-mut Matcher.add(code: []Inst, into_next: bool, start: u32, text: string, at: usize) {
+mut Matcher.add_current(code: []Inst, start: u32, text: string, at: usize) {
     top: usize = 1
     self.stack[0] = Frame {
         pc = start,
@@ -166,21 +165,8 @@ mut Matcher.add(code: []Inst, into_next: bool, start: u32, text: string, at: usi
         pc: u32 = frame.pc
 
         explore: {
-            queued: bool = false
-
-            if into_next {
-                queued = self.next.has(pc)
-            } else {
-                queued = self.current.has(pc)
-            }
-
-            if queued { break explore }
-
-            if into_next {
-                mut self.next.insert(pc)
-            } else {
-                mut self.current.insert(pc)
-            }
+            if self.current.has(pc) { break explore }
+            mut self.current.insert(pc)
 
             switch code[usize(pc)] {
                 Inst.jmp(target: u32) {
@@ -235,13 +221,90 @@ mut Matcher.add(code: []Inst, into_next: bool, start: u32, text: string, at: usi
                 default {
                     row: usize = usize(pc) * self.slots
 
-                    for i: usize in 0 .. self.slots {
-                        if into_next {
-                            self.next.caps[row + i] = self.work[i]
-                        } else {
-                            self.current.caps[row + i] = self.work[i]
-                        }
+                    for i: usize in 0 .. self.slots { self.current.caps[row + i] = self.work[i] }
+                }
+            }
+        }
+    }
+}
+
+/* `add_current` into the next step's queue, `next`. */
+mut Matcher.add_next(code: []Inst, start: u32, text: string, at: usize) {
+    top: usize = 1
+    self.stack[0] = Frame {
+        pc = start,
+        slot = NIL,
+        value = 0,
+    }
+
+    for top > 0 {
+        top -= 1
+        frame: Frame = self.stack[top]
+
+        if frame.slot != NIL {
+            self.work[usize(frame.slot)] = frame.value
+            continue
+        }
+        pc: u32 = frame.pc
+
+        explore: {
+            if self.next.has(pc) { break explore }
+            mut self.next.insert(pc)
+
+            switch code[usize(pc)] {
+                Inst.jmp(target: u32) {
+                    pc = target
+                    continue explore
+                }
+                Inst.split(targets: Fork) {
+                    self.stack[top] = Frame {
+                        pc = targets.y,
+                        slot = NIL,
+                        value = 0,
                     }
+                    top += 1
+                    pc = targets.x
+                    continue explore
+                }
+                Inst.save(slot: u32) {
+                    self.stack[top] = Frame {
+                        pc = 0,
+                        slot = slot,
+                        value = self.work[usize(slot)],
+                    }
+                    top += 1
+                    self.work[usize(slot)] = at
+                    pc += 1
+                    continue explore
+                }
+                Inst.bol {
+                    if at == 0 {
+                        pc += 1
+                        continue explore
+                    }
+                }
+                Inst.eol {
+                    if at == text.len {
+                        pc += 1
+                        continue explore
+                    }
+                }
+                Inst.word {
+                    if is_boundary(text, at) {
+                        pc += 1
+                        continue explore
+                    }
+                }
+                Inst.not_word {
+                    if !is_boundary(text, at) {
+                        pc += 1
+                        continue explore
+                    }
+                }
+                default {
+                    row: usize = usize(pc) * self.slots
+
+                    for i: usize in 0 .. self.slots { self.next.caps[row + i] = self.work[i] }
                 }
             }
         }
@@ -264,7 +327,7 @@ pub mut Matcher.run(code: Program, text: string, after: usize, earliest: bool): 
     for {
         if !matched {
             for i: usize in 0 .. self.slots { self.work[i] = UNSET }
-            mut self.add(insts, false, 0, text, at)
+            mut self.add_current(insts, 0, text, at)
         }
 
         if self.current.count == 0 { break }
@@ -297,7 +360,7 @@ pub mut Matcher.run(code: Program, text: string, after: usize, earliest: bool): 
 
             if advance {
                 for s: usize in 0 .. self.slots { self.work[s] = self.current.caps[row + s] }
-                mut self.add(insts, true, pc + 1, text, at + 1)
+                mut self.add_next(insts, pc + 1, text, at + 1)
             }
         }
 

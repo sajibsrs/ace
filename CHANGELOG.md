@@ -1450,6 +1450,14 @@ current normative rules, and Git preserves patch-level detail.
   runs 7-16% faster per byte (`literal` 32.2 to 28.4 ns, `pathological` 175.6
   to 146.7), retires 6.3% fewer instructions, and grows its text by 1,024
   bytes; checksums are unchanged.
+- Split `pkg/regex`'s `Matcher.add` into `add_current` and `add_next`, one
+  per queue, removing the `into_next` test from its membership check, insert,
+  and per-slot capture copy. `bench/regex` runs 4-17% faster per byte
+  (`captures` 59.7 to 49.3 ns, `word-ing` 52.2 to 46.9) with `pathological`
+  unchanged, and retires 5.2% fewer instructions. Marking `add` `inline`
+  instead cost `pathological` 5% and 2.8% more instructions, and passing the
+  queue as a `mut Queue` parameter left `captures` 5% slower, though it
+  retired as few instructions.
 - Gave `pkg/json` a convenience layer over its public core. The tagged union
   is now `Value` (in `inc/value.ace`), and `Json` (in `inc/json.ace`, matching
   `regex.Regex`) holds a `Parser`, a `Formatter`, and `root`: the input tree.

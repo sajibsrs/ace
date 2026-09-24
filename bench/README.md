@@ -944,6 +944,29 @@ billion instructions against 2.38 without the markers and C's 1.02 (2.18x,
 from 2.32x); text grows from 90,220 to 91,244 bytes. `Matcher.add`, where
 `captures` spends its time, is still a call.
 
+### Regex after splitting `Matcher.add`
+
+Nine interleaved runs at `f64a784` with `Matcher.add` split into
+`add_current` and `add_next`, first run discarded, medians in ns per byte;
+PCRE2 from one `run-regex.sh` run:
+
+| workload | Ace | C | Ace/C | PCRE2 | PCRE2 JIT |
+|---|---|---|---|---|---|
+| `literal` | 26.8 | 11.3 | 2.37x | 1.61 | 0.06 |
+| `word-ing` | 46.9 | 27.0 | 1.74x | 52.07 | 5.47 |
+| `captures` | 49.3 | 33.5 | 1.47x | 12.43 | 3.52 |
+| `pathological` | 143.7 | 73.3 | 1.96x | 11744.53 | 945.74 |
+
+The unsplit build measured 27.9, 52.2, 59.7, and 143.8 ns in the same runs,
+with every checksum matching C. `add` tested `into_next` for the membership
+check, the insert, and once per capture slot in the row copy; each copy now
+names its queue. The whole bench retires 2.11 billion instructions against
+2.23 unsplit (2.07x C, from 2.18x); text grows from 91,244 to 92,284 bytes.
+Two alternatives measured worse on `captures`, the workload `add` dominates:
+marking `add` `inline` (58.0 ns, but `pathological` 151.6 and 2.8% more
+instructions) and passing the queue as one `mut Queue` parameter (62.6 ns at
+2.12 billion instructions, with `literal` 25.4).
+
 ## Compile time
 
 Run the compile-time benchmark on Apple arm64:
