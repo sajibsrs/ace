@@ -2,7 +2,9 @@
 
 Box[T]: struct { value: T }
 
-consume(values: [2][2]Box[i32]): i32 { return values[0][0].value }
+consume(values: [2][2]Box[i32]): i32 {
+    return values[0][0].value
+}
 
 main(): int {
     values: [2][2]Box[i32]

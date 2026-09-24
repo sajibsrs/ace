@@ -1,2 +1,5 @@
 Domain: error
-main() { value: Error = Domain("bad") }
+
+main() {
+    value: Error = Domain("bad")
+}

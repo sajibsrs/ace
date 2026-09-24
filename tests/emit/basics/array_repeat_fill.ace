@@ -14,7 +14,9 @@ seven(): i32 {
     return 7
 }
 
-byte_of(x: int): u8 { return u8(x) }
+byte_of(x: int): u8 {
+    return u8(x)
+}
 
 bytes(): int {
     guard_lo: u64 = 0x1122334455667788

@@ -38,27 +38,45 @@ Big: struct {
 global_pair: Pair
 
 // The object's first function label is the section, so it stays a dummy.
-first(): usize { return 0 }
+first(): usize {
+    return 0
+}
 
-pair_sum(p: Pair, k: usize): usize { return p.a + p.b * 10 + k * 100 }
+pair_sum(p: Pair, k: usize): usize {
+    return p.a + p.b * 10 + k * 100
+}
 
-vec_sum(v: Vec3, w: Vec3): f64 { return v.x + v.y * 2.0 + v.z * 3.0 + w.x * 4.0 + w.y * 5.0 + w.z * 6.0 }
+vec_sum(v: Vec3, w: Vec3): f64 {
+    return v.x + v.y * 2.0 + v.z * 3.0 + w.x * 4.0 + w.y * 5.0 + w.z * 6.0
+}
 
-vec2_sum(v: Vec2, k: f32): f32 { return v.x + v.y * 2.0 + k }
+vec2_sum(v: Vec2, k: f32): f32 {
+    return v.x + v.y * 2.0 + k
+}
 
-odd_sum(o: Odd, k: usize): usize { return usize(o.a) + usize(o.b) * 10 + usize(o.c) * 100 + k * 1000 }
+odd_sum(o: Odd, k: usize): usize {
+    return usize(o.a) + usize(o.b) * 10 + usize(o.c) * 100 + k * 1000
+}
 
 five(a: Pair, b: Pair, c: Pair, d: Pair, e: Pair): usize {
     return a.a + b.a + c.a + d.a + e.a + (a.b + b.b + c.b + d.b + e.b) * 100
 }
 
-mixed(a: usize, p: Pair, x: f64, v: Vec2, b: usize): f64 { return f64(a + p.a + p.b + b) + x + f64(v.x) + f64(v.y) }
+mixed(a: usize, p: Pair, x: f64, v: Vec2, b: usize): f64 {
+    return f64(a + p.a + p.b + b) + x + f64(v.x) + f64(v.y)
+}
 
-big_sum(b: Big): usize { return b.a + b.b * 10 + b.c * 100 }
+big_sum(b: Big): usize {
+    return b.a + b.b * 10 + b.c * 100
+}
 
-use_pair(p: Pair, k: usize): usize { return pair_sum(p, k) }
+use_pair(p: Pair, k: usize): usize {
+    return pair_sum(p, k)
+}
 
-use_vec(v: Vec3): f64 { return vec_sum(v, v) }
+use_vec(v: Vec3): f64 {
+    return vec_sum(v, v)
+}
 
 main(): int {
     if first() != 0 { return 100 }

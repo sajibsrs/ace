@@ -2,4 +2,6 @@
 
 Event: union { none, quit, none }
 
-main(): int { return 0 }
+main(): int {
+    return 0
+}

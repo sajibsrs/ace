@@ -94,9 +94,13 @@ pub Formatter.finish(): (string, Error) {
     return string(self.buffer[0..self.at]), null
 }
 
-pub mut Formatter.object() { mut self.open(true) }
+pub mut Formatter.object() {
+    mut self.open(true)
+}
 
-pub mut Formatter.array() { mut self.open(false) }
+pub mut Formatter.array() {
+    mut self.open(false)
+}
 
 /* Closes the innermost open container, whichever kind it is. */
 pub mut Formatter.end() {

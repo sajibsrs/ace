@@ -1,1 +1,3 @@
-pub c(): int { return 9 }
+pub c(): int {
+    return 9
+}

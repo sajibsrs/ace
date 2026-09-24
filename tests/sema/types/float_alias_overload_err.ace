@@ -1,5 +1,9 @@
 /* `float` is the same type as `f64`, so these signatures are duplicates. */
 
-measure(value: f64): int { return int(value) }
+measure(value: f64): int {
+    return int(value)
+}
 
-measure(value: float): int { return int(value) }
+measure(value: float): int {
+    return int(value)
+}

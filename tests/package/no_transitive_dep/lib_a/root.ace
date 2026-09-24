@@ -1,3 +1,5 @@
 import lib_c
 
-pub a(): int { return lib_c.c() }
+pub a(): int {
+    return lib_c.c()
+}

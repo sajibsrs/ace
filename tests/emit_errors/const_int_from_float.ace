@@ -6,4 +6,6 @@
 
 bad: const i32 = i32(3.5)
 
-main(): int { return 0 }
+main(): int {
+    return 0
+}

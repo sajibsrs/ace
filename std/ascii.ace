@@ -5,7 +5,9 @@ import mem
 /* Reports whether `byte` is an ASCII control byte: 0x00 through 0x1F or
  * 0x7F.
  */
-pub control(byte: u8): bool { return byte < ' ' || byte == '\x7F' }
+pub control(byte: u8): bool {
+    return byte < ' ' || byte == '\x7F'
+}
 
 /* Converts an ASCII uppercase letter to lowercase. Every other byte is
  * returned unchanged.

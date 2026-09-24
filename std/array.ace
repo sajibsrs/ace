@@ -42,9 +42,13 @@ pub mut Array[T].wipe() {
 /* The live elements. The view aliases the array's storage and is invalidated
  * by any call that grows it.
  */
-pub Array[T].view(): []T { return self.items[..self.len] }
+pub Array[T].view(): []T {
+    return self.items[..self.len]
+}
 
-pub Array[T].get(index: usize): T { return self.items[..self.len][index] }
+pub Array[T].get(index: usize): T {
+    return self.items[..self.len][index]
+}
 
 pub mut Array[T].set(index: usize, value: T) {
     live: mut []T = self.items[..self.len]
@@ -81,10 +85,14 @@ pub mut Array[T].reserve(count: usize): Error {
 }
 
 /* Drops every live element and keeps the storage. */
-pub mut Array[T].clear() { self.len = 0 }
+pub mut Array[T].clear() {
+    self.len = 0
+}
 
 /* Drops every live element from index `count` onward, keeping storage. `count`
  * follows the ordinary sequence bounds contract: checked builds diagnose a
  * count past the current length and release assumes it.
  */
-pub mut Array[T].truncate(count: usize) { self.len = self.view()[..count].len }
+pub mut Array[T].truncate(count: usize) {
+    self.len = self.view()[..count].len
+}

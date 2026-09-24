@@ -66,7 +66,9 @@ pub mut Regex.wipe() {
 }
 
 /* The number of capturing groups, not counting the whole match. */
-pub Regex.groups(): u32 { return self.code.slots / 2 - 1 }
+pub Regex.groups(): u32 {
+    return self.code.slots / 2 - 1
+}
 
 /* Whether the pattern matches anywhere in `text`. It stops at the first match
  * any thread reaches, so it records no match for `group` and `span`.

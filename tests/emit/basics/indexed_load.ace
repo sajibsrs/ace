@@ -21,11 +21,17 @@ f64s: [5]f64
 rgbs: [5]Rgb
 vecs: [5]Vec3
 
-pick_u8(xs: []u8, i: usize): u8 { return xs[i] }
+pick_u8(xs: []u8, i: usize): u8 {
+    return xs[i]
+}
 
-pick_i16(xs: []i16, i: usize): i16 { return xs[i] }
+pick_i16(xs: []i16, i: usize): i16 {
+    return xs[i]
+}
 
-pick_f64(xs: []f64, i: usize): f64 { return xs[i] }
+pick_f64(xs: []f64, i: usize): f64 {
+    return xs[i]
+}
 
 main(): int {
     f32s = [0.5, 1.5, -2.5, 4.5, 0.25]

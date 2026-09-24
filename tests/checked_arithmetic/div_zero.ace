@@ -1,2 +1,7 @@
-zero(): i32 { return 0 }
-main(): int { return int(i32(12) / zero()) }
+zero(): i32 {
+    return 0
+}
+
+main(): int {
+    return int(i32(12) / zero())
+}

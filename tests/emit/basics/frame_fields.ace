@@ -44,10 +44,14 @@ text_sum(text: string, part: []i32, k: usize): int {
 }
 
 // .len of a value that is not a place loads through its address register
-tail_len(text: string): int { return int(text[1..].len) }
+tail_len(text: string): int {
+    return int(text[1..].len)
+}
 
 // scalar tuple and literal members store straight into the result slot
-parts(x: i8, y: f64): (i8, f64, u16) { return x, y, 65535 }
+parts(x: i8, y: f64): (i8, f64, u16) {
+    return x, y, 65535
+}
 
 literals(): int {
     a: i8, b: f64, c: u16 = parts(-7, 1.5)
@@ -73,7 +77,9 @@ deep(): int {
 }
 
 // loads through a pointer reuse the address register
-through(p: *i8, q: *u16): int { return int(*p) + int(*q) }
+through(p: *i8, q: *u16): int {
+    return int(*p) + int(*q)
+}
 
 main(): int {
     m: Mixed = { word = -70000, inner = { pad = 200, small = -5, half = -300 },

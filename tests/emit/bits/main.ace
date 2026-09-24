@@ -14,7 +14,10 @@ Box: struct { prefix: u8, flags: Flags }
 @packed
 PackedBox: struct { prefix: u8, flags: Flags }
 
-roundtrip(value: Flags): Flags { return value }
+roundtrip(value: Flags): Flags {
+    return value
+}
+
 once(mut calls: int, value: u32): u32 {
     calls += 1
     return value

@@ -1,4 +1,7 @@
-value(): u32 { return 1 }
+value(): u32 {
+    return 1
+}
+
 main(): int {
     n: u32 = value()
     m: u32 = value()

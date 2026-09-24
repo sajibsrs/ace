@@ -12,7 +12,9 @@ Box[T]: struct {
 
 Box[T] signs Value[T]
 
-Box[T].get(): T { return self.value }
+Box[T].get(): T {
+    return self.value
+}
 
 main(): int {
     box: Box[int]

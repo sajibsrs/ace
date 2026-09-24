@@ -2,4 +2,6 @@
 
 import b: "./b.ace"
 
-pub fa(): int { return 1 }
+pub fa(): int {
+    return 1
+}

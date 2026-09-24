@@ -2,4 +2,6 @@
 
 import leaf: "../nested_quoted_dir/leaf"
 
-main(): int { return leaf.value - 7 }
+main(): int {
+    return leaf.value - 7
+}

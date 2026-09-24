@@ -1,4 +1,7 @@
-value(): i32 { return 2147483646 }
+value(): i32 {
+    return 2147483646
+}
+
 main(): int {
     n: i32 = value()
     m: i32 = value()

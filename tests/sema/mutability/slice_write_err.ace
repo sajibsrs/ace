@@ -1,6 +1,10 @@
 /* err: plain []T is read-only content regardless of the descriptor axis —
  * element writes require mut []T (Mutability #9, Reading A). */
 
-write_first(values: []u8) { values[0] = 1 }
+write_first(values: []u8) {
+    values[0] = 1
+}
 
-main(): int { return 0 }
+main(): int {
+    return 0
+}

@@ -4,9 +4,13 @@
 
 Point: struct { x: int }
 
-set_x(point: mut *Point, value: int) { point.x = value }
+set_x(point: mut *Point, value: int) {
+    point.x = value
+}
 
-retarget(mut point: *Point, replacement: *Point) { point = replacement }
+retarget(mut point: *Point, replacement: *Point) {
+    point = replacement
+}
 
 modify_and_retarget(mut point: mut *Point, replacement: mut *Point) {
     point.x += 1

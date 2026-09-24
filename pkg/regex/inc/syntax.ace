@@ -143,7 +143,9 @@ mut Class.negate() {
     for i: usize in 0 .. 4 { self.bits[i] = ~self.bits[i] }
 }
 
-pub inline Class.has(byte: u8): bool { return ((self.bits[usize(byte >> 6)] >> u64(byte & 63)) & 1) != 0 }
+pub inline Class.has(byte: u8): bool {
+    return ((self.bits[usize(byte >> 6)] >> u64(byte & 63)) & 1) != 0
+}
 
 /* The class a Perl escape letter names: `d` digits, `w` word bytes
  * `[0-9A-Za-z_]`, `s` whitespace `[\t\n\f\r ]`, and each uppercase letter the
@@ -176,7 +178,9 @@ perl_class(letter: u8): (Class, bool) {
     return set, true
 }
 
-is_quantifier(c: u8): bool { return c == '*' || c == '+' || c == '?' || c == '{' }
+is_quantifier(c: u8): bool {
+    return c == '*' || c == '+' || c == '?' || c == '{'
+}
 
 /* Parses the complete pattern. On failure the returned offset is the byte at
  * which the error was found, except that an unclosed group or class reports

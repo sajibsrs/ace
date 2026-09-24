@@ -7,7 +7,9 @@ Text: type = string
 Bytes: type = []u8
 View[T]: struct { value: T }
 
-byte_it(x: u8): u8 { return x }
+byte_it(x: u8): u8 {
+    return x
+}
 
 pick(a: u8, b: u8): u8 {
     if a < b { return a }

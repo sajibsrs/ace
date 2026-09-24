@@ -6,9 +6,13 @@ Point: struct { x: i32, y: i32 }
 
 Big: struct { a: i64, b: i64, c: i64 }
 
-sum_point(p: Point): i32 { return p.x + p.y }
+sum_point(p: Point): i32 {
+    return p.x + p.y
+}
 
-sum_big(b: Big): i64 { return b.a + b.b + b.c }
+sum_big(b: Big): i64 {
+    return b.a + b.b + b.c
+}
 
 main(): int {
     p: Point = Point {

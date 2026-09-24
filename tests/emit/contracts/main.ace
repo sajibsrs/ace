@@ -20,13 +20,21 @@ Circle signs (
     Metric,
 )
 
-Circle.area(): i32 { return self.radius * self.radius * 3 }
+Circle.area(): i32 {
+    return self.radius * self.radius * 3
+}
 
-mut Circle.scale(k: i32) { self.radius = self.radius * k }
+mut Circle.scale(k: i32) {
+    self.radius = self.radius * k
+}
 
-Circle.value(k: int): int { return int(self.radius) + k }
+Circle.value(k: int): int {
+    return int(self.radius) + k
+}
 
-Circle.value(k: f64): f64 { return k + 1.0 }
+Circle.value(k: f64): f64 {
+    return k + 1.0
+}
 
 main(): int {
     circle: Circle = Circle { radius = 3 }

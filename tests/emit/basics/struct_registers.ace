@@ -29,17 +29,25 @@ G: Pair = Pair {
     b = 6,
 }
 
-keep(x: usize): usize { return x }
+keep(x: usize): usize {
+    return x
+}
 
-keepf(x: f64): f64 { return x }
+keepf(x: f64): f64 {
+    return x
+}
 
 check(p: Pair) {
     if p.a + p.b != 42 { G.a = 1000 }
 }
 
-touch(p: mut *Pair) { p.a += 1 }
+touch(p: mut *Pair) {
+    p.a += 1
+}
 
-Pair.sum(): usize { return self.a + self.b }
+Pair.sum(): usize {
+    return self.a + self.b
+}
 
 // integer fields: literal init, field writes, compound ops, a self-reading
 // literal that swaps, and a loop
@@ -301,7 +309,9 @@ spill_args(a: usize, b: usize, c: usize, d: usize, e: usize, f: usize, g: usize,
     return a + b + c + d + e + f + g + p.a * 100 + p.b * 1000
 }
 
-spill_floats(a: Vec4, b: Vec4, c: Vec3): f64 { return a.x + b.w + c.x * 10.0 + c.z * 100.0 }
+spill_floats(a: Vec4, b: Vec4, c: Vec3): f64 {
+    return a.x + b.w + c.x * 10.0 + c.z * 100.0
+}
 
 // arguments, results, and call sinks of every shape
 calls(): int {

@@ -1,4 +1,6 @@
-pub file(): string { return @file }
+pub file(): string {
+    return @file
+}
 
 pub line(): usize {
     return @line

@@ -9,7 +9,9 @@ mut Counter.add(amount: int): int {
     return self.value
 }
 
-twice(value: int): int { return value * 2 }
+twice(value: int): int {
+    return value * 2
+}
 
 main(): int {
     counter: Counter = Counter { value = 1 }

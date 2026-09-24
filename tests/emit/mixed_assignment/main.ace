@@ -1,5 +1,7 @@
 // expect-exit: 42
-pair(a: int, b: int): (int, int) { return a, b }
+pair(a: int, b: int): (int, int) {
+    return a, b
+}
 
 main(): int {
     old: int = 2

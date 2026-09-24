@@ -1,5 +1,9 @@
 /* Argument counts must match the signature. */
 
-add(a: int, b: int): int { return a + b }
+add(a: int, b: int): int {
+    return a + b
+}
 
-main(): int { return add(1) }
+main(): int {
+    return add(1)
+}

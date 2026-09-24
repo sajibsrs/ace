@@ -9,17 +9,29 @@ Box[T]: struct { v: T }
 
 Store: struct { bytes: mut []u8, text: mut string }
 
-plain_len(s: string): int { return int(s.len) }
+plain_len(s: string): int {
+    return int(s.len)
+}
 
-mut_len(s: mut string): int { return int(s.len) }
+mut_len(s: mut string): int {
+    return int(s.len)
+}
 
-pick(s: string): int { return 1 }
+pick(s: string): int {
+    return 1
+}
 
-pick(s: mut string): int { return 2 }
+pick(s: mut string): int {
+    return 2
+}
 
-first[T](values: []T): T { return values[0] }
+first[T](values: []T): T {
+    return values[0]
+}
 
-id(text: string): string { return text }
+id(text: string): string {
+    return text
+}
 
 main(): int {
     // Establishment from writable-lvalue sources; literals cannot establish.
@@ -78,4 +90,6 @@ main(): int {
     return 0
 }
 
-plain_len_of(v: []u8): int { return int(v.len) }
+plain_len_of(v: []u8): int {
+    return int(v.len)
+}

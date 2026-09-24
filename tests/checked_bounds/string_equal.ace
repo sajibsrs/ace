@@ -1,4 +1,7 @@
-read(text: string, index: i32): u8 { return text[index] }
+read(text: string, index: i32): u8 {
+    return text[index]
+}
+
 main(): int {
     value: u8 = read("ab", 2)
     return int(value)

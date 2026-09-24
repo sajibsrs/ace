@@ -1,3 +1,5 @@
 /* Companion module for the Local fn fixture. */
 
-pub twice(x: int): int { return x * 2 }
+pub twice(x: int): int {
+    return x * 2
+}

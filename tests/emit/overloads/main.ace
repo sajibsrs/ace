@@ -2,30 +2,50 @@
 
 // expect-exit: 42
 
-score(value: int): int { return value + 1 }
+score(value: int): int {
+    return value + 1
+}
 
-score(value: string): int { return int(value.len) }
+score(value: string): int {
+    return int(value.len)
+}
 
-score(value: f64): int { return int(value) }
+score(value: f64): int {
+    return int(value)
+}
 
-overload_type(value: i32): int { return 1 }
+overload_type(value: i32): int {
+    return 1
+}
 
-overload_type(value: int): int { return 2 }
+overload_type(value: int): int {
+    return 2
+}
 
-overload_type(value: f32): int { return 4 }
+overload_type(value: f32): int {
+    return 4
+}
 
-overload_type(value: f64): int { return 8 }
+overload_type(value: f64): int {
+    return 8
+}
 
-touch(value: i32): i32 { return value }
+touch(value: i32): i32 {
+    return value
+}
 
 touch(mut value: i32): i32 {
     value += 1
     return value
 }
 
-keep[T](value: T): T { return value }
+keep[T](value: T): T {
+    return value
+}
 
-keep[T](first: T, second: T): T { return second }
+keep[T](first: T, second: T): T {
+    return second
+}
 
 main(): int {
     x: i32 = 5

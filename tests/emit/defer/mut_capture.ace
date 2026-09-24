@@ -18,9 +18,13 @@ total: int
 gs: int
 gm: int
 
-snatch_ref(mut x: int) { seen = x }
+snatch_ref(mut x: int) {
+    seen = x
+}
 
-bump(mut x: int, by: int) { x = x + by }
+bump(mut x: int, by: int) {
+    x = x + by
+}
 
 Counter: struct { n: int }
 
@@ -34,7 +38,9 @@ mut Counter.note_mut(): int {
     return 0
 }
 
-mut Counter.add(by: int) { self.n = self.n + by }
+mut Counter.add(by: int) {
+    self.n = self.n + by
+}
 
 gc: Counter = Counter { n = 0 }
 

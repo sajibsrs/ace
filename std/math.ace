@@ -186,7 +186,9 @@ pub exp(value: f64): f64 {
     return fma(scale, correction, scale) * bits.cast(u64(23) << 52)
 }
 
-pub exp(value: f32): f32 { return f32(exp(f64(value))) }
+pub exp(value: f32): f32 {
+    return f32(exp(f64(value)))
+}
 
 pub log(value: f64): f64 {
     if isnan(value) { return value }
@@ -215,7 +217,9 @@ pub log(value: f64): f64 {
     return t + ((w - t + r) + (fma(f64(offset >> 52), LOG_LN2_LO, table.log[i].logctail) + r2 * q))
 }
 
-pub log(value: f32): f32 { return f32(log(f64(value))) }
+pub log(value: f32): f32 {
+    return f32(log(f64(value)))
+}
 
 // Parity of the finite non-zero exponent with bits `raw`: 0 fractional, 1 odd, 2 even.
 integer_parity(raw: u64): int {
@@ -423,7 +427,9 @@ pub pow(x: f32, y: f32): f32 {
 
 
 
-exponent_field(x: f64): int { return int((bits.cast(x) >> 52) & u64(0x7FF)) }
+exponent_field(x: f64): int {
+    return int((bits.cast(x) >> 52) & u64(0x7FF))
+}
 
 /* Cody-Waite reduction for 0 < x < 2^20 * pi/2: x = n * pi/2 + (y0 + y1). */
 
@@ -571,7 +577,9 @@ pub sin(value: f64): f64 {
     return result
 }
 
-pub sin(value: f32): f32 { return f32(sin(f64(value))) }
+pub sin(value: f32): f32 {
+    return f32(sin(f64(value)))
+}
 
 pub cos(value: f64): f64 {
     raw: u64 = bits.cast(value)
@@ -647,4 +655,6 @@ pub cos(value: f64): f64 {
     return result
 }
 
-pub cos(value: f32): f32 { return f32(cos(f64(value))) }
+pub cos(value: f32): f32 {
+    return f32(cos(f64(value)))
+}

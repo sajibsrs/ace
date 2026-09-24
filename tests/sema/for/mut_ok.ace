@@ -2,9 +2,13 @@
  * one- and two-binder forms, aliases through call-site `mut` and `mut &`,
  * and labels on mut loops. Plain iteration is untouched beside it. */
 
-bump(mut n: i32) { n += 1 }
+bump(mut n: i32) {
+    n += 1
+}
 
-poke(p: mut *i32) { *p += 10 }
+poke(p: mut *i32) {
+    *p += 10
+}
 
 main(): int {
     // mut over a local array

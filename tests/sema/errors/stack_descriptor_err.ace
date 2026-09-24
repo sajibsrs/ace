@@ -1,2 +1,5 @@
 LocalError: error
-make_error(): Error { return LocalError(1, 2) }
+
+make_error(): Error {
+    return LocalError(1, 2)
+}

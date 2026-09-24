@@ -1,3 +1,5 @@
 /* Std fixture: @file names std files as std/<path>. */
 
-pub file(): string { return @file }
+pub file(): string {
+    return @file
+}

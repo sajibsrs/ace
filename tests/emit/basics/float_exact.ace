@@ -5,9 +5,13 @@
 import bits
 import math
 
-same(a: f64, b: f64): bool { return bits.cast(a) == bits.cast(b) }
+same(a: f64, b: f64): bool {
+    return bits.cast(a) == bits.cast(b)
+}
 
-same32(a: f32, b: f32): bool { return bits.cast(a) == bits.cast(b) }
+same32(a: f32, b: f32): bool {
+    return bits.cast(a) == bits.cast(b)
+}
 
 main(): int {
     negative_zero: f64 = bits.cast(u64(0x8000000000000000))

@@ -36,4 +36,6 @@ lookup(): int {
     return 0
 }
 
-main(): int { return lookup() }
+main(): int {
+    return lookup()
+}

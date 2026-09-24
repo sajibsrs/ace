@@ -1,8 +1,12 @@
 Router: struct { count: int }
 
-pub Router::new(start: int): Router { return Router { count = start } }
+pub Router::new(start: int): Router {
+    return Router { count = start }
+}
 
-pub mut Router.bump(k: int) { self.count = self.count + k }
+pub mut Router.bump(k: int) {
+    self.count = self.count + k
+}
 
 pub Router::reset(mut r: Router): Router {
     r.count = 0

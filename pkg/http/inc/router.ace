@@ -19,10 +19,14 @@ pub Router: struct {
     routes: array.Array[Route],
 }
 
-pub Router::new(): Router { return Router { routes = array.Array[Route] {} } }
+pub Router::new(): Router {
+    return Router { routes = array.Array[Route] {} }
+}
 
 /* Releases route storage. Call once the router is no longer served. */
-pub mut Router.wipe() { mut self.routes.wipe() }
+pub mut Router.wipe() {
+    mut self.routes.wipe()
+}
 
 /* Registers `handler` for exact `method` and path-segment prefix `path`.
  * Grows route storage as needed; fails only if that growth fails.

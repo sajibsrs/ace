@@ -3,7 +3,9 @@ Other: bits u32 { enabled: 1, mode: signed 3, _: 28 }
 
 Box: struct { flags: Flags, values: [2]Flags }
 
-copy(value: Flags): Flags { return value }
+copy(value: Flags): Flags {
+    return value
+}
 
 main(): int {
     flags: Flags = Flags { enabled = 1 }

@@ -1,6 +1,8 @@
 /* Invalid defaults and omissions remain diagnostics. */
 
-runtime(): int { return 1 }
+runtime(): int {
+    return 1
+}
 
 Missing: struct { required: int, optional: int = 2 }
 Called: struct { value: int = runtime() }

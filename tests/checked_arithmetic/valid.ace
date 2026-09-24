@@ -1,4 +1,6 @@
-runtime_i64(value: i64): i64 { return value }
+runtime_i64(value: i64): i64 {
+    return value
+}
 
 // immediate add/sub up to each limit, including a narrow promoted local
 imm_range(): int {

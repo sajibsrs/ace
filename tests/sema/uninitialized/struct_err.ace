@@ -2,7 +2,9 @@
 
 Point: struct { x: int, y: int }
 
-sum(point: Point): int { return point.x + point.y }
+sum(point: Point): int {
+    return point.x + point.y
+}
 
 main(): int {
     point: Point

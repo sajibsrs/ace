@@ -1,8 +1,12 @@
 /* Context-typed array repetition semantic fixture. */
 
-take(values: [3]i32): i32 { return values[0] + values[1] + values[2] }
+take(values: [3]i32): i32 {
+    return values[0] + values[1] + values[2]
+}
 
-make(): [3]i32 { return [7 : 3] }
+make(): [3]i32 {
+    return [7 : 3]
+}
 
 main(): int {
     values: [3]i32 = [1 : 3]

@@ -169,7 +169,9 @@ pub accept_nonblock(listener: Listener): (Conn, net.Addr4, Error) {
     return connection(sock, Interest.read), address, null
 }
 
-pub interest(conn: Conn): Interest { return conn.interest }
+pub interest(conn: Conn): Interest {
+    return conn.interest
+}
 
 pub progress_connect(mut conn: Conn): Event {
     err: Error = net.pending_error(conn.socket)

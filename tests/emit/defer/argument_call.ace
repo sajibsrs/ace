@@ -5,7 +5,9 @@
 
 seen: int
 
-keep(x: int) { seen = x }
+keep(x: int) {
+    seen = x
+}
 
 // call-free: its locals take x14 down
 scratch(): int {
@@ -22,4 +24,6 @@ run(n: int): int {
     return k + n
 }
 
-main(): int { return run(10) }
+main(): int {
+    return run(10)
+}

@@ -26,7 +26,10 @@ Flag: union { none, byte: u8 }               // small tagged union, register
 
 Box[T]: struct { value: T }
 
-sum_pair(p: Pair): i64 { return p.a + i64(p.b) }
+sum_pair(p: Pair): i64 {
+    return p.a + i64(p.b)
+}
+
 bump_pair(p: Pair): Pair {
     return Pair {
         a = p.a + 1,
@@ -34,7 +37,10 @@ bump_pair(p: Pair): Pair {
     }
 }
 
-sum_triple(t: Triple): i64 { return t.a + t.b + i64(t.c) }
+sum_triple(t: Triple): i64 {
+    return t.a + t.b + i64(t.c)
+}
+
 bump_triple(t: Triple): Triple {
     return Triple {
         a = t.a + 1,
@@ -43,7 +49,10 @@ bump_triple(t: Triple): Triple {
     }
 }
 
-bump_h1(h: H1): H1 { return H1 { a = h.a + 1.0 } }
+bump_h1(h: H1): H1 {
+    return H1 { a = h.a + 1.0 }
+}
+
 bump_h2(h: H2): H2 {
     return H2 {
         a = h.a + 1.0,
@@ -107,14 +116,20 @@ sum_flag(f: Flag): u8 {
     }
 }
 
-sum_box_pair(b: Box[Pair]): i64 { return b.value.a + i64(b.value.b) }
+sum_box_pair(b: Box[Pair]): i64 {
+    return b.value.a + i64(b.value.b)
+}
+
 bump_box_h2(b: Box[H2]): Box[H2] {
     return Box[H2] { value = H2 {
         a = b.value.a + 1.0,
         b = b.value.b + 2.0,
     } }
 }
-sum_box_triple(b: Box[Triple]): i64 { return b.value.a + b.value.b + i64(b.value.c) }
+
+sum_box_triple(b: Box[Triple]): i64 {
+    return b.value.a + b.value.b + i64(b.value.c)
+}
 
 split_pair(): (Pair, i32) {
     pair: Pair = Pair {

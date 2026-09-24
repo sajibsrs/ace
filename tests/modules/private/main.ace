@@ -2,4 +2,6 @@
 
 import util: "./util.ace"
 
-main(): int { return util.secret() }
+main(): int {
+    return util.secret()
+}

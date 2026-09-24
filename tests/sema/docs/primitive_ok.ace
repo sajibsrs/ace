@@ -2,7 +2,9 @@
 
 import fmt
 
-dynamic_byte(text: string, index: i32): u8 { return text[index] }
+dynamic_byte(text: string, index: i32): u8 {
+    return text[index]
+}
 
 main(): int {
     signed_word: int = 13

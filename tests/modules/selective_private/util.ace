@@ -1,3 +1,5 @@
 /* Companion module for the Selective private fixture. */
 
-hidden(): int { return 1 }
+hidden(): int {
+    return 1
+}

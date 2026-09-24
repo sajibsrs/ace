@@ -1,4 +1,7 @@
-pointer(value: *u64): *u64 { return value }
+pointer(value: *u64): *u64 {
+    return value
+}
+
 main(): int {
     bad: *u64 = pointer(null)
     bad += 0

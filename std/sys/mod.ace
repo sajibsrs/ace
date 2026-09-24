@@ -70,30 +70,52 @@ pub S_IXOTH: const u32 = os.S_IXOTH
 /* Process-start pointer arrays stay behind compiler-backed helpers because
  * Ace deliberately exposes no pointer arithmetic over their C layouts.
  */
-process_argc(): usize { return 0 }
+process_argc(): usize {
+    return 0
+}
 
-process_arg(index: usize): string { return null }
+process_arg(index: usize): string {
+    return null
+}
 
-process_envc(): usize { return 0 }
+process_envc(): usize {
+    return 0
+}
 
-process_env(index: usize): string { return null }
+process_env(index: usize): string {
+    return null
+}
 
-pub argc(): usize { return process_argc() }
+pub argc(): usize {
+    return process_argc()
+}
 
-pub arg(index: usize): string { return process_arg(index) }
+pub arg(index: usize): string {
+    return process_arg(index)
+}
 
-pub envc(): usize { return process_envc() }
+pub envc(): usize {
+    return process_envc()
+}
 
-pub env(index: usize): string { return process_env(index) }
+pub env(index: usize): string {
+    return process_env(index)
+}
 
-pub exit(code: int) { os.exit(code) }
+pub exit(code: int) {
+    os.exit(code)
+}
 
-pub errno(): i32 { return os.errno() }
+pub errno(): i32 {
+    return os.errno()
+}
 
 /* Fill caller-owned storage with cryptographically secure operating-system
  * entropy. Empty storage succeeds without making a platform call.
  */
-pub random(storage: mut []u8): Error { return os.random(storage) }
+pub random(storage: mut []u8): Error {
+    return os.random(storage)
+}
 
 pub fork(): (Process, Error) {
     process: Process, err: Error = os.fork()
@@ -120,11 +142,17 @@ pub write(fd: Fd, data: []u8): (int, Error) {
     return count, err
 }
 
-pub close(fd: Fd): Error { return os.close(fd) }
+pub close(fd: Fd): Error {
+    return os.close(fd)
+}
 
-pub ioctl(fd: Fd, request: uint): Error { return os.ioctl(fd, request) }
+pub ioctl(fd: Fd, request: uint): Error {
+    return os.ioctl(fd, request)
+}
 
-pub ioctl(fd: Fd, request: uint, data: mut []u8): Error { return os.ioctl(fd, request, data) }
+pub ioctl(fd: Fd, request: uint, data: mut []u8): Error {
+    return os.ioctl(fd, request, data)
+}
 
 pub open(path: string, flags: i32): (Fd, Error) {
     fd: Fd, err: Error = os.open(path, flags)
@@ -141,13 +169,21 @@ pub stat(path: string): (FileInfo, Error) {
     return info, err
 }
 
-pub mkdir(path: string, mode: u32): Error { return os.mkdir(path, mode) }
+pub mkdir(path: string, mode: u32): Error {
+    return os.mkdir(path, mode)
+}
 
-pub mkdir(path: string): Error { return os.mkdir(path) }
+pub mkdir(path: string): Error {
+    return os.mkdir(path)
+}
 
-pub rename(old_path: string, new_path: string): Error { return os.rename(old_path, new_path) }
+pub rename(old_path: string, new_path: string): Error {
+    return os.rename(old_path, new_path)
+}
 
-pub unlink(path: string): Error { return os.unlink(path) }
+pub unlink(path: string): Error {
+    return os.unlink(path)
+}
 
 pub opendir(path: string): (Dir, Error) {
     dir: Dir, err: Error = os.opendir(path)
@@ -159,4 +195,6 @@ pub readdir(mut dir: Dir, name: mut []u8): (usize, FileType, bool, Error) {
     return length, file_type, done, err
 }
 
-pub closedir(mut dir: Dir): Error { return os.closedir(mut dir) }
+pub closedir(mut dir: Dir): Error {
+    return os.closedir(mut dir)
+}

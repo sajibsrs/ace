@@ -183,7 +183,9 @@ pub Program.format(destination: mut []char): (usize, bool) {
 }
 
 /* The index the next instruction will take. */
-Compiler.pc(): u32 { return u32(self.insts.len) }
+Compiler.pc(): u32 {
+    return u32(self.insts.len)
+}
 
 mut Compiler.emit(inst: Inst) {
     if self.err != null { return }

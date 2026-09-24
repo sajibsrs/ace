@@ -2,4 +2,6 @@
 
 import bla: outer/inner
 
-main(): int { return bla.value - 7 }
+main(): int {
+    return bla.value - 7
+}

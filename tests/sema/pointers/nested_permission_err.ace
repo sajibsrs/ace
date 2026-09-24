@@ -2,6 +2,10 @@
 
 Point: struct { x: int }
 
-change(points: mut **Point) { points.x = 42 }
+change(points: mut **Point) {
+    points.x = 42
+}
 
-main(): int { return 0 }
+main(): int {
+    return 0
+}

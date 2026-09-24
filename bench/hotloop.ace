@@ -23,7 +23,9 @@ ys32: [4096]f32
 positions: [4096]Vec3
 velocities: [4096]Vec3
 
-now(): u64 { return time.awake() }
+now(): u64 {
+    return time.awake()
+}
 
 report(name: string, elapsed: u64, operations: usize, checksum: usize) {
     fmt.printf("%s %u %u %u\n", name, usize(elapsed), operations, checksum)

@@ -2,4 +2,6 @@
 
 import outer_missing/inner
 
-main(): int { return inner.value }
+main(): int {
+    return inner.value
+}

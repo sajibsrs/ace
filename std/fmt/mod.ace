@@ -298,13 +298,21 @@ print_precision[T](value: T, precision: usize): int specialized
 
 print_radix[T](value: T, radix: u8, uppercase: bool): int specialized
 
-print_counted[string](text: string): int { return print(text) }
+print_counted[string](text: string): int {
+    return print(text)
+}
 
-print_counted[int](value: int): int { return print(value) }
+print_counted[int](value: int): int {
+    return print(value)
+}
 
-print_counted[uint](value: uint): int { return print(value) }
+print_counted[uint](value: uint): int {
+    return print(value)
+}
 
-print_counted[usize](value: usize): int { return print(value) }
+print_counted[usize](value: usize): int {
+    return print(value)
+}
 
 print_counted[u8](value: u8): int {
     out: [1]u8 = [value]
@@ -431,7 +439,9 @@ print_precision[f32](value: f32, precision: usize): int {
  * ordinary declaration. Calls are otherwise validated and lowered directly
  * by the compiler; this format-dependent function is never a first-class value.
  */
-pub printf(format: string): int { return print_counted[string](format) }
+pub printf(format: string): int {
+    return print_counted[string](format)
+}
 
 /*
  * Closes a println after a nonempty value write: a non-positive result is
@@ -452,12 +462,22 @@ pub println(text: string): int {
     return finish_line(print(text))
 }
 
-pub println(value: int): int { return finish_line(print(value)) }
+pub println(value: int): int {
+    return finish_line(print(value))
+}
 
-pub println(value: uint): int { return finish_line(print(value)) }
+pub println(value: uint): int {
+    return finish_line(print(value))
+}
 
-pub println(value: usize): int { return finish_line(print(value)) }
+pub println(value: usize): int {
+    return finish_line(print(value))
+}
 
-pub println(value: f32): int { return finish_line(print(value)) }
+pub println(value: f32): int {
+    return finish_line(print(value))
+}
 
-pub println(value: f64): int { return finish_line(print(value)) }
+pub println(value: f64): int {
+    return finish_line(print(value))
+}

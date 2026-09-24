@@ -3,4 +3,6 @@
 import min from math
 import min from math
 
-main(): int { return 0 }
+main(): int {
+    return 0
+}

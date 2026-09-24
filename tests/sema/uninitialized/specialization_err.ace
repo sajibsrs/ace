@@ -16,4 +16,6 @@ gen[T](value: T): int {
     return y
 }
 
-main(): int { return get[int](1) + gen[int](2) }
+main(): int {
+    return get[int](1) + gen[int](2)
+}

@@ -2,4 +2,6 @@
 
 import outer/amb_leaf
 
-main(): int { return amb_leaf.value }
+main(): int {
+    return amb_leaf.value
+}

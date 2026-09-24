@@ -1,1 +1,3 @@
-inline pair(): (int, bool) { return 1, true }
+inline pair(): (int, bool) {
+    return 1, true
+}

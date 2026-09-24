@@ -7,12 +7,21 @@
 Point: struct { x: int, y: int }
 Box[T]: struct { value: T }
 
-make_point(): Point { return { x = 1, y = 2 } }
+make_point(): Point {
+    return { x = 1, y = 2 }
+}
 
-make_box(): Box[int] { return { value = 9 } }
+make_box(): Box[int] {
+    return { value = 9 }
+}
 
-take_point(p: Point): int { return p.x + p.y }
-take_box(b: Box[int]): int { return b.value }
+take_point(p: Point): int {
+    return p.x + p.y
+}
+
+take_box(b: Box[int]): int {
+    return b.value
+}
 
 main(): int {
     p: Point = make_point()

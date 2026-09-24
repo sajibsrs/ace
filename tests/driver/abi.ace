@@ -48,19 +48,29 @@ extern "c" {
     c_get_thread_entry(): extern "c" (mut *u8): mut *u8
 }
 
-export ace_thread_entry(argument: mut *u8): mut *u8 { return argument }
+export ace_thread_entry(argument: mut *u8): mut *u8 {
+    return argument
+}
 
 export ace_scalars(a: i8, b: i16, c: i32, d: i64, e: u8, f: u16, g: u32, h: u64, i: usize): i64 {
     return i64(a) + i64(b) + i64(c) + d + i64(e) + i64(f) + i64(g) + i64(h) + i64(i)
 }
 
-export ace_floats(a: f32, b: f64): f64 { return f64(a) + b }
+export ace_floats(a: f32, b: f64): f64 {
+    return f64(a) + b
+}
 
-export ace_f32(value: f32): f32 { return value + 0.75 }
+export ace_f32(value: f32): f32 {
+    return value + 0.75
+}
 
-export ace_bump(value: mut *i32) { *value = *value + 7 }
+export ace_bump(value: mut *i32) {
+    *value = *value + 7
+}
 
-export ace_code(value: Code): Code { return Code(i32(value) + 1) }
+export ace_code(value: Code): Code {
+    return Code(i32(value) + 1)
+}
 
 export ace_wire(value: Wire): Wire {
     if value == Wire.request { return Wire.response }

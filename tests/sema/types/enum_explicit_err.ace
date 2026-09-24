@@ -11,4 +11,6 @@ SignedTooWide: enum i32 { none, huge = 2147483648 }
 runtime: int = 2
 Nonconstant: enum i32 { none, bad = runtime }
 
-main(): int { return 0 }
+main(): int {
+    return 0
+}

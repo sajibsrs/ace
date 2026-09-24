@@ -2,4 +2,6 @@
 
 import m: "./main.ace"
 
-main(): int { return 0 }
+main(): int {
+    return 0
+}

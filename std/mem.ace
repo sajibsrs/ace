@@ -5,11 +5,17 @@
  * platform allocator; the fallback bodies are never emitted.
  */
 
-pub alloc(size: int, align: int): mut []u8 { return null }
+pub alloc(size: int, align: int): mut []u8 {
+    return null
+}
 
-pub realloc(data: []u8, new_size: int): mut []u8 { return null }
+pub realloc(data: []u8, new_size: int): mut []u8 {
+    return null
+}
 
-pub release(mut data: []u8) { data = null }
+pub release(mut data: []u8) {
+    data = null
+}
 
 /* Typed allocation over the same fixed allocator: the element type is stated
  * at the explicit instantiation, and the byte size and alignment derive from
@@ -17,18 +23,26 @@ pub release(mut data: []u8) { data = null }
  * the raw forms above.
  */
 
-pub alloc[T](count: usize): mut []T { return null }
+pub alloc[T](count: usize): mut []T {
+    return null
+}
 
 /* Like `alloc[T]`, but every byte of the returned storage is zero, which is
  * a valid `T` for every type. The bootstrap compiler lowers it directly to the
  * platform's zero-filling allocator.
  */
 
-pub zalloc[T](count: usize): mut []T { return null }
+pub zalloc[T](count: usize): mut []T {
+    return null
+}
 
-pub realloc[T](data: []T, new_count: usize): mut []T { return null }
+pub realloc[T](data: []T, new_count: usize): mut []T {
+    return null
+}
 
-pub release[T](mut data: []T) { data = null }
+pub release[T](mut data: []T) {
+    data = null
+}
 
 /* Usable size in bytes of a live allocation, at least the requested length
  * and allocator-defined beyond it. `data` must be the base slice a raw
@@ -37,7 +51,9 @@ pub release[T](mut data: []T) { data = null }
  * allocator's size query.
  */
 
-pub usable(data: []u8): usize { return 0 }
+pub usable(data: []u8): usize {
+    return 0
+}
 
 /* Byte operations use complete slice views as their ranges. Write destinations
  * carry type-position `mut` (Mutability #10): their argument must be a
@@ -53,13 +69,17 @@ pub fill(data: mut []u8, value: u8) {}
 
 pub zero(data: mut []u8) {}
 
-pub compare(a: []u8, b: []u8): int { return 0 }
+pub compare(a: []u8, b: []u8): int {
+    return 0
+}
 
 /* The bootstrap accepts every pairwise [N]u8, []u8, and string combination
  * at this compiler-backed declaration; its representative parameter types do
  * not constrain intrinsic call checking.
  */
-pub equal(a: []u8, b: []u8): bool { return false }
+pub equal(a: []u8, b: []u8): bool {
+    return false
+}
 
 /* Grows `slice` to at least `needed` elements, doubling its length when that
  * is larger. A null slice allocates. On allocation failure or count overflow

@@ -22,7 +22,9 @@ Shape: union {
 }
 
 // first in the file, so each function below keeps its own symbol
-twice(x: int): int { return x * 2 }
+twice(x: int): int {
+    return x * 2
+}
 
 // twelve loop-carried locals fill all six leaf registers and spill into x19+
 hot(n: int): int {

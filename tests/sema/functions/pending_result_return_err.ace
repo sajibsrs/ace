@@ -1,6 +1,10 @@
 /* A call that resolves at end of file is still checked against the
  * function's return type. */
 
-f(a: u64): u64 { return a }
+f(a: u64): u64 {
+    return a
+}
 
-main(): int { return f(300) }
+main(): int {
+    return f(300)
+}

@@ -11,9 +11,13 @@ Shape: contract {
 
 Point signs Shape
 
-Point.area(): i32 { return self.x }
+Point.area(): i32 {
+    return self.x
+}
 
-mut Point.scale(k: i32) { self.x = self.x * k }
+mut Point.scale(k: i32) {
+    self.x = self.x * k
+}
 
 bigger[T](a: T, b: T): T {
     if a < b { return b }

@@ -4,9 +4,13 @@
 
 import Point, Color, origin, score, Thing, TypeOnly, ValueOnly from "./util.ace"
 
-keep(score: int): int { return score }
+keep(score: int): int {
+    return score
+}
 
-keep_type[Point](value: Point): Point { return value }
+keep_type[Point](value: Point): Point {
+    return value
+}
 
 main(): int {
     p: Point = origin

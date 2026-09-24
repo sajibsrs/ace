@@ -1,6 +1,8 @@
 /* A user declaration named printf coexists with fmt.printf. */
 
-printf(value: int): int { return value }
+printf(value: int): int {
+    return value
+}
 
 check(): int {
     fn: (int): int = printf

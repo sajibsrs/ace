@@ -1,6 +1,8 @@
 /* Fallthrough context fixture. */
 
-fallthrough(): int { return 1 }
+fallthrough(): int {
+    return 1
+}
 
 ordinary_identifier(): int {
     fallthrough: int = 1

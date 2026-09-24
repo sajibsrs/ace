@@ -1,1 +1,3 @@
-inline same[T](value: T): T { return value }
+inline same[T](value: T): T {
+    return value
+}

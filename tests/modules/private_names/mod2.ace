@@ -1,5 +1,9 @@
 /* Companion module for the Private names fixture. */
 
-helper(): int { return 20 }
+helper(): int {
+    return 20
+}
 
-pub two(): int { return helper() }
+pub two(): int {
+    return helper()
+}

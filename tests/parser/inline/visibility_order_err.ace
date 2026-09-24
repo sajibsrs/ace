@@ -1,1 +1,3 @@
-inline pub late(): int { return 0 }
+inline pub late(): int {
+    return 0
+}

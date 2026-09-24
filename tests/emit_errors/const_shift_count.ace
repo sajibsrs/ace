@@ -7,4 +7,6 @@
 count: const u8 = 8
 bad: const u8 = u8(1) << count
 
-main(): int { return int(bad) }
+main(): int {
+    return int(bad)
+}

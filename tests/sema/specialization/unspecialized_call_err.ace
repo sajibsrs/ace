@@ -3,7 +3,9 @@
 
 load[T](text: string): (T, bool) specialized
 
-load[int](text: string): (int, bool) { return (7, true) }
+load[int](text: string): (int, bool) {
+    return (7, true)
+}
 
 main(): int {
     x: (f64, bool) = load[f64]("2.5")

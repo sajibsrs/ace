@@ -7,6 +7,10 @@ main(): int {
     return later(value) + later("x")
 }
 
-later(value: int): int { return value + 1 }
+later(value: int): int {
+    return value + 1
+}
 
-later(value: string): int { return int(value.len) }
+later(value: string): int {
+    return int(value.len)
+}

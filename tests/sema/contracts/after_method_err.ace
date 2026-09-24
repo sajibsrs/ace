@@ -3,6 +3,8 @@
 Thing: struct { value: int }
 Readable: contract { read(): int }
 
-Thing.read(): int { return self.value }
+Thing.read(): int {
+    return self.value
+}
 
 Thing signs Readable

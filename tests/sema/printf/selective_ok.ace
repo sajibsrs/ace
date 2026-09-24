@@ -4,4 +4,6 @@ import printf from fmt
 
 format: const string = "%s=%d"
 
-check(): int { return printf(format, "value", 7) }
+check(): int {
+    return printf(format, "value", 7)
+}

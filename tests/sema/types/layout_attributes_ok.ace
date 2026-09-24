@@ -52,4 +52,6 @@ static_assert(offsetof(Outer, tail) == 6)
 static_assert(sizeof(Outer) == 8)
 static_assert(sizeof([2]Outer) == 16)
 
-main(): int { return 0 }
+main(): int {
+    return 0
+}

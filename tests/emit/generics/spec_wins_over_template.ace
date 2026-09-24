@@ -3,9 +3,13 @@
 
 // expect-exit: 42
 
-pick[T](a: T, b: T): T { return a }
+pick[T](a: T, b: T): T {
+    return a
+}
 
-pick[int](a: int, b: int): int { return b }
+pick[int](a: int, b: int): int {
+    return b
+}
 
 main(): int {
     if pick[int](1, 2) != 2 {

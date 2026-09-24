@@ -5,9 +5,13 @@
 
 import fmt
 
-id(x: f64): f64 { return x }
+id(x: f64): f64 {
+    return x
+}
 
-id32(x: f32): f32 { return x }
+id32(x: f32): f32 {
+    return x
+}
 
 main(): int {
     one: f64 = 1.0

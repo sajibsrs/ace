@@ -1,1 +1,3 @@
-inline inline twice(): int { return 0 }
+inline inline twice(): int {
+    return 0
+}

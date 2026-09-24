@@ -60,7 +60,9 @@ quit_status: const Status = Status.quit
 key_status: const Status = Status.key(42)
 text_value: const Scalar = Scalar.text("union")
 
-round_trip(event: Event): Event { return event }
+round_trip(event: Event): Event {
+    return event
+}
 
 main(): int {
     if default_status != Status.none { return 1 }

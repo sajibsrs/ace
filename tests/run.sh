@@ -860,7 +860,7 @@ done
 if ! "$ACE" --checked -o /tmp/ace_checked_features/assert_false \
      tests/assert/checked_false.ace ||
    /tmp/ace_checked_features/assert_false >/dev/null 2>/tmp/ace_test_errs ||
-   ! grep -qx "checked_false.ace:4:11: assertion failed" /tmp/ace_test_errs; then
+   ! grep -qx "checked_false.ace:6:11: assertion failed" /tmp/ace_test_errs; then
     echo "FAIL: checked assert failure"
     fail=1
 fi

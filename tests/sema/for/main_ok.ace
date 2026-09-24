@@ -1,7 +1,9 @@
 /* General for heads type-check: head-scoped declarations cover cond, post,
  * and body; assignment and expression-statement inits; labels on loops. */
 
-bump(): int { return 1 }
+bump(): int {
+    return 1
+}
 
 main(): int {
     total: int = 0

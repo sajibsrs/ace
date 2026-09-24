@@ -6,4 +6,6 @@ main(): int {
     return 0
 }
 
-mem_alloc4(): []u8 { return null }
+mem_alloc4(): []u8 {
+    return null
+}

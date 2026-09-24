@@ -19,10 +19,14 @@ CLOCK_UPTIME_RAW: const i32 = 8
  * with real elapsed time across sleep/wake cycles. Unaffected by
  * calendar-clock changes.
  */
-pub elapsed(): u64 { return c_clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW) }
+pub elapsed(): u64 {
+    return c_clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)
+}
 
 /* System-wide monotonic nanoseconds from an unspecified origin, reset at
  * every boot. Pauses during system sleep and resumes when the system wakes;
  * unaffected by calendar-clock changes.
  */
-pub awake(): u64 { return c_clock_gettime_nsec_np(CLOCK_UPTIME_RAW) }
+pub awake(): u64 {
+    return c_clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+}

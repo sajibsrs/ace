@@ -1,3 +1,5 @@
 /* Same basename a module fixture. */
 
-pub tag(): int { return 1 }
+pub tag(): int {
+    return 1
+}

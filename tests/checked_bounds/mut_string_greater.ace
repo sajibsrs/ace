@@ -1,4 +1,7 @@
-write(text: mut string, index: usize) { text[index] = 'x' }
+write(text: mut string, index: usize) {
+    text[index] = 'x'
+}
+
 main(): int {
     bytes: [2]u8 = ['a', 'b']
     text: mut string = mut bytes[0..2]

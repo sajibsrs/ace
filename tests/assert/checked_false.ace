@@ -1,4 +1,6 @@
-condition(): bool { return false }
+condition(): bool {
+    return false
+}
 
 main(): int {
     assert(condition())

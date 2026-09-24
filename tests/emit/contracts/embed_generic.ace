@@ -12,7 +12,9 @@ Base[T]: struct {
 
 Base[T] signs Value[T]
 
-Base[T].get(): T { return self.value }
+Base[T].get(): T {
+    return self.value
+}
 
 Outer[T]: struct {
     embed base: Base[T],

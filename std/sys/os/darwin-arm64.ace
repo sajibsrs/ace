@@ -28,7 +28,9 @@ pub stderr: const Fd = Fd(2)
 /* Terminate immediately with the requested process status. This does not
  * return, unwind, run defers, or invoke C-runtime exit handlers.
  */
-pub exit(code: int) { c_exit(i32(code)) }
+pub exit(code: int) {
+    c_exit(i32(code))
+}
 
 /* Per-operation error domains: the failing operation is readable from the
  * returned handle's domain; the raw errno is queried separately via errno().
@@ -515,7 +517,9 @@ pub mkdir(path: string, mode: u32): Error {
 /* Portable creation form: request all ordinary permissions and let the
  * process umask choose the effective platform permissions.
  */
-pub mkdir(path: string): Error { return mkdir(path, S_IRWXU | S_IRWXG | S_IRWXO) }
+pub mkdir(path: string): Error {
+    return mkdir(path, S_IRWXU | S_IRWXG | S_IRWXO)
+}
 
 pub rename(old_path: string, new_path: string): Error {
     from_buf: [1024]u8

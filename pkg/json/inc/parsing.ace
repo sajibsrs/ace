@@ -396,9 +396,13 @@ mut Parser.parse_object(depth: usize): (Value, Error) {
     return Value.object(self.pairs[at..at + count]), null
 }
 
-is_ws(c: u8): bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
+is_ws(c: u8): bool {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r'
+}
 
-is_digit(c: u8): bool { return c >= '0' && c <= '9' }
+is_digit(c: u8): bool {
+    return c >= '0' && c <= '9'
+}
 
 hex_value(c: u8): (u32, bool) {
     if c >= '0' && c <= '9' { return u32(c - '0'), true }

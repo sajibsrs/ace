@@ -2,7 +2,9 @@
 
 Span: struct { start: usize, end: usize }
 
-peek(span: *Span): usize { return span.start }
+peek(span: *Span): usize {
+    return span.start
+}
 
 main(): int {
     span: Span

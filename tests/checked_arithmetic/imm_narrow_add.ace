@@ -1,4 +1,7 @@
-value(): u8 { return u8(250) }
+value(): u8 {
+    return u8(250)
+}
+
 main(): int {
     n: u8 = value()
     m: u8 = value()

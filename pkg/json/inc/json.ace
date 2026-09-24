@@ -59,45 +59,85 @@ pub Json.format(): (string, Error) {
 /* Discards the written text and its error, keeping the buffer; `root` is
  * unchanged.
  */
-pub mut Json.reset() { mut self.formatter.reset() }
+pub mut Json.reset() {
+    mut self.formatter.reset()
+}
 
-pub mut Json.object() { mut self.formatter.object() }
+pub mut Json.object() {
+    mut self.formatter.object()
+}
 
-pub mut Json.array() { mut self.formatter.array() }
+pub mut Json.array() {
+    mut self.formatter.array()
+}
 
-pub mut Json.end() { mut self.formatter.end() }
+pub mut Json.end() {
+    mut self.formatter.end()
+}
 
-pub mut Json.key(name: string) { mut self.formatter.key(name) }
+pub mut Json.key(name: string) {
+    mut self.formatter.key(name)
+}
 
-pub mut Json.none() { mut self.formatter.none() }
+pub mut Json.none() {
+    mut self.formatter.none()
+}
 
-pub mut Json.value(flag: bool) { mut self.formatter.value(flag) }
+pub mut Json.value(flag: bool) {
+    mut self.formatter.value(flag)
+}
 
-pub mut Json.value(number: int) { mut self.formatter.value(number) }
+pub mut Json.value(number: int) {
+    mut self.formatter.value(number)
+}
 
-pub mut Json.value(number: uint) { mut self.formatter.value(number) }
+pub mut Json.value(number: uint) {
+    mut self.formatter.value(number)
+}
 
-pub mut Json.value(number: usize) { mut self.formatter.value(number) }
+pub mut Json.value(number: usize) {
+    mut self.formatter.value(number)
+}
 
-pub mut Json.value(number: f64) { mut self.formatter.value(number) }
+pub mut Json.value(number: f64) {
+    mut self.formatter.value(number)
+}
 
-pub mut Json.value(text: string) { mut self.formatter.value(text) }
+pub mut Json.value(text: string) {
+    mut self.formatter.value(text)
+}
 
-pub mut Json.value(tree: Value) { mut self.formatter.value(tree) }
+pub mut Json.value(tree: Value) {
+    mut self.formatter.value(tree)
+}
 
-pub mut Json.field(name: string, flag: bool) { mut self.formatter.field(name, flag) }
+pub mut Json.field(name: string, flag: bool) {
+    mut self.formatter.field(name, flag)
+}
 
-pub mut Json.field(name: string, number: int) { mut self.formatter.field(name, number) }
+pub mut Json.field(name: string, number: int) {
+    mut self.formatter.field(name, number)
+}
 
-pub mut Json.field(name: string, number: uint) { mut self.formatter.field(name, number) }
+pub mut Json.field(name: string, number: uint) {
+    mut self.formatter.field(name, number)
+}
 
-pub mut Json.field(name: string, number: usize) { mut self.formatter.field(name, number) }
+pub mut Json.field(name: string, number: usize) {
+    mut self.formatter.field(name, number)
+}
 
-pub mut Json.field(name: string, number: f64) { mut self.formatter.field(name, number) }
+pub mut Json.field(name: string, number: f64) {
+    mut self.formatter.field(name, number)
+}
 
-pub mut Json.field(name: string, text: string) { mut self.formatter.field(name, text) }
+pub mut Json.field(name: string, text: string) {
+    mut self.formatter.field(name, text)
+}
 
-pub mut Json.field(name: string, tree: Value) { mut self.formatter.field(name, tree) }
+pub mut Json.field(name: string, tree: Value) {
+    mut self.formatter.field(name, tree)
+}
 
 /* The value at JSON Pointer `path`, or `Value.none` and false when absent. */
 pub Json.get(path: string): (Value, bool) {

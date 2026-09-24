@@ -1,7 +1,9 @@
 /* err: the bare `mut` prefix is legal only over a slice expression (grammar
  * note 25) — a call result or a plain binding establishes nothing. */
 
-view_of(): []u8 { return null }
+view_of(): []u8 {
+    return null
+}
 
 main(): int {
     values: []u8 = view_of()

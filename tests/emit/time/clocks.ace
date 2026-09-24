@@ -12,7 +12,9 @@ extern "c" {
     c_usleep(micros: u32): i32 = "usleep"
 }
 
-wait_us(micros: u32) { c_usleep(micros) }
+wait_us(micros: u32) {
+    c_usleep(micros)
+}
 
 check_nondecreasing(): int {
     asleep1: u64 = time.elapsed()

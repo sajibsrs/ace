@@ -13,7 +13,7 @@ main(): int {
     line: int = @line
     if line != 13 { return 1 }
     if !mem.equal(@file, "main.ace") { return 2 }
-    if !mem.equal(where.file(), "sub/where.ace") || where.line() != 4 { return 3 }
+    if !mem.equal(where.file(), "sub/where.ace") || where.line() != 6 { return 3 }
     if !mem.equal(outside.file(), "../location_outside/outside.ace") { return 4 }
     return 0
 }

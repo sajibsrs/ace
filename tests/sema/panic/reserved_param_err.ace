@@ -1,5 +1,9 @@
 /* Panic reserved param fixture. */
 
-read(panic: string): int { return 0 }
+read(panic: string): int {
+    return 0
+}
 
-main(): int { return read("x") }
+main(): int {
+    return read("x")
+}

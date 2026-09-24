@@ -6,9 +6,13 @@
 
 import bits
 
-pass64(x: f64): f64 { return x }
+pass64(x: f64): f64 {
+    return x
+}
 
-pass32(x: f32): f32 { return x }
+pass32(x: f32): f32 {
+    return x
+}
 
 main(): int {
     a: f64 = 0.125

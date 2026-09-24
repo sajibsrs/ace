@@ -1,6 +1,8 @@
 Item: struct { value: int }
 
-build(pointer: *Item, count: usize): []Item { return []Item(pointer, count) }
+build(pointer: *Item, count: usize): []Item {
+    return []Item(pointer, count)
+}
 
 main(): int {
     value: []Item = build(*Item(usize(0xfffffffffffffff8)), usize(2))

@@ -1,4 +1,7 @@
-write(mut values: [2]i32, index: usize) { values[index] = 9 }
+write(mut values: [2]i32, index: usize) {
+    values[index] = 9
+}
+
 main(): int {
     values: [2]i32 = [1, 2]
     write(mut values, 2)

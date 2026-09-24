@@ -1,3 +1,5 @@
 static_assert(1 < 2 < 2)
 
-main(): int { return 0 }
+main(): int {
+    return 0
+}

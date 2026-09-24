@@ -1,1 +1,3 @@
-pub greet(): int { return 9 }
+pub greet(): int {
+    return 9
+}

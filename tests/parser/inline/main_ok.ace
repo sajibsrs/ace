@@ -1,9 +1,17 @@
 Owner: struct { n: int }
 
-inline plain(): int { return 0 }
+inline plain(): int {
+    return 0
+}
 
-pub inline Owner.read(): int { return self.n }
+pub inline Owner.read(): int {
+    return self.n
+}
 
-pub inline mut Owner.write() { self.n = 1 }
+pub inline mut Owner.write() {
+    self.n = 1
+}
 
-inline Owner::make(): Owner { return Owner{ n = 0 } }
+inline Owner::make(): Owner {
+    return Owner{ n = 0 }
+}

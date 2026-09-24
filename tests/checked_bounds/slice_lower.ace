@@ -1,4 +1,7 @@
-cut(values: []i32, lo: i32): []i32 { return values[lo..] }
+cut(values: []i32, lo: i32): []i32 {
+    return values[lo..]
+}
+
 main(): int {
     values: [2]i32 = [1, 2]
     cut(values[0..2], -1)

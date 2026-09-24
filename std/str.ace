@@ -631,7 +631,9 @@ pub parse[f32](text: string): (f32, bool) {
 }
 
 /* True for exactly the ASCII whitespace bytes 0x09..0x0D and 0x20. */
-space_byte(c: u8): bool { return (c >= '\t' && c <= '\r') || c == ' ' }
+space_byte(c: u8): bool {
+    return (c >= '\t' && c <= '\r') || c == ' '
+}
 
 /* Renders the canonical notation into out: decimal for scientific exponents
  * -6 through 20, otherwise scientific like 1.5e-7. The sign comes first and

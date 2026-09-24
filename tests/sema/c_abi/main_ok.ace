@@ -36,7 +36,9 @@ export write_value(value: mut *i32): i32 {
 export no_result() {
 }
 
-export combine(pointer: mut *u8, value: u32): int { return int(value) }
+export combine(pointer: mut *u8, value: u32): int {
+    return int(value)
+}
 
 zero: extern "c" () = no_result
 many: extern "c" (mut *u8, u32): int = combine

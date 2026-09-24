@@ -7,9 +7,15 @@ import os: "./missing.ace"
 import os: "./darwin.ace"
 
 @when(target != "darwin-arm64")
-selected(): int { return missing_name }
+selected(): int {
+    return missing_name
+}
 
 @when(target == "darwin-arm64")
-selected(): int { return os.value() }
+selected(): int {
+    return os.value()
+}
 
-main(): int { return selected() - 17 }
+main(): int {
+    return selected() - 17
+}

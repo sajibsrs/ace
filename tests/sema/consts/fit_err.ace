@@ -4,4 +4,6 @@ H: distinct u8
 
 h: const H = H(300)
 
-main(): int { return 0 }
+main(): int {
+    return 0
+}

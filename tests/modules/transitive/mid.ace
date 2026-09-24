@@ -2,4 +2,6 @@
 
 import leaf from "./leaf.ace"
 
-pub mid(): int { return leaf() + 3 }
+pub mid(): int {
+    return leaf() + 3
+}

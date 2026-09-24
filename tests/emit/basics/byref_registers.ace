@@ -13,7 +13,9 @@ Counter: struct {
 
 seen: int
 
-note(x: int) { seen = seen + x }
+note(x: int) {
+    seen = seen + x
+}
 
 // the loop reads the receiver's fields straight through its register
 mut Counter.run(n: int) {
@@ -38,7 +40,9 @@ mut Counter.relay(n: int): int {
     return self.value
 }
 
-bump(mut c: Counter, by: int) { c.steps = c.steps + by }
+bump(mut c: Counter, by: int) {
+    c.steps = c.steps + by
+}
 
 // the pointer's last use precedes the local, which may take its register
 share(mut c: Counter, n: int): int {
@@ -61,7 +65,9 @@ ninth(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int, mut k: Cou
 }
 
 // a deferred mut call captures the pointer at the defer statement
-finish(mut c: Counter, x: int) { c.steps = c.steps + x }
+finish(mut c: Counter, x: int) {
+    c.steps = c.steps + x
+}
 
 deferred(mut c: Counter, n: int): int {
     defer finish(mut c, share(mut c, n))

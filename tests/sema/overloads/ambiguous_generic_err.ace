@@ -1,7 +1,13 @@
 /* Overload ambiguous generic fixture. */
 
-pick[T](value: T): T { return value }
+pick[T](value: T): T {
+    return value
+}
 
-pick[T](value: int): int { return value }
+pick[T](value: int): int {
+    return value
+}
 
-main(): int { return pick[int](1) }
+main(): int {
+    return pick[int](1)
+}

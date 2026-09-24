@@ -2,4 +2,6 @@
 
 import ambiguous_probe
 
-main(): int { return ambiguous_probe.value }
+main(): int {
+    return ambiguous_probe.value
+}

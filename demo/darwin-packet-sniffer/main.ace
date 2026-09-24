@@ -15,7 +15,9 @@ import bpf: "./packet.ace"
 
 CAPTURE_CAPACITY: const usize = 524288
 
-report(context: string, err: Error) { fmt.printf("%s: error %d\n", context, int(err.code)) }
+report(context: string, err: Error) {
+    fmt.printf("%s: error %d\n", context, int(err.code))
+}
 
 print_hex_byte(value: u8) {
     digits: string = "0123456789abcdef"

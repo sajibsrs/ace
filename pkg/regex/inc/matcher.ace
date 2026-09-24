@@ -97,7 +97,9 @@ inline mut Queue.insert(pc: u32) {
     self.count += 1
 }
 
-inline is_word(byte: u8): bool { return '0' <= byte <= '9' || 'A' <= byte <= 'Z' || 'a' <= byte <= 'z' || byte == '_' }
+inline is_word(byte: u8): bool {
+    return '0' <= byte <= '9' || 'A' <= byte <= 'Z' || 'a' <= byte <= 'z' || byte == '_'
+}
 
 /* Whether `at` sits between a word byte and a non-word byte, the text's ends
  * counting as non-word.

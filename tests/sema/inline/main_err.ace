@@ -1,1 +1,3 @@
-inline main(): int { return 0 }
+inline main(): int {
+    return 0
+}

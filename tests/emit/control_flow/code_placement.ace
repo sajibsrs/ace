@@ -2,7 +2,9 @@
 
 // expect-exit: 42
 
-tiny(x: int): int { return x + 1 }
+tiny(x: int): int {
+    return x + 1
+}
 
 odd(x: int): int {
     y: int = x * 3

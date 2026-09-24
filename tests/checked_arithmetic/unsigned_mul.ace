@@ -1,2 +1,7 @@
-value(): u64 { return u64(0xffffffffffffffff) }
-main(): int { return int(value() * u64(2)) }
+value(): u64 {
+    return u64(0xffffffffffffffff)
+}
+
+main(): int {
+    return int(value() * u64(2))
+}

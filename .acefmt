@@ -43,6 +43,7 @@ after-result-group = always
 space-before-open = always
 inner-space = one-line-nonempty
 empty-body = same-line
+function-body = multi-line
 single-statement-body = same-line-if-fits
 
 [comments]

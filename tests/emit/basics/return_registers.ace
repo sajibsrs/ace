@@ -36,7 +36,9 @@ bump(): usize {
     return hits + 100
 }
 
-small_step(s: Small): Small { return Small { v = (s.v * 48271 + 1) & MASK } }
+small_step(s: Small): Small {
+    return Small { v = (s.v * 48271 + 1) & MASK }
+}
 
 pair_step(p: Pair): Pair {
     return Pair {
@@ -74,7 +76,9 @@ packed(p: Packed): Packed {
     }
 }
 
-divmod(a: usize, b: usize): (usize, usize) { return a / b, a % b }
+divmod(a: usize, b: usize): (usize, usize) {
+    return a / b, a % b
+}
 
 deferred(s: Small): Small {
     defer bump()

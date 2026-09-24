@@ -18,19 +18,33 @@ Flags: struct {
 }
 
 // the shape the matcher reads: a bounds test guarding a load
-has(dense: []u32, count: usize, at: u32, pc: u32): bool { return usize(at) < count && dense[usize(at)] == pc }
+has(dense: []u32, count: usize, at: u32, pc: u32): bool {
+    return usize(at) < count && dense[usize(at)] == pc
+}
 
-both(a: int, b: int): bool { return a < b && b < 10 }
+both(a: int, b: int): bool {
+    return a < b && b < 10
+}
 
-either(a: int, b: int): bool { return a == 0 || b == 0 }
+either(a: int, b: int): bool {
+    return a == 0 || b == 0
+}
 
-stored(f: Flags): bool { return f.ready && f.open }
+stored(f: Flags): bool {
+    return f.ready && f.open
+}
 
-stored_or(f: Flags): bool { return f.ready || f.open }
+stored_or(f: Flags): bool {
+    return f.ready || f.open
+}
 
-nested(a: int, b: int, c: int): bool { return (a < b || b < c) && !(a == c && c == 0) }
+nested(a: int, b: int, c: int): bool {
+    return (a < b || b < c) && !(a == c && c == 0)
+}
 
-less(x: f64, y: f64): bool { return x < y && y < 100.0 }
+less(x: f64, y: f64): bool {
+    return x < y && y < 100.0
+}
 
 main(): int {
     score: int = 0

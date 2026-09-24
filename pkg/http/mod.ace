@@ -44,7 +44,9 @@ pub POST: const string = message.POST
 pub PUT: const string = message.PUT
 pub TRACE: const string = message.TRACE
 
-pub status(code: u16): string { return message.status(code) }
+pub status(code: u16): string {
+    return message.status(code)
+}
 
 pub get(value: string, mut context: ClientContext): (Response, Error) {
     response: Response, err: Error = client.get(value, mut context)

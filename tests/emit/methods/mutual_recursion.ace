@@ -9,9 +9,13 @@ Parser.value(n: int): int {
     return self.object(n) + self.array(n)
 }
 
-Parser.object(n: int): int { return 1 + self.value(n - 1) }
+Parser.object(n: int): int {
+    return 1 + self.value(n - 1)
+}
 
-Parser.array(n: int): int { return 1 + self.value(n - 1) }
+Parser.array(n: int): int {
+    return 1 + self.value(n - 1)
+}
 
 main(): int {
     p: Parser = Parser { depth = 0 }

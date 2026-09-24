@@ -2,7 +2,9 @@
 
 Span: struct { start: usize, end: usize }
 
-first(spans: []Span): usize { return spans[0].start }
+first(spans: []Span): usize {
+    return spans[0].start
+}
 
 main(): int {
     spans: [2]Span

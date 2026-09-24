@@ -1,7 +1,13 @@
 @when(true)
-same(): int { return 1 }
+same(): int {
+    return 1
+}
 
 @when(target == "darwin-arm64")
-same(): int { return 2 }
+same(): int {
+    return 2
+}
 
-main(): int { return same() }
+main(): int {
+    return same()
+}

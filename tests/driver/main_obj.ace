@@ -8,4 +8,6 @@ extern "c" {
     helper_value(): int
 }
 
-main(): int { return helper_value() }
+main(): int {
+    return helper_value()
+}

@@ -23,7 +23,9 @@ make_outer(tag: u16): Outer {
     }
 }
 
-split(): (int, [2]u8) { return 5, [8, 9] }
+split(): (int, [2]u8) {
+    return 5, [8, 9]
+}
 
 main(): int {
     a: Pair = make_pair(u16(1))

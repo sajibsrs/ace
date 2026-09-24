@@ -13,7 +13,9 @@ Val: union {
     flag: bool,
 }
 
-twice(x: int): int { return x * 2 }
+twice(x: int): int {
+    return x * 2
+}
 
 // payloads in the arms of a loop: each binder is read several times
 weigh(v: Val): int {

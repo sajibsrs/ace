@@ -1,7 +1,13 @@
 /* A specialization's signature must equal the substituted generic signature. */
 
-pick[T](a: T, b: T): T { return a }
+pick[T](a: T, b: T): T {
+    return a
+}
 
-pick[int](a: int, b: string): int { return 1 }
+pick[int](a: int, b: string): int {
+    return 1
+}
 
-main(): int { return 0 }
+main(): int {
+    return 0
+}

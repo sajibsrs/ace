@@ -1,4 +1,7 @@
-offset(value: usize): usize { return value }
+offset(value: usize): usize {
+    return value
+}
+
 main(): int {
     value: u64 = 0
     pointer: *u64 = &value

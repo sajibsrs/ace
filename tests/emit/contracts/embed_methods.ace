@@ -13,9 +13,13 @@ Base: struct {
 
 Base signs Value
 
-Base.get(): int { return self.value }
+Base.get(): int {
+    return self.value
+}
 
-mut Base.add(amount: int) { self.value = self.value + amount }
+mut Base.add(amount: int) {
+    self.value = self.value + amount
+}
 
 Outer: struct {
     prefix: int,

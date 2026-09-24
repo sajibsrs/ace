@@ -9,7 +9,9 @@ P: struct { a: int, b: f64, c: string }
 Color: enum { red, green }
 Id: distinct u32
 
-zero_of[T](): T { return blank(T) }
+zero_of[T](): T {
+    return blank(T)
+}
 
 main(): int {
     r: int = 0

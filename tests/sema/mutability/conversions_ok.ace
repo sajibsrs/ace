@@ -1,13 +1,17 @@
 /* string, []char, and []u8 are intent spellings of one view type; writable
  * spellings likewise share identity and permission. */
 
-alias_view(views: []char): string { return views }
+alias_view(views: []char): string {
+    return views
+}
 
 from_call_result(view: mut []u8): mut string { // selection is type-driven
     return view
 }
 
-round_trip(text: mut string): mut []u8 { return text }
+round_trip(text: mut string): mut []u8 {
+    return text
+}
 
 shrink(text: mut string): string {
     return text // permission shrink is implicit; widening never

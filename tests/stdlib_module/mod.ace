@@ -4,4 +4,6 @@ import impl: "./impl.ace"
 
 pub Number: type = impl.Number
 
-pub value(): Number { return impl.value }
+pub value(): Number {
+    return impl.value
+}

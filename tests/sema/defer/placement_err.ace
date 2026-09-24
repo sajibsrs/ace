@@ -2,7 +2,9 @@
  * body block. Every defer below sits in a nested block — if, for, a switch
  * case, and a labeled block — so each must be rejected. */
 
-touch(): int { return 1 }
+touch(): int {
+    return 1
+}
 
 main(): int {
     if true { defer touch() }

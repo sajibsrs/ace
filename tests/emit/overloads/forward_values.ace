@@ -5,12 +5,18 @@
 
 // expect-exit: 42
 
-pair(a: u64): (u64, int) { return a, 1 }
+pair(a: u64): (u64, int) {
+    return a, 1
+}
 
-g(a: u64): u64 { return a }
+g(a: u64): u64 {
+    return a
+}
 
 // the single signature materializes 5 as u64
-narrow(): int { return int(g(5)) + int(g(1) + 1) * 2 }
+narrow(): int {
+    return int(g(5)) + int(g(1) + 1) * 2
+}
 
 // typed names under '=' are new against what was declared before
 use_pair(): int {
@@ -24,23 +30,37 @@ zero(): int {
     return z + int(later() + 1)
 }
 
-f(a: u64): u64 { return a }
+f(a: u64): u64 {
+    return a
+}
 
 // the untyped 5 selects the exact f(int) declared below
-pick(): int { return int(f(5)) }
+pick(): int {
+    return int(f(5))
+}
 
 Box[T]: struct { v: T }
 
 // a generic body using both kinds of values
-get[T](b: Box[T]): int { return int(later()) + int(g(5)) }
+get[T](b: Box[T]): int {
+    return int(later()) + int(g(5))
+}
 
-tree(): int { return 100 }
+tree(): int {
+    return 100
+}
 
-blank(): int { return 0 }
+blank(): int {
+    return 0
+}
 
-later(): u64 { return 7 }
+later(): u64 {
+    return 7
+}
 
-f(a: int): u64 { return u64(a + 1) }
+f(a: int): u64 {
+    return u64(a + 1)
+}
 
 main(): int {
     b: Box[int] = Box[int] { v = 1 }

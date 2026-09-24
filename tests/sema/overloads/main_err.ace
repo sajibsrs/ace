@@ -1,7 +1,13 @@
 /* Overload nomatch fixture. */
 
-show(value: int): int { return value }
+show(value: int): int {
+    return value
+}
 
-show(value: string): int { return int(value.len) }
+show(value: string): int {
+    return int(value.len)
+}
 
-main(): int { return show(true) }
+main(): int {
+    return show(true)
+}

@@ -2,4 +2,6 @@
 
 import s: "./shared.ace"
 
-pub f(): int { return s.take(7) }
+pub f(): int {
+    return s.take(7)
+}

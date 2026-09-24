@@ -5,7 +5,9 @@ Writable: contract { mut write(value: int) }
 
 Thing signs Writable
 
-mut Thing.write(value: int) { self.value = value }
+mut Thing.write(value: int) {
+    self.value = value
+}
 
 main(): int {
     thing: const Thing = Thing { value = 1 }

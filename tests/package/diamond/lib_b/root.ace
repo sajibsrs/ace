@@ -1,1 +1,3 @@
-pub f(): int { return 3 }
+pub f(): int {
+    return 3
+}

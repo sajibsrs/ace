@@ -6,7 +6,9 @@ import mem
 import poll
 import sys
 
-has_error(err: Error, domain: typeid): bool { return err != null && err.domain == domain && err.code != 0 }
+has_error(err: Error, domain: typeid): bool {
+    return err != null && err.domain == domain && err.code != 0
+}
 
 main(): int {
     q: poll.Queue, err: Error = poll.queue()

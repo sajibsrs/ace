@@ -1,3 +1,6 @@
 pub Same: error
 pub Alias: type = Same
-pub make(code: i32): Error { return Same(code) }
+
+pub make(code: i32): Error {
+    return Same(code)
+}

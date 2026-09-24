@@ -1,3 +1,5 @@
 inline weight[K](key: K): u64 specialized
 
-weight[int](key: int): u64 { return 1 }
+weight[int](key: int): u64 {
+    return 1
+}

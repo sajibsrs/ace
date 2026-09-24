@@ -2,7 +2,9 @@
 
 import fmt
 
-g(a: usize): usize { return a + 1 }
+g(a: usize): usize {
+    return a + 1
+}
 
 bad(): int {
     fmt.printf("%u\n", g(41))

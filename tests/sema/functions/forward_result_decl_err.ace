@@ -6,4 +6,6 @@ main(): int {
     return int(s.len)
 }
 
-later(): u64 { return 300 }
+later(): u64 {
+    return 300
+}

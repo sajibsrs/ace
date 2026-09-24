@@ -31,7 +31,9 @@ Arr: struct {
 }
 
 // The object's first function label is the section, so it stays a dummy.
-first(): usize { return 0 }
+first(): usize {
+    return 0
+}
 
 vec_add(a: Vec3, b: Vec3): Vec3 {
     return Vec3 {
@@ -76,29 +78,51 @@ swap2(a: Vec2): Vec2 {
 }
 
 // s arrives on the stack, past d0-d7, and is read after the homed leaves
-stacked(a: Vec3, b: Vec3, c: f64, d: f64, s: f64): f64 { return a.x + b.z + c + d + s }
+stacked(a: Vec3, b: Vec3, c: f64, d: f64, s: f64): f64 {
+    return a.x + b.z + c + d + s
+}
 
-dot(a: Vec3, b: Vec3): f64 { return a.x * b.x + a.y * b.y + a.z * b.z }
+dot(a: Vec3, b: Vec3): f64 {
+    return a.x * b.x + a.y * b.y + a.z * b.z
+}
 
-second(a: Vec3): f64 { return a.y }
+second(a: Vec3): f64 {
+    return a.y
+}
 
-unused(a: Vec3, b: Vec3): f64 { return b.z }
+unused(a: Vec3, b: Vec3): f64 {
+    return b.z
+}
 
-sum2(a: Vec2, b: Vec2): f32 { return a.x + b.y }
+sum2(a: Vec2, b: Vec2): f32 {
+    return a.x + b.y
+}
 
-widen(a: Vec2): f64 { return f64(a.x) + f64(a.y) }
+widen(a: Vec2): f64 {
+    return f64(a.x) + f64(a.y)
+}
 
-area(r: Rect): f64 { return (r.max.x - r.min.x) * (r.max.y - r.min.y) }
+area(r: Rect): f64 {
+    return (r.max.x - r.min.x) * (r.max.y - r.min.y)
+}
 
 // operand order and literals on either side
-order(a: Vec3): f64 { return (2.0 - a.x) / a.y - a.z * 0.5 }
+order(a: Vec3): f64 {
+    return (2.0 - a.x) / a.y - a.z * 0.5
+}
 
-negate(a: Vec3): f64 { return -a.x + a.y }
+negate(a: Vec3): f64 {
+    return -a.x + a.y
+}
 
-bigger(a: Vec3, b: Vec3): bool { return a.x > b.x }
+bigger(a: Vec3, b: Vec3): bool {
+    return a.x > b.x
+}
 
 // a whole-value use keeps the slot; the other parameter still qualifies
-pass(a: Vec3): Vec3 { return a }
+pass(a: Vec3): Vec3 {
+    return a
+}
 
 mixed(a: Vec3, b: Vec3): f64 {
     c: Vec3 = b
@@ -106,15 +130,23 @@ mixed(a: Vec3, b: Vec3): f64 {
 }
 
 // a runtime index needs the array in memory
-pick(a: Arr, i: usize): f64 { return a.v[i] }
+pick(a: Arr, i: usize): f64 {
+    return a.v[i]
+}
 
 // a call clobbers the registers, so a non-leaf keeps its slots
-twice(x: f64): f64 { return x * 2.0 }
+twice(x: f64): f64 {
+    return x * 2.0
+}
 
-after_call(a: Vec3): f64 { return twice(a.x) + a.y }
+after_call(a: Vec3): f64 {
+    return twice(a.x) + a.y
+}
 
 // three parameters exceed the register budget: the last keeps its slot
-sum3(a: Vec3, b: Vec3, c: Vec3): f64 { return a.x + a.y + a.z + b.x + b.y + b.z + c.x + c.y + c.z }
+sum3(a: Vec3, b: Vec3, c: Vec3): f64 {
+    return a.x + a.y + a.z + b.x + b.y + b.z + c.x + c.y + c.z
+}
 
 in_loop(a: Vec3): f64 {
     acc: f64 = 0.0
@@ -122,7 +154,9 @@ in_loop(a: Vec3): f64 {
     return acc
 }
 
-deep(a: Vec3): f64 { return a.x * (a.y + (a.z * (a.x + (a.y * (a.z + (a.x * (a.y + a.z))))))) }
+deep(a: Vec3): f64 {
+    return a.x * (a.y + (a.z * (a.x + (a.y * (a.z + (a.x * (a.y + a.z)))))))
+}
 
 main(): int {
     a: Vec3 = Vec3 {

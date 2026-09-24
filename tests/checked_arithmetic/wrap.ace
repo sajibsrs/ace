@@ -4,7 +4,9 @@
 
 import bits
 
-runtime_u64(value: u64): u64 { return value }
+runtime_u64(value: u64): u64 {
+    return value
+}
 
 main(): int {
     if bits.wradd(u8(250), u8(10)) != u8(4) ||

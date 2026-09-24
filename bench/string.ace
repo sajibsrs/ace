@@ -8,7 +8,9 @@ import mem
 import str
 import time
 
-now(): u64 { return time.awake() }
+now(): u64 {
+    return time.awake()
+}
 
 report(name: string, elapsed: u64, operations: usize, checksum: usize) {
     fmt.printf("%s %u %u %u\n", name, usize(elapsed), operations, checksum)

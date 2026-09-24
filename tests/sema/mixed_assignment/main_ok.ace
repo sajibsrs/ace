@@ -1,7 +1,11 @@
 /* `=` decides declaration or reassignment independently for each name. */
-pair(): (int, Error) { return 7, null }
+pair(): (int, Error) {
+    return 7, null
+}
 
-error_first(): (Error, int) { return null, 9 }
+error_first(): (Error, int) {
+    return null, 9
+}
 
 main(): int {
     err: Error = null

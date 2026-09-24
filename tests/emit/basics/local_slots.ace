@@ -2,11 +2,17 @@
 
 // expect-exit: 42
 
-id8(x: i8): i8 { return x }
+id8(x: i8): i8 {
+    return x
+}
 
-idi(x: int): int { return x }
+idi(x: int): int {
+    return x
+}
 
-idf(x: f64): f64 { return x }
+idf(x: f64): f64 {
+    return x
+}
 
 // narrow signed locals sign-extend when read after a call
 narrow(): int {

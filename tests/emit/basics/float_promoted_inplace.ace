@@ -14,7 +14,9 @@ xs: [8]f64
 ys: [8]f64
 
 // The object's first function label is the section, so it stays a dummy.
-first(): usize { return 0 }
+first(): usize {
+    return 0
+}
 
 sum(): f64 {
     total: f64 = 0.0
@@ -98,7 +100,9 @@ recurrence32(): f32 {
     return x
 }
 
-twice(x: f64): f64 { return x * 2.0 }
+twice(x: f64): f64 {
+    return x * 2.0
+}
 
 // a promoted float survives a call: d8 and up are callee-saved
 across_call(): f64 {
@@ -118,7 +122,9 @@ leaf_dot(p: Vec3, q: Vec3): f64 {
     return acc
 }
 
-bump(mut x: f64, by: f64) { x = x + by }
+bump(mut x: f64, by: f64) {
+    x = x + by
+}
 
 // an escaping local keeps its slot and the plain path
 escaped(): f64 {

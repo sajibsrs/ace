@@ -18,13 +18,17 @@ pub Packet: struct {
     protocol: u8,
 }
 
-native_u16(data: []u8, at: usize): u16 { return u16(data[at]) | (u16(data[at + 1]) << 8) }
+native_u16(data: []u8, at: usize): u16 {
+    return u16(data[at]) | (u16(data[at + 1]) << 8)
+}
 
 native_u32(data: []u8, at: usize): u32 {
     return u32(data[at]) | (u32(data[at + 1]) << 8) | (u32(data[at + 2]) << 16) | (u32(data[at + 3]) << 24)
 }
 
-network_u16(data: []u8, at: usize): u16 { return (u16(data[at]) << 8) | u16(data[at + 1]) }
+network_u16(data: []u8, at: usize): u16 {
+    return (u16(data[at]) << 8) | u16(data[at + 1])
+}
 
 /* Decode one complete Darwin bpf_hdr plus frame and BPF_WORDALIGN padding.
  * A false result never exposes partially decoded offsets.

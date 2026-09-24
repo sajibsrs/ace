@@ -14,7 +14,9 @@ loopback(port: u16): net.Addr4 {
     }
 }
 
-is_error(err: Error, domain: typeid): bool { return err != null && err.domain == domain }
+is_error(err: Error, domain: typeid): bool {
+    return err != null && err.domain == domain
+}
 
 client(port: u16): int {
     connection: tcp.Conn, err: Error = tcp.connect(loopback(port))

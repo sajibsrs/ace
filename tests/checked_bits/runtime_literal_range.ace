@@ -1,6 +1,8 @@
 Flags: bits u8 { value: 3, _: 5 }
 
-dynamic(): u8 { return 10 }
+dynamic(): u8 {
+    return 10
+}
 
 main(): int {
     flags: Flags = Flags { value = dynamic() }

@@ -14,8 +14,14 @@ bad(left: *Item, right: *Item, signed: int, small: u32, offset: usize) {
     left *= offset
 }
 
-zero_sized(pointer: *Empty) { bad: *Empty = pointer + 1 }
+zero_sized(pointer: *Empty) {
+    bad: *Empty = pointer + 1
+}
 
-scaled_constant(pointer: *Item) { bad: *Item = pointer + usize(0xffffffffffffffff) }
+scaled_constant(pointer: *Item) {
+    bad: *Item = pointer + usize(0xffffffffffffffff)
+}
 
-readonly(pointer: *Item, offset: usize) { pointer += offset }
+readonly(pointer: *Item, offset: usize) {
+    pointer += offset
+}

@@ -1,3 +1,5 @@
 /* Companion module for the Selective collision fixture. */
 
-pub work(): int { return 1 }
+pub work(): int {
+    return 1
+}

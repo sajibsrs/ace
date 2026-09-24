@@ -64,9 +64,13 @@ ramp100_ok(x: [100]u8): bool {
     return true
 }
 
-split(): (Big, [33]u8) { return big(10), ramp33() }
+split(): (Big, [33]u8) {
+    return big(10), ramp33()
+}
 
-far_split(): ([4100]u8, Big) { return [0 : 4100], big(80) }
+far_split(): ([4100]u8, Big) {
+    return [0 : 4100], big(80)
+}
 
 sizes(): int {
     source: [4096]u8 = [0 : 4096]

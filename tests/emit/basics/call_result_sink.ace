@@ -51,9 +51,13 @@ Outer: struct {
 global_pair: Pair
 
 // The object's first function label is the section, so it stays a dummy.
-first(): usize { return 0 }
+first(): usize {
+    return 0
+}
 
-small_step(s: Small): Small { return Small { v = (s.v * 3 + 1) & MASK } }
+small_step(s: Small): Small {
+    return Small { v = (s.v * 3 + 1) & MASK }
+}
 
 pair_step(p: Pair): Pair {
     return Pair {
@@ -107,11 +111,17 @@ padded_step(p: Padded): Padded {
     }
 }
 
-divmod(a: usize, b: usize): (usize, usize) { return a / b, a % b }
+divmod(a: usize, b: usize): (usize, usize) {
+    return a / b, a % b
+}
 
-halves(a: f64): (f64, f64) { return a / 2.0, a * 2.0 }
+halves(a: f64): (f64, f64) {
+    return a / 2.0, a * 2.0
+}
 
-flagged(a: usize): (usize, bool) { return a + 1, a > 5 }
+flagged(a: usize): (usize, bool) {
+    return a + 1, a > 5
+}
 
 sink_small(s: Small): Small {
     t: Small = s

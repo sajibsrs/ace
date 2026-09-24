@@ -16,17 +16,25 @@ Scores: type = [2][2]Score
 Boxes: type = [2][2]Box[i32]
 Choices: type = [2][2]Choice[i32]
 
-id[T](value: T): T { return value }
+id[T](value: T): T {
+    return value
+}
 
-replace[T](values: mut []T, index: int, value: T) { values[index] = value }
+replace[T](values: mut []T, index: int, value: T) {
+    values[index] = value
+}
 
 make_points(): [2][2]Point {
     return [[Point { x = 1, y = 2 }, Point { x = 3, y = 4 }], [Point { x = 5, y = 6 }, Point { x = 7, y = 8 }]]
 }
 
-make_colors(): [2][2]Color { return [[Color.red, Color.green], [Color.blue, Color.red]] }
+make_colors(): [2][2]Color {
+    return [[Color.red, Color.green], [Color.blue, Color.red]]
+}
 
-make_scores(): [2][2]Score { return [[Score(1), Score(2)], [Score(3), Score(4)]] }
+make_scores(): [2][2]Score {
+    return [[Score(1), Score(2)], [Score(3), Score(4)]]
+}
 
 make_boxes(): [2][2]Box[i32] {
     return [[Box[i32] { value = 1 }, Box[i32] { value = 2 }], [Box[i32] { value = 3 }, Box[i32] { value = 4 }]]

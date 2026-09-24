@@ -7,23 +7,42 @@
 // expect-exit: 42
 
 Point: struct { x: int, y: int }
-id8(x: i8): i8 { return x }
 
-set(p: mut *int, v: int) { *p = v }
+id8(x: i8): i8 {
+    return x
+}
 
-bump(mut x: int, by: int) { x = x + by }
+set(p: mut *int, v: int) {
+    *p = v
+}
 
-idf(x: f64): f64 { return x }
+bump(mut x: int, by: int) {
+    x = x + by
+}
 
-setf(p: mut *f64, v: f64) { *p = v }
+idf(x: f64): f64 {
+    return x
+}
 
-bumpf(mut x: f64, by: f64) { x = x + by }
+setf(p: mut *f64, v: f64) {
+    *p = v
+}
 
-peek(p: *int): int { return *p }
+bumpf(mut x: f64, by: f64) {
+    x = x + by
+}
 
-pair(): (int, int) { return (3, 4) }
+peek(p: *int): int {
+    return *p
+}
 
-read_x(p: *Point): int { return p.x }
+pair(): (int, int) {
+    return (3, 4)
+}
+
+read_x(p: *Point): int {
+    return p.x
+}
 
 // narrow locals keep their width through register moves and calls
 widths(): int {

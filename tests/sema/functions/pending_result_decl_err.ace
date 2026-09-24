@@ -1,7 +1,9 @@
 /* A call that resolves at end of file (its untyped argument waits for the
  * complete overload set) is still checked where its value lands. */
 
-f(a: u64): u64 { return a }
+f(a: u64): u64 {
+    return a
+}
 
 main(): int {
     y: u8 = f(300)

@@ -64,24 +64,38 @@ pub socket(socket_type: SocketType): (Socket, Error) {
     return result, err
 }
 
-pub reuseaddr(sock: Socket, enabled: bool): Error { return os.reuseaddr(sock, enabled) }
+pub reuseaddr(sock: Socket, enabled: bool): Error {
+    return os.reuseaddr(sock, enabled)
+}
 
-pub reuseport(sock: Socket, enabled: bool): Error { return os.reuseport(sock, enabled) }
+pub reuseport(sock: Socket, enabled: bool): Error {
+    return os.reuseport(sock, enabled)
+}
 
-pub nonblock(sock: Socket, enabled: bool): Error { return os.nonblock(sock, enabled) }
+pub nonblock(sock: Socket, enabled: bool): Error {
+    return os.nonblock(sock, enabled)
+}
 
-pub bind(sock: Socket, address: Addr4): Error { return os.bind(sock, address) }
+pub bind(sock: Socket, address: Addr4): Error {
+    return os.bind(sock, address)
+}
 
-pub listen(sock: Socket, backlog: usize): Error { return os.listen(sock, backlog) }
+pub listen(sock: Socket, backlog: usize): Error {
+    return os.listen(sock, backlog)
+}
 
 pub accept(listener: Socket): (Socket, Addr4, Error) {
     accepted: Socket, address: Addr4, err: Error = os.accept(listener)
     return accepted, address, err
 }
 
-pub connect(sock: Socket, address: Addr4): Error { return os.connect(sock, address) }
+pub connect(sock: Socket, address: Addr4): Error {
+    return os.connect(sock, address)
+}
 
-pub pending_error(sock: Socket): Error { return os.pending_error(sock) }
+pub pending_error(sock: Socket): Error {
+    return os.pending_error(sock)
+}
 
 pub local(sock: Socket): (Addr4, Error) {
     address: Addr4, err: Error = os.local(sock)

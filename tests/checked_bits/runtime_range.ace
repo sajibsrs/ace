@@ -1,7 +1,12 @@
 Flags: bits u8 { value: 3, signed_value: signed 3, _: 2 }
 
-dynamic_unsigned(): u8 { return 10 }
-dynamic_signed(): i8 { return 5 }
+dynamic_unsigned(): u8 {
+    return 10
+}
+
+dynamic_signed(): i8 {
+    return 5
+}
 
 main(): int {
     flags: Flags = Flags {}

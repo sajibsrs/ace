@@ -14,7 +14,9 @@ Header: struct { op: Opcode, delta: Delta, pad: u8 }
 default_opcode: Opcode
 saved_opcode: const Opcode = Opcode.store
 
-round(op: Opcode): Opcode { return op }
+round(op: Opcode): Opcode {
+    return op
+}
 
 main(): int {
     header: Header = Header {

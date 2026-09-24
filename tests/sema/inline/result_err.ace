@@ -1,1 +1,3 @@
-inline name(): string { return "ace" }
+inline name(): string {
+    return "ace"
+}

@@ -9,8 +9,14 @@ Shape: contract {
 
 Point signs Shape
 
-Point.area(): f32 { return self.x }
+Point.area(): f32 {
+    return self.x
+}
 
-mut Point.scale(k: f32) { self.x = self.x * k }
+mut Point.scale(k: f32) {
+    self.x = self.x * k
+}
 
-f(s: Shape) { s.scale(1.0) }
+f(s: Shape) {
+    s.scale(1.0)
+}

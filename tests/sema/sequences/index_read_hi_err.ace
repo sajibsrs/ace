@@ -1,2 +1,4 @@
 /* An index equal to the statically known length is out of bounds. */
-main(): int { return int("ab"[2]) }
+main(): int {
+    return int("ab"[2])
+}

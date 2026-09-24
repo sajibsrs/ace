@@ -32,9 +32,13 @@ inline mut Counter.bump(by: int): bool {
     return true
 }
 
-inline Counter.big(): bool { return self.n > 10 }
+inline Counter.big(): bool {
+    return self.n > 10
+}
 
-inline add_to(mut total: int, v: int) { total += v }
+inline add_to(mut total: int, v: int) {
+    total += v
+}
 
 inline find(xs: []int, want: int): usize {
     for i: usize in 0 .. xs.len {
@@ -49,28 +53,47 @@ inline last[T](xs: []T, first: bool): usize {
 }
 
 fold[K](key: K): u64 specialized
-inline fold[int](key: int): u64 { return mix(u64(key)) + 1 }
 
-inline sq(x: int): int { return x * x }
+inline fold[int](key: int): u64 {
+    return mix(u64(key)) + 1
+}
 
-inline half(x: f64): f64 { return x * 0.5 }
+inline sq(x: int): int {
+    return x * x
+}
 
-inline outer(x: int): int { return later(x) + 1 }
+inline half(x: f64): f64 {
+    return x * 0.5
+}
 
-inline later(x: int): int { return x * 3 }
+inline outer(x: int): int {
+    return later(x) + 1
+}
 
-inline small(x: int): bool { return x < 4 }
+inline later(x: int): int {
+    return x * 3
+}
 
-slow(x: int): int { return x + 100 }
+inline small(x: int): bool {
+    return x < 4
+}
+
+slow(x: int): int {
+    return x + 100
+}
 
 inline mixed(x: int): int {
     y: int = slow(x)
     return y - 100 + x
 }
 
-release(v: int) { released += v }
+release(v: int) {
+    released += v
+}
 
-apply(f: (int): int, v: int): int { return f(v) }
+apply(f: (int): int, v: int): int {
+    return f(v)
+}
 
 run(): int {
     defer release(sq(3))

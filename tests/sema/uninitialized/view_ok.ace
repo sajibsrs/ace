@@ -2,7 +2,9 @@
 
 Span: struct { start: usize, end: usize }
 
-first(spans: []Span): usize { return spans[0].start }
+first(spans: []Span): usize {
+    return spans[0].start
+}
 
 fill(spans: mut []Span) {
     for i: usize in usize(0) .. spans.len {
@@ -13,9 +15,13 @@ fill(spans: mut []Span) {
     }
 }
 
-set(value: mut *usize) { *value = 1 }
+set(value: mut *usize) {
+    *value = 1
+}
 
-peek(value: *usize): usize { return *value }
+peek(value: *usize): usize {
+    return *value
+}
 
 render(spans: []Span, out: mut []u8): usize {
     out[0] = u8(48 + spans[0].start)

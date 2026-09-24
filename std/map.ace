@@ -45,15 +45,41 @@ inline mix(value: u64): u64 {
     return x ^ (x >> 31)
 }
 
-inline hash[i8](key: i8): u64 { return mix(u64(key)) }
-inline hash[i16](key: i16): u64 { return mix(u64(key)) }
-inline hash[i32](key: i32): u64 { return mix(u64(key)) }
-inline hash[i64](key: i64): u64 { return mix(u64(key)) }
-inline hash[u8](key: u8): u64 { return mix(u64(key)) }
-inline hash[u16](key: u16): u64 { return mix(u64(key)) }
-inline hash[u32](key: u32): u64 { return mix(u64(key)) }
-inline hash[u64](key: u64): u64 { return mix(key) }
-inline hash[usize](key: usize): u64 { return mix(u64(key)) }
+inline hash[i8](key: i8): u64 {
+    return mix(u64(key))
+}
+
+inline hash[i16](key: i16): u64 {
+    return mix(u64(key))
+}
+
+inline hash[i32](key: i32): u64 {
+    return mix(u64(key))
+}
+
+inline hash[i64](key: i64): u64 {
+    return mix(u64(key))
+}
+
+inline hash[u8](key: u8): u64 {
+    return mix(u64(key))
+}
+
+inline hash[u16](key: u16): u64 {
+    return mix(u64(key))
+}
+
+inline hash[u32](key: u32): u64 {
+    return mix(u64(key))
+}
+
+inline hash[u64](key: u64): u64 {
+    return mix(key)
+}
+
+inline hash[usize](key: usize): u64 {
+    return mix(u64(key))
+}
 
 inline hash[bool](key: bool): u64 {
     if key { return mix(1) }
@@ -67,17 +93,49 @@ inline hash[string](key: string): u64 {
     return mix(h)
 }
 
-inline same[i8](a: i8, b: i8): bool { return a == b }
-inline same[i16](a: i16, b: i16): bool { return a == b }
-inline same[i32](a: i32, b: i32): bool { return a == b }
-inline same[i64](a: i64, b: i64): bool { return a == b }
-inline same[u8](a: u8, b: u8): bool { return a == b }
-inline same[u16](a: u16, b: u16): bool { return a == b }
-inline same[u32](a: u32, b: u32): bool { return a == b }
-inline same[u64](a: u64, b: u64): bool { return a == b }
-inline same[usize](a: usize, b: usize): bool { return a == b }
-inline same[bool](a: bool, b: bool): bool { return a == b }
-inline same[string](a: string, b: string): bool { return mem.equal(a, b) }
+inline same[i8](a: i8, b: i8): bool {
+    return a == b
+}
+
+inline same[i16](a: i16, b: i16): bool {
+    return a == b
+}
+
+inline same[i32](a: i32, b: i32): bool {
+    return a == b
+}
+
+inline same[i64](a: i64, b: i64): bool {
+    return a == b
+}
+
+inline same[u8](a: u8, b: u8): bool {
+    return a == b
+}
+
+inline same[u16](a: u16, b: u16): bool {
+    return a == b
+}
+
+inline same[u32](a: u32, b: u32): bool {
+    return a == b
+}
+
+inline same[u64](a: u64, b: u64): bool {
+    return a == b
+}
+
+inline same[usize](a: usize, b: usize): bool {
+    return a == b
+}
+
+inline same[bool](a: bool, b: bool): bool {
+    return a == b
+}
+
+inline same[string](a: string, b: string): bool {
+    return mem.equal(a, b)
+}
 
 /* The slot holding `key`, or else the empty slot where it belongs. `slots` is
  * nonempty and never full, which the load limit guarantees.
