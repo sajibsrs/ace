@@ -86,23 +86,23 @@ mut Queue.wipe() {
 }
 
 /* `sparse` may hold a stale index; it counts only when `dense` agrees. */
-Queue.has(pc: u32): bool {
+inline Queue.has(pc: u32): bool {
     at: u32 = self.sparse[usize(pc)]
     return usize(at) < self.count && self.dense[usize(at)] == pc
 }
 
-mut Queue.insert(pc: u32) {
+inline mut Queue.insert(pc: u32) {
     self.sparse[usize(pc)] = u32(self.count)
     self.dense[self.count] = pc
     self.count += 1
 }
 
-is_word(byte: u8): bool { return '0' <= byte <= '9' || 'A' <= byte <= 'Z' || 'a' <= byte <= 'z' || byte == '_' }
+inline is_word(byte: u8): bool { return '0' <= byte <= '9' || 'A' <= byte <= 'Z' || 'a' <= byte <= 'z' || byte == '_' }
 
 /* Whether `at` sits between a word byte and a non-word byte, the text's ends
  * counting as non-word.
  */
-is_boundary(text: string, at: usize): bool {
+inline is_boundary(text: string, at: usize): bool {
     before: bool = at > 0 && is_word(text[at - 1])
     after: bool = at < text.len && is_word(text[at])
     return before != after

@@ -1438,6 +1438,11 @@ current normative rules, and Git preserves patch-level detail.
   and `span(k)` read the recorded match, replacing `captures`. `bench/regex`
   checksums are unchanged and every workload is within 1.2% of the previous
   build, inside run-to-run spread.
+- Marked `pkg/regex`'s per-byte helpers `inline`: `Queue.has`,
+  `Queue.insert`, `is_word`, `is_boundary`, and `Class.has`. `bench/regex`
+  runs 7-16% faster per byte (`literal` 32.2 to 28.4 ns, `pathological` 175.6
+  to 146.7), retires 6.3% fewer instructions, and grows its text by 1,024
+  bytes; checksums are unchanged.
 - Gave `pkg/json` a convenience layer over its public core. The tagged union
   is now `Value` (in `inc/value.ace`), and `Json` (in `inc/json.ace`, matching
   `regex.Regex`) holds a `Parser`, a `Formatter`, and `root`: the input tree.

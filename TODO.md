@@ -51,7 +51,7 @@ next, in this order.
   for a use case where the union itself owns the behavior.
 - **`pkg/regex` search prefilter** [new] — the Pike VM seeds a thread at
   every byte, while PCRE2 skips to candidate positions: `literal` runs at
-  46.94 ns/B against PCRE2's 1.47 (`bench/README.md`), which bounds the gain.
+  28.4 ns/B against PCRE2's 1.65 (`bench/README.md`), which bounds the gain.
   Candidate: skip ahead with `str`'s word-at-a-time search to the pattern's
   required first byte or first-byte class. Measure first.
 

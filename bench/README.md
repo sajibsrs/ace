@@ -925,6 +925,25 @@ billion against C's 1.02 (2.31x, from 2.39x). Cycles fell 2.1%, 0.4%, and
 7.0% on the first three rows with `pathological` 0.2% up (3.0% down for the
 whole bench), and 0.5%, 0.9%, 6.9%, and 0.1% (3.5%) in a second round.
 
+### Regex after inline helpers
+
+Nine interleaved runs at `c34055d` with `Queue.has`, `Queue.insert`,
+`is_word`, `is_boundary`, and `Class.has` marked `inline` in `pkg/regex`,
+first run discarded, medians in ns per byte; PCRE2 from one `run-regex.sh` run:
+
+| workload | Ace | C | Ace/C | PCRE2 | PCRE2 JIT |
+|---|---|---|---|---|---|
+| `literal` | 28.4 | 11.3 | 2.51x | 1.65 | 0.06 |
+| `word-ing` | 52.4 | 27.0 | 1.94x | 52.01 | 5.48 |
+| `captures` | 60.8 | 33.6 | 1.81x | 12.34 | 3.53 |
+| `pathological` | 146.7 | 72.0 | 2.04x | 11813.56 | 946.05 |
+
+The same compiler without the markers measured 32.2, 60.3, 65.4, and 175.6 ns
+(7-16% slower), with every checksum matching C. The whole bench retires 2.23
+billion instructions against 2.38 without the markers and C's 1.02 (2.18x,
+from 2.32x); text grows from 90,220 to 91,244 bytes. `Matcher.add`, where
+`captures` spends its time, is still a call.
+
 ## Compile time
 
 Run the compile-time benchmark on Apple arm64:
