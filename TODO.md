@@ -267,8 +267,12 @@ These are baseline observations, not performance promises.
   nested call's result passes through each expansion's result temp; a `bool`
   result used as a condition is materialized and retested instead of
   branching to the caller's targets; and a read-only scalar parameter copies
-  an argument local the body could read in place. Private inline functions
-  keep an out-of-line body even when no call or function value uses it.
+  an argument local the body could read in place. A scalar local passed to a
+  `mut` parameter binds by address, which keeps it in its frame slot for the
+  whole caller: `str`'s integer-parse loop runs 20-25% slower when its
+  accumulator is updated through a `mut` parameter than when the loop updates
+  it after a check-only helper. Private inline functions keep an out-of-line
+  body even when no call or function value uses it.
   Each needs its gain measured.
 - **Tail-call optimization** [new] — a `return f(args)` still emits `bl` plus a
   full epilogue, so tail recursion grows the stack linearly and overflows at

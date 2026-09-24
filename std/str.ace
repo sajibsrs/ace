@@ -539,14 +539,9 @@ inline digit_value(c: u8): u64 {
     return 36
 }
 
-/* Accumulates one digit into `mag` with the overflow-before-multiply check;
- * false leaves `mag` unchanged.
- */
-inline accumulate(mut mag: u64, d: u64, radix: u8, limit: u64): bool {
-    if mag > (limit - d) / u64(radix) { return false }
-
-    mag = mag * u64(radix) + d
-    return true
+/* Whether mag * radix + d stays within `limit`, checked before multiplying. */
+inline fits(mag: u64, d: u64, radix: u8, limit: u64): bool {
+    return mag <= (limit - d) / u64(radix)
 }
 
 /* Parses the complete text as a signed integer in the given radix. The
@@ -570,7 +565,8 @@ pub parse[int](text: string, radix: u8): (int, bool) {
 
     for i: usize in at .. text.len {
         d: u64 = digit_value(text[i])
-        if d >= u64(radix) || !accumulate(mut mag, d, radix, limit) { return 0, false }
+        if d >= u64(radix) || !fits(mag, d, radix, limit) { return 0, false }
+        mag = mag * u64(radix) + d
     }
 
     if negative {
@@ -590,7 +586,8 @@ pub parse[uint](text: string, radix: u8): (uint, bool) {
 
     for i: usize in 0 .. text.len {
         d: u64 = digit_value(text[i])
-        if d >= u64(radix) || !accumulate(mut mag, d, radix, 18446744073709551615) { return 0, false }
+        if d >= u64(radix) || !fits(mag, d, radix, 18446744073709551615) { return 0, false }
+        mag = mag * u64(radix) + d
     }
     return uint(mag), true
 }

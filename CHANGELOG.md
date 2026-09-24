@@ -1484,6 +1484,13 @@ current normative rules, and Git preserves patch-level detail.
   cases, and `accumulate` updates a `mut` magnitude and returns only the
   overflow flag. Decimal `parse[int]`/`parse[uint]` run 50% faster, radix-16
   44%, and rejected inputs 58%; dropping the tuple results alone gave 29-44%.
+- Replaced `str`'s `accumulate(mut mag, …)` with the check-only
+  `fits(mag, d, radix, limit)`, the loop updating `mag` itself. The `mut`
+  argument had pinned `mag` to its frame slot, so every digit loaded and
+  stored it; in a register, decimal parsing runs 21-25% faster, radix-16 12%,
+  and rejected inputs 24%. Hoisting the per-digit overflow division into a
+  per-parse cutoff and remainder gained nothing: the division depends only on
+  the digit and overlaps the multiply-add chain.
 - Gave `pkg/json` a convenience layer over its public core. The tagged union
   is now `Value` (in `inc/value.ace`), and `Json` (in `inc/json.ace`, matching
   `regex.Regex`) holds a `Parser`, a `Formatter`, and `root`: the input tree.
