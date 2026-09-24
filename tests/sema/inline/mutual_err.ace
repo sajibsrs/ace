@@ -1,0 +1,3 @@
+inline even(n: int): bool { return n == 0 || odd(n - 1) }
+
+inline odd(n: int): bool { return n != 0 && even(n - 1) }

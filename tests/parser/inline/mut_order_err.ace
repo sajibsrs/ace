@@ -1,0 +1,3 @@
+Owner: struct { n: int }
+
+mut inline Owner.write() { self.n = 1 }

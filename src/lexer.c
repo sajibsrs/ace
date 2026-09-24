@@ -247,6 +247,7 @@ static const struct {
     {"type", T_TYPE},         {"enum", T_ENUM},         {"union", T_UNION},
     {"specialized", T_SPECIALIZED},
     {"intrinsic", T_INTRINSIC},
+    {"inline", T_INLINE},
     {"volatile", T_VOLATILE},
     {"null", T_NULL},
     {"true", T_TRUE},         {"false", T_FALSE},

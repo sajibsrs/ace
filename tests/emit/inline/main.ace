@@ -1,0 +1,106 @@
+/* inline expansion: value, mut, and receiver bindings; nested, forward, and
+ * generic callees; a specialization; a loop with an early return; a float
+ * result; calls inside operands, loop conditions, and short-circuit
+ * operands with temps live around them; a real call inside an inlined body;
+ * and the out-of-line symbol through a function value and a defer.
+ */
+
+// expect-exit: 0
+// expect-output: 10 5 30 2 3 0 1 412 35 4 35 36 9
+
+import fmt
+
+released: int = 0
+
+inline mix(value: u64): u64 {
+    x: u64 = value
+    x = x ^ (x >> 30)
+    return x ^ (x >> 31)
+}
+
+inline twice(a: int): int {
+    if mix(u64(a)) == 0 { return 0 }
+    return a * 2
+}
+
+Counter: struct { n: int, hits: int }
+
+inline mut Counter.bump(by: int): bool {
+    if by < 0 { return false }
+    self.n += by
+    self.hits += 1
+    return true
+}
+
+inline Counter.big(): bool { return self.n > 10 }
+
+inline add_to(mut total: int, v: int) { total += v }
+
+inline find(xs: []int, want: int): usize {
+    for i: usize in 0 .. xs.len {
+        if xs[i] == want { return i }
+    }
+    return xs.len
+}
+
+inline last[T](xs: []T, first: bool): usize {
+    if first { return 0 }
+    return xs.len - 1
+}
+
+fold[K](key: K): u64 specialized
+inline fold[int](key: int): u64 { return mix(u64(key)) + 1 }
+
+inline sq(x: int): int { return x * x }
+
+inline half(x: f64): f64 { return x * 0.5 }
+
+inline outer(x: int): int { return later(x) + 1 }
+
+inline later(x: int): int { return x * 3 }
+
+inline small(x: int): bool { return x < 4 }
+
+slow(x: int): int { return x + 100 }
+
+inline mixed(x: int): int {
+    y: int = slow(x)
+    return y - 100 + x
+}
+
+release(v: int) { released += v }
+
+apply(f: (int): int, v: int): int { return f(v) }
+
+run(): int {
+    defer release(sq(3))
+    return 0
+}
+
+main(): int {
+    c: Counter = Counter{ n = 0, hits = 0 }
+    total: int = 0
+    for i: int in 0 .. 5 {
+        if !mut c.bump(i) { return 1 }
+        add_to(mut total, i + twice(i))
+    }
+    ok: bool = mut c.bump(-1)
+    arr: [4]int = [3, 5, 7, 9]
+    at: usize = find(arr[..], 7)
+    big: int = 0
+    if c.big() { big = 1 }
+    same: int = 0
+    if fold[int](3) == mix(3) + 1 && !ok { same = 1 }
+
+    a: int = 5
+    b: int = a + sq(a) * sq(a - 1) + outer(2)
+    h: f64 = half(3.0) + half(half(8.0))
+    n: int = 0
+    for small(n) && sq(n) >= 0 { n += 1 }
+    m: int = 7 + mixed(a) * 2 + mixed(sq(2))
+    g: int = apply(sq, 6)
+    r: int = run()
+    fmt.printf("%d %d %d %d %d %d %d %d %d %d %d %d %d\n", c.n, c.hits, total, int(at),
+               int(last[int](arr[..], false)), big, same, b, int(h * 10.0), n, m, g, released + r)
+    return 0
+}

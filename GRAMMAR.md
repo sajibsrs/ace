@@ -13,7 +13,7 @@ newline       := significant — terminates statements (see §6 Notes)
 keyword       := "import" | "from" | "pub" | "mut" | "const" | "noalias" | "if" | "else"
                 | "for" | "in" | "switch" | "default" | "return" | "break" | "continue" | "defer"
                 | "asm" | "extern" | "export" | "contract" | "struct" | "embed" | "signs"
-                | "specialized" | "intrinsic" | "distinct" | "type" | "enum" | "union" | "null" | "true" | "false"
+                | "specialized" | "intrinsic" | "inline" | "distinct" | "type" | "enum" | "union" | "null" | "true" | "false"
                 | "volatile"
 
 ident         := letter ("letter" | digit | "_")*        [P: exact ident charset]
@@ -63,7 +63,7 @@ module_path   := ident ("/" ident)*             // net/tcp; only the leaf binds
 import_path   := string_lit                     // "./util.ace" or "../A/B" (no .ace = nested)
 internal_import := "@" ident                              // compiler-reserved std implementation
 
-top_decl      := ["pub"] top_body
+top_decl      := ["pub"] ["inline"] top_body                 // "inline": function forms only (SPEC Functions & ABI #8)
 top_body      := var_decl | const_decl | func_decl | struct_decl
                | static_map_decl
                | bits_decl | contract_decl | enum_decl | union_decl | alias_decl | distinct_decl

@@ -393,6 +393,29 @@ typedef struct {
 #define PARAM_FHOMES 8 // register-homed float leaves of incoming HFA parameters, in their argument registers
 #define PARAM_HOMES (PARAM_FHOMES + LEAF_REGS) // plus x14 down: integer-class leaves
 
+/*
+ * One direct call to an inline function, planned before its caller is
+ * emitted: the callee's parameters and body copied with fresh binders, so
+ * every planner sees the expansion as the caller's own code.
+ */
+typedef struct {
+    int      n;      // bindings: the receiver, then the parameters
+    Node**   arg;    // argument expressions, a mut mark unwrapped
+    Node**   bind;   // a by-reference parameter's binder, or an N_VAR holding a value
+    uint8_t* byref;
+    Node*    body;   // the copied body block
+    SType*   ret;    // the result type, or NULL
+    Node*    tail;   // a final top-level return, which falls into the join
+} InlineSite;
+
+typedef struct {
+    int    join; // label after the expansion
+    int    res;  // result temp
+    int    fp;
+    SType* ret;
+    Node*  tail;
+} InlineCtx;
+
 typedef struct {
     Diag* d;
     Node* file;
@@ -501,7 +524,26 @@ typedef struct {
     int      nlines, clines;
     DebugFn* debug_fns;
     int      ndebug_fns, cdebug_fns;
+    // inline expansion (Functions & ABI #8), per emitted function
+    PtrMap   inl_ix;     // call node -> InlineSite*
+    PtrMap   copy_node;  // callee node -> its copy, while copying one callee
+    PtrMap   copy_sym;   // callee local -> its copy
+    Node**   inl_path;   // callees inline_plan is expanding, outermost first
+    int      ninl_path, cinl_path;
+    InlineCtx* inl;      // expansions being emitted, innermost last
+    int      ninl, cinl;
+    int      vti_base, vtf_base; // statement boundaries reset the temps to these
 } Em;
+
+static InlineSite* inline_site(Em* e, Node* call) {
+    return call && call->kind == N_CALL ? (InlineSite*)ptrmap_get(&e->inl_ix, call) : NULL;
+}
+
+// a statement boundary: the temps an enclosing inline call holds stay live
+static void temps_reset(Em* e) {
+    e->vti = e->vti_base;
+    e->vtf = e->vtf_base;
+}
 
 
 static void em_err(Em* e, Node* n, const char* fmt, ...) {
@@ -628,6 +670,7 @@ static void line_mark(Em* e, Node* n) {
     if (!n || n->line <= 0) return;
     uint32_t addr = (uint32_t)text(e)->len;
     e->peep_bar = addr; // a line row's first instruction stays its own
+    if (e->ninl) return; // inlined code keeps its call site's line
     const char* path = n->path ? n->path : e->d->path;
     if (e->nlines && e->lines[e->nlines - 1].addr == addr) {
         e->lines[e->nlines - 1] = (LineRow){ addr, n->line, n->col, path };
@@ -4733,8 +4776,85 @@ static void emit_math_fused(Em* e, int dst, int a, int b, int c, int is64) {
                         (uint32_t)vreg(e, c), is64);
 }
 
+/*
+ * A call to an inline function, planned by inline_plan: bind each argument
+ * to its copied parameter, emit the copied body in place, and join its
+ * returns after it with the result in a temp. The enclosing expression's
+ * temps stay live: the body's statements reset to the temps above them.
+ */
+static EV gen_inline(Em* e, InlineSite* site) {
+    int fp = site->ret && is_floatt(site->ret);
+    int res = !site->ret ? 0 : fp ? tmp_fp(e) : tmp_int(e);
+    int held_i = e->vti, held_f = e->vtf;
+    int base_i = e->vti_base, base_f = e->vtf_base;
+    e->vti_base = held_i;
+    e->vtf_base = held_f;
+    if (e->ninl == e->cinl) {
+        e->cinl = e->cinl ? e->cinl * 2 : 8;
+        e->inl = realloc(e->inl, (size_t)e->cinl * sizeof(InlineCtx));
+        if (!e->inl) oom();
+    }
+    int join = new_label(e);
+    e->inl[e->ninl++] = (InlineCtx){ join, res, fp, site->ret, site->tail };
+
+    for (int i = 0; i < site->n; i++) {
+        temps_reset(e);
+        if (!site->byref[i]) {
+            emit_stmt(e, site->bind[i]); // the value parameter's N_VAR
+            continue;
+        }
+        Node* a = site->arg[i];
+        int addr;
+        if (is_lvalue_node(a)) {
+            addr = gen_addr(e, a);
+        } else {
+            EV v = gen_expr(e, a);
+            if (v.cls != CLS_ADDR) em_err(e, a, "aggregate argument must materialize in memory");
+            addr = v.idx;
+        }
+        Node* b = site->bind[i];
+        int br = bref_reg(e, node_sym(b));
+        if (br >= 0) {
+            mov_int(e, 1, br, xreg(addr));
+        } else {
+            uint32_t slot = slot_alloc(e, b, 8, 8);
+            e->slots[e->nslots - 1].byref = 1;
+            store_frame(e, xreg(addr), slot, 8);
+        }
+    }
+    for (int i = 0; i < site->body->nkids; i++) emit_stmt(e, site->body->kids[i]);
+    if (site->ret && !site->tail) { // falls off only where no path reaches
+        if (fp) ins(e, (unwrap(site->ret)->prim == P_F64 ? 0x9E6703E0u : 0x1E2703E0u) | (uint32_t)vreg(e, res));
+        else load_imm(e, 1, xreg(res), 0);
+    }
+    bind_label(e, join);
+    e->ninl--;
+    e->vti_base = base_i;
+    e->vtf_base = base_f;
+    e->vti = held_i;
+    e->vtf = held_f;
+    if (!site->ret) return (EV){ CLS_INT, 0 };
+    return (EV){ fp ? CLS_FP : CLS_INT, res };
+}
+
+// a return inside an inline expansion: the result to its temp, then the join
+static void inline_return(Em* e, Node* s) {
+    InlineCtx* c = &e->inl[e->ninl - 1];
+    if (s->a && c->ret) {
+        EV v = gen_expr(e, s->a);
+        if (c->fp) {
+            if (v.idx != c->res) fmov_raw(e, unwrap(c->ret)->prim == P_F64, vreg(e, c->res), vreg(e, v.idx));
+        } else if (v.idx != c->res) {
+            mov_int(e, scalar_bits(c->ret) == 64, xreg(c->res), xreg(v.idx));
+        }
+    }
+    if (s != c->tail) br_(e, c->join);
+}
+
 static EV gen_call(Em* e, Node* call) {
     Node* callee = call->a;
+    InlineSite* site = inline_site(e, call);
+    if (site) return gen_inline(e, site);
 
     // usize -> data pointer: identical bits, plus the local checked alignment
     // diagnostic promised by the explicit trust boundary.
@@ -6718,7 +6838,7 @@ static int gen_call_to_binders(Em* e, Node* call, SType** wants, uint32_t* offs,
 
 static void emit_stmt(Em* e, Node* s) {
     line_mark(e, s->kind == N_EXPRSTMT ? s->a : s);
-    e->vti = 0; e->vtf = 0; // statement boundary
+    temps_reset(e); // statement boundary
     switch (s->kind) {
     case N_VAR: {
         if (s->flags & F_MIXED) {
@@ -7133,7 +7253,7 @@ static void emit_stmt(Em* e, Node* s) {
                 bcond_(e, ty_is_signed(rt) ? C_GE : C_HS, lbreak);
                 if (vpr >= 0) set_preg(e, vpr, rcur, elem);
                 else store_frame(e, rcur, vs, (uint32_t)((scalar_bits(elem) + 7) / 8));
-                e->vti = 0; e->vtf = 0;
+                temps_reset(e);
                 if (e->nctx >= 64) {
                     em_err(e, s, "control flow nested too deeply");
                     return;
@@ -7257,7 +7377,7 @@ static void emit_stmt(Em* e, Node* s) {
                 cbz_(e, 1, rcnt, 0, lbreak);
                 if (vpr >= 0) set_preg(e, vpr, rcur, elem);
                 else store_frame(e, rcur, vs, (uint32_t)((scalar_bits(elem) + 7) / 8));
-                e->vti = 0; e->vtf = 0;
+                temps_reset(e);
                 if (e->nctx >= 64) {
                     em_err(e, s, "control flow nested too deeply");
                     return;
@@ -7287,7 +7407,7 @@ static void emit_stmt(Em* e, Node* s) {
             }
             if (vpr >= 0) set_preg(e, vpr, xreg(ti), elem);
             else store_frame(e, xreg(ti), vs, scalar_bits(elem) > rbits ? 8u : (uint32_t)((scalar_bits(elem) + 7) / 8));
-            e->vti = 0; e->vtf = 0;
+            temps_reset(e);
             if (e->nctx >= 64) {
                 em_err(e, s, "control flow nested too deeply");
                 return;
@@ -7306,7 +7426,7 @@ static void emit_stmt(Em* e, Node* s) {
             load_frame(e, xreg(tc2), cslot, 8, 0);
             ins(e, 0xD1000000u | (1u << 10) | (xreg(tc2) << 5) | xreg(tc2));
             store_frame(e, xreg(tc2), cslot, 8);
-            e->vti = 0;
+            e->vti = e->vti_base;
             br_(e, lcond);
             bind_label(e, lbreak);
             return;
@@ -7372,7 +7492,7 @@ static void emit_stmt(Em* e, Node* s) {
             }
             if (ipr >= 0) mov_int(e, 1, ipr, rix);
             else if (index_binder) store_frame(e, rix, ivs, 8);
-            e->vti = 0; e->vtf = 0;
+            temps_reset(e);
             if (e->nctx >= 64) {
                 em_err(e, s, "control flow nested too deeply");
                 return;
@@ -7430,7 +7550,7 @@ static void emit_stmt(Em* e, Node* s) {
             load_frame(e, 16, ixslot, 8, 0);
             store_frame(e, 16, ivs, 8);
         }
-        e->vti = 0; e->vtf = 0;
+        temps_reset(e);
         if (e->nctx >= 64) {
             em_err(e, s, "control flow nested too deeply");
             return;
@@ -7452,7 +7572,7 @@ static void emit_stmt(Em* e, Node* s) {
             ins(e, 0x91000000u | (1u << 10) | (16u << 5) | 16u);
             store_frame(e, 16, ixslot, 8);
         }
-        e->vti = 0;
+        e->vti = e->vti_base;
         br_(e, lcond);
         bind_label(e, lbreak);
         return;
@@ -7511,6 +7631,10 @@ static void emit_stmt(Em* e, Node* s) {
         return;
     }
     case N_RETURN: {
+        if (e->ninl) {
+            inline_return(e, s);
+            return;
+        }
         SType* rt = e->fnret;
         RetCls rc;
         classify_ret(rt, &rc);
@@ -7853,6 +7977,181 @@ static int range_up(Node* r, uint64_t* end) {
     return !sig && lo == 0;
 }
 
+// --- inline expansion planning (Functions & ABI #8) ---------------------------------
+
+// The inline function a direct call names, with the type arguments its body
+// is stamped under; mirrors gen_call's target selection.
+static Node* inline_target(Node* call, SType*** targs, int* ntargs) {
+    Node* callee = call->a;
+    *targs = NULL;
+    *ntargs = 0;
+    if (callee->kind == N_INDEX && callee->sym) {
+        Sym* gs = node_sym(callee);
+        if (!gs->decl || !(gs->decl->flags & F_INLINE)) return NULL;
+        for (STypeInst* inst = sema_insts(gs->decl); inst; inst = inst->next)
+            if (inst->result == callee->ty) {
+                *targs = inst->args;
+                *ntargs = gs->decl->c ? gs->decl->c->nkids : 0;
+                return gs->decl;
+            }
+        return NULL;
+    }
+    Sym* s = call->sym ? node_sym(call) : NULL;
+    if (!s || s->kind != SYM_FUNC || s->is_extern || !s->decl || !(s->decl->flags & F_INLINE)) return NULL;
+    if (s->is_generic) { // a method of a generic type: its owner's arguments
+        SType* cft = node_ty(callee);
+        if (!cft || cft->kind != SK_FUNC) cft = s->type;
+        SType* owner = (call->flags & F_ASSOC) ? (callee->kind == N_FIELD_E ? node_ty(callee->a) : NULL)
+                     : cft && cft->nparams > 0 ? cft->params[0] : NULL;
+        if (!owner) return NULL;
+        *targs = owner->args;
+        *ntargs = owner->nargs;
+    }
+    return s->decl;
+}
+
+// n and everything under it, each node once; Node.d only as a general for's body
+static Node* inline_copy(Em* e, Node* n) {
+    if (!n) return NULL;
+    Node* c = (Node*)ptrmap_get(&e->copy_node, n);
+    if (c) return c;
+    c = (Node*)arena_alloc(sizeof(Node));
+    *c = *n;
+    ptrmap_put(&e->copy_node, n, (uintptr_t)c);
+    c->a = inline_copy(e, n->a);
+    c->b = inline_copy(e, n->b);
+    c->c = inline_copy(e, n->c);
+    if (n->kind == N_FOR && (n->flags & F_FORGEN)) c->d = inline_copy(e, n->d);
+    if (n->nkids) {
+        c->kids = (Node**)arena_alloc((size_t)n->nkids * sizeof(Node*));
+        for (int i = 0; i < n->nkids; i++) c->kids[i] = inline_copy(e, n->kids[i]);
+    }
+    return c;
+}
+
+// point a copy's names at fresh locals whose binders are the copied ones
+static void inline_resym(Em* e, Node* c, PtrMap* seen) {
+    if (!c || ptrmap_get(seen, c)) return;
+    ptrmap_put(seen, c, 1);
+    Sym* s = node_sym(c);
+    if (s && s->kind == SYM_VAR && !s->is_global && s->decl) {
+        Node* d = (Node*)ptrmap_get(&e->copy_node, s->decl);
+        if (d) {
+            Sym* ns = (Sym*)ptrmap_get(&e->copy_sym, s);
+            if (!ns) {
+                ns = (Sym*)arena_alloc(sizeof(Sym));
+                *ns = *s;
+                ns->decl = d;
+                ptrmap_put(&e->copy_sym, s, (uintptr_t)ns);
+            }
+            c->sym = ns;
+        }
+    }
+    inline_resym(e, c->a, seen);
+    inline_resym(e, c->b, seen);
+    inline_resym(e, c->c, seen);
+    if (c->kind == N_FOR && (c->flags & F_FORGEN)) inline_resym(e, c->d, seen);
+    for (int i = 0; i < c->nkids; i++) inline_resym(e, c->kids[i], seen);
+}
+
+static void inline_plan(Em* e, Node* n);
+
+// plan the expansion of one call to an inline function, and of those in its copy
+static void inline_plan_call(Em* e, Node* call) {
+    SType** targs;
+    int ntargs;
+    Node* f = inline_target(call, &targs, &ntargs);
+    if (!f || !f->b) return;
+    for (int i = 0; i < e->ninl_path; i++)
+        if (e->inl_path[i] == f) { // sema reports cycles it can see before stamping
+            em_err(e, call, "inline function '%.*s' reaches itself through inline calls; a recursive call cannot be expanded",
+                   (int)f->len, f->str);
+            return;
+        }
+    Node* callee = call->a;
+    Node* args[41];
+    int n = 0;
+    if (callee->kind == N_FIELD_E && !(call->flags & (F_METHOD | F_ASSOC))) args[n++] = callee->a; // receiver
+    if (n + call->nkids != f->nkids || f->nkids > 40) return;
+    for (int i = 0; i < call->nkids; i++) args[n++] = call->kids[i];
+    Sym* fs = node_sym(f);
+    if (f->c && !(fs && fs->spec_args)) sema_stamp_body(f, targs, ntargs);
+
+    ptrmap_clear(&e->copy_node);
+    ptrmap_clear(&e->copy_sym);
+    InlineSite* site = (InlineSite*)arena_alloc(sizeof(InlineSite));
+    memset(site, 0, sizeof *site);
+    site->n = n;
+    site->arg = (Node**)arena_alloc((size_t)(n ? n : 1) * sizeof(Node*));
+    site->bind = (Node**)arena_alloc((size_t)(n ? n : 1) * sizeof(Node*));
+    site->byref = (uint8_t*)arena_alloc((size_t)(n ? n : 1));
+    for (int i = 0; i < n; i++) site->bind[i] = inline_copy(e, f->kids[i]);
+    site->body = inline_copy(e, f->b);
+    PtrMap seen = {0};
+    for (int i = 0; i < n; i++) inline_resym(e, site->bind[i], &seen);
+    inline_resym(e, site->body, &seen);
+    ptrmap_free(&seen);
+
+    for (int i = 0; i < n; i++) {
+        Node* p = f->kids[i];
+        Sym* ps = node_sym(site->bind[i]);
+        int mut = (p->flags & F_MUT) || ((f->flags & F_METHOD) && i == 0);
+        Node* a = args[i];
+        if (a->kind == N_MUTARG) a = a->a;
+        site->arg[i] = a;
+        // a read-only aggregate binds to the argument's storage, as the
+        // by-address parameter ABI allows (Functions & ABI #3)
+        site->byref[i] = mut || !ps || !is_scalar(ps->type);
+        if (site->byref[i]) continue;
+        Node* v = (Node*)arena_alloc(sizeof(Node));
+        memset(v, 0, sizeof *v);
+        v->kind = N_VAR;
+        v->path = call->path;
+        v->line = call->line;
+        v->col = call->col;
+        v->kids = (Node**)arena_alloc(sizeof(Node*));
+        v->kids[0] = site->bind[i];
+        v->nkids = 1;
+        v->b = a;
+        site->bind[i] = v;
+    }
+    SType* ret = node_ty(call);
+    site->ret = ret && unwrap(ret)->kind != SK_VOID ? ret : NULL;
+    Node* body = site->body;
+    if (body->nkids && body->kids[body->nkids - 1]->kind == N_RETURN) site->tail = body->kids[body->nkids - 1];
+    ptrmap_put(&e->inl_ix, call, (uintptr_t)site);
+
+    if (e->ninl_path == e->cinl_path) {
+        e->cinl_path = e->cinl_path ? e->cinl_path * 2 : 16;
+        e->inl_path = realloc(e->inl_path, (size_t)e->cinl_path * sizeof(Node*));
+        if (!e->inl_path) oom();
+    }
+    e->inl_path[e->ninl_path++] = f;
+    inline_plan(e, site->body);
+    e->ninl_path--;
+}
+
+/*
+ * Before a function is emitted, attach a copy of the callee to every direct
+ * call of an inline function in its body, innermost calls included. A
+ * deferred call stays a call: it runs at the exits; its arguments may inline.
+ */
+static void inline_plan(Em* e, Node* n) {
+    if (!n) return;
+    if (n->kind == N_DEFER && n->a && n->a->kind == N_CALL) {
+        Node* c = n->a;
+        inline_plan(e, c->a);
+        for (int i = 0; i < c->nkids; i++) inline_plan(e, c->kids[i]);
+        return;
+    }
+    inline_plan(e, n->a);
+    inline_plan(e, n->b);
+    inline_plan(e, n->c);
+    if (n->kind == N_FOR && (n->flags & F_FORGEN)) inline_plan(e, n->d);
+    for (int i = 0; i < n->nkids; i++) inline_plan(e, n->kids[i]);
+    if (n->kind == N_CALL) inline_plan_call(e, n);
+}
+
 // registers a range or sequence loop keeps in x19-x28 (0: general loop)
 static int loop_own_regs(Node* s) {
     if (s->kind != N_FOR || (s->flags & F_FORGEN)) return 0;
@@ -7870,6 +8169,21 @@ static int loop_own_regs(Node* s) {
  * when its own chain fits the pool, so inner loops win and no nested chain of
  * register loops can exceed LOOP_REGS; loops beyond that keep frame slots.
  */
+static int plan_loops(Em* e, Node* s);
+
+// the loop register need of the inline expansions within expression x
+static int plan_inline_loops(Em* e, Node* x) {
+    if (!x) return 0;
+    int need = 0, n;
+    InlineSite* site = inline_site(e, x);
+    if (site) need = plan_loops(e, site->body);
+    if ((n = plan_inline_loops(e, x->a)) > need) need = n;
+    if ((n = plan_inline_loops(e, x->b)) > need) need = n;
+    if ((n = plan_inline_loops(e, x->c)) > need) need = n;
+    for (int i = 0; i < x->nkids; i++) if ((n = plan_inline_loops(e, x->kids[i])) > need) need = n;
+    return need;
+}
+
 static int plan_loops(Em* e, Node* s) {
     if (!s) return 0;
     int inner = 0, n;
@@ -7878,11 +8192,18 @@ static int plan_loops(Em* e, Node* s) {
         for (int i = 0; i < s->nkids; i++) if ((n = plan_loops(e, s->kids[i])) > inner) inner = n;
         return inner;
     case N_IF:
-        inner = plan_loops(e, s->b);
+        inner = plan_inline_loops(e, s->a);
+        if ((n = plan_loops(e, s->b)) > inner) inner = n;
         if ((n = plan_loops(e, s->c)) > inner) inner = n;
         return inner;
     case N_SWITCH:
-        for (int i = 0; i < s->nkids; i++) if ((n = plan_loops(e, s->kids[i]->b)) > inner) inner = n;
+        inner = plan_inline_loops(e, s->a);
+        for (int i = 0; i < s->nkids; i++) {
+            if ((n = plan_inline_loops(e, s->kids[i]->a)) > inner) inner = n;
+            for (int j = 0; j < s->kids[i]->nkids; j++)
+                if ((n = plan_inline_loops(e, s->kids[i]->kids[j])) > inner) inner = n;
+            if ((n = plan_loops(e, s->kids[i]->b)) > inner) inner = n;
+        }
         return inner;
     case N_LABEL:
         return plan_loops(e, s->a);
@@ -7890,7 +8211,14 @@ static int plan_loops(Em* e, Node* s) {
         e->fn_has_asm = 1;
         return 0;
     case N_FOR: {
-        if (s->flags & F_FORGEN) return plan_loops(e, s->d);
+        if (s->flags & F_FORGEN) { // a general loop keeps its state in frame slots
+            inner = plan_loops(e, s->d);
+            if ((n = plan_loops(e, s->a)) > inner) inner = n;
+            if ((n = plan_inline_loops(e, s->b)) > inner) inner = n;
+            if ((n = plan_loops(e, s->c)) > inner) inner = n;
+            return inner;
+        }
+        inner = plan_inline_loops(e, s->b); // the header runs before the loop
         int below = loop_own_regs(s) + plan_loops(e, s->c);
         if (below <= LOOP_REGS) {
             if (e->nlreg_loops == e->clreg_loops) {
@@ -7901,10 +8229,10 @@ static int plan_loops(Em* e, Node* s) {
             e->lreg_loops[e->nlreg_loops++] = s;
             if (below > e->lreg_max) e->lreg_max = below;
         }
-        return below;
+        return below > inner ? below : inner;
     }
     default:
-        return 0;
+        return plan_inline_loops(e, s);
     }
 }
 
@@ -8074,8 +8402,17 @@ static int call_is_inline(Node* call) {
  * operand plus its result. Statements hold nothing across their parts.
  * Lowerings with internal temps can exceed it; see TEMP_MARGIN.
  */
-static int temp_need(Node* n) {
+static int temp_need(Em* e, Node* n) {
     if (!n) return 0;
+    InlineSite* site = inline_site(e, n);
+    if (site) { // its result, above each binding and each body statement
+        int need = 1, kn;
+        for (int i = 0; i < site->n; i++)
+            if ((kn = 1 + temp_need(e, site->byref[i] ? site->arg[i] : site->bind[i])) > need) need = kn;
+        for (int i = 0; i < site->body->nkids; i++)
+            if ((kn = 1 + temp_need(e, site->body->kids[i])) > need) need = kn;
+        return need;
+    }
     Node* part[4] = { n->a, n->b, n->c, NULL };
     if (n->kind == N_FOR && (n->flags & F_FORGEN)) part[3] = n->d;
     int held = 0, need = 0, count = 0;
@@ -8085,7 +8422,7 @@ static int temp_need(Node* n) {
     for (int i = 0; i < 4 + n->nkids; i++) {
         Node* k = i < 4 ? part[i] : n->kids[i - 4];
         if (!k) continue;
-        int kn = temp_need(k) + (stmt ? 0 : held);
+        int kn = temp_need(e, k) + (stmt ? 0 : held);
         if (kn > need) need = kn;
         held++;
         count++;
@@ -8286,6 +8623,20 @@ static void promo_scan(Em* e, Node* n, int depth) {
         promo_escape(e, n->a);
         break;
     case N_CALL: {
+        InlineSite* site = inline_site(e, n);
+        if (site) { // the bindings, then the body, in emission order
+            for (int i = 0; i < site->n; i++) {
+                if (!site->byref[i]) {
+                    promo_scan(e, site->bind[i], depth);
+                    continue;
+                }
+                promo_escape(e, site->arg[i]); // its storage's address is bound
+                scan_part(e, site->arg[i], depth);
+                promo_add(e, site->bind[i], 1);
+            }
+            for (int i = 0; i < site->body->nkids; i++) scan_part(e, site->body->kids[i], depth);
+            return;
+        }
         if (n->a && n->a->kind == N_FIELD_E) { // a callee field: the call takes it as a place
             Split* sp = split_of(e, n->a->a);
             if (sp) sp->bad = 1;
@@ -8546,7 +8897,7 @@ static void plan_promotion(Em* e, Node* f, int export_c) {
         PromoCand* c = &e->pcands[i];
         if (scan_crosses(e, c->first, c->last)) c->crosses = 1;
     }
-    int room = MAX_ITEMPS - temp_need(f->b) - TEMP_MARGIN;
+    int room = MAX_ITEMPS - temp_need(e, f->b) - TEMP_MARGIN;
     if (room > LEAF_REGS) room = LEAF_REGS;
     if (e->npcands > e->cprank) {
         e->cprank = e->npcands;
@@ -8666,9 +9017,9 @@ static void param_scan(Em* e, ParamPlan* p, Node* n) {
 static void plan_param_homes(Em* e, Node* f, SType** pt, const uint8_t* muts, TU* units, int np, uint8_t* homed) {
     e->nphome = e->nfhome = e->nxhome = 0;
     if (!f->b || e->fn_has_asm || e->scan_call) return;
-    int froom = MAX_FPTEMPS - temp_need(f->b) - TEMP_MARGIN;
+    int froom = MAX_FPTEMPS - temp_need(e, f->b) - TEMP_MARGIN;
     if (froom > PARAM_FHOMES) froom = PARAM_FHOMES;
-    int xroom = MAX_ITEMPS - temp_need(f->b) - TEMP_MARGIN;
+    int xroom = MAX_ITEMPS - temp_need(e, f->b) - TEMP_MARGIN;
     if (xroom > LEAF_REGS) xroom = LEAF_REGS;
     xroom -= e->nxpreg;
     if (froom <= 0 && xroom <= 0) return;
@@ -8748,6 +9099,18 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
     e->nlreg_loops = 0;
     e->lreg_top = e->lreg_max = 0;
     e->fn_has_asm = 0;
+    e->ninl = 0;
+    e->vti_base = e->vtf_base = 0;
+    ptrmap_clear(&e->inl_ix);
+    e->ninl_path = 1;
+    if (!e->cinl_path) {
+        e->cinl_path = 16;
+        e->inl_path = malloc((size_t)e->cinl_path * sizeof(Node*));
+        if (!e->inl_path) oom();
+    }
+    e->inl_path[0] = f; // a call back into f cannot expand in f
+    inline_plan(e, f->b);
+    e->ninl_path = 0;
     plan_loops(e, f->b);
     e->npreg = e->nfpreg = e->nxpreg = e->nfpleaf = e->npasg = 0;
     e->vti_cap = MAX_ITEMPS;

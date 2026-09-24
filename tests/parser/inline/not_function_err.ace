@@ -1,0 +1,1 @@
+inline Point: struct { x: int }

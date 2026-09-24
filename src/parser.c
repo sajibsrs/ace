@@ -17,7 +17,8 @@
 //               d = owner type for methods and associated functions;
 //               F_PUB/F_EXPO/F_METHOD/F_MUT/F_ASSOC (F_ASSOC: no implicit
 //               self, owner-qualified call only, e.g. `Type::new(...)`);
-//               F_SPECIALIZED/F_INTRINSIC mark bodyless declarations
+//               F_SPECIALIZED/F_INTRINSIC mark bodyless declarations;
+//               F_INLINE marks a function expanded at its direct calls
 //   N_PARAM     str = name; a = type; F_MUT/F_NOALIAS (also used as var binder)
 //   N_STRUCT    str = name; kids = N_FIELD; b = optional @align expression;
 //               c = N_TPARAMS; F_PUB/F_PACKED
@@ -2270,11 +2271,14 @@ static void parse_layout_attrs(P* p, int* packed, Node** align) {
     }
 }
 
+static Node* parse_top_named(P* p, int pub, int expo, int mut);
+
 static Node* parse_top(P* p) {
     if (at(p, T_IMPORT)) perr(p, "imports must precede declarations");
-    int pub = 0, expo = 0, mut = 0;
+    int pub = 0, expo = 0, mut = 0, inl = 0;
     for (;;) {
         if (at(p, T_PUB)) {
+            if (inl) perr(p, "visibility must come before 'inline'");
             if (mut) perr(p, "visibility must come before 'mut'");
             if (pub) perr(p, "duplicate 'pub' modifier");
             p->i++; pub = 1;
@@ -2283,6 +2287,11 @@ static Node* parse_top(P* p) {
             if (expo) perr(p, "duplicate 'export' modifier");
             p->i++; expo = 1;
         }
+        else if (at(p, T_INLINE)) {
+            if (mut) perr(p, "'inline' must come before 'mut'");
+            if (inl) perr(p, "duplicate 'inline' modifier");
+            p->i++; inl = 1;
+        }
         else if (at(p, T_MUT)) {
             if (mut) perr(p, "duplicate 'mut' modifier");
             p->i++; mut = 1;
@@ -2290,10 +2299,23 @@ static Node* parse_top(P* p) {
         else break;
     }
     if (at(p, T_EXTERN)) {
-        if (pub || expo) perr(p, "'extern' blocks take no pub/export");
+        if (pub || expo || inl) perr(p, "'extern' blocks take no pub/export/inline");
         return parse_extern(p);
     }
     if (!at(p, T_IDENT)) perr(p, "expected declaration, got %s", gdesc(p));
+    size_t start = p->i;
+    Node* d = parse_top_named(p, pub, expo, mut);
+    if (inl) {
+        if (d->kind != N_FUNC) {
+            p->i = start; // report at the declaration's name
+            perr(p, "'inline' applies only to function declarations");
+        }
+        d->flags |= F_INLINE;
+    }
+    return d;
+}
+
+static Node* parse_top_named(P* p, int pub, int expo, int mut) {
     Token* name = tk(p);
     p->i++;
     if (name->len == 13 && memcmp(name->str, "static_assert", 13) == 0 && at(p, T_LPAREN)) {
@@ -2396,6 +2418,7 @@ static void pflags(Node* x) {
     if (x->flags & F_EMBED) printf(" embed");
     if (x->flags & F_SPECIALIZED) printf(" specialized");
     if (x->flags & F_INTRINSIC) printf(" intrinsic");
+    if (x->flags & F_INLINE) printf(" inline");
     if (x->flags & F_PACKED) printf(" packed");
     if (x->flags & F_VOLATILE) printf(" volatile");
     if (x->flags & F_CABI) printf(" c_abi");

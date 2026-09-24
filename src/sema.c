@@ -6345,6 +6345,114 @@ void sema_stamp_body(Node* f, SType** args, int nargs) {
     check_func_body(&k, f); // re-annotate the body under substitution
 }
 
+// --- inline functions (Functions & ABI #8) -------------------------------------
+
+// none, or one value the emitter keeps in a single register
+static int inline_result_ok(SType* t) {
+    while (t && t->kind == SK_DISTINCT) t = t->base;
+    if (!t || t->kind == SK_VOID || t->kind == SK_ERR) return 1;
+    switch (t->kind) {
+    case SK_PRIM: return t->prim != P_STRING;
+    case SK_PTR: case SK_FUNC: case SK_ENUM: case SK_BITS: case SK_ERROR: return 1;
+    default: return 0;
+    }
+}
+
+// the first defer or asm statement in n, or NULL
+static Node* inline_body_bad(Node* n) {
+    if (!n) return NULL;
+    if (n->kind == N_DEFER || n->kind == N_ASM) return n;
+    Node* part[4] = { n->a, n->b, n->c, n->kind == N_FOR && (n->flags & F_FORGEN) ? n->d : NULL };
+    for (int i = 0; i < 4; i++) {
+        Node* bad = inline_body_bad(part[i]);
+        if (bad) return bad;
+    }
+    for (int i = 0; i < n->nkids; i++) {
+        Node* bad = inline_body_bad(n->kids[i]);
+        if (bad) return bad;
+    }
+    return NULL;
+}
+
+static void check_inline_decl(Ck* k, Node* f, Sym* s) {
+    if (!(f->flags & F_INLINE)) return;
+    int nl = (int)f->len;
+    if (f->flags & F_INTRINSIC) {
+        ck_err(k, f, "'inline' cannot mark intrinsic declaration '%.*s'", nl, f->str);
+        return;
+    }
+    if (f->flags & F_SPECIALIZED) {
+        ck_err(k, f, "'inline' needs a body; '%.*s' is marked 'specialized'", nl, f->str);
+        return;
+    }
+    if (!(f->flags & (F_METHOD | F_ASSOC)) && f->len == 4 && memcmp(f->str, "main", 4) == 0) {
+        ck_err(k, f, "the entry function cannot be 'inline'");
+        return;
+    }
+    for (int i = 0; i < f->nkids; i++)
+        if (f->kids[i]->flags & F_NOALIAS)
+            ck_err(k, f->kids[i], "inline function '%.*s' cannot take a noalias parameter", nl, f->str);
+    SType* ret = s && s->type && s->type->kind == SK_FUNC ? s->type->ret : NULL;
+    if (!inline_result_ok(ret))
+        ck_err(k, f->a ? f->a : f, "inline function '%.*s' must return nothing or one scalar value, not %s",
+               nl, f->str, ret->kind == SK_TYPEPARAM ? "a type parameter"
+                           : ret->kind == SK_TUPLE ? "multiple values" : type_name(ret));
+    Node* bad = inline_body_bad(f->b);
+    if (bad)
+        ck_err(k, bad, "inline function '%.*s' cannot contain %s", nl, f->str,
+               bad->kind == N_DEFER ? "'defer'" : "inline assembly");
+}
+
+// the inline function a direct call names, or NULL
+static Node* inline_callee(Node* call) {
+    Sym* s = call->a && call->a->kind == N_INDEX && call->a->sym ? (Sym*)call->a->sym : (Sym*)call->sym;
+    if (!s || s->kind != SYM_FUNC || !s->decl) return NULL;
+    return (s->decl->flags & F_INLINE) ? s->decl : NULL;
+}
+
+typedef struct {
+    Node** path; int npath, cpath; // inline functions being expanded
+    Node** done; int ndone, cdone; // inline functions whose call tree is finite
+} InlineWalk;
+
+static void inline_visit(Ck* k, InlineWalk* w, Node* f);
+
+static void inline_calls(Ck* k, InlineWalk* w, Node* n) {
+    if (!n) return;
+    if (n->kind == N_CALL) {
+        Node* g = inline_callee(n);
+        if (g) inline_visit(k, w, g);
+    }
+    inline_calls(k, w, n->a);
+    inline_calls(k, w, n->b);
+    inline_calls(k, w, n->c);
+    if (n->kind == N_FOR && (n->flags & F_FORGEN)) inline_calls(k, w, n->d);
+    for (int i = 0; i < n->nkids; i++) inline_calls(k, w, n->kids[i]);
+}
+
+static void node_push(Node*** v, int* n, int* cap, Node* x) {
+    if (*n == *cap) {
+        *cap = *cap ? *cap * 2 : 16;
+        *v = realloc(*v, (size_t)*cap * sizeof(Node*));
+        if (!*v) { fprintf(stderr, "ace: out of memory\n"); exit(1); }
+    }
+    (*v)[(*n)++] = x;
+}
+
+static void inline_visit(Ck* k, InlineWalk* w, Node* f) {
+    for (int i = 0; i < w->npath; i++)
+        if (w->path[i] == f) {
+            ck_err(k, f, "inline function '%.*s' reaches itself through inline calls; a recursive call cannot be expanded",
+                   (int)f->len, f->str);
+            return;
+        }
+    for (int i = 0; i < w->ndone; i++) if (w->done[i] == f) return;
+    node_push(&w->path, &w->npath, &w->cpath, f);
+    inline_calls(k, w, f->b);
+    w->npath--;
+    node_push(&w->done, &w->ndone, &w->cdone, f);
+}
+
 // Root import aliases live in their own scope, parented to the shared global
 // scope, so a same-named local anywhere else in the merged unit — including
 // inside a std module the root package never names directly — cannot collide
@@ -6436,6 +6544,7 @@ int sema_check(Node* file, Diag* d) {
             }
             Sym* s = declare_func(&k, n, 0);
             if (!s) break;
+            check_inline_decl(&k, n, s);
             if (s->is_generic) s->decl_scope = is_root_node(d, n) ? &import_scope : &file_scope;
             if (!(n->flags & (F_METHOD | F_ASSOC)) && n->len == 4 && memcmp(n->str, "main", 4) == 0) {
                 int spells_int = n->a && n->a->kind == N_NAMED && n->a->len == 3 && memcmp(n->a->str, "int", 3) == 0;
@@ -6654,6 +6763,14 @@ int sema_check(Node* file, Diag* d) {
         k.final = 0;
     }
     k.scope = &file_scope;
+    if (d->errors == 0) { // every call now names its target
+        InlineWalk walk = {0};
+        for (int i = 0; i < file->nkids; i++)
+            if (file->kids[i]->kind == N_FUNC && (file->kids[i]->flags & F_INLINE))
+                inline_visit(&k, &walk, file->kids[i]);
+        free(walk.path);
+        free(walk.done);
+    }
     if (d->errors == 0) check_definite_initialization(file, d);
     return d->errors;
 }

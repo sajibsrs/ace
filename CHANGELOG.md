@@ -119,6 +119,19 @@ current normative rules, and Git preserves patch-level detail.
   non-constant or non-positive length or a mismatched repetition count as a
   compile-time error. Raised while carving `std/http`'s router, where a
   module-level `const usize` could not back a buffer or route-table size.
+- Implemented the `inline` declaration modifier (Functions & ABI #8). Sema
+  checks the declaration rules and, after forward calls resolve, walks inline
+  call trees for cycles. Before a function's planners run, `inline_plan`
+  attaches to each direct call a copy of the callee (stamped first when
+  generic) with fresh binders and `Sym`s, so loop-register and promotion
+  planning treat the expansion as the caller's own locals; `gen_inline` binds
+  the arguments, emits the copy, and joins returns into a result temp, while
+  statement boundaries reset temps to a base that keeps the enclosing
+  expression's temps live. `std/map` marks `mix`, `probe`, and its `hash` and
+  `same` specializations; `pkg/json` marks eleven `Formatter` helpers. Release
+  builds: the 158-byte formatter document drops from 1096 to 821 ns, and
+  16k-key `set`/`get`/`unset` from 71.5/21.2/32.4 to 46.5/15.9/26.1 ns; the
+  benchmarks' text grows 20% and 6%.
 
 ## Types and abstraction
 

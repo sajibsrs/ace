@@ -1,0 +1,5 @@
+finish(value: int) {}
+
+inline guarded(value: int) {
+    defer finish(value)
+}

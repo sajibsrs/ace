@@ -261,6 +261,15 @@ These are baseline observations, not performance promises.
   single-pass design avoids; (2) the bottom-tested loop and by-value `Vec3`
   leaf-call frame cost; (3) `std/simd` NEON intrinsics (`f32x4`, `i8x16`), the
   only route past auto-vectorized C.
+- **Inline-expansion leftovers** [new] — code expanded by `inline` still
+  carries moves a hand-inlined body avoids (`Map.get` shows each):
+  `fold_preg` can retarget a copy onto its own source, leaving `mov x, x`; a
+  nested call's result passes through each expansion's result temp; a `bool`
+  result used as a condition is materialized and retested instead of
+  branching to the caller's targets; and a read-only scalar parameter copies
+  an argument local the body could read in place. Private inline functions
+  keep an out-of-line body even when no call or function value uses it.
+  Each needs its gain measured.
 - **Tail-call optimization** [new] — a `return f(args)` still emits `bl` plus a
   full epilogue, so tail recursion grows the stack linearly and overflows at
   roughly 100M frames in checked and release builds alike. Candidate: lower a
@@ -339,14 +348,13 @@ foundations.
   composite keys, once specializations may live outside the generic's module
   (Generics #14). String keys hash a byte at a time; measure a word-at-a-time
   hash before adding one.
-- **`map` throughput** [new] — with 1,000,000 `int` keys, `set` with growth
-  takes 135–165 ms, `get` 49–76 ms, and `unset` 100–120 ms, against 85–93,
-  20–26, and 45–48 ms for the same algorithm, hash, and load factor in C `-O2`
-  (about 1.6×, 2.4–2.9×, and 2.2–2.5×). The suspected cause is that `probe`,
-  `hash`, `mix`, and `same` are real calls in Ace and inline in C, like the
-  `pkg/json` formatter gap below; it is not profiled. Shares its root question
-  with that entry, and no map-specific source change is planned until it is
-  answered. String keys and `--checked` are unmeasured.
+- **`map` throughput** [new] — with `probe`, `hash`, `mix`, and `same`
+  `inline`, 16,384 cache-resident `int` keys take 46.5, 15.9, and 26.1 ns per
+  `set`, `get`, and `unset` in release builds, against 26.2, 5.7, and 12.9 ns
+  for the same algorithm, hash, and load factor in C `-O2`. Hand-inlined
+  source reaches 44.3, 10.2, and 20.5 ns; the rest of that gap is the
+  inline-expansion leftovers (section 2). String keys and `--checked` are
+  unmeasured.
 - **Fixed-width integer formatting** [additive] — width, zero padding, and base
   prefixes for `fmt.printf`, especially fixed-width `%b`/`%o`/`%x` register
   displays; carve consistently across integer conversions from a hardware
@@ -355,17 +363,14 @@ foundations.
 
 ## 5. Packages
 
-- **`pkg/json` formatter throughput** [new] — a 139-byte document written
-  with about 30 `Formatter` calls takes 1145 ns without an `f64` field and
-  1595 ns with one, against 336 and 503 ns for the same state machine in C
-  `-O2` and about 600 and 780 ns in C `-fno-inline`. Sampled time is about 28%
-  in `put` and `reserve`, 23% in `escape` and `quote`, 12% in the `f64` path,
-  5% in `inside_object`, and 4% in `mem_copy`. Candidate source changes, none
-  measured: skip the `escape` call for bytes that need no escape, check
-  capacity inline in `put(byte)` and call `reserve` only when full, and cache
-  an "innermost container is an object" flag. Each needs its gain measured
-  first; inlining small functions is a compiler question bound by the
-  single-pass design.
+- **`pkg/json` formatter throughput** [new] — with its eleven small
+  `Formatter` helpers `inline`, a 158-byte document written with 28 calls
+  takes 821 ns in release builds, against 366 ns for the same state machine
+  in C `-O2` and 748 ns for hand-inlined Ace source. The hand-inlined source
+  also splits `reserve` into an inline capacity check and an out-of-line
+  `grow`, writes errors directly where `fail`'s null check is already known,
+  and branches on conditions instead of `ok` flags. Candidate: the `reserve`
+  split, measured against the inline-expansion leftovers first.
 
 ## 6. Language questions and conveniences
 

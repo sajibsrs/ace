@@ -1,0 +1,3 @@
+inline extern "c" {
+    puts(text: *u8): i32
+}

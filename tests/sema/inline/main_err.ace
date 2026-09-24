@@ -1,0 +1,1 @@
+inline main(): int { return 0 }

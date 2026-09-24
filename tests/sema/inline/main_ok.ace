@@ -1,0 +1,45 @@
+// Every declaration form `inline` accepts, called directly, as a function
+// value, from a defer, forward, and through other inline functions.
+
+inline mix(value: u64): u64 { return value ^ (value >> 31) }
+
+inline hashed(value: u64): u64 { return mix(later(value)) }
+
+inline later(value: u64): u64 { return value * 3 }
+
+inline first[T](xs: []T): usize { return 0 }
+
+weight[K](key: K): u64 specialized
+inline weight[int](key: int): u64 { return mix(u64(key)) }
+
+weight[u8](key: u8): u64 { return u64(key) }
+
+Counter: struct { n: int }
+
+inline mut Counter.bump(by: int): bool {
+    if by < 0 { return false }
+    self.n += by
+    return true
+}
+
+inline Counter.big(): bool { return self.n > 10 }
+
+inline Counter::zero(): int { return 0 }
+
+inline flag(): Error { return null }
+
+inline done(mut total: int) { total += 1 }
+
+pub inline shared(x: f64): f64 { return x * 0.5 }
+
+main(): int {
+    c: Counter = Counter{ n = Counter::zero() }
+    total: int = 0
+    defer done(mut total)
+    ok: bool = mut c.bump(2)
+    f: (u64): u64 = mix
+    xs: [2]int = [1, 2]
+    if !ok || c.big() || flag() != null { return 1 }
+    return int(hashed(1) + f(2) + weight[int](3) + weight[u8](4) + u64(first[int](xs[..]))) +
+        int(shared(2.0))
+}

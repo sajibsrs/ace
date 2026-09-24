@@ -1,0 +1,1 @@
+inline pub late(): int { return 0 }

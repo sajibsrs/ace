@@ -1,0 +1,1 @@
+inline inline twice(): int { return 0 }

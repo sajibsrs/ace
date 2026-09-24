@@ -289,6 +289,49 @@ specialize yet. The standard library uses the feature directly: both `str`
 `parse[T]` overloads are `specialized` templates whose entire callable surface
 is per-type specializations (see [str](std/str.md)).
 
+## Inline functions
+
+The `inline` modifier asks for a function's body to be expanded at every
+direct call instead of called. It follows `pub` and precedes a receiver `mut`:
+
+```ace
+inline mix(value: u64): u64 {
+    x: u64 = value ^ (value >> 31)
+    return x * 3
+}
+
+Buffer: struct { at: usize }
+
+pub inline mut Buffer.skip(n: usize) {
+    self.at += n
+}
+
+main(): int {
+    b: Buffer = Buffer{ at = 0 }
+    mut b.skip(2)
+    return int(mix(u64(b.at)))
+}
+```
+
+Expansion is guaranteed, not a hint, and does not change what a call means:
+the arguments are evaluated left to right as for any call, a read-only scalar
+parameter sees the value it was passed, and a `mut` parameter or receiver
+writes to the caller's storage. A `return` in the body finishes the expanded
+call with its value. Declaration order and module boundaries do not matter,
+and a call inside an inline function's body expands too, so small helpers can
+be written as functions without paying for the call. Expanded code keeps the
+call site's line in debug information.
+
+The function still has an ordinary symbol, so it can be used as a function
+value, and a `defer` of it calls that symbol at exit. Generic templates,
+methods, associated functions, and specializations may be `inline`; each
+specialization carries its own marker. An inline function must return nothing
+or one scalar value (not a type parameter), must not take a `noalias`
+parameter, and must not contain `defer` or inline assembly. `intrinsic`
+declarations, bodiless `specialized` templates, and `main` cannot be `inline`,
+and a chain of inline functions that calls back into itself is rejected.
+Nothing is inlined automatically.
+
 ## Declaration order and forward calls
 
 Names normally follow declaration-before-use. Top-level function calls are the

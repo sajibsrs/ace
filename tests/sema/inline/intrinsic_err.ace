@@ -1,0 +1,1 @@
+inline cast(value: f64): u64 intrinsic

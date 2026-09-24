@@ -271,17 +271,17 @@ pub mut Formatter.field(name: string, tree: Value) {
     mut self.value(tree)
 }
 
-mut Formatter.fail(err: Error) {
+inline mut Formatter.fail(err: Error) {
     if self.err == null { self.err = err }
 }
 
-Formatter.inside_object(): bool {
+inline Formatter.inside_object(): bool {
     level: usize = self.depth - 1
     mask: u8 = u8(1) << u8(level % 8)
     return (self.objects[level / 8] & mask) != 0
 }
 
-mut Formatter.open(object: bool) {
+inline mut Formatter.open(object: bool) {
     ok: bool = mut self.open_value()
     if !ok { return }
 
@@ -308,7 +308,7 @@ mut Formatter.open(object: bool) {
  * once at top level, after a key inside an object, or as the next element of
  * an array.
  */
-mut Formatter.open_value(): bool {
+inline mut Formatter.open_value(): bool {
     if self.err != null { return false }
 
     if self.depth == 0 {
@@ -336,21 +336,21 @@ mut Formatter.open_value(): bool {
 /* Opens a value and guarantees room for the longest number, so `str.format`
  * can write it in place at the cursor.
  */
-mut Formatter.open_number(): bool {
+inline mut Formatter.open_number(): bool {
     ok: bool = mut self.open_value()
     if !ok { return false }
 
     return mut self.reserve(NUMBER_MAX)
 }
 
-mut Formatter.close_value() {
+inline mut Formatter.close_value() {
     if self.depth == 0 { self.done = true }
 }
 
 /* Accounts for a number `str.format` wrote in place at the cursor. The
  * reserved room always fits it, so `fit` is a guard, not an expected path.
  */
-mut Formatter.advance(n: usize, fit: bool) {
+inline mut Formatter.advance(n: usize, fit: bool) {
     if !fit {
         mut self.fail(FormatErr.allocation)
         return
@@ -360,7 +360,7 @@ mut Formatter.advance(n: usize, fit: bool) {
 }
 
 /* Makes room for `extra` more bytes, growing the buffer geometrically. */
-mut Formatter.reserve(extra: usize): bool {
+inline mut Formatter.reserve(extra: usize): bool {
     need: usize = self.at + extra
 
     if need <= self.buffer.len { return true }
@@ -397,7 +397,7 @@ mut Formatter.quote(text: string) {
 /* Writes the JSON escape for `byte` into `spelling` and returns its length,
  * or returns 0 when the byte is written as itself.
  */
-escape(byte: u8, spelling: mut []u8): usize {
+inline escape(byte: u8, spelling: mut []u8): usize {
     short: u8 = 0
 
     if byte == '"' || byte == '\\' {
@@ -430,7 +430,7 @@ escape(byte: u8, spelling: mut []u8): usize {
     return 6
 }
 
-mut Formatter.put(byte: u8) {
+inline mut Formatter.put(byte: u8) {
     if self.err != null { return }
     ok: bool = mut self.reserve(1)
     if !ok { return }
@@ -439,7 +439,7 @@ mut Formatter.put(byte: u8) {
     self.at += 1
 }
 
-mut Formatter.put(text: string) {
+inline mut Formatter.put(text: string) {
     if self.err != null { return }
     ok: bool = mut self.reserve(text.len)
     if !ok { return }

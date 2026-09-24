@@ -34,8 +34,21 @@ count_of[int](v: int): int { return 8 }
 
 count_of[f64](v: f64): int { return 4 }
 
+inline mix(value: u64): u64 {
+    x: u64 = value ^ (value >> 31)
+    return x * 3
+}
+
+Buffer: struct { at: usize }
+
+pub inline mut Buffer.skip(n: usize) {
+    self.at += n
+}
+
 main(): int {
-    count: int = 12
+    b: Buffer = Buffer{ at = 0 }
+    mut b.skip(2)
+    count: int = 12 + int(mix(u64(b.at))) - 6
     increment(mut count)
     quotient: int, remainder: int = divide(count, 5)
     operation: (int): int = twice

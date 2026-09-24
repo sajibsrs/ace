@@ -77,6 +77,32 @@ for f in $(find tests/sema -name '*_err.ace' | sort); do
     fi
 done
 
+# inline declarations: each placement and declaration rule reports its own
+# diagnostic (SPEC Functions & ABI #8)
+while IFS='|' read -r f want; do
+    if ! "$ACE" "$f" 2>&1 | grep -qF "$want"; then
+        echo "FAIL: $f should report: $want"
+        fail=1
+    fi
+done <<'INLINE_RULES'
+tests/parser/inline/visibility_order_err.ace|visibility must come before 'inline'
+tests/parser/inline/mut_order_err.ace|'inline' must come before 'mut'
+tests/parser/inline/duplicate_err.ace|duplicate 'inline' modifier
+tests/parser/inline/not_function_err.ace|1:8: error: 'inline' applies only to function declarations
+tests/parser/inline/extern_err.ace|'extern' blocks take no pub/export/inline
+tests/sema/inline/result_err.ace|inline function 'name' must return nothing or one scalar value, not string
+tests/sema/inline/multi_result_err.ace|must return nothing or one scalar value, not multiple values
+tests/sema/inline/type_param_result_err.ace|must return nothing or one scalar value, not a type parameter
+tests/sema/inline/noalias_err.ace|inline function 'sum' cannot take a noalias parameter
+tests/sema/inline/defer_err.ace|4:5: error: inline function 'guarded' cannot contain 'defer'
+tests/sema/inline/asm_err.ace|inline function 'spin' cannot contain inline assembly
+tests/sema/inline/specialized_err.ace|'inline' needs a body; 'weight' is marked 'specialized'
+tests/sema/inline/intrinsic_err.ace|'inline' cannot mark intrinsic declaration 'cast'
+tests/sema/inline/main_err.ace|the entry function cannot be 'inline'
+tests/sema/inline/recursion_err.ace|inline function 'count' reaches itself through inline calls
+tests/sema/inline/mutual_err.ace|inline function 'even' reaches itself through inline calls
+INLINE_RULES
+
 # A call resolved at end of file is checked where its value lands, not
 # accepted for its poison type.
 for f in pending_result_decl pending_result_return forward_result_decl; do
