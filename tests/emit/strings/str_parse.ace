@@ -61,6 +61,9 @@ main(): int {
     z, zok = str.parse[usize]("zz", u8(36))
 
     if !zok || z != 1295 { return 18 }
+    z, zok = str.parse[usize]("z!", u8(36))
+
+    if zok { return 40 }
     z, zok = str.parse[usize]("FF", u8(16))
 
     if !zok || z != 255 { return 19 }

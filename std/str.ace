@@ -527,20 +527,26 @@ index_byte_from(text: string, byte: char, after: usize): (usize, bool) {
     return 0, false
 }
 
-/* The value of one ASCII digit and whether it is a digit at all. */
-digit_value(c: u8): (u64, bool) {
-    if c >= '0' && c <= '9' { return u64(c - '0'), true }
+/* The value of one ASCII digit, or 36 for any other byte, so one `< radix`
+ * test rejects both a non-digit and a digit beyond the radix.
+ */
+inline digit_value(c: u8): u64 {
+    if c >= '0' && c <= '9' { return u64(c - '0') }
 
-    if c >= 'a' && c <= 'z' { return u64(c - 87), true }
+    if c >= 'a' && c <= 'z' { return u64(c - 87) }
 
-    if c >= 'A' && c <= 'Z' { return u64(c - 55), true }
-    return 0, false
+    if c >= 'A' && c <= 'Z' { return u64(c - 55) }
+    return 36
 }
 
-/* Accumulates one digit with the overflow-before-multiply check. */
-accumulate(mag: u64, d: u64, radix: u8, limit: u64): (u64, bool) {
-    if mag > (limit - d) / u64(radix) { return 0, false }
-    return mag * u64(radix) + d, true
+/* Accumulates one digit into `mag` with the overflow-before-multiply check;
+ * false leaves `mag` unchanged.
+ */
+inline accumulate(mut mag: u64, d: u64, radix: u8, limit: u64): bool {
+    if mag > (limit - d) / u64(radix) { return false }
+
+    mag = mag * u64(radix) + d
+    return true
 }
 
 /* Parses the complete text as a signed integer in the given radix. The
@@ -563,11 +569,8 @@ pub parse[int](text: string, radix: u8): (int, bool) {
     mag: u64 = 0
 
     for i: usize in at .. text.len {
-        d: u64, ok: bool = digit_value(text[i])
-        if !ok || d >= u64(radix) { return 0, false }
-
-        mag, ok = accumulate(mag, d, radix, limit)
-        if !ok { return 0, false }
+        d: u64 = digit_value(text[i])
+        if d >= u64(radix) || !accumulate(mut mag, d, radix, limit) { return 0, false }
     }
 
     if negative {
@@ -586,11 +589,8 @@ pub parse[uint](text: string, radix: u8): (uint, bool) {
     mag: u64 = 0
 
     for i: usize in 0 .. text.len {
-        d: u64, ok: bool = digit_value(text[i])
-        if !ok || d >= u64(radix) { return 0, false }
-
-        mag, ok = accumulate(mag, d, radix, 18446744073709551615)
-        if !ok { return 0, false }
+        d: u64 = digit_value(text[i])
+        if d >= u64(radix) || !accumulate(mut mag, d, radix, 18446744073709551615) { return 0, false }
     }
     return uint(mag), true
 }

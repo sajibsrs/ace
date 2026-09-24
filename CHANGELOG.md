@@ -1479,6 +1479,11 @@ current normative rules, and Git preserves patch-level detail.
   parser's `exact64`/`exact32`, `pkg/json`'s `Json` forwarders and
   `Formatter.object`/`array`, and `pkg/http`'s `skip_ows` gained at most
   about 1% and stay unmarked.
+- Made `str`'s integer-parse helpers scalar and `inline`: `digit_value`
+  returns 36 for a non-digit, so the existing `< radix` test rejects both
+  cases, and `accumulate` updates a `mut` magnitude and returns only the
+  overflow flag. Decimal `parse[int]`/`parse[uint]` run 50% faster, radix-16
+  44%, and rejected inputs 58%; dropping the tuple results alone gave 29-44%.
 - Gave `pkg/json` a convenience layer over its public core. The tagged union
   is now `Value` (in `inc/value.ace`), and `Json` (in `inc/json.ace`, matching
   `regex.Regex`) holds a `Parser`, a `Formatter`, and `root`: the input tree.
