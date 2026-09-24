@@ -97,39 +97,39 @@ ABS_BITS: const u64 = 0x7FFFFFFFFFFFFFFF
 INF_BITS: const u64 = 0x7FF0000000000000
 POW_SIGN: const u64 = 0x8000000000000000
 
-pub isnan(value: f64): bool {
+pub inline isnan(value: f64): bool {
     raw: u64 = bits.cast(value)
     exponent: u64 = raw & u64(0x7FF0000000000000)
     fraction: u64 = raw & u64(0x000FFFFFFFFFFFFF)
     return exponent == u64(0x7FF0000000000000) && fraction != 0
 }
 
-pub isnan(value: f32): bool {
+pub inline isnan(value: f32): bool {
     raw: u32 = bits.cast(value)
     exponent: u32 = raw & u32(0x7F800000)
     fraction: u32 = raw & u32(0x007FFFFF)
     return exponent == u32(0x7F800000) && fraction != 0
 }
 
-pub isinf(value: f64): bool {
+pub inline isinf(value: f64): bool {
     raw: u64 = bits.cast(value)
     magnitude: u64 = raw & u64(0x7FFFFFFFFFFFFFFF)
     return magnitude == u64(0x7FF0000000000000)
 }
 
-pub isinf(value: f32): bool {
+pub inline isinf(value: f32): bool {
     raw: u32 = bits.cast(value)
     magnitude: u32 = raw & u32(0x7FFFFFFF)
     return magnitude == u32(0x7F800000)
 }
 
-pub isfinite(value: f64): bool {
+pub inline isfinite(value: f64): bool {
     raw: u64 = bits.cast(value)
     exponent: u64 = raw & u64(0x7FF0000000000000)
     return exponent != u64(0x7FF0000000000000)
 }
 
-pub isfinite(value: f32): bool {
+pub inline isfinite(value: f32): bool {
     raw: u32 = bits.cast(value)
     exponent: u32 = raw & u32(0x7F800000)
     return exponent != u32(0x7F800000)
@@ -186,7 +186,7 @@ pub exp(value: f64): f64 {
     return fma(scale, correction, scale) * bits.cast(u64(23) << 52)
 }
 
-pub exp(value: f32): f32 {
+pub inline exp(value: f32): f32 {
     return f32(exp(f64(value)))
 }
 
@@ -217,7 +217,7 @@ pub log(value: f64): f64 {
     return t + ((w - t + r) + (fma(f64(offset >> 52), LOG_LN2_LO, table.log[i].logctail) + r2 * q))
 }
 
-pub log(value: f32): f32 {
+pub inline log(value: f32): f32 {
     return f32(log(f64(value)))
 }
 
@@ -433,7 +433,7 @@ exponent_field(x: f64): int {
 
 /* Cody-Waite reduction for 0 < x < 2^20 * pi/2: x = n * pi/2 + (y0 + y1). */
 
-bit_at(limbs: []u64, k: int): u64 {
+inline bit_at(limbs: []u64, k: int): u64 {
     if k < 0 || k >= 320 { return 0 }
     return (limbs[usize(k / 32)] >> u64(k % 32)) & 1
 }
@@ -577,7 +577,7 @@ pub sin(value: f64): f64 {
     return result
 }
 
-pub sin(value: f32): f32 {
+pub inline sin(value: f32): f32 {
     return f32(sin(f64(value)))
 }
 
@@ -655,6 +655,6 @@ pub cos(value: f64): f64 {
     return result
 }
 
-pub cos(value: f32): f32 {
+pub inline cos(value: f32): f32 {
     return f32(cos(f64(value)))
 }

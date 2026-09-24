@@ -45,7 +45,7 @@ pub Response: struct {
 }
 
 /* Reports whether `byte` is permitted by the HTTP token grammar. */
-pub tchar(byte: u8): bool {
+pub inline tchar(byte: u8): bool {
     if (byte >= '0' && byte <= '9') || (byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z') { return true }
     return byte == '!' || byte == '#' || byte == '$' || byte == '%' ||
         byte == '&' || byte == '\'' || byte == '*' || byte == '+' ||

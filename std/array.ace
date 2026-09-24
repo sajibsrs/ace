@@ -50,17 +50,17 @@ pub Array[T].get(index: usize): T {
     return self.items[..self.len][index]
 }
 
-pub mut Array[T].set(index: usize, value: T) {
+pub inline mut Array[T].set(index: usize, value: T) {
     live: mut []T = self.items[..self.len]
     live[index] = value
 }
 
 /* Appends `value`, growing storage when full. */
-pub mut Array[T].push(value: T): Error {
-    grown: mut []T, ok: bool = mem.grow[T](self.items, self.len + 1)
-    if !ok { return ArrayErr.allocation }
-
-    self.items = grown
+pub inline mut Array[T].push(value: T): Error {
+    if self.len == self.items.len {
+        err: Error = mut self.reserve(self.len + 1)
+        if err != null { return err }
+    }
     self.items[self.len] = value
     self.len += 1
     return null

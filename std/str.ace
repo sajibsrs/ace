@@ -631,7 +631,7 @@ pub parse[f32](text: string): (f32, bool) {
 }
 
 /* True for exactly the ASCII whitespace bytes 0x09..0x0D and 0x20. */
-space_byte(c: u8): bool {
+inline space_byte(c: u8): bool {
     return (c >= '\t' && c <= '\r') || c == ' '
 }
 

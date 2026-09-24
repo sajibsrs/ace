@@ -8,7 +8,7 @@
 /* Returns the encoded byte width of `value` (1-4), or 0 when it is not a
  * Unicode scalar value.
  */
-pub width(value: u32): usize {
+pub inline width(value: u32): usize {
     if value < 0x80 { return 1 }
 
     if value < 0x800 { return 2 }

@@ -20,15 +20,15 @@ pub Wide: struct {
     high: u64,
 }
 
-log10_pow2(exponent: i32): u32 {
+inline log10_pow2(exponent: i32): u32 {
     return (u32(exponent) * 78913) >> 18
 }
 
-log10_pow5(exponent: i32): u32 {
+inline log10_pow5(exponent: i32): u32 {
     return (u32(exponent) * 732923) >> 20
 }
 
-pow5_bits(exponent: i32): i32 {
+inline pow5_bits(exponent: i32): i32 {
     return i32((u32(exponent) * 1217359) >> 19) + 1
 }
 
@@ -51,7 +51,7 @@ pub multiply_wide(a: u64, b: u64): Wide {
     }
 }
 
-shift_wide(value: Wide, distance: i32): u64 {
+inline shift_wide(value: Wide, distance: i32): u64 {
     shift: u64 = u64(distance)
     return (value.high << (64 - shift)) | (value.low >> shift)
 }
@@ -93,11 +93,11 @@ power5_factor(value: u64): u32 {
     return count
 }
 
-multiple_power5(value: u64, power: u32): bool {
+inline multiple_power5(value: u64, power: u32): bool {
     return power5_factor(value) >= power
 }
 
-multiple_power2(value: u64, power: u32): bool {
+inline multiple_power2(value: u64, power: u32): bool {
     if power == 0 { return true }
     return (value & ((u64(1) << u64(power)) - 1)) == 0
 }

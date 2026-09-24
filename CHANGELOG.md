@@ -1461,6 +1461,24 @@ current normative rules, and Git preserves patch-level detail.
   instead cost `pathological` 5% and 2.8% more instructions, and passing the
   queue as a `mut Queue` parameter left `captures` 5% slower, though it
   retired as few instructions.
+- Marked per-byte and per-element helpers `inline` where a release
+  microbenchmark measured a gain: `ascii.control`/`lower`, `utf8.width`,
+  `str`'s `space_byte`, `math.isnan`/`isinf`/`isfinite`, the `f32`
+  `exp`/`log`/`sin`/`cos` forwarders, `math`'s `bit_at`, Ryu's `log10_pow2`/
+  `log10_pow5`/`pow5_bits`/`shift_wide`/`multiple_power2`/`multiple_power5`,
+  `Array.set`, `pkg/json`'s `is_ws`/`is_digit`/`Parser.skip_ws`, and
+  `pkg/http`'s `tchar`. `Array.push` became an inline capacity check that
+  calls `reserve` only when full, instead of calling `mem.grow` every time.
+  Per operation: case-folding `ascii.equal` on 64 bytes 48% faster, `str.trim`
+  37%, float classification 52%, `f32` math 17%, `sin` past 2^20·π/2 28%,
+  `utf8.encode` 20%, `push` 58%, `set` 12%, float formatting 1-4%,
+  `pkg/json` parsing 6%, and `pkg/http` request parsing 4.5%; checksums are
+  unchanged and text grows 1.3-2.7%. Ryu's `multiply_shift64`/
+  `multiply_shift32` made formatting 3-8% slower and stay out of line;
+  `Map.has`, `Array.clear`/`truncate`, `math`'s `exponent_field`, the float
+  parser's `exact64`/`exact32`, `pkg/json`'s `Json` forwarders and
+  `Formatter.object`/`array`, and `pkg/http`'s `skip_ows` gained at most
+  about 1% and stay unmarked.
 - Gave `pkg/json` a convenience layer over its public core. The tagged union
   is now `Value` (in `inc/value.ace`), and `Json` (in `inc/json.ace`, matching
   `regex.Regex`) holds a `Parser`, a `Formatter`, and `root`: the input tree.
