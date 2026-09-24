@@ -171,6 +171,7 @@ enum {
     F_VOLATILE = 65536, F_CABI = 131072, F_ASSOC = 262144,
     F_PENDING = 524288, // a call deferred to end of file
     F_INLINE = 1048576, // a function expanded at every direct call
+    F_INLCALLS = 2097152, // a function body with a direct call to an inline function
 };
 
 // Compiler-backed standard-module functions. These markers live only on the

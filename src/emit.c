@@ -530,6 +530,7 @@ typedef struct {
     PtrMap   copy_sym;   // callee local -> its copy
     Node**   inl_path;   // callees inline_plan is expanding, outermost first
     int      ninl_path, cinl_path;
+    int      nsites;     // calls inline_plan expanded in this function
     InlineCtx* inl;      // expansions being emitted, innermost last
     int      ninl, cinl;
     int      vti_base, vtf_base; // statement boundaries reset the temps to these
@@ -8126,8 +8127,9 @@ static void inline_plan_call(Em* e, Node* call) {
         e->inl_path = realloc(e->inl_path, (size_t)e->cinl_path * sizeof(Node*));
         if (!e->inl_path) oom();
     }
+    e->nsites++;
     e->inl_path[e->ninl_path++] = f;
-    inline_plan(e, site->body);
+    if (f->flags & F_INLCALLS) inline_plan(e, site->body);
     e->ninl_path--;
 }
 
@@ -8173,7 +8175,7 @@ static int plan_loops(Em* e, Node* s);
 
 // the loop register need of the inline expansions within expression x
 static int plan_inline_loops(Em* e, Node* x) {
-    if (!x) return 0;
+    if (!x || !e->nsites) return 0;
     int need = 0, n;
     InlineSite* site = inline_site(e, x);
     if (site) need = plan_loops(e, site->body);
@@ -9109,7 +9111,8 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
         if (!e->inl_path) oom();
     }
     e->inl_path[0] = f; // a call back into f cannot expand in f
-    inline_plan(e, f->b);
+    e->nsites = 0;
+    if (f->flags & F_INLCALLS) inline_plan(e, f->b);
     e->ninl_path = 0;
     plan_loops(e, f->b);
     e->npreg = e->nfpreg = e->nxpreg = e->nfpleaf = e->npasg = 0;

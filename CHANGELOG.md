@@ -132,6 +132,13 @@ current normative rules, and Git preserves patch-level detail.
   builds: the 158-byte formatter document drops from 1096 to 821 ns, and
   16k-key `set`/`get`/`unset` from 71.5/21.2/32.4 to 46.5/15.9/26.1 ns; the
   benchmarks' text grows 20% and 6%.
+- Limited inline planning to functions that call an inline function: sema
+  marks such a body `F_INLCALLS` in `check_call`, `inline_plan` walks only
+  marked bodies and marked callee copies, and `plan_loops` searches
+  expressions only once a site exists. Unmarked code had paid for both walks:
+  checked compiles of the 20,000-function, 20,000-statement, and 20,000-type
+  generated corpora had run 6.4%, 9.2%, and 5.3% more instructions than before
+  inlining, and now run 1.0%, 2.9%, and 1.1% more.
 
 ## Types and abstraction
 

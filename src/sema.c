@@ -786,6 +786,7 @@ static SType* expr_type(Ck* k, Node* e);
 static uint32_t type_identity(SType* t);
 static int coerce(Ck* k, Node* e, SType* want);
 static SType* check_call(Ck* k, Node* call);
+static Node* inline_callee(Node* call);
 static void check_stmt(Ck* k, Node* s);
 static void check_block(Ck* k, Node* b);
 static void check_structlit(Ck* k, Node* lit, SType* want);
@@ -3852,6 +3853,7 @@ static SType* check_call(Ck* k, Node* call) {
     if (k->final && (call->flags & F_PENDING)) k->see_all = 1;
     SType* t = check_call_raw(k, call);
     k->see_all = saved;
+    if (k->curfn && inline_callee(call)) k->curfn->flags |= F_INLCALLS; // the emitter plans only these
     return t;
 }
 
