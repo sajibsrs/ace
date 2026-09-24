@@ -104,8 +104,9 @@ history.
   to test the package system, and a `mod.ace` only to test directory modules.
 - Place each benchmark in the `bench/` section whose code it measures:
   `compiler/` (the compiler's own speed), `core/` (generated code for
-  language features), `std/` (standard-library operations), or `pkg/`
-  (first-party packages). Benchmarks never live under `tests/`.
+  language features), `std/` (standard-library operations), or `package/`
+  (first-party packages; not `pkg/`, which is reserved for dependency
+  lookup). Benchmarks never live under `tests/`.
 
 ## Scoped rules
 

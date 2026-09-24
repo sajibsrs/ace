@@ -1,0 +1,12 @@
+// app has no pkg/ of its own; its dependency resolves from the nearest
+// ancestor's pkg/, the way sibling packages share one pkg/.
+// expect-ok: lib,app
+
+name: app
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[dependencies]
+lib: 0.1.0

@@ -1,0 +1,12 @@
+// Every dependency resolves from the root package's directory: lib_a's own
+// pkg/lib_c is never consulted, so lib_c is not found.
+// expect-err: dependency 'lib_c' 0.1.0 not found
+
+name: flat_layout
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[dependencies]
+lib_a: 0.1.0

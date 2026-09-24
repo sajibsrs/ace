@@ -1,0 +1,8 @@
+// A package's root file cannot live under its reserved pkg/ directory.
+// expect-err: root 'pkg/main.ace' is inside the reserved pkg/ directory
+
+name: root_in_pkg
+version: 0.1.0
+ace: 0.1
+type: exe
+root: pkg/main.ace

@@ -342,6 +342,20 @@ current normative rules, and Git preserves patch-level detail.
   (end-to-end transitive linking through a real `cc` invocation, and the
   conflict diagnostic); `tests/run.sh` gained the `// expect-build-err:`
   marker since checking alone never reaches the link step.
+- Replaced path dependencies with version-only entries resolved through a
+  reserved `pkg/` directory (SPEC.md Package System #4–#6, #9–#13): a
+  `[dependencies]` value is one exact `major.minor.patch` version, and every
+  name in a graph resolves from the root package's directory as the nearest
+  existing `<dir>/pkg/<name>` (`find_in_pkg` in `package.c`), which must
+  declare that name and version; a dependency's own `pkg/` is never read.
+  `package_contains` excludes `pkg/` from a package's canonical directory for
+  its root file, `[[link]]` paths, and relative imports (`module.c`). `ace pkg
+  add` takes `NAME VERSION`. Git sources, the lockfile, and
+  `fetch`/`resolve`/`update` were dropped from the design pending a central
+  registry. Package fixtures moved their dependencies under `<case>/pkg/`;
+  demos, benches, and `pkg/*/tests` now reach the repository's `pkg/` by
+  walking up. The `bench/pkg/` section became `bench/package/`, since a
+  directory named `pkg/` is now read as a dependency directory.
 - Implemented recursive nested modules: a subdirectory with its own `mod.ace`
   is itself addressable via a `/`-separated path (bare, aliased, or quoted
   relative without a `.ace` suffix). The parser accepts `ident (/ ident)*` for

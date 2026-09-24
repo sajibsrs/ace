@@ -14,7 +14,7 @@ reference where one exists.
 | `compiler/` | the compiler's own speed and output size | `run-compile.sh` |
 | `core/` | generated code for language features | `run-calls.sh`, `run-cpu.sh`, `run-hotloop.sh` |
 | `std/` | standard-library operations | `run-string.sh`, `run-collections.sh`, `run-math.sh`, `run-memory.sh` |
-| `pkg/` | first-party packages, built as packages | `run-regex.sh`, `run-json.sh` |
+| `package/` | first-party packages, built as packages | `run-regex.sh`, `run-json.sh` |
 
 ## First-run cost
 
@@ -973,7 +973,7 @@ Run `pkg/regex` against the same Pike VM written in C, with PCRE2 as a
 reference:
 
 ```sh
-./bench/pkg/run-regex.sh
+./bench/package/run-regex.sh
 ```
 
 Four workloads over the same 1 MiB of generated letters, digits, dashes,
@@ -983,12 +983,12 @@ find-all loop over the whole text. `pathological` runs `(a|aa)*c` 10,000 times
 against 14 `a`s, a `b`, and a `c`, which a backtracker explores exponentially.
 Times are nanoseconds per input byte.
 
-The Ace side is the package `bench/pkg/regex`, built with `ace pkg build
---release`. `bench/pkg/regex.c` is the comparison target: it mirrors
+The Ace side is the package `bench/package/regex`, built with `ace pkg build
+--release`. `bench/package/regex.c` is the comparison target: it mirrors
 `pkg/regex/inc/matcher.ace` structure for structure and runs the exact
 programs `Program::compile` emits, copied from `Program.format`, so the ratio
 measures code generation rather than algorithm. The runner fails if Ace and C
-disagree on any checksum. `bench/pkg/regex-pcre2.c` runs the same workloads
+disagree on any checksum. `bench/package/regex-pcre2.c` runs the same workloads
 through PCRE2, interpreted and JIT-compiled, when `pcre2-config` is on the
 path. PCRE2 is also leftmost-first, so its checksums must agree too, but it is
 a reference, not a target: it is a backtracker with literal and first-byte
@@ -1201,14 +1201,14 @@ instructions) and passing the queue as one `mut Queue` parameter (62.6 ns at
 Run `pkg/json` writing, parsing, and pointer lookup:
 
 ```sh
-./bench/pkg/run-json.sh
+./bench/package/run-json.sh
 ```
 
 `format` writes a 32-record array (an `id`, a `name` with escapes, `active`,
 a `score`, and a one- to four-element `tags` array per record) through `Json`
 and takes its 2,935-byte text; `parse` parses that text into a reused `Json`;
 `lookup` reads four JSON Pointer paths from the parsed tree. The Ace side is the
-package `bench/pkg/json`, built with `ace pkg build --release`. There is no C
+package `bench/package/json`, built with `ace pkg build --release`. There is no C
 column: compare runs of the script across builds. Times are nanoseconds per
 operation and, for `format` and `parse`, per byte of text.
 

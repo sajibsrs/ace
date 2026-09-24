@@ -1,5 +1,5 @@
 // expect-build-exit: 7
-// pkg-add-args: greeter ../lib
+// pkg-add-args: greeter 0.1.0
 name: consumer
 version: 0.1.0
 ace: 0.1

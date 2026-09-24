@@ -1853,9 +1853,8 @@ fi
 
 # package fixtures: one directory per case. The root ace.pkg passed to
 # --pkg-graph/--pkg-check sits directly at the case root, or at "$case/app"
-# when the case also needs a sibling dependency package (packages are never
-# nested inside one another, so such a dependency cannot live under the case
-# root itself without defeating a containment test). A `// expect-ok:
+# when its dependencies must sit outside it; dependencies live under the
+# case's pkg/<name> and are found by the nearest-pkg/ walk-up. A `// expect-ok:
 # name1,name2,...` comment names the expected dependency-first package-name
 # order from --pkg-graph; `// expect-err: substring` names diagnostic text a
 # failing graph-resolution case must report instead. `// expect-check-ok` and
@@ -1929,8 +1928,8 @@ fi
 # `ace pkg` real subcommand fixtures: one directory per case, exercising the
 # CLI surface itself (cwd-based ace.pkg discovery, build/run linking, check)
 # rather than the --pkg-graph/--pkg-check debug hooks above. The root
-# ace.pkg sits directly at the case root, or at "$case/app" with a sibling
-# "$case/lib" dependency, matching the tests/package convention. Markers live as
+# ace.pkg sits directly at the case root, or at "$case/app" with its
+# dependencies under "$case/pkg/<name>", matching the tests/package convention. Markers live as
 # `//`-comments in ace.pkg: `// expect-build-exit: N` builds an app case and
 # runs it (via both `pkg build` + the binary, and `pkg run` directly),
 # expecting exit code N; `// expect-build-ok` builds a lib case, expecting
@@ -1940,9 +1939,9 @@ fi
 # never reaches the link step); `// expect-run-err: substring` expects
 # `pkg run` on a lib case to fail with that diagnostic; `// expect-check-ok`
 # expects `pkg check` to succeed from a nested working directory (src/)
-# rather than the package root. `// pkg-add-args: NAME PATH` runs
-# `ace pkg add NAME PATH` before any of the above, so a case can prove the
-# added dependency actually builds/links; `// expect-add-err: NAME PATH
+# rather than the package root. `// pkg-add-args: NAME VERSION` runs
+# `ace pkg add NAME VERSION` before any of the above, so a case can prove the
+# added dependency actually builds/links; `// expect-add-err: NAME VERSION
 # substring` and `// expect-remove-err: NAME substring` run `pkg add`/`pkg
 # remove` expecting failure with that diagnostic substring and an unchanged
 # manifest (SPEC.md Decision Queue, "Package system v1": failure leaves the
@@ -1971,8 +1970,8 @@ if [ -d tests/package_cli ]; then
 
         if [ -n "$pkg_add_args" ]; then
             add_name=$(printf '%s\n' "$pkg_add_args" | awk '{print $1}')
-            add_path=$(printf '%s\n' "$pkg_add_args" | awk '{print $2}')
-            if ! (cd "$dir" && "$ACE" pkg add "$add_name" "$add_path") >/tmp/ace_test_errs 2>&1; then
+            add_version=$(printf '%s\n' "$pkg_add_args" | awk '{print $2}')
+            if ! (cd "$dir" && "$ACE" pkg add "$add_name" "$add_version") >/tmp/ace_test_errs 2>&1; then
                 echo "FAIL (pkg add should succeed): $dir"
                 cat /tmp/ace_test_errs
                 fail=1
@@ -1980,10 +1979,10 @@ if [ -d tests/package_cli ]; then
         fi
         if [ -n "$add_err" ]; then
             add_err_name=$(printf '%s\n' "$add_err" | awk '{print $1}')
-            add_err_path=$(printf '%s\n' "$add_err" | awk '{print $2}')
+            add_err_version=$(printf '%s\n' "$add_err" | awk '{print $2}')
             add_err_msg=$(printf '%s\n' "$add_err" | cut -d' ' -f3-)
             before=$(cat "$f")
-            add_out=$(cd "$dir" && "$ACE" pkg add "$add_err_name" "$add_err_path" 2>&1)
+            add_out=$(cd "$dir" && "$ACE" pkg add "$add_err_name" "$add_err_version" 2>&1)
             got=$?
             after=$(cat "$f")
             if [ "$got" -eq 0 ]; then

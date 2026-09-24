@@ -297,10 +297,10 @@ typedef enum { EMIT_CHECKED, EMIT_RELEASE } EmitMode;
 int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report, EmitMode mode);
 extern int emit_has_main;
 
-// --- Packages (ace.pkg manifests, Package System v1: local-path only) --------
-// SPEC.md Decision Queue, "Package system v1 (local-path)". A package is a
-// directory holding one ace.pkg and one root .ace file; dependencies are
-// relative local paths to other package directories, resolved recursively.
+// --- Packages (ace.pkg manifests, SPEC.md Package System) --------------------
+// A package is a directory holding one ace.pkg and one root .ace file;
+// dependencies are name: version entries, each found as the nearest pkg/NAME
+// from the root package's directory and resolved recursively.
 // module.c's resolve_imports consumes the resolved graph for cross-package
 // imports; this stage itself has no codegen involvement.
 struct PackageDep {
@@ -337,7 +337,7 @@ struct Package {
     Package*    next;        // completion order: dependencies before dependents
 };
 
-// Parse ace.pkg at package_dir and resolve its complete local-path dependency
+// Parse ace.pkg at package_dir and resolve its complete dependency
 // graph. Returns the root package, or NULL if any error was reported through
 // d. On success, *order receives every loaded package (including the root)
 // in dependency-first order and *norder its count; the caller owns the
@@ -354,6 +354,10 @@ Package* package_resolve(const char* package_dir, Diag* d, const char* compiler_
 // its count via *nargs; returns NULL with *nargs 0 if d gained any errors.
 char** package_collect_links(Package** order, int norder, Diag* d, int* nargs);
 
+// True iff canonical path canon is package_dir or beneath it, outside its
+// reserved pkg/ directory (SPEC.md Package System #6).
+int package_contains(const char* package_dir, const char* canon);
+
 // True iff s is a nonempty lowercase Ace identifier, the shape a package name
 // must have. Shared by manifest validation and `ace pkg init`'s derived name.
 int package_valid_name(const char* s, size_t len);
@@ -363,9 +367,9 @@ int package_valid_name(const char* s, size_t len);
 // the caller re-resolves the graph afterward and restores the manifest's
 // original bytes on failure. Both return 0 on a successful rewrite, 1 if the
 // manifest could not be read or written back (message already printed).
-// add_dep inserts "name: path\n" as a new [dependencies] entry, creating the
+// add_dep inserts "name: version\n" as a new [dependencies] entry, creating the
 // section header at end-of-file if absent.
-int package_manifest_add_dep(const char* manifest_path, const char* name, const char* path);
+int package_manifest_add_dep(const char* manifest_path, const char* name, const char* version);
 // remove_dep deletes the [dependencies] entry whose key exactly equals name,
 // and the section header too if no other entry remains; *found reports
 // whether such an entry existed (false leaves the manifest untouched).

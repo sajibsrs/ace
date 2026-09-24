@@ -655,17 +655,19 @@ static const char* import_target(Loader* L, Node* imp, const char* src_path, Pac
             if (!target) return NULL;
         }
         // A package's ordinary relative imports may not reach outside its own
-        // canonical directory — this is also what keeps a dependency's
-        // internal files from being deep-imported by a consumer (Package
-        // System #1, #7). Non-package compiles (*target_package == NULL) are
-        // unaffected.
+        // canonical directory, nor into its reserved pkg/ — this is also what
+        // keeps a dependency's internal files from being deep-imported by a
+        // consumer (Package System #1, #6, #7). Non-package compiles
+        // (*target_package == NULL) are unaffected.
         if (*target_package) {
             const char* target_canon = canonicalize(target);
-            if (target_canon && strcmp(target_canon, (*target_package)->dir) != 0 &&
-                !path_beneath(target_canon, (*target_package)->dir)) {
-                import_err(L->d, imp,
-                           "relative import '%s' escapes its package directory '%s'",
-                           raw, (*target_package)->dir);
+            const char* own = (*target_package)->dir;
+            if (target_canon && strcmp(target_canon, own) != 0 && !path_beneath(target_canon, own)) {
+                import_err(L->d, imp, "relative import '%s' escapes its package directory '%s'", raw, own);
+                return NULL;
+            }
+            if (target_canon && !package_contains(own, target_canon)) {
+                import_err(L->d, imp, "relative import '%s' reaches into the reserved pkg/ directory of '%s'", raw, own);
                 return NULL;
             }
         }

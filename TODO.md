@@ -385,6 +385,10 @@ foundations.
 
 ## 5. Packages
 
+- **Remote package source** [open] — Package System #9 in `SPEC.md`: one
+  central registry or resolver maps a name to its source and installs into
+  `pkg/`. Compare against Go's model, where the source URL is itself the
+  package name (`github.com/owner/json`), uniform without a central server.
 - **`pkg/json` formatter throughput** [new] — with its eleven small
   `Formatter` helpers `inline`, a 158-byte document written with 28 calls
   takes 821 ns in release builds, against 366 ns for the same state machine

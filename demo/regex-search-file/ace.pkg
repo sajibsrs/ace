@@ -5,4 +5,4 @@ type: exe
 root: main.ace
 
 [dependencies]
-regex: ../../pkg/regex
+regex: 0.1.0

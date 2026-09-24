@@ -6,4 +6,4 @@ type: exe
 root: main.ace
 
 [dependencies]
-regex: ../..
+regex: 0.1.0

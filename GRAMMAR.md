@@ -347,11 +347,11 @@ Notes:
 3. `description`/`author`/`license`/`repository` alone admit an empty
    `value` (field present, meaning absent); every other `top_key`, every
    `dep_key`, and every `link_key` requires a nonempty `value`.
-4. `[dependencies]`'s `value` is a relative path (Package System #4); an
-   `object`/`search` `link_key`'s `value` is a path relative to the
-   declaring package's own directory with no `..` traversal, and `object`
-   must end in `.o` or `.a` (Package System #14); `library`/`framework`
-   values are bare names.
+4. `[dependencies]`'s `value` is one exact `major.minor.patch` version
+   (Package System #4); an `object`/`search` `link_key`'s `value` is a path
+   relative to the declaring package's own directory with no `..` traversal,
+   and `object` must end in `.o` or `.a` (Package System #14);
+   `library`/`framework` values are bare names.
 5. [P] The recognized header and key sets are closed and expected to grow
    (e.g. a future `authors` as `[[authors]]`); today only `[dependencies]`
    and `[[link]]` exist, and an unrecognized header or key is an error.

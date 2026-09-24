@@ -6,4 +6,4 @@ type: exe
 root: main.ace
 
 [dependencies]
-json: ../..
+json: 0.1.0

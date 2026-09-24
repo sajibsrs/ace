@@ -221,7 +221,7 @@ static void package_usage(void) {
                     "       ace pkg run   [--checked|--release] [--target=TARGET]\n"
                     "                     [--report]\n"
                     "       ace pkg check\n"
-                    "       ace pkg add NAME PATH\n"
+                    "       ace pkg add NAME VERSION\n"
                     "       ace pkg remove NAME\n"
                     "       ace pkg list\n"
                     "  init   create a minimal exe or lib package skeleton, without\n"
@@ -230,7 +230,7 @@ static void package_usage(void) {
                     "         up from the working directory to the nearest ace.pkg\n"
                     "  run    build, then execute the exe (exe-only)\n"
                     "  check  full semantic check of the package, no codegen\n"
-                    "  add    add a local-path lib dependency (PATH relative to ace.pkg)\n"
+                    "  add    add a lib dependency found as the nearest pkg/NAME\n"
                     "  remove remove a dependency by name\n"
                     "  list   print the resolved dependency graph\n");
     exit(2);
@@ -288,7 +288,7 @@ static int package_write_file(const char* path, const char* data, size_t len) {
     return 0;
 }
 
-// Resolve the local-path dependency graph at dir and fully check its root
+// Resolve the dependency graph at dir and fully check its root
 // file (lex/parse/resolve_imports/sema_check), the manifest-free counterpart
 // to plain `ace file.ace`. On success *out_package/*out_file/*out_diag are set
 // for a caller (pkg build) that still needs the parsed file for codegen;
@@ -391,7 +391,7 @@ static int package_revalidate_or_restore(const char* dir, const char* argv0,
 static int package_cmd_add(int argc, char** argv, const char* argv0) {
     if (argc != 2) package_usage();
     const char* name = argv[0];
-    const char* path = argv[1];
+    const char* version = argv[1];
     if (!package_valid_name(name, strlen(name))) {
         fprintf(stderr, "ace: dependency name '%s' must be a lowercase identifier\n", name);
         return 2;
@@ -407,7 +407,7 @@ static int package_cmd_add(int argc, char** argv, const char* argv0) {
     char* backup;
     size_t backup_len;
     if (package_manifest_backup(manifest_path, &backup, &backup_len) != 0) return 1;
-    if (package_manifest_add_dep(manifest_path, name, path) != 0) {
+    if (package_manifest_add_dep(manifest_path, name, version) != 0) {
         free(backup);
         return 1;
     }

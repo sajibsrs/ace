@@ -9,4 +9,4 @@ type: exe
 root: src/main.ace
 
 [dependencies]
-lib_a: ../lib_a
+lib_a: 0.1.0

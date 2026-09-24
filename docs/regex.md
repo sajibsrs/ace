@@ -14,8 +14,9 @@ compiled instructions), and `Matcher` (the VM that runs a program) — so a
 caller who needs different control can compose those directly.
 
 `regex` is a standalone package at [`pkg/regex`](../pkg/regex), not a `std`
-module. A consumer lists it under `[dependencies]` in its own `ace.pkg` with a
-relative path to `pkg/regex`; the source then writes a plain `import regex`.
+module. A consumer lists it under `[dependencies]` in its own `ace.pkg` as
+`regex: 0.1.0`, found as the nearest `pkg/regex`; the source then writes a
+plain `import regex`.
 See [`demo/regex-search-file`](../demo/regex-search-file) for a consuming
 example.
 

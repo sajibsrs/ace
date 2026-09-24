@@ -1,0 +1,12 @@
+// A dependency with no pkg/<name> in the root package's directory or any
+// ancestor directory is an error.
+// expect-err: dependency 'missing' 0.1.0 not found
+
+name: dep_not_found
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[dependencies]
+missing: 0.1.0

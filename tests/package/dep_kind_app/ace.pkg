@@ -8,4 +8,4 @@ type: exe
 root: main.ace
 
 [dependencies]
-dep: ./dep
+dep: 0.1.0

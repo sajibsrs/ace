@@ -1,13 +1,12 @@
-// The graph can contain at most one source for each declared package name;
-// dep1 and dep2 both declare `name: shared`.
+// Each package name has one location per graph: the root is itself named
+// `shared`, while lib_a's dependency `shared` resolves to pkg/shared.
 // expect-err: resolves to two different sources
 
-name: name_conflict
+name: shared
 version: 0.1.0
 ace: 0.1
 type: exe
 root: main.ace
 
 [dependencies]
-shared: ./dep1
-shared2: ./dep2
+lib_a: 0.1.0

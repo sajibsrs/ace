@@ -12,5 +12,5 @@ type: exe
 root: src/main.ace
 
 [dependencies]
-lib_a: ../lib_a
-lib_b: ../lib_b
+lib_a: 0.1.0
+lib_b: 0.1.0

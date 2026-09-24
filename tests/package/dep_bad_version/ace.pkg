@@ -1,0 +1,11 @@
+// A dependency value is one exact major.minor.patch version, never a path.
+// expect-err: dependency 'lib' version '../lib' must be exactly major.minor.patch
+
+name: dep_bad_version
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[dependencies]
+lib: ../lib

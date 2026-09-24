@@ -5,8 +5,9 @@
 # correctness, and shouldn't gate core compiler iteration. Run via
 # `make test-packages` or directly as `pkg/regex/tests/run.sh`.
 #
-# One directory per case, each its own `app` package depending on the sibling
-# `regex` package (`regex: ../..`), matching tests/package_cli's convention.
+# One directory per case, each its own `app` package depending on `regex`
+# (`regex: 0.1.0`), found as the repository's pkg/regex by the nearest-pkg/
+# walk-up.
 # Markers live as `//`-comments in ace.pkg: `// expect-exit: N` builds and
 # runs the case, expecting exit code N; `// expect-check-ok` expects
 # `--pkg-check` to succeed with no run.

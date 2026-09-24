@@ -1,0 +1,12 @@
+// A relative import cannot reach into the package's own reserved pkg/
+// directory, even though pkg/ sits beneath the package root.
+// expect-check-err: reaches into the reserved pkg/ directory
+
+name: import_into_pkg
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[dependencies]
+lib: 0.1.0

@@ -1,4 +1,4 @@
-// pkg-add-args: greeter ../lib
+// pkg-add-args: greeter 0.1.0
 // expect-remove-ok: greeter
 name: consumer
 version: 0.1.0

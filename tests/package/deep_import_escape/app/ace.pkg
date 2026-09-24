@@ -1,8 +1,6 @@
 // A relative import reaching into a dependency's internal (non-root) file
-// escapes that dependency's canonical directory and must be rejected: a
-// library's root module is its sole external import surface. app and lib
-// are ordinary sibling directories, as packages always are (never nested
-// inside one another).
+// escapes the importing package's canonical directory and must be rejected:
+// a library's root module is its sole external import surface.
 // expect-check-err: escapes its package directory
 
 name: app
@@ -12,4 +10,4 @@ type: exe
 root: main.ace
 
 [dependencies]
-lib: ../lib
+lib: 0.1.0

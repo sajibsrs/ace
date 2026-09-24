@@ -1,8 +1,0 @@
-name: lib_a
-version: 0.1.0
-ace: 0.1
-type: lib
-root: src/mod.ace
-
-[dependencies]
-lib_b: ../lib_b

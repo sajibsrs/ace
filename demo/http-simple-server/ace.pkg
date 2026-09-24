@@ -5,4 +5,4 @@ type: exe
 root: main.ace
 
 [dependencies]
-http: ../../pkg/http
+http: 0.1.0

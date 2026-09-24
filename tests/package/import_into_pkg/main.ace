@@ -1,0 +1,5 @@
+import x: "./pkg/lib/root.ace"
+
+main(): int {
+    return x.f()
+}

@@ -1,11 +1,10 @@
-// package.c — ace.pkg manifest parsing and local-path dependency-graph
-// resolution (Package System v1, SPEC.md Decision Queue). A manifest is a
-// small line-based key: value format, plus one [dependencies] section of
-// name: relative/path entries. Dependency paths are resolved from the
-// declaring ace.pkg and may traverse upward (packages are ordinary sibling
-// directories, not nested inside one another); the root's own root file must
-// stay within its package directory. No codegen or import-surface wiring
-// happens here.
+// package.c — ace.pkg manifest parsing and dependency-graph resolution
+// (SPEC.md Package System). A manifest is a small line-based key: value
+// format, plus one [dependencies] section of name: version entries. Every
+// dependency name in a graph, direct or transitive, is found from the root
+// package's directory as the nearest <dir>/pkg/<name> (Package System #5);
+// a package's own reserved pkg/ is not part of it (#6). No codegen or
+// import-surface wiring happens here.
 #include "ace.h"
 
 #include <ctype.h>
@@ -16,7 +15,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
-typedef struct { const char* alias; const char* path; int line; } RawDep;
+typedef struct { const char* alias; const char* version; int line; } RawDep;
 
 // [[link]] record kinds (LinkKind is declared in ace.h beside PackageLink):
 // one raw entry per recognized key, in file order across every occurrence.
@@ -45,6 +44,7 @@ typedef struct {
     Package*    loading; // in-progress stack (cycle detection)
     Package*    loaded;  // completed, newest-first
     NameEntry*  names;   // declared package name -> its canonical directory
+    const char* root_dir; // canonical directory every dependency resolves from
     int         have_ace_version;
     int         ace_major, ace_minor; // the root's, shared by the whole graph
 } PackageLoader;
@@ -149,20 +149,40 @@ static int path_is_local_object(const char* s, size_t len) {
     return path_is_contained(s, len);
 }
 
-// A relative directory path — dependency paths may traverse upward (".."),
-// since packages are ordinary sibling directories on disk.
-static int path_is_relative(const char* s, size_t len) {
-    return len > 0 && s[0] != '/';
+int package_contains(const char* package_dir, const char* canon) {
+    if (strcmp(canon, package_dir) != 0 && !path_beneath(canon, package_dir)) return 0;
+    size_t n = strlen(package_dir);
+    const char* rest = canon + n;
+    return !(strncmp(rest, "/pkg", 4) == 0 && (rest[4] == 0 || rest[4] == '/'));
 }
 
-static void add_raw_dep(RawManifest* rm, const char* alias, const char* path, int line) {
+// The nearest existing <dir>/pkg/<name>, checking start and then each
+// ancestor directory (Package System #5); NULL if none exists.
+static const char* find_in_pkg(const char* start, const char* name) {
+    size_t n = strlen(start);
+    char* dir = arena_alloc(n + 1);
+    memcpy(dir, start, n + 1);
+    for (;;) {
+        size_t need = strlen(dir) + strlen(name) + 7;
+        char* candidate = arena_alloc(need);
+        snprintf(candidate, need, "%s/pkg/%s", strcmp(dir, "/") == 0 ? "" : dir, name);
+        struct stat st;
+        if (stat(candidate, &st) == 0 && S_ISDIR(st.st_mode)) return candidate;
+        char* slash = strrchr(dir, '/');
+        if (!slash || strcmp(dir, "/") == 0) return NULL;
+        if (slash == dir) slash[1] = 0;
+        else slash[0] = 0;
+    }
+}
+
+static void add_raw_dep(RawManifest* rm, const char* alias, const char* version, int line) {
     if (rm->ndeps == rm->cdeps) {
         rm->cdeps = rm->cdeps ? rm->cdeps * 2 : 8;
         rm->deps = realloc(rm->deps, (size_t)rm->cdeps * sizeof(RawDep));
         if (!rm->deps) { fprintf(stderr, "ace: out of memory\n"); exit(1); }
     }
     rm->deps[rm->ndeps].alias = alias;
-    rm->deps[rm->ndeps].path = path;
+    rm->deps[rm->ndeps].version = version;
     rm->deps[rm->ndeps].line = line;
     rm->ndeps++;
 }
@@ -324,6 +344,7 @@ static int is_std_module_name(const char* compiler_path, const char* name) {
 static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
                          const char* dep_manifest, int dep_line) {
     const char* canon = canonicalize(dir_arg);
+    if (canon && is_root) L->root_dir = canon;
     if (!canon) {
         package_err(L, dep_manifest ? dep_manifest : dir_arg, dep_line, "cannot find package directory '%s'", dir_arg);
         return NULL;
@@ -409,6 +430,9 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
         if (!root_canon || !(path_beneath(root_canon, canon) || strcmp(root_canon, canon) == 0)) {
             package_err(L, manifest, rm.root_line, "root '%s' does not exist", rm.root);
             ok = 0;
+        } else if (!package_contains(canon, root_canon)) {
+            package_err(L, manifest, rm.root_line, "root '%s' is inside the reserved pkg/ directory", rm.root);
+            ok = 0;
         }
     }
     if (ok && is_std_module_name(L->compiler_path, rm.name)) {
@@ -438,8 +462,10 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
             package_err(L, manifest, rm.deps[i].line, "dependency alias '%s' must be an identifier", rm.deps[i].alias);
             ok = 0;
         }
-        if (!path_is_relative(rm.deps[i].path, strlen(rm.deps[i].path))) {
-            package_err(L, manifest, rm.deps[i].line, "dependency path '%s' must be a relative path", rm.deps[i].path);
+        int dmaj, dmin, dpat;
+        if (!parse_version(rm.deps[i].version, strlen(rm.deps[i].version), &dmaj, &dmin, &dpat)) {
+            package_err(L, manifest, rm.deps[i].line, "dependency '%s' version '%s' must be exactly major.minor.patch",
+                        rm.deps[i].alias, rm.deps[i].version);
             ok = 0;
         }
     }
@@ -477,13 +503,26 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
 
     PackageDep* deps = NULL;
     for (int i = 0; i < rm.ndeps; i++) {
-        const char* target = join_path(canon, rm.deps[i].path);
-        Package* dep = package_load(L, target, 0, manifest, rm.deps[i].line);
+        RawDep* rd = &rm.deps[i];
+        const char* target = find_in_pkg(L->root_dir, rd->alias);
+        if (!target) {
+            package_err(L, manifest, rd->line, "dependency '%s' %s not found: no pkg/%s in '%s' or any parent directory",
+                        rd->alias, rd->version, rd->alias, L->root_dir);
+            continue;
+        }
+        Package* dep = package_load(L, target, 0, manifest, rd->line);
         if (!dep) continue;
-        if (strcmp(dep->name, rm.deps[i].alias) != 0) {
-            package_err(L, manifest, rm.deps[i].line,
+        if (strcmp(dep->name, rd->alias) != 0) {
+            package_err(L, manifest, rd->line,
                     "dependency alias '%s' does not match package name '%s' declared at '%s'",
-                    rm.deps[i].alias, dep->name, dep->dir);
+                    rd->alias, dep->name, dep->dir);
+            continue;
+        }
+        int dmaj = 0, dmin = 0, dpat = 0;
+        parse_version(rd->version, strlen(rd->version), &dmaj, &dmin, &dpat);
+        if (dep->ver_major != dmaj || dep->ver_minor != dmin || dep->ver_patch != dpat) {
+            package_err(L, manifest, rd->line, "dependency '%s' requires version %s, but '%s' declares %d.%d.%d",
+                        rd->alias, rd->version, dep->dir, dep->ver_major, dep->ver_minor, dep->ver_patch);
             continue;
         }
         PackageDep* pd = (PackageDep*)arena_alloc(sizeof(PackageDep));
@@ -504,6 +543,10 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
             const char* resolved = canonicalize(join_path(canon, value));
             if (!resolved || !(path_beneath(resolved, canon) || strcmp(resolved, canon) == 0)) {
                 package_err(L, manifest, rl->line, "[[link]] path '%s' does not exist", value);
+                continue;
+            }
+            if (!package_contains(canon, resolved)) {
+                package_err(L, manifest, rl->line, "[[link]] path '%s' is inside the reserved pkg/ directory", value);
                 continue;
             }
             value = resolved;
@@ -645,12 +688,12 @@ static int overwrite_file(const char* path, const char* data, size_t len) {
     return 0;
 }
 
-int package_manifest_add_dep(const char* manifest_path, const char* name, const char* path) {
+int package_manifest_add_dep(const char* manifest_path, const char* name, const char* version) {
     Source s;
     if (source_load(&s, manifest_path) != 0) return 1;
 
     char entry[512];
-    int entry_len = snprintf(entry, sizeof entry, "%s: %s\n", name, path);
+    int entry_len = snprintf(entry, sizeof entry, "%s: %s\n", name, version);
 
     // Find the end of the first "[dependencies]" line; the new entry is
     // inserted immediately after it, regardless of what else the section

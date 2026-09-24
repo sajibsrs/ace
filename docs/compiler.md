@@ -93,9 +93,9 @@ machine-consumable standard output remain unchanged.
 Plain `ace file.ace` compiles one root source with no manifest. An optional
 `ace.pkg` at a directory root groups a package's files under a declared
 `name`, exact `version`, `ace` language version, `type` (`exe` or `lib`), and
-`root` source file, with local-path-only `[dependencies]` entries (see
-`SPEC.md`'s Package System section for the manifest format and dependency
-rules). Optional `description`, `author`, `license`, and `repository` fields
+`root` source file, with `[dependencies]` entries naming each dependency and
+its exact version (`json: 0.1.0`; see `SPEC.md`'s Package System section for
+the manifest format and dependency rules). Optional `description`, `author`, `license`, and `repository` fields
 hold free-form single-line metadata with no effect on identity, resolution, or
 compilation; any of them may be left empty. Every manifest-aware operation is
 grouped under `ace pkg`:
@@ -106,7 +106,7 @@ ace pkg init lib my_lib
 ace pkg build
 ace pkg run
 ace pkg check
-ace pkg add NAME PATH
+ace pkg add NAME VERSION
 ace pkg remove NAME
 ace pkg list
 ```
@@ -133,15 +133,24 @@ empty `src/mod.ace`, since a library's root module needs no content to be a
 valid sole import surface. The generated `ace.pkg` includes empty
 `description`, `author`, `license`, and `repository` fields ready to fill in.
 
-`add NAME PATH` and `remove NAME` edit the enclosing package's own
-`[dependencies]` section for a local-path entry (`PATH` relative to that
-`ace.pkg`, same convention as an existing entry): `add` validates the
-complete resulting graph — no duplicate or colliding name, `PATH` holding a
-`lib` package whose declared `name` exactly matches `NAME`, no cycle, one
-shared `ace` language version — before writing, and `remove` re-validates
-symmetrically; either restores the manifest to its exact original bytes if
-validation fails. `list` is read-only: it prints the resolved graph (name,
-type, direct/transitive, directory).
+Every dependency, direct or transitive, is found from the directory of the
+package being built: the first existing `pkg/NAME` in that directory or any
+ancestor directory. That nearest match must be a `lib` package declaring
+exactly `NAME` and the requested version; a mismatch is an error, not a
+reason to keep searching, and a dependency's own `pkg/` is never read. So
+sibling packages share one `pkg/` in a common ancestor, and each name has one
+location per build. `pkg/` is reserved: a package's root file cannot live
+under it and a relative import cannot reach into it. Nothing fetches packages
+into `pkg/` yet; remote packages await a central registry.
+
+`add NAME VERSION` and `remove NAME` edit the enclosing package's own
+`[dependencies]` section: `add` validates the complete resulting graph — no
+duplicate or colliding name, a matching `lib` at the nearest `pkg/NAME`, no
+cycle, one shared `ace` language version — before writing, and `remove`
+re-validates symmetrically; either restores the manifest to its exact
+original bytes if validation fails. Neither writes or deletes anything under
+`pkg/`. `list` is read-only: it prints the resolved graph (name, type,
+direct/transitive, directory).
 
 `--pkg-graph=DIR` and `--pkg-check=DIR` remain as lower-level debug hooks —
 analogous to `--tokens`/`--ast` exposing earlier compiler stages — resolving

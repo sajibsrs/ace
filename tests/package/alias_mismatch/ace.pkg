@@ -1,5 +1,5 @@
-// A dependency's manifest alias cannot rename the fetched package: it must
-// equal the target's own declared name.
+// A dependency name cannot rename a package: the package found at
+// pkg/<name> must declare that same name.
 // expect-err: does not match package name
 
 name: alias_mismatch
@@ -9,4 +9,4 @@ type: exe
 root: main.ace
 
 [dependencies]
-wrong_name: ./dep
+wrong_name: 0.1.0

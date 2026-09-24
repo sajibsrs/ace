@@ -6,4 +6,4 @@ type: exe
 root: main.ace
 
 [dependencies]
-http: ../..
+http: 0.1.0

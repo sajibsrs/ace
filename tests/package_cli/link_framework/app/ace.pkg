@@ -9,4 +9,4 @@ type: exe
 root: src/main.ace
 
 [dependencies]
-greeter: ../lib
+greeter: 0.1.0

@@ -9,4 +9,4 @@ type: exe
 root: main.ace
 
 [dependencies]
-a: ./a
+a: 0.1.0

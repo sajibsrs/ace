@@ -1,0 +1,12 @@
+// The nearest pkg/lib (app/pkg/lib, 0.2.0) is authoritative: its version
+// mismatch is an error even though the parent's pkg/lib declares 0.1.0.
+// expect-err: dependency 'lib' requires version 0.1.0, but
+
+name: app
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[dependencies]
+lib: 0.1.0

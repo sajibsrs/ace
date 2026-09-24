@@ -5,4 +5,4 @@ type: exe
 root: main.ace
 
 [dependencies]
-json: ../../pkg/json
+json: 0.1.0

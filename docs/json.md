@@ -15,8 +15,9 @@ use them directly to reuse storage across many parses or to skip `Json`'s
 extra call per write.
 
 `json` is a standalone package at [`pkg/json`](../pkg/json), not a `std`
-module. A consumer lists it under `[dependencies]` in its own `ace.pkg` with a
-relative path to `pkg/json`; the source then writes a plain `import json`. See
+module. A consumer lists it under `[dependencies]` in its own `ace.pkg` as
+`json: 0.1.0`, found as the nearest `pkg/json`; the source then writes a plain
+`import json`. See
 [`demo/json-parse-file`](../demo/json-parse-file) and
 [`demo/json-format-file`](../demo/json-format-file) for consuming examples.
 

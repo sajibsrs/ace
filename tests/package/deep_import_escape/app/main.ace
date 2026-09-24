@@ -1,4 +1,4 @@
-import x: "../lib/secret.ace"
+import x: "../pkg/lib/secret.ace"
 
 main(): int {
     return x.hidden()

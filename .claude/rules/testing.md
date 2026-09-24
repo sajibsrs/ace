@@ -16,12 +16,12 @@ paths:
   synthetic std tree; emit-errors fail during `-c`; driver tests exercise
   external linking; package tests resolve an `ace.pkg` dependency graph via
   `--pkg-graph=DIR` and check cross-package imports via `--pkg-check=DIR` —
-  one directory per case, root manifest at the case root (or `<case>/app`
-  when a sibling dependency package is needed), a `// expect-ok:`/
+  one directory per case, root manifest at the case root (or `<case>/app`),
+  dependencies under `<case>/pkg/<name>`, a `// expect-ok:`/
   `// expect-err:`/`// expect-check-ok`/`// expect-check-err:` comment naming
   the expected outcome. `tests/package_cli/` exercises the real `ace pkg`
   subcommands (`init`/`build`/`run`/`check`) rather than the debug flags —
-  same one-directory-per-case/`<case>/app`+`<case>/lib` layout, with
+  same one-directory-per-case/`<case>/app`+`<case>/pkg/<name>` layout, with
   `// expect-build-exit: N` (build an app, run it both via the linked binary
   and `pkg run`), `// expect-build-ok` (build a lib: succeeds, no linked
   binary), `// expect-run-err: substring` (`pkg run` on a lib must fail with
@@ -35,7 +35,7 @@ paths:
   under `pkg/<name>/tests/`, run by `make test-packages`
   (`pkg/<name>/tests/run.sh`), not `make test`/`tests/run.sh`: package content
   doesn't gate core compiler iteration. Same one-directory-per-case layout as
-  `tests/package_cli/`, each case an `app` package depending on the sibling
-  package by relative path, with `// expect-exit: N`/`// expect-check-ok`
-  markers as `ace.pkg` comments. Run `make test-packages` when touching a
+  `tests/package_cli/`, each case an `app` package depending on the package
+  by version, found as the repository's `pkg/<name>`, with
+  `// expect-exit: N`/`// expect-check-ok` markers as `ace.pkg` comments. Run `make test-packages` when touching a
   `pkg/` package; it is not covered by `make test`.
