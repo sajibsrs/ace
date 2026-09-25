@@ -85,6 +85,11 @@ current normative rules, and Git preserves patch-level detail.
   the module when the member existed. Type positions (`shape.Box`,
   `shape.Box{...}`, sizeof and typeid operands) still name the module's type.
   The separate unscoped qualified-lowering pass is gone.
+- Indexed an imported file's renamed declarations in an open-addressed FNV-1a
+  table built once before the reference walk. Each unshadowed name had scanned
+  every declaration, so lowering was quadratic in the file's size: an imported
+  file of 8000 struct types and functions took 25.1G instructions to compile,
+  now 3.0G (500: -23.5%). The regex and json package checks gain 0.3%.
 - Merged the imported-file rename walk into the scoped reference walk: one
   pass, after an imported file's declarations take private names, lowers
   selected imports, `binding.member`, and that file's own names, so one set of

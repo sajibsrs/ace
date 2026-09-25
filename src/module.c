@@ -968,6 +968,8 @@ typedef struct {
 typedef struct {
     Rename* v;
     int     n, cap;
+    int*    index; // open-addressed slots of v + 1 (0 = empty); see index_renames
+    uint32_t mask;
 } Renames;
 
 static void renames_add(Renames* rs, const char* from, uint32_t flen, const char* to) {
@@ -1035,8 +1037,42 @@ static void rename_decls(Module* m, Renames* rs) {
     }
 }
 
+static uint32_t rename_hash(const char* name, uint32_t len) {
+    uint32_t h = 2166136261u; // FNV-1a
+    for (uint32_t i = 0; i < len; i++) h = (h ^ (uint8_t)name[i]) * 16777619u;
+    return h;
+}
+
+/* Every unshadowed name in an imported file is looked up here, against all of
+ * its declarations, so the complete list is indexed once. An overload set adds
+ * one entry per declaration under one name; all map to the same private name,
+ * so the index keeps the first. */
+static void index_renames(Renames* rs) {
+    uint32_t cap = 16;
+    while (cap < (uint32_t)rs->n * 2) cap *= 2;
+    rs->index = calloc(cap, sizeof(int));
+    if (!rs->index) exit(1);
+    rs->mask = cap - 1;
+    for (int i = 0; i < rs->n; i++) {
+        uint32_t at = rename_hash(rs->v[i].from, rs->v[i].flen) & rs->mask;
+        for (;;) {
+            int slot = rs->index[at];
+            if (!slot) {
+                rs->index[at] = i + 1;
+                break;
+            }
+            Rename* r = &rs->v[slot - 1];
+            if (r->flen == rs->v[i].flen && memcmp(r->from, rs->v[i].from, r->flen) == 0) break;
+            at = (at + 1) & rs->mask;
+        }
+    }
+}
+
 static Rename* find_rename(Renames* rs, const char* name, uint32_t len) {
-    for (int i = 0; i < rs->n; i++) if (rs->v[i].flen == len && memcmp(rs->v[i].from, name, len) == 0) return &rs->v[i];
+    for (uint32_t at = rename_hash(name, len) & rs->mask; rs->index[at]; at = (at + 1) & rs->mask) {
+        Rename* r = &rs->v[rs->index[at] - 1];
+        if (r->flen == len && memcmp(r->from, name, len) == 0) return r;
+    }
     return NULL;
 }
 
@@ -1447,7 +1483,10 @@ static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root
     // lowers every reference to them and to this file's imports.
     Module* self = L->loading; // the module being resolved is stack top
     Renames rs = {0};
-    if (!is_root) rename_decls(self, &rs);
+    if (!is_root) {
+        rename_decls(self, &rs);
+        index_renames(&rs);
+    }
     for (int i = 0; i < file->nkids; i++) {
         if (file->kids[i]->kind == N_IMPORT) continue;
         RefLower c = {0};
@@ -1458,6 +1497,7 @@ static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root
         lower_refs(file->kids[i], &c);
     }
     free(rs.v);
+    free(rs.index);
     if (L->d->errors) return L->d->errors;
 
     if (!is_root) {
