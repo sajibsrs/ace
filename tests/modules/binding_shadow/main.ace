@@ -1,0 +1,24 @@
+/* A local or parameter shadows an import binding for `.` member syntax from
+ * its declarator to the end of its scope; a type qualifier stays the module. */
+
+/* expect-exit: 32 */
+
+import shape: "./shape.ace"
+
+field(shape: shape.Box): int {
+    return shape.area
+}
+
+main(): int {
+    before: int = shape.area()
+    box: shape.Box = shape.Box{area = 5, floor = 0}
+    total: int = field(box)
+    kind: shape.Kind = shape.Kind.circle
+    if before > 0 {
+        shape: shape.Box = shape.Box{area = 20, floor = 0}
+        same: shape.Kind = kind
+        if same == kind { total += shape.area }
+    }
+    total += shape.inner()
+    return total + (shape.area() - before)
+}

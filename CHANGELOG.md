@@ -79,6 +79,12 @@ current normative rules, and Git preserves patch-level detail.
 - Fixed module-private name lowering to preserve lexical value and type scopes,
   so parameters and locals shadow same-named module functions without changing
   unshadowed overload, qualified-module, or method resolution.
+- Lowered `binding.member` in the scoped import walk, so a local or parameter
+  named like a whole-module binding shadows it: `.` on it is a field access,
+  where it was rejected as an unknown module member, or silently resolved to
+  the module when the member existed. Type positions (`shape.Box`,
+  `shape.Box{...}`, sizeof and typeid operands) still name the module's type.
+  The separate unscoped qualified-lowering pass is gone.
 - Scoped a local from its declarator in module lowering as sema already did,
   so an imported file's `total: usize = total + 1` names the uninitialized
   local instead of the module global, and a selected import no longer reaches

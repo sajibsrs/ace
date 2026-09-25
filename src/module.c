@@ -853,9 +853,9 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
 
 // --- qualified reference lowering -----------------------------------------------------
 // `binding.member` forms are rewritten to the module's private prefixed
-// names after a pub check, before semantic checking runs. Shadowing an
-// import binding with a local is diagnosed by the checker (unknown
-// `name$member`); the loader cannot see scopes, only the surface.
+// names after a pub check, before semantic checking runs. The scoped walk
+// below (lower_selected_node) calls these only where no local shadows the
+// binding; a type qualifier is never shadowed by a value.
 
 static void qualified_type_err(Loader* L, Node* n) {
     import_err(L->d, n, "qualified type paths deeper than 'module.Type' are not supported");
@@ -957,32 +957,11 @@ static void lower_field(Loader* L, Node* e, Binding* binds) {
     }
 }
 
-static void lower_qualified(Loader* L, Node* n, Binding* binds) {
-    if (!n) return;
-    switch (n->kind) {
-    case N_IMPORT:
-        return; // bindings, not references
-    case N_NAMED:
-        if (n->a) { lower_named(L, n, binds); return; }
-        break;
-    case N_FIELD_E:
-        if (n->a && n->a->kind == N_IDENT) { lower_field(L, n, binds); return; }
-        if (n->a && n->a->kind == N_FIELD_E) { lower_field(L, n, binds); return; }
-        break;
-    default:
-        break;
-    }
-    lower_qualified(L, n->a, binds);
-    lower_qualified(L, n->b, binds);
-    lower_qualified(L, n->c, binds);
-    lower_qualified(L, n->d, binds);
-    for (int i = 0; i < n->nkids; i++) lower_qualified(L, n->kids[i], binds);
-}
-
-// --- selective import lowering ------------------------------------------------------
-// Selected names are lowered with lexical-scope awareness. This is intentionally
-// separate from rename_refs: a parameter/local may shadow a selected value, while
-// a generic type parameter may shadow a selected type.
+// --- import reference lowering ------------------------------------------------------
+// Selected names and `binding.member` references are lowered with lexical-scope
+// awareness. This is intentionally separate from rename_refs: a parameter/local
+// may shadow a selected value or an import binding, while a generic type
+// parameter may shadow a selected type.
 
 typedef struct LocalName LocalName;
 struct LocalName {
@@ -994,6 +973,8 @@ struct LocalName {
 };
 
 typedef struct {
+    Loader* L;
+    Binding* binds; // whole-module bindings for `binding.member`
     Select* sels;
     LocalName* locals;
     int depth;
@@ -1040,6 +1021,7 @@ static void lower_selected_node(Node* n, SelectLower* c);
 
 static void lower_selected_type(Node* t, SelectLower* c) {
     if (!t) return;
+    if (t->kind == N_NAMED && t->a) lower_named(c->L, t, c->binds); // `math.Vec`
     if (t->kind == N_NAMED && !t->a) { // few selections, many locals: look up the selection first
         Select* s = find_select(c->sels, t->str, t->len, 1);
         if (s && !local_name(c, t->str, t->len, 1)) replace_name(t, s->type_name);
@@ -1047,6 +1029,20 @@ static void lower_selected_type(Node* t, SelectLower* c) {
     lower_selected_type(t->a, c);
     if (t->kind == N_STATICMAP_T) lower_selected_type(t->b, c);
     for (int i = 0; i < t->nkids; i++) lower_selected_type(t->kids[i], c);
+}
+
+/* `binding.member`, or the enum-constant form `binding.Type.member`: a module
+ * member unless, in value position, a local shadows the binding. A type
+ * position (`binding.T{...}`, a sizeof operand) names a type, which no value
+ * local shadows. */
+static void lower_qualified_field(Node* n, SelectLower* c, int type_position) {
+    Node* base = n->a && n->a->kind == N_FIELD_E ? n->a->a : n->a;
+    if (base && base->kind == N_IDENT &&
+        (type_position || !local_name(c, base->str, base->len, 0))) {
+        lower_field(c->L, n, c->binds);
+        if (n->kind != N_FIELD_E) return; // now the member's private name
+    }
+    lower_selected_node(n->a, c); // field spelling is member-local
 }
 
 static void lower_selected_type_ref(Node* n, SelectLower* c) {
@@ -1061,7 +1057,8 @@ static void lower_selected_type_ref(Node* n, SelectLower* c) {
         return;
     }
     Node* name = n->kind == N_INDEX ? n->a : n;
-    if (name && name->kind == N_IDENT) {
+    if (name && name->kind == N_FIELD_E) lower_qualified_field(name, c, 1); // e.g. typeid(tcp.Err)
+    else if (name && name->kind == N_IDENT) {
         Select* s = find_select(c->sels, name->str, name->len, 1);
         if (s && !local_name(c, name->str, name->len, 1)) replace_name(name, s->type_name);
     }
@@ -1192,7 +1189,7 @@ static void lower_selected_node(Node* n, SelectLower* c) {
         }
         return;
     case N_FIELD_E:
-        lower_selected_node(n->a, c); // field spelling is member-local
+        lower_qualified_field(n, c, 0);
         return;
     case N_FIELDINIT:
         lower_selected_node(n->a, c); // initializer name is struct-local
@@ -1534,16 +1531,16 @@ static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root
         if (L->d->errors) return L->d->errors;
     }
 
-    // lower qualified references with this file's bindings
-    for (int i = 0; i < file->nkids; i++) if (file->kids[i]->kind != N_IMPORT) lower_qualified(L, file->kids[i], binds);
-    if (L->d->errors) return L->d->errors;
-
+    // lower qualified and selected references with this file's imports
     for (int i = 0; i < file->nkids; i++) {
         if (file->kids[i]->kind == N_IMPORT) continue;
         SelectLower c = {0};
+        c.L = L;
+        c.binds = binds;
         c.sels = sels;
         lower_selected_node(file->kids[i], &c);
     }
+    if (L->d->errors) return L->d->errors;
 
     if (!is_root) {
         Module* self = L->loading; // the module being resolved is stack top

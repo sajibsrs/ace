@@ -91,6 +91,10 @@ A binding may be declared only once per namespace in a file. A selected name
 that conflicts with another import or declaration is a compile error; imports
 from different modules never merge overload sets. Import the module qualified
 when names collide. Nested local bindings may shadow selected values normally.
+A local or parameter named like a whole-module binding shadows it the same way:
+in its scope, `shape.area` reads the local's field, and `shape.Kind.circle` is
+a field path too. A type position such as `shape.Box` or `shape.Box{...}` still
+names the module's type, since a value never shadows a type.
 
 ## What can be imported
 
@@ -237,10 +241,6 @@ every function to the file it was written in.
   file, per spec) is future work.
 - Relative import paths must name a file or nested module directly; wildcard
   imports and package lists do not exist.
-- A local variable that shadows an import binding cannot be used with `.`
-  member syntax in that file — the qualified use is rejected as an unknown
-  module member name. Rename one side. Selectively imported values do not have
-  this limitation; their nested shadowing is resolved lexically.
 - Standard-library modules live beside the compiler binary (`std/` next to
   `ace`); there is no user-configurable search path yet.
 - `bits`, `fmt`, `mem`, and the minimal `math` exist in the standard library today — see
