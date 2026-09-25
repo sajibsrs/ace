@@ -1,0 +1,23 @@
+/* A qualified or selected constant is lowered wherever an array length
+ * appears: declarations, fields, parameters, and sizeof operands, including
+ * the parts of a tuple type. */
+
+/* expect-exit: 28 */
+
+import sizes: "./sizes.ace"
+import SIZE from "./sizes.ace"
+import filled from "./buffer.ace"
+
+Frame: struct { bytes: [sizes.SIZE]u8 }
+
+count(bytes: [SIZE]u8): usize {
+    return bytes.len
+}
+
+main(): int {
+    frame: Frame
+    selected: [SIZE]u8 = [0 : SIZE]
+    total: usize = frame.bytes.len + count(selected) + filled()
+    total += sizeof([sizes.SIZE]u8) + sizeof(([SIZE]u8, sizes.Cell))
+    return int(total)
+}

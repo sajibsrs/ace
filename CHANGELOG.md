@@ -85,6 +85,11 @@ current normative rules, and Git preserves patch-level detail.
   the module when the member existed. Type positions (`shape.Box`,
   `shape.Box{...}`, sizeof and typeid operands) still name the module's type.
   The separate unscoped qualified-lowering pass is gone.
+- Lowered imported names in array lengths within type positions. The scoped
+  import walk skipped an array type's length expression and the parts of a
+  tuple, function, or map type in a sizeof-style operand, so `[sizes.SIZE]u8`
+  (since the qualified pass moved into that walk) and `[SIZE]u8` from a
+  selective import reported an unknown name.
 - Scoped a switch payload binder to its case block in module lowering, so
   `Event.data(count: int)` shadows a module global in an imported file, a
   selected value, or a whole-module binding there instead of being lowered to

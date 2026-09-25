@@ -1028,6 +1028,7 @@ static void lower_selected_type(Node* t, SelectLower* c) {
     }
     lower_selected_type(t->a, c);
     if (t->kind == N_STATICMAP_T) lower_selected_type(t->b, c);
+    if (t->kind == N_ARRAY_T) lower_selected_node(t->b, c); // length: an expression, not a type
     for (int i = 0; i < t->nkids; i++) lower_selected_type(t->kids[i], c);
 }
 
@@ -1052,8 +1053,12 @@ static void lower_selected_type_ref(Node* n, SelectLower* c) {
         return;
     }
     if (n->kind == N_SLICE_T || n->kind == N_ARRAY_T || n->kind == N_PTR ||
-        n->kind == N_CONST_T) { // inline operand, e.g. alignof([]pkg.T)
+        n->kind == N_CONST_T || n->kind == N_TUPLE_T || n->kind == N_FUNC_T ||
+        n->kind == N_STATICMAP_T) { // inline operand, e.g. alignof([]pkg.T)
         lower_selected_type_ref(n->a, c);
+        if (n->kind == N_ARRAY_T) lower_selected_node(n->b, c); // length expression
+        if (n->kind == N_STATICMAP_T) lower_selected_type_ref(n->b, c);
+        for (int i = 0; i < n->nkids; i++) lower_selected_type_ref(n->kids[i], c);
         return;
     }
     Node* name = n->kind == N_INDEX ? n->a : n;

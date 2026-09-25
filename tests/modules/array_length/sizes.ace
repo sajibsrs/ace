@@ -1,0 +1,3 @@
+pub SIZE: const usize = 4
+
+pub Cell: struct { value: u32 }

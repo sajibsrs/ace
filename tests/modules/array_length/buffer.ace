@@ -1,0 +1,9 @@
+import sizes: "./sizes.ace"
+import SIZE from "./sizes.ace"
+
+/* An imported file lowers array lengths like the root file does. */
+pub filled(): usize {
+    qualified: [sizes.SIZE]u8
+    selected: [SIZE]u8
+    return qualified.len + selected.len
+}
