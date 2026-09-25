@@ -363,15 +363,18 @@ observed:
 
 Otherwise the call stays an ordinary call, with the same result. Only a direct
 call to the function itself qualifies, and never one whose result is used
-afterwards (`return n * factorial(n - 1)`). This is not general tail-call
-optimization: returning another function's call is always an ordinary call.
-That is deliberate: general tail-call optimization adds cost without a
-performance payoff. Jumping into another function means tearing down the frame
-first, and its main use, handlers that tail-call one another, still runs
-several times slower than the same code written as a `switch` loop. Every
-backend would carry the extra machinery, and callers would vanish from
-backtraces throughout ordinary code. A self call needs no teardown, so it costs
-one branch and brings tail recursion to loop speed.
+afterwards (`return n * factorial(n - 1)`).
+
+> **This is not general tail-call optimization (TCO)**
+>
+> Returning another function's call
+> is always an ordinary call. That is deliberate: general tail-call optimization
+> adds cost without a performance payoff. Jumping into another function means
+> tearing down the frame first, and its main use, handlers that tail-call one
+> another, still runs several times slower than the same code written as a
+> `switch` loop. Every backend would carry the extra machinery, and callers
+> would vanish from backtraces throughout ordinary code. A self call needs no
+> teardown, so it costs one branch and brings tail recursion to loop speed.
 
 This is an optimization, not a guarantee: recursion that must not overflow, in
 any build, is written as a loop.
