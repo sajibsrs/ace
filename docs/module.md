@@ -230,7 +230,7 @@ private access each have dedicated diagnostics.
 
 All loaded modules are merged into one compilation unit in dependency order —
 imported declarations come before the importing file's own — which preserves
-Ace's declaration-before-use rule and single-pass compilation. Source file
+Ace's declaration-before-use rule and in-order checking. Source file
 names and line rows are preserved per file, so debugger line tables resolve
 every function to the file it was written in.
 

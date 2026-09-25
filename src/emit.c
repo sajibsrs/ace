@@ -1,5 +1,6 @@
-// emit.c — stage four: direct AArch64 codegen → Mach-O arm64 object (tcc-style:
-// single-pass walk of the sema-checked AST, no optimization).
+// emit.c — stage four: direct AArch64 codegen → Mach-O arm64 object (tcc-style
+// walk of the sema-checked AST: per function, planning scans then one emission
+// walk; see SPEC.md Compiler #2).
 //
 // Model: every local/param lives in an x29-relative stack slot; expressions
 // evaluate into a virtual-register stack (int temps = x0-x7,x9-x15, fp temps =

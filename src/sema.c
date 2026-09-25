@@ -1,5 +1,5 @@
 // sema.c — semantic checking (stage three): types, names, expression typing.
-// Walks the AST in declaration order — single-pass semantics: declaration
+// Walks the AST in declaration order — in-order semantics: declaration
 // before use; forward top-level calls are deferred (like emitter fixups), and
 // aggregate fields admit a second narrow fixup for uninterrupted pointer
 // paths to a later same-module type, or a bare slice at the field/variant

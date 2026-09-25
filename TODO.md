@@ -212,13 +212,6 @@ These are baseline observations, not performance promises.
   of its gain. Integer struct leaves are still copied to x14 down; reading
   them in place measured 0.04 ns on `struct-16`, and dropping a leaf's frame
   measured nothing on `call-1` or `struct-hfa` (`bench/README.md`).
-- **Unoptimized debug build** [new] — debug and release emit the same
-  optimized code; the modes differ in runtime guards alone. Local register
-  promotion, immediates, and register returns are always on, promoted locals
-  have no frame slot, and objects carry line tables but no variable locations,
-  so a debugger cannot show a promoted local by name. Candidate: the debug
-  mode disables optimization so every local keeps a slot, with executable
-  tests then run in both modes.
 - **Remaining immediate and destination forms** [new] — declarations with an
   initializer still compute through a temp, and a constant on the left of a
   compare or in the middle of a chain still takes a register. Float compares

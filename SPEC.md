@@ -81,9 +81,16 @@ Concrete rules and syntax. The why behind every rule lives in PHILOSOPHY.md (clo
 
 ## Compiler
 1. Make memory size available to programmer. (see: Errors)
-2. Single-pass compilation (two if needed) — the simplest modular compiler architecture that preserves fast builds and direct emission.
+2. Compilation is a fixed sequence of in-order passes, with no whole-program or cross-function analysis:
+   1. Lex: one scan of a source file into tokens.
+   2. Parse: one recursive-descent pass from tokens to an AST; inactive `@when` declarations are dropped here.
+   3. Merge: each imported file is lexed and parsed the same way, renamed through one loop over its top-level declarations and one scoped reference walk, and merged into one unit in dependency order.
+   4. Check: one in-order walk over the unit. At end of file: top-level checks (specialized generics, forward types, contract method sets), resolution of pending forward calls, a second check of only the bodies that made one, a cycle walk over `inline` functions only, and one definite-initialization walk.
+   5. Emit: per function, up to four planning scans of its body (inline expansion, loop registers, register promotion, parameter homes), then one emission walk; then globals, vtables, fixup patching, DWARF, and the Mach-O write.
+
+   A function body is walked by check once (twice after a forward call), by definite initialization once, and by emit up to five times. The per-function IR in the Decision Queue replaces pass 5.
 3. Name mangling — internal symbols only; the C boundary is explicit and unmangled (see: C Interop).
-4. Code generation: direct machine-code emission, single-pass (tcc-style) — fastest builds, full control; the optimization ceiling is accepted (see PHILOSOPHY.md, Cautions #1). v1 target: AArch64 / Apple arm64 (reference machine is Apple Silicon); x86-64 is the second backend.
+4. Code generation: direct machine-code emission, with no external assembler or backend. Emission currently walks the checked AST (tcc-style); the per-function IR in the Decision Queue replaces it. v1 target: AArch64 / Apple arm64 (reference machine is Apple Silicon); x86-64 is the second backend.
 5. Declaration-before-use is the rule. Forward and mutual calls, including method calls on a struct, are handled by fixups: emit a call to a placeholder, record the patch site, and patch the real address at definition. A second narrow fixup class permits an as-yet undeclared type name only when the complete path from the field to that name consists of one or more pointer levels (`*Later`, `**Later`), or is a bare slice exactly at the field/variant root (`[]Later`) — a slice's representation is a fixed pointer-plus-count pair whose size and alignment, like a pointer's, do not depend on its element type. The slice allowance does not extend through or past the slice: a slice reached via a preceding pointer (`*[]Later`) or nested inside another compound stays ordinary declaration-before-use, while a pointer reached via a preceding root slice (`[]*Later`) still forwards, since it's the same pointer fixup applying once the slice has already handed it a root-started path. The exact nominal type must be declared later in the same module, and any field access, method use, inline containment, array element, union payload, alias expansion, or other operation requiring its layout remains declaration-before-use. Unresolved type placeholders are errors at end of file. A function body that made a call resolved at end of file is checked once more after resolution, seeing only the declarations its first check saw apart from those calls, so their results are type-checked where used. No prototype or general pre-pass exists.
 6. Performance plan (v1, compile-time-cheap by design):
    - Emission-time selection — the emitter picks fused forms where it already knows operand lifetimes: compare-and-branch, loads into their destination, frame-relative field access, direct use of promoted registers, add/sub/compare immediates, and results computed straight into a promoted destination. No separate pass over emitted code.
@@ -493,7 +500,7 @@ Carved (compile-time static lookup maps):
 
 Rationale: sparse standard-library LUTs need direct declarative source without
 hand-written ranges, holes, or switches. A module-only lookup surface supplies
-that use while preserving recursive descent, single-pass compilation, direct
+that use while preserving recursive descent, in-order compilation, direct
 machine-code emission, explicit values, and no hidden allocation or general
 compile-time execution.
 
@@ -538,7 +545,7 @@ explicit mutation, debug-build, layout, and access-site volatile rules.
 
 ## Modules
 Decision: modules are single files or `mod.ace`-rooted directories; explicit imports; explicit exports.
-1. A single-file module consists of one `.ace` file. A directory module consists of `mod.ace` and every implementation file recursively beneath its directory; `mod.ace` is its sole external import surface. Each file lists exactly what it imports; after compile-time-inactive declarations are removed, import statements precede every other declaration — reading order is stated up front for the single pass. A subdirectory with its own `mod.ace` is itself a nested module, addressable via a `/`-separated path from any enclosing directory: bare `import net/tcp`, aliased `import bla: net/tcp`, or quoted relative `import "../A/B"` (the same `/` separator; a quoted path without a `.ace` suffix resolves as a nested-module path instead of a flat file). A subdirectory without `mod.ace` stays private, swallowed by its nearest enclosing module boundary exactly as an ordinary implementation file. Only the leaf segment's identifier becomes the bound qualifier — `import net/tcp` brings `tcp` into scope, not `net` — mirroring single-segment `import tcp` binding `tcp`. There is no transitivity in either direction (rule 8): importing `net/tcp` exposes nothing through `net`, and importing `net` does not expose `tcp` unless `net`'s own `mod.ace` explicitly re-exports it.
+1. A single-file module consists of one `.ace` file. A directory module consists of `mod.ace` and every implementation file recursively beneath its directory; `mod.ace` is its sole external import surface. Each file lists exactly what it imports; after compile-time-inactive declarations are removed, import statements precede every other declaration — reading order is stated up front for the in-order check. A subdirectory with its own `mod.ace` is itself a nested module, addressable via a `/`-separated path from any enclosing directory: bare `import net/tcp`, aliased `import bla: net/tcp`, or quoted relative `import "../A/B"` (the same `/` separator; a quoted path without a `.ace` suffix resolves as a nested-module path instead of a flat file). A subdirectory without `mod.ace` stays private, swallowed by its nearest enclosing module boundary exactly as an ordinary implementation file. Only the leaf segment's identifier becomes the bound qualifier — `import net/tcp` brings `tcp` into scope, not `net` — mirroring single-segment `import tcp` binding `tcp`. There is no transitivity in either direction (rule 8): importing `net/tcp` exposes nothing through `net`, and importing `net` does not expose `tcp` unless `net`'s own `mod.ace` explicitly re-exports it.
 2. Members are private unless marked `pub` on the declaration line — `pub max(a: int): int`; the mark lives with the member and cannot drift; one grep finds every public member. Applies to types, functions, and globals alike. In a directory module, `pub` in an implementation file grants access only to other files in that directory module. Only `pub` declarations owned by `mod.ace` are externally visible. A facade re-exports a type explicitly with an ordinary public transparent alias, such as `pub Fd: type = os.Fd`; imports themselves never re-export.
 3. Compilation reads imports in dependency order, reading only what is imported — nothing scanned, nothing implicit. **Import cycles are a compile error** (a cycle has no first file; structure, not policy).
 4. Incremental rebuild granularity: the file.
@@ -671,7 +678,7 @@ Decision: explicit monomorphization.
 
 ## Names & Scoping
 1. Qualification is the primary namespacing mechanism — modules provide what C fakes with prefixes: `parser.init()` instead of `ace_parser_init`; import aliasing resolves module-name collisions. Selective import is the explicit opt-in for bringing particular public spellings into their ordinary namespaces.
-2. Two namespaces, separated by grammar position: **types** (type positions: after `:`, in brackets, casts) and **values** (expression positions). A type and a value may share a name — `Point: struct` + `Point(...)` constructor coexist. Position decides; decidable single-pass, no inference.
+2. Two namespaces, separated by grammar position: **types** (type positions: after `:`, in brackets, casts) and **values** (expression positions). A type and a value may share a name — `Point: struct` + `Point(...)` constructor coexist. Position decides; decidable in one in-order check, no inference.
 3. The value namespace holds functions, variables, and imports together. Variables and imports still require a unique same-scope name; functions may form an overload set under one name. A function name cannot share its scope with a variable or import.
 4. Free-function overload selection is exact and static: argument count, argument types, and `mut` parameter/call-site marks must match one candidate. No implicit conversions, conversion ranking, inheritance conversions, argument-dependent lookup, or return-type-directed call selection exist. Exactly one match is required; zero matches and multiple matches are compile errors.
 5. Return types do not distinguish overload declarations. Two declarations with the same parameter types and `mut` positions are duplicates even when their return types differ. `noalias` does not distinguish them because it changes optimizer facts, not the callable shape.
@@ -1068,7 +1075,7 @@ Decision: explicit cleanup ordered by the language at every function exit — on
 6. Codegen is inline expansion: each exit point re-emits its captured calls in reverse immediately before the epilogue — no runtime counter, registration, or epilogue loop exists. Exit-time call sites carry DWARF line marks for the defer statement's source line, and a register-returned result is parked in a frame slot across the deferred calls (an sret result already sits in the caller's buffer). A deferred call to `panic` or `sys.exit` is legal: it terminates at the exit.
 7. Out of scope: no detection of duplicate or repeated defers of the same target, and no deferred block or non-call form — the operand is exactly one call.
 
-Rationale: cleanup ordering is what C reaches for `goto` to obtain. Anchoring the list at the function keeps the exit set total — every `return` plus fall-off — with no block-scoped bookkeeping, which is what makes inline expansion possible at zero runtime cost in a single-pass compiler. The two-tier capture keeps the ordinary `mut` call contract truthful at a distance: read-only arguments behave like call-by-value snapshots, while `mut`-marked arguments keep their by-reference meaning up to the function's final moment.
+Rationale: cleanup ordering is what C reaches for `goto` to obtain. Anchoring the list at the function keeps the exit set total — every `return` plus fall-off — with no block-scoped bookkeeping, which is what makes inline expansion possible at zero runtime cost in an in-order compiler. The two-tier capture keeps the ordinary `mut` call contract truthful at a distance: read-only arguments behave like call-by-value snapshots, while `mut`-marked arguments keep their by-reference meaning up to the function's final moment.
 
 ## Sequences
 Decision: one view model across arrays, slices, and strings; `string`, `[]char`, and `[]u8` are intent spellings of one byte-view type; content permission lives in the view's type and is established only where `mut` is written. Sequential values have no `==`/`!=`, byte content comparison is the explicit `mem.equal` call, and a literal-`null` operand selects a distinct nullness form.
@@ -1118,6 +1125,62 @@ Only active or trigger-gated decisions live here. Implemented history is recorde
 once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 
 ### Active
+
+- **Per-function SSA IR backend** (decided; migration pending). It replaces
+  Compiler #2 pass 5, Compiler #4's AST-walking emission, and #6's
+  emission-time plan. Rationale (PHILOSOPHY.md Cautions #1): emission from the
+  AST needs every optimization written once per source shape, leaves hot loops
+  2–3.6x scalar C `-O2`, and would repeat every case in a second backend; the
+  compile-time cost ranks below performance, simplicity, and modularity.
+  - Scope: one function at a time, with no whole-program or cross-function
+    analysis; explicit `inline` stays the only crossing. Ace still writes
+    machine code and objects itself.
+  - Passes after Compiler #2 passes 1–4, exactly:
+    5. Lower: one walk of each checked function into SSA (Braun et al.,
+       trivial phis removed), expanding `inline` calls, turning `defer` into
+       control flow and debug checks into explicit branches, splitting
+       non-escaping struct and tuple locals into SSA values, and turning self
+       tail recursion into a loop.
+    6. Optimize (release only), in this order, each once: loop rotation, sparse
+       conditional constant propagation, global value numbering, loop-invariant
+       code motion, loop strength reduction, dead-code and control-flow
+       cleanup.
+    7. Select AArch64 instructions, including fused forms (integer `madd`,
+       never float contraction).
+    8. Leave SSA: phis become copies, with coalescing.
+    9. Allocate registers: linear scan with interval splitting, aware of calls,
+       rematerializing constants.
+    10. Lay out blocks and encode; then globals, vtables, fixups, DWARF, and
+        the Mach-O write as today.
+
+    Passes 5–6 are shared by every target; 7–10 are per target.
+  - Passes rely only on facts a debug build checks, so a run that passes in
+    debug computes the same result in release. They never reassociate or
+    contract float operations, and debug checks keep their order. Three facts
+    are stated but not yet checked, and each needs a debug check before a pass
+    may use it: `noalias` on pointer parameters (Safety #7 checks slices
+    only), non-overlap of read-only parameters (Functions & ABI #5), and memory
+    written by inline assembly (Inline Assembly #5).
+  - Build modes: debug (the default) runs no pass 6, keeps runtime checks, and
+    gives every local a stack slot; release runs pass 6 and has no checks.
+    Optimization and checks are two independent internal settings, so an
+    optimized-and-checked mode can follow a concrete need (for example,
+    fuzzing parsers of untrusted input). Executable tests run in both modes,
+    and a differential check compiles random programs in both and requires
+    identical output.
+  - `--ir` prints the IR, as `--ast` prints the AST.
+  - Excluded: automatic inlining, auto-vectorization (explicit `std/simd`),
+    and loop unrolling or instruction scheduling unless later measured.
+  - Migration: the new backend compiles each function it supports and the AST
+    emitter the rest, under one ABI into one object. Steps: (1) IR, selection,
+    and allocation for scalar integer code, measuring compile time against the
+    emission it replaces; (2) floats, aggregates, and the full ABI; (3) tagged
+    unions, `switch`, `defer`, debug checks, and `inline`; (4) pass 6 and
+    the debug mode, with `bench/core`, `bench/std`, and `bench/package` at
+    parity or better; (5) remove the AST emitter and fold this entry into
+    Compiler #2, #4, and #6.
+  - Files: `src/ir.c` (IR and passes), `src/lower.c`, `src/arm64.c`
+    (selection, allocation, encoding), `src/macho.c` (object writer).
 
 ### Trigger-gated
 

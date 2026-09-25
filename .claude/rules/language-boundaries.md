@@ -30,8 +30,9 @@ Follow `SPEC.md` for exact rules; do not propose or assume away these decisions:
 - Composition and explicit contract values replace inheritance.
 - Declarations use `name: type`; functions are keywordless with trailing
   returns; function values use signature types.
-- The compiler uses recursive descent, single-pass compilation, and direct
-  machine-code emission; no whole-program analysis.
+- The compiler uses recursive descent, the fixed in-order passes of `SPEC.md`
+  Compiler #2, and direct machine-code emission (moving to a per-function IR);
+  no whole-program or cross-function analysis.
 - Safety is cheap local checking plus removable debug-build diagnostics.
 - There is no `goto`; use labeled blocks and loops. Iteration, switch, and
   `fallthrough` follow `SPEC.md` exactly.

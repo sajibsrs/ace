@@ -12,7 +12,7 @@
 // references in the importing file are rewritten to prefixed names after a
 // `pub` check, and extern
 // declarations keep their C-boundary name in Node.cname for the linker.
-// The merged unit is ordered dependencies-first, so the single-pass checker
+// The merged unit is ordered dependencies-first, so the in-order checker
 // and emitter still see every name declared before use. Separate per-module
 // objects and incremental rebuilds are deliberately deferred.
 #include "ace.h"
