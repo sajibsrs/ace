@@ -313,18 +313,18 @@ mut Matcher.add_next(code: []Inst, start: u32, text: string, at: usize) {
     }
 }
 
-/* Searches `text` for the leftmost-first match that starts at byte `after`
+/* Searches `text` for the leftmost-first match that starts at byte `from`
  * or later, leaving its capture positions in `best`. With `earliest`, returns
  * at the first match any thread reaches, whose positions need not be
  * leftmost-first; that suffices when only existence matters.
  */
-pub mut Matcher.run(code: Program, text: string, after: usize, earliest: bool): bool {
-    if after > text.len { return false }
+pub mut Matcher.run(code: Program, text: string, from: usize, earliest: bool): bool {
+    if from > text.len { return false }
     insts: []Inst = code.insts.view()
     classes: []Class = code.classes.view()
     self.current.count = 0
     matched: bool = false
-    at: usize = after
+    at: usize = from
 
     for {
         if !matched {

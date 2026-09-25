@@ -49,16 +49,16 @@ report(pattern: string, text: string, got: string, want: string) {
     fmt.println(want)
 }
 
-/* The match starting at `after` or later, as rendered spans; `none` for no
+/* The match starting at `from` or later, as rendered spans; `none` for no
  * match.
  */
-found(pattern: string, text: string, after: usize, want: string): int {
+found(pattern: string, text: string, from: usize, want: string): int {
     re: regex.Regex = compile(pattern)
     defer mut re.wipe()
     buffer: [64]u8
     got: string = "none"
 
-    if mut re.find(text, after) {
+    if mut re.find(text, from) {
         spans: [1]regex.Span = [re.span(0)]
         got = string(buffer[0..render(spans[0..1], mut buffer[0..64])])
     }
@@ -141,7 +141,7 @@ priority(): int {
     return bad
 }
 
-/* Assertions see the whole text, not the text from `after` on. */
+/* Assertions see the whole text, not the text from `from` on. */
 anchors(): int {
     bad: int = 0
     bad += found("^a", "ab", 0, "0-1")

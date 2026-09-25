@@ -78,12 +78,12 @@ pub mut Regex.match(text: string): bool {
     return mut self.run.run(self.code, text, 0, true)
 }
 
-/* Finds the leftmost-first match that starts at byte `after` or later and
+/* Finds the leftmost-first match that starts at byte `from` or later and
  * records it for `group` and `span`.
  */
-pub mut Regex.find(text: string, after: usize): bool {
+pub mut Regex.find(text: string, from: usize): bool {
     self.text = text
-    self.found = mut self.run.run(self.code, text, after, false)
+    self.found = mut self.run.run(self.code, text, from, false)
     return self.found
 }
 

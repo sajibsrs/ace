@@ -46,7 +46,7 @@ search reuses that scratch state, which is why each search method takes
 | Method                          | Result                                                     |
 | ------------------------------- | ---------------------------------------------------------- |
 | `match(text): bool`             | whether the pattern matches anywhere                       |
-| `find(text, after): bool`       | whether a leftmost-first match starts at `after` or later  |
+| `find(text, from): bool`        | whether a leftmost-first match starts at `from` or later   |
 | `next(text, mut at): bool`      | `find` from `at`, then moves `at` past the match           |
 | `count(text): usize`            | the number of matches `next` visits                        |
 | `group(k): string`              | the text of group k of the last match, 0 the whole match   |
@@ -260,8 +260,8 @@ if mut m.run(p, text, 0, false) {
 ```
 
 `Matcher::new` sizes every buffer the VM needs from a program, so
-`run(code, text, after, earliest)` never allocates or fails. It searches from
-`after` and returns whether a match was found; `earliest` stops at the first
+`run(code, text, from, earliest)` never allocates or fails. It searches from
+`from` and returns whether a match was found; `earliest` stops at the first
 match any thread reaches instead of the leftmost-first one. After a
 leftmost-first run, `best` holds the match's `Program.slots` capture
 positions, `UNSET` for a group that took no part. One `Program` may be run by

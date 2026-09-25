@@ -472,20 +472,20 @@ store_text(destination: mut []char, text: string): (usize, bool) {
  * positions are filtered per step by needle's first and last bytes together;
  * each surviving candidate is confirmed whole.
  */
-index_from(text: string, needle: string, after: usize): (usize, bool) {
-    if needle.len == 0 { return after, true }
+index_from(text: string, needle: string, from: usize): (usize, bool) {
+    if needle.len == 0 { return from, true }
 
-    // after past the last start would make the range below run downward
-    if needle.len > text.len || after > text.len - needle.len { return 0, false }
+    // from past the last start would make the range below run downward
+    if needle.len > text.len || from > text.len - needle.len { return 0, false }
 
     if needle.len == 1 {
-        index: usize, found: bool = index_byte_from(text, needle[0], after)
+        index: usize, found: bool = index_byte_from(text, needle[0], from)
         return index, found
     }
     last: usize = needle.len - 1
     first_pattern: u64 = u64(needle[0]) * ONES
     last_pattern: u64 = u64(needle[last]) * ONES
-    at: usize = after
+    at: usize = from
 
     for at + last + 8 <= text.len {
         a: u64 = load.unaligned_u64(text, at) ^ first_pattern
@@ -508,10 +508,10 @@ index_from(text: string, needle: string, after: usize): (usize, bool) {
 }
 
 /* First occurrence of one byte at or after from, eight bytes per step. */
-index_byte_from(text: string, byte: char, after: usize): (usize, bool) {
-    if after >= text.len { return 0, false }
+index_byte_from(text: string, byte: char, from: usize): (usize, bool) {
+    if from >= text.len { return 0, false }
     pattern: u64 = u64(byte) * ONES
-    at: usize = after
+    at: usize = from
 
     for at + 8 <= text.len {
         x: u64 = load.unaligned_u64(text, at) ^ pattern
