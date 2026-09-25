@@ -1,0 +1,15 @@
+/* No generic overload of the written arity has the declared
+ * function-value type. */
+
+combine[T](a: T, b: T): T {
+    return a + b
+}
+
+combine[T](a: T): T {
+    return a + a
+}
+
+main(): int {
+    pick: (int): bool = combine[int]
+    return 0
+}

@@ -1,0 +1,15 @@
+/* A qualified or selected generic function is a function value once its type
+ * arguments are written. */
+
+/* expect-exit: 42 */
+
+import util: "./util.ace"
+import larger from "./util.ace"
+
+main(): int {
+    qualified: (i32, i32): i32 = util.larger[i32]
+    selected: (u8, u8): u8 = larger[u8]
+    if qualified(4, 11) != 11 { return 1 }
+    if selected(30, 12) != 30 { return 2 }
+    return 42
+}

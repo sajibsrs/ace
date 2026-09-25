@@ -1,0 +1,14 @@
+/* A generic function value names its type arguments; the declared
+ * function-value type never supplies them. */
+
+larger[T](a: T, b: T): T {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+main(): int {
+    pick: (int, int): int = larger
+    return 0
+}

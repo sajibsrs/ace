@@ -1,0 +1,43 @@
+/* A generic function named with its type arguments is a function value: the
+ * template's stamp, or a written specialization when one matches. */
+
+// expect-exit: 42
+
+larger[T](a: T, b: T): T {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+doubled[T](x: T): T {
+    return x + x
+}
+
+doubled[int](x: int): int {
+    return x * 3
+}
+
+inline above[T](a: T, b: T): bool {
+    return a > b
+}
+
+apply(f: (int, int): int, a: int, b: int): int {
+    return f(a, b)
+}
+
+main(): int {
+    pick: (int, int): int = larger[int]
+    narrow: (u8, u8): u8 = larger[u8]
+    stamped: (i32): i32 = doubled[i32]
+    special: (int): int = doubled[int]
+    test: (int, int): bool = above[int]
+    if pick(3, 9) != 9 { return 1 }
+    if narrow(200, 7) != 200 { return 2 }
+    if apply(larger[int], 7, 2) != 7 { return 3 }
+    if stamped(4) != 8 { return 4 }
+    if special(4) != 12 { return 5 }
+    if !test(5, 1) || test(1, 5) { return 6 }
+    if larger[int](1, 2) != 2 { return 7 }
+    return 42
+}

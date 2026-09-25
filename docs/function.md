@@ -210,6 +210,20 @@ Generic functions may be overloaded. The written type arguments are substituted
 first, followed by the same exact argument matching used for ordinary overloads.
 Each used type tuple emits a specialized function body.
 
+A generic function becomes a function value once its type arguments are
+written. The declared function-value type never supplies them, so a bare
+`choose` is an error:
+
+```ace
+pick: (int, int): int = choose[int]
+```
+
+The value is the stamp for that type tuple, or the written specialization when
+one matches. When generic overloads take the same number of type arguments,
+the declared function-value type selects one, as it does for ordinary
+overloads. The typed `mem` builtins are lowered at their call and cannot be
+taken as values.
+
 ## Generic specialization
 
 A generic function may be followed by same-name specializations whose brackets

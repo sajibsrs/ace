@@ -81,9 +81,10 @@ main(): int {
     increment(mut count)
     quotient: int, remainder: int = divide(count, 5)
     operation: (int): int = twice
+    chosen: (int, int): int = choose[int]
     counted: int = count_of[int](0) + count_of[f64](0.5)
     return add(render("ace"), render(13)) + quotient + remainder +
-        operation(5) + choose[int](1, 2) + pick[int](3, 4) +
+        operation(5) + chosen(1, 2) + pick[int](3, 4) +
         int(pick[string]("a", "b")[0] - 'a') + later(1) - 29 + counted - 12
 }
 

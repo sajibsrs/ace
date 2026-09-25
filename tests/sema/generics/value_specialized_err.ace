@@ -1,0 +1,14 @@
+/* A 'specialized' template has no default body: only a written
+ * specialization can be taken as a function value. */
+
+load[T](text: string): T specialized
+
+load[int](text: string): int {
+    return 7
+}
+
+main(): int {
+    parse: (string): int = load[int]
+    other: (string): f64 = load[f64]
+    return 0
+}

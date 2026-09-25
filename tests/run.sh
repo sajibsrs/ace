@@ -103,6 +103,21 @@ tests/sema/inline/recursion_err.ace|inline function 'count' reaches itself throu
 tests/sema/inline/mutual_err.ace|inline function 'even' reaches itself through inline calls
 INLINE_RULES
 
+# generic function values name their type arguments (SPEC Generics #6)
+while IFS='|' read -r f want; do
+    if ! "$ACE" "$f" 2>&1 | grep -qF "$want"; then
+        echo "FAIL: $f should report: $want"
+        fail=1
+    fi
+done <<'GENERIC_VALUE_RULES'
+tests/sema/generics/value_bare_err.ace|'larger' is a type or generic — used bare here
+tests/sema/generics/value_arity_err.ace|no generic 'larger' takes 2 type arguments
+tests/sema/generics/value_memory_err.ace|mem.alloc[T] is direct-call-only: it has no body to take as a value
+tests/sema/generics/value_specialized_err.ace|'load[f64]' matches no specialization
+tests/sema/generics/value_overload_mismatch_err.ace|no generic overload of 'combine' has the required function type
+tests/sema/generics/value_overload_ambiguous_err.ace|ambiguous generic function value 'combine'
+GENERIC_VALUE_RULES
+
 # A call resolved at end of file is checked where its value lands, not
 # accepted for its poison type.
 for f in pending_result_decl pending_result_return forward_result_decl; do

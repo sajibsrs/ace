@@ -4067,6 +4067,29 @@ static int field_base(Em* e, Node* x, uint32_t* off) {
     return ta;
 }
 
+// `larger[int]` as a value: the address of the written specialization or of
+// the stamp whose signature sema recorded on the node
+static int gen_generic_value(Em* e, Node* x) {
+    Sym* s = node_sym(x);
+    int nt = s->spec_args ? s->spec_nargs : s->decl->c ? s->decl->c->nkids : 0;
+    SType** targs = s->spec_args;
+    SType* ft = s->type;
+    if (!s->spec_args) {
+        STypeInst* inst = sema_insts(s->decl);
+        while (inst && inst->result != node_ty(x)) inst = inst->next;
+        if (!inst) {
+            em_err(e, x, "generic stamp not found");
+            return tmp_int(e);
+        }
+        targs = inst->args;
+        ft = inst->result;
+    }
+    const char* mn = fn_mangle(s->name, s->len, ft, s->decl, targs, nt, s->spec_args != NULL);
+    int t = tmp_int(e);
+    addr_of_sym(e, xreg(t), sym_intern(&e->syms, mn, (uint32_t)strlen(mn)));
+    return t;
+}
+
 static int gen_addr(Em* e, Node* x) {
     switch (x->kind) {
     case N_IDENT: {
@@ -6054,6 +6077,7 @@ static EV gen_expr(Em* e, Node* x) {
         return (EV){ CLS_ADDR, gen_addr(e, x) };
     }
     case N_INDEX: {
+        if (x->sym) return (EV){ CLS_INT, gen_generic_value(e, x) };
         SType* bt = node_ty(x->a);
         if (bt && bt->kind == SK_STATICMAP) return gen_staticmap_lookup(e, x, bt);
         SType* t = node_ty(x);

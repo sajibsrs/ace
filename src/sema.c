@@ -327,6 +327,7 @@ static Pending* new_pending(Ck* k, Node* call) {
 }
 
 static SType* build_type(Ck* k, Node* t);
+static SType* generic_func_value(Ck* k, Node* e, SType* want);
 static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int nargs);
 
 static void ck_err(Ck* k, Node* n, const char* fmt, ...) {
@@ -2031,7 +2032,10 @@ static int coerce(Ck* k, Node* e, SType* want) {
             return 1;
         }
     }
-    SType* t = expr_type(k, e);
+    SType* t = NULL;
+    if (e->kind == N_INDEX && want && want->kind == SK_FUNC && (t = generic_func_value(k, e, want)))
+        e->ty = t;
+    if (!t) t = expr_type(k, e);
     if (same_type(t, want)) return 1;
     if (shrink_ok(t, want)) return 1; // implicit permission shrink, never widening
     if (want->kind == SK_ERR || t->kind == SK_ERR) return 1;
@@ -2761,6 +2765,8 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         return T_ERR;
     }
     case N_INDEX: {
+        SType* gv = generic_func_value(k, e, NULL);
+        if (gv) return gv;
         SType* b = expr_type(k, e->a);
         if (b->kind == SK_STATICMAP) {
             if (!e->a || e->a->kind != N_IDENT || !node_sym(e->a) || !node_sym(e->a)->is_global) {
@@ -2917,6 +2923,86 @@ static SType* instantiate_generic_func(Ck* k, Sym* gs, Node* index_node) {
     SType** args = (SType**)arena_alloc((size_t)nargs * sizeof(SType*));
     for (int i = 0; i < nargs; i++) args[i] = build_type(k, index_node->b ? index_node->b : index_node->kids[i]);
     return instantiate_generic_func_args(k, gs, args, nargs, index_node);
+}
+
+/*
+ * A generic function named with its type arguments as a value (Generics #6):
+ * `larger[int]`. A written specialization wins (Generics #10); otherwise the
+ * template with that type-argument count is stamped exactly as a call stamps
+ * it. A declared function-value type `want` selects among same-arity
+ * overloads (Overloads #8) but never supplies a type argument. The node
+ * carries the chosen declaration for the emitter. NULL when `e` does not name
+ * a generic function.
+ */
+static SType* generic_func_value(Ck* k, Node* e, SType* want) {
+    if (!e->a || e->a->kind != N_IDENT) return NULL;
+    Sym* head = lookup_val(k, e->a->str, e->a->len);
+    if (!head || head->kind != SYM_FUNC) return NULL;
+    int any = 0;
+    for (Sym* s = head; s && visible(k, s); s = s->overload) any |= s->is_generic || s->spec_args;
+    if (!any) return NULL;
+    int nargs = e->b ? 1 : e->nkids;
+    SType** targs = (SType**)arena_alloc((size_t)(nargs ? nargs : 1) * sizeof(SType*));
+    for (int i = 0; i < nargs; i++) {
+        targs[i] = build_type(k, e->b ? e->b : e->kids[i]);
+        if (targs[i]->kind == SK_ERR) return T_ERR;
+    }
+    Sym* chosen = NULL;
+    for (Sym* s = head; s && visible(k, s); s = s->overload) {
+        if (!s->spec_args || s->spec_nargs != nargs) continue;
+        int same = 1;
+        for (int i = 0; i < nargs && same; i++) same = same_type(s->spec_args[i], targs[i]);
+        if (!same || (want && !same_type(s->type, want))) continue;
+        if (chosen) {
+            ck_err(k, e, "ambiguous specialized function value '%.*s'", (int)e->a->len, e->a->str);
+            return T_ERR;
+        }
+        chosen = s;
+    }
+    if (chosen) {
+        e->sym = chosen;
+        return chosen->type;
+    }
+    Sym* sole = NULL;
+    int eligible = 0;
+    for (Sym* s = head; s && visible(k, s); s = s->overload) {
+        if (!s->is_generic || s->spec_args || !s->decl->c || s->decl->c->nkids != nargs) continue;
+        eligible++;
+        sole = s;
+        if (want && !same_type(build_func_type(k, s->decl, targs, nargs), want)) continue;
+        if (chosen) {
+            ck_err(k, e, "ambiguous generic function value '%.*s'", (int)e->a->len, e->a->str);
+            return T_ERR;
+        }
+        chosen = s;
+    }
+    if (!chosen && eligible == 1) chosen = sole; // the consumer reports a mismatch
+    if (!chosen) {
+        if (eligible)
+            ck_err(k, e, "no generic overload of '%.*s' has the required function type",
+                   (int)e->a->len, e->a->str);
+        else
+            ck_err(k, e, "no generic '%.*s' takes %d type argument%s", (int)e->a->len, e->a->str,
+                   nargs, nargs == 1 ? "" : "s");
+        return T_ERR;
+    }
+    if (chosen->decl->ival) { // typed memory builtins: lowered at the call, no stamp
+        const char* nm = chosen->decl->str; // module-lowered: "mem$alloc"
+        const char* sep = memchr(nm, '$', chosen->decl->len);
+        int len = (int)chosen->decl->len;
+        if (sep) { len -= (int)(sep + 1 - nm); nm = sep + 1; }
+        ck_err(k, e, "mem.%.*s[T] is direct-call-only: it has no body to take as a value", len, nm);
+        return T_ERR;
+    }
+    if (chosen->decl->flags & F_SPECIALIZED) {
+        ck_err(k, e, "'%.*s%s' matches no specialization — '%.*s' is declared 'specialized' (no default body) at line %d",
+               (int)e->a->len, e->a->str, spec_tuple_name(targs, nargs), (int)e->a->len, e->a->str,
+               chosen->decl->line);
+        return T_ERR;
+    }
+    SType* ft = instantiate_generic_func_args(k, chosen, targs, nargs, e);
+    if (ft->kind != SK_ERR) e->sym = chosen;
+    return ft;
 }
 
 static SType* overload_arg_type(Ck* k, Node* arg) {

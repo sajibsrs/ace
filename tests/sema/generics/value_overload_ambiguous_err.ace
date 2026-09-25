@@ -1,0 +1,15 @@
+/* Without a declared function-value type, same-arity generic overloads
+ * leave the value ambiguous. */
+
+combine[T](a: T, b: T): T {
+    return a + b
+}
+
+combine[T](a: T): T {
+    return a + a
+}
+
+main(): int {
+    found: bool = combine[int] == null
+    return 0
+}

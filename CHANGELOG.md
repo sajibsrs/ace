@@ -213,6 +213,11 @@ current normative rules, and Git preserves patch-level detail.
 - Implemented explicit generic instantiation and exact function specialization.
   Generic bodies are checked per concrete stamp; compiler-backed standard
   generics share the ordinary resolution path.
+- Implemented generic function values (`choose[int]`). Sema resolves an index
+  expression over a generic function name to the matching specialization or
+  template of that arity, stamping it through the call path's memo; a declared
+  function-value type selects among same-arity overloads. The emitter loads the
+  address of that stamp's mangled symbol.
 - Implemented transparent generic type aliases by stamping and memoizing each
   explicit argument tuple to its fully substituted target type.
 - Implemented standalone tuple-literal initialization and whole assignment;

@@ -1,0 +1,9 @@
+/* Typed memory builtins are lowered at the call and have no body to take as a
+ * function value. */
+
+import mem
+
+main(): int {
+    alloc: (usize): mut []usize = mem.alloc[usize]
+    return 0
+}
