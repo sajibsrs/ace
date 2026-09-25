@@ -5495,9 +5495,11 @@ static void init_restore(InitSnap* s) {
     for (int i = 0; i < s->n; i++) s->v[i].var->state = init_clone(&s->v[i].state);
 }
 
-static InitState* init_snap_state(InitSnap* s, InitVar* v) {
-    for (int i = 0; i < s->n; i++) if (s->v[i].var == v) return &s->v[i].state;
-    return NULL;
+/* Base entry i's state in s. k->vars only grows, at its head, and snapshots
+ * list it head first, so a snapshot of the same function taken no earlier than
+ * base ends with base's entries in base's order. */
+static InitState* init_snap_state(InitSnap* s, InitSnap* base, int i) {
+    return &s->v[s->n - base->n + i].state;
 }
 
 static int init_field_index(SType* t, Node* e) {
@@ -5734,9 +5736,7 @@ static void init_expr(InitCk* k, Node* e) {
 static void init_merge_snapshots(InitSnap* base, InitSnap* a, InitSnap* b) {
     for (int i = 0; i < base->n; i++) {
         InitVar* v = base->v[i].var;
-        InitState* as = init_snap_state(a, v);
-        InitState* bs = init_snap_state(b, v);
-        if (as && bs) v->state = init_intersect(as, bs, v->sym->type);
+        v->state = init_intersect(init_snap_state(a, base, i), init_snap_state(b, base, i), v->sym->type);
     }
 }
 
@@ -5746,11 +5746,8 @@ static InitSnap init_intersect_snapshots(InitSnap* base, InitSnap* a, InitSnap* 
     out.v = (InitSnapEntry*)arena_alloc((size_t)(out.n ? out.n : 1) * sizeof(InitSnapEntry));
     for (int i = 0; i < out.n; i++) {
         InitVar* v = base->v[i].var;
-        InitState* as = init_snap_state(a, v);
-        InitState* bs = init_snap_state(b, v);
         out.v[i].var = v;
-        out.v[i].state = as && bs ? init_intersect(as, bs, v->sym->type)
-            : (InitState){0};
+        out.v[i].state = init_intersect(init_snap_state(a, base, i), init_snap_state(b, base, i), v->sym->type);
     }
     return out;
 }

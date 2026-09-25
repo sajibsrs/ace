@@ -500,6 +500,13 @@ current normative rules, and Git preserves patch-level detail.
   candidates, and select lowering looks a name up among the few selections
   before it searches the locals. A 20,000-local function compiles in 92 ms
   (was 2.35 s) with identical machine code.
+- Removed the cubic merge from definite initialization. Joining two branch
+  snapshots searched each for every variable of the base snapshot; since
+  `k->vars` only grows at its head and snapshots list it head first, an
+  earlier snapshot is the tail of a later one, so each base variable is found
+  by offset. A function of 5,000 locals and 2,500 `if`/`else` statements took
+  378G instructions to check, now 2.5G; the regex and json package checks gain
+  0.5%. Snapshot cloning itself stays linear in the declared variables.
 - Materialized a float constant with `fmov Vd, #imm8` when it is one of the 256
   encodable values (0.125 to 31.0 in sixteenths of a power of two, either sign),
   and folded the scaled index into a scalar array or slice load as
