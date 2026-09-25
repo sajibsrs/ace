@@ -1,0 +1,22 @@
+/* Release arithmetic on narrow values wraps in the register, before any
+ * store: +, -, *, and unary - give the fixed-width result. */
+
+id8(v: i8): i8 {
+    return v
+}
+
+idu8(v: u8): u8 {
+    return v
+}
+
+idi16(v: i16): i16 {
+    return v
+}
+
+main(): int {
+    if id8(127) + id8(1) != -128 || idu8(0) - idu8(1) != 255 { return 1 }
+    if idu8(16) * idu8(16) != 0 || idi16(32767) + idi16(1) != -32768 { return 2 }
+    if -id8(-128) != -128 { return 3 }
+    if idu8(250) + 10 != 4 { return 4 }
+    return 0
+}

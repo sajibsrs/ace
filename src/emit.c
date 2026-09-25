@@ -340,6 +340,7 @@ static void fix_add(Em* e, uint8_t kind, uint32_t site, ESym* target) {
  *   mov t, p ; op t, ..t..         -> op t, ..p..    (op overwrites t: the copy is dead)
  *   add t, s, #a ; ldr t, [t, #b]  -> ldr t, [s, #a+b]
  *   add t, s, #a ; add t, t, #b    -> add t, s, #a+b
+ *   xbfm t, p, #0, #m ; xbfm t, t, #0, #k (k <= m) -> xbfm t, p, #0, #k
  * op is an add/sub or logical immediate, sbfm/ubfm, a shifted add/sub, a
  * logical register op other than the mov alias, a 2- or 3-source op, or an
  * integer load by unsigned or register offset. A 32-bit mov feeds only 32-bit
@@ -376,6 +377,17 @@ static int peep(Em* e, uint32_t w) {
         if ((src2 || src3 || ld_roff) && rm == t) nw = (nw & ~(31u << 16)) | (p << 16);
         if (src3 && ra == t) nw = (nw & ~(31u << 10)) | (p << 10);
         if (nw == w) return 0; // w does not read t
+        memcpy(b->d + len - 4, &nw, 4);
+        return 1;
+    }
+    // sbfm/ubfm from bit 0 (sxt*, uxt*, low-bit sbfx/ubfx): a second one
+    // keeping no more low bits than the first reads the same bits of p
+    if (((prev >> 23) & 0x3Fu) == 0x26u && ((prev >> 29) & 3u) != 1u && !((prev >> 16) & 63u) &&
+        ((w >> 23) & 0x3Fu) == 0x26u && ((w >> 29) & 3u) != 1u && !((w >> 16) & 63u) &&
+        rn == t && ((w >> 10) & 63u) <= ((prev >> 10) & 63u)) {
+        uint32_t p = (prev >> 5) & 31u;
+        if (p == t) return 0;
+        uint32_t nw = (w & ~(31u << 5)) | (p << 5);
         memcpy(b->d + len - 4, &nw, 4);
         return 1;
     }
@@ -1211,6 +1223,14 @@ static uint32_t uxtw_of(int bits) {
     }
 }
 
+// Re-extend a narrow (8/16-bit) integer in rd from its low bits, sxtb/sxth or uxtb/uxth
+static void narrow_wrap(Em* e, int rd, SType* t) {
+    int b = scalar_bits(t);
+    if (!is_intt(t) || b >= 32) return;
+    uint32_t x = ty_is_signed(t) ? (b == 8 ? 0x13001C00u : 0x13003C00u) : (b == 8 ? 0x53001C00u : 0x53003C00u);
+    ins(e, x | ((uint32_t)rd << 5) | (uint32_t)rd);
+}
+
 static EV gen_cast(Em* e, EV v, SType* from, SType* to) {
     if (!from || !to || from->kind == SK_ERR || to->kind == SK_ERR) return v;
     if (is_floatt(from) && is_floatt(to)) { // f32 <-> f64
@@ -1254,6 +1274,10 @@ static EV gen_cast(Em* e, EV v, SType* from, SType* to) {
     } else if (ta < 64 && fa == 64) {
         mov_int(e, 0, xreg(v.idx), xreg(v.idx));
     }
+    // Narrowing, or a signed source into an unsigned target, changes the
+    // target's extension; an unsigned source widening into signed does not
+    int sf = ty_is_signed(from), st = ty_is_signed(to);
+    if (fa > ta || (sf && !st) || (fa == ta && sf != st)) narrow_wrap(e, xreg(v.idx), to);
     return v;
 }
 
@@ -1295,7 +1319,7 @@ static int tok_cond(TokKind op, SType* t) {
 static void emit_arithmetic_fail_call(Em* e);
 
 // rd = ra op rb on physical registers; ra and rb are only read
-static void emit_arith(Em* e, TokKind op, int rd, int ra, int rb, SType* t) {
+static void emit_arith_raw(Em* e, TokKind op, int rd, int ra, int rb, SType* t) {
     int sf = scalar_bits(t) == 64;
     uint32_t s = sf ? 0x80000000u : 0;
     switch (op) {
@@ -1322,6 +1346,12 @@ static void emit_arith(Em* e, TokKind op, int rd, int ra, int rb, SType* t) {
         return;
     default: return;
     }
+}
+
+// emit_arith_raw, then re-extend a narrow result where it can wrap unchecked
+static void emit_arith(Em* e, TokKind op, int rd, int ra, int rb, SType* t) {
+    emit_arith_raw(e, op, rd, ra, rb, t);
+    if (e->o.mode == EMIT_RELEASE || op == T_SHL) narrow_wrap(e, rd, t);
 }
 
 /*
@@ -1587,6 +1617,7 @@ static int emit_arith_imm(Em* e, TokKind op, int rd, int ra, uint64_t imm, SType
     uint32_t base = op == T_PLUS ? (checked ? 0x31000000u : 0x11000000u)
                                  : (checked ? 0x71000000u : 0x51000000u);
     ins(e, (sf ? 0x80000000u : 0) | base | ((uint32_t)imm << 10) | ((uint32_t)ra << 5) | (uint32_t)rd);
+    if (!checked) narrow_wrap(e, rd, t);
     if (checked) {
         int ok = new_label(e);
         bcond_(e, ty_is_signed(t) ? 7 /* VC */ : (op == T_PLUS ? C_LO : C_HS), ok);
@@ -5682,6 +5713,7 @@ static EV gen_expr(Em* e, Node* x) {
                 bind_label(e, ok);
             }
             ins(e, (sf ? 0xCB0003E0u : 0x4B0003E0u) | ((uint32_t)xreg(v.idx) << 16) | (uint32_t)xreg(v.idx));
+            if (e->o.mode == EMIT_RELEASE && t) narrow_wrap(e, xreg(v.idx), t);
             return v;
         }
         if (x->op == T_BANG || x->op == T_TILDE) {
@@ -5699,6 +5731,7 @@ static EV gen_expr(Em* e, Node* x) {
             int sf = !t || scalar_bits(t) == 64;
             ins(e, (sf ? 0xAA2003E0u : 0x2A2003E0u) |
                    ((uint32_t)xreg(v.idx) << 16) | (uint32_t)xreg(v.idx)); // mvn
+            if (t && !ty_is_signed(t)) narrow_wrap(e, xreg(v.idx), t);
             return v;
         }
         break;

@@ -1,0 +1,30 @@
+/* Narrow (8/16-bit) results stay in their type's range while still in a
+ * register: casts truncate and re-extend, `~` on unsigned stays masked, and
+ * `<<` drops the bits shifted out. Each value is compared before any store. */
+
+// expect-exit: 0
+
+id32(v: i32): i32 {
+    return v
+}
+
+id8(v: i8): i8 {
+    return v
+}
+
+idu8(v: u8): u8 {
+    return v
+}
+
+idu16(v: u16): u16 {
+    return v
+}
+
+main(): int {
+    if u8(id32(300)) != 44 || i8(id32(200)) != -56 { return 1 }
+    if u16(id32(70000)) != 4464 || i16(id32(40000)) != -25536 { return 2 }
+    if u16(id8(-1)) != 65535 || u8(id8(-1)) != 255 || i16(idu16(65535)) != -1 { return 3 }
+    if ~idu8(0) != 255 || ~idu16(1) != 65534 { return 4 }
+    if idu8(0x81) << 1 != 2 || idu16(0x8001) << 1 != 2 { return 5 }
+    return 0
+}

@@ -844,7 +844,7 @@ for f in signed_add unsigned_mul narrow_mul div_zero neg_min shift_count compoun
 done
 # release arithmetic wraps: the same immediate-operand overflows produce the
 # fixed-width result, including narrow values computed in registers
-for f in imm_signed_add imm_unsigned_sub imm_narrow_add; do
+for f in imm_signed_add imm_unsigned_sub imm_narrow_add narrow_release; do
     if ! "$ACE" --release -o "/tmp/ace_checked_features/arithmetic_${f}_release" \
          "tests/checked_arithmetic/$f.ace" ||
        ! "/tmp/ace_checked_features/arithmetic_${f}_release"; then

@@ -38,6 +38,11 @@ current normative rules, and Git preserves patch-level detail.
   leaks before returning, and release turns self tail calls into a loop. `--ir`
   prints the root file's functions, or why one was not lowered; nothing is
   emitted from the IR yet. `tests/ir` holds expected output for both modes.
+- Fixed narrow (8/16-bit) integers leaving their range while in a register:
+  casts to them now truncate and re-extend, `~` on `u8`/`u16` is masked, and
+  `<<` (both modes) and unchecked `+`, `-`, `*`, and unary `-` (release)
+  re-extend their result, per Safety & Debug Builds #6; a peephole folds the
+  resulting back-to-back extends.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic
