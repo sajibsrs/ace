@@ -1191,6 +1191,22 @@ static void lower_selected_node(Node* n, SelectLower* c) {
     case N_FIELD_E:
         lower_qualified_field(n, c, 0);
         return;
+    case N_CASE:
+        // A variant pattern's payload binder is a local of its case block.
+        select_scope_push(c);
+        for (int i = 0; i < n->nkids; i++) {
+            Node* pat = n->kids[i];
+            if (pat->kind != N_VARPAT) {
+                lower_selected_node(pat, c);
+                continue;
+            }
+            lower_selected_node(pat->a, c);
+            lower_selected_type(pat->b->a, c);
+            bind_local(c, pat->b->str, pat->b->len, 0);
+        }
+        lower_selected_node(n->b, c);
+        select_scope_pop(c);
+        return;
     case N_FIELDINIT:
         lower_selected_node(n->a, c); // initializer name is struct-local
         return;
@@ -1468,6 +1484,22 @@ static void rename_refs(Node* n, Renames* rs, SelectLower* c) {
         return;
     case N_FIELD_E:
         rename_refs(n->a, rs, c); // field spelling is member-local
+        return;
+    case N_CASE:
+        // Scoped as lower_selected_node's N_CASE.
+        select_scope_push(c);
+        for (int i = 0; i < n->nkids; i++) {
+            Node* pat = n->kids[i];
+            if (pat->kind != N_VARPAT) {
+                rename_refs(pat, rs, c);
+                continue;
+            }
+            rename_refs(pat->a, rs, c);
+            rename_type_refs(pat->b->a, rs, c);
+            bind_local(c, pat->b->str, pat->b->len, 0);
+        }
+        rename_refs(n->b, rs, c);
+        select_scope_pop(c);
         return;
     default:
         break;

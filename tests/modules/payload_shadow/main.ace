@@ -1,0 +1,26 @@
+/* A switch payload binder is a local of its case block: it shadows a module
+ * global in an imported file, a selected value, and a whole-module binding. */
+
+/* expect-exit: 169 */
+
+import Event, run, total from "./events.ace"
+import math
+
+Box: struct { floor: int }
+
+Holder: union { none, box: Box, total: int }
+
+pick(holder: Holder): int {
+    switch holder {
+        Holder.box(math: Box) { return math.floor }
+        Holder.total(total: int) { return total }
+        default {}
+    }
+    return total
+}
+
+main(): int {
+    box: Box = Box{floor = 3}
+    return run(Event.data(7)) + run(Event.none) + pick(Holder.box(box)) +
+        pick(Holder.total(9)) + pick(Holder.none)
+}

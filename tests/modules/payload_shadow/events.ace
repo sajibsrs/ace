@@ -1,0 +1,14 @@
+pub Event: union { none, data: int }
+
+count: int = 100
+
+pub total: int = 50
+
+/* The payload binder shadows the module global only in its case block. */
+pub run(event: Event): int {
+    switch event {
+        Event.data(count: int) { return count }
+        default {}
+    }
+    return count
+}

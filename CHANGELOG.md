@@ -85,6 +85,10 @@ current normative rules, and Git preserves patch-level detail.
   the module when the member existed. Type positions (`shape.Box`,
   `shape.Box{...}`, sizeof and typeid operands) still name the module's type.
   The separate unscoped qualified-lowering pass is gone.
+- Scoped a switch payload binder to its case block in module lowering, so
+  `Event.data(count: int)` shadows a module global in an imported file, a
+  selected value, or a whole-module binding there instead of being lowered to
+  it; an imported file's `return count` in that case read the global.
 - Scoped a local from its declarator in module lowering as sema already did,
   so an imported file's `total: usize = total + 1` names the uninitialized
   local instead of the module global, and a selected import no longer reaches
