@@ -45,10 +45,6 @@ next, in this order.
   (Memory #15), so the Pike VM copies each `[]usize` capture row (2–10 words
   per thread step) with a hand loop where C uses `memcpy`. Measure a typed
   copy against the loop at those sizes before proposing one.
-- **Methods on enums and unions** [unspecified] — `pkg/regex` dispatches over
-  its `Node` and `Inst` unions at every site with one `switch` inside a method
-  of the struct owning the arrays, and never needed a method on a union. Wait
-  for a use case where the union itself owns the behavior.
 - **`pkg/regex` search prefilter** [new] — the Pike VM seeds a thread at
   every byte, while PCRE2 skips to candidate positions: `literal` runs at
   26.8 ns/B against PCRE2's 1.61 (`bench/README.md`), which bounds the gain.
