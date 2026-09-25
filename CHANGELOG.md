@@ -520,8 +520,9 @@ current normative rules, and Git preserves patch-level detail.
 - Added `tests/definite-init-diff.sh`, the differential check behind that
   change: an awk generator writes random functions mixing partial struct and
   array writes with every branch form, and two compilers must report
-  byte-identical diagnostics. A program rejected before definite
-  initialization fails the run, and mismatching programs are kept.
+  byte-identical diagnostics. Both compilers must exist, any baseline output
+  other than initialization diagnostics (another diagnostic, a crash) fails
+  the run, and mismatching programs are kept.
 - Materialized a float constant with `fmov Vd, #imm8` when it is one of the 256
   encodable values (0.125 to 31.0 in sixteenths of a power of two, either sign),
   and folded the scaled index into a scalar array or slice load as

@@ -5,8 +5,9 @@
 # early return) and requires two compilers to report byte-identical
 # diagnostics. Run a change against a build of HEAD:
 #   tests/definite-init-diff.sh <baseline-ace> <candidate-ace> [count] [seed]
-# Every program must reach definite initialization: any other diagnostic means
-# the generator no longer matches the language, and the run fails.
+# Every program must reach definite initialization: any other baseline output
+# (another diagnostic, a crash) means the generator no longer matches the
+# language or the baseline is broken, and the run fails.
 set -eu
 
 if [ "$#" -lt 2 ] || [ "$#" -gt 4 ]; then
@@ -17,6 +18,12 @@ old=$1
 new=$2
 count=${3:-1000}
 seed=${4:-1}
+for ace in "$old" "$new"; do
+    if [ ! -f "$ace" ] || [ ! -x "$ace" ]; then
+        echo "$0: not an executable compiler: $ace" >&2
+        exit 2
+    fi
+done
 dir=$(mktemp -d "${TMPDIR:-/tmp}/ace-definite-init.XXXXXX")
 trap 'rm -rf "$dir"' EXIT HUP INT TERM
 
@@ -133,9 +140,12 @@ while [ "$n" -lt "$count" ]; do
     old_out=$("$old" "$dir/case.ace" 2>&1) || old_rc=$?
     new_rc=0
     new_out=$("$new" "$dir/case.ace" 2>&1) || new_rc=$?
-    if printf '%s\n' "$old_out" | grep 'error:' | grep -qv 'initialized before use'; then
-        echo "FAIL: program $n was rejected before definite initialization:" >&2
-        printf '%s\n' "$old_out" | grep 'error:' | grep -v 'initialized before use' | head -3 >&2
+    # only initialization diagnostics and the compiler's error count
+    other=$(printf '%s\n' "$old_out" |
+        grep -v -e 'initialized before use$' -e ': [0-9][0-9]* errors*$' -e '^$' || true)
+    if [ -n "$other" ]; then
+        echo "FAIL: program $n did not reach definite initialization under $old:" >&2
+        printf '%s\n' "$other" | head -3 >&2
         exit 1
     fi
     [ -n "$old_out" ] && diagnosed=$((diagnosed + 1))
