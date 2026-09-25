@@ -108,12 +108,12 @@ the remaining proof points explicit:
 - **Per-module objects and incremental rebuilds** [queued] — the merged-unit
   loader deliberately defers both.
 - **Definite initialization inside the checker pass** [new] — the check is a
-  separate whole-file walk after sema (`check_definite_initialization`), the
-  only traversal beyond lex, parse, check, and emit. Folding it into the
-  in-order check would drop that walk (estimated 2–5% of compile time, not
-  measured), but initialization state would then be tracked while some calls
-  are still pending and would have to stay consistent through the end-of-file
-  re-check.
+  separate whole-file walk after sema (`check_definite_initialization`).
+  Skipping it entirely saves 1.0–1.9% of instructions on real programs (the
+  regex and json package checks, `bench/core` and `bench/std` compiles) and
+  3.3–3.8% on generated corpora. Folding it into the in-order check would save
+  only the traversal part of that, while tracking initialization state across
+  pending calls and the end-of-file re-check. Not worth it at that ceiling.
 - **Local lookup in module lowering is quadratic** [new] — in an imported
   file, `lower_refs` checks each unshadowed name against the list of locals in
   scope (`local_name` in `module.c`), so one function of 8,000 locals takes
