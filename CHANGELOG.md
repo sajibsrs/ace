@@ -24,6 +24,11 @@ current normative rules, and Git preserves patch-level detail.
   with no alias, `EMIT_DEBUG` replaces `EMIT_CHECKED`, and the spec section
   is Safety & Debug Builds. Individual checks keep their names (checked
   arithmetic, the `tests/checked_*` fixtures).
+- Moved the object writer out of `emit.c` into `macho.c` behind `backend.h`
+  (IR migration step 1a): sections, symbols, relocations, fixups, line rows,
+  DWARF, and the Mach-O image, plus the shared runtime-routine flags, live in
+  one `Obj` that every code generator emits into. Objects are byte-identical
+  across the test, bench, and demo sources in both modes.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

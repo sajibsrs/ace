@@ -31,27 +31,6 @@
 //   - multi-return = anonymous struct (tuple) per platform rules: <=16B in
 //     chunk registers, >16B sret.
 //
-// Object format facts (pinned against clang reference objects, otool dumps):
-//   - one LC_SEGMENT_64 with an EMPTY segname holds all sections; each
-//     section carries its real (segname, sectname) pair (__TEXT/__DATA/__DWARF)
-//   - segment vmaddr=0, fileoff = first section's file offset; section addrs
-//     are continuous from 0; maxprot=initprot=7 (RWX in objects — the linker
-//     decides the final image)
-//   - symbol order in LC_SYMTAB: locals (n_type 0x0e = N_SECT), then extdefs
-//     (0x0f = N_SECT|N_EXT), then undefs (0x01 = N_EXT); strtab starts with
-//     the empty string (index 0)
-//   - MH flags = 0 — no SUBSECTIONS_VIA_SYMBOLS: internal bl's are patched
-//     in-place, never relocated (SPEC.md Compiler #5)
-//   - one LC_BUILD_VERSION (platform 1 = macOS, minos 11.0), LC_SYMTAB,
-//     LC_DYSYMTAB
-//
-// Relocations (r_word1 = symbolnum(24)|pcrel<<24|length<<25|extern<<27|type<<28;
-// BRANCH26=2, PAGE21=3, PAGEOFF12=4 (length 2), UNSIGNED=0 (length 3)):
-//   - adrp/add address pairs against local symbols (PAGE21 pcrel=1 / PAGEOFF12
-//     pcrel=0), 8-byte absolute words via UNSIGNED (vtable slots, string
-//     pointers in data), extern branches via BRANCH26 (extern=1). Entries are
-//     kept structured and serialized once symbol indices are known at write.
-//
 // Instruction encodings verified against `as` + objdump (scratch /tmp/ace_ref):
 //   stp x29,x30,[sp,#-16]! = 0xA9BF7BFD   mov x29,sp = 0x910003FD
 //   sub sp,sp,#imm12       = 0xD10003FF|imm<<10 (placeholder, patched at end)
@@ -89,6 +68,7 @@
 //   svc = 0xD4000001|imm16<<5  nop = 0xD503201F  blr = 0xD63F0000|rn<<5
 //   movz w/x = 0x528/0xD2800000  movn = 0x128/0x9280  movk = 0x728/0xF28..
 #include "ace.h"
+#include "backend.h"
 #include "sema.h"
 
 #include <math.h>
@@ -100,216 +80,7 @@
 
 int emit_has_main = 0;
 
-// --- growable byte buffer ---------------------------------------------------------
-
-static void oom(void) {
-    fprintf(stderr, "ace: out of memory\n");
-    exit(1);
-}
-
-typedef struct {
-    uint8_t* d;
-    size_t   len, cap;
-} Buf;
-
-static void buf_reserve(Buf* b, size_t extra) {
-    if (b->len + extra <= b->cap) return;
-    size_t cap = b->cap ? b->cap * 2 : 256;
-    while (cap < b->len + extra) cap *= 2;
-    b->d = realloc(b->d, cap);
-    if (!b->d) oom();
-    b->cap = cap;
-}
-
-static void buf_put8(Buf* b, uint8_t v) {
-    buf_reserve(b, 1);
-    b->d[b->len++] = v;
-}
-
-static void buf_put16(Buf* b, uint16_t v) {
-    buf_put8(b, (uint8_t)v);
-    buf_put8(b, (uint8_t)(v >> 8));
-}
-
-static void buf_put32(Buf* b, uint32_t v) {
-    for (int i = 0; i < 4; i++) buf_put8(b, (uint8_t)(v >> (8 * i)));
-}
-
-static void buf_put64(Buf* b, uint64_t v) {
-    for (int i = 0; i < 8; i++) buf_put8(b, (uint8_t)(v >> (8 * i)));
-}
-
-static void buf_uleb(Buf* b, uint64_t v) {
-    do {
-        uint8_t byte = (uint8_t)(v & 0x7f);
-        v >>= 7;
-        if (v) byte |= 0x80;
-        buf_put8(b, byte);
-    } while (v);
-}
-
-static void buf_sleb(Buf* b, int64_t v) {
-    int more;
-    do {
-        uint8_t byte = (uint8_t)(v & 0x7f);
-        int sign = byte & 0x40;
-        v >>= 7;
-        more = !((v == 0 && !sign) || (v == -1 && sign));
-        if (more) byte |= 0x80;
-        buf_put8(b, byte);
-    } while (more);
-}
-
-static void buf_write(Buf* b, const void* p, size_t n) {
-    buf_reserve(b, n);
-    memcpy(b->d + b->len, p, n);
-    b->len += n;
-}
-
-static void buf_patch32(Buf* b, size_t off, uint32_t v) {
-    for (int i = 0; i < 4; i++) b->d[off + (size_t)i] = (uint8_t)(v >> (8 * i));
-}
-
-static void buf_putname(Buf* b, const char* name) { // 16-byte padded field
-    size_t n = strlen(name);
-    if (n > 16) n = 16;
-    buf_write(b, name, n);
-    for (size_t i = n; i < 16; i++) buf_put8(b, 0);
-}
-
-// --- sections & symbols ------------------------------------------------------------
-
-enum {
-    SEC_TEXT, SEC_CONST, SEC_DATA, SEC_BSS,
-    SEC_DEBUG_ABBREV, SEC_DEBUG_INFO, SEC_DEBUG_LINE, NSECS,
-    // nlist_64 n_sect is 1-based: SEC_TEXT -> 1
-};
-
-enum { // section flags (mach-o/loader.h)
-    S_ZEROFILL               = 0x00000001,
-    S_ATTR_SOME_INSTRUCTIONS = 0x00000400,
-    S_ATTR_DEBUG             = 0x02000000,
-    S_ATTR_PURE_INSTRUCTIONS = 0x80000000,
-};
-
-enum { // arm64 relocation types
-    RM_UNSIGNED  = 0,
-    RM_PAIR      = 1,
-    RM_BRANCH26  = 2,
-    RM_PAGE21    = 3,
-    RM_PAGEOFF12 = 4,
-};
-
-enum { // n_type bits
-    N_EXT_  = 0x01,
-    N_SECT_ = 0x0e,
-};
-
-typedef struct { char* name; uint32_t strx, ord; uint8_t type, sect; uint64_t value; uint32_t hash, len; } ESym;
-// v keeps emission order; slots is an open-addressing index over it by name.
-typedef struct { ESym** v; size_t n, cap; ESym** slots; size_t slot_cap; } SymTab;
-
-// Structured relocation; serialized once symbol indices are known at write.
-typedef struct {
-    uint32_t off;
-    ESym*    sym;
-    uint8_t  pcrel, len, ext, type;
-} Rel;
-
-typedef struct {
-    const char* sect, *seg;
-    uint32_t    flags;
-    uint8_t     align; // exponent: 2^align
-    Buf         data;
-    Rel*        rl;
-    int         nrl, crl;
-    uint64_t    size;  // bss: reserved bytes; else set to data.len at layout
-    uint64_t    addr;
-    uint32_t    offset, reloff;
-} Sec;
-
-static void reloc_add(Sec* s, uint32_t off, ESym* sym, int pcrel, int len, int ext, uint32_t type) {
-    if (s->nrl == s->crl) {
-        s->crl = s->crl ? s->crl * 2 : 8;
-        s->rl = realloc(s->rl, (size_t)s->crl * sizeof(Rel));
-        if (!s->rl) oom();
-    }
-    s->rl[s->nrl++] = (Rel){ off, sym, (uint8_t)!!pcrel, (uint8_t)len, (uint8_t)!!ext, (uint8_t)type };
-}
-
-static uint32_t sym_hash(const char* p, uint32_t len) {
-    uint32_t h = 2166136261u; // FNV-1a
-    for (uint32_t i = 0; i < len; i++) h = (h ^ (uint8_t)p[i]) * 16777619u;
-    return h;
-}
-
-static void sym_slot_put(SymTab* t, ESym* s) {
-    size_t i = s->hash & (t->slot_cap - 1);
-    while (t->slots[i]) i = (i + 1) & (t->slot_cap - 1);
-    t->slots[i] = s;
-}
-
-static ESym* sym_intern(SymTab* t, const char* p, uint32_t len) {
-    uint32_t h = sym_hash(p, len);
-    if (t->slot_cap) {
-        for (size_t i = h & (t->slot_cap - 1); t->slots[i];
-             i = (i + 1) & (t->slot_cap - 1)) {
-            ESym* s = t->slots[i];
-            if (s->hash == h && s->len == len && memcmp(s->name, p, len) == 0)
-                return s;
-        }
-    }
-    if (t->n == t->cap) {
-        t->cap = t->cap ? t->cap * 2 : 16;
-        t->v = realloc(t->v, t->cap * sizeof(ESym*));
-        if (!t->v) oom();
-    }
-    ESym* s = malloc(sizeof(ESym));
-    if (!s) oom();
-    t->v[t->n++] = s;
-    s->name = malloc((size_t)len + 1);
-    if (!s->name) oom();
-    memcpy(s->name, p, len);
-    s->name[len] = 0;
-    s->hash = h;
-    s->len = len;
-    s->strx = s->ord = 0;
-    s->type = 0;
-    s->sect = 0;
-    s->value = 0;
-    if (t->n * 2 > t->slot_cap) { // load factor <= 1/2
-        size_t cap = t->slot_cap ? t->slot_cap * 2 : 64;
-        free(t->slots);
-        t->slots = calloc(cap, sizeof(ESym*));
-        if (!t->slots) oom();
-        t->slot_cap = cap;
-        for (size_t i = 0; i < t->n; i++) sym_slot_put(t, t->v[i]);
-    } else {
-        sym_slot_put(t, s);
-    }
-    return s;
-}
-
-// Define at the section cursor; bss grows its size cursor instead of data.
-static ESym* sym_define(SymTab* t, Sec* secs, const char* p, uint32_t len, int ext, Sec* in) {
-    ESym* s = sym_intern(t, p, len);
-    if (s->type) return s; // redefinition is a sema error; keep the first
-    s->type = N_SECT_ | (ext ? N_EXT_ : 0);
-    s->sect = (uint8_t)(1 + (int)(in - secs));
-    s->value = (in->flags & S_ZEROFILL) ? in->size : in->data.len;
-    return s;
-}
-
 // --- emitter state ----------------------------------------------------------------
-
-enum { FK_SUBSP, FK_BRANCH };
-
-typedef struct {
-    uint8_t  kind;   // FK_*
-    uint32_t site;   // offset of the instruction word in __text
-    ESym*    target; // FK_BRANCH: call target (interned by name)
-    uint32_t frame;  // FK_SUBSP: final frame size
-} Fixup;
 
 typedef struct { // per-function stack slot (keyed by binder/loop node)
     Node*    key;
@@ -328,8 +99,6 @@ typedef struct {
     uint32_t count;
     uint8_t string_keys;
 } StaticMapData;
-typedef struct { uint32_t addr; int line, col; const char* path; } LineRow;
-typedef struct { uint32_t addr, size; const char* name; uint32_t nlen; } DebugFn;
 
 enum { CLS_INT, CLS_FP, CLS_ADDR };
 typedef struct { uint8_t cls; int idx; } EV; // int temp / fp temp / address in int temp
@@ -418,22 +187,9 @@ typedef struct {
 } InlineCtx;
 
 typedef struct {
-    Diag* d;
+    Obj   o;
     Node* file;
-    EmitMode mode;
-    int bounds_fail_used;
-    int arithmetic_fail_used;
-    int contract_fail_used;
-    int null_fail_used;
-    int allocator_used;
-    int mem_copy_used; // __ace$mem_copy / __ace$mem_move
-    int mem_fill_used; // __ace$mem_fill
-    int mem_compare_used; // __ace$mem_compare
     int current_is_main;
-    Sec   secs[NSECS];
-    SymTab syms;
-    Fixup* fix;
-    size_t nfix, capfix;
     uint64_t* fpool; // current function's float constants, 8 bytes each
     uint32_t  nfpool, cfpool;
     uint32_t* fpool_site; // (ldr literal offset, pool index) pairs
@@ -530,10 +286,6 @@ typedef struct {
     uint32_t sink_off[4];
     int      sink_n, sink_done;
     Split*   sink_split; // or moves the units into this split local's fields
-    LineRow* lines;
-    int      nlines, clines;
-    DebugFn* debug_fns;
-    int      ndebug_fns, cdebug_fns;
     // inline expansion (Functions & ABI #8), per emitted function
     PtrMap   inl_ix;     // call node -> InlineSite*
     PtrMap   copy_node;  // callee node -> its copy, while copying one callee
@@ -559,15 +311,15 @@ static void temps_reset(Em* e) {
 
 static void em_err(Em* e, Node* n, const char* fmt, ...) {
     va_list ap;
-    fprintf(stderr, "%s:%d:%d: error: ", n && n->path ? n->path : e->d->path, n ? n->line : 0, n ? n->col : 0);
+    fprintf(stderr, "%s:%d:%d: error: ", n && n->path ? n->path : e->o.d->path, n ? n->line : 0, n ? n->col : 0);
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
     fputc('\n', stderr);
-    e->d->errors++;
+    e->o.d->errors++;
 }
 
-static Buf* text(Em* e) { return &e->secs[SEC_TEXT].data; }
+static Buf* text(Em* e) { return obj_text(&e->o); }
 
 /*
  * A text offset something recorded (a relocation, fixup, or branch site):
@@ -578,12 +330,7 @@ static Buf* text(Em* e) { return &e->secs[SEC_TEXT].data; }
 static void peep_barrier(Em* e) { e->peep_bar = (uint32_t)text(e)->len; }
 
 static void fix_add(Em* e, uint8_t kind, uint32_t site, ESym* target) {
-    if (e->nfix == e->capfix) {
-        e->capfix = e->capfix ? e->capfix * 2 : 16;
-        e->fix = realloc(e->fix, e->capfix * sizeof(Fixup));
-        if (!e->fix) oom();
-    }
-    e->fix[e->nfix++] = (Fixup){ kind, site, target, 0 };
+    obj_fixup(&e->o, kind, site, target);
     peep_barrier(e);
 }
 
@@ -682,26 +429,11 @@ static void line_mark(Em* e, Node* n) {
     uint32_t addr = (uint32_t)text(e)->len;
     e->peep_bar = addr; // a line row's first instruction stays its own
     if (e->ninl) return; // inlined code keeps its call site's line
-    const char* path = n->path ? n->path : e->d->path;
-    if (e->nlines && e->lines[e->nlines - 1].addr == addr) {
-        e->lines[e->nlines - 1] = (LineRow){ addr, n->line, n->col, path };
-        return;
-    }
-    if (e->nlines == e->clines) {
-        e->clines = e->clines ? e->clines * 2 : 64;
-        e->lines = realloc(e->lines, (size_t)e->clines * sizeof(LineRow));
-        if (!e->lines) oom();
-    }
-    e->lines[e->nlines++] = (LineRow){ addr, n->line, n->col, path };
+    obj_line(&e->o, addr, n->line, n->col, n->path ? n->path : e->o.d->path);
 }
 
 static void debug_fn_add(Em* e, Node* f, uint32_t addr, uint32_t size) {
-    if (e->ndebug_fns == e->cdebug_fns) {
-        e->cdebug_fns = e->cdebug_fns ? e->cdebug_fns * 2 : 16;
-        e->debug_fns = realloc(e->debug_fns, (size_t)e->cdebug_fns * sizeof(DebugFn));
-        if (!e->debug_fns) oom();
-    }
-    e->debug_fns[e->ndebug_fns++] = (DebugFn){ addr, size, f->str, f->len };
+    obj_debug_fn(&e->o, addr, size, f->str, f->len);
 }
 
 // Relocations collected while folding a constant initializer.
@@ -1068,7 +800,7 @@ static void flush_fpool(Em* e) {
         int64_t delta = (int64_t)base + 8 * (int64_t)e->fpool_site[i + 1] - (int64_t)site;
         if (delta >= (1 << 20)) {
             fprintf(stderr, "ace: float constant out of literal-load range\n");
-            e->d->errors++;
+            e->o.d->errors++;
             break;
         }
         uint32_t w;
@@ -1194,7 +926,7 @@ static void frame_addr(Em* e, int rd, uint32_t off) {
 
 static int tmp_int(Em* e) {
     if (e->vti >= e->vti_cap) {
-        e->d->errors++;
+        e->o.d->errors++;
         fprintf(stderr, "ace: expression too deeply nested (int temps)\n");
         return 0;
     }
@@ -1203,7 +935,7 @@ static int tmp_int(Em* e) {
 
 static int tmp_fp(Em* e) {
     if (e->vtf >= e->vtf_cap) {
-        e->d->errors++;
+        e->o.d->errors++;
         fprintf(stderr, "ace: expression too deeply nested (fp temps)\n");
         return 0;
     }
@@ -1404,7 +1136,7 @@ static void copy_mem(Em* e, int dst, uint32_t doff, int src, uint32_t soff, uint
         mov_int(e, 1, 16, 17);
     }
     load_imm(e, 1, 17, size);
-    e->mem_copy_used = 1;
+    e->o.mem_copy_used = 1;
     emit_bl_internal(e, "__ace$mem_copy", 14);
 }
 
@@ -1733,7 +1465,7 @@ static void emit_checked_arith(Em* e, TokKind op, int rd, int ra, int rb, SType*
     int bits = scalar_bits(t);
     int sf = bits == 64;
     int sig = ty_is_signed(t);
-    if (e->mode != EMIT_DEBUG || !is_intt(t)) {
+    if (e->o.mode != EMIT_DEBUG || !is_intt(t)) {
         emit_arith(e, op, rd, ra, rb, t);
         return;
     }
@@ -1850,7 +1582,7 @@ static int imm12_const(Node* x, uint64_t* out) {
 static int emit_arith_imm(Em* e, TokKind op, int rd, int ra, uint64_t imm, SType* t) {
     if (op != T_PLUS && op != T_MINUS) return 0;
     int bits = scalar_bits(t), sf = bits == 64;
-    int checked = e->mode == EMIT_DEBUG && is_intt(t);
+    int checked = e->o.mode == EMIT_DEBUG && is_intt(t);
     if (checked && bits < 32) return 0;
     uint32_t base = op == T_PLUS ? (checked ? 0x31000000u : 0x11000000u)
                                  : (checked ? 0x71000000u : 0x51000000u);
@@ -1936,7 +1668,7 @@ static TokKind compound_op(TokKind op) {
  * preconditions at the operation site; release is only multiply plus add/sub. */
 static void emit_pointer_arith(Em* e, TokKind op, int pointer, int offset, uint32_t elem_size) {
     int rp = xreg(pointer), ro = xreg(offset);
-    if (e->mode == EMIT_DEBUG) {
+    if (e->o.mode == EMIT_DEBUG) {
         int nonnull = new_label(e);
         cbz_(e, 1, rp, 1, nonnull);
         emit_arithmetic_fail_call(e);
@@ -1944,7 +1676,7 @@ static void emit_pointer_arith(Em* e, TokKind op, int pointer, int offset, uint3
     }
     if (elem_size != 1) {
         load_imm(e, 1, 16, elem_size);
-        if (e->mode == EMIT_DEBUG) {
+        if (e->o.mode == EMIT_DEBUG) {
             ins(e, 0x9BC07C00u | (16u << 16) | ((uint32_t)ro << 5) | 17u); // umulh
             int scaled = new_label(e);
             cbz_(e, 1, 17, 0, scaled);
@@ -1956,7 +1688,7 @@ static void emit_pointer_arith(Em* e, TokKind op, int pointer, int offset, uint3
     }
     uint32_t base = op == T_PLUS ? 0xAB000000u : 0xEB000000u; // adds/subs x
     ins(e, base | ((uint32_t)ro << 16) | ((uint32_t)rp << 5) | (uint32_t)rp);
-    if (e->mode == EMIT_DEBUG) {
+    if (e->o.mode == EMIT_DEBUG) {
         int valid = new_label(e);
         bcond_(e, op == T_PLUS ? C_LO : C_HS, valid);
         emit_arithmetic_fail_call(e);
@@ -2708,7 +2440,7 @@ static void classify_ret(SType* t, RetCls* r) {
 static void emit_bl_internal(Em* e, const char* p, uint32_t len) {
     fp_leaves(e, 0);
     ins(e, 0x94000000u); // bl .+0
-    ESym* t = sym_intern(&e->syms, p, len);
+    ESym* t = sym_intern(&e->o.syms, p, len);
     fix_add(e, FK_BRANCH, (uint32_t)(text(e)->len - 4), t);
     fp_leaves(e, 1);
 }
@@ -2716,8 +2448,8 @@ static void emit_bl_internal(Em* e, const char* p, uint32_t len) {
 static void emit_bl_extern(Em* e, const char* p, uint32_t len) {
     fp_leaves(e, 0);
     ins(e, 0x94000000u);
-    ESym* t = sym_intern(&e->syms, p, len);
-    reloc_add(&e->secs[SEC_TEXT], (uint32_t)(text(e)->len - 4), t, 1, 2, 1, RM_BRANCH26);
+    ESym* t = sym_intern(&e->o.syms, p, len);
+    reloc_add(&e->o.secs[SEC_TEXT], (uint32_t)(text(e)->len - 4), t, 1, 2, 1, RM_BRANCH26);
     peep_barrier(e);
     fp_leaves(e, 1);
 }
@@ -2730,7 +2462,7 @@ static void addr_of_sym(Em* e, int rd, ESym* sym);
  * __ace$bounds_fail helper writes whatever message it is handed.
  */
 static void emit_located_fail_call(Em* e, Node* at, const char* what) {
-    e->bounds_fail_used = 1;
+    e->o.bounds_fail_used = 1;
     const char* path = at && at->path ? at->path : "<source>";
     size_t need = strlen(path) + strlen(what) + 64;
     char* diagnostic = (char*)arena_alloc(need);
@@ -2752,22 +2484,22 @@ static void emit_bounds_fail_call(Em* e, Node* at) {
 }
 
 static void emit_arithmetic_fail_call(Em* e) {
-    e->arithmetic_fail_used = 1;
+    e->o.arithmetic_fail_used = 1;
     emit_bl_internal(e, "__ace$arithmetic_fail", 21);
 }
 
 static void emit_contract_fail_call(Em* e) {
-    e->contract_fail_used = 1;
+    e->o.contract_fail_used = 1;
     emit_bl_internal(e, "__ace$contract_fail", 19);
 }
 
 static void emit_null_fail_call(Em* e) {
-    e->null_fail_used = 1;
+    e->o.null_fail_used = 1;
     emit_bl_internal(e, "__ace$null_fail", 15);
 }
 
 static void emit_null_guard(Em* e, int reg) {
-    if (e->mode != EMIT_DEBUG) return;
+    if (e->o.mode != EMIT_DEBUG) return;
     int ok = new_label(e);
     cbz_(e, 1, reg, 1, ok);
     emit_null_fail_call(e);
@@ -2782,7 +2514,7 @@ static int signed_index(Node* index) {
 /* The lower comparison deliberately precedes widening: a negative signed
  * value must remain a lower-bound failure rather than becoming a huge usize. */
 static void emit_index_guard(Em* e, Node* access, int index_reg, int length_reg, uint64_t array_length) {
-    if (e->mode != EMIT_DEBUG || (access->flags & F_BOUNDS_PROVEN)) return;
+    if (e->o.mode != EMIT_DEBUG || (access->flags & F_BOUNDS_PROVEN)) return;
     if (signed_index(access->b)) {
         int ok = new_label(e);
         int sf = scalar_bits(node_ty(access->b)) == 64;
@@ -2809,7 +2541,7 @@ static void emit_nonnegative_guard(Em* e, Node* slice, Node* bound, int reg) {
     enum { BP_LO_NONNEG = 1, BP_HI_NONNEG = 2 };
     uint8_t proof = slice->aux ? *(uint8_t*)slice->aux : 0;
     int bit = bound == slice->b ? BP_LO_NONNEG : BP_HI_NONNEG;
-    if (e->mode != EMIT_DEBUG || (slice->flags & F_BOUNDS_PROVEN) ||
+    if (e->o.mode != EMIT_DEBUG || (slice->flags & F_BOUNDS_PROVEN) ||
         !bound || (proof & bit) || !signed_index(bound)) return;
     int ok = new_label(e);
     int sf = scalar_bits(node_ty(bound)) == 64;
@@ -2975,7 +2707,7 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
     if (e->nxpreg && !e->in_defers) {
         uintptr_t cp = at ? ptrmap_get(&e->call_pos, at) : 0;
         if (!cp || leaf_spanned(e, (uint32_t)(cp - 1))) { // or a call promo_scan never saw
-            e->d->errors++;
+            e->o.d->errors++;
             fprintf(stderr, "ace: call inside a caller-saved promoted local's live range\n");
         }
     }
@@ -3063,7 +2795,7 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
         // registers is loaded from its slot at marshal time: no address temp
         uint32_t fdepth;
         if (!is_scalar(eff[i]) && units[i * 4].kind != TU_STACK_AGGR && (a->kind == N_IDENT || a->kind == N_FIELD_E) &&
-            !(e->mode == EMIT_DEBUG && eff[i]->kind == SK_SLICE) && node_ty(a) && ty_size(node_ty(a)) == arg_size &&
+            !(e->o.mode == EMIT_DEBUG && eff[i]->kind == SK_SLICE) && node_ty(a) && ty_size(node_ty(a)) == arg_size &&
             frame_place(e, a, &fdepth)) {
             framed[i] = 1;
             fdepths[i] = fdepth;
@@ -3081,7 +2813,7 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
      * locally available; no pointee walk or provenance machinery is added. */
     Sym* called = at ? node_sym(at) : NULL;
     Node* decl = called && called->kind == SYM_FUNC ? called->decl : NULL;
-    if (e->mode == EMIT_DEBUG && decl) {
+    if (e->o.mode == EMIT_DEBUG && decl) {
         int guard_ni = e->vti, guard_nf = e->vtf;
         spill_temps(e);
         uint32_t ranges[40];
@@ -3346,7 +3078,7 @@ static EV gen_byte_sequence_eq(Em* e, Node* n, EV a, SType* at, EV b, SType* bt,
     ins(e, 0xEB00001Fu | ((uint32_t)xreg(blen) << 16) |
            ((uint32_t)xreg(alen) << 5)); // cmp alen, blen
     bcond_(e, C_NE, done);
-    e->mem_compare_used = 1;
+    e->o.mem_compare_used = 1;
     mov_int(e, 1, 15, xreg(aptr));
     mov_int(e, 1, 16, xreg(bptr));
     mov_int(e, 1, 17, xreg(alen));
@@ -3368,11 +3100,11 @@ static void store_to_slot(Em* e, EV v, uint32_t off, SType* t);
 // --- string literals --------------------------------------------------------------------
 
 static ESym* intern_string(Em* e, Node* s) {
-    Sec* c = &e->secs[SEC_CONST];
+    Sec* c = &e->o.secs[SEC_CONST];
     while (c->data.len % 8) buf_put8(&c->data, 0);
     char nm[64];
     snprintf(nm, sizeof nm, "__ace$str$%d", e->str_n++);
-    ESym* sym = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, c);
+    ESym* sym = sym_define(&e->o.syms, e->o.secs, nm, (uint32_t)strlen(nm), 0, c);
     buf_write(&c->data, s->str, s->len);
     return sym;
 }
@@ -3444,7 +3176,7 @@ static EV gen_error_description(Em* e, EV value, int message) {
 static ESym* global_sym(Em* e, Sym* s) {
     for (int i = 0; i < e->nglobs; i++)
         if (e->globs[i].s == s)
-            return sym_intern(&e->syms, e->globs[i].name, e->globs[i].len);
+            return sym_intern(&e->o.syms, e->globs[i].name, e->globs[i].len);
     return NULL;
 }
 
@@ -3452,11 +3184,11 @@ static ESym* global_sym(Em* e, Sym* s) {
 static void addr_of_sym(Em* e, int rd, ESym* sym) {
     uint32_t site = (uint32_t)text(e)->len;
     ins(e, 0x90000000u | ((uint32_t)rd & 31u));
-    reloc_add(&e->secs[SEC_TEXT], site, sym, 1, 2, 1, RM_PAGE21);
+    reloc_add(&e->o.secs[SEC_TEXT], site, sym, 1, 2, 1, RM_PAGE21);
     peep_barrier(e);
     site = (uint32_t)text(e)->len;
     ins(e, 0x91000000u | ((uint32_t)rd << 5) | ((uint32_t)rd & 31u));
-    reloc_add(&e->secs[SEC_TEXT], site, sym, 0, 2, 1, RM_PAGEOFF12);
+    reloc_add(&e->o.secs[SEC_TEXT], site, sym, 0, 2, 1, RM_PAGEOFF12);
     peep_barrier(e);
 }
 
@@ -3950,7 +3682,7 @@ static int index_addr(Em* e, Node* x, uint32_t fold_w, int* fold_ri) {
         em_err(e, x, "cannot index this type");
         return ta;
     }
-    int need_guard = e->mode == EMIT_DEBUG && !(x->flags & F_BOUNDS_PROVEN);
+    int need_guard = e->o.mode == EMIT_DEBUG && !(x->flags & F_BOUNDS_PROVEN);
     uint32_t len_slot = 0;
     if (descriptor) {
         if (need_guard) {
@@ -3988,7 +3720,7 @@ static int index_addr(Em* e, Node* x, uint32_t fold_w, int* fold_ri) {
         load_frame(e, lenreg, len_slot, 8, 0);
     }
     emit_index_guard(e, x, ri, lenreg, seq && seq->kind == SK_ARRAY ? seq->count : 0);
-    if (e->mode != EMIT_DEBUG || (x->flags & F_BOUNDS_PROVEN)) widen_idx(e, x->b, ri);
+    if (e->o.mode != EMIT_DEBUG || (x->flags & F_BOUNDS_PROVEN)) widen_idx(e, x->b, ri);
     if (fold_w && esz == fold_w && (esz == 1 || esz == 2 || esz == 4 || esz == 8)) {
         *fold_ri = ri; // the consumer loads [ta, ri, lsl #log2(esz)]
     } else if (esz == 1) {
@@ -4087,7 +3819,7 @@ static int gen_generic_value(Em* e, Node* x) {
     }
     const char* mn = fn_mangle(s->name, s->len, ft, s->decl, targs, nt, s->spec_args != NULL);
     int t = tmp_int(e);
-    addr_of_sym(e, xreg(t), sym_intern(&e->syms, mn, (uint32_t)strlen(mn)));
+    addr_of_sym(e, xreg(t), sym_intern(&e->o.syms, mn, (uint32_t)strlen(mn)));
     return t;
 }
 
@@ -4109,9 +3841,9 @@ static int gen_addr(Em* e, Node* x) {
                                               : (s->decl->cname ? s->decl->cname : s->name);
                 char nm[512];
                 snprintf(nm, sizeof nm, "_%s", cn);
-                fs = sym_intern(&e->syms, nm, (uint32_t)strlen(nm));
+                fs = sym_intern(&e->o.syms, nm, (uint32_t)strlen(nm));
             } else {
-                fs = sym_intern(&e->syms,
+                fs = sym_intern(&e->o.syms,
                                 fn_mangle(s->name, s->len, s->type, s->decl,
                                           s->spec_args,
                                           s->spec_args ? s->spec_nargs : 0,
@@ -4178,8 +3910,8 @@ static EV finish_slice_builtin(Em* e, int si, int sf, uint32_t off) {
 }
 
 static void registry_add(Em* e, Node* at, int ptr, int size, uint64_t align, int align_reg) {
-    if (e->mode != EMIT_DEBUG) return;
-    e->allocator_used = 1;
+    if (e->o.mode != EMIT_DEBUG) return;
+    e->o.allocator_used = 1;
     int ar = align_reg;
     if (ar < 0) {
         ar = tmp_int(e);
@@ -4197,7 +3929,7 @@ static void registry_add(Em* e, Node* at, int ptr, int size, uint64_t align, int
 }
 
 static EV registry_find(Em* e, Node* at, int ptr, int size) {
-    e->allocator_used = 1;
+    e->o.allocator_used = 1;
     CallArg args[2] = {
         { NULL, { CLS_INT, ptr }, 1, 0 },
         { NULL, { CLS_INT, size }, 1, 0 },
@@ -4209,8 +3941,8 @@ static EV registry_find(Em* e, Node* at, int ptr, int size) {
 }
 
 static void registry_remove(Em* e, Node* at, int ptr, int size) {
-    if (e->mode != EMIT_DEBUG) return;
-    e->allocator_used = 1;
+    if (e->o.mode != EMIT_DEBUG) return;
+    e->o.allocator_used = 1;
     CallArg args[2] = {
         { NULL, { CLS_INT, ptr }, 1, 0 },
         { NULL, { CLS_INT, size }, 1, 0 },
@@ -4346,7 +4078,7 @@ static EV gen_realloc_builtin(Em* e, Node* call) {
     bcond_(e, C_LE, done);
 
     EV record = { CLS_INT, 0 };
-    if (e->mode == EMIT_DEBUG) record = registry_find(e, call, ptemp, old_size);
+    if (e->o.mode == EMIT_DEBUG) record = registry_find(e, call, ptemp, old_size);
     CallArg args[2] = {
         { NULL, { CLS_INT, ptemp }, 1, 0 },
         { NULL, size, 1, 0 },
@@ -4356,7 +4088,7 @@ static EV gen_realloc_builtin(Em* e, Node* call) {
     CallTarget tgt = { TK_EXTERN, "_realloc", 8, 0 };
     EV ptr = emit_call(e, call, args, 2, params, muts, 2, 0, -1, tgt, raw_pointer_type());
     cbz_(e, 1, xreg(ptr.idx), 0, done);
-    if (e->mode == EMIT_DEBUG) {
+    if (e->o.mode == EMIT_DEBUG) {
         st_reg(e, xreg(ptr.idx), xreg(record.idx), 0, 8);
         st_reg(e, xreg(size.idx), xreg(record.idx), 8, 8);
     }
@@ -4478,7 +4210,7 @@ static EV gen_realloc_typed_builtin(Em* e, Node* call) {
     ins(e, 0x9B007C00u | ((uint32_t)xreg(old_scale) << 16) |
            ((uint32_t)xreg(old_count) << 5) | (uint32_t)xreg(old_bytes));
     EV record = { CLS_INT, 0 };
-    if (e->mode == EMIT_DEBUG) record = registry_find(e, call, ptemp, old_bytes);
+    if (e->o.mode == EMIT_DEBUG) record = registry_find(e, call, ptemp, old_bytes);
     CallArg args[2] = {
         { NULL, { CLS_INT, ptemp }, 1, 0 },
         { NULL, { CLS_INT, bytes }, 1, 0 },
@@ -4488,7 +4220,7 @@ static EV gen_realloc_typed_builtin(Em* e, Node* call) {
     CallTarget tgt = { TK_EXTERN, "_realloc", 8, 0 };
     EV ptr = emit_call(e, call, args, 2, params, muts, 2, 0, -1, tgt, raw_pointer_type());
     cbz_(e, 1, xreg(ptr.idx), 0, done);
-    if (e->mode == EMIT_DEBUG) {
+    if (e->o.mode == EMIT_DEBUG) {
         st_reg(e, xreg(ptr.idx), xreg(record.idx), 0, 8);
         st_reg(e, xreg(bytes), xreg(record.idx), 8, 8);
     }
@@ -4581,7 +4313,7 @@ static EV gen_byte_write_builtin(Em* e, Node* call, int intrinsic) {
     if (intrinsic == BI_MEM_COPY || intrinsic == BI_MEM_MOVE) {
         int src, slen;
         gen_slice_parts(e, call->kids[1], &src, &slen);
-        if (e->mode == EMIT_DEBUG) {
+        if (e->o.mode == EMIT_DEBUG) {
             int lengths_ok = new_label(e);
             ins(e, 0xEB00001Fu | ((uint32_t)xreg(slen) << 16) | ((uint32_t)xreg(dlen) << 5));
             bcond_(e, C_EQ, lengths_ok);
@@ -4612,14 +4344,14 @@ static EV gen_byte_write_builtin(Em* e, Node* call, int intrinsic) {
         }
         // Empty slices may carry null pointers; the routines touch no bytes
         // for a zero count.
-        e->mem_copy_used = 1;
+        e->o.mem_copy_used = 1;
         mov_int(e, 1, 15, xreg(dst));
         mov_int(e, 1, 16, xreg(src));
         mov_int(e, 1, 17, xreg(slen));
         if (intrinsic == BI_MEM_MOVE) emit_bl_internal(e, "__ace$mem_move", 14);
         else emit_bl_internal(e, "__ace$mem_copy", 14);
     } else {
-        e->mem_fill_used = 1;
+        e->o.mem_fill_used = 1;
         if (intrinsic == BI_MEM_FILL) {
             EV value = gen_expr(e, call->kids[1]);
             mov_int(e, 1, 16, xreg(value.idx));
@@ -4652,7 +4384,7 @@ static EV gen_compare_builtin(Em* e, Node* call) {
 
     // The shared routine orders the common prefix; zero-length prefixes
     // touch no bytes, so empty slices may carry null pointers.
-    e->mem_compare_used = 1;
+    e->o.mem_compare_used = 1;
     mov_int(e, 1, 15, xreg(aptr));
     mov_int(e, 1, 16, xreg(bptr));
     mov_int(e, 1, 17, xreg(count));
@@ -4982,7 +4714,7 @@ static EV gen_call(Em* e, Node* call) {
         EV address = gen_expr(e, call->kids[0]);
         SType* pt = node_ty(call);
         uint32_t align = pt && pt->base ? ty_align(pt->base) : 1;
-        if (e->mode == EMIT_DEBUG && align > 1 && !(call->flags & F_BOUNDS_PROVEN)) {
+        if (e->o.mode == EMIT_DEBUG && align > 1 && !(call->flags & F_BOUNDS_PROVEN)) {
             load_imm(e, 1, 16, align - 1);
             ins(e, 0xEA00001Fu | (16u << 16) |
                    ((uint32_t)xreg(address.idx) << 5)); // tst address, align-1
@@ -5000,7 +4732,7 @@ static EV gen_call(Em* e, Node* call) {
         uint32_t off = temp_slot(e, 16, 8);
         EV pointer = gen_expr(e, call->kids[0]);
         EV count = gen_expr(e, call->kids[1]);
-        if (e->mode == EMIT_DEBUG && !(call->flags & F_BOUNDS_PROVEN)) {
+        if (e->o.mode == EMIT_DEBUG && !(call->flags & F_BOUNDS_PROVEN)) {
             int extent_ok = new_label(e);
             cbz_(e, 1, xreg(count.idx), 0, extent_ok);
             int nonnull = new_label(e);
@@ -5285,7 +5017,7 @@ static EV gen_call(Em* e, Node* call) {
     if (callee->kind == N_IDENT && !call->sym &&
         (call->ival == 2 || call->ival == 3) &&
         callee->len == 6 && memcmp(callee->str, "assert", 6) == 0) {
-        if (e->mode != EMIT_DEBUG || call->ival == 3) return (EV){ CLS_INT, 0 };
+        if (e->o.mode != EMIT_DEBUG || call->ival == 3) return (EV){ CLS_INT, 0 };
         int ok = new_label(e);
         gen_branch(e, call->kids[0], 1, ok);
         const char* path = call->path ? build_path(call->path) : "<source>";
@@ -5616,7 +5348,7 @@ static EV gen_staticmap_lookup(Em* e, Node* x, SType* map) {
         ins(e, 0xEB00001Fu | (17u << 16) | ((uint32_t)xreg(len) << 5));
         bcond_(e, C_NE, miss);
         ld_reg(e, 16, 16, 0, 8, 0);
-        e->mem_compare_used = 1;
+        e->o.mem_compare_used = 1;
         mov_int(e, 1, 15, xreg(ptr));
         mov_int(e, 1, 17, xreg(len));
         emit_bl_internal(e, "__ace$mem_compare", 17);
@@ -5783,7 +5515,7 @@ static EV gen_expr(Em* e, Node* x) {
                 if (fidx < 0) continue;
                 SField* f = &t->fields[fidx];
                 EV v = gen_expr(e, fi->a);
-                if (e->mode == EMIT_DEBUG && f->bit_width < 64) {
+                if (e->o.mode == EMIT_DEBUG && f->bit_width < 64) {
                     int fail = new_label(e), ok = new_label(e); uint64_t hi;
                     if (f->bit_signed) {
                         uint64_t lo = (uint64_t)(-(INT64_C(1) << (f->bit_width - 1)));
@@ -5832,7 +5564,7 @@ static EV gen_expr(Em* e, Node* x) {
             free(cb.d);
             free(cr.v);
             if (uniform) {
-                e->mem_fill_used = 1;
+                e->o.mem_fill_used = 1;
                 frame_addr(e, 15, off);
                 load_imm(e, 1, 16, byte);
                 load_imm(e, 1, 17, total);
@@ -5840,7 +5572,7 @@ static EV gen_expr(Em* e, Node* x) {
             } else if (t->count > 0) {
                 EV v = gen_expr(e, x->a);
                 if (esz == 1 && v.cls == CLS_INT) {
-                    e->mem_fill_used = 1;
+                    e->o.mem_fill_used = 1;
                     mov_int(e, 1, 16, xreg(v.idx));
                     frame_addr(e, 15, off);
                     load_imm(e, 1, 17, total);
@@ -5855,7 +5587,7 @@ static EV gen_expr(Em* e, Node* x) {
                     }
                     for (uint64_t done = 1; esz && done < t->count;) {
                         uint64_t n = t->count - done < done ? t->count - done : done;
-                        e->mem_copy_used = 1;
+                        e->o.mem_copy_used = 1;
                         frame_addr(e, 15, off - (uint32_t)(done * esz));
                         frame_addr(e, 16, off);
                         load_imm(e, 1, 17, n * esz);
@@ -5938,7 +5670,7 @@ static EV gen_expr(Em* e, Node* x) {
                 return v;
             }
             int sf = !t || scalar_bits(t) == 64;
-            if (e->mode == EMIT_DEBUG && t && is_intt(t)) {
+            if (e->o.mode == EMIT_DEBUG && t && is_intt(t)) {
                 int bits = scalar_bits(t);
                 uint64_t min = bits == 64 ? UINT64_C(0x8000000000000000)
                                           : (uint32_t)(-(INT64_C(1) << (bits - 1)));
@@ -6114,7 +5846,7 @@ static EV gen_expr(Em* e, Node* x) {
         uint32_t lo_slot = temp_slot(e, 8, 8), hi_slot = temp_slot(e, 8, 8);
         enum { BP_ORDER = 4, BP_SOURCE = 8 };
         uint8_t proof = x->aux ? *(uint8_t*)x->aux : 0;
-        int guard = e->mode == EMIT_DEBUG && !(x->flags & F_BOUNDS_PROVEN);
+        int guard = e->o.mode == EMIT_DEBUG && !(x->flags & F_BOUNDS_PROVEN);
         int guard_source = guard && !(proof & BP_SOURCE);
         uint32_t len_slot = guard_source ? temp_slot(e, 8, 8) : 0;
         int svi = e->vti, svf = e->vtf;
@@ -6758,7 +6490,7 @@ static void emit_bits_field_assign(Em* e, Node* target, Node* rhs, TokKind op, S
         emit_checked_arith(e, compound_op(op), xreg(vr), xreg(vr), xreg(rv.idx), f->t);
         value = (EV){ CLS_INT, vr };
     } else value = gen_expr(e, rhs);
-    if (e->mode == EMIT_DEBUG && f->bit_width < 64) {
+    if (e->o.mode == EMIT_DEBUG && f->bit_width < 64) {
         int fail = new_label(e), ok = new_label(e);
         uint64_t hi;
         if (f->bit_signed) {
@@ -7410,7 +7142,7 @@ static void emit_stmt(Em* e, Node* s) {
             if (s->b->c) {
                 EV step = gen_expr(e, s->b->c);
                 uint64_t sc;
-                if (e->mode == EMIT_DEBUG && !const_int(s->b->c, &sc)) {
+                if (e->o.mode == EMIT_DEBUG && !const_int(s->b->c, &sc)) {
                     // a runtime step must be a positive magnitude: checked once at entry
                     int ok = new_label(e);
                     uint32_t x = (uint32_t)xreg(step.idx);
@@ -8014,7 +7746,7 @@ static void emit_prologue(Em* e) {
     ins(e, 0x910003FD); // mov x29, sp
     e->frame = 16; // saved x29/x30 occupy the first 16 bytes of depth
     e->ended_return = 0;
-    e->subsp_fix = e->nfix;
+    e->subsp_fix = e->o.nfix;
     fix_add(e, FK_SUBSP, (uint32_t)text(e)->len, NULL);
     ins(e, 0xD10003FF); // sub sp, sp, #frame — patched at end
 }
@@ -8056,7 +7788,7 @@ static void callee_saved(Em* e, int load) {
 
 static void emit_epilogue(Em* e) {
     e->ended_return = 1;
-    if (e->mode == EMIT_DEBUG && e->current_is_main) {
+    if (e->o.mode == EMIT_DEBUG && e->current_is_main) {
         emit_bl_internal(e, "__ace$registry_leaks", 20);
     }
     callee_saved(e, 1);
@@ -9279,7 +9011,7 @@ static int self_safe(Em* e, Node* n) {
 // whether f's returned self calls may branch: every parameter arrives in a
 // register and is flat or by reference, and nothing addresses the frame
 static int self_eligible(Em* e, Node* f, SType** pt, const uint8_t* muts, TU* units, int np, RetCls* rc) {
-    if (e->mode != EMIT_RELEASE || e->current_is_main || e->fn_has_asm || e->nsites || rc->sret || !f->b ||
+    if (e->o.mode != EMIT_RELEASE || e->current_is_main || e->fn_has_asm || e->nsites || rc->sret || !f->b ||
         (f->flags & (F_EXPO | F_INTRINSIC)) || f->c)
         return 0;
     Sym* fs = node_sym(f);
@@ -9366,7 +9098,7 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
         plan_promotion(e, f, export_c);
     }
     e->nsaved = e->lreg_max + e->npreg;
-    sym_define(&e->syms, e->secs, symname, symlen, is_main || export_c, &e->secs[SEC_TEXT]);
+    sym_define(&e->o.syms, e->o.secs, symname, symlen, is_main || export_c, &e->o.secs[SEC_TEXT]);
     if (is_main) emit_has_main = 1;
     emit_prologue(e);
     e->peep_on = !e->fn_has_asm;
@@ -9524,7 +9256,7 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
         emit_epilogue(e);
     }
     e->peep_on = 0;
-    e->fix[e->subsp_fix].frame = align_up(e->frame + e->out_max, 16);
+    e->o.fix[e->subsp_fix].frame = align_up(e->frame + e->out_max, 16);
     patch_branches(e);
     debug_fn_add(e, f, debug_addr, (uint32_t)text(e)->len - debug_addr);
     flush_fpool(e);
@@ -10055,7 +9787,7 @@ static void emit_staticmap_global(Em* e, Node* n, Sym* vs, SType* t) {
         size <<= 1;
     }
 
-    Sec* d = &e->secs[SEC_CONST];
+    Sec* d = &e->o.secs[SEC_CONST];
     char name[640];
     uint32_t ka = ty_align(t->base), va = ty_align(t->ret);
     Buf key_bytes = {0}, value_bytes = {0};
@@ -10076,7 +9808,7 @@ static void emit_staticmap_global(Em* e, Node* n, Sym* vs, SType* t) {
 
     while (d->data.len % ka) buf_put8(&d->data, 0);
     snprintf(name, sizeof name, "__ace$map$%.*s$keys", (int)vs->len, vs->name);
-    ESym* keys = sym_define(&e->syms, e->secs, name, (uint32_t)strlen(name), 0, d);
+    ESym* keys = sym_define(&e->o.syms, e->o.secs, name, (uint32_t)strlen(name), 0, d);
     uint32_t key_start = (uint32_t)d->data.len;
     buf_write(&d->data, key_bytes.d, key_bytes.len);
     for (int i = 0; i < key_rels.n; i++)
@@ -10085,7 +9817,7 @@ static void emit_staticmap_global(Em* e, Node* n, Sym* vs, SType* t) {
 
     while (d->data.len % va) buf_put8(&d->data, 0);
     snprintf(name, sizeof name, "__ace$map$%.*s$values", (int)vs->len, vs->name);
-    ESym* values = sym_define(&e->syms, e->secs, name, (uint32_t)strlen(name), 0, d);
+    ESym* values = sym_define(&e->o.syms, e->o.secs, name, (uint32_t)strlen(name), 0, d);
     uint32_t value_start = (uint32_t)d->data.len;
     buf_write(&d->data, value_bytes.d, value_bytes.len);
     for (int i = 0; i < value_rels.n; i++)
@@ -10096,7 +9828,7 @@ static void emit_staticmap_global(Em* e, Node* n, Sym* vs, SType* t) {
 
     while (d->data.len % 4) buf_put8(&d->data, 0);
     snprintf(name, sizeof name, "__ace$map$%.*s$slots", (int)vs->len, vs->name);
-    ESym* slot_sym = sym_define(&e->syms, e->secs, name, (uint32_t)strlen(name), 0, d);
+    ESym* slot_sym = sym_define(&e->o.syms, e->o.secs, name, (uint32_t)strlen(name), 0, d);
     for (uint32_t i = 0; i < size; i++) buf_put32(&d->data, slots[i]);
     free(slots);
 
@@ -10126,17 +9858,17 @@ static int emit_error_handle_global(Em* e, Node* n, Sym* vs, const char* nm) {
     Node* call = n->b;
     uint64_t code = 0;
     if (call && call->kind == N_NULL) {
-        Sec* d = (n->flags & F_CONST) ? &e->secs[SEC_CONST] : &e->secs[SEC_DATA];
+        Sec* d = (n->flags & F_CONST) ? &e->o.secs[SEC_CONST] : &e->o.secs[SEC_DATA];
         while (d->data.len % 8) buf_put8(&d->data, 0);
-        ESym* g = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, d);
+        ESym* g = sym_define(&e->o.syms, e->o.secs, nm, (uint32_t)strlen(nm), 0, d);
         buf_put64(&d->data, 0);
         add_global(e, vs, g);
         return 1;
     }
     if (call && call->kind == N_FIELD_E && node_ty(call) && node_ty(call)->kind == SK_ERROR) {
-        Sec* d = (n->flags & F_CONST) ? &e->secs[SEC_CONST] : &e->secs[SEC_DATA];
+        Sec* d = (n->flags & F_CONST) ? &e->o.secs[SEC_CONST] : &e->o.secs[SEC_DATA];
         while (d->data.len % 8) buf_put8(&d->data, 0);
-        ESym* g = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, d);
+        ESym* g = sym_define(&e->o.syms, e->o.secs, nm, (uint32_t)strlen(nm), 0, d);
         buf_put64(&d->data, call->ival);
         add_global(e, vs, g);
         return 1;
@@ -10145,9 +9877,9 @@ static int emit_error_handle_global(Em* e, Node* n, Sym* vs, const char* nm) {
         em_err(e, n, "global Error initializer must use a domain with a constant i32 code");
         return 0;
     }
-    Sec* d = (n->flags & F_CONST) ? &e->secs[SEC_CONST] : &e->secs[SEC_DATA];
+    Sec* d = (n->flags & F_CONST) ? &e->o.secs[SEC_CONST] : &e->o.secs[SEC_DATA];
     while (d->data.len % 8) buf_put8(&d->data, 0);
-    ESym* g = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, d);
+    ESym* g = sym_define(&e->o.syms, e->o.secs, nm, (uint32_t)strlen(nm), 0, d);
     buf_put64(&d->data, (call->ival << 32) | (uint32_t)code);
     add_global(e, vs, g);
     return 1;
@@ -10166,9 +9898,9 @@ static void emit_global(Em* e, Node* n) {
     char nm[512];
     snprintf(nm, sizeof nm, "__ace$g$%.*s", (int)binder->len, binder->str);
     if (!n->b) { // no initializer: zero-fill storage
-        Sec* b = &e->secs[SEC_BSS];
+        Sec* b = &e->o.secs[SEC_BSS];
         b->size = align_up(b->size, align);
-        ESym* s = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, b);
+        ESym* s = sym_define(&e->o.syms, e->o.secs, nm, (uint32_t)strlen(nm), 0, b);
         b->size += size;
         add_global(e, vs, s);
         return;
@@ -10179,19 +9911,19 @@ static void emit_global(Em* e, Node* n) {
     }
     Buf bytes = {0};
     ConstRels rels = {0};
-    int errors_before = e->d->errors;
+    int errors_before = e->o.d->errors;
     if (!eval_const(e, n->b, t, &bytes, &rels)) {
         // a fold error is already reported; otherwise the shape is not constant
-        if (e->d->errors != errors_before) {}
+        if (e->o.d->errors != errors_before) {}
         else if (t->kind == SK_UNION) em_err(e, n, "global union initializer must be a compile-time variant value");
         else em_err(e, n, "global initializer must be a compile-time constant");
         free(bytes.d);
         free(rels.v);
         return;
     }
-    Sec* d = (n->flags & F_CONST) ? &e->secs[SEC_CONST] : &e->secs[SEC_DATA];
+    Sec* d = (n->flags & F_CONST) ? &e->o.secs[SEC_CONST] : &e->o.secs[SEC_DATA];
     while (d->data.len % align) buf_put8(&d->data, 0);
-    ESym* g = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, d);
+    ESym* g = sym_define(&e->o.syms, e->o.secs, nm, (uint32_t)strlen(nm), 0, d);
     uint32_t start = (uint32_t)d->data.len;
     buf_write(&d->data, bytes.d, bytes.len);
     for (int i = 0; i < rels.n; i++) reloc_add(d, start + rels.v[i].off, rels.v[i].sym, 0, 3, 1, RM_UNSIGNED);
@@ -10217,14 +9949,14 @@ static const char* vtable_name(SType* conc, SType* contract) {
 static ESym* emit_embed_thunk(Em* e, const char* vtname, int slot, const char* target, uint32_t off) {
     char name[1024];
     snprintf(name, sizeof name, "%s$embed$%d", vtname, slot);
-    ESym* prior = sym_intern(&e->syms, name, (uint32_t)strlen(name));
+    ESym* prior = sym_intern(&e->o.syms, name, (uint32_t)strlen(name));
     if (prior->type) return prior;
     int skip = -1;
     if (e->frame) {
         skip = new_label(e);
         br_(e, skip); // a generic vtable may be materialized inside a function
     }
-    ESym* out = sym_define(&e->syms, e->secs, name, (uint32_t)strlen(name), 0, &e->secs[SEC_TEXT]);
+    ESym* out = sym_define(&e->o.syms, e->o.secs, name, (uint32_t)strlen(name), 0, &e->o.secs[SEC_TEXT]);
     ins(e, 0xA9BF7BFD); // stp x29, x30, [sp, #-16]!
     if (off <= 4095) {
         ins(e, 0x91000000u | (off << 10)); // add x0, x0, #field-offset
@@ -10233,7 +9965,7 @@ static ESym* emit_embed_thunk(Em* e, const char* vtname, int slot, const char* t
         ins(e, 0x8B000000u | (16u << 16)); // add x0, x0, x16
     }
     ins(e, 0x94000000u);
-    ESym* fn = sym_intern(&e->syms, target, (uint32_t)strlen(target));
+    ESym* fn = sym_intern(&e->o.syms, target, (uint32_t)strlen(target));
     fix_add(e, FK_BRANCH, (uint32_t)(text(e)->len - 4), fn);
     ins(e, 0xA8C17BFD); // ldp x29, x30, [sp], #16
     ins(e, 0xD65F03C0); // ret
@@ -10244,14 +9976,14 @@ static ESym* emit_embed_thunk(Em* e, const char* vtname, int slot, const char* t
 static ESym* emit_vtable(Em* e, SType* conc, SType* contract, Node* conf) {
     if (!conc || !contract || !conf) {
         em_err(e, conf, "invalid contract conformance in codegen");
-        return sym_intern(&e->syms, "__ace$vt$invalid", 16);
+        return sym_intern(&e->o.syms, "__ace$vt$invalid", 16);
     }
     const char* nm = vtable_name(conc, contract);
-    ESym* prior = sym_intern(&e->syms, nm, (uint32_t)strlen(nm));
+    ESym* prior = sym_intern(&e->o.syms, nm, (uint32_t)strlen(nm));
     if (prior->type) return prior;
-    Sec* c = &e->secs[SEC_CONST];
+    Sec* c = &e->o.secs[SEC_CONST];
     while (c->data.len % 8) buf_put8(&c->data, 0);
-    ESym* out = sym_define(&e->syms, e->secs, nm, (uint32_t)strlen(nm), 0, c);
+    ESym* out = sym_define(&e->o.syms, e->o.secs, nm, (uint32_t)strlen(nm), 0, c);
     for (int i = 0; i < contract->decl->nkids; i++) { // contract method order
         uint32_t off = (uint32_t)c->data.len;
         Node* ref = i < conf->nkids ? conf->kids[i] : NULL;
@@ -10288,7 +10020,7 @@ static ESym* emit_vtable(Em* e, SType* conc, SType* contract, Node* conf) {
         if (ref->a) {
             fs = emit_embed_thunk(e, nm, i, fnm, field_off(conc, embed_fi));
         } else {
-            fs = sym_intern(&e->syms, fnm, (uint32_t)strlen(fnm));
+            fs = sym_intern(&e->o.syms, fnm, (uint32_t)strlen(fnm));
         }
         buf_put64(&c->data, 0);
         reloc_add(c, off, fs, 0, 3, 1, RM_UNSIGNED);
@@ -10307,393 +10039,11 @@ static void emit_signing(Em* e, Node* signing) {
     }
 }
 
-// --- fixups ---------------------------------------------------------------------------
-
-static void patch_fixups(Em* e) {
-    Buf* t = text(e);
-    for (size_t i = 0; i < e->nfix; i++) {
-        Fixup* f = &e->fix[i];
-        if (f->kind == FK_SUBSP) {
-            uint32_t frame = (f->frame + 15u) & ~15u;
-            if (frame <= 0xFFFu) {
-                buf_patch32(t, f->site, 0xD10003FFu | (frame << 10));
-                continue;
-            }
-            uint32_t pages = (frame + 0xFFFu) >> 12;
-            if (pages > 0xFFFu) {
-                fprintf(stderr, "ace: function stack frame exceeds AArch64 immediate range\n");
-                e->d->errors++;
-                continue;
-            }
-            buf_patch32(t, f->site, 0xD14003FFu | (pages << 10));
-            continue;
-        }
-        if (!f->target->type || f->target->sect != 1 + SEC_TEXT) {
-            fprintf(stderr, "ace: internal call to '%s' is not a text symbol\n", f->target->name);
-            e->d->errors++;
-            continue;
-        }
-        int64_t delta = (int64_t)f->target->value - (int64_t)f->site;
-        if (delta < -(1 << 27) || delta >= (1 << 27) || (delta & 3)) {
-            fprintf(stderr, "ace: call to '%s' out of branch range\n", f->target->name);
-            e->d->errors++;
-            continue;
-        }
-        buf_patch32(t, f->site, 0x94000000u | (uint32_t)((delta >> 2) & 0x03FFFFFFu));
-    }
-}
-
-// --- DWARF line table -------------------------------------------------------------
-
-static void source_path(const char* input, char* out, size_t cap) {
-    if (input[0] == '/') {
-        snprintf(out, cap, "%s", input);
-        return;
-    }
-    char cwd[3072];
-    if (getcwd(cwd, sizeof cwd)) snprintf(out, cap, "%s/%s", cwd, input);
-    else snprintf(out, cap, "%s", input);
-}
-
-static void emit_debug_info(Em* e, ESym* text_anchor) {
-    if (!e->nlines) return;
-    Buf* ab = &e->secs[SEC_DEBUG_ABBREV].data;
-    // Abbrev 1: compile unit. Function children let dsymutil select the text
-    // ranges while deliberately omitting types, variables, and frame data.
-    buf_uleb(ab, 1);
-    buf_uleb(ab, 0x11); // DW_TAG_compile_unit
-    buf_put8(ab, 1);    // DW_CHILDREN_yes
-    buf_uleb(ab, 0x25); buf_uleb(ab, 0x08); // DW_AT_producer, DW_FORM_string
-    buf_uleb(ab, 0x13); buf_uleb(ab, 0x05); // DW_AT_language, DW_FORM_data2
-    buf_uleb(ab, 0x03); buf_uleb(ab, 0x08); // DW_AT_name, DW_FORM_string
-    buf_uleb(ab, 0x10); buf_uleb(ab, 0x17); // DW_AT_stmt_list, DW_FORM_sec_offset
-    buf_uleb(ab, 0x1b); buf_uleb(ab, 0x08); // DW_AT_comp_dir, DW_FORM_string
-    buf_uleb(ab, 0x11); buf_uleb(ab, 0x01); // DW_AT_low_pc, DW_FORM_addr
-    buf_uleb(ab, 0x12); buf_uleb(ab, 0x06); // DW_AT_high_pc, DW_FORM_data4
-    buf_put8(ab, 0); buf_put8(ab, 0);
-    buf_uleb(ab, 2);
-    buf_uleb(ab, 0x2e); // DW_TAG_subprogram
-    buf_put8(ab, 0);    // DW_CHILDREN_no
-    buf_uleb(ab, 0x11); buf_uleb(ab, 0x01); // DW_AT_low_pc, DW_FORM_addr
-    buf_uleb(ab, 0x12); buf_uleb(ab, 0x06); // DW_AT_high_pc, DW_FORM_data4
-    buf_uleb(ab, 0x03); buf_uleb(ab, 0x08); // DW_AT_name, DW_FORM_string
-    buf_put8(ab, 0); buf_put8(ab, 0);
-    buf_put8(ab, 0);    // abbreviation table terminator
-
-    char path[4096], cwd[3072];
-    source_path(e->d->path, path, sizeof path);
-    if (!getcwd(cwd, sizeof cwd)) snprintf(cwd, sizeof cwd, ".");
-    Buf* in = &e->secs[SEC_DEBUG_INFO].data;
-    size_t unit = in->len;
-    buf_put32(in, 0);   // unit_length
-    buf_put16(in, 4);   // DWARF v4
-    buf_put32(in, 0);   // abbrev offset
-    buf_put8(in, 8);    // address size
-    buf_uleb(in, 1);    // abbrev code
-    buf_write(in, "Ace compiler", sizeof "Ace compiler");
-    buf_put16(in, 0x8000); // DW_LANG_lo_user: Ace has no assigned DWARF code
-    buf_write(in, path, strlen(path) + 1);
-    buf_put32(in, 0);   // stmt_list offset
-    buf_write(in, cwd, strlen(cwd) + 1);
-    uint32_t low_pc = (uint32_t)in->len;
-    buf_put64(in, 0);
-    reloc_add(&e->secs[SEC_DEBUG_INFO], low_pc, text_anchor, 0, 3, 0, RM_UNSIGNED);
-    buf_put32(in, (uint32_t)text(e)->len); // high_pc is a size in DWARF v4
-    for (int i = 0; i < e->ndebug_fns; i++) {
-        DebugFn* f = &e->debug_fns[i];
-        buf_uleb(in, 2);
-        uint32_t fn_pc = (uint32_t)in->len;
-        buf_put64(in, f->addr); // relocation addend within __text
-        reloc_add(&e->secs[SEC_DEBUG_INFO], fn_pc, text_anchor, 0, 3, 0, RM_UNSIGNED);
-        buf_put32(in, f->size);
-        buf_write(in, f->name, f->nlen);
-        buf_put8(in, 0);
-    }
-    buf_put8(in, 0);    // end compile-unit children
-    buf_patch32(in, unit, (uint32_t)(in->len - unit - 4));
-}
-
-static void emit_debug_line(Em* e, ESym* text_anchor) {
-    if (!e->nlines) return;
-    Buf* b = &e->secs[SEC_DEBUG_LINE].data;
-
-    const char** files = malloc((size_t)e->nlines * sizeof(char*));
-    if (!files) oom();
-    int nfiles = 0;
-    for (int i = 0; i < e->nlines; i++) {
-        int seen = 0;
-        for (int j = 0; j < nfiles; j++) if (strcmp(files[j], e->lines[i].path) == 0) { seen = 1; break; }
-        if (!seen) files[nfiles++] = e->lines[i].path;
-    }
-
-    size_t unit = b->len;
-    buf_put32(b, 0);             // unit_length, patched below
-    buf_put16(b, 4);             // DWARF v4
-    size_t header_len = b->len;
-    buf_put32(b, 0);             // header_length, patched below
-    size_t header = b->len;
-    buf_put8(b, 1);              // minimum_instruction_length
-    buf_put8(b, 1);              // maximum_operations_per_instruction
-    buf_put8(b, 1);              // default_is_stmt
-    buf_put8(b, (uint8_t)-5);    // line_base
-    buf_put8(b, 14);             // line_range
-    buf_put8(b, 13);             // opcode_base
-    static const uint8_t oplen[12] = { 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1 };
-    buf_write(b, oplen, sizeof oplen);
-    buf_put8(b, 0);              // include_directories terminator
-    for (int i = 0; i < nfiles; i++) {
-        char path[4096];
-        source_path(files[i], path, sizeof path);
-        buf_write(b, path, strlen(path) + 1);
-        buf_uleb(b, 0);          // directory index (full filename)
-        buf_uleb(b, 0);          // modification time
-        buf_uleb(b, 0);          // file size
-    }
-    buf_put8(b, 0);              // file_names terminator
-    buf_patch32(b, header_len, (uint32_t)(b->len - header));
-
-    // DW_LNE_set_address. The object relocation supplies __text's final base.
-    buf_put8(b, 0);
-    buf_uleb(b, 9);
-    buf_put8(b, 2);
-    uint32_t address_off = (uint32_t)b->len;
-    buf_put64(b, 0);
-    reloc_add(&e->secs[SEC_DEBUG_LINE], address_off, text_anchor, 0, 3, 0, RM_UNSIGNED);
-
-    uint32_t addr = 0;
-    int line = 1, col = 0, file = 1;
-    for (int i = 0; i < e->nlines; i++) {
-        LineRow* r = &e->lines[i];
-        int want_file = 1;
-        for (int j = 0; j < nfiles; j++) if (strcmp(files[j], r->path) == 0) { want_file = j + 1; break; }
-        if (r->addr > addr) {
-            buf_put8(b, 2);      // DW_LNS_advance_pc
-            buf_uleb(b, r->addr - addr);
-            addr = r->addr;
-        }
-        if (want_file != file) {
-            buf_put8(b, 4);      // DW_LNS_set_file
-            buf_uleb(b, (uint64_t)want_file);
-            file = want_file;
-        }
-        if (r->line != line) {
-            buf_put8(b, 3);      // DW_LNS_advance_line
-            buf_sleb(b, (int64_t)r->line - line);
-            line = r->line;
-        }
-        if (r->col != col) {
-            buf_put8(b, 5);      // DW_LNS_set_column
-            buf_uleb(b, (uint64_t)(r->col > 0 ? r->col : 0));
-            col = r->col;
-        }
-        buf_put8(b, 1);          // DW_LNS_copy
-    }
-    uint32_t end = (uint32_t)text(e)->len;
-    if (end > addr) {
-        buf_put8(b, 2);
-        buf_uleb(b, end - addr);
-    }
-    buf_put8(b, 0);
-    buf_uleb(b, 1);
-    buf_put8(b, 1);              // DW_LNE_end_sequence
-    buf_patch32(b, unit, (uint32_t)(b->len - unit - 4));
-    free(files);
-}
-
-// --- Mach-O object writing ----------------------------------------------------------
-
-static size_t write_object(Em* e, const char* path) {
-    // Section size = data length for file-backed sections (bss is reserved).
-    for (int i = 0; i < NSECS; i++) if (!(e->secs[i].flags & S_ZEROFILL)) e->secs[i].size = e->secs[i].data.len;
-
-    uint32_t segcmd = 72 + 80 * NSECS;
-    uint32_t cmdend = 32 + segcmd + 24 + 24 + 80; // header + 4 load commands
-    uint32_t max_section_align = 1;
-    for (int i = 0; i < NSECS; i++) {
-        uint32_t a = 1u << e->secs[i].align;
-        if (max_section_align < a) max_section_align = a;
-    }
-    uint32_t base = (cmdend + max_section_align - 1) & ~(max_section_align - 1);
-
-    // Layout: addrs continuous from 0; file offsets track (bss takes no bytes).
-    uint64_t addr = 0;
-    uint32_t off = base;
-    for (int i = 0; i < NSECS; i++) {
-        Sec* s = &e->secs[i];
-        uint32_t a = 1u << s->align;
-        addr = (addr + a - 1) & ~(uint64_t)(a - 1);
-        off = (off + a - 1) & ~(a - 1);
-        s->addr = addr;
-        s->offset = off;
-        addr += s->size;
-        if (!(s->flags & S_ZEROFILL)) off += (uint32_t)s->size;
-    }
-    uint64_t vmsize = addr;
-    uint32_t filesize = off - base;
-
-    // Symbol order (pinned): locals, extdefs, undefs. Assign strtab indices
-    // and table ordinals; relocation entries serialize against the ordinals.
-    Buf str;
-    memset(&str, 0, sizeof str);
-    buf_put8(&str, 0); // strx 0: the empty string
-    ESym** order = malloc((e->syms.n ? e->syms.n : 1) * sizeof(ESym*));
-    if (!order) oom();
-    size_t norder = 0, nloc = 0, next_ = 0, nund = 0;
-    for (int pass = 0; pass < 3; pass++) {
-        for (size_t i = 0; i < e->syms.n; i++) {
-            ESym* s = e->syms.v[i];
-            int want = pass == 0 ? (s->type && !(s->type & N_EXT_))
-                    : pass == 1 ? (s->type && (s->type & N_EXT_))
-                                : !s->type;
-            if (!want) continue;
-            s->strx = (uint32_t)str.len;
-            s->ord = (uint32_t)norder;
-            buf_write(&str, s->name, strlen(s->name) + 1);
-            order[norder++] = s;
-            if (pass == 0) nloc++;
-            else if (pass == 1) next_++;
-            else nund++;
-        }
-    }
-
-    // Serialize structured relocations now that symbol ordinals are known.
-    Buf relocs[NSECS];
-    memset(relocs, 0, sizeof relocs);
-    for (int i = 0; i < NSECS; i++) {
-        for (int j = 0; j < e->secs[i].nrl; j++) {
-            Rel* r = &e->secs[i].rl[j];
-            buf_put32(&relocs[i], r->off);
-            uint32_t target = r->ext ? r->sym->ord : r->sym->sect;
-            buf_put32(&relocs[i], (target & 0xFFFFFFu) |
-                      ((uint32_t)r->pcrel << 24) | ((uint32_t)r->len << 25) |
-                      ((uint32_t)r->ext << 27) | ((uint32_t)r->type << 28));
-        }
-    }
-
-    // Relocation data follows all section data.
-    uint32_t reloff = off;
-    for (int i = 0; i < NSECS; i++) {
-        e->secs[i].reloff = reloff;
-        reloff += (uint32_t)relocs[i].len;
-    }
-
-    // Assemble the file image.
-    Buf o;
-    memset(&o, 0, sizeof o);
-
-    // mach_header_64
-    buf_put32(&o, 0xFEEDFACFu);             // MH_MAGIC_64
-    buf_put32(&o, 0x0100000Cu);             // CPU_TYPE_ARM64
-    buf_put32(&o, 0);                       // CPU_SUBTYPE_ARM64_ALL
-    buf_put32(&o, 1);                       // MH_OBJECT
-    buf_put32(&o, 4);                       // ncmds
-    buf_put32(&o, segcmd + 24 + 24 + 80);   // sizeofcmds
-    buf_put32(&o, 0);                       // flags (pinned: no bit set)
-    buf_put32(&o, 0);                       // reserved
-
-    // LC_SEGMENT_64 — one nameless segment holding all sections
-    buf_put32(&o, 0x19);
-    buf_put32(&o, segcmd);
-    buf_putname(&o, "");                    // segname: empty (pinned)
-    buf_put64(&o, 0);                       // vmaddr
-    buf_put64(&o, vmsize);
-    buf_put64(&o, base);                    // fileoff
-    buf_put64(&o, filesize);
-    buf_put32(&o, 7);                       // maxprot RWX
-    buf_put32(&o, 7);                       // initprot RWX
-    buf_put32(&o, NSECS);
-    buf_put32(&o, 0);                       // flags
-    for (int i = 0; i < NSECS; i++) {
-        Sec* s = &e->secs[i];
-        buf_putname(&o, s->sect);
-        buf_putname(&o, s->seg);
-        buf_put64(&o, s->addr);
-        buf_put64(&o, s->size);
-        buf_put32(&o, s->offset);
-        buf_put32(&o, s->align);
-        buf_put32(&o, relocs[i].len ? s->reloff : 0);
-        buf_put32(&o, (uint32_t)(relocs[i].len / 8));
-        buf_put32(&o, s->flags);
-        buf_put32(&o, 0);                   // reserved1
-        buf_put32(&o, 0);                   // reserved2
-        buf_put32(&o, 0);                   // reserved3
-    }
-
-    // LC_BUILD_VERSION
-    buf_put32(&o, 0x32);
-    buf_put32(&o, 24);
-    buf_put32(&o, 1);                       // PLATFORM_MACOS
-    buf_put32(&o, 0x000B0000u);             // minos 11.0
-    buf_put32(&o, 0x000B0000u);             // sdk 11.0
-    buf_put32(&o, 0);                       // ntools
-
-    // LC_SYMTAB — symoff/stroff patched once known
-    size_t symcmd = o.len;
-    buf_put32(&o, 0x02);
-    buf_put32(&o, 24);
-    buf_put32(&o, 0);                       // symoff (patch)
-    buf_put32(&o, (uint32_t)e->syms.n);
-    buf_put32(&o, 0);                       // stroff (patch)
-    buf_put32(&o, (uint32_t)str.len);
-
-    // LC_DYSYMTAB
-    buf_put32(&o, 0x0B);
-    buf_put32(&o, 80);
-    buf_put32(&o, 0); buf_put32(&o, (uint32_t)nloc);
-    buf_put32(&o, (uint32_t)nloc); buf_put32(&o, (uint32_t)next_);
-    buf_put32(&o, (uint32_t)(nloc + next_)); buf_put32(&o, (uint32_t)nund);
-    for (int i = 0; i < 12; i++) buf_put32(&o, 0); // remaining dysym fields
-
-    // Section data (offsets pinned above), then relocations.
-    while (o.len < base) buf_put8(&o, 0);
-    for (int i = 0; i < NSECS; i++) {
-        Sec* s = &e->secs[i];
-        while (o.len < s->offset) buf_put8(&o, 0);
-        if (s->flags & S_ZEROFILL) continue;
-        buf_write(&o, s->data.d, s->data.len);
-    }
-    for (int i = 0; i < NSECS; i++) buf_write(&o, relocs[i].d, relocs[i].len);
-
-    // Symbol table (in `order`), then the string table.
-    uint32_t symoff = (uint32_t)((o.len + 7) & ~(size_t)7);
-    while (o.len < symoff) buf_put8(&o, 0);
-    for (size_t i = 0; i < norder; i++) {
-        ESym* s = order[i];
-        buf_put32(&o, s->strx);
-        buf_put8(&o, s->type ? s->type : N_EXT_); // undefined: N_EXT only
-        buf_put8(&o, s->sect);
-        buf_put16(&o, 0);                         // n_desc
-        uint64_t value = s->value;
-        if (s->sect > 0 && s->sect <= NSECS) value += e->secs[s->sect - 1].addr;
-        buf_put64(&o, value);
-    }
-    uint32_t stroff = (uint32_t)o.len;
-    buf_write(&o, str.d, str.len);
-
-    buf_patch32(&o, symcmd + 8, symoff);
-    buf_patch32(&o, symcmd + 16, stroff);
-
-    size_t object_size = o.len;
-    FILE* fp = fopen(path, "wb");
-    if (!fp) {
-        fprintf(stderr, "ace: cannot write '%s'\n", path);
-        e->d->errors++;
-    } else {
-        fwrite(o.d, 1, o.len, fp);
-        fclose(fp);
-    }
-    free(str.d);
-    free(o.d);
-    free(order);
-    for (int i = 0; i < NSECS; i++) free(relocs[i].d);
-    return e->d->errors ? 0 : object_size;
-}
-
 // --- entry ---------------------------------------------------------------------------
 
 static void emit_bounds_failure_helper(Em* e) {
-    if (!e->bounds_fail_used) return;
-    sym_define(&e->syms, e->secs, "__ace$bounds_fail", 17, 0, &e->secs[SEC_TEXT]);
+    if (!e->o.bounds_fail_used) return;
+    sym_define(&e->o.syms, e->o.secs, "__ace$bounds_fail", 17, 0, &e->o.secs[SEC_TEXT]);
     ins(e, 0xA9BF7BFD); // stp x29, x30, [sp, #-16]!
     ins(e, 0x910003FD); // mov x29, sp
     emit_bl_extern(e, "_write", 6);
@@ -10702,13 +10052,13 @@ static void emit_bounds_failure_helper(Em* e) {
 }
 
 static void emit_arithmetic_failure_helper(Em* e) {
-    if (!e->arithmetic_fail_used) return;
+    if (!e->o.arithmetic_fail_used) return;
     static const char message[] = "ace: arithmetic violation\n";
-    Sec* c = &e->secs[SEC_CONST];
-    ESym* msg = sym_define(&e->syms, e->secs, "__ace$arithmetic_message", 24, 0, c);
+    Sec* c = &e->o.secs[SEC_CONST];
+    ESym* msg = sym_define(&e->o.syms, e->o.secs, "__ace$arithmetic_message", 24, 0, c);
     buf_write(&c->data, message, sizeof message - 1);
 
-    sym_define(&e->syms, e->secs, "__ace$arithmetic_fail", 21, 0, &e->secs[SEC_TEXT]);
+    sym_define(&e->o.syms, e->o.secs, "__ace$arithmetic_fail", 21, 0, &e->o.secs[SEC_TEXT]);
     ins(e, 0xA9BF7BFD);
     ins(e, 0x910003FD);
     load_imm(e, 1, 0, 2);
@@ -10720,12 +10070,12 @@ static void emit_arithmetic_failure_helper(Em* e) {
 }
 
 static void emit_contract_failure_helper(Em* e) {
-    if (!e->contract_fail_used) return;
+    if (!e->o.contract_fail_used) return;
     static const char message[] = "ace: call contract violation\n";
-    Sec* c = &e->secs[SEC_CONST];
-    ESym* msg = sym_define(&e->syms, e->secs, "__ace$contract_message", 22, 0, c);
+    Sec* c = &e->o.secs[SEC_CONST];
+    ESym* msg = sym_define(&e->o.syms, e->o.secs, "__ace$contract_message", 22, 0, c);
     buf_write(&c->data, message, sizeof message - 1);
-    sym_define(&e->syms, e->secs, "__ace$contract_fail", 19, 0, &e->secs[SEC_TEXT]);
+    sym_define(&e->o.syms, e->o.secs, "__ace$contract_fail", 19, 0, &e->o.secs[SEC_TEXT]);
     ins(e, 0xA9BF7BFD);
     ins(e, 0x910003FD);
     load_imm(e, 1, 0, 2);
@@ -10737,12 +10087,12 @@ static void emit_contract_failure_helper(Em* e) {
 }
 
 static void emit_null_failure_helper(Em* e) {
-    if (!e->null_fail_used) return;
+    if (!e->o.null_fail_used) return;
     static const char message[] = "ace: null use violation\n";
-    Sec* c = &e->secs[SEC_CONST];
-    ESym* msg = sym_define(&e->syms, e->secs, "__ace$null_message", 18, 0, c);
+    Sec* c = &e->o.secs[SEC_CONST];
+    ESym* msg = sym_define(&e->o.syms, e->o.secs, "__ace$null_message", 18, 0, c);
     buf_write(&c->data, message, sizeof message - 1);
-    sym_define(&e->syms, e->secs, "__ace$null_fail", 15, 0, &e->secs[SEC_TEXT]);
+    sym_define(&e->o.syms, e->o.secs, "__ace$null_fail", 15, 0, &e->o.secs[SEC_TEXT]);
     ins(e, 0xA9BF7BFD);
     ins(e, 0x910003FD);
     load_imm(e, 1, 0, 2);
@@ -10815,7 +10165,7 @@ static void compare_block32(Em* e, int mismatch) {
  * internal instruction selection, not a language vector facility.
  */
 static void emit_byte_helpers(Em* e) {
-    if (e->mem_copy_used) {
+    if (e->o.mem_copy_used) {
         int copy = new_label(e), backward = new_label(e), lt16 = new_label(e);
         int lt8 = new_label(e), lt4 = new_label(e), done = new_label(e);
         int gt32 = new_label(e), big = new_label(e), loop = new_label(e);
@@ -10823,14 +10173,14 @@ static void emit_byte_helpers(Em* e) {
 
         // move: at most 64 bytes is overlap-safe; above that, go backward only
         // when the destination starts inside the source.
-        sym_define(&e->syms, e->secs, "__ace$mem_move", 14, 0, &e->secs[SEC_TEXT]);
+        sym_define(&e->o.syms, e->o.secs, "__ace$mem_move", 14, 0, &e->o.secs[SEC_TEXT]);
         ins(e, 0xF100001Fu | (64u << 10) | (17u << 5));   // cmp x17, #64
         bcond_(e, C_LS, copy);
         ins(e, 0xCB000000u | (16u << 16) | (15u << 5) | 8u); // x8 = dst - src
         ins(e, 0xEB00001Fu | (17u << 16) | (8u << 5));    // cmp x8, x17
         bcond_(e, C_LO, backward);
 
-        sym_define(&e->syms, e->secs, "__ace$mem_copy", 14, 0, &e->secs[SEC_TEXT]);
+        sym_define(&e->o.syms, e->o.secs, "__ace$mem_copy", 14, 0, &e->o.secs[SEC_TEXT]);
         bind_label(e, copy);
         ins(e, 0xF100001Fu | (32u << 10) | (17u << 5));   // cmp x17, #32
         bcond_(e, C_HI, gt32);
@@ -10931,11 +10281,11 @@ static void emit_byte_helpers(Em* e) {
         vpair(e, STP_Q, 30, 31, 8, 0);
         ins(e, 0xD65F03C0u);
     }
-    if (e->mem_fill_used) {
+    if (e->o.mem_fill_used) {
         int lt16 = new_label(e), lt8 = new_label(e), lt4 = new_label(e);
         int done = new_label(e), gt32 = new_label(e), loop = new_label(e);
 
-        sym_define(&e->syms, e->secs, "__ace$mem_fill", 14, 0, &e->secs[SEC_TEXT]);
+        sym_define(&e->o.syms, e->o.secs, "__ace$mem_fill", 14, 0, &e->o.secs[SEC_TEXT]);
         ins(e, 0x4E010C00u | (16u << 5) | 24u);            // dup v24.16b, w16
         ins(e, 0xF100001Fu | (32u << 10) | (17u << 5));   // cmp x17, #32
         bcond_(e, C_HI, gt32);
@@ -10979,7 +10329,7 @@ static void emit_byte_helpers(Em* e) {
         bcond_(e, C_HI, loop);
         ins(e, 0xD65F03C0u);
     }
-    if (e->mem_compare_used) {
+    if (e->o.mem_compare_used) {
         int lt16 = new_label(e), lt8 = new_label(e), lt4 = new_label(e);
         int gt32 = new_label(e), loop = new_label(e), words = new_label(e);
         int same = new_label(e), diff = new_label(e), res16 = new_label(e);
@@ -10992,7 +10342,7 @@ static void emit_byte_helpers(Em* e) {
          * order it, since reversal puts the first byte in the high bits.
          * Overlapping tail chunks rescan only bytes already known equal.
          */
-        sym_define(&e->syms, e->secs, "__ace$mem_compare", 17, 0, &e->secs[SEC_TEXT]);
+        sym_define(&e->o.syms, e->o.secs, "__ace$mem_compare", 17, 0, &e->o.secs[SEC_TEXT]);
         ins(e, 0xF100001Fu | (16u << 10) | (17u << 5));   // cmp x17, #16
         bcond_(e, C_LO, lt16);
         ins(e, 0xF100001Fu | (32u << 10) | (17u << 5));   // cmp x17, #32
@@ -11108,23 +10458,23 @@ static void emit_byte_helpers(Em* e) {
 }
 
 static void emit_allocator_helpers(Em* e) {
-    if (!e->allocator_used) {
-        if (e->mode == EMIT_DEBUG) {
-            sym_define(&e->syms, e->secs, "__ace$registry_leaks", 20, 0, &e->secs[SEC_TEXT]);
+    if (!e->o.allocator_used) {
+        if (e->o.mode == EMIT_DEBUG) {
+            sym_define(&e->o.syms, e->o.secs, "__ace$registry_leaks", 20, 0, &e->o.secs[SEC_TEXT]);
             ins(e, 0xD65F03C0); // no allocation intrinsic exists in this unit
         }
         return;
     }
-    Sec* b = &e->secs[SEC_BSS];
+    Sec* b = &e->o.secs[SEC_BSS];
     b->size = align_up(b->size, 8);
-    ESym* head = sym_define(&e->syms, e->secs, "__ace$registry_head", 19, 0, b);
+    ESym* head = sym_define(&e->o.syms, e->o.secs, "__ace$registry_head", 19, 0, b);
     b->size += 8;
 
     static const char message[] = "ace: allocator violation\n";
-    Sec* c = &e->secs[SEC_CONST];
-    ESym* msg = sym_define(&e->syms, e->secs, "__ace$allocator_message", 23, 0, c);
+    Sec* c = &e->o.secs[SEC_CONST];
+    ESym* msg = sym_define(&e->o.syms, e->o.secs, "__ace$allocator_message", 23, 0, c);
     buf_write(&c->data, message, sizeof message - 1);
-    sym_define(&e->syms, e->secs, "__ace$allocator_fail", 20, 0, &e->secs[SEC_TEXT]);
+    sym_define(&e->o.syms, e->o.secs, "__ace$allocator_fail", 20, 0, &e->o.secs[SEC_TEXT]);
     ins(e, 0xA9BF7BFD); ins(e, 0x910003FD);
     load_imm(e, 1, 0, 2); addr_of_sym(e, 1, msg);
     load_imm(e, 1, 2, sizeof message - 1);
@@ -11132,7 +10482,7 @@ static void emit_allocator_helpers(Em* e) {
     ins(e, 0xD4200000u);
 
     /* find(ptr,size) -> node; node layout is ptr,size,align,next. */
-    sym_define(&e->syms, e->secs, "__ace$registry_find", 19, 0, &e->secs[SEC_TEXT]);
+    sym_define(&e->o.syms, e->o.secs, "__ace$registry_find", 19, 0, &e->o.secs[SEC_TEXT]);
     mov_int(e, 1, 2, 0); mov_int(e, 1, 3, 1);
     addr_of_sym(e, 16, head); ld_reg(e, 0, 16, 0, 8, 0);
     int find_loop = new_label(e), find_next = new_label(e), find_ok = new_label(e);
@@ -11153,7 +10503,7 @@ static void emit_allocator_helpers(Em* e) {
     emit_bl_internal(e, "__ace$allocator_fail", 20);
     bind_label(e, find_ret); ins(e, 0xD65F03C0);
 
-    sym_define(&e->syms, e->secs, "__ace$registry_add", 18, 0, &e->secs[SEC_TEXT]);
+    sym_define(&e->o.syms, e->o.secs, "__ace$registry_add", 18, 0, &e->o.secs[SEC_TEXT]);
     helper_prologue(e);
     mov_int(e, 1, 19, 0); mov_int(e, 1, 20, 1); mov_int(e, 1, 21, 2);
     load_imm(e, 1, 0, 32); emit_bl_extern(e, "_malloc", 7);
@@ -11165,7 +10515,7 @@ static void emit_allocator_helpers(Em* e) {
     st_reg(e, 17, 0, 24, 8); st_reg(e, 0, 16, 0, 8);
     helper_epilogue(e);
 
-    sym_define(&e->syms, e->secs, "__ace$registry_remove", 21, 0, &e->secs[SEC_TEXT]);
+    sym_define(&e->o.syms, e->o.secs, "__ace$registry_remove", 21, 0, &e->o.secs[SEC_TEXT]);
     helper_prologue(e);
     mov_int(e, 1, 19, 0); mov_int(e, 1, 20, 1); load_imm(e, 1, 21, 0);
     addr_of_sym(e, 16, head); ld_reg(e, 0, 16, 0, 8, 0);
@@ -11191,7 +10541,7 @@ static void emit_allocator_helpers(Em* e) {
     bind_label(e, rem_unlinked); emit_bl_extern(e, "_free", 5);
     helper_epilogue(e);
 
-    sym_define(&e->syms, e->secs, "__ace$registry_leaks", 20, 0, &e->secs[SEC_TEXT]);
+    sym_define(&e->o.syms, e->o.secs, "__ace$registry_leaks", 20, 0, &e->o.secs[SEC_TEXT]);
     addr_of_sym(e, 16, head); ld_reg(e, 16, 16, 0, 8, 0);
     int no_leaks = new_label(e); cbz_(e, 1, 16, 0, no_leaks);
     emit_bl_internal(e, "__ace$allocator_fail", 20);
@@ -11200,38 +10550,13 @@ static void emit_allocator_helpers(Em* e) {
 }
 
 int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report, EmitMode mode) {
-    static const Sec PROTO[NSECS] = {
-        [SEC_TEXT]       = { .sect = "__text",       .seg = "__TEXT",
-                             .flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS, .align = 6 },
-        [SEC_CONST]      = { .sect = "__const",      .seg = "__DATA_CONST",
-                             .align = 4 },
-        [SEC_DATA]       = { .sect = "__data",       .seg = "__DATA",
-                             .align = 4 },
-        [SEC_BSS]        = { .sect = "__bss",        .seg = "__DATA",
-                             .flags = S_ZEROFILL, .align = 4 },
-        [SEC_DEBUG_ABBREV] = { .sect = "__debug_abbrev", .seg = "__DWARF",
-                               .flags = S_ATTR_DEBUG },
-        [SEC_DEBUG_INFO] = { .sect = "__debug_info", .seg = "__DWARF",
-                             .flags = S_ATTR_DEBUG },
-        [SEC_DEBUG_LINE] = { .sect = "__debug_line", .seg = "__DWARF",
-                             .flags = S_ATTR_DEBUG },
-    };
-
     Em e;
     memset(&e, 0, sizeof e);
+    obj_init(&e.o, d, mode);
     vmap_reset(&e);
     e.vti_cap = MAX_ITEMPS;
     e.vtf_cap = MAX_FPTEMPS;
-    e.d = d;
     e.file = file;
-    e.mode = mode;
-    for (int i = 0; i < NSECS; i++) {
-        e.secs[i].sect = PROTO[i].sect;
-        e.secs[i].seg = PROTO[i].seg;
-        e.secs[i].flags = PROTO[i].flags;
-        e.secs[i].align = PROTO[i].align;
-    }
-    sym_define(&e.syms, e.secs, "__ace$text", 10, 0, &e.secs[SEC_TEXT]);
 
     for (int i = 0; i < file->nkids; i++) {
         Node* n = file->kids[i];
@@ -11302,13 +10627,13 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
     emit_null_failure_helper(&e);
     emit_allocator_helpers(&e);
     emit_byte_helpers(&e);
-    patch_fixups(&e);
+    obj_patch_fixups(&e.o);
     if (d->errors) return 1;
     if (report) report->machine_code = text(&e)->len;
-    ESym* text_anchor = sym_intern(&e.syms, "__ace$text", 10);
-    emit_debug_info(&e, text_anchor);
-    emit_debug_line(&e, text_anchor);
-    size_t object_size = write_object(&e, out_path);
+    ESym* text_anchor = sym_intern(&e.o.syms, "__ace$text", 10);
+    obj_debug_info(&e.o, text_anchor);
+    obj_debug_line(&e.o, text_anchor);
+    size_t object_size = obj_write(&e.o, out_path);
     if (report) report->object_file = object_size;
     return d->errors ? 1 : 0;
 }
