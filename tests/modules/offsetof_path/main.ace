@@ -1,0 +1,10 @@
+/* An imported file's own declarations are lowered only where a reference can
+ * name them: an offsetof field path is left to the struct. */
+
+/* expect-exit: 13 */
+
+import offset from "./layout.ace"
+
+main(): int {
+    return offset()
+}

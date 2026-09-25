@@ -1,0 +1,10 @@
+/* An imported file binds a generic signing's type parameters before lowering
+ * its own names, so `Base[T] signs Value[T]` keeps its parameter `T`. */
+
+/* expect-exit: 42 */
+
+import run from "./value.ace"
+
+main(): int {
+    return run()
+}

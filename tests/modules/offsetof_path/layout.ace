@@ -1,0 +1,8 @@
+Box: struct { w: u32, x: u32 }
+
+x: u32 = 9
+
+/* The field path names Box's field, not the module global `x`. */
+pub offset(): int {
+    return int(offsetof(Box, x)) + int(x)
+}

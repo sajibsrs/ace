@@ -256,7 +256,7 @@ static Node* load_module(Loader* L, const char* path) {
 
 // Module-level builtin names are checked before prefixing: `m$panic`
 // would pass sema's reservation and silently shadow the builtin for this
-// module's own calls (rename_refs rewrites them to the declaration).
+// module's own calls (lower_refs rewrites them to the declaration).
 static void check_reserved_name(Loader* L, Node* at, const char* name, uint32_t len) {
     if (len == 5 && memcmp(name, "panic", 5) == 0)
         import_err(L->d, at,
@@ -854,7 +854,7 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
 // --- qualified reference lowering -----------------------------------------------------
 // `binding.member` forms are rewritten to the module's private prefixed
 // names after a pub check, before semantic checking runs. The scoped walk
-// below (lower_selected_node) calls these only where no local shadows the
+// below (lower_refs) calls these only where no local shadows the
 // binding; a type qualifier is never shadowed by a value.
 
 static void qualified_type_err(Loader* L, Node* n) {
@@ -957,341 +957,6 @@ static void lower_field(Loader* L, Node* e, Binding* binds) {
     }
 }
 
-// --- import reference lowering ------------------------------------------------------
-// Selected names and `binding.member` references are lowered with lexical-scope
-// awareness. This is intentionally separate from rename_refs: a parameter/local
-// may shadow a selected value or an import binding, while a generic type
-// parameter may shadow a selected type.
-
-typedef struct LocalName LocalName;
-struct LocalName {
-    const char* name;
-    uint32_t len;
-    int depth;
-    int is_type;
-    LocalName* next;
-};
-
-typedef struct {
-    Loader* L;
-    Binding* binds; // whole-module bindings for `binding.member`
-    Select* sels;
-    LocalName* locals;
-    int depth;
-} SelectLower;
-
-static Select* find_select(Select* sels, const char* name, uint32_t len, int is_type) {
-    for (Select* s = sels; s; s = s->next)
-        if (s->len == len && memcmp(s->name, name, len) == 0 &&
-            (is_type ? s->type_name != NULL : s->value_name != NULL))
-            return s;
-    return NULL;
-}
-
-static int local_name(SelectLower* c, const char* name, uint32_t len, int is_type) {
-    for (LocalName* n = c->locals; n; n = n->next)
-        if (n->is_type == is_type && n->len == len &&
-            memcmp(n->name, name, len) == 0) return 1;
-    return 0;
-}
-
-static void bind_local(SelectLower* c, const char* name, uint32_t len, int is_type) {
-    LocalName* n = (LocalName*)arena_alloc(sizeof(LocalName));
-    n->name = name;
-    n->len = len;
-    n->depth = c->depth;
-    n->is_type = is_type;
-    n->next = c->locals;
-    c->locals = n;
-}
-
-static void select_scope_push(SelectLower* c) { c->depth++; }
-
-static void select_scope_pop(SelectLower* c) {
-    while (c->locals && c->locals->depth == c->depth) c->locals = c->locals->next;
-    c->depth--;
-}
-
-static void replace_name(Node* n, const char* name) {
-    n->str = name;
-    n->len = (uint32_t)strlen(name);
-}
-
-static void lower_selected_node(Node* n, SelectLower* c);
-
-static void lower_selected_type(Node* t, SelectLower* c) {
-    if (!t) return;
-    if (t->kind == N_NAMED && t->a) lower_named(c->L, t, c->binds); // `math.Vec`
-    if (t->kind == N_NAMED && !t->a) { // few selections, many locals: look up the selection first
-        Select* s = find_select(c->sels, t->str, t->len, 1);
-        if (s && !local_name(c, t->str, t->len, 1)) replace_name(t, s->type_name);
-    }
-    lower_selected_type(t->a, c);
-    if (t->kind == N_STATICMAP_T) lower_selected_type(t->b, c);
-    if (t->kind == N_ARRAY_T) lower_selected_node(t->b, c); // length: an expression, not a type
-    for (int i = 0; i < t->nkids; i++) lower_selected_type(t->kids[i], c);
-}
-
-/* `binding.member`, or the enum-constant form `binding.Type.member`: a module
- * member unless, in value position, a local shadows the binding. A type
- * position (`binding.T{...}`, a sizeof operand) names a type, which no value
- * local shadows. */
-static void lower_qualified_field(Node* n, SelectLower* c, int type_position) {
-    Node* base = n->a && n->a->kind == N_FIELD_E ? n->a->a : n->a;
-    if (base && base->kind == N_IDENT &&
-        (type_position || !local_name(c, base->str, base->len, 0))) {
-        lower_field(c->L, n, c->binds);
-        if (n->kind != N_FIELD_E) return; // now the member's private name
-    }
-    lower_selected_node(n->a, c); // field spelling is member-local
-}
-
-static void lower_selected_type_ref(Node* n, SelectLower* c) {
-    if (!n) return;
-    if (n->kind == N_NAMED) {
-        lower_selected_type(n, c);
-        return;
-    }
-    if (n->kind == N_SLICE_T || n->kind == N_ARRAY_T || n->kind == N_PTR ||
-        n->kind == N_CONST_T || n->kind == N_TUPLE_T || n->kind == N_FUNC_T ||
-        n->kind == N_STATICMAP_T) { // inline operand, e.g. alignof([]pkg.T)
-        lower_selected_type_ref(n->a, c);
-        if (n->kind == N_ARRAY_T) lower_selected_node(n->b, c); // length expression
-        if (n->kind == N_STATICMAP_T) lower_selected_type_ref(n->b, c);
-        for (int i = 0; i < n->nkids; i++) lower_selected_type_ref(n->kids[i], c);
-        return;
-    }
-    Node* name = n->kind == N_INDEX ? n->a : n;
-    if (name && name->kind == N_FIELD_E) lower_qualified_field(name, c, 1); // e.g. typeid(tcp.Err)
-    else if (name && name->kind == N_IDENT) {
-        Select* s = find_select(c->sels, name->str, name->len, 1);
-        if (s && !local_name(c, name->str, name->len, 1)) replace_name(name, s->type_name);
-    }
-    if (n->kind == N_INDEX) {
-        lower_selected_type_ref(n->b, c);
-        for (int i = 0; i < n->nkids; i++) lower_selected_type_ref(n->kids[i], c);
-    }
-}
-
-static void lower_selected_block(Node* b, SelectLower* c) {
-    select_scope_push(c);
-    for (int i = 0; i < b->nkids; i++) lower_selected_node(b->kids[i], c);
-    select_scope_pop(c);
-}
-
-static void lower_selected_func(Node* f, SelectLower* c) {
-    select_scope_push(c);
-    if (f->c) {
-        for (int i = 0; i < f->c->nkids; i++) bind_local(c, f->c->kids[i]->str, f->c->kids[i]->len, 1);
-    }
-    if (f->d) lower_selected_type(f->d, c);
-    for (int i = 0; i < f->nkids; i++) lower_selected_type(f->kids[i]->a, c);
-    lower_selected_type(f->a, c);
-    select_scope_push(c);
-    if (f->flags & F_METHOD) bind_local(c, "self", 4, 0);
-    for (int i = 0; i < f->nkids; i++) bind_local(c, f->kids[i]->str, f->kids[i]->len, 0);
-    if (f->b) lower_selected_block(f->b, c);
-    select_scope_pop(c);
-    select_scope_pop(c);
-}
-
-static void lower_selected_node(Node* n, SelectLower* c) {
-    if (!n) return;
-    switch (n->kind) {
-    case N_IMPORT:
-        return;
-    case N_IDENT:
-    {
-        Select* s = find_select(c->sels, n->str, n->len, 0); // few selections, many locals: look up first
-        if (!s) s = find_select(c->sels, n->str, n->len, 1);
-        if (s && !local_name(c, n->str, n->len, 0)) replace_name(n, s->value_name ? s->value_name : s->type_name);
-        return;
-    }
-    case N_NAMED:
-        lower_selected_type(n, c);
-        return;
-    case N_FUNC:
-        lower_selected_func(n, c);
-        return;
-    case N_BLOCK:
-        lower_selected_block(n, c);
-        return;
-    case N_VAR:
-        // A typed name is in scope from its declarator, its own initializer
-        // included; a bare name of a multi-name `=` reassigns what it names.
-        for (int i = 0; i < n->nkids; i++) {
-            Node* binder = n->kids[i];
-            if (binder->kind != N_PARAM) lower_selected_node(binder, c);
-        }
-        for (int i = 0; i < n->nkids; i++) {
-            Node* binder = n->kids[i];
-            if (binder->kind != N_PARAM) continue;
-            lower_selected_type(binder->a, c);
-            bind_local(c, binder->str, binder->len, 0);
-        }
-        lower_selected_node(n->b, c);
-        return;
-    case N_FOR:
-        if (n->flags & F_FORGEN) {
-            // General head: one select scope covers init, cond, post, and
-            // body; a head declaration binds through its N_VAR statement.
-            select_scope_push(c);
-            lower_selected_node(n->a, c);
-            lower_selected_node(n->b, c);
-            lower_selected_node(n->c, c);
-            lower_selected_node(n->d, c);
-            select_scope_pop(c);
-            return;
-        }
-        for (int i = 0; i < n->nkids; i++) lower_selected_type(n->kids[i]->a, c);
-        lower_selected_node(n->b, c);
-        select_scope_push(c);
-        for (int i = 0; i < n->nkids; i++) bind_local(c, n->kids[i]->str, n->kids[i]->len, 0);
-        lower_selected_node(n->c, c);
-        select_scope_pop(c);
-        return;
-    case N_STRUCT: case N_BITS: case N_CONTRACT: case N_ALIAS: case N_UNION:
-        select_scope_push(c);
-        if (n->c) for (int i = 0; i < n->c->nkids; i++) bind_local(c, n->c->kids[i]->str, n->c->kids[i]->len, 1);
-        if (n->kind == N_ALIAS || n->kind == N_BITS) lower_selected_type(n->a, c);
-        else if (n->kind == N_UNION) {
-            for (int i = 0; i < n->nkids; i++)
-                lower_selected_type(n->kids[i]->a, c); // variant payload types
-        }
-        else for (int i = 0; i < n->nkids; i++) {
-            Node* member = n->kids[i];
-            for (int j = 0; j < member->nkids; j++) lower_selected_type(member->kids[j]->a, c);
-            lower_selected_type(member->a, c);
-            if (n->kind == N_STRUCT) {
-                lower_selected_node(member->b, c); // field @align expression
-                lower_selected_node(member->c, c); // field default
-            }
-        }
-        if (n->kind == N_STRUCT) lower_selected_node(n->b, c); // struct @align expression
-        select_scope_pop(c);
-        return;
-    case N_DISTINCT:
-        lower_selected_type(n->a, c);
-        return;
-    case N_ERROR_DOMAIN:
-        return;
-    case N_ENUM:
-        lower_selected_type(n->a, c);
-        for (int i = 0; i < n->nkids; i++) lower_selected_node(n->kids[i]->a, c);
-        return; // member names themselves are declarations, not references
-    case N_SIGNING:
-        select_scope_push(c);
-        if (n->c) for (int i = 0; i < n->c->nkids; i++) bind_local(c, n->c->kids[i]->str, n->c->kids[i]->len, 1);
-        lower_selected_type(n->a, c);
-        for (int i = 0; i < n->nkids; i++) lower_selected_type(n->kids[i]->a, c);
-        select_scope_pop(c);
-        return;
-    case N_EXTERN:
-        for (int i = 0; i < n->nkids; i++) {
-            Node* f = n->kids[i];
-            for (int j = 0; j < f->nkids; j++) lower_selected_type(f->kids[j]->a, c);
-            lower_selected_type(f->a, c);
-        }
-        return;
-    case N_FIELD_E:
-        lower_qualified_field(n, c, 0);
-        return;
-    case N_CASE:
-        // A variant pattern's payload binder is a local of its case block.
-        select_scope_push(c);
-        for (int i = 0; i < n->nkids; i++) {
-            Node* pat = n->kids[i];
-            if (pat->kind != N_VARPAT) {
-                lower_selected_node(pat, c);
-                continue;
-            }
-            lower_selected_node(pat->a, c);
-            lower_selected_type(pat->b->a, c);
-            bind_local(c, pat->b->str, pat->b->len, 0);
-        }
-        lower_selected_node(n->b, c);
-        select_scope_pop(c);
-        return;
-    case N_FIELDINIT:
-        lower_selected_node(n->a, c); // initializer name is struct-local
-        return;
-    case N_STRUCTLIT:
-        lower_selected_type_ref(n->a, c);
-        for (int i = 0; i < n->nkids; i++) lower_selected_node(n->kids[i], c);
-        return;
-    case N_CALL:
-        if (n->a && n->a->kind == N_IDENT &&
-            !local_name(c, n->a->str, n->a->len, 0) &&
-            !find_select(c->sels, n->a->str, n->a->len, 0) &&
-            (text_is(n->a->str, n->a->len, "sizeof") ||
-             text_is(n->a->str, n->a->len, "alignof") ||
-             text_is(n->a->str, n->a->len, "blank") ||
-             text_is(n->a->str, n->a->len, "offsetof") ||
-             text_is(n->a->str, n->a->len, "typeid"))) {
-            if (n->nkids) lower_selected_type_ref(n->kids[0], c);
-            return;
-        }
-        break;
-    case N_ASM:
-        for (int i = 0; i < n->nkids; i++) {
-            Node* b = n->kids[i];
-            int clob = b->len == 8 && memcmp(b->str, "clobbers", 8) == 0;
-            if (!clob) for (int j = 1; j < b->nkids; j += 2) lower_selected_node(b->kids[j], c);
-        }
-        return;
-    default:
-        break;
-    }
-    lower_selected_node(n->a, c);
-    lower_selected_node(n->b, c);
-    lower_selected_node(n->c, c);
-    lower_selected_node(n->d, c);
-    for (int i = 0; i < n->nkids; i++) lower_selected_node(n->kids[i], c);
-}
-
-static int decl_namespace(Node* n) {
-    if (n->kind == N_FUNC && !(n->flags & (F_METHOD | F_ASSOC))) return 1;
-    if (n->kind == N_VAR || n->kind == N_EXTERN) return 1;
-    if (n->kind == N_STRUCT || n->kind == N_BITS || n->kind == N_CONTRACT || n->kind == N_ENUM ||
-        n->kind == N_ALIAS || n->kind == N_DISTINCT ||
-        n->kind == N_ERROR_DOMAIN || n->kind == N_UNION)
-        return 2;
-    return 0;
-}
-
-static void check_select_collisions(Loader* L, Node* file, Binding* binds, Select* sels) {
-    for (Select* s = sels; s; s = s->next) {
-        for (Binding* b = binds; b; b = b->next)
-            if (s->value_name && b->len == s->len &&
-                memcmp(b->name, s->name, s->len) == 0)
-                import_err(L->d, s->node,
-                           "import binding '%.*s' collides with another import",
-                           (int)s->len, s->name);
-        for (int i = 0; i < file->nkids; i++) {
-            Node* n = file->kids[i];
-            int ns = decl_namespace(n);
-            if (!ns || n->kind == N_IMPORT) continue;
-            if (n->kind == N_EXTERN) {
-                if (!s->value_name) continue;
-                for (int j = 0; j < n->nkids; j++)
-                    if (n->kids[j]->len == s->len &&
-                        memcmp(n->kids[j]->str, s->name, s->len) == 0)
-                        import_err(L->d, s->node,
-                                   "imported name '%.*s' collides with a declaration",
-                                   (int)s->len, s->name);
-                continue;
-            }
-            Node* named = n->kind == N_VAR ? n->kids[0] : n;
-            int conflicts = (ns == 1 && s->value_name) || (ns == 2 && s->type_name);
-            if (conflicts && named->len == s->len &&
-                memcmp(named->str, s->name, s->len) == 0)
-                import_err(L->d, s->node,
-                           "imported name '%.*s' collides with a declaration",
-                           (int)s->len, s->name);
-        }
-    }
-}
-
 // --- module-private identities ---------------------------------------------------------
 
 typedef struct {
@@ -1375,146 +1040,356 @@ static Rename* find_rename(Renames* rs, const char* name, uint32_t len) {
     return NULL;
 }
 
-static void rename_refs(Node* n, Renames* rs, SelectLower* c);
+// --- reference lowering -------------------------------------------------------------
+// One lexically scoped walk lowers every reference a file makes by name: a
+// selected import, a `binding.member`, and, in an imported file, its own
+// module-level declarations. A parameter or local shadows any of them in value
+// position; a generic type parameter shadows them in type position.
 
-static void rename_type_refs(Node* t, Renames* rs, SelectLower* c) {
+typedef struct LocalName LocalName;
+struct LocalName {
+    const char* name;
+    uint32_t len;
+    int depth;
+    int is_type;
+    LocalName* next;
+};
+
+typedef struct {
+    Loader* L;
+    Binding* binds; // whole-module bindings for `binding.member`
+    Select* sels;
+    Renames* renames; // this imported file's own declarations; NULL in the root
+    LocalName* locals;
+    int depth;
+} RefLower;
+
+static Select* find_select(Select* sels, const char* name, uint32_t len, int is_type) {
+    for (Select* s = sels; s; s = s->next)
+        if (s->len == len && memcmp(s->name, name, len) == 0 &&
+            (is_type ? s->type_name != NULL : s->value_name != NULL))
+            return s;
+    return NULL;
+}
+
+static int local_name(RefLower* c, const char* name, uint32_t len, int is_type) {
+    for (LocalName* n = c->locals; n; n = n->next)
+        if (n->is_type == is_type && n->len == len &&
+            memcmp(n->name, name, len) == 0) return 1;
+    return 0;
+}
+
+static void bind_local(RefLower* c, const char* name, uint32_t len, int is_type) {
+    LocalName* n = (LocalName*)arena_alloc(sizeof(LocalName));
+    n->name = name;
+    n->len = len;
+    n->depth = c->depth;
+    n->is_type = is_type;
+    n->next = c->locals;
+    c->locals = n;
+}
+
+static void ref_scope_push(RefLower* c) { c->depth++; }
+
+static void ref_scope_pop(RefLower* c) {
+    while (c->locals && c->locals->depth == c->depth) c->locals = c->locals->next;
+    c->depth--;
+}
+
+static void replace_name(Node* n, const char* name) {
+    n->str = name;
+    n->len = (uint32_t)strlen(name);
+}
+
+/* The private name an unshadowed reference lowers to, or NULL: a selected
+ * import's, else this imported file's own declaration's. A value position may
+ * also name a selected type (a cast or constructor). Selections never collide
+ * with the file's declarations, so the order is not observable. The few
+ * selections are searched before the locals; the many declarations after. */
+static const char* lowered_name(RefLower* c, const char* name, uint32_t len, int is_type) {
+    Select* s = find_select(c->sels, name, len, is_type);
+    if (!s && !is_type) s = find_select(c->sels, name, len, 1);
+    if (!s && !c->renames) return NULL;
+    if (local_name(c, name, len, is_type)) return NULL;
+    if (s) return !is_type && s->value_name ? s->value_name : s->type_name;
+    Rename* r = find_rename(c->renames, name, len);
+    return r ? r->to : NULL;
+}
+
+static void lower_refs(Node* n, RefLower* c);
+
+static void lower_refs_type(Node* t, RefLower* c) {
     if (!t) return;
-    if (t->kind == N_NAMED && !local_name(c, t->str, t->len, 1)) {
-        Rename* r = find_rename(rs, t->str, t->len);
-        if (r) replace_name(t, r->to);
+    if (t->kind == N_NAMED && t->a) lower_named(c->L, t, c->binds); // `math.Vec`
+    if (t->kind == N_NAMED && !t->a) {
+        const char* to = lowered_name(c, t->str, t->len, 1);
+        if (to) replace_name(t, to);
     }
-    rename_type_refs(t->a, rs, c);
-    if (t->kind == N_STATICMAP_T) rename_type_refs(t->b, rs, c);
-    if (t->kind == N_ARRAY_T) rename_refs(t->b, rs, c); // array length: an expression, not a type
-    for (int i = 0; i < t->nkids; i++) rename_type_refs(t->kids[i], rs, c);
+    lower_refs_type(t->a, c);
+    if (t->kind == N_STATICMAP_T) lower_refs_type(t->b, c);
+    if (t->kind == N_ARRAY_T) lower_refs(t->b, c); // length: an expression, not a type
+    for (int i = 0; i < t->nkids; i++) lower_refs_type(t->kids[i], c);
 }
 
-static void rename_block_refs(Node* b, Renames* rs, SelectLower* c) {
-    select_scope_push(c);
-    for (int i = 0; i < b->nkids; i++) rename_refs(b->kids[i], rs, c);
-    select_scope_pop(c);
+/* `binding.member`, or the enum-constant form `binding.Type.member`: a module
+ * member unless, in value position, a local shadows the binding. A type
+ * position (`binding.T{...}`, a sizeof operand) names a type, which no value
+ * local shadows. */
+static void lower_qualified_field(Node* n, RefLower* c, int type_position) {
+    Node* base = n->a && n->a->kind == N_FIELD_E ? n->a->a : n->a;
+    if (base && base->kind == N_IDENT &&
+        (type_position || !local_name(c, base->str, base->len, 0))) {
+        lower_field(c->L, n, c->binds);
+        if (n->kind != N_FIELD_E) return; // now the member's private name
+    }
+    lower_refs(n->a, c); // field spelling is member-local
 }
 
-static void rename_func_refs(Node* f, Renames* rs, SelectLower* c) {
-    select_scope_push(c);
+static void lower_refs_type_ref(Node* n, RefLower* c) {
+    if (!n) return;
+    if (n->kind == N_NAMED) {
+        lower_refs_type(n, c);
+        return;
+    }
+    if (n->kind == N_SLICE_T || n->kind == N_ARRAY_T || n->kind == N_PTR ||
+        n->kind == N_CONST_T || n->kind == N_TUPLE_T || n->kind == N_FUNC_T ||
+        n->kind == N_STATICMAP_T) { // inline operand, e.g. alignof([]pkg.T)
+        lower_refs_type_ref(n->a, c);
+        if (n->kind == N_ARRAY_T) lower_refs(n->b, c); // length expression
+        if (n->kind == N_STATICMAP_T) lower_refs_type_ref(n->b, c);
+        for (int i = 0; i < n->nkids; i++) lower_refs_type_ref(n->kids[i], c);
+        return;
+    }
+    Node* name = n->kind == N_INDEX ? n->a : n;
+    if (name && name->kind == N_FIELD_E) lower_qualified_field(name, c, 1); // e.g. typeid(tcp.Err)
+    else if (name && name->kind == N_IDENT) {
+        const char* to = lowered_name(c, name->str, name->len, 1);
+        if (to) replace_name(name, to);
+    }
+    if (n->kind == N_INDEX) {
+        lower_refs_type_ref(n->b, c);
+        for (int i = 0; i < n->nkids; i++) lower_refs_type_ref(n->kids[i], c);
+    }
+}
+
+static void lower_refs_block(Node* b, RefLower* c) {
+    ref_scope_push(c);
+    for (int i = 0; i < b->nkids; i++) lower_refs(b->kids[i], c);
+    ref_scope_pop(c);
+}
+
+static void lower_refs_func(Node* f, RefLower* c) {
+    ref_scope_push(c);
     if (f->c) {
         for (int i = 0; i < f->c->nkids; i++) bind_local(c, f->c->kids[i]->str, f->c->kids[i]->len, 1);
     }
-    if (f->d) rename_type_refs(f->d, rs, c);
-    for (int i = 0; i < f->nkids; i++) rename_type_refs(f->kids[i]->a, rs, c);
-    rename_type_refs(f->a, rs, c);
-    select_scope_push(c);
+    if (f->d) lower_refs_type(f->d, c);
+    for (int i = 0; i < f->nkids; i++) lower_refs_type(f->kids[i]->a, c);
+    lower_refs_type(f->a, c);
+    ref_scope_push(c);
     if (f->flags & F_METHOD) bind_local(c, "self", 4, 0);
     for (int i = 0; i < f->nkids; i++) bind_local(c, f->kids[i]->str, f->kids[i]->len, 0);
-    if (f->b) rename_block_refs(f->b, rs, c);
-    select_scope_pop(c);
-    select_scope_pop(c);
+    if (f->b) lower_refs_block(f->b, c);
+    ref_scope_pop(c);
+    ref_scope_pop(c);
 }
 
-static void rename_refs(Node* n, Renames* rs, SelectLower* c) {
+static void lower_refs(Node* n, RefLower* c) {
     if (!n) return;
     switch (n->kind) {
+    case N_IMPORT:
+        return;
     case N_IDENT:
-        if (!local_name(c, n->str, n->len, 0)) {
-            Rename* r = find_rename(rs, n->str, n->len);
-            if (r) replace_name(n, r->to);
-        }
-        return; // leaf: no children hold references
+    {
+        const char* to = lowered_name(c, n->str, n->len, 0);
+        if (to) replace_name(n, to);
+        return;
+    }
     case N_NAMED:
-        rename_type_refs(n, rs, c);
+        lower_refs_type(n, c);
         return;
     case N_FUNC:
-        rename_func_refs(n, rs, c);
+        lower_refs_func(n, c);
         return;
     case N_BLOCK:
-        rename_block_refs(n, rs, c);
+        lower_refs_block(n, c);
         return;
     case N_VAR:
-        // Scoped as lower_selected_node's N_VAR.
+        // A typed name is in scope from its declarator, its own initializer
+        // included; a bare name of a multi-name `=` reassigns what it names.
         for (int i = 0; i < n->nkids; i++) {
             Node* binder = n->kids[i];
-            if (binder->kind != N_PARAM) rename_refs(binder, rs, c);
+            if (binder->kind != N_PARAM) lower_refs(binder, c);
         }
         for (int i = 0; i < n->nkids; i++) {
             Node* binder = n->kids[i];
             if (binder->kind != N_PARAM) continue;
-            rename_type_refs(binder->a, rs, c);
+            lower_refs_type(binder->a, c);
             bind_local(c, binder->str, binder->len, 0);
         }
-        rename_refs(n->b, rs, c);
+        lower_refs(n->b, c);
         return;
     case N_FOR:
         if (n->flags & F_FORGEN) {
-            select_scope_push(c);
-            rename_refs(n->a, rs, c);
-            rename_refs(n->b, rs, c);
-            rename_refs(n->c, rs, c);
-            rename_refs(n->d, rs, c);
-            select_scope_pop(c);
+            // General head: one select scope covers init, cond, post, and
+            // body; a head declaration binds through its N_VAR statement.
+            ref_scope_push(c);
+            lower_refs(n->a, c);
+            lower_refs(n->b, c);
+            lower_refs(n->c, c);
+            lower_refs(n->d, c);
+            ref_scope_pop(c);
             return;
         }
-        for (int i = 0; i < n->nkids; i++) rename_type_refs(n->kids[i]->a, rs, c);
-        rename_refs(n->b, rs, c);
-        select_scope_push(c);
+        for (int i = 0; i < n->nkids; i++) lower_refs_type(n->kids[i]->a, c);
+        lower_refs(n->b, c);
+        ref_scope_push(c);
         for (int i = 0; i < n->nkids; i++) bind_local(c, n->kids[i]->str, n->kids[i]->len, 0);
-        rename_refs(n->c, rs, c);
-        select_scope_pop(c);
+        lower_refs(n->c, c);
+        ref_scope_pop(c);
         return;
     case N_STRUCT: case N_BITS: case N_CONTRACT: case N_ALIAS: case N_UNION:
-        select_scope_push(c);
+        ref_scope_push(c);
         if (n->c) for (int i = 0; i < n->c->nkids; i++) bind_local(c, n->c->kids[i]->str, n->c->kids[i]->len, 1);
-        if (n->kind == N_ALIAS || n->kind == N_BITS) rename_type_refs(n->a, rs, c);
+        if (n->kind == N_ALIAS || n->kind == N_BITS) lower_refs_type(n->a, c);
         else if (n->kind == N_UNION) {
-            for (int i = 0; i < n->nkids; i++) rename_type_refs(n->kids[i]->a, rs, c);
-        } else for (int i = 0; i < n->nkids; i++) {
+            for (int i = 0; i < n->nkids; i++)
+                lower_refs_type(n->kids[i]->a, c); // variant payload types
+        }
+        else for (int i = 0; i < n->nkids; i++) {
             Node* member = n->kids[i];
-            for (int j = 0; j < member->nkids; j++) rename_type_refs(member->kids[j]->a, rs, c);
-            rename_type_refs(member->a, rs, c);
+            for (int j = 0; j < member->nkids; j++) lower_refs_type(member->kids[j]->a, c);
+            lower_refs_type(member->a, c);
             if (n->kind == N_STRUCT) {
-                rename_refs(member->b, rs, c); // field @align expression
-                rename_refs(member->c, rs, c); // field default
+                lower_refs(member->b, c); // field @align expression
+                lower_refs(member->c, c); // field default
             }
         }
-        if (n->kind == N_STRUCT) rename_refs(n->b, rs, c); // struct @align expression
-        select_scope_pop(c);
+        if (n->kind == N_STRUCT) lower_refs(n->b, c); // struct @align expression
+        ref_scope_pop(c);
         return;
     case N_DISTINCT:
-        rename_type_refs(n->a, rs, c);
-        return;
-    case N_ENUM:
-        rename_type_refs(n->a, rs, c);
-        for (int i = 0; i < n->nkids; i++) rename_refs(n->kids[i]->a, rs, c);
+        lower_refs_type(n->a, c);
         return;
     case N_ERROR_DOMAIN:
         return;
+    case N_ENUM:
+        lower_refs_type(n->a, c);
+        for (int i = 0; i < n->nkids; i++) lower_refs(n->kids[i]->a, c);
+        return; // member names themselves are declarations, not references
+    case N_SIGNING:
+        ref_scope_push(c);
+        if (n->c) for (int i = 0; i < n->c->nkids; i++) bind_local(c, n->c->kids[i]->str, n->c->kids[i]->len, 1);
+        lower_refs_type(n->a, c);
+        for (int i = 0; i < n->nkids; i++) lower_refs_type(n->kids[i]->a, c);
+        ref_scope_pop(c);
+        return;
+    case N_EXTERN:
+        for (int i = 0; i < n->nkids; i++) {
+            Node* f = n->kids[i];
+            for (int j = 0; j < f->nkids; j++) lower_refs_type(f->kids[j]->a, c);
+            lower_refs_type(f->a, c);
+        }
+        return;
     case N_FIELD_E:
-        rename_refs(n->a, rs, c); // field spelling is member-local
+        lower_qualified_field(n, c, 0);
         return;
     case N_CASE:
-        // Scoped as lower_selected_node's N_CASE.
-        select_scope_push(c);
+        // A variant pattern's payload binder is a local of its case block.
+        ref_scope_push(c);
         for (int i = 0; i < n->nkids; i++) {
             Node* pat = n->kids[i];
             if (pat->kind != N_VARPAT) {
-                rename_refs(pat, rs, c);
+                lower_refs(pat, c);
                 continue;
             }
-            rename_refs(pat->a, rs, c);
-            rename_type_refs(pat->b->a, rs, c);
+            lower_refs(pat->a, c);
+            lower_refs_type(pat->b->a, c);
             bind_local(c, pat->b->str, pat->b->len, 0);
         }
-        rename_refs(n->b, rs, c);
-        select_scope_pop(c);
+        lower_refs(n->b, c);
+        ref_scope_pop(c);
+        return;
+    case N_FIELDINIT:
+        lower_refs(n->a, c); // initializer name is struct-local
+        return;
+    case N_STRUCTLIT:
+        lower_refs_type_ref(n->a, c);
+        for (int i = 0; i < n->nkids; i++) lower_refs(n->kids[i], c);
+        return;
+    case N_CALL:
+        if (n->a && n->a->kind == N_IDENT &&
+            !local_name(c, n->a->str, n->a->len, 0) &&
+            !lowered_name(c, n->a->str, n->a->len, 0) &&
+            (text_is(n->a->str, n->a->len, "sizeof") ||
+             text_is(n->a->str, n->a->len, "alignof") ||
+             text_is(n->a->str, n->a->len, "blank") ||
+             text_is(n->a->str, n->a->len, "offsetof") ||
+             text_is(n->a->str, n->a->len, "typeid"))) {
+            if (n->nkids) lower_refs_type_ref(n->kids[0], c);
+            return;
+        }
+        break;
+    case N_ASM:
+        for (int i = 0; i < n->nkids; i++) {
+            Node* b = n->kids[i];
+            int clob = b->len == 8 && memcmp(b->str, "clobbers", 8) == 0;
+            if (!clob) for (int j = 1; j < b->nkids; j += 2) lower_refs(b->kids[j], c);
+        }
         return;
     default:
         break;
     }
-    rename_refs(n->a, rs, c);
-    rename_refs(n->b, rs, c);
-    rename_refs(n->c, rs, c);
-    rename_refs(n->d, rs, c);
-    for (int i = 0; i < n->nkids; i++) rename_refs(n->kids[i], rs, c);
+    lower_refs(n->a, c);
+    lower_refs(n->b, c);
+    lower_refs(n->c, c);
+    lower_refs(n->d, c);
+    for (int i = 0; i < n->nkids; i++) lower_refs(n->kids[i], c);
 }
+
+static int decl_namespace(Node* n) {
+    if (n->kind == N_FUNC && !(n->flags & (F_METHOD | F_ASSOC))) return 1;
+    if (n->kind == N_VAR || n->kind == N_EXTERN) return 1;
+    if (n->kind == N_STRUCT || n->kind == N_BITS || n->kind == N_CONTRACT || n->kind == N_ENUM ||
+        n->kind == N_ALIAS || n->kind == N_DISTINCT ||
+        n->kind == N_ERROR_DOMAIN || n->kind == N_UNION)
+        return 2;
+    return 0;
+}
+
+static void check_select_collisions(Loader* L, Node* file, Binding* binds, Select* sels) {
+    for (Select* s = sels; s; s = s->next) {
+        for (Binding* b = binds; b; b = b->next)
+            if (s->value_name && b->len == s->len &&
+                memcmp(b->name, s->name, s->len) == 0)
+                import_err(L->d, s->node,
+                           "import binding '%.*s' collides with another import",
+                           (int)s->len, s->name);
+        for (int i = 0; i < file->nkids; i++) {
+            Node* n = file->kids[i];
+            int ns = decl_namespace(n);
+            if (!ns || n->kind == N_IMPORT) continue;
+            if (n->kind == N_EXTERN) {
+                if (!s->value_name) continue;
+                for (int j = 0; j < n->nkids; j++)
+                    if (n->kids[j]->len == s->len &&
+                        memcmp(n->kids[j]->str, s->name, s->len) == 0)
+                        import_err(L->d, s->node,
+                                   "imported name '%.*s' collides with a declaration",
+                                   (int)s->len, s->name);
+                continue;
+            }
+            Node* named = n->kind == N_VAR ? n->kids[0] : n;
+            int conflicts = (ns == 1 && s->value_name) || (ns == 2 && s->type_name);
+            if (conflicts && named->len == s->len &&
+                memcmp(named->str, s->name, s->len) == 0)
+                import_err(L->d, s->node,
+                           "imported name '%.*s' collides with a declaration",
+                           (int)s->len, s->name);
+        }
+    }
+}
+
 
 // --- per-file resolution ----------------------------------------------------------------
 
@@ -1568,26 +1443,24 @@ static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root
         if (L->d->errors) return L->d->errors;
     }
 
-    // lower qualified and selected references with this file's imports
+    // An imported file's declarations take private identities; then one walk
+    // lowers every reference to them and to this file's imports.
+    Module* self = L->loading; // the module being resolved is stack top
+    Renames rs = {0};
+    if (!is_root) rename_decls(self, &rs);
     for (int i = 0; i < file->nkids; i++) {
         if (file->kids[i]->kind == N_IMPORT) continue;
-        SelectLower c = {0};
+        RefLower c = {0};
         c.L = L;
         c.binds = binds;
         c.sels = sels;
-        lower_selected_node(file->kids[i], &c);
+        c.renames = is_root ? NULL : &rs;
+        lower_refs(file->kids[i], &c);
     }
+    free(rs.v);
     if (L->d->errors) return L->d->errors;
 
     if (!is_root) {
-        Module* self = L->loading; // the module being resolved is stack top
-        Renames rs = {0};
-        rename_decls(self, &rs);
-        for (int i = 0; i < file->nkids; i++) {
-            SelectLower c = {0};
-            rename_refs(file->kids[i], &rs, &c);
-        }
-        free(rs.v);
         // Drop this module's import nodes: qualified bindings and selected
         // aliases have both been lowered to private target identities.
         int ndecls = 0;

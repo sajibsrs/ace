@@ -1,0 +1,24 @@
+/* A signing's type parameter shadows the module type T it is named like. */
+
+T: struct { unused: u8 }
+
+Value[T]: contract {
+    get(): T
+}
+
+Base[T]: struct {
+    value: T,
+}
+
+Base[T] signs Value[T]
+
+Base[T].get(): T {
+    return self.value
+}
+
+pub run(): int {
+    base: Base[int]
+    base.value = 42
+    value: Value[int] = Value[int](&base)
+    return value.get()
+}

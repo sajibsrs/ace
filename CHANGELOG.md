@@ -85,6 +85,13 @@ current normative rules, and Git preserves patch-level detail.
   the module when the member existed. Type positions (`shape.Box`,
   `shape.Box{...}`, sizeof and typeid operands) still name the module's type.
   The separate unscoped qualified-lowering pass is gone.
+- Merged the imported-file rename walk into the scoped reference walk: one
+  pass, after an imported file's declarations take private names, lowers
+  selected imports, `binding.member`, and that file's own names, so one set of
+  scope rules serves all three. The rename walk's own gaps close with it: an
+  `offsetof` field path named like a module global was renamed to the global,
+  and a signing's type parameters were not bound. Checking the regex and json
+  packages takes about 1% fewer instructions.
 - Lowered imported names in array lengths within type positions. The scoped
   import walk skipped an array type's length expression and the parts of a
   tuple, function, or map type in a sizeof-style operand, so `[sizes.SIZE]u8`
