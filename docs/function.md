@@ -332,6 +332,50 @@ declarations, bodiless `specialized` templates, and `main` cannot be `inline`,
 and a chain of inline functions that calls back into itself is rejected.
 Nothing is inlined automatically.
 
+## Self tail recursion
+
+A function whose `return` is a call to itself does no work after that call:
+
+```ace
+count_down(n: usize, total: usize): usize {
+    if n == 0 { return total }
+    return count_down(n - 1, total + n)
+}
+```
+
+Release builds compile such a `return` as a branch back to the function's
+parameter reads, reusing its stack frame, so this recursion runs as fast as the
+equivalent loop and at any depth. Checked builds keep every call so a backtrace
+shows each level; there, deep enough recursion still overflows the stack.
+
+This is guaranteed in release builds whenever sharing one frame across levels
+cannot be observed:
+
+- no `defer` is pending at the `return`;
+- the parameters fit the argument registers: at most 8 integer-class ones (a
+  scalar, pointer, `mut` parameter, or method receiver takes 1; a slice or
+  `string` takes 2) and at most 8 float ones;
+- every by-value parameter and every local is a scalar, a slice, or a `string`;
+- the function takes no address of its own locals or by-value parameters
+  (`&x`, `mut x` at a call, or a method call on one);
+- the function is not `main`, generic, or exported, and contains no inline
+  assembly and no call to an `inline` function.
+
+Otherwise the call stays an ordinary call, with the same result. Only a direct
+call to the function itself qualifies, and never one whose result is used
+afterwards (`return n * factorial(n - 1)`). This is not general tail-call
+optimization: returning another function's call is always an ordinary call.
+That is deliberate: general tail-call optimization adds cost without a
+performance payoff. Jumping into another function means tearing down the frame
+first, and its main use, handlers that tail-call one another, still runs
+several times slower than the same code written as a `switch` loop. Every
+backend would carry the extra machinery, and callers would vanish from
+backtraces throughout ordinary code. A self call needs no teardown, so it costs
+one branch and brings tail recursion to loop speed.
+
+Recursion that must not overflow in checked builds as well is written as a
+loop.
+
 ## Declaration order and forward calls
 
 Names normally follow declaration-before-use. Top-level function calls are the

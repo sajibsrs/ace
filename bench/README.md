@@ -483,7 +483,8 @@ Run the call-overhead benchmark on Apple arm64:
 The runner builds `bench/core/calls.ace` in release mode and `bench/core/calls.c` at
 `-O2` twice, checks that every checksum matches, and prints ns per operation.
 Each workload feeds its result into the next call: one-, four-, and
-eight-argument scalar calls, recursive `fib(32)`, by-value struct arguments and
+eight-argument scalar calls, recursive `fib(32)`, a self tail-recursive sum
+at depth 10,000, by-value struct arguments and
 returns of 8, 16, 24, and 64 bytes, a three-`f64` homogeneous float aggregate, a
 float accumulator fed by a call whose arguments change every iteration, a
 two-value tuple return, a `mut self` method, and a call through a function
@@ -503,6 +504,7 @@ registers, and float parameter leaves read in their argument registers:
 | `call-4` | 3.67 | 3.42 | 1.07x | 5.61 |
 | `call-8` | 4.19 | 4.35 | 0.96x | 4.93 |
 | `fib-recursive` | 2.05 | 1.16 | 1.76x | |
+| `tail-recursive` | 0.96 | 0.96 | 1.00x | |
 | `struct-8` | 2.91 | 2.41 | 1.21x | |
 | `struct-16` | 2.62 | 2.40 | 1.09x | |
 | `struct-24` | 6.47 | 10.74 | 0.60x | |

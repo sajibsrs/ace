@@ -273,15 +273,6 @@ These are baseline observations, not performance promises.
   it after a check-only helper. Private inline functions keep an out-of-line
   body even when no call or function value uses it.
   Each needs its gain measured.
-- **Tail-call optimization** [new] — a `return f(args)` still emits `bl` plus a
-  full epilogue, so tail recursion grows the stack linearly and overflows at
-  roughly 100M frames in checked and release builds alike. Candidate: lower a
-  self-recursive tail call to a jump past the prologue when no `defer` is
-  pending, all arguments and the result ride registers, and the function
-  creates no pointer or slice into its own frame; sibling tail calls to other
-  functions need callee-saved restoration and frame teardown first. Whether the
-  form becomes a normative guarantee or stays an unspecified optimization is
-  undecided.
 - **Float constants from bit patterns** [new] — `bits.cast(u64(0x7FF0000000000000))`
   still builds the integer with `mov`/`movk` and moves it with `fmov`, and a
   const float initialized by an expression rather than a literal loads from

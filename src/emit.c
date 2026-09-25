@@ -514,6 +514,11 @@ typedef struct {
     SType*   fnret;
     uint32_t sret_slot;
     Node*    fnbody;   // current function's top-level body block (defer check)
+    Node*    fnnode;   // current function's declaration
+    const char* fnname; // and its symbol
+    uint32_t fnnlen;
+    int      self_entry; // label before the parameter reads, or -1: no self tail recursion
+    Node*    self_call;  // the self call being emitted as a branch to it
     struct { Node* call; Node* at; } *defers; // captured defers, source order
     int      ndefers, cdefers;
     uint32_t retsave_off; // result-register save area across deferred calls
@@ -726,6 +731,7 @@ static int promo_reg(Em* e, Sym* s);
 static int gen_addr(Em* e, Node* x);
 static int is_lvalue_node(Node* x);
 static int frame_place(Em* e, Node* x, uint32_t* depth);
+static int self_return(Em* e, Node* x);
 static int param_home(Em* e, Node* x);
 static int split_reg(Em* e, Node* x);
 static int split_type(SType* t);
@@ -3224,6 +3230,16 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
     if (rc.sret) {
         sret_off = temp_slot(e, ty_size(ret), ty_align(ret));
         frame_addr(e, 8, sret_off);
+    }
+
+    // a returned self call: the arguments sit where the parameter reads
+    // expect them, so branch back to those reads in this frame
+    if (at && at == e->self_call) {
+        if (tgt.kind != TK_INTERNAL || tgt.nlen != e->fnnlen || memcmp(tgt.name, e->fnname, tgt.nlen) != 0)
+            em_err(e, at, "self call resolved to another target");
+        br_(e, e->self_entry);
+        e->vti = si; e->vtf = sf;
+        return (EV){ CLS_INT, 0 };
     }
 
     // the call itself
@@ -7721,6 +7737,13 @@ static void emit_stmt(Em* e, Node* s) {
             inline_return(e, s);
             return;
         }
+        if (self_return(e, s->a)) { // emit_call branches back to the parameter reads
+            e->self_call = s->a;
+            gen_expr(e, s->a);
+            e->self_call = NULL;
+            e->ended_return = 1;
+            return;
+        }
         SType* rt = e->fnret;
         RetCls rc;
         classify_ret(rt, &rc);
@@ -9159,6 +9182,105 @@ static void plan_param_homes(Em* e, Node* f, SType** pt, const uint8_t* muts, TU
     e->vti_cap -= e->nxhome;
 }
 
+// --- self tail recursion ---------------------------------------------------------------
+
+/*
+ * Release lowers `return f(args)` inside f itself to a branch back to f's
+ * parameter reads: the frame is reused, so every recursion level shares one
+ * copy of each local. That is unobservable only when nothing can hold an
+ * address into the frame, so the function keeps every value it owns in one
+ * register-sized or two-word view (no aggregate local or by-value aggregate
+ * parameter, whose storage the ABI may pass by address) and takes no address
+ * of its own storage anywhere. Only a call to f itself branches; a call to
+ * another function in tail position stays a call. Checked builds keep every
+ * call: a backtrace shows each level.
+ */
+
+// a value that holds no storage of its own frame: a scalar or a slice view
+static int self_flat(SType* t) {
+    t = unwrap(t);
+    return t && (is_scalar(t) || t->kind == SK_SLICE || (t->kind == SK_PRIM && t->prim == P_STRING));
+}
+
+// whether place x is storage in this frame: a local or by-value parameter, or
+// part of one reached without a pointer or view
+static int self_frame_place(Em* e, Node* x) {
+    while (x) {
+        if (x->kind == N_IDENT) {
+            Sym* s = node_sym(x);
+            if (!s || s->kind != SYM_VAR || s->is_global) return 0;
+            Node* f = e->fnnode;
+            int receiver = (f->flags & F_METHOD) && f->nkids > 0 && s->decl == f->kids[0];
+            return !receiver && !(s->is_param && s->decl && (s->decl->flags & F_MUT));
+        }
+        if (x->kind != N_FIELD_E && x->kind != N_INDEX && x->kind != N_SLICE_E) return 0;
+        SType* t = node_ty(x->a);
+        t = t ? unwrap(t) : NULL;
+        if (t && (t->kind == SK_PTR || t->kind == SK_SLICE || (t->kind == SK_PRIM && t->prim == P_STRING))) return 0;
+        x = x->a;
+    }
+    return 0;
+}
+
+// whether the body keeps every binder flat and takes no address of its frame
+static int self_safe(Em* e, Node* n) {
+    if (!n) return 1;
+    Sym* s = n->sym ? node_sym(n) : NULL;
+    if (s && s->kind == SYM_VAR && !s->is_global && s->decl == n && !self_flat(s->type)) return 0;
+    switch (n->kind) {
+    case N_UNARY:
+        if ((n->op == T_AMP || n->op == T_VOLATILE) && self_frame_place(e, n->a)) return 0;
+        break;
+    case N_MUTARG:
+        if (self_frame_place(e, n->a)) return 0;
+        break;
+    case N_CALL: // an instance method receives its receiver's address
+        if (n->a && n->a->kind == N_FIELD_E && s && s->kind == SYM_FUNC && !s->is_extern &&
+            !(n->flags & (F_METHOD | F_ASSOC)) && self_frame_place(e, n->a->a))
+            return 0;
+        break;
+    case N_FOR:
+        if (n->flags & F_FORGEN) return self_safe(e, n->a) && self_safe(e, n->b) && self_safe(e, n->c) && self_safe(e, n->d);
+        for (int i = 0; i < n->nkids; i++) if (!self_safe(e, n->kids[i])) return 0;
+        return self_safe(e, n->b) && self_safe(e, n->c);
+    default:
+        break;
+    }
+    if (!self_safe(e, n->a) || !self_safe(e, n->b) || !self_safe(e, n->c)) return 0;
+    for (int i = 0; i < n->nkids; i++) if (!self_safe(e, n->kids[i])) return 0;
+    return 1;
+}
+
+// whether f's returned self calls may branch: every parameter arrives in a
+// register and is flat or by reference, and nothing addresses the frame
+static int self_eligible(Em* e, Node* f, SType** pt, const uint8_t* muts, TU* units, int np, RetCls* rc) {
+    if (e->mode != EMIT_RELEASE || e->current_is_main || e->fn_has_asm || e->nsites || rc->sret || !f->b ||
+        (f->flags & (F_EXPO | F_INTRINSIC)) || f->c)
+        return 0;
+    Sym* fs = node_sym(f);
+    if (!fs || fs->is_generic || fs->spec_args) return 0;
+    for (int i = 0; i < np; i++) {
+        if (!muts[i] && !self_flat(pt[i])) return 0;
+        for (int w = 0; w < 4; w++)
+            if (units[i * 4 + w].kind == TU_STACK || units[i * 4 + w].kind == TU_STACK_AGGR) return 0;
+    }
+    return self_safe(e, f->b);
+}
+
+// whether `return x` is a returned self call: a direct call to this function with
+// no defer pending, whose by-reference receiver is a place outside the frame
+static int self_return(Em* e, Node* x) {
+    if (e->self_entry < 0 || e->ndefers || e->in_defers || !x || x->kind != N_CALL || x->d || !x->sym ||
+        inline_site(e, x))
+        return 0;
+    Sym* s = node_sym(x);
+    Node* callee = x->a;
+    if (s->kind != SYM_FUNC || s->decl != e->fnnode || s->is_extern || s->is_generic || s->spec_args) return 0;
+    if (callee->kind == N_IDENT) return 1;
+    if (callee->kind != N_FIELD_E) return 0;
+    return (x->flags & (F_METHOD | F_ASSOC)) || is_lvalue_node(callee->a);
+}
+
 static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, SType* ret, int is_main, int export_c) {
     align_code(e, FUNC_ALIGN);
     uint32_t debug_addr = (uint32_t)text(e)->len;
@@ -9177,6 +9299,11 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
     e->fnret = ret;
     e->current_is_main = is_main;
     e->fnbody = f->b;
+    e->fnnode = f;
+    e->fnname = symname;
+    e->fnnlen = symlen;
+    e->self_entry = -1;
+    e->self_call = NULL;
     e->ndefers = 0;
     e->retsave_off = 0;
     e->sink_call = NULL;
@@ -9250,6 +9377,10 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
     assign_cc(pt, muts, np, !export_c, -1, units);
     uint8_t homed[40] = {0};
     plan_param_homes(e, f, pt, muts, units, np, homed);
+    if (self_eligible(e, f, pt, muts, units, np, &rc)) { // returned self calls re-enter here
+        e->self_entry = new_label(e);
+        bind_label(e, e->self_entry);
+    }
     for (int i = 0; i < np; i++) {
         if (homed[i]) { // leaves read in place: an integer leaf moves to its home, no slot
             for (int w = 0; w < 4; w++) {

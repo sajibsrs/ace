@@ -1,0 +1,31 @@
+/* Self tail recursion that stays calls in every build: each level's own storage
+ * is observable, so the levels cannot share one frame. */
+
+runs: usize = 0
+
+bump(level: usize) {
+    runs = runs + 1
+}
+
+// each level passes the address of its own x down; the base reads the
+// deepest but one level's x through it
+chain(n: usize, p: *usize): usize {
+    x: usize = n
+    q: *usize = &x
+    if n == 0 { return *p }
+    return chain(n - 1, q)
+}
+
+// every level's deferred call runs as that level exits
+unwind(n: usize): usize {
+    defer bump(n)
+    if n == 0 { return runs }
+    return unwind(n - 1)
+}
+
+main(): int {
+    first: usize = 99
+    if chain(3, &first) != 1 { return 1 }
+    if unwind(4) != 0 || runs != 5 { return 2 }
+    return 0
+}

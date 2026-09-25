@@ -1,0 +1,55 @@
+/* Self tail recursion: release lowers each `return f(args)` below to a branch
+ * back to the parameter reads, so recursion far deeper than the stack allows
+ * runs in one frame. */
+
+DEPTH: const usize = 10000000
+
+Counter: struct {
+    value: usize,
+}
+
+sum(n: usize, acc: usize): usize {
+    if n == 0 { return acc }
+    return sum(n - 1, acc + 1)
+}
+
+halves(n: usize, acc: f64): f64 {
+    if n == 0 { return acc }
+    return halves(n - 1, acc + 0.5)
+}
+
+tally(mut out: usize, n: usize): usize {
+    if n == 0 { return out }
+    out = out + 1
+    return tally(mut out, n - 1)
+}
+
+// all eight integer argument registers
+wide(n: usize, b: usize, c: usize, d: usize, e: usize, f: usize, g: usize, acc: usize): usize {
+    if n == 0 { return acc + b + c + d + e + f + g }
+    return wide(n - 1, b, c, d, e, f, g, acc + 1)
+}
+
+// a string takes two of them
+span(n: usize, text: string, acc: usize): usize {
+    if n == 0 { return acc }
+    return span(n - 1, text, acc + text.len)
+}
+
+mut Counter.count(n: usize): usize {
+    if n == 0 { return self.value }
+    self.value = self.value + 1
+    return mut self.count(n - 1)
+}
+
+main(): int {
+    if sum(DEPTH, 0) != DEPTH { return 1 }
+    if halves(DEPTH, 0.0) != f64(DEPTH) * 0.5 { return 2 }
+    out: usize = 0
+    if tally(mut out, DEPTH) != DEPTH || out != DEPTH { return 3 }
+    counter: Counter = Counter { value = 0 }
+    if mut counter.count(DEPTH) != DEPTH || counter.value != DEPTH { return 4 }
+    if wide(DEPTH, 0, 0, 0, 0, 0, 0, 0) != DEPTH { return 5 }
+    if span(DEPTH, "ab", 0) != 2 * DEPTH { return 6 }
+    return 0
+}

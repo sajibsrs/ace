@@ -640,6 +640,28 @@ for f in runtime_range runtime_literal_range; do
         fail=1
     fi
 done
+# Self tail recursion: release lowers `return f(args)` inside f to a branch, so
+# ten million levels run in one frame; checked keeps every call, so each level
+# stays in a backtrace. A function whose levels' own storage is observable
+# keeps its calls in both.
+mkdir -p /tmp/ace_self_tail_recursion
+if ! "$ACE" --release -o /tmp/ace_self_tail_recursion/deep tests/self_tail_recursion/deep.ace ||
+   ! /tmp/ace_self_tail_recursion/deep; then
+    echo "FAIL: release self tail recursion should run in one frame"
+    fail=1
+fi
+if ! "$ACE" --checked -o /tmp/ace_self_tail_recursion/deep_checked tests/self_tail_recursion/deep.ace ||
+   ! otool -tv /tmp/ace_self_tail_recursion/deep_checked | grep -q 'bl.*__ace\$fn\$sum\$'; then
+    echo "FAIL: checked builds should keep self tail recursion as calls"
+    fail=1
+fi
+for mode in --checked --release; do
+    if ! "$ACE" "$mode" -o /tmp/ace_self_tail_recursion/frame tests/self_tail_recursion/frame.ace ||
+       ! /tmp/ace_self_tail_recursion/frame; then
+        echo "FAIL: self tail recursion over observable frame storage must stay calls ($mode)"
+        fail=1
+    fi
+done
 mkdir -p /tmp/ace_checked_bounds
 cp tests/checked_bounds/*.ace /tmp/ace_checked_bounds/
 if ! "$ACE" --checked tests/sema/sequences/main_ok.ace ||

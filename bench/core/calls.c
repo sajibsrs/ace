@@ -17,6 +17,8 @@
 #define ITERATIONS 10000000ull
 #define FIB_INPUT 32ull
 #define FIB_CALLS 7049155ull
+#define TAIL_DEPTH 10000ull
+#define TAIL_ROUNDS 1000ull
 
 typedef uint64_t usize;
 
@@ -42,6 +44,11 @@ NOINLINE usize call8(usize a, usize b, usize c, usize d, usize e, usize f,
 NOINLINE usize fib(usize n) {
     if (n < 2) return n;
     return fib(n - 1) + fib(n - 2);
+}
+
+NOINLINE usize sum_tail(usize n, usize acc) {
+    if (n == 0) return acc;
+    return sum_tail(n - 1, (acc + n) & MASK);
 }
 
 NOINLINE Small small_step(Small s) {
@@ -107,6 +114,11 @@ int main(void) {
     started = now();
     state = fib(FIB_INPUT);
     report("fib-recursive", now() - started, FIB_CALLS, state);
+
+    state = 1;
+    started = now();
+    for (usize i = 0; i < TAIL_ROUNDS; i++) state = sum_tail(TAIL_DEPTH, state);
+    report("tail-recursive", now() - started, TAIL_ROUNDS * TAIL_DEPTH, state);
 
     Small small = {1};
     started = now();

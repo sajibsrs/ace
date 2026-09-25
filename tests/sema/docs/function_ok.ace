@@ -69,6 +69,11 @@ pub inline mut Buffer.skip(n: usize) {
     self.at += n
 }
 
+count_down(n: usize, total: usize): usize {
+    if n == 0 { return total }
+    return count_down(n - 1, total + n)
+}
+
 main(): int {
     b: Buffer = Buffer{ at = 0 }
     mut b.skip(2)

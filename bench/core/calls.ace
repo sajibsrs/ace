@@ -10,6 +10,8 @@ MASK: const usize = 0x7FFFFFFF
 ITERATIONS: const usize = 10000000
 FIB_INPUT: const usize = 32
 FIB_CALLS: const usize = 7049155 // 2 * fib(FIB_INPUT + 1) - 1
+TAIL_DEPTH: const usize = 10000
+TAIL_ROUNDS: const usize = 1000
 
 Small: struct {
     v: usize,
@@ -62,6 +64,11 @@ call8(a: usize, b: usize, c: usize, d: usize, e: usize, f: usize, g: usize, h: u
 fib(n: usize): usize {
     if n < 2 { return n }
     return fib(n - 1) + fib(n - 2)
+}
+
+sum_tail(n: usize, acc: usize): usize {
+    if n == 0 { return acc }
+    return sum_tail(n - 1, (acc + n) & MASK)
 }
 
 small_step(s: Small): Small {
@@ -139,6 +146,11 @@ main(): int {
     started = time.awake()
     state = fib(FIB_INPUT)
     report("fib-recursive", time.awake() - started, FIB_CALLS, state)
+
+    state = 1
+    started = time.awake()
+    for i: usize in 0 .. TAIL_ROUNDS { state = sum_tail(TAIL_DEPTH, state) }
+    report("tail-recursive", time.awake() - started, TAIL_ROUNDS * TAIL_DEPTH, state)
 
     small: Small = Small { v = 1 }
     started = time.awake()

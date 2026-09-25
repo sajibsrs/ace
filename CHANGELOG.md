@@ -2026,6 +2026,21 @@ current normative rules, and Git preserves patch-level detail.
   global's `__const` slot; `+0.0` is now one `fmov Vd, xzr`. `exp` runs 12%
   faster for `f64` and 7% for `f32`, `pow` 7%, `log` 5%; the hot-loop kernels
   are unchanged, and machine code shrinks slightly despite the tables.
+- Self tail recursion: release builds lower `return f(args)` inside `f` to a
+  branch back to the parameter reads instead of `bl` plus an epilogue, reusing
+  the frame, as Functions & ABI #9 guarantees (`self_return`, `emit_call`);
+  calls to other functions are untouched. `emit_func` binds the branch target
+  after the prologue, callee-saved stores, and before the parameter reads only
+  when sharing one frame across levels is unobservable (`self_eligible`):
+  every parameter arrives in a register and is flat (a scalar, slice, or
+  `string`) or by reference, every binder is flat, and nothing takes the
+  address of a local or by-value parameter (`self_safe`); `main`, generic,
+  exported, inline-assembly, and inline-expanding functions are excluded, and a
+  pending `defer` keeps the call. Checked builds keep every call. The
+  `tail-recursive` workload in `bench/core/calls` (depth 10,000) falls from
+  10.58 to 0.96 ns per level, equal to C `-O2`, and ten million levels now run
+  in one frame; other workloads, the 20,000-function compile time, and its
+  machine code are unchanged.
 
 ## Current frontier
 
