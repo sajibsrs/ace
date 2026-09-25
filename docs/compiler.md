@@ -32,7 +32,8 @@ choice cannot change their result because they emit no program.
 `--ir` checks the program and prints the IR of each function in the root file
 as the selected mode lowers it: debug marks the integer operations it checks
 with `.chk`. A function the IR does not cover yet is listed with the first
-construct that kept it out; the AST emitter compiles such functions.
+construct that kept it out; the AST emitter compiles such functions, and the
+IR's AArch64 backend compiles the rest.
 
 The build target defaults from the compiler host and can be selected explicitly
 with `--target=NAME` (or `--target NAME`). The bootstrap compiler currently

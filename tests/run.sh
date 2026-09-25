@@ -1378,22 +1378,22 @@ if [ -d tests/emit ]; then
             echo "FAIL: frame-resident aggregate arguments must load straight from their slots"
             fail=1
         fi
-        # A call-free function promotes every used local, single-use ones
-        # included, into x14 down, and locals whose live ranges do not overlap
-        # share a register: straight()'s four take only x14 and x13 and it
-        # saves no callee-saved register.
+        # A call-free function keeps every value in caller-saved registers
+        # from x9 up, and values whose live ranges do not overlap share one:
+        # straight()'s four take only x9 and x10 and it saves no callee-saved
+        # register (the IR backend compiles it).
         if ! otool -tv /tmp/ace_emit/basics/register_locals.o | awk '
             /^[^0-9].*:$/ { fn = ($0 ~ /^__ace\$fn\$straight\$/); next }
             fn {
                 for (i = 3; i <= NF; i++) {
                     r = $i; gsub(/[][,]/, "", r)
-                    if (r == "x14") high = 1
-                    if (r == "x13") low = 1
-                    if (r ~ /^x(9|1[0-2]|19|2[0-8])$/) bad = 1
+                    if (r == "x9") low = 1
+                    if (r == "x10") high = 1
+                    if (r ~ /^x(1[1-4]|19|2[0-8])$/) bad = 1
                 }
             }
             END { exit bad || !low || !high }'; then
-            echo "FAIL: call-free locals must share x14 down by live range"
+            echo "FAIL: call-free values must share x9 up by live range"
             fail=1
         fi
         # A small struct local popped from a slice loads each field straight

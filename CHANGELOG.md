@@ -36,13 +36,27 @@ current normative rules, and Git preserves patch-level detail.
   `break`/`continue`, direct calls, casts, and comparison chains. Debug marks
   checked integer operations as trapping `.chk` instructions, `main` reports
   leaks before returning, and release turns self tail calls into a loop. `--ir`
-  prints the root file's functions, or why one was not lowered; nothing is
-  emitted from the IR yet. `tests/ir` holds expected output for both modes.
+  prints the root file's functions, or why one was not lowered. `tests/ir`
+  holds expected output for both modes.
 - Fixed narrow (8/16-bit) integers leaving their range while in a register:
   casts to them now truncate and re-extend, `~` on `u8`/`u16` is masked, and
   `<<` (both modes) and unchecked `+`, `-`, `*`, and unary `-` (release)
   re-extend their result, per Safety & Debug Builds #6; a peephole folds the
   resulting back-to-back extends.
+- Compiled lowered functions through a new AArch64 backend (IR migration step
+  1c): `arm64.c` selects instructions (compare-and-branch, `cbz`, add/sub/cmp
+  and bitmask immediates, `madd`/`msub` with a register addend, constant
+  division), leaves SSA by parallel moves at the end of each predecessor after
+  splitting critical edges, allocates registers by linear scan over one
+  interval per value (constants rematerialized, call-crossing values in
+  callee-saved registers or reused stack slots, hints coalescing phis), and
+  gives a leaf without spills no frame. Narrow values keep the Apple PCS
+  32-bit register form. Debug checks branch to one failure call per function;
+  a function past conditional-branch range is re-emitted with far branches.
+  Every other function still goes to the AST emitter, byte-identical.
+  `tests/ir-diff.sh` requires identical output from random scalar programs
+  under two compilers. On `scaling-corpus.sh long 20000` machine code
+  shrinks 44% and compile time 5-8%.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

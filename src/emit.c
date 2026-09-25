@@ -412,11 +412,7 @@ static void ins(Em* e, uint32_t w) {
     if (!peep(e, w)) buf_put32(text(e), w);
 }
 
-// Pad with nops to a code boundary; __text is 64-byte aligned, so the
-// boundary holds after linking. Function entries and loop heads start on one
-// so identical code does not change speed with its offset in a fetch block.
-// Entry padding never executes; loop-head padding runs once per loop entry.
-enum { FUNC_ALIGN = 16, LOOP_ALIGN = 16 };
+// Pad with nops to a code boundary (FUNC_ALIGN, LOOP_ALIGN in backend.h).
 static void align_code(Em* e, uint32_t bytes) {
     while (text(e)->len % bytes) ins(e, 0xD503201Fu);
 }
@@ -1361,7 +1357,6 @@ static void emit_arith(Em* e, TokKind op, int rd, int ra, int rb, SType* t) {
  * Values narrower than 32 bits live extended in 32-bit registers, so every
  * integer type divides at width 32 or 64.
  */
-typedef struct { uint64_t magic; int shift, add, neg; } DivMagic;
 
 // floor(2^(w + p) / d) and its remainder, for p < w and 2^p < d.
 static uint64_t pow2_quotient(int w, int p, uint64_t d, uint64_t* rem) {
@@ -1391,7 +1386,7 @@ static int floor_log2(uint64_t v) {
 }
 
 // Magic for d >= 3, not a power of two; sign selects the signed variant.
-static DivMagic div_magic(uint64_t d, int w, int sign, int neg) {
+DivMagic div_magic(uint64_t d, int w, int sign, int neg) {
     uint64_t mask = w == 64 ? UINT64_MAX : UINT32_MAX;
     int l = floor_log2(d);
     uint64_t rem, q = pow2_quotient(w, sign ? l - 1 : l, d, &rem);
@@ -1627,12 +1622,9 @@ static int emit_arith_imm(Em* e, TokKind op, int rd, int ra, uint64_t imm, SType
     return 1;
 }
 
-/*
- * AArch64 bitmask immediate: a run of ones rotated within a power-of-two
- * element that is replicated across the register. Returns the N:immr:imms
- * field (bits 22..10) or 0 when v is not encodable (0 and all-ones are not).
- */
-static uint32_t logical_imm_field(uint64_t v, int sf) {
+// AArch64 bitmask immediate: a run of ones rotated within a power-of-two
+// element that is replicated across the register.
+uint32_t logical_imm_field(uint64_t v, int sf) {
     int width = sf ? 64 : 32;
     uint64_t all = sf ? ~UINT64_C(0) : UINT64_C(0xFFFFFFFF);
     v &= all;
@@ -2656,7 +2648,7 @@ static char fnname_buf[512];
 // `spec` marks a generic specialization: its exact type-argument tuple rides
 // an 's' tag so the symbol can never collide with a template stamp ('g' tag)
 // or an ordinary same-params overload (no tag).
-static const char* fn_mangle(const char* name, uint32_t len, SType* ft, Node* decl, SType** targs, int nt, int spec) {
+const char* fn_mangle(const char* name, uint32_t len, SType* ft, Node* decl, SType** targs, int nt, int spec) {
     Buf b = {0};
     buf_write(&b, "__ace$fn$", strlen("__ace$fn$"));
     buf_write(&b, name, len);
@@ -10625,7 +10617,18 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
             int is_main = !(n->flags & (F_METHOD | F_ASSOC)) && n->len == 4 && memcmp(n->str, "main", 4) == 0;
             int export_c = (n->flags & F_EXPO) != 0;
             SType* ret = n->a ? sema_build_type(n->a) : NULL;
-            if (is_main) {
+            const char* why;
+            IrFunc* ir = ir_lower(n, mode, &why); // the IR backend where it covers the function
+            if (ir) {
+                Sym* fs = node_sym(n);
+                char mn[512];
+                snprintf(mn, sizeof mn, "%s", is_main ? "_main" : fn_mangle(fs->name, fs->len, fs->type, n,
+                                                                              fs->spec_args, fs->spec_args ? fs->spec_nargs : 0,
+                                                                              fs->spec_args != NULL));
+                arm64_func(&e.o, ir, mn, (uint32_t)strlen(mn), is_main);
+                if (is_main) emit_has_main = 1;
+                ir_free(ir);
+            } else if (is_main) {
                 emit_func(&e, n, "_main", 5, ret, 1, 0);
             } else if (export_c) {
                 const char* cn = n->cname ? n->cname : n->str;

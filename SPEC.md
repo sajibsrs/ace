@@ -1149,8 +1149,9 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
     7. Select AArch64 instructions, including fused forms (integer `madd`,
        never float contraction).
     8. Leave SSA: phis become copies, with coalescing.
-    9. Allocate registers: linear scan with interval splitting, aware of calls,
-       rematerializing constants.
+    9. Allocate registers: linear scan over one interval per value, aware of
+       calls, rematerializing constants. Interval splitting is added only if
+       measured spills in hot code call for it.
     10. Lay out blocks and encode; then globals, vtables, fixups, DWARF, and
         the Mach-O write as today.
 
@@ -1162,8 +1163,8 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
     may use it: `noalias` on pointer parameters (Safety #7 checks slices
     only), non-overlap of read-only parameters (Functions & ABI #5), and memory
     written by inline assembly (Inline Assembly #5).
-  - Build modes: debug (the default) runs no pass 6, keeps runtime checks, and
-    gives every local a stack slot; release runs pass 6 and has no checks.
+  - Build modes: debug (the default) runs no pass 6 and keeps runtime checks;
+    release runs pass 6 and has no checks. Locals are SSA values in both.
     Optimization and checks are two independent internal settings, so an
     optimized-and-checked mode can follow a concrete need (for example,
     fuzzing parsers of untrusted input). Executable tests run in both modes,

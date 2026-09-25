@@ -31,6 +31,10 @@ paths:
 - `tests/ir/NAME.ace` pairs with `NAME.ir` and `NAME.release.ir`, the exact
   `--ir` output in each mode; regenerate them only after reviewing the new IR.
   Every checked `tests/emit` root must also lower and verify in both modes.
+- A change to the IR, lowering, or `arm64.c` also runs
+  `tests/ir-diff.sh <baseline-ace> ./ace [count] [seed]`: random scalar
+  programs must print the same results and exit the same way under both
+  compilers in debug and release. It is not part of `make test`.
 - A change to definite initialization (`sema.c`) also runs
   `tests/definite-init-diff.sh <HEAD-ace> ./ace [count] [seed]`: random
   functions under every branch form must get byte-identical diagnostics from

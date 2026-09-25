@@ -5,6 +5,7 @@
 #define BACKEND_H
 
 #include "ace.h"
+#include "ir.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -160,5 +161,26 @@ void obj_debug_info(Obj* o, ESym* text_anchor);
 void obj_debug_line(Obj* o, ESym* text_anchor);
 // Write the object file; returns its size, or 0 on error.
 size_t obj_write(Obj* o, const char* path);
+
+// --- shared by the code generators -----------------------------------------------
+
+// Function entries and loop heads start on a code boundary (nop padding;
+// __text is 64-byte aligned) so identical code does not change speed with its
+// offset in a fetch block. Loop-head padding runs once per loop entry.
+enum { FUNC_ALIGN = 16, LOOP_ALIGN = 16 };
+
+// The internal symbol of an Ace function (emit.c); the result lives in a
+// static buffer until the next call.
+const char* fn_mangle(const char* name, uint32_t len, SType* ft, Node* decl, SType** targs, int nt, int spec);
+// The N:immr:imms field (bits 22..10) of an AArch64 bitmask immediate, or 0
+// when v does not encode (0 and all-ones never do).
+uint32_t logical_imm_field(uint64_t v, int sf);
+// Division by a constant d >= 3, not a power of two, as a multiply-high by
+// magic and shifts (Granlund-Montgomery); w is 32 or 64.
+typedef struct { uint64_t magic; int shift, add, neg; } DivMagic;
+DivMagic div_magic(uint64_t d, int w, int sign, int neg);
+
+// arm64.c: compile a lowered function into o's __text as symbol `name`.
+void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int is_main);
 
 #endif
