@@ -92,6 +92,9 @@ main(): int {
     a: int = number
     b: int = 3
     a, b = b, a
+    members: (int, f64) = (20, 22.0)
+    members = (21, 23.0)
+    narrow: (i32, u8) = (-1, 'z')
 
     count: Count = 13
     distance: Meters = Meters(12.5)

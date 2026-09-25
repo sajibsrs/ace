@@ -1990,29 +1990,6 @@ static int accepts_null(SType* t) {
                   (t->prim == P_STRING || t->prim == P_TYPEID)));
 }
 
-/* Give a standalone expression fixed literal defaults without borrowing type
- * information from its destination. Tuple construction uses this recursively
- * so its member types are determined before compatibility with the declared
- * tuple is checked. */
-static SType* materialize_expr_defaults(Ck* k, Node* e) {
-    SType* t = expr_type(k, e);
-    if (t == T_UT_INT) {
-        SType* def = e->kind == N_CHAR ? st_prim(P_U8) : st_prim(P_I64);
-        coerce(k, e, def);
-        return def;
-    }
-    if (t == T_UT_FLOAT) {
-        SType* def = st_prim(P_F64);
-        coerce(k, e, def);
-        return def;
-    }
-    if (e->kind == N_TUPLE_E && t->kind == SK_TUPLE) {
-        for (int i = 0; i < e->nkids; i++) t->fields[i].t = materialize_expr_defaults(k, e->kids[i]);
-        e->ty = t;
-    }
-    return t;
-}
-
 static int coerce(Ck* k, Node* e, SType* want) {
     if (e->kind == N_ARRAYLIT && want && want->kind == SK_ARRAY) {
         check_arraylit(k, e, want);
@@ -2023,22 +2000,15 @@ static int coerce(Ck* k, Node* e, SType* want) {
         return node_ty(e) != T_ERR;
     }
     if (e->kind == N_TUPLE_E && want && want->kind == SK_TUPLE) {
-        SType* t = materialize_expr_defaults(k, e);
-        if (t->nfields != want->nfields) {
-            ck_err(k, e, "tuple has %d values where %d expected", t->nfields, want->nfields);
+        if (e->nkids != want->nfields) {
+            ck_err(k, e, "tuple has %d values where %d expected", e->nkids, want->nfields);
             return 0;
         }
-        for (int i = 0; i < t->nfields; i++) {
-            if (!same_type(t->fields[i].t, want->fields[i].t)) {
-                ck_err(k, e->kids[i],
-                       "tuple value %d is %s where %s expected (casts are explicit)",
-                       i + 1, type_name(t->fields[i].t),
-                       type_name(want->fields[i].t));
-                return 0;
-            }
-        }
-        e->ty = want; // emitter uses the declared tuple's exact layout
-        return 1;
+        // each member meets its declared member type, as a struct field does
+        int ok = 1;
+        for (int i = 0; i < e->nkids; i++) ok &= coerce(k, e->kids[i], want->fields[i].t);
+        e->ty = ok ? want : T_ERR; // emitter uses the declared tuple's exact layout
+        return ok;
     }
     if (e->kind == N_IDENT && want && want->kind == SK_FUNC) {
         Sym* head = lookup_val(k, e->str, e->len);

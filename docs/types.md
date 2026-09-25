@@ -583,17 +583,16 @@ operation: (int, int): int = add
 ```
 
 Multiple-return values use the platform aggregate ABI and are consumed through
-typed destructuring. A standalone tuple literal may initialize or replace an
-explicit tuple when its independently resolved member types match exactly.
+typed destructuring. A tuple literal may initialize or replace an explicit
+tuple of the same arity. Each member meets its declared member type the way a
+struct field initializer does: a literal takes that type and must fit it, and a
+typed value must match it exactly.
 
 ```ace
 pair: (int, f64) = (20, 22.0)
 pair = (21, 23.0)
+narrow: (i32, u8) = (-1, 'z')
 ```
-
-Tuple construction performs no member-type inference. Integer, float, and
-character literals first take their ordinary `int`, `f64`, and `u8` defaults;
-write explicit casts for other member types.
 
 ## Structs, enums, and tagged unions
 

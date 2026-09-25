@@ -29,12 +29,10 @@ Concrete rules and syntax. The why behind every rule lives in PHILOSOPHY.md (clo
     cast's target type (`f32(1.0 / 3.0)` computes at `f32`), and an untyped
     integer constant expression is evaluated as `int` and then converted.
 11. A tuple expression may initialize or assign one explicitly stated tuple
-    type of the same arity when every member expression independently resolves
-    to the corresponding member type. Standalone integer, float, and character
-    members therefore use their ordinary `int`, `f64`, and `u8` defaults before
-    the tuple is compared with its destination; no tuple-wide contextual typing
-    or inference occurs. Write casts where a different member type is required:
-    `pair: (i32, i32) = (i32(1), i32(2))`. Construction uses the existing
+    type of the same arity. Each member meets its corresponding member type
+    exactly as a struct field initializer does: an untyped constant takes that
+    type and must fit it (`pair: (i32, i32) = (1, 2)`), and a typed member must
+    match it with no implicit conversion. Construction uses the existing
     positional tuple layout, performs no allocation, and introduces no new
     runtime machinery.
 12. `if`, `switch`, and `for` are statements, not expressions, and their

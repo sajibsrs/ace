@@ -1,4 +1,6 @@
-/* err: tuple literal members resolve independently; the destination does not
- * infer or materialize a narrower member type. */
+/* err: a tuple literal member meets its declared member type exactly as a
+ * struct field does: a typed member does not convert, and a literal must fit. */
 
-pair: (i32, i32) = (1, 2)
+wide: i64 = 5
+pair: (i32, i32) = (wide, 2)
+bytes: (u8, u8) = (300, 2)

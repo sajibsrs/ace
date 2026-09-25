@@ -2093,6 +2093,10 @@ current normative rules, and Git preserves patch-level detail.
   `(func)`, `(tuple)`, and `*T`; composite names build in a local buffer before
   taking a slot in `type_name`'s ring. Type arguments after a function with no
   generic form report that it is not generic, as a value and as a call.
+- Tuple literal members now meet their declared member types as struct field
+  initializers do, so `(1, 2)` initializes `(i32, i32)`: `coerce` checks each
+  member against its member type, replacing the pass that fixed `int`, `f64`,
+  and `u8` defaults before comparing.
 
 ## Current frontier
 

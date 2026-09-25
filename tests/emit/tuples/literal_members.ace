@@ -1,0 +1,38 @@
+/* Tuple literal members take their declared member types, so narrower,
+ * unsigned, and floating members store and load at their exact widths. */
+
+// expect-exit: 42
+
+pair_of(values: (u8, i16)): int {
+    small: u8
+    signed: i16
+    small, signed = values
+    return int(small) + int(signed)
+}
+
+main(): int {
+    narrow: (i32, i32) = (40, -2)
+    bytes: (u8, u8) = (255, 'a')
+    mixed: (f32, u16, bool) = (0.5, 65535, true)
+    nested: ((u8, i16), i8) = ((200, -300), -1)
+    narrow = (41, 1)
+    a: i32
+    b: i32
+    a, b = narrow
+    if a + b != 42 { return 1 }
+    high: u8
+    letter: u8
+    high, letter = bytes
+    if high != 255 || letter != 'a' { return 2 }
+    half: f32
+    top: u16
+    flag: bool
+    half, top, flag = mixed
+    if half != 0.5 || top != 65535 || !flag { return 3 }
+    inner: (u8, i16)
+    last: i8
+    inner, last = nested
+    if pair_of(inner) != -100 || last != -1 { return 4 }
+    if pair_of((7, 8)) != 15 { return 5 }
+    return 42
+}
