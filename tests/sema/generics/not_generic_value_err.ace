@@ -1,0 +1,10 @@
+/* Type arguments name a generic; a plain function takes none. */
+
+plain(x: int): int {
+    return x
+}
+
+main(): int {
+    f: (int): int = plain[int]
+    return 0
+}

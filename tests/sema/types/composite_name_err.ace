@@ -1,0 +1,17 @@
+/* Diagnostics render function, tuple, and pointer types in full. */
+
+Point: struct { x: i32, y: i32 }
+
+scale(value: i32, by: i32): i32 {
+    return value * by
+}
+
+main(): int {
+    point: Point = Point{x = 1, y = 2}
+    f: (i64): i64 = scale
+    pair: (i32, bool) = (i32(1), true)
+    other: (i64, bool) = pair
+    p: *Point = &point
+    q: *i32 = p
+    return 0
+}

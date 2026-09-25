@@ -79,11 +79,24 @@ static int is_volatile_scalar(SType* t) {
     return (t->prim >= P_I8 && t->prim <= P_U64) || t->prim == P_F32 || t->prim == P_F64 || t->prim == P_USIZE;
 }
 
+static const char* type_name(SType* t);
+
+/* Append a type list, `(a, b)`, to a composite name being built. */
+static void type_list_name(char* out, size_t cap, SType** types, SField* fields, int n) {
+    size_t at = strlen(out);
+    for (int i = 0; i < n && at < cap; i++) {
+        SType* part = types ? types[i] : fields[i].t;
+        at += (size_t)snprintf(out + at, cap - at, "%s%s", i ? ", " : "", part ? type_name(part) : "?");
+    }
+    if (at < cap) snprintf(out + at, cap - at, ")");
+}
+
 static const char* type_name(SType* t) {
-    /* slice/array names render their element type: diagnostics must name the
-       exact mismatched type, not a placeholder. A small ring of static
-       buffers bounds nested compositions. */
-    static char bufs[8][128];
+    /* composite names render their parts: diagnostics must name the exact
+       mismatched type, not a placeholder. A small ring of static buffers
+       bounds nested compositions; tuple and function names are built locally
+       first so their parts cannot recycle the slot holding the result. */
+    static char bufs[16][256];
     static int bi;
     switch (t->kind) {
     case SK_PRIM:
@@ -99,26 +112,45 @@ static const char* type_name(SType* t) {
         case P_TYPEID: return "typeid";
         }
         return "?";
-    case SK_PTR: return t->is_mut ? "mut *T" : "*T";
+    case SK_PTR: {
+        char* out = bufs[bi = (bi + 1) & 15];
+        snprintf(out, sizeof bufs[0], "%s*%s", t->is_mut ? "mut " : "", t->base ? type_name(t->base) : "?");
+        return out;
+    }
     case SK_SLICE: {
-        char* out = bufs[bi = (bi + 1) & 7];
+        char* out = bufs[bi = (bi + 1) & 15];
         snprintf(out, sizeof bufs[0], "%s[]%s", t->is_mut ? "mut " : "", t->base ? type_name(t->base) : "?");
         return out;
     }
     case SK_ARRAY: {
-        char* out = bufs[bi = (bi + 1) & 7];
+        char* out = bufs[bi = (bi + 1) & 15];
         snprintf(out, sizeof bufs[0], "[%llu]%s", (unsigned long long)t->count, t->base ? type_name(t->base) : "?");
         return out;
     }
     case SK_STATICMAP: {
-        char* out = bufs[bi = (bi + 1) & 7];
+        char* out = bufs[bi = (bi + 1) & 15];
         snprintf(out, sizeof bufs[0], "StaticMap[%s]%s",
                  t->base ? type_name(t->base) : "?",
                  t->ret ? type_name(t->ret) : "?");
         return out;
     }
-    case SK_TUPLE: return "(tuple)";
-    case SK_FUNC: return "(func)";
+    case SK_TUPLE: {
+        char name[sizeof bufs[0]] = "(";
+        type_list_name(name, sizeof name, NULL, t->fields, t->nfields);
+        char* out = bufs[bi = (bi + 1) & 15];
+        return memcpy(out, name, sizeof name);
+    }
+    case SK_FUNC: {
+        char name[sizeof bufs[0]];
+        snprintf(name, sizeof name, "%s(", t->is_c_abi ? "extern \"c\" " : "");
+        type_list_name(name, sizeof name, t->params, NULL, t->nparams);
+        if (t->ret && t->ret->kind != SK_VOID) {
+            size_t at = strlen(name);
+            if (at < sizeof name) snprintf(name + at, sizeof name - at, ": %s", type_name(t->ret));
+        }
+        char* out = bufs[bi = (bi + 1) & 15];
+        return memcpy(out, name, sizeof name);
+    }
     case SK_STRUCT: return t->name ? t->name : "struct";
     case SK_ENUM: return t->name ? t->name : "enum";
     case SK_CONTRACT: return t->name ? t->name : "contract";
@@ -2925,6 +2957,13 @@ static SType* instantiate_generic_func(Ck* k, Sym* gs, Node* index_node) {
     return instantiate_generic_func_args(k, gs, args, nargs, index_node);
 }
 
+// whether any visible overload of a function name takes type arguments
+static int has_generic_form(Ck* k, Sym* head) {
+    for (Sym* s = head; s && visible(k, s); s = s->overload)
+        if (s->is_generic || s->spec_args) return 1;
+    return 0;
+}
+
 /*
  * A generic function named with its type arguments as a value (Generics #6):
  * `larger[int]`. A written specialization wins (Generics #10); otherwise the
@@ -2938,9 +2977,10 @@ static SType* generic_func_value(Ck* k, Node* e, SType* want) {
     if (!e->a || e->a->kind != N_IDENT) return NULL;
     Sym* head = lookup_val(k, e->a->str, e->a->len);
     if (!head || head->kind != SYM_FUNC) return NULL;
-    int any = 0;
-    for (Sym* s = head; s && visible(k, s); s = s->overload) any |= s->is_generic || s->spec_args;
-    if (!any) return NULL;
+    if (!has_generic_form(k, head)) {
+        ck_err(k, e, "'%.*s' is not generic; name it without type arguments", (int)e->a->len, e->a->str);
+        return T_ERR;
+    }
     int nargs = e->b ? 1 : e->nkids;
     SType** targs = (SType**)arena_alloc((size_t)(nargs ? nargs : 1) * sizeof(SType*));
     for (int i = 0; i < nargs; i++) {
@@ -4373,6 +4413,11 @@ static SType* check_call_raw(Ck* k, Node* call) {
             return check_contract_construct(k, call, named);
         }
         Sym* head = lookup_val(k, callee->a->str, callee->a->len);
+        if (head && head->kind == SYM_FUNC && !has_generic_form(k, head)) {
+            ck_err(k, callee, "'%.*s' is not generic; call it without type arguments",
+                   (int)callee->a->len, callee->a->str);
+            return T_ERR;
+        }
         if (head && head->kind == SYM_FUNC) {
             int nargs = callee->b ? 1 : callee->nkids;
             SType** targs = (SType**)arena_alloc((size_t)(nargs ? nargs : 1) * sizeof(SType*));

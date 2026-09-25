@@ -2088,6 +2088,11 @@ current normative rules, and Git preserves patch-level detail.
   10.58 to 0.96 ns per level, equal to C `-O2`, and ten million levels now run
   in one frame; other workloads, the 20,000-function compile time, and its
   machine code are unchanged.
+- Diagnostics now render function, tuple, and pointer types in full
+  (`(i32, i32): i32`, `(i32, bool)`, `*Point`) instead of the placeholders
+  `(func)`, `(tuple)`, and `*T`; composite names build in a local buffer before
+  taking a slot in `type_name`'s ring. Type arguments after a function with no
+  generic form report that it is not generic, as a value and as a call.
 
 ## Current frontier
 

@@ -103,7 +103,8 @@ tests/sema/inline/recursion_err.ace|inline function 'count' reaches itself throu
 tests/sema/inline/mutual_err.ace|inline function 'even' reaches itself through inline calls
 INLINE_RULES
 
-# generic function values name their type arguments (SPEC Generics #6)
+# generic function values name their type arguments (SPEC Generics #6), and
+# diagnostics render composite types in full
 while IFS='|' read -r f want; do
     if ! "$ACE" "$f" 2>&1 | grep -qF "$want"; then
         echo "FAIL: $f should report: $want"
@@ -116,6 +117,11 @@ tests/sema/generics/value_memory_err.ace|mem.alloc[T] is direct-call-only: it ha
 tests/sema/generics/value_specialized_err.ace|'load[f64]' matches no specialization
 tests/sema/generics/value_overload_mismatch_err.ace|no generic overload of 'combine' has the required function type
 tests/sema/generics/value_overload_ambiguous_err.ace|ambiguous generic function value 'combine'
+tests/sema/generics/not_generic_value_err.ace|'plain' is not generic; name it without type arguments
+tests/sema/generics/not_generic_call_err.ace|'plain' is not generic; call it without type arguments
+tests/sema/types/composite_name_err.ace|(i32, i32): i32 given where (i64): i64 expected
+tests/sema/types/composite_name_err.ace|(i32, bool) given where (i64, bool) expected
+tests/sema/types/composite_name_err.ace|*Point given where *i32 expected
 GENERIC_VALUE_RULES
 
 # A call resolved at end of file is checked where its value lands, not
@@ -270,9 +276,9 @@ c_abi_errors=$("$ACE" tests/sema/c_abi/rejected_err.ace 2>&1)
 for want in \
     "parameter 'value' has type bool, which is not C-ABI compatible" \
     "parameter 'value' has type string, which is not C-ABI compatible" \
-    "return type (tuple) is not C-ABI compatible" \
+    "return type (i32, i32) is not C-ABI compatible" \
     "return type [4]i32 is not C-ABI compatible" \
-    "parameter 'value' has type *T, which is not C-ABI compatible" \
+    "parameter 'value' has type *string, which is not C-ABI compatible" \
     "parameter 'value' has type BadField, which is not C-ABI compatible" \
     "parameter 'value' has type Box, which is not C-ABI compatible" \
     "parameter 'value' is 'mut' — mut parameters stay internal; pass a mut *T instead" \
