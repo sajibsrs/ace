@@ -120,6 +120,12 @@ the remaining proof points explicit:
   arena memory. A function of 20,000 locals with 10,000 small loops spends
   most of its 6.7 s compile there, 0.27 s at 5,000. Candidate: snapshot only
   the variables a branch assigns, or share unchanged state between snapshots.
+- **Local lookup in module lowering is quadratic** [new] — in an imported
+  file, `lower_refs` checks each unshadowed name against the list of locals in
+  scope (`local_name` in `module.c`), so one function of 8,000 locals takes
+  1.44G instructions against 0.30G as a root file. Indexing locals past 32 live
+  bindings, as sema's scopes do, removes that (-79%) but costs the regex and
+  json package checks 0.2–0.3%; revisit if generated code reaches that size.
 - **Richer DWARF** [additive] — variable/type DIEs and unwind tables.
 
 ### Deferred optimization work
