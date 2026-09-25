@@ -2028,7 +2028,8 @@ current normative rules, and Git preserves patch-level detail.
   are unchanged, and machine code shrinks slightly despite the tables.
 - Self tail recursion: release builds lower `return f(args)` inside `f` to a
   branch back to the parameter reads instead of `bl` plus an epilogue, reusing
-  the frame, as Functions & ABI #9 guarantees (`self_return`, `emit_call`);
+  the frame, as a documented optimization rather than a guarantee
+  (`self_return`, `emit_call`);
   calls to other functions are untouched. `emit_func` binds the branch target
   after the prologue, callee-saved stores, and before the parameter reads only
   when sharing one frame across levels is unobservable (`self_eligible`):

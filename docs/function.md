@@ -348,8 +348,8 @@ parameter reads, reusing its stack frame, so this recursion runs as fast as the
 equivalent loop and at any depth. Checked builds keep every call so a backtrace
 shows each level; there, deep enough recursion still overflows the stack.
 
-This is guaranteed in release builds whenever sharing one frame across levels
-cannot be observed:
+Release builds do this whenever sharing one frame across levels cannot be
+observed:
 
 - no `defer` is pending at the `return`;
 - the parameters fit the argument registers: at most 8 integer-class ones (a
@@ -373,8 +373,8 @@ backend would carry the extra machinery, and callers would vanish from
 backtraces throughout ordinary code. A self call needs no teardown, so it costs
 one branch and brings tail recursion to loop speed.
 
-Recursion that must not overflow in checked builds as well is written as a
-loop.
+This is an optimization, not a guarantee: recursion that must not overflow, in
+any build, is written as a loop.
 
 ## Declaration order and forward calls
 
