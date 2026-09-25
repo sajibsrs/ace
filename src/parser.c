@@ -967,7 +967,7 @@ static Node* expr_primary(P* p, int ctx) {
         }
         expect(p, T_RPAREN, "')' to close expression");
         if (w.n == 1) return w.v[0];
-        Node* tu = nd(p, N_TUPLE_E);
+        Node* tu = nd_tok(p, N_TUPLE_E, t); // at '(', not the token after ')
         set_kids(tu, &w);
         return tu;
     }
@@ -1011,7 +1011,8 @@ static Node* expr_primary(P* p, int ctx) {
 // expr_list: comma list; single expression returned bare, else N_TUPLE_E
 static Node* expr_list(P* p, int ctx) {
     NV w = {0};
-    int line = tk(p)->line;
+    Token* first = tk(p);
+    int line = first->line;
     nv_push(p, &w, expr(p, ctx));
     while (at(p, T_COMMA)) {
         bare_list_line(p, line);
@@ -1020,7 +1021,7 @@ static Node* expr_list(P* p, int ctx) {
         nv_push(p, &w, expr(p, 0));
     }
     if (w.n == 1) return w.v[0];
-    Node* tu = nd(p, N_TUPLE_E);
+    Node* tu = nd_tok(p, N_TUPLE_E, first);
     set_kids(tu, &w);
     return tu;
 }

@@ -2097,6 +2097,9 @@ current normative rules, and Git preserves patch-level detail.
   initializers do, so `(1, 2)` initializes `(i32, i32)`: `coerce` checks each
   member against its member type, replacing the pass that fixed `int`, `f64`,
   and `u8` defaults before comparing.
+- Tuple expression nodes now take the position of their first token (the
+  opening parenthesis, or a bare list's first element) instead of the token
+  after them, so a wrong-count tuple diagnostic names the tuple's own line.
 
 ## Current frontier
 

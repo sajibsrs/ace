@@ -127,8 +127,9 @@ GENERIC_VALUE_RULES
 # tuple literal members meet their declared member types (SPEC Syntax #11)
 tuple_member_errors=$("$ACE" tests/sema/types/tuple_literal_member_type_err.ace 2>&1)
 for want in \
-    "5:21: error: type mismatch: i64 given where i32 expected" \
-    "6:20: error: integer literal 300 out of range for u8"; do
+    "6:21: error: type mismatch: i64 given where i32 expected" \
+    "7:20: error: integer literal 300 out of range for u8" \
+    "8:21: error: tuple has 3 values where 2 expected"; do
     if ! printf '%s\n' "$tuple_member_errors" | grep -qF "$want"; then
         echo "FAIL: missing tuple member diagnostic '$want'"
         fail=1

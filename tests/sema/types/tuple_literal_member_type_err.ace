@@ -1,6 +1,8 @@
 /* err: a tuple literal member meets its declared member type exactly as a
- * struct field does: a typed member does not convert, and a literal must fit. */
+ * struct field does: a typed member does not convert, and a literal must fit.
+ * A wrong member count is reported at the tuple's opening parenthesis. */
 
 wide: i64 = 5
 pair: (i32, i32) = (wide, 2)
 bytes: (u8, u8) = (300, 2)
+count: (i32, i32) = (1, 2, 3)
