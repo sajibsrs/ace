@@ -28,6 +28,10 @@ paths:
   that diagnostic), and `// expect-check-ok` (`pkg check` succeeds from a
   nested working directory, proving the walk-up-to-nearest-`ace.pkg`
   discovery).
+- A change to definite initialization (`sema.c`) also runs
+  `tests/definite-init-diff.sh <HEAD-ace> ./ace [count] [seed]`: random
+  functions under every branch form must get byte-identical diagnostics from
+  a build of `HEAD` and the change. It is not part of `make test`.
 - Sandboxes may deny network and loopback sockets, causing `net`, `poll`, `tcp`,
   and HTTP fixtures to fail. Confirm environmental restrictions before treating
   those failures as regressions.

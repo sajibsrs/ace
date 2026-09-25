@@ -517,6 +517,11 @@ current normative rules, and Git preserves patch-level detail.
   5,000 `if`/`else` 298M (was 9.4G); the regex and json package checks gain
   0.55-0.75%. Random programs mixing partial writes with every branch form
   report identical diagnostics under both.
+- Added `tests/definite-init-diff.sh`, the differential check behind that
+  change: an awk generator writes random functions mixing partial struct and
+  array writes with every branch form, and two compilers must report
+  byte-identical diagnostics. A program rejected before definite
+  initialization fails the run, and mismatching programs are kept.
 - Materialized a float constant with `fmov Vd, #imm8` when it is one of the 256
   encodable values (0.125 to 31.0 in sixteenths of a power of two, either sign),
   and folded the scaled index into a scalar array or slice load as
