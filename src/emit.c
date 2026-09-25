@@ -433,6 +433,10 @@ typedef struct {
     SymTab syms;
     Fixup* fix;
     size_t nfix, capfix;
+    uint64_t* fpool; // current function's float constants, 8 bytes each
+    uint32_t  nfpool, cfpool;
+    uint32_t* fpool_site; // (ldr literal offset, pool index) pairs
+    uint32_t  nfpool_site, cfpool_site;
     GVar*  globs;
     int    nglobs, cglobs;
     StaticMapData* maps;
@@ -963,6 +967,27 @@ static int const_global_imm(Sym* s, SType* t, Node* x, uint64_t* out) {
     return 1;
 }
 
+/*
+ * const_global_imm's float counterpart: a global const f32/f64 initialized by
+ * a float literal, its negation, or another such const is that value, so a
+ * read loads it from the function's constant pool instead of its slot.
+ */
+static int const_global_float(Sym* s, SType* t, double* out) {
+    SType* u = unwrap(t);
+    if (!s->is_global || !s->is_const || !s->init || !u || u->kind != SK_PRIM ||
+        (u->prim != P_F32 && u->prim != P_F64))
+        return 0;
+    Node* v = s->init;
+    int neg = v->kind == N_UNARY && v->op == T_MINUS;
+    if (neg) v = v->a;
+    if (v->kind == N_FLOAT) {
+        *out = neg ? -v->fval : v->fval;
+        return 1;
+    }
+    Sym* inner = !neg && v->kind == N_IDENT ? node_sym(v) : NULL;
+    return inner && inner->kind == SYM_VAR && const_global_float(inner, t, out);
+}
+
 // imm8 of `fmov Vd, #imm` when the bit pattern is one of its 256 values (the
 // sign, three exponent bits, and four fraction bits of VFPExpandImm), else -1.
 static int fmov_imm8(uint64_t bits, int is64) {
@@ -986,13 +1011,65 @@ static void load_f64(Em* e, int is64, int vr, double d) {
         memcpy(&b, &f, 4);
         bits = b;
     }
+    if (!bits) { // fmov Vd, xzr/wzr: +0.0 has no imm8 encoding
+        ins(e, (is64 ? 0x9E6703E0u : 0x1E2703E0u) | (uint32_t)vr);
+        return;
+    }
     int imm8 = fmov_imm8(bits, is64);
     if (imm8 >= 0) { // fmov Vd, #imm: no integer temp
         ins(e, (is64 ? 0x1E601000u : 0x1E201000u) | ((uint32_t)imm8 << 13) | (uint32_t)vr);
         return;
     }
-    load_imm(e, 1, 16, bits);
-    ins(e, (is64 ? 0x9E670000u : 0x1E270000u) | (16u << 5) | (uint32_t)vr);
+    // ldr Vd, <literal>: one load from the function's constant pool, which
+    // flush_fpool places after its last instruction and patches imm19 against
+    uint32_t idx = 0;
+    while (idx < e->nfpool && e->fpool[idx] != bits) idx++;
+    if (idx == e->nfpool) {
+        if (e->nfpool == e->cfpool) {
+            e->cfpool = e->cfpool ? e->cfpool * 2 : 16;
+            e->fpool = realloc(e->fpool, e->cfpool * sizeof(uint64_t));
+            if (!e->fpool) oom();
+        }
+        e->fpool[e->nfpool++] = bits;
+    }
+    if (e->nfpool_site + 2 > e->cfpool_site) {
+        e->cfpool_site = e->cfpool_site ? e->cfpool_site * 2 : 32;
+        e->fpool_site = realloc(e->fpool_site, e->cfpool_site * sizeof(uint32_t));
+        if (!e->fpool_site) oom();
+    }
+    e->fpool_site[e->nfpool_site++] = (uint32_t)text(e)->len;
+    e->fpool_site[e->nfpool_site++] = idx;
+    ins(e, (is64 ? 0x5C000000u : 0x1C000000u) | (uint32_t)vr);
+}
+
+/*
+ * Place the current function's float constants after its last instruction,
+ * which never falls through, 8-byte aligned (an f32 in the low half), and
+ * patch every ldr literal site's imm19 against its entry.
+ */
+static void flush_fpool(Em* e) {
+    if (!e->nfpool) return;
+    Buf* t = text(e);
+    if (t->len & 7) buf_put32(t, 0); // udf #0 pad
+    uint32_t base = (uint32_t)t->len;
+    for (uint32_t i = 0; i < e->nfpool; i++) {
+        buf_put32(t, (uint32_t)e->fpool[i]);
+        buf_put32(t, (uint32_t)(e->fpool[i] >> 32));
+    }
+    for (uint32_t i = 0; i < e->nfpool_site; i += 2) {
+        uint32_t site = e->fpool_site[i];
+        int64_t delta = (int64_t)base + 8 * (int64_t)e->fpool_site[i + 1] - (int64_t)site;
+        if (delta >= (1 << 20)) {
+            fprintf(stderr, "ace: float constant out of literal-load range\n");
+            e->d->errors++;
+            break;
+        }
+        uint32_t w;
+        memcpy(&w, t->d + site, 4);
+        buf_patch32(t, site, w | (uint32_t)(delta >> 2) << 5);
+    }
+    e->nfpool = e->nfpool_site = 0;
+    peep_barrier(e);
 }
 
 // --- labels & branches ---------------------------------------------------------------
@@ -3510,6 +3587,8 @@ static int fold_fp(Em* e, int r, int src) {
              (x & 0xFF000000u) == 0x1F000000u ||   // 3-source
              (x & 0xFF201FE0u) == 0x1E201000u ||   // fmov immediate
              (x & 0x7F3E0000u) == 0x1E220000u ||   // scvtf/ucvtf
+             (x & 0x7F3FFC00u) == 0x1E270000u ||   // fmov from a general register
+             (x & 0x3F000000u) == 0x1C000000u ||   // ldr, literal
              (x & 0x3F400000u) == 0x3D400000u ||   // ldr, unsigned offset
              (x & 0x3F600C00u) == 0x3C400000u ||   // ldur
              (x & 0x3F600C00u) == 0x3C600800u;     // ldr, register offset
@@ -5616,6 +5695,12 @@ static EV gen_expr(Em* e, Node* x) {
             int it = tmp_int(e);
             load_imm(e, ty_size(t) == 8, xreg(it), folded);
             return (EV){ CLS_INT, it };
+        }
+        double folded_float;
+        if (const_global_float(s, t, &folded_float)) {
+            int vt = tmp_fp(e);
+            load_f64(e, unwrap(t)->prim == P_F64, vreg(e, vt), folded_float);
+            return (EV){ CLS_FP, vt };
         }
         if (is_scalar(t)) return load_var(e, s, t, x);
         return (EV){ CLS_ADDR, gen_var_addr(e, s, x) };
@@ -9286,6 +9371,7 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
     e->fix[e->subsp_fix].frame = align_up(e->frame + e->out_max, 16);
     patch_branches(e);
     debug_fn_add(e, f, debug_addr, (uint32_t)text(e)->len - debug_addr);
+    flush_fpool(e);
 }
 
 // --- globals ---------------------------------------------------------------------------

@@ -1356,10 +1356,11 @@ if [ -d tests/emit ]; then
         fi
         # Passed to and assigned from a call returning an HFA, a Vec3 local
         # moves between d8-d13 and d0-d5 by fmov: no float goes through the
-        # frame (the callee-saved area uses stp/ldp).
+        # frame (the callee-saved area uses stp/ldp; a constant-pool literal
+        # load has no bracketed address).
         if ! otool -tv /tmp/ace_emit/basics/struct_registers.o | awk '
             /^[^0-9].*:$/ { fn = ($0 ~ /^__ace\$fn\$hfa_loop\$/); next }
-            fn && $2 ~ /^(ldur|stur|ldr|str)$/ && $3 ~ /^d/ { bad = 1 }
+            fn && $2 ~ /^(ldur|stur|ldr|str)$/ && $3 ~ /^d/ && $4 ~ /^\[/ { bad = 1 }
             fn && $2 == "bl" { called = 1 }
             fn && called && $2 == "fmov" && $3 == "d8," && $4 == "d0" { back = 1 }
             END { exit bad || !back }'; then

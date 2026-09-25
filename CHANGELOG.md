@@ -2017,6 +2017,15 @@ current normative rules, and Git preserves patch-level detail.
   and reached codegen. Two checked-bounds fixtures returning `i32` from
   `main(): int` relied on the hole and now convert explicitly. The regex app's check costs 1.2% more
   instructions.
+- Pooled float constants per function: a float literal outside the 256
+  `fmov #imm8` values, and a read of a const `f32`/`f64` global initialized by
+  a literal (possibly negated, or another such const), now loads with one
+  `ldr Vd, <literal>` from a deduplicated 8-byte table that `flush_fpool`
+  places after the function's last instruction, patching each site's `imm19`.
+  They were a `mov`/`movk` chain plus `fmov`, or `adrp`/`add`/`ldr` from the
+  global's `__const` slot; `+0.0` is now one `fmov Vd, xzr`. `exp` runs 12%
+  faster for `f64` and 7% for `f32`, `pow` 7%, `log` 5%; the hot-loop kernels
+  are unchanged, and machine code shrinks slightly despite the tables.
 
 ## Current frontier
 

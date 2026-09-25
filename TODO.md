@@ -242,8 +242,8 @@ These are baseline observations, not performance promises.
   vectorization off, and 2x to 30x C's NEON auto-vectorized output, which Ace
   leaves to explicit `simd`. What remains, measured on a `saxpy` loop (1.25 ns
   then, 0.97 ns now, C 0.48): an array base is rebuilt with `adrp`/`add` at
-  every access and float constants are rebuilt at every use, and hoisting both
-  out of the loop measured 0.97 to 0.48 ns; a field of an indexed struct
+  every access, and hoisting it and the loop's float constants into registers
+  measured 0.97 to 0.48 ns; a field of an indexed struct
   element costs `add`, `add`, then a load with no offset (`ps[i].x` about
   twelve times per particle); indexed stores still add the scaled index
   separately; a 12-byte element strides by `mov`/`mul`; and a leaf call taking
@@ -253,9 +253,8 @@ These are baseline observations, not performance promises.
   weighed on top of the address work. `bench/core/run-hotloop.sh` tracks the saxpy,
   dot, and `Vec3` kernels. Latest ratios to scalar C `-O2`: saxpy 2x, particle
   `Vec3` 3.64x, `Vec3` length 1.53x, floating dot 0.77x. `std/simd` is
-  specified and unimplemented. Candidate order: (1) scalar address and constant
-  work, meaning pooled float constants with one PC-relative `ldr` and the
-  scaled index and field offset folded into load and store addressing, measured
+  specified and unimplemented. Candidate order: (1) scalar address work, meaning
+  the scaled index and field offset folded into load and store addressing, measured
   against a saved `bench/core/run-hotloop.sh` baseline over several runs; loop-invariant
   hoisting into registers is the alternative but needs analysis the
   single-pass design avoids; (2) the bottom-tested loop and by-value `Vec3`
@@ -283,13 +282,12 @@ These are baseline observations, not performance promises.
   functions need callee-saved restoration and frame teardown first. Whether the
   form becomes a normative guarantee or stays an unspecified optimization is
   undecided.
-- **Float constant materialization** [new] — every float constant is rebuilt
-  with `mov`/`movk` plus `fmov` at each use (19 sequences in a 226-instruction
-  `exp`), where C loads it from a literal pool or hoists it. A pure-Ace `exp`
-  runs 6x the same algorithm compiled by clang. Candidate: pool float
-  constants per function or module and load them with one PC-relative `ldr`;
-  measure on the transcendental prototypes, `bench/core/run-hotloop.sh`, and
-  `bench/std/run-math.sh`.
+- **Float constants from bit patterns** [new] — `bits.cast(u64(0x7FF0000000000000))`
+  still builds the integer with `mov`/`movk` and moves it with `fmov`, and a
+  const float initialized by an expression rather than a literal loads from
+  its `__const` slot with `adrp`/`add`/`ldr`. Float literals and
+  literal-initialized const floats load from the function's constant pool.
+  Candidate: route both through the pool; measure on `bench/std/run-math.sh`.
 - **Signing-check scaling** [new] — the check that walks all module values once
   per signing is O(signings x declarations); not yet measured on a corpus with
   many signings. Candidate: index values by signing; measure with
