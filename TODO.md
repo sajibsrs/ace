@@ -31,10 +31,6 @@ blockers for the current sequential core.
 Found by writing `pkg/regex` (parser, compiler, Pike VM, benchmark); explore
 next, in this order.
 
-- **`from` as a contextual word** [unspecified] — `from` is reserved only for
-  `import names from source`, yet it blocks the natural name for a search
-  start (`pkg/regex` uses `after`, as `str` does). `when`, `step`, and
-  `fallthrough` are already contextual; whether `from` joins them is open.
 - **Failure position alongside `Error`** [unspecified] — `Error` carries only
   its domain, code, name, and message (Errors #9), so a parser that reports
   where it failed returns a separate value: `regex.Syntax::parse` returns

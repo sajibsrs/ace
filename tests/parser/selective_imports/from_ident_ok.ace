@@ -1,0 +1,22 @@
+/* Contextual from fixture. */
+
+import from from alpha
+import from, to from beta
+import (
+    from,
+) from "./local.ace"
+
+Span: struct {
+    from: usize,
+    to: usize,
+}
+
+from(from: usize): usize {
+    return from
+}
+
+main(): int {
+    from: usize = from(1)
+    span: Span = Span{from = from, to = from}
+    return int(span.from)
+}

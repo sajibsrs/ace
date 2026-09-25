@@ -251,6 +251,8 @@ current normative rules, and Git preserves patch-level detail.
   selective imports, aliases, visibility checks, cycle diagnostics, and
   declaration-before-use ordering. Modules merge into one compilation unit under
   private prefixed identities; canonical files load once.
+- Made `from` contextual: the parser matches the identifier text after a
+  selective import's member list, so `from` is otherwise an ordinary name.
 - Added standard directory modules (`std/name/module.ace`) beside single-file
   modules, with ambiguity diagnostics. OS-layer files remain explicitly imported
   behind stable public facades.

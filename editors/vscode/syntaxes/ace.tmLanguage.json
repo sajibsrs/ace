@@ -369,7 +369,7 @@
         },
         {
           "name": "keyword.control.ace",
-          "match": "\\b(?:import|from|pub|mut|const|noalias|if|else|for|in|switch|default|return|break|continue|defer|asm|extern|export|contract|struct|embed|union|signs|specialized|intrinsic|inline|distinct|type|enum|volatile)\\b"
+          "match": "\\b(?:import|pub|mut|const|noalias|if|else|for|in|switch|default|return|break|continue|defer|asm|extern|export|contract|struct|embed|union|signs|specialized|intrinsic|inline|distinct|type|enum|volatile)\\b"
         }
       ]
     },

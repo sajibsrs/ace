@@ -43,7 +43,8 @@ import one from "relative/path.ace"
   containing the import, so a module's own imports travel with it.
 - The **selective** form imports named public members without a module
   qualifier. Its source is either a bare standard-module name or a relative
-  local path.
+  local path. `from` is contextual: outside this position it is an ordinary
+  identifier, so `from: usize = 0` is valid.
 
 A subdirectory with its own `mod.ace` is itself a **nested module**,
 addressable by a `/`-separated path from any enclosing directory:

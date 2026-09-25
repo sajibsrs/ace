@@ -11,7 +11,7 @@
     X(NL, "newline")                                                           \
     X(IDENT, "ident")                                                          \
     /* keywords (v1 inventory, SPEC.md Pre-Implementation Checklist #2) */     \
-    X(IMPORT, "import") X(FROM, "from") X(PUB, "pub") X(MUT, "mut")           \
+    X(IMPORT, "import") X(PUB, "pub") X(MUT, "mut")                            \
     X(CONST, "const")                                                          \
     X(NOALIAS, "noalias") X(IF, "if") X(ELSE, "else") X(FOR, "for")            \
     X(IN, "in") X(SWITCH, "switch") X(DEFAULT, "default") X(RETURN, "return") X(BREAK, "break")      \

@@ -10,7 +10,7 @@ line_comment  := "//" (any – newline) newline
 block_comment := "/*" (any – "*/")* "*/"       // non-nesting; a newline inside acts as a newline
 newline       := significant — terminates statements (see §6 Notes)
 
-keyword       := "import" | "from" | "pub" | "mut" | "const" | "noalias" | "if" | "else"
+keyword       := "import" | "pub" | "mut" | "const" | "noalias" | "if" | "else"
                 | "for" | "in" | "switch" | "default" | "return" | "break" | "continue" | "defer"
                 | "asm" | "extern" | "export" | "contract" | "struct" | "embed" | "signs"
                 | "specialized" | "intrinsic" | "inline" | "distinct" | "type" | "enum" | "union" | "null" | "true" | "false"
@@ -55,7 +55,8 @@ module_import := "import" module_path
                                                           // import math; import net/tcp
                                                           // import m: math; import bla: net/tcp
                                                           // import util: "./util.ace"
-selective_import := "import" import_names "from" import_source
+selective_import := "import" import_names contextual_from import_source
+contextual_from := ident                                  // exact text "from"; not reserved
 import_names  := ident ("," ident)*
                | "(" ident ("," ident)* [","] ")"       // parenthesized = multiline
 import_source := module_path | import_path | internal_import     // std, local, or reserved

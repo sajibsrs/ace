@@ -15,6 +15,8 @@ It does not yet provide completion, diagnostics, formatting, navigation, or a la
 
 Language changes that affect syntax highlighting or basic editor behavior must update this extension when practical. Any editor support that cannot land with the language change is tracked here.
 
+The highlighter colors `from` only inside a selective import, where it ends the member list; elsewhere it is an ordinary identifier.
+
 The highlighter recognizes case-final `fallthrough` as a control keyword without reserving the same spelling in functions, variables, or calls elsewhere.
 
 The `defer` statement keyword is reserved, so the highlighter colors it as a control keyword everywhere it appears; no contextual disambiguation is needed.

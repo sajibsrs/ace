@@ -2110,7 +2110,7 @@ static Node* parse_import(P* p) {
     NV selected = {0};
     int parenthesized = ate(p, T_LPAREN);
     Token* first = expect(p, T_IDENT, parenthesized ? "imported member name" : "module or member name after 'import'");
-    if (parenthesized || at(p, T_COMMA) || at(p, T_FROM)) {
+    if (parenthesized || at(p, T_COMMA) || ident_at(p, "from")) {
         n->flags |= F_SELECT;
         nv_push(p, &selected, ident_node(p, first));
         if (parenthesized) {
@@ -2134,7 +2134,8 @@ static Node* parse_import(P* p) {
             }
         }
         set_kids(n, &selected);
-        expect(p, T_FROM, "'from' after imported member list");
+        if (!ident_at(p, "from")) perr(p, "expected 'from' after imported member list, got %s", gdesc(p));
+        p->i++;
         if (at(p, T_IDENT)) {
             Token* target = tk(p);
             p->i++;
