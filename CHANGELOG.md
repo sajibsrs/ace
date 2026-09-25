@@ -20,6 +20,10 @@ current normative rules, and Git preserves patch-level detail.
   array, slice, and string indexing and slicing bounds. Bounds diagnostics now
   identify the failing source file, line, and column; release objects retain
   no bounds failure machinery or metadata.
+- Renamed the checked emission mode to debug: `--debug` replaces `--checked`
+  with no alias, `EMIT_DEBUG` replaces `EMIT_CHECKED`, and the spec section
+  is Safety & Debug Builds. Individual checks keep their names (checked
+  arithmetic, the `tests/checked_*` fixtures).
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

@@ -1,4 +1,4 @@
-/* A dynamic aggregate array index equal to its length aborts in checked mode. */
+/* A dynamic aggregate array index equal to its length aborts in debug mode. */
 
 Point: struct { x: i64, y: i64 }
 

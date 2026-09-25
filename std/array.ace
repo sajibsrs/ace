@@ -90,7 +90,7 @@ pub mut Array[T].clear() {
 }
 
 /* Drops every live element from index `count` onward, keeping storage. `count`
- * follows the ordinary sequence bounds contract: checked builds diagnose a
+ * follows the ordinary sequence bounds contract: debug builds diagnose a
  * count past the current length and release assumes it.
  */
 pub mut Array[T].truncate(count: usize) {

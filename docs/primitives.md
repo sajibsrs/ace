@@ -23,7 +23,7 @@ shifts `<< >>`. Comparisons produce `bool`. Signed division truncates toward
 zero, and the remainder has the dividend's sign. `!` is logical negation and
 accepts only `bool`; `~` complements every bit of an integer value.
 
-Checked output aborts when integer `+`, `-`, `*`, or unary `-` cannot produce a
+Debug output aborts when integer `+`, `-`, `*`, or unary `-` cannot produce a
 value of its declared type, and on division/remainder by zero or the signed
 minimum divided by `-1`. Shift counts must be nonnegative and below the left
 operand width. Release output emits direct fixed-width operations without
@@ -33,7 +33,7 @@ When the divisor of `/`, `%`, `/=`, or `%=` is an integer literal or named
 constant, the compiler replaces the hardware divide with shifts and masks for
 powers of two, or a multiply-high by a precomputed reciprocal otherwise. The
 results are identical, including signed truncation toward zero. A constant
-nonzero divisor cannot fail, so checked output omits its guards; zero and a
+nonzero divisor cannot fail, so debug output omits its guards; zero and a
 signed `-1` divisor keep the ordinary divide and checks.
 
 Integer literals are untyped constants until used. They must fit the destination
@@ -129,7 +129,7 @@ first: u8 = message[0]
 ```
 
 Every string index must satisfy `0 <= index < message.len`. The compiler
-rejects statically provable violations in every mode; checked output validates
+rejects statically provable violations in every mode; debug output validates
 dynamic indices before reading or writing, while release output assumes them.
 
 Strings are UTF-8 by convention. Indexing addresses bytes, not Unicode code
@@ -139,7 +139,7 @@ Slicing a string yields a `string`: `message[1..4]` is a zero-copy view with
 bounds defaulting to `0` and `source.len`, exactly like array and slice
 slicing ([Types](types.md)). Where the bounds are compile-time constants that
 violate `0 <= lo <= hi <= source.len`, the compiler rejects the program.
-Checked output enforces the same complete precondition for dynamic bounds;
+Debug output enforces the same complete precondition for dynamic bounds;
 release output emits no guard.
 `for-in` walks the stored bytes. Assignment and calls among `string`, `[]char`,
 and `[]u8` require no conversion and perform no work ([Types](types.md),

@@ -32,7 +32,7 @@ When goals conflict, resolve in this order:
 7. Reduce code nesting. (Applies to the language requirement only) [*]
 8. Additional and quality-of-life features should be zero-cost whenever possible.
 9. Design that reduces code duplication. [*]
-10. Safety is deliberately limited: prefer cheap local checks and checked-build tooling; reject borrow checking, lifetime systems, and whole-program proofs.
+10. Safety is deliberately limited: prefer cheap local checks and debug-build tooling; reject borrow checking, lifetime systems, and whole-program proofs.
 
 ## Other Language Support
 1. Assembly support.
@@ -46,7 +46,7 @@ When goals conflict, resolve in this order:
 
 ## Principles
 Distilled from the closed philosophy decisions; operative rules live in SPEC.md.
-1. Memory is manual and explicit. Ace permits only small, local compile-time safety rules with zero runtime cost; broader diagnostics belong in checked builds, never in ownership or lifetime machinery.
+1. Memory is manual and explicit. Ace permits only small, local compile-time safety rules with zero runtime cost; broader diagnostics belong in debug builds, never in ownership or lifetime machinery.
 2. No hidden control flow, no hidden costs: no exceptions, no propagation sugar, no COW, no inference, no implicit instantiation.
 3. Mutation is visible — in signatures and at call sites; an unmarked call changes nothing you passed.
 4. Machine truth: layout, sizes, and stack vs heap are statically known and visible.
@@ -61,7 +61,7 @@ Distilled from the closed philosophy decisions; operative rules live in SPEC.md.
 ## Cautions
 1. Direct emission caps the optimization ceiling — if runtime benchmarks lag C by a widening margin, revisit the backend; keep codegen seams clean enough that a swap stays possible.
 2. Explicit everything (types, instantiations, checks) is verbose — watch real-world ergonomics; relax per Considerations #1, never tighten.
-3. Safety remains intentionally narrower than Rust: definite initialization and type checking catch cheap local mistakes, while aliasing, lifetimes, allocator discipline, and error checks remain the programmer's responsibility with checked-build assistance.
+3. Safety remains intentionally narrower than Rust: definite initialization and type checking catch cheap local mistakes, while aliasing, lifetimes, allocator discipline, and error checks remain the programmer's responsibility with debug-build assistance.
 
 ## Inspiration
 - Assembly

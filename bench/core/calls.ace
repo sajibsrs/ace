@@ -1,6 +1,6 @@
 /* Call-overhead benchmark paired with calls.c. Every workload feeds its result
  * into the next call and reports a checksum, so the calls stay observable.
- * Arithmetic is masked to stay bounded for checked builds.
+ * Arithmetic is masked to stay bounded for debug builds.
  */
 
 import fmt

@@ -28,14 +28,14 @@ static const char* host_target(void) {
 }
 
 static void usage(void) {
-    fprintf(stderr, "usage: ace [--checked | --release] [--tokens] [--ast] [--report]\n"
+    fprintf(stderr, "usage: ace [--debug | --release] [--tokens] [--ast] [--report]\n"
                     "           [--target=TARGET] [-c] [-o NAME] <file.ace>\n"
                     "           [<file.o> | <file.a> | -L DIR | -l NAME | -framework NAME]...\n"
                     "       ace --pkg-graph=DIR\n"
                     "       ace --pkg-check=DIR\n"
                     "       ace pkg <init|build|run|check|add|remove|list> ...\n"
                     "  (default)       full semantic check, no codegen\n"
-                    "  --checked       emit runtime diagnostics (the emission default)\n"
+                    "  --debug         emit runtime diagnostics (the emission default)\n"
                     "  --release       emit without runtime diagnostic machinery\n"
                     "  --report        print compilation statistics to stderr\n"
                     "  --target=TARGET compile for TARGET (supported: darwin-arm64)\n"
@@ -50,10 +50,10 @@ static void usage(void) {
                     "  --pkg-check=DIR full semantic check of the ace.pkg package at DIR,\n"
                     "                  with cross-package imports resolved, no codegen\n"
                     "  ace pkg init <exe|lib> [DIR]  create a minimal package skeleton\n"
-                    "  ace pkg build [--checked|--release] [--target=TARGET] [--report]\n"
+                    "  ace pkg build [--debug|--release] [--target=TARGET] [--report]\n"
                     "                compile (and, for an exe, link) the package found by\n"
                     "                walking up from the working directory to the nearest ace.pkg\n"
-                    "  ace pkg run   [--checked|--release] [--target=TARGET] [--report]\n"
+                    "  ace pkg run   [--debug|--release] [--target=TARGET] [--report]\n"
                     "                build, then execute the exe (exe-only)\n"
                     "  ace pkg check full semantic check of the enclosing package, no codegen\n");
     exit(2);
@@ -216,9 +216,9 @@ static void obj_path(char* out, size_t cap, const char* src) {
 
 static void package_usage(void) {
     fprintf(stderr, "usage: ace pkg init <exe|lib> [DIR]\n"
-                    "       ace pkg build [--checked|--release] [--target=TARGET]\n"
+                    "       ace pkg build [--debug|--release] [--target=TARGET]\n"
                     "                     [--report]\n"
-                    "       ace pkg run   [--checked|--release] [--target=TARGET]\n"
+                    "       ace pkg run   [--debug|--release] [--target=TARGET]\n"
                     "                     [--report]\n"
                     "       ace pkg check\n"
                     "       ace pkg add NAME VERSION\n"
@@ -505,16 +505,16 @@ static int package_cmd_check(int argc, char** argv, const char* argv0) {
 static int package_build_or_run(int argc, char** argv, const char* argv0, int require_exe,
                                 char* out_bin, size_t out_bin_cap) {
     int mode_seen = 0, show_report = 0;
-    EmitMode emit_mode = EMIT_CHECKED;
+    EmitMode emit_mode = EMIT_DEBUG;
     const char* target = host_target();
     for (int i = 0; i < argc; i++) {
         char* a = argv[i];
-        if (strcmp(a, "--checked") == 0) {
-            if (mode_seen && emit_mode != EMIT_CHECKED) cli_error("--checked and --release are mutually exclusive");
+        if (strcmp(a, "--debug") == 0) {
+            if (mode_seen && emit_mode != EMIT_DEBUG) cli_error("--debug and --release are mutually exclusive");
             mode_seen = 1;
-            emit_mode = EMIT_CHECKED;
+            emit_mode = EMIT_DEBUG;
         } else if (strcmp(a, "--release") == 0) {
-            if (mode_seen && emit_mode != EMIT_RELEASE) cli_error("--checked and --release are mutually exclusive");
+            if (mode_seen && emit_mode != EMIT_RELEASE) cli_error("--debug and --release are mutually exclusive");
             mode_seen = 1;
             emit_mode = EMIT_RELEASE;
         } else if (strcmp(a, "--report") == 0) {
@@ -729,7 +729,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && strcmp(argv[1], "pkg") == 0) return package_main(argc - 2, argv + 2, argv[0]);
     int dump_tok = 0, dump_ast = 0, show_report = 0, opt_c = 0, opt_link = 0;
     int mode_seen = 0;
-    EmitMode emit_mode = EMIT_CHECKED;
+    EmitMode emit_mode = EMIT_DEBUG;
     const char* path = NULL;
     const char* package_graph_dir = NULL;
     const char* package_check_dir = NULL;
@@ -741,13 +741,13 @@ int main(int argc, char** argv) {
         char* a = argv[i];
         if (strcmp(a, "--tokens") == 0) dump_tok = 1;
         else if (strcmp(a, "--ast") == 0) dump_ast = 1;
-        else if (strcmp(a, "--checked") == 0) {
-            if (mode_seen && emit_mode != EMIT_CHECKED) cli_error("--checked and --release are mutually exclusive");
+        else if (strcmp(a, "--debug") == 0) {
+            if (mode_seen && emit_mode != EMIT_DEBUG) cli_error("--debug and --release are mutually exclusive");
             mode_seen = 1;
-            emit_mode = EMIT_CHECKED;
+            emit_mode = EMIT_DEBUG;
         }
         else if (strcmp(a, "--release") == 0) {
-            if (mode_seen && emit_mode != EMIT_RELEASE) cli_error("--checked and --release are mutually exclusive");
+            if (mode_seen && emit_mode != EMIT_RELEASE) cli_error("--debug and --release are mutually exclusive");
             mode_seen = 1;
             emit_mode = EMIT_RELEASE;
         }

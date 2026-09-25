@@ -292,7 +292,7 @@ int resolve_imports(Node* file, Diag* d, const char* compiler_path,
 
 // Direct AArch64 codegen (stage four): walks the sema-checked AST and writes
 // a Mach-O arm64 object. Returns 0 on success. Sets emit_has_main.
-typedef enum { EMIT_CHECKED, EMIT_RELEASE } EmitMode;
+typedef enum { EMIT_DEBUG, EMIT_RELEASE } EmitMode;
 
 int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report, EmitMode mode);
 extern int emit_has_main;

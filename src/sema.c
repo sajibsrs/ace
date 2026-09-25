@@ -769,7 +769,7 @@ static int bound_const(Node* n, int64_t* out) {
 /*
  * Sequences #2: the bounds precondition 0 <= lo <= hi <= source.len is a
  * compile-time error when constants prove a violation. Unknown lengths and
- * runtime bounds are left to checked builds.
+ * runtime bounds are left to debug builds.
  */
 static void check_slice_bounds(Ck* k, Node* e, Node* base, SType* bt) {
     enum { BP_LO_NONNEG = 1, BP_HI_NONNEG = 2, BP_ORDER = 4, BP_SOURCE = 8 };
@@ -812,7 +812,7 @@ static void check_slice_bounds(Ck* k, Node* e, Node* base, SType* bt) {
 /*
  * Sequences #11: an indexed write follows the slice-write bounds contract —
  * a compile-time error when constants prove the index out of range, a
- * checked-build diagnostic otherwise, and release assumes it.
+ * debug-build diagnostic otherwise, and release assumes it.
  */
 static void check_index_bounds(Ck* k, Node* e, Node* base, SType* bt, int write) {
     int64_t ix;
@@ -4187,7 +4187,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 call->ival = total;
                 return st_prim(P_USIZE);
             }
-            // reserved builtin: assert(condition: bool) — checked-only
+            // reserved builtin: assert(condition: bool) — debug-only
             if (is_assert_name(callee->str, callee->len)) {
                 if (call->nkids != 1) {
                     ck_err(k, call, "assert takes exactly one bool condition, got %d arguments", call->nkids);

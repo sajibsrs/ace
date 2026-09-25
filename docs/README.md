@@ -24,7 +24,7 @@ must be corrected.
   iteration, indices, loop exits, labeled blocks, and deferred calls.
 - [Errors](errors.md) — packed `Error` values and nominal domains
   construction, `typeid` domains, exact identity matching, module boundaries,
-  and the reserved `panic(message)` and checked-only `assert(condition)` builtins.
+  and the reserved `panic(message)` and debug-only `assert(condition)` builtins.
 - [Modules](module.md) — qualified and selective imports, standard-library and
   relative local sources, `pub` visibility, dependency loading, and cycles.
 - [Standard library](std/index.md) — the shipped `std/` modules and

@@ -7,7 +7,7 @@ ace program.ace
 ace -c program.ace
 ace -o program program.ace
 ace -o program.ace
-ace --checked -o program program.ace
+ace --debug -o program program.ace
 ace --release -o program program.ace
 ace --target=darwin-arm64 program.ace
 ```
@@ -20,7 +20,7 @@ that file is compiled and the executable and intermediate object are named after
 the file without the suffix, so `-o program.ace` links `program` and leaves
 `program.o` beside it.
 
-Emitted programs default to `--checked`. Checked output dynamically validates
+Emitted programs default to `--debug`. Debug output dynamically validates
 sequence bounds, integer arithmetic, call-boundary slice contracts, null use,
 and allocator discipline; a violation writes a concise diagnostic to standard
 error and aborts. It also enables `assert`. `--release` removes those guards,
@@ -120,7 +120,7 @@ resolves the dependency graph and fully checks the root file; for a `lib`
 package that is the entire result, plus ensuring `build/` exists, since v1
 ships libraries as source with no reusable binary archive. For an `exe`
 package, `build` additionally compiles and links into
-`build/<package-name>`, accepting the same `--checked`/`--release`/
+`build/<package-name>`, accepting the same `--debug`/`--release`/
 `--target=`/`--report` flags as plain compilation. `run` is
 exe-only — it errors on a `lib` package — and otherwise builds, then
 executes the linked binary in place, propagating its exact exit code.

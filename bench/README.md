@@ -50,10 +50,10 @@ checksum. `bench/compiler/scaling-corpus.sh <long|types> <count> <dir>` scales o
 dimensions: `long` is one function with N locals in a single scope, `types` is
 N structs each with a function taking one by value. Both pairs were verified to
 print the same checksum. The runner compiles each size to an object, timing
-whole-process wall clock (median of three runs) for `ace -c` in checked and
+whole-process wall clock (median of three runs) for `ace -c` in debug and
 release modes against `cc -O0 -c` and `cc -O2 -c`, prints a growth column (time
 over the previous size's time; linear code growth is 10x for 100 to 1,000 and
-4x for the later steps shown), then times the scaling shapes in checked mode
+4x for the later steps shown), then times the scaling shapes in debug mode
 against both `cc` levels, reports machine-code bytes, and times a few real
 programs.
 
@@ -63,7 +63,7 @@ column, not the ratio at small sizes, is the real signal.
 
 Function-count corpus, medians in ms:
 
-| functions | lines | Ace checked | `cc -O0` | `cc -O2` |
+| functions | lines | Ace debug | `cc -O0` | `cc -O2` |
 |---|---|---|---|---|
 | 100 | 1,053 | 10.4 | 55.1 | 206.4 |
 | 1,000 | 10,353 | 27.7 | 215.0 | 1,611 |
@@ -73,7 +73,7 @@ Function-count corpus, medians in ms:
 Growth is 3.6x for 5x the code and 3.9x for 4x, so this shape is now linear.
 Before scope symbols were indexed:
 
-| functions | Ace checked | was |
+| functions | Ace debug | was |
 |---|---|---|
 | 5,000 | 111 ms | 813 ms |
 | 20,000 | 409 ms | 12,900 ms |
@@ -82,17 +82,17 @@ A profile then put about 78% in `find_in`, `lookup_val`, and `declare_func`,
 and emit's symbol interning scanned every symbol per call. Scopes past 32 names
 now use a hash index and emit interns through a hash table.
 
-Other shapes in ms, Ace checked linear on both:
+Other shapes in ms, Ace debug linear on both:
 
 | shape | compiler | 1,000 | 5,000 | 20,000 | growth for 5x code | for 4x code |
 |---|---|---|---|---|---|---|
-| `types` | Ace checked | 21 | 70 | 261 | 3.3x | 3.7x |
+| `types` | Ace debug | 21 | 70 | 261 | 3.3x | 3.7x |
 | `types` | `cc -O0` | 141 | 574 | 2,194 | 4.1x | 3.8x |
 | `types` | `cc -O2` | 394 | 1,874 | 7,617 | 4.8x | 4.1x |
-| `long` | Ace checked | 12 | 27 | 87 | 2.2x | 3.2x |
+| `long` | Ace debug | 12 | 27 | 87 | 2.2x | 3.2x |
 | `long` | `cc -O0` | 106 | 1,584 | 20,154 | 15x | 13x |
 | `long` | `cc -O2` | 229 | 1,101 | crash ¹ | 4.8x | |
-| `long`, before | Ace checked | 20 | 161 | 2,347 | | |
+| `long`, before | Ace debug | 20 | 161 | 2,347 | | |
 
 ¹ Apple clang 21 aborts with "Illegal instruction: 4"; the runner prints
 `failed`.
@@ -108,7 +108,7 @@ Machine code for 5,000 functions:
 | build | machine code |
 |---|---|
 | Ace release | 1.60 MB |
-| Ace checked | 2.07 MB |
+| Ace debug | 2.07 MB |
 | `cc -O0` | 0.98 MB |
 | `cc -O2` | 1.10 MB |
 
@@ -126,7 +126,7 @@ Real programs:
 
 ### CPU
 
-Run the bounded integer recurrence in Ace checked and release modes and in
+Run the bounded integer recurrence in Ace debug and release modes and in
 equivalent C built with `-O0` and `-O2`:
 
 ```sh
@@ -145,13 +145,13 @@ these median times for 5,000,000 iterations:
 
 | build | time |
 |---|---|
-| Ace checked | 48.44 ms |
+| Ace debug | 48.44 ms |
 | Ace release | 45.25 ms |
 | C `-O0` | 43.15 ms |
 | C `-O2` | 31.16 ms |
 
 All twenty executions produced checksum `1019507998`. On this workload, release
-was about 5% behind unoptimized C, checked guards added about 7% over release,
+was about 5% behind unoptimized C, debug guards added about 7% over release,
 and optimized C was about 31% faster than release. The result points first to
 local code-generation optimization and broader workload coverage; it does not
 establish performance for other programs or machines.
@@ -163,7 +163,7 @@ these medians, all with checksum `1019507998`:
 
 | build | time |
 |---|---|
-| Ace checked | 43.60 ms |
+| Ace debug | 43.60 ms |
 | Ace release | 42.45 ms |
 | C `-O0` | 43.40 ms |
 | C `-O2` | 34.22 ms |
@@ -415,7 +415,7 @@ against C `-O2`:
 | CPU build | time | Ace/C |
 |---|---|---|
 | Ace release | 37.7 ms | 1.06x |
-| Ace checked | 35.5 ms | 1.00x |
+| Ace debug | 35.5 ms | 1.00x |
 | C `-O2` | 35.5 ms | 1.00x |
 | C `-O0` | 41.4 ms | 1.17x |
 
@@ -462,7 +462,7 @@ Five alternating runs of the string and CPU benchmarks, Ace release against C
 | CPU build | time | Ace/C |
 |---|---|---|
 | Ace release | 36.0 ms | 1.07x |
-| Ace checked | 37.1 ms | 1.10x |
+| Ace debug | 37.1 ms | 1.10x |
 | C `-O2` | 33.6 ms | 1.00x |
 | C `-O0` | 40.9 ms | 1.22x |
 
@@ -941,14 +941,14 @@ Run the v1 raw-memory benchmark on Apple arm64:
 ./bench/std/run-memory.sh
 ```
 
-The runner builds `bench/std/memory.ace` in checked and release modes with compiler
+The runner builds `bench/std/memory.ace` in debug and release modes with compiler
 reports enabled, then runs each under macOS `/usr/bin/time -l`. The Ace program checks allocation,
 reallocation payload preservation, and release nulling. It reports operation
 counts, nanoseconds per operation, requested live bytes, allocator-usable live
 bytes from `mem.usable`, allocator overhead, a checksum, and failures.
 
 The external timing report adds process-level statistics such as peak resident
-set size. Checked results include bounds, arithmetic, and allocator diagnostics;
+set size. Debug results include bounds, arithmetic, and allocator diagnostics;
 release results measure the stripped runtime path. Timing and RSS vary by
 machine and system load, so this is a manual v1 acceptance benchmark rather
 than a performance threshold in `tests/run.sh`. The only pass/fail condition is
@@ -959,13 +959,13 @@ runs successfully.
 
 Three consecutive reference runs produced stable per-operation medians:
 
-| operation | checked | release |
+| operation | debug | release |
 |---|---|---|
 | allocation | 42 ns | 20 ns |
 | reallocation | 157 ns | 60 ns |
 | release | 145 ns | 17 ns |
 
-The larger checked cost comes from the live-allocation registry and is
+The larger debug cost comes from the live-allocation registry and is
 diagnostic-mode overhead, not part of release output.
 ## Packages
 

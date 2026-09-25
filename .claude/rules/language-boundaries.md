@@ -32,6 +32,6 @@ Follow `SPEC.md` for exact rules; do not propose or assume away these decisions:
   returns; function values use signature types.
 - The compiler uses recursive descent, single-pass compilation, and direct
   machine-code emission; no whole-program analysis.
-- Safety is cheap local checking plus removable checked-build diagnostics.
+- Safety is cheap local checking plus removable debug-build diagnostics.
 - There is no `goto`; use labeled blocks and loops. Iteration, switch, and
   `fallthrough` follow `SPEC.md` exactly.

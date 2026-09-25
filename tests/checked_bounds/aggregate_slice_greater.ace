@@ -1,4 +1,4 @@
-/* A dynamic aggregate slice index beyond its length aborts in checked mode. */
+/* A dynamic aggregate slice index beyond its length aborts in debug mode. */
 
 Box[T]: struct { value: T }
 

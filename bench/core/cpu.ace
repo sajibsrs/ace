@@ -1,5 +1,5 @@
 // Integer CPU benchmark shared with cpu.c. Keep the recurrence bounded so
-// checked mode measures guards without intentionally overflowing.
+// debug mode measures guards without intentionally overflowing.
 import fmt
 import time
 

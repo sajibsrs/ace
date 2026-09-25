@@ -8,7 +8,7 @@ trap 'rm -rf "$bench_tmp"' EXIT HUP INT TERM
 cd "$repo_dir"
 make ace
 
-for mode in checked release; do
+for mode in debug release; do
     echo "Ace $mode compiler report"
     echo "--------------------------"
     ./ace "--$mode" --report -o "$bench_tmp/memory-$mode" bench/std/memory.ace

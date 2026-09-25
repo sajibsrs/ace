@@ -130,7 +130,7 @@ and a string is a read-only view — its bytes cannot be written through it.
 `usize(pointer)` extracts the exact machine address from any data pointer.
 `*T(address)` and `mut *T(address)` convert an exact `usize` address back to the
 written pointer type; the writable form is an explicit assertion of write
-authority. Checked output diagnoses dynamic nonzero misalignment, while a
+authority. Debug output diagnoses dynamic nonzero misalignment, while a
 locally known misaligned address is always a compile error.
 
 An existing extent can be made into a slice without allocation:
@@ -142,7 +142,7 @@ writable: mut []Packet = mut []Packet(writable_pointer, count)
 
 The pointer element type must match exactly and `count` is exactly `usize`.
 The plain form may shrink pointer permission; the writable form requires a
-writable pointer. A null pointer is valid only with count zero. Checked output
+writable pointer. A null pointer is valid only with count zero. Debug output
 also diagnoses dynamic byte-extent and end-address overflow; release output
 assumes these local preconditions and emits only the descriptor construction.
 A non-null pointer with count zero remains a non-null empty view.
@@ -395,9 +395,9 @@ common prefix is equal, the shorter slice sorts first. Unlike copy and move,
 the compared slices need not have equal lengths.
 
 No byte operation allocates. An unequal-length copy/move or overlapping copy
-is a programmer error. Checked builds diagnose these contracts at the call
+is a programmer error. Debug builds diagnose these contracts at the call
 boundary; release builds emit the direct byte operation without validation.
-Checked allocation also tracks exact live base/extent pairs, diagnoses invalid
+Debug-build allocation also tracks exact live base/extent pairs, diagnoses invalid
 or repeated release/reallocation, and reports allocations still live when
 `main` returns normally. The registry and its metadata are absent in release.
 
@@ -425,7 +425,7 @@ allocation and copy.
 
 The `mem` declarations are compiler-backed in the current bootstrap. Release
 calls lower directly to the platform `malloc`, `realloc`, and `free` boundary
-and add no Ace allocation header or registry. Checked builds maintain a live
+and add no Ace allocation header or registry. Debug builds maintain a live
 allocation registry that diagnoses invalid or repeated release/reallocation and
 reports allocations still live when `main` returns normally. It does not detect
 arbitrary access through a dangling alias.
@@ -435,8 +435,8 @@ The examples on this page are checked by
 behavior is covered by `tests/emit/allocation/main.ace`,
 `tests/emit/allocation/typed.ace`, and `tests/emit/allocation/bytes.ace`. For manual
 performance and process-memory measurement on Apple arm64, run
-`./bench/std/run-memory.sh`; it reports checked and release allocator timings,
+`./bench/std/run-memory.sh`; it reports debug and release allocator timings,
 usable bytes, compiler statistics, peak resident size, and related macOS
 process counters without turning variable benchmark numbers into test
 thresholds. `./bench/core/run-cpu.sh` compares one bounded integer workload across
-Ace checked/release output and equivalent C `-O0`/`-O2` builds.
+Ace debug/release output and equivalent C `-O0`/`-O2` builds.

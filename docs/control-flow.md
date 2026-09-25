@@ -104,14 +104,14 @@ for i: int in 9 .. 0 step step {
 The step has exactly the bounds' integer type and may be an arbitrary
 expression. It is evaluated once after both endpoints, including for an empty
 range. A statically known zero or negative step is rejected. Runtime-computed
-steps must also be positive: checked output tests the step once at loop entry
+steps must also be positive: debug output tests the step once at loop entry
 and aborts with `file:line:col: range step violation` naming the step, while
 release output assumes the precondition and adds no check.
 
 Range bounds are ordinary captured values, not aliases to expressions used to
 produce them. If a slice variable is resliced or reassigned inside an index
 range loop, the captured endpoint does not change, while later indexing uses
-the slice's current descriptor. Checked output applies the ordinary dynamic
+the slice's current descriptor. Debug output applies the ordinary dynamic
 index guard at that access; release output assumes the current slice is large
 enough. Direct sequence iteration uses its compiler-controlled pointer-bump
 loop and needs no per-element guard.

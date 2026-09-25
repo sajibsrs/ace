@@ -127,7 +127,7 @@ the remaining proof points explicit:
 Optimization follows the feature TODO rather than interrupting it. The first
 manual baseline is deliberately narrow: across five 5,000,000-iteration bounded
 integer runs on the reference Apple-arm64 development machine, median times were
-48.44 ms for Ace checked, 45.25 ms for Ace release, 43.15 ms for C `-O0`, and
+48.44 ms for Ace debug, 45.25 ms for Ace release, 43.15 ms for C `-O0`, and
 31.16 ms for C `-O2`; every variant produced the same checksum. This suggests
 that current direct release emission is already near unoptimized C for that
 workload, checked arithmetic has modest cost there, and optimization—not
@@ -212,14 +212,13 @@ These are baseline observations, not performance promises.
   of its gain. Integer struct leaves are still copied to x14 down; reading
   them in place measured 0.04 ns on `struct-16`, and dropping a leaf's frame
   measured nothing on `call-1` or `struct-hfa` (`bench/README.md`).
-- **Unoptimized debug build mode** [new] — only the checked and release modes
-  exist, and both emit the same optimized code; the modes differ in runtime
-  guards alone. Local register promotion, immediates, and register returns are
-  always on, promoted locals have no frame slot, and objects carry line tables
-  but no variable locations, so a debugger cannot show a promoted local by
-  name. Candidate: a third mode (or a modifier on checked) that disables
-  promotion so every local keeps a slot, weighed against the cost of testing
-  another mode.
+- **Unoptimized debug build** [new] — debug and release emit the same
+  optimized code; the modes differ in runtime guards alone. Local register
+  promotion, immediates, and register returns are always on, promoted locals
+  have no frame slot, and objects carry line tables but no variable locations,
+  so a debugger cannot show a promoted local by name. Candidate: the debug
+  mode disables optimization so every local keeps a slot, with executable
+  tests then run in both modes.
 - **Remaining immediate and destination forms** [new] — declarations with an
   initializer still compute through a temp, and a constant on the left of a
   compare or in the middle of a chain still takes a register. Float compares
@@ -276,7 +275,7 @@ These are baseline observations, not performance promises.
   many signings. Candidate: index values by signing; measure with
   `bench/compiler/run-compile.sh`.
 - **Machine-code size** [new] — 5,000 generated functions emit 1.60 MB release
-  and 2.07 MB checked against 1.10 MB for `cc -O2`.
+  and 2.07 MB debug against 1.10 MB for `cc -O2`.
 - **Float-parse optimization backlog** [new] — the canonical 80%-short /
   20%-long `parse-f64` workload is 1.9x `strtod` (52 ns); the goal is to close
   the gap to C and surpass it where possible. Measured next steps, in order:
@@ -339,7 +338,7 @@ foundations.
   `set`, `get`, and `unset` in release builds, against 26.2, 5.7, and 12.9 ns
   for the same algorithm, hash, and load factor in C `-O2`. Hand-inlined
   source reaches 44.3, 10.2, and 20.5 ns; the rest of that gap is the
-  inline-expansion leftovers (section 2). String keys and `--checked` are
+  inline-expansion leftovers (section 2). String keys and `--debug` are
   unmeasured. `bench/std/run-collections.sh` tracks the gap.
 - **`Array` element access** [new] — `set` and `get` run 5.5x and 4x a scalar
   C array, and `push` 3.7x the same growth policy in C
@@ -451,17 +450,17 @@ nonblocking connect completion remain visible without callbacks or allocation.
   much server mechanism belongs in the language versus a framework built on
   top must happen before anything like the nonblocking core returns.
 
-## 8. Completed checked-build checkpoint
+## 8. Completed debug-build checkpoint
 
-The explicit `--checked`/`--release` modes and strict sequence bounds are
-implemented: emitted programs default to checked mode, while release strips
+The explicit `--debug`/`--release` modes and strict sequence bounds are
+implemented: emitted programs default to debug mode, while release strips
 their dynamic guards, failure paths, and diagnostic metadata. This completed
 checkpoint remains here as a compact reference rather than occupying the active
 priority list.
 
 - **[implemented]** Build-mode plumbing and array, slice, and string bounds diagnostics.
-- **[implemented]** Checked integer arithmetic diagnostics (Safety & Checked Builds #6).
-- **[implemented]** Call-boundary `noalias`/length diagnostics (Safety & Checked Builds #7; Memory #16).
-- **[implemented]** Checked null-use diagnostics (Safety & Checked Builds #8; Zero #2).
-- **[implemented]** Allocator diagnostics (Safety & Checked Builds #9).
-- **[implemented]** Language-level `assert(bool)`, checked-only and release-stripped, for invariants and simple checked-mode tests (Safety & Checked Builds #10).
+- **[implemented]** Checked integer arithmetic diagnostics (Safety & Debug Builds #6).
+- **[implemented]** Call-boundary `noalias`/length diagnostics (Safety & Debug Builds #7; Memory #16).
+- **[implemented]** Checked null-use diagnostics (Safety & Debug Builds #8; Zero #2).
+- **[implemented]** Allocator diagnostics (Safety & Debug Builds #9).
+- **[implemented]** Language-level `assert(bool)`, debug-only and release-stripped, for invariants and simple debug-mode tests (Safety & Debug Builds #10).

@@ -46,7 +46,7 @@ runtime-library call, and remain usable through exact function values.
 
 `wradd`, `wrsub`, and `wrmul` take two operands of one of the same four
 types and return that type modulo 2^width. The ordinary `+`, `-`, and `*`
-operators abort on overflow in checked builds; these never do, in any build mode:
+operators abort on overflow in debug builds; these never do, in any build mode:
 
 ```ace
 h: u32 = u32(2166136261)

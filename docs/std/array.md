@@ -31,7 +31,7 @@ Type arguments are explicit, as everywhere: `array.Array[int]`,
 `wipe`, `push`, `reserve`, `pop`, `set`, `clear`, and `truncate` mutate, so the
 call site states `mut`. Access is checked against `len`, not capacity: `get`
 and `set` at an index at or beyond `len`, and `truncate` past `len`, are
-bounds violations in checked builds and unchecked in release builds.
+bounds violations in debug builds and unchecked in release builds.
 
 ```ace
 import array

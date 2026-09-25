@@ -172,7 +172,7 @@ second.x = 42
 second -= 1
 ```
 
-The pointee must have complete, nonzero-sized layout. Checked builds diagnose a
+The pointee must have complete, nonzero-sized layout. Debug builds diagnose a
 null starting pointer, scaled-offset overflow, and address overflow or
 underflow. Pointers carry no bounds or provenance, so use arrays or slices for
 bounded traversal. Pointer indexing, pointer-pointer difference and ordering,
@@ -295,7 +295,7 @@ comparison, and `null` behave exactly as for `string`; it originates from proven
 bytes, such as `mut array[0..]`, and re-slicing preserves it. Indexed
 byte writes exist only through a `mut string`: `s[i] = c` assigns exactly one
 byte (`u8` or `char`) and follows the slice-write bounds contract — a
-compile-time error when constants prove the index out of range, a checked-build
+compile-time error when constants prove the index out of range, a debug-build
 diagnostic otherwise, and release assumes it. Plain `string` indexing stays a
 value read.
 
@@ -330,7 +330,7 @@ remain zero.
 Named fields can be read and assigned but have no address: they cannot be used
 with address-of, a `mut` argument, `offsetof`, or individual volatile access.
 Assignment preserves every other backing bit. Constant out-of-range writes are
-compile errors; dynamic writes abort in checked builds and retain the low field
+compile errors; dynamic writes abort in debug builds and retain the low field
 bits in release builds. Whole values copy normally, compare with `==`/`!=` only
 against the same nominal type, compose in aggregates, and support whole-value
 volatile loads and stores. C boundaries use the backing integer plus an explicit
@@ -365,7 +365,7 @@ pop(): (T, Error) {
 }
 ```
 
-The current bootstrap has checked/release emission modes for sequence bounds,
+The current bootstrap has debug/release emission modes for sequence bounds,
 but null-use diagnostics have not landed; invalid zero operations therefore
 still follow the unchecked path.
 
@@ -460,7 +460,7 @@ widens permission ([Writable views](#writable-views)). The result length is
 Empty results keep their computed pointer and are never canonicalized to
 `null`. Bounds may be any integer; when constants prove
 `0 <= lo <= hi <= source.len` false, the program is rejected at compile time,
-while checked output validates dynamic bounds and aborts with a standard-error
+while debug output validates dynamic bounds and aborts with a standard-error
 diagnostic on failure. Release output assumes the complete precondition.
 
 All four bound forms are available:
@@ -500,7 +500,7 @@ Array assignment copies all elements. Slice assignment copies only its pointer
 and length, so both values view the same backing storage; it never copies the
 elements. Slicing does not allocate. See [Memory](memory.md) for allocation and
 lifetime rules. Every element read or write requires
-`0 <= index < sequence.len`: static violations are compilation errors, checked
+`0 <= index < sequence.len`: static violations are compilation errors, debug
 output validates dynamic indices, and release output emits no guard.
 
 These layout facts are normative — code may rely on them. A slice is exactly two
@@ -835,7 +835,7 @@ with no allocation, object metadata, subtype relation, or runtime search.
 - Type inference and implicit generic instantiation are not implemented.
 - Generic aliases are not implemented by the current compiler; generic structs
   are supported.
-- Checked-build sequence bounds, integer arithmetic, `noalias`/length,
+- Debug-build sequence bounds, integer arithmetic, `noalias`/length,
   null-use, and allocator diagnostics are implemented and stripped in release.
 
 The examples are covered by `tests/sema/docs/type_ok.ace`.

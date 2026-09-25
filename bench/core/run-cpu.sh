@@ -8,15 +8,15 @@ trap 'rm -rf "$bench_tmp"' EXIT HUP INT TERM
 cd "$repo_dir"
 make ace
 
-./ace --checked --report -o "$bench_tmp/cpu-checked" bench/core/cpu.ace
+./ace --debug --report -o "$bench_tmp/cpu-debug" bench/core/cpu.ace
 ./ace --release --report -o "$bench_tmp/cpu-release" bench/core/cpu.ace
 cc -std=c11 -O0 -o "$bench_tmp/cpu-c-o0" bench/core/cpu.c
 cc -std=c11 -O2 -o "$bench_tmp/cpu-c-o2" bench/core/cpu.c
 
 expected=
-for variant in ace-checked ace-release c-o0 c-o2; do
+for variant in ace-debug ace-release c-o0 c-o2; do
     case "$variant" in
-        ace-checked) exe="$bench_tmp/cpu-checked" ;;
+        ace-debug) exe="$bench_tmp/cpu-debug" ;;
         ace-release) exe="$bench_tmp/cpu-release" ;;
         c-o0) exe="$bench_tmp/cpu-c-o0" ;;
         c-o2) exe="$bench_tmp/cpu-c-o2" ;;

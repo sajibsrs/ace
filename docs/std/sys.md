@@ -151,7 +151,7 @@ the read end followed by the write end. Failure returns `Fd(-1)` for both with
 
 `arg(0)` is the program invocation name. `arg(index)` requires
 `index < argc()`, and `env(index)` requires `index < envc()`. These are the
-ordinary preconditions of these compiler-backed calls; their checked
+ordinary preconditions of these compiler-backed calls; their debug-build
 diagnostics have not landed in the sequence-bounds stage, so both modes
 currently assume valid indexes. `argc()` is
 constant-time; `envc()` scans the null-terminated environment pointer array on

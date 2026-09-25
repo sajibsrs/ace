@@ -1648,7 +1648,7 @@ static DivMagic div_magic(uint64_t d, int w, int sign, int neg) {
 /*
  * dst = a / c or a % c for a constant divisor. Returns 0, emitting nothing,
  * when the hardware divide must stay: a zero divisor, or signed -1, whose
- * checked-build overflow guard lives with the generic path. Uses x16/x17.
+ * debug-build overflow guard lives with the generic path. Uses x16/x17.
  */
 static int emit_const_divide(Em* e, TokKind op, int dst, int a, uint64_t c,
                              SType* t) { // physical registers; a is only read
@@ -1732,7 +1732,7 @@ static void emit_checked_arith(Em* e, TokKind op, int rd, int ra, int rb, SType*
     int bits = scalar_bits(t);
     int sf = bits == 64;
     int sig = ty_is_signed(t);
-    if (e->mode != EMIT_CHECKED || !is_intt(t)) {
+    if (e->mode != EMIT_DEBUG || !is_intt(t)) {
         emit_arith(e, op, rd, ra, rb, t);
         return;
     }
@@ -1849,7 +1849,7 @@ static int imm12_const(Node* x, uint64_t* out) {
 static int emit_arith_imm(Em* e, TokKind op, int rd, int ra, uint64_t imm, SType* t) {
     if (op != T_PLUS && op != T_MINUS) return 0;
     int bits = scalar_bits(t), sf = bits == 64;
-    int checked = e->mode == EMIT_CHECKED && is_intt(t);
+    int checked = e->mode == EMIT_DEBUG && is_intt(t);
     if (checked && bits < 32) return 0;
     uint32_t base = op == T_PLUS ? (checked ? 0x31000000u : 0x11000000u)
                                  : (checked ? 0x71000000u : 0x51000000u);
@@ -1931,11 +1931,11 @@ static TokKind compound_op(TokKind op) {
 }
 
 /* Typed pointer arithmetic scales a usize element offset and then performs an
- * unsigned machine-address add/subtract. Checked mode keeps all three local
+ * unsigned machine-address add/subtract. Debug mode keeps all three local
  * preconditions at the operation site; release is only multiply plus add/sub. */
 static void emit_pointer_arith(Em* e, TokKind op, int pointer, int offset, uint32_t elem_size) {
     int rp = xreg(pointer), ro = xreg(offset);
-    if (e->mode == EMIT_CHECKED) {
+    if (e->mode == EMIT_DEBUG) {
         int nonnull = new_label(e);
         cbz_(e, 1, rp, 1, nonnull);
         emit_arithmetic_fail_call(e);
@@ -1943,7 +1943,7 @@ static void emit_pointer_arith(Em* e, TokKind op, int pointer, int offset, uint3
     }
     if (elem_size != 1) {
         load_imm(e, 1, 16, elem_size);
-        if (e->mode == EMIT_CHECKED) {
+        if (e->mode == EMIT_DEBUG) {
             ins(e, 0x9BC07C00u | (16u << 16) | ((uint32_t)ro << 5) | 17u); // umulh
             int scaled = new_label(e);
             cbz_(e, 1, 17, 0, scaled);
@@ -1955,7 +1955,7 @@ static void emit_pointer_arith(Em* e, TokKind op, int pointer, int offset, uint3
     }
     uint32_t base = op == T_PLUS ? 0xAB000000u : 0xEB000000u; // adds/subs x
     ins(e, base | ((uint32_t)ro << 16) | ((uint32_t)rp << 5) | (uint32_t)rp);
-    if (e->mode == EMIT_CHECKED) {
+    if (e->mode == EMIT_DEBUG) {
         int valid = new_label(e);
         bcond_(e, op == T_PLUS ? C_LO : C_HS, valid);
         emit_arithmetic_fail_call(e);
@@ -2766,7 +2766,7 @@ static void emit_null_fail_call(Em* e) {
 }
 
 static void emit_null_guard(Em* e, int reg) {
-    if (e->mode != EMIT_CHECKED) return;
+    if (e->mode != EMIT_DEBUG) return;
     int ok = new_label(e);
     cbz_(e, 1, reg, 1, ok);
     emit_null_fail_call(e);
@@ -2781,7 +2781,7 @@ static int signed_index(Node* index) {
 /* The lower comparison deliberately precedes widening: a negative signed
  * value must remain a lower-bound failure rather than becoming a huge usize. */
 static void emit_index_guard(Em* e, Node* access, int index_reg, int length_reg, uint64_t array_length) {
-    if (e->mode != EMIT_CHECKED || (access->flags & F_BOUNDS_PROVEN)) return;
+    if (e->mode != EMIT_DEBUG || (access->flags & F_BOUNDS_PROVEN)) return;
     if (signed_index(access->b)) {
         int ok = new_label(e);
         int sf = scalar_bits(node_ty(access->b)) == 64;
@@ -2808,7 +2808,7 @@ static void emit_nonnegative_guard(Em* e, Node* slice, Node* bound, int reg) {
     enum { BP_LO_NONNEG = 1, BP_HI_NONNEG = 2 };
     uint8_t proof = slice->aux ? *(uint8_t*)slice->aux : 0;
     int bit = bound == slice->b ? BP_LO_NONNEG : BP_HI_NONNEG;
-    if (e->mode != EMIT_CHECKED || (slice->flags & F_BOUNDS_PROVEN) ||
+    if (e->mode != EMIT_DEBUG || (slice->flags & F_BOUNDS_PROVEN) ||
         !bound || (proof & bit) || !signed_index(bound)) return;
     int ok = new_label(e);
     int sf = scalar_bits(node_ty(bound)) == 64;
@@ -3062,7 +3062,7 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
         // registers is loaded from its slot at marshal time: no address temp
         uint32_t fdepth;
         if (!is_scalar(eff[i]) && units[i * 4].kind != TU_STACK_AGGR && (a->kind == N_IDENT || a->kind == N_FIELD_E) &&
-            !(e->mode == EMIT_CHECKED && eff[i]->kind == SK_SLICE) && node_ty(a) && ty_size(node_ty(a)) == arg_size &&
+            !(e->mode == EMIT_DEBUG && eff[i]->kind == SK_SLICE) && node_ty(a) && ty_size(node_ty(a)) == arg_size &&
             frame_place(e, a, &fdepth)) {
             framed[i] = 1;
             fdepths[i] = fdepth;
@@ -3080,7 +3080,7 @@ static EV emit_call(Em* e, Node* at, CallArg* args, int nargs,
      * locally available; no pointee walk or provenance machinery is added. */
     Sym* called = at ? node_sym(at) : NULL;
     Node* decl = called && called->kind == SYM_FUNC ? called->decl : NULL;
-    if (e->mode == EMIT_CHECKED && decl) {
+    if (e->mode == EMIT_DEBUG && decl) {
         int guard_ni = e->vti, guard_nf = e->vtf;
         spill_temps(e);
         uint32_t ranges[40];
@@ -3949,7 +3949,7 @@ static int index_addr(Em* e, Node* x, uint32_t fold_w, int* fold_ri) {
         em_err(e, x, "cannot index this type");
         return ta;
     }
-    int need_guard = e->mode == EMIT_CHECKED && !(x->flags & F_BOUNDS_PROVEN);
+    int need_guard = e->mode == EMIT_DEBUG && !(x->flags & F_BOUNDS_PROVEN);
     uint32_t len_slot = 0;
     if (descriptor) {
         if (need_guard) {
@@ -3987,7 +3987,7 @@ static int index_addr(Em* e, Node* x, uint32_t fold_w, int* fold_ri) {
         load_frame(e, lenreg, len_slot, 8, 0);
     }
     emit_index_guard(e, x, ri, lenreg, seq && seq->kind == SK_ARRAY ? seq->count : 0);
-    if (e->mode != EMIT_CHECKED || (x->flags & F_BOUNDS_PROVEN)) widen_idx(e, x->b, ri);
+    if (e->mode != EMIT_DEBUG || (x->flags & F_BOUNDS_PROVEN)) widen_idx(e, x->b, ri);
     if (fold_w && esz == fold_w && (esz == 1 || esz == 2 || esz == 4 || esz == 8)) {
         *fold_ri = ri; // the consumer loads [ta, ri, lsl #log2(esz)]
     } else if (esz == 1) {
@@ -4177,7 +4177,7 @@ static EV finish_slice_builtin(Em* e, int si, int sf, uint32_t off) {
 }
 
 static void registry_add(Em* e, Node* at, int ptr, int size, uint64_t align, int align_reg) {
-    if (e->mode != EMIT_CHECKED) return;
+    if (e->mode != EMIT_DEBUG) return;
     e->allocator_used = 1;
     int ar = align_reg;
     if (ar < 0) {
@@ -4208,7 +4208,7 @@ static EV registry_find(Em* e, Node* at, int ptr, int size) {
 }
 
 static void registry_remove(Em* e, Node* at, int ptr, int size) {
-    if (e->mode != EMIT_CHECKED) return;
+    if (e->mode != EMIT_DEBUG) return;
     e->allocator_used = 1;
     CallArg args[2] = {
         { NULL, { CLS_INT, ptr }, 1, 0 },
@@ -4345,7 +4345,7 @@ static EV gen_realloc_builtin(Em* e, Node* call) {
     bcond_(e, C_LE, done);
 
     EV record = { CLS_INT, 0 };
-    if (e->mode == EMIT_CHECKED) record = registry_find(e, call, ptemp, old_size);
+    if (e->mode == EMIT_DEBUG) record = registry_find(e, call, ptemp, old_size);
     CallArg args[2] = {
         { NULL, { CLS_INT, ptemp }, 1, 0 },
         { NULL, size, 1, 0 },
@@ -4355,7 +4355,7 @@ static EV gen_realloc_builtin(Em* e, Node* call) {
     CallTarget tgt = { TK_EXTERN, "_realloc", 8, 0 };
     EV ptr = emit_call(e, call, args, 2, params, muts, 2, 0, -1, tgt, raw_pointer_type());
     cbz_(e, 1, xreg(ptr.idx), 0, done);
-    if (e->mode == EMIT_CHECKED) {
+    if (e->mode == EMIT_DEBUG) {
         st_reg(e, xreg(ptr.idx), xreg(record.idx), 0, 8);
         st_reg(e, xreg(size.idx), xreg(record.idx), 8, 8);
     }
@@ -4477,7 +4477,7 @@ static EV gen_realloc_typed_builtin(Em* e, Node* call) {
     ins(e, 0x9B007C00u | ((uint32_t)xreg(old_scale) << 16) |
            ((uint32_t)xreg(old_count) << 5) | (uint32_t)xreg(old_bytes));
     EV record = { CLS_INT, 0 };
-    if (e->mode == EMIT_CHECKED) record = registry_find(e, call, ptemp, old_bytes);
+    if (e->mode == EMIT_DEBUG) record = registry_find(e, call, ptemp, old_bytes);
     CallArg args[2] = {
         { NULL, { CLS_INT, ptemp }, 1, 0 },
         { NULL, { CLS_INT, bytes }, 1, 0 },
@@ -4487,7 +4487,7 @@ static EV gen_realloc_typed_builtin(Em* e, Node* call) {
     CallTarget tgt = { TK_EXTERN, "_realloc", 8, 0 };
     EV ptr = emit_call(e, call, args, 2, params, muts, 2, 0, -1, tgt, raw_pointer_type());
     cbz_(e, 1, xreg(ptr.idx), 0, done);
-    if (e->mode == EMIT_CHECKED) {
+    if (e->mode == EMIT_DEBUG) {
         st_reg(e, xreg(ptr.idx), xreg(record.idx), 0, 8);
         st_reg(e, xreg(bytes), xreg(record.idx), 8, 8);
     }
@@ -4580,7 +4580,7 @@ static EV gen_byte_write_builtin(Em* e, Node* call, int intrinsic) {
     if (intrinsic == BI_MEM_COPY || intrinsic == BI_MEM_MOVE) {
         int src, slen;
         gen_slice_parts(e, call->kids[1], &src, &slen);
-        if (e->mode == EMIT_CHECKED) {
+        if (e->mode == EMIT_DEBUG) {
             int lengths_ok = new_label(e);
             ins(e, 0xEB00001Fu | ((uint32_t)xreg(slen) << 16) | ((uint32_t)xreg(dlen) << 5));
             bcond_(e, C_EQ, lengths_ok);
@@ -4981,7 +4981,7 @@ static EV gen_call(Em* e, Node* call) {
         EV address = gen_expr(e, call->kids[0]);
         SType* pt = node_ty(call);
         uint32_t align = pt && pt->base ? ty_align(pt->base) : 1;
-        if (e->mode == EMIT_CHECKED && align > 1 && !(call->flags & F_BOUNDS_PROVEN)) {
+        if (e->mode == EMIT_DEBUG && align > 1 && !(call->flags & F_BOUNDS_PROVEN)) {
             load_imm(e, 1, 16, align - 1);
             ins(e, 0xEA00001Fu | (16u << 16) |
                    ((uint32_t)xreg(address.idx) << 5)); // tst address, align-1
@@ -4999,7 +4999,7 @@ static EV gen_call(Em* e, Node* call) {
         uint32_t off = temp_slot(e, 16, 8);
         EV pointer = gen_expr(e, call->kids[0]);
         EV count = gen_expr(e, call->kids[1]);
-        if (e->mode == EMIT_CHECKED && !(call->flags & F_BOUNDS_PROVEN)) {
+        if (e->mode == EMIT_DEBUG && !(call->flags & F_BOUNDS_PROVEN)) {
             int extent_ok = new_label(e);
             cbz_(e, 1, xreg(count.idx), 0, extent_ok);
             int nonnull = new_label(e);
@@ -5279,12 +5279,12 @@ static EV gen_call(Em* e, Node* call) {
         default: break;
         }
     }
-    // assert(condition): checked evaluates once; release removes the complete
+    // assert(condition): debug evaluates once; release removes the complete
     // condition expression, including side effects.
     if (callee->kind == N_IDENT && !call->sym &&
         (call->ival == 2 || call->ival == 3) &&
         callee->len == 6 && memcmp(callee->str, "assert", 6) == 0) {
-        if (e->mode != EMIT_CHECKED || call->ival == 3) return (EV){ CLS_INT, 0 };
+        if (e->mode != EMIT_DEBUG || call->ival == 3) return (EV){ CLS_INT, 0 };
         int ok = new_label(e);
         gen_branch(e, call->kids[0], 1, ok);
         const char* path = call->path ? build_path(call->path) : "<source>";
@@ -5782,7 +5782,7 @@ static EV gen_expr(Em* e, Node* x) {
                 if (fidx < 0) continue;
                 SField* f = &t->fields[fidx];
                 EV v = gen_expr(e, fi->a);
-                if (e->mode == EMIT_CHECKED && f->bit_width < 64) {
+                if (e->mode == EMIT_DEBUG && f->bit_width < 64) {
                     int fail = new_label(e), ok = new_label(e); uint64_t hi;
                     if (f->bit_signed) {
                         uint64_t lo = (uint64_t)(-(INT64_C(1) << (f->bit_width - 1)));
@@ -5937,7 +5937,7 @@ static EV gen_expr(Em* e, Node* x) {
                 return v;
             }
             int sf = !t || scalar_bits(t) == 64;
-            if (e->mode == EMIT_CHECKED && t && is_intt(t)) {
+            if (e->mode == EMIT_DEBUG && t && is_intt(t)) {
                 int bits = scalar_bits(t);
                 uint64_t min = bits == 64 ? UINT64_C(0x8000000000000000)
                                           : (uint32_t)(-(INT64_C(1) << (bits - 1)));
@@ -6113,7 +6113,7 @@ static EV gen_expr(Em* e, Node* x) {
         uint32_t lo_slot = temp_slot(e, 8, 8), hi_slot = temp_slot(e, 8, 8);
         enum { BP_ORDER = 4, BP_SOURCE = 8 };
         uint8_t proof = x->aux ? *(uint8_t*)x->aux : 0;
-        int guard = e->mode == EMIT_CHECKED && !(x->flags & F_BOUNDS_PROVEN);
+        int guard = e->mode == EMIT_DEBUG && !(x->flags & F_BOUNDS_PROVEN);
         int guard_source = guard && !(proof & BP_SOURCE);
         uint32_t len_slot = guard_source ? temp_slot(e, 8, 8) : 0;
         int svi = e->vti, svf = e->vtf;
@@ -6757,7 +6757,7 @@ static void emit_bits_field_assign(Em* e, Node* target, Node* rhs, TokKind op, S
         emit_checked_arith(e, compound_op(op), xreg(vr), xreg(vr), xreg(rv.idx), f->t);
         value = (EV){ CLS_INT, vr };
     } else value = gen_expr(e, rhs);
-    if (e->mode == EMIT_CHECKED && f->bit_width < 64) {
+    if (e->mode == EMIT_DEBUG && f->bit_width < 64) {
         int fail = new_label(e), ok = new_label(e);
         uint64_t hi;
         if (f->bit_signed) {
@@ -7409,7 +7409,7 @@ static void emit_stmt(Em* e, Node* s) {
             if (s->b->c) {
                 EV step = gen_expr(e, s->b->c);
                 uint64_t sc;
-                if (e->mode == EMIT_CHECKED && !const_int(s->b->c, &sc)) {
+                if (e->mode == EMIT_DEBUG && !const_int(s->b->c, &sc)) {
                     // a runtime step must be a positive magnitude: checked once at entry
                     int ok = new_label(e);
                     uint32_t x = (uint32_t)xreg(step.idx);
@@ -8055,7 +8055,7 @@ static void callee_saved(Em* e, int load) {
 
 static void emit_epilogue(Em* e) {
     e->ended_return = 1;
-    if (e->mode == EMIT_CHECKED && e->current_is_main) {
+    if (e->mode == EMIT_DEBUG && e->current_is_main) {
         emit_bl_internal(e, "__ace$registry_leaks", 20);
     }
     callee_saved(e, 1);
@@ -9216,7 +9216,7 @@ static void plan_param_homes(Em* e, Node* f, SType** pt, const uint8_t* muts, TU
  * register-sized or two-word view (no aggregate local or by-value aggregate
  * parameter, whose storage the ABI may pass by address) and takes no address
  * of its own storage anywhere. Only a call to f itself branches; a call to
- * another function in tail position stays a call. Checked builds keep every
+ * another function in tail position stays a call. Debug builds keep every
  * call: a backtrace shows each level.
  */
 
@@ -9575,7 +9575,7 @@ static int fold_float_target(SType* t) {
  * i64 that literals carry); a float expression folds at its destination's
  * precision, rounding f32 after every operation as the runtime instruction
  * does. Overflow, division or remainder by zero, and an out-of-range shift
- * count are reported here, matching Safety & Checked Builds #4 and #6. Each
+ * count are reported here, matching Safety & Debug Builds #4 and #6. Each
  * folder returns 1 with a value, 0 when the shape is not foldable (the caller
  * reports the generic diagnostic), or -1 after reporting its own.
  */
@@ -11108,7 +11108,7 @@ static void emit_byte_helpers(Em* e) {
 
 static void emit_allocator_helpers(Em* e) {
     if (!e->allocator_used) {
-        if (e->mode == EMIT_CHECKED) {
+        if (e->mode == EMIT_DEBUG) {
             sym_define(&e->syms, e->secs, "__ace$registry_leaks", 20, 0, &e->secs[SEC_TEXT]);
             ins(e, 0xD65F03C0); // no allocation intrinsic exists in this unit
         }

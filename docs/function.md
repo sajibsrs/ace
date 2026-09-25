@@ -188,7 +188,7 @@ the return clause for a function returning no value. Only an exact `export`
 function or imported `extern "c"` declaration can initialize a non-null value
 of this type; an ordinary Ace function has a distinct convention. Parameters
 and returns must be C-ABI-compatible. C function values are one word, may be
-`null`, and may be compared with `null`. Calling null is diagnosed in checked
+`null`, and may be compared with `null`. Calling null is diagnosed in debug
 builds; release builds require a non-null callee.
 
 ## Generic functions
@@ -359,7 +359,7 @@ count_down(n: usize, total: usize): usize {
 
 Release builds compile such a `return` as a branch back to the function's
 parameter reads, reusing its stack frame, so this recursion runs as fast as the
-equivalent loop and at any depth. Checked builds keep every call so a backtrace
+equivalent loop and at any depth. Debug builds keep every call so a backtrace
 shows each level; there, deep enough recursion still overflows the stack.
 
 Release builds do this whenever sharing one frame across levels cannot be

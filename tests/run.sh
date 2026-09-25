@@ -669,13 +669,13 @@ if ! printf '%s\n' "$unsupported_target" | grep -qF \
 fi
 
 # Emission modes are accepted by every pipeline stage but affect only emitted
-# code. Checked is the emission default; release contains no bounds machinery.
+# code. Debug is the emission default; release contains no bounds machinery.
 mkdir -p /tmp/ace_checked_bits
 for f in runtime_range runtime_literal_range; do
-    if ! "$ACE" --checked -o "/tmp/ace_checked_bits/${f}_checked" "tests/checked_bits/$f.ace"; then
+    if ! "$ACE" --debug -o "/tmp/ace_checked_bits/${f}_debug" "tests/checked_bits/$f.ace"; then
         echo "FAIL: checked bits range fixture did not compile: $f"
         fail=1
-    elif "/tmp/ace_checked_bits/${f}_checked" >/dev/null 2>/tmp/ace_test_errs; then
+    elif "/tmp/ace_checked_bits/${f}_debug" >/dev/null 2>/tmp/ace_test_errs; then
         echo "FAIL: checked out-of-range bit-field operation did not abort: $f"
         fail=1
     fi
@@ -686,7 +686,7 @@ for f in runtime_range runtime_literal_range; do
     fi
 done
 # Self tail recursion: release lowers `return f(args)` inside f to a branch, so
-# ten million levels run in one frame; checked keeps every call, so each level
+# ten million levels run in one frame; debug keeps every call, so each level
 # stays in a backtrace. A function whose levels' own storage is observable
 # keeps its calls in both.
 mkdir -p /tmp/ace_self_tail_recursion
@@ -695,12 +695,12 @@ if ! "$ACE" --release -o /tmp/ace_self_tail_recursion/deep tests/self_tail_recur
     echo "FAIL: release self tail recursion should run in one frame"
     fail=1
 fi
-if ! "$ACE" --checked -o /tmp/ace_self_tail_recursion/deep_checked tests/self_tail_recursion/deep.ace ||
-   ! otool -tv /tmp/ace_self_tail_recursion/deep_checked | grep -q 'bl.*__ace\$fn\$sum\$'; then
-    echo "FAIL: checked builds should keep self tail recursion as calls"
+if ! "$ACE" --debug -o /tmp/ace_self_tail_recursion/deep_debug tests/self_tail_recursion/deep.ace ||
+   ! otool -tv /tmp/ace_self_tail_recursion/deep_debug | grep -q 'bl.*__ace\$fn\$sum\$'; then
+    echo "FAIL: debug builds should keep self tail recursion as calls"
     fail=1
 fi
-for mode in --checked --release; do
+for mode in --debug --release; do
     if ! "$ACE" "$mode" -o /tmp/ace_self_tail_recursion/frame tests/self_tail_recursion/frame.ace ||
        ! /tmp/ace_self_tail_recursion/frame; then
         echo "FAIL: self tail recursion over observable frame storage must stay calls ($mode)"
@@ -709,48 +709,48 @@ for mode in --checked --release; do
 done
 mkdir -p /tmp/ace_checked_bounds
 cp tests/checked_bounds/*.ace /tmp/ace_checked_bounds/
-if ! "$ACE" --checked tests/sema/sequences/main_ok.ace ||
+if ! "$ACE" --debug tests/sema/sequences/main_ok.ace ||
    ! "$ACE" --release tests/sema/sequences/main_ok.ace; then
     echo "FAIL: check-only mode flags should not change semantic checking"
     fail=1
 fi
 if ! "$ACE" --tokens tests/lexer/hello_ok.ace >/tmp/ace_mode_plain ||
-   ! "$ACE" --checked --tokens tests/lexer/hello_ok.ace >/tmp/ace_mode_checked ||
+   ! "$ACE" --debug --tokens tests/lexer/hello_ok.ace >/tmp/ace_mode_debug ||
    ! "$ACE" --release --tokens tests/lexer/hello_ok.ace >/tmp/ace_mode_release ||
-   ! cmp -s /tmp/ace_mode_plain /tmp/ace_mode_checked ||
+   ! cmp -s /tmp/ace_mode_plain /tmp/ace_mode_debug ||
    ! cmp -s /tmp/ace_mode_plain /tmp/ace_mode_release; then
     echo "FAIL: mode flags changed --tokens output"
     fail=1
 fi
 if ! "$ACE" --ast tests/parser/full_ok.ace >/tmp/ace_mode_plain ||
-   ! "$ACE" --checked --ast tests/parser/full_ok.ace >/tmp/ace_mode_checked ||
+   ! "$ACE" --debug --ast tests/parser/full_ok.ace >/tmp/ace_mode_debug ||
    ! "$ACE" --release --ast tests/parser/full_ok.ace >/tmp/ace_mode_release ||
-   ! cmp -s /tmp/ace_mode_plain /tmp/ace_mode_checked ||
+   ! cmp -s /tmp/ace_mode_plain /tmp/ace_mode_debug ||
    ! cmp -s /tmp/ace_mode_plain /tmp/ace_mode_release; then
     echo "FAIL: mode flags changed --ast output"
     fail=1
 fi
-for flags in "--checked --release" "--release --checked"; do
+for flags in "--debug --release" "--release --debug"; do
     if "$ACE" $flags tests/sema/sequences/main_ok.ace >/dev/null 2>/tmp/ace_test_errs ||
-       ! grep -qF -- "--checked and --release are mutually exclusive" /tmp/ace_test_errs; then
+       ! grep -qF -- "--debug and --release are mutually exclusive" /tmp/ace_test_errs; then
         echo "FAIL: mode mutual exclusion for $flags"
         fail=1
     fi
 done
-for bad in --checked=yes --release=yes; do
+for bad in --debug=yes --release=yes; do
     if "$ACE" "$bad" tests/sema/sequences/main_ok.ace >/dev/null 2>/tmp/ace_test_errs ||
        ! grep -qF "unknown option '$bad'" /tmp/ace_test_errs; then
         echo "FAIL: invalid mode spelling $bad"
         fail=1
     fi
 done
-for mode in --checked --release; do
+for mode in --debug --release; do
     if "$ACE" "$mode" >/dev/null 2>/tmp/ace_test_errs; then
         echo "FAIL: $mode without a source should show usage"
         fail=1
     fi
 done
-for mode in --checked --release; do
+for mode in --debug --release; do
     for f in tests/sema/sequences/index_read_negative_err.ace \
              tests/sema/sequences/index_read_hi_err.ace \
              tests/sema/sequences/bounds_negative_err.ace \
@@ -763,14 +763,14 @@ for mode in --checked --release; do
 done
 if ! "$ACE" -o /tmp/ace_checked_bounds/default /tmp/ace_checked_bounds/valid.ace ||
    ! /tmp/ace_checked_bounds/default ||
-   ! "$ACE" --checked -o /tmp/ace_checked_bounds/checked /tmp/ace_checked_bounds/valid.ace ||
+   ! "$ACE" --debug -o /tmp/ace_checked_bounds/checked /tmp/ace_checked_bounds/valid.ace ||
    ! /tmp/ace_checked_bounds/checked ||
    ! "$ACE" --release -o /tmp/ace_checked_bounds/release /tmp/ace_checked_bounds/valid.ace ||
    ! /tmp/ace_checked_bounds/release; then
     echo "FAIL: valid dynamic bounds program failed in an emission mode"
     fail=1
 fi
-if ! "$ACE" --checked -o /tmp/ace_checked_bounds/proven_iteration \
+if ! "$ACE" --debug -o /tmp/ace_checked_bounds/proven_iteration \
      /tmp/ace_checked_bounds/proven_iteration.ace ||
    ! /tmp/ace_checked_bounds/proven_iteration; then
     echo "FAIL: proven/iteration checked fixture failed"
@@ -780,7 +780,7 @@ for f in array_negative array_equal aggregate_array_equal \
          aggregate_slice_greater slice_greater string_equal \
          mut_string_greater slice_lower slice_upper slice_order \
          slice_source_length; do
-    if ! "$ACE" --checked -o "/tmp/ace_checked_bounds/$f" \
+    if ! "$ACE" --debug -o "/tmp/ace_checked_bounds/$f" \
          "/tmp/ace_checked_bounds/$f.ace" >/dev/null 2>/tmp/ace_test_errs; then
         echo "FAIL: checked bounds fixture did not compile: $f"
         cat /tmp/ace_test_errs
@@ -796,12 +796,12 @@ for f in array_negative array_equal aggregate_array_equal \
 done
 if command -v nm >/dev/null 2>&1; then
     if ! nm /tmp/ace_checked_bounds/default.o 2>/dev/null | grep -qF '__ace$bounds_fail'; then
-        echo "FAIL: default emission is not checked"
+        echo "FAIL: default emission lacks debug bounds machinery"
         fail=1
     fi
     if nm /tmp/ace_checked_bounds/release.o 2>/dev/null |
          grep -Eq '__ace\$bounds|[[:space:]]U (_abort|_write)$'; then
-        echo "FAIL: release object retains checked failure machinery"
+        echo "FAIL: release object retains debug failure machinery"
         fail=1
     fi
     if nm /tmp/ace_checked_bounds/proven_iteration.o 2>/dev/null |
@@ -816,25 +816,25 @@ if command -v strings >/dev/null 2>&1 &&
     fail=1
 fi
 
-# Remaining checked-build contracts: arithmetic, call ranges, null use,
+# Remaining debug-build contracts: arithmetic, call ranges, null use,
 # allocator tracking, and the language-level assert primitive.
 mkdir -p /tmp/ace_checked_features
-if ! "$ACE" --checked -o /tmp/ace_checked_features/arithmetic_valid \
+if ! "$ACE" --debug -o /tmp/ace_checked_features/arithmetic_valid \
      tests/checked_arithmetic/valid.ace ||
    ! /tmp/ace_checked_features/arithmetic_valid; then
     echo "FAIL: valid checked arithmetic fixture"
     fail=1
 fi
-if ! "$ACE" --checked -o /tmp/ace_checked_features/arithmetic_wrap \
+if ! "$ACE" --debug -o /tmp/ace_checked_features/arithmetic_wrap \
      tests/checked_arithmetic/wrap.ace ||
    ! /tmp/ace_checked_features/arithmetic_wrap; then
-    echo "FAIL: bits wrapping arithmetic must not trap in checked builds"
+    echo "FAIL: bits wrapping arithmetic must not trap in debug builds"
     fail=1
 fi
 for f in signed_add unsigned_mul narrow_mul div_zero neg_min shift_count compound \
          imm_signed_add imm_unsigned_sub imm_narrow_add \
          pointer_null pointer_scale pointer_add pointer_sub; do
-    if ! "$ACE" --checked -o "/tmp/ace_checked_features/arithmetic_$f" \
+    if ! "$ACE" --debug -o "/tmp/ace_checked_features/arithmetic_$f" \
          "tests/checked_arithmetic/$f.ace" >/dev/null 2>/tmp/ace_test_errs ||
        "/tmp/ace_checked_features/arithmetic_$f" >/dev/null 2>/tmp/ace_test_errs ||
        ! grep -qF "ace: arithmetic violation" /tmp/ace_test_errs; then
@@ -853,7 +853,7 @@ for f in imm_signed_add imm_unsigned_sub imm_narrow_add; do
     fi
 done
 for f in noalias copy_length copy_overlap; do
-    if ! "$ACE" --checked -o "/tmp/ace_checked_features/contract_$f" \
+    if ! "$ACE" --debug -o "/tmp/ace_checked_features/contract_$f" \
          "tests/checked_contracts/$f.ace" >/dev/null 2>/tmp/ace_test_errs ||
        "/tmp/ace_checked_features/contract_$f" >/dev/null 2>/tmp/ace_test_errs ||
        ! grep -qF "ace: call contract violation" /tmp/ace_test_errs; then
@@ -861,7 +861,7 @@ for f in noalias copy_length copy_overlap; do
         fail=1
     fi
 done
-if ! "$ACE" --checked -o /tmp/ace_checked_features/contract_valid \
+if ! "$ACE" --debug -o /tmp/ace_checked_features/contract_valid \
      tests/checked_contracts/valid.ace; then
     echo "FAIL: valid checked call-contract fixture did not compile"
     fail=1
@@ -873,11 +873,11 @@ else
         fail=1
     fi
 fi
-# A runtime range step must be positive: checked builds test it once at loop
+# A runtime range step must be positive: debug builds test it once at loop
 # entry, at the step's own width and even over an empty interval, and name
 # the step's position.
 for f in zero_step negative_step narrow_step empty_step; do
-    if ! "$ACE" --checked -o "/tmp/ace_checked_features/range_$f" \
+    if ! "$ACE" --debug -o "/tmp/ace_checked_features/range_$f" \
          "tests/checked_ranges/$f.ace" >/dev/null 2>/tmp/ace_test_errs ||
        "/tmp/ace_checked_features/range_$f" >/dev/null 2>/tmp/ace_test_errs ||
        ! grep -qF "tests/checked_ranges/$f.ace:5:" /tmp/ace_test_errs ||
@@ -886,7 +886,7 @@ for f in zero_step negative_step narrow_step empty_step; do
         fail=1
     fi
 done
-for mode in --checked --release; do
+for mode in --debug --release; do
     if ! "$ACE" "$mode" -o /tmp/ace_checked_features/range_valid \
          tests/checked_ranges/valid.ace; then
         echo "FAIL: valid range-step fixture did not compile in $mode"
@@ -901,7 +901,7 @@ for mode in --checked --release; do
     fi
 done
 for f in pointer function c_function; do
-    if ! "$ACE" --checked -o "/tmp/ace_checked_features/null_$f" \
+    if ! "$ACE" --debug -o "/tmp/ace_checked_features/null_$f" \
          "tests/checked_null/$f.ace" >/dev/null 2>/tmp/ace_test_errs ||
        "/tmp/ace_checked_features/null_$f" >/dev/null 2>/tmp/ace_test_errs ||
        ! grep -qF "ace: null use violation" /tmp/ace_test_errs; then
@@ -909,14 +909,14 @@ for f in pointer function c_function; do
         fail=1
     fi
 done
-if ! "$ACE" --checked -o /tmp/ace_checked_features/allocator_valid \
+if ! "$ACE" --debug -o /tmp/ace_checked_features/allocator_valid \
      tests/checked_allocator/valid.ace ||
    ! /tmp/ace_checked_features/allocator_valid; then
     echo "FAIL: valid checked allocator fixture"
     fail=1
 fi
 for f in double_release truncated_release leak; do
-    if ! "$ACE" --checked -o "/tmp/ace_checked_features/allocator_$f" \
+    if ! "$ACE" --debug -o "/tmp/ace_checked_features/allocator_$f" \
          "tests/checked_allocator/$f.ace" >/dev/null 2>/tmp/ace_test_errs ||
        "/tmp/ace_checked_features/allocator_$f" >/dev/null 2>/tmp/ace_test_errs ||
        ! grep -qF "ace: allocator violation" /tmp/ace_test_errs; then
@@ -924,17 +924,17 @@ for f in double_release truncated_release leak; do
         fail=1
     fi
 done
-if ! "$ACE" --checked -o /tmp/ace_checked_features/assert_false \
+if ! "$ACE" --debug -o /tmp/ace_checked_features/assert_false \
      tests/assert/checked_false.ace ||
    /tmp/ace_checked_features/assert_false >/dev/null 2>/tmp/ace_test_errs ||
    ! grep -qx "checked_false.ace:6:11: assertion failed" /tmp/ace_test_errs; then
-    echo "FAIL: checked assert failure"
+    echo "FAIL: debug assert failure"
     fail=1
 fi
 if ! "$ACE" --release -o /tmp/ace_checked_features/assert_release \
      tests/assert/release_stripped.ace ||
    ! /tmp/ace_checked_features/assert_release ||
-   ! "$ACE" --checked -o /tmp/ace_checked_features/assert_true \
+   ! "$ACE" --debug -o /tmp/ace_checked_features/assert_true \
      tests/assert/true_ok.ace ||
    ! /tmp/ace_checked_features/assert_true; then
     echo "FAIL: assert true/release stripping"
@@ -952,7 +952,7 @@ if ! "$ACE" --release -c -o /tmp/ace_checked_features/release.o \
 elif command -v nm >/dev/null 2>&1 &&
      nm /tmp/ace_checked_features/release.o 2>/dev/null |
        grep -Eq '__ace\$(arithmetic|contract|null|registry)|[[:space:]]U (_abort|_write)$'; then
-    echo "FAIL: release object retains checked-feature machinery"
+    echo "FAIL: release object retains debug machinery"
     fail=1
 fi
 if ! "$ACE" --release -c -o /tmp/ace_checked_features/pointer_release.o \
@@ -962,7 +962,7 @@ if ! "$ACE" --release -c -o /tmp/ace_checked_features/pointer_release.o \
 elif command -v nm >/dev/null 2>&1 &&
      nm /tmp/ace_checked_features/pointer_release.o 2>/dev/null |
        grep -Eq '__ace\$(arithmetic|null)|[[:space:]]U (_abort|_write)$'; then
-    echo "FAIL: release pointer arithmetic retains checked machinery"
+    echo "FAIL: release pointer arithmetic retains debug machinery"
     fail=1
 fi
 if command -v strings >/dev/null 2>&1 &&
@@ -973,7 +973,7 @@ if command -v strings >/dev/null 2>&1 &&
 fi
 
 for f in null overflow alignment; do
-    if ! "$ACE" --checked -o "/tmp/ace_checked_features/pointer_construct_$f" \
+    if ! "$ACE" --debug -o "/tmp/ace_checked_features/pointer_construct_$f" \
          "tests/checked_pointer_construct/$f.ace" >/dev/null 2>/tmp/ace_test_errs; then
         echo "FAIL: checked pointer/slice construction fixture did not compile: $f"
         fail=1
