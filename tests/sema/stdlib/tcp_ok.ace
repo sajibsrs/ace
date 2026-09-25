@@ -28,12 +28,12 @@ check(address: net.Addr4, listener: Listener, connection: Conn, bytes: mut []u8,
     accepted: Conn, peer: net.Addr4, accept_err: Error = accept(listener)
     received: usize, receive_err: Error = receive_all(connection, bytes)
     sent: usize, send_err: Error = send_all(connection, text)
-    interest: Interest = interest(connection)
+    current: Interest = interest(connection)
 
     if receive_err != null && receive_err.domain == typeid(ReceiveAllErr) { received = usize(receive_err.code) }
     if send_err != null && send_err.domain == typeid(SendAllErr) { sent = usize(send_err.code) }
     if local_err != null || accept_err != null || bound.port == peer.port { return int(received + sent) }
-    if interest == Interest.none {
+    if current == Interest.none {
         event: Event = progress_receive(mut accepted, bytes)
         switch event {
             Event.data(count: usize) { received = count }

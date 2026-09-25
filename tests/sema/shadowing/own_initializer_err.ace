@@ -1,0 +1,12 @@
+/* A local is in scope from its declarator, so its own initializer names the
+ * local, not the function it shadows. */
+
+get(x: usize): usize {
+    return x
+}
+
+main(): int {
+    a: usize = 1
+    get: usize = get(a)
+    return int(get)
+}

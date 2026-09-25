@@ -1,0 +1,6 @@
+count: int = 1
+
+pub run(): int {
+    count, extra: int = 5, 6
+    return count + extra
+}

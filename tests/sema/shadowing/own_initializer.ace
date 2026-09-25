@@ -1,0 +1,6 @@
+total: usize = 3
+
+pub run(): usize {
+    total: usize = total + 1
+    return total
+}

@@ -1,0 +1,8 @@
+/* A bare name in an imported module's multi-name `=` reassigns the module
+ * global it names, as in the root file. */
+
+import run from "./mixed_global.ace"
+
+main(): int {
+    return run()
+}

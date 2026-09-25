@@ -112,6 +112,18 @@ for f in pending_result_decl pending_result_return forward_result_decl; do
         fail=1
     fi
 done
+
+# A local is in scope from its declarator, in the root file and in an
+# imported module alike.
+while IFS='|' read -r f want; do
+    if ! "$ACE" "$f" 2>&1 | grep -qF "$want"; then
+        echo "FAIL: $f should report: $want"
+        fail=1
+    fi
+done <<'OWN_INITIALIZER'
+tests/sema/shadowing/own_initializer_err.ace|10:21: error: 'get' is not callable
+tests/sema/shadowing/own_initializer_module_err.ace|own_initializer.ace:4:20: error: 'total' was not initialized before use
+OWN_INITIALIZER
 if ! "$ACE" tests/sema/types/forward_call_default_err.ace 2>&1 |
      grep -qF "default for field 'v' must be a compile-time expression"; then
     echo "FAIL: a field default must not call a function declared later"

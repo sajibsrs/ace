@@ -1,0 +1,8 @@
+/* An imported module scopes a local's own initializer as the root file does:
+ * the initializer names the uninitialized local, not the module global. */
+
+import run from "./own_initializer.ace"
+
+main(): int {
+    return int(run())
+}

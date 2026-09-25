@@ -79,6 +79,12 @@ current normative rules, and Git preserves patch-level detail.
 - Fixed module-private name lowering to preserve lexical value and type scopes,
   so parameters and locals shadow same-named module functions without changing
   unshadowed overload, qualified-module, or method resolution.
+- Scoped a local from its declarator in module lowering as sema already did,
+  so an imported file's `total: usize = total + 1` names the uninitialized
+  local instead of the module global, and a selected import no longer reaches
+  a same-named local's initializer. A bare name in a multi-name `=` is now
+  lowered as a reference rather than bound as a new local, so an imported
+  file can reassign a module global there.
 - Implemented canonical all-bits-zero values and path-sensitive definite
   initialization for direct Ace storage. Pointer aliases, extern calls, and
   inline assembly remain explicit trust boundaries.

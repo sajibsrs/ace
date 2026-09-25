@@ -1115,9 +1115,19 @@ static void lower_selected_node(Node* n, SelectLower* c) {
         lower_selected_block(n, c);
         return;
     case N_VAR:
-        for (int i = 0; i < n->nkids; i++) lower_selected_type(n->kids[i]->a, c);
-        lower_selected_node(n->b, c); // initializer precedes the new bindings
-        for (int i = 0; i < n->nkids; i++) bind_local(c, n->kids[i]->str, n->kids[i]->len, 0);
+        // A typed name is in scope from its declarator, its own initializer
+        // included; a bare name of a multi-name `=` reassigns what it names.
+        for (int i = 0; i < n->nkids; i++) {
+            Node* binder = n->kids[i];
+            if (binder->kind != N_PARAM) lower_selected_node(binder, c);
+        }
+        for (int i = 0; i < n->nkids; i++) {
+            Node* binder = n->kids[i];
+            if (binder->kind != N_PARAM) continue;
+            lower_selected_type(binder->a, c);
+            bind_local(c, binder->str, binder->len, 0);
+        }
+        lower_selected_node(n->b, c);
         return;
     case N_FOR:
         if (n->flags & F_FORGEN) {
@@ -1402,9 +1412,18 @@ static void rename_refs(Node* n, Renames* rs, SelectLower* c) {
         rename_block_refs(n, rs, c);
         return;
     case N_VAR:
-        for (int i = 0; i < n->nkids; i++) rename_type_refs(n->kids[i]->a, rs, c);
-        rename_refs(n->b, rs, c); // initializer precedes the new bindings
-        for (int i = 0; i < n->nkids; i++) bind_local(c, n->kids[i]->str, n->kids[i]->len, 0);
+        // Scoped as lower_selected_node's N_VAR.
+        for (int i = 0; i < n->nkids; i++) {
+            Node* binder = n->kids[i];
+            if (binder->kind != N_PARAM) rename_refs(binder, rs, c);
+        }
+        for (int i = 0; i < n->nkids; i++) {
+            Node* binder = n->kids[i];
+            if (binder->kind != N_PARAM) continue;
+            rename_type_refs(binder->a, rs, c);
+            bind_local(c, binder->str, binder->len, 0);
+        }
+        rename_refs(n->b, rs, c);
         return;
     case N_FOR:
         if (n->flags & F_FORGEN) {

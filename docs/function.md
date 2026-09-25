@@ -391,6 +391,12 @@ the same declarations in view as before except that the deferred calls see the
 whole file, so each use of their results is checked at its real type:
 `y: u8 = later()` is an error when `later` returns `u64`.
 
+A local shadows a same-named function or global from its declarator to the end
+of its block, its own initializer included. `get: usize = get(a)` is therefore
+an error (`'get' is not callable`); name the local differently. A call written
+before the local still reaches the function, even when it is resolved at the
+end of the file.
+
 ## Entry point
 
 An executable defines exactly this source-level entry:
