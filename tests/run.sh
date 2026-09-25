@@ -2195,6 +2195,29 @@ EOF
     done
 fi
 
+# IR lowering: --ir prints the root file's functions as tests/ir/NAME.ir
+# (debug) and NAME.release.ir (release) expect, and every emit fixture that
+# checks must also lower and pass the IR verifier in both modes.
+for f in tests/ir/*.ace; do
+    for mode in debug release; do
+        want=${f%.ace}.ir
+        [ "$mode" = release ] && want=${f%.ace}.release.ir
+        if ! "$ACE" --$mode --ir "$f" >/tmp/ace_ir_out 2>&1 || ! cmp -s /tmp/ace_ir_out "$want"; then
+            echo "FAIL: --$mode --ir $f differs from $want"
+            fail=1
+        fi
+    done
+done
+for f in $(find tests/emit -name '*.ace' | sort); do
+    "$ACE" "$f" >/dev/null 2>&1 || continue # a companion file, not a root
+    for mode in --debug --release; do
+        if ! "$ACE" $mode --ir "$f" >/dev/null 2>/tmp/ace_test_errs; then
+            echo "FAIL: $mode --ir $f: $(head -1 /tmp/ace_test_errs)"
+            fail=1
+        fi
+    done
+done
+
 if [ $fail -eq 0 ]; then
     echo "\n--------------------"
     echo "all tests passed"

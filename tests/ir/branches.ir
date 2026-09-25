@@ -1,0 +1,90 @@
+pick(i64, i64, bool): i64 {
+b0:
+    %0 = param i64 0
+    %1 = param i64 1
+    %2 = param bool 2
+    br %2, b4, b3
+b1: ; preds b4
+    jmp b2
+b2: ; preds b1, b6
+    %5 = phi i64 [%1, b1], [%12, b6]
+    ret %5
+b3: ; preds b0, b4
+    br %2, b7, b5
+b4: ; preds b0
+    %8 = lt bool %0, %1
+    br %8, b1, b3
+b5: ; preds b3, b7
+    %10 = neg.chk i64 %0
+    jmp b6
+b6: ; preds b7, b5
+    %12 = phi i64 [%0, b7], [%10, b5]
+    jmp b2
+b7: ; preds b3
+    %14 = eq bool %0, %1
+    br %14, b5, b6
+}
+
+both(i32, i32): bool {
+b0:
+    %0 = param i32 0
+    %1 = param i32 1
+    %2 = const i32 0
+    %3 = gt bool %0, %2
+    br %3, b4, b2
+b1: ; preds b4
+    %5 = const bool true
+    jmp b3
+b2: ; preds b0, b4
+    %7 = const bool false
+    jmp b3
+b3: ; preds b1, b2
+    %9 = phi bool [%5, b1], [%7, b2]
+    ret %9
+b4: ; preds b0
+    %11 = const i32 0
+    %12 = gt bool %1, %11
+    br %12, b1, b2
+}
+
+within(u8, u8, u8): bool {
+b0:
+    %0 = param u8 0
+    %1 = param u8 1
+    %2 = param u8 2
+    %3 = le bool %0, %1
+    %4 = lt bool %1, %2
+    %5 = and bool %3, %4
+    ret %5
+}
+
+main(): i64 {
+b0:
+    %0 = const i64 1
+    %1 = const i64 2
+    %2 = const bool true
+    %3 = call i64 pick(%0, %1, %2)
+    %4 = const i64 2
+    %5 = ne bool %3, %4
+    br %5, b1, b4
+b1: ; preds b0, b4, b3
+    %7 = const i64 1
+    call @__ace$registry_leaks()
+    ret %7
+b2: ; preds b3
+    %10 = const i64 0
+    call @__ace$registry_leaks()
+    ret %10
+b3: ; preds b4
+    %13 = const u8 1
+    %14 = const u8 2
+    %15 = const u8 3
+    %16 = call bool within(%13, %14, %15)
+    br %16, b2, b1
+b4: ; preds b0
+    %18 = const i32 1
+    %19 = const i32 2
+    %20 = call bool both(%18, %19)
+    br %20, b3, b1
+}
+

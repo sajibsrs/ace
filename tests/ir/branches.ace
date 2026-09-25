@@ -1,0 +1,26 @@
+/* && and || branch without evaluating the right operand when the left one
+ * decides; as a value they merge true and false in a phi. Comparison chains
+ * evaluate every operand once and AND the comparisons. */
+
+pick(a: i64, b: i64, c: bool): i64 {
+    r: i64 = a
+    if c && a < b {
+        r = b
+    } else if !c || a == b {
+        r = -a
+    }
+    return r
+}
+
+both(a: i32, b: i32): bool {
+    return a > 0 && b > 0
+}
+
+within(lo: u8, x: u8, hi: u8): bool {
+    return lo <= x < hi
+}
+
+main(): int {
+    if pick(1, 2, true) != 2 || !both(1, 2) || !within(1, 2, 3) { return 1 }
+    return 0
+}

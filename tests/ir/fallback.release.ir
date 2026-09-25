@@ -1,0 +1,8 @@
+; norm: not lowered (struct)
+
+; half: not lowered (floating-point value)
+
+; bump: not lowered (mut parameter)
+
+; main: not lowered (struct)
+

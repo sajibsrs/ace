@@ -122,6 +122,7 @@ Path-specific guidance lives in `.claude/rules/`:
 - Run test suite: `make test`
 - Lex file: `./ace --tokens file.ace`
 - Parse file: `./ace --ast file.ace`
+- Print IR: `./ace --ir file.ace`
 - Check sema: `./ace file.ace`
 - Show successful-run statistics: `./ace --report file.ace`
 - Compile object: `./ace -c file.ace`

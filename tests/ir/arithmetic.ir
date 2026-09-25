@@ -1,0 +1,44 @@
+mix(i32, u32, i64): u32 {
+b0:
+    %0 = param i32 0
+    %1 = param u32 1
+    %2 = param i64 2
+    %3 = const i32 3
+    %4 = mul.chk i32 %0, %3
+    %5 = const i32 7
+    %6 = sub.chk i32 %4, %5
+    %7 = const i32 2
+    %8 = div.chk i32 %6, %7
+    %9 = cast u32 %8
+    %10 = xor u32 %9, %1
+    %11 = const u32 255
+    %12 = and u32 %10, %11
+    %13 = neg.chk i64 %2
+    %14 = const i64 5
+    %15 = rem.chk i64 %13, %14
+    %16 = const u32 2
+    %17 = shl.chk u32 %12, %16
+    %18 = cast u32 %15
+    %19 = or u32 %17, %18
+    ret %19
+}
+
+main(): i64 {
+b0:
+    %0 = const i32 5
+    %1 = const u32 1
+    %2 = const i64 0
+    %3 = call u32 mix(%0, %1, %2)
+    %4 = const u32 20
+    %5 = ne bool %3, %4
+    br %5, b1, b2
+b1: ; preds b0
+    %7 = const i64 1
+    call @__ace$registry_leaks()
+    ret %7
+b2: ; preds b0
+    %10 = const i64 0
+    call @__ace$registry_leaks()
+    ret %10
+}
+

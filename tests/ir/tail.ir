@@ -1,0 +1,37 @@
+sum(u64, u64, u64): u64 {
+b0:
+    %0 = param u64 0
+    %1 = param u64 1
+    %2 = param u64 2
+    %3 = const u64 0
+    %4 = eq bool %0, %3
+    br %4, b1, b2
+b1: ; preds b0
+    ret %1
+b2: ; preds b0
+    %7 = const u64 1
+    %8 = sub.chk u64 %0, %7
+    %9 = add.chk u64 %1, %2
+    %10 = call u64 sum(%8, %9, %2)
+    ret %10
+}
+
+main(): i64 {
+b0:
+    %0 = const u64 10
+    %1 = const u64 0
+    %2 = const u64 2
+    %3 = call u64 sum(%0, %1, %2)
+    %4 = const u64 20
+    %5 = ne bool %3, %4
+    br %5, b1, b2
+b1: ; preds b0
+    %7 = const i64 1
+    call @__ace$registry_leaks()
+    ret %7
+b2: ; preds b0
+    %10 = const i64 0
+    call @__ace$registry_leaks()
+    ret %10
+}
+

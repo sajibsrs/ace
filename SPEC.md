@@ -1138,7 +1138,8 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
   - Passes after Compiler #2 passes 1–4, exactly:
     5. Lower: one walk of each checked function into SSA (Braun et al.,
        trivial phis removed), expanding `inline` calls, turning `defer` into
-       control flow and debug checks into explicit branches, splitting
+       control flow, making debug checks trapping instructions (checked
+       integer arithmetic) or explicit branches, splitting
        non-escaping struct and tuple locals into SSA values, and turning self
        tail recursion into a loop.
     6. Optimize (release only), in this order, each once: loop rotation, sparse
@@ -1173,9 +1174,10 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
     and loop unrolling or instruction scheduling unless later measured.
   - Migration: the new backend compiles each function it supports and the AST
     emitter the rest, under one ABI into one object. Steps: (1) IR, selection,
-    and allocation for scalar integer code, measuring compile time against the
-    emission it replaces; (2) floats, aggregates, and the full ABI; (3) tagged
-    unions, `switch`, `defer`, debug checks, and `inline`; (4) pass 6 and
+    and allocation for scalar integer code with its debug checks, measuring
+    compile time against the emission it replaces; (2) floats, aggregates, and
+    the full ABI; (3) tagged unions, `switch`, `defer`, bounds, null, and
+    contract checks, and `inline`; (4) pass 6 and
     the debug mode, with `bench/core`, `bench/std`, and `bench/package` at
     parity or better; (5) remove the AST emitter and fold this entry into
     Compiler #2, #4, and #6.

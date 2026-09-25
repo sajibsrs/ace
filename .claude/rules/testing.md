@@ -28,6 +28,9 @@ paths:
   that diagnostic), and `// expect-check-ok` (`pkg check` succeeds from a
   nested working directory, proving the walk-up-to-nearest-`ace.pkg`
   discovery).
+- `tests/ir/NAME.ace` pairs with `NAME.ir` and `NAME.release.ir`, the exact
+  `--ir` output in each mode; regenerate them only after reviewing the new IR.
+  Every checked `tests/emit` root must also lower and verify in both modes.
 - A change to definite initialization (`sema.c`) also runs
   `tests/definite-init-diff.sh <HEAD-ace> ./ace [count] [seed]`: random
   functions under every branch form must get byte-identical diagnostics from

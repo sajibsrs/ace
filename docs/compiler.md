@@ -9,6 +9,7 @@ ace -o program program.ace
 ace -o program.ace
 ace --debug -o program program.ace
 ace --release -o program program.ace
+ace --ir program.ace
 ace --target=darwin-arm64 program.ace
 ```
 
@@ -27,6 +28,11 @@ error and aborts. It also enables `assert`. `--release` removes those guards,
 failure paths, tracking, assertion evaluation, and diagnostic data. The flags are mutually
 exclusive. Check-only, `--tokens`, and `--ast` runs accept either flag, but the
 choice cannot change their result because they emit no program.
+
+`--ir` checks the program and prints the IR of each function in the root file
+as the selected mode lowers it: debug marks the integer operations it checks
+with `.chk`. A function the IR does not cover yet is listed with the first
+construct that kept it out; the AST emitter compiles such functions.
 
 The build target defaults from the compiler host and can be selected explicitly
 with `--target=NAME` (or `--target NAME`). The bootstrap compiler currently
@@ -82,7 +88,7 @@ sections.
 Compile time covers source loading through object emission. It excludes the
 external linker invoked by `-o`, keeping the measurement about Ace itself. The
 object-file size counts only Ace's own object; external `.o`/`.a` inputs are not
-Ace output. In a check-only, `--tokens`, or `--ast` run, no object is emitted,
+Ace output. In a check-only, `--tokens`, `--ast`, or `--ir` run, no object is emitted,
 so the machine-code and object-file values are zero.
 
 The report uses standard error so token dumps, AST dumps, and other

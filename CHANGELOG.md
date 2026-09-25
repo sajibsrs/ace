@@ -29,6 +29,15 @@ current normative rules, and Git preserves patch-level detail.
   DWARF, and the Mach-O image, plus the shared runtime-routine flags, live in
   one `Obj` that every code generator emits into. Objects are byte-identical
   across the test, bench, and demo sources in both modes.
+- Added the per-function SSA IR and its lowering (IR migration step 1b):
+  `ir.c` builds, verifies (structure and dominance), and prints it; `lower.c`
+  builds SSA during one walk of a checked function (Braun et al.) for scalar
+  integer and `bool` code: locals, assignment, `if`, general `for`, labeled
+  `break`/`continue`, direct calls, casts, and comparison chains. Debug marks
+  checked integer operations as trapping `.chk` instructions, `main` reports
+  leaks before returning, and release turns self tail calls into a loop. `--ir`
+  prints the root file's functions, or why one was not lowered; nothing is
+  emitted from the IR yet. `tests/ir` holds expected output for both modes.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

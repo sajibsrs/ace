@@ -1,5 +1,6 @@
 // main.c — compiler driver. Stages: lex → parse → sema (→ emit → link).
 #include "ace.h"
+#include "ir.h"
 
 #include <errno.h>
 #include <spawn.h>
@@ -28,7 +29,7 @@ static const char* host_target(void) {
 }
 
 static void usage(void) {
-    fprintf(stderr, "usage: ace [--debug | --release] [--tokens] [--ast] [--report]\n"
+    fprintf(stderr, "usage: ace [--debug | --release] [--tokens] [--ast] [--ir] [--report]\n"
                     "           [--target=TARGET] [-c] [-o NAME] <file.ace>\n"
                     "           [<file.o> | <file.a> | -L DIR | -l NAME | -framework NAME]...\n"
                     "       ace --pkg-graph=DIR\n"
@@ -37,6 +38,7 @@ static void usage(void) {
                     "  (default)       full semantic check, no codegen\n"
                     "  --debug         emit runtime diagnostics (the emission default)\n"
                     "  --release       emit without runtime diagnostic machinery\n"
+                    "  --ir            print each function's IR after semantic checking\n"
                     "  --report        print compilation statistics to stderr\n"
                     "  --target=TARGET compile for TARGET (supported: darwin-arm64)\n"
                     "  -c              emit a Mach-O arm64 object <base>.o\n"
@@ -727,7 +729,7 @@ static int package_main(int argc, char** argv, const char* argv0) {
 
 int main(int argc, char** argv) {
     if (argc >= 2 && strcmp(argv[1], "pkg") == 0) return package_main(argc - 2, argv + 2, argv[0]);
-    int dump_tok = 0, dump_ast = 0, show_report = 0, opt_c = 0, opt_link = 0;
+    int dump_tok = 0, dump_ast = 0, dump_ir = 0, show_report = 0, opt_c = 0, opt_link = 0;
     int mode_seen = 0;
     EmitMode emit_mode = EMIT_DEBUG;
     const char* path = NULL;
@@ -741,6 +743,7 @@ int main(int argc, char** argv) {
         char* a = argv[i];
         if (strcmp(a, "--tokens") == 0) dump_tok = 1;
         else if (strcmp(a, "--ast") == 0) dump_ast = 1;
+        else if (strcmp(a, "--ir") == 0) dump_ir = 1;
         else if (strcmp(a, "--debug") == 0) {
             if (mode_seen && emit_mode != EMIT_DEBUG) cli_error("--debug and --release are mutually exclusive");
             mode_seen = 1;
@@ -895,6 +898,10 @@ int main(int argc, char** argv) {
         if (d.errors > 0) goto done;
         sema_check(file, &d); // default mode: full semantic check
         if (d.errors > 0) goto done;
+        if (dump_ir) { // --ir: through lowering only
+            ir_dump_file(file, emit_mode);
+            return 0;
+        }
 
         if (opt_c || opt_link) { // codegen: Mach-O arm64 object
             char obj[4096];
