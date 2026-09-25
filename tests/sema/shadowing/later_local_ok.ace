@@ -1,0 +1,19 @@
+/* A call deferred to end of file, here by an untyped literal argument,
+ * resolves against the locals declared before it, not a later one that
+ * shadows the function for the rest of the block. */
+
+before(x: usize): usize {
+    return x
+}
+
+main(): int {
+    a: usize = before(1)
+    before: usize = a
+    b: usize = after(2)
+    after: usize = b
+    return int(before + after)
+}
+
+after(x: usize): usize {
+    return x
+}

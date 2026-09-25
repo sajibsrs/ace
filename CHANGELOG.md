@@ -2019,6 +2019,12 @@ current normative rules, and Git preserves patch-level detail.
   and reached codegen. Two checked-bounds fixtures returning `i32` from
   `main(): int` relied on the hole and now convert explicitly. The regex app's check costs 1.2% more
   instructions.
+- Fixed a pending call resolving against locals declared after it. The
+  end-of-file resolution looked the callee up in the call's saved block scope,
+  which by then held the rest of the block, so `y: usize = get(1)` followed by
+  `get: usize = y` reported `unknown function 'get'`. Each pending call now
+  records the declaration sequence at the call, and inside its function's own
+  scopes sees only locals up to it; the enclosing scopes stay fully visible.
 - Pooled float constants per function: a float literal outside the 256
   `fmov #imm8` values, and a read of a const `f32`/`f64` global initialized by
   a literal (possibly negated, or another such const), now loads with one

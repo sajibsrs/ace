@@ -275,6 +275,7 @@ typedef struct Pending {
     Node* fn;
     Scope* fnscope;
     uint32_t seq;  // last declaration that body's check could see
+    uint32_t call_seq; // last declaration visible at the call itself
     const char** tnames; SType** ttypes; int nsub;
     struct Pending* next;
 } Pending;
@@ -306,6 +307,8 @@ typedef struct {
     int     see_all;
 } Ck;
 
+static uint32_t g_sym_seq;
+
 // Arena memory is not zeroed; every Pending field must start defined.
 static Pending* new_pending(Ck* k, Node* call) {
     Pending* pd = (Pending*)arena_alloc(sizeof(Pending));
@@ -316,6 +319,7 @@ static Pending* new_pending(Ck* k, Node* call) {
     pd->fn = k->curfn;
     pd->fnscope = k->fnscope;
     pd->seq = k->fn_seq;
+    pd->call_seq = g_sym_seq;
     pd->tnames = k->tnames; pd->ttypes = k->ttypes; pd->nsub = k->nsub;
     pd->next = k->pending;
     k->pending = pd;
@@ -370,8 +374,6 @@ static void ensure_memory_types(void) {
     T_MUT_STRING->is_mut = 1;
     layout(T_MUT_STRING);
 }
-
-static uint32_t g_sym_seq;
 
 static Sym* sym_new(uint8_t kind, const char* name, uint32_t len) {
     Sym* s = (Sym*)arena_alloc(sizeof(Sym));
@@ -459,6 +461,19 @@ static Sym* lookup_val(Ck* k, const char* name, uint32_t len) {
     for (Scope* s = k->scope; s; s = s->parent) {
         Sym* v = scope_find(s, 0, name, len);
         if (v && visible(k, v)) return v;
+    }
+    return NULL;
+}
+
+/* A pending call sees every declaration from its function's enclosing scope
+ * outward, but in the function's own scopes only the locals declared before
+ * it: the scopes it saved have since gained the rest of their block. */
+static Sym* lookup_pending(Pending* pd, const char* name, uint32_t len) {
+    int local = pd->fnscope != NULL;
+    for (Scope* s = pd->scope; s; s = s->parent) {
+        if (s == pd->fnscope) local = 0;
+        Sym* v = scope_find(s, 0, name, len);
+        if (v && (!local || v->seq <= pd->call_seq)) return v;
     }
     return NULL;
 }
@@ -6727,7 +6742,7 @@ int sema_check(Node* file, Diag* d) {
             call->ty = r;
             continue;
         }
-        Sym* head = lookup_val(&k, callee->str, callee->len);
+        Sym* head = lookup_pending(pd, callee->str, callee->len);
         if (!head || head->kind != SYM_FUNC) {
             ck_err(&k, call, "unknown function '%.*s'", (int)callee->len, callee->str);
         } else {
