@@ -114,12 +114,6 @@ the remaining proof points explicit:
   measured), but initialization state would then be tracked while some calls
   are still pending and would have to stay consistent through the end-of-file
   re-check.
-- **Definite-initialization snapshots are quadratic** [new] — every `if`,
-  `for`, and `switch` clones the state of every variable the function has
-  declared so far (`init_snapshot`/`init_restore` in `sema.c`), in time and
-  arena memory. A function of 20,000 locals with 10,000 small loops spends
-  most of its 6.7 s compile there, 0.27 s at 5,000. Candidate: snapshot only
-  the variables a branch assigns, or share unchanged state between snapshots.
 - **Local lookup in module lowering is quadratic** [new] — in an imported
   file, `lower_refs` checks each unshadowed name against the list of locals in
   scope (`local_name` in `module.c`), so one function of 8,000 locals takes

@@ -507,6 +507,16 @@ current normative rules, and Git preserves patch-level detail.
   by offset. A function of 5,000 locals and 2,500 `if`/`else` statements took
   378G instructions to check, now 2.5G; the regex and json package checks gain
   0.5%. Snapshot cloning itself stays linear in the declared variables.
+- Replaced definite initialization's whole-function snapshots with an undo
+  trail. A variable's state is saved before its first change after a branch
+  point; a branch collects the variables it changed and unwinds, and the paths
+  reaching a join intersect only those, a path that left one alone standing in
+  with the unwound state. `if`, `switch`, loops, and labeled blocks cost what
+  their branches change, not every variable declared so far. A function of
+  10,000 locals and 5,000 loops checks in 376M instructions (was 4.2G), with
+  5,000 `if`/`else` 298M (was 9.4G); the regex and json package checks gain
+  0.55-0.75%. Random programs mixing partial writes with every branch form
+  report identical diagnostics under both.
 - Materialized a float constant with `fmov Vd, #imm8` when it is one of the 256
   encodable values (0.125 to 31.0 in sixteenths of a power of two, either sign),
   and folded the scaled index into a scalar array or slice load as

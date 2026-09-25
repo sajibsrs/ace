@@ -5346,32 +5346,47 @@ struct InitPart {
 struct InitVar {
     Sym* sym;
     InitState state;
-    InitVar* next;
+    int saved;      // trail slot of the latest save of state, or -1
+    InitState acc;  // init_join scratch: the paths' intersection so far
+    int count;      // init_join scratch: paths that changed state
+    uint8_t seen;   // init_delta/init_join scratch
 };
+
+/* A branch saves a variable's state before its first change, so undoing the
+ * branch touches only what it changed; see init_touch and init_undo. */
+typedef struct {
+    InitVar* var;
+    InitState old;
+    int prev; // var's previous trail slot
+} InitUndo;
 
 typedef struct {
     Diag* d;
-    InitVar* vars;
     PtrMap var_ix; // Sym -> InitVar
     InitExit* exits;
+    InitUndo* trail;
+    int ntrail, cap;
+    int mark;  // trail length at the innermost open branch point
+    int depth; // open branch points; none means no change is ever undone
 } InitCk;
 
+// The variables one path changed since a branch point, with their states.
 typedef struct {
     InitVar* var;
     InitState state;
-} InitSnapEntry;
+} InitChange;
 
 typedef struct {
-    InitSnapEntry* v;
+    InitChange* v;
     int n;
-} InitSnap;
+} InitDelta;
 
 struct InitExit {
     const char* name;
     uint32_t len;
-    InitSnap base;
-    InitSnap merged;
-    int have;
+    int from;        // trail length at the label
+    InitDelta* paths; // one per `break` to it, and its fallthrough
+    int n, cap;
     InitExit* next;
 };
 
@@ -5474,32 +5489,94 @@ static InitVar* init_var(InitCk* k, Sym* sym, int create) {
     InitVar* v = (InitVar*)arena_alloc(sizeof(InitVar));
     memset(v, 0, sizeof *v);
     v->sym = sym;
-    v->next = k->vars;
-    k->vars = v;
+    v->saved = -1;
     ptrmap_put(&k->var_ix, sym, (uintptr_t)v);
     return v;
 }
 
-static InitSnap init_snapshot(InitCk* k) {
-    int n = 0;
-    for (InitVar* v = k->vars; v; v = v->next) n++;
-    InitSnap s = {0};
-    s.n = n;
-    s.v = (InitSnapEntry*)arena_alloc((size_t)(n ? n : 1) * sizeof(InitSnapEntry));
-    int i = 0;
-    for (InitVar* v = k->vars; v; v = v->next) { s.v[i].var = v; s.v[i].state = init_clone(&v->state); i++; }
-    return s;
+// Save v's state before its first change since the innermost branch point.
+static void init_touch(InitCk* k, InitVar* v) {
+    if (!k->depth || v->saved >= k->mark) return;
+    if (k->ntrail == k->cap) {
+        k->cap = k->cap ? k->cap * 2 : 64;
+        k->trail = realloc(k->trail, (size_t)k->cap * sizeof(InitUndo));
+        if (!k->trail) exit(1);
+    }
+    k->trail[k->ntrail] = (InitUndo){ v, init_clone(&v->state), v->saved };
+    v->saved = k->ntrail++;
 }
 
-static void init_restore(InitSnap* s) {
-    for (int i = 0; i < s->n; i++) s->v[i].var->state = init_clone(&s->v[i].state);
+static void init_undo(InitCk* k, int to) {
+    while (k->ntrail > to) {
+        InitUndo* u = &k->trail[--k->ntrail];
+        u->var->state = u->old;
+        u->var->saved = u->prev;
+    }
 }
 
-/* Base entry i's state in s. k->vars only grows, at its head, and snapshots
- * list it head first, so a snapshot of the same function taken no earlier than
- * base ends with base's entries in base's order. */
-static InitState* init_snap_state(InitSnap* s, InitSnap* base, int i) {
-    return &s->v[s->n - base->n + i].state;
+// Open a branch point; the result restores the enclosing one in init_end.
+static int init_begin(InitCk* k) {
+    int outer = k->mark;
+    k->mark = k->ntrail;
+    k->depth++;
+    return outer;
+}
+
+// Close a branch point, undoing every change made since it opened.
+static void init_end(InitCk* k, int outer) {
+    init_undo(k, k->mark);
+    k->mark = outer;
+    k->depth--;
+}
+
+/* The variables changed since trail slot from, with their current states. A
+ * path that goes on changing them (a `break` inside the branch) clones. */
+static InitDelta init_delta(InitCk* k, int from, int clone) {
+    InitDelta out = {0};
+    out.v = (InitChange*)arena_alloc((size_t)(k->ntrail > from ? k->ntrail - from : 1) * sizeof(InitChange));
+    for (int i = from; i < k->ntrail; i++) {
+        InitVar* v = k->trail[i].var;
+        if (v->seen) continue; // saved again by a branch still open
+        v->seen = 1;
+        out.v[out.n].var = v;
+        out.v[out.n].state = clone ? init_clone(&v->state) : v->state;
+        out.n++;
+    }
+    for (int i = 0; i < out.n; i++) out.v[i].var->seen = 0;
+    return out;
+}
+
+/* Join the npaths paths reaching one point, after init_end has restored the
+ * base state: each changed variable takes the intersection of its states, the
+ * base standing in for a path that left it alone. */
+static void init_join(InitCk* k, InitDelta* paths, int np, int npaths) {
+    int total = 0;
+    for (int p = 0; p < np; p++) total += paths[p].n;
+    if (!total) return;
+    InitVar** changed = (InitVar**)arena_alloc((size_t)total * sizeof(InitVar*));
+    int nchanged = 0;
+    for (int p = 0; p < np; p++) {
+        for (int i = 0; i < paths[p].n; i++) {
+            InitVar* v = paths[p].v[i].var;
+            InitState* st = &paths[p].v[i].state;
+            if (!v->seen) {
+                v->seen = 1;
+                v->acc = *st;
+                v->count = 1;
+                changed[nchanged++] = v;
+            } else {
+                v->acc = init_intersect(&v->acc, st, v->sym->type);
+                v->count++;
+            }
+        }
+    }
+    for (int i = 0; i < nchanged; i++) {
+        InitVar* v = changed[i];
+        if (v->count < npaths) v->acc = init_intersect(&v->acc, &v->state, v->sym->type);
+        init_touch(k, v);
+        v->state = v->acc;
+        v->seen = 0;
+    }
 }
 
 static int init_field_index(SType* t, Node* e) {
@@ -5597,6 +5674,7 @@ static void init_mark_path(InitCk* k, Node* e) {
     if (!init_path(e, &p) || p.dynamic_index) return;
     InitVar* v = init_var(k, p.root, 1);
     if (!v) return;
+    init_touch(k, v);
     InitState* s = init_path_state(v, &p, 1);
     s->full = 1;
     s->parts = NULL;
@@ -5733,39 +5811,16 @@ static void init_expr(InitCk* k, Node* e) {
     }
 }
 
-static void init_merge_snapshots(InitSnap* base, InitSnap* a, InitSnap* b) {
-    for (int i = 0; i < base->n; i++) {
-        InitVar* v = base->v[i].var;
-        v->state = init_intersect(init_snap_state(a, base, i), init_snap_state(b, base, i), v->sym->type);
+// Record one path leaving the labeled block x.
+static void init_exit_path(InitCk* k, InitExit* x, int clone) {
+    if (x->n == x->cap) {
+        int cap = x->cap ? x->cap * 2 : 4;
+        InitDelta* grown = (InitDelta*)arena_alloc((size_t)cap * sizeof(InitDelta));
+        if (x->n) memcpy(grown, x->paths, (size_t)x->n * sizeof(InitDelta));
+        x->paths = grown;
+        x->cap = cap;
     }
-}
-
-static InitSnap init_intersect_snapshots(InitSnap* base, InitSnap* a, InitSnap* b) {
-    InitSnap out = {0};
-    out.n = base->n;
-    out.v = (InitSnapEntry*)arena_alloc((size_t)(out.n ? out.n : 1) * sizeof(InitSnapEntry));
-    for (int i = 0; i < out.n; i++) {
-        InitVar* v = base->v[i].var;
-        out.v[i].var = v;
-        out.v[i].state = init_intersect(init_snap_state(a, base, i), init_snap_state(b, base, i), v->sym->type);
-    }
-    return out;
-}
-
-static void init_exit_add(InitExit* x) {
-    InitSnap now = {0};
-    now.n = x->base.n;
-    now.v = (InitSnapEntry*)arena_alloc((size_t)(now.n ? now.n : 1) * sizeof(InitSnapEntry));
-    for (int i = 0; i < now.n; i++) {
-        now.v[i].var = x->base.v[i].var;
-        now.v[i].state = init_clone(&now.v[i].var->state);
-    }
-    if (!x->have) {
-        x->merged = now;
-        x->have = 1;
-    } else {
-        x->merged = init_intersect_snapshots(&x->base, &x->merged, &now);
-    }
+    x->paths[x->n++] = init_delta(k, x->from, clone);
 }
 
 static int init_block(InitCk* k, Node* b) {
@@ -5784,7 +5839,10 @@ static int init_stmt(InitCk* k, Node* s) {
             if ((s->flags & F_MIXED) && s->kids[i]->kind != N_PARAM) continue;
             Sym* sym = node_sym(s->kids[i]);
             InitVar* v = init_var(k, sym, 1);
-            if (v) memset(&v->state, 0, sizeof v->state);
+            if (v) {
+                init_touch(k, v);
+                memset(&v->state, 0, sizeof v->state);
+            }
         }
         if (s->b) {
             init_expr(k, s->b);
@@ -5793,7 +5851,11 @@ static int init_stmt(InitCk* k, Node* s) {
                     init_mark_path(k, s->kids[i]);
                 } else {
                     InitVar* v = init_var(k, node_sym(s->kids[i]), 1);
-                    if (v) { v->state.full = 1; v->state.parts = NULL; }
+                    if (v) {
+                        init_touch(k, v);
+                        v->state.full = 1;
+                        v->state.parts = NULL;
+                    }
                 }
             }
         }
@@ -5813,79 +5875,70 @@ static int init_stmt(InitCk* k, Node* s) {
         init_expr(k, s->a); return 1;
     case N_IF: {
         init_expr(k, s->a);
-        InitSnap base = init_snapshot(k);
+        int outer = init_begin(k), from = k->mark;
+        InitDelta paths[2];
+        int np = 0;
         int tf = init_block(k, s->b);
-        InitSnap then_s = init_snapshot(k);
-        init_restore(&base);
+        if (tf) paths[np++] = init_delta(k, from, 0);
+        init_undo(k, from);
         int ef = s->c ? init_stmt(k, s->c) : 1;
-        InitSnap else_s = init_snapshot(k);
-        if (tf && ef) init_merge_snapshots(&base, &then_s, &else_s);
-        else if (tf) init_restore(&then_s);
-        else if (ef) init_restore(&else_s);
-        else init_restore(&base);
+        if (ef) paths[np++] = init_delta(k, from, 0);
+        init_end(k, outer);
+        init_join(k, paths, np, np);
         return tf || ef;
     }
     case N_FOR: {
         if (s->flags & F_FORGEN) {
             if (s->a) init_stmt(k, s->a); // head init runs before the first cond
             if (s->b) init_expr(k, s->b);
-            InitSnap base = init_snapshot(k);
+            int outer = init_begin(k);
             (void)init_block(k, s->d);
             if (s->c) init_stmt(k, s->c); // post-clause reads see the body's state
-            init_restore(&base); // loop may execute zero times
+            init_end(k, outer); // loop may execute zero times
             return 1;
         }
         init_expr(k, s->b);
-        InitSnap base = init_snapshot(k);
+        int outer = init_begin(k);
         for (int i = 0; i < s->nkids; i++) {
             InitVar* v = init_var(k, node_sym(s->kids[i]), 1);
-            if (v) v->state.full = 1;
+            if (v) {
+                init_touch(k, v);
+                v->state.full = 1;
+            }
         }
         (void)init_block(k, s->c);
-        init_restore(&base); // loop may execute zero times
+        init_end(k, outer); // loop may execute zero times
         return 1;
     }
     case N_SWITCH: {
         init_expr(k, s->a);
-        InitSnap base = init_snapshot(k);
-        InitSnap merged = base;
-        int have = 0, has_default = 0;
+        int outer = init_begin(k), from = k->mark;
+        InitDelta* paths = (InitDelta*)arena_alloc((size_t)(s->nkids ? s->nkids : 1) * sizeof(InitDelta));
+        int np = 0, has_default = 0;
         for (int i = 0; i < s->nkids; i++) {
             Node* c = s->kids[i];
             if (c->flags & F_DEFAULT) has_default = 1;
-            init_restore(&base);
             for (int j = 0; j < c->nkids; j++) {
                 Node* pat = c->kids[j];
                 if (pat->kind == N_VARPAT && pat->b) {
                     // an arm binder is a fresh copy, always initialized
                     InitVar* bv = init_var(k, node_sym(pat->b), 1);
-                    if (bv) { bv->state.full = 1; bv->state.parts = NULL; }
+                    if (bv) {
+                        init_touch(k, bv);
+                        bv->state.full = 1;
+                        bv->state.parts = NULL;
+                    }
                 } else {
                     init_expr(k, pat);
                 }
             }
-            int falls = init_block(k, c->b);
-            if (!falls) continue;
-            InitSnap cs = init_snapshot(k);
-            if (!have) { merged = cs; have = 1; }
-            else {
-                init_restore(&merged);
-                InitSnap cur = init_snapshot(k);
-                init_merge_snapshots(&base, &cur, &cs);
-                merged = init_snapshot(k);
-            }
+            if (init_block(k, c->b)) paths[np++] = init_delta(k, from, 0);
+            init_undo(k, from); // each case starts from the scrutinee's state
         }
-        if (!has_default) {
-            if (!have) merged = base;
-            else {
-                init_restore(&merged);
-                InitSnap cur = init_snapshot(k);
-                init_merge_snapshots(&base, &cur, &base);
-                merged = init_snapshot(k);
-            }
-        }
-        init_restore(have || !has_default ? &merged : &base);
-        return !has_default || have;
+        init_end(k, outer);
+        // without a default, the value matching no case is one more path
+        init_join(k, paths, np, np + !has_default);
+        return !has_default || np;
     }
     case N_RETURN:
         init_expr(k, s->a); return 0;
@@ -5909,21 +5962,21 @@ static int init_stmt(InitCk* k, Node* s) {
         InitExit x = {0};
         x.name = s->str;
         x.len = s->len;
-        x.base = init_snapshot(k);
+        int outer = init_begin(k);
+        x.from = k->mark;
         x.next = k->exits;
         k->exits = &x;
-        int falls = init_block(k, s->a);
-        if (falls) init_exit_add(&x);
+        if (init_block(k, s->a)) init_exit_path(k, &x, 0);
         k->exits = x.next;
-        if (x.have) init_restore(&x.merged);
-        else init_restore(&x.base);
-        return x.have;
+        init_end(k, outer);
+        init_join(k, x.paths, x.n, x.n);
+        return x.n > 0;
     }
     case N_BREAK:
         if (s->str) {
             for (InitExit* x = k->exits; x; x = x->next) {
                 if (x->len == s->len && memcmp(x->name, s->str, s->len) == 0) {
-                    init_exit_add(x);
+                    init_exit_path(k, x, 1); // the label's scope goes on
                     break;
                 }
             }
@@ -5951,6 +6004,7 @@ static void check_definite_initialization(Node* file, Diag* d) {
         }
         (void)init_block(&k, f->b);
         ptrmap_free(&k.var_ix);
+        free(k.trail);
     }
 }
 
