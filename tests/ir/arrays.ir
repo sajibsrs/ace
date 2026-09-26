@@ -1,0 +1,228 @@
+get(ptr, i32): i64 {
+b0:
+    %0 = param ptr 0
+    %1 = param i32 1
+    %2 = const i32 0
+    %3 = ge bool %1, %2
+    check %3, 16:14 bounds violation
+    %5 = cast u64 %1
+    %6 = const u64 4
+    %7 = lt bool %5, %6
+    check %7, 16:14 bounds violation
+    %9 = padd ptr %0, %5 * 8
+    %10 = load i64 [%9]
+    %11 = load i64 [%0 + 24]
+    %12 = add.chk i64 %10, %11
+    ret %12
+}
+
+set(ptr, u64, u8): void {
+b0:
+    %0 = param ptr 0
+    %1 = param u64 1
+    %2 = param u8 2
+    %3 = const u64 4
+    %4 = lt bool %1, %3
+    check %4, 20:13 bounds violation
+    %6 = padd ptr %0, %1 * 1
+    store [%6 + 4], %2
+    %8 = load u8 [%0 + 4]
+    %9 = const u8 1
+    %10 = add.chk u8 %8, %9
+    store [%0 + 4], %10
+    ret
+}
+
+window(ptr, u64, u64): {ptr, u64} {
+b0:
+    %0 = param ptr 0
+    %1 = param u64 1
+    %2 = param u64 2
+    %3 = const u64 4
+    %4 = le bool %1, %2
+    check %4, 25:14 bounds violation
+    %6 = le bool %2, %3
+    check %6, 25:14 bounds violation
+    %8 = padd ptr %0, %1 * 8
+    %9 = sub u64 %2, %1
+    ret %8, %9
+}
+
+sum(ptr): u64 {
+b0:
+    %0 = param ptr 0
+    %1 = const u64 0
+    %2 = const i64 0
+    %3 = const i64 64
+    jmp b1
+b1: ; preds b0, b4
+    %5 = phi i64 [%2, b0], [%20, b4]
+    %6 = phi u64 [%1, b0], [%16, b4]
+    %7 = lt bool %5, %3
+    br %7, b2, b3
+b2: ; preds b1
+    %9 = cast u64 %5
+    %10 = const u64 64
+    %11 = lt bool %9, %10
+    check %11, 31:20 bounds violation
+    %13 = padd ptr %0, %9 * 1
+    %14 = load u8 [%13]
+    %15 = cast u64 %14
+    %16 = add.chk u64 %6, %15
+    jmp b4
+b3: ; preds b1
+    ret %6
+b4: ; preds b2
+    %19 = const i64 1
+    %20 = add i64 %5, %19
+    jmp b1
+}
+
+pair(i64): {i64, i64} {
+b0:
+    %0 = param i64 0
+    %1 = const i64 1
+    %2 = add.chk i64 %0, %1
+    ret %0, %2
+}
+
+bits32(f32): u32 {
+b0:
+    %0 = param f32 0
+    %1 = bitcast u32 %0
+    ret %1
+}
+
+main(): i64 {
+b0:
+    %0 = slot ptr 64, 1
+    %1 = slot ptr 16, 8
+    %2 = slot ptr 64, 1
+    %3 = slot ptr 64, 1
+    %4 = slot ptr 8, 4
+    %5 = slot ptr 32, 8
+    %6 = const i64 1
+    store [%5], %6
+    %8 = const i64 2
+    store [%5 + 8], %8
+    %10 = const i64 3
+    store [%5 + 16], %10
+    %12 = const i64 4
+    store [%5 + 24], %12
+    %14 = const i32 1
+    %15 = const u8 0
+    store [%4], %14
+    store [%4 + 4], %15
+    store [%4 + 5], %15
+    store [%4 + 6], %15
+    store [%4 + 7], %15
+    %21 = const u64 2
+    %22 = const u8 7
+    call set(%4, %21, %22)
+    %24 = const u8 1
+    %25 = const u64 72340172838076673
+    store [%3], %25
+    store [%3 + 8], %25
+    store [%3 + 16], %25
+    store [%3 + 24], %25
+    store [%3 + 32], %25
+    store [%3 + 40], %25
+    store [%3 + 48], %25
+    store [%3 + 56], %25
+    %34 = load u64 [%3]
+    store [%2], %34
+    %36 = load u64 [%3 + 8]
+    store [%2 + 8], %36
+    %38 = load u64 [%3 + 16]
+    store [%2 + 16], %38
+    %40 = load u64 [%3 + 24]
+    store [%2 + 24], %40
+    %42 = load u64 [%3 + 32]
+    store [%2 + 32], %42
+    %44 = load u64 [%3 + 40]
+    store [%2 + 40], %44
+    %46 = load u64 [%3 + 48]
+    store [%2 + 48], %46
+    %48 = load u64 [%3 + 56]
+    store [%2 + 56], %48
+    %50 = const u8 2
+    store [%2 + 63], %50
+    %52 = const i64 5
+    %53 = call {2} pair(%52)
+    %54 = proj i64 %53, 0
+    %55 = proj i64 %53, 1
+    store [%1], %54
+    store [%1 + 8], %55
+    %58 = load i64 [%5]
+    %59 = load i64 [%5 + 8]
+    %60 = load i64 [%5 + 16]
+    %61 = load i64 [%5 + 24]
+    %62 = const i32 1
+    %63 = call i64 get(%58, %59, %60, %61, %62)
+    %64 = const i64 6
+    %65 = ne bool %63, %64
+    br %65, b1, b6
+b1: ; preds b0, b6, b5, b4, b3
+    %67 = const i64 1
+    call @__ace$registry_leaks()
+    ret %67
+b2: ; preds b3
+    %70 = const f32 1.0
+    %71 = call u32 bits32(%70)
+    %72 = const u32 1065353216
+    %73 = ne bool %71, %72
+    br %73, b7, b8
+b3: ; preds b4
+    %75 = load i64 [%1 + 8]
+    %76 = const i64 6
+    %77 = ne bool %75, %76
+    br %77, b1, b2
+b4: ; preds b5
+    %79 = load u64 [%2]
+    store [%0], %79
+    %81 = load u64 [%2 + 8]
+    store [%0 + 8], %81
+    %83 = load u64 [%2 + 16]
+    store [%0 + 16], %83
+    %85 = load u64 [%2 + 24]
+    store [%0 + 24], %85
+    %87 = load u64 [%2 + 32]
+    store [%0 + 32], %87
+    %89 = load u64 [%2 + 40]
+    store [%0 + 40], %89
+    %91 = load u64 [%2 + 48]
+    store [%0 + 48], %91
+    %93 = load u64 [%2 + 56]
+    store [%0 + 56], %93
+    %95 = call u64 sum(%0)
+    %96 = const u64 65
+    %97 = ne bool %95, %96
+    br %97, b1, b3
+b5: ; preds b6
+    %99 = load i64 [%5]
+    %100 = load i64 [%5 + 8]
+    %101 = load i64 [%5 + 16]
+    %102 = load i64 [%5 + 24]
+    %103 = const u64 1
+    %104 = const u64 3
+    %105 = call {2} window(%99, %100, %101, %102, %103, %104)
+    %106 = proj ptr %105, 0
+    %107 = proj u64 %105, 1
+    %108 = const u64 2
+    %109 = ne bool %107, %108
+    br %109, b1, b4
+b6: ; preds b0
+    %111 = load u8 [%4 + 6]
+    %112 = const u8 7
+    %113 = ne bool %111, %112
+    br %113, b1, b5
+b7: ; preds b2
+    %115 = const i64 2
+    call @__ace$registry_leaks()
+    ret %115
+b8: ; preds b2
+    %118 = const i64 0
+    call @__ace$registry_leaks()
+    ret %118
+}
+

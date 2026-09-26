@@ -2,6 +2,7 @@
 #include "ir.h"
 #include "backend.h"
 
+#include <limits.h>
 #include <stdio.h>
 
 static void* grow(void* p, int* cap, int need, size_t elem) {
@@ -136,35 +137,49 @@ int ir_type_of(SType* t) {
     }
 }
 
-static int leaves_at(SType* t, uint32_t off, IrLeaf* out, int n, SType** bad) {
+// The leaves of t at off appended to out[n..max) (none stored when out is
+// NULL): the new count, or -1 with *bad the type that does not fit.
+static int leaves_at(SType* t, uint32_t off, IrLeaf* out, int n, int max, SType** bad) {
     int it = ir_type_of(t);
     if (it >= 0) {
-        if (n == IR_MAX_LEAVES) {
+        if (n == max) {
             *bad = t;
             return -1;
         }
-        out[n] = (IrLeaf){ off, (uint8_t)it };
+        if (out) out[n] = (IrLeaf){ off, (uint8_t)it };
         return n + 1;
     }
     SType* u = unwrap(t);
     if (u && (u->kind == SK_SLICE || (u->kind == SK_PRIM && u->prim == P_STRING))) { // Types #19
-        if (n + 2 > IR_MAX_LEAVES) {
+        if (n + 2 > max) {
             *bad = t;
             return -1;
         }
-        out[n] = (IrLeaf){ off, IT_PTR };
-        out[n + 1] = (IrLeaf){ off + 8, IT_U64 };
+        if (out) {
+            out[n] = (IrLeaf){ off, IT_PTR };
+            out[n + 1] = (IrLeaf){ off + 8, IT_U64 };
+        }
         return n + 2;
+    }
+    if (u && u->kind == SK_ARRAY) { // its elements in order, as AAPCS64 flattens it
+        uint32_t es = sema_size(u->base);
+        for (uint64_t i = 0; i < u->count && n >= 0; i++) n = leaves_at(u->base, off + (uint32_t)i * es, out, n, max, bad);
+        return n;
     }
     if (!u || (u->kind != SK_STRUCT && u->kind != SK_TUPLE)) {
         *bad = t;
         return -1;
     }
-    for (int i = 0; i < u->nfields && n >= 0; i++) n = leaves_at(u->fields[i].t, off + field_off(u, i), out, n, bad);
+    for (int i = 0; i < u->nfields && n >= 0; i++) n = leaves_at(u->fields[i].t, off + field_off(u, i), out, n, max, bad);
     return n;
 }
 
-int ir_leaves(SType* t, IrLeaf* out, SType** bad) { return leaves_at(t, 0, out, 0, bad); }
+int ir_leaves(SType* t, IrLeaf* out, SType** bad) { return leaves_at(t, 0, out, 0, IR_MAX_LEAVES, bad); }
+
+int ir_leaf_count(SType* t) {
+    SType* bad;
+    return leaves_at(t, 0, NULL, 0, INT_MAX, &bad);
+}
 
 // The 64-bit pattern of v wrapped into t: truncated, then extended by t's
 // signedness. Every IR integer value is held in this form.

@@ -40,7 +40,10 @@ with one as its result prints `call {n}`, whose leaves `proj` reads. An
 literal's address prints as `str` with its bytes quoted. An element of a
 string or slice is addressed by `padd ptr, i * size`; in debug, each bounds
 test prints as a comparison and a `check %c, line:col bounds violation`,
-which aborts with that site's diagnostic when `%c` is false. A function the IR does not cover yet is listed with the first
+which aborts with that site's diagnostic when `%c` is false. An array
+lives in memory: a constant index is an offset on the access, any other a
+`padd` checked below the fixed length. `bitcast` reinterprets a float's bits
+as an integer of its width, or back (`bits.cast`). A function the IR does not cover yet is listed with the first
 construct that kept it out; the AST emitter compiles such functions, and the
 IR's AArch64 backend compiles the rest.
 

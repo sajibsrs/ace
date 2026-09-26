@@ -801,7 +801,7 @@ if ! "$ACE" --debug -o /tmp/ace_checked_bounds/proven_iteration \
     echo "FAIL: proven/iteration checked fixture failed"
     fail=1
 fi
-for f in array_negative array_equal aggregate_array_equal \
+for f in array_negative array_equal aggregate_array_equal array_slice_upper array_slice_order \
          aggregate_slice_greater slice_greater string_equal \
          mut_string_greater slice_lower slice_upper slice_order \
          slice_source_length; do
@@ -1235,7 +1235,7 @@ if [ -d tests/emit ]; then
         # arithmetic, compares, bool tests, and 64-bit indexes read x19-x28
         # (or x9-x14 in these call-free functions) directly, and arith copies
         # none of them into a temp. An index is read directly by the address
-        # add or by the folded register-offset load.
+        # add or as the folded register-offset load's index register.
         if ! otool -tv /tmp/ace_emit/basics/register_operands.o | awk '
             /^[^0-9].*:$/ { fn = $0; next }
             {
@@ -1251,7 +1251,8 @@ if [ -d tests/emit ]; then
             fn ~ /^__ace\$fn\$narrow\$/ && $2 == "cmp" && n == 2 { cmp = 1 }
             fn ~ /^__ace\$fn\$narrow\$/ && $2 ~ /^cbn?z$/ && n == 1 { test = 1 }
             fn ~ /^__ace\$fn\$indexed\$/ && $2 == "add" && $NF == "#3" && n == 1 { idx = 1 }
-            fn ~ /^__ace\$fn\$indexed\$/ && $2 == "ldr" && $NF == "#3]" && n == 1 { idx = 1 }
+            fn ~ /^__ace\$fn\$indexed\$/ && $2 == "ldr" && $NF == "#3]" &&
+                $(NF - 2) ~ /^[xw](9|1[0-4]|19|2[0-8]),$/ { idx = 1 }
             END { exit bad || !arith || !cmp || !test || !idx }'; then
             echo "FAIL: promoted locals must be read in place as operands"
             fail=1

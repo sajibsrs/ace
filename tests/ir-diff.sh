@@ -15,7 +15,8 @@
 # and calls to generic templates and a written specialization, directly and
 # as values, and indexing and slicing (reads, writes, ^=, &, every slice form;
 # indices and bounds mostly in range, at times one past either end) of a
-# 22-byte mut []u8 and a string, each a window between two guard bytes, so a
+# 22-byte mut []u8, a string, and a [22]u8 struct field, each a window
+# between two guard bytes (and in-range reads of a local copy of the array), so a
 # debug bounds trap ends the run the same way in both and release reads or
 # writes a guard. A switch keeps some functions
 # on the AST emitter, so calls cross between the backends both ways. Each
@@ -202,8 +203,12 @@ function index_of(depth,   r, e, t) {
 
 # a window (the mut []u8 gv or the string gt) sliced from lo, a u8 local
 # below 12: every form, lo at times -1 and hi at times one past the end
+# a writable 22-byte window: the mut []u8 gv, or the array ga.a
+function window() { return chance(0.5) ? "gv" : "ga.a" }
+
 function slice_of(lo, depth,   w, r, t, hi) {
-    w = chance(0.5) ? "gv" : "gt"
+    r = rand()
+    w = r < 0.35 ? "gv" : r < 0.7 ? "gt" : "ga.a"
     r = rand()
     if (r < 0.1) return w "[..]"
     if (r < 0.2) return w "[.." lo "]"
@@ -217,11 +222,17 @@ function slice_of(lo, depth,   w, r, t, hi) {
 function seq_stmt(pad,   p, r, name) {
     p = indent(pad)
     r = rand()
-    if (r < 0.3) { print p "gv[" index_of(1) "] = u8(" expr("u8", 1) ")"; return }
-    if (r < 0.45) { print p "gv[" index_of(1) "] ^= " expr("u8", 1); return }
+    if (r < 0.3) { print p window() "[" index_of(1) "] = u8(" expr("u8", 1) ")"; return }
+    if (r < 0.45) { print p window() "[" index_of(1) "] ^= " expr("u8", 1); return }
     name = "v" nlocals++
+    if (r < 0.5) { # a local copy of the array, indexed in range
+        print p name ": [22]u8 = ga.a"
+        print p "v" nlocals ": u8 = " name "[u8(" expr(types[2 + pick(ntypes - 1)], 1) ") % 22]"
+        declare("v" nlocals++, "u8")
+        return
+    }
     if (r < 0.55) {
-        print p name ": u8 = *(&" (chance(0.5) ? "gv" : "gt") "[" index_of(1) "])"
+        print p name ": u8 = *(&" (chance(0.3) ? "gt" : window()) "[" index_of(1) "])"
         declare(name, "u8")
         return
     }
@@ -232,7 +243,7 @@ function seq_stmt(pad,   p, r, name) {
 }
 
 function leaf(t, depth,   v, r, s) {
-    if (t == "u8" && depth > 0 && chance(0.15)) return (chance(0.5) ? "gv" : "gt") "[" index_of(depth - 1) "]"
+    if (t == "u8" && depth > 0 && chance(0.15)) return (chance(0.3) ? "gt" : window()) "[" index_of(depth - 1) "]"
     r = rand()
     v = var_of(t)
     if (v != "" && r < 0.55) return v
@@ -562,6 +573,7 @@ BEGIN {
     print "mut S.bump(n: i64): int {\n    self.a += n & 7\n    self.b = u8(self.a & 63)\n    return int(self.b)\n}\n"
     print "Fail: error\n"
     print "gbuf: [24]u8\ngv: mut []u8\ngt: string\n"
+    print "GA: struct {\n    lo: u8,\n    a: [22]u8,\n    hi: u8,\n}\n\nga: GA\n"
     nstrs = split("\"\" \"a\" \"hello\" \"ace-ir\" \"0123456789abcdef01234\"", strs, " ")
     print "gmax[T](a: T, b: T): T {\n    if a > b { return a }\n    return b\n}\n"
     print "gpick[T](a: T, b: T, c: bool): T {\n    if c { return a }\n    return b\n}\n"
@@ -618,6 +630,7 @@ BEGIN {
     nvars = 0
     print "main(): int {"
     print "    gbuf[0] = 35\n    gbuf[23] = 36\n    gv = mut gbuf[1..23]"
+    print "    ga.lo = 37\n    ga.hi = 38\n    for k: usize in 0 .. 22 { ga.a[k] = u8(k * 3) }"
     print "    gt = \"#abcdefghijklmnopqrstuv$\"[1..23]"
     for (f = 0; f < nf; f++) {
         for (c = 0; c < 3; c++) {
@@ -636,6 +649,7 @@ BEGIN {
     }
     print "    fmt.printf(\"%d %d\\n\", int(gs.a), int(gs.b))"
     print "    for k: usize in 0 .. 24 { fmt.printf(\"%d \", int(gbuf[k])) }"
+    print "    fmt.printf(\"%d %d \", int(ga.lo), int(ga.hi))\n    for k: usize in 0 .. 22 { fmt.printf(\"%d \", int(ga.a[k])) }"
     for (k = 2; k <= ntypes; k++) print "    fmt.printf(\"%d\\n\", int(g_" types[k] "))"
     print show("g_f32", "f32")
     print show("g_f64", "f64")

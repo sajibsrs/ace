@@ -1521,6 +1521,18 @@ static void cast(A64* a, int v) {
     dst_done(a, v, rd);
 }
 
+// fmov between a float and an integer register of its width (a 32-bit one
+// zeroes the upper bits, so a u32 result is held zero-extended).
+static void bitcast(A64* a, int v) {
+    IrIns* x = ins_of(a, v);
+    IrType to = (IrType)x->type, from = (IrType)ins_of(a, x->args[0])->type;
+    int rn = opnd(a, x->args[0], is_fp(from) ? FS0 : S0), rd = dst(a, v);
+    int w = to == IT_F32 || from == IT_F32;
+    uint32_t op = is_fp(to) ? (w ? 0x1E270000u : 0x9E670000u) : (w ? 0x1E260000u : 0x9E660000u);
+    put(a, op | (R(rn) << 5) | R(rd));
+    dst_done(a, v, rd);
+}
+
 // --- memory -----------------------------------------------------------------------------
 
 // The unsigned-offset load or store opcode for a value of type t (a load
@@ -1937,6 +1949,9 @@ static void emit_block(A64* a, int b) {
         }
         case IR_CAST:
             cast(a, v);
+            break;
+        case IR_BITCAST:
+            bitcast(a, v);
             break;
         case IR_CALL: case IR_CALLI:
             call(a, v);

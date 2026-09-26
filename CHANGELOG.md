@@ -173,12 +173,30 @@ current normative rules, and Git preserves patch-level detail.
   are unchanged. `tests/ir-diff.sh` also indexes and slices a `mut []u8` and
   a string window between guard bytes, and the bounds fixtures check the
   exact diagnostic location.
+- Lowered arrays to IR (IR migration step 2c3b). An array's leaves are its
+  elements, as AAPCS64 flattens it, so one of up to 16 leaves travels like a
+  struct; a local, parameter, or field holding an array lives in memory, where
+  a constant index is an offset on the access and any other a `padd` checked
+  in debug below the fixed length (a signed one first nonnegative), and a
+  slice's length is the array's. An aggregate of over 16 leaves stays in
+  memory: a parameter arrives by address and an argument is a copy, as
+  AAPCS64 passes it (an array parameter over 16 bytes, not a floating
+  aggregate, likewise lives at its incoming address); copies and `[v : n]` fills are word stores, looping past
+  16 words (a fill repeats `v`'s bytes in a word). A new `bitcast` lowers
+  `bits.cast`, and `sys.argc`, `sys.arg`, `sys.envc`, and `sys.env` read
+  Darwin's accessors in IR. Functions lowered across the `bench` and `demo`
+  roots rise from 334 to 572 of 680 (compiler-backed declarations excluded).
+  `bench/std/collections` runs `map-get`, `map-miss`, and `map-unset` 12-19%
+  and `map-set` 7-10% faster, and `bench/std/string` `format-f64-shortest`
+  28%; the other benchmarks are unchanged. `tests/ir-diff.sh` also indexes,
+  slices, and copies a `[22]u8` struct field between guard bytes.
 - Shared an AArch64 cast's location with its operand when the operand's
   register form already holds the result (a same-width or zero-extending
   integer cast), its interval lies within the operand's, and no value
   computed into the operand's location is defined while it is live. A loop
   index cast to `usize` is then read in place by the element load, as
-  `tests/emit/basics/register_operands` requires. Each benchmark binary sheds 96-132
+  `tests/emit/basics/register_operands` requires, whose check now looks at
+  the load's index register. Each benchmark binary sheds 96-132
   instructions; `bench/std/string` `copy-64` runs 5% faster, the rest are
   unchanged.
 - Implemented `@when` for top-level compile-time declaration filtering with a

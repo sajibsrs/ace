@@ -14,14 +14,18 @@
 // parameter or method receiver lives at the address it arrives as. Those
 // variables are read and written by load and store.
 //
-// A struct or tuple is its scalar leaves (ir_leaves): a local is one variable
-// per leaf, and a call passes and returns leaves, which the target maps onto
-// its ABI. A local whose storage something needs holds its leaves in a slot.
+// A struct, tuple, or array is its scalar leaves (ir_leaves): a local is one
+// variable per leaf, and a call passes and returns leaves, which the target
+// maps onto its ABI. A local whose storage something needs holds its leaves in
+// a slot, as does one holding an array, whose elements an index addresses. An
+// aggregate of over 16 leaves is never split: it is copied in memory, and a
+// parameter of it arrives by address, as AAPCS64 passes it.
 //
 // A function that uses anything outside the covered subset is not lowered;
 // the AST emitter compiles it (migration steps 1 and 2: scalar code, floats,
-// pointers, globals, calls, structs, tuples, Error values, and strings and
-// slices with their indexing, slicing, and debug bounds checks).
+// pointers, globals, calls, structs, tuples, arrays, Error values, and
+// strings, slices, and arrays with their indexing, slicing, and debug bounds
+// checks).
 #include "ir.h"
 #include "backend.h"
 
@@ -143,7 +147,41 @@ static int is_view(SType* t) {
 
 static int is_agg(SType* t) {
     t = unwrap(t);
-    return t && (t->kind == SK_STRUCT || t->kind == SK_TUPLE || is_view(t));
+    return t && (t->kind == SK_STRUCT || t->kind == SK_TUPLE || t->kind == SK_ARRAY || is_view(t));
+}
+
+// Whether t holds an array: a variable of it lives in memory, where an
+// element's index addresses it.
+static int has_array(SType* t) {
+    t = unwrap(t);
+    if (!t) return 0;
+    if (t->kind == SK_ARRAY) return 1;
+    if (t->kind != SK_STRUCT && t->kind != SK_TUPLE) return 0;
+    for (int i = 0; i < t->nfields; i++) if (has_array(t->fields[i].t)) return 1;
+    return 0;
+}
+
+// An aggregate of over IR_MAX_LEAVES leaves: never split, it stays in memory
+// and travels by address (AAPCS64 passes it so, as a copy).
+static int is_big(SType* t) { return is_agg(t) && ir_leaf_count(t) > IR_MAX_LEAVES; }
+
+static int in_memory(SType* t) { return is_agg(t) && (has_array(t) || is_big(t)); }
+
+// A parameter in memory that AAPCS64 passes by address (over 16 bytes and no
+// floating aggregate): it lives at that address, the caller's copy.
+static int param_by_address(SType* t) {
+    if (!in_memory(t)) return 0;
+    if (is_big(t)) return 1;
+    IrLeaf lv[IR_MAX_LEAVES];
+    SType* bad;
+    int n = ir_leaves(t, lv, &bad);
+    if (n < 0 || sema_size(t) <= 16) return 0;
+    if (n <= 4 && ir_type_float((IrType)lv[0].type)) {
+        int hfa = 1;
+        for (int k = 1; k < n; k++) hfa &= lv[k].type == lv[0].type;
+        if (hfa) return 0;
+    }
+    return 1;
 }
 
 // The leaves of t, which the IR must cover.
@@ -157,6 +195,11 @@ static int leaves(Lw* l, SType* t, IrLeaf* out) {
 static int leaf_count(Lw* l, SType* t) {
     IrLeaf lv[IR_MAX_LEAVES];
     return leaves(l, t, lv);
+}
+
+// Refuse t unless the IR covers each of its leaves, however many.
+static void covered(Lw* l, SType* t) {
+    if (ir_leaf_count(t) < 0) leaf_count(l, t);
 }
 
 // The index of field fi's first leaf among its struct's or tuple's.
@@ -324,8 +367,8 @@ static int at_entry(Lw* l, IrOp op, IrType type) {
 static int var_of(Lw* l, Sym* s) {
     uintptr_t ix = ptrmap_get(&l->var_ix, s);
     if (ix) return (int)ix - 1;
-    if (ptrmap_get(&l->stored, s)) {
-        if (is_agg(s->type)) leaf_count(l, s->type); // covered, although in memory
+    if (ptrmap_get(&l->stored, s) || in_memory(s->type)) {
+        if (is_agg(s->type)) covered(l, s->type);
         int slot = at_entry(l, IR_SLOT, IT_PTR);
         l->fn->ins[slot].imm = sema_size(s->type);
         l->fn->ins[slot].aux = (int32_t)sema_align(s->type);
@@ -434,6 +477,8 @@ static void scan_storage(Lw* l, Node* n) {
         for (int i = 0; i < n->nkids; i++) need_storage(l, n->kids[i]);
     if (n->kind == N_CALL && n->a && n->a->kind == N_FIELD_E && !(n->flags & (F_METHOD | F_ASSOC)))
         need_storage(l, n->a->a); // a method receiver travels by address
+    if (n->kind == N_PARAM && node_sym(n) && in_memory(node_sym(n)->type)) // a binder in memory
+        ptrmap_put(&l->stored, node_sym(n), 1);
     scan_storage(l, n->a);
     scan_storage(l, n->b);
     scan_storage(l, n->c);
@@ -508,6 +553,8 @@ typedef struct {
 
 static int expr(Lw* l, Node* x, int want);
 static Place element(Lw* l, Node* x);
+static int is_place(Node* x);
+static void value(Lw* l, Node* x, SType* t, Agg* out);
 
 static Place place(Lw* l, Node* x) {
     Place p = { -1, -1, 0, 0, node_ty(x) };
@@ -696,6 +743,9 @@ static int is_self_call(Lw* l, Node* x) {
 }
 
 static void value(Lw* l, Node* x, SType* t, Agg* out);
+static int new_slot(Lw* l, SType* t);
+static void store_value(Lw* l, Node* x, SType* t, int dst, int32_t off);
+static Place array_place(Lw* l, Node* x);
 
 // Arguments, flattened to leaves, and how they group into parts.
 typedef struct {
@@ -722,6 +772,13 @@ static void call_arg(Lw* l, Args* g, Node* a, SType* pt, int by_address) {
     }
     if (!is_agg(pt)) {
         arg_scalar(l, g, expr(l, a, need_type(l, pt)));
+        return;
+    }
+    if (is_big(pt)) { // the address of a copy
+        covered(l, pt);
+        int slot = new_slot(l, pt);
+        store_value(l, a, pt, slot, 0);
+        arg_scalar(l, g, slot);
         return;
     }
     Agg v;
@@ -802,6 +859,89 @@ static IrType result_type(Lw* l, SType* rt) {
 
 static int is_domain(SType* t) { return t && t->kind == SK_ERROR_DOMAIN; }
 
+static int widen(Lw* l, int v, IrType from, IrType to) { return from == to ? v : emit2(l, IR_CAST, to, v, -1); }
+
+// A call to C routine name (its link symbol) with no arguments, returning a
+// ptr; its sym marks it extern, bound at link time.
+static int call_extern(Lw* l, const char* name) {
+    static Sym c_routine = { .kind = SYM_FUNC, .is_extern = 1 };
+    int id = emit(l, IR_CALL, IT_PTR);
+    l->fn->ins[id].name = name;
+    l->fn->ins[id].sym = &c_routine;
+    return id;
+}
+
+// The length of the NUL-terminated bytes at p: a u64 counted up.
+static int c_length(Lw* l, int p) {
+    int n = var_new(l, NULL, IT_U64, -1);
+    write_var(l, n, l->cur, konst(l, IT_U64, 0));
+    int head = new_block(l), body = new_block(l), exit = new_block(l);
+    jump(l, head);
+    enter(l, head);
+    int i = read_var(l, n, head);
+    int at = emit2(l, IR_PADD, IT_PTR, p, i);
+    l->fn->ins[at].imm = 1;
+    int b = load(l, IT_U8, at, 0, 0);
+    terminate(l, IR_BR, emit2(l, IR_NE, IT_BOOL, b, konst(l, IT_U8, 0)), body, exit);
+    seal(l, body);
+    enter(l, body);
+    write_var(l, n, l->cur, emit2(l, IR_ADD, IT_U64, i, konst(l, IT_U64, 1)));
+    jump(l, head);
+    seal(l, head);
+    seal(l, exit);
+    enter(l, exit);
+    return i;
+}
+
+// A compiler-backed call the IR covers: its value (a string's leaves into
+// res), or -2 for one it does not.
+static int builtin(Lw* l, Node* x, int bi, Agg* res) {
+    switch (bi) {
+    case BI_BITS_FROM_FLOAT: case BI_BITS_TO_FLOAT: { // the same bits (Types: bits.cast)
+        IrType to = need_type(l, node_ty(x)), from = need_type(l, node_ty(x->kids[0]));
+        return emit2(l, IR_BITCAST, to, expr(l, x->kids[0], from), -1);
+    }
+    case BI_SYS_ARGC: // Darwin's accessors: an int* and a char*** (as emit.c's)
+        return widen(l, load(l, IT_I32, call_extern(l, "__NSGetArgc"), 0, 0), IT_I32, need_type(l, node_ty(x)));
+    case BI_SYS_ENVC: {
+        int env = load(l, IT_PTR, call_extern(l, "__NSGetEnviron"), 0, 0);
+        int n = var_new(l, NULL, IT_U64, -1);
+        write_var(l, n, l->cur, konst(l, IT_U64, 0));
+        int head = new_block(l), body = new_block(l), exit = new_block(l);
+        jump(l, head);
+        enter(l, head);
+        int i = read_var(l, n, head);
+        int at = emit2(l, IR_PADD, IT_PTR, env, i);
+        l->fn->ins[at].imm = 8;
+        terminate(l, IR_BR, emit2(l, IR_NE, IT_BOOL, load(l, IT_PTR, at, 0, 0), konst(l, IT_PTR, 0)), body, exit);
+        seal(l, body);
+        enter(l, body);
+        write_var(l, n, l->cur, emit2(l, IR_ADD, IT_U64, i, konst(l, IT_U64, 1)));
+        jump(l, head);
+        seal(l, head);
+        seal(l, exit);
+        enter(l, exit);
+        return widen(l, i, IT_U64, need_type(l, node_ty(x)));
+    }
+    case BI_SYS_ARG: case BI_SYS_ENV: { // entry i's bytes up to its NUL
+        IrType it = type_in(l, x->kids[0], IT_U64);
+        int i = widen(l, expr(l, x->kids[0], it), it, IT_U64);
+        int base = load(l, IT_PTR, call_extern(l, bi == BI_SYS_ARG ? "__NSGetArgv" : "__NSGetEnviron"), 0, 0);
+        int at = emit2(l, IR_PADD, IT_PTR, base, i);
+        l->fn->ins[at].imm = 8;
+        int p = load(l, IT_PTR, at, 0, 0);
+        int n = c_length(l, p);
+        if (!res) return -1;
+        res->n = 2;
+        res->v[0] = p;
+        res->v[1] = n;
+        return -1;
+    }
+    default:
+        return -2;
+    }
+}
+
 // A call: a scalar result's value; an aggregate's leaves into res.
 static int call(Lw* l, Node* x, int want, Agg* res) {
     Node* callee = x->a;
@@ -841,6 +981,10 @@ static int call(Lw* l, Node* x, int want, Agg* res) {
     if (!s || s->kind != SYM_FUNC || !callee) unsupported(l, "indirect or method call");
     Node* d = s->decl;
     if (!d) unsupported(l, "extern call");
+    if (d->kind == N_FUNC && d->ival) {
+        int v = builtin(l, x, (int)d->ival, res);
+        if (v != -2) return v;
+    }
     if ((d->kind == N_FUNC && d->ival) || (d->flags & F_INTRINSIC)) unsupported(l, "compiler-backed call");
     if (d->flags & F_INLINE) unsupported(l, "inline call");
     if (d->flags & F_EXPO) unsupported(l, "exported call");
@@ -930,6 +1074,10 @@ static int expr(Lw* l, Node* x, int want) {
             unsupported(l, "Error description");
         }
         if (is_view(bt) && x->len == 3 && memcmp(x->str, "len", 3) == 0) return view_leaf(l, x->a, 1);
+        if (bt && bt->kind == SK_ARRAY && x->len == 3 && memcmp(x->str, "len", 3) == 0) {
+            if (!is_place(x->a)) unsupported(l, "array length");
+            return konst(l, type_in(l, x, want), bt->count);
+        }
         if (!bt || (bt->kind != SK_PTR && bt->kind != SK_STRUCT)) unsupported(l, bt ? type_why(bt) : "field access");
         if (!is_place(x)) {
             Agg a;
@@ -1060,6 +1208,28 @@ static void literal_agg(Lw* l, Node* x, SType* t, Agg* out) {
         if (out->v[k] < 0) out->v[k] = konst(l, (IrType)lv[k].type, 0);
 }
 
+// The leaves of array literal x of type t, element by element; [v : n]
+// evaluates v once.
+static void literal_array(Lw* l, Node* x, SType* t, Agg* out) {
+    SType* u = unwrap(t);
+    if (!u || u->kind != SK_ARRAY) unsupported(l, type_why(t));
+    int nb = leaf_count(l, u->base);
+    out->n = leaf_count(l, t);
+    if (x->a) {
+        Agg e;
+        if (u->count) value(l, x->a, u->base, &e);
+        for (uint64_t i = 0; i < u->count; i++)
+            for (int k = 0; k < nb; k++) out->v[i * nb + k] = e.v[k];
+        return;
+    }
+    if ((uint64_t)x->nkids != u->count) unsupported(l, "array literal");
+    for (int i = 0; i < x->nkids; i++) {
+        Agg e;
+        value(l, x->kids[i], u->base, &e);
+        for (int k = 0; k < nb; k++) out->v[i * nb + k] = e.v[k];
+    }
+}
+
 // The literal a module-level string constant names, or NULL.
 static Node* const_string(Node* x) {
     Sym* s = x->kind == N_IDENT ? node_sym(x) : NULL;
@@ -1094,6 +1264,189 @@ static int view_leaf(Lw* l, Node* x, int k) {
     Agg v;
     value(l, x, node_ty(x), &v);
     return v.v[k];
+}
+
+// --- memory ------------------------------------------------------------------------
+
+enum { UNROLL = 16 }; // a copy or fill of up to this many words is straight-line
+
+// A counted loop over u64 i in [0, n): loop_begin enters the body and returns
+// i; loop_end steps i and leaves through the exit.
+typedef struct { int var, head, exit; } Loop;
+
+static int loop_begin(Lw* l, Loop* lp, uint64_t n) {
+    lp->var = var_new(l, NULL, IT_U64, -1);
+    write_var(l, lp->var, l->cur, konst(l, IT_U64, 0));
+    lp->head = new_block(l);
+    lp->exit = new_block(l);
+    int body = new_block(l);
+    jump(l, lp->head);
+    enter(l, lp->head);
+    int i = read_var(l, lp->var, lp->head);
+    terminate(l, IR_BR, emit2(l, IR_LT, IT_BOOL, i, konst(l, IT_U64, n)), body, lp->exit);
+    seal(l, body);
+    enter(l, body);
+    return i;
+}
+
+static void loop_end(Lw* l, Loop* lp, int i) {
+    write_var(l, lp->var, l->cur, emit2(l, IR_ADD, IT_U64, i, konst(l, IT_U64, 1)));
+    jump(l, lp->head);
+    seal(l, lp->head);
+    seal(l, lp->exit);
+    enter(l, lp->exit);
+}
+
+// The address addr + off.
+static int offset_addr(Lw* l, int addr, int32_t off) {
+    if (!off) return addr;
+    int id = emit2(l, IR_PADD, IT_PTR, addr, konst(l, IT_U64, (uint64_t)off));
+    l->fn->ins[id].imm = 1;
+    return id;
+}
+
+// Copy size bytes from src + soff (loads flagged sflags) to dst + doff:
+// words, then a narrower tail; a long run of words loops.
+static void copy_mem(Lw* l, int dst, int32_t doff, int src, int32_t soff, int sflags, uint32_t size) {
+    uint32_t words = size / 8, done = 0;
+    if (words > UNROLL) {
+        int d = offset_addr(l, dst, doff), s = offset_addr(l, src, soff);
+        Loop lp;
+        int i = loop_begin(l, &lp, words);
+        int sa = emit2(l, IR_PADD, IT_PTR, s, i), da = emit2(l, IR_PADD, IT_PTR, d, i);
+        l->fn->ins[sa].imm = l->fn->ins[da].imm = 8;
+        store(l, da, 0, load(l, IT_U64, sa, 0, sflags), 0);
+        loop_end(l, &lp, i);
+        done = words * 8;
+    }
+    for (uint32_t w = 8; w; w /= 2) {
+        IrType t = w == 8 ? IT_U64 : w == 4 ? IT_U32 : w == 2 ? IT_U16 : IT_U8;
+        for (; size - done >= w; done += w)
+            store(l, dst, doff + (int32_t)done, load(l, t, src, soff + (int32_t)done, sflags), 0);
+    }
+}
+
+// Fill size bytes at dst + off with u64 pattern pat (one repeating unit).
+static void fill_mem(Lw* l, int dst, int32_t off, int pat, uint32_t size) {
+    uint32_t words = size / 8, done = 0;
+    if (words > UNROLL) {
+        int d = offset_addr(l, dst, off);
+        Loop lp;
+        int i = loop_begin(l, &lp, words);
+        int da = emit2(l, IR_PADD, IT_PTR, d, i);
+        l->fn->ins[da].imm = 8;
+        store(l, da, 0, pat, 0);
+        loop_end(l, &lp, i);
+        done = words * 8;
+    }
+    for (uint32_t w = 8; w; w /= 2) {
+        IrType t = w == 8 ? IT_U64 : w == 4 ? IT_U32 : w == 2 ? IT_U16 : IT_U8;
+        if (size - done < w) continue;
+        int v = w == 8 ? pat : emit2(l, IR_CAST, t, pat, -1);
+        for (; size - done >= w; done += w) store(l, dst, off + (int32_t)done, v, 0);
+    }
+}
+
+// The u64 repeating element value v of type t, or -1 when its bytes do not
+// repeat in a word (a float's, or a width that does not divide 8).
+static int fill_pattern(Lw* l, int v, SType* t) {
+    IrType it = (IrType)ir_type_of(t);
+    uint32_t w = sema_size(t);
+    if ((int)it < 0 || ir_type_float(it) || it == IT_PTR || (w != 1 && w != 2 && w != 4 && w != 8)) return -1;
+    uint64_t rep = w == 1 ? UINT64_C(0x0101010101010101) : w == 2 ? UINT64_C(0x0001000100010001)
+                 : w == 4 ? UINT64_C(0x0000000100000001) : 1;
+    IrIns* k = &l->fn->ins[v];
+    if (k->op == IR_CONST) {
+        uint64_t bits = w == 8 ? k->imm : k->imm & ((UINT64_C(1) << (w * 8)) - 1);
+        return konst(l, IT_U64, bits * rep);
+    }
+    IrType ut = w == 1 ? IT_U8 : w == 2 ? IT_U16 : w == 4 ? IT_U32 : IT_U64;
+    if (it == IT_BOOL) ut = IT_BOOL;
+    if (ut != it) v = emit2(l, IR_CAST, ut, v, -1); // its bits, zero-extended
+    if (ut != IT_U64) v = emit2(l, IR_CAST, IT_U64, v, -1);
+    return w == 8 ? v : emit2(l, IR_MUL, IT_U64, v, konst(l, IT_U64, rep));
+}
+
+// A new stack object of type t.
+static int new_slot(Lw* l, SType* t) {
+    int slot = at_entry(l, IR_SLOT, IT_PTR);
+    l->fn->ins[slot].imm = sema_size(t);
+    l->fn->ins[slot].aux = (int32_t)sema_align(t);
+    return slot;
+}
+
+// x of type t into memory at dst + off: an array or struct literal member by
+// member, a place in memory by copying its bytes, anything else by its leaves.
+static void store_value(Lw* l, Node* x, SType* t, int dst, int32_t off) {
+    SType* u = unwrap(t);
+    if (x->kind == N_ARRAYLIT && u && u->kind == SK_ARRAY) {
+        uint32_t es = sema_size(u->base);
+        if (!x->a) {
+            for (int i = 0; i < x->nkids; i++) store_value(l, x->kids[i], u->base, dst, off + (int32_t)(i * es));
+            return;
+        }
+        if (!u->count) return;
+        if (!is_agg(u->base)) { // [v : n]: v once, as a repeating word when its bytes allow
+            int v = expr(l, x->a, need_type(l, u->base));
+            int pat = fill_pattern(l, v, u->base);
+            if (pat >= 0) {
+                fill_mem(l, dst, off, pat, (uint32_t)u->count * es);
+                return;
+            }
+        }
+        store_value(l, x->a, u->base, dst, off); // the first element, then copies of it
+        if (u->count - 1 <= UNROLL) {
+            for (uint64_t i = 1; i < u->count; i++) copy_mem(l, dst, off + (int32_t)(i * es), dst, off, 0, es);
+            return;
+        }
+        int d = offset_addr(l, dst, off);
+        Loop lp;
+        int i = loop_begin(l, &lp, u->count - 1);
+        int one = konst(l, IT_U64, 1);
+        int at = emit2(l, IR_PADD, IT_PTR, d, emit2(l, IR_ADD, IT_U64, i, one));
+        l->fn->ins[at].imm = es;
+        copy_mem(l, at, 0, d, 0, 0, es);
+        loop_end(l, &lp, i);
+        return;
+    }
+    if (x->kind == N_STRUCTLIT && u && u->kind == SK_STRUCT && is_big(t)) {
+        int positional = x->nkids > 0 && x->kids[0]->str == NULL;
+        if (x->nkids != u->nfields) unsupported(l, "field initializer"); // sema supplies every field
+        for (int i = 0; i < x->nkids; i++) {
+            Node* fi = x->kids[i];
+            int fidx = positional ? i : find_field(u, fi->str, fi->len);
+            if (fidx < 0) unsupported(l, "field initializer");
+            store_value(l, fi->a, u->fields[fidx].t, dst, off + (int32_t)field_off(u, fidx));
+        }
+        return;
+    }
+    if (is_agg(t) && !is_view(t) && is_place(x)) {
+        Place p = place(l, x);
+        if (p.var < 0) {
+            copy_mem(l, dst, off, p.addr, p.off, p.flags, sema_size(t));
+            return;
+        }
+    }
+    if (is_big(t)) unsupported(l, "aggregate of over 16 leaves");
+    Agg a;
+    value(l, x, t, &a);
+    IrLeaf lv[IR_MAX_LEAVES];
+    leaves(l, t, lv);
+    for (int k = 0; k < a.n; k++) store(l, dst, off + (int32_t)lv[k].off, a.v[k], 0);
+}
+
+// Array x as a place in memory: its own, or a new stack object holding it.
+static Place array_place(Lw* l, Node* x) {
+    if (is_place(x)) {
+        Place p = place(l, x);
+        if (p.var < 0) return p;
+    }
+    SType* t = node_ty(x);
+    covered(l, t);
+    int slot = new_slot(l, t);
+    store_value(l, x, t, slot, 0);
+    Place p = { -1, slot, 0, 0, t };
+    return p;
 }
 
 // --- sequences ------------------------------------------------------------------------
@@ -1143,8 +1496,24 @@ enum { BP_LO_NONNEG = 1, BP_HI_NONNEG = 2, BP_ORDER = 4, BP_SOURCE = 8 }; // sem
 static Place element(Lw* l, Node* x) {
     static SType byte = { .kind = SK_PRIM, .prim = P_U8, .size = 1, .align = 1 };
     SType* st = unwrap(node_ty(x->a));
-    if (!is_view(st)) unsupported(l, type_why(st));
     int chk = l->mode == EMIT_DEBUG && !(x->flags & F_BOUNDS_PROVEN);
+    if (st && st->kind == SK_ARRAY) { // at a fixed offset from the array's place
+        Place p = array_place(l, x->a);
+        uint32_t es = sema_size(st->base);
+        p.t = st->base;
+        if (x->b->kind == N_INT && x->b->ival < st->count) { // a constant index (sema rejects one out of range)
+            p.off += (int32_t)(x->b->ival * es);
+            return p;
+        }
+        int i = bound(l, x->b, x, chk);
+        if (chk) bounds_check(l, emit2(l, IR_LT, IT_BOOL, i, konst(l, IT_U64, st->count)), x);
+        int id = emit2(l, IR_PADD, IT_PTR, p.addr, i); // the place's offset stays on the access
+        l->fn->ins[id].imm = es;
+        l->fn->ins[id].flags = (uint8_t)p.flags; // a null base traps here
+        Place e = { -1, id, p.off, 0, st->base };
+        return e;
+    }
+    if (!is_view(st)) unsupported(l, type_why(st));
     int ptr, len = -1;
     view_parts(l, x->a, &ptr, chk ? &len : NULL);
     int i = bound(l, x->b, x, chk);
@@ -1162,11 +1531,16 @@ static Place element(Lw* l, Node* x) {
 // omitted hi's, which is s.len).
 static void slice_leaves(Lw* l, Node* x, Agg* out) {
     SType* st = unwrap(node_ty(x->a));
-    if (!is_view(st)) unsupported(l, type_why(st));
     uint8_t proof = x->aux ? *(uint8_t*)x->aux : 0;
     int chk = l->mode == EMIT_DEBUG && !(x->flags & F_BOUNDS_PROVEN);
     int ptr, len = -1;
-    view_parts(l, x->a, &ptr, !x->c || (chk && !(proof & BP_SOURCE)) ? &len : NULL);
+    if (st && st->kind == SK_ARRAY) { // its place's address and its fixed length
+        ptr = place_address(l, array_place(l, x->a));
+        len = konst(l, IT_U64, st->count);
+    } else {
+        if (!is_view(st)) unsupported(l, type_why(st));
+        view_parts(l, x->a, &ptr, !x->c || (chk && !(proof & BP_SOURCE)) ? &len : NULL);
+    }
     int lo = x->b ? bound(l, x->b, x, chk && !(proof & BP_LO_NONNEG)) : -1;
     int hi = x->c ? bound(l, x->c, x, chk && !(proof & BP_HI_NONNEG)) : len;
     if (chk && !(proof & BP_ORDER) && lo >= 0) bounds_check(l, emit2(l, IR_LE, IT_BOOL, lo, hi), x);
@@ -1176,7 +1550,7 @@ static void slice_leaves(Lw* l, Node* x, Agg* out) {
     out->v[1] = hi;
     if (lo < 0) return;
     out->v[0] = emit2(l, IR_PADD, IT_PTR, ptr, lo);
-    l->fn->ins[out->v[0]].imm = st->kind == SK_SLICE ? sema_size(st->base) : 1;
+    l->fn->ins[out->v[0]].imm = st->kind == SK_SLICE || st->kind == SK_ARRAY ? sema_size(st->base) : 1;
     out->v[1] = emit2(l, IR_SUB, IT_U64, hi, lo);
 }
 
@@ -1205,10 +1579,20 @@ static void value(Lw* l, Node* x, SType* t, Agg* out) {
             value(l, x->kids[0], t, out);
             return;
         }
+        SType* at = unwrap(node_ty(x));
+        if (at && at->kind == SK_ARRAY) { // an array viewed whole
+            out->n = 2;
+            out->v[0] = place_address(l, array_place(l, x));
+            out->v[1] = konst(l, IT_U64, at->count);
+            return;
+        }
     }
     switch (x->kind) {
     case N_STRUCTLIT: case N_TUPLE_E:
         literal_agg(l, x, t, out);
+        return;
+    case N_ARRAYLIT:
+        literal_array(l, x, t, out);
         return;
     case N_SLICE_E:
         slice_leaves(l, x, out);
@@ -1344,6 +1728,17 @@ static void assign(Lw* l, Node* s) {
     if (vol && p.var >= 0) unsupported(l, "volatile access"); // scan_storage missed it
     if (is_agg(p.t)) {
         if (s->op != T_ASSIGN) unsupported(l, "compound assignment");
+        if (p.var < 0 && !vol && (is_big(p.t) || (has_array(p.t) && is_place(s->a)))) {
+            int src = -1;
+            if (!is_place(s->a)) { // whole, before any byte is written
+                covered(l, p.t);
+                src = new_slot(l, p.t);
+                store_value(l, s->a, p.t, src, 0);
+            }
+            if (src < 0) store_value(l, s->a, p.t, p.addr, p.off); // a place's bytes: equal or disjoint
+            else copy_mem(l, p.addr, p.off, src, 0, 0, sema_size(p.t));
+            return;
+        }
         Agg a;
         value(l, s->a, p.t, &a); // whole, before any leaf is written
         place_put(l, p, &a, vol);
@@ -1378,6 +1773,10 @@ static void var_decl(Lw* l, Node* s) {
     if (!sym) unsupported(l, "unresolved binder");
     int var = var_of(l, sym);
     if (!s->b) return; // assigned before any read (definite initialization)
+    if (l->home[var] != -1 && in_memory(sym->type)) { // into its memory, which the value cannot name
+        store_value(l, s->b, sym->type, var_addr(l, var), 0);
+        return;
+    }
     Agg a;
     value(l, s->b, sym->type, &a);
     set_leaves(l, var, sym->type, &a);
@@ -1395,7 +1794,6 @@ static void loop_body(Lw* l, Node* s, int exit, Node* stmts) {
     enter(l, post);
 }
 
-static int widen(Lw* l, int v, IrType from, IrType to) { return from == to ? v : emit2(l, IR_CAST, to, v, -1); }
 
 // for i: T in a .. b [step c] (Iterations #4-5): the endpoints once, in order,
 // then the step; every selected value in order from a toward b. Ascending by
@@ -1722,12 +2120,16 @@ IrFunc* ir_lower(Node* f, EmitMode mode, const char** why) {
     l.cur = new_block(&l);
     seal(&l, l.cur);
     l.at = f;
+    for (int i = 0; i < f->nkids; i++) // in this frame's memory: no self tail recursion
+        if (node_sym(f->kids[i]) && !by_address(f, i) && in_memory(node_sym(f->kids[i])->type))
+            ptrmap_put(&l.stored, node_sym(f->kids[i]), 1);
     scan_storage(&l, f->b);
     for (int i = 0; i < f->nkids; i++) {
         Node* p = f->kids[i];
         Sym* ps = node_sym(p);
         if (!ps) unsupported(&l, "unresolved parameter");
-        if (by_address(f, i)) { // lives at the caller's address, held in an SSA variable
+        if (by_address(f, i) || param_by_address(ps->type)) { // at the caller's address (or copy), held in an SSA variable
+            if (!by_address(f, i)) covered(&l, ps->type);
             int v = emit(&l, IR_PARAM, IT_PTR);
             fn->ins[v].imm = (uint64_t)g.n;
             arg_scalar(&l, &g, v);

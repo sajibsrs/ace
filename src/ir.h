@@ -33,6 +33,8 @@ typedef enum {
     X(EQ, "eq") X(NE, "ne") X(LT, "lt") X(LE, "le") X(GT, "gt") X(GE, "ge")    \
     X(CAST, "cast")     /* truncate or extend; to or from a float: convert,   \
                            toward zero and saturating to an integer (NaN: 0) */ \
+    X(BITCAST, "bitcast") /* the same bits between a float and an integer of \
+                           its width */                                        \
     X(SLOT, "slot")     /* ptr to a stack object: imm = size, aux = alignment */ \
     X(GLOBAL, "global") /* ptr to sym: a global variable or a function */      \
     X(STR, "str")       /* ptr to the bytes of a string literal: name, imm long */ \
@@ -71,9 +73,10 @@ enum {
     IRF_VARARGS = 4,  // call: arguments from index aux on are variadic
 };
 
-// Aggregates are never IR values: lowering splits every struct and tuple, and
-// every string and slice (a ptr and a u64 length), into its scalar leaves (SSA values, or loads and stores for one in memory), and
-// each target maps leaves onto its ABI.
+// Aggregates are never IR values: lowering splits every struct, tuple, and
+// array, and every string and slice (a ptr and a u64 length), into its scalar
+// leaves (SSA values, or loads and stores for one in memory), and each target
+// maps leaves onto its ABI. One of over IR_MAX_LEAVES leaves stays in memory.
 enum { IR_MAX_LEAVES = 16 };
 
 typedef struct {
@@ -151,6 +154,7 @@ int      ir_type_of(SType* t);
 // The leaves of t in offset order (a scalar is its own one leaf), or -1 with
 // *bad set to the first type the IR does not cover.
 int      ir_leaves(SType* t, IrLeaf* out, SType** bad);
+int      ir_leaf_count(SType* t); // uncapped; -1 when some leaf is not covered
 // v wrapped into t: truncated, then extended by t's signedness
 uint64_t ir_wrap(IrType t, uint64_t v);
 
