@@ -43,7 +43,9 @@ test prints as a comparison and a `check %c, line:col bounds violation`,
 which aborts with that site's diagnostic when `%c` is false. An array
 lives in memory: a constant index is an offset on the access, any other a
 `padd` checked below the fixed length. `bitcast` reinterprets a float's bits
-as an integer of its width, or back (`bits.cast`). A function the IR does not cover yet is listed with the first
+as an integer of its width, or back (`bits.cast`). A call to an `inline`
+function prints as the expanded body, which ends at a join block reading the
+result. A function the IR does not cover yet is listed with the first
 construct that kept it out; the AST emitter compiles such functions, and the
 IR's AArch64 backend compiles the rest.
 

@@ -244,18 +244,19 @@ These are baseline observations, not performance promises.
   single-pass design avoids; (2) the bottom-tested loop and by-value `Vec3`
   leaf-call frame cost; (3) `std/simd` NEON intrinsics (`f32x4`, `i8x16`), the
   only route past auto-vectorized C.
-- **Inline-expansion leftovers** [new] — code expanded by `inline` still
-  carries moves a hand-inlined body avoids (`Map.get` shows each):
-  `fold_preg` can retarget a copy onto its own source, leaving `mov x, x`; a
-  nested call's result passes through each expansion's result temp; a `bool`
-  result used as a condition is materialized and retested instead of
-  branching to the caller's targets; and a read-only scalar parameter copies
-  an argument local the body could read in place. A scalar local passed to a
+- **Inline-expansion leftovers** [new] — an expansion the IR lowers has no
+  result temp and no argument copies, but a `bool` result returned from
+  several branches is joined as a phi of constants and branched on again
+  instead of branching to the caller's targets, and a scalar local passed to a
   `mut` parameter binds by address, which keeps it in its frame slot for the
   whole caller: `str`'s integer-parse loop runs 20-25% slower when its
   accumulator is updated through a `mut` parameter than when the loop updates
   it after a check-only helper. Private inline functions keep an out-of-line
-  body even when no call or function value uses it.
+  body even when no call or function value uses it. The AST emitter, which
+  still compiles generic templates (`Map.get`), keeps its own: `fold_preg` can
+  retarget a copy onto its own source, leaving `mov x, x`; a nested call's
+  result passes through each expansion's result temp; and a read-only scalar
+  parameter copies an argument local the body could read in place.
   Each needs its gain measured.
 - **Float constants from bit patterns** [new] — `bits.cast(u64(0x7FF0000000000000))`
   still builds the integer with `mov`/`movk` and moves it with `fmov`, and a

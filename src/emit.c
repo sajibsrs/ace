@@ -287,9 +287,7 @@ typedef struct {
     Split*   sink_split; // or moves the units into this split local's fields
     // inline expansion (Functions & ABI #8), per emitted function
     PtrMap   inl_ix;     // call node -> InlineSite*
-    PtrMap   copy_node;  // callee node -> its copy, while copying one callee
-    PtrMap   copy_sym;   // callee local -> its copy
-    Node**   inl_path;   // callees inline_plan is expanding, outermost first
+    Node**   inl_path;  // callees inline_plan is expanding, outermost first
     int      ninl_path, cinl_path;
     int      nsites;     // calls inline_plan expanded in this function
     InlineCtx* inl;      // expansions being emitted, innermost last
@@ -7880,81 +7878,6 @@ static int range_up(Node* r, uint64_t* end) {
 
 // --- inline expansion planning (Functions & ABI #8) ---------------------------------
 
-// The inline function a direct call names, with the type arguments its body
-// is stamped under; mirrors gen_call's target selection.
-static Node* inline_target(Node* call, SType*** targs, int* ntargs) {
-    Node* callee = call->a;
-    *targs = NULL;
-    *ntargs = 0;
-    if (callee->kind == N_INDEX && callee->sym) {
-        Sym* gs = node_sym(callee);
-        if (!gs->decl || !(gs->decl->flags & F_INLINE)) return NULL;
-        for (STypeInst* inst = sema_insts(gs->decl); inst; inst = inst->next)
-            if (inst->result == callee->ty) {
-                *targs = inst->args;
-                *ntargs = gs->decl->c ? gs->decl->c->nkids : 0;
-                return gs->decl;
-            }
-        return NULL;
-    }
-    Sym* s = call->sym ? node_sym(call) : NULL;
-    if (!s || s->kind != SYM_FUNC || s->is_extern || !s->decl || !(s->decl->flags & F_INLINE)) return NULL;
-    if (s->is_generic) { // a method of a generic type: its owner's arguments
-        SType* cft = node_ty(callee);
-        if (!cft || cft->kind != SK_FUNC) cft = s->type;
-        SType* owner = (call->flags & F_ASSOC) ? (callee->kind == N_FIELD_E ? node_ty(callee->a) : NULL)
-                     : cft && cft->nparams > 0 ? cft->params[0] : NULL;
-        if (!owner) return NULL;
-        *targs = owner->args;
-        *ntargs = owner->nargs;
-    }
-    return s->decl;
-}
-
-// n and everything under it, each node once; Node.d only as a general for's body
-static Node* inline_copy(Em* e, Node* n) {
-    if (!n) return NULL;
-    Node* c = (Node*)ptrmap_get(&e->copy_node, n);
-    if (c) return c;
-    c = (Node*)arena_alloc(sizeof(Node));
-    *c = *n;
-    ptrmap_put(&e->copy_node, n, (uintptr_t)c);
-    c->a = inline_copy(e, n->a);
-    c->b = inline_copy(e, n->b);
-    c->c = inline_copy(e, n->c);
-    if (n->kind == N_FOR && (n->flags & F_FORGEN)) c->d = inline_copy(e, n->d);
-    if (n->nkids) {
-        c->kids = (Node**)arena_alloc((size_t)n->nkids * sizeof(Node*));
-        for (int i = 0; i < n->nkids; i++) c->kids[i] = inline_copy(e, n->kids[i]);
-    }
-    return c;
-}
-
-// point a copy's names at fresh locals whose binders are the copied ones
-static void inline_resym(Em* e, Node* c, PtrMap* seen) {
-    if (!c || ptrmap_get(seen, c)) return;
-    ptrmap_put(seen, c, 1);
-    Sym* s = node_sym(c);
-    if (s && s->kind == SYM_VAR && !s->is_global && s->decl) {
-        Node* d = (Node*)ptrmap_get(&e->copy_node, s->decl);
-        if (d) {
-            Sym* ns = (Sym*)ptrmap_get(&e->copy_sym, s);
-            if (!ns) {
-                ns = (Sym*)arena_alloc(sizeof(Sym));
-                *ns = *s;
-                ns->decl = d;
-                ptrmap_put(&e->copy_sym, s, (uintptr_t)ns);
-            }
-            c->sym = ns;
-        }
-    }
-    inline_resym(e, c->a, seen);
-    inline_resym(e, c->b, seen);
-    inline_resym(e, c->c, seen);
-    if (c->kind == N_FOR && (c->flags & F_FORGEN)) inline_resym(e, c->d, seen);
-    for (int i = 0; i < c->nkids; i++) inline_resym(e, c->kids[i], seen);
-}
-
 static void inline_plan(Em* e, Node* n);
 
 // plan the expansion of one call to an inline function, and of those in its copy
@@ -7975,23 +7898,13 @@ static void inline_plan_call(Em* e, Node* call) {
     if (callee->kind == N_FIELD_E && !(call->flags & (F_METHOD | F_ASSOC))) args[n++] = callee->a; // receiver
     if (n + call->nkids != f->nkids || f->nkids > 40) return;
     for (int i = 0; i < call->nkids; i++) args[n++] = call->kids[i];
-    Sym* fs = node_sym(f);
-    if (f->c && !(fs && fs->spec_args)) sema_stamp_body(f, targs, ntargs);
-
-    ptrmap_clear(&e->copy_node);
-    ptrmap_clear(&e->copy_sym);
     InlineSite* site = (InlineSite*)arena_alloc(sizeof(InlineSite));
     memset(site, 0, sizeof *site);
     site->n = n;
     site->arg = (Node**)arena_alloc((size_t)(n ? n : 1) * sizeof(Node*));
     site->bind = (Node**)arena_alloc((size_t)(n ? n : 1) * sizeof(Node*));
     site->byref = (uint8_t*)arena_alloc((size_t)(n ? n : 1));
-    for (int i = 0; i < n; i++) site->bind[i] = inline_copy(e, f->kids[i]);
-    site->body = inline_copy(e, f->b);
-    PtrMap seen = {0};
-    for (int i = 0; i < n; i++) inline_resym(e, site->bind[i], &seen);
-    inline_resym(e, site->body, &seen);
-    ptrmap_free(&seen);
+    inline_copy(f, targs, ntargs, site->bind, &site->body);
 
     for (int i = 0; i < n; i++) {
         Node* p = f->kids[i];

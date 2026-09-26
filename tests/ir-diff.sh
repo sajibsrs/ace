@@ -18,7 +18,8 @@
 # 22-byte mut []u8, a string, and a [22]u8 struct field, each a window
 # between two guard bytes (and in-range reads of a local copy of the array), so a
 # debug bounds trap ends the run the same way in both and release reads or
-# writes a guard. A switch keeps some functions
+# writes a guard. Some scalar-result functions are inline, so their calls
+# expand in place, with every parameter form. A switch keeps some functions
 # on the AST emitter, so calls cross between the backends both ways. Each
 # program is built with two
 # compilers in debug and release, and requires identical output and exit
@@ -603,7 +604,8 @@ BEGIN {
         r = rand()
         rett = r < 0.1 ? "string" : r < 0.2 ? "R" pick(nrec) : r < 0.35 ? "(" types[2 + pick(ntypes - 1)] ", Error)" : r < 0.55 ? (chance(0.5) ? "f32" : "f64") : "int"
         fret[f] = rett
-        s = "f" f "("
+        finl = chance(0.5) && (rett == "int" || isfloat(rett))
+        s = (finl ? "inline " : "") "f" f "("
         for (k = 0; k < np; k++) {
             t = chance(0.3) ? "R" pick(nrec) : chance(0.15) ? "string" : anytype()
             ptype[f, k] = t
@@ -619,7 +621,7 @@ BEGIN {
         if (chance(0.3)) declare("gs.a", "i64")
         if (chance(0.3)) declare("gs.b", "u8")
         print s "): " rett " {"
-        if (chance(0.3)) print "    sw: int = 1\n    switch sw {\n        0 { sw = 2 }\n        default {}\n    }" # on the AST emitter
+        if (chance(finl ? 0.1 : 0.3)) print "    sw: int = 1\n    switch sw {\n        0 { sw = 2 }\n        default {}\n    }" # on the AST emitter
         block(3, 1, "")
         print "    return " result(2)
         print "}\n"

@@ -1,0 +1,23 @@
+/* Inline expansion of a generic type's methods: a void one through a mut
+ * receiver, and one returning an Error. */
+
+// expect-exit: 0
+// expect-output: 3 11 4
+
+import array
+import fmt
+
+main(): int {
+    items: array.Array[u64] = array.Array[u64] {}
+    for i: u64 in 0 .. 3 {
+        err: Error = mut items.push(i + 1)
+        if err != null { return 1 }
+    }
+    mut items.set(0, 3)
+    mut items.set(2, items.get(2) + 3)
+    sum: u64 = 0
+    for i: usize in 0 .. items.len { sum += items.get(i) }
+    fmt.printf("%d %d %d\n", int(items.get(0)), int(sum), int(items.len + 1))
+    mut items.wipe()
+    return 0
+}

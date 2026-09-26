@@ -1,0 +1,173 @@
+Box::add(ptr, i64): void {
+b0:
+    %0 = param ptr 0
+    %1 = param i64 1
+    %2 = load i64 [%0]
+    %3 = add.chk i64 %2, %1
+    store [%0], %3
+    ret
+}
+
+clamp(i64, i64): i64 {
+b0:
+    %0 = param i64 0
+    %1 = param i64 1
+    %2 = gt bool %0, %1
+    br %2, b1, b2
+b1: ; preds b0
+    ret %1
+b2: ; preds b0
+    ret %0
+}
+
+twice(i64): i64 {
+b0:
+    %0 = param i64 0
+    %1 = const i64 100
+    %2 = gt bool %0, %1
+    br %2, b2, b3
+b1: ; preds b2, b3
+    %4 = phi i64 [%1, b2], [%0, b3]
+    %5 = const i64 2
+    %6 = mul.chk i64 %4, %5
+    ret %6
+b2: ; preds b0
+    jmp b1
+b3: ; preds b0
+    jmp b1
+}
+
+; last: not lowered (generic)
+
+drain(ptr, i64): void {
+b0:
+    %0 = param ptr 0
+    %1 = param i64 1
+    %2 = load i64 [%0]
+    %3 = add.chk i64 %2, %1
+    store [%0], %3
+    ret
+}
+
+step(i64): i64 {
+b0:
+    %0 = param i64 0
+    %1 = const i64 1
+    %2 = sub.chk i64 %0, %1
+    ret %2
+}
+
+countdown(i64): i64 {
+b0:
+    %0 = param i64 0
+    %1 = const i64 0
+    %2 = le bool %0, %1
+    br %2, b1, b2
+b1: ; preds b0
+    %4 = const i64 0
+    ret %4
+b2: ; preds b0
+    %6 = const i64 1
+    %7 = sub.chk i64 %0, %6
+    jmp b3
+b3: ; preds b2
+    %9 = call i64 countdown(%7)
+    ret %9
+}
+
+run(ptr, i64): i64 {
+b0:
+    %0 = slot ptr 24, 8
+    %1 = slot ptr 8, 8
+    %2 = param ptr 0
+    %3 = param i64 1
+    %4 = const i64 0
+    store [%1], %4
+    %6 = const i64 4
+    store [%0], %6
+    %8 = const i64 5
+    store [%0 + 8], %8
+    %10 = const i64 6
+    store [%0 + 16], %10
+    %12 = load i64 [%2]
+    %13 = add.chk i64 %12, %3
+    store [%2], %13
+    jmp b1
+b1: ; preds b0
+    %16 = load i64 [%1]
+    %17 = add.chk i64 %16, %3
+    store [%1], %17
+    jmp b2
+b2: ; preds b1
+    %20 = const i64 100
+    %21 = gt bool %3, %20
+    br %21, b5, b6
+b3: ; preds b4
+    %23 = load i64 [%1]
+    %24 = add.chk i64 %31, %23
+    %25 = const u64 3
+    %26 = const i64 3
+    %27 = gt bool %3, %26
+    br %27, b8, b9
+b4: ; preds b5, b6
+    %29 = phi i64 [%20, b5], [%3, b6]
+    %30 = const i64 2
+    %31 = mul.chk i64 %29, %30
+    jmp b3
+b5: ; preds b2
+    jmp b4
+b6: ; preds b2
+    jmp b4
+b7: ; preds b8, b9
+    %35 = phi u64 [%39, b8], [%42, b9]
+    %36 = cast i64 %35
+    %37 = add.chk i64 %24, %36
+    ret %37
+b8: ; preds b3
+    %39 = const u64 0
+    jmp b7
+b9: ; preds b3
+    %41 = const u64 1
+    %42 = sub.chk u64 %25, %41
+    jmp b7
+}
+
+main(): i64 {
+b0:
+    %0 = slot ptr 8, 8
+    %1 = const i64 1
+    store [%0], %1
+    %3 = const i64 60
+    %4 = call i64 run(%0, %3)
+    %5 = const i64 180
+    %6 = ne bool %4, %5
+    br %6, b1, b2
+b1: ; preds b0
+    %8 = const i64 1
+    call @__ace$registry_leaks()
+    ret %8
+b2: ; preds b0
+    %11 = load i64 [%0]
+    %12 = const i64 61
+    %13 = ne bool %11, %12
+    br %13, b3, b4
+b3: ; preds b2
+    %15 = const i64 2
+    call @__ace$registry_leaks()
+    ret %15
+b4: ; preds b2
+    %18 = const i64 5
+    %19 = call i64 countdown(%18)
+    %20 = const i64 0
+    %21 = ne bool %19, %20
+    br %21, b5, b6
+b5: ; preds b4
+    %23 = const i64 3
+    call @__ace$registry_leaks()
+    ret %23
+b6: ; preds b4
+    %26 = const i64 0
+    call @__ace$registry_leaks()
+    ret %26
+}
+

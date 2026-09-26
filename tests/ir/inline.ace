@@ -1,0 +1,53 @@
+/* An inline call expands in place: a read-only argument is bound to a copy, a
+ * mut parameter or receiver to the argument's own storage; nested callees, an
+ * early return, a generic callee, and one with no result all join after the
+ * expansion. A function that expands one keeps its self calls in release. */
+
+Box: struct { v: i64 }
+
+inline mut Box.add(n: i64) {
+    self.v += n
+}
+
+inline clamp(x: i64, hi: i64): i64 {
+    if x > hi { return hi }
+    return x
+}
+
+inline twice(x: i64): i64 {
+    return clamp(x, 100) * 2
+}
+
+inline last[T](xs: []T, first: bool): usize {
+    if first { return 0 }
+    return xs.len - 1
+}
+
+inline drain(mut total: i64, v: i64) {
+    total += v
+}
+
+inline step(x: i64): i64 {
+    return x - 1
+}
+
+countdown(n: i64): i64 {
+    if n <= 0 { return 0 }
+    return countdown(step(n))
+}
+
+run(mut b: Box, n: i64): i64 {
+    total: i64 = 0
+    xs: [3]i64 = [4, 5, 6]
+    mut b.add(n)
+    drain(mut total, n)
+    return twice(n) + total + i64(last[i64](xs[..], n > 3))
+}
+
+main(): int {
+    b: Box = Box{ v = 1 }
+    if run(mut b, 60) != 180 { return 1 }
+    if b.v != 61 { return 2 }
+    if countdown(5) != 0 { return 3 }
+    return 0
+}

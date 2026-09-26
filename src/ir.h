@@ -180,6 +180,14 @@ uint64_t ir_wrap(IrType t, uint64_t v);
 // Lower a checked function to IR, or return NULL and set *why when it uses
 // something the IR does not cover yet (the AST emitter compiles it instead).
 IrFunc* ir_lower(Node* f, EmitMode mode, const char** why);
+// Inline expansion (Functions & ABI #8), shared with the AST emitter: the
+// inline function a direct call names, with the type arguments its body is
+// stamped under, or NULL.
+Node*   inline_target(Node* call, SType*** targs, int* ntargs);
+// f's parameters (bind, one per parameter) and body copied with fresh local
+// symbols, so each expansion has locals of its own; a generic body is stamped
+// under targs first, and the copy keeps that stamp's types.
+void    inline_copy(Node* f, SType** targs, int ntargs, Node** bind, Node** body);
 void    ir_free(IrFunc* fn);
 // Structural invariants; returns 0 and prints the first violation to stderr.
 int     ir_verify(IrFunc* fn);

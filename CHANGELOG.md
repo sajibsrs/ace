@@ -215,6 +215,27 @@ current normative rules, and Git preserves patch-level detail.
   `inline` functions and one computed global constant still keep a function on the AST emitter across the `bench` and
   `demo` roots. `bench/std/math` runs `pow-f64` 29%, `sin`/`cos` 44-51%, and
   `string` `copy-64` 65% and `find-4096` 24% faster; packages are unchanged.
+- Lowered `inline` calls to IR (IR migration step 3a). A call expands in
+  place: `inline_copy`, shared with the AST emitter, stamps a generic body and
+  copies the callee's parameters and body with fresh locals; each argument is
+  evaluated in order and bound, a `mut` parameter or receiver to the
+  argument's own storage and any other to a copy; each `return` writes an SSA
+  result variable and jumps to a join block, where the variable is read. Inlined
+  statements keep the call site's line, debug checks keep their own source
+  locations, and a function value of an `inline` function names its out-of-line
+  symbol. A function that expands a call keeps its self tail calls, as before.
+  A cycle of inline calls, a body that never returns, or 16 nested expansions
+  keep the function on the AST emitter. Release lowers all 561 functions of
+  the `bench` roots and their std imports (516 before) and 1,459 across the
+  package benchmarks and demos (1,330); those left there wait on `union`
+  (113), `defer` (18), `switch` (14), and computed global constants (12).
+  Each benchmark binary sheds 2-15% of its machine code and compile time is
+  unchanged. `bench/std/math` runs `exp` and `log` 36-48%, `sin-large` 32%, and
+  `classify` 15% faster; `bench/std/string` `parse-int` and `parse-hex` 29-31%,
+  `trim` 11%, and `format-f64-shortest` 6% faster; the map workloads read 7-13%
+  slower on byte-identical code, a placement shift `HEAD` reproduces with 48
+  bytes of padding; the other benchmarks are unchanged. `tests/ir-diff.sh`
+  also generates `inline` functions with every parameter form.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

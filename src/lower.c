@@ -45,6 +45,13 @@ typedef struct { // a break/continue target
     int         brk, cont; // blocks; cont < 0 for a labeled block
 } Target;
 
+typedef struct { // an inline call being expanded
+    Node*  f;    // the callee
+    SType* rt;   // its result type, or NULL
+    int    join; // the block after the expansion, where each return goes
+    int    res;  // the variable holding the result, or -1
+} Expansion;
+
 typedef struct {
     IrFunc*     fn;
     Node*       f;
@@ -72,6 +79,8 @@ typedef struct {
     int         is_main;
     SType*      rtype;     // the function's result type, or NULL
     int         result;    // a result in memory: the RESULT address, else -1
+    Expansion   inl[16];   // inline calls being expanded, innermost last
+    int         ninl;
 } Lw;
 
 typedef struct { // the leaf values of an aggregate, or a scalar's one
@@ -1337,6 +1346,101 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
     }
 }
 
+// --- inline expansion (Functions & ABI #8) -------------------------------------------
+
+// The inline function a direct call names, with the type arguments its body
+// is stamped under.
+Node* inline_target(Node* call, SType*** targs, int* ntargs) {
+    Node* callee = call->a;
+    *targs = NULL;
+    *ntargs = 0;
+    if (callee->kind == N_INDEX && callee->sym) {
+        Sym* gs = node_sym(callee);
+        if (!gs->decl || !(gs->decl->flags & F_INLINE)) return NULL;
+        for (STypeInst* inst = sema_insts(gs->decl); inst; inst = inst->next)
+            if (inst->result == callee->ty) {
+                *targs = inst->args;
+                *ntargs = gs->decl->c ? gs->decl->c->nkids : 0;
+                return gs->decl;
+            }
+        return NULL;
+    }
+    Sym* s = call->sym ? node_sym(call) : NULL;
+    if (!s || s->kind != SYM_FUNC || s->is_extern || !s->decl || !(s->decl->flags & F_INLINE)) return NULL;
+    if (s->is_generic) { // a method of a generic type: its owner's arguments
+        SType* cft = node_ty(callee);
+        if (!cft || cft->kind != SK_FUNC) cft = s->type;
+        SType* owner = (call->flags & F_ASSOC) ? (callee->kind == N_FIELD_E ? node_ty(callee->a) : NULL)
+                     : cft && cft->nparams > 0 ? cft->params[0] : NULL;
+        if (!owner) return NULL;
+        *targs = owner->args;
+        *ntargs = owner->nargs;
+    }
+    return s->decl;
+}
+
+static PtrMap copy_node; // callee node -> its copy, while copying one callee
+static PtrMap copy_sym;  // callee local -> its copy
+
+// n and everything under it, each node once; Node.d only as a general for's body
+static Node* copy_tree(Node* n) {
+    if (!n) return NULL;
+    Node* c = (Node*)ptrmap_get(&copy_node, n);
+    if (c) return c;
+    c = (Node*)arena_alloc(sizeof(Node));
+    *c = *n;
+    ptrmap_put(&copy_node, n, (uintptr_t)c);
+    c->a = copy_tree(n->a);
+    c->b = copy_tree(n->b);
+    c->c = copy_tree(n->c);
+    if (n->kind == N_FOR && (n->flags & F_FORGEN)) c->d = copy_tree(n->d);
+    if (n->nkids) {
+        c->kids = (Node**)arena_alloc((size_t)n->nkids * sizeof(Node*));
+        for (int i = 0; i < n->nkids; i++) c->kids[i] = copy_tree(n->kids[i]);
+    }
+    return c;
+}
+
+// point a copy's names at fresh locals whose binders are the copied ones
+static void copy_syms(Node* c, PtrMap* seen) {
+    if (!c || ptrmap_get(seen, c)) return;
+    ptrmap_put(seen, c, 1);
+    Sym* s = node_sym(c);
+    if (s && s->kind == SYM_VAR && !s->is_global && s->decl) {
+        Node* d = (Node*)ptrmap_get(&copy_node, s->decl);
+        if (d) {
+            Sym* ns = (Sym*)ptrmap_get(&copy_sym, s);
+            if (!ns) {
+                ns = (Sym*)arena_alloc(sizeof(Sym));
+                *ns = *s;
+                ns->decl = d;
+                ptrmap_put(&copy_sym, s, (uintptr_t)ns);
+            }
+            c->sym = ns;
+        }
+    }
+    copy_syms(c->a, seen);
+    copy_syms(c->b, seen);
+    copy_syms(c->c, seen);
+    if (c->kind == N_FOR && (c->flags & F_FORGEN)) copy_syms(c->d, seen);
+    for (int i = 0; i < c->nkids; i++) copy_syms(c->kids[i], seen);
+}
+
+void inline_copy(Node* f, SType** targs, int ntargs, Node** bind, Node** body) {
+    Sym* fs = node_sym(f);
+    if (f->c && !(fs && fs->spec_args)) sema_stamp_body(f, targs, ntargs);
+    ptrmap_clear(&copy_node);
+    ptrmap_clear(&copy_sym);
+    for (int i = 0; i < f->nkids; i++) bind[i] = copy_tree(f->kids[i]);
+    *body = copy_tree(f->b);
+    PtrMap seen = {0};
+    for (int i = 0; i < f->nkids; i++) copy_syms(bind[i], &seen);
+    copy_syms(*body, &seen);
+    ptrmap_free(&seen);
+}
+
+static int inline_call(Lw* l, Node* call);
+
 // Whether x is the layout builtin name(...), which sema resolved to no symbol.
 static int is_layout_builtin(Node* x, const char* name) {
     Node* c = x->kind == N_CALL ? x->a : NULL;
@@ -1407,7 +1511,7 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
         if (v != -2) return v;
     }
     if ((d->kind == N_FUNC && d->ival) || (d->flags & F_INTRINSIC)) unsupported(l, "compiler-backed call");
-    if (d->flags & F_INLINE) unsupported(l, "inline call");
+    if (d->flags & F_INLINE) return inline_call(l, x);
     if (d->flags & F_EXPO) unsupported(l, "exported call");
     int first_var = call_args(l, x, s, &g);
     SType* ft = node_ty(callee);
@@ -1467,7 +1571,7 @@ static int expr(Lw* l, Node* x, int want) {
             return literal(l, t, init, neg);
         }
         if (s && s->kind == SYM_FUNC) { // a function value
-            if (s->decl && (s->decl->flags & (F_INTRINSIC | F_INLINE | F_EXPO))) unsupported(l, "function value");
+            if (s->decl && (s->decl->flags & (F_INTRINSIC | F_EXPO))) unsupported(l, "function value");
             if (s->is_generic || s->spec_args || (s->decl && s->decl->kind == N_FUNC && s->decl->c)) {
                 const char* mn = fn_value_mangle(s, x); // larger[int]
                 if (!mn) unsupported(l, "generic function value");
@@ -2225,6 +2329,17 @@ static void assign(Lw* l, Node* s) {
     place_write(l, p, v, vol);
 }
 
+// Local sym's variable var, initialized to x.
+static void init_var(Lw* l, int var, Sym* sym, Node* x) {
+    if (l->home[var] != -1 && in_memory(sym->type)) { // into its memory, which the value cannot name
+        store_value(l, x, sym->type, var_addr(l, var), 0);
+        return;
+    }
+    Agg a;
+    value(l, x, sym->type, &a);
+    set_leaves(l, var, sym->type, &a);
+}
+
 static void var_decl(Lw* l, Node* s) {
     if (s->nkids != 1 || s->kids[0]->kind != N_PARAM || (s->flags & F_MIXED)) {
         if (!s->b) unsupported(l, "multiple binders");
@@ -2238,13 +2353,73 @@ static void var_decl(Lw* l, Node* s) {
     if (!sym) unsupported(l, "unresolved binder");
     int var = var_of(l, sym);
     if (!s->b) return; // assigned before any read (definite initialization)
-    if (l->home[var] != -1 && in_memory(sym->type)) { // into its memory, which the value cannot name
-        store_value(l, s->b, sym->type, var_addr(l, var), 0);
-        return;
+    init_var(l, var, sym, s->b);
+}
+
+static int by_address(Node* f, int i);
+
+// A return inside an expansion: the result to the expansion's variable, then
+// the join.
+static void inline_return(Lw* l, Node* s) {
+    Expansion* x = &l->inl[l->ninl - 1];
+    if (s->a && x->res >= 0) {
+        int v = expr(l, s->a, need_type(l, x->rt));
+        write_var(l, x->res, l->cur, v);
     }
-    Agg a;
-    value(l, s->b, sym->type, &a);
-    set_leaves(l, var, sym->type, &a);
+    jump(l, x->join);
+}
+
+// A call to an inline function: its body copied in place. Each argument is
+// evaluated in order and bound to its parameter, a mut parameter or receiver
+// to the argument's own storage and any other to a copy. Each return jumps to
+// a join block, where the result is a variable read.
+static int inline_call(Lw* l, Node* call) {
+    SType** targs;
+    int ntargs;
+    Node* f = inline_target(call, &targs, &ntargs);
+    if (!f || !f->b) unsupported(l, "inline call");
+    if (f == l->f) unsupported(l, "recursive inline call");
+    for (int i = 0; i < l->ninl; i++)
+        if (l->inl[i].f == f) unsupported(l, "recursive inline call");
+    if (l->ninl == (int)(sizeof l->inl / sizeof l->inl[0])) unsupported(l, "nesting depth");
+    Node* callee = call->a;
+    Node* args[41];
+    int n = 0;
+    if (callee->kind == N_FIELD_E && !(call->flags & (F_METHOD | F_ASSOC))) args[n++] = callee->a; // receiver
+    if (n + call->nkids != f->nkids || f->nkids > 40) unsupported(l, "inline call");
+    for (int i = 0; i < call->nkids; i++) args[n++] = call->kids[i];
+    SType* rt = f->a ? node_ty(call) : NULL; // the call of a generic method with no result is not typed void
+    if (rt && unwrap(rt)->kind == SK_VOID) rt = NULL;
+    if (is_agg(rt)) unsupported(l, "inline aggregate result");
+
+    Node* bind[40];
+    Node* body;
+    inline_copy(f, targs, ntargs, bind, &body);
+    scan_storage(l, body);
+    for (int i = 0; i < n; i++) {
+        Sym* ps = node_sym(bind[i]);
+        if (!ps) unsupported(l, "unresolved parameter");
+        Node* a = args[i];
+        if (a->kind == N_MUTARG) a = a->a;
+        if (by_address(f, i)) {
+            var_new(l, ps, IT_VOID, place_address(l, place(l, a)));
+            continue;
+        }
+        init_var(l, var_of(l, ps), ps, a);
+    }
+    int join = new_block(l);
+    int res = rt ? var_new(l, NULL, need_type(l, rt), -1) : -1;
+    l->inl[l->ninl++] = (Expansion){ f, rt, join, res };
+    block(l, body);
+    if (l->cur >= 0) { // falling off the end: zero
+        if (res >= 0) write_var(l, res, l->cur, konst(l, l->vtype[res], 0));
+        jump(l, join);
+    }
+    l->ninl--;
+    seal(l, join);
+    enter(l, join);
+    if (l->cur < 0) unsupported(l, "inline call that never returns");
+    return res >= 0 ? read_var(l, res, join) : -1;
 }
 
 // The body of a loop; continue reaches the returned block, current on
@@ -2385,7 +2560,7 @@ static void for_loop(Lw* l, Node* s) {
 
 static void stmt(Lw* l, Node* s) {
     if (l->cur < 0) return;
-    l->at = s;
+    if (!l->ninl) l->at = s; // inlined code keeps its call site's line
     switch (s->kind) {
     case N_BLOCK:
         block(l, s);
@@ -2440,6 +2615,10 @@ static void stmt(Lw* l, Node* s) {
         return;
     }
     case N_RETURN: {
+        if (l->ninl) {
+            inline_return(l, s);
+            return;
+        }
         if (!s->a) {
             ret(l, NULL);
             return;
@@ -2557,7 +2736,6 @@ IrFunc* ir_lower(Node* f, EmitMode mode, const char** why) {
     else if (!f->b) *why = "no body";
     else if (f->c && !(fs && fs->spec_args)) *why = "generic";
     else if (f->flags & F_EXPO) *why = "exported";
-    else if (f->flags & F_INLCALLS) *why = "calls an inline function";
     if (*why) return NULL;
 
     Lw l;
@@ -2639,7 +2817,7 @@ IrFunc* ir_lower(Node* f, EmitMode mode, const char** why) {
         fn->sig->nparts = g.nparts;
         fn->sig->ret = (IrPart){ is_agg(rt) && !fn->ret_mem ? rt : NULL, 0, fn->nrets };
     }
-    if (mode == EMIT_RELEASE && !l.is_main && !frame_storage(&l) && has_self_tail(&l, f->b)) {
+    if (mode == EMIT_RELEASE && !l.is_main && !(f->flags & F_INLCALLS) && !frame_storage(&l) && has_self_tail(&l, f->b)) {
         l.self_head = new_block(&l);
         jump(&l, l.self_head);
         l.cur = l.self_head;
