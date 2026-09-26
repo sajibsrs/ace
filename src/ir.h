@@ -15,6 +15,7 @@ typedef enum {
     IT_VOID, IT_BOOL,
     IT_I8, IT_I16, IT_I32, IT_I64,
     IT_U8, IT_U16, IT_U32, IT_U64,
+    IT_PTR, // an address: pointers, function values, variable homes; compares unsigned
 } IrType;
 
 #define IR_OPS(X)                                                              \
@@ -27,7 +28,14 @@ typedef enum {
     /* comparisons: signedness from the operand type; result bool */          \
     X(EQ, "eq") X(NE, "ne") X(LT, "lt") X(LE, "le") X(GT, "gt") X(GE, "ge")    \
     X(CAST, "cast")     /* truncate or extend to the result type */           \
-    X(CALL, "call")     /* callee: fn */                                       \
+    X(SLOT, "slot")     /* ptr to a stack object: imm = size, aux = alignment */ \
+    X(GLOBAL, "global") /* ptr to sym: a global variable or a function */      \
+    X(LOAD, "load")     /* the result type's value at args[0] + aux */         \
+    X(STORE, "store")   /* args[1] to args[0] + aux, at args[1]'s width */     \
+    /* pointer offset: ptr args[0] +/- u64 args[1] * imm (the element size) */ \
+    X(PADD, "padd") X(PSUB, "psub")                                            \
+    X(CALL, "call")     /* to name (sym, when an Ace or extern function) */    \
+    X(CALLI, "calli")   /* to the function value args[0]; arguments follow */ \
     /* terminators */                                                          \
     X(JMP, "jmp")       /* succ[0] */                                          \
     X(BR, "br")         /* args[0] ? succ[0] : succ[1] */                      \
@@ -45,6 +53,12 @@ enum {
     // (add, sub, mul, signed neg; div and rem by MIN / -1), its divisor is
     // zero, or its shift count is negative or at least the operand width
     IRF_CHECKED = 1,
+    // also IRF_CHECKED, on load, store, and calli: a null address or function
+    // value traps through the null failure routine (Safety & Debug Builds
+    // #8); on padd and psub: a null start, an overflowing scaled offset, or an
+    // address past either end of the address space (Pointers #9)
+    IRF_VOLATILE = 2, // load, store: an access-site volatile access
+    IRF_VARARGS = 4,  // call: arguments from index aux on are variadic
 };
 
 typedef struct {
@@ -54,9 +68,10 @@ typedef struct {
     int      block;  // owning block, or -1 once removed
     int*     args;   // value ids
     int      nargs, cargs;
-    uint64_t imm;    // CONST value (in range for type), PARAM index
-    Sym*     fn;     // CALL target
-    const char* name; // CALL to a shared runtime routine when fn is NULL
+    uint64_t imm;    // CONST value (in range for type), PARAM index, SLOT size, PADD/PSUB scale
+    int32_t  aux;    // LOAD/STORE offset, SLOT alignment, CALL first variadic argument
+    Sym*     sym;    // GLOBAL symbol; CALL target function, when not a runtime routine
+    const char* name; // CALL target's link symbol
     Node*    at;     // source position, for line rows
 } IrIns;
 

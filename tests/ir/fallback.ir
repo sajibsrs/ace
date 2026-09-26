@@ -2,7 +2,15 @@
 
 ; half: not lowered (floating-point value)
 
-; bump: not lowered (mut parameter)
+bump(ptr): void {
+b0:
+    %0 = param ptr 0
+    %1 = load i64 [%0]
+    %2 = const i64 1
+    %3 = add.chk i64 %1, %2
+    store [%0], %3
+    ret
+}
 
 ; main: not lowered (struct)
 

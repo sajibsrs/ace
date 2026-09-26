@@ -180,7 +180,12 @@ uint32_t logical_imm_field(uint64_t v, int sf);
 typedef struct { uint64_t magic; int shift, add, neg; } DivMagic;
 DivMagic div_magic(uint64_t d, int w, int sign, int neg);
 
+// Byte offset of struct t's field want, and the index of field name or -1 (emit.c).
+uint32_t field_off(SType* t, int want);
+int      find_field(SType* t, const char* name, uint32_t len);
+
 // arm64.c: compile a lowered function into o's __text as symbol `name`.
+int  arm64_covers(IrFunc* fn); // selection handles every instruction; else the AST emitter
 void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int is_main);
 
 #endif

@@ -1,0 +1,62 @@
+/* Memory and the scalar ABI: globals, pointers and their arithmetic, locals
+ * whose storage is needed (a slot), mut parameters and method receivers (at
+ * the caller's address), function values, externs, and range loops. Debug
+ * null-checks every access through a pointer value and every call through a
+ * function value. */
+
+Mode: enum { off, on }
+
+Counter: struct {
+    hits: i64,
+    mode: Mode,
+}
+
+TOTAL: i64 = 0
+
+extern "c" {
+    printf(format: *u8, ...): i32
+}
+
+mut Counter.add(n: i64) {
+    self.hits += n
+    if n > 9 { self.mode = Mode.on }
+}
+
+twice(x: i64): i64 {
+    return x * 2
+}
+
+say(format: *u8, n: i64, k: i16): i32 {
+    return printf(format, n, k)
+}
+
+apply(f: (i64): i64, x: i64): i64 {
+    return f(x)
+}
+
+bump(mut n: i64, p: mut *i32) {
+    n += 1
+    *p = *(p + 1) - 2
+}
+
+sum(c: *Counter, lo: i64, hi: i64): i64 {
+    s: i64 = 0
+    for i: i64 in lo .. hi {
+        s += i
+    }
+    for j: u8 in 0 .. 4 {
+        s += i64(j)
+    }
+    return s + c.hits
+}
+
+main(): int {
+    cell: i32 = 5
+    n: i64 = 1
+    bump(mut n, mut &cell)
+    TOTAL = apply(twice, n)
+    q: mut *i64 = mut &n
+    *q += TOTAL
+    volatile n = n + 1
+    return int(volatile n)
+}

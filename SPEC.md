@@ -1150,8 +1150,8 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
        never float contraction).
     8. Leave SSA: phis become copies, with coalescing.
     9. Allocate registers: linear scan over one interval per value, aware of
-       calls, rematerializing constants. Interval splitting is added only if
-       measured spills in hot code call for it.
+       calls, rematerializing constants and stack-object addresses. Interval
+       splitting is added only if measured spills in hot code call for it.
     10. Lay out blocks and encode; then globals, vtables, fixups, DWARF, and
         the Mach-O write as today.
 

@@ -57,6 +57,26 @@ current normative rules, and Git preserves patch-level detail.
   `tests/ir-diff.sh` requires identical output from random scalar programs
   under two compilers. On `scaling-corpus.sh long 20000` machine code
   shrinks 44% and compile time 5-8%.
+- Extended the IR to memory and the scalar ABI (IR migration step 2a): `ptr`
+  values; `slot`, `global`, `load`/`store` (folded offset, volatile),
+  `padd`/`psub`, and `calli`; locals whose address is needed, `mut`
+  parameters, and method receivers live in memory; enums, function values,
+  extern and variadic calls, and range loops lower. Debug null-checks loads,
+  stores, and calls through pointer and function values, and checks pointer
+  arithmetic (Pointers #9). `arm64.c` rematerializes stack-object addresses as
+  it does constants, folds a single-use global or unchecked pointer offset
+  into the access (`adrp` + page offset, immediate, or scaled register
+  index), passes arguments past the eighth and variadic ones on the stack
+  from an outgoing area at the frame's base, and reaches externs by branch
+  relocation. Every `tests/emit` fixture passes in both modes, and
+  `tests/ir-diff.sh` now also covers globals, pointers, `mut` parameters, a
+  method, function values, and range loops. Release self tail recursion
+  also loops through `mut` parameters and method receivers (their address is
+  an SSA variable), unless a local lives in the frame. The `tests/run.sh`
+  code-shape checks on functions the IR now compiles state backend-neutral
+  properties instead of AST-emitter register policy. On `compile-corpus.sh 5000`,
+  compile time rises 10%, all of it from lowering these functions instead of
+  the AST emitter; benchmark runtime is unchanged.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

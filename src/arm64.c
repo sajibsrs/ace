@@ -28,14 +28,19 @@
 enum { S0 = 16, S1 = 17, S2 = 15 }; // scratch, never allocated
 enum { C_EQ, C_NE, C_HS, C_LO, C_MI, C_PL, C_VS, C_VC, C_HI, C_LS, C_GE, C_LT, C_GT, C_LE };
 enum { NOREG = -1, SLOT = 32 }; // a move location: register r, or SLOT + stack slot
-enum { FAIL = -1 };             // branch target: the arithmetic failure stub
+enum { FAIL = -1, NFAIL = -2 }; // branch targets: the arithmetic and null failure stubs
 
 typedef struct { uint32_t site, w; int target; uint8_t imm19; } Branch;
 
 // A branch condition: the flags satisfy cond, or (cbz) reg is zero / nonzero.
 typedef struct { uint8_t cbz, cond, reg, sf, nz; } Cond;
 
+// is_const: 1 moves imm, 2 moves the address sp + imm (a stack object)
 typedef struct { int dst, src; uint64_t imm; uint8_t is_const, sf; } Move;
+
+// Where an argument or parameter travels: x register reg, else the stack at
+// soff (from the caller's sp) in size bytes.
+typedef struct { int8_t reg; uint8_t size; uint32_t soff; } Arg;
 
 typedef struct {
     Obj*      o;
@@ -56,6 +61,9 @@ typedef struct {
     int*      hint, *phi_of;
     int*      calls;   // call use positions, ascending
     int       ncalls;
+    uint32_t  out;     // outgoing stack argument bytes, at [sp]
+    Arg*      pin;     // incoming parameters
+    uint32_t* obj;     // SLOT value -> its object's offset from sp
     // allocation
     int8_t*   reg;
     int*      slot;
@@ -67,7 +75,6 @@ typedef struct {
     uint32_t* label;   // block -> text offset
     Branch*   br;
     int       nbr, cbr;
-    uint32_t  fail_at;
     Node*     last_at;
 } A64;
 
@@ -81,6 +88,8 @@ static IrIns* ins_of(A64* a, int v) { return &a->fn->ins[v]; }
 static int is64(IrType t) { return ir_type_bits(t) == 64; }
 static uint32_t sfb(IrType t) { return is64(t) ? 0x80000000u : 0; }
 static int is_const(A64* a, int v) { return ins_of(a, v)->op == IR_CONST; }
+// a value no register holds: rebuilt at each use (a constant, sp + a stack object's offset)
+static int is_remat(IrOp op) { return op == IR_CONST || op == IR_SLOT; }
 static int narrow(IrType t) { return t != IT_BOOL && ir_type_bits(t) < 32; }
 
 // --- encoding -------------------------------------------------------------------------
@@ -126,6 +135,16 @@ static void mov_imm(A64* a, int rd, uint64_t v, int sf) {
 static void sp_adjust(A64* a, uint32_t base, uint32_t f) { // add/sub sp, sp, #f
     if (f >> 12) put(a, base | 0x400000u | ((f >> 12) << 10));
     if (f & 0xFFFu) put(a, base | ((f & 0xFFFu) << 10));
+}
+
+// rd = rn + imm (either may be sp), imm below 2^24
+static void add_imm(A64* a, int rd, int rn, uint32_t imm) {
+    uint32_t lo = imm & 0xFFFu, hi = imm >> 12;
+    if (hi) {
+        put(a, 0x91400000u | (hi << 10) | ((uint32_t)rn << 5) | (uint32_t)rd);
+        rn = rd;
+    }
+    if (lo || !hi) put(a, 0x91000000u | (lo << 10) | ((uint32_t)rn << 5) | (uint32_t)rd);
 }
 
 static uint32_t slot_off(A64* a, int s) { return a->slot_base + 8u * (uint32_t)s; }
@@ -196,17 +215,35 @@ static void bl_to(A64* a, const char* name) {
     put(a, 0x94000000u);
 }
 
+static void bl_extern(A64* a, const char* name) {
+    reloc_add(&a->o->secs[SEC_TEXT], here(a), sym_intern(&a->o->syms, name, (uint32_t)strlen(name)), 1, 2, 1, RM_BRANCH26);
+    put(a, 0x94000000u);
+}
+
+static const char* fail_routine(A64* a, int target) {
+    if (target == FAIL) {
+        a->o->arithmetic_fail_used = 1;
+        return "__ace$arithmetic_fail";
+    }
+    a->o->null_fail_used = 1;
+    return "__ace$null_fail";
+}
+
 // Branch to block target when c holds. Far code (over 1 MiB) skips an
 // unconditional branch on the inverse instead.
 static void branch_if(A64* a, Cond c, int target) {
-    if (target == FAIL) a->o->arithmetic_fail_used = 1;
+    const char* fail = target < 0 ? fail_routine(a, target) : NULL;
     if (!a->far) {
         branch_add(a, cond_word(c), target, 1);
         return;
     }
     put(a, cond_word(invert(c)) | (2u << 5)); // over the next instruction
-    if (target == FAIL) bl_to(a, "__ace$arithmetic_fail");
+    if (fail) bl_to(a, fail);
     else branch_add(a, 0x14000000u, target, 0);
+}
+
+static void null_fail_if_zero(A64* a, int reg) {
+    branch_if(a, (Cond){ 1, 0, (uint8_t)reg, 1, 0 }, NFAIL);
 }
 
 static void fail_if(A64* a, int cond) { branch_if(a, (Cond){ 0, (uint8_t)cond, 0, 0, 0 }, FAIL); }
@@ -231,6 +268,10 @@ static int opnd(A64* a, int v, int scratch) {
         mov_imm(a, scratch, x->imm, is64((IrType)x->type));
         return scratch;
     }
+    if (x->op == IR_SLOT) {
+        add_imm(a, scratch, 31, a->obj[v]);
+        return scratch;
+    }
     if (a->reg[v] >= 0) return a->reg[v];
     ld_slot(a, scratch, a->slot[v]);
     return scratch;
@@ -250,12 +291,10 @@ static int loc(A64* a, int v) { // a move location, or NOREG for an unused value
 
 static void move1(A64* a, Move m) {
     if (m.is_const) {
-        if (m.dst < SLOT) {
-            mov_imm(a, m.dst, m.imm, m.sf);
-        } else {
-            mov_imm(a, S1, m.imm, m.sf);
-            st_slot(a, S1, m.dst - SLOT);
-        }
+        int r = m.dst < SLOT ? m.dst : S1;
+        if (m.is_const == 2) add_imm(a, r, 31, (uint32_t)m.imm);
+        else mov_imm(a, r, m.imm, m.sf);
+        if (m.dst >= SLOT) st_slot(a, S1, m.dst - SLOT);
     } else if (m.dst < SLOT && m.src < SLOT) {
         mov_reg(a, m.dst, m.src);
     } else if (m.dst < SLOT) {
@@ -304,8 +343,44 @@ static void parallel_move(A64* a, Move* m, int n) {
 static Move move_of(A64* a, int dst_loc, int v) {
     IrIns* x = ins_of(a, v);
     if (x->op == IR_CONST) return (Move){ dst_loc, 0, x->imm, 1, (uint8_t)is64((IrType)x->type) };
+    if (x->op == IR_SLOT) return (Move){ dst_loc, 0, a->obj[v], 2, 1 };
     return (Move){ dst_loc, loc(a, v), 0, 0, 1 };
 }
+
+// The scalar calling convention (emit.c assign_cc): the first eight in x0-x7,
+// the rest on the stack at their natural size, 4 bytes at least, and
+// naturally aligned; variadic arguments from varargs_from on in 8-byte stack
+// slots. Returns the stack bytes used.
+static uint32_t assign_args(const IrType* t, int n, int varargs_from, Arg* out) {
+    int xn = 0;
+    uint32_t soff = 0;
+    for (int i = 0; i < n; i++) {
+        uint32_t w = (uint32_t)ir_type_bits(t[i]) / 8;
+        if (varargs_from >= 0 && i >= varargs_from) w = 8;
+        else if (xn < 8) { out[i] = (Arg){ (int8_t)xn++, 8, 0 }; continue; }
+        if (w < 4) w = 4;
+        soff = (soff + w - 1) & ~(w - 1);
+        out[i] = (Arg){ -1, (uint8_t)w, soff };
+        soff += w;
+    }
+    return soff;
+}
+
+// A call's arguments (after a calli's target) and their locations; the
+// caller frees the returned array.
+static Arg* call_args(A64* a, IrIns* x, int* first, uint32_t* stack) {
+    int k0 = x->op == IR_CALLI, n = x->nargs - k0;
+    IrType* t = xcalloc((size_t)n, sizeof(IrType));
+    Arg* args = xcalloc((size_t)n, sizeof(Arg));
+    for (int k = 0; k < n; k++) t[k] = (IrType)ins_of(a, x->args[k0 + k])->type;
+    uint32_t s = assign_args(t, n, (x->flags & IRF_VARARGS) ? x->aux : -1, args);
+    free(t);
+    *first = k0;
+    if (stack) *stack = s;
+    return args;
+}
+
+static int is_call(int op) { return op == IR_CALL || op == IR_CALLI; }
 
 // --- layout, liveness, allocation --------------------------------------------------------
 
@@ -380,6 +455,28 @@ static void layout(A64* a) {
 
 static int is_compare(int op) { return op >= IR_EQ && op <= IR_GE; }
 
+static int access_bytes(A64* a, IrIns* x) {
+    IrType t = (IrType)(x->op == IR_LOAD ? x->type : ins_of(a, x->args[1])->type);
+    return ir_type_bits(t) / 8;
+}
+
+// Whether load or store u computes its address itself: from a global (adrp
+// and a page offset), or from an unchecked pointer offset (a folded constant,
+// or a register index scaled by the access size).
+static int fold_address(A64* a, int u) {
+    IrIns* x = ins_of(a, u);
+    int p = x->args[0];
+    IrIns* px = ins_of(a, p);
+    if (a->nuse[p] != 1 || px->block != x->block || (x->flags & IRF_CHECKED)) return 0;
+    if (px->op == IR_GLOBAL) return x->aux == 0;
+    if ((px->op != IR_PADD && px->op != IR_PSUB) || (px->flags & IRF_CHECKED)) return 0;
+    int n = px->args[1];
+    uint64_t d;
+    if (is_const(a, n)) return !__builtin_mul_overflow(ins_of(a, n)->imm, px->imm, &d) && d <= INT32_MAX;
+    return px->op == IR_PADD && x->aux == 0 && !is_remat((IrOp)ins_of(a, px->args[0])->op) &&
+           (px->imm == 1 || px->imm == (uint64_t)access_bytes(a, x));
+}
+
 static void count_uses(A64* a) {
     IrFunc* fn = a->fn;
     a->nuse = xcalloc((size_t)fn->nins, sizeof(int));
@@ -397,6 +494,8 @@ static void count_uses(A64* a) {
             if (x->op == IR_BR) {
                 int c = x->args[0];
                 if (is_compare(fn->ins[c].op) && a->nuse[c] == 1 && fn->ins[c].block == b) a->fused[c] = 1;
+            } else if (x->op == IR_LOAD || x->op == IR_STORE) {
+                if (fold_address(a, u)) a->fused[x->args[0]] = 1;
             } else if ((x->op == IR_ADD || x->op == IR_SUB) && !(x->flags & IRF_CHECKED)) {
                 for (int k = x->op == IR_ADD ? 0 : 1; k < 2; k++) { // multiply-add, multiply-subtract
                     int m = x->args[k];
@@ -446,7 +545,7 @@ static void liveness(A64* a) {
                 int nsub = a->fused[v] ? vx->nargs : 1;
                 for (int s = 0; s < nsub; s++) {
                     int w = a->fused[v] ? vx->args[s] : v;
-                    if (fn->ins[w].op == IR_CONST) continue;
+                    if (is_remat((IrOp)fn->ins[w].op)) continue;
                     if (nu == cu) {
                         cu = cu ? cu * 2 : 256;
                         uses = realloc(uses, (size_t)cu * sizeof(Use));
@@ -506,7 +605,7 @@ static int crosses_call(A64* a, int v) {
 
 static int allocatable(A64* a, int v) {
     IrIns* x = ins_of(a, v);
-    return x->type != IT_VOID && x->op != IR_CONST && !a->fused[v] && a->nuse[v] > 0;
+    return x->type != IT_VOID && !is_remat((IrOp)x->op) && !a->fused[v] && a->nuse[v] > 0;
 }
 
 static void hints(A64* a) {
@@ -524,12 +623,18 @@ static void hints(A64* a) {
                 for (int k = 0; k < x->nargs; k++)
                     if (a->phi_of[x->args[k]] < 0) a->phi_of[x->args[k]] = u;
             } else if (x->op == IR_PARAM) {
-                a->hint[u] = (int)x->imm;
-            } else if (x->op == IR_CALL) {
+                if (a->pin[x->imm].reg >= 0) a->hint[u] = a->pin[x->imm].reg;
+            } else if (is_call(x->op)) {
                 a->calls[a->ncalls++] = 2 * a->idx[u];
                 a->hint[u] = 0;
-                for (int k = 0; k < x->nargs; k++)
-                    if (a->hint[x->args[k]] < 0) a->hint[x->args[k]] = k;
+                int k0;
+                uint32_t stack;
+                Arg* args = call_args(a, x, &k0, &stack);
+                for (int k = k0; k < x->nargs; k++)
+                    if (args[k - k0].reg >= 0 && a->hint[x->args[k]] < 0) a->hint[x->args[k]] = args[k - k0].reg;
+                free(args);
+                stack = (stack + 15) & ~15u;
+                if (stack > a->out) a->out = stack;
             } else if (x->op == IR_RET && x->nargs) {
                 if (a->hint[x->args[0]] < 0) a->hint[x->args[0]] = 0;
             }
@@ -650,44 +755,74 @@ static void allocate(A64* a) {
 }
 
 // --- frame ------------------------------------------------------------------------------
+//
+// [sp, sp + out): outgoing stack arguments; then the frame record (x29, x30),
+// the callee-saved registers, the spill slots, and the stack objects.
+
+// Save (or restore) the callee-saved registers, after the frame record (with
+// it when record) at sp + out, within ldp/stp reach: at most 40 arguments
+// (lowering) put out at 320 bytes.
+static void frame_pairs(A64* a, int restore, int record) {
+    uint32_t off = a->out;
+    uint32_t pair = restore ? 0xA9400000u : 0xA9000000u, one = restore ? 0xF9400000u : 0xF9000000u;
+    if (record) put(a, pair | ((off / 8) << 15) | (30u << 10) | (31u << 5) | 29u);
+    for (int k = 0; k < a->ncs; k += 2) {
+        uint32_t o = (off + 16u + 8u * (uint32_t)k) / 8;
+        if (k + 1 < a->ncs)
+            put(a, pair | (o << 15) | ((uint32_t)a->cs[k + 1] << 10) | (31u << 5) | (uint32_t)a->cs[k]);
+        else
+            put(a, one | (o << 10) | (31u << 5) | (uint32_t)a->cs[k]);
+    }
+}
+
+// A small frame without outgoing arguments saves the record with writeback.
+static int short_frame(A64* a) { return !a->out && a->frame <= 504; }
 
 static void prologue(A64* a) {
     if (!a->has_frame) return;
     uint32_t f = a->frame;
-    if (f <= 504) {
+    if (short_frame(a)) {
         put(a, 0xA9800000u | ((uint32_t)(-(int32_t)(f / 8)) & 0x7Fu) << 15 | (30u << 10) | (31u << 5) | 29u);
+        put(a, 0x910003FDu); // mov x29, sp
+        frame_pairs(a, 0, 0);
     } else {
         sp_adjust(a, 0xD10003FFu, f);
-        put(a, 0xA9000000u | (30u << 10) | (31u << 5) | 29u); // stp x29, x30, [sp]
-    }
-    put(a, 0x910003FDu); // mov x29, sp
-    for (int k = 0; k < a->ncs; k += 2) {
-        uint32_t off = (16u + 8u * (uint32_t)k) / 8;
-        if (k + 1 < a->ncs)
-            put(a, 0xA9000000u | (off << 15) | ((uint32_t)a->cs[k + 1] << 10) | (31u << 5) | (uint32_t)a->cs[k]);
-        else
-            put(a, 0xF90003E0u | (off << 10) | (uint32_t)a->cs[k]);
+        frame_pairs(a, 0, 1);
+        add_imm(a, 29, 31, a->out);
     }
 }
 
 static void epilogue(A64* a) {
     if (a->has_frame) {
-        for (int k = 0; k < a->ncs; k += 2) {
-            uint32_t off = (16u + 8u * (uint32_t)k) / 8;
-            if (k + 1 < a->ncs)
-                put(a, 0xA9400000u | (off << 15) | ((uint32_t)a->cs[k + 1] << 10) | (31u << 5) | (uint32_t)a->cs[k]);
-            else
-                put(a, 0xF94003E0u | (off << 10) | (uint32_t)a->cs[k]);
-        }
         uint32_t f = a->frame;
-        if (f <= 504) {
+        if (short_frame(a)) {
+            frame_pairs(a, 1, 0);
             put(a, 0xA8C00000u | ((f / 8) << 15) | (30u << 10) | (31u << 5) | 29u); // ldp x29, x30, [sp], #f
         } else {
-            put(a, 0xA9400000u | (30u << 10) | (31u << 5) | 29u);
+            frame_pairs(a, 1, 1);
             sp_adjust(a, 0x910003FFu, f);
         }
     }
     put(a, 0xD65F03C0u); // ret
+}
+
+// Lay out the stack objects above the spill slots; returns the frame size.
+static uint32_t place_objects(A64* a) {
+    IrFunc* fn = a->fn;
+    a->obj = xcalloc((size_t)fn->nins, sizeof(uint32_t));
+    uint32_t at = a->slot_base + 8u * (uint32_t)a->nslots;
+    for (int b = 0; b < fn->nblocks; b++)
+        for (int i = 0; i < fn->blocks[b].nins; i++) {
+            int v = fn->blocks[b].ins[i];
+            IrIns* x = &fn->ins[v];
+            if (x->op != IR_SLOT) continue;
+            uint32_t al = x->aux > 0 ? (uint32_t)x->aux : 1;
+            at = (at + al - 1) & ~(al - 1);
+            a->obj[v] = at;
+            at += (uint32_t)(x->imm ? x->imm : 1);
+            a->has_frame = 1;
+        }
+    return (at + 15u) & ~15u;
 }
 
 // --- selection --------------------------------------------------------------------------
@@ -1007,17 +1142,177 @@ static void cast(A64* a, int v) {
     dst_done(a, v, rd);
 }
 
+// --- memory -----------------------------------------------------------------------------
+
+// The unsigned-offset load or store opcode for a value of type t (a load
+// extends a narrow value to its 32-bit register form).
+static uint32_t mem_op(IrType t, int load) {
+    switch (ir_type_bits(t)) {
+    case 8: return load ? (t == IT_I8 ? 0x39C00000u : 0x39400000u) : 0x39000000u;
+    case 16: return load ? (t == IT_I16 ? 0x79C00000u : 0x79400000u) : 0x79000000u;
+    case 32: return load ? 0xB9400000u : 0xB9000000u;
+    default: return load ? 0xF9400000u : 0xF9000000u;
+    }
+}
+
+// op rt, [rn + off]: scaled, unscaled, or through x15 as a register offset.
+static void mem(A64* a, uint32_t op, int size, int rt, int rn, int64_t off) {
+    uint32_t tn = ((uint32_t)rn << 5) | (uint32_t)rt;
+    if (off >= 0 && off % size == 0 && off / size <= 4095) {
+        put(a, op | ((uint32_t)(off / size) << 10) | tn);
+    } else if (off >= -256 && off <= 255) {
+        put(a, (op & ~0x01000000u) | (((uint32_t)off & 0x1FFu) << 12) | tn);
+    } else {
+        mov_imm(a, S2, (uint64_t)off, 1);
+        put(a, (op & ~0x01000000u) | 0x00206800u | (S2 << 16) | tn);
+    }
+}
+
+// adrp rd, name@PAGE, then the page offset in the instruction w (add or a
+// load/store with a zero offset)
+static void page_ref(A64* a, int rd, const char* name, uint32_t w) {
+    ESym* s = sym_intern(&a->o->syms, name, (uint32_t)strlen(name));
+    Sec* t = &a->o->secs[SEC_TEXT];
+    reloc_add(t, here(a), s, 1, 2, 1, RM_PAGE21);
+    put(a, 0x90000000u | (uint32_t)rd);
+    reloc_add(t, here(a), s, 0, 2, 1, RM_PAGEOFF12);
+    put(a, w);
+}
+
+// Load or store v; the value register is chosen by the caller of mem.
+static void access(A64* a, int v) {
+    IrIns* x = ins_of(a, v);
+    int load = x->op == IR_LOAD;
+    IrType t = (IrType)(load ? x->type : ins_of(a, x->args[1])->type);
+    int size = access_bytes(a, x);
+    uint32_t op = mem_op(t, load);
+    int rt;
+    if (load) {
+        rt = dst(a, v);
+    } else {
+        int s = x->args[1];
+        rt = is_const(a, s) && ins_of(a, s)->imm == 0 ? 31 : opnd(a, s, S1); // zr
+    }
+    int p = x->args[0];
+    IrIns* px = ins_of(a, p);
+    int64_t off = x->aux;
+    int rn;
+    if (px->op == IR_SLOT) {
+        rn = 31;
+        off += a->obj[p];
+    } else if (a->fused[p] && px->op == IR_GLOBAL) {
+        page_ref(a, S0, px->name, op | (S0 << 5) | (uint32_t)rt);
+        goto done;
+    } else if (a->fused[p]) { // an unchecked pointer offset
+        int n = px->args[1], base = px->args[0];
+        if (is_const(a, n)) {
+            int64_t d = (int64_t)(ins_of(a, n)->imm * px->imm);
+            off += px->op == IR_PADD ? d : -d;
+            if (ins_of(a, base)->op == IR_SLOT) {
+                rn = 31;
+                off += a->obj[base];
+            } else {
+                rn = opnd(a, base, S0);
+            }
+        } else {
+            rn = opnd(a, base, S0);
+            int ri = opnd(a, n, S2);
+            put(a, (op & ~0x01000000u) | 0x00206800u | (px->imm > 1 ? 0x1000u : 0) | ((uint32_t)ri << 16) |
+                       ((uint32_t)rn << 5) | (uint32_t)rt);
+            goto done;
+        }
+    } else {
+        rn = opnd(a, p, S0);
+        if (x->flags & IRF_CHECKED) null_fail_if_zero(a, rn);
+    }
+    mem(a, op, size, rt, rn, off);
+done:
+    if (load) dst_done(a, v, rt);
+}
+
+static void global(A64* a, int v) {
+    int rd = dst(a, v);
+    page_ref(a, rd, ins_of(a, v)->name, 0x91000000u | ((uint32_t)rd << 5) | (uint32_t)rd);
+    dst_done(a, v, rd);
+}
+
+// rd = rp +/- rn * scale (Pointers #9): debug checks a null start, the scaled
+// offset's overflow, and a result past either end of the address space.
+static void pointer_offset(A64* a, int v) {
+    IrIns* x = ins_of(a, v);
+    int sub = x->op == IR_PSUB, chk = x->flags & IRF_CHECKED;
+    uint64_t scale = x->imm;
+    int n = x->args[1];
+    int rp = opnd(a, x->args[0], S0);
+    if (chk) fail_if_zero(a, rp, 1, 0);
+    uint64_t d;
+    int k = scale && (scale & (scale - 1)) == 0 ? __builtin_ctzll(scale) : -1;
+    uint32_t adds = chk ? 0x20000000u : 0;
+    if (is_const(a, n) && !__builtin_mul_overflow(ins_of(a, n)->imm, scale, &d)) {
+        int rd = dst(a, v);
+        if (d <= 0xFFF || (d <= 0xFFF000 && !(d & 0xFFF))) {
+            uint32_t imm = d <= 0xFFF ? (uint32_t)d << 10 : (0x400000u | (uint32_t)(d >> 12) << 10);
+            put(a, (sub ? 0xD1000000u : 0x91000000u) | adds | imm | ((uint32_t)rp << 5) | (uint32_t)rd);
+        } else {
+            mov_imm(a, S1, d, 1);
+            put(a, (sub ? 0xCB000000u : 0x8B000000u) | adds | (S1 << 16) | ((uint32_t)rp << 5) | (uint32_t)rd);
+        }
+        if (chk) fail_if(a, sub ? C_LO : C_HS);
+        dst_done(a, v, rd);
+        return;
+    }
+    int rn = opnd(a, n, S1);
+    if (chk && scale != 1) { // the scaled offset must fit in 64 bits
+        if (k >= 0) {
+            put(a, 0xD340FC00u | ((uint32_t)(64 - k) << 16) | ((uint32_t)rn << 5) | S2); // lsr x15, rn, #(64 - k)
+        } else {
+            mov_imm(a, S2, scale, 1);
+            put(a, 0x9BC07C00u | (S2 << 16) | ((uint32_t)rn << 5) | S2); // umulh
+        }
+        fail_if_zero(a, S2, 1, 1);
+    }
+    int rd = dst(a, v);
+    if (k >= 0) { // add/sub rd, rp, rn, lsl #k
+        put(a, (sub ? 0xCB000000u : 0x8B000000u) | adds | ((uint32_t)rn << 16) | ((uint32_t)k << 10) | ((uint32_t)rp << 5) | (uint32_t)rd);
+    } else if (!chk) { // madd / msub rd, rn, scale, rp
+        mov_imm(a, S2, scale, 1);
+        put(a, (sub ? 0x9B008000u : 0x9B000000u) | (S2 << 16) | ((uint32_t)rp << 10) | ((uint32_t)rn << 5) | (uint32_t)rd);
+    } else {
+        mov_imm(a, S2, scale, 1);
+        put(a, 0x9B007C00u | (S2 << 16) | ((uint32_t)rn << 5) | S2); // mul
+        put(a, (sub ? 0xEB000000u : 0xAB000000u) | (S2 << 16) | ((uint32_t)rp << 5) | (uint32_t)rd);
+    }
+    if (chk) fail_if(a, sub ? C_LO : C_HS);
+    dst_done(a, v, rd);
+}
+
+// A direct, extern, or indirect call: stack arguments stored at [sp], then
+// the register arguments moved in parallel; a calli's target waits in x17.
 static void call(A64* a, int v) {
     IrIns* x = ins_of(a, v);
-    Move m[8];
-    for (int k = 0; k < x->nargs; k++) m[k] = move_of(a, k, x->args[k]);
-    parallel_move(a, m, x->nargs);
-    if (x->fn) {
-        Sym* s = x->fn;
-        bl_to(a, fn_mangle(s->name, s->len, s->type, s->decl, NULL, 0, 0));
-    } else {
-        bl_to(a, x->name);
+    int k0;
+    Arg* args = call_args(a, x, &k0, NULL);
+    if (x->op == IR_CALLI) {
+        mov_reg(a, S1, opnd(a, x->args[0], S1));
+        if (x->flags & IRF_CHECKED) null_fail_if_zero(a, S1);
     }
+    Move m[8];
+    int nm = 0;
+    for (int k = k0; k < x->nargs; k++) {
+        Arg g = args[k - k0];
+        if (g.reg >= 0) {
+            m[nm++] = move_of(a, g.reg, x->args[k]);
+            continue;
+        }
+        int w = x->args[k];
+        int r = is_const(a, w) && ins_of(a, w)->imm == 0 ? 31 : opnd(a, w, S0);
+        mem(a, g.size == 8 ? 0xF9000000u : 0xB9000000u, g.size, r, 31, g.soff);
+    }
+    free(args);
+    parallel_move(a, m, nm);
+    if (x->op == IR_CALLI) put(a, 0xD63F0000u | (S1 << 5)); // blr x17
+    else if (x->sym && x->sym->is_extern) bl_extern(a, x->name);
+    else bl_to(a, x->name);
     if (loc(a, v) == NOREG) return;
     int rd = dst(a, v);
     IrType t = (IrType)x->type;
@@ -1073,12 +1368,7 @@ static void terminator(A64* a, int b, int v) {
         return;
     }
     if (x->op == IR_RET) {
-        if (x->nargs) {
-            int r = x->args[0];
-            if (is_const(a, r)) mov_imm(a, 0, ins_of(a, r)->imm, is64((IrType)ins_of(a, r)->type));
-            else if (a->reg[r] >= 0) mov_reg(a, 0, a->reg[r]);
-            else ld_slot(a, 0, a->slot[r]);
-        }
+        if (x->nargs) mov_reg(a, 0, opnd(a, x->args[0], 0));
         epilogue(a);
         return;
     }
@@ -1134,8 +1424,19 @@ static void emit_block(A64* a, int b) {
         case IR_CAST:
             cast(a, v);
             break;
-        case IR_CALL:
+        case IR_CALL: case IR_CALLI:
             call(a, v);
+            break;
+        case IR_SLOT:
+            break;
+        case IR_GLOBAL:
+            global(a, v);
+            break;
+        case IR_LOAD: case IR_STORE:
+            access(a, v);
+            break;
+        case IR_PADD: case IR_PSUB:
+            pointer_offset(a, v);
             break;
         default:
             terminator(a, b, v);
@@ -1144,8 +1445,9 @@ static void emit_block(A64* a, int b) {
     }
 }
 
-// Entry: incoming parameters, a narrow one wrapped where it arrived (an
-// AST-emitted caller may pass it unwrapped), then moved to their homes.
+// Entry: register parameters, a narrow one wrapped where it arrived (an
+// AST-emitted caller may pass it unwrapped), moved to their homes; then
+// stack parameters loaded from the caller's frame.
 static void params(A64* a) {
     IrBlock* bb = &a->fn->blocks[0];
     Move m[8];
@@ -1154,10 +1456,21 @@ static void params(A64* a) {
         int v = bb->ins[i];
         IrIns* x = ins_of(a, v);
         if (x->op != IR_PARAM || loc(a, v) == NOREG) continue;
-        if (narrow((IrType)x->type)) ext(a, (IrType)x->type, (int)x->imm, (int)x->imm);
-        m[n++] = (Move){ loc(a, v), (int)x->imm, 0, 0, 1 };
+        int r = a->pin[x->imm].reg;
+        if (r < 0) continue;
+        if (narrow((IrType)x->type)) ext(a, (IrType)x->type, r, r);
+        m[n++] = (Move){ loc(a, v), r, 0, 0, 1 };
     }
     parallel_move(a, m, n);
+    for (int i = 0; i < bb->nins; i++) {
+        int v = bb->ins[i];
+        IrIns* x = ins_of(a, v);
+        if (x->op != IR_PARAM || loc(a, v) == NOREG || a->pin[x->imm].reg >= 0) continue;
+        IrType t = (IrType)x->type;
+        int rd = dst(a, v);
+        mem(a, mem_op(t, 1), ir_type_bits(t) / 8, rd, 31, (int64_t)(a->frame + a->pin[x->imm].soff));
+        dst_done(a, v, rd);
+    }
 }
 
 static int is_loop_head(A64* a, int b) {
@@ -1171,7 +1484,6 @@ static int is_loop_head(A64* a, int b) {
 static int emit_body(A64* a) {
     IrFunc* fn = a->fn;
     a->nbr = 0;
-    a->fail_at = UINT32_MAX;
     a->last_at = NULL;
     line_row(a, fn->decl);
     prologue(a);
@@ -1183,15 +1495,16 @@ static int emit_body(A64* a) {
         a->label[b] = here(a);
         emit_block(a, b);
     }
+    uint32_t fail_at[2] = { UINT32_MAX, UINT32_MAX }; // per function: bl to the routine
     for (int i = 0; i < a->nbr; i++) {
-        if (a->br[i].target != FAIL) continue;
-        a->fail_at = here(a);
-        bl_to(a, "__ace$arithmetic_fail");
-        break;
+        int t = a->br[i].target;
+        if (t >= 0 || fail_at[-1 - t] != UINT32_MAX) continue;
+        fail_at[-1 - t] = here(a);
+        bl_to(a, fail_routine(a, t));
     }
     for (int i = 0; i < a->nbr; i++) {
         Branch* br = &a->br[i];
-        uint32_t to = br->target == FAIL ? a->fail_at : a->label[br->target];
+        uint32_t to = br->target < 0 ? fail_at[-1 - br->target] : a->label[br->target];
         int64_t d = ((int64_t)to - (int64_t)br->site) / 4;
         uint32_t w = br->w;
         if (br->imm19) {
@@ -1205,6 +1518,18 @@ static int emit_body(A64* a) {
     return 1;
 }
 
+// Whether selection covers every instruction of fn; the AST emitter compiles
+// a function it does not.
+int arm64_covers(IrFunc* fn) {
+    for (int b = 0; b < fn->nblocks; b++)
+        for (int i = 0; i < fn->blocks[b].nins; i++) {
+            IrIns* x = &fn->ins[fn->blocks[b].ins[i]];
+            if (x->op == IR_SLOT && x->aux > 16) return 0; // over-aligned: sp is only 16-byte aligned
+            if (x->op == IR_GLOBAL && x->sym && x->sym->is_extern) return 0; // needs the GOT
+        }
+    return 1;
+}
+
 void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int is_main) {
     A64 a;
     memset(&a, 0, sizeof a);
@@ -1212,26 +1537,31 @@ void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int is_main)
     a.fn = fn;
     a.t = obj_text(o);
     a.is_main = is_main;
+    a.pin = xcalloc((size_t)fn->nparams, sizeof(Arg));
+    assign_args(fn->params, fn->nparams, -1, a.pin);
     split_critical_edges(fn);
     layout(&a);
     count_uses(&a);
     liveness(&a);
     hints(&a);
     allocate(&a);
-    a.slot_base = 16u + 8u * (uint32_t)a.ncs;
-    a.frame = (a.slot_base + 8u * (uint32_t)a.nslots + 15u) & ~15u;
+    a.slot_base = a.out + 16u + 8u * (uint32_t)a.ncs;
     a.has_frame = a.ncalls || a.nslots || a.ncs;
+    a.frame = place_objects(&a);
+    if (!a.has_frame) a.frame = 0;
     a.label = xcalloc((size_t)fn->nblocks, sizeof(uint32_t));
 
     while (a.t->len % FUNC_ALIGN) put(&a, 0xD503201Fu);
     uint32_t start = here(&a);
     sym_define(&o->syms, o->secs, name, len, is_main, &o->secs[SEC_TEXT]);
     size_t nfix = o->nfix;
+    int nrl = o->secs[SEC_TEXT].nrl;
     int nlines = o->nlines;
     LineRow last = nlines ? o->lines[nlines - 1] : (LineRow){ 0 };
     if (!emit_body(&a)) { // over 1 MiB: again with far conditional branches
         a.t->len = start;
         o->nfix = nfix;
+        o->secs[SEC_TEXT].nrl = nrl;
         o->nlines = nlines;
         if (nlines) o->lines[nlines - 1] = last;
         a.far = 1;
@@ -1242,5 +1572,5 @@ void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int is_main)
     free(a.order); free(a.lix); free(a.bfirst); free(a.blast); free(a.idx);
     free(a.nuse); free(a.fused); free(a.madd); free(a.start); free(a.end);
     free(a.hint); free(a.phi_of); free(a.calls); free(a.reg); free(a.slot);
-    free(a.label); free(a.br);
+    free(a.label); free(a.br); free(a.pin); free(a.obj);
 }

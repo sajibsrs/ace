@@ -1,0 +1,173 @@
+Counter::add(ptr, i64): void {
+b0:
+    %0 = param ptr 0
+    %1 = param i64 1
+    %2 = load i64 [%0]
+    %3 = add.chk i64 %2, %1
+    store [%0], %3
+    %5 = const i64 9
+    %6 = gt bool %1, %5
+    br %6, b1, b2
+b1: ; preds b0
+    %8 = const i32 1
+    store [%0 + 8], %8
+    jmp b2
+b2: ; preds b0, b1
+    ret
+}
+
+twice(i64): i64 {
+b0:
+    %0 = param i64 0
+    %1 = const i64 2
+    %2 = mul.chk i64 %0, %1
+    ret %2
+}
+
+say(ptr, i64, i16): i32 {
+b0:
+    %0 = param ptr 0
+    %1 = param i64 1
+    %2 = param i16 2
+    %3 = cast i64 %2
+    %4 = call i32 printf(%0, ... %1, %3)
+    ret %4
+}
+
+apply(ptr, i64): i64 {
+b0:
+    %0 = param ptr 0
+    %1 = param i64 1
+    %2 = calli.chk i64 %0(%1)
+    ret %2
+}
+
+bump(ptr, ptr): void {
+b0:
+    %0 = param ptr 0
+    %1 = param ptr 1
+    %2 = load i64 [%0]
+    %3 = const i64 1
+    %4 = add.chk i64 %2, %3
+    store [%0], %4
+    %6 = const u64 1
+    %7 = padd.chk ptr %1, %6 * 4
+    %8 = load.chk i32 [%7]
+    %9 = const i32 2
+    %10 = sub.chk i32 %8, %9
+    store.chk [%1], %10
+    ret
+}
+
+sum(ptr, i64, i64): i64 {
+b0:
+    %0 = param ptr 0
+    %1 = param i64 1
+    %2 = param i64 2
+    %3 = const i64 0
+    %4 = const i64 1
+    %5 = cast u64 %1
+    %6 = cast u64 %2
+    %7 = cast u64 %4
+    %8 = eq bool %1, %2
+    br %8, b5, b4
+b1: ; preds b8, b9
+    %10 = phi u64 [%45, b8], [%51, b9]
+    %11 = phi i64 [%44, b8], [%49, b9]
+    %12 = phi i64 [%3, b8], [%16, b9]
+    %13 = const u64 0
+    %14 = ne bool %10, %13
+    br %14, b2, b3
+b2: ; preds b1
+    %16 = add.chk i64 %12, %11
+    jmp b9
+b3: ; preds b1
+    %18 = const i64 0
+    %19 = const i64 4
+    jmp b10
+b4: ; preds b0
+    %21 = gt bool %1, %2
+    br %21, b7, b6
+b5: ; preds b0
+    %23 = const u64 0
+    %24 = const i64 0
+    %25 = const u64 0
+    jmp b8
+b6: ; preds b4
+    %27 = const u64 1
+    %28 = sub u64 %6, %5
+    %29 = sub u64 %28, %27
+    %30 = div u64 %29, %7
+    %31 = add u64 %30, %27
+    jmp b8
+b7: ; preds b4
+    %33 = const u64 1
+    %34 = sub u64 %5, %6
+    %35 = sub u64 %34, %33
+    %36 = div u64 %35, %7
+    %37 = mul u64 %36, %7
+    %38 = add u64 %6, %37
+    %39 = add u64 %36, %33
+    %40 = cast i64 %38
+    %41 = neg u64 %7
+    jmp b8
+b8: ; preds b5, b6, b7
+    %43 = phi u64 [%25, b5], [%7, b6], [%41, b7]
+    %44 = phi i64 [%24, b5], [%1, b6], [%40, b7]
+    %45 = phi u64 [%23, b5], [%31, b6], [%39, b7]
+    jmp b1
+b9: ; preds b2
+    %47 = cast u64 %11
+    %48 = add u64 %47, %43
+    %49 = cast i64 %48
+    %50 = const u64 1
+    %51 = sub u64 %10, %50
+    jmp b1
+b10: ; preds b3, b13
+    %53 = phi i64 [%18, b3], [%65, b13]
+    %54 = phi i64 [%12, b3], [%59, b13]
+    %55 = lt bool %53, %19
+    br %55, b11, b12
+b11: ; preds b10
+    %57 = cast u8 %53
+    %58 = cast i64 %57
+    %59 = add.chk i64 %54, %58
+    jmp b13
+b12: ; preds b10
+    %61 = load.chk i64 [%0]
+    %62 = add.chk i64 %54, %61
+    ret %62
+b13: ; preds b11
+    %64 = const i64 1
+    %65 = add i64 %53, %64
+    jmp b10
+}
+
+main(): i64 {
+b0:
+    %0 = slot ptr 8, 8
+    %1 = slot ptr 4, 4
+    %2 = const i32 5
+    store [%1], %2
+    %4 = const i64 1
+    store [%0], %4
+    call bump(%0, %1)
+    %7 = global ptr TOTAL
+    %8 = global ptr twice
+    %9 = load i64 [%0]
+    %10 = call i64 apply(%8, %9)
+    store [%7], %10
+    %12 = load i64 [%0]
+    %13 = global ptr TOTAL
+    %14 = load i64 [%13]
+    %15 = add.chk i64 %12, %14
+    store [%0], %15
+    %17 = load i64 [%0]
+    %18 = const i64 1
+    %19 = add.chk i64 %17, %18
+    store.vol [%0], %19
+    %21 = load.vol i64 [%0]
+    call @__ace$registry_leaks()
+    ret %21
+}
+

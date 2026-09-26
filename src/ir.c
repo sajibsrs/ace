@@ -98,7 +98,7 @@ int ir_type_bits(IrType t) {
     case IT_BOOL: case IT_I8: case IT_U8: return 8;
     case IT_I16: case IT_U16: return 16;
     case IT_I32: case IT_U32: return 32;
-    case IT_I64: case IT_U64: return 64;
+    case IT_I64: case IT_U64: case IT_PTR: return 64;
     default: return 0;
     }
 }
@@ -118,7 +118,7 @@ uint64_t ir_wrap(IrType t, uint64_t v) {
 }
 
 static const char* type_name(IrType t) {
-    static const char* names[] = { "void", "bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64" };
+    static const char* names[] = { "void", "bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "ptr" };
     return names[t];
 }
 
@@ -254,6 +254,9 @@ int ir_verify(IrFunc* fn) {
                 int u = v->args[a];
                 if (u < 0 || u >= fn->nins || fn->ins[u].block < 0) { ok = bad(fn, "%%%d uses removed value %%%d", id, u); break; }
                 if (fn->ins[u].type == IT_VOID) { ok = bad(fn, "%%%d uses void value %%%d", id, u); break; }
+                int want_ptr = a == 0 && (v->op == IR_LOAD || v->op == IR_STORE || v->op == IR_PADD ||
+                                          v->op == IR_PSUB || v->op == IR_CALLI);
+                if (want_ptr && fn->ins[u].type != IT_PTR) { ok = bad(fn, "%%%d needs an address, not %%%d", id, u); break; }
                 int db = fn->ins[u].block;
                 // a phi operand must be available at the end of its predecessor
                 int ub = v->op == IR_PHI ? bb->preds[a] : b;
@@ -269,6 +272,12 @@ int ir_verify(IrFunc* fn) {
 // --- printing -------------------------------------------------------------------------
 
 static void print_value(FILE* out, const int* num, int v) { fprintf(out, "%%%d", num[v]); }
+
+static void print_sym(FILE* out, Sym* s) { // owner::name, as the source spells it
+    Node* d = s->decl;
+    if (d && d->d) fprintf(out, "%.*s::", (int)d->d->len, d->d->str);
+    fprintf(out, "%.*s", (int)s->len, s->name);
+}
 
 static void print_imm(FILE* out, IrType t, uint64_t imm) {
     if (t == IT_BOOL) fputs(imm ? "true" : "false", out);
@@ -307,6 +316,7 @@ void ir_print(IrFunc* fn, FILE* out) {
             }
             fputs(op_name((IrOp)v->op), out);
             if (v->flags & IRF_CHECKED) fputs(".chk", out);
+            if (v->flags & IRF_VOLATILE) fputs(".vol", out);
             if (v->type != IT_VOID) fprintf(out, " %s", type_name((IrType)v->type));
             switch (v->op) {
             case IR_CONST:
@@ -323,21 +333,45 @@ void ir_print(IrFunc* fn, FILE* out) {
                     fprintf(out, ", b%d]", bb->preds[a]);
                 }
                 break;
-            case IR_CALL:
-                if (v->fn) {
-                    Node* c = v->fn->decl;
-                    fputc(' ', out);
-                    if (c && c->d) fprintf(out, "%.*s::", (int)c->d->len, c->d->str);
-                    fprintf(out, "%.*s(", (int)v->fn->len, v->fn->name);
-                } else {
-                    fprintf(out, " @%s(", v->name);
+            case IR_SLOT:
+                fprintf(out, " %llu, %d", (unsigned long long)v->imm, (int)v->aux);
+                break;
+            case IR_GLOBAL:
+                fputc(' ', out);
+                print_sym(out, v->sym);
+                break;
+            case IR_LOAD: case IR_STORE:
+                fputs(" [", out);
+                print_value(out, num, v->args[0]);
+                if (v->aux) fprintf(out, " + %d", (int)v->aux);
+                fputc(']', out);
+                if (v->op == IR_STORE) {
+                    fputs(", ", out);
+                    print_value(out, num, v->args[1]);
                 }
-                for (int a = 0; a < v->nargs; a++) {
-                    if (a) fputs(", ", out);
+                break;
+            case IR_PADD: case IR_PSUB:
+                fputc(' ', out);
+                print_value(out, num, v->args[0]);
+                fputs(", ", out);
+                print_value(out, num, v->args[1]);
+                fprintf(out, " * %llu", (unsigned long long)v->imm);
+                break;
+            case IR_CALL: case IR_CALLI: {
+                int first = v->op == IR_CALLI;
+                fputc(' ', out);
+                if (first) print_value(out, num, v->args[0]);
+                else if (v->sym) print_sym(out, v->sym);
+                else fprintf(out, "@%s", v->name);
+                fputc('(', out);
+                for (int a = first; a < v->nargs; a++) {
+                    if (a > first) fputs(", ", out);
+                    if ((v->flags & IRF_VARARGS) && a == v->aux) fputs("... ", out);
                     print_value(out, num, v->args[a]);
                 }
                 fputc(')', out);
                 break;
+            }
             case IR_JMP:
                 fprintf(out, " b%d", bb->succ[0]);
                 break;

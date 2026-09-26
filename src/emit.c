@@ -546,7 +546,7 @@ static int scalar_bits(SType* t) {
     return 64;
 }
 
-static uint32_t field_off(SType* t, int want) {
+uint32_t field_off(SType* t, int want) {
     int special = t->kind == SK_STRUCT && (t->is_packed || t->requested_align);
     if (t->kind == SK_STRUCT && !special)
         for (int i = 0; i < t->nfields; i++)
@@ -567,7 +567,7 @@ static uint32_t field_off(SType* t, int want) {
     return off;
 }
 
-static int find_field(SType* t, const char* name, uint32_t len) {
+int find_field(SType* t, const char* name, uint32_t len) {
     for (int i = 0; i < t->nfields; i++)
         if ((uint32_t)strlen(t->fields[i].name) == len &&
             memcmp(t->fields[i].name, name, len) == 0)
@@ -10619,6 +10619,10 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
             SType* ret = n->a ? sema_build_type(n->a) : NULL;
             const char* why;
             IrFunc* ir = ir_lower(n, mode, &why); // the IR backend where it covers the function
+            if (ir && !arm64_covers(ir)) {
+                ir_free(ir);
+                ir = NULL;
+            }
             if (ir) {
                 Sym* fs = node_sym(n);
                 char mn[512];

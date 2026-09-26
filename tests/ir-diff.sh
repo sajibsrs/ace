@@ -3,7 +3,9 @@
 # functions (every integer type, bool, casts, arithmetic, bitwise, shift and
 # comparison operators, comparison chains, && and ||, if/else, general for
 # loops, labeled break/continue and blocks, early returns, and calls between
-# them), builds each with two compilers in debug and release, and requires
+# them) and memory (globals, a struct global and its mut method, mut
+# parameters, pointers to variables, function values, and range loops with
+# steps in both directions), builds each with two compilers in debug and release, and requires
 # identical output and exit status. main prints each function's result for
 # several arguments; a debug arithmetic trap ends the run the same way in
 # both. Run a change against a build of HEAD:
@@ -78,14 +80,74 @@ function leaf(t, depth,   v, r, s) {
         }
     }
     if (t != "bool" && nfuncs > 0 && depth > 0 && r < 0.9) return t "(" call_expr() ")"
+    if (t != "bool" && depth > 0 && r < 0.93) return t "(mut gs.bump(" expr("i64", 0) "))"
     return t == "bool" ? literal(t) : t "(" literal(t) ")"
 }
 
-function call_expr(   j, k, s) {
+function call_expr(   j) {
     j = pick(nfuncs)
-    s = "f" j "("
-    for (k = 0; k < nparams[j]; k++) s = s (k ? ", " : "") expr(ptype[j, k], 0)
-    return s ")"
+    return "f" j "(" args_of(j, 0) ")"
+}
+
+# the arguments of a call to fj: a mut parameter takes a variable
+function args_of(j, lit,   k, s, t) {
+    s = ""
+    for (k = 0; k < nparams[j]; k++) {
+        t = ptype[j, k]
+        if (pmut[j, k]) s = s (k ? ", " : "") "mut " lvalue(t)
+        else if (lit) s = s (k ? ", " : "") (t == "bool" ? literal(t) : t "(" literal(t) ")")
+        else s = s (k ? ", " : "") expr(t, 0)
+    }
+    return s
+}
+
+# an assignable variable of type t (not through a pointer), else its global
+function lvalue(t,   i, n, c) {
+    n = 0
+    for (i = 0; i < nvars; i++) if (vtype[i] == t && !vfixed[vname[i]] && vname[i] !~ /^\*/) c[n++] = vname[i]
+    return n ? c[pick(n)] : "g_" t
+}
+
+# a bound of a range loop over t: small, so the loop stays short
+function bound(t) {
+    if (chance(0.3)) return "(" expr(t, 1) " & 7)"
+    return t "(" (signed(t) ? pick(13) - 4 : pick(9)) ")"
+}
+
+function memory_stmt(depth, pad, loops,   p, r, t, i, name, lab, j, k, s) {
+    p = indent(pad)
+    r = rand()
+    if (r < 0.35) { # a pointer to a variable, written and read through
+        i = assignable()
+        if (i < 0 || vname[i] ~ /^\*/) return
+        t = vtype[i]
+        name = "q" nlocals++
+        print p name ": mut *" t " = mut &" vname[i]
+        if (t == "bool") print p "*" name " = " expr(t, 1)
+        else print p "*" name " += (" expr(t, 1) " & 3)"
+        declare("*" name, t)
+        return
+    }
+    if (r < 0.55) { # a call through a function value
+        j = pick(nfuncs + 1) - 1
+        if (j < 0 || fmut[j]) return
+        name = "h" nlocals++
+        s = ""
+        for (k = 0; k < nparams[j]; k++) s = s (k ? ", " : "") ptype[j, k]
+        print p name ": (" s "): int = f" j
+        print p "v" nlocals ": int = " name "(" args_of(j, 0) ")"
+        declare("v" nlocals++, "int")
+        return
+    }
+    t = types[2 + pick(ntypes - 1)]
+    name = "k" nlocals++
+    lab = "l" nlabels++
+    print p lab ": for " name ": " t " in " bound(t) " .. " bound(t) (chance(0.3) ? " step " (1 + pick(3)) : "") " {"
+    declare(name, t)
+    vfixed[name] = 1
+    block(depth - 1, pad + 1, loops == "" ? lab : loops " " lab)
+    nvars--
+    print p "}"
 }
 
 function compare(depth,   t, n, s, i, ops) {
@@ -163,6 +225,7 @@ function assignable(   i, n, c) {
 
 function stmt(depth, pad, loops,   p, r, t, name, i, lab, n, open, ops) {
     p = indent(pad)
+    if (depth > 0 && chance(0.18)) { memory_stmt(depth, pad, loops); return }
     r = rand()
     if (depth <= 0 || r < 0.3) {
         t = types[1 + pick(ntypes)]
@@ -228,6 +291,10 @@ BEGIN {
     ntypes = split("bool i8 i16 i32 i64 u8 u16 u32 u64 usize int", types, " ")
     # bool first: types[2..] are the integers
     print "import fmt\n"
+    for (k = 1; k <= ntypes; k++) print "g_" types[k] ": " types[k] " = " literal(types[k])
+    print "\nS: struct {\n    a: i64,\n    b: u8,\n}\n"
+    print "gs: S = S { a = " literal("i64") ", b = " literal("u8") " }\n"
+    print "mut S.bump(n: i64): int {\n    self.a += n & 7\n    self.b = u8(self.a & 63)\n    return int(self.b)\n}\n"
     nf = 2 + pick(4)
     for (f = 0; f < nf; f++) {
         nvars = 0
@@ -238,10 +305,15 @@ BEGIN {
         for (k = 0; k < np; k++) {
             t = types[1 + pick(ntypes)]
             ptype[f, k] = t
-            s = s (k ? ", " : "") "p" k ": " t
+            pmut[f, k] = chance(0.2)
+            if (pmut[f, k]) fmut[f] = 1
+            s = s (k ? ", " : "") (pmut[f, k] ? "mut " : "") "p" k ": " t
             declare("p" k, t)
-            vfixed["p" k] = 1
+            if (!pmut[f, k]) vfixed["p" k] = 1
         }
+        for (k = 1; k <= ntypes; k++) if (chance(0.25)) declare("g_" types[k], types[k])
+        if (chance(0.3)) declare("gs.a", "i64")
+        if (chance(0.3)) declare("gs.b", "u8")
         print s "): int {"
         block(3, 1, "")
         print "    return int(" expr(types[2 + pick(ntypes - 1)], 2) ")"
@@ -250,14 +322,15 @@ BEGIN {
         nfuncs = f + 1
         delete vfixed
     }
+    nvars = 0
     print "main(): int {"
     for (f = 0; f < nf; f++) {
         for (c = 0; c < 3; c++) {
-            s = "f" f "("
-            for (k = 0; k < nparams[f]; k++) s = s (k ? ", " : "") (ptype[f, k] == "bool" ? literal("bool") : ptype[f, k] "(" literal(ptype[f, k]) ")")
-            print "    fmt.printf(\"%d\\n\", " s "))"
+            print "    fmt.printf(\"%d\\n\", f" f "(" args_of(f, 1) "))"
         }
     }
+    print "    fmt.printf(\"%d %d\\n\", int(gs.a), int(gs.b))"
+    for (k = 2; k <= ntypes; k++) print "    fmt.printf(\"%d\\n\", int(g_" types[k] "))"
     print "    return 0"
     print "}"
 }'

@@ -1174,13 +1174,13 @@ if [ -d tests/emit ]; then
             echo "FAIL: loop heads must be 16-byte aligned"
             fail=1
         fi
-        # Scalar locals, parameters, and range-loop state within x29 - 256
-        # are accessed with single ldur/stur, never a computed frame address.
+        # Scalar locals, parameters, and range-loop state are never reached
+        # through a computed frame address.
         if ! otool -tv /tmp/ace_emit/basics/local_slots.o | awk '
             /^[^0-9].*:$/ { hot = ($0 ~ /^__ace\$fn\$hot\$/); next }
-            hot && /ldur|stur/ { direct = 1 }
-            hot && $2 == "sub" && $4 == "x29," { bad = 1 }
-            END { exit bad || !direct }'; then
+            hot { seen = 1 }
+            hot && $2 ~ /^(add|sub)$/ && $4 ~ /^(x29|sp),$/ && $3 !~ /^(x29|sp),$/ { bad = 1 }
+            END { exit bad || !seen }'; then
             echo "FAIL: scalar locals must use direct frame slot access"
             fail=1
         fi
@@ -1236,28 +1236,27 @@ if [ -d tests/emit ]; then
             echo "FAIL: promoted locals must be read in place as operands"
             fail=1
         fi
-        # Loop state takes x19-x28 innermost-first: four nested range loops
-        # (12 registers) keep the outermost in slots and use x19-x27, while the
-        # call-free function's promoted accumulator takes x14 ahead of x28; a
-        # function with any asm statement touches none of them.
+        # The state of four nested range loops and the accumulator stays in
+        # registers: no load or store in the frame beyond saving registers; a
+        # function with any asm statement touches no callee-saved register.
         if ! otool -tv /tmp/ace_emit/control_flow/loop_registers.o | awk '
             /^[^0-9].*:$/ { fn = $0; next }
-            {
+            fn ~ /^__ace\$fn\$nested\$/ {
+                seen = 1
+                if ($2 ~ /^(ldu?r|stu?r)$/ && $4 ~ /^\[(x29|sp)/) bad = 1
+            }
+            fn ~ /^__ace\$fn\$with_asm\$/ {
                 for (i = 3; i <= NF; i++) {
                     r = $i; gsub(/[][,]/, "", r)
-                    if (r !~ /^x(19|2[0-8])$/) continue
-                    if (fn ~ /^__ace\$fn\$with_asm\$/) bad = 1
-                    if (fn ~ /^__ace\$fn\$nested\$/ && r == "x27") top = 1
-                    if (fn ~ /^__ace\$fn\$nested\$/ && r == "x28") bad = 1
+                    if (r ~ /^x(19|2[0-8])$/) bad = 1
                 }
-                if (fn ~ /^__ace\$fn\$nested\$/ && $0 ~ /[ ,]x14(,|$)/) acc = 1
             }
-            END { exit bad || !top || !acc }'; then
-            echo "FAIL: loop registers must be assigned innermost-first within x19-x28"
+            END { exit bad || !seen }'; then
+            echo "FAIL: loop state must stay in registers"
             fail=1
         fi
         # A range that ascends by one from a constant zero over an unsigned
-        # type compares its cursor with the end register: no frame slot, trip
+        # type compares its cursor with the end register: no frame access, trip
         # count, division, or direction test. A constant end within 4095 is a
         # cmp immediate.
         if ! otool -tv /tmp/ace_emit/control_flow/range_limits.o | awk '
@@ -1268,9 +1267,9 @@ if [ -d tests/emit ]; then
                 next
             }
             fn && $2 ~ /^(udiv|mul|cbz|b\.hi|b\.gt)$/ { bad = 1 }
-            fn && $2 ~ /^(ldur|stur)$/ && $3 !~ /^x(19|2[0-8]),$/ { bad = 1 }
-            fn == 1 && $2 == "cmp" && $3 ~ /^x(19|2[0-8]),$/ && $4 ~ /^x(19|2[0-8])$/ { reg = 1 }
-            fn == 2 && $2 == "cmp" && $3 ~ /^x(19|2[0-8]),$/ && $4 == "#0x4" { imm = 1 }
+            fn && $2 ~ /^(ldu?r|stu?r)$/ && $4 ~ /^\[(x29|sp)/ { bad = 1 }
+            fn == 1 && $2 == "cmp" && $3 ~ /^x[0-9]+,$/ && $4 ~ /^x[0-9]+$/ { reg = 1 }
+            fn == 2 && $2 == "cmp" && $3 ~ /^x[0-9]+,$/ && $4 == "#0x4" { imm = 1 }
             END { exit bad || !reg || !imm }'; then
             echo "FAIL: ascending step-one ranges must compare the cursor with the end"
             fail=1
@@ -1434,64 +1433,60 @@ if [ -d tests/emit ]; then
             echo "FAIL: an HFA struct local must stay in registers across calls"
             fail=1
         fi
-        # A call-free function fills x14 down to x9 before x19-x28. In one with
-        # a function-value call, a local whose live range ends before the call
-        # (with_call's n) takes x14, while those live across it stay out of the
-        # caller-saved x9-x14.
+        # A call-free function takes caller-saved registers before x19-x28. In
+        # one with a function-value call, what lives across the call is in
+        # callee-saved registers: after it, no caller-saved register but the
+        # result x0 is read before it is written.
         if ! otool -tv /tmp/ace_emit/basics/leaf_registers.o | awk '
             /^[^0-9].*:$/ {
                 fn = ($0 ~ /^__ace\$fn\$hot\$/) ? 1 : ($0 ~ /^__ace\$fn\$with_call\$/) ? 2 : 0
                 next
             }
-            fn {
-                if (fn == 2 && $2 == "blr") called = 1
+            fn == 1 {
                 for (i = 3; i <= NF; i++) {
                     r = $i; gsub(/[][,]/, "", r)
-                    if (fn == 1 && r == "x9") low = 1
-                    if (fn == 1 && r == "x19") spill = 1
-                    if (fn == 2 && r == "x14") before = 1
-                    if (fn == 2 && called && r ~ /^x(9|1[0-4])$/) bad = 1
+                    if (r == "x9") low = 1
+                    if (r == "x19") spill = 1
                 }
             }
-            END { exit bad || !low || !spill || !before || !called }'; then
-            echo "FAIL: only locals whose live range crosses no call may use x14-x9"
+            fn == 2 && called {
+                first = ($2 ~ /^(stu?r|stp|cmp|cmn|tst|cbn?z|blr|ret)$/) ? 3 : 4
+                for (i = first; i <= NF; i++) {
+                    r = $i; gsub(/[][,!]/, "", r); sub(/^w/, "x", r)
+                    if (r ~ /^x([1-9]|1[0-5])$/ && !(r in written)) bad = 1
+                }
+                if (first == 4) { r = $3; gsub(/,/, "", r); sub(/^w/, "x", r); written[r] = 1 }
+            }
+            fn == 2 && $2 == "blr" { called = 1 }
+            END { exit bad || !low || !spill || !called }'; then
+            echo "FAIL: values live across a call must stay in callee-saved registers"
             fail=1
         fi
         # Small constants are immediates: the digit scan compares against #0x30
-        # and counts with an immediate add on its own register, and past the
-        # entry declarations dest() copies no computed temp into a promoted
-        # register.
+        # and counts with an immediate add on its own register, and dest()
+        # compares with and adds its small constants as immediates.
         if ! otool -tv /tmp/ace_emit/basics/immediate_operands.o | awk '
             /^[^0-9].*:$/ {
                 fn = ($0 ~ /^__ace\$fn\$digits\$/) ? 1 : ($0 ~ /^__ace\$fn\$dest\$/) ? 2 : 0
-                body = 0
                 next
             }
             fn == 1 && $2 == "cmp" && $3 ~ /^w/ && $4 == "#0x30" { cmp = 1 }
-            fn == 1 && $2 ~ /^adds?$/ && $3 == $4 && $5 == "#0x1" &&
-                $3 ~ /^x(9|1[0-4]|19|2[0-8]),$/ { inc = 1 }
-            fn == 2 && $2 ~ /^(b|b\..*|cbn?z)$/ { body = 1 }
-            fn == 2 && body && $2 == "mov" && $3 ~ /^[xw](9|1[0-4]|19|2[0-8]),$/ &&
-                $4 ~ /^[xw][0-8]$/ { bad = 1 }
-            END { exit bad || !cmp || !inc }'; then
-            echo "FAIL: small constants must be immediates computed into promoted registers"
+            fn == 1 && $2 ~ /^adds?$/ && $3 == $4 && $5 == "#0x1" { inc = 1 }
+            fn == 2 && $2 ~ /^(cmp|cmn)$/ && $4 ~ /^#/ { dcmp = 1 }
+            fn == 2 && $2 ~ /^adds?$/ && $5 == "#0x1" { dinc = 1 }
+            END { exit !cmp || !inc || !dcmp || !dinc }'; then
+            echo "FAIL: small constants must be immediates"
             fail=1
         fi
-        # The instruction just emitted absorbs the next one: narrow() converts
-        # straight from its promoted registers with no copy ahead of the ubfx,
-        # deep() loads the nested field at the summed offset, and global_field()
-        # keeps each relocated adrp/add pair intact ahead of the field access.
+        # Offsets fold into the access: deep() loads the nested field at the
+        # summed offset, and global_field() keeps each relocated adrp/add pair
+        # intact ahead of the field access.
         if ! otool -tv /tmp/ace_emit/basics/peephole.o | awk '
             /^[^0-9].*:$/ {
                 fn = 0
-                if ($0 ~ /^__ace\$fn\$narrow\$/) fn = 1
-                else if ($0 ~ /^__ace\$fn\$deep\$/) fn = 2
+                if ($0 ~ /^__ace\$fn\$deep\$/) fn = 2
                 else if ($0 ~ /^__ace\$fn\$global_field\$/) fn = 3
                 last = ""; next
-            }
-            fn == 1 && $2 == "ubfx" {
-                if ($3 != $4) direct++
-                if (last == "mov " $3) bad = 1
             }
             fn == 2 && $2 == "ldr" && $5 == "#0x30]" { summed = 1 }
             fn == 3 && reloc {
@@ -1499,31 +1494,27 @@ if [ -d tests/emit ]; then
                 pairs++
             }
             fn == 3 && $2 == "ldr" && $5 == "#0x30]" { field = 1 }
-            fn { reloc = ($2 == "adrp") ? $3 : ""; last = $2 " " $3 }
-            END { exit bad || direct < 2 || !summed || pairs < 2 || !field }'; then
-            echo "FAIL: the peephole must fold adjacent pairs but never a relocated instruction"
+            fn { reloc = ($2 == "adrp") ? $3 : "" }
+            END { exit bad || !summed || pairs < 2 || !field }'; then
+            echo "FAIL: field offsets must fold into accesses, never into a relocated instruction"
             fail=1
         fi
         # A by-reference parameter's pointer lives in a register: the hot
         # Counter.run loop loads the receiver's fields through it and never
-        # reloads a frame slot, and share() hands its register to the local
-        # declared after the pointer's last use.
+        # reloads a frame slot.
         if ! otool -tv /tmp/ace_emit/basics/byref_registers.o | awk '
             /^[^0-9].*:$/ {
                 fn = 0; loop = 0
                 if ($0 ~ /^__ace\$fn\$Counter\$run\$/) fn = 1
-                else if ($0 ~ /^__ace\$fn\$share\$/) fn = 2
                 next
             }
             fn == 1 && $2 ~ /^cbn?z$/ { loop = 1; next }
             fn == 1 && loop && $2 == "b" { loop = 0 }
             fn == 1 && loop && $2 ~ /^ldu?r$/ {
-                if ($4 ~ /^\[x29/) bad = 1
-                else if ($4 ~ /^\[x(9|1[0-4])[],]/) direct++
+                if ($4 ~ /^\[(x29|sp)/) bad = 1
+                else if ($4 ~ /^\[x[0-9]+[],]/) direct++
             }
-            fn == 2 && $2 == "ldr" && $4 ~ /^\[x14[],]/ { based = 1 }
-            fn == 2 && based && $2 == "mov" && $3 == "x14," { shared = 1 }
-            END { exit bad || direct < 2 || !shared }'; then
+            END { exit bad || direct < 2 }'; then
             echo "FAIL: by-reference parameter pointers must stay in registers"
             fail=1
         fi

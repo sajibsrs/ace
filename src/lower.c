@@ -9,8 +9,14 @@
 // the block is sealed. A phi whose operands are all one value (or itself) is
 // trivial and is replaced by that value.
 //
+// A local lives in a stack slot instead when something needs its storage (its
+// address, a mut argument or method receiver, a volatile access); a mut
+// parameter or method receiver lives at the address it arrives as. Those
+// variables are read and written by load and store.
+//
 // A function that uses anything outside the covered subset is not lowered;
-// the AST emitter compiles it (migration step 1: scalar integer code).
+// the AST emitter compiles it (migration steps 1 and 2a: scalar integer code,
+// pointers, globals, and calls).
 #include "ir.h"
 #include "backend.h"
 
@@ -39,7 +45,10 @@ typedef struct {
     int         cur;       // block receiving instructions, or -1 when unreachable
     Node*       at;        // statement being lowered
     PtrMap      var_ix;    // binder Sym -> variable index + 1
+    PtrMap      stored;    // Syms whose storage something needs: they live in a slot
     IrType*     vtype;
+    int*        home;      // variable -> the address value it lives at, or -1 (SSA)
+    int         chome;
     int         nvars, cvars;
     DefMap      defs;
     Incomplete* inc;       // pending phis, chained per block from inc_head
@@ -87,7 +96,10 @@ static SType* unwrap(SType* t) {
 // The IR type of t, or -1 when the IR does not cover it yet.
 static int ir_type_of(SType* t) {
     t = unwrap(t);
-    if (!t || t->kind != SK_PRIM) return -1;
+    if (!t) return -1;
+    if (t->kind == SK_PTR || t->kind == SK_FUNC) return IT_PTR;
+    if (t->kind == SK_ENUM) return ir_type_of(t->base);
+    if (t->kind != SK_PRIM) return -1;
     switch (t->prim) {
     case P_BOOL: return IT_BOOL;
     case P_I8: return IT_I8;
@@ -155,16 +167,12 @@ static int konst(Lw* l, IrType type, uint64_t v) {
     return id;
 }
 
+
+static int at_entry(Lw* l, IrOp op, IrType type);
+
 // A zero of var's type at the top of the entry block: the value of a read no
 // definition reaches, which definite initialization confines to dead paths.
-static int zero_at_entry(Lw* l, IrType type) {
-    IrFunc* fn = l->fn;
-    int id = ir_phi_new(fn, 0, type); // placed after the entry's (absent) phis
-    fn->ins[id].op = IR_CONST;
-    fn->ins[id].imm = 0;
-    fn->ins[id].at = l->f;
-    return id;
-}
+static int zero_at_entry(Lw* l, IrType type) { return at_entry(l, IR_CONST, type); }
 
 static void terminate(Lw* l, IrOp op, int arg, int s0, int s1) {
     int id = emit(l, op, IT_VOID);
@@ -233,13 +241,50 @@ static void replace(Lw* l, int v, int by) {
     l->fn->ins[v].block = -1;
 }
 
-static int var_of(Lw* l, Sym* s, IrType type) {
+// A new variable for s (NULL for one of lowering's own): an SSA value of
+// type, or one living at address home.
+// home: -1 for an SSA value, a slot's address value, or ADDR_VAR - v when
+// the address itself is SSA variable v (a by-address parameter, which a
+// release self tail call may rebind)
+enum { ADDR_VAR = -2 };
+
+static int var_new(Lw* l, Sym* s, IrType type, int home) {
+    l->vtype = grow(l->vtype, &l->cvars, l->nvars + 1, sizeof(IrType));
+    l->home = grow(l->home, &l->chome, l->nvars + 1, sizeof(int));
+    l->vtype[l->nvars] = type;
+    l->home[l->nvars] = home;
+    if (s) ptrmap_put(&l->var_ix, s, (uintptr_t)l->nvars + 1);
+    return l->nvars++;
+}
+
+static int read_var(Lw* l, int var, int b);
+
+// The address of memory variable var.
+static int var_addr(Lw* l, int var) {
+    int h = l->home[var];
+    return h >= 0 ? h : read_var(l, ADDR_VAR - h, l->cur);
+}
+
+// An instruction at the top of the entry block, which dominates every use.
+static int at_entry(Lw* l, IrOp op, IrType type) {
+    int id = ir_phi_new(l->fn, 0, type); // placed after the entry's (absent) phis
+    l->fn->ins[id].op = (uint8_t)op;
+    l->fn->ins[id].at = l->f;
+    return id;
+}
+
+// The variable of local s, made on first sight: in a slot when something
+// needs its storage, else an SSA value.
+static int var_of(Lw* l, Sym* s) {
     uintptr_t ix = ptrmap_get(&l->var_ix, s);
     if (ix) return (int)ix - 1;
-    l->vtype = grow(l->vtype, &l->cvars, l->nvars + 1, sizeof(IrType));
-    l->vtype[l->nvars] = type;
-    ptrmap_put(&l->var_ix, s, (uintptr_t)l->nvars + 1);
-    return l->nvars++;
+    if (ptrmap_get(&l->stored, s)) {
+        int slot = at_entry(l, IR_SLOT, IT_PTR);
+        l->fn->ins[slot].imm = sema_size(s->type);
+        l->fn->ins[slot].aux = (int32_t)sema_align(s->type);
+        return var_new(l, s, IT_VOID, slot);
+    }
+    return var_new(l, s, need_type(l, s->type), -1);
 }
 
 static void write_var(Lw* l, int var, int b, int v) { def_put(&l->defs, def_key(b, var), v); }
@@ -307,11 +352,183 @@ static int new_block(Lw* l) {
     return b;
 }
 
-static int local_var(Lw* l, Node* ident) {
-    Sym* s = node_sym(ident);
-    if (!s || s->kind != SYM_VAR) unsupported(l, "non-variable name");
-    if (s->is_global) unsupported(l, "global variable");
-    return var_of(l, s, need_type(l, s->type));
+// --- storage ------------------------------------------------------------------------
+
+// The local whose storage a place expression names, or NULL: through fields
+// of a struct value and elements of an array value, never through a pointer.
+static Sym* root_local(Node* x) {
+    while (x && (x->kind == N_FIELD_E || x->kind == N_INDEX)) {
+        SType* bt = unwrap(node_ty(x->a));
+        if (!bt || bt->kind == SK_PTR || (x->kind == N_INDEX && bt->kind != SK_ARRAY)) return NULL;
+        x = x->a;
+    }
+    Sym* s = x && x->kind == N_IDENT ? node_sym(x) : NULL;
+    return s && s->kind == SYM_VAR && !s->is_global ? s : NULL;
+}
+
+static void need_storage(Lw* l, Node* x) {
+    Sym* s = root_local(x);
+    if (s) ptrmap_put(&l->stored, s, 1);
+}
+
+// Mark every local whose storage the body needs, before any is read. Follows
+// a/b/c/kids, and d only as a general for's body (sema's d links form cycles).
+static void scan_storage(Lw* l, Node* n) {
+    if (!n || n->kind == N_FUNC) return;
+    if ((n->kind == N_UNARY && (n->op == T_AMP || n->op == T_VOLATILE)) || n->kind == N_MUTARG)
+        need_storage(l, n->a);
+    if (n->kind == N_ASSIGN && (n->flags & F_VOLATILE))
+        for (int i = 0; i < n->nkids; i++) need_storage(l, n->kids[i]);
+    if (n->kind == N_CALL && n->a && n->a->kind == N_FIELD_E && !(n->flags & (F_METHOD | F_ASSOC)))
+        need_storage(l, n->a->a); // a method receiver travels by address
+    scan_storage(l, n->a);
+    scan_storage(l, n->b);
+    scan_storage(l, n->c);
+    if (n->kind == N_FOR && (n->flags & F_FORGEN)) scan_storage(l, n->d);
+    for (int i = 0; i < n->nkids; i++) scan_storage(l, n->kids[i]);
+}
+
+static int load(Lw* l, IrType t, int addr, int32_t off, int flags) {
+    int id = emit2(l, IR_LOAD, t, addr, -1);
+    l->fn->ins[id].aux = off;
+    l->fn->ins[id].flags = (uint8_t)flags;
+    return id;
+}
+
+static void store(Lw* l, int addr, int32_t off, int v, int flags) {
+    int id = emit2(l, IR_STORE, IT_VOID, addr, v);
+    l->fn->ins[id].aux = off;
+    l->fn->ins[id].flags = (uint8_t)flags;
+}
+
+// A debug null check on an address that came from a pointer value.
+static int null_checked(Lw* l) { return l->mode == EMIT_DEBUG ? IRF_CHECKED : 0; }
+
+// The check for an access through address value addr: none for a slot or a
+// global, which is never null.
+static int access_check(Lw* l, int addr) {
+    IrOp op = (IrOp)l->fn->ins[addr].op;
+    return op == IR_SLOT || op == IR_GLOBAL ? 0 : null_checked(l);
+}
+
+static const char* arena_name(const char* s) {
+    size_t n = strlen(s) + 1;
+    char* p = arena_alloc(n);
+    memcpy(p, s, n);
+    return p;
+}
+
+// The link symbol of a function: an extern's C name, else the mangled Ace name.
+static const char* link_name(Sym* s, SType* ft) {
+    char buf[512];
+    if (s->is_extern) {
+        if (s->decl && s->decl->cname) snprintf(buf, sizeof buf, "_%s", s->decl->cname);
+        else snprintf(buf, sizeof buf, "_%.*s", (int)s->len, s->name);
+        return arena_name(buf);
+    }
+    return arena_name(fn_mangle(s->name, s->len, ft, s->decl, NULL, 0, 0));
+}
+
+// The address of global variable or function s.
+static int global_addr(Lw* l, Sym* s) {
+    int id = emit(l, IR_GLOBAL, IT_PTR);
+    IrIns* x = &l->fn->ins[id];
+    x->sym = s;
+    if (s->kind == SYM_FUNC) {
+        x->name = link_name(s, s->type);
+    } else {
+        char buf[512];
+        snprintf(buf, sizeof buf, "__ace$g$%.*s", (int)s->len, s->name);
+        x->name = arena_name(buf);
+    }
+    return id;
+}
+
+// A place: an SSA variable, or memory at addr + off.
+typedef struct {
+    int     var;   // an SSA variable, or -1 for memory
+    int     addr;  // memory: the base address value
+    int32_t off;   // memory: the byte offset from addr
+    int     flags; // memory: IRF_CHECKED when addr came from a pointer value
+    SType*  t;     // the place's type
+} Place;
+
+static int expr(Lw* l, Node* x, int want);
+
+static Place place(Lw* l, Node* x) {
+    Place p = { -1, -1, 0, 0, node_ty(x) };
+    switch (x->kind) {
+    case N_IDENT: {
+        Sym* s = node_sym(x);
+        if (!s || s->kind != SYM_VAR) unsupported(l, "non-variable name");
+        p.t = s->type;
+        if (s->is_extern) unsupported(l, "extern global");
+        if (s->is_global) {
+            p.addr = global_addr(l, s);
+            return p;
+        }
+        int var = var_of(l, s);
+        if (l->home[var] == -1) p.var = var;
+        else p.addr = var_addr(l, var);
+        return p;
+    }
+    case N_UNARY:
+        if (x->op != T_STAR) break;
+        p.addr = expr(l, x->a, IT_PTR);
+        p.flags = access_check(l, p.addr);
+        p.t = unwrap(node_ty(x->a))->base; // an assignment target's node carries no type
+        return p;
+    case N_FIELD_E: {
+        SType* bt = unwrap(node_ty(x->a));
+        if (bt && bt->kind == SK_PTR) { // p.x is (*p).x
+            p.addr = expr(l, x->a, IT_PTR);
+            p.flags = access_check(l, p.addr);
+            bt = unwrap(bt->base);
+        } else {
+            Place b = place(l, x->a);
+            if (b.var >= 0) unsupported(l, type_why(b.t)); // a struct value in SSA
+            p = b;
+        }
+        if (!bt || bt->kind != SK_STRUCT) unsupported(l, bt ? type_why(bt) : "field access");
+        int fi = find_field(bt, x->str, x->len);
+        if (fi < 0) unsupported(l, "field access");
+        p.off += (int32_t)field_off(bt, fi);
+        p.t = bt->fields[fi].t;
+        return p;
+    }
+    case N_INDEX:
+        unsupported(l, type_why(node_ty(x->a)));
+    default:
+        break;
+    }
+    unsupported(l, "assignment target");
+}
+
+// Assign variable var, in SSA or at its home.
+static void set_var(Lw* l, int var, int v) {
+    if (l->home[var] == -1) write_var(l, var, l->cur, v);
+    else store(l, var_addr(l, var), 0, v, 0);
+}
+
+static int place_read(Lw* l, Place p, int flags) {
+    if (p.var >= 0) return read_var(l, p.var, l->cur);
+    return load(l, need_type(l, p.t), p.addr, p.off, p.flags | flags);
+}
+
+static void place_write(Lw* l, Place p, int v, int flags) {
+    if (p.var >= 0) write_var(l, p.var, l->cur, v);
+    else store(l, p.addr, p.off, v, p.flags | flags);
+}
+
+// The address of a memory place; a pointer-derived one is null-checked here.
+static int place_address(Lw* l, Place p) {
+    if (p.var >= 0) unsupported(l, "address of a register value"); // scan_storage missed it
+    if (!p.off && !p.flags) return p.addr;
+    int k = konst(l, IT_U64, (uint64_t)p.off);
+    int id = emit2(l, IR_PADD, IT_PTR, p.addr, k);
+    l->fn->ins[id].imm = 1;
+    l->fn->ins[id].flags = (uint8_t)p.flags;
+    return id;
 }
 
 // --- expressions ------------------------------------------------------------------
@@ -396,22 +613,46 @@ static int bool_value(Lw* l, Node* x) { // a short-circuit form as a value: a ph
 }
 
 static int is_self_call(Lw* l, Node* x) {
-    if (!x || x->kind != N_CALL || !x->a || x->a->kind != N_IDENT) return 0;
+    if (!x || x->kind != N_CALL || !x->a || (x->a->kind != N_IDENT && x->a->kind != N_FIELD_E)) return 0;
     Sym* s = node_sym(x);
     return s && s->kind == SYM_FUNC && s->decl == l->f;
 }
 
-// Arguments of a direct call, each at its parameter's type.
-static void call_args(Lw* l, Node* call, Sym* s, int* out) {
-    Node* callee = s->decl;
-    if (call->nkids != callee->nkids) unsupported(l, "default argument");
-    for (int i = 0; i < call->nkids; i++) {
-        Node* a = call->kids[i];
-        if (a->kind == N_MUTARG || (callee->kids[i]->flags & F_MUT)) unsupported(l, "mut parameter");
-        Sym* ps = node_sym(callee->kids[i]);
-        IrType pt = need_type(l, ps ? ps->type : NULL);
-        out[i] = expr(l, a, pt);
+// The value of a call argument: the address of its place for a mut
+// parameter or method receiver, else its value at the parameter's type.
+static int call_arg(Lw* l, Node* a, SType* pt, int by_address) {
+    if (a->kind == N_MUTARG) a = a->a;
+    if (by_address) return place_address(l, place(l, a));
+    return expr(l, a, need_type(l, pt));
+}
+
+// Arguments of a direct call to s: an instance method's receiver first.
+static int call_args(Lw* l, Node* call, Sym* s, int* out, int max) {
+    Node* callee = call->a;
+    Node* d = s->decl;
+    SType* ft = node_ty(callee);
+    if (!ft || ft->kind != SK_FUNC) ft = s->type;
+    int recv = callee->kind == N_FIELD_E && !s->is_extern && !(call->flags & (F_METHOD | F_ASSOC));
+    int n = recv + call->nkids;
+    int named = ft ? ft->nparams : n;
+    int varargs = s->is_extern && d && (d->flags & F_VARARGS);
+    if (n > max) unsupported(l, "too many arguments");
+    if (varargs ? n < named : n != named) unsupported(l, "default argument");
+    for (int i = 0; i < n; i++) {
+        Node* a = recv && i == 0 ? callee->a : call->kids[i - recv];
+        if (i >= named) { // variadic: an integer or pointer, promoted to 64 bits
+            SType* at = node_ty(a);
+            IrType t = is_untyped(at) ? IT_I64 : need_type(l, at);
+            int v = expr(l, a, t);
+            if (t != IT_PTR && ir_type_bits(t) < 64) v = emit2(l, IR_CAST, ir_type_signed(t) ? IT_I64 : IT_U64, v, -1);
+            out[i] = v;
+            continue;
+        }
+        int by_address = (d && i < d->nkids && (d->kids[i]->flags & F_MUT)) ||
+                         (d && (d->flags & F_METHOD) && i == 0);
+        out[i] = call_arg(l, a, ft->params[i], by_address);
     }
+    return n;
 }
 
 static int call(Lw* l, Node* x, int want) {
@@ -427,23 +668,59 @@ static int call(Lw* l, Node* x, int want) {
         if (from == to) return v;
         return emit2(l, IR_CAST, to, v, -1);
     }
-    if (!s || s->kind != SYM_FUNC || !callee || callee->kind != N_IDENT) unsupported(l, "indirect or method call");
+    int args[40];
+    if (s && s->kind == SYM_VAR) { // through a function value
+        SType* ft = unwrap(s->type);
+        if (!ft || ft->kind != SK_FUNC || x->nkids != ft->nparams) unsupported(l, "indirect call");
+        if (x->nkids > 39) unsupported(l, "too many arguments");
+        int f = expr(l, callee, IT_PTR);
+        for (int i = 0; i < x->nkids; i++) {
+            if (x->kids[i]->kind == N_MUTARG) unsupported(l, "mut argument through a function value");
+            args[i] = call_arg(l, x->kids[i], ft->params[i], 0);
+        }
+        IrType t = ft->ret && unwrap(ft->ret)->kind != SK_VOID ? need_type(l, ft->ret) : IT_VOID;
+        int id = emit(l, IR_CALLI, t);
+        l->fn->ins[id].flags = (uint8_t)null_checked(l);
+        ir_arg_add(l->fn, id, f);
+        for (int i = 0; i < x->nkids; i++) ir_arg_add(l->fn, id, args[i]);
+        return id;
+    }
+    if (!s || s->kind != SYM_FUNC || !callee) unsupported(l, "indirect or method call");
     Node* d = s->decl;
-    if (!d || d->kind != N_FUNC) unsupported(l, "extern call");
-    if (s->is_extern) unsupported(l, "extern call");
-    if (s->is_generic || s->spec_args || d->c) unsupported(l, "generic call");
-    if (d->ival || (d->flags & F_INTRINSIC)) unsupported(l, "compiler-backed call");
+    if (!d) unsupported(l, "extern call");
+    if (s->is_generic || s->spec_args || (d->kind == N_FUNC && d->c)) unsupported(l, "generic call");
+    if ((d->kind == N_FUNC && d->ival) || (d->flags & F_INTRINSIC)) unsupported(l, "compiler-backed call");
     if (d->flags & F_INLINE) unsupported(l, "inline call");
-    if (d->flags & (F_METHOD | F_ASSOC | F_EXPO)) unsupported(l, "method or exported call");
-    if (d->nkids > 8) unsupported(l, "stack-passed argument");
-    int args[8];
-    call_args(l, x, s, args);
-    SType* rt = s->type ? s->type->ret : NULL;
+    if (d->flags & F_EXPO) unsupported(l, "exported call");
+    int n = call_args(l, x, s, args, 40);
+    SType* ft = node_ty(callee);
+    if (!ft || ft->kind != SK_FUNC) ft = s->type;
+    SType* rt = ft ? ft->ret : NULL;
     IrType t = rt && unwrap(rt)->kind != SK_VOID ? need_type(l, rt) : IT_VOID;
     int id = emit(l, IR_CALL, t);
-    l->fn->ins[id].fn = s;
-    for (int i = 0; i < x->nkids; i++) ir_arg_add(l->fn, id, args[i]);
+    IrIns* c = &l->fn->ins[id];
+    c->sym = s;
+    c->name = link_name(s, ft);
+    if (s->is_extern && (d->flags & F_VARARGS)) {
+        c->flags |= IRF_VARARGS;
+        c->aux = ft->nparams;
+    }
+    for (int i = 0; i < n; i++) ir_arg_add(l->fn, id, args[i]);
     return id;
+}
+
+// ptr pv (of pointer type pt) +/- u64 n elements of its pointee
+static int pointer_offset(Lw* l, IrOp op, SType* pt, int pv, int n) {
+    pt = unwrap(pt);
+    int id = emit2(l, op, IT_PTR, pv, n);
+    l->fn->ins[id].imm = sema_size(pt->base);
+    l->fn->ins[id].flags = (uint8_t)null_checked(l);
+    return id;
+}
+
+static int is_pointer(Node* x) {
+    SType* t = unwrap(node_ty(x));
+    return t && t->kind == SK_PTR;
 }
 
 static int expr(Lw* l, Node* x, int want) {
@@ -461,7 +738,25 @@ static int expr(Lw* l, Node* x, int want) {
                 unsupported(l, "computed global constant");
             return konst(l, t, neg ? (uint64_t)0 - init->ival : init->ival);
         }
-        return read_var(l, local_var(l, x), l->cur);
+        if (s && s->kind == SYM_FUNC) { // a function value
+            if (s->is_generic || s->spec_args || (s->decl && s->decl->kind == N_FUNC && s->decl->c))
+                unsupported(l, "generic function value");
+            if (s->decl && (s->decl->flags & (F_INTRINSIC | F_INLINE | F_EXPO))) unsupported(l, "function value");
+            return global_addr(l, s);
+        }
+        return place_read(l, place(l, x), 0);
+    }
+    case N_NULL:
+        if (want != IT_PTR) unsupported(l, type_why(node_ty(x)));
+        return konst(l, IT_PTR, 0);
+    case N_FIELD_E: {
+        Sym* ts = node_sym(x->a);
+        if (ts && ts->kind == SYM_TYPE && ts->type && unwrap(ts->type)->kind == SK_ENUM) // Color.red
+            return konst(l, type_in(l, x, want), x->ival);
+        if (ts && ts->kind == SYM_TYPE) unsupported(l, type_why(ts->type));
+        SType* bt = unwrap(node_ty(x->a));
+        if (!bt || (bt->kind != SK_PTR && bt->kind != SK_STRUCT)) unsupported(l, bt ? type_why(bt) : "field access");
+        return place_read(l, place(l, x), 0);
     }
     case N_UNARY: {
         IrType t = type_in(l, x, want);
@@ -470,12 +765,23 @@ static int expr(Lw* l, Node* x, int want) {
             return arith(l, IR_NEG, t, expr(l, x->a, t), -1);
         }
         if (x->op == T_BANG || x->op == T_TILDE) return emit2(l, IR_NOT, t, expr(l, x->a, t), -1);
-        unsupported(l, x->op == T_AMP ? "address-of" : "pointer dereference");
+        if (x->op == T_AMP) return place_address(l, place(l, x->a));
+        if (x->op == T_STAR) return place_read(l, place(l, x), 0);
+        if (x->op == T_VOLATILE) {
+            Place p = place(l, x->a);
+            if (p.var >= 0) unsupported(l, "volatile access"); // scan_storage missed it
+            return place_read(l, p, IRF_VOLATILE);
+        }
+        unsupported(l, "operator");
     }
     case N_BINARY: {
         if (x->op == T_ANDAND || x->op == T_OROR) return bool_value(l, x);
         int op = binop_of((TokKind)x->op);
         if (op < 0) unsupported(l, "operator");
+        if ((op == IR_ADD || op == IR_SUB) && is_pointer(x->a)) { // p + n, p - n
+            int pv = expr(l, x->a, IT_PTR);
+            return pointer_offset(l, op == IR_ADD ? IR_PADD : IR_PSUB, node_ty(x->a), pv, expr(l, x->b, IT_U64));
+        }
         if (is_compare(op)) {
             IrType ot = operand_type(l, x, -1);
             int a = expr(l, x->a, ot);
@@ -502,8 +808,10 @@ static int expr(Lw* l, Node* x, int want) {
     }
     case N_CALL:
         return call(l, x, want);
+    case N_INDEX: case N_SLICE_E:
+        unsupported(l, type_why(node_ty(x->a)));
     default:
-        unsupported(l, "expression form");
+        unsupported(l, is_untyped(node_ty(x)) ? "expression form" : type_why(node_ty(x)));
     }
 }
 
@@ -568,21 +876,24 @@ static void push_target(Lw* l, Node* s, int brk, int cont) {
 }
 
 static void assign(Lw* l, Node* s) {
-    if (s->nkids != 1 || s->kids[0]->kind != N_IDENT) unsupported(l, "assignment target");
-    if (s->flags & F_VOLATILE) unsupported(l, "volatile store");
-    Node* dst = s->kids[0];
-    int var = local_var(l, dst);
-    IrType t = l->vtype[var];
+    if (s->nkids != 1) unsupported(l, "assignment target");
+    int vol = s->flags & F_VOLATILE ? IRF_VOLATILE : 0;
+    Place p = place(l, s->kids[0]);
+    if (vol && p.var >= 0) unsupported(l, "volatile access"); // scan_storage missed it
+    IrType t = need_type(l, p.t);
     int v;
     if (s->op == T_ASSIGN) {
         v = expr(l, s->a, t);
     } else {
         int op = binop_of((TokKind)s->op);
         if (op < 0) unsupported(l, "compound assignment");
-        int old = read_var(l, var, l->cur);
-        v = arith(l, op, t, old, expr(l, s->a, t));
+        int old = place_read(l, p, vol);
+        if (t == IT_PTR && (op == IR_ADD || op == IR_SUB)) // p += n, p -= n
+            v = pointer_offset(l, op == IR_ADD ? IR_PADD : IR_PSUB, p.t, old, expr(l, s->a, IT_U64));
+        else
+            v = arith(l, op, t, old, expr(l, s->a, t));
     }
-    write_var(l, var, l->cur, v);
+    place_write(l, p, v, vol);
 }
 
 static void var_decl(Lw* l, Node* s) {
@@ -590,14 +901,124 @@ static void var_decl(Lw* l, Node* s) {
     Node* binder = s->kids[0];
     Sym* sym = node_sym(binder);
     if (!sym) unsupported(l, "unresolved binder");
-    int var = var_of(l, sym, need_type(l, sym->type));
+    int var = var_of(l, sym);
     if (!s->b) return; // assigned before any read (definite initialization)
     if (s->b->kind == N_TUPLE_E) unsupported(l, "tuple");
-    write_var(l, var, l->cur, expr(l, s->b, l->vtype[var]));
+    set_var(l, var, expr(l, s->b, need_type(l, sym->type)));
+}
+
+// The body of a loop; continue reaches the returned block, current on
+// return, which the caller finishes with the step back to the head.
+static void loop_body(Lw* l, Node* s, int exit, Node* stmts) {
+    int post = new_block(l);
+    push_target(l, s, exit, post);
+    if (l->cur >= 0) block(l, stmts);
+    l->ntgt--;
+    jump(l, post);
+    seal(l, post);
+    enter(l, post);
+}
+
+static int widen(Lw* l, int v, IrType from, IrType to) { return from == to ? v : emit2(l, IR_CAST, to, v, -1); }
+
+// for i: T in a .. b [step c] (Iterations #4-5): the endpoints once, in order,
+// then the step; every selected value in order from a toward b. Ascending by
+// one from a constant start to a constant not below it, or from zero to an
+// unsigned end, runs the cursor up to the end; any other range counts
+// (|b - a| - 1) / step + 1 values from its first, stepping down when a > b
+// from the last value the lower endpoint's stepping selects.
+static void range_loop(Lw* l, Node* s) {
+    Node* r = s->b;
+    Sym* bs = node_sym(s->kids[s->nkids - 1]);
+    if (s->nkids != 1 || !bs) unsupported(l, "range binders");
+    int var = var_of(l, bs);
+    IrType bt = need_type(l, bs->type);
+    IrType rt = is_untyped(node_ty(r)) ? bt : need_type(l, node_ty(r)); // endpoints at the binder's type
+    int sig = ir_type_signed(rt);
+    int lo = expr(l, r->a, rt), hi = expr(l, r->b, rt);
+    IrIns* lk = &l->fn->ins[lo];
+    IrIns* hk = &l->fn->ins[hi];
+    int step_one = !r->c || (r->c->kind == N_INT && r->c->ival == 1);
+    int up = step_one && lk->op == IR_CONST &&
+             (hk->op == IR_CONST ? (sig ? (int64_t)lk->imm <= (int64_t)hk->imm : lk->imm <= hk->imm)
+                                 : !sig && lk->imm == 0);
+    if (!up && r->c && r->c->kind != N_INT && l->mode == EMIT_DEBUG) unsupported(l, "range step check");
+    int cur = var_new(l, NULL, rt, -1);
+    int cnt = up ? -1 : var_new(l, NULL, IT_U64, -1);
+    int stp = up ? -1 : var_new(l, NULL, IT_U64, -1);
+    int head = new_block(l), body = new_block(l), exit = new_block(l);
+    if (up) {
+        write_var(l, cur, l->cur, lo);
+    } else {
+        IrType wt = sig ? IT_I64 : IT_U64; // 64-bit endpoints, then u64 arithmetic
+        int step = r->c ? expr(l, r->c, rt) : konst(l, rt, 1);
+        int a = widen(l, lo, rt, wt), b = widen(l, hi, rt, wt);
+        int ua = widen(l, a, wt, IT_U64), ub = widen(l, b, wt, IT_U64);
+        int st = widen(l, widen(l, step, rt, wt), wt, IT_U64);
+        int nonempty = new_block(l), empty = new_block(l), asc = new_block(l), desc = new_block(l);
+        int setup = new_block(l);
+        terminate(l, IR_BR, emit2(l, IR_EQ, IT_BOOL, a, b), empty, nonempty);
+        seal(l, empty);
+        seal(l, nonempty);
+        enter(l, empty);
+        write_var(l, cnt, l->cur, konst(l, IT_U64, 0));
+        write_var(l, cur, l->cur, konst(l, rt, 0));
+        write_var(l, stp, l->cur, konst(l, IT_U64, 0));
+        jump(l, setup);
+        enter(l, nonempty);
+        terminate(l, IR_BR, emit2(l, IR_GT, IT_BOOL, a, b), desc, asc);
+        seal(l, asc);
+        seal(l, desc);
+        enter(l, asc);
+        int one = konst(l, IT_U64, 1);
+        int q = emit2(l, IR_DIV, IT_U64, emit2(l, IR_SUB, IT_U64, emit2(l, IR_SUB, IT_U64, ub, ua), one), st);
+        write_var(l, cnt, l->cur, emit2(l, IR_ADD, IT_U64, q, one));
+        write_var(l, cur, l->cur, lo);
+        write_var(l, stp, l->cur, st);
+        jump(l, setup);
+        enter(l, desc);
+        one = konst(l, IT_U64, 1);
+        q = emit2(l, IR_DIV, IT_U64, emit2(l, IR_SUB, IT_U64, emit2(l, IR_SUB, IT_U64, ua, ub), one), st);
+        int first = emit2(l, IR_ADD, IT_U64, ub, emit2(l, IR_MUL, IT_U64, q, st));
+        write_var(l, cnt, l->cur, emit2(l, IR_ADD, IT_U64, q, one));
+        write_var(l, cur, l->cur, widen(l, first, IT_U64, rt));
+        write_var(l, stp, l->cur, emit2(l, IR_NEG, IT_U64, st, -1));
+        jump(l, setup);
+        seal(l, setup);
+        enter(l, setup);
+    }
+    jump(l, head);
+    enter(l, head);
+    int c = read_var(l, up ? cur : cnt, head);
+    int more = up ? emit2(l, IR_LT, IT_BOOL, c, hi) : emit2(l, IR_NE, IT_BOOL, c, konst(l, IT_U64, 0));
+    terminate(l, IR_BR, more, body, exit);
+    seal(l, body);
+    enter(l, body);
+    set_var(l, var, widen(l, read_var(l, cur, body), rt, bt));
+    loop_body(l, s, exit, s->c);
+    if (l->cur >= 0) { // the cursor wraps past the last value, which no iteration reads
+        int v = read_var(l, cur, l->cur);
+        if (up) {
+            v = emit2(l, IR_ADD, rt, v, konst(l, rt, 1));
+        } else {
+            v = emit2(l, IR_ADD, IT_U64, widen(l, v, rt, IT_U64), read_var(l, stp, l->cur));
+            v = widen(l, v, IT_U64, rt);
+            write_var(l, cnt, l->cur, emit2(l, IR_SUB, IT_U64, read_var(l, cnt, l->cur), konst(l, IT_U64, 1)));
+        }
+        write_var(l, cur, l->cur, v);
+        jump(l, head);
+    }
+    seal(l, head);
+    seal(l, exit);
+    enter(l, exit);
 }
 
 static void for_loop(Lw* l, Node* s) {
-    if (!(s->flags & F_FORGEN)) unsupported(l, "range or sequence loop");
+    if (!(s->flags & F_FORGEN)) {
+        if (!s->b || s->b->kind != N_RANGE) unsupported(l, type_why(node_ty(s->b)));
+        range_loop(l, s);
+        return;
+    }
     if (s->a) stmt(l, s->a);
     if (l->cur < 0) return;
     int head = new_block(l), body = new_block(l), exit = new_block(l);
@@ -687,10 +1108,12 @@ static void stmt(Lw* l, Node* s) {
         }
         if (s->a->kind == N_TUPLE_E) unsupported(l, "tuple");
         if (l->self_head >= 0 && is_self_call(l, s->a)) { // release: a branch back to the head
-            int args[8];
-            call_args(l, s->a, node_sym(s->a), args);
-            for (int i = 0; i < l->fn->nparams; i++)
-                write_var(l, (int)ptrmap_get(&l->var_ix, node_sym(l->f->kids[i])) - 1, l->cur, args[i]);
+            int args[40];
+            if (call_args(l, s->a, node_sym(s->a), args, 40) != l->fn->nparams) unsupported(l, "self call");
+            for (int i = 0; i < l->fn->nparams; i++) {
+                int var = (int)ptrmap_get(&l->var_ix, node_sym(l->f->kids[i])) - 1;
+                write_var(l, l->home[var] <= ADDR_VAR ? ADDR_VAR - l->home[var] : var, l->cur, args[i]);
+            }
             jump(l, l->self_head);
             return;
         }
@@ -705,6 +1128,23 @@ static void stmt(Lw* l, Node* s) {
 }
 
 // --- functions --------------------------------------------------------------------------
+
+static int by_address(Node* f, int i) {
+    return (f->kids[i]->flags & F_MUT) || ((f->flags & F_METHOD) && i == 0);
+}
+
+// Whether a local or parameter of f lives in this frame (a slot): the levels
+// of a self tail recursion could then observe each other's.
+static int frame_storage(Lw* l) {
+    for (size_t k = 0; k < l->stored.cap; k++) {
+        if (!l->stored.key || !l->stored.key[k]) continue;
+        int param = 0;
+        for (int i = 0; i < l->f->nkids && !param; i++)
+            param = by_address(l->f, i) && node_sym(l->f->kids[i]) == l->stored.key[k];
+        if (!param) return 1;
+    }
+    return 0;
+}
 
 static int has_self_tail(Lw* l, Node* n) {
     if (!n) return 0;
@@ -764,11 +1204,9 @@ IrFunc* ir_lower(Node* f, EmitMode mode, const char** why) {
     *why = NULL;
     if (f->ival || (f->flags & F_INTRINSIC)) *why = "compiler-backed";
     else if (!f->b) *why = "no body";
-    else if (f->flags & F_METHOD) *why = "method";
     else if (f->c && !(fs && fs->spec_args)) *why = "generic";
     else if (f->flags & F_EXPO) *why = "exported";
     else if (f->flags & F_INLCALLS) *why = "calls an inline function";
-    else if (f->nkids > 8) *why = "stack-passed parameter";
     if (*why) return NULL;
 
     Lw l;
@@ -782,7 +1220,8 @@ IrFunc* ir_lower(Node* f, EmitMode mode, const char** why) {
         *why = l.why;
         ir_free(l.fn);
         ptrmap_free(&l.var_ix);
-        free(l.vtype); free(l.defs.key); free(l.defs.val); free(l.inc); free(l.inc_head); free(l.repl);
+        ptrmap_free(&l.stored);
+        free(l.vtype); free(l.home); free(l.defs.key); free(l.defs.val); free(l.inc); free(l.inc_head); free(l.repl);
         return NULL;
     }
     IrFunc* fn = l.fn;
@@ -796,18 +1235,27 @@ IrFunc* ir_lower(Node* f, EmitMode mode, const char** why) {
     l.cur = new_block(&l);
     seal(&l, l.cur);
     l.at = f;
+    scan_storage(&l, f->b);
     for (int i = 0; i < f->nkids; i++) {
         Node* p = f->kids[i];
         Sym* ps = node_sym(p);
-        if (p->flags & F_MUT) unsupported(&l, "mut parameter");
         if (!ps) unsupported(&l, "unresolved parameter");
+        if (by_address(f, i)) { // lives at the caller's address, held in an SSA variable
+            fn->params[i] = IT_PTR;
+            int v = emit(&l, IR_PARAM, IT_PTR);
+            fn->ins[v].imm = (uint64_t)i;
+            int a = var_new(&l, NULL, IT_PTR, -1);
+            set_var(&l, a, v);
+            var_new(&l, ps, IT_VOID, ADDR_VAR - a);
+            continue;
+        }
         IrType t = need_type(&l, ps->type);
         fn->params[i] = t;
         int v = emit(&l, IR_PARAM, t);
         fn->ins[v].imm = (uint64_t)i;
-        write_var(&l, var_of(&l, ps, t), l.cur, v);
+        set_var(&l, var_of(&l, ps), v);
     }
-    if (mode == EMIT_RELEASE && !l.is_main && has_self_tail(&l, f->b)) {
+    if (mode == EMIT_RELEASE && !l.is_main && !frame_storage(&l) && has_self_tail(&l, f->b)) {
         l.self_head = new_block(&l);
         jump(&l, l.self_head);
         l.cur = l.self_head;
@@ -817,7 +1265,8 @@ IrFunc* ir_lower(Node* f, EmitMode mode, const char** why) {
     if (l.self_head >= 0) seal(&l, l.self_head);
     finish(&l);
     ptrmap_free(&l.var_ix);
-    free(l.vtype); free(l.defs.key); free(l.defs.val); free(l.inc); free(l.inc_head); free(l.repl);
+    ptrmap_free(&l.stored);
+    free(l.vtype); free(l.home); free(l.defs.key); free(l.defs.val); free(l.inc); free(l.inc_head); free(l.repl);
     return fn;
 }
 
