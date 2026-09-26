@@ -173,6 +173,14 @@ current normative rules, and Git preserves patch-level detail.
   are unchanged. `tests/ir-diff.sh` also indexes and slices a `mut []u8` and
   a string window between guard bytes, and the bounds fixtures check the
   exact diagnostic location.
+- Shared an AArch64 cast's location with its operand when the operand's
+  register form already holds the result (a same-width or zero-extending
+  integer cast), its interval lies within the operand's, and no value
+  computed into the operand's location is defined while it is live. A loop
+  index cast to `usize` is then read in place by the element load, as
+  `tests/emit/basics/register_operands` requires. Each benchmark binary sheds 96-132
+  instructions; `bench/std/string` `copy-64` runs 5% faster, the rest are
+  unchanged.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

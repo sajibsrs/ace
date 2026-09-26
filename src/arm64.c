@@ -22,7 +22,8 @@
 // a callee-saved register or a stack slot. A phi's operands move into it in
 // parallel at the end of each predecessor; critical edges into a phi's block
 // are split first, and hints steer a phi and its operands to one register so
-// most of those moves vanish.
+// most of those moves vanish. A cast whose register form is its operand's
+// shares the operand's location, costing no instruction.
 //
 // Float constants are rematerialized too: fmov from zero or an 8-bit
 // immediate, else a literal load from the function's pool after its code.
@@ -113,6 +114,15 @@ static int fp_reg(int r) { return r >= V && r < SLOT; }
 static int fp_val(A64* a, int v) { return is_fp((IrType)ins_of(a, v)->type); }
 static uint32_t R(int r) { return (uint32_t)r & 31; } // a register's encoding field
 static uint32_t ftype(IrType t) { return t == IT_F64 ? 0x00400000u : 0; } // the d form of an s instruction
+
+// Whether an integer cast's register form is its operand's: no instruction.
+static int cast_in_place(IrType to, IrType from) {
+    if (is_fp(to) || is_fp(from)) return 0;
+    int fb = ir_type_bits(from), tb = ir_type_bits(to);
+    if (tb == 64 && fb < 64) return !ir_type_signed(from) && fb < 32; // a u8, u16, or bool is held zero-extended
+    return !(tb < 32 && !(fb < tb && (!ir_type_signed(from) || ir_type_signed(to))) &&
+             !(fb == tb && ir_type_signed(from) == ir_type_signed(to)));
+}
 
 // --- encoding -------------------------------------------------------------------------
 
@@ -920,6 +930,25 @@ static void coalesce(A64* a) {
         }
     }
     free(stamp); free(stack);
+    // A cast its operand's register form already holds shares the operand's
+    // location when its interval lies within the operand's, which only the
+    // operand's definition writes then: the operand leads no sharing pair of
+    // its own (a phi's moves come at its predecessors' ends, where in SSA the
+    // cast is not live), and no value computed into it is defined in the
+    // cast's interval.
+    int* partner = xcalloc((size_t)fn->nins, sizeof(int)); // a phi -> the one value computed into it + 1
+    for (int v = 0; v < fn->nins; v++) if (a->with[v] >= 0) partner[a->with[v]] = v + 1;
+    for (int v = 0; v < fn->nins; v++) {
+        IrIns* x = &fn->ins[v];
+        if (x->op != IR_CAST || x->block < 0 || !allocatable(a, v) || a->with[v] >= 0) continue;
+        int s = x->args[0];
+        if (!allocatable(a, s) || a->with[s] >= 0 || a->end[v] > a->end[s] ||
+            !cast_in_place((IrType)x->type, (IrType)fn->ins[s].type))
+            continue;
+        int w = partner[s] - 1;
+        if (w < 0 || a->start[w] <= a->start[v] || a->start[w] > a->end[v]) a->with[v] = s;
+    }
+    free(partner);
 }
 
 static const int8_t caller_regs[] = { 9, 10, 11, 12, 13, 14, 8, 7, 6, 5, 4, 3, 2, 1, 0 };
@@ -1485,16 +1514,10 @@ static void cast(A64* a, int v) {
     }
     int fb = ir_type_bits(from), tb = ir_type_bits(to);
     int rn = opnd(a, x->args[0], S0), rd = dst(a, v);
-    if (tb == 64 && fb < 64) {
-        if (ir_type_signed(from)) put(a, 0x93407C00u | ((uint32_t)rn << 5) | (uint32_t)rd); // sxtw
-        else if (fb < 32) mov_reg(a, rd, rn); // a u8, u16, or bool is held zero-extended in 64 bits
-        else put(a, 0x2A0003E0u | ((uint32_t)rn << 16) | (uint32_t)rd);                      // mov w
-    } else if (tb < 32 && !(fb < tb && (!ir_type_signed(from) || ir_type_signed(to))) &&
-               !(fb == tb && ir_type_signed(from) == ir_type_signed(to))) {
-        ext(a, to, rd, rn);
-    } else {
-        mov_reg(a, rd, rn); // the register form already holds the result
-    }
+    if (cast_in_place(to, from)) mov_reg(a, rd, rn); // none when it shares its operand's location
+    else if (tb == 64 && fb < 64 && ir_type_signed(from)) put(a, 0x93407C00u | ((uint32_t)rn << 5) | (uint32_t)rd); // sxtw
+    else if (tb == 64 && fb < 64) put(a, 0x2A0003E0u | ((uint32_t)rn << 16) | (uint32_t)rd);                   // mov w
+    else ext(a, to, rd, rn);
     dst_done(a, v, rd);
 }
 
