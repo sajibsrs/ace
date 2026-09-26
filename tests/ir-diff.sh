@@ -21,7 +21,8 @@
 # writes a guard. Some scalar-result functions are inline, so their calls
 # expand in place, with every parameter form. Scalar switches (literal,
 # variable, and computed patterns, several to a case, fallthrough, and
-# default) sit among the statements. An asm statement keeps some functions
+# default) sit among the statements, and some functions defer notes of their
+# parameters. An asm statement keeps some functions
 # on the AST emitter, so calls cross between the backends both ways. Each
 # program is built with two
 # compilers in debug and release, and requires identical output and exit
@@ -610,6 +611,8 @@ BEGIN {
     print "\nS: struct {\n    a: i64,\n    b: u8,\n}\n"
     print "gs: S = S { a = " literal("i64") ", b = " literal("u8") " }\n"
     print "mut S.bump(n: i64): int {\n    self.a += n & 7\n    self.b = u8(self.a & 63)\n    return int(self.b)\n}\n"
+    print "gd: i64\n"
+    print "dnote(x: i64) {\n    gd = gd * 3 % 1000003 + x % 1000\n}\n"
     print "Fail: error\n"
     print "gbuf: [24]u8\ngv: mut []u8\ngt: string\n"
     print "GA: struct {\n    lo: u8,\n    a: [22]u8,\n    hi: u8,\n}\n\nga: GA\n"
@@ -660,6 +663,14 @@ BEGIN {
         if (chance(0.3)) declare("gs.b", "u8")
         print s "): " rett " {"
         if (!finl && chance(0.3)) print "    asm \"nop\" {}" # keeps the function on the AST emitter; an inline one cannot hold asm
+        if (!finl && chance(0.3)) { # deferred notes: the value a parameter has when deferred, then a constant
+            for (k = 0; k < np; k++)
+                if (ptype[f, k] ~ /^(i8|i16|i32|i64|u8|u16|u32|u64|usize|int)$/ && (pmut[f, k] || chance(0.3))) {
+                    print "    defer dnote(i64(p" k "))"
+                    break
+                }
+            if (chance(0.5)) print "    defer dnote(" pick(50) ")"
+        }
         block(3, 1, "")
         print "    return " result(2)
         print "}\n"
@@ -687,6 +698,7 @@ BEGIN {
             }
         }
     }
+    print "    fmt.printf(\"%d\\n\", gd)"
     print "    fmt.printf(\"%d %d\\n\", int(gs.a), int(gs.b))"
     print "    for k: usize in 0 .. 24 { fmt.printf(\"%d \", int(gbuf[k])) }"
     print "    fmt.printf(\"%d %d \", int(ga.lo), int(ga.hi))\n    for k: usize in 0 .. 22 { fmt.printf(\"%d \", int(ga.a[k])) }"

@@ -1,0 +1,111 @@
+/* A defer captures its call at the statement: a read-only argument into a
+ * fresh variable, a mut argument or receiver as its address. The call is
+ * lowered again before every return and at the fall-off end, last defer
+ * first, with the result already computed. A self call keeps its frame only
+ * while no defer is pending. */
+
+import mem
+
+total: i64
+
+Box: struct { v: i64 }
+
+Box.note(): i64 {
+    total = total * 10 + self.v
+    return 0
+}
+
+mut Box.add(n: i64) {
+    self.v += n
+}
+
+note(x: i64) {
+    total = total * 10 + x
+}
+
+note_ret(x: i64): i64 {
+    total = total * 10 + x
+    return x
+}
+
+twice(x: i64): i64 {
+    return x * 2
+}
+
+grow(mut n: i64, by: i64) {
+    n += by
+}
+
+snapshot(n: i64): i64 {
+    x: i64 = n
+    defer note(x)
+    x = x + 1
+    return x
+}
+
+address(): i64 {
+    v: i64 = 1
+    defer note(v)
+    defer grow(mut v, 5)
+    v = 2
+    return v
+}
+
+paths(n: i64): i64 {
+    defer note(1)
+    defer note(n)
+    if n > 3 { return n }
+    if n > 1 { return n * 2 }
+    return 0
+}
+
+fall_off(n: i64) {
+    b: Box = Box { v = n }
+    defer b.note()
+    b.v = 9
+}
+
+receiver(): i64 {
+    b: Box = Box { v = 1 }
+    defer mut b.add(4)
+    defer b.note()
+    return b.v
+}
+
+callee(f: (i64): i64): i64 {
+    g: (i64): i64 = f
+    defer g(7)
+    g = twice
+    return g(1)
+}
+
+pair(a: i64): (i64, i64) {
+    defer note(a)
+    return a, a + 1
+}
+
+release(): i64 {
+    buf: []u8 = mem.alloc[u8](16)
+    defer mem.release(mut buf)
+    return i64(buf.len)
+}
+
+countdown(n: i64): i64 {
+    defer note(n)
+    if n <= 0 { return 0 }
+    return countdown(n - 1)
+}
+
+main(): int {
+    a: i64 = snapshot(4)
+    b: i64 = address()
+    c: i64 = paths(5) + paths(2) + paths(0)
+    fall_off(3)
+    d: i64 = receiver()
+    e: i64 = callee(note_ret)
+    p: i64, q: i64 = pair(6)
+    f: i64 = release() + countdown(2)
+    if a != 5 || b != 2 || c != 9 || d != 1 || e != 2 || p != 6 || q != 7 || f != 16 { return 1 }
+    if total != 415121013176012 { return 2 }
+    return 0
+}

@@ -257,6 +257,20 @@ current normative rules, and Git preserves patch-level detail.
   variable, and computed patterns, several to a case, `fallthrough`, `default`),
   and an `asm` statement replaces the `switch` that kept some functions on the
   AST emitter.
+- Lowered `defer` to IR (IR migration step 3c). A `defer` evaluates its call's
+  arguments where it stands, each read-only one into a fresh variable (a
+  literal or constant global is left as it is) and each `mut` argument or
+  receiver into the address of its storage, as does a function-value callee;
+  the call over those names is lowered again before every `return` and at the
+  fall-off end, last defer first, carrying the defer's line. The result is
+  already SSA values or the caller's memory, so no save area is needed. A
+  `return` of a self call keeps its branch only while no defer is pending. A
+  deferred call of a contract method keeps the function on the AST emitter.
+  Release lowers the 18 functions that waited on `defer` across the `bench`
+  roots, package benchmarks, and demos; three of them stay behind on an `Error`
+  value they use. `pkg/regex` sheds 2.0 KB of machine code and the
+  `http-simple-server` demo 0.9 KB; runtime is unchanged, the cleanup paths
+  being cold. `tests/ir-diff.sh` now defers notes of parameters.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

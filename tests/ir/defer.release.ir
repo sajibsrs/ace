@@ -1,0 +1,315 @@
+Box::note(ptr): i64 {
+b0:
+    %0 = param ptr 0
+    %1 = global ptr total
+    %2 = global ptr total
+    %3 = load i64 [%2]
+    %4 = const i64 10
+    %5 = mul i64 %3, %4
+    %6 = load i64 [%0]
+    %7 = add i64 %5, %6
+    store [%1], %7
+    %9 = const i64 0
+    ret %9
+}
+
+Box::add(ptr, i64): void {
+b0:
+    %0 = param ptr 0
+    %1 = param i64 1
+    %2 = load i64 [%0]
+    %3 = add i64 %2, %1
+    store [%0], %3
+    ret
+}
+
+note(i64): void {
+b0:
+    %0 = param i64 0
+    %1 = global ptr total
+    %2 = global ptr total
+    %3 = load i64 [%2]
+    %4 = const i64 10
+    %5 = mul i64 %3, %4
+    %6 = add i64 %5, %0
+    store [%1], %6
+    ret
+}
+
+note_ret(i64): i64 {
+b0:
+    %0 = param i64 0
+    %1 = global ptr total
+    %2 = global ptr total
+    %3 = load i64 [%2]
+    %4 = const i64 10
+    %5 = mul i64 %3, %4
+    %6 = add i64 %5, %0
+    store [%1], %6
+    ret %0
+}
+
+twice(i64): i64 {
+b0:
+    %0 = param i64 0
+    %1 = const i64 2
+    %2 = mul i64 %0, %1
+    ret %2
+}
+
+grow(ptr, i64): void {
+b0:
+    %0 = param ptr 0
+    %1 = param i64 1
+    %2 = load i64 [%0]
+    %3 = add i64 %2, %1
+    store [%0], %3
+    ret
+}
+
+snapshot(i64): i64 {
+b0:
+    %0 = param i64 0
+    %1 = const i64 1
+    %2 = add i64 %0, %1
+    call note(%0)
+    ret %2
+}
+
+address(): i64 {
+b0:
+    %0 = slot ptr 8, 8
+    %1 = const i64 1
+    store [%0], %1
+    %3 = load i64 [%0]
+    %4 = const i64 2
+    store [%0], %4
+    %6 = load i64 [%0]
+    %7 = const i64 5
+    call grow(%0, %7)
+    call note(%3)
+    ret %6
+}
+
+paths(i64): i64 {
+b0:
+    %0 = param i64 0
+    %1 = const i64 3
+    %2 = gt bool %0, %1
+    br %2, b1, b2
+b1: ; preds b0
+    call note(%0)
+    %5 = const i64 1
+    call note(%5)
+    ret %0
+b2: ; preds b0
+    %8 = const i64 1
+    %9 = gt bool %0, %8
+    br %9, b3, b4
+b3: ; preds b2
+    %11 = const i64 2
+    %12 = mul i64 %0, %11
+    call note(%0)
+    %14 = const i64 1
+    call note(%14)
+    ret %12
+b4: ; preds b2
+    %17 = const i64 0
+    call note(%0)
+    %19 = const i64 1
+    call note(%19)
+    ret %17
+}
+
+fall_off(i64): void {
+b0:
+    %0 = slot ptr 8, 8
+    %1 = slot ptr 8, 8
+    %2 = param i64 0
+    store [%1], %2
+    %4 = load i64 [%1]
+    store [%0], %4
+    %6 = const i64 9
+    store [%1], %6
+    %8 = call i64 Box::Box$note(%0)
+    ret
+}
+
+receiver(): i64 {
+b0:
+    %0 = slot ptr 8, 8
+    %1 = slot ptr 8, 8
+    %2 = const i64 1
+    store [%1], %2
+    %4 = load i64 [%1]
+    store [%0], %4
+    %6 = load i64 [%1]
+    %7 = call i64 Box::Box$note(%0)
+    %8 = const i64 4
+    call Box::Box$add(%1, %8)
+    ret %6
+}
+
+callee(ptr): i64 {
+b0:
+    %0 = param ptr 0
+    %1 = global ptr twice
+    %2 = const i64 1
+    %3 = calli i64 %1(%2)
+    %4 = const i64 7
+    %5 = calli i64 %0(%4)
+    ret %3
+}
+
+pair(i64): {i64, i64} {
+b0:
+    %0 = param i64 0
+    %1 = const i64 1
+    %2 = add i64 %0, %1
+    call note(%0)
+    ret %0, %2
+}
+
+release(): i64 {
+b0:
+    %0 = slot ptr 16, 8
+    %1 = const u64 16
+    %2 = const ptr 0
+    %3 = const u64 0
+    %4 = const u64 0
+    %5 = ne bool %1, %4
+    %6 = const u64 18446744073709551615
+    %7 = le bool %1, %6
+    %8 = and bool %5, %7
+    br %8, b1, b2
+b1: ; preds b0
+    %10 = const u64 1
+    %11 = mul u64 %1, %10
+    %12 = call ptr @_malloc(%11)
+    %13 = const ptr 0
+    %14 = ne bool %12, %13
+    br %14, b3, b4
+b2: ; preds b0, b4
+    %16 = phi ptr [%2, b0], [%28, b4]
+    %17 = phi u64 [%3, b0], [%29, b4]
+    store [%0], %16
+    store [%0 + 8], %17
+    %20 = load u64 [%0 + 8]
+    %21 = cast i64 %20
+    %22 = load ptr [%0]
+    %23 = const ptr 0
+    %24 = ne bool %22, %23
+    br %24, b5, b6
+b3: ; preds b1
+    %26 = const u64 1
+    jmp b4
+b4: ; preds b1, b3
+    %28 = phi ptr [%2, b1], [%12, b3]
+    %29 = phi u64 [%3, b1], [%1, b3]
+    jmp b2
+b5: ; preds b2
+    %31 = load u64 [%0 + 8]
+    call @_free(%22)
+    jmp b6
+b6: ; preds b2, b5
+    %34 = const ptr 0
+    %35 = const u64 0
+    store [%0], %34
+    store [%0 + 8], %35
+    ret %21
+}
+
+countdown(i64): i64 {
+b0:
+    %0 = param i64 0
+    jmp b1
+b1: ; preds b0
+    %2 = const i64 0
+    %3 = le bool %0, %2
+    br %3, b2, b3
+b2: ; preds b1
+    %5 = const i64 0
+    call note(%0)
+    ret %5
+b3: ; preds b1
+    %8 = const i64 1
+    %9 = sub i64 %0, %8
+    %10 = call i64 countdown(%9)
+    call note(%0)
+    ret %10
+}
+
+main(): i64 {
+b0:
+    %0 = const i64 4
+    %1 = call i64 snapshot(%0)
+    %2 = call i64 address()
+    %3 = const i64 5
+    %4 = call i64 paths(%3)
+    %5 = const i64 2
+    %6 = call i64 paths(%5)
+    %7 = add i64 %4, %6
+    %8 = const i64 0
+    %9 = call i64 paths(%8)
+    %10 = add i64 %7, %9
+    %11 = const i64 3
+    call fall_off(%11)
+    %13 = call i64 receiver()
+    %14 = global ptr note_ret
+    %15 = call i64 callee(%14)
+    %16 = const i64 6
+    %17 = call {2} pair(%16)
+    %18 = proj i64 %17, 0
+    %19 = proj i64 %17, 1
+    %20 = call i64 release()
+    %21 = const i64 2
+    %22 = call i64 countdown(%21)
+    %23 = add i64 %20, %22
+    %24 = const i64 5
+    %25 = ne bool %1, %24
+    br %25, b1, b9
+b1: ; preds b0, b9, b8, b7, b6, b5, b4, b3
+    %27 = const i64 1
+    ret %27
+b2: ; preds b3
+    %29 = global ptr total
+    %30 = load i64 [%29]
+    %31 = const i64 415121013176012
+    %32 = ne bool %30, %31
+    br %32, b10, b11
+b3: ; preds b4
+    %34 = const i64 16
+    %35 = ne bool %23, %34
+    br %35, b1, b2
+b4: ; preds b5
+    %37 = const i64 7
+    %38 = ne bool %19, %37
+    br %38, b1, b3
+b5: ; preds b6
+    %40 = const i64 6
+    %41 = ne bool %18, %40
+    br %41, b1, b4
+b6: ; preds b7
+    %43 = const i64 2
+    %44 = ne bool %15, %43
+    br %44, b1, b5
+b7: ; preds b8
+    %46 = const i64 1
+    %47 = ne bool %13, %46
+    br %47, b1, b6
+b8: ; preds b9
+    %49 = const i64 9
+    %50 = ne bool %10, %49
+    br %50, b1, b7
+b9: ; preds b0
+    %52 = const i64 2
+    %53 = ne bool %2, %52
+    br %53, b1, b8
+b10: ; preds b2
+    %55 = const i64 2
+    ret %55
+b11: ; preds b2
+    %57 = const i64 0
+    ret %57
+}
+

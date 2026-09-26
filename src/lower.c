@@ -22,10 +22,10 @@
 // parameter of it arrives by address, as AAPCS64 passes it.
 //
 // A function that uses anything outside the covered subset is not lowered;
-// the AST emitter compiles it (migration steps 1 to 3b: scalar code, floats,
+// the AST emitter compiles it (migration steps 1 to 3c: scalar code, floats,
 // pointers, globals, calls, structs, tuples, arrays, Error values, and
 // strings, slices, and arrays with their indexing, slicing, and debug bounds
-// checks, inline calls, and switch on a scalar).
+// checks, inline calls, switch on a scalar, and defer).
 #include "ir.h"
 #include "backend.h"
 
@@ -51,6 +51,11 @@ typedef struct { // an inline call being expanded
     int    join; // the block after the expansion, where each return goes
     int    res;  // the variable holding the result, or -1
 } Expansion;
+
+typedef struct { // a captured `defer`: its call over snapshot variables
+    Node* call;
+    Node* at;    // the defer statement, whose line the exit-time call carries
+} Deferred;
 
 typedef struct {
     IrFunc*     fn;
@@ -81,6 +86,8 @@ typedef struct {
     int         result;    // a result in memory: the RESULT address, else -1
     Expansion   inl[16];   // inline calls being expanded, innermost last
     int         ninl;
+    Deferred*   defers;    // captured defers, source order
+    int         ndefers, cdefers;
 } Lw;
 
 typedef struct { // the leaf values of an aggregate, or a scalar's one
@@ -2190,7 +2197,10 @@ static void leaks_check(Lw* l) { // main's allocator leak report (Safety & Debug
     l->fn->ins[id].name = "__ace$registry_leaks";
 }
 
+static void run_defers(Lw* l);
+
 static void ret(Lw* l, const Agg* a) {
+    run_defers(l);
     leaks_check(l);
     int id = emit(l, IR_RET, IT_VOID);
     for (int k = 0; a && k < a->n; k++) ir_arg_add(l->fn, id, a->v[k]);
@@ -2603,6 +2613,106 @@ static void switch_stmt(Lw* l, Node* s) {
     enter(l, end);
 }
 
+// --- defer ------------------------------------------------------------------------------
+// A `defer` at the top of the body captures its call: each read-only argument
+// is evaluated there into a fresh variable, and a `mut` argument or receiver
+// keeps its storage's address, so the call re-lowered before every return and
+// at the fall-off end, last defer first, reads the snapshots and the final
+// storage. The result being returned is already SSA values (or memory the
+// caller owns), so it survives the calls.
+
+// a fresh variable's name, standing for the argument captured into it
+static Node* defer_name(Node* src, SType* t) {
+    Node* id = (Node*)arena_alloc(sizeof(Node));
+    memset(id, 0, sizeof *id);
+    id->kind = N_IDENT;
+    id->path = src->path;
+    id->line = src->line;
+    id->col = src->col;
+    Sym* s = (Sym*)arena_alloc(sizeof(Sym));
+    memset(s, 0, sizeof *s);
+    s->name = "defer";
+    s->len = 5;
+    s->kind = SYM_VAR;
+    s->type = t;
+    s->decl = id;
+    id->sym = s;
+    id->ty = t;
+    return id;
+}
+
+static int is_literal(Node* x) {
+    if (x->kind == N_INT || x->kind == N_FLOAT || x->kind == N_STR || x->kind == N_CHAR || x->kind == N_BOOL ||
+        x->kind == N_NULL)
+        return 1;
+    Sym* s = x->kind == N_IDENT ? node_sym(x) : NULL;
+    return s && s->kind == SYM_VAR && s->is_global && s->is_const; // never changes
+}
+
+// Argument a of the deferred call, captured: its storage's address when byaddr,
+// else its value, in memory when a receiver reads it by address; the name the
+// exit-time call reads in its place.
+static Node* defer_arg(Lw* l, Node* a, int byaddr, int in_slot) {
+    Node* inner = a->kind == N_MUTARG ? a->a : a;
+    SType* t = node_ty(inner);
+    Node* id;
+    if (byaddr) {
+        Place p = place(l, inner);
+        id = defer_name(inner, p.t);
+        var_new(l, node_sym(id), IT_VOID, place_address(l, p));
+    } else {
+        if (is_untyped(t) || is_literal(inner)) return a; // nothing to snapshot
+        id = defer_name(inner, t);
+        if (in_slot) ptrmap_put(&l->stored, node_sym(id), 1);
+        init_var(l, var_of(l, node_sym(id)), node_sym(id), inner);
+    }
+    if (a->kind != N_MUTARG) return id;
+    Node* w = (Node*)arena_alloc(sizeof(Node));
+    *w = *a;
+    w->a = id;
+    w->ty = id->ty;
+    return w;
+}
+
+static void defer_capture(Lw* l, Node* s) {
+    int top = 0;
+    for (int i = 0; !l->ninl && i < l->f->b->nkids; i++) top |= l->f->b->kids[i] == s;
+    if (!top) unsupported(l, "defer placement");
+    Node* call = s->a;
+    if (call->kind != N_CALL) unsupported(l, "defer operand");
+    Node* callee = call->a;
+    Sym* tgt = call->sym ? node_sym(call) : NULL;
+    int instance = callee->kind == N_FIELD_E && tgt && tgt->kind == SYM_FUNC && !tgt->is_extern &&
+                   !(call->flags & (F_METHOD | F_ASSOC));
+    if (callee->kind == N_FIELD_E && !tgt) unsupported(l, "contract method call");
+    Node* sc = (Node*)arena_alloc(sizeof(Node));
+    *sc = *call;
+    if (instance) {
+        Node* sf = (Node*)arena_alloc(sizeof(Node));
+        *sf = *callee;
+        sf->a = defer_arg(l, callee->a, (call->flags & F_MUT) != 0, 1);
+        sc->a = sf;
+    } else if (tgt && tgt->kind == SYM_VAR) { // the function value is snapshotted too
+        sc->a = defer_arg(l, callee, 0, 0);
+    }
+    if (call->nkids) {
+        sc->kids = (Node**)arena_alloc((size_t)call->nkids * sizeof(Node*));
+        for (int i = 0; i < call->nkids; i++)
+            sc->kids[i] = defer_arg(l, call->kids[i], call->kids[i]->kind == N_MUTARG, 0);
+    }
+    l->defers = grow(l->defers, &l->cdefers, l->ndefers + 1, sizeof(Deferred));
+    l->defers[l->ndefers++] = (Deferred){ sc, s };
+}
+
+static void run_defers(Lw* l) {
+    Node* at = l->at;
+    for (int i = l->ndefers - 1; i >= 0; i--) {
+        l->at = l->defers[i].at; // exit-time code cites the defer's line
+        expr(l, l->defers[i].call, -1);
+    }
+    l->at = at;
+}
+
 static void stmt(Lw* l, Node* s) {
     if (l->cur < 0) return;
     if (!l->ninl) l->at = s; // inlined code keeps its call site's line
@@ -2668,7 +2778,7 @@ static void stmt(Lw* l, Node* s) {
             ret(l, NULL);
             return;
         }
-        if (l->self_head >= 0 && is_self_call(l, s->a)) { // release: a branch back to the head
+        if (l->self_head >= 0 && !l->ndefers && is_self_call(l, s->a)) { // release: a branch back to the head
             Args g;
             memset(&g, 0, sizeof g);
             if (call_args(l, s->a, node_sym(s->a), &g) >= 0 || g.n != l->fn->nparams) unsupported(l, "self call");
@@ -2700,7 +2810,9 @@ static void stmt(Lw* l, Node* s) {
         return;
     case N_FALLTHROUGH: // the enclosing switch branches to the next case
         return;
-    case N_DEFER: unsupported(l, "defer");
+    case N_DEFER:
+        defer_capture(l, s);
+        return;
     case N_ASM: unsupported(l, "asm");
     default: unsupported(l, "statement form");
     }
@@ -2799,7 +2911,7 @@ IrFunc* ir_lower(Node* f, EmitMode mode, const char** why) {
         ir_free(l.fn);
         ptrmap_free(&l.var_ix);
         ptrmap_free(&l.stored);
-        free(l.vtype); free(l.home); free(l.defs.key); free(l.defs.val); free(l.inc); free(l.inc_head); free(l.repl);
+        free(l.defers); free(l.vtype); free(l.home); free(l.defs.key); free(l.defs.val); free(l.inc); free(l.inc_head); free(l.repl);
         return NULL;
     }
     IrFunc* fn = l.fn;
@@ -2882,7 +2994,7 @@ IrFunc* ir_lower(Node* f, EmitMode mode, const char** why) {
     finish(&l);
     ptrmap_free(&l.var_ix);
     ptrmap_free(&l.stored);
-    free(l.vtype); free(l.home); free(l.defs.key); free(l.defs.val); free(l.inc); free(l.inc_head); free(l.repl);
+    free(l.defers); free(l.vtype); free(l.home); free(l.defs.key); free(l.defs.val); free(l.inc); free(l.inc_head); free(l.repl);
     return fn;
 }
 

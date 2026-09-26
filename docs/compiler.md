@@ -48,6 +48,8 @@ function prints as the expanded body, which ends at a join block reading the
 result. A `switch` on a scalar prints as a chain of `ne` comparisons, one per
 pattern in source order, each branching to the next test or to its case; a
 case ends at the join block or, after `fallthrough`, in the next case's block.
+A `defer` prints as nothing at its statement beyond the evaluation of its
+arguments; its call appears again before every `ret`, last defer first.
 A function the IR does not cover yet is listed with the first
 construct that kept it out; the AST emitter compiles such functions, and the
 IR's AArch64 backend compiles the rest.
