@@ -301,6 +301,19 @@ current normative rules, and Git preserves patch-level detail.
   regex benchmark; the `json` benchmark runs about 14% faster (0.75 s to
   0.65 s, three runs). `tests/ir-diff.sh` now switches on unions and keeps them
   in a struct member and an array.
+- Lowered the debug `noalias` contract checks to IR (IR migration step 3e).
+  After a call's arguments, each slice argument's byte range is checked
+  representable (the length times the element size does not overflow, and the
+  end does not wrap), and each pair of slice arguments with a `noalias`
+  parameter among them is checked disjoint when both are nonempty, through the
+  call contract failure. A `mut` descriptor argument to such a slice
+  parameter keeps the function on the AST emitter. An empty range inside another
+  now passes, as SPEC Safety #7 says; the AST emitter traps on it. Release
+  emits nothing. Functions left on the AST emitter for `noalias contract`
+  across the `bench` roots, package benchmarks, and demos fall from 29 to 0 in
+  debug builds, so debug and release now leave the same 638 functions there.
+  `tests/ir-diff.sh` now calls a function with a `noalias` slice pair over
+  random windows of a buffer.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

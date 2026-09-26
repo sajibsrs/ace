@@ -1,0 +1,278 @@
+blit({ptr, u64}, {ptr, u64}): void {
+b0:
+    %0 = param ptr 0
+    %1 = param u64 1
+    %2 = param ptr 2
+    %3 = param u64 3
+    %4 = const u64 0
+    jmp b1
+b1: ; preds b0, b4
+    %6 = phi u64 [%4, b0], [%20, b4]
+    %7 = lt bool %6, %1
+    br %7, b2, b3
+b2: ; preds b1
+    %9 = lt bool %6, %1
+    check %9, 10:13 bounds violation
+    %11 = padd ptr %0, %6 * 1
+    %12 = lt bool %6, %3
+    check %12, 10:22 bounds violation
+    %14 = padd ptr %2, %6 * 1
+    %15 = load u8 [%14]
+    store [%11], %15
+    jmp b4
+b3: ; preds b1
+    ret
+b4: ; preds b2
+    %19 = const u64 1
+    %20 = add u64 %6, %19
+    jmp b1
+}
+
+mix({ptr, u64}, {ptr, u64}, {ptr, u64}): i32 {
+b0:
+    %0 = param ptr 0
+    %1 = param u64 1
+    %2 = param ptr 2
+    %3 = param u64 3
+    %4 = param ptr 4
+    %5 = param u64 5
+    %6 = const u64 0
+    %7 = lt bool %6, %1
+    check %7, 15:16 bounds violation
+    %9 = padd ptr %0, %6 * 4
+    %10 = load i32 [%9]
+    %11 = const u64 0
+    %12 = lt bool %11, %3
+    check %12, 15:23 bounds violation
+    %14 = padd ptr %2, %11 * 4
+    %15 = load i32 [%14]
+    %16 = add.chk i32 %10, %15
+    %17 = const u64 0
+    %18 = lt bool %17, %5
+    check %18, 15:30 bounds violation
+    %20 = padd ptr %4, %17 * 4
+    %21 = load i32 [%20]
+    %22 = add.chk i32 %16, %21
+    ret %22
+}
+
+scale({ptr, u64}, i32): void {
+b0:
+    %0 = param ptr 0
+    %1 = param u64 1
+    %2 = param i32 2
+    %3 = const u64 0
+    %4 = lt bool %3, %1
+    check %4, 19:8 bounds violation
+    %6 = padd ptr %0, %3 * 8
+    %7 = load i32 [%6]
+    %8 = mul.chk i32 %7, %2
+    store [%6], %8
+    ret
+}
+
+main(): i64 {
+b0:
+    %0 = slot ptr 16, 4
+    %1 = slot ptr 24, 4
+    %2 = slot ptr 16, 1
+    %3 = const u8 0
+    %4 = const u64 0
+    store [%2], %4
+    store [%2 + 8], %4
+    %7 = const i64 0
+    %8 = const i64 16
+    jmp b1
+b1: ; preds b0, b4
+    %10 = phi i64 [%7, b0], [%44, b4]
+    %11 = lt bool %10, %8
+    br %11, b2, b3
+b2: ; preds b1
+    %13 = cast u64 %10
+    %14 = const u64 16
+    %15 = lt bool %13, %14
+    check %15, 24:35 bounds violation
+    %17 = padd ptr %2, %13 * 1
+    %18 = cast u8 %13
+    store [%17], %18
+    jmp b4
+b3: ; preds b1
+    %21 = const u64 16
+    %22 = const u64 0
+    %23 = const u64 8
+    %24 = padd ptr %2, %22 * 1
+    %25 = sub u64 %23, %22
+    %26 = const u64 16
+    %27 = const u64 8
+    %28 = const u64 16
+    %29 = padd ptr %2, %27 * 1
+    %30 = sub u64 %28, %27
+    %31 = padd ptr %24, %25 * 1
+    %32 = ge bool %31, %24
+    check %32, contract
+    %34 = padd ptr %29, %30 * 1
+    %35 = ge bool %34, %29
+    check %35, contract
+    %37 = const u64 0
+    %38 = ne bool %25, %37
+    %39 = const u64 0
+    %40 = ne bool %30, %39
+    %41 = and bool %38, %40
+    br %41, b5, b6
+b4: ; preds b2
+    %43 = const i64 1
+    %44 = add i64 %10, %43
+    jmp b1
+b5: ; preds b3
+    %46 = ge bool %29, %31
+    %47 = ge bool %24, %34
+    %48 = or bool %46, %47
+    check %48, contract
+    jmp b6
+b6: ; preds b3, b5
+    call blit(%24, %25, %29, %30)
+    %52 = load u8 [%2]
+    %53 = const u8 8
+    %54 = ne bool %52, %53
+    br %54, b7, b8
+b7: ; preds b6
+    %56 = const i64 1
+    call @__ace$registry_leaks()
+    ret %56
+b8: ; preds b6
+    %59 = const i32 1
+    store [%1], %59
+    %61 = const i32 2
+    store [%1 + 4], %61
+    %63 = const i32 3
+    store [%1 + 8], %63
+    %65 = const i32 4
+    store [%1 + 12], %65
+    %67 = const i32 5
+    store [%1 + 16], %67
+    %69 = const i32 6
+    store [%1 + 20], %69
+    %71 = const u64 6
+    %72 = const u64 0
+    %73 = const u64 2
+    %74 = padd ptr %1, %72 * 4
+    %75 = sub u64 %73, %72
+    %76 = const u64 6
+    %77 = const u64 2
+    %78 = const u64 4
+    %79 = padd ptr %1, %77 * 4
+    %80 = sub u64 %78, %77
+    %81 = const u64 6
+    %82 = const u64 4
+    %83 = const u64 6
+    %84 = padd ptr %1, %82 * 4
+    %85 = sub u64 %83, %82
+    %86 = const u64 4611686018427387903
+    %87 = le bool %75, %86
+    check %87, contract
+    %89 = const u64 4
+    %90 = mul u64 %75, %89
+    %91 = padd ptr %74, %90 * 1
+    %92 = ge bool %91, %74
+    check %92, contract
+    %94 = const u64 4611686018427387903
+    %95 = le bool %80, %94
+    check %95, contract
+    %97 = const u64 4
+    %98 = mul u64 %80, %97
+    %99 = padd ptr %79, %98 * 1
+    %100 = ge bool %99, %79
+    check %100, contract
+    %102 = const u64 4611686018427387903
+    %103 = le bool %85, %102
+    check %103, contract
+    %105 = const u64 4
+    %106 = mul u64 %85, %105
+    %107 = padd ptr %84, %106 * 1
+    %108 = ge bool %107, %84
+    check %108, contract
+    %110 = const u64 0
+    %111 = ne bool %75, %110
+    %112 = const u64 0
+    %113 = ne bool %80, %112
+    %114 = and bool %111, %113
+    br %114, b11, b12
+b9: ; preds b16
+    %116 = const i64 2
+    call @__ace$registry_leaks()
+    ret %116
+b10: ; preds b16
+    %119 = const i32 1
+    %120 = const i32 2
+    store [%0], %119
+    store [%0 + 4], %120
+    %123 = const i32 3
+    %124 = const i32 4
+    store [%0 + 8], %123
+    store [%0 + 12], %124
+    %127 = const u64 2
+    %128 = const u64 0
+    %129 = const u64 1
+    %130 = padd ptr %0, %128 * 8
+    %131 = sub u64 %129, %128
+    %132 = const i32 5
+    %133 = const u64 2305843009213693951
+    %134 = le bool %131, %133
+    check %134, contract
+    %136 = const u64 8
+    %137 = mul u64 %131, %136
+    %138 = padd ptr %130, %137 * 1
+    %139 = ge bool %138, %130
+    check %139, contract
+    call scale(%130, %131, %132)
+    %142 = load i32 [%0]
+    %143 = const i32 5
+    %144 = ne bool %142, %143
+    br %144, b17, b18
+b11: ; preds b8
+    %146 = ge bool %79, %91
+    %147 = ge bool %74, %99
+    %148 = or bool %146, %147
+    check %148, contract
+    jmp b12
+b12: ; preds b8, b11
+    %151 = const u64 0
+    %152 = ne bool %75, %151
+    %153 = const u64 0
+    %154 = ne bool %85, %153
+    %155 = and bool %152, %154
+    br %155, b13, b14
+b13: ; preds b12
+    %157 = ge bool %84, %91
+    %158 = ge bool %74, %107
+    %159 = or bool %157, %158
+    check %159, contract
+    jmp b14
+b14: ; preds b12, b13
+    %162 = const u64 0
+    %163 = ne bool %80, %162
+    %164 = const u64 0
+    %165 = ne bool %85, %164
+    %166 = and bool %163, %165
+    br %166, b15, b16
+b15: ; preds b14
+    %168 = ge bool %84, %99
+    %169 = ge bool %79, %107
+    %170 = or bool %168, %169
+    check %170, contract
+    jmp b16
+b16: ; preds b14, b15
+    %173 = call i32 mix(%74, %75, %79, %80, %84, %85)
+    %174 = const i32 9
+    %175 = ne bool %173, %174
+    br %175, b9, b10
+b17: ; preds b10
+    %177 = const i64 3
+    call @__ace$registry_leaks()
+    ret %177
+b18: ; preds b10
+    %180 = const i64 0
+    call @__ace$registry_leaks()
+    ret %180
+}
+

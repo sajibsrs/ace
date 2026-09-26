@@ -55,7 +55,10 @@ block per payload variant. A struct, tuple, or array holding a union is memory
 too, and crosses a call as words the same way. A `switch` on a union loads the
 `i32` tag once and prints as a chain of `ne` comparisons against the variant
 indices; an arm's payload binder is a copy of the payload made where the arm
-starts. A `defer` prints as nothing at its statement beyond the evaluation of its
+starts. In debug, a call of a function with a `noalias` parameter prints the range
+checks before the call: per slice argument a representability check (`check`
+of the length's bound and of the end not wrapping), then per pair with a
+`noalias` member a guarded `check` that the ranges are disjoint. A `defer` prints as nothing at its statement beyond the evaluation of its
 arguments; its call appears again before every `ret`, last defer first.
 A function the IR does not cover yet is listed with the first
 construct that kept it out; the AST emitter compiles such functions, and the

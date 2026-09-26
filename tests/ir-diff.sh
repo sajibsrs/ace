@@ -24,7 +24,8 @@
 # default) sit among the statements, and some functions defer notes of their
 # parameters, and tagged unions (one nested, one of over 16 bytes) are built,
 # passed, returned, copied, compared, and switched on (with a binder and a
-# default), and held in a struct member and an array. An asm statement keeps some functions
+# default), and held in a struct member and an array, and calls with a noalias slice
+# parameter compare their slice windows. An asm statement keeps some functions
 # on the AST emitter, so calls cross between the backends both ways. Each
 # program is built with two
 # compilers in debug and release, and requires identical output and exit
@@ -629,6 +630,7 @@ BEGIN {
     print "mkb(k: i64, v: i64): UB {\n    return UB { k = k, e = mk(k, v), t = u8(v) }\n}\n"
     print "sumb(b: UB): i64 {\n    return b.k + eval(b.e) + i64(b.t)\n}\n"
     print "echob(b: UB): UB {\n    return b\n}\n"
+    print "nblit(noalias d: mut []u8, s: []u8): int {\n    if d.len > 0 && s.len > 0 { return int(d[0]) + int(s[0]) }\n    return int(d.len) + int(s.len)\n}\n"
     print "table() {\n    for i: i64 in 0 .. 4 {\n        for j: i64 in 0 .. 4 {"
     print "            fmt.printf(\"%d\", eqe(mk(i, " pick(3) "), mk(j, " pick(3) ")))"
     print "            fmt.printf(\"%d\", nee(mk(i, 1), mk(j, 2)))"
@@ -726,6 +728,10 @@ BEGIN {
                 print show("f" f "(" args_of(f, 1) ")", fret[f])
             }
         }
+    }
+    for (k = 0; k < 3; k++) { # two nonempty windows of gbuf: disjoint, or a debug contract trap in both (the function only reads, so a release overlap is harmless)
+        lo = 1 + pick(20); hi = lo + 1 + pick(23 - lo); lo2 = 1 + pick(20); hi2 = lo2 + 1 + pick(23 - lo2)
+        print "    fmt.printf(\"%d\\n\", nblit(mut gbuf[" lo ".." hi "], gbuf[" lo2 ".." hi2 "]))"
     }
     print "    table()"
     print "    fmt.printf(\"%d\\n\", gd)"

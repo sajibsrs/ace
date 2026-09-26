@@ -24,10 +24,10 @@
 // parameter of it arrives by address, as AAPCS64 passes it.
 //
 // A function that uses anything outside the covered subset is not lowered;
-// the AST emitter compiles it (migration steps 1 to 3d2: scalar code, floats,
+// the AST emitter compiles it (migration steps 1 to 3e: scalar code, floats,
 // pointers, globals, calls, structs, tuples, arrays, Error values, and
 // strings, slices, and arrays with their indexing, slicing, and debug bounds
-// checks, inline calls, switch on a scalar, defer, and tagged unions as values and in switches).
+// checks, inline calls, switch on a scalar, defer, tagged unions, and the debug noalias checks).
 #include "ir.h"
 #include "backend.h"
 
@@ -828,6 +828,9 @@ static void call_arg(Lw* l, Args* g, Node* a, SType* pt, int by_address) {
     g->agg = 1;
 }
 
+typedef struct { int ptr, len; uint64_t esz; } Range; // a slice argument, ptr < 0 for another
+static void noalias_check(Lw* l, Node* d, const Range* r, int n);
+
 // Arguments of a direct call to s: an instance method's receiver first.
 // Returns the leaf index of the first variadic argument, or -1.
 static int call_args(Lw* l, Node* call, Sym* s, Args* g) {
@@ -842,7 +845,11 @@ static int call_args(Lw* l, Node* call, Sym* s, Args* g) {
     if (n > 40) unsupported(l, "too many arguments");
     if (varargs ? n < named : n != named) unsupported(l, "default argument");
     int first_var = -1;
+    Range rng[40];
+    int noalias = 0;
+    for (int i = 0; l->mode == EMIT_DEBUG && d && i < n && i < d->nkids; i++) noalias |= (d->kids[i]->flags & F_NOALIAS) != 0;
     for (int i = 0; i < n; i++) {
+        rng[i].ptr = -1;
         Node* a = recv && i == 0 ? callee->a : call->kids[i - recv];
         if (i >= named) { // variadic: promoted to 64 bits (an f32 to f64)
             SType* at = node_ty(a);
@@ -858,7 +865,13 @@ static int call_args(Lw* l, Node* call, Sym* s, Args* g) {
         int by_address = (d && i < d->nkids && (d->kids[i]->flags & F_MUT)) ||
                          (d && (d->flags & F_METHOD) && i == 0);
         call_arg(l, g, a, ft->params[i], by_address);
+        SType* pu = unwrap(ft->params[i]);
+        if (!noalias || !pu || pu->kind != SK_SLICE) continue;
+        if (by_address) unsupported(l, "noalias contract"); // a descriptor the callee replaces
+        IrPart* pp = &g->part[g->nparts - 1];
+        rng[i] = (Range){ g->v[pp->first], g->v[pp->first + 1], sema_size(pu->base) };
     }
+    if (noalias) noalias_check(l, d, rng, n);
     return first_var;
 }
 
@@ -997,6 +1010,35 @@ static int slice_out(Lw* l, Agg* res, int pv, int nv) {
 static void contract_check(Lw* l, int c) {
     int id = emit2(l, IR_CHECK, IT_VOID, c, -1);
     l->fn->ins[id].at = l->at;
+}
+
+// Debug, at a call boundary (Safety #7): the byte range of each slice argument
+// must be representable, and two whose parameters include a noalias one must
+// be disjoint unless one is empty. Nothing else is walked.
+static void noalias_check(Lw* l, Node* d, const Range* r, int n) {
+    int end[40];
+    for (int i = 0; i < n && i < d->nkids; i++) {
+        if (r[i].ptr < 0) continue;
+        int bytes = r[i].len;
+        if (r[i].esz != 1) {
+            contract_check(l, cmp(l, IR_LE, bytes, konst(l, IT_U64, UINT64_MAX / r[i].esz)));
+            bytes = emit2(l, IR_MUL, IT_U64, bytes, konst(l, IT_U64, r[i].esz));
+        }
+        end[i] = emit2(l, IR_PADD, IT_PTR, r[i].ptr, bytes);
+        l->fn->ins[end[i]].imm = 1;
+        contract_check(l, cmp(l, IR_GE, end[i], r[i].ptr));
+    }
+    for (int i = 0; i < n && i < d->nkids; i++) {
+        if (r[i].ptr < 0) continue;
+        for (int j = i + 1; j < n && j < d->nkids; j++) {
+            if (r[j].ptr < 0 || !((d->kids[i]->flags | d->kids[j]->flags) & F_NOALIAS)) continue;
+            int both = emit2(l, IR_AND, IT_BOOL, cmp(l, IR_NE, r[i].len, konst(l, IT_U64, 0)),
+                             cmp(l, IR_NE, r[j].len, konst(l, IT_U64, 0)));
+            int some = guard(l, both);
+            contract_check(l, emit2(l, IR_OR, IT_BOOL, cmp(l, IR_GE, r[j].ptr, end[i]), cmp(l, IR_GE, r[i].ptr, end[j])));
+            guard_end(l, some);
+        }
+    }
 }
 
 // Debug allocator tracking (Safety & Debug Builds #9): the registry routines.
@@ -1531,9 +1573,6 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
     }
     if (!s || s->kind != SYM_FUNC || !callee) unsupported(l, "indirect or method call");
     Node* d = s->decl;
-    if (l->mode == EMIT_DEBUG && d)
-        for (int i = 0; i < d->nkids; i++)
-            if (d->kids[i]->flags & F_NOALIAS) unsupported(l, "noalias contract"); // step 3
     if (!d) unsupported(l, "extern call");
     if (d->kind == N_FUNC && d->ival) {
         int v = builtin(l, x, (int)d->ival, res);
