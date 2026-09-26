@@ -19,7 +19,9 @@
 # between two guard bytes (and in-range reads of a local copy of the array), so a
 # debug bounds trap ends the run the same way in both and release reads or
 # writes a guard. Some scalar-result functions are inline, so their calls
-# expand in place, with every parameter form. A switch keeps some functions
+# expand in place, with every parameter form. Scalar switches (literal,
+# variable, and computed patterns, several to a case, fallthrough, and
+# default) sit among the statements. An asm statement keeps some functions
 # on the AST emitter, so calls cross between the backends both ways. Each
 # program is built with two
 # compilers in debug and release, and requires identical output and exit
@@ -458,9 +460,45 @@ function record_stmt(pad,   p, r, t, i, k, j, n, c, name) {
     nlocals += 3
 }
 
+# a switch on a fresh scalar local: each case has one to three patterns (a
+# literal, a variable, an expression, at times the scrutinee itself, so some
+# cases always match), a case that is not last may fall through into the next,
+# and a default is optional; a break or continue in a case names an enclosing
+# loop or block
+function switch_stmt(depth, pad, loops,   p, q, t, name, ncases, hasdef, i, j, k, pats, r) {
+    p = indent(pad)
+    q = indent(pad + 1)
+    t = anytype()
+    name = "v" nlocals++
+    print p name ": " t " = " expr(t, 2)
+    declare(name, t)
+    print p "switch " name " {"
+    ncases = 1 + pick(4)
+    hasdef = chance(0.6)
+    for (i = 0; i < ncases; i++) {
+        k = chance(0.7) ? 1 : 2 + pick(2)
+        pats = ""
+        for (j = 0; j < k; j++) {
+            r = rand()
+            pats = pats (j ? ", " : "") (r < 0.4 ? literal(t) : r < 0.6 ? (var_of(t) != "" ? var_of(t) : literal(t)) : r < 0.9 ? expr(t, 1) : name)
+        }
+        print q pats " {"
+        block(depth - 1, pad + 2, loops)
+        if ((i < ncases - 1 || hasdef) && chance(0.25)) print indent(pad + 2) "fallthrough"
+        print q "}"
+    }
+    if (hasdef) {
+        print q "default {"
+        block(depth - 1, pad + 2, loops)
+        print q "}"
+    }
+    print p "}"
+}
+
 function stmt(depth, pad, loops,   p, r, t, name, i, lab, n, open, ops) {
     p = indent(pad)
     if (depth > 0 && chance(0.18)) { memory_stmt(depth, pad, loops); return }
+    if (depth > 0 && chance(0.1)) { switch_stmt(depth, pad, loops); return }
     if (chance(0.12)) { seq_stmt(pad); return }
     if (chance(0.15)) { record_stmt(pad); return }
     r = rand()
@@ -621,7 +659,7 @@ BEGIN {
         if (chance(0.3)) declare("gs.a", "i64")
         if (chance(0.3)) declare("gs.b", "u8")
         print s "): " rett " {"
-        if (chance(finl ? 0.1 : 0.3)) print "    sw: int = 1\n    switch sw {\n        0 { sw = 2 }\n        default {}\n    }" # on the AST emitter
+        if (!finl && chance(0.3)) print "    asm \"nop\" {}" # keeps the function on the AST emitter; an inline one cannot hold asm
         block(3, 1, "")
         print "    return " result(2)
         print "}\n"

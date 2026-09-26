@@ -1,6 +1,6 @@
 ; norm: not lowered (string)
 
-; sign: not lowered (switch)
+; sign: not lowered (asm)
 
 bump(ptr): void {
 b0:

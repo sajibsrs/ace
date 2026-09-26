@@ -22,10 +22,10 @@
 // parameter of it arrives by address, as AAPCS64 passes it.
 //
 // A function that uses anything outside the covered subset is not lowered;
-// the AST emitter compiles it (migration steps 1 and 2: scalar code, floats,
+// the AST emitter compiles it (migration steps 1 to 3b: scalar code, floats,
 // pointers, globals, calls, structs, tuples, arrays, Error values, and
 // strings, slices, and arrays with their indexing, slicing, and debug bounds
-// checks).
+// checks, inline calls, and switch on a scalar).
 #include "ir.h"
 #include "backend.h"
 
@@ -2558,6 +2558,51 @@ static void for_loop(Lw* l, Node* s) {
     enter(l, exit);
 }
 
+// switch on a scalar (Conditions #2): the scrutinee once, then each pattern in
+// source order against it, a chain of branches to the first matching case, else
+// to the default or past the switch. A case ends past the switch, or, when its
+// last statement is `fallthrough`, in the next case. Each branch tests "not
+// equal" toward the next test, so the chain lays out ahead of the bodies. A
+// plain `break` still names the nearest loop, so a switch pushes no target.
+static void switch_stmt(Lw* l, Node* s) {
+    IrType t = need_type(l, node_ty(s->a)); // a union scrutinee stops here
+    int v = expr(l, s->a, t);
+    int n = s->nkids, ntests = 0, dflt = -1;
+    for (int i = 0; i < n; i++) {
+        if (s->kids[i]->flags & F_DEFAULT) dflt = i;
+        else ntests += s->kids[i]->nkids;
+    }
+    int end = new_block(l);
+    int* body = (int*)arena_alloc((size_t)(n ? n : 1) * sizeof(int));
+    for (int i = 0; i < n; i++) body[i] = new_block(l);
+    int miss = dflt >= 0 ? body[dflt] : end;
+    if (!ntests) jump(l, miss);
+    for (int i = 0, k = 0; i < n; i++) {
+        Node* c = s->kids[i];
+        if (c->flags & F_DEFAULT) continue;
+        for (int j = 0; j < c->nkids; j++) {
+            int last = ++k == ntests;
+            int next = last ? miss : new_block(l);
+            int p = expr(l, c->kids[j], t);
+            terminate(l, IR_BR, emit2(l, IR_NE, IT_BOOL, v, p), next, body[i]);
+            if (!last) {
+                seal(l, next);
+                enter(l, next);
+            }
+        }
+    }
+    for (int i = 0; i < n; i++) {
+        Node* b = s->kids[i]->b;
+        seal(l, body[i]); // its tests, and the case before it if that falls through, have branched here
+        enter(l, body[i]);
+        if (l->cur >= 0) block(l, b);
+        int falls = i + 1 < n && b->nkids && b->kids[b->nkids - 1]->kind == N_FALLTHROUGH;
+        jump(l, falls ? body[i + 1] : end);
+    }
+    seal(l, end);
+    enter(l, end);
+}
+
 static void stmt(Lw* l, Node* s) {
     if (l->cur < 0) return;
     if (!l->ninl) l->at = s; // inlined code keeps its call site's line
@@ -2650,8 +2695,12 @@ static void stmt(Lw* l, Node* s) {
         ret(l, &a);
         return;
     }
+    case N_SWITCH:
+        switch_stmt(l, s);
+        return;
+    case N_FALLTHROUGH: // the enclosing switch branches to the next case
+        return;
     case N_DEFER: unsupported(l, "defer");
-    case N_SWITCH: unsupported(l, "switch");
     case N_ASM: unsupported(l, "asm");
     default: unsupported(l, "statement form");
     }

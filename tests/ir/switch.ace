@@ -1,0 +1,68 @@
+/* switch on a scalar: the scrutinee once, then each pattern in order against it
+ * to the first matching case, else the default or past the switch. A case with
+ * several patterns shares one body, `fallthrough` enters the next case, and a
+ * plain break inside a case still leaves the enclosing loop. */
+
+Color: enum { red, green, blue }
+
+Log: struct {
+    n: i64,
+}
+
+kind(x: i64): i64 {
+    r: i64 = 0
+    switch x {
+        1, 2 { r = 10 }
+        3 {
+            r = 20
+            fallthrough
+        }
+        4 { r += 1 }
+        default { r = -1 }
+    }
+    return r
+}
+
+hue(c: Color): u8 {
+    switch c {
+        Color.red { return 1 }
+        Color.blue { return 3 }
+    }
+    return 0
+}
+
+ratio(f: f64): i64 {
+    switch f {
+        0.0 { return 0 }
+        1.5, 2.5 { return 1 }
+        default { return 2 }
+    }
+}
+
+scan(s: []u8): i64 {
+    n: i64 = 0
+    for i: usize in 0 .. s.len {
+        switch s[i] {
+            'a' { n += 1 }
+            ' ' { break }
+            default {}
+        }
+    }
+    return n
+}
+
+inline pick(x: i32): i32 {
+    switch x {
+        0 { return 5 }
+        default { return x }
+    }
+}
+
+main(): int {
+    if kind(2) != 10 || kind(3) != 21 || kind(4) != 1 || kind(9) != -1 { return 1 }
+    if hue(Color.blue) != 3 || hue(Color.green) != 0 { return 2 }
+    if ratio(2.5) != 1 || ratio(0.0) != 0 || ratio(7.0) != 2 { return 3 }
+    if pick(0) != 5 || pick(7) != 7 { return 4 }
+    if scan("banana bandana") != 3 { return 5 }
+    return 0
+}

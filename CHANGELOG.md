@@ -236,6 +236,27 @@ current normative rules, and Git preserves patch-level detail.
   slower on byte-identical code, a placement shift `HEAD` reproduces with 48
   bytes of padding; the other benchmarks are unchanged. `tests/ir-diff.sh`
   also generates `inline` functions with every parameter form.
+- Lowered `switch` on a scalar to IR (IR migration step 3b). The scrutinee is
+  evaluated once, then each pattern, any expression and evaluated only when
+  reached, is compared with it in source order, as the AST emitter tests them:
+  a chain of `ne` branches whose not-taken side is the next test and whose taken
+  side is the case, so the tests lay out ahead of the bodies as a run of `cmp`
+  and `b.eq`. A miss on the last test goes to `default` or past the switch; a
+  case ends past the switch or, when its last statement is `fallthrough`, in the
+  next case; a plain `break` still names the enclosing loop. A union scrutinee
+  keeps the function on the AST emitter until tagged unions lower. A leaf
+  dispatch needs no frame and compares small constants as immediates (a
+  five-case one shrinks from 29 instructions to 18). Release lowers 1,465
+  functions across the package benchmarks and demos (1,459), the `bench` roots
+  having none; those left there wait on `union` (121), `defer` (18), and
+  computed global constants (12). `pkg/regex` loses 1.3 KB of machine code
+  (`parse_item` 484 to 232 instructions), its matcher keeps its instruction
+  counts, and its benchmark moves within placement noise. A dense dispatch
+  loop runs 2.8% faster, most of its time being mispredicted branches. Compile
+  time is unchanged. `tests/ir-diff.sh` now generates scalar switches (literal,
+  variable, and computed patterns, several to a case, `fallthrough`, `default`),
+  and an `asm` statement replaces the `switch` that kept some functions on the
+  AST emitter.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

@@ -9,10 +9,9 @@ norm(s: string): i64 {
 }
 
 sign(x: i64): i64 {
-    switch x {
-        0 { return 0 }
-        default { return 1 }
-    }
+    asm "nop" {}
+    if x == 0 { return 0 }
+    return 1
 }
 
 bump(mut n: i64) {

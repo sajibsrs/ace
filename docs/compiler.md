@@ -45,7 +45,10 @@ lives in memory: a constant index is an offset on the access, any other a
 `padd` checked below the fixed length. `bitcast` reinterprets a float's bits
 as an integer of its width, or back (`bits.cast`). A call to an `inline`
 function prints as the expanded body, which ends at a join block reading the
-result. A function the IR does not cover yet is listed with the first
+result. A `switch` on a scalar prints as a chain of `ne` comparisons, one per
+pattern in source order, each branching to the next test or to its case; a
+case ends at the join block or, after `fallthrough`, in the next case's block.
+A function the IR does not cover yet is listed with the first
 construct that kept it out; the AST emitter compiles such functions, and the
 IR's AArch64 backend compiles the rest.
 
