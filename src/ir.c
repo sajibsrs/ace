@@ -97,13 +97,15 @@ int ir_type_bits(IrType t) {
     switch (t) {
     case IT_BOOL: case IT_I8: case IT_U8: return 8;
     case IT_I16: case IT_U16: return 16;
-    case IT_I32: case IT_U32: return 32;
-    case IT_I64: case IT_U64: case IT_PTR: return 64;
+    case IT_I32: case IT_U32: case IT_F32: return 32;
+    case IT_I64: case IT_U64: case IT_PTR: case IT_F64: return 64;
     default: return 0;
     }
 }
 
 int ir_type_signed(IrType t) { return t >= IT_I8 && t <= IT_I64; }
+
+int ir_type_float(IrType t) { return t == IT_F32 || t == IT_F64; }
 
 // The 64-bit pattern of v wrapped into t: truncated, then extended by t's
 // signedness. Every IR integer value is held in this form.
@@ -118,7 +120,7 @@ uint64_t ir_wrap(IrType t, uint64_t v) {
 }
 
 static const char* type_name(IrType t) {
-    static const char* names[] = { "void", "bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "ptr" };
+    static const char* names[] = { "void", "bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "ptr", "f32", "f64" };
     return names[t];
 }
 
@@ -280,7 +282,28 @@ static void print_sym(FILE* out, Sym* s) { // owner::name, as the source spells 
 }
 
 static void print_imm(FILE* out, IrType t, uint64_t imm) {
-    if (t == IT_BOOL) fputs(imm ? "true" : "false", out);
+    if (ir_type_float(t)) { // the shortest decimal that reads back to the same bits
+        char buf[40];
+        if (t == IT_F32) {
+            float f;
+            uint32_t b = (uint32_t)imm;
+            memcpy(&f, &b, 4);
+            for (int p = 1; p <= 9; p++) {
+                snprintf(buf, sizeof buf, "%.*g", p, (double)f);
+                if (strtof(buf, NULL) == f || f != f) break;
+            }
+        } else {
+            double d;
+            memcpy(&d, &imm, 8);
+            for (int p = 1; p <= 17; p++) {
+                snprintf(buf, sizeof buf, "%.*g", p, d);
+                if (strtod(buf, NULL) == d || d != d) break;
+            }
+        }
+        if (!strpbrk(buf, ".eni")) strcat(buf, ".0"); // a float stays visibly one
+        fputs(buf, out);
+        return;
+    } else if (t == IT_BOOL) fputs(imm ? "true" : "false", out);
     else if (ir_type_signed(t)) fprintf(out, "%lld", (long long)imm);
     else fprintf(out, "%llu", (unsigned long long)imm);
 }

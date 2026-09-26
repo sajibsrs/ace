@@ -5,10 +5,13 @@
 # loops, labeled break/continue and blocks, early returns, and calls between
 # them) and memory (globals, a struct global and its mut method, mut
 # parameters, pointers to variables, function values, and range loops with
-# steps in both directions), builds each with two compilers in debug and release, and requires
-# identical output and exit status. main prints each function's result for
-# several arguments; a debug arithmetic trap ends the run the same way in
-# both. Run a change against a build of HEAD:
+# steps in both directions), and floats (f32 and f64 locals, parameters past
+# the eight argument registers, results, globals, arithmetic, NaN-producing
+# division, comparisons, and conversions both ways), builds each with two
+# compilers in debug and release, and requires identical output and exit
+# status. main prints each function's result for several arguments (a float
+# as its bits); a debug arithmetic trap ends the run the same way in both.
+# Run a change against a build of HEAD:
 #   tests/ir-diff.sh <baseline-ace> <candidate-ace> [count] [seed]
 set -eu
 
@@ -47,7 +50,57 @@ function bits(t) {
     return 64
 }
 
+function isfloat(t) { return t == "f32" || t == "f64" }
+
+# any value type: mostly integers and bool, sometimes a float
+function anytype() { return chance(0.25) ? (chance(0.5) ? "f32" : "f64") : types[1 + pick(ntypes)] }
+
+function fliteral(t,   n) {
+    n = split("0.0 -0.0 0.5 1.0 -1.5 0.1 3.0 100.0 65536.25 -2.5e-3 1.0e10 1.0e300", flits, " ")
+    return t "(" flits[1 + pick(t == "f32" ? n - 1 : n)] ")"
+}
+
+# expression e of type et converted to t; a float reaches a narrow integer
+# through i64, since the AST emitter leaves a narrow fcvtzs result unwrapped
+function conv(t, e, et) {
+    if (isfloat(et) && !isfloat(t) && bits(t) < 32) return t "(i64(" e "))"
+    return t "(" e ")"
+}
+
+function fleaf(t, depth,   v, r, s) {
+    r = rand()
+    v = var_of(t)
+    if (v != "" && r < 0.45) return v
+    if (r < 0.65) {
+        s = any_var()
+        if (s != "") {
+            split(s, part, SUBSEP)
+            if (part[2] != "bool") return conv(t, part[1], part[2])
+        }
+    }
+    if (v != "" && r < 0.72) return "((" v " - " v ") / (" v " - " v "))" # NaN, or 0 / 0 of an infinity
+    if (nfuncs > 0 && depth > 0 && r < 0.82) return call_conv(t)
+    return fliteral(t)
+}
+
+function fexpr(t, depth,   r, a, b) {
+    r = rand()
+    if (depth <= 0 || r < 0.3) return fleaf(t, depth)
+    a = fexpr(t, depth - 1)
+    b = fexpr(t, depth - 1)
+    if (r < 0.75) return "(" a " " substr("+-*/", 1 + pick(4), 1) " " b ")"
+    if (r < 0.85) return "-(" a ")"
+    return t "(" fexpr(t == "f32" ? "f64" : "f32", depth - 1) ")"
+}
+
+# a call of a random function, converted to t
+function call_conv(t,   j) {
+    j = pick(nfuncs)
+    return conv(t, "f" j "(" args_of(j, 0) ")", fret[j])
+}
+
 function literal(t,   m) {
+    if (isfloat(t)) return fliteral(t)
     if (t == "bool") return chance(0.5) ? "true" : "false"
     m = bits(t) == 8 ? 20 : bits(t) == 16 ? 3000 : bits(t) == 32 ? 100000 : 5000000
     if (chance(0.3)) m = 10
@@ -76,17 +129,12 @@ function leaf(t, depth,   v, r, s) {
         s = any_var()
         if (s != "") {
             split(s, part, SUBSEP)
-            if (part[2] != "bool" && part[2] != t) return t "(" part[1] ")"
+            if (part[2] != "bool" && part[2] != t) return conv(t, part[1], part[2])
         }
     }
-    if (t != "bool" && nfuncs > 0 && depth > 0 && r < 0.9) return t "(" call_expr() ")"
+    if (t != "bool" && nfuncs > 0 && depth > 0 && r < 0.9) return call_conv(t)
     if (t != "bool" && depth > 0 && r < 0.93) return t "(mut gs.bump(" expr("i64", 0) "))"
     return t == "bool" ? literal(t) : t "(" literal(t) ")"
-}
-
-function call_expr(   j) {
-    j = pick(nfuncs)
-    return "f" j "(" args_of(j, 0) ")"
 }
 
 # the arguments of a call to fj: a mut parameter takes a variable
@@ -95,7 +143,7 @@ function args_of(j, lit,   k, s, t) {
     for (k = 0; k < nparams[j]; k++) {
         t = ptype[j, k]
         if (pmut[j, k]) s = s (k ? ", " : "") "mut " lvalue(t)
-        else if (lit) s = s (k ? ", " : "") (t == "bool" ? literal(t) : t "(" literal(t) ")")
+        else if (lit) s = s (k ? ", " : "") (t == "bool" || isfloat(t) ? literal(t) : t "(" literal(t) ")")
         else s = s (k ? ", " : "") expr(t, 0)
     }
     return s
@@ -123,7 +171,7 @@ function memory_stmt(depth, pad, loops,   p, r, t, i, name, lab, j, k, s) {
         t = vtype[i]
         name = "q" nlocals++
         print p name ": mut *" t " = mut &" vname[i]
-        if (t == "bool") print p "*" name " = " expr(t, 1)
+        if (t == "bool" || isfloat(t)) print p "*" name " = " expr(t, 1)
         else print p "*" name " += (" expr(t, 1) " & 3)"
         declare("*" name, t)
         return
@@ -134,9 +182,9 @@ function memory_stmt(depth, pad, loops,   p, r, t, i, name, lab, j, k, s) {
         name = "h" nlocals++
         s = ""
         for (k = 0; k < nparams[j]; k++) s = s (k ? ", " : "") ptype[j, k]
-        print p name ": (" s "): int = f" j
-        print p "v" nlocals ": int = " name "(" args_of(j, 0) ")"
-        declare("v" nlocals++, "int")
+        print p name ": (" s "): " fret[j] " = f" j
+        print p "v" nlocals ": " fret[j] " = " name "(" args_of(j, 0) ")"
+        declare("v" nlocals++, fret[j])
         return
     }
     t = types[2 + pick(ntypes - 1)]
@@ -151,7 +199,7 @@ function memory_stmt(depth, pad, loops,   p, r, t, i, name, lab, j, k, s) {
 }
 
 function compare(depth,   t, n, s, i, ops) {
-    t = types[2 + pick(ntypes - 1)] # not bool
+    t = chance(0.3) ? (chance(0.5) ? "f32" : "f64") : types[2 + pick(ntypes - 1)] # not bool
     split("< <= > >= == !=", ops, " ")
     if (chance(0.2)) { # a comparison chain
         n = 3
@@ -175,6 +223,7 @@ function small(t) { return bits(t) == 8 ? 7 : bits(t) == 16 ? 1023 : bits(t) == 
 
 function expr(t, depth,   r, a, b, op, m) {
     if (t == "bool") return boolean(depth)
+    if (isfloat(t)) return fexpr(t, depth)
     r = rand()
     if (depth <= 0 || r < 0.3) return leaf(t, depth)
     a = expr(t, depth - 1)
@@ -228,7 +277,7 @@ function stmt(depth, pad, loops,   p, r, t, name, i, lab, n, open, ops) {
     if (depth > 0 && chance(0.18)) { memory_stmt(depth, pad, loops); return }
     r = rand()
     if (depth <= 0 || r < 0.3) {
-        t = types[1 + pick(ntypes)]
+        t = anytype()
         name = "v" nlocals++
         print p name ": " t " = " expr(t, 2)
         declare(name, t)
@@ -239,6 +288,7 @@ function stmt(depth, pad, loops,   p, r, t, name, i, lab, n, open, ops) {
         if (i < 0) return
         t = vtype[i]
         if (t == "bool" || chance(0.5)) { print p vname[i] " = " expr(t, 2); return }
+        if (isfloat(t)) { print p vname[i] " " substr("+-*/", 1 + pick(4), 1) "= " expr(t, 1); return }
         split("+= -= *= /= %= &= |= ^= <<= >>=", ops, " ")
         n = 1 + pick(10)
         if (n == 3) { print p vname[i] " *= " pick(4); return }
@@ -249,7 +299,7 @@ function stmt(depth, pad, loops,   p, r, t, name, i, lab, n, open, ops) {
         return
     }
     if (r < 0.55) {
-        print p "if " boolean(1) " { return int(" expr(types[2 + pick(ntypes - 1)], 1) ") }"
+        print p "if " boolean(1) " { return " result(1) " }"
         return
     }
     if (r < 0.62 && loops != "") {
@@ -286,12 +336,26 @@ function stmt(depth, pad, loops,   p, r, t, name, i, lab, n, open, ops) {
     print p "}"
 }
 
+# a return value of the current function
+function result(depth,   t) {
+    t = chance(0.5) ? (chance(0.5) ? "f32" : "f64") : types[2 + pick(ntypes - 1)]
+    if (t == rett) return expr(t, depth)
+    return conv(rett, expr(t, depth), t)
+}
+
+# fmt.printf of value e of type t: a float as its exact bits
+function show(e, t) {
+    if (isfloat(t)) return "    fmt.printf(\"%u\\n\", uint(bits.cast(" e ")))"
+    return "    fmt.printf(\"%d\\n\", int(" e "))"
+}
+
 BEGIN {
     srand(seed * 1000003 + n)
     ntypes = split("bool i8 i16 i32 i64 u8 u16 u32 u64 usize int", types, " ")
     # bool first: types[2..] are the integers
-    print "import fmt\n"
+    print "import bits\nimport fmt\n"
     for (k = 1; k <= ntypes; k++) print "g_" types[k] ": " types[k] " = " literal(types[k])
+    print "g_f32: f32 = " fliteral("f32") "\ng_f64: f64 = " fliteral("f64")
     print "\nS: struct {\n    a: i64,\n    b: u8,\n}\n"
     print "gs: S = S { a = " literal("i64") ", b = " literal("u8") " }\n"
     print "mut S.bump(n: i64): int {\n    self.a += n & 7\n    self.b = u8(self.a & 63)\n    return int(self.b)\n}\n"
@@ -300,10 +364,12 @@ BEGIN {
         nvars = 0
         nlocals = 0
         nlabels = 0
-        np = 1 + pick(4)
+        np = chance(0.15) ? 9 + pick(4) : 1 + pick(4) # past the argument registers, at times
+        rett = chance(0.3) ? (chance(0.5) ? "f32" : "f64") : "int"
+        fret[f] = rett
         s = "f" f "("
         for (k = 0; k < np; k++) {
-            t = types[1 + pick(ntypes)]
+            t = anytype()
             ptype[f, k] = t
             pmut[f, k] = chance(0.2)
             if (pmut[f, k]) fmut[f] = 1
@@ -312,11 +378,13 @@ BEGIN {
             if (!pmut[f, k]) vfixed["p" k] = 1
         }
         for (k = 1; k <= ntypes; k++) if (chance(0.25)) declare("g_" types[k], types[k])
+        if (chance(0.3)) declare("g_f32", "f32")
+        if (chance(0.3)) declare("g_f64", "f64")
         if (chance(0.3)) declare("gs.a", "i64")
         if (chance(0.3)) declare("gs.b", "u8")
-        print s "): int {"
+        print s "): " rett " {"
         block(3, 1, "")
-        print "    return int(" expr(types[2 + pick(ntypes - 1)], 2) ")"
+        print "    return " result(2)
         print "}\n"
         nparams[f] = np
         nfuncs = f + 1
@@ -326,11 +394,13 @@ BEGIN {
     print "main(): int {"
     for (f = 0; f < nf; f++) {
         for (c = 0; c < 3; c++) {
-            print "    fmt.printf(\"%d\\n\", f" f "(" args_of(f, 1) "))"
+            print show("f" f "(" args_of(f, 1) ")", fret[f])
         }
     }
     print "    fmt.printf(\"%d %d\\n\", int(gs.a), int(gs.b))"
     for (k = 2; k <= ntypes; k++) print "    fmt.printf(\"%d\\n\", int(g_" types[k] "))"
+    print show("g_f32", "f32")
+    print show("g_f64", "f64")
     print "    return 0"
     print "}"
 }'

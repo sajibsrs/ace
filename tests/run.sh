@@ -1310,20 +1310,24 @@ if [ -d tests/emit ]; then
             echo "FAIL: a value && must branch on its left compare"
             fail=1
         fi
-        # Hot float locals fill d8-d15; a loop-free function saves none of
-        # the callee-saved registers.
+        # Call-free functions save no callee-saved register, and the ten hot
+        # float locals of fpressure stay in registers: no float load or store
+        # through an address.
         if ! otool -tv /tmp/ace_emit/basics/register_locals.o | awk '
             /^[^0-9].*:$/ { fn = $0; next }
+            fn ~ /^__ace\$fn\$fpressure\$/ {
+                seen = 1
+                if ($2 ~ /^(ldur|stur|ldr|str|ldp|stp)$/ && $3 ~ /^[sd]/ && $0 ~ /\[/) bad = 1
+            }
             {
                 for (i = 3; i <= NF; i++) {
                     r = $i; gsub(/[][,]/, "", r)
                     if (r !~ /^([sd]([89]|1[0-5])|x(19|2[0-8]))$/) continue
-                    if (fn ~ /^__ace\$fn\$(id8|idf)\$/) bad = 1
-                    if (fn ~ /^__ace\$fn\$fpressure\$/ && r == "d15") full = 1
+                    if (fn ~ /^__ace\$fn\$(id8|idf|fpressure)\$/) bad = 1
                 }
             }
-            END { exit bad || !full }'; then
-            echo "FAIL: float locals must be promoted into d8-d15"
+            END { exit bad || !seen }'; then
+            echo "FAIL: call-free float locals must stay in caller-saved registers"
             fail=1
         fi
         # A global integer const with a compile-time initializer is an

@@ -77,6 +77,24 @@ current normative rules, and Git preserves patch-level detail.
   properties instead of AST-emitter register policy. On `compile-corpus.sh 5000`,
   compile time rises 10%, all of it from lowering these functions instead of
   the AST emitter; benchmark runtime is unchanged.
+- Extended the IR to floats (IR migration step 2b): `f32`/`f64` values reuse
+  the arithmetic, `neg`, and comparison ops by type (IEEE: every ordering and
+  `eq` false and `ne` true on a NaN, so `not(lt)` is not `ge`); `cast`
+  converts between integers and floats (`scvtf`/`ucvtf`, saturating
+  `fcvtzs`/`fcvtzu` then a narrow result wrapped) and between widths; a float
+  `const` holds its bit pattern. Float arithmetic is never checked or
+  contracted. `arm64.c` allocates
+  v registers in the same linear scan as a second class (caller-saved
+  v16-v28 and v0-v7, callee-saved d8-d15 saved in the frame, v29-v31
+  scratch), passes floats in v0-v7 and on the stack at natural size (a
+  variadic `f32` promoted to `f64`), returns them in v0, selects `fcmp`
+  (against `#0.0` for a zero) with the AST emitter's NaN-false conditions, and
+  rematerializes constants by `fmov` or a literal load from a per-function
+  pool. IR coverage of the `tests/emit` and bench roots rises from 232 to 288
+  functions; the rest of the float code waits on intrinsic and `inline`
+  calls, arrays, and structs. Every `tests/emit` fixture passes in both
+  modes, `tests/ir-diff.sh` now also generates float programs, and compile
+  time and benchmark runtime are unchanged.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

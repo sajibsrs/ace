@@ -110,6 +110,8 @@ static int ir_type_of(SType* t) {
     case P_U16: return IT_U16;
     case P_U32: return IT_U32;
     case P_U64: case P_USIZE: return IT_U64;
+    case P_F32: return IT_F32;
+    case P_F64: return IT_F64;
     default: return -1;
     }
 }
@@ -119,7 +121,6 @@ static const char* type_why(SType* t) {
     if (!t) return "untyped value";
     switch (t->kind) {
     case SK_PRIM:
-        if (t->prim == P_F32 || t->prim == P_F64) return "floating-point value";
         if (t->prim == P_STRING) return "string";
         return "unsupported primitive";
     case SK_PTR: return "pointer";
@@ -165,6 +166,31 @@ static int konst(Lw* l, IrType type, uint64_t v) {
     int id = emit(l, IR_CONST, type);
     l->fn->ins[id].imm = ir_wrap(type, v);
     return id;
+}
+
+// A float constant: d rounded to type's precision, as its bit pattern.
+static int fconst(Lw* l, IrType type, double d) {
+    uint64_t bits;
+    if (type == IT_F32) {
+        float f = (float)d;
+        uint32_t b;
+        memcpy(&b, &f, 4);
+        bits = b;
+    } else {
+        memcpy(&bits, &d, 8);
+    }
+    return konst(l, type, bits);
+}
+
+// A literal (or its negation) at type: an integer literal meeting a float
+// converts as the AST emitter does.
+static int literal(Lw* l, IrType type, Node* x, int neg) {
+    if (ir_type_float(type)) {
+        double d = x->kind == N_FLOAT ? x->fval : (double)x->ival;
+        return fconst(l, type, neg ? -d : d);
+    }
+    if (x->kind == N_FLOAT) unsupported(l, "float literal at an integer type");
+    return konst(l, type, neg ? (uint64_t)0 - x->ival : x->ival);
 }
 
 
@@ -572,12 +598,14 @@ static int is_compare(int op) { return op >= IR_EQ && op <= IR_GE; }
 
 // Arithmetic that a debug build checks (Safety & Debug Builds #6).
 static int checked_op(Lw* l, int op, IrType t) {
-    if (l->mode != EMIT_DEBUG || t == IT_BOOL) return 0;
+    if (l->mode != EMIT_DEBUG || t == IT_BOOL || ir_type_float(t)) return 0; // IEEE arithmetic never traps
     return op == IR_ADD || op == IR_SUB || op == IR_MUL || op == IR_DIV || op == IR_REM ||
            op == IR_SHL || op == IR_SHR || op == IR_NEG;
 }
 
 static int arith(Lw* l, int op, IrType t, int a, int b) {
+    if (ir_type_float(t) && op != IR_ADD && op != IR_SUB && op != IR_MUL && op != IR_DIV && op != IR_NEG)
+        unsupported(l, "float operator");
     int id = emit2(l, (IrOp)op, t, a, b);
     if (checked_op(l, op, t)) l->fn->ins[id].flags |= IRF_CHECKED;
     return id;
@@ -640,11 +668,12 @@ static int call_args(Lw* l, Node* call, Sym* s, int* out, int max) {
     if (varargs ? n < named : n != named) unsupported(l, "default argument");
     for (int i = 0; i < n; i++) {
         Node* a = recv && i == 0 ? callee->a : call->kids[i - recv];
-        if (i >= named) { // variadic: an integer or pointer, promoted to 64 bits
+        if (i >= named) { // variadic: promoted to 64 bits (an f32 to f64)
             SType* at = node_ty(a);
-            IrType t = is_untyped(at) ? IT_I64 : need_type(l, at);
+            IrType t = is_untyped(at) ? (a->kind == N_FLOAT ? IT_F64 : IT_I64) : need_type(l, at);
             int v = expr(l, a, t);
-            if (t != IT_PTR && ir_type_bits(t) < 64) v = emit2(l, IR_CAST, ir_type_signed(t) ? IT_I64 : IT_U64, v, -1);
+            if (t == IT_F32) v = emit2(l, IR_CAST, IT_F64, v, -1);
+            else if (t != IT_PTR && ir_type_bits(t) < 64) v = emit2(l, IR_CAST, ir_type_signed(t) ? IT_I64 : IT_U64, v, -1);
             out[i] = v;
             continue;
         }
@@ -725,7 +754,9 @@ static int is_pointer(Node* x) {
 
 static int expr(Lw* l, Node* x, int want) {
     switch (x->kind) {
-    case N_INT: case N_CHAR: case N_BOOL:
+    case N_INT: case N_CHAR: case N_FLOAT:
+        return literal(l, type_in(l, x, want), x, 0);
+    case N_BOOL:
         return konst(l, type_in(l, x, want), x->ival);
     case N_IDENT: {
         Sym* s = node_sym(x);
@@ -734,9 +765,9 @@ static int expr(Lw* l, Node* x, int want) {
             Node* init = s->init;
             int neg = 0;
             if (init->kind == N_UNARY && init->op == T_MINUS) { neg = 1; init = init->a; }
-            if (init->kind != N_INT && init->kind != N_CHAR && init->kind != N_BOOL)
+            if (init->kind != N_INT && init->kind != N_CHAR && init->kind != N_BOOL && init->kind != N_FLOAT)
                 unsupported(l, "computed global constant");
-            return konst(l, t, neg ? (uint64_t)0 - init->ival : init->ival);
+            return literal(l, t, init, neg);
         }
         if (s && s->kind == SYM_FUNC) { // a function value
             if (s->is_generic || s->spec_args || (s->decl && s->decl->kind == N_FUNC && s->decl->c))
@@ -761,7 +792,7 @@ static int expr(Lw* l, Node* x, int want) {
     case N_UNARY: {
         IrType t = type_in(l, x, want);
         if (x->op == T_MINUS) {
-            if (x->a->kind == N_INT) return konst(l, t, (uint64_t)0 - x->a->ival);
+            if (x->a->kind == N_INT || x->a->kind == N_FLOAT) return literal(l, t, x->a, 1);
             return arith(l, IR_NEG, t, expr(l, x->a, t), -1);
         }
         if (x->op == T_BANG || x->op == T_TILDE) return emit2(l, IR_NOT, t, expr(l, x->a, t), -1);

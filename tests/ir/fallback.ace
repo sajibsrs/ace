@@ -10,8 +10,11 @@ norm(p: Point): i64 {
     return p.x + p.y
 }
 
-half(x: f64): f64 {
-    return x / 2.0
+sign(x: i64): i64 {
+    switch x {
+        0 { return 0 }
+        default { return 1 }
+    }
 }
 
 bump(mut n: i64) {
@@ -21,6 +24,6 @@ bump(mut n: i64) {
 main(): int {
     n: i64 = norm(Point{x = 1, y = 2})
     bump(mut n)
-    if half(4.0) != 2.0 || n != 4 { return 1 }
+    if sign(4) != 1 || n != 4 { return 1 }
     return 0
 }

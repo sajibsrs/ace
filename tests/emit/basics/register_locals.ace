@@ -162,7 +162,7 @@ walk(n: int): int {
     return total
 }
 
-// f32 and f64 locals stay in d8-d15 across calls, negation, and conversions
+// f32 and f64 locals survive calls, negation, and conversions
 floats(): int {
     s: f32 = 1.5
     d: f64 = 0.25
@@ -204,7 +204,7 @@ fescapes(): int {
     return 0
 }
 
-// more hot float locals than d8-d15: the rest keep their slots
+// ten hot float locals in a call-free loop: all stay in registers
 fpressure(n: int): f64 {
     a: f64 = 1.0
     b: f64 = 2.0
@@ -238,9 +238,8 @@ fwalk(n: int): f64 {
     return total
 }
 
-// float locals start at d8 in every function: the callee saves and restores
-// three (an odd count) under the caller's three, which are read after it
-// returns; `step` arrives in v1
+// float locals live across a call in the caller and the callee alike, and
+// the caller's are read after it returns; `step` arrives in v1
 fdown(n: f64, step: f64): f64 {
     k: f64 = n
     s: f64 = 0.0

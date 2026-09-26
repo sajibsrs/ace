@@ -1,6 +1,6 @@
 ; norm: not lowered (struct)
 
-; half: not lowered (floating-point value)
+; sign: not lowered (switch)
 
 bump(ptr): void {
 b0:

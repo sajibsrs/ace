@@ -1,0 +1,31 @@
+/* Floats: arithmetic is never checked and never contracted (mul then add
+ * stays two operations). Comparisons are IEEE, so !(a >= b) branches on ge
+ * with its targets exchanged, never on lt. Casts convert between integers
+ * and floats and between widths; an f32 variadic argument promotes to f64.
+ * Constants print as the shortest decimal that reads back to their bits. */
+
+SCALE: const f64 = -2.5
+
+extern "c" {
+    snprintf(buf: mut *u8, n: usize, format: *u8, ...): i32
+}
+
+mix(a: f64, b: f32, n: i32): f64 {
+    x: f64 = a * 2 + f64(b) / 3.0
+    if x < SCALE || !(a >= 1.0e300) { x = -x }
+    return x + f64(n) - 0.1
+}
+
+narrow(x: f32): u8 {
+    return u8(x)
+}
+
+show(x: f32, buf: mut *u8, format: *u8): i32 {
+    return snprintf(buf, 8, format, x)
+}
+
+main(): int {
+    if mix(1.25, f32(0.5), 7) > 0.0 { return 1 }
+    if narrow(f32(300.5)) != 44 { return 2 }
+    return 0
+}

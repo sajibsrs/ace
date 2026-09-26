@@ -11,11 +11,13 @@
 
 // Value types. Every integer value is held in range for its type: a narrow
 // result is wrapped (release) or checked (debug) at the operation that makes it.
+// A float CONST's imm is its IEEE bit pattern (an f32's in the low 32 bits).
 typedef enum {
     IT_VOID, IT_BOOL,
     IT_I8, IT_I16, IT_I32, IT_I64,
     IT_U8, IT_U16, IT_U32, IT_U64,
     IT_PTR, // an address: pointers, function values, variable homes; compares unsigned
+    IT_F32, IT_F64,
 } IrType;
 
 #define IR_OPS(X)                                                              \
@@ -25,9 +27,12 @@ typedef enum {
     X(ADD, "add") X(SUB, "sub") X(MUL, "mul") X(DIV, "div") X(REM, "rem")      \
     X(AND, "and") X(OR, "or") X(XOR, "xor") X(SHL, "shl") X(SHR, "shr")        \
     X(NEG, "neg") X(NOT, "not")                                                \
-    /* comparisons: signedness from the operand type; result bool */          \
+    /* comparisons: signedness or float from the operand type; result bool.   \
+       Float ones are IEEE: eq, lt, le, gt, ge are false and ne true when an   \
+       operand is a NaN, so not(lt) is not ge */                               \
     X(EQ, "eq") X(NE, "ne") X(LT, "lt") X(LE, "le") X(GT, "gt") X(GE, "ge")    \
-    X(CAST, "cast")     /* truncate or extend to the result type */           \
+    X(CAST, "cast")     /* truncate or extend; to or from a float: convert,   \
+                           toward zero and saturating to an integer (NaN: 0) */ \
     X(SLOT, "slot")     /* ptr to a stack object: imm = size, aux = alignment */ \
     X(GLOBAL, "global") /* ptr to sym: a global variable or a function */      \
     X(LOAD, "load")     /* the result type's value at args[0] + aux */         \
@@ -107,6 +112,7 @@ int      ir_is_term(IrOp op);
 
 int      ir_type_bits(IrType t);
 int      ir_type_signed(IrType t);
+int      ir_type_float(IrType t);
 // v wrapped into t: truncated, then extended by t's signedness
 uint64_t ir_wrap(IrType t, uint64_t v);
 

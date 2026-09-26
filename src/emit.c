@@ -737,7 +737,7 @@ static int const_global_float(Sym* s, SType* t, double* out) {
 
 // imm8 of `fmov Vd, #imm` when the bit pattern is one of its 256 values (the
 // sign, three exponent bits, and four fraction bits of VFPExpandImm), else -1.
-static int fmov_imm8(uint64_t bits, int is64) {
+int fmov_imm8(uint64_t bits, int is64) {
     int fbits = is64 ? 52 : 23, ebits = is64 ? 11 : 8, drop = fbits - 4;
     if (bits & ((UINT64_C(1) << drop) - 1)) return -1; // fraction beyond four bits
     uint32_t exp = (uint32_t)(bits >> fbits) & ((1u << ebits) - 1);

@@ -175,6 +175,8 @@ const char* fn_mangle(const char* name, uint32_t len, SType* ft, Node* decl, STy
 // The N:immr:imms field (bits 22..10) of an AArch64 bitmask immediate, or 0
 // when v does not encode (0 and all-ones never do).
 uint32_t logical_imm_field(uint64_t v, int sf);
+// imm8 of `fmov Vd, #imm` for an f32 (is64 = 0) or f64 bit pattern, or -1
+int fmov_imm8(uint64_t bits, int is64);
 // Division by a constant d >= 3, not a power of two, as a multiply-high by
 // magic and shifts (Granlund-Montgomery); w is 32 or 64.
 typedef struct { uint64_t magic; int shift, add, neg; } DivMagic;
