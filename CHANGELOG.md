@@ -287,6 +287,20 @@ current normative rules, and Git preserves patch-level detail.
   0.7 KB, and the `json` benchmark 48 bytes; the regex benchmark's runtime is
   unchanged within noise. `tests/ir-diff.sh` now builds, passes, returns, copies, and compares
   unions.
+- Lowered `switch` on a union and unions inside aggregates to IR (IR migration
+  step 3d2). The scrutinee's address is taken once (a place's own, else a
+  stack object holding it), the `i32` tag is loaded once, and each pattern
+  compares it with the variant's index; an arm's payload binder is a copy of
+  the payload, made where the arm starts, as the AST emitter does. A struct,
+  tuple, or array holding a union at any depth lives in memory, is built member
+  by member, and crosses calls as its words (`u64` each, a `u32` for a last
+  half word; by address above 16 bytes), like a union on its own. Functions
+  left on the AST emitter for `union` across the `bench` roots, package
+  benchmarks, and demos fall from 61 to 0. Machine code shrinks 9.3% for the
+  `json` benchmark, 7.3% for the `json-parse-file` demo, and 1.7% for the
+  regex benchmark; the `json` benchmark runs about 14% faster (0.75 s to
+  0.65 s, three runs). `tests/ir-diff.sh` now switches on unions and keeps them
+  in a struct member and an array.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

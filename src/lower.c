@@ -17,15 +17,17 @@
 // A struct, tuple, or array is its scalar leaves (ir_leaves): a local is one
 // variable per leaf, and a call passes and returns leaves, which the target
 // maps onto its ABI. A local whose storage something needs holds its leaves in
-// a slot, as does one holding an array, whose elements an index addresses. An
+// a slot, as does one holding an array, whose elements an index addresses, or a
+// union, whose payload lives in memory (its leaves are then its words, as a
+// union's own). An
 // aggregate of over 16 leaves is never split: it is copied in memory, and a
 // parameter of it arrives by address, as AAPCS64 passes it.
 //
 // A function that uses anything outside the covered subset is not lowered;
-// the AST emitter compiles it (migration steps 1 to 3d1: scalar code, floats,
+// the AST emitter compiles it (migration steps 1 to 3d2: scalar code, floats,
 // pointers, globals, calls, structs, tuples, arrays, Error values, and
 // strings, slices, and arrays with their indexing, slicing, and debug bounds
-// checks, inline calls, switch on a scalar, defer, and tagged unions as values).
+// checks, inline calls, switch on a scalar, defer, and tagged unions as values and in switches).
 #include "ir.h"
 #include "backend.h"
 
@@ -175,23 +177,31 @@ static int is_agg(SType* t) {
     return t && (t->kind == SK_STRUCT || t->kind == SK_TUPLE || t->kind == SK_ARRAY || is_union(t) || is_view(t));
 }
 
-// Whether t holds an array: a variable of it lives in memory, where an
-// element's index addresses it.
+// Whether t holds an array or a union member: a variable of it lives in
+// memory, where an element's index or a union's payload addresses it.
 static int has_array(SType* t) {
     t = unwrap(t);
     if (!t) return 0;
     if (t->kind == SK_ARRAY) return 1;
     if (t->kind != SK_STRUCT && t->kind != SK_TUPLE) return 0;
-    for (int i = 0; i < t->nfields; i++) if (has_array(t->fields[i].t)) return 1;
+    for (int i = 0; i < t->nfields; i++) if (has_array(t->fields[i].t) || is_union(t->fields[i].t)) return 1;
     return 0;
 }
+
+// An aggregate holding a union in a member: never split, its leaves are its
+// words (like a union's), and a literal of it is built member by member.
+static int has_union(SType* t) { return ir_holds_union(t); }
 
 // An aggregate of over IR_MAX_LEAVES leaves: never split, it stays in memory
 // and travels by address (AAPCS64 passes it so, as a copy).
 static int is_big(SType* t) {
-    if (is_union(t)) return sema_size(unwrap(t)) > 16;
+    if (is_union(t) || has_union(t)) return sema_size(unwrap(t)) > 16;
     return is_agg(t) && ir_leaf_count(t) > IR_MAX_LEAVES;
 }
+
+// An aggregate stored member by member, never as leaves: too big, or holding a
+// union.
+static int by_parts(SType* t) { return is_big(t) || has_union(t); }
 
 static int in_memory(SType* t) { return is_union(t) || (is_agg(t) && (has_array(t) || is_big(t))); }
 
@@ -1726,6 +1736,13 @@ static void field_leaves(Lw* l, Node* x, Agg* out) {
     if (!bt || bt->kind != SK_STRUCT) unsupported(l, bt ? type_why(bt) : "field access");
     int fi = find_field(bt, x->str, x->len);
     if (fi < 0) unsupported(l, "field access");
+    if (has_union(bt)) { // its words, not its members': stored, then the field read
+        covered(l, bt);
+        int slot = new_slot(l, bt);
+        store_value(l, x->a, bt, slot, 0);
+        place_get(l, (Place){ -1, slot, (int32_t)field_off(bt, fi), 0, bt->fields[fi].t }, 0, out);
+        return;
+    }
     Agg b;
     value(l, x->a, node_ty(x->a), &b);
     int at = leaf_index(l, bt, fi);
@@ -2082,7 +2099,7 @@ static void store_value(Lw* l, Node* x, SType* t, int dst, int32_t off) {
         }
     }
     if (((x->kind == N_STRUCTLIT && u && u->kind == SK_STRUCT) || (x->kind == N_TUPLE_E && u && u->kind == SK_TUPLE)) &&
-        is_big(t)) {
+        by_parts(t)) {
         int positional = x->kind == N_TUPLE_E || (x->nkids > 0 && x->kids[0]->str == NULL);
         if (x->nkids != u->nfields) unsupported(l, "field initializer"); // sema supplies every field
         for (int i = 0; i < x->nkids; i++) {
@@ -2279,6 +2296,13 @@ static void value(Lw* l, Node* x, SType* t, Agg* out) {
             return;
         }
     }
+    if (has_union(t) && (x->kind == N_STRUCTLIT || x->kind == N_TUPLE_E || x->kind == N_ARRAYLIT)) {
+        covered(l, t); // built in a stack object, then read as leaves
+        int slot = new_slot(l, t);
+        store_value(l, x, t, slot, 0);
+        place_get(l, (Place){ -1, slot, 0, 0, t }, 0, out);
+        return;
+    }
     switch (x->kind) {
     case N_STRUCTLIT: case N_TUPLE_E:
         literal_agg(l, x, t, out);
@@ -2381,6 +2405,14 @@ static void move_place(Lw* l, Place dst, Place src) {
     place_put(l, dst, &a, 0);
 }
 
+// The place of new binder (N_PARAM) b: its SSA variable, or its memory.
+static Place binder_place(Lw* l, Node* b) {
+    Sym* bs = node_sym(b);
+    if (!bs) unsupported(l, "unresolved binder");
+    int var = var_of(l, bs);
+    return l->home[var] == -1 ? (Place){ var, -1, 0, 0, bs->type } : (Place){ -1, var_addr(l, var), 0, 0, bs->type };
+}
+
 // Tuple destructuring (Errors #12): the right side once, then each member
 // into a new binder (N_PARAM) or an existing place, in order. A tuple of over
 // 16 leaves is stored whole first, then its members copied out.
@@ -2388,7 +2420,7 @@ static void destructure(Lw* l, Node** kids, int n, Node* rhs) {
     SType* tt = node_ty(rhs);
     SType* u = unwrap(tt);
     if (!u || u->kind != SK_TUPLE || u->nfields != n) unsupported(l, "destructuring");
-    if (is_big(tt)) {
+    if (by_parts(tt)) {
         covered(l, tt);
         int slot = new_slot(l, tt);
         store_value(l, rhs, tt, slot, 0);
@@ -2396,10 +2428,7 @@ static void destructure(Lw* l, Node** kids, int n, Node* rhs) {
             Place src = { -1, slot, (int32_t)field_off(u, i), 0, u->fields[i].t };
             Place dst;
             if (kids[i]->kind == N_PARAM) {
-                Sym* bs = node_sym(kids[i]);
-                if (!bs) unsupported(l, "unresolved binder");
-                int var = var_of(l, bs);
-                dst = l->home[var] == -1 ? (Place){ var, -1, 0, 0, bs->type } : (Place){ -1, var_addr(l, var), 0, 0, bs->type };
+                dst = binder_place(l, kids[i]);
             } else {
                 dst = place(l, kids[i]);
             }
@@ -2717,15 +2746,44 @@ static void for_loop(Lw* l, Node* s) {
     enter(l, exit);
 }
 
+// The payload binders of a union switch's case c, each a copy of its variant's
+// payload at addr.
+static void union_binders(Lw* l, Node* c, SType* ut, int addr) {
+    for (int j = 0; j < c->nkids; j++) {
+        Node* pat = c->kids[j];
+        if (pat->kind != N_VARPAT || !pat->b) continue;
+        int vi = (int)pat->ival;
+        SType* pt = vi >= 0 && vi < ut->nfields ? ut->fields[vi].t : NULL;
+        if (!pt) continue;
+        Place src = { -1, addr, (int32_t)sema_union_payload_off(ut), 0, pt };
+        move_place(l, binder_place(l, pat->b), src);
+    }
+}
+
 // switch on a scalar (Conditions #2): the scrutinee once, then each pattern in
 // source order against it, a chain of branches to the first matching case, else
 // to the default or past the switch. A case ends past the switch, or, when its
 // last statement is `fallthrough`, in the next case. Each branch tests "not
 // equal" toward the next test, so the chain lays out ahead of the bodies. A
 // plain `break` still names the nearest loop, so a switch pushes no target.
+//
+// On a union the scrutinee is its tag, loaded once from the union's address, a
+// pattern is a variant's index, and an arm's binder is a copy of the payload
+// made where the arm is entered.
+static Place binder_place(Lw* l, Node* binder);
+static void move_place(Lw* l, Place dst, Place src);
+
 static void switch_stmt(Lw* l, Node* s) {
-    IrType t = need_type(l, node_ty(s->a)); // a union scrutinee stops here
-    int v = expr(l, s->a, t);
+    SType* st = node_ty(s->a);
+    int un = is_union(st), addr = -1;
+    IrType t = un ? IT_I32 : need_type(l, st);
+    int v;
+    if (un) {
+        addr = union_addr(l, s->a, st);
+        v = load(l, IT_I32, addr, 0, 0);
+    } else {
+        v = expr(l, s->a, t);
+    }
     int n = s->nkids, ntests = 0, dflt = -1;
     for (int i = 0; i < n; i++) {
         if (s->kids[i]->flags & F_DEFAULT) dflt = i;
@@ -2742,7 +2800,7 @@ static void switch_stmt(Lw* l, Node* s) {
         for (int j = 0; j < c->nkids; j++) {
             int last = ++k == ntests;
             int next = last ? miss : new_block(l);
-            int p = expr(l, c->kids[j], t);
+            int p = un ? konst(l, IT_I32, c->kids[j]->ival) : expr(l, c->kids[j], t);
             terminate(l, IR_BR, emit2(l, IR_NE, IT_BOOL, v, p), next, body[i]);
             if (!last) {
                 seal(l, next);
@@ -2754,6 +2812,7 @@ static void switch_stmt(Lw* l, Node* s) {
         Node* b = s->kids[i]->b;
         seal(l, body[i]); // its tests, and the case before it if that falls through, have branched here
         enter(l, body[i]);
+        if (un && l->cur >= 0 && !(s->kids[i]->flags & F_DEFAULT)) union_binders(l, s->kids[i], unwrap(st), addr);
         if (l->cur >= 0) block(l, b);
         int falls = i + 1 < n && b->nkids && b->kids[b->nkids - 1]->kind == N_FALLTHROUGH;
         jump(l, falls ? body[i + 1] : end);

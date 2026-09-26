@@ -1,0 +1,120 @@
+/* A switch on a union loads the tag once and tests each variant's index; an
+ * arm's payload binder is a copy made where the arm is entered. A union inside
+ * a struct, tuple, or array is never split: the aggregate lives in memory and
+ * crosses calls as its words. */
+
+Point: struct { x: int, y: int }
+
+Shape: union { none, circle: f64, dot: Point, id: int }
+
+Wide: union { empty, one: f64, box: Point, pair: [3]i64 }
+
+Slot: struct { tag: int, shape: Shape }
+
+Deep: struct { head: Slot, tail: [2]Shape }
+
+Tiny: union { off, on }
+
+Flags: struct { a: Tiny, b: Tiny }
+
+area(s: Shape): int {
+    switch s {
+    Shape.none { return 0 }
+    Shape.circle(r: f64) { return int(r * 2.0) }
+    Shape.dot(p: Point) { return p.x + p.y }
+    default { return -1 }
+    }
+    return -2
+}
+
+kind(s: Shape): int {
+    r: int = 0
+    switch s {
+    Shape.none { r += 1 }
+    Shape.id(n: int) { r += n }
+    Shape.dot(p: Point) { r += p.y }
+    Shape.circle(f: f64) { r += 100 }
+    }
+    return r
+}
+
+wide(w: Wide): int {
+    switch w {
+    Wide.empty { return 0 }
+    Wide.one(f: f64) { return int(f) }
+    Wide.box(p: Point) { return p.x * p.y }
+    Wide.pair(a: [3]i64) { return int(a[0] + a[1] + a[2]) }
+    }
+    return -1
+}
+
+make(n: int): Shape {
+    if n == 0 { return Shape.none }
+    if n == 1 { return Shape.circle(1.5) }
+    if n == 2 { return Shape.dot(Point { x = 3, y = 4 }) }
+    return Shape.id(n)
+}
+
+slot(n: int): Slot {
+    return Slot { tag = n, shape = make(n) }
+}
+
+pick(s: Slot): int {
+    return s.tag + area(s.shape)
+}
+
+set(mut s: Slot, n: int) {
+    s.shape = make(n)
+    s.tag = n
+}
+
+flags(a: bool, b: bool): Flags {
+    f: Flags = Flags { a = Tiny.off, b = Tiny.off }
+    if a { f.a = Tiny.on }
+    if b { f.b = Tiny.on }
+    return f
+}
+
+both(f: Flags): bool {
+    return f.a == Tiny.on && f.b == Tiny.on
+}
+
+deep(n: int): Deep {
+    d: Deep = Deep { head = slot(n), tail = [make(n + 1), make(n + 2)] }
+    return d
+}
+
+total(d: Deep): int {
+    return pick(d.head) + area(d.tail[0]) + area(d.tail[1])
+}
+
+pair(n: int): (int, Shape) {
+    return (n, make(n))
+}
+
+main(): int {
+    if area(make(0)) != 0 || area(make(1)) != 3 || area(make(2)) != 7 || area(make(5)) != -1 { return 1 }
+    if kind(make(0)) != 1 || kind(make(1)) != 100 || kind(make(2)) != 4 || kind(make(9)) != 9 { return 2 }
+    if wide(Wide.box(Point { x = 2, y = 5 })) != 10 || wide(Wide.one(6.5)) != 6 || wide(Wide.empty) != 0 { return 3 }
+    if wide(Wide.pair([1, 2, 3])) != 6 { return 4 }
+    s: Slot = slot(2)
+    if pick(s) != 9 || pick(slot(1)) != 4 || pick(slot(0)) != 0 { return 5 }
+    set(mut s, 1)
+    if pick(s) != 4 { return 6 }
+    s.shape = Shape.id(8)
+    if area(s.shape) != -1 { return 7 }
+    if both(flags(true, false)) || !both(flags(true, true)) { return 8 }
+    d: Deep = deep(1)
+    if total(d) != 1 + 3 + 7 + -1 { return 9 }
+    d.tail[1] = Shape.circle(4.0)
+    if total(d) != 1 + 3 + 7 + 8 { return 10 }
+    t: (int, Shape) = pair(2)
+    n: int, sh: Shape = pair(2)
+    if n != 2 || area(sh) != 7 { return 11 }
+    a: [2]Shape = [make(2), Shape.none]
+    if area(a[0]) != 7 || area(a[1]) != 0 { return 12 }
+    i: int = 1
+    a[i] = make(1)
+    if area(a[i]) != 3 { return 13 }
+    return 0
+}

@@ -1,8 +1,8 @@
 /* A tagged union lives in memory: variant construction writes the payload and
  * then the i32 tag, a copy moves its bytes, and it crosses calls as the ABI
  * moves it, in words up to 16 bytes and by address above. == compares the tags
- * and then the active payload. A union inside another aggregate, and a switch
- * on one, keep the function on the AST emitter. */
+ * and then the active payload. A switch on one, and one inside another
+ * aggregate, are in union_members.ace. */
 
 Event: union { none, quit, key: u32, ratio: f32 }
 

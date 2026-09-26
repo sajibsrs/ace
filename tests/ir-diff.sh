@@ -23,7 +23,8 @@
 # variable, and computed patterns, several to a case, fallthrough, and
 # default) sit among the statements, and some functions defer notes of their
 # parameters, and tagged unions (one nested, one of over 16 bytes) are built,
-# passed, returned, copied, and compared. An asm statement keeps some functions
+# passed, returned, copied, compared, and switched on (with a binder and a
+# default), and held in a struct member and an array. An asm statement keeps some functions
 # on the AST emitter, so calls cross between the backends both ways. Each
 # program is built with two
 # compilers in debug and release, and requires identical output and exit
@@ -622,13 +623,23 @@ BEGIN {
     print "eqw(a: UW, b: UW): int {\n    return bit(a == b)\n}\n"
     print "new(a: UW, b: UW): int {\n    return bit(a != b)\n}\n"
     print "swap(e: UE, w: UW, mut o: UE): UW {\n    o = e\n    return w\n}\n"
+    print "UB: struct {\n    k: i64,\n    e: UE,\n    t: u8,\n}\n"
+    print "eval(e: UE): i64 {\n    switch e {\n    UE.none { return 1 }\n    UE.a(x: u8) { return i64(x) }\n    UE.b(x: i64) { return x * 3 }\n    default { return 9 }\n    }\n    return 0\n}\n"
+    print "evw(w: UW): i64 {\n    switch w {\n    UW.none { return 5 }\n    UW.w(x: i32) { return i64(x) }\n    UW.o(x: UE) { return eval(x) + 7 }\n    }\n    return 0\n}\n"
+    print "mkb(k: i64, v: i64): UB {\n    return UB { k = k, e = mk(k, v), t = u8(v) }\n}\n"
+    print "sumb(b: UB): i64 {\n    return b.k + eval(b.e) + i64(b.t)\n}\n"
+    print "echob(b: UB): UB {\n    return b\n}\n"
     print "table() {\n    for i: i64 in 0 .. 4 {\n        for j: i64 in 0 .. 4 {"
     print "            fmt.printf(\"%d\", eqe(mk(i, " pick(3) "), mk(j, " pick(3) ")))"
     print "            fmt.printf(\"%d\", nee(mk(i, 1), mk(j, 2)))"
     print "            fmt.printf(\"%d\", eqw(mkw(i, " pick(3) "), mkw(j, " pick(3) ")))"
     print "            fmt.printf(\"%d \", new(mkw(i, 2), mkw(j, 2)))"
     print "            o: UE = mk(0, 0)\n            w: UW = swap(mk(i, 1), mkw(j, 2), mut o)"
-    print "            fmt.printf(\"%d\", eqe(o, mk(i, 1)))\n            fmt.printf(\"%d\\n\", eqw(w, mkw(j, 2)))\n        }\n    }\n}\n"
+    print "            fmt.printf(\"%d\", eqe(o, mk(i, 1)))\n            fmt.printf(\"%d \", eqw(w, mkw(j, 2)))"
+    print "            fmt.printf(\"%d %d \", eval(mk(i, " pick(9) ")), evw(mkw(j, " pick(9) ")))"
+    print "            bb: UB = echob(mkb(i, " pick(9) "))\n            fmt.printf(\"%d \", sumb(bb))"
+    print "            bb.e = mk(j, 2)\n            fmt.printf(\"%d \", sumb(bb))"
+    print "            arr: [2]UE = [mk(i, 1), mk(j, 2)]\n            fmt.printf(\"%d\\n\", eval(arr[0]) + eval(arr[j & 1]))\n        }\n    }\n}\n"
     print "gd: i64\n"
     print "dnote(x: i64) {\n    gd = gd * 3 % 1000003 + x % 1000\n}\n"
     print "Fail: error\n"

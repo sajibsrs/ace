@@ -174,10 +174,23 @@ static int leaves_at(SType* t, uint32_t off, IrLeaf* out, int n, int max, SType*
     return n;
 }
 
-// A union, on its own, is its bytes as the ABI moves them: a u64 per full word
-// and a u32 for a last half word (a union's size is a multiple of its i32
-// tag's alignment). One inside another aggregate has no leaves.
-static int union_leaves(SType* t, IrLeaf* out, int max, SType** bad) {
+// Whether t holds a union in a struct, tuple, or array member (at any depth).
+int ir_holds_union(SType* t) {
+    SType* u = unwrap(t);
+    if (!u) return 0;
+    if (u->kind == SK_ARRAY) return unwrap(u->base) && (unwrap(u->base)->kind == SK_UNION || ir_holds_union(u->base));
+    if (u->kind != SK_STRUCT && u->kind != SK_TUPLE) return 0;
+    for (int i = 0; i < u->nfields; i++) {
+        SType* f = unwrap(u->fields[i].t);
+        if (f && (f->kind == SK_UNION || ir_holds_union(f))) return 1;
+    }
+    return 0;
+}
+
+// A union, or an aggregate holding one, is its bytes as the ABI moves them: a
+// u64 per full word and a u32 for a last half word (such a size is a multiple
+// of the union's i32 tag's alignment).
+static int word_leaves(SType* t, IrLeaf* out, int max, SType** bad) {
     uint32_t size = sema_size(t);
     int n = (int)(size / 8) + (size % 8 ? 1 : 0);
     if (n > max) {
@@ -188,16 +201,19 @@ static int union_leaves(SType* t, IrLeaf* out, int max, SType** bad) {
     return n;
 }
 
-int ir_leaves(SType* t, IrLeaf* out, SType** bad) {
+static int is_word_type(SType* t) {
     SType* u = unwrap(t);
-    if (u && u->kind == SK_UNION) return union_leaves(u, out, IR_MAX_LEAVES, bad);
+    return u && (u->kind == SK_UNION || ir_holds_union(u));
+}
+
+int ir_leaves(SType* t, IrLeaf* out, SType** bad) {
+    if (is_word_type(t)) return word_leaves(unwrap(t), out, IR_MAX_LEAVES, bad);
     return leaves_at(t, 0, out, 0, IR_MAX_LEAVES, bad);
 }
 
 int ir_leaf_count(SType* t) {
     SType* bad;
-    SType* u = unwrap(t);
-    if (u && u->kind == SK_UNION) return union_leaves(u, NULL, INT_MAX, &bad);
+    if (is_word_type(t)) return word_leaves(unwrap(t), NULL, INT_MAX, &bad);
     return leaves_at(t, 0, NULL, 0, INT_MAX, &bad);
 }
 

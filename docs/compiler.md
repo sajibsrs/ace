@@ -51,7 +51,11 @@ case ends at the join block or, after `fallthrough`, in the next case's block.
 A tagged union is memory: its construction stores the payload and then the
 `i32` tag, and it crosses a call as `u64` words (a `u32` for a last half word)
 up to 16 bytes, or by address above. `==` prints as a tag comparison and one
-block per payload variant. A `defer` prints as nothing at its statement beyond the evaluation of its
+block per payload variant. A struct, tuple, or array holding a union is memory
+too, and crosses a call as words the same way. A `switch` on a union loads the
+`i32` tag once and prints as a chain of `ne` comparisons against the variant
+indices; an arm's payload binder is a copy of the payload made where the arm
+starts. A `defer` prints as nothing at its statement beyond the evaluation of its
 arguments; its call appears again before every `ret`, last defer first.
 A function the IR does not cover yet is listed with the first
 construct that kept it out; the AST emitter compiles such functions, and the
