@@ -174,10 +174,30 @@ static int leaves_at(SType* t, uint32_t off, IrLeaf* out, int n, int max, SType*
     return n;
 }
 
-int ir_leaves(SType* t, IrLeaf* out, SType** bad) { return leaves_at(t, 0, out, 0, IR_MAX_LEAVES, bad); }
+// A union, on its own, is its bytes as the ABI moves them: a u64 per full word
+// and a u32 for a last half word (a union's size is a multiple of its i32
+// tag's alignment). One inside another aggregate has no leaves.
+static int union_leaves(SType* t, IrLeaf* out, int max, SType** bad) {
+    uint32_t size = sema_size(t);
+    int n = (int)(size / 8) + (size % 8 ? 1 : 0);
+    if (n > max) {
+        *bad = t;
+        return -1;
+    }
+    for (int k = 0; out && k < n; k++) out[k] = (IrLeaf){ (uint32_t)k * 8, (uint8_t)(size - (uint32_t)k * 8 >= 8 ? IT_U64 : IT_U32) };
+    return n;
+}
+
+int ir_leaves(SType* t, IrLeaf* out, SType** bad) {
+    SType* u = unwrap(t);
+    if (u && u->kind == SK_UNION) return union_leaves(u, out, IR_MAX_LEAVES, bad);
+    return leaves_at(t, 0, out, 0, IR_MAX_LEAVES, bad);
+}
 
 int ir_leaf_count(SType* t) {
     SType* bad;
+    SType* u = unwrap(t);
+    if (u && u->kind == SK_UNION) return union_leaves(u, NULL, INT_MAX, &bad);
     return leaves_at(t, 0, NULL, 0, INT_MAX, &bad);
 }
 

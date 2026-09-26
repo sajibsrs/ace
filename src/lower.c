@@ -22,10 +22,10 @@
 // parameter of it arrives by address, as AAPCS64 passes it.
 //
 // A function that uses anything outside the covered subset is not lowered;
-// the AST emitter compiles it (migration steps 1 to 3c: scalar code, floats,
+// the AST emitter compiles it (migration steps 1 to 3d1: scalar code, floats,
 // pointers, globals, calls, structs, tuples, arrays, Error values, and
 // strings, slices, and arrays with their indexing, slicing, and debug bounds
-// checks, inline calls, switch on a scalar, and defer).
+// checks, inline calls, switch on a scalar, defer, and tagged unions as values).
 #include "ir.h"
 #include "backend.h"
 
@@ -162,9 +162,17 @@ static int is_view(SType* t) {
     return t && (t->kind == SK_SLICE || (t->kind == SK_PRIM && t->prim == P_STRING));
 }
 
+// A tagged union: an i32 tag, then its payload, always in memory. On its own
+// it is 1 or 2 word-sized leaves, as the ABI moves it, or when over 16 bytes an
+// address (Compiler #5, migration step 3).
+static int is_union(SType* t) {
+    t = unwrap(t);
+    return t && t->kind == SK_UNION;
+}
+
 static int is_agg(SType* t) {
     t = unwrap(t);
-    return t && (t->kind == SK_STRUCT || t->kind == SK_TUPLE || t->kind == SK_ARRAY || is_view(t));
+    return t && (t->kind == SK_STRUCT || t->kind == SK_TUPLE || t->kind == SK_ARRAY || is_union(t) || is_view(t));
 }
 
 // Whether t holds an array: a variable of it lives in memory, where an
@@ -180,9 +188,12 @@ static int has_array(SType* t) {
 
 // An aggregate of over IR_MAX_LEAVES leaves: never split, it stays in memory
 // and travels by address (AAPCS64 passes it so, as a copy).
-static int is_big(SType* t) { return is_agg(t) && ir_leaf_count(t) > IR_MAX_LEAVES; }
+static int is_big(SType* t) {
+    if (is_union(t)) return sema_size(unwrap(t)) > 16;
+    return is_agg(t) && ir_leaf_count(t) > IR_MAX_LEAVES;
+}
 
-static int in_memory(SType* t) { return is_agg(t) && (has_array(t) || is_big(t)); }
+static int in_memory(SType* t) { return is_union(t) || (is_agg(t) && (has_array(t) || is_big(t))); }
 
 // A parameter in memory that AAPCS64 passes by address (over 16 bytes and no
 // floating aggregate): it lives at that address, the caller's copy.
@@ -762,6 +773,7 @@ static int is_self_call(Lw* l, Node* x) {
 static void value(Lw* l, Node* x, SType* t, Agg* out);
 static int new_slot(Lw* l, SType* t);
 static void store_value(Lw* l, Node* x, SType* t, int dst, int32_t off);
+static int union_equal(Lw* l, Node* x, int negate);
 static Place array_place(Lw* l, Node* x);
 
 // Arguments, flattened to leaves, and how they group into parts.
@@ -1649,6 +1661,8 @@ static int expr(Lw* l, Node* x, int want) {
             if (is_view(node_ty(o))) // Sequences #8: a null view has a null ptr
                 return emit2(l, (IrOp)op, IT_BOOL, view_leaf(l, o, 0), konst(l, IT_PTR, 0));
         }
+        if ((op == IR_EQ || op == IR_NE) && (is_union(node_ty(x->a)) || is_union(node_ty(x->b))))
+            return union_equal(l, x, op == IR_NE);
         if (is_compare(op)) {
             IrType ot = operand_type(l, x, -1);
             int a = expr(l, x->a, ot);
@@ -1909,6 +1923,122 @@ static int new_slot(Lw* l, SType* t) {
     return slot;
 }
 
+// --- tagged unions --------------------------------------------------------------------
+
+// The union a construction's or pattern's base names: a type, or a generic
+// union's stamp.
+static SType* union_of_base(Node* base) {
+    if (!base) return NULL;
+    if (base->kind == N_IDENT) {
+        Sym* ts = node_sym(base);
+        return ts && ts->kind == SYM_TYPE && is_union(ts->type) ? unwrap(ts->type) : NULL;
+    }
+    if (base->kind == N_INDEX) return is_union(node_ty(base)) ? unwrap(node_ty(base)) : NULL;
+    return NULL;
+}
+
+// Whether x builds a variant: `Event.quit`, or `Event.key(42)` with its
+// payload expression. Sets the variant and payload (NULL for none).
+static int union_ctor(Node* x, int* variant, Node** payload) {
+    *payload = NULL;
+    if (x->kind == N_FIELD_E && union_of_base(x->a)) {
+        *variant = (int)x->ival;
+        return 1;
+    }
+    if (x->kind != N_CALL || x->sym || !x->a || x->a->kind != N_FIELD_E || !union_of_base(x->a->a)) return 0;
+    *variant = (int)x->a->ival;
+    if (x->nkids == 1) *payload = x->kids[0]->kind == N_MUTARG ? x->kids[0]->a : x->kids[0];
+    return 1;
+}
+
+// Variant construction into memory at dst + off: the payload where it lives,
+// then the tag. The inactive bytes are left as they are.
+static void union_store(Lw* l, Node* x, SType* t, int dst, int32_t off) {
+    SType* ut = unwrap(t);
+    int vi;
+    Node* pay;
+    union_ctor(x, &vi, &pay);
+    if (vi < 0 || vi >= ut->nfields || (pay != NULL) != (ut->fields[vi].t != NULL)) unsupported(l, "union variant");
+    if (pay) store_value(l, pay, ut->fields[vi].t, dst, off + (int32_t)sema_union_payload_off(ut));
+    store(l, dst, off, konst(l, IT_I32, (uint64_t)vi), 0);
+}
+
+// The address of the union x names or builds.
+static int union_addr(Lw* l, Node* x, SType* t) {
+    int vi;
+    Node* pay;
+    if (!union_ctor(x, &vi, &pay) && is_place(x)) {
+        Place p = place(l, x);
+        if (p.var < 0) return place_address(l, p);
+    }
+    covered(l, t);
+    int slot = new_slot(l, t);
+    store_value(l, x, t, slot, 0);
+    return slot;
+}
+
+static int union_equal_at(Lw* l, SType* ut, int a, int b);
+
+// Whether the size bytes at a + off and b + off are equal, as the tag's payload
+// is compared: a nested union by its own rule, a float by value, the rest word
+// by word.
+static int payload_equal(Lw* l, SType* pt, int a, int b, int32_t off) {
+    SType* u = unwrap(pt);
+    if (u->kind == SK_UNION) return union_equal_at(l, u, offset_addr(l, a, off), offset_addr(l, b, off));
+    if (u->kind == SK_PRIM && (u->prim == P_F32 || u->prim == P_F64)) {
+        IrType ft = u->prim == P_F32 ? IT_F32 : IT_F64;
+        return cmp(l, IR_EQ, load(l, ft, a, off, 0), load(l, ft, b, off, 0));
+    }
+    uint32_t size = sema_size(pt);
+    if (size > 64) unsupported(l, "union payload comparison");
+    int acc = konst(l, IT_BOOL, 1);
+    for (uint32_t at = 0; at < size;) {
+        uint32_t rem = size - at, w = rem >= 8 ? 8 : rem >= 4 ? 4 : rem >= 2 ? 2 : 1;
+        IrType wt = w == 8 ? IT_U64 : w == 4 ? IT_U32 : w == 2 ? IT_U16 : IT_U8;
+        int c = cmp(l, IR_EQ, load(l, wt, a, off + (int32_t)at, 0), load(l, wt, b, off + (int32_t)at, 0));
+        acc = emit2(l, IR_AND, IT_BOOL, acc, c);
+        at += w;
+    }
+    return acc;
+}
+
+// Whether the unions at a and b are equal: the tags, and when they match the
+// active payload (inactive bytes and padding are never compared).
+static int union_equal_at(Lw* l, SType* ut, int a, int b) {
+    int res = temp_var(l, IT_BOOL, konst(l, IT_BOOL, 0));
+    int join = new_block(l), same = new_block(l);
+    int ta = load(l, IT_I32, a, 0, 0), tb = load(l, IT_I32, b, 0, 0);
+    terminate(l, IR_BR, cmp(l, IR_EQ, ta, tb), same, join);
+    seal(l, same);
+    enter(l, same);
+    int32_t poff = (int32_t)sema_union_payload_off(ut);
+    for (int k = 0; k < ut->nfields; k++) {
+        if (!ut->fields[k].t) continue;
+        int yes = new_block(l), next = new_block(l);
+        terminate(l, IR_BR, cmp(l, IR_EQ, ta, konst(l, IT_I32, (uint64_t)k)), yes, next);
+        seal(l, yes);
+        enter(l, yes);
+        write_var(l, res, l->cur, payload_equal(l, ut->fields[k].t, a, b, poff));
+        jump(l, join);
+        seal(l, next);
+        enter(l, next);
+    }
+    write_var(l, res, l->cur, konst(l, IT_BOOL, 1)); // a payloadless variant
+    jump(l, join);
+    seal(l, join);
+    enter(l, join);
+    return read_var(l, res, join);
+}
+
+// x.a == x.b or x.a != x.b on unions.
+static int union_equal(Lw* l, Node* x, int negate) {
+    SType* t = node_ty(x->a);
+    if (!is_union(t)) t = node_ty(x->b);
+    int a = union_addr(l, x->a, t), b = union_addr(l, x->b, t);
+    int r = union_equal_at(l, unwrap(t), a, b);
+    return negate ? emit2(l, IR_NOT, IT_BOOL, r, -1) : r;
+}
+
 // x of type t into memory at dst + off: an array or struct literal member by
 // member, a place in memory by copying its bytes, anything else by its leaves.
 static void store_value(Lw* l, Node* x, SType* t, int dst, int32_t off) {
@@ -1942,6 +2072,14 @@ static void store_value(Lw* l, Node* x, SType* t, int dst, int32_t off) {
         copy_mem(l, at, 0, d, 0, 0, es);
         loop_end(l, &lp, i);
         return;
+    }
+    if (u && u->kind == SK_UNION) {
+        int vi;
+        Node* pay;
+        if (union_ctor(x, &vi, &pay)) {
+            union_store(l, x, t, dst, off);
+            return;
+        }
     }
     if (((x->kind == N_STRUCTLIT && u && u->kind == SK_STRUCT) || (x->kind == N_TUPLE_E && u && u->kind == SK_TUPLE)) &&
         is_big(t)) {
@@ -2127,6 +2265,17 @@ static void value(Lw* l, Node* x, SType* t, Agg* out) {
             out->n = 2;
             out->v[0] = place_address(l, array_place(l, x));
             out->v[1] = konst(l, IT_U64, at->count);
+            return;
+        }
+    }
+    if (is_union(t)) {
+        int vi;
+        Node* pay;
+        if (union_ctor(x, &vi, &pay)) { // built in a stack object, then read as leaves
+            covered(l, t);
+            int slot = new_slot(l, t);
+            union_store(l, x, t, slot, 0);
+            place_get(l, (Place){ -1, slot, 0, 0, t }, 0, out);
             return;
         }
     }

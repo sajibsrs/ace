@@ -1,0 +1,856 @@
+make(u32): {u64} {
+b0:
+    %0 = slot ptr 8, 4
+    %1 = slot ptr 8, 4
+    %2 = slot ptr 8, 4
+    %3 = param u32 0
+    %4 = const u32 0
+    %5 = eq bool %3, %4
+    br %5, b1, b2
+b1: ; preds b0
+    %7 = const i32 1
+    store [%2], %7
+    %9 = load u64 [%2]
+    ret %9
+b2: ; preds b0
+    %11 = const u32 1
+    %12 = eq bool %3, %11
+    br %12, b3, b4
+b3: ; preds b2
+    %14 = const f32 1.5
+    store [%1 + 4], %14
+    %16 = const i32 3
+    store [%1], %16
+    %18 = load u64 [%1]
+    ret %18
+b4: ; preds b2
+    store [%0 + 4], %3
+    %21 = const i32 2
+    store [%0], %21
+    %23 = load u64 [%0]
+    ret %23
+}
+
+echo({u64}): {u64} {
+b0:
+    %0 = slot ptr 8, 4
+    %1 = param u64 0
+    store [%0], %1
+    %3 = load u64 [%0]
+    ret %3
+}
+
+same({u64}, {u64}): bool {
+b0:
+    %0 = slot ptr 8, 4
+    %1 = slot ptr 8, 4
+    %2 = param u64 0
+    store [%1], %2
+    %4 = param u64 1
+    store [%0], %4
+    %6 = const bool false
+    %7 = load i32 [%1]
+    %8 = load i32 [%0]
+    %9 = eq bool %7, %8
+    br %9, b2, b1
+b1: ; preds b0, b3, b5, b6
+    %11 = phi bool [%6, b0], [%20, b3], [%27, b5], [%29, b6]
+    ret %11
+b2: ; preds b0
+    %13 = const i32 2
+    %14 = eq bool %7, %13
+    br %14, b3, b4
+b3: ; preds b2
+    %16 = const bool true
+    %17 = load u32 [%1 + 4]
+    %18 = load u32 [%0 + 4]
+    %19 = eq bool %17, %18
+    %20 = and bool %16, %19
+    jmp b1
+b4: ; preds b2
+    %22 = const i32 3
+    %23 = eq bool %7, %22
+    br %23, b5, b6
+b5: ; preds b4
+    %25 = load f32 [%1 + 4]
+    %26 = load f32 [%0 + 4]
+    %27 = eq bool %25, %26
+    jmp b1
+b6: ; preds b4
+    %29 = const bool true
+    jmp b1
+}
+
+differ({u64}, {u64}): bool {
+b0:
+    %0 = slot ptr 8, 4
+    %1 = slot ptr 8, 4
+    %2 = param u64 0
+    store [%1], %2
+    %4 = param u64 1
+    store [%0], %4
+    %6 = const bool false
+    %7 = load i32 [%1]
+    %8 = load i32 [%0]
+    %9 = eq bool %7, %8
+    br %9, b2, b1
+b1: ; preds b0, b3, b5, b6
+    %11 = phi bool [%6, b0], [%21, b3], [%28, b5], [%30, b6]
+    %12 = not bool %11
+    ret %12
+b2: ; preds b0
+    %14 = const i32 2
+    %15 = eq bool %7, %14
+    br %15, b3, b4
+b3: ; preds b2
+    %17 = const bool true
+    %18 = load u32 [%1 + 4]
+    %19 = load u32 [%0 + 4]
+    %20 = eq bool %18, %19
+    %21 = and bool %17, %20
+    jmp b1
+b4: ; preds b2
+    %23 = const i32 3
+    %24 = eq bool %7, %23
+    br %24, b5, b6
+b5: ; preds b4
+    %26 = load f32 [%1 + 4]
+    %27 = load f32 [%0 + 4]
+    %28 = eq bool %26, %27
+    jmp b1
+b6: ; preds b4
+    %30 = const bool true
+    jmp b1
+}
+
+copy(ptr, {u64}): void {
+b0:
+    %0 = slot ptr 8, 4
+    %1 = param ptr 0
+    %2 = param u64 1
+    store [%0], %2
+    %4 = load u64 [%0]
+    store [%1], %4
+    ret
+}
+
+wide(i64): {u64, u64} {
+b0:
+    %0 = slot ptr 16, 8
+    %1 = slot ptr 16, 8
+    %2 = slot ptr 16, 8
+    %3 = param i64 0
+    %4 = const i64 0
+    %5 = eq bool %3, %4
+    br %5, b1, b2
+b1: ; preds b0
+    %7 = const i32 0
+    store [%2], %7
+    %9 = load u64 [%2]
+    %10 = load u64 [%2 + 8]
+    ret %9, %10
+b2: ; preds b0
+    %12 = const i64 1
+    %13 = eq bool %3, %12
+    br %13, b3, b4
+b3: ; preds b2
+    %15 = const f64 2.5
+    store [%1 + 8], %15
+    %17 = const i32 1
+    store [%1], %17
+    %19 = load u64 [%1]
+    %20 = load u64 [%1 + 8]
+    ret %19, %20
+b4: ; preds b2
+    %22 = cast u64 %3
+    store [%0 + 8], %22
+    %24 = const i32 2
+    store [%0], %24
+    %26 = load u64 [%0]
+    %27 = load u64 [%0 + 8]
+    ret %26, %27
+}
+
+wide_same({u64, u64}, {u64, u64}): bool {
+b0:
+    %0 = slot ptr 16, 8
+    %1 = slot ptr 16, 8
+    %2 = param u64 0
+    %3 = param u64 1
+    store [%1], %2
+    store [%1 + 8], %3
+    %6 = param u64 2
+    %7 = param u64 3
+    store [%0], %6
+    store [%0 + 8], %7
+    %10 = const bool false
+    %11 = load i32 [%1]
+    %12 = load i32 [%0]
+    %13 = eq bool %11, %12
+    br %13, b2, b1
+b1: ; preds b0, b3, b5, b6
+    %15 = phi bool [%10, b0], [%22, b3], [%31, b5], [%33, b6]
+    ret %15
+b2: ; preds b0
+    %17 = const i32 1
+    %18 = eq bool %11, %17
+    br %18, b3, b4
+b3: ; preds b2
+    %20 = load f64 [%1 + 8]
+    %21 = load f64 [%0 + 8]
+    %22 = eq bool %20, %21
+    jmp b1
+b4: ; preds b2
+    %24 = const i32 2
+    %25 = eq bool %11, %24
+    br %25, b5, b6
+b5: ; preds b4
+    %27 = const bool true
+    %28 = load u64 [%1 + 8]
+    %29 = load u64 [%0 + 8]
+    %30 = eq bool %28, %29
+    %31 = and bool %27, %30
+    jmp b1
+b6: ; preds b4
+    %33 = const bool true
+    jmp b1
+}
+
+tiny(bool): {u32} {
+b0:
+    %0 = slot ptr 4, 4
+    %1 = slot ptr 4, 4
+    %2 = param bool 0
+    br %2, b1, b2
+b1: ; preds b0
+    %4 = const i32 1
+    store [%1], %4
+    %6 = load u32 [%1]
+    ret %6
+b2: ; preds b0
+    %8 = const i32 0
+    store [%0], %8
+    %10 = load u32 [%0]
+    ret %10
+}
+
+pair(i32): {u64} {
+b0:
+    %0 = slot ptr 8, 4
+    %1 = param i32 0
+    store [%0 + 4], %1
+    %3 = const i32 1
+    store [%0], %3
+    %5 = load u64 [%0]
+    ret %5
+}
+
+outer(i32): {u64, u32} {
+b0:
+    %0 = slot ptr 12, 4
+    %1 = slot ptr 12, 4
+    %2 = slot ptr 12, 4
+    %3 = param i32 0
+    %4 = const i32 0
+    %5 = eq bool %3, %4
+    br %5, b1, b2
+b1: ; preds b0
+    %7 = const i32 0
+    store [%2], %7
+    %9 = load u64 [%2]
+    %10 = load u32 [%2 + 8]
+    ret %9, %10
+b2: ; preds b0
+    %12 = const i32 1
+    %13 = eq bool %3, %12
+    br %13, b3, b4
+b3: ; preds b2
+    store [%1 + 4], %3
+    %16 = const i32 2
+    store [%1], %16
+    %18 = load u64 [%1]
+    %19 = load u32 [%1 + 8]
+    ret %18, %19
+b4: ; preds b2
+    %21 = cast u32 %3
+    %22 = call {1} make(%21)
+    %23 = proj u64 %22, 0
+    store [%0 + 4], %23
+    %25 = const i32 1
+    store [%0], %25
+    %27 = load u64 [%0]
+    %28 = load u32 [%0 + 8]
+    ret %27, %28
+}
+
+outer_same({u64, u32}, {u64, u32}): bool {
+b0:
+    %0 = slot ptr 12, 4
+    %1 = slot ptr 12, 4
+    %2 = param u64 0
+    %3 = param u32 1
+    store [%1], %2
+    store [%1 + 8], %3
+    %6 = param u64 2
+    %7 = param u32 3
+    store [%0], %6
+    store [%0 + 8], %7
+    %10 = const bool false
+    %11 = load i32 [%1]
+    %12 = load i32 [%0]
+    %13 = eq bool %11, %12
+    br %13, b2, b1
+b1: ; preds b0, b5, b11, b12
+    %15 = phi bool [%10, b0], [%32, b5], [%56, b11], [%58, b12]
+    ret %15
+b2: ; preds b0
+    %17 = const i32 1
+    %18 = eq bool %11, %17
+    br %18, b3, b4
+b3: ; preds b2
+    %20 = const u64 4
+    %21 = padd ptr %1, %20 * 1
+    %22 = const u64 4
+    %23 = padd ptr %0, %22 * 1
+    %24 = const bool false
+    %25 = load i32 [%21]
+    %26 = load i32 [%23]
+    %27 = eq bool %25, %26
+    br %27, b6, b5
+b4: ; preds b2
+    %29 = const i32 2
+    %30 = eq bool %11, %29
+    br %30, b11, b12
+b5: ; preds b3, b7, b9, b10
+    %32 = phi bool [%24, b3], [%41, b7], [%48, b9], [%50, b10]
+    jmp b1
+b6: ; preds b3
+    %34 = const i32 2
+    %35 = eq bool %25, %34
+    br %35, b7, b8
+b7: ; preds b6
+    %37 = const bool true
+    %38 = load u32 [%21 + 4]
+    %39 = load u32 [%23 + 4]
+    %40 = eq bool %38, %39
+    %41 = and bool %37, %40
+    jmp b5
+b8: ; preds b6
+    %43 = const i32 3
+    %44 = eq bool %25, %43
+    br %44, b9, b10
+b9: ; preds b8
+    %46 = load f32 [%21 + 4]
+    %47 = load f32 [%23 + 4]
+    %48 = eq bool %46, %47
+    jmp b5
+b10: ; preds b8
+    %50 = const bool true
+    jmp b5
+b11: ; preds b4
+    %52 = const bool true
+    %53 = load u32 [%1 + 4]
+    %54 = load u32 [%0 + 4]
+    %55 = eq bool %53, %54
+    %56 = and bool %52, %55
+    jmp b1
+b12: ; preds b4
+    %58 = const bool true
+    jmp b1
+}
+
+blob(i32): mem 32 {
+b0:
+    %0 = result ptr
+    %1 = param i32 0
+    %2 = const i32 0
+    %3 = eq bool %1, %2
+    br %3, b1, b2
+b1: ; preds b0
+    %5 = const i32 0
+    store [%0], %5
+    ret
+b2: ; preds b0
+    %8 = const i32 1
+    %9 = eq bool %1, %8
+    br %9, b3, b4
+b3: ; preds b2
+    store [%0 + 8], %1
+    %12 = const i32 2
+    store [%0], %12
+    ret
+b4: ; preds b2
+    %15 = const i64 1
+    %16 = const i64 2
+    %17 = const i64 3
+    store [%0 + 8], %15
+    store [%0 + 16], %16
+    store [%0 + 24], %17
+    %21 = const i32 1
+    store [%0], %21
+    ret
+}
+
+blob_ok(ptr): bool {
+b0:
+    %0 = param ptr 0
+    %1 = const bool true
+    ret %1
+}
+
+local(): bool {
+b0:
+    %0 = slot ptr 8, 4
+    %1 = slot ptr 8, 4
+    %2 = slot ptr 8, 4
+    %3 = slot ptr 8, 4
+    %4 = slot ptr 8, 4
+    %5 = const u32 5
+    %6 = call {1} make(%5)
+    %7 = proj u64 %6, 0
+    store [%4], %7
+    %9 = load u64 [%4]
+    store [%3], %9
+    %11 = const i32 1
+    store [%2], %11
+    %13 = load u64 [%2]
+    call copy(%4, %13)
+    %15 = load u64 [%3]
+    %16 = const u32 5
+    store [%1 + 4], %16
+    %18 = const i32 2
+    store [%1], %18
+    %20 = load u64 [%1]
+    %21 = call bool same(%15, %20)
+    br %21, b4, b2
+b1: ; preds b5
+    %23 = global ptr first
+    %24 = const bool false
+    %25 = load i32 [%23]
+    %26 = load i32 [%3]
+    %27 = eq bool %25, %26
+    br %27, b12, b11
+b2: ; preds b0, b5
+    %29 = const bool false
+    jmp b3
+b3: ; preds b11, b2
+    %31 = phi bool [%61, b11], [%29, b2]
+    ret %31
+b4: ; preds b0
+    %33 = const i32 1
+    store [%0], %33
+    %35 = const bool false
+    %36 = load i32 [%4]
+    %37 = load i32 [%0]
+    %38 = eq bool %36, %37
+    br %38, b6, b5
+b5: ; preds b4, b7, b9, b10
+    %40 = phi bool [%35, b4], [%49, b7], [%56, b9], [%58, b10]
+    br %40, b1, b2
+b6: ; preds b4
+    %42 = const i32 2
+    %43 = eq bool %36, %42
+    br %43, b7, b8
+b7: ; preds b6
+    %45 = const bool true
+    %46 = load u32 [%4 + 4]
+    %47 = load u32 [%0 + 4]
+    %48 = eq bool %46, %47
+    %49 = and bool %45, %48
+    jmp b5
+b8: ; preds b6
+    %51 = const i32 3
+    %52 = eq bool %36, %51
+    br %52, b9, b10
+b9: ; preds b8
+    %54 = load f32 [%4 + 4]
+    %55 = load f32 [%0 + 4]
+    %56 = eq bool %54, %55
+    jmp b5
+b10: ; preds b8
+    %58 = const bool true
+    jmp b5
+b11: ; preds b1, b13, b15, b16
+    %60 = phi bool [%24, b1], [%70, b13], [%77, b15], [%79, b16]
+    %61 = not bool %60
+    jmp b3
+b12: ; preds b1
+    %63 = const i32 2
+    %64 = eq bool %25, %63
+    br %64, b13, b14
+b13: ; preds b12
+    %66 = const bool true
+    %67 = load u32 [%23 + 4]
+    %68 = load u32 [%3 + 4]
+    %69 = eq bool %67, %68
+    %70 = and bool %66, %69
+    jmp b11
+b14: ; preds b12
+    %72 = const i32 3
+    %73 = eq bool %25, %72
+    br %73, b15, b16
+b15: ; preds b14
+    %75 = load f32 [%23 + 4]
+    %76 = load f32 [%3 + 4]
+    %77 = eq bool %75, %76
+    jmp b11
+b16: ; preds b14
+    %79 = const bool true
+    jmp b11
+}
+
+through(ptr): {u64} {
+b0:
+    %0 = param ptr 0
+    %1 = load.chk u64 [%0]
+    ret %1
+}
+
+main(): i64 {
+b0:
+    %0 = slot ptr 8, 4
+    %1 = slot ptr 12, 4
+    %2 = slot ptr 12, 4
+    %3 = slot ptr 32, 8
+    %4 = slot ptr 32, 8
+    %5 = slot ptr 32, 8
+    %6 = slot ptr 8, 4
+    %7 = slot ptr 8, 4
+    %8 = slot ptr 4, 4
+    %9 = slot ptr 4, 4
+    %10 = slot ptr 4, 4
+    %11 = slot ptr 4, 4
+    %12 = slot ptr 16, 8
+    %13 = slot ptr 8, 4
+    %14 = slot ptr 8, 4
+    %15 = slot ptr 8, 4
+    %16 = slot ptr 8, 4
+    %17 = slot ptr 8, 4
+    %18 = slot ptr 8, 4
+    %19 = const u32 3
+    %20 = call {1} make(%19)
+    %21 = proj u64 %20, 0
+    %22 = call {1} echo(%21)
+    %23 = proj u64 %22, 0
+    store [%18], %23
+    %25 = load u64 [%18]
+    %26 = const u32 3
+    store [%17 + 4], %26
+    %28 = const i32 2
+    store [%17], %28
+    %30 = load u64 [%17]
+    %31 = call bool same(%25, %30)
+    br %31, b2, b1
+b1: ; preds b0
+    %33 = const i64 1
+    call @__ace$registry_leaks()
+    ret %33
+b2: ; preds b0
+    %36 = load u64 [%18]
+    %37 = const u32 4
+    store [%16 + 4], %37
+    %39 = const i32 2
+    store [%16], %39
+    %41 = load u64 [%16]
+    %42 = call bool same(%36, %41)
+    br %42, b3, b5
+b3: ; preds b2, b5
+    %44 = const i64 2
+    call @__ace$registry_leaks()
+    ret %44
+b4: ; preds b5
+    %47 = const u32 1
+    %48 = call {1} make(%47)
+    %49 = proj u64 %48, 0
+    %50 = const f32 1.5
+    store [%14 + 4], %50
+    %52 = const i32 3
+    store [%14], %52
+    %54 = load u64 [%14]
+    %55 = call bool same(%49, %54)
+    br %55, b8, b6
+b5: ; preds b2
+    %57 = load u64 [%18]
+    %58 = const i32 1
+    store [%15], %58
+    %60 = load u64 [%15]
+    %61 = call bool differ(%57, %60)
+    br %61, b4, b3
+b6: ; preds b4, b8
+    %63 = const i64 3
+    call @__ace$registry_leaks()
+    ret %63
+b7: ; preds b8
+    %66 = const i64 1
+    %67 = call {2} wide(%66)
+    %68 = proj u64 %67, 0
+    %69 = proj u64 %67, 1
+    %70 = const f64 2.5
+    store [%12 + 8], %70
+    %72 = const i32 1
+    store [%12], %72
+    %74 = load u64 [%12]
+    %75 = load u64 [%12 + 8]
+    %76 = call bool wide_same(%68, %69, %74, %75)
+    br %76, b11, b9
+b8: ; preds b4
+    %78 = const u32 1
+    %79 = call {1} make(%78)
+    %80 = proj u64 %79, 0
+    %81 = const f32 2.5
+    store [%13 + 4], %81
+    %83 = const i32 3
+    store [%13], %83
+    %85 = load u64 [%13]
+    %86 = call bool same(%80, %85)
+    br %86, b6, b7
+b9: ; preds b7, b11
+    %88 = const i64 4
+    call @__ace$registry_leaks()
+    ret %88
+b10: ; preds b11
+    %91 = const i64 0
+    %92 = call {2} wide(%91)
+    %93 = proj u64 %92, 0
+    %94 = proj u64 %92, 1
+    %95 = const i64 1
+    %96 = call {2} wide(%95)
+    %97 = proj u64 %96, 0
+    %98 = proj u64 %96, 1
+    %99 = call bool wide_same(%93, %94, %97, %98)
+    br %99, b12, b14
+b11: ; preds b7
+    %101 = const i64 1
+    %102 = call {2} wide(%101)
+    %103 = proj u64 %102, 0
+    %104 = proj u64 %102, 1
+    %105 = const i64 2
+    %106 = call {2} wide(%105)
+    %107 = proj u64 %106, 0
+    %108 = proj u64 %106, 1
+    %109 = call bool wide_same(%103, %104, %107, %108)
+    br %109, b9, b10
+b12: ; preds b10, b14
+    %111 = const i64 5
+    call @__ace$registry_leaks()
+    ret %111
+b13: ; preds b14
+    %114 = const bool true
+    %115 = call {1} tiny(%114)
+    %116 = proj u32 %115, 0
+    store [%11], %116
+    %118 = const bool false
+    %119 = call {1} tiny(%118)
+    %120 = proj u32 %119, 0
+    store [%10], %120
+    %122 = const bool false
+    %123 = load i32 [%11]
+    %124 = load i32 [%10]
+    %125 = eq bool %123, %124
+    br %125, b19, b18
+b14: ; preds b10
+    %127 = const i64 0
+    %128 = call {2} wide(%127)
+    %129 = proj u64 %128, 0
+    %130 = proj u64 %128, 1
+    %131 = const i64 0
+    %132 = call {2} wide(%131)
+    %133 = proj u64 %132, 0
+    %134 = proj u64 %132, 1
+    %135 = call bool wide_same(%129, %130, %133, %134)
+    br %135, b13, b12
+b15: ; preds b18, b20
+    %137 = const i64 6
+    call @__ace$registry_leaks()
+    ret %137
+b16: ; preds b20
+    %140 = const i32 2
+    %141 = call {1} pair(%140)
+    %142 = proj u64 %141, 0
+    store [%7], %142
+    %144 = const i32 2
+    store [%6 + 4], %144
+    %146 = const i32 1
+    store [%6], %146
+    %148 = const bool false
+    %149 = load i32 [%7]
+    %150 = load i32 [%6]
+    %151 = eq bool %149, %150
+    br %151, b25, b24
+b17: ; preds b18
+    %153 = const bool false
+    %154 = call {1} tiny(%153)
+    %155 = proj u32 %154, 0
+    store [%9], %155
+    %157 = const i32 0
+    store [%8], %157
+    %159 = const bool false
+    %160 = load i32 [%9]
+    %161 = load i32 [%8]
+    %162 = eq bool %160, %161
+    br %162, b21, b20
+b18: ; preds b13, b19
+    %164 = phi bool [%122, b13], [%166, b19]
+    br %164, b15, b17
+b19: ; preds b13
+    %166 = const bool true
+    jmp b18
+b20: ; preds b17, b21
+    %168 = phi bool [%159, b17], [%171, b21]
+    %169 = not bool %168
+    br %169, b15, b16
+b21: ; preds b17
+    %171 = const bool true
+    jmp b20
+b22: ; preds b24
+    %173 = const i64 7
+    call @__ace$registry_leaks()
+    ret %173
+b23: ; preds b24
+    %176 = const i32 2
+    call.mem blob(%176, %5)
+    %178 = call bool blob_ok(%5)
+    br %178, b31, b28
+b24: ; preds b16, b26, b27
+    %180 = phi bool [%148, b16], [%190, b26], [%192, b27]
+    %181 = not bool %180
+    br %181, b22, b23
+b25: ; preds b16
+    %183 = const i32 1
+    %184 = eq bool %149, %183
+    br %184, b26, b27
+b26: ; preds b25
+    %186 = const bool true
+    %187 = load u32 [%7 + 4]
+    %188 = load u32 [%6 + 4]
+    %189 = eq bool %187, %188
+    %190 = and bool %186, %189
+    jmp b24
+b27: ; preds b25
+    %192 = const bool true
+    jmp b24
+b28: ; preds b23, b31, b30
+    %194 = const i64 8
+    call @__ace$registry_leaks()
+    ret %194
+b29: ; preds b30
+    %197 = const i32 3
+    %198 = call {2} outer(%197)
+    %199 = proj u64 %198, 0
+    %200 = proj u32 %198, 1
+    %201 = const u32 3
+    store [%2 + 8], %201
+    %203 = const i32 2
+    store [%2 + 4], %203
+    %205 = const i32 1
+    store [%2], %205
+    %207 = load u64 [%2]
+    %208 = load u32 [%2 + 8]
+    %209 = call bool outer_same(%199, %200, %207, %208)
+    br %209, b34, b32
+b30: ; preds b31
+    %211 = const i32 0
+    call.mem blob(%211, %3)
+    %213 = call bool blob_ok(%3)
+    br %213, b29, b28
+b31: ; preds b23
+    %215 = const i32 1
+    call.mem blob(%215, %4)
+    %217 = call bool blob_ok(%4)
+    br %217, b30, b28
+b32: ; preds b29, b34
+    %219 = const i64 11
+    call @__ace$registry_leaks()
+    ret %219
+b33: ; preds b34
+    %222 = const i32 1
+    %223 = call {2} outer(%222)
+    %224 = proj u64 %223, 0
+    %225 = proj u32 %223, 1
+    %226 = const i32 0
+    %227 = call {2} outer(%226)
+    %228 = proj u64 %227, 0
+    %229 = proj u32 %227, 1
+    %230 = call bool outer_same(%224, %225, %228, %229)
+    br %230, b35, b37
+b34: ; preds b29
+    %232 = const i32 3
+    %233 = call {2} outer(%232)
+    %234 = proj u64 %233, 0
+    %235 = proj u32 %233, 1
+    %236 = const i32 4
+    %237 = call {2} outer(%236)
+    %238 = proj u64 %237, 0
+    %239 = proj u32 %237, 1
+    %240 = call bool outer_same(%234, %235, %238, %239)
+    br %240, b32, b33
+b35: ; preds b33, b37
+    %242 = const i64 12
+    call @__ace$registry_leaks()
+    ret %242
+b36: ; preds b37
+    %245 = call bool local()
+    br %245, b39, b38
+b37: ; preds b33
+    %247 = const i32 1
+    %248 = call {2} outer(%247)
+    %249 = proj u64 %248, 0
+    %250 = proj u32 %248, 1
+    %251 = const i32 1
+    store [%1 + 4], %251
+    %253 = const i32 2
+    store [%1], %253
+    %255 = load u64 [%1]
+    %256 = load u32 [%1 + 8]
+    %257 = call bool outer_same(%249, %250, %255, %256)
+    br %257, b36, b35
+b38: ; preds b36
+    %259 = const i64 9
+    call @__ace$registry_leaks()
+    ret %259
+b39: ; preds b36
+    %262 = call {1} through(%18)
+    %263 = proj u64 %262, 0
+    store [%0], %263
+    %265 = const bool false
+    %266 = load i32 [%0]
+    %267 = load i32 [%18]
+    %268 = eq bool %266, %267
+    br %268, b43, b42
+b40: ; preds b42
+    %270 = const i64 10
+    call @__ace$registry_leaks()
+    ret %270
+b41: ; preds b42
+    %273 = const i64 0
+    call @__ace$registry_leaks()
+    ret %273
+b42: ; preds b39, b44, b46, b47
+    %276 = phi bool [%265, b39], [%286, b44], [%293, b46], [%295, b47]
+    %277 = not bool %276
+    br %277, b40, b41
+b43: ; preds b39
+    %279 = const i32 2
+    %280 = eq bool %266, %279
+    br %280, b44, b45
+b44: ; preds b43
+    %282 = const bool true
+    %283 = load u32 [%0 + 4]
+    %284 = load u32 [%18 + 4]
+    %285 = eq bool %283, %284
+    %286 = and bool %282, %285
+    jmp b42
+b45: ; preds b43
+    %288 = const i32 3
+    %289 = eq bool %266, %288
+    br %289, b46, b47
+b46: ; preds b45
+    %291 = load f32 [%0 + 4]
+    %292 = load f32 [%18 + 4]
+    %293 = eq bool %291, %292
+    jmp b42
+b47: ; preds b45
+    %295 = const bool true
+    jmp b42
+}
+

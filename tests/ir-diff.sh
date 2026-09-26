@@ -22,7 +22,8 @@
 # expand in place, with every parameter form. Scalar switches (literal,
 # variable, and computed patterns, several to a case, fallthrough, and
 # default) sit among the statements, and some functions defer notes of their
-# parameters. An asm statement keeps some functions
+# parameters, and tagged unions (one nested, one of over 16 bytes) are built,
+# passed, returned, copied, and compared. An asm statement keeps some functions
 # on the AST emitter, so calls cross between the backends both ways. Each
 # program is built with two
 # compilers in debug and release, and requires identical output and exit
@@ -611,6 +612,23 @@ BEGIN {
     print "\nS: struct {\n    a: i64,\n    b: u8,\n}\n"
     print "gs: S = S { a = " literal("i64") ", b = " literal("u8") " }\n"
     print "mut S.bump(n: i64): int {\n    self.a += n & 7\n    self.b = u8(self.a & 63)\n    return int(self.b)\n}\n"
+    print "UE: union { none, a: u8, b: i64, c: f32 }\n"
+    print "UW: union { none, w: i32, o: UE }\n"
+    print "mk(k: i64, v: i64): UE {\n    if k == 0 { return UE.none }\n    if k == 1 { return UE.a(u8(v)) }\n    if k == 2 { return UE.b(v) }\n    return UE.c(f32(v))\n}\n"
+    print "mkw(k: i64, v: i64): UW {\n    if k == 0 { return UW.none }\n    if k == 1 { return UW.w(i32(v)) }\n    return UW.o(mk(k, v))\n}\n"
+    print "bit(b: bool): int {\n    if b { return 1 }\n    return 0\n}\n"
+    print "eqe(a: UE, b: UE): int {\n    return bit(a == b)\n}\n"
+    print "nee(a: UE, b: UE): int {\n    return bit(a != b)\n}\n"
+    print "eqw(a: UW, b: UW): int {\n    return bit(a == b)\n}\n"
+    print "new(a: UW, b: UW): int {\n    return bit(a != b)\n}\n"
+    print "swap(e: UE, w: UW, mut o: UE): UW {\n    o = e\n    return w\n}\n"
+    print "table() {\n    for i: i64 in 0 .. 4 {\n        for j: i64 in 0 .. 4 {"
+    print "            fmt.printf(\"%d\", eqe(mk(i, " pick(3) "), mk(j, " pick(3) ")))"
+    print "            fmt.printf(\"%d\", nee(mk(i, 1), mk(j, 2)))"
+    print "            fmt.printf(\"%d\", eqw(mkw(i, " pick(3) "), mkw(j, " pick(3) ")))"
+    print "            fmt.printf(\"%d \", new(mkw(i, 2), mkw(j, 2)))"
+    print "            o: UE = mk(0, 0)\n            w: UW = swap(mk(i, 1), mkw(j, 2), mut o)"
+    print "            fmt.printf(\"%d\", eqe(o, mk(i, 1)))\n            fmt.printf(\"%d\\n\", eqw(w, mkw(j, 2)))\n        }\n    }\n}\n"
     print "gd: i64\n"
     print "dnote(x: i64) {\n    gd = gd * 3 % 1000003 + x % 1000\n}\n"
     print "Fail: error\n"
@@ -698,6 +716,7 @@ BEGIN {
             }
         }
     }
+    print "    table()"
     print "    fmt.printf(\"%d\\n\", gd)"
     print "    fmt.printf(\"%d %d\\n\", int(gs.a), int(gs.b))"
     print "    for k: usize in 0 .. 24 { fmt.printf(\"%d \", int(gbuf[k])) }"

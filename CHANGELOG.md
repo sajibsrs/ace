@@ -271,6 +271,22 @@ current normative rules, and Git preserves patch-level detail.
   value they use. `pkg/regex` sheds 2.0 KB of machine code and the
   `http-simple-server` demo 0.9 KB; runtime is unchanged, the cleanup paths
   being cold. `tests/ir-diff.sh` now defers notes of parameters.
+- Lowered tagged unions as values to IR (IR migration step 3d1). A union lives
+  in memory, a slot or the caller's address, and is never split into SSA
+  values; on its own its leaves are the words the ABI moves, `u64` for each
+  full word and a `u32` for a last half word, and one of over 16 bytes travels
+  by address like a large aggregate. `Event.key(42)` stores the payload where
+  it lives, then the `i32` tag; `Event.quit` stores only the tag. Assignment
+  and copies move bytes, and `==`/`!=` compare the tags, then the active
+  payload as the AST emitter does (a nested union by its own rule, a float by
+  value, anything else word by word, up to 64 bytes). A union inside a struct,
+  tuple, or array, and `switch` on a union, keep the function on the AST
+  emitter (step 3d2). Functions left on the AST emitter for `union` across
+  the `bench` roots, package benchmarks, and demos fall from 121 to 61.
+  `pkg/regex` sheds 2.9 KB of machine code (4.2%), the `http-simple` demos
+  0.7 KB, and the `json` benchmark 48 bytes; the regex benchmark's runtime is
+  unchanged within noise. `tests/ir-diff.sh` now builds, passes, returns, copies, and compares
+  unions.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

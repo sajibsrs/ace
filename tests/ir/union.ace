@@ -1,0 +1,111 @@
+/* A tagged union lives in memory: variant construction writes the payload and
+ * then the i32 tag, a copy moves its bytes, and it crosses calls as the ABI
+ * moves it, in words up to 16 bytes and by address above. == compares the tags
+ * and then the active payload. A union inside another aggregate, and a switch
+ * on one, keep the function on the AST emitter. */
+
+Event: union { none, quit, key: u32, ratio: f32 }
+
+Wide: union { empty, one: f64, count: u64 }
+
+Outer: union { none, inner: Event, n: i32 }
+
+Tiny: union { off, on }
+
+Pair[T]: union { none, one: T }
+
+Big: struct { a: i64, b: i64, c: i64 }
+
+Blob: union { none, data: Big, code: i32 }
+
+first: Event = Event.key(7)
+
+make(n: u32): Event {
+    if n == 0 { return Event.quit }
+    if n == 1 { return Event.ratio(1.5) }
+    return Event.key(n)
+}
+
+echo(e: Event): Event {
+    return e
+}
+
+same(a: Event, b: Event): bool {
+    return a == b
+}
+
+differ(a: Event, b: Event): bool {
+    return a != b
+}
+
+copy(mut into: Event, from: Event) {
+    into = from
+}
+
+wide(n: i64): Wide {
+    if n == 0 { return Wide.empty }
+    if n == 1 { return Wide.one(2.5) }
+    return Wide.count(u64(n))
+}
+
+wide_same(a: Wide, b: Wide): bool {
+    return a == b
+}
+
+tiny(on: bool): Tiny {
+    if on { return Tiny.on }
+    return Tiny.off
+}
+
+pair(x: i32): Pair[i32] {
+    return Pair[i32].one(x)
+}
+
+outer(n: i32): Outer {
+    if n == 0 { return Outer.none }
+    if n == 1 { return Outer.n(n) }
+    return Outer.inner(make(u32(n)))
+}
+
+outer_same(a: Outer, b: Outer): bool {
+    return a == b
+}
+
+blob(n: i32): Blob {
+    if n == 0 { return Blob.none }
+    if n == 1 { return Blob.code(n) }
+    return Blob.data(Big { a = 1, b = 2, c = 3 })
+}
+
+blob_ok(a: Blob): bool {
+    return true
+}
+
+local(): bool {
+    e: Event = make(5)
+    f: Event
+    f = e
+    copy(mut e, Event.quit)
+    return same(f, Event.key(5)) && e == Event.quit && first != f
+}
+
+through(p: *Event): Event {
+    return *p
+}
+
+main(): int {
+    a: Event = echo(make(3))
+    if !same(a, Event.key(3)) { return 1 }
+    if same(a, Event.key(4)) || !differ(a, Event.quit) { return 2 }
+    if !same(make(1), Event.ratio(1.5)) || same(make(1), Event.ratio(2.5)) { return 3 }
+    if !wide_same(wide(1), Wide.one(2.5)) || wide_same(wide(1), wide(2)) { return 4 }
+    if wide_same(wide(0), wide(1)) || !wide_same(wide(0), wide(0)) { return 5 }
+    if tiny(true) == tiny(false) || tiny(false) != Tiny.off { return 6 }
+    if pair(2) != Pair[i32].one(2) { return 7 }
+    if !blob_ok(blob(2)) || !blob_ok(blob(1)) || !blob_ok(blob(0)) { return 8 }
+    if !outer_same(outer(3), Outer.inner(Event.key(3))) || outer_same(outer(3), outer(4)) { return 11 }
+    if outer_same(outer(1), outer(0)) || !outer_same(outer(1), Outer.n(1)) { return 12 }
+    if !local() { return 9 }
+    if through(&a) != a { return 10 }
+    return 0
+}
