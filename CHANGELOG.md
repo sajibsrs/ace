@@ -140,6 +140,15 @@ current normative rules, and Git preserves patch-level detail.
   from 149 to 129, those kept out by a string or slice from 75 to 16, and
   `bench/core/calls` `main` now lowers. `tests/ir-diff.sh` also generates
   strings and generic calls.
+- Shared a loop phi's AArch64 location with the value it carries around the
+  back edge (IR migration step 2c2b). Allocation gives each value one
+  interval in block order, so a phi also used after its loop spans the whole
+  body and its back-edge value took a temporary, copied back each iteration.
+  When the phi is dead from that value's definition on and the value is not
+  live into the phi's block, the value now joins the phi's interval and is
+  computed in its register or slot, taking the copy off the loop-carried
+  chain: the call benchmark's float accumulation runs 40% faster and its
+  24-byte struct loop 2% faster; other benchmarks are unchanged.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

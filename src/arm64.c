@@ -61,7 +61,10 @@ typedef struct {
     uint8_t*  fused;   // emitted by its only user
     uint8_t*  madd;    // ADD/SUB fused with a MUL operand: 1 + its index
     int*      start, *end;
+    int*      ufirst;  // value -> its first use in uses; a remat value has none
+    struct Use* uses;  // by value
     int*      hint, *phi_of;
+    int*      with;    // value -> the phi it shares a location with, or -1
     int*      calls;   // call use positions, ascending
     int       ncalls;
     uint32_t  out;     // outgoing bytes at [sp]: stack arguments, then call memory
@@ -728,7 +731,36 @@ static void count_uses(A64* a) {
         }
 }
 
-typedef struct { int v, block, pos; } Use;
+typedef struct Use { int v, block, pos; } Use;
+
+// Stamp tag on each block where v is live in (never its own block), walking
+// up from each use to the definition; returns the furthest position, in
+// layout order, where v is used or live out of a block.
+static int live_in(A64* a, int v, int* stamp, int* stack, int tag) {
+    IrFunc* fn = a->fn;
+    int d = fn->ins[v].block, e = a->start[v];
+    for (int i = a->ufirst[v]; i < a->ufirst[v + 1]; i++) {
+        Use* u = &a->uses[i];
+        if (u->pos > e) e = u->pos;
+        int b = u->block;
+        if (b == d || stamp[b] == tag) continue;
+        int sp = 0;
+        stamp[b] = tag;
+        stack[sp++] = b;
+        while (sp) { // live in at b: live out of each predecessor
+            IrBlock* bb = &fn->blocks[stack[--sp]];
+            for (int p = 0; p < bb->npreds; p++) {
+                int q = bb->preds[p];
+                if (2 * a->blast[q] + 1 > e) e = 2 * a->blast[q] + 1;
+                if (q != d && stamp[q] != tag) {
+                    stamp[q] = tag;
+                    stack[sp++] = q;
+                }
+            }
+        }
+    }
+    return e;
+}
 
 // The end of each value's interval: the furthest position, in layout order,
 // where it is used or live out of a block.
@@ -782,32 +814,12 @@ static void liveness(A64* a) {
     for (int i = 0; i < nu; i++) by[first[uses[i].v] + fill[uses[i].v]++] = uses[i];
     free(uses);
     free(fill);
+    a->ufirst = first;
+    a->uses = by;
     int* stamp = xcalloc((size_t)fn->nblocks, sizeof(int));
     int* stack = xcalloc((size_t)fn->nblocks, sizeof(int));
-    for (int v = 0; v < nv; v++) {
-        int d = fn->ins[v].block, e = a->end[v];
-        for (int i = first[v]; i < first[v + 1]; i++) {
-            if (by[i].pos > e) e = by[i].pos;
-            int b = by[i].block;
-            if (b == d || stamp[b] == v + 1) continue;
-            int sp = 0;
-            stamp[b] = v + 1;
-            stack[sp++] = b;
-            while (sp) { // live in at b: live out of each predecessor
-                IrBlock* bb = &fn->blocks[stack[--sp]];
-                for (int p = 0; p < bb->npreds; p++) {
-                    int q = bb->preds[p];
-                    if (2 * a->blast[q] + 1 > e) e = 2 * a->blast[q] + 1;
-                    if (q != d && stamp[q] != v + 1) {
-                        stamp[q] = v + 1;
-                        stack[sp++] = q;
-                    }
-                }
-            }
-        }
-        a->end[v] = e;
-    }
-    free(stamp); free(stack); free(first); free(by);
+    for (int v = 0; v < nv; v++) a->end[v] = live_in(a, v, stamp, stack, v + 1);
+    free(stamp); free(stack);
 }
 
 // Does v's interval contain a call it must survive?
@@ -863,6 +875,48 @@ static void hints(A64* a) {
     }
 }
 
+// Share a phi's location with an operand defined after it, typically the
+// value a loop carries around its back edge, when their intervals overlap only
+// as hulls: the phi is dead from the operand's definition on (neither used
+// after it in its block nor live out of it) and the operand is not live into
+// the phi's block. The pair is allocated as the phi, over both intervals, so
+// the operand is computed where the phi lives and its phi move vanishes.
+static void coalesce(A64* a) {
+    IrFunc* fn = a->fn;
+    a->with = xcalloc((size_t)fn->nins, sizeof(int));
+    for (int v = 0; v < fn->nins; v++) a->with[v] = -1;
+    int* stamp = xcalloc((size_t)fn->nblocks, sizeof(int));
+    int* stack = xcalloc((size_t)fn->nblocks, sizeof(int));
+    int tag = 0;
+    for (int b = 0; b < fn->nblocks; b++) {
+        IrBlock* bb = &fn->blocks[b];
+        for (int i = 0; i < bb->nins && fn->ins[bb->ins[i]].op == IR_PHI; i++) {
+            int p = bb->ins[i];
+            if (!allocatable(a, p)) continue;
+            int shared = 0;
+            for (int k = 0; k < fn->ins[p].nargs && !shared; k++) {
+                int v = fn->ins[p].args[k];
+                if (!allocatable(a, v) || fn->ins[v].op == IR_PHI || a->with[v] >= 0 ||
+                    a->start[v] <= a->start[p] || a->start[v] > a->end[p]) // disjoint: a hint suffices
+                    continue;
+                int bv = fn->ins[v].block, live = 0;
+                live_in(a, v, stamp, stack, ++tag);
+                if (stamp[b] == tag) continue;
+                live_in(a, p, stamp, stack, ++tag);
+                for (int j = a->ufirst[p]; j < a->ufirst[p + 1] && !live; j++)
+                    live = a->uses[j].block == bv && a->uses[j].pos > a->start[v];
+                for (int s = 0; s < 2 && !live; s++)
+                    live = fn->blocks[bv].succ[s] >= 0 && stamp[fn->blocks[bv].succ[s]] == tag;
+                if (live) continue;
+                a->with[v] = p;
+                if (a->end[v] > a->end[p]) a->end[p] = a->end[v];
+                shared = 1;
+            }
+        }
+    }
+    free(stamp); free(stack);
+}
+
 static const int8_t caller_regs[] = { 9, 10, 11, 12, 13, 14, 8, 7, 6, 5, 4, 3, 2, 1, 0 };
 static const int8_t callee_regs[] = { 19, 20, 21, 22, 23, 24, 25, 26, 27, 28 };
 // v16-v28, then the argument registers; d8-d15 are callee-saved (their low 64 bits)
@@ -907,7 +961,7 @@ static void allocate(A64* a) {
     for (int i = 0; i < fn->nblocks; i++) {
         IrBlock* bb = &fn->blocks[a->order[i]];
         for (int j = 0; j < bb->nins; j++)
-            if (allocatable(a, bb->ins[j])) seq[nseq++] = bb->ins[j];
+            if (allocatable(a, bb->ins[j]) && a->with[bb->ins[j]] < 0) seq[nseq++] = bb->ins[j];
     }
     int owner[SLOT], active[SLOT], nactive = 0;
     uint8_t* spilled = xcalloc((size_t)nv, 1);
@@ -976,6 +1030,11 @@ static void allocate(A64* a) {
         a->slot[v] = s;
         heap_push(heap, &nheap, (SlotUse){ a->end[v], s });
     }
+    for (int v = 0; v < nv; v++)
+        if (a->with[v] >= 0) {
+            a->reg[v] = a->reg[a->with[v]];
+            a->slot[v] = a->slot[a->with[v]];
+        }
     uint64_t used = 0;
     for (int i = 0; i < nseq; i++)
         if (a->reg[seq[i]] >= 0) used |= UINT64_C(1) << a->reg[seq[i]];
@@ -1995,6 +2054,7 @@ void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int is_main)
     count_uses(&a);
     liveness(&a);
     hints(&a);
+    coalesce(&a);
     allocate(&a);
     a.slot_base = a.out + 16u + 8u * (uint32_t)a.ncs;
     a.has_frame = a.ncalls || a.nslots || a.ncs || a.nsave;
@@ -2022,6 +2082,6 @@ void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int is_main)
 
     free(a.order); free(a.lix); free(a.bfirst); free(a.blast); free(a.idx);
     free(a.nuse); free(a.fused); free(a.madd); free(a.start); free(a.end);
-    free(a.hint); free(a.phi_of); free(a.calls); free(a.reg); free(a.slot);
+    free(a.ufirst); free(a.uses); free(a.hint); free(a.phi_of); free(a.with); free(a.calls); free(a.reg); free(a.slot);
     free(a.label); free(a.br); free(a.pin); free(a.rin); free(a.obj); free(a.pool); free(a.psite);
 }

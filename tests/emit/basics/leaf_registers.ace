@@ -26,7 +26,7 @@ twice(x: int): int {
     return x * 2
 }
 
-// twelve loop-carried locals fill all six leaf registers and spill into x19+
+// eighteen loop-carried locals fill the caller-saved registers and spill into x19+
 hot(n: int): int {
     a: int = 1
     b: int = 2
@@ -40,6 +40,12 @@ hot(n: int): int {
     j: int = 10
     k: int = 11
     m: int = 12
+    o: int = 13
+    p: int = 14
+    q: int = 15
+    r: int = 16
+    s: int = 17
+    t: int = 18
     for step: int in 0 .. n {
         a += b
         b += c
@@ -52,9 +58,15 @@ hot(n: int): int {
         i += j
         j += k
         k += m
-        m += a
+        m += o
+        o += p
+        p += q
+        q += r
+        r += s
+        s += t
+        t += a
     }
-    return (a + b + c + d + e + f + g + h + i + j + k + m) % 1000
+    return (a + b + c + d + e + f + g + h + i + j + k + m + o + p + q + r + s + t) % 1000
 }
 
 // the out-of-line byte copy clobbers only x8 and x15-x17
@@ -120,7 +132,7 @@ with_call(f: (int): int, n: int): int {
 }
 
 main(): int {
-    if hot(20) != 68 { return 1 }
+    if hot(20) != 671 { return 1 }
     if copy_live() != 182 { return 2 }
     if pick(Shape.wide(Wide {
         a = 1,
