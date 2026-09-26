@@ -855,6 +855,8 @@ static Node* expr_postfix_base(P* p, int ctx, Node* base) {
             expect(p, T_RBRACK, "']' after index/slice");
             if (is_slice) {
                 Node* sl = nd(p, N_SLICE_E);
+                sl->line = ix->line; // anchor inside the brackets, as for an index
+                sl->col = ix->col;
                 sl->a = base;
                 sl->b = lo;
                 sl->c = hi;

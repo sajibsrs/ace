@@ -93,11 +93,6 @@ the remaining proof points explicit:
 
 ## 2. Compiler and backend completion
 
-- **Slice bounds diagnostics point past the slice** [defect] — a debug slice
-  bounds violation reports the source position of the token after the slice
-  expression (the enclosing block's closing `}` in `tests/checked_bounds`),
-  not the `x[lo..hi]` node, in both backends; the `// expect-bounds:`
-  fixtures record the current position and move with the fix.
 - **Canonical source formatter** [open] — deferred while language implementation
   remains the priority. Resume from the Decision Queue's `ace fmt` carving: one
   shared lexer scan and parser pass, a mode-gated lossless token/trivia stream

@@ -2288,6 +2288,10 @@ current normative rules, and Git preserves patch-level detail.
   target width. `fcvtzs`/`fcvtzu` saturate at 32 bits, so the AST emitter left
   `u8(300.0)` as 300 in its register while the stored value was 44, and
   `u8(300.0) == u8(44)` was false. The IR already wrapped.
+- Slice expression nodes now take the index node's position (the first token
+  inside the brackets) instead of the token after the closing `]`, so debug
+  slice bounds violations and compile-time slice diagnostics (bound order,
+  writable-content establishment) name the slice rather than the next line.
 
 ## Current frontier
 

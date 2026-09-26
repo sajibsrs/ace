@@ -83,16 +83,16 @@ b0:
     %3 = param i64 3
     %4 = const i64 0
     %5 = ge bool %2, %4
-    check %5, 36:1 bounds violation
+    check %5, 35:14 bounds violation
     %7 = cast u64 %2
     %8 = const i64 0
     %9 = ge bool %3, %8
-    check %9, 36:1 bounds violation
+    check %9, 35:14 bounds violation
     %11 = cast u64 %3
     %12 = le bool %7, %11
-    check %12, 36:1 bounds violation
+    check %12, 35:14 bounds violation
     %14 = le bool %11, %1
-    check %14, 36:1 bounds violation
+    check %14, 35:14 bounds violation
     %16 = padd ptr %0, %7 * 1
     %17 = sub u64 %11, %7
     ret %16, %17
@@ -104,7 +104,7 @@ b0:
     %1 = param u64 1
     %2 = param u64 2
     %3 = le bool %2, %1
-    check %3, 40:1 bounds violation
+    check %3, 39:14 bounds violation
     %5 = padd ptr %0, %2 * 16
     %6 = sub u64 %1, %2
     ret %5, %6
@@ -117,7 +117,7 @@ b0:
     %2 = param u8 2
     %3 = cast u64 %2
     %4 = le bool %3, %1
-    check %4, 44:1 bounds violation
+    check %4, 43:14 bounds violation
     ret %0, %3
 }
 
