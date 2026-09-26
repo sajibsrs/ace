@@ -186,7 +186,9 @@ const char* fn_call_mangle(Sym* s, Node* call);
 // when no stamp matches its type.
 const char* fn_value_mangle(Sym* s, Node* x);
 // The N:immr:imms field (bits 22..10) of an AArch64 bitmask immediate, or 0
-// when v does not encode (0 and all-ones never do).
+// when v does not encode (0 and all-ones never do). The values 1 and
+// 0x100000001 encode as field 0 too, so a caller that tests for 0 treats them
+// as not encoding.
 uint32_t logical_imm_field(uint64_t v, int sf);
 // imm8 of `fmov Vd, #imm` for an f32 (is64 = 0) or f64 bit pattern, or -1
 int fmov_imm8(uint64_t bits, int is64);
