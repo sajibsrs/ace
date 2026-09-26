@@ -1,4 +1,4 @@
-; norm: not lowered (struct)
+; norm: not lowered (string)
 
 ; sign: not lowered (switch)
 
@@ -12,5 +12,5 @@ b0:
     ret
 }
 
-; main: not lowered (struct)
+; main: not lowered (string)
 

@@ -14,9 +14,13 @@
 // parameter or method receiver lives at the address it arrives as. Those
 // variables are read and written by load and store.
 //
+// A struct or tuple is its scalar leaves (ir_leaves): a local is one variable
+// per leaf, and a call passes and returns leaves, which the target maps onto
+// its ABI. A local whose storage something needs holds its leaves in a slot.
+//
 // A function that uses anything outside the covered subset is not lowered;
-// the AST emitter compiles it (migration steps 1 and 2a: scalar integer code,
-// pointers, globals, and calls).
+// the AST emitter compiles it (migration steps 1 and 2: scalar code, floats,
+// pointers, globals, calls, structs, tuples, and Error values).
 #include "ir.h"
 #include "backend.h"
 
@@ -61,7 +65,13 @@ typedef struct {
     int         ntgt;
     int         self_head; // release self tail recursion: the loop head block, or -1
     int         is_main;
+    SType*      rtype;     // the function's result type, or NULL
 } Lw;
+
+typedef struct { // the leaf values of an aggregate, or a scalar's one
+    int n;
+    int v[IR_MAX_LEAVES];
+} Agg;
 
 static _Noreturn void unsupported(Lw* l, const char* why) {
     l->why = why;
@@ -91,29 +101,6 @@ static int* grow_zero(int* p, int* cap, int need) {
 static SType* unwrap(SType* t) {
     while (t && t->kind == SK_DISTINCT) t = t->base;
     return t;
-}
-
-// The IR type of t, or -1 when the IR does not cover it yet.
-static int ir_type_of(SType* t) {
-    t = unwrap(t);
-    if (!t) return -1;
-    if (t->kind == SK_PTR || t->kind == SK_FUNC) return IT_PTR;
-    if (t->kind == SK_ENUM) return ir_type_of(t->base);
-    if (t->kind != SK_PRIM) return -1;
-    switch (t->prim) {
-    case P_BOOL: return IT_BOOL;
-    case P_I8: return IT_I8;
-    case P_I16: return IT_I16;
-    case P_I32: return IT_I32;
-    case P_I64: return IT_I64;
-    case P_U8: return IT_U8;
-    case P_U16: return IT_U16;
-    case P_U32: return IT_U32;
-    case P_U64: case P_USIZE: return IT_U64;
-    case P_F32: return IT_F32;
-    case P_F64: return IT_F64;
-    default: return -1;
-    }
 }
 
 static const char* type_why(SType* t) {
@@ -146,6 +133,32 @@ static IrType need_type(Lw* l, SType* t) {
 }
 
 static int is_untyped(SType* t) { return !t || t->kind == SK_UT; }
+
+static int is_agg(SType* t) {
+    t = unwrap(t);
+    return t && (t->kind == SK_STRUCT || t->kind == SK_TUPLE);
+}
+
+// The leaves of t, which the IR must cover.
+static int leaves(Lw* l, SType* t, IrLeaf* out) {
+    SType* bad = NULL;
+    int n = ir_leaves(t, out, &bad);
+    if (n < 0) unsupported(l, bad && ir_type_of(bad) >= 0 ? "aggregate of over 16 leaves" : type_why(bad));
+    return n;
+}
+
+static int leaf_count(Lw* l, SType* t) {
+    IrLeaf lv[IR_MAX_LEAVES];
+    return leaves(l, t, lv);
+}
+
+// The index of field fi's first leaf among its struct's or tuple's.
+static int leaf_index(Lw* l, SType* t, int fi) {
+    t = unwrap(t);
+    int k = 0;
+    for (int i = 0; i < fi; i++) k += leaf_count(l, t->fields[i].t);
+    return k;
+}
 
 // --- instructions ---------------------------------------------------------------------
 
@@ -305,12 +318,19 @@ static int var_of(Lw* l, Sym* s) {
     uintptr_t ix = ptrmap_get(&l->var_ix, s);
     if (ix) return (int)ix - 1;
     if (ptrmap_get(&l->stored, s)) {
+        if (is_agg(s->type)) leaf_count(l, s->type); // covered, although in memory
         int slot = at_entry(l, IR_SLOT, IT_PTR);
         l->fn->ins[slot].imm = sema_size(s->type);
         l->fn->ins[slot].aux = (int32_t)sema_align(s->type);
         return var_new(l, s, IT_VOID, slot);
     }
-    return var_new(l, s, need_type(l, s->type), -1);
+    if (!is_agg(s->type)) return var_new(l, s, need_type(l, s->type), -1);
+    IrLeaf lv[IR_MAX_LEAVES];
+    int n = leaves(l, s->type, lv), first = l->nvars;
+    if (!n) var_new(l, NULL, IT_VOID, -1); // an empty aggregate's placeholder, never read
+    for (int k = 0; k < n; k++) var_new(l, NULL, (IrType)lv[k].type, -1);
+    ptrmap_put(&l->var_ix, s, (uintptr_t)first + 1);
+    return first;
 }
 
 static void write_var(Lw* l, int var, int b, int v) { def_put(&l->defs, def_key(b, var), v); }
@@ -511,13 +531,12 @@ static Place place(Lw* l, Node* x) {
             p.flags = access_check(l, p.addr);
             bt = unwrap(bt->base);
         } else {
-            Place b = place(l, x->a);
-            if (b.var >= 0) unsupported(l, type_why(b.t)); // a struct value in SSA
-            p = b;
+            p = place(l, x->a);
         }
         if (!bt || bt->kind != SK_STRUCT) unsupported(l, bt ? type_why(bt) : "field access");
         int fi = find_field(bt, x->str, x->len);
         if (fi < 0) unsupported(l, "field access");
+        if (p.var >= 0) p.var += leaf_index(l, bt, fi); // its leaves' variables
         p.off += (int32_t)field_off(bt, fi);
         p.t = bt->fields[fi].t;
         return p;
@@ -544,6 +563,24 @@ static int place_read(Lw* l, Place p, int flags) {
 static void place_write(Lw* l, Place p, int v, int flags) {
     if (p.var >= 0) write_var(l, p.var, l->cur, v);
     else store(l, p.addr, p.off, v, p.flags | flags);
+}
+
+// Every leaf of a place, a scalar's included.
+static void place_get(Lw* l, Place p, int flags, Agg* out) {
+    IrLeaf lv[IR_MAX_LEAVES];
+    out->n = leaves(l, p.t, lv);
+    for (int k = 0; k < out->n; k++)
+        out->v[k] = p.var >= 0 ? read_var(l, p.var + k, l->cur)
+                               : load(l, (IrType)lv[k].type, p.addr, p.off + (int32_t)lv[k].off, p.flags | flags);
+}
+
+static void place_put(Lw* l, Place p, const Agg* a, int flags) {
+    IrLeaf lv[IR_MAX_LEAVES];
+    leaves(l, p.t, lv);
+    for (int k = 0; k < a->n; k++) {
+        if (p.var >= 0) write_var(l, p.var + k, l->cur, a->v[k]);
+        else store(l, p.addr, p.off + (int32_t)lv[k].off, a->v[k], p.flags | flags);
+    }
 }
 
 // The address of a memory place; a pointer-derived one is null-checked here.
@@ -646,16 +683,46 @@ static int is_self_call(Lw* l, Node* x) {
     return s && s->kind == SYM_FUNC && s->decl == l->f;
 }
 
-// The value of a call argument: the address of its place for a mut
-// parameter or method receiver, else its value at the parameter's type.
-static int call_arg(Lw* l, Node* a, SType* pt, int by_address) {
+static void value(Lw* l, Node* x, SType* t, Agg* out);
+
+// Arguments, flattened to leaves, and how they group into parts.
+typedef struct {
+    int    v[40];
+    int    n;
+    IrPart part[40];
+    int    nparts;
+    int    agg;    // some part is an aggregate
+} Args;
+
+static void arg_scalar(Lw* l, Args* g, int v) {
+    if (g->n == 40) unsupported(l, "too many arguments");
+    g->part[g->nparts++] = (IrPart){ NULL, g->n, 1 };
+    g->v[g->n++] = v;
+}
+
+// A call argument: the address of its place for a mut parameter or method
+// receiver, else its leaves at the parameter's type.
+static void call_arg(Lw* l, Args* g, Node* a, SType* pt, int by_address) {
     if (a->kind == N_MUTARG) a = a->a;
-    if (by_address) return place_address(l, place(l, a));
-    return expr(l, a, need_type(l, pt));
+    if (by_address) {
+        arg_scalar(l, g, place_address(l, place(l, a)));
+        return;
+    }
+    if (!is_agg(pt)) {
+        arg_scalar(l, g, expr(l, a, need_type(l, pt)));
+        return;
+    }
+    Agg v;
+    value(l, a, pt, &v);
+    if (g->n + v.n > 40) unsupported(l, "too many arguments");
+    g->part[g->nparts++] = (IrPart){ pt, g->n, v.n };
+    for (int k = 0; k < v.n; k++) g->v[g->n++] = v.v[k];
+    g->agg = 1;
 }
 
 // Arguments of a direct call to s: an instance method's receiver first.
-static int call_args(Lw* l, Node* call, Sym* s, int* out, int max) {
+// Returns the leaf index of the first variadic argument, or -1.
+static int call_args(Lw* l, Node* call, Sym* s, Args* g) {
     Node* callee = call->a;
     Node* d = s->decl;
     SType* ft = node_ty(callee);
@@ -664,29 +731,75 @@ static int call_args(Lw* l, Node* call, Sym* s, int* out, int max) {
     int n = recv + call->nkids;
     int named = ft ? ft->nparams : n;
     int varargs = s->is_extern && d && (d->flags & F_VARARGS);
-    if (n > max) unsupported(l, "too many arguments");
+    if (n > 40) unsupported(l, "too many arguments");
     if (varargs ? n < named : n != named) unsupported(l, "default argument");
+    int first_var = -1;
     for (int i = 0; i < n; i++) {
         Node* a = recv && i == 0 ? callee->a : call->kids[i - recv];
         if (i >= named) { // variadic: promoted to 64 bits (an f32 to f64)
             SType* at = node_ty(a);
+            if (is_agg(at)) unsupported(l, "variadic aggregate");
             IrType t = is_untyped(at) ? (a->kind == N_FLOAT ? IT_F64 : IT_I64) : need_type(l, at);
             int v = expr(l, a, t);
             if (t == IT_F32) v = emit2(l, IR_CAST, IT_F64, v, -1);
             else if (t != IT_PTR && ir_type_bits(t) < 64) v = emit2(l, IR_CAST, ir_type_signed(t) ? IT_I64 : IT_U64, v, -1);
-            out[i] = v;
+            if (first_var < 0) first_var = g->n;
+            arg_scalar(l, g, v);
             continue;
         }
         int by_address = (d && i < d->nkids && (d->kids[i]->flags & F_MUT)) ||
                          (d && (d->flags & F_METHOD) && i == 0);
-        out[i] = call_arg(l, a, ft->params[i], by_address);
+        call_arg(l, g, a, ft->params[i], by_address);
     }
-    return n;
+    return first_var;
 }
 
-static int call(Lw* l, Node* x, int want) {
+// Emit call id's arguments, and its signature when a part or the result rt
+// is an aggregate; an aggregate result's leaves follow as projections into
+// res (none without res, whose value is unused).
+static int call_finish(Lw* l, int id, Args* g, SType* rt, Agg* res) {
+    for (int k = 0; k < g->n; k++) ir_arg_add(l->fn, id, g->v[k]);
+    if (!g->agg && !is_agg(rt)) return id;
+    IrSig* sig = (IrSig*)arena_alloc(sizeof(IrSig));
+    sig->parts = (IrPart*)arena_alloc((size_t)(g->nparts ? g->nparts : 1) * sizeof(IrPart));
+    memcpy(sig->parts, g->part, (size_t)g->nparts * sizeof(IrPart));
+    sig->nparts = g->nparts;
+    sig->ret = (IrPart){ NULL, 0, 0 };
+    l->fn->ins[id].sig = sig;
+    if (!is_agg(rt)) {
+        if (rt && unwrap(rt)->kind != SK_VOID) sig->ret.n = 1;
+        return id;
+    }
+    IrLeaf lv[IR_MAX_LEAVES];
+    int n = leaves(l, rt, lv);
+    sig->ret = (IrPart){ rt, 0, n };
+    if (res) {
+        res->n = n;
+        for (int k = 0; k < n; k++) {
+            res->v[k] = emit2(l, IR_PROJ, (IrType)lv[k].type, id, -1);
+            l->fn->ins[res->v[k]].imm = (uint64_t)k;
+        }
+    }
+    return id;
+}
+
+static IrType result_type(Lw* l, SType* rt) {
+    if (!rt || unwrap(rt)->kind == SK_VOID || is_agg(rt)) return IT_VOID;
+    return need_type(l, rt);
+}
+
+static int is_domain(SType* t) { return t && t->kind == SK_ERROR_DOMAIN; }
+
+// A call: a scalar result's value; an aggregate's leaves into res.
+static int call(Lw* l, Node* x, int want, Agg* res) {
     Node* callee = x->a;
     Sym* s = node_sym(x);
+    if (!s && callee && callee->kind == N_IDENT && is_domain(node_ty(callee))) { // Domain(code) (Errors #5, #7)
+        int id = konst(l, IT_U64, x->ival << 32);
+        if (x->nkids != 1) return id;
+        int code = emit2(l, IR_CAST, IT_U32, expr(l, x->kids[0], IT_I32), -1); // its raw bits
+        return emit2(l, IR_OR, IT_U64, id, emit2(l, IR_CAST, IT_U64, code, -1));
+    }
     if (!s && callee && callee->kind == N_IDENT && node_ty(callee) && x->nkids == 1) { // conversion
         IrType to = type_in(l, x, want);
         Node* a = x->kids[0];
@@ -697,22 +810,20 @@ static int call(Lw* l, Node* x, int want) {
         if (from == to) return v;
         return emit2(l, IR_CAST, to, v, -1);
     }
-    int args[40];
+    Args g;
+    memset(&g, 0, sizeof g);
     if (s && s->kind == SYM_VAR) { // through a function value
         SType* ft = unwrap(s->type);
         if (!ft || ft->kind != SK_FUNC || x->nkids != ft->nparams) unsupported(l, "indirect call");
-        if (x->nkids > 39) unsupported(l, "too many arguments");
         int f = expr(l, callee, IT_PTR);
         for (int i = 0; i < x->nkids; i++) {
             if (x->kids[i]->kind == N_MUTARG) unsupported(l, "mut argument through a function value");
-            args[i] = call_arg(l, x->kids[i], ft->params[i], 0);
+            call_arg(l, &g, x->kids[i], ft->params[i], 0);
         }
-        IrType t = ft->ret && unwrap(ft->ret)->kind != SK_VOID ? need_type(l, ft->ret) : IT_VOID;
-        int id = emit(l, IR_CALLI, t);
+        int id = emit(l, IR_CALLI, result_type(l, ft->ret));
         l->fn->ins[id].flags = (uint8_t)null_checked(l);
-        ir_arg_add(l->fn, id, f);
-        for (int i = 0; i < x->nkids; i++) ir_arg_add(l->fn, id, args[i]);
-        return id;
+        ir_arg_add(l->fn, id, f); // the target, then the arguments
+        return call_finish(l, id, &g, ft->ret, res);
     }
     if (!s || s->kind != SYM_FUNC || !callee) unsupported(l, "indirect or method call");
     Node* d = s->decl;
@@ -721,21 +832,22 @@ static int call(Lw* l, Node* x, int want) {
     if ((d->kind == N_FUNC && d->ival) || (d->flags & F_INTRINSIC)) unsupported(l, "compiler-backed call");
     if (d->flags & F_INLINE) unsupported(l, "inline call");
     if (d->flags & F_EXPO) unsupported(l, "exported call");
-    int n = call_args(l, x, s, args, 40);
+    int first_var = call_args(l, x, s, &g);
     SType* ft = node_ty(callee);
     if (!ft || ft->kind != SK_FUNC) ft = s->type;
     SType* rt = ft ? ft->ret : NULL;
-    IrType t = rt && unwrap(rt)->kind != SK_VOID ? need_type(l, rt) : IT_VOID;
-    int id = emit(l, IR_CALL, t);
+    int id = emit(l, IR_CALL, result_type(l, rt));
     IrIns* c = &l->fn->ins[id];
     c->sym = s;
     c->name = link_name(s, ft);
-    if (s->is_extern && (d->flags & F_VARARGS)) {
+    if (s->is_extern && (d->flags & F_VARARGS) && first_var >= 0) {
         c->flags |= IRF_VARARGS;
-        c->aux = ft->nparams;
+        c->aux = first_var;
+    } else if (s->is_extern && (d->flags & F_VARARGS)) {
+        c->flags |= IRF_VARARGS;
+        c->aux = g.n;
     }
-    for (int i = 0; i < n; i++) ir_arg_add(l->fn, id, args[i]);
-    return id;
+    return call_finish(l, id, &g, rt, res);
 }
 
 // ptr pv (of pointer type pt) +/- u64 n elements of its pointee
@@ -751,6 +863,9 @@ static int is_pointer(Node* x) {
     SType* t = unwrap(node_ty(x));
     return t && t->kind == SK_PTR;
 }
+
+static int is_place(Node* x);
+static void field_leaves(Lw* l, Node* x, Agg* out);
 
 static int expr(Lw* l, Node* x, int want) {
     switch (x->kind) {
@@ -777,16 +892,28 @@ static int expr(Lw* l, Node* x, int want) {
         }
         return place_read(l, place(l, x), 0);
     }
-    case N_NULL:
-        if (want != IT_PTR) unsupported(l, type_why(node_ty(x)));
-        return konst(l, IT_PTR, 0);
+    case N_NULL: // a null pointer or Error
+        if (want != IT_PTR && want != IT_U64) unsupported(l, type_why(node_ty(x)));
+        return konst(l, (IrType)want, 0);
     case N_FIELD_E: {
         Sym* ts = node_sym(x->a);
         if (ts && ts->kind == SYM_TYPE && ts->type && unwrap(ts->type)->kind == SK_ENUM) // Color.red
             return konst(l, type_in(l, x, want), x->ival);
+        if (ts && ts->kind == SYM_TYPE && is_domain(ts->type)) return konst(l, IT_U64, x->ival); // Domain.entry
         if (ts && ts->kind == SYM_TYPE) unsupported(l, type_why(ts->type));
         SType* bt = unwrap(node_ty(x->a));
+        if (bt && bt->kind == SK_ERROR) { // Errors #9: the domain above the raw i32 code
+            int v = expr(l, x->a, IT_U64);
+            if (x->len == 6 && memcmp(x->str, "domain", 6) == 0) return emit2(l, IR_SHR, IT_U64, v, konst(l, IT_U64, 32));
+            if (x->len == 4 && memcmp(x->str, "code", 4) == 0) return emit2(l, IR_CAST, IT_I32, v, -1);
+            unsupported(l, "Error description");
+        }
         if (!bt || (bt->kind != SK_PTR && bt->kind != SK_STRUCT)) unsupported(l, bt ? type_why(bt) : "field access");
+        if (!is_place(x)) {
+            Agg a;
+            field_leaves(l, x, &a);
+            return a.v[0];
+        }
         return place_read(l, place(l, x), 0);
     }
     case N_UNARY: {
@@ -838,12 +965,93 @@ static int expr(Lw* l, Node* x, int want) {
         return acc;
     }
     case N_CALL:
-        return call(l, x, want);
+        return call(l, x, want, NULL);
     case N_INDEX: case N_SLICE_E:
         unsupported(l, type_why(node_ty(x->a)));
     default:
         unsupported(l, is_untyped(node_ty(x)) ? "expression form" : type_why(node_ty(x)));
     }
+}
+
+// Whether x names storage: a variable, a dereference, or a field of one.
+static int is_place(Node* x) {
+    switch (x->kind) {
+    case N_IDENT: case N_INDEX: return 1;
+    case N_UNARY: return x->op == T_STAR;
+    case N_FIELD_E: {
+        SType* bt = unwrap(node_ty(x->a));
+        return (bt && bt->kind == SK_PTR) || is_place(x->a);
+    }
+    default: return 0;
+    }
+}
+
+// The leaves of field x of a value that is no place: a call's result or a
+// literal.
+static void field_leaves(Lw* l, Node* x, Agg* out) {
+    SType* bt = unwrap(node_ty(x->a));
+    if (!bt || bt->kind != SK_STRUCT) unsupported(l, bt ? type_why(bt) : "field access");
+    int fi = find_field(bt, x->str, x->len);
+    if (fi < 0) unsupported(l, "field access");
+    Agg b;
+    value(l, x->a, node_ty(x->a), &b);
+    int at = leaf_index(l, bt, fi);
+    out->n = leaf_count(l, bt->fields[fi].t);
+    for (int k = 0; k < out->n; k++) out->v[k] = b.v[at + k];
+}
+
+// The leaves of a struct or tuple literal of type t, in field order; its
+// fields are evaluated in source order.
+static void literal_agg(Lw* l, Node* x, SType* t, Agg* out) {
+    SType* u = unwrap(t);
+    IrLeaf lv[IR_MAX_LEAVES];
+    out->n = leaves(l, t, lv);
+    for (int k = 0; k < out->n; k++) out->v[k] = -1;
+    int positional = x->kind == N_TUPLE_E || (x->nkids > 0 && x->kids[0]->str == NULL);
+    if (x->kind == N_TUPLE_E ? u->kind != SK_TUPLE || x->nkids != u->nfields : u->kind != SK_STRUCT)
+        unsupported(l, type_why(t));
+    for (int i = 0; i < x->nkids; i++) {
+        Node* fi = x->kids[i];
+        int fidx = positional ? i : find_field(u, fi->str, fi->len);
+        if (fidx < 0 || fidx >= u->nfields) unsupported(l, "field initializer");
+        Agg f;
+        value(l, x->kind == N_TUPLE_E ? fi : fi->a, u->fields[fidx].t, &f);
+        int at = leaf_index(l, u, fidx);
+        for (int k = 0; k < f.n; k++) out->v[at + k] = f.v[k];
+    }
+    for (int k = 0; k < out->n; k++) // sema supplies every field, defaults included
+        if (out->v[k] < 0) out->v[k] = konst(l, (IrType)lv[k].type, 0);
+}
+
+// The leaves of x, converted to type t: a scalar's one value, or those of an
+// aggregate.
+static void value(Lw* l, Node* x, SType* t, Agg* out) {
+    if (!is_agg(t)) {
+        out->n = 1;
+        out->v[0] = expr(l, x, need_type(l, t));
+        return;
+    }
+    switch (x->kind) {
+    case N_STRUCTLIT: case N_TUPLE_E:
+        literal_agg(l, x, t, out);
+        return;
+    case N_CALL:
+        call(l, x, -1, out);
+        if (out->n != leaf_count(l, t)) unsupported(l, "conversion");
+        return;
+    case N_FIELD_E:
+        if (!is_place(x)) {
+            field_leaves(l, x, out);
+            return;
+        }
+        break;
+    case N_IDENT: case N_UNARY:
+        break;
+    default:
+        unsupported(l, type_why(t));
+    }
+    if (!is_place(x)) unsupported(l, type_why(t));
+    place_get(l, place(l, x), 0, out);
 }
 
 // Branch on x to block t when true, f when false.
@@ -884,9 +1092,50 @@ static void leaks_check(Lw* l) { // main's allocator leak report (Safety & Debug
     l->fn->ins[id].name = "__ace$registry_leaks";
 }
 
-static void ret(Lw* l, int v) {
+static void ret(Lw* l, const Agg* a) {
     leaks_check(l);
-    terminate(l, IR_RET, v, -1, -1);
+    int id = emit(l, IR_RET, IT_VOID);
+    for (int k = 0; a && k < a->n; k++) ir_arg_add(l->fn, id, a->v[k]);
+    l->cur = -1;
+}
+
+// A variable's leaves: its SSA variables, or stored at its home.
+static void set_leaves(Lw* l, int var, SType* t, const Agg* a) {
+    if (l->home[var] == -1) {
+        for (int k = 0; k < a->n; k++) write_var(l, var + k, l->cur, a->v[k]);
+        return;
+    }
+    IrLeaf lv[IR_MAX_LEAVES];
+    leaves(l, t, lv);
+    int addr = var_addr(l, var);
+    for (int k = 0; k < a->n; k++) store(l, addr, (int32_t)lv[k].off, a->v[k], 0);
+}
+
+// Tuple destructuring (Errors #12): the right side once, then each member
+// into a new binder (N_PARAM) or an existing place, in order.
+static void destructure(Lw* l, Node** kids, int n, Node* rhs) {
+    SType* tt = node_ty(rhs);
+    SType* u = unwrap(tt);
+    if (!u || u->kind != SK_TUPLE || u->nfields != n) unsupported(l, "destructuring");
+    Agg all;
+    value(l, rhs, tt, &all);
+    for (int i = 0; i < n; i++) {
+        Agg m;
+        int at = leaf_index(l, u, i);
+        m.n = leaf_count(l, u->fields[i].t);
+        for (int k = 0; k < m.n; k++) m.v[k] = all.v[at + k];
+        Node* kid = kids[i];
+        if (kid->kind == N_PARAM) {
+            Sym* bs = node_sym(kid);
+            if (!bs) unsupported(l, "unresolved binder");
+            if (leaf_count(l, bs->type) != m.n) unsupported(l, "destructuring");
+            set_leaves(l, var_of(l, bs), bs->type, &m);
+            continue;
+        }
+        Place p = place(l, kid);
+        if (leaf_count(l, p.t) != m.n) unsupported(l, "destructuring");
+        place_put(l, p, &m, 0);
+    }
 }
 
 static Target* target(Lw* l, Node* s, int is_continue) {
@@ -907,10 +1156,21 @@ static void push_target(Lw* l, Node* s, int brk, int cont) {
 }
 
 static void assign(Lw* l, Node* s) {
-    if (s->nkids != 1) unsupported(l, "assignment target");
+    if (s->nkids > 1) {
+        if (s->op != T_ASSIGN || (s->flags & F_VOLATILE)) unsupported(l, "assignment target");
+        destructure(l, s->kids, s->nkids, s->a);
+        return;
+    }
     int vol = s->flags & F_VOLATILE ? IRF_VOLATILE : 0;
     Place p = place(l, s->kids[0]);
     if (vol && p.var >= 0) unsupported(l, "volatile access"); // scan_storage missed it
+    if (is_agg(p.t)) {
+        if (s->op != T_ASSIGN) unsupported(l, "compound assignment");
+        Agg a;
+        value(l, s->a, p.t, &a); // whole, before any leaf is written
+        place_put(l, p, &a, vol);
+        return;
+    }
     IrType t = need_type(l, p.t);
     int v;
     if (s->op == T_ASSIGN) {
@@ -928,14 +1188,21 @@ static void assign(Lw* l, Node* s) {
 }
 
 static void var_decl(Lw* l, Node* s) {
-    if (s->nkids != 1 || s->kids[0]->kind != N_PARAM || (s->flags & F_MIXED)) unsupported(l, "multiple binders");
+    if (s->nkids != 1 || s->kids[0]->kind != N_PARAM || (s->flags & F_MIXED)) {
+        if (!s->b) unsupported(l, "multiple binders");
+        for (int i = 0; i < s->nkids; i++) // make each new binder's variable
+            if (s->kids[i]->kind == N_PARAM && node_sym(s->kids[i])) var_of(l, node_sym(s->kids[i]));
+        destructure(l, s->kids, s->nkids, s->b);
+        return;
+    }
     Node* binder = s->kids[0];
     Sym* sym = node_sym(binder);
     if (!sym) unsupported(l, "unresolved binder");
     int var = var_of(l, sym);
     if (!s->b) return; // assigned before any read (definite initialization)
-    if (s->b->kind == N_TUPLE_E) unsupported(l, "tuple");
-    set_var(l, var, expr(l, s->b, need_type(l, sym->type)));
+    Agg a;
+    value(l, s->b, sym->type, &a);
+    set_leaves(l, var, sym->type, &a);
 }
 
 // The body of a loop; continue reaches the returned block, current on
@@ -1132,23 +1399,24 @@ static void stmt(Lw* l, Node* s) {
         return;
     }
     case N_RETURN: {
-        IrType rt = l->fn->ret;
         if (!s->a) {
-            ret(l, -1);
+            ret(l, NULL);
             return;
         }
-        if (s->a->kind == N_TUPLE_E) unsupported(l, "tuple");
         if (l->self_head >= 0 && is_self_call(l, s->a)) { // release: a branch back to the head
-            int args[40];
-            if (call_args(l, s->a, node_sym(s->a), args, 40) != l->fn->nparams) unsupported(l, "self call");
-            for (int i = 0; i < l->fn->nparams; i++) {
+            Args g;
+            memset(&g, 0, sizeof g);
+            if (call_args(l, s->a, node_sym(s->a), &g) >= 0 || g.n != l->fn->nparams) unsupported(l, "self call");
+            for (int i = 0; i < l->fn->nparams; i++) { // every parameter is a scalar here
                 int var = (int)ptrmap_get(&l->var_ix, node_sym(l->f->kids[i])) - 1;
-                write_var(l, l->home[var] <= ADDR_VAR ? ADDR_VAR - l->home[var] : var, l->cur, args[i]);
+                write_var(l, l->home[var] <= ADDR_VAR ? ADDR_VAR - l->home[var] : var, l->cur, g.v[i]);
             }
             jump(l, l->self_head);
             return;
         }
-        ret(l, expr(l, s->a, rt));
+        Agg a;
+        value(l, s->a, l->rtype, &a);
+        ret(l, &a);
         return;
     }
     case N_DEFER: unsupported(l, "defer");
@@ -1257,11 +1525,15 @@ IrFunc* ir_lower(Node* f, EmitMode mode, const char** why) {
     }
     IrFunc* fn = l.fn;
     SType* rt = fs && fs->type ? fs->type->ret : NULL;
-    fn->ret = rt && unwrap(rt)->kind != SK_VOID ? need_type(&l, rt) : IT_VOID;
-    if (rt && unwrap(rt)->kind == SK_TUPLE) unsupported(&l, "tuple");
-    fn->nparams = f->nkids;
-    fn->params = malloc((size_t)(f->nkids ? f->nkids : 1) * sizeof(IrType));
-    if (!fn->params) oom();
+    if (rt && unwrap(rt)->kind == SK_VOID) rt = NULL;
+    l.rtype = rt;
+    IrLeaf lv[IR_MAX_LEAVES];
+    fn->nrets = rt ? leaves(&l, rt, lv) : 0;
+    fn->rets = malloc((size_t)(fn->nrets ? fn->nrets : 1) * sizeof(IrType));
+    if (!fn->rets) oom();
+    for (int k = 0; k < fn->nrets; k++) fn->rets[k] = (IrType)lv[k].type;
+    Args g; // the parameters' leaves, as a call's arguments group
+    memset(&g, 0, sizeof g);
 
     l.cur = new_block(&l);
     seal(&l, l.cur);
@@ -1272,27 +1544,52 @@ IrFunc* ir_lower(Node* f, EmitMode mode, const char** why) {
         Sym* ps = node_sym(p);
         if (!ps) unsupported(&l, "unresolved parameter");
         if (by_address(f, i)) { // lives at the caller's address, held in an SSA variable
-            fn->params[i] = IT_PTR;
             int v = emit(&l, IR_PARAM, IT_PTR);
-            fn->ins[v].imm = (uint64_t)i;
+            fn->ins[v].imm = (uint64_t)g.n;
+            arg_scalar(&l, &g, v);
             int a = var_new(&l, NULL, IT_PTR, -1);
             set_var(&l, a, v);
             var_new(&l, ps, IT_VOID, ADDR_VAR - a);
             continue;
         }
-        IrType t = need_type(&l, ps->type);
-        fn->params[i] = t;
-        int v = emit(&l, IR_PARAM, t);
-        fn->ins[v].imm = (uint64_t)i;
-        set_var(&l, var_of(&l, ps), v);
+        Agg a;
+        a.n = leaves(&l, ps->type, lv);
+        if (g.n + a.n > 40) unsupported(&l, "too many parameters");
+        if (is_agg(ps->type)) {
+            g.part[g.nparts++] = (IrPart){ ps->type, g.n, a.n };
+            g.agg = 1;
+        }
+        for (int k = 0; k < a.n; k++) {
+            a.v[k] = emit(&l, IR_PARAM, (IrType)lv[k].type);
+            fn->ins[a.v[k]].imm = (uint64_t)g.n;
+            if (is_agg(ps->type)) g.v[g.n++] = a.v[k];
+            else arg_scalar(&l, &g, a.v[k]);
+        }
+        set_leaves(&l, var_of(&l, ps), ps->type, &a);
     }
-    if (mode == EMIT_RELEASE && !l.is_main && !frame_storage(&l) && has_self_tail(&l, f->b)) {
+    fn->nparams = g.n;
+    fn->params = malloc((size_t)(g.n ? g.n : 1) * sizeof(IrType));
+    if (!fn->params) oom();
+    for (int k = 0; k < g.n; k++) fn->params[k] = (IrType)fn->ins[g.v[k]].type;
+    if (g.agg || is_agg(rt)) {
+        fn->sig = (IrSig*)arena_alloc(sizeof(IrSig));
+        fn->sig->parts = (IrPart*)arena_alloc((size_t)(g.nparts ? g.nparts : 1) * sizeof(IrPart));
+        memcpy(fn->sig->parts, g.part, (size_t)g.nparts * sizeof(IrPart));
+        fn->sig->nparts = g.nparts;
+        fn->sig->ret = (IrPart){ is_agg(rt) ? rt : NULL, 0, fn->nrets };
+    }
+    if (mode == EMIT_RELEASE && !l.is_main && !fn->sig && !frame_storage(&l) && has_self_tail(&l, f->b)) {
         l.self_head = new_block(&l);
         jump(&l, l.self_head);
         l.cur = l.self_head;
     }
     block(&l, f->b);
-    if (l.cur >= 0) ret(&l, fn->ret == IT_VOID ? -1 : konst(&l, fn->ret, 0)); // falling off the end
+    if (l.cur >= 0) { // falling off the end: zero
+        Agg z;
+        z.n = fn->nrets;
+        for (int k = 0; k < z.n; k++) z.v[k] = konst(&l, fn->rets[k], 0);
+        ret(&l, &z);
+    }
     if (l.self_head >= 0) seal(&l, l.self_head);
     finish(&l);
     ptrmap_free(&l.var_ix);

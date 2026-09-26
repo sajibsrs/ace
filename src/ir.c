@@ -88,6 +88,7 @@ void ir_free(IrFunc* fn) {
     free(fn->ins);
     free(fn->blocks);
     free(fn->params);
+    free(fn->rets);
     free(fn);
 }
 
@@ -106,6 +107,55 @@ int ir_type_bits(IrType t) {
 int ir_type_signed(IrType t) { return t >= IT_I8 && t <= IT_I64; }
 
 int ir_type_float(IrType t) { return t == IT_F32 || t == IT_F64; }
+
+static SType* unwrap(SType* t) {
+    while (t && t->kind == SK_DISTINCT) t = t->base;
+    return t;
+}
+
+int ir_type_of(SType* t) {
+    t = unwrap(t);
+    if (!t) return -1;
+    if (t->kind == SK_PTR || t->kind == SK_FUNC) return IT_PTR;
+    if (t->kind == SK_ENUM) return ir_type_of(t->base);
+    if (t->kind == SK_ERROR) return IT_U64; // domain id above the code (Errors #5)
+    if (t->kind != SK_PRIM) return -1;
+    switch (t->prim) {
+    case P_BOOL: return IT_BOOL;
+    case P_I8: return IT_I8;
+    case P_I16: return IT_I16;
+    case P_I32: return IT_I32;
+    case P_I64: return IT_I64;
+    case P_U8: return IT_U8;
+    case P_U16: return IT_U16;
+    case P_U32: return IT_U32;
+    case P_U64: case P_USIZE: case P_TYPEID: return IT_U64;
+    case P_F32: return IT_F32;
+    case P_F64: return IT_F64;
+    default: return -1;
+    }
+}
+
+static int leaves_at(SType* t, uint32_t off, IrLeaf* out, int n, SType** bad) {
+    int it = ir_type_of(t);
+    if (it >= 0) {
+        if (n == IR_MAX_LEAVES) {
+            *bad = t;
+            return -1;
+        }
+        out[n] = (IrLeaf){ off, (uint8_t)it };
+        return n + 1;
+    }
+    SType* u = unwrap(t);
+    if (!u || (u->kind != SK_STRUCT && u->kind != SK_TUPLE)) {
+        *bad = t;
+        return -1;
+    }
+    for (int i = 0; i < u->nfields && n >= 0; i++) n = leaves_at(u->fields[i].t, off + field_off(u, i), out, n, bad);
+    return n;
+}
+
+int ir_leaves(SType* t, IrLeaf* out, SType** bad) { return leaves_at(t, 0, out, 0, bad); }
 
 // The 64-bit pattern of v wrapped into t: truncated, then extended by t's
 // signedness. Every IR integer value is held in this form.
@@ -255,7 +305,14 @@ int ir_verify(IrFunc* fn) {
             for (int a = 0; a < v->nargs; a++) {
                 int u = v->args[a];
                 if (u < 0 || u >= fn->nins || fn->ins[u].block < 0) { ok = bad(fn, "%%%d uses removed value %%%d", id, u); break; }
-                if (fn->ins[u].type == IT_VOID) { ok = bad(fn, "%%%d uses void value %%%d", id, u); break; }
+                if (v->op == IR_PROJ) { // the call, or the proj before it, directly precedes it
+                    int prev = i ? bb->ins[i - 1] : -1;
+                    if (fn->ins[u].op != IR_CALL && fn->ins[u].op != IR_CALLI) { ok = bad(fn, "proj %%%d of non-call %%%d", id, u); break; }
+                    if (prev != u && (prev < 0 || fn->ins[prev].op != IR_PROJ || fn->ins[prev].args[0] != u)) {
+                        ok = bad(fn, "proj %%%d does not follow call %%%d", id, u);
+                        break;
+                    }
+                } else if (fn->ins[u].type == IT_VOID) { ok = bad(fn, "%%%d uses void value %%%d", id, u); break; }
                 int want_ptr = a == 0 && (v->op == IR_LOAD || v->op == IR_STORE || v->op == IR_PADD ||
                                           v->op == IR_PSUB || v->op == IR_CALLI);
                 if (want_ptr && fn->ins[u].type != IT_PTR) { ok = bad(fn, "%%%d needs an address, not %%%d", id, u); break; }
@@ -308,6 +365,19 @@ static void print_imm(FILE* out, IrType t, uint64_t imm) {
     else fprintf(out, "%llu", (unsigned long long)imm);
 }
 
+// Leaf types, an aggregate part's in braces.
+static void print_types(FILE* out, const IrType* t, int n, const IrPart* parts, int nparts) {
+    int k = 0;
+    for (int p = 0; k < n; p++) {
+        const IrPart* pt = parts && p < nparts ? &parts[p] : NULL;
+        int agg = pt && pt->agg, m = pt ? pt->n : 1;
+        fputs(p ? ", " : "", out);
+        if (agg) fputc('{', out);
+        for (int i = 0; i < m; i++, k++) fprintf(out, "%s%s", i ? ", " : "", type_name(t[k]));
+        if (agg) fputc('}', out);
+    }
+}
+
 void ir_print(IrFunc* fn, FILE* out) {
     // values are numbered in block order, so the text is independent of the
     // order lowering created them in
@@ -319,8 +389,12 @@ void ir_print(IrFunc* fn, FILE* out) {
     Node* d = fn->decl;
     if (d->d) fprintf(out, "%.*s::", (int)d->d->len, d->d->str);
     fprintf(out, "%.*s(", (int)d->len, d->str);
-    for (int i = 0; i < fn->nparams; i++) fprintf(out, "%s%s", i ? ", " : "", type_name(fn->params[i]));
-    fprintf(out, "): %s {\n", type_name(fn->ret));
+    print_types(out, fn->params, fn->nparams, fn->sig ? fn->sig->parts : NULL, fn->sig ? fn->sig->nparts : 0);
+    fputs("): ", out);
+    if (!fn->nrets) fputs("void", out);
+    else if (fn->sig && fn->sig->ret.agg) print_types(out, fn->rets, fn->nrets, &fn->sig->ret, 1);
+    else fputs(type_name(fn->rets[0]), out);
+    fputs(" {\n", out);
     for (int b = 0; b < fn->nblocks; b++) {
         IrBlock* bb = &fn->blocks[b];
         fprintf(out, "b%d:", b);
@@ -333,7 +407,8 @@ void ir_print(IrFunc* fn, FILE* out) {
             int id = bb->ins[i];
             IrIns* v = &fn->ins[id];
             fputs("    ", out);
-            if (v->type != IT_VOID) {
+            int agg = v->sig && v->sig->ret.agg; // a call whose leaves its projs read
+            if (v->type != IT_VOID || agg) {
                 print_value(out, num, id);
                 fputs(" = ", out);
             }
@@ -341,6 +416,7 @@ void ir_print(IrFunc* fn, FILE* out) {
             if (v->flags & IRF_CHECKED) fputs(".chk", out);
             if (v->flags & IRF_VOLATILE) fputs(".vol", out);
             if (v->type != IT_VOID) fprintf(out, " %s", type_name((IrType)v->type));
+            if (agg) fprintf(out, " {%d}", v->sig->ret.n);
             switch (v->op) {
             case IR_CONST:
                 fputc(' ', out);
@@ -348,6 +424,11 @@ void ir_print(IrFunc* fn, FILE* out) {
                 break;
             case IR_PARAM:
                 fprintf(out, " %llu", (unsigned long long)v->imm);
+                break;
+            case IR_PROJ:
+                fputc(' ', out);
+                print_value(out, num, v->args[0]);
+                fprintf(out, ", %llu", (unsigned long long)v->imm);
                 break;
             case IR_PHI:
                 for (int a = 0; a < v->nargs; a++) {

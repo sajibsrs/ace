@@ -1,0 +1,71 @@
+shift({i64, f64}, i64): {i64, f64} {
+b0:
+    %0 = param i64 0
+    %1 = param f64 1
+    %2 = param i64 2
+    %3 = add i64 %0, %2
+    ret %3, %1
+}
+
+check(i64): {i64, u64} {
+b0:
+    %0 = param i64 0
+    %1 = const i64 0
+    %2 = lt bool %0, %1
+    br %2, b1, b2
+b1: ; preds b0
+    %4 = const i64 0
+    %5 = const u64 4294967296
+    %6 = cast i32 %0
+    %7 = cast u32 %6
+    %8 = cast u64 %7
+    %9 = or u64 %5, %8
+    ret %4, %9
+b2: ; preds b0
+    %11 = const u64 0
+    ret %0, %11
+}
+
+bump(ptr): void {
+b0:
+    %0 = param ptr 0
+    %1 = load i64 [%0]
+    %2 = const i64 1
+    %3 = add i64 %1, %2
+    store [%0], %3
+    ret
+}
+
+main(): i64 {
+b0:
+    %0 = slot ptr 16, 8
+    %1 = const i64 1
+    %2 = const f64 0.5
+    %3 = const i64 2
+    %4 = call {2} shift(%1, %2, %3)
+    %5 = proj i64 %4, 0
+    %6 = proj f64 %4, 1
+    store [%0], %5
+    store [%0 + 8], %6
+    call bump(%0)
+    %10 = load i64 [%0]
+    %11 = load f64 [%0 + 8]
+    %12 = const i64 1
+    %13 = call {2} shift(%10, %11, %12)
+    %14 = proj i64 %13, 0
+    %15 = proj f64 %13, 1
+    %16 = call {2} check(%14)
+    %17 = proj i64 %16, 0
+    %18 = proj u64 %16, 1
+    %19 = const u64 0
+    %20 = ne bool %18, %19
+    br %20, b1, b2
+b1: ; preds b0
+    %22 = cast i32 %18
+    %23 = cast i64 %22
+    ret %23
+b2: ; preds b0
+    %25 = sub i64 %17, %5
+    ret %25
+}
+

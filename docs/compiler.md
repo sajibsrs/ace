@@ -33,7 +33,10 @@ choice cannot change their result because they emit no program.
 as the selected mode lowers it: debug marks the operations it checks with
 `.chk` (integer arithmetic, pointer arithmetic, and accesses and calls through
 pointer and function values), and a float constant prints as the shortest
-decimal that reads back to its bits. A function the IR does not cover yet is listed with the first
+decimal that reads back to its bits. A struct or tuple is its scalar leaves:
+a parameter or result of one prints as its leaf types in braces, and a call
+with one as its result prints `call {n}`, whose leaves `proj` reads. An
+`Error` is a `u64`. A function the IR does not cover yet is listed with the first
 construct that kept it out; the AST emitter compiles such functions, and the
 IR's AArch64 backend compiles the rest.
 

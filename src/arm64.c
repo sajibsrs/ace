@@ -45,10 +45,6 @@ typedef struct { uint8_t cbz, cond, reg, sf, nz; } Cond;
 // is_const: 1 moves imm, 2 moves the address sp + imm (a stack object)
 typedef struct { int dst, src; uint64_t imm; uint8_t is_const, sf; } Move;
 
-// Where an argument or parameter travels: register reg (x or V + n), else the
-// stack at soff (from the caller's sp) in size bytes.
-typedef struct { int8_t reg; uint8_t size; uint32_t soff; } Arg;
-
 typedef struct {
     Obj*      o;
     IrFunc*   fn;
@@ -68,8 +64,10 @@ typedef struct {
     int*      hint, *phi_of;
     int*      calls;   // call use positions, ascending
     int       ncalls;
-    uint32_t  out;     // outgoing stack argument bytes, at [sp]
-    Arg*      pin;     // incoming parameters
+    uint32_t  out;     // outgoing bytes at [sp]: stack arguments, then call memory
+    struct Loc* pin;   // where each parameter leaf arrives
+    struct Loc* rin;   // where each result leaf leaves
+    uint32_t  nsave, save_at; // the save area for incoming words and addresses
     uint32_t* obj;     // SLOT value -> its object's offset from sp
     // allocation
     int8_t*   reg;
@@ -413,38 +411,187 @@ static Move move_of(A64* a, int dst_loc, int v) {
     return (Move){ dst_loc, loc(a, v), 0, 0, 1 };
 }
 
-// The scalar calling convention (emit.c assign_cc): the first eight integers
-// in x0-x7 and floats in v0-v7, the rest on the stack at their natural size,
-// 4 bytes at least, and naturally aligned; variadic arguments from
-// varargs_from on in 8-byte stack slots. Returns the stack bytes used.
-static uint32_t assign_args(const IrType* t, int n, int varargs_from, Arg* out) {
-    int xn = 0, vn = 0;
-    uint32_t soff = 0;
-    for (int i = 0; i < n; i++) {
-        uint32_t w = (uint32_t)ir_type_bits(t[i]) / 8;
-        int* rn = is_fp(t[i]) ? &vn : &xn;
-        if (varargs_from >= 0 && i >= varargs_from) w = 8;
-        else if (*rn < 8) { out[i] = (Arg){ (int8_t)((rn == &vn ? V : 0) + (*rn)++), 8, 0 }; continue; }
-        if (w < 4) w = 4;
-        soff = (soff + w - 1) & ~(w - 1);
-        out[i] = (Arg){ -1, (uint8_t)w, soff };
-        soff += w;
-    }
-    return soff;
+// Where a leaf of an argument, parameter, or result travels (emit.c
+// assign_cc): in register reg (L_REG); on the stack at soff in size bytes
+// (L_STACK); in the word of x register reg that it shares with other leaves,
+// at byte off, through 8 bytes of memory at mem (L_WORD); or at off from an
+// address that travels in register reg, or on the stack at soff when reg < 0
+// (L_ADDR), whose memory is at mem. head marks the first leaf of a word or of
+// an addressed aggregate. mem is an offset in the caller's outgoing area (a
+// copy of the aggregate, a result buffer, a word) or in the callee's save
+// area (the saved address or word).
+enum { L_REG, L_STACK, L_WORD, L_ADDR };
+typedef struct Loc { uint8_t kind, size, head; int8_t reg; uint32_t soff, off, mem; } Loc;
+
+static uint32_t align_to(uint32_t v, uint32_t a) { return (v + a - 1) & ~(a - 1); }
+
+// A homogeneous floating aggregate: one to four leaves of one float type.
+static int is_hfa(const IrType* t, int n) {
+    if (n < 1 || n > 4 || !is_fp(t[0])) return 0;
+    for (int k = 1; k < n; k++) if (t[k] != t[0]) return 0;
+    return 1;
 }
 
-// A call's arguments (after a calli's target) and their locations; the
-// caller frees the returned array.
-static Arg* call_args(A64* a, IrIns* x, int* first, uint32_t* stack) {
-    int k0 = x->op == IR_CALLI, n = x->nargs - k0;
-    IrType* t = xcalloc((size_t)n, sizeof(IrType));
-    Arg* args = xcalloc((size_t)n, sizeof(Arg));
-    for (int k = 0; k < n; k++) t[k] = (IrType)ins_of(a, x->args[k0 + k])->type;
-    uint32_t s = assign_args(t, n, (x->flags & IRF_VARARGS) ? x->aux : -1, args);
+typedef struct { int xn, vn; uint32_t soff, area; int caller; } Cc;
+
+// An aggregate on the stack, its leaves at their natural size.
+static void agg_stack(Cc* c, const IrLeaf* lv, int n, SType* agg, Loc* out) {
+    uint32_t al = sema_align(agg);
+    c->soff = align_to(c->soff, al > 8 ? 8 : al ? al : 1);
+    for (int k = 0; k < n; k++)
+        out[k] = (Loc){ L_STACK, (uint8_t)(ir_type_bits((IrType)lv[k].type) / 8), 0, -1, c->soff + lv[k].off, 0, 0 };
+    c->soff += align_to(sema_size(agg), 8);
+}
+
+// Memory for an aggregate that travels by address: the caller's copy, or the
+// callee's saved address.
+static uint32_t addr_mem(Cc* c, SType* agg) {
+    c->area = align_to(c->area, 8);
+    uint32_t m = c->area;
+    c->area += c->caller ? align_to(sema_size(agg), 8) : 8;
+    return m;
+}
+
+// An aggregate in 8-byte words from x register first: a word holding one leaf
+// at its start is that leaf's register, else its leaves share it through memory.
+static void agg_words(Cc* c, const IrLeaf* lv, int n, int first, Loc* out) {
+    for (int k = 0; k < n;) {
+        uint32_t w = lv[k].off / 8;
+        int e = k;
+        while (e < n && lv[e].off / 8 == w) e++;
+        int8_t reg = (int8_t)(first + (int)w);
+        if (e == k + 1 && lv[k].off % 8 == 0) {
+            out[k] = (Loc){ L_REG, 8, 1, reg, 0, 0, 0 };
+        } else {
+            uint32_t m = c->area = align_to(c->area, 8);
+            c->area += 8;
+            for (int j = k; j < e; j++) out[j] = (Loc){ L_WORD, 8, (uint8_t)(j == k), reg, 0, lv[j].off % 8, m };
+        }
+        k = e;
+    }
+}
+
+// Assign the leaves t[0..n), grouped by sig's parts (each leaf alone when sig
+// is NULL), from x0-x7, v0-v7, and the stack; scalars from leaf varargs_from
+// on take 8-byte stack slots. Returns the stack bytes; c->area ends past the
+// memory the leaves need.
+static uint32_t assign_leaves(Cc* c, const IrType* t, int n, const IrSig* sig, int varargs_from, Loc* out) {
+    int np = sig ? sig->nparts : n;
+    for (int p = 0; p < np; p++) {
+        IrPart pt = sig ? sig->parts[p] : (IrPart){ NULL, p, 1 };
+        Loc* o = out + pt.first;
+        if (!pt.agg) {
+            IrType tt = t[pt.first];
+            uint32_t w = (uint32_t)ir_type_bits(tt) / 8;
+            int* rn = is_fp(tt) ? &c->vn : &c->xn;
+            if (varargs_from >= 0 && pt.first >= varargs_from) w = 8;
+            else if (*rn < 8) {
+                o[0] = (Loc){ L_REG, 8, 1, (int8_t)((rn == &c->vn ? V : 0) + (*rn)++), 0, 0, 0 };
+                continue;
+            }
+            if (w < 4) w = 4;
+            c->soff = align_to(c->soff, w);
+            o[0] = (Loc){ L_STACK, (uint8_t)w, 1, -1, c->soff, 0, 0 };
+            c->soff += w;
+            continue;
+        }
+        IrLeaf lv[IR_MAX_LEAVES];
+        SType* bad;
+        ir_leaves(pt.agg, lv, &bad);
+        uint32_t size = sema_size(pt.agg);
+        if (is_hfa(t + pt.first, pt.n)) {
+            if (c->vn + pt.n <= 8) {
+                for (int k = 0; k < pt.n; k++) o[k] = (Loc){ L_REG, 8, 1, (int8_t)(V + c->vn++), 0, 0, 0 };
+            } else {
+                agg_stack(c, lv, pt.n, pt.agg, o);
+                c->vn = 8;
+            }
+        } else if (size > 16) {
+            uint32_t m = addr_mem(c, pt.agg);
+            int8_t reg = -1;
+            uint32_t so = 0;
+            if (c->xn < 8) {
+                reg = (int8_t)c->xn++;
+            } else {
+                so = c->soff = align_to(c->soff, 8);
+                c->soff += 8;
+            }
+            for (int k = 0; k < pt.n; k++) o[k] = (Loc){ L_ADDR, 8, (uint8_t)(k == 0), reg, so, lv[k].off, m };
+        } else if (c->xn + (int)((size + 7) / 8) > 8) {
+            agg_stack(c, lv, pt.n, pt.agg, o);
+            c->xn = 8;
+        } else {
+            agg_words(c, lv, pt.n, c->xn, o);
+            c->xn += (int)((size + 7) / 8);
+        }
+    }
+    return c->soff;
+}
+
+// The result's leaves: a scalar in x0 or v0; an aggregate as an argument
+// would travel from the first registers, except that one over 16 bytes (not
+// an HFA) is stored through the address in x8.
+static void assign_result(Cc* c, const IrType* t, int n, SType* agg, Loc* out) {
+    if (!n) return;
+    if (!agg) {
+        out[0] = (Loc){ L_REG, 8, 1, (int8_t)(is_fp(t[0]) ? V : 0), 0, 0, 0 };
+        return;
+    }
+    if (!is_hfa(t, n) && sema_size(agg) > 16) {
+        IrLeaf lv[IR_MAX_LEAVES];
+        SType* bad;
+        ir_leaves(agg, lv, &bad);
+        uint32_t m = addr_mem(c, agg);
+        for (int k = 0; k < n; k++) out[k] = (Loc){ L_ADDR, 8, (uint8_t)(k == 0), 8, 0, lv[k].off, m };
+        return;
+    }
+    Cc r = { 0, 0, 0, c->area, c->caller };
+    IrSig one = { &(IrPart){ agg, 0, n }, 1, { NULL, 0, 0 } };
+    assign_leaves(&r, t, n, &one, -1, out);
+    c->area = r.area;
+}
+
+// A call's plan: its arguments' leaves (after a calli's target) and its
+// result's, with the outgoing bytes they need at [sp]: the stack arguments,
+// then the memory of copies, words, and a result buffer.
+typedef struct {
+    Loc*     arg;
+    Loc*     res;
+    int      k0, n, nres;
+    uint32_t bytes;
+} Plan;
+
+static void plan_call(IrFunc* fn, IrIns* x, Plan* p) {
+    p->k0 = x->op == IR_CALLI;
+    p->n = x->nargs - p->k0;
+    IrType* t = xcalloc((size_t)p->n, sizeof(IrType));
+    for (int k = 0; k < p->n; k++) t[k] = (IrType)fn->ins[x->args[p->k0 + k]].type;
+    p->arg = xcalloc((size_t)p->n, sizeof(Loc));
+    Cc c = { 0, 0, 0, 0, 1 };
+    uint32_t base = align_to(assign_leaves(&c, t, p->n, x->sig, (x->flags & IRF_VARARGS) ? x->aux : -1, p->arg), 8);
     free(t);
-    *first = k0;
-    if (stack) *stack = s;
-    return args;
+    SType* agg = x->sig ? x->sig->ret.agg : NULL;
+    IrLeaf lv[IR_MAX_LEAVES];
+    IrType rt[IR_MAX_LEAVES];
+    p->nres = 0;
+    if (agg) {
+        SType* bad;
+        p->nres = ir_leaves(agg, lv, &bad);
+        for (int k = 0; k < p->nres; k++) rt[k] = (IrType)lv[k].type;
+    } else if (x->type != IT_VOID) {
+        p->nres = 1;
+        rt[0] = (IrType)x->type;
+    }
+    p->res = xcalloc((size_t)(p->nres ? p->nres : 1), sizeof(Loc));
+    assign_result(&c, rt, p->nres, agg, p->res);
+    for (int k = 0; k < p->n; k++) p->arg[k].mem += base; // the memory follows the stack arguments
+    for (int k = 0; k < p->nres; k++) p->res[k].mem += base;
+    p->bytes = align_to(base + c.area, 16);
+}
+
+static void plan_free(Plan* p) {
+    free(p->arg);
+    free(p->res);
 }
 
 static int is_call(int op) { return op == IR_CALL || op == IR_CALLI; }
@@ -592,7 +739,9 @@ static void liveness(A64* a) {
     for (int b = 0; b < fn->nblocks; b++)
         for (int i = 0; i < fn->blocks[b].nins; i++) {
             int v = fn->blocks[b].ins[i];
-            a->start[v] = fn->ins[v].op == IR_PHI ? 2 * a->bfirst[b] : 2 * a->idx[v] + 1;
+            IrIns* x = &fn->ins[v];
+            // a proj's value arrives at its call
+            a->start[v] = x->op == IR_PHI ? 2 * a->bfirst[b] : x->op == IR_PROJ ? 2 * a->idx[x->args[0]] + 1 : 2 * a->idx[v] + 1;
             a->end[v] = a->start[v];
         }
     // uses by value (counting sort), a fused value's operands used at its user
@@ -691,20 +840,23 @@ static void hints(A64* a) {
                 for (int k = 0; k < x->nargs; k++)
                     if (a->phi_of[x->args[k]] < 0) a->phi_of[x->args[k]] = u;
             } else if (x->op == IR_PARAM) {
-                if (a->pin[x->imm].reg >= 0) a->hint[u] = a->pin[x->imm].reg;
+                if (a->pin[x->imm].kind == L_REG) a->hint[u] = a->pin[x->imm].reg;
             } else if (is_call(x->op)) {
                 a->calls[a->ncalls++] = 2 * a->idx[u];
-                a->hint[u] = is_fp((IrType)x->type) ? V : 0;
-                int k0;
-                uint32_t stack;
-                Arg* args = call_args(a, x, &k0, &stack);
-                for (int k = k0; k < x->nargs; k++)
-                    if (args[k - k0].reg >= 0 && a->hint[x->args[k]] < 0) a->hint[x->args[k]] = args[k - k0].reg;
-                free(args);
-                stack = (stack + 15) & ~15u;
-                if (stack > a->out) a->out = stack;
-            } else if (x->op == IR_RET && x->nargs) {
-                if (a->hint[x->args[0]] < 0) a->hint[x->args[0]] = fp_val(a, x->args[0]) ? V : 0;
+                Plan p;
+                plan_call(fn, x, &p);
+                for (int k = 0; k < p.n; k++)
+                    if (p.arg[k].kind == L_REG && a->hint[x->args[p.k0 + k]] < 0) a->hint[x->args[p.k0 + k]] = p.arg[k].reg;
+                if (p.nres && p.res[0].kind == L_REG) a->hint[u] = p.res[0].reg;
+                for (int i = j + 1; i < bb->nins && fn->ins[bb->ins[i]].op == IR_PROJ; i++) {
+                    Loc r = p.res[fn->ins[bb->ins[i]].imm];
+                    if (r.kind == L_REG) a->hint[bb->ins[i]] = r.reg;
+                }
+                if (p.bytes > a->out) a->out = p.bytes;
+                plan_free(&p);
+            } else if (x->op == IR_RET) {
+                for (int k = 0; k < x->nargs; k++)
+                    if (a->rin[k].kind == L_REG && a->hint[x->args[k]] < 0) a->hint[x->args[k]] = a->rin[k].reg;
             }
         }
     }
@@ -894,6 +1046,11 @@ static uint32_t place_objects(A64* a) {
     IrFunc* fn = a->fn;
     a->obj = xcalloc((size_t)fn->nins, sizeof(uint32_t));
     uint32_t at = a->slot_base + 8u * (uint32_t)a->nslots;
+    if (a->nsave) {
+        a->save_at = at;
+        at += a->nsave;
+        a->has_frame = 1;
+    }
     for (int b = 0; b < fn->nblocks; b++)
         for (int i = 0; i < fn->blocks[b].nins; i++) {
             int v = fn->blocks[b].ins[i];
@@ -1428,47 +1585,121 @@ static void pointer_offset(A64* a, int v) {
     dst_done(a, v, rd);
 }
 
-// A direct, extern, or indirect call: stack arguments stored at [sp], then
-// the register arguments moved in parallel; a calli's target waits in x17.
+// Store leaf v to [base + off], through scratch when it is a constant or in
+// a slot; wide stores a narrow integer as 32 bits (a scalar stack argument).
+static void store_leaf(A64* a, int v, int base, int64_t off, int scratch, int wide) {
+    IrIns* x = ins_of(a, v);
+    IrType t = (IrType)x->type;
+    int size = ir_type_bits(t) / 8, rt;
+    uint32_t op = mem_op(t, 0);
+    if (x->op == IR_CONST) { // a float constant stores as its bits
+        if (is_fp(t)) op = mem_op(t == IT_F64 ? IT_U64 : IT_U32, 0);
+        rt = x->imm ? scratch : 31;
+        if (x->imm) mov_imm(a, scratch, x->imm, size == 8);
+    } else {
+        rt = opnd(a, v, is_fp(t) ? (scratch == S0 ? FS0 : FS1) : scratch);
+    }
+    if (wide && size < 4 && !is_fp(t)) {
+        op = mem_op(IT_U32, 0);
+        size = 4;
+    }
+    mem(a, op, size, rt, base, off);
+}
+
+// Load leaf v, when it is used, from [base + off].
+static void load_leaf(A64* a, int v, int base, int64_t off) {
+    if (loc(a, v) == NOREG) return;
+    IrType t = (IrType)ins_of(a, v)->type;
+    int rd = dst(a, v);
+    mem(a, mem_op(t, 1), ir_type_bits(t) / 8, rd, base, off);
+    dst_done(a, v, rd);
+}
+
+static void str_x(A64* a, int r, int base, uint32_t off) { mem(a, 0xF9000000u, 8, r, base, off); }
+static void ldr_x(A64* a, int r, int base, uint32_t off) { mem(a, 0xF9400000u, 8, r, base, off); }
+
+// A direct, extern, or indirect call: memory first (stack arguments, copies
+// of aggregates passed by address, shared words), then the register arguments
+// moved in parallel and the shared words loaded; a calli's target waits in
+// x17. The results then move to the call's value or its projections, the
+// words and a result buffer through memory.
 static void call(A64* a, int v) {
     IrIns* x = ins_of(a, v);
-    int k0;
-    Arg* args = call_args(a, x, &k0, NULL);
+    Plan p;
+    plan_call(a->fn, x, &p);
     if (x->op == IR_CALLI) {
         mov_reg(a, S1, opnd(a, x->args[0], S1));
         if (x->flags & IRF_CHECKED) null_fail_if_zero(a, S1);
     }
-    Move m[16];
+    Move* m = xcalloc((size_t)(p.n + p.nres + 1), sizeof(Move));
     int nm = 0;
-    for (int k = k0; k < x->nargs; k++) {
-        Arg g = args[k - k0];
-        if (g.reg >= 0) {
-            m[nm++] = move_of(a, g.reg, x->args[k]);
-            continue;
+    for (int k = 0; k < p.n; k++) {
+        Loc g = p.arg[k];
+        int w = x->args[p.k0 + k];
+        switch (g.kind) {
+        case L_REG:
+            m[nm++] = move_of(a, g.reg, w);
+            break;
+        case L_STACK:
+            store_leaf(a, w, 31, g.soff, S0, g.size == 4);
+            break;
+        case L_WORD:
+            store_leaf(a, w, 31, g.mem + g.off, S0, 0);
+            break;
+        default: // L_ADDR: the copy, and its address
+            store_leaf(a, w, 31, g.mem + g.off, S0, 0);
+            if (!g.head) break;
+            if (g.reg >= 0) {
+                m[nm++] = (Move){ g.reg, 0, g.mem, 2, 1 };
+            } else {
+                add_imm(a, S0, 31, g.mem);
+                str_x(a, S0, 31, g.soff);
+            }
+            break;
         }
-        int w = x->args[k]; // a constant, float or not, stores as its bits
-        uint32_t op = g.size == 8 ? 0xF9000000u : 0xB9000000u;
-        int r;
-        if (is_const(a, w)) {
-            r = ins_of(a, w)->imm == 0 ? 31 : S0;
-            if (r == S0) mov_imm(a, S0, ins_of(a, w)->imm, g.size == 8);
-        } else {
-            r = opnd(a, w, fp_val(a, w) ? FS0 : S0);
-            if (fp_reg(r)) op = g.size == 8 ? 0xFD000000u : 0xBD000000u;
-        }
-        mem(a, op, g.size, r, 31, g.soff);
     }
-    free(args);
+    if (p.nres && p.res[0].kind == L_ADDR) m[nm++] = (Move){ 8, 0, p.res[0].mem, 2, 1 }; // the result buffer
     parallel_move(a, m, nm);
+    for (int k = 0; k < p.n; k++)
+        if (p.arg[k].kind == L_WORD && p.arg[k].head) ldr_x(a, p.arg[k].reg, 31, p.arg[k].mem);
     if (x->op == IR_CALLI) put(a, 0xD63F0000u | (S1 << 5)); // blr x17
     else if (x->sym && x->sym->is_extern) bl_extern(a, x->name);
     else bl_to(a, x->name);
-    if (loc(a, v) == NOREG) return;
-    int rd = dst(a, v);
-    IrType t = (IrType)x->type;
-    if (narrow(t)) ext(a, t, rd, 0); // an AST-emitted callee may leave it unwrapped
-    else mov_reg(a, rd, is_fp(t) ? V : 0);
-    dst_done(a, v, rd);
+    if (!x->sig || !x->sig->ret.agg) {
+        free(m);
+        plan_free(&p);
+        if (loc(a, v) == NOREG) return;
+        int rd = dst(a, v);
+        IrType t = (IrType)x->type;
+        if (narrow(t)) ext(a, t, rd, 0); // an AST-emitted callee may leave it unwrapped
+        else mov_reg(a, rd, is_fp(t) ? V : 0);
+        dst_done(a, v, rd);
+        return;
+    }
+    IrBlock* bb = &a->fn->blocks[x->block];
+    int first = 0;
+    while (bb->ins[first] != v) first++;
+    int last = first + 1;
+    while (last < bb->nins && ins_of(a, bb->ins[last])->op == IR_PROJ) last++;
+    for (int k = 0; k < p.nres; k++)
+        if (p.res[k].kind == L_WORD && p.res[k].head) str_x(a, p.res[k].reg, 31, p.res[k].mem);
+    nm = 0;
+    for (int i = first + 1; i < last; i++) {
+        int u = bb->ins[i];
+        Loc r = p.res[ins_of(a, u)->imm];
+        IrType t = (IrType)ins_of(a, u)->type;
+        if (r.kind != L_REG || loc(a, u) == NOREG) continue;
+        if (narrow(t)) ext(a, t, r.reg, r.reg); // an AST-emitted callee may leave it unwrapped
+        m[nm++] = (Move){ loc(a, u), r.reg, 0, 0, 1 };
+    }
+    parallel_move(a, m, nm);
+    for (int i = first + 1; i < last; i++) {
+        int u = bb->ins[i];
+        Loc r = p.res[ins_of(a, u)->imm];
+        if (r.kind != L_REG) load_leaf(a, u, 31, r.mem + r.off);
+    }
+    free(m);
+    plan_free(&p);
 }
 
 // --- emission ---------------------------------------------------------------------------
@@ -1518,10 +1749,19 @@ static void terminator(A64* a, int b, int v) {
         return;
     }
     if (x->op == IR_RET) {
-        if (x->nargs) {
-            int r = fp_val(a, x->args[0]) ? V : 0;
-            mov_reg(a, r, opnd(a, x->args[0], r));
+        Move* m = xcalloc((size_t)(x->nargs ? x->nargs : 1), sizeof(Move));
+        int nm = 0;
+        if (x->nargs && a->rin[0].kind == L_ADDR) ldr_x(a, S0, 31, a->save_at + a->rin[0].mem); // the caller's buffer
+        for (int k = 0; k < x->nargs; k++) {
+            Loc r = a->rin[k];
+            if (r.kind == L_REG) m[nm++] = move_of(a, r.reg, x->args[k]);
+            else if (r.kind == L_WORD) store_leaf(a, x->args[k], 31, a->save_at + r.mem + r.off, S0, 0);
+            else store_leaf(a, x->args[k], S0, r.off, S1, 0);
         }
+        parallel_move(a, m, nm);
+        for (int k = 0; k < x->nargs; k++)
+            if (a->rin[k].kind == L_WORD && a->rin[k].head) ldr_x(a, a->rin[k].reg, 31, a->save_at + a->rin[k].mem);
+        free(m);
         epilogue(a);
         return;
     }
@@ -1552,7 +1792,7 @@ static void emit_block(A64* a, int b) {
             continue;
         }
         switch (x->op) {
-        case IR_CONST: case IR_PARAM: case IR_PHI:
+        case IR_CONST: case IR_PARAM: case IR_PHI: case IR_PROJ: // a proj's value arrives at its call
             break;
         case IR_ADD: case IR_SUB:
             add_sub(a, v);
@@ -1603,31 +1843,45 @@ static void emit_block(A64* a, int b) {
     }
 }
 
-// Entry: register parameters, a narrow one wrapped where it arrived (an
-// AST-emitted caller may pass it unwrapped), moved to their homes; then
-// stack parameters loaded from the caller's frame.
+// Entry: first the words and addresses that arrive in registers (and x8, a
+// result buffer's) are saved; then the register parameters, a narrow one
+// wrapped where it arrived (an AST-emitted caller may pass it unwrapped),
+// move to their homes in parallel; then the rest load from memory: the saved
+// words, through the saved or stacked addresses, and the caller's frame.
 static void params(A64* a) {
-    IrBlock* bb = &a->fn->blocks[0];
-    Move m[16];
+    IrFunc* fn = a->fn;
+    IrBlock* bb = &fn->blocks[0];
+    if (fn->nrets && a->rin[0].kind == L_ADDR) str_x(a, 8, 31, a->save_at + a->rin[0].mem);
+    for (int k = 0; k < fn->nparams; k++) {
+        Loc g = a->pin[k];
+        if (g.head && (g.kind == L_WORD || (g.kind == L_ADDR && g.reg >= 0))) str_x(a, g.reg, 31, a->save_at + g.mem);
+    }
+    Move* m = xcalloc((size_t)(fn->nparams ? fn->nparams : 1), sizeof(Move));
     int n = 0;
     for (int i = 0; i < bb->nins; i++) {
         int v = bb->ins[i];
         IrIns* x = ins_of(a, v);
-        if (x->op != IR_PARAM || loc(a, v) == NOREG) continue;
+        if (x->op != IR_PARAM || loc(a, v) == NOREG || a->pin[x->imm].kind != L_REG) continue;
         int r = a->pin[x->imm].reg;
-        if (r < 0) continue;
         if (narrow((IrType)x->type)) ext(a, (IrType)x->type, r, r);
         m[n++] = (Move){ loc(a, v), r, 0, 0, 1 };
     }
     parallel_move(a, m, n);
+    free(m);
     for (int i = 0; i < bb->nins; i++) {
         int v = bb->ins[i];
         IrIns* x = ins_of(a, v);
-        if (x->op != IR_PARAM || loc(a, v) == NOREG || a->pin[x->imm].reg >= 0) continue;
-        IrType t = (IrType)x->type;
-        int rd = dst(a, v);
-        mem(a, mem_op(t, 1), ir_type_bits(t) / 8, rd, 31, (int64_t)(a->frame + a->pin[x->imm].soff));
-        dst_done(a, v, rd);
+        if (x->op != IR_PARAM) continue;
+        Loc g = a->pin[x->imm];
+        if (g.kind == L_STACK) {
+            load_leaf(a, v, 31, (int64_t)(a->frame + g.soff));
+        } else if (g.kind == L_WORD) {
+            load_leaf(a, v, 31, a->save_at + g.mem + g.off);
+        } else if (g.kind == L_ADDR && loc(a, v) != NOREG) {
+            if (g.reg >= 0) ldr_x(a, S1, 31, a->save_at + g.mem);
+            else ldr_x(a, S1, 31, a->frame + g.soff);
+            load_leaf(a, v, S1, g.off);
+        }
     }
 }
 
@@ -1701,6 +1955,12 @@ int arm64_covers(IrFunc* fn) {
             IrIns* x = &fn->ins[fn->blocks[b].ins[i]];
             if (x->op == IR_SLOT && x->aux > 16) return 0; // over-aligned: sp is only 16-byte aligned
             if (x->op == IR_GLOBAL && x->sym && x->sym->is_extern) return 0; // needs the GOT
+            if (is_call(x->op)) { // frame_pairs reaches the saved registers past the outgoing bytes
+                Plan p;
+                plan_call(fn, x, &p);
+                plan_free(&p);
+                if (p.bytes > 352) return 0;
+            }
         }
     return 1;
 }
@@ -1712,8 +1972,12 @@ void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int is_main)
     a.fn = fn;
     a.t = obj_text(o);
     a.is_main = is_main;
-    a.pin = xcalloc((size_t)fn->nparams, sizeof(Arg));
-    assign_args(fn->params, fn->nparams, -1, a.pin);
+    a.pin = xcalloc((size_t)(fn->nparams ? fn->nparams : 1), sizeof(Loc));
+    a.rin = xcalloc((size_t)(fn->nrets ? fn->nrets : 1), sizeof(Loc));
+    Cc c = { 0, 0, 0, 0, 0 };
+    assign_leaves(&c, fn->params, fn->nparams, fn->sig, -1, a.pin);
+    assign_result(&c, fn->rets, fn->nrets, fn->sig ? fn->sig->ret.agg : NULL, a.rin);
+    a.nsave = c.area;
     split_critical_edges(fn);
     layout(&a);
     count_uses(&a);
@@ -1721,7 +1985,7 @@ void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int is_main)
     hints(&a);
     allocate(&a);
     a.slot_base = a.out + 16u + 8u * (uint32_t)a.ncs;
-    a.has_frame = a.ncalls || a.nslots || a.ncs;
+    a.has_frame = a.ncalls || a.nslots || a.ncs || a.nsave;
     a.frame = place_objects(&a);
     if (!a.has_frame) a.frame = 0;
     a.label = xcalloc((size_t)fn->nblocks, sizeof(uint32_t));
@@ -1747,5 +2011,5 @@ void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int is_main)
     free(a.order); free(a.lix); free(a.bfirst); free(a.blast); free(a.idx);
     free(a.nuse); free(a.fused); free(a.madd); free(a.start); free(a.end);
     free(a.hint); free(a.phi_of); free(a.calls); free(a.reg); free(a.slot);
-    free(a.label); free(a.br); free(a.pin); free(a.obj); free(a.pool); free(a.psite);
+    free(a.label); free(a.br); free(a.pin); free(a.rin); free(a.obj); free(a.pool); free(a.psite);
 }

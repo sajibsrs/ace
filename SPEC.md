@@ -1139,8 +1139,10 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
     5. Lower: one walk of each checked function into SSA (Braun et al.,
        trivial phis removed), expanding `inline` calls, turning `defer` into
        control flow, making debug checks trapping instructions (checked
-       integer arithmetic) or explicit branches, splitting
-       non-escaping struct and tuple locals into SSA values, and turning self
+       integer arithmetic) or explicit branches, splitting every struct,
+       tuple, string, and slice into its scalar leaves (SSA values, or loads
+       and stores for one that lives in memory; the IR has no aggregate
+       values, and each target maps leaves onto its ABI), and turning self
        tail recursion into a loop.
     6. Optimize (release only), in this order, each once: loop rotation, sparse
        conditional constant propagation, global value numbering, loop-invariant

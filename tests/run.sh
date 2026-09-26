@@ -1361,48 +1361,42 @@ if [ -d tests/emit ]; then
             echo "FAIL: register-returned literals and tuples must skip the frame temp"
             fail=1
         fi
-        # A register-returned call assigned to a frame-resident local or bound
-        # to typed binders stores its result registers straight into the
-        # destination: the instruction after the call is a direct stur of x0 or
-        # d0, not the address computation of a staged temp. Assigned to a
-        # small struct local it moves them into the fields' registers. The
-        # first function's label is the section, so first() is a dummy.
+        # A register-returned call assigned to a local or bound to typed
+        # binders reaches its destination without a staged temp: after the
+        # call no frame address is formed and no result register is reloaded
+        # from the frame. The first function's label is the section, so
+        # first() is a dummy.
         if ! otool -tv /tmp/ace_emit/basics/call_result_sink.o | awk '
             /^_main:/ { exit }
-            /^[^0-9].*:$/ { fn = $0; next }
-            fn ~ /^__ace\$fn\$sink_/ && $2 == "bl" && $3 !~ /fail/ { want = 1; next }
-            want {
-                want = 0
-                if ($2 == "stur" && $3 ~ /^[xd]0,$/) {
-                    if (fn ~ /sink_padded/) padded = 1
-                    if (fn ~ /sink_divmod/) dm = 1
-                } else if ($2 ~ /^f?mov$/ && $4 ~ /^[xd]0$/) {
-                    if (fn ~ /sink_small/) small = 1
-                    if (fn ~ /sink_pair/) pair = 1
-                    if (fn ~ /sink_vec/) vec = 1
-                } else bad = 1
+            /^[^0-9].*:$/ { fn = $0; after = 0; next }
+            fn ~ /^__ace\$fn\$sink_/ && $2 == "bl" && $3 !~ /fail/ {
+                after = 1
+                for (k = split("small pair vec padded divmod", s, " "); k; k--) if (fn ~ ("sink_" s[k]) && !seen[s[k]]++) nseen++
+                next
             }
-            END { exit bad || !small || !pair || !vec || !padded || !dm }'; then
+            after && (($2 == "sub" && $4 == "x29,") || ($2 == "add" && $4 == "sp,")) { bad = 1 }
+            after && $2 ~ /^ldu?r$/ && $3 ~ /^[xd][0-7],$/ && $4 ~ /^\[(x29|sp)/ { bad = 1 }
+            END { exit bad || nseen != 5 }'; then
             echo "FAIL: register-returned call results must be stored straight into the destination"
             fail=1
         fi
-        # A by-value aggregate argument that is a frame-resident local is loaded
-        # straight from its slot: before the call no frame address is formed
-        # (`sub xN, x29, ...`), and use_pair loads x0/x1 and use_vec d0 through
-        # d5 with ldur. The first function's label is the section, so first()
-        # is a dummy.
+        # A by-value aggregate argument that is a local goes straight to its
+        # argument registers: before the call no frame address is formed for
+        # a staged copy. The first function's label is the section, so
+        # first() is a dummy.
         if ! otool -tv /tmp/ace_emit/basics/call_frame_args.o | awk '
             /^_main:/ { exit }
             /^[^0-9].*:$/ { fn = $0; done = 0; next }
             fn ~ /^__ace\$fn\$use_(pair|vec)\$/ && !done {
-                if ($2 == "bl" && $3 !~ /fail/) { done = 1; next }
-                if ($2 == "sub" && $4 == "x29,") bad = 1
-                if ($2 == "ldur" && fn ~ /use_pair/ && $3 == "x0,") p0 = 1
-                if ($2 == "ldur" && fn ~ /use_pair/ && $3 == "x1,") p1 = 1
-                if ($2 == "ldur" && fn ~ /use_vec/ && $3 == "d0,") v0 = 1
-                if ($2 == "ldur" && fn ~ /use_vec/ && $3 == "d5,") v5 = 1
+                if ($2 == "bl" && $3 !~ /fail/) {
+                    done = 1
+                    if (fn ~ /use_pair/) pair = 1
+                    else vec = 1
+                    next
+                }
+                if (($2 == "sub" && $4 == "x29,") || ($2 == "add" && $4 == "sp,")) bad = 1
             }
-            END { exit bad || !p0 || !p1 || !v0 || !v5 }'; then
+            END { exit bad || !pair || !vec }'; then
             echo "FAIL: frame-resident aggregate arguments must load straight from their slots"
             fail=1
         fi
@@ -1450,15 +1444,28 @@ if [ -d tests/emit ]; then
             fail=1
         fi
         # Passed to and assigned from a call returning an HFA, a Vec3 local
-        # moves between d8-d13 and d0-d5 by fmov: no float goes through the
-        # frame (the callee-saved area uses stp/ldp; a constant-pool literal
-        # load has no bracketed address).
+        # stays in registers: inside the loop (its head to the backward
+        # branch) no float goes through memory, and after the call the result
+        # moves from d0 into a callee-saved d register by fmov.
         if ! otool -tv /tmp/ace_emit/basics/struct_registers.o | awk '
             /^[^0-9].*:$/ { fn = ($0 ~ /^__ace\$fn\$hfa_loop\$/); next }
-            fn && $2 ~ /^(ldur|stur|ldr|str)$/ && $3 ~ /^d/ && $4 ~ /^\[/ { bad = 1 }
-            fn && $2 == "bl" { called = 1 }
-            fn && called && $2 == "fmov" && $3 == "d8," && $4 == "d0" { back = 1 }
-            END { exit bad || !back }'; then
+            function hex(h,   v, i) {
+                sub(/^0x/, "", h)
+                v = 0
+                for (i = 1; i <= length(h); i++) v = v * 16 + index("0123456789abcdef", substr(h, i, 1)) - 1
+                return v
+            }
+            fn { n++; addr[n] = hex($1); op[n] = $2; a3[n] = $3; a4[n] = $4 }
+            END {
+                for (i = 1; i <= n; i++) if (op[i] == "b" && hex(a3[i]) < addr[i]) { head = hex(a3[i]); tail = addr[i] }
+                for (i = 1; i <= n; i++) {
+                    if (addr[i] < head || addr[i] > tail) continue
+                    if (op[i] ~ /^(ldur|stur|ldr|str|ldp|stp)$/ && a3[i] ~ /^d/) bad = 1
+                    if (op[i] == "bl") called = 1
+                    if (called && op[i] == "fmov" && a3[i] ~ /^d([89]|1[0-5]),$/ && a4[i] == "d0") back = 1
+                }
+                exit bad || !head || !back
+            }'; then
             echo "FAIL: an HFA struct local must stay in registers across calls"
             fail=1
         fi

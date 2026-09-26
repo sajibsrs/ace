@@ -7,7 +7,12 @@
 # parameters, pointers to variables, function values, and range loops with
 # steps in both directions), and floats (f32 and f64 locals, parameters past
 # the eight argument registers, results, globals, arithmetic, NaN-producing
-# division, comparisons, and conversions both ways), builds each with two
+# division, comparisons, and conversions both ways), and records (random
+# structs: floating aggregates, words shared by several fields, ones past 16
+# bytes, nested; as locals, parameters, results, literals, fields, and
+# copies) and (T, Error) results destructured. A switch keeps some functions
+# on the AST emitter, so calls cross between the backends both ways. Each
+# program is built with two
 # compilers in debug and release, and requires identical output and exit
 # status. main prints each function's result for several arguments (a float
 # as its bits); a debug arithmetic trap ends the run the same way in both.
@@ -87,10 +92,46 @@ function fexpr(t, depth,   r, a, b) {
     return t "(" fexpr(t == "f32" ? "f64" : "f32", depth - 1) ")"
 }
 
-# a call of a random function, converted to t
-function call_conv(t,   j) {
-    j = pick(nfuncs)
+# a call of a random function with a scalar result, converted to t
+function call_conv(t,   j, i, n, c) {
+    n = 0
+    for (i = 0; i < nfuncs; i++) if (!isrec(fret[i]) && fret[i] !~ /^\(/) c[n++] = i
+    if (!n) return isfloat(t) ? fliteral(t) : t "(" literal(t) ")"
+    j = c[pick(n)]
     return t "(f" j "(" args_of(j, 0) "))"
+}
+
+function isrec(t) { return t ~ /^R/ }
+function recno(t) { return substr(t, 2) + 0 }
+
+# a value of record type t: a variable, a literal, or a call
+function rexpr(t, depth,   r, v, s, i, j, n, c) {
+    r = rand()
+    v = var_of(t)
+    if (v != "" && r < 0.5) return v
+    if (depth > 0 && r < 0.75) {
+        n = 0
+        for (i = 0; i < nfuncs; i++) if (fret[i] == t) c[n++] = i
+        if (n) {
+            j = c[pick(n)]
+            return "f" j "(" args_of(j, 0) ")"
+        }
+    }
+    s = t " {"
+    for (i = 0; i < nfld[recno(t)]; i++) s = s (i ? ", " : " ") "f" i " = " anyexpr(ftype[recno(t), i], depth - 1)
+    return s " }"
+}
+
+function anyexpr(t, depth) { return isrec(t) ? rexpr(t, depth) : expr(t, depth) }
+
+# a scalar field of type t of a record variable in scope, or ""
+function field_of(t,   i, k, n, c) {
+    n = 0
+    for (i = 0; i < nvars; i++) {
+        if (!isrec(vtype[i])) continue
+        for (k = 0; k < nfld[recno(vtype[i])]; k++) if (ftype[recno(vtype[i]), k] == t) c[n++] = vname[i] ".f" k
+    }
+    return n ? c[pick(n)] : ""
 }
 
 function literal(t,   m) {
@@ -109,9 +150,12 @@ function var_of(t,   i, n, c) {
     return n ? c[pick(n)] : ""
 }
 
-function any_var(   i) {
-    if (!nvars) return ""
-    i = pick(nvars)
+# a scalar variable and its type, or ""
+function any_var(   i, n, c) {
+    n = 0
+    for (i = 0; i < nvars; i++) if (!isrec(vtype[i])) c[n++] = i
+    if (!n) return ""
+    i = c[pick(n)]
     return vname[i] SUBSEP vtype[i]
 }
 
@@ -119,6 +163,10 @@ function leaf(t, depth,   v, r, s) {
     r = rand()
     v = var_of(t)
     if (v != "" && r < 0.55) return v
+    if (r < 0.62) {
+        s = field_of(t)
+        if (s != "") return s
+    }
     if (t != "bool" && r < 0.8) {
         s = any_var()
         if (s != "") {
@@ -137,6 +185,7 @@ function args_of(j, lit,   k, s, t) {
     for (k = 0; k < nparams[j]; k++) {
         t = ptype[j, k]
         if (pmut[j, k]) s = s (k ? ", " : "") "mut " lvalue(t)
+        else if (isrec(t)) s = s (k ? ", " : "") rexpr(t, 0)
         else if (lit) s = s (k ? ", " : "") (t == "bool" || isfloat(t) ? literal(t) : t "(" literal(t) ")")
         else s = s (k ? ", " : "") expr(t, 0)
     }
@@ -172,7 +221,7 @@ function memory_stmt(depth, pad, loops,   p, r, t, i, name, lab, j, k, s) {
     }
     if (r < 0.55) { # a call through a function value
         j = pick(nfuncs + 1) - 1
-        if (j < 0 || fmut[j]) return
+        if (j < 0 || fmut[j] || fret[j] ~ /^\(/) return
         name = "h" nlocals++
         s = ""
         for (k = 0; k < nparams[j]; k++) s = s (k ? ", " : "") ptype[j, k]
@@ -260,15 +309,52 @@ function block(depth, pad, loops,   i, n, saved) {
     nvars = saved
 }
 
-function assignable(   i, n, c) {
+function assignable(   i, n, c) { # a scalar one
     n = 0
-    for (i = 0; i < nvars; i++) if (!vfixed[vname[i]]) c[n++] = i
+    for (i = 0; i < nvars; i++) if (!vfixed[vname[i]] && !isrec(vtype[i])) c[n++] = i
     return n ? c[pick(n)] : -1
+}
+
+# a record local, a field or whole-record assignment, or a destructured call
+function record_stmt(pad,   p, r, t, i, k, j, n, c, name) {
+    p = indent(pad)
+    r = rand()
+    if (r < 0.4) {
+        t = "R" pick(nrec)
+        name = "v" nlocals++
+        print p name ": " t " = " rexpr(t, 2)
+        declare(name, t)
+        return
+    }
+    n = 0
+    for (i = 0; i < nvars; i++) if (isrec(vtype[i]) && !vfixed[vname[i]]) c[n++] = i
+    if (r < 0.8 && n) {
+        i = c[pick(n)]
+        t = vtype[i]
+        if (chance(0.3)) { print p vname[i] " = " rexpr(t, 1); return }
+        k = pick(nfld[recno(t)])
+        print p vname[i] ".f" k " = " anyexpr(ftype[recno(t), k], 1)
+        return
+    }
+    n = 0
+    for (j = 0; j < nfuncs; j++) if (fret[j] ~ /^\(/) c[n++] = j
+    if (!n) return
+    j = c[pick(n)]
+    t = substr(fret[j], 2, index(fret[j], ",") - 2)
+    name = "v" nlocals++
+    print p name ": " t ", e" nlocals ": Error = f" j "(" args_of(j, 0) ")"
+    declare(name, t)
+    print p "v" nlocals + 1 ": i32 = e" nlocals ".code"
+    declare("v" nlocals + 1, "i32")
+    print p "v" nlocals + 2 ": bool = e" nlocals " != null"
+    declare("v" nlocals + 2, "bool")
+    nlocals += 3
 }
 
 function stmt(depth, pad, loops,   p, r, t, name, i, lab, n, open, ops) {
     p = indent(pad)
     if (depth > 0 && chance(0.18)) { memory_stmt(depth, pad, loops); return }
+    if (chance(0.15)) { record_stmt(pad); return }
     r = rand()
     if (depth <= 0 || r < 0.3) {
         t = anytype()
@@ -332,13 +418,29 @@ function stmt(depth, pad, loops,   p, r, t, name, i, lab, n, open, ops) {
 
 # a return value of the current function
 function result(depth,   t) {
+    if (isrec(rett)) return rexpr(rett, depth)
+    if (rett ~ /^\(/) {
+        t = substr(rett, 2, index(rett, ",") - 2)
+        return expr(t, depth) ", " (chance(0.5) ? "null" : "Fail(" (pick(5) - 2) ")")
+    }
     t = chance(0.5) ? (chance(0.5) ? "f32" : "f64") : types[2 + pick(ntypes - 1)]
     if (t == rett) return expr(t, depth)
     return rett "(" expr(t, depth) ")"
 }
 
+# every scalar of a record value e of type t
+function show_rec(e, t,   i, s) {
+    s = ""
+    for (i = 0; i < nfld[recno(t)]; i++) {
+        if (isrec(ftype[recno(t), i])) s = s show_rec(e ".f" i, ftype[recno(t), i])
+        else s = s show(e ".f" i, ftype[recno(t), i]) "\n"
+    }
+    return s
+}
+
 # fmt.printf of value e of type t: a float as its exact bits
 function show(e, t) {
+    if (t == "bool") return "    if " e " { fmt.printf(\"1\\n\") } else { fmt.printf(\"0\\n\") }"
     if (isfloat(t)) return "    fmt.printf(\"%u\\n\", uint(bits.cast(" e ")))"
     return "    fmt.printf(\"%d\\n\", int(" e "))"
 }
@@ -353,19 +455,37 @@ BEGIN {
     print "\nS: struct {\n    a: i64,\n    b: u8,\n}\n"
     print "gs: S = S { a = " literal("i64") ", b = " literal("u8") " }\n"
     print "mut S.bump(n: i64): int {\n    self.a += n & 7\n    self.b = u8(self.a & 63)\n    return int(self.b)\n}\n"
+    print "Fail: error\n"
+    nrec = 1 + pick(4)
+    for (r = 0; r < nrec; r++) { # a floating aggregate, small scalars sharing words, or anything
+        form = rand()
+        nfld[r] = form < 0.3 ? 1 + pick(4) : 1 + pick(5)
+        s = "R" r ": struct {\n"
+        ft = chance(0.5) ? "f32" : "f64"
+        for (k = 0; k < nfld[r]; k++) {
+            if (form < 0.3) t = ft
+            else if (form < 0.55) t = narrows[1 + pick(split("i8 u8 bool u16 i32 u32", narrows, " "))]
+            else t = anytype()
+            if (r > 0 && chance(0.15)) t = "R" pick(r)
+            ftype[r, k] = t
+            s = s "    f" k ": " t ",\n"
+        }
+        print s "}\n"
+    }
     nf = 2 + pick(4)
     for (f = 0; f < nf; f++) {
         nvars = 0
         nlocals = 0
         nlabels = 0
         np = chance(0.15) ? 9 + pick(4) : 1 + pick(4) # past the argument registers, at times
-        rett = chance(0.3) ? (chance(0.5) ? "f32" : "f64") : "int"
+        r = rand()
+        rett = r < 0.2 ? "R" pick(nrec) : r < 0.35 ? "(" types[2 + pick(ntypes - 1)] ", Error)" : r < 0.55 ? (chance(0.5) ? "f32" : "f64") : "int"
         fret[f] = rett
         s = "f" f "("
         for (k = 0; k < np; k++) {
-            t = anytype()
+            t = chance(0.3) ? "R" pick(nrec) : anytype()
             ptype[f, k] = t
-            pmut[f, k] = chance(0.2)
+            pmut[f, k] = !isrec(t) && chance(0.2)
             if (pmut[f, k]) fmut[f] = 1
             s = s (k ? ", " : "") (pmut[f, k] ? "mut " : "") "p" k ": " t
             declare("p" k, t)
@@ -377,6 +497,7 @@ BEGIN {
         if (chance(0.3)) declare("gs.a", "i64")
         if (chance(0.3)) declare("gs.b", "u8")
         print s "): " rett " {"
+        if (chance(0.3)) print "    sw: int = 1\n    switch sw {\n        0 { sw = 2 }\n        default {}\n    }" # on the AST emitter
         block(3, 1, "")
         print "    return " result(2)
         print "}\n"
@@ -388,7 +509,17 @@ BEGIN {
     print "main(): int {"
     for (f = 0; f < nf; f++) {
         for (c = 0; c < 3; c++) {
-            print show("f" f "(" args_of(f, 1) ")", fret[f])
+            if (isrec(fret[f])) {
+                print "    r" f "_" c ": " fret[f] " = f" f "(" args_of(f, 1) ")"
+                printf "%s", show_rec("r" f "_" c, fret[f])
+            } else if (fret[f] ~ /^\(/) {
+                t = substr(fret[f], 2, index(fret[f], ",") - 2)
+                print "    t" f "_" c ": " t ", e" f "_" c ": Error = f" f "(" args_of(f, 1) ")"
+                print show("t" f "_" c, t)
+                print show("e" f "_" c ".code", "i32")
+            } else {
+                print show("f" f "(" args_of(f, 1) ")", fret[f])
+            }
         }
     }
     print "    fmt.printf(\"%d %d\\n\", int(gs.a), int(gs.b))"

@@ -1,13 +1,8 @@
 /* A function outside the IR's current subset is left to the AST emitter,
  * with the first construct that kept it out. */
 
-Point: struct {
-    x: i64,
-    y: i64,
-}
-
-norm(p: Point): i64 {
-    return p.x + p.y
+norm(s: string): i64 {
+    return i64(s.len)
 }
 
 sign(x: i64): i64 {
@@ -22,7 +17,7 @@ bump(mut n: i64) {
 }
 
 main(): int {
-    n: i64 = norm(Point{x = 1, y = 2})
+    n: i64 = norm("abc")
     bump(mut n)
     if sign(4) != 1 || n != 4 { return 1 }
     return 0

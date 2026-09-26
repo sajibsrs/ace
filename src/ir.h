@@ -41,10 +41,12 @@ typedef enum {
     X(PADD, "padd") X(PSUB, "psub")                                            \
     X(CALL, "call")     /* to name (sym, when an Ace or extern function) */    \
     X(CALLI, "calli")   /* to the function value args[0]; arguments follow */ \
+    X(PROJ, "proj")     /* leaf imm of the aggregate result of call args[0],  \
+                           which it follows directly with the call's others */ \
     /* terminators */                                                          \
     X(JMP, "jmp")       /* succ[0] */                                          \
     X(BR, "br")         /* args[0] ? succ[0] : succ[1] */                      \
-    X(RET, "ret")       /* optional args[0] */
+    X(RET, "ret")       /* the result's leaves, if any */
 
 typedef enum {
 #define X(name, _) IR_##name,
@@ -66,6 +68,31 @@ enum {
     IRF_VARARGS = 4,  // call: arguments from index aux on are variadic
 };
 
+// Aggregates are never IR values: lowering splits every struct and tuple into
+// its scalar leaves (SSA values, or loads and stores for one in memory), and
+// each target maps leaves onto its ABI.
+enum { IR_MAX_LEAVES = 16 };
+
+typedef struct {
+    uint32_t off;  // byte offset in the aggregate
+    uint8_t  type; // IrType
+} IrLeaf;
+
+// One argument, parameter, or result as the ABI sees it: n leaves from first,
+// of aggregate type agg, or NULL for a scalar (a by-address one included).
+typedef struct {
+    SType* agg;
+    int    first, n;
+} IrPart;
+
+// How a call's arguments (after a calli's target) or a function's parameters
+// group into parts, and its result; absent (NULL) when every part is a scalar.
+typedef struct {
+    IrPart* parts;
+    int     nparts;
+    IrPart  ret;   // n = 0 when there is no result
+} IrSig;
+
 typedef struct {
     uint8_t  op;     // IrOp
     uint8_t  type;   // IrType of the result
@@ -77,6 +104,7 @@ typedef struct {
     int32_t  aux;    // LOAD/STORE offset, SLOT alignment, CALL first variadic argument
     Sym*     sym;    // GLOBAL symbol; CALL target function, when not a runtime routine
     const char* name; // CALL target's link symbol
+    IrSig*   sig;    // CALL, CALLI: the parts of its arguments and result, or NULL
     Node*    at;     // source position, for line rows
 } IrIns;
 
@@ -92,9 +120,11 @@ typedef struct {
 typedef struct {
     Node*    decl;
     Sym*     sym;
-    IrType   ret;
-    IrType*  params;
+    IrType*  params; // leaves, in order
     int      nparams;
+    IrType*  rets;   // result leaves; none for a void function
+    int      nrets;
+    IrSig*   sig;    // the parts of params and rets, or NULL when all are scalars
     IrIns*   ins;    // indexed by value id
     int      nins, cins;
     IrBlock* blocks; // blocks[0] is the entry
@@ -113,6 +143,11 @@ int      ir_is_term(IrOp op);
 int      ir_type_bits(IrType t);
 int      ir_type_signed(IrType t);
 int      ir_type_float(IrType t);
+// The IR type of scalar t, or -1 when t is not a scalar the IR covers.
+int      ir_type_of(SType* t);
+// The leaves of t in offset order (a scalar is its own one leaf), or -1 with
+// *bad set to the first type the IR does not cover.
+int      ir_leaves(SType* t, IrLeaf* out, SType** bad);
 // v wrapped into t: truncated, then extended by t's signedness
 uint64_t ir_wrap(IrType t, uint64_t v);
 

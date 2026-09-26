@@ -1,6 +1,6 @@
 // expect-exit: 42
-// A by-value aggregate argument that is a plain frame-resident local is loaded
-// straight from its slot; other sources and shapes keep the address temp.
+// A by-value aggregate argument that is a local goes straight to its argument
+// registers, without a staged copy.
 
 Pair: struct {
     a: usize,

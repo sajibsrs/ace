@@ -95,6 +95,31 @@ current normative rules, and Git preserves patch-level detail.
   calls, arrays, and structs. Every `tests/emit` fixture passes in both
   modes, `tests/ir-diff.sh` now also generates float programs, and compile
   time and benchmark runtime are unchanged.
+- Extended the IR to structs, tuples, and `Error` values (IR migration step
+  2c1). The IR stays scalar: `ir_leaves` flattens a struct or tuple into its
+  scalar leaves (at most 16) in offset order. A local is one SSA variable per
+  leaf, or a slot read and written by leaf when its storage is needed;
+  literals, field reads and writes, whole copies, fields of call results, and
+  tuple destructuring (new binders, existing places, or both) lower to leaf
+  moves. Parameters, arguments, and `ret` carry leaves, grouped into parts by
+  an `IrSig` when one is an aggregate, and a new `proj` reads leaf k of a
+  call's aggregate result. `Error` is a `u64`: `Domain(code)` ORs the domain
+  id with the code's raw bits, `Domain.entry` is a constant, `.code`
+  truncates, `.domain` shifts, and `null` is zero; `.name` and `.message`
+  stay with the AST emitter. `arm64.c` maps leaves onto the AAPCS64 classes
+  of `assign_cc`: a floating aggregate one v register per leaf, a word
+  holding one leaf that leaf's x register, a word shared by smaller leaves
+  through memory (the sender stores the leaves and loads the word, the
+  receiver the reverse), over 16 bytes by the address of a caller-made copy,
+  a result over 16 bytes through the buffer in x8, and past the registers on
+  the stack; the callee saves incoming words and addresses before its
+  parameters move in parallel, then loads the rest. IR coverage of the
+  `tests/emit` and bench roots rises from 331 to 548 of about 1,045
+  functions. Every `tests/emit` fixture passes in both modes, a new fixture
+  crosses both backends with each shape, and `tests/ir-diff.sh` now also
+  generates random records and `(T, Error)` results, keeping some functions
+  on the AST emitter by a `switch`. Compile time is unchanged; the call
+  benchmark's 64-, 24-, and 8-byte struct loops run 30%, 9%, and 9% faster.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

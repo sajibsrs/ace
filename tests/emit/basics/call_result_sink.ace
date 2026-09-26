@@ -1,7 +1,6 @@
 // expect-exit: 42
-// A register-returned call result is stored straight into a frame-resident
-// destination, or moved into a small struct local's field registers; other
-// destinations and shapes keep the staged copy.
+// A register-returned call result reaches its destination (a local, its
+// fields, or typed binders) without a staged temp.
 
 MASK: const usize = 0x7FFFFFFF
 
