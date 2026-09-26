@@ -44,6 +44,8 @@ typedef enum {
     X(CALLI, "calli")   /* to the function value args[0]; arguments follow */ \
     X(PROJ, "proj")     /* leaf imm of the aggregate result of call args[0],  \
                            which it follows directly with the call's others */ \
+    X(CHECK, "check")   /* debug: bool args[0] false traps, writing "path:    \
+                           line:col: name" for site at (Safety & Debug #2) */  \
     /* terminators */                                                          \
     X(JMP, "jmp")       /* succ[0] */                                          \
     X(BR, "br")         /* args[0] ? succ[0] : succ[1] */                      \
@@ -104,9 +106,9 @@ typedef struct {
     uint64_t imm;    // CONST value (in range for type), PARAM index, SLOT size, PADD/PSUB scale
     int32_t  aux;    // LOAD/STORE offset, SLOT alignment, CALL first variadic argument
     Sym*     sym;    // GLOBAL symbol; CALL target function, when not a runtime routine
-    const char* name; // CALL target's link symbol; STR bytes
+    const char* name; // CALL target's link symbol; STR bytes; CHECK diagnostic
     IrSig*   sig;    // CALL, CALLI: the parts of its arguments and result, or NULL
-    Node*    at;     // source position, for line rows
+    Node*    at;     // source position, for line rows; CHECK: the failing site
 } IrIns;
 
 typedef struct {

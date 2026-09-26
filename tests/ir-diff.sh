@@ -13,12 +13,17 @@
 # copies) and (T, Error) results destructured, and strings (literals, null,
 # .len, null checks, []u8 views; as locals, parameters, results, and fields),
 # and calls to generic templates and a written specialization, directly and
-# as values. A switch keeps some functions
+# as values, and indexing and slicing (reads, writes, ^=, &, every slice form;
+# indices and bounds mostly in range, at times one past either end) of a
+# 22-byte mut []u8 and a string, each a window between two guard bytes, so a
+# debug bounds trap ends the run the same way in both and release reads or
+# writes a guard. A switch keeps some functions
 # on the AST emitter, so calls cross between the backends both ways. Each
 # program is built with two
 # compilers in debug and release, and requires identical output and exit
 # status. main prints each function's result for several arguments (a float
-# as its bits); a debug arithmetic trap ends the run the same way in both.
+# as its bits); a debug arithmetic or bounds trap ends the run the same way
+# in both.
 # Run a change against a build of HEAD:
 #   tests/ir-diff.sh <baseline-ace> <candidate-ace> [count] [seed]
 set -eu
@@ -185,7 +190,49 @@ function any_var(   i, n, c) {
     return vname[i] SUBSEP vtype[i]
 }
 
+# an index into a 22-element window at a random integer type: usually in
+# range, at times one past the end or -1
+function index_of(depth,   r, e, t) {
+    r = rand()
+    e = "u8(" expr(types[2 + pick(ntypes - 1)], depth) ")"
+    if (r < 0.05) return "(i8(" e " % 2) - 1)"
+    t = types[2 + pick(ntypes - 1)]
+    return t "(" e " % " (r < 0.2 ? 23 : 22) ")"
+}
+
+# a window (the mut []u8 gv or the string gt) sliced from lo, a u8 local
+# below 12: every form, lo at times -1 and hi at times one past the end
+function slice_of(lo, depth,   w, r, t, hi) {
+    w = chance(0.5) ? "gv" : "gt"
+    r = rand()
+    if (r < 0.1) return w "[..]"
+    if (r < 0.2) return w "[.." lo "]"
+    t = types[2 + pick(ntypes - 1)]
+    if (r < 0.3) return w "[" t "(" lo ")..]"
+    if (r < 0.35) return w "[(i8(" lo " % 2) - 1).." lo "]"
+    hi = "(" lo " + u8(" expr(types[2 + pick(ntypes - 1)], depth) ") % " (chance(0.15) ? 13 : 12) ")"
+    return w "[" t "(" lo ").." t "(" hi ")]"
+}
+
+function seq_stmt(pad,   p, r, name) {
+    p = indent(pad)
+    r = rand()
+    if (r < 0.3) { print p "gv[" index_of(1) "] = u8(" expr("u8", 1) ")"; return }
+    if (r < 0.45) { print p "gv[" index_of(1) "] ^= " expr("u8", 1); return }
+    name = "v" nlocals++
+    if (r < 0.55) {
+        print p name ": u8 = *(&" (chance(0.5) ? "gv" : "gt") "[" index_of(1) "])"
+        declare(name, "u8")
+        return
+    }
+    print p name ": u8 = u8(" expr(types[2 + pick(ntypes - 1)], 1) ") % 12"
+    declare(name, "u8")
+    print p "v" nlocals ": string = " slice_of(name, 1)
+    declare("v" nlocals++, "string")
+}
+
 function leaf(t, depth,   v, r, s) {
+    if (t == "u8" && depth > 0 && chance(0.15)) return (chance(0.5) ? "gv" : "gt") "[" index_of(depth - 1) "]"
     r = rand()
     v = var_of(t)
     if (v != "" && r < 0.55) return v
@@ -402,6 +449,7 @@ function record_stmt(pad,   p, r, t, i, k, j, n, c, name) {
 function stmt(depth, pad, loops,   p, r, t, name, i, lab, n, open, ops) {
     p = indent(pad)
     if (depth > 0 && chance(0.18)) { memory_stmt(depth, pad, loops); return }
+    if (chance(0.12)) { seq_stmt(pad); return }
     if (chance(0.15)) { record_stmt(pad); return }
     r = rand()
     if (r < 0.08) {
@@ -513,6 +561,7 @@ BEGIN {
     print "gs: S = S { a = " literal("i64") ", b = " literal("u8") " }\n"
     print "mut S.bump(n: i64): int {\n    self.a += n & 7\n    self.b = u8(self.a & 63)\n    return int(self.b)\n}\n"
     print "Fail: error\n"
+    print "gbuf: [24]u8\ngv: mut []u8\ngt: string\n"
     nstrs = split("\"\" \"a\" \"hello\" \"ace-ir\" \"0123456789abcdef01234\"", strs, " ")
     print "gmax[T](a: T, b: T): T {\n    if a > b { return a }\n    return b\n}\n"
     print "gpick[T](a: T, b: T, c: bool): T {\n    if c { return a }\n    return b\n}\n"
@@ -568,6 +617,8 @@ BEGIN {
     }
     nvars = 0
     print "main(): int {"
+    print "    gbuf[0] = 35\n    gbuf[23] = 36\n    gv = mut gbuf[1..23]"
+    print "    gt = \"#abcdefghijklmnopqrstuv$\"[1..23]"
     for (f = 0; f < nf; f++) {
         for (c = 0; c < 3; c++) {
             if (isrec(fret[f])) {
@@ -584,6 +635,7 @@ BEGIN {
         }
     }
     print "    fmt.printf(\"%d %d\\n\", int(gs.a), int(gs.b))"
+    print "    for k: usize in 0 .. 24 { fmt.printf(\"%d \", int(gbuf[k])) }"
     for (k = 2; k <= ntypes; k++) print "    fmt.printf(\"%d\\n\", int(g_" types[k] "))"
     print show("g_f32", "f32")
     print show("g_f64", "f64")
@@ -620,7 +672,7 @@ while [ "$n" -lt "$count" ]; do
             fi
             echo "exit $rc" >> "$dir/$side.out"
         done
-        if [ "$mode" = debug ] && grep -q 'arithmetic violation' "$dir/old.out"; then
+        if [ "$mode" = debug ] && grep -Eq '(arithmetic|bounds) violation' "$dir/old.out"; then
             trapped=$((trapped + 1))
         fi
         if ! cmp -s "$dir/old.out" "$dir/new.out"; then

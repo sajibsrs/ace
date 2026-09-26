@@ -6,3 +6,5 @@ main(): int {
     value: u8 = read("ab", 2)
     return int(value)
 }
+
+// expect-bounds: 2:17

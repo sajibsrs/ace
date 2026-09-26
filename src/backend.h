@@ -151,6 +151,9 @@ typedef struct {
 
 // The bytes of a string literal in the constant section, under a fresh name.
 ESym* obj_string(Obj* o, const char* p, uint32_t len);
+// The debug diagnostic "path:line:col: what\n" for site at, as a string
+// literal of *len bytes, shared by both backends' located failures.
+ESym* obj_located(Obj* o, Node* at, const char* what, uint32_t* len);
 
 // Set up the sections and the __ace$text anchor.
 void obj_init(Obj* o, Diag* d, EmitMode mode);

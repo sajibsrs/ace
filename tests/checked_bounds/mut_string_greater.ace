@@ -8,3 +8,5 @@ main(): int {
     write(text, 4)
     return 0
 }
+
+// expect-bounds: 2:10

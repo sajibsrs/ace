@@ -7,3 +7,5 @@ main(): int {
     write(mut values, 2)
     return 0
 }
+
+// expect-bounds: 2:12

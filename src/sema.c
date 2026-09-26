@@ -2098,7 +2098,7 @@ static int settle_operand(Ck* k, Node* e, SType* want) {
 
 // --- lvalues ------------------------------------------------------------------------
 
-static SType* check_lvalue(Ck* k, Node* e, int write) {
+static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
     switch (e->kind) {
     case N_IDENT: {
         Sym* s = lookup_val(k, e->str, e->len);
@@ -2259,6 +2259,14 @@ static SType* check_lvalue(Ck* k, Node* e, int write) {
     }
     ck_err(k, e, "not an assignable target");
     return T_ERR;
+}
+
+// An assignment target, address operand, or mut argument's type, recorded on
+// the node as an expression's is, for the backends.
+static SType* check_lvalue(Ck* k, Node* e, int write) {
+    SType* t = check_lvalue_raw(k, e, write);
+    e->ty = t;
+    return t;
 }
 
 // --- helpers ------------------------------------------------------------------------

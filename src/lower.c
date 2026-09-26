@@ -20,7 +20,8 @@
 //
 // A function that uses anything outside the covered subset is not lowered;
 // the AST emitter compiles it (migration steps 1 and 2: scalar code, floats,
-// pointers, globals, calls, structs, tuples, and Error values).
+// pointers, globals, calls, structs, tuples, Error values, and strings and
+// slices with their indexing, slicing, and debug bounds checks).
 #include "ir.h"
 #include "backend.h"
 
@@ -506,6 +507,7 @@ typedef struct {
 } Place;
 
 static int expr(Lw* l, Node* x, int want);
+static Place element(Lw* l, Node* x);
 
 static Place place(Lw* l, Node* x) {
     Place p = { -1, -1, 0, 0, node_ty(x) };
@@ -548,7 +550,7 @@ static Place place(Lw* l, Node* x) {
         return p;
     }
     case N_INDEX:
-        unsupported(l, type_why(node_ty(x->a)));
+        return element(l, x);
     default:
         break;
     }
@@ -662,24 +664,28 @@ static IrType operand_type(Lw* l, Node* x, int want) {
     return (IrType)want;
 }
 
-static int bool_value(Lw* l, Node* x) { // a short-circuit form as a value: a phi of true and false
-    int t = new_block(l), f = new_block(l), join = new_block(l);
-    cond(l, x, t, f);
-    seal(l, t);
-    seal(l, f);
-    enter(l, t);
-    int one = l->cur >= 0 ? konst(l, IT_BOOL, 1) : -1;
+// a && b or a || b as a value: branch on a, then b's own value where it
+// decides, joined with the constant a decided (so b's compare sets the bool)
+static int bool_value(Lw* l, Node* x) {
+    int and = x->op == T_ANDAND;
+    int rhs = new_block(l), done = new_block(l), join = new_block(l);
+    cond(l, x->a, and ? rhs : done, and ? done : rhs);
+    seal(l, rhs);
+    seal(l, done);
+    enter(l, rhs);
+    int b = l->cur >= 0 ? expr(l, x->b, IT_BOOL) : -1;
+    int from_b = l->cur;
     jump(l, join);
-    enter(l, f);
-    int zero = l->cur >= 0 ? konst(l, IT_BOOL, 0) : -1;
+    enter(l, done);
+    int k = l->cur >= 0 ? konst(l, IT_BOOL, (uint64_t)!and) : -1;
     jump(l, join);
     seal(l, join);
     enter(l, join);
     if (l->cur < 0) return -1;
     IrBlock* jb = &l->fn->blocks[join];
-    if (jb->npreds == 1) return jb->preds[0] == t ? one : zero;
+    if (jb->npreds == 1) return jb->preds[0] == from_b ? b : k;
     int phi = ir_phi_new(l->fn, join, IT_BOOL);
-    for (int i = 0; i < jb->npreds; i++) ir_arg_add(l->fn, phi, jb->preds[i] == t ? one : zero);
+    for (int i = 0; i < jb->npreds; i++) ir_arg_add(l->fn, phi, jb->preds[i] == from_b ? b : k);
     return phi;
 }
 
@@ -997,7 +1003,8 @@ static int expr(Lw* l, Node* x, int want) {
             l->fn->ins[id].name = mn;
             return id;
         }
-        unsupported(l, type_why(node_ty(x->a)));
+        if (x->kind == N_SLICE_E) unsupported(l, type_why(node_ty(x)));
+        return place_read(l, place(l, x), 0);
     default:
         unsupported(l, is_untyped(node_ty(x)) ? "expression form" : type_why(node_ty(x)));
     }
@@ -1089,6 +1096,90 @@ static int view_leaf(Lw* l, Node* x, int k) {
     return v.v[k];
 }
 
+// --- sequences ------------------------------------------------------------------------
+
+// The ptr of string or slice x, and its length when len is not NULL: the
+// descriptor read once, a place's through one address.
+static void view_parts(Lw* l, Node* x, int* ptr, int* len) {
+    Node* lit = x->kind == N_STR ? x : const_string(x);
+    if (!lit && is_place(x)) {
+        Place p = place(l, x);
+        if (p.var >= 0) {
+            *ptr = read_var(l, p.var, l->cur);
+            if (len) *len = read_var(l, p.var + 1, l->cur);
+        } else {
+            *ptr = load(l, IT_PTR, p.addr, p.off, p.flags);
+            if (len) *len = load(l, IT_U64, p.addr, p.off + 8, p.flags);
+        }
+        return;
+    }
+    Agg v;
+    if (lit) string_literal(l, lit, &v);
+    else value(l, x, node_ty(x), &v);
+    *ptr = v.v[0];
+    if (len) *len = v.v[1];
+}
+
+// Debug: trap through the bounds failure at site unless c holds.
+static void bounds_check(Lw* l, int c, Node* site) {
+    int id = emit2(l, IR_CHECK, IT_VOID, c, -1);
+    l->fn->ins[id].name = "bounds violation";
+    l->fn->ins[id].at = site;
+}
+
+// Index or bound x of site as a u64; checked (a signed one is first checked
+// nonnegative, Sequences #12) when nonneg is set.
+static int bound(Lw* l, Node* x, Node* site, int nonneg) {
+    IrType t = type_in(l, x, IT_U64);
+    int v = expr(l, x, t);
+    if (nonneg && ir_type_signed(t)) bounds_check(l, emit2(l, IR_GE, IT_BOOL, v, konst(l, t, 0)), site);
+    return t == IT_U64 ? v : emit2(l, IR_CAST, IT_U64, v, -1);
+}
+
+enum { BP_LO_NONNEG = 1, BP_HI_NONNEG = 2, BP_ORDER = 4, BP_SOURCE = 8 }; // sema's slice proofs
+
+// Element x = s[i] of a string or slice: its descriptor, then i, then (debug)
+// 0 <= i < s.len unless sema proved it.
+static Place element(Lw* l, Node* x) {
+    static SType byte = { .kind = SK_PRIM, .prim = P_U8, .size = 1, .align = 1 };
+    SType* st = unwrap(node_ty(x->a));
+    if (!is_view(st)) unsupported(l, type_why(st));
+    int chk = l->mode == EMIT_DEBUG && !(x->flags & F_BOUNDS_PROVEN);
+    int ptr, len = -1;
+    view_parts(l, x->a, &ptr, chk ? &len : NULL);
+    int i = bound(l, x->b, x, chk);
+    if (chk) bounds_check(l, emit2(l, IR_LT, IT_BOOL, i, len), x);
+    SType* et = st->kind == SK_SLICE ? st->base : &byte;
+    int id = emit2(l, IR_PADD, IT_PTR, ptr, i);
+    l->fn->ins[id].imm = sema_size(et);
+    Place p = { -1, id, 0, 0, et };
+    return p;
+}
+
+// The leaves of x = s[lo..hi] (Sequences #1-2): s's descriptor, then lo,
+// then hi; debug checks each signed bound nonnegative as it is evaluated,
+// then lo <= hi, then hi <= s.len, skipping what sema proved (and an
+// omitted hi's, which is s.len).
+static void slice_leaves(Lw* l, Node* x, Agg* out) {
+    SType* st = unwrap(node_ty(x->a));
+    if (!is_view(st)) unsupported(l, type_why(st));
+    uint8_t proof = x->aux ? *(uint8_t*)x->aux : 0;
+    int chk = l->mode == EMIT_DEBUG && !(x->flags & F_BOUNDS_PROVEN);
+    int ptr, len = -1;
+    view_parts(l, x->a, &ptr, !x->c || (chk && !(proof & BP_SOURCE)) ? &len : NULL);
+    int lo = x->b ? bound(l, x->b, x, chk && !(proof & BP_LO_NONNEG)) : -1;
+    int hi = x->c ? bound(l, x->c, x, chk && !(proof & BP_HI_NONNEG)) : len;
+    if (chk && !(proof & BP_ORDER) && lo >= 0) bounds_check(l, emit2(l, IR_LE, IT_BOOL, lo, hi), x);
+    if (chk && !(proof & BP_SOURCE) && x->c) bounds_check(l, emit2(l, IR_LE, IT_BOOL, hi, len), x);
+    out->n = 2;
+    out->v[0] = ptr;
+    out->v[1] = hi;
+    if (lo < 0) return;
+    out->v[0] = emit2(l, IR_PADD, IT_PTR, ptr, lo);
+    l->fn->ins[out->v[0]].imm = st->kind == SK_SLICE ? sema_size(st->base) : 1;
+    out->v[1] = emit2(l, IR_SUB, IT_U64, hi, lo);
+}
+
 // The leaves of x, converted to type t: a scalar's one value, or those of an
 // aggregate.
 static void value(Lw* l, Node* x, SType* t, Agg* out) {
@@ -1119,6 +1210,9 @@ static void value(Lw* l, Node* x, SType* t, Agg* out) {
     case N_STRUCTLIT: case N_TUPLE_E:
         literal_agg(l, x, t, out);
         return;
+    case N_SLICE_E:
+        slice_leaves(l, x, out);
+        return;
     case N_CALL:
         call(l, x, -1, out);
         if (out->n != leaf_count(l, t)) unsupported(l, "conversion");
@@ -1129,7 +1223,7 @@ static void value(Lw* l, Node* x, SType* t, Agg* out) {
             return;
         }
         break;
-    case N_IDENT: case N_UNARY:
+    case N_IDENT: case N_UNARY: case N_INDEX:
         break;
     default:
         unsupported(l, type_why(t));

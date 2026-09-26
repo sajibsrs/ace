@@ -6,3 +6,5 @@ main(): int {
     values: [2]i32 = [1, 2]
     return int(read(values[0..2], 3))
 }
+
+// expect-bounds: 2:19

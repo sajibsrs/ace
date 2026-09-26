@@ -2477,7 +2477,6 @@ static void emit_bl_extern(Em* e, const char* p, uint32_t len) {
     fp_leaves(e, 1);
 }
 
-static ESym* intern_string(Em* e, Node* s);
 static void addr_of_sym(Em* e, int rd, ESym* sym);
 
 /*
@@ -2486,16 +2485,8 @@ static void addr_of_sym(Em* e, int rd, ESym* sym);
  */
 static void emit_located_fail_call(Em* e, Node* at, const char* what) {
     e->o.bounds_fail_used = 1;
-    const char* path = at && at->path ? at->path : "<source>";
-    size_t need = strlen(path) + strlen(what) + 64;
-    char* diagnostic = (char*)arena_alloc(need);
-    int n = snprintf(diagnostic, need, "%s:%d:%d: %s\n", path, at ? at->line : 0, at ? at->col : 0, what);
-    Node message;
-    memset(&message, 0, sizeof message);
-    message.kind = N_STR;
-    message.str = diagnostic;
-    message.len = (uint32_t)n;
-    ESym* msg = intern_string(e, &message);
+    uint32_t n;
+    ESym* msg = obj_located(&e->o, at, what, &n);
     load_imm(e, 1, 0, 2);
     addr_of_sym(e, 1, msg);
     load_imm(e, 1, 2, (uint64_t)n);
@@ -3130,6 +3121,15 @@ ESym* obj_string(Obj* o, const char* p, uint32_t len) {
     ESym* sym = sym_define(&o->syms, o->secs, nm, (uint32_t)strlen(nm), 0, c);
     buf_write(&c->data, p, len);
     return sym;
+}
+
+ESym* obj_located(Obj* o, Node* at, const char* what, uint32_t* len) {
+    const char* path = at && at->path ? at->path : "<source>";
+    size_t need = strlen(path) + strlen(what) + 64;
+    char* diagnostic = (char*)arena_alloc(need);
+    int n = snprintf(diagnostic, need, "%s:%d:%d: %s\n", path, at ? at->line : 0, at ? at->col : 0, what);
+    *len = (uint32_t)n;
+    return obj_string(o, diagnostic, (uint32_t)n);
 }
 
 static ESym* intern_string(Em* e, Node* s) { return obj_string(&e->o, s->str, (uint32_t)s->len); }
@@ -5884,7 +5884,8 @@ static EV gen_expr(Em* e, Node* x) {
         uint8_t proof = x->aux ? *(uint8_t*)x->aux : 0;
         int guard = e->o.mode == EMIT_DEBUG && !(x->flags & F_BOUNDS_PROVEN);
         int guard_source = guard && !(proof & BP_SOURCE);
-        uint32_t len_slot = guard_source ? temp_slot(e, 8, 8) : 0;
+        int open_len = !x->c && bt->kind != SK_ARRAY; // an omitted hi reads the source length
+        uint32_t len_slot = guard_source || open_len ? temp_slot(e, 8, 8) : 0;
         int svi = e->vti, svf = e->vtf;
         int base;
         if (is_lvalue_node(x->a)) base = gen_addr(e, x->a);
@@ -5892,7 +5893,8 @@ static EV gen_expr(Em* e, Node* x) {
             EV v = gen_expr(e, x->a);
             base = v.idx;
         }
-        if (guard_source) {
+        // Sequences #2: the source descriptor once, then lo, then hi
+        if (len_slot) {
             if (bt->kind == SK_ARRAY) {
                 load_imm(e, 1, 16, bt->count);
             } else {
@@ -5900,7 +5902,17 @@ static EV gen_expr(Em* e, Node* x) {
             }
             store_frame(e, 16, len_slot, 8);
         }
-        // hi (evaluated once; open-ended reads the sequence length)
+        // data pointer (slice/string: load; array: the base address)
+        if (bt->kind != SK_ARRAY) ld_reg(e, base, base, 0, 8, 0);
+        if (x->b) {
+            EV lo = gen_expr(e, x->b);
+            emit_nonnegative_guard(e, x, x->b, xreg(lo.idx));
+            widen_idx(e, x->b, xreg(lo.idx));
+            store_frame(e, xreg(lo.idx), lo_slot, 8);
+        } else {
+            load_imm(e, 1, 16, 0);
+            store_frame(e, 16, lo_slot, 8);
+        }
         if (x->c) {
             EV hi = gen_expr(e, x->c);
             emit_nonnegative_guard(e, x, x->c, xreg(hi.idx));
@@ -5910,19 +5922,8 @@ static EV gen_expr(Em* e, Node* x) {
             load_imm(e, 1, 16, bt->count);
             store_frame(e, 16, hi_slot, 8);
         } else {
-            if (guard_source) load_frame(e, 16, len_slot, 8, 0);
-            else ld_reg(e, 16, base, 8, 8, 0);
+            load_frame(e, 16, len_slot, 8, 0);
             store_frame(e, 16, hi_slot, 8);
-        }
-        // lo (evaluated once; defaults to 0)
-        if (x->b) {
-            EV lo = gen_expr(e, x->b);
-            emit_nonnegative_guard(e, x, x->b, xreg(lo.idx));
-            widen_idx(e, x->b, xreg(lo.idx));
-            store_frame(e, xreg(lo.idx), lo_slot, 8);
-        } else {
-            load_imm(e, 1, 16, 0);
-            store_frame(e, 16, lo_slot, 8);
         }
         if (guard) {
             if (!(proof & BP_ORDER)) {
@@ -5944,8 +5945,6 @@ static EV gen_expr(Em* e, Node* x) {
                 bind_label(e, ok_len);
             }
         }
-        // data pointer (slice/string: load; array: the base address)
-        if (bt->kind != SK_ARRAY) ld_reg(e, base, base, 0, 8, 0);
         // ptr = data + lo*esz
         load_frame(e, 16, lo_slot, 8, 0);
         if (esz > 1) {

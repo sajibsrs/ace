@@ -31,20 +31,17 @@ b0:
     %1 = param i32 1
     %2 = const i32 0
     %3 = gt bool %0, %2
-    br %3, b4, b2
-b1: ; preds b4
-    %5 = const bool true
+    br %3, b1, b2
+b1: ; preds b0
+    %5 = const i32 0
+    %6 = gt bool %1, %5
     jmp b3
-b2: ; preds b0, b4
-    %7 = const bool false
+b2: ; preds b0
+    %8 = const bool false
     jmp b3
 b3: ; preds b1, b2
-    %9 = phi bool [%5, b1], [%7, b2]
-    ret %9
-b4: ; preds b0
-    %11 = const i32 0
-    %12 = gt bool %1, %11
-    br %12, b1, b2
+    %10 = phi bool [%6, b1], [%8, b2]
+    ret %10
 }
 
 within(u8, u8, u8): bool {

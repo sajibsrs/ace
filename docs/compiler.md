@@ -37,7 +37,10 @@ decimal that reads back to its bits. A struct or tuple is its scalar leaves:
 a parameter or result of one prints as its leaf types in braces, and a call
 with one as its result prints `call {n}`, whose leaves `proj` reads. An
 `Error` is a `u64`. A string or slice is two leaves, `{ptr, u64}`, and a
-literal's address prints as `str` with its bytes quoted. A function the IR does not cover yet is listed with the first
+literal's address prints as `str` with its bytes quoted. An element of a
+string or slice is addressed by `padd ptr, i * size`; in debug, each bounds
+test prints as a comparison and a `check %c, line:col bounds violation`,
+which aborts with that site's diagnostic when `%c` is false. A function the IR does not cover yet is listed with the first
 construct that kept it out; the AST emitter compiles such functions, and the
 IR's AArch64 backend compiles the rest.
 

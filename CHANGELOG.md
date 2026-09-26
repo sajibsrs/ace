@@ -149,6 +149,30 @@ current normative rules, and Git preserves patch-level detail.
   computed in its register or slot, taking the copy off the loop-carried
   chain: the call benchmark's float accumulation runs 40% faster and its
   24-byte struct loop 2% faster; other benchmarks are unchanged.
+- Lowered string and slice indexing and slicing to IR, with their bounds
+  checks (IR migration step 2c3a). An element is a place at `padd ptr, i *
+  size`, so reads, writes, compound assignment, `&s[i]`, and fields of
+  elements reuse the place lowering; a slice is `padd ptr, lo * size` and
+  `hi - lo`. A debug check is a new `check` of a comparison, trapping when
+  false: an index is checked nonnegative when signed, then below the length;
+  a slice's signed bounds nonnegative, then `lo <= hi`, then `hi <= len`,
+  each skipped where sema proved it. `arm64.c` fuses the comparison into a
+  branch to an out-of-line stub per site after the body, which passes
+  `path:line:col: bounds violation` to `__ace$bounds_fail`; `obj_located`
+  now formats that message for both backends. Slicing now reads the source
+  descriptor once, then evaluates `lo`, then `hi`, in both backends (the AST
+  emitter evaluated `hi` first and read the pointer last), and sema records
+  the type of assignment targets and address operands on their nodes. Arrays
+  stay with the AST emitter. A value `a && b` or `a || b` now branches on
+  `a` and joins `b`'s own value with the constant `a` decided, so `b`'s
+  comparison sets the bool, and widening a `u8`, `u16`, or `bool` to 64 bits
+  emits no instruction, since it is held zero-extended. Functions lowered
+  across the `bench` and `demo` roots rise from 218 to 273 of 629. In release, `str.copy`'s loop shrinks
+  to four instructions, and `bench/std/string` runs `utf8-valid` 27%,
+  `format-f64-shortest` 10%, and `copy-64` 6% faster; the other benchmarks
+  are unchanged. `tests/ir-diff.sh` also indexes and slices a `mut []u8` and
+  a string window between guard bytes, and the bounds fixtures check the
+  exact diagnostic location.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

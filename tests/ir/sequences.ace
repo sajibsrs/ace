@@ -1,0 +1,49 @@
+/* Indexing a string or slice reads its descriptor, then the index, and
+ * addresses the element with padd; slicing reads the descriptor, then lo,
+ * then hi. Debug checks each with a compare and a check (a signed index
+ * first nonnegative), skipping what sema proves; release has none. */
+
+TAG: const string = "ir"
+
+Pair: struct {
+    a: i32,
+    b: i64,
+}
+
+byte(s: string, i: i32): u8 {
+    return s[i]
+}
+
+second(p: []Pair, i: usize): i64 {
+    return p[i].b
+}
+
+bump(s: mut []u8, i: usize) {
+    s[i] += 1
+    s[i + 1] = s[i]
+}
+
+first(s: mut []u8): *u8 {
+    return &s[0]
+}
+
+names(n: []string, i: u32): usize {
+    return n[i].len
+}
+
+window(s: string, lo: i64, hi: i64): string {
+    return s[lo..hi]
+}
+
+tail(p: []Pair, lo: usize): []Pair {
+    return p[lo..]
+}
+
+head(s: string, hi: u8): string {
+    return s[..hi]
+}
+
+main(): int {
+    if byte(TAG, 1) != 114 || "xyz"[2] != 122 { return 1 }
+    return int(window("abcdef", 1, 4).len + head(TAG, 1).len)
+}

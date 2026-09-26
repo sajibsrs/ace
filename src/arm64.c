@@ -35,7 +35,9 @@ enum { S0 = 16, S1 = 17, S2 = 15 }; // scratch, never allocated
 enum { V = 32, FS0 = V + 31, FS1 = V + 30, FS2 = V + 29 }; // v registers; the float scratch
 enum { C_EQ, C_NE, C_HS, C_LO, C_MI, C_PL, C_VS, C_VC, C_HI, C_LS, C_GE, C_LT, C_GT, C_LE };
 enum { NOREG = -1, SLOT = 64 }; // a move location: register r, or SLOT + stack slot
-enum { FAIL = -1, NFAIL = -2 }; // branch targets: the arithmetic and null failure stubs
+// branch targets: the arithmetic and null failure stubs, then the located
+// check stubs (LFAIL - k for the function's stub k)
+enum { FAIL = -1, NFAIL = -2, LFAIL = -3 };
 
 typedef struct { uint32_t site, w; int target; uint8_t imm19; } Branch;
 
@@ -88,6 +90,9 @@ typedef struct {
     uint32_t* psite;   // literal loads: (text offset, pool index) pairs
     int       npsite, cpsite;
     Node*     last_at;
+    IrIns**   stub;    // located check stubs: a failing site and its diagnostic, one per pair
+    uint32_t* stub_at; // each stub's text offset
+    int       nstub, cstub;
 } A64;
 
 static void* xcalloc(size_t n, size_t size) {
@@ -294,7 +299,7 @@ static const char* fail_routine(A64* a, int target) {
 // Branch to block target when c holds. Far code (over 1 MiB) skips an
 // unconditional branch on the inverse instead.
 static void branch_if(A64* a, Cond c, int target) {
-    const char* fail = target < 0 ? fail_routine(a, target) : NULL;
+    const char* fail = target < 0 && target > LFAIL ? fail_routine(a, target) : NULL;
     if (!a->far) {
         branch_add(a, cond_word(c), target, 1);
         return;
@@ -709,7 +714,7 @@ static void count_uses(A64* a) {
         for (int i = 0; i < fn->blocks[b].nins; i++) {
             int u = fn->blocks[b].ins[i];
             IrIns* x = &fn->ins[u];
-            if (x->op == IR_BR) {
+            if (x->op == IR_BR || x->op == IR_CHECK) {
                 int c = x->args[0];
                 if (is_compare(fn->ins[c].op) && a->nuse[c] == 1 && fn->ins[c].block == b) a->fused[c] = 1;
             } else if (x->op == IR_LOAD || x->op == IR_STORE) {
@@ -1482,6 +1487,7 @@ static void cast(A64* a, int v) {
     int rn = opnd(a, x->args[0], S0), rd = dst(a, v);
     if (tb == 64 && fb < 64) {
         if (ir_type_signed(from)) put(a, 0x93407C00u | ((uint32_t)rn << 5) | (uint32_t)rd); // sxtw
+        else if (fb < 32) mov_reg(a, rd, rn); // a u8, u16, or bool is held zero-extended in 64 bits
         else put(a, 0x2A0003E0u | ((uint32_t)rn << 16) | (uint32_t)rd);                      // mov w
     } else if (tb < 32 && !(fb < tb && (!ir_type_signed(from) || ir_type_signed(to))) &&
                !(fb == tb && ir_type_signed(from) == ir_type_signed(to))) {
@@ -1846,13 +1852,32 @@ static void terminator(A64* a, int b, int v) {
     }
 }
 
+// A debug check: a branch to its site's stub when its condition is false.
+static void check(A64* a, int v) {
+    IrIns* x = ins_of(a, v);
+    int k = 0;
+    while (k < a->nstub && (a->stub[k]->at != x->at || strcmp(a->stub[k]->name, x->name) != 0)) k++;
+    if (k == a->nstub) {
+        if (a->nstub == a->cstub) {
+            a->cstub = a->cstub ? a->cstub * 2 : 8;
+            a->stub = realloc(a->stub, (size_t)a->cstub * sizeof(IrIns*));
+            a->stub_at = realloc(a->stub_at, (size_t)a->cstub * sizeof(uint32_t));
+            if (!a->stub || !a->stub_at) oom();
+        }
+        a->stub[a->nstub++] = x;
+    }
+    int c = x->args[0];
+    Cond t = a->fused[c] ? compare(a, c, 1) : (Cond){ 1, 0, (uint8_t)opnd(a, c, S0), 0, 1 };
+    branch_if(a, invert(t), LFAIL - k);
+}
+
 static void emit_block(A64* a, int b) {
     IrFunc* fn = a->fn;
     IrBlock* bb = &fn->blocks[b];
     for (int i = 0; i < bb->nins; i++) {
         int v = bb->ins[i];
         IrIns* x = &fn->ins[v];
-        line_row(a, x->at);
+        if (x->op != IR_CHECK) line_row(a, x->at); // its at is the site its stub reports
         if (a->fused[v]) continue;
         if (is_fp((IrType)x->type) && (x->op == IR_ADD || x->op == IR_SUB || x->op == IR_MUL || x->op == IR_DIV ||
                                        x->op == IR_NEG)) {
@@ -1906,6 +1931,9 @@ static void emit_block(A64* a, int b) {
             break;
         case IR_PADD: case IR_PSUB:
             pointer_offset(a, v);
+            break;
+        case IR_CHECK:
+            check(a, v);
             break;
         default:
             terminator(a, b, v);
@@ -1968,6 +1996,7 @@ static int emit_body(A64* a) {
     IrFunc* fn = a->fn;
     a->nbr = 0;
     a->npool = a->npsite = 0;
+    a->nstub = 0;
     a->last_at = NULL;
     line_row(a, fn->decl);
     prologue(a);
@@ -1982,13 +2011,25 @@ static int emit_body(A64* a) {
     uint32_t fail_at[2] = { UINT32_MAX, UINT32_MAX }; // per function: bl to the routine
     for (int i = 0; i < a->nbr; i++) {
         int t = a->br[i].target;
-        if (t >= 0 || fail_at[-1 - t] != UINT32_MAX) continue;
+        if (t >= 0 || t <= LFAIL || fail_at[-1 - t] != UINT32_MAX) continue;
         fail_at[-1 - t] = here(a);
         bl_to(a, fail_routine(a, t));
     }
+    for (int k = 0; k < a->nstub; k++) { // write "path:line:col: what" to fd 2 and abort
+        uint32_t n;
+        ESym* msg = obj_located(a->o, a->stub[k]->at, a->stub[k]->name, &n);
+        a->stub_at[k] = here(a);
+        line_row(a, a->stub[k]->at);
+        mov_imm(a, 0, 2, 1);
+        page_ref(a, 1, msg->name, 0x91000021u); // add x1, x1, msg@PAGEOFF
+        mov_imm(a, 2, n, 1);
+        bl_to(a, "__ace$bounds_fail");
+        a->o->bounds_fail_used = 1;
+    }
     for (int i = 0; i < a->nbr; i++) {
         Branch* br = &a->br[i];
-        uint32_t to = br->target < 0 ? fail_at[-1 - br->target] : a->label[br->target];
+        uint32_t to = br->target <= LFAIL ? a->stub_at[LFAIL - br->target]
+                    : br->target < 0 ? fail_at[-1 - br->target] : a->label[br->target];
         int64_t d = ((int64_t)to - (int64_t)br->site) / 4;
         uint32_t w = br->w;
         if (br->imm19) {
@@ -2084,4 +2125,5 @@ void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int is_main)
     free(a.nuse); free(a.fused); free(a.madd); free(a.start); free(a.end);
     free(a.ufirst); free(a.uses); free(a.hint); free(a.phi_of); free(a.with); free(a.calls); free(a.reg); free(a.slot);
     free(a.label); free(a.br); free(a.pin); free(a.rin); free(a.obj); free(a.pool); free(a.psite);
+    free(a.stub); free(a.stub_at);
 }

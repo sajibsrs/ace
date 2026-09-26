@@ -1,0 +1,42 @@
+/* Sequences #2: slicing reads the source descriptor once, then evaluates lo,
+ * then hi. Bounds that record their order and replace the source prove both,
+ * in a function the IR lowers and one a switch keeps on the AST emitter. */
+
+// expect-exit: 0
+
+text: string = "abcdef"
+trace: u64 = 0
+
+lo(): int {
+    trace = trace * 10 + 1
+    text = "xy"
+    return 1
+}
+
+hi(): int {
+    trace = trace * 10 + 2
+    return 4
+}
+
+lowered(): string {
+    return text[lo()..hi()]
+}
+
+emitted(): string {
+    k: int = 1
+    switch k {
+        0 { k = 2 }
+        default {}
+    }
+    return text[lo()..hi()]
+}
+
+main(): int {
+    a: string = lowered()
+    if trace != 12 || a.len != 3 || a[0] != 98 || a[2] != 100 { return 1 }
+    text = "abcdef"
+    trace = 0
+    b: string = emitted()
+    if trace != 12 || b.len != 3 || b[0] != 98 || b[2] != 100 { return 2 }
+    return 0
+}

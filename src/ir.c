@@ -325,6 +325,7 @@ int ir_verify(IrFunc* fn) {
                 int want_ptr = a == 0 && (v->op == IR_LOAD || v->op == IR_STORE || v->op == IR_PADD ||
                                           v->op == IR_PSUB || v->op == IR_CALLI);
                 if (want_ptr && fn->ins[u].type != IT_PTR) { ok = bad(fn, "%%%d needs an address, not %%%d", id, u); break; }
+                if (v->op == IR_CHECK && fn->ins[u].type != IT_BOOL) { ok = bad(fn, "check %%%d of non-bool %%%d", id, u); break; }
                 int db = fn->ins[u].block;
                 // a phi operand must be available at the end of its predecessor
                 int ub = v->op == IR_PHI ? bb->preds[a] : b;
@@ -495,6 +496,11 @@ void ir_print(IrFunc* fn, FILE* out) {
                 fputc(')', out);
                 break;
             }
+            case IR_CHECK:
+                fputc(' ', out);
+                print_value(out, num, v->args[0]);
+                fprintf(out, ", %d:%d %s", v->at ? v->at->line : 0, v->at ? v->at->col : 0, v->name);
+                break;
             case IR_JMP:
                 fprintf(out, " b%d", bb->succ[0]);
                 break;

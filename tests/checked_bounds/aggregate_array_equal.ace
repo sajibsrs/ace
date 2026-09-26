@@ -10,3 +10,5 @@ main(): int {
     values: [2]Point = [Point { x = 1, y = 2 }, Point { x = 3, y = 4 }]
     return int(read(values, 2))
 }
+
+// expect-bounds: 6:19
