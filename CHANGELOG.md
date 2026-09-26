@@ -333,6 +333,22 @@ current normative rules, and Git preserves patch-level detail.
   the regex benchmark; the `json` benchmark is unchanged. `tests/ir-diff.sh`
   now restarts a labeled block, reads a computed constant, and looks up an
   Error's description.
+- Added pass 6 to the IR backend, release only (IR migration step 4a, new
+  `src/opt.c`): sparse conditional constant propagation, then dead-code and
+  control-flow cleanup. Every integer, bool, and pointer value is unknown, one
+  constant, or varying, and only blocks a branch can reach are evaluated, so a
+  constant condition prunes its other arm; a value found constant becomes a
+  `const`, through phis and loops too. An operation debug would trap on (a zero
+  divisor, `MIN / -1`, a shift count past the width) is left for run time, and
+  floats are not folded. Cleanup folds constant and same-target branches,
+  removes unreachable blocks and trivial phis, merges a block into its sole
+  predecessor, skips blocks holding only a jump, and removes unused values
+  (never calls, stores, volatile loads, parameters, or call results). Release
+  `__text` shrinks 2.4% for the `http-simple-server` demo, 2.4% for
+  `regex-search-file`, 3.4% for `json-parse-file`, 3.9% and 2.7% for the `json`
+  and regex benchmarks, and 4% to 10% across `bench/core` and `bench/std`;
+  timings are unchanged within run-to-run noise (`bench/core` within 0.5%).
+  `tests/ir/fold.ace` folds through locals, a loop phi, and a pruned arm.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

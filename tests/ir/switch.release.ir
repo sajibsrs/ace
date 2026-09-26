@@ -90,8 +90,8 @@ b0:
     %3 = const u64 0
     jmp b1
 b1: ; preds b0, b4
-    %5 = phi u64 [%3, b0], [%16, b4]
-    %6 = phi i64 [%2, b0], [%18, b4]
+    %5 = phi u64 [%3, b0], [%17, b4]
+    %6 = phi i64 [%2, b0], [%15, b4]
     %7 = lt bool %5, %1
     br %7, b2, b3
 b2: ; preds b1
@@ -99,28 +99,22 @@ b2: ; preds b1
     %10 = load u8 [%9]
     %11 = const u8 97
     %12 = ne bool %10, %11
-    br %12, b9, b6
-b3: ; preds b1, b7
+    br %12, b6, b5
+b3: ; preds b1, b6
     ret %6
-b4: ; preds b5
-    %15 = const u64 1
-    %16 = add u64 %5, %15
+b4: ; preds b5, b6
+    %15 = phi i64 [%20, b5], [%6, b6]
+    %16 = const u64 1
+    %17 = add u64 %5, %16
     jmp b1
-b5: ; preds b6, b8
-    %18 = phi i64 [%21, b6], [%6, b8]
+b5: ; preds b2
+    %19 = const i64 1
+    %20 = add i64 %6, %19
     jmp b4
 b6: ; preds b2
-    %20 = const i64 1
-    %21 = add i64 %6, %20
-    jmp b5
-b7: ; preds b9
-    jmp b3
-b8: ; preds b9
-    jmp b5
-b9: ; preds b2
-    %25 = const u8 32
-    %26 = ne bool %10, %25
-    br %26, b8, b7
+    %22 = const u8 32
+    %23 = ne bool %10, %22
+    br %23, b4, b3
 }
 
 pick(i32): i32 {
@@ -189,62 +183,29 @@ b9: ; preds b7, b12, b11
     %39 = const i64 3
     ret %39
 b10: ; preds b11
-    %41 = const i32 0
-    %42 = const i32 0
-    %43 = ne bool %41, %42
-    br %43, b18, b17
+    %41 = str ptr "banana bandana"
+    %42 = const u64 14
+    %43 = call i64 scan(%41, %42)
+    %44 = const i64 3
+    %45 = ne bool %43, %44
+    br %45, b13, b14
 b11: ; preds b12
-    %45 = const f64 7.0
-    %46 = call i64 ratio(%45)
-    %47 = const i64 2
-    %48 = ne bool %46, %47
-    br %48, b9, b10
+    %47 = const f64 7.0
+    %48 = call i64 ratio(%47)
+    %49 = const i64 2
+    %50 = ne bool %48, %49
+    br %50, b9, b10
 b12: ; preds b7
-    %50 = const f64 0.0
-    %51 = call i64 ratio(%50)
-    %52 = const i64 0
-    %53 = ne bool %51, %52
-    br %53, b9, b11
-b13: ; preds b16, b19
-    %55 = const i64 4
-    ret %55
-b14: ; preds b19
-    %57 = str ptr "banana bandana"
-    %58 = const u64 14
-    %59 = call i64 scan(%57, %58)
-    %60 = const i64 3
-    %61 = ne bool %59, %60
-    br %61, b22, b23
-b15: ; preds b16
-    %63 = const i32 7
-    %64 = const i32 0
-    %65 = ne bool %63, %64
-    br %65, b21, b20
-b16: ; preds b17, b18
-    %67 = phi i32 [%71, b17], [%41, b18]
-    %68 = const i32 5
-    %69 = ne bool %67, %68
-    br %69, b13, b15
-b17: ; preds b10
-    %71 = const i32 5
-    jmp b16
-b18: ; preds b10
-    jmp b16
-b19: ; preds b20, b21
-    %74 = phi i32 [%78, b20], [%63, b21]
-    %75 = const i32 7
-    %76 = ne bool %74, %75
-    br %76, b13, b14
-b20: ; preds b15
-    %78 = const i32 5
-    jmp b19
-b21: ; preds b15
-    jmp b19
-b22: ; preds b14
-    %81 = const i64 5
-    ret %81
-b23: ; preds b14
-    %83 = const i64 0
-    ret %83
+    %52 = const f64 0.0
+    %53 = call i64 ratio(%52)
+    %54 = const i64 0
+    %55 = ne bool %53, %54
+    br %55, b9, b11
+b13: ; preds b10
+    %57 = const i64 5
+    ret %57
+b14: ; preds b10
+    %59 = const i64 0
+    ret %59
 }
 

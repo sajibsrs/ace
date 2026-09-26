@@ -3,26 +3,24 @@ b0:
     %0 = param i64 0
     %1 = param i64 1
     %2 = param bool 2
-    br %2, b4, b3
-b1: ; preds b4
-    jmp b2
-b2: ; preds b1, b6
-    %5 = phi i64 [%1, b1], [%12, b6]
-    ret %5
-b3: ; preds b0, b4
-    br %2, b7, b5
-b4: ; preds b0
-    %8 = lt bool %0, %1
-    br %8, b1, b3
-b5: ; preds b3, b7
-    %10 = neg i64 %0
-    jmp b6
-b6: ; preds b7, b5
-    %12 = phi i64 [%0, b7], [%10, b5]
-    jmp b2
-b7: ; preds b3
-    %14 = eq bool %0, %1
-    br %14, b5, b6
+    br %2, b3, b2
+b1: ; preds b3, b5
+    %4 = phi i64 [%1, b3], [%11, b5]
+    ret %4
+b2: ; preds b0, b3
+    br %2, b6, b4
+b3: ; preds b0
+    %7 = lt bool %0, %1
+    br %7, b1, b2
+b4: ; preds b2, b6
+    %9 = neg i64 %0
+    jmp b5
+b5: ; preds b6, b4
+    %11 = phi i64 [%0, b6], [%9, b4]
+    jmp b1
+b6: ; preds b2
+    %13 = eq bool %0, %1
+    br %13, b4, b5
 }
 
 both(i32, i32): bool {

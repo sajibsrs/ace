@@ -121,12 +121,11 @@ b2: ; preds b3
     ret %23
 b3: ; preds b0
     %25 = str ptr "xyz"
-    %26 = const u64 3
-    %27 = const u64 2
-    %28 = padd ptr %25, %27 * 1
-    %29 = load u8 [%28]
-    %30 = const u8 122
-    %31 = ne bool %29, %30
-    br %31, b1, b2
+    %26 = const u64 2
+    %27 = padd ptr %25, %26 * 1
+    %28 = load u8 [%27]
+    %29 = const u8 122
+    %30 = ne bool %28, %29
+    br %30, b1, b2
 }
 

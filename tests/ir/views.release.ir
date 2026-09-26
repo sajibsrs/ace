@@ -35,35 +35,29 @@ b0:
     %6 = proj ptr %5, 0
     %7 = proj u64 %5, 1
     %8 = const ptr 0
-    %9 = const u64 0
-    %10 = const ptr 0
-    %11 = ne bool %8, %10
-    br %11, b1, b3
-b1: ; preds b0, b3
-    %13 = const i64 1
-    ret %13
-b2: ; preds b3
-    %15 = cast i64 %7
-    %16 = const i64 1
-    %17 = call i64 larger(%15, %16)
-    %18 = global ptr larger
-    %19 = const i64 1
-    %20 = call i64 twice(%19)
-    %21 = calli i64 %18(%17, %20)
-    %22 = const i64 3
-    %23 = ne bool %21, %22
-    br %23, b4, b5
-b3: ; preds b0
-    %25 = const ptr 0
-    %26 = eq bool %6, %25
-    br %26, b1, b2
+    %9 = eq bool %6, %8
+    br %9, b1, b2
+b1: ; preds b0
+    %11 = const i64 1
+    ret %11
+b2: ; preds b0
+    %13 = cast i64 %7
+    %14 = const i64 1
+    %15 = call i64 larger(%13, %14)
+    %16 = global ptr larger
+    %17 = const i64 1
+    %18 = call i64 twice(%17)
+    %19 = calli i64 %16(%15, %18)
+    %20 = const i64 3
+    %21 = ne bool %19, %20
+    br %21, b3, b4
+b3: ; preds b2
+    %23 = const i64 2
+    ret %23
 b4: ; preds b2
-    %28 = const i64 2
-    ret %28
-b5: ; preds b2
-    %30 = const u64 3
-    %31 = add u64 %7, %30
-    %32 = cast i64 %31
-    ret %32
+    %25 = const u64 3
+    %26 = add u64 %7, %25
+    %27 = cast i64 %26
+    ret %27
 }
 

@@ -191,6 +191,9 @@ Node*   inline_target(Node* call, SType*** targs, int* ntargs);
 // under targs first, and the copy keeps that stamp's types.
 void    inline_copy(Node* f, SType** targs, int ntargs, Node** bind, Node** body);
 void    ir_free(IrFunc* fn);
+// Pass 6 (release only, opt.c): constant propagation, then dead-code and
+// control-flow cleanup, in place.
+void    ir_optimize(IrFunc* fn);
 // Structural invariants; returns 0 and prints the first violation to stderr.
 int     ir_verify(IrFunc* fn);
 void    ir_print(IrFunc* fn, FILE* out);

@@ -67,6 +67,10 @@ checks before the call: per slice argument a representability check (`check`
 of the length's bound and of the end not wrapping), then per pair with a
 `noalias` member a guarded `check` that the ranges are disjoint. A `defer` prints as nothing at its statement beyond the evaluation of its
 arguments; its call appears again before every `ret`, last defer first.
+In release, the IR is then optimized before it prints: a value that is constant
+on every path becomes a `const`, a branch on a constant becomes a `jmp` and its
+untaken arm disappears, and blocks left empty, unreachable, or with a single
+predecessor are removed or merged. Debug prints the lowered IR unchanged.
 A function the IR does not cover yet is listed with the first
 construct that kept it out; the AST emitter compiles such functions, and the
 IR's AArch64 backend compiles the rest.

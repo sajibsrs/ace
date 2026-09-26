@@ -29,10 +29,9 @@ b0:
     %0 = param ptr 0
     %1 = param u64 1
     %2 = param u64 2
-    %3 = const u64 4
-    %4 = padd ptr %0, %1 * 8
-    %5 = sub u64 %2, %1
-    ret %4, %5
+    %3 = padd ptr %0, %1 * 8
+    %4 = sub u64 %2, %1
+    ret %3, %4
 }
 
 sum(ptr): u64 {
@@ -42,9 +41,9 @@ b0:
     %2 = const i64 0
     %3 = const i64 64
     jmp b1
-b1: ; preds b0, b4
-    %5 = phi i64 [%2, b0], [%17, b4]
-    %6 = phi u64 [%1, b0], [%13, b4]
+b1: ; preds b0, b2
+    %5 = phi i64 [%2, b0], [%15, b2]
+    %6 = phi u64 [%1, b0], [%13, b2]
     %7 = lt bool %5, %3
     br %7, b2, b3
 b2: ; preds b1
@@ -53,13 +52,11 @@ b2: ; preds b1
     %11 = load u8 [%10]
     %12 = cast u64 %11
     %13 = add u64 %6, %12
-    jmp b4
+    %14 = const i64 1
+    %15 = add i64 %5, %14
+    jmp b1
 b3: ; preds b1
     ret %6
-b4: ; preds b2
-    %16 = const i64 1
-    %17 = add i64 %5, %16
-    jmp b1
 }
 
 pair(i64): {i64, i64} {
@@ -103,107 +100,106 @@ b0:
     %21 = const u64 2
     %22 = const u8 7
     call set(%4, %21, %22)
-    %24 = const u8 1
-    %25 = const u64 72340172838076673
-    store [%3], %25
-    store [%3 + 8], %25
-    store [%3 + 16], %25
-    store [%3 + 24], %25
-    store [%3 + 32], %25
-    store [%3 + 40], %25
-    store [%3 + 48], %25
-    store [%3 + 56], %25
-    %34 = load u64 [%3]
-    store [%2], %34
-    %36 = load u64 [%3 + 8]
-    store [%2 + 8], %36
-    %38 = load u64 [%3 + 16]
-    store [%2 + 16], %38
-    %40 = load u64 [%3 + 24]
-    store [%2 + 24], %40
-    %42 = load u64 [%3 + 32]
-    store [%2 + 32], %42
-    %44 = load u64 [%3 + 40]
-    store [%2 + 40], %44
-    %46 = load u64 [%3 + 48]
-    store [%2 + 48], %46
-    %48 = load u64 [%3 + 56]
-    store [%2 + 56], %48
-    %50 = const u8 2
-    store [%2 + 63], %50
-    %52 = const i64 5
-    %53 = call {2} pair(%52)
-    %54 = proj i64 %53, 0
-    %55 = proj i64 %53, 1
-    store [%1], %54
-    store [%1 + 8], %55
-    %58 = load i64 [%5]
-    %59 = load i64 [%5 + 8]
-    %60 = load i64 [%5 + 16]
-    %61 = load i64 [%5 + 24]
-    %62 = const i32 1
-    %63 = call i64 get(%58, %59, %60, %61, %62)
-    %64 = const i64 6
-    %65 = ne bool %63, %64
-    br %65, b1, b6
+    %24 = const u64 72340172838076673
+    store [%3], %24
+    store [%3 + 8], %24
+    store [%3 + 16], %24
+    store [%3 + 24], %24
+    store [%3 + 32], %24
+    store [%3 + 40], %24
+    store [%3 + 48], %24
+    store [%3 + 56], %24
+    %33 = load u64 [%3]
+    store [%2], %33
+    %35 = load u64 [%3 + 8]
+    store [%2 + 8], %35
+    %37 = load u64 [%3 + 16]
+    store [%2 + 16], %37
+    %39 = load u64 [%3 + 24]
+    store [%2 + 24], %39
+    %41 = load u64 [%3 + 32]
+    store [%2 + 32], %41
+    %43 = load u64 [%3 + 40]
+    store [%2 + 40], %43
+    %45 = load u64 [%3 + 48]
+    store [%2 + 48], %45
+    %47 = load u64 [%3 + 56]
+    store [%2 + 56], %47
+    %49 = const u8 2
+    store [%2 + 63], %49
+    %51 = const i64 5
+    %52 = call {2} pair(%51)
+    %53 = proj i64 %52, 0
+    %54 = proj i64 %52, 1
+    store [%1], %53
+    store [%1 + 8], %54
+    %57 = load i64 [%5]
+    %58 = load i64 [%5 + 8]
+    %59 = load i64 [%5 + 16]
+    %60 = load i64 [%5 + 24]
+    %61 = const i32 1
+    %62 = call i64 get(%57, %58, %59, %60, %61)
+    %63 = const i64 6
+    %64 = ne bool %62, %63
+    br %64, b1, b6
 b1: ; preds b0, b6, b5, b4, b3
-    %67 = const i64 1
-    ret %67
+    %66 = const i64 1
+    ret %66
 b2: ; preds b3
-    %69 = const f32 1.0
-    %70 = call u32 bits32(%69)
-    %71 = const u32 1065353216
-    %72 = ne bool %70, %71
-    br %72, b7, b8
+    %68 = const f32 1.0
+    %69 = call u32 bits32(%68)
+    %70 = const u32 1065353216
+    %71 = ne bool %69, %70
+    br %71, b7, b8
 b3: ; preds b4
-    %74 = load i64 [%1 + 8]
-    %75 = const i64 6
-    %76 = ne bool %74, %75
-    br %76, b1, b2
+    %73 = load i64 [%1 + 8]
+    %74 = const i64 6
+    %75 = ne bool %73, %74
+    br %75, b1, b2
 b4: ; preds b5
-    %78 = load u64 [%2]
-    store [%0], %78
-    %80 = load u64 [%2 + 8]
-    store [%0 + 8], %80
-    %82 = load u64 [%2 + 16]
-    store [%0 + 16], %82
-    %84 = load u64 [%2 + 24]
-    store [%0 + 24], %84
-    %86 = load u64 [%2 + 32]
-    store [%0 + 32], %86
-    %88 = load u64 [%2 + 40]
-    store [%0 + 40], %88
-    %90 = load u64 [%2 + 48]
-    store [%0 + 48], %90
-    %92 = load u64 [%2 + 56]
-    store [%0 + 56], %92
-    %94 = call u64 sum(%0)
-    %95 = const u64 65
-    %96 = ne bool %94, %95
-    br %96, b1, b3
+    %77 = load u64 [%2]
+    store [%0], %77
+    %79 = load u64 [%2 + 8]
+    store [%0 + 8], %79
+    %81 = load u64 [%2 + 16]
+    store [%0 + 16], %81
+    %83 = load u64 [%2 + 24]
+    store [%0 + 24], %83
+    %85 = load u64 [%2 + 32]
+    store [%0 + 32], %85
+    %87 = load u64 [%2 + 40]
+    store [%0 + 40], %87
+    %89 = load u64 [%2 + 48]
+    store [%0 + 48], %89
+    %91 = load u64 [%2 + 56]
+    store [%0 + 56], %91
+    %93 = call u64 sum(%0)
+    %94 = const u64 65
+    %95 = ne bool %93, %94
+    br %95, b1, b3
 b5: ; preds b6
-    %98 = load i64 [%5]
-    %99 = load i64 [%5 + 8]
-    %100 = load i64 [%5 + 16]
-    %101 = load i64 [%5 + 24]
-    %102 = const u64 1
-    %103 = const u64 3
-    %104 = call {2} window(%98, %99, %100, %101, %102, %103)
-    %105 = proj ptr %104, 0
-    %106 = proj u64 %104, 1
-    %107 = const u64 2
-    %108 = ne bool %106, %107
-    br %108, b1, b4
+    %97 = load i64 [%5]
+    %98 = load i64 [%5 + 8]
+    %99 = load i64 [%5 + 16]
+    %100 = load i64 [%5 + 24]
+    %101 = const u64 1
+    %102 = const u64 3
+    %103 = call {2} window(%97, %98, %99, %100, %101, %102)
+    %104 = proj ptr %103, 0
+    %105 = proj u64 %103, 1
+    %106 = const u64 2
+    %107 = ne bool %105, %106
+    br %107, b1, b4
 b6: ; preds b0
-    %110 = load u8 [%4 + 6]
-    %111 = const u8 7
-    %112 = ne bool %110, %111
-    br %112, b1, b5
+    %109 = load u8 [%4 + 6]
+    %110 = const u8 7
+    %111 = ne bool %109, %110
+    br %111, b1, b5
 b7: ; preds b2
-    %114 = const i64 2
-    ret %114
+    %113 = const i64 2
+    ret %113
 b8: ; preds b2
-    %116 = const i64 0
-    ret %116
+    %115 = const i64 0
+    ret %115
 }
 

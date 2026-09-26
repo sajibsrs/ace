@@ -3319,6 +3319,7 @@ IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, const char** why) {
     }
     if (l.self_head >= 0) seal(&l, l.self_head);
     finish(&l);
+    if (mode == EMIT_RELEASE) ir_optimize(fn);
     ptrmap_free(&l.var_ix);
     ptrmap_free(&l.stored);
     free(l.defers); free(l.vtype); free(l.home); free(l.defs.key); free(l.defs.val); free(l.inc); free(l.inc_head); free(l.repl);

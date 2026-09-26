@@ -12,121 +12,91 @@ b2: ; preds b0
     %7 = eq bool %0, %6
     br %7, b3, b4
 b3: ; preds b2
-    %9 = const u64 4294967296
-    %10 = const i32 2
-    %11 = cast u32 %10
-    %12 = cast u64 %11
-    %13 = or u64 %9, %12
-    ret %13
+    %9 = const u64 4294967298
+    ret %9
 b4: ; preds b2
-    %15 = const i64 2
-    %16 = eq bool %0, %15
-    br %16, b5, b6
+    %11 = const i64 2
+    %12 = eq bool %0, %11
+    br %12, b5, b6
 b5: ; preds b4
-    %18 = const u64 4294967296
-    %19 = const i32 13
-    %20 = cast u32 %19
-    %21 = cast u64 %20
-    %22 = or u64 %18, %21
-    ret %22
+    %14 = const u64 4294967309
+    ret %14
 b6: ; preds b4
-    %24 = const i64 3
-    %25 = eq bool %0, %24
-    br %25, b7, b8
+    %16 = const i64 3
+    %17 = eq bool %0, %16
+    br %17, b7, b8
 b7: ; preds b6
-    %27 = const u64 4294967296
-    %28 = const i32 99
-    %29 = cast u32 %28
-    %30 = cast u64 %29
-    %31 = or u64 %27, %30
-    ret %31
+    %19 = const u64 4294967395
+    ret %19
 b8: ; preds b6
-    %33 = const i64 4
-    %34 = eq bool %0, %33
-    br %34, b9, b10
+    %21 = const i64 4
+    %22 = eq bool %0, %21
+    br %22, b9, b10
 b9: ; preds b8
-    %36 = const u64 8589934592
-    %37 = const i32 5
-    %38 = cast u32 %37
-    %39 = cast u64 %38
-    %40 = or u64 %36, %39
-    ret %40
+    %24 = const u64 8589934597
+    ret %24
 b10: ; preds b8
-    %42 = const u64 12884901888
-    ret %42
+    %26 = const u64 12884901888
+    ret %26
 }
 
 lens(u64): i64 {
 b0:
     %0 = param u64 0
-    %1 = const ptr 0
-    %2 = const u64 0
-    %3 = const u64 32
-    %4 = shr u64 %0, %3
-    %5 = const u64 1
-    %6 = eq bool %4, %5
-    br %6, b2, b3
-b1: ; preds b2, b4, b6, b7
-    %8 = phi ptr [%18, b2], [%24, b4], [%30, b6], [%1, b7]
-    %9 = phi u64 [%19, b2], [%25, b4], [%31, b6], [%2, b7]
-    %10 = cast i64 %9
-    %11 = const i64 100
-    %12 = mul i64 %10, %11
-    %13 = const ptr 0
-    %14 = const u64 0
-    %15 = const u64 4294967298
-    %16 = eq bool %0, %15
-    br %16, b9, b10
+    %1 = const u64 0
+    %2 = const u64 32
+    %3 = shr u64 %0, %2
+    %4 = const u64 1
+    %5 = eq bool %3, %4
+    br %5, b2, b3
+b1: ; preds b2, b4, b6, b5
+    %7 = phi u64 [%15, b2], [%20, b4], [%25, b6], [%1, b5]
+    %8 = cast i64 %7
+    %9 = const i64 100
+    %10 = mul i64 %8, %9
+    %11 = const u64 0
+    %12 = const u64 4294967298
+    %13 = eq bool %0, %12
+    br %13, b8, b9
 b2: ; preds b0
-    %18 = str ptr "OpenErr"
-    %19 = const u64 7
+    %15 = const u64 7
     jmp b1
 b3: ; preds b0
-    %21 = const u64 2
-    %22 = eq bool %4, %21
-    br %22, b4, b5
+    %17 = const u64 2
+    %18 = eq bool %3, %17
+    br %18, b4, b5
 b4: ; preds b3
-    %24 = str ptr "ReadErr"
-    %25 = const u64 7
+    %20 = const u64 7
     jmp b1
 b5: ; preds b3
-    %27 = const u64 3
-    %28 = eq bool %4, %27
-    br %28, b6, b7
+    %22 = const u64 3
+    %23 = eq bool %3, %22
+    br %23, b6, b1
 b6: ; preds b5
-    %30 = str ptr "Bare"
-    %31 = const u64 4
+    %25 = const u64 4
     jmp b1
-b7: ; preds b5
-    jmp b1
-b8: ; preds b9, b11, b13, b14
-    %34 = phi ptr [%39, b9], [%45, b11], [%51, b13], [%13, b14]
-    %35 = phi u64 [%40, b9], [%46, b11], [%52, b13], [%14, b14]
-    %36 = cast i64 %35
-    %37 = add i64 %12, %36
-    ret %37
+b7: ; preds b8, b10, b12, b11
+    %27 = phi u64 [%31, b8], [%36, b10], [%41, b12], [%11, b11]
+    %28 = cast i64 %27
+    %29 = add i64 %10, %28
+    ret %29
+b8: ; preds b1
+    %31 = const u64 12
+    jmp b7
 b9: ; preds b1
-    %39 = str ptr "no such file"
-    %40 = const u64 12
-    jmp b8
-b10: ; preds b1
-    %42 = const u64 4294967309
-    %43 = eq bool %0, %42
-    br %43, b11, b12
-b11: ; preds b10
-    %45 = str ptr "permission denied"
-    %46 = const u64 17
-    jmp b8
-b12: ; preds b10
-    %48 = const u64 8589934597
-    %49 = eq bool %0, %48
-    br %49, b13, b14
-b13: ; preds b12
-    %51 = str ptr "input/output error"
-    %52 = const u64 18
-    jmp b8
-b14: ; preds b12
-    jmp b8
+    %33 = const u64 4294967309
+    %34 = eq bool %0, %33
+    br %34, b10, b11
+b10: ; preds b9
+    %36 = const u64 17
+    jmp b7
+b11: ; preds b9
+    %38 = const u64 8589934597
+    %39 = eq bool %0, %38
+    br %39, b12, b7
+b12: ; preds b11
+    %41 = const u64 18
+    jmp b7
 }
 
 named(u64, u64): bool {

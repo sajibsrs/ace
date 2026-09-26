@@ -5,59 +5,47 @@ b0:
     %2 = const u32 0
     jmp b1
 b1: ; preds b0, b4
-    %4 = phi u32 [%2, b0], [%13, b4]
-    %5 = phi u32 [%1, b0], [%16, b4]
+    %4 = phi u32 [%2, b0], [%15, b4]
+    %5 = phi u32 [%1, b0], [%18, b4]
     %6 = lt bool %4, %0
     br %6, b2, b3
 b2: ; preds b1
     %8 = const u32 0
     jmp b5
-b3: ; preds b1, b11
-    %10 = phi u32 [%5, b1], [%16, b11]
-    jmp b14
-b4: ; preds b9, b7
-    %12 = const u32 1
-    %13 = add u32 %4, %12
+b3: ; preds b1, b7
+    %10 = phi u32 [%5, b1], [%18, b7]
+    %11 = const u32 5
+    %12 = gt bool %10, %11
+    br %12, b9, b10
+b4: ; preds b6, b5
+    %14 = const u32 1
+    %15 = add u32 %4, %14
     jmp b1
 b5: ; preds b2, b8
-    %15 = phi u32 [%8, b2], [%23, b8]
-    %16 = phi u32 [%5, b2], [%32, b8]
-    %17 = lt bool %15, %0
-    br %17, b6, b7
+    %17 = phi u32 [%8, b2], [%30, b8]
+    %18 = phi u32 [%5, b2], [%28, b8]
+    %19 = lt bool %17, %0
+    br %19, b6, b4
 b6: ; preds b5
-    %19 = gt bool %15, %4
-    br %19, b9, b10
-b7: ; preds b5
-    jmp b4
-b8: ; preds b12
-    %22 = const u32 1
-    %23 = add u32 %15, %22
+    %21 = gt bool %17, %4
+    br %21, b4, b7
+b7: ; preds b6
+    %23 = add u32 %4, %17
+    %24 = const u32 7
+    %25 = eq bool %23, %24
+    br %25, b3, b8
+b8: ; preds b7
+    %27 = const u32 1
+    %28 = add u32 %18, %27
+    %29 = const u32 1
+    %30 = add u32 %17, %29
     jmp b5
-b9: ; preds b6
-    jmp b4
-b10: ; preds b6
-    %26 = add u32 %4, %15
-    %27 = const u32 7
-    %28 = eq bool %26, %27
-    br %28, b11, b12
-b11: ; preds b10
-    jmp b3
-b12: ; preds b10
-    %31 = const u32 1
-    %32 = add u32 %16, %31
-    jmp b8
-b13: ; preds b15, b16
-    %34 = phi u32 [%10, b15], [%40, b16]
-    ret %34
-b14: ; preds b3
-    %36 = const u32 5
-    %37 = gt bool %10, %36
-    br %37, b15, b16
-b15: ; preds b14
-    jmp b13
-b16: ; preds b14
-    %40 = const u32 0
-    jmp b13
+b9: ; preds b3, b10
+    %32 = phi u32 [%10, b3], [%34, b10]
+    ret %32
+b10: ; preds b3
+    %34 = const u32 0
+    jmp b9
 }
 
 restart(i64): i64 {
@@ -66,11 +54,11 @@ b0:
     %1 = const i64 0
     %2 = const i64 0
     jmp b2
-b1: ; preds b5, b6
-    %4 = phi i64 [%9, b5], [%21, b6]
+b1: ; preds b4, b5
+    %4 = phi i64 [%9, b4], [%20, b5]
     %5 = const i64 0
     %6 = const i64 4
-    jmp b7
+    jmp b6
 b2: ; preds b0, b3
     %8 = phi i64 [%2, b0], [%11, b3]
     %9 = phi i64 [%1, b0], [%14, b3]
@@ -84,50 +72,42 @@ b3: ; preds b2
 b4: ; preds b2
     %16 = const i64 20
     %17 = eq bool %11, %16
-    br %17, b5, b6
+    br %17, b1, b5
 b5: ; preds b4
+    %19 = const i64 100
+    %20 = add i64 %9, %19
     jmp b1
-b6: ; preds b4
-    %20 = const i64 100
-    %21 = add i64 %9, %20
-    jmp b1
-b7: ; preds b1, b10
-    %23 = phi i64 [%5, b1], [%31, b10]
-    %24 = phi i64 [%4, b1], [%29, b10]
-    %25 = lt bool %23, %6
-    br %25, b8, b9
-b8: ; preds b7
-    jmp b12
-b9: ; preds b7
-    ret %24
-b10: ; preds b15, b11
-    %29 = phi i64 [%36, b15], [%33, b11]
-    %30 = const i64 1
-    %31 = add i64 %23, %30
-    jmp b7
-b11: ; preds b13, b16
-    %33 = phi i64 [%36, b13], [%48, b16]
-    jmp b10
-b12: ; preds b8
+b6: ; preds b1, b9
+    %22 = phi i64 [%5, b1], [%36, b9]
+    %23 = phi i64 [%4, b1], [%34, b9]
+    %24 = lt bool %22, %6
+    br %24, b7, b8
+b7: ; preds b6
+    %26 = const i64 1
+    %27 = add i64 %23, %26
+    %28 = const i64 3
+    %29 = rem i64 %27, %28
+    %30 = const i64 0
+    %31 = eq bool %29, %30
+    br %31, b10, b11
+b8: ; preds b6
+    ret %23
+b9: ; preds b11, b10
+    %34 = phi i64 [%27, b11], [%38, b10]
     %35 = const i64 1
-    %36 = add i64 %24, %35
-    %37 = const i64 3
-    %38 = rem i64 %36, %37
-    %39 = const i64 0
-    %40 = eq bool %38, %39
-    br %40, b13, b14
-b13: ; preds b12
-    jmp b11
-b14: ; preds b12
-    %43 = const i64 200
-    %44 = lt bool %36, %43
-    br %44, b15, b16
-b15: ; preds b14
+    %36 = add i64 %22, %35
+    jmp b6
+b10: ; preds b7, b12
+    %38 = phi i64 [%27, b7], [%44, b12]
+    jmp b9
+b11: ; preds b7
+    %40 = const i64 200
+    %41 = lt bool %27, %40
+    br %41, b9, b12
+b12: ; preds b11
+    %43 = const i64 10
+    %44 = add i64 %27, %43
     jmp b10
-b16: ; preds b14
-    %47 = const i64 10
-    %48 = add i64 %36, %47
-    jmp b11
 }
 
 main(): i64 {

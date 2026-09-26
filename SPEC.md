@@ -1181,10 +1181,12 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
     compile time against the emission it replaces; (2) floats, aggregates, and
     the full ABI; (3) tagged unions, `switch`, `defer`, and contract checks;
     (4) pass 6 and the debug mode, with `bench/core`, `bench/std`, and
-    `bench/package` at parity or better; (5) remove the AST emitter and fold
+    `bench/package` at parity or better; (5) remove the AST emitter, once the
+    `slice`, `string`, and `static map` fallbacks are lowered too, and fold
     this entry into Compiler #2, #4, and #6.
-  - Files: `src/ir.c` (IR and passes), `src/lower.c`, `src/arm64.c`
-    (selection, allocation, encoding), `src/macho.c` (object writer).
+  - Files: `src/ir.c` (IR, verifier, printer), `src/lower.c`, `src/opt.c`
+    (pass 6), `src/arm64.c` (selection, allocation, encoding), `src/macho.c`
+    (object writer).
 
 ### Trigger-gated
 

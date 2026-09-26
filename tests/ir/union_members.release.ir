@@ -41,38 +41,34 @@ b0:
     %4 = ne bool %2, %3
     br %4, b6, b2
 b1: ; preds b8, b2, b3, b4, b5
-    %6 = phi i64 [%1, b8], [%9, b2], [%12, b3], [%16, b4], [%20, b5]
+    %6 = phi i64 [%1, b8], [%8, b2], [%11, b3], [%14, b4], [%16, b5]
     ret %6
 b2: ; preds b0
     %8 = const i64 1
-    %9 = add i64 %1, %8
     jmp b1
 b3: ; preds b6
-    %11 = load i64 [%0 + 8]
-    %12 = add i64 %1, %11
+    %10 = load i64 [%0 + 8]
+    %11 = add i64 %1, %10
     jmp b1
 b4: ; preds b7
-    %14 = load i64 [%0 + 8]
-    %15 = load i64 [%0 + 16]
-    %16 = add i64 %1, %15
+    %13 = load i64 [%0 + 16]
+    %14 = add i64 %1, %13
     jmp b1
 b5: ; preds b8
-    %18 = load f64 [%0 + 8]
-    %19 = const i64 100
-    %20 = add i64 %1, %19
+    %16 = const i64 100
     jmp b1
 b6: ; preds b0
-    %22 = const i32 3
-    %23 = ne bool %2, %22
-    br %23, b7, b3
+    %18 = const i32 3
+    %19 = ne bool %2, %18
+    br %19, b7, b3
 b7: ; preds b6
-    %25 = const i32 2
-    %26 = ne bool %2, %25
-    br %26, b8, b4
+    %21 = const i32 2
+    %22 = ne bool %2, %21
+    br %22, b8, b4
 b8: ; preds b7
-    %28 = const i32 1
-    %29 = ne bool %2, %28
-    br %29, b1, b5
+    %24 = const i32 1
+    %25 = ne bool %2, %24
+    br %25, b1, b5
 }
 
 wide(ptr): i64 {
@@ -616,156 +612,143 @@ b26: ; preds b27
     %218 = load u64 [%12 + 72]
     store [%11 + 72], %218
     %220 = call i64 total(%11)
-    %221 = const i64 1
-    %222 = const i64 3
-    %223 = add i64 %221, %222
-    %224 = const i64 7
-    %225 = add i64 %223, %224
-    %226 = const i64 -1
-    %227 = add i64 %225, %226
-    %228 = ne bool %220, %227
-    br %228, b28, b29
+    %221 = const i64 10
+    %222 = ne bool %220, %221
+    br %222, b28, b29
 b27: ; preds b24
-    %230 = const bool true
-    %231 = const bool true
-    %232 = call {1} flags(%230, %231)
-    %233 = proj u64 %232, 0
-    %234 = call bool both(%233)
-    br %234, b26, b25
+    %224 = const bool true
+    %225 = const bool true
+    %226 = call {1} flags(%224, %225)
+    %227 = proj u64 %226, 0
+    %228 = call bool both(%227)
+    br %228, b26, b25
 b28: ; preds b26
-    %236 = const i64 9
-    ret %236
+    %230 = const i64 9
+    ret %230
 b29: ; preds b26
-    %238 = const f64 4.0
-    store [%10 + 8], %238
-    %240 = const i32 1
-    store [%10], %240
-    %242 = load u64 [%10]
-    store [%12 + 56], %242
-    %244 = load u64 [%10 + 8]
-    store [%12 + 64], %244
-    %246 = load u64 [%10 + 16]
-    store [%12 + 72], %246
-    %248 = load u64 [%12]
-    store [%9], %248
-    %250 = load u64 [%12 + 8]
-    store [%9 + 8], %250
-    %252 = load u64 [%12 + 16]
-    store [%9 + 16], %252
-    %254 = load u64 [%12 + 24]
-    store [%9 + 24], %254
-    %256 = load u64 [%12 + 32]
-    store [%9 + 32], %256
-    %258 = load u64 [%12 + 40]
-    store [%9 + 40], %258
-    %260 = load u64 [%12 + 48]
-    store [%9 + 48], %260
-    %262 = load u64 [%12 + 56]
-    store [%9 + 56], %262
-    %264 = load u64 [%12 + 64]
-    store [%9 + 64], %264
-    %266 = load u64 [%12 + 72]
-    store [%9 + 72], %266
-    %268 = call i64 total(%9)
-    %269 = const i64 1
-    %270 = const i64 3
-    %271 = add i64 %269, %270
-    %272 = const i64 7
-    %273 = add i64 %271, %272
-    %274 = const i64 8
-    %275 = add i64 %273, %274
-    %276 = ne bool %268, %275
-    br %276, b30, b31
+    %232 = const f64 4.0
+    store [%10 + 8], %232
+    %234 = const i32 1
+    store [%10], %234
+    %236 = load u64 [%10]
+    store [%12 + 56], %236
+    %238 = load u64 [%10 + 8]
+    store [%12 + 64], %238
+    %240 = load u64 [%10 + 16]
+    store [%12 + 72], %240
+    %242 = load u64 [%12]
+    store [%9], %242
+    %244 = load u64 [%12 + 8]
+    store [%9 + 8], %244
+    %246 = load u64 [%12 + 16]
+    store [%9 + 16], %246
+    %248 = load u64 [%12 + 24]
+    store [%9 + 24], %248
+    %250 = load u64 [%12 + 32]
+    store [%9 + 32], %250
+    %252 = load u64 [%12 + 40]
+    store [%9 + 40], %252
+    %254 = load u64 [%12 + 48]
+    store [%9 + 48], %254
+    %256 = load u64 [%12 + 56]
+    store [%9 + 56], %256
+    %258 = load u64 [%12 + 64]
+    store [%9 + 64], %258
+    %260 = load u64 [%12 + 72]
+    store [%9 + 72], %260
+    %262 = call i64 total(%9)
+    %263 = const i64 19
+    %264 = ne bool %262, %263
+    br %264, b30, b31
 b30: ; preds b29
-    %278 = const i64 10
-    ret %278
+    %266 = const i64 10
+    ret %266
 b31: ; preds b29
-    %280 = const i64 2
-    call.mem pair(%280, %8)
-    %282 = const i64 2
-    call.mem pair(%282, %6)
-    %284 = load i64 [%6]
-    %285 = load u64 [%6 + 8]
-    store [%7], %285
-    %287 = load u64 [%6 + 16]
-    store [%7 + 8], %287
-    %289 = load u64 [%6 + 24]
-    store [%7 + 16], %289
-    %291 = const i64 2
-    %292 = ne bool %284, %291
-    br %292, b32, b34
+    %268 = const i64 2
+    call.mem pair(%268, %8)
+    %270 = const i64 2
+    call.mem pair(%270, %6)
+    %272 = load i64 [%6]
+    %273 = load u64 [%6 + 8]
+    store [%7], %273
+    %275 = load u64 [%6 + 16]
+    store [%7 + 8], %275
+    %277 = load u64 [%6 + 24]
+    store [%7 + 16], %277
+    %279 = const i64 2
+    %280 = ne bool %272, %279
+    br %280, b32, b34
 b32: ; preds b31, b34
-    %294 = const i64 11
-    ret %294
+    %282 = const i64 11
+    ret %282
 b33: ; preds b34
-    %296 = const i64 2
-    call.mem make(%296, %4)
-    %298 = const i32 0
-    store [%4 + 24], %298
-    %300 = load u64 [%4]
-    store [%3], %300
-    %302 = load u64 [%4 + 8]
-    store [%3 + 8], %302
-    %304 = load u64 [%4 + 16]
-    store [%3 + 16], %304
-    %306 = call i64 area(%3)
-    %307 = const i64 7
-    %308 = ne bool %306, %307
-    br %308, b35, b37
+    %284 = const i64 2
+    call.mem make(%284, %4)
+    %286 = const i32 0
+    store [%4 + 24], %286
+    %288 = load u64 [%4]
+    store [%3], %288
+    %290 = load u64 [%4 + 8]
+    store [%3 + 8], %290
+    %292 = load u64 [%4 + 16]
+    store [%3 + 16], %292
+    %294 = call i64 area(%3)
+    %295 = const i64 7
+    %296 = ne bool %294, %295
+    br %296, b35, b37
 b34: ; preds b31
-    %310 = load u64 [%7]
-    store [%5], %310
-    %312 = load u64 [%7 + 8]
-    store [%5 + 8], %312
-    %314 = load u64 [%7 + 16]
-    store [%5 + 16], %314
-    %316 = call i64 area(%5)
-    %317 = const i64 7
-    %318 = ne bool %316, %317
-    br %318, b32, b33
+    %298 = load u64 [%7]
+    store [%5], %298
+    %300 = load u64 [%7 + 8]
+    store [%5 + 8], %300
+    %302 = load u64 [%7 + 16]
+    store [%5 + 16], %302
+    %304 = call i64 area(%5)
+    %305 = const i64 7
+    %306 = ne bool %304, %305
+    br %306, b32, b33
 b35: ; preds b33, b37
-    %320 = const i64 12
-    ret %320
+    %308 = const i64 12
+    ret %308
 b36: ; preds b37
-    %322 = const i64 1
-    %323 = cast u64 %322
-    %324 = padd ptr %4, %323 * 24
-    %325 = const i64 1
-    call.mem make(%325, %1)
-    %327 = load u64 [%1]
-    store [%324], %327
-    %329 = load u64 [%1 + 8]
-    store [%324 + 8], %329
-    %331 = load u64 [%1 + 16]
-    store [%324 + 16], %331
-    %333 = cast u64 %322
-    %334 = padd ptr %4, %333 * 24
-    %335 = load u64 [%334]
-    store [%0], %335
-    %337 = load u64 [%334 + 8]
-    store [%0 + 8], %337
-    %339 = load u64 [%334 + 16]
-    store [%0 + 16], %339
-    %341 = call i64 area(%0)
-    %342 = const i64 3
-    %343 = ne bool %341, %342
-    br %343, b38, b39
+    %310 = const u64 1
+    %311 = padd ptr %4, %310 * 24
+    %312 = const i64 1
+    call.mem make(%312, %1)
+    %314 = load u64 [%1]
+    store [%311], %314
+    %316 = load u64 [%1 + 8]
+    store [%311 + 8], %316
+    %318 = load u64 [%1 + 16]
+    store [%311 + 16], %318
+    %320 = const u64 1
+    %321 = padd ptr %4, %320 * 24
+    %322 = load u64 [%321]
+    store [%0], %322
+    %324 = load u64 [%321 + 8]
+    store [%0 + 8], %324
+    %326 = load u64 [%321 + 16]
+    store [%0 + 16], %326
+    %328 = call i64 area(%0)
+    %329 = const i64 3
+    %330 = ne bool %328, %329
+    br %330, b38, b39
 b37: ; preds b33
-    %345 = load u64 [%4 + 24]
-    store [%2], %345
-    %347 = load u64 [%4 + 32]
-    store [%2 + 8], %347
-    %349 = load u64 [%4 + 40]
-    store [%2 + 16], %349
-    %351 = call i64 area(%2)
-    %352 = const i64 0
-    %353 = ne bool %351, %352
-    br %353, b35, b36
+    %332 = load u64 [%4 + 24]
+    store [%2], %332
+    %334 = load u64 [%4 + 32]
+    store [%2 + 8], %334
+    %336 = load u64 [%4 + 40]
+    store [%2 + 16], %336
+    %338 = call i64 area(%2)
+    %339 = const i64 0
+    %340 = ne bool %338, %339
+    br %340, b35, b36
 b38: ; preds b36
-    %355 = const i64 13
-    ret %355
+    %342 = const i64 13
+    ret %342
 b39: ; preds b36
-    %357 = const i64 0
-    ret %357
+    %344 = const i64 0
+    ret %344
 }
 

@@ -65,82 +65,77 @@ b0:
     %1 = param i64 1
     %2 = param i64 2
     %3 = const i64 0
-    %4 = const i64 1
-    %5 = cast u64 %1
-    %6 = cast u64 %2
-    %7 = cast u64 %4
-    %8 = eq bool %1, %2
-    br %8, b5, b4
-b1: ; preds b8, b9
-    %10 = phi u64 [%45, b8], [%51, b9]
-    %11 = phi i64 [%44, b8], [%49, b9]
-    %12 = phi i64 [%3, b8], [%16, b9]
-    %13 = const u64 0
-    %14 = ne bool %10, %13
-    br %14, b2, b3
+    %4 = cast u64 %1
+    %5 = cast u64 %2
+    %6 = const u64 1
+    %7 = eq bool %1, %2
+    br %7, b5, b4
+b1: ; preds b8, b2
+    %9 = phi u64 [%49, b8], [%20, b2]
+    %10 = phi i64 [%48, b8], [%18, b2]
+    %11 = phi i64 [%3, b8], [%15, b2]
+    %12 = const u64 0
+    %13 = ne bool %9, %12
+    br %13, b2, b3
 b2: ; preds b1
-    %16 = add i64 %12, %11
-    jmp b9
+    %15 = add i64 %11, %10
+    %16 = cast u64 %10
+    %17 = add u64 %16, %47
+    %18 = cast i64 %17
+    %19 = const u64 1
+    %20 = sub u64 %9, %19
+    jmp b1
 b3: ; preds b1
-    %18 = const i64 0
-    %19 = const i64 4
-    jmp b10
+    %22 = const i64 0
+    %23 = const i64 4
+    jmp b9
 b4: ; preds b0
-    %21 = gt bool %1, %2
-    br %21, b7, b6
+    %25 = gt bool %1, %2
+    br %25, b7, b6
 b5: ; preds b0
-    %23 = const u64 0
-    %24 = const i64 0
-    %25 = const u64 0
+    %27 = const u64 0
+    %28 = const i64 0
+    %29 = const u64 0
     jmp b8
 b6: ; preds b4
-    %27 = const u64 1
-    %28 = sub u64 %6, %5
-    %29 = sub u64 %28, %27
-    %30 = div u64 %29, %7
-    %31 = add u64 %30, %27
+    %31 = const u64 1
+    %32 = sub u64 %5, %4
+    %33 = sub u64 %32, %31
+    %34 = div u64 %33, %6
+    %35 = add u64 %34, %31
     jmp b8
 b7: ; preds b4
-    %33 = const u64 1
-    %34 = sub u64 %5, %6
-    %35 = sub u64 %34, %33
-    %36 = div u64 %35, %7
-    %37 = mul u64 %36, %7
-    %38 = add u64 %6, %37
-    %39 = add u64 %36, %33
-    %40 = cast i64 %38
-    %41 = neg u64 %7
+    %37 = const u64 1
+    %38 = sub u64 %4, %5
+    %39 = sub u64 %38, %37
+    %40 = div u64 %39, %6
+    %41 = mul u64 %40, %6
+    %42 = add u64 %5, %41
+    %43 = add u64 %40, %37
+    %44 = cast i64 %42
+    %45 = const u64 18446744073709551615
     jmp b8
 b8: ; preds b5, b6, b7
-    %43 = phi u64 [%25, b5], [%7, b6], [%41, b7]
-    %44 = phi i64 [%24, b5], [%1, b6], [%40, b7]
-    %45 = phi u64 [%23, b5], [%31, b6], [%39, b7]
+    %47 = phi u64 [%29, b5], [%6, b6], [%45, b7]
+    %48 = phi i64 [%28, b5], [%1, b6], [%44, b7]
+    %49 = phi u64 [%27, b5], [%35, b6], [%43, b7]
     jmp b1
-b9: ; preds b2
-    %47 = cast u64 %11
-    %48 = add u64 %47, %43
-    %49 = cast i64 %48
-    %50 = const u64 1
-    %51 = sub u64 %10, %50
-    jmp b1
-b10: ; preds b3, b13
-    %53 = phi i64 [%18, b3], [%65, b13]
-    %54 = phi i64 [%12, b3], [%59, b13]
-    %55 = lt bool %53, %19
-    br %55, b11, b12
-b11: ; preds b10
-    %57 = cast u8 %53
-    %58 = cast i64 %57
-    %59 = add i64 %54, %58
-    jmp b13
-b12: ; preds b10
+b9: ; preds b3, b10
+    %51 = phi i64 [%22, b3], [%59, b10]
+    %52 = phi i64 [%11, b3], [%57, b10]
+    %53 = lt bool %51, %23
+    br %53, b10, b11
+b10: ; preds b9
+    %55 = cast u8 %51
+    %56 = cast i64 %55
+    %57 = add i64 %52, %56
+    %58 = const i64 1
+    %59 = add i64 %51, %58
+    jmp b9
+b11: ; preds b9
     %61 = load i64 [%0]
-    %62 = add i64 %54, %61
+    %62 = add i64 %52, %61
     ret %62
-b13: ; preds b11
-    %64 = const i64 1
-    %65 = add i64 %53, %64
-    jmp b10
 }
 
 main(): i64 {

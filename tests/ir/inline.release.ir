@@ -25,15 +25,13 @@ b0:
     %0 = param i64 0
     %1 = const i64 100
     %2 = gt bool %0, %1
-    br %2, b2, b3
-b1: ; preds b2, b3
-    %4 = phi i64 [%1, b2], [%0, b3]
+    br %2, b1, b2
+b1: ; preds b0, b2
+    %4 = phi i64 [%1, b0], [%0, b2]
     %5 = const i64 2
     %6 = mul i64 %4, %5
     ret %6
 b2: ; preds b0
-    jmp b1
-b3: ; preds b0
     jmp b1
 }
 
@@ -69,10 +67,8 @@ b1: ; preds b0
 b2: ; preds b0
     %6 = const i64 1
     %7 = sub i64 %0, %6
-    jmp b3
-b3: ; preds b2
-    %9 = call i64 countdown(%7)
-    ret %9
+    %8 = call i64 countdown(%7)
+    ret %8
 }
 
 run(ptr, i64): i64 {
@@ -92,44 +88,34 @@ b0:
     %12 = load i64 [%2]
     %13 = add i64 %12, %3
     store [%2], %13
-    jmp b1
-b1: ; preds b0
-    %16 = load i64 [%1]
-    %17 = add i64 %16, %3
-    store [%1], %17
-    jmp b2
-b2: ; preds b1
-    %20 = const i64 100
-    %21 = gt bool %3, %20
-    br %21, b5, b6
-b3: ; preds b4
-    %23 = load i64 [%1]
-    %24 = add i64 %31, %23
-    %25 = const u64 3
+    %15 = load i64 [%1]
+    %16 = add i64 %15, %3
+    store [%1], %16
+    %18 = const i64 100
+    %19 = gt bool %3, %18
+    br %19, b1, b2
+b1: ; preds b0, b2
+    %21 = phi i64 [%18, b0], [%3, b2]
+    %22 = const i64 2
+    %23 = mul i64 %21, %22
+    %24 = load i64 [%1]
+    %25 = add i64 %23, %24
     %26 = const i64 3
     %27 = gt bool %3, %26
-    br %27, b8, b9
-b4: ; preds b5, b6
-    %29 = phi i64 [%20, b5], [%3, b6]
-    %30 = const i64 2
-    %31 = mul i64 %29, %30
+    br %27, b4, b5
+b2: ; preds b0
+    jmp b1
+b3: ; preds b4, b5
+    %30 = phi u64 [%34, b4], [%36, b5]
+    %31 = cast i64 %30
+    %32 = add i64 %25, %31
+    ret %32
+b4: ; preds b1
+    %34 = const u64 0
     jmp b3
-b5: ; preds b2
-    jmp b4
-b6: ; preds b2
-    jmp b4
-b7: ; preds b8, b9
-    %35 = phi u64 [%39, b8], [%42, b9]
-    %36 = cast i64 %35
-    %37 = add i64 %24, %36
-    ret %37
-b8: ; preds b3
-    %39 = const u64 0
-    jmp b7
-b9: ; preds b3
-    %41 = const u64 1
-    %42 = sub u64 %25, %41
-    jmp b7
+b5: ; preds b1
+    %36 = const u64 2
+    jmp b3
 }
 
 main(): i64 {
