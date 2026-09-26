@@ -198,7 +198,6 @@ typedef struct {
     int    nglobs, cglobs;
     StaticMapData* maps;
     int    nmaps, cmaps;
-    int    str_n;
     // current function
     size_t subsp_fix;
     uint32_t frame;
@@ -3123,15 +3122,17 @@ static void store_to_slot(Em* e, EV v, uint32_t off, SType* t);
 
 // --- string literals --------------------------------------------------------------------
 
-static ESym* intern_string(Em* e, Node* s) {
-    Sec* c = &e->o.secs[SEC_CONST];
+ESym* obj_string(Obj* o, const char* p, uint32_t len) {
+    Sec* c = &o->secs[SEC_CONST];
     while (c->data.len % 8) buf_put8(&c->data, 0);
     char nm[64];
-    snprintf(nm, sizeof nm, "__ace$str$%d", e->str_n++);
-    ESym* sym = sym_define(&e->o.syms, e->o.secs, nm, (uint32_t)strlen(nm), 0, c);
-    buf_write(&c->data, s->str, s->len);
+    snprintf(nm, sizeof nm, "__ace$str$%d", o->str_n++);
+    ESym* sym = sym_define(&o->syms, o->secs, nm, (uint32_t)strlen(nm), 0, c);
+    buf_write(&c->data, p, len);
     return sym;
 }
+
+static ESym* intern_string(Em* e, Node* s) { return obj_string(&e->o, s->str, (uint32_t)s->len); }
 
 static void addr_of_sym(Em* e, int rd, ESym* sym);
 
@@ -3826,22 +3827,48 @@ static int field_base(Em* e, Node* x, uint32_t* off) {
 
 // `larger[int]` as a value: the address of the written specialization or of
 // the stamp whose signature sema recorded on the node
-static int gen_generic_value(Em* e, Node* x) {
-    Sym* s = node_sym(x);
+const char* fn_value_mangle(Sym* s, Node* x) {
     int nt = s->spec_args ? s->spec_nargs : s->decl->c ? s->decl->c->nkids : 0;
     SType** targs = s->spec_args;
     SType* ft = s->type;
     if (!s->spec_args) {
         STypeInst* inst = sema_insts(s->decl);
         while (inst && inst->result != node_ty(x)) inst = inst->next;
-        if (!inst) {
-            em_err(e, x, "generic stamp not found");
-            return tmp_int(e);
-        }
+        if (!inst) return NULL;
         targs = inst->args;
         ft = inst->result;
     }
-    const char* mn = fn_mangle(s->name, s->len, ft, s->decl, targs, nt, s->spec_args != NULL);
+    return fn_mangle(s->name, s->len, ft, s->decl, targs, nt, s->spec_args != NULL);
+}
+
+const char* fn_call_mangle(Sym* s, Node* call) {
+    Node* callee = call->a;
+    SType* cft = node_ty(callee);
+    if (!cft || cft->kind != SK_FUNC) cft = s->type;
+    SType** targs = NULL;
+    int ntargs = 0;
+    if (s->is_generic && (call->flags & F_ASSOC)) {
+        // no receiver parameter to read args back from; the owner
+        // expression's resolved type carries them instead
+        SType* owner = callee->kind == N_FIELD_E ? node_ty(callee->a) : NULL;
+        if (owner) { targs = owner->args; ntargs = owner->nargs; }
+    } else if (s->is_generic && cft && cft->nparams > 0) {
+        SType* recv = cft->params[0];
+        targs = recv->args;
+        ntargs = recv->nargs;
+    } else if (s->spec_args) {
+        targs = s->spec_args;
+        ntargs = s->spec_nargs;
+    }
+    return fn_mangle(s->name, s->len, cft, s->decl, targs, ntargs, s->spec_args != NULL);
+}
+
+static int gen_generic_value(Em* e, Node* x) {
+    const char* mn = fn_value_mangle(node_sym(x), x);
+    if (!mn) {
+        em_err(e, x, "generic stamp not found");
+        return tmp_int(e);
+    }
     int t = tmp_int(e);
     addr_of_sym(e, xreg(t), sym_intern(&e->o.syms, mn, (uint32_t)strlen(mn)));
     return t;
@@ -5219,24 +5246,7 @@ static EV gen_call(Em* e, Node* call) {
                 tgt.nlen = (uint32_t)strlen(nm);
                 c_boundary = 1;
             } else {
-                SType* cft = node_ty(callee);
-                if (!cft || cft->kind != SK_FUNC) cft = s->type;
-                SType** targs = NULL;
-                int ntargs = 0;
-                if (s->is_generic && (call->flags & F_ASSOC)) {
-                    // no receiver parameter to read args back from; the owner
-                    // expression's resolved type carries them instead
-                    SType* owner = callee->kind == N_FIELD_E ? node_ty(callee->a) : NULL;
-                    if (owner) { targs = owner->args; ntargs = owner->nargs; }
-                } else if (s->is_generic && cft && cft->nparams > 0) {
-                    SType* recv = cft->params[0];
-                    targs = recv->args;
-                    ntargs = recv->nargs;
-                } else if (s->spec_args) {
-                    targs = s->spec_args;
-                    ntargs = s->spec_nargs;
-                }
-                const char* mn = fn_mangle(s->name, s->len, cft, s->decl, targs, ntargs, s->spec_args != NULL);
+                const char* mn = fn_call_mangle(s, call);
                 tgt.kind = TK_INTERNAL;
                 tgt.name = arena_copy(mn, strlen(mn));
                 tgt.nlen = (uint32_t)strlen(mn);

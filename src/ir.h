@@ -35,6 +35,7 @@ typedef enum {
                            toward zero and saturating to an integer (NaN: 0) */ \
     X(SLOT, "slot")     /* ptr to a stack object: imm = size, aux = alignment */ \
     X(GLOBAL, "global") /* ptr to sym: a global variable or a function */      \
+    X(STR, "str")       /* ptr to the bytes of a string literal: name, imm long */ \
     X(LOAD, "load")     /* the result type's value at args[0] + aux */         \
     X(STORE, "store")   /* args[1] to args[0] + aux, at args[1]'s width */     \
     /* pointer offset: ptr args[0] +/- u64 args[1] * imm (the element size) */ \
@@ -68,8 +69,8 @@ enum {
     IRF_VARARGS = 4,  // call: arguments from index aux on are variadic
 };
 
-// Aggregates are never IR values: lowering splits every struct and tuple into
-// its scalar leaves (SSA values, or loads and stores for one in memory), and
+// Aggregates are never IR values: lowering splits every struct and tuple, and
+// every string and slice (a ptr and a u64 length), into its scalar leaves (SSA values, or loads and stores for one in memory), and
 // each target maps leaves onto its ABI.
 enum { IR_MAX_LEAVES = 16 };
 
@@ -103,7 +104,7 @@ typedef struct {
     uint64_t imm;    // CONST value (in range for type), PARAM index, SLOT size, PADD/PSUB scale
     int32_t  aux;    // LOAD/STORE offset, SLOT alignment, CALL first variadic argument
     Sym*     sym;    // GLOBAL symbol; CALL target function, when not a runtime routine
-    const char* name; // CALL target's link symbol
+    const char* name; // CALL target's link symbol; STR bytes
     IrSig*   sig;    // CALL, CALLI: the parts of its arguments and result, or NULL
     Node*    at;     // source position, for line rows
 } IrIns;

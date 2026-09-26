@@ -1,0 +1,72 @@
+pick({ptr, u64}, {ptr, u64}, bool): {ptr, u64} {
+b0:
+    %0 = param ptr 0
+    %1 = param u64 1
+    %2 = param ptr 2
+    %3 = param u64 3
+    %4 = param bool 4
+    br %4, b1, b2
+b1: ; preds b0
+    ret %0, %1
+b2: ; preds b0
+    ret %2, %3
+}
+
+; larger: not lowered (generic)
+
+; twice: not lowered (generic)
+
+twice(i64): i64 {
+b0:
+    %0 = param i64 0
+    %1 = const i64 3
+    %2 = mul.chk i64 %0, %1
+    ret %2
+}
+
+main(): i64 {
+b0:
+    %0 = str ptr "abc"
+    %1 = const u64 3
+    %2 = str ptr "ir"
+    %3 = const u64 2
+    %4 = const bool false
+    %5 = call {2} pick(%0, %1, %2, %3, %4)
+    %6 = proj ptr %5, 0
+    %7 = proj u64 %5, 1
+    %8 = const ptr 0
+    %9 = const u64 0
+    %10 = const ptr 0
+    %11 = ne bool %8, %10
+    br %11, b1, b3
+b1: ; preds b0, b3
+    %13 = const i64 1
+    call @__ace$registry_leaks()
+    ret %13
+b2: ; preds b3
+    %16 = cast i64 %7
+    %17 = const i64 1
+    %18 = call i64 larger(%16, %17)
+    %19 = global ptr larger
+    %20 = const i64 1
+    %21 = call i64 twice(%20)
+    %22 = calli.chk i64 %19(%18, %21)
+    %23 = const i64 3
+    %24 = ne bool %22, %23
+    br %24, b4, b5
+b3: ; preds b0
+    %26 = const ptr 0
+    %27 = eq bool %6, %26
+    br %27, b1, b2
+b4: ; preds b2
+    %29 = const i64 2
+    call @__ace$registry_leaks()
+    ret %29
+b5: ; preds b2
+    %32 = const u64 3
+    %33 = add.chk u64 %7, %32
+    %34 = cast i64 %33
+    call @__ace$registry_leaks()
+    ret %34
+}
+

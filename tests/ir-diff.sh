@@ -10,7 +10,10 @@
 # division, comparisons, and conversions both ways), and records (random
 # structs: floating aggregates, words shared by several fields, ones past 16
 # bytes, nested; as locals, parameters, results, literals, fields, and
-# copies) and (T, Error) results destructured. A switch keeps some functions
+# copies) and (T, Error) results destructured, and strings (literals, null,
+# .len, null checks, []u8 views; as locals, parameters, results, and fields),
+# and calls to generic templates and a written specialization, directly and
+# as values. A switch keeps some functions
 # on the AST emitter, so calls cross between the backends both ways. Each
 # program is built with two
 # compilers in debug and release, and requires identical output and exit
@@ -95,7 +98,7 @@ function fexpr(t, depth,   r, a, b) {
 # a call of a random function with a scalar result, converted to t
 function call_conv(t,   j, i, n, c) {
     n = 0
-    for (i = 0; i < nfuncs; i++) if (!isrec(fret[i]) && fret[i] !~ /^\(/) c[n++] = i
+    for (i = 0; i < nfuncs; i++) if (!isrec(fret[i]) && fret[i] !~ /^\(/ && fret[i] != "string") c[n++] = i
     if (!n) return isfloat(t) ? fliteral(t) : t "(" literal(t) ")"
     j = c[pick(n)]
     return t "(f" j "(" args_of(j, 0) "))"
@@ -122,7 +125,30 @@ function rexpr(t, depth,   r, v, s, i, j, n, c) {
     return s " }"
 }
 
-function anyexpr(t, depth) { return isrec(t) ? rexpr(t, depth) : expr(t, depth) }
+function anyexpr(t, depth) { return isrec(t) ? rexpr(t, depth) : t == "string" ? sexpr(depth) : expr(t, depth) }
+
+# a string: a variable or field, a literal, null, a call, a []u8 view and back
+function sexpr(depth,   r, v, i, j, n, c) {
+    r = rand()
+    v = var_of("string")
+    if (v != "" && r < 0.35) return v
+    if (r < 0.45) {
+        v = field_of("string")
+        if (v != "") return v
+    }
+    if (depth > 0 && r < 0.6) {
+        n = 0
+        for (i = 0; i < nfuncs; i++) if (fret[i] == "string") c[n++] = i
+        if (n) {
+            j = c[pick(n)]
+            return "f" j "(" args_of(j, 0) ")"
+        }
+    }
+    if (depth > 0 && r < 0.7) return "gpick[string](" sexpr(depth - 1) ", " sexpr(depth - 1) ", " boolean(0) ")"
+    if (depth > 0 && r < 0.75) return "string([]u8(" (v != "" ? v : strs[1 + pick(nstrs)]) "))"
+    if (r < 0.82) return "null"
+    return strs[1 + pick(nstrs)]
+}
 
 # a scalar field of type t of a record variable in scope, or ""
 function field_of(t,   i, k, n, c) {
@@ -153,7 +179,7 @@ function var_of(t,   i, n, c) {
 # a scalar variable and its type, or ""
 function any_var(   i, n, c) {
     n = 0
-    for (i = 0; i < nvars; i++) if (!isrec(vtype[i])) c[n++] = i
+    for (i = 0; i < nvars; i++) if (!isrec(vtype[i]) && vtype[i] != "string") c[n++] = i
     if (!n) return ""
     i = c[pick(n)]
     return vname[i] SUBSEP vtype[i]
@@ -174,6 +200,15 @@ function leaf(t, depth,   v, r, s) {
             if (part[2] != "bool" && part[2] != t) return t "(" part[1] ")"
         }
     }
+    if (t != "bool" && r < 0.84) {
+        s = var_of("string")
+        if (s == "") s = field_of("string")
+        if (s != "" && chance(0.5)) return t "(" s ".len)"
+    }
+    if (t != "bool" && depth > 0 && r < 0.87) {
+        if (chance(0.5)) return "gmax[" t "](" expr(t, depth - 1) ", " expr(t, depth - 1) ")"
+        return "gpick[" t "](" expr(t, depth - 1) ", " expr(t, depth - 1) ", " boolean(depth - 1) ")"
+    }
     if (t != "bool" && nfuncs > 0 && depth > 0 && r < 0.9) return call_conv(t)
     if (t != "bool" && depth > 0 && r < 0.93) return t "(mut gs.bump(" expr("i64", 0) "))"
     return t == "bool" ? literal(t) : t "(" literal(t) ")"
@@ -186,6 +221,7 @@ function args_of(j, lit,   k, s, t) {
         t = ptype[j, k]
         if (pmut[j, k]) s = s (k ? ", " : "") "mut " lvalue(t)
         else if (isrec(t)) s = s (k ? ", " : "") rexpr(t, 0)
+        else if (t == "string") s = s (k ? ", " : "") (lit ? strs[1 + pick(nstrs)] : sexpr(0))
         else if (lit) s = s (k ? ", " : "") (t == "bool" || isfloat(t) ? literal(t) : t "(" literal(t) ")")
         else s = s (k ? ", " : "") expr(t, 0)
     }
@@ -217,6 +253,14 @@ function memory_stmt(depth, pad, loops,   p, r, t, i, name, lab, j, k, s) {
         if (t == "bool" || isfloat(t)) print p "*" name " = " expr(t, 1)
         else print p "*" name " += (" expr(t, 1) " & 3)"
         declare("*" name, t)
+        return
+    }
+    if (r < 0.45) { # a generic stamp or specialization as a value
+        t = types[2 + pick(ntypes - 1)]
+        name = "h" nlocals++
+        print p name ": (" t ", " t ", bool): " t " = gpick[" t "]"
+        print p "v" nlocals ": " t " = " name "(" expr(t, 1) ", " expr(t, 1) ", " boolean(1) ")"
+        declare("v" nlocals++, t)
         return
     }
     if (r < 0.55) { # a call through a function value
@@ -253,8 +297,12 @@ function compare(depth,   t, n, s, i, ops) {
     return expr(t, depth - 1) " " ops[1 + pick(6)] " " expr(t, depth - 1)
 }
 
-function boolean(depth,   r) {
+function boolean(depth,   r, a) {
     r = rand()
+    if (r < 0.08) {
+        a = var_of("string")
+        if (a != "") return "(" a (chance(0.5) ? " == null" : " != null") ")"
+    }
     if (depth <= 0 || r < 0.2) return leaf("bool", depth)
     if (r < 0.6) return "(" compare(depth) ")"
     if (r < 0.75) return "!(" boolean(depth - 1) ")"
@@ -311,7 +359,7 @@ function block(depth, pad, loops,   i, n, saved) {
 
 function assignable(   i, n, c) { # a scalar one
     n = 0
-    for (i = 0; i < nvars; i++) if (!vfixed[vname[i]] && !isrec(vtype[i])) c[n++] = i
+    for (i = 0; i < nvars; i++) if (!vfixed[vname[i]] && !isrec(vtype[i]) && vtype[i] != "string") c[n++] = i
     return n ? c[pick(n)] : -1
 }
 
@@ -356,6 +404,13 @@ function stmt(depth, pad, loops,   p, r, t, name, i, lab, n, open, ops) {
     if (depth > 0 && chance(0.18)) { memory_stmt(depth, pad, loops); return }
     if (chance(0.15)) { record_stmt(pad); return }
     r = rand()
+    if (r < 0.08) {
+        name = "v" nlocals++
+        print p name ": string = " sexpr(2)
+        declare(name, "string")
+        if (chance(0.3)) print p name " = " sexpr(1)
+        return
+    }
     if (depth <= 0 || r < 0.3) {
         t = anytype()
         name = "v" nlocals++
@@ -419,6 +474,7 @@ function stmt(depth, pad, loops,   p, r, t, name, i, lab, n, open, ops) {
 # a return value of the current function
 function result(depth,   t) {
     if (isrec(rett)) return rexpr(rett, depth)
+    if (rett == "string") return sexpr(depth)
     if (rett ~ /^\(/) {
         t = substr(rett, 2, index(rett, ",") - 2)
         return expr(t, depth) ", " (chance(0.5) ? "null" : "Fail(" (pick(5) - 2) ")")
@@ -441,6 +497,7 @@ function show_rec(e, t,   i, s) {
 # fmt.printf of value e of type t: a float as its exact bits
 function show(e, t) {
     if (t == "bool") return "    if " e " { fmt.printf(\"1\\n\") } else { fmt.printf(\"0\\n\") }"
+    if (t == "string") return "    fmt.printf(\"[%s] %d\\n\", " e ", int(" e ".len))\n" show("(" e " == null)", "bool")
     if (isfloat(t)) return "    fmt.printf(\"%u\\n\", uint(bits.cast(" e ")))"
     return "    fmt.printf(\"%d\\n\", int(" e "))"
 }
@@ -456,6 +513,10 @@ BEGIN {
     print "gs: S = S { a = " literal("i64") ", b = " literal("u8") " }\n"
     print "mut S.bump(n: i64): int {\n    self.a += n & 7\n    self.b = u8(self.a & 63)\n    return int(self.b)\n}\n"
     print "Fail: error\n"
+    nstrs = split("\"\" \"a\" \"hello\" \"ace-ir\" \"0123456789abcdef01234\"", strs, " ")
+    print "gmax[T](a: T, b: T): T {\n    if a > b { return a }\n    return b\n}\n"
+    print "gpick[T](a: T, b: T, c: bool): T {\n    if c { return a }\n    return b\n}\n"
+    print "gpick[i64](a: i64, b: i64, c: bool): i64 {\n    if c { return b }\n    return a\n}\n"
     nrec = 1 + pick(4)
     for (r = 0; r < nrec; r++) { # a floating aggregate, small scalars sharing words, or anything
         form = rand()
@@ -465,7 +526,7 @@ BEGIN {
         for (k = 0; k < nfld[r]; k++) {
             if (form < 0.3) t = ft
             else if (form < 0.55) t = narrows[1 + pick(split("i8 u8 bool u16 i32 u32", narrows, " "))]
-            else t = anytype()
+            else t = chance(0.15) ? "string" : anytype()
             if (r > 0 && chance(0.15)) t = "R" pick(r)
             ftype[r, k] = t
             s = s "    f" k ": " t ",\n"
@@ -479,13 +540,13 @@ BEGIN {
         nlabels = 0
         np = chance(0.15) ? 9 + pick(4) : 1 + pick(4) # past the argument registers, at times
         r = rand()
-        rett = r < 0.2 ? "R" pick(nrec) : r < 0.35 ? "(" types[2 + pick(ntypes - 1)] ", Error)" : r < 0.55 ? (chance(0.5) ? "f32" : "f64") : "int"
+        rett = r < 0.1 ? "string" : r < 0.2 ? "R" pick(nrec) : r < 0.35 ? "(" types[2 + pick(ntypes - 1)] ", Error)" : r < 0.55 ? (chance(0.5) ? "f32" : "f64") : "int"
         fret[f] = rett
         s = "f" f "("
         for (k = 0; k < np; k++) {
-            t = chance(0.3) ? "R" pick(nrec) : anytype()
+            t = chance(0.3) ? "R" pick(nrec) : chance(0.15) ? "string" : anytype()
             ptype[f, k] = t
-            pmut[f, k] = !isrec(t) && chance(0.2)
+            pmut[f, k] = !isrec(t) && t != "string" && chance(0.2)
             if (pmut[f, k]) fmut[f] = 1
             s = s (k ? ", " : "") (pmut[f, k] ? "mut " : "") "p" k ": " t
             declare("p" k, t)

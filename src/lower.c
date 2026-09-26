@@ -134,16 +134,22 @@ static IrType need_type(Lw* l, SType* t) {
 
 static int is_untyped(SType* t) { return !t || t->kind == SK_UT; }
 
+// A string or slice: a byte or element ptr and a u64 length (Types #19).
+static int is_view(SType* t) {
+    t = unwrap(t);
+    return t && (t->kind == SK_SLICE || (t->kind == SK_PRIM && t->prim == P_STRING));
+}
+
 static int is_agg(SType* t) {
     t = unwrap(t);
-    return t && (t->kind == SK_STRUCT || t->kind == SK_TUPLE);
+    return t && (t->kind == SK_STRUCT || t->kind == SK_TUPLE || is_view(t));
 }
 
 // The leaves of t, which the IR must cover.
 static int leaves(Lw* l, SType* t, IrLeaf* out) {
     SType* bad = NULL;
     int n = ir_leaves(t, out, &bad);
-    if (n < 0) unsupported(l, bad && ir_type_of(bad) >= 0 ? "aggregate of over 16 leaves" : type_why(bad));
+    if (n < 0) unsupported(l, bad && (ir_type_of(bad) >= 0 || is_view(bad)) ? "aggregate of over 16 leaves" : type_why(bad));
     return n;
 }
 
@@ -793,7 +799,8 @@ static int is_domain(SType* t) { return t && t->kind == SK_ERROR_DOMAIN; }
 // A call: a scalar result's value; an aggregate's leaves into res.
 static int call(Lw* l, Node* x, int want, Agg* res) {
     Node* callee = x->a;
-    Sym* s = node_sym(x);
+    int inst = callee && callee->kind == N_INDEX && callee->sym; // larger[int](a, b)
+    Sym* s = inst ? node_sym(callee) : node_sym(x);
     if (!s && callee && callee->kind == N_IDENT && is_domain(node_ty(callee))) { // Domain(code) (Errors #5, #7)
         int id = konst(l, IT_U64, x->ival << 32);
         if (x->nkids != 1) return id;
@@ -828,7 +835,6 @@ static int call(Lw* l, Node* x, int want, Agg* res) {
     if (!s || s->kind != SYM_FUNC || !callee) unsupported(l, "indirect or method call");
     Node* d = s->decl;
     if (!d) unsupported(l, "extern call");
-    if (s->is_generic || s->spec_args || (d->kind == N_FUNC && d->c)) unsupported(l, "generic call");
     if ((d->kind == N_FUNC && d->ival) || (d->flags & F_INTRINSIC)) unsupported(l, "compiler-backed call");
     if (d->flags & F_INLINE) unsupported(l, "inline call");
     if (d->flags & F_EXPO) unsupported(l, "exported call");
@@ -839,7 +845,9 @@ static int call(Lw* l, Node* x, int want, Agg* res) {
     int id = emit(l, IR_CALL, result_type(l, rt));
     IrIns* c = &l->fn->ins[id];
     c->sym = s;
-    c->name = link_name(s, ft);
+    const char* mn = inst ? fn_value_mangle(s, callee) : s->is_extern ? NULL : fn_call_mangle(s, x);
+    if (inst && !mn) unsupported(l, "generic call");
+    c->name = s->is_extern ? link_name(s, ft) : arena_name(mn);
     if (s->is_extern && (d->flags & F_VARARGS) && first_var >= 0) {
         c->flags |= IRF_VARARGS;
         c->aux = first_var;
@@ -866,6 +874,7 @@ static int is_pointer(Node* x) {
 
 static int is_place(Node* x);
 static void field_leaves(Lw* l, Node* x, Agg* out);
+static int view_leaf(Lw* l, Node* x, int k);
 
 static int expr(Lw* l, Node* x, int want) {
     switch (x->kind) {
@@ -885,9 +894,15 @@ static int expr(Lw* l, Node* x, int want) {
             return literal(l, t, init, neg);
         }
         if (s && s->kind == SYM_FUNC) { // a function value
-            if (s->is_generic || s->spec_args || (s->decl && s->decl->kind == N_FUNC && s->decl->c))
-                unsupported(l, "generic function value");
             if (s->decl && (s->decl->flags & (F_INTRINSIC | F_INLINE | F_EXPO))) unsupported(l, "function value");
+            if (s->is_generic || s->spec_args || (s->decl && s->decl->kind == N_FUNC && s->decl->c)) {
+                const char* mn = fn_value_mangle(s, x); // larger[int]
+                if (!mn) unsupported(l, "generic function value");
+                mn = arena_name(mn); // before global_addr reuses fn_mangle's buffer
+                int id = global_addr(l, s);
+                l->fn->ins[id].name = mn;
+                return id;
+            }
             return global_addr(l, s);
         }
         return place_read(l, place(l, x), 0);
@@ -908,6 +923,7 @@ static int expr(Lw* l, Node* x, int want) {
             if (x->len == 4 && memcmp(x->str, "code", 4) == 0) return emit2(l, IR_CAST, IT_I32, v, -1);
             unsupported(l, "Error description");
         }
+        if (is_view(bt) && x->len == 3 && memcmp(x->str, "len", 3) == 0) return view_leaf(l, x->a, 1);
         if (!bt || (bt->kind != SK_PTR && bt->kind != SK_STRUCT)) unsupported(l, bt ? type_why(bt) : "field access");
         if (!is_place(x)) {
             Agg a;
@@ -940,6 +956,11 @@ static int expr(Lw* l, Node* x, int want) {
             int pv = expr(l, x->a, IT_PTR);
             return pointer_offset(l, op == IR_ADD ? IR_PADD : IR_PSUB, node_ty(x->a), pv, expr(l, x->b, IT_U64));
         }
+        if ((op == IR_EQ || op == IR_NE) && (x->a->kind == N_NULL) != (x->b->kind == N_NULL)) {
+            Node* o = x->a->kind == N_NULL ? x->b : x->a;
+            if (is_view(node_ty(o))) // Sequences #8: a null view has a null ptr
+                return emit2(l, (IrOp)op, IT_BOOL, view_leaf(l, o, 0), konst(l, IT_PTR, 0));
+        }
         if (is_compare(op)) {
             IrType ot = operand_type(l, x, -1);
             int a = expr(l, x->a, ot);
@@ -967,6 +988,15 @@ static int expr(Lw* l, Node* x, int want) {
     case N_CALL:
         return call(l, x, want, NULL);
     case N_INDEX: case N_SLICE_E:
+        if (x->kind == N_INDEX && x->sym) { // larger[int] as a value
+            Sym* s = node_sym(x);
+            const char* mn = fn_value_mangle(s, x);
+            if (!mn) unsupported(l, "generic function value");
+            mn = arena_name(mn); // before global_addr reuses fn_mangle's buffer
+            int id = global_addr(l, s);
+            l->fn->ins[id].name = mn;
+            return id;
+        }
         unsupported(l, type_why(node_ty(x->a)));
     default:
         unsupported(l, is_untyped(node_ty(x)) ? "expression form" : type_why(node_ty(x)));
@@ -1023,6 +1053,42 @@ static void literal_agg(Lw* l, Node* x, SType* t, Agg* out) {
         if (out->v[k] < 0) out->v[k] = konst(l, (IrType)lv[k].type, 0);
 }
 
+// The literal a module-level string constant names, or NULL.
+static Node* const_string(Node* x) {
+    Sym* s = x->kind == N_IDENT ? node_sym(x) : NULL;
+    if (!s || s->kind != SYM_VAR || !s->is_global || !s->is_const || !s->init) return NULL;
+    return s->init->kind == N_STR ? s->init : NULL;
+}
+
+// The leaves of string literal x: its bytes' address and length.
+static void string_literal(Lw* l, Node* x, Agg* out) {
+    int p = emit(l, IR_STR, IT_PTR);
+    l->fn->ins[p].name = x->str;
+    l->fn->ins[p].imm = (uint64_t)x->len;
+    out->n = 2;
+    out->v[0] = p;
+    out->v[1] = konst(l, IT_U64, (uint64_t)x->len);
+}
+
+// Leaf k of string or slice x, a place's read alone: 0 its ptr, 1 its length.
+static int view_leaf(Lw* l, Node* x, int k) {
+    Node* lit = x->kind == N_STR ? x : const_string(x);
+    if (lit && k) return konst(l, IT_U64, (uint64_t)lit->len);
+    if (lit) {
+        Agg v;
+        string_literal(l, lit, &v);
+        return v.v[0];
+    }
+    if (is_place(x)) {
+        Place p = place(l, x);
+        if (p.var >= 0) return read_var(l, p.var + k, l->cur);
+        return load(l, k ? IT_U64 : IT_PTR, p.addr, p.off + 8 * k, p.flags);
+    }
+    Agg v;
+    value(l, x, node_ty(x), &v);
+    return v.v[k];
+}
+
 // The leaves of x, converted to type t: a scalar's one value, or those of an
 // aggregate.
 static void value(Lw* l, Node* x, SType* t, Agg* out) {
@@ -1030,6 +1096,24 @@ static void value(Lw* l, Node* x, SType* t, Agg* out) {
         out->n = 1;
         out->v[0] = expr(l, x, need_type(l, t));
         return;
+    }
+    if (is_view(t)) {
+        Node* lit = x->kind == N_STR ? x : const_string(x);
+        if (lit) {
+            string_literal(l, lit, out);
+            return;
+        }
+        if (x->kind == N_NULL) { // Sequences #8: the null view
+            out->n = 2;
+            out->v[0] = konst(l, IT_PTR, 0);
+            out->v[1] = konst(l, IT_U64, 0);
+            return;
+        }
+        if (x->kind == N_CALL && !node_sym(x) && x->a && x->a->kind == N_IDENT && x->nkids == 1 &&
+            is_view(node_ty(x->kids[0]))) { // string(b), []u8(s): one type (Types #19)
+            value(l, x->kids[0], t, out);
+            return;
+        }
     }
     switch (x->kind) {
     case N_STRUCTLIT: case N_TUPLE_E:
@@ -1407,9 +1491,15 @@ static void stmt(Lw* l, Node* s) {
             Args g;
             memset(&g, 0, sizeof g);
             if (call_args(l, s->a, node_sym(s->a), &g) >= 0 || g.n != l->fn->nparams) unsupported(l, "self call");
-            for (int i = 0; i < l->fn->nparams; i++) { // every parameter is a scalar here
-                int var = (int)ptrmap_get(&l->var_ix, node_sym(l->f->kids[i])) - 1;
-                write_var(l, l->home[var] <= ADDR_VAR ? ADDR_VAR - l->home[var] : var, l->cur, g.v[i]);
+            for (int i = 0, k = 0; i < l->f->nkids; i++) { // each parameter's leaves, in order
+                Sym* ps = node_sym(l->f->kids[i]);
+                int var = (int)ptrmap_get(&l->var_ix, ps) - 1;
+                if (l->home[var] <= ADDR_VAR) {
+                    write_var(l, ADDR_VAR - l->home[var], l->cur, g.v[k++]);
+                    continue;
+                }
+                int n = is_agg(ps->type) ? leaf_count(l, ps->type) : 1;
+                for (int j = 0; j < n; j++) write_var(l, var + j, l->cur, g.v[k++]);
             }
             jump(l, l->self_head);
             return;
@@ -1578,7 +1668,7 @@ IrFunc* ir_lower(Node* f, EmitMode mode, const char** why) {
         fn->sig->nparts = g.nparts;
         fn->sig->ret = (IrPart){ is_agg(rt) ? rt : NULL, 0, fn->nrets };
     }
-    if (mode == EMIT_RELEASE && !l.is_main && !fn->sig && !frame_storage(&l) && has_self_tail(&l, f->b)) {
+    if (mode == EMIT_RELEASE && !l.is_main && !frame_storage(&l) && has_self_tail(&l, f->b)) {
         l.self_head = new_block(&l);
         jump(&l, l.self_head);
         l.cur = l.self_head;

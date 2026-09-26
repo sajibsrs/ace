@@ -12,5 +12,31 @@ b0:
     ret
 }
 
-; main: not lowered (string)
+main(): i64 {
+b0:
+    %0 = slot ptr 8, 8
+    %1 = str ptr "abc"
+    %2 = const u64 3
+    %3 = call i64 norm(%1, %2)
+    store [%0], %3
+    call bump(%0)
+    %6 = const i64 4
+    %7 = call i64 sign(%6)
+    %8 = const i64 1
+    %9 = ne bool %7, %8
+    br %9, b1, b3
+b1: ; preds b0, b3
+    %11 = const i64 1
+    call @__ace$registry_leaks()
+    ret %11
+b2: ; preds b3
+    %14 = const i64 0
+    call @__ace$registry_leaks()
+    ret %14
+b3: ; preds b0
+    %17 = load i64 [%0]
+    %18 = const i64 98
+    %19 = ne bool %17, %18
+    br %19, b1, b2
+}
 

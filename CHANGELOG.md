@@ -120,6 +120,26 @@ current normative rules, and Git preserves patch-level detail.
   generates random records and `(T, Error)` results, keeping some functions
   on the AST emitter by a `switch`. Compile time is unchanged; the call
   benchmark's 64-, 24-, and 8-byte struct loops run 30%, 9%, and 9% faster.
+- Extended the IR to strings and slices, and to calls of stamped generics
+  (IR migration step 2c2). A string or slice is two leaves, a `ptr` and a
+  `u64` length, so locals, parameters, results, fields, and destructuring
+  reuse the aggregate lowering and its AAPCS64 mapping. A new `str` gives the
+  address of a literal's bytes, interned through `obj_string` in the shared
+  `Obj` so both backends number `__ace$str$N` from one counter; a module
+  `const` string lowers as its literal. `.len` reads the second leaf, `x ==
+  null` compares the first with zero, `null` is two zero leaves, and
+  `string(b)` and `[]u8(s)` keep their leaves. Indexing and slicing stay with
+  the AST emitter until bounds checks lower. Calls to a template stamp, a
+  written specialization, or a generic method, and `larger[int]` as a value,
+  take their symbol from `fn_call_mangle` and `fn_value_mangle`, shared with
+  the AST emitter. A `bool` alone in an incoming aggregate word is now
+  zero-extended, since AAPCS64 leaves the word's other bits unspecified,
+  and a release self tail call rebinds every leaf of an aggregate parameter,
+  so such functions still run in one frame.
+  Functions left to the AST emitter across the `bench` and `demo` roots fall
+  from 149 to 129, those kept out by a string or slice from 75 to 16, and
+  `bench/core/calls` `main` now lowers. `tests/ir-diff.sh` also generates
+  strings and generic calls.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

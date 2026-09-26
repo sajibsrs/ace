@@ -147,6 +147,15 @@ static int leaves_at(SType* t, uint32_t off, IrLeaf* out, int n, SType** bad) {
         return n + 1;
     }
     SType* u = unwrap(t);
+    if (u && (u->kind == SK_SLICE || (u->kind == SK_PRIM && u->prim == P_STRING))) { // Types #19
+        if (n + 2 > IR_MAX_LEAVES) {
+            *bad = t;
+            return -1;
+        }
+        out[n] = (IrLeaf){ off, IT_PTR };
+        out[n + 1] = (IrLeaf){ off + 8, IT_U64 };
+        return n + 2;
+    }
     if (!u || (u->kind != SK_STRUCT && u->kind != SK_TUPLE)) {
         *bad = t;
         return -1;
@@ -443,6 +452,16 @@ void ir_print(IrFunc* fn, FILE* out) {
             case IR_GLOBAL:
                 fputc(' ', out);
                 print_sym(out, v->sym);
+                break;
+            case IR_STR:
+                fputs(" \"", out);
+                for (uint64_t k = 0; k < v->imm; k++) {
+                    unsigned char c = (unsigned char)v->name[k];
+                    if (c == '"' || c == '\\') fprintf(out, "\\%c", c);
+                    else if (c >= 32 && c < 127) fputc(c, out);
+                    else fprintf(out, "\\x%02x", c);
+                }
+                fputc('"', out);
                 break;
             case IR_LOAD: case IR_STORE:
                 fputs(" [", out);

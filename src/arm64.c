@@ -233,7 +233,7 @@ static uint32_t ext_of(IrType t) {
     switch (t) {
     case IT_I8: return 0x13001C00u;  // sxtb
     case IT_I16: return 0x13003C00u; // sxth
-    case IT_U8: return 0x53001C00u;  // uxtb
+    case IT_U8: case IT_BOOL: return 0x53001C00u; // uxtb
     default: return 0x53003C00u;     // uxth
     }
 }
@@ -419,9 +419,10 @@ static Move move_of(A64* a, int dst_loc, int v) {
 // (L_ADDR), whose memory is at mem. head marks the first leaf of a word or of
 // an addressed aggregate. mem is an offset in the caller's outgoing area (a
 // copy of the aggregate, a result buffer, a word) or in the callee's save
-// area (the saved address or word).
+// area (the saved address or word). word marks an L_REG leaf alone in a word
+// of an aggregate, whose other bits AAPCS64 leaves unspecified.
 enum { L_REG, L_STACK, L_WORD, L_ADDR };
-typedef struct Loc { uint8_t kind, size, head; int8_t reg; uint32_t soff, off, mem; } Loc;
+typedef struct Loc { uint8_t kind, size, head; int8_t reg; uint32_t soff, off, mem; uint8_t word; } Loc;
 
 static uint32_t align_to(uint32_t v, uint32_t a) { return (v + a - 1) & ~(a - 1); }
 
@@ -439,7 +440,7 @@ static void agg_stack(Cc* c, const IrLeaf* lv, int n, SType* agg, Loc* out) {
     uint32_t al = sema_align(agg);
     c->soff = align_to(c->soff, al > 8 ? 8 : al ? al : 1);
     for (int k = 0; k < n; k++)
-        out[k] = (Loc){ L_STACK, (uint8_t)(ir_type_bits((IrType)lv[k].type) / 8), 0, -1, c->soff + lv[k].off, 0, 0 };
+        out[k] = (Loc){ L_STACK, (uint8_t)(ir_type_bits((IrType)lv[k].type) / 8), 0, -1, c->soff + lv[k].off, 0, 0, 0 };
     c->soff += align_to(sema_size(agg), 8);
 }
 
@@ -461,11 +462,11 @@ static void agg_words(Cc* c, const IrLeaf* lv, int n, int first, Loc* out) {
         while (e < n && lv[e].off / 8 == w) e++;
         int8_t reg = (int8_t)(first + (int)w);
         if (e == k + 1 && lv[k].off % 8 == 0) {
-            out[k] = (Loc){ L_REG, 8, 1, reg, 0, 0, 0 };
+            out[k] = (Loc){ L_REG, 8, 1, reg, 0, 0, 0, 1 };
         } else {
             uint32_t m = c->area = align_to(c->area, 8);
             c->area += 8;
-            for (int j = k; j < e; j++) out[j] = (Loc){ L_WORD, 8, (uint8_t)(j == k), reg, 0, lv[j].off % 8, m };
+            for (int j = k; j < e; j++) out[j] = (Loc){ L_WORD, 8, (uint8_t)(j == k), reg, 0, lv[j].off % 8, m, 0 };
         }
         k = e;
     }
@@ -486,12 +487,12 @@ static uint32_t assign_leaves(Cc* c, const IrType* t, int n, const IrSig* sig, i
             int* rn = is_fp(tt) ? &c->vn : &c->xn;
             if (varargs_from >= 0 && pt.first >= varargs_from) w = 8;
             else if (*rn < 8) {
-                o[0] = (Loc){ L_REG, 8, 1, (int8_t)((rn == &c->vn ? V : 0) + (*rn)++), 0, 0, 0 };
+                o[0] = (Loc){ L_REG, 8, 1, (int8_t)((rn == &c->vn ? V : 0) + (*rn)++), 0, 0, 0, 0 };
                 continue;
             }
             if (w < 4) w = 4;
             c->soff = align_to(c->soff, w);
-            o[0] = (Loc){ L_STACK, (uint8_t)w, 1, -1, c->soff, 0, 0 };
+            o[0] = (Loc){ L_STACK, (uint8_t)w, 1, -1, c->soff, 0, 0, 0 };
             c->soff += w;
             continue;
         }
@@ -501,7 +502,7 @@ static uint32_t assign_leaves(Cc* c, const IrType* t, int n, const IrSig* sig, i
         uint32_t size = sema_size(pt.agg);
         if (is_hfa(t + pt.first, pt.n)) {
             if (c->vn + pt.n <= 8) {
-                for (int k = 0; k < pt.n; k++) o[k] = (Loc){ L_REG, 8, 1, (int8_t)(V + c->vn++), 0, 0, 0 };
+                for (int k = 0; k < pt.n; k++) o[k] = (Loc){ L_REG, 8, 1, (int8_t)(V + c->vn++), 0, 0, 0, 0 };
             } else {
                 agg_stack(c, lv, pt.n, pt.agg, o);
                 c->vn = 8;
@@ -516,7 +517,7 @@ static uint32_t assign_leaves(Cc* c, const IrType* t, int n, const IrSig* sig, i
                 so = c->soff = align_to(c->soff, 8);
                 c->soff += 8;
             }
-            for (int k = 0; k < pt.n; k++) o[k] = (Loc){ L_ADDR, 8, (uint8_t)(k == 0), reg, so, lv[k].off, m };
+            for (int k = 0; k < pt.n; k++) o[k] = (Loc){ L_ADDR, 8, (uint8_t)(k == 0), reg, so, lv[k].off, m, 0 };
         } else if (c->xn + (int)((size + 7) / 8) > 8) {
             agg_stack(c, lv, pt.n, pt.agg, o);
             c->xn = 8;
@@ -534,7 +535,7 @@ static uint32_t assign_leaves(Cc* c, const IrType* t, int n, const IrSig* sig, i
 static void assign_result(Cc* c, const IrType* t, int n, SType* agg, Loc* out) {
     if (!n) return;
     if (!agg) {
-        out[0] = (Loc){ L_REG, 8, 1, (int8_t)(is_fp(t[0]) ? V : 0), 0, 0, 0 };
+        out[0] = (Loc){ L_REG, 8, 1, (int8_t)(is_fp(t[0]) ? V : 0), 0, 0, 0, 0 };
         return;
     }
     if (!is_hfa(t, n) && sema_size(agg) > 16) {
@@ -542,7 +543,7 @@ static void assign_result(Cc* c, const IrType* t, int n, SType* agg, Loc* out) {
         SType* bad;
         ir_leaves(agg, lv, &bad);
         uint32_t m = addr_mem(c, agg);
-        for (int k = 0; k < n; k++) out[k] = (Loc){ L_ADDR, 8, (uint8_t)(k == 0), 8, 0, lv[k].off, m };
+        for (int k = 0; k < n; k++) out[k] = (Loc){ L_ADDR, 8, (uint8_t)(k == 0), 8, 0, lv[k].off, m, 0 };
         return;
     }
     Cc r = { 0, 0, 0, c->area, c->caller };
@@ -1535,6 +1536,14 @@ static void global(A64* a, int v) {
     dst_done(a, v, rd);
 }
 
+static void string_bytes(A64* a, int v) {
+    IrIns* x = ins_of(a, v);
+    ESym* s = obj_string(a->o, x->name, (uint32_t)x->imm);
+    int rd = dst(a, v);
+    page_ref(a, rd, s->name, 0x91000000u | ((uint32_t)rd << 5) | (uint32_t)rd);
+    dst_done(a, v, rd);
+}
+
 // rd = rp +/- rn * scale (Pointers #9): debug checks a null start, the scaled
 // offset's overflow, and a result past either end of the address space.
 static void pointer_offset(A64* a, int v) {
@@ -1689,7 +1698,7 @@ static void call(A64* a, int v) {
         Loc r = p.res[ins_of(a, u)->imm];
         IrType t = (IrType)ins_of(a, u)->type;
         if (r.kind != L_REG || loc(a, u) == NOREG) continue;
-        if (narrow(t)) ext(a, t, r.reg, r.reg); // an AST-emitted callee may leave it unwrapped
+        if (narrow(t) || (t == IT_BOOL && r.word)) ext(a, t, r.reg, r.reg); // an AST-emitted callee may leave it unwrapped
         m[nm++] = (Move){ loc(a, u), r.reg, 0, 0, 1 };
     }
     parallel_move(a, m, nm);
@@ -1830,6 +1839,9 @@ static void emit_block(A64* a, int b) {
         case IR_GLOBAL:
             global(a, v);
             break;
+        case IR_STR:
+            string_bytes(a, v);
+            break;
         case IR_LOAD: case IR_STORE:
             access(a, v);
             break;
@@ -1863,7 +1875,7 @@ static void params(A64* a) {
         IrIns* x = ins_of(a, v);
         if (x->op != IR_PARAM || loc(a, v) == NOREG || a->pin[x->imm].kind != L_REG) continue;
         int r = a->pin[x->imm].reg;
-        if (narrow((IrType)x->type)) ext(a, (IrType)x->type, r, r);
+        if (narrow((IrType)x->type) || (x->type == IT_BOOL && a->pin[x->imm].word)) ext(a, (IrType)x->type, r, r);
         m[n++] = (Move){ loc(a, v), r, 0, 0, 1 };
     }
     parallel_move(a, m, n);

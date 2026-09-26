@@ -146,7 +146,11 @@ typedef struct {
     int mem_copy_used;    // __ace$mem_copy / __ace$mem_move
     int mem_fill_used;    // __ace$mem_fill
     int mem_compare_used; // __ace$mem_compare
+    int str_n;            // string literals interned, for their __ace$str$N names
 } Obj;
+
+// The bytes of a string literal in the constant section, under a fresh name.
+ESym* obj_string(Obj* o, const char* p, uint32_t len);
 
 // Set up the sections and the __ace$text anchor.
 void obj_init(Obj* o, Diag* d, EmitMode mode);
@@ -172,6 +176,12 @@ enum { FUNC_ALIGN = 16, LOOP_ALIGN = 16 };
 // The internal symbol of an Ace function (emit.c); the result lives in a
 // static buffer until the next call.
 const char* fn_mangle(const char* name, uint32_t len, SType* ft, Node* decl, SType** targs, int nt, int spec);
+// The internal symbol a direct call to Ace function s targets, a stamped
+// generic's or a specialization's included (same buffer as fn_mangle).
+const char* fn_call_mangle(Sym* s, Node* call);
+// The internal symbol of generic function x (larger[int]) as a value, or NULL
+// when no stamp matches its type.
+const char* fn_value_mangle(Sym* s, Node* x);
 // The N:immr:imms field (bits 22..10) of an AArch64 bitmask immediate, or 0
 // when v does not encode (0 and all-ones never do).
 uint32_t logical_imm_field(uint64_t v, int sf);
