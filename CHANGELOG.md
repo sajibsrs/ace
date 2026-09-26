@@ -2206,6 +2206,10 @@ current normative rules, and Git preserves patch-level detail.
   `+ - * /`, integer for `% & | ^ << >>`); it previously only coerced the right
   side, so float `%=`/`&=`/`<<=` and `bool`, struct, or `string` `+=`/`*=` were
   accepted.
+- A float cast to an 8- or 16-bit integer now wraps the converted value to the
+  target width. `fcvtzs`/`fcvtzu` saturate at 32 bits, so the AST emitter left
+  `u8(300.0)` as 300 in its register while the stored value was 44, and
+  `u8(300.0) == u8(44)` was false. The IR already wrapped.
 
 ## Current frontier
 

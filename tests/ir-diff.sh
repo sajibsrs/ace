@@ -60,12 +60,6 @@ function fliteral(t,   n) {
     return t "(" flits[1 + pick(t == "f32" ? n - 1 : n)] ")"
 }
 
-# expression e of type et converted to t; a float reaches a narrow integer
-# through i64, since the AST emitter leaves a narrow fcvtzs result unwrapped
-function conv(t, e, et) {
-    if (isfloat(et) && !isfloat(t) && bits(t) < 32) return t "(i64(" e "))"
-    return t "(" e ")"
-}
 
 function fleaf(t, depth,   v, r, s) {
     r = rand()
@@ -75,7 +69,7 @@ function fleaf(t, depth,   v, r, s) {
         s = any_var()
         if (s != "") {
             split(s, part, SUBSEP)
-            if (part[2] != "bool") return conv(t, part[1], part[2])
+            if (part[2] != "bool") return t "(" part[1] ")"
         }
     }
     if (v != "" && r < 0.72) return "((" v " - " v ") / (" v " - " v "))" # NaN, or 0 / 0 of an infinity
@@ -96,7 +90,7 @@ function fexpr(t, depth,   r, a, b) {
 # a call of a random function, converted to t
 function call_conv(t,   j) {
     j = pick(nfuncs)
-    return conv(t, "f" j "(" args_of(j, 0) ")", fret[j])
+    return t "(f" j "(" args_of(j, 0) "))"
 }
 
 function literal(t,   m) {
@@ -129,7 +123,7 @@ function leaf(t, depth,   v, r, s) {
         s = any_var()
         if (s != "") {
             split(s, part, SUBSEP)
-            if (part[2] != "bool" && part[2] != t) return conv(t, part[1], part[2])
+            if (part[2] != "bool" && part[2] != t) return t "(" part[1] ")"
         }
     }
     if (t != "bool" && nfuncs > 0 && depth > 0 && r < 0.9) return call_conv(t)
@@ -340,7 +334,7 @@ function stmt(depth, pad, loops,   p, r, t, name, i, lab, n, open, ops) {
 function result(depth,   t) {
     t = chance(0.5) ? (chance(0.5) ? "f32" : "f64") : types[2 + pick(ntypes - 1)]
     if (t == rett) return expr(t, depth)
-    return conv(rett, expr(t, depth), t)
+    return rett "(" expr(t, depth) ")"
 }
 
 # fmt.printf of value e of type t: a float as its exact bits

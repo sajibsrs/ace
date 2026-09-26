@@ -1259,6 +1259,7 @@ static EV gen_cast(Em* e, EV v, SType* from, SType* to) {
         if (!ty_is_signed(to)) base |= 0x10000u;
         int t = tmp_int(e);
         ins(e, base | ((uint32_t)vreg(e, v.idx) << 5) | (uint32_t)xreg(t));
+        narrow_wrap(e, xreg(t), to); // fcvtz* saturates to 32 bits, not 8/16
         e->vtf = v.idx; // the fp temp is consumed
         return (EV){ CLS_INT, t };
     }

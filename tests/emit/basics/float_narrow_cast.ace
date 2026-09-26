@@ -1,0 +1,28 @@
+/* A float cast to an 8- or 16-bit integer converts saturating at 32 bits,
+ * then wraps to the target width, so the register value equals the stored
+ * one. viaswitch stays on the AST emitter (switch), direct on the IR. */
+
+// expect-exit: 42
+
+direct(x: f64): u8 {
+    return u8(x)
+}
+
+viaswitch(x: f64, k: i64): i64 {
+    switch k {
+        0 { if u8(x) != u8(44) { return 1 } }
+        1 { if i8(x) != i8(-56) { return 2 } }
+        2 { if u16(x) != u16(4464) { return 3 } }
+        default { if i16(-x) != i16(-4464) { return 4 } }
+    }
+    return 0
+}
+
+main(): int {
+    if direct(300.5) != u8(44) { return 5 }
+    if viaswitch(300.5, 0) != 0 { return 6 }
+    if viaswitch(200.0, 1) != 0 { return 7 }
+    if viaswitch(70000.0, 2) != 0 { return 8 }
+    if viaswitch(70000.0, 3) != 0 { return 9 }
+    return 42
+}
