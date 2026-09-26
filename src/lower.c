@@ -24,10 +24,11 @@
 // parameter of it arrives by address, as AAPCS64 passes it.
 //
 // A function that uses anything outside the covered subset is not lowered;
-// the AST emitter compiles it (migration steps 1 to 3e: scalar code, floats,
+// the AST emitter compiles it (migration steps 1 to 3f: scalar code, floats,
 // pointers, globals, calls, structs, tuples, arrays, Error values, and
 // strings, slices, and arrays with their indexing, slicing, and debug bounds
-// checks, inline calls, switch on a scalar, defer, tagged unions, and the debug noalias checks).
+// checks, inline calls, switch on a scalar, defer, tagged unions, the debug noalias checks, `continue` on a labeled block, `typeid`,
+// computed global constants, an Error's name and message, and `panic`).
 #include "ir.h"
 #include "backend.h"
 
@@ -45,6 +46,7 @@ typedef struct { // a break/continue target
     const char* label;
     uint32_t    llen;
     int         brk, cont; // blocks; cont < 0 for a labeled block
+    int         restart;   // a labeled block: its first block, where `continue label` returns; else -1
 } Target;
 
 typedef struct { // an inline call being expanded
@@ -62,6 +64,7 @@ typedef struct { // a captured `defer`: its call over snapshot variables
 typedef struct {
     IrFunc*     fn;
     Node*       f;
+    Node*       file;      // the program
     EmitMode    mode;
     const char* why;
     jmp_buf     fail;
@@ -1540,6 +1543,17 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
     }
     int inst = callee && callee->kind == N_INDEX && callee->sym; // larger[int](a, b)
     Sym* s = inst ? node_sym(callee) : node_sym(x);
+    if (!s && x->ival && callee && callee->kind == N_IDENT && callee->len == 5 && memcmp(callee->str, "panic", 5) == 0 &&
+        x->nkids == 1) { // panic(message): the bytes to stderr, best effort, then abort (Errors #15)
+        int ptr, len;
+        view_parts(l, x->kids[0], &ptr, &len);
+        int w[3] = { konst(l, IT_I32, 2), ptr, len };
+        call_routine(l, "_write", 1, IT_I64, w, 3);
+        call_routine(l, "_abort", 1, IT_VOID, NULL, 0);
+        return -1;
+    }
+    if (!s && callee && callee->kind == N_IDENT && callee->len == 6 && memcmp(callee->str, "typeid", 6) == 0)
+        return konst(l, IT_U64, x->ival); // typeid(T): the type's identity word
     if (!s && callee && callee->kind == N_IDENT && is_domain(node_ty(callee))) { // Domain(code) (Errors #5, #7)
         int id = konst(l, IT_U64, x->ival << 32);
         if (x->nkids != 1) return id;
@@ -1635,7 +1649,7 @@ static int expr(Lw* l, Node* x, int want) {
             int neg = 0;
             if (init->kind == N_UNARY && init->op == T_MINUS) { neg = 1; init = init->a; }
             if (init->kind != N_INT && init->kind != N_CHAR && init->kind != N_BOOL && init->kind != N_FLOAT)
-                unsupported(l, "computed global constant");
+                return place_read(l, place(l, x), 0); // a computed one is read from its storage
             return literal(l, t, init, neg);
         }
         if (s && s->kind == SYM_FUNC) { // a function value
@@ -1762,6 +1776,7 @@ static int is_place(Node* x) {
     case N_UNARY: return x->op == T_STAR;
     case N_FIELD_E: {
         SType* bt = unwrap(node_ty(x->a));
+        if (bt && bt->kind == SK_ERROR) return 0; // an Error's description is looked up
         return (bt && bt->kind == SK_PTR) || is_place(x->a);
     }
     default: return 0;
@@ -2291,6 +2306,67 @@ static void slice_leaves(Lw* l, Node* x, Agg* out) {
     out->v[1] = emit2(l, IR_SUB, IT_U64, hi, lo);
 }
 
+// The name or message of an Error (Errors #9), when x reads one: the string
+// of the first domain (name) or entry (message) the Error's packed value
+// matches, else the empty string. The domains are the program's, searched in
+// declaration order, as the AST emitter does.
+static int error_description(Lw* l, Node* x, Agg* out) {
+    SType* bt = unwrap(node_ty(x->a));
+    int message = x->len == 7 && memcmp(x->str, "message", 7) == 0;
+    if (!bt || bt->kind != SK_ERROR || (!message && !(x->len == 4 && memcmp(x->str, "name", 4) == 0))) return 0;
+    int v = expr(l, x->a, IT_U64);
+    int pv = temp_var(l, IT_PTR, konst(l, IT_PTR, 0)), nv = temp_var(l, IT_U64, konst(l, IT_U64, 0));
+    int done = new_block(l);
+    int domain = message ? -1 : emit2(l, IR_SHR, IT_U64, v, konst(l, IT_U64, 32));
+    for (int i = 0; i < l->file->nkids; i++) {
+        Node* d = l->file->kids[i];
+        if (d->kind != N_ERROR_DOMAIN) continue;
+        SType* dt = node_ty(d);
+        if (!dt) {
+            Sym* ds = node_sym(d);
+            dt = ds ? ds->type : NULL;
+        }
+        if (!dt || !dt->type_id) continue;
+        int nk = message ? d->nkids : 1;
+        for (int j = 0; j < nk; j++) {
+            Node* text;
+            int match;
+            if (message) {
+                Node* entry = d->kids[j];
+                uint64_t packed = ((uint64_t)dt->type_id << 32) | (uint32_t)entry->ival;
+                match = cmp(l, IR_EQ, v, konst(l, IT_U64, packed));
+                text = entry->b;
+            } else {
+                Node* name = (Node*)arena_alloc(sizeof(Node));
+                memset(name, 0, sizeof *name);
+                name->kind = N_STR;
+                name->str = d->cname ? d->cname : d->str;
+                name->len = d->cname ? (uint32_t)strlen(d->cname) : d->len;
+                match = cmp(l, IR_EQ, domain, konst(l, IT_U64, dt->type_id));
+                text = name;
+            }
+            int yes = new_block(l), next = new_block(l);
+            terminate(l, IR_BR, match, yes, next);
+            seal(l, yes);
+            enter(l, yes);
+            Agg s;
+            string_literal(l, text, &s);
+            write_var(l, pv, l->cur, s.v[0]);
+            write_var(l, nv, l->cur, s.v[1]);
+            jump(l, done);
+            seal(l, next);
+            enter(l, next);
+        }
+    }
+    jump(l, done);
+    seal(l, done);
+    enter(l, done);
+    out->n = 2;
+    out->v[0] = read_var(l, pv, l->cur);
+    out->v[1] = read_var(l, nv, l->cur);
+    return 1;
+}
+
 // The leaves of x, converted to type t: a scalar's one value, or those of an
 // aggregate.
 static void value(Lw* l, Node* x, SType* t, Agg* out) {
@@ -2324,6 +2400,7 @@ static void value(Lw* l, Node* x, SType* t, Agg* out) {
             return;
         }
     }
+    if (x->kind == N_FIELD_E && is_view(t) && error_description(l, x, out)) return;
     if (is_union(t)) {
         int vi;
         Node* pay;
@@ -2508,9 +2585,9 @@ static Target* target(Lw* l, Node* s, int is_continue) {
     unsupported(l, is_continue ? "continue target" : "break target");
 }
 
-static void push_target(Lw* l, Node* s, int brk, int cont) {
+static void push_target(Lw* l, Node* s, int brk, int cont, int restart) {
     if (l->ntgt == 64) unsupported(l, "nesting depth");
-    l->tgt[l->ntgt++] = (Target){ s->str, s->len, brk, cont };
+    l->tgt[l->ntgt++] = (Target){ s->str, s->len, brk, cont, restart };
 }
 
 static void assign(Lw* l, Node* s) {
@@ -2653,7 +2730,7 @@ static int inline_call(Lw* l, Node* call) {
 // return, which the caller finishes with the step back to the head.
 static void loop_body(Lw* l, Node* s, int exit, Node* stmts) {
     int post = new_block(l);
-    push_target(l, s, exit, post);
+    push_target(l, s, exit, post, -1);
     if (l->cur >= 0) block(l, stmts);
     l->ntgt--;
     jump(l, post);
@@ -2770,7 +2847,7 @@ static void for_loop(Lw* l, Node* s) {
     else jump(l, body);
     seal(l, body);
     enter(l, body);
-    push_target(l, s, exit, post);
+    push_target(l, s, exit, post, -1);
     if (l->cur >= 0) block(l, s->d);
     l->ntgt--;
     jump(l, post);
@@ -2997,12 +3074,15 @@ static void stmt(Lw* l, Node* s) {
     case N_FOR:
         for_loop(l, s);
         return;
-    case N_LABEL: {
-        int exit = new_block(l);
-        push_target(l, s, exit, -1);
+    case N_LABEL: { // `continue label` restarts the block, a loop head whose back edges come from inside
+        int exit = new_block(l), head = new_block(l);
+        jump(l, head);
+        enter(l, head);
+        push_target(l, s, exit, -1, head);
         block(l, s->a);
         l->ntgt--;
         jump(l, exit);
+        seal(l, head);
         seal(l, exit);
         enter(l, exit);
         return;
@@ -3012,8 +3092,7 @@ static void stmt(Lw* l, Node* s) {
         return;
     case N_CONTINUE: {
         Target* t = target(l, s, 1);
-        if (t->cont < 0) unsupported(l, "continue target");
-        jump(l, t->cont);
+        jump(l, t->cont >= 0 ? t->cont : t->restart);
         return;
     }
     case N_RETURN: {
@@ -3137,7 +3216,7 @@ static void finish(Lw* l) {
     free(map);
 }
 
-IrFunc* ir_lower(Node* f, EmitMode mode, const char** why) {
+IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, const char** why) {
     Sym* fs = node_sym(f);
     *why = NULL;
     if (f->ival || (f->flags & F_INTRINSIC)) *why = "compiler-backed";
@@ -3149,6 +3228,7 @@ IrFunc* ir_lower(Node* f, EmitMode mode, const char** why) {
     Lw l;
     memset(&l, 0, sizeof l);
     l.f = f;
+    l.file = file;
     l.mode = mode;
     l.self_head = -1;
     l.fn = ir_func_new(f, fs);
@@ -3250,7 +3330,7 @@ void ir_dump_file(Node* file, EmitMode mode) {
         Node* n = file->kids[i];
         if (n->kind != N_FUNC || !n->path || strcmp(n->path, file->path) != 0) continue; // the root file's own
         const char* why;
-        IrFunc* fn = ir_lower(n, mode, &why);
+        IrFunc* fn = ir_lower(file, n, mode, &why);
         if (!fn) {
             printf("; ");
             if (n->d) printf("%.*s::", (int)n->d->len, n->d->str);

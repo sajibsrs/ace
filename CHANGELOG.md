@@ -314,6 +314,25 @@ current normative rules, and Git preserves patch-level detail.
   debug builds, so debug and release now leave the same 638 functions there.
   `tests/ir-diff.sh` now calls a function with a `noalias` slice pair over
   random windows of a buffer.
+- Lowered the small leftovers to IR (IR migration step 3f). `continue label`
+  on a labeled block jumps back to a head block the label opens, the block's
+  own back edge (a loop's `continue` still runs its post clause). `typeid(T)`
+  is its identity constant. A global constant not a literal (an expression, or
+  another module's constant) is read from its storage, as the AST emitter
+  does. An Error's `name` or `message` compares the packed value with each of
+  the program's error domains (name) or entries (message) in declaration order
+  and yields the matching string, else the empty one, and is no longer a place.
+  `panic(message)` writes the message to descriptor 2 and calls `abort`, then
+  falls through to code that never runs. `ir_lower` now takes the program for
+  the domains. Functions left on the AST emitter for `Error value`, `computed
+  global constant`, `non-variable name`, and `continue target` across the
+  `bench` roots, package benchmarks, and demos fall from 44 to 0; what remains
+  besides compiler-backed builtins is `slice` (6), `string` (2), and `static
+  map` (2). Release machine code shrinks 9.5% for the `http-simple-server`
+  demo, 4.0% for `regex-search-file`, 3.0% for `json-parse-file`, and 1.7% for
+  the regex benchmark; the `json` benchmark is unchanged. `tests/ir-diff.sh`
+  now restarts a labeled block, reads a computed constant, and looks up an
+  Error's description.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

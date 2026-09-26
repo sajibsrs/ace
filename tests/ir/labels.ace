@@ -1,5 +1,6 @@
 /* Labeled loops and blocks: break and continue name their targets; an
- * unlabeled one takes the innermost loop. */
+ * unlabeled one takes the innermost loop. `continue` on a labeled block
+ * restarts it. */
 
 count(n: u32): u32 {
     total: u32 = 0
@@ -17,7 +18,31 @@ count(n: u32): u32 {
     return total
 }
 
+restart(n: int): int {
+    total: int = 0
+    i: int = 0
+    again: {
+        i += 1
+        if i < n {
+            total += i
+            continue again
+        }
+        if i == 20 { break again }
+        total += 100
+    }
+    for j: int in 0 .. 4 {
+        skip: {
+            total += 1
+            if total % 3 == 0 { break skip }
+            if total < 200 { continue }
+            total += 10
+        }
+    }
+    return total
+}
+
 main(): int {
+    if restart(5) != 114 { return 3 }
     if count(3) != 6 { return 1 }
     return 0
 }

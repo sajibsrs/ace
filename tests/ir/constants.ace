@@ -1,0 +1,17 @@
+/* A global constant with a literal initializer is its value; one computed from
+ * others is read from its storage. */
+
+A: const int = 6
+B: const int = A * 2 + 1
+C: const u32 = 1 << 5
+D: const int = B
+E: const f64 = 1.5 * 2.0
+
+total(): int {
+    return B + int(C) + D + int(E)
+}
+
+main(): int {
+    if total() != 61 { return 1 }
+    return 0
+}

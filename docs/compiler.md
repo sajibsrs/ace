@@ -55,7 +55,14 @@ block per payload variant. A struct, tuple, or array holding a union is memory
 too, and crosses a call as words the same way. A `switch` on a union loads the
 `i32` tag once and prints as a chain of `ne` comparisons against the variant
 indices; an arm's payload binder is a copy of the payload made where the arm
-starts. In debug, a call of a function with a `noalias` parameter prints the range
+starts. `continue` on a labeled block jumps back to its first block, so the label
+prints as a loop head whose back edges come from inside. A computed global
+constant prints as a `load` of its storage, `typeid(T)` as a `u64` constant,
+and an Error's `name` or `message` as a chain of comparisons of the packed
+value with each declared domain (name) or entry (message), each matching one
+loading its string; nothing matching leaves the empty string. `panic(message)`
+prints as a `write` of the message to descriptor 2 and a call of `abort`. In
+debug, a call of a function with a `noalias` parameter prints the range
 checks before the call: per slice argument a representability check (`check`
 of the length's bound and of the end not wrapping), then per pair with a
 `noalias` member a guarded `check` that the ranges are disjoint. A `defer` prints as nothing at its statement beyond the evaluation of its

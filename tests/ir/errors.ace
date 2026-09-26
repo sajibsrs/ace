@@ -1,0 +1,52 @@
+/* An Error's name and message are looked up among the program's error
+ * domains, an unknown entry or null giving the empty string. typeid(T) is the
+ * type's identity word. panic writes its message to stderr and aborts. */
+
+OpenErr: error {
+    2: missing = "no such file"
+    13: denied = "permission denied"
+}
+
+ReadErr: error {
+    5: io = "input/output error"
+}
+
+Bare: error
+
+make(k: int): Error {
+    if k == 0 { return null }
+    if k == 1 { return OpenErr(2) }
+    if k == 2 { return OpenErr(13) }
+    if k == 3 { return OpenErr(99) }
+    if k == 4 { return ReadErr(5) }
+    return Bare()
+}
+
+lens(e: Error): int {
+    return int(e.name.len) * 100 + int(e.message.len)
+}
+
+named(e: Error, d: typeid): bool {
+    return e.domain == d
+}
+
+kind(d: typeid): int {
+    if d == typeid(OpenErr) { return 1 }
+    if d == typeid(ReadErr) { return 2 }
+    return 0
+}
+
+guard(n: int, message: string): int {
+    if n > 100 { panic(message) }
+    if n < 0 { panic("negative\n") }
+    return n
+}
+
+main(): int {
+    if lens(make(0)) != 0 || lens(make(1)) != 712 || lens(make(2)) != 717 { return 1 }
+    if lens(make(3)) != 700 || lens(make(4)) != 718 || lens(make(5)) != 400 { return 2 }
+    if !named(make(1), typeid(OpenErr)) || named(make(4), typeid(OpenErr)) { return 3 }
+    if kind(make(4).domain) != 2 || kind(make(1).domain) != 1 || kind(typeid(int)) != 0 { return 4 }
+    if guard(5, "big") != 5 { return 5 }
+    return 0
+}

@@ -25,7 +25,8 @@
 # parameters, and tagged unions (one nested, one of over 16 bytes) are built,
 # passed, returned, copied, compared, and switched on (with a binder and a
 # default), and held in a struct member and an array, and calls with a noalias slice
-# parameter compare their slice windows. An asm statement keeps some functions
+# parameter compare their slice windows. A labeled block restarts, a computed
+# global constant is read, and an Error's name and message are looked up. An asm statement keeps some functions
 # on the AST emitter, so calls cross between the backends both ways. Each
 # program is built with two
 # compilers in debug and release, and requires identical output and exit
@@ -631,6 +632,11 @@ BEGIN {
     print "sumb(b: UB): i64 {\n    return b.k + eval(b.e) + i64(b.t)\n}\n"
     print "echob(b: UB): UB {\n    return b\n}\n"
     print "nblit(noalias d: mut []u8, s: []u8): int {\n    if d.len > 0 && s.len > 0 { return int(d[0]) + int(s[0]) }\n    return int(d.len) + int(s.len)\n}\n"
+    print "GK: const int = 3 * 5 + 1\n"
+    print "DomErr: error {\n    3: three = \"the third\"\n    9: nine = \"nine\"\n}\n"
+    print "derr(k: i64): Error {\n    if k == 0 { return null }\n    if k == 1 { return DomErr(3) }\n    if k == 2 { return DomErr(9) }\n    return DomErr(i32(k))\n}\n"
+    print "dlen(e: Error): int {\n    return int(e.name.len) * 100 + int(e.message.len)\n}\n"
+    print "again(n: i64): i64 {\n    t: i64 = 0\n    k: i64 = 0\n    rep: {\n        k += 1\n        t += k * GK\n        if k < n { continue rep }\n    }\n    return t\n}\n"
     print "table() {\n    for i: i64 in 0 .. 4 {\n        for j: i64 in 0 .. 4 {"
     print "            fmt.printf(\"%d\", eqe(mk(i, " pick(3) "), mk(j, " pick(3) ")))"
     print "            fmt.printf(\"%d\", nee(mk(i, 1), mk(j, 2)))"
@@ -733,6 +739,7 @@ BEGIN {
         lo = 1 + pick(20); hi = lo + 1 + pick(23 - lo); lo2 = 1 + pick(20); hi2 = lo2 + 1 + pick(23 - lo2)
         print "    fmt.printf(\"%d\\n\", nblit(mut gbuf[" lo ".." hi "], gbuf[" lo2 ".." hi2 "]))"
     }
+    print "    for k: i64 in 0 .. 5 {\n        fmt.printf(\"%d %d\\n\", dlen(derr(k)), int(again(k)))\n        if derr(k).domain == typeid(DomErr) { fmt.printf(\"dom\\n\") }\n    }"
     print "    table()"
     print "    fmt.printf(\"%d\\n\", gd)"
     print "    fmt.printf(\"%d %d\\n\", int(gs.a), int(gs.b))"

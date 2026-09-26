@@ -10541,7 +10541,7 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
             int export_c = (n->flags & F_EXPO) != 0;
             SType* ret = n->a ? sema_build_type(n->a) : NULL;
             const char* why;
-            IrFunc* ir = ir_lower(n, mode, &why); // the IR backend where it covers the function
+            IrFunc* ir = ir_lower(file, n, mode, &why); // the IR backend where it covers the function
             if (ir && !arm64_covers(ir)) {
                 ir_free(ir);
                 ir = NULL;
