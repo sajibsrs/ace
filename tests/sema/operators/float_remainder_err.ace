@@ -1,0 +1,8 @@
+/* '%' takes integer operands only: typed floats and a pair of untyped float
+ * constants are both rejected, since no float remainder instruction exists. */
+
+typed(a: f64, b: f64): f64 { return a % b }
+
+narrow(a: f32, b: f32): f32 { return a % 2.0 }
+
+untyped(): f64 { return 5.5 % 2.0 }

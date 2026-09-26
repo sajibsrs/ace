@@ -2523,6 +2523,16 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             b = a;
             if (!settle_operand(k, e->b, b)) return T_ERR;
         }
+        // Remainder, bitwise, and shift operators take integers only; there is
+        // no float remainder instruction to hide a loop behind.
+        if (op == T_PERCENT || op == T_SHL || op == T_SHR ||
+            op == T_AMP || op == T_PIPE || op == T_CARET) {
+            if (a == T_UT_INT && b == T_UT_INT) return T_UT_INT;
+            if (is_int(a) && is_int(b) && same_type(a, b)) return a;
+            ck_err(k, e, "'%s' needs integer operands of one type, got %s and %s",
+                   tok_disp(op), type_name(a), type_name(b));
+            return T_ERR;
+        }
         int cmp = op == T_EQEQ || op == T_BANGEQ || op == T_LT || op == T_LE || op == T_GT || op == T_GE;
         // Two untyped operands compare at their natural type (int or f64);
         // the result is bool, never an untyped constant.
@@ -2562,14 +2572,6 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                 return st_prim(P_BOOL);
             }
             ck_err(k, e, "cannot compare %s and %s", type_name(a), type_name(b));
-            return T_ERR;
-        }
-        int shift = op == T_SHL || op == T_SHR;
-        int bit = op == T_AMP || op == T_PIPE || op == T_CARET;
-        if (bit || shift) {
-            if (is_int(a) && is_int(b) && same_type(a, b)) return a;
-            ck_err(k, e, "'%s' needs integer operands of one type, got %s and %s",
-                   tok_disp(op), type_name(a), type_name(b));
             return T_ERR;
         }
         if (is_num(a) && is_num(b) && same_type(a, b)) return a;
@@ -4928,6 +4930,16 @@ static void check_stmt(Ck* k, Node* s) {
                 ck_err(k, rhs, "pointer offset scaled by sizeof(%s) overflows usize",
                        type_name(t->base));
             return;
+        }
+        // x op= y follows the operand rule of x = x op y.
+        if (compound) {
+            int int_only = s->op == T_MODEQ || s->op == T_ANDEQ || s->op == T_OREQ ||
+                           s->op == T_XOREQ || s->op == T_SHLEQ || s->op == T_SHREQ;
+            if (int_only ? !is_int(t) : !is_num(t)) {
+                ck_err(k, s, "'%s' needs %s target, got %s", tok_disp(s->op),
+                       int_only ? "an integer" : "a numeric", type_name(t));
+                return;
+            }
         }
         SType* bits_owner = NULL; int bits_index = -1;
         if (is_bits_field(s->kids[0], &bits_owner, &bits_index) && !compound) {

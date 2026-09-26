@@ -1,0 +1,17 @@
+/* A compound assignment x op= y follows the operand rule of x = x op y. */
+
+Point: struct { x: int }
+
+main(): int {
+    ratio: f64 = 7.5
+    ratio %= 2.0
+    ratio &= 1.0
+    ratio <<= 1.0
+    flag: bool = false
+    flag += true
+    point: Point = {x = 1}
+    point *= point
+    name: string = "a"
+    name += "b"
+    return 0
+}

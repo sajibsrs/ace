@@ -64,7 +64,8 @@ converted: f64 = f64(single)
 
 Floating literals are untyped until context materializes them. In overload
 selection, an uncast floating literal uses `f64`. Arithmetic supports `+`, `-`,
-`*`, and `/`, with the ordinary comparisons.
+`*`, and `/`, with the ordinary comparisons. `%`, `%=`, and the bitwise and
+shift operators take integers only.
 
 The `bits` standard module provides the bit-preserving `cast` overloads for `f32`/`u32` and `f64`/`u64`. These expose the complete IEEE-754
 representation and are distinct from numeric casts.

@@ -2180,6 +2180,14 @@ current normative rules, and Git preserves patch-level detail.
 - Tuple expression nodes now take the position of their first token (the
   opening parenthesis, or a bare list's first element) instead of the token
   after them, so a wrong-count tuple diagnostic names the tuple's own line.
+- Rejected `%` on floats. Sema accepted it, including between two untyped
+  float constants, while the emitter had no float remainder and returned the
+  left operand; `%` now joins the bitwise and shift operators' integer-only
+  check, placed before the untyped-constant shortcuts. Compound assignment
+  now checks its operator against the target as `x = x op y` does (numeric for
+  `+ - * /`, integer for `% & | ^ << >>`); it previously only coerced the right
+  side, so float `%=`/`&=`/`<<=` and `bool`, struct, or `string` `+=`/`*=` were
+  accepted.
 
 ## Current frontier
 

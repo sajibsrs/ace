@@ -170,6 +170,31 @@ if ! printf '%s\n' "$untyped_float_mix" | grep -qF \
     fail=1
 fi
 
+float_remainder=$("$ACE" tests/sema/operators/float_remainder_err.ace 2>&1)
+for want in \
+    "4:43: error: '%' needs integer operands of one type, got f64 and f64" \
+    "6:46: error: '%' needs integer operands of one type, got f32 and f32" \
+    "8:35: error: '%' needs integer operands of one type, got float literal and float literal"; do
+    if ! printf '%s\n' "$float_remainder" | grep -qF "$want"; then
+        echo "FAIL: float remainder should report: $want"
+        fail=1
+    fi
+done
+
+compound_operand=$("$ACE" tests/sema/operators/compound_operand_err.ace 2>&1)
+for want in \
+    "7:11: error: '%=' needs an integer target, got f64" \
+    "8:11: error: '&=' needs an integer target, got f64" \
+    "9:11: error: '<<=' needs an integer target, got f64" \
+    "11:10: error: '+=' needs a numeric target, got bool" \
+    "13:11: error: '*=' needs a numeric target, got Point" \
+    "15:10: error: '+=' needs a numeric target, got string"; do
+    if ! printf '%s\n' "$compound_operand" | grep -qF "$want"; then
+        echo "FAIL: compound assignment should report: $want"
+        fail=1
+    fi
+done
+
 float_alias_overload=$("$ACE" tests/sema/types/float_alias_overload_err.ace 2>&1)
 if ! printf '%s\n' "$float_alias_overload" | grep -qF \
     "duplicate overload 'measure': parameter signatures must differ"; then
