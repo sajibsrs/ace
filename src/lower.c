@@ -71,6 +71,7 @@ typedef struct {
     int         self_head; // release self tail recursion: the loop head block, or -1
     int         is_main;
     SType*      rtype;     // the function's result type, or NULL
+    int         result;    // a result in memory: the RESULT address, else -1
 } Lw;
 
 typedef struct { // the leaf values of an aggregate, or a scalar's one
@@ -825,9 +826,16 @@ static int call_args(Lw* l, Node* call, Sym* s, Args* g) {
 
 // Emit call id's arguments, and its signature when a part or the result rt
 // is an aggregate; an aggregate result's leaves follow as projections into
-// res (none without res, whose value is unused).
-static int call_finish(Lw* l, int id, Args* g, SType* rt, Agg* res) {
+// res (none without res, whose value is unused). One of over 16 leaves goes
+// to memory at dst (a new stack object when dst < 0), passed last.
+static int call_finish(Lw* l, int id, Args* g, SType* rt, Agg* res, int dst) {
     for (int k = 0; k < g->n; k++) ir_arg_add(l->fn, id, g->v[k]);
+    if (is_big(rt)) {
+        covered(l, rt);
+        if (dst < 0) dst = new_slot(l, rt);
+        ir_arg_add(l->fn, id, dst);
+        l->fn->ins[id].flags |= IRF_SRET;
+    }
     if (!g->agg && !is_agg(rt)) return id;
     IrSig* sig = (IrSig*)arena_alloc(sizeof(IrSig));
     sig->parts = (IrPart*)arena_alloc((size_t)(g->nparts ? g->nparts : 1) * sizeof(IrPart));
@@ -835,6 +843,7 @@ static int call_finish(Lw* l, int id, Args* g, SType* rt, Agg* res) {
     sig->nparts = g->nparts;
     sig->ret = (IrPart){ NULL, 0, 0 };
     l->fn->ins[id].sig = sig;
+    if (is_big(rt)) return id;
     if (!is_agg(rt)) {
         if (rt && unwrap(rt)->kind != SK_VOID) sig->ret.n = 1;
         return id;
@@ -861,14 +870,43 @@ static int is_domain(SType* t) { return t && t->kind == SK_ERROR_DOMAIN; }
 
 static int widen(Lw* l, int v, IrType from, IrType to) { return from == to ? v : emit2(l, IR_CAST, to, v, -1); }
 
-// A call to C routine name (its link symbol) with no arguments, returning a
-// ptr; its sym marks it extern, bound at link time.
-static int call_extern(Lw* l, const char* name) {
+// A call to routine name (its link symbol) with scalar arguments args[0..n):
+// a C function when c, whose sym marks it extern, bound at link time; else
+// one of the object's own runtime routines.
+static int call_routine(Lw* l, const char* name, int c, IrType t, const int* args, int n) {
     static Sym c_routine = { .kind = SYM_FUNC, .is_extern = 1 };
-    int id = emit(l, IR_CALL, IT_PTR);
+    int id = emit(l, IR_CALL, t);
     l->fn->ins[id].name = name;
-    l->fn->ins[id].sym = &c_routine;
+    if (c) l->fn->ins[id].sym = &c_routine;
+    for (int k = 0; k < n; k++) ir_arg_add(l->fn, id, args[k]);
     return id;
+}
+
+static int call_extern(Lw* l, const char* name) { return call_routine(l, name, 1, IT_PTR, NULL, 0); }
+
+// Continue in a new block when bool c holds; guard_end joins the path where
+// it did not. A variable written between them meets its earlier value there.
+static int guard(Lw* l, int c) {
+    int yes = new_block(l), join = new_block(l);
+    terminate(l, IR_BR, c, yes, join);
+    seal(l, yes);
+    enter(l, yes);
+    return join;
+}
+
+static void guard_end(Lw* l, int join) {
+    jump(l, join);
+    seal(l, join);
+    enter(l, join);
+}
+
+static int cmp(Lw* l, IrOp op, int a, int b) { return emit2(l, op, IT_BOOL, a, b); }
+
+// A variable of lowering's own, first holding v.
+static int temp_var(Lw* l, IrType t, int v) {
+    int var = var_new(l, NULL, t, -1);
+    write_var(l, var, l->cur, v);
+    return var;
 }
 
 // The length of the NUL-terminated bytes at p: a u64 counted up.
@@ -893,14 +931,371 @@ static int c_length(Lw* l, int p) {
     return i;
 }
 
-// A compiler-backed call the IR covers: its value (a string's leaves into
-// res), or -2 for one it does not.
+static void view_parts(Lw* l, Node* x, int* ptr, int* len);
+
+// The bytes of [N]u8, []u8, or string x: its address and length.
+static void bytes_parts(Lw* l, Node* x, int* ptr, int* len) {
+    if (x->kind == N_MUTARG) x = x->a;
+    SType* t = unwrap(node_ty(x));
+    if (t && t->kind == SK_ARRAY) {
+        *ptr = place_address(l, array_place(l, x));
+        *len = konst(l, IT_U64, t->count);
+        return;
+    }
+    view_parts(l, x, ptr, len);
+}
+
+// A slice result's leaves from variables pv and nv, into res when wanted.
+static int slice_out(Lw* l, Agg* res, int pv, int nv) {
+    if (res) {
+        res->n = 2;
+        res->v[0] = read_var(l, pv, l->cur);
+        res->v[1] = read_var(l, nv, l->cur);
+    }
+    return -1;
+}
+
+// Debug: trap through the call contract failure unless c holds.
+static void contract_check(Lw* l, int c) {
+    int id = emit2(l, IR_CHECK, IT_VOID, c, -1);
+    l->fn->ins[id].at = l->at;
+}
+
+// Debug allocator tracking (Safety & Debug Builds #9): the registry routines.
+static void registry_add(Lw* l, int ptr, int size, int align) {
+    if (l->mode != EMIT_DEBUG) return;
+    int a[3] = { ptr, size, align };
+    call_routine(l, "__ace$registry_add", 0, IT_VOID, a, 3);
+}
+
+static int registry_find(Lw* l, int ptr, int size) { // the record of a live allocation
+    int a[2] = { ptr, size };
+    return call_routine(l, "__ace$registry_find", 0, IT_PTR, a, 2);
+}
+
+// mem.alloc(size, align): the null slice unless size > 0 and align is a power
+// of two up to 16 and the allocator succeeds.
+static int mem_alloc(Lw* l, Node* x, Agg* res) {
+    int size = expr(l, x->kids[0], IT_I64), align = expr(l, x->kids[1], IT_I64);
+    int pv = temp_var(l, IT_PTR, konst(l, IT_PTR, 0)), nv = temp_var(l, IT_U64, konst(l, IT_U64, 0));
+    int pow2 = cmp(l, IR_EQ, emit2(l, IR_AND, IT_I64, align, emit2(l, IR_SUB, IT_I64, align, konst(l, IT_I64, 1))),
+                   konst(l, IT_I64, 0));
+    int ok = emit2(l, IR_AND, IT_BOOL, cmp(l, IR_GT, size, konst(l, IT_I64, 0)),
+                   emit2(l, IR_AND, IT_BOOL, cmp(l, IR_GT, align, konst(l, IT_I64, 0)),
+                         emit2(l, IR_AND, IT_BOOL, cmp(l, IR_LE, align, konst(l, IT_I64, 16)), pow2)));
+    int valid = guard(l, ok);
+    int p = call_routine(l, "_malloc", 1, IT_PTR, &size, 1);
+    int got = guard(l, cmp(l, IR_NE, p, konst(l, IT_PTR, 0)));
+    registry_add(l, p, size, align);
+    write_var(l, pv, l->cur, p);
+    write_var(l, nv, l->cur, emit2(l, IR_CAST, IT_U64, size, -1));
+    guard_end(l, got);
+    guard_end(l, valid);
+    return slice_out(l, res, pv, nv);
+}
+
+// mem.realloc(data, size): data unchanged and the null slice unless size > 0
+// and the allocator succeeds; debug moves data's registry record.
+static int mem_realloc(Lw* l, Node* x, Agg* res) {
+    int old, oldn;
+    view_parts(l, x->kids[0], &old, &oldn);
+    int size = expr(l, x->kids[1], IT_I64);
+    int pv = temp_var(l, IT_PTR, konst(l, IT_PTR, 0)), nv = temp_var(l, IT_U64, konst(l, IT_U64, 0));
+    int valid = guard(l, cmp(l, IR_GT, size, konst(l, IT_I64, 0)));
+    int rec = l->mode == EMIT_DEBUG ? registry_find(l, old, oldn) : -1;
+    int a[2] = { old, size };
+    int p = call_routine(l, "_realloc", 1, IT_PTR, a, 2);
+    int got = guard(l, cmp(l, IR_NE, p, konst(l, IT_PTR, 0)));
+    int n = emit2(l, IR_CAST, IT_U64, size, -1);
+    if (rec >= 0) {
+        store(l, rec, 0, p, 0);
+        store(l, rec, 8, n, 0);
+    }
+    write_var(l, pv, l->cur, p);
+    write_var(l, nv, l->cur, n);
+    guard_end(l, got);
+    guard_end(l, valid);
+    return slice_out(l, res, pv, nv);
+}
+
+// mem.alloc[T](count), mem.zalloc[T](count), mem.realloc[T](data, count):
+// count elements of T; a zero byte size, an alignment over 16, an overflowing
+// byte count, or an allocator failure is the null slice (data unchanged).
+static int mem_alloc_typed(Lw* l, Node* x, int bi, Agg* res) {
+    SType* elem = unwrap(node_ty(x))->base;
+    uint64_t esz = sema_size(elem), eal = sema_align(elem);
+    int old = -1, oldn = -1;
+    if (bi == BI_MEM_REALLOC_T) view_parts(l, x->kids[0], &old, &oldn);
+    Node* cn = x->kids[bi == BI_MEM_REALLOC_T];
+    IrType ct = type_in(l, cn, IT_U64);
+    int count = widen(l, expr(l, cn, ct), ct, IT_U64);
+    int pv = temp_var(l, IT_PTR, konst(l, IT_PTR, 0)), nv = temp_var(l, IT_U64, konst(l, IT_U64, 0));
+    if (!esz || eal > 16) return slice_out(l, res, pv, nv);
+    int ok = emit2(l, IR_AND, IT_BOOL, cmp(l, IR_NE, count, konst(l, IT_U64, 0)),
+                   cmp(l, IR_LE, count, konst(l, IT_U64, UINT64_MAX / esz)));
+    int valid = guard(l, ok);
+    int bytes = emit2(l, IR_MUL, IT_U64, count, konst(l, IT_U64, esz));
+    int p, rec = -1;
+    if (bi == BI_MEM_REALLOC_T) {
+        int old_bytes = emit2(l, IR_MUL, IT_U64, oldn, konst(l, IT_U64, esz));
+        if (l->mode == EMIT_DEBUG) rec = registry_find(l, old, old_bytes);
+        int a[2] = { old, bytes };
+        p = call_routine(l, "_realloc", 1, IT_PTR, a, 2);
+    } else if (bi == BI_MEM_ZALLOC_T) { // the platform zero-fills
+        int a[2] = { bytes, konst(l, IT_U64, 1) };
+        p = call_routine(l, "_calloc", 1, IT_PTR, a, 2);
+    } else {
+        p = call_routine(l, "_malloc", 1, IT_PTR, &bytes, 1);
+    }
+    int got = guard(l, cmp(l, IR_NE, p, konst(l, IT_PTR, 0)));
+    if (rec >= 0) {
+        store(l, rec, 0, p, 0);
+        store(l, rec, 8, bytes, 0);
+    } else if (bi != BI_MEM_REALLOC_T) {
+        registry_add(l, p, bytes, konst(l, IT_U64, eal));
+    }
+    write_var(l, pv, l->cur, p);
+    write_var(l, nv, l->cur, count);
+    guard_end(l, got);
+    guard_end(l, valid);
+    return slice_out(l, res, pv, nv);
+}
+
+// mem.release(mut data), mem.release[T](mut data): free a non-null data
+// (debug first drops its registry record), then data becomes null.
+static int mem_release(Lw* l, Node* x) {
+    Node* raw = x->kids[0]->kind == N_MUTARG ? x->kids[0]->a : x->kids[0];
+    Place p = place(l, raw);
+    SType* st = unwrap(p.t);
+    uint64_t esz = st && st->kind == SK_SLICE ? sema_size(st->base) : 1;
+    int ptr = p.var >= 0 ? read_var(l, p.var, l->cur) : load(l, IT_PTR, p.addr, p.off, p.flags);
+    int live = guard(l, cmp(l, IR_NE, ptr, konst(l, IT_PTR, 0)));
+    int n = p.var >= 0 ? read_var(l, p.var + 1, l->cur) : load(l, IT_U64, p.addr, p.off + 8, p.flags);
+    if (l->mode == EMIT_DEBUG) {
+        int a[2] = { ptr, esz == 1 ? n : emit2(l, IR_MUL, IT_U64, n, konst(l, IT_U64, esz)) };
+        call_routine(l, "__ace$registry_remove", 0, IT_VOID, a, 2);
+    }
+    call_routine(l, "_free", 1, IT_VOID, &ptr, 1);
+    guard_end(l, live);
+    Agg z = { 2, { konst(l, IT_PTR, 0), konst(l, IT_U64, 0) } };
+    place_put(l, p, &z, 0);
+    return -1;
+}
+
+// A byte routine call; the result is an i64 when name is mem_compare's.
+static int rtcall(Lw* l, const char* name, int a, int b, int n) {
+    int id = emit(l, IR_RTCALL, strcmp(name, "__ace$mem_compare") == 0 ? IT_I64 : IT_VOID);
+    l->fn->ins[id].name = name;
+    ir_arg_add(l->fn, id, a);
+    ir_arg_add(l->fn, id, b);
+    ir_arg_add(l->fn, id, n);
+    return id;
+}
+
+// mem.copy, mem.move, mem.fill, mem.zero (Values & Passing: byte operations):
+// debug checks equal lengths, and for copy that nonempty ranges neither wrap
+// nor overlap (noalias), before the routine.
+static int mem_write(Lw* l, Node* x, int bi) {
+    int dst, dlen;
+    view_parts(l, x->kids[0]->kind == N_MUTARG ? x->kids[0]->a : x->kids[0], &dst, &dlen);
+    if (bi == BI_MEM_FILL || bi == BI_MEM_ZERO) {
+        int v = bi == BI_MEM_FILL ? expr(l, x->kids[1], IT_U8) : konst(l, IT_U8, 0);
+        rtcall(l, "__ace$mem_fill", dst, v, dlen);
+        return -1;
+    }
+    int src, slen;
+    view_parts(l, x->kids[1], &src, &slen);
+    if (l->mode == EMIT_DEBUG) {
+        contract_check(l, cmp(l, IR_EQ, slen, dlen));
+        if (bi == BI_MEM_COPY) {
+            int some = guard(l, cmp(l, IR_NE, slen, konst(l, IT_U64, 0)));
+            int dend = emit2(l, IR_PADD, IT_PTR, dst, slen), send = emit2(l, IR_PADD, IT_PTR, src, slen);
+            l->fn->ins[dend].imm = l->fn->ins[send].imm = 1;
+            contract_check(l, cmp(l, IR_GE, dend, dst));
+            contract_check(l, cmp(l, IR_GE, send, src));
+            contract_check(l, emit2(l, IR_OR, IT_BOOL, cmp(l, IR_GE, dst, send), cmp(l, IR_GE, src, dend)));
+            guard_end(l, some);
+        }
+    }
+    rtcall(l, bi == BI_MEM_MOVE ? "__ace$mem_move" : "__ace$mem_copy", dst, src, slen);
+    return -1;
+}
+
+// mem.compare(a, b): the common prefix's order, then the shorter first.
+static int mem_compare(Lw* l, Node* x) {
+    int ap, an, bp, bn;
+    bytes_parts(l, x->kids[0], &ap, &an);
+    bytes_parts(l, x->kids[1], &bp, &bn);
+    int count = temp_var(l, IT_U64, an);
+    int shorter = guard(l, cmp(l, IR_LT, bn, an));
+    write_var(l, count, l->cur, bn);
+    guard_end(l, shorter);
+    int r = rtcall(l, "__ace$mem_compare", ap, bp, read_var(l, count, l->cur));
+    int out = temp_var(l, IT_I64, r);
+    int same = guard(l, cmp(l, IR_EQ, r, konst(l, IT_I64, 0)));
+    int gt = emit2(l, IR_CAST, IT_I64, cmp(l, IR_GT, an, bn), -1), lt = emit2(l, IR_CAST, IT_I64, cmp(l, IR_LT, an, bn), -1);
+    write_var(l, out, l->cur, emit2(l, IR_SUB, IT_I64, gt, lt));
+    guard_end(l, same);
+    return read_var(l, out, l->cur);
+}
+
+// mem.equal(a, b): equal lengths, then equal bytes.
+static int mem_equal(Lw* l, Node* x) {
+    int ap, an, bp, bn;
+    bytes_parts(l, x->kids[0], &ap, &an);
+    bytes_parts(l, x->kids[1], &bp, &bn);
+    int out = temp_var(l, IT_BOOL, konst(l, IT_BOOL, 0));
+    int same = guard(l, cmp(l, IR_EQ, an, bn));
+    int r = rtcall(l, "__ace$mem_compare", ap, bp, an);
+    write_var(l, out, l->cur, cmp(l, IR_EQ, r, konst(l, IT_I64, 0)));
+    guard_end(l, same);
+    return read_var(l, out, l->cur);
+}
+
+// fmt.printf (Standard Library: fmt): every argument once, in order; then
+// each part of sema's plan through its helper, stopping at the first that
+// writes nothing or fails, whose count is then the result; else the total.
+static int printf_call(Lw* l, Node* x) {
+    PrintfPlan* plan = (PrintfPlan*)x->aux;
+    int nargs = x->nkids - 1;
+    Agg* cap = (Agg*)arena_alloc((size_t)(nargs ? nargs : 1) * sizeof(Agg));
+    SType** capt = (SType**)arena_alloc((size_t)(nargs ? nargs : 1) * sizeof(SType*));
+    for (int i = 0; i < nargs; i++) {
+        Node* arg = x->kids[i + 1]->kind == N_MUTARG ? x->kids[i + 1]->a : x->kids[i + 1];
+        SType* t = node_ty(arg);
+        for (int k = 0; k < plan->nparts && is_untyped(t); k++) // an untyped constant takes its helper's type
+            if (plan->parts[k].arg == i + 1 && plan->parts[k].helper) t = ((Sym*)plan->parts[k].helper)->type->params[0];
+        value(l, arg, t, &cap[i]);
+        capt[i] = t;
+    }
+    int total = temp_var(l, IT_I64, konst(l, IT_I64, 0));
+    int done = new_block(l);
+    for (int i = 0; i < plan->nparts && l->cur >= 0; i++) {
+        PrintfPart* part = &plan->parts[i];
+        Sym* h = (Sym*)part->helper;
+        SType* ft = h->type;
+        Args g;
+        memset(&g, 0, sizeof g);
+        Agg v;
+        SType* vt = ft->params[0];
+        int empty = -1;
+        if (part->kind == PF_TEXT) {
+            v.n = 2;
+            v.v[0] = emit(l, IR_STR, IT_PTR);
+            l->fn->ins[v.v[0]].name = plan->format->str + part->off;
+            l->fn->ins[v.v[0]].imm = part->len;
+            v.v[1] = konst(l, IT_U64, part->len);
+        } else if (part->kind == PF_PERCENT) {
+            v.n = 1;
+            v.v[0] = konst(l, need_type(l, vt), '%');
+        } else {
+            v = cap[part->arg - 1];
+            if (!is_agg(vt)) v.v[0] = widen(l, v.v[0], need_type(l, capt[part->arg - 1]), need_type(l, vt));
+            if (part->kind == PF_STRING) empty = guard(l, cmp(l, IR_NE, v.v[1], konst(l, IT_U64, 0)));
+        }
+        if (is_agg(vt)) {
+            g.part[g.nparts++] = (IrPart){ vt, 0, v.n };
+            for (int k = 0; k < v.n; k++) g.v[g.n++] = v.v[k];
+            g.agg = 1;
+        } else {
+            arg_scalar(l, &g, v.v[0]);
+        }
+        if (part->kind == PF_BINARY || part->kind == PF_OCTAL || part->kind == PF_HEX_LOWER || part->kind == PF_HEX_UPPER) {
+            int base = part->kind == PF_BINARY ? 2 : part->kind == PF_OCTAL ? 8 : 16;
+            arg_scalar(l, &g, konst(l, need_type(l, ft->params[1]), (uint64_t)base));
+            arg_scalar(l, &g, konst(l, need_type(l, ft->params[2]), part->kind == PF_HEX_UPPER));
+        } else if (part->kind == PF_FIXED) {
+            arg_scalar(l, &g, konst(l, need_type(l, ft->params[1]), part->precision));
+        }
+        int id = emit(l, IR_CALL, IT_I64);
+        l->fn->ins[id].sym = h;
+        l->fn->ins[id].name = arena_name(fn_mangle(h->name, h->len, ft, h->decl, h->spec_args,
+                                                   h->spec_args ? h->spec_nargs : 0, h->spec_args != NULL));
+        call_finish(l, id, &g, ft->ret, NULL, -1);
+        int wrote = new_block(l), failed = new_block(l);
+        terminate(l, IR_BR, cmp(l, IR_GT, id, konst(l, IT_I64, 0)), wrote, failed);
+        seal(l, wrote);
+        seal(l, failed);
+        enter(l, failed); // its count is the result
+        write_var(l, total, l->cur, id);
+        jump(l, done);
+        enter(l, wrote);
+        write_var(l, total, l->cur, emit2(l, IR_ADD, IT_I64, read_var(l, total, l->cur), id));
+        if (empty >= 0) guard_end(l, empty);
+    }
+    jump(l, done);
+    seal(l, done);
+    enter(l, done);
+    return read_var(l, total, l->cur);
+}
+
+// A compiler-backed call the IR covers: its value (a slice's or string's
+// leaves into res), or -2 for one it does not.
 static int builtin(Lw* l, Node* x, int bi, Agg* res) {
     switch (bi) {
     case BI_BITS_FROM_FLOAT: case BI_BITS_TO_FLOAT: { // the same bits (Types: bits.cast)
         IrType to = need_type(l, node_ty(x)), from = need_type(l, node_ty(x->kids[0]));
         return emit2(l, IR_BITCAST, to, expr(l, x->kids[0], from), -1);
     }
+    case BI_BITS_POP_COUNT: case BI_BITS_LEAD_ZEROS: case BI_BITS_TRAIL_ZEROS: case BI_BITS_BYTE_SWAP: {
+        IrType t = need_type(l, node_ty(x->kids[0]));
+        IrOp op = bi == BI_BITS_POP_COUNT ? IR_POPCNT : bi == BI_BITS_LEAD_ZEROS ? IR_CLZ
+                : bi == BI_BITS_TRAIL_ZEROS ? IR_CTZ : IR_BSWAP;
+        int v = emit2(l, op, t, expr(l, x->kids[0], t), -1);
+        return widen(l, v, t, need_type(l, node_ty(x)));
+    }
+    case BI_BITS_ROTATE_LEFT: case BI_BITS_ROTATE_RIGHT: {
+        IrType t = need_type(l, node_ty(x->kids[0]));
+        int v = expr(l, x->kids[0], t);
+        IrType ct = type_in(l, x->kids[1], IT_U64);
+        int c = widen(l, expr(l, x->kids[1], ct), ct, IT_U64);
+        return emit2(l, bi == BI_BITS_ROTATE_LEFT ? IR_ROTL : IR_ROTR, t, v, c);
+    }
+    case BI_BITS_WRAP_ADD: case BI_BITS_WRAP_SUB: case BI_BITS_WRAP_MUL: { // never checked
+        IrType t = need_type(l, node_ty(x));
+        int a = expr(l, x->kids[0], t);
+        return emit2(l, bi == BI_BITS_WRAP_ADD ? IR_ADD : bi == BI_BITS_WRAP_SUB ? IR_SUB : IR_MUL, t, a,
+                     expr(l, x->kids[1], t));
+    }
+    case BI_MATH_SQRT: case BI_MATH_FLOOR: case BI_MATH_CEIL: {
+        IrType t = need_type(l, node_ty(x));
+        return emit2(l, bi == BI_MATH_SQRT ? IR_SQRT : bi == BI_MATH_FLOOR ? IR_FLOOR : IR_CEIL, t,
+                     expr(l, x->kids[0], t), -1);
+    }
+    case BI_MATH_FMA: {
+        IrType t = need_type(l, node_ty(x));
+        int a = expr(l, x->kids[0], t), b = expr(l, x->kids[1], t), c = expr(l, x->kids[2], t);
+        int id = emit2(l, IR_FMA, t, a, b);
+        ir_arg_add(l->fn, id, c);
+        return id;
+    }
+    case BI_INTERNAL_LOAD_U64: { // the native-endian word at text[index], unchecked
+        int p;
+        view_parts(l, x->kids[0], &p, NULL);
+        IrType it = type_in(l, x->kids[1], IT_U64);
+        int at = emit2(l, IR_PADD, IT_PTR, p, widen(l, expr(l, x->kids[1], it), it, IT_U64));
+        l->fn->ins[at].imm = 1;
+        return load(l, IT_U64, at, 0, 0);
+    }
+    case BI_MEM_ALLOC: case BI_MEM_REALLOC: case BI_MEM_RELEASE: case BI_MEM_ALLOC_T: case BI_MEM_ZALLOC_T:
+    case BI_MEM_REALLOC_T: case BI_MEM_RELEASE_T: case BI_MEM_ALLOC_SIZE: case BI_MEM_COPY: case BI_MEM_MOVE:
+    case BI_MEM_FILL: case BI_MEM_ZERO: case BI_MEM_COMPARE: case BI_MEM_EQUAL: case BI_FMT_PRINTF:
+        if (x->ival != (uint64_t)bi) return -2; // sema checked it as the builtin
+        switch (bi) {
+        case BI_MEM_ALLOC: return mem_alloc(l, x, res);
+        case BI_MEM_REALLOC: return mem_realloc(l, x, res);
+        case BI_MEM_RELEASE: case BI_MEM_RELEASE_T: return mem_release(l, x);
+        case BI_MEM_ALLOC_SIZE: { // the allocator's usable size of data's allocation
+            int p;
+            view_parts(l, x->kids[0], &p, NULL);
+            return widen(l, call_routine(l, "_malloc_size", 1, IT_U64, &p, 1), IT_U64, need_type(l, node_ty(x)));
+        }
+        case BI_MEM_COMPARE: return mem_compare(l, x);
+        case BI_MEM_EQUAL: return mem_equal(l, x);
+        case BI_FMT_PRINTF: return x->aux ? printf_call(l, x) : -2;
+        case BI_MEM_COPY: case BI_MEM_MOVE: case BI_MEM_FILL: case BI_MEM_ZERO: return mem_write(l, x, bi);
+        default: return mem_alloc_typed(l, x, bi, res);
+        }
     case BI_SYS_ARGC: // Darwin's accessors: an int* and a char*** (as emit.c's)
         return widen(l, load(l, IT_I32, call_extern(l, "__NSGetArgc"), 0, 0), IT_I32, need_type(l, node_ty(x)));
     case BI_SYS_ENVC: {
@@ -942,9 +1337,32 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
     }
 }
 
-// A call: a scalar result's value; an aggregate's leaves into res.
-static int call(Lw* l, Node* x, int want, Agg* res) {
+// Whether x is the layout builtin name(...), which sema resolved to no symbol.
+static int is_layout_builtin(Node* x, const char* name) {
+    Node* c = x->kind == N_CALL ? x->a : NULL;
+    size_t n = strlen(name);
+    return c && c->kind == N_IDENT && !x->sym && c->len == n && memcmp(c->str, name, n) == 0;
+}
+
+// A call: a scalar result's value; an aggregate's leaves into res. A result
+// of over 16 leaves goes to memory at address dst, or a new stack object when
+// dst < 0.
+static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
     Node* callee = x->a;
+    if (is_layout_builtin(x, "sizeof") || is_layout_builtin(x, "alignof") || is_layout_builtin(x, "offsetof"))
+        return konst(l, type_in(l, x, want), x->ival); // folded by sema
+    if (is_layout_builtin(x, "static_assert")) return -1;
+    if (is_layout_builtin(x, "blank")) { // the zero of its type
+        SType* t = node_ty(x);
+        if (!is_agg(t)) return konst(l, type_in(l, x, want), 0);
+        IrLeaf lv[IR_MAX_LEAVES];
+        int n = leaves(l, t, lv);
+        if (res) {
+            res->n = n;
+            for (int k = 0; k < n; k++) res->v[k] = konst(l, (IrType)lv[k].type, 0);
+        }
+        return -1;
+    }
     int inst = callee && callee->kind == N_INDEX && callee->sym; // larger[int](a, b)
     Sym* s = inst ? node_sym(callee) : node_sym(x);
     if (!s && callee && callee->kind == N_IDENT && is_domain(node_ty(callee))) { // Domain(code) (Errors #5, #7)
@@ -976,10 +1394,13 @@ static int call(Lw* l, Node* x, int want, Agg* res) {
         int id = emit(l, IR_CALLI, result_type(l, ft->ret));
         l->fn->ins[id].flags = (uint8_t)null_checked(l);
         ir_arg_add(l->fn, id, f); // the target, then the arguments
-        return call_finish(l, id, &g, ft->ret, res);
+        return call_finish(l, id, &g, ft->ret, res, dst);
     }
     if (!s || s->kind != SYM_FUNC || !callee) unsupported(l, "indirect or method call");
     Node* d = s->decl;
+    if (l->mode == EMIT_DEBUG && d)
+        for (int i = 0; i < d->nkids; i++)
+            if (d->kids[i]->flags & F_NOALIAS) unsupported(l, "noalias contract"); // step 3
     if (!d) unsupported(l, "extern call");
     if (d->kind == N_FUNC && d->ival) {
         int v = builtin(l, x, (int)d->ival, res);
@@ -1005,8 +1426,10 @@ static int call(Lw* l, Node* x, int want, Agg* res) {
         c->flags |= IRF_VARARGS;
         c->aux = g.n;
     }
-    return call_finish(l, id, &g, rt, res);
+    return call_finish(l, id, &g, rt, res, dst);
 }
+
+static int call(Lw* l, Node* x, int want, Agg* res) { return call_to(l, x, want, res, -1); }
 
 // ptr pv (of pointer type pt) +/- u64 n elements of its pointee
 static int pointer_offset(Lw* l, IrOp op, SType* pt, int pv, int n) {
@@ -1409,14 +1832,15 @@ static void store_value(Lw* l, Node* x, SType* t, int dst, int32_t off) {
         loop_end(l, &lp, i);
         return;
     }
-    if (x->kind == N_STRUCTLIT && u && u->kind == SK_STRUCT && is_big(t)) {
-        int positional = x->nkids > 0 && x->kids[0]->str == NULL;
+    if (((x->kind == N_STRUCTLIT && u && u->kind == SK_STRUCT) || (x->kind == N_TUPLE_E && u && u->kind == SK_TUPLE)) &&
+        is_big(t)) {
+        int positional = x->kind == N_TUPLE_E || (x->nkids > 0 && x->kids[0]->str == NULL);
         if (x->nkids != u->nfields) unsupported(l, "field initializer"); // sema supplies every field
         for (int i = 0; i < x->nkids; i++) {
             Node* fi = x->kids[i];
             int fidx = positional ? i : find_field(u, fi->str, fi->len);
             if (fidx < 0) unsupported(l, "field initializer");
-            store_value(l, fi->a, u->fields[fidx].t, dst, off + (int32_t)field_off(u, fidx));
+            store_value(l, x->kind == N_TUPLE_E ? fi : fi->a, u->fields[fidx].t, dst, off + (int32_t)field_off(u, fidx));
         }
         return;
     }
@@ -1426,6 +1850,14 @@ static void store_value(Lw* l, Node* x, SType* t, int dst, int32_t off) {
             copy_mem(l, dst, off, p.addr, p.off, p.flags, sema_size(t));
             return;
         }
+    }
+    if (is_big(t) && is_layout_builtin(x, "blank")) {
+        fill_mem(l, dst, off, konst(l, IT_U64, 0), sema_size(t));
+        return;
+    }
+    if (is_big(t) && x->kind == N_CALL) { // its result goes straight to dst + off
+        call_to(l, x, -1, NULL, offset_addr(l, dst, off));
+        return;
     }
     if (is_big(t)) unsupported(l, "aggregate of over 16 leaves");
     Agg a;
@@ -1673,12 +2105,45 @@ static void set_leaves(Lw* l, int var, SType* t, const Agg* a) {
     for (int k = 0; k < a->n; k++) store(l, addr, (int32_t)lv[k].off, a->v[k], 0);
 }
 
+// Copy memory place src to place dst of its type: bytes between memory, else
+// leaves.
+static void move_place(Lw* l, Place dst, Place src) {
+    if (dst.var < 0 && (is_big(src.t) || has_array(src.t))) {
+        int d = dst.flags ? place_address(l, dst) : dst.addr; // a pointer-derived one is checked once
+        copy_mem(l, d, dst.flags ? 0 : dst.off, src.addr, src.off, src.flags, sema_size(src.t));
+        return;
+    }
+    Agg a;
+    place_get(l, src, 0, &a);
+    place_put(l, dst, &a, 0);
+}
+
 // Tuple destructuring (Errors #12): the right side once, then each member
-// into a new binder (N_PARAM) or an existing place, in order.
+// into a new binder (N_PARAM) or an existing place, in order. A tuple of over
+// 16 leaves is stored whole first, then its members copied out.
 static void destructure(Lw* l, Node** kids, int n, Node* rhs) {
     SType* tt = node_ty(rhs);
     SType* u = unwrap(tt);
     if (!u || u->kind != SK_TUPLE || u->nfields != n) unsupported(l, "destructuring");
+    if (is_big(tt)) {
+        covered(l, tt);
+        int slot = new_slot(l, tt);
+        store_value(l, rhs, tt, slot, 0);
+        for (int i = 0; i < n; i++) {
+            Place src = { -1, slot, (int32_t)field_off(u, i), 0, u->fields[i].t };
+            Place dst;
+            if (kids[i]->kind == N_PARAM) {
+                Sym* bs = node_sym(kids[i]);
+                if (!bs) unsupported(l, "unresolved binder");
+                int var = var_of(l, bs);
+                dst = l->home[var] == -1 ? (Place){ var, -1, 0, 0, bs->type } : (Place){ -1, var_addr(l, var), 0, 0, bs->type };
+            } else {
+                dst = place(l, kids[i]);
+            }
+            move_place(l, dst, src);
+        }
+        return;
+    }
     Agg all;
     value(l, rhs, tt, &all);
     for (int i = 0; i < n; i++) {
@@ -1996,6 +2461,11 @@ static void stmt(Lw* l, Node* s) {
             jump(l, l->self_head);
             return;
         }
+        if (l->result >= 0) { // into the caller's memory
+            store_value(l, s->a, l->rtype, l->result, 0);
+            ret(l, NULL);
+            return;
+        }
         Agg a;
         value(l, s->a, l->rtype, &a);
         ret(l, &a);
@@ -2109,17 +2579,22 @@ IrFunc* ir_lower(Node* f, EmitMode mode, const char** why) {
     SType* rt = fs && fs->type ? fs->type->ret : NULL;
     if (rt && unwrap(rt)->kind == SK_VOID) rt = NULL;
     l.rtype = rt;
+    l.result = -1;
     IrLeaf lv[IR_MAX_LEAVES];
-    fn->nrets = rt ? leaves(&l, rt, lv) : 0;
+    l.cur = new_block(&l);
+    seal(&l, l.cur);
+    l.at = f;
+    if (is_big(rt)) { // stored through the address the caller passes
+        covered(&l, rt);
+        fn->ret_mem = rt;
+        l.result = emit(&l, IR_RESULT, IT_PTR);
+    }
+    fn->nrets = rt && !fn->ret_mem ? leaves(&l, rt, lv) : 0;
     fn->rets = malloc((size_t)(fn->nrets ? fn->nrets : 1) * sizeof(IrType));
     if (!fn->rets) oom();
     for (int k = 0; k < fn->nrets; k++) fn->rets[k] = (IrType)lv[k].type;
     Args g; // the parameters' leaves, as a call's arguments group
     memset(&g, 0, sizeof g);
-
-    l.cur = new_block(&l);
-    seal(&l, l.cur);
-    l.at = f;
     for (int i = 0; i < f->nkids; i++) // in this frame's memory: no self tail recursion
         if (node_sym(f->kids[i]) && !by_address(f, i) && in_memory(node_sym(f->kids[i])->type))
             ptrmap_put(&l.stored, node_sym(f->kids[i]), 1);
@@ -2157,12 +2632,12 @@ IrFunc* ir_lower(Node* f, EmitMode mode, const char** why) {
     fn->params = malloc((size_t)(g.n ? g.n : 1) * sizeof(IrType));
     if (!fn->params) oom();
     for (int k = 0; k < g.n; k++) fn->params[k] = (IrType)fn->ins[g.v[k]].type;
-    if (g.agg || is_agg(rt)) {
+    if (g.agg || (is_agg(rt) && !fn->ret_mem)) {
         fn->sig = (IrSig*)arena_alloc(sizeof(IrSig));
         fn->sig->parts = (IrPart*)arena_alloc((size_t)(g.nparts ? g.nparts : 1) * sizeof(IrPart));
         memcpy(fn->sig->parts, g.part, (size_t)g.nparts * sizeof(IrPart));
         fn->sig->nparts = g.nparts;
-        fn->sig->ret = (IrPart){ is_agg(rt) ? rt : NULL, 0, fn->nrets };
+        fn->sig->ret = (IrPart){ is_agg(rt) && !fn->ret_mem ? rt : NULL, 0, fn->nrets };
     }
     if (mode == EMIT_RELEASE && !l.is_main && !frame_storage(&l) && has_self_tail(&l, f->b)) {
         l.self_head = new_block(&l);

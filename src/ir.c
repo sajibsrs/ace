@@ -337,8 +337,9 @@ int ir_verify(IrFunc* fn) {
                         break;
                     }
                 } else if (fn->ins[u].type == IT_VOID) { ok = bad(fn, "%%%d uses void value %%%d", id, u); break; }
-                int want_ptr = a == 0 && (v->op == IR_LOAD || v->op == IR_STORE || v->op == IR_PADD ||
-                                          v->op == IR_PSUB || v->op == IR_CALLI);
+                int want_ptr = (a == 0 && (v->op == IR_LOAD || v->op == IR_STORE || v->op == IR_PADD ||
+                                           v->op == IR_PSUB || v->op == IR_CALLI || v->op == IR_RTCALL)) ||
+                               (a == v->nargs - 1 && (v->flags & IRF_SRET));
                 if (want_ptr && fn->ins[u].type != IT_PTR) { ok = bad(fn, "%%%d needs an address, not %%%d", id, u); break; }
                 if (v->op == IR_CHECK && fn->ins[u].type != IT_BOOL) { ok = bad(fn, "check %%%d of non-bool %%%d", id, u); break; }
                 int db = fn->ins[u].block;
@@ -416,7 +417,8 @@ void ir_print(IrFunc* fn, FILE* out) {
     fprintf(out, "%.*s(", (int)d->len, d->str);
     print_types(out, fn->params, fn->nparams, fn->sig ? fn->sig->parts : NULL, fn->sig ? fn->sig->nparts : 0);
     fputs("): ", out);
-    if (!fn->nrets) fputs("void", out);
+    if (fn->ret_mem) fprintf(out, "mem %u", sema_size(fn->ret_mem));
+    else if (!fn->nrets) fputs("void", out);
     else if (fn->sig && fn->sig->ret.agg) print_types(out, fn->rets, fn->nrets, &fn->sig->ret, 1);
     else fputs(type_name(fn->rets[0]), out);
     fputs(" {\n", out);
@@ -440,6 +442,7 @@ void ir_print(IrFunc* fn, FILE* out) {
             fputs(op_name((IrOp)v->op), out);
             if (v->flags & IRF_CHECKED) fputs(".chk", out);
             if (v->flags & IRF_VOLATILE) fputs(".vol", out);
+            if (v->flags & IRF_SRET) fputs(".mem", out);
             if (v->type != IT_VOID) fprintf(out, " %s", type_name((IrType)v->type));
             if (agg) fprintf(out, " {%d}", v->sig->ret.n);
             switch (v->op) {
@@ -496,11 +499,11 @@ void ir_print(IrFunc* fn, FILE* out) {
                 print_value(out, num, v->args[1]);
                 fprintf(out, " * %llu", (unsigned long long)v->imm);
                 break;
-            case IR_CALL: case IR_CALLI: {
+            case IR_CALL: case IR_CALLI: case IR_RTCALL: {
                 int first = v->op == IR_CALLI;
                 fputc(' ', out);
                 if (first) print_value(out, num, v->args[0]);
-                else if (v->sym) print_sym(out, v->sym);
+                else if (v->sym && v->sym->name) print_sym(out, v->sym);
                 else fprintf(out, "@%s", v->name);
                 fputc('(', out);
                 for (int a = first; a < v->nargs; a++) {
@@ -514,7 +517,8 @@ void ir_print(IrFunc* fn, FILE* out) {
             case IR_CHECK:
                 fputc(' ', out);
                 print_value(out, num, v->args[0]);
-                fprintf(out, ", %d:%d %s", v->at ? v->at->line : 0, v->at ? v->at->col : 0, v->name);
+                if (v->name) fprintf(out, ", %d:%d %s", v->at ? v->at->line : 0, v->at ? v->at->col : 0, v->name);
+                else fputs(", contract", out);
                 break;
             case IR_JMP:
                 fprintf(out, " b%d", bb->succ[0]);

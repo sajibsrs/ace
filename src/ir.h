@@ -35,6 +35,14 @@ typedef enum {
                            toward zero and saturating to an integer (NaN: 0) */ \
     X(BITCAST, "bitcast") /* the same bits between a float and an integer of \
                            its width */                                        \
+    /* bits of unsigned args[0] at its width, the result of its type:         \
+       set bits, leading and trailing zeros (the width for zero), bytes       \
+       reversed, and a rotation by u64 args[1] modulo the width */            \
+    X(POPCNT, "popcnt") X(CLZ, "clz") X(CTZ, "ctz") X(BSWAP, "bswap")          \
+    X(ROTL, "rotl") X(ROTR, "rotr")                                            \
+    /* exact IEEE: the square root, rounding down or up to an integer, and    \
+       args[0] * args[1] + args[2] rounded once */                            \
+    X(SQRT, "sqrt") X(FLOOR, "floor") X(CEIL, "ceil") X(FMA, "fma")            \
     X(SLOT, "slot")     /* ptr to a stack object: imm = size, aux = alignment */ \
     X(GLOBAL, "global") /* ptr to sym: a global variable or a function */      \
     X(STR, "str")       /* ptr to the bytes of a string literal: name, imm long */ \
@@ -44,10 +52,17 @@ typedef enum {
     X(PADD, "padd") X(PSUB, "psub")                                            \
     X(CALL, "call")     /* to name (sym, when an Ace or extern function) */    \
     X(CALLI, "calli")   /* to the function value args[0]; arguments follow */ \
+    X(RTCALL, "rtcall") /* to the byte routine name (mem_copy, mem_move,      \
+                           mem_fill: ptr, ptr or u8, u64; mem_compare: ptr,   \
+                           ptr, u64 to an i64 of -1, 0, or 1), which every    \
+                           target keeps from disturbing any value */          \
+    X(RESULT, "result") /* ptr to the caller's memory for this function's    \
+                           result of over IR_MAX_LEAVES leaves */             \
     X(PROJ, "proj")     /* leaf imm of the aggregate result of call args[0],  \
                            which it follows directly with the call's others */ \
     X(CHECK, "check")   /* debug: bool args[0] false traps, writing "path:    \
-                           line:col: name" for site at (Safety & Debug #2) */  \
+                           line:col: name" for site at (Safety & Debug #2),   \
+                           or the call contract failure when name is NULL */  \
     /* terminators */                                                          \
     X(JMP, "jmp")       /* succ[0] */                                          \
     X(BR, "br")         /* args[0] ? succ[0] : succ[1] */                      \
@@ -71,6 +86,9 @@ enum {
     // address past either end of the address space (Pointers #9)
     IRF_VOLATILE = 2, // load, store: an access-site volatile access
     IRF_VARARGS = 4,  // call: arguments from index aux on are variadic
+    // call, calli: the result, of over IR_MAX_LEAVES leaves, goes to the
+    // memory whose address is the last argument (AAPCS64 passes it in x8)
+    IRF_SRET = 8,
 };
 
 // Aggregates are never IR values: lowering splits every struct, tuple, and
@@ -130,6 +148,7 @@ typedef struct {
     int      nparams;
     IrType*  rets;   // result leaves; none for a void function
     int      nrets;
+    SType*   ret_mem; // a result of over IR_MAX_LEAVES leaves, stored through RESULT; else NULL
     IrSig*   sig;    // the parts of params and rets, or NULL when all are scalars
     IrIns*   ins;    // indexed by value id
     int      nins, cins;

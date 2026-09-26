@@ -199,6 +199,22 @@ current normative rules, and Git preserves patch-level detail.
   the load's index register. Each benchmark binary sheds 96-132
   instructions; `bench/std/string` `copy-64` runs 5% faster, the rest are
   unchanged.
+- Lowered compiler-backed calls and aggregates of over 16 leaves to IR (IR
+  migration step 2d), finishing step 2. `bits.*` become `popcnt`, `clz`,
+  `ctz`, `bswap`, `rotl`, and `rotr`; `math.sqrt`, `floor`, `ceil`, and `fma`
+  become `sqrt`, `floor`, `ceil`, and `fma` (one `fsqrt`, `frintm`, `frintp`,
+  or `fmadd`, rounding once). `mem.*` and `fmt.printf` call the private byte
+  routines through `rtcall` (arguments in x15-x17, clobbering only x8,
+  x15-x17, x30, v24-v31, and the flags, so a value live across one avoids
+  them) or the allocator registry, and a contract failure is an unlocated
+  `check`. A result of over 16 leaves is written through a `result` pointer,
+  and a call passes the caller's memory as a last `sret` argument in x8;
+  `blank(T)`, big tuple literals, and their destructuring move through
+  memory. In debug, a call of a function with a `noalias` parameter stays
+  with the AST emitter until contract checks lower (step 3). Only calls of
+  `inline` functions and one computed global constant still keep a function on the AST emitter across the `bench` and
+  `demo` roots. `bench/std/math` runs `pow-f64` 29%, `sin`/`cos` 44-51%, and
+  `string` `copy-64` 65% and `find-4096` 24% faster; packages are unchanged.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic
