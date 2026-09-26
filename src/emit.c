@@ -1644,7 +1644,7 @@ uint32_t logical_imm_field(uint64_t v, int sf) {
         uint64_t rol = r ? ((elem << r) | (elem >> (size - r))) & mask : elem;
         if (rol != run) continue;
         uint32_t n = size == 64 ? 1u : 0u;
-        uint32_t imms = (uint32_t)(((~(size - 1)) << 1) & 0x3F) | (uint32_t)(ones - 1);
+        uint32_t imms = ((~(uint32_t)(size - 1) << 1) & 0x3F) | (uint32_t)(ones - 1);
         return (n << 12) | ((uint32_t)r << 6) | imms;
     }
     return 0;

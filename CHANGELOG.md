@@ -2334,6 +2334,9 @@ current normative rules, and Git preserves patch-level detail.
   inside the brackets) instead of the token after the closing `]`, so debug
   slice bounds violations and compile-time slice diagnostics (bound order,
   writable-content establishment) name the slice rather than the next line.
+- The AArch64 bitmask-immediate encoder now builds its element-size prefix from
+  an unsigned value; it shifted a negative `int`, which the sanitizer build
+  reports on any compile that encodes a bitmask. Emitted objects are unchanged.
 
 ## Current frontier
 
