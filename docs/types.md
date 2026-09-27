@@ -795,6 +795,10 @@ the generated const vtable; concrete method overloads remain compile-time direct
 calls. `Type.method(...)` is available for a disambiguated direct call, but a
 bare `Type.method` is not a function value.
 
+A contract method's own parameters may not be `mut` — dispatch has no way to
+validate mut agreement against the implementing method (the receiver's own
+`mut`, as in `mut Number.set`, is unaffected).
+
 Signings and methods are private by default. Put visibility first:
 `pub Number signs Value` and `pub mut Number.set(value: int)`. A contract
 over const backing storage may be read, but mutating dispatch through it is a

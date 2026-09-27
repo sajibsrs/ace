@@ -79,7 +79,9 @@ untaken arm disappears, and blocks left empty, unreachable, or with a single
 predecessor are removed or merged. Debug prints the lowered IR unchanged.
 A function the IR does not cover yet is listed with the first
 construct that kept it out; the AST emitter compiles such functions, and the
-IR's AArch64 backend compiles the rest.
+IR's AArch64 backend compiles the rest. A function containing `asm` is
+permanently excluded this way rather than pending migration: calls cross
+between the two backends freely under one ABI.
 
 The build target defaults from the compiler host and can be selected explicitly
 with `--target=NAME` (or `--target NAME`). The bootstrap compiler currently

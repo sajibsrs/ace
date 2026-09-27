@@ -1176,7 +1176,9 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
     identical output.
   - `--ir` prints the IR, as `--ast` prints the AST.
   - Excluded: automatic inlining, auto-vectorization (explicit `std/simd`),
-    and loop unrolling or instruction scheduling unless later measured.
+    loop unrolling or instruction scheduling unless later measured, and any
+    function containing `asm`, permanently emitted by the AST emitter with
+    calls crossing both ways under one ABI.
   - Migration: the new backend compiles each function it supports and the AST
     emitter the rest, under one ABI into one object. Steps: (1) IR, selection,
     and allocation for scalar integer code with its debug checks, measuring

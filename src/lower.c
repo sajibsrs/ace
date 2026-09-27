@@ -872,8 +872,12 @@ static int call_args(Lw* l, Node* call, Sym* s, Args* g) {
         call_arg(l, g, a, ft->params[i], by_address);
         SType* pu = unwrap(ft->params[i]);
         if (!noalias || !pu || pu->kind != SK_SLICE) continue;
-        if (by_address) unsupported(l, "noalias contract"); // a descriptor the callee replaces
         IrPart* pp = &g->part[g->nparts - 1];
+        if (by_address) { // a descriptor in memory: read it at the address just passed
+            int addr = g->v[pp->first];
+            rng[i] = (Range){ load(l, IT_PTR, addr, 0, 0), load(l, IT_U64, addr, 8, 0), sema_size(pu->base) };
+            continue;
+        }
         rng[i] = (Range){ g->v[pp->first], g->v[pp->first + 1], sema_size(pu->base) };
     }
     if (noalias) noalias_check(l, d, rng, n);
@@ -1589,10 +1593,8 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
             int fn = load(l, IT_PTR, vt, midx * 8, access_check(l, vt)); // fn slot: vt checked here
             int data = load(l, IT_PTR, addr, 8, 0);
             arg_scalar(l, &g, data); // the receiver: always by address
-            for (int i = 0; i < x->nkids; i++) {
-                Node* a = x->kids[i];
-                call_arg(l, &g, a, node_ty(a->kind == N_MUTARG ? a->a : a), a->kind == N_MUTARG);
-            }
+            for (int i = 0; i < x->nkids; i++) // sema: no contract method parameter is mut
+                call_arg(l, &g, x->kids[i], node_ty(x->kids[i]), 0);
             SType* rt = node_ty(x);
             int id = emit(l, IR_CALLI, result_type(l, rt));
             l->fn->ins[id].flags = (uint8_t)null_checked(l); // fn itself, at the call
@@ -1604,10 +1606,8 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
         SType* ft = unwrap(s->type);
         if (!ft || ft->kind != SK_FUNC || x->nkids != ft->nparams) unsupported(l, "indirect call");
         int f = expr(l, callee, IT_PTR);
-        for (int i = 0; i < x->nkids; i++) {
-            if (x->kids[i]->kind == N_MUTARG) unsupported(l, "mut argument through a function value");
+        for (int i = 0; i < x->nkids; i++) // sema: no function-value parameter is mut
             call_arg(l, &g, x->kids[i], ft->params[i], 0);
-        }
         int id = emit(l, IR_CALLI, result_type(l, ft->ret));
         l->fn->ins[id].flags = (uint8_t)null_checked(l);
         ir_arg_add(l->fn, id, f); // the target, then the arguments

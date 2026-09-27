@@ -172,6 +172,10 @@ main(): int {
 A bare overloaded function name without an explicit function-value type is an
 error.
 
+A function with a `mut` parameter cannot become a function value: a
+function-value type has no syntax for a parameter's mutability, so a call
+through one could never validate `mut` agreement against the real callee.
+
 C-callable function values state their convention in the type:
 
 ```ace

@@ -471,6 +471,27 @@ current normative rules, and Git preserves patch-level detail.
   proof of unreachability. `make test`, `make test-packages`, and
   `tests/ir-diff.sh` (400 random programs across four seeds) pass with no
   mismatches.
+- Resolved the remaining three gaps from the same audit (IR migration step
+  5d). A function with a `mut` parameter can no longer become a callable
+  value at all — not a function value (`sema.c`'s three coercion sites:
+  the plain, overloaded, and generic cases) and not a contract method
+  (rejected once, at the contract's own declaration) — since neither a
+  function-value type nor contract dispatch has any way to validate `mut`
+  agreement against the real callee; this closes the `mut argument through a
+  function value` bail outright; rather than extending the grammar and
+  runtime, a mut-parameter function simply cannot reach these call
+  paths, so any `mut`-marked argument there is now a plain sema error. The
+  `noalias contract` bail (a by-address slice parameter's descriptor) is
+  resolved by loading `{ptr, len}` through the address `call_arg` already
+  computed, the same pattern `mem_release` uses to read a slice place by
+  address, rather than misreading it out of the by-value leaf array. The
+  `asm` bail needed no code change: `tests/ir-diff.sh`'s own comment already
+  documents that a function containing `asm` permanently stays on the AST
+  emitter with calls crossing both backends, so this is the migration's
+  intended per-function fallback working as designed, not a gap; recorded in
+  `SPEC.md`'s `Excluded:` line. `tests/ir-diff.sh` (100 random programs) and
+  the affected `tests/sema`, `tests/emit`, `tests/checked_contracts`, and
+  `tests/modules` fixtures pass with no mismatches.
 - Lowered `for` over a string, slice, or array to IR (IR migration step 3g).
   The sequence's pointer and length (an array's address and fixed count) are
   read once at entry, the end is `padd ptr, len * size`, and a pointer runs to
