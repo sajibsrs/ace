@@ -181,7 +181,9 @@ uint64_t ir_wrap(IrType t, uint64_t v);
 // Lower a checked function to IR, or return NULL and set *why when it uses
 // something the IR does not cover yet (the AST emitter compiles it instead).
 // file is the program, whose error domains an Error's name and message search.
-IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, const char** why);
+// targs/ntargs are the instantiation's type arguments for a generic template
+// (f->c set, not itself a specialization); pass NULL/0 otherwise.
+IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, const char** why);
 // Inline expansion (Functions & ABI #8), shared with the AST emitter: the
 // inline function a direct call names, with the type arguments its body is
 // stamped under, or NULL.

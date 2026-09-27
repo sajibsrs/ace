@@ -401,6 +401,18 @@ current normative rules, and Git preserves patch-level detail.
   register use; both assumed a top-tested loop's unconditional backward jump
   and needed widening to recognize the rotated bottom test's conditional
   branch (`cbz`/`cbnz` included) as the back edge instead.
+- Lowered generic function instantiations to IR (IR migration step 5a,
+  `src/emit.c`, `src/lower.c`): each per-instantiation memo entry now tries
+  `ir_lower`/`arm64_covers` before falling back to the AST emitter, the same
+  as a monomorphic function. `ir_lower` takes the instantiation's
+  type-argument tuple and stamps the template's body (`sema_stamp_body`)
+  itself when it is not already an explicit specialization, exactly as
+  `inline_copy` already does for an inlined generic call. `bench/std/
+  collections.ace` shrinks 8.0% (24,204 to 22,268 bytes) and the `json`
+  package benchmark binary 9.6% (171,320 to 154,808 bytes), both
+  generics-heavy; every other measured benchmark, demo, and package binary is
+  unchanged, and checksums match. `tests/ir-diff.sh` (100 random programs)
+  shows no mismatches.
 - Lowered `for` over a string, slice, or array to IR (IR migration step 3g).
   The sequence's pointer and length (an array's address and fixed count) are
   read once at entry, the end is `padd ptr, len * size`, and a pointer runs to

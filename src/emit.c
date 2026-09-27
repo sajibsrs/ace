@@ -10566,13 +10566,21 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
                 // generic template: one function per instantiation memo entry
                 int nt = n->c->nkids;
                 for (STypeInst* inst = sema_insts(n); inst; inst = inst->next) {
-                    sema_stamp_body(n, inst->args, nt);
+                    const char* why;
+                    IrFunc* ir = ir_lower(file, n, mode, inst->args, nt, &why); // stamps n's body for this instantiation either way
+                    if (ir && !arm64_covers(ir)) { ir_free(ir); ir = NULL; }
                     Sym* gs = node_sym(n);
-                    const char* mn = fn_mangle(gs ? gs->name : n->str,
+                    char mn[512];
+                    snprintf(mn, sizeof mn, "%s", fn_mangle(gs ? gs->name : n->str,
                                                gs ? gs->len : n->len, inst->result,
-                                               gs ? gs->decl : n, inst->args, nt, 0);
-                    emit_func(&e, n, mn, (uint32_t)strlen(mn),
-                              inst->result->ret, 0, 0);
+                                               gs ? gs->decl : n, inst->args, nt, 0));
+                    if (ir) {
+                        arm64_func(&e.o, ir, mn, (uint32_t)strlen(mn), 0);
+                        ir_free(ir);
+                    } else {
+                        emit_func(&e, n, mn, (uint32_t)strlen(mn),
+                                  inst->result->ret, 0, 0);
+                    }
                 }
                 break;
             }
@@ -10580,7 +10588,7 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
             int export_c = (n->flags & F_EXPO) != 0;
             SType* ret = n->a ? sema_build_type(n->a) : NULL;
             const char* why;
-            IrFunc* ir = ir_lower(file, n, mode, &why); // the IR backend where it covers the function
+            IrFunc* ir = ir_lower(file, n, mode, NULL, 0, &why); // the IR backend where it covers the function
             if (ir && !arm64_covers(ir)) {
                 ir_free(ir);
                 ir = NULL;

@@ -3384,12 +3384,15 @@ static void finish(Lw* l) {
     free(map);
 }
 
-IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, const char** why) {
+IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, const char** why) {
     Sym* fs = node_sym(f);
     *why = NULL;
     if (f->ival || (f->flags & F_INTRINSIC)) *why = "compiler-backed";
     else if (!f->b) *why = "no body";
-    else if (f->c && !(fs && fs->spec_args)) *why = "generic";
+    else if (f->c && !(fs && fs->spec_args)) {
+        if (!targs || f->c->nkids != ntargs) *why = "generic";
+        else sema_stamp_body(f, targs, ntargs); // as inline_copy does for an inlined generic call
+    }
     else if (f->flags & F_EXPO) *why = "exported";
     if (*why) return NULL;
 
@@ -3499,7 +3502,7 @@ void ir_dump_file(Node* file, EmitMode mode) {
         Node* n = file->kids[i];
         if (n->kind != N_FUNC || !n->path || strcmp(n->path, file->path) != 0) continue; // the root file's own
         const char* why;
-        IrFunc* fn = ir_lower(file, n, mode, &why);
+        IrFunc* fn = ir_lower(file, n, mode, NULL, 0, &why);
         if (!fn) {
             printf("; ");
             if (n->d) printf("%.*s::", (int)n->d->len, n->d->str);
