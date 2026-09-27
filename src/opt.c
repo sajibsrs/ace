@@ -1,7 +1,7 @@
 // opt.c — pass 6, the release-only optimizer, over one function's IR
 // (SPEC.md Decision Queue, "Per-function SSA IR backend"). Each pass runs
-// once, in the order the SPEC gives; those present so far are sparse
-// conditional constant propagation, global value numbering, and dead-code and
+// once, in the order the SPEC gives: sparse conditional constant propagation,
+// global value numbering, loop strength reduction, and dead-code and
 // control-flow cleanup.
 //
 // The passes rely only on facts a debug build checks: an integer operation
@@ -484,6 +484,182 @@ static void gvn(IrFunc* fn) {
     free(rpo); free(idom); free(cstart); free(kids); free(fill); free(sb); free(si); free(sm);
 }
 
+// --- loop strength reduction ------------------------------------------------------------
+//
+// A pointer offset `base +/- i * S` of a basic induction variable i (a header
+// 64-bit phi whose back-edge operand is i +/- a constant c, indexing directly
+// or through a cast to u64, the same bits) and an invariant base
+// becomes a pointer phi of its own, started at `base +/- init * S` before the
+// loop and stepped by `c * S` at the latch. The two phis step together, so the
+// pointer equals the offset everywhere the header dominates. Only a scale that
+// is not a power of two gains: a power-of-two one is a shifted operand the
+// backend folds into the access or an add, while any other needs a `mov` and
+// a `madd` per iteration. Offsets with one base, scale, direction, and i share
+// one pointer. Release wraps, so the rewrite holds for every trip count.
+
+typedef struct { int base, op, phi, q; uint64_t scale; } LsrPtr;
+
+// repl covers the values from before the pass; a pointer phi is never replaced.
+static int lsr_chase(const int* repl, int nins, int v) {
+    while (v < nins && repl[v] >= 0) v = repl[v];
+    return v;
+}
+
+// A new instruction in b, before its terminator.
+static int ins_before_term(IrFunc* fn, int b, IrOp op, IrType type) {
+    int v = ir_ins_new(fn, b, op, type);
+    IrBlock* bb = &fn->blocks[b];
+    bb->ins[bb->nins - 1] = bb->ins[bb->nins - 2];
+    bb->ins[bb->nins - 2] = v;
+    return v;
+}
+
+// The induction variable index v stands for: itself, or the 64-bit value a
+// cast to u64 reinterprets.
+static int lsr_index(const IrFunc* fn, int v) {
+    const IrIns* x = &fn->ins[v];
+    if (x->op == IR_CAST && x->type == IT_U64 && fn->ins[x->args[0]].type == IT_I64) return x->args[0];
+    return v;
+}
+
+// v as the u64 index of a pointer offset in b.
+static int lsr_u64(IrFunc* fn, int b, int v) {
+    if (fn->ins[v].type == IT_U64) return v;
+    int c = ins_before_term(fn, b, fn->ins[v].op == IR_CONST ? IR_CONST : IR_CAST, IT_U64);
+    if (fn->ins[v].op == IR_CONST) fn->ins[c].imm = fn->ins[v].imm;
+    else ir_arg_add(fn, c, v);
+    return c;
+}
+
+static int same_base(const IrFunc* fn, int a, int b) {
+    if (a == b) return 1;
+    const IrIns* x = &fn->ins[a];
+    const IrIns* y = &fn->ins[b];
+    return x->op == IR_GLOBAL && y->op == IR_GLOBAL && x->sym == y->sym &&
+           (x->name == y->name || (x->name && y->name && !strcmp(x->name, y->name)));
+}
+
+// The pointer standing for offset u of phi in the loop headed by h, entered
+// from pre and closed by latch, or -1 when its base does not reach pre.
+static int lsr_pointer(IrFunc* fn, const int* idom, const int* repl, int nins, LsrPtr** ptrs, int* nptr, int* cptr,
+                       int h, int pre, int latch, int pi, int li, int phi, int u) {
+    int base = lsr_chase(repl, nins, fn->ins[u].args[0]), op = fn->ins[u].op;
+    uint64_t scale = fn->ins[u].imm;
+    for (int i = 0; i < *nptr; i++) {
+        LsrPtr* p = &(*ptrs)[i];
+        if (p->phi == phi && p->op == op && p->scale == scale && same_base(fn, p->base, base)) return p->q;
+    }
+    if (fn->ins[base].op == IR_GLOBAL && !ir_dominates(idom, fn->ins[base].block, pre)) {
+        int g = ins_before_term(fn, pre, IR_GLOBAL, IT_PTR);
+        fn->ins[g].sym = fn->ins[base].sym;
+        fn->ins[g].name = fn->ins[base].name;
+        base = g;
+    } else if (!ir_dominates(idom, fn->ins[base].block, pre)) {
+        return -1;
+    }
+    int init = fn->ins[phi].args[pi], next = fn->ins[phi].args[li];
+    int start = base;
+    if (fn->ins[init].op != IR_CONST || fn->ins[init].imm != 0) {
+        int k = lsr_u64(fn, pre, init);
+        start = ins_before_term(fn, pre, (IrOp)op, IT_PTR);
+        fn->ins[start].imm = scale;
+        ir_arg_add(fn, start, base);
+        ir_arg_add(fn, start, k);
+    }
+    int q = ir_phi_new(fn, h, IT_PTR);
+    int up = (op == IR_PADD) == (fn->ins[next].op == IR_ADD);
+    int c = lsr_u64(fn, latch, fn->ins[next].args[1]);
+    int step = ins_before_term(fn, latch, up ? IR_PADD : IR_PSUB, IT_PTR);
+    fn->ins[step].imm = scale;
+    ir_arg_add(fn, step, q);
+    ir_arg_add(fn, step, c);
+    for (int i = 0; i < 2; i++) ir_arg_add(fn, q, i == pi ? start : step);
+    *ptrs = xgrow(*ptrs, cptr, *nptr + 1, sizeof(LsrPtr));
+    (*ptrs)[(*nptr)++] = (LsrPtr){ base, op, phi, q, scale };
+    return q;
+}
+
+static void lsr(IrFunc* fn) {
+    int n = fn->nblocks, nins = fn->nins, any = 0;
+    for (int v = 0; v < nins && !any; v++) {
+        const IrIns* x = &fn->ins[v];
+        any = (x->op == IR_PADD || x->op == IR_PSUB) && x->block >= 0 && !x->flags && (x->imm & (x->imm - 1));
+    }
+    if (!any) return;
+    int* rpo, nrpo;
+    int* idom = ir_dominators(fn, &rpo, &nrpo);
+    int* repl = xalloc((size_t)nins, sizeof(int));
+    for (int v = 0; v < nins; v++) repl[v] = -1;
+    uint8_t* body = xalloc((size_t)n, 1);
+    int* stack = xalloc((size_t)n, sizeof(int));
+    int* phis = NULL;
+    int cphis = 0, changed = 0;
+    LsrPtr* ptrs = NULL;
+    int cptr = 0;
+    for (int r = 0; r < nrpo; r++) {
+        int h = rpo[r];
+        IrBlock* hb = &fn->blocks[h];
+        if (hb->npreds != 2) continue;
+        int li = -1;
+        for (int i = 0; i < 2; i++)
+            if (idom[hb->preds[i]] >= 0 && ir_dominates(idom, h, hb->preds[i])) li = li < 0 ? i : -2;
+        if (li < 0) continue;
+        int pi = 1 - li, latch = hb->preds[li], pre = hb->preds[pi];
+        if (idom[pre] < 0 || ir_dominates(idom, h, pre)) continue;
+        memset(body, 0, (size_t)n); // the natural loop: every block reaching the latch without passing h
+        int sp = 0;
+        body[h] = 1;
+        if (!body[latch]) { body[latch] = 1; stack[sp++] = latch; }
+        while (sp) {
+            IrBlock* bb = &fn->blocks[stack[--sp]];
+            for (int i = 0; i < bb->npreds; i++)
+                if (!body[bb->preds[i]]) { body[bb->preds[i]] = 1; stack[sp++] = bb->preds[i]; }
+        }
+        int nphi = 0; // the header's basic induction variables, before any pointer phi joins them
+        for (int i = 0; i < hb->nins && fn->ins[hb->ins[i]].op == IR_PHI; i++) {
+            int phi = hb->ins[i];
+            IrIns* px = &fn->ins[phi];
+            IrIns* nx = &fn->ins[px->args[li]];
+            if ((px->type != IT_U64 && px->type != IT_I64) || (nx->op != IR_ADD && nx->op != IR_SUB) || nx->flags || nx->args[0] != phi ||
+                fn->ins[nx->args[1]].op != IR_CONST)
+                continue;
+            phis = xgrow(phis, &cphis, nphi + 1, sizeof(int));
+            phis[nphi++] = phi;
+        }
+        int nptr = 0;
+        for (int k = 0; k < nphi; k++)
+            for (int b = 0; b < n; b++) {
+                if (!body[b]) continue;
+                for (int i = 0; i < fn->blocks[b].nins; i++) {
+                    int u = fn->blocks[b].ins[i];
+                    IrIns* x = &fn->ins[u];
+                    if ((x->op != IR_PADD && x->op != IR_PSUB) || x->flags || lsr_index(fn, x->args[1]) != phis[k] || u >= nins ||
+                        !(x->imm & (x->imm - 1)))
+                        continue;
+                    int q = lsr_pointer(fn, idom, repl, nins, &ptrs, &nptr, &cptr, h, pre, latch, pi, li, phis[k], u);
+                    if (q < 0) continue;
+                    repl[u] = q;
+                    changed = 1;
+                }
+            }
+    }
+    if (changed) {
+        for (int b = 0; b < fn->nblocks; b++) {
+            IrBlock* bb = &fn->blocks[b];
+            int k = 0;
+            for (int i = 0; i < bb->nins; i++) {
+                int v = bb->ins[i];
+                if (v < nins && repl[v] >= 0) { kill_ins(fn, v); continue; }
+                IrIns* x = &fn->ins[v];
+                for (int a = 0; a < x->nargs; a++) x->args[a] = lsr_chase(repl, nins, x->args[a]);
+                bb->ins[k++] = v;
+            }
+            bb->nins = k;
+        }
+    }
+    free(rpo); free(idom); free(repl); free(body); free(stack); free(phis); free(ptrs);
+}
+
 // --- dead-code and control-flow cleanup -----------------------------------------------
 
 typedef struct {
@@ -799,5 +975,6 @@ static void cleanup(IrFunc* fn) {
 void ir_optimize(IrFunc* fn) {
     sccp(fn);
     gvn(fn);
+    lsr(fn);
     cleanup(fn);
 }

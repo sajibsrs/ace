@@ -407,6 +407,27 @@ current normative rules, and Git preserves patch-level detail.
   register use; both assumed a top-tested loop's unconditional backward jump
   and needed widening to recognize the rotated bottom test's conditional
   branch (`cbz`/`cbnz` included) as the back edge instead.
+- Added loop strength reduction to pass 6 (IR migration step 4d,
+  `src/opt.c`), between value numbering and cleanup. An unchecked pointer
+  offset `base +/- i * S` whose scale is not a power of two, by a basic
+  induction variable (a 64-bit header phi stepped by a constant at the one
+  back edge, used directly or through a cast to `u64`) with a base available
+  before the loop (a global is placed there afresh), becomes a pointer phi
+  started at `base +/- init * S` and stepped by the constant times `S` at the
+  latch; offsets with one base (a global by its symbol), scale, direction, and
+  induction variable share one pointer. The two phis step together, so the
+  pointer is right wherever the header dominates, exit included, with no
+  exit-value repair. A power-of-two scale is left alone: the backend already
+  folds it into the access or an `add`, while any other scale cost a `mov`
+  and a `madd` per offset per iteration. A function with no such offset skips
+  the pass before computing dominators. `bench/core`'s `particle-vec3` is
+  2.22x faster and `length-vec3` 1.55x (`__text` 26,856 to 26,620 bytes);
+  the `json` benchmark and JSON demos shrink 16 bytes with timings flat; every
+  other `bench/core`, `bench/std`, `bench/package`, and demo binary has
+  byte-identical code. Release compile time is unchanged. The earlier dropped
+  attempt rewrote `i * C`, which `madd` fusion already absorbed.
+  `tests/ir/strength.ace` covers a global and a parameter base, a nonzero
+  start, a falling counter, an inner loop, and a power-of-two scale left alone.
 - Lowered generic function instantiations to IR (IR migration step 5a,
   `src/emit.c`, `src/lower.c`): each per-instantiation memo entry now tries
   `ir_lower`/`arm64_covers` before falling back to the AST emitter, the same

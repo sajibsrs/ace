@@ -230,13 +230,13 @@ These are baseline observations, not performance promises.
   measured 0.97 to 0.48 ns; a field of an indexed struct
   element costs `add`, `add`, then a load with no offset (`ps[i].x` about
   twelve times per particle); indexed stores still add the scaled index
-  separately; a 12-byte element strides by `mov`/`mul`; and a leaf call taking
+  separately; and a leaf call taking
   by-value `Vec3`s copies every argument register and sets up a frame it does
   not use. A bottom-tested loop measured 7.7% on `saxpy` and 31% on a short
   branchy loop, but 8% slower on `for cond {}`; it is deferred until it can be
   weighed on top of the address work. `bench/core/run-hotloop.sh` tracks the saxpy,
-  dot, and `Vec3` kernels. Latest ratios to scalar C `-O2`: saxpy 2x, particle
-  `Vec3` 3.64x, `Vec3` length 1.53x, floating dot 0.77x. `std/simd` is
+  dot, and `Vec3` kernels. Latest ratios to scalar C `-O2`: saxpy 1.62x, particle
+  `Vec3` 1.51x, `Vec3` length 0.89x, floating dot 0.79x. `std/simd` is
   specified and unimplemented. Candidate order: (1) scalar address work, meaning
   the scaled index and field offset folded into load and store addressing, measured
   against a saved `bench/core/run-hotloop.sh` baseline over several runs; loop-invariant

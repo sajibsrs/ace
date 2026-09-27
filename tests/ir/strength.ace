@@ -1,0 +1,61 @@
+/* Release gives an offset by a loop counter at a scale that is not a power of
+ * two a pointer of its own, started before the loop and stepped at its latch:
+ * an element's fields share one pointer, from a global or a parameter, from a
+ * nonzero start, for a counter that falls, and in an inner loop, restarted on
+ * each entry. A power-of-two scale stays an offset. Debug keeps every one. */
+
+Vec3: struct {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+points: [8]Vec3
+
+fill() {
+    for i: usize in 0 .. 8 {
+        points[i].x = f32(i)
+        points[i].y = f32(i) * 2.0
+        points[i].z = 1.0
+    }
+}
+
+total(): f32 {
+    t: f32 = 0.0
+    for i: usize in 0 .. 8 { t += points[i].x + points[i].y + points[i].z }
+    return t
+}
+
+tail(): f32 {
+    t: f32 = 0.0
+    for i: usize in 6 .. 8 { t += points[i].x }
+    return t
+}
+
+falling(v: []Vec3): f32 {
+    t: f32 = 0.0
+    i: usize = v.len - 1
+    for i > 0 {
+        t += v[i].y
+        i -= 1
+    }
+    return t
+}
+
+grid(v: []Vec3, words: []u64): f32 {
+    t: f32 = 0.0
+    for r: usize in 0 .. 2 {
+        for c: usize in 0 .. 4 { t += v[c].x + f32(words[c]) }
+    }
+    return t
+}
+
+main(): int {
+    fill()
+    if total() != 92.0 { return 1 }
+    if tail() != 13.0 { return 2 }
+    if falling(points[..]) != 56.0 { return 3 }
+    w: [4]u64 = [1, 2, 3, 4]
+    if grid(points[..], w[..]) != 32.0 { return 4 }
+    return 0
+}

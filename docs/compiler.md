@@ -78,7 +78,9 @@ of the length's bound and of the end not wrapping), then per pair with a
 arguments; its call appears again before every `ret`, last defer first.
 In release, the IR is then optimized before it prints: a value that is constant
 on every path becomes a `const`, a pure operation equal to one that dominates it
-(or an identity such as `x + 0`) is replaced by that value, a branch on a constant becomes a `jmp` and its
+(or an identity such as `x + 0`) is replaced by that value, an offset into an
+array whose element size is not a power of two, indexed by a loop counter,
+becomes a pointer `phi` started before the loop and stepped at its end, a branch on a constant becomes a `jmp` and its
 untaken arm disappears, and blocks left empty, unreachable, or with a single
 predecessor are removed or merged. Debug prints the lowered IR unchanged.
 A function the IR does not cover yet is listed with the first
