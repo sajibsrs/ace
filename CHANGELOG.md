@@ -366,6 +366,23 @@ current normative rules, and Git preserves patch-level detail.
   into addressing, and `mul` with `add`, and has no live-range splitting for
   a value held across a loop. `tests/ir/numbering.ace` covers a repeat, a
   commuted operand, and an identity.
+- Lowered `for` over a string, slice, or array to IR (IR migration step 3g).
+  The sequence's pointer and length (an array's address and fixed count) are
+  read once at entry, the end is `padd ptr, len * size`, and a pointer runs to
+  it bumped by the element size (Iterations #9-10), with a `u64` counter when
+  there is an index binder. A value binder is a copy of the element; under
+  `in mut` its variable lives at the pointer, so reads and writes are loads
+  and stores. The body has no bounds checks. Functions left on the AST emitter
+  for `slice`, `string`, and `array` across the emit fixtures, `bench` roots,
+  package benchmarks, and demos fall from 5, 4, and 17 to 0; the `static map`
+  fallback (2) is what remains of those three, besides compiler-backed
+  builtins. Release machine code shrinks 1.4% for the `regex-search-file`
+  demo and 1.6% for the regex benchmark and is unchanged elsewhere, since only
+  three functions in `pkg/regex` were left; timings are unchanged (the
+  `pathological` workload moves about 5% either way when unused functions
+  shift the layout). `tests/ir/forin.ace` covers each sequence kind, both
+  binder forms, and `in mut`, `tests/ir/fallback.ace` keeps only the `asm`
+  case, and `tests/ir-diff.sh` now generates for-in loops over its windows.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

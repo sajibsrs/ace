@@ -1,0 +1,53 @@
+/* for-in fixes the sequence's pointer and length at entry, then bumps a
+ * pointer by the element size to the end (Iterations #9-10). A binder is a
+ * copy of the element, with the index counting alongside when asked for; under
+ * `in mut` it aliases the element. A string, slice, or array each iterate so,
+ * with no bounds check in the body. */
+
+sum(s: string): int {
+    total: int = 0
+    for i: usize, c: u8 in s {
+        total += int(c) * int(i + 1)
+    }
+    return total
+}
+
+double(mut a: [3]u8) {
+    for c: u8 in mut a {
+        c = c * 2
+    }
+}
+
+Pair: struct {
+    a: i32,
+    b: i32,
+}
+
+pairs(ps: []Pair): int {
+    total: int = 0
+    for p: Pair in ps {
+        total += int(p.a) - int(p.b)
+    }
+    return total
+}
+
+first(a: [4]u8, stop: u8): int {
+    n: int = 0
+    for c: u8 in a {
+        if c == stop { break }
+        n += 1
+    }
+    return n
+}
+
+main(): int {
+    if sum("abc") != 97 + 2 * 98 + 3 * 99 { return 1 }
+    buf: [3]u8 = [1, 2, 3]
+    double(mut buf)
+    if buf[0] != 2 || buf[2] != 6 { return 2 }
+    ps: [2]Pair = [Pair{ a = 5, b = 1 }, Pair{ a = 2, b = 7 }]
+    if pairs(ps[..]) != -1 { return 3 }
+    four: [4]u8 = [1, 2, 3, 4]
+    if first(four, 3) != 2 { return 4 }
+    return 0
+}

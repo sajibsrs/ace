@@ -24,11 +24,12 @@
 // parameter of it arrives by address, as AAPCS64 passes it.
 //
 // A function that uses anything outside the covered subset is not lowered;
-// the AST emitter compiles it (migration steps 1 to 3f: scalar code, floats,
+// the AST emitter compiles it (migration steps 1 to 3g: scalar code, floats,
 // pointers, globals, calls, structs, tuples, arrays, Error values, and
 // strings, slices, and arrays with their indexing, slicing, and debug bounds
 // checks, inline calls, switch on a scalar, defer, tagged unions, the debug noalias checks, `continue` on a labeled block, `typeid`,
-// computed global constants, an Error's name and message, and `panic`).
+// computed global constants, an Error's name and message, `panic`, and `for`
+// over a string, slice, or array).
 #include "ir.h"
 #include "backend.h"
 
@@ -2831,10 +2832,81 @@ static void range_loop(Lw* l, Node* s) {
     enter(l, exit);
 }
 
+// for v: T in seq, for i: usize, v: T in seq, and either under `in mut`
+// (Iterations #7-10): the sequence's pointer and length are fixed at entry, and
+// a pointer runs from the start to the end, bumped by the element size. The
+// value binder is a copy of the element at the pointer, or under `in mut` an
+// alias of it; the index binder counts from zero. The body has no bounds checks.
+static void seq_loop(Lw* l, Node* s) {
+    static SType byte = { .kind = SK_PRIM, .prim = P_U8, .size = 1, .align = 1 };
+    if (s->nkids < 1 || s->nkids > 2) unsupported(l, "sequence binders");
+    Node* vb = s->kids[s->nkids - 1];
+    Node* ib = s->nkids == 2 ? s->kids[0] : NULL;
+    Sym* vs = node_sym(vb);
+    Sym* is = ib ? node_sym(ib) : NULL;
+    if (!vs || (ib && !is)) unsupported(l, "unresolved binder");
+    int mut = (s->flags & F_MUT) != 0;
+    SType* st = unwrap(node_ty(s->b));
+    SType* et;
+    int ptr, len = -1;
+    if (st && st->kind == SK_ARRAY) { // its place's address and its fixed length
+        et = st->base;
+        ptr = place_address(l, array_place(l, s->b));
+        len = konst(l, IT_U64, st->count);
+    } else {
+        if (!is_view(st)) unsupported(l, type_why(st));
+        et = st->kind == SK_SLICE ? st->base : &byte;
+        view_parts(l, s->b, &ptr, &len);
+    }
+    uint32_t esz = sema_size(et);
+    int end = emit2(l, IR_PADD, IT_PTR, ptr, len);
+    l->fn->ins[end].imm = esz;
+    int cur = var_new(l, NULL, IT_PTR, -1);
+    int ix = is ? var_new(l, NULL, IT_U64, -1) : -1;
+    int alias = -1;
+    if (mut) { // the binder lives at the element's address, which changes each iteration
+        alias = var_new(l, NULL, IT_PTR, -1);
+        var_new(l, vs, IT_VOID, ADDR_VAR - alias);
+    }
+    write_var(l, cur, l->cur, ptr);
+    if (is) write_var(l, ix, l->cur, konst(l, IT_U64, 0));
+    int head = new_block(l), body = new_block(l), exit = new_block(l);
+    jump(l, head);
+    enter(l, head);
+    terminate(l, IR_BR, emit2(l, IR_LT, IT_BOOL, read_var(l, cur, head), end), body, exit);
+    seal(l, body);
+    enter(l, body);
+    int p = read_var(l, cur, body);
+    if (mut) {
+        write_var(l, alias, l->cur, p);
+    } else {
+        Place src = { -1, p, 0, 0, et };
+        move_place(l, binder_place(l, vb), src);
+    }
+    if (is) {
+        Agg g;
+        g.n = 1;
+        g.v[0] = read_var(l, ix, l->cur);
+        set_leaves(l, var_of(l, is), is->type, &g);
+    }
+    loop_body(l, s, exit, s->c);
+    if (l->cur >= 0) {
+        int next = emit2(l, IR_PADD, IT_PTR, read_var(l, cur, l->cur), konst(l, IT_U64, 1));
+        l->fn->ins[next].imm = esz;
+        write_var(l, cur, l->cur, next);
+        if (is) write_var(l, ix, l->cur, emit2(l, IR_ADD, IT_U64, read_var(l, ix, l->cur), konst(l, IT_U64, 1)));
+        jump(l, head);
+    }
+    seal(l, head);
+    seal(l, exit);
+    enter(l, exit);
+}
+
 static void for_loop(Lw* l, Node* s) {
     if (!(s->flags & F_FORGEN)) {
-        if (!s->b || s->b->kind != N_RANGE) unsupported(l, type_why(node_ty(s->b)));
-        range_loop(l, s);
+        if (!s->b) unsupported(l, "for head");
+        if (s->b->kind == N_RANGE) range_loop(l, s);
+        else seq_loop(l, s);
         return;
     }
     if (s->a) stmt(l, s->a);

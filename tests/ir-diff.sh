@@ -25,7 +25,7 @@
 # parameters, and tagged unions (one nested, one of over 16 bytes) are built,
 # passed, returned, copied, compared, and switched on (with a binder and a
 # default), and held in a struct member and an array, and calls with a noalias slice
-# parameter compare their slice windows. A labeled block restarts, a computed
+# parameter compare their slice windows, and for-in loops read and change them. A labeled block restarts, a computed
 # global constant is read, and an Error's name and message are looked up. An asm statement keeps some functions
 # on the AST emitter, so calls cross between the backends both ways. Each
 # program is built with two
@@ -227,8 +227,43 @@ function slice_of(lo, depth,   w, r, t, hi) {
     return w "[" t "(" lo ").." t "(" hi ")]"
 }
 
+# a for-in loop over a window (the mut []u8 gv, the string gt, or the array
+# ga.a, or a slice of one): each element copied to a binder, with or without
+# the index, or (over a writable one) aliased and changed; it sums into a new
+# local, and at times skips or leaves early
+function forin_stmt(pad,   p, acc, w, r, c, i, k) {
+    p = indent(pad)
+    acc = "v" nlocals++
+    print p acc ": int = 0"
+    declare(acc, "int")
+    c = "f" nlocals++
+    i = "f" nlocals++
+    k = pick(200)
+    r = rand()
+    if (r < 0.3) {
+        print p "for " c ": u8 in mut " window() " {"
+        print p "    " c " ^= u8(" k ")"
+        print p "    " acc " += int(" c ")"
+        print p "}"
+        return
+    }
+    w = r < 0.45 ? "gt" : r < 0.6 ? "gv" : r < 0.75 ? "ga.a" : slice_of("u8(" pick(12) ")", 1)
+    if (chance(0.5)) {
+        print p "for " i ": usize, " c ": u8 in " w " {"
+        print p "    " acc " += int(" c ") * int(" i " + 1)"
+    } else {
+        print p "for " c ": u8 in " w " {"
+        print p "    " acc " += int(" c ")"
+    }
+    if (chance(0.3)) print p "    if int(" c ") > " k " { continue }"
+    if (chance(0.3)) print p "    if int(" c ") == " k " { break }"
+    print p "    " acc " += 1"
+    print p "}"
+}
+
 function seq_stmt(pad,   p, r, name) {
     p = indent(pad)
+    if (chance(0.35)) { forin_stmt(pad); return }
     r = rand()
     if (r < 0.3) { print p window() "[" index_of(1) "] = u8(" expr("u8", 1) ")"; return }
     if (r < 0.45) { print p window() "[" index_of(1) "] ^= " expr("u8", 1); return }

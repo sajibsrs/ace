@@ -48,7 +48,12 @@ function prints as the expanded body, which ends at a join block reading the
 result. A `switch` on a scalar prints as a chain of `ne` comparisons, one per
 pattern in source order, each branching to the next test or to its case; a
 case ends at the join block or, after `fallthrough`, in the next case's block.
-A tagged union is memory: its construction stores the payload and then the
+A `for` over a string, slice, or array prints as a loop over a pointer: the
+end is `padd ptr, len * size` computed once, the head compares the pointer with
+it, and each step is `padd ptr, 1 * size`, with a `u64` counter alongside when
+the loop has an index binder. A value binder is a copy of the element loaded at
+the pointer; under `in mut` it is the pointer itself, so its reads and writes
+are loads and stores. The body has no bounds checks. A tagged union is memory: its construction stores the payload and then the
 `i32` tag, and it crosses a call as `u64` words (a `u32` for a last half word)
 up to 16 bytes, or by address above. `==` prints as a tag comparison and one
 block per payload variant. A struct, tuple, or array holding a union is memory
