@@ -376,9 +376,11 @@ int ir_verify(IrFunc* fn) {
             for (int a = 0; a < v->nargs; a++) {
                 int u = v->args[a];
                 if (u < 0 || u >= fn->nins || fn->ins[u].block < 0) { ok = bad(fn, "%%%d uses removed value %%%d", id, u); break; }
-                if (v->op == IR_PROJ) { // the call, or the proj before it, directly precedes it
+                if (v->op == IR_PROJ) { // the call or asm, or the proj before it, directly precedes it
                     int prev = i ? bb->ins[i - 1] : -1;
-                    if (fn->ins[u].op != IR_CALL && fn->ins[u].op != IR_CALLI) { ok = bad(fn, "proj %%%d of non-call %%%d", id, u); break; }
+                    if (fn->ins[u].op != IR_CALL && fn->ins[u].op != IR_CALLI && fn->ins[u].op != IR_ASM) {
+                        ok = bad(fn, "proj %%%d of non-call %%%d", id, u); break;
+                    }
                     if (prev != u && (prev < 0 || fn->ins[prev].op != IR_PROJ || fn->ins[prev].args[0] != u)) {
                         ok = bad(fn, "proj %%%d does not follow call %%%d", id, u);
                         break;
@@ -481,7 +483,8 @@ void ir_print(IrFunc* fn, FILE* out) {
             int id = bb->ins[i];
             IrIns* v = &fn->ins[id];
             fputs("    ", out);
-            int agg = v->sig && v->sig->ret.agg; // a call whose leaves its projs read
+            // a call or asm whose leaves its projs read
+            int agg = (v->sig && v->sig->ret.agg) || (v->op == IR_ASM && v->asmb->nout > 0);
             if (v->type != IT_VOID || agg) {
                 print_value(out, num, id);
                 fputs(" = ", out);
@@ -491,7 +494,7 @@ void ir_print(IrFunc* fn, FILE* out) {
             if (v->flags & IRF_VOLATILE) fputs(".vol", out);
             if (v->flags & IRF_SRET) fputs(".mem", out);
             if (v->type != IT_VOID) fprintf(out, " %s", type_name((IrType)v->type));
-            if (agg) fprintf(out, " {%d}", v->sig->ret.n);
+            if (agg) fprintf(out, " {%d}", v->sig ? v->sig->ret.n : v->asmb->nout);
             switch (v->op) {
             case IR_CONST:
                 fputc(' ', out);
@@ -567,6 +570,18 @@ void ir_print(IrFunc* fn, FILE* out) {
                 print_value(out, num, v->args[0]);
                 if (v->name) fprintf(out, ", %d:%d %s", v->at ? v->at->line : 0, v->at ? v->at->col : 0, v->name);
                 else fputs(", contract", out);
+                break;
+            case IR_ASM:
+                fprintf(out, " \"%s\"", v->name);
+                for (int a = 0; a < v->nargs; a++) {
+                    fprintf(out, " x%d=", v->asmb->reg[a]);
+                    print_value(out, num, v->args[a]);
+                }
+                if (v->asmb->nout) {
+                    fputs(" ->", out);
+                    for (int k = 0; k < v->asmb->nout; k++) fprintf(out, " x%d", v->asmb->out[k]);
+                }
+                if (v->asmb->reserved) fprintf(out, ", clobbers 0x%x", v->asmb->reserved);
                 break;
             case IR_JMP:
                 fprintf(out, " b%d", bb->succ[0]);

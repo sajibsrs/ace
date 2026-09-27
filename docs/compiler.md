@@ -85,9 +85,12 @@ untaken arm disappears, and blocks left empty, unreachable, or with a single
 predecessor are removed or merged. Debug prints the lowered IR unchanged.
 A function the IR does not cover yet is listed with the first
 construct that kept it out; the AST emitter compiles such functions, and the
-IR's AArch64 backend compiles the rest. A function containing `asm` is
-permanently excluded this way rather than pending migration: calls cross
-between the two backends freely under one ABI.
+IR's AArch64 backend compiles the rest; calls cross between the two backends
+freely under one ABI. An `asm` statement prints as one instruction, its
+bindings' registers beside the values moved into them, the registers it
+reads out after `->`, and every register it reserves as a `clobbers` mask;
+each value it writes out is a `proj` of it. A statement binding an aggregate
+or an address-taken local still keeps its function on the AST emitter.
 
 The build target defaults from the compiler host and can be selected explicitly
 with `--target=NAME` (or `--target NAME`). The bootstrap compiler currently

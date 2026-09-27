@@ -537,6 +537,33 @@ current normative rules, and Git preserves patch-level detail.
   construction and dispatch; `tests/emit/contracts`, `tests/checked_contracts`,
   `make test`, `make test-packages`, and `tests/ir-diff.sh` (100 random
   programs) pass with no mismatches.
+- Lowered `asm` statements to IR (IR migration step 5e), reversing step 5d's
+  permanent exclusion. `IR_ASM` carries its instruction text, its "in"
+  values as arguments with an `IrAsm` naming each one's x register, and one
+  `IR_PROJ` per "out" register after it; `reserved` is every register any
+  binding or clobber names. The allocator keeps a value out of a statement's
+  reserved registers only when its interval crosses that statement, rather
+  than giving the whole function frame slots as the AST emitter does, and a
+  statement reserving x29 or x30 keeps the frame. A move cycle into a
+  statement that binds x16 swaps in place with three `eor`s, since any other
+  register may hold a value live across it; pass 6 counts `IR_ASM` as an
+  effect, so one with no outputs survives release. A binding naming an
+  aggregate or an address-taken local, or an instruction outside `nop`,
+  `svc`, and `brk`, still keeps its function on the AST emitter. No `std`,
+  `pkg`, or `bench` code uses `asm`. `tests/ir/asm.ace` and
+  `tests/emit/basics/asm_bindings.ace` cover bindings, the in-place swap, a
+  value live across the statement, and callee-saved registers on both
+  backends; `tests/ir/fallback.ace`,
+  `tests/emit/staticmap/asm_keys.ace`, and `tests/ir-diff.sh` now keep
+  functions on the AST emitter through an address-taken binding.
+  A function whose asm reserves any of x19-x28 now saves and restores it
+  (Inline Assembly #3): the IR backend adds every reserved register to the
+  set its allocator already saves, and the AST emitter, which promotes
+  nothing in an asm function, saves x19 up to the highest one reserved.
+  Both backends previously returned with the caller's registers
+  overwritten. `make test`, `make test-packages`, and `tests/ir-diff.sh`
+  (200 random programs across two seeds) pass with no mismatches. Renamed
+  `src/opt.c` to `src/optimizer.c`.
 - Lowered `for` over a string, slice, or array to IR (IR migration step 3g).
   The sequence's pointer and length (an array's address and fixed count) are
   read once at entry, the end is `padd ptr, len * size`, and a pointer runs to

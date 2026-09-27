@@ -1,0 +1,42 @@
+syscall(i64, i64): i64 {
+b0:
+    %0 = param i64 0
+    %1 = param i64 1
+    %2 = const i64 0
+    %3 = const i64 4
+    %4 = asm {1} "svc #0" x0=%0 x1=%1 x16=%3 -> x0, clobbers 0x30003
+    %5 = proj i64 %4, 0
+    ret %5
+}
+
+twice(i64): i64 {
+b0:
+    %0 = param i64 0
+    %1 = const i64 0
+    %2 = const i64 0
+    asm "nop"
+    %4 = asm {1} "nop" x9=%0 -> x9, clobbers 0x200
+    %5 = proj i64 %4, 0
+    %6 = asm {1} "nop" x9=%0 -> x9, clobbers 0x200
+    %7 = proj i64 %6, 0
+    %8 = add.chk i64 %5, %7
+    ret %8
+}
+
+main(): i64 {
+b0:
+    %0 = const i64 2
+    %1 = call i64 twice(%0)
+    %2 = const i64 4
+    %3 = ne bool %1, %2
+    br %3, b1, b2
+b1: ; preds b0
+    %5 = const i64 1
+    call @__ace$registry_leaks()
+    ret %5
+b2: ; preds b0
+    %8 = const i64 0
+    call @__ace$registry_leaks()
+    ret %8
+}
+

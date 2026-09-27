@@ -1,4 +1,4 @@
-; sign: not lowered (asm)
+; sign: not lowered (asm binding)
 
 bump(ptr): void {
 b0:

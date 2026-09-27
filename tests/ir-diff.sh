@@ -26,8 +26,8 @@
 # passed, returned, copied, compared, and switched on (with a binder and a
 # default), and held in a struct member and an array, and calls with a noalias slice
 # parameter compare their slice windows, and for-in loops read and change them. A labeled block restarts, a computed
-# global constant is read, and an Error's name and message are looked up. An asm statement keeps some functions
-# on the AST emitter, so calls cross between the backends both ways. Each
+# global constant is read, and an Error's name and message are looked up. An asm statement binding an
+# address-taken local keeps some functions on the AST emitter, so calls cross between the backends both ways. Each
 # program is built with two
 # compilers in debug and release, and requires identical output and exit
 # status. main prints each function's result for several arguments (a float
@@ -685,6 +685,7 @@ BEGIN {
     print "            arr: [2]UE = [mk(i, 1), mk(j, 2)]\n            fmt.printf(\"%d\\n\", eval(arr[0]) + eval(arr[j & 1]))\n        }\n    }\n}\n"
     print "gd: i64\n"
     print "dnote(x: i64) {\n    gd = gd * 3 % 1000003 + x % 1000\n}\n"
+    print "pin(mut n: i64) {}\n"
     print "Fail: error\n"
     print "gbuf: [24]u8\ngv: mut []u8\ngt: string\n"
     print "GA: struct {\n    lo: u8,\n    a: [22]u8,\n    hi: u8,\n}\n\nga: GA\n"
@@ -734,7 +735,7 @@ BEGIN {
         if (chance(0.3)) declare("gs.a", "i64")
         if (chance(0.3)) declare("gs.b", "u8")
         print s "): " rett " {"
-        if (!finl && chance(0.3)) print "    asm \"nop\" {}" # keeps the function on the AST emitter; an inline one cannot hold asm
+        if (!finl && chance(0.3)) print "    ap: i64 = 0\n    pin(mut ap)\n    asm \"nop\" { in: x9 = ap }" # an address-taken binding keeps the function on the AST emitter; an inline one cannot hold asm
         if (!finl && chance(0.3)) { # deferred notes: the value a parameter has when deferred, then a constant
             for (k = 0; k < np; k++)
                 if (ptype[f, k] ~ /^(i8|i16|i32|i64|u8|u16|u32|u64|usize|int)$/ && (pmut[f, k] || chance(0.3))) {

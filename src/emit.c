@@ -251,6 +251,7 @@ typedef struct {
     uint32_t* leaf_span; // merged interiors of x9-x14 intervals, as [lo, hi] pairs
     int      nleaf_span, cleaf_span;
     int      fn_has_asm;
+    int      asm_saved;  // x19..x19+asm_saved-1 cover every callee-saved register an asm statement reserves
     struct { Node* decl; uint32_t off; int reg; } phome[PARAM_HOMES]; // register-homed parameter leaves
     int      nphome, nfhome, nxhome; // all, argument-register float, and x14-down integer homes
     int      vtf_cap;    // fp temps available: MAX_FPTEMPS less nfhome
@@ -8023,8 +8024,17 @@ static int plan_loops(Em* e, Node* s) {
         return inner;
     case N_LABEL:
         return plan_loops(e, s->a);
-    case N_ASM:
+    case N_ASM: // a reserved x19-x28 is the caller's: saved at entry, restored at exit
         e->fn_has_asm = 1;
+        for (int i = 0; i < s->nkids; i++) {
+            Node* bnd = s->kids[i];
+            int step = (bnd->len == 2 && memcmp(bnd->str, "in", 2) == 0) ||
+                       (bnd->len == 3 && memcmp(bnd->str, "out", 3) == 0) ? 2 : 1;
+            for (int j = 0; j < bnd->nkids; j += step) {
+                int r = parse_xreg_name(bnd->kids[j]);
+                if (r >= 19 && r <= 28 && r - 18 > e->asm_saved) e->asm_saved = r - 18;
+            }
+        }
         return 0;
     case N_FOR: {
         if (s->flags & F_FORGEN) { // a general loop keeps its state in frame slots
@@ -9018,7 +9028,7 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
     e->sink_split = NULL;
     e->nlreg_loops = 0;
     e->lreg_top = e->lreg_max = 0;
-    e->fn_has_asm = 0;
+    e->fn_has_asm = e->asm_saved = 0;
     e->ninl = 0;
     e->vti_base = e->vtf_base = 0;
     ptrmap_clear(&e->inl_ix);
@@ -9046,7 +9056,7 @@ static void emit_func(Em* e, Node* f, const char* symname, uint32_t symlen, STyp
     } else {
         plan_promotion(e, f, export_c);
     }
-    e->nsaved = e->lreg_max + e->npreg;
+    e->nsaved = e->fn_has_asm ? e->asm_saved : e->lreg_max + e->npreg;
     sym_define(&e->o.syms, e->o.secs, symname, symlen, is_main || export_c, &e->o.secs[SEC_TEXT]);
     if (is_main) emit_has_main = 1;
     emit_prologue(e);

@@ -107,7 +107,8 @@ sequences(): int {
     return 0
 }
 
-// asm bindings may name any x register, so this loop keeps frame slots
+// an asm statement reserves only the registers it binds, and only across
+// itself, so this loop's values stay in registers around its x9
 with_asm(n: int): int {
     total: int = 0
     for i: int in 0 .. n {

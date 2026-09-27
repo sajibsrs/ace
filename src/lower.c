@@ -3265,6 +3265,123 @@ static void run_defers(Lw* l) {
     l->at = at;
 }
 
+// --- inline assembly ---------------------------------------------------------------
+
+// A binding's register name ("x0".."x30"), or -1 (mirrors emit.c's
+// parse_xreg_name for the AST-emitted fallback's own diagnostic).
+static int asm_reg(Node* r) {
+    if (r->kind != N_IDENT || r->len < 2 || r->str[0] != 'x') return -1;
+    int n = 0;
+    for (uint32_t i = 1; i < r->len; i++) {
+        if (r->str[i] < '0' || r->str[i] > '9') return -1;
+        n = n * 10 + (r->str[i] - '0');
+    }
+    return n <= 30 ? n : -1;
+}
+
+// Whether s is one of the v1 mini-assembler's supported instructions (Inline
+// Assembly #1, emit.c asm_insn): nop, svc #imm, brk #imm. Anything else keeps
+// the AST emitter, which reports the unsupported-instruction diagnostic.
+static int asm_recognized(Node* s) {
+    const char* p = s->str;
+    uint32_t n = s->len, i = 0;
+    while (i < n && (p[i] == ' ' || p[i] == '\t')) i++;
+    uint32_t start = i;
+    while (i < n && p[i] != ' ' && p[i] != '\t' && p[i] != '#') i++;
+    uint32_t wlen = i - start;
+    if (wlen == 3 && memcmp(p + start, "nop", 3) == 0) return 1;
+    if (wlen != 3 || (memcmp(p + start, "svc", 3) != 0 && memcmp(p + start, "brk", 3) != 0)) return 0;
+    while (i < n && (p[i] == ' ' || p[i] == '\t' || p[i] == '#')) i++;
+    int any = 0;
+    while (i < n && p[i] >= '0' && p[i] <= '9') { i++; any = 1; }
+    return any;
+}
+
+// The variable of a plain, non-address-taken scalar local an asm binding
+// names, or -1 when it is not one the fast path binds directly (an
+// aggregate, or one the allocator must keep in memory): an asm statement
+// touching either keeps the AST emitter, which has no such restriction.
+static int asm_local(Lw* l, Node* val) {
+    if (val->kind != N_IDENT) return -1;
+    Sym* vs = node_sym(val);
+    if (!vs || vs->kind != SYM_VAR || is_agg(vs->type)) return -1;
+    int var = var_of(l, vs);
+    return l->home[var] == -1 ? var : -1;
+}
+
+// asm "instruction text" { bindings } (Inline Assembly #1-3): lowered
+// directly when its instruction is recognized and every bound local is a
+// plain SSA-resident scalar; anything else keeps the AST emitter, exactly as
+// sema already checked it (register names, and that an "in"/"out" value
+// resolves to a local).
+static void asm_stmt(Lw* l, Node* s) {
+    if (!asm_recognized(s)) unsupported(l, "asm instruction");
+    int nin = 0, nout = 0;
+    for (int i = 0; i < s->nkids; i++) {
+        Node* bnd = s->kids[i];
+        int is_in = bnd->len == 2 && memcmp(bnd->str, "in", 2) == 0;
+        int is_out = bnd->len == 3 && memcmp(bnd->str, "out", 3) == 0;
+        if (is_in) nin += bnd->nkids / 2;
+        else if (is_out) nout += bnd->nkids / 2;
+    }
+    int* inreg = (int*)arena_alloc((size_t)(nin ? nin : 1) * sizeof(int));
+    int* invals = (int*)arena_alloc((size_t)(nin ? nin : 1) * sizeof(int)); // IR value ids
+    int* outreg = (int*)arena_alloc((size_t)(nout ? nout : 1) * sizeof(int));
+    int* outvars = (int*)arena_alloc((size_t)(nout ? nout : 1) * sizeof(int)); // lowering var ids
+    uint32_t reserved = 0;
+    int ki = 0, ko = 0;
+    for (int i = 0; i < s->nkids; i++) {
+        Node* bnd = s->kids[i];
+        int is_in = bnd->len == 2 && memcmp(bnd->str, "in", 2) == 0;
+        int is_out = bnd->len == 3 && memcmp(bnd->str, "out", 3) == 0;
+        if (!is_in && !is_out) { // clobbers: register names only
+            for (int j = 0; j < bnd->nkids; j++) {
+                int r = asm_reg(bnd->kids[j]);
+                if (r < 0) unsupported(l, "asm register");
+                reserved |= 1u << r;
+            }
+            continue;
+        }
+        for (int j = 0; j + 1 < bnd->nkids; j += 2) {
+            int r = asm_reg(bnd->kids[j]);
+            if (r < 0) unsupported(l, "asm register");
+            reserved |= 1u << r;
+            Node* val = bnd->kids[j + 1];
+            if (is_in) {
+                int v = val->kind == N_INT ? konst(l, IT_I64, (uint64_t)val->ival) : -1;
+                if (v < 0) {
+                    int var = asm_local(l, val);
+                    if (var < 0) unsupported(l, "asm binding");
+                    v = read_var(l, var, l->cur);
+                }
+                inreg[ki] = r; invals[ki] = v; ki++;
+            } else {
+                int var = asm_local(l, val);
+                if (var < 0) unsupported(l, "asm binding");
+                outreg[ko] = r; outvars[ko] = var; ko++;
+            }
+        }
+    }
+    int id = emit(l, IR_ASM, IT_VOID);
+    for (int k = 0; k < nin; k++) ir_arg_add(l->fn, id, invals[k]);
+    IrAsm* ab = (IrAsm*)arena_alloc(sizeof(IrAsm));
+    ab->reg = inreg;
+    ab->nout = nout;
+    ab->out = outreg;
+    ab->reserved = reserved;
+    l->fn->ins[id].asmb = ab;
+    char* text = arena_alloc((size_t)s->len + 1);
+    memcpy(text, s->str, s->len);
+    text[s->len] = 0;
+    l->fn->ins[id].name = text;
+    for (int k = 0; k < nout; k++) {
+        int p = emit(l, IR_PROJ, l->vtype[outvars[k]]);
+        ir_arg_add(l->fn, p, id);
+        l->fn->ins[p].imm = (uint64_t)k;
+        write_var(l, outvars[k], l->cur, p);
+    }
+}
+
 static void stmt(Lw* l, Node* s) {
     if (l->cur < 0) return;
     if (!l->ninl) l->at = s; // inlined code keeps its call site's line
@@ -3370,7 +3487,9 @@ static void stmt(Lw* l, Node* s) {
     case N_DEFER:
         defer_capture(l, s);
         return;
-    case N_ASM: unsupported(l, "asm");
+    case N_ASM:
+        asm_stmt(l, s);
+        return;
     default: unsupported(l, "statement form");
     }
 }

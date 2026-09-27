@@ -56,10 +56,16 @@ typedef enum {
                            mem_fill: ptr, ptr or u8, u64; mem_compare: ptr,   \
                            ptr, u64 to an i64 of -1, 0, or 1), which every    \
                            target keeps from disturbing any value */          \
+    X(ASM, "asm")       /* verbatim instruction text in name; args are the   \
+                           "in" bindings, each moved to asmb's matching x     \
+                           register; an "out" binding's value follows as a   \
+                           PROJ, read back from its own x register (Inline   \
+                           Assembly #1-3) */                                  \
     X(RESULT, "result") /* ptr to the caller's memory for this function's    \
                            result of over IR_MAX_LEAVES leaves */             \
-    X(PROJ, "proj")     /* leaf imm of the aggregate result of call args[0],  \
-                           which it follows directly with the call's others */ \
+    X(PROJ, "proj")     /* leaf imm of the aggregate result of call args[0]  \
+                           or an asm's out bindings, which it follows        \
+                           directly with the others */                       \
     X(CHECK, "check")   /* debug: bool args[0] false traps, writing "path:    \
                            line:col: name" for site at (Safety & Debug #2),   \
                            or the call contract failure when name is NULL */  \
@@ -117,6 +123,18 @@ typedef struct {
     IrPart  ret;   // n = 0 when there is no result
 } IrSig;
 
+// An asm statement's real-register bindings (Inline Assembly #2): reg[k] is
+// the x register args[k] ("in") moves to before the instruction; out[k] is
+// the x register the k-th following PROJ reads after it. reserved is every
+// register named in any "in", "out", or "clobbers" binding — none of them
+// may hold a value live across the instruction.
+typedef struct {
+    int*     reg;    // nargs of them, parallel to args
+    int      nout;
+    int*     out;
+    uint32_t reserved;
+} IrAsm;
+
 typedef struct {
     uint8_t  op;     // IrOp
     uint8_t  type;   // IrType of the result
@@ -127,8 +145,9 @@ typedef struct {
     uint64_t imm;    // CONST value (in range for type), PARAM index, SLOT size, PADD/PSUB scale
     int32_t  aux;    // LOAD/STORE offset, SLOT alignment, CALL first variadic argument
     Sym*     sym;    // GLOBAL symbol; CALL target function, when not a runtime routine
-    const char* name; // CALL target's link symbol; STR bytes; CHECK diagnostic
+    const char* name; // CALL target's link symbol; STR bytes; CHECK diagnostic; ASM instruction text
     IrSig*   sig;    // CALL, CALLI: the parts of its arguments and result, or NULL
+    IrAsm*   asmb;   // ASM: its register bindings
     Node*    at;     // source position, for line rows; CHECK: the failing site
 } IrIns;
 
@@ -195,7 +214,7 @@ void    inline_copy(Node* f, SType** targs, int ntargs, Node** bind, Node** body
 // The seed and mask of static map s's perfect hash (emit.c); 0 when none was found.
 int     staticmap_hash(Sym* s, uint64_t* seed, uint32_t* mask);
 void    ir_free(IrFunc* fn);
-// Pass 6 (release only, opt.c): constant propagation, value numbering, loop
+// Pass 6 (release only, optimizer.c): constant propagation, value numbering, loop
 // strength reduction, then dead-code and control-flow cleanup, in place.
 void    ir_optimize(IrFunc* fn);
 // Immediate dominators (Cooper-Harvey-Kennedy) over a reverse postorder, which

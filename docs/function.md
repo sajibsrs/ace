@@ -376,8 +376,8 @@ observed:
 - every by-value parameter and every local is a scalar, a slice, or a `string`;
 - the function takes no address of its own locals or by-value parameters
   (`&x`, `mut x` at a call, or a method call on one);
-- the function is not `main`, generic, or exported, and contains no inline
-  assembly and no call to an `inline` function.
+- the function is not `main`, generic, or exported, and contains no call to
+  an `inline` function.
 
 Otherwise the call stays an ordinary call, with the same result. Only a direct
 call to the function itself qualifies, and never one whose result is used

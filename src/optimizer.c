@@ -1,4 +1,4 @@
-// opt.c — pass 6, the release-only optimizer, over one function's IR
+// optimizer.c — pass 6, the release-only optimizer, over one function's IR
 // (SPEC.md Decision Queue, "Per-function SSA IR backend"). Each pass runs
 // once, in the order the SPEC gives: sparse conditional constant propagation,
 // global value numbering, loop strength reduction, and dead-code and
@@ -889,7 +889,7 @@ static int thread_jumps(Clean* c) {
 
 static int has_effect(const IrIns* x) {
     switch (x->op) {
-    case IR_STORE: case IR_CALL: case IR_CALLI: case IR_RTCALL: case IR_CHECK: case IR_PROJ:
+    case IR_STORE: case IR_CALL: case IR_CALLI: case IR_RTCALL: case IR_CHECK: case IR_PROJ: case IR_ASM:
     case IR_PARAM: case IR_RESULT: case IR_JMP: case IR_BR: case IR_RET:
         return 1;
     case IR_LOAD: return (x->flags & IRF_VOLATILE) != 0;

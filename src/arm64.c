@@ -74,6 +74,10 @@ typedef struct {
     int       ncalls;
     int*      rtcalls; // byte routine call positions, ascending
     int       nrtcalls;
+    int*      asm_pos;  // asm instruction positions, ascending
+    uint32_t* asm_mask; // that instruction's asmb->reserved, parallel to asm_pos
+    int       nasms;
+    uint32_t  asm_all;  // every asm statement's reserved registers
     uint32_t  out;     // outgoing bytes at [sp]: stack arguments, then call memory
     struct Loc* pin;   // where each parameter leaf arrives
     struct Loc* rin;   // where each result leaf leaves
@@ -398,8 +402,13 @@ static void move1(A64* a, Move m) {
 
 // Perform moves as if every source were read before any destination is
 // written; a cycle is broken through x16, or v31 for a v register (a slot's
-// bits park in x16, whichever class reads them).
-static void parallel_move(A64* a, Move* m, int n) {
+// bits park in x16, whichever class reads them). avoid is 0 for every
+// ordinary caller (an ABI register set never includes x16); asm's own moves
+// pass its reserved set, since a binding may target x16 directly. Any other
+// register may hold a value live across the statement, so such a cycle is
+// broken with no scratch at all: a stuck move set is only whole register
+// cycles, and three eors swap a move's destination with its source in place.
+static void parallel_move(A64* a, Move* m, int n, uint32_t avoid) {
     int left = 0;
     for (int i = 0; i < n; i++) {
         if (!m[i].is_const && m[i].src == m[i].dst) m[i].dst = NOREG;
@@ -421,7 +430,19 @@ static void parallel_move(A64* a, Move* m, int n) {
         if (progress) continue;
         for (int i = 0; i < n; i++) { // every pending move is on a cycle
             if (m[i].dst == NOREG) continue;
-            int d = m[i].dst, park = fp_reg(d) ? FS0 : S0;
+            int d = m[i].dst, fp = fp_reg(d), park = fp ? FS0 : S0;
+            if (!fp && (avoid & (1u << park))) { // d = s, s = d; readers of either follow the swap
+                uint32_t s = (uint32_t)m[i].src, rd = (uint32_t)d;
+                put(a, 0xCA000000u | (s << 16) | (rd << 5) | rd);
+                put(a, 0xCA000000u | (s << 16) | (rd << 5) | s);
+                put(a, 0xCA000000u | (s << 16) | (rd << 5) | rd);
+                m[i].dst = NOREG;
+                left--;
+                for (int j = 0; j < n; j++)
+                    if (m[j].dst != NOREG && !m[j].is_const)
+                        m[j].src = m[j].src == d ? (int)s : m[j].src == (int)s ? d : m[j].src;
+                break;
+            }
             move1(a, (Move){ park, d, 0, 0, 1 });
             for (int j = 0; j < n; j++)
                 if (m[j].dst != NOREG && !m[j].is_const && m[j].src == d) m[j].src = park;
@@ -928,6 +949,20 @@ static int crosses_call(A64* a, int v) { return crosses(a, v, a->calls, a->ncall
 // The registers a byte routine disturbs that allocation hands out: x8 and v24-v28.
 static int rtcall_clobbers(int r) { return r == 8 || (r >= V + 24 && r <= V + 28); }
 
+// The union of every asm statement's reserved x registers (Inline Assembly
+// #2-3) whose position falls inside v's interval: none of them may hold v.
+static uint32_t asm_reserved(A64* a, int v) {
+    uint32_t m = 0;
+    for (int i = 0; i < a->nasms; i++) {
+        int at = a->asm_pos[i];
+        if (at > a->start[v] && a->end[v] > at + 1) m |= a->asm_mask[i];
+    }
+    return m;
+}
+
+// az bounds-checks before shifting: asm never reserves a v register.
+static int asm_clobbers(uint32_t az, int r) { return r < 32 && (az & (1u << r)) != 0; }
+
 static int allocatable(A64* a, int v) {
     IrIns* x = ins_of(a, v);
     return x->type != IT_VOID && !is_remat((IrOp)x->op) && !a->fused[v] && a->nuse[v] > 0;
@@ -940,6 +975,8 @@ static void hints(A64* a) {
     for (int v = 0; v < fn->nins; v++) a->hint[v] = a->phi_of[v] = -1;
     a->calls = xcalloc((size_t)fn->nins, sizeof(int));
     a->rtcalls = xcalloc((size_t)fn->nins, sizeof(int));
+    a->asm_pos = xcalloc((size_t)fn->nins, sizeof(int));
+    a->asm_mask = xcalloc((size_t)fn->nins, sizeof(uint32_t));
     for (int i = 0; i < fn->nblocks; i++) {
         IrBlock* bb = &fn->blocks[a->order[i]];
         for (int j = 0; j < bb->nins; j++) {
@@ -954,6 +991,11 @@ static void hints(A64* a) {
                 a->hint[u] = 8;
             } else if (x->op == IR_RTCALL) {
                 a->rtcalls[a->nrtcalls++] = 2 * a->idx[u];
+            } else if (x->op == IR_ASM) {
+                a->asm_pos[a->nasms] = 2 * a->idx[u];
+                a->asm_mask[a->nasms] = x->asmb->reserved;
+                a->nasms++;
+                a->asm_all |= x->asmb->reserved;
             } else if (is_call(x->op)) {
                 a->calls[a->ncalls++] = 2 * a->idx[u];
                 if ((x->flags & IRF_SRET) && a->hint[x->args[x->nargs - 1]] < 0) a->hint[x->args[x->nargs - 1]] = 8;
@@ -1099,6 +1141,7 @@ static void allocate(A64* a) {
         }
         int cross = crosses_call(a, v), r = -1, fp = fp_val(a, v);
         int rt = crosses(a, v, a->rtcalls, a->nrtcalls); // not in a register a byte routine disturbs
+        uint32_t az = asm_reserved(a, v); // not in a register an asm statement reserves
         const int8_t* caller = fp ? fcaller_regs : caller_regs;
         const int8_t* callee = fp ? fcallee_regs : callee_regs;
         size_t ncaller = fp ? sizeof fcaller_regs : sizeof caller_regs;
@@ -1112,18 +1155,20 @@ static void allocate(A64* a) {
         if (a->hint[v] >= 0) want[nwant++] = a->hint[v];
         for (int k = 0; k < nwant && r < 0; k++)
             if (owner[want[k]] < 0 && fp_reg(want[k]) == fp && (!cross || callee_saved(want[k])) &&
-                !(rt && rtcall_clobbers(want[k])))
+                !(rt && rtcall_clobbers(want[k])) && !asm_clobbers(az, want[k]))
                 r = want[k];
         if (!cross)
             for (size_t k = 0; k < ncaller && r < 0; k++)
-                if (owner[caller[k]] < 0 && !(rt && rtcall_clobbers(caller[k]))) r = caller[k];
+                if (owner[caller[k]] < 0 && !(rt && rtcall_clobbers(caller[k])) && !asm_clobbers(az, caller[k]))
+                    r = caller[k];
         for (size_t k = 0; k < ncallee && r < 0; k++)
-            if (owner[callee[k]] < 0) r = callee[k];
+            if (owner[callee[k]] < 0 && !asm_clobbers(az, callee[k])) r = callee[k];
         if (r < 0) { // spill whichever interval of the class ends last
             int far = -1;
             for (int k = 0; k < nactive; k++) {
                 int w = active[k];
-                if (fp_reg(a->reg[w]) != fp || (cross && !callee_saved(a->reg[w])) || (rt && rtcall_clobbers(a->reg[w])))
+                if (fp_reg(a->reg[w]) != fp || (cross && !callee_saved(a->reg[w])) ||
+                    (rt && rtcall_clobbers(a->reg[w])) || asm_clobbers(az, a->reg[w]))
                     continue;
                 if (far < 0 || a->end[w] > a->end[active[far]]) far = k;
             }
@@ -1162,6 +1207,7 @@ static void allocate(A64* a) {
     uint64_t used = 0;
     for (int i = 0; i < nseq; i++)
         if (a->reg[seq[i]] >= 0) used |= UINT64_C(1) << a->reg[seq[i]];
+    used |= a->asm_all; // a reserved x19-x28 is the caller's, whatever asm does to it
     for (int r = 0; r < SLOT; r++)
         if (callee_saved(r) && (used & (UINT64_C(1) << r))) a->cs[a->ncs++] = (int8_t)r;
     free(seq); free(spilled); free(heap); free(free_slots);
@@ -1935,7 +1981,7 @@ static void call(A64* a, int v) {
     }
     if (p.nres && p.res[0].kind == L_ADDR) m[nm++] = (Move){ 8, 0, p.res[0].mem, 2, 1 }; // the result buffer
     if (x->flags & IRF_SRET) m[nm++] = move_of(a, 8, x->args[x->nargs - 1]); // the result's memory
-    parallel_move(a, m, nm);
+    parallel_move(a, m, nm, 0);
     for (int k = 0; k < p.n; k++)
         if (p.arg[k].kind == L_WORD && p.arg[k].head) ldr_x(a, p.arg[k].reg, 31, p.arg[k].mem);
     if (x->op == IR_CALLI) put(a, 0xD63F0000u | (S1 << 5)); // blr x17
@@ -1971,7 +2017,7 @@ static void call(A64* a, int v) {
         if (narrow(t) || (t == IT_BOOL && r.word)) ext(a, t, r.reg, r.reg); // an AST-emitted callee may leave it unwrapped
         m[nm++] = (Move){ loc(a, u), r.reg, 0, 0, 1 };
     }
-    parallel_move(a, m, nm);
+    parallel_move(a, m, nm, 0);
     for (int i = first + 1; i < last; i++) {
         int u = bb->ins[i];
         Loc r = p.res[ins_of(a, u)->imm];
@@ -1988,7 +2034,7 @@ static void rtcall(A64* a, int v) {
     IrIns* x = ins_of(a, v);
     Move m[3];
     for (int k = 0; k < x->nargs; k++) m[k] = move_of(a, S2 + k, x->args[k]); // x15, x16, x17
-    parallel_move(a, m, x->nargs);
+    parallel_move(a, m, x->nargs, 0);
     bl_to(a, x->name);
     if (strcmp(x->name, "__ace$mem_fill") == 0) a->o->mem_fill_used = 1;
     else if (strcmp(x->name, "__ace$mem_compare") == 0) a->o->mem_compare_used = 1;
@@ -1997,6 +2043,55 @@ static void rtcall(A64* a, int v) {
     int rd = dst(a, v);
     mov_reg(a, rd, S1);
     dst_done(a, v, rd);
+}
+
+// The v1 mini-assembler's only recognized instructions (Inline Assembly #1):
+// nop, svc #imm, brk #imm; lowering already refused anything else
+// (asm_recognized), so this only encodes.
+static void asm_encode(A64* a, const char* p, uint32_t n) {
+    uint32_t i = 0;
+    while (i < n && (p[i] == ' ' || p[i] == '\t')) i++;
+    uint32_t start = i;
+    while (i < n && p[i] != ' ' && p[i] != '\t' && p[i] != '#') i++;
+    if (i - start == 3 && memcmp(p + start, "nop", 3) == 0) { put(a, 0xD503201Fu); return; }
+    int is_svc = p[start] == 's';
+    while (i < n && (p[i] == ' ' || p[i] == '\t' || p[i] == '#')) i++;
+    uint64_t imm = 0;
+    while (i < n && p[i] >= '0' && p[i] <= '9') { imm = imm * 10 + (uint64_t)(p[i] - '0'); i++; }
+    put(a, (is_svc ? 0xD4000001u : 0xD4200000u) | ((uint32_t)imm << 5));
+}
+
+// asm "instruction text" { bindings } (Inline Assembly #2-3): moves each
+// "in" binding into its named register, emits the instruction, then moves
+// each "out" binding's register into its projection, narrowed to its
+// declared type (an AST-emitted asm variable may have left it unwrapped, the
+// same trust call() already makes for a callee's return leaf).
+static void asm_select(A64* a, int v) {
+    IrIns* x = ins_of(a, v);
+    IrAsm* ab = x->asmb;
+    Move* m = xcalloc((size_t)(x->nargs ? x->nargs : 1), sizeof(Move));
+    for (int k = 0; k < x->nargs; k++) m[k] = move_of(a, ab->reg[k], x->args[k]);
+    parallel_move(a, m, x->nargs, ab->reserved);
+    free(m);
+    asm_encode(a, x->name, (uint32_t)strlen(x->name));
+    if (!ab->nout) return;
+    IrBlock* bb = &a->fn->blocks[x->block];
+    int first = 0;
+    while (bb->ins[first] != v) first++;
+    int last = first + 1;
+    while (last < bb->nins && ins_of(a, bb->ins[last])->op == IR_PROJ) last++;
+    Move* om = xcalloc((size_t)ab->nout, sizeof(Move));
+    int nm = 0;
+    for (int i = first + 1; i < last; i++) {
+        int u = bb->ins[i];
+        if (loc(a, u) == NOREG) continue;
+        int reg = ab->out[ins_of(a, u)->imm];
+        IrType t = (IrType)ins_of(a, u)->type;
+        if (narrow(t)) ext(a, t, reg, reg);
+        om[nm++] = (Move){ loc(a, u), reg, 0, 0, 1 };
+    }
+    parallel_move(a, om, nm, ab->reserved);
+    free(om);
 }
 
 // --- emission ---------------------------------------------------------------------------
@@ -2032,7 +2127,7 @@ static void phi_moves(A64* a, int b) {
         int d = loc(a, phi);
         if (d != NOREG) m[k++] = move_of(a, d, fn->ins[phi].args[p]);
     }
-    parallel_move(a, m, k);
+    parallel_move(a, m, k, 0);
     free(m);
 }
 
@@ -2055,7 +2150,7 @@ static void terminator(A64* a, int b, int v) {
             else if (r.kind == L_WORD) store_leaf(a, x->args[k], 31, a->save_at + r.mem + r.off, S0, 0);
             else store_leaf(a, x->args[k], S0, r.off, S1, 0);
         }
-        parallel_move(a, m, nm);
+        parallel_move(a, m, nm, 0);
         for (int k = 0; k < x->nargs; k++)
             if (a->rin[k].kind == L_WORD && a->rin[k].head) ldr_x(a, a->rin[k].reg, 31, a->save_at + a->rin[k].mem);
         free(m);
@@ -2122,6 +2217,9 @@ static void emit_block(A64* a, int b) {
             break;
         case IR_RTCALL:
             rtcall(a, v);
+            break;
+        case IR_ASM:
+            asm_select(a, v);
             break;
         case IR_ADD: case IR_SUB:
             add_sub(a, v);
@@ -2205,7 +2303,7 @@ static void params(A64* a) {
         if (narrow((IrType)x->type) || (x->type == IT_BOOL && a->pin[x->imm].word)) ext(a, (IrType)x->type, r, r);
         m[n++] = (Move){ loc(a, v), r, 0, 0, 1 };
     }
-    parallel_move(a, m, n);
+    parallel_move(a, m, n, 0);
     free(m);
     for (int i = 0; i < bb->nins; i++) {
         int v = bb->ins[i];
@@ -2338,7 +2436,9 @@ void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int is_main)
     coalesce(&a);
     allocate(&a);
     a.slot_base = a.out + 16u + 8u * (uint32_t)a.ncs;
-    a.has_frame = a.ncalls || a.nrtcalls || a.nslots || a.ncs || a.nsave; // a byte routine's bl needs x30 saved
+    // a byte routine's bl needs x30 saved; an asm statement naming x29 or x30
+    // needs the return address protected regardless of its own leaf status
+    a.has_frame = a.ncalls || a.nrtcalls || a.nslots || a.ncs || a.nsave || (a.asm_all & (3u << 29)); // an asm reserving x29 or x30 keeps the frame
     a.frame = place_objects(&a);
     if (!a.has_frame) a.frame = 0;
     a.label = xcalloc((size_t)fn->nblocks, sizeof(uint32_t));

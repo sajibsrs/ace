@@ -1,0 +1,34 @@
+/* An asm statement is one instruction: its "in" values as arguments, each
+ * "out" register as a projection, and every register it binds or clobbers in
+ * its reserved mask. Release keeps one with no outputs and never merges two
+ * equal ones. syscall is never called. */
+
+syscall(fd: i64, n: i64): i64 {
+    ret: i64 = 0
+    asm "svc #0" {
+        in: x0 = fd, x1 = n, x16 = 4
+        out: x0 = ret
+        clobbers: x17
+    }
+    return ret
+}
+
+twice(x: i64): i64 {
+    a: i64 = 0
+    b: i64 = 0
+    asm "nop" {}
+    asm "nop" {
+        in: x9 = x
+        out: x9 = a
+    }
+    asm "nop" {
+        in: x9 = x
+        out: x9 = b
+    }
+    return a + b
+}
+
+main(): int {
+    if twice(2) != 4 { return 1 }
+    return 0
+}

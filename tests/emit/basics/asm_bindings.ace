@@ -1,0 +1,73 @@
+// expect-exit: 0
+
+/* asm bindings wire values into and out of named registers with plain moves
+   around the statement (Inline Assembly #2-3): crossed bindings form a
+   register cycle, broken in place when the statement binds the scratch
+   register, and a value live across the statement stays out of the
+   registers it reserves. A reserved x19-x28 belongs to the caller, so the
+   function saves it at entry and restores it at exit, on either backend. */
+
+// a arrives in x0 and b in x1; binding them crosswise swaps them, with x16
+// bound as well, so the cycle cannot park through it, and c live in x2
+crossed(a: i64, b: i64, c: i64): i64 {
+    lo: i64 = 0
+    hi: i64 = 0
+    z: i64 = 0
+    asm "nop" {
+        in: x0 = b, x1 = a, x16 = 9
+        out: x0 = lo, x1 = hi, x16 = z
+    }
+    return c * 1000 + hi * 100 + lo * 10 + z
+}
+
+// keep is live across the statement, which reserves x9 through x15
+reserved(keep: i64): i64 {
+    t: i64 = keep + 1
+    v: i64 = 0
+    asm "nop" {
+        in: x9 = 7
+        out: x9 = v
+        clobbers: x10, x11, x12, x13, x14, x15
+    }
+    return t * 10 + v
+}
+
+// writes x19 and x23 and clobbers x26, which the caller's loop may hold
+smash(x: i64) {
+    asm "nop" {
+        in: x19 = x, x23 = x
+        clobbers: x26
+    }
+}
+
+pin(mut n: i64) {}
+
+// the same, with an address-taken binding that keeps it on the AST emitter
+smash_fallback(x: i64) {
+    ap: i64 = x
+    pin(mut ap)
+    asm "nop" {
+        in: x19 = ap, x23 = x
+        clobbers: x26
+    }
+}
+
+// a, total, and i live across both calls, in callee-saved registers
+preserved(): i64 {
+    a: i64 = 1
+    total: i64 = 0
+    for i: i64 in 0 .. 10 {
+        smash(i + 100)
+        smash_fallback(i + 200)
+        total += a + i
+        a += 1
+    }
+    return total
+}
+
+main(): int {
+    if crossed(3, 4, 5) != 5349 { return 1 }
+    if reserved(5) != 67 { return 2 }
+    if preserved() != 100 { return 3 }
+    return 0
+}

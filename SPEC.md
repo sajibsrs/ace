@@ -95,7 +95,7 @@ Concrete rules and syntax. The why behind every rule lives in PHILOSOPHY.md (clo
 6. Performance plan (v1, compile-time-cheap by design):
    - Emission-time selection — the emitter picks fused forms where it already knows operand lifetimes: compare-and-branch, loads into their destination, frame-relative field access, direct use of promoted registers, add/sub/compare immediates, and results computed straight into a promoted destination. No separate pass over emitted code.
    - Register promotion — before emitting a function, one linear pass over its body selects scalar locals whose address never escapes, weighted by use count × loop depth, and gives each integer-class one a live interval in emission order; locals whose intervals do not overlap share a register. An integer local whose interval crosses no clobbering call first uses caller-saved registers above its expressions' estimated temp need, which cost no save; the rest take callee-saved registers. Float locals take callee-saved registers for the whole body; float locals beyond the callee-saved set take caller-saved registers that nothing else reserves, stored and reloaded around every branch-with-link, so the cost falls on the calling paths; a function whose loop carries a call or a large aggregate keeps frame slots instead. Bounded per function; no global analysis.
-   - Self tail recursion — release builds lower `return f(args)` in the body of `f` itself to a branch back to `f`'s parameter reads, reusing its frame, when sharing that frame across levels is unobservable: no `defer` is pending, the parameters ride argument registers, every by-value parameter and every local is a scalar, a slice, or a `string`, and the function takes no address of its own storage; `main`, generic, exported, inline-assembly, and inline-expanding functions keep their calls. Calls to other functions are never lowered, and debug builds keep every call. It is an optimization, not a guarantee: recursion that must not overflow is written as a loop.
+   - Self tail recursion — release builds lower `return f(args)` in the body of `f` itself to a branch back to `f`'s parameter reads, reusing its frame, when sharing that frame across levels is unobservable: no `defer` is pending, the parameters ride argument registers, every by-value parameter and every local is a scalar, a slice, or a `string`, and the function takes no address of its own storage; `main`, generic, exported, and inline-expanding functions keep their calls. Calls to other functions are never lowered, and debug builds keep every call. It is an optimization, not a guarantee: recursion that must not overflow is written as a loop.
    - Read-only parameters are alias facts — loads through them may be hoisted and cached freely by the emitter.
    - Inline expansion — only where the source asks for it (`inline`, Functions & ABI #8); the expansion's locals join the caller's register promotion.
    - Vectorization path: `noalias` facts (Mutability #8) plus the `simd` stdlib module; auto-vectorization belongs only to a future release backend if ever added.
@@ -694,7 +694,7 @@ Decision: explicit monomorphization.
 ## Inline Assembly
 1. `asm "instruction text" { bindings }` — a statement, never an expression; values flow only through the bindings.
 2. Bindings name real registers directly: `in: x0 = fd` wires an Ace value in, `out: x0 = ret` wires a register out to an Ace local, `clobbers: x16, x17` declares what breaks. Nothing implicit — the compiler emits plain moves around the block. No constraint language exists.
-3. asm statements are never reordered or elided; clobbers are honored by surrounding codegen.
+3. asm statements are never reordered or elided; clobbers are honored by surrounding codegen. A function whose asm reserves a callee-saved register (x19-x28) through any binding or clobber saves it at entry and restores it at exit, as the platform ABI requires.
 4. The ISA is implied by the compilation target (v1: AArch64).
 5. Memory written through asm is the programmer's trust — debug builds do not trace it.
 
@@ -1176,9 +1176,11 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
     identical output.
   - `--ir` prints the IR, as `--ast` prints the AST.
   - Excluded: automatic inlining, auto-vectorization (explicit `std/simd`),
-    loop unrolling or instruction scheduling unless later measured, and any
-    function containing `asm`, permanently emitted by the AST emitter with
-    calls crossing both ways under one ABI.
+    and loop unrolling or instruction scheduling unless later measured.
+  - `asm` is one IR instruction: its "in" values as arguments, its "out"
+    registers as projections, and its reserved registers (every binding and
+    clobber) kept free of values live across it. It is never reordered or
+    removed.
   - Migration: the new backend compiles each function it supports and the AST
     emitter the rest, under one ABI into one object. Steps: (1) IR, selection,
     and allocation for scalar integer code with its debug checks, measuring
@@ -1187,7 +1189,7 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
     and values; (4) pass 6 and the debug mode, with `bench/core`, `bench/std`, and
     `bench/package` at parity or better; (5) remove the AST emitter and fold
     this entry into Compiler #2, #4, and #6.
-  - Files: `src/ir.c` (IR, verifier, printer), `src/lower.c`, `src/opt.c`
+  - Files: `src/ir.c` (IR, verifier, printer), `src/lower.c`, `src/optimizer.c`
     (pass 6), `src/arm64.c` (selection, allocation, encoding), `src/macho.c`
     (object writer).
 
