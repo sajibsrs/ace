@@ -54,8 +54,10 @@ typedef struct {
     Buf*      t;
     int       is_main, far;
     // layout
-    int*      order;   // blocks in layout order
-    int*      lix;     // block -> layout index
+    int*      order;   // blocks in reverse postorder (analysis: liveness, allocation)
+    int*      lix;     // block -> reverse-postorder index
+    int*      layout;  // blocks in emission order (a loop rotated after its body)
+    int*      eix;     // block -> emission-order index
     int*      bfirst;  // block -> index of its first instruction
     int*      blast;   // block -> index of its terminator
     int*      idx;     // value -> instruction index
@@ -651,6 +653,72 @@ static void split_critical_edges(IrFunc* fn) {
     }
 }
 
+// A loop whose header only tests (a two-way branch with one successor in the
+// loop, one outside) and whose one back edge is a plain jump: cloning the
+// reverse postorder and moving such a header after its latch, so an iteration
+// ends in the test's own conditional branch to the body instead of a jump to
+// the test, then a jump to the body once at entry. This only reorders the
+// blocks emission walks (a->layout); analysis (a->order, a->bfirst, a->idx,
+// liveness, allocation, coalescing) keeps every value's position as if
+// nothing moved, so none of their ordering assumptions change.
+static void emission_order(A64* a) {
+    IrFunc* fn = a->fn;
+    int n = fn->nblocks;
+    a->layout = xcalloc((size_t)n, sizeof(int));
+    a->eix = xcalloc((size_t)n, sizeof(int));
+    memcpy(a->layout, a->order, (size_t)n * sizeof(int));
+    int* pos = xcalloc((size_t)n, sizeof(int));
+    int* after = xcalloc((size_t)n, sizeof(int)); // latch -> its deferred header, or -1
+    uint8_t* deferred = xcalloc((size_t)n, 1);
+    uint8_t* in = xcalloc((size_t)n, 1);
+    int* stack = xcalloc((size_t)n, sizeof(int));
+    int moved = 0;
+    for (int b = 0; b < n; b++) after[b] = -1;
+    for (int i = 0; i < n; i++) pos[a->layout[i]] = i;
+    for (int i = 1; i < n; i++) { // the entry stays first
+        int h = a->layout[i];
+        IrBlock* hb = &fn->blocks[h];
+        if (hb->succ[1] < 0) continue;
+        int latch = -1, back = 0;
+        for (int p = 0; p < hb->npreds; p++)
+            if (pos[hb->preds[p]] >= i) { latch = hb->preds[p]; back++; }
+        if (back != 1 || fn->blocks[latch].succ[1] >= 0 || fn->blocks[latch].succ[0] != h || after[latch] >= 0)
+            continue;
+        memset(in, 0, (size_t)n); // the natural loop: what reaches the latch without passing h
+        int sp = 0;
+        in[h] = 1;
+        in[latch] = 1;
+        stack[sp++] = latch;
+        while (sp) {
+            IrBlock* bb = &fn->blocks[stack[--sp]];
+            for (int p = 0; p < bb->npreds; p++)
+                if (!in[bb->preds[p]]) {
+                    in[bb->preds[p]] = 1;
+                    stack[sp++] = bb->preds[p];
+                }
+        }
+        int s0 = hb->succ[0], s1 = hb->succ[1];
+        if ((in[s0] && s0 != h) == (in[s1] && s1 != h)) continue;
+        after[latch] = h;
+        deferred[h] = 1;
+        moved++;
+    }
+    if (moved) {
+        int* old = xcalloc((size_t)n, sizeof(int));
+        memcpy(old, a->layout, (size_t)n * sizeof(int));
+        int k = 0;
+        for (int i = 0; i < n; i++) {
+            int b = old[i];
+            if (deferred[b]) continue;
+            a->layout[k++] = b;
+            if (after[b] >= 0) a->layout[k++] = after[b];
+        }
+        free(old);
+    }
+    for (int i = 0; i < n; i++) a->eix[a->layout[i]] = i;
+    free(pos); free(after); free(deferred); free(in); free(stack);
+}
+
 // Reverse postorder, visiting the second successor first so that the first
 // (a branch's true side, a loop's body) follows its block.
 static void layout(A64* a) {
@@ -690,6 +758,7 @@ static void layout(A64* a) {
         for (int j = 0; j < bb->nins; j++) a->idx[bb->ins[j]] = k++;
         a->blast[b] = k - 1;
     }
+    emission_order(a);
 }
 
 static int is_compare(int op) { return op >= IR_EQ && op <= IR_GE; }
@@ -1939,8 +2008,8 @@ static void line_row(A64* a, Node* at) {
 }
 
 static int next_block(A64* a, int b) {
-    int i = a->lix[b] + 1;
-    return i < a->fn->nblocks ? a->order[i] : -1;
+    int i = a->eix[b] + 1;
+    return i < a->fn->nblocks ? a->layout[i] : -1;
 }
 
 static void jump(A64* a, int from, int to) {
@@ -2158,7 +2227,7 @@ static void params(A64* a) {
 static int is_loop_head(A64* a, int b) {
     IrBlock* bb = &a->fn->blocks[b];
     for (int p = 0; p < bb->npreds; p++)
-        if (a->lix[bb->preds[p]] >= a->lix[b]) return 1;
+        if (a->eix[bb->preds[p]] >= a->eix[b]) return 1;
     return 0;
 }
 
@@ -2173,7 +2242,7 @@ static int emit_body(A64* a) {
     prologue(a);
     params(a);
     for (int i = 0; i < fn->nblocks; i++) {
-        int b = a->order[i];
+        int b = a->layout[i];
         if (i && is_loop_head(a, b))
             while (here(a) % LOOP_ALIGN) put(a, 0xD503201Fu);
         a->label[b] = here(a);

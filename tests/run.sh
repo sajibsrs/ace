@@ -1453,7 +1453,10 @@ if [ -d tests/emit ]; then
             }
             fn { n++; addr[n] = hex($1); op[n] = $2; a3[n] = $3; a4[n] = $4 }
             END {
-                for (i = 1; i <= n; i++) if (op[i] == "b" && hex(a3[i]) < addr[i]) { head = hex(a3[i]); tail = addr[i] }
+                # the loop back edge, an unconditional jump (a top-tested
+                # loop) or the rotated bottom tests conditional branch
+                for (i = 1; i <= n; i++)
+                    if (op[i] ~ /^(b|b\.[a-z]+)$/ && a3[i] ~ /^0x/ && hex(a3[i]) < addr[i]) { head = hex(a3[i]); tail = addr[i] }
                 for (i = 1; i <= n; i++) {
                     if (addr[i] < head || addr[i] > tail) continue
                     if (op[i] ~ /^(ldur|stur|ldr|str|ldp|stp)$/ && a3[i] ~ /^d/) bad = 1
@@ -1535,18 +1538,31 @@ if [ -d tests/emit ]; then
         # Counter.run loop loads the receiver's fields through it and never
         # reloads a frame slot.
         if ! otool -tv /tmp/ace_emit/basics/byref_registers.o | awk '
-            /^[^0-9].*:$/ {
-                fn = 0; loop = 0
-                if ($0 ~ /^__ace\$fn\$Counter\$run\$/) fn = 1
-                next
+            /^[^0-9].*:$/ { fn = ($0 ~ /^__ace\$fn\$Counter\$run\$/); next }
+            function hex(h,   v, i) {
+                sub(/^0x/, "", h)
+                v = 0
+                for (i = 1; i <= length(h); i++) v = v * 16 + index("0123456789abcdef", substr(h, i, 1)) - 1
+                return v
             }
-            fn == 1 && $2 ~ /^cbn?z$/ { loop = 1; next }
-            fn == 1 && loop && $2 == "b" { loop = 0 }
-            fn == 1 && loop && $2 ~ /^ldu?r$/ {
-                if ($4 ~ /^\[(x29|sp)/) bad = 1
-                else if ($4 ~ /^\[x[0-9]+[],]/) direct++
+            fn {
+                n++; addr[n] = hex($1); op[n] = $2; a4[n] = $4
+                target[n] = op[n] ~ /^cbn?z$/ ? $4 : $3
             }
-            END { exit bad || direct < 2 }'; then
+            END {
+                # the loop back edge, an unconditional jump (a top-tested
+                # loop) or the rotated bottom tests branch (cbz/cbnz or a
+                # conditional branch)
+                for (i = 1; i <= n; i++)
+                    if (op[i] ~ /^(b|b\.[a-z]+|cbn?z)$/ && target[i] ~ /^0x/ && hex(target[i]) < addr[i])
+                        { head = hex(target[i]); tail = addr[i] }
+                for (i = 1; i <= n; i++) {
+                    if (addr[i] < head || addr[i] > tail || op[i] !~ /^ldu?r$/) continue
+                    if (a4[i] ~ /^\[(x29|sp)/) bad = 1
+                    else if (a4[i] ~ /^\[x[0-9]+[],]/) direct++
+                }
+                exit bad || !head || direct < 2
+            }'; then
             echo "FAIL: by-reference parameter pointers must stay in registers"
             fail=1
         fi

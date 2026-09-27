@@ -366,6 +366,41 @@ current normative rules, and Git preserves patch-level detail.
   into addressing, and `mul` with `add`, and has no live-range splitting for
   a value held across a loop. `tests/ir/numbering.ace` covers a repeat, a
   commuted operand, and an identity.
+- Rotated loops at block layout instead of as an IR pass (IR migration step
+  4c, `src/arm64.c`): a header that only tests (a two-way branch with one
+  successor in the loop, one outside) and whose one back edge is a plain jump
+  is laid out after its latch, so an iteration ends in the test's own
+  conditional branch instead of a jump to the test, with a jump to the test
+  once at entry. This applies in both modes, since it is layout, not an IR
+  pass; it needed no SPEC-listed IR rotation pass, no exit-edge SSA repair,
+  and no code duplication. A separate `layout`/`eix` emission order carries
+  the rotation; `order`/`lix`/`bfirst`/`idx`/`blast`, and therefore liveness,
+  linear-scan allocation, coalescing, and hints, keep every value's position
+  exactly as an unrotated layout would, so none of their ordering assumptions
+  change. An earlier version rotated `order` itself and widened `live_in`'s
+  start position for a value used before its home block's new position;
+  that broke coalescing's own use of `start`, which shares a register between
+  a phi and its loop-carried operand, and gave wrong values for a call
+  returning more than one leaf inside a rotated loop, release mode only
+  (`tests/emit/staticmap`-style differential testing missed it; an
+  independent recompute of the affected benchmarks caught it). `saxpy`
+  (`bench/core/hotloop`) is 18.9% faster, `particle-vec3` 5.3%, `length-vec3`
+  4.6%, `bench/core/calls`'s `struct-24` 25.1%, `bench/std/string`'s
+  `compare-64` 12.5%, `find-4096` 16.5%, `ascii-fold-64` 9.1%, and
+  `bench/std/math`'s `exp-f32` 10.0%; isolated single-loop and nested-loop
+  programs shaped like `bench/std/collections`'s map operations and
+  `bench/core/calls`'s `call-4`/`call-8` (a call, then a conditional check)
+  are flat to 15-17% faster. Those same shapes regress 2% to 15% inside
+  `bench/core/calls.ace`, `bench/std/collections.ace`, `bench/std/string.ace`,
+  and `bench/std/math.ace` themselves: each packs dozens of loops into one
+  function, so shrinking one loop's code shifts every later loop's address
+  and its alignment against cache lines, a placement effect `bench/README.md`
+  already documents as separate from a change's own cost. Two `tests/run.sh`
+  checks (`struct_registers.o`'s HFA loop, `byref_registers.o`'s `Counter.run`)
+  found a loop's back edge by its own address to bound where they check
+  register use; both assumed a top-tested loop's unconditional backward jump
+  and needed widening to recognize the rotated bottom test's conditional
+  branch (`cbz`/`cbnz` included) as the back edge instead.
 - Lowered `for` over a string, slice, or array to IR (IR migration step 3g).
   The sequence's pointer and length (an array's address and fixed count) are
   read once at entry, the end is `padd ptr, len * size`, and a pointer runs to

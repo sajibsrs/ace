@@ -1144,17 +1144,20 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
        and stores for one that lives in memory; the IR has no aggregate
        values, and each target maps leaves onto its ABI), and turning self
        tail recursion into a loop.
-    6. Optimize (release only), in this order, each once: loop rotation, sparse
-       conditional constant propagation, global value numbering, loop strength
-       reduction, dead-code and control-flow cleanup.
+    6. Optimize (release only), in this order, each once: sparse conditional
+       constant propagation, global value numbering, loop strength reduction,
+       dead-code and control-flow cleanup.
     7. Select AArch64 instructions, including fused forms (integer `madd`,
        never float contraction).
     8. Leave SSA: phis become copies, with coalescing.
     9. Allocate registers: linear scan over one interval per value, aware of
        calls, rematerializing constants and stack-object addresses. Interval
        splitting is added only if measured spills in hot code call for it.
-    10. Lay out blocks and encode; then globals, vtables, fixups, DWARF, and
-        the Mach-O write as today.
+    10. Lay out blocks (both modes: a header that only tests, with one back
+        edge that is a plain jump, is laid out after its latch, so the loop
+        ends in the test's own branch instead of a jump to the test) and
+        encode; then globals, vtables, fixups, DWARF, and the Mach-O write as
+        today.
 
     Passes 5–6 are shared by every target; 7–10 are per target.
   - Passes rely only on facts a debug build checks, so a run that passes in
