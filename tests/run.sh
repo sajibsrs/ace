@@ -311,7 +311,6 @@ fi
 
 c_abi_errors=$("$ACE" tests/sema/c_abi/rejected_err.ace 2>&1)
 for want in \
-    "parameter 'value' has type bool, which is not C-ABI compatible" \
     "parameter 'value' has type string, which is not C-ABI compatible" \
     "return type (i32, i32) is not C-ABI compatible" \
     "return type [4]i32 is not C-ABI compatible" \

@@ -9,7 +9,6 @@ Box[T]: struct { value: T }
 CallbackBox: struct { callback: extern "c" (i32): i32 }
 
 extern "c" {
-    bad_bool(value: bool)
     bad_enum(value: Flag)
     bad_string(value: string)
     bad_slice(value: []u8)

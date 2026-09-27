@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdarg.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 typedef struct { int32_t a; float b; } Mixed;
 typedef struct { int64_t a; int32_t b; } Pair;
@@ -14,11 +15,14 @@ typedef struct { IntPair inner; int32_t tag; } Wrapped;
 typedef struct { Hfa3 h; } Envelope;
 typedef struct { Hfa3 h; int32_t tag; } WrappedHfa;
 typedef void* (*ThreadEntry)(void*);
+typedef struct { int32_t code; bool down, repeat; } Key;
 
 extern int64_t ace_scalars(int8_t, int16_t, int32_t, int64_t,
                            uint8_t, uint16_t, uint32_t, uint64_t, size_t);
 extern double ace_floats(float, double);
 extern float ace_f32(float);
+extern bool ace_not(bool);
+extern Key ace_key(Key);
 extern void ace_bump(int32_t*);
 extern int32_t ace_code(int32_t);
 extern uint8_t ace_wire(uint8_t);
@@ -181,6 +185,26 @@ int32_t c_varargs(int32_t fixed, ...) {
     return *pointer == 11 ? 0 : 2;
 }
 
+bool c_not(bool value) { return !value; }
+
+Key c_key(Key value) {
+    value.code += 1;
+    value.down = !value.down;
+    value.repeat = !value.repeat;
+    return value;
+}
+
+void c_flag(bool* out) { *out = true; }
+
+int32_t c_bool_varargs(int32_t fixed, ...) {
+    va_list args;
+    va_start(args, fixed);
+    int a = va_arg(args, int);
+    int b = va_arg(args, int);
+    va_end(args);
+    return fixed == 3 && a == 1 && b == 0 ? 0 : 1;
+}
+
 int32_t c_run_ace(void) {
     if (ace_scalars(-1, 2, 3, 4, 5, 6, 7, 8, 9) != 43) return 1;
     if (ace_floats(1.25f, 2.5) != 3.75) return 2;
@@ -189,6 +213,9 @@ int32_t c_run_ace(void) {
     if (x != 17) return 3;
     if (ace_code(41) != 42) return 4;
     if (ace_wire(7) != 8) return 18;
+    if (ace_not(true) || !ace_not(false)) return 23;
+    Key key = ace_key((Key){4, true, true});
+    if (key.code != 5 || key.down || !key.repeat) return 24;
 
     Mixed mixed = ace_mixed((Mixed){10, 1.5f});
     if (mixed.a != 12 || mixed.b != 4.5f) return 5;

@@ -956,6 +956,10 @@ current normative rules, and Git preserves patch-level detail.
   pointers, distincts, recursive structs, nested arrays, register exhaustion,
   homogeneous floating aggregates, indirect aggregates, and structure returns;
   clang-compiled fixtures serve as the ABI oracle.
+- Admitted `bool` at the C boundary as `_Bool` in every integer position,
+  including C variadics (promoted to `int`); the backend already kept `bool`
+  as a 0/1 byte, so only the ABI whitelist changed. The clang oracle covers
+  direct values, struct fields, a `*bool` out-parameter, and variadics.
 - Implemented statement-only AArch64 inline assembly with explicit
   input/output/clobber bindings and no constraint language or reordering.
 - Implemented Package System v1's manifest and dependency-graph resolution

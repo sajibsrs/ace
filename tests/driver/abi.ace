@@ -18,6 +18,7 @@ Envelope: struct { h: Hfa3 }
 WrappedHfa: struct { h: Hfa3, tag: i32 }
 Code: distinct i32
 Wire: enum u8 { none, request = 7, response }
+Key: struct { code: i32, down: bool, repeat: bool }
 
 extern "c" {
     c_scalars(a: i8, b: i16, c: i32, d: i64, e: u8, f: u16, g: u32, h: u64, i: usize): i64
@@ -43,6 +44,10 @@ extern "c" {
     c_fpstack_check(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: Hfa3, tail: f64): i32
     c_fp_align(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: f64, narrow: f32, wide: f64): f64
     c_varargs(fixed: i32, ...): i32
+    c_not(value: bool): bool
+    c_key(value: Key): Key
+    c_flag(out: mut *bool)
+    c_bool_varargs(fixed: i32, ...): i32
     c_run_ace(): i32
     c_call_thread_entry(entry: extern "c" (mut *u8): mut *u8, argument: mut *u8): mut *u8
     c_get_thread_entry(): extern "c" (mut *u8): mut *u8
@@ -50,6 +55,14 @@ extern "c" {
 
 export ace_thread_entry(argument: mut *u8): mut *u8 {
     return argument
+}
+
+export ace_not(value: bool): bool {
+    return !value
+}
+
+export ace_key(value: Key): Key {
+    return Key { code = value.code + 1, down = !value.down, repeat = value.repeat }
 }
 
 export ace_scalars(a: i8, b: i16, c: i32, d: i64, e: u8, f: u16, g: u32, h: u64, i: usize): i64 {
@@ -298,6 +311,13 @@ main(): int {
     direct: Large = ace_large(large)
 
     if direct.a != 5 || direct.b != 7 || direct.c != 9 { return 13 }
+    if c_not(true) || !c_not(false) { return 70 }
+    key: Key = c_key(Key { code = 4, down = true, repeat = false })
+    if key.code != 5 || key.down || !key.repeat { return 71 }
+    flag: bool = false
+    c_flag(mut &flag)
+    if !flag { return 72 }
+    if c_bool_varargs(3, true, false) != 0 { return 73 }
     from_c: i32 = c_run_ace()
 
     if from_c != 0 { return int(20 + from_c) }

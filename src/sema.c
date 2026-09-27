@@ -1555,10 +1555,10 @@ static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
         switch (t->prim) {
         case P_I8: case P_I16: case P_I32: case P_I64:
         case P_U8: case P_U16: case P_U32: case P_U64:
-        case P_F32: case P_F64: case P_USIZE:
+        case P_F32: case P_F64: case P_USIZE: case P_BOOL:
             return 1;
         default:
-            return 0; // bool, string, typeid
+            return 0; // string, typeid
         }
     case SK_PTR:
         return is_c_abi_type(t->base, CABI_POINTEE, stack, nstack);
@@ -2330,7 +2330,7 @@ static int is_c_variadic_scalar(SType* t) {
     switch (t->prim) {
     case P_I8: case P_I16: case P_I32: case P_I64:
     case P_U8: case P_U16: case P_U32: case P_U64:
-    case P_F32: case P_F64: case P_USIZE:
+    case P_F32: case P_F64: case P_USIZE: case P_BOOL:
         return 1;
     default:
         return 0;
