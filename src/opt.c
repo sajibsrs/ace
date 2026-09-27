@@ -1,7 +1,8 @@
 // opt.c — pass 6, the release-only optimizer, over one function's IR
 // (SPEC.md Decision Queue, "Per-function SSA IR backend"). Each pass runs
 // once, in the order the SPEC gives; those present so far are sparse
-// conditional constant propagation and dead-code and control-flow cleanup.
+// conditional constant propagation, global value numbering, and dead-code and
+// control-flow cleanup.
 //
 // The passes rely only on facts a debug build checks: an integer operation
 // that would trap in debug (a zero divisor, MIN / -1, a shift count outside
@@ -296,6 +297,191 @@ static void sccp(IrFunc* fn) {
         free(fresh);
     }
     free(s.lat); free(s.val); free(s.exec); free(s.edge); free(s.inq); free(s.work); free(s.ustart); free(s.users);
+}
+
+// --- global value numbering -------------------------------------------------------------
+//
+// A walk of the dominator tree with a scoped table of the pure operations seen:
+// an operation equal to one in a dominating block is replaced by it, and an
+// identity (`x + 0`, `x * 1`, `x | x`, a cast to the same type) by its operand.
+// A constant operand counts by its value, not its id, because lowering makes a
+// fresh `const` per use. Loads are never numbered (no memory model).
+
+static int is_pure(const IrIns* x) {
+    if (x->flags) return 0;
+    switch (x->op) {
+    case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_REM:
+    case IR_AND: case IR_OR: case IR_XOR: case IR_SHL: case IR_SHR: case IR_NEG: case IR_NOT:
+    case IR_EQ: case IR_NE: case IR_LT: case IR_LE: case IR_GT: case IR_GE:
+    case IR_CAST: case IR_BITCAST:
+    case IR_POPCNT: case IR_CLZ: case IR_CTZ: case IR_BSWAP: case IR_ROTL: case IR_ROTR:
+    case IR_SQRT: case IR_FLOOR: case IR_CEIL: case IR_FMA:
+    case IR_PADD: case IR_PSUB:
+        return 1;
+    default: return 0;
+    }
+}
+
+typedef struct { int v, next; } VnEnt;
+
+typedef struct {
+    IrFunc* fn;
+    int*    repl;
+    int*    head; // hash bucket -> newest entry, or -1
+    VnEnt*  ent;
+    int*    log;  // bucket of each live entry, newest last
+    int     nent, mask;
+} Vn;
+
+static int vn_chase(const Vn* g, int v) {
+    while (g->repl[v] >= 0) v = g->repl[v];
+    return v;
+}
+
+static int commutes(const IrFunc* fn, const IrIns* x) {
+    switch (x->op) {
+    case IR_ADD: case IR_MUL: case IR_AND: case IR_OR: case IR_XOR: case IR_EQ: case IR_NE:
+        return !ir_type_float((IrType)fn->ins[x->args[0]].type);
+    default: return 0;
+    }
+}
+
+static int same_arg(const IrFunc* fn, int a, int b) {
+    if (a == b) return 1;
+    const IrIns* x = &fn->ins[a];
+    const IrIns* y = &fn->ins[b];
+    return x->op == IR_CONST && y->op == IR_CONST && x->type == y->type && x->imm == y->imm;
+}
+
+static uint64_t mix(uint64_t h, uint64_t v) {
+    h ^= v + UINT64_C(0x9E3779B97F4A7C15) + (h << 6) + (h >> 2);
+    return h;
+}
+
+static uint64_t arg_hash(const IrFunc* fn, int a) {
+    const IrIns* x = &fn->ins[a];
+    return x->op == IR_CONST ? mix(mix(1, x->type), x->imm) : mix(2, (uint64_t)a);
+}
+
+static uint64_t vn_hash(const IrFunc* fn, const IrIns* x) {
+    uint64_t h = mix(mix(mix(x->op, x->type), x->imm), (uint64_t)(uint32_t)x->aux);
+    if (commutes(fn, x)) return mix(h, arg_hash(fn, x->args[0]) + arg_hash(fn, x->args[1]));
+    for (int i = 0; i < x->nargs; i++) h = mix(h, arg_hash(fn, x->args[i]));
+    return h;
+}
+
+static int vn_equal(const IrFunc* fn, const IrIns* x, const IrIns* y) {
+    if (x->op != y->op || x->type != y->type || x->imm != y->imm || x->aux != y->aux || x->nargs != y->nargs) return 0;
+    int direct = 1, swapped = x->nargs == 2 && commutes(fn, x);
+    for (int i = 0; i < x->nargs; i++) {
+        direct &= same_arg(fn, x->args[i], y->args[i]);
+        if (swapped) swapped &= same_arg(fn, x->args[i], y->args[1 - i]);
+    }
+    return direct || swapped;
+}
+
+static int is_konst(const IrFunc* fn, int a, uint64_t k) {
+    const IrIns* x = &fn->ins[a];
+    return x->op == IR_CONST && !ir_type_float((IrType)x->type) && x->imm == k;
+}
+
+// The operand x equals, or -1.
+static int simplify(const IrFunc* fn, const IrIns* x) {
+    int a = x->args[0], b = x->nargs > 1 ? x->args[1] : -1;
+    if (ir_type_float((IrType)x->type)) return -1;
+    switch (x->op) {
+    case IR_ADD: case IR_OR: case IR_XOR:
+        if (is_konst(fn, b, 0)) return a;
+        if (is_konst(fn, a, 0)) return b;
+        return x->op == IR_OR && a == b ? a : -1;
+    case IR_AND: return a == b ? a : -1;
+    case IR_SUB: case IR_SHL: case IR_SHR: case IR_ROTL: case IR_ROTR: case IR_PADD: case IR_PSUB:
+        return is_konst(fn, b, 0) ? a : -1;
+    case IR_MUL:
+        if (is_konst(fn, b, 1)) return a;
+        return is_konst(fn, a, 1) ? b : -1;
+    case IR_DIV: return is_konst(fn, b, 1) ? a : -1;
+    case IR_CAST: return fn->ins[a].type == x->type ? a : -1;
+    default: return -1;
+    }
+}
+
+static void gvn_block(Vn* g, int b) {
+    IrFunc* fn = g->fn;
+    IrBlock* bb = &fn->blocks[b];
+    int k = 0;
+    for (int i = 0; i < bb->nins; i++) {
+        int v = bb->ins[i];
+        IrIns* x = &fn->ins[v];
+        for (int a = 0; a < x->nargs; a++) x->args[a] = vn_chase(g, x->args[a]);
+        if (!is_pure(x)) { bb->ins[k++] = v; continue; }
+        int w = simplify(fn, x);
+        if (w < 0) {
+            int h = (int)(vn_hash(fn, x) & (uint64_t)g->mask);
+            for (int e = g->head[h]; e >= 0 && w < 0; e = g->ent[e].next)
+                if (vn_equal(fn, &fn->ins[g->ent[e].v], x)) w = g->ent[e].v;
+            if (w < 0) {
+                g->ent[g->nent] = (VnEnt){ v, g->head[h] };
+                g->head[h] = g->nent;
+                g->log[g->nent++] = h;
+                bb->ins[k++] = v;
+                continue;
+            }
+        }
+        g->repl[v] = w;
+        kill_ins(fn, v);
+    }
+    bb->nins = k;
+}
+
+static void gvn(IrFunc* fn) {
+    Vn g;
+    g.fn = fn;
+    int n = fn->nblocks, size = 16;
+    while (size < 2 * fn->nins) size *= 2;
+    g.mask = size - 1;
+    g.head = xalloc((size_t)size, sizeof(int));
+    for (int i = 0; i < size; i++) g.head[i] = -1;
+    g.ent = xalloc((size_t)fn->nins, sizeof(VnEnt));
+    g.log = xalloc((size_t)fn->nins, sizeof(int));
+    g.repl = xalloc((size_t)fn->nins, sizeof(int));
+    for (int v = 0; v < fn->nins; v++) g.repl[v] = -1;
+    g.nent = 0;
+    int* rpo, nrpo;
+    int* idom = ir_dominators(fn, &rpo, &nrpo);
+    int* cstart = xalloc((size_t)n + 1, sizeof(int));
+    for (int b = 1; b < n; b++) if (idom[b] >= 0) cstart[idom[b] + 1]++;
+    for (int b = 0; b < n; b++) cstart[b + 1] += cstart[b];
+    int* kids = xalloc((size_t)n, sizeof(int));
+    int* fill = xalloc((size_t)n, sizeof(int));
+    for (int b = 1; b < n; b++) if (idom[b] >= 0) kids[cstart[idom[b]] + fill[idom[b]]++] = b;
+    int* sb = xalloc((size_t)n, sizeof(int)); // the walk's frames: block, next child, entries at entry
+    int* si = xalloc((size_t)n, sizeof(int));
+    int* sm = xalloc((size_t)n, sizeof(int));
+    int sp = 0;
+    sb[0] = 0; si[0] = 0; sm[0] = 0; sp = 1;
+    gvn_block(&g, 0);
+    while (sp) {
+        int b = sb[sp - 1];
+        if (si[sp - 1] < cstart[b + 1] - cstart[b]) {
+            int c = kids[cstart[b] + si[sp - 1]++];
+            sb[sp] = c; si[sp] = 0; sm[sp] = g.nent; sp++;
+            gvn_block(&g, c);
+            continue;
+        }
+        while (g.nent > sm[sp - 1]) { // leave the block: drop its entries
+            g.nent--;
+            g.head[g.log[g.nent]] = g.ent[g.head[g.log[g.nent]]].next;
+        }
+        sp--;
+    }
+    for (int b = 0; b < n; b++)
+        for (int i = 0; i < fn->blocks[b].nins; i++) {
+            IrIns* x = &fn->ins[fn->blocks[b].ins[i]];
+            for (int a = 0; a < x->nargs; a++) x->args[a] = vn_chase(&g, x->args[a]);
+        }
+    free(g.head); free(g.ent); free(g.log); free(g.repl);
+    free(rpo); free(idom); free(cstart); free(kids); free(fill); free(sb); free(si); free(sm);
 }
 
 // --- dead-code and control-flow cleanup -----------------------------------------------
@@ -612,5 +798,6 @@ static void cleanup(IrFunc* fn) {
 
 void ir_optimize(IrFunc* fn) {
     sccp(fn);
+    gvn(fn);
     cleanup(fn);
 }

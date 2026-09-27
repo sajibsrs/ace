@@ -258,6 +258,15 @@ These are baseline observations, not performance promises.
   result passes through each expansion's result temp; and a read-only scalar
   parameter copies an argument local the body could read in place.
   Each needs its gain measured.
+- **Loop-invariant hoisting** [new] — hoisting pure operations with invariant
+  operands to a loop preheader gained nothing over value numbering and made the
+  regex benchmark 5% to 10% slower: the backend fuses compares into branches,
+  pointer offsets into addressing, and `mul` with `add`, and has no live-range
+  splitting for a value held across a loop. Candidates: `div`, `rem`, `sqrt`,
+  and float chains only; loads in a loop with no store, call, or volatile
+  access (needs a design); and the array-base and float-constant hoisting the
+  address-work entry above measured, which is a register-allocation decision.
+  Each needs a benchmark that shows a gain first.
 - **Float constants from bit patterns** [new] — `bits.cast(u64(0x7FF0000000000000))`
   still builds the integer with `mov`/`movk` and moves it with `fmov`, and a
   const float initialized by an expression rather than a literal loads from

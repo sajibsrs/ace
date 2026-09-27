@@ -254,7 +254,7 @@ static int bad(IrFunc* fn, const char* fmt, int a, int b) {
 
 // Immediate dominators by the Cooper-Harvey-Kennedy iteration over a reverse
 // postorder; idom[b] = -1 for blocks unreachable from the entry.
-static int* dominators(IrFunc* fn, int** rpo_out, int* nrpo) {
+int* ir_dominators(IrFunc* fn, int** rpo_out, int* nrpo) {
     int n = fn->nblocks;
     int* order = malloc((size_t)n * sizeof(int));
     int* num = malloc((size_t)n * sizeof(int));   // reverse postorder index
@@ -308,7 +308,7 @@ static int* dominators(IrFunc* fn, int** rpo_out, int* nrpo) {
     return idom;
 }
 
-static int dominates(const int* idom, int a, int b) {
+int ir_dominates(const int* idom, int a, int b) {
     while (b != a && b != 0) b = idom[b];
     return b == a;
 }
@@ -351,7 +351,7 @@ int ir_verify(IrFunc* fn) {
         }
     }
     int* rpo = NULL, nrpo = 0;
-    int* idom = ok ? dominators(fn, &rpo, &nrpo) : NULL;
+    int* idom = ok ? ir_dominators(fn, &rpo, &nrpo) : NULL;
     if (ok && nrpo != fn->nblocks) ok = bad(fn, "%d blocks unreachable from the entry%s", fn->nblocks - nrpo, 0);
     for (int b = 0; b < fn->nblocks && ok; b++) {
         IrBlock* bb = &fn->blocks[b];
@@ -381,7 +381,7 @@ int ir_verify(IrFunc* fn) {
                 int db = fn->ins[u].block;
                 // a phi operand must be available at the end of its predecessor
                 int ub = v->op == IR_PHI ? bb->preds[a] : b;
-                int dom = db == ub ? (v->op == IR_PHI || pos[u] < i) : dominates(idom, db, ub);
+                int dom = db == ub ? (v->op == IR_PHI || pos[u] < i) : ir_dominates(idom, db, ub);
                 if (!dom) { ok = bad(fn, "%%%d uses %%%d where its definition does not dominate", id, u); break; }
             }
         }

@@ -349,6 +349,23 @@ current normative rules, and Git preserves patch-level detail.
   and regex benchmarks, and 4% to 10% across `bench/core` and `bench/std`;
   timings are unchanged within run-to-run noise (`bench/core` within 0.5%).
   `tests/ir/fold.ace` folds through locals, a loop phi, and a pruned arm.
+- Added global value numbering to pass 6 (IR migration step 4b, `src/opt.c`),
+  between constant propagation and cleanup. A walk of the dominator tree with a
+  scoped table replaces a pure operation equal to one in a dominating block
+  (commutative integer operands in either order, a constant by its value rather
+  than its id) and an identity (`x + 0`, `x - 0`, `x | x`, `x & x`, `x * 1`,
+  `x / 1`, a shift or rotation by 0, a pointer offset of 0, a cast to the same
+  type) by its operand; loads and calls are never numbered. `ir_dominators` and
+  `ir_dominates` are now shared from `ir.c`. Release `__text` shrinks 0.7% to
+  0.8% for the demos and package benchmarks and 0.7% to 1.2% across `bench/core`
+  and `bench/std`; three alternating rounds show `format-f64-shortest` 9%,
+  `pow-f64` 6%, `parse-f64` 5%, and `compare-64` 5% faster and nothing slower
+  beyond run-to-run noise. Loop-invariant code motion was built and dropped: it
+  gained nothing over numbering alone and made the regex benchmark 5% to 10%
+  slower, because the backend fuses compares into branches, pointer offsets
+  into addressing, and `mul` with `add`, and has no live-range splitting for
+  a value held across a loop. `tests/ir/numbering.ace` covers a repeat, a
+  commuted operand, and an identity.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic

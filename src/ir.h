@@ -194,6 +194,11 @@ void    ir_free(IrFunc* fn);
 // Pass 6 (release only, opt.c): constant propagation, then dead-code and
 // control-flow cleanup, in place.
 void    ir_optimize(IrFunc* fn);
+// Immediate dominators (Cooper-Harvey-Kennedy) over a reverse postorder, which
+// *rpo_out receives (malloc'd, *nrpo blocks); idom[0] = 0 and idom[b] = -1 for
+// a block unreachable from the entry. Both results are the caller's to free.
+int*    ir_dominators(IrFunc* fn, int** rpo_out, int* nrpo);
+int     ir_dominates(const int* idom, int a, int b); // a dominates reachable block b
 // Structural invariants; returns 0 and prints the first violation to stderr.
 int     ir_verify(IrFunc* fn);
 void    ir_print(IrFunc* fn, FILE* out);

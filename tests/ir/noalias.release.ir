@@ -30,18 +30,12 @@ b0:
     %3 = param u64 3
     %4 = param ptr 4
     %5 = param u64 5
-    %6 = const u64 0
-    %7 = padd ptr %0, %6 * 4
-    %8 = load i32 [%7]
-    %9 = const u64 0
-    %10 = padd ptr %2, %9 * 4
-    %11 = load i32 [%10]
-    %12 = add i32 %8, %11
-    %13 = const u64 0
-    %14 = padd ptr %4, %13 * 4
-    %15 = load i32 [%14]
-    %16 = add i32 %12, %15
-    ret %16
+    %6 = load i32 [%0]
+    %7 = load i32 [%2]
+    %8 = add i32 %6, %7
+    %9 = load i32 [%4]
+    %10 = add i32 %8, %9
+    ret %10
 }
 
 scale({ptr, u64}, i32): void {
@@ -49,11 +43,9 @@ b0:
     %0 = param ptr 0
     %1 = param u64 1
     %2 = param i32 2
-    %3 = const u64 0
-    %4 = padd ptr %0, %3 * 8
-    %5 = load i32 [%4]
-    %6 = mul i32 %5, %2
-    store [%4], %6
+    %3 = load i32 [%0]
+    %4 = mul i32 %3, %2
+    store [%0], %4
     ret
 }
 
@@ -81,72 +73,66 @@ b2: ; preds b1
     %17 = add i64 %9, %16
     jmp b1
 b3: ; preds b1
-    %19 = const u64 0
-    %20 = padd ptr %2, %19 * 1
-    %21 = const u64 8
+    %19 = const u64 8
+    %20 = const u64 8
+    %21 = padd ptr %2, %20 * 1
     %22 = const u64 8
-    %23 = padd ptr %2, %22 * 1
-    %24 = const u64 8
-    call blit(%20, %21, %23, %24)
-    %26 = load u8 [%2]
-    %27 = const u8 8
-    %28 = ne bool %26, %27
-    br %28, b4, b5
+    call blit(%2, %19, %21, %22)
+    %24 = load u8 [%2]
+    %25 = const u8 8
+    %26 = ne bool %24, %25
+    br %26, b4, b5
 b4: ; preds b3
-    %30 = const i64 1
-    ret %30
+    %28 = const i64 1
+    ret %28
 b5: ; preds b3
-    %32 = const i32 1
-    store [%1], %32
-    %34 = const i32 2
-    store [%1 + 4], %34
-    %36 = const i32 3
-    store [%1 + 8], %36
-    %38 = const i32 4
-    store [%1 + 12], %38
-    %40 = const i32 5
-    store [%1 + 16], %40
-    %42 = const i32 6
-    store [%1 + 20], %42
-    %44 = const u64 0
-    %45 = padd ptr %1, %44 * 4
-    %46 = const u64 2
-    %47 = const u64 2
-    %48 = padd ptr %1, %47 * 4
-    %49 = const u64 2
-    %50 = const u64 4
-    %51 = padd ptr %1, %50 * 4
-    %52 = const u64 2
-    %53 = call i32 mix(%45, %46, %48, %49, %51, %52)
-    %54 = const i32 9
-    %55 = ne bool %53, %54
-    br %55, b6, b7
+    %30 = const i32 1
+    store [%1], %30
+    %32 = const i32 2
+    store [%1 + 4], %32
+    %34 = const i32 3
+    store [%1 + 8], %34
+    %36 = const i32 4
+    store [%1 + 12], %36
+    %38 = const i32 5
+    store [%1 + 16], %38
+    %40 = const i32 6
+    store [%1 + 20], %40
+    %42 = const u64 2
+    %43 = const u64 2
+    %44 = padd ptr %1, %43 * 4
+    %45 = const u64 2
+    %46 = const u64 4
+    %47 = padd ptr %1, %46 * 4
+    %48 = const u64 2
+    %49 = call i32 mix(%1, %42, %44, %45, %47, %48)
+    %50 = const i32 9
+    %51 = ne bool %49, %50
+    br %51, b6, b7
 b6: ; preds b5
-    %57 = const i64 2
-    ret %57
+    %53 = const i64 2
+    ret %53
 b7: ; preds b5
-    %59 = const i32 1
-    %60 = const i32 2
-    store [%0], %59
-    store [%0 + 4], %60
-    %63 = const i32 3
-    %64 = const i32 4
-    store [%0 + 8], %63
-    store [%0 + 12], %64
-    %67 = const u64 0
-    %68 = padd ptr %0, %67 * 8
-    %69 = const u64 1
-    %70 = const i32 5
-    call scale(%68, %69, %70)
-    %72 = load i32 [%0]
-    %73 = const i32 5
-    %74 = ne bool %72, %73
-    br %74, b8, b9
+    %55 = const i32 1
+    %56 = const i32 2
+    store [%0], %55
+    store [%0 + 4], %56
+    %59 = const i32 3
+    %60 = const i32 4
+    store [%0 + 8], %59
+    store [%0 + 12], %60
+    %63 = const u64 1
+    %64 = const i32 5
+    call scale(%0, %63, %64)
+    %66 = load i32 [%0]
+    %67 = const i32 5
+    %68 = ne bool %66, %67
+    br %68, b8, b9
 b8: ; preds b7
-    %76 = const i64 3
-    ret %76
+    %70 = const i64 3
+    ret %70
 b9: ; preds b7
-    %78 = const i64 0
-    ret %78
+    %72 = const i64 0
+    ret %72
 }
 

@@ -32,9 +32,8 @@ b0:
     %8 = const u64 1
     %9 = add u64 %2, %8
     %10 = padd ptr %0, %9 * 1
-    %11 = padd ptr %0, %2 * 1
-    %12 = load u8 [%11]
-    store [%10], %12
+    %11 = load u8 [%3]
+    store [%10], %11
     ret
 }
 
@@ -42,9 +41,7 @@ first({ptr, u64}): ptr {
 b0:
     %0 = param ptr 0
     %1 = param u64 1
-    %2 = const u64 0
-    %3 = padd ptr %0, %2 * 1
-    ret %3
+    ret %0
 }
 
 names({ptr, u64}, u32): u64 {

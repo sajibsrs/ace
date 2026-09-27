@@ -1,0 +1,29 @@
+/* Release numbers equal pure operations: a repeat, a commuted operand, and a
+ * constant that lowering made afresh all match the first one that dominates
+ * them, and an identity such as x + 0 or x * 1 is its operand. Loads and calls
+ * are never matched. Debug keeps every operation where it was written. */
+
+scale(a: int, b: int, n: int): int {
+    total: int = 0
+    i: int = 0
+    for i < n {
+        total = total + a * b + (b * a) + i
+        i = i + 1
+    }
+    return total
+}
+
+repeat(a: int, b: int): int {
+    x: int = (a + b) << 2
+    if x > 10 {
+        return (b + a) << 2
+    }
+    return x + (a + 0) * 1
+}
+
+main(): int {
+    if scale(2, 3, 4) != 54 { return 1 }
+    if repeat(1, 2) != 12 { return 2 }
+    if repeat(1, 1) != 9 { return 3 }
+    return 0
+}

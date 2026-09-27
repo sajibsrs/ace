@@ -1145,9 +1145,8 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
        values, and each target maps leaves onto its ABI), and turning self
        tail recursion into a loop.
     6. Optimize (release only), in this order, each once: loop rotation, sparse
-       conditional constant propagation, global value numbering, loop-invariant
-       code motion, loop strength reduction, dead-code and control-flow
-       cleanup.
+       conditional constant propagation, global value numbering, loop strength
+       reduction, dead-code and control-flow cleanup.
     7. Select AArch64 instructions, including fused forms (integer `madd`,
        never float contraction).
     8. Leave SSA: phis become copies, with coalescing.
