@@ -413,6 +413,32 @@ current normative rules, and Git preserves patch-level detail.
   generics-heavy; every other measured benchmark, demo, and package binary is
   unchanged, and checksums match. `tests/ir-diff.sh` (100 random programs)
   shows no mismatches.
+- Closed six of the reachable gaps an audit of `lower.c`'s 91 `unsupported()`
+  bailouts found (IR migration step 5b), ahead of removing the AST-emitter
+  fallback: `l->inl` and `l->tgt` (inline-expansion and loop/label nesting)
+  now grow dynamically through the existing `grow()` helper instead of
+  bailing past a fixed 16/64 cap, matching the AST emitter's own unbounded
+  `inl` growth (each is indexed fresh through `l->inl`/`l->tgt` at every
+  step rather than through a cached pointer, since expanding a nested inline
+  call can reallocate the array mid-lowering); an inline call whose body
+  never returns no longer bails, since `enter()` already marks its join
+  block unreachable (`l->cur = -1`), the same idiom every other construct in
+  the file already relies on; `.len` on a non-place fixed-array expression
+  (for example a call result) evaluates the expression for its side effects
+  and returns the static count; every bare expression-statement of
+  aggregate type, not only `Error.name`/`.message`, now goes through
+  `value()` instead of the scalar-only `expr()`, since `N_EXPRSTMT` was the
+  one caller passing an aggregate through a function that can only return
+  one scalar id; and `StaticMap[bool]V` lookups use the same splitmix64
+  integer-hash path as any other non-float, non-pointer key. The `union
+  payload comparison` cap (over 64 bytes) turned out to be dead:
+  `union_supports_equality` (`sema.c`) permits `==`/`!=` on a union only
+  when every payload is a primitive, pointer, function, enum, bits,
+  contract, error, or nested union of those, each capped at 8 bytes, so the
+  comparison's byte-at-a-time loop can never actually see more than 64
+  bytes; the cap is removed anyway since the loop was already fully
+  general. `make test`, `make test-packages`, and `tests/ir-diff.sh` (300
+  random programs across three seeds) pass with no mismatches.
 - Lowered `for` over a string, slice, or array to IR (IR migration step 3g).
   The sequence's pointer and length (an array's address and fixed count) are
   read once at entry, the end is `padd ptr, len * size`, and a pointer runs to

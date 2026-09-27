@@ -84,14 +84,14 @@ typedef struct {
     int         cinc_head;
     int*        repl;      // value -> replacement + 1 (removed trivial phis)
     int         crepl;
-    Target      tgt[64];
-    int         ntgt;
+    Target*     tgt;
+    int         ntgt, ctgt;
     int         self_head; // release self tail recursion: the loop head block, or -1
     int         is_main;
     SType*      rtype;     // the function's result type, or NULL
     int         result;    // a result in memory: the RESULT address, else -1
-    Expansion   inl[16];   // inline calls being expanded, innermost last
-    int         ninl;
+    Expansion*  inl;       // inline calls being expanded, innermost last
+    int         ninl, cinl;
     Deferred*   defers;    // captured defers, source order
     int         ndefers, cdefers;
 } Lw;
@@ -1685,7 +1685,7 @@ static int expr(Lw* l, Node* x, int want) {
         }
         if (is_view(bt) && x->len == 3 && memcmp(x->str, "len", 3) == 0) return view_leaf(l, x->a, 1);
         if (bt && bt->kind == SK_ARRAY && x->len == 3 && memcmp(x->str, "len", 3) == 0) {
-            if (!is_place(x->a)) unsupported(l, "array length");
+            if (!is_place(x->a)) { Agg discard; value(l, x->a, node_ty(x->a), &discard); } // side effects only: the length is static
             return konst(l, type_in(l, x, want), bt->count);
         }
         if (!bt || (bt->kind != SK_PTR && bt->kind != SK_STRUCT)) unsupported(l, bt ? type_why(bt) : "field access");
@@ -2062,7 +2062,6 @@ static int payload_equal(Lw* l, SType* pt, int a, int b, int32_t off) {
         return cmp(l, IR_EQ, load(l, ft, a, off, 0), load(l, ft, b, off, 0));
     }
     uint32_t size = sema_size(pt);
-    if (size > 64) unsupported(l, "union payload comparison");
     int acc = konst(l, IT_BOOL, 1);
     for (uint32_t at = 0; at < size;) {
         uint32_t rem = size - at, w = rem >= 8 ? 8 : rem >= 4 ? 4 : rem >= 2 ? 2 : 1;
@@ -2276,7 +2275,7 @@ static Place staticmap_place(Lw* l, Node* x, SType* map) {
         value(l, x->b, map->base, &kv);
     } else {
         kt = need_type(l, map->base);
-        if (kt == IT_BOOL || kt == IT_PTR || ir_type_float(kt)) unsupported(l, "static map");
+        if (kt == IT_PTR || ir_type_float(kt)) unsupported(l, "static map"); // bool's 0/1 casts to u64 like any other integer key below
         k = expr(l, x->b, kt);
     }
     int idx = temp_var(l, IT_U64, konst(l, IT_U64, count));
@@ -2683,7 +2682,7 @@ static Target* target(Lw* l, Node* s, int is_continue) {
 }
 
 static void push_target(Lw* l, Node* s, int brk, int cont, int restart) {
-    if (l->ntgt == 64) unsupported(l, "nesting depth");
+    l->tgt = (Target*)grow(l->tgt, &l->ctgt, l->ntgt + 1, sizeof(Target));
     l->tgt[l->ntgt++] = (Target){ s->str, s->len, brk, cont, restart };
 }
 
@@ -2762,12 +2761,14 @@ static int by_address(Node* f, int i);
 // A return inside an expansion: the result to the expansion's variable, then
 // the join.
 static void inline_return(Lw* l, Node* s) {
-    Expansion* x = &l->inl[l->ninl - 1];
-    if (s->a && x->res >= 0) {
-        int v = expr(l, s->a, need_type(l, x->rt));
-        write_var(l, x->res, l->cur, v);
+    // indexes l->inl fresh at each step: expr() may recurse into another
+    // inline_call and grow (realloc) l->inl out from under a cached pointer
+    int i = l->ninl - 1;
+    if (s->a && l->inl[i].res >= 0) {
+        int v = expr(l, s->a, need_type(l, l->inl[i].rt));
+        write_var(l, l->inl[i].res, l->cur, v);
     }
-    jump(l, x->join);
+    jump(l, l->inl[i].join);
 }
 
 // A call to an inline function: its body copied in place. Each argument is
@@ -2782,7 +2783,6 @@ static int inline_call(Lw* l, Node* call) {
     if (f == l->f) unsupported(l, "recursive inline call");
     for (int i = 0; i < l->ninl; i++)
         if (l->inl[i].f == f) unsupported(l, "recursive inline call");
-    if (l->ninl == (int)(sizeof l->inl / sizeof l->inl[0])) unsupported(l, "nesting depth");
     Node* callee = call->a;
     Node* args[41];
     int n = 0;
@@ -2810,6 +2810,7 @@ static int inline_call(Lw* l, Node* call) {
     }
     int join = new_block(l);
     int res = rt ? var_new(l, NULL, need_type(l, rt), -1) : -1;
+    l->inl = (Expansion*)grow(l->inl, &l->cinl, l->ninl + 1, sizeof(Expansion));
     l->inl[l->ninl++] = (Expansion){ f, rt, join, res };
     block(l, body);
     if (l->cur >= 0) { // falling off the end: zero
@@ -2819,8 +2820,7 @@ static int inline_call(Lw* l, Node* call) {
     l->ninl--;
     seal(l, join);
     enter(l, join);
-    if (l->cur < 0) unsupported(l, "inline call that never returns");
-    return res >= 0 ? read_var(l, res, join) : -1;
+    return l->cur >= 0 && res >= 0 ? read_var(l, res, join) : -1;
 }
 
 // The body of a loop; continue reaches the returned block, current on
@@ -3218,9 +3218,12 @@ static void stmt(Lw* l, Node* s) {
     case N_ASSIGN:
         assign(l, s);
         return;
-    case N_EXPRSTMT:
-        expr(l, s->a, -1);
+    case N_EXPRSTMT: {
+        SType* t = node_ty(s->a);
+        if (is_agg(t)) { Agg discard; value(l, s->a, t, &discard); } // expr() returns one scalar id; an aggregate result needs value()'s leaves, here discarded
+        else expr(l, s->a, -1);
         return;
+    }
     case N_IF: {
         int t = new_block(l), join = new_block(l);
         int f = s->c ? new_block(l) : join;
@@ -3409,7 +3412,7 @@ IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, 
         ir_free(l.fn);
         ptrmap_free(&l.var_ix);
         ptrmap_free(&l.stored);
-        free(l.defers); free(l.vtype); free(l.home); free(l.defs.key); free(l.defs.val); free(l.inc); free(l.inc_head); free(l.repl);
+        free(l.defers); free(l.vtype); free(l.home); free(l.defs.key); free(l.defs.val); free(l.inc); free(l.inc_head); free(l.repl); free(l.tgt); free(l.inl);
         return NULL;
     }
     IrFunc* fn = l.fn;
@@ -3493,7 +3496,7 @@ IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, 
     if (mode == EMIT_RELEASE) ir_optimize(fn);
     ptrmap_free(&l.var_ix);
     ptrmap_free(&l.stored);
-    free(l.defers); free(l.vtype); free(l.home); free(l.defs.key); free(l.defs.val); free(l.inc); free(l.inc_head); free(l.repl);
+    free(l.defers); free(l.vtype); free(l.home); free(l.defs.key); free(l.defs.val); free(l.inc); free(l.inc_head); free(l.repl); free(l.tgt); free(l.inl);
     return fn;
 }
 
