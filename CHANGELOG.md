@@ -365,7 +365,13 @@ current normative rules, and Git preserves patch-level detail.
   slower, because the backend fuses compares into branches, pointer offsets
   into addressing, and `mul` with `add`, and has no live-range splitting for
   a value held across a loop. `tests/ir/numbering.ace` covers a repeat, a
-  commuted operand, and an identity.
+  commuted operand, and an identity. Loop strength reduction (replacing a
+  multiply of a linear induction variable by a constant, when the product is
+  reused so `madd` fusion cannot fold it into the surrounding add or
+  subtract) was also built and dropped: it produced byte-identical machine
+  code across every demo, `bench/core`, `bench/std`, and `bench/package`
+  benchmark, since the pattern it targets does not occur in real code here,
+  and cost every function a small compile-time scan for nothing.
 - Rotated loops at block layout instead of as an IR pass (IR migration step
   4c, `src/arm64.c`): a header that only tests (a two-way branch with one
   successor in the loop, one outside) and whose one back edge is a plain jump
@@ -439,6 +445,32 @@ current normative rules, and Git preserves patch-level detail.
   bytes; the cap is removed anyway since the loop was already fully
   general. `make test`, `make test-packages`, and `tests/ir-diff.sh` (300
   random programs across three seeds) pass with no mismatches.
+- Closed three more of the same audit's reachable gaps (IR migration step
+  5c): an exported function's function value, and a direct call to one from
+  IR-lowered code, now resolve through `link_name` (`src/lower.c`) to the
+  export's unmangled C-boundary symbol — the same symbol `emit.c`'s
+  `gen_addr` already targets — closing the `function value` and `exported
+  call` bails (an intrinsic's function value needed no change, since it
+  already fell through to the ordinary mangled symbol its own out-of-line
+  body is emitted under); a `for` loop's runtime (non-constant) step now
+  gets the same debug-mode positivity trap (`IR_CHECK`, "range step
+  violation") the AST emitter already has, since sema only rejects a
+  non-positive *constant* step at compile time; and contract method
+  dispatch (`s.area()` / `mut s.scale(...)`) lowers directly — a
+  null-guarded vtable-slot read at the method's declared position, then an
+  indirect call with the contract's data pointer as receiver, mirroring
+  `emit.c`'s mechanism exactly, and reaching `defer_capture` alongside the
+  existing concrete-method case. That last one is not yet reachable by any
+  real program: contract values have no representation in the IR's
+  aggregate-type layer (`is_agg`, `ir_leaves`), so a contract cannot yet be
+  bound to a parameter or local at all; general contract-value support is
+  separate, larger future work. The seventh audited item, `aggregate of
+  over 16 leaves` in `store_value`, still has no known repro after a second
+  audit against every `store_value` call site and 1,500 fuzzer-generated
+  programs; left in place, unlike the union-payload cap, for lack of a
+  proof of unreachability. `make test`, `make test-packages`, and
+  `tests/ir-diff.sh` (400 random programs across four seeds) pass with no
+  mismatches.
 - Lowered `for` over a string, slice, or array to IR (IR migration step 3g).
   The sequence's pointer and length (an array's address and fixed count) are
   read once at entry, the end is `padd ptr, len * size`, and a pointer runs to

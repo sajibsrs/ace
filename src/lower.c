@@ -558,10 +558,11 @@ static const char* arena_name(const char* s) {
     return p;
 }
 
-// The link symbol of a function: an extern's C name, else the mangled Ace name.
+// The link symbol of a function: an extern's or export's C name, else the
+// mangled Ace name.
 static const char* link_name(Sym* s, SType* ft) {
     char buf[512];
-    if (s->is_extern) {
+    if (s->is_extern || (s->decl && (s->decl->flags & F_EXPO))) {
         if (s->decl && s->decl->cname) snprintf(buf, sizeof buf, "_%s", s->decl->cname);
         else snprintf(buf, sizeof buf, "_%.*s", (int)s->len, s->name);
         return arena_name(buf);
@@ -1573,6 +1574,32 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
     }
     Args g;
     memset(&g, 0, sizeof g);
+    if (!s && callee->kind == N_FIELD_E) { // contract dispatch: s.area() / mut s.scale(2.0)
+        SType* ct = node_ty(callee->a);
+        if (ct && ct->kind == SK_CONTRACT) {
+            int midx = -1;
+            for (int i = 0; i < ct->decl->nkids; i++) {
+                Node* m = ct->decl->kids[i];
+                if (m->len == callee->len && memcmp(m->str, callee->str, callee->len) == 0) { midx = i; break; }
+            }
+            if (midx < 0) unsupported(l, "contract method");
+            if (!is_place(callee->a)) unsupported(l, "contract value must be in memory");
+            int addr = place_address(l, place(l, callee->a));
+            int vt = load(l, IT_PTR, addr, 0, 0);
+            int fn = load(l, IT_PTR, vt, midx * 8, access_check(l, vt)); // fn slot: vt checked here
+            int data = load(l, IT_PTR, addr, 8, 0);
+            arg_scalar(l, &g, data); // the receiver: always by address
+            for (int i = 0; i < x->nkids; i++) {
+                Node* a = x->kids[i];
+                call_arg(l, &g, a, node_ty(a->kind == N_MUTARG ? a->a : a), a->kind == N_MUTARG);
+            }
+            SType* rt = node_ty(x);
+            int id = emit(l, IR_CALLI, result_type(l, rt));
+            l->fn->ins[id].flags = (uint8_t)null_checked(l); // fn itself, at the call
+            ir_arg_add(l->fn, id, fn);
+            return call_finish(l, id, &g, rt, res, dst);
+        }
+    }
     if (s && s->kind == SYM_VAR) { // through a function value
         SType* ft = unwrap(s->type);
         if (!ft || ft->kind != SK_FUNC || x->nkids != ft->nparams) unsupported(l, "indirect call");
@@ -1595,7 +1622,6 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
     }
     if ((d->kind == N_FUNC && d->ival) || (d->flags & F_INTRINSIC)) unsupported(l, "compiler-backed call");
     if (d->flags & F_INLINE) return inline_call(l, x);
-    if (d->flags & F_EXPO) unsupported(l, "exported call");
     int first_var = call_args(l, x, s, &g);
     SType* ft = node_ty(callee);
     if (!ft || ft->kind != SK_FUNC) ft = s->type;
@@ -1603,9 +1629,10 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
     int id = emit(l, IR_CALL, result_type(l, rt));
     IrIns* c = &l->fn->ins[id];
     c->sym = s;
-    const char* mn = inst ? fn_value_mangle(s, callee) : s->is_extern ? NULL : fn_call_mangle(s, x);
+    int link = s->is_extern || (d->flags & F_EXPO);
+    const char* mn = inst ? fn_value_mangle(s, callee) : link ? NULL : fn_call_mangle(s, x);
     if (inst && !mn) unsupported(l, "generic call");
-    c->name = s->is_extern ? link_name(s, ft) : arena_name(mn);
+    c->name = link ? link_name(s, ft) : arena_name(mn);
     if (s->is_extern && (d->flags & F_VARARGS) && first_var >= 0) {
         c->flags |= IRF_VARARGS;
         c->aux = first_var;
@@ -1654,7 +1681,6 @@ static int expr(Lw* l, Node* x, int want) {
             return literal(l, t, init, neg);
         }
         if (s && s->kind == SYM_FUNC) { // a function value
-            if (s->decl && (s->decl->flags & (F_INTRINSIC | F_EXPO))) unsupported(l, "function value");
             if (s->is_generic || s->spec_args || (s->decl && s->decl->kind == N_FUNC && s->decl->c)) {
                 const char* mn = fn_value_mangle(s, x); // larger[int]
                 if (!mn) unsupported(l, "generic function value");
@@ -2857,7 +2883,6 @@ static void range_loop(Lw* l, Node* s) {
     int up = step_one && lk->op == IR_CONST &&
              (hk->op == IR_CONST ? (sig ? (int64_t)lk->imm <= (int64_t)hk->imm : lk->imm <= hk->imm)
                                  : !sig && lk->imm == 0);
-    if (!up && r->c && r->c->kind != N_INT && l->mode == EMIT_DEBUG) unsupported(l, "range step check");
     int cur = var_new(l, NULL, rt, -1);
     int cnt = up ? -1 : var_new(l, NULL, IT_U64, -1);
     int stp = up ? -1 : var_new(l, NULL, IT_U64, -1);
@@ -2867,6 +2892,15 @@ static void range_loop(Lw* l, Node* s) {
     } else {
         IrType wt = sig ? IT_I64 : IT_U64; // 64-bit endpoints, then u64 arithmetic
         int step = r->c ? expr(l, r->c, rt) : konst(l, rt, 1);
+        if (r->c && r->c->kind != N_INT && l->mode == EMIT_DEBUG) {
+            // sema rejects a non-positive constant step (range step must be
+            // positive); only a runtime-computed step needs checking here
+            int ok = sig ? emit2(l, IR_GT, IT_BOOL, step, konst(l, rt, 0))
+                         : emit2(l, IR_NE, IT_BOOL, step, konst(l, rt, 0));
+            int id = emit2(l, IR_CHECK, IT_VOID, ok, -1);
+            l->fn->ins[id].name = "range step violation";
+            l->fn->ins[id].at = r->c;
+        }
         int a = widen(l, lo, rt, wt), b = widen(l, hi, rt, wt);
         int ua = widen(l, a, wt, IT_U64), ub = widen(l, b, wt, IT_U64);
         int st = widen(l, widen(l, step, rt, wt), wt, IT_U64);
@@ -3176,10 +3210,11 @@ static void defer_capture(Lw* l, Node* s) {
     Sym* tgt = call->sym ? node_sym(call) : NULL;
     int instance = callee->kind == N_FIELD_E && tgt && tgt->kind == SYM_FUNC && !tgt->is_extern &&
                    !(call->flags & (F_METHOD | F_ASSOC));
-    if (callee->kind == N_FIELD_E && !tgt) unsupported(l, "contract method call");
+    SType* ct = callee->kind == N_FIELD_E ? node_ty(callee->a) : NULL;
+    int contract = callee->kind == N_FIELD_E && !tgt && ct && ct->kind == SK_CONTRACT;
     Node* sc = (Node*)arena_alloc(sizeof(Node));
     *sc = *call;
-    if (instance) {
+    if (instance || contract) {
         Node* sf = (Node*)arena_alloc(sizeof(Node));
         *sf = *callee;
         sf->a = defer_arg(l, callee->a, (call->flags & F_MUT) != 0, 1);
