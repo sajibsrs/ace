@@ -1,0 +1,19 @@
+// Static map lookups: an integer key hashed by splitmix64, a string key by FNV-1a, and a struct value.
+
+Pair: struct { left: u32, right: u32 }
+codes: StaticMap[i32]u64 = { -7: 91, 0: 5, 42: 1234 }
+words: StaticMap[string]u16 = { "ace": 9, "other": 20 }
+pairs: StaticMap[u8]Pair = { 1: { left = 4, right = 5 } }
+
+code(k: i32): u64 {
+    return codes[k]
+}
+
+word(s: string): u16 {
+    return words[s]
+}
+
+pair(k: u8): u32 {
+    p: Pair = pairs[k]
+    return p.left + p.right
+}

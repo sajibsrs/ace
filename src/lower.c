@@ -24,12 +24,12 @@
 // parameter of it arrives by address, as AAPCS64 passes it.
 //
 // A function that uses anything outside the covered subset is not lowered;
-// the AST emitter compiles it (migration steps 1 to 3g: scalar code, floats,
+// the AST emitter compiles it (migration steps 1 to 3h: scalar code, floats,
 // pointers, globals, calls, structs, tuples, arrays, Error values, and
 // strings, slices, and arrays with their indexing, slicing, and debug bounds
 // checks, inline calls, switch on a scalar, defer, tagged unions, the debug noalias checks, `continue` on a labeled block, `typeid`,
 // computed global constants, an Error's name and message, `panic`, and `for`
-// over a string, slice, or array).
+// over a string, slice, or array, and static map lookups).
 #include "ir.h"
 #include "backend.h"
 
@@ -2244,6 +2244,101 @@ static int bound(Lw* l, Node* x, Node* site, int nonneg) {
 
 enum { BP_LO_NONNEG = 1, BP_HI_NONNEG = 2, BP_ORDER = 4, BP_SOURCE = 8 }; // sema's slice proofs
 
+// The link symbol of one table (keys, values, or slots) of static map ms.
+static int map_table(Lw* l, Sym* ms, const char* table) {
+    int id = emit(l, IR_GLOBAL, IT_PTR);
+    IrIns* g = &l->fn->ins[id];
+    char buf[640];
+    g->sym = ms;
+    snprintf(buf, sizeof buf, "__ace$map$%.*s$%s", (int)ms->len, ms->name, table);
+    g->name = arena_name(buf);
+    return id;
+}
+
+// Static map lookup x = table[key] (Carved: compile-time static lookup maps):
+// hash the key as emit.c laid the table out (integers by splitmix64, strings
+// by FNV-1a, both seeded), load the slot, and confirm the key exactly. The
+// entry index is count, the table's zero entry, unless the key is found; the
+// place is that entry's value.
+static Place staticmap_place(Lw* l, Node* x, SType* map) {
+    Sym* ms = node_sym(x->a);
+    uint64_t seed;
+    uint32_t mask;
+    if (!ms || ms->kind != SYM_VAR || !ms->is_global || !ms->init || !staticmap_hash(ms, &seed, &mask))
+        unsupported(l, "static map");
+    SType* rawkey = unwrap(map->base);
+    int strings = rawkey && rawkey->kind == SK_PRIM && rawkey->prim == P_STRING;
+    uint64_t count = ms->init->nkids;
+    Agg kv;
+    IrType kt = IT_U64;
+    int k = -1, h;
+    if (strings) {
+        value(l, x->b, map->base, &kv);
+    } else {
+        kt = need_type(l, map->base);
+        if (kt == IT_BOOL || kt == IT_PTR || ir_type_float(kt)) unsupported(l, "static map");
+        k = expr(l, x->b, kt);
+    }
+    int idx = temp_var(l, IT_U64, konst(l, IT_U64, count));
+    if (!strings) {
+        h = kt == IT_U64 || kt == IT_I64 ? k : emit2(l, IR_CAST, IT_U64, k, -1);
+        h = emit2(l, IR_ADD, IT_U64, h, konst(l, IT_U64, seed + UINT64_C(0x9e3779b97f4a7c15)));
+        h = emit2(l, IR_XOR, IT_U64, h, emit2(l, IR_SHR, IT_U64, h, konst(l, IT_U64, 30)));
+        h = emit2(l, IR_MUL, IT_U64, h, konst(l, IT_U64, UINT64_C(0xbf58476d1ce4e5b9)));
+        h = emit2(l, IR_XOR, IT_U64, h, emit2(l, IR_SHR, IT_U64, h, konst(l, IT_U64, 27)));
+        h = emit2(l, IR_MUL, IT_U64, h, konst(l, IT_U64, UINT64_C(0x94d049bb133111eb)));
+        h = emit2(l, IR_XOR, IT_U64, h, emit2(l, IR_SHR, IT_U64, h, konst(l, IT_U64, 31)));
+    } else {
+        int hv = temp_var(l, IT_U64, konst(l, IT_U64, UINT64_C(1469598103934665603) ^ seed));
+        int iv = temp_var(l, IT_U64, konst(l, IT_U64, 0));
+        int head = new_block(l), body = new_block(l), exit = new_block(l);
+        jump(l, head);
+        enter(l, head);
+        int i = read_var(l, iv, head);
+        h = read_var(l, hv, head);
+        terminate(l, IR_BR, cmp(l, IR_LT, i, kv.v[1]), body, exit);
+        seal(l, body);
+        enter(l, body);
+        int at = emit2(l, IR_PADD, IT_PTR, kv.v[0], i);
+        l->fn->ins[at].imm = 1;
+        int b = emit2(l, IR_CAST, IT_U64, load(l, IT_U8, at, 0, 0), -1);
+        write_var(l, hv, l->cur, emit2(l, IR_MUL, IT_U64, emit2(l, IR_XOR, IT_U64, h, b),
+                                       konst(l, IT_U64, UINT64_C(1099511628211))));
+        write_var(l, iv, l->cur, emit2(l, IR_ADD, IT_U64, i, konst(l, IT_U64, 1)));
+        jump(l, head);
+        seal(l, head);
+        seal(l, exit);
+        enter(l, exit);
+    }
+    h = emit2(l, IR_AND, IT_U64, h, konst(l, IT_U64, mask));
+    int sp = emit2(l, IR_PADD, IT_PTR, map_table(l, ms, "slots"), h);
+    l->fn->ins[sp].imm = 4;
+    int slot = load(l, IT_U32, sp, 0, 0);
+    int found = guard(l, cmp(l, IR_NE, slot, konst(l, IT_U32, 0)));
+    int ei = emit2(l, IR_SUB, IT_U64, emit2(l, IR_CAST, IT_U64, slot, -1), konst(l, IT_U64, 1));
+    uint32_t ksz = strings ? 16 : sema_size(map->base);
+    int ep = emit2(l, IR_PADD, IT_PTR, map_table(l, ms, "keys"), ei);
+    l->fn->ins[ep].imm = ksz;
+    int same;
+    if (strings) {
+        int lenok = guard(l, cmp(l, IR_EQ, load(l, IT_U64, ep, 8, 0), kv.v[1]));
+        int r = rtcall(l, "__ace$mem_compare", load(l, IT_PTR, ep, 0, 0), kv.v[0], kv.v[1]);
+        same = guard(l, cmp(l, IR_EQ, r, konst(l, IT_I64, 0)));
+        write_var(l, idx, l->cur, ei);
+        guard_end(l, same);
+        guard_end(l, lenok);
+    } else {
+        same = guard(l, cmp(l, IR_EQ, load(l, kt, ep, 0, 0), k));
+        write_var(l, idx, l->cur, ei);
+        guard_end(l, same);
+    }
+    guard_end(l, found);
+    int vp = emit2(l, IR_PADD, IT_PTR, map_table(l, ms, "values"), read_var(l, idx, l->cur));
+    l->fn->ins[vp].imm = sema_size(map->ret);
+    Place p = { -1, vp, 0, 0, map->ret };
+    return p;
+}
+
 // Element x = s[i] of a string or slice: its descriptor, then i, then (debug)
 // 0 <= i < s.len unless sema proved it.
 static Place element(Lw* l, Node* x) {
@@ -2266,6 +2361,7 @@ static Place element(Lw* l, Node* x) {
         Place e = { -1, id, p.off, 0, st->base };
         return e;
     }
+    if (st && st->kind == SK_STATICMAP) return staticmap_place(l, x, st);
     if (!is_view(st)) unsupported(l, type_why(st));
     int ptr, len = -1;
     view_parts(l, x->a, &ptr, chk ? &len : NULL);

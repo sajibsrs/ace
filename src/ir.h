@@ -190,6 +190,8 @@ Node*   inline_target(Node* call, SType*** targs, int* ntargs);
 // symbols, so each expansion has locals of its own; a generic body is stamped
 // under targs first, and the copy keeps that stamp's types.
 void    inline_copy(Node* f, SType** targs, int ntargs, Node** bind, Node** body);
+// The seed and mask of static map s's perfect hash (emit.c); 0 when none was found.
+int     staticmap_hash(Sym* s, uint64_t* seed, uint32_t* mask);
 void    ir_free(IrFunc* fn);
 // Pass 6 (release only, opt.c): constant propagation, then dead-code and
 // control-flow cleanup, in place.

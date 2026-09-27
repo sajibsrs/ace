@@ -5312,6 +5312,7 @@ static EV gen_staticmap_lookup(Em* e, Node* x, SType* map) {
 
     if (!md->string_keys) {
         EV key = gen_expr(e, x->b);
+        widen_idx(e, x->b, xreg(key.idx)); // the table hashed the key sign- or zero-extended to 64 bits
         uint32_t keyoff = temp_slot(e, 8, 8);
         store_frame(e, xreg(key.idx), keyoff, 8);
         int h = tmp_int(e), q = tmp_int(e);
@@ -9695,8 +9696,16 @@ static StaticMapData* map_data(Em* e, Sym* s) {
     return NULL;
 }
 
-static void emit_staticmap_global(Em* e, Node* n, Sym* vs, SType* t) {
-    Node* lit = n->b;
+// A StaticMap's perfect hash, built once per map and shared by lowering (which
+// embeds seed and mask) and the data emitter (which writes the slot table).
+typedef struct { Sym* s; uint64_t seed; uint32_t size; uint32_t* slots; uint8_t ok; } MapPlan;
+static MapPlan* map_plans;
+static int nmap_plans, cmap_plans;
+
+static MapPlan* map_plan(Sym* vs) {
+    for (int i = 0; i < nmap_plans; i++) if (map_plans[i].s == vs) return &map_plans[i];
+    Node* lit = vs->init;
+    SType* t = vs->type;
     int count = lit ? lit->nkids : 0;
     SType* rawkey = unwrap(t->base);
     int strings = rawkey && rawkey->kind == SK_PRIM && rawkey->prim == P_STRING;
@@ -9704,10 +9713,10 @@ static void emit_staticmap_global(Em* e, Node* n, Sym* vs, SType* t) {
     while (size < (uint32_t)(count ? count * 2 : 1)) size <<= 1;
     uint64_t seed = 0;
     uint32_t* slots = NULL;
+    int ok = 0;
     for (;;) {
         slots = calloc(size, sizeof(uint32_t));
         if (!slots) oom();
-        int found = 0;
         for (seed = 0; seed < UINT64_C(1000000); seed++) {
             memset(slots, 0, (size_t)size * sizeof(uint32_t));
             int collision = 0;
@@ -9724,16 +9733,44 @@ static void emit_staticmap_global(Em* e, Node* n, Sym* vs, SType* t) {
                 if (slots[at]) { collision = 1; break; }
                 slots[at] = (uint32_t)i + 1;
             }
-            if (!collision) { found = 1; break; }
+            if (!collision) { ok = 1; break; }
         }
-        if (found) break;
+        if (ok) break;
         free(slots);
-        if (size >= (1u << 30)) {
-            em_err(e, n, "could not construct StaticMap perfect hash");
-            return;
-        }
+        slots = NULL;
+        if (size >= (1u << 30)) break;
         size <<= 1;
     }
+    if (nmap_plans == cmap_plans) {
+        cmap_plans = cmap_plans ? cmap_plans * 2 : 8;
+        map_plans = realloc(map_plans, (size_t)cmap_plans * sizeof(*map_plans));
+        if (!map_plans) oom();
+    }
+    map_plans[nmap_plans] = (MapPlan){ vs, seed, size, slots, (uint8_t)ok };
+    return &map_plans[nmap_plans++];
+}
+
+int staticmap_hash(Sym* vs, uint64_t* seed, uint32_t* mask) {
+    MapPlan* p = map_plan(vs);
+    if (!p->ok) return 0;
+    *seed = p->seed;
+    *mask = p->size - 1;
+    return 1;
+}
+
+static void emit_staticmap_global(Em* e, Node* n, Sym* vs, SType* t) {
+    Node* lit = n->b;
+    int count = lit ? lit->nkids : 0;
+    SType* rawkey = unwrap(t->base);
+    int strings = rawkey && rawkey->kind == SK_PRIM && rawkey->prim == P_STRING;
+    MapPlan* plan = map_plan(vs);
+    if (!plan->ok) {
+        em_err(e, n, "could not construct StaticMap perfect hash");
+        return;
+    }
+    uint64_t seed = plan->seed;
+    uint32_t size = plan->size;
+    uint32_t* slots = plan->slots;
 
     Sec* d = &e->o.secs[SEC_CONST];
     char name[640];
@@ -9753,6 +9790,7 @@ static void emit_staticmap_global(Em* e, Node* n, Sym* vs, SType* t) {
     for (int i = 0; i < count; i++)
         if (!eval_const(e, lit->kids[i]->b, t->ret, &value_bytes, &value_rels))
             em_err(e, lit->kids[i]->b, "StaticMap value did not emit as a constant");
+    for (uint32_t i = 0; i < ty_size(t->ret); i++) buf_put8(&value_bytes, 0); // the miss entry, at index count
 
     while (d->data.len % ka) buf_put8(&d->data, 0);
     snprintf(name, sizeof name, "__ace$map$%.*s$keys", (int)vs->len, vs->name);
@@ -9779,6 +9817,7 @@ static void emit_staticmap_global(Em* e, Node* n, Sym* vs, SType* t) {
     ESym* slot_sym = sym_define(&e->o.syms, e->o.secs, name, (uint32_t)strlen(name), 0, d);
     for (uint32_t i = 0; i < size; i++) buf_put32(&d->data, slots[i]);
     free(slots);
+    plan->slots = NULL;
 
     if (e->nmaps == e->cmaps) {
         e->cmaps = e->cmaps ? e->cmaps * 2 : 8;

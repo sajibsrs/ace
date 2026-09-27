@@ -1,0 +1,94 @@
+// expect-exit: 0
+
+// Lookups in larger tables: signed narrow keys (sign-extended before the hash),
+// many slots so misses land on occupied ones, and string keys that collide by length.
+
+ints: StaticMap[i16]u32 = { 2102: 65131, -908: 18509, -63: 25392, 2656: 61345, 2341: 57228, 1342: 10467, -2763: 8828, 814: 23539, -960: 65473, 2316: 55861, -2576: 47889, -1716: 42485, -2073: 33450, 45: 28676, 842: 48663, -981: 30246, 119: 24858, 1454: 45427, -2165: 25798, 1701: 35340, -958: 15775, -2893: 27934, 2989: 11396, -1225: 64090, 343: 29242, -711: 5688, -1509: 43318, 190: 62819, -1693: 28014, -2411: 43804, -1864: 50121, 2062: 10515, 2058: 44375, 644: 53565, -1963: 52572, -1917: 23630, -2986: 12363, -2957: 45406, -1285: 47702, -1235: 50436 }
+strs: StaticMap[string]i64 = { "w0": -5, "w1w1": 8, "w2w2w2": 21, "w3": 34, "w4w4": 47, "w5w5w5": 60, "w6": 73, "w7w7": 86, "w8w8w8": 99, "w9": 112, "w10w10": 125, "w11w11w11": 138, "w12": 151, "w13w13": 164, "w14w14w14": 177, "w15": 190, "w16w16": 203, "w17w17w17": 216, "w18": 229, "w19w19": 242, "w20w20w20": 255, "w21": 268, "w22w22": 281, "w23w23w23": 294, "w24": 307, "w25w25": 320, "w26w26w26": 333, "w27": 346, "w28w28": 359, "w29w29w29": 372 }
+
+main(): int {
+    if ints[i16(2102)] != 65131 { return 1 }
+    if ints[i16(-908)] != 18509 { return 2 }
+    if ints[i16(-63)] != 25392 { return 3 }
+    if ints[i16(2656)] != 61345 { return 4 }
+    if ints[i16(2341)] != 57228 { return 5 }
+    if ints[i16(1342)] != 10467 { return 6 }
+    if ints[i16(-2763)] != 8828 { return 7 }
+    if ints[i16(814)] != 23539 { return 8 }
+    if ints[i16(-960)] != 65473 { return 9 }
+    if ints[i16(2316)] != 55861 { return 10 }
+    if ints[i16(-2576)] != 47889 { return 11 }
+    if ints[i16(-1716)] != 42485 { return 12 }
+    if ints[i16(-2073)] != 33450 { return 13 }
+    if ints[i16(45)] != 28676 { return 14 }
+    if ints[i16(842)] != 48663 { return 15 }
+    if ints[i16(-981)] != 30246 { return 16 }
+    if ints[i16(119)] != 24858 { return 17 }
+    if ints[i16(1454)] != 45427 { return 18 }
+    if ints[i16(-2165)] != 25798 { return 19 }
+    if ints[i16(1701)] != 35340 { return 20 }
+    if ints[i16(-958)] != 15775 { return 21 }
+    if ints[i16(-2893)] != 27934 { return 22 }
+    if ints[i16(2989)] != 11396 { return 23 }
+    if ints[i16(-1225)] != 64090 { return 24 }
+    if ints[i16(343)] != 29242 { return 25 }
+    if ints[i16(-711)] != 5688 { return 26 }
+    if ints[i16(-1509)] != 43318 { return 27 }
+    if ints[i16(190)] != 62819 { return 28 }
+    if ints[i16(-1693)] != 28014 { return 29 }
+    if ints[i16(-2411)] != 43804 { return 30 }
+    if ints[i16(-1864)] != 50121 { return 31 }
+    if ints[i16(2062)] != 10515 { return 32 }
+    if ints[i16(2058)] != 44375 { return 33 }
+    if ints[i16(644)] != 53565 { return 34 }
+    if ints[i16(-1963)] != 52572 { return 35 }
+    if ints[i16(-1917)] != 23630 { return 36 }
+    if ints[i16(-2986)] != 12363 { return 37 }
+    if ints[i16(-2957)] != 45406 { return 38 }
+    if ints[i16(-1285)] != 47702 { return 39 }
+    if ints[i16(-1235)] != 50436 { return 40 }
+    found: int = 0
+    i: i32 = -3100
+    for i < 3100 {
+        if ints[i16(i)] != 0 { found += 1 }
+        i += 1
+    }
+    if found != 40 { return 50 }
+    if strs["w0"] != -5 { return 60 }
+    if strs["w1w1"] != 8 { return 61 }
+    if strs["w2w2w2"] != 21 { return 62 }
+    if strs["w3"] != 34 { return 63 }
+    if strs["w4w4"] != 47 { return 64 }
+    if strs["w5w5w5"] != 60 { return 65 }
+    if strs["w6"] != 73 { return 66 }
+    if strs["w7w7"] != 86 { return 67 }
+    if strs["w8w8w8"] != 99 { return 68 }
+    if strs["w9"] != 112 { return 69 }
+    if strs["w10w10"] != 125 { return 70 }
+    if strs["w11w11w11"] != 138 { return 71 }
+    if strs["w12"] != 151 { return 72 }
+    if strs["w13w13"] != 164 { return 73 }
+    if strs["w14w14w14"] != 177 { return 74 }
+    if strs["w15"] != 190 { return 75 }
+    if strs["w16w16"] != 203 { return 76 }
+    if strs["w17w17w17"] != 216 { return 77 }
+    if strs["w18"] != 229 { return 78 }
+    if strs["w19w19"] != 242 { return 79 }
+    if strs["w20w20w20"] != 255 { return 80 }
+    if strs["w21"] != 268 { return 81 }
+    if strs["w22w22"] != 281 { return 82 }
+    if strs["w23w23w23"] != 294 { return 83 }
+    if strs["w24"] != 307 { return 84 }
+    if strs["w25w25"] != 320 { return 85 }
+    if strs["w26w26w26"] != 333 { return 86 }
+    if strs["w27"] != 346 { return 87 }
+    if strs["w28w28"] != 359 { return 88 }
+    if strs["w29w29w29"] != 372 { return 89 }
+    if strs["w"] != 0 { return 100 }
+    if strs["w0w"] != 0 { return 101 }
+    if strs["w1"] != 0 { return 102 }
+    if strs["zz"] != 0 { return 103 }
+    if strs[""] != 0 { return 104 }
+    if strs["w29w29w2"] != 0 { return 105 }
+    return 0
+}

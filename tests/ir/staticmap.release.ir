@@ -1,0 +1,165 @@
+code(i32): u64 {
+b0:
+    %0 = param i32 0
+    %1 = const u64 3
+    %2 = cast u64 %0
+    %3 = const u64 11400714819323198485
+    %4 = add u64 %2, %3
+    %5 = const u64 30
+    %6 = shr u64 %4, %5
+    %7 = xor u64 %4, %6
+    %8 = const u64 13787848793156543929
+    %9 = mul u64 %7, %8
+    %10 = const u64 27
+    %11 = shr u64 %9, %10
+    %12 = xor u64 %9, %11
+    %13 = const u64 10723151780598845931
+    %14 = mul u64 %12, %13
+    %15 = const u64 31
+    %16 = shr u64 %14, %15
+    %17 = xor u64 %14, %16
+    %18 = const u64 7
+    %19 = and u64 %17, %18
+    %20 = global ptr codes
+    %21 = padd ptr %20, %19 * 4
+    %22 = load u32 [%21]
+    %23 = const u32 0
+    %24 = ne bool %22, %23
+    br %24, b1, b2
+b1: ; preds b0
+    %26 = cast u64 %22
+    %27 = const u64 1
+    %28 = sub u64 %26, %27
+    %29 = global ptr codes
+    %30 = padd ptr %29, %28 * 4
+    %31 = load i32 [%30]
+    %32 = eq bool %31, %0
+    br %32, b3, b4
+b2: ; preds b0, b4
+    %34 = phi u64 [%1, b0], [%40, b4]
+    %35 = global ptr codes
+    %36 = padd ptr %35, %34 * 8
+    %37 = load u64 [%36]
+    ret %37
+b3: ; preds b1
+    jmp b4
+b4: ; preds b1, b3
+    %40 = phi u64 [%1, b1], [%28, b3]
+    jmp b2
+}
+
+word({ptr, u64}): u16 {
+b0:
+    %0 = param ptr 0
+    %1 = param u64 1
+    %2 = const u64 2
+    %3 = const u64 1469598103934665603
+    %4 = const u64 0
+    jmp b1
+b1: ; preds b0, b2
+    %6 = phi u64 [%4, b0], [%17, b2]
+    %7 = phi u64 [%3, b0], [%15, b2]
+    %8 = lt bool %6, %1
+    br %8, b2, b3
+b2: ; preds b1
+    %10 = padd ptr %0, %6 * 1
+    %11 = load u8 [%10]
+    %12 = cast u64 %11
+    %13 = xor u64 %7, %12
+    %14 = const u64 1099511628211
+    %15 = mul u64 %13, %14
+    %16 = const u64 1
+    %17 = add u64 %6, %16
+    jmp b1
+b3: ; preds b1
+    %19 = const u64 3
+    %20 = and u64 %7, %19
+    %21 = global ptr words
+    %22 = padd ptr %21, %20 * 4
+    %23 = load u32 [%22]
+    %24 = const u32 0
+    %25 = ne bool %23, %24
+    br %25, b4, b5
+b4: ; preds b3
+    %27 = cast u64 %23
+    %28 = const u64 1
+    %29 = sub u64 %27, %28
+    %30 = global ptr words
+    %31 = padd ptr %30, %29 * 16
+    %32 = load u64 [%31 + 8]
+    %33 = eq bool %32, %1
+    br %33, b6, b7
+b5: ; preds b3, b7
+    %35 = phi u64 [%2, b3], [%45, b7]
+    %36 = global ptr words
+    %37 = padd ptr %36, %35 * 2
+    %38 = load u16 [%37]
+    ret %38
+b6: ; preds b4
+    %40 = load ptr [%31]
+    %41 = rtcall i64 @__ace$mem_compare(%40, %0, %1)
+    %42 = const i64 0
+    %43 = eq bool %41, %42
+    br %43, b8, b9
+b7: ; preds b4, b9
+    %45 = phi u64 [%2, b4], [%48, b9]
+    jmp b5
+b8: ; preds b6
+    jmp b9
+b9: ; preds b6, b8
+    %48 = phi u64 [%2, b6], [%29, b8]
+    jmp b7
+}
+
+pair(u8): u32 {
+b0:
+    %0 = param u8 0
+    %1 = const u64 1
+    %2 = cast u64 %0
+    %3 = const u64 11400714819323198485
+    %4 = add u64 %2, %3
+    %5 = const u64 30
+    %6 = shr u64 %4, %5
+    %7 = xor u64 %4, %6
+    %8 = const u64 13787848793156543929
+    %9 = mul u64 %7, %8
+    %10 = const u64 27
+    %11 = shr u64 %9, %10
+    %12 = xor u64 %9, %11
+    %13 = const u64 10723151780598845931
+    %14 = mul u64 %12, %13
+    %15 = const u64 31
+    %16 = shr u64 %14, %15
+    %17 = xor u64 %14, %16
+    %18 = const u64 1
+    %19 = and u64 %17, %18
+    %20 = global ptr pairs
+    %21 = padd ptr %20, %19 * 4
+    %22 = load u32 [%21]
+    %23 = const u32 0
+    %24 = ne bool %22, %23
+    br %24, b1, b2
+b1: ; preds b0
+    %26 = cast u64 %22
+    %27 = const u64 1
+    %28 = sub u64 %26, %27
+    %29 = global ptr pairs
+    %30 = padd ptr %29, %28 * 1
+    %31 = load u8 [%30]
+    %32 = eq bool %31, %0
+    br %32, b3, b4
+b2: ; preds b0, b4
+    %34 = phi u64 [%1, b0], [%42, b4]
+    %35 = global ptr pairs
+    %36 = padd ptr %35, %34 * 8
+    %37 = load u32 [%36]
+    %38 = load u32 [%36 + 4]
+    %39 = add u32 %37, %38
+    ret %39
+b3: ; preds b1
+    jmp b4
+b4: ; preds b1, b3
+    %42 = phi u64 [%1, b1], [%28, b3]
+    jmp b2
+}
+

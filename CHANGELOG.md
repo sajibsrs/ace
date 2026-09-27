@@ -383,6 +383,25 @@ current normative rules, and Git preserves patch-level detail.
   shift the layout). `tests/ir/forin.ace` covers each sequence kind, both
   binder forms, and `in mut`, `tests/ir/fallback.ace` keeps only the `asm`
   case, and `tests/ir-diff.sh` now generates for-in loops over its windows.
+- Lowered `static map` lookups to IR (IR migration step 3h). `table[key]` hashes
+  the key as the emitted table was laid out (an integer by splitmix64 over its
+  sign- or zero-extended `u64`, a string by an FNV-1a loop, both seeded), loads
+  the `u32` slot, and confirms the key exactly (a value compare, or length and
+  `mem_compare`); the seed and mask are constants, since the perfect hash is now
+  built once per map (`map_plan`, `staticmap_hash` in `src/emit.c`) and shared by
+  lowering and the data emitter, so a lookup no longer depends on emission order.
+  The `$values` array gains one zeroed entry at index `count`; a hit or miss
+  ends in one `u64` entry index (a phi), so the place is `values + idx * size`
+  and needs no stack temporary or copy. Lookups in a `static map` loop run about
+  20% faster than the AST emitter's (30M integer and 10M string lookups, 0.27 s
+  to 0.22 s). Nothing remains on the AST emitter but compiler-backed builtins.
+  The AST emitter's lookup hashed a narrow signed key without extending it to
+  64 bits (the table is laid out with it extended), so negative `i16` keys
+  missed (22 of 40 present ones); it now widens the key first.
+  `tests/emit/staticmap/large_tables.ace` covers signed narrow keys,
+  occupied-slot misses, and colliding string keys, and `asm_keys.ace` the AST
+  path, kept there by an `asm` statement.
+  `tests/ir/staticmap.ace` covers integer, string, and struct-valued lookups.
 - Implemented `@when` for top-level compile-time declaration filtering with a
   closed target/boolean expression language, plus host-defaulted `--target`;
   inactive declarations remain syntax-checked but never reach imports, semantic
