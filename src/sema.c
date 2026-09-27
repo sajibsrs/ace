@@ -2879,10 +2879,11 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                 else (void)check_lvalue(k, e->a, 1);
             }
         }
-        if (e->b) { SType* lo = expr_type(k, e->b);
-            if (!is_int(lo) && lo != T_UT_INT) ck_err(k, e->b, "slice bound must be an integer"); }
-        if (e->c) { SType* hi = expr_type(k, e->c);
-            if (!is_int(hi) && hi != T_UT_INT) ck_err(k, e->c, "slice bound must be an integer"); }
+        SType* lo = e->b ? expr_type(k, e->b) : NULL;
+        SType* hi = e->c ? expr_type(k, e->c) : NULL;
+        if ((lo && lo->kind == SK_ERR) || (hi && hi->kind == SK_ERR)) return T_ERR; // a pending call's poison
+        if (lo && !is_int(lo) && lo != T_UT_INT) ck_err(k, e->b, "slice bound must be an integer");
+        if (hi && !is_int(hi) && hi != T_UT_INT) ck_err(k, e->c, "slice bound must be an integer");
         check_slice_bounds(k, e, e->a, b);
         if (is_string) return b->is_mut || establish ? T_MUT_STRING : st_prim(P_STRING);
         SType* s = st_new(SK_SLICE);

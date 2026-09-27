@@ -2674,6 +2674,13 @@ current normative rules, and Git preserves patch-level detail.
 - The AArch64 bitmask-immediate encoder now builds its element-size prefix from
   an unsigned value; it shifted a negative `int`, which the sanitizer build
   reports on any compile that encodes a bitmask. Emitted objects are unchanged.
+- Fixed a slice bound whose call pends until end of file being rejected. A
+  call that cannot choose its overload before every declaration is known (an
+  untyped float argument, as in `s[0..width(1.0)]`) returns the silent
+  poison type until its body is re-checked, and the slice-bound check reported
+  that as `slice bound must be an integer`; a poisoned bound now makes the
+  slice poison too, as an index already did. `tests/ir-diff.sh` generated such
+  a bound (seed 7, program 72).
 
 ## Current frontier
 

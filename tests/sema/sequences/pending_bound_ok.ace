@@ -1,0 +1,16 @@
+/* ok: a slice bound whose call waits for end of file to choose its overload
+ * (an untyped float argument) is checked once the call resolves. */
+
+bytes: mut []u8
+text: string = "hello"
+
+width(x: f32): u64 {
+    return 2
+}
+
+main(): int {
+    a: []u8 = bytes[0..width(1.0)]
+    b: string = text[width(1.0)..]
+    c: string = text[0..u64(i32(width(0.5)))]
+    return int(a.len + b.len + c.len)
+}
