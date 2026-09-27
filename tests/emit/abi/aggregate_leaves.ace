@@ -1,9 +1,7 @@
-// Aggregates across the two backends: each shape passes through a function
-// the IR compiles (ir_*) and one the AST emitter compiles (ast_*, kept there by
-// a switch), in both directions. Shapes: whole words, words shared by small
-// fields, floating aggregates, over 16 bytes (by address and through a result
-// buffer), on the stack past the argument registers, nested, and a
-// (value, Error) tuple.
+// Aggregates as arguments and results, in both directions. Shapes: whole
+// words, words shared by small fields, floating aggregates, over 16 bytes (by
+// address and through a result buffer), on the stack past the argument
+// registers, nested, and a (value, Error) tuple.
 
 // expect-exit: 0
 
@@ -17,111 +15,45 @@ Outer: struct { inner: Shared, tail: i16 }
 
 Parse: error
 
-ir_words(v: Words): Words { return Words{a = v.a + 1, b = v.b * 2} }
-ir_shared(v: Shared): Shared { return Shared{a = v.a - 1, b = v.b + 1, c = !v.c, d = v.d * 3} }
-ir_split(v: Split): Split { return Split{a = v.a + 2, b = -v.b} }
-ir_hfa3(v: Hfa3): Hfa3 { return Hfa3{x = v.z, y = v.x, z = v.y} }
-ir_hfa4(v: Hfa4): Hfa4 { return Hfa4{a = v.d, b = v.c, c = v.b, d = v.a} }
-ir_big(v: Big): Big { return Big{a = v.a * 2, b = v.b + 7, c = v.c ^ 1, d = v.d / 2.0} }
-ir_outer(v: Outer): Outer { return Outer{inner = ir_shared(v.inner), tail = v.tail + 1} }
+words(v: Words): Words { return Words{a = v.a + 1, b = v.b * 2} }
+shared(v: Shared): Shared { return Shared{a = v.a - 1, b = v.b + 1, c = !v.c, d = v.d * 3} }
+split(v: Split): Split { return Split{a = v.a + 2, b = -v.b} }
+hfa3(v: Hfa3): Hfa3 { return Hfa3{x = v.z, y = v.x, z = v.y} }
+hfa4(v: Hfa4): Hfa4 { return Hfa4{a = v.d, b = v.c, c = v.b, d = v.a} }
+big(v: Big): Big { return Big{a = v.a * 2, b = v.b + 7, c = v.c ^ 1, d = v.d / 2.0} }
+outer(v: Outer): Outer { return Outer{inner = shared(v.inner), tail = v.tail + 1} }
 
-ir_parse(n: i64): (i64, Error) {
+parse(n: i64): (i64, Error) {
     if n < 0 { return 0, Parse(i32(-n)) }
     return n + 1, null
 }
 
 // Eight integer and eight float registers are taken: the aggregates go on the stack.
-ir_stacked(r0: i64, r1: i64, r2: i64, r3: i64, r4: i64, r5: i64, r6: i64, r7: i64,
+stacked(r0: i64, r1: i64, r2: i64, r3: i64, r4: i64, r5: i64, r6: i64, r7: i64,
            f0: f64, f1: f64, f2: f64, f3: f64, f4: f64, f5: f64, f6: f64, f7: f64,
            s: Shared, h: Hfa3, b: Big): i64 {
     return r0 + r7 + i64(f7) + i64(s.a) + i64(s.d) + i64(h.z) + b.a + i64(b.c)
 }
 
-ast_words(v: Words): Words {
-    switch v.a {
-        0 { return v }
-        default { return ir_words(v) }
-    }
-}
-
-ast_shared(v: Shared): Shared {
-    switch v.a {
-        0 { return v }
-        default { return ir_shared(v) }
-    }
-}
-
-ast_split(v: Split): Split {
-    switch v.b {
-        0 { return v }
-        default { return ir_split(v) }
-    }
-}
-
-ast_hfa3(v: Hfa3): Hfa3 {
-    switch int(v.x) {
-        0 { return v }
-        default { return ir_hfa3(v) }
-    }
-}
-
-ast_hfa4(v: Hfa4): Hfa4 {
-    switch int(v.a) {
-        0 { return v }
-        default { return ir_hfa4(v) }
-    }
-}
-
-ast_big(v: Big): Big {
-    switch v.a {
-        0 { return v }
-        default { return ir_big(v) }
-    }
-}
-
-ast_outer(v: Outer): Outer {
-    switch v.tail {
-        0 { return v }
-        default { return ir_outer(v) }
-    }
-}
-
-ast_parse(n: i64): (i64, Error) {
-    switch n {
-        0 { return 0, null }
-        default {
-            v: i64, err: Error = ir_parse(n)
-            return v, err
-        }
-    }
-}
-
-ast_stacked(s: Shared, h: Hfa3, b: Big): i64 {
-    switch s.a {
-        0 { return 0 }
-        default { return ir_stacked(1, 2, 3, 4, 5, 6, 7, 8, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, s, h, b) }
-    }
-}
-
 main(): int {
-    w: Words = ast_words(Words{a = 5, b = 6})
+    w: Words = words(Words{a = 5, b = 6})
     if w.a != 6 || w.b != 12 { return 1 }
-    s: Shared = ast_shared(Shared{a = 10, b = 200, c = true, d = -4})
+    s: Shared = shared(Shared{a = 10, b = 200, c = true, d = -4})
     if s.a != 9 || s.b != 201 || s.c || s.d != -12 { return 2 }
-    p: Split = ast_split(Split{a = 250, b = 9})
+    p: Split = split(Split{a = 250, b = 9})
     if p.a != 252 || p.b != -9 { return 3 }
-    h: Hfa3 = ast_hfa3(Hfa3{x = 1.5, y = 2.5, z = 3.5})
+    h: Hfa3 = hfa3(Hfa3{x = 1.5, y = 2.5, z = 3.5})
     if h.x != 3.5 || h.y != 1.5 || h.z != 2.5 { return 4 }
-    q: Hfa4 = ast_hfa4(Hfa4{a = 1.0, b = 2.0, c = 3.0, d = 4.0})
+    q: Hfa4 = hfa4(Hfa4{a = 1.0, b = 2.0, c = 3.0, d = 4.0})
     if q.a != 4.0 || q.b != 3.0 || q.c != 2.0 || q.d != 1.0 { return 5 }
-    b: Big = ast_big(Big{a = 21, b = 1, c = 6, d = 9.0})
+    b: Big = big(Big{a = 21, b = 1, c = 6, d = 9.0})
     if b.a != 42 || b.b != 8 || b.c != 7 || b.d != 4.5 { return 6 }
-    o: Outer = ast_outer(Outer{inner = Shared{a = 3, b = 4, c = false, d = 5}, tail = 7})
+    o: Outer = outer(Outer{inner = Shared{a = 3, b = 4, c = false, d = 5}, tail = 7})
     if o.inner.a != 2 || o.inner.b != 5 || !o.inner.c || o.inner.d != 15 || o.tail != 8 { return 7 }
-    n: i64, err: Error = ast_parse(-5)
+    n: i64, err: Error = parse(-5)
     if n != 0 || err == null || err.code != 5 || err != Parse(5) { return 8 }
-    n, err = ast_parse(41)
+    n, err = parse(41)
     if n != 42 || err != null { return 9 }
-    if ast_stacked(s, h, b) != 1 + 8 + 8 + 9 - 12 + 2 + 42 + 7 { return 10 }
+    if stacked(1, 2, 3, 4, 5, 6, 7, 8, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, s, h, b) != 1 + 8 + 8 + 9 - 12 + 2 + 42 + 7 { return 10 }
     return 0
 }

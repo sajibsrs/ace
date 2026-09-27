@@ -1,6 +1,6 @@
 /* Sequences #2: slicing reads the source descriptor once, then evaluates lo,
  * then hi. Bounds that record their order and replace the source prove both,
- * in a function the IR lowers and one a switch keeps on the AST emitter. */
+ * directly and after a switch has joined its arms. */
 
 // expect-exit: 0
 
@@ -18,11 +18,11 @@ hi(): int {
     return 4
 }
 
-lowered(): string {
+direct(): string {
     return text[lo()..hi()]
 }
 
-emitted(): string {
+after_switch(): string {
     k: int = 1
     switch k {
         0 { k = 2 }
@@ -32,11 +32,11 @@ emitted(): string {
 }
 
 main(): int {
-    a: string = lowered()
+    a: string = direct()
     if trace != 12 || a.len != 3 || a[0] != 98 || a[2] != 100 { return 1 }
     text = "abcdef"
     trace = 0
-    b: string = emitted()
+    b: string = after_switch()
     if trace != 12 || b.len != 3 || b[0] != 98 || b[2] != 100 { return 2 }
     return 0
 }
