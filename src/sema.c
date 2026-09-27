@@ -6562,10 +6562,10 @@ STypeInst* sema_insts(Node* generic_decl) {
     return generic_decl && generic_decl->c ? (STypeInst*)generic_decl->c->b : NULL;
 }
 
-void sema_stamp_body(Node* f, SType** args, int nargs) {
+SType* sema_stamp_body(Node* f, SType** args, int nargs) {
     Node* tp = f->c;
-    if (!tp || tp->nkids != nargs) return;
-    if (f->flags & F_SPECIALIZED) return; // no default body: nothing to stamp
+    if (!tp || tp->nkids != nargs) return NULL;
+    if (f->flags & F_SPECIALIZED) return NULL; // no default body: nothing to stamp
     Ck k = {0};
     k.d = &g_dummy_diag;
     k.final = 1; // after sema_check: every declaration is known
@@ -6576,6 +6576,7 @@ void sema_stamp_body(Node* f, SType** args, int nargs) {
     k.nsub = nargs;
     for (int i = 0; i < nargs; i++) k.tnames[i] = tp->kids[i]->str;
     check_func_body(&k, f); // re-annotate the body under substitution
+    return f->a ? build_type(&k, f->a) : NULL;
 }
 
 // --- inline functions (Functions & ABI #8) -------------------------------------

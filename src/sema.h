@@ -106,7 +106,7 @@ SType* sema_build_type(Node* t);
 
 // Re-check (and re-annotate) a generic function body under a type-argument
 // substitution, immediately before the emitter emits that stamp.
-void sema_stamp_body(Node* generic_fn, SType** args, int nargs);
+SType* sema_stamp_body(Node* generic_fn, SType** args, int nargs); // the substituted return type
 
 // The instantiation memo of a generic declaration (chain on its tparams node).
 STypeInst* sema_insts(Node* generic_decl);

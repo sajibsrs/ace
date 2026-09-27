@@ -564,6 +564,18 @@ current normative rules, and Git preserves patch-level detail.
   overwritten. `make test`, `make test-packages`, and `tests/ir-diff.sh`
   (200 random programs across two seeds) pass with no mismatches. Renamed
   `src/opt.c` to `src/optimizer.c`.
+- Lowered generic instantiations to IR (IR migration step 5, group 2). Every
+  instance whose return type named a type parameter bailed with "unsupported
+  type" and fell back to the AST emitter: `ir_lower` read the return type from
+  the template's symbol, still `T`, while stamping already re-binds the
+  parameters under substitution. `sema_stamp_body` now returns the return
+  type it builds under the same substitution, and `ir_lower` uses it. The 30
+  fallback instances across `tests/`, `bench/`, and `demo/` (among them
+  `Array.get` and `Map.get`) now lower; in release, `bench/std/collections.ace`
+  shrinks `Map.get` from 464 to 208 bytes and `Array.get` from 112 to 16, and
+  `map-get` and `array-get` run about 25% faster. `make test`,
+  `make test-packages`, and `tests/ir-diff.sh` (100 random programs) pass
+  with no mismatches.
 - Lowered `for` over a string, slice, or array to IR (IR migration step 3g).
   The sequence's pointer and length (an array's address and fixed count) are
   read once at entry, the end is `padd ptr, len * size`, and a pointer runs to

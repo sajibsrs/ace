@@ -3568,12 +3568,13 @@ static void finish(Lw* l) {
 
 IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, const char** why) {
     Sym* fs = node_sym(f);
+    SType* rt = fs && fs->type ? fs->type->ret : NULL;
     *why = NULL;
     if (f->ival || (f->flags & F_INTRINSIC)) *why = "compiler-backed";
     else if (!f->b) *why = "no body";
     else if (f->c && !(fs && fs->spec_args)) {
         if (!targs || f->c->nkids != ntargs) *why = "generic";
-        else sema_stamp_body(f, targs, ntargs); // as inline_copy does for an inlined generic call
+        else rt = sema_stamp_body(f, targs, ntargs); // as inline_copy does for an inlined generic call
     }
     else if (f->flags & F_EXPO) *why = "exported";
     if (*why) return NULL;
@@ -3595,7 +3596,6 @@ IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, 
         return NULL;
     }
     IrFunc* fn = l.fn;
-    SType* rt = fs && fs->type ? fs->type->ret : NULL;
     if (rt && unwrap(rt)->kind == SK_VOID) rt = NULL;
     l.rtype = rt;
     l.result = -1;

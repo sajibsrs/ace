@@ -252,12 +252,8 @@ These are baseline observations, not performance promises.
   whole caller: `str`'s integer-parse loop runs 20-25% slower when its
   accumulator is updated through a `mut` parameter than when the loop updates
   it after a check-only helper. Private inline functions keep an out-of-line
-  body even when no call or function value uses it. The AST emitter, which
-  still compiles generic templates (`Map.get`), keeps its own: `fold_preg` can
-  retarget a copy onto its own source, leaving `mov x, x`; a nested call's
-  result passes through each expansion's result temp; and a read-only scalar
-  parameter copies an argument local the body could read in place.
-  Each needs its gain measured.
+  body even when no call or function value uses it. Each needs its gain
+  measured.
 - **Loop-invariant hoisting** [new] — hoisting pure operations with invariant
   operands to a loop preheader gained nothing over value numbering and made the
   regex benchmark 5% to 10% slower: the backend fuses compares into branches,
@@ -337,16 +333,15 @@ foundations.
   (Generics #14). String keys hash a byte at a time; measure a word-at-a-time
   hash before adding one.
 - **`map` throughput** [new] — with `probe`, `hash`, `mix`, and `same`
-  `inline`, 16,384 cache-resident `int` keys take 46.5, 15.9, and 26.1 ns per
-  `set`, `get`, and `unset` in release builds, against 26.2, 5.7, and 12.9 ns
-  for the same algorithm, hash, and load factor in C `-O2`. Hand-inlined
-  source reaches 44.3, 10.2, and 20.5 ns; the rest of that gap is the
-  inline-expansion leftovers (section 2). String keys and `--debug` are
+  `inline`, 16,384 cache-resident `int` keys take 40.2, 10.5, and 22.3 ns per
+  `set`, `get`, and `unset` in release builds, against 30.7, 7.0, and 16.3 ns
+  for the same algorithm, hash, and load factor in C `-O2`; the gap is not yet
+  diagnosed. `unset` moves by about 30% with its code's alignment, so compare
+  its layout before crediting a change. String keys and `--debug` are
   unmeasured. `bench/std/run-collections.sh` tracks the gap.
-- **`Array` element access** [new] — `set` and `get` run 5.5x and 4x a scalar
-  C array, and `push` 3.7x the same growth policy in C
-  (`bench/std/run-collections.sh`); the cause is not yet diagnosed. Inspect
-  the expanded `set`, which re-slices `items` to `len`, before choosing a fix.
+- **`Array` element access** [new] — `get` runs 2.9x a scalar C array and
+  `push` 2.8x the same growth policy in C, while `set` is within 1.1x
+  (`bench/std/run-collections.sh`); the cause is not yet diagnosed.
 - **UTF-8 validation throughput** [new] — `utf8.valid` over 78 mixed bytes
   runs 6.3x a strict C validator with the same rules
   (`bench/std/run-string.sh`). It calls `decode`, which returns
