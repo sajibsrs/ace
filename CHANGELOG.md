@@ -607,6 +607,22 @@ current normative rules, and Git preserves patch-level detail.
   `tests/sema/functions/param_count_{ok,err}.ace` cover the new diagnostics, and
   `tests/ir-diff.sh` (100 random programs) lowers all 329 functions with no
   mismatches.
+- Removed the AST emitter (IR migration step 6b): every function compiles
+  through the IR backend, and one it does not cover is a compile error naming
+  the construct. `src/emit.c` keeps the object driver, global and constant
+  data, static maps, vtables and signings, mangling, and the runtime and byte
+  routines, dropping from 10,691 to 2,086 lines; `arm64_covers` is gone (sema
+  already caps alignment at 16, and extern globals do not exist), and
+  `inline_target`/`inline_copy` are private to `lower.c`. The asm checks the
+  emitter made move to sema at the same positions: the instruction set, an
+  `svc`/`brk` immediate, `x0`-`x30` binding names (clobbers now included),
+  and an `out` target that is a local or parameter. SPEC's migration entry
+  folds into Compiler #2, #4, and #6. Every non-debug section of the 816
+  objects built from `tests/`, `bench/`, `demo/`, and `pkg/` in both modes is
+  identical to step 6a's, so machine code and runtime are unchanged; the
+  compiler's `__TEXT` shrinks 28% with compile time unchanged.
+  `tests/sema/asm/instruction_err.ace` and `register_err.ace` cover the moved
+  diagnostics.
 - Lowered `for` over a string, slice, or array to IR (IR migration step 3g).
   The sequence's pointer and length (an array's address and fixed count) are
   read once at entry, the end is `padd ptr, len * size`, and a pointer runs to

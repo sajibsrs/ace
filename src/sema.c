@@ -4787,6 +4787,35 @@ static void check_switch_fallthrough(Ck* k, Node* s, SType* t) {
     }
 }
 
+// An asm binding's register: x0 through x30 (Inline Assembly #2).
+static int is_xreg_name(Node* r) {
+    if (r->kind != N_IDENT || r->len < 2 || r->len > 3 || r->str[0] != 'x') return 0;
+    int n = 0;
+    for (uint32_t i = 1; i < r->len; i++) {
+        if (r->str[i] < '0' || r->str[i] > '9') return 0;
+        n = n * 10 + (r->str[i] - '0');
+    }
+    return n <= 30;
+}
+
+// The v1 mini-assembler's instructions (Inline Assembly #1): nop, svc #imm,
+// brk #imm.
+static void check_asm_insn(Ck* k, Node* s) {
+    const char* p = s->str;
+    uint32_t n = s->len, i = 0;
+    while (i < n && (p[i] == ' ' || p[i] == '\t')) i++;
+    uint32_t start = i;
+    while (i < n && p[i] != ' ' && p[i] != '\t' && p[i] != '#') i++;
+    uint32_t wlen = i - start;
+    if (wlen == 3 && memcmp(p + start, "nop", 3) == 0) return;
+    if (wlen != 3 || (memcmp(p + start, "svc", 3) != 0 && memcmp(p + start, "brk", 3) != 0)) {
+        ck_err(k, s, "supported asm instructions: nop, svc #imm, brk #imm");
+        return;
+    }
+    while (i < n && (p[i] == ' ' || p[i] == '\t' || p[i] == '#')) i++;
+    if (i >= n || p[i] < '0' || p[i] > '9') ck_err(k, s, "svc/brk need an immediate");
+}
+
 static void check_stmt(Ck* k, Node* s) {
     switch (s->kind) {
     case N_VAR: {
@@ -5231,12 +5260,20 @@ static void check_stmt(Ck* k, Node* s) {
         return;
     }
     case N_ASM: {
+        check_asm_insn(k, s);
         for (int i = 0; i < s->nkids; i++) {
             Node* bnd = s->kids[i];
             int isclob = bnd->len == 8 && memcmp(bnd->str, "clobbers", 8) == 0;
-            if (isclob) continue; // register names only
-            for (int j = 0; j < bnd->nkids; j += 2) { // pairs: reg, value
+            int is_in = bnd->len == 2 && memcmp(bnd->str, "in", 2) == 0;
+            for (int j = 0; j < bnd->nkids; j += isclob ? 1 : 2) // clobbers: names; in/out: reg, value pairs
+                if (!is_xreg_name(bnd->kids[j])) ck_err(k, bnd->kids[j], "asm bindings name x registers (x0-x30)");
+            if (isclob) continue;
+            for (int j = 0; j + 1 < bnd->nkids; j += 2) {
                 Node* val = bnd->kids[j + 1];
+                if (!is_in && val->kind != N_IDENT) { // the parser takes a name or an integer
+                    ck_err(k, val, "asm 'out' needs a local or a parameter");
+                    continue;
+                }
                 if (val->kind == N_IDENT) {
                     Sym* vs = lookup_val(k, val->str, val->len);
                     if (!vs || vs->kind != SYM_VAR || vs->is_global) {

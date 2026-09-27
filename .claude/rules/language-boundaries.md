@@ -31,7 +31,7 @@ Follow `SPEC.md` for exact rules; do not propose or assume away these decisions:
 - Declarations use `name: type`; functions are keywordless with trailing
   returns; function values use signature types.
 - The compiler uses recursive descent, the fixed in-order passes of `SPEC.md`
-  Compiler #2, and direct machine-code emission (moving to a per-function IR);
+  Compiler #2, and direct machine-code emission from a per-function IR;
   no whole-program or cross-function analysis.
 - Safety is cheap local checking plus removable debug-build diagnostics.
 - There is no `goto`; use labeled blocks and loops. Iteration, switch, and

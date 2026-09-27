@@ -1,5 +1,5 @@
 // optimizer.c — pass 6, the release-only optimizer, over one function's IR
-// (SPEC.md Decision Queue, "Per-function SSA IR backend"). Each pass runs
+// (SPEC.md Compiler #2). Each pass runs
 // once, in the order the SPEC gives: sparse conditional constant propagation,
 // global value numbering, loop strength reduction, and dead-code and
 // control-flow cleanup.

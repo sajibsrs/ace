@@ -1,5 +1,5 @@
 // ir.h — the per-function SSA IR between the checker and the targets
-// (SPEC.md Decision Queue, "Per-function SSA IR backend"). lower.c builds it
+// (SPEC.md Compiler #2 and #4). lower.c builds it
 // from a checked function; the passes and each target consume it.
 #ifndef IR_H
 #define IR_H
@@ -208,19 +208,11 @@ int      ir_holds_union(SType* t); // a union in a struct, tuple, or array membe
 uint64_t ir_wrap(IrType t, uint64_t v);
 
 // Lower a checked function to IR, or return NULL and set *why when it uses
-// something the IR does not cover yet (the AST emitter compiles it instead).
+// something the IR does not cover (a compile error).
 // file is the program, whose error domains an Error's name and message search.
 // targs/ntargs are the instantiation's type arguments for a generic template
 // (f->c set, not itself a specialization); pass NULL/0 otherwise.
 IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, const char** why);
-// Inline expansion (Functions & ABI #8), shared with the AST emitter: the
-// inline function a direct call names, with the type arguments its body is
-// stamped under, or NULL.
-Node*   inline_target(Node* call, SType*** targs, int* ntargs);
-// f's parameters (bind, one per parameter) and body copied with fresh local
-// symbols, so each expansion has locals of its own; a generic body is stamped
-// under targs first, and the copy keeps that stamp's types.
-void    inline_copy(Node* f, SType** targs, int ntargs, Node** bind, Node** body);
 // The seed and mask of static map s's perfect hash (emit.c); 0 when none was found.
 int     staticmap_hash(Sym* s, uint64_t* seed, uint32_t* mask);
 void    ir_free(IrFunc* fn);

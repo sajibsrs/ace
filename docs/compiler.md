@@ -89,10 +89,9 @@ array whose element size is not a power of two, indexed by a loop counter,
 becomes a pointer `phi` started before the loop and stepped at its end, a branch on a constant becomes a `jmp` and its
 untaken arm disappears, and blocks left empty, unreachable, or with a single
 predecessor are removed or merged. Debug prints the lowered IR unchanged.
-A function the IR does not cover yet is listed with the first
-construct that kept it out; the AST emitter compiles such functions, and the
-IR's AArch64 backend compiles the rest; calls cross between the two backends
-freely under one ABI. An `asm` statement prints as one instruction, its
+A function the IR does not cover is listed with the first
+construct that kept it out, and compiling it is an error naming that
+construct. An `asm` statement prints as one instruction, its
 bindings' registers beside the values moved into them, the registers it
 reads out after `->`, and every register it reserves as a `clobbers` mask;
 each value it writes out is a `proj` of it. A binding of a local or parameter

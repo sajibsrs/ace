@@ -1,7 +1,7 @@
-// arm64.c — the AArch64 target of the IR backend (SPEC.md Decision Queue,
-// "Per-function SSA IR backend", passes 7-10): instruction selection, leaving
+// arm64.c — the AArch64 target of the IR backend (SPEC.md Compiler #2,
+// passes 7-10): instruction selection, leaving
 // SSA, linear-scan register allocation, the frame, and encoding into the
-// shared Obj, under the AST emitter's ABI (emit.c header).
+// shared Obj, under the platform ABI (emit.c header).
 //
 // Values: a 64-bit type lives in a whole x register. A narrower one lives in
 // the low 32 bits, extended to 32 by its signedness (the Apple PCS argument
@@ -2408,18 +2408,6 @@ static int emit_body(A64* a) {
             buf_patch32(a->t, site, w | ((uint32_t)d << 5));
         }
     }
-    return 1;
-}
-
-// Whether selection covers every instruction of fn; the AST emitter compiles
-// a function it does not.
-int arm64_covers(IrFunc* fn) {
-    for (int b = 0; b < fn->nblocks; b++)
-        for (int i = 0; i < fn->blocks[b].nins; i++) {
-            IrIns* x = &fn->ins[fn->blocks[b].ins[i]];
-            if (x->op == IR_SLOT && x->aux > 16) return 0; // over-aligned: sp is only 16-byte aligned
-            if (x->op == IR_GLOBAL && x->sym && x->sym->is_extern) return 0; // needs the GOT
-        }
     return 1;
 }
 

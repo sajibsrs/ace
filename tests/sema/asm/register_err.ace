@@ -1,0 +1,10 @@
+/* Every binding, clobbers included, names x0 through x30, and an out target
+   is a local or parameter, never an integer (Inline Assembly #2). */
+
+main(): int {
+    value: i64 = 1
+    asm "nop" { in: x31 = value }
+    asm "nop" { clobbers: q9 }
+    asm "nop" { out: x0 = 3 }
+    return 0
+}

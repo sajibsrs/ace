@@ -86,19 +86,24 @@ Concrete rules and syntax. The why behind every rule lives in PHILOSOPHY.md (clo
    2. Parse: one recursive-descent pass from tokens to an AST; inactive `@when` declarations are dropped here.
    3. Merge: each imported file is lexed and parsed the same way, renamed through one loop over its top-level declarations and one scoped reference walk, and merged into one unit in dependency order.
    4. Check: one in-order walk over the unit. At end of file: top-level checks (specialized generics, forward types, contract method sets), resolution of pending forward calls, a second check of only the bodies that made one, a cycle walk over `inline` functions only, and one definite-initialization walk.
-   5. Emit: per function, up to four planning scans of its body (inline expansion, loop registers, register promotion, parameter homes), then one emission walk; then globals, vtables, fixup patching, DWARF, and the Mach-O write.
+   5. Lower: one walk of each checked function into SSA (Braun et al., trivial phis removed), expanding `inline` calls, turning `defer` into control flow, making debug checks trapping instructions (checked integer arithmetic) or explicit branches, splitting every struct, tuple, string, and slice into its scalar leaves (SSA values, or loads and stores for one that lives in memory; the IR has no aggregate values, and each target maps leaves onto its ABI), and turning self tail recursion into a loop.
+   6. Optimize (release only), in this order, each once: sparse conditional constant propagation, global value numbering, loop strength reduction, dead-code and control-flow cleanup.
+   7. Select AArch64 instructions, including fused forms (integer `madd`, never float contraction).
+   8. Leave SSA: phis become copies, with coalescing.
+   9. Allocate registers: linear scan over one interval per value, aware of calls, rematerializing constants and stack-object addresses. Interval splitting is added only if measured spills in hot code call for it.
+   10. Lay out blocks (both modes: a header that only tests, with one back edge that is a plain jump, is laid out after its latch, so the loop ends in the test's own branch instead of a jump to the test) and encode; then globals, vtables, fixups, DWARF, and the Mach-O write.
 
-   A function body is walked by check once (twice after a forward call), by definite initialization once, and by emit up to five times. The per-function IR in the Decision Queue replaces pass 5.
+   Passes 5–6 are shared by every target; 7–10 are per target. Each works on one function at a time, with no whole-program or cross-function analysis; explicit `inline` is the only crossing. A function the IR does not cover is a compile error. A function body is walked by check once (twice after a forward call), by definite initialization once, and by lowering once. `--ir` prints the IR, as `--ast` prints the AST.
 3. Name mangling — internal symbols only; the C boundary is explicit and unmangled (see: C Interop).
-4. Code generation: direct machine-code emission, with no external assembler or backend. Emission currently walks the checked AST (tcc-style); the per-function IR in the Decision Queue replaces it. v1 target: AArch64 / Apple arm64 (reference machine is Apple Silicon); x86-64 is the second backend.
+4. Code generation: a per-function SSA IR (#2 passes 5–10), from which Ace writes machine code and objects itself, with no external assembler or backend. Rationale (PHILOSOPHY.md Cautions #1): emission straight from the AST needs every optimization written once per source shape and repeats each in a second backend; the compile-time cost ranks below performance, simplicity, and modularity. Files: `src/ir.c` (IR, verifier, printer), `src/lower.c`, `src/optimizer.c` (pass 6), `src/arm64.c` (selection, allocation, encoding), `src/emit.c` (object driver, data, runtime routines), `src/macho.c` (object writer). v1 target: AArch64 / Apple arm64 (reference machine is Apple Silicon); x86-64 is the second backend.
 5. Declaration-before-use is the rule. Forward and mutual calls, including method calls on a struct, are handled by fixups: emit a call to a placeholder, record the patch site, and patch the real address at definition. A second narrow fixup class permits an as-yet undeclared type name only when the complete path from the field to that name consists of one or more pointer levels (`*Later`, `**Later`), or is a bare slice exactly at the field/variant root (`[]Later`) — a slice's representation is a fixed pointer-plus-count pair whose size and alignment, like a pointer's, do not depend on its element type. The slice allowance does not extend through or past the slice: a slice reached via a preceding pointer (`*[]Later`) or nested inside another compound stays ordinary declaration-before-use, while a pointer reached via a preceding root slice (`[]*Later`) still forwards, since it's the same pointer fixup applying once the slice has already handed it a root-started path. The exact nominal type must be declared later in the same module, and any field access, method use, inline containment, array element, union payload, alias expansion, or other operation requiring its layout remains declaration-before-use. Unresolved type placeholders are errors at end of file. A function body that made a call resolved at end of file is checked once more after resolution, seeing only the declarations its first check saw apart from those calls, so their results are type-checked where used. No prototype or general pre-pass exists.
-6. Performance plan (v1, compile-time-cheap by design):
-   - Emission-time selection — the emitter picks fused forms where it already knows operand lifetimes: compare-and-branch, loads into their destination, frame-relative field access, direct use of promoted registers, add/sub/compare immediates, and results computed straight into a promoted destination. No separate pass over emitted code.
-   - Register promotion — before emitting a function, one linear pass over its body selects scalar locals whose address never escapes, weighted by use count × loop depth, and gives each integer-class one a live interval in emission order; locals whose intervals do not overlap share a register. An integer local whose interval crosses no clobbering call first uses caller-saved registers above its expressions' estimated temp need, which cost no save; the rest take callee-saved registers. Float locals take callee-saved registers for the whole body; float locals beyond the callee-saved set take caller-saved registers that nothing else reserves, stored and reloaded around every branch-with-link, so the cost falls on the calling paths; a function whose loop carries a call or a large aggregate keeps frame slots instead. Bounded per function; no global analysis.
-   - Self tail recursion — release builds lower `return f(args)` in the body of `f` itself to a branch back to `f`'s parameter reads, reusing its frame, when sharing that frame across levels is unobservable: no `defer` is pending, the parameters ride argument registers, every by-value parameter and every local is a scalar, a slice, or a `string`, and the function takes no address of its own storage; `main`, generic, exported, and inline-expanding functions keep their calls. Calls to other functions are never lowered, and debug builds keep every call. It is an optimization, not a guarantee: recursion that must not overflow is written as a loop.
-   - Read-only parameters are alias facts — loads through them may be hoisted and cached freely by the emitter.
-   - Inline expansion — only where the source asks for it (`inline`, Functions & ABI #8); the expansion's locals join the caller's register promotion.
-   - Vectorization path: `noalias` facts (Mutability #8) plus the `simd` stdlib module; auto-vectorization belongs only to a future release backend if ever added.
+6. Performance plan (v1):
+   - Passes rely only on facts a debug build checks, so a run that passes in debug computes the same result in release. They never reassociate or contract float operations, and debug checks keep their order. Three facts are stated but not yet checked, and each needs a debug check before a pass may use it: `noalias` on pointer parameters (Safety #7 checks slices only), non-overlap of read-only parameters (Functions & ABI #5), and memory written by inline assembly (Inline Assembly #5).
+   - Build modes: debug (the default) runs no pass 6 and keeps runtime checks; release runs pass 6 and has no checks. Locals are SSA values in both. Optimization and checks are two independent internal settings, so an optimized-and-checked mode can follow a concrete need (for example, fuzzing parsers of untrusted input). Executable tests run in both modes, and a differential check compiles random programs in both and requires identical output.
+   - Self tail recursion — release builds lower `return f(args)` in the body of `f` itself to a branch back to its entry, reusing its frame, when sharing that frame across levels is unobservable: no `defer` is pending and no local or by-value parameter of `f` lives in the frame; `main`, exported, and inline-expanding functions keep their calls. Calls to other functions are never lowered, and debug builds keep every call. It is an optimization, not a guarantee: recursion that must not overflow is written as a loop.
+   - Inline expansion — only where the source asks for it (`inline`, Functions & ABI #8).
+   - `asm` is one IR instruction: its "in" values as arguments, its "out" registers as projections, and its reserved registers (every binding and clobber) kept free of values live across it. It is never reordered or removed.
+   - Excluded: automatic inlining, auto-vectorization (explicit `std/simd`), and loop unrolling or instruction scheduling unless later measured. Vectorization path: `noalias` facts (Mutability #8) plus the `simd` stdlib module.
 7. The source entry point is `main(): int`; on Apple arm64 the platform consumes
    its low 32 bits as the process exit status.
 8. The compiler emits Mach-O objects and uses the system toolchain for executable
@@ -1127,72 +1132,7 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 
 ### Active
 
-- **Per-function SSA IR backend** (decided; migration pending). It replaces
-  Compiler #2 pass 5, Compiler #4's AST-walking emission, and #6's
-  emission-time plan. Rationale (PHILOSOPHY.md Cautions #1): emission from the
-  AST needs every optimization written once per source shape, leaves hot loops
-  2–3.6x scalar C `-O2`, and would repeat every case in a second backend; the
-  compile-time cost ranks below performance, simplicity, and modularity.
-  - Scope: one function at a time, with no whole-program or cross-function
-    analysis; explicit `inline` stays the only crossing. Ace still writes
-    machine code and objects itself.
-  - Passes after Compiler #2 passes 1–4, exactly:
-    5. Lower: one walk of each checked function into SSA (Braun et al.,
-       trivial phis removed), expanding `inline` calls, turning `defer` into
-       control flow, making debug checks trapping instructions (checked
-       integer arithmetic) or explicit branches, splitting every struct,
-       tuple, string, and slice into its scalar leaves (SSA values, or loads
-       and stores for one that lives in memory; the IR has no aggregate
-       values, and each target maps leaves onto its ABI), and turning self
-       tail recursion into a loop.
-    6. Optimize (release only), in this order, each once: sparse conditional
-       constant propagation, global value numbering, loop strength reduction,
-       dead-code and control-flow cleanup.
-    7. Select AArch64 instructions, including fused forms (integer `madd`,
-       never float contraction).
-    8. Leave SSA: phis become copies, with coalescing.
-    9. Allocate registers: linear scan over one interval per value, aware of
-       calls, rematerializing constants and stack-object addresses. Interval
-       splitting is added only if measured spills in hot code call for it.
-    10. Lay out blocks (both modes: a header that only tests, with one back
-        edge that is a plain jump, is laid out after its latch, so the loop
-        ends in the test's own branch instead of a jump to the test) and
-        encode; then globals, vtables, fixups, DWARF, and the Mach-O write as
-        today.
-
-    Passes 5–6 are shared by every target; 7–10 are per target.
-  - Passes rely only on facts a debug build checks, so a run that passes in
-    debug computes the same result in release. They never reassociate or
-    contract float operations, and debug checks keep their order. Three facts
-    are stated but not yet checked, and each needs a debug check before a pass
-    may use it: `noalias` on pointer parameters (Safety #7 checks slices
-    only), non-overlap of read-only parameters (Functions & ABI #5), and memory
-    written by inline assembly (Inline Assembly #5).
-  - Build modes: debug (the default) runs no pass 6 and keeps runtime checks;
-    release runs pass 6 and has no checks. Locals are SSA values in both.
-    Optimization and checks are two independent internal settings, so an
-    optimized-and-checked mode can follow a concrete need (for example,
-    fuzzing parsers of untrusted input). Executable tests run in both modes,
-    and a differential check compiles random programs in both and requires
-    identical output.
-  - `--ir` prints the IR, as `--ast` prints the AST.
-  - Excluded: automatic inlining, auto-vectorization (explicit `std/simd`),
-    and loop unrolling or instruction scheduling unless later measured.
-  - `asm` is one IR instruction: its "in" values as arguments, its "out"
-    registers as projections, and its reserved registers (every binding and
-    clobber) kept free of values live across it. It is never reordered or
-    removed.
-  - Migration: the new backend compiles each function it supports and the AST
-    emitter the rest, under one ABI into one object. Steps: (1) IR, selection,
-    and allocation for scalar integer code with its debug checks, measuring
-    compile time against the emission it replaces; (2) floats, aggregates, and
-    the full ABI; (3) tagged unions, `switch`, `defer`, and contract checks
-    and values; (4) pass 6 and the debug mode, with `bench/core`, `bench/std`, and
-    `bench/package` at parity or better; (5) remove the AST emitter and fold
-    this entry into Compiler #2, #4, and #6.
-  - Files: `src/ir.c` (IR, verifier, printer), `src/lower.c`, `src/optimizer.c`
-    (pass 6), `src/arm64.c` (selection, allocation, encoding), `src/macho.c`
-    (object writer).
+None.
 
 ### Trigger-gated
 

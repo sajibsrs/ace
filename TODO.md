@@ -129,7 +129,7 @@ manual baseline is deliberately narrow: across five 5,000,000-iteration bounded
 integer runs on the reference Apple-arm64 development machine, median times were
 48.44 ms for Ace debug, 45.25 ms for Ace release, 43.15 ms for C `-O0`, and
 31.16 ms for C `-O2`; every variant produced the same checksum. This suggests
-that current direct release emission is already near unoptimized C for that
+that release code was then already near unoptimized C for that
 workload, checked arithmetic has modest cost there, and optimization—not
 language machinery—is the visible gap to optimized C. The allocator benchmark
 separately confirms that checked registry bookkeeping is intentionally much
@@ -139,88 +139,6 @@ These are baseline observations, not performance promises.
 - **Read-only parameter load reuse** [queued] — exploit the existing parameter
   facts without adding global alias analysis. Keeping a string parameter's
   length in a register measured no parse gain even with registers free.
-- **Caller-saved promotion across calls** [new] — an integer local whose live
-  interval crosses a call still takes x19-x28, or its slot below
-  `PROMO_MIN_WEIGHT`; x9-x14 would need a save and reload around each call it
-  spans.
-- **Float promotion ignores live ranges** [new] — integer locals share
-  registers by live interval, but float locals still hold d8-d15 or d24-d31
-  for the whole body (`promo_take` ranks them by use-count weight alone), so
-  two with disjoint live ranges can never share one. In a function that already
-  saturates its float registers this inverts the usual advice: naming a
-  repeated subexpression in `pow` is bit-identical and saves five
-  instructions, yet costs 5% throughput and 15% dependent-chain latency,
-  because the new name evicts a hotter value for the whole body even when it
-  is live for four instructions at the end. The same accounting makes
-  recomputing a cheap register-only expression, and nesting a single-use value
-  rather than naming it, the idioms that win in `std/math`. `pow` saturates
-  its sixteen float registers but loses only two candidates, both at the
-  minimum weight. Candidate: extend the integer intervals to the float
-  classes.
-- **Stores through a by-reference pointer copy it first** [new] — a promoted
-  pointer is copied into the address temp (`mov x0, x14` then
-  `str x1, [x0]`), and the peephole folds only a load that consumes it.
-  Candidate: address a scalar store through the pointer register directly.
-  Removing copies alone saved no time before, so measure first.
-- **Large read-only parameters reload their address** [new] — a read-only
-  parameter over 16 bytes (not an HFA) also arrives by address but keeps it in
-  a slot. Candidate: make it a by-reference promotion candidate like `mut`
-  parameters and receivers.
-- **Counted range loops** [new] — a range whose direction or step is not
-  known at compile time (a signed `0 .. n`, a descending or explicit step)
-  stores its bounds and step to frame slots, branches on direction, and
-  divides for its trip count: about 27 setup instructions. Candidates, each
-  measured on its own: compute the bounds and step in registers with no
-  division for a step of one; then let a value binder the body never assigns
-  share the cursor register (one copy per iteration).
-- **An unused loop binder is stored every iteration** [new] — `for i: usize
-  in 0 .. n` whose body never reads `i` still gives `i` a slot and stores the
-  cursor to it each iteration. Skipping the store measured slower on the
-  `calls` bench (`struct-16` 2.62 to 2.77 ns, `struct-hfa` 4.42 to 4.69 ns) at
-  every placement, because the loop around the call moves the struct out of
-  and back into the argument registers (see `bench/README.md`). Revisit it
-  once that loop keeps the struct in the argument registers.
-- **Wrapper calls cost a float spill** [new] — since promoted floats reach
-  `d24-d31`, which are caller-saved, every branch-with-link stores and reloads
-  them. A one-line dispatcher between two callers and two callees is therefore
-  not free: deleting `math`'s `reduce` was worth 28% of `sin`. Candidate: spill
-  only the promoted registers a call actually crosses, which needs the same
-  per-call liveness; until then, prefer folding a thin wrapper into its callers
-  in hot code.
-- **Call and tuple-return plumbing** [new] — incoming aggregate parameters
-  other than the read-only, leaf-read HFA and 8-byte-integer-leaf struct
-  parameters of a call-free function (a parameter in a function with calls, a
-  packed or mixed-class struct, a tuple) are spilled to slots and reloaded per
-  use, and an aggregate
-  argument that is not a plain frame-resident local or a small struct local
-  in registers (a global, an rvalue, a member behind a pointer) or that
-  overflows the argument registers still travels through an address temp. A returned literal or tuple with packed
-  sub-8-byte fields, a `(f64, bool)` tuple, or a call in a leaf is still built
-  in a frame temp and reloaded.
-  A returned struct whose size is not a multiple of 8, a tuple with a
-  non-8-byte member, a call assigned to a non-local destination (a pointer
-  target, an index, a global), and `q, r = f()` into existing variables still
-  stage the result in a temp and copy it. `bool` locals and a string
-  parameter's pointer and length stay in stack slots inside loops.
-  `bench/core/calls.ace` measures it: the by-value 8- and 16-byte structs, the
-  three-`f64` aggregate, and the tuple return run 1.0x to 2.35x noinline C
-  `-O2`. `vec_add` is now three `fadd`s on its argument registers, so the
-  `struct-hfa` gap sits in the caller, which moves `acc` and `step` between
-  d8-d15 and d0-d5 around every call where C leaves them in the argument
-  registers. Float `fmov` between registers costs about 1 ns on a
-  loop-carried chain, so a promotion scheme that adds moves there loses most
-  of its gain. Integer struct leaves are still copied to x14 down; reading
-  them in place measured 0.04 ns on `struct-16`, and dropping a leaf's frame
-  measured nothing on `call-1` or `struct-hfa` (`bench/README.md`).
-- **Remaining immediate and destination forms** [new] — declarations with an
-  initializer still compute through a temp, and a constant on the left of a
-  compare or in the middle of a chain still takes a register. Float compares
-  still copy promoted operands into temps; comparing the promoted registers in
-  place measured 1.63 to 1.32 ns per iteration (19%) on a loop with two
-  compares. `x = x * 0.5 + 1.0` runs 2.7 ns against C's 1.7 because C fuses it
-  into one `fmadd` (1.6 ns), not because of its constants. Ace does not contract
-  a multiply and add, since that changes rounding; `math.fma` is the explicit
-  spelling.
 - **Hot-loop codegen gap** [new] — game and graphics kernels over global arrays
   run 1.1x (dot product) to 8x (by-value `Vec3` calls) scalar C `-O2` with
   vectorization off, and 2x to 30x C's NEON auto-vectorized output, which Ace

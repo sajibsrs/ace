@@ -208,7 +208,6 @@ int      find_field(SType* t, const char* name, uint32_t len);
 
 // arm64.c: compile a lowered function into o's __text as symbol `name`,
 // global (visible to the linker) for main and a C export.
-int  arm64_covers(IrFunc* fn); // selection handles every instruction; else the AST emitter
 void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int global);
 
 #endif

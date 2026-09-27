@@ -23,13 +23,8 @@
 // aggregate of over 16 leaves is never split: it is copied in memory, and a
 // parameter of it arrives by address, as AAPCS64 passes it.
 //
-// A function that uses anything outside the covered subset is not lowered;
-// the AST emitter compiles it (migration steps 1 to 3h: scalar code, floats,
-// pointers, globals, calls, structs, tuples, arrays, Error values, and
-// strings, slices, and arrays with their indexing, slicing, and debug bounds
-// checks, inline calls, switch on a scalar, defer, tagged unions, the debug noalias checks, `continue` on a labeled block, `typeid`,
-// computed global constants, an Error's name and message, `panic`, and `for`
-// over a string, slice, or array, and static map lookups).
+// A function using anything the IR does not cover is not lowered, and
+// emit_object reports it as a compile error naming why.
 #include "ir.h"
 #include "backend.h"
 
@@ -176,7 +171,7 @@ static int is_contract(SType* t) {
 
 // A tagged union: an i32 tag, then its payload, always in memory. On its own
 // it is 1 or 2 word-sized leaves, as the ABI moves it, or when over 16 bytes an
-// address (Compiler #5, migration step 3).
+// address.
 static int is_union(SType* t) {
     t = unwrap(t);
     return t && t->kind == SK_UNION;
@@ -295,7 +290,7 @@ static int fconst(Lw* l, IrType type, double d) {
 }
 
 // A literal (or its negation) at type: an integer literal meeting a float
-// converts as the AST emitter does.
+// converts exactly.
 static int literal(Lw* l, IrType type, Node* x, int neg) {
     if (ir_type_float(type)) {
         double d = x->kind == N_FLOAT ? x->fval : (double)x->ival;
@@ -647,7 +642,6 @@ static Place place(Lw* l, Node* x) {
         Sym* s = node_sym(x);
         if (!s || s->kind != SYM_VAR) unsupported(l, "non-variable name");
         p.t = s->type;
-        if (s->is_extern) unsupported(l, "extern global");
         if (s->is_global) {
             p.addr = global_addr(l, s);
             return p;
@@ -1547,8 +1541,8 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
 // --- inline expansion (Functions & ABI #8) -------------------------------------------
 
 // The inline function a direct call names, with the type arguments its body
-// is stamped under.
-Node* inline_target(Node* call, SType*** targs, int* ntargs) {
+// is stamped under, or NULL.
+static Node* inline_target(Node* call, SType*** targs, int* ntargs) {
     Node* callee = call->a;
     *targs = NULL;
     *ntargs = 0;
@@ -1624,7 +1618,10 @@ static void copy_syms(Node* c, PtrMap* seen) {
     for (int i = 0; i < c->nkids; i++) copy_syms(c->kids[i], seen);
 }
 
-void inline_copy(Node* f, SType** targs, int ntargs, Node** bind, Node** body) {
+// f's parameters (bind, one per parameter) and body copied with fresh local
+// symbols, so each expansion has locals of its own; a generic body is stamped
+// under targs first, and the copy keeps that stamp's types.
+static void inline_copy(Node* f, SType** targs, int ntargs, Node** bind, Node** body) {
     Sym* fs = node_sym(f);
     if (f->c && !(fs && fs->spec_args)) sema_stamp_body(f, targs, ntargs);
     ptrmap_clear(&copy_node);
@@ -2655,7 +2652,7 @@ static void slice_leaves(Lw* l, Node* x, Agg* out) {
 // The name or message of an Error (Errors #9), when x reads one: the string
 // of the first domain (name) or entry (message) the Error's packed value
 // matches, else the empty string. The domains are the program's, searched in
-// declaration order, as the AST emitter does.
+// declaration order.
 static int error_description(Lw* l, Node* x, Agg* out) {
     SType* bt = unwrap(node_ty(x->a));
     int message = x->len == 7 && memcmp(x->str, "message", 7) == 0;
@@ -3524,8 +3521,7 @@ static void run_defers(Lw* l) {
 
 // --- inline assembly ---------------------------------------------------------------
 
-// A binding's register name ("x0".."x30"), or -1 (mirrors emit.c's
-// parse_xreg_name for the AST-emitted fallback's own diagnostic).
+// A binding's register number: sema accepted only "x0".."x30".
 static int asm_reg(Node* r) {
     if (r->kind != N_IDENT || r->len < 2 || r->str[0] != 'x') return -1;
     int n = 0;
@@ -3534,24 +3530,6 @@ static int asm_reg(Node* r) {
         n = n * 10 + (r->str[i] - '0');
     }
     return n <= 30 ? n : -1;
-}
-
-// Whether s is one of the v1 mini-assembler's supported instructions (Inline
-// Assembly #1, emit.c asm_insn): nop, svc #imm, brk #imm. Anything else keeps
-// the AST emitter, which reports the unsupported-instruction diagnostic.
-static int asm_recognized(Node* s) {
-    const char* p = s->str;
-    uint32_t n = s->len, i = 0;
-    while (i < n && (p[i] == ' ' || p[i] == '\t')) i++;
-    uint32_t start = i;
-    while (i < n && p[i] != ' ' && p[i] != '\t' && p[i] != '#') i++;
-    uint32_t wlen = i - start;
-    if (wlen == 3 && memcmp(p + start, "nop", 3) == 0) return 1;
-    if (wlen != 3 || (memcmp(p + start, "svc", 3) != 0 && memcmp(p + start, "brk", 3) != 0)) return 0;
-    while (i < n && (p[i] == ' ' || p[i] == '\t' || p[i] == '#')) i++;
-    int any = 0;
-    while (i < n && p[i] >= '0' && p[i] <= '9') { i++; any = 1; }
-    return any;
 }
 
 // The variable of the scalar local or parameter an asm binding names (sema
@@ -3564,13 +3542,11 @@ static int asm_local(Lw* l, Node* val, IrType* t) {
     return var_of(l, vs);
 }
 
-// asm "instruction text" { bindings } (Inline Assembly #1-3): lowered
-// directly when its instruction is recognized and every bound local is a
-// scalar local, as sema already checked it (register names, and that an
-// "in"/"out" value resolves to a scalar local); one living at a home is
+// asm "instruction text" { bindings } (Inline Assembly #1-3), as sema checked
+// it (the instruction, register names, and that an "in"/"out" value is an
+// integer literal or a scalar local): a bound local living at a home is
 // loaded before the instruction and stored after it.
 static void asm_stmt(Lw* l, Node* s) {
-    if (!asm_recognized(s)) unsupported(l, "asm instruction");
     int nin = 0, nout = 0;
     for (int i = 0; i < s->nkids; i++) {
         Node* bnd = s->kids[i];

@@ -1,0 +1,8 @@
+/* The v1 mini-assembler takes nop, svc #imm, and brk #imm (Inline Assembly
+   #1): another instruction, or svc/brk without an immediate, is rejected. */
+
+main(): int {
+    asm "mov x0, x1" { clobbers: x0 }
+    asm "svc" { clobbers: x16 }
+    return 0
+}
