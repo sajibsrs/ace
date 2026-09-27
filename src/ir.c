@@ -90,6 +90,7 @@ void ir_free(IrFunc* fn) {
     free(fn->blocks);
     free(fn->params);
     free(fn->rets);
+    free(fn->vtables);
     free(fn);
 }
 
@@ -118,7 +119,7 @@ int ir_type_of(SType* t) {
     t = unwrap(t);
     if (!t) return -1;
     if (t->kind == SK_PTR || t->kind == SK_FUNC) return IT_PTR;
-    if (t->kind == SK_ENUM) return ir_type_of(t->base);
+    if (t->kind == SK_ENUM || t->kind == SK_BITS) return ir_type_of(t->base); // bits: its backing integer
     if (t->kind == SK_ERROR) return IT_U64; // domain id above the code (Errors #5)
     if (t->kind != SK_PRIM) return -1;
     switch (t->prim) {

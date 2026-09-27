@@ -576,6 +576,37 @@ current normative rules, and Git preserves patch-level detail.
   `map-get` and `array-get` run about 25% faster. `make test`,
   `make test-packages`, and `tests/ir-diff.sh` (100 random programs) pass
   with no mismatches.
+- Lowered every remaining function to IR (IR migration step 6a), so no
+  function across `tests/`, `bench/`, `demo/`, and `pkg/` reaches the AST
+  emitter in either mode. A compiler-backed declaration's body is a
+  synthesized `return f(p0, ...)`; a C export is its global `_name` symbol and
+  is never turned into a loop; `assert`, `*T(addr)`, and `[]T(p, n)` lower
+  with their debug checks; multi-name declarations take untyped tuple
+  elements at their targets' types; `q.x` dereferences every level of
+  `*mut *T`; a contract compares with `null` by its vtable leaf; and a
+  `[]u8(s)` view conversion is one value, as `string(b)` was. An asm binding
+  of a local or parameter kept in memory is loaded before the instruction
+  and stored after it, and sema now rejects an aggregate or global binding
+  (Inline Assembly #2). A `bits` value is its backing integer (`ir_type_of`):
+  a field read is a shift and mask (or a shift up and arithmetic shift down
+  when signed), and a field write one read-modify-write of the whole value
+  through its containing place, after a debug range test; a literal ORs its
+  fields into zero. Construction over a generic concrete type records its
+  pair in the `IrFunc`, and `emit_object` defines the vtable through
+  `obj_vtable`, which with its embed thunks now takes only an `Obj*`, before
+  compiling the function. Lowering keeps a call's or signature's argument
+  leaves in 40-entry buffers that move to the arena past them, so there is no
+  argument-leaf cap; an outgoing area over 352 bytes allocates the frame in
+  two steps (the frame record and callee-saved registers first, at its base,
+  within `stp`/`ldp` reach), and a declaration or function type takes at
+  most 64 parameters, a method's receiver included (Functions & ABI #9).
+  Touched fixtures shrink 12-62%; `bench/std`
+  shrinks 848-1,008 bytes, with timings changed only through layout.
+  `tests/ir/asm_home.ace` replaces `tests/ir/fallback.ace`,
+  `tests/sema/asm/binding_err.ace` and
+  `tests/sema/functions/param_count_{ok,err}.ace` cover the new diagnostics, and
+  `tests/ir-diff.sh` (100 random programs) lowers all 329 functions with no
+  mismatches.
 - Lowered `for` over a string, slice, or array to IR (IR migration step 3g).
   The sequence's pointer and length (an array's address and fixed count) are
   read once at entry, the end is `padd ptr, len * size`, and a pointer runs to

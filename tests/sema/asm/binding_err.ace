@@ -1,0 +1,13 @@
+/* An asm binding names a scalar local or parameter (Inline Assembly #2):
+   never an aggregate, whose words no register holds, or a global. */
+
+Pair: struct { x: i64, y: i64 }
+
+count: i64 = 0
+
+main(): int {
+    pair: Pair = Pair { x = 1, y = 2 }
+    text: string = "a"
+    asm "nop" { in: x9 = pair, x10 = text, x11 = count }
+    return 0
+}

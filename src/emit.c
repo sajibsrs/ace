@@ -9943,51 +9943,58 @@ const char* vtable_name(SType* conc, SType* contract) {
     return out;
 }
 
-static ESym* emit_embed_thunk(Em* e, const char* vtname, int slot, const char* target, uint32_t off) {
+static void obj_err(Obj* o, Node* n, const char* msg) {
+    fprintf(stderr, "%s:%d:%d: error: %s\n", n && n->path ? n->path : o->d->path, n ? n->line : 0, n ? n->col : 0, msg);
+    o->d->errors++;
+}
+
+// The thunk slot of vtable vtname calls through: target with the receiver
+// advanced to the embedded field at off.
+static ESym* obj_embed_thunk(Obj* o, const char* vtname, int slot, const char* target, uint32_t off) {
     char name[1024];
     snprintf(name, sizeof name, "%s$embed$%d", vtname, slot);
-    ESym* prior = sym_intern(&e->o.syms, name, (uint32_t)strlen(name));
+    ESym* prior = sym_intern(&o->syms, name, (uint32_t)strlen(name));
     if (prior->type) return prior;
-    int skip = -1;
-    if (e->frame) {
-        skip = new_label(e);
-        br_(e, skip); // a generic vtable may be materialized inside a function
-    }
-    ESym* out = sym_define(&e->o.syms, e->o.secs, name, (uint32_t)strlen(name), 0, &e->o.secs[SEC_TEXT]);
-    ins(e, 0xA9BF7BFD); // stp x29, x30, [sp, #-16]!
+    Buf* t = obj_text(o);
+    ESym* out = sym_define(&o->syms, o->secs, name, (uint32_t)strlen(name), 0, &o->secs[SEC_TEXT]);
+    buf_put32(t, 0xA9BF7BFD); // stp x29, x30, [sp, #-16]!
     if (off <= 4095) {
-        ins(e, 0x91000000u | (off << 10)); // add x0, x0, #field-offset
+        buf_put32(t, 0x91000000u | (off << 10)); // add x0, x0, #field-offset
     } else {
-        load_imm(e, 1, 16, off);
-        ins(e, 0x8B000000u | (16u << 16)); // add x0, x0, x16
+        buf_put32(t, 0xD2800010u | ((off & 0xFFFF) << 5)); // movz x16, #lo
+        if (off >> 16) buf_put32(t, 0xF2A00010u | ((off >> 16) << 5)); // movk x16, #hi, lsl #16
+        buf_put32(t, 0x8B000000u | (16u << 16)); // add x0, x0, x16
     }
-    ins(e, 0x94000000u);
-    ESym* fn = sym_intern(&e->o.syms, target, (uint32_t)strlen(target));
-    fix_add(e, FK_BRANCH, (uint32_t)(text(e)->len - 4), fn);
-    ins(e, 0xA8C17BFD); // ldp x29, x30, [sp], #16
-    ins(e, 0xD65F03C0); // ret
-    if (skip >= 0) bind_label(e, skip);
+    obj_fixup(o, FK_BRANCH, (uint32_t)t->len, sym_intern(&o->syms, target, (uint32_t)strlen(target)));
+    buf_put32(t, 0x94000000u); // bl target
+    buf_put32(t, 0xA8C17BFD); // ldp x29, x30, [sp], #16
+    buf_put32(t, 0xD65F03C0); // ret
     return out;
 }
 
-static ESym* emit_vtable(Em* e, SType* conc, SType* contract, Node* conf) {
+// conc's vtable for contract under conformance conf, defined once per pair:
+// its method addresses in contract order in __const, and any embed thunk it
+// needs in __text at the cursor, so never inside a function's code.
+ESym* obj_vtable(Obj* o, SType* conc, SType* contract, Node* conf) {
     if (!conc || !contract || !conf) {
-        em_err(e, conf, "invalid contract conformance in codegen");
-        return sym_intern(&e->o.syms, "__ace$vt$invalid", 16);
+        obj_err(o, conf, "invalid contract conformance in codegen");
+        return sym_intern(&o->syms, "__ace$vt$invalid", 16);
     }
     const char* nm = vtable_name(conc, contract);
-    ESym* prior = sym_intern(&e->o.syms, nm, (uint32_t)strlen(nm));
+    ESym* prior = sym_intern(&o->syms, nm, (uint32_t)strlen(nm));
     if (prior->type) return prior;
-    Sec* c = &e->o.secs[SEC_CONST];
+    Sec* c = &o->secs[SEC_CONST];
     while (c->data.len % 8) buf_put8(&c->data, 0);
-    ESym* out = sym_define(&e->o.syms, e->o.secs, nm, (uint32_t)strlen(nm), 0, c);
+    ESym* out = sym_define(&o->syms, o->secs, nm, (uint32_t)strlen(nm), 0, c);
     for (int i = 0; i < contract->decl->nkids; i++) { // contract method order
         uint32_t off = (uint32_t)c->data.len;
         Node* ref = i < conf->nkids ? conf->kids[i] : NULL;
         Sym* fsym = ref ? node_sym(ref) : NULL;
         if (!fsym) {
             Node* m = contract->decl->kids[i];
-            em_err(e, conf, "signing misses method '%.*s' (sema gap)", (int)m->len, m->str);
+            char msg[256];
+            snprintf(msg, sizeof msg, "signing misses method '%.*s' (sema gap)", (int)m->len, m->str);
+            obj_err(o, conf, msg);
             buf_put64(&c->data, 0);
             continue;
         }
@@ -10015,13 +10022,33 @@ static ESym* emit_vtable(Em* e, SType* conc, SType* contract, Node* conf) {
         const char* fnm = fn_mangle(fsym->name, fsym->len, ft, fsym->decl, args, nargs, 0);
         ESym* fs;
         if (ref->a) {
-            fs = emit_embed_thunk(e, nm, i, fnm, field_off(conc, embed_fi));
+            fs = obj_embed_thunk(o, nm, i, fnm, field_off(conc, embed_fi));
         } else {
-            fs = sym_intern(&e->o.syms, fnm, (uint32_t)strlen(fnm));
+            fs = sym_intern(&o->syms, fnm, (uint32_t)strlen(fnm));
         }
         buf_put64(&c->data, 0);
         reloc_add(c, off, fs, 0, 3, 1, RM_UNSIGNED);
     }
+    return out;
+}
+
+// obj_vtable from inside a function's code, which branches around a new
+// vtable's embed thunks.
+static ESym* emit_vtable(Em* e, SType* conc, SType* contract, Node* conf) {
+    int thunks = 0;
+    for (int i = 0; conf && i < conf->nkids; i++) thunks |= conf->kids[i]->a != NULL;
+    if (thunks && conc && contract) {
+        const char* nm = vtable_name(conc, contract);
+        thunks = !sym_intern(&e->o.syms, nm, (uint32_t)strlen(nm))->type;
+    }
+    int skip = -1;
+    if (e->frame && thunks) {
+        skip = new_label(e);
+        br_(e, skip);
+    }
+    peep_barrier(e);
+    ESym* out = obj_vtable(&e->o, conc, contract, conf);
+    if (skip >= 0) bind_label(e, skip);
     return out;
 }
 
@@ -10585,6 +10612,8 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
                                                gs ? gs->len : n->len, inst->result,
                                                gs ? gs->decl : n, inst->args, nt, 0));
                     if (ir) {
+                        for (int k = 0; k < ir->nvtables; k++)
+                            obj_vtable(&e.o, ir->vtables[k].conc, ir->vtables[k].contract, ir->vtables[k].conf);
                         arm64_func(&e.o, ir, mn, (uint32_t)strlen(mn), 0);
                         ir_free(ir);
                     } else {
@@ -10606,10 +10635,13 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
             if (ir) {
                 Sym* fs = node_sym(n);
                 char mn[512];
-                snprintf(mn, sizeof mn, "%s", is_main ? "_main" : fn_mangle(fs->name, fs->len, fs->type, n,
-                                                                              fs->spec_args, fs->spec_args ? fs->spec_nargs : 0,
-                                                                              fs->spec_args != NULL));
-                arm64_func(&e.o, ir, mn, (uint32_t)strlen(mn), is_main);
+                if (is_main) snprintf(mn, sizeof mn, "_main");
+                else if (export_c) snprintf(mn, sizeof mn, "_%s", n->cname ? n->cname : n->str);
+                else snprintf(mn, sizeof mn, "%s", fn_mangle(fs->name, fs->len, fs->type, n, fs->spec_args,
+                                                         fs->spec_args ? fs->spec_nargs : 0, fs->spec_args != NULL));
+                for (int k = 0; k < ir->nvtables; k++)
+                    obj_vtable(&e.o, ir->vtables[k].conc, ir->vtables[k].contract, ir->vtables[k].conf);
+                arm64_func(&e.o, ir, mn, (uint32_t)strlen(mn), is_main || export_c);
                 if (is_main) emit_has_main = 1;
                 ir_free(ir);
             } else if (is_main) {

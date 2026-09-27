@@ -5,7 +5,7 @@
    register cycle, broken in place when the statement binds the scratch
    register, and a value live across the statement stays out of the
    registers it reserves. A reserved x19-x28 belongs to the caller, so the
-   function saves it at entry and restores it at exit, on either backend. */
+   function saves it at entry and restores it at exit. */
 
 // a arrives in x0 and b in x1; binding them crosswise swaps them, with x16
 // bound as well, so the cycle cannot park through it, and c live in x2
@@ -42,8 +42,8 @@ smash(x: i64) {
 
 pin(mut n: i64) {}
 
-// the same, with an address-taken binding that keeps it on the AST emitter
-smash_fallback(x: i64) {
+// the same, with an address-taken binding, read from its home
+smash_home(x: i64) {
     ap: i64 = x
     pin(mut ap)
     asm "nop" {
@@ -58,7 +58,7 @@ preserved(): i64 {
     total: i64 = 0
     for i: i64 in 0 .. 10 {
         smash(i + 100)
-        smash_fallback(i + 200)
+        smash_home(i + 200)
         total += a + i
         a += 1
     }

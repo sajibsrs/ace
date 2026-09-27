@@ -103,6 +103,10 @@ Token* lex(Source* s, Diag* d, size_t* count);
 // --- Arena (implemented in lexer.c; never freed, pointers are stable) --------
 char* arena_alloc(size_t n);
 
+// Functions & ABI #9: a parameter list, a method's receiver included, has at
+// most MAX_PARAMS entries.
+enum { MAX_PARAMS = 64 };
+
 // --- Pointer map (implemented in lexer.c) ------------------------------------
 // Open-addressing map from a non-NULL pointer to a nonzero uintptr_t, for
 // per-function lookups that would otherwise scan a list. A zeroed PtrMap is

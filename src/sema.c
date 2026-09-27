@@ -1249,6 +1249,11 @@ static Node* clone_expr(Node* n) {
 // --- type building ------------------------------------------------------------------
 
 static SType* build_type(Ck* k, Node* t);
+static void check_param_count(Ck* k, Node* at, int n, int receiver) {
+    if (n > MAX_PARAMS)
+        ck_err(k, at, "too many parameters: %d%s (max %d)", n, receiver ? ", the receiver included" : "", MAX_PARAMS);
+}
+
 static SType* build_type_ctx(Ck* k, Node* t, int path);
 enum { CABI_DIRECT, CABI_FIELD, CABI_POINTEE, CABI_POINTEE_FIELD };
 static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack);
@@ -1439,6 +1444,7 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
         return tu;
     }
     case N_FUNC_T: {
+        check_param_count(k, t, t->nkids, 0);
         SType* f = st_new(SK_FUNC);
         f->is_c_abi = (t->flags & F_CABI) != 0;
         f->nparams = t->nkids;
@@ -1770,6 +1776,7 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
                    (int)f->len, f->str);
         if (f->c) ck_err(k, f, "intrinsic declaration '%.*s' cannot be generic or specialized", (int)f->len, f->str);
     }
+    check_param_count(k, f, f->nkids, (f->flags & F_METHOD) != 0);
     SType* ft = build_func_type(k, f, NULL, 0);
     ft->is_c_abi = is_extern || (f->flags & F_EXPO);
     if ((f->flags & F_INTRINSIC) && f->ival) {
@@ -5232,8 +5239,17 @@ static void check_stmt(Ck* k, Node* s) {
                 Node* val = bnd->kids[j + 1];
                 if (val->kind == N_IDENT) {
                     Sym* vs = lookup_val(k, val->str, val->len);
-                    if (!vs) {
+                    if (!vs || vs->kind != SYM_VAR || vs->is_global) {
                         ck_err(k, val, "asm binding '%.*s' is not a local or parameter", (int)val->len, val->str);
+                        continue;
+                    }
+                    SType* bt = vs->type;
+                    while (bt && bt->kind == SK_DISTINCT) bt = bt->base;
+                    if (bt && (bt->kind == SK_STRUCT || bt->kind == SK_TUPLE || bt->kind == SK_ARRAY ||
+                               bt->kind == SK_SLICE || bt->kind == SK_UNION || bt->kind == SK_CONTRACT ||
+                               (bt->kind == SK_PRIM && bt->prim == P_STRING))) {
+                        ck_err(k, val, "asm binding '%.*s' must be a scalar, not %s", (int)val->len, val->str,
+                               type_name(vs->type));
                         continue;
                     }
                     val->sym = vs; // emitter: storage for in/out moves
@@ -6868,6 +6884,7 @@ int sema_check(Node* file, Diag* d) {
                 // against the implementing method at the call site.
                 for (int mi = 0; mi < n->nkids; mi++) {
                     Node* m = n->kids[mi];
+                    check_param_count(&k, m, m->nkids + 1, 1); // the receiver the slot passes
                     for (int pi = 0; pi < m->nkids; pi++)
                         if (m->kids[pi]->flags & F_MUT)
                             ck_err(&k, m->kids[pi],

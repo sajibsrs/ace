@@ -610,8 +610,35 @@ typedef struct {
 
 static int expr(Lw* l, Node* x, int want);
 static Place element(Lw* l, Node* x);
+static Place place(Lw* l, Node* x);
 static int is_place(Node* x);
 static void value(Lw* l, Node* x, SType* t, Agg* out);
+
+// The type *x names: an assignment target's dereferences carry no type of
+// their own, so it is the pointer operand's base, through every level.
+static SType* deref_type(Node* x) {
+    SType* t = x->a->kind == N_UNARY && x->a->op == T_STAR ? deref_type(x->a) : node_ty(x->a);
+    t = unwrap(t);
+    return t && t->kind == SK_PTR ? t->base : NULL;
+}
+
+// The place field x is read from: x.a, or what it points to through every
+// level (p.x is (*p).x, and q.x through *mut *T); *bt its type.
+static Place field_base(Lw* l, Node* x, SType** bt) {
+    SType* t = unwrap(node_ty(x->a));
+    if (!t || t->kind != SK_PTR) {
+        *bt = t;
+        return place(l, x->a);
+    }
+    Place p = { -1, expr(l, x->a, IT_PTR), 0, 0, NULL };
+    p.flags = access_check(l, p.addr);
+    for (t = unwrap(t->base); t && t->kind == SK_PTR; t = unwrap(t->base)) {
+        p.addr = load(l, IT_PTR, p.addr, 0, p.flags);
+        p.flags = access_check(l, p.addr);
+    }
+    p.t = *bt = t;
+    return p;
+}
 
 static Place place(Lw* l, Node* x) {
     Place p = { -1, -1, 0, 0, node_ty(x) };
@@ -634,17 +661,12 @@ static Place place(Lw* l, Node* x) {
         if (x->op != T_STAR) break;
         p.addr = expr(l, x->a, IT_PTR);
         p.flags = access_check(l, p.addr);
-        p.t = unwrap(node_ty(x->a))->base; // an assignment target's node carries no type
+        p.t = deref_type(x); // an assignment target's node carries no type
+        if (!p.t) unsupported(l, "pointer");
         return p;
     case N_FIELD_E: {
-        SType* bt = unwrap(node_ty(x->a));
-        if (bt && bt->kind == SK_PTR) { // p.x is (*p).x
-            p.addr = expr(l, x->a, IT_PTR);
-            p.flags = access_check(l, p.addr);
-            bt = unwrap(bt->base);
-        } else {
-            p = place(l, x->a);
-        }
+        SType* bt;
+        p = field_base(l, x, &bt);
         if (!bt || bt->kind != SK_STRUCT) unsupported(l, bt ? type_why(bt) : "field access");
         int fi = find_field(bt, x->str, x->len);
         if (fi < 0) unsupported(l, "field access");
@@ -805,17 +827,42 @@ static void store_value(Lw* l, Node* x, SType* t, int dst, int32_t off);
 static int union_equal(Lw* l, Node* x, int negate);
 static Place array_place(Lw* l, Node* x);
 
-// Arguments, flattened to leaves, and how they group into parts.
+// Arguments, flattened to leaves, and how they group into parts: in the
+// inline buffers, moved to the arena past them (a struct's leaves, or a C
+// variadic call's arguments, past MAX_PARAMS).
 typedef struct {
-    int    v[40];
-    int    n;
-    IrPart part[40];
-    int    nparts;
-    int    agg;    // some part is an aggregate
+    int*    v;
+    int     n, cap;
+    IrPart* part;
+    int     nparts;
+    int     agg;    // some part is an aggregate
+    int     vbuf[MAX_PARAMS];
+    IrPart  pbuf[MAX_PARAMS];
 } Args;
 
+static void args_init(Args* g) {
+    memset(g, 0, sizeof *g);
+    g->v = g->vbuf;
+    g->part = g->pbuf;
+    g->cap = MAX_PARAMS;
+}
+
+// Room for k more leaves and one more part (never more parts than leaves).
+static void args_room(Args* g, int k) {
+    if (g->n + k <= g->cap) return;
+    int cap = g->cap * 2 > g->n + k ? g->cap * 2 : g->n + k;
+    int* v = (int*)arena_alloc((size_t)cap * sizeof(int));
+    IrPart* part = (IrPart*)arena_alloc((size_t)cap * sizeof(IrPart));
+    memcpy(v, g->v, (size_t)g->n * sizeof(int));
+    memcpy(part, g->part, (size_t)g->nparts * sizeof(IrPart));
+    g->v = v;
+    g->part = part;
+    g->cap = cap;
+}
+
 static void arg_scalar(Lw* l, Args* g, int v) {
-    if (g->n == 40) unsupported(l, "too many arguments");
+    (void)l;
+    args_room(g, 1);
     g->part[g->nparts++] = (IrPart){ NULL, g->n, 1 };
     g->v[g->n++] = v;
 }
@@ -841,7 +888,7 @@ static void call_arg(Lw* l, Args* g, Node* a, SType* pt, int by_address) {
     }
     Agg v;
     value(l, a, pt, &v);
-    if (g->n + v.n > 40) unsupported(l, "too many arguments");
+    args_room(g, v.n);
     g->part[g->nparts++] = (IrPart){ pt, g->n, v.n };
     for (int k = 0; k < v.n; k++) g->v[g->n++] = v.v[k];
     g->agg = 1;
@@ -861,10 +908,10 @@ static int call_args(Lw* l, Node* call, Sym* s, Args* g) {
     int n = recv + call->nkids;
     int named = ft ? ft->nparams : n;
     int varargs = s->is_extern && d && (d->flags & F_VARARGS);
-    if (n > 40) unsupported(l, "too many arguments");
     if (varargs ? n < named : n != named) unsupported(l, "default argument");
     int first_var = -1;
-    Range rng[40];
+    Range rbuf[MAX_PARAMS]; // a C variadic call's arguments may pass it
+    Range* rng = n <= MAX_PARAMS ? rbuf : (Range*)arena_alloc((size_t)n * sizeof(Range));
     int noalias = 0;
     for (int i = 0; l->mode == EMIT_DEBUG && d && i < n && i < d->nkids; i++) noalias |= (d->kids[i]->flags & F_NOALIAS) != 0;
     for (int i = 0; i < n; i++) {
@@ -976,6 +1023,62 @@ static void guard_end(Lw* l, int join) {
 
 static int cmp(Lw* l, IrOp op, int a, int b) { return emit2(l, op, IT_BOOL, a, b); }
 
+// The named field x projects of a bits type (Scalar-backed Bit Fields #3),
+// *b that type, or NULL when x is no such field.
+static SField* bits_field(Node* x, SType** b) {
+    if (x->kind != N_FIELD_E) return NULL;
+    SType* t = unwrap(node_ty(x->a));
+    while (t && t->kind == SK_PTR) t = unwrap(t->base);
+    if (!t || t->kind != SK_BITS) return NULL;
+    int fi = find_field(t, x->str, x->len);
+    if (fi < 0 || t->fields[fi].bit_anonymous) return NULL;
+    *b = t;
+    return &t->fields[fi];
+}
+
+// Field f of bits type b's backing value w, zero- or sign-extended to the
+// field's type (#2).
+static int bits_get(Lw* l, SType* b, SField* f, int w) {
+    IrType bt = need_type(l, b), ft = need_type(l, f->t);
+    int n = ir_type_bits(bt), width = f->bit_width;
+    if (!f->bit_signed) {
+        if (f->bit_offset) w = emit2(l, IR_SHR, bt, w, konst(l, bt, f->bit_offset));
+        if (width + f->bit_offset < n) w = emit2(l, IR_AND, bt, w, konst(l, bt, (UINT64_C(1) << width) - 1));
+        return w;
+    }
+    int up = n - f->bit_offset - width; // its top bit to the sign bit, then back down
+    if (up) w = emit2(l, IR_SHL, bt, w, konst(l, bt, (uint64_t)up));
+    w = emit2(l, IR_CAST, ft, w, -1);
+    if (width < n) w = emit2(l, IR_SHR, ft, w, konst(l, ft, (uint64_t)(n - width)));
+    return w;
+}
+
+// Bits type b's backing value w with field f replaced by v, of the field's
+// type, where f's bits of w are zero when clear is 0; debug first checks v
+// fits the field's width (#4).
+static int bits_set(Lw* l, SType* b, SField* f, int w, int v, int clear) {
+    IrType bt = need_type(l, b), ft = need_type(l, f->t);
+    int n = ir_type_bits(bt), width = f->bit_width;
+    uint64_t low = width == 64 ? UINT64_MAX : (UINT64_C(1) << width) - 1;
+    if (width == n) return widen(l, v, ft, bt);
+    if (l->mode == EMIT_DEBUG) {
+        int c;
+        if (f->bit_signed) { // out of range: sign-extending its low bits changes it
+            int k = konst(l, ft, (uint64_t)(n - width));
+            c = cmp(l, IR_NE, emit2(l, IR_SHR, ft, emit2(l, IR_SHL, ft, v, k), k), v);
+        } else {
+            c = cmp(l, IR_GT, v, konst(l, ft, low));
+        }
+        int bad = guard(l, c);
+        call_routine(l, "__ace$arithmetic_fail", 0, IT_VOID, NULL, 0);
+        guard_end(l, bad);
+    }
+    int u = emit2(l, IR_AND, bt, widen(l, v, ft, bt), konst(l, bt, low));
+    if (f->bit_offset) u = emit2(l, IR_SHL, bt, u, konst(l, bt, f->bit_offset));
+    if (clear) w = emit2(l, IR_AND, bt, w, konst(l, bt, ~(low << f->bit_offset)));
+    return emit2(l, IR_OR, bt, w, u);
+}
+
 // A variable of lowering's own, first holding v.
 static int temp_var(Lw* l, IrType t, int v) {
     int var = var_new(l, NULL, t, -1);
@@ -1039,7 +1142,8 @@ static void contract_check(Lw* l, int c) {
 // must be representable, and two whose parameters include a noalias one must
 // be disjoint unless one is empty. Nothing else is walked.
 static void noalias_check(Lw* l, Node* d, const Range* r, int n) {
-    int end[40];
+    int ebuf[MAX_PARAMS];
+    int* end = n <= MAX_PARAMS ? ebuf : (int*)arena_alloc((size_t)n * sizeof(int));
     for (int i = 0; i < n && i < d->nkids; i++) {
         if (r[i].ptr < 0) continue;
         int bytes = r[i].len;
@@ -1278,7 +1382,7 @@ static int printf_call(Lw* l, Node* x) {
         Sym* h = (Sym*)part->helper;
         SType* ft = h->type;
         Args g;
-        memset(&g, 0, sizeof g);
+        args_init(&g);
         Agg v;
         SType* vt = ft->params[0];
         int empty = -1;
@@ -1553,7 +1657,12 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
     if (x->d && x->d->kind == N_CONFORMANCE) { // Shape(&value): contract construction (Carved #5)
         SType* pt = node_ty(x->kids[0]);
         SType* conc = pt && pt->kind == SK_PTR ? pt->base : NULL;
-        if (!conc || conc->nargs > 0) unsupported(l, "generic contract construction");
+        if (!conc) unsupported(l, "contract construction");
+        if (conc->nargs > 0) { // a generic signing's pair: its vtable comes with this function
+            IrFunc* fn = l->fn;
+            fn->vtables = (IrVtable*)grow(fn->vtables, &fn->cvtables, fn->nvtables + 1, sizeof(IrVtable));
+            fn->vtables[fn->nvtables++] = (IrVtable){ conc, node_ty(x), x->d };
+        }
         int vt = global_named(l, vtable_name(conc, node_ty(x)));
         int data = expr(l, x->kids[0], IT_PTR);
         if (res) {
@@ -1585,6 +1694,70 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
         call_routine(l, "_abort", 1, IT_VOID, NULL, 0);
         return -1;
     }
+    if (!s && (x->ival == 2 || x->ival == 3) && callee && callee->kind == N_IDENT && callee->len == 6 &&
+        memcmp(callee->str, "assert", 6) == 0 && x->nkids == 1) {
+        // assert(condition): debug evaluates it once, and a false one writes
+        // "path:line:col: assertion failed" to stderr and aborts; release
+        // removes the whole condition, side effects included
+        if (l->mode != EMIT_DEBUG || x->ival == 3) return -1;
+        int ok = new_block(l), bad = new_block(l);
+        cond(l, x->kids[0], ok, bad);
+        seal(l, ok);
+        seal(l, bad);
+        enter(l, bad);
+        if (l->cur >= 0) {
+            const char* path = x->path ? build_path(x->path) : "<source>";
+            size_t need = strlen(path) + 80;
+            char* text = (char*)arena_alloc(need);
+            int n = snprintf(text, need, "%s:%d:%d: assertion failed\n", path, x->line, x->col);
+            int p = emit(l, IR_STR, IT_PTR);
+            l->fn->ins[p].name = text;
+            l->fn->ins[p].imm = (uint64_t)n;
+            int w[3] = { konst(l, IT_I32, 2), p, konst(l, IT_U64, (uint64_t)n) };
+            call_routine(l, "_write", 1, IT_I64, w, 3);
+            call_routine(l, "_abort", 1, IT_VOID, NULL, 0);
+            jump(l, ok); // never taken: abort does not return
+        }
+        enter(l, ok);
+        return -1;
+    }
+    if (!s && callee && callee->kind == N_PTR && x->nkids == 1) {
+        // *T(address): the same bits; debug checks the address is aligned for T
+        IrType at = type_in(l, x->kids[0], IT_U64);
+        int v = widen(l, expr(l, x->kids[0], at), at, IT_U64);
+        SType* pt = unwrap(node_ty(x));
+        uint32_t align = pt && pt->base ? sema_align(pt->base) : 1;
+        if (l->mode == EMIT_DEBUG && align > 1 && !(x->flags & F_BOUNDS_PROVEN)) {
+            int low = emit2(l, IR_AND, IT_U64, v, konst(l, IT_U64, align - 1));
+            int bad = guard(l, cmp(l, IR_NE, low, konst(l, IT_U64, 0)));
+            call_routine(l, "__ace$arithmetic_fail", 0, IT_VOID, NULL, 0);
+            guard_end(l, bad);
+        }
+        return emit2(l, IR_CAST, IT_PTR, v, -1);
+    }
+    if (!s && callee && callee->kind == N_SLICE_T && x->nkids == 2) {
+        // []T(pointer, count): debug checks a nonempty one has a nonnull start
+        // and an end, count elements on, that the address space holds
+        int p = expr(l, x->kids[0], IT_PTR);
+        IrType ct = type_in(l, x->kids[1], IT_U64);
+        int n = widen(l, expr(l, x->kids[1], ct), ct, IT_U64);
+        if (l->mode == EMIT_DEBUG && !(x->flags & F_BOUNDS_PROVEN)) {
+            int some = guard(l, cmp(l, IR_NE, n, konst(l, IT_U64, 0)));
+            int null = guard(l, cmp(l, IR_EQ, p, konst(l, IT_PTR, 0)));
+            call_routine(l, "__ace$null_fail", 0, IT_VOID, NULL, 0);
+            guard_end(l, null);
+            int end = emit2(l, IR_PADD, IT_PTR, p, n); // the rest: its own checks
+            l->fn->ins[end].imm = sema_size(unwrap(node_ty(x))->base);
+            l->fn->ins[end].flags = IRF_CHECKED;
+            guard_end(l, some);
+        }
+        if (res) {
+            res->n = 2;
+            res->v[0] = p;
+            res->v[1] = n;
+        }
+        return p;
+    }
     if (!s && callee && callee->kind == N_IDENT && callee->len == 6 && memcmp(callee->str, "typeid", 6) == 0)
         return konst(l, IT_U64, x->ival); // typeid(T): the type's identity word
     if (!s && callee && callee->kind == N_IDENT && is_domain(node_ty(callee))) { // Domain(code) (Errors #5, #7)
@@ -1604,7 +1777,7 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
         return emit2(l, IR_CAST, to, v, -1);
     }
     Args g;
-    memset(&g, 0, sizeof g);
+    args_init(&g);
     if (!s && callee->kind == N_FIELD_E) { // contract dispatch: s.area() / mut s.scale(2.0)
         SType* ct = node_ty(callee->a);
         if (ct && ct->kind == SK_CONTRACT) {
@@ -1718,6 +1891,18 @@ static int expr(Lw* l, Node* x, int want) {
         }
         return place_read(l, place(l, x), 0);
     }
+    case N_STRUCTLIT: { // a bits value (#5): all bits zero, then each field in source order
+        SType* b = unwrap(node_ty(x));
+        if (!b || b->kind != SK_BITS) unsupported(l, type_why(b));
+        int w = konst(l, need_type(l, b), 0);
+        for (int i = 0; i < x->nkids; i++) {
+            int fi = find_field(b, x->kids[i]->str, x->kids[i]->len);
+            if (fi < 0) unsupported(l, "field initializer");
+            SField* f = &b->fields[fi];
+            w = bits_set(l, b, f, w, expr(l, x->kids[i]->a, need_type(l, f->t)), 0); // each field once (#5)
+        }
+        return w;
+    }
     case N_NULL: // a null pointer or Error
         if (want != IT_PTR && want != IT_U64) unsupported(l, type_why(node_ty(x)));
         return konst(l, (IrType)want, 0);
@@ -1738,6 +1923,15 @@ static int expr(Lw* l, Node* x, int want) {
         if (bt && bt->kind == SK_ARRAY && x->len == 3 && memcmp(x->str, "len", 3) == 0) {
             if (!is_place(x->a)) { Agg discard; value(l, x->a, node_ty(x->a), &discard); } // side effects only: the length is static
             return konst(l, type_in(l, x, want), bt->count);
+        }
+        SType* bits;
+        SField* bf = bits_field(x, &bits);
+        if (bf) { // a projection of the whole backing value
+            if ((bt && bt->kind == SK_PTR) || is_place(x->a)) {
+                SType* ignore;
+                return bits_get(l, bits, bf, place_read(l, field_base(l, x, &ignore), 0));
+            }
+            return bits_get(l, bits, bf, expr(l, x->a, need_type(l, bits)));
         }
         if (!bt || (bt->kind != SK_PTR && bt->kind != SK_STRUCT)) unsupported(l, bt ? type_why(bt) : "field access");
         if (!is_place(x)) {
@@ -1775,6 +1969,11 @@ static int expr(Lw* l, Node* x, int want) {
             Node* o = x->a->kind == N_NULL ? x->b : x->a;
             if (is_view(node_ty(o))) // Sequences #8: a null view has a null ptr
                 return emit2(l, (IrOp)op, IT_BOOL, view_leaf(l, o, 0), konst(l, IT_PTR, 0));
+            if (is_contract(node_ty(o))) { // Carved #5: a null contract has a null vtable
+                Agg a;
+                value(l, o, node_ty(o), &a);
+                return emit2(l, (IrOp)op, IT_BOOL, a.v[0], konst(l, IT_PTR, 0));
+            }
         }
         if ((op == IR_EQ || op == IR_NE) && (is_union(node_ty(x->a)) || is_union(node_ty(x->b))))
             return union_equal(l, x, op == IR_NE);
@@ -2534,8 +2733,8 @@ static void value(Lw* l, Node* x, SType* t, Agg* out) {
             out->v[1] = konst(l, IT_U64, 0);
             return;
         }
-        if (x->kind == N_CALL && !node_sym(x) && x->a && x->a->kind == N_IDENT && x->nkids == 1 &&
-            is_view(node_ty(x->kids[0]))) { // string(b), []u8(s): one type (Types #19)
+        if (x->kind == N_CALL && !node_sym(x) && x->a && (x->a->kind == N_IDENT || x->a->kind == N_SLICE_T) &&
+            x->nkids == 1 && is_view(node_ty(x->kids[0]))) { // string(b), []u8(s): one type (Types #19)
             value(l, x->kids[0], t, out);
             return;
         }
@@ -2546,6 +2745,11 @@ static void value(Lw* l, Node* x, SType* t, Agg* out) {
             out->v[1] = konst(l, IT_U64, at->count);
             return;
         }
+    }
+    if (is_contract(t) && x->kind == N_NULL) { // Carved #5: the null contract, all bits zero
+        out->n = 2;
+        out->v[0] = out->v[1] = konst(l, IT_PTR, 0);
+        return;
     }
     if (x->kind == N_FIELD_E && is_view(t) && error_description(l, x, out)) return;
     if (is_union(t)) {
@@ -2676,6 +2880,37 @@ static Place binder_place(Lw* l, Node* b) {
     return l->home[var] == -1 ? (Place){ var, -1, 0, 0, bs->type } : (Place){ -1, var_addr(l, var), 0, 0, bs->type };
 }
 
+// Bits field x assigned, or with a compound op, the value of rhs, or v when
+// rhs is NULL: one read-modify-write of the whole backing value (#3), read
+// before rhs is evaluated.
+static void bits_assign(Lw* l, Node* x, int op, Node* rhs, int v) {
+    SType* bits;
+    SField* bf = bits_field(x, &bits);
+    Place p = field_base(l, x, &bits);
+    int w = place_read(l, p, 0);
+    IrType ft = need_type(l, bf->t);
+    if (op != T_ASSIGN) {
+        int bop = binop_of((TokKind)op);
+        if (bop < 0) unsupported(l, "compound assignment");
+        v = arith(l, bop, ft, bits_get(l, bits, bf, w), expr(l, rhs, ft));
+    } else if (rhs) {
+        v = expr(l, rhs, ft);
+    }
+    place_write(l, p, bits_set(l, bits, bf, w, v, 1), 0);
+}
+
+// Member m into x, an existing place or a bits field.
+static void member_put(Lw* l, Node* x, const Agg* m) {
+    SType* bits;
+    if (bits_field(x, &bits)) {
+        bits_assign(l, x, T_ASSIGN, NULL, m->v[0]);
+        return;
+    }
+    Place p = place(l, x);
+    if (leaf_count(l, p.t) != m->n) unsupported(l, "destructuring");
+    place_put(l, p, m, 0);
+}
+
 // Tuple destructuring (Errors #12): the right side once, then each member
 // into a new binder (N_PARAM) or an existing place, in order. A tuple of over
 // 16 leaves is stored whole first, then its members copied out.
@@ -2683,19 +2918,38 @@ static void destructure(Lw* l, Node** kids, int n, Node* rhs) {
     SType* tt = node_ty(rhs);
     SType* u = unwrap(tt);
     if (!u || u->kind != SK_TUPLE || u->nfields != n) unsupported(l, "destructuring");
+    if (rhs->kind == N_TUPLE_E && rhs->nkids == n && ir_leaf_count(tt) < 0) {
+        // `a: int, b: string = 1, "x"`: untyped elements take their targets'
+        // types; every element is evaluated before any target is written
+        Agg* m = (Agg*)arena_alloc((size_t)n * sizeof(Agg));
+        for (int i = 0; i < n; i++) {
+            Sym* bs = kids[i]->kind == N_PARAM ? node_sym(kids[i]) : NULL;
+            SType* kt = kids[i]->kind == N_PARAM ? (bs ? bs->type : NULL) : node_ty(kids[i]);
+            if (!kt || by_parts(kt)) unsupported(l, "destructuring");
+            value(l, rhs->kids[i], kt, &m[i]);
+        }
+        for (int i = 0; i < n; i++) {
+            if (kids[i]->kind == N_PARAM) {
+                Sym* bs = node_sym(kids[i]);
+                set_leaves(l, var_of(l, bs), bs->type, &m[i]);
+                continue;
+            }
+            member_put(l, kids[i], &m[i]);
+        }
+        return;
+    }
     if (by_parts(tt)) {
         covered(l, tt);
         int slot = new_slot(l, tt);
         store_value(l, rhs, tt, slot, 0);
         for (int i = 0; i < n; i++) {
             Place src = { -1, slot, (int32_t)field_off(u, i), 0, u->fields[i].t };
-            Place dst;
-            if (kids[i]->kind == N_PARAM) {
-                dst = binder_place(l, kids[i]);
-            } else {
-                dst = place(l, kids[i]);
+            SType* bits;
+            if (bits_field(kids[i], &bits)) {
+                bits_assign(l, kids[i], T_ASSIGN, NULL, place_read(l, src, 0));
+                continue;
             }
-            move_place(l, dst, src);
+            move_place(l, kids[i]->kind == N_PARAM ? binder_place(l, kids[i]) : place(l, kids[i]), src);
         }
         return;
     }
@@ -2714,9 +2968,7 @@ static void destructure(Lw* l, Node** kids, int n, Node* rhs) {
             set_leaves(l, var_of(l, bs), bs->type, &m);
             continue;
         }
-        Place p = place(l, kid);
-        if (leaf_count(l, p.t) != m.n) unsupported(l, "destructuring");
-        place_put(l, p, &m, 0);
+        member_put(l, kid, &m);
     }
 }
 
@@ -2741,6 +2993,11 @@ static void assign(Lw* l, Node* s) {
     if (s->nkids > 1) {
         if (s->op != T_ASSIGN || (s->flags & F_VOLATILE)) unsupported(l, "assignment target");
         destructure(l, s->kids, s->nkids, s->a);
+        return;
+    }
+    SType* bits;
+    if (bits_field(s->kids[0], &bits)) {
+        bits_assign(l, s->kids[0], s->op, s->a, -1);
         return;
     }
     int vol = s->flags & F_VOLATILE ? IRF_VOLATILE : 0;
@@ -2835,16 +3092,16 @@ static int inline_call(Lw* l, Node* call) {
     for (int i = 0; i < l->ninl; i++)
         if (l->inl[i].f == f) unsupported(l, "recursive inline call");
     Node* callee = call->a;
-    Node* args[41];
+    Node* args[MAX_PARAMS]; // the receiver included
     int n = 0;
     if (callee->kind == N_FIELD_E && !(call->flags & (F_METHOD | F_ASSOC))) args[n++] = callee->a; // receiver
-    if (n + call->nkids != f->nkids || f->nkids > 40) unsupported(l, "inline call");
+    if (n + call->nkids != f->nkids || f->nkids > MAX_PARAMS) unsupported(l, "inline call");
     for (int i = 0; i < call->nkids; i++) args[n++] = call->kids[i];
     SType* rt = f->a ? node_ty(call) : NULL; // the call of a generic method with no result is not typed void
     if (rt && unwrap(rt)->kind == SK_VOID) rt = NULL;
     if (is_agg(rt)) unsupported(l, "inline aggregate result");
 
-    Node* bind[40];
+    Node* bind[MAX_PARAMS];
     Node* body;
     inline_copy(f, targs, ntargs, bind, &body);
     scan_storage(l, body);
@@ -3297,23 +3554,21 @@ static int asm_recognized(Node* s) {
     return any;
 }
 
-// The variable of a plain, non-address-taken scalar local an asm binding
-// names, or -1 when it is not one the fast path binds directly (an
-// aggregate, or one the allocator must keep in memory): an asm statement
-// touching either keeps the AST emitter, which has no such restriction.
-static int asm_local(Lw* l, Node* val) {
-    if (val->kind != N_IDENT) return -1;
-    Sym* vs = node_sym(val);
-    if (!vs || vs->kind != SYM_VAR || is_agg(vs->type)) return -1;
-    int var = var_of(l, vs);
-    return l->home[var] == -1 ? var : -1;
+// The variable of the scalar local or parameter an asm binding names (sema
+// refused any other): in SSA, or at its home, read before the instruction
+// and written after it.
+static int asm_local(Lw* l, Node* val, IrType* t) {
+    Sym* vs = val->kind == N_IDENT ? node_sym(val) : NULL;
+    if (!vs || vs->kind != SYM_VAR || vs->is_global || is_agg(vs->type)) unsupported(l, "asm binding");
+    *t = need_type(l, vs->type);
+    return var_of(l, vs);
 }
 
 // asm "instruction text" { bindings } (Inline Assembly #1-3): lowered
 // directly when its instruction is recognized and every bound local is a
-// plain SSA-resident scalar; anything else keeps the AST emitter, exactly as
-// sema already checked it (register names, and that an "in"/"out" value
-// resolves to a local).
+// scalar local, as sema already checked it (register names, and that an
+// "in"/"out" value resolves to a scalar local); one living at a home is
+// loaded before the instruction and stored after it.
 static void asm_stmt(Lw* l, Node* s) {
     if (!asm_recognized(s)) unsupported(l, "asm instruction");
     int nin = 0, nout = 0;
@@ -3328,6 +3583,7 @@ static void asm_stmt(Lw* l, Node* s) {
     int* invals = (int*)arena_alloc((size_t)(nin ? nin : 1) * sizeof(int)); // IR value ids
     int* outreg = (int*)arena_alloc((size_t)(nout ? nout : 1) * sizeof(int));
     int* outvars = (int*)arena_alloc((size_t)(nout ? nout : 1) * sizeof(int)); // lowering var ids
+    IrType* outtypes = (IrType*)arena_alloc((size_t)(nout ? nout : 1) * sizeof(IrType));
     uint32_t reserved = 0;
     int ki = 0, ko = 0;
     for (int i = 0; i < s->nkids; i++) {
@@ -3350,14 +3606,15 @@ static void asm_stmt(Lw* l, Node* s) {
             if (is_in) {
                 int v = val->kind == N_INT ? konst(l, IT_I64, (uint64_t)val->ival) : -1;
                 if (v < 0) {
-                    int var = asm_local(l, val);
-                    if (var < 0) unsupported(l, "asm binding");
-                    v = read_var(l, var, l->cur);
+                    IrType vt;
+                    int var = asm_local(l, val, &vt);
+                    v = l->home[var] == -1 ? read_var(l, var, l->cur) : load(l, vt, var_addr(l, var), 0, 0);
                 }
                 inreg[ki] = r; invals[ki] = v; ki++;
             } else {
-                int var = asm_local(l, val);
-                if (var < 0) unsupported(l, "asm binding");
+                IrType vt;
+                int var = asm_local(l, val, &vt);
+                outtypes[ko] = vt;
                 outreg[ko] = r; outvars[ko] = var; ko++;
             }
         }
@@ -3374,12 +3631,13 @@ static void asm_stmt(Lw* l, Node* s) {
     memcpy(text, s->str, s->len);
     text[s->len] = 0;
     l->fn->ins[id].name = text;
-    for (int k = 0; k < nout; k++) {
-        int p = emit(l, IR_PROJ, l->vtype[outvars[k]]);
-        ir_arg_add(l->fn, p, id);
-        l->fn->ins[p].imm = (uint64_t)k;
-        write_var(l, outvars[k], l->cur, p);
+    int* projs = (int*)arena_alloc((size_t)(nout ? nout : 1) * sizeof(int));
+    for (int k = 0; k < nout; k++) { // every projection directly after the asm
+        projs[k] = emit(l, IR_PROJ, outtypes[k]);
+        ir_arg_add(l->fn, projs[k], id);
+        l->fn->ins[projs[k]].imm = (uint64_t)k;
     }
+    for (int k = 0; k < nout; k++) set_var(l, outvars[k], projs[k]);
 }
 
 static void stmt(Lw* l, Node* s) {
@@ -3454,7 +3712,7 @@ static void stmt(Lw* l, Node* s) {
         }
         if (l->self_head >= 0 && !l->ndefers && is_self_call(l, s->a)) { // release: a branch back to the head
             Args g;
-            memset(&g, 0, sizeof g);
+            args_init(&g);
             if (call_args(l, s->a, node_sym(s->a), &g) >= 0 || g.n != l->fn->nparams) unsupported(l, "self call");
             for (int i = 0, k = 0; i < l->f->nkids; i++) { // each parameter's leaves, in order
                 Sym* ps = node_sym(l->f->kids[i]);
@@ -3566,18 +3824,64 @@ static void finish(Lw* l) {
     free(map);
 }
 
+// A compiler-backed declaration (bits.popcount, math.sqrt, ...) has no Ace
+// body, yet its symbol exists for use as a function value: its body is
+// `return f(p0, p1, ...)`, a call the IR covers as the builtin's operation.
+// A node like at, of kind k, in the arena: the IR keeps pointers to it.
+static Node* synth(Node* at, int k, Sym* sym, SType* ty) {
+    Node* n = (Node*)arena_alloc(sizeof(Node));
+    memset(n, 0, sizeof *n);
+    n->kind = (uint8_t)k;
+    n->line = at->line;
+    n->col = at->col;
+    n->path = at->path;
+    n->str = at->str;
+    n->len = at->len;
+    n->sym = sym;
+    n->ty = ty;
+    return n;
+}
+
+// Its parameters, which sema binds no symbols for, as its signature types them.
+static void intrinsic_params(Node* f, Sym* fs) {
+    for (int i = 0; i < f->nkids && i < fs->type->nparams; i++) {
+        if (node_sym(f->kids[i])) continue;
+        Sym* ps = (Sym*)arena_alloc(sizeof(Sym));
+        memset(ps, 0, sizeof *ps);
+        ps->name = f->kids[i]->str;
+        ps->len = f->kids[i]->len;
+        ps->kind = SYM_VAR;
+        ps->is_param = 1;
+        ps->type = fs->type->params[i];
+        ps->decl = f->kids[i];
+        f->kids[i]->sym = ps;
+    }
+}
+
+static void intrinsic_body(Lw* l, Node* f) {
+    Sym* fs = node_sym(f);
+    Node* call = synth(f, N_CALL, fs, l->rtype);
+    call->a = synth(f, N_IDENT, fs, fs->type);
+    call->nkids = f->nkids;
+    call->kids = (Node**)arena_alloc((size_t)(f->nkids ? f->nkids : 1) * sizeof(Node*));
+    for (int i = 0; i < f->nkids; i++)
+        call->kids[i] = synth(f->kids[i], N_IDENT, node_sym(f->kids[i]), node_sym(f->kids[i])->type);
+    Node* ret = synth(f, N_RETURN, NULL, NULL);
+    ret->a = call;
+    stmt(l, ret);
+}
+
 IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, const char** why) {
     Sym* fs = node_sym(f);
     SType* rt = fs && fs->type ? fs->type->ret : NULL;
     *why = NULL;
-    if (f->ival || (f->flags & F_INTRINSIC)) *why = "compiler-backed";
-    else if (!f->b) *why = "no body";
+    if (!f->b && !f->ival && !(f->flags & F_INTRINSIC)) *why = "no body";
     else if (f->c && !(fs && fs->spec_args)) {
         if (!targs || f->c->nkids != ntargs) *why = "generic";
         else rt = sema_stamp_body(f, targs, ntargs); // as inline_copy does for an inlined generic call
     }
-    else if (f->flags & F_EXPO) *why = "exported";
     if (*why) return NULL;
+    if (!f->b) intrinsic_params(f, fs);
 
     Lw l;
     memset(&l, 0, sizeof l);
@@ -3613,7 +3917,7 @@ IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, 
     if (!fn->rets) oom();
     for (int k = 0; k < fn->nrets; k++) fn->rets[k] = (IrType)lv[k].type;
     Args g; // the parameters' leaves, as a call's arguments group
-    memset(&g, 0, sizeof g);
+    args_init(&g);
     for (int i = 0; i < f->nkids; i++) // in this frame's memory: no self tail recursion
         if (node_sym(f->kids[i]) && !by_address(f, i) && in_memory(node_sym(f->kids[i])->type))
             ptrmap_put(&l.stored, node_sym(f->kids[i]), 1);
@@ -3634,7 +3938,7 @@ IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, 
         }
         Agg a;
         a.n = leaves(&l, ps->type, lv);
-        if (g.n + a.n > 40) unsupported(&l, "too many parameters");
+        args_room(&g, a.n);
         if (is_agg(ps->type)) {
             g.part[g.nparts++] = (IrPart){ ps->type, g.n, a.n };
             g.agg = 1;
@@ -3658,12 +3962,13 @@ IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, 
         fn->sig->nparts = g.nparts;
         fn->sig->ret = (IrPart){ is_agg(rt) && !fn->ret_mem ? rt : NULL, 0, fn->nrets };
     }
-    if (mode == EMIT_RELEASE && !l.is_main && !(f->flags & F_INLCALLS) && !frame_storage(&l) && has_self_tail(&l, f->b)) {
+    if (mode == EMIT_RELEASE && !l.is_main && !(f->flags & (F_INLCALLS | F_EXPO)) && !frame_storage(&l) && has_self_tail(&l, f->b)) {
         l.self_head = new_block(&l);
         jump(&l, l.self_head);
         l.cur = l.self_head;
     }
-    block(&l, f->b);
+    if (!f->b) intrinsic_body(&l, f);
+    else block(&l, f->b);
     if (l.cur >= 0) { // falling off the end: zero
         Agg z;
         z.n = fn->nrets;

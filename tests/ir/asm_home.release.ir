@@ -1,4 +1,22 @@
-; sign: not lowered (asm binding)
+sign(i64): i64 {
+b0:
+    %0 = slot ptr 8, 8
+    %1 = param i64 0
+    store [%0], %1
+    call bump(%0)
+    %4 = load i64 [%0]
+    asm "nop" x9=%4, clobbers 0x200
+    %6 = load i64 [%0]
+    %7 = const i64 1
+    %8 = eq bool %6, %7
+    br %8, b1, b2
+b1: ; preds b0
+    %10 = const i64 0
+    ret %10
+b2: ; preds b0
+    %12 = const i64 1
+    ret %12
+}
 
 bump(ptr): void {
 b0:

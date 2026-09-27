@@ -26,8 +26,8 @@
 # passed, returned, copied, compared, and switched on (with a binder and a
 # default), and held in a struct member and an array, and calls with a noalias slice
 # parameter compare their slice windows, and for-in loops read and change them. A labeled block restarts, a computed
-# global constant is read, and an Error's name and message are looked up. An asm statement binding an
-# address-taken local keeps some functions on the AST emitter, so calls cross between the backends both ways. Each
+# global constant is read, and an Error's name and message are looked up. Some functions bind an
+# address-taken local in an asm statement, read from its home. Each
 # program is built with two
 # compilers in debug and release, and requires identical output and exit
 # status. main prints each function's result for several arguments (a float
@@ -735,7 +735,7 @@ BEGIN {
         if (chance(0.3)) declare("gs.a", "i64")
         if (chance(0.3)) declare("gs.b", "u8")
         print s "): " rett " {"
-        if (!finl && chance(0.3)) print "    ap: i64 = 0\n    pin(mut ap)\n    asm \"nop\" { in: x9 = ap }" # an address-taken binding keeps the function on the AST emitter; an inline one cannot hold asm
+        if (!finl && chance(0.3)) print "    ap: i64 = 0\n    pin(mut ap)\n    asm \"nop\" { in: x9 = ap }" # an address-taken binding, read from its home; an inline function cannot hold asm
         if (!finl && chance(0.3)) { # deferred notes: the value a parameter has when deferred, then a constant
             for (k = 0; k < np; k++)
                 if (ptype[f, k] ~ /^(i8|i16|i32|i64|u8|u16|u32|u64|usize|int)$/ && (pmut[f, k] || chance(0.3))) {

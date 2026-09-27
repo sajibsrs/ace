@@ -160,6 +160,14 @@ typedef struct {
     uint8_t sealed;  // every predecessor is known (lowering)
 } IrBlock;
 
+// A contract construction over a generic concrete type (Carved #5): no
+// signing emits its pair's vtable, so the object gains it with the function.
+typedef struct {
+    SType* conc;
+    SType* contract;
+    Node*  conf;
+} IrVtable;
+
 typedef struct {
     Node*    decl;
     Sym*     sym;
@@ -173,6 +181,8 @@ typedef struct {
     int      nins, cins;
     IrBlock* blocks; // blocks[0] is the entry
     int      nblocks, cblocks;
+    IrVtable* vtables;
+    int       nvtables, cvtables;
 } IrFunc;
 
 // --- construction (lower.c) -------------------------------------------------------

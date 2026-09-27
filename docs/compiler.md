@@ -45,7 +45,13 @@ lives in memory: a constant index is an offset on the access, any other a
 `padd` checked below the fixed length. A contract value is two leaves,
 `{ptr, ptr}` (vtable, data): construction prints its vtable as a `global` and
 the argument's address; dispatch loads the method slot from the vtable leaf
-(a checked load in debug) and calls it with the data leaf as receiver.
+(a checked load in debug) and calls it with the data leaf as receiver; a
+construction over a generic concrete type emits its pair's vtable with the
+constructing function. A `bits` value is its backing integer: a field read
+prints as a `shr` and `and`, or for a signed field a `shl`, a `cast` to the
+signed type, and a `shr`; a field write or literal field merges the value with
+`and`, `shl`, and `or`, after a debug range test calling the arithmetic
+failure routine, and a field write loads and stores the whole value once.
 `bitcast` reinterprets a float's bits
 as an integer of its width, or back (`bits.cast`). A call to an `inline`
 function prints as the expanded body, which ends at a join block reading the
@@ -89,8 +95,9 @@ IR's AArch64 backend compiles the rest; calls cross between the two backends
 freely under one ABI. An `asm` statement prints as one instruction, its
 bindings' registers beside the values moved into them, the registers it
 reads out after `->`, and every register it reserves as a `clobbers` mask;
-each value it writes out is a `proj` of it. A statement binding an aggregate
-or an address-taken local still keeps its function on the AST emitter.
+each value it writes out is a `proj` of it. A binding of a local or parameter
+kept in memory (address-taken, or a `mut` parameter) prints as a `load` before
+the instruction and a `store` after it.
 
 The build target defaults from the compiler host and can be selected explicitly
 with `--target=NAME` (or `--target NAME`). The bootstrap compiler currently

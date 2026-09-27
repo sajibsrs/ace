@@ -179,9 +179,11 @@ enum { FUNC_ALIGN = 16, LOOP_ALIGN = 16 };
 // The internal symbol of an Ace function (emit.c); the result lives in a
 // static buffer until the next call.
 const char* fn_mangle(const char* name, uint32_t len, SType* ft, Node* decl, SType** targs, int nt, int spec);
-// The link symbol of conc's vtable for contract (emit.c), already defined
-// once per pair by module-level signing emission (non-generic conc only).
+// The link symbol of conc's vtable for contract (emit.c), defined once per
+// pair: by module-level signing emission, or, for a generic signing, by
+// obj_vtable wherever a function constructs the pair.
 const char* vtable_name(SType* conc, SType* contract);
+ESym*       obj_vtable(Obj* o, SType* conc, SType* contract, Node* conf);
 // The internal symbol a direct call to Ace function s targets, a stamped
 // generic's or a specialization's included (same buffer as fn_mangle).
 const char* fn_call_mangle(Sym* s, Node* call);
@@ -204,8 +206,9 @@ DivMagic div_magic(uint64_t d, int w, int sign, int neg);
 uint32_t field_off(SType* t, int want);
 int      find_field(SType* t, const char* name, uint32_t len);
 
-// arm64.c: compile a lowered function into o's __text as symbol `name`.
+// arm64.c: compile a lowered function into o's __text as symbol `name`,
+// global (visible to the linker) for main and a C export.
 int  arm64_covers(IrFunc* fn); // selection handles every instruction; else the AST emitter
-void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int is_main);
+void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int global);
 
 #endif

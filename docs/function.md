@@ -490,6 +490,10 @@ result: i32 = c_variadic(0, i32(9), f32(1.25), &value)
 - Ace-defined functions are not variadic. Pass a slice instead; only imported
   C functions may declare `...`.
 - Default and named arguments are not implemented.
+- A declaration or function type takes at most 64 parameters. A method's
+  receiver counts, so a method declares at most 63 more; so does a contract
+  method, whose receiver is implicit. The variadic arguments of a C variadic
+  call are not counted.
 - C-boundary `extern` and `export` functions cannot overload because their
   external names are unmangled.
 - Exceptions and hidden error propagation do not exist; functions return error

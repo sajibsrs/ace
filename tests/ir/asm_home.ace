@@ -1,6 +1,5 @@
-/* A function outside the IR's current subset is left to the AST emitter,
- * with the first construct that kept it out: here an asm binding naming an
- * address-taken local, which the IR binds only as an SSA value. */
+/* An asm binding naming an address-taken local (Inline Assembly #2) reads
+ * it from its home just before the instruction. */
 
 sign(x: i64): i64 {
     k: i64 = x

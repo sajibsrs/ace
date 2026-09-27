@@ -60,8 +60,8 @@ history.
   resolved entries outright, no resolution notes.
 - Update `SPEC.md`, `CHANGELOG.md`, `TODO.md`, and `docs/` in the same commit
   as the change they describe, not a follow-up.
-- Split work likely to exceed 100k tokens into 2–3 owner-approved steps; each
-  step must compile and pass relevant tests.
+- Split work likely to exceed 200k tokens into owner-approved steps; each step
+  must stay under 200k tokens, compile, and pass relevant tests.
 - Commit only after the owner has reviewed the change and explicitly
   permitted the commit, as one commit per topic. Keep a patch of each measured
   stage outside the repository; park an unfinished topic with `git stash`.

@@ -52,7 +52,7 @@ typedef struct {
     Obj*      o;
     IrFunc*   fn;
     Buf*      t;
-    int       is_main, far;
+    int       far;
     // layout
     int*      order;   // blocks in reverse postorder (analysis: liveness, allocation)
     int*      lix;     // block -> reverse-postorder index
@@ -1219,11 +1219,9 @@ static void allocate(A64* a) {
 // the callee-saved registers, the spill slots, and the stack objects.
 
 // Save (or restore) the callee-saved registers, after the frame record (with
-// it when record) at sp + out, within ldp/stp reach: at most 40 arguments
-// (lowering) put out at 320 bytes, and 18 registers follow. A pair never
-// mixes x and d registers.
-static void frame_pairs(A64* a, int restore, int record) {
-    uint32_t off = a->out;
+// it when record) at sp + off, within ldp/stp reach when off is at most 352
+// bytes (18 registers follow). A pair never mixes x and d registers.
+static void frame_pairs(A64* a, uint32_t off, int restore, int record) {
     uint32_t pair = restore ? 0xA9400000u : 0xA9000000u, one = restore ? 0xF9400000u : 0xF9000000u;
     uint32_t fpair = restore ? 0x6D400000u : 0x6D000000u, fone = restore ? 0xFD400000u : 0xFD000000u;
     if (record) put(a, pair | ((off / 8) << 15) | (30u << 10) | (31u << 5) | 29u);
@@ -1243,16 +1241,25 @@ static void frame_pairs(A64* a, int restore, int record) {
 // A small frame without outgoing arguments saves the record with writeback.
 static int short_frame(A64* a) { return !a->out && a->frame <= 504; }
 
+// Outgoing bytes past ldp/stp reach of the saved registers: sp moves in two
+// steps, the frame above them first, so the registers sit at its base.
+static int far_out(A64* a) { return a->out > 352; }
+
 static void prologue(A64* a) {
     if (!a->has_frame) return;
     uint32_t f = a->frame;
     if (short_frame(a)) {
         put(a, 0xA9800000u | ((uint32_t)(-(int32_t)(f / 8)) & 0x7Fu) << 15 | (30u << 10) | (31u << 5) | 29u);
         put(a, 0x910003FDu); // mov x29, sp
-        frame_pairs(a, 0, 0);
+        frame_pairs(a, 0, 0, 0);
+    } else if (far_out(a)) {
+        sp_adjust(a, 0xD10003FFu, f - a->out);
+        frame_pairs(a, 0, 0, 1);
+        put(a, 0x910003FDu); // mov x29, sp
+        sp_adjust(a, 0xD10003FFu, a->out);
     } else {
         sp_adjust(a, 0xD10003FFu, f);
-        frame_pairs(a, 0, 1);
+        frame_pairs(a, a->out, 0, 1);
         add_imm(a, 29, 31, a->out);
     }
 }
@@ -1261,10 +1268,14 @@ static void epilogue(A64* a) {
     if (a->has_frame) {
         uint32_t f = a->frame;
         if (short_frame(a)) {
-            frame_pairs(a, 1, 0);
+            frame_pairs(a, 0, 1, 0);
             put(a, 0xA8C00000u | ((f / 8) << 15) | (30u << 10) | (31u << 5) | 29u); // ldp x29, x30, [sp], #f
+        } else if (far_out(a)) {
+            sp_adjust(a, 0x910003FFu, a->out);
+            frame_pairs(a, 0, 1, 1);
+            sp_adjust(a, 0x910003FFu, f - a->out);
         } else {
-            frame_pairs(a, 1, 1);
+            frame_pairs(a, a->out, 1, 1);
             sp_adjust(a, 0x910003FFu, f);
         }
     }
@@ -1990,6 +2001,9 @@ static void call(A64* a, int v) {
     if (x->op == IR_CALL && !x->sym && strncmp(x->name, "__ace$registry_", 15) == 0 &&
         strcmp(x->name, "__ace$registry_leaks") != 0)
         a->o->allocator_used = 1; // main's exit check alone needs no registry
+    if (x->op == IR_CALL && !x->sym && strcmp(x->name, "__ace$arithmetic_fail") == 0)
+        a->o->arithmetic_fail_used = 1; // a check lowering calls a failure routine directly
+    if (x->op == IR_CALL && !x->sym && strcmp(x->name, "__ace$null_fail") == 0) a->o->null_fail_used = 1;
     if (!x->sig || !x->sig->ret.agg) {
         free(m);
         plan_free(&p);
@@ -2405,23 +2419,16 @@ int arm64_covers(IrFunc* fn) {
             IrIns* x = &fn->ins[fn->blocks[b].ins[i]];
             if (x->op == IR_SLOT && x->aux > 16) return 0; // over-aligned: sp is only 16-byte aligned
             if (x->op == IR_GLOBAL && x->sym && x->sym->is_extern) return 0; // needs the GOT
-            if (is_call(x->op)) { // frame_pairs reaches the saved registers past the outgoing bytes
-                Plan p;
-                plan_call(fn, x, &p);
-                plan_free(&p);
-                if (p.bytes > 352) return 0;
-            }
         }
     return 1;
 }
 
-void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int is_main) {
+void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int global) {
     A64 a;
     memset(&a, 0, sizeof a);
     a.o = o;
     a.fn = fn;
     a.t = obj_text(o);
-    a.is_main = is_main;
     a.pin = xcalloc((size_t)(fn->nparams ? fn->nparams : 1), sizeof(Loc));
     a.rin = xcalloc((size_t)(fn->nrets ? fn->nrets : 1), sizeof(Loc));
     Cc c = { 0, 0, 0, 0, 0 };
@@ -2445,7 +2452,7 @@ void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int is_main)
 
     while (a.t->len % FUNC_ALIGN) put(&a, 0xD503201Fu);
     uint32_t start = here(&a);
-    sym_define(&o->syms, o->secs, name, len, is_main, &o->secs[SEC_TEXT]);
+    sym_define(&o->syms, o->secs, name, len, global, &o->secs[SEC_TEXT]);
     size_t nfix = o->nfix;
     int nrl = o->secs[SEC_TEXT].nrl;
     int nlines = o->nlines;
