@@ -492,6 +492,30 @@ current normative rules, and Git preserves patch-level detail.
   `SPEC.md`'s `Excluded:` line. `tests/ir-diff.sh` (100 random programs) and
   the affected `tests/sema`, `tests/emit`, `tests/checked_contracts`, and
   `tests/modules` fixtures pass with no mismatches.
+- Gave contract values an IR leaf representation and lowered `Shape(&c)`
+  construction, closing the gap the same audit flagged: contract values had
+  no representation in the IR's aggregate-type layer, so one could not yet be
+  bound to a parameter or local. `leaves_at` (`src/ir.c`) now yields a
+  contract's vtable and data pointer as two `IT_PTR` leaves (Carved #5), and
+  `is_agg` (`src/lower.c`) recognizes them, so a contract binds to a local,
+  parameter, field, or return like any other aggregate. Construction reuses
+  `emit.c`'s `vtable_name` (now shared through `backend.h`, the same
+  treatment `fn_mangle` already gets) to reference the vtable module-level
+  signing emission already defines, rather than re-deriving its mangled name;
+  the two leaves are an `IR_GLOBAL` naming that symbol and the argument's
+  address, with no new object-file work needed. Contract-method dispatch
+  (step 5c) no longer requires the contract to already be an addressable
+  place — it reads the two leaves directly, a net simplification, and what
+  makes that dispatch reachable by real programs for the first time.
+  Construction over a generic concrete type still bails with
+  `unsupported(l, "generic contract construction")` and falls back per
+  function, same as `asm`: such a signing's vtable is only materialized on
+  demand by the AST emitter's own construction-site codegen (`Em`-coupled),
+  not yet by `lower.c`; closing it needs `emit_vtable` reachable through
+  `Obj*` instead, left for later. `tests/ir/contracts.ace` covers
+  construction and dispatch; `tests/emit/contracts`, `tests/checked_contracts`,
+  `make test`, `make test-packages`, and `tests/ir-diff.sh` (100 random
+  programs) pass with no mismatches.
 - Lowered `for` over a string, slice, or array to IR (IR migration step 3g).
   The sequence's pointer and length (an array's address and fixed count) are
   read once at entry, the end is `padd ptr, len * size`, and a pointer runs to

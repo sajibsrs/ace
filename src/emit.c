@@ -9921,7 +9921,7 @@ static void emit_global(Em* e, Node* n) {
 
 // --- vtables ---------------------------------------------------------------------------
 
-static const char* vtable_name(SType* conc, SType* contract) {
+const char* vtable_name(SType* conc, SType* contract) {
     Buf b = {0};
     buf_write(&b, "__ace$vt$", 9);
     mangle_type(&b, conc);

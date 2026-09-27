@@ -168,6 +168,12 @@ static int is_view(SType* t) {
     return t && (t->kind == SK_SLICE || (t->kind == SK_PRIM && t->prim == P_STRING));
 }
 
+// A contract value: a vtable pointer and a data pointer (Carved #5).
+static int is_contract(SType* t) {
+    t = unwrap(t);
+    return t && t->kind == SK_CONTRACT;
+}
+
 // A tagged union: an i32 tag, then its payload, always in memory. On its own
 // it is 1 or 2 word-sized leaves, as the ABI moves it, or when over 16 bytes an
 // address (Compiler #5, migration step 3).
@@ -178,7 +184,8 @@ static int is_union(SType* t) {
 
 static int is_agg(SType* t) {
     t = unwrap(t);
-    return t && (t->kind == SK_STRUCT || t->kind == SK_TUPLE || t->kind == SK_ARRAY || is_union(t) || is_view(t));
+    return t && (t->kind == SK_STRUCT || t->kind == SK_TUPLE || t->kind == SK_ARRAY || is_union(t) || is_view(t) ||
+                 is_contract(t));
 }
 
 // Whether t holds an array or a union member: a variable of it lives in
@@ -568,6 +575,13 @@ static const char* link_name(Sym* s, SType* ft) {
         return arena_name(buf);
     }
     return arena_name(fn_mangle(s->name, s->len, ft, s->decl, NULL, 0, 0));
+}
+
+// The address of an external symbol with no Ace Sym of its own (a vtable).
+static int global_named(Lw* l, const char* name) {
+    int id = emit(l, IR_GLOBAL, IT_PTR);
+    l->fn->ins[id].name = name;
+    return id;
 }
 
 // The address of global variable or function s.
@@ -1536,6 +1550,19 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
     if (is_layout_builtin(x, "sizeof") || is_layout_builtin(x, "alignof") || is_layout_builtin(x, "offsetof"))
         return konst(l, type_in(l, x, want), x->ival); // folded by sema
     if (is_layout_builtin(x, "static_assert")) return -1;
+    if (x->d && x->d->kind == N_CONFORMANCE) { // Shape(&value): contract construction (Carved #5)
+        SType* pt = node_ty(x->kids[0]);
+        SType* conc = pt && pt->kind == SK_PTR ? pt->base : NULL;
+        if (!conc || conc->nargs > 0) unsupported(l, "generic contract construction");
+        int vt = global_named(l, vtable_name(conc, node_ty(x)));
+        int data = expr(l, x->kids[0], IT_PTR);
+        if (res) {
+            res->n = 2;
+            res->v[0] = vt;
+            res->v[1] = data;
+        }
+        return -1;
+    }
     if (is_layout_builtin(x, "blank")) { // the zero of its type
         SType* t = node_ty(x);
         if (!is_agg(t)) return konst(l, type_in(l, x, want), 0);
@@ -1587,12 +1614,10 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
                 if (m->len == callee->len && memcmp(m->str, callee->str, callee->len) == 0) { midx = i; break; }
             }
             if (midx < 0) unsupported(l, "contract method");
-            if (!is_place(callee->a)) unsupported(l, "contract value must be in memory");
-            int addr = place_address(l, place(l, callee->a));
-            int vt = load(l, IT_PTR, addr, 0, 0);
-            int fn = load(l, IT_PTR, vt, midx * 8, access_check(l, vt)); // fn slot: vt checked here
-            int data = load(l, IT_PTR, addr, 8, 0);
-            arg_scalar(l, &g, data); // the receiver: always by address
+            Agg c;
+            value(l, callee->a, ct, &c);
+            int fn = load(l, IT_PTR, c.v[0], midx * 8, access_check(l, c.v[0])); // fn slot: vtable checked here
+            arg_scalar(l, &g, c.v[1]); // the receiver: always by address
             for (int i = 0; i < x->nkids; i++) // sema: no contract method parameter is mut
                 call_arg(l, &g, x->kids[i], node_ty(x->kids[i]), 0);
             SType* rt = node_ty(x);

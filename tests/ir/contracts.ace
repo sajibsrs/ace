@@ -1,0 +1,22 @@
+/* Contract values as IR aggregates: construction (vtable + data pointer
+ * leaves) and dispatch through them (Carved #5). */
+
+Circle: struct {
+    radius: i32,
+}
+
+Shape: contract {
+    area(): i32
+}
+
+Circle signs Shape
+
+Circle.area(): i32 {
+    return self.radius
+}
+
+main(): int {
+    circle: Circle = Circle { radius = 21 }
+    shape: Shape = Shape(&circle)
+    return int(shape.area()) * 2 - 42
+}

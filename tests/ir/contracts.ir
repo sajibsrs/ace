@@ -1,0 +1,29 @@
+Circle::area(ptr): i32 {
+b0:
+    %0 = param ptr 0
+    %1 = load i32 [%0]
+    ret %1
+}
+
+main(): i64 {
+b0:
+    %0 = slot ptr 16, 8
+    %1 = slot ptr 4, 4
+    %2 = const i32 21
+    store [%1], %2
+    %4 = global ptr @__ace$vt$S6_Circle$I5_Shape
+    store [%0], %4
+    store [%0 + 8], %1
+    %7 = load ptr [%0]
+    %8 = load ptr [%0 + 8]
+    %9 = load.chk ptr [%7]
+    %10 = calli.chk i32 %9(%8)
+    %11 = cast i64 %10
+    %12 = const i64 2
+    %13 = mul.chk i64 %11, %12
+    %14 = const i64 42
+    %15 = sub.chk i64 %13, %14
+    call @__ace$registry_leaks()
+    ret %15
+}
+

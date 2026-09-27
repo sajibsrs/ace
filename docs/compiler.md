@@ -42,7 +42,11 @@ string or slice is addressed by `padd ptr, i * size`; in debug, each bounds
 test prints as a comparison and a `check %c, line:col bounds violation`,
 which aborts with that site's diagnostic when `%c` is false. An array
 lives in memory: a constant index is an offset on the access, any other a
-`padd` checked below the fixed length. `bitcast` reinterprets a float's bits
+`padd` checked below the fixed length. A contract value is two leaves,
+`{ptr, ptr}` (vtable, data): construction prints its vtable as a `global` and
+the argument's address; dispatch loads the method slot from the vtable leaf
+(a checked load in debug) and calls it with the data leaf as receiver.
+`bitcast` reinterprets a float's bits
 as an integer of its width, or back (`bits.cast`). A call to an `inline`
 function prints as the expanded body, which ends at a join block reading the
 result. A `switch` on a scalar prints as a chain of `ne` comparisons, one per

@@ -1183,8 +1183,8 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
     emitter the rest, under one ABI into one object. Steps: (1) IR, selection,
     and allocation for scalar integer code with its debug checks, measuring
     compile time against the emission it replaces; (2) floats, aggregates, and
-    the full ABI; (3) tagged unions, `switch`, `defer`, and contract checks;
-    (4) pass 6 and the debug mode, with `bench/core`, `bench/std`, and
+    the full ABI; (3) tagged unions, `switch`, `defer`, and contract checks
+    and values; (4) pass 6 and the debug mode, with `bench/core`, `bench/std`, and
     `bench/package` at parity or better; (5) remove the AST emitter and fold
     this entry into Compiler #2, #4, and #6.
   - Files: `src/ir.c` (IR, verifier, printer), `src/lower.c`, `src/opt.c`

@@ -161,6 +161,17 @@ static int leaves_at(SType* t, uint32_t off, IrLeaf* out, int n, int max, SType*
         }
         return n + 2;
     }
+    if (u && u->kind == SK_CONTRACT) { // a vtable pointer and a data pointer (Carved #5)
+        if (n + 2 > max) {
+            *bad = t;
+            return -1;
+        }
+        if (out) {
+            out[n] = (IrLeaf){ off, IT_PTR };
+            out[n + 1] = (IrLeaf){ off + 8, IT_PTR };
+        }
+        return n + 2;
+    }
     if (u && u->kind == SK_ARRAY) { // its elements in order, as AAPCS64 flattens it
         uint32_t es = sema_size(u->base);
         for (uint64_t i = 0; i < u->count && n >= 0; i++) n = leaves_at(u->base, off + (uint32_t)i * es, out, n, max, bad);
@@ -506,7 +517,8 @@ void ir_print(IrFunc* fn, FILE* out) {
                 break;
             case IR_GLOBAL:
                 fputc(' ', out);
-                print_sym(out, v->sym);
+                if (v->sym) print_sym(out, v->sym);
+                else fprintf(out, "@%s", v->name);
                 break;
             case IR_STR:
                 fputs(" \"", out);
