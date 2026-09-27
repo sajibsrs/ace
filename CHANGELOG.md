@@ -679,6 +679,20 @@ current normative rules, and Git preserves patch-level detail.
   runtime-sized collection without boxing every element behind a pointer, e.g.
   `Json: union { none, object: []Pair }` followed by
   `Pair: struct { key: string, value: Json }`.
+- Numbered `IR_GLOBAL` in global value numbering, keyed by symbol (a name-only
+  reference with no symbol, the vtable case, never merges), so a repeated
+  address materialization of the same global is replaced by one already
+  dominating it; `simplify` now returns unchanged on a zero-argument operation
+  instead of reading past an empty argument list. Loop strength reduction's
+  preheader hoist for a global base no longer needs a non-power-of-two scale:
+  a power-of-two access keeps its scaled-register offset in the loop body (the
+  backend already folds that for free) but still moves its base to the
+  preheader, as the pointer case's is, memoized per loop by symbol.
+  `bench/core`'s `saxpy-f64` drops from 0.784 to 0.507 ns/element (1.62x to
+  1.05x scalar C, `dot-f64` improving alongside it), and `hotloop`'s machine
+  code shrinks 25,612 to 25,552 bytes. `tests/ir/strength.ace` gains a global
+  summed by a power-of-two stride to cover the new hoist, and
+  `tests/ir-diff.sh` (200 random programs) shows no mismatches.
 
 ## Core language
 

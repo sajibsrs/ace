@@ -316,7 +316,7 @@ static int is_pure(const IrIns* x) {
     case IR_CAST: case IR_BITCAST:
     case IR_POPCNT: case IR_CLZ: case IR_CTZ: case IR_BSWAP: case IR_ROTL: case IR_ROTR:
     case IR_SQRT: case IR_FLOOR: case IR_CEIL: case IR_FMA:
-    case IR_PADD: case IR_PSUB:
+    case IR_PADD: case IR_PSUB: case IR_GLOBAL:
         return 1;
     default: return 0;
     }
@@ -365,13 +365,17 @@ static uint64_t arg_hash(const IrFunc* fn, int a) {
 
 static uint64_t vn_hash(const IrFunc* fn, const IrIns* x) {
     uint64_t h = mix(mix(mix(x->op, x->type), x->imm), (uint64_t)(uint32_t)x->aux);
+    if (x->op == IR_GLOBAL) return mix(h, (uint64_t)(uintptr_t)x->sym);
     if (commutes(fn, x)) return mix(h, arg_hash(fn, x->args[0]) + arg_hash(fn, x->args[1]));
     for (int i = 0; i < x->nargs; i++) h = mix(h, arg_hash(fn, x->args[i]));
     return h;
 }
 
+// A global counts as equal only by a shared, non-null symbol: the name-only
+// (vtable) form has no symbol to key on and is never merged.
 static int vn_equal(const IrFunc* fn, const IrIns* x, const IrIns* y) {
     if (x->op != y->op || x->type != y->type || x->imm != y->imm || x->aux != y->aux || x->nargs != y->nargs) return 0;
+    if (x->op == IR_GLOBAL) return x->sym && x->sym == y->sym;
     int direct = 1, swapped = x->nargs == 2 && commutes(fn, x);
     for (int i = 0; i < x->nargs; i++) {
         direct &= same_arg(fn, x->args[i], y->args[i]);
@@ -387,6 +391,7 @@ static int is_konst(const IrFunc* fn, int a, uint64_t k) {
 
 // The operand x equals, or -1.
 static int simplify(const IrFunc* fn, const IrIns* x) {
+    if (!x->nargs) return -1;
     int a = x->args[0], b = x->nargs > 1 ? x->args[1] : -1;
     if (ir_type_float((IrType)x->type)) return -1;
     switch (x->op) {
@@ -579,11 +584,32 @@ static int lsr_pointer(IrFunc* fn, const int* idom, const int* repl, int nins, L
     return q;
 }
 
+// The preheader-resident global that base already is or chases to, reusing
+// one already hoisted in this loop for the same symbol; base unchanged when
+// it already dominates pre, or -1 when it is some other loop-varying value a
+// full pointer rewrite would be needed for (out of scope: no general LICM).
+// Marked by phi = -1 in the shared table, so it never matches a real
+// induction-pointer entry (phi is always a valid instruction id, >= 0).
+static int lsr_hoist(IrFunc* fn, const int* idom, LsrPtr** ptrs, int* nptr, int* cptr, int pre, int base) {
+    if (ir_dominates(idom, fn->ins[base].block, pre)) return base;
+    if (fn->ins[base].op != IR_GLOBAL) return -1;
+    for (int i = 0; i < *nptr; i++) {
+        LsrPtr* p = &(*ptrs)[i];
+        if (p->phi < 0 && same_base(fn, p->base, base)) return p->q;
+    }
+    int g = ins_before_term(fn, pre, IR_GLOBAL, IT_PTR);
+    fn->ins[g].sym = fn->ins[base].sym;
+    fn->ins[g].name = fn->ins[base].name;
+    *ptrs = xgrow(*ptrs, cptr, *nptr + 1, sizeof(LsrPtr));
+    (*ptrs)[(*nptr)++] = (LsrPtr){ base, 0, -1, g, 0 };
+    return g;
+}
+
 static void lsr(IrFunc* fn) {
     int n = fn->nblocks, nins = fn->nins, any = 0;
     for (int v = 0; v < nins && !any; v++) {
         const IrIns* x = &fn->ins[v];
-        any = (x->op == IR_PADD || x->op == IR_PSUB) && x->block >= 0 && !x->flags && (x->imm & (x->imm - 1));
+        any = (x->op == IR_PADD || x->op == IR_PSUB) && x->block >= 0 && !x->flags;
     }
     if (!any) return;
     int* rpo, nrpo;
@@ -633,12 +659,18 @@ static void lsr(IrFunc* fn) {
                 for (int i = 0; i < fn->blocks[b].nins; i++) {
                     int u = fn->blocks[b].ins[i];
                     IrIns* x = &fn->ins[u];
-                    if ((x->op != IR_PADD && x->op != IR_PSUB) || x->flags || lsr_index(fn, x->args[1]) != phis[k] || u >= nins ||
-                        !(x->imm & (x->imm - 1)))
+                    if ((x->op != IR_PADD && x->op != IR_PSUB) || x->flags || lsr_index(fn, x->args[1]) != phis[k] || u >= nins)
                         continue;
-                    int q = lsr_pointer(fn, idom, repl, nins, &ptrs, &nptr, &cptr, h, pre, latch, pi, li, phis[k], u);
-                    if (q < 0) continue;
-                    repl[u] = q;
+                    if (x->imm & (x->imm - 1)) {
+                        int q = lsr_pointer(fn, idom, repl, nins, &ptrs, &nptr, &cptr, h, pre, latch, pi, li, phis[k], u);
+                        if (q < 0) continue;
+                        repl[u] = q;
+                    } else {
+                        int base = lsr_chase(repl, nins, x->args[0]);
+                        int g = lsr_hoist(fn, idom, &ptrs, &nptr, &cptr, pre, base);
+                        if (g < 0 || g == base) continue;
+                        fn->ins[u].args[0] = g; // lsr_hoist may have grown fn->ins, so x is stale
+                    }
                     changed = 1;
                 }
             }

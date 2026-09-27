@@ -2,7 +2,10 @@
  * two a pointer of its own, started before the loop and stepped at its latch:
  * an element's fields share one pointer, from a global or a parameter, from a
  * nonzero start, for a counter that falls, and in an inner loop, restarted on
- * each entry. A power-of-two scale stays an offset. Debug keeps every one. */
+ * each entry. A power-of-two scale keeps its offset in place, but a global
+ * base recomputed every iteration is still hoisted to the preheader; a
+ * parameter base needs no hoist, already dominating the loop. Debug keeps
+ * every one. */
 
 Vec3: struct {
     x: f32,
@@ -11,6 +14,17 @@ Vec3: struct {
 }
 
 points: [8]Vec3
+xs64: [8]f64
+
+fill64() {
+    for i: usize in 0 .. 8 { xs64[i] = f64(i) }
+}
+
+sum64(): f64 {
+    t: f64 = 0.0
+    for i: usize in 0 .. 8 { t += xs64[i] }
+    return t
+}
 
 fill() {
     for i: usize in 0 .. 8 {
@@ -57,5 +71,7 @@ main(): int {
     if falling(points[..]) != 56.0 { return 3 }
     w: [4]u64 = [1, 2, 3, 4]
     if grid(points[..], w[..]) != 32.0 { return 4 }
+    fill64()
+    if sum64() != 28.0 { return 5 }
     return 0
 }

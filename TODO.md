@@ -140,28 +140,25 @@ These are baseline observations, not performance promises.
   facts without adding global alias analysis. Keeping a string parameter's
   length in a register measured no parse gain even with registers free.
 - **Hot-loop codegen gap** [new] — game and graphics kernels over global arrays
-  run 1.1x (dot product) to 8x (by-value `Vec3` calls) scalar C `-O2` with
+  run 1.05x (saxpy) to 8x (by-value `Vec3` calls) scalar C `-O2` with
   vectorization off, and 2x to 30x C's NEON auto-vectorized output, which Ace
-  leaves to explicit `simd`. What remains, measured on a `saxpy` loop (1.25 ns
-  then, 0.97 ns now, C 0.48): an array base is rebuilt with `adrp`/`add` at
-  every access, and hoisting it and the loop's float constants into registers
-  measured 0.97 to 0.48 ns; a field of an indexed struct
+  leaves to explicit `simd`. What remains: a field of an indexed struct
   element costs `add`, `add`, then a load with no offset (`ps[i].x` about
   twelve times per particle); indexed stores still add the scaled index
-  separately; and a leaf call taking
-  by-value `Vec3`s copies every argument register and sets up a frame it does
-  not use. A bottom-tested loop measured 7.7% on `saxpy` and 31% on a short
-  branchy loop, but 8% slower on `for cond {}`; it is deferred until it can be
-  weighed on top of the address work. `bench/core/run-hotloop.sh` tracks the saxpy,
-  dot, and `Vec3` kernels. Latest ratios to scalar C `-O2`: saxpy 1.62x, particle
-  `Vec3` 1.51x, `Vec3` length 0.89x, floating dot 0.79x. `std/simd` is
-  specified and unimplemented. Candidate order: (1) scalar address work, meaning
-  the scaled index and field offset folded into load and store addressing, measured
-  against a saved `bench/core/run-hotloop.sh` baseline over several runs; loop-invariant
-  hoisting into registers is the alternative but needs analysis the
-  single-pass design avoids; (2) the bottom-tested loop and by-value `Vec3`
-  leaf-call frame cost; (3) `std/simd` NEON intrinsics (`f32x4`, `i8x16`), the
-  only route past auto-vectorized C.
+  separately; a loop's float constants (a saxpy `fmov` immediate) are
+  rematerialized every iteration rather than held in a register; and a leaf
+  call taking by-value `Vec3`s copies every argument register and sets up a
+  frame it does not use. A bottom-tested loop measured 7.7% on `saxpy` and 31%
+  on a short branchy loop, but 8% slower on `for cond {}`; it is deferred
+  until it can be weighed on top of the remaining address work.
+  `bench/core/run-hotloop.sh` tracks the saxpy, dot, and `Vec3` kernels.
+  Latest ratios to scalar C `-O2`: saxpy 1.05x, particle `Vec3` 1.51x, `Vec3`
+  length 0.89x, floating dot 0.75x. `std/simd` is specified and unimplemented.
+  Candidate order: (1) the scaled index and field offset folded into load and
+  store addressing, and the float-constant hoisting, each measured against a
+  saved `bench/core/run-hotloop.sh` baseline over several runs; (2) the
+  bottom-tested loop and by-value `Vec3` leaf-call frame cost; (3) `std/simd`
+  NEON intrinsics (`f32x4`, `i8x16`), the only route past auto-vectorized C.
 - **Inline-expansion leftovers** [new] — an expansion the IR lowers has no
   result temp and no argument copies, but a `bool` result returned from
   several branches is joined as a phi of constants and branched on again
@@ -178,9 +175,8 @@ These are baseline observations, not performance promises.
   pointer offsets into addressing, and `mul` with `add`, and has no live-range
   splitting for a value held across a loop. Candidates: `div`, `rem`, `sqrt`,
   and float chains only; loads in a loop with no store, call, or volatile
-  access (needs a design); and the array-base and float-constant hoisting the
-  address-work entry above measured, which is a register-allocation decision.
-  Each needs a benchmark that shows a gain first.
+  access (needs a design); and a loop's float constants, a register-allocation
+  decision. Each needs a benchmark that shows a gain first.
 - **Float constants from bit patterns** [new] — `bits.cast(u64(0x7FF0000000000000))`
   still builds the integer with `mov`/`movk` and moves it with `fmov`, and a
   const float initialized by an expression rather than a literal loads from

@@ -61,16 +61,38 @@ The small-size comparison against `cc` flatters Ace: `cc` pays process startup
 and header parsing that a 100-function corpus barely amortizes, so the growth
 column, not the ratio at small sizes, is the real signal.
 
-Function-count corpus, medians in ms:
+Function-count corpus, medians in ms, at `af1aeae` (the finished IR migration):
 
-| functions | lines | Ace debug | `cc -O0` | `cc -O2` |
+| functions | lines | Ace debug | Ace release | `cc -O0` | `cc -O2` |
+|---|---|---|---|---|---|
+| 100 | 1,053 | 14.6 | 15.1 | 57.6 | 204.7 |
+| 1,000 | 10,353 | 37.7 | 41.0 | 219.9 | 1,589.6 |
+| 5,000 | 51,684 | 147.4 | 161.6 | 941.1 | 7,659.4 |
+| 20,000 | 206,684 | 551.8 | 605.9 | 3,649.1 | 31,087.6 |
+
+Growth is 3.9x for 5x the code and 3.7x for 4x, so this shape is still linear.
+Ace remains far faster to compile-to-object than `cc` at every size (0.17x
+`-O0`, 0.02x `-O2` at 20,000), but against Ace's own pre-migration self, five
+paired median-of-5 runs on the same corpus files show the migration cost real
+compile time, worst in release since that mode now runs a pass that did not
+exist before:
+
+| functions | Ace debug (`fef1651`) | Ace debug (`af1aeae`) | Ace release (`fef1651`) | Ace release (`af1aeae`) |
 |---|---|---|---|---|
-| 100 | 1,053 | 10.4 | 55.1 | 206.4 |
-| 1,000 | 10,353 | 27.7 | 215.0 | 1,611 |
-| 5,000 | 51,684 | 100 | 934 | 7,758 |
-| 20,000 | 206,684 | 388 | 3,608 | 30,919 |
+| 100 | 11.4 | 14.8 | 11.8 | 15.7 |
+| 1,000 | 28.8 | 37.8 | 28.6 | 42.0 |
+| 5,000 | 109.5 | 143.1 | 102.9 | 158.4 |
+| 20,000 | 422.6 | 531.9 | 406.0 | 595.4 |
 
-Growth is 3.6x for 5x the code and 3.9x for 4x, so this shape is now linear.
++26-33% in debug, +33-54% in release, consistent at every size. `fef1651` is
+the last commit before any IR code existed (pure AST-emitter backend); every
+checksum matched between the two compilers on every corpus size, confirming
+the migration changed no observable behavior. This is the tradeoff
+`SPEC.md`'s priority stack (performance > simplicity > modularity > compile
+time > safety) explicitly ranks compile time below: see the Core and Hot
+loops sections below for the runtime and code-size side of the same
+comparison.
+
 Before scope symbols were indexed:
 
 | functions | Ace debug | was |
@@ -103,14 +125,19 @@ per-function lists, and stays linear now that register promotion ranks its
 candidates once and searches each register's sorted intervals. It had reached
 1.60 s at 20,000 when live-interval sharing let most of those locals hold
 registers.
-Machine code for 5,000 functions:
+Machine code for 5,000 functions, at `af1aeae`:
 
-| build | machine code |
-|---|---|
-| Ace release | 1.60 MB |
-| Ace debug | 2.07 MB |
-| `cc -O0` | 0.98 MB |
-| `cc -O2` | 1.10 MB |
+| build | machine code | was (`fef1651`) |
+|---|---|---|
+| Ace release | 0.66 MB | 0.93 MB |
+| Ace debug | 0.82 MB | 1.35 MB |
+| `cc -O0` | 0.98 MB | 0.98 MB |
+| `cc -O2` | 1.10 MB | 1.10 MB |
+
+The IR backend's instruction selection and addressing-mode folding shrank
+Ace's own output by 30% (release) and 39% (debug) against the pre-IR AST
+emitter, putting Ace below both `cc` levels where it previously sat above
+`-O2`.
 
 Real programs:
 
@@ -659,6 +686,62 @@ dependency chain; Ace leads it. The `saxpy` pair reproduces the ad-hoc figures
 `velocities[i]` to a local `Vec3` once, instead of indexing it three times,
 measured 2.551 ns against 2.744, so about 7% of that row is repeated address
 computation and the rest is elsewhere.
+
+#### After the IR migration
+
+Five runs at `af1aeae` (the finished IR migration, `22fdbed` plus loop
+strength reduction and the AST-emitter removal), medians in ns per element,
+against C medians from the same run (unchanged since `cc` did not move):
+
+| workload | Ace | C scalar | Ace/C | C vector | Ace/vector | `22fdbed` |
+|---|---|---|---|---|---|---|
+| `saxpy-f64` | 0.784 | 0.485 | 1.62x | 0.182 | 4.31x | 0.966 |
+| `saxpy-f32` | 0.784 | 0.485 | 1.62x | 0.092 | 8.52x | 0.965 |
+| `dot-f64` | 1.306 | 1.647 | 0.79x | 1.072 | 1.22x | 1.303 |
+| `particle-vec3` | 1.109 | 0.735 | 1.51x | 0.273 | 4.06x | 2.648 |
+| `length-vec3` | 1.465 | 1.651 | 0.89x | 1.104 | 1.33x | 2.363 |
+
+`particle-vec3` is the one that moved most (2.39x): loop strength reduction
+now recognizes `positions[i].x/.y/.z` and `velocities[i].x/.y/.z` as one
+induction variable each and rewrites the indexed access into a single pointer
+phi stepped by the struct size per iteration, so all three fields load and
+store off one already-computed address instead of recomputing `base + i *
+12` three times per particle. `length-vec3` inherits the same fix (1.62x).
+`saxpy` and `dot-f64` do not go through that path — their stride (8 bytes) is
+a power of two, which the pass deliberately skips because a power-of-two
+scale already folds into a shifted register-offset load with no separate
+multiply — yet `saxpy` still improved 1.23x from the IR backend's generally
+better register allocation. Disassembly at this commit shows `saxpy`'s
+`adrp`/`add` pair for each global array is still rebuilt every loop
+iteration, including twice for `ys64` (once for the read, once for the
+write) since nothing currently common-subexpression-eliminates repeated
+`global` address materialization; this is the open half of `TODO.md`'s
+"Hot-loop codegen gap" entry.
+
+#### GVN-numbered globals and the power-of-two preheader hoist
+
+Five runs after closing that open half, medians in ns per element, against C
+medians from the same run:
+
+| workload | Ace | C scalar | Ace/C | C vector | Ace/vector | `af1aeae` |
+|---|---|---|---|---|---|---|
+| `saxpy-f64` | 0.508 | 0.484 | 1.05x | 0.182 | 2.79x | 0.784 |
+| `saxpy-f32` | 0.507 | 0.483 | 1.05x | 0.091 | 5.57x | 0.784 |
+| `dot-f64` | 1.240 | 1.643 | 0.75x | 1.070 | 1.16x | 1.306 |
+| `particle-vec3` | 1.117 | 0.733 | 1.52x | 0.289 | 3.87x | 1.109 |
+| `length-vec3` | 1.465 | 1.647 | 0.89x | 1.106 | 1.32x | 1.465 |
+
+Global value numbering now numbers `IR_GLOBAL` by symbol, so a global's
+address is computed once per dominating occurrence instead of once per static
+reference in the same block; loop strength reduction's preheader hoist no
+longer requires a non-power-of-two stride, so a power-of-two access
+(`saxpy`'s, `dot-f64`'s) keeps its scaled-register offset in place but has its
+base hoisted out of the loop the same way the pointer-phi case's is. `saxpy`'s
+repeated `adrp`/`add` per iteration is gone: `saxpy-f64` moves from 1.62x to
+1.05x scalar C, essentially closing the gap, and `dot-f64` improves alongside
+it (0.79x to 0.75x) since it reads the same two globals in its own loop.
+`particle-vec3` and `length-vec3` are unaffected, as expected — their stride
+is not a power of two, so they were already on the pointer-phi path.
 
 ## Standard library
 

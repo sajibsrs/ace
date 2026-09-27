@@ -1,3 +1,49 @@
+fill64(): void {
+b0:
+    %0 = const i64 0
+    %1 = const i64 8
+    %2 = global ptr xs64
+    jmp b1
+b1: ; preds b0, b2
+    %4 = phi i64 [%0, b0], [%12, b2]
+    %5 = lt bool %4, %1
+    br %5, b2, b3
+b2: ; preds b1
+    %7 = cast u64 %4
+    %8 = padd ptr %2, %7 * 8
+    %9 = cast f64 %7
+    store [%8], %9
+    %11 = const i64 1
+    %12 = add i64 %4, %11
+    jmp b1
+b3: ; preds b1
+    ret
+}
+
+sum64(): f64 {
+b0:
+    %0 = const f64 0.0
+    %1 = const i64 0
+    %2 = const i64 8
+    %3 = global ptr xs64
+    jmp b1
+b1: ; preds b0, b2
+    %5 = phi i64 [%1, b0], [%14, b2]
+    %6 = phi f64 [%0, b0], [%12, b2]
+    %7 = lt bool %5, %2
+    br %7, b2, b3
+b2: ; preds b1
+    %9 = cast u64 %5
+    %10 = padd ptr %3, %9 * 8
+    %11 = load f64 [%10]
+    %12 = add f64 %6, %11
+    %13 = const i64 1
+    %14 = add i64 %5, %13
+    jmp b1
+b3: ; preds b1
+    ret %6
+}
+
 fill(): void {
 b0:
     %0 = const i64 0
@@ -194,18 +240,26 @@ b6: ; preds b4
     store [%0 + 16], %26
     %28 = const u64 4
     store [%0 + 24], %28
-    %30 = global ptr points
-    %31 = const u64 8
-    %32 = const u64 4
-    %33 = call f32 grid(%30, %31, %0, %32)
-    %34 = const f32 32.0
-    %35 = ne bool %33, %34
-    br %35, b7, b8
+    %30 = const u64 8
+    %31 = const u64 4
+    %32 = call f32 grid(%14, %30, %0, %31)
+    %33 = const f32 32.0
+    %34 = ne bool %32, %33
+    br %34, b7, b8
 b7: ; preds b6
-    %37 = const i64 4
-    ret %37
+    %36 = const i64 4
+    ret %36
 b8: ; preds b6
-    %39 = const i64 0
-    ret %39
+    call fill64()
+    %39 = call f64 sum64()
+    %40 = const f64 28.0
+    %41 = ne bool %39, %40
+    br %41, b9, b10
+b9: ; preds b8
+    %43 = const i64 5
+    ret %43
+b10: ; preds b8
+    %45 = const i64 0
+    ret %45
 }
 
