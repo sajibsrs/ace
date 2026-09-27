@@ -65,7 +65,6 @@ next, in this order.
 
 ### C boundary completion
 
-- **`bool` (`_Bool`) mapping** [additive].
 - **C enums at the boundary** [additive].
 - **C global variables in extern blocks** [unspecified] — data imports such as
   `stdout` and errno-style globals are unaddressed.
@@ -142,23 +141,20 @@ These are baseline observations, not performance promises.
 - **Hot-loop codegen gap** [new] — game and graphics kernels over global arrays
   run 1.05x (saxpy) to 8x (by-value `Vec3` calls) scalar C `-O2` with
   vectorization off, and 2x to 30x C's NEON auto-vectorized output, which Ace
-  leaves to explicit `simd`. What remains: a field of an indexed struct
-  element costs `add`, `add`, then a load with no offset (`ps[i].x` about
-  twelve times per particle); indexed stores still add the scaled index
-  separately; a loop's float constants (a saxpy `fmov` immediate) are
-  rematerialized every iteration rather than held in a register; and a leaf
-  call taking by-value `Vec3`s copies every argument register and sets up a
-  frame it does not use. A bottom-tested loop measured 7.7% on `saxpy` and 31%
-  on a short branchy loop, but 8% slower on `for cond {}`; it is deferred
-  until it can be weighed on top of the remaining address work.
-  `bench/core/run-hotloop.sh` tracks the saxpy, dot, and `Vec3` kernels.
-  Latest ratios to scalar C `-O2`: saxpy 1.05x, particle `Vec3` 1.51x, `Vec3`
-  length 0.89x, floating dot 0.75x. `std/simd` is specified and unimplemented.
-  Candidate order: (1) the scaled index and field offset folded into load and
-  store addressing, and the float-constant hoisting, each measured against a
-  saved `bench/core/run-hotloop.sh` baseline over several runs; (2) the
-  bottom-tested loop and by-value `Vec3` leaf-call frame cost; (3) `std/simd`
-  NEON intrinsics (`f32x4`, `i8x16`), the only route past auto-vectorized C.
+  leaves to explicit `simd`. Scaled-index and field-offset addressing is
+  already folded (loop strength reduction's pointer-phi for a non-power-of-two
+  stride, the backend's fused shift-add shared across a struct's fields for a
+  power-of-two one); float-constant hoisting was tried and found not worth it
+  (`TODO.md` Loop-invariant hoisting). What remains: a leaf call taking
+  by-value `Vec3`s copies every argument register and sets up a frame it does
+  not use. A bottom-tested loop measured 7.7% on `saxpy` and 31% on a short
+  branchy loop, but 8% slower on `for cond {}`; it is deferred until it can be
+  weighed on top of the remaining work. `bench/core/run-hotloop.sh` tracks the
+  saxpy, dot, and `Vec3` kernels. Latest ratios to scalar C `-O2`: saxpy 1.05x,
+  particle `Vec3` 1.51x, `Vec3` length 0.89x, floating dot 0.75x. `std/simd` is
+  specified and unimplemented. Candidate order: (1) the bottom-tested loop and
+  by-value `Vec3` leaf-call frame cost; (2) `std/simd` NEON intrinsics
+  (`f32x4`, `i8x16`), the only route past auto-vectorized C.
 - **Inline-expansion leftovers** [new] — an expansion the IR lowers has no
   result temp and no argument copies, but a `bool` result returned from
   several branches is joined as a phi of constants and branched on again
@@ -175,8 +171,16 @@ These are baseline observations, not performance promises.
   pointer offsets into addressing, and `mul` with `add`, and has no live-range
   splitting for a value held across a loop. Candidates: `div`, `rem`, `sqrt`,
   and float chains only; loads in a loop with no store, call, or volatile
-  access (needs a design); and a loop's float constants, a register-allocation
-  decision. Each needs a benchmark that shows a gain first.
+  access (needs a design). A narrower, register-allocation-only version was
+  tried for a loop's float constants alone (hoisted to the preheader and held
+  in a register instead of rematerialized per use, sidestepping the fusion
+  losses above since a bare constant fuses into nothing):
+  `bench/core/run-hotloop.sh` measured 2.3% faster on `particle-vec3` (three
+  multiplies share the constant) but 1.3% slower on `saxpy` (memory-bound; the
+  rematerialize already lands in an otherwise-idle slot there), a
+  shape-dependent split too small and inconsistent to justify the added IR
+  flag and allocator special case. Each remaining candidate needs a benchmark
+  that shows a gain first.
 - **Float constants from bit patterns** [new] — `bits.cast(u64(0x7FF0000000000000))`
   still builds the integer with `mov`/`movk` and moves it with `fmov`, and a
   const float initialized by an expression rather than a literal loads from
