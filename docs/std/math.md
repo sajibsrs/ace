@@ -66,7 +66,8 @@ across: f32 = math.cos(single)
 ```
 
 - Every `f64` result is within 1 ULP of the exact result over the whole finite
-  domain. An `f32` result is within 1 ULP too; `pow` has its own `f32` kernel.
+  domain. An `f32` result is within 1 ULP too; `pow`, `sin`, and `cos` have
+  their own `f32` kernels.
 - `exp(±0)` is `1`, `exp(+inf)` is `+inf`, `exp(-inf)` is `0`; overflow gives
   `+inf` and underflow is gradual through subnormals.
 - `log(±0)` is `-inf`, `log` of a negative value is a NaN, `log(1)` is `+0`, and
@@ -91,7 +92,8 @@ across: f32 = math.cos(single)
 They are pure Ace: no libm call, no errno or floating-point flag, and the same
 result on every target. They currently run at about 6 ns per call for `exp` and
 8 ns for `log`, 11–12 ns for `sin` and `cos` once the argument needs reducing
-and about 4 ns below pi/4, several hundred ns for arguments beyond 1.6e6, and
+and about 4 ns below pi/4 (about 5 ns for `f32` `sin` and `cos`), several
+hundred ns for arguments beyond 1.6e6, and
 about 23 ns for `pow(f64)` (12 ns for `pow(f32)`, about 7 ns for the exponents
 2, 1, -1, and 0.5). `exp`, `log`, and `pow` are all table-driven over the same
 two 128-entry tables: a logarithm table of `invc` and `log(c)`, and a table of

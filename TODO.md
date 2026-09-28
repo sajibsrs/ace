@@ -271,11 +271,11 @@ foundations.
 - **Large-argument `sin`/`cos`** [new] — past the Cody-Waite cutoff, `sin`
   takes 366 ns against libm's 7.8 (47x, `bench/std/run-math.sh`). Profile the
   Payne-Hanek path before choosing a candidate.
-- **`f32` transcendental functions** [new] — the `f32` `exp`, `log`, `sin`,
-  and `cos` convert to `f64`, call the `f64` function, and round back, running
-  3.3-5.3x libm's `expf`, `logf`, `sinf`, and `cosf` against 2.1-3.1x for the
-  `f64` forms (`bench/std/run-math.sh`). Candidate: `f32` kernels with
-  `f32`-sized polynomials that keep the 1-ULP bound (Stdlib #8).
+- **`f32` transcendental functions** [new] — the `f32` `exp` and `log`
+  convert to `f64`, call the `f64` function, and round back, running slower
+  against libm's `expf` and `logf` than the `f64` forms do against theirs
+  (`bench/std/run-math.sh`). Candidate: `f32` kernels with `f32`-sized
+  polynomials that keep the 1-ULP bound (Stdlib #8), as `sin` and `cos` have.
 - **Random source** [new].
 
 ## 5. Packages

@@ -1758,6 +1758,13 @@ current normative rules, and Git preserves patch-level detail.
   rather than needing a fresh reference sweep. `POW_ABS` became `ABS_BITS` and
   gained `INF_BITS` beside it, since the magnitude mask is no longer pow's
   alone.
+- Gave the `f32` `sin` and `cos` their own kernels in place of rounding the
+  `f64` result: musl's four-term `f64` polynomials, after an inline reduction
+  by pi/2 in a 25-bit head and a tail that stays exact below 2^28 * pi/2, and
+  Payne-Hanek beyond it. They fell from 7.9 to 4.8 ns (`sin`) and 7.1 to 4.9 ns
+  (`cos`) on `bench/std/run-math.sh`, with unchanged checksums; every finite
+  input below 1.6e6 and a 1-in-997 sample above it stays within 1 ULP of the
+  rounded `f64` result.
 - Widened float register promotion past the callee-saved eight: `d24-d31`,
   which nothing else reserves between statements, now take up to eight more
   promoted locals. They are caller-saved and the shared byte routines clobber

@@ -7,7 +7,8 @@
  * pow runs both halves back to back, carrying its logarithm as a high and low double because the
  * value must survive multiplication by the exponent; exp and log return one rounded double and so
  * keep only the single compensation term the cancelling add needs. The f32 pow overload is a
- * separate plain-f64 kernel over the same tables; the other f32 overloads round the f64 result.
+ * separate plain-f64 kernel over the same tables, and the f32 sin and cos use shorter f64 kernels
+ * after a two-word reduction; the f32 exp and log round the f64 result.
  */
 
 import table: @math_tables
@@ -53,6 +54,24 @@ COS_C3: const f64 = 2.48015872894767294178e-05
 COS_C4: const f64 = -2.75573143513906633035e-07
 COS_C5: const f64 = 2.08757232129817482790e-09
 COS_C6: const f64 = -1.13596475577881948265e-11
+
+// The f32 sin and cos work in f64: musl's shorter kernels hold an f32 result to 1 ULP on
+// [-pi/4, pi/4], and pi/2 in a 25-bit head and a tail reduces exactly while n * PIO2F_1 fits in
+// 53 bits, below F32_LARGE_BITS (2^28 * pi/2). Bit bounds are those of the f32 magnitude.
+SINF_S1: const f64 = -0.16666666641626524
+SINF_S2: const f64 = 0.008333329385889463
+SINF_S3: const f64 = -0.00019839334836096632
+SINF_S4: const f64 = 2.718311493989822e-06
+COSF_C0: const f64 = -0.499999997251031
+COSF_C1: const f64 = 0.04166662332373906
+COSF_C2: const f64 = -0.001388676377460993
+COSF_C3: const f64 = 2.439044879627741e-05
+PIO2F_1: const f64 = 1.5707963109016418
+PIO2F_1T: const f64 = 1.5893254773528196e-08
+F32_PIO4_BITS: const u32 = 0x3F490FDA
+F32_SMALL_BITS: const u32 = 0x39800000
+F32_LARGE_BITS: const u32 = 0x4DC90FDB
+F32_INF_BITS: const u32 = 0x7F800000
 
 // Logarithm reduction over the `math_tables` log table, shared by log and pow: x = 2^k * z with z
 // in [OFF, 2*OFF); LOG_HIGH32 splits z for pow's exact product; C3..C10 carry log1p(r) - r + r^2/2
@@ -576,8 +595,52 @@ pub sin(value: f64): f64 {
     return result
 }
 
-pub inline sin(value: f32): f32 {
-    return f32(sin(f64(value)))
+inline sin_kernel32(x: f64): f64 {
+    z: f64 = x * x
+    w: f64 = z * z
+    s: f64 = z * x
+    return (x + s * (SINF_S1 + z * SINF_S2)) + s * w * (SINF_S3 + z * SINF_S4)
+}
+
+inline cos_kernel32(x: f64): f64 {
+    z: f64 = x * x
+    w: f64 = z * z
+    return ((1.0 + z * COSF_C0) + w * COSF_C1) + (w * z) * (COSF_C2 + z * COSF_C3)
+}
+
+/* x - n * pi/2 for an f32 x beyond F32_LARGE_BITS, as the reduced value and the quarter n & 3. */
+reduce_large32(value: f32): (f64, int) {
+    x: f64 = f64(value)
+    y0: f64 = 0.0
+    y1: f64 = 0.0
+    quarter: int = 0
+    y0, y1, quarter = reduce_large(bitcast(f64, bitcast(u64, x) & ABS_BITS))
+    if value < 0.0 { return -(y0 + y1), (4 - quarter) & 3 }
+    return y0 + y1, quarter
+}
+
+pub sin(value: f32): f32 {
+    bits: u32 = bitcast(u32, value) & u32(0x7FFFFFFF)
+    if bits <= F32_PIO4_BITS {
+        if bits < F32_SMALL_BITS { return value }
+        return f32(sin_kernel32(f64(value)))
+    }
+    if bits >= F32_INF_BITS { return value - value }
+    y: f64 = 0.0
+    quarter: int = 0
+    if bits < F32_LARGE_BITS {
+        // Inline, as in the f64 forms; adding and removing 1.5 * 2^52 rounds to the nearest integer.
+        x: f64 = f64(value)
+        n: f64 = x * INV_PIO2 + EXP_SHIFT - EXP_SHIFT
+        y = x - n * PIO2F_1 - n * PIO2F_1T
+        quarter = int(n) & 3
+    } else {
+        y, quarter = reduce_large32(value)
+    }
+    if quarter == 0 { return f32(sin_kernel32(y)) }
+    if quarter == 1 { return f32(cos_kernel32(y)) }
+    if quarter == 2 { return f32(sin_kernel32(-y)) }
+    return f32(-cos_kernel32(y))
 }
 
 pub cos(value: f64): f64 {
@@ -654,6 +717,26 @@ pub cos(value: f64): f64 {
     return result
 }
 
-pub inline cos(value: f32): f32 {
-    return f32(cos(f64(value)))
+pub cos(value: f32): f32 {
+    bits: u32 = bitcast(u32, value) & u32(0x7FFFFFFF)
+    if bits <= F32_PIO4_BITS {
+        if bits < F32_SMALL_BITS { return 1.0 }
+        return f32(cos_kernel32(f64(value)))
+    }
+    if bits >= F32_INF_BITS { return value - value }
+    y: f64 = 0.0
+    quarter: int = 0
+    if bits < F32_LARGE_BITS {
+        // Inline, as in the f64 forms; adding and removing 1.5 * 2^52 rounds to the nearest integer.
+        x: f64 = f64(value)
+        n: f64 = x * INV_PIO2 + EXP_SHIFT - EXP_SHIFT
+        y = x - n * PIO2F_1 - n * PIO2F_1T
+        quarter = int(n) & 3
+    } else {
+        y, quarter = reduce_large32(value)
+    }
+    if quarter == 0 { return f32(cos_kernel32(y)) }
+    if quarter == 1 { return f32(sin_kernel32(-y)) }
+    if quarter == 2 { return f32(-cos_kernel32(y)) }
+    return f32(sin_kernel32(y))
 }
