@@ -372,9 +372,9 @@ static void ck_err(Ck* k, Node* n, const char* fmt, ...) {
     k->d->errors++;
 }
 
-// `panic` and `assert` are reserved builtin names: no binding may take either
-// in any scope. Unlike them, sizeof/alignof/len/typeid/blank are ordinary shadowable
-// names.
+// `panic`, `assert`, `static_assert`, and `bitcast` are reserved builtin
+// names: no binding may take one in any scope. Unlike them,
+// sizeof/alignof/len/typeid/blank are ordinary shadowable names.
 static int is_panic_name(const char* name, uint32_t len) {
     return len == 5 && memcmp(name, "panic", 5) == 0;
 }
@@ -384,6 +384,13 @@ static int is_assert_name(const char* name, uint32_t len) {
 }
 static int is_static_assert_name(const char* name, uint32_t len) {
     return len == 13 && memcmp(name, "static_assert", 13) == 0;
+}
+static int is_bitcast_name(const char* name, uint32_t len) {
+    return len == 7 && memcmp(name, "bitcast", 7) == 0;
+}
+static int is_reserved_builtin(const char* name, uint32_t len) {
+    return is_panic_name(name, len) || is_assert_name(name, len) || is_static_assert_name(name, len) ||
+           is_bitcast_name(name, len);
 }
 static int is_staticmap_name(const char* name, uint32_t len) {
     return len == 9 && memcmp(name, "StaticMap", 9) == 0;
@@ -520,7 +527,7 @@ static Sym* lookup_type(Ck* k, const char* name, uint32_t len) {
 }
 
 static Sym* declare_val(Ck* k, Node* at, uint8_t kind, const char* name, uint32_t len) {
-    if (is_panic_name(name, len) || is_assert_name(name, len) || is_static_assert_name(name, len)) {
+    if (is_reserved_builtin(name, len)) {
         ck_err(k, at, "'%.*s' is a reserved builtin name — no declaration may take it", (int)len, name);
         return NULL;
     }
@@ -538,7 +545,7 @@ static Sym* declare_type(Ck* k, Node* at, const char* name, uint32_t len) {
         ck_err(k, at, "'StaticMap' is a predeclared type name and cannot be redeclared");
         return NULL;
     }
-    if (is_panic_name(name, len) || is_assert_name(name, len) || is_static_assert_name(name, len)) {
+    if (is_reserved_builtin(name, len)) {
         ck_err(k, at, "'%.*s' is a reserved builtin name — no declaration may take it", (int)len, name);
         return NULL;
     }
@@ -1706,7 +1713,7 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
     uint32_t key_len = f->len;
     const char* key = f->str;
     if (f->flags & (F_METHOD | F_ASSOC)) key = method_key(f->d, f->str, f->len, &key_len);
-    else if (is_panic_name(f->str, f->len) || is_assert_name(f->str, f->len) || is_static_assert_name(f->str, f->len)) {
+    else if (is_reserved_builtin(f->str, f->len)) {
         ck_err(k, f, "'%.*s' is a reserved builtin name — no declaration may take it", (int)f->len, f->str);
         return NULL;
     }
@@ -1782,18 +1789,6 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
     if ((f->flags & F_INTRINSIC) && f->ival) {
         SType* p = ft->nparams == 1 ? ft->params[0] : NULL;
         SType* r = ft->ret;
-        int from64 = f->ival == BI_BITS_FROM_FLOAT && p && r &&
-            p->kind == SK_PRIM && p->prim == P_F64 &&
-            r->kind == SK_PRIM && r->prim == P_U64;
-        int from32 = f->ival == BI_BITS_FROM_FLOAT && p && r &&
-            p->kind == SK_PRIM && p->prim == P_F32 &&
-            r->kind == SK_PRIM && r->prim == P_U32;
-        int to64 = f->ival == BI_BITS_TO_FLOAT && p && r &&
-            p->kind == SK_PRIM && p->prim == P_U64 &&
-            r->kind == SK_PRIM && r->prim == P_F64;
-        int to32 = f->ival == BI_BITS_TO_FLOAT && p && r &&
-            p->kind == SK_PRIM && p->prim == P_U32 &&
-            r->kind == SK_PRIM && r->prim == P_F32;
         int load64 = f->ival == BI_INTERNAL_LOAD_U64 && ft->nparams == 2 &&
             ft->params[0]->kind == SK_PRIM && ft->params[0]->prim == P_STRING &&
             ft->params[1]->kind == SK_PRIM && ft->params[1]->prim == P_USIZE &&
@@ -1827,7 +1822,7 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
             (ip->prim == P_F32 || ip->prim == P_F64) &&
             ft->params[1]->kind == SK_PRIM && ft->params[1]->prim == ip->prim &&
             ft->params[2]->kind == SK_PRIM && ft->params[2]->prim == ip->prim;
-        if (!(from64 || from32 || to64 || to32 || load64 || bit_count ||
+        if (!(load64 || bit_count ||
               bit_transform || bit_rotate || bit_wrap || math_exact || math_fused))
             ck_err(k, f, "intrinsic declaration '%.*s' does not match a compiler-provided signature",
                    (int)f->len, f->str);
@@ -2127,8 +2122,7 @@ static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
     case N_IDENT: {
         Sym* s = lookup_val(k, e->str, e->len);
         if (!s) {
-            if (is_panic_name(e->str, e->len) || is_assert_name(e->str, e->len) ||
-                is_static_assert_name(e->str, e->len)) {
+            if (is_reserved_builtin(e->str, e->len)) {
                 ck_err(k, e, "'%.*s' is a builtin call, not a value", (int)e->len, e->str);
                 return T_ERR;
             }
@@ -2408,8 +2402,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
     case N_IDENT: {
         Sym* s = lookup_val(k, e->str, e->len);
         if (!s) {
-            if (is_panic_name(e->str, e->len) || is_assert_name(e->str, e->len) ||
-                is_static_assert_name(e->str, e->len)) {
+            if (is_reserved_builtin(e->str, e->len)) {
                 ck_err(k, e, "'%.*s' is a builtin call, not a value", (int)e->len, e->str);
                 return T_ERR;
             }
@@ -4046,6 +4039,23 @@ static int plain_bits(SType* t) {
     }
 }
 
+// Whether every byte of a plain-bits t belongs to a value: fields tile the
+// struct exactly, so a bit copy never reads padding (Compiler #10).
+static int no_padding(SType* t) {
+    switch (t->kind) {
+    case SK_DISTINCT: case SK_ARRAY: return no_padding(t->base);
+    case SK_STRUCT: {
+        uint64_t end = 0;
+        for (int i = 0; i < t->nfields; i++) {
+            if (t->fields[i].offset != end || !no_padding(t->fields[i].t)) return 0;
+            end += t->fields[i].t->size;
+        }
+        return end == t->size;
+    }
+    default: return 1;
+    }
+}
+
 static SType* check_call_raw(Ck* k, Node* call) {
     Node* callee = call->a;
     /* Pointer types are conversion callees for a usize address, the raw
@@ -4281,6 +4291,35 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 }
                 call->ival = total;
                 return st_prim(P_USIZE);
+            }
+            // reserved builtin: bitcast(U, value) — the bits of value as U
+            if (is_bitcast_name(callee->str, callee->len)) {
+                if (call->nkids != 2) {
+                    ck_err(k, call, "bitcast takes one target type and one value");
+                    return T_ERR;
+                }
+                SType* want = build_type(k, call->kids[0]);
+                if (want->kind == SK_ERR) return T_ERR;
+                SType* from = expr_type(k, call->kids[1]);
+                if (from->kind == SK_ERR) return T_ERR;
+                if (from->kind == SK_UT) {
+                    ck_err(k, call->kids[1], "bitcast needs a typed value; convert the constant first");
+                    return T_ERR;
+                }
+                if (!plain_bits(from) || !plain_bits(want) || !layout(want) || !layout(from)) {
+                    ck_err(k, call, "bitcast requires plain-bits types, got %s to %s", type_name(from), type_name(want));
+                    return T_ERR;
+                }
+                if (from->size != want->size) {
+                    ck_err(k, call, "bitcast requires equal sizes, got %s (%u bytes) to %s (%u bytes)",
+                           type_name(from), (unsigned)from->size, type_name(want), (unsigned)want->size);
+                    return T_ERR;
+                }
+                if (!no_padding(from)) {
+                    ck_err(k, call->kids[1], "bitcast source %s has padding bytes", type_name(from));
+                    return T_ERR;
+                }
+                return want;
             }
             // reserved builtin: assert(condition: bool) — debug-only
             if (is_assert_name(callee->str, callee->len)) {

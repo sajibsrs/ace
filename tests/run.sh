@@ -325,6 +325,12 @@ for want in \
     fi
 done
 
+bitcast_errors=$("$ACE" tests/sema/bitcast/main_err.ace 2>&1)
+if [ "$(printf '%s\n' "$bitcast_errors" | grep -c 'error:')" -ne 7 ]; then
+    echo "FAIL: bitcast diagnostics"
+    fail=1
+fi
+
 reinterpret_errors=$("$ACE" tests/sema/pointers/reinterpret_err.ace 2>&1)
 if [ "$(printf '%s\n' "$reinterpret_errors" | grep -c 'pointer reinterpretation')" -ne 9 ]; then
     echo "FAIL: pointer reinterpretation diagnostics"
@@ -1590,8 +1596,8 @@ if [ -d tests/emit ]; then
         echo "FAIL: --report separator missing"
         fail=1
     fi
-    if ! printf '%s\n' "$report" | grep -q 'source files:.*8$'; then
-        echo "FAIL: --report should count root + fmt/target + bits/decimal/bigint/shortest/table sources"
+    if ! printf '%s\n' "$report" | grep -q 'source files:.*7$'; then
+        echo "FAIL: --report should count root + fmt/target + decimal/bigint/shortest/table sources"
         fail=1
     fi
     for label in 'source bytes:' 'tokens:' 'machine code:' 'object file:' 'compile time:'; do

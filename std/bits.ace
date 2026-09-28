@@ -2,11 +2,6 @@
  * Compiler-backed target instructions; no numeric conversion or runtime calls.
  */
 
-pub cast(value: f64): u64 intrinsic
-pub cast(value: f32): u32 intrinsic
-pub cast(value: u64): f64 intrinsic
-pub cast(value: u32): f32 intrinsic
-
 pub popcount(value: u8): uint intrinsic
 pub popcount(value: u16): uint intrinsic
 pub popcount(value: u32): uint intrinsic

@@ -5,8 +5,6 @@
  * past that by address, as a copy, and a copy or a repeated fill of it
  * loops over words. Float bits are a bitcast. */
 
-import bits
-
 Grid: struct {
     w: i32,
     cells: [4]u8,
@@ -38,7 +36,7 @@ pair(x: i64): [2]i64 {
 }
 
 bits32(f: f32): u32 {
-    return bits.cast(f)
+    return bitcast(u32, f)
 }
 
 main(): int {

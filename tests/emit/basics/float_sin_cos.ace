@@ -4,33 +4,32 @@
 
 // expect-exit: 42
 
-import bits
 import math
 
 close64(got: f64, want: u64): bool {
-    have: u64 = bits.cast(got)
+    have: u64 = bitcast(u64, got)
     if have > want { return have - want <= 1 }
     return want - have <= 1
 }
 
 close32(got: f32, want: u32): bool {
-    have: u32 = bits.cast(got)
+    have: u32 = bitcast(u32, got)
     if have > want { return have - want <= 1 }
     return want - have <= 1
 }
 
 main(): int {
-    infinity: f64 = bits.cast(u64(0x7FF0000000000000))
-    negative_infinity: f64 = bits.cast(u64(0xFFF0000000000000))
-    negative_zero: f64 = bits.cast(u64(0x8000000000000000))
-    quiet_nan: f64 = bits.cast(u64(0x7FF8000000000000))
-    smallest: f64 = bits.cast(u64(1))
+    infinity: f64 = bitcast(f64, u64(0x7FF0000000000000))
+    negative_infinity: f64 = bitcast(f64, u64(0xFFF0000000000000))
+    negative_zero: f64 = bitcast(f64, u64(0x8000000000000000))
+    quiet_nan: f64 = bitcast(f64, u64(0x7FF8000000000000))
+    smallest: f64 = bitcast(f64, u64(1))
 
     // Special cases: exact results, not tolerances.
-    if bits.cast(math.sin(0.0)) != u64(0) ||
-       bits.cast(math.sin(negative_zero)) != u64(0x8000000000000000) ||
-       bits.cast(math.cos(0.0)) != u64(0x3FF0000000000000) ||
-       bits.cast(math.cos(negative_zero)) != u64(0x3FF0000000000000) {
+    if bitcast(u64, math.sin(0.0)) != u64(0) ||
+       bitcast(u64, math.sin(negative_zero)) != u64(0x8000000000000000) ||
+       bitcast(u64, math.cos(0.0)) != u64(0x3FF0000000000000) ||
+       bitcast(u64, math.cos(negative_zero)) != u64(0x3FF0000000000000) {
         return 1
     }
     if !math.isnan(math.sin(infinity)) || !math.isnan(math.sin(negative_infinity)) ||
@@ -78,22 +77,22 @@ main(): int {
        !close64(math.sin(-2.0), u64(0xbfed18f6ead1b446)) ||
        !close64(math.sin(-1.0e22), u64(0x3feb453ab76bf397)) ||
        !close64(math.sin(-1.0e300), u64(0x3fea2c16b010e385)) ||
-       !close64(math.sin(bits.cast(u64(0x7506AC5B262CA1FF))), u64(0x3ff0000000000000)) ||
-       !close64(math.sin(bits.cast(u64(0x7516AC5B262CA1FF))), u64(0xbc314ae72e6ba22f)) ||
-       !close64(math.sin(bits.cast(u64(0x416B951F1572EBA5))), u64(0xbff0000000000000)) ||
-       !close64(math.sin(bits.cast(u64(0x482504CAC51F1EAF))), u64(0xbff0000000000000)) ||
-       !close64(math.sin(bits.cast(u64(0x7526AC5B262CA1FF))), u64(0x3c414ae72e6ba22f)) ||
-       !close64(math.sin(bits.cast(u64(0x7DEE009C53148BE1))), u64(0x3ff0000000000000)) ||
-       !close64(math.sin(bits.cast(u64(0x6404C96C11134D36))), u64(0xbff0000000000000)) ||
-       !close64(math.sin(bits.cast(u64(0x75BCFE482285F8ED))), u64(0xbff0000000000000)) ||
-       !close64(math.sin(bits.cast(u64(0x6A7DB41F3CB71D7B))), u64(0x3ff0000000000000)) ||
-       !close64(math.sin(bits.cast(u64(0x4C4E7E44A78AC18C))), u64(0xbff0000000000000)) ||
-       !close64(math.sin(bits.cast(u64(0x417B951F1572EBA5))), u64(0x3c4f54f5227a4e84)) ||
-       !close64(math.sin(bits.cast(u64(0x526C45CD11154DFD))), u64(0x3ff0000000000000)) ||
-       !close64(math.sin(bits.cast(u64(0x483504CAC51F1EAF))), u64(0x3c50cb604d34f341)) ||
-       !close64(math.sin(bits.cast(u64(0x66583009E2E9E2EB))), u64(0x3ff0000000000000)) ||
-       !close64(math.sin(bits.cast(u64(0x68B29888128E5D23))), u64(0x3ff0000000000000)) ||
-       !close64(math.sin(bits.cast(u64(0x45305A5ACABF7F18))), u64(0xbd15d2c235373e42)) {
+       !close64(math.sin(bitcast(f64, u64(0x7506AC5B262CA1FF))), u64(0x3ff0000000000000)) ||
+       !close64(math.sin(bitcast(f64, u64(0x7516AC5B262CA1FF))), u64(0xbc314ae72e6ba22f)) ||
+       !close64(math.sin(bitcast(f64, u64(0x416B951F1572EBA5))), u64(0xbff0000000000000)) ||
+       !close64(math.sin(bitcast(f64, u64(0x482504CAC51F1EAF))), u64(0xbff0000000000000)) ||
+       !close64(math.sin(bitcast(f64, u64(0x7526AC5B262CA1FF))), u64(0x3c414ae72e6ba22f)) ||
+       !close64(math.sin(bitcast(f64, u64(0x7DEE009C53148BE1))), u64(0x3ff0000000000000)) ||
+       !close64(math.sin(bitcast(f64, u64(0x6404C96C11134D36))), u64(0xbff0000000000000)) ||
+       !close64(math.sin(bitcast(f64, u64(0x75BCFE482285F8ED))), u64(0xbff0000000000000)) ||
+       !close64(math.sin(bitcast(f64, u64(0x6A7DB41F3CB71D7B))), u64(0x3ff0000000000000)) ||
+       !close64(math.sin(bitcast(f64, u64(0x4C4E7E44A78AC18C))), u64(0xbff0000000000000)) ||
+       !close64(math.sin(bitcast(f64, u64(0x417B951F1572EBA5))), u64(0x3c4f54f5227a4e84)) ||
+       !close64(math.sin(bitcast(f64, u64(0x526C45CD11154DFD))), u64(0x3ff0000000000000)) ||
+       !close64(math.sin(bitcast(f64, u64(0x483504CAC51F1EAF))), u64(0x3c50cb604d34f341)) ||
+       !close64(math.sin(bitcast(f64, u64(0x66583009E2E9E2EB))), u64(0x3ff0000000000000)) ||
+       !close64(math.sin(bitcast(f64, u64(0x68B29888128E5D23))), u64(0x3ff0000000000000)) ||
+       !close64(math.sin(bitcast(f64, u64(0x45305A5ACABF7F18))), u64(0xbd15d2c235373e42)) {
         return 4
     }
     // cos, f64
@@ -130,22 +129,22 @@ main(): int {
        !close64(math.cos(-2.0), u64(0xbfdaa22657537205)) ||
        !close64(math.cos(-1.0e22), u64(0x3fe0be2cef01c8f4)) ||
        !close64(math.cos(-1.0e300), u64(0xbfe2699022adc4c1)) ||
-       !close64(math.cos(bits.cast(u64(0x7506AC5B262CA1FF))), u64(0xbc214ae72e6ba22f)) ||
-       !close64(math.cos(bits.cast(u64(0x7516AC5B262CA1FF))), u64(0xbff0000000000000)) ||
-       !close64(math.cos(bits.cast(u64(0x416B951F1572EBA5))), u64(0xbc3f54f5227a4e84)) ||
-       !close64(math.cos(bits.cast(u64(0x482504CAC51F1EAF))), u64(0xbc40cb604d34f341)) ||
-       !close64(math.cos(bits.cast(u64(0x7526AC5B262CA1FF))), u64(0x3ff0000000000000)) ||
-       !close64(math.cos(bits.cast(u64(0x7DEE009C53148BE1))), u64(0x3c4295a3b0a64b1d)) ||
-       !close64(math.cos(bits.cast(u64(0x6404C96C11134D36))), u64(0x3c46ec67bcf77522)) ||
-       !close64(math.cos(bits.cast(u64(0x75BCFE482285F8ED))), u64(0xbc4d08f59c32bfa3)) ||
-       !close64(math.cos(bits.cast(u64(0x6A7DB41F3CB71D7B))), u64(0x3c4e09878d22e29d)) ||
-       !close64(math.cos(bits.cast(u64(0x4C4E7E44A78AC18C))), u64(0x3c4ed415f54c8cb8)) ||
-       !close64(math.cos(bits.cast(u64(0x417B951F1572EBA5))), u64(0xbff0000000000000)) ||
-       !close64(math.cos(bits.cast(u64(0x526C45CD11154DFD))), u64(0x3c501242876d7c1b)) ||
-       !close64(math.cos(bits.cast(u64(0x483504CAC51F1EAF))), u64(0xbff0000000000000)) ||
-       !close64(math.cos(bits.cast(u64(0x66583009E2E9E2EB))), u64(0xbc5104830400912a)) ||
-       !close64(math.cos(bits.cast(u64(0x68B29888128E5D23))), u64(0xbcc1a1b3ceaa69db)) ||
-       !close64(math.cos(bits.cast(u64(0x45305A5ACABF7F18))), u64(0x3ff0000000000000)) {
+       !close64(math.cos(bitcast(f64, u64(0x7506AC5B262CA1FF))), u64(0xbc214ae72e6ba22f)) ||
+       !close64(math.cos(bitcast(f64, u64(0x7516AC5B262CA1FF))), u64(0xbff0000000000000)) ||
+       !close64(math.cos(bitcast(f64, u64(0x416B951F1572EBA5))), u64(0xbc3f54f5227a4e84)) ||
+       !close64(math.cos(bitcast(f64, u64(0x482504CAC51F1EAF))), u64(0xbc40cb604d34f341)) ||
+       !close64(math.cos(bitcast(f64, u64(0x7526AC5B262CA1FF))), u64(0x3ff0000000000000)) ||
+       !close64(math.cos(bitcast(f64, u64(0x7DEE009C53148BE1))), u64(0x3c4295a3b0a64b1d)) ||
+       !close64(math.cos(bitcast(f64, u64(0x6404C96C11134D36))), u64(0x3c46ec67bcf77522)) ||
+       !close64(math.cos(bitcast(f64, u64(0x75BCFE482285F8ED))), u64(0xbc4d08f59c32bfa3)) ||
+       !close64(math.cos(bitcast(f64, u64(0x6A7DB41F3CB71D7B))), u64(0x3c4e09878d22e29d)) ||
+       !close64(math.cos(bitcast(f64, u64(0x4C4E7E44A78AC18C))), u64(0x3c4ed415f54c8cb8)) ||
+       !close64(math.cos(bitcast(f64, u64(0x417B951F1572EBA5))), u64(0xbff0000000000000)) ||
+       !close64(math.cos(bitcast(f64, u64(0x526C45CD11154DFD))), u64(0x3c501242876d7c1b)) ||
+       !close64(math.cos(bitcast(f64, u64(0x483504CAC51F1EAF))), u64(0xbff0000000000000)) ||
+       !close64(math.cos(bitcast(f64, u64(0x66583009E2E9E2EB))), u64(0xbc5104830400912a)) ||
+       !close64(math.cos(bitcast(f64, u64(0x68B29888128E5D23))), u64(0xbcc1a1b3ceaa69db)) ||
+       !close64(math.cos(bitcast(f64, u64(0x45305A5ACABF7F18))), u64(0x3ff0000000000000)) {
         return 5
     }
     // sin, f32
@@ -174,14 +173,14 @@ main(): int {
     cos64: (f64): f64 = math.cos
     sin32: (f32): f32 = math.sin
     cos32: (f32): f32 = math.cos
-    if bits.cast(sin64(0.0)) != u64(0) || bits.cast(cos64(0.0)) != u64(0x3FF0000000000000) ||
-       bits.cast(sin32(f32(0.0))) != u32(0) || bits.cast(cos32(f32(0.0))) != u32(0x3F800000) {
+    if bitcast(u64, sin64(0.0)) != u64(0) || bitcast(u64, cos64(0.0)) != u64(0x3FF0000000000000) ||
+       bitcast(u32, sin32(f32(0.0))) != u32(0) || bitcast(u32, cos32(f32(0.0))) != u32(0x3F800000) {
         return 8
     }
     // Odd and even symmetry holds bit for bit.
     x: f64 = 1.0e10
-    if bits.cast(math.sin(0.0 - x)) != bits.cast(0.0 - math.sin(x)) ||
-       bits.cast(math.cos(0.0 - x)) != bits.cast(math.cos(x)) {
+    if bitcast(u64, math.sin(0.0 - x)) != bitcast(u64, 0.0 - math.sin(x)) ||
+       bitcast(u64, math.cos(0.0 - x)) != bitcast(u64, math.cos(x)) {
         return 9
     }
     return 42

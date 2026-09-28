@@ -2,7 +2,6 @@
 
 // expect-exit: 42
 
-import bits
 import str
 
 main(): int {
@@ -16,13 +15,13 @@ main(): int {
         exponent: u64 = (state64 >> 52) & u64(0x7FF)
 
         if exponent != u64(0x7FF) {
-            value: f64 = bits.cast(state64)
+            value: f64 = bitcast(f64, state64)
             count: usize, ok: bool = str.format(mut text[0..64], value)
 
             if !ok { return 1 }
             parsed: f64, parsed_ok: bool = str.parse[f64](text[0..count])
 
-            if !parsed_ok || bits.cast(parsed) != state64 { return 2 }
+            if !parsed_ok || bitcast(u64, parsed) != state64 { return 2 }
         }
     }
     state32: u32 = u32(0x9E3779B9)
@@ -34,13 +33,13 @@ main(): int {
         exponent: u32 = (state32 >> 23) & u32(0xFF)
 
         if exponent != u32(0xFF) {
-            value: f32 = bits.cast(state32)
+            value: f32 = bitcast(f32, state32)
             count: usize, ok: bool = str.format(mut text[0..64], value)
 
             if !ok { return 3 }
             parsed: f32, parsed_ok: bool = str.parse[f32](text[0..count])
 
-            if !parsed_ok || bits.cast(parsed) != state32 { return 4 }
+            if !parsed_ok || bitcast(u32, parsed) != state32 { return 4 }
         }
     }
     return 42

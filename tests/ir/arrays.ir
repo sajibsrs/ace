@@ -4,11 +4,11 @@ b0:
     %1 = param i32 1
     %2 = const i32 0
     %3 = ge bool %1, %2
-    check %3, 16:14 bounds violation
+    check %3, 14:14 bounds violation
     %5 = cast u64 %1
     %6 = const u64 4
     %7 = lt bool %5, %6
-    check %7, 16:14 bounds violation
+    check %7, 14:14 bounds violation
     %9 = padd ptr %0, %5 * 8
     %10 = load i64 [%9]
     %11 = load i64 [%0 + 24]
@@ -23,7 +23,7 @@ b0:
     %2 = param u8 2
     %3 = const u64 4
     %4 = lt bool %1, %3
-    check %4, 20:13 bounds violation
+    check %4, 18:13 bounds violation
     %6 = padd ptr %0, %1 * 1
     store [%6 + 4], %2
     %8 = load u8 [%0 + 4]
@@ -40,9 +40,9 @@ b0:
     %2 = param u64 2
     %3 = const u64 4
     %4 = le bool %1, %2
-    check %4, 25:14 bounds violation
+    check %4, 23:14 bounds violation
     %6 = le bool %2, %3
-    check %6, 25:14 bounds violation
+    check %6, 23:14 bounds violation
     %8 = padd ptr %0, %1 * 8
     %9 = sub u64 %2, %1
     ret %8, %9
@@ -64,7 +64,7 @@ b2: ; preds b1
     %9 = cast u64 %5
     %10 = const u64 64
     %11 = lt bool %9, %10
-    check %11, 31:20 bounds violation
+    check %11, 29:20 bounds violation
     %13 = padd ptr %0, %9 * 1
     %14 = load u8 [%13]
     %15 = cast u64 %14

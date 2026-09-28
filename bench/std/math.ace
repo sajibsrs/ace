@@ -4,7 +4,6 @@
  * reported rather than required to match.
  */
 
-import bits
 import fmt
 import math
 import time
@@ -51,43 +50,43 @@ main(): int {
     total: f64 = 0.0
     started = now()
     for i: usize in 0 .. n { total += math.exp(wide[i % 256]) }
-    report("exp-f64", now() - started, n, bits.cast(total))
+    report("exp-f64", now() - started, n, bitcast(u64, total))
     total = 0.0
     started = now()
     for i: usize in 0 .. n { total += math.log(positive[i % 256]) }
-    report("log-f64", now() - started, n, bits.cast(total))
+    report("log-f64", now() - started, n, bitcast(u64, total))
     total = 0.0
     started = now()
     for i: usize in 0 .. n { total += math.pow(positive[i % 256], unit[(i * 7) % 256]) }
-    report("pow-f64", now() - started, n, bits.cast(total))
+    report("pow-f64", now() - started, n, bitcast(u64, total))
     total = 0.0
     started = now()
     for i: usize in 0 .. n { total += math.sin(wide[i % 256]) }
-    report("sin-f64", now() - started, n, bits.cast(total))
+    report("sin-f64", now() - started, n, bitcast(u64, total))
     total = 0.0
     started = now()
     for i: usize in 0 .. n { total += math.cos(wide[i % 256]) }
-    report("cos-f64", now() - started, n, bits.cast(total))
+    report("cos-f64", now() - started, n, bitcast(u64, total))
     total = 0.0
     started = now()
     for i: usize in 0 .. n / 10 { total += math.sin(f64(i + 1) * 1.0e7) }
-    report("sin-large", now() - started, n / 10, bits.cast(total))
+    report("sin-large", now() - started, n / 10, bitcast(u64, total))
 
     total32: f32 = 0.0
     started = now()
     for i: usize in 0 .. n { total32 += math.exp(wide32[i % 256] * 0.25) }
-    report("exp-f32", now() - started, n, u64(bits.cast(total32)))
+    report("exp-f32", now() - started, n, u64(bitcast(u32, total32)))
     total32 = 0.0
     started = now()
     for i: usize in 0 .. n { total32 += math.log(positive32[i % 256]) }
-    report("log-f32", now() - started, n, u64(bits.cast(total32)))
+    report("log-f32", now() - started, n, u64(bitcast(u32, total32)))
     total32 = 0.0
     started = now()
     for i: usize in 0 .. n { total32 += math.sin(wide32[i % 256]) }
-    report("sin-f32", now() - started, n, u64(bits.cast(total32)))
+    report("sin-f32", now() - started, n, u64(bitcast(u32, total32)))
     total32 = 0.0
     started = now()
     for i: usize in 0 .. n { total32 += math.cos(wide32[i % 256]) }
-    report("cos-f32", now() - started, n, u64(bits.cast(total32)))
+    report("cos-f32", now() - started, n, u64(bitcast(u32, total32)))
     return 0
 }

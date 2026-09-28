@@ -294,7 +294,8 @@ choices that are not evident from the productions.
     the normative permission rules.
 11. Calls spelled `sizeof(`, `alignof(`, or `blank(` parse their sole operand with
     the full type grammar.
-12. `offsetof(` parses a type, comma, and dot-separated field-name path.
+12. `offsetof(` parses a type, comma, and dot-separated field-name path;
+    `bitcast(` parses a type, comma, and one expression.
     `static_assert` is additionally admitted in the top-level declaration list.
 13. A pointer or slice type is admitted as a primary only as the callee of its
     explicit conversion/construction call. Semantic analysis distinguishes the

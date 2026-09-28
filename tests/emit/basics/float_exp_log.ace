@@ -2,31 +2,30 @@
 
 // expect-exit: 42
 
-import bits
 import math
 
 close64(got: f64, want: u64): bool {
-    have: u64 = bits.cast(got)
+    have: u64 = bitcast(u64, got)
     if have > want { return have - want <= 1 }
     return want - have <= 1
 }
 
 close32(got: f32, want: u32): bool {
-    have: u32 = bits.cast(got)
+    have: u32 = bitcast(u32, got)
     if have > want { return have - want <= 1 }
     return want - have <= 1
 }
 
 main(): int {
-    infinity: f64 = bits.cast(u64(0x7FF0000000000000))
-    negative_infinity: f64 = bits.cast(u64(0xFFF0000000000000))
-    negative_zero: f64 = bits.cast(u64(0x8000000000000000))
-    quiet_nan: f64 = bits.cast(u64(0x7FF8000000000000))
+    infinity: f64 = bitcast(f64, u64(0x7FF0000000000000))
+    negative_infinity: f64 = bitcast(f64, u64(0xFFF0000000000000))
+    negative_zero: f64 = bitcast(f64, u64(0x8000000000000000))
+    quiet_nan: f64 = bitcast(f64, u64(0x7FF8000000000000))
     negative_one: f64 = 0.0 - 1.0
 
     // Special cases: exact results, not tolerances.
-    if bits.cast(math.exp(0.0)) != u64(0x3FF0000000000000) ||
-       bits.cast(math.exp(negative_zero)) != u64(0x3FF0000000000000) {
+    if bitcast(u64, math.exp(0.0)) != u64(0x3FF0000000000000) ||
+       bitcast(u64, math.exp(negative_zero)) != u64(0x3FF0000000000000) {
         return 1
     }
     if math.exp(infinity) != infinity || math.exp(negative_infinity) != 0.0 ||
@@ -34,7 +33,7 @@ main(): int {
        !math.isnan(math.exp(quiet_nan)) {
         return 2
     }
-    if bits.cast(math.log(1.0)) != u64(0) || math.log(0.0) != negative_infinity ||
+    if bitcast(u64, math.log(1.0)) != u64(0) || math.log(0.0) != negative_infinity ||
        math.log(negative_zero) != negative_infinity || math.log(infinity) != infinity {
         return 3
     }
@@ -120,11 +119,11 @@ main(): int {
     log64: (f64): f64 = math.log
     exp32: (f32): f32 = math.exp
     log32: (f32): f32 = math.log
-    if bits.cast(exp64(0.0)) != u64(0x3FF0000000000000) || bits.cast(log64(1.0)) != u64(0) ||
-       bits.cast(exp32(f32(0.0))) != u32(0x3F800000) || bits.cast(log32(f32(1.0))) != u32(0) {
+    if bitcast(u64, exp64(0.0)) != u64(0x3FF0000000000000) || bitcast(u64, log64(1.0)) != u64(0) ||
+       bitcast(u32, exp32(f32(0.0))) != u32(0x3F800000) || bitcast(u32, log32(f32(1.0))) != u32(0) {
         return 9
     }
     // f32 overflow and gradual underflow round from the f64 result.
-    if math.exp(f32(89.0)) != f32(infinity) || bits.cast(math.exp(f32(-104.0))) != u32(0) { return 10 }
+    if math.exp(f32(89.0)) != f32(infinity) || bitcast(u32, math.exp(f32(-104.0))) != u32(0) { return 10 }
     return 42
 }

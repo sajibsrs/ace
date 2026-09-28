@@ -368,15 +368,7 @@ static void mark_bits_intrinsics(Loader* L, Module* m) {
     for (int i = 0; i < m->file->nkids; i++) {
         Node* n = m->file->kids[i];
         if (n->kind != N_FUNC || !(n->flags & F_INTRINSIC)) continue;
-        if (text_is(n->str, n->len, "cast")) {
-            // A float parameter reads the representation out; any other
-            // parameter writes it back. Sema checks the exact signature.
-            Node* t = n->nkids == 1 ? n->kids[0]->a : NULL;
-            int from = t && t->kind == N_NAMED &&
-                (text_is(t->str, t->len, "f64") || text_is(t->str, t->len, "f32"));
-            n->ival = from ? BI_BITS_FROM_FLOAT : BI_BITS_TO_FLOAT;
-        }
-        else if (text_is(n->str, n->len, "popcount")) n->ival = BI_BITS_POP_COUNT;
+        if (text_is(n->str, n->len, "popcount")) n->ival = BI_BITS_POP_COUNT;
         else if (text_is(n->str, n->len, "clz")) n->ival = BI_BITS_LEAD_ZEROS;
         else if (text_is(n->str, n->len, "ctz")) n->ival = BI_BITS_TRAIL_ZEROS;
         else if (text_is(n->str, n->len, "bswap")) n->ival = BI_BITS_BYTE_SWAP;

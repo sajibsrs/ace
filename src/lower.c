@@ -1434,10 +1434,6 @@ static int printf_call(Lw* l, Node* x) {
 // leaves into res), or -2 for one it does not.
 static int builtin(Lw* l, Node* x, int bi, Agg* res) {
     switch (bi) {
-    case BI_BITS_FROM_FLOAT: case BI_BITS_TO_FLOAT: { // the same bits (Types: bits.cast)
-        IrType to = need_type(l, node_ty(x)), from = need_type(l, node_ty(x->kids[0]));
-        return emit2(l, IR_BITCAST, to, expr(l, x->kids[0], from), -1);
-    }
     case BI_BITS_POP_COUNT: case BI_BITS_LEAD_ZEROS: case BI_BITS_TRAIL_ZEROS: case BI_BITS_BYTE_SWAP: {
         IrType t = need_type(l, node_ty(x->kids[0]));
         IrOp op = bi == BI_BITS_POP_COUNT ? IR_POPCNT : bi == BI_BITS_LEAD_ZEROS ? IR_CLZ
@@ -1679,6 +1675,27 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
             for (int k = 0; k < n; k++) res->v[k] = konst(l, (IrType)lv[k].type, 0);
         }
         return -1;
+    }
+    if (is_layout_builtin(x, "bitcast")) { // the same bits as another plain-bits type
+        SType* to = node_ty(x);
+        SType* from = node_ty(x->kids[1]);
+        if (dst >= 0) { // equal sizes: the source's bits stored are the result's
+            store_value(l, x->kids[1], from, dst, 0);
+            return -1;
+        }
+        if (!is_agg(to) && !is_agg(from)) {
+            IrType tt = need_type(l, to), ft = need_type(l, from);
+            int v = expr(l, x->kids[1], ft);
+            if (tt == ft) return v;
+            if (ir_type_float(tt) != ir_type_float(ft)) return emit2(l, IR_BITCAST, tt, v, -1);
+        }
+        // otherwise through a stack object aligned for both
+        int slot = new_slot(l, sema_align(to) > sema_align(from) ? to : from);
+        store_value(l, x->kids[1], from, slot, 0);
+        Agg tmp;
+        Agg* out = res ? res : &tmp;
+        place_get(l, (Place){ -1, slot, 0, 0, to }, 0, out);
+        return is_agg(to) ? -1 : out->v[0];
     }
     int inst = callee && callee->kind == N_INDEX && callee->sym; // larger[int](a, b)
     Sym* s = inst ? node_sym(callee) : node_sym(x);

@@ -968,6 +968,12 @@ current normative rules, and Git preserves patch-level detail.
   pointees through the existing pointer-conversion callee: sema checks plain
   bits and permission and proves alignment when `U` is no more aligned than
   `T`, so only an over-aligning view carries the debug alignment check.
+- Added the reserved `bitcast(U, value)` builtin for plain-bits types of equal
+  size and padding-free source, and removed the four `bits.cast` float
+  intrinsics it subsumes. A float-integer pair still lowers to `IR_BITCAST`;
+  other pairs go through a stack object. Callers were migrated by a sema probe
+  recording each call's result type; the generated IR of the float benchmarks
+  and tests is identical to before.
 - Implemented statement-only AArch64 inline assembly with explicit
   input/output/clobber bindings and no constraint language or reordering.
 - Implemented Package System v1's manifest and dependency-graph resolution

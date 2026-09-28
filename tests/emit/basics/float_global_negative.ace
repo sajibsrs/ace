@@ -2,8 +2,6 @@
 
 // expect-exit: 42
 
-import bits
-
 Point: struct { x: f32, y: f32 }
 Meters: distinct f32
 
@@ -23,18 +21,18 @@ ORIGIN: Point = Point {
 TABLE: [3]f32 = [-1.0, 0.5, -0.5]
 
 main(): int {
-    if bits.cast(G64) != u64(0xC004000000000000) { return 1 }
-    if bits.cast(G32) != u32(0xBFC00000) ||
-       bits.cast(CAST32) != u32(0xC0200000) {
+    if bitcast(u64, G64) != u64(0xC004000000000000) { return 1 }
+    if bitcast(u32, G32) != u32(0xBFC00000) ||
+       bitcast(u32, CAST32) != u32(0xC0200000) {
         return 2
     }
-    if bits.cast(CAST64) != u64(0xBFE8000000000000) ||
-       bits.cast(ZERO) != u64(0x8000000000000000) {
+    if bitcast(u64, CAST64) != u64(0xBFE8000000000000) ||
+       bitcast(u64, ZERO) != u64(0x8000000000000000) {
         return 3
     }
-    if bits.cast(FROM_CONST) != u64(0xBFD0000000000000) { return 4 }
-    if bits.cast(f32(LENGTH)) != u32(0xC0600000) { return 5 }
-    if bits.cast(ORIGIN.x) != u32(0xBF800000) || bits.cast(ORIGIN.y) != u32(0x40000000) { return 6 }
-    if bits.cast(TABLE[0]) != u32(0xBF800000) || bits.cast(TABLE[2]) != u32(0xBF000000) { return 7 }
+    if bitcast(u64, FROM_CONST) != u64(0xBFD0000000000000) { return 4 }
+    if bitcast(u32, f32(LENGTH)) != u32(0xC0600000) { return 5 }
+    if bitcast(u32, ORIGIN.x) != u32(0xBF800000) || bitcast(u32, ORIGIN.y) != u32(0x40000000) { return 6 }
+    if bitcast(u32, TABLE[0]) != u32(0xBF800000) || bitcast(u32, TABLE[2]) != u32(0xBF000000) { return 7 }
     return 42
 }

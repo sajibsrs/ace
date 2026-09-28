@@ -5,7 +5,6 @@
  * match bit for bit.
  */
 
-import bits
 import fmt
 import math
 import time
@@ -36,19 +35,19 @@ report(name: string, elapsed: u64, operations: usize, checksum: usize) {
 sum64(v: []f64): usize {
     acc: f64 = 0.0
     for i: usize in 0 .. COUNT { acc += v[i] }
-    return usize(bits.cast(acc))
+    return usize(bitcast(u64, acc))
 }
 
 sum32(v: []f32): usize {
     acc: f64 = 0.0
     for i: usize in 0 .. COUNT { acc += f64(v[i]) }
-    return usize(bits.cast(acc))
+    return usize(bitcast(u64, acc))
 }
 
 sum_particles(): usize {
     acc: f64 = 0.0
     for i: usize in 0 .. COUNT { acc += f64(positions[i].x) + f64(positions[i].y) + f64(positions[i].z) }
-    return usize(bits.cast(acc))
+    return usize(bitcast(u64, acc))
 }
 
 main(): int {
@@ -85,7 +84,7 @@ main(): int {
     for r: usize in 0 .. REPEATS {
         for i: usize in 0 .. COUNT { acc += xs64[i] * ys64[i] }
     }
-    report("dot-f64", now() - started, saxpy_ops, usize(bits.cast(acc)))
+    report("dot-f64", now() - started, saxpy_ops, usize(bitcast(u64, acc)))
 
     started = now()
     for r: usize in 0 .. PARTICLE_REPEATS {
@@ -106,6 +105,6 @@ main(): int {
                                     velocities[i].z * velocities[i].z))
         }
     }
-    report("length-vec3", now() - started, particle_ops, usize(bits.cast(length)))
+    report("length-vec3", now() - started, particle_ops, usize(bitcast(u64, length)))
     return 0
 }

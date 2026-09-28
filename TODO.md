@@ -181,7 +181,7 @@ These are baseline observations, not performance promises.
   shape-dependent split too small and inconsistent to justify the added IR
   flag and allocator special case. Each remaining candidate needs a benchmark
   that shows a gain first.
-- **Float constants from bit patterns** [new] — `bits.cast(u64(0x7FF0000000000000))`
+- **Float constants from bit patterns** [new] — `bitcast(f64, u64(0x7FF0000000000000))`
   still builds the integer with `mov`/`movk` and moves it with `fmov`, and a
   const float initialized by an expression rather than a literal loads from
   its `__const` slot with `adrp`/`add`/`ldr`. Float literals and

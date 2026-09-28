@@ -1,0 +1,14 @@
+Padded: struct { tag: u8, value: u32 }
+Shape: union { none, value: i32 }
+Flag: struct { on: bool }
+
+bad(word: u32, text: string, shape: Shape, padded: Padded) {
+    a: u64 = bitcast(u64, word)
+    b: u32 = bitcast(u32, 7)
+    c: [16]u8 = bitcast([16]u8, text)
+    d: u64 = bitcast(u64, shape)
+    e: [8]u8 = bitcast([8]u8, padded)
+    f: typeid = bitcast(typeid, u64(1))
+}
+
+bitcast: int = 3

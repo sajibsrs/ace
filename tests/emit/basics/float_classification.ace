@@ -2,17 +2,16 @@
 
 // expect-exit: 42
 
-import bits
 import math
 
 main(): int {
-    positive_inf64: f64 = bits.cast(u64(0x7FF0000000000000))
-    negative_inf64: f64 = bits.cast(u64(0xFFF0000000000000))
-    quiet_nan64: f64 = bits.cast(u64(0x7FF8000000001234))
-    signaling_nan64: f64 = bits.cast(u64(0x7FF0000000000001))
-    negative_zero64: f64 = bits.cast(u64(0x8000000000000000))
-    subnormal64: f64 = bits.cast(u64(1))
-    maximum64: f64 = bits.cast(u64(0x7FEFFFFFFFFFFFFF))
+    positive_inf64: f64 = bitcast(f64, u64(0x7FF0000000000000))
+    negative_inf64: f64 = bitcast(f64, u64(0xFFF0000000000000))
+    quiet_nan64: f64 = bitcast(f64, u64(0x7FF8000000001234))
+    signaling_nan64: f64 = bitcast(f64, u64(0x7FF0000000000001))
+    negative_zero64: f64 = bitcast(f64, u64(0x8000000000000000))
+    subnormal64: f64 = bitcast(f64, u64(1))
+    maximum64: f64 = bitcast(f64, u64(0x7FEFFFFFFFFFFFFF))
 
     if !math.isinf(positive_inf64) || !math.isinf(negative_inf64) ||
        math.isinf(quiet_nan64) || math.isinf(maximum64) {
@@ -28,13 +27,13 @@ main(): int {
         return 3
     }
 
-    positive_inf32: f32 = bits.cast(u32(0x7F800000))
-    negative_inf32: f32 = bits.cast(u32(0xFF800000))
-    quiet_nan32: f32 = bits.cast(u32(0x7FC01234))
-    signaling_nan32: f32 = bits.cast(u32(0x7F800001))
-    negative_zero32: f32 = bits.cast(u32(0x80000000))
-    subnormal32: f32 = bits.cast(u32(1))
-    maximum32: f32 = bits.cast(u32(0x7F7FFFFF))
+    positive_inf32: f32 = bitcast(f32, u32(0x7F800000))
+    negative_inf32: f32 = bitcast(f32, u32(0xFF800000))
+    quiet_nan32: f32 = bitcast(f32, u32(0x7FC01234))
+    signaling_nan32: f32 = bitcast(f32, u32(0x7F800001))
+    negative_zero32: f32 = bitcast(f32, u32(0x80000000))
+    subnormal32: f32 = bitcast(f32, u32(1))
+    maximum32: f32 = bitcast(f32, u32(0x7F7FFFFF))
 
     if !math.isinf(positive_inf32) || !math.isinf(negative_inf32) ||
        math.isinf(quiet_nan32) || math.isinf(maximum32) {

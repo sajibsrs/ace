@@ -2,26 +2,16 @@
 
 // expect-exit: 42
 
-import bits
-
 main(): int {
-    if bits.cast(1.0) != u64(0x3FF0000000000000) { return 1 }
+    if bitcast(u64, f64(1.0)) != u64(0x3FF0000000000000) { return 1 }
     negative: f64 = 0.0 - 1.0
-    if bits.cast(negative) != u64(0xBFF0000000000000) { return 2 }
-    if bits.cast(f32(0.5)) != u32(0x3F000000) { return 3 }
+    if bitcast(u64, negative) != u64(0xBFF0000000000000) { return 2 }
+    if bitcast(u32, f32(0.5)) != u32(0x3F000000) { return 3 }
     negative_zero64: u64 = u64(0x8000000000000000)
-    if bits.cast(bits.cast(negative_zero64)) != negative_zero64 { return 4 }
+    if bitcast(u64, bitcast(f64, negative_zero64)) != negative_zero64 { return 4 }
     payload64: u64 = u64(0x7FF8000000001234)
-    if bits.cast(bits.cast(payload64)) != payload64 { return 5 }
+    if bitcast(u64, bitcast(f64, payload64)) != payload64 { return 5 }
     payload32: u32 = u32(0x7FC01234)
-    if bits.cast(bits.cast(payload32)) != payload32 { return 6 }
-    from64: (f64): u64 = bits.cast
-    to64: (u64): f64 = bits.cast
-    from32: (f32): u32 = bits.cast
-    to32: (u32): f32 = bits.cast
-    if from64(to64(payload64)) != payload64 ||
-       from32(to32(payload32)) != payload32 {
-        return 7
-    }
+    if bitcast(u32, bitcast(f32, payload32)) != payload32 { return 6 }
     return 42
 }

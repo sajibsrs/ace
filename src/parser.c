@@ -769,6 +769,16 @@ static Node* expr_postfix_base(P* p, int ctx, Node* base) {
                 base = call;
                 continue;
             }
+            if (base->kind == N_IDENT && base->len == 7 && memcmp(base->str, "bitcast", 7) == 0) {
+                NV w = {0};
+                nv_push(p, &w, parse_type(p));
+                expect(p, T_COMMA, "',' after bitcast type");
+                nv_push(p, &w, expr(p, 0));
+                expect(p, T_RPAREN, "')' after bitcast value");
+                set_kids(call, &w);
+                base = call;
+                continue;
+            }
             if (base->kind == N_IDENT && base->len == 8 && memcmp(base->str, "offsetof", 8) == 0) {
                 NV w = {0};
                 nv_push(p, &w, parse_type(p));

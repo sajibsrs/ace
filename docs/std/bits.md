@@ -2,21 +2,17 @@
 
 [Standard library](index.md)
 
-`bits.cast` copies complete IEEE-754 representations between floating and
-same-width unsigned integer values, in either direction. They do not perform
-numeric conversion, allocate, or call a runtime helper.
+Copying a float's complete IEEE-754 representation to an integer, or back, is
+the `bitcast` builtin rather than a `bits` operation (see
+[Memory](../memory.md#untyped-storage)):
 
 ```ace
-import bits
-
-one_bits: u64 = bits.cast(1.0) // 0x3FF0000000000000
-one: f64 = bits.cast(one_bits)
+one_bits: u64 = bitcast(u64, f64(1.0)) // 0x3FF0000000000000
+one: f64 = bitcast(f64, one_bits)
 ```
 
-The exact overloads are `cast(f64): u64`, `cast(f32): u32`,
-`cast(u64): f64`, and `cast(u32): f32`. They preserve signed zero,
-infinities, subnormals, and NaN payloads. Ordinary casts such as `u64(value)`
-and `f64(integer)` remain numeric conversions.
+It preserves signed zero, infinities, subnormals, and NaN payloads. Ordinary
+casts such as `u64(value)` and `f64(integer)` remain numeric conversions.
 
 Their declarations use the restricted trailing `intrinsic` marker. Applications
 call them as ordinary public functions and may store an exact overload in a
@@ -58,9 +54,9 @@ Representation access supports algorithms that deliberately operate on a
 float's encoding, including the classic fast inverse-square-root seed:
 
 ```ace
-raw: u32 = bits.cast(value)
+raw: u32 = bitcast(u32, value)
 raw = u32(0x5F3759DF) - (raw >> 1)
-estimate: f32 = bits.cast(raw)
+estimate: f32 = bitcast(f32, raw)
 ```
 
 `mem` exports `alloc`, `realloc`, `release`, `copy`, `move`, `fill`, `zero`,

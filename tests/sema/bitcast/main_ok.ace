@@ -1,0 +1,12 @@
+Flag: struct { on: bool }
+
+@packed
+Header: struct { tag: u8, length: u32 }
+
+main(): int {
+    flag: Flag = bitcast(Flag, u8(1))
+    raw: [5]u8 = [0, 0, 0, 0, 0]
+    header: Header = bitcast(Header, raw)
+    if !flag.on || header.tag != 0 { return 1 }
+    return 0
+}

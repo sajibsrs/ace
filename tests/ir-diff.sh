@@ -636,7 +636,7 @@ function show_rec(e, t,   i, s) {
 function show(e, t) {
     if (t == "bool") return "    if " e " { fmt.printf(\"1\\n\") } else { fmt.printf(\"0\\n\") }"
     if (t == "string") return "    fmt.printf(\"[%s] %d\\n\", " e ", int(" e ".len))\n" show("(" e " == null)", "bool")
-    if (isfloat(t)) return "    fmt.printf(\"%u\\n\", uint(bits.cast(" e ")))"
+    if (isfloat(t)) return "    fmt.printf(\"%u\\n\", uint(bitcast(" (t == "f32" ? "u32" : "u64") ", " e ")))"
     return "    fmt.printf(\"%d\\n\", int(" e "))"
 }
 
@@ -644,7 +644,7 @@ BEGIN {
     srand(seed * 1000003 + n)
     ntypes = split("bool i8 i16 i32 i64 u8 u16 u32 u64 usize int", types, " ")
     # bool first: types[2..] are the integers
-    print "import bits\nimport fmt\n"
+    print "import fmt\n"
     for (k = 1; k <= ntypes; k++) print "g_" types[k] ": " types[k] " = " literal(types[k])
     print "g_f32: f32 = " fliteral("f32") "\ng_f64: f64 = " fliteral("f64")
     print "\nS: struct {\n    a: i64,\n    b: u8,\n}\n"

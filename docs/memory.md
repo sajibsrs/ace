@@ -86,6 +86,18 @@ hold `0` or `1`. Tagged unions, `Error`, `typeid`, contracts, Ace function
 values, slices, strings, and tuples are created only by the language and are
 never produced by reinterpreting storage.
 
+`bitcast(U, value)` copies a value's bits as another plain-bits type of the
+same size, in native byte order:
+
+```ace
+raw: u32 = bitcast(u32, value)             // value: f32
+color: Rgba = bitcast(Rgba, u32(0x04030201)) // Rgba: four u8 fields
+```
+
+The value must be typed (`bitcast(u64, f64(1.0))`, not `bitcast(u64, 1.0)`),
+and its type must have no padding bytes; use `@packed` or explicit reserved
+fields where a layout has gaps.
+
 ## Volatile access
 
 `volatile` marks one access, not a variable or type:

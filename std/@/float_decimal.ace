@@ -3,7 +3,6 @@
  * no bare std facade.
  */
 
-import bits
 import big: @bigint
 import ryu: @float_shortest
 
@@ -32,7 +31,7 @@ write_shortest(value: ryu.Floating, out: mut []u8): (int, i32) {
 }
 
 pub binary64(value: f64, out: mut []u8): Decimal {
-    raw: u64 = bits.cast(value)
+    raw: u64 = bitcast(u64, value)
     negative: bool = raw >> 63 != 0
     exponent: u64 = (raw >> 52) & u64(0x7FF)
     fraction: u64 = raw & u64(0xFFFFFFFFFFFFF)
@@ -73,7 +72,7 @@ pub binary64(value: f64, out: mut []u8): Decimal {
 }
 
 pub binary32(value: f32, out: mut []u8): Decimal {
-    raw: u32 = bits.cast(value)
+    raw: u32 = bitcast(u32, value)
     negative: bool = raw >> 31 != 0
     exponent: u32 = (raw >> 23) & u32(0xFF)
     fraction: u32 = raw & u32(0x7FFFFF)
@@ -219,7 +218,7 @@ fixed(mantissa: u64, exponent2: i32, precision: int, negative: bool, out: mut []
 }
 
 pub fixed64(value: f64, precision: usize, out: mut []u8): Decimal {
-    raw: u64 = bits.cast(value)
+    raw: u64 = bitcast(u64, value)
     negative: bool = raw >> 63 != 0
     exponent: u64 = (raw >> 52) & u64(0x7FF)
     fraction: u64 = raw & u64(0xFFFFFFFFFFFFF)
@@ -260,7 +259,7 @@ pub fixed64(value: f64, precision: usize, out: mut []u8): Decimal {
 }
 
 pub fixed32(value: f32, precision: usize, out: mut []u8): Decimal {
-    raw: u32 = bits.cast(value)
+    raw: u32 = bitcast(u32, value)
     negative: bool = raw >> 31 != 0
     exponent: u32 = (raw >> 23) & u32(0xFF)
     fraction: u32 = raw & u32(0x7FFFFF)

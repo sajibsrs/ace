@@ -2,21 +2,20 @@
 
 // expect-exit: 42
 
-import bits
 import math
 
 same(a: f64, b: f64): bool {
-    return bits.cast(a) == bits.cast(b)
+    return bitcast(u64, a) == bitcast(u64, b)
 }
 
 same32(a: f32, b: f32): bool {
-    return bits.cast(a) == bits.cast(b)
+    return bitcast(u32, a) == bitcast(u32, b)
 }
 
 main(): int {
-    negative_zero: f64 = bits.cast(u64(0x8000000000000000))
-    infinity: f64 = bits.cast(u64(0x7FF0000000000000))
-    negative_infinity: f64 = bits.cast(u64(0xFFF0000000000000))
+    negative_zero: f64 = bitcast(f64, u64(0x8000000000000000))
+    infinity: f64 = bitcast(f64, u64(0x7FF0000000000000))
+    negative_infinity: f64 = bitcast(f64, u64(0xFFF0000000000000))
     negative_one: f64 = 0.0 - 1.0
     negative_one32: f32 = f32(negative_one)
 
@@ -62,14 +61,14 @@ main(): int {
 
     // fma rounds a*b + c once. With a = 1 + 3*2^-52 the low bits of the product decide the result,
     // and a separate multiply and add lose them: an ordinary a*b + c is never contracted into one.
-    fused_base: f64 = bits.cast(u64(0x3FF0000000000003))
-    if !same(math.fma(fused_base, fused_base, negative_one), bits.cast(u64(0x3CD8000000000002))) ||
-       !same(fused_base * fused_base + negative_one, bits.cast(u64(0x3CD8000000000000))) {
+    fused_base: f64 = bitcast(f64, u64(0x3FF0000000000003))
+    if !same(math.fma(fused_base, fused_base, negative_one), bitcast(f64, u64(0x3CD8000000000002))) ||
+       !same(fused_base * fused_base + negative_one, bitcast(f64, u64(0x3CD8000000000000))) {
         return 11
     }
-    fused_base32: f32 = bits.cast(u32(0x3F800003))
-    if !same32(math.fma(fused_base32, fused_base32, negative_one32), bits.cast(u32(0x35400002))) ||
-       !same32(fused_base32 * fused_base32 + negative_one32, bits.cast(u32(0x35400000))) {
+    fused_base32: f32 = bitcast(f32, u32(0x3F800003))
+    if !same32(math.fma(fused_base32, fused_base32, negative_one32), bitcast(f32, u32(0x35400002))) ||
+       !same32(fused_base32 * fused_base32 + negative_one32, bitcast(f32, u32(0x35400000))) {
         return 12
     }
     two: f64 = 2.0
@@ -84,7 +83,7 @@ main(): int {
     }
     fused64: (f64, f64, f64): f64 = math.fma
     fused32: (f32, f32, f32): f32 = math.fma
-    if !same(fused64(fused_base, fused_base, negative_one), bits.cast(u64(0x3CD8000000000002))) ||
+    if !same(fused64(fused_base, fused_base, negative_one), bitcast(f64, u64(0x3CD8000000000002))) ||
        fused32(f32(two), f32(three), f32(four)) != f32(10.0) {
         return 14
     }

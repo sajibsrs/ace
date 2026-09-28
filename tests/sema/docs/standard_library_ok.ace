@@ -24,8 +24,7 @@ WOULD_BLOCK: const i32 = sys.EWOULDBLOCK
 TRY_AGAIN: const i32 = sys.EAGAIN
 
 bits_examples(): int {
-    raw: u32 = bits.cast(f32(1.0))
-    restore: (u32): f32 = bits.cast
+    raw: u32 = bitcast(u32, f32(1.0))
     ones: uint = bits.popcount(u32(0xF00F))
     high: uint = bits.clz(u16(1))
     low: uint = bits.ctz(u64(8))
@@ -33,7 +32,7 @@ bits_examples(): int {
     rotated: u8 = bits.rotl(u8(0x81), uint(1))
     wrapped: u8 = bits.wradd(u8(250), u8(10))
 
-    if bits.cast(restore(raw)) != raw || ones != 8 || high != 15 ||
+    if bitcast(u32, bitcast(f32, raw)) != raw || ones != 8 || high != 15 ||
        low != 3 || reversed != u32(0x78563412) || rotated != u8(3) ||
        wrapped != u8(4) {
         return 1
@@ -42,9 +41,9 @@ bits_examples(): int {
 }
 
 fast_inverse_sqrt_seed(value: f32): f32 {
-    raw: u32 = bits.cast(value)
+    raw: u32 = bitcast(u32, value)
     raw = u32(0x5F3759DF) - (raw >> 1)
-    return bits.cast(raw)
+    return bitcast(f32, raw)
 }
 
 math_examples(value: f64): bool {

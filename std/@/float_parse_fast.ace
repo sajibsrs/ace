@@ -51,7 +51,7 @@ pub exact64(coefficient: u64, exponent10: int, mut raw: u64): bool {
     } else {
         value = value * EXACT_POWERS64[exponent10]
     }
-    raw = bits.cast(value)
+    raw = bitcast(u64, value)
     return true
 }
 
@@ -64,7 +64,7 @@ pub exact32(coefficient: u64, exponent10: int, mut raw: u64): bool {
     } else {
         value = value * EXACT_POWERS32[exponent10]
     }
-    raw = u64(bits.cast(value))
+    raw = u64(bitcast(u32, value))
     return true
 }
 

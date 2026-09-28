@@ -53,7 +53,7 @@ signed type, and a `shr`; a field write or literal field merges the value with
 `and`, `shl`, and `or`, after a debug range test calling the arithmetic
 failure routine, and a field write loads and stores the whole value once.
 `bitcast` reinterprets a float's bits
-as an integer of its width, or back (`bits.cast`). A call to an `inline`
+as an integer of its width, or back (`bitcast`). A call to an `inline`
 function prints as the expanded body, which ends at a join block reading the
 result. A `switch` on a scalar prints as a chain of `ne` comparisons, one per
 pattern in source order, each branching to the next test or to its case; a

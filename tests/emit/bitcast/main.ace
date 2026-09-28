@@ -1,0 +1,26 @@
+/* expect-exit: 0 */
+
+Rgba: struct { r: u8, g: u8, b: u8, a: u8 }
+Pair: struct { low: u32, high: u32 }
+Level: enum u16 { low, high }
+
+main(): int {
+    one: f32 = 1.0
+    if bitcast(u32, one) != 0x3F800000 { return 1 }
+    if bitcast(f64, u64(0x4000000000000000)) != 2.0 { return 2 }
+
+    color: Rgba = bitcast(Rgba, u32(0x04030201))
+    if color.r != 1 || color.g != 2 || color.b != 3 || color.a != 4 { return 3 }
+    if bitcast(u32, color) != 0x04030201 { return 4 }
+
+    pair: Pair = bitcast(Pair, u64(0x0000000200000001))
+    if pair.low != 1 || pair.high != 2 { return 5 }
+    bytes: [4]u8 = bitcast([4]u8, f32(-0.0))
+    if bytes[3] != 0x80 || bytes[0] != 0 { return 6 }
+
+    if bitcast(i32, u32(0xFFFFFFFF)) != -1 { return 7 }
+    level: Level = bitcast(Level, u16(1))
+    if level != Level.high { return 8 }
+    if bitcast(u16, level) != 1 { return 9 }
+    return 0
+}

@@ -10,7 +10,6 @@
  * separate plain-f64 kernel over the same tables; the other f32 overloads round the f64 result.
  */
 
-import bits
 import table: @math_tables
 
 pub sqrt(value: f64): f64 intrinsic
@@ -98,39 +97,39 @@ INF_BITS: const u64 = 0x7FF0000000000000
 POW_SIGN: const u64 = 0x8000000000000000
 
 pub inline isnan(value: f64): bool {
-    raw: u64 = bits.cast(value)
+    raw: u64 = bitcast(u64, value)
     exponent: u64 = raw & u64(0x7FF0000000000000)
     fraction: u64 = raw & u64(0x000FFFFFFFFFFFFF)
     return exponent == u64(0x7FF0000000000000) && fraction != 0
 }
 
 pub inline isnan(value: f32): bool {
-    raw: u32 = bits.cast(value)
+    raw: u32 = bitcast(u32, value)
     exponent: u32 = raw & u32(0x7F800000)
     fraction: u32 = raw & u32(0x007FFFFF)
     return exponent == u32(0x7F800000) && fraction != 0
 }
 
 pub inline isinf(value: f64): bool {
-    raw: u64 = bits.cast(value)
+    raw: u64 = bitcast(u64, value)
     magnitude: u64 = raw & u64(0x7FFFFFFFFFFFFFFF)
     return magnitude == u64(0x7FF0000000000000)
 }
 
 pub inline isinf(value: f32): bool {
-    raw: u32 = bits.cast(value)
+    raw: u32 = bitcast(u32, value)
     magnitude: u32 = raw & u32(0x7FFFFFFF)
     return magnitude == u32(0x7F800000)
 }
 
 pub inline isfinite(value: f64): bool {
-    raw: u64 = bits.cast(value)
+    raw: u64 = bitcast(u64, value)
     exponent: u64 = raw & u64(0x7FF0000000000000)
     return exponent != u64(0x7FF0000000000000)
 }
 
 pub inline isfinite(value: f32): bool {
-    raw: u32 = bits.cast(value)
+    raw: u32 = bitcast(u32, value)
     exponent: u32 = raw & u32(0x7F800000)
     return exponent != u32(0x7F800000)
 }
@@ -152,12 +151,12 @@ pub abs[T](x: T): T {
 
 pub exp(value: f64): f64 {
     if isnan(value) { return value }
-    if value > EXP_OVERFLOW { return bits.cast(u64(0x7FF0000000000000)) }
+    if value > EXP_OVERFLOW { return bitcast(f64, u64(0x7FF0000000000000)) }
     if value < EXP_UNDERFLOW { return 0.0 }
     // exp(x) = 2^k * 2^(j/128) * exp(r), where n = 128*k + j is x*128/ln2 rounded and read out of
     // the shifted double, and r = x - n*ln2/128 with ln2/128 in two words, so |r| <= ln2/256.
     shifted: f64 = fma(value, EXP_INV_LN2N, EXP_SHIFT)
-    n: i64 = i64(bits.cast(shifted)) - EXP_SHIFT_BITS
+    n: i64 = i64(bitcast(u64, shifted)) - EXP_SHIFT_BITS
     r: f64 = fma(shifted - EXP_SHIFT, EXP_NEG_LN2_LO_N, fma(shifted - EXP_SHIFT, EXP_NEG_LN2_HI_N, value))
     r2: f64 = r * r
     j: u64 = u64(n) & 127
@@ -172,18 +171,18 @@ pub exp(value: f64): f64 {
     // never a second rounding. Only a genuinely subnormal result rounds twice, and both spellings
     // send it below regardless.
     if power >= -1022 && power <= 1023 {
-        scale: f64 = bits.cast(u64(i64(table.two_bits[j]) + (power << 52)))
+        scale: f64 = bitcast(f64, u64(i64(table.two_bits[j]) + (power << 52)))
         return fma(scale, correction, scale)
     }
     // Past 1023 only k == 1024 reaches here, just under the overflow limit: scale at 2^1023 and
     // double once, so the correction is applied while the scale is still a normal double.
     if power > 1023 {
-        scale: f64 = bits.cast(u64(i64(table.two_bits[j]) + EXP_TOP))
+        scale: f64 = bitcast(f64, u64(i64(table.two_bits[j]) + EXP_TOP))
         return fma(scale, correction, scale) * 2.0
     }
     // Subnormal result: scale in two exact steps so only the last one rounds.
-    scale: f64 = bits.cast(u64(i64(table.two_bits[j]) + ((power + 1000) << 52)))
-    return fma(scale, correction, scale) * bits.cast(u64(23) << 52)
+    scale: f64 = bitcast(f64, u64(i64(table.two_bits[j]) + ((power + 1000) << 52)))
+    return fma(scale, correction, scale) * bitcast(f64, u64(23) << 52)
 }
 
 pub inline exp(value: f32): f32 {
@@ -192,17 +191,17 @@ pub inline exp(value: f32): f32 {
 
 pub log(value: f64): f64 {
     if isnan(value) { return value }
-    if value < 0.0 { return bits.cast(u64(0x7FF8000000000000)) }
-    if value == 0.0 { return -bits.cast(u64(0x7FF0000000000000)) }
+    if value < 0.0 { return bitcast(f64, u64(0x7FF8000000000000)) }
+    if value == 0.0 { return -bitcast(f64, u64(0x7FF0000000000000)) }
     if isinf(value) { return value }
     // x = 2^k * z with z in [OFF, 2*OFF), k = offset >> 52 and z the bits in the shifted pattern;
     // i selects the table entry, c = 1/invc lies near z, and log(x) = k*ln2 + log(c) + log1p(r).
-    xs: i64 = i64(bits.cast(value))
-    if (bits.cast(value) >> 52) == 0 { xs = i64(bits.cast(value * TWO_52)) - LOG_SUB_OFF }
+    xs: i64 = i64(bitcast(u64, value))
+    if (bitcast(u64, value) >> 52) == 0 { xs = i64(bitcast(u64, value * TWO_52)) - LOG_SUB_OFF }
     offset: i64 = xs - LOG_OFF
     i: u64 = u64(offset >> 45) & 127
     // z*invc - 1 is representable exactly, so one fma carries r with no error at all.
-    r: f64 = fma(bits.cast(u64(xs - (offset & -4503599627370496))), table.log[i].invc, -1.0)
+    r: f64 = fma(bitcast(f64, u64(xs - (offset & -4503599627370496))), table.log[i].invc, -1.0)
     // k*ln2hi + logc is exact. Their sum with r cancels, so t loses up to half an ulp of itself;
     // (w - t) + r is that loss exactly, and carrying it is what keeps a single rounded double honest.
     w: f64 = f64(offset >> 52) * LOG_LN2_HI + table.log[i].logc
@@ -243,13 +242,13 @@ pow_signed(magnitude: f64, flip: u64): f64 {
 // bits of x as a signed integer, flip). When not done, the bits are those of |x| with a subnormal
 // rescaled by 2^52 and its exponent field lowered by 52, so the field may go negative.
 pow_special(x: f64, y: f64): (bool, f64, i64, u64) {
-    ix: u64 = bits.cast(x)
-    iy: u64 = bits.cast(y)
+    ix: u64 = bitcast(u64, x)
+    iy: u64 = bitcast(u64, y)
     ax: u64 = ix & ABS_BITS
     ay: u64 = iy & ABS_BITS
     one: u64 = 0x3FF0000000000000
     infinite: u64 = 0x7FF0000000000000
-    infinity: f64 = bits.cast(infinite)
+    infinity: f64 = bitcast(f64, infinite)
     // Zero exponent and a base of +1 give 1 whatever the other operand is, a NaN included.
     if ay == 0 || ix == one { return true, 1.0, 0, 0 }
     if ax > infinite || ay > infinite { return true, x + y, 0, 0 }
@@ -275,7 +274,7 @@ pow_special(x: f64, y: f64): (bool, f64, i64, u64) {
         return true, pow_signed(infinity, flip), 0, 0
     }
     // A finite negative base with a fractional exponent has no real power.
-    if negative && parity == 0 { return true, bits.cast(u64(0x7FF8000000000000)), 0, 0 }
+    if negative && parity == 0 { return true, bitcast(f64, u64(0x7FF8000000000000)), 0, 0 }
     // |y| < 2^-65 puts the result within 2^-54 of 1; |y| >= 2^63 overflows or underflows unless |x| = 1.
     ey: u64 = (iy >> 52) & 0x7FF
     if ax == one || ey < 0x3BE { return true, 1.0, 0, 0 }
@@ -284,7 +283,7 @@ pow_special(x: f64, y: f64): (bool, f64, i64, u64) {
         return true, 0.0, 0, 0
     }
     magnitude: i64 = i64(ax)
-    if (ax >> 52) == 0 { magnitude = i64(bits.cast(bits.cast(ax) * TWO_52)) - LOG_SUB_OFF }
+    if (ax >> 52) == 0 { magnitude = i64(bitcast(u64, bitcast(f64, ax) * TWO_52)) - LOG_SUB_OFF }
     return false, 0.0, magnitude, flip
 }
 
@@ -293,9 +292,9 @@ pow_special(x: f64, y: f64): (bool, f64, i64, u64) {
 // otherwise scales in two steps so w keeps its precision and only the last multiply can round into
 // the subnormal range.
 pow_extreme(w: f64, n: i64): f64 {
-    if n > 1024 { return bits.cast(u64(0x7FF0000000000000)) }
-    if n == 1024 { return (w * bits.cast(u64(2046) << 52)) * 2.0 }
-    return (w * bits.cast(u64(n + 1083) << 52)) * TWO_M60
+    if n > 1024 { return bitcast(f64, u64(0x7FF0000000000000)) }
+    if n == 1024 { return (w * bitcast(f64, u64(2046) << 52)) * 2.0 }
+    return (w * bitcast(f64, u64(n + 1083) << 52)) * TWO_M60
 }
 
 /* The body names as few locals as it can. A local that does not win one of the eight callee-saved
@@ -303,8 +302,8 @@ pow_extreme(w: f64, n: i64): f64 {
  * stay nested in the expression that consumes them and cheap ones are recomputed rather than named.
  */
 pub pow(x: f64, y: f64): f64 {
-    ix: u64 = bits.cast(x)
-    iy: u64 = bits.cast(y)
+    ix: u64 = bitcast(u64, x)
+    iy: u64 = bitcast(u64, y)
     // An exponent of 2, 1, -1, or 0.5 (a zero mantissa selects the powers of two) has a cheaper exact
     // form. Only a positive base takes the square root: pow(-0, 0.5) is +0 and pow(-inf, 0.5) is +inf.
     if (iy << 12) == 0 {
@@ -321,9 +320,9 @@ pub pow(x: f64, y: f64): f64 {
         if top_x > 0x800 && top_x < 0xFFF && top_y >= 0x3BE && top_y < 0x43E {
             // A finite negative base and an ordinary exponent: only an integer exponent is defined, and
             // an odd one flips the sign. The units bit of y sits 0x433 - top_y places above bit 0.
-            if top_y < 0x3FF { return bits.cast(u64(0x7FF8000000000000)) }
+            if top_y < 0x3FF { return bitcast(f64, u64(0x7FF8000000000000)) }
             if top_y <= 0x433 {
-                if (iy & ((u64(1) << (0x433 - top_y)) - 1)) != 0 { return bits.cast(u64(0x7FF8000000000000)) }
+                if (iy & ((u64(1) << (0x433 - top_y)) - 1)) != 0 { return bitcast(f64, u64(0x7FF8000000000000)) }
                 flip = (iy >> (0x433 - top_y)) << 63
             }
             xs = i64(ix & ABS_BITS)
@@ -343,8 +342,8 @@ pub pow(x: f64, y: f64): f64 {
     i: u64 = u64(offset >> 45) & 127
     scaled: u64 = u64(xs - (offset & -4503599627370496))
     invc: f64 = table.log[i].invc
-    rhi: f64 = bits.cast((scaled + 2147483648) & LOG_HIGH32) * invc - 1.0
-    rlo: f64 = (bits.cast(scaled) - bits.cast((scaled + 2147483648) & LOG_HIGH32)) * invc
+    rhi: f64 = bitcast(f64, (scaled + 2147483648) & LOG_HIGH32) * invc - 1.0
+    rlo: f64 = (bitcast(f64, scaled) - bitcast(f64, (scaled + 2147483648) & LOG_HIGH32)) * invc
     r: f64 = rhi + rlo
     // k*ln2 + logc is exact; each sum below keeps its rounding error in the low word.
     t1: f64 = f64(offset >> 52) * LOG_LN2_HI + table.log[i].logc
@@ -367,28 +366,28 @@ pub pow(x: f64, y: f64): f64 {
     // exp(e_hi + e_lo) = 2^e * 2^(j/128) * exp(er), where n = 128*e + j is e_hi/ln2*128 rounded and
     // |er| <= ln2/256. Below 2^-54 the answer rounds to 1; beyond +-745.2 it overflows or underflows.
     // flip holds the sign bit a negative base's odd exponent sets, so xoring it in negates the result.
-    top_e: u64 = (bits.cast(e_hi) >> 52) & 0x7FF
-    if top_e < 0x3C9 { return bits.cast(u64(0x3FF0000000000000) ^ flip) }
+    top_e: u64 = (bitcast(u64, e_hi) >> 52) & 0x7FF
+    if top_e < 0x3C9 { return bitcast(f64, u64(0x3FF0000000000000) ^ flip) }
     if top_e >= 0x408 {
-        if e_hi > EXP_LIMIT { return bits.cast(u64(0x7FF0000000000000) ^ flip) }
-        if e_hi < -EXP_LIMIT { return bits.cast(flip) }
+        if e_hi > EXP_LIMIT { return bitcast(f64, u64(0x7FF0000000000000) ^ flip) }
+        if e_hi < -EXP_LIMIT { return bitcast(f64, flip) }
     }
     shifted: f64 = EXP_INV_LN2N * e_hi + EXP_SHIFT
-    n: i64 = i64(bits.cast(shifted)) - EXP_SHIFT_BITS
+    n: i64 = i64(bitcast(u64, shifted)) - EXP_SHIFT_BITS
     er: f64 = e_hi + (shifted - EXP_SHIFT) * EXP_NEG_LN2_HI_N +
         (shifted - EXP_SHIFT) * EXP_NEG_LN2_LO_N +
         (fma(y, log_hi, -e_hi) + y * (hi - log_hi + lo))
     j: u64 = u64(n) & 127
     power: i64 = n >> 7
     if power < -1000 || power > 1023 {
-        s: f64 = bits.cast(table.two_bits[j])
+        s: f64 = bitcast(f64, table.two_bits[j])
         er2: f64 = er * er
         correction: f64 = table.two_tail[j] + er + er2 * (0.5 + er * EXP_C3) +
             er2 * er2 * (EXP_C4 + er * EXP_C5)
-        return bits.cast(bits.cast(pow_extreme(s + s * correction, power)) ^ flip)
+        return bitcast(f64, bitcast(u64, pow_extreme(s + s * correction, power)) ^ flip)
     }
-    scale: f64 = bits.cast(u64(i64(table.two_bits[j]) + (power << 52)))
-    return bits.cast(bits.cast(scale + scale * (table.two_tail[j] + er +
+    scale: f64 = bitcast(f64, u64(i64(table.two_bits[j]) + (power << 52)))
+    return bitcast(f64, bitcast(u64, scale + scale * (table.two_tail[j] + er +
         er * er * (0.5 + er * EXP_C3) +
         (er * er) * (er * er) * (EXP_C4 + er * EXP_C5))) ^ flip)
 }
@@ -398,8 +397,8 @@ pub pow(x: f64, y: f64): f64 {
 // the subnormal range or to infinity when the result leaves f32. Every f32 magnitude is a normal f64,
 // so only zero, infinite, NaN, and negative bases and non-finite exponents take the f64 path.
 pub pow(x: f32, y: f32): f32 {
-    ix: u32 = bits.cast(x)
-    iy: u32 = bits.cast(y)
+    ix: u32 = bitcast(u32, x)
+    iy: u32 = bitcast(u32, y)
     if (iy << 9) == 0 {
         if iy == 0x40000000 { return x * x }
         if iy == 0x3F800000 { return x }
@@ -407,28 +406,28 @@ pub pow(x: f32, y: f32): f32 {
         if iy == 0x3F000000 && ix < 0x7F800000 { return sqrt(x) }
     }
     if ix < 1 || ix >= 0x7F800000 || (iy & 0x7FFFFFFF) >= 0x7F800000 { return f32(pow(f64(x), f64(y))) }
-    xs: i64 = i64(bits.cast(f64(x)))
+    xs: i64 = i64(bitcast(u64, f64(x)))
     offset: i64 = xs - LOG_OFF
     i: u64 = u64(offset >> 45) & 127
-    r: f64 = bits.cast(u64(xs - (offset & -4503599627370496))) * table.log[i].invc - 1.0
+    r: f64 = bitcast(f64, u64(xs - (offset & -4503599627370496))) * table.log[i].invc - 1.0
     e: f64 = f64(y) * (f64(offset >> 52) * LOG_LN2 + table.log[i].logc + r -
         r * r * (0.5 - r * (LOG_C3 + r * (LOG_C4 + r * LOG_C5))))
     // Beyond |e| = 128 the result overflows or underflows to zero in f32.
-    if ((bits.cast(e) >> 52) & 0x7FF) >= 0x406 {
-        if e > 0.0 { return bits.cast(u32(0x7F800000)) }
+    if ((bitcast(u64, e) >> 52) & 0x7FF) >= 0x406 {
+        if e > 0.0 { return bitcast(f32, u32(0x7F800000)) }
         return 0.0
     }
     shifted: f64 = EXP_INV_LN2N * e + EXP_SHIFT
-    n: i64 = i64(bits.cast(shifted)) - EXP_SHIFT_BITS
+    n: i64 = i64(bitcast(u64, shifted)) - EXP_SHIFT_BITS
     er: f64 = e - (shifted - EXP_SHIFT) * EXP_LN2_N
-    scale: f64 = bits.cast(u64(i64(table.two_bits[u64(n) & 127]) + ((n >> 7) << 52)))
+    scale: f64 = bitcast(f64, u64(i64(table.two_bits[u64(n) & 127]) + ((n >> 7) << 52)))
     return f32(scale + scale * (er + er * er * (0.5 + er * EXP_C3)))
 }
 
 
 
 exponent_field(x: f64): int {
-    return int((bits.cast(x) >> 52) & u64(0x7FF))
+    return int((bitcast(u64, x) >> 52) & u64(0x7FF))
 }
 
 /* Cody-Waite reduction for 0 < x < 2^20 * pi/2: x = n * pi/2 + (y0 + y1). */
@@ -445,7 +444,7 @@ inline bit_at(limbs: []u64, k: int): u64 {
  * even when the fraction cancels to 2^-62 (the worst case for an f64).
  */
 reduce_large(x: f64): (f64, f64, int) {
-    raw: u64 = bits.cast(x)
+    raw: u64 = bitcast(u64, x)
     e: int = exponent_field(x) - 1075
     m: u64 = (raw & u64(0x000FFFFFFFFFFFFF)) | u64(0x0010000000000000)
     ml: u64 = m & u64(0xFFFFFFFF)
@@ -493,8 +492,8 @@ reduce_large(x: f64): (f64, f64, int) {
         high_bits = high_bits * 2 + bit_at(limbs[..], top - t)
         low_bits = low_bits * 2 + bit_at(limbs[..], top - 53 - t)
     }
-    fh: f64 = f64(high_bits) * bits.cast(u64(1023 + top - 52 - fraction_bits) << 52)
-    fl: f64 = f64(low_bits) * bits.cast(u64(1023 + top - 105 - fraction_bits) << 52)
+    fh: f64 = f64(high_bits) * bitcast(f64, u64(1023 + top - 52 - fraction_bits) << 52)
+    fl: f64 = f64(low_bits) * bitcast(f64, u64(1023 + top - 105 - fraction_bits) << 52)
     // (fh + fl) * pi/2 as a double-double, using pi/2 = A + B + (C, negligible).
     p: f64 = fh * PIO2_A
     t: f64 = fma(fh, PIO2_A, -p) + (fh * PIO2_B + fl * PIO2_A)
@@ -505,9 +504,9 @@ reduce_large(x: f64): (f64, f64, int) {
 }
 
 pub sin(value: f64): f64 {
-    raw: u64 = bits.cast(value)
-    if (raw & ABS_BITS) >= INF_BITS { return bits.cast(u64(0x7FF8000000000000)) }
-    magnitude: f64 = bits.cast(raw & ABS_BITS)
+    raw: u64 = bitcast(u64, value)
+    if (raw & ABS_BITS) >= INF_BITS { return bitcast(f64, u64(0x7FF8000000000000)) }
+    magnitude: f64 = bitcast(f64, raw & ABS_BITS)
     if magnitude <= PIO4 {
         if magnitude < SMALL_ARGUMENT { return value }
         z: f64 = value * value
@@ -532,13 +531,13 @@ pub sin(value: f64): f64 {
         w: f64 = fn * PIO2_1T
         a: f64 = r - w
         j: int = int((raw >> 52) & u64(0x7FF))
-        if j - int((bits.cast(a) >> 52) & u64(0x7FF)) > 16 {
+        if j - int((bitcast(u64, a) >> 52) & u64(0x7FF)) > 16 {
             t: f64 = r
             w = fn * PIO2_2
             r = t - w
             w = fn * PIO2_2T - ((t - r) - w)
             a = r - w
-            if j - int((bits.cast(a) >> 52) & u64(0x7FF)) > 49 {
+            if j - int((bitcast(u64, a) >> 52) & u64(0x7FF)) > 49 {
                 t = r
                 w = fn * PIO2_3
                 r = t - w
@@ -562,13 +561,13 @@ pub sin(value: f64): f64 {
     } else {
         z: f64 = y0 * y0
         r: f64 = z * fma(z, fma(z, fma(z, fma(z, fma(z, COS_C6, COS_C5), COS_C4), COS_C3), COS_C2), COS_C1)
-        reduced: f64 = bits.cast(bits.cast(y0) & ABS_BITS)
+        reduced: f64 = bitcast(f64, bitcast(u64, y0) & ABS_BITS)
         if reduced < 0.3 {
             result = 1.0 - (0.5 * z - (z * r - y0 * y1))
         } else {
             qx: f64 = 0.28125
             // y0/4 truncated to its high word, so the subtraction below stays exact.
-            if reduced <= 0.78125 { qx = bits.cast(((bits.cast(reduced) >> 32) - u64(0x00200000)) << 32) }
+            if reduced <= 0.78125 { qx = bitcast(f64, ((bitcast(u64, reduced) >> 32) - u64(0x00200000)) << 32) }
             result = (1.0 - qx) - ((0.5 * z - qx) - (z * r - y0 * y1))
         }
     }
@@ -582,9 +581,9 @@ pub inline sin(value: f32): f32 {
 }
 
 pub cos(value: f64): f64 {
-    raw: u64 = bits.cast(value)
-    if (raw & ABS_BITS) >= INF_BITS { return bits.cast(u64(0x7FF8000000000000)) }
-    magnitude: f64 = bits.cast(raw & ABS_BITS)
+    raw: u64 = bitcast(u64, value)
+    if (raw & ABS_BITS) >= INF_BITS { return bitcast(f64, u64(0x7FF8000000000000)) }
+    magnitude: f64 = bitcast(f64, raw & ABS_BITS)
     if magnitude <= PIO4 {
         if magnitude < SMALL_ARGUMENT { return 1.0 }
         // The unreduced argument carries no tail, so every y1 term of the kernel below drops out.
@@ -593,7 +592,7 @@ pub cos(value: f64): f64 {
         if magnitude < 0.3 { return 1.0 - (0.5 * z - z * r) }
         qx: f64 = 0.28125
         // magnitude/4 truncated to its high word, so the subtraction below stays exact.
-        if magnitude <= 0.78125 { qx = bits.cast(((bits.cast(magnitude) >> 32) - u64(0x00200000)) << 32) }
+        if magnitude <= 0.78125 { qx = bitcast(f64, ((bitcast(u64, magnitude) >> 32) - u64(0x00200000)) << 32) }
         return (1.0 - qx) - ((0.5 * z - qx) - z * r)
     }
 
@@ -611,13 +610,13 @@ pub cos(value: f64): f64 {
         w: f64 = fn * PIO2_1T
         a: f64 = r - w
         j: int = int((raw >> 52) & u64(0x7FF))
-        if j - int((bits.cast(a) >> 52) & u64(0x7FF)) > 16 {
+        if j - int((bitcast(u64, a) >> 52) & u64(0x7FF)) > 16 {
             t: f64 = r
             w = fn * PIO2_2
             r = t - w
             w = fn * PIO2_2T - ((t - r) - w)
             a = r - w
-            if j - int((bits.cast(a) >> 52) & u64(0x7FF)) > 49 {
+            if j - int((bitcast(u64, a) >> 52) & u64(0x7FF)) > 49 {
                 t = r
                 w = fn * PIO2_3
                 r = t - w
@@ -636,13 +635,13 @@ pub cos(value: f64): f64 {
     if (quarter & 1) == 0 {
         z: f64 = y0 * y0
         r: f64 = z * fma(z, fma(z, fma(z, fma(z, fma(z, COS_C6, COS_C5), COS_C4), COS_C3), COS_C2), COS_C1)
-        reduced: f64 = bits.cast(bits.cast(y0) & ABS_BITS)
+        reduced: f64 = bitcast(f64, bitcast(u64, y0) & ABS_BITS)
         if reduced < 0.3 {
             result = 1.0 - (0.5 * z - (z * r - y0 * y1))
         } else {
             qx: f64 = 0.28125
             // y0/4 truncated to its high word, so the subtraction below stays exact.
-            if reduced <= 0.78125 { qx = bits.cast(((bits.cast(reduced) >> 32) - u64(0x00200000)) << 32) }
+            if reduced <= 0.78125 { qx = bitcast(f64, ((bitcast(u64, reduced) >> 32) - u64(0x00200000)) << 32) }
             result = (1.0 - qx) - ((0.5 * z - qx) - (z * r - y0 * y1))
         }
     } else {
