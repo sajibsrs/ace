@@ -9,8 +9,8 @@ cd "$repo_dir"
 make ace
 
 ./ace --release --report -o "$bench_tmp/hotloop-ace" bench/core/hotloop.ace
-# Ace leaves vectorization to explicit `simd`, so scalar C is the comparison
-# target; the auto-vectorized build is a reference column, not a goal.
+# Scalar C is the Ace/C column; C's auto-vectorized build is the reference
+# for Ace's own auto-vectorizer (SPEC Compiler #6).
 cc -std=c11 -O2 -fno-vectorize -fno-slp-vectorize \
     -o "$bench_tmp/hotloop-c" bench/core/hotloop.c
 cc -std=c11 -O2 -o "$bench_tmp/hotloop-c-vector" bench/core/hotloop.c
