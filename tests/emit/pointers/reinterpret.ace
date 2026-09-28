@@ -1,0 +1,33 @@
+/* expect-exit: 0 */
+
+Event: struct { kind: u32, bytes: [28]u8 }
+Key: struct { kind: u32, code: i32, down: bool, repeat: bool }
+Level: enum u8 { low, high }
+Head: struct { level: Level, tag: u8 }
+
+main(): int {
+    value: f32 = 1.0
+    if *(*u32(&value)) != 0x3F800000 { return 1 }
+
+    word: u32 = 0
+    bytes: mut *u8 = mut *u8(mut &word)
+    *(bytes + 1) = 0x12
+    if word != 0x1200 { return 2 }
+
+    event: Event
+    key: mut *Key = mut *Key(mut &event)
+    key.kind = 7
+    key.code = 42
+    key.down = true
+    if event.kind != 7 { return 3 }
+    view: *Key = *Key(&event)
+    if view.code != 42 || !view.down { return 4 }
+
+    raw: [2]u8 = [1, 9]
+    head: *Head = *Head(&raw)
+    if head.level != Level.high || head.tag != 9 { return 5 }
+
+    none: *u8 = null
+    if *u32(none) != null { return 6 }
+    return 0
+}

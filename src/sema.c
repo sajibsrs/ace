@@ -4027,14 +4027,35 @@ static SType* check_call(Ck* k, Node* call) {
     return t;
 }
 
+/*
+ * Plain-bits types (Memory, untyped storage): every byte pattern is a value,
+ * so reinterpreted storage may be read as one without forging a value only
+ * the language creates.
+ */
+static int plain_bits(SType* t) {
+    if (!t) return 0;
+    switch (t->kind) {
+    case SK_PRIM: return t->prim != P_STRING && t->prim != P_TYPEID;
+    case SK_PTR: case SK_ENUM: case SK_BITS: return 1;
+    case SK_FUNC: return t->is_c_abi;
+    case SK_DISTINCT: case SK_ARRAY: return plain_bits(t->base);
+    case SK_STRUCT:
+        for (int i = 0; i < t->nfields; i++) if (!plain_bits(t->fields[i].t)) return 0;
+        return 1;
+    default: return 0;
+    }
+}
+
 static SType* check_call_raw(Ck* k, Node* call) {
     Node* callee = call->a;
-    /* Pointer types are conversion callees only for the exact usize-address
-     * boundary.  Writable construction is an explicit authority assertion. */
+    /* Pointer types are conversion callees for a usize address, the raw
+     * boundary where writable construction is an explicit authority
+     * assertion, and for another data pointer, reinterpreting plain bits
+     * without widening permission. */
     if (callee->kind == N_PTR) {
         SType* want = build_type(k, callee);
         if (call->nkids != 1) {
-            ck_err(k, call, "a data-pointer conversion takes exactly one usize address");
+            ck_err(k, call, "a data-pointer conversion takes exactly one usize address or pointer");
             return T_ERR;
         }
         if (!layout(want->base) || !want->base->size) {
@@ -4045,6 +4066,21 @@ static SType* check_call_raw(Ck* k, Node* call) {
         }
         SType* from = expr_type(k, call->kids[0]);
         if (from->kind == SK_ERR) return T_ERR;
+        if (from->kind == SK_PTR) {
+            if (!plain_bits(from->base) || !plain_bits(want->base)) {
+                ck_err(k, call, "pointer reinterpretation requires plain-bits pointees, got %s to %s",
+                       type_name(from), type_name(want));
+                return T_ERR;
+            }
+            if (want->is_mut && !from->is_mut) {
+                ck_err(k, call, "pointer reinterpretation cannot widen %s to %s",
+                       type_name(from), type_name(want));
+                return T_ERR;
+            }
+            if (want->base->align <= from->base->align) call->flags |= F_BOUNDS_PROVEN;
+            callee->ty = want;
+            return want;
+        }
         if (from->kind != SK_PRIM || from->prim != P_USIZE) {
             ck_err(k, call, "data-pointer conversion requires usize, got %s", type_name(from));
             return T_ERR;

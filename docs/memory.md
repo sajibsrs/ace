@@ -80,7 +80,7 @@ as `T`, and the compiler never assumes two accesses are disjoint just because
 their types differ; only `noalias` and read-only parameters state non-overlap.
 
 Plain-bits types are those where every byte pattern is a value: integers,
-`char`, floating types, enums, data pointers, C function values, and structs,
+`char`, floating types, enums, bits types, data pointers, C function values, and structs,
 arrays, and distinct types built only from them. `bool` counts too, trusted to
 hold `0` or `1`. Tagged unions, `Error`, `typeid`, contracts, Ace function
 values, slices, strings, and tuples are created only by the language and are
@@ -145,6 +145,19 @@ and a string is a read-only view — its bytes cannot be written through it.
 written pointer type; the writable form is an explicit assertion of write
 authority. Debug output diagnoses dynamic nonzero misalignment, while a
 locally known misaligned address is always a compile error.
+
+The same spelling reinterprets another data pointer, viewing the same address
+as a different plain-bits type:
+
+```ace
+event: Event
+key: mut *KeyboardEvent = mut *KeyboardEvent(mut &event)
+bits: u32 = *(*u32(&value))                // value: f32
+```
+
+Both pointee types must be plain bits, and permission never widens: a writable
+view needs a writable source. A view no more aligned than its source costs
+nothing; a more-aligned one gets the same debug alignment check as an address.
 
 An existing extent can be made into a slice without allocation:
 

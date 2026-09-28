@@ -1719,9 +1719,14 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
         return -1;
     }
     if (!s && callee && callee->kind == N_PTR && x->nkids == 1) {
-        // *T(address): the same bits; debug checks the address is aligned for T
-        IrType at = type_in(l, x->kids[0], IT_U64);
-        int v = widen(l, expr(l, x->kids[0], at), at, IT_U64);
+        // *T(address) or *T(pointer): the same bits; debug checks the address
+        // is aligned for T unless sema proved it
+        SType* ft = unwrap(node_ty(x->kids[0]));
+        int from_ptr = ft && ft->kind == SK_PTR;
+        IrType at = from_ptr ? IT_PTR : type_in(l, x->kids[0], IT_U64);
+        int v = expr(l, x->kids[0], at);
+        if (from_ptr && (x->flags & F_BOUNDS_PROVEN)) return v;
+        v = from_ptr ? emit2(l, IR_CAST, IT_U64, v, -1) : widen(l, v, at, IT_U64);
         SType* pt = unwrap(node_ty(x));
         uint32_t align = pt && pt->base ? sema_align(pt->base) : 1;
         if (l->mode == EMIT_DEBUG && align > 1 && !(x->flags & F_BOUNDS_PROVEN)) {

@@ -155,7 +155,14 @@ Decision: manual management through one fixed process-wide allocator strategy (C
    type and permission facts; converting an unchanged address back restores
    only the explicitly written pointer type and address. Function values,
    slices, strings, contracts, and other callable or multiword values do not
-   participate. Rationale: kernels, embedded and memory-mapped access, tagged
+   participate.
+   `*U(pointer)` and `mut *U(pointer)` reinterpret a data pointer `*T` or
+   `mut *T` as the same address viewing `U` (untyped storage, below). Both `T`
+   and `U` must be plain bits, and permission never widens: `mut *U(p)`
+   requires `p: mut *T`. `null` stays `null`. When `alignof(U)` exceeds
+   `alignof(T)`, the address alignment rule above applies; otherwise the
+   conversion is proven aligned and emits nothing. `*T(address)` from `usize`
+   remains unrestricted as the raw-address boundary. Rationale: kernels, embedded and memory-mapped access, tagged
    pointers, integer-address ABIs, custom runtimes, renderers, and address
    diagnostics require the exact machine facility. The explicit conversion is
    the trust boundary; Ace adds no tagged-pointer abstraction, hidden metadata,
@@ -202,8 +209,8 @@ Carved (untyped storage):
   their types differ; non-overlap comes only from stated facts (`noalias`,
   read-only parameters).
 - Plain-bits types are the integers, `char`, `bool`, the floating types, all
-  enums, data pointers, C function values (C Interop #5), distinct forms of
-  these, and arrays and structs composed only of them. Every byte pattern of a
+  enums, bits types, data pointers, C function values (C Interop #5), distinct
+  forms of these, and arrays and structs composed only of them. Every byte pattern of a
   plain-bits type is a value, except that a `bool` read from reinterpreted
   storage is trusted to be `0` or `1` (Type System #12). Tagged unions, `Error`,
   error domains, `typeid`, contracts, Ace function values, slices, strings, and
@@ -1158,14 +1165,10 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 ### Active
 
 - Storage reinterpretation (decided; implementation staged). Built on untyped
-  storage and plain-bits types (Memory):
+  storage, plain-bits types, and pointer reinterpretation (Memory):
   - `bitcast(U, value)` copies the bits of `value` as `U`: both plain bits,
     `sizeof` equal, and the source type has no padding. `bitcast` is a reserved
     builtin name.
-  - `*U(p)` and `mut *U(p)` reinterpret a pointer `p: *T` or `mut *T`: both
-    plain bits, permission never widens, and the ordinary alignment rule
-    applies. `*T(address)` from `usize` stays unrestricted as the raw-address
-    boundary.
   - Field `@offset(N)` places a field at byte `N`, satisfying its effective
     alignment; unannotated fields follow the preceding field as today. A struct
     with overlapping fields holds only plain-bits fields, has no `==`, is

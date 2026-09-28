@@ -325,6 +325,12 @@ for want in \
     fi
 done
 
+reinterpret_errors=$("$ACE" tests/sema/pointers/reinterpret_err.ace 2>&1)
+if [ "$(printf '%s\n' "$reinterpret_errors" | grep -c 'pointer reinterpretation')" -ne 9 ]; then
+    echo "FAIL: pointer reinterpretation diagnostics"
+    fail=1
+fi
+
 printf_format_errors=$("$ACE" tests/sema/printf/formats_err.ace 2>&1)
 for want in \
     "format must be a string literal or static-literal const global" \
@@ -996,7 +1002,7 @@ if command -v strings >/dev/null 2>&1 &&
     fail=1
 fi
 
-for f in null overflow alignment; do
+for f in null overflow alignment reinterpret_alignment; do
     if ! "$ACE" --debug -o "/tmp/ace_checked_features/pointer_construct_$f" \
          "tests/checked_pointer_construct/$f.ace" >/dev/null 2>/tmp/ace_test_errs; then
         echo "FAIL: checked pointer/slice construction fixture did not compile: $f"

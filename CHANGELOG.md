@@ -964,6 +964,10 @@ current normative rules, and Git preserves patch-level detail.
   function values in every C-ABI position (struct fields and pointees
   included); the clang oracle calls a callback field by value and through a
   pointer in both directions.
+- Added pointer reinterpretation `*U(p)`/`mut *U(p)` between plain-bits
+  pointees through the existing pointer-conversion callee: sema checks plain
+  bits and permission and proves alignment when `U` is no more aligned than
+  `T`, so only an over-aligning view carries the debug alignment check.
 - Implemented statement-only AArch64 inline assembly with explicit
   input/output/clobber bindings and no constraint language or reordering.
 - Implemented Package System v1's manifest and dependency-graph resolution

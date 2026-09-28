@@ -1,0 +1,15 @@
+Shape: union { none, value: i32 }
+Wrapped: struct { text: string }
+Hook: struct { call: (i32): i32 }
+
+bad(readonly: *u32, text: *string, shape: *Shape, wrapped: *Wrapped, hook: *Hook) {
+    a: mut *u8 = mut *u8(readonly)
+    b: *u8 = *u8(text)
+    c: *Shape = *Shape(readonly)
+    d: *u8 = *u8(shape)
+    e: *Wrapped = *Wrapped(readonly)
+    f: *u8 = *u8(wrapped)
+    g: *u8 = *u8(hook)
+    h: *typeid = *typeid(readonly)
+    i: *Error = *Error(readonly)
+}
