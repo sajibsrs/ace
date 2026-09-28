@@ -3533,9 +3533,10 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn, SType* elem,
  * selects the specialization whose type-argument tuple equals it. No name
  * composition remains.
  */
-static Sym* printf_helper(Ck* k, Sym* printf_fn, const char* generic, SType** targs, int nargs, Node* at) {
+static Sym* printf_helper(Ck* k, Sym* printf_fn, const char* who, const char* generic, SType** targs, int nargs,
+                          Node* at) {
     if (!printf_fn || printf_fn->len < 6) return NULL;
-    uint32_t prefix = printf_fn->len - 6; // canonical module prefix before "printf"
+    uint32_t prefix = printf_fn->len - 6; // canonical module prefix before "printf" or "format"
     char name[512];
     snprintf(name, sizeof name, "%.*s%s", (int)prefix, printf_fn->name, generic);
     for (Sym* s = lookup_val(k, name, (uint32_t)strlen(name)); s && visible(k, s); s = s->overload) {
@@ -3545,7 +3546,7 @@ static Sym* printf_helper(Ck* k, Sym* printf_fn, const char* generic, SType** ta
             same = same_type(s->spec_args[i], targs[i]);
         if (same) return s;
     }
-    ck_err(k, at, "internal fmt.printf helper '%s%s' has no specialization", name, spec_tuple_name(targs, nargs));
+    ck_err(k, at, "internal %s helper '%s%s' has no specialization", who, name, spec_tuple_name(targs, nargs));
     return NULL;
 }
 
@@ -3554,13 +3555,13 @@ static void printf_add_part(PrintfPlan* plan, int* cap, PrintfPart part) {
     plan->parts[plan->nparts++] = part;
 }
 
-static int printf_expected_type(Ck* k, Node* arg, int kind, SType** out, const char** expected) {
+static int printf_expected_type(Ck* k, Node* arg, int kind, SType** out, const char** expected, const char* who) {
     int errors = k->d->errors;
     SType* t = expr_type(k, arg);
     // A call deferred to end of file is still poison here; picking a helper
     // from it would match any specialization.
     if (t && t->kind == SK_ERR && k->d->errors == errors) {
-        ck_err(k, arg, "fmt.printf argument type is not yet known; give the call typed arguments or assign its result first");
+        ck_err(k, arg, "%s argument type is not yet known; give the call typed arguments or assign its result first", who);
         return -1;
     }
     SType* want = NULL;
@@ -3606,27 +3607,60 @@ static int printf_expected_type(Ck* k, Node* arg, int kind, SType** out, const c
     return 0;
 }
 
-static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
+/*
+ * A checked format call: fmt.printf(format, ...) with the format at argument
+ * fi = 0, or str.format(destination, format, ...) with it at fi = 1. Both
+ * build the same plan; helpers are the named specialized templates beside the
+ * public function (print_* in fmt, put_* in str), and who names the call in
+ * diagnostics.
+ */
+typedef struct {
+    int         bi;         // BI_FMT_PRINTF or BI_STR_FORMAT
+    int         fi;         // the format's argument index
+    const char* who;
+    const char* counted;    // helper names
+    const char* precision;
+    const char* radix;
+} FormatCall;
+
+static const FormatCall PRINTF_CALL = { BI_FMT_PRINTF, 0, "fmt.printf", "print_counted", "print_precision", "print_radix" };
+static const FormatCall STR_FORMAT_CALL = { BI_STR_FORMAT, 1, "str.format", "put_counted", "put_precision", "put_radix" };
+
+static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc) {
     Node* callee = call->a;
+    const char* who = fc->who;
+    int fi = fc->fi;
     callee->sym = fn;
     callee->ty = fn->type;
     call->sym = fn;
-    call->ival = BI_FMT_PRINTF;
+    call->ival = (uint64_t)fc->bi;
 
-    if (call->nkids < 1) {
-        ck_err(k, call, "fmt.printf requires a compile-time-static format string");
+    if (fi == 1) { // the writable destination comes first
+        if (call->nkids < 1) {
+            ck_err(k, call, "%s requires a destination and a compile-time-static format string", who);
+            return T_ERR;
+        }
+        Node* dest = call->kids[0];
+        if (dest->kind == N_MUTARG) {
+            ck_err(k, dest, "%s writes through the destination slice's own permission; it takes no 'mut'", who);
+            dest = dest->a;
+        }
+        if (!coerce(k, dest, fn->type->params[0])) return T_ERR;
+    }
+    if (call->nkids < fi + 1) {
+        ck_err(k, call, "%s requires a compile-time-static format string", who);
         return T_ERR;
     }
-    Node* format_arg = call->kids[0];
+    Node* format_arg = call->kids[fi];
     if (format_arg->kind == N_MUTARG) {
-        ck_err(k, format_arg, "fmt.printf format is read-only");
+        ck_err(k, format_arg, "%s format is read-only", who);
         format_arg = format_arg->a;
     }
     if (!coerce(k, format_arg, st_prim(P_STRING))) return T_ERR;
     Node* format = static_string_expr(k, format_arg);
     if (!format) {
-        ck_err(k, format_arg, "fmt.printf format must be a string literal or static-literal const global");
-        for (int i = 1; i < call->nkids; i++)
+        ck_err(k, format_arg, "%s format must be a string literal or static-literal const global", who);
+        for (int i = fi + 1; i < call->nkids; i++)
             (void)expr_type(k, call->kids[i]->kind == N_MUTARG
                                ? call->kids[i]->a : call->kids[i]);
         return T_ERR;
@@ -3640,7 +3674,7 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
     memset(plan->parts, 0, (size_t)cap * sizeof(PrintfPart));
 
     uint32_t literal = 0;
-    int next_arg = 1;
+    int next_arg = fi + 1;
     for (uint32_t i = 0; i < format->len;) {
         if ((unsigned char)format->str[i] != '%') { i++; continue; }
         if (i > literal)
@@ -3648,7 +3682,7 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
                 .off = literal, .len = i - literal });
         uint32_t conv_off = i++;
         if (i >= format->len) {
-            ck_err(k, format_arg, "incomplete fmt.printf conversion at decoded byte %u", conv_off);
+            ck_err(k, format_arg, "incomplete %s conversion at decoded byte %u", who, conv_off);
             return T_ERR;
         }
         if (format->str[i] == '%') {
@@ -3664,11 +3698,11 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
             has_precision = 1;
             i++;
             if (i < format->len && format->str[i] == '*') {
-                ck_err(k, format_arg, "fmt.printf dynamic '*' precision is not supported (decoded byte %u)", conv_off);
+                ck_err(k, format_arg, "%s dynamic '*' precision is not supported (decoded byte %u)", who, conv_off);
                 return T_ERR;
             }
             if (i >= format->len || format->str[i] < '0' || format->str[i] > '9') {
-                ck_err(k, format_arg, "fmt.printf precision needs decimal digits at decoded byte %u", conv_off);
+                ck_err(k, format_arg, "%s precision needs decimal digits at decoded byte %u", who, conv_off);
                 return T_ERR;
             }
             uint64_t p = 0;
@@ -3678,13 +3712,13 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
             }
             if (p > 324) {
                 ck_err(k, format_arg,
-                       "fmt.printf precision %llu exceeds the fixed-buffer limit 324",
+                       "%s precision %llu exceeds the fixed-buffer limit 324", who,
                        (unsigned long long)p);
                 return T_ERR;
             }
             precision = (uint16_t)p;
             if (i >= format->len) {
-                ck_err(k, format_arg, "incomplete fmt.printf conversion at decoded byte %u", conv_off);
+                ck_err(k, format_arg, "incomplete %s conversion at decoded byte %u", who, conv_off);
                 return T_ERR;
             }
         } else if (format->str[i] == '*' || format->str[i] == '+' ||
@@ -3692,7 +3726,7 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
                    format->str[i] == ' ' ||
                    (format->str[i] >= '0' && format->str[i] <= '9')) {
             ck_err(k, format_arg,
-                   "fmt.printf width, flags, '*', and positional arguments are not supported (decoded byte %u)",
+                   "%s width, flags, '*', and positional arguments are not supported (decoded byte %u)", who,
                    conv_off);
             return T_ERR;
         }
@@ -3710,12 +3744,12 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
         case 'c': kind = PF_BYTE; break;
         default:
             ck_err(k, format_arg,
-                   "unsupported fmt.printf conversion '%%%c' at decoded byte %u",
+                   "unsupported %s conversion '%%%c' at decoded byte %u", who,
                    format->str[i], conv_off);
             return T_ERR;
         }
         if (has_precision && kind != PF_FIXED) {
-            ck_err(k, format_arg, "fmt.printf precision is supported only for %%f (decoded byte %u)", conv_off);
+            ck_err(k, format_arg, "%s precision is supported only for %%f (decoded byte %u)", who, conv_off);
             return T_ERR;
         }
         printf_add_part(plan, &cap, (PrintfPart){ .kind = (uint8_t)kind,
@@ -3727,30 +3761,30 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
         printf_add_part(plan, &cap, (PrintfPart){ .kind = PF_TEXT,
             .off = literal, .len = format->len - literal });
 
-    int expected_count = next_arg - 1;
-    int provided_count = call->nkids - 1;
+    int expected_count = next_arg - (fi + 1);
+    int provided_count = call->nkids - (fi + 1);
     if (provided_count < expected_count) {
         PrintfPart* missing = NULL;
         for (int i = 0; i < plan->nparts; i++)
-            if (plan->parts[i].arg == provided_count + 1) {
+            if (plan->parts[i].arg == fi + provided_count + 1) {
                 missing = &plan->parts[i];
                 break;
             }
         ck_err(k, call,
-               "fmt.printf format requires %d value argument%s, got %d; missing argument %d for conversion at decoded byte %u",
+               "%s format requires %d value argument%s, got %d; missing argument %d for conversion at decoded byte %u", who,
                expected_count, expected_count == 1 ? "" : "s", provided_count,
                provided_count + 1, missing ? missing->off : 0);
     }
     else if (provided_count > expected_count)
-        ck_err(k, call->kids[expected_count + 1],
-               "extra fmt.printf argument %d is not consumed by the format",
+        ck_err(k, call->kids[fi + expected_count + 1],
+               "extra %s argument %d is not consumed by the format", who,
                expected_count + 1);
 
     SType* counted_arg[1];
     counted_arg[0] = st_prim(P_STRING);
-    Sym* text_helper = printf_helper(k, fn, "print_counted", counted_arg, 1, call);
+    Sym* text_helper = printf_helper(k, fn, who, fc->counted, counted_arg, 1, call);
     counted_arg[0] = st_prim(P_U8);
-    Sym* byte_helper = printf_helper(k, fn, "print_counted", counted_arg, 1, call);
+    Sym* byte_helper = printf_helper(k, fn, who, fc->counted, counted_arg, 1, call);
     for (int i = 0; i < plan->nparts; i++) {
         PrintfPart* part = &plan->parts[i];
         if (part->kind == PF_TEXT) { part->helper = text_helper; continue; }
@@ -3758,40 +3792,40 @@ static SType* check_printf_call(Ck* k, Node* call, Sym* fn) {
         if (part->arg >= call->nkids) continue;
         Node* arg = call->kids[part->arg];
         if (arg->kind == N_MUTARG) {
-            ck_err(k, arg, "fmt.printf value arguments are read-only");
+            ck_err(k, arg, "%s value arguments are read-only", who);
             arg = arg->a;
         }
         SType* actual = NULL;
         const char* expected = "value";
-        int typed = printf_expected_type(k, arg, part->kind, &actual, &expected);
+        int typed = printf_expected_type(k, arg, part->kind, &actual, &expected, who);
         if (typed < 0) continue;
         if (!typed) {
             SType* got = node_ty(arg);
-            ck_err(k, arg, "fmt.printf argument %d for conversion at decoded byte %u requires %s, got %s",
-                   part->arg, part->off, expected,
+            ck_err(k, arg, "%s argument %d for conversion at decoded byte %u requires %s, got %s", who,
+                   part->arg - fi, part->off, expected,
                    got ? type_name(got) : "unknown");
             continue;
         }
-        const char* generic = "print_counted";
+        const char* generic = fc->counted;
         SType* helper_arg[1] = { actual };
         switch (part->kind) {
         case PF_BINARY: case PF_OCTAL: case PF_HEX_LOWER: case PF_HEX_UPPER:
-            generic = "print_radix";
+            generic = fc->radix;
             break;
         case PF_FIXED:
-            generic = "print_precision";
+            generic = fc->precision;
             break;
         default: break;
         }
-        part->helper = printf_helper(k, fn, generic, helper_arg, 1, call);
+        part->helper = printf_helper(k, fn, who, generic, helper_arg, 1, call);
     }
-    for (int i = expected_count + 1; i < call->nkids; i++) {
+    for (int i = fi + expected_count + 1; i < call->nkids; i++) {
         Node* arg = call->kids[i]->kind == N_MUTARG ? call->kids[i]->a : call->kids[i];
         if (!node_ty(arg)) (void)expr_type(k, arg);
     }
 
     call->aux = plan;
-    return st_prim(P_I64);
+    return fn->type->ret;
 }
 
 /*
@@ -4398,7 +4432,19 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 }
             if (mi) return check_memory_call(k, call, mi, (int)mi->decl->ival);
         }
-        if (s->kind == SYM_FUNC && s->decl && s->decl->ival == BI_FMT_PRINTF) return check_printf_call(k, call, s);
+        if (s->kind == SYM_FUNC && s->decl && s->decl->ival == BI_FMT_PRINTF)
+            return check_format_call(k, call, s, &PRINTF_CALL);
+        if (s->kind == SYM_FUNC && call->nkids >= 2) { // str.format(destination, "format", ...)
+            Sym* sf = NULL;
+            for (Sym* it = s; it && visible(k, it); it = it->overload)
+                if (it->decl && it->decl->ival == BI_STR_FORMAT) { sf = it; break; }
+            if (sf) {
+                Node* second = call->kids[1]->kind == N_MUTARG ? call->kids[1]->a : call->kids[1];
+                SType* st = overload_arg_type(k, second);
+                if (st && (same_type(st, st_prim(P_STRING)) || shrink_ok(st, st_prim(P_STRING))))
+                    return check_format_call(k, call, sf, &STR_FORMAT_CALL);
+            }
+        }
         if (s->kind == SYM_VAR && s->type && s->type->kind == SK_FUNC) {
             check_args(k, call, s->type, 0);
             check_no_mut_args(k, call);

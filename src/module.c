@@ -421,6 +421,19 @@ static void mark_fmt_intrinsics(Loader* L, Module* m) {
     }
 }
 
+// The one str.format overload whose second parameter is a string: the
+// formatted form (destination, format, ...), checked like fmt.printf.
+static void mark_str_intrinsics(Loader* L, Module* m) {
+    if (!is_std_named_module(L, m->canon, "str")) return;
+    for (int i = 0; i < m->file->nkids; i++) {
+        Node* n = m->file->kids[i];
+        if (n->kind != N_FUNC || !(n->flags & F_PUB) || !text_is(n->str, n->len, "format") || n->nkids != 2)
+            continue;
+        Node* t = n->kids[1]->a;
+        if (t && t->kind == N_NAMED && !t->a && text_is(t->str, t->len, "string")) n->ival = BI_STR_FORMAT;
+    }
+}
+
 static void mark_sys_intrinsics(Loader* L, Module* m) {
     if (!is_std_named_module(L, m->canon, "sys")) return;
     for (int i = 0; i < m->file->nkids; i++) {
@@ -827,6 +840,7 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
     collect_members(L, m); // original names + pub-ness, before any renaming
     mark_mem_intrinsics(L, m);
     mark_fmt_intrinsics(L, m);
+    mark_str_intrinsics(L, m);
     mark_sys_intrinsics(L, m);
     mark_bits_intrinsics(L, m);
     mark_math_intrinsics(L, m);

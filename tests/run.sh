@@ -375,6 +375,20 @@ for want in \
     fi
 done
 
+str_format_errors=$("$ACE" tests/sema/printf/str_format_err.ace 2>&1)
+for want in \
+    "str.format argument 1 for conversion at decoded byte 0 requires int" \
+    "str.format format requires 2 value arguments, got 1" \
+    "extra str.format argument 2 is not consumed by the format" \
+    "str.format format must be a string literal or static-literal const global" \
+    "unsupported str.format conversion '%q'" \
+    "[]u8 given where mut []u8 expected"; do
+    if ! printf '%s\n' "$str_format_errors" | grep -qF "$want"; then
+        echo "FAIL: missing str.format diagnostic '$want'"
+        fail=1
+    fi
+done
+
 printf_deferred_error=$("$ACE" tests/sema/printf/deferred_arg_err.ace 2>&1)
 if ! printf '%s\n' "$printf_deferred_error" | grep -qF \
     "fmt.printf argument type is not yet known"; then
@@ -1602,8 +1616,8 @@ if [ -d tests/emit ]; then
         echo "FAIL: --report separator missing"
         fail=1
     fi
-    if ! printf '%s\n' "$report" | grep -q 'source files:.*7$'; then
-        echo "FAIL: --report should count root + fmt/target + decimal/bigint/shortest/table sources"
+    if ! printf '%s\n' "$report" | grep -q 'source files:.*8$'; then
+        echo "FAIL: --report should count root + fmt/target + decimal/bigint/shortest/table/rendering sources"
         fail=1
     fi
     for label in 'source bytes:' 'tokens:' 'machine code:' 'object file:' 'compile time:'; do

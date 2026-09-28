@@ -13,6 +13,7 @@ import bits
 import mem
 
 import decimal: @float_decimal
+import rendering: @rendering
 import float_parse: @float_parse
 import load: @byte_load
 
@@ -90,25 +91,22 @@ pub copy(text: string, noalias destination: mut []char): bool {
     return true
 }
 
-/* Concatenates every part in order into caller storage. Insufficient capacity
- * fails without writing; success returns the complete byte count and leaves
- * the unused destination suffix unchanged.
+/* Concatenates every part in order into caller storage in one pass. Success
+ * returns the complete byte count and leaves the unused destination suffix
+ * unchanged; insufficient capacity returns (0, false) with the destination's
+ * contents unspecified.
  */
 pub concat(parts: []string, destination: mut []char): (usize, bool) {
-    total: usize = 0
-
-    for i: usize in 0 .. parts.len {
-        if total > destination.len || parts[i].len > destination.len - total { return 0, false }
-        total += parts[i].len
-    }
-
     at: usize = 0
+
     for i: usize in 0 .. parts.len {
         count: usize = parts[i].len
+        if count > destination.len - at { return 0, false }
+
         mem.copy(destination[at..at + count], parts[i])
         at += count
     }
-    return total, true
+    return at, true
 }
 
 /* Splits left to right on non-overlapping exact matches. Separators are
@@ -449,6 +447,100 @@ pub format(destination: mut []char, value: usize, radix: u8): (usize, bool) {
     }
     n2: usize, ok: bool = store_bytes(destination, mut digits[at..64])
     return n2, ok
+}
+
+/* Formatted text into caller storage: the conversions, static-format rule,
+ * exact argument types, and diagnostics of fmt.printf, with the destination
+ * in place of standard output. Success returns the byte count and true; the
+ * text is destination[..n], with no NUL appended. Insufficient capacity
+ * returns (0, false) with the destination's contents unspecified.
+ *
+ * This body serves the zero-conversion case and gives the public name an
+ * ordinary declaration. Calls are otherwise validated and lowered directly by
+ * the compiler, one helper below per format piece.
+ */
+pub format(destination: mut []char, format: string): (usize, bool) {
+    if !copy(format, destination) { return 0, false }
+
+    return format.len, true
+}
+
+/* The formatted-write helpers: each writes one piece at the start of
+ * destination and returns its byte count, or -1 when it does not fit. The
+ * compiler selects the specialization by the argument's exact type.
+ */
+put_counted[T](destination: mut []char, value: T): int specialized
+
+put_precision[T](destination: mut []char, value: T, precision: usize): int specialized
+
+put_radix[T](destination: mut []char, value: T, radix: u8, uppercase: bool): int specialized
+
+put_counted[string](destination: mut []char, text: string): int {
+    if !copy(text, destination) { return -1 }
+
+    return int(text.len)
+}
+
+put_counted[int](destination: mut []char, value: int): int {
+    n: usize, ok: bool = format(destination, value)
+    if !ok { return -1 }
+
+    return int(n)
+}
+
+put_counted[uint](destination: mut []char, value: uint): int {
+    n: usize, ok: bool = format(destination, value)
+    if !ok { return -1 }
+
+    return int(n)
+}
+
+put_counted[usize](destination: mut []char, value: usize): int {
+    n: usize, ok: bool = format(destination, value)
+    if !ok { return -1 }
+
+    return int(n)
+}
+
+put_counted[u8](destination: mut []char, value: u8): int {
+    if destination.len == 0 { return -1 }
+
+    destination[0] = value
+    return 1
+}
+
+put_radix[uint](destination: mut []char, value: uint, radix: u8, uppercase: bool): int {
+    n: usize, ok: bool = rendering.radix(u64(value), radix, uppercase, destination)
+    if !ok { return -1 }
+
+    return int(n)
+}
+
+put_radix[usize](destination: mut []char, value: usize, radix: u8, uppercase: bool): int {
+    n: usize, ok: bool = rendering.radix(u64(value), radix, uppercase, destination)
+    if !ok { return -1 }
+
+    return int(n)
+}
+
+put_precision[f64](destination: mut []char, value: f64, precision: usize): int {
+    digits: [640]u8
+    view: mut []u8 = mut digits[0..640]
+    converted: decimal.Decimal = decimal.fixed64(value, precision, view)
+    n: usize, ok: bool = rendering.fixed(converted, view, precision, destination)
+    if !ok { return -1 }
+
+    return int(n)
+}
+
+put_precision[f32](destination: mut []char, value: f32, precision: usize): int {
+    digits: [640]u8
+    view: mut []u8 = mut digits[0..640]
+    converted: decimal.Decimal = decimal.fixed32(value, precision, view)
+    n: usize, ok: bool = rendering.fixed(converted, view, precision, destination)
+    if !ok { return -1 }
+
+    return int(n)
 }
 
 /* Writes the complete byte sequence into destination or nothing at all. */

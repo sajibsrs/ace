@@ -1430,6 +1430,97 @@ static int printf_call(Lw* l, Node* x) {
     return read_var(l, total, l->cur);
 }
 
+// str.format(destination, format, ...) (Standard Library: str): the
+// destination and every argument once, in order; then each part of sema's
+// plan through its helper into the unwritten rest of the destination. A
+// helper returns its byte count, or a negative count when its piece does not
+// fit, which ends the call with (0, false); else (total, true).
+static int str_format_call(Lw* l, Node* x, Agg* res) {
+    PrintfPlan* plan = (PrintfPlan*)x->aux;
+    int dp, dn;
+    view_parts(l, x->kids[0]->kind == N_MUTARG ? x->kids[0]->a : x->kids[0], &dp, &dn);
+    int nargs = x->nkids - 2;
+    Agg* cap = (Agg*)arena_alloc((size_t)(nargs ? nargs : 1) * sizeof(Agg));
+    SType** capt = (SType**)arena_alloc((size_t)(nargs ? nargs : 1) * sizeof(SType*));
+    for (int i = 0; i < nargs; i++) {
+        Node* arg = x->kids[i + 2]->kind == N_MUTARG ? x->kids[i + 2]->a : x->kids[i + 2];
+        SType* t = node_ty(arg);
+        for (int k = 0; k < plan->nparts && is_untyped(t); k++) // an untyped constant takes its helper's type
+            if (plan->parts[k].arg == i + 2 && plan->parts[k].helper) t = ((Sym*)plan->parts[k].helper)->type->params[1];
+        value(l, arg, t, &cap[i]);
+        capt[i] = t;
+    }
+    int at = temp_var(l, IT_U64, konst(l, IT_U64, 0));
+    int fit = temp_var(l, IT_BOOL, konst(l, IT_BOOL, 1));
+    int done = new_block(l);
+    for (int i = 0; i < plan->nparts && l->cur >= 0; i++) {
+        PrintfPart* part = &plan->parts[i];
+        Sym* h = (Sym*)part->helper;
+        SType* ft = h->type;
+        Args g;
+        args_init(&g);
+        int offset = read_var(l, at, l->cur);
+        int rest = emit2(l, IR_PADD, IT_PTR, dp, offset);
+        l->fn->ins[rest].imm = 1;
+        g.part[g.nparts++] = (IrPart){ ft->params[0], 0, 2 };
+        g.v[g.n++] = rest;
+        g.v[g.n++] = emit2(l, IR_SUB, IT_U64, dn, offset);
+        g.agg = 1;
+        Agg v;
+        SType* vt = ft->params[1];
+        if (part->kind == PF_TEXT) {
+            v.n = 2;
+            v.v[0] = emit(l, IR_STR, IT_PTR);
+            l->fn->ins[v.v[0]].name = plan->format->str + part->off;
+            l->fn->ins[v.v[0]].imm = part->len;
+            v.v[1] = konst(l, IT_U64, part->len);
+        } else if (part->kind == PF_PERCENT) {
+            v.n = 1;
+            v.v[0] = konst(l, need_type(l, vt), '%');
+        } else {
+            v = cap[part->arg - 2];
+            if (!is_agg(vt)) v.v[0] = widen(l, v.v[0], need_type(l, capt[part->arg - 2]), need_type(l, vt));
+        }
+        if (is_agg(vt)) {
+            g.part[g.nparts++] = (IrPart){ vt, g.n, v.n };
+            for (int k = 0; k < v.n; k++) g.v[g.n++] = v.v[k];
+        } else {
+            arg_scalar(l, &g, v.v[0]);
+        }
+        if (part->kind == PF_BINARY || part->kind == PF_OCTAL || part->kind == PF_HEX_LOWER || part->kind == PF_HEX_UPPER) {
+            int base = part->kind == PF_BINARY ? 2 : part->kind == PF_OCTAL ? 8 : 16;
+            arg_scalar(l, &g, konst(l, need_type(l, ft->params[2]), (uint64_t)base));
+            arg_scalar(l, &g, konst(l, need_type(l, ft->params[3]), part->kind == PF_HEX_UPPER));
+        } else if (part->kind == PF_FIXED) {
+            arg_scalar(l, &g, konst(l, need_type(l, ft->params[2]), part->precision));
+        }
+        int id = emit(l, IR_CALL, IT_I64);
+        l->fn->ins[id].sym = h;
+        l->fn->ins[id].name = arena_name(fn_mangle(h->name, h->len, ft, h->decl, h->spec_args,
+                                                   h->spec_args ? h->spec_nargs : 0, h->spec_args != NULL));
+        call_finish(l, id, &g, ft->ret, NULL, -1);
+        int wrote = new_block(l), failed = new_block(l);
+        terminate(l, IR_BR, cmp(l, IR_GE, id, konst(l, IT_I64, 0)), wrote, failed);
+        seal(l, wrote);
+        seal(l, failed);
+        enter(l, failed);
+        write_var(l, at, l->cur, konst(l, IT_U64, 0));
+        write_var(l, fit, l->cur, konst(l, IT_BOOL, 0));
+        jump(l, done);
+        enter(l, wrote);
+        write_var(l, at, l->cur, emit2(l, IR_ADD, IT_U64, read_var(l, at, l->cur), id));
+    }
+    jump(l, done);
+    seal(l, done);
+    enter(l, done);
+    if (res) {
+        res->n = 2;
+        res->v[0] = read_var(l, at, l->cur);
+        res->v[1] = read_var(l, fit, l->cur);
+    }
+    return -1;
+}
+
 // A compiler-backed call the IR covers: its value (a slice's or string's
 // leaves into res), or -2 for one it does not.
 static int builtin(Lw* l, Node* x, int bi, Agg* res) {
@@ -1477,6 +1568,7 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
     case BI_MEM_ALLOC: case BI_MEM_REALLOC: case BI_MEM_RELEASE: case BI_MEM_ALLOC_T: case BI_MEM_ZALLOC_T:
     case BI_MEM_REALLOC_T: case BI_MEM_RELEASE_T: case BI_MEM_ALLOC_SIZE: case BI_MEM_COPY: case BI_MEM_MOVE:
     case BI_MEM_FILL: case BI_MEM_ZERO: case BI_MEM_COMPARE: case BI_MEM_EQUAL: case BI_FMT_PRINTF:
+    case BI_STR_FORMAT:
         if (x->ival != (uint64_t)bi) return -2; // sema checked it as the builtin
         switch (bi) {
         case BI_MEM_ALLOC: return mem_alloc(l, x, res);
@@ -1490,6 +1582,7 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
         case BI_MEM_COMPARE: return mem_compare(l, x);
         case BI_MEM_EQUAL: return mem_equal(l, x);
         case BI_FMT_PRINTF: return x->aux ? printf_call(l, x) : -2;
+        case BI_STR_FORMAT: return x->aux ? str_format_call(l, x, res) : -2;
         case BI_MEM_COPY: case BI_MEM_MOVE: case BI_MEM_FILL: case BI_MEM_ZERO: return mem_write(l, x, bi);
         default: return mem_alloc_typed(l, x, bi, res);
         }

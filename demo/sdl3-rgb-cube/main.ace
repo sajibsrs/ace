@@ -39,40 +39,6 @@ STATS_PERIOD: const u64 = 500
 // Debug text draws at this scale, so the 8x8 font stays readable.
 TEXT_SCALE: const f32 = 2.0
 
-// One line of overlay text, built in place and ended in "\0" for SDL.
-Line: struct {
-    bytes: [64]u8,
-    len: usize,
-}
-
-Line::init(): Line {
-    return Line { bytes = [0 : 64], len = 0 }
-}
-
-// Text that does not fit is dropped; the overlay is only informational.
-mut Line.add(text: string) {
-    if str.copy(text, mut self.bytes[self.len..]) { self.len += text.len }
-}
-
-mut Line.add(value: int) {
-    n: usize, ok: bool = str.format(mut self.bytes[self.len..], value)
-    if ok { self.len += n }
-}
-
-// A value in hundredths, as whole.fraction with two fraction digits.
-mut Line.add_hundredths(value: int) {
-    mut self.add(value / 100)
-    mut self.add(".")
-    if value % 100 < 10 { mut self.add("0") }
-    mut self.add(value % 100)
-}
-
-// The finished text, "\0"-ended for Renderer.debug_text.
-mut Line.text(): string {
-    mut self.add("\0")
-    return string(self.bytes[..self.len])
-}
-
 fail(context: string): int {
     fmt.printf("%s: %s\n", context, sdl.error())
     return 1
@@ -224,40 +190,24 @@ main(): int {
         step: f32 = sdl.DEBUG_TEXT_SIZE + 4.0
         y: f32 = 6.0
 
-        fps_line: Line = Line::init()
-        mut fps_line.add("FPS ")
-        mut fps_line.add(fps)
-        renderer.debug_text(6.0, y, mut fps_line.text())
+        // Each line is "\0"-ended for Renderer.debug_text; a line that does
+        // not fit is skipped, as the overlay is only informational.
+        line: [64]u8 = [0 : 64]
+        n: usize, fit: bool = str.format(mut line[..], "FPS %d\0", fps)
+        if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-
-        frame_line: Line = Line::init()
-        mut frame_line.add("frame ")
-        mut frame_line.add_hundredths(frame_hundredths)
-        mut frame_line.add(" ms")
-        renderer.debug_text(6.0, y, mut frame_line.text())
+        n, fit = str.format(mut line[..], "frame %d.%d%d ms\0", frame_hundredths / 100,
+                            frame_hundredths / 10 % 10, frame_hundredths % 10)
+        if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-
-        draw_line: Line = Line::init()
-        mut draw_line.add("draw ")
-        mut draw_line.add(draw_us)
-        mut draw_line.add(" us (CPU)")
-        renderer.debug_text(6.0, y, mut draw_line.text())
+        n, fit = str.format(mut line[..], "draw %d us (CPU)\0", draw_us)
+        if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-
-        faces_line: Line = Line::init()
-        mut faces_line.add("faces ")
-        mut faces_line.add(int(nv / 4))
-        mut faces_line.add(", triangles ")
-        mut faces_line.add(int(ni / 3))
-        renderer.debug_text(6.0, y, mut faces_line.text())
+        n, fit = str.format(mut line[..], "faces %u, triangles %u\0", nv / 4, ni / 3)
+        if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-
-        size_line: Line = Line::init()
-        mut size_line.add("output ")
-        mut size_line.add(int(w))
-        mut size_line.add(" x ")
-        mut size_line.add(int(h))
-        renderer.debug_text(6.0, y, mut size_line.text())
+        n, fit = str.format(mut line[..], "output %d x %d\0", int(w), int(h))
+        if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
 
         if vsync {

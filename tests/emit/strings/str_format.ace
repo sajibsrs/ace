@@ -1,5 +1,5 @@
-/* str.format: integer forms with and without radix, all-or-nothing
- * capacity behavior, and float representations identical to fmt.print.
+/* str.format: integer forms with and without radix, (0, false) on
+ * insufficient capacity, and float representations identical to fmt.print.
  */
 
 // expect-exit: 0
@@ -82,7 +82,7 @@ main(): int {
     sdst: mut []u8 = mut small[0..2]
     n, ok = str.format(sdst, 12345)
 
-    if ok || n != 0 || small[0] != 0 || small[1] != 0 { return 1 }
+    if ok || n != 0 { return 1 }
     n, ok = str.format(dst, 1, u8(1))
 
     if ok || n != 0 { return 2 }

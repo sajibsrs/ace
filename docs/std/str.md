@@ -52,8 +52,8 @@ Caller storage and views:
   source and the written range must not overlap.
 - `concat(parts: []string, destination: mut []char): (usize, bool)` — writes all
   parts in order and returns the complete byte count and whether it fit. A short
-  destination returns `(0, false)` without writing; empty parts are valid and
-  the unused destination suffix is untouched. Source bytes must not overlap the
+  destination returns `(0, false)` and its contents are unspecified; empty
+  parts are valid and on success the unused destination suffix is untouched. Source bytes must not overlap the
   written destination range.
 - `split(text: string, separator: string, parts: mut []string): (usize, bool)`
   and the `separator: char` overload — splits left to right on non-overlapping
@@ -116,12 +116,25 @@ main(): int {
   Naming any other `T` is a compile-time error at the call.
 - `format(destination: mut []char, value): (usize, bool)` — overloads for
   `int`, `uint`, `usize`, `f32`, and `f64`, plus radix-taking overloads for
-  the three integer types. The complete representation is written or, when
-  capacity is insufficient or the runtime radix is outside 2 through 36,
-  nothing is written and the result is `(0, false)`. Integer radix digits are
-  lowercase ASCII with no base prefix, only `int` may emit `-`, and the
-  no-radix float representations are exactly the matching `fmt.print`
-  overloads'.
+  the three integer types. A runtime radix outside 2 through 36 writes nothing
+  and returns `(0, false)`; insufficient capacity returns `(0, false)` with the
+  destination's contents unspecified. Integer radix digits are lowercase ASCII
+  with no base prefix, only `int` may emit `-`, and the no-radix float
+  representations are exactly the matching `fmt.print` overloads'.
+- `format(destination: mut []char, format: string, ...): (usize, bool)` —
+  formatted text into caller storage, chosen when the second argument is a
+  `string`. The format and arguments follow [`fmt.printf`](fmt.md) exactly:
+  the format is a string literal or a `const` global, and the compiler checks
+  each conversion's argument type. The text is `destination[..n]`; no NUL is
+  appended, so text for a C API writes `\0` in the format. A short destination
+  returns `(0, false)` with its contents unspecified. It cannot be used as a
+  function value.
+
+```ace
+line: [64]u8 = [0 : 64]
+n: usize, ok: bool = str.format(mut line[..], "FPS %d, %.2f ms\0", fps, frame_ms)
+if ok { renderer.debug_text(6.0, 6.0, string(line[..n])) }
+```
 
 Float formatting uses the same internal exact binary-to-decimal engine as
 `fmt`; the two APIs therefore share one rounding implementation rather than

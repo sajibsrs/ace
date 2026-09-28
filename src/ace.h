@@ -215,6 +215,7 @@ enum {
     BI_BITS_WRAP_SUB = 34,
     BI_BITS_WRAP_MUL = 35,
     BI_MEM_ZALLOC_T = 36,   // mem.zalloc[T](count: usize): mut []T, zero-filled
+    BI_STR_FORMAT = 37,     // str.format(destination, "format", ...): checked like fmt.printf
 };
 
 enum {

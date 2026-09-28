@@ -835,6 +835,15 @@ current normative rules, and Git preserves patch-level detail.
   `mem.copy` for single-range byte movement.
 - Added allocation-free, all-or-nothing `str.concat` over a string-parts slice
   and caller-owned destination storage.
+- Added formatted `str.format(destination, "format", ...)`: `fmt.printf`'s
+  checked plan (one `check_format_call` for both, parameterized by the
+  format's argument position, helper names, and diagnostic name) lowered to
+  `put_*` helper calls on the unwritten rest of the destination, returning
+  `(0, false)` at the first piece that does not fit. Radix and fixed-float
+  rendering moved into the internal `std/@/rendering.ace`, shared by `fmt`
+  and `str`. `str.concat` and the `str.format` value overloads no longer
+  promise to write nothing on insufficient capacity; `concat` now copies in
+  one pass. `demo/sdl3-rgb-cube` builds its overlay with it.
 - Implemented `@packed` structs and compile-time `@align` on structs and fields,
   with declaration-order effective alignment, exact stored field offsets,
   layout introspection, 16-byte stack/static support, and pointer-only initial

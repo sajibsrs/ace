@@ -1,0 +1,115 @@
+/* Number-to-text rendering into caller storage, shared by fmt's printf
+ * helpers and str's formatted writes. This reserved internal implementation
+ * module has no bare std facade.
+ *
+ * Each renderer writes its complete text into out and returns the byte count
+ * and true, or returns (0, false) when out is too small, having written
+ * nothing.
+ */
+
+import decimal: @float_decimal
+
+/* Digits of value in radix 2 through 36 with no prefix or leading zeroes;
+ * zero is "0". A 64-bit value has at most 64 binary digits.
+ */
+pub radix(value: u64, radix: u8, uppercase: bool, out: mut []u8): (usize, bool) {
+    storage: [64]u8
+    digits: mut []u8 = mut storage[0..64]
+    at: int = 64
+    remaining: u64 = value
+
+    for digit: int in 0 .. 64 {
+        at -= 1
+        d: u64 = remaining % u64(radix)
+
+        if d < 10 {
+            digits[at] = u8(48 + d)
+        } else if uppercase {
+            digits[at] = u8(55 + d)
+        } else {
+            digits[at] = u8(87 + d)
+        }
+        remaining = remaining / u64(radix)
+
+        if remaining == 0 { break }
+    }
+    count: usize = usize(64 - at)
+    if count > out.len { return 0, false }
+
+    for i: usize in 0 .. count { out[i] = digits[usize(at) + i] }
+    return count, true
+}
+
+text(value: string, out: mut []u8): (usize, bool) {
+    if value.len > out.len { return 0, false }
+
+    for i: usize in 0 .. value.len { out[i] = value[i] }
+    return value.len, true
+}
+
+/* Fixed notation with exactly precision fraction digits (no point when it is
+ * zero) from a decimal.fixed64/fixed32 conversion whose digits are in
+ * digits; non-finite values are "nan", "inf", and "-inf".
+ */
+pub fixed(value: decimal.Decimal, digits: []u8, precision: usize, out: mut []u8): (usize, bool) {
+    if value.number_type == decimal.Type.nan || value.number_type == decimal.Type.infinity {
+        spelling: string = "nan"
+
+        if value.number_type == decimal.Type.infinity {
+            spelling = "inf"
+
+            if value.negative { spelling = "-inf" }
+        }
+        n: usize, ok: bool = text(spelling, out)
+        return n, ok
+    }
+    point: int = int(value.point)
+    places: int = int(precision)
+    whole: int = 1
+
+    if value.number_type != decimal.Type.zero && point > 0 { whole = point }
+    need: int = whole
+
+    if value.negative { need += 1 }
+
+    if places != 0 { need += 1 + places }
+
+    if usize(need) > out.len { return 0, false }
+    at: int = 0
+
+    if value.negative {
+        out[at] = u8(45)
+        at += 1
+    }
+
+    if value.number_type == decimal.Type.zero || point <= 0 {
+        out[at] = u8(48)
+        at += 1
+    } else {
+        for i: int in 0 .. point {
+            if i < value.count {
+                out[at] = digits[i]
+            } else {
+                out[at] = u8(48)
+            }
+            at += 1
+        }
+    }
+
+    if places != 0 {
+        out[at] = u8(46)
+        at += 1
+
+        for i: int in 0 .. places {
+            source: int = point + i
+
+            if value.number_type != decimal.Type.zero && source >= 0 && source < value.count {
+                out[at] = digits[source]
+            } else {
+                out[at] = u8(48)
+            }
+            at += 1
+        }
+    }
+    return usize(at), true
+}

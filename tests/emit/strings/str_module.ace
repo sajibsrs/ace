@@ -59,7 +59,7 @@ main(): int {
     }
     concat_short: [3]u8 = [9 : 3]
     concat_count, concat_ok = str.concat(concat_parts[..], mut concat_short[..])
-    if concat_ok || concat_count != 0 || concat_short[0] != 9 || concat_short[2] != 9 { return 102 }
+    if concat_ok || concat_count != 0 { return 102 }
     empty_parts: []string = null
     concat_count, concat_ok = str.concat(empty_parts, mut concat_buffer[..])
     if !concat_ok || concat_count != 0 || concat_buffer[0] != u8('a') { return 103 }

@@ -85,6 +85,12 @@ str_examples(): int {
     count: usize, fit: bool = str.format(dst, n)
 
     if !fit || count != 4 { return 5 }
+    fps: int = 60
+    frame_ms: f64 = 16.67
+    line: [64]u8 = [0 : 64]
+    written: usize, ok_line: bool = str.format(mut line[..], "FPS %d, %.2f ms\0", fps, frame_ms)
+
+    if !ok_line || written != 17 { return 6 }
     return 0
 }
 

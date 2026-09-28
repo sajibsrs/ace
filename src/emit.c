@@ -2028,7 +2028,7 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
                 n->ival == BI_MEM_REALLOC_T ||
                 n->ival == BI_MEM_RELEASE_T)
                 break; // compiler-backed std/mem declarations have no body symbol
-            if (n->ival == BI_FMT_PRINTF ||
+            if (n->ival == BI_FMT_PRINTF || n->ival == BI_STR_FORMAT ||
                 (n->ival >= BI_SYS_ARGC && n->ival <= BI_SYS_ENV))
                 break; // compiler-backed calls lower directly; no symbol
             Sym* decl_sym = node_sym(n);
