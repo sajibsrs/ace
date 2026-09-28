@@ -333,7 +333,7 @@ top_key         := "name" | "version" | "ace" | "type" | "root"
                   | "description" | "author" | "license" | "repository"
 dep_key         := ident                           // import alias, only
                                                     // inside [dependencies]
-link_key        := "object" | "search" | "library" | "framework"
+link_key        := "object" | "search" | "library" | "framework" | "path"
                                                     // only inside [[link]]
 value           := (any – newline)*                [P: escaping/quoting]
 ```
@@ -355,7 +355,9 @@ Notes:
    (Package System #4); an `object`/`search` `link_key`'s `value` is a path
    relative to the declaring package's own directory with no `..` traversal,
    and `object` must end in `.o` or `.a` (Package System #14);
-   `library`/`framework` values are bare names.
+   `library`/`framework` values are bare names. A `path` value is an
+   absolute directory, admitted only in a record that also has a `library`
+   (Package System #14).
 5. [P] The recognized header and key sets are closed and expected to grow
    (e.g. a future `authors` as `[[authors]]`); today only `[dependencies]`
    and `[[link]]` exist, and an unrecognized header or key is an error.

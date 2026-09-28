@@ -1060,6 +1060,18 @@ current normative rules, and Git preserves patch-level detail.
   (end-to-end transitive linking through a real `cc` invocation, and the
   conflict diagnostic); `tests/run.sh` gained the `// expect-build-err:`
   marker since checking alone never reaches the link step.
+- Added `[[link]] path: DIR` beside `library`: `package.c` resolves it to
+  the exact file in the Apple linker's per-directory order (`.tbd`,
+  `.dylib`, `.a`), keeping symlinks as written, and that file replaces
+  `-l<name>` at the library's first position in the graph, so the path
+  applies to one library, not every `-l`. A dependency's path is a hint that
+  falls back to `-l<name>` where the file is missing; the root's is binding,
+  overrides the hints, and a missing file is a manifest error. Dependencies
+  hinting different paths for one library conflict at link collection
+  whether or not either exists, so the outcome never depends on the host. A
+  `path` needs a `library` in its record and must be absolute. Records now
+  carry their occurrence number so a key can pair with its record's
+  `library`.
 - Replaced path dependencies with version-only entries resolved through a
   reserved `pkg/` directory (SPEC.md Package System #4–#6, #9–#13): a
   `[dependencies]` value is one exact `major.minor.patch` version, and every

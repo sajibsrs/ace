@@ -1,0 +1,11 @@
+// A [[link]] path names the directory of its own record's library.
+// expect-err: [[link]] path needs a library in the same record
+
+name: link_path_no_library
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[[link]]
+path: /usr/lib

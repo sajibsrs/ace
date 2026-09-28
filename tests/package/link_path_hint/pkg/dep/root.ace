@@ -1,0 +1,3 @@
+dep_value(): int {
+    return 0
+}

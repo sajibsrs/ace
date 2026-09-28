@@ -296,6 +296,16 @@ foundations.
   `grow`, writes errors directly where `fail`'s null check is already known,
   and branches on conditions instead of `ok` flags. Candidate: the `reserve`
   split, measured against the inline-expansion leftovers first.
+- **Portable library paths** [new] — a `[[link]] path` is one absolute host
+  directory resolved in the Apple linker's order only, so a Homebrew hint
+  (`/opt/homebrew/lib`) misses on an Intel Mac (`/usr/local/lib`) and falls
+  back to the linker's search, which does not look there. Open: per-target
+  file orders (Linux `.so`, `.a`; MSVC `<name>.lib`; MinGW `.dll.a` first)
+  and per-target or fallback paths; run-time loading, which a path does not
+  settle (Linux needs an rpath or `LD_LIBRARY_PATH` outside the system
+  directories, Windows the `.dll` beside the `.exe` or on `PATH`; Apple
+  records the library's own install name); a `framework` counterpart; and a
+  command-line override (`ace pkg build -L`) that needs no manifest edit.
 
 ## 6. Language questions and conveniences
 

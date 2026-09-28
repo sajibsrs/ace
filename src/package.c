@@ -18,8 +18,9 @@
 typedef struct { const char* alias; const char* version; int line; } RawDep;
 
 // [[link]] record kinds (LinkKind is declared in ace.h beside PackageLink):
-// one raw entry per recognized key, in file order across every occurrence.
-typedef struct { LinkKind kind; const char* value; int line; } RawLink;
+// one raw entry per recognized key, in file order across every occurrence;
+// record numbers the [[link]] occurrence the key belongs to.
+typedef struct { LinkKind kind; const char* value; int line; int record; } RawLink;
 
 typedef struct {
     const char* name; int name_line;
@@ -149,6 +150,36 @@ static int path_is_local_object(const char* s, size_t len) {
     return path_is_contained(s, len);
 }
 
+// The library key of [[link]] record `record`, or NULL.
+static const char* record_library(const RawManifest* rm, int record) {
+    for (int i = 0; i < rm->nlinks; i++)
+        if (rm->links[i].record == record && rm->links[i].kind == LINK_LIBRARY) return rm->links[i].value;
+    return NULL;
+}
+
+// The path key of [[link]] record `record`, or NULL.
+static const char* record_path(const RawManifest* rm, int record) {
+    for (int i = 0; i < rm->nlinks; i++)
+        if (rm->links[i].record == record && rm->links[i].kind == LINK_PATH) return rm->links[i].value;
+    return NULL;
+}
+
+// The file the target linker would pick for -l<name> in dir, in its own
+// per-directory order (Apple ld64: .tbd, .dylib, .a), or NULL. The path is
+// kept as written, symlinks unresolved: the binary records the library's own
+// install name either way.
+static const char* library_file(const char* dir, const char* name) {
+    static const char* const suffixes[] = {".tbd", ".dylib", ".a"};
+    for (size_t i = 0; i < sizeof suffixes / sizeof *suffixes; i++) {
+        size_t n = strlen(dir) + strlen(name) + 16;
+        char* path = arena_alloc(n);
+        snprintf(path, n, "%s/lib%s%s", dir, name, suffixes[i]);
+        struct stat st;
+        if (stat(path, &st) == 0 && S_ISREG(st.st_mode)) return path;
+    }
+    return NULL;
+}
+
 int package_contains(const char* package_dir, const char* canon) {
     if (strcmp(canon, package_dir) != 0 && !path_beneath(canon, package_dir)) return 0;
     size_t n = strlen(package_dir);
@@ -187,7 +218,7 @@ static void add_raw_dep(RawManifest* rm, const char* alias, const char* version,
     rm->ndeps++;
 }
 
-static void add_raw_link(RawManifest* rm, LinkKind kind, const char* value, int line) {
+static void add_raw_link(RawManifest* rm, LinkKind kind, const char* value, int line, int record) {
     if (rm->nlinks == rm->clinks) {
         rm->clinks = rm->clinks ? rm->clinks * 2 : 8;
         rm->links = realloc(rm->links, (size_t)rm->clinks * sizeof(RawLink));
@@ -196,6 +227,7 @@ static void add_raw_link(RawManifest* rm, LinkKind kind, const char* value, int 
     rm->links[rm->nlinks].kind = kind;
     rm->links[rm->nlinks].value = value;
     rm->links[rm->nlinks].line = line;
+    rm->links[rm->nlinks].record = record;
     rm->nlinks++;
 }
 
@@ -206,7 +238,7 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
     Source s;
     if (source_load(&s, manifest_path) != 0) { L->d->errors++; return 0; }
     memset(rm, 0, sizeof *rm);
-    int line = 0, in_deps = 0, in_link = 0, link_seen = 0, ok = 1;
+    int line = 0, in_deps = 0, in_link = 0, link_seen = 0, link_record = 0, ok = 1;
     const char* p = s.buf;
     const char* end = s.buf + s.len;
     while (p < end) {
@@ -220,7 +252,7 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
         if (tlen == 0) continue;
         if (tlen >= 2 && t[0] == '/' && t[1] == '/') continue; // comment
         if (tlen == 14 && memcmp(t, "[dependencies]", 14) == 0) { in_deps = 1; in_link = 0; continue; }
-        if (tlen == 8 && memcmp(t, "[[link]]", 8) == 0) { in_link = 1; in_deps = 0; link_seen = 0; continue; }
+        if (tlen == 8 && memcmp(t, "[[link]]", 8) == 0) { in_link = 1; in_deps = 0; link_seen = 0; link_record++; continue; }
         if (t[0] == '[') {
             package_err(L, manifest_path, line, "unknown section '%.*s'", (int)tlen, t);
             ok = 0;
@@ -260,6 +292,7 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
             else if (text_is(key, (uint32_t)kt, "search")) kind = LINK_SEARCH;
             else if (text_is(key, (uint32_t)kt, "library")) kind = LINK_LIBRARY;
             else if (text_is(key, (uint32_t)kt, "framework")) kind = LINK_FRAMEWORK;
+            else if (text_is(key, (uint32_t)kt, "path")) kind = LINK_PATH;
             else {
                 package_err(L, manifest_path, line, "unknown [[link]] field '%.*s'", (int)kt, key);
                 ok = 0;
@@ -271,7 +304,7 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
                 continue;
             }
             link_seen |= (1 << kind);
-            add_raw_link(rm, kind, package_strndup(val, vlen), line);
+            add_raw_link(rm, kind, package_strndup(val, vlen), line, link_record);
             continue;
         }
         if (in_deps) {
@@ -482,6 +515,14 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
                     "[[link]] search '%s' must be a relative path within the package",
                     rl->value);
             ok = 0;
+        } else if (rl->kind == LINK_PATH) {
+            if (rl->value[0] != '/') {
+                package_err(L, manifest, rl->line, "[[link]] path '%s' must be an absolute directory", rl->value);
+                ok = 0;
+            } else if (!record_library(&rm, rl->record)) {
+                package_err(L, manifest, rl->line, "[[link]] path needs a library in the same record");
+                ok = 0;
+            }
         }
     }
     if (!ok) { free(rm.deps); free(rm.links); return NULL; }
@@ -551,9 +592,25 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
             }
             value = resolved;
         }
+        if (rl->kind == LINK_PATH) continue; // consumed by its record's library
+        // The root's path is binding, so a missing file is an error; a
+        // dependency's is a hint that falls back to the linker's search.
+        const char* dir = NULL;
+        const char* file = NULL;
+        if (rl->kind == LINK_LIBRARY) {
+            dir = record_path(&rm, rl->record);
+            if (dir && !(file = library_file(dir, value)) && is_root) {
+                package_err(L, manifest, rl->line,
+                        "[[link]] library '%s' not found in '%s' (tried lib%s.tbd, lib%s.dylib, lib%s.a)",
+                        value, dir, value, value, value);
+                continue;
+            }
+        }
         PackageLink* pl = (PackageLink*)arena_alloc(sizeof(PackageLink));
         pl->kind = rl->kind;
         pl->value = arena_string(value);
+        pl->path = dir ? arena_string(dir) : NULL;
+        pl->file = file;
         pl->line = rl->line;
         pl->next = NULL;
         if (links_tail) links_tail->next = pl; else links = pl;
@@ -591,6 +648,33 @@ Package* package_resolve(const char* package_dir, Diag* d, const char* compiler_
     return root;
 }
 
+// The file to link for library `name`: the root's path when it gives one,
+// else the dependencies' one agreed path hint, else NULL (plain -l<name>).
+// Two dependencies hinting different paths conflict, whether or not either
+// exists here, so the result never depends on the host; the root settles it.
+static const char* library_choice(Package** order, int norder, const char* name, Diag* d) {
+    Package* root = order[norder - 1];
+    for (const PackageLink* pl = root->links; pl; pl = pl->next)
+        if (pl->kind == LINK_LIBRARY && pl->path && strcmp(pl->value, name) == 0) return pl->file;
+    const PackageLink* hint = NULL;
+    const Package* hint_pkg = NULL;
+    for (int i = 0; i < norder - 1; i++)
+        for (const PackageLink* pl = order[i]->links; pl; pl = pl->next) {
+            if (pl->kind != LINK_LIBRARY || !pl->path || strcmp(pl->value, name) != 0) continue;
+            if (!hint) { hint = pl; hint_pkg = order[i]; continue; }
+            if (strcmp(hint->path, pl->path) != 0) {
+                fprintf(stderr,
+                        "%s:%d: error: [[link]] library '%s' path '%s' conflicts with %s:%d's '%s'; "
+                        "the root package can choose one with its own path\n",
+                        join_path(order[i]->dir, "ace.pkg"), pl->line, name, pl->path,
+                        join_path(hint_pkg->dir, "ace.pkg"), hint->line, hint->path);
+                d->errors++;
+                return NULL;
+            }
+        }
+    return hint ? hint->file : NULL;
+}
+
 char** package_collect_links(Package** order, int norder, Diag* d, int* nargs) {
     typedef struct {
         LinkKind    kind;
@@ -610,6 +694,8 @@ char** package_collect_links(Package** order, int norder, Diag* d, int* nargs) {
         args[nargv++] = (char*)(s);                                          \
     } while (0)
 
+    // A library's chosen file (library_choice) replaces -l<name> at the
+    // library's first position in the graph.
     for (int i = 0; i < norder; i++) {
         Package* pkg = order[i];
         const char* manifest = join_path(pkg->dir, "ace.pkg");
@@ -650,8 +736,14 @@ char** package_collect_links(Package** order, int norder, Diag* d, int* nargs) {
             switch (pl->kind) {
             case LINK_OBJECT: PUSH_ARG(pl->value); break;
             case LINK_SEARCH: PUSH_ARG("-L"); PUSH_ARG(pl->value); break;
-            case LINK_LIBRARY: PUSH_ARG("-l"); PUSH_ARG(pl->value); break;
+            case LINK_LIBRARY: {
+                const char* file = library_choice(order, norder, pl->value, d);
+                if (file) PUSH_ARG(file);
+                else { PUSH_ARG("-l"); PUSH_ARG(pl->value); }
+                break;
+            }
             case LINK_FRAMEWORK: PUSH_ARG("-framework"); PUSH_ARG(pl->value); break;
+            case LINK_PATH: break; // never a PackageLink
             }
         }
     }

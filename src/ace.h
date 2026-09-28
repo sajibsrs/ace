@@ -315,10 +315,14 @@ struct PackageDep {
 // (SPEC.md Package System #14, GRAMMAR.md §7) — the same four kinds the
 // direct compiler driver accepts on its command line.
 typedef struct PackageLink PackageLink;
-typedef enum { LINK_OBJECT, LINK_SEARCH, LINK_LIBRARY, LINK_FRAMEWORK } LinkKind;
+// LINK_PATH is a record attribute (the directory of the record's library),
+// never a PackageLink of its own.
+typedef enum { LINK_OBJECT, LINK_SEARCH, LINK_LIBRARY, LINK_FRAMEWORK, LINK_PATH } LinkKind;
 struct PackageLink {
     LinkKind     kind;
     const char*  value; // canonical path for OBJECT/SEARCH; bare name for LIBRARY/FRAMEWORK
+    const char*  path;  // LIBRARY: its record's path directory, else NULL
+    const char*  file;  // LIBRARY: the file found in path, else NULL
     int          line;
     PackageLink* next;
 };

@@ -1,0 +1,12 @@
+// A lib's library path is a hint: resolving the graph succeeds even where
+// the file is missing, since the link falls back to -l<name>.
+// expect-ok: dep,link_path_hint
+
+name: link_path_hint
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[dependencies]
+dep: 0.1.0
