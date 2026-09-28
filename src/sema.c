@@ -4754,7 +4754,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
             return T_ERR;
         }
         SType* r = check_method_call(k, call, b, qualified, k->final);
-        if (r) return r;
+        if (r || call->sym) return r; // a resolved void method returns NULL
         Pending* pd = new_pending(k, call);
         pd->recv = b;
         pd->qualified = qualified;

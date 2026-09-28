@@ -1855,6 +1855,10 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Significant implementation corrections
 
+- A resolved method call returning nothing is no longer queued for
+  end-of-file resolution: its `NULL` result type read as "not declared yet",
+  so every void method call was checked twice and reported its errors twice.
+  Deferral now also requires the call to have no resolved symbol.
 - Added `.acefmt` `result-group = adjacent` and `after-result-group = always`:
   a statement binding a call's result, its `defer`, and the checks of that
   result form one group with no blank line inside, even before a multi-line
