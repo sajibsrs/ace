@@ -119,7 +119,7 @@ pub mut Renderer.wipe() {
     self.handle = null
 }
 
-pub Renderer.set_color(color: Color): bool {
+pub Renderer.color(color: Color): bool {
     return c_set_render_draw_color(self.handle, color.r, color.g, color.b, color.a)
 }
 

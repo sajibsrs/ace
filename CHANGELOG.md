@@ -2700,14 +2700,14 @@ current normative rules, and Git preserves patch-level detail.
   temporary elements back to its watermark after copying them into the
   block's permanent storage.
 - Added the standalone package `pkg/sdl` (`type: lib`), a minimal SDL3
-  binding whose manifest links `SDL3` with Homebrew's `/opt/homebrew/lib` as
-  a `[[link]] path` hint. `Window::new`/`wipe` and `Renderer::new`/`wipe` wrap SDL's
-  opaque pointers in value structs, `Renderer.set_color`/`color` pair
-  `SDL_SetRenderDrawColor`/`SDL_GetRenderDrawColor` over a `Color` struct,
-  and `error()` views `SDL_GetError`'s NUL-terminated text as a string
-  without libc. `Event` mirrors the `SDL_Event` union as an overlapping
-  struct (`kind`, `keyboard`, `quit`, `[128]u8` padding, all `@offset(0)`)
-  whose layout `static_assert`s pin against the 3.4 headers.
+  binding whose manifest links `SDL3` with Homebrew's `/opt/homebrew/lib` as a
+  `[[link]] path` hint. `Window::new`/`wipe` and `Renderer::new`/`wipe` wrap
+  SDL's opaque pointers in value structs, `Renderer.color(c)`/`color()`
+  overloads pair `SDL_SetRenderDrawColor`/`SDL_GetRenderDrawColor` over a
+  `Color` struct, and `error()` views `SDL_GetError`'s NUL-terminated text as
+  a string without libc. `Event` mirrors the `SDL_Event` union as an
+  overlapping struct (`kind`, `keyboard`, `quit`, `[128]u8` padding, all
+  `@offset(0)`) whose layout `static_assert`s pin against the 3.4 headers.
   `pkg/sdl/tests/events` round-trips a key event through `SDL_PushEvent` and
   `SDL_PollEvent` headlessly and is skipped where that library is missing;
   `demo/sdl3-window` opens a window and renderer and runs a classic

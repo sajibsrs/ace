@@ -39,17 +39,17 @@ renderer: sdl.Renderer = sdl.Renderer::new(window)
 defer mut renderer.wipe()
 if !renderer.ok() { return 1 }
 
-renderer.set_color(sdl.Color { r = 32, g = 64, b = 128, a = 255 })
+renderer.color(sdl.Color { r = 32, g = 64, b = 128, a = 255 })
 renderer.clear()
 renderer.present()
 ```
 
 `Window` and `Renderer` hold SDL's heap objects, so they follow the
-`::new`/`wipe` pair; `ok()` reports whether creation succeeded, and `wipe`
-on a failed handle is harmless. The window title is passed to SDL as a C
-string, so it must end in `"\0"`. `Renderer.color(): (Color, bool)` reads
-the draw color back. `sdl.error()` returns SDL's last error message as a
-string view into SDL's own buffer, valid until the next SDL call.
+`::new`/`wipe` pair; `ok()` reports whether creation succeeded, and `wipe` on
+a failed handle is harmless. The window title is passed to SDL as a C string,
+so it must end in `"\0"`. `Renderer.color(): (Color, bool)` reads the draw
+color back; `color(c)` sets it. `sdl.error()` returns SDL's last error message
+as a string view into SDL's own buffer, valid until the next SDL call.
 
 ## Events
 

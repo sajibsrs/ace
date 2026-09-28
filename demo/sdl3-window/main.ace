@@ -40,7 +40,7 @@ main(): int {
         }
 
         if shade == 255 { shade = 0 } else { shade += 1 }
-        renderer.set_color(sdl.Color { r = shade, g = 64, b = 255 - shade, a = 255 })
+        renderer.color(sdl.Color { r = shade, g = 64, b = 255 - shade, a = 255 })
         renderer.clear()
         renderer.present()
         sdl.delay(16)
