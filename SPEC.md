@@ -721,7 +721,7 @@ Decision: explicit monomorphization.
 14. Scope: specializations live in the generic's module (v1); struct generics (`Box[T]`) are untouched, and type-owned generic methods specialize additively later.
 
 ## Functions & ABI
-1. Multi-return — decided (see: Errors). Returns are positional: types only, `(int, Error)`; names appear at destructuring, never in signatures.
+1. Multi-return — decided (see: Errors). Returns are positional: types only, `(int, Error)`; names appear at destructuring, never in signatures. A call whose result tuple matches the signature exactly — same count, order, and identical types — may be returned directly: `return read()`. Anything else destructures and returns the values explicitly.
 2. Multi-returns are laid out as anonymous structs: small ones ride platform registers, larger ones use the hidden return pointer — plain platform struct-return rules.
 3. `mut` parameters pass the caller's actual address (writes visible to the caller); read-only parameters pass addresses too, but small ones may travel by value — identical observable behavior, legal codegen freedom (same class as copy elision).
 4. Internal calling convention: the platform convention (SysV, AArch64, …) — debuggers, profilers, tracers, and the C boundary work unchanged.

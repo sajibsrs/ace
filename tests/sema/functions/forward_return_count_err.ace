@@ -1,0 +1,6 @@
+/* A forwarded multi-return must match the signature's value count. */
+
+pair(): (int, bool) { return 1, true }
+triple(): (int, bool, int) { return pair() }
+
+main(): int { return 0 }

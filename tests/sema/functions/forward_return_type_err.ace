@@ -1,0 +1,6 @@
+/* A forwarded multi-return must match the signature's types exactly. */
+
+pair(): (int, bool) { return 1, true }
+narrow(): (i32, bool) { return pair() }
+
+main(): int { return 0 }

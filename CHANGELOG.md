@@ -874,6 +874,10 @@ current normative rules, and Git preserves patch-level detail.
   checked compiles of the 20,000-function, 20,000-statement, and 20,000-type
   generated corpora had run 6.4%, 9.2%, and 5.3% more instructions than before
   inlining, and now run 1.0%, 2.9%, and 1.1% more.
+- Allowed `return f()` to forward a multi-return call whose result tuple
+  matches the signature exactly (count, order, and `same_type` per value);
+  sema checks it in `N_RETURN`, and lowering already returned any tuple-typed
+  expression. Mismatches name the first differing position.
 
 ## Types and abstraction
 

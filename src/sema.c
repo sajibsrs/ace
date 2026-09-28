@@ -5387,7 +5387,22 @@ static void check_stmt(Ck* k, Node* s) {
             return;
         }
         if (rt && rt->kind == SK_TUPLE) {
-            ck_err(k, s, "function returns %d values, return has 1", rt->nfields);
+            // forwarding a multi-return: count, order, and types match exactly
+            SType* at = s->a->kind == N_CALL ? expr_type(k, s->a) : NULL;
+            if (!at || at->kind != SK_TUPLE) {
+                if (!at || at->kind != SK_ERR) ck_err(k, s, "function returns %d values, return has 1", rt->nfields);
+                return;
+            }
+            if (at->nfields != rt->nfields) {
+                ck_err(k, s, "function returns %d values, return has %d", rt->nfields, at->nfields);
+                return;
+            }
+            for (int i = 0; i < rt->nfields; i++)
+                if (!same_type(at->fields[i].t, rt->fields[i].t)) {
+                    ck_err(k, s, "return value %d is %s, function returns %s", i + 1, type_name(at->fields[i].t),
+                           type_name(rt->fields[i].t));
+                    return;
+                }
             return;
         }
         if (!rt) {

@@ -69,6 +69,19 @@ as `return quotient, remainder` or a typed destructuring list must stay on one
 physical line. Parentheses provide the multiline return form shown above;
 delimited parameter and argument lists follow the same general layout rule.
 
+A call returning multiple values may be returned directly when its result has
+exactly the function's return types, in the same order:
+
+```ace
+checked_divide(value: int, by: int): (int, int) {
+    return divide(value, by)
+}
+```
+
+The match is exact: forwarding `(int, bool)` into `(i32, bool)`, or into a
+different number of values, is rejected. Destructure and return the values
+explicitly to convert them.
+
 ## Parameter-list layout
 
 A parameter list stays on one line when the complete declaration fits within

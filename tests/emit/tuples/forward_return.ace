@@ -1,0 +1,23 @@
+/* A multi-return call forwards directly as the return value when its count,
+ * order, and types match the signature exactly, including a result returned
+ * through the caller's memory and one returned past a defer. */
+
+// expect-exit: 19
+
+Quad: struct { a: int, b: int, c: int, d: int }
+
+pair(a: int): (int, bool) { return a, true }
+forward_pair(a: int): (int, bool) { return pair(a) }
+
+quad(a: int): (Quad, int) { return Quad { a = a, b = 2, c = 3, d = 4 }, 5 }
+forward_quad(a: int): (Quad, int) {
+    defer pair(0)
+    return quad(a)
+}
+
+main(): int {
+    n: int, ok: bool = forward_pair(3)
+    q: Quad, m: int = forward_quad(7)
+    if !ok { return 1 }
+    return n + q.a + q.d + m
+}
