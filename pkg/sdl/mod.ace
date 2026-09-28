@@ -17,7 +17,7 @@ pub WindowFlags: bits u64 { _: 5, resizable: 1, _: 58 }
 // SDL_EventType values this binding names; SDL may deliver others, which
 // compare unequal to every member.
 pub EventType: enum u32 {
-    first,
+    none,
     quit = 0x100,
     window_close_requested = 0x210,
     key_down = 0x300,
