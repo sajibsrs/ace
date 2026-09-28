@@ -113,7 +113,9 @@ pointer level. Address-of requires an lvalue: `&value` produces `*T`, while
 `mut &value` produces `mut *T` and is rejected for const or otherwise
 read-only storage. Both forms emit the same machine address; `mut` is a
 compile-time permission. `*pointer` explicitly dereferences, while field
-access automatically dereferences pointers.
+access and method calls automatically dereference pointers: `pointer.m()` is
+`(*pointer).m()`, so a mutating method needs a `mut *T` and the usual `mut`
+receiver mark (`mut pointer.bump()`).
 
 ```ace
 Point: struct { x: int, y: int }

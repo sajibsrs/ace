@@ -860,6 +860,9 @@ current normative rules, and Git preserves patch-level detail.
   (`tests/driver/abi.ace`/`abi.c`) with nested-struct and array-in-struct
   cases. No defect found; the existing recursive classification already
   covers every case correctly.
+- Method calls auto-deref pointer receivers like field access: sema rewrites
+  `p.m()` on `p: *T` (any pointer depth) into the explicit `(*p).m()`, so
+  permission checks and codegen are unchanged.
 - Extended receiver-marked mutating method calls to every expression position,
   so their return values initialize and assign ordinary values while retaining
   the same visible `mut` receiver mark.

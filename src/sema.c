@@ -4704,6 +4704,24 @@ static SType* check_call_raw(Ck* k, Node* call) {
         }
         if (!b) b = expr_type(k, callee->a);
         if (b->kind == SK_ERR) return T_ERR;
+        // p.m() auto-derefs like p.x: the receiver becomes the ordinary
+        // explicit dereference (*p).m(), once per pointer level
+        while (!qualified && b->kind == SK_PTR) {
+            if (b->base->kind == SK_FORWARD) {
+                ck_err(k, call, "type '%s' is not declared yet; a method call requires its declaration",
+                       type_name(b->base));
+                return T_ERR;
+            }
+            Node* d = (Node*)arena_alloc(sizeof(Node));
+            memset(d, 0, sizeof *d);
+            d->kind = N_UNARY;
+            d->op = T_STAR;
+            d->path = callee->path; d->line = callee->line; d->col = callee->col;
+            d->a = callee->a;
+            d->ty = b->base;
+            callee->a = d;
+            b = b->base;
+        }
         if (b->kind == SK_CONTRACT) {
             Node* m = contract_method(b, callee->str, callee->len);
             if (!m) {

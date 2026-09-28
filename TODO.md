@@ -332,11 +332,6 @@ Each item requires an owner decision and should wait for a motivating use case.
   a method call and fails, so a C callback field is copied to a local before
   calling; decide whether a field holding a function value is callable when no
   method has that name.
-- **Calling a method through a pointer** [unspecified] — field access
-  auto-derefs (`p.x`), but `p.m()` on `p: *T` reports no method for `*T`, so
-  a C handle is wrapped in a value struct or called as `(*p).m()`; decide
-  whether method calls auto-deref like fields.
-
 - **Deferred cleanup-result handling** [unspecified] — `defer` currently
   executes its call at function exit and discards every returned value,
   including `Error`; no exception or propagation occurs. Revisit only when a

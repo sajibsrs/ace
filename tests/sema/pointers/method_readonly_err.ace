@@ -1,0 +1,14 @@
+/* A mutating method through a read-only pointer. */
+
+Counter: struct { value: int }
+
+mut Counter.bump() {
+    self.value += 1
+}
+
+main(): int {
+    c: Counter = Counter{value = 0}
+    p: *Counter = &c
+    mut p.bump()
+    return 0
+}

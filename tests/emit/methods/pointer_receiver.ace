@@ -1,0 +1,24 @@
+// expect-exit: 42
+
+/* p.m() auto-derefs like p.x, once per pointer level. */
+
+Counter: struct {
+    value: int,
+}
+
+Counter.get(): int {
+    return self.value
+}
+
+mut Counter.bump() {
+    self.value += 1
+}
+
+main(): int {
+    c: Counter = Counter{value = 40}
+    p: mut *Counter = mut &c
+    mut p.bump()
+    pp: *mut *Counter = &p
+    mut pp.bump()
+    return pp.get()
+}
