@@ -59,7 +59,7 @@ main(): int {
     if !sdl.init(sdl.INIT_VIDEO) { return fail("SDL_Init") }
     defer sdl.quit()
 
-    window: sdl.Window = sdl.Window::new("Ace + SDL cube\0", 640, 640, sdl.WINDOW_RESIZABLE)
+    window: sdl.Window = sdl.Window::new("Ace + SDL3 cube\0", 640, 640, sdl.WINDOW_RESIZABLE)
     defer mut window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
 
