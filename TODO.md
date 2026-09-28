@@ -124,6 +124,28 @@ the remaining proof points explicit:
   json package checks 0.2–0.3%; revisit if generated code reaches that size.
 - **Richer DWARF** [additive] — variable/type DIEs and unwind tables.
 
+### Largest measured gaps
+
+Release Ace against C `-O2` on the `bench/` workloads, the candidates for the
+next large gains; only gaps above 1.5x are taken up until these close. Rows
+with a §4 entry carry their detail there.
+
+| Workload | Ace/C | Bench | Entry |
+|---|---|---|---|
+| `sin` past 1.6e6 (Payne-Hanek) | 32x | `std/run-math.sh` `sin-large` | §4 Large-argument `sin`/`cos` |
+| UTF-8 validation | 3.2x | `std/run-string.sh` `utf8-valid` | §4 UTF-8 validation throughput |
+| `Array.push` | 2.9x | `std/run-collections.sh` `array-push` | §4 `Array` element access |
+| `Array.get` | 2.4x | `std/run-collections.sh` `array-get` | §4 `Array` element access |
+| float-struct (HFA) argument | 2.3x | `core/run-calls.sh` `struct-hfa` | undiagnosed |
+| ASCII case fold | 2.0x | `std/run-string.sh` `ascii-fold-64` | undiagnosed |
+| `str` trim | 2.0x | `std/run-string.sh` `trim` | undiagnosed |
+| `f32` `exp` | 1.8x | `std/run-math.sh` `exp-f32` | §4 `f32` transcendental functions |
+| regex literal search | 1.8x | `package/run-regex.sh` `literal` | undiagnosed |
+| long `f64` parse | 1.6x | `std/run-string.sh` `parse-f64-long` | undiagnosed |
+| `f64` `sin` / `cos` | 1.6x / 1.5x | `std/run-math.sh` | undiagnosed |
+| `f32` `log` | 1.5x | `std/run-math.sh` `log-f32` | §4 `f32` transcendental functions |
+| vec3 particle update | 1.5x | `core/run-hotloop.sh` `particle-vec3` | undiagnosed |
+
 ### Deferred optimization work
 
 Optimization follows the feature TODO rather than interrupting it. The first
@@ -260,21 +282,20 @@ foundations.
   diagnosed. `unset` moves by about 30% with its code's alignment, so compare
   its layout before crediting a change. String keys and `--debug` are
   unmeasured. `bench/std/run-collections.sh` tracks the gap.
-- **`Array` element access** [new] — `get` runs 2.9x a scalar C array and
-  `push` 2.8x the same growth policy in C, while `set` is within 1.1x
+- **`Array` element access** [new] — `get` runs 2.4x a scalar C array and
+  `push` 2.9x the same growth policy in C, while `set` is within 1.1x
   (`bench/std/run-collections.sh`); the cause is not yet diagnosed.
 - **UTF-8 validation throughput** [new] — `utf8.valid` over 78 mixed bytes
-  runs 6.3x a strict C validator with the same rules
+  runs 3.2x a strict C validator with the same rules
   (`bench/std/run-string.sh`). It calls `decode`, which returns
   `(u32, usize, bool)` per sequence. Candidate: validate without decoding, or a
   scalar-result decode step; measure both.
 - **Large-argument `sin`/`cos`** [new] — past the Cody-Waite cutoff, `sin`
-  takes 366 ns against libm's 7.8 (47x, `bench/std/run-math.sh`). Profile the
+  takes 250 ns against libm's 7.8 (32x, `bench/std/run-math.sh`). Profile the
   Payne-Hanek path before choosing a candidate.
 - **`f32` transcendental functions** [new] — the `f32` `exp` and `log`
-  convert to `f64`, call the `f64` function, and round back, running slower
-  against libm's `expf` and `logf` than the `f64` forms do against theirs
-  (`bench/std/run-math.sh`). Candidate: `f32` kernels with `f32`-sized
+  convert to `f64`, call the `f64` function, and round back, running 1.8x and
+  1.5x libm's `expf` and `logf` (`bench/std/run-math.sh`). Candidate: `f32` kernels with `f32`-sized
   polynomials that keep the 1-ULP bound (Stdlib #8), as `sin` and `cos` have.
 - **Random source** [new].
 
