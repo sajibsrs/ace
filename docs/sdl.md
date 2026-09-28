@@ -25,7 +25,7 @@ else gives the same record with its own `path` in its `ace.pkg`; the app's
 path overrides the hint, and a missing file there is a manifest error.
 
 See [`demo/sdl3-window`](../demo/sdl3-window) and
-[`demo/sdl3-rgb-cube`](../demo/sdl3-rgb-cube) for consuming examples.
+[`demo/sdl3-cube-rotation`](../demo/sdl3-cube-rotation) for consuming examples.
 
 ## Window and renderer
 
@@ -41,7 +41,7 @@ renderer: sdl.Renderer = sdl.Renderer::new(window)
 defer mut renderer.wipe()
 if !renderer.ok() { return 1 }
 
-renderer.color(sdl.Color { r = 32, g = 64, b = 128, a = 255 })
+renderer.color(sdl.Color::hex(0x204080))
 renderer.clear()
 renderer.present()
 ```
@@ -49,7 +49,9 @@ renderer.present()
 `Window` and `Renderer` hold SDL's heap objects, so they follow the
 `::new`/`wipe` pair; `ok()` reports whether creation succeeded, and `wipe` on
 a failed handle is harmless. The window title is passed to SDL as a C string,
-so it must end in `"\0"`. `Renderer.color(): (Color, bool)` reads the draw
+so it must end in `"\0"`. A `Color` has `f32` channels from 0 to 1, with `a`
+defaulting to 1 (opaque); `Color::hex(rgb)` builds an opaque one from a
+24-bit `0xRRGGBB` value such as `0xF44336`. `Renderer.color(): (Color, bool)` reads the draw
 color back; `color(c)` sets it. `sdl.error()` returns SDL's last error message
 as a string view into SDL's own buffer, valid until the next SDL call.
 
@@ -58,17 +60,17 @@ as a string view into SDL's own buffer, valid until the next SDL call.
 `Renderer.geometry(vertices, indices)` draws untextured triangles: every
 three entries of `indices` name one triangle's corners in `vertices`, and SDL
 interpolates the corners' colors across it. A `Vertex` holds a `position`
-(`FPoint`, in render pixels), a `color` (`FColor`, channels from 0 to 1), and
-a `tex_coord`, which is unused without a texture. An empty `vertices` or
+(`Point`, in render pixels), a `color`, and a `tex_coord`, which is unused
+without a texture; every field defaults to zero (opaque black for `color`),
+so `sdl.Vertex {}` is a blank vertex. An empty `vertices` or
 `indices` draws nothing.
 
 ```ace
-origin: sdl.FPoint = sdl.FPoint { x = 0.0, y = 0.0 }
-red: sdl.FColor = sdl.FColor { r = 1.0, g = 0.0, b = 0.0, a = 1.0 }
+red: sdl.Color = sdl.Color { r = 1.0 }
 triangle: [3]sdl.Vertex = [
-    sdl.Vertex { position = sdl.FPoint { x = 320.0, y = 80.0 }, color = red, tex_coord = origin },
-    sdl.Vertex { position = sdl.FPoint { x = 80.0, y = 400.0 }, color = red, tex_coord = origin },
-    sdl.Vertex { position = sdl.FPoint { x = 560.0, y = 400.0 }, color = red, tex_coord = origin },
+    sdl.Vertex { position = sdl.Point { x = 320.0, y = 80.0 }, color = red },
+    sdl.Vertex { position = sdl.Point { x = 80.0, y = 400.0 }, color = red },
+    sdl.Vertex { position = sdl.Point { x = 560.0, y = 400.0 }, color = red },
 ]
 corners: [3]i32 = [0, 1, 2]
 renderer.geometry(triangle[..], corners[..])

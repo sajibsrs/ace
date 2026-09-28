@@ -44,11 +44,6 @@ fail(context: string): int {
     return 1
 }
 
-// One 8-bit channel of an 0xRRGGBB color, scaled to 0..1.
-channel(rgb: u32, shift: u32): f32 {
-    return f32((rgb >> shift) & 0xFF) / 255.0
-}
-
 // One coordinate of corner i, centered: -1 or 1.
 axis(i: i32, bit: i32): f32 {
     if ((i >> bit) & 1) == 1 { return 1.0 }
@@ -73,14 +68,8 @@ main(): int {
     xs: [8]f32 = [0.0 : 8]
     ys: [8]f32 = [0.0 : 8]
     zs: [8]f32 = [0.0 : 8]
-    screen: [8]sdl.FPoint = [sdl.FPoint { x = 0.0, y = 0.0 } : 8]
-    origin: sdl.FPoint = sdl.FPoint { x = 0.0, y = 0.0 }
-    blank: sdl.Vertex = sdl.Vertex {
-        position = origin,
-        color = sdl.FColor { r = 0.0, g = 0.0, b = 0.0, a = 1.0 },
-        tex_coord = origin,
-    }
-    vertices: [24]sdl.Vertex = [blank : 24]
+    screen: [8]sdl.Point = [sdl.Point {} : 8]
+    vertices: [24]sdl.Vertex = [sdl.Vertex {} : 24]
     indices: [36]i32 = [0 : 36]
 
     // Frames and their time since the last statistics refresh, and the
@@ -88,7 +77,7 @@ main(): int {
     period_start: u64 = sdl.ticks()
     period_frames: u64 = 0
     fps: int = 0
-    frame_hundredths: int = 0
+    frame_us: int = 0
     // CPU time spent building frames, excluding the wait in present.
     period_draw_ns: u64 = 0
     period_drawn: u64 = 0
@@ -132,7 +121,7 @@ main(): int {
             xs[i] = rx
             ys[i] = ry
             zs[i] = rz
-            screen[i] = sdl.FPoint { x = cx + rx * scale / rz, y = cy - ry * scale / rz }
+            screen[i] = sdl.Point { x = cx + rx * scale / rz, y = cy - ry * scale / rz }
         }
 
         // A face is visible when its outward normal points back toward the
@@ -148,14 +137,9 @@ main(): int {
             mz: f32 = (zs[a] + zs[c]) * 0.5
             if mx * mx + my * my + (mz - DISTANCE) * mz >= 0.0 { continue }
 
-            rgb: u32 = FACE_COLORS[f]
-            color: sdl.FColor = sdl.FColor {
-                r = channel(rgb, 16), g = channel(rgb, 8), b = channel(rgb, 0), a = 1.0,
-            }
+            color: sdl.Color = sdl.Color::hex(FACE_COLORS[f])
             for k: usize in 0 .. 4 {
-                vertices[nv + k] = sdl.Vertex {
-                    position = screen[FACES[f * 4 + k]], color = color, tex_coord = origin,
-                }
+                vertices[nv + k] = sdl.Vertex { position = screen[FACES[f * 4 + k]], color = color }
             }
             base: i32 = i32(nv)
             indices[ni] = base
@@ -168,7 +152,7 @@ main(): int {
             ni += 6
         }
 
-        renderer.color(sdl.Color { r = 16, g = 16, b = 24, a = 255 })
+        renderer.color(sdl.Color::hex(0x101018))
         renderer.clear()
         renderer.geometry(vertices[..nv], indices[..ni])
 
@@ -177,7 +161,7 @@ main(): int {
         if now - period_start >= STATS_PERIOD {
             elapsed: u64 = now - period_start
             fps = int(period_frames * 1000 / elapsed)
-            frame_hundredths = int(elapsed * 100 / period_frames)
+            frame_us = int(elapsed * 1000 / period_frames)
             if period_drawn > 0 { draw_us = int(period_draw_ns / period_drawn / 1000) }
             period_start = now
             period_frames = 0
@@ -186,7 +170,7 @@ main(): int {
         }
 
         renderer.scale(TEXT_SCALE, TEXT_SCALE)
-        renderer.color(sdl.Color { r = 224, g = 224, b = 224, a = 255 })
+        renderer.color(sdl.Color::hex(0xE0E0E0))
         step: f32 = sdl.DEBUG_TEXT_SIZE + 4.0
         y: f32 = 6.0
 
@@ -196,8 +180,7 @@ main(): int {
         n: usize, fit: bool = str.format(mut line[..], "FPS %d\0", fps)
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-        n, fit = str.format(mut line[..], "frame %d.%02d ms\0", frame_hundredths / 100,
-                            frame_hundredths % 100)
+        n, fit = str.format(mut line[..], "frame %d.%02d ms\0", frame_us / 1000, frame_us % 1000 / 10)
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
         n, fit = str.format(mut line[..], "draw %d us (CPU)\0", draw_us)

@@ -651,7 +651,7 @@ identical checksums, which are whole-array reductions rather than single
 elements: some particles have zero velocity, so one element can be insensitive
 to the kernel and check nothing.
 
-`cube-transform` is the per-frame math of `demo/sdl3-rgb-cube` for 1,024
+`cube-transform` is the per-frame math of `demo/sdl3-cube-rotation` for 1,024
 cubes: rotate and project eight corners, cull the six faces by their normals,
 and fill four vertices and six indices per visible face; ns/op is per cube.
 Rotations come from a 64-entry sine table built by an exact recurrence, since

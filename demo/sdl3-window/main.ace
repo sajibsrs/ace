@@ -27,7 +27,7 @@ main(): int {
     defer mut renderer.wipe()
     if !renderer.ok() { return fail("SDL_CreateRenderer") }
 
-    shade: u8 = 0
+    shade: f32 = 0.0
     running: bool = true
     for running {
         event: sdl.Event
@@ -39,8 +39,9 @@ main(): int {
             }
         }
 
-        if shade == 255 { shade = 0 } else { shade += 1 }
-        renderer.color(sdl.Color { r = shade, g = 64, b = 255 - shade, a = 255 })
+        shade += 1.0 / 255.0
+        if shade > 1.0 { shade = 0.0 }
+        renderer.color(sdl.Color { r = shade, g = 0.25, b = 1.0 - shade })
         renderer.clear()
         renderer.present()
         sdl.delay(16)

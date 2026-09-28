@@ -33,16 +33,17 @@ SDL_Texture: struct {}
 pub Window: struct { handle: *SDL_Window }
 pub Renderer: struct { handle: *SDL_Renderer }
 
-pub Color: struct { r: u8, g: u8, b: u8, a: u8 }
+// A position in render pixels (SDL_FPoint).
+pub Point: struct { x: f32 = 0.0, y: f32 = 0.0 }
 
-// Geometry: a position in render pixels, a color with 0..1 channels, and a
-// texture coordinate (unused without a texture).
-pub FPoint: struct { x: f32, y: f32 }
-pub FColor: struct { r: f32, g: f32, b: f32, a: f32 }
+// A color with 0..1 channels (SDL_FColor), opaque unless `a` says otherwise.
+pub Color: struct { r: f32 = 0.0, g: f32 = 0.0, b: f32 = 0.0, a: f32 = 1.0 }
+
+// A geometry vertex; the texture coordinate is unused without a texture.
 pub Vertex: struct {
-    position: FPoint,
-    color: FColor,
-    tex_coord: FPoint,
+    position: Point = Point {},
+    color: Color = Color {},
+    tex_coord: Point = Point {},
 }
 
 pub QuitEvent: struct {
@@ -86,6 +87,7 @@ static_assert(offsetof(KeyboardEvent, key) == 28)
 static_assert(offsetof(KeyboardEvent, mod) == 32)
 static_assert(offsetof(KeyboardEvent, down) == 36)
 static_assert(sizeof(Event) == 128 && alignof(Event) == 8)
+static_assert(sizeof(Color) == 16)
 static_assert(sizeof(Vertex) == 32 && offsetof(Vertex, color) == 8)
 
 extern "c" {
@@ -96,8 +98,8 @@ extern "c" {
     c_destroy_window(window: *SDL_Window) = "SDL_DestroyWindow"
     c_create_renderer(window: *SDL_Window, name: *u8): *SDL_Renderer = "SDL_CreateRenderer"
     c_destroy_renderer(renderer: *SDL_Renderer) = "SDL_DestroyRenderer"
-    c_set_render_draw_color(renderer: *SDL_Renderer, r: u8, g: u8, b: u8, a: u8): bool = "SDL_SetRenderDrawColor"
-    c_get_render_draw_color(renderer: *SDL_Renderer, r: mut *u8, g: mut *u8, b: mut *u8, a: mut *u8): bool = "SDL_GetRenderDrawColor"
+    c_set_render_draw_color_float(renderer: *SDL_Renderer, r: f32, g: f32, b: f32, a: f32): bool = "SDL_SetRenderDrawColorFloat"
+    c_get_render_draw_color_float(renderer: *SDL_Renderer, r: mut *f32, g: mut *f32, b: mut *f32, a: mut *f32): bool = "SDL_GetRenderDrawColorFloat"
     c_render_clear(renderer: *SDL_Renderer): bool = "SDL_RenderClear"
     c_render_present(renderer: *SDL_Renderer): bool = "SDL_RenderPresent"
     c_get_current_render_output_size(renderer: *SDL_Renderer, w: mut *i32, h: mut *i32): bool = "SDL_GetCurrentRenderOutputSize"
@@ -131,6 +133,16 @@ pub error(): string {
     return string([]u8(p, n))
 }
 
+// An opaque color from a 24-bit 0xRRGGBB value, e.g. 0xF44336, as written
+// in CSS and design tools.
+pub Color::hex(rgb: u32): Color {
+    return Color {
+        r = f32((rgb >> 16) & 0xFF) / 255.0,
+        g = f32((rgb >> 8) & 0xFF) / 255.0,
+        b = f32(rgb & 0xFF) / 255.0,
+    }
+}
+
 // The title must end in "\0"; SDL reads it as a C string.
 pub Window::new(title: string, w: i32, h: i32, flags: u64): Window {
     return Window { handle = c_create_window(&title[0], w, h, flags) }
@@ -153,12 +165,12 @@ pub mut Renderer.wipe() {
 }
 
 pub Renderer.color(color: Color): bool {
-    return c_set_render_draw_color(self.handle, color.r, color.g, color.b, color.a)
+    return c_set_render_draw_color_float(self.handle, color.r, color.g, color.b, color.a)
 }
 
 pub Renderer.color(): (Color, bool) {
-    c: Color = Color { r = 0, g = 0, b = 0, a = 0 }
-    ok: bool = c_get_render_draw_color(self.handle, mut &c.r, mut &c.g, mut &c.b, mut &c.a)
+    c: Color
+    ok: bool = c_get_render_draw_color_float(self.handle, mut &c.r, mut &c.g, mut &c.b, mut &c.a)
     return c, ok
 }
 

@@ -31,7 +31,7 @@ typedef struct {
     float x, y, r, g, b, a, u, v;
 } Vertex;
 
-/* cube-transform: the per-frame math of demo/sdl3-rgb-cube for many cubes.
+/* cube-transform: the per-frame math of demo/sdl3-cube-rotation for many cubes.
  * Corner i sits at x = bit 0, y = bit 1, z = bit 2 of i; a face is four
  * corners sharing one bit, in order around it. */
 static const int FACES[24] = {

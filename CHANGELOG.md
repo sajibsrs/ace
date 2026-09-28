@@ -2960,6 +2960,14 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Current frontier
 
+- Unified `pkg/sdl`'s value types: one `Point` and one `Color`, both `f32`
+  (SDL_FPoint/SDL_FColor layouts), replacing `FPoint`, `FColor`, and the
+  `u8` `Color`; `Renderer.color` now wraps `SDL_{Set,Get}RenderDrawColorFloat`.
+  Field defaults (`Color.a = 1`, zero elsewhere) make `Vertex {}` blank and
+  leave `tex_coord` unwritten; `Color::hex(rgb)` builds an opaque color
+  from a 24-bit `0xRRGGBB` value (e.g. `0xF44336`). Renamed
+  `demo/sdl3-rgb-cube` to `demo/sdl3-cube-rotation`.
+
 The checked-build queue is complete. Additive networking, concurrency, fuller
 math/SIMD, and a second
 backend remain open; their status belongs in the `SPEC.md` Decision Queue and
