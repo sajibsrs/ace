@@ -641,7 +641,7 @@ Run float array kernels through Ace release output and equivalent C:
 ./bench/core/run-hotloop.sh
 ```
 
-Five kernels over 4096-element global arrays: `saxpy-f64` and `saxpy-f32`
+Six kernels. Five run over 4096-element global arrays: `saxpy-f64` and `saxpy-f32`
 (`y[i] = a*x[i] + y[i]`), `dot-f64` (an accumulating reduction), and
 `particle-vec3` (three `f32` fields of an indexed struct element, read and
 written per iteration), and `length-vec3` (`math.sqrt` of a squared-length
@@ -650,6 +650,14 @@ base-address computation. The runner checks that Ace and both C builds produce
 identical checksums, which are whole-array reductions rather than single
 elements: some particles have zero velocity, so one element can be insensitive
 to the kernel and check nothing.
+
+`cube-transform` is the per-frame math of `demo/sdl3-rgb-cube` for 1,024
+cubes: rotate and project eight corners, cull the six faces by their normals,
+and fill four vertices and six indices per visible face; ns/op is per cube.
+Rotations come from a 64-entry sine table built by an exact recurrence, since
+`sin`/`cos` kernels differ in the last ulp (`std/run-math.sh` times those). The
+C kernel sets `#pragma STDC FP_CONTRACT OFF`: clang otherwise fuses `a*b + c`
+into one `fmadd` rounding, which Ace never does, and the checksums diverge.
 
 Ace leaves vectorization to explicit `simd`, so scalar C `-O2`
 (`-fno-vectorize -fno-slp-vectorize`) is the comparison target. The
@@ -742,6 +750,20 @@ repeated `adrp`/`add` per iteration is gone: `saxpy-f64` moves from 1.62x to
 it (0.79x to 0.75x) since it reads the same two globals in its own loop.
 `particle-vec3` and `length-vec3` are unaffected, as expected — their stride
 is not a power of two, so they were already on the pointer-phi path.
+
+#### Cube transform
+
+Three runs at `3a8a125`, ns per cube: Ace 60.9, scalar C 52.9 (1.15x),
+vectorized C 31.5; clang's SLP vectorizer turns the corner loop's divides into
+`fdiv.4s`. Scalar C does not unroll the corner loop either; the gap is spread
+over small differences, none worth over a few percent measured alone: `axis`
+compiles to branches where C selects with `fcsel` (a branchless source variant
+gains about 3%), stack-array accesses take `add`, `add`, `ldr` where C folds a
+register-indexed `ldr` (folding it measured no gain: the loop is bound by its
+`fdiv` and multiply chains), constants are rematerialized inside the loop, and
+the four vertex stores are not paired. Drawn with SDL (OpenGL renderer, vsync
+off; Metal paces presents to the display regardless), the math matters from
+about 10,000 cubes, where it is 40% of a frame.
 
 ## Standard library
 

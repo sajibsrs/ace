@@ -12,6 +12,9 @@ import time
 COUNT: const usize = 4096
 REPEATS: const usize = 20000
 PARTICLE_REPEATS: const usize = 5000
+CUBES: const usize = 1024
+FRAMES: const usize = 2000
+ANGLES: const usize = 64
 
 Vec3: struct { x: f32, y: f32, z: f32 }
 
@@ -21,6 +24,28 @@ xs32: [4096]f32
 ys32: [4096]f32
 positions: [4096]Vec3
 velocities: [4096]Vec3
+
+// A position, a color, and a texture coordinate, laid out as SDL_Vertex.
+Vertex: struct { x: f32, y: f32, r: f32, g: f32, b: f32, a: f32, u: f32, v: f32 }
+
+// cube-transform: the per-frame math of demo/sdl3-rgb-cube for many cubes.
+// Corner i sits at x = bit 0, y = bit 1, z = bit 2 of i; a face is four
+// corners sharing one bit, in order around it.
+FACES: const [24]i32 = [
+    0, 2, 6, 4,  1, 3, 7, 5,
+    0, 1, 5, 4,  2, 3, 7, 6,
+    0, 1, 3, 2,  4, 5, 7, 6,
+]
+FACE_COLORS: const [6]u32 = [0xF44336, 0x4CAF50, 0x00BCD4, 0x9C27B0, 0x2196F3, 0xFFEB3B]
+DISTANCE: const f32 = 4.0
+SIZE: const f32 = 800.0
+
+// Sines and cosines of evenly spaced angles, stepped by an exact recurrence
+// so Ace and C hold identical bits without sharing a sin/cos kernel.
+sines: [64]f32
+cosines: [64]f32
+vertices: [24576]Vertex
+indices: [36864]i32
 
 now(): u64 {
     return time.awake()
@@ -47,6 +72,99 @@ sum32(v: []f32): usize {
 sum_particles(): usize {
     acc: f64 = 0.0
     for i: usize in 0 .. COUNT { acc += f64(positions[i].x) + f64(positions[i].y) + f64(positions[i].z) }
+    return usize(bitcast(u64, acc))
+}
+
+angles() {
+    // One step of 2*pi/64: cos and sin rounded to f32.
+    step_cos: f32 = 0.99518472
+    step_sin: f32 = 0.09801714
+    sines[0] = 0.0
+    cosines[0] = 1.0
+    for i: usize in 1 .. ANGLES {
+        sines[i] = sines[i - 1] * step_cos + cosines[i - 1] * step_sin
+        cosines[i] = cosines[i - 1] * step_cos - sines[i - 1] * step_sin
+    }
+}
+
+channel(rgb: u32, shift: u32): f32 {
+    return f32((rgb >> shift) & 0xFF) / 255.0
+}
+
+axis(i: i32, bit: i32): f32 {
+    if ((i >> bit) & 1) == 1 { return 1.0 }
+    return -1.0
+}
+
+// Rotates, projects, and culls every cube for one frame, filling vertices and
+// indices for the visible faces; returns the vertex count.
+cubes(frame: usize): usize {
+    xs: [8]f32 = [0.0 : 8]
+    ys: [8]f32 = [0.0 : 8]
+    zs: [8]f32 = [0.0 : 8]
+    sx: [8]f32 = [0.0 : 8]
+    sy: [8]f32 = [0.0 : 8]
+    cell: f32 = SIZE / 32.0
+    scale: f32 = cell * 0.55
+    nv: usize = 0
+    ni: usize = 0
+    for n: usize in 0 .. CUBES {
+        cx: f32 = (f32(n % 32) + 0.5) * cell
+        cy: f32 = (f32(n / 32) + 0.5) * cell
+        ai: usize = (n * 7 + frame) % ANGLES
+        bi: usize = (n * 5 + frame * 3) % ANGLES
+        sa: f32 = sines[ai]
+        ca: f32 = cosines[ai]
+        sb: f32 = sines[bi]
+        cb: f32 = cosines[bi]
+        for i: i32 in 0 .. 8 {
+            x: f32 = axis(i, 0)
+            y: f32 = axis(i, 1)
+            z: f32 = axis(i, 2)
+            rx: f32 = x * ca + z * sa
+            rz: f32 = z * ca - x * sa
+            ry: f32 = y * cb - rz * sb
+            rz = y * sb + rz * cb + DISTANCE
+            xs[i] = rx
+            ys[i] = ry
+            zs[i] = rz
+            sx[i] = cx + rx * scale / rz
+            sy[i] = cy - ry * scale / rz
+        }
+        for f: usize in 0 .. 6 {
+            a: i32 = FACES[f * 4]
+            c: i32 = FACES[f * 4 + 2]
+            mx: f32 = (xs[a] + xs[c]) * 0.5
+            my: f32 = (ys[a] + ys[c]) * 0.5
+            mz: f32 = (zs[a] + zs[c]) * 0.5
+            if mx * mx + my * my + (mz - DISTANCE) * mz >= 0.0 { continue }
+            rgb: u32 = FACE_COLORS[f]
+            r: f32 = channel(rgb, 16)
+            g: f32 = channel(rgb, 8)
+            b: f32 = channel(rgb, 0)
+            for k: usize in 0 .. 4 {
+                corner: i32 = FACES[f * 4 + k]
+                vertices[nv + k] = Vertex {
+                    x = sx[corner], y = sy[corner], r = r, g = g, b = b, a = 1.0, u = 0.0, v = 0.0,
+                }
+            }
+            base: i32 = i32(nv)
+            indices[ni] = base
+            indices[ni + 1] = base + 1
+            indices[ni + 2] = base + 2
+            indices[ni + 3] = base
+            indices[ni + 4] = base + 2
+            indices[ni + 5] = base + 3
+            nv += 4
+            ni += 6
+        }
+    }
+    return nv
+}
+
+sum_vertices(count: usize): usize {
+    acc: f64 = 0.0
+    for i: usize in 0 .. count { acc += f64(vertices[i].x) + f64(vertices[i].y) * 3.0 + f64(indices[i]) }
     return usize(bitcast(u64, acc))
 }
 
@@ -106,5 +224,11 @@ main(): int {
         }
     }
     report("length-vec3", now() - started, particle_ops, usize(bitcast(u64, length)))
+
+    angles()
+    count: usize = 0
+    started = now()
+    for frame: usize in 0 .. FRAMES { count = cubes(frame) }
+    report("cube-transform", now() - started, CUBES * FRAMES, sum_vertices(count))
     return 0
 }

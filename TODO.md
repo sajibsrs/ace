@@ -145,6 +145,7 @@ with a §4 entry carry their detail there.
 | `f64` `sin` / `cos` | 1.6x / 1.5x | `std/run-math.sh` | undiagnosed |
 | `f32` `log` | 1.5x | `std/run-math.sh` `log-f32` | §4 `f32` transcendental functions |
 | vec3 particle update | 1.5x | `core/run-hotloop.sh` `particle-vec3` | undiagnosed |
+| SDL cube transform | 1.15x | `core/run-hotloop.sh` `cube-transform` | spread; `bench/README.md` Cube transform |
 
 ### Deferred optimization work
 

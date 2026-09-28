@@ -2907,6 +2907,12 @@ current normative rules, and Git preserves patch-level detail.
   that as `slice bound must be an integer`; a poisoned bound now makes the
   slice poison too, as an index already did. `tests/ir-diff.sh` generated such
   a bound (seed 7, program 72).
+- `bench/core/hotloop` adds `cube-transform`: the per-frame math of
+  `demo/sdl3-rgb-cube` (8 corner rotations and projections, 6-face backface
+  cull, vertex and index fill) for 1,024 cubes over 2,000 frames, headless.
+  Rotations come from a 64-entry table built by an exact recurrence rather
+  than `sin`/`cos`, and the C side disables `FP_CONTRACT` in the kernel, so
+  checksums match bit for bit. Release Ace runs 1.15x scalar C `-O2`.
 
 ## Current frontier
 
