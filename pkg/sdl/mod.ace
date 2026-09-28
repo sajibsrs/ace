@@ -200,8 +200,7 @@ pub Renderer.size(): (i32, i32, bool) {
 // whose colors SDL interpolates across it.
 pub Renderer.geometry(vertices: []Vertex, indices: []i32): bool {
     if vertices.len == 0 || indices.len == 0 { return true }
-    return c_render_geometry(self.handle, null, &vertices[0], i32(vertices.len),
-                             &indices[0], i32(indices.len))
+    return c_render_geometry(self.handle, null, &vertices[0], i32(vertices.len), &indices[0], i32(indices.len))
 }
 
 // Present in step with the display: 1 waits for every refresh, 2 for every
