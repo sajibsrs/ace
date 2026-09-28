@@ -46,8 +46,10 @@ contextual_target := ident                            // exact text "target"
 layout_attr   := packed_attr | align_attr
 packed_attr   := "@" contextual_packed newline*
 align_attr    := "@" contextual_align "(" expr ")" newline*
+offset_attr   := "@" contextual_offset "(" expr ")" newline*
 contextual_packed := ident                            // exact text "packed"
 contextual_align := ident                             // exact text "align"
+contextual_offset := ident                            // exact text "offset"
 
 import_decl   := module_import | selective_import
 module_import := "import" module_path
@@ -94,7 +96,7 @@ block         := "{" stmt* "}"
 
 struct_decl   := ident [type_params] ":" "struct" "{" field_list "}"
 field_list    := field ("," field)*
-field         := align_attr* ["embed"] ident ":" type ["=" expr]
+field         := [offset_attr] [align_attr] ["embed"] ident ":" type ["=" expr]
 
 bits_decl     := ident ":" contextual_bits bits_backing "{" bits_fields "}"
 contextual_bits := ident                                // exact text "bits"; not reserved

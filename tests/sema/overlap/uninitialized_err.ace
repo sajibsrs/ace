@@ -1,0 +1,13 @@
+Word: struct {
+    @offset(0)
+    value: u32,
+
+    @offset(0)
+    bytes: [4]u8,
+}
+
+main(): int {
+    unset: Word
+    if unset.bytes[0] == 0 { return 1 }
+    return 0
+}

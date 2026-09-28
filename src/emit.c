@@ -171,7 +171,7 @@ uint32_t field_off(SType* t, int want) {
     int special = t->kind == SK_STRUCT && (t->is_packed || t->requested_align);
     if (t->kind == SK_STRUCT && !special)
         for (int i = 0; i < t->nfields; i++)
-            if (t->fields[i].requested_align) {
+            if (t->fields[i].requested_align || t->fields[i].has_offset) {
                 special = 1;
                 break;
             }

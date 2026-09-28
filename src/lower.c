@@ -190,7 +190,7 @@ static int has_array(SType* t) {
     if (!t) return 0;
     if (t->kind == SK_ARRAY) return 1;
     if (t->kind != SK_STRUCT && t->kind != SK_TUPLE) return 0;
-    for (int i = 0; i < t->nfields; i++) if (has_array(t->fields[i].t) || is_union(t->fields[i].t)) return 1;
+    for (int i = 0; i < t->nfields; i++) if (has_array(t->fields[i].t) || ir_is_overlay(t->fields[i].t)) return 1;
     return 0;
 }
 
@@ -209,7 +209,7 @@ static int is_big(SType* t) {
 // union.
 static int by_parts(SType* t) { return is_big(t) || has_union(t); }
 
-static int in_memory(SType* t) { return is_union(t) || (is_agg(t) && (has_array(t) || is_big(t))); }
+static int in_memory(SType* t) { return ir_is_overlay(t) || (is_agg(t) && (has_array(t) || is_big(t))); }
 
 // A parameter in memory that AAPCS64 passes by address (over 16 bytes and no
 // floating aggregate): it lives at that address, the caller's copy.

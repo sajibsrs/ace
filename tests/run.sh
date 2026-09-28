@@ -325,6 +325,12 @@ for want in \
     fi
 done
 
+overlap_errors=$("$ACE" tests/sema/overlap/main_err.ace 2>&1)
+if [ "$(printf '%s\n' "$overlap_errors" | grep -c 'error:')" -ne 7 ]; then
+    echo "FAIL: overlapping struct diagnostics"
+    fail=1
+fi
+
 bitcast_errors=$("$ACE" tests/sema/bitcast/main_err.ace 2>&1)
 if [ "$(printf '%s\n' "$bitcast_errors" | grep -c 'error:')" -ne 7 ]; then
     echo "FAIL: bitcast diagnostics"

@@ -974,6 +974,13 @@ current normative rules, and Git preserves patch-level detail.
   other pairs go through a stack object. Callers were migrated by a sema probe
   recording each call's result type; the generated IR of the float benchmarks
   and tests is identical to before.
+- Added field `@offset(N)` and overlapping structs, which complete storage
+  reinterpretation. Layout places an offset field exactly and takes the size
+  from the largest field end; sema rejects misaligned offsets and, where fields
+  share bytes, non-plain-bits fields, defaults, literals, and by-value C use.
+  Overlapping structs lower like unions (in memory, moved as words, a partial
+  last word as u32/u16/u8 pieces), `field_off` reads their stored offsets, and
+  definite initialization stops its path at them so any member write counts.
 - Implemented statement-only AArch64 inline assembly with explicit
   input/output/clobber bindings and no constraint language or reordering.
 - Implemented Package System v1's manifest and dependency-graph resolution

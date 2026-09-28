@@ -203,7 +203,8 @@ int      ir_type_of(SType* t);
 // *bad set to the first type the IR does not cover.
 int      ir_leaves(SType* t, IrLeaf* out, SType** bad);
 int      ir_leaf_count(SType* t); // uncapped; -1 when some leaf is not covered
-int      ir_holds_union(SType* t); // a union in a struct, tuple, or array member, at any depth
+int      ir_is_overlay(SType* t);  // a union or a struct whose fields share bytes
+int      ir_holds_union(SType* t); // is or holds an overlay in a struct, tuple, or array member, at any depth
 // v wrapped into t: truncated, then extended by t's signedness
 uint64_t ir_wrap(IrType t, uint64_t v);
 

@@ -1,0 +1,58 @@
+Shape: union { none, value: i32 }
+
+Misaligned: struct {
+    @offset(2)
+    value: u32,
+}
+
+WithString: struct {
+    @offset(0)
+    text: string,
+
+    @offset(0)
+    word: u64,
+}
+
+WithUnion: struct {
+    @offset(0)
+    shape: Shape,
+
+    @offset(0)
+    word: u64,
+}
+
+WithDefault: struct {
+    @offset(0)
+    word: u32 = 1,
+
+    @offset(0)
+    bytes: [4]u8,
+}
+
+Word: struct {
+    @offset(0)
+    value: u32,
+
+    @offset(0)
+    bytes: [4]u8,
+}
+
+NotConst: struct {
+    @offset(runtime())
+    value: u32,
+}
+
+extern "c" {
+    by_value(word: Word)
+}
+
+runtime(): usize {
+    return 0
+}
+
+main(): int {
+    literal: Word = Word { value = 1 }
+    unset: Word
+    if unset.value == 0 { return 1 }
+    return 0
+}

@@ -1,0 +1,33 @@
+Word: struct {
+    @offset(0)
+    value: u32,
+
+    @offset(0)
+    bytes: [4]u8,
+}
+
+@packed
+Header: struct {
+    tag: u8,
+
+    @offset(1)
+    @align(1)
+    length: u32,
+
+    @offset(1)
+    raw: [4]u8,
+}
+
+extern "c" {
+    by_pointer(word: *Word)
+}
+
+main(): int {
+    word: Word
+    word.bytes[2] = 7 // any member write initializes the whole struct
+    if word.value == 0 { return 1 }
+    raw: [5]u8 = [0, 0, 0, 0, 0]
+    header: Header = bitcast(Header, raw)
+    if sizeof(Header) != 5 || header.tag != 0 { return 2 }
+    return 0
+}

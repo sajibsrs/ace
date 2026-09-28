@@ -1655,19 +1655,22 @@ static int named_attr_at(P* p, const char* name) {
     return kth(p, 1) == T_IDENT && tk(p)[1].len == n && memcmp(tk(p)[1].str, name, n) == 0;
 }
 
-/* Parse @align(expr), including its required terminating physical line. */
-static Node* parse_align_attr(P* p) {
-    expect(p, T_AT, "'@' before align");
-    if (!ident_at(p, "align")) perr(p, "expected @align attribute");
+/* Parse @align(expr) or @offset(expr), including its required terminating
+ * physical line. */
+static Node* parse_layout_attr(P* p, const char* name) {
+    expect(p, T_AT, "'@' before a layout attribute");
+    if (!ident_at(p, name)) perr(p, "expected @%s attribute", name);
     p->i++;
-    expect(p, T_LPAREN, "'(' after @align");
+    expect(p, T_LPAREN, "'(' after a layout attribute");
     Node* value = expr(p, 0);
-    expect(p, T_RPAREN, "')' after @align expression");
+    expect(p, T_RPAREN, "')' after a layout attribute expression");
     int line = p->toks[p->i - 1].line;
     skipnl(p);
-    if (tk(p)->line == line) perr(p, "@align must occupy its own line before a declaration or field");
+    if (tk(p)->line == line) perr(p, "@%s must occupy its own line before a declaration or field", name);
     return value;
 }
+
+static Node* parse_align_attr(P* p) { return parse_layout_attr(p, "align"); }
 
 // If toks[i] starts a type-parameter list `['T,' U']' (idents only), consume it.
 static Node* try_tparams(P* p) {
@@ -1847,12 +1850,18 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
         NV fields = {0};
         if (!at(p, T_RBRACE)) {
             for (;;) {
+                Node* field_offset = NULL;
                 Node* field_align = NULL;
+                if (named_attr_at(p, "offset")) {
+                    field_offset = parse_layout_attr(p, "offset");
+                    if (named_attr_at(p, "offset")) perr(p, "a field accepts at most one @offset attribute");
+                }
                 if (named_attr_at(p, "align")) {
                     field_align = parse_align_attr(p);
                     if (named_attr_at(p, "align")) perr(p, "a field accepts at most one @align attribute");
+                    if (named_attr_at(p, "offset")) perr(p, "@offset precedes @align on a field");
                 } else if (at(p, T_AT)) {
-                    perr(p, "only @align may modify a struct field");
+                    perr(p, "only @offset and @align may modify a struct field");
                 }
                 int embed = ate(p, T_EMBED);
                 Token* fname = expect(p, T_IDENT, "field name");
@@ -1861,6 +1870,7 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
                 fl->len = fname->len;
                 if (embed) fl->flags |= F_EMBED;
                 fl->b = field_align;
+                fl->d = field_offset;
                 expect(p, T_COLON, "':' after field name");
                 fl->a = parse_type(p);
                 if (ate(p, T_ASSIGN)) fl->c = expr(p, 0);

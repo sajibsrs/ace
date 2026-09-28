@@ -476,12 +476,21 @@ Carved (explicit struct layout):
   below its type's natural alignment. Following unannotated fields retain
   alignment one. The struct alignment is the maximum effective field alignment,
   raised by its own `@align(N)`.
-- Each field begins at the first offset satisfying its effective alignment and
-  struct size is rounded up to struct alignment. Nested values retain their
+- Each field begins at the first offset satisfying its effective alignment,
+  following the preceding field, unless field `@offset(N)` places it at exactly
+  byte `N`: a compile-time `usize` that must be a multiple of the field's
+  effective alignment. On a field, `@offset` precedes `@align`. Struct size is
+  the largest field end rounded up to struct alignment. Nested values retain their
   internal layouts; packing changes placement, not contents. Explicit byte
   arrays represent reserved or unnamed bytes. `sizeof`, `alignof`, and
   `offsetof` expose the result.
-- Packed and explicitly aligned structs may be C-compatible behind pointers
+- A struct whose fields share bytes is an overlapping struct (a C union is one
+  whose fields are all `@offset(0)`). Every field must be plain bits (Memory,
+  untyped storage) and none may have a default. Reading a field reads its
+  bytes and writing one writes only its bytes. It has no literal and no `==`;
+  it starts as zero or uninitialized, and initialization checking tracks it
+  whole, so any member write initializes it. Its zero is all zero bytes.
+- Packed, explicitly aligned, and explicitly offset structs may be C-compatible behind pointers
   when all recursive rules hold and the layout matches the external definition.
   They are rejected as direct `extern`/`export` parameters and returns pending
   by-value ABI verification. Layout attributes do not determine byte order, bit
@@ -1170,14 +1179,7 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 
 ### Active
 
-- Storage reinterpretation (decided; implementation staged). Built on untyped
-  storage, plain-bits types, pointer reinterpretation, and `bitcast` (Memory):
-  - Field `@offset(N)` places a field at byte `N`, satisfying its effective
-    alignment; unannotated fields follow the preceding field as today. A struct
-    with overlapping fields holds only plain-bits fields, has no `==`, is
-    initialized as a whole by any member write, and crosses C boundaries only
-    behind pointers until its by-value ABI is verified. Attribute order is
-    `@offset`, then `@align`.
+None.
 
 ### Trigger-gated
 

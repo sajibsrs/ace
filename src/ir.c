@@ -186,37 +186,47 @@ static int leaves_at(SType* t, uint32_t off, IrLeaf* out, int n, int max, SType*
     return n;
 }
 
-// Whether t holds a union in a struct, tuple, or array member (at any depth).
+// Whether t is a union or a struct whose fields share bytes: its bytes, not
+// its members, are its value.
+int ir_is_overlay(SType* t) {
+    SType* u = unwrap(t);
+    return u && (u->kind == SK_UNION || (u->kind == SK_STRUCT && u->is_overlap));
+}
+
+// Whether t is, or holds in a struct, tuple, or array member (at any depth),
+// a union or an overlapping struct.
 int ir_holds_union(SType* t) {
     SType* u = unwrap(t);
     if (!u) return 0;
-    if (u->kind == SK_ARRAY) return unwrap(u->base) && (unwrap(u->base)->kind == SK_UNION || ir_holds_union(u->base));
+    if (u->kind == SK_STRUCT && u->is_overlap) return 1;
+    if (u->kind == SK_ARRAY) return ir_is_overlay(u->base) || ir_holds_union(u->base);
     if (u->kind != SK_STRUCT && u->kind != SK_TUPLE) return 0;
-    for (int i = 0; i < u->nfields; i++) {
-        SType* f = unwrap(u->fields[i].t);
-        if (f && (f->kind == SK_UNION || ir_holds_union(f))) return 1;
-    }
+    for (int i = 0; i < u->nfields; i++)
+        if (ir_is_overlay(u->fields[i].t) || ir_holds_union(u->fields[i].t)) return 1;
     return 0;
 }
 
-// A union, or an aggregate holding one, is its bytes as the ABI moves them: a
-// u64 per full word and a u32 for a last half word (such a size is a multiple
-// of the union's i32 tag's alignment).
+// A union or overlapping struct, or an aggregate holding one, is its bytes as
+// the ABI moves them: a u64 per full word, then a u32, u16, and u8 for what a
+// last partial word holds (a union's is a u32, its size a multiple of its i32
+// tag's alignment).
 static int word_leaves(SType* t, IrLeaf* out, int max, SType** bad) {
-    uint32_t size = sema_size(t);
-    int n = (int)(size / 8) + (size % 8 ? 1 : 0);
-    if (n > max) {
-        *bad = t;
-        return -1;
+    uint32_t size = sema_size(t), off = 0;
+    int n = 0;
+    while (off < size) {
+        uint32_t rest = size - off, w = rest >= 8 ? 8 : rest >= 4 ? 4 : rest >= 2 ? 2 : 1;
+        if (n >= max) {
+            *bad = t;
+            return -1;
+        }
+        if (out) out[n] = (IrLeaf){ off, (uint8_t)(w == 8 ? IT_U64 : w == 4 ? IT_U32 : w == 2 ? IT_U16 : IT_U8) };
+        n++;
+        off += w;
     }
-    for (int k = 0; out && k < n; k++) out[k] = (IrLeaf){ (uint32_t)k * 8, (uint8_t)(size - (uint32_t)k * 8 >= 8 ? IT_U64 : IT_U32) };
     return n;
 }
 
-static int is_word_type(SType* t) {
-    SType* u = unwrap(t);
-    return u && (u->kind == SK_UNION || ir_holds_union(u));
-}
+static int is_word_type(SType* t) { return ir_is_overlay(t) || ir_holds_union(t); }
 
 int ir_leaves(SType* t, IrLeaf* out, SType** bad) {
     if (is_word_type(t)) return word_leaves(unwrap(t), out, IR_MAX_LEAVES, bad);

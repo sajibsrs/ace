@@ -208,7 +208,7 @@ static int layout(SType* t) {
         return 1;
     case SK_STRUCT: case SK_TUPLE: {
         t->calc = 1;
-        uint32_t off = 0, maxa = 1;
+        uint32_t off = 0, end = 0, maxa = 1;
         for (int i = 0; i < t->nfields; i++) {
             if (t->fields[i].t->kind == SK_ERR) {
                 t->calc = 0; t->size = t->align = 1; return 1;
@@ -218,13 +218,15 @@ static int layout(SType* t) {
             if (t->fields[i].requested_align) a = t->fields[i].requested_align;
             t->fields[i].effective_align = a;
             if (maxa < a) maxa = a;
-            off = align_to(off, a);
+            // @offset places a field exactly; others follow the preceding field
+            off = t->fields[i].has_offset ? t->fields[i].requested_offset : align_to(off, a);
             t->fields[i].offset = off;
             off += t->fields[i].t->size;
+            if (end < off) end = off;
         }
         if (t->requested_align > maxa) maxa = t->requested_align;
         t->align = maxa;
-        t->size = align_to(off, maxa);
+        t->size = align_to(end, maxa);
         t->calc = 0;
         return 1;
     }
@@ -1549,7 +1551,7 @@ static const char* method_key(Node* owner, const char* name, uint32_t len, uint3
 static int has_special_struct_layout(SType* t) {
     if (!t || t->kind != SK_STRUCT) return 0;
     if (t->is_packed || t->requested_align) return 1;
-    for (int i = 0; i < t->nfields; i++) if (t->fields[i].requested_align) return 1;
+    for (int i = 0; i < t->nfields; i++) if (t->fields[i].requested_align || t->fields[i].has_offset) return 1;
     return 0;
 }
 
@@ -5388,6 +5390,10 @@ static void check_block(Ck* k, Node* b) {
 
 static void check_structlit(Ck* k, Node* lit, SType* want) {
     lit->ty = want; // emitter: context-typed literal carries its type
+    if (want->kind == SK_STRUCT && want->is_overlap) {
+        ck_err(k, lit, "overlapping struct %s has no literal; declare it and assign a member", type_name(want));
+        return;
+    }
     if (want->kind == SK_BITS) {
         uint8_t* seen = (uint8_t*)arena_alloc((size_t)(want->nfields ? want->nfields : 1));
         memset(seen, 0, (size_t)(want->nfields ? want->nfields : 1));
@@ -5588,6 +5594,7 @@ typedef struct {
     SType* type[65];
     int n;
     int dynamic_index;
+    int overlay; // reached an overlapping struct: tracked whole from there
 } InitPath;
 
 static SType* init_shape(SType* t) {
@@ -5798,7 +5805,12 @@ static int init_path(Node* e, InitPath* p) {
     }
     if (e->kind == N_FIELD_E) {
         if (!init_path(e->a, p)) return 0;
+        if (p->overlay) return 1;
         SType* bt = init_shape(p->type[p->n]);
+        if (bt && bt->kind == SK_STRUCT && bt->is_overlap) { // tracked whole: any member write initializes it
+            p->overlay = 1;
+            return 1;
+        }
         int fi = init_field_index(bt, e);
         if (fi < 0) return 0; // pointer auto-deref, Error, or method
         p->key[p->n] = (uint64_t)fi;
@@ -5808,6 +5820,7 @@ static int init_path(Node* e, InitPath* p) {
     }
     if (e->kind == N_INDEX) {
         if (!init_path(e->a, p)) return 0;
+        if (p->overlay) return 1;
         SType* bt = init_shape(p->type[p->n]);
         if (!bt || bt->kind != SK_ARRAY) return 0;
         uint64_t ix;
@@ -6260,6 +6273,55 @@ static uint32_t checked_layout_align(Ck* k, Node* expr, const char* subject) {
     return (uint32_t)value;
 }
 
+static int plain_bits(SType* t);
+
+static uint32_t checked_layout_offset(Ck* k, Node* expr) {
+    coerce(k, expr, st_prim(P_USIZE));
+    int64_t value;
+    if (!ut_const(expr, &value)) {
+        ck_err(k, expr, "field @offset value must be a compile-time usize expression");
+        return 0;
+    }
+    if (value < 0 || value > UINT32_MAX) {
+        ck_err(k, expr, "field @offset value %lld is out of range", (long long)value);
+        return 0;
+    }
+    return (uint32_t)value;
+}
+
+// After layout: each @offset meets its field's effective alignment, and a
+// struct whose fields share bytes holds only plain bits and no defaults
+// (Memory, untyped storage).
+static void check_struct_offsets(Ck* k, Node* decl, SType* t) {
+    int any = 0;
+    for (int i = 0; i < t->nfields; i++) {
+        SField* f = &t->fields[i];
+        if (!f->has_offset) continue;
+        any = 1;
+        if (f->requested_offset % f->effective_align)
+            ck_err(k, decl->kids[i]->d, "field '%s' @offset(%u) is not a multiple of its alignment %u",
+                   f->name, f->requested_offset, f->effective_align);
+    }
+    if (!any) return;
+    for (int i = 0; i < t->nfields && !t->is_overlap; i++)
+        for (int j = i + 1; j < t->nfields; j++) {
+            SField *a = &t->fields[i], *b = &t->fields[j];
+            if (a->t->size && b->t->size && a->offset < b->offset + b->t->size && b->offset < a->offset + a->t->size) {
+                t->is_overlap = 1;
+                break;
+            }
+        }
+    if (!t->is_overlap) return;
+    for (int i = 0; i < t->nfields; i++) {
+        if (!plain_bits(t->fields[i].t))
+            ck_err(k, decl->kids[i], "field '%s' of overlapping struct %s must be plain bits, got %s",
+                   t->fields[i].name, decl->str, type_name(t->fields[i].t));
+        if (t->fields[i].default_value)
+            ck_err(k, decl->kids[i]->c, "field '%s' of overlapping struct %s cannot have a default",
+                   t->fields[i].name, decl->str);
+    }
+}
+
 static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
     k->type_build_depth++;
     t->kind = SK_STRUCT;
@@ -6269,6 +6331,7 @@ static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
     t->calc = 0;
     t->invalid_layout = 0;
     t->is_packed = (decl->flags & F_PACKED) != 0;
+    t->is_overlap = 0;
     t->requested_align = 0;
     t->building = 1;
     t->nfields = decl->nkids;
@@ -6279,6 +6342,10 @@ static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
         t->fields[i].t = build_type_ctx(k, decl->kids[i]->a, 2);
         t->fields[i].default_value = decl->kids[i]->c;
         t->fields[i].requested_align = checked_layout_align(k, decl->kids[i]->b, "field");
+        if (decl->kids[i]->d) {
+            t->fields[i].has_offset = 1;
+            t->fields[i].requested_offset = checked_layout_offset(k, decl->kids[i]->d);
+        }
         if (t->fields[i].requested_align && !t->is_packed &&
             layout(t->fields[i].t) &&
             t->fields[i].requested_align < t->fields[i].t->align) {
@@ -6330,7 +6397,7 @@ static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
         t->invalid_layout = 1;
         t->size = t->align = 1; // poison recovery after the required diagnostic
         t->calc = 0;
-    }
+    } else check_struct_offsets(k, decl, t);
     k->type_build_depth--;
     return t;
 }

@@ -25,6 +25,8 @@ typedef struct {
     SType* t;
     Node* default_value; // struct-literal default; never storage initialization
     uint32_t requested_align; // zero means contextual default
+    uint32_t requested_offset; // @offset(N), meaningful when has_offset
+    uint8_t has_offset;
     uint32_t effective_align;
     uint32_t offset;
     uint8_t bit_offset, bit_width, bit_signed, bit_anonymous;
@@ -38,6 +40,7 @@ struct SType {
     uint8_t     building; // aggregate fields are currently being constructed
     uint8_t     invalid_layout;
     uint8_t     is_packed;
+    uint8_t     is_overlap; // SK_STRUCT: some fields share bytes (@offset)
     uint8_t     is_c_abi; // SK_FUNC: explicitly extern "c" callable shape
     uint32_t    size, align;
     uint32_t    requested_align; // explicit aggregate @align, zero when absent

@@ -54,17 +54,20 @@ next, in this order.
 
 ### Pointer-level machine operations
 
-- **Typed views over byte storage** [additive] — consider an explicit general
-  operation that aliases an existing byte slice as a read-only or writable
-  pointer to `T`, with size, alignment, permission, representation, and lifetime
-  rules stated directly. This is a future convenience for native binary layouts,
-  memory-mapped data, devices, and foreign buffers, not a prerequisite for such
-  work: bounded byte-wise parsing remains the baseline and is sufficient for the
-  BPF packet-sniffer proof of concept.
+- **Checked typed views over byte slices** [additive] — `*U(pointer)`
+  reinterprets a pointer between plain-bits types, but nothing takes such a view
+  from a byte slice with its length checked against `sizeof(U)`; slices have no
+  pointer extraction. A convenience for native binary layouts, memory-mapped
+  data, and foreign buffers, not a prerequisite: bounded byte-wise parsing and
+  pointer reinterpretation already cover them.
 - **Over-16-byte alignment for raw `mem.alloc`** [additive].
 
 ### C boundary completion
 
+- **By-value C ABI for explicit layouts** [additive] — packed, explicitly
+  aligned, and overlapping (`@offset`) structs cross C only behind pointers until
+  their arm64 by-value classification is verified; a C union passed by value,
+  such as Vulkan's `VkClearValue`, is the first customer.
 - **C enums at the boundary** [additive].
 - **C global variables in extern blocks** [unspecified] — data imports such as
   `stdout` and errno-style globals are unaddressed.
@@ -305,6 +308,14 @@ Each item requires an owner decision and should wait for a motivating use case.
 - **`bf16`** [new] — a 16-bit float retaining the broad exponent range of
   `f32`, useful for ML training-style workloads and straightforward conversion
   to and from `f32`.
+
+- **All-at-zero shorthand for overlapping structs** [additive] — a C union
+  needs one `@offset(0)` line per member (about 80 lines for `SDL_Event`); a
+  struct-level attribute could imply it once a second binding shows the cost.
+- **Calling a function-valued field** [unspecified] — `hook.call(x)` resolves as
+  a method call and fails, so a C callback field is copied to a local before
+  calling; decide whether a field holding a function value is callable when no
+  method has that name.
 
 - **Deferred cleanup-result handling** [unspecified] — `defer` currently
   executes its call at function exit and discards every returned value,

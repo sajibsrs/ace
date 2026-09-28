@@ -1,0 +1,64 @@
+/* expect-exit: 0 */
+
+Key: struct { kind: u32, code: i32, down: bool, repeat: bool }
+Motion: struct { kind: u32, x: f32, y: f32 }
+
+Event: struct {
+    @offset(0)
+    kind: u32,
+
+    @offset(0)
+    key: Key,
+
+    @offset(0)
+    motion: Motion,
+
+    @offset(0)
+    padding: [32]u8,
+}
+
+Word: struct {
+    @offset(0)
+    value: u32,
+
+    @offset(0)
+    bytes: [4]u8,
+}
+
+fill(event: mut *Event) {
+    event.key.kind = 3
+    event.key.code = 42
+    event.key.down = true
+}
+
+describe(event: Event): i32 {
+    if event.kind == 3 { return event.key.code }
+    return -1
+}
+
+main(): int {
+    if sizeof(Event) != 32 || alignof(Event) != 4 { return 1 }
+    if offsetof(Event, motion) != 0 || offsetof(Event, motion.y) != 8 { return 2 }
+
+    event: Event
+    fill(mut &event)
+    if event.kind != 3 || !event.key.down { return 3 }
+    if describe(event) != 42 { return 4 }
+
+    event.motion.kind = 7
+    event.motion.x = 1.5
+    if event.kind != 7 || bitcast(f32, u32(event.key.code)) != 1.5 { return 5 }
+
+    word: Word
+    word.value = 0x04030201
+    if word.bytes[0] != 1 || word.bytes[3] != 4 { return 6 }
+    word.bytes[1] = 9
+    if word.value != 0x04030901 { return 7 }
+
+    copy: Word = word
+    word.value = 0
+    if copy.value != 0x04030901 { return 8 }
+    zero: Word
+    zero.value = 0
+    return 0
+}

@@ -73,6 +73,35 @@ when their complete shape is otherwise C-compatible and matches the external
 declaration. Passing or returning such a struct directly is currently rejected
 until its target-specific by-value ABI has been separately verified.
 
+`@offset(N)` places a field at exactly byte `N`, which must be a multiple of the
+field's alignment; the fields after it follow it as usual. Fields placed so
+that they share bytes make an overlapping struct, which is how a C union is
+written:
+
+```ace
+Event: struct {
+    @offset(0)
+    kind: u32,
+
+    @offset(0)
+    key: KeyboardEvent,
+
+    @offset(0)
+    padding: [128]u8,
+}
+
+event: Event
+if poll(mut &event) && event.kind == KEY_DOWN {
+    handle(event.key.code)
+}
+```
+
+Every field of an overlapping struct must be plain bits (below), and none may
+have a default. Reading a field reads its bytes; writing one writes only its
+bytes. There is no literal and no `==`. Any member write counts as
+initializing the whole struct. Like other explicit layouts, it crosses a C
+boundary only behind a pointer. On a field, `@offset` comes before `@align`.
+
 ## Untyped storage
 
 Memory has no dynamic type. Reading storage as `T` reads its `sizeof(T)` bytes
