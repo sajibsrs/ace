@@ -81,10 +81,11 @@ history.
   root and its other implementation files under `std/<module>/inc/`. This is
   organizational only; `mod.ace` remains the sole external import surface
   regardless of where its implementation files sit.
-- A constructor carries the `_new` suffix exactly when a matching `_wipe`
-  releases what it returns (`parser_new`/`parser_wipe`). A constructor with
-  nothing to release takes the bare name. A type-owned pair instead uses
-  `Type::new(...)`/`mut Type.wipe()` (associated function and method).
+- A constructor takes one of two names. `Type::new(...)` (free form
+  `x_new`) when the value owns heap memory that must be released, whoever
+  allocates it (`mem` or a C library); a matching `mut Type.wipe()`
+  (`x_wipe`) releases it. `Type::init(...)` (`x_init`) when there is nothing
+  to release, as for a value over caller storage.
 - A property's accessors are one overloaded name, told apart by signature:
   `color()` reads it and `color(value)` sets it, never `get_color`/
   `set_color`. `get`/`set` remain ordinary method names for keyed access

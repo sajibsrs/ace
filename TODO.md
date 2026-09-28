@@ -306,14 +306,12 @@ foundations.
   directories, Windows the `.dll` beside the `.exe` or on `PATH`; Apple
   records the library's own install name); a `framework` counterpart; and a
   command-line override (`ace pkg build -L`) that needs no manifest edit.
-- **Constructor naming convention** [new] — replace the `AGENTS.md`
-  constructor rule with two shapes: `T::new`/`mut t.wipe()` (`x_new`/`x_wipe`)
-  when the value owns heap memory that must be released, whoever allocates it
-  (`mem` or a C library); `T::init` (`x_init`) when there is nothing to
-  release. Then rename the constructors that break it: `pkg/regex`'s
-  `Syntax::parse` and `Program::compile` (heap, with `wipe`) to `::new`, and
-  `Output::new` (wraps caller storage) and `pkg/http`'s `Url::parse` (views
-  into its input) to `::init`.
+- **Constructors outside the naming convention** [new] — the `AGENTS.md`
+  constructor rule (`::new`/`wipe` for owned heap memory, `::init` otherwise)
+  is broken by `pkg/regex`'s `Syntax::parse` and `Program::compile` (heap,
+  with `wipe`; become `::new`), and by `Output::new` (wraps caller storage)
+  and `pkg/http`'s `Url::parse` (views into its input), which become
+  `::init`.
 
 ## 6. Language questions and conveniences
 
