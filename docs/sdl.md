@@ -3,8 +3,9 @@
 [Documentation](README.md)
 
 `sdl` is a minimal binding to the host's [SDL3](https://libsdl.org): a
-window, a renderer with a draw color, and the keyboard and quit events of a
-classic `SDL_PollEvent` loop. It covers only what its demo needs and grows
+window, a renderer with a draw color, colored triangle geometry, debug text,
+and vsync, and the keyboard and quit events of a classic `SDL_PollEvent`
+loop. It covers only what its demo needs and grows
 with its users.
 
 `sdl` is a standalone package at [`pkg/sdl`](../pkg/sdl), not a `std`
@@ -23,7 +24,8 @@ falls back to the linker's own search. An app whose SDL3 lives somewhere
 else gives the same record with its own `path` in its `ace.pkg`; the app's
 path overrides the hint, and a missing file there is a manifest error.
 
-See [`demo/sdl3-window`](../demo/sdl3-window) for a consuming example.
+See [`demo/sdl3-window`](../demo/sdl3-window) and
+[`demo/sdl3-rgb-cube`](../demo/sdl3-rgb-cube) for consuming examples.
 
 ## Window and renderer
 
@@ -50,6 +52,52 @@ a failed handle is harmless. The window title is passed to SDL as a C string,
 so it must end in `"\0"`. `Renderer.color(): (Color, bool)` reads the draw
 color back; `color(c)` sets it. `sdl.error()` returns SDL's last error message
 as a string view into SDL's own buffer, valid until the next SDL call.
+
+## Geometry
+
+`Renderer.geometry(vertices, indices)` draws untextured triangles: every
+three entries of `indices` name one triangle's corners in `vertices`, and SDL
+interpolates the corners' colors across it. A `Vertex` holds a `position`
+(`FPoint`, in render pixels), a `color` (`FColor`, channels from 0 to 1), and
+a `tex_coord`, which is unused without a texture. An empty `vertices` or
+`indices` draws nothing.
+
+```ace
+origin: sdl.FPoint = sdl.FPoint { x = 0.0, y = 0.0 }
+red: sdl.FColor = sdl.FColor { r = 1.0, g = 0.0, b = 0.0, a = 1.0 }
+triangle: [3]sdl.Vertex = [
+    sdl.Vertex { position = sdl.FPoint { x = 320.0, y = 80.0 }, color = red, tex_coord = origin },
+    sdl.Vertex { position = sdl.FPoint { x = 80.0, y = 400.0 }, color = red, tex_coord = origin },
+    sdl.Vertex { position = sdl.FPoint { x = 560.0, y = 400.0 }, color = red, tex_coord = origin },
+]
+corners: [3]i32 = [0, 1, 2]
+renderer.geometry(triangle[..], corners[..])
+```
+
+`Renderer.size(): (i32, i32, bool)` reports the current output size in render
+pixels, which follows window resizes. `sdl.ticks()` returns the milliseconds
+since `sdl.init`, for animation, and `sdl.ticks_ns()` the nanoseconds, for
+timing work.
+
+## Presentation and text
+
+`Renderer.vsync(1)` makes `present` wait for the display's next refresh, so
+frames arrive evenly and the loop needs no delay of its own; `2` waits for
+every other refresh, `sdl.VSYNC_ADAPTIVE` tears only when a frame is late, and
+`sdl.VSYNC_DISABLED` never waits. It returns `false` where the renderer cannot
+honor the interval.
+
+`Renderer.debug_text(x, y, text)` draws one line in SDL's built-in 8x8 font
+(`sdl.DEBUG_TEXT_SIZE`) with the current draw color; like a window title, the
+text must end in `"\0"`. `Renderer.scale(x, y)` multiplies every later
+drawing coordinate, which enlarges that font on high-density displays:
+
+```ace
+renderer.scale(2.0, 2.0)
+renderer.color(sdl.Color { r = 224, g = 224, b = 224, a = 255 })
+renderer.debug_text(6.0, 6.0, "vsync on\0")
+renderer.scale(1.0, 1.0)
+```
 
 ## Events
 

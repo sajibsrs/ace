@@ -1,5 +1,6 @@
-/* sdl — a minimal SDL3 binding: window, renderer, draw color, and the
- * keyboard and quit events of a classic SDL_PollEvent loop.
+/* sdl — a minimal SDL3 binding: window, renderer, draw color, colored
+ * triangle geometry, debug text, vsync, and the keyboard and quit events of a
+ * classic SDL_PollEvent loop.
  *
  * Layouts, values, and signatures mirror the SDL 3.4 headers; the
  * static_asserts pin them. The manifest links SDL3 with Homebrew's
@@ -16,15 +17,33 @@ pub EVENT_KEY_DOWN: const u32 = 0x300
 
 pub KEY_ESCAPE: const u32 = 0x1b
 
+// Renderer.vsync intervals: 1 presents on every refresh, 0 never waits.
+pub VSYNC_DISABLED: const i32 = 0
+pub VSYNC_ADAPTIVE: const i32 = -1
+
+// Debug text glyphs are this many render units square.
+pub DEBUG_TEXT_SIZE: const f32 = 8.0
+
 // Opaque C objects, only ever seen behind a pointer.
 SDL_Window: struct {}
 SDL_Renderer: struct {}
+SDL_Texture: struct {}
 
 // Handles own one C object each; a null handle means creation failed.
 pub Window: struct { handle: *SDL_Window }
 pub Renderer: struct { handle: *SDL_Renderer }
 
 pub Color: struct { r: u8, g: u8, b: u8, a: u8 }
+
+// Geometry: a position in render pixels, a color with 0..1 channels, and a
+// texture coordinate (unused without a texture).
+pub FPoint: struct { x: f32, y: f32 }
+pub FColor: struct { r: f32, g: f32, b: f32, a: f32 }
+pub Vertex: struct {
+    position: FPoint,
+    color: FColor,
+    tex_coord: FPoint,
+}
 
 pub QuitEvent: struct {
     kind: u32,
@@ -67,6 +86,7 @@ static_assert(offsetof(KeyboardEvent, key) == 28)
 static_assert(offsetof(KeyboardEvent, mod) == 32)
 static_assert(offsetof(KeyboardEvent, down) == 36)
 static_assert(sizeof(Event) == 128 && alignof(Event) == 8)
+static_assert(sizeof(Vertex) == 32 && offsetof(Vertex, color) == 8)
 
 extern "c" {
     c_init(flags: u32): bool = "SDL_Init"
@@ -80,6 +100,13 @@ extern "c" {
     c_get_render_draw_color(renderer: *SDL_Renderer, r: mut *u8, g: mut *u8, b: mut *u8, a: mut *u8): bool = "SDL_GetRenderDrawColor"
     c_render_clear(renderer: *SDL_Renderer): bool = "SDL_RenderClear"
     c_render_present(renderer: *SDL_Renderer): bool = "SDL_RenderPresent"
+    c_get_current_render_output_size(renderer: *SDL_Renderer, w: mut *i32, h: mut *i32): bool = "SDL_GetCurrentRenderOutputSize"
+    c_render_geometry(renderer: *SDL_Renderer, texture: *SDL_Texture, vertices: *Vertex, num_vertices: i32, indices: *i32, num_indices: i32): bool = "SDL_RenderGeometry"
+    c_get_ticks(): u64 = "SDL_GetTicks"
+    c_get_ticks_ns(): u64 = "SDL_GetTicksNS"
+    c_set_render_vsync(renderer: *SDL_Renderer, vsync: i32): bool = "SDL_SetRenderVSync"
+    c_set_render_scale(renderer: *SDL_Renderer, x: f32, y: f32): bool = "SDL_SetRenderScale"
+    c_render_debug_text(renderer: *SDL_Renderer, x: f32, y: f32, text: *u8): bool = "SDL_RenderDebugText"
     c_poll_event(event: mut *Event): bool = "SDL_PollEvent"
     c_delay(ms: u32) = "SDL_Delay"
 }
@@ -88,6 +115,12 @@ pub init(flags: u32): bool { return c_init(flags) }
 pub quit() { c_quit() }
 pub poll_event(event: mut *Event): bool { return c_poll_event(event) }
 pub delay(ms: u32) { c_delay(ms) }
+
+// Milliseconds since SDL initialization.
+pub ticks(): u64 { return c_get_ticks() }
+
+// Nanoseconds since SDL initialization.
+pub ticks_ns(): u64 { return c_get_ticks_ns() }
 
 // SDL returns NUL-terminated text; view it as a string without libc.
 pub error(): string {
@@ -131,3 +164,37 @@ pub Renderer.color(): (Color, bool) {
 
 pub Renderer.clear(): bool { return c_render_clear(self.handle) }
 pub Renderer.present(): bool { return c_render_present(self.handle) }
+
+// The current output size in render pixels, which follows window resizes.
+pub Renderer.size(): (i32, i32, bool) {
+    w: i32 = 0
+    h: i32 = 0
+    ok: bool = c_get_current_render_output_size(self.handle, mut &w, mut &h)
+    return w, h, ok
+}
+
+// Untextured triangles: each three indices name one triangle's vertices,
+// whose colors SDL interpolates across it.
+pub Renderer.geometry(vertices: []Vertex, indices: []i32): bool {
+    if vertices.len == 0 || indices.len == 0 { return true }
+    return c_render_geometry(self.handle, null, &vertices[0], i32(vertices.len),
+                             &indices[0], i32(indices.len))
+}
+
+// Present in step with the display: 1 waits for every refresh, 2 for every
+// other one, VSYNC_ADAPTIVE tears only when late, and VSYNC_DISABLED never
+// waits.
+pub Renderer.vsync(interval: i32): bool {
+    return c_set_render_vsync(self.handle, interval)
+}
+
+// Multiply every later drawing coordinate; 1, 1 is the identity.
+pub Renderer.scale(x: f32, y: f32): bool {
+    return c_set_render_scale(self.handle, x, y)
+}
+
+// Draw text in SDL's built-in 8x8 font with the draw color. The text must
+// end in "\0"; SDL reads it as a C string.
+pub Renderer.debug_text(x: f32, y: f32, text: string): bool {
+    return c_render_debug_text(self.handle, x, y, &text[0])
+}

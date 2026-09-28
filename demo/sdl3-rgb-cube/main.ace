@@ -1,0 +1,277 @@
+/* A spinning cube with pkg/sdl: each face is one solid color, and the cube
+ * turns about two axes under a perspective projection. Frames present in step
+ * with the display, and the top-left corner shows frame statistics.
+ *
+ * Build and run from this directory (Homebrew SDL3 on Apple arm64):
+ *   ace pkg run
+ *
+ * Closing the window or pressing Escape quits.
+ */
+
+import fmt
+import math
+import sdl
+import str
+
+// Corner i sits at x = bit 0, y = bit 1, z = bit 2 of i, each 0 or 1.
+// A face is the four corners that share one bit, in order around it.
+FACES: const [24]i32 = [
+    0, 2, 6, 4,  1, 3, 7, 5, // x = 0, x = 1
+    0, 1, 5, 4,  2, 3, 7, 6, // y = 0, y = 1
+    0, 1, 3, 2,  4, 5, 7, 6, // z = 0, z = 1
+]
+
+// One 0xRRGGBB per face, in FACES order, from the Material Design 500
+// shades: the four sides around the y axis are red, green, blue, and
+// yellow; the bottom and top are cyan and purple.
+FACE_COLORS: const [6]u32 = [
+    0xF44336, 0x4CAF50, // x = 0 red, x = 1 green
+    0x00BCD4, 0x9C27B0, // y = 0 cyan, y = 1 purple
+    0x2196F3, 0xFFEB3B, // z = 0 blue, z = 1 yellow
+]
+
+// The camera sits DISTANCE units from the cube's center, looking at it.
+DISTANCE: const f32 = 4.0
+
+// Statistics average over this many milliseconds between refreshes.
+STATS_PERIOD: const u64 = 500
+
+// Debug text draws at this scale, so the 8x8 font stays readable.
+TEXT_SCALE: const f32 = 2.0
+
+// One line of overlay text, built in place and ended in "\0" for SDL.
+Line: struct {
+    bytes: [64]u8,
+    len: usize,
+}
+
+Line::init(): Line {
+    return Line { bytes = [0 : 64], len = 0 }
+}
+
+// Text that does not fit is dropped; the overlay is only informational.
+mut Line.add(text: string) {
+    if str.copy(text, mut self.bytes[self.len..]) { self.len += text.len }
+}
+
+mut Line.add(value: int) {
+    n: usize, ok: bool = str.format(mut self.bytes[self.len..], value)
+    if ok { self.len += n }
+}
+
+// A value in hundredths, as whole.fraction with two fraction digits.
+mut Line.add_hundredths(value: int) {
+    mut self.add(value / 100)
+    mut self.add(".")
+    if value % 100 < 10 { mut self.add("0") }
+    mut self.add(value % 100)
+}
+
+// The finished text, "\0"-ended for Renderer.debug_text.
+mut Line.text(): string {
+    mut self.add("\0")
+    return string(self.bytes[..self.len])
+}
+
+fail(context: string): int {
+    fmt.printf("%s: %s\n", context, sdl.error())
+    return 1
+}
+
+// One 8-bit channel of an 0xRRGGBB color, scaled to 0..1.
+channel(rgb: u32, shift: u32): f32 {
+    return f32((rgb >> shift) & 0xFF) / 255.0
+}
+
+// One coordinate of corner i, centered: -1 or 1.
+axis(i: i32, bit: i32): f32 {
+    if ((i >> bit) & 1) == 1 { return 1.0 }
+    return -1.0
+}
+
+main(): int {
+    if !sdl.init(sdl.INIT_VIDEO) { return fail("SDL_Init") }
+    defer sdl.quit()
+
+    window: sdl.Window = sdl.Window::new("Ace + SDL cube\0", 640, 640, sdl.WINDOW_RESIZABLE)
+    defer mut window.wipe()
+    if !window.ok() { return fail("SDL_CreateWindow") }
+
+    renderer: sdl.Renderer = sdl.Renderer::new(window)
+    defer mut renderer.wipe()
+    if !renderer.ok() { return fail("SDL_CreateRenderer") }
+    vsync: bool = renderer.vsync(1)
+
+    // Corners rotated into camera space and their screen positions; each
+    // visible face then gets four vertices of its own, in its own color.
+    xs: [8]f32 = [0.0 : 8]
+    ys: [8]f32 = [0.0 : 8]
+    zs: [8]f32 = [0.0 : 8]
+    screen: [8]sdl.FPoint = [sdl.FPoint { x = 0.0, y = 0.0 } : 8]
+    origin: sdl.FPoint = sdl.FPoint { x = 0.0, y = 0.0 }
+    blank: sdl.Vertex = sdl.Vertex {
+        position = origin,
+        color = sdl.FColor { r = 0.0, g = 0.0, b = 0.0, a = 1.0 },
+        tex_coord = origin,
+    }
+    vertices: [24]sdl.Vertex = [blank : 24]
+    indices: [36]i32 = [0 : 36]
+
+    // Frames and their time since the last statistics refresh, and the
+    // figures shown until the next one.
+    period_start: u64 = sdl.ticks()
+    period_frames: u64 = 0
+    fps: int = 0
+    frame_hundredths: int = 0
+    // CPU time spent building frames, excluding the wait in present.
+    period_draw_ns: u64 = 0
+    period_drawn: u64 = 0
+    draw_us: int = 0
+
+    running: bool = true
+    for running {
+        work_start: u64 = sdl.ticks_ns()
+        event: sdl.Event
+        for sdl.poll_event(mut &event) {
+            if event.kind == sdl.EVENT_QUIT || event.kind == sdl.EVENT_WINDOW_CLOSE_REQUESTED {
+                running = false
+            } else if event.kind == sdl.EVENT_KEY_DOWN && event.keyboard.key == sdl.KEY_ESCAPE {
+                running = false
+            }
+        }
+
+        w: i32, h: i32, sized: bool = renderer.size()
+        if !sized { return fail("SDL_GetCurrentRenderOutputSize") }
+        cx: f32 = f32(w) * 0.5
+        cy: f32 = f32(h) * 0.5
+        scale: f32 = cx
+        if cy < scale { scale = cy }
+        scale *= 1.1
+
+        seconds: f32 = f32(sdl.ticks()) / 1000.0
+        sa: f32 = math.sin(seconds * 0.9)
+        ca: f32 = math.cos(seconds * 0.9)
+        sb: f32 = math.sin(seconds * 0.6)
+        cb: f32 = math.cos(seconds * 0.6)
+
+        for i: i32 in 0 .. 8 {
+            x: f32 = axis(i, 0)
+            y: f32 = axis(i, 1)
+            z: f32 = axis(i, 2)
+            // about the y axis, then the x axis, then back from the camera
+            rx: f32 = x * ca + z * sa
+            rz: f32 = z * ca - x * sa
+            ry: f32 = y * cb - rz * sb
+            rz = y * sb + rz * cb + DISTANCE
+            xs[i] = rx
+            ys[i] = ry
+            zs[i] = rz
+            screen[i] = sdl.FPoint { x = cx + rx * scale / rz, y = cy - ry * scale / rz }
+        }
+
+        // A face is visible when its outward normal points back toward the
+        // camera at the origin; a convex cube needs no depth sorting.
+        nv: usize = 0
+        ni: usize = 0
+        for f: usize in 0 .. 6 {
+            a: i32 = FACES[f * 4]
+            c: i32 = FACES[f * 4 + 2]
+            // the outward normal runs from the cube's center to the face's
+            mx: f32 = (xs[a] + xs[c]) * 0.5
+            my: f32 = (ys[a] + ys[c]) * 0.5
+            mz: f32 = (zs[a] + zs[c]) * 0.5
+            if mx * mx + my * my + (mz - DISTANCE) * mz >= 0.0 { continue }
+
+            rgb: u32 = FACE_COLORS[f]
+            color: sdl.FColor = sdl.FColor {
+                r = channel(rgb, 16), g = channel(rgb, 8), b = channel(rgb, 0), a = 1.0,
+            }
+            for k: usize in 0 .. 4 {
+                vertices[nv + k] = sdl.Vertex {
+                    position = screen[FACES[f * 4 + k]], color = color, tex_coord = origin,
+                }
+            }
+            base: i32 = i32(nv)
+            indices[ni] = base
+            indices[ni + 1] = base + 1
+            indices[ni + 2] = base + 2
+            indices[ni + 3] = base
+            indices[ni + 4] = base + 2
+            indices[ni + 5] = base + 3
+            nv += 4
+            ni += 6
+        }
+
+        renderer.color(sdl.Color { r = 16, g = 16, b = 24, a = 255 })
+        renderer.clear()
+        renderer.geometry(vertices[..nv], indices[..ni])
+
+        period_frames += 1
+        now: u64 = sdl.ticks()
+        if now - period_start >= STATS_PERIOD {
+            elapsed: u64 = now - period_start
+            fps = int(period_frames * 1000 / elapsed)
+            frame_hundredths = int(elapsed * 100 / period_frames)
+            if period_drawn > 0 { draw_us = int(period_draw_ns / period_drawn / 1000) }
+            period_start = now
+            period_frames = 0
+            period_draw_ns = 0
+            period_drawn = 0
+        }
+
+        renderer.scale(TEXT_SCALE, TEXT_SCALE)
+        renderer.color(sdl.Color { r = 224, g = 224, b = 224, a = 255 })
+        step: f32 = sdl.DEBUG_TEXT_SIZE + 4.0
+        y: f32 = 6.0
+
+        fps_line: Line = Line::init()
+        mut fps_line.add("FPS ")
+        mut fps_line.add(fps)
+        renderer.debug_text(6.0, y, mut fps_line.text())
+        y += step
+
+        frame_line: Line = Line::init()
+        mut frame_line.add("frame ")
+        mut frame_line.add_hundredths(frame_hundredths)
+        mut frame_line.add(" ms")
+        renderer.debug_text(6.0, y, mut frame_line.text())
+        y += step
+
+        draw_line: Line = Line::init()
+        mut draw_line.add("draw ")
+        mut draw_line.add(draw_us)
+        mut draw_line.add(" us (CPU)")
+        renderer.debug_text(6.0, y, mut draw_line.text())
+        y += step
+
+        faces_line: Line = Line::init()
+        mut faces_line.add("faces ")
+        mut faces_line.add(int(nv / 4))
+        mut faces_line.add(", triangles ")
+        mut faces_line.add(int(ni / 3))
+        renderer.debug_text(6.0, y, mut faces_line.text())
+        y += step
+
+        size_line: Line = Line::init()
+        mut size_line.add("output ")
+        mut size_line.add(int(w))
+        mut size_line.add(" x ")
+        mut size_line.add(int(h))
+        renderer.debug_text(6.0, y, mut size_line.text())
+        y += step
+
+        if vsync {
+            renderer.debug_text(6.0, y, "vsync on\0")
+        } else {
+            renderer.debug_text(6.0, y, "vsync off\0")
+        }
+        renderer.scale(1.0, 1.0)
+
+        period_draw_ns += sdl.ticks_ns() - work_start
+        period_drawn += 1
+        renderer.present()
+        // Without vsync, the delay keeps the loop from spinning flat out.
+        if !vsync { sdl.delay(16) }
+    }
+    return 0
+}

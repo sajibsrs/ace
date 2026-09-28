@@ -2719,6 +2719,19 @@ current normative rules, and Git preserves patch-level detail.
   `SDL_PollEvent` headlessly and is skipped where that library is missing;
   `demo/sdl3-window` opens a window and renderer and runs a classic
   `SDL_PollEvent` loop, quitting on window close or Escape.
+- Extended `pkg/sdl` with untextured colored triangles:
+  `Renderer.geometry(vertices, indices)` over `SDL_RenderGeometry` with
+  `Vertex`/`FPoint`/`FColor` mirroring SDL's layout, `Renderer.size()` over
+  `SDL_GetCurrentRenderOutputSize`, `ticks()`/`ticks_ns()` over
+  `SDL_GetTicks`/`SDL_GetTicksNS`,
+  `Renderer.vsync`, `Renderer.scale`, and `Renderer.debug_text` over SDL's
+  built-in 8x8 font.
+  `demo/sdl3-rgb-cube` spins a cube with one solid color per face, culling
+  back faces against the camera and drawing each visible face as two
+  triangles over four vertices of its own. It presents under vsync and
+  overlays FPS, frame time, CPU draw time excluding the wait in `present`,
+  visible faces and triangles, and output size,
+  formatted with `str.format` into fixed line buffers.
 - Added the standalone package `pkg/regex` (`type: lib`), a byte-oriented
   regular-expression engine. `Syntax::parse(pattern): (Syntax,
   Error, usize)` builds a syntax tree or returns a `ParseErr` with the byte
