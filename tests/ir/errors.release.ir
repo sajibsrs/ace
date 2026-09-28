@@ -162,106 +162,450 @@ main(): i64 {
 b0:
     %0 = const i64 0
     %1 = call u64 make(%0)
-    %2 = call i64 lens(%1)
-    %3 = const i64 0
-    %4 = ne bool %2, %3
-    br %4, b1, b4
-b1: ; preds b0, b4, b3
-    %6 = const i64 1
-    ret %6
-b2: ; preds b3
-    %8 = const i64 3
-    %9 = call u64 make(%8)
-    %10 = call i64 lens(%9)
-    %11 = const i64 700
-    %12 = ne bool %10, %11
-    br %12, b5, b8
-b3: ; preds b4
-    %14 = const i64 2
-    %15 = call u64 make(%14)
-    %16 = call i64 lens(%15)
-    %17 = const i64 717
-    %18 = ne bool %16, %17
-    br %18, b1, b2
-b4: ; preds b0
-    %20 = const i64 1
-    %21 = call u64 make(%20)
-    %22 = call i64 lens(%21)
-    %23 = const i64 712
-    %24 = ne bool %22, %23
-    br %24, b1, b3
-b5: ; preds b2, b8, b7
-    %26 = const i64 2
-    ret %26
-b6: ; preds b7
-    %28 = const i64 1
-    %29 = call u64 make(%28)
-    %30 = const u64 1
-    %31 = call bool named(%29, %30)
-    br %31, b11, b9
-b7: ; preds b8
-    %33 = const i64 5
-    %34 = call u64 make(%33)
-    %35 = call i64 lens(%34)
-    %36 = const i64 400
-    %37 = ne bool %35, %36
-    br %37, b5, b6
-b8: ; preds b2
-    %39 = const i64 4
-    %40 = call u64 make(%39)
-    %41 = call i64 lens(%40)
-    %42 = const i64 718
-    %43 = ne bool %41, %42
-    br %43, b5, b7
-b9: ; preds b6, b11
-    %45 = const i64 3
-    ret %45
-b10: ; preds b11
-    %47 = const i64 4
-    %48 = call u64 make(%47)
-    %49 = const u64 32
-    %50 = shr u64 %48, %49
-    %51 = call i64 kind(%50)
-    %52 = const i64 2
-    %53 = ne bool %51, %52
-    br %53, b12, b15
-b11: ; preds b6
-    %55 = const i64 4
-    %56 = call u64 make(%55)
-    %57 = const u64 1
-    %58 = call bool named(%56, %57)
-    br %58, b9, b10
-b12: ; preds b10, b15, b14
-    %60 = const i64 4
-    ret %60
-b13: ; preds b14
-    %62 = const i64 5
-    %63 = str ptr "big"
-    %64 = const u64 3
-    %65 = call i64 guard(%62, %63, %64)
-    %66 = const i64 5
-    %67 = ne bool %65, %66
-    br %67, b16, b17
-b14: ; preds b15
-    %69 = const u64 4
-    %70 = call i64 kind(%69)
-    %71 = const i64 0
-    %72 = ne bool %70, %71
-    br %72, b12, b13
-b15: ; preds b10
-    %74 = const i64 1
-    %75 = call u64 make(%74)
-    %76 = const u64 32
-    %77 = shr u64 %75, %76
-    %78 = call i64 kind(%77)
-    %79 = const i64 1
-    %80 = ne bool %78, %79
-    br %80, b12, b14
-b16: ; preds b13
-    %82 = const i64 5
-    ret %82
-b17: ; preds b13
-    %84 = const i64 0
-    ret %84
+    %2 = const u64 0
+    %3 = const u64 32
+    %4 = shr u64 %1, %3
+    %5 = const u64 1
+    %6 = eq bool %4, %5
+    br %6, b6, b7
+b1: ; preds b11, b23, b35
+    %8 = const i64 1
+    ret %8
+b2: ; preds b35
+    %10 = const i64 3
+    %11 = call u64 make(%10)
+    %12 = const u64 0
+    %13 = const u64 32
+    %14 = shr u64 %11, %13
+    %15 = const u64 1
+    %16 = eq bool %14, %15
+    br %16, b46, b47
+b3: ; preds b23
+    %18 = const i64 2
+    %19 = call u64 make(%18)
+    %20 = const u64 0
+    %21 = const u64 32
+    %22 = shr u64 %19, %21
+    %23 = const u64 1
+    %24 = eq bool %22, %23
+    br %24, b30, b31
+b4: ; preds b11
+    %26 = const i64 1
+    %27 = call u64 make(%26)
+    %28 = const u64 0
+    %29 = const u64 32
+    %30 = shr u64 %27, %29
+    %31 = const u64 1
+    %32 = eq bool %30, %31
+    br %32, b18, b19
+b5: ; preds b6, b8, b10, b9
+    %34 = phi u64 [%42, b6], [%47, b8], [%52, b10], [%2, b9]
+    %35 = cast i64 %34
+    %36 = const i64 100
+    %37 = mul i64 %35, %36
+    %38 = const u64 0
+    %39 = const u64 4294967298
+    %40 = eq bool %1, %39
+    br %40, b12, b13
+b6: ; preds b0
+    %42 = const u64 7
+    jmp b5
+b7: ; preds b0
+    %44 = const u64 2
+    %45 = eq bool %4, %44
+    br %45, b8, b9
+b8: ; preds b7
+    %47 = const u64 7
+    jmp b5
+b9: ; preds b7
+    %49 = const u64 3
+    %50 = eq bool %4, %49
+    br %50, b10, b5
+b10: ; preds b9
+    %52 = const u64 4
+    jmp b5
+b11: ; preds b12, b14, b16, b15
+    %54 = phi u64 [%60, b12], [%65, b14], [%70, b16], [%38, b15]
+    %55 = cast i64 %54
+    %56 = add i64 %37, %55
+    %57 = const i64 0
+    %58 = ne bool %56, %57
+    br %58, b1, b4
+b12: ; preds b5
+    %60 = const u64 12
+    jmp b11
+b13: ; preds b5
+    %62 = const u64 4294967309
+    %63 = eq bool %1, %62
+    br %63, b14, b15
+b14: ; preds b13
+    %65 = const u64 17
+    jmp b11
+b15: ; preds b13
+    %67 = const u64 8589934597
+    %68 = eq bool %1, %67
+    br %68, b16, b11
+b16: ; preds b15
+    %70 = const u64 18
+    jmp b11
+b17: ; preds b18, b20, b22, b21
+    %72 = phi u64 [%80, b18], [%85, b20], [%90, b22], [%28, b21]
+    %73 = cast i64 %72
+    %74 = const i64 100
+    %75 = mul i64 %73, %74
+    %76 = const u64 0
+    %77 = const u64 4294967298
+    %78 = eq bool %27, %77
+    br %78, b24, b25
+b18: ; preds b4
+    %80 = const u64 7
+    jmp b17
+b19: ; preds b4
+    %82 = const u64 2
+    %83 = eq bool %30, %82
+    br %83, b20, b21
+b20: ; preds b19
+    %85 = const u64 7
+    jmp b17
+b21: ; preds b19
+    %87 = const u64 3
+    %88 = eq bool %30, %87
+    br %88, b22, b17
+b22: ; preds b21
+    %90 = const u64 4
+    jmp b17
+b23: ; preds b24, b26, b28, b27
+    %92 = phi u64 [%98, b24], [%103, b26], [%108, b28], [%76, b27]
+    %93 = cast i64 %92
+    %94 = add i64 %75, %93
+    %95 = const i64 712
+    %96 = ne bool %94, %95
+    br %96, b1, b3
+b24: ; preds b17
+    %98 = const u64 12
+    jmp b23
+b25: ; preds b17
+    %100 = const u64 4294967309
+    %101 = eq bool %27, %100
+    br %101, b26, b27
+b26: ; preds b25
+    %103 = const u64 17
+    jmp b23
+b27: ; preds b25
+    %105 = const u64 8589934597
+    %106 = eq bool %27, %105
+    br %106, b28, b23
+b28: ; preds b27
+    %108 = const u64 18
+    jmp b23
+b29: ; preds b30, b32, b34, b33
+    %110 = phi u64 [%118, b30], [%123, b32], [%128, b34], [%20, b33]
+    %111 = cast i64 %110
+    %112 = const i64 100
+    %113 = mul i64 %111, %112
+    %114 = const u64 0
+    %115 = const u64 4294967298
+    %116 = eq bool %19, %115
+    br %116, b36, b37
+b30: ; preds b3
+    %118 = const u64 7
+    jmp b29
+b31: ; preds b3
+    %120 = const u64 2
+    %121 = eq bool %22, %120
+    br %121, b32, b33
+b32: ; preds b31
+    %123 = const u64 7
+    jmp b29
+b33: ; preds b31
+    %125 = const u64 3
+    %126 = eq bool %22, %125
+    br %126, b34, b29
+b34: ; preds b33
+    %128 = const u64 4
+    jmp b29
+b35: ; preds b36, b38, b40, b39
+    %130 = phi u64 [%136, b36], [%141, b38], [%146, b40], [%114, b39]
+    %131 = cast i64 %130
+    %132 = add i64 %113, %131
+    %133 = const i64 717
+    %134 = ne bool %132, %133
+    br %134, b1, b2
+b36: ; preds b29
+    %136 = const u64 12
+    jmp b35
+b37: ; preds b29
+    %138 = const u64 4294967309
+    %139 = eq bool %19, %138
+    br %139, b38, b39
+b38: ; preds b37
+    %141 = const u64 17
+    jmp b35
+b39: ; preds b37
+    %143 = const u64 8589934597
+    %144 = eq bool %19, %143
+    br %144, b40, b35
+b40: ; preds b39
+    %146 = const u64 18
+    jmp b35
+b41: ; preds b51, b63, b75
+    %148 = const i64 2
+    ret %148
+b42: ; preds b75
+    %150 = const i64 1
+    %151 = call u64 make(%150)
+    %152 = const u64 1
+    %153 = const u64 32
+    %154 = shr u64 %151, %153
+    %155 = eq bool %154, %152
+    br %155, b83, b81
+b43: ; preds b63
+    %157 = const i64 5
+    %158 = call u64 make(%157)
+    %159 = const u64 0
+    %160 = const u64 32
+    %161 = shr u64 %158, %160
+    %162 = const u64 1
+    %163 = eq bool %161, %162
+    br %163, b70, b71
+b44: ; preds b51
+    %165 = const i64 4
+    %166 = call u64 make(%165)
+    %167 = const u64 0
+    %168 = const u64 32
+    %169 = shr u64 %166, %168
+    %170 = const u64 1
+    %171 = eq bool %169, %170
+    br %171, b58, b59
+b45: ; preds b46, b48, b50, b49
+    %173 = phi u64 [%181, b46], [%186, b48], [%191, b50], [%12, b49]
+    %174 = cast i64 %173
+    %175 = const i64 100
+    %176 = mul i64 %174, %175
+    %177 = const u64 0
+    %178 = const u64 4294967298
+    %179 = eq bool %11, %178
+    br %179, b52, b53
+b46: ; preds b2
+    %181 = const u64 7
+    jmp b45
+b47: ; preds b2
+    %183 = const u64 2
+    %184 = eq bool %14, %183
+    br %184, b48, b49
+b48: ; preds b47
+    %186 = const u64 7
+    jmp b45
+b49: ; preds b47
+    %188 = const u64 3
+    %189 = eq bool %14, %188
+    br %189, b50, b45
+b50: ; preds b49
+    %191 = const u64 4
+    jmp b45
+b51: ; preds b52, b54, b56, b55
+    %193 = phi u64 [%199, b52], [%204, b54], [%209, b56], [%177, b55]
+    %194 = cast i64 %193
+    %195 = add i64 %176, %194
+    %196 = const i64 700
+    %197 = ne bool %195, %196
+    br %197, b41, b44
+b52: ; preds b45
+    %199 = const u64 12
+    jmp b51
+b53: ; preds b45
+    %201 = const u64 4294967309
+    %202 = eq bool %11, %201
+    br %202, b54, b55
+b54: ; preds b53
+    %204 = const u64 17
+    jmp b51
+b55: ; preds b53
+    %206 = const u64 8589934597
+    %207 = eq bool %11, %206
+    br %207, b56, b51
+b56: ; preds b55
+    %209 = const u64 18
+    jmp b51
+b57: ; preds b58, b60, b62, b61
+    %211 = phi u64 [%219, b58], [%224, b60], [%229, b62], [%167, b61]
+    %212 = cast i64 %211
+    %213 = const i64 100
+    %214 = mul i64 %212, %213
+    %215 = const u64 0
+    %216 = const u64 4294967298
+    %217 = eq bool %166, %216
+    br %217, b64, b65
+b58: ; preds b44
+    %219 = const u64 7
+    jmp b57
+b59: ; preds b44
+    %221 = const u64 2
+    %222 = eq bool %169, %221
+    br %222, b60, b61
+b60: ; preds b59
+    %224 = const u64 7
+    jmp b57
+b61: ; preds b59
+    %226 = const u64 3
+    %227 = eq bool %169, %226
+    br %227, b62, b57
+b62: ; preds b61
+    %229 = const u64 4
+    jmp b57
+b63: ; preds b64, b66, b68, b67
+    %231 = phi u64 [%237, b64], [%242, b66], [%247, b68], [%215, b67]
+    %232 = cast i64 %231
+    %233 = add i64 %214, %232
+    %234 = const i64 718
+    %235 = ne bool %233, %234
+    br %235, b41, b43
+b64: ; preds b57
+    %237 = const u64 12
+    jmp b63
+b65: ; preds b57
+    %239 = const u64 4294967309
+    %240 = eq bool %166, %239
+    br %240, b66, b67
+b66: ; preds b65
+    %242 = const u64 17
+    jmp b63
+b67: ; preds b65
+    %244 = const u64 8589934597
+    %245 = eq bool %166, %244
+    br %245, b68, b63
+b68: ; preds b67
+    %247 = const u64 18
+    jmp b63
+b69: ; preds b70, b72, b74, b73
+    %249 = phi u64 [%257, b70], [%262, b72], [%267, b74], [%159, b73]
+    %250 = cast i64 %249
+    %251 = const i64 100
+    %252 = mul i64 %250, %251
+    %253 = const u64 0
+    %254 = const u64 4294967298
+    %255 = eq bool %158, %254
+    br %255, b76, b77
+b70: ; preds b43
+    %257 = const u64 7
+    jmp b69
+b71: ; preds b43
+    %259 = const u64 2
+    %260 = eq bool %161, %259
+    br %260, b72, b73
+b72: ; preds b71
+    %262 = const u64 7
+    jmp b69
+b73: ; preds b71
+    %264 = const u64 3
+    %265 = eq bool %161, %264
+    br %265, b74, b69
+b74: ; preds b73
+    %267 = const u64 4
+    jmp b69
+b75: ; preds b76, b78, b80, b79
+    %269 = phi u64 [%275, b76], [%280, b78], [%285, b80], [%253, b79]
+    %270 = cast i64 %269
+    %271 = add i64 %252, %270
+    %272 = const i64 400
+    %273 = ne bool %271, %272
+    br %273, b41, b42
+b76: ; preds b69
+    %275 = const u64 12
+    jmp b75
+b77: ; preds b69
+    %277 = const u64 4294967309
+    %278 = eq bool %158, %277
+    br %278, b78, b79
+b78: ; preds b77
+    %280 = const u64 17
+    jmp b75
+b79: ; preds b77
+    %282 = const u64 8589934597
+    %283 = eq bool %158, %282
+    br %283, b80, b75
+b80: ; preds b79
+    %285 = const u64 18
+    jmp b75
+b81: ; preds b42, b83
+    %287 = const i64 3
+    ret %287
+b82: ; preds b83
+    %289 = const i64 4
+    %290 = call u64 make(%289)
+    %291 = const u64 32
+    %292 = shr u64 %290, %291
+    %293 = const u64 1
+    %294 = eq bool %292, %293
+    br %294, b88, b89
+b83: ; preds b42
+    %296 = const i64 4
+    %297 = call u64 make(%296)
+    %298 = const u64 1
+    %299 = const u64 32
+    %300 = shr u64 %297, %299
+    %301 = eq bool %300, %298
+    br %301, b81, b82
+b84: ; preds b87, b92
+    %303 = const i64 4
+    ret %303
+b85: ; preds b92
+    %305 = const i64 5
+    %306 = str ptr "big"
+    %307 = const u64 3
+    %308 = call i64 guard(%305, %306, %307)
+    %309 = const i64 5
+    %310 = ne bool %308, %309
+    br %310, b97, b98
+b86: ; preds b87
+    %312 = const i64 1
+    %313 = call u64 make(%312)
+    %314 = const u64 32
+    %315 = shr u64 %313, %314
+    %316 = const u64 1
+    %317 = eq bool %315, %316
+    br %317, b93, b94
+b87: ; preds b88, b90, b91
+    %319 = phi i64 [%323, b88], [%328, b90], [%330, b91]
+    %320 = const i64 2
+    %321 = ne bool %319, %320
+    br %321, b84, b86
+b88: ; preds b82
+    %323 = const i64 1
+    jmp b87
+b89: ; preds b82
+    %325 = const u64 2
+    %326 = eq bool %292, %325
+    br %326, b90, b91
+b90: ; preds b89
+    %328 = const i64 2
+    jmp b87
+b91: ; preds b89
+    %330 = const i64 0
+    jmp b87
+b92: ; preds b93, b95, b96
+    %332 = phi i64 [%336, b93], [%341, b95], [%343, b96]
+    %333 = const i64 1
+    %334 = ne bool %332, %333
+    br %334, b84, b85
+b93: ; preds b86
+    %336 = const i64 1
+    jmp b92
+b94: ; preds b86
+    %338 = const u64 2
+    %339 = eq bool %315, %338
+    br %339, b95, b96
+b95: ; preds b94
+    %341 = const i64 2
+    jmp b92
+b96: ; preds b94
+    %343 = const i64 0
+    jmp b92
+b97: ; preds b85
+    %345 = const i64 5
+    ret %345
+b98: ; preds b85
+    %347 = const i64 0
+    ret %347
 }
 

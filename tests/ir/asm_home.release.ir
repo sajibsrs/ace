@@ -3,19 +3,22 @@ b0:
     %0 = slot ptr 8, 8
     %1 = param i64 0
     store [%0], %1
-    call bump(%0)
-    %4 = load i64 [%0]
-    asm "nop" x9=%4, clobbers 0x200
-    %6 = load i64 [%0]
-    %7 = const i64 1
-    %8 = eq bool %6, %7
-    br %8, b1, b2
+    %3 = load i64 [%0]
+    %4 = const i64 1
+    %5 = add i64 %3, %4
+    store [%0], %5
+    %7 = load i64 [%0]
+    asm "nop" x9=%7, clobbers 0x200
+    %9 = load i64 [%0]
+    %10 = const i64 1
+    %11 = eq bool %9, %10
+    br %11, b1, b2
 b1: ; preds b0
-    %10 = const i64 0
-    ret %10
+    %13 = const i64 0
+    ret %13
 b2: ; preds b0
-    %12 = const i64 1
-    ret %12
+    %15 = const i64 1
+    ret %15
 }
 
 bump(ptr): void {
@@ -33,22 +36,25 @@ b0:
     %0 = slot ptr 8, 8
     %1 = const i64 97
     store [%0], %1
-    call bump(%0)
-    %4 = const i64 4
-    %5 = call i64 sign(%4)
-    %6 = const i64 1
-    %7 = ne bool %5, %6
-    br %7, b1, b3
-b1: ; preds b0, b3
+    %3 = load i64 [%0]
+    %4 = const i64 1
+    %5 = add i64 %3, %4
+    store [%0], %5
+    %7 = const i64 4
+    %8 = call i64 sign(%7)
     %9 = const i64 1
-    ret %9
+    %10 = ne bool %8, %9
+    br %10, b1, b3
+b1: ; preds b0, b3
+    %12 = const i64 1
+    ret %12
 b2: ; preds b3
-    %11 = const i64 0
-    ret %11
+    %14 = const i64 0
+    ret %14
 b3: ; preds b0
-    %13 = load i64 [%0]
-    %14 = const i64 98
-    %15 = ne bool %13, %14
-    br %15, b1, b2
+    %16 = load i64 [%0]
+    %17 = const i64 98
+    %18 = ne bool %16, %17
+    br %18, b1, b2
 }
 

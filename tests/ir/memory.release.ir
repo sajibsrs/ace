@@ -143,21 +143,30 @@ b0:
     store [%1], %2
     %4 = const i64 1
     store [%0], %4
-    call bump(%0, %1)
-    %7 = global ptr TOTAL
-    %8 = global ptr twice
-    %9 = load i64 [%0]
-    %10 = call i64 apply(%8, %9)
-    store [%7], %10
-    %12 = load i64 [%0]
-    %13 = load i64 [%7]
-    %14 = add i64 %12, %13
-    store [%0], %14
-    %16 = load i64 [%0]
-    %17 = const i64 1
-    %18 = add i64 %16, %17
-    store.vol [%0], %18
-    %20 = load.vol i64 [%0]
-    ret %20
+    %6 = load i64 [%0]
+    %7 = const i64 1
+    %8 = add i64 %6, %7
+    store [%0], %8
+    %10 = const u64 1
+    %11 = padd ptr %1, %10 * 4
+    %12 = load i32 [%11]
+    %13 = const i32 2
+    %14 = sub i32 %12, %13
+    store [%1], %14
+    %16 = global ptr TOTAL
+    %17 = global ptr twice
+    %18 = load i64 [%0]
+    %19 = call i64 apply(%17, %18)
+    store [%16], %19
+    %21 = load i64 [%0]
+    %22 = load i64 [%16]
+    %23 = add i64 %21, %22
+    store [%0], %23
+    %25 = load i64 [%0]
+    %26 = const i64 1
+    %27 = add i64 %25, %26
+    store.vol [%0], %27
+    %29 = load.vol i64 [%0]
+    ret %29
 }
 

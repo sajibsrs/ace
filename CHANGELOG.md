@@ -27,6 +27,12 @@ current normative rules, and Git preserves patch-level detail.
 - Made release the default emission mode for direct compilation and
   `ace pkg build`/`run`; the core and package test runners pass `--debug`
   explicitly so tests keep their checks.
+- Made release builds expand small leaf functions no source marks `inline`: a
+  body of at most 24 syntax nodes calling only conversions and compiler-backed
+  operations goes through the same expansion as `inline`, the verdict kept per
+  declaration. The spinning-cube math fell from 99 to 76 ns per frame, matching
+  hand-marked `inline`; the std and package benchmarks, already marked by hand
+  where it paid, stayed within noise with identical checksums.
 - Moved the object writer out of `emit.c` into `macho.c` behind `backend.h`
   (IR migration step 1a): sections, symbols, relocations, fixups, line rows,
   DWARF, and the Mach-O image, plus the shared runtime-routine flags, live in

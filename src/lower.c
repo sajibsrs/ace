@@ -1574,9 +1574,58 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
 
 // --- inline expansion (Functions & ABI #8) -------------------------------------------
 
+// Release builds also expand a small leaf function no source marks inline:
+// its body at most AUTO_INLINE_NODES nodes, with no call other than a
+// conversion or compiler-backed operation, and inline's other limits
+// (Functions & ABI #8). The verdict is kept per declaration.
+#define AUTO_INLINE_NODES 24
+
+static PtrMap auto_inline_seen; // declaration -> 1 expands, 2 stays a call
+
+// n's node count, or AUTO_INLINE_NODES + 1 once over it or on any node that
+// rules expansion out
+static int auto_inline_size(Node* n, int size) {
+    if (!n || size > AUTO_INLINE_NODES) return size;
+    if (n->kind == N_DEFER || n->kind == N_ASM) return AUTO_INLINE_NODES + 1;
+    if (n->kind == N_CALL) {
+        Sym* s = n->a && n->a->kind == N_INDEX && n->a->sym ? (Sym*)n->a->sym : n->sym ? node_sym(n) : NULL;
+        int backed = s && s->kind == SYM_FUNC && s->decl && s->decl->kind == N_FUNC &&
+                     (s->decl->ival || (s->decl->flags & F_INTRINSIC));
+        int conversion = !s && n->a && n->a->kind == N_IDENT;
+        if (!backed && !conversion) return AUTO_INLINE_NODES + 1;
+    }
+    size++;
+    size = auto_inline_size(n->a, size);
+    size = auto_inline_size(n->b, size);
+    size = auto_inline_size(n->c, size);
+    if (n->kind == N_FOR && (n->flags & F_FORGEN)) size = auto_inline_size(n->d, size);
+    for (int i = 0; i < n->nkids; i++) size = auto_inline_size(n->kids[i], size);
+    return size;
+}
+
+static int auto_inline(Lw* l, Sym* s) {
+    if (l->mode != EMIT_RELEASE || l->self_head >= 0) return 0;
+    Node* f = s->decl;
+    if (f == l->f) return 0;
+    for (int i = 0; i < l->ninl; i++)
+        if (l->inl[i].f == f) return 0;
+    uintptr_t seen = ptrmap_get(&auto_inline_seen, f);
+    if (seen) return seen == 1;
+    int ok = f->kind == N_FUNC && f->b && !f->c && !s->is_extern && !s->is_generic && !s->spec_args &&
+             !(f->flags & (F_INTRINSIC | F_SPECIALIZED)) && f->nkids <= MAX_PARAMS &&
+             !(!(f->flags & (F_METHOD | F_ASSOC)) && f->len == 4 && memcmp(f->str, "main", 4) == 0);
+    for (int i = 0; ok && i < f->nkids; i++)
+        if (f->kids[i]->flags & F_NOALIAS) ok = 0;
+    SType* rt = s->type && s->type->kind == SK_FUNC ? s->type->ret : NULL;
+    if (ok && rt && is_agg(rt)) ok = 0;
+    if (ok && auto_inline_size(f->b, 0) > AUTO_INLINE_NODES) ok = 0;
+    ptrmap_put(&auto_inline_seen, f, ok ? 1 : 2);
+    return ok;
+}
+
 // The inline function a direct call names, with the type arguments its body
 // is stamped under, or NULL.
-static Node* inline_target(Node* call, SType*** targs, int* ntargs) {
+static Node* inline_target(Lw* l, Node* call, SType*** targs, int* ntargs) {
     Node* callee = call->a;
     *targs = NULL;
     *ntargs = 0;
@@ -1592,7 +1641,8 @@ static Node* inline_target(Node* call, SType*** targs, int* ntargs) {
         return NULL;
     }
     Sym* s = call->sym ? node_sym(call) : NULL;
-    if (!s || s->kind != SYM_FUNC || s->is_extern || !s->decl || !(s->decl->flags & F_INLINE)) return NULL;
+    if (!s || s->kind != SYM_FUNC || s->is_extern || !s->decl) return NULL;
+    if (!(s->decl->flags & F_INLINE) && !auto_inline(l, s)) return NULL;
     if (s->is_generic) { // a method of a generic type: its owner's arguments
         SType* cft = node_ty(callee);
         if (!cft || cft->kind != SK_FUNC) cft = s->type;
@@ -1876,7 +1926,7 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
         if (v != -2) return v;
     }
     if ((d->kind == N_FUNC && d->ival) || (d->flags & F_INTRINSIC)) unsupported(l, "compiler-backed call");
-    if (d->flags & F_INLINE) return inline_call(l, x);
+    if ((d->flags & F_INLINE) || auto_inline(l, s)) return inline_call(l, x);
     int first_var = call_args(l, x, s, &g);
     SType* ft = node_ty(callee);
     if (!ft || ft->kind != SK_FUNC) ft = s->type;
@@ -3143,7 +3193,7 @@ static void inline_return(Lw* l, Node* s) {
 static int inline_call(Lw* l, Node* call) {
     SType** targs;
     int ntargs;
-    Node* f = inline_target(call, &targs, &ntargs);
+    Node* f = inline_target(l, call, &targs, &ntargs);
     if (!f || !f->b) unsupported(l, "inline call");
     if (f == l->f) unsupported(l, "recursive inline call");
     for (int i = 0; i < l->ninl; i++)

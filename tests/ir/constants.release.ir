@@ -18,15 +18,27 @@ b0:
 
 main(): i64 {
 b0:
-    %0 = call i64 total()
-    %1 = const i64 61
-    %2 = ne bool %0, %1
-    br %2, b1, b2
+    %0 = global ptr B
+    %1 = load i64 [%0]
+    %2 = global ptr C
+    %3 = load u32 [%2]
+    %4 = cast i64 %3
+    %5 = add i64 %1, %4
+    %6 = global ptr D
+    %7 = load i64 [%6]
+    %8 = add i64 %5, %7
+    %9 = global ptr E
+    %10 = load f64 [%9]
+    %11 = cast i64 %10
+    %12 = add i64 %8, %11
+    %13 = const i64 61
+    %14 = ne bool %12, %13
+    br %14, b1, b2
 b1: ; preds b0
-    %4 = const i64 1
-    ret %4
+    %16 = const i64 1
+    ret %16
 b2: ; preds b0
-    %6 = const i64 0
-    ret %6
+    %18 = const i64 0
+    ret %18
 }
 

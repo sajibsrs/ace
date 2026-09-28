@@ -47,25 +47,28 @@ b0:
     %6 = proj f64 %4, 1
     store [%0], %5
     store [%0 + 8], %6
-    call bump(%0)
-    %10 = load i64 [%0]
-    %11 = load f64 [%0 + 8]
-    %12 = const i64 1
-    %13 = call {2} shift(%10, %11, %12)
-    %14 = proj i64 %13, 0
-    %15 = proj f64 %13, 1
-    %16 = call {2} check(%14)
+    %9 = load i64 [%0]
+    %10 = const i64 1
+    %11 = add i64 %9, %10
+    store [%0], %11
+    %13 = load i64 [%0]
+    %14 = load f64 [%0 + 8]
+    %15 = const i64 1
+    %16 = call {2} shift(%13, %14, %15)
     %17 = proj i64 %16, 0
-    %18 = proj u64 %16, 1
-    %19 = const u64 0
-    %20 = ne bool %18, %19
-    br %20, b1, b2
+    %18 = proj f64 %16, 1
+    %19 = call {2} check(%17)
+    %20 = proj i64 %19, 0
+    %21 = proj u64 %19, 1
+    %22 = const u64 0
+    %23 = ne bool %21, %22
+    br %23, b1, b2
 b1: ; preds b0
-    %22 = cast i32 %18
-    %23 = cast i64 %22
-    ret %23
+    %25 = cast i32 %21
+    %26 = cast i64 %25
+    ret %26
 b2: ; preds b0
-    %25 = sub i64 %17, %5
-    ret %25
+    %28 = sub i64 %20, %5
+    ret %28
 }
 

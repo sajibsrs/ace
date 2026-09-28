@@ -356,7 +356,11 @@ or one scalar value (not a type parameter), must not take a `noalias`
 parameter, and must not contain `defer` or inline assembly. `intrinsic`
 declarations, bodiless `specialized` templates, and `main` cannot be `inline`,
 and a chain of inline functions that calls back into itself is rejected.
-Nothing is inlined automatically.
+Release builds also expand small leaf functions on their own: a body of at
+most 24 syntax nodes that calls nothing but conversions and compiler-provided
+operations, within the limits above, and not generic, `main`, or recursive.
+Debug builds keep those calls, so backtraces show them. Mark a larger or
+non-leaf helper `inline` to expand it.
 
 ## Self tail recursion
 
