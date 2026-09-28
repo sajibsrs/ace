@@ -753,17 +753,12 @@ is not a power of two, so they were already on the pointer-phi path.
 
 #### Cube transform
 
-Three runs at `3a8a125`, ns per cube: Ace 60.9, scalar C 52.9 (1.15x),
-vectorized C 31.5; clang's SLP vectorizer turns the corner loop's divides into
-`fdiv.4s`. Scalar C does not unroll the corner loop either; the gap is spread
-over small differences, none worth over a few percent measured alone: `axis`
-compiles to branches where C selects with `fcsel` (a branchless source variant
-gains about 3%), stack-array accesses take `add`, `add`, `ldr` where C folds a
-register-indexed `ldr` (folding it measured no gain: the loop is bound by its
-`fdiv` and multiply chains), constants are rematerialized inside the loop, and
-the four vertex stores are not paired. Drawn with SDL (OpenGL renderer, vsync
-off; Metal paces presents to the display regardless), the math matters from
-about 10,000 cubes, where it is 40% of a frame.
+Three runs at `890c823`, ns per cube: Ace 41.5, scalar C 52.9 (0.78x),
+vectorized C 31.4 (Ace at 1.32x). Ace's auto-vectorizer runs the corner loop
+four lanes wide, its `axis` branches becoming `select`s on a lane mask; clang
+vectorizes the same loop with its SLP vectorizer. Drawn with SDL (OpenGL
+renderer, vsync off; Metal paces presents to the display regardless), the math
+mattered at `3a8a125` from about 10,000 cubes, where it was 40% of a frame.
 
 ## Standard library
 
