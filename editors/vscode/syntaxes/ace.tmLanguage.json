@@ -438,7 +438,7 @@
           ]
         },
         {
-          "begin": "\\b([A-Z][A-Za-z0-9_]*)(\\[)",
+          "begin": "\\b(?![A-Z][A-Z0-9_]+\\b)([A-Z][A-Za-z0-9_]*)(\\[)",
           "beginCaptures": {
             "1": { "name": "entity.name.type.ace" },
             "2": { "name": "punctuation.definition.typearguments.begin.ace" }
