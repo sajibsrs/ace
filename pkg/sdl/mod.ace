@@ -8,14 +8,23 @@
  * the linker's own search. An app overrides it with its own [[link]] path.
  */
 
-pub INIT_VIDEO: const u32 = 0x20
-pub WINDOW_RESIZABLE: const u64 = 0x20
+// SDL_InitFlags: the subsystems sdl.init starts.
+pub InitFlags: bits u32 { _: 5, video: 1, _: 8, events: 1, _: 17 }
 
-pub EVENT_QUIT: const u32 = 0x100
-pub EVENT_WINDOW_CLOSE_REQUESTED: const u32 = 0x210
-pub EVENT_KEY_DOWN: const u32 = 0x300
+// SDL_WindowFlags: window properties chosen at creation.
+pub WindowFlags: bits u64 { _: 5, resizable: 1, _: 58 }
 
-pub KEY_ESCAPE: const u32 = 0x1b
+// SDL_EventType values this binding names; SDL may deliver others, which
+// compare unequal to every member.
+pub EventType: enum u32 {
+    first,
+    quit = 0x100,
+    window_close_requested = 0x210,
+    key_down = 0x300,
+}
+
+// SDL_Keycode values this binding names.
+pub Keycode: enum u32 { unknown, escape = 0x1b }
 
 // Renderer.vsync intervals: 1 presents on every refresh, 0 never waits.
 pub VSYNC_DISABLED: const i32 = 0
@@ -47,19 +56,19 @@ pub Vertex: struct {
 }
 
 pub QuitEvent: struct {
-    kind: u32,
+    kind: EventType,
     reserved: u32,
     timestamp: u64,
 }
 
 pub KeyboardEvent: struct {
-    kind: u32,
+    kind: EventType,
     reserved: u32,
     timestamp: u64,
     window_id: u32,
     which: u32,
     scancode: u32,
-    key: u32,
+    key: Keycode,
     mod: u16,
     raw: u16,
     down: bool,
@@ -69,7 +78,7 @@ pub KeyboardEvent: struct {
 // SDL_Event: a C union, written as an overlapping struct.
 pub Event: struct {
     @offset(0)
-    kind: u32,
+    kind: EventType,
 
     @offset(0)
     keyboard: KeyboardEvent,
@@ -113,7 +122,7 @@ extern "c" {
     c_delay(ms: u32) = "SDL_Delay"
 }
 
-pub init(flags: u32): bool { return c_init(flags) }
+pub init(flags: InitFlags): bool { return c_init(u32(flags)) }
 pub quit() { c_quit() }
 pub poll_event(event: mut *Event): bool { return c_poll_event(event) }
 pub delay(ms: u32) { c_delay(ms) }
@@ -144,8 +153,8 @@ pub Color::hex(rgb: u32): Color {
 }
 
 // The title must end in "\0"; SDL reads it as a C string.
-pub Window::new(title: string, w: i32, h: i32, flags: u64): Window {
-    return Window { handle = c_create_window(&title[0], w, h, flags) }
+pub Window::new(title: string, w: i32, h: i32, flags: WindowFlags): Window {
+    return Window { handle = c_create_window(&title[0], w, h, u64(flags)) }
 }
 
 pub Window.ok(): bool { return self.handle != null }

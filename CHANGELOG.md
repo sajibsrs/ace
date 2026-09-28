@@ -2967,6 +2967,10 @@ current normative rules, and Git preserves patch-level detail.
   leave `tex_coord` unwritten; `Color::hex(rgb)` builds an opaque color
   from a 24-bit `0xRRGGBB` value (e.g. `0xF44336`). Renamed
   `demo/sdl3-rgb-cube` to `demo/sdl3-cube-rotation`.
+- Typed `pkg/sdl`'s flags and event values: `InitFlags` (`bits u32`) and
+  `WindowFlags` (`bits u64`) replace the `INIT_*`/`WINDOW_*` constants, and
+  the `u32`-backed enums `EventType` and `Keycode` replace `EVENT_*`/`KEY_*`
+  as the types of `Event.kind` and `KeyboardEvent.key`.
 
 The checked-build queue is complete. Additive networking, concurrency, fuller
 math/SIMD, and a second

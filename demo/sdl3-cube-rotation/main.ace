@@ -51,10 +51,10 @@ axis(i: i32, bit: i32): f32 {
 }
 
 main(): int {
-    if !sdl.init(sdl.INIT_VIDEO) { return fail("SDL_Init") }
+    if !sdl.init(sdl.InitFlags { video = 1 }) { return fail("SDL_Init") }
     defer sdl.quit()
 
-    window: sdl.Window = sdl.Window::new("Ace + SDL3 cube\0", 640, 640, sdl.WINDOW_RESIZABLE)
+    window: sdl.Window = sdl.Window::new("Ace + SDL3 cube\0", 640, 640, sdl.WindowFlags { resizable = 1 })
     defer mut window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
 
@@ -88,9 +88,9 @@ main(): int {
         work_start: u64 = sdl.ticks_ns()
         event: sdl.Event
         for sdl.poll_event(mut &event) {
-            if event.kind == sdl.EVENT_QUIT || event.kind == sdl.EVENT_WINDOW_CLOSE_REQUESTED {
+            if event.kind == sdl.EventType.quit || event.kind == sdl.EventType.window_close_requested {
                 running = false
-            } else if event.kind == sdl.EVENT_KEY_DOWN && event.keyboard.key == sdl.KEY_ESCAPE {
+            } else if event.kind == sdl.EventType.key_down && event.keyboard.key == sdl.Keycode.escape {
                 running = false
             }
         }

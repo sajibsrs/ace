@@ -30,10 +30,10 @@ See [`demo/sdl3-window`](../demo/sdl3-window) and
 ## Window and renderer
 
 ```ace
-if !sdl.init(sdl.INIT_VIDEO) { return 1 }
+if !sdl.init(sdl.InitFlags { video = 1 }) { return 1 }
 defer sdl.quit()
 
-window: sdl.Window = sdl.Window::new("Ace + SDL3\0", 640, 480, sdl.WINDOW_RESIZABLE)
+window: sdl.Window = sdl.Window::new("Ace + SDL3\0", 640, 480, sdl.WindowFlags { resizable = 1 })
 defer mut window.wipe()
 if !window.ok() { return 1 }   // sdl.error() says why
 
@@ -45,6 +45,10 @@ renderer.color(sdl.Color::hex(0x204080))
 renderer.clear()
 renderer.present()
 ```
+
+`InitFlags` and `WindowFlags` are bits types over SDL's flag words: set the
+fields you want and the rest stay zero. Only the flags this binding uses are
+named so far.
 
 `Window` and `Renderer` hold SDL's heap objects, so they follow the
 `::new`/`wipe` pair; `ok()` reports whether creation succeeded, and `wipe` on
@@ -110,9 +114,9 @@ them.
 ```ace
 event: sdl.Event
 for sdl.poll_event(mut &event) {
-    if event.kind == sdl.EVENT_QUIT || event.kind == sdl.EVENT_WINDOW_CLOSE_REQUESTED {
+    if event.kind == sdl.EventType.quit || event.kind == sdl.EventType.window_close_requested {
         running = false
-    } else if event.kind == sdl.EVENT_KEY_DOWN && event.keyboard.key == sdl.KEY_ESCAPE {
+    } else if event.kind == sdl.EventType.key_down && event.keyboard.key == sdl.Keycode.escape {
         running = false
     }
 }
@@ -121,7 +125,9 @@ for sdl.poll_event(mut &event) {
 `event.keyboard` is a `KeyboardEvent` (`key`, `scancode`, `mod`, `down`,
 `repeat`, …) and `event.quit` a `QuitEvent`; read the member that `kind`
 names. Field names follow SDL's, except the shared `type` field, which is
-`kind` because `type` is an Ace keyword.
+`kind` because `type` is an Ace keyword. `kind` is an `EventType` and `key` a
+`Keycode`, `u32`-backed enums naming the values this binding handles; SDL may
+deliver other values, which simply match no named member.
 
 ## Testing
 
