@@ -2971,6 +2971,10 @@ current normative rules, and Git preserves patch-level detail.
   `WindowFlags` (`bits u64`) replace the `INIT_*`/`WINDOW_*` constants, and
   the `u32`-backed enums `EventType` and `Keycode` replace `EVENT_*`/`KEY_*`
   as the types of `Event.kind` and `KeyboardEvent.key`.
+- A `mut` method call now initializes its receiver for definite
+  initialization, as `mut &receiver` does, instead of requiring it to be
+  initialized first (Mutability #6). `pkg/sdl` uses it: `mut Event.poll()`
+  replaces `poll_event(mut *Event)`, so loops read `for mut event.poll()`.
 
 The checked-build queue is complete. Additive networking, concurrency, fuller
 math/SIMD, and a second

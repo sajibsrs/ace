@@ -6116,7 +6116,15 @@ static void init_expr(InitCk* k, Node* e) {
             Sym* s = node_sym(e->a);
             if (s && s->kind == SYM_VAR) init_expr(k, e->a); // function variable
         } else if (e->a && e->a->kind == N_FIELD_E) {
-            init_expr(k, e->a->a); // receiver
+            Node* recv = e->a->a;
+            SType* rt = init_shape(node_ty(recv));
+            if ((e->flags & F_MUT) && !(rt && rt->kind == SK_PTR)) {
+                // A mut receiver is passed by address, as `mut &recv` is.
+                init_addr_parts(k, recv);
+                init_mark_path(k, recv);
+            } else {
+                init_expr(k, recv); // receiver
+            }
         } else if (e->a) {
             init_expr(k, e->a);
         }

@@ -113,7 +113,7 @@ them.
 
 ```ace
 event: sdl.Event
-for sdl.poll_event(mut &event) {
+for mut event.poll() {
     if event.kind == sdl.EventType.quit || event.kind == sdl.EventType.window_close_requested {
         running = false
     } else if event.kind == sdl.EventType.key_down && event.keyboard.key == sdl.Keycode.escape {

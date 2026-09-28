@@ -124,7 +124,6 @@ extern "c" {
 
 pub init(flags: InitFlags): bool { return c_init(u32(flags)) }
 pub quit() { c_quit() }
-pub poll_event(event: mut *Event): bool { return c_poll_event(event) }
 pub delay(ms: u32) { c_delay(ms) }
 
 // Milliseconds since SDL initialization.
@@ -141,6 +140,9 @@ pub error(): string {
     for *(p + n) != 0 { n += 1 }
     return string([]u8(p, n))
 }
+
+// Fill this event with the next pending one; false when none is left.
+pub mut Event.poll(): bool { return c_poll_event(mut &self) }
 
 // An opaque color from a 24-bit 0xRRGGBB value, e.g. 0xF44336, as written
 // in CSS and design tools.

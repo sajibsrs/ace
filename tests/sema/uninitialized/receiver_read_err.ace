@@ -1,0 +1,10 @@
+/* A read-only receiver is read by the call, so it must be initialized. */
+
+Pair: struct { x: int, y: int }
+
+Pair.sum(): int { return self.x + self.y }
+
+main(): int {
+    pair: Pair
+    return pair.sum()
+}

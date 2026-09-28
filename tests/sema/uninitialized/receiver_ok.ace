@@ -1,0 +1,21 @@
+/* A mut receiver is passed by address, as `mut &x` is: the call may
+ * initialize it, and it counts as initialized afterwards. */
+
+Pair: struct { x: int, y: int }
+Outer: struct { pair: Pair, tag: int }
+
+mut Pair.fill(): bool {
+    self.x = 1
+    self.y = 2
+    return true
+}
+
+main(): int {
+    pair: Pair
+    for mut pair.fill() { break }
+
+    outer: Outer
+    mut outer.pair.fill()
+    outer.tag = 3
+    return pair.x + outer.pair.y + outer.tag
+}
