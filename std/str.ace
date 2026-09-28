@@ -465,82 +465,23 @@ pub format(destination: mut []char, format: string): (usize, bool) {
     return format.len, true
 }
 
-/* The formatted-write helpers: each writes one piece at the start of
- * destination and returns its byte count, or -1 when it does not fit. The
- * compiler selects the specialization by the argument's exact type.
+/* The formatted-write sink: the destination is its storage, and its drain
+ * refuses, so a piece that does not fit fails the call. The compiler writes
+ * each format piece through the shared rendering.piece* writers between
+ * put_open and put_close, which returns the byte count or -1.
  */
-put_counted[T](destination: mut []char, value: T): int specialized
-
-put_precision[T](destination: mut []char, value: T, precision: usize): int specialized
-
-put_radix[T](destination: mut []char, value: T, radix: u8, uppercase: bool): int specialized
-
-put_counted[string](destination: mut []char, text: string): int {
-    if !copy(text, destination) { return -1 }
-
-    return int(text.len)
+refuse(bytes: []u8): int {
+    return -1
 }
 
-put_counted[int](destination: mut []char, value: int): int {
-    n: usize, ok: bool = format(destination, value)
-    if !ok { return -1 }
-
-    return int(n)
+put_open(mut sink: rendering.Sink, destination: mut []char) {
+    sink = rendering.Sink::init(destination, refuse)
 }
 
-put_counted[uint](destination: mut []char, value: uint): int {
-    n: usize, ok: bool = format(destination, value)
-    if !ok { return -1 }
+put_close(mut sink: rendering.Sink): int {
+    if sink.failed { return -1 }
 
-    return int(n)
-}
-
-put_counted[usize](destination: mut []char, value: usize): int {
-    n: usize, ok: bool = format(destination, value)
-    if !ok { return -1 }
-
-    return int(n)
-}
-
-put_counted[u8](destination: mut []char, value: u8): int {
-    if destination.len == 0 { return -1 }
-
-    destination[0] = value
-    return 1
-}
-
-put_radix[uint](destination: mut []char, value: uint, radix: u8, uppercase: bool): int {
-    n: usize, ok: bool = rendering.radix(u64(value), radix, uppercase, destination)
-    if !ok { return -1 }
-
-    return int(n)
-}
-
-put_radix[usize](destination: mut []char, value: usize, radix: u8, uppercase: bool): int {
-    n: usize, ok: bool = rendering.radix(u64(value), radix, uppercase, destination)
-    if !ok { return -1 }
-
-    return int(n)
-}
-
-put_precision[f64](destination: mut []char, value: f64, precision: usize): int {
-    digits: [640]u8
-    view: mut []u8 = mut digits[0..640]
-    converted: decimal.Decimal = decimal.fixed64(value, precision, view)
-    n: usize, ok: bool = rendering.fixed(converted, view, precision, destination)
-    if !ok { return -1 }
-
-    return int(n)
-}
-
-put_precision[f32](destination: mut []char, value: f32, precision: usize): int {
-    digits: [640]u8
-    view: mut []u8 = mut digits[0..640]
-    converted: decimal.Decimal = decimal.fixed32(value, precision, view)
-    n: usize, ok: bool = rendering.fixed(converted, view, precision, destination)
-    if !ok { return -1 }
-
-    return int(n)
+    return int(sink.used)
 }
 
 /* Writes the complete byte sequence into destination or nothing at all. */

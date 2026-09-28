@@ -1,5 +1,5 @@
-/* Number-to-text rendering into caller storage, shared by fmt's printf
- * helpers and str's formatted writes. This reserved internal implementation
+/* Number-to-text rendering into caller storage and the formatted-output
+ * sink, shared by fmt.printf and str.format. This reserved internal implementation
  * module has no bare std facade.
  *
  * Each renderer writes its complete text into out and returns the byte count
@@ -7,6 +7,7 @@
  * nothing.
  */
 
+import mem
 import decimal: @float_decimal
 
 /* Digits of value in radix 2 through 36 with no prefix or leading zeroes;
@@ -38,6 +39,20 @@ pub radix(value: u64, radix: u8, uppercase: bool, out: mut []u8): (usize, bool) 
 
     for i: usize in 0 .. count { out[i] = digits[usize(at) + i] }
     return count, true
+}
+
+/* Signed decimal digits of value, with '-' before a negative value. */
+pub signed(value: int, out: mut []u8): (usize, bool) {
+    if value >= 0 {
+        n: usize, ok: bool = radix(u64(value), 10, false, out)
+        return n, ok
+    }
+    if out.len == 0 { return 0, false }
+    n: usize, ok: bool = radix(u64(-(value + 1)) + 1, 10, false, mut out[1..out.len])
+    if !ok { return 0, false }
+
+    out[0] = u8(45)
+    return n + 1, true
 }
 
 text(value: string, out: mut []u8): (usize, bool) {
@@ -112,4 +127,209 @@ pub fixed(value: decimal.Decimal, digits: []u8, precision: usize, out: mut []u8)
         }
     }
     return usize(at), true
+}
+
+/* Formatted output through caller storage, shared by fmt.printf and
+ * str.format. Pieces append to storage[0..used]; a piece that does not fit
+ * first hands the buffered bytes to drain, which returns their count or a
+ * non-positive failure. fmt.printf drains to standard output; str.format's
+ * drain refuses, so filling its destination fails the call. The first
+ * failure sticks and later writes are no-ops. Nothing outlives the call.
+ */
+pub Sink: struct {
+    storage: mut []u8 = null,
+    used: usize,
+    drained: int,               // bytes drain has taken
+    failed: bool,
+    status: int,                // the failing drain result
+    drain: ([]u8): int,
+}
+
+pub Sink::init(storage: mut []u8, drain: ([]u8): int): Sink {
+    return Sink {
+        storage = storage,
+        used = 0,
+        drained = 0,
+        failed = false,
+        status = 0,
+        drain = drain,
+    }
+}
+
+/* Hands bytes to drain, recording a failure. A failed sink drops its
+ * storage, so every later write takes the slow path, which stops there.
+ */
+mut Sink.emit(bytes: []u8) {
+    drain: ([]u8): int = self.drain
+    n: int = drain(bytes)
+
+    if n <= 0 {
+        self.failed = true
+        self.status = n
+        self.storage = mut self.storage[0..0]
+        self.used = 0
+        return
+    }
+    self.drained += n
+}
+
+/* Drains the buffered bytes, leaving the storage empty. */
+pub mut Sink.flush() {
+    if self.failed || self.used == 0 { return }
+    mut self.emit(self.storage[0..self.used])
+    self.used = 0
+}
+
+/* The fast path, inlined into every piece writer: room left, copy. */
+pub inline mut Sink.put(bytes: []u8) {
+    if bytes.len > self.storage.len - self.used {
+        mut self.overflow(bytes)
+        return
+    }
+    mem.copy(mut self.storage[self.used..self.used + bytes.len], bytes)
+    self.used += bytes.len
+}
+
+/* A piece that does not fit: drain the storage, then buffer the piece, or
+ * hand it straight to drain when it is larger than the storage.
+ */
+mut Sink.overflow(bytes: []u8) {
+    if self.failed { return }
+
+    mut self.flush()
+    if self.failed { return }
+
+    if bytes.len > self.storage.len {
+        mut self.emit(bytes)
+        return
+    }
+    mem.copy(mut self.storage[0..bytes.len], bytes)
+    self.used = bytes.len
+}
+
+/* count copies of byte, streamed through the storage in pieces. */
+pub mut Sink.fill(byte: u8, count: usize) {
+    left: usize = count
+
+    for round: usize in 0 .. count {
+        if self.failed || left == 0 { return }
+
+        if self.used == self.storage.len {
+            if self.used == 0 { // no storage at all
+                mut self.emit(self.storage[0..0])
+                if self.failed { return }
+            }
+            mut self.flush()
+            if self.failed { return }
+        }
+        room: usize = self.storage.len - self.used
+        n: usize = left
+
+        if room < n { n = room }
+        mem.fill(mut self.storage[self.used..self.used + n], byte)
+        self.used += n
+        left -= n
+    }
+}
+
+/* text widened to at least width bytes: spaces before it, or with zero,
+ * zeroes between any leading '-' and the digits. The non-finite spellings
+ * "nan" and "inf" (the only texts starting with 'n' or 'i' after the sign)
+ * still take spaces.
+ */
+pub mut Sink.padded(text: []u8, width: usize, zero: bool) {
+    if text.len >= width {
+        mut self.put(text)
+        return
+    }
+    fill: usize = width - text.len
+
+    if zero {
+        start: usize = 0
+
+        if text.len > 0 && text[0] == u8(45) { start = 1 }
+
+        if start < text.len && text[start] != u8(105) && text[start] != u8(110) {
+            mut self.put(text[0..start])
+            mut self.fill(u8(48), fill)
+            mut self.put(text[start..text.len])
+            return
+        }
+    }
+    mut self.fill(u8(32), fill)
+    mut self.put(text)
+}
+
+/*
+ * The piece writers the compiler's checked format lowering calls, one per
+ * format piece: exact-type specializations, selected by the argument's type,
+ * each taking the conversion's width (0 for none) and zero flag.
+ */
+pub piece[T](mut sink: Sink, value: T, width: usize, zero: bool) specialized
+
+pub piece_radix[T](mut sink: Sink, value: T, radix: u8, uppercase: bool, width: usize, zero: bool) specialized
+
+pub piece_precision[T](mut sink: Sink, value: T, precision: usize, width: usize, zero: bool) specialized
+
+pub piece[string](mut sink: Sink, text: string, width: usize, zero: bool) {
+    if width == 0 {
+        mut sink.put(text)
+        return
+    }
+    mut sink.padded(text, width, false)
+}
+
+pub piece[u8](mut sink: Sink, value: u8, width: usize, zero: bool) {
+    out: [1]u8 = [value]
+    mut sink.padded(out[0..1], width, false)
+}
+
+pub piece[int](mut sink: Sink, value: int, width: usize, zero: bool) {
+    storage: [20]u8
+    n: usize, ok: bool = signed(value, mut storage[0..20])
+    mut sink.padded(storage[0..n], width, zero)
+}
+
+pub piece[uint](mut sink: Sink, value: uint, width: usize, zero: bool) {
+    storage: [20]u8
+    n: usize, ok: bool = radix(u64(value), 10, false, mut storage[0..20])
+    mut sink.padded(storage[0..n], width, zero)
+}
+
+pub piece[usize](mut sink: Sink, value: usize, width: usize, zero: bool) {
+    storage: [20]u8
+    n: usize, ok: bool = radix(u64(value), 10, false, mut storage[0..20])
+    mut sink.padded(storage[0..n], width, zero)
+}
+
+pub piece_radix[uint](mut sink: Sink, value: uint, base: u8, uppercase: bool, width: usize, zero: bool) {
+    storage: [64]u8
+    n: usize, ok: bool = radix(u64(value), base, uppercase, mut storage[0..64])
+    mut sink.padded(storage[0..n], width, zero)
+}
+
+pub piece_radix[usize](mut sink: Sink, value: usize, base: u8, uppercase: bool, width: usize, zero: bool) {
+    storage: [64]u8
+    n: usize, ok: bool = radix(u64(value), base, uppercase, mut storage[0..64])
+    mut sink.padded(storage[0..n], width, zero)
+}
+
+piece_fixed(mut sink: Sink, value: decimal.Decimal, digits: []u8, precision: usize, width: usize, zero: bool) {
+    storage: [640]u8
+    n: usize, ok: bool = fixed(value, digits, precision, mut storage[0..640])
+    mut sink.padded(storage[0..n], width, zero)
+}
+
+pub piece_precision[f64](mut sink: Sink, value: f64, precision: usize, width: usize, zero: bool) {
+    digits: [640]u8
+    view: mut []u8 = mut digits[0..640]
+    converted: decimal.Decimal = decimal.fixed64(value, precision, view)
+    piece_fixed(mut sink, converted, view, precision, width, zero)
+}
+
+pub piece_precision[f32](mut sink: Sink, value: f32, precision: usize, width: usize, zero: bool) {
+    digits: [640]u8
+    view: mut []u8 = mut digits[0..640]
+    converted: decimal.Decimal = decimal.fixed32(value, precision, view)
+    piece_fixed(mut sink, converted, view, precision, width, zero)
 }

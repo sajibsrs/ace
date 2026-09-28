@@ -348,7 +348,10 @@ for want in \
     "format must be a string literal or static-literal const global" \
     "incomplete fmt.printf conversion" \
     "unsupported fmt.printf conversion '%q'" \
-    "width, flags, '*', and positional arguments are not supported" \
+    "flags other than '0', '*', and positional arguments are not supported" \
+    "zero flag needs a width" \
+    "width 1000001 exceeds the limit 1000000" \
+    "zero padding is supported only for numeric conversions" \
     "precision needs decimal digits" \
     "dynamic '*' precision is not supported" \
     "precision is supported only for %f" \
@@ -1616,8 +1619,8 @@ if [ -d tests/emit ]; then
         echo "FAIL: --report separator missing"
         fail=1
     fi
-    if ! printf '%s\n' "$report" | grep -q 'source files:.*8$'; then
-        echo "FAIL: --report should count root + fmt/target + decimal/bigint/shortest/table/rendering sources"
+    if ! printf '%s\n' "$report" | grep -q 'source files:.*9$'; then
+        echo "FAIL: --report should count root + fmt/target + decimal/bigint/shortest/table/rendering/mem sources"
         fail=1
     fi
     for label in 'source bytes:' 'tokens:' 'machine code:' 'object file:' 'compile time:'; do

@@ -92,13 +92,14 @@ main(): int {
 
 The format must be a string literal or a const-global `string` initialized
 from a static literal. The compiler parses it, checks the argument count and
-exact types, and emits direct typed formatting calls. Those calls are
-exact-type specializations of the private per-shape generics in `std/fmt/mod.ace`
-— `print_counted[T](value: T): int` for text, bytes, and decimal integers,
-`print_precision[T](value: T, precision: usize): int` for fixed floats, and
-`print_radix[T](value: T, radix: u8, uppercase: bool): int` for binary, octal,
-and hexadecimal — selected by
-the format interpreter's concrete argument type (see
+exact types, and emits direct typed formatting calls. It opens a sink over
+1024 bytes of the calling function's frame, writes each piece into it, and
+closes it. The piece writers are exact-type specializations of the
+per-shape generics in the internal `std/@/rendering.ace` — `piece[T]` for
+text, bytes, and decimal integers, `piece_precision[T]` for fixed floats,
+and `piece_radix[T]` for binary, octal, and hexadecimal, each taking the
+sink, the value, the conversion's extras, its width, and its zero flag —
+selected by the format interpreter's concrete argument type (see
 [Functions](../function.md#generic-specialization)). Runtime-created or
 runtime-selected formats are rejected. There is no runtime parser, argument
 pack, type tag, reflection, allocation, or C variadic call.
@@ -128,16 +129,25 @@ integers must be converted explicitly. A literal receives the conversion's
 natural type: `int`, `uint`, `f64`, or `u8`; write `usize(...)` when that is
 the intended unsigned type.
 
-Width, padding, alignment, sign and alternate-form flags, dynamic `*`, and
-positional arguments are not implemented. Consequently `%b`, `%o`, `%x`, and
-`%X` cannot yet render fixed-width or zero-padded register values. The only
-modifier is the literal precision on `%f`.
+A literal width between `%` and the conversion (`%5d`, `%6.2f`, `%4s`) pads
+the piece with spaces on the left to at least that many bytes, from 1 through
+1000000. A `0` flag before the width (`%05d`, `%08x`, `%064b`, `%06.2f`) pads
+numeric conversions with zeroes after any sign instead: `-0042`. `nan` and
+`inf` still take spaces, and `%s`/`%c` reject the flag. A longer value is
+never truncated. Write a base prefix as literal text (`0x%08x`). Left
+alignment, sign and alternate-form flags, dynamic `*`, and positional
+arguments are not implemented; the precision on `%f` is the only other
+modifier.
 
 All runtime arguments are evaluated exactly once, in source order, before
-output begins. On success `printf` returns the complete byte count. Positive
-partial writes are retried; a zero or negative OS result stops later output
-and is returned unchanged, matching `print` and `println`. Formatting uses a
-fixed 640-byte stack buffer and never allocates. `fmt.printf` is direct-call
+output begins. Output collects in the sink's storage and is written when the
+storage fills and when the call ends, so a call whose output fits in 1024
+bytes makes one write; text longer than the storage is written straight from
+its source, and padding streams through the storage in runs. Nothing is kept
+between calls. On success `printf` returns the complete byte count. Positive
+partial writes are retried; a zero or negative OS result stops the rest of
+the call and is returned unchanged, matching `print` and `println`. Formatting
+uses fixed stack storage and never allocates. `fmt.printf` is direct-call
 only and cannot be stored as a function value because its checked argument
 shape depends on the static format.
 

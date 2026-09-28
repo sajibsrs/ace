@@ -234,6 +234,8 @@ typedef struct Package Package;
 typedef struct {
     uint8_t  kind;
     uint16_t precision;
+    uint8_t  zero;       // '0' flag: zero padding after any sign
+    uint32_t width;      // minimum byte width, 0 for none
     uint32_t off, len;   // decoded static-format byte span for PF_TEXT
     int      arg;        // call->kids index; zero for text/percent
     void*    helper;     // Sym* selected by sema, consumed by the emitter
@@ -243,6 +245,8 @@ typedef struct {
     Node*       format;  // resolved static string literal
     PrintfPart* parts;
     int         nparts;
+    void*       open;    // Sym*: the call's sink opener and closer
+    void*       close;
 } PrintfPlan;
 
 struct Node {
@@ -299,6 +303,9 @@ typedef enum { EMIT_DEBUG, EMIT_RELEASE } EmitMode;
 
 int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report, EmitMode mode);
 extern int emit_has_main;
+// The name prefix of std's internal rendering module, whose piece writers
+// fmt.printf and str.format lower to; NULL until it loads.
+extern const char* rendering_prefix;
 
 // --- Packages (ace.pkg manifests, SPEC.md Package System) --------------------
 // A package is a directory holding one ace.pkg and one root .ace file;

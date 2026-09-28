@@ -3,7 +3,7 @@
  */
 
 // expect-exit: 0
-// expect-output: FPS 60, hi 7 ff FF 101 10 A 3.14 -0.500000 % end|48|12345|none|18446744073709551615
+// expect-output: FPS 60, hi 7 ff FF 101 10 A 3.14 -0.500000 % end|48|12345|none|18446744073709551615|7.05|  ab|010|-0003.5|    -
 
 import fmt
 import mem
@@ -44,5 +44,13 @@ main(): int {
     n, ok = str.format(mut buffer[..], 42)
 
     if !ok || !mem.equal(buffer[..n], "42") { return 7 }
+    // widths pad in place; a padded piece that does not fit ends the call
+    n, ok = str.format(mut buffer[..], "|%d.%02d|%4s|%03o|%07.1f|%5c", 7, 5, "ab", uint(8), -3.5, u8(45))
+
+    if !ok { return 8 }
+    fmt.print(string(buffer[..n]))
+    n, ok = str.format(mut small[..], "%5d", 1)
+
+    if ok || n != 0 { return 9 }
     return 0
 }

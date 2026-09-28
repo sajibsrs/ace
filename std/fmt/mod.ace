@@ -287,69 +287,21 @@ pub print(value: f32): int {
 }
 
 /*
- * The compiler's checked printf lowering resolves its helpers through exact-
- * type specialization lookup: each shape below is a specialized template, and
- * the format interpreter's concrete argument type selects the specialization
- * with the equal type-argument tuple. Helpers use fixed stack storage and the
- * shared partial-write retry path; no runtime dispatch or metadata exists.
+ * The compiler's checked printf lowering opens a sink over fixed storage in
+ * the caller's frame, writes each format piece into it through the shared
+ * rendering.piece* writers, and closes it: normally one write per call.
+ * Complete success returns the total byte count; a failed write stops the
+ * call and its non-positive result is returned unchanged.
  */
-print_counted[T](value: T): int specialized
-
-print_precision[T](value: T, precision: usize): int specialized
-
-print_radix[T](value: T, radix: u8, uppercase: bool): int specialized
-
-print_counted[string](text: string): int {
-    return print(text)
+print_open(mut sink: rendering.Sink, storage: mut []u8) {
+    sink = rendering.Sink::init(storage, write_bytes)
 }
 
-print_counted[int](value: int): int {
-    return print(value)
-}
+print_close(mut sink: rendering.Sink): int {
+    mut sink.flush()
+    if sink.failed { return sink.status }
 
-print_counted[uint](value: uint): int {
-    return print(value)
-}
-
-print_counted[usize](value: usize): int {
-    return print(value)
-}
-
-print_counted[u8](value: u8): int {
-    out: [1]u8 = [value]
-    return write_bytes(out[0..1])
-}
-
-print_radix[uint](value: uint, radix: u8, uppercase: bool): int {
-    storage: [64]u8
-    n: usize, ok: bool = rendering.radix(u64(value), radix, uppercase, mut storage[0..64])
-    return write_bytes(storage[0..n])
-}
-
-print_radix[usize](value: usize, radix: u8, uppercase: bool): int {
-    storage: [64]u8
-    n: usize, ok: bool = rendering.radix(u64(value), radix, uppercase, mut storage[0..64])
-    return write_bytes(storage[0..n])
-}
-
-write_fixed(value: decimal.Decimal, digits: []u8, precision: usize): int {
-    storage: [640]u8
-    n: usize, ok: bool = rendering.fixed(value, digits, precision, mut storage[0..640])
-    return write_bytes(storage[0..n])
-}
-
-print_precision[f64](value: f64, precision: usize): int {
-    digits: [640]u8
-    view: mut []u8 = mut digits[0..640]
-    converted: decimal.Decimal = decimal.fixed64(value, precision, view)
-    return write_fixed(converted, view, precision)
-}
-
-print_precision[f32](value: f32, precision: usize): int {
-    digits: [640]u8
-    view: mut []u8 = mut digits[0..640]
-    converted: decimal.Decimal = decimal.fixed32(value, precision, view)
-    return write_fixed(converted, view, precision)
+    return sink.drained
 }
 
 /*
@@ -358,7 +310,7 @@ print_precision[f32](value: f32, precision: usize): int {
  * by the compiler; this format-dependent function is never a first-class value.
  */
 pub printf(format: string): int {
-    return print_counted[string](format)
+    return print(format)
 }
 
 /*

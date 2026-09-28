@@ -1,0 +1,19 @@
+/* Printf width and zero-padding fixture: spaces before the text, zeroes after
+ * any sign, non-finite floats keep spaces, and a longer value is never cut.
+ */
+
+/* expect-exit: 0 */
+// expect-output: [   42|-0042|-9223372036854775808|0000beef|000000FF|0000000000000000000000000000000000000000000000000000000000000101][003.14| -3.14| -inf|  nan|12345|    7|  hi|  A|     ]
+
+import fmt
+
+main(): int {
+    low: int = int(-9223372036854775807) - 1
+    a: int = fmt.printf("[%5d|%05d|%05d|%08x|%08X|%064b]", 42, -42, low, uint(0xbeef), usize(255), uint(5))
+    if a != 117 { return 1 }
+
+    b: int = fmt.printf("[%06.2f|%6.2f|%05f|%5f|%2d|%5u|%4s|%3c|%5s]", 3.14159, -3.14159, -1.0 / 0.0, 0.0 / 0.0,
+                        12345, uint(7), "hi", u8(65), "")
+    if b != 54 { return 2 }
+    return 0
+}

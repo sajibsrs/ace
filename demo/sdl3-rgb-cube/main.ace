@@ -196,8 +196,8 @@ main(): int {
         n: usize, fit: bool = str.format(mut line[..], "FPS %d\0", fps)
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-        n, fit = str.format(mut line[..], "frame %d.%d%d ms\0", frame_hundredths / 100,
-                            frame_hundredths / 10 % 10, frame_hundredths % 10)
+        n, fit = str.format(mut line[..], "frame %d.%02d ms\0", frame_hundredths / 100,
+                            frame_hundredths % 100)
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
         n, fit = str.format(mut line[..], "draw %d us (CPU)\0", draw_us)

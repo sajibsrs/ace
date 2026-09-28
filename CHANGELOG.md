@@ -844,6 +844,16 @@ current normative rules, and Git preserves patch-level detail.
   and `str`. `str.concat` and the `str.format` value overloads no longer
   promise to write nothing on insufficient capacity; `concat` now copies in
   one pass. `demo/sdl3-rgb-cube` builds its overlay with it.
+- Added width and zero padding to `fmt.printf`/`str.format` conversions
+  (`%5d`, `%08x`, `%06.2f`), and moved both calls onto one lowering over a
+  `rendering.Sink`: storage plus a drain, with sticky failure. `printf`'s
+  storage is 1024 bytes of the caller's frame drained to standard output, so
+  a call makes one write instead of one per piece (about 5x faster on a
+  five-piece line to `/dev/null`); `str.format`'s is the destination, with a
+  drain that refuses (release speed unchanged). The shared
+  `rendering.piece*` writers replace fmt's `print_*` and str's `put_*`
+  helpers; padding streams through `Sink.fill`, so width is not bounded by
+  any buffer.
 - Implemented `@packed` structs and compile-time `@align` on structs and fields,
   with declaration-order effective alignment, exact stored field offsets,
   layout introspection, 16-byte stack/static support, and pointer-only initial

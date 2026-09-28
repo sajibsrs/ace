@@ -46,10 +46,9 @@ the same names.
 
 ## Current limitations
 
-- `fmt.printf` supports only its documented conversions and literal float
-  precision; runtime formats, width/flags, dynamic precision, and positional
-  arguments are not implemented. Binary/octal/hexadecimal output therefore
-  cannot yet request fixed width, zero padding, or a base prefix.
+- `fmt.printf` supports only its documented conversions, literal width, the
+  `0` flag, and literal float precision; runtime formats, other flags,
+  dynamic width or precision, and positional arguments are not implemented.
 - No output overloads for narrower integer widths; an explicit cast selects
   between the `int`, `uint`, and `usize` overloads.
 - `math` has no `sqrt`, floats, or libm binding.

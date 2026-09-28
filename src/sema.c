@@ -3525,21 +3525,22 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn, SType* elem,
 }
 
 /*
- * The checked printf lowering resolves each plan part's helper through exact-
- * type specialization lookup (Generics #10): the helper shapes are 'special-
- * ized' generics in std fmt — print_counted[T](value: T): int, print_preci-
- * sion[T](value: T, precision: usize): int, and print_radix[T](value: T,
- * radix: u8, uppercase: bool): int — and the format interpreter's concrete argument type
- * selects the specialization whose type-argument tuple equals it. No name
- * composition remains.
+ * The checked format lowering writes each plan part through a piece writer
+ * of std's internal rendering module, resolved by exact-type specialization
+ * lookup (Generics #10): the writer shapes are 'specialized' generics —
+ * piece[T], piece_radix[T], and piece_precision[T], each taking the sink,
+ * the value, its conversion's extras, width, and zero flag — and the format
+ * interpreter's concrete argument type selects the specialization whose
+ * type-argument tuple equals it. With nargs == 0 it finds the plain function
+ * (the call's sink opener or closer, beside the public function).
  */
-static Sym* printf_helper(Ck* k, Sym* printf_fn, const char* who, const char* generic, SType** targs, int nargs,
-                          Node* at) {
-    if (!printf_fn || printf_fn->len < 6) return NULL;
-    uint32_t prefix = printf_fn->len - 6; // canonical module prefix before "printf" or "format"
+static Sym* printf_helper(Ck* k, const char* prefix, uint32_t prefix_len, const char* who, const char* generic,
+                          SType** targs, int nargs, Node* at) {
+    if (!prefix) return NULL;
     char name[512];
-    snprintf(name, sizeof name, "%.*s%s", (int)prefix, printf_fn->name, generic);
+    snprintf(name, sizeof name, "%.*s%s", (int)prefix_len, prefix, generic);
     for (Sym* s = lookup_val(k, name, (uint32_t)strlen(name)); s && visible(k, s); s = s->overload) {
+        if (!nargs && !s->spec_args) return s;
         if (!s->spec_args || s->spec_nargs != nargs) continue;
         int same = 1;
         for (int i = 0; i < nargs && same; i++)
@@ -3618,13 +3619,12 @@ typedef struct {
     int         bi;         // BI_FMT_PRINTF or BI_STR_FORMAT
     int         fi;         // the format's argument index
     const char* who;
-    const char* counted;    // helper names
-    const char* precision;
-    const char* radix;
+    const char* open;       // the sink opener and closer beside the public function
+    const char* close;
 } FormatCall;
 
-static const FormatCall PRINTF_CALL = { BI_FMT_PRINTF, 0, "fmt.printf", "print_counted", "print_precision", "print_radix" };
-static const FormatCall STR_FORMAT_CALL = { BI_STR_FORMAT, 1, "str.format", "put_counted", "put_precision", "put_radix" };
+static const FormatCall PRINTF_CALL = { BI_FMT_PRINTF, 0, "fmt.printf", "print_open", "print_close" };
+static const FormatCall STR_FORMAT_CALL = { BI_STR_FORMAT, 1, "str.format", "put_open", "put_close" };
 
 static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc) {
     Node* callee = call->a;
@@ -3692,6 +3692,29 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
             continue;
         }
 
+        int zero = 0;
+        uint64_t width = 0;
+        if (format->str[i] == '0') {
+            zero = 1;
+            i++;
+            if (i >= format->len || format->str[i] < '1' || format->str[i] > '9') {
+                ck_err(k, format_arg, "%s zero flag needs a width at decoded byte %u", who, conv_off);
+                return T_ERR;
+            }
+        }
+        while (i < format->len && format->str[i] >= '0' && format->str[i] <= '9') {
+            if (width <= 1000000) width = width * 10 + (uint64_t)(format->str[i] - '0');
+            i++;
+        }
+        if (width > 1000000) {
+            ck_err(k, format_arg, "%s width %llu exceeds the limit 1000000", who, (unsigned long long)width);
+            return T_ERR;
+        }
+        if (i >= format->len) {
+            ck_err(k, format_arg, "incomplete %s conversion at decoded byte %u", who, conv_off);
+            return T_ERR;
+        }
+
         uint16_t precision = 6;
         int has_precision = 0;
         if (format->str[i] == '.') {
@@ -3723,10 +3746,9 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
             }
         } else if (format->str[i] == '*' || format->str[i] == '+' ||
                    format->str[i] == '-' || format->str[i] == '#' ||
-                   format->str[i] == ' ' ||
-                   (format->str[i] >= '0' && format->str[i] <= '9')) {
+                   format->str[i] == ' ') {
             ck_err(k, format_arg,
-                   "%s width, flags, '*', and positional arguments are not supported (decoded byte %u)", who,
+                   "%s flags other than '0', '*', and positional arguments are not supported (decoded byte %u)", who,
                    conv_off);
             return T_ERR;
         }
@@ -3752,8 +3774,14 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
             ck_err(k, format_arg, "%s precision is supported only for %%f (decoded byte %u)", who, conv_off);
             return T_ERR;
         }
+        if (zero && (kind == PF_STRING || kind == PF_BYTE)) {
+            ck_err(k, format_arg, "%s zero padding is supported only for numeric conversions (decoded byte %u)", who,
+                   conv_off);
+            return T_ERR;
+        }
         printf_add_part(plan, &cap, (PrintfPart){ .kind = (uint8_t)kind,
-            .precision = precision, .off = conv_off, .arg = next_arg++ });
+            .precision = precision, .width = (uint32_t)width, .zero = (uint8_t)zero,
+            .off = conv_off, .arg = next_arg++ });
         i++;
         literal = i;
     }
@@ -3780,11 +3808,15 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
                "extra %s argument %d is not consumed by the format", who,
                expected_count + 1);
 
+    uint32_t own_len = fn->len - 6; // the module prefix before "printf" or "format"
+    uint32_t rendering_len = rendering_prefix ? (uint32_t)strlen(rendering_prefix) : 0;
+    plan->open = printf_helper(k, fn->name, own_len, who, fc->open, NULL, 0, call);
+    plan->close = printf_helper(k, fn->name, own_len, who, fc->close, NULL, 0, call);
     SType* counted_arg[1];
     counted_arg[0] = st_prim(P_STRING);
-    Sym* text_helper = printf_helper(k, fn, who, fc->counted, counted_arg, 1, call);
+    Sym* text_helper = printf_helper(k, rendering_prefix, rendering_len, who, "piece", counted_arg, 1, call);
     counted_arg[0] = st_prim(P_U8);
-    Sym* byte_helper = printf_helper(k, fn, who, fc->counted, counted_arg, 1, call);
+    Sym* byte_helper = printf_helper(k, rendering_prefix, rendering_len, who, "piece", counted_arg, 1, call);
     for (int i = 0; i < plan->nparts; i++) {
         PrintfPart* part = &plan->parts[i];
         if (part->kind == PF_TEXT) { part->helper = text_helper; continue; }
@@ -3806,18 +3838,18 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
                    got ? type_name(got) : "unknown");
             continue;
         }
-        const char* generic = fc->counted;
+        const char* generic = "piece";
         SType* helper_arg[1] = { actual };
         switch (part->kind) {
         case PF_BINARY: case PF_OCTAL: case PF_HEX_LOWER: case PF_HEX_UPPER:
-            generic = fc->radix;
+            generic = "piece_radix";
             break;
         case PF_FIXED:
-            generic = fc->precision;
+            generic = "piece_precision";
             break;
         default: break;
         }
-        part->helper = printf_helper(k, fn, who, generic, helper_arg, 1, call);
+        part->helper = printf_helper(k, rendering_prefix, rendering_len, who, generic, helper_arg, 1, call);
     }
     for (int i = fi + expected_count + 1; i < call->nkids; i++) {
         Node* arg = call->kids[i]->kind == N_MUTARG ? call->kids[i]->a : call->kids[i];

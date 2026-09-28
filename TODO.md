@@ -276,10 +276,6 @@ foundations.
   3.3-5.3x libm's `expf`, `logf`, `sinf`, and `cosf` against 2.1-3.1x for the
   `f64` forms (`bench/std/run-math.sh`). Candidate: `f32` kernels with
   `f32`-sized polynomials that keep the 1-ULP bound (Stdlib #8).
-- **Fixed-width integer formatting** [additive] — width, zero padding, and base
-  prefixes for `fmt.printf`, especially fixed-width `%b`/`%o`/`%x` register
-  displays; carve consistently across integer conversions from a hardware
-  fixture rather than adding a binary-only modifier.
 - **Random source** [new].
 
 ## 5. Packages
