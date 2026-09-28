@@ -27,6 +27,8 @@ must be corrected.
   and the reserved `panic(message)` and debug-only `assert(condition)` builtins.
 - [Modules](module.md) — qualified and selective imports, standard-library and
   relative local sources, `pub` visibility, dependency loading, and cycles.
+- [Packages](package.md) — `ace.pkg` manifests, dependencies found in `pkg/`,
+  native link inputs, and the `ace pkg` commands.
 - [Standard library](std/index.md) — the shipped `std/` modules and
   their implemented APIs.
 
