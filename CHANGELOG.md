@@ -702,6 +702,46 @@ current normative rules, and Git preserves patch-level detail.
   code shrinks 25,612 to 25,552 bytes. `tests/ir/strength.ace` gains a global
   summed by a power-of-two stride to cover the new hoist, and
   `tests/ir-diff.sh` (200 random programs) shows no mismatches.
+- Added the IR's internal vector types for auto-vectorization (Compiler #6,
+  step 1 of 3): `v4f32` and `v4i32`, with `splat` and `select` beside lane-wise
+  `add`, `sub`, `mul`, `neg`, `div` (float), compares to a lane mask, `cast`
+  (`i32` to `f32`), `load`, `store`, and `phi`; the verifier confines them to
+  those operations. `arm64.c` emits NEON `.4s` forms, allocates vectors in the
+  v registers as whole `q` registers, moves and parks them whole, and spills
+  one to a pair of slots, never keeping one in a callee-saved register across a
+  call (a callee preserves only the low half). No pass creates vectors yet:
+  `tests/vector_ir.c` builds them by hand, checks `--ir` printing against
+  `tests/vector_ir.ir`, and compares every lane with C, bit for bit.
+  Existing programs compile to identical machine code.
+- Added auto-vectorization to pass 6 (Compiler #6, step 2 of 3), after
+  cleanup so loops are merged: an innermost counted loop (header of only the
+  `u64` or `i64` counter from 0 by 1 under `lt i, n`, one body block) of
+  lane-wise `f32`/`i32` `add`, `sub`, `mul`, `neg`, and float `div` over
+  `base[i]` elements gains a four-lane loop ahead of it when each store's
+  object is another access's only at the same element (distinct globals or
+  stack objects, or the same base and offset) and no body value is used after
+  the loop. The vector loop counts whole vectors (`k`, addressed `base + 16k`,
+  which the target folds) with invariants splatted in the preheader; the
+  original loop runs the remainder from `4k`. A reduction, a carried value, a
+  neighbouring element, two possibly overlapping pointers, a remaining call,
+  or `f64` elements keep a loop scalar. `bench/core` `saxpy-f32` drops from
+  0.507 to 0.131 ns/element (3.9x; C `-O2` scalar 0.486, vectorized 0.092).
+  `tests/ir/vectorize.ace` covers accepted and rejected loops, and
+  `tests/vectorize/lanes.ace` must print the same bits in release and debug
+  for counts leaving every remainder and for NaN, signed-zero, infinite, and
+  subnormal lanes.
+- Extended auto-vectorization to branches and the index as a lane value
+  (Compiler #6, step 3 of 3). The body may be a sequence of blocks, each
+  forking on a compare into arms of at most one block that meet at the next;
+  arms may not load or store, since the vector loop runs both, and each join's
+  phi becomes a `select` on the compare's lane mask. Under a constant count
+  that fits, `i32(i)` is a lane value: a vector phi from the new `lanes` op
+  (`<0, 1, 2, 3>`) stepping by 4, feeding `v4i32` `and`, `or`, `xor`, and
+  `shl`/`shr` by a constant. Equal constants share one splat, which the
+  target emits as `movi`/`fmov .4s` when the lane fits eight bits, and a
+  constant count of whole vectors drops the scalar remainder loop. `bench/core`
+  `cube-transform` drops from 61.0 to 41.4 ns/cube (1.47x; C `-O2` scalar
+  53.0, vectorized 31.4), and `saxpy-f32` from 0.131 to 0.126 ns/element.
 
 ## Core language
 

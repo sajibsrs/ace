@@ -7,7 +7,9 @@
 // the low 32 bits, extended to 32 by its signedness (the Apple PCS argument
 // form); bits 63:32 are unspecified, so 32-bit instructions operate on it and
 // only a widening cast extends it. A float lives in the low bits of a v
-// register (s for f32, d for f64).
+// register (s for f32, d for f64); a vector (ir.h), in the whole q register.
+// A vector never takes a callee-saved register across a call, whose low 64
+// bits alone the callee preserves, and spills to a pair of slots.
 //
 // Registers: x0-x14 and x19-x28 are allocated. x15, x16, and x17 are scratch
 // for spilled and constant operands, check temporaries, and far spill slots;
@@ -46,7 +48,8 @@ typedef struct { uint32_t site, w; int target; uint8_t imm19; } Branch;
 typedef struct { uint8_t cbz, cond, reg, sf, nz; } Cond;
 
 // is_const: 1 moves imm, 2 moves the address sp + imm (a stack object)
-typedef struct { int dst, src; uint64_t imm; uint8_t is_const, sf; } Move;
+// q: a vector, moved whole (never a constant)
+typedef struct { int dst, src; uint64_t imm; uint8_t is_const, sf, q; } Move;
 
 typedef struct {
     Obj*      o;
@@ -119,13 +122,15 @@ static int is_remat(IrOp op) { return op == IR_CONST || op == IR_SLOT; }
 static int narrow(IrType t) { return t != IT_BOOL && ir_type_bits(t) < 32; }
 static int is_fp(IrType t) { return ir_type_float(t); }
 static int fp_reg(int r) { return r >= V && r < SLOT; }
-static int fp_val(A64* a, int v) { return is_fp((IrType)ins_of(a, v)->type); }
+static int is_vec(IrType t) { return ir_type_vector(t); }
+static int fp_val(A64* a, int v) { IrType t = (IrType)ins_of(a, v)->type; return is_fp(t) || is_vec(t); }
+static int vec_val(A64* a, int v) { return is_vec((IrType)ins_of(a, v)->type); }
 static uint32_t R(int r) { return (uint32_t)r & 31; } // a register's encoding field
 static uint32_t ftype(IrType t) { return t == IT_F64 ? 0x00400000u : 0; } // the d form of an s instruction
 
 // Whether an integer cast's register form is its operand's: no instruction.
 static int cast_in_place(IrType to, IrType from) {
-    if (is_fp(to) || is_fp(from)) return 0;
+    if (is_fp(to) || is_fp(from) || is_vec(to) || is_vec(from)) return 0;
     int fb = ir_type_bits(from), tb = ir_type_bits(to);
     if (tb == 64 && fb < 64) return !ir_type_signed(from) && fb < 32; // a u8, u16, or bool is held zero-extended
     return !(tb < 32 && !(fb < tb && (!ir_type_signed(from) || ir_type_signed(to))) &&
@@ -136,6 +141,13 @@ static int cast_in_place(IrType to, IrType from) {
 
 static void put(A64* a, uint32_t w) { buf_put32(a->t, w); }
 static uint32_t here(A64* a) { return (uint32_t)a->t->len; }
+
+static void mem(A64* a, uint32_t op, int size, int rt, int rn, int64_t off);
+
+// mov vd.16b, vn.16b: a whole vector
+static void mov_q(A64* a, int rd, int rn) {
+    if (rd != rn) put(a, 0x4EA01C00u | (R(rn) << 16) | (R(rn) << 5) | R(rd));
+}
 
 // rd = rn in either class; across classes, the bits (fmov d, x / x, d)
 static void mov_reg(A64* a, int rd, int rn) {
@@ -205,6 +217,10 @@ static void ld_slot(A64* a, int rt, int s) { // a far slot through rt, or x15 fo
     put(a, 0x914003E0u | ((off >> 12) << 10) | base); // add base, sp, #hi, lsl 12
     put(a, op | (((off & 0xFFFu) / 8) << 10) | (base << 5) | R(rt));
 }
+
+// A vector's pair of slots from s: ldr/str q, a far one through x15.
+static void ld_slotq(A64* a, int rt, int s) { mem(a, 0x3DC00000u, 16, rt, 31, slot_off(a, s)); }
+static void st_slotq(A64* a, int rt, int s) { mem(a, 0x3D800000u, 16, rt, 31, slot_off(a, s)); }
 
 static void st_slot(A64* a, int rt, int s) { // a far slot is addressed through x15
     uint32_t off = slot_off(a, s), op = fp_reg(rt) ? 0xFD000000u : 0xF9000000u;
@@ -364,7 +380,8 @@ static int opnd(A64* a, int v, int scratch) {
         return scratch;
     }
     if (a->reg[v] >= 0) return a->reg[v];
-    ld_slot(a, scratch, a->slot[v]);
+    if (vec_val(a, v)) ld_slotq(a, scratch, a->slot[v]);
+    else ld_slot(a, scratch, a->slot[v]);
     return scratch;
 }
 
@@ -372,7 +389,10 @@ static int opnd(A64* a, int v, int scratch) {
 static int dst(A64* a, int v) { return a->reg[v] >= 0 ? a->reg[v] : fp_val(a, v) ? FS0 : S0; }
 
 static void dst_done(A64* a, int v, int r) {
-    if (a->reg[v] < 0 && a->slot[v] >= 0) st_slot(a, r, a->slot[v]);
+    if (a->reg[v] < 0 && a->slot[v] >= 0) {
+        if (vec_val(a, v)) st_slotq(a, r, a->slot[v]);
+        else st_slot(a, r, a->slot[v]);
+    }
 }
 
 static int loc(A64* a, int v) { // a move location, or NOREG for an unused value
@@ -382,6 +402,13 @@ static int loc(A64* a, int v) { // a move location, or NOREG for an unused value
 
 // A constant into a v register is a float; into a slot, any constant is its bits.
 static void move1(A64* a, Move m) {
+    if (m.q) {
+        if (m.dst < SLOT && m.src < SLOT) mov_q(a, m.dst, m.src);
+        else if (m.dst < SLOT) ld_slotq(a, m.dst, m.src - SLOT);
+        else if (m.src < SLOT) st_slotq(a, m.src, m.dst - SLOT);
+        else { ld_slotq(a, FS1, m.src - SLOT); st_slotq(a, FS1, m.dst - SLOT); }
+        return;
+    }
     if (m.is_const) {
         int r = m.dst < SLOT ? m.dst : S1;
         if (m.is_const == 2) add_imm(a, r, 31, (uint32_t)m.imm);
@@ -402,7 +429,7 @@ static void move1(A64* a, Move m) {
 
 // Perform moves as if every source were read before any destination is
 // written; a cycle is broken through x16, or v31 for a v register (a slot's
-// bits park in x16, whichever class reads them). avoid is 0 for every
+// bits park in x16, whichever class reads them; a vector's in v31). avoid is 0 for every
 // ordinary caller (an ABI register set never includes x16); asm's own moves
 // pass its reserved set, since a binding may target x16 directly. Any other
 // register may hold a value live across the statement, so such a cycle is
@@ -430,7 +457,9 @@ static void parallel_move(A64* a, Move* m, int n, uint32_t avoid) {
         if (progress) continue;
         for (int i = 0; i < n; i++) { // every pending move is on a cycle
             if (m[i].dst == NOREG) continue;
-            int d = m[i].dst, fp = fp_reg(d), park = fp ? FS0 : S0;
+            int d = m[i].dst, q = 0; // parked whole when a vector reads it
+            for (int j = 0; j < n; j++) q |= m[j].dst != NOREG && !m[j].is_const && m[j].src == d && m[j].q;
+            int fp = fp_reg(d) || q, park = fp ? FS0 : S0;
             if (!fp && (avoid & (1u << park))) { // d = s, s = d; readers of either follow the swap
                 uint32_t s = (uint32_t)m[i].src, rd = (uint32_t)d;
                 put(a, 0xCA000000u | (s << 16) | (rd << 5) | rd);
@@ -443,7 +472,7 @@ static void parallel_move(A64* a, Move* m, int n, uint32_t avoid) {
                         m[j].src = m[j].src == d ? (int)s : m[j].src == (int)s ? d : m[j].src;
                 break;
             }
-            move1(a, (Move){ park, d, 0, 0, 1 });
+            move1(a, (Move){ park, d, 0, 0, 1, (uint8_t)q });
             for (int j = 0; j < n; j++)
                 if (m[j].dst != NOREG && !m[j].is_const && m[j].src == d) m[j].src = park;
             break;
@@ -453,9 +482,9 @@ static void parallel_move(A64* a, Move* m, int n, uint32_t avoid) {
 
 static Move move_of(A64* a, int dst_loc, int v) {
     IrIns* x = ins_of(a, v);
-    if (x->op == IR_CONST) return (Move){ dst_loc, 0, x->imm, 1, (uint8_t)is64((IrType)x->type) };
-    if (x->op == IR_SLOT) return (Move){ dst_loc, 0, a->obj[v], 2, 1 };
-    return (Move){ dst_loc, loc(a, v), 0, 0, 1 };
+    if (x->op == IR_CONST) return (Move){ dst_loc, 0, x->imm, 1, (uint8_t)is64((IrType)x->type), 0 };
+    if (x->op == IR_SLOT) return (Move){ dst_loc, 0, a->obj[v], 2, 1, 0 };
+    return (Move){ dst_loc, loc(a, v), 0, 0, 1, (uint8_t)is_vec((IrType)x->type) };
 }
 
 // Where a leaf of an argument, parameter, or result travels (emit.c
@@ -826,7 +855,7 @@ static void count_uses(A64* a) {
             } else if (x->op == IR_LOAD || x->op == IR_STORE) {
                 if (fold_address(a, u)) a->fused[x->args[0]] = 1;
             } else if ((x->op == IR_ADD || x->op == IR_SUB) && !(x->flags & IRF_CHECKED) &&
-                       !is_fp((IrType)x->type)) { // a float multiply-add is never contracted
+                       !is_fp((IrType)x->type) && !is_vec((IrType)x->type)) { // a float multiply-add is never contracted
                 for (int k = x->op == IR_ADD ? 0 : 1; k < 2; k++) { // multiply-add, multiply-subtract
                     int m = x->args[k];
                     IrIns* mx = &fn->ins[m];
@@ -1140,6 +1169,10 @@ static void allocate(A64* a) {
             }
         }
         int cross = crosses_call(a, v), r = -1, fp = fp_val(a, v);
+        if (cross && vec_val(a, v)) { // a callee preserves a v register's low half only
+            spilled[v] = 1;
+            continue;
+        }
         int rt = crosses(a, v, a->rtcalls, a->nrtcalls); // not in a register a byte routine disturbs
         uint32_t az = asm_reserved(a, v); // not in a register an asm statement reserves
         const int8_t* caller = fp ? fcaller_regs : caller_regs;
@@ -1194,6 +1227,11 @@ static void allocate(A64* a) {
     for (int i = 0; i < nseq; i++) {
         int v = seq[i];
         if (!spilled[v]) continue;
+        if (vec_val(a, v)) { // a pair of its own
+            a->slot[v] = a->nslots;
+            a->nslots += 2;
+            continue;
+        }
         while (nheap && heap[0].end < a->start[v]) free_slots[nfree++] = heap_pop(heap, &nheap).slot;
         int s = nfree ? free_slots[--nfree] : a->nslots++;
         a->slot[v] = s;
@@ -1651,6 +1689,90 @@ static void fcast(A64* a, int v) {
     dst_done(a, v, rd);
 }
 
+// A lane-wise vector operation (ir.h): NEON on .4s lanes, a compare to a mask
+// (lt and le as gt and ge with the operands exchanged; ne as eq inverted),
+// and select through bsl, or bit or bif when the result's register already
+// holds the lanes it keeps.
+static void vector(A64* a, int v) {
+    IrIns* x = ins_of(a, v);
+    IrType t = (IrType)x->type;
+    if (x->op == IR_SPLAT) {
+        int f = t == IT_V4F32;
+        if (is_const(a, x->args[0])) { // an 8-bit lane immediate: movi .4s, or fmov .4s for a float
+            uint64_t bits = ins_of(a, x->args[0])->imm & 0xFFFFFFFFu;
+            int imm8 = !f && bits <= 0xFF ? (int)bits : f && !bits ? 0 : f ? fmov_imm8(bits, 0) : -1;
+            if (imm8 >= 0) {
+                int rd = dst(a, v);
+                uint32_t op = f && bits ? 0x4F00F400u : 0x4F000400u;
+                put(a, op | ((uint32_t)imm8 >> 5) << 16 | ((uint32_t)imm8 & 31) << 5 | R(rd));
+                dst_done(a, v, rd);
+                return;
+            }
+        }
+        int rn = opnd(a, x->args[0], f ? FS0 : S0), rd = dst(a, v);
+        put(a, (f ? 0x4E040400u : 0x4E040C00u) | (R(rn) << 5) | R(rd)); // dup .4s, from s lane 0 or w
+        dst_done(a, v, rd);
+        return;
+    }
+    if (x->op == IR_SELECT) {
+        int m = opnd(a, x->args[0], FS0), rn = opnd(a, x->args[1], FS1), rm = opnd(a, x->args[2], FS2);
+        int rd = dst(a, v);
+        if (rd == rm && rd != m) {
+            put(a, 0x6EA01C00u | (R(m) << 16) | (R(rn) << 5) | R(rd)); // bit: rn's lanes where m is set
+        } else if (rd == rn && rd != m) {
+            put(a, 0x6EE01C00u | (R(m) << 16) | (R(rm) << 5) | R(rd)); // bif: rm's lanes where m is clear
+        } else {
+            mov_q(a, rd, m);
+            put(a, 0x6E601C00u | (R(rm) << 16) | (R(rn) << 5) | R(rd)); // bsl
+        }
+        dst_done(a, v, rd);
+        return;
+    }
+    if (x->op == IR_LANES) { // <0, 1> into the low half by fmov, which zeroes the high; <2, 3> inserted
+        int rd = dst(a, v);
+        mov_imm(a, S0, 1ull << 32, 1);
+        put(a, 0x9E670000u | (S0 << 5) | R(rd)); // fmov d, x
+        mov_imm(a, S0, 3ull << 32 | 2, 1);
+        put(a, 0x4E181C00u | (S0 << 5) | R(rd)); // ins .d[1], x
+        dst_done(a, v, rd);
+        return;
+    }
+    if (x->op == IR_SHL || x->op == IR_SHR) { // by an immediate (ir.h); shr is arithmetic, as i32's
+        uint32_t n = (uint32_t)ins_of(a, x->args[1])->imm;
+        int rn = opnd(a, x->args[0], FS0), rd = dst(a, v);
+        put(a, (x->op == IR_SHL ? 0x4F005400u | (32 + n) << 16 : 0x4F000400u | (64 - n) << 16) | (R(rn) << 5) | R(rd));
+        dst_done(a, v, rd);
+        return;
+    }
+    int l = x->args[0], r = x->nargs > 1 ? x->args[1] : -1, op = x->op;
+    IrType ot = (IrType)ins_of(a, l)->type;
+    int f = ot == IT_V4F32;
+    uint32_t w;
+    switch (op) {
+    case IR_ADD: w = f ? 0x4E20D400u : 0x4EA08400u; break;
+    case IR_SUB: w = f ? 0x4EA0D400u : 0x6EA08400u; break;
+    case IR_MUL: w = f ? 0x6E20DC00u : 0x4EA09C00u; break;
+    case IR_DIV: w = 0x6E20FC00u; break;
+    case IR_NEG: w = f ? 0x6EA0F800u : 0x6EA0B800u; break;
+    case IR_CAST: w = 0x4E21D800u; break; // scvtf
+    case IR_AND: w = 0x4E201C00u; break;
+    case IR_OR: w = 0x4EA01C00u; break;
+    case IR_XOR: w = 0x6E201C00u; break;
+    case IR_LT: case IR_LE:
+        r = l; l = x->args[1];
+        op = swap_op(op);
+        // fall through
+    default: // a compare
+        w = op == IR_GT ? (f ? 0x6EA0E400u : 0x4EA03400u) : op == IR_GE ? (f ? 0x6E20E400u : 0x4EA03C00u)
+                        : (f ? 0x4E20E400u : 0x6EA08C00u); // eq, ne
+        break;
+    }
+    int rn = opnd(a, l, FS0), rm = r >= 0 ? opnd(a, r, FS1) : 0, rd = dst(a, v);
+    put(a, w | (R(rm) << 16) | (R(rn) << 5) | R(rd));
+    if (op == IR_NE) put(a, 0x6E205800u | (R(rd) << 5) | R(rd)); // mvn
+    dst_done(a, v, rd);
+}
+
 // Truncate, then extend by the target's signedness (ir_wrap), in register form.
 static void cast(A64* a, int v) {
     IrIns* x = ins_of(a, v);
@@ -1761,6 +1883,7 @@ static void fexact(A64* a, int v) {
 // The unsigned-offset load or store opcode for a value of type t (a load
 // extends a narrow value to its 32-bit register form; a float uses s or d).
 static uint32_t mem_op(IrType t, int load) {
+    if (is_vec(t)) return load ? 0x3DC00000u : 0x3D800000u; // q
     if (t == IT_F32) return load ? 0xBD400000u : 0xBD000000u;
     if (t == IT_F64) return load ? 0xFD400000u : 0xFD000000u;
     switch (ir_type_bits(t)) {
@@ -1813,7 +1936,7 @@ static void access(A64* a, int v) {
             if (bits) mov_imm(a, S1, bits, t == IT_F64);
             rt = bits ? S1 : 31;
         } else {
-            rt = is_const(a, s) && bits == 0 ? 31 : opnd(a, s, is_fp(t) ? FS1 : S1); // zr
+            rt = is_const(a, s) && bits == 0 ? 31 : opnd(a, s, is_fp(t) || is_vec(t) ? FS1 : S1); // zr
         }
     }
     int p = x->args[0];
@@ -1982,7 +2105,7 @@ static void call(A64* a, int v) {
             store_leaf(a, w, 31, g.mem + g.off, S0, 0);
             if (!g.head) break;
             if (g.reg >= 0) {
-                m[nm++] = (Move){ g.reg, 0, g.mem, 2, 1 };
+                m[nm++] = (Move){ g.reg, 0, g.mem, 2, 1, 0 };
             } else {
                 add_imm(a, S0, 31, g.mem);
                 str_x(a, S0, 31, g.soff);
@@ -1990,7 +2113,7 @@ static void call(A64* a, int v) {
             break;
         }
     }
-    if (p.nres && p.res[0].kind == L_ADDR) m[nm++] = (Move){ 8, 0, p.res[0].mem, 2, 1 }; // the result buffer
+    if (p.nres && p.res[0].kind == L_ADDR) m[nm++] = (Move){ 8, 0, p.res[0].mem, 2, 1, 0 }; // the result buffer
     if (x->flags & IRF_SRET) m[nm++] = move_of(a, 8, x->args[x->nargs - 1]); // the result's memory
     parallel_move(a, m, nm, 0);
     for (int k = 0; k < p.n; k++)
@@ -2029,7 +2152,7 @@ static void call(A64* a, int v) {
         IrType t = (IrType)ins_of(a, u)->type;
         if (r.kind != L_REG || loc(a, u) == NOREG) continue;
         if (narrow(t) || (t == IT_BOOL && r.word)) ext(a, t, r.reg, r.reg); // an AST-emitted callee may leave it unwrapped
-        m[nm++] = (Move){ loc(a, u), r.reg, 0, 0, 1 };
+        m[nm++] = (Move){ loc(a, u), r.reg, 0, 0, 1, 0 };
     }
     parallel_move(a, m, nm, 0);
     for (int i = first + 1; i < last; i++) {
@@ -2102,7 +2225,7 @@ static void asm_select(A64* a, int v) {
         int reg = ab->out[ins_of(a, u)->imm];
         IrType t = (IrType)ins_of(a, u)->type;
         if (narrow(t)) ext(a, t, reg, reg);
-        om[nm++] = (Move){ loc(a, u), reg, 0, 0, 1 };
+        om[nm++] = (Move){ loc(a, u), reg, 0, 0, 1, 0 };
     }
     parallel_move(a, om, nm, ab->reserved);
     free(om);
@@ -2215,6 +2338,10 @@ static void emit_block(A64* a, int b) {
         IrIns* x = &fn->ins[v];
         if (x->op != IR_CHECK) line_row(a, x->at); // its at is the site its stub reports
         if (a->fused[v]) continue;
+        if (is_vec((IrType)x->type) && x->op != IR_LOAD && x->op != IR_PHI) {
+            vector(a, v);
+            continue;
+        }
         if (is_fp((IrType)x->type) && (x->op == IR_ADD || x->op == IR_SUB || x->op == IR_MUL || x->op == IR_DIV ||
                                        x->op == IR_NEG)) {
             farith(a, v);
@@ -2311,11 +2438,11 @@ static void params(A64* a) {
     for (int i = 0; i < bb->nins; i++) {
         int v = bb->ins[i];
         IrIns* x = ins_of(a, v);
-        if (x->op == IR_RESULT && loc(a, v) != NOREG) m[n++] = (Move){ loc(a, v), 8, 0, 0, 1 }; // the caller's memory
+        if (x->op == IR_RESULT && loc(a, v) != NOREG) m[n++] = (Move){ loc(a, v), 8, 0, 0, 1, 0 }; // the caller's memory
         if (x->op != IR_PARAM || loc(a, v) == NOREG || a->pin[x->imm].kind != L_REG) continue;
         int r = a->pin[x->imm].reg;
         if (narrow((IrType)x->type) || (x->type == IT_BOOL && a->pin[x->imm].word)) ext(a, (IrType)x->type, r, r);
-        m[n++] = (Move){ loc(a, v), r, 0, 0, 1 };
+        m[n++] = (Move){ loc(a, v), r, 0, 0, 1, 0 };
     }
     parallel_move(a, m, n, 0);
     free(m);

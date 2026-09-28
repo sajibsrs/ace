@@ -1,0 +1,350 @@
+_vf_arith(ptr, ptr, ptr): void {
+b0:
+    %0 = param ptr 0
+    %1 = param ptr 1
+    %2 = param ptr 2
+    %3 = load v4f32 [%0]
+    %4 = load v4f32 [%1]
+    %5 = add v4f32 %3, %4
+    store [%2], %5
+    %7 = sub v4f32 %3, %4
+    store [%2 + 16], %7
+    %9 = mul v4f32 %3, %4
+    store [%2 + 32], %9
+    %11 = div v4f32 %3, %4
+    store [%2 + 48], %11
+    %13 = neg v4f32 %3
+    store [%2 + 64], %13
+    ret
+}
+_vi_arith(ptr, ptr, ptr): void {
+b0:
+    %0 = param ptr 0
+    %1 = param ptr 1
+    %2 = param ptr 2
+    %3 = load v4i32 [%0]
+    %4 = load v4i32 [%1]
+    %5 = add v4i32 %3, %4
+    store [%2], %5
+    %7 = sub v4i32 %3, %4
+    store [%2 + 16], %7
+    %9 = mul v4i32 %3, %4
+    store [%2 + 32], %9
+    %11 = neg v4i32 %3
+    store [%2 + 48], %11
+    ret
+}
+_vf_cmp(ptr, ptr, ptr): void {
+b0:
+    %0 = param ptr 0
+    %1 = param ptr 1
+    %2 = param ptr 2
+    %3 = load v4f32 [%0]
+    %4 = load v4f32 [%1]
+    %5 = eq v4i32 %3, %4
+    store [%2], %5
+    %7 = ne v4i32 %3, %4
+    store [%2 + 16], %7
+    %9 = lt v4i32 %3, %4
+    store [%2 + 32], %9
+    %11 = le v4i32 %3, %4
+    store [%2 + 48], %11
+    %13 = gt v4i32 %3, %4
+    store [%2 + 64], %13
+    %15 = ge v4i32 %3, %4
+    store [%2 + 80], %15
+    ret
+}
+_vi_cmp(ptr, ptr, ptr): void {
+b0:
+    %0 = param ptr 0
+    %1 = param ptr 1
+    %2 = param ptr 2
+    %3 = load v4i32 [%0]
+    %4 = load v4i32 [%1]
+    %5 = eq v4i32 %3, %4
+    store [%2], %5
+    %7 = ne v4i32 %3, %4
+    store [%2 + 16], %7
+    %9 = lt v4i32 %3, %4
+    store [%2 + 32], %9
+    %11 = le v4i32 %3, %4
+    store [%2 + 48], %11
+    %13 = gt v4i32 %3, %4
+    store [%2 + 64], %13
+    %15 = ge v4i32 %3, %4
+    store [%2 + 80], %15
+    ret
+}
+_v_select(ptr, ptr, ptr, ptr): void {
+b0:
+    %0 = param ptr 0
+    %1 = param ptr 1
+    %2 = param ptr 2
+    %3 = param ptr 3
+    %4 = load v4i32 [%0]
+    %5 = load v4f32 [%1]
+    %6 = load v4f32 [%2]
+    %7 = load v4i32 [%1]
+    %8 = load v4i32 [%2]
+    %9 = select v4f32 %4, %5, %6
+    store [%3], %9
+    %11 = select v4i32 %4, %7, %8
+    store [%3 + 16], %11
+    %13 = load v4f32 [%2]
+    %14 = select v4f32 %4, %5, %13
+    store [%3 + 32], %14
+    %16 = load v4f32 [%1]
+    %17 = select v4f32 %4, %16, %6
+    store [%3 + 48], %17
+    %19 = load v4i32 [%0]
+    %20 = select v4f32 %19, %5, %6
+    store [%3 + 64], %20
+    %22 = add v4f32 %5, %6
+    store [%3 + 80], %22
+    %24 = add v4i32 %4, %4
+    store [%3 + 96], %24
+    ret
+}
+_v_splat(ptr, f32, i32, ptr): void {
+b0:
+    %0 = param ptr 0
+    %1 = param f32 1
+    %2 = param i32 2
+    %3 = param ptr 3
+    %4 = splat v4f32 %1
+    store [%0], %4
+    %6 = splat v4i32 %2
+    store [%0 + 16], %6
+    %8 = const f32 2.5
+    %9 = splat v4f32 %8
+    store [%0 + 32], %9
+    %11 = const i32 -7
+    %12 = splat v4i32 %11
+    store [%0 + 48], %12
+    %14 = load v4i32 [%3]
+    %15 = cast v4f32 %14
+    store [%0 + 64], %15
+    ret
+}
+_v_bits(ptr, ptr, ptr): void {
+b0:
+    %0 = param ptr 0
+    %1 = param ptr 1
+    %2 = param ptr 2
+    %3 = load v4i32 [%0]
+    %4 = load v4i32 [%1]
+    %5 = lanes v4i32
+    store [%2], %5
+    %7 = and v4i32 %3, %4
+    store [%2 + 16], %7
+    %9 = or v4i32 %3, %4
+    store [%2 + 32], %9
+    %11 = xor v4i32 %3, %4
+    store [%2 + 48], %11
+    %13 = const i32 3
+    %14 = shl v4i32 %3, %13
+    store [%2 + 64], %14
+    %16 = const i32 1
+    %17 = shr v4i32 %3, %16
+    store [%2 + 80], %17
+    %19 = const i32 31
+    %20 = shr v4i32 %3, %19
+    store [%2 + 96], %20
+    %22 = const f32 0.0
+    %23 = splat v4f32 %22
+    store [%2 + 112], %23
+    %25 = const i32 200
+    %26 = splat v4i32 %25
+    store [%2 + 128], %26
+    %28 = const i32 256
+    %29 = splat v4i32 %28
+    store [%2 + 144], %29
+    ret
+}
+_v_loop(ptr, u64, ptr): void {
+b0:
+    %0 = param ptr 0
+    %1 = param u64 1
+    %2 = param ptr 2
+    %3 = const f32 0.0
+    %4 = splat v4f32 %3
+    %5 = const i32 0
+    %6 = splat v4i32 %5
+    %7 = const i32 1
+    %8 = splat v4i32 %7
+    %9 = load v4f32 [%0]
+    %10 = load v4f32 [%0 + 16]
+    %11 = const u64 0
+    jmp b1
+b1: ; preds b0, b2
+    %13 = phi u64 [%11, b0], [%25, b2]
+    %14 = phi v4f32 [%4, b0], [%22, b2]
+    %15 = phi v4i32 [%6, b0], [%23, b2]
+    %16 = phi v4f32 [%9, b0], [%17, b2]
+    %17 = phi v4f32 [%10, b0], [%16, b2]
+    %18 = lt bool %13, %1
+    br %18, b2, b3
+b2: ; preds b1
+    %20 = padd ptr %0, %13 * 16
+    %21 = load v4f32 [%20]
+    %22 = add v4f32 %14, %21
+    %23 = add v4i32 %15, %8
+    %24 = const u64 1
+    %25 = add u64 %13, %24
+    jmp b1
+b3: ; preds b1
+    store [%2], %14
+    %28 = cast v4f32 %15
+    store [%2 + 16], %28
+    store [%2 + 32], %16
+    store [%2 + 48], %17
+    ret
+}
+_v_pressure(ptr, ptr): void {
+b0:
+    %0 = param ptr 0
+    %1 = param ptr 1
+    %2 = load v4f32 [%0]
+    %3 = load v4f32 [%0 + 16]
+    %4 = load v4f32 [%0 + 32]
+    %5 = load v4f32 [%0 + 48]
+    %6 = load v4f32 [%0 + 64]
+    %7 = load v4f32 [%0 + 80]
+    %8 = load v4f32 [%0 + 96]
+    %9 = load v4f32 [%0 + 112]
+    %10 = load v4f32 [%0 + 128]
+    %11 = load v4f32 [%0 + 144]
+    %12 = load v4f32 [%0 + 160]
+    %13 = load v4f32 [%0 + 176]
+    %14 = load v4f32 [%0 + 192]
+    %15 = load v4f32 [%0 + 208]
+    %16 = load v4f32 [%0 + 224]
+    %17 = load v4f32 [%0 + 240]
+    %18 = load v4f32 [%0 + 256]
+    %19 = load v4f32 [%0 + 272]
+    %20 = load v4f32 [%0 + 288]
+    %21 = load v4f32 [%0 + 304]
+    %22 = load v4f32 [%0 + 320]
+    %23 = load v4f32 [%0 + 336]
+    %24 = load v4f32 [%0 + 352]
+    %25 = load v4f32 [%0 + 368]
+    %26 = load v4f32 [%0 + 384]
+    %27 = load v4f32 [%0 + 400]
+    %28 = load v4f32 [%0 + 416]
+    %29 = load v4f32 [%0 + 432]
+    %30 = load v4f32 [%0 + 448]
+    %31 = load v4f32 [%0 + 464]
+    %32 = load v4f32 [%0 + 480]
+    %33 = load v4f32 [%0 + 496]
+    %34 = add v4f32 %2, %3
+    %35 = add v4f32 %34, %4
+    %36 = add v4f32 %35, %5
+    %37 = add v4f32 %36, %6
+    %38 = add v4f32 %37, %7
+    %39 = add v4f32 %38, %8
+    %40 = add v4f32 %39, %9
+    %41 = add v4f32 %40, %10
+    %42 = add v4f32 %41, %11
+    %43 = add v4f32 %42, %12
+    %44 = add v4f32 %43, %13
+    %45 = add v4f32 %44, %14
+    %46 = add v4f32 %45, %15
+    %47 = add v4f32 %46, %16
+    %48 = add v4f32 %47, %17
+    %49 = add v4f32 %48, %18
+    %50 = add v4f32 %49, %19
+    %51 = add v4f32 %50, %20
+    %52 = add v4f32 %51, %21
+    %53 = add v4f32 %52, %22
+    %54 = add v4f32 %53, %23
+    %55 = add v4f32 %54, %24
+    %56 = add v4f32 %55, %25
+    %57 = add v4f32 %56, %26
+    %58 = add v4f32 %57, %27
+    %59 = add v4f32 %58, %28
+    %60 = add v4f32 %59, %29
+    %61 = add v4f32 %60, %30
+    %62 = add v4f32 %61, %31
+    %63 = add v4f32 %62, %32
+    %64 = add v4f32 %63, %33
+    store [%1], %64
+    %66 = mul v4f32 %2, %64
+    store [%1 + 16], %66
+    %68 = mul v4f32 %3, %64
+    store [%1 + 32], %68
+    %70 = mul v4f32 %4, %64
+    store [%1 + 48], %70
+    %72 = mul v4f32 %5, %64
+    store [%1 + 64], %72
+    %74 = mul v4f32 %6, %64
+    store [%1 + 80], %74
+    %76 = mul v4f32 %7, %64
+    store [%1 + 96], %76
+    %78 = mul v4f32 %8, %64
+    store [%1 + 112], %78
+    %80 = mul v4f32 %9, %64
+    store [%1 + 128], %80
+    %82 = mul v4f32 %10, %64
+    store [%1 + 144], %82
+    %84 = mul v4f32 %11, %64
+    store [%1 + 160], %84
+    %86 = mul v4f32 %12, %64
+    store [%1 + 176], %86
+    %88 = mul v4f32 %13, %64
+    store [%1 + 192], %88
+    %90 = mul v4f32 %14, %64
+    store [%1 + 208], %90
+    %92 = mul v4f32 %15, %64
+    store [%1 + 224], %92
+    %94 = mul v4f32 %16, %64
+    store [%1 + 240], %94
+    %96 = mul v4f32 %17, %64
+    store [%1 + 256], %96
+    %98 = mul v4f32 %18, %64
+    store [%1 + 272], %98
+    %100 = mul v4f32 %19, %64
+    store [%1 + 288], %100
+    %102 = mul v4f32 %20, %64
+    store [%1 + 304], %102
+    %104 = mul v4f32 %21, %64
+    store [%1 + 320], %104
+    %106 = mul v4f32 %22, %64
+    store [%1 + 336], %106
+    %108 = mul v4f32 %23, %64
+    store [%1 + 352], %108
+    %110 = mul v4f32 %24, %64
+    store [%1 + 368], %110
+    %112 = mul v4f32 %25, %64
+    store [%1 + 384], %112
+    %114 = mul v4f32 %26, %64
+    store [%1 + 400], %114
+    %116 = mul v4f32 %27, %64
+    store [%1 + 416], %116
+    %118 = mul v4f32 %28, %64
+    store [%1 + 432], %118
+    %120 = mul v4f32 %29, %64
+    store [%1 + 448], %120
+    %122 = mul v4f32 %30, %64
+    store [%1 + 464], %122
+    %124 = mul v4f32 %31, %64
+    store [%1 + 480], %124
+    %126 = mul v4f32 %32, %64
+    store [%1 + 496], %126
+    %128 = mul v4f32 %33, %64
+    store [%1 + 512], %128
+    ret
+}
+_v_call(ptr, ptr): void {
+b0:
+    %0 = param ptr 0
+    %1 = param ptr 1
+    %2 = load v4f32 [%0]
+    %3 = load v4i32 [%0 + 16]
+    call @_clobber()
+    %5 = add v4f32 %2, %2
+    store [%1], %5
+    %7 = add v4i32 %3, %3
+    store [%1 + 16], %7
+    ret
+}

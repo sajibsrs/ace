@@ -176,11 +176,14 @@ These are baseline observations, not performance promises.
   not use. A bottom-tested loop measured 7.7% on `saxpy` and 31% on a short
   branchy loop, but 8% slower on `for cond {}`; it is deferred until it can be
   weighed on top of the remaining work. `bench/core/run-hotloop.sh` tracks the
-  saxpy, dot, and `Vec3` kernels. Latest ratios to scalar C `-O2`: saxpy 1.05x,
+  saxpy, dot, and `Vec3` kernels. Latest ratios to scalar C `-O2`: saxpy-f64
+  1.05x, saxpy-f32 0.26x (auto-vectorized; 1.37x C's vectorized output),
+  cube-transform 0.78x (auto-vectorized; 1.32x C's vectorized output),
   particle `Vec3` 1.51x, `Vec3` length 0.89x, floating dot 0.75x. `std/simd` is
-  specified and unimplemented. Candidate order: (1) the bottom-tested loop and
-  by-value `Vec3` leaf-call frame cost; (2) auto-vectorization; (3) `std/simd`
-  NEON intrinsics (`f32x4`, `i8x16`) for what it does not cover.
+  specified and unimplemented. Candidate order: (1) auto-vectorization's
+  remaining steps (SPEC Decision Queue); (2) the bottom-tested loop and
+  by-value `Vec3` leaf-call frame cost; (3) `std/simd` NEON intrinsics
+  (`f32x4`, `i8x16`) for what it does not cover.
 - **Release FMA contraction** [new] — undecided and deferred: Ace never fuses `a * b + c`; `math.fma` is the explicit route.
 - **Inline-expansion leftovers** [new] — an expansion the IR lowers has no
   result temp and no argument copies, but a `bool` result returned from

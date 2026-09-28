@@ -102,6 +102,7 @@ int ir_type_bits(IrType t) {
     case IT_I16: case IT_U16: return 16;
     case IT_I32: case IT_U32: case IT_F32: return 32;
     case IT_I64: case IT_U64: case IT_PTR: case IT_F64: return 64;
+    case IT_V4F32: case IT_V4I32: return 128;
     default: return 0;
     }
 }
@@ -109,6 +110,10 @@ int ir_type_bits(IrType t) {
 int ir_type_signed(IrType t) { return t >= IT_I8 && t <= IT_I64; }
 
 int ir_type_float(IrType t) { return t == IT_F32 || t == IT_F64; }
+
+int ir_type_vector(IrType t) { return t == IT_V4F32 || t == IT_V4I32; }
+
+IrType ir_lane_type(IrType t) { return t == IT_V4F32 ? IT_F32 : t == IT_V4I32 ? IT_I32 : t; }
 
 static SType* unwrap(SType* t) {
     while (t && t->kind == SK_DISTINCT) t = t->base;
@@ -252,7 +257,7 @@ uint64_t ir_wrap(IrType t, uint64_t v) {
 }
 
 static const char* type_name(IrType t) {
-    static const char* names[] = { "void", "bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "ptr", "f32", "f64" };
+    static const char* names[] = { "void", "bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "ptr", "f32", "f64", "v4f32", "v4i32" };
     return names[t];
 }
 
@@ -335,6 +340,44 @@ int ir_dominates(const int* idom, int a, int b) {
     return b == a;
 }
 
+// Whether instruction id uses vectors only as the vector operations allow
+// (ir.h IR_OPS); a scalar instruction touching none passes.
+static int vector_ok(IrFunc* fn, int id) {
+    IrIns* v = &fn->ins[id];
+    IrType t = (IrType)v->type;
+    int any = ir_type_vector(t);
+    for (int a = 0; a < v->nargs; a++) any |= ir_type_vector((IrType)fn->ins[v->args[a]].type);
+    if (!any) return v->op != IR_SPLAT && v->op != IR_SELECT && v->op != IR_LANES;
+    IrType a0 = v->nargs ? (IrType)fn->ins[v->args[0]].type : IT_VOID;
+    IrType a1 = v->nargs > 1 ? (IrType)fn->ins[v->args[1]].type : IT_VOID;
+    if (v->flags & IRF_CHECKED) return 0;
+    switch (v->op) {
+    case IR_PHI:
+        for (int a = 0; a < v->nargs; a++)
+            if (fn->ins[v->args[a]].type != t) return 0;
+        return 1;
+    case IR_ADD: case IR_SUB: case IR_MUL: return v->nargs == 2 && ir_type_vector(t) && a0 == t && a1 == t;
+    case IR_DIV: return v->nargs == 2 && t == IT_V4F32 && a0 == t && a1 == t;
+    case IR_NEG: return v->nargs == 1 && ir_type_vector(t) && a0 == t;
+    case IR_AND: case IR_OR: case IR_XOR: return v->nargs == 2 && t == IT_V4I32 && a0 == t && a1 == t;
+    case IR_SHL: case IR_SHR: {
+        const IrIns* c = v->nargs == 2 ? &fn->ins[v->args[1]] : NULL;
+        return c && t == IT_V4I32 && a0 == t && a1 == IT_I32 && c->op == IR_CONST && c->imm >= 1 && c->imm <= 31;
+    }
+    case IR_LANES: return v->nargs == 0 && t == IT_V4I32;
+    case IR_EQ: case IR_NE: case IR_LT: case IR_LE: case IR_GT: case IR_GE:
+        return v->nargs == 2 && t == IT_V4I32 && ir_type_vector(a0) && a1 == a0;
+    case IR_CAST: return v->nargs == 1 && t == IT_V4F32 && a0 == IT_V4I32;
+    case IR_LOAD: return v->nargs == 1 && a0 == IT_PTR; // a vector result
+    case IR_STORE: return v->nargs == 2 && a0 == IT_PTR && ir_type_vector(a1);
+    case IR_SPLAT: return v->nargs == 1 && ir_type_vector(t) && a0 == ir_lane_type(t);
+    case IR_SELECT:
+        return v->nargs == 3 && a0 == IT_V4I32 && ir_type_vector(t) && a1 == t &&
+               (IrType)fn->ins[v->args[2]].type == t;
+    default: return 0;
+    }
+}
+
 int ir_verify(IrFunc* fn) {
     if (fn->nblocks == 0) return bad(fn, "no blocks%s", 0, 0);
     if (fn->blocks[0].npreds) return bad(fn, "entry block b0 has %d predecessors%s", fn->blocks[0].npreds, 0);
@@ -408,6 +451,7 @@ int ir_verify(IrFunc* fn) {
                 int dom = db == ub ? (v->op == IR_PHI || pos[u] < i) : ir_dominates(idom, db, ub);
                 if (!dom) { ok = bad(fn, "%%%d uses %%%d where its definition does not dominate", id, u); break; }
             }
+            if (ok && !vector_ok(fn, id)) ok = bad(fn, "%%%d misuses a vector type%s", id, 0);
         }
     }
     free(pos); free(rpo); free(idom);

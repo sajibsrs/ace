@@ -12,12 +12,16 @@
 // Value types. Every integer value is held in range for its type: a narrow
 // result is wrapped (release) or checked (debug) at the operation that makes it.
 // A float CONST's imm is its IEEE bit pattern (an f32's in the low 32 bits).
+// A vector type is four lanes in 128 bits, internal to the optimizer (Compiler
+// #6, auto-vectorization): no source type lowers to one, and none crosses a
+// call, parameter, or result. A v4i32 lane compares signed and wraps.
 typedef enum {
     IT_VOID, IT_BOOL,
     IT_I8, IT_I16, IT_I32, IT_I64,
     IT_U8, IT_U16, IT_U32, IT_U64,
     IT_PTR, // an address: pointers, function values, variable homes; compares unsigned
     IT_F32, IT_F64,
+    IT_V4F32, IT_V4I32,
 } IrType;
 
 #define IR_OPS(X)                                                              \
@@ -66,6 +70,14 @@ typedef enum {
     X(PROJ, "proj")     /* leaf imm of the aggregate result of call args[0]  \
                            or an asm's out bindings, which it follows        \
                            directly with the others */                       \
+    /* vectors: every lane of vector type the scalar args[0] of its lane    \
+       type; each lane args[1]'s where v4i32 mask args[0]'s is all ones,     \
+       else args[2]'s; the v4i32 <0, 1, 2, 3>. add, sub, mul, neg, div       \
+       (v4f32 only), and, or, xor, shl and shr (v4i32 only, by an i32        \
+       constant 1-31), compare (to a v4i32 mask of all-ones or zero lanes),  \
+       cast (v4i32 to v4f32), load, store, and phi also take vectors,        \
+       lane-wise and never checked */                                        \
+    X(SPLAT, "splat") X(SELECT, "select") X(LANES, "lanes")                    \
     X(CHECK, "check")   /* debug: bool args[0] false traps, writing "path:    \
                            line:col: name" for site at (Safety & Debug #2),   \
                            or the call contract failure when name is NULL */  \
@@ -197,6 +209,8 @@ int      ir_is_term(IrOp op);
 int      ir_type_bits(IrType t);
 int      ir_type_signed(IrType t);
 int      ir_type_float(IrType t);
+int      ir_type_vector(IrType t);
+IrType   ir_lane_type(IrType t); // a vector's lane type; t itself for a scalar
 // The IR type of scalar t, or -1 when t is not a scalar the IR covers.
 int      ir_type_of(SType* t);
 // The leaves of t in offset order (a scalar is its own one leaf), or -1 with
@@ -218,7 +232,8 @@ IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, 
 int     staticmap_hash(Sym* s, uint64_t* seed, uint32_t* mask);
 void    ir_free(IrFunc* fn);
 // Pass 6 (release only, optimizer.c): constant propagation, value numbering, loop
-// strength reduction, then dead-code and control-flow cleanup, in place.
+// strength reduction, dead-code and control-flow cleanup, then auto-vectorization
+// (cleaning up again after it), in place.
 void    ir_optimize(IrFunc* fn);
 // Immediate dominators (Cooper-Harvey-Kennedy) over a reverse postorder, which
 // *rpo_out receives (malloc'd, *nrpo blocks); idom[0] = 0 and idom[b] = -1 for

@@ -766,6 +766,16 @@ for mode in --debug --release; do
         fail=1
     fi
 done
+# auto-vectorization: release (vectorized) and debug (scalar) print the same bits
+mkdir -p /tmp/ace_vectorize
+if ! "$ACE" --release -o /tmp/ace_vectorize/release tests/vectorize/lanes.ace ||
+   ! "$ACE" --debug -o /tmp/ace_vectorize/debug tests/vectorize/lanes.ace ||
+   ! /tmp/ace_vectorize/release >/tmp/ace_vectorize/release.txt ||
+   ! /tmp/ace_vectorize/debug >/tmp/ace_vectorize/debug.txt ||
+   ! cmp -s /tmp/ace_vectorize/release.txt /tmp/ace_vectorize/debug.txt; then
+    echo "FAIL: vectorized loops should compute what scalar loops do"
+    fail=1
+fi
 mkdir -p /tmp/ace_checked_bounds
 cp tests/checked_bounds/*.ace /tmp/ace_checked_bounds/
 if ! "$ACE" --debug tests/sema/sequences/main_ok.ace ||
@@ -1055,6 +1065,26 @@ if ! cc -target arm64-apple-macos tests/darwin_bpf_layout.c \
     fail=1
 elif ! /tmp/ace_darwin_bpf_layout; then
     echo "FAIL: Darwin SDK BPF layout verifier failed"
+    fail=1
+fi
+
+# vector IR (tests/vector_ir.c): hand-built functions verify, print as
+# tests/vector_ir.ir, and match C lane for lane through the AArch64 target
+if ! cc -std=c11 -O1 -DEMIT -o /tmp/ace_vector_emit tests/vector_ir.c $(ls src/*.c | grep -v src/main.c) \
+        2>/tmp/ace_test_errs; then
+    echo "FAIL: vector IR emitter did not build"
+    cat /tmp/ace_test_errs
+    fail=1
+elif ! /tmp/ace_vector_emit /tmp/ace_vector.o >/tmp/ace_vector.ir 2>/tmp/ace_test_errs; then
+    echo "FAIL: vector IR did not verify or emit"
+    cat /tmp/ace_test_errs
+    fail=1
+elif ! diff -u tests/vector_ir.ir /tmp/ace_vector.ir; then
+    echo "FAIL: vector IR printing differs"
+    fail=1
+elif ! cc -o /tmp/ace_vector tests/vector_ir.c /tmp/ace_vector.o 2>/tmp/ace_test_errs || ! /tmp/ace_vector >/dev/null; then
+    echo "FAIL: vector IR results differ from C"
+    cat /tmp/ace_test_errs
     fail=1
 fi
 

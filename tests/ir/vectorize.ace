@@ -1,0 +1,95 @@
+/* Release gives an innermost counted loop of lane-wise f32 or i32 arithmetic
+ * over independent elements a vector loop ahead of it, four elements per
+ * iteration, counting whole vectors; the original loop runs the remainder.
+ * Accepted: global arrays with a constant or variable count, integer lanes
+ * with negation, float division, a stack array, a call inline expansion
+ * removes, two slices once inlined over a global and a stack array, and
+ * branches on an i32 index (selects over its lanes; a count of whole vectors
+ * leaves no remainder loop). Kept scalar: a reduction, a neighbouring element,
+ * two slices that may overlap, a call that stays, f64 elements, and a load
+ * under a branch. Debug keeps every loop scalar. */
+
+xs: [64]f32
+ys: [64]f32
+ks: [64]i32
+ds: [64]f64
+
+scale(n: usize) {
+    for i: usize in 0 .. n { ys[i] = xs[i] / ys[i] - 2.5 }
+}
+
+negate() {
+    for i: usize in 0 .. 64 { ks[i] = -ks[i] * 3 + ks[i] }
+}
+
+local(): f32 {
+    tmp: [16]f32 = [0.0 : 16]
+    for i: usize in 0 .. 16 { tmp[i] = xs[i] * xs[i] }
+    return tmp[3]
+}
+
+sum(): f32 {
+    s: f32 = 0.0
+    for i: usize in 0 .. 64 { s += xs[i] }
+    return s
+}
+
+shift() {
+    for i: usize in 0 .. 63 { ys[i] = ys[i + 1] }
+}
+
+slices(a: []f32, b: mut []f32) {
+    for i: usize in 0 .. 64 { b[i] = a[i] + 1.0 }
+}
+
+twice(x: f32): f32 {
+    return x * 2.0
+}
+
+calls() {
+    for i: usize in 0 .. 64 { ys[i] = twice(xs[i]) + xs[i] }
+}
+
+halve(x: f32, n: int): f32 {
+    if n == 0 { return x }
+    return halve(x * 0.5, n - 1)
+}
+
+stays() {
+    for i: usize in 0 .. 64 { ys[i] = halve(xs[i], 2) }
+}
+
+wide() {
+    for i: usize in 0 .. 64 { ds[i] = ds[i] * 2.0 }
+}
+
+sign(i: i32, bit: i32): f32 {
+    if ((i >> bit) & 1) == 1 { return 1.0 }
+    return -1.0
+}
+
+corners() {
+    for i: i32 in 0 .. 64 { ys[i] = sign(i, 0) * xs[i] + sign(i, 2) }
+}
+
+guarded() {
+    for i: usize in 0 .. 64 {
+        y: f32 = 0.0
+        if ks[i] > 0 { y = xs[i] }
+        ys[i] = y
+    }
+}
+
+main(): int {
+    scale(64)
+    negate()
+    b: [64]f32 = [0.0 : 64]
+    slices(xs[..], mut b[..])
+    calls()
+    stays()
+    wide()
+    shift()
+    corners()
+    guarded()
+    return int(local() + sum())
+}

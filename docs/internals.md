@@ -33,16 +33,26 @@ from the AST would need every optimization written once per source shape and
 repeated in each additional backend.
 
 - **`ir.h`** / **`ir.c`** — the IR's instruction set, construction,
-  verification, and printer (`--ir`). Shared by every target.
+  verification, and printer (`--ir`). Shared by every target. Its four-lane
+  vector types (`v4f32`, `v4i32`) are internal to the optimizer: no source
+  type lowers to one, and none crosses a call. `tests/vector_ir.c` builds
+  vector IR by hand and checks the target's lanes against C.
 - **`lower.c`** (pass 5) — walks each checked function once into SSA
   (Braun et al.): expands `inline` calls, turns `defer` into control flow,
   makes debug checks trapping instructions or explicit branches, splits every
   struct, tuple, string, and slice into scalar leaves (the IR has no
   aggregate values), and turns self tail recursion into a loop.
-- **`optimizer.c`** (pass 6, release builds only) — four passes over one
+- **`optimizer.c`** (pass 6, release builds only) — passes over one
   function's IR, each run once, in order: sparse conditional constant
   propagation, global value numbering, loop strength reduction, dead-code and
-  control-flow cleanup.
+  control-flow cleanup, then auto-vectorization over the cleaned loops (and
+  cleanup again when it rewrote one). The vectorizer puts a four-lane loop,
+  counting whole vectors, ahead of an innermost counted loop of lane-wise
+  `f32`/`i32` arithmetic whose accesses it proves independent; the original
+  loop runs the remainder, or is dropped when the count is a constant number
+  of whole vectors. A branch whose arms neither load nor store becomes a
+  `select` on the compare's lane mask, and `i32(i)` under a constant count
+  becomes a lane vector counting up from `<0, 1, 2, 3>`.
 - **`arm64.c`** (passes 7-10, the AArch64 target) — instruction selection
   (including fused forms such as integer `madd`), leaving SSA (phis become
   copies, with coalescing), linear-scan register allocation, block layout,

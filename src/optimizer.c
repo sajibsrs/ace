@@ -1,8 +1,9 @@
 // optimizer.c — pass 6, the release-only optimizer, over one function's IR
 // (SPEC.md Compiler #2). Each pass runs
 // once, in the order the SPEC gives: sparse conditional constant propagation,
-// global value numbering, loop strength reduction, and dead-code and
-// control-flow cleanup.
+// global value numbering, loop strength reduction, dead-code and control-flow
+// cleanup, then auto-vectorization over the cleaned loops (and cleanup again
+// after it rewrites any).
 //
 // The passes rely only on facts a debug build checks: an integer operation
 // that would trap in debug (a zero divisor, MIN / -1, a shift count outside
@@ -692,6 +693,408 @@ static void lsr(IrFunc* fn) {
     free(rpo); free(idom); free(repl); free(body); free(stack); free(phis); free(ptrs);
 }
 
+// --- auto-vectorization -----------------------------------------------------------------
+//
+// SPEC.md Compiler #6. An innermost counted loop (a header holding only
+// i = phi [0, pre], [i + 1, body], lt i, n, and its branch, for a u64 or i64
+// i indexing directly or through its cast to u64, or, under a constant n that
+// fits, through i32 lane value t = cast i32 i and its cast to u64; a body of
+// blocks in sequence, where one may branch on a compare into arms of a single
+// block each, or none, that meet at the next, whose phis become selects)
+// whose body is lane-wise f32/i32 arithmetic over elements base[i] gains a
+// vector loop ahead of it, four elements per iteration, when every store's
+// object is provably another access's object only at the same element: a
+// distinct global or stack object, or the same base at the same offset. The
+// vector loop counts whole vectors, k = i / 4, so the target folds the
+// address scale; the original loop then runs the remainder from i = 4 * k.
+// A header phi other than i (a reduction or any carried value) keeps the loop
+// scalar, as does a body value used after it. An arm holds no load or store,
+// since the vector loop runs both; t lanes come from a vector phi counting
+// <0, 1, 2, 3> up by 4.
+
+enum { VEC_BLOCKS = 32 };
+
+// b is the latch; blk the body in order, each arm after the block branching to it
+typedef struct { int h, b, pre, pi, i, step, n, lane, nb; int blk[VEC_BLOCKS]; uint8_t arm[VEC_BLOCKS]; } VecLoop;
+
+static int vec_at(const VecLoop* L, int b) {
+    for (int j = 0; j < L->nb; j++)
+        if (L->blk[j] == b) return j;
+    return -1;
+}
+
+static IrType vec_of(IrType t) { return t == IT_F32 ? IT_V4F32 : t == IT_I32 ? IT_V4I32 : IT_VOID; }
+
+// Whether bases a and b are distinct objects: other globals, other stack
+// objects, or a global and a stack object.
+static int distinct_objects(const IrFunc* fn, int a, int b) {
+    int ga = fn->ins[a].op == IR_GLOBAL, gb = fn->ins[b].op == IR_GLOBAL;
+    int sa = fn->ins[a].op == IR_SLOT, sb = fn->ins[b].op == IR_SLOT;
+    if (ga && gb) return !same_base(fn, a, b);
+    if (sa && sb) return a != b;
+    return (ga && sb) || (sa && gb);
+}
+
+// Whether v, used in loop L, is the same in every iteration: defined outside
+// it, or a constant or global address the body computes.
+static int vec_invariant(const IrFunc* fn, const VecLoop* L, int v) {
+    const IrIns* x = &fn->ins[v];
+    if (x->block != L->h && vec_at(L, x->block) < 0) return 1;
+    return x->block != L->h && (x->op == IR_CONST || x->op == IR_GLOBAL);
+}
+
+// A lane value of L's body: a load or lane-wise arithmetic.
+static int vec_lane(const IrFunc* fn, const VecLoop* L, int v) {
+    const IrIns* x = &fn->ins[v];
+    return vec_at(L, x->block) >= 0 && vec_of((IrType)x->type) != IT_VOID && x->op != IR_CONST;
+}
+
+// Whether v is a padd index of L: i, or its cast to u64 or t's.
+static int vec_index(const IrFunc* fn, const VecLoop* L, int v) {
+    const IrIns* x = &fn->ins[v];
+    return lsr_index(fn, v) == L->i || (L->lane >= 0 && x->op == IR_CAST && x->type == IT_U64 && x->args[0] == L->lane);
+}
+
+// The block an arm of b's branch leads to, or b itself when it is no arm.
+static int vec_arm(const IrFunc* fn, int h, int b) {
+    const IrBlock* x = &fn->blocks[b];
+    return x->npreds == 1 && x->succ[1] < 0 && x->succ[0] != h && b != h ? x->succ[0] : b;
+}
+
+static int vec_operand(const IrFunc* fn, const VecLoop* L, int v, IrType t) {
+    return fn->ins[v].type == t && (vec_lane(fn, L, v) || vec_invariant(fn, L, v));
+}
+
+// Whether the loop headed by h has the accepted shape; fills *L.
+static int vec_shape(IrFunc* fn, int h, VecLoop* L) {
+    IrBlock* hb = &fn->blocks[h];
+    if (hb->npreds != 2 || hb->nins != 3 || hb->succ[1] < 0) return 0;
+    int first = hb->succ[0], b = first, nb = 0;
+    if (first == h || fn->blocks[first].npreds != 1) return 0;
+    for (;;) { // the body's blocks in sequence, each fork's arms after it
+        if (nb >= VEC_BLOCKS - 2) return 0;
+        L->arm[nb] = 0;
+        L->blk[nb++] = b;
+        IrBlock* xb = &fn->blocks[b];
+        if (xb->succ[0] == h && xb->succ[1] < 0) break;
+        int j = xb->succ[0];
+        if (xb->succ[1] >= 0) { // a fork: arms t and f meet at j
+            int t = xb->succ[0], f = xb->succ[1];
+            j = vec_arm(fn, h, t);
+            if (j == b || j != vec_arm(fn, h, f) || (t == j && f == j) || fn->blocks[j].npreds != 2) return 0;
+            if (t != j) { L->arm[nb] = 1; L->blk[nb++] = t; }
+            if (f != j) { L->arm[nb] = 1; L->blk[nb++] = f; }
+        } else if (fn->blocks[j].npreds != 1) {
+            return 0;
+        }
+        if (j == h || j == first || vec_at(L, j) >= 0) return 0;
+        b = j;
+    }
+    L->nb = nb;
+    L->lane = -1;
+    int li = hb->preds[0] == b ? 0 : hb->preds[1] == b ? 1 : -1;
+    if (li < 0) return 0;
+    int pre = hb->preds[1 - li];
+    if (pre == h || vec_at(L, pre) >= 0) return 0;
+    IrIns* phi = &fn->ins[hb->ins[0]];
+    IrIns* cmp = &fn->ins[hb->ins[1]];
+    IrIns* br = &fn->ins[hb->ins[2]];
+    if (phi->op != IR_PHI || (phi->type != IT_U64 && phi->type != IT_I64) || cmp->op != IR_LT || cmp->args[0] != hb->ins[0] ||
+        br->op != IR_BR || br->args[0] != hb->ins[1])
+        return 0;
+    IrIns* init = &fn->ins[phi->args[1 - li]];
+    IrIns* step = &fn->ins[phi->args[li]];
+    if (init->op != IR_CONST || init->imm != 0 || step->op != IR_ADD || step->flags || step->block != b ||
+        step->args[0] != hb->ins[0] || fn->ins[step->args[1]].op != IR_CONST || fn->ins[step->args[1]].imm != 1)
+        return 0;
+    L->h = h, L->b = b, L->pre = pre, L->pi = 1 - li, L->i = hb->ins[0], L->step = phi->args[li], L->n = cmp->args[1];
+    if (!vec_invariant(fn, L, L->n)) return 0;
+    const IrIns* n = &fn->ins[L->n];
+    return n->op != IR_CONST || (int64_t)n->imm >= 4;
+}
+
+// Whether L's body is lane-wise over independent elements, used only inside it.
+static int vec_body(IrFunc* fn, VecLoop* L) {
+    int nins = 0;
+    for (int k = 0; k < L->nb; k++) nins += fn->blocks[L->blk[k]].nins;
+    int* acc = xalloc((size_t)nins, sizeof(int)); // the loads and stores
+    int nacc = 0, ok = 1, stores = 0;
+    const IrIns* n = &fn->ins[L->n];
+    for (int k = 0; k < L->nb && ok; k++) {
+        IrBlock* bb = &fn->blocks[L->blk[k]];
+        for (int j = 0; j < bb->nins && ok; j++) {
+            int u = bb->ins[j];
+            IrIns* x = &fn->ins[u];
+            IrType t = (IrType)x->type;
+            if (u == L->step || x->op == IR_JMP || x->op == IR_CONST || x->op == IR_GLOBAL) continue;
+            if (x->flags) { ok = 0; break; }
+            switch (x->op) {
+            case IR_BR: // a fork on a compare of its own block
+                ok = fn->ins[x->args[0]].block == L->blk[k] && fn->ins[x->args[0]].type == IT_BOOL &&
+                     fn->ins[x->args[0]].op != IR_PHI;
+                break;
+            case IR_EQ: case IR_NE: case IR_LT: case IR_LE: case IR_GT: case IR_GE: {
+                IrType ot = (IrType)fn->ins[x->args[0]].type;
+                ok = vec_of(ot) != IT_VOID && vec_operand(fn, L, x->args[0], ot) && vec_operand(fn, L, x->args[1], ot);
+                break;
+            }
+            case IR_PHI: // a join's: lane values or invariants
+                ok = vec_of(t) != IT_VOID && x->nargs == 2 && vec_operand(fn, L, x->args[0], t) &&
+                     vec_operand(fn, L, x->args[1], t);
+                break;
+            case IR_CAST:
+                if (x->args[0] == L->i && t == IT_I32 && L->lane < 0) { // t, which a constant n keeps exact
+                    ok = n->op == IR_CONST && n->imm <= INT32_MAX;
+                    L->lane = u;
+                } else {
+                    ok = t == IT_U64 && ((x->args[0] == L->i && fn->ins[L->i].type == IT_I64) || x->args[0] == L->lane);
+                }
+                break;
+            case IR_PADD:
+                ok = x->imm == 4 && vec_index(fn, L, x->args[1]) && vec_invariant(fn, L, x->args[0]);
+                break;
+            case IR_LOAD: case IR_STORE: {
+                IrIns* px = &fn->ins[x->args[0]];
+                IrType et = x->op == IR_LOAD ? t : (IrType)fn->ins[x->args[1]].type;
+                ok = !L->arm[k] && px->op == IR_PADD && vec_at(L, px->block) >= 0 && vec_of(et) != IT_VOID &&
+                     (x->op == IR_LOAD || vec_operand(fn, L, x->args[1], et));
+                acc[nacc++] = u;
+                stores += x->op == IR_STORE;
+                break;
+            }
+            case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV:
+                ok = vec_of(t) != IT_VOID && (x->op != IR_DIV || t == IT_F32) && vec_operand(fn, L, x->args[0], t) &&
+                     vec_operand(fn, L, x->args[1], t);
+                break;
+            case IR_AND: case IR_OR: case IR_XOR:
+                ok = t == IT_I32 && vec_operand(fn, L, x->args[0], t) && vec_operand(fn, L, x->args[1], t);
+                break;
+            case IR_SHL: case IR_SHR: {
+                const IrIns* c = &fn->ins[x->args[1]];
+                ok = t == IT_I32 && vec_operand(fn, L, x->args[0], t) && c->op == IR_CONST && c->imm >= 1 && c->imm <= 31;
+                break;
+            }
+            case IR_NEG:
+                ok = vec_of(t) != IT_VOID && vec_operand(fn, L, x->args[0], t);
+                break;
+            default:
+                ok = 0;
+                break;
+            }
+        }
+    }
+    for (int s = 0; s < nacc && ok; s++) { // each store against every other access
+        IrIns* sx = &fn->ins[acc[s]];
+        if (sx->op != IR_STORE) continue;
+        int sbase = fn->ins[sx->args[0]].args[0];
+        IrType st = (IrType)fn->ins[sx->args[1]].type;
+        for (int a = 0; a < nacc && ok; a++) {
+            if (a == s) continue;
+            IrIns* ax = &fn->ins[acc[a]];
+            int abase = fn->ins[ax->args[0]].args[0];
+            IrType at = (IrType)(ax->op == IR_LOAD ? ax->type : fn->ins[ax->args[1]].type);
+            ok = distinct_objects(fn, sbase, abase) || (same_base(fn, sbase, abase) && sx->aux == ax->aux && st == at);
+        }
+    }
+    free(acc);
+    if (!ok || !stores) return 0;
+    // No body value leaves the loop; i only indexes, steps, and becomes t; a
+    // u64 cast only indexes; a compare only forks.
+    for (int b = 0; b < fn->nblocks && ok; b++) {
+        IrBlock* ob = &fn->blocks[b];
+        int in = vec_at(L, b) >= 0;
+        for (int j = 0; j < ob->nins && ok; j++) {
+            IrIns* x = &fn->ins[ob->ins[j]];
+            for (int a = 0; a < x->nargs && ok; a++) {
+                int v = x->args[a];
+                IrIns* vx = &fn->ins[v];
+                if (v == L->i && in && !(x->op == IR_PADD && a == 1) && x->op != IR_CAST && ob->ins[j] != L->step)
+                    ok = 0;
+                if (vec_at(L, vx->block) < 0) continue;
+                if (!in && b != L->h) ok = 0;
+                if (vx->op == IR_CAST && v != L->lane && !(x->op == IR_PADD && a == 1)) ok = 0;
+                if (vx->type == IT_BOOL && x->op != IR_BR) ok = 0;
+            }
+        }
+    }
+    return ok;
+}
+
+static int konst_in(IrFunc* fn, int b, IrType t, uint64_t imm) {
+    int v = ins_before_term(fn, b, IR_CONST, t);
+    fn->ins[v].imm = imm;
+    return v;
+}
+
+static int ins2(IrFunc* fn, int b, IrOp op, IrType t, int x, int y) {
+    int v = ir_ins_new(fn, b, op, t);
+    ir_arg_add(fn, v, x);
+    if (y >= 0) ir_arg_add(fn, v, y);
+    return v;
+}
+
+// v as used from the preheader: itself, or a copy of the body's constant or global.
+static int vec_scalar(IrFunc* fn, const VecLoop* L, int* pre_of, int v) {
+    if (vec_at(L, fn->ins[v].block) < 0) return v;
+    if (pre_of[v] < 0) {
+        int c = ins_before_term(fn, L->pre, (IrOp)fn->ins[v].op, (IrType)fn->ins[v].type);
+        fn->ins[c].imm = fn->ins[v].imm;
+        fn->ins[c].sym = fn->ins[v].sym;
+        fn->ins[c].name = fn->ins[v].name;
+        pre_of[v] = c;
+    }
+    return pre_of[v];
+}
+
+// Lane value v in the vector loop: its clone, or an invariant splat in the preheader.
+static int vec_value(IrFunc* fn, const VecLoop* L, int* map, int* pre_of, int* splat, int v) {
+    if (map[v] >= 0) return map[v];
+    if (splat[v] < 0 && fn->ins[v].op == IR_CONST) // one splat per constant, however many copies inlining made
+        for (int c = 0; c < v && splat[v] < 0; c++)
+            if (splat[c] >= 0 && fn->ins[c].op == IR_CONST && fn->ins[c].type == fn->ins[v].type &&
+                fn->ins[c].imm == fn->ins[v].imm)
+                splat[v] = splat[c];
+    if (splat[v] < 0) {
+        int s = vec_scalar(fn, L, pre_of, v);
+        splat[v] = ins_before_term(fn, L->pre, IR_SPLAT, vec_of((IrType)fn->ins[v].type));
+        ir_arg_add(fn, splat[v], s);
+    }
+    return splat[v];
+}
+
+// Whether L runs whole vectors only (a constant n, a multiple of 4) and
+// nothing past it needs its header but the exit's phis, for i.
+static int vec_whole(const IrFunc* fn, const VecLoop* L, int ex) {
+    const IrIns* n = &fn->ins[L->n];
+    if (n->op != IR_CONST || n->imm % 4) return 0;
+    for (int b = 0; b < fn->nblocks; b++) {
+        if (b == L->h || vec_at(L, b) >= 0) continue;
+        const IrBlock* ob = &fn->blocks[b];
+        for (int j = 0; j < ob->nins; j++) {
+            const IrIns* x = &fn->ins[ob->ins[j]];
+            for (int a = 0; a < x->nargs; a++) {
+                int v = x->args[a];
+                if (fn->ins[v].block != L->h) continue;
+                if (!(b == ex && x->op == IR_PHI && ob->preds[a] == L->h && v == L->i)) return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+static void vec_rewrite(IrFunc* fn, const VecLoop* L) {
+    int nold = fn->nins;
+    int* map = xalloc((size_t)nold, sizeof(int));
+    int* pre_of = xalloc((size_t)nold, sizeof(int));
+    int* splat = xalloc((size_t)nold, sizeof(int));
+    for (int v = 0; v < nold; v++) map[v] = pre_of[v] = splat[v] = -1;
+    int pre = L->pre, h = L->h;
+    IrType it = (IrType)fn->ins[L->i].type; // k's type, so lt k, m compares as lt i, n does
+    int zero = konst_in(fn, pre, it, 0), one = konst_in(fn, pre, it, 1), two = konst_in(fn, pre, it, 2);
+    int m;
+    if (fn->ins[L->n].op == IR_CONST) {
+        m = konst_in(fn, pre, it, fn->ins[L->n].imm >> 2);
+    } else { // an i64 n shifts arithmetically: a negative one skips the vector loop
+        m = ins_before_term(fn, pre, IR_SHR, it);
+        ir_arg_add(fn, m, vec_scalar(fn, L, pre_of, L->n));
+        ir_arg_add(fn, m, two);
+    }
+    int vh = ir_block_new(fn), vb = ir_block_new(fn), x = ir_block_new(fn);
+    IrBlock* pb = &fn->blocks[pre];
+    pb->succ[pb->succ[0] == h ? 0 : 1] = vh;
+    IrBlock* hb = &fn->blocks[vh];
+    hb->preds = xgrow(hb->preds, &hb->cpreds, 1, sizeof(int));
+    hb->preds[hb->npreds++] = pre;
+    int k = ir_phi_new(fn, vh, it);
+    ir_arg_add(fn, k, zero);
+    ins2(fn, vh, IR_BR, IT_VOID, ins2(fn, vh, IR_LT, IT_BOOL, k, m), -1);
+    ir_edge_add(fn, vh, vb);
+    ir_edge_add(fn, vh, x);
+    int kx = it == IT_U64 ? k : ins2(fn, vb, IR_CAST, IT_U64, k, -1); // the u64 vector index
+    int vi = -1;
+    if (L->lane >= 0) { // t's lanes: <0, 1, 2, 3>, then 4 more each vector
+        vi = ir_phi_new(fn, vh, IT_V4I32);
+        ir_arg_add(fn, vi, ins_before_term(fn, pre, IR_LANES, IT_V4I32));
+        map[L->lane] = vi;
+    }
+    for (int bk = 0; bk < L->nb; bk++)
+    for (int j = 0; j < fn->blocks[L->blk[bk]].nins; j++) {
+        int u = fn->blocks[L->blk[bk]].ins[j];
+        IrIns x0 = fn->ins[u]; // fn->ins grows below
+        if (u == L->step || x0.op == IR_JMP || x0.op == IR_BR || x0.op == IR_CONST || x0.op == IR_GLOBAL ||
+            x0.op == IR_CAST)
+            continue;
+        if (x0.op == IR_PHI) { // a join's: a select on the fork's mask
+            IrBlock* jb = &fn->blocks[x0.block];
+            int p = jb->preds[0], c = vec_at(L, p) >= 0 && L->arm[vec_at(L, p)] ? fn->blocks[p].preds[0] : p;
+            int first = p == c ? fn->blocks[c].succ[0] == x0.block : fn->blocks[c].succ[0] == p; // arg 0 on true
+            int mask = map[fn->ins[fn->blocks[c].ins[fn->blocks[c].nins - 1]].args[0]];
+            int a = vec_value(fn, L, map, pre_of, splat, x0.args[first ? 0 : 1]);
+            int b = vec_value(fn, L, map, pre_of, splat, x0.args[first ? 1 : 0]);
+            map[u] = ins2(fn, vb, IR_SELECT, vec_of((IrType)x0.type), mask, a);
+            ir_arg_add(fn, map[u], b);
+        } else if (x0.type == IT_BOOL) { // a compare, to a mask
+            int a = vec_value(fn, L, map, pre_of, splat, x0.args[0]);
+            map[u] = ins2(fn, vb, (IrOp)x0.op, IT_V4I32, a, vec_value(fn, L, map, pre_of, splat, x0.args[1]));
+        } else if (x0.op == IR_SHL || x0.op == IR_SHR) { // by the constant itself
+            map[u] = ins2(fn, vb, (IrOp)x0.op, IT_V4I32, vec_value(fn, L, map, pre_of, splat, x0.args[0]),
+                          vec_scalar(fn, L, pre_of, x0.args[1]));
+        } else if (x0.op == IR_PADD) {
+            map[u] = ins2(fn, vb, IR_PADD, IT_PTR, vec_scalar(fn, L, pre_of, x0.args[0]), kx);
+            fn->ins[map[u]].imm = 16;
+        } else if (x0.op == IR_LOAD) {
+            map[u] = ins2(fn, vb, IR_LOAD, vec_of((IrType)x0.type), map[x0.args[0]], -1);
+            fn->ins[map[u]].aux = x0.aux;
+        } else if (x0.op == IR_STORE) {
+            int s = ins2(fn, vb, IR_STORE, IT_VOID, map[x0.args[0]],
+                         vec_value(fn, L, map, pre_of, splat, x0.args[1]));
+            fn->ins[s].aux = x0.aux;
+        } else {
+            int a = vec_value(fn, L, map, pre_of, splat, x0.args[0]);
+            int c = x0.nargs > 1 ? vec_value(fn, L, map, pre_of, splat, x0.args[1]) : -1;
+            map[u] = ins2(fn, vb, (IrOp)x0.op, vec_of((IrType)x0.type), a, c);
+        }
+    }
+    if (vi >= 0) {
+        int c4 = konst_in(fn, pre, IT_I32, 4), four = ins_before_term(fn, pre, IR_SPLAT, IT_V4I32);
+        ir_arg_add(fn, four, c4);
+        ir_arg_add(fn, vi, ins2(fn, vb, IR_ADD, IT_V4I32, vi, four));
+    }
+    ir_arg_add(fn, k, ins2(fn, vb, IR_ADD, it, k, one));
+    ir_ins_new(fn, vb, IR_JMP, IT_VOID);
+    ir_edge_add(fn, vb, vh);
+    int i0 = ins2(fn, x, IR_SHL, it, k, two), ex = fn->blocks[h].succ[1];
+    fn->blocks[x].succ[0] = h;
+    if (vec_whole(fn, L, ex)) { // no remainder: x leaves on a false branch, which cleanup folds with the scalar loop
+        int no = ir_ins_new(fn, x, IR_CONST, IT_BOOL);
+        ins2(fn, x, IR_BR, IT_VOID, no, -1);
+        int hp = 0;
+        while (fn->blocks[ex].preds[hp] != h) hp++;
+        ir_edge_add(fn, x, ex);
+        for (int j = 0; j < fn->blocks[ex].nins && fn->ins[fn->blocks[ex].ins[j]].op == IR_PHI; j++) {
+            int ph = fn->blocks[ex].ins[j], a = fn->ins[ph].args[hp];
+            ir_arg_add(fn, ph, a == L->i ? i0 : a);
+        }
+    } else {
+        ir_ins_new(fn, x, IR_JMP, IT_VOID);
+    }
+    fn->blocks[h].preds[L->pi] = x;
+    fn->ins[L->i].args[L->pi] = i0;
+    free(map); free(pre_of); free(splat);
+}
+
+// Returns whether any loop gained a vector loop.
+static int vectorize(IrFunc* fn) {
+    int n = fn->nblocks;
+    VecLoop* loops = xalloc((size_t)n, sizeof(VecLoop));
+    int nloops = 0;
+    for (int h = 0; h < n; h++)
+        if (vec_shape(fn, h, &loops[nloops]) && vec_body(fn, &loops[nloops])) nloops++;
+    for (int i = 0; i < nloops; i++) vec_rewrite(fn, &loops[i]);
+    free(loops);
+    return nloops > 0;
+}
+
 // --- dead-code and control-flow cleanup -----------------------------------------------
 
 typedef struct {
@@ -1009,4 +1412,5 @@ void ir_optimize(IrFunc* fn) {
     gvn(fn);
     lsr(fn);
     cleanup(fn);
+    if (vectorize(fn)) cleanup(fn); // over the merged blocks, which it then tidies
 }
