@@ -166,8 +166,8 @@ These are baseline observations, not performance promises.
   length in a register measured no parse gain even with registers free.
 - **Hot-loop codegen gap** [new] — game and graphics kernels over global arrays
   run 1.05x (saxpy) to 8x (by-value `Vec3` calls) scalar C `-O2` with
-  vectorization off, and 2x to 30x C's NEON auto-vectorized output, which Ace
-  leaves to explicit `simd`. Scaled-index and field-offset addressing is
+  vectorization off, and 2x to 30x C's NEON auto-vectorized output, which
+  auto-vectorization (SPEC Decision Queue) targets. Scaled-index and field-offset addressing is
   already folded (loop strength reduction's pointer-phi for a non-power-of-two
   stride, the backend's fused shift-add shared across a struct's fields for a
   power-of-two one); float-constant hoisting was tried and found not worth it
@@ -179,8 +179,9 @@ These are baseline observations, not performance promises.
   saxpy, dot, and `Vec3` kernels. Latest ratios to scalar C `-O2`: saxpy 1.05x,
   particle `Vec3` 1.51x, `Vec3` length 0.89x, floating dot 0.75x. `std/simd` is
   specified and unimplemented. Candidate order: (1) the bottom-tested loop and
-  by-value `Vec3` leaf-call frame cost; (2) `std/simd` NEON intrinsics
-  (`f32x4`, `i8x16`), the only route past auto-vectorized C.
+  by-value `Vec3` leaf-call frame cost; (2) auto-vectorization; (3) `std/simd`
+  NEON intrinsics (`f32x4`, `i8x16`) for what it does not cover.
+- **Release FMA contraction** [new] — undecided and deferred: Ace never fuses `a * b + c`; `math.fma` is the explicit route.
 - **Inline-expansion leftovers** [new] — an expansion the IR lowers has no
   result temp and no argument copies, but a `bool` result returned from
   several branches is joined as a phi of constants and branched on again
@@ -234,8 +235,7 @@ These are baseline observations, not performance promises.
 - **Broader performance corpus** [new] — add checksum-matched Ace/C fixtures for
   slices, branches, floating-point kernels, and cache-heavy loops before
   making optimizer-wide claims; `bench/core/calls.ace` covers calls and aggregate
-  passing, and `bench/compiler/run-compile.sh` covers compile time and code size. `noalias`-driven
-  auto-vectorization remains outside v1 as stated by Compiler #6.
+  passing, and `bench/compiler/run-compile.sh` covers compile time and code size.
 
 ## 3. Concurrency and process expansion
 
