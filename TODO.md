@@ -391,7 +391,7 @@ nonblocking connect completion remain visible without callbacks or allocation.
 ## 8. Completed debug-build checkpoint
 
 The explicit `--debug`/`--release` modes and strict sequence bounds are
-implemented: emitted programs default to debug mode, while release strips
+implemented: emitted programs default to release mode, which strips
 their dynamic guards, failure paths, and diagnostic metadata. This completed
 checkpoint remains here as a compact reference rather than occupying the active
 priority list.

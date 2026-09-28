@@ -21,7 +21,8 @@ that file is compiled and the executable and intermediate object are named after
 the file without the suffix, so `-o program.ace` links `program` and leaves
 `program.o` beside it.
 
-Emitted programs default to `--debug`. Debug output dynamically validates
+Emitted programs default to `--release`; `ace pkg build` and `ace pkg run`
+follow the same default. `--debug` output dynamically validates
 sequence bounds, integer arithmetic, call-boundary slice contracts, null use,
 and allocator discipline; a violation writes a concise diagnostic to standard
 error and aborts. It also enables `assert`. `--release` removes those guards,

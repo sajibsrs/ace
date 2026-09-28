@@ -545,7 +545,7 @@ if [ -d tests/emit_errors ]; then
         name=$(basename "$f" .ace)
         want=$(sed -n 's/^.*error:[[:space:]]*//p' "$f" | head -1)
         cp "$f" "/tmp/ace_emit_errors/$name.ace"
-        if (cd /tmp/ace_emit_errors && "$ACE" -c "$name.ace") >/dev/null 2>/tmp/ace_test_errs; then
+        if (cd /tmp/ace_emit_errors && "$ACE" --debug -c "$name.ace") >/dev/null 2>/tmp/ace_test_errs; then
             echo "FAIL (should report errors): $f"
             fail=1
         elif [ -z "$want" ] || ! grep -qF "$want" /tmp/ace_test_errs; then
@@ -716,7 +716,7 @@ fi
 
 # @when filters declarations before import loading, binding collisions, and
 # semantic checking, while inactive source still has to parse correctly.
-if ! "$ACE" -o /tmp/ace_when tests/modules/when/main.ace || ! /tmp/ace_when; then
+if ! "$ACE" --debug -o /tmp/ace_when tests/modules/when/main.ace || ! /tmp/ace_when; then
     echo "FAIL: @when should select exactly the Darwin import and declaration"
     fail=1
 fi
@@ -728,7 +728,7 @@ if ! printf '%s\n' "$unsupported_target" | grep -qF \
 fi
 
 # Emission modes are accepted by every pipeline stage but affect only emitted
-# code. Debug is the emission default; release contains no bounds machinery.
+# code. Release is the emission default and contains no bounds machinery.
 mkdir -p /tmp/ace_checked_bits
 for f in runtime_range runtime_literal_range; do
     if ! "$ACE" --debug -o "/tmp/ace_checked_bits/${f}_debug" "tests/checked_bits/$f.ace"; then
@@ -854,8 +854,8 @@ for f in array_negative array_equal aggregate_array_equal array_slice_upper arra
     fi
 done
 if command -v nm >/dev/null 2>&1; then
-    if ! nm /tmp/ace_checked_bounds/default.o 2>/dev/null | grep -qF '__ace$bounds_fail'; then
-        echo "FAIL: default emission lacks debug bounds machinery"
+    if nm /tmp/ace_checked_bounds/default.o 2>/dev/null | grep -qF '__ace$bounds_fail'; then
+        echo "FAIL: default emission retains debug bounds machinery"
         fail=1
     fi
     if nm /tmp/ace_checked_bounds/release.o 2>/dev/null |
@@ -1073,7 +1073,7 @@ if [ -d tests/emit ]; then
         mkdir -p "/tmp/ace_emit/$(dirname "$rel")"
         cp "$f" "/tmp/ace_emit/$rel"
         rm -f /tmp/ace_test_run
-        out=$(cd /tmp/ace_emit && { "$ACE" -c "$rel" && cc "$name.o" -o "$name" && "./$name"; } 2>/tmp/ace_test_run)
+        out=$(cd /tmp/ace_emit && { "$ACE" --debug -c "$rel" && cc "$name.o" -o "$name" && "./$name"; } 2>/tmp/ace_test_run)
         got=$?
         if [ "$got" -ne "$exp" ]; then
             echo "FAIL: $f exited $got, want $exp"
@@ -1602,7 +1602,7 @@ if [ -d tests/emit ]; then
         fi
     fi
     # -o mode drives the same pipeline through the cc link step
-    "$ACE" -o /tmp/ace_emit/direct tests/emit/basics/main.ace && /tmp/ace_emit/direct
+    "$ACE" --debug -o /tmp/ace_emit/direct tests/emit/basics/main.ace && /tmp/ace_emit/direct
     got=$?
     if [ "$got" -ne 42 ]; then
         echo "FAIL: -o mode exited $got, want 42"
@@ -1610,7 +1610,7 @@ if [ -d tests/emit ]; then
     fi
     # --report writes whole-compilation statistics to stderr. welcome imports
     # fmt, so the source-file count also verifies imported-module accounting.
-    report=$(cd /tmp/ace_emit/basics && "$ACE" --report -c welcome.ace 2>&1 >/dev/null)
+    report=$(cd /tmp/ace_emit/basics && "$ACE" --debug --report -c welcome.ace 2>&1 >/dev/null)
     if ! printf '%s\n' "$report" | grep -q '^Ace compile report:$'; then
         echo "FAIL: --report heading missing"
         fail=1
@@ -1692,7 +1692,7 @@ if [ -d tests/modules ]; then
             continue
         fi
         rm -f /tmp/ace_test_run
-        out=$({ "$ACE" -o "/tmp/ace_modules/$name" "$f" && "/tmp/ace_modules/$name"; } 2>/tmp/ace_test_run)
+        out=$({ "$ACE" --debug -o "/tmp/ace_modules/$name" "$f" && "/tmp/ace_modules/$name"; } 2>/tmp/ace_test_run)
         got=$?
         if [ "$got" -ne "$exp" ]; then
             echo "FAIL: $f exited $got, want $exp"
@@ -1730,21 +1730,21 @@ if [ -d tests/driver ]; then
     cp /tmp/ace_driver/helper_raw.o '/tmp/ace_driver/evil;$(echo pwn)`id`.o'
     cp /tmp/ace_driver/helper_raw.o "/tmp/ace_driver/space dir/help lib.o"
 
-    out=$("$ACE" -o /tmp/ace_driver/app_obj tests/driver/main_obj.ace \
+    out=$("$ACE" --debug -o /tmp/ace_driver/app_obj tests/driver/main_obj.ace \
           /tmp/ace_driver/helper_raw.o && /tmp/ace_driver/app_obj)
     got=$?
     if [ "$got" -ne 7 ]; then
         echo "FAIL: linking an extra .o exited $got, want 7"
         fail=1
     fi
-    out=$("$ACE" -o /tmp/ace_driver/app_lib tests/driver/main_obj.ace \
+    out=$("$ACE" --debug -o /tmp/ace_driver/app_lib tests/driver/main_obj.ace \
           -L "/tmp/ace_driver/lib dir" -l helper && /tmp/ace_driver/app_lib)
     got=$?
     if [ "$got" -ne 7 ]; then
         echo "FAIL: -L/-l archive link exited $got, want 7"
         fail=1
     fi
-    out=$("$ACE" -o /tmp/ace_driver/app_fw tests/driver/main_fw.ace \
+    out=$("$ACE" --debug -o /tmp/ace_driver/app_fw tests/driver/main_fw.ace \
           -framework CoreFoundation && /tmp/ace_driver/app_fw)
     got=$?
     if [ "$got" -ne 0 ]; then
@@ -1752,14 +1752,14 @@ if [ -d tests/driver ]; then
         fail=1
     fi
     # spaces and shell metacharacters must travel as plain argument bytes
-    out=$("$ACE" -o "/tmp/ace_driver/space dir/my app" tests/driver/main_obj.ace \
+    out=$("$ACE" --debug -o "/tmp/ace_driver/space dir/my app" tests/driver/main_obj.ace \
           "/tmp/ace_driver/space dir/help lib.o" && "/tmp/ace_driver/space dir/my app")
     got=$?
     if [ "$got" -ne 7 ]; then
         echo "FAIL: paths with spaces exited $got, want 7"
         fail=1
     fi
-    out=$("$ACE" -o /tmp/ace_driver/app_evil tests/driver/main_obj.ace \
+    out=$("$ACE" --debug -o /tmp/ace_driver/app_evil tests/driver/main_obj.ace \
           '/tmp/ace_driver/evil;$(echo pwn)`id`.o' && /tmp/ace_driver/app_evil)
     got=$?
     if [ "$got" -ne 7 ]; then
@@ -1768,7 +1768,7 @@ if [ -d tests/driver ]; then
     fi
     # -o FILE.ace compiles that file in place: executable and object take the stem
     printf 'main(): int {\n    return 5\n}\n' > /tmp/ace_driver/stem_test.ace
-    if ! "$ACE" -o /tmp/ace_driver/stem_test.ace >/dev/null 2>/tmp/ace_test_errs; then
+    if ! "$ACE" --debug -o /tmp/ace_driver/stem_test.ace >/dev/null 2>/tmp/ace_test_errs; then
         echo "FAIL: -o FILE.ace in-place compile failed"
         cat /tmp/ace_test_errs
         fail=1
@@ -1785,7 +1785,7 @@ if [ -d tests/driver ]; then
     fi
     # Bidirectional C ABI oracle: clang owns the foreign half and calls Ace
     # exports; Ace calls the same C object through extern declarations.
-    if ! "$ACE" -o /tmp/ace_driver/app_abi tests/driver/abi.ace \
+    if ! "$ACE" --debug -o /tmp/ace_driver/app_abi tests/driver/abi.ace \
          /tmp/ace_driver/abi_c.o >/dev/null 2>/tmp/ace_test_errs; then
         echo "FAIL: C ABI oracle did not compile/link"
         cat /tmp/ace_test_errs
@@ -1870,7 +1870,7 @@ if [ -d tests/driver ]; then
         fail=1
     fi
     # cc's own diagnostics pass through; ace reports the exit status and fails
-    if "$ACE" -o /tmp/ace_driver/app_bad tests/driver/main_obj.ace \
+    if "$ACE" --debug -o /tmp/ace_driver/app_bad tests/driver/main_obj.ace \
        -l ace_missing_lib_zz >/dev/null 2>/tmp/ace_test_errs; then
         echo "FAIL: missing library should fail to link"
         fail=1
@@ -2190,7 +2190,7 @@ EOF
 
         rm -rf "$dir/build"
         if [ -n "$build_exit" ]; then
-            if ! (cd "$dir" && "$ACE" pkg build) >/dev/null 2>/tmp/ace_test_errs; then
+            if ! (cd "$dir" && "$ACE" pkg build --debug) >/dev/null 2>/tmp/ace_test_errs; then
                 echo "FAIL (pkg build should succeed): $dir"
                 cat /tmp/ace_test_errs
                 fail=1
@@ -2201,7 +2201,7 @@ EOF
                     echo "FAIL: $dir/build/$name exited $got, want $build_exit"
                     fail=1
                 fi
-                (cd "$dir" && "$ACE" pkg run) >/dev/null 2>/tmp/ace_test_errs
+                (cd "$dir" && "$ACE" pkg run --debug) >/dev/null 2>/tmp/ace_test_errs
                 got=$?
                 if [ "$got" -ne "$build_exit" ]; then
                     echo "FAIL: $dir 'pkg run' exited $got, want $build_exit"
@@ -2211,7 +2211,7 @@ EOF
             fi
         fi
         if [ -n "$build_ok" ]; then
-            if ! (cd "$dir" && "$ACE" pkg build) >/dev/null 2>/tmp/ace_test_errs; then
+            if ! (cd "$dir" && "$ACE" pkg build --debug) >/dev/null 2>/tmp/ace_test_errs; then
                 echo "FAIL (pkg build should succeed): $dir"
                 cat /tmp/ace_test_errs
                 fail=1
@@ -2221,7 +2221,7 @@ EOF
             fi
         fi
         if [ -n "$build_err" ]; then
-            build_out=$(cd "$dir" && "$ACE" pkg build 2>&1)
+            build_out=$(cd "$dir" && "$ACE" pkg build --debug 2>&1)
             got=$?
             if [ "$got" -eq 0 ]; then
                 echo "FAIL (pkg build should fail): $dir"
@@ -2233,7 +2233,7 @@ EOF
             fi
         fi
         if [ -n "$run_err" ]; then
-            run_out=$(cd "$dir" && "$ACE" pkg run 2>&1)
+            run_out=$(cd "$dir" && "$ACE" pkg run --debug 2>&1)
             got=$?
             if [ "$got" -eq 0 ]; then
                 echo "FAIL (pkg run on a lib should fail): $dir"

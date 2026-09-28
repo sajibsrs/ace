@@ -24,6 +24,9 @@ current normative rules, and Git preserves patch-level detail.
   with no alias, `EMIT_DEBUG` replaces `EMIT_CHECKED`, and the spec section
   is Safety & Debug Builds. Individual checks keep their names (checked
   arithmetic, the `tests/checked_*` fixtures).
+- Made release the default emission mode for direct compilation and
+  `ace pkg build`/`run`; the core and package test runners pass `--debug`
+  explicitly so tests keep their checks.
 - Moved the object writer out of `emit.c` into `macho.c` behind `backend.h`
   (IR migration step 1a): sections, symbols, relocations, fixups, line rows,
   DWARF, and the Mach-O image, plus the shared runtime-routine flags, live in

@@ -507,7 +507,7 @@ static int package_cmd_check(int argc, char** argv, const char* argv0) {
 static int package_build_or_run(int argc, char** argv, const char* argv0, int require_exe,
                                 char* out_bin, size_t out_bin_cap) {
     int mode_seen = 0, show_report = 0;
-    EmitMode emit_mode = EMIT_DEBUG;
+    EmitMode emit_mode = EMIT_RELEASE;
     const char* target = host_target();
     for (int i = 0; i < argc; i++) {
         char* a = argv[i];
@@ -731,7 +731,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && strcmp(argv[1], "pkg") == 0) return package_main(argc - 2, argv + 2, argv[0]);
     int dump_tok = 0, dump_ast = 0, dump_ir = 0, show_report = 0, opt_c = 0, opt_link = 0;
     int mode_seen = 0;
-    EmitMode emit_mode = EMIT_DEBUG;
+    EmitMode emit_mode = EMIT_RELEASE;
     const char* path = NULL;
     const char* package_graph_dir = NULL;
     const char* package_check_dir = NULL;

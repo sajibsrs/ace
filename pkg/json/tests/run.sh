@@ -27,7 +27,7 @@ for case_dir in */; do
     check_ok=$(sed -n 's/^\/\/ *expect-check-ok[[:space:]]*.*/yes/p' "$f")
     rm -rf "$dir/build"
     if [ -n "$exp" ]; then
-        if ! (cd "$dir" && "$ACE" pkg build) >/dev/null 2>/tmp/ace_pkg_json_test_errs; then
+        if ! (cd "$dir" && "$ACE" pkg build --debug) >/dev/null 2>/tmp/ace_pkg_json_test_errs; then
             echo "FAIL (pkg build should succeed): $dir"
             cat /tmp/ace_pkg_json_test_errs
             fail=1

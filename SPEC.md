@@ -99,7 +99,7 @@ Concrete rules and syntax. The why behind every rule lives in PHILOSOPHY.md (clo
 5. Declaration-before-use is the rule. Forward and mutual calls, including method calls on a struct, are handled by fixups: emit a call to a placeholder, record the patch site, and patch the real address at definition. A second narrow fixup class permits an as-yet undeclared type name only when the complete path from the field to that name consists of one or more pointer levels (`*Later`, `**Later`), or is a bare slice exactly at the field/variant root (`[]Later`) — a slice's representation is a fixed pointer-plus-count pair whose size and alignment, like a pointer's, do not depend on its element type. The slice allowance does not extend through or past the slice: a slice reached via a preceding pointer (`*[]Later`) or nested inside another compound stays ordinary declaration-before-use, while a pointer reached via a preceding root slice (`[]*Later`) still forwards, since it's the same pointer fixup applying once the slice has already handed it a root-started path. The exact nominal type must be declared later in the same module, and any field access, method use, inline containment, array element, union payload, alias expansion, or other operation requiring its layout remains declaration-before-use. Unresolved type placeholders are errors at end of file. A function body that made a call resolved at end of file is checked once more after resolution, seeing only the declarations its first check saw apart from those calls, so their results are type-checked where used. No prototype or general pre-pass exists.
 6. Performance plan (v1):
    - Passes rely only on facts a debug build checks, so a run that passes in debug computes the same result in release. They never reassociate or contract float operations, and debug checks keep their order. Three facts are stated but not yet checked, and each needs a debug check before a pass may use it: `noalias` on pointer parameters (Safety #7 checks slices only), non-overlap of read-only parameters (Functions & ABI #5), and memory written by inline assembly (Inline Assembly #5).
-   - Build modes: debug (the default) runs no pass 6 and keeps runtime checks; release runs pass 6 and has no checks. Locals are SSA values in both. Optimization and checks are two independent internal settings, so an optimized-and-checked mode can follow a concrete need (for example, fuzzing parsers of untrusted input). Executable tests run in both modes, and a differential check compiles random programs in both and requires identical output.
+   - Build modes: release (the default) runs pass 6 and has no checks; debug runs no pass 6 and keeps runtime checks. Locals are SSA values in both. Optimization and checks are two independent internal settings, so an optimized-and-checked mode can follow a concrete need (for example, fuzzing parsers of untrusted input). Executable tests run in both modes, and a differential check compiles random programs in both and requires identical output.
    - Self tail recursion — release builds lower `return f(args)` in the body of `f` itself to a branch back to its entry, reusing its frame, when sharing that frame across levels is unobservable: no `defer` is pending and no local or by-value parameter of `f` lives in the frame; `main`, exported, and inline-expanding functions keep their calls. Calls to other functions are never lowered, and debug builds keep every call. It is an optimization, not a guarantee: recursion that must not overflow is written as a loop.
    - Inline expansion — only where the source asks for it (`inline`, Functions & ABI #8).
    - `asm` is one IR instruction: its "in" values as arguments, its "out" registers as projections, and its reserved registers (every binding and clobber) kept free of values live across it. It is never reordered or removed.
@@ -331,7 +331,7 @@ Historical design note (non-normative): `T?` optionals were explored, specified,
 ## Safety & Debug Builds
 Decision: checks are a development tool; release trusts the developer.
 1. The compiler has two explicit emission modes: `--debug` and `--release`.
-   They are mutually exclusive, and emitted programs default to `--debug`.
+   They are mutually exclusive, and emitted programs default to `--release`.
    Check-only, `--tokens`, and `--ast` invocations accept either flag but emit
    no program, so the choice has no effect on their result.
 2. Debug builds diagnose dynamic contract violations and then abort; bounds
@@ -405,9 +405,10 @@ Decision: checks are a development tool; release trusts the developer.
 
 Rationale: the compiler never guesses a mode from its own build, an output
 name, or the surrounding environment; the selected artifact semantics remain
-visible and reproducible. Debug-by-default follows the strict-first rule for
-development, while explicit release preserves the priority stack's highest
-requirement by removing every dynamic safety cost. Compile-time proofs remain
+visible and reproducible. Release-by-default gives an unmarked build the
+priority stack's highest requirement, performance, with no dynamic safety cost;
+debug is requested explicitly where its checks earn their cost, as every test
+runner does. Compile-time proofs remain
 mode-independent because rejecting a known-invalid program costs nothing at
 runtime and avoids giving one source two static meanings. The exact arithmetic
 set checks operations that claim to produce a numeric value while keeping casts
