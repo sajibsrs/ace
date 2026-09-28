@@ -40,6 +40,8 @@ must be corrected.
 - [`regex`](regex.md) — byte-oriented regular expressions with
   leftmost-first matching and captures, run by a Pike VM in time linear in
   the text.
+- [`sdl`](sdl.md) — a minimal SDL3 binding: a window, a renderer, and a
+  classic event-polling loop over the host's SDL3.
 
 ## Tooling
 

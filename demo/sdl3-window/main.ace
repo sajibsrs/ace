@@ -1,0 +1,49 @@
+/* SDL3 proof of concept with pkg/sdl: a window, a renderer, and a classic
+ * PollEvent loop.
+ *
+ * Build and run from this directory (Homebrew SDL3 on Apple arm64):
+ *   ace pkg run
+ *
+ * Closing the window or pressing Escape quits.
+ */
+
+import fmt
+import sdl
+
+fail(context: string): int {
+    fmt.printf("%s: %s\n", context, sdl.error())
+    return 1
+}
+
+main(): int {
+    if !sdl.init(sdl.INIT_VIDEO) { return fail("SDL_Init") }
+    defer sdl.quit()
+
+    window: sdl.Window = sdl.Window::new("Ace + SDL3\0", 640, 480, sdl.WINDOW_RESIZABLE)
+    defer mut window.wipe()
+    if !window.ok() { return fail("SDL_CreateWindow") }
+
+    renderer: sdl.Renderer = sdl.Renderer::new(window)
+    defer mut renderer.wipe()
+    if !renderer.ok() { return fail("SDL_CreateRenderer") }
+
+    shade: u8 = 0
+    running: bool = true
+    for running {
+        event: sdl.Event
+        for sdl.poll_event(mut &event) {
+            if event.kind == sdl.EVENT_QUIT || event.kind == sdl.EVENT_WINDOW_CLOSE_REQUESTED {
+                running = false
+            } else if event.kind == sdl.EVENT_KEY_DOWN && event.keyboard.key == sdl.KEY_ESCAPE {
+                running = false
+            }
+        }
+
+        if shade == 255 { shade = 0 } else { shade += 1 }
+        renderer.set_color(sdl.Color { r = shade, g = 64, b = 255 - shade, a = 255 })
+        renderer.clear()
+        renderer.present()
+        sdl.delay(16)
+    }
+    return 0
+}

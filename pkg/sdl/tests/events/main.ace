@@ -1,0 +1,43 @@
+/* Headless round trip: a key event written through Event.keyboard is pushed
+ * onto SDL's queue and polled back, proving SDL and Ace agree on its layout.
+ */
+
+import sdl
+
+extern "c" {
+    push_event(event: mut *sdl.Event): bool = "SDL_PushEvent"
+}
+
+INIT_EVENTS: const u32 = 0x4000
+SCANCODE_ESCAPE: const u32 = 41
+KMOD_LCTRL: const u16 = 0x0040
+
+main(): int {
+    if !sdl.init(INIT_EVENTS) { return 1 }
+    defer sdl.quit()
+
+    sent: sdl.Event
+    sent.keyboard.kind = sdl.EVENT_KEY_DOWN
+    sent.keyboard.reserved = 0
+    sent.keyboard.timestamp = 0
+    sent.keyboard.window_id = 7
+    sent.keyboard.which = 0
+    sent.keyboard.scancode = SCANCODE_ESCAPE
+    sent.keyboard.key = sdl.KEY_ESCAPE
+    sent.keyboard.mod = KMOD_LCTRL
+    sent.keyboard.raw = 0
+    sent.keyboard.down = true
+    sent.keyboard.repeat = false
+    if !push_event(mut &sent) { return 2 }
+
+    got: sdl.Event
+    for sdl.poll_event(mut &got) {
+        if got.kind != sdl.EVENT_KEY_DOWN { continue }
+        key: sdl.KeyboardEvent = got.keyboard
+        if key.key != sdl.KEY_ESCAPE || key.scancode != SCANCODE_ESCAPE { return 3 }
+        if key.window_id != 7 || key.mod != KMOD_LCTRL { return 4 }
+        if !key.down || key.repeat { return 5 }
+        return 0
+    }
+    return 6
+}

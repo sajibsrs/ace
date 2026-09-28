@@ -1,0 +1,133 @@
+/* sdl — a minimal SDL3 binding: window, renderer, draw color, and the
+ * keyboard and quit events of a classic SDL_PollEvent loop.
+ *
+ * Layouts, values, and signatures mirror the SDL 3.4 headers; the
+ * static_asserts pin them. The manifest links SDL3 with Homebrew's
+ * /opt/homebrew/lib as a path hint: used where the library is there, else
+ * the linker's own search. An app overrides it with its own [[link]] path.
+ */
+
+pub INIT_VIDEO: const u32 = 0x20
+pub WINDOW_RESIZABLE: const u64 = 0x20
+
+pub EVENT_QUIT: const u32 = 0x100
+pub EVENT_WINDOW_CLOSE_REQUESTED: const u32 = 0x210
+pub EVENT_KEY_DOWN: const u32 = 0x300
+
+pub KEY_ESCAPE: const u32 = 0x1b
+
+// Opaque C objects, only ever seen behind a pointer.
+SDL_Window: struct {}
+SDL_Renderer: struct {}
+
+// Handles own one C object each; a null handle means creation failed.
+pub Window: struct { handle: *SDL_Window }
+pub Renderer: struct { handle: *SDL_Renderer }
+
+pub Color: struct { r: u8, g: u8, b: u8, a: u8 }
+
+pub QuitEvent: struct {
+    kind: u32,
+    reserved: u32,
+    timestamp: u64,
+}
+
+pub KeyboardEvent: struct {
+    kind: u32,
+    reserved: u32,
+    timestamp: u64,
+    window_id: u32,
+    which: u32,
+    scancode: u32,
+    key: u32,
+    mod: u16,
+    raw: u16,
+    down: bool,
+    repeat: bool,
+}
+
+// SDL_Event: a C union, written as an overlapping struct.
+pub Event: struct {
+    @offset(0)
+    kind: u32,
+
+    @offset(0)
+    keyboard: KeyboardEvent,
+
+    @offset(0)
+    quit: QuitEvent,
+
+    @offset(0)
+    padding: [128]u8,
+}
+
+static_assert(sizeof(QuitEvent) == 16)
+static_assert(sizeof(KeyboardEvent) == 40 && alignof(KeyboardEvent) == 8)
+static_assert(offsetof(KeyboardEvent, key) == 28)
+static_assert(offsetof(KeyboardEvent, mod) == 32)
+static_assert(offsetof(KeyboardEvent, down) == 36)
+static_assert(sizeof(Event) == 128 && alignof(Event) == 8)
+
+extern "c" {
+    c_init(flags: u32): bool = "SDL_Init"
+    c_quit() = "SDL_Quit"
+    c_get_error(): *u8 = "SDL_GetError"
+    c_create_window(title: *u8, w: i32, h: i32, flags: u64): *SDL_Window = "SDL_CreateWindow"
+    c_destroy_window(window: *SDL_Window) = "SDL_DestroyWindow"
+    c_create_renderer(window: *SDL_Window, name: *u8): *SDL_Renderer = "SDL_CreateRenderer"
+    c_destroy_renderer(renderer: *SDL_Renderer) = "SDL_DestroyRenderer"
+    c_set_render_draw_color(renderer: *SDL_Renderer, r: u8, g: u8, b: u8, a: u8): bool = "SDL_SetRenderDrawColor"
+    c_get_render_draw_color(renderer: *SDL_Renderer, r: mut *u8, g: mut *u8, b: mut *u8, a: mut *u8): bool = "SDL_GetRenderDrawColor"
+    c_render_clear(renderer: *SDL_Renderer): bool = "SDL_RenderClear"
+    c_render_present(renderer: *SDL_Renderer): bool = "SDL_RenderPresent"
+    c_poll_event(event: mut *Event): bool = "SDL_PollEvent"
+    c_delay(ms: u32) = "SDL_Delay"
+}
+
+pub init(flags: u32): bool { return c_init(flags) }
+pub quit() { c_quit() }
+pub poll_event(event: mut *Event): bool { return c_poll_event(event) }
+pub delay(ms: u32) { c_delay(ms) }
+
+// SDL returns NUL-terminated text; view it as a string without libc.
+pub error(): string {
+    p: *u8 = c_get_error()
+    if p == null { return "" }
+    n: usize = 0
+    for *(p + n) != 0 { n += 1 }
+    return string([]u8(p, n))
+}
+
+// The title must end in "\0"; SDL reads it as a C string.
+pub Window::new(title: string, w: i32, h: i32, flags: u64): Window {
+    return Window { handle = c_create_window(&title[0], w, h, flags) }
+}
+
+pub Window.ok(): bool { return self.handle != null }
+pub mut Window.wipe() {
+    c_destroy_window(self.handle)
+    self.handle = null
+}
+
+pub Renderer::new(window: Window): Renderer {
+    return Renderer { handle = c_create_renderer(window.handle, null) }
+}
+
+pub Renderer.ok(): bool { return self.handle != null }
+pub mut Renderer.wipe() {
+    c_destroy_renderer(self.handle)
+    self.handle = null
+}
+
+pub Renderer.set_color(color: Color): bool {
+    return c_set_render_draw_color(self.handle, color.r, color.g, color.b, color.a)
+}
+
+pub Renderer.color(): (Color, bool) {
+    c: Color = Color { r = 0, g = 0, b = 0, a = 0 }
+    ok: bool = c_get_render_draw_color(self.handle, mut &c.r, mut &c.g, mut &c.b, mut &c.a)
+    return c, ok
+}
+
+pub Renderer.clear(): bool { return c_render_clear(self.handle) }
+pub Renderer.present(): bool { return c_render_present(self.handle) }
