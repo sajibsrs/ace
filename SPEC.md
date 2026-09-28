@@ -194,6 +194,28 @@ Carved (memory representation):
 20. A string literal resides in static read-only storage holding exactly its written bytes — no appended NUL, nothing hidden. The empty literal `""` is a valid non-null string (byte pointer, count 0); only the all-bits-zero string is `null`. `mem.equal("", zero_string)` is true by content, while `"" == null` is false because nullness tests the complete descriptor (Values & Passing #11).
 21. An array `[N]T` is `N` contiguous elements in index order with no metadata and no inter-element padding: `sizeof([N]T)` is `N * sizeof(T)`, and array alignment is the element's alignment. Padding and byte order inside one element are that element type's own platform facts.
 
+Carved (untyped storage):
+
+- Storage has no dynamic type. Reading memory as `T` at an address satisfying
+  `alignof(T)` reads those `sizeof(T)` bytes as `T`, and a write of `T` writes
+  exactly those bytes. Passes never assume two accesses are disjoint because
+  their types differ; non-overlap comes only from stated facts (`noalias`,
+  read-only parameters).
+- Plain-bits types are the integers, `char`, `bool`, the floating types, all
+  enums, data pointers, C function values (C Interop #5), distinct forms of
+  these, and arrays and structs composed only of them. Every byte pattern of a
+  plain-bits type is a value, except that a `bool` read from reinterpreted
+  storage is trusted to be `0` or `1` (Type System #12). Tagged unions, `Error`,
+  error domains, `typeid`, contracts, Ace function values, slices, strings, and
+  tuples are not plain bits: their values are created only by the language, and
+  reinterpretation never produces one.
+
+Rationale: the machine has no typed memory, and Ace already states aliasing
+explicitly, so type-based disjointness would buy nothing Ace relies on while
+making every foreign union, record header, and device layout undefined.
+Restricting reinterpretation to plain bits keeps compiler-created values
+unforgeable, so the facts passes rely on for them need no debug check.
+
 Carved (volatile access):
 
 - `volatile place` performs one volatile read and `volatile place = value`
@@ -587,7 +609,7 @@ Decision: explicit extern/export boundary; Ace internals stay free.
 1. Ace-internal symbols may be mangled (multi-return, mut params, modules) — mangling is private to the compiler.
 2. `extern "c" { … }` blocks import C declarations — the ABI stated once per block; variadics (`…`) are legal only inside extern blocks (Functions & ABI #7). Export: an `export` modifier on the declaration produces a C-ABI function with an unmangled name. An extern declaration may carry a link name — `c_open(path: *u8, flags: i32, mode: u32): i32 = "open"` — binding an Ace-side name distinct from the linker symbol, which lets a module wrap a C function under the name it wants to own (first customer: `sys`). The linker spelling is always the declared (or link-named) symbol with the platform's underscore convention applied by the compiler. Link names must be nonempty, contain no NUL byte, and in the v1 emitter are limited to 510 decoded bytes; other bytes are accepted because platform symbols need not be C or Ace identifiers. [spellings provisional]
    Implementation note (Apple arm64): C variadic functions receive their unnamed arguments in 8-byte caller-stack slots, not in the remaining argument registers — libSystem's `open` itself reads mode from the first stack-argument slot. The emitter implements that convention, including the ordinary f32-to-f64 and `bool`-to-`int` default promotions. The initially verified unnamed-argument set is C-compatible integer, `bool`, floating, distinct-scalar, and pointer values; aggregate and Ace-specific shapes are rejected until their variadic ABI is separately verified. A fixed-surface wrapper may still bind a fixed-arity export such as `__open` rather than expose variadics it does not need.
-3. C-facing signatures are checked by a positive, position-aware C-ABI compatibility predicate (chunk 1B decision). Allowed: the fixed-width integers `i8 i16 i32 i64` and `u8 u16 u32 u64`, the platform words `int`/`uint`, `usize`, `f32`, `f64`, `bool` (C `_Bool`, Type System #12); explicitly backed enums, represented exactly as their fixed-width backing integer; plain and writable pointers (`*T`, `mut *T`) whose pointee shapes are recursively compatible; distinct types whose bases are allowed in the same position; structs whose fields are recursively compatible; arrays whose elements are recursively compatible only when nested inside a compatible aggregate or behind a pointer; and explicitly `extern "c"` function values only as direct parameters or returns. A no-value (void) shape is allowed only as a function return. Direct array parameters and returns are rejected. Rejected: default enums without an external width promise, `string`, slices, contracts, tagged unions, `Error`, error domains, `typeid`, every tuple shape, ordinary Ace function values, type parameters, generic declarations, and generic instantiations. `mut` parameters stay internal-only — writable storage crosses the boundary as an explicit `mut *T` (the former `mut p` → `T*` export mapping under Functions & ABI #6 is struck). The recursive check carries a cycle guard so C-compatible self-referential structs through pointers terminate correctly. Every rejected category is additive later, each only after an exact C representation is separately approved. Rationale: a positive whitelist states exactly what the compiler has verified against the platform ABI; anything absent is unverified, and under the priority stack an explicit opt-in beats accidental shape coincidences (default enum width freedom, slice/string descriptor layout). A `bool` received from C is trusted to be `0` or `1`, as C guarantees, with no normalization or debug check; on Apple arm64 a direct `bool` argument or return is zero-extended to 32 bits by its producer, and bits 32–63 are unspecified.
+3. C-facing signatures are checked by a positive, position-aware C-ABI compatibility predicate (chunk 1B decision). Allowed: the fixed-width integers `i8 i16 i32 i64` and `u8 u16 u32 u64`, the platform words `int`/`uint`, `usize`, `f32`, `f64`, `bool` (C `_Bool`, Type System #12); explicitly backed enums, represented exactly as their fixed-width backing integer; plain and writable pointers (`*T`, `mut *T`) whose pointee shapes are recursively compatible; distinct types whose bases are allowed in the same position; structs whose fields are recursively compatible; arrays whose elements are recursively compatible only when nested inside a compatible aggregate or behind a pointer; and explicitly `extern "c"` function values in every position. A no-value (void) shape is allowed only as a function return. Direct array parameters and returns are rejected. Rejected: default enums without an external width promise, `string`, slices, contracts, tagged unions, `Error`, error domains, `typeid`, every tuple shape, ordinary Ace function values, type parameters, generic declarations, and generic instantiations. `mut` parameters stay internal-only — writable storage crosses the boundary as an explicit `mut *T` (the former `mut p` → `T*` export mapping under Functions & ABI #6 is struck). The recursive check carries a cycle guard so C-compatible self-referential structs through pointers terminate correctly. Every rejected category is additive later, each only after an exact C representation is separately approved. Rationale: a positive whitelist states exactly what the compiler has verified against the platform ABI; anything absent is unverified, and under the priority stack an explicit opt-in beats accidental shape coincidences (default enum width freedom, slice/string descriptor layout). A `bool` received from C is trusted to be `0` or `1`, as C guarantees, with no normalization or debug check; on Apple arm64 a direct `bool` argument or return is zero-extended to 32 bits by its producer, and bits 32–63 are unspecified.
 4. Ace programs never depend on another programming language or its utility
    runtime — interop is a declared boundary, not a foundation. Ace language and
    standard-library behavior is implemented in Ace or emitted directly. A
@@ -613,14 +635,14 @@ Decision: explicit extern/export boundary; Ace internals stay free.
    nonnull. An `export` function or an imported `extern "c"` declaration with
    the exact signature is referenced by its bare name under an explicitly typed
    destination; an ordinary Ace function never converts to this type. Calls use
-   the platform C convention in both directions. C function values are admitted
-   directly as C parameters and returns, not recursively inside aggregates or
-   behind another pointer in this initial slice. There is no address sigil,
+   the platform C convention in both directions. C function values are
+   plain bits (Memory, untyped storage) and are admitted wherever a data
+   pointer is: parameters, returns, struct fields, and pointees. There is no address sigil,
    closure, captured context, lifetime management, generic callback, calling-
    convention inference, or arbitrary foreign ABI. Rationale: a distinct type
    makes the foreign convention visible while retaining the existing one-word,
-   explicit function-value model; the narrow direct position proves the first
-   POSIX-style thread entry callback without enlarging unrelated aggregate ABI.
+   explicit function-value model; as one pointer word it adds no aggregate ABI
+   case, so callback fields in C structs cross the boundary like data pointers.
 
 ## Abstraction
 Decision: composition over inheritance; dispatch is explicit.
@@ -1135,7 +1157,21 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 
 ### Active
 
-None.
+- Storage reinterpretation (decided; implementation staged). Built on untyped
+  storage and plain-bits types (Memory):
+  - `bitcast(U, value)` copies the bits of `value` as `U`: both plain bits,
+    `sizeof` equal, and the source type has no padding. `bitcast` is a reserved
+    builtin name.
+  - `*U(p)` and `mut *U(p)` reinterpret a pointer `p: *T` or `mut *T`: both
+    plain bits, permission never widens, and the ordinary alignment rule
+    applies. `*T(address)` from `usize` stays unrestricted as the raw-address
+    boundary.
+  - Field `@offset(N)` places a field at byte `N`, satisfying its effective
+    alignment; unannotated fields follow the preceding field as today. A struct
+    with overlapping fields holds only plain-bits fields, has no `==`, is
+    initialized as a whole by any member write, and crosses C boundaries only
+    behind pointers until its by-value ABI is verified. Attribute order is
+    `@offset`, then `@align`.
 
 ### Trigger-gated
 

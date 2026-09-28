@@ -1569,7 +1569,7 @@ static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
     case SK_ARRAY:
         return pos != CABI_DIRECT && is_c_abi_type(t->base, pos, stack, nstack);
     case SK_FUNC:
-        if (!t->is_c_abi || pos != CABI_DIRECT) return 0;
+        if (!t->is_c_abi) return 0;
         for (int i = 0; i < t->nparams; i++) if (!is_c_abi_type(t->params[i], CABI_DIRECT, stack, nstack)) return 0;
         return is_c_abi_type(t->ret, CABI_DIRECT, stack, nstack);
     case SK_STRUCT: {

@@ -87,8 +87,8 @@ the remaining proof points explicit:
 - **Low-level target breadth** [new] — validate assembly and SIMD ergonomics,
   device-scale volatile access, additional architectures and operating systems,
   and richer static/shared linking through concrete programs. Callback families
-  beyond the implemented direct C-function-value boundary require their own
-  concrete customers.
+  beyond plain C function values (captured context, closures) require their
+  own concrete customers.
 
 ## 2. Compiler and backend completion
 

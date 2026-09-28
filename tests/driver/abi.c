@@ -16,12 +16,14 @@ typedef struct { Hfa3 h; } Envelope;
 typedef struct { Hfa3 h; int32_t tag; } WrappedHfa;
 typedef void* (*ThreadEntry)(void*);
 typedef struct { int32_t code; bool down, repeat; } Key;
+typedef struct { int32_t (*call)(int32_t); int32_t base; } Hook;
 
 extern int64_t ace_scalars(int8_t, int16_t, int32_t, int64_t,
                            uint8_t, uint16_t, uint32_t, uint64_t, size_t);
 extern double ace_floats(float, double);
 extern float ace_f32(float);
 extern bool ace_not(bool);
+extern int32_t ace_twice(int32_t);
 extern Key ace_key(Key);
 extern void ace_bump(int32_t*);
 extern int32_t ace_code(int32_t);
@@ -195,6 +197,11 @@ Key c_key(Key value) {
 }
 
 void c_flag(bool* out) { *out = true; }
+
+int32_t c_hook_value(Hook hook) { return hook.call(hook.base); }
+int32_t c_hook_pointer(Hook* hook) { return hook->call(hook->base); }
+Hook c_get_hook(void) { return (Hook){ace_twice, 21}; }
+void c_set_callback(int32_t (**out)(int32_t)) { *out = c_code; }
 
 int32_t c_bool_varargs(int32_t fixed, ...) {
     va_list args;

@@ -73,6 +73,19 @@ when their complete shape is otherwise C-compatible and matches the external
 declaration. Passing or returning such a struct directly is currently rejected
 until its target-specific by-value ABI has been separately verified.
 
+## Untyped storage
+
+Memory has no dynamic type. Reading storage as `T` reads its `sizeof(T)` bytes
+as `T`, and the compiler never assumes two accesses are disjoint just because
+their types differ; only `noalias` and read-only parameters state non-overlap.
+
+Plain-bits types are those where every byte pattern is a value: integers,
+`char`, floating types, enums, data pointers, C function values, and structs,
+arrays, and distinct types built only from them. `bool` counts too, trusted to
+hold `0` or `1`. Tagged unions, `Error`, `typeid`, contracts, Ace function
+values, slices, strings, and tuples are created only by the language and are
+never produced by reinterpreting storage.
+
 ## Volatile access
 
 `volatile` marks one access, not a variable or type:

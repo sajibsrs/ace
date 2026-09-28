@@ -6,7 +6,6 @@ Event: union { none, value: i32 }
 BadDistinct: distinct string
 BadField: struct { text: string }
 Box[T]: struct { value: T }
-CallbackBox: struct { callback: extern "c" (i32): i32 }
 
 extern "c" {
     bad_enum(value: Flag)
@@ -23,8 +22,6 @@ extern "c" {
     bad_distinct(value: BadDistinct)
     bad_field(value: BadField)
     bad_stamp(value: Box[i32])
-    bad_callback_box(value: CallbackBox)
-    bad_callback_pointer(value: *extern "c" (i32): i32)
 }
 
 export bad_mut(mut value: i32) {

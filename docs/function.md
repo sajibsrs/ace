@@ -192,7 +192,15 @@ the return clause for a function returning no value. Only an exact `export`
 function or imported `extern "c"` declaration can initialize a non-null value
 of this type; an ordinary Ace function has a distinct convention. Parameters
 and returns must be C-ABI-compatible. C function values are one word, may be
-`null`, and may be compared with `null`. Calling null is diagnosed in debug
+`null`, and may be compared with `null`. They may also be fields of
+C-compatible structs and pointer targets, so C callback tables and
+out-parameters bind directly:
+
+```ace
+Hook: struct { call: extern "c" (i32): i32, base: i32 }
+```
+
+Call a field's function by first copying it to a local. Calling null is diagnosed in debug
 builds; release builds require a non-null callee.
 
 ## Generic functions

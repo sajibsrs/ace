@@ -960,6 +960,10 @@ current normative rules, and Git preserves patch-level detail.
   including C variadics (promoted to `int`); the backend already kept `bool`
   as a 0/1 byte, so only the ABI whitelist changed. The clang oracle covers
   direct values, struct fields, a `*bool` out-parameter, and variadics.
+- Stated untyped storage and the plain-bits type category, and admitted C
+  function values in every C-ABI position (struct fields and pointees
+  included); the clang oracle calls a callback field by value and through a
+  pointer in both directions.
 - Implemented statement-only AArch64 inline assembly with explicit
   input/output/clobber bindings and no constraint language or reordering.
 - Implemented Package System v1's manifest and dependency-graph resolution
