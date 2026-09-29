@@ -74,7 +74,7 @@ typedef enum {
     /* vectors: every lane of vector type the scalar args[0] of its lane    \
        type; each lane args[1]'s where v4i32 mask args[0]'s is all ones,     \
        else args[2]'s; the v4i32 <0, 1, 2, 3>. add, sub, mul, neg, div       \
-       (v4f32 only), and, or, xor, shl and shr (v4i32 only, by an i32        \
+       (float only), and, or, xor, shl and shr (v4i32 only, by an i32        \
        constant 1-31), compare (to a v4i32 mask of all-ones or zero lanes),  \
        cast (v4i32 to v4f32), load, store, and phi also take vectors,        \
        lane-wise and never checked */                                        \

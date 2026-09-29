@@ -7,9 +7,10 @@
 // Values: every value that is not a constant or a stack object lives in its
 // own 8-byte frame slot, held in canonical form: a narrow integer sign- or
 // zero-extended to 64 bits by its type, a bool 0 or 1, a float its bits (an
-// f32's zero-extended). Each instruction loads its operands into rax, rcx,
-// and rdx (a float's on through rax to xmm0-xmm2), computes, restores the
-// canonical form, and stores its result. Constants and stack objects are rebuilt at each use.
+// f32's zero-extended), a vector (ir.h) whole in its own 16-byte aligned slot.
+// Each instruction loads its operands into rax, rcx, and rdx (a float's on
+// through rax to xmm0-xmm2, a vector's straight to them), computes, restores
+// the canonical form, and stores its result. Constants and stack objects are rebuilt at each use.
 // There is no register allocation yet.
 //
 // Frame: push rbp; mov rbp, rsp; sub rsp, N. Value slots, a phi staging
@@ -29,10 +30,10 @@
 // in rax and rdx, xmm0 and xmm1, by class. Calls go through R_X86_64_PLT32;
 // the address of an extern symbol loads from the GOT, an internal one is
 // rip-relative. Byte routines take their own convention (x64_runtime).
-// Vectors and asm are refused with a diagnostic until the target covers them.
+// Asm is refused with a diagnostic until the target covers it.
 //
 // The target requires x86-64-v3: floats use SSE (roundsd for floor and ceil)
-// and vfmadd (FMA3) for fma.
+// and vfmadd (FMA3) for fma, vectors SSE up to SSE4.1 (pmulld, blendvps).
 //
 // Release arithmetic follows the arm64 target: shifts count modulo 32 for a
 // type up to 32 bits and 64 above, a division by zero yields 0, and MIN / -1
@@ -60,7 +61,7 @@ typedef struct {
     IrFunc*  fn;
     Buf*     t;
     int32_t* home;    // value -> rbp offset of its slot (negative), 0 for none
-    int32_t  stage;   // rbp offset of the phi staging area
+    int32_t  stage;   // rbp offset of the phi staging area (its 16-aligned base)
     int32_t  scratch; // rbp offset of 16 bytes where register words meet leaves
     int32_t  sret;    // rbp offset of the saved result address, 0 for a result in registers
     uint32_t out;     // outgoing stack argument bytes
@@ -631,6 +632,128 @@ static void fexact(X64* a, int v) {
     fstore(a, v, t, XMM0);
 }
 
+// A vector value (ir.h) lives in its own 16-byte slot, aligned as rbp is, and
+// moves whole into xmm0-xmm2. Each operation is lane-wise SSE (up to SSE4.1),
+// matching the arm64 target's NEON lane for lane.
+
+// movdqa (aligned) or movdqu of xmm x from (load) or to [base + disp]
+static void xmove(X64* a, int load, int aligned, int x, int base, int32_t disp) {
+    put(a, aligned ? 0x66 : 0xF3);
+    rm(a, 0, (const uint8_t[]){ 0x0F, load ? 0x6F : 0x7F }, 2, x, base, disp, 0);
+}
+
+static void vload(X64* a, int x, int v) { xmove(a, 1, 1, x, RBP, a->home[v]); }
+
+static void vstore(X64* a, int v, int x) {
+    if (a->home[v]) xmove(a, 0, 1, x, RBP, a->home[v]);
+}
+
+// op x, y after the prefix pfx (0 for none): 0F op, or 0F 38 op for op38
+static void vop(X64* a, int pfx, int op38, uint8_t op, int x, int y) {
+    if (pfx) put(a, (uint8_t)pfx);
+    if (op38) rr(a, 0, (const uint8_t[]){ 0x0F, 0x38, op }, 3, x, y);
+    else rr(a, 0, (const uint8_t[]){ 0x0F, op }, 2, x, y);
+}
+
+// op x, imm8 of the 66 0F 72/73 shift group (ext: 4 psra, 6 psll)
+static void vshift(X64* a, uint8_t op, int ext, int x, int n) {
+    vop(a, 0x66, 0, op, ext, x);
+    put(a, (uint8_t)n);
+}
+
+// x = all ones (pcmpeqd x, x)
+static void vones(X64* a, int x) { vop(a, 0x66, 0, 0x76, x, x); }
+
+// A lane-wise vector operation (ir.h): a compare to a mask (float lt and le
+// by cmpps, gt and ge as them with the operands exchanged, ne as NEQ_UQ,
+// true on a NaN as arm64's inverted eq is; an integer lt as gt exchanged, ne,
+// le, and ge as eq, gt, and lt inverted), neg as a sign flip or a subtraction
+// from zero, and select through blendvps on xmm0's mask.
+static void vector(X64* a, int v) {
+    IrIns* x = ins_of(a, v);
+    IrType t = (IrType)x->type;
+    if (x->op == IR_LANES) { // <0, 1, 2, 3> as two words
+        mov_imm(a, RAX, 1ull << 32);
+        st64(a, RAX, RBP, a->home[v]);
+        mov_imm(a, RAX, 3ull << 32 | 2);
+        st64(a, RAX, RBP, a->home[v] + 8);
+        return;
+    }
+    if (x->op == IR_SPLAT) { // the scalar's bits in lane 0, copied by pshufd
+        fload(a, XMM0, x->args[0]);
+        vop(a, 0x66, 0, 0x70, XMM0, XMM0);
+        put(a, t == IT_V2F64 ? 0x44 : 0x00);
+        vstore(a, v, XMM0);
+        return;
+    }
+    if (x->op == IR_SELECT) { // xmm2 = xmm1's lanes where xmm0's are set
+        vload(a, XMM0, x->args[0]);
+        vload(a, XMM1, x->args[1]);
+        vload(a, XMM2, x->args[2]);
+        vop(a, 0x66, 1, 0x14, XMM2, XMM1);
+        vstore(a, v, XMM2);
+        return;
+    }
+    vload(a, XMM0, x->args[0]);
+    if (x->op == IR_SHL || x->op == IR_SHR) { // by an immediate (ir.h); shr is arithmetic, as i32's
+        vshift(a, 0x72, x->op == IR_SHL ? 6 : 4, XMM0, (int)ins_of(a, x->args[1])->imm);
+        vstore(a, v, XMM0);
+        return;
+    }
+    if (x->op == IR_CAST) { // v4i32 to v4f32: cvtdq2ps
+        vop(a, 0, 0, 0x5B, XMM0, XMM0);
+        vstore(a, v, XMM0);
+        return;
+    }
+    if (x->op == IR_NEG) {
+        if (t == IT_V4I32) { // 0 - x
+            vop(a, 0x66, 0, 0xEF, XMM1, XMM1);
+            vop(a, 0x66, 0, 0xFA, XMM1, XMM0);
+            vstore(a, v, XMM1);
+            return;
+        }
+        vones(a, XMM1); // the sign bits flipped, as fneg does
+        vshift(a, t == IT_V2F64 ? 0x73 : 0x72, 6, XMM1, t == IT_V2F64 ? 63 : 31);
+        vop(a, 0, 0, 0x57, XMM0, XMM1);
+        vstore(a, v, XMM0);
+        return;
+    }
+    int l = XMM0, r = XMM1, op = x->op;
+    IrType ot = (IrType)ins_of(a, x->args[0])->type;
+    vload(a, XMM1, x->args[1]);
+    int pd = ot == IT_V2F64 ? 0x66 : 0;
+    switch (op) {
+    case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV:
+        if (ot == IT_V4I32) {
+            if (op == IR_MUL) vop(a, 0x66, 1, 0x40, l, r); // pmulld
+            else vop(a, 0x66, 0, op == IR_ADD ? 0xFE : 0xFA, l, r);
+        } else {
+            static const uint8_t fop[] = { [IR_ADD] = 0x58, [IR_SUB] = 0x5C, [IR_MUL] = 0x59, [IR_DIV] = 0x5E };
+            vop(a, pd, 0, fop[op], l, r);
+        }
+        break;
+    case IR_AND: vop(a, 0x66, 0, 0xDB, l, r); break;
+    case IR_OR: vop(a, 0x66, 0, 0xEB, l, r); break;
+    case IR_XOR: vop(a, 0x66, 0, 0xEF, l, r); break;
+    default: // a compare
+        if (ot == IT_V4F32) {
+            static const uint8_t pred[] = { [IR_EQ] = 0, [IR_NE] = 4, [IR_LT] = 1, [IR_LE] = 2, [IR_GT] = 1, [IR_GE] = 2 };
+            if (op == IR_GT || op == IR_GE) l = XMM1, r = XMM0;
+            vop(a, 0, 0, 0xC2, l, r);
+            put(a, pred[op]);
+        } else {
+            if (op == IR_LT || op == IR_GE) l = XMM1, r = XMM0;
+            vop(a, 0x66, 0, op == IR_EQ || op == IR_NE ? 0x76 : 0x66, l, r); // pcmpeqd, pcmpgtd
+            if (op == IR_NE || op == IR_LE || op == IR_GE) {
+                vones(a, r);
+                vop(a, 0x66, 0, 0xEF, l, r);
+            }
+        }
+        break;
+    }
+    vstore(a, v, l);
+}
+
 // r = the value of type t at [base + off] in canonical form (a mov with extension)
 static void ld_width(X64* a, IrType t, int r, int base, int32_t off) {
     int sg = ir_type_signed(t);
@@ -653,7 +776,8 @@ static void st_width(X64* a, IrType t, int r, int base, int32_t off) {
     }
 }
 
-// mov (load, with extension) or store of type t at [rax + off] with rcx
+// mov (load, with extension) or store of type t at [rax + off] with rcx, or
+// movdqu with xmm0 for a vector
 static void access(X64* a, int v) {
     IrIns* x = ins_of(a, v);
     int load = x->op == IR_LOAD;
@@ -662,6 +786,12 @@ static void access(X64* a, int v) {
     if (x->flags & IRF_CHECKED) {
         test_rr(a, RAX);
         fail_if(a, CC_E, NFAIL);
+    }
+    if (ir_type_vector(t)) {
+        if (!load) vload(a, XMM0, x->args[1]);
+        xmove(a, load, 0, XMM0, RAX, x->aux);
+        if (load) vstore(a, v, XMM0);
+        return;
     }
     if (load) {
         ld_width(a, t, RCX, RAX, x->aux);
@@ -693,6 +823,14 @@ static void pointer_offset(X64* a, int v) {
 }
 
 static uint32_t align_up(uint32_t v, uint32_t a) { return (v + a - 1) & ~(a - 1); }
+
+// The staging offset of the next phi of type t, from the area's 16-aligned
+// base: 8 bytes, or 16 aligned for a vector; advances *off past it.
+static uint32_t stage_next(IrType t, uint32_t* off) {
+    uint32_t n = ir_type_vector(t) ? 16 : 8, at = align_up(*off, n);
+    *off = at + n;
+    return at;
+}
 
 // --- calling convention -------------------------------------------------------------
 
@@ -946,13 +1084,29 @@ static void phi_moves(X64* a, int b) {
     while (sb->preds[p] != b) p++;
     int n = 0;
     while (n < sb->nins && fn->ins[sb->ins[n]].op == IR_PHI) n++;
+    uint32_t off = 0;
     for (int i = 0; i < n; i++) { // stage every source first: the moves are parallel
-        load_val(a, RAX, fn->ins[sb->ins[i]].args[p]);
-        st64(a, RAX, RBP, a->stage - 8 * i);
+        int ph = sb->ins[i], src = fn->ins[ph].args[p];
+        int32_t at = a->stage + (int32_t)stage_next((IrType)fn->ins[ph].type, &off);
+        if (ir_type_vector((IrType)fn->ins[ph].type)) {
+            vload(a, XMM0, src);
+            xmove(a, 0, 1, XMM0, RBP, at);
+        } else {
+            load_val(a, RAX, src);
+            st64(a, RAX, RBP, at);
+        }
     }
+    off = 0;
     for (int i = 0; i < n; i++) {
-        ld64(a, RAX, RBP, a->stage - 8 * i);
-        store_val(a, sb->ins[i], RAX);
+        int ph = sb->ins[i];
+        int32_t at = a->stage + (int32_t)stage_next((IrType)fn->ins[ph].type, &off);
+        if (ir_type_vector((IrType)fn->ins[ph].type)) {
+            xmove(a, 1, 1, XMM0, RBP, at);
+            vstore(a, ph, XMM0);
+        } else {
+            ld64(a, RAX, RBP, at);
+            store_val(a, ph, RAX);
+        }
     }
 }
 
@@ -1044,9 +1198,9 @@ static void emit_block(X64* a, int b) {
         IrIns* x = &fn->ins[v];
         if (x->op != IR_CHECK) line_row(a, x->at);
         IrType t = (IrType)x->type;
-        if (ir_type_vector(t) || (x->op == IR_STORE && ir_type_vector((IrType)ins_of(a, x->args[1])->type))) {
-            refuse(a, "a vector value");
-            return;
+        if (ir_type_vector(t) && x->op != IR_LOAD && x->op != IR_PHI) {
+            vector(a, v);
+            continue;
         }
         int fp = x->nargs && ir_type_float((IrType)ins_of(a, x->args[0])->type);
         switch (x->op) {
@@ -1152,14 +1306,14 @@ static void split_critical_edges(IrFunc* fn) {
 static uint32_t layout(X64* a) {
     IrFunc* fn = a->fn;
     a->home = xcalloc((size_t)fn->nins, sizeof(int32_t));
-    uint32_t down = 0, maxphi = 0;
+    uint32_t down = 0, maxstage = 0;
     for (int b = 0; b < fn->nblocks; b++) {
         IrBlock* bb = &fn->blocks[b];
-        uint32_t nphi = 0;
+        uint32_t staged = 0; // bytes
         for (int i = 0; i < bb->nins; i++) {
             int v = bb->ins[i];
             IrIns* x = &fn->ins[v];
-            if (x->op == IR_PHI) nphi++;
+            if (x->op == IR_PHI) stage_next((IrType)x->type, &staged);
             if (x->op == IR_CALL || x->op == IR_CALLI) {
                 Plan p;
                 plan_call(a, x, &p);
@@ -1167,13 +1321,13 @@ static uint32_t layout(X64* a) {
                 plan_free(&p);
             }
             if (x->type == IT_VOID || x->op == IR_CONST || x->op == IR_SLOT) continue;
-            down += 8;
+            down = ir_type_vector((IrType)x->type) ? align_up(down + 16, 16) : down + 8; // rbp is 16-aligned
             a->home[v] = -(int32_t)down;
         }
-        if (nphi > maxphi) maxphi = nphi;
+        if (staged > maxstage) maxstage = staged;
     }
-    down += 8 * maxphi;
-    a->stage = -(int32_t)down + 8 * (int32_t)(maxphi ? maxphi - 1 : 0);
+    down = align_up(down + maxstage, 16);
+    a->stage = -(int32_t)down;
     down += 16;
     a->scratch = -(int32_t)down;
     if (fn->ret_mem || ret_in_memory(fn->sig)) {

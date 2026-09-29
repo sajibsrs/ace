@@ -75,8 +75,10 @@ repeated in each additional backend.
   Floats pass in `xmm0`-`xmm7` and SSE eightbytes, and compute through
   `xmm0`-`xmm2` in scalar SSE, with the target's float conversions matching
   arm64's saturation bit for bit. Integers, floats, pointers, aggregates of
-  them, the byte routines, and the debug allocator registry are covered; a
-  function using vectors or `asm` is a compile error naming what it lacks.
+  them, the byte routines, the debug allocator registry, and the
+  vectorizer's lanes (SSE on 16-byte slots, matching arm64's NEON lane for
+  lane) are covered; a function using `asm` is a compile error naming what it
+  lacks.
   The target requires an x86-64-v3 CPU (FMA3 for `math.fma`).
 
 ## Object emission

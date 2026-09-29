@@ -814,6 +814,14 @@ current normative rules, and Git preserves patch-level detail.
   Calls pass floats and SSE eightbytes in `xmm0`-`xmm7`, return them in
   `xmm0`/`xmm1`, and set `al` to the SSE count of a variadic call; an
   aggregate result's integer words now come from `rax` and `rdx` by class.
+- Added vectors to linux-x64, so release auto-vectorization compiles there.
+  A vector value takes a 16-byte slot aligned to 16, and phi staging sizes
+  each entry by its type; operations move whole through `xmm0`-`xmm2` in SSE
+  up to SSE4.1, matching arm64's lanes: float compares by `cmpps` (`gt`/`ge`
+  as `lt`/`le` exchanged, `ne` as `NEQ_UQ`, true on a NaN), integer ones by
+  `pcmpeqd`/`pcmpgtd` with `ne`, `le`, and `ge` inverted, float negation as
+  a sign-bit flip, `pmulld`, `psrad` for `shr`, a splat by `pshufd`, and
+  `select` by `blendvps` on the mask in `xmm0`.
 
 ## Core language
 
