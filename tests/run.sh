@@ -1088,6 +1088,31 @@ elif ! cc -o /tmp/ace_vector tests/vector_ir.c /tmp/ace_vector.o 2>/tmp/ace_test
     fail=1
 fi
 
+# ELF object writer (tests/elf_object.c): a hand-encoded object links with
+# the system cc and runs, on a linux-x64 host only
+if [ "$(uname -s)-$(uname -m)" = Linux-x86_64 ]; then
+    if ! cc -std=c11 -D_DEFAULT_SOURCE -o /tmp/ace_elf_emit tests/elf_object.c $(ls src/*.c | grep -v src/main.c) \
+            2>/tmp/ace_test_errs; then
+        echo "FAIL: ELF object writer test did not build"
+        cat /tmp/ace_test_errs
+        fail=1
+    elif ! /tmp/ace_elf_emit /tmp/ace_elf.o 2>/tmp/ace_test_errs; then
+        echo "FAIL: ELF object was not written"
+        cat /tmp/ace_test_errs
+        fail=1
+    elif ! cc -o /tmp/ace_elf /tmp/ace_elf.o 2>/tmp/ace_test_errs; then
+        echo "FAIL: ELF object did not link"
+        cat /tmp/ace_test_errs
+        fail=1
+    else
+        out=$(/tmp/ace_elf); code=$?
+        if [ "$out" != "elf object" ] || [ $code -ne 42 ]; then
+            echo "FAIL: ELF object printed '$out' and exited $code, want 'elf object' and 42"
+            fail=1
+        fi
+    fi
+fi
+
 if [ -d tests/emit ]; then
     rm -rf /tmp/ace_emit
     mkdir -p /tmp/ace_emit

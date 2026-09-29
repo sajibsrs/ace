@@ -742,6 +742,16 @@ current normative rules, and Git preserves patch-level detail.
   constant count of whole vectors drops the scalar remainder loop. `bench/core`
   `cube-transform` drops from 61.0 to 41.4 ns/cube (1.47x; C `-O2` scalar
   53.0, vectorized 31.4), and `saxpy-f32` from 0.131 to 0.126 ns/element.
+- Began the linux-x64 target. `--target=linux-x64` (the Linux x86-64 host's
+  default) checks and lowers, and object emission reports that its code
+  generator is not written yet; the build defines `_DEFAULT_SOURCE` so
+  `-std=c11` exposes POSIX on glibc.
+- Added `src/elf.c`, the ELF64 x86-64 relocatable writer for the same `Obj`
+  the Mach-O writer serializes: `R_X86_64_*` relocation types (the shared
+  DWARF writers' type 0 read as an absolute address), each addend moved from
+  its field into a `.rela` entry, locals before globals, and a
+  `.note.GNU-stack`. `tests/elf_object.c` links a hand-encoded object through
+  `cc` on a linux-x64 host.
 
 ## Core language
 

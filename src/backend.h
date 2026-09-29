@@ -168,6 +168,8 @@ void obj_debug_info(Obj* o, ESym* text_anchor);
 void obj_debug_line(Obj* o, ESym* text_anchor);
 // Write the object file; returns its size, or 0 on error.
 size_t obj_write(Obj* o, const char* path);
+// elf.c: the same object as ELF64 x86-64 (linux-x64); Rel.type is R_X86_64_*.
+size_t elf_write(Obj* o, const char* path);
 
 // --- shared by the code generators -----------------------------------------------
 
