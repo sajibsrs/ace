@@ -14,6 +14,19 @@
 
 extern char** environ;
 
+#define SUPPORTED_TARGETS "darwin-arm64, linux-x64"
+
+static int target_supported(const char* target) {
+    return strcmp(target, "darwin-arm64") == 0 || strcmp(target, "linux-x64") == 0;
+}
+
+// linux-x64 checks and lowers; its code generator is not written yet.
+static int target_codegen(const char* target) {
+    if (strcmp(target, "darwin-arm64") == 0) return 1;
+    fprintf(stderr, "ace: code generation for target '%s' is not implemented yet\n", target);
+    return 0;
+}
+
 static const char* host_target(void) {
 #if defined(__APPLE__) && defined(__aarch64__)
     return "darwin-arm64";
@@ -22,7 +35,7 @@ static const char* host_target(void) {
 #elif defined(__linux__) && defined(__aarch64__)
     return "linux-arm64";
 #elif defined(__linux__) && defined(__x86_64__)
-    return "linux-x86-64";
+    return "linux-x64";
 #else
     return "unknown";
 #endif
@@ -40,7 +53,7 @@ static void usage(void) {
                     "  --release       emit without runtime diagnostic machinery\n"
                     "  --ir            print each function's IR after semantic checking\n"
                     "  --report        print compilation statistics to stderr\n"
-                    "  --target=TARGET compile for TARGET (supported: darwin-arm64)\n"
+                    "  --target=TARGET compile for TARGET (supported: " SUPPORTED_TARGETS ")\n"
                     "  -c              emit a Mach-O arm64 object <base>.o\n"
                     "  -o NAME         emit + link via the system cc; NAME ending in\n"
                     "                  .ace compiles that file, naming the output after it\n"
@@ -488,8 +501,8 @@ static int package_cmd_check(int argc, char** argv, const char* argv0) {
         return 1;
     }
     const char* target = host_target();
-    if (strcmp(target, "darwin-arm64") != 0) {
-        fprintf(stderr, "ace: unsupported target '%s' (supported: darwin-arm64)\n", target);
+    if (!target_supported(target)) {
+        fprintf(stderr, "ace: unsupported target '%s' (supported: " SUPPORTED_TARGETS ")\n", target);
         return 2;
     }
     Package* root_package;
@@ -529,8 +542,8 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
             return 2;
         }
     }
-    if (strcmp(target, "darwin-arm64") != 0) {
-        fprintf(stderr, "ace: unsupported target '%s' (supported: darwin-arm64)\n", target);
+    if (!target_supported(target)) {
+        fprintf(stderr, "ace: unsupported target '%s' (supported: " SUPPORTED_TARGETS ")\n", target);
         return 2;
     }
     const char* dir = find_package_root();
@@ -569,6 +582,10 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
         return 0;
     }
 
+    if (!target_codegen(target)) {
+        free(order);
+        return 1;
+    }
     char obj[4096];
     snprintf(obj, sizeof obj, "%s/%s.o", build_dir, root_package->name);
     if (out_bin_cap) snprintf(out_bin, out_bin_cap, "%s/%s", build_dir, root_package->name);
@@ -824,8 +841,8 @@ int main(int argc, char** argv) {
         free(order);
         return 0;
     }
-    if (strcmp(target, "darwin-arm64") != 0) {
-        fprintf(stderr, "ace: unsupported target '%s' (supported: darwin-arm64)\n", target);
+    if (!target_supported(target)) {
+        fprintf(stderr, "ace: unsupported target '%s' (supported: " SUPPORTED_TARGETS ")\n", target);
         return 2;
     }
     if (package_check_dir) {
@@ -904,6 +921,7 @@ int main(int argc, char** argv) {
         }
 
         if (opt_c || opt_link) { // codegen: Mach-O arm64 object
+            if (!target_codegen(target)) return 1;
             char obj[4096];
             if (opt_link) snprintf(obj, sizeof obj, "%s.o", out_name);
             else obj_path(obj, sizeof obj, path);
