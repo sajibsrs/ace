@@ -105,6 +105,12 @@ the remaining proof points explicit:
   should consume this toolchain formatter rather than implement Ace parsing.
 - **x86-64 backend and OS layer** [open] — the second target; facade selection
   already uses `@when`.
+- **Target-independent linking and cross-compilation** [new] — `-o` runs the
+  host `cc`, so building for another OS needs that OS's toolchain, and Windows
+  has none by default. Options: require `cc`, bundle `lld` (Mach-O, ELF, COFF),
+  or an own linker with per-target system-library stubs (Zig's approach).
+  Settle with the second target, alongside ELF/COFF writers and per-OS ABI
+  variants (Windows x64 convention, symbol prefixes, stack probes).
 - **Shared-library (dylib/PIC) and static-archive emission** [new] — the driver
   currently emits objects and executables only.
 - **Per-module objects and incremental rebuilds** [queued] — the merged-unit
