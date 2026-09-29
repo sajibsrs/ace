@@ -23,11 +23,11 @@ FACES: const [24]i32 = [
 
 // One 0xRRGGBB per face, in FACES order, from the Material Design 500
 // shades: the four sides around the y axis are red, green, blue, and
-// yellow; the bottom and top are cyan and purple.
+// amber (700, softer than the 500); the bottom and top are cyan and purple.
 FACE_COLORS: const [6]u32 = [
     0xF44336, 0x4CAF50, // x = 0 red, x = 1 green
     0x00BCD4, 0x9C27B0, // y = 0 cyan, y = 1 purple
-    0x2196F3, 0xFFEB3B, // z = 0 blue, z = 1 yellow
+    0x2196F3, 0xFFA000, // z = 0 blue, z = 1 amber 700
 ]
 
 // The camera sits DISTANCE units from the cube's center, looking at it.
