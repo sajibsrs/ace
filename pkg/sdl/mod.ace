@@ -8,6 +8,8 @@
  * the linker's own search. An app overrides it with its own [[link]] path.
  */
 
+import mem
+
 // SDL_InitFlags: the subsystems sdl.init starts.
 pub InitFlags: bits u32 { _: 5, video: 1, _: 8, events: 1, _: 17 }
 
@@ -29,6 +31,9 @@ pub Keycode: enum u32 { unknown, escape = 0x1b }
 // Renderer.vsync intervals: 1 presents on every refresh, 0 never waits.
 pub VSYNC_DISABLED: const i32 = 0
 pub VSYNC_ADAPTIVE: const i32 = -1
+
+// Longest text, in bytes, that Window::new and Renderer.debug_text accept.
+pub TEXT_MAX: const usize = 255
 
 // Debug text glyphs are this many render units square.
 pub DEBUG_TEXT_SIZE: const f32 = 8.0
@@ -141,6 +146,15 @@ pub error(): string {
     return string([]u8(p, n))
 }
 
+// Copy text into buf with the NUL SDL reads as its end; null when it does
+// not fit.
+c_text(buf: mut []u8, text: string): *u8 {
+    if text.len >= buf.len { return null }
+    mem.copy(mut buf[..text.len], text)
+    buf[text.len] = 0
+    return &buf[0]
+}
+
 // Fill this event with the next pending one; false when none is left.
 pub mut Event.poll(): bool { return c_poll_event(mut &self) }
 
@@ -154,9 +168,12 @@ pub Color::hex(rgb: u32): Color {
     }
 }
 
-// The title must end in "\0"; SDL reads it as a C string.
+// A title longer than TEXT_MAX bytes fails creation.
 pub Window::new(title: string, w: i32, h: i32, flags: WindowFlags): Window {
-    return Window { handle = c_create_window(&title[0], w, h, u64(flags)) }
+    buf: [TEXT_MAX + 1]u8
+    p: *u8 = c_text(mut buf[..], title)
+    if p == null { return Window { handle = null } }
+    return Window { handle = c_create_window(p, w, h, u64(flags)) }
 }
 
 pub Window.ok(): bool { return self.handle != null }
@@ -219,8 +236,11 @@ pub Renderer.scale(x: f32, y: f32): bool {
     return c_set_render_scale(self.handle, x, y)
 }
 
-// Draw text in SDL's built-in 8x8 font with the draw color. The text must
-// end in "\0"; SDL reads it as a C string.
+// Draw text in SDL's built-in 8x8 font with the draw color; text longer
+// than TEXT_MAX bytes draws nothing and returns false.
 pub Renderer.debug_text(x: f32, y: f32, text: string): bool {
-    return c_render_debug_text(self.handle, x, y, &text[0])
+    buf: [TEXT_MAX + 1]u8
+    p: *u8 = c_text(mut buf[..], text)
+    if p == null { return false }
+    return c_render_debug_text(self.handle, x, y, p)
 }

@@ -2978,6 +2978,9 @@ current normative rules, and Git preserves patch-level detail.
 - `pkg/sdl` `Renderer.geometry` with empty `indices` now passes `NULL` so SDL
   draws the vertices as consecutive triangles, instead of drawing nothing;
   `indices` without `vertices` returns false.
+- `pkg/sdl` `Window::new` and `Renderer.debug_text` take plain Ace strings:
+  each copies the text into a `TEXT_MAX + 1` (256) byte stack buffer and
+  appends the NUL SDL reads, with no allocation; longer text fails.
 
 - Extended auto-vectorization to `f64` lanes (Compiler #6): the IR's
   `v2f64` holds two lanes in 128 bits and takes `add`, `sub`, `mul`, `div`,

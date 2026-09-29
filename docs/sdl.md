@@ -33,7 +33,7 @@ See [`demo/sdl3-window`](../demo/sdl3-window) and
 if !sdl.init(sdl.InitFlags { video = 1 }) { return 1 }
 defer sdl.quit()
 
-window: sdl.Window = sdl.Window::new("Ace + SDL3\0", 640, 480, sdl.WindowFlags { resizable = 1 })
+window: sdl.Window = sdl.Window::new("Ace + SDL3", 640, 480, sdl.WindowFlags { resizable = 1 })
 defer mut window.wipe()
 if !window.ok() { return 1 }   // sdl.error() says why
 
@@ -52,8 +52,8 @@ named so far.
 
 `Window` and `Renderer` hold SDL's heap objects, so they follow the
 `::new`/`wipe` pair; `ok()` reports whether creation succeeded, and `wipe` on
-a failed handle is harmless. The window title is passed to SDL as a C string,
-so it must end in `"\0"`. A `Color` has `f32` channels from 0 to 1, with `a`
+a failed handle is harmless. A title longer than `sdl.TEXT_MAX` (255) bytes
+fails creation. A `Color` has `f32` channels from 0 to 1, with `a`
 defaulting to 1 (opaque); `Color::hex(rgb)` builds an opaque one from a
 24-bit `0xRRGGBB` value such as `0xF44336`. `Renderer.color(): (Color, bool)` reads the draw
 color back; `color(c)` sets it. `sdl.error()` returns SDL's last error message
@@ -96,14 +96,14 @@ every other refresh, `sdl.VSYNC_ADAPTIVE` tears only when a frame is late, and
 honor the interval.
 
 `Renderer.debug_text(x, y, text)` draws one line in SDL's built-in 8x8 font
-(`sdl.DEBUG_TEXT_SIZE`) with the current draw color; like a window title, the
-text must end in `"\0"`. `Renderer.scale(x, y)` multiplies every later
+(`sdl.DEBUG_TEXT_SIZE`) with the current draw color; text longer than `sdl.TEXT_MAX`
+bytes draws nothing and returns false. `Renderer.scale(x, y)` multiplies every later
 drawing coordinate, which enlarges that font on high-density displays:
 
 ```ace
 renderer.scale(2.0, 2.0)
 renderer.color(sdl.Color { r = 224, g = 224, b = 224, a = 255 })
-renderer.debug_text(6.0, 6.0, "vsync on\0")
+renderer.debug_text(6.0, 6.0, "vsync on")
 renderer.scale(1.0, 1.0)
 ```
 

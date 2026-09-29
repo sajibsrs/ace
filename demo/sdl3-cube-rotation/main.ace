@@ -54,7 +54,7 @@ main(): int {
     if !sdl.init(sdl.InitFlags { video = 1 }) { return fail("SDL_Init") }
     defer sdl.quit()
 
-    window: sdl.Window = sdl.Window::new("Ace + SDL3 cube\0", 640, 640, sdl.WindowFlags { resizable = 1 })
+    window: sdl.Window = sdl.Window::new("Ace + SDL3 cube", 640, 640, sdl.WindowFlags { resizable = 1 })
     defer mut window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
 
@@ -174,29 +174,29 @@ main(): int {
         step: f32 = sdl.DEBUG_TEXT_SIZE + 4.0
         y: f32 = 6.0
 
-        // Each line is "\0"-ended for Renderer.debug_text; a line that does
-        // not fit is skipped, as the overlay is only informational.
+        // A line that does not fit is skipped, as the overlay is only
+        // informational.
         line: [64]u8 = [0 : 64]
-        n: usize, fit: bool = str.format(mut line[..], "FPS %d\0", fps)
+        n: usize, fit: bool = str.format(mut line[..], "FPS %d", fps)
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-        n, fit = str.format(mut line[..], "frame %d.%02d ms\0", frame_us / 1000, frame_us % 1000 / 10)
+        n, fit = str.format(mut line[..], "frame %d.%02d ms", frame_us / 1000, frame_us % 1000 / 10)
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-        n, fit = str.format(mut line[..], "draw %d us (CPU)\0", draw_us)
+        n, fit = str.format(mut line[..], "draw %d us (CPU)", draw_us)
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-        n, fit = str.format(mut line[..], "faces %u, triangles %u\0", nv / 4, ni / 3)
+        n, fit = str.format(mut line[..], "faces %u, triangles %u", nv / 4, ni / 3)
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-        n, fit = str.format(mut line[..], "output %d x %d\0", int(w), int(h))
+        n, fit = str.format(mut line[..], "output %d x %d", int(w), int(h))
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
 
         if vsync {
-            renderer.debug_text(6.0, y, "vsync on\0")
+            renderer.debug_text(6.0, y, "vsync on")
         } else {
-            renderer.debug_text(6.0, y, "vsync off\0")
+            renderer.debug_text(6.0, y, "vsync off")
         }
         renderer.scale(1.0, 1.0)
 
