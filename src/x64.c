@@ -1,7 +1,8 @@
 // x64.c — the x64 target of the IR backend for linux-x64 (SPEC.md
 // Compiler #2, passes 7-10): instruction selection, leaving SSA, the frame,
 // and encoding into the shared Obj under the System V AMD64 ABI, plus the
-// runtime failure routines emit.c's arm64 ones mirror (x64_runtime).
+// runtime routines emit.c's arm64 ones mirror (x64_runtime): failures, the
+// byte routines, and the debug allocator registry.
 //
 // Values: every value that is not a constant or a stack object lives in its
 // own 8-byte frame slot, held in canonical form: a narrow integer sign- or
@@ -24,8 +25,9 @@
 // registers); a scalar result arrives in rax and is re-canonicalized (a C
 // callee may leave a narrow result's upper bits unspecified). Calls go
 // through R_X86_64_PLT32; the address of an extern symbol loads from the GOT,
-// an internal one is rip-relative. Floats, vectors, byte routines, and asm
-// are refused with a diagnostic until the target covers them.
+// an internal one is rip-relative. Byte routines take their own convention
+// (x64_runtime). Floats, vectors, and asm are refused with a diagnostic until
+// the target covers them.
 //
 // Release arithmetic follows the arm64 target: shifts count modulo 32 for a
 // type up to 32 bits and 64 above, a division by zero yields 0, and MIN / -1
@@ -702,6 +704,20 @@ static void call(X64* a, IrBlock* bb, int i) {
     store_val(a, v, RAX);
 }
 
+// A byte routine call under its private convention (x64_runtime): the
+// operands in rdi, rsi, rdx; mem_compare's result in rax.
+static void rtcall(X64* a, int v) {
+    IrIns* x = ins_of(a, v);
+    load_val(a, RDI, x->args[0]);
+    load_val(a, RSI, x->args[1]);
+    load_val(a, RDX, x->args[2]);
+    call_sym(a, x->name);
+    if (strcmp(x->name, "__ace$mem_fill") == 0) a->o->mem_fill_used = 1;
+    else if (strcmp(x->name, "__ace$mem_compare") == 0) a->o->mem_compare_used = 1;
+    else a->o->mem_copy_used = 1;
+    if (x->type != IT_VOID) store_val(a, v, RAX);
+}
+
 // --- emission ---------------------------------------------------------------------------
 
 static void line_row(X64* a, Node* at) {
@@ -868,7 +884,7 @@ static void emit_block(X64* a, int b) {
             check(a, v);
             break;
         case IR_RTCALL:
-            refuse(a, "a byte routine (memory copy, fill, or compare)");
+            rtcall(a, v);
             break;
         case IR_ASM:
             refuse(a, "inline assembly");
@@ -1117,22 +1133,522 @@ static void fail_routine(Obj* o, const char* name, const char* message) {
     put(&a, 0x0F); put(&a, 0x0B); // ud2 if abort unexpectedly returns
 }
 
+// --- routine encoding: [base + index + disp] operands, SSE, local labels ---
+
+enum { X10 = 10, X11, X12, X13, X14, X15 }; // the byte routines' xmm scratch
+
+// op reg, [base + index + disp] after an optional mandatory prefix pfx;
+// index < 0 for none; force emits an empty REX (sil, dil as bytes).
+static void mop(X64* a, int pfx, int w, const uint8_t* op, int nop, int reg, int base, int index, int32_t disp, int force) {
+    if (pfx) put(a, (uint8_t)pfx);
+    uint8_t r = (uint8_t)(0x40 | (w ? 8 : 0) | ((reg >> 3) & 1) << 2 |
+                          (index >= 0 ? ((index >> 3) & 1) << 1 : 0) | ((base >> 3) & 1));
+    if (r != 0x40 || force) put(a, r);
+    for (int i = 0; i < nop; i++) put(a, op[i]);
+    int mod = disp == 0 && (base & 7) != RBP ? 0 : disp >= -128 && disp <= 127 ? 1 : 2;
+    int sib = index >= 0 || (base & 7) == RSP;
+    put(a, (uint8_t)(mod << 6 | (reg & 7) << 3 | (sib ? 4 : base & 7)));
+    if (sib) put(a, (uint8_t)((index >= 0 ? index & 7 : 4) << 3 | (base & 7)));
+    if (mod == 1) put(a, (uint8_t)disp);
+    else if (mod == 2) put32(a, (uint32_t)disp);
+}
+
+static void ldq(X64* a, int r, int b, int i, int32_t d) { mop(a, 0, 1, (const uint8_t[]){ 0x8B }, 1, r, b, i, d, 0); }
+static void stq(X64* a, int r, int b, int i, int32_t d) { mop(a, 0, 1, (const uint8_t[]){ 0x89 }, 1, r, b, i, d, 0); }
+static void ldd(X64* a, int r, int b, int i, int32_t d) { mop(a, 0, 0, (const uint8_t[]){ 0x8B }, 1, r, b, i, d, 0); }
+static void std_(X64* a, int r, int b, int i, int32_t d) { mop(a, 0, 0, (const uint8_t[]){ 0x89 }, 1, r, b, i, d, 0); }
+static void ldb(X64* a, int r, int b, int i, int32_t d) { mop(a, 0, 0, (const uint8_t[]){ 0x0F, 0xB6 }, 2, r, b, i, d, 0); } // movzx r32, m8
+static void stb(X64* a, int r, int b, int i, int32_t d) { mop(a, 0, 0, (const uint8_t[]){ 0x88 }, 1, r, b, i, d, r >= RSP && r < R8); }
+static void leaq(X64* a, int r, int b, int i, int32_t d) { mop(a, 0, 1, (const uint8_t[]){ 0x8D }, 1, r, b, i, d, 0); }
+static void ldx(X64* a, int x, int b, int i, int32_t d) { mop(a, 0xF3, 0, (const uint8_t[]){ 0x0F, 0x6F }, 2, x, b, i, d, 0); } // movdqu
+static void stx(X64* a, int x, int b, int i, int32_t d) { mop(a, 0xF3, 0, (const uint8_t[]){ 0x0F, 0x7F }, 2, x, b, i, d, 0); } // movdqu
+static void stxa(X64* a, int x, int b, int32_t d) { mop(a, 0x66, 0, (const uint8_t[]){ 0x0F, 0x7F }, 2, x, b, -1, d, 0); }   // movdqa
+
+// op reg, rm with a 66 prefix: SSE2 integer forms
+static void sse(X64* a, int w, uint8_t op, int reg, int r) {
+    put(a, 0x66);
+    rr(a, w, (const uint8_t[]){ 0x0F, op }, 2, reg, r);
+}
+
+// op r, imm8 of group 1 (ext: 0 add, 1 or, 4 and, 5 sub, 6 xor, 7 cmp)
+static void grp(X64* a, int w, int ext, int r, int8_t imm) {
+    rr(a, w, (const uint8_t[]){ 0x83 }, 1, ext, r);
+    put(a, (uint8_t)imm);
+}
+
+static void ret_(X64* a) { put(a, 0xC3); }
+static void bind(X64* a, int k) { a->label[k] = here(a); }
+
+static void jmp_sym(X64* a, const char* name) {
+    put(a, 0xE9);
+    reloc32(a, name, R_PLT32);
+}
+
+// op r, [rip + name] (a local data symbol)
+static void rip_op(X64* a, uint8_t op, int r, const char* name) {
+    rex(a, 1, r, 0, 0);
+    put(a, op);
+    put(a, (uint8_t)(0x05 | (r & 7) << 3));
+    reloc32(a, name, R_PC32);
+}
+
+// Pad with long nops to a 16-byte boundary: a loop head that no fetch block splits.
+static void align_loop(X64* a) {
+    static const uint8_t nop[9][9] = {
+        { 0x90 }, { 0x66, 0x90 }, { 0x0F, 0x1F, 0x00 }, { 0x0F, 0x1F, 0x40, 0x00 },
+        { 0x0F, 0x1F, 0x44, 0x00, 0x00 }, { 0x66, 0x0F, 0x1F, 0x44, 0x00, 0x00 },
+        { 0x0F, 0x1F, 0x80, 0x00, 0x00, 0x00, 0x00 }, { 0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00 },
+        { 0x66, 0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00 },
+    };
+    uint32_t n = (LOOP_ALIGN - here(a) % LOOP_ALIGN) % LOOP_ALIGN;
+    while (n) {
+        uint32_t k = n > 9 ? 9 : n;
+        for (uint32_t i = 0; i < k; i++) put(a, nop[k - 1][i]);
+        n -= k;
+    }
+}
+
+// Begin routine name at a FUNC_ALIGN boundary, with fresh local labels.
+static void routine(X64* a, Obj* o, const char* name) {
+    Buf* t = obj_text(o);
+    while (t->len % FUNC_ALIGN) buf_put8(t, 0x90);
+    sym_define(&o->syms, o->secs, name, (uint32_t)strlen(name), 0, &o->secs[SEC_TEXT]);
+    a->njmp = 0;
+}
+
+static void patch_local(X64* a) {
+    for (int i = 0; i < a->njmp; i++)
+        buf_patch32(a->t, a->jmp[i].site, a->label[a->jmp[i].target] - (a->jmp[i].site + 4));
+    a->njmp = 0;
+}
+
+/*
+ * Shared byte routines, emitted once per object when used. A private
+ * convention keeps call sites from disturbing other values: rdi = destination
+ * (or a), rsi = source, fill byte (zero-extended), or b, rdx = byte count;
+ * mem_compare returns -1, 0, or 1 in rax. They clobber only rax, rcx, rdx,
+ * rsi, rdi, r11, xmm10-xmm15, and flags, and use SSE2 alone (every x86-64).
+ * As on arm64, each size class up to 64 bytes loads every byte before
+ * storing, so it also serves overlapping moves, and tails reuse overlapping
+ * chunks instead of byte loops. Larger runs move 32 bytes per iteration with
+ * the far-end chunk loaded first; forward runs align the destination to 32.
+ * From REP_BYTES, forward copies and fills use rep movsb / rep stosb.
+ */
+enum { L_COPY, L_BACKWARD, L_FORWARD, L_REP, L_LT16, L_LT8, L_LT4, L_DONE, L_GT32, L_BIG, L_LOOP, L_TAIL, L_BLOOP,
+       L_WORDS, L_LAST, L_SAME, L_DIFF, L_FOUND, L_FAIL, L_NEXT, L_FOUND2, NLABELS };
+
+// The byte count from which copies and fills take rep movsb / rep stosb:
+// measured on an ERMS/FSRM core, the SSE2 loops win below it.
+enum { REP_BYTES = 1024 };
+
+static void rep_at(X64* a, int target) {
+    rr(a, 1, (const uint8_t[]){ 0x81 }, 1, 7, RDX); // cmp rdx, imm32
+    put32(a, REP_BYTES);
+    jump_add(a, CC_AE, target);
+}
+
+static void emit_mem_copy(X64* a, Obj* o) {
+    routine(a, o, "__ace$mem_move"); // at most 64 bytes is overlap-safe; above that,
+    grp(a, 1, 7, RDX, 64);           // backward only when the destination starts inside the source
+    jump_add(a, CC_BE, L_COPY);
+    mov_rr(a, RAX, RDI);
+    rr(a, 1, (const uint8_t[]){ 0x29 }, 1, RSI, RAX); // rax = dst - src
+    cmp_rr(a, RAX, RDX);
+    jump_add(a, CC_B, L_BACKWARD);
+    rr(a, 1, (const uint8_t[]){ 0xF7 }, 1, 3, RAX);   // neg rax: src - dst
+    cmp_rr(a, RAX, RDX);
+    jump_add(a, CC_B, L_FORWARD);           // a leftward overlap never takes rep movsb
+    sym_define(&o->syms, o->secs, "__ace$mem_copy", 14, 0, &o->secs[SEC_TEXT]);
+    bind(a, L_COPY);
+    grp(a, 1, 7, RDX, 32);
+    jump_add(a, CC_A, L_GT32);
+    grp(a, 1, 7, RDX, 16);
+    jump_add(a, CC_B, L_LT16);
+    ldx(a, X12, RSI, -1, 0);                // 16..32
+    ldx(a, X13, RSI, RDX, -16);
+    stx(a, X12, RDI, -1, 0);
+    stx(a, X13, RDI, RDX, -16);
+    ret_(a);
+    bind(a, L_LT16);
+    grp(a, 1, 7, RDX, 8);
+    jump_add(a, CC_B, L_LT8);
+    ldq(a, RAX, RSI, -1, 0);                // 8..15
+    ldq(a, RCX, RSI, RDX, -8);
+    stq(a, RAX, RDI, -1, 0);
+    stq(a, RCX, RDI, RDX, -8);
+    ret_(a);
+    bind(a, L_LT8);
+    grp(a, 1, 7, RDX, 4);
+    jump_add(a, CC_B, L_LT4);
+    ldd(a, RAX, RSI, -1, 0);                // 4..7
+    ldd(a, RCX, RSI, RDX, -4);
+    std_(a, RAX, RDI, -1, 0);
+    std_(a, RCX, RDI, RDX, -4);
+    ret_(a);
+    bind(a, L_LT4);                         // 0..3: first, middle, last
+    test_rr(a, RDX);
+    jump_add(a, CC_E, L_DONE);
+    mov_rr(a, R11, RDX);
+    rr(a, 1, (const uint8_t[]){ 0xD1 }, 1, 5, R11); // shr r11, 1
+    ldb(a, RAX, RSI, -1, 0);
+    ldb(a, RCX, RSI, R11, 0);
+    ldb(a, RSI, RSI, RDX, -1);
+    stb(a, RAX, RDI, -1, 0);
+    stb(a, RCX, RDI, R11, 0);
+    stb(a, RSI, RDI, RDX, -1);
+    bind(a, L_DONE);
+    ret_(a);
+    bind(a, L_GT32);
+    grp(a, 1, 7, RDX, 64);
+    jump_add(a, CC_A, L_BIG);
+    ldx(a, X12, RSI, -1, 0);                // 33..64
+    ldx(a, X13, RSI, -1, 16);
+    ldx(a, X14, RSI, RDX, -32);
+    ldx(a, X15, RSI, RDX, -16);
+    stx(a, X12, RDI, -1, 0);
+    stx(a, X13, RDI, -1, 16);
+    stx(a, X14, RDI, RDX, -32);
+    stx(a, X15, RDI, RDX, -16);
+    ret_(a);
+    // From REP_BYTES, rep movsb (fast strings) outruns 16-byte SSE2 stores.
+    // Below it, forward: preload the tail and head, then continue from a
+    // 32-byte-aligned destination so no loop store splits a cache line. The
+    // first aligned chunk loads before the head store, which may overwrite
+    // it in a leftward overlapping move.
+    bind(a, L_BIG);
+    rep_at(a, L_REP);
+    bind(a, L_FORWARD);
+    ldx(a, X14, RSI, RDX, -32);
+    ldx(a, X15, RSI, RDX, -16);
+    ldx(a, X12, RSI, -1, 0);
+    ldx(a, X13, RSI, -1, 16);
+    leaq(a, R11, RDI, RDX, -32);            // the tail's destination
+    leaq(a, RAX, RDI, -1, 32);
+    grp(a, 1, 4, RAX, -32);
+    rr(a, 1, (const uint8_t[]){ 0x29 }, 1, RDI, RAX); // rax = step, 1..32
+    rr(a, 1, (const uint8_t[]){ 0x01 }, 1, RAX, RSI);
+    ldx(a, X10, RSI, -1, 0);
+    ldx(a, X11, RSI, -1, 16);
+    stx(a, X12, RDI, -1, 0);
+    stx(a, X13, RDI, -1, 16);
+    rr(a, 1, (const uint8_t[]){ 0x01 }, 1, RAX, RDI);
+    stxa(a, X10, RDI, 0);
+    stxa(a, X11, RDI, 16);
+    rr(a, 1, (const uint8_t[]){ 0x29 }, 1, RAX, RDX);
+    grp(a, 1, 5, RDX, 64);                  // bytes past the first aligned chunk, less 32
+    jump_add(a, CC_BE, L_TAIL);
+    align_loop(a);
+    bind(a, L_LOOP);
+    grp(a, 1, 0, RSI, 32);
+    grp(a, 1, 0, RDI, 32);
+    ldx(a, X10, RSI, -1, 0);
+    ldx(a, X11, RSI, -1, 16);
+    stxa(a, X10, RDI, 0);
+    stxa(a, X11, RDI, 16);
+    grp(a, 1, 5, RDX, 32);
+    jump_add(a, CC_A, L_LOOP);
+    bind(a, L_TAIL);
+    stx(a, X14, R11, -1, 0);
+    stx(a, X15, R11, -1, 16);
+    ret_(a);
+    bind(a, L_BACKWARD);                    // backward, head preloaded
+    ldx(a, X14, RSI, -1, 0);
+    ldx(a, X15, RSI, -1, 16);
+    mov_rr(a, R11, RDI);
+    rr(a, 1, (const uint8_t[]){ 0x01 }, 1, RDX, RSI);
+    rr(a, 1, (const uint8_t[]){ 0x01 }, 1, RDX, RDI);
+    grp(a, 1, 5, RDX, 32);
+    align_loop(a);
+    bind(a, L_BLOOP);
+    grp(a, 1, 5, RSI, 32);
+    grp(a, 1, 5, RDI, 32);
+    ldx(a, X10, RSI, -1, 0);
+    ldx(a, X11, RSI, -1, 16);
+    stx(a, X10, RDI, -1, 0);
+    stx(a, X11, RDI, -1, 16);
+    grp(a, 1, 5, RDX, 32);
+    jump_add(a, CC_A, L_BLOOP);
+    stx(a, X14, R11, -1, 0);
+    stx(a, X15, R11, -1, 16);
+    ret_(a);
+    bind(a, L_REP);
+    mov_rr(a, RCX, RDX);
+    put(a, 0xF3); put(a, 0xA4);             // rep movsb
+    ret_(a);
+    patch_local(a);
+}
+
+static void emit_mem_fill(X64* a, Obj* o) {
+    routine(a, o, "__ace$mem_fill");
+    mov_imm(a, RAX, 0x0101010101010101ull);
+    rr(a, 1, (const uint8_t[]){ 0x0F, 0xAF }, 2, RAX, RSI); // imul rax, rsi: the byte in every lane
+    sse(a, 1, 0x6E, X12, RAX);              // movq xmm12, rax
+    sse(a, 0, 0x6C, X12, X12);              // punpcklqdq xmm12, xmm12
+    grp(a, 1, 7, RDX, 32);
+    jump_add(a, CC_A, L_GT32);
+    grp(a, 1, 7, RDX, 16);
+    jump_add(a, CC_B, L_LT16);
+    stx(a, X12, RDI, -1, 0);                // 16..32
+    stx(a, X12, RDI, RDX, -16);
+    ret_(a);
+    bind(a, L_LT16);
+    grp(a, 1, 7, RDX, 8);
+    jump_add(a, CC_B, L_LT8);
+    stq(a, RAX, RDI, -1, 0);                // 8..15
+    stq(a, RAX, RDI, RDX, -8);
+    ret_(a);
+    bind(a, L_LT8);
+    grp(a, 1, 7, RDX, 4);
+    jump_add(a, CC_B, L_LT4);
+    std_(a, RAX, RDI, -1, 0);               // 4..7
+    std_(a, RAX, RDI, RDX, -4);
+    ret_(a);
+    bind(a, L_LT4);                         // 0..3: first, middle, last
+    test_rr(a, RDX);
+    jump_add(a, CC_E, L_DONE);
+    stb(a, RAX, RDI, -1, 0);
+    stb(a, RAX, RDI, RDX, -1);
+    rr(a, 1, (const uint8_t[]){ 0xD1 }, 1, 5, RDX); // shr rdx, 1
+    stb(a, RAX, RDI, RDX, 0);
+    bind(a, L_DONE);
+    ret_(a);
+    bind(a, L_GT32);                        // 33+: tail, then 32-byte runs
+    rep_at(a, L_REP);
+    stx(a, X12, RDI, RDX, -32);
+    stx(a, X12, RDI, RDX, -16);
+    grp(a, 1, 5, RDX, 32);
+    align_loop(a);
+    bind(a, L_LOOP);
+    stx(a, X12, RDI, -1, 0);
+    stx(a, X12, RDI, -1, 16);
+    grp(a, 1, 0, RDI, 32);
+    grp(a, 1, 5, RDX, 32);
+    jump_add(a, CC_A, L_LOOP);
+    ret_(a);
+    bind(a, L_REP);                         // al: the byte
+    mov_rr(a, RCX, RDX);
+    put(a, 0xF3); put(a, 0xAA);             // rep stosb
+    ret_(a);
+    patch_local(a);
+}
+
+// eax = the mask of the 16 bytes of [rdi + rcx] and [rsi + rcx] that differ,
+// branching to found when any does.
+static void compare16(X64* a, int32_t d, int found) {
+    ldx(a, X12, RDI, RCX, d);
+    ldx(a, X13, RSI, RCX, d);
+    sse(a, 0, 0x74, X12, X13);              // pcmpeqb
+    sse(a, 0, 0xD7, RAX, X12);              // pmovmskb eax
+    put(a, 0x35); put32(a, 0xFFFF);         // xor eax, 0xffff
+    jump_add(a, CC_NE, found);
+}
+
+/*
+ * compare: rdi = a, rsi = b, rdx = common length; returns -1, 0, or 1 in rax
+ * by the first differing unsigned byte. pcmpeqb and pmovmskb give a mask of
+ * equal bytes, whose first clear bit (bsf of its complement) indexes the
+ * first difference directly. Lengths below 16 compare byte-reversed words,
+ * since reversal puts the first byte in the high bits. Overlapping tail
+ * chunks rescan only bytes already known equal.
+ */
+static void emit_mem_compare(X64* a, Obj* o) {
+    routine(a, o, "__ace$mem_compare");
+    grp(a, 1, 7, RDX, 16);
+    jump_add(a, CC_B, L_LT16);
+    grp(a, 1, 7, RDX, 32);
+    jump_add(a, CC_A, L_GT32);
+    mov_imm(a, RCX, 0);                     // 16..32: head, then tail
+    compare16(a, 0, L_FOUND);
+    leaq(a, RCX, RDX, -1, -16);
+    compare16(a, 0, L_FOUND);
+    bind(a, L_SAME);
+    mov_imm(a, RAX, 0);
+    ret_(a);
+    bind(a, L_GT32);                        // 33+: 32-byte blocks, then the final one
+    leaq(a, R11, RDX, -1, -32);
+    mov_imm(a, RCX, 0);
+    align_loop(a);
+    bind(a, L_LOOP);
+    ldx(a, X12, RDI, RCX, 0);
+    ldx(a, X13, RDI, RCX, 16);
+    ldx(a, X14, RSI, RCX, 0);
+    ldx(a, X15, RSI, RCX, 16);
+    sse(a, 0, 0x74, X12, X14);
+    sse(a, 0, 0x74, X13, X15);
+    sse(a, 0, 0xDB, X12, X13);              // pand
+    sse(a, 0, 0xD7, RAX, X12);
+    put(a, 0x3D); put32(a, 0xFFFF);         // cmp eax, 0xffff
+    jump_add(a, CC_NE, L_FOUND2);
+    grp(a, 1, 0, RCX, 32);
+    cmp_rr(a, RCX, R11);
+    jump_add(a, CC_B, L_LOOP);
+    mov_rr(a, RCX, R11);
+    compare16(a, 0, L_FOUND);
+    compare16(a, 16, L_FOUND2);
+    jump_add(a, -1, L_SAME);
+    bind(a, L_FOUND2);                      // in [rcx, rcx + 32): which half
+    compare16(a, 0, L_FOUND);
+    grp(a, 1, 0, RCX, 16);
+    compare16(a, 0, L_FOUND);
+    bind(a, L_FOUND);                       // eax: the differing bytes of [rcx, rcx + 16)
+    rr(a, 0, (const uint8_t[]){ 0x0F, 0xBC }, 2, RAX, RAX); // bsf eax, eax
+    rr(a, 1, (const uint8_t[]){ 0x01 }, 1, RAX, RCX);
+    ldb(a, RAX, RDI, RCX, 0);
+    ldb(a, RCX, RSI, RCX, 0);
+    rr(a, 0, (const uint8_t[]){ 0x39 }, 1, RCX, RAX); // cmp eax, ecx
+    jump_add(a, -1, L_DIFF);
+    bind(a, L_LT16);                        // 8..15: two overlapping words
+    grp(a, 1, 7, RDX, 8);
+    jump_add(a, CC_B, L_LT8);
+    ldq(a, RAX, RDI, -1, 0);
+    ldq(a, RCX, RSI, -1, 0);
+    cmp_rr(a, RAX, RCX);
+    jump_add(a, CC_NE, L_WORDS);
+    ldq(a, RAX, RDI, RDX, -8);
+    ldq(a, RCX, RSI, RDX, -8);
+    jump_add(a, -1, L_LAST);
+    bind(a, L_LT8);                         // 4..7: two overlapping halves
+    grp(a, 1, 7, RDX, 4);
+    jump_add(a, CC_B, L_LT4);
+    ldd(a, RAX, RDI, -1, 0);
+    ldd(a, RCX, RSI, -1, 0);
+    cmp_rr(a, RAX, RCX);
+    jump_add(a, CC_NE, L_WORDS);
+    ldd(a, RAX, RDI, RDX, -4);
+    ldd(a, RCX, RSI, RDX, -4);
+    bind(a, L_LAST);
+    cmp_rr(a, RAX, RCX);
+    jump_add(a, CC_E, L_SAME);
+    bind(a, L_WORDS);                       // rax != rcx in memory order
+    rex(a, 1, 0, RAX, 0); put(a, 0x0F); put(a, 0xC8); // bswap rax
+    rex(a, 1, 0, RCX, 0); put(a, 0x0F); put(a, 0xC9); // bswap rcx
+    cmp_rr(a, RAX, RCX);
+    jump_add(a, -1, L_DIFF);
+    bind(a, L_LT4);                         // 0..3: first, middle, last
+    test_rr(a, RDX);
+    jump_add(a, CC_E, L_SAME);
+    ldb(a, RAX, RDI, -1, 0);
+    ldb(a, RCX, RSI, -1, 0);
+    cmp_rr(a, RAX, RCX);
+    jump_add(a, CC_NE, L_DIFF);
+    mov_rr(a, R11, RDX);
+    rr(a, 1, (const uint8_t[]){ 0xD1 }, 1, 5, R11); // shr r11, 1
+    ldb(a, RAX, RDI, R11, 0);
+    ldb(a, RCX, RSI, R11, 0);
+    cmp_rr(a, RAX, RCX);
+    jump_add(a, CC_NE, L_DIFF);
+    ldb(a, RAX, RDI, RDX, -1);
+    ldb(a, RCX, RSI, RDX, -1);
+    cmp_rr(a, RAX, RCX);
+    jump_add(a, CC_E, L_SAME);
+    bind(a, L_DIFF);                        // flags of an unsigned a <> b: -1 below, 1 above
+    rr(a, 1, (const uint8_t[]){ 0x19 }, 1, RAX, RAX); // sbb rax, rax
+    grp(a, 1, 1, RAX, 1);                   // or rax, 1
+    ret_(a);
+    patch_local(a);
+}
+
+/*
+ * The debug allocator's registry (SPEC Manual Memory): a list of live
+ * allocations whose nodes are malloc'd ptr, size, align, next, headed at
+ * __ace$registry_head. find and remove fail unless ptr and size match a
+ * record; leaks fails while any record remains. Standard System V calls.
+ */
+static void emit_registry(X64* a, Obj* o) {
+    Sec* b = &o->secs[SEC_BSS];
+    b->size = align_up(b->size, 8);
+    sym_define(&o->syms, o->secs, "__ace$registry_head", 19, 0, b);
+    b->size += 8;
+    fail_routine(o, "__ace$allocator_fail", "ace: allocator violation\n");
+
+    routine(a, o, "__ace$registry_find");   // find(ptr, size) -> node
+    rip_op(a, 0x8B, RAX, "__ace$registry_head");
+    bind(a, L_LOOP);
+    test_rr(a, RAX);
+    jump_add(a, CC_E, L_FAIL);
+    mop(a, 0, 1, (const uint8_t[]){ 0x39 }, 1, RDI, RAX, -1, 0, 0); // cmp [rax], rdi
+    jump_add(a, CC_NE, L_NEXT);
+    mop(a, 0, 1, (const uint8_t[]){ 0x39 }, 1, RSI, RAX, -1, 8, 0);
+    jump_add(a, CC_E, L_DONE);
+    bind(a, L_NEXT);
+    ldq(a, RAX, RAX, -1, 24);
+    jump_add(a, -1, L_LOOP);
+    bind(a, L_DONE);
+    ret_(a);
+    bind(a, L_FAIL);
+    jmp_sym(a, "__ace$allocator_fail");
+    patch_local(a);
+
+    routine(a, o, "__ace$registry_add");    // add(ptr, size, align)
+    put(a, 0x53); put(a, 0x41); put(a, 0x54); put(a, 0x41); put(a, 0x55); // push rbx, r12, r13: rsp aligned
+    mov_rr(a, RBX, RDI);
+    rr(a, 1, (const uint8_t[]){ 0x89 }, 1, RSI, 12);
+    rr(a, 1, (const uint8_t[]){ 0x89 }, 1, RDX, 13);
+    mov_imm(a, RDI, 32);
+    call_sym(a, "_malloc");
+    test_rr(a, RAX);
+    jump_add(a, CC_E, L_FAIL);
+    stq(a, RBX, RAX, -1, 0);
+    stq(a, 12, RAX, -1, 8);
+    stq(a, 13, RAX, -1, 16);
+    rip_op(a, 0x8B, RCX, "__ace$registry_head");
+    stq(a, RCX, RAX, -1, 24);
+    rip_op(a, 0x89, RAX, "__ace$registry_head");
+    put(a, 0x41); put(a, 0x5D); put(a, 0x41); put(a, 0x5C); put(a, 0x5B); // pop r13, r12, rbx
+    ret_(a);
+    bind(a, L_FAIL);
+    jmp_sym(a, "__ace$allocator_fail");
+    patch_local(a);
+
+    routine(a, o, "__ace$registry_remove"); // remove(ptr, size): unlink its record and free it
+    rip_op(a, 0x8D, RCX, "__ace$registry_head"); // rcx = the link to the record
+    bind(a, L_LOOP);
+    ldq(a, RAX, RCX, -1, 0);
+    test_rr(a, RAX);
+    jump_add(a, CC_E, L_FAIL);
+    mop(a, 0, 1, (const uint8_t[]){ 0x39 }, 1, RDI, RAX, -1, 0, 0);
+    jump_add(a, CC_NE, L_NEXT);
+    mop(a, 0, 1, (const uint8_t[]){ 0x39 }, 1, RSI, RAX, -1, 8, 0);
+    jump_add(a, CC_E, L_FOUND);
+    bind(a, L_NEXT);
+    leaq(a, RCX, RAX, -1, 24);
+    jump_add(a, -1, L_LOOP);
+    bind(a, L_FOUND);
+    ldq(a, RDX, RAX, -1, 24);
+    stq(a, RDX, RCX, -1, 0);
+    mov_rr(a, RDI, RAX);
+    jmp_sym(a, "_free");
+    bind(a, L_FAIL);
+    jmp_sym(a, "__ace$allocator_fail");
+    patch_local(a);
+}
+
+static void emit_registry_leaks(X64* a, Obj* o, int registry) {
+    routine(a, o, "__ace$registry_leaks");
+    if (registry) { // any record left fails
+        rip_op(a, 0x8B, RAX, "__ace$registry_head");
+        test_rr(a, RAX);
+        put(a, 0x0F); put(a, 0x85);
+        reloc32(a, "__ace$allocator_fail", R_PC32); // jnz
+    }
+    ret_(a);
+}
+
 void x64_runtime(Obj* o) {
     if (o->bounds_fail_used) fail_routine(o, "__ace$bounds_fail", NULL);
     if (o->arithmetic_fail_used) fail_routine(o, "__ace$arithmetic_fail", "ace: arithmetic violation\n");
     if (o->contract_fail_used) fail_routine(o, "__ace$contract_fail", "ace: call contract violation\n");
     if (o->null_fail_used) fail_routine(o, "__ace$null_fail", "ace: null use violation\n");
-    if (o->allocator_used) {
-        fprintf(stderr, "%s: error: the allocator is not supported for linux-x64 yet\n", o->d->path);
-        o->d->errors++;
-    } else if (o->mode == EMIT_DEBUG) { // no allocation intrinsic exists in this unit
-        Buf* t = obj_text(o);
-        while (t->len % FUNC_ALIGN) buf_put8(t, 0x90);
-        sym_define(&o->syms, o->secs, "__ace$registry_leaks", 20, 0, &o->secs[SEC_TEXT]);
-        buf_put8(t, 0xC3);
-    }
-    if (o->mem_copy_used || o->mem_fill_used || o->mem_compare_used) {
-        fprintf(stderr, "%s: error: byte routines are not supported for linux-x64 yet\n", o->d->path);
-        o->d->errors++;
-    }
+    uint32_t label[NLABELS];
+    X64 a;
+    memset(&a, 0, sizeof a);
+    a.o = o;
+    a.t = obj_text(o);
+    a.label = label;
+    if (o->allocator_used) emit_registry(&a, o);
+    if (o->allocator_used || o->mode == EMIT_DEBUG) emit_registry_leaks(&a, o, o->allocator_used);
+    if (o->mem_copy_used) emit_mem_copy(&a, o);
+    if (o->mem_fill_used) emit_mem_fill(&a, o);
+    if (o->mem_compare_used) emit_mem_compare(&a, o);
+    free(a.jmp);
 }

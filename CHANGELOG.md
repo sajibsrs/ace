@@ -786,6 +786,20 @@ current normative rules, and Git preserves patch-level detail.
   (`rep movsb`) and the callee takes the address of its stack copy, so both
   meet C. An embed thunk advances `rsi` instead of `rdi` when the method's
   result travels through memory.
+- Added the linux-x64 byte routines and debug allocator registry.
+  `__ace$mem_copy`/`move`/`fill`/`compare` take a private convention (`rdi`
+  destination or `a`, `rsi` source, byte, or `b`, `rdx` count, `rax` the
+  compare result) and clobber only `rax`, `rcx`, `rdx`, `rsi`, `rdi`, `r11`,
+  `xmm10`-`xmm15`, and flags. They use SSE2 alone and follow the arm64
+  structure: overlapping chunks up to 64 bytes, loaded before any store, and
+  32-byte loops beyond. From 1024 bytes, forward copies and fills use
+  `rep movsb`/`rep stosb`, but a leftward-overlapping move keeps the loop.
+  `mem_compare` finds the first differing byte with `pcmpeqb`/`pmovmskb` and
+  `bsf`. The registry routines are ordinary System V functions over
+  `malloc`/`free`. Against glibc's AVX2 routines on an ERMS/FSRM Xeon, copy
+  up to 64 bytes runs 1.2-2.2x faster and fill 0.9-1.8x; from 100 bytes to
+  1 KB both are 1.3-2.1x slower (16-byte stores against 32); from 4 KB `rep`
+  matches glibc. Compare is even to 64 bytes and 1.3-1.7x slower beyond.
 
 ## Core language
 

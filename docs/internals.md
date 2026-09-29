@@ -72,9 +72,9 @@ repeated in each additional backend.
   register allocation yet. Calls follow System V: an argument, parameter, or
   result of up to 16 bytes travels in one register per eightbyte, and a
   larger aggregate on the stack as a copy, with a result's address in `rdi`.
-  Integers, pointers, and aggregates of them are covered; a function using
-  floats, byte routines, the allocator, or `asm` is a compile error naming
-  what it lacks.
+  Integers, pointers, aggregates of them, the byte routines, and the debug
+  allocator registry are covered; a function using floats or `asm` is a
+  compile error naming what it lacks.
 
 ## Object emission
 
