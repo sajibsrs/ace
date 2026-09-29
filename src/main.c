@@ -31,7 +31,7 @@ static const char* host_target(void) {
 #if defined(__APPLE__) && defined(__aarch64__)
     return "darwin-arm64";
 #elif defined(__APPLE__) && defined(__x86_64__)
-    return "darwin-x86-64";
+    return "darwin-x64";
 #elif defined(__linux__) && defined(__aarch64__)
     return "linux-arm64";
 #elif defined(__linux__) && defined(__x86_64__)
