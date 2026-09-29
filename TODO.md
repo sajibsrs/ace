@@ -179,9 +179,12 @@ These are baseline observations, not performance promises.
   0.51x (auto-vectorized; 1.37x C's vectorized output), saxpy-f32 0.26x (auto-vectorized; 1.37x C's vectorized output),
   cube-transform 0.78x (auto-vectorized; 1.32x C's vectorized output),
   particle `Vec3` 0.38x (auto-vectorized; 1.03x C's vectorized output, which fuses multiply-adds), `Vec3` length 0.89x, floating dot 0.75x. `std/simd` is
-  specified and unimplemented. Candidate order: (1) auto-vectorization's
-  remaining steps (SPEC Decision Queue); (2) the bottom-tested loop and
-  by-value `Vec3` leaf-call frame cost; (3) `std/simd` NEON intrinsics
+  specified and unimplemented. A scalar loop whose `Vec3` fields differ runs
+  1.52x scalar C (`-ffp-contract=off`); in hand-edited assembly, holding its
+  float constants in registers recovers 1.22x, adding `ldp`/`stp` pairing
+  1.30x (pairing alone gains nothing), and a down-counting loop 1.37x, all
+  below the 1.5x bar. Candidate order: (1) the bottom-tested loop and
+  by-value `Vec3` leaf-call frame cost; (2) `std/simd` NEON intrinsics
   (`f32x4`, `i8x16`) for what it does not cover.
 - **Release FMA contraction** [new] — undecided and deferred: Ace never fuses `a * b + c`; `math.fma` is the explicit route.
 - **Inline-expansion leftovers** [new] — an expansion the IR lowers has no

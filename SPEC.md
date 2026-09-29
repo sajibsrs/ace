@@ -1192,8 +1192,9 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
   whose arms neither load nor store becomes a lane select, and `i32(i)` under
   a constant count is a lane value. A struct array whose same-typed fields
   each get the same computation, every field stored, runs as the flat array
-  of its fields. The original loop runs the remainder. Open: struct fields
-  computed differently (interleaved loads and stores). Acceptance:
+  of its fields. The original loop runs the remainder. Struct fields computed
+  differently (interleaved `ld3`/`st3`) are parked: on AArch64 they measured
+  1.28x over scalar C, below the bar, and no bench kernel needs them. Acceptance:
   `bench/core/run-hotloop.sh` `cube-transform`, `saxpy-f32`, `saxpy-f64`, and
   `particle-vec3` against C `-O2` with vectorization on.
 
