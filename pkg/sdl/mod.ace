@@ -23,6 +23,7 @@ pub EventType: enum u32 {
     quit = 0x100,
     window_close_requested = 0x210,
     key_down = 0x300,
+    key_up = 0x301,
 }
 
 // SDL_Keycode values this binding names. Keys produce their unshifted
@@ -206,6 +207,12 @@ c_text(buf: mut []u8, text: string): *u8 {
 
 // Fill this event with the next pending one; false when none is left.
 pub mut Event.poll(): bool { return c_poll_event(mut &self) }
+
+// The keyboard member, and whether kind says it holds one; false for every
+// other kind, whose bytes the member would misread.
+pub Event.keyboard(): (KeyboardEvent, bool) {
+    return self.keyboard, self.kind == EventType.key_down || self.kind == EventType.key_up
+}
 
 // An opaque color from a 24-bit 0xRRGGBB value, e.g. 0xF44336, as written
 // in CSS and design tools.

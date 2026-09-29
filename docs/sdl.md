@@ -126,7 +126,15 @@ for mut event.poll() {
 
 `event.keyboard` is a `KeyboardEvent` (`key`, `scancode`, `mod`, `down`,
 `repeat`, …) and `event.quit` a `QuitEvent`; read the member that `kind`
-names. Field names follow SDL's, except the shared `type` field, which is
+names. `event.keyboard(): (KeyboardEvent, bool)` does that check for you,
+returning false unless `kind` is `key_down` or `key_up`:
+
+```ace
+key: sdl.KeyboardEvent, is_key: bool = event.keyboard()
+if is_key && key.key == sdl.Keycode.space { ... }
+```
+
+Field names follow SDL's, except the shared `type` field, which is
 `kind` because `type` is an Ace keyword. `kind` is an `EventType` and `key` a
 `Keycode`, `u32`-backed enums naming the values this binding handles; SDL may
 deliver other values, which simply match no named member. `Keycode` names

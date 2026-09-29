@@ -2984,6 +2984,9 @@ current normative rules, and Git preserves patch-level detail.
 - `pkg/sdl` `Keycode` names `backspace`, `tab`, `enter`, `escape`, `space`,
   `digit_0`–`digit_9`, `a`–`z`, and the four arrows; other keys stay
   reachable as `Keycode(c)` with `u32(key)` for range checks.
+- `pkg/sdl` `Event.keyboard(): (KeyboardEvent, bool)` returns the keyboard
+  member with false unless `kind` is `key_down` or the new `key_up`; the raw
+  field stays for direct access.
 
 - Extended auto-vectorization to `f64` lanes (Compiler #6): the IR's
   `v2f64` holds two lanes in 128 bits and takes `add`, `sub`, `mul`, `div`,

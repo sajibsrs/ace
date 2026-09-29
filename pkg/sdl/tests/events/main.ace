@@ -31,10 +31,16 @@ main(): int {
     sent.keyboard.repeat = false
     if !push_event(mut &sent) { return 2 }
 
+    quit: sdl.Event
+    quit.padding = [0 : 128]
+    quit.kind = sdl.EventType.quit
+    quit_key: sdl.KeyboardEvent, quit_is_key: bool = quit.keyboard()
+    if quit_is_key { return 8 }
+
     got: sdl.Event
     for mut got.poll() {
-        if got.kind != sdl.EventType.key_down { continue }
-        key: sdl.KeyboardEvent = got.keyboard
+        key: sdl.KeyboardEvent, is_key: bool = got.keyboard()
+        if !is_key { continue }
         if key.key != sdl.Keycode.escape || key.scancode != SCANCODE_ESCAPE { return 3 }
         if key.window_id != 7 || key.mod != KMOD_LCTRL { return 4 }
         if !key.down || key.repeat { return 5 }
