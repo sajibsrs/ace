@@ -341,6 +341,16 @@ foundations.
   with `wipe`; become `::new`), and by `Output::new` (wraps caller storage)
   and `pkg/http`'s `Url::parse` (views into its input), which become
   `::init`.
+- **`pkg/sdl` streaming textures** [new] — no texture operations exist yet
+  beyond the opaque `SDL_Texture`. Candidate: `Texture::new`/`wipe` over
+  `SDL_CreateTexture`/`SDL_DestroyTexture`, plus `SDL_UpdateTexture` and
+  `SDL_RenderTexture`, for per-pixel CPU output.
+- **Raytraced cube demo** [new] — the `demo/sdl3-cube-rotation` scene traced
+  per pixel on one thread: the ray inverse-rotated into the cube frame, a
+  slab ray–box test, Lambert shading, and a floor with a shadow ray. It
+  doubles as a float hot-loop stress test for codegen. Output through
+  `RenderGeometry` cells (one ray per 2×2 or 4×4 block) keeps the existing
+  API; a threaded variant follows §3 threads.
 
 ## 6. Language questions and conveniences
 
@@ -435,3 +445,16 @@ priority list.
 - **[implemented]** Checked null-use diagnostics (Safety & Debug Builds #8; Zero #2).
 - **[implemented]** Allocator diagnostics (Safety & Debug Builds #9).
 - **[implemented]** Language-level `assert(bool)`, debug-only and release-stripped, for invariants and simple debug-mode tests (Safety & Debug Builds #10).
+
+## 9. Public release
+
+Gates before making the repository public (well before v1):
+
+- **Linux support** [new] — the compiler and `std` build and pass their tests
+  on Linux; the SDL demos may lag. Depends on §2 target-independent linking.
+- **License detection** [new] — the license is `Apache-2.0.txt`; GitHub
+  detects only a root `LICENSE` file, so rename it or add one.
+- **README status line** [new] — pre-alpha, breaking changes expected, pull
+  requests not yet accepted.
+- **Issue policy** [new] — issues disabled or limited to bug reports until
+  design discussion is open to outside input.
