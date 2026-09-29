@@ -28,6 +28,10 @@ history.
   holds even when the change is already agreed in principle (e.g. noted in
   `TODO.md`). Propose language-design decisions (semantics, syntax) before
   implementing them.
+- In a cloud session, whose container is discarded, work on the topic branch
+  the owner names (e.g. `linux`) instead of `master` or the session's generated
+  branch, and push each approved commit there, since that is the only way work
+  reaches the owner.
 - The owner resolves `[open]` and `[controversial]` items and removes those
   markers. Provisional spelling may change; semantics may not.
 - Confirm each step before proceeding. Implement only what was explicitly
