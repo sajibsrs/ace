@@ -1190,8 +1190,10 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
   compare), over elements `base[i]`, with no call after inline
   expansion, whose stores provably touch no other access's element; a branch
   whose arms neither load nor store becomes a lane select, and `i32(i)` under
-  a constant count is a lane value. The original loop runs the remainder.
-  Open: strided (`Vec3` field) elements. Acceptance:
+  a constant count is a lane value. A struct array whose same-typed fields
+  each get the same computation, every field stored, runs as the flat array
+  of its fields. The original loop runs the remainder. Open: struct fields
+  computed differently (interleaved loads and stores). Acceptance:
   `bench/core/run-hotloop.sh` `cube-transform`, `saxpy-f32`, `saxpy-f64`, and
   `particle-vec3` against C `-O2` with vectorization on.
 

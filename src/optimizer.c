@@ -715,11 +715,40 @@ static void lsr(IrFunc* fn) {
 // since the vector loop runs both; t lanes come from a vector phi counting
 // <0, 1, 2, 3> up by 4.
 
-enum { VEC_BLOCKS = 32 };
+// A struct array whose F same-typed fields each get the same computation
+// (every field of a stored struct stored, each field reading only its own
+// field) is the flat array of its fields: element e is field e % F of struct
+// e / F, so the vector loop runs F vectors per width structs, the body's
+// field-0 computation once per vector, and every lane still computes what the
+// scalar loop does for that field. Its elements are base[i] as a padd scaled
+// by the struct size S = F * the field size, or a header phi stepping by S
+// (loop strength reduction's pointer for a size that is no power of two).
 
-// b is the latch; blk the body in order, each arm after the block branching to it
+enum { VEC_BLOCKS = 32, VEC_PTRS = 8 };
+
+// b is the latch; blk the body in order, each arm after the block branching to
+// it; ptr the header's pointer phis, stepping by stride, which pstep holds
 typedef struct { int h, b, pre, pi, i, step, n, lane, nb, width; // width: lanes, 4 or 2 (f64)
-    int blk[VEC_BLOCKS]; uint8_t arm[VEC_BLOCKS]; } VecLoop;
+    int blk[VEC_BLOCKS]; uint8_t arm[VEC_BLOCKS];
+    int np, stride, fields; // fields: F, 1 for contiguous elements
+    int ptr[VEC_PTRS], pstep[VEC_PTRS]; } VecLoop;
+
+static int vec_ptr(const VecLoop* L, int v) {
+    for (int j = 0; j < L->np; j++)
+        if (L->ptr[j] == v) return j;
+    return -1;
+}
+
+// The object address p offsets: a padd's base, or a pointer's entry value.
+static int vec_base(const IrFunc* fn, const VecLoop* L, int p) {
+    return fn->ins[p].args[vec_ptr(L, p) >= 0 ? L->pi : 0];
+}
+
+static int vec_pstep(const VecLoop* L, int v) {
+    for (int j = 0; j < L->np; j++)
+        if (L->pstep[j] == v) return 1;
+    return 0;
+}
 
 static int vec_at(const VecLoop* L, int b) {
     for (int j = 0; j < L->nb; j++)
@@ -782,7 +811,7 @@ static int vec_operand(const IrFunc* fn, const VecLoop* L, int v, IrType t) {
 // Whether the loop headed by h has the accepted shape; fills *L.
 static int vec_shape(IrFunc* fn, int h, VecLoop* L) {
     IrBlock* hb = &fn->blocks[h];
-    if (hb->npreds != 2 || hb->nins != 3 || hb->succ[1] < 0) return 0;
+    if (hb->npreds != 2 || hb->nins < 3 || hb->nins > 3 + VEC_PTRS || hb->succ[1] < 0) return 0;
     int first = hb->succ[0], b = first, nb = 0;
     if (first == h || fn->blocks[first].npreds != 1) return 0;
     for (;;) { // the body's blocks in sequence, each fork's arms after it
@@ -810,21 +839,79 @@ static int vec_shape(IrFunc* fn, int h, VecLoop* L) {
     if (li < 0) return 0;
     int pre = hb->preds[1 - li];
     if (pre == h || vec_at(L, pre) >= 0) return 0;
-    IrIns* phi = &fn->ins[hb->ins[0]];
-    IrIns* cmp = &fn->ins[hb->ins[1]];
-    IrIns* br = &fn->ins[hb->ins[2]];
-    if (phi->op != IR_PHI || (phi->type != IT_U64 && phi->type != IT_I64) || cmp->op != IR_LT || cmp->args[0] != hb->ins[0] ||
-        br->op != IR_BR || br->args[0] != hb->ins[1])
-        return 0;
+    IrIns* cmp = &fn->ins[hb->ins[hb->nins - 2]];
+    IrIns* br = &fn->ins[hb->ins[hb->nins - 1]];
+    if (cmp->op != IR_LT || br->op != IR_BR || br->args[0] != hb->ins[hb->nins - 2]) return 0;
+    IrIns* phi = &fn->ins[cmp->args[0]];
+    if (phi->op != IR_PHI || phi->block != h || (phi->type != IT_U64 && phi->type != IT_I64)) return 0;
+    L->np = L->stride = 0;
+    for (int j = 0; j < hb->nins - 2; j++) { // i, and pointers stepping by one stride
+        int p = hb->ins[j];
+        if (p == cmp->args[0]) continue;
+        const IrIns* px = &fn->ins[p];
+        if (px->op != IR_PHI || px->type != IT_PTR) return 0;
+        const IrIns* sx = &fn->ins[px->args[li]];
+        const IrIns* ox = &fn->ins[px->args[1 - li]];
+        if (sx->op != IR_PADD || sx->flags || sx->block != b || sx->args[0] != p || fn->ins[sx->args[1]].op != IR_CONST ||
+            fn->ins[sx->args[1]].imm != 1 || !sx->imm || (L->stride && sx->imm != (uint64_t)L->stride) ||
+            ox->block == h || vec_at(L, ox->block) >= 0)
+            return 0;
+        L->stride = (int)sx->imm;
+        L->ptr[L->np] = p;
+        L->pstep[L->np++] = px->args[li];
+    }
     IrIns* init = &fn->ins[phi->args[1 - li]];
     IrIns* step = &fn->ins[phi->args[li]];
     if (init->op != IR_CONST || init->imm != 0 || step->op != IR_ADD || step->flags || step->block != b ||
         step->args[0] != hb->ins[0] || fn->ins[step->args[1]].op != IR_CONST || fn->ins[step->args[1]].imm != 1)
         return 0;
-    L->h = h, L->b = b, L->pre = pre, L->pi = 1 - li, L->i = hb->ins[0], L->step = phi->args[li], L->n = cmp->args[1];
+    L->h = h, L->b = b, L->pre = pre, L->pi = 1 - li, L->i = cmp->args[0], L->step = phi->args[li], L->n = cmp->args[1];
     if (!vec_invariant(fn, L, L->n)) return 0;
     const IrIns* n = &fn->ins[L->n];
     return n->op != IR_CONST || (int64_t)n->imm >= 4;
+}
+
+// Whether lane value w computes for field f what v does for field 0: the same
+// operations over the same invariants, reading field f where v reads field 0.
+static int vec_iso(const IrFunc* fn, const VecLoop* L, int v, int w, int f, int es) {
+    const IrIns* x = &fn->ins[v];
+    const IrIns* y = &fn->ins[w];
+    int lv = vec_lane(fn, L, v), lw = vec_lane(fn, L, w);
+    if (!lv || !lw) {
+        if (lv || lw) return 0;
+        return v == w || (x->op == IR_CONST && y->op == IR_CONST && x->type == y->type && x->imm == y->imm);
+    }
+    if (x->op != y->op || x->type != y->type || x->nargs != y->nargs) return 0;
+    if (x->op == IR_LOAD) return x->aux == 0 && y->aux == f * es && x->args[0] == y->args[0];
+    for (int a = 0; a < x->nargs; a++)
+        if (!vec_iso(fn, L, x->args[a], y->args[a], f, es)) return 0;
+    return 1;
+}
+
+// Whether L's F fields each get field 0's computation: a single block whose
+// every store of a field f > 0 has a field-0 store to the same struct computing
+// the same, and each field-0 store one in every field.
+static int vec_fields(const IrFunc* fn, const VecLoop* L, const int* acc, int nacc, int es) {
+    if (L->nb != 1 || L->lane >= 0) return 0;
+    for (int s = 0; s < nacc; s++) {
+        const IrIns* sx = &fn->ins[acc[s]];
+        if (sx->aux % es || sx->aux < 0 || sx->aux >= L->stride) return 0;
+        if (sx->op != IR_STORE) continue;
+        int f = sx->aux / es;
+        for (int g = 0; g < L->fields; g++) { // f's field-0 store, or field 0's in every field g
+            if (f && g) break;
+            int want = f ? 0 : g * es, found = 0;
+            for (int t = 0; t < nacc && !found; t++) {
+                const IrIns* tx = &fn->ins[acc[t]];
+                const IrIns* z = f ? tx : sx; // the field-0 store
+                const IrIns* o = f ? sx : tx;
+                found = tx->op == IR_STORE && tx->aux == want && tx->args[0] == sx->args[0] &&
+                        vec_iso(fn, L, z->args[1], o->args[1], f ? f : g, es);
+            }
+            if (!found) return 0;
+        }
+    }
+    return 1;
 }
 
 // Whether L's body is lane-wise over independent elements, used only inside it.
@@ -841,7 +928,7 @@ static int vec_body(IrFunc* fn, VecLoop* L) {
             int u = bb->ins[j];
             IrIns* x = &fn->ins[u];
             IrType t = (IrType)x->type;
-            if (u == L->step || x->op == IR_JMP || x->op == IR_CONST || x->op == IR_GLOBAL) continue;
+            if (u == L->step || vec_pstep(L, u) || x->op == IR_JMP || x->op == IR_CONST || x->op == IR_GLOBAL) continue;
             if (x->flags) { ok = 0; break; }
             switch (x->op) {
             case IR_BR: // a fork on a compare of its own block
@@ -865,15 +952,16 @@ static int vec_body(IrFunc* fn, VecLoop* L) {
                     ok = t == IT_U64 && ((x->args[0] == L->i && fn->ins[L->i].type == IT_I64) || x->args[0] == L->lane);
                 }
                 break;
-            case IR_PADD:
-                ok = (x->imm == 4 || x->imm == 8) && vec_index(fn, L, x->args[1]) && vec_invariant(fn, L, x->args[0]);
+            case IR_PADD: // every element one stride apart
+                ok = x->imm && (!L->stride || x->imm == (uint64_t)L->stride) && vec_index(fn, L, x->args[1]) &&
+                     vec_invariant(fn, L, x->args[0]);
+                L->stride = (int)x->imm;
                 break;
             case IR_LOAD: case IR_STORE: {
                 IrIns* px = &fn->ins[x->args[0]];
                 IrType et = x->op == IR_LOAD ? t : (IrType)fn->ins[x->args[1]].type;
-                ok = !L->arm[k] && px->op == IR_PADD && vec_at(L, px->block) >= 0 && vec_of(et) != IT_VOID &&
-                     vec_width(L, et) && px->imm == (et == IT_F64 ? 8 : 4) &&
-                     (x->op == IR_LOAD || vec_operand(fn, L, x->args[1], et));
+                ok = !L->arm[k] && ((px->op == IR_PADD && vec_at(L, px->block) >= 0) || vec_ptr(L, x->args[0]) >= 0) &&
+                     vec_of(et) != IT_VOID && vec_width(L, et) && (x->op == IR_LOAD || vec_operand(fn, L, x->args[1], et));
                 acc[nacc++] = u;
                 stores += x->op == IR_STORE;
                 break;
@@ -899,21 +987,30 @@ static int vec_body(IrFunc* fn, VecLoop* L) {
             }
         }
     }
+    int es = L->width == 2 ? 8 : 4; // the element, or field, size
+    int inner = L->stride > es; // aux offsets within one struct: its other fields, never another iteration's
     for (int s = 0; s < nacc && ok; s++) { // each store against every other access
         IrIns* sx = &fn->ins[acc[s]];
         if (sx->op != IR_STORE) continue;
-        int sbase = fn->ins[sx->args[0]].args[0];
+        int sbase = vec_base(fn, L, sx->args[0]);
         IrType st = (IrType)fn->ins[sx->args[1]].type;
         for (int a = 0; a < nacc && ok; a++) {
             if (a == s) continue;
             IrIns* ax = &fn->ins[acc[a]];
-            int abase = fn->ins[ax->args[0]].args[0];
+            int abase = vec_base(fn, L, ax->args[0]);
             IrType at = (IrType)(ax->op == IR_LOAD ? ax->type : fn->ins[ax->args[1]].type);
-            ok = distinct_objects(fn, sbase, abase) || (same_base(fn, sbase, abase) && sx->aux == ax->aux && st == at);
+            ok = distinct_objects(fn, sbase, abase) ||
+                 (same_base(fn, sbase, abase) && ((sx->aux == ax->aux && st == at) ||
+                                                 (inner && sx->aux != ax->aux && sx->aux >= 0 && ax->aux >= 0 &&
+                                                  sx->aux < L->stride && ax->aux < L->stride &&
+                                                  sx->aux % es == 0 && ax->aux % es == 0)));
         }
     }
+    ok = ok && stores && L->stride % es == 0;
+    L->fields = ok ? L->stride / es : 0;
+    if (ok && L->fields > 1) ok = vec_fields(fn, L, acc, nacc, es);
     free(acc);
-    if (!ok || !stores) return 0;
+    if (!ok) return 0;
     // No body value leaves the loop; i only indexes, steps, and becomes t; a
     // u64 cast only indexes; a compare only forks.
     for (int b = 0; b < fn->nblocks && ok; b++) {
@@ -926,6 +1023,8 @@ static int vec_body(IrFunc* fn, VecLoop* L) {
                 IrIns* vx = &fn->ins[v];
                 if (v == L->i && in && !(x->op == IR_PADD && a == 1) && x->op != IR_CAST && ob->ins[j] != L->step)
                     ok = 0;
+                if (vec_ptr(L, v) >= 0 && b != L->h && !(in && a == 0 && (x->op == IR_LOAD || x->op == IR_STORE || vec_pstep(L, ob->ins[j]))))
+                    ok = 0; // a pointer only addresses and steps
                 if (vec_at(L, vx->block) < 0) continue;
                 if (!in && b != L->h) ok = 0;
                 if (vx->op == IR_CAST && v != L->lane && !(x->op == IR_PADD && a == 1)) ok = 0;
@@ -1034,12 +1133,38 @@ static void vec_rewrite(IrFunc* fn, const VecLoop* L) {
         ir_arg_add(fn, vi, ins_before_term(fn, pre, IR_LANES, IT_V4I32));
         map[L->lane] = vi;
     }
+    int F = L->fields;
+    uint8_t* keep = NULL; // for F > 1, field 0's computation
+    if (F > 1) {
+        keep = xalloc((size_t)nold, 1);
+        int* stack = xalloc((size_t)nold, sizeof(int));
+        int sp = 0;
+        IrBlock* bb = &fn->blocks[L->blk[0]];
+        for (int j = 0; j < bb->nins; j++) {
+            int u = bb->ins[j];
+            if (fn->ins[u].op == IR_STORE && fn->ins[u].aux == 0) { keep[u] = 1; stack[sp++] = u; }
+        }
+        while (sp) {
+            IrIns* y = &fn->ins[stack[--sp]];
+            for (int a = 0; a < y->nargs; a++) {
+                int w = y->args[a];
+                if (!keep[w] && vec_lane(fn, L, w)) { keep[w] = 1; stack[sp++] = w; }
+            }
+        }
+        free(stack);
+    }
+    for (int j = 0; j < L->np; j++) { // a pointer's struct group: its entry value plus k * 16F
+        int p = L->ptr[j];
+        map[p] = ins2(fn, vb, IR_PADD, IT_PTR, vec_scalar(fn, L, pre_of, fn->ins[p].args[L->pi]), kx);
+        fn->ins[map[p]].imm = 16 * (uint64_t)F;
+    }
+    for (int c = 0; c < F; c++) // F > 1: field 0's computation for each 16 bytes of the group
     for (int bk = 0; bk < L->nb; bk++)
     for (int j = 0; j < fn->blocks[L->blk[bk]].nins; j++) {
         int u = fn->blocks[L->blk[bk]].ins[j];
         IrIns x0 = fn->ins[u]; // fn->ins grows below
-        if (u == L->step || x0.op == IR_JMP || x0.op == IR_BR || x0.op == IR_CONST || x0.op == IR_GLOBAL ||
-            x0.op == IR_CAST)
+        if (u == L->step || vec_pstep(L, u) || x0.op == IR_JMP || x0.op == IR_BR || x0.op == IR_CONST ||
+            x0.op == IR_GLOBAL || x0.op == IR_CAST || (keep && x0.op != IR_PADD && !keep[u]) || (c && x0.op == IR_PADD))
             continue;
         if (x0.op == IR_PHI) { // a join's: a select on the fork's mask
             IrBlock* jb = &fn->blocks[x0.block];
@@ -1058,14 +1183,14 @@ static void vec_rewrite(IrFunc* fn, const VecLoop* L) {
                           vec_scalar(fn, L, pre_of, x0.args[1]));
         } else if (x0.op == IR_PADD) {
             map[u] = ins2(fn, vb, IR_PADD, IT_PTR, vec_scalar(fn, L, pre_of, x0.args[0]), kx);
-            fn->ins[map[u]].imm = 16;
+            fn->ins[map[u]].imm = 16 * (uint64_t)F;
         } else if (x0.op == IR_LOAD) {
             map[u] = ins2(fn, vb, IR_LOAD, vec_of((IrType)x0.type), map[x0.args[0]], -1);
-            fn->ins[map[u]].aux = x0.aux;
+            fn->ins[map[u]].aux = x0.aux + 16 * c;
         } else if (x0.op == IR_STORE) {
             int s = ins2(fn, vb, IR_STORE, IT_VOID, map[x0.args[0]],
                          vec_value(fn, L, map, pre_of, splat, x0.args[1]));
-            fn->ins[s].aux = x0.aux;
+            fn->ins[s].aux = x0.aux + 16 * c;
         } else {
             int a = vec_value(fn, L, map, pre_of, splat, x0.args[0]);
             int c = x0.nargs > 1 ? vec_value(fn, L, map, pre_of, splat, x0.args[1]) : -1;
@@ -1081,6 +1206,15 @@ static void vec_rewrite(IrFunc* fn, const VecLoop* L) {
     ir_ins_new(fn, vb, IR_JMP, IT_VOID);
     ir_edge_add(fn, vb, vh);
     int i0 = ins2(fn, x, IR_SHL, it, k, shift), ex = fn->blocks[h].succ[1];
+    if (L->np) { // the scalar loop's pointers resume at struct i0
+        int i64 = it == IT_U64 ? i0 : ins2(fn, x, IR_CAST, IT_U64, i0, -1);
+        for (int j = 0; j < L->np; j++) {
+            IrIns* px = &fn->ins[L->ptr[j]];
+            int r = ins2(fn, x, IR_PADD, IT_PTR, vec_scalar(fn, L, pre_of, px->args[L->pi]), i64);
+            fn->ins[r].imm = (uint64_t)L->stride;
+            fn->ins[L->ptr[j]].args[L->pi] = r;
+        }
+    }
     fn->blocks[x].succ[0] = h;
     if (vec_whole(fn, L, ex)) { // no remainder: x leaves on a false branch, which cleanup folds with the scalar loop
         int no = ir_ins_new(fn, x, IR_CONST, IT_BOOL);
@@ -1097,7 +1231,7 @@ static void vec_rewrite(IrFunc* fn, const VecLoop* L) {
     }
     fn->blocks[h].preds[L->pi] = x;
     fn->ins[L->i].args[L->pi] = i0;
-    free(map); free(pre_of); free(splat);
+    free(map); free(pre_of); free(splat); free(keep);
 }
 
 // Returns whether any loop gained a vector loop.

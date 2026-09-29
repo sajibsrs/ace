@@ -144,7 +144,6 @@ with a §4 entry carry their detail there.
 | long `f64` parse | 1.6x | `std/run-string.sh` `parse-f64-long` | undiagnosed |
 | `f64` `sin` / `cos` | 1.6x / 1.5x | `std/run-math.sh` | undiagnosed |
 | `f32` `log` | 1.5x | `std/run-math.sh` `log-f32` | §4 `f32` transcendental functions |
-| vec3 particle update | 1.5x | `core/run-hotloop.sh` `particle-vec3` | undiagnosed |
 | SDL cube transform | 1.15x | `core/run-hotloop.sh` `cube-transform` | spread; `bench/README.md` Cube transform |
 
 ### Deferred optimization work
@@ -179,7 +178,7 @@ These are baseline observations, not performance promises.
   saxpy, dot, and `Vec3` kernels. Latest ratios to scalar C `-O2`: saxpy-f64
   0.51x (auto-vectorized; 1.37x C's vectorized output), saxpy-f32 0.26x (auto-vectorized; 1.37x C's vectorized output),
   cube-transform 0.78x (auto-vectorized; 1.32x C's vectorized output),
-  particle `Vec3` 1.51x, `Vec3` length 0.89x, floating dot 0.75x. `std/simd` is
+  particle `Vec3` 0.38x (auto-vectorized; 1.03x C's vectorized output, which fuses multiply-adds), `Vec3` length 0.89x, floating dot 0.75x. `std/simd` is
   specified and unimplemented. Candidate order: (1) auto-vectorization's
   remaining steps (SPEC Decision Queue); (2) the bottom-tested loop and
   by-value `Vec3` leaf-call frame cost; (3) `std/simd` NEON intrinsics

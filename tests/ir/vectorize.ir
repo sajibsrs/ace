@@ -11,18 +11,18 @@ b2: ; preds b1
     %6 = global ptr ys
     %7 = const u64 64
     %8 = lt bool %3, %7
-    check %8, 20:33 bounds violation
+    check %8, 24:33 bounds violation
     %10 = padd ptr %6, %3 * 4
     %11 = global ptr xs
     %12 = const u64 64
     %13 = lt bool %3, %12
-    check %13, 20:41 bounds violation
+    check %13, 24:41 bounds violation
     %15 = padd ptr %11, %3 * 4
     %16 = load f32 [%15]
     %17 = global ptr ys
     %18 = const u64 64
     %19 = lt bool %3, %18
-    check %19, 20:49 bounds violation
+    check %19, 24:49 bounds violation
     %21 = padd ptr %17, %3 * 4
     %22 = load f32 [%21]
     %23 = div f32 %16, %22
@@ -52,12 +52,12 @@ b2: ; preds b1
     %7 = global ptr ks
     %8 = const u64 64
     %9 = lt bool %6, %8
-    check %9, 24:34 bounds violation
+    check %9, 28:34 bounds violation
     %11 = padd ptr %7, %6 * 4
     %12 = global ptr ks
     %13 = const u64 64
     %14 = lt bool %6, %13
-    check %14, 24:43 bounds violation
+    check %14, 28:43 bounds violation
     %16 = padd ptr %12, %6 * 4
     %17 = load i32 [%16]
     %18 = neg.chk i32 %17
@@ -66,7 +66,7 @@ b2: ; preds b1
     %21 = global ptr ks
     %22 = const u64 64
     %23 = lt bool %6, %22
-    check %23, 24:55 bounds violation
+    check %23, 28:55 bounds violation
     %25 = padd ptr %21, %6 * 4
     %26 = load i32 [%25]
     %27 = add.chk i32 %20, %26
@@ -127,18 +127,18 @@ b2: ; preds b1
     %40 = cast u64 %37
     %41 = const u64 16
     %42 = lt bool %40, %41
-    check %42, 29:35 bounds violation
+    check %42, 33:35 bounds violation
     %44 = padd ptr %0, %40 * 4
     %45 = global ptr xs
     %46 = const u64 64
     %47 = lt bool %40, %46
-    check %47, 29:43 bounds violation
+    check %47, 33:43 bounds violation
     %49 = padd ptr %45, %40 * 4
     %50 = load f32 [%49]
     %51 = global ptr xs
     %52 = const u64 64
     %53 = lt bool %40, %52
-    check %53, 29:51 bounds violation
+    check %53, 33:51 bounds violation
     %55 = padd ptr %51, %40 * 4
     %56 = load f32 [%55]
     %57 = mul f32 %50, %56
@@ -169,7 +169,7 @@ b2: ; preds b1
     %9 = global ptr xs
     %10 = const u64 64
     %11 = lt bool %8, %10
-    check %11, 35:39 bounds violation
+    check %11, 39:39 bounds violation
     %13 = padd ptr %9, %8 * 4
     %14 = load f32 [%13]
     %15 = add f32 %5, %14
@@ -196,14 +196,14 @@ b2: ; preds b1
     %7 = global ptr ys
     %8 = const u64 64
     %9 = lt bool %6, %8
-    check %9, 40:34 bounds violation
+    check %9, 44:34 bounds violation
     %11 = padd ptr %7, %6 * 4
     %12 = global ptr ys
     %13 = const u64 1
     %14 = add.chk u64 %6, %13
     %15 = const u64 64
     %16 = lt bool %14, %15
-    check %16, 40:42 bounds violation
+    check %16, 44:42 bounds violation
     %18 = padd ptr %12, %14 * 4
     %19 = load f32 [%18]
     store [%11], %19
@@ -232,10 +232,10 @@ b1: ; preds b0, b4
 b2: ; preds b1
     %10 = cast u64 %7
     %11 = lt bool %10, %3
-    check %11, 44:33 bounds violation
+    check %11, 48:33 bounds violation
     %13 = padd ptr %2, %10 * 4
     %14 = lt bool %10, %1
-    check %14, 44:40 bounds violation
+    check %14, 48:40 bounds violation
     %16 = padd ptr %0, %10 * 4
     %17 = load f32 [%16]
     %18 = const f32 1.0
@@ -272,19 +272,19 @@ b2: ; preds b1
     %7 = global ptr ys
     %8 = const u64 64
     %9 = lt bool %6, %8
-    check %9, 52:34 bounds violation
+    check %9, 56:34 bounds violation
     %11 = padd ptr %7, %6 * 4
     %12 = global ptr xs
     %13 = const u64 64
     %14 = lt bool %6, %13
-    check %14, 52:48 bounds violation
+    check %14, 56:48 bounds violation
     %16 = padd ptr %12, %6 * 4
     %17 = load f32 [%16]
     %18 = call f32 twice(%17)
     %19 = global ptr xs
     %20 = const u64 64
     %21 = lt bool %6, %20
-    check %21, 52:57 bounds violation
+    check %21, 56:57 bounds violation
     %23 = padd ptr %19, %6 * 4
     %24 = load f32 [%23]
     %25 = add f32 %18, %24
@@ -330,12 +330,12 @@ b2: ; preds b1
     %7 = global ptr ys
     %8 = const u64 64
     %9 = lt bool %6, %8
-    check %9, 61:34 bounds violation
+    check %9, 65:34 bounds violation
     %11 = padd ptr %7, %6 * 4
     %12 = global ptr xs
     %13 = const u64 64
     %14 = lt bool %6, %13
-    check %14, 61:48 bounds violation
+    check %14, 65:48 bounds violation
     %16 = padd ptr %12, %6 * 4
     %17 = load f32 [%16]
     %18 = const i64 2
@@ -365,12 +365,12 @@ b2: ; preds b1
     %8 = global ptr ds
     %9 = const u64 64
     %10 = lt bool %7, %9
-    check %10, 65:34 bounds violation
+    check %10, 69:34 bounds violation
     %12 = padd ptr %8, %7 * 8
     %13 = global ptr ds
     %14 = const u64 64
     %15 = lt bool %7, %14
-    check %15, 65:42 bounds violation
+    check %15, 69:42 bounds violation
     %17 = padd ptr %13, %7 * 8
     %18 = load f64 [%17]
     %19 = const f64 2.0
@@ -392,12 +392,12 @@ b6: ; preds b5
     %31 = global ptr ds
     %32 = const u64 64
     %33 = lt bool %28, %32
-    check %33, 66:33 bounds violation
+    check %33, 70:33 bounds violation
     %35 = padd ptr %31, %28 * 8
     %36 = global ptr ds
     %37 = const u64 64
     %38 = lt bool %28, %37
-    check %38, 66:42 bounds violation
+    check %38, 70:42 bounds violation
     %40 = padd ptr %36, %28 * 8
     %41 = load f64 [%40]
     %42 = neg f64 %41
@@ -427,12 +427,12 @@ b2: ; preds b1
     %7 = global ptr ds
     %8 = const u64 64
     %9 = lt bool %6, %8
-    check %9, 71:12 bounds violation
+    check %9, 75:12 bounds violation
     %11 = padd ptr %7, %6 * 8
     %12 = global ptr ds
     %13 = const u64 64
     %14 = lt bool %6, %13
-    check %14, 71:20 bounds violation
+    check %14, 75:20 bounds violation
     %16 = padd ptr %12, %6 * 8
     %17 = load f64 [%16]
     %18 = const f64 2.0
@@ -441,12 +441,12 @@ b2: ; preds b1
     %21 = global ptr ys
     %22 = const u64 64
     %23 = lt bool %6, %22
-    check %23, 72:12 bounds violation
+    check %23, 76:12 bounds violation
     %25 = padd ptr %21, %6 * 4
     %26 = global ptr ys
     %27 = const u64 64
     %28 = lt bool %6, %27
-    check %28, 72:20 bounds violation
+    check %28, 76:20 bounds violation
     %30 = padd ptr %26, %6 * 4
     %31 = load f32 [%30]
     %32 = const f32 2.0
@@ -475,7 +475,7 @@ b2: ; preds b1
     %7 = global ptr ds
     %8 = const u64 64
     %9 = lt bool %6, %8
-    check %9, 78:21 bounds violation
+    check %9, 82:21 bounds violation
     %11 = padd ptr %7, %6 * 8
     %12 = load f64 [%11]
     %13 = const f64 1.0
@@ -495,7 +495,7 @@ b6: ; preds b2, b5
     %23 = global ptr ds
     %24 = const u64 64
     %25 = lt bool %6, %24
-    check %25, 80:12 bounds violation
+    check %25, 84:12 bounds violation
     %27 = padd ptr %23, %6 * 8
     store [%27], %22
     jmp b4
@@ -533,22 +533,22 @@ b2: ; preds b1
     %7 = global ptr ys
     %8 = const i32 0
     %9 = ge bool %6, %8
-    check %9, 90:32 bounds violation
+    check %9, 94:32 bounds violation
     %11 = cast u64 %6
     %12 = const u64 64
     %13 = lt bool %11, %12
-    check %13, 90:32 bounds violation
+    check %13, 94:32 bounds violation
     %15 = padd ptr %7, %11 * 4
     %16 = const i32 0
     %17 = call f32 sign(%6, %16)
     %18 = global ptr xs
     %19 = const i32 0
     %20 = ge bool %6, %19
-    check %20, 90:53 bounds violation
+    check %20, 94:53 bounds violation
     %22 = cast u64 %6
     %23 = const u64 64
     %24 = lt bool %22, %23
-    check %24, 90:53 bounds violation
+    check %24, 94:53 bounds violation
     %26 = padd ptr %18, %22 * 4
     %27 = load f32 [%26]
     %28 = mul f32 %17, %27
@@ -580,7 +580,7 @@ b2: ; preds b1
     %8 = global ptr ks
     %9 = const u64 64
     %10 = lt bool %6, %9
-    check %10, 96:15 bounds violation
+    check %10, 100:15 bounds violation
     %12 = padd ptr %8, %6 * 4
     %13 = load i32 [%12]
     %14 = const i32 0
@@ -596,7 +596,7 @@ b5: ; preds b2
     %21 = global ptr xs
     %22 = const u64 64
     %23 = lt bool %6, %22
-    check %23, 96:31 bounds violation
+    check %23, 100:31 bounds violation
     %25 = padd ptr %21, %6 * 4
     %26 = load f32 [%25]
     jmp b6
@@ -605,10 +605,265 @@ b6: ; preds b2, b5
     %29 = global ptr ys
     %30 = const u64 64
     %31 = lt bool %6, %30
-    check %31, 97:12 bounds violation
+    check %31, 101:12 bounds violation
     %33 = padd ptr %29, %6 * 4
     store [%33], %28
     jmp b4
+}
+
+particles(u64): void {
+b0:
+    %0 = param u64 0
+    %1 = const u64 0
+    jmp b1
+b1: ; preds b0, b4
+    %3 = phi u64 [%1, b0], [%57, b4]
+    %4 = lt bool %3, %0
+    br %4, b2, b3
+b2: ; preds b1
+    %6 = global ptr ps
+    %7 = const u64 64
+    %8 = lt bool %3, %7
+    check %8, 113:12 bounds violation
+    %10 = padd ptr %6, %3 * 12
+    %11 = load f32 [%10]
+    %12 = global ptr vs
+    %13 = const u64 64
+    %14 = lt bool %3, %13
+    check %14, 113:23 bounds violation
+    %16 = padd ptr %12, %3 * 12
+    %17 = load f32 [%16]
+    %18 = const f32 0.5
+    %19 = mul f32 %17, %18
+    %20 = add f32 %11, %19
+    store [%10], %20
+    %22 = global ptr ps
+    %23 = const u64 64
+    %24 = lt bool %3, %23
+    check %24, 114:12 bounds violation
+    %26 = padd ptr %22, %3 * 12
+    %27 = load f32 [%26 + 4]
+    %28 = global ptr vs
+    %29 = const u64 64
+    %30 = lt bool %3, %29
+    check %30, 114:23 bounds violation
+    %32 = padd ptr %28, %3 * 12
+    %33 = load f32 [%32 + 4]
+    %34 = const f32 0.5
+    %35 = mul f32 %33, %34
+    %36 = add f32 %27, %35
+    store [%26 + 4], %36
+    %38 = global ptr ps
+    %39 = const u64 64
+    %40 = lt bool %3, %39
+    check %40, 115:12 bounds violation
+    %42 = padd ptr %38, %3 * 12
+    %43 = load f32 [%42 + 8]
+    %44 = global ptr vs
+    %45 = const u64 64
+    %46 = lt bool %3, %45
+    check %46, 115:23 bounds violation
+    %48 = padd ptr %44, %3 * 12
+    %49 = load f32 [%48 + 8]
+    %50 = const f32 0.5
+    %51 = mul f32 %49, %50
+    %52 = add f32 %43, %51
+    store [%42 + 8], %52
+    jmp b4
+b3: ; preds b1
+    ret
+b4: ; preds b2
+    %56 = const u64 1
+    %57 = add u64 %3, %56
+    jmp b1
+}
+
+pairs(): void {
+b0:
+    %0 = const i64 0
+    %1 = const i64 64
+    jmp b1
+b1: ; preds b0, b4
+    %3 = phi i64 [%0, b0], [%42, b4]
+    %4 = lt bool %3, %1
+    br %4, b2, b3
+b2: ; preds b1
+    %6 = cast u64 %3
+    %7 = global ptr qs
+    %8 = const u64 64
+    %9 = lt bool %6, %8
+    check %9, 121:12 bounds violation
+    %11 = padd ptr %7, %6 * 8
+    %12 = global ptr qs
+    %13 = const u64 64
+    %14 = lt bool %6, %13
+    check %14, 121:22 bounds violation
+    %16 = padd ptr %12, %6 * 8
+    %17 = load f32 [%16]
+    %18 = const f32 2.0
+    %19 = mul f32 %17, %18
+    %20 = const f32 1.0
+    %21 = sub f32 %19, %20
+    store [%11], %21
+    %23 = global ptr qs
+    %24 = const u64 64
+    %25 = lt bool %6, %24
+    check %25, 122:12 bounds violation
+    %27 = padd ptr %23, %6 * 8
+    %28 = global ptr qs
+    %29 = const u64 64
+    %30 = lt bool %6, %29
+    check %30, 122:22 bounds violation
+    %32 = padd ptr %28, %6 * 8
+    %33 = load f32 [%32 + 4]
+    %34 = const f32 2.0
+    %35 = mul f32 %33, %34
+    %36 = const f32 1.0
+    %37 = sub f32 %35, %36
+    store [%27 + 4], %37
+    jmp b4
+b3: ; preds b1
+    ret
+b4: ; preds b2
+    %41 = const i64 1
+    %42 = add i64 %3, %41
+    jmp b1
+}
+
+uneven(): void {
+b0:
+    %0 = const i64 0
+    %1 = const i64 64
+    jmp b1
+b1: ; preds b0, b4
+    %3 = phi i64 [%0, b0], [%38, b4]
+    %4 = lt bool %3, %1
+    br %4, b2, b3
+b2: ; preds b1
+    %6 = cast u64 %3
+    %7 = global ptr qs
+    %8 = const u64 64
+    %9 = lt bool %6, %8
+    check %9, 128:12 bounds violation
+    %11 = padd ptr %7, %6 * 8
+    %12 = global ptr qs
+    %13 = const u64 64
+    %14 = lt bool %6, %13
+    check %14, 128:22 bounds violation
+    %16 = padd ptr %12, %6 * 8
+    %17 = load f32 [%16]
+    %18 = const f32 2.0
+    %19 = mul f32 %17, %18
+    store [%11], %19
+    %21 = global ptr qs
+    %22 = const u64 64
+    %23 = lt bool %6, %22
+    check %23, 129:12 bounds violation
+    %25 = padd ptr %21, %6 * 8
+    %26 = global ptr qs
+    %27 = const u64 64
+    %28 = lt bool %6, %27
+    check %28, 129:22 bounds violation
+    %30 = padd ptr %26, %6 * 8
+    %31 = load f32 [%30 + 4]
+    %32 = const f32 3.0
+    %33 = mul f32 %31, %32
+    store [%25 + 4], %33
+    jmp b4
+b3: ; preds b1
+    ret
+b4: ; preds b2
+    %37 = const i64 1
+    %38 = add i64 %3, %37
+    jmp b1
+}
+
+partial(): void {
+b0:
+    %0 = const i64 0
+    %1 = const i64 64
+    jmp b1
+b1: ; preds b0, b4
+    %3 = phi i64 [%0, b0], [%34, b4]
+    %4 = lt bool %3, %1
+    br %4, b2, b3
+b2: ; preds b1
+    %6 = cast u64 %3
+    %7 = global ptr ps
+    %8 = const u64 64
+    %9 = lt bool %6, %8
+    check %9, 135:12 bounds violation
+    %11 = padd ptr %7, %6 * 12
+    %12 = global ptr vs
+    %13 = const u64 64
+    %14 = lt bool %6, %13
+    check %14, 135:22 bounds violation
+    %16 = padd ptr %12, %6 * 12
+    %17 = load f32 [%16]
+    store [%11], %17
+    %19 = global ptr ps
+    %20 = const u64 64
+    %21 = lt bool %6, %20
+    check %21, 136:12 bounds violation
+    %23 = padd ptr %19, %6 * 12
+    %24 = global ptr vs
+    %25 = const u64 64
+    %26 = lt bool %6, %25
+    check %26, 136:22 bounds violation
+    %28 = padd ptr %24, %6 * 12
+    %29 = load f32 [%28 + 4]
+    store [%23 + 4], %29
+    jmp b4
+b3: ; preds b1
+    ret
+b4: ; preds b2
+    %33 = const i64 1
+    %34 = add i64 %3, %33
+    jmp b1
+}
+
+crossed(): void {
+b0:
+    %0 = const i64 0
+    %1 = const i64 64
+    jmp b1
+b1: ; preds b0, b4
+    %3 = phi i64 [%0, b0], [%34, b4]
+    %4 = lt bool %3, %1
+    br %4, b2, b3
+b2: ; preds b1
+    %6 = cast u64 %3
+    %7 = global ptr qs
+    %8 = const u64 64
+    %9 = lt bool %6, %8
+    check %9, 142:12 bounds violation
+    %11 = padd ptr %7, %6 * 8
+    %12 = global ptr qs
+    %13 = const u64 64
+    %14 = lt bool %6, %13
+    check %14, 142:22 bounds violation
+    %16 = padd ptr %12, %6 * 8
+    %17 = load f32 [%16 + 4]
+    store [%11], %17
+    %19 = global ptr qs
+    %20 = const u64 64
+    %21 = lt bool %6, %20
+    check %21, 143:12 bounds violation
+    %23 = padd ptr %19, %6 * 8
+    %24 = global ptr qs
+    %25 = const u64 64
+    %26 = lt bool %6, %25
+    check %26, 143:22 bounds violation
+    %28 = padd ptr %24, %6 * 8
+    %29 = load f32 [%28]
+    store [%23 + 4], %29
+    jmp b4
+b3: ; preds b1
+    ret
+b4: ; preds b2
+    %33 = const i64 1
+    %34 = add i64 %3, %33
+    jmp b1
 }
 
 main(): i64 {
@@ -623,7 +878,7 @@ b0:
     %7 = const u64 0
     jmp b1
 b1: ; preds b0, b3
-    %9 = phi u64 [%7, b0], [%38, b3]
+    %9 = phi u64 [%7, b0], [%44, b3]
     %10 = const u64 63
     %11 = lt bool %9, %10
     br %11, b3, b2
@@ -641,20 +896,26 @@ b2: ; preds b1
     call shift()
     call corners()
     call guarded()
-    %26 = call f32 local()
-    %27 = call f32 sum()
-    %28 = add f32 %26, %27
-    %29 = cast i64 %28
+    %26 = const u64 64
+    call particles(%26)
+    call pairs()
+    call uneven()
+    call partial()
+    call crossed()
+    %32 = call f32 local()
+    %33 = call f32 sum()
+    %34 = add f32 %32, %33
+    %35 = cast i64 %34
     call @__ace$registry_leaks()
-    ret %29
+    ret %35
 b3: ; preds b1
-    %32 = const u64 1
-    %33 = add u64 %9, %32
-    %34 = padd ptr %0, %33 * 4
-    %35 = load u32 [%0]
-    store [%34], %35
-    %37 = const u64 1
-    %38 = add u64 %9, %37
+    %38 = const u64 1
+    %39 = add u64 %9, %38
+    %40 = padd ptr %0, %39 * 4
+    %41 = load u32 [%0]
+    store [%40], %41
+    %43 = const u64 1
+    %44 = add u64 %9, %43
     jmp b1
 }
 

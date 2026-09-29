@@ -9,7 +9,11 @@
  * leaves no remainder loop), and f64 elements with a constant or variable
  * count. Kept scalar: a reduction, a neighbouring element, two slices that may
  * overlap, a call that stays, f64 beside 32-bit lanes, an f64 compare, and a
- * load under a branch. Debug keeps every loop scalar. */
+ * load under a branch. A struct array whose same-typed fields all get the
+ * same computation vectorizes as its flat fields, with a pointer for a size
+ * that is no power of two or a scaled offset for one that is; fields computed
+ * differently, a field left unstored, or a field read into another stay
+ * scalar. Debug keeps every loop scalar. */
 
 xs: [64]f32
 ys: [64]f32
@@ -98,6 +102,48 @@ guarded() {
     }
 }
 
+Vec3: struct { x: f32, y: f32, z: f32 }
+Vec2: struct { x: f32, y: f32 }
+ps: [64]Vec3
+vs: [64]Vec3
+qs: [64]Vec2
+
+particles(n: usize) {
+    for i: usize in 0 .. n {
+        ps[i].x += vs[i].x * 0.5
+        ps[i].y += vs[i].y * 0.5
+        ps[i].z += vs[i].z * 0.5
+    }
+}
+
+pairs() {
+    for i: usize in 0 .. 64 {
+        qs[i].x = qs[i].x * 2.0 - 1.0
+        qs[i].y = qs[i].y * 2.0 - 1.0
+    }
+}
+
+uneven() {
+    for i: usize in 0 .. 64 {
+        qs[i].x = qs[i].x * 2.0
+        qs[i].y = qs[i].y * 3.0
+    }
+}
+
+partial() {
+    for i: usize in 0 .. 64 {
+        ps[i].x = vs[i].x
+        ps[i].y = vs[i].y
+    }
+}
+
+crossed() {
+    for i: usize in 0 .. 64 {
+        qs[i].x = qs[i].y
+        qs[i].y = qs[i].x
+    }
+}
+
 main(): int {
     scale(64)
     negate()
@@ -111,5 +157,10 @@ main(): int {
     shift()
     corners()
     guarded()
+    particles(64)
+    pairs()
+    uneven()
+    partial()
+    crossed()
     return int(local() + sum())
 }

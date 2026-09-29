@@ -518,6 +518,194 @@ b5: ; preds b2, b4
     jmp b1
 }
 
+particles(u64): void {
+b0:
+    %0 = param u64 0
+    %1 = global ptr ps
+    %2 = global ptr vs
+    %3 = const u64 0
+    %4 = const u64 1
+    %5 = const u64 2
+    %6 = shr u64 %0, %5
+    %7 = const f32 0.5
+    %8 = splat v4f32 %7
+    jmp b4
+b1: ; preds b6, b2
+    %10 = phi u64 [%61, b6], [%34, b2]
+    %11 = phi ptr [%62, b6], [%35, b2]
+    %12 = phi ptr [%63, b6], [%36, b2]
+    %13 = lt bool %10, %0
+    br %13, b2, b3
+b2: ; preds b1
+    %15 = load f32 [%11]
+    %16 = load f32 [%12]
+    %17 = const f32 0.5
+    %18 = mul f32 %16, %17
+    %19 = add f32 %15, %18
+    store [%11], %19
+    %21 = load f32 [%11 + 4]
+    %22 = load f32 [%12 + 4]
+    %23 = const f32 0.5
+    %24 = mul f32 %22, %23
+    %25 = add f32 %21, %24
+    store [%11 + 4], %25
+    %27 = load f32 [%11 + 8]
+    %28 = load f32 [%12 + 8]
+    %29 = const f32 0.5
+    %30 = mul f32 %28, %29
+    %31 = add f32 %27, %30
+    store [%11 + 8], %31
+    %33 = const u64 1
+    %34 = add u64 %10, %33
+    %35 = padd ptr %11, %33 * 12
+    %36 = padd ptr %12, %33 * 12
+    jmp b1
+b3: ; preds b1
+    ret
+b4: ; preds b0, b5
+    %39 = phi u64 [%3, b0], [%59, b5]
+    %40 = lt bool %39, %6
+    br %40, b5, b6
+b5: ; preds b4
+    %42 = padd ptr %1, %39 * 48
+    %43 = padd ptr %2, %39 * 48
+    %44 = load v4f32 [%42]
+    %45 = load v4f32 [%43]
+    %46 = mul v4f32 %45, %8
+    %47 = add v4f32 %44, %46
+    store [%42], %47
+    %49 = load v4f32 [%42 + 16]
+    %50 = load v4f32 [%43 + 16]
+    %51 = mul v4f32 %50, %8
+    %52 = add v4f32 %49, %51
+    store [%42 + 16], %52
+    %54 = load v4f32 [%42 + 32]
+    %55 = load v4f32 [%43 + 32]
+    %56 = mul v4f32 %55, %8
+    %57 = add v4f32 %54, %56
+    store [%42 + 32], %57
+    %59 = add u64 %39, %4
+    jmp b4
+b6: ; preds b4
+    %61 = shl u64 %39, %5
+    %62 = padd ptr %1, %61 * 12
+    %63 = padd ptr %2, %61 * 12
+    jmp b1
+}
+
+pairs(): void {
+b0:
+    %0 = global ptr qs
+    %1 = const i64 0
+    %2 = const i64 1
+    %3 = const i64 16
+    %4 = const f32 2.0
+    %5 = splat v4f32 %4
+    %6 = const f32 1.0
+    %7 = splat v4f32 %6
+    jmp b1
+b1: ; preds b0, b2
+    %9 = phi i64 [%1, b0], [%22, b2]
+    %10 = lt bool %9, %3
+    br %10, b2, b3
+b2: ; preds b1
+    %12 = cast u64 %9
+    %13 = padd ptr %0, %12 * 32
+    %14 = load v4f32 [%13]
+    %15 = mul v4f32 %14, %5
+    %16 = sub v4f32 %15, %7
+    store [%13], %16
+    %18 = load v4f32 [%13 + 16]
+    %19 = mul v4f32 %18, %5
+    %20 = sub v4f32 %19, %7
+    store [%13 + 16], %20
+    %22 = add i64 %9, %2
+    jmp b1
+b3: ; preds b1
+    ret
+}
+
+uneven(): void {
+b0:
+    %0 = const i64 0
+    %1 = const i64 64
+    %2 = global ptr qs
+    jmp b1
+b1: ; preds b0, b2
+    %4 = phi i64 [%0, b0], [%18, b2]
+    %5 = lt bool %4, %1
+    br %5, b2, b3
+b2: ; preds b1
+    %7 = cast u64 %4
+    %8 = padd ptr %2, %7 * 8
+    %9 = load f32 [%8]
+    %10 = const f32 2.0
+    %11 = mul f32 %9, %10
+    store [%8], %11
+    %13 = load f32 [%8 + 4]
+    %14 = const f32 3.0
+    %15 = mul f32 %13, %14
+    store [%8 + 4], %15
+    %17 = const i64 1
+    %18 = add i64 %4, %17
+    jmp b1
+b3: ; preds b1
+    ret
+}
+
+partial(): void {
+b0:
+    %0 = const i64 0
+    %1 = const i64 64
+    %2 = global ptr ps
+    %3 = global ptr vs
+    jmp b1
+b1: ; preds b0, b2
+    %5 = phi i64 [%0, b0], [%15, b2]
+    %6 = phi ptr [%2, b0], [%17, b2]
+    %7 = phi ptr [%3, b0], [%19, b2]
+    %8 = lt bool %5, %1
+    br %8, b2, b3
+b2: ; preds b1
+    %10 = load f32 [%7]
+    store [%6], %10
+    %12 = load f32 [%7 + 4]
+    store [%6 + 4], %12
+    %14 = const i64 1
+    %15 = add i64 %5, %14
+    %16 = const u64 1
+    %17 = padd ptr %6, %16 * 12
+    %18 = const u64 1
+    %19 = padd ptr %7, %18 * 12
+    jmp b1
+b3: ; preds b1
+    ret
+}
+
+crossed(): void {
+b0:
+    %0 = const i64 0
+    %1 = const i64 64
+    %2 = global ptr qs
+    jmp b1
+b1: ; preds b0, b2
+    %4 = phi i64 [%0, b0], [%14, b2]
+    %5 = lt bool %4, %1
+    br %5, b2, b3
+b2: ; preds b1
+    %7 = cast u64 %4
+    %8 = padd ptr %2, %7 * 8
+    %9 = load f32 [%8 + 4]
+    store [%8], %9
+    %11 = load f32 [%8]
+    store [%8 + 4], %11
+    %13 = const i64 1
+    %14 = add i64 %4, %13
+    jmp b1
+b3: ; preds b1
+    ret
+}
+
 main(): i64 {
 b0:
     %0 = slot ptr 256, 4
@@ -530,7 +718,7 @@ b0:
     %7 = splat v4f32 %6
     jmp b10
 b1: ; preds b15, b3
-    %9 = phi u64 [%95, b15], [%21, b3]
+    %9 = phi u64 [%101, b15], [%21, b3]
     %10 = const u64 63
     %11 = lt bool %9, %10
     br %11, b3, b2
@@ -550,13 +738,13 @@ b3: ; preds b1
     store [%22], %23
     jmp b1
 b4: ; preds b18, b5
-    %26 = phi i64 [%114, b18], [%38, b5]
-    %27 = lt bool %26, %115
+    %26 = phi i64 [%120, b18], [%38, b5]
+    %27 = lt bool %26, %121
     br %27, b5, b6
 b5: ; preds b4
     %29 = cast u64 %26
     %30 = global ptr ys
-    %31 = padd ptr %116, %29 * 4
+    %31 = padd ptr %122, %29 * 4
     %32 = const u64 1
     %33 = add u64 %29, %32
     %34 = padd ptr %30, %33 * 4
@@ -568,93 +756,99 @@ b5: ; preds b4
 b6: ; preds b4
     call corners()
     call guarded()
-    %42 = call f32 local()
-    %43 = const f32 0.0
-    %44 = const i64 0
-    %45 = const i64 64
+    %42 = const u64 64
+    call particles(%42)
+    call pairs()
+    call uneven()
+    call partial()
+    call crossed()
+    %48 = call f32 local()
+    %49 = const f32 0.0
+    %50 = const i64 0
+    %51 = const i64 64
     jmp b7
 b7: ; preds b6, b8
-    %47 = phi i64 [%44, b6], [%56, b8]
-    %48 = phi f32 [%43, b6], [%54, b8]
-    %49 = lt bool %47, %45
-    br %49, b8, b9
+    %53 = phi i64 [%50, b6], [%62, b8]
+    %54 = phi f32 [%49, b6], [%60, b8]
+    %55 = lt bool %53, %51
+    br %55, b8, b9
 b8: ; preds b7
-    %51 = cast u64 %47
-    %52 = padd ptr %13, %51 * 4
-    %53 = load f32 [%52]
-    %54 = add f32 %48, %53
-    %55 = const i64 1
-    %56 = add i64 %47, %55
+    %57 = cast u64 %53
+    %58 = padd ptr %13, %57 * 4
+    %59 = load f32 [%58]
+    %60 = add f32 %54, %59
+    %61 = const i64 1
+    %62 = add i64 %53, %61
     jmp b7
 b9: ; preds b7
-    %58 = add f32 %42, %48
-    %59 = cast i64 %58
-    ret %59
+    %64 = add f32 %48, %54
+    %65 = cast i64 %64
+    ret %65
 b10: ; preds b0, b11
-    %61 = phi u64 [%3, b0], [%71, b11]
-    %62 = lt bool %61, %5
-    br %62, b11, b12
+    %67 = phi u64 [%3, b0], [%77, b11]
+    %68 = lt bool %67, %5
+    br %68, b11, b12
 b11: ; preds b10
-    %64 = padd ptr %1, %61 * 16
-    %65 = padd ptr %2, %61 * 16
-    %66 = load v4f32 [%65]
-    %67 = load v4f32 [%64]
-    %68 = div v4f32 %66, %67
-    %69 = sub v4f32 %68, %7
-    store [%64], %69
-    %71 = add u64 %61, %4
+    %70 = padd ptr %1, %67 * 16
+    %71 = padd ptr %2, %67 * 16
+    %72 = load v4f32 [%71]
+    %73 = load v4f32 [%70]
+    %74 = div v4f32 %72, %73
+    %75 = sub v4f32 %74, %7
+    store [%70], %75
+    %77 = add u64 %67, %4
     jmp b10
 b12: ; preds b10
-    %73 = global ptr ks
-    %74 = const i64 0
-    %75 = const i64 1
-    %76 = const i64 16
-    %77 = const i32 3
-    %78 = splat v4i32 %77
+    %79 = global ptr ks
+    %80 = const i64 0
+    %81 = const i64 1
+    %82 = const i64 16
+    %83 = const i32 3
+    %84 = splat v4i32 %83
     jmp b13
 b13: ; preds b12, b14
-    %80 = phi i64 [%74, b12], [%91, b14]
-    %81 = lt bool %80, %76
-    br %81, b14, b15
+    %86 = phi i64 [%80, b12], [%97, b14]
+    %87 = lt bool %86, %82
+    br %87, b14, b15
 b14: ; preds b13
-    %83 = cast u64 %80
-    %84 = padd ptr %73, %83 * 16
-    %85 = load v4i32 [%84]
-    %86 = neg v4i32 %85
-    %87 = mul v4i32 %86, %78
-    %88 = load v4i32 [%84]
-    %89 = add v4i32 %87, %88
-    store [%84], %89
-    %91 = add i64 %80, %75
+    %89 = cast u64 %86
+    %90 = padd ptr %79, %89 * 16
+    %91 = load v4i32 [%90]
+    %92 = neg v4i32 %91
+    %93 = mul v4i32 %92, %84
+    %94 = load v4i32 [%90]
+    %95 = add v4i32 %93, %94
+    store [%90], %95
+    %97 = add i64 %86, %81
     jmp b13
 b15: ; preds b13
-    %93 = const f32 0.0
-    store [%0], %93
-    %95 = const u64 0
+    %99 = const f32 0.0
+    store [%0], %99
+    %101 = const u64 0
     jmp b1
 b16: ; preds b2, b17
-    %97 = phi i64 [%14, b2], [%106, b17]
-    %98 = lt bool %97, %16
-    br %98, b17, b18
+    %103 = phi i64 [%14, b2], [%112, b17]
+    %104 = lt bool %103, %16
+    br %104, b17, b18
 b17: ; preds b16
-    %100 = cast u64 %97
-    %101 = padd ptr %0, %100 * 16
-    %102 = padd ptr %13, %100 * 16
-    %103 = load v4f32 [%102]
-    %104 = add v4f32 %103, %18
-    store [%101], %104
-    %106 = add i64 %97, %15
+    %106 = cast u64 %103
+    %107 = padd ptr %0, %106 * 16
+    %108 = padd ptr %13, %106 * 16
+    %109 = load v4f32 [%108]
+    %110 = add v4f32 %109, %18
+    store [%107], %110
+    %112 = add i64 %103, %15
     jmp b16
 b18: ; preds b16
     call calls()
     call stays()
-    %110 = const u64 64
-    call wide(%110)
+    %116 = const u64 64
+    call wide(%116)
     call mixed()
     call clamped()
-    %114 = const i64 0
-    %115 = const i64 63
-    %116 = global ptr ys
+    %120 = const i64 0
+    %121 = const i64 63
+    %122 = global ptr ys
     jmp b4
 }
 

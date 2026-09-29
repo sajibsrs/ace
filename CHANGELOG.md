@@ -2987,6 +2987,19 @@ current normative rules, and Git preserves patch-level detail.
   0.182). `tests/ir/vectorize.ace` adds accepted and rejected `f64` loops, and
   `tests/vectorize/lanes.ace` `f64` counts with NaN, signed-zero, infinite,
   and subnormal lanes.
+- Extended auto-vectorization to strided struct fields (Compiler #6): a
+  struct array whose same-typed fields each get the same computation, every
+  field stored and each reading only its own field, vectorizes as the flat
+  array of its fields, running field 0's computation once per 16-byte vector
+  of a group of structs. The loop's elements may be a `padd` scaled by the
+  struct size or a strength-reduced pointer phi, which the remainder loop
+  resumes at `base + i * size`; accesses at different field offsets of one
+  struct are independent. `bench/core/run-hotloop.sh` `particle-vec3` went
+  from 1.11 to 0.281 ns/particle (3.96x; C `-O2` scalar 0.735, vectorized
+  with fused multiply-adds 0.274). `tests/ir/vectorize.ace` adds accepted
+  `Vec3` and `Vec2` loops and rejected uneven, partial, and crossed ones;
+  `tests/vectorize/lanes.ace` adds `Vec3` `f32`, two-field `f64`, and
+  four-field `i32` arrays.
 
 The checked-build queue is complete. Additive networking, concurrency, fuller
 math/SIMD, and a second

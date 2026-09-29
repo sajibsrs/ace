@@ -54,7 +54,14 @@ repeated in each additional backend.
   loop runs the remainder, or is dropped when the count is a constant number
   of whole vectors. A branch whose arms neither load nor store becomes a
   `select` on the compare's lane mask, and `i32(i)` under a constant count
-  becomes a lane vector counting up from `<0, 1, 2, 3>`.
+  becomes a lane vector counting up from `<0, 1, 2, 3>`. A struct array
+  whose same-typed fields all get the same computation (every field stored,
+  each reading only its own field) vectorizes as the flat array of its
+  fields: each vector iteration covers four structs (two for `f64`) as one
+  16-byte vector per field, running field 0's computation once per vector.
+  Its elements may be a `padd` scaled by the struct size or a loop strength
+  reduction pointer phi, which the remainder loop resumes at the vector
+  loop's end.
 - **`arm64.c`** (passes 7-10, the AArch64 target) — instruction selection
   (including fused forms such as integer `madd`), leaving SSA (phis become
   copies, with coalescing), linear-scan register allocation, block layout,

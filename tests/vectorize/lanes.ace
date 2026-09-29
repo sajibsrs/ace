@@ -2,7 +2,8 @@
  * release (which vectorizes) and debug (which never does) must print the same
  * bits for every count, including remainders of one to three elements (one
  * for f64's two lanes), and
- * for NaN, signed zero, infinity, and subnormal lanes. */
+ * for NaN, signed zero, infinity, and subnormal lanes. Struct arrays whose
+ * fields all get the same computation vectorize as their flat fields. */
 
 import bits
 import fmt
@@ -16,6 +17,14 @@ js: [4103]i32
 xd: [4103]f64
 yd: [4103]f64
 
+Vec3: struct { x: f32, y: f32, z: f32 }
+Pair: struct { a: f64, b: f64 }
+Quad: struct { a: i32, b: i32, c: i32, d: i32 }
+ps: [4103]Vec3
+vs: [4103]Vec3
+pd: [4103]Pair
+qs: [4103]Quad
+
 // A hash of the first n elements' bits, order-dependent.
 hash(n: usize): u64 {
     h: u64 = 1469598103934665603
@@ -23,6 +32,12 @@ hash(n: usize): u64 {
         h = bits.wrmul(h ^ u64(bitcast(u32, ys[i])), PRIME)
         h = bits.wrmul(h ^ u64(u32(ks[i] + 2147483647 / 2)), PRIME)
         h = bits.wrmul(h ^ bitcast(u64, yd[i]), PRIME)
+        h = bits.wrmul(h ^ u64(bitcast(u32, ps[i].x)) ^ (u64(bitcast(u32, ps[i].y)) << 32), PRIME)
+        h = bits.wrmul(h ^ u64(bitcast(u32, ps[i].z)), PRIME)
+        h = bits.wrmul(h ^ bitcast(u64, pd[i].a), PRIME)
+        h = bits.wrmul(h ^ bitcast(u64, pd[i].b), PRIME)
+        h = bits.wrmul(h ^ u64(u32(qs[i].a + 1000)) ^ (u64(u32(qs[i].d + 1000)) << 32), PRIME)
+        h = bits.wrmul(h ^ u64(u32(qs[i].b + 1000)) ^ (u64(u32(qs[i].c + 1000)) << 32), PRIME)
     }
     return h
 }
@@ -35,7 +50,27 @@ reset() {
         js[i] = i32(i % 13) + 1
         xd[i] = f64(i % 29) * 0.31 - 4.0
         yd[i] = f64(i % 7) * -1.75 + 0.125
+        ps[i].x = f32(i % 11) * 0.5 - 2.0
+        ps[i].y = f32(i % 13) * -0.75
+        ps[i].z = f32(i % 7) * 0.25 + 1.0
+        vs[i].x = f32(i % 3) * 0.25
+        vs[i].y = f32(i % 5) * -0.5
+        vs[i].z = f32(i % 9) * 0.125
+        pd[i].a = f64(i % 19) * 0.3 - 2.0
+        pd[i].b = f64(i % 5) * -0.7
+        qs[i].a = i32(i % 31) - 9
+        qs[i].b = i32(i % 17)
+        qs[i].c = i32(i % 5) - 3
+        qs[i].d = i32(i % 43)
     }
+    ps[1].y = bitcast(f32, u32(0x7FC00000))
+    ps[2].z = -0.0
+    vs[3].x = bitcast(f32, u32(0x7F800000))
+    ps[5].x = bitcast(f32, u32(1))
+    pd[1].b = bitcast(f64, u64(0x7FF8000000000000))
+    pd[2].a = -0.0
+    pd[3].b = bitcast(f64, u64(0x7FF0000000000000))
+    pd[5].a = bitcast(f64, u64(1))
     xd[1] = bitcast(f64, u64(0x7FF8000000000000))
     xd[2] = -0.0
     yd[3] = bitcast(f64, u64(0x7FF0000000000000))
@@ -58,6 +93,31 @@ double_ops(n: usize) {
 
 int_ops(n: usize) {
     for i: usize in 0 .. n { ks[i] = -ks[i] * 3 + js[i] - ks[i] * js[i] }
+}
+
+// Strided: every field gets the same computation.
+vec3_ops(n: usize) {
+    for i: usize in 0 .. n {
+        ps[i].x = (ps[i].x + vs[i].x * 0.5) / (vs[i].x - 0.75)
+        ps[i].y = (ps[i].y + vs[i].y * 0.5) / (vs[i].y - 0.75)
+        ps[i].z = (ps[i].z + vs[i].z * 0.5) / (vs[i].z - 0.75)
+    }
+}
+
+pair_ops(n: usize) {
+    for i: usize in 0 .. n {
+        pd[i].a = -pd[i].a * 1.5 + 0.25
+        pd[i].b = -pd[i].b * 1.5 + 0.25
+    }
+}
+
+quad_ops(n: usize) {
+    for i: usize in 0 .. n {
+        qs[i].a = (qs[i].a << 2) - qs[i].a * 3 ^ 5
+        qs[i].b = (qs[i].b << 2) - qs[i].b * 3 ^ 5
+        qs[i].c = (qs[i].c << 2) - qs[i].c * 3 ^ 5
+        qs[i].d = (qs[i].d << 2) - qs[i].d * 3 ^ 5
+    }
 }
 
 sign(i: i32, bit: i32): f32 {
@@ -90,6 +150,9 @@ main(): int {
         float_ops(counts[c])
         int_ops(counts[c])
         double_ops(counts[c])
+        vec3_ops(counts[c])
+        pair_ops(counts[c])
+        quad_ops(counts[c])
         h: u64 = hash(4103)
         fmt.printf("%u %u\n", counts[c], h)
     }
