@@ -1,0 +1,71 @@
+/* Headless draw: on SDL's dummy video driver and software renderer, one
+ * triangle drawn from vertices alone (no indices) is read back pixel by
+ * pixel, proving Renderer.geometry draws unindexed triangles. Indices without
+ * vertices must fail.
+ */
+
+import fmt
+import sdl
+
+SDL_Surface: struct {}
+
+extern "c" {
+    set_hint(name: *u8, value: *u8): bool = "SDL_SetHint"
+    read_pixels(renderer: *u8, rect: *u8): *SDL_Surface = "SDL_RenderReadPixels"
+    read_pixel(surface: *SDL_Surface, x: i32, y: i32, r: mut *u8, g: mut *u8, b: mut *u8, a: mut *u8): bool = "SDL_ReadSurfacePixel"
+    destroy_surface(surface: *SDL_Surface) = "SDL_DestroySurface"
+}
+
+SIZE: const i32 = 16
+
+// The red channel at (x, y), or -1 when it cannot be read.
+red(surface: *SDL_Surface, x: i32, y: i32): int {
+    r: u8 = 0
+    g: u8 = 0
+    b: u8 = 0
+    a: u8 = 0
+    if !read_pixel(surface, x, y, mut &r, mut &g, mut &b, mut &a) { return -1 }
+    return int(r)
+}
+
+main(): int {
+    // Hints are C strings, so these end in "\0" by hand.
+    video: string = "SDL_VIDEO_DRIVER\0"
+    dummy: string = "dummy\0"
+    render: string = "SDL_RENDER_DRIVER\0"
+    software: string = "software\0"
+    if !set_hint(&video[0], &dummy[0]) || !set_hint(&render[0], &software[0]) { return 1 }
+
+    if !sdl.init(sdl.InitFlags { video = 1 }) { return 2 }
+    defer sdl.quit()
+    window: sdl.Window = sdl.Window::new("geometry", SIZE, SIZE, sdl.WindowFlags {})
+    defer mut window.wipe()
+    if !window.ok() {
+        fmt.print(sdl.error())
+        return 3
+    }
+    renderer: sdl.Renderer = sdl.Renderer::new(window)
+    defer mut renderer.wipe()
+    if !renderer.ok() { return 4 }
+
+    none: [1]i32 = [0]
+    if renderer.geometry(null, none[..]) { return 5 }
+
+    // The top-left half of the target: its corner is inside, the opposite
+    // corner outside.
+    red_color: sdl.Color = sdl.Color::hex(0xFF0000)
+    triangle: [3]sdl.Vertex = [
+        sdl.Vertex { position = sdl.Point { x = 0.0, y = 0.0 }, color = red_color },
+        sdl.Vertex { position = sdl.Point { x = 16.0, y = 0.0 }, color = red_color },
+        sdl.Vertex { position = sdl.Point { x = 0.0, y = 16.0 }, color = red_color },
+    ]
+    if !renderer.color(sdl.Color {}) || !renderer.clear() { return 6 }
+    if !renderer.geometry(triangle[..], null) { return 7 }
+
+    surface: *SDL_Surface = read_pixels(bitcast(*u8, renderer.handle), null)
+    defer destroy_surface(surface)
+    if surface == null { return 8 }
+    if red(surface, 2, 2) != 255 { return 9 }
+    if red(surface, 13, 13) != 0 { return 10 }
+    return 0
+}
