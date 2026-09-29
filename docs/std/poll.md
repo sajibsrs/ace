@@ -61,7 +61,8 @@ The readiness surface is:
   `sys.close(sys.Fd(q))`.
 - `watch(q, fd, readable, writable): Error` registers a descriptor or replaces
   its complete readable/writable interest. At least one interest must be true.
-  A failed update may leave partial kqueue state; call `watch` or `unwatch`
+  A failed update may leave partial kqueue state on Darwin (a Linux epoll
+  update is atomic); call `watch` or `unwatch`
   again before relying on that registration.
 - `unwatch(q, fd): Error` removes an existing registration. Removing an
   unwatched descriptor is an error.
@@ -77,8 +78,21 @@ bytes. Hangup may coexist with readable buffered data. Error supplies no
 errno value and may coexist with every other condition. Error and hangup need
 no registered interest.
 
+Darwin implements the queue with kqueue and Linux with level-triggered epoll.
+On Linux, watching a descriptor epoll cannot poll, such as a regular file,
+fails with `WatchErr.unsupported`, and hangup (`EPOLLHUP` or `EPOLLRDHUP`)
+also reports readable for a descriptor watched for reading. The write end
+of a pipe whose reader has closed reports `error` there rather than kqueue's
+`hangup`; a socket's `EPOLLERR` is a real pending error, so the kernel's
+answer is kept. epoll watches the open file rather than the descriptor
+number: closing a watched fd while a `dup` of it stays open keeps the
+registration alive and reporting the old fd, where kqueue drops it on close.
+Unwatch a descriptor before closing it when it may have been duplicated.
+
 A timeout of `0` polls without blocking. `poll.FOREVER` waits without a
-timeout; every other value is a finite nanosecond duration. An interrupted
+timeout; every other value is a finite nanosecond duration. Linux waits in
+whole milliseconds, so it rounds a duration up (never ending early) and caps
+it at about 24.8 days; Darwin waits the exact duration. An interrupted
 wait returns `WaitErr`; it is never restarted privately. A successful zero
 count means that the timeout expired or a poll found no readiness.
 

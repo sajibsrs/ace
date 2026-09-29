@@ -5,6 +5,9 @@ import sys
 @when(target == "darwin-arm64")
 import os: "./os/darwin-arm64.ace"
 
+@when(target == "linux-x64")
+import os: "./os/linux-x64.ace"
+
 pub Queue: type = os.Queue
 pub Event: type = os.Event
 pub QueueErr: type = os.QueueErr

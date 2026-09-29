@@ -833,6 +833,14 @@ current normative rules, and Git preserves patch-level detail.
   `clock_gettime`. An Ace `main` stores its entry argc and argv in local
   `.bss` words that `sys.argc`/`sys.arg` load, and `sys.envc`/`sys.env` read
   glibc's `environ`.
+- Added the linux-x64 `poll` OS layer over level-triggered epoll. `watch`
+  adds, or modifies on `EEXIST`, in one atomic update; `unwatch` deletes.
+  `wait` calls `epoll_wait` with the timeout rounded up to whole milliseconds
+  and capped at the i32 maximum, so it needs no recent glibc or kernel. The
+  event data word holds the fd and a read-interest bit, so a hangup
+  (`EPOLLHUP`/`EPOLLRDHUP`) reports readable only under read interest,
+  matching kqueue's EOF.
+  `WatchErr` gains `unsupported` (`EPERM`) and `watch_limit` (`ENOSPC`).
 
 ## Core language
 
