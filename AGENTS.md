@@ -28,10 +28,13 @@ history.
   holds even when the change is already agreed in principle (e.g. noted in
   `TODO.md`). Propose language-design decisions (semantics, syntax) before
   implementing them.
-- In a cloud session, whose container is discarded, work on the topic branch
-  the owner names (e.g. `linux`) instead of `master` or the session's generated
-  branch, and push each approved commit there, since that is the only way work
-  reaches the owner.
+- In a cloud session, whose container is discarded, work only on the topic
+  branch the owner names (e.g. `linux`), never on `master`, the session's
+  generated branch, or a branch of your own, and push each approved commit
+  there, since that is the only way work reaches the owner. Author every commit
+  as the owner, `Sajidur Rahman <sajibsrs@gmail.com>`, setting `user.name` and
+  `user.email` before the first one. Deliver reports and measurements in the
+  session reply, never as a repository file or a branch.
 - The owner resolves `[open]` and `[controversial]` items and removes those
   markers. Provisional spelling may change; semantics may not.
 - Confirm each step before proceeding. Implement only what was explicitly
@@ -71,8 +74,8 @@ history.
   stage outside the repository; park an unfinished topic with `git stash`.
   Every commit message is exactly one
   imperative subject line, full stop — no body paragraph, no rationale, no
-  bullet list, even when the change feels like it needs explaining. That
-  explanation belongs in `CHANGELOG.md`, not the commit.
+  bullet list, no `Co-Authored-By` trailer, even when the change feels like it
+  needs explaining. That explanation belongs in `CHANGELOG.md`, not the commit.
 
 ## Conventions
 
