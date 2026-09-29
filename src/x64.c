@@ -10,17 +10,22 @@
 // and stores its result. Constants and stack objects are rebuilt at each use.
 // There is no register allocation yet.
 //
-// Frame: push rbp; mov rbp, rsp; sub rsp, N. Value slots and a phi staging
-// area sit below rbp, then the stack objects, then the outgoing stack
-// arguments at [rsp]. N keeps rsp 16-byte aligned at every call.
+// Frame: push rbp; mov rbp, rsp; sub rsp, N. Value slots, a phi staging
+// area, 16 scratch bytes, and a saved result address sit below rbp, then the
+// stack objects, then the outgoing area at [rsp]: stack arguments, register
+// words of aggregate arguments, and a result buffer. N keeps rsp 16-byte
+// aligned at every call.
 //
-// Calls: scalar arguments in rdi, rsi, rdx, rcx, r8, r9, then 8-byte stack
-// slots; a variadic call sets al to 0 (no vector registers); the result
-// arrives in rax and is re-canonicalized (a C callee may leave a narrow
-// result's upper bits unspecified). Calls go through R_X86_64_PLT32; the
-// address of an extern symbol loads from the GOT, an internal one is
-// rip-relative. Aggregate parts, floats, vectors, byte routines, and asm are
-// refused with a diagnostic until the target covers them.
+// Calls (System V): scalars in rdi, rsi, rdx, rcx, r8, r9, then 8-byte stack
+// slots; an aggregate of up to 16 bytes in one register per eightbyte, or all
+// on the stack when they run out; a larger one on the stack as a copy, and a
+// result through memory at the address in rdi, returned in rax. Leaves meet
+// register words in memory. A variadic call sets al to 0 (no vector
+// registers); a scalar result arrives in rax and is re-canonicalized (a C
+// callee may leave a narrow result's upper bits unspecified). Calls go
+// through R_X86_64_PLT32; the address of an extern symbol loads from the GOT,
+// an internal one is rip-relative. Floats, vectors, byte routines, and asm
+// are refused with a diagnostic until the target covers them.
 //
 // Release arithmetic follows the arm64 target: shifts count modulo 32 for a
 // type up to 32 bits and 64 above, a division by zero yields 0, and MIN / -1
@@ -49,6 +54,8 @@ typedef struct {
     Buf*     t;
     int32_t* home;    // value -> rbp offset of its slot (negative), 0 for none
     int32_t  stage;   // rbp offset of the phi staging area
+    int32_t  scratch; // rbp offset of 16 bytes where register words meet leaves
+    int32_t  sret;    // rbp offset of the saved result address, 0 for a result in registers
     uint32_t out;     // outgoing stack argument bytes
     uint32_t frame_at; // text offset of the sub rsp imm32
     uint32_t* label;  // block -> text offset
@@ -411,6 +418,28 @@ static void bitop(X64* a, int v) {
     store_val(a, v, RAX);
 }
 
+// r = the value of type t at [base + off] in canonical form (a mov with extension)
+static void ld_width(X64* a, IrType t, int r, int base, int32_t off) {
+    int sg = ir_type_signed(t);
+    switch (t == IT_BOOL ? 8 : ir_type_bits(t)) {
+    case 8: rm(a, sg, sg ? (const uint8_t[]){ 0x0F, 0xBE } : (const uint8_t[]){ 0x0F, 0xB6 }, 2, r, base, off, 0); break;
+    case 16: rm(a, sg, sg ? (const uint8_t[]){ 0x0F, 0xBF } : (const uint8_t[]){ 0x0F, 0xB7 }, 2, r, base, off, 0); break;
+    case 32: rm(a, sg, sg ? (const uint8_t[]){ 0x63 } : (const uint8_t[]){ 0x8B }, 1, r, base, off, 0); break;
+    default: ld64(a, r, base, off); break;
+    }
+    if (t == IT_BOOL) normalize(a, t, r);
+}
+
+// [base + off] = r at type t's width
+static void st_width(X64* a, IrType t, int r, int base, int32_t off) {
+    switch (t == IT_BOOL ? 8 : ir_type_bits(t)) {
+    case 8: rm(a, 0, (const uint8_t[]){ 0x88 }, 1, r, base, off, (r & 7) >= RSP && r < R8); break; // sil, dil need a REX
+    case 16: put(a, 0x66); rm(a, 0, (const uint8_t[]){ 0x89 }, 1, r, base, off, 0); break;
+    case 32: rm(a, 0, (const uint8_t[]){ 0x89 }, 1, r, base, off, 0); break;
+    default: st64(a, r, base, off); break;
+    }
+}
+
 // mov (load, with extension) or store of type t at [rax + off] with rcx
 static void access(X64* a, int v) {
     IrIns* x = ins_of(a, v);
@@ -421,26 +450,13 @@ static void access(X64* a, int v) {
         test_rr(a, RAX);
         fail_if(a, CC_E, NFAIL);
     }
-    int32_t off = x->aux;
-    int bits = t == IT_BOOL ? 8 : ir_type_bits(t);
     if (load) {
-        switch (bits) {
-        case 8: rm(a, ir_type_signed(t), ir_type_signed(t) ? (const uint8_t[]){ 0x0F, 0xBE } : (const uint8_t[]){ 0x0F, 0xB6 }, 2, RCX, RAX, off, 0); break;
-        case 16: rm(a, ir_type_signed(t), ir_type_signed(t) ? (const uint8_t[]){ 0x0F, 0xBF } : (const uint8_t[]){ 0x0F, 0xB7 }, 2, RCX, RAX, off, 0); break;
-        case 32: rm(a, ir_type_signed(t), ir_type_signed(t) ? (const uint8_t[]){ 0x63 } : (const uint8_t[]){ 0x8B }, 1, RCX, RAX, off, 0); break;
-        default: ld64(a, RCX, RAX, off); break;
-        }
-        if (t == IT_BOOL) normalize(a, t, RCX);
+        ld_width(a, t, RCX, RAX, x->aux);
         store_val(a, v, RCX);
         return;
     }
     load_val(a, RCX, x->args[1]);
-    switch (bits) {
-    case 8: rm(a, 0, (const uint8_t[]){ 0x88 }, 1, RCX, RAX, off, 0); break;
-    case 16: put(a, 0x66); rm(a, 0, (const uint8_t[]){ 0x89 }, 1, RCX, RAX, off, 0); break;
-    case 32: rm(a, 0, (const uint8_t[]){ 0x89 }, 1, RCX, RAX, off, 0); break;
-    default: st64(a, RCX, RAX, off); break;
-    }
+    st_width(a, t, RCX, RAX, x->aux);
 }
 
 // rax = p +/- n * scale (Pointers #9): debug checks a null start, the scaled
@@ -463,29 +479,157 @@ static void pointer_offset(X64* a, int v) {
     store_val(a, v, RAX);
 }
 
-static int scalar_sig(const IrSig* sig) {
-    if (!sig) return 1;
-    for (int k = 0; k < sig->nparts; k++) if (sig->parts[k].agg) return 0;
-    return !sig->ret.agg;
+static uint32_t align_up(uint32_t v, uint32_t a) { return (v + a - 1) & ~(a - 1); }
+
+// --- calling convention -------------------------------------------------------------
+
+// Where one part of an argument, parameter, or result travels (System V
+// AMD64): a scalar, or an aggregate of up to 16 bytes, in one register per
+// eightbyte, an SSE one when every leaf in it is a float and an integer one
+// otherwise; the whole part on the stack at soff when its registers run out;
+// an aggregate over 16 bytes (MEMORY) always on the stack, as a copy. reg[w]
+// is the register of eightbyte w, or -1 on the stack; SSE + k is xmm k.
+enum { SSE = 32 };
+typedef struct { int8_t reg[2]; int8_t words; uint32_t soff, size; } Pass;
+
+typedef struct { int ni, ns; uint32_t soff; } Cc;
+
+static IrPart part_of(const IrSig* sig, int p) { return sig ? sig->parts[p] : (IrPart){ NULL, p, 1, 0 }; }
+
+// A result System V returns through memory at an address the caller passes
+// in rdi and the callee returns in rax: an aggregate over 16 bytes.
+static int ret_in_memory(const IrSig* sig) { return sig && sig->ret.agg && sema_size(sig->ret.agg) > 16; }
+
+int x64_result_in_memory(SType* t) { return t && ir_type_of(t) < 0 && sema_size(t) > 16; }
+
+// Whether eightbyte w of the leaves lv[0..n) is SSE: every leaf in it a float.
+static int word_sse(const IrLeaf* lv, int n, uint32_t w) {
+    for (int k = 0; k < n; k++)
+        if (lv[k].off / 8 == w && !ir_type_float((IrType)lv[k].type)) return 0;
+    return 1;
 }
 
-static void call(X64* a, int v) {
-    IrIns* x = ins_of(a, v);
-    if (!scalar_sig(x->sig) || (x->flags & IRF_SRET)) {
-        refuse(a, "an aggregate argument or result");
+// Assign part pt, whose first leaf has type t0, from the next registers or
+// the stack; lv receives an aggregate's leaves.
+static void pass_part(Cc* c, IrPart pt, IrType t0, IrLeaf* lv, Pass* o) {
+    o->reg[0] = o->reg[1] = -1;
+    if (!pt.agg) { // a scalar
+        o->words = 1;
+        o->size = 8;
+        if (ir_type_float(t0) || ir_type_vector(t0)) {
+            if (c->ns < 8) { o->reg[0] = (int8_t)(SSE + c->ns++); return; }
+        } else if (c->ni < 6) {
+            o->reg[0] = (int8_t)ARG_REG[c->ni++];
+            return;
+        }
+        o->soff = c->soff;
+        c->soff += 8;
         return;
     }
-    int k0 = x->op == IR_CALLI, n = x->nargs - k0;
-    for (int k = 0; k < n; k++) {
-        IrType t = (IrType)ins_of(a, x->args[k0 + k])->type;
-        if (ir_type_float(t) || ir_type_vector(t)) {
-            refuse(a, "a float argument");
+    SType* bad;
+    int n = pt.addr ? 0 : ir_leaves(pt.agg, lv, &bad);
+    o->size = sema_size(pt.agg);
+    o->words = (int8_t)((o->size + 7) / 8);
+    if (!pt.addr && o->size <= 16) {
+        int ni = 0, ns = 0;
+        for (int w = 0; w < o->words; w++) word_sse(lv, n, (uint32_t)w) ? ns++ : ni++;
+        if (c->ni + ni <= 6 && c->ns + ns <= 8) {
+            for (int w = 0; w < o->words; w++)
+                o->reg[w] = (int8_t)(word_sse(lv, n, (uint32_t)w) ? SSE + c->ns++ : ARG_REG[c->ni++]);
             return;
         }
     }
-    for (int k = 6; k < n; k++) {
-        load_val(a, RAX, x->args[k0 + k]);
-        st64(a, RAX, RSP, 8 * (k - 6));
+    c->soff = align_up(c->soff, sema_align(pt.agg) > 8 ? 16 : 8);
+    o->soff = c->soff;
+    c->soff += align_up(o->size, 8);
+}
+
+// A call's plan: its parts, and the outgoing bytes at [rsp]: the stack
+// arguments, then 16 bytes of register words per aggregate part in
+// registers (at img), then a result through memory (at buf).
+typedef struct {
+    Pass*    pass;
+    IrLeaf*  lv;      // IR_MAX_LEAVES per part
+    int      k0, n, np, sret, mem_ret;
+    uint32_t img, buf, bytes;
+} Plan;
+
+static void plan_call(X64* a, IrIns* x, Plan* p) {
+    p->k0 = x->op == IR_CALLI;
+    p->sret = (x->flags & IRF_SRET) != 0;
+    p->n = x->nargs - p->k0 - p->sret;
+    p->np = x->sig ? x->sig->nparts : p->n;
+    p->mem_ret = p->sret || ret_in_memory(x->sig);
+    p->pass = xcalloc((size_t)p->np, sizeof(Pass));
+    p->lv = xcalloc((size_t)p->np * IR_MAX_LEAVES, sizeof(IrLeaf));
+    Cc c = { p->mem_ret, 0, 0 };
+    int nimg = 0;
+    for (int q = 0; q < p->np; q++) {
+        IrPart pt = part_of(x->sig, q);
+        pass_part(&c, pt, (IrType)ins_of(a, x->args[p->k0 + pt.first])->type, p->lv + q * IR_MAX_LEAVES, &p->pass[q]);
+        if (pt.agg && p->pass[q].reg[0] >= 0) nimg++;
+    }
+    p->img = align_up(c.soff, 16);
+    p->buf = p->img + 16 * (uint32_t)(nimg ? nimg : 1); // one image also holds a result's registers
+    p->bytes = p->buf + (p->mem_ret && !p->sret ? align_up(sema_size(x->sig->ret.agg), 16) : 0);
+}
+
+static void plan_free(Plan* p) {
+    free(p->pass);
+    free(p->lv);
+}
+
+// Register r of a Pass, refusing an SSE one until floats are covered.
+static int int_reg(X64* a, int r, const char* what) {
+    if (r >= SSE) refuse(a, what);
+    return r;
+}
+
+// The call at bb->ins[i], whose aggregate result's projections follow it.
+static void call(X64* a, IrBlock* bb, int i) {
+    int v = bb->ins[i];
+    IrIns* x = ins_of(a, v);
+    Plan p;
+    plan_call(a, x, &p);
+    const IrSig* sig = x->sig;
+    // the stack parts and the register images first: they use rax, rcx, rsi, and rdi
+    uint32_t img = p.img;
+    for (int q = 0; q < p.np && !a->failed; q++) {
+        IrPart pt = part_of(sig, q);
+        Pass* ps = &p.pass[q];
+        const IrLeaf* lv = p.lv + q * IR_MAX_LEAVES;
+        int first = p.k0 + pt.first;
+        if (!pt.agg) {
+            IrType t = (IrType)ins_of(a, x->args[first])->type;
+            if (ir_type_float(t) || ir_type_vector(t)) refuse(a, "a float argument");
+            else if (ps->reg[0] < 0) {
+                load_val(a, RAX, x->args[first]);
+                st64(a, RAX, RSP, (int32_t)ps->soff);
+            }
+            continue;
+        }
+        if (pt.addr) { // copy the aggregate at the address: rep movsb
+            load_val(a, RSI, x->args[first]);
+            lea(a, RDI, RSP, (int32_t)ps->soff);
+            mov_imm(a, RCX, ps->size);
+            put(a, 0xF3); put(a, 0xA4);
+            continue;
+        }
+        uint32_t at = ps->soff;
+        if (ps->reg[0] >= 0) {
+            for (int w = 0; w < ps->words; w++) int_reg(a, ps->reg[w], "a float argument");
+            at = img;
+            img += 16;
+        }
+        for (int k = 0; k < pt.n; k++) {
+            IrType t = (IrType)ins_of(a, x->args[first + k])->type;
+            if (ir_type_float(t)) {
+                refuse(a, "a float argument");
+                break;
+            }
+            load_val(a, RAX, x->args[first + k]);
+            st_width(a, t, RAX, RSP, (int32_t)(at + lv[k].off));
+        }
     }
     if (x->op == IR_CALLI) {
         load_val(a, R11, x->args[0]);
@@ -494,7 +638,20 @@ static void call(X64* a, int v) {
             fail_if(a, CC_E, NFAIL);
         }
     }
-    for (int k = 0; k < n && k < 6; k++) load_val(a, ARG_REG[k], x->args[k0 + k]);
+    img = p.img;
+    for (int q = 0; q < p.np; q++) {
+        IrPart pt = part_of(sig, q);
+        Pass* ps = &p.pass[q];
+        if (ps->reg[0] < 0 || ps->reg[0] >= SSE) continue;
+        if (!pt.agg) {
+            load_val(a, ps->reg[0], x->args[p.k0 + pt.first]);
+            continue;
+        }
+        for (int w = 0; w < ps->words; w++) ld64(a, ps->reg[w], RSP, (int32_t)(img + 8 * (uint32_t)w));
+        img += 16;
+    }
+    if (p.sret) load_val(a, RDI, x->args[x->nargs - 1]);
+    else if (p.mem_ret) lea(a, RDI, RSP, (int32_t)p.buf);
     if (x->flags & IRF_VARARGS) mov_imm(a, RAX, 0); // al: no vector registers
     if (x->op == IR_CALLI) {
         put(a, 0x41); put(a, 0xFF); put(a, 0xD3); // call r11
@@ -506,6 +663,35 @@ static void call(X64* a, int v) {
         a->o->allocator_used = 1;
     if (x->op == IR_CALL && !x->sym && strcmp(x->name, "__ace$arithmetic_fail") == 0) a->o->arithmetic_fail_used = 1;
     if (x->op == IR_CALL && !x->sym && strcmp(x->name, "__ace$null_fail") == 0) a->o->null_fail_used = 1;
+    if (sig && sig->ret.agg && !p.sret) { // the projections read the result's leaves
+        IrLeaf lv[IR_MAX_LEAVES];
+        SType* bad;
+        int n = ir_leaves(sig->ret.agg, lv, &bad);
+        uint32_t at = p.buf;
+        if (!p.mem_ret) {
+            Cc c = { 0, 0, 0 };
+            Pass r;
+            pass_part(&c, sig->ret, (IrType)lv[0].type, lv, &r);
+            for (int w = 0; w < r.words; w++) {
+                if (int_reg(a, r.reg[w], "a float result") >= SSE) break;
+                st64(a, w ? RDX : RAX, RSP, (int32_t)(p.img + 8 * (uint32_t)w));
+            }
+            at = p.img;
+        }
+        for (int j = i + 1; j < bb->nins && ins_of(a, bb->ins[j])->op == IR_PROJ; j++) {
+            IrIns* pj = ins_of(a, bb->ins[j]);
+            int k = (int)pj->imm;
+            if (k >= n || ir_type_float((IrType)pj->type)) {
+                refuse(a, "a float result");
+                break;
+            }
+            ld_width(a, (IrType)pj->type, RAX, RSP, (int32_t)(at + lv[k].off));
+            store_val(a, bb->ins[j], RAX);
+        }
+        plan_free(&p);
+        return;
+    }
+    plan_free(&p);
     IrType t = (IrType)x->type;
     if (t == IT_VOID) return;
     if (ir_type_float(t)) {
@@ -552,17 +738,35 @@ static void terminator(X64* a, int b, int v) {
         return;
     }
     if (x->op == IR_RET) {
-        if (x->nargs > 1) {
-            refuse(a, "a result of several leaves");
-            return;
-        }
-        if (x->nargs) {
-            if (ir_type_float((IrType)ins_of(a, x->args[0])->type)) {
+        for (int k = 0; k < x->nargs; k++)
+            if (ir_type_float((IrType)ins_of(a, x->args[k])->type)) {
                 refuse(a, "a float result");
                 return;
             }
+        const IrSig* sig = fn->sig;
+        if (sig && sig->ret.agg) { // its leaves meet in memory: the caller's, or the words of rax and rdx
+            IrLeaf lv[IR_MAX_LEAVES];
+            SType* bad;
+            ir_leaves(sig->ret.agg, lv, &bad);
+            int base = RBP;
+            int32_t at = a->scratch;
+            if (a->sret) {
+                ld64(a, RCX, RBP, a->sret);
+                base = RCX;
+                at = 0;
+            }
+            for (int k = 0; k < x->nargs; k++) {
+                load_val(a, RAX, x->args[k]);
+                st_width(a, (IrType)ins_of(a, x->args[k])->type, RAX, base, at + (int32_t)lv[k].off);
+            }
+            if (!a->sret) {
+                ld64(a, RAX, RBP, a->scratch);
+                if (sema_size(sig->ret.agg) > 8) ld64(a, RDX, RBP, a->scratch + 8);
+            }
+        } else if (x->nargs) {
             load_val(a, RAX, x->args[0]);
         }
+        if (a->sret) ld64(a, RAX, RBP, a->sret); // the result's address, as the caller passed it
         put(a, 0xC9); // leave
         put(a, 0xC3); // ret
         return;
@@ -615,8 +819,8 @@ static void emit_block(X64* a, int b) {
             return;
         }
         switch (x->op) {
-        case IR_CONST: case IR_PARAM: case IR_PHI: case IR_SLOT:
-            break;
+        case IR_CONST: case IR_PARAM: case IR_PHI: case IR_SLOT: case IR_RESULT: case IR_PROJ:
+            break; // a result's address arrives at entry, a projection at its call
         case IR_ADD: case IR_SUB: case IR_MUL: case IR_AND: case IR_OR: case IR_XOR:
             arith(a, v);
             break;
@@ -658,7 +862,7 @@ static void emit_block(X64* a, int b) {
             pointer_offset(a, v);
             break;
         case IR_CALL: case IR_CALLI:
-            call(a, v);
+            call(a, bb, i);
             break;
         case IR_CHECK:
             check(a, v);
@@ -668,9 +872,6 @@ static void emit_block(X64* a, int b) {
             break;
         case IR_ASM:
             refuse(a, "inline assembly");
-            break;
-        case IR_RESULT: case IR_PROJ:
-            refuse(a, "an aggregate result");
             break;
         case IR_BITCAST:
             refuse(a, "a float bitcast");
@@ -714,8 +915,6 @@ static void split_critical_edges(IrFunc* fn) {
     }
 }
 
-static uint32_t align_up(uint32_t v, uint32_t a) { return (v + a - 1) & ~(a - 1); }
-
 // Slots, the phi staging area, and stack objects below rbp; the frame size.
 static uint32_t layout(X64* a) {
     IrFunc* fn = a->fn;
@@ -729,8 +928,10 @@ static uint32_t layout(X64* a) {
             IrIns* x = &fn->ins[v];
             if (x->op == IR_PHI) nphi++;
             if (x->op == IR_CALL || x->op == IR_CALLI) {
-                int n = x->nargs - (x->op == IR_CALLI);
-                if (n > 6 && 8u * (uint32_t)(n - 6) > a->out) a->out = 8u * (uint32_t)(n - 6);
+                Plan p;
+                plan_call(a, x, &p);
+                if (p.bytes > a->out) a->out = p.bytes;
+                plan_free(&p);
             }
             if (x->type == IT_VOID || x->op == IR_CONST || x->op == IR_SLOT) continue;
             down += 8;
@@ -740,6 +941,12 @@ static uint32_t layout(X64* a) {
     }
     down += 8 * maxphi;
     a->stage = -(int32_t)down + 8 * (int32_t)(maxphi ? maxphi - 1 : 0);
+    down += 16;
+    a->scratch = -(int32_t)down;
+    if (fn->ret_mem || ret_in_memory(fn->sig)) {
+        down += 8;
+        a->sret = -(int32_t)down;
+    }
     for (int b = 0; b < fn->nblocks; b++) {
         IrBlock* bb = &fn->blocks[b];
         for (int i = 0; i < bb->nins; i++) {
@@ -756,31 +963,65 @@ static uint32_t layout(X64* a) {
     return align_up(down + a->out, 16);
 }
 
-// Entry: register parameters, and the ones the caller stacked at rbp + 16,
-// store to their slots in canonical form (a C caller may leave a narrow
-// argument's upper bits unspecified).
+// Entry: each parameter's leaves to their slots in canonical form (a C
+// caller may leave a narrow argument's upper bits unspecified): from their
+// registers, the ones the caller stacked at rbp + 16, or, for an aggregate in
+// registers, the words stored to the scratch area. A parameter passed by
+// value at its address is the address of the caller's stack copy. A result
+// through memory takes rdi first, whose address is saved.
 static void params(X64* a) {
     IrFunc* fn = a->fn;
-    if (!scalar_sig(fn->sig) || fn->ret_mem) {
-        refuse(a, "an aggregate parameter or result");
-        return;
-    }
     IrBlock* bb = &fn->blocks[0];
+    int* pv = xcalloc((size_t)(fn->nparams ? fn->nparams : 1), sizeof(int));
     for (int i = 0; i < bb->nins; i++) {
         int v = bb->ins[i];
         IrIns* x = ins_of(a, v);
-        if (x->op != IR_PARAM || !a->home[v]) continue;
-        IrType t = (IrType)x->type;
-        if (ir_type_float(t) || ir_type_vector(t)) {
+        if (x->op == IR_PARAM && a->home[v]) pv[x->imm] = v + 1;
+        if (x->op == IR_RESULT) store_val(a, v, RDI);
+    }
+    for (int k = 0; k < fn->nparams; k++)
+        if (pv[k] && (ir_type_float(fn->params[k]) || ir_type_vector(fn->params[k]))) {
             refuse(a, "a float parameter");
+            free(pv);
             return;
         }
-        int k = (int)x->imm;
-        int r = k < 6 ? ARG_REG[k] : RAX;
-        if (k >= 6) ld64(a, RAX, RBP, 16 + 8 * (k - 6));
-        normalize(a, t, r);
-        store_val(a, v, r);
+    Cc c = { 0, 0, 0 };
+    if (a->sret) {
+        st64(a, RDI, RBP, a->sret);
+        c.ni = 1;
     }
+    int np = fn->sig ? fn->sig->nparts : fn->nparams;
+    IrLeaf lv[IR_MAX_LEAVES];
+    for (int q = 0; q < np && !a->failed; q++) {
+        IrPart pt = part_of(fn->sig, q);
+        Pass ps;
+        pass_part(&c, pt, fn->params[pt.first], lv, &ps);
+        int32_t stacked = 16 + (int32_t)ps.soff;
+        if (pt.addr) {
+            if (!pv[pt.first]) continue;
+            lea(a, RAX, RBP, stacked);
+            store_val(a, pv[pt.first] - 1, RAX);
+        } else if (!pt.agg) {
+            if (!pv[pt.first]) continue;
+            int r = ps.reg[0] >= 0 ? ps.reg[0] : RAX;
+            if (ps.reg[0] < 0) ld64(a, RAX, RBP, stacked);
+            normalize(a, fn->params[pt.first], r);
+            store_val(a, pv[pt.first] - 1, r);
+        } else {
+            int32_t at = stacked;
+            if (ps.reg[0] >= 0) {
+                for (int w = 0; w < ps.words; w++) st64(a, int_reg(a, ps.reg[w], "a float parameter"), RBP, a->scratch + 8 * w);
+                at = a->scratch;
+            }
+            for (int k = 0; k < pt.n; k++) {
+                int v = pv[pt.first + k];
+                if (!v) continue;
+                ld_width(a, fn->params[pt.first + k], RAX, RBP, at + (int32_t)lv[k].off);
+                store_val(a, v - 1, RAX);
+            }
+        }
+    }
+    free(pv);
 }
 
 static void emit_body(X64* a) {

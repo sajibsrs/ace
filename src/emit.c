@@ -1392,16 +1392,17 @@ static void obj_err(Obj* o, Node* n, const char* msg) {
 }
 
 // The thunk slot of vtable vtname calls through: target with the receiver
-// advanced to the embedded field at off.
-static ESym* obj_embed_thunk(Obj* o, const char* vtname, int slot, const char* target, uint32_t off) {
+// advanced to the embedded field at off; on x64 the receiver follows the
+// result's address when mem_ret.
+static ESym* obj_embed_thunk(Obj* o, const char* vtname, int slot, const char* target, uint32_t off, int mem_ret) {
     char name[1024];
     snprintf(name, sizeof name, "%s$embed$%d", vtname, slot);
     ESym* prior = sym_intern(&o->syms, name, (uint32_t)strlen(name));
     if (prior->type) return prior;
     Buf* t = obj_text(o);
     ESym* out = sym_define(&o->syms, o->secs, name, (uint32_t)strlen(name), 0, &o->secs[SEC_TEXT]);
-    if (strcmp(ace_target, "linux-x64") == 0) { // add rdi, field-offset; jmp target
-        buf_put8(t, 0x48); buf_put8(t, 0x81); buf_put8(t, 0xC7); buf_put32(t, off);
+    if (strcmp(ace_target, "linux-x64") == 0) { // add rdi (or rsi), field-offset; jmp target
+        buf_put8(t, 0x48); buf_put8(t, 0x81); buf_put8(t, mem_ret ? 0xC6 : 0xC7); buf_put32(t, off);
         buf_put8(t, 0xE9);
         reloc_add(&o->secs[SEC_TEXT], (uint32_t)t->len, sym_intern(&o->syms, target, (uint32_t)strlen(target)), 1, 2, 1, 4);
         buf_put32(t, (uint32_t)-4); // R_X86_64_PLT32 addend
@@ -1472,7 +1473,7 @@ ESym* obj_vtable(Obj* o, SType* conc, SType* contract, Node* conf) {
         const char* fnm = fn_mangle(fsym->name, fsym->len, ft, fsym->decl, args, nargs, 0);
         ESym* fs;
         if (ref->a) {
-            fs = obj_embed_thunk(o, nm, i, fnm, field_off(conc, embed_fi));
+            fs = obj_embed_thunk(o, nm, i, fnm, field_off(conc, embed_fi), x64_result_in_memory(ft->ret));
         } else {
             fs = sym_intern(&o->syms, fnm, (uint32_t)strlen(fnm));
         }

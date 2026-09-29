@@ -500,7 +500,7 @@ static void print_types(FILE* out, const IrType* t, int n, const IrPart* parts, 
     int k = 0;
     for (int p = 0; k < n; p++) {
         const IrPart* pt = parts && p < nparts ? &parts[p] : NULL;
-        int agg = pt && pt->agg, m = pt ? pt->n : 1;
+        int agg = pt && pt->agg && !pt->addr, m = pt ? pt->n : 1;
         fputs(p ? ", " : "", out);
         if (agg) fputc('{', out);
         for (int i = 0; i < m; i++, k++) fprintf(out, "%s%s", i ? ", " : "", type_name(t[k]));

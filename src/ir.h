@@ -122,10 +122,13 @@ typedef struct {
 } IrLeaf;
 
 // One argument, parameter, or result as the ABI sees it: n leaves from first,
-// of aggregate type agg, or NULL for a scalar (a by-address one included).
+// of aggregate type agg, or NULL for a scalar (a mut or receiver address
+// included). addr marks an aggregate of over 16 bytes passed by value whose
+// one leaf is its address in the IR: the address of the caller's copy.
 typedef struct {
-    SType* agg;
-    int    first, n;
+    SType*  agg;
+    int     first, n;
+    uint8_t addr;
 } IrPart;
 
 // How a call's arguments (after a calli's target) or a function's parameters

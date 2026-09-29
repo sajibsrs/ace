@@ -214,5 +214,8 @@ void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int global);
 // x64.c: the same for linux-x64, and its runtime failure routines.
 void x64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int global);
 void x64_runtime(Obj* o);
+// Whether System V returns a value of type t through memory, the caller's
+// address taking rdi ahead of the arguments: an aggregate over 16 bytes.
+int  x64_result_in_memory(SType* t);
 
 #endif

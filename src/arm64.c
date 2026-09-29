@@ -555,9 +555,9 @@ static void agg_words(Cc* c, const IrLeaf* lv, int n, int first, Loc* out) {
 static uint32_t assign_leaves(Cc* c, const IrType* t, int n, const IrSig* sig, int varargs_from, Loc* out) {
     int np = sig ? sig->nparts : n;
     for (int p = 0; p < np; p++) {
-        IrPart pt = sig ? sig->parts[p] : (IrPart){ NULL, p, 1 };
+        IrPart pt = sig ? sig->parts[p] : (IrPart){ NULL, p, 1, 0 };
         Loc* o = out + pt.first;
-        if (!pt.agg) {
+        if (!pt.agg || pt.addr) { // a by-value aggregate's address travels as a scalar (AAPCS64)
             IrType tt = t[pt.first];
             uint32_t w = (uint32_t)ir_type_bits(tt) / 8;
             int* rn = is_fp(tt) ? &c->vn : &c->xn;
@@ -623,7 +623,7 @@ static void assign_result(Cc* c, const IrType* t, int n, SType* agg, Loc* out) {
         return;
     }
     Cc r = { 0, 0, 0, c->area, c->caller };
-    IrSig one = { &(IrPart){ agg, 0, n }, 1, { NULL, 0, 0 } };
+    IrSig one = { &(IrPart){ agg, 0, n, 0 }, 1, { NULL, 0, 0, 0 } };
     assign_leaves(&r, t, n, &one, -1, out);
     c->area = r.area;
 }

@@ -773,6 +773,19 @@ current normative rules, and Git preserves patch-level detail.
   failed the `tests/ir` expectations. Each such argument is now its own
   statement, in the left-to-right order clang used; the gcc-built compiler's
   IR and objects match the clang-built `HEAD` on every repository file.
+- Passed aggregates by System V on linux-x64. `x64.c` plans each call's,
+  parameter list's, and result's parts: up to 16 bytes, one register per
+  eightbyte (SSE when every leaf in it is a float, not yet emitted), the whole
+  part on the stack when its registers run out; over 16 bytes, a copy on the
+  stack, with a result through memory addressed by `rdi` and returned in
+  `rax`. Leaves meet register words in 16 bytes of memory (the outgoing area
+  for a call, a scratch slot in the callee), so no leaf shifts or masks. The
+  IR's new `IrPart.addr` marks an aggregate over 16 bytes that lowering holds
+  by address (over 16 leaves, or a parameter it reads in memory): arm64 still
+  passes the address, while x64 copies the aggregate onto the stack
+  (`rep movsb`) and the callee takes the address of its stack copy, so both
+  meet C. An embed thunk advances `rsi` instead of `rdi` when the method's
+  result travels through memory.
 
 ## Core language
 

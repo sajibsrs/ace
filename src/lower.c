@@ -857,7 +857,7 @@ static void args_room(Args* g, int k) {
 static void arg_scalar(Lw* l, Args* g, int v) {
     (void)l;
     args_room(g, 1);
-    g->part[g->nparts++] = (IrPart){ NULL, g->n, 1 };
+    g->part[g->nparts++] = (IrPart){ NULL, g->n, 1, 0 };
     g->v[g->n++] = v;
 }
 
@@ -877,13 +877,16 @@ static void call_arg(Lw* l, Args* g, Node* a, SType* pt, int by_address) {
         covered(l, pt);
         int slot = new_slot(l, pt);
         store_value(l, a, pt, slot, 0);
-        arg_scalar(l, g, slot);
+        args_room(g, 1);
+        g->part[g->nparts++] = (IrPart){ pt, g->n, 1, 1 };
+        g->v[g->n++] = slot;
+        g->agg = 1;
         return;
     }
     Agg v;
     value(l, a, pt, &v);
     args_room(g, v.n);
-    g->part[g->nparts++] = (IrPart){ pt, g->n, v.n };
+    g->part[g->nparts++] = (IrPart){ pt, g->n, v.n, 0 };
     for (int k = 0; k < v.n; k++) g->v[g->n++] = v.v[k];
     g->agg = 1;
 }
@@ -956,7 +959,7 @@ static int call_finish(Lw* l, int id, Args* g, SType* rt, Agg* res, int dst) {
     sig->parts = (IrPart*)arena_alloc((size_t)(g->nparts ? g->nparts : 1) * sizeof(IrPart));
     memcpy(sig->parts, g->part, (size_t)g->nparts * sizeof(IrPart));
     sig->nparts = g->nparts;
-    sig->ret = (IrPart){ NULL, 0, 0 };
+    sig->ret = (IrPart){ NULL, 0, 0, 0 };
     l->fn->ins[id].sig = sig;
     if (is_big(rt)) return id;
     if (!is_agg(rt)) {
@@ -965,7 +968,7 @@ static int call_finish(Lw* l, int id, Args* g, SType* rt, Agg* res, int dst) {
     }
     IrLeaf lv[IR_MAX_LEAVES];
     int n = leaves(l, rt, lv);
-    sig->ret = (IrPart){ rt, 0, n };
+    sig->ret = (IrPart){ rt, 0, n, 0 };
     if (res) {
         res->n = n;
         for (int k = 0; k < n; k++) {
@@ -1407,7 +1410,7 @@ static int format_call(Lw* l, Node* x, int fi, Agg* res) {
     Args g;
     args_init(&g);
     arg_scalar(l, &g, sink);
-    g.part[g.nparts++] = (IrPart){ open->type->params[1], g.n, 2 };
+    g.part[g.nparts++] = (IrPart){ open->type->params[1], g.n, 2, 0 };
     g.v[g.n++] = dp;
     g.v[g.n++] = dn;
     g.agg = 1;
@@ -1434,7 +1437,7 @@ static int format_call(Lw* l, Node* x, int fi, Agg* res) {
             if (!is_agg(vt)) v.v[0] = widen(l, v.v[0], need_type(l, capt[part->arg - fi - 1]), need_type(l, vt));
         }
         if (is_agg(vt)) {
-            g.part[g.nparts++] = (IrPart){ vt, g.n, v.n };
+            g.part[g.nparts++] = (IrPart){ vt, g.n, v.n, 0 };
             for (int k = 0; k < v.n; k++) g.v[g.n++] = v.v[k];
             g.agg = 1;
         } else {
@@ -4038,7 +4041,14 @@ IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, 
             if (!by_address(f, i)) covered(&l, ps->type);
             int v = emit(&l, IR_PARAM, IT_PTR);
             fn->ins[v].imm = (uint64_t)g.n;
-            arg_scalar(&l, &g, v);
+            if (by_address(f, i)) {
+                arg_scalar(&l, &g, v);
+            } else { // an aggregate passed by value
+                args_room(&g, 1);
+                g.part[g.nparts++] = (IrPart){ ps->type, g.n, 1, 1 };
+                g.v[g.n++] = v;
+                g.agg = 1;
+            }
             int a = var_new(&l, NULL, IT_PTR, -1);
             set_var(&l, a, v);
             var_new(&l, ps, IT_VOID, ADDR_VAR - a);
@@ -4048,7 +4058,7 @@ IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, 
         a.n = leaves(&l, ps->type, lv);
         args_room(&g, a.n);
         if (is_agg(ps->type)) {
-            g.part[g.nparts++] = (IrPart){ ps->type, g.n, a.n };
+            g.part[g.nparts++] = (IrPart){ ps->type, g.n, a.n, 0 };
             g.agg = 1;
         }
         for (int k = 0; k < a.n; k++) {
@@ -4068,7 +4078,7 @@ IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, 
         fn->sig->parts = (IrPart*)arena_alloc((size_t)(g.nparts ? g.nparts : 1) * sizeof(IrPart));
         memcpy(fn->sig->parts, g.part, (size_t)g.nparts * sizeof(IrPart));
         fn->sig->nparts = g.nparts;
-        fn->sig->ret = (IrPart){ is_agg(rt) && !fn->ret_mem ? rt : NULL, 0, fn->nrets };
+        fn->sig->ret = (IrPart){ is_agg(rt) && !fn->ret_mem ? rt : NULL, 0, fn->nrets, 0 };
     }
     if (mode == EMIT_RELEASE && !l.is_main && !(f->flags & (F_INLCALLS | F_EXPO)) && !frame_storage(&l) && has_self_tail(&l, f->b)) {
         l.self_head = new_block(&l);

@@ -65,8 +65,16 @@ repeated in each additional backend.
 - **`arm64.c`** (passes 7-10, the AArch64 target) — instruction selection
   (including fused forms such as integer `madd`), leaving SSA (phis become
   copies, with coalescing), linear-scan register allocation, block layout,
-  and encoding. A future `x86-64` backend would be a sibling to this file,
-  reusing passes 1-6 unchanged.
+  and encoding.
+- **`x64.c`** (passes 7-10, the `linux-x64` target) — a sibling of `arm64.c`
+  reusing passes 1-6 unchanged. Every value lives in its own frame slot and
+  each instruction works through `rax`, `rcx`, and `rdx`; there is no
+  register allocation yet. Calls follow System V: an argument, parameter, or
+  result of up to 16 bytes travels in one register per eightbyte, and a
+  larger aggregate on the stack as a copy, with a result's address in `rdi`.
+  Integers, pointers, and aggregates of them are covered; a function using
+  floats, byte routines, the allocator, or `asm` is a compile error naming
+  what it lacks.
 
 ## Object emission
 
