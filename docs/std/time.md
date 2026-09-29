@@ -36,5 +36,9 @@ main(): int {
 }
 ```
 
+On Darwin, `elapsed()` reads `CLOCK_MONOTONIC_RAW` and `awake()`
+`CLOCK_UPTIME_RAW`. On Linux, `elapsed()` reads `CLOCK_BOOTTIME`, whose rate
+NTP may slew, and `awake()` reads `CLOCK_MONOTONIC_RAW`.
+
 Calendar time, process CPU time, duration conversion, and process sleep are not
 implemented yet.

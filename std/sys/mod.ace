@@ -3,6 +3,9 @@
 @when(target == "darwin-arm64")
 import os: "./os/darwin-arm64.ace"
 
+@when(target == "linux-x64")
+import os: "./os/linux-x64.ace"
+
 pub Fd: type = os.Fd
 pub Process: type = os.Process
 pub ProcessStatus: type = os.ProcessStatus
@@ -49,9 +52,16 @@ pub ECONNRESET: const i32 = os.ECONNRESET
 pub EACCES: const i32 = os.EACCES
 pub EBUSY: const i32 = os.EBUSY
 
+@when(target == "darwin-arm64")
 pub BIOCGBLEN: const uint = os.BIOCGBLEN
+
+@when(target == "darwin-arm64")
 pub BIOCPROMISC: const uint = os.BIOCPROMISC
+
+@when(target == "darwin-arm64")
 pub BIOCSETIF: const uint = os.BIOCSETIF
+
+@when(target == "darwin-arm64")
 pub BIOCIMMEDIATE: const uint = os.BIOCIMMEDIATE
 
 pub S_IRWXU: const u32 = os.S_IRWXU

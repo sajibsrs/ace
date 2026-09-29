@@ -2,6 +2,10 @@
 
 @when(target == "darwin-arm64")
 import os: "./os/darwin-arm64.ace"
+
+@when(target == "linux-x64")
+import os: "./os/linux-x64.ace"
+
 import decimal: @float_decimal
 import rendering: @rendering
 

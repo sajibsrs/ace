@@ -1212,9 +1212,11 @@ if [ -d tests/emit ]; then
             fi
         done
         process_undef=$(nm -u /tmp/ace_emit/sys/process.o 2>/dev/null)
-        for symbol in __NSGetArgc __NSGetArgv __NSGetEnviron; do
-            if ! printf '%s\n' "$process_undef" | grep -q "^$symbol$"; then
-                echo "FAIL: sys process object is missing Darwin boundary '$symbol'"
+        process_boundary="__NSGetArgc __NSGetArgv __NSGetEnviron"
+        [ "$(uname -s)-$(uname -m)" = Linux-x86_64 ] && process_boundary=environ
+        for symbol in $process_boundary; do
+            if ! printf '%s\n' "$process_undef" | grep -Eq "(^| )$symbol$"; then
+                echo "FAIL: sys process object is missing OS boundary '$symbol'"
                 fail=1
             fi
         done

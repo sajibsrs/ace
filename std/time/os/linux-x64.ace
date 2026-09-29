@@ -1,0 +1,42 @@
+/* time Linux x86-64 — monotonic clocks over glibc. */
+
+Timespec: struct {
+    seconds: i64,
+    nanoseconds: i64,
+}
+
+extern "c" {
+    c_clock_gettime(clk_id: i32, time: mut *Timespec): i32 = "clock_gettime"
+}
+
+/* Monotonic time. Linux clock ids from <linux/time.h>: CLOCK_BOOTTIME keeps
+ * advancing while the system is suspended; CLOCK_MONOTONIC_RAW pauses while
+ * it is suspended. Setting the calendar clock moves neither; NTP may slew
+ * CLOCK_BOOTTIME's rate but never steps it.
+ */
+
+CLOCK_MONOTONIC_RAW: const i32 = 4
+CLOCK_BOOTTIME: const i32 = 7
+
+nanoseconds(clk_id: i32): u64 {
+    time: Timespec = blank(Timespec)
+    c_clock_gettime(clk_id, mut &time)
+    return u64(time.seconds) * 1000000000 + u64(time.nanoseconds)
+}
+
+/* System-wide monotonic nanoseconds from an unspecified origin, reset at
+ * every boot. Continues advancing during system suspend, so it stays in sync
+ * with real elapsed time across suspend/resume cycles. Unaffected by
+ * calendar-clock changes.
+ */
+pub elapsed(): u64 {
+    return nanoseconds(CLOCK_BOOTTIME)
+}
+
+/* System-wide monotonic nanoseconds from an unspecified origin, reset at
+ * every boot. Pauses during system suspend and resumes when the system wakes;
+ * unaffected by calendar-clock changes.
+ */
+pub awake(): u64 {
+    return nanoseconds(CLOCK_MONOTONIC_RAW)
+}

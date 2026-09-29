@@ -1002,6 +1002,20 @@ static int call_routine(Lw* l, const char* name, int c, IrType t, const int* arg
 
 static int call_extern(Lw* l, const char* name) { return call_routine(l, name, 1, IT_PTR, NULL, 0); }
 
+// The address of builtin bi's process-start word: Darwin's accessor results;
+// on linux-x64, the argc and argv words main stored at entry (x64.c) and
+// glibc's environ, read at each use so it follows setenv.
+static int process_word(Lw* l, int bi) {
+    if (strcmp(ace_target, "linux-x64") != 0)
+        return call_extern(l, bi == BI_SYS_ARGC ? "__NSGetArgc" : bi == BI_SYS_ARG ? "__NSGetArgv" : "__NSGetEnviron");
+    if (bi == BI_SYS_ARGC) return global_named(l, "__ace$argc");
+    if (bi == BI_SYS_ARG) return global_named(l, "__ace$argv");
+    static Sym environ_sym = { .kind = SYM_VAR, .is_extern = 1 };
+    int id = global_named(l, "_environ");
+    l->fn->ins[id].sym = &environ_sym;
+    return id;
+}
+
 // Continue in a new block when bool c holds; guard_end joins the path where
 // it did not. A variable written between them meets its earlier value there.
 static int guard(Lw* l, int c) {
@@ -1538,10 +1552,10 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
         case BI_MEM_COPY: case BI_MEM_MOVE: case BI_MEM_FILL: case BI_MEM_ZERO: return mem_write(l, x, bi);
         default: return mem_alloc_typed(l, x, bi, res);
         }
-    case BI_SYS_ARGC: // Darwin's accessors: an int* and a char*** (as emit.c's)
-        return widen(l, load(l, IT_I32, call_extern(l, "__NSGetArgc"), 0, 0), IT_I32, need_type(l, node_ty(x)));
+    case BI_SYS_ARGC: // an int, then (below) char** arrays: see process_word
+        return widen(l, load(l, IT_I32, process_word(l, bi), 0, 0), IT_I32, need_type(l, node_ty(x)));
     case BI_SYS_ENVC: {
-        int env = load(l, IT_PTR, call_extern(l, "__NSGetEnviron"), 0, 0);
+        int env = load(l, IT_PTR, process_word(l, bi), 0, 0);
         int n = var_new(l, NULL, IT_U64, -1);
         write_var(l, n, l->cur, konst(l, IT_U64, 0));
         int head = new_block(l), body = new_block(l), exit = new_block(l);
@@ -1564,7 +1578,7 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
     case BI_SYS_ARG: case BI_SYS_ENV: { // entry i's bytes up to its NUL
         IrType it = type_in(l, x->kids[0], IT_U64);
         int i = widen(l, expr(l, x->kids[0], it), it, IT_U64);
-        int base = load(l, IT_PTR, call_extern(l, bi == BI_SYS_ARG ? "__NSGetArgv" : "__NSGetEnviron"), 0, 0);
+        int base = load(l, IT_PTR, process_word(l, bi), 0, 0);
         int at = emit2(l, IR_PADD, IT_PTR, base, i);
         l->fn->ins[at].imm = 8;
         int p = load(l, IT_PTR, at, 0, 0);

@@ -73,6 +73,7 @@ typedef struct {
     int      nstub, cstub;
     Node*    last_at;
     int      failed;
+    int      main;     // the C entry main: store argc and argv (process_words)
 } X64;
 
 static void* xcalloc(size_t n, size_t size) {
@@ -1409,6 +1410,8 @@ static void params(X64* a) {
     free(pv);
 }
 
+static void rip_op(X64* a, uint8_t op, int r, const char* name);
+
 static void emit_body(X64* a) {
     IrFunc* fn = a->fn;
     line_row(a, fn->decl);
@@ -1417,6 +1420,10 @@ static void emit_body(X64* a) {
     rr(a, 1, (const uint8_t[]){ 0x81 }, 1, 5, RSP); // sub rsp, imm32
     a->frame_at = here(a);
     put32(a, 0);
+    if (a->main) { // glibc's argc and argv for sys.argc/arg (lower.c's process_word)
+        rip_op(a, 0x89, RDI, "__ace$argc");
+        rip_op(a, 0x89, RSI, "__ace$argv");
+    }
     params(a);
     for (int b = 0; b < fn->nblocks && !a->failed; b++) {
         a->label[b] = here(a);
@@ -1461,6 +1468,7 @@ void x64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int global) {
     split_critical_edges(fn);
     uint32_t frame = layout(&a);
     a.label = xcalloc((size_t)fn->nblocks, sizeof(uint32_t));
+    a.main = len == 5 && memcmp(name, "_main", 5) == 0;
     while (a.t->len % FUNC_ALIGN) put(&a, 0x90);
     uint32_t start = here(&a);
     sym_define(&o->syms, o->secs, name, len, global, &o->secs[SEC_TEXT]);
@@ -1500,6 +1508,16 @@ static void fail_routine(Obj* o, const char* name, const char* message) {
     call_sym(&a, "_write");
     call_sym(&a, "_abort");
     put(&a, 0x0F); put(&a, 0x0B); // ud2 if abort unexpectedly returns
+}
+
+// The words an Ace main stores argc and argv in; zero when a C main is the entry.
+static void process_words(Obj* o) {
+    Sec* b = &o->secs[SEC_BSS];
+    b->size = (b->size + 7) & ~(uint64_t)7;
+    sym_define(&o->syms, o->secs, "__ace$argc", 10, 0, b);
+    b->size += 8;
+    sym_define(&o->syms, o->secs, "__ace$argv", 10, 0, b);
+    b->size += 8;
 }
 
 // --- routine encoding: [base + index + disp] operands, SSE, local labels ---
@@ -2004,6 +2022,7 @@ static void emit_registry_leaks(X64* a, Obj* o, int registry) {
 }
 
 void x64_runtime(Obj* o) {
+    process_words(o);
     if (o->bounds_fail_used) fail_routine(o, "__ace$bounds_fail", NULL);
     if (o->arithmetic_fail_used) fail_routine(o, "__ace$arithmetic_fail", "ace: arithmetic violation\n");
     if (o->contract_fail_used) fail_routine(o, "__ace$contract_fail", "ace: call contract violation\n");

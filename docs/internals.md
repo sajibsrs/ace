@@ -80,6 +80,10 @@ repeated in each additional backend.
   lane) are covered; a function using `asm` is a compile error naming what it
   lacks.
   The target requires an x86-64-v3 CPU (FMA3 for `math.fma`).
+  An Ace `main` stores its entry `rdi` and `rsi` (glibc's argc and argv) in
+  the local `.bss` words `__ace$argc` and `__ace$argv`, which `lower.c` loads
+  for `sys.argc`/`sys.arg`; `sys.envc`/`sys.env` load glibc's `environ`
+  through the GOT. Darwin calls the `_NSGet*` accessors instead.
 
 ## Object emission
 

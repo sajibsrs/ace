@@ -822,6 +822,17 @@ current normative rules, and Git preserves patch-level detail.
   integer ones by `pcmpeqd`/`pcmpgtd` with `ne`, `le`, and `ge` inverted,
   float negation as a sign-bit flip, `pmulld`, `psrad` for `shr`, a splat by
   `pshufd`, and `select` by `blendvps` on the mask in `xmm0`.
+- Added the linux-x64 OS layer for `sys`, `fmt`, and `time` over glibc. Each
+  facade selects `./os/linux-x64.ace` with `@when` beside Darwin's, and the
+  `BIOC*` re-exports are gated to darwin-arm64. The `sys` error domains keep
+  their variants with Linux errno numbers (no `ForkErr.process_limit`); paths
+  use 4096-byte `PATH_MAX` buffers; `stat` reads the 144-byte x86-64
+  `struct stat`; `readdir` parses `getdents64` records (NUL-terminated names
+  at offset 19), so the Linux `Dir` has no `base`. `time.elapsed` reads
+  `CLOCK_BOOTTIME` and `time.awake` `CLOCK_MONOTONIC_RAW` through
+  `clock_gettime`. An Ace `main` stores its entry argc and argv in local
+  `.bss` words that `sys.argc`/`sys.arg` load, and `sys.envc`/`sys.env` read
+  glibc's `environ`.
 
 ## Core language
 

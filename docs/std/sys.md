@@ -38,7 +38,8 @@ main(): int {
   input and `sys.write(sys.stderr, "oops")` writes to standard error.
 - `open(path: string, flags: i32): (Fd, Error)` and the three-argument form
   add a `mode: u32` used with `O_CREAT`. The path is copied into a fixed
-  1024-byte stack buffer and NUL-terminated; longer paths fail with
+  stack buffer of the target's `PATH_MAX` (1024 bytes on Darwin, 4096 on
+  Linux) and NUL-terminated; longer paths fail with
   `ENAMETOOLONG` through the normal error path, exactly as the kernel would
   reject them.
 - `read(fd: Fd, buf: mut []u8): (int, Error)` fills the caller's buffer and
@@ -47,7 +48,7 @@ main(): int {
   identity and returns the byte count as the operating system reported it — partial writes
   are legitimate results and are never retried here.
 - `close(fd: Fd): Error`.
-- `ioctl(fd: Fd, request: uint): Error` issues a Darwin descriptor-control
+- `ioctl(fd: Fd, request: uint): Error` issues a descriptor-control
   request with no additional argument. The overload
   `ioctl(fd: Fd, request: uint, data: mut []u8): Error` passes caller-owned,
   nonempty byte storage as the request argument. It performs no allocation,
@@ -60,7 +61,7 @@ main(): int {
   ordinary permissions (`0777` on POSIX), after which the process umask chooses
   the effective permissions. It creates one directory and does not create
   missing parents.
-- `mkdir(path: string, mode: u32): Error` explicitly supplies Darwin/POSIX
+- `mkdir(path: string, mode: u32): Error` explicitly supplies POSIX
   creation permissions. This overload is target-specific rather than a claim
   that POSIX mode bits model Windows ACLs.
 - `rename(old_path: string, new_path: string): Error` and
@@ -70,7 +71,7 @@ main(): int {
   failed call; any intervening system call may overwrite it.
 - `random(storage: mut []u8): Error` fills caller-owned storage with
   cryptographically secure OS entropy and allocates nothing. Empty storage
-  succeeds. Darwin chunks `getentropy` requests to at most 256 bytes, retries
+  succeeds. `getentropy` requests are chunked to at most 256 bytes, retries
   `EINTR`, and returns other failures through `RandomErr`.
 
 Directory traversal keeps its buffer and cursor in a caller-owned `Dir` value:
@@ -158,7 +159,9 @@ constant-time; `envc()` scans the null-terminated environment pointer array on
 every call, so capture it before iteration. Each selected entry is scanned for
 its byte length only when requested. Argument views remain valid for the
 process lifetime. Behavior after linked C code mutates the environment is not
-specified yet.
+specified yet. On linux-x64 an Ace `main` records argc and argv at entry, so an
+Ace object linked under a C `main` sees `argc()` as zero; the environment
+is read from glibc's `environ` at each call.
 
 Flags are raw constants with the operating system's own values and spellings
 (`O_RDONLY`, `O_WRONLY`, `O_RDWR`, `O_NONBLOCK`, `O_APPEND`, `O_CREAT`,
@@ -172,12 +175,12 @@ carve its richer security surface separately rather than pretending these bits
 are universal.
 
 `EAGAIN` and `EWOULDBLOCK` are the target-defined errno values for retryable
-nonblocking operations. They are equal on Darwin, but both standard spellings
+nonblocking operations. They are equal on Darwin and Linux, but both standard spellings
 are exported so code can name the condition described by its operation instead
 of embedding a platform number.
 
-Darwin additionally exposes `BIOCGBLEN`, `BIOCPROMISC`, `BIOCSETIF`, and
-`BIOCIMMEDIATE` for the BPF proof of concept, together with `EBUSY` and
+Darwin (darwin-arm64 only) additionally exposes `BIOCGBLEN`, `BIOCPROMISC`,
+`BIOCSETIF`, and `BIOCIMMEDIATE` for the BPF proof of concept, together with `EBUSY` and
 `EACCES` so device probing can distinguish contention from access denial. The
 request parameter is `uint`, matching Darwin's 64-bit `unsigned long`; callers
 must not narrow it to `u32`. An ioctl failure uses `IoctlErr` and contains the
