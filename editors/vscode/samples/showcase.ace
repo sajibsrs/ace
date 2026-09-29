@@ -1,4 +1,4 @@
-// Ace Language syntax-highlighting showcase.
+// Ace syntax-highlighting showcase.
 // Use Developer: Inspect Editor Tokens and Scopes on the examples below.
 import fmt
 import mem

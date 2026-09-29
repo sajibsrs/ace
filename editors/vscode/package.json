@@ -1,6 +1,6 @@
 {
   "name": "ace-language",
-  "displayName": "Ace Language",
+  "displayName": "Ace",
   "description": "Ace language and package-manifest syntax highlighting, file icons, and editor configuration.",
   "version": "0.0.1",
   "private": true,

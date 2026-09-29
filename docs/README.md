@@ -50,7 +50,7 @@ must be corrected.
 - [Compiler usage](compiler.md) — checking, object emission, linking, and the
   optional compile report.
 - [Editor support](../editors/vscode/README.md) — local use and scope behavior
-  for the dependency-free Ace Language VS Code extension.
+  for the dependency-free Ace VS Code extension.
 
 Repository implementation status is summarized in
 [`../AGENTS.md`](../AGENTS.md), with chunk-by-chunk history in

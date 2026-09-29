@@ -1,4 +1,4 @@
-# Ace Language
+# Ace
 
 Ace syntax highlighting and basic editor configuration for Visual Studio Code and compatible editors.
 
@@ -55,7 +55,7 @@ semantic editor support for guaranteed classification.
 ## Run locally
 
 1. Open the root of the Ace repository in Visual Studio Code.
-2. Select **Run Ace Language Extension** in the Run and Debug view.
+2. Select **Run Ace Extension** in the Run and Debug view.
 3. Press **F5**.
 
 An Extension Development Host opens with `samples/showcase.ace`; `samples/ace.pkg` shows manifest highlighting. Changes to the grammar can be loaded there with **Developer: Reload Window**.

@@ -108,10 +108,10 @@ make test
 
 ## Editor support
 
-The [Ace Language VS Code extension](editors/vscode/README.md) recognizes
+The [Ace VS Code extension](editors/vscode/README.md) recognizes
 `.ace` files and provides syntax highlighting, comment toggling, bracket
 matching, auto-closing pairs, and indentation. Open this repository in VS Code
-and press **F5** (**Run Ace Language Extension**) to try it; nothing needs to
+and press **F5** (**Run Ace Extension**) to try it; nothing needs to
 be built or installed.
 
 ## Learn more
