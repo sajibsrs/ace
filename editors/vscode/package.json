@@ -5,6 +5,7 @@
   "version": "0.0.1",
   "private": true,
   "license": "MIT",
+  "icon": "icons/ace-framed.png",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -38,8 +39,8 @@
         ],
         "configuration": "./pkg-language-configuration.json",
         "icon": {
-          "light": "./icons/ace-pkg.svg",
-          "dark": "./icons/ace-pkg.svg"
+          "light": "./icons/ace-framed.svg",
+          "dark": "./icons/ace-framed.svg"
         }
       }
     ],
