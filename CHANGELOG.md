@@ -800,6 +800,20 @@ current normative rules, and Git preserves patch-level detail.
   up to 64 bytes runs 1.2-2.2x faster and fill 0.9-1.8x; from 100 bytes to
   1 KB both are 1.3-2.1x slower (16-byte stores against 32); from 4 KB `rep`
   matches glibc. Compare is even to 64 bytes and 1.3-1.7x slower beyond.
+- Added floats to linux-x64, which now requires x86-64-v3. A float's slot
+  holds its bits (an f32's zero-extended), so constants, phis, memory, and
+  aggregate leaves take the integer paths; arithmetic, `ucomis` compares,
+  conversions, `sqrt`, `roundsd` floor and ceil, and `vfmadd213` move
+  through `xmm0`-`xmm2`, leaving `xmm10`-`xmm15` to the byte routines. Float
+  compares are false on a NaN except `ne` (`eq` also tests PF, `lt`/`le`
+  swap operands to `seta`/`setae`); negation flips the sign bit. Conversions
+  match arm64: a float to a 64-bit integer saturates at 64 bits, to a
+  narrower one at 32 bits and then wraps, a NaN to 0, correcting the
+  `cvtts2si` sentinel with `cmov`; a u64 at or past 2^63 converts less 2^63,
+  and one converted to a float is halved with a sticky low bit and doubled.
+  Calls pass floats and SSE eightbytes in `xmm0`-`xmm7`, return them in
+  `xmm0`/`xmm1`, and set `al` to the SSE count of a variadic call; an
+  aggregate result's integer words now come from `rax` and `rdx` by class.
 
 ## Core language
 
