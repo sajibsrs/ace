@@ -4,9 +4,10 @@
 
 `net` provides a thin IPv4 TCP layer with allocation-free core socket
 operations. Its public values and operations are
-OS-neutral; `std/net/mod.ace` selects the supported Darwin/Apple-arm64 OS
-layer through `@when(target == "darwin-arm64")`. Platform structures, constants, byte order, and C
-bindings stay in that private-by-convention file. `net.Socket` is a transparent
+OS-neutral; `std/net/mod.ace` selects the darwin-arm64 or linux-x64 OS
+layer through `@when(target == "...")`. Platform structures, constants, byte
+order, and C bindings stay in that private-by-convention file. Error codes are
+the target's errno values; glibc's resolver codes are negative. `net.Socket` is a transparent
 alias of `sys.Fd`, so close sockets with `sys.close`.
 
 ```ace
@@ -84,7 +85,7 @@ if err == null && count != 0 {
 }
 ```
 
-The Darwin resolver temporarily allocates its private result list and frees it
+The platform resolver temporarily allocates its private result list and frees it
 before `resolve4` returns. This is a narrow resolver-boundary exception: no
 resolver-owned pointer escapes and the application owns all returned storage.
 The initial API does not indicate that additional results were truncated or

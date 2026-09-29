@@ -3,6 +3,9 @@
 @when(target == "darwin-arm64")
 import os: "./os/darwin-arm64.ace"
 
+@when(target == "linux-x64")
+import os: "./os/linux-x64.ace"
+
 pub Socket: type = os.Socket
 pub SocketType: type = os.SocketType
 pub Addr4: type = os.Addr4

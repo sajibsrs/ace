@@ -841,6 +841,11 @@ current normative rules, and Git preserves patch-level detail.
   (`EPOLLHUP`/`EPOLLRDHUP`) reports readable only under read interest,
   matching kqueue's EOF.
   `WatchErr` gains `unsupported` (`EPERM`) and `watch_limit` (`ENOSPC`).
+- Added the linux-x64 `net` OS layer. It mirrors Darwin's operations over
+  glibc with Linux errno numbers and socket constants, a `sockaddr_in` whose
+  first field is a u16 family (no length byte), and glibc's `addrinfo`, whose
+  address precedes the canonical name. `ResolveErr` carries glibc's negative
+  `EAI_*` codes beside the local `invalid`.
 
 ## Core language
 
