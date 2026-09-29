@@ -846,6 +846,11 @@ current normative rules, and Git preserves patch-level detail.
   first field is a u16 family (no length byte), and glibc's `addrinfo`, whose
   address precedes the canonical name. `ResolveErr` carries glibc's negative
   `EAI_*` codes beside the local `invalid`.
+- Made the ELF writer emit the constant section as writable `.data.rel.ro`
+  when it carries relocations (vtables, strings in const aggregates and
+  static maps), so a linux-x64 PIE links without a text relocation and the
+  linker write-protects the section after relocation (RELRO); an object
+  without them keeps `.rodata`.
 
 ## Core language
 

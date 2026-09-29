@@ -7,6 +7,10 @@
 //     .debug_abbrev .debug_info .debug_line, then a .rela section per
 //     relocated section, .note.GNU-stack (non-executable stack), .symtab,
 //     .strtab, .shstrtab. An empty debug section is still written.
+//   - constants holding an absolute address (a vtable, a string in a const
+//     aggregate or static map) make .rodata writable .data.rel.ro instead,
+//     which the linker relocates and then protects (RELRO), so a PIE needs
+//     no text relocation.
 //   - Rel.type is an R_X86_64_* type, except type 0 (RM_UNSIGNED from the
 //     shared DWARF writers), which is an absolute address of Rel.len
 //     (3: R_X86_64_64, 2: R_X86_64_32).
@@ -130,9 +134,10 @@ size_t elf_write(Obj* o, const char* path) {
     memset(&shs, 0, sizeof shs);
     buf_put8(&shs, 0);
     uint32_t sec_name[NSECS], rela_name[NSECS];
+    int relro = o->secs[SEC_CONST].nrl > 0;
     for (int i = 0; i < NSECS; i++) {
         char nm[64];
-        snprintf(nm, sizeof nm, ".rela%s", ELF_SECS[i].name);
+        snprintf(nm, sizeof nm, ".rela%s", i == SEC_CONST && relro ? ".data.rel.ro" : ELF_SECS[i].name);
         rela_name[i] = str_add(&shs, nm);
         sec_name[i] = rela_name[i] + 5; // ".rela.text" ends in ".text"
     }
@@ -153,7 +158,8 @@ size_t elf_write(Obj* o, const char* path) {
         Sec* s = &o->secs[i];
         uint64_t a = (uint64_t)1 << s->align;
         pad_to(&img, a);
-        sh[nsh] = (Shdr){ sec_name[i], ELF_SECS[i].type, ELF_SECS[i].flags, img.len, s->size, 0, 0, a, 0 };
+        uint32_t flags = ELF_SECS[i].flags | (i == SEC_CONST && relro ? SHF_WRITE : 0);
+        sh[nsh] = (Shdr){ sec_name[i], ELF_SECS[i].type, flags, img.len, s->size, 0, 0, a, 0 };
         if (i != SEC_BSS) buf_write(&img, s->data.d, s->data.len);
         nsh++;
     }
