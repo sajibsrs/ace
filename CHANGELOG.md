@@ -851,6 +851,11 @@ current normative rules, and Git preserves patch-level detail.
   static maps), so a linux-x64 PIE links without a text relocation and the
   linker write-protects the section after relocation (RELRO); an object
   without them keeps `.rodata`.
+- Made the bounds-diagnostic and debug tail-call checks in `tests/run.sh`
+  pass on Linux: the former matches its exact line (dash writes its
+  `Aborted` job line into the redirected stderr), and the latter reads
+  `objdump` where `otool` is absent and matches x64's `call` and ELF's
+  single-underscore name.
 
 ## Core language
 

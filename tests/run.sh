@@ -755,7 +755,9 @@ if ! "$ACE" --release -o /tmp/ace_self_tail_recursion/deep tests/self_tail_recur
     fail=1
 fi
 if ! "$ACE" --debug -o /tmp/ace_self_tail_recursion/deep_debug tests/self_tail_recursion/deep.ace ||
-   ! otool -tv /tmp/ace_self_tail_recursion/deep_debug | grep -q 'bl.*__ace\$fn\$sum\$'; then
+   ! { otool -tv /tmp/ace_self_tail_recursion/deep_debug 2>/dev/null ||
+       objdump -d /tmp/ace_self_tail_recursion/deep_debug; } |
+     grep -Eq '(bl|call).*_ace\$fn\$sum\$'; then
     echo "FAIL: debug builds should keep self tail recursion as calls"
     fail=1
 fi
@@ -857,7 +859,8 @@ for f in array_negative array_equal aggregate_array_equal array_slice_upper arra
     elif "/tmp/ace_checked_bounds/$f" >/dev/null 2>/tmp/ace_test_errs; then
         echo "FAIL: checked bounds fixture did not abort: $f"
         fail=1
-    elif [ "$(cat /tmp/ace_test_errs)" != "/tmp/ace_checked_bounds/$f.ace:$(sed -n 's|^// expect-bounds: *||p' "tests/checked_bounds/$f.ace"): bounds violation" ]; then
+    elif ! grep -qxF "/tmp/ace_checked_bounds/$f.ace:$(sed -n 's|^// expect-bounds: *||p' "tests/checked_bounds/$f.ace"): bounds violation" \
+         /tmp/ace_test_errs; then # dash also writes its "Aborted" job line here
         echo "FAIL: checked bounds fixture lacked its located diagnostic: $f"
         cat /tmp/ace_test_errs
         fail=1
