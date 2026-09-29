@@ -17,51 +17,31 @@ directly, with no assembler or LLVM in between.
 ```ace
 import fmt
 
-Shape: contract {
-    area(): f64
+Point: struct {
+    x: int,
+    y: int,
 }
 
-Circle: struct { radius: f64 }
-Rect: struct { w: f64, h: f64 = 1.0 }
-
-Circle signs Shape
-Rect signs Shape
-
-Circle.area(): f64 { return 3.14159 * self.radius * self.radius }
-Rect.area(): f64 { return self.w * self.h }
-
-total(shapes: []Shape): f64 {
-    sum: f64 = 0.0
-    for i: int in 0 .. shapes.len {
-        sum += shapes[i].area()
-    }
-    return sum
+Point.sum(): int {
+    return self.x + self.y
 }
 
 main(): int {
-    c: Circle = Circle{ radius = 2.0 }
-    r: Rect = Rect{ w = 3.0, h = 4.0 }
-    shapes: [2]Shape = [Shape(&c), Shape(&r)]
+    points: [3]Point = [Point{ x = 1, y = 2 }, Point{ x = 3, y = 4 }, Point{ x = 5, y = 6 }]
 
-    fmt.printf("total area: %.2f\n", total(shapes[..]))
+    total: int = 0
+    for i: int in 0 .. points.len {
+        total += points[i].sum()
+    }
+
+    fmt.printf("total: %d\n", total)
+
     return 0
 }
 ```
 
 ```
-total area: 24.57
-```
-
-Errors come back as values, and resources are released right where they are
-acquired:
-
-```ace
-data: mut []u8, err: Error = file.read(PATH)
-defer mem.release[u8](mut data)
-if err != null {
-    fmt.printf("failed to read %s: %s\n", PATH, err.message)
-    return 1
-}
+total: 21
 ```
 
 ## Why Ace
