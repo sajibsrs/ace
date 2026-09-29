@@ -1522,7 +1522,7 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
         case BI_MEM_ALLOC_SIZE: { // the allocator's usable size of data's allocation
             int p;
             view_parts(l, x->kids[0], &p, NULL);
-            return widen(l, call_routine(l, "_malloc_size", 1, IT_U64, &p, 1), IT_U64, need_type(l, node_ty(x)));
+            return widen(l, call_routine(l, strcmp(ace_target, "linux-x64") == 0 ? "_malloc_usable_size" : "_malloc_size", 1, IT_U64, &p, 1), IT_U64, need_type(l, node_ty(x)));
         }
         case BI_MEM_COMPARE: return mem_compare(l, x);
         case BI_MEM_EQUAL: return mem_equal(l, x);

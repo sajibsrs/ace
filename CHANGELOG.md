@@ -742,16 +742,30 @@ current normative rules, and Git preserves patch-level detail.
   constant count of whole vectors drops the scalar remainder loop. `bench/core`
   `cube-transform` drops from 61.0 to 41.4 ns/cube (1.47x; C `-O2` scalar
   53.0, vectorized 31.4), and `saxpy-f32` from 0.131 to 0.126 ns/element.
-- Began the linux-x64 target. `--target=linux-x64` (the Linux x86-64 host's
+- Began the linux-x64 target. `--target=linux-x64` (the Linux x64 host's
   default) checks and lowers, and object emission reports that its code
   generator is not written yet; the build defines `_DEFAULT_SOURCE` so
   `-std=c11` exposes POSIX on glibc.
-- Added `src/elf.c`, the ELF64 x86-64 relocatable writer for the same `Obj`
+- Added `src/elf.c`, the ELF64 x64 relocatable writer for the same `Obj`
   the Mach-O writer serializes: `R_X86_64_*` relocation types (the shared
   DWARF writers' type 0 read as an absolute address), each addend moved from
   its field into a `.rela` entry, locals before globals, and a
   `.note.GNU-stack`. `tests/elf_object.c` links a hand-encoded object through
   `cc` on a linux-x64 host.
+- Added `src/x64.c`, the linux-x64 code generator (step 1: integers).
+  Every value lives in its own frame slot in canonical form (a narrow integer
+  extended to 64 bits by its type) and each instruction works through rax,
+  rcx, and rdx; there is no register allocation yet. It covers integer and
+  pointer arithmetic, comparisons, casts, bit operations, loads, stores,
+  stack objects, globals, strings, scalar calls (System V registers, then
+  stack slots), phis (critical edges split), and debug checks, whose shared
+  failure routines it emits itself. Release arithmetic matches the arm64
+  target: shifts count modulo the 32- or 64-bit operation width, and a
+  division by zero or MIN / -1 does not trap. A function using floats,
+  aggregate parts, byte routines, the allocator, or asm is refused with a
+  diagnostic. `ace_target` selects the backend and writer; the ELF writer
+  drops the Mach-O leading underscore from every symbol, and a contract
+  embed stub on x64 is `add rdi, offset; jmp method`.
 
 ## Core language
 

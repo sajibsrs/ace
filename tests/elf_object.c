@@ -1,4 +1,4 @@
-// elf_object.c — the ELF64 x86-64 object writer (src/elf.c) before any
+// elf_object.c — the ELF64 x64 object writer (src/elf.c) before any
 // backend fills it: a hand-encoded main exercises each relocation form.
 //
 // Built by tests/run.sh on a linux-x64 host with the compiler's sources, it

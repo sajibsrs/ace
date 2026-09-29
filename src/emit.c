@@ -73,6 +73,7 @@
 #include <unistd.h>
 
 int emit_has_main = 0;
+const char* ace_target = "darwin-arm64";
 
 // --- emitter state ----------------------------------------------------------------
 
@@ -1399,6 +1400,13 @@ static ESym* obj_embed_thunk(Obj* o, const char* vtname, int slot, const char* t
     if (prior->type) return prior;
     Buf* t = obj_text(o);
     ESym* out = sym_define(&o->syms, o->secs, name, (uint32_t)strlen(name), 0, &o->secs[SEC_TEXT]);
+    if (strcmp(ace_target, "linux-x64") == 0) { // add rdi, field-offset; jmp target
+        buf_put8(t, 0x48); buf_put8(t, 0x81); buf_put8(t, 0xC7); buf_put32(t, off);
+        buf_put8(t, 0xE9);
+        reloc_add(&o->secs[SEC_TEXT], (uint32_t)t->len, sym_intern(&o->syms, target, (uint32_t)strlen(target)), 1, 2, 1, 4);
+        buf_put32(t, (uint32_t)-4); // R_X86_64_PLT32 addend
+        return out;
+    }
     buf_put32(t, 0xA9BF7BFD); // stp x29, x30, [sp, #-16]!
     if (off <= 4095) {
         buf_put32(t, 0x91000000u | (off << 10)); // add x0, x0, #field-offset
@@ -2004,7 +2012,8 @@ static int compile_ir(Em* e, Node* n, IrFunc* ir, const char* why, const char* n
     }
     for (int k = 0; k < ir->nvtables; k++)
         obj_vtable(&e->o, ir->vtables[k].conc, ir->vtables[k].contract, ir->vtables[k].conf);
-    arm64_func(&e->o, ir, name, (uint32_t)strlen(name), global);
+    if (strcmp(ace_target, "linux-x64") == 0) x64_func(&e->o, ir, name, (uint32_t)strlen(name), global);
+    else arm64_func(&e->o, ir, name, (uint32_t)strlen(name), global);
     ir_free(ir);
     return 1;
 }
@@ -2068,19 +2077,24 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
             break; // types/imports/externs: no code
         }
     }
-    emit_bounds_failure_helper(&e);
-    emit_arithmetic_failure_helper(&e);
-    emit_contract_failure_helper(&e);
-    emit_null_failure_helper(&e);
-    emit_allocator_helpers(&e);
-    emit_byte_helpers(&e);
-    obj_patch_fixups(&e.o);
+    int x64 = strcmp(ace_target, "linux-x64") == 0;
+    if (x64) {
+        x64_runtime(&e.o);
+    } else {
+        emit_bounds_failure_helper(&e);
+        emit_arithmetic_failure_helper(&e);
+        emit_contract_failure_helper(&e);
+        emit_null_failure_helper(&e);
+        emit_allocator_helpers(&e);
+        emit_byte_helpers(&e);
+        obj_patch_fixups(&e.o);
+    }
     if (d->errors) return 1;
     if (report) report->machine_code = text(&e)->len;
     ESym* text_anchor = sym_intern(&e.o.syms, "__ace$text", 10);
     obj_debug_info(&e.o, text_anchor);
     obj_debug_line(&e.o, text_anchor);
-    size_t object_size = obj_write(&e.o, out_path);
+    size_t object_size = x64 ? elf_write(&e.o, out_path) : obj_write(&e.o, out_path);
     if (report) report->object_file = object_size;
     return d->errors ? 1 : 0;
 }

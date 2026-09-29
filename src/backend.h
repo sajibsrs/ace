@@ -168,7 +168,7 @@ void obj_debug_info(Obj* o, ESym* text_anchor);
 void obj_debug_line(Obj* o, ESym* text_anchor);
 // Write the object file; returns its size, or 0 on error.
 size_t obj_write(Obj* o, const char* path);
-// elf.c: the same object as ELF64 x86-64 (linux-x64); Rel.type is R_X86_64_*.
+// elf.c: the same object as ELF64 x64 (linux-x64); Rel.type is R_X86_64_*.
 size_t elf_write(Obj* o, const char* path);
 
 // --- shared by the code generators -----------------------------------------------
@@ -211,5 +211,8 @@ int      find_field(SType* t, const char* name, uint32_t len);
 // arm64.c: compile a lowered function into o's __text as symbol `name`,
 // global (visible to the linker) for main and a C export.
 void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int global);
+// x64.c: the same for linux-x64, and its runtime failure routines.
+void x64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int global);
+void x64_runtime(Obj* o);
 
 #endif

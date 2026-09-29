@@ -1,4 +1,4 @@
-// elf.c — the ELF64 x86-64 relocatable object for target linux-x64: the same
+// elf.c — the ELF64 x64 relocatable object for target linux-x64: the same
 // Obj the backends fill (sections, symbols, relocations, DWARF; macho.c),
 // written in ELF form instead of Mach-O.
 //
@@ -14,6 +14,8 @@
 //     number form); Rel.ext only mirrors Mach-O. Its addend is the value the
 //     backend stored in the field (4 or 8 bytes by Rel.len), which the writer
 //     moves into the .rela entry and clears, so the result is S + A (- P).
+//   - names drop one leading underscore: the backends spell every symbol
+//     the Mach-O way (_main, _write, __ace$...), and ELF's C names have none.
 //   - symbols: null, then locals in Obj order, then defined globals, then
 //     undefined globals; st_value is the offset within its section. A defined
 //     symbol in .text is STT_FUNC (the __ace$text anchor aside), one
@@ -90,7 +92,7 @@ size_t elf_write(Obj* o, const char* path) {
                     : pass == 1 ? (s->type && (s->type & N_EXT_))
                                 : !s->type;
             if (!want) continue;
-            s->strx = str_add(&str, s->name);
+            s->strx = str_add(&str, s->name + (s->name[0] == '_')); // the Mach-O C prefix
             s->ord = (uint32_t)(norder + 1);
             order[norder++] = s;
             if (pass == 0) nloc++;

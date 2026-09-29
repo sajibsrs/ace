@@ -303,6 +303,9 @@ typedef enum { EMIT_DEBUG, EMIT_RELEASE } EmitMode;
 
 int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report, EmitMode mode);
 extern int emit_has_main;
+// The build target (main.c): "darwin-arm64" writes a Mach-O arm64 object,
+// "linux-x64" an ELF x64 one.
+extern const char* ace_target;
 // The name prefix of std's internal rendering module, whose piece writers
 // fmt.printf and str.format lower to; NULL until it loads.
 extern const char* rendering_prefix;

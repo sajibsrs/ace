@@ -20,11 +20,10 @@ static int target_supported(const char* target) {
     return strcmp(target, "darwin-arm64") == 0 || strcmp(target, "linux-x64") == 0;
 }
 
-// linux-x64 checks and lowers; its code generator is not written yet.
+// Select the code generator and object format for target.
 static int target_codegen(const char* target) {
-    if (strcmp(target, "darwin-arm64") == 0) return 1;
-    fprintf(stderr, "ace: code generation for target '%s' is not implemented yet\n", target);
-    return 0;
+    ace_target = target;
+    return 1;
 }
 
 static const char* host_target(void) {
