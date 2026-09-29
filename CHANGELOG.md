@@ -2981,6 +2981,12 @@ current normative rules, and Git preserves patch-level detail.
   Rotations come from a 64-entry table built by an exact recurrence rather
   than `sin`/`cos`, and the C side disables `FP_CONTRACT` in the kernel, so
   checksums match bit for bit. Release Ace runs 1.15x scalar C `-O2`.
+- Global value numbering now merges two `IR_GLOBAL`s only when their names
+  match as well as their symbol. A static map's keys, values, and slots tables
+  share the map's symbol, as do a generic's instantiations taken as function
+  values (`pick[u8]`, `pick[u64]`), so release builds addressed every table
+  from one of them and called every instantiation through one; e.g.
+  `tests/emit/staticmap/narrow_keys.ace` exited 1 under `--release`.
 
 ## Current frontier
 

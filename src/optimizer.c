@@ -372,11 +372,17 @@ static uint64_t vn_hash(const IrFunc* fn, const IrIns* x) {
     return h;
 }
 
-// A global counts as equal only by a shared, non-null symbol: the name-only
-// (vtable) form has no symbol to key on and is never merged.
+// Whether globals x and y address the same object: one symbol can own several
+// named objects (a static map's tables, a generic's instantiations).
+static int same_global(const IrIns* x, const IrIns* y) {
+    return x->sym == y->sym && (x->name == y->name || (x->name && y->name && !strcmp(x->name, y->name)));
+}
+
+// A global counts as equal only by a shared, non-null symbol and name: the
+// name-only (vtable) form has no symbol to key on and is never merged.
 static int vn_equal(const IrFunc* fn, const IrIns* x, const IrIns* y) {
     if (x->op != y->op || x->type != y->type || x->imm != y->imm || x->aux != y->aux || x->nargs != y->nargs) return 0;
-    if (x->op == IR_GLOBAL) return x->sym && x->sym == y->sym;
+    if (x->op == IR_GLOBAL) return x->sym && same_global(x, y);
     int direct = 1, swapped = x->nargs == 2 && commutes(fn, x);
     for (int i = 0; i < x->nargs; i++) {
         direct &= same_arg(fn, x->args[i], y->args[i]);
@@ -541,8 +547,7 @@ static int same_base(const IrFunc* fn, int a, int b) {
     if (a == b) return 1;
     const IrIns* x = &fn->ins[a];
     const IrIns* y = &fn->ins[b];
-    return x->op == IR_GLOBAL && y->op == IR_GLOBAL && x->sym == y->sym &&
-           (x->name == y->name || (x->name && y->name && !strcmp(x->name, y->name)));
+    return x->op == IR_GLOBAL && y->op == IR_GLOBAL && same_global(x, y);
 }
 
 // The pointer standing for offset u of phi in the loop headed by h, entered
