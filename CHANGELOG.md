@@ -2975,6 +2975,9 @@ current normative rules, and Git preserves patch-level detail.
   initialization, as `mut &receiver` does, instead of requiring it to be
   initialized first (Mutability #6). `pkg/sdl` uses it: `mut Event.poll()`
   replaces `poll_event(mut *Event)`, so loops read `for mut event.poll()`.
+- `pkg/sdl` `Renderer.geometry` with empty `indices` now passes `NULL` so SDL
+  draws the vertices as consecutive triangles, instead of drawing nothing;
+  `indices` without `vertices` returns false.
 
 - Extended auto-vectorization to `f64` lanes (Compiler #6): the IR's
   `v2f64` holds two lanes in 128 bits and takes `add`, `sub`, `mul`, `div`,

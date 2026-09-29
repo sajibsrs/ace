@@ -197,9 +197,13 @@ pub Renderer.size(): (i32, i32, bool) {
 }
 
 // Untextured triangles: each three indices name one triangle's vertices,
-// whose colors SDL interpolates across it.
+// whose colors SDL interpolates across it. Without indices, each three
+// consecutive vertices form one triangle. Indices without vertices fail.
 pub Renderer.geometry(vertices: []Vertex, indices: []i32): bool {
-    if vertices.len == 0 || indices.len == 0 { return true }
+    if vertices.len == 0 { return indices.len == 0 }
+    if indices.len == 0 {
+        return c_render_geometry(self.handle, null, &vertices[0], i32(vertices.len), null, 0)
+    }
     return c_render_geometry(self.handle, null, &vertices[0], i32(vertices.len), &indices[0], i32(indices.len))
 }
 

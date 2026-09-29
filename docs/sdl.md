@@ -66,8 +66,10 @@ three entries of `indices` name one triangle's corners in `vertices`, and SDL
 interpolates the corners' colors across it. A `Vertex` holds a `position`
 (`Point`, in render pixels), a `color`, and a `tex_coord`, which is unused
 without a texture; every field defaults to zero (opaque black for `color`),
-so `sdl.Vertex {}` is a blank vertex. An empty `vertices` or
-`indices` draws nothing.
+so `sdl.Vertex {}` is a blank vertex. With an empty `indices`, every three
+consecutive vertices form one triangle. Empty `vertices` with empty `indices`
+draws nothing and succeeds; non-empty `indices` without `vertices` returns
+false.
 
 ```ace
 red: sdl.Color = sdl.Color { r = 1.0 }
