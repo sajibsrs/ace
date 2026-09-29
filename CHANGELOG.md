@@ -766,6 +766,13 @@ current normative rules, and Git preserves patch-level detail.
   diagnostic. `ace_target` selects the backend and writer; the ELF writer
   drops the Mach-O leading underscore from every symbol, and a contract
   embed stub on x64 is `add rdi, offset; jmp method`.
+- Made IR numbering independent of the host C compiler. Lowering and the
+  vectorizer passed two emitting calls as arguments of one call, whose order C
+  leaves unspecified, so a gcc-built compiler numbered (and, for `and`/`eq`
+  operands, ordered) instructions differently from a clang-built one and
+  failed the `tests/ir` expectations. Each such argument is now its own
+  statement, in the left-to-right order clang used; the gcc-built compiler's
+  IR and objects match the clang-built `HEAD` on every repository file.
 
 ## Core language
 

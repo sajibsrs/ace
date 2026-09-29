@@ -1067,7 +1067,8 @@ static int bits_set(Lw* l, SType* b, SField* f, int w, int v, int clear) {
         call_routine(l, "__ace$arithmetic_fail", 0, IT_VOID, NULL, 0);
         guard_end(l, bad);
     }
-    int u = emit2(l, IR_AND, bt, widen(l, v, ft, bt), konst(l, bt, low));
+    int wv = widen(l, v, ft, bt);
+    int u = emit2(l, IR_AND, bt, wv, konst(l, bt, low));
     if (f->bit_offset) u = emit2(l, IR_SHL, bt, u, konst(l, bt, f->bit_offset));
     if (clear) w = emit2(l, IR_AND, bt, w, konst(l, bt, ~(low << f->bit_offset)));
     return emit2(l, IR_OR, bt, w, u);
@@ -1153,10 +1154,11 @@ static void noalias_check(Lw* l, Node* d, const Range* r, int n) {
         if (r[i].ptr < 0) continue;
         for (int j = i + 1; j < n && j < d->nkids; j++) {
             if (r[j].ptr < 0 || !((d->kids[i]->flags | d->kids[j]->flags) & F_NOALIAS)) continue;
-            int both = emit2(l, IR_AND, IT_BOOL, cmp(l, IR_NE, r[i].len, konst(l, IT_U64, 0)),
-                             cmp(l, IR_NE, r[j].len, konst(l, IT_U64, 0)));
-            int some = guard(l, both);
-            contract_check(l, emit2(l, IR_OR, IT_BOOL, cmp(l, IR_GE, r[j].ptr, end[i]), cmp(l, IR_GE, r[i].ptr, end[j])));
+            int ki = konst(l, IT_U64, 0), ni = cmp(l, IR_NE, r[i].len, ki);
+            int kj = konst(l, IT_U64, 0), nj = cmp(l, IR_NE, r[j].len, kj);
+            int some = guard(l, emit2(l, IR_AND, IT_BOOL, ni, nj));
+            int after = cmp(l, IR_GE, r[j].ptr, end[i]), before = cmp(l, IR_GE, r[i].ptr, end[j]);
+            contract_check(l, emit2(l, IR_OR, IT_BOOL, after, before));
             guard_end(l, some);
         }
     }
@@ -1179,11 +1181,12 @@ static int registry_find(Lw* l, int ptr, int size) { // the record of a live all
 static int mem_alloc(Lw* l, Node* x, Agg* res) {
     int size = expr(l, x->kids[0], IT_I64), align = expr(l, x->kids[1], IT_I64);
     int pv = temp_var(l, IT_PTR, konst(l, IT_PTR, 0)), nv = temp_var(l, IT_U64, konst(l, IT_U64, 0));
-    int pow2 = cmp(l, IR_EQ, emit2(l, IR_AND, IT_I64, align, emit2(l, IR_SUB, IT_I64, align, konst(l, IT_I64, 1))),
-                   konst(l, IT_I64, 0));
-    int ok = emit2(l, IR_AND, IT_BOOL, cmp(l, IR_GT, size, konst(l, IT_I64, 0)),
-                   emit2(l, IR_AND, IT_BOOL, cmp(l, IR_GT, align, konst(l, IT_I64, 0)),
-                         emit2(l, IR_AND, IT_BOOL, cmp(l, IR_LE, align, konst(l, IT_I64, 16)), pow2)));
+    int low = emit2(l, IR_AND, IT_I64, align, emit2(l, IR_SUB, IT_I64, align, konst(l, IT_I64, 1)));
+    int pow2 = cmp(l, IR_EQ, low, konst(l, IT_I64, 0));
+    int sized = cmp(l, IR_GT, size, konst(l, IT_I64, 0));
+    int aligned = cmp(l, IR_GT, align, konst(l, IT_I64, 0));
+    int small = cmp(l, IR_LE, align, konst(l, IT_I64, 16));
+    int ok = emit2(l, IR_AND, IT_BOOL, sized, emit2(l, IR_AND, IT_BOOL, aligned, emit2(l, IR_AND, IT_BOOL, small, pow2)));
     int valid = guard(l, ok);
     int p = call_routine(l, "_malloc", 1, IT_PTR, &size, 1);
     int got = guard(l, cmp(l, IR_NE, p, konst(l, IT_PTR, 0)));
@@ -1232,8 +1235,8 @@ static int mem_alloc_typed(Lw* l, Node* x, int bi, Agg* res) {
     int count = widen(l, expr(l, cn, ct), ct, IT_U64);
     int pv = temp_var(l, IT_PTR, konst(l, IT_PTR, 0)), nv = temp_var(l, IT_U64, konst(l, IT_U64, 0));
     if (!esz || eal > 16) return slice_out(l, res, pv, nv);
-    int ok = emit2(l, IR_AND, IT_BOOL, cmp(l, IR_NE, count, konst(l, IT_U64, 0)),
-                   cmp(l, IR_LE, count, konst(l, IT_U64, UINT64_MAX / esz)));
+    int some = cmp(l, IR_NE, count, konst(l, IT_U64, 0));
+    int ok = emit2(l, IR_AND, IT_BOOL, some, cmp(l, IR_LE, count, konst(l, IT_U64, UINT64_MAX / esz)));
     int valid = guard(l, ok);
     int bytes = emit2(l, IR_MUL, IT_U64, count, konst(l, IT_U64, esz));
     int p, rec = -1;
@@ -1314,7 +1317,8 @@ static int mem_write(Lw* l, Node* x, int bi) {
             l->fn->ins[dend].imm = l->fn->ins[send].imm = 1;
             contract_check(l, cmp(l, IR_GE, dend, dst));
             contract_check(l, cmp(l, IR_GE, send, src));
-            contract_check(l, emit2(l, IR_OR, IT_BOOL, cmp(l, IR_GE, dst, send), cmp(l, IR_GE, src, dend)));
+            int after = cmp(l, IR_GE, dst, send), before = cmp(l, IR_GE, src, dend);
+            contract_check(l, emit2(l, IR_OR, IT_BOOL, after, before));
             guard_end(l, some);
         }
     }
@@ -1543,7 +1547,8 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
         int i = read_var(l, n, head);
         int at = emit2(l, IR_PADD, IT_PTR, env, i);
         l->fn->ins[at].imm = 8;
-        terminate(l, IR_BR, emit2(l, IR_NE, IT_BOOL, load(l, IT_PTR, at, 0, 0), konst(l, IT_PTR, 0)), body, exit);
+        int e = load(l, IT_PTR, at, 0, 0);
+        terminate(l, IR_BR, emit2(l, IR_NE, IT_BOOL, e, konst(l, IT_PTR, 0)), body, exit);
         seal(l, body);
         enter(l, body);
         write_var(l, n, l->cur, emit2(l, IR_ADD, IT_U64, i, konst(l, IT_U64, 1)));
@@ -2074,8 +2079,10 @@ static int expr(Lw* l, Node* x, int want) {
         }
         if ((op == IR_EQ || op == IR_NE) && (x->a->kind == N_NULL) != (x->b->kind == N_NULL)) {
             Node* o = x->a->kind == N_NULL ? x->b : x->a;
-            if (is_view(node_ty(o))) // Sequences #8: a null view has a null ptr
-                return emit2(l, (IrOp)op, IT_BOOL, view_leaf(l, o, 0), konst(l, IT_PTR, 0));
+            if (is_view(node_ty(o))) { // Sequences #8: a null view has a null ptr
+                int ptr = view_leaf(l, o, 0);
+                return emit2(l, (IrOp)op, IT_BOOL, ptr, konst(l, IT_PTR, 0));
+            }
             if (is_contract(node_ty(o))) { // Carved #5: a null contract has a null vtable
                 Agg a;
                 value(l, o, node_ty(o), &a);
@@ -2413,17 +2420,22 @@ static int union_equal_at(Lw* l, SType* ut, int a, int b);
 // by word.
 static int payload_equal(Lw* l, SType* pt, int a, int b, int32_t off) {
     SType* u = unwrap(pt);
-    if (u->kind == SK_UNION) return union_equal_at(l, u, offset_addr(l, a, off), offset_addr(l, b, off));
+    if (u->kind == SK_UNION) {
+        int ua = offset_addr(l, a, off);
+        return union_equal_at(l, u, ua, offset_addr(l, b, off));
+    }
     if (u->kind == SK_PRIM && (u->prim == P_F32 || u->prim == P_F64)) {
         IrType ft = u->prim == P_F32 ? IT_F32 : IT_F64;
-        return cmp(l, IR_EQ, load(l, ft, a, off, 0), load(l, ft, b, off, 0));
+        int fa = load(l, ft, a, off, 0);
+        return cmp(l, IR_EQ, fa, load(l, ft, b, off, 0));
     }
     uint32_t size = sema_size(pt);
     int acc = konst(l, IT_BOOL, 1);
     for (uint32_t at = 0; at < size;) {
         uint32_t rem = size - at, w = rem >= 8 ? 8 : rem >= 4 ? 4 : rem >= 2 ? 2 : 1;
         IrType wt = w == 8 ? IT_U64 : w == 4 ? IT_U32 : w == 2 ? IT_U16 : IT_U8;
-        int c = cmp(l, IR_EQ, load(l, wt, a, off + (int32_t)at, 0), load(l, wt, b, off + (int32_t)at, 0));
+        int wa = load(l, wt, a, off + (int32_t)at, 0);
+        int c = cmp(l, IR_EQ, wa, load(l, wt, b, off + (int32_t)at, 0));
         acc = emit2(l, IR_AND, IT_BOOL, acc, c);
         at += w;
     }
@@ -2658,8 +2670,8 @@ static Place staticmap_place(Lw* l, Node* x, SType* map) {
         int at = emit2(l, IR_PADD, IT_PTR, kv.v[0], i);
         l->fn->ins[at].imm = 1;
         int b = emit2(l, IR_CAST, IT_U64, load(l, IT_U8, at, 0, 0), -1);
-        write_var(l, hv, l->cur, emit2(l, IR_MUL, IT_U64, emit2(l, IR_XOR, IT_U64, h, b),
-                                       konst(l, IT_U64, UINT64_C(1099511628211))));
+        int mix = emit2(l, IR_XOR, IT_U64, h, b);
+        write_var(l, hv, l->cur, emit2(l, IR_MUL, IT_U64, mix, konst(l, IT_U64, UINT64_C(1099511628211))));
         write_var(l, iv, l->cur, emit2(l, IR_ADD, IT_U64, i, konst(l, IT_U64, 1)));
         jump(l, head);
         seal(l, head);
@@ -2671,9 +2683,11 @@ static Place staticmap_place(Lw* l, Node* x, SType* map) {
     l->fn->ins[sp].imm = 4;
     int slot = load(l, IT_U32, sp, 0, 0);
     int found = guard(l, cmp(l, IR_NE, slot, konst(l, IT_U32, 0)));
-    int ei = emit2(l, IR_SUB, IT_U64, emit2(l, IR_CAST, IT_U64, slot, -1), konst(l, IT_U64, 1));
+    int wide = emit2(l, IR_CAST, IT_U64, slot, -1);
+    int ei = emit2(l, IR_SUB, IT_U64, wide, konst(l, IT_U64, 1));
     uint32_t ksz = strings ? 16 : sema_size(map->base);
-    int ep = emit2(l, IR_PADD, IT_PTR, map_table(l, ms, "keys"), ei);
+    int keys = map_table(l, ms, "keys");
+    int ep = emit2(l, IR_PADD, IT_PTR, keys, ei);
     l->fn->ins[ep].imm = ksz;
     int same;
     if (strings) {
@@ -2689,7 +2703,8 @@ static Place staticmap_place(Lw* l, Node* x, SType* map) {
         guard_end(l, same);
     }
     guard_end(l, found);
-    int vp = emit2(l, IR_PADD, IT_PTR, map_table(l, ms, "values"), read_var(l, idx, l->cur));
+    int values = map_table(l, ms, "values");
+    int vp = emit2(l, IR_PADD, IT_PTR, values, read_var(l, idx, l->cur));
     l->fn->ins[vp].imm = sema_size(map->ret);
     Place p = { -1, vp, 0, 0, map->ret };
     return p;
@@ -2999,7 +3014,8 @@ static void bits_assign(Lw* l, Node* x, int op, Node* rhs, int v) {
     if (op != T_ASSIGN) {
         int bop = binop_of((TokKind)op);
         if (bop < 0) unsupported(l, "compound assignment");
-        v = arith(l, bop, ft, bits_get(l, bits, bf, w), expr(l, rhs, ft));
+        int old = bits_get(l, bits, bf, w);
+        v = arith(l, bop, ft, old, expr(l, rhs, ft));
     } else if (rhs) {
         v = expr(l, rhs, ft);
     }
@@ -3339,9 +3355,11 @@ static void range_loop(Lw* l, Node* s) {
         if (up) {
             v = emit2(l, IR_ADD, rt, v, konst(l, rt, 1));
         } else {
-            v = emit2(l, IR_ADD, IT_U64, widen(l, v, rt, IT_U64), read_var(l, stp, l->cur));
+            v = widen(l, v, rt, IT_U64);
+            v = emit2(l, IR_ADD, IT_U64, v, read_var(l, stp, l->cur));
             v = widen(l, v, IT_U64, rt);
-            write_var(l, cnt, l->cur, emit2(l, IR_SUB, IT_U64, read_var(l, cnt, l->cur), konst(l, IT_U64, 1)));
+            int left = read_var(l, cnt, l->cur);
+            write_var(l, cnt, l->cur, emit2(l, IR_SUB, IT_U64, left, konst(l, IT_U64, 1)));
         }
         write_var(l, cur, l->cur, v);
         jump(l, head);
@@ -3410,10 +3428,14 @@ static void seq_loop(Lw* l, Node* s) {
     }
     loop_body(l, s, exit, s->c);
     if (l->cur >= 0) {
-        int next = emit2(l, IR_PADD, IT_PTR, read_var(l, cur, l->cur), konst(l, IT_U64, 1));
+        int at = read_var(l, cur, l->cur);
+        int next = emit2(l, IR_PADD, IT_PTR, at, konst(l, IT_U64, 1));
         l->fn->ins[next].imm = esz;
         write_var(l, cur, l->cur, next);
-        if (is) write_var(l, ix, l->cur, emit2(l, IR_ADD, IT_U64, read_var(l, ix, l->cur), konst(l, IT_U64, 1)));
+        if (is) {
+            int i = read_var(l, ix, l->cur);
+            write_var(l, ix, l->cur, emit2(l, IR_ADD, IT_U64, i, konst(l, IT_U64, 1)));
+        }
         jump(l, head);
     }
     seal(l, head);

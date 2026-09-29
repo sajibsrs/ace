@@ -1185,8 +1185,8 @@ static void vec_rewrite(IrFunc* fn, const VecLoop* L) {
             int a = vec_value(fn, L, map, pre_of, splat, x0.args[0]);
             map[u] = ins2(fn, vb, (IrOp)x0.op, IT_V4I32, a, vec_value(fn, L, map, pre_of, splat, x0.args[1]));
         } else if (x0.op == IR_SHL || x0.op == IR_SHR) { // by the constant itself
-            map[u] = ins2(fn, vb, (IrOp)x0.op, IT_V4I32, vec_value(fn, L, map, pre_of, splat, x0.args[0]),
-                          vec_scalar(fn, L, pre_of, x0.args[1]));
+            int a = vec_value(fn, L, map, pre_of, splat, x0.args[0]);
+            map[u] = ins2(fn, vb, (IrOp)x0.op, IT_V4I32, a, vec_scalar(fn, L, pre_of, x0.args[1]));
         } else if (x0.op == IR_PADD) {
             map[u] = ins2(fn, vb, IR_PADD, IT_PTR, vec_scalar(fn, L, pre_of, x0.args[0]), kx);
             fn->ins[map[u]].imm = 16 * (uint64_t)F;
