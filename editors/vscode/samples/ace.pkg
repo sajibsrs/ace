@@ -1,0 +1,13 @@
+name: sdl3_cube_rotation
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[dependencies]
+sdl: 0.1.0
+
+// Link SDL3 from Homebrew.
+[[link]]
+library: SDL3
+path: /opt/homebrew/lib

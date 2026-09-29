@@ -5,6 +5,10 @@ Ace syntax highlighting and basic editor configuration for Visual Studio Code an
 The extension currently provides:
 
 - `.ace` file recognition
+- `ace.pkg` manifest highlighting (headers, known keys, dependency aliases,
+  versions, `exe`/`lib`) per `GRAMMAR.md` §7
+- file icons for `.ace` and `ace.pkg`, shown when the active file
+  icon theme has no icon of its own for them
 - theme-compatible TextMate syntax scopes
 - comment and bracket configuration
 - automatic closing pairs and block indentation
@@ -54,6 +58,6 @@ semantic editor support for guaranteed classification.
 2. Select **Run Ace Language Extension** in the Run and Debug view.
 3. Press **F5**.
 
-An Extension Development Host opens with `samples/showcase.ace`. Changes to the grammar can be loaded there with **Developer: Reload Window**.
+An Extension Development Host opens with `samples/showcase.ace`; `samples/ace.pkg` shows manifest highlighting. Changes to the grammar can be loaded there with **Developer: Reload Window**.
 
 No dependencies or build step are required.

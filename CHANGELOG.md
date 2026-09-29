@@ -2960,6 +2960,11 @@ current normative rules, and Git preserves patch-level detail.
 
 ## Current frontier
 
+- Added `ace.pkg` highlighting to `editors/vscode/`: a separate `ace-pkg`
+  language matched by exact filename (not `.pkg`, which macOS installers
+  use), with a TextMate grammar following `GRAMMAR.md` §7. Added language
+  icons for `.ace` (including `mod.ace`) and `ace.pkg`, shown when the
+  active file icon theme has none.
 - Unified `pkg/sdl`'s value types: one `Point` and one `Color`, both `f32`
   (SDL_FPoint/SDL_FColor layouts), replacing `FPoint`, `FColor`, and the
   `u8` `Color`; `Renderer.color` now wraps `SDL_{Set,Get}RenderDrawColorFloat`.

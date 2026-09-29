@@ -1,7 +1,7 @@
 {
   "name": "ace-language",
   "displayName": "Ace Language",
-  "description": "Ace language syntax highlighting and editor configuration.",
+  "description": "Ace language and package-manifest syntax highlighting, file icons, and editor configuration.",
   "version": "0.0.1",
   "private": true,
   "license": "MIT",
@@ -22,7 +22,25 @@
         "extensions": [
           ".ace"
         ],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/ace.svg",
+          "dark": "./icons/ace.svg"
+        }
+      },
+      {
+        "id": "ace-pkg",
+        "aliases": [
+          "Ace Package Manifest"
+        ],
+        "filenames": [
+          "ace.pkg"
+        ],
+        "configuration": "./pkg-language-configuration.json",
+        "icon": {
+          "light": "./icons/ace-pkg.svg",
+          "dark": "./icons/ace-pkg.svg"
+        }
       }
     ],
     "grammars": [
@@ -30,6 +48,11 @@
         "language": "ace",
         "scopeName": "source.ace",
         "path": "./syntaxes/ace.tmLanguage.json"
+      },
+      {
+        "language": "ace-pkg",
+        "scopeName": "source.ace-pkg",
+        "path": "./syntaxes/ace-pkg.tmLanguage.json"
       }
     ]
   }
