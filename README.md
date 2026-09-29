@@ -27,7 +27,11 @@ Point.sum(): int {
 }
 
 main(): int {
-    points: [3]Point = [Point{ x = 1, y = 2 }, Point{ x = 3, y = 4 }, Point{ x = 5, y = 6 }]
+    points: [3]Point = [
+        Point{ x = 1, y = 2 },
+        Point{ x = 3, y = 4 },
+        Point{ x = 5, y = 6 },
+    ]
 
     total: int = 0
     for i: int in 0 .. points.len {
@@ -35,7 +39,6 @@ main(): int {
     }
 
     fmt.printf("total: %d\n", total)
-
     return 0
 }
 ```
