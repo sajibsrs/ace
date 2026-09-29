@@ -702,11 +702,14 @@ static void lsr(IrFunc* fn) {
 // blocks in sequence, where one may branch on a compare into arms of a single
 // block each, or none, that meet at the next, whose phis become selects)
 // whose body is lane-wise f32/i32 arithmetic over elements base[i] gains a
-// vector loop ahead of it, four elements per iteration, when every store's
+// vector loop ahead of it, four elements per iteration (two for f64, which
+// takes only arithmetic, loads, and stores, never mixed with 32-bit lanes),
+// when every store's
 // object is provably another access's object only at the same element: a
 // distinct global or stack object, or the same base at the same offset. The
-// vector loop counts whole vectors, k = i / 4, so the target folds the
-// address scale; the original loop then runs the remainder from i = 4 * k.
+// vector loop counts whole vectors, k = i / width, so the target folds the
+// 16-byte address scale; the original loop then runs the remainder from
+// i = width * k.
 // A header phi other than i (a reduction or any carried value) keeps the loop
 // scalar, as does a body value used after it. An arm holds no load or store,
 // since the vector loop runs both; t lanes come from a vector phi counting
@@ -715,7 +718,8 @@ static void lsr(IrFunc* fn) {
 enum { VEC_BLOCKS = 32 };
 
 // b is the latch; blk the body in order, each arm after the block branching to it
-typedef struct { int h, b, pre, pi, i, step, n, lane, nb; int blk[VEC_BLOCKS]; uint8_t arm[VEC_BLOCKS]; } VecLoop;
+typedef struct { int h, b, pre, pi, i, step, n, lane, nb, width; // width: lanes, 4 or 2 (f64)
+    int blk[VEC_BLOCKS]; uint8_t arm[VEC_BLOCKS]; } VecLoop;
 
 static int vec_at(const VecLoop* L, int b) {
     for (int j = 0; j < L->nb; j++)
@@ -723,7 +727,17 @@ static int vec_at(const VecLoop* L, int b) {
     return -1;
 }
 
-static IrType vec_of(IrType t) { return t == IT_F32 ? IT_V4F32 : t == IT_I32 ? IT_V4I32 : IT_VOID; }
+static IrType vec_of(IrType t) {
+    return t == IT_F32 ? IT_V4F32 : t == IT_I32 ? IT_V4I32 : t == IT_F64 ? IT_V2F64 : IT_VOID;
+}
+
+// Whether lane type t fits L: every lane type of a loop has one width, set by
+// the first; f64 takes only arithmetic, loads, and stores (ir.h).
+static int vec_width(VecLoop* L, IrType t) {
+    int w = t == IT_F64 ? 2 : 4;
+    if (!L->width) L->width = w;
+    return L->width == w;
+}
 
 // Whether bases a and b are distinct objects: other globals, other stack
 // objects, or a global and a stack object.
@@ -820,6 +834,7 @@ static int vec_body(IrFunc* fn, VecLoop* L) {
     int* acc = xalloc((size_t)nins, sizeof(int)); // the loads and stores
     int nacc = 0, ok = 1, stores = 0;
     const IrIns* n = &fn->ins[L->n];
+    L->width = 0;
     for (int k = 0; k < L->nb && ok; k++) {
         IrBlock* bb = &fn->blocks[L->blk[k]];
         for (int j = 0; j < bb->nins && ok; j++) {
@@ -835,47 +850,48 @@ static int vec_body(IrFunc* fn, VecLoop* L) {
                 break;
             case IR_EQ: case IR_NE: case IR_LT: case IR_LE: case IR_GT: case IR_GE: {
                 IrType ot = (IrType)fn->ins[x->args[0]].type;
-                ok = vec_of(ot) != IT_VOID && vec_operand(fn, L, x->args[0], ot) && vec_operand(fn, L, x->args[1], ot);
+                ok = vec_of(ot) != IT_VOID && ot != IT_F64 && vec_width(L, ot) && vec_operand(fn, L, x->args[0], ot) && vec_operand(fn, L, x->args[1], ot);
                 break;
             }
             case IR_PHI: // a join's: lane values or invariants
-                ok = vec_of(t) != IT_VOID && x->nargs == 2 && vec_operand(fn, L, x->args[0], t) &&
+                ok = vec_of(t) != IT_VOID && t != IT_F64 && vec_width(L, t) && x->nargs == 2 && vec_operand(fn, L, x->args[0], t) &&
                      vec_operand(fn, L, x->args[1], t);
                 break;
             case IR_CAST:
                 if (x->args[0] == L->i && t == IT_I32 && L->lane < 0) { // t, which a constant n keeps exact
-                    ok = n->op == IR_CONST && n->imm <= INT32_MAX;
+                    ok = n->op == IR_CONST && n->imm <= INT32_MAX && vec_width(L, IT_I32);
                     L->lane = u;
                 } else {
                     ok = t == IT_U64 && ((x->args[0] == L->i && fn->ins[L->i].type == IT_I64) || x->args[0] == L->lane);
                 }
                 break;
             case IR_PADD:
-                ok = x->imm == 4 && vec_index(fn, L, x->args[1]) && vec_invariant(fn, L, x->args[0]);
+                ok = (x->imm == 4 || x->imm == 8) && vec_index(fn, L, x->args[1]) && vec_invariant(fn, L, x->args[0]);
                 break;
             case IR_LOAD: case IR_STORE: {
                 IrIns* px = &fn->ins[x->args[0]];
                 IrType et = x->op == IR_LOAD ? t : (IrType)fn->ins[x->args[1]].type;
                 ok = !L->arm[k] && px->op == IR_PADD && vec_at(L, px->block) >= 0 && vec_of(et) != IT_VOID &&
+                     vec_width(L, et) && px->imm == (et == IT_F64 ? 8 : 4) &&
                      (x->op == IR_LOAD || vec_operand(fn, L, x->args[1], et));
                 acc[nacc++] = u;
                 stores += x->op == IR_STORE;
                 break;
             }
             case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV:
-                ok = vec_of(t) != IT_VOID && (x->op != IR_DIV || t == IT_F32) && vec_operand(fn, L, x->args[0], t) &&
+                ok = vec_of(t) != IT_VOID && vec_width(L, t) && (x->op != IR_DIV || t != IT_I32) && vec_operand(fn, L, x->args[0], t) &&
                      vec_operand(fn, L, x->args[1], t);
                 break;
             case IR_AND: case IR_OR: case IR_XOR:
-                ok = t == IT_I32 && vec_operand(fn, L, x->args[0], t) && vec_operand(fn, L, x->args[1], t);
+                ok = t == IT_I32 && vec_width(L, t) && vec_operand(fn, L, x->args[0], t) && vec_operand(fn, L, x->args[1], t);
                 break;
             case IR_SHL: case IR_SHR: {
                 const IrIns* c = &fn->ins[x->args[1]];
-                ok = t == IT_I32 && vec_operand(fn, L, x->args[0], t) && c->op == IR_CONST && c->imm >= 1 && c->imm <= 31;
+                ok = t == IT_I32 && vec_width(L, t) && vec_operand(fn, L, x->args[0], t) && c->op == IR_CONST && c->imm >= 1 && c->imm <= 31;
                 break;
             }
             case IR_NEG:
-                ok = vec_of(t) != IT_VOID && vec_operand(fn, L, x->args[0], t);
+                ok = vec_of(t) != IT_VOID && vec_width(L, t) && vec_operand(fn, L, x->args[0], t);
                 break;
             default:
                 ok = 0;
@@ -966,7 +982,7 @@ static int vec_value(IrFunc* fn, const VecLoop* L, int* map, int* pre_of, int* s
 // nothing past it needs its header but the exit's phis, for i.
 static int vec_whole(const IrFunc* fn, const VecLoop* L, int ex) {
     const IrIns* n = &fn->ins[L->n];
-    if (n->op != IR_CONST || n->imm % 4) return 0;
+    if (n->op != IR_CONST || n->imm % (uint64_t)L->width) return 0;
     for (int b = 0; b < fn->nblocks; b++) {
         if (b == L->h || vec_at(L, b) >= 0) continue;
         const IrBlock* ob = &fn->blocks[b];
@@ -990,14 +1006,15 @@ static void vec_rewrite(IrFunc* fn, const VecLoop* L) {
     for (int v = 0; v < nold; v++) map[v] = pre_of[v] = splat[v] = -1;
     int pre = L->pre, h = L->h;
     IrType it = (IrType)fn->ins[L->i].type; // k's type, so lt k, m compares as lt i, n does
-    int zero = konst_in(fn, pre, it, 0), one = konst_in(fn, pre, it, 1), two = konst_in(fn, pre, it, 2);
+    int lg = L->width == 4 ? 2 : 1; // log2 of the lanes a vector holds
+    int zero = konst_in(fn, pre, it, 0), one = konst_in(fn, pre, it, 1), shift = konst_in(fn, pre, it, (uint64_t)lg);
     int m;
     if (fn->ins[L->n].op == IR_CONST) {
-        m = konst_in(fn, pre, it, fn->ins[L->n].imm >> 2);
+        m = konst_in(fn, pre, it, fn->ins[L->n].imm >> lg);
     } else { // an i64 n shifts arithmetically: a negative one skips the vector loop
         m = ins_before_term(fn, pre, IR_SHR, it);
         ir_arg_add(fn, m, vec_scalar(fn, L, pre_of, L->n));
-        ir_arg_add(fn, m, two);
+        ir_arg_add(fn, m, shift);
     }
     int vh = ir_block_new(fn), vb = ir_block_new(fn), x = ir_block_new(fn);
     IrBlock* pb = &fn->blocks[pre];
@@ -1063,7 +1080,7 @@ static void vec_rewrite(IrFunc* fn, const VecLoop* L) {
     ir_arg_add(fn, k, ins2(fn, vb, IR_ADD, it, k, one));
     ir_ins_new(fn, vb, IR_JMP, IT_VOID);
     ir_edge_add(fn, vb, vh);
-    int i0 = ins2(fn, x, IR_SHL, it, k, two), ex = fn->blocks[h].succ[1];
+    int i0 = ins2(fn, x, IR_SHL, it, k, shift), ex = fn->blocks[h].succ[1];
     fn->blocks[x].succ[0] = h;
     if (vec_whole(fn, L, ex)) { // no remainder: x leaves on a false branch, which cleanup folds with the scalar loop
         int no = ir_ins_new(fn, x, IR_CONST, IT_BOOL);

@@ -1184,14 +1184,15 @@ once in `CHANGELOG.md`; uncommitted candidates are surveyed in `TODO.md`.
 ### Active
 
 - Auto-vectorization (Compiler #6) — semantics decided; the IR represents
-  vectors as internal value types (`v4f32`, `v4i32`) the target emits
+  vectors as internal value types (`v4f32`, `v4i32`, `v2f64`) the target emits
   lane-wise. Accepted so far: an innermost counted loop of lane-wise
-  `f32`/`i32` arithmetic over elements `base[i]`, with no call after inline
+  `f32`/`i32` arithmetic, or of `f64` arithmetic alone (two lanes, no
+  compare), over elements `base[i]`, with no call after inline
   expansion, whose stores provably touch no other access's element; a branch
   whose arms neither load nor store becomes a lane select, and `i32(i)` under
   a constant count is a lane value. The original loop runs the remainder.
-  Open: f64 lanes and strided (`Vec3` field) elements. Acceptance:
-  `bench/core/run-hotloop.sh` `cube-transform`, `saxpy-f32`, and
+  Open: strided (`Vec3` field) elements. Acceptance:
+  `bench/core/run-hotloop.sh` `cube-transform`, `saxpy-f32`, `saxpy-f64`, and
   `particle-vec3` against C `-O2` with vectorization on.
 
 ### Trigger-gated

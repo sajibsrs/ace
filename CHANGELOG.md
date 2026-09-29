@@ -2976,6 +2976,18 @@ current normative rules, and Git preserves patch-level detail.
   initialized first (Mutability #6). `pkg/sdl` uses it: `mut Event.poll()`
   replaces `poll_event(mut *Event)`, so loops read `for mut event.poll()`.
 
+- Extended auto-vectorization to `f64` lanes (Compiler #6): the IR's
+  `v2f64` holds two lanes in 128 bits and takes `add`, `sub`, `mul`, `div`,
+  `neg`, `splat`, `load`, `store`, and `phi`, which `arm64.c` emits as NEON
+  `.2d` forms (`dup .2d`, or `fmov .2d`/`movi` for an 8-bit immediate). A
+  loop's lane types share one width, so `f64` never mixes with `f32`/`i32`
+  lanes, and a compare on `f64` keeps a loop scalar; the vector loop counts
+  `n >> 1` vectors at the same 16-byte stride. `bench/core` `saxpy-f64` drops
+  from 0.508 to 0.249 ns/element (2.04x; C `-O2` scalar 0.485, vectorized
+  0.182). `tests/ir/vectorize.ace` adds accepted and rejected `f64` loops, and
+  `tests/vectorize/lanes.ace` `f64` counts with NaN, signed-zero, infinite,
+  and subnormal lanes.
+
 The checked-build queue is complete. Additive networking, concurrency, fuller
 math/SIMD, and a second
 backend remain open; their status belongs in the `SPEC.md` Decision Queue and

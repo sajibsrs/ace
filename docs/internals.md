@@ -33,8 +33,8 @@ from the AST would need every optimization written once per source shape and
 repeated in each additional backend.
 
 - **`ir.h`** / **`ir.c`** — the IR's instruction set, construction,
-  verification, and printer (`--ir`). Shared by every target. Its four-lane
-  vector types (`v4f32`, `v4i32`) are internal to the optimizer: no source
+  verification, and printer (`--ir`). Shared by every target. Its 128-bit
+  vector types (`v4f32`, `v4i32`, `v2f64`) are internal to the optimizer: no source
   type lowers to one, and none crosses a call. `tests/vector_ir.c` builds
   vector IR by hand and checks the target's lanes against C.
 - **`lower.c`** (pass 5) — walks each checked function once into SSA
@@ -46,9 +46,11 @@ repeated in each additional backend.
   function's IR, each run once, in order: sparse conditional constant
   propagation, global value numbering, loop strength reduction, dead-code and
   control-flow cleanup, then auto-vectorization over the cleaned loops (and
-  cleanup again when it rewrote one). The vectorizer puts a four-lane loop,
-  counting whole vectors, ahead of an innermost counted loop of lane-wise
-  `f32`/`i32` arithmetic whose accesses it proves independent; the original
+  cleanup again when it rewrote one). The vectorizer puts a four-lane loop
+  (two-lane for `f64`, which takes arithmetic only and never shares a loop
+  with 32-bit lanes), counting whole vectors, ahead of an innermost counted
+  loop of lane-wise `f32`/`i32`/`f64` arithmetic whose accesses it proves
+  independent; the original
   loop runs the remainder, or is dropped when the count is a constant number
   of whole vectors. A branch whose arms neither load nor store becomes a
   `select` on the compare's lane mask, and `i32(i)` under a constant count

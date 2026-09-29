@@ -1696,6 +1696,20 @@ static void fcast(A64* a, int v) {
 static void vector(A64* a, int v) {
     IrIns* x = ins_of(a, v);
     IrType t = (IrType)x->type;
+    if (x->op == IR_SPLAT && t == IT_V2F64) { // dup .2d from d lane 0, or fmov .2d/movi for an 8-bit immediate
+        int d = is_const(a, x->args[0]) ? fmov_imm8(ins_of(a, x->args[0])->imm, 1) : -1;
+        int zero = is_const(a, x->args[0]) && !ins_of(a, x->args[0])->imm;
+        if (zero || d >= 0) {
+            int rd = dst(a, v), imm8 = zero ? 0 : d;
+            put(a, (zero ? 0x4F000400u : 0x6F00F400u) | ((uint32_t)imm8 >> 5) << 16 | ((uint32_t)imm8 & 31) << 5 | R(rd));
+            dst_done(a, v, rd);
+            return;
+        }
+        int rn = opnd(a, x->args[0], FS0), rd = dst(a, v);
+        put(a, 0x4E080400u | (R(rn) << 5) | R(rd));
+        dst_done(a, v, rd);
+        return;
+    }
     if (x->op == IR_SPLAT) {
         int f = t == IT_V4F32;
         if (is_const(a, x->args[0])) { // an 8-bit lane immediate: movi .4s, or fmov .4s for a float
@@ -1746,7 +1760,7 @@ static void vector(A64* a, int v) {
     }
     int l = x->args[0], r = x->nargs > 1 ? x->args[1] : -1, op = x->op;
     IrType ot = (IrType)ins_of(a, l)->type;
-    int f = ot == IT_V4F32;
+    int f = ot == IT_V4F32 || ot == IT_V2F64;
     uint32_t w;
     switch (op) {
     case IR_ADD: w = f ? 0x4E20D400u : 0x4EA08400u; break;
@@ -1767,6 +1781,7 @@ static void vector(A64* a, int v) {
                         : (f ? 0x4E20E400u : 0x6EA08C00u); // eq, ne
         break;
     }
+    if (ot == IT_V2F64) w |= 0x00400000u; // sz: .2d lanes (arithmetic only, ir.h)
     int rn = opnd(a, l, FS0), rm = r >= 0 ? opnd(a, r, FS1) : 0, rd = dst(a, v);
     put(a, w | (R(rm) << 16) | (R(rn) << 5) | R(rd));
     if (op == IR_NE) put(a, 0x6E205800u | (R(rd) << 5) | R(rd)); // mvn

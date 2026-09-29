@@ -1,13 +1,15 @@
-/* Release gives an innermost counted loop of lane-wise f32 or i32 arithmetic
- * over independent elements a vector loop ahead of it, four elements per
- * iteration, counting whole vectors; the original loop runs the remainder.
+/* Release gives an innermost counted loop of lane-wise f32, i32, or f64
+ * arithmetic over independent elements a vector loop ahead of it, four
+ * elements per iteration (two for f64), counting whole vectors; the original
+ * loop runs the remainder.
  * Accepted: global arrays with a constant or variable count, integer lanes
  * with negation, float division, a stack array, a call inline expansion
  * removes, two slices once inlined over a global and a stack array, and
  * branches on an i32 index (selects over its lanes; a count of whole vectors
- * leaves no remainder loop). Kept scalar: a reduction, a neighbouring element,
- * two slices that may overlap, a call that stays, f64 elements, and a load
- * under a branch. Debug keeps every loop scalar. */
+ * leaves no remainder loop), and f64 elements with a constant or variable
+ * count. Kept scalar: a reduction, a neighbouring element, two slices that may
+ * overlap, a call that stays, f64 beside 32-bit lanes, an f64 compare, and a
+ * load under a branch. Debug keeps every loop scalar. */
 
 xs: [64]f32
 ys: [64]f32
@@ -59,8 +61,24 @@ stays() {
     for i: usize in 0 .. 64 { ys[i] = halve(xs[i], 2) }
 }
 
-wide() {
+wide(n: usize) {
     for i: usize in 0 .. 64 { ds[i] = ds[i] * 2.0 }
+    for i: usize in 0 .. n { ds[i] = -ds[i] / 3.0 }
+}
+
+mixed() {
+    for i: usize in 0 .. 64 {
+        ds[i] = ds[i] * 2.0
+        ys[i] = ys[i] * 2.0
+    }
+}
+
+clamped() {
+    for i: usize in 0 .. 64 {
+        d: f64 = ds[i]
+        if d > 1.0 { d = 1.0 }
+        ds[i] = d
+    }
 }
 
 sign(i: i32, bit: i32): f32 {
@@ -87,7 +105,9 @@ main(): int {
     slices(xs[..], mut b[..])
     calls()
     stays()
-    wide()
+    wide(64)
+    mixed()
+    clamped()
     shift()
     corners()
     guarded()

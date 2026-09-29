@@ -12,16 +12,17 @@
 // Value types. Every integer value is held in range for its type: a narrow
 // result is wrapped (release) or checked (debug) at the operation that makes it.
 // A float CONST's imm is its IEEE bit pattern (an f32's in the low 32 bits).
-// A vector type is four lanes in 128 bits, internal to the optimizer (Compiler
-// #6, auto-vectorization): no source type lowers to one, and none crosses a
-// call, parameter, or result. A v4i32 lane compares signed and wraps.
+// A vector type is four (or, for f64, two) lanes in 128 bits, internal to the
+// optimizer (Compiler #6, auto-vectorization): no source type lowers to one,
+// and none crosses a call, parameter, or result. A v4i32 lane compares signed
+// and wraps. v2f64 takes arithmetic, splat, load, store, and phi only.
 typedef enum {
     IT_VOID, IT_BOOL,
     IT_I8, IT_I16, IT_I32, IT_I64,
     IT_U8, IT_U16, IT_U32, IT_U64,
     IT_PTR, // an address: pointers, function values, variable homes; compares unsigned
     IT_F32, IT_F64,
-    IT_V4F32, IT_V4I32,
+    IT_V4F32, IT_V4I32, IT_V2F64,
 } IrType;
 
 #define IR_OPS(X)                                                              \
