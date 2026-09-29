@@ -3012,6 +3012,11 @@ current normative rules, and Git preserves patch-level detail.
   `Vec3` and `Vec2` loops and rejected uneven, partial, and crossed ones;
   `tests/vectorize/lanes.ace` adds `Vec3` `f32`, two-field `f64`, and
   four-field `i32` arrays.
+- Fixed auto-vectorization reading `blocks[-1]`: every two-predecessor block
+  is a candidate header, and the body walk reached a return block before the
+  back-edge check, so ordinary `if` joins (e.g. in `mem.grow`) read out of
+  bounds and `demo/http-simple-server` crashed. The walk now rejects a
+  candidate at any block that leaves through a return.
 
 The checked-build queue is complete. Additive networking, concurrency, fuller
 math/SIMD, and a second

@@ -821,10 +821,11 @@ static int vec_shape(IrFunc* fn, int h, VecLoop* L) {
         IrBlock* xb = &fn->blocks[b];
         if (xb->succ[0] == h && xb->succ[1] < 0) break;
         int j = xb->succ[0];
+        if (j < 0) return 0; // leaves through a return, so h heads no loop
         if (xb->succ[1] >= 0) { // a fork: arms t and f meet at j
             int t = xb->succ[0], f = xb->succ[1];
             j = vec_arm(fn, h, t);
-            if (j == b || j != vec_arm(fn, h, f) || (t == j && f == j) || fn->blocks[j].npreds != 2) return 0;
+            if (j < 0 || j == b || j != vec_arm(fn, h, f) || (t == j && f == j) || fn->blocks[j].npreds != 2) return 0;
             if (t != j) { L->arm[nb] = 1; L->blk[nb++] = t; }
             if (f != j) { L->arm[nb] = 1; L->blk[nb++] = f; }
         } else if (fn->blocks[j].npreds != 1) {
