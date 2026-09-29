@@ -25,8 +25,57 @@ pub EventType: enum u32 {
     key_down = 0x300,
 }
 
-// SDL_Keycode values this binding names.
-pub Keycode: enum u32 { unknown, escape = 0x1b }
+// SDL_Keycode values this binding names. Keys produce their unshifted
+// character, so any other key is still reachable: `Keycode('/')` builds
+// one, and `u32(key)` gives the integer for range checks.
+pub Keycode: enum u32 {
+    unknown,
+    backspace = 0x08,
+    tab = 0x09,
+    enter = 0x0d,
+    escape = 0x1b,
+    space = 0x20,
+    digit_0 = '0',
+    digit_1 = '1',
+    digit_2 = '2',
+    digit_3 = '3',
+    digit_4 = '4',
+    digit_5 = '5',
+    digit_6 = '6',
+    digit_7 = '7',
+    digit_8 = '8',
+    digit_9 = '9',
+    a = 'a',
+    b = 'b',
+    c = 'c',
+    d = 'd',
+    e = 'e',
+    f = 'f',
+    g = 'g',
+    h = 'h',
+    i = 'i',
+    j = 'j',
+    k = 'k',
+    l = 'l',
+    m = 'm',
+    n = 'n',
+    o = 'o',
+    p = 'p',
+    q = 'q',
+    r = 'r',
+    s = 's',
+    t = 't',
+    u = 'u',
+    v = 'v',
+    w = 'w',
+    x = 'x',
+    y = 'y',
+    z = 'z',
+    right = 0x4000_004f,
+    left = 0x4000_0050,
+    down = 0x4000_0051,
+    up = 0x4000_0052,
+}
 
 // Renderer.vsync intervals: 1 presents on every refresh, 0 never waits.
 pub VSYNC_DISABLED: const i32 = 0

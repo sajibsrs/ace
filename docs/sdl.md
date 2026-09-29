@@ -129,7 +129,15 @@ for mut event.poll() {
 names. Field names follow SDL's, except the shared `type` field, which is
 `kind` because `type` is an Ace keyword. `kind` is an `EventType` and `key` a
 `Keycode`, `u32`-backed enums naming the values this binding handles; SDL may
-deliver other values, which simply match no named member.
+deliver other values, which simply match no named member. `Keycode` names
+`backspace`, `tab`, `enter`, `escape`, `space`, `digit_0`…`digit_9`, `a`…`z`,
+and the arrows `left`, `right`, `up`, `down`. A key is its unshifted
+character, so any other one is `sdl.Keycode('/')`, and `u32(key)` gives the
+integer for a range check:
+
+```ace
+if u32(key) >= 'a' && u32(key) <= 'z' { ... }
+```
 
 ## Testing
 

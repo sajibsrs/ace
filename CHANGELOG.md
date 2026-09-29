@@ -2981,6 +2981,9 @@ current normative rules, and Git preserves patch-level detail.
 - `pkg/sdl` `Window::new` and `Renderer.debug_text` take plain Ace strings:
   each copies the text into a `TEXT_MAX + 1` (256) byte stack buffer and
   appends the NUL SDL reads, with no allocation; longer text fails.
+- `pkg/sdl` `Keycode` names `backspace`, `tab`, `enter`, `escape`, `space`,
+  `digit_0`–`digit_9`, `a`–`z`, and the four arrows; other keys stay
+  reachable as `Keycode(c)` with `u32(key)` for range checks.
 
 - Extended auto-vectorization to `f64` lanes (Compiler #6): the IR's
   `v2f64` holds two lanes in 128 bits and takes `add`, `sub`, `mul`, `div`,
