@@ -823,6 +823,8 @@ while [ "$n" -lt "$count" ]; do
         if ! cmp -s "$dir/old.out" "$dir/new.out"; then
             same=0
             echo "mismatch: program $n, $mode" >&2
+            cp "$dir/old.out" "$dir/old_$mode.out"
+            cp "$dir/new.out" "$dir/new_$mode.out"
         fi
     done
     if [ "$same" -eq 0 ]; then
@@ -831,6 +833,9 @@ while [ "$n" -lt "$count" ]; do
             keep=$(mktemp -d "${TMPDIR:-/tmp}/ace-ir-diff-mismatch.XXXXXX")
         fi
         cp "$dir/case.ace" "$keep/case_$n.ace"
+        for out in "$dir"/old_*.out "$dir"/new_*.out; do
+            [ -f "$out" ] && mv "$out" "$keep/case_${n}_${out##*/}"
+        done
     fi
     n=$((n + 1))
 done
