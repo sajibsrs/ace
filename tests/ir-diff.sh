@@ -27,7 +27,7 @@
 # default), and held in a struct member and an array, and calls with a noalias slice
 # parameter compare their slice windows, and for-in loops read and change them. A labeled block restarts, a computed
 # global constant is read, and an Error's name and message are looked up. Some functions bind an
-# address-taken local in an asm statement, read from its home. Each
+# address-taken local in an asm statement (a host register), read from its home. Each
 # program is built with two
 # compilers in debug and release, and requires identical output and exit
 # status. main prints each function's result for several arguments (a float
@@ -36,6 +36,8 @@
 # Run a change against a build of HEAD:
 #   tests/ir-diff.sh <baseline-ace> <candidate-ace> [count] [seed]
 set -eu
+asm_reg=x9
+[ "$(uname -s)-$(uname -m)" = Linux-x86_64 ] && asm_reg=r9
 
 if [ "$#" -lt 2 ] || [ "$#" -gt 4 ]; then
     echo "usage: $0 <baseline-ace> <candidate-ace> [count] [seed]" >&2
@@ -735,7 +737,7 @@ BEGIN {
         if (chance(0.3)) declare("gs.a", "i64")
         if (chance(0.3)) declare("gs.b", "u8")
         print s "): " rett " {"
-        if (!finl && chance(0.3)) print "    ap: i64 = 0\n    pin(mut ap)\n    asm \"nop\" { in: x9 = ap }" # an address-taken binding, read from its home; an inline function cannot hold asm
+        if (!finl && chance(0.3)) print "    ap: i64 = 0\n    pin(mut ap)\n    asm \"nop\" { in: " asm_reg " = ap }" # an address-taken binding, read from its home; an inline function cannot hold asm
         if (!finl && chance(0.3)) { # deferred notes: the value a parameter has when deferred, then a constant
             for (k = 0; k < np; k++)
                 if (ptype[f, k] ~ /^(i8|i16|i32|i64|u8|u16|u32|u64|usize|int)$/ && (pmut[f, k] || chance(0.3))) {
@@ -794,7 +796,7 @@ funcs=0
 trapped=0
 mismatched=0
 while [ "$n" -lt "$count" ]; do
-    awk -v seed="$seed" -v n="$n" "$generator" > "$dir/case.ace"
+    awk -v seed="$seed" -v n="$n" -v asm_reg="$asm_reg" "$generator" > "$dir/case.ace"
     if ! "$old" "$dir/case.ace" > "$dir/check" 2>&1; then
         echo "FAIL: program $n does not check under $old:" >&2
         head -3 "$dir/check" >&2

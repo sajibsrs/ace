@@ -105,6 +105,8 @@ the remaining proof points explicit:
   should consume this toolchain formatter rather than implement Ace parsing.
 - **x86-64 backend and OS layer** [open] — the second target; facade selection
   already uses `@when`.
+- **x64 asm operand syntax** [open] — Intel or AT&T operand order, decided with
+  the first x64 asm instruction that takes operands; v1's take none.
 - **Target-independent linking and cross-compilation** [new] — `-o` runs the
   host `cc`, so building for another OS needs that OS's toolchain, and Windows
   has none by default. Options: require `cc`, bundle `lld` (Mach-O, ELF, COFF),

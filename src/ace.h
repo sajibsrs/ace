@@ -306,6 +306,11 @@ extern int emit_has_main;
 // The build target (main.c): "darwin-arm64" writes a Mach-O arm64 object,
 // "linux-x64" an ELF x64 one.
 extern const char* ace_target;
+// Inline-assembly registers of the target (Inline Assembly #2): the number a
+// binding's name selects (arm64 xN as N; x64 by encoding, rax 0 .. r15 15,
+// never rsp or rbp), or -1; and a number's name.
+int asm_register(const char* s, uint32_t len);
+const char* asm_register_name(int r);
 // The name prefix of std's internal rendering module, whose piece writers
 // fmt.printf and str.format lower to; NULL until it loads.
 extern const char* rendering_prefix;

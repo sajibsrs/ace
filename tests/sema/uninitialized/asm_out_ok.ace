@@ -1,5 +1,7 @@
 /* Uninitialized asm out fixture. */
 
+// target: darwin-arm64
+
 write(fd: int): int {
     result: i64
 

@@ -16,12 +16,13 @@ extern char** environ;
 
 #define SUPPORTED_TARGETS "darwin-arm64, linux-x64"
 
-static int target_supported(const char* target) {
-    return strcmp(target, "darwin-arm64") == 0 || strcmp(target, "linux-x64") == 0;
-}
-
-// Select the code generator and object format for target.
-static int target_codegen(const char* target) {
+// Select target for every stage (sema checks asm against its ISA, lowering
+// and the code generator follow it), or report it unsupported.
+static int target_select(const char* target) {
+    if (strcmp(target, "darwin-arm64") != 0 && strcmp(target, "linux-x64") != 0) {
+        fprintf(stderr, "ace: unsupported target '%s' (supported: " SUPPORTED_TARGETS ")\n", target);
+        return 0;
+    }
     ace_target = target;
     return 1;
 }
@@ -500,10 +501,7 @@ static int package_cmd_check(int argc, char** argv, const char* argv0) {
         return 1;
     }
     const char* target = host_target();
-    if (!target_supported(target)) {
-        fprintf(stderr, "ace: unsupported target '%s' (supported: " SUPPORTED_TARGETS ")\n", target);
-        return 2;
-    }
+    if (!target_select(target)) return 2;
     Package* root_package;
     Node* file;
     Diag d;
@@ -541,10 +539,7 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
             return 2;
         }
     }
-    if (!target_supported(target)) {
-        fprintf(stderr, "ace: unsupported target '%s' (supported: " SUPPORTED_TARGETS ")\n", target);
-        return 2;
-    }
+    if (!target_select(target)) return 2;
     const char* dir = find_package_root();
     if (!dir) {
         fprintf(stderr, "ace: no ace.pkg found in the working directory or any parent\n");
@@ -579,11 +574,6 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
     if (!root_package->is_exe) { // lib: checked, build/ ensured, nothing to link
         free(order);
         return 0;
-    }
-
-    if (!target_codegen(target)) {
-        free(order);
-        return 1;
     }
     char obj[4096];
     snprintf(obj, sizeof obj, "%s/%s.o", build_dir, root_package->name);
@@ -840,10 +830,7 @@ int main(int argc, char** argv) {
         free(order);
         return 0;
     }
-    if (!target_supported(target)) {
-        fprintf(stderr, "ace: unsupported target '%s' (supported: " SUPPORTED_TARGETS ")\n", target);
-        return 2;
-    }
+    if (!target_select(target)) return 2;
     if (package_check_dir) {
         Package* root_package;
         Node* file;
@@ -919,8 +906,7 @@ int main(int argc, char** argv) {
             return 0;
         }
 
-        if (opt_c || opt_link) { // codegen: Mach-O arm64 object
-            if (!target_codegen(target)) return 1;
+        if (opt_c || opt_link) { // codegen: the target's object
             char obj[4096];
             if (opt_link) snprintf(obj, sizeof obj, "%s.o", out_name);
             else obj_path(obj, sizeof obj, path);

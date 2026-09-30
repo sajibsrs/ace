@@ -1,0 +1,23 @@
+/* Each x64 instruction and binding form checks clean (Inline Assembly #1-4). */
+
+// target: linux-x64
+
+exit_code(code: i64): i64 {
+    ret: i64 = 0
+    asm "syscall" {
+        in: rax = 60, rdi = code
+        out: rax = ret
+        clobbers: rcx, r11
+    }
+    return ret
+}
+
+main(): int {
+    kept: i64 = 3
+    asm " nop " {
+        in: rbx = kept, r15 = 1
+        clobbers: r12, r13, r14
+    }
+    asm "int3" {}
+    return int(exit_code(0))
+}

@@ -30,7 +30,13 @@
 // in rax and rdx, xmm0 and xmm1, by class. Calls go through R_X86_64_PLT32;
 // the address of an extern symbol loads from the GOT, an internal one is
 // rip-relative. Byte routines take their own convention (x64_runtime).
-// Asm is refused with a diagnostic until the target covers it.
+//
+// Asm (Inline Assembly #1-3): each "in" value loads into its register, the
+// instruction is encoded (nop, syscall, int3), and each "out" register is
+// stored to its projection's slot. No value lives in a register between
+// instructions, so a reserved register holds nothing live; a reserved rbx or
+// r12-r15 is the caller's, saved below the frame's rbp at entry and restored
+// before leave.
 //
 // The target requires x86-64-v3: floats use SSE (roundsd for floor and ceil)
 // and vfmadd (FMA3) for fma, vectors SSE up to SSE4.1 (pmulld, blendvps).
@@ -44,7 +50,9 @@
 
 #include <stdio.h>
 
-enum { RAX, RCX, RDX, RBX, RSP, RBP, RSI, RDI, R8, R9, R10, R11 };
+enum { RAX, RCX, RDX, RBX, RSP, RBP, RSI, RDI, R8, R9, R10, R11, R12, R13, R14, R15 };
+// the callee-saved registers an asm statement may reserve
+#define CALLEE_SAVED (1u << RBX | 1u << R12 | 1u << R13 | 1u << R14 | 1u << R15)
 enum { CC_O = 0, CC_B = 2, CC_AE = 3, CC_E = 4, CC_NE = 5, CC_BE = 6, CC_A = 7,
        CC_S = 8, CC_P = 10, CC_NP = 11, CC_L = 12, CC_GE = 13, CC_LE = 14, CC_G = 15 };
 enum { R_PC32 = 2, R_PLT32 = 4, R_GOTPCREL = 9 };
@@ -64,6 +72,8 @@ typedef struct {
     int32_t  stage;   // rbp offset of the phi staging area (its 16-aligned base)
     int32_t  scratch; // rbp offset of 16 bytes where register words meet leaves
     int32_t  sret;    // rbp offset of the saved result address, 0 for a result in registers
+    int32_t  saved;   // rbp offset of the callee-saved registers asm reserves (keep), ascending
+    uint32_t keep;    // those registers, a mask by encoding
     uint32_t out;     // outgoing stack argument bytes
     uint32_t frame_at; // text offset of the sub rsp imm32
     uint32_t* label;  // block -> text offset
@@ -1111,6 +1121,39 @@ static void phi_moves(X64* a, int b) {
     }
 }
 
+// Save (at entry) or restore (before leave) the callee-saved registers the
+// function's asm statements reserve.
+static void callee_saved(X64* a, int save) {
+    int32_t at = a->saved;
+    for (int r = RBX; r <= R15; r++) {
+        if (!(a->keep & 1u << r)) continue;
+        if (save) st64(a, r, RBP, at);
+        else ld64(a, r, RBP, at);
+        at += 8;
+    }
+}
+
+// asm "instruction text" { bindings } (Inline Assembly #2-3), bb->ins[i]:
+// loads each "in" value into its register, emits the instruction (sema
+// accepted only nop, syscall, and int3), then stores each "out" register,
+// narrowed to its projection's type, to the projection's slot.
+static void asm_select(X64* a, IrBlock* bb, int i) {
+    int v = bb->ins[i];
+    IrIns* x = ins_of(a, v);
+    for (int k = 0; k < x->nargs; k++) load_val(a, x->asmb->reg[k], x->args[k]);
+    const char* p = x->name;
+    while (*p == ' ' || *p == '\t') p++;
+    if (p[0] == 's') { put(a, 0x0F); put(a, 0x05); } // syscall
+    else if (p[0] == 'i') put(a, 0xCC);            // int3
+    else put(a, 0x90);                             // nop
+    for (int j = i + 1; j < bb->nins && ins_of(a, bb->ins[j])->op == IR_PROJ; j++) {
+        int u = bb->ins[j];
+        int r = x->asmb->out[ins_of(a, u)->imm];
+        normalize(a, (IrType)ins_of(a, u)->type, r);
+        store_val(a, u, r);
+    }
+}
+
 static void terminator(X64* a, int b, int v) {
     IrFunc* fn = a->fn;
     IrIns* x = ins_of(a, v);
@@ -1152,6 +1195,7 @@ static void terminator(X64* a, int b, int v) {
             if (ir_type_float((IrType)ins_of(a, x->args[0])->type)) xmm_from(a, XMM0, RAX);
         }
         if (a->sret) ld64(a, RAX, RBP, a->sret); // the result's address, as the caller passed it
+        callee_saved(a, 0);
         put(a, 0xC9); // leave
         put(a, 0xC3); // ret
         return;
@@ -1259,7 +1303,7 @@ static void emit_block(X64* a, int b) {
             rtcall(a, v);
             break;
         case IR_ASM:
-            refuse(a, "inline assembly");
+            asm_select(a, bb, i);
             break;
         case IR_BITCAST:
             bitcast(a, v);
@@ -1315,6 +1359,7 @@ static uint32_t layout(X64* a) {
             int v = bb->ins[i];
             IrIns* x = &fn->ins[v];
             if (x->op == IR_PHI) stage_next((IrType)x->type, &staged);
+            if (x->op == IR_ASM) a->keep |= x->asmb->reserved & CALLEE_SAVED;
             if (x->op == IR_CALL || x->op == IR_CALLI) {
                 Plan p;
                 plan_call(a, x, &p);
@@ -1334,6 +1379,10 @@ static uint32_t layout(X64* a) {
     if (fn->ret_mem || ret_in_memory(fn->sig)) {
         down += 8;
         a->sret = -(int32_t)down;
+    }
+    if (a->keep) {
+        down += 8 * (uint32_t)__builtin_popcount(a->keep);
+        a->saved = -(int32_t)down;
     }
     for (int b = 0; b < fn->nblocks; b++) {
         IrBlock* bb = &fn->blocks[b];
@@ -1420,6 +1469,7 @@ static void emit_body(X64* a) {
     rr(a, 1, (const uint8_t[]){ 0x81 }, 1, 5, RSP); // sub rsp, imm32
     a->frame_at = here(a);
     put32(a, 0);
+    callee_saved(a, 1);
     if (a->main) { // glibc's argc and argv for sys.argc/arg (lower.c's process_word)
         rip_op(a, 0x89, RDI, "__ace$argc");
         rip_op(a, 0x89, RSI, "__ace$argv");

@@ -108,7 +108,8 @@ sequences(): int {
 }
 
 // an asm statement reserves only the registers it binds, and only across
-// itself, so this loop's values stay in registers around its x9
+// itself, so this loop's values stay in registers around its x9 (r9 on x64)
+@when(target == "darwin-arm64")
 with_asm(n: int): int {
     total: int = 0
     for i: int in 0 .. n {
@@ -116,6 +117,20 @@ with_asm(n: int): int {
         asm "nop" {
             in: x9 = 7
             out: x9 = v
+        }
+        total += i + int(v)
+    }
+    return total
+}
+
+@when(target == "linux-x64")
+with_asm(n: int): int {
+    total: int = 0
+    for i: int in 0 .. n {
+        v: i64 = 0
+        asm "nop" {
+            in: r9 = 7
+            out: r9 = v
         }
         total += i + int(v)
     }

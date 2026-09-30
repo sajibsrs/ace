@@ -629,12 +629,12 @@ void ir_print(IrFunc* fn, FILE* out) {
             case IR_ASM:
                 fprintf(out, " \"%s\"", v->name);
                 for (int a = 0; a < v->nargs; a++) {
-                    fprintf(out, " x%d=", v->asmb->reg[a]);
+                    fprintf(out, " %s=", asm_register_name(v->asmb->reg[a]));
                     print_value(out, num, v->args[a]);
                 }
                 if (v->asmb->nout) {
                     fputs(" ->", out);
-                    for (int k = 0; k < v->asmb->nout; k++) fprintf(out, " x%d", v->asmb->out[k]);
+                    for (int k = 0; k < v->asmb->nout; k++) fprintf(out, " %s", asm_register_name(v->asmb->out[k]));
                 }
                 if (v->asmb->reserved) fprintf(out, ", clobbers 0x%x", v->asmb->reserved);
                 break;

@@ -748,9 +748,9 @@ Decision: explicit monomorphization.
 
 ## Inline Assembly
 1. `asm "instruction text" { bindings }` — a statement, never an expression; values flow only through the bindings.
-2. Bindings name real registers directly: `in: x0 = fd` wires an Ace value in, `out: x0 = ret` wires a register out to an Ace local, `clobbers: x16, x17` declares what breaks. An `in` value is an integer literal or names a scalar local or parameter, and an `out` target names a scalar local or parameter; an aggregate or a global is rejected. Nothing implicit — the compiler emits plain moves around the block. No constraint language exists.
-3. asm statements are never reordered or elided; clobbers are honored by surrounding codegen. A function whose asm reserves a callee-saved register (x19-x28) through any binding or clobber saves it at entry and restores it at exit, as the platform ABI requires.
-4. The ISA is implied by the compilation target (v1: AArch64).
+2. Bindings name real registers of the target directly: `in: x0 = fd` wires an Ace value in, `out: x0 = ret` wires a register out to an Ace local, `clobbers: x16, x17` declares what breaks. AArch64 names `x0`-`x30`; x64 names the 64-bit general registers `rax`, `rbx`, `rcx`, `rdx`, `rsi`, `rdi`, `r8`-`r15`, never `rsp` or `rbp`, which hold the frame. A register of another target is an error. An `in` value is an integer literal or names a scalar local or parameter, and an `out` target names a scalar local or parameter; an aggregate or a global is rejected. Nothing implicit — the compiler emits plain moves around the block. No constraint language exists.
+3. asm statements are never reordered or elided; clobbers are honored by surrounding codegen. A function whose asm reserves a callee-saved register (AArch64 x19-x28; x64 `rbx`, `r12`-`r15`) through any binding or clobber saves it at entry and restores it at exit, as the platform ABI requires.
+4. The ISA is implied by the compilation target, and the compiler encodes the instruction itself. v1 instructions: AArch64 `nop`, `svc #imm`, `brk #imm`; x64 `nop`, `syscall`, `int3`, which take no operands. Nothing is implicit: a Linux `syscall` declares `clobbers: rcx, r11`.
 5. Memory written through asm is the programmer's trust — debug builds do not trace it.
 
 ```c
@@ -759,6 +759,12 @@ asm "svc #0" {
     in:  x0 = fd, x16 = 3     // Apple syscall convention
     out: x0 = ret
     clobbers: x16, x17
+}
+
+asm "syscall" {
+    in:  rax = 60, rdi = code  // Linux x64 exit
+    out: rax = ret
+    clobbers: rcx, r11
 }
 ```
 

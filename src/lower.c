@@ -3670,16 +3670,8 @@ static void run_defers(Lw* l) {
 
 // --- inline assembly ---------------------------------------------------------------
 
-// A binding's register number: sema accepted only "x0".."x30".
-static int asm_reg(Node* r) {
-    if (r->kind != N_IDENT || r->len < 2 || r->str[0] != 'x') return -1;
-    int n = 0;
-    for (uint32_t i = 1; i < r->len; i++) {
-        if (r->str[i] < '0' || r->str[i] > '9') return -1;
-        n = n * 10 + (r->str[i] - '0');
-    }
-    return n <= 30 ? n : -1;
-}
+// A binding's register number: sema accepted only the target's names.
+static int asm_reg(Node* r) { return r->kind == N_IDENT ? asm_register(r->str, r->len) : -1; }
 
 // The variable of the scalar local or parameter an asm binding names (sema
 // refused any other): in SSA, or at its home, read before the instruction

@@ -3,13 +3,15 @@
 # *_err.ace must fail. Fixtures live in feature-grouped directories — one
 # directory per feature with a main fixture plus aspect-named companions.
 # tests/lexer and tests/parser run parse-only (--ast); tests/sema runs the
-# full check (default mode).
+# full check (default mode). A sema or IR fixture's `// target: NAME` line
+# checks it for that target instead of the host's (its asm names registers).
 set -u
 fail=0
 tab=$(printf '\t')
 ACE_BIN=${ACE_BIN:-./ace}
 ACE_DIR=$(dirname "$ACE_BIN")
 ACE=$(cd "$ACE_DIR" && pwd)/$(basename "$ACE_BIN")
+target_of() { sed -n 's/^\/\/ target: *\(.*\)/--target=\1/p' "$1"; }
 
 for f in $(find tests/lexer tests/parser -name '*_ok.ace' | sort); do
     if ! "$ACE" --ast "$f" >/dev/null 2>/tmp/ace_test_errs; then
@@ -63,7 +65,7 @@ if ! printf '%s\n' "$default_link_name_error" | grep -qF \
 fi
 
 for f in $(find tests/sema -name '*_ok.ace' | sort); do
-    if ! "$ACE" "$f" >/dev/null 2>/tmp/ace_test_errs; then
+    if ! "$ACE" $(target_of "$f") "$f" >/dev/null 2>/tmp/ace_test_errs; then
         echo "FAIL (should check clean): $f"
         cat /tmp/ace_test_errs
         fail=1
@@ -71,7 +73,7 @@ for f in $(find tests/sema -name '*_ok.ace' | sort); do
 done
 
 for f in $(find tests/sema -name '*_err.ace' | sort); do
-    if "$ACE" "$f" >/dev/null 2>&1; then
+    if "$ACE" $(target_of "$f") "$f" >/dev/null 2>&1; then
         echo "FAIL (should report errors): $f"
         fail=1
     fi
@@ -2346,7 +2348,7 @@ for f in tests/ir/*.ace; do
     for mode in debug release; do
         want=${f%.ace}.ir
         [ "$mode" = release ] && want=${f%.ace}.release.ir
-        if ! "$ACE" --$mode --ir "$f" >/tmp/ace_ir_out 2>&1 || ! cmp -s /tmp/ace_ir_out "$want"; then
+        if ! "$ACE" --$mode --ir $(target_of "$f") "$f" >/tmp/ace_ir_out 2>&1 || ! cmp -s /tmp/ace_ir_out "$want"; then
             echo "FAIL: --$mode --ir $f differs from $want"
             fail=1
         fi

@@ -1,0 +1,11 @@
+/* The x64 mini-assembler takes nop, syscall, and int3 (Inline Assembly #1,
+   #4): arm64's svc, an operand, or another instruction is rejected. */
+
+// target: linux-x64
+
+main(): int {
+    asm "svc #0" { clobbers: rcx }
+    asm "syscall 1" { clobbers: rcx }
+    asm "mov rax, rbx" { clobbers: rax }
+    return 0
+}

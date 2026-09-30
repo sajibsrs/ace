@@ -1,0 +1,14 @@
+/* On x64, bindings name the 64-bit general registers rax through r15, never
+   rsp or rbp, which hold the frame, nor arm64's x registers (Inline Assembly
+   #2, #4). */
+
+// target: linux-x64
+
+main(): int {
+    value: i64 = 1
+    asm "nop" { in: rsp = value }
+    asm "nop" { clobbers: rbp }
+    asm "nop" { in: x9 = value }
+    asm "nop" { out: eax = value }
+    return 0
+}

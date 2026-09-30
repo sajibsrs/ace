@@ -882,6 +882,18 @@ current normative rules, and Git preserves patch-level detail.
   with `CLOCK_MONOTONIC_RAW` there (the clock `time.awake` reads) and keeps
   `CLOCK_UPTIME_RAW` on Darwin, and the scalar C build disables
   vectorization with the switches of whichever compiler `cc` is.
+- Added x64 inline assembly. The driver now selects the target before
+  semantic checking (it was set only for code generation, so checking and
+  `--ir` always saw darwin-arm64), and sema checks bindings and instructions
+  against it through a register table beside `ace_target`: x64 binds `rax`-
+  `r15` except `rsp`/`rbp` by encoding and takes `nop`, `syscall`, and
+  `int3`. x64 loads each `in` value into its register from its slot, encodes
+  the instruction, and stores each `out` register narrowed to its slot;
+  reserved `rbx`/`r12`-`r15` are saved below rbp at entry and restored before
+  `leave`. The IR prints the target's register names. A sema or IR fixture's
+  `// target: NAME` line checks it for that target; the asm emit fixtures
+  select per-target functions with `@when`, and `tests/ir-diff.sh` binds a
+  host register.
 
 ## Core language
 

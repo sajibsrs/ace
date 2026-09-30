@@ -4,11 +4,17 @@
    around the statement (Inline Assembly #2-3): crossed bindings form a
    register cycle, broken in place when the statement binds the scratch
    register, and a value live across the statement stays out of the
-   registers it reserves. A reserved x19-x28 belongs to the caller, so the
-   function saves it at entry and restores it at exit. */
+   registers it reserves. A reserved callee-saved register (x19-x28, or
+   rbx and r12-r15 on x64) belongs to the caller, so the function saves it
+   at entry and restores it at exit. Each target binds its own registers. */
+
+extern "c" {
+    getpid(): i32
+}
 
 // a arrives in x0 and b in x1; binding them crosswise swaps them, with x16
 // bound as well, so the cycle cannot park through it, and c live in x2
+@when(target == "darwin-arm64")
 crossed(a: i64, b: i64, c: i64): i64 {
     lo: i64 = 0
     hi: i64 = 0
@@ -21,6 +27,7 @@ crossed(a: i64, b: i64, c: i64): i64 {
 }
 
 // keep is live across the statement, which reserves x9 through x15
+@when(target == "darwin-arm64")
 reserved(keep: i64): i64 {
     t: i64 = keep + 1
     v: i64 = 0
@@ -33,6 +40,7 @@ reserved(keep: i64): i64 {
 }
 
 // writes x19 and x23 and clobbers x26, which the caller's loop may hold
+@when(target == "darwin-arm64")
 smash(x: i64) {
     asm "nop" {
         in: x19 = x, x23 = x
@@ -40,9 +48,62 @@ smash(x: i64) {
     }
 }
 
+// the same on x64: rdi and rsi swapped crosswise, with r11 bound as well
+@when(target == "linux-x64")
+crossed(a: i64, b: i64, c: i64): i64 {
+    lo: i64 = 0
+    hi: i64 = 0
+    z: i64 = 0
+    asm "nop" {
+        in: rdi = b, rsi = a, r11 = 9
+        out: rdi = lo, rsi = hi, r11 = z
+    }
+    return c * 1000 + hi * 100 + lo * 10 + z
+}
+
+// keep is live across the statement, which reserves r9 and the rest
+@when(target == "linux-x64")
+reserved(keep: i64): i64 {
+    t: i64 = keep + 1
+    v: i64 = 0
+    asm "nop" {
+        in: r9 = 7
+        out: r9 = v
+        clobbers: rcx, rdx, rsi, rdi, r8, r10, r11
+    }
+    return t * 10 + v
+}
+
+// writes rbx and r12 and clobbers r15, which the caller may hold
+@when(target == "linux-x64")
+smash(x: i64) {
+    asm "nop" {
+        in: rbx = x, r12 = x
+        clobbers: r15
+    }
+}
+
+// a direct Linux getpid (39) agrees with the C library's
+@when(target == "linux-x64")
+own_pid(): i64 {
+    pid: i64 = 0
+    asm "syscall" {
+        in: rax = 39
+        out: rax = pid
+        clobbers: rcx, r11
+    }
+    return pid - i64(getpid())
+}
+
+@when(target == "darwin-arm64")
+own_pid(): i64 {
+    return 0
+}
+
 pin(mut n: i64) {}
 
 // the same, with an address-taken binding, read from its home
+@when(target == "darwin-arm64")
 smash_home(x: i64) {
     ap: i64 = x
     pin(mut ap)
@@ -50,6 +111,35 @@ smash_home(x: i64) {
         in: x19 = ap, x23 = x
         clobbers: x26
     }
+}
+
+@when(target == "linux-x64")
+smash_home(x: i64) {
+    ap: i64 = x
+    pin(mut ap)
+    asm "nop" {
+        in: rbx = ap, r12 = x
+        clobbers: r15
+    }
+}
+
+// a callee-saved register set before a call to smash reads back unchanged
+@when(target == "darwin-arm64")
+probe(): i64 {
+    seen: i64 = 0
+    asm "nop" { in: x19 = 77 }
+    smash(1)
+    asm "nop" { out: x19 = seen }
+    return seen
+}
+
+@when(target == "linux-x64")
+probe(): i64 {
+    seen: i64 = 0
+    asm "nop" { in: rbx = 77 }
+    smash(1)
+    asm "nop" { out: rbx = seen }
+    return seen
 }
 
 // a, total, and i live across both calls, in callee-saved registers
@@ -69,5 +159,7 @@ main(): int {
     if crossed(3, 4, 5) != 5349 { return 1 }
     if reserved(5) != 67 { return 2 }
     if preserved() != 100 { return 3 }
+    if own_pid() != 0 { return 4 }
+    if probe() != 77 { return 5 }
     return 0
 }

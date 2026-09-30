@@ -1,6 +1,8 @@
 /* An asm binding naming an address-taken local (Inline Assembly #2) reads
  * it from its home just before the instruction. */
 
+// target: darwin-arm64
+
 sign(x: i64): i64 {
     k: i64 = x
     bump(mut k)

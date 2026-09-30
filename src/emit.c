@@ -75,6 +75,27 @@
 int emit_has_main = 0;
 const char* ace_target = "darwin-arm64";
 
+static const char* const ARM64_ASM_REG[31] = {
+    "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15",
+    "x16", "x17", "x18", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30",
+};
+static const char* const X64_ASM_REG[16] = {
+    "rax", "rcx", "rdx", "rbx", NULL, NULL, "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
+};
+
+int asm_register(const char* s, uint32_t len) {
+    int x64 = strcmp(ace_target, "linux-x64") == 0;
+    const char* const* names = x64 ? X64_ASM_REG : ARM64_ASM_REG;
+    int n = x64 ? 16 : 31;
+    for (int r = 0; r < n; r++)
+        if (names[r] && strlen(names[r]) == len && memcmp(names[r], s, len) == 0) return r;
+    return -1;
+}
+
+const char* asm_register_name(int r) {
+    return strcmp(ace_target, "linux-x64") == 0 ? X64_ASM_REG[r] : ARM64_ASM_REG[r];
+}
+
 // --- emitter state ----------------------------------------------------------------
 
 typedef struct { Sym* s; const char* name; uint32_t len; } GVar; // global storage

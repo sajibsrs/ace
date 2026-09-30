@@ -1,6 +1,8 @@
 /* An asm binding names a scalar local or parameter (Inline Assembly #2):
    never an aggregate, whose words no register holds, or a global. */
 
+// target: darwin-arm64
+
 Pair: struct { x: i64, y: i64 }
 
 count: i64 = 0

@@ -30,6 +30,8 @@ paths:
   discovery); `// expect-host: OS` skips a case unless `uname -s` prints OS.
 - `tests/ir/NAME.ace` pairs with `NAME.ir` and `NAME.release.ir`, the exact
   `--ir` output in each mode; regenerate them only after reviewing the new IR.
+  A sema or IR fixture's `// target: NAME` line checks it for that target
+  rather than the host's (asm names the target's registers).
   Every checked `tests/emit` root must also lower and verify in both modes.
 - A change to the IR, lowering, or `arm64.c` also runs
   `tests/ir-diff.sh <baseline-ace> ./ace [count] [seed]`: random scalar

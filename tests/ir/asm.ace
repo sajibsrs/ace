@@ -3,6 +3,8 @@
  * its reserved mask. Release keeps one with no outputs and never merges two
  * equal ones. syscall is never called. */
 
+// target: darwin-arm64
+
 syscall(fd: i64, n: i64): i64 {
     ret: i64 = 0
     asm "svc #0" {
