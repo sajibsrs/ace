@@ -1,4 +1,8 @@
 // C twin of raytrace.ace.
+#ifdef __linux__
+#define _DEFAULT_SOURCE /* CLOCK_MONOTONIC_RAW */
+#endif
+
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -91,10 +95,15 @@ static Color trace(Spin spin, Vec light, Vec d) {
     return shade(FLOOR_COLOR, light.y);
 }
 
+/* The clock Ace's time.awake reads on each target. */
 static uint64_t awake(void) {
+#ifdef __APPLE__
+    return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+#else
     struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
+    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
     return (uint64_t)ts.tv_sec * 1000000000u + (uint64_t)ts.tv_nsec;
+#endif
 }
 
 int main(void) {
