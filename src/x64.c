@@ -442,6 +442,11 @@ static void setcc(X64* a, int cc, int r) {
     rex(a, 0, 0, r, r >= RSP && r < R8);
     put(a, 0x0F); put(a, (uint8_t)(0x90 | cc)); put(a, (uint8_t)(0xC0 | (r & 7)));
 }
+// op r8, reg8 (0x20 and, 0x08 or)
+static void op8(X64* a, uint8_t op, int reg, int r) {
+    rex(a, 0, reg, r, (r >= RSP && r < R8) || (reg >= RSP && reg < R8));
+    put(a, op); put(a, (uint8_t)(0xC0 | (reg & 7) << 3 | (r & 7)));
+}
 
 static void fail_if(X64* a, int cc, int target) { jump_add(a, cc, fail_target(a, target)); }
 
@@ -803,10 +808,9 @@ static void fcompare(X64* a, int v) {
     ucomis(a, t, xl, x_in(a, r, XMM1));
     int d = gp_out(a, v, RAX);
     setcc(a, op == IR_EQ ? CC_E : op == IR_NE ? CC_NE : op == IR_GT ? CC_A : CC_AE, d);
-    if (op == IR_EQ || op == IR_NE) { // and d8, cl, or or d8, cl
+    if (op == IR_EQ || op == IR_NE) {
         setcc(a, op == IR_EQ ? CC_NP : CC_P, RCX);
-        rex(a, 0, RCX, d, d >= RSP && d < R8);
-        put(a, op == IR_EQ ? 0x20 : 0x08); put(a, (uint8_t)(0xC0 | RCX << 3 | (d & 7)));
+        op8(a, op == IR_EQ ? 0x20 : 0x08, RCX, d); // and d8, cl, or or d8, cl
     }
     normalize(a, IT_BOOL, d);
     gp_done(a, v, d);
@@ -1141,8 +1145,14 @@ static void pointer_offset(X64* a, int v) {
     int64_t off;
     if (!chk && imm32_of(a, x->args[1], &k) && !__builtin_mul_overflow((int64_t)k, (int64_t)x->imm, &off) &&
         off == (int32_t)off && off != INT32_MIN) {
-        int d = gp_out(a, v, RAX);
-        load_val(a, d, x->args[0]);
+        int d = gp_out(a, v, RAX), p = x->args[0];
+        int64_t at = a->home[p] + (sub ? -off : off);
+        if (ins_of(a, p)->op == IR_SLOT && at == (int32_t)at) { // into a stack object: one lea from rbp
+            lea(a, d, RBP, (int32_t)at);
+            gp_done(a, v, d);
+            return;
+        }
+        load_val(a, d, p);
         if (off) alu_imm(a, 0, d, (int32_t)(sub ? -off : off));
         gp_done(a, v, d);
         return;
