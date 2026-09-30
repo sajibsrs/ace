@@ -58,3 +58,29 @@ the same names.
 - Apple-arm64 extern C variadic calls use the platform's stack convention for
   unnamed arguments. `sys` still binds fixed-arity `__open` because its public
   wrapper has a fixed signature and needs no variadic boundary.
+
+## Design rationale
+
+Why the rules in `spec/std/README.md` are shaped as they are.
+
+- Stdlib: module context and conventional abbreviations remove noise without
+  introducing a private shorthand vocabulary or making related facade and target
+  APIs differ.
+- Stdlib #5: one conventional entry name gives a directory module an explicit,
+  auditable boundary without repeating its public name, while exact user paths
+  and ambiguity diagnostics keep resolution simple. The suffixless `@name`
+  spelling presents a reserved module rather than an implementation filename and
+  remains visibly distinct from userland and ordinary standard modules.
+- Stdlib #8: the compact established names remain unambiguous under the `math`
+  qualifier, while representation access stays centralized in `bits`.
+- Stdlib #8: each operation has one exact result, so no accuracy contract is
+  needed, and a compiler-provided instruction is the machine truth.
+- Stdlib #8: a stated bound is testable and portable, and in-Ace implementations
+  leave `math` usable without a system library.
+- Stdlib #8: source states honestly that no Ace body exists, the public API
+  remains first-class, and the exact whitelist adds machine operations without
+  exposing backend internals or an unrestricted intrinsic namespace.
+- Stdlib #21: convenience must not cost control. Keeping every capability public
+  lets callers replace a convenience when its policy does not fit, and since Ace
+  has no allocator values, the returned ownership is what makes allocation
+  visible.

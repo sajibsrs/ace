@@ -113,3 +113,39 @@ It returns null when no stored connection error exists, `ConnectErr(code)` for
 the stored connection result, or `PendingErrorErr(errno)` if the query itself
 fails. Higher-level nonblocking connection completion belongs to `tcp`.
 
+## Design rationale
+
+Why the rules in `spec/std/net.md` are shaped as they are.
+
+- Module shape (Stdlib #13): networking is a large coherent family deserving a
+  predictable module boundary; hiding incidental platform ABI details improves
+  modularity without compromising performance or machine truth. IPv4 first
+  proves that boundary and the later event model with the smallest coherent
+  surface. The explicit `Addr4` value keeps byte order and platform layout out
+  of application code while leaving `Addr6` additive. The alias gives networking
+  a domain name while retaining zero-cost interoperability with ordinary
+  descriptors and the future event queue. One type-parameterized constructor
+  keeps the family predictable as protocols are added; its Ace enum is privately
+  mapped to platform constants. Separate option, bind, and nonblocking
+  operations compose across socket roles and keep every kernel-state transition
+  explicit; convenience belongs above this core rather than inside it. Result
+  shapes follow Ace's existing explicit error convention without returning
+  redundant values from operations on an existing socket.
+- `listen`: `usize` expresses a nonnegative count, and retaining a single
+  transition preserves the core composition rule.
+- `accept`: the one-attempt rule avoids hidden control flow or renewed blocking,
+  while leaving retry policy and accepted-socket configuration explicit.
+- Module organization: the directory groups one coherent multi-file module,
+  compile-time selection reflects actual support, and the facade preserves one
+  stable API without redundant target-to-target forwarding.
+- `connect`: blocking connect completes the initial client proof with one kernel
+  transition, while the deferred facilities require independent semantics and
+  are unnecessary for the first blocking client or nonblocking servers.
+- `local`: the nonblocking proof genuinely requires passing an ephemeral
+  listener endpoint to its client, and the short `local` name leaves the
+  accurate `local`/`peer` pair for endpoint queries.
+- `resolve4`: caller-owned result storage keeps persistent memory and capacity
+  explicit, one blocking call matches the initial blocking TCP layer, and the
+  narrow platform boundary supplies immediately useful host lookup without first
+  adding UDP, DNS packet parsing, resolver configuration, retry policy, and TCP
+  fallback to Ace.

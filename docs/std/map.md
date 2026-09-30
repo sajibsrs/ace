@@ -52,3 +52,12 @@ gone: bool = mut ports.unset("http")         /* true */
 
 Iteration order is unspecified and iteration is not offered. Removal shifts
 later entries back over the hole, so no tombstones accumulate.
+
+## Design rationale
+
+Why the rules in `spec/std/collections.md` are shaped as they are.
+
+- Stdlib: `array`, `map`, and `file` #19: direct specialized calls let `hash`
+  and `same` expand `inline` (Functions & ABI #8) and preserve a valid zero
+  value, which function-valued fields would forfeit at one indirect call per
+  operation.

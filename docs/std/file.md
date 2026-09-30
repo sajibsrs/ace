@@ -31,3 +31,13 @@ its own `FileErr`:
 | ------------ | -------------------------------- |
 | `allocation` | the buffer could not be allocated |
 | `truncated`  | the file shrank while being read |
+
+## Design rationale
+
+Why the rules in `spec/std/collections.md` are shaped as they are.
+
+- Stdlib: `array`, `map`, and `file` #20: reading or writing a whole file is the
+  common case and composes existing one-to-one operations; the allocation stays
+  visible in the returned slice, released by the ordinary `mem.release` rather
+  than a wrapper type. A module of its own keeps `sys` allocation-free, since
+  every imported function is emitted and linked.

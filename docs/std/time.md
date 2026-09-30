@@ -42,3 +42,11 @@ NTP may slew, and `awake()` reads `CLOCK_MONOTONIC_RAW`.
 
 Calendar time, process CPU time, duration conversion, and process sleep are not
 implemented yet.
+
+## Design rationale
+
+Why the rules in `spec/std/sys.md` are shaped as they are.
+
+- Stdlib: `sys` and `time` #11: the clocks are distinct operations with distinct
+  time domains, so separate names state whether the reading measures all elapsed
+  time or awake time without a boolean argument.

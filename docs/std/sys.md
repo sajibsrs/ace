@@ -232,3 +232,28 @@ values, the native 18-byte BPF header length (which excludes two bytes of C
 structure tail padding), four-byte record alignment, truncated-input rejection,
 and Ethernet/IPv4 decoding for TCP, UDP, and ICMP.
 
+## Design rationale
+
+Why the rules in `spec/std/sys.md` are shaped as they are.
+
+- Stdlib: `sys` and `time` #10: distinct-typed handles prevent silent integer
+  misuse where the OS cannot diagnose it; flags and POSIX permission bits stay
+  plain because the kernel validates their combinations; per-operation domains
+  plus the errno query keep one fact in one place without bending the
+  static-descriptor rule.
+- Stdlib: `sys` and `time` #10: one allocation-free escape hatch is smaller and
+  more honest than a premature portable device-control abstraction, while
+  caller-owned bytes preserve explicit layout and make the existing bounded
+  manual parsing baseline sufficient for BPF.
+- Stdlib: `sys` and `time` #10: caller-owned batching gives one-entry iteration
+  without libc allocation, truncation, or an OS-specific record surface;
+  explicit `mut` makes cursor and invalidation changes visible; the deliberately
+  small metadata value avoids freezing incidental Darwin ABI while leaving
+  richer queries additive.
+- Stdlib: `sys` and `time` #10: the networking proofs require a real concurrent
+  peer but should contain no platform externs; distinct handles prevent
+  accidental process/fd interchange, while one-operation wrappers preserve
+  machine-visible control flow and keep policy with the caller.
+- Stdlib: `sys` and `time` #10: indexed access exposes the existing process
+  storage without manufacturing an incompatible `[]string` descriptor array,
+  hidden allocation, runtime-sized stack storage, or an arbitrary fixed cap.

@@ -845,3 +845,46 @@ with no allocation, object metadata, subtype relation, or runtime search.
   null-use, and allocator diagnostics are implemented and stripped in release.
 
 The examples are covered by `tests/sema/docs/type_ok.ace`.
+
+## Design rationale
+
+Why the rules in `spec/syntax.md`, `spec/types.md` are shaped as they are.
+
+- Syntax & Parsing #9: one declaration rule works uniformly for literals,
+  aggregates, null values, and single- or multi-return expressions while making
+  the programmer's expected type locally visible and independently checkable
+  against the initializer.
+- Syntax & Parsing #13: omission explicitly authorized by the type author
+  removes repetitive construction without hidden work or weakening definite
+  initialization, while per-field opt-in keeps required state visible. `=`
+  consistently supplies a value, while `:` consistently associates a name with a
+  type.
+- Syntax & Parsing #14: error entries are declarative records rather than an
+  expression list; a line-oriented form stays easy to scan and parse without
+  redundant separators.
+- Syntax & Parsing #15: a compile-time constant identifier is exactly as fixed
+  and safe as a literal, so a literal-only grammar bought no safety — only
+  friction for named sizes shared across declarations (`INPUT_SIZE: const usize
+  = 8192` backing `input: [INPUT_SIZE]u8`).
+- Type System #3: the destination only settles how a value with no type of its
+  own is stored, or picks among existing declarations; it never creates an
+  instantiation, so every stamp is spelled at its use. Type-argument deduction
+  from arguments or destinations, multi-binding deduction, and declaration type
+  elision remain absent and could only be added later as opt-in relaxations
+  (PHILOSOPHY.md, Considerations #1).
+- Type System #9: explicit controls complete machine-true wire, hardware, and C
+  representations without changing ordinary struct layout.
+- Type System #11: explicit values and widths make opcodes, wire values,
+  registers, and integer-backed ABI fields machine-true while the strict zero,
+  fit, and uniqueness checks preserve Ace's local safety and leave aliases or
+  other relaxations additive (PHILOSOPHY.md, Priority Stack and Considerations
+  #1).
+- Type System #12: sparse standard-library LUTs need direct declarative source
+  without hand-written ranges, holes, or switches. A module-only lookup surface
+  supplies that use while preserving recursive descent, in-order compilation,
+  direct machine-code emission, explicit values, and no hidden allocation or
+  general compile-time execution.
+- Scalar-backed Bit Fields #7: deterministic machine-register and compact binary
+  layouts are useful without importing C's implementation-defined bit fields or
+  weakening Ace's explicit mutation, debug-build, layout, and access-site
+  volatile rules.

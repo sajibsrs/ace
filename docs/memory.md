@@ -507,3 +507,55 @@ usable bytes, compiler statistics, peak resident size, and related macOS
 process counters without turning variable benchmark numbers into test
 thresholds. `./bench/core/run-cpu.sh` compares one bounded integer workload across
 Ace debug/release output and equivalent C `-O0`/`-O2` builds.
+
+## Design rationale
+
+Why the rules in `spec/memory.md` are shaped as they are.
+
+- Operators (Memory #7): distinct operators keep pointer access, Boolean logic,
+  and integer bit manipulation visible and type-specific while retaining the
+  familiar machine-level spellings. Floats have no `%`: the target has no
+  remainder instruction, and an exact one is a data-dependent loop that belongs
+  behind an explicit call, not an operator.
+- Pointer arithmetic: this exposes the required machine operation without making
+  a pointer resemble a sequence, widening permission, adding metadata, or
+  implying iterator, ownership, or provenance machinery.
+- Pointer-integer and pointer reinterpretation: kernels, embedded and
+  memory-mapped access, tagged pointers, integer-address ABIs, custom runtimes,
+  renderers, and address diagnostics require the exact machine facility. The
+  explicit conversion is the trust boundary; Ace adds no tagged-pointer
+  abstraction, hidden metadata, ownership rule, or runtime validation beyond the
+  cheap local alignment diagnostic.
+- Strings and byte views (Memory #19): use `string` for complete text, `[]char`
+  for character-oriented parsing or framing, and `[]u8` for raw bytes; these are
+  source-level intent conventions, not runtime or overload distinctions.
+- Untyped storage: the machine has no typed memory, and Ace already states
+  aliasing explicitly, so type-based disjointness would buy nothing Ace relies
+  on while making every foreign union, record header, and device layout
+  undefined. Restricting reinterpretation to plain bits keeps compiler-created
+  values unforgeable, so the facts passes rely on for them need no debug check.
+- Volatile access: access-site marking exposes each observable operation without
+  a contagious qualifier system and remains independent of byte layout.
+- Volatile access implementation: ordinary and volatile
+  fields share one typed-place path which computes the address once, takes width
+  only from the final scalar type, and selects volatile behavior at the
+  exact-width load/store primitive.
+- Typed allocation: typed allocation removes manual byte packing while changing
+  nothing about the allocation model — one fixed process-wide strategy,
+  machine-true sizes, explicit failure as the null slice, and zero release-mode
+  cost (the lowering is the raw platform call plus a constant multiply).
+  Reinterpretation (`[]u8` to `[]T`) and implicit conversions stay out
+  (Sequences #7): the typed form is a separate allocation path, not a view cast.
+- Zero-filled typed allocation (Memory #24): the zero representation is
+  universal, so the only cost of offering it is one name, while a hand-written
+  clear loop was measured 1.5x to 3x slower to initialize tables of 2^14 to 2^22
+  24-byte slots.
+- Initialization through views (Values & Passing #8): a writable view hands
+  storage to be filled without a zero fill, and tracking array slices whole
+  keeps branch joins constant-cost.
+- Constant initializers (Values & Passing #12): an initialized constant remains
+  a constant across an explicit module boundary, allowing an OS-neutral facade
+  to re-export target-selected values without duplicating their machine values.
+- Mutability (section decision): local mutability is invisible to optimization
+  (SSA); mutation through references is what blocks alias analysis. Syntax is
+  spent only where the compiler and reader profit.

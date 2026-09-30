@@ -176,3 +176,16 @@ deadlines, and cancellation are absent.
 URL path and query remain separate views;
 callers composing a request target provide destination storage explicitly.
 
+## Design rationale
+
+Why the rules in `spec/pkg/http.md` are shaped as they are.
+
+- Stdlib: HTTP #17: explicit overloads preserve existing one-request behavior,
+  make network work opt-in, and bound it in accordance with `PHILOSOPHY.md`
+  Principles #2, #3, and #7.
+- Stdlib: HTTP #17: keeping the framing core independent while composing
+  concrete TCP operations at the ergonomic boundary preserves machine-visible
+  storage, explicit errors, and the lack of hidden allocation without adding
+  dependency inversion for a TCP-only protocol. Byte-oriented parsing matches
+  HTTP and permits UTF-8 payloads to pass through unchanged without making
+  Unicode text processing part of networking.

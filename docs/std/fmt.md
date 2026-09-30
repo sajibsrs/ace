@@ -156,3 +156,18 @@ call deferred to end of file (`g(41)` with a `usize` parameter), is a
 compile-time error; type the call's arguments (`g(usize(41))`) or assign its
 result to a typed variable first.
 
+## Design rationale
+
+Why the rules in `spec/std/fmt.md` are shaped as they are.
+
+- Stdlib: formatted output #12: one write per call rather than per piece (Go's
+  `fmt` formats a whole call into one buffer before writing) without C stdio's
+  cross-call buffer and its flushing rules.
+- Stdlib: formatted output #12 (under the priority stack): direct typed
+  lowering, bounded stack storage, and no runtime interpretation put performance
+  first; the small conversion/modifier set and one uniform output contract
+  minimize language, compiler, and runtime machinery; private helper reuse
+  preserves the `fmt` module boundary; static linear validation keeps compile
+  time cheap; and precise compile-time diagnostics add safety without release
+  cost. Every excluded feature can be added later without tightening existing
+  code.

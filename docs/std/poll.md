@@ -115,3 +115,24 @@ Compare `error.domain` with the corresponding `typeid(poll.*Err)` and inspect
 `error.code` for the errno captured at failure. Closing a poll queue uses
 `sys.close` and therefore retains `sys.CloseErr`.
 
+## Design rationale
+
+Why the rules in `spec/std/net.md` are shaped as they are.
+
+- Polling module (Stdlib #14): polling belongs to descriptor I/O rather than
+  networking, while its own module keeps `sys` from becoming an unstructured
+  platform catalogue.
+- `wait`: caller-owned storage, fixed bounded OS-layer work, explicit lifetime,
+  and one wait transition preserve performance and machine truth while
+  OS-neutral public names do not expose kqueue.
+- Nonblocking server proof: a deterministic multi-client chat fixture
+  demonstrates that the carved one-attempt operations are sufficient for bounded
+  servers while preserving the machine-visible storage and control-flow model
+  required by `PHILOSOPHY.md` Principles #1–2 and #6.
+
+## Design rationale
+
+Why the rules in `spec/control-flow.md` are shaped as they are.
+
+- Sequences #12: descriptor polling needs a general non-socket readiness proof
+  without exposing a test-local platform binding.

@@ -10,7 +10,7 @@ overload signature. Consequently, overloads cannot distinguish `float` from
 `char` is the transparent `u8` alias specified by Stdlib #16.
 1. Every signature, global, field, parameter, return, local, and multi-binding states its type. Generic instantiation is also explicit.
 2. No type inference keeps compilation direct, types deterministic, declared intent locally visible, and generated code machine-true. Initializer expressions are checked against the type written on their bindings.
-3. Context never supplies a type argument. A declared type reaches into an expression in exactly two ways: an untyped constant or `null` takes the type of the declaration, assignment, field, payload, parameter, return, or tuple member it initializes (Syntax & Parsing #10–11; Zero, Null & Absence #1), and a declared function-value type selects one written function from an overload set (Names & Scoping #8). Rationale: the destination only settles how a value with no type of its own is stored, or picks among existing declarations; it never creates an instantiation, so every stamp is spelled at its use. Type-argument deduction from arguments or destinations, multi-binding deduction, and declaration type elision remain absent and could only be added later as opt-in relaxations (PHILOSOPHY.md, Considerations #1).
+3. Context never supplies a type argument. A declared type reaches into an expression in exactly two ways: an untyped constant or `null` takes the type of the declaration, assignment, field, payload, parameter, return, or tuple member it initializes (Syntax & Parsing #10–11; Zero, Null & Absence #1), and a declared function-value type selects one written function from an overload set (Names & Scoping #8).
 4. Type aliases: `Name: type = Existing` — transparent, zero-cost notation; the alias IS the type, fully interchangeable. Generic aliases allowed: `Pair[T]: type = (T, T)`.
 5. Distinct types: `Name: distinct Existing` — same layout, new nominal type. `Name(value)` constructs (constructor position is free via the namespace split); distinct types do not mix with their base or each other without explicit conversion. Zero runtime cost — pure compile-time discipline for units, handles, and IDs.
 6. `typeid(T)` is a compile-time builtin for an exact named type. The compiler assigns a nonzero 32-bit ID represented in the existing pointer-sized `typeid`, allowing an error's upper 32 bits to compare directly with `typeid(Domain)`. The same exact type compares equal throughout one linked program; different nominal types and exact generic instantiations compare unequal; transparent aliases share their target's identity. Values support storage, passing, `==`, and `!=`, but no ordering, arithmetic, reflection, integer conversion, runtime name, serialization, or cross-build/process stability. Zero/null means no type identity.
@@ -55,8 +55,6 @@ Carved (explicit struct layout):
   by-value ABI verification. Layout attributes do not determine byte order, bit
   fields, observability, or synchronization.
 
-Rationale: explicit controls complete machine-true wire, hardware, and C
-representations without changing ordinary struct layout.
 10. Enums default to `i32` storage and declaration-order discriminants beginning
     at zero. `Name: enum u8 { none, read = 4, write }` explicitly selects one of
     `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, or `u64` as the backing type;
@@ -71,11 +69,7 @@ representations without changing ordinary struct layout.
 11. An explicitly backed enum is C-ABI-compatible wherever its backing integer
     is compatible and crosses the boundary exactly as that integer. A default
     enum remains rejected at C boundaries because it states no external width
-    promise. Rationale: explicit values and widths make opcodes, wire values,
-    registers, and integer-backed ABI fields machine-true while the strict zero,
-    fit, and uniqueness checks preserve Ace's local safety and leave aliases or
-    other relaxations additive (PHILOSOPHY.md, Priority Stack and Considerations
-    #1).
+    promise.
 12. `bool` is one byte with alignment one; `false` is `0` and `true` is `1`,
     and no other byte value is a valid `bool`. It maps to C's `_Bool`/`bool`
     and is C-ABI-compatible in every position an integer is (C Interop #3).
@@ -108,12 +102,6 @@ Carved (compile-time static lookup maps):
   cannot alias a stored entry. A declaration performs no runtime construction
   or initialization. The representation is compiler-private and introduces no
   runtime map descriptor or hashing contract for user-defined types.
-
-Rationale: sparse standard-library LUTs need direct declarative source without
-hand-written ranges, holes, or switches. A module-only lookup surface supplies
-that use while preserving recursive descent, in-order compilation, direct
-machine-code emission, explicit values, and no hidden allocation or general
-compile-time execution.
 
 ## Scalar-backed Bit Fields
 Decision: nominal, exact-width bit layouts lower:
@@ -149,10 +137,6 @@ Decision: nominal, exact-width bit layouts lower:
    `export` signatures; interop uses the backing integer and explicit conversion.
    No C bit-field ABI equivalence, atomic field operation, volatile field RMW,
    reflection, wider backing unit, or cross-statement fusion is implied.
-
-Rationale: deterministic machine-register and compact binary layouts are useful
-without importing C's implementation-defined bit fields or weakening Ace's
-explicit mutation, debug-build, layout, and access-site volatile rules.
 
 ## Abstraction
 Decision: composition over inheritance; dispatch is explicit.

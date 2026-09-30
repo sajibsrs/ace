@@ -525,3 +525,13 @@ result: i32 = c_variadic(0, i32(9), f32(1.25), &value)
   values explicitly.
 
 The examples are covered by `tests/sema/docs/function_ok.ace`.
+
+## Design rationale
+
+Why the rules in `spec/compiler.md` are shaped as they are.
+
+- Functions & ABI #8: the marker keeps expansion visible in source and declares
+  at the module boundary that callers compile against the body; release builds
+  additionally expand only small leaf functions (Compiler #6), so unmarked code
+  pays no call for a trivial helper while larger expansion stays the author's
+  choice (PHILOSOPHY Considerations #1).

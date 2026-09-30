@@ -421,3 +421,28 @@ Defers run only at function exits, and nothing else runs them:
 - There is no check for deferring the same call twice.
 
 `main` defers work like any other function's.
+
+## Design rationale
+
+Why the rules in `spec/control-flow.md` are shaped as they are.
+
+- Conditions #2: a fixed position makes the catch-all the last thing a reader
+  meets, so no case after it can look reachable, and a distinct word keeps
+  `else` meaning only the alternative branch of `if`. The rule costs one check
+  in sema and does not change emitted code.
+- Deferred calls #7: cleanup ordering is what C reaches for `goto` to obtain.
+  Anchoring the list at the function keeps the exit set total — every `return`
+  plus fall-off — with no block-scoped bookkeeping, which is what makes inline
+  expansion possible at zero runtime cost in an in-order compiler. The two-tier
+  capture keeps the ordinary `mut` call contract truthful at a distance:
+  read-only arguments behave like call-by-value snapshots, while `mut`-marked
+  arguments keep their by-reference meaning up to the function's final moment.
+- Sequences #9: every view operation is explicit and allocation-free; permission
+  is established where `mut` is written, carried in types thereafter, and never
+  escalated — writable bytes exist only from proven-writable provenance, so the
+  literal-storage fault class is rejected at declarations rather than handled at
+  runtime. Removing sequence equality operators avoids both hidden
+  arbitrary-element work and descriptor identity masquerading as value equality.
+  Byte content remains available through the explicit `mem.equal` operation,
+  while the literal-`null` form states nullness directly without granting
+  sequence-to-sequence comparison.

@@ -193,19 +193,11 @@ shared rules are in `spec/std/README.md`.
       `RedirectErr.limit`, including at a zero limit. The client reuses explicit
       owned URL workspace so each location is stable before response input is
       reused. Cookies, custom headers, authentication, connection reuse, and
-      session state remain deferred. Rationale: explicit overloads preserve
-      existing one-request behavior, make network work opt-in, and bound it in
-      accordance with `PHILOSOPHY.md` Principles #2, #3, and #7.
+      session state remain deferred.
     - Known initial limitations and next improvements: content
       decoding, cookies, authentication policy, caching, proxies, upgrades,
       multipart helpers, and exposed trailers are not part of the protocol core.
       Client concerns such as connection reuse, pooling, deadlines, and
       cancellation remain outside the initial conveniences. Each proof updates
       the user guide and compiler-checked or executable fixtures only for
-      behavior that has actually landed. Rationale: keeping the framing core
-      independent while composing concrete TCP operations at the ergonomic
-      boundary preserves machine-visible storage, explicit errors, and the
-      lack of hidden allocation without adding dependency inversion for a
-      TCP-only protocol. Byte-oriented parsing matches HTTP and permits UTF-8
-      payloads to pass through unchanged without making Unicode text processing
-      part of networking.
+      behavior that has actually landed.

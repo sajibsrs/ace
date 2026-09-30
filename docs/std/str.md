@@ -142,3 +142,26 @@ merely testing for matching output. Float parsing uses a companion internal
 exact decimal-to-binary engine, so it does not pass `f32` input through `f64`
 or depend on a target conversion routine.
 
+## Design rationale
+
+Why the rules in `spec/std/text.md` are shaped as they are.
+
+- Stdlib: character and string utilities #16: text built from values is one
+  checked call rather than one conversion per piece with manual offset tracking;
+  one name means text into a buffer as `printf` means text to output. Capacity
+  failure keeps `bool` because a caller-sized buffer is not an external failure
+  warranting `Error`, and leaves the destination unspecified — for `str.concat`
+  and the value overloads too — so every writer runs in one pass without
+  measuring first. `str.split` instead reports its fitting parts, which remain
+  valid views.
+- Stdlib: character and string utilities #16: `char` improves byte-oriented
+  intent without adding a second representation or conversion domain; code
+  points remain `u32` because a named alias would add no behavior, and a
+  separate `utf8` module keeps `str` encoding-agnostic. Free `str` functions
+  keep library ownership visible and reuse Ace's existing overload and
+  explicit-generic machinery without extending methods to primitives. Every
+  operation works on views or caller storage, exposes capacity and failure
+  explicitly, and adds no hidden allocation, decoding, normalization, locale, or
+  runtime type dispatch. Compact overload sets avoid a family of
+  prefix/suffix/type-specific names while their argument and explicit type
+  shapes remain statically unambiguous.

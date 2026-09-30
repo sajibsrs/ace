@@ -156,3 +156,29 @@ outside it. `assert` diagnostics use the same `file:line:col` paths.
 
 The examples are checked by `tests/sema/docs/errors_ok.ace` and the runnable
 fixtures in `tests/emit/errors/` and `tests/modules/error_export/`.
+
+## Design rationale
+
+Why the rules in `spec/safety-errors.md` are shaped as they are.
+
+- Safety & Debug Builds #10: the compiler never guesses a mode from its own
+  build, an output name, or the surrounding environment; the selected artifact
+  semantics remain visible and reproducible. Release-by-default gives an
+  unmarked build the priority stack's highest requirement, performance, with no
+  dynamic safety cost; debug is requested explicitly where its checks earn their
+  cost, as every test runner does. Compile-time proofs remain mode-independent
+  because rejecting a known-invalid program costs nothing at runtime and avoids
+  giving one source two static meanings. The exact arithmetic set checks
+  operations that claim to produce a numeric value while keeping casts and bit
+  manipulation machine-direct. Call-boundary range comparisons, direct null
+  guards, and allocator bookkeeping are bounded local work rather than
+  whole-program safety analysis. Assertions add one minimal development
+  primitive and reuse abort semantics without weakening the visible distinction
+  among recoverable `Error` values, broken-invariant `panic`, and caller-chosen
+  `sys.exit` status.
+- Errors #14: static descriptions improve diagnostics at no per-value or
+  unused-program cost while preserving the packed ABI, explicit errors, and
+  machine-visible allocation model.
+- Errors #16: panic, log, and error-report text gains location without macros or
+  hidden parameters, and build-relative paths keep binaries identical across
+  machines without exposing the builder's directory layout.

@@ -103,3 +103,14 @@ package being built, `path` is binding: it overrides every hint for that
 library, and a missing file is a manifest error. Two dependencies hinting
 different paths for one library are an error; the package being built
 settles it with its own record.
+
+## Design rationale
+
+Why the rules in `spec/modules-packages.md` are shaped as they are.
+
+- Package System #15: the package layer preserves explicit imports and source
+  boundaries, performs no hidden network work during compilation, admits no
+  dependency code execution, and uses exact identities found in one fixed place.
+  This puts simplicity and modularity ahead of convenience machinery while
+  leaving the registry, shared caches, workspaces, ranges, precompiled packages,
+  testing classes, and publishing additive.

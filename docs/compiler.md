@@ -163,3 +163,17 @@ machine-consumable standard output remain unchanged.
 
 Manifest-aware building (`ace.pkg`, dependencies, native link inputs, and the
 `ace pkg` commands) is described in [Packages](package.md).
+
+## Design rationale
+
+Why the rules in `spec/compiler.md` are shaped as they are.
+
+- Compiler #4 (PHILOSOPHY.md Cautions #1): emission straight from the AST needs
+  every optimization written once per source shape and repeats each in a second
+  backend; the compile-time cost ranks below performance, simplicity, and
+  modularity.
+- Compiler #6 (PHILOSOPHY.md: performance first): the target's vector unit is a
+  platform feature ordinary loops should benefit from without rewriting, as
+  clang's loop vectorizer does for C; measured on `bench/core`, it takes
+  `cube-transform` from 61.0 to 41.4 ns per cube (1.47x) and `saxpy-f32` from
+  0.507 to 0.131 ns per element (3.9x).

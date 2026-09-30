@@ -110,3 +110,15 @@ send modes may be switched only between complete sources. A connection returned
 by blocking `accept` must first be configured with
 `net.nonblock(connection.socket, true)` before using progress operations.
 
+## Design rationale
+
+Why the rules in `spec/std/net.md` are shaped as they are.
+
+- `tcp` blocking conveniences: common blocking setup and whole-buffer progress
+  are useful honest compositions, while allocation, capacities, cleanup, handle
+  aliasing, and all failure paths remain visible and the low-level module
+  retains one-kernel-operation semantics.
+- `tcp` progress operations: `tcp` absorbs repeated would-block classification,
+  interest transitions, partial-send accounting, connect completion, and
+  disconnect recognition while the caller retains control flow, event ordering,
+  storage, capacity, identity, and explicit cleanup.

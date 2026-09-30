@@ -73,22 +73,6 @@ Decision: checks are a development tool; release trusts the developer.
     richer expected/actual reporting and test discovery belong to a library or
     runner rather than the language primitive.
 
-Rationale: the compiler never guesses a mode from its own build, an output
-name, or the surrounding environment; the selected artifact semantics remain
-visible and reproducible. Release-by-default gives an unmarked build the
-priority stack's highest requirement, performance, with no dynamic safety cost;
-debug is requested explicitly where its checks earn their cost, as every test
-runner does. Compile-time proofs remain
-mode-independent because rejecting a known-invalid program costs nothing at
-runtime and avoids giving one source two static meanings. The exact arithmetic
-set checks operations that claim to produce a numeric value while keeping casts
-and bit manipulation machine-direct. Call-boundary range comparisons, direct
-null guards, and allocator bookkeeping are bounded local work rather than
-whole-program safety analysis. Assertions add one minimal development primitive
-and reuse abort semantics without weakening the visible distinction among
-recoverable `Error` values, broken-invariant `panic`, and caller-chosen
-`sys.exit` status.
-
 ## Errors
 Decision: errors are ordinary values; checking is always explicit.
 1. Functions return multiple values (e.g. value, memory size, error).
@@ -104,8 +88,7 @@ Decision: errors are ordinary values; checking is always explicit.
 11. Compiler-assigned domain IDs are collision-free only within one linked program, unstable across builds and processes, nonserializable, and not suitable as external identifiers.
 12. Multi-return consumption is typed destructuring — `n: int, error: Error = read()` — the `name: type` rule applied to multiple bindings; plain reassignment `n, error = read()` afterwards.
 13. `Error`, error-domain names, and `typeid` are Ace-internal shapes and are rejected in `extern`/`export` signatures. C-facing wrappers translate explicitly to stable `i32` codes or another declared C-compatible shape; imported C failures are mapped to an Ace domain and occurrence code.
-14. Error descriptions are opt-in static metadata: names and messages are read-only string data, and lookup data/code is emitted only when `.name` or `.message` is used. Lookup is allocation-free and safely returns empty strings for unknown domains/codes. There is no runtime registry or initialization, metadata carried inside `Error`, descriptor, pointer, vtable, general reflection/type-name facility, dynamic entry lookup, or `fmt.print(Error)` support. Occurrence-specific context is returned separately. Rationale: static descriptions improve diagnostics at no per-value or unused-program cost while preserving the packed ABI, explicit errors, and machine-visible allocation model.
+14. Error descriptions are opt-in static metadata: names and messages are read-only string data, and lookup data/code is emitted only when `.name` or `.message` is used. Lookup is allocation-free and safely returns empty strings for unknown domains/codes. There is no runtime registry or initialization, metadata carried inside `Error`, descriptor, pointer, vtable, general reflection/type-name facility, dynamic entry lookup, or `fmt.print(Error)` support. Occurrence-specific context is returned separately.
 15. Panic remains semantically separate from recoverable errors: it terminates the process for broken invariants and is never catchable, recoverable, or convertible into `Error`. Surface (decided): `panic` is a reserved builtin — no declaration may bind, shadow, or redefine the name in any scope — and its only use is the call `panic(message: string)`: exactly one message argument, any string expression, static or runtime. The call never returns and `panic` is not a first-class value. Termination (decided): the message is delivered best-effort to standard error (file descriptor 2) exactly as supplied — no prefix, no added newline, a failed or partial write never blocks termination — then the process aborts via `abort()` (`SIGABRT`), as undefined externals resolved by the system linker. Debug and release builds behave identically. Users trigger it; the language owns everything that happens next.
 16. Source-location builtins: `@file` and `@line` are reserved expression forms naming where they are written, never where the caller is. `@file` is a compile-time `string` constant naming the containing source file; its bytes are static read-only data. `@line` is an untyped integer constant holding the 1-based source line, typed by context exactly like an integer literal. A helper reporting its caller's location receives these values as ordinary arguments: there is no implicit caller-location parameter, `@column`, `@function`, or location struct, and any other `@name` in an expression is an error.
     - Reported paths are build-relative with `/` separators, never absolute. A standard-library file is `std/<path within std>`; every other file is relative to the build root — the directory holding the entry file for a direct compile, or the root package's directory under `ace pkg` — using `..` segments when outside it. The `assert` diagnostic (Safety & Debug Builds #10) reports the same paths.
-    - Rationale: panic, log, and error-report text gains location without macros or hidden parameters, and build-relative paths keep binaries identical across machines without exposing the builder's directory layout.

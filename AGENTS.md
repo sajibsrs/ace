@@ -60,13 +60,15 @@ history.
   estimate) and state it when presenting the change. If the gain is
   negligible, drop the change: the return on investment is low, and every
   added line is more surface for bugs and more to extend and maintain.
-- Record current rules and rationale in the `spec/` chapter they belong to,
-  keeping only active decisions in `spec/queue.md`. Record implemented behavior and its essential approach once,
-  briefly, as a 2–4 line entry in `changelog/`. Keep `spec/`, `changelog/`,
-  `GRAMMAR.md`, and issue bodies minimal but sufficient; full detail belongs only in
-  `docs/`. `spec/` entries and issues state current rules and open
-  questions only; what was removed, replaced, or how something got here is
-  `changelog/`'s history alone, not restated elsewhere.
+- Record current rules in the `spec/` chapter they belong to, keeping only
+  active decisions in `spec/queue.md`. Rationale stays in `spec/` only while a
+  decision is open; an implemented rule's rationale goes in the "Design
+  rationale" section of its `docs/` page. Record implemented behavior and its
+  essential approach once, briefly, as a 2–4 line entry in `changelog/`. Keep
+  `spec/`, `changelog/`, `GRAMMAR.md`, and issue bodies minimal but sufficient;
+  full detail belongs only in `docs/`. `spec/` entries and issues state current
+  rules and open questions only; what was removed, replaced, or how something
+  got here is `changelog/`'s history alone, not restated elsewhere.
 - Issues are non-normative. Promote one through the Decision Queue and update
   it in the same change. An issue reflects present state only: edit its body
   rather than appending history, and close it when resolved (`not planned`

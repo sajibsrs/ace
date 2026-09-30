@@ -245,3 +245,27 @@ every function to the file it was written in.
   `ace`); there is no user-configurable search path yet.
 - `bits`, `fmt`, `mem`, and the minimal `math` exist in the standard library today — see
   [Standard library](std/index.md).
+
+## Design rationale
+
+Why the rules in `spec/modules-packages.md` are shaped as they are.
+
+- Modules #10: platform replacement changes the target layer without spreading
+  kernel ABI, constants, structures, or link names through callers, while the
+  public Ace surface remains reviewable in one place and redundant forwarding
+  layers do not accumulate.
+- Modules #11: one restricted declaration filter supplies zero-cost target
+  selection without a textual preprocessor, hidden runtime branch, general
+  compile-time execution, or mid-function source fragmentation.
+- C Interop #3: a positive whitelist states exactly what the compiler has
+  verified against the platform ABI; anything absent is unverified, and under
+  the priority stack an explicit opt-in beats accidental shape coincidences
+  (default enum width freedom, slice/string descriptor layout). A `bool`
+  received from C is trusted to be `0` or `1`, as C guarantees, with no
+  normalization or debug check; on Apple arm64 a direct `bool` argument or
+  return is zero-extended to 32 bits by its producer, and bits 32–63 are
+  unspecified.
+- C Interop #5: a distinct type makes the foreign convention visible while
+  retaining the existing one-word, explicit function-value model; as one pointer
+  word it adds no aggregate ABI case, so callback fields in C structs cross the
+  boundary like data pointers.
