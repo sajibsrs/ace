@@ -17,3 +17,8 @@
   offset plus a folded constant, overflows int32: the object's address is
   materialized in rax by `lea` and the access keeps the constant alone,
   where it had wrapped to a wrong address.
+- Let an inline function return any type but a type parameter: a struct,
+  tuple, or string result joins after the expansion as one SSA variable per
+  leaf, and one of over 16 leaves is stored in memory, as a call's result is.
+  Release auto-inlining takes aggregate results too. `bench/core/raytrace`
+  (new, with a C twin) with its helpers inline: 0.842 s to 0.602 s.

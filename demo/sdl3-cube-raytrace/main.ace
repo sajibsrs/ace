@@ -53,7 +53,7 @@ TEXT_SCALE: const f32 = 2.0
 
 Vec: struct { x: f32 = 0.0, y: f32 = 0.0, z: f32 = 0.0 }
 
-Vec.dot(other: Vec): f32 {
+inline Vec.dot(other: Vec): f32 {
     return self.x * other.x + self.y * other.y + self.z * other.z
 }
 
@@ -62,7 +62,7 @@ Vec.dot(other: Vec): f32 {
 Spin: struct { sa: f32, ca: f32, sb: f32, cb: f32 }
 
 // A direction in the cube's frame, turned into the camera's.
-Spin.to_camera(v: Vec): Vec {
+inline Spin.to_camera(v: Vec): Vec {
     z: f32 = v.z * self.ca - v.x * self.sa
     return Vec {
         x = v.x * self.ca + v.z * self.sa,
@@ -73,7 +73,7 @@ Spin.to_camera(v: Vec): Vec {
 
 // A direction in the camera's frame, turned into the cube's: to_camera's
 // rotations undone in reverse order.
-Spin.to_cube(v: Vec): Vec {
+inline Spin.to_cube(v: Vec): Vec {
     z: f32 = v.z * self.cb - v.y * self.sb
     return Vec {
         x = v.x * self.ca - z * self.sa,
@@ -88,7 +88,7 @@ Span: struct { near: f32 = 0.0, far: f32 = FAR, face: i32 = -1 }
 
 // Narrow the span to the slab -1 <= o + t * d <= 1 of one axis; false when
 // the ray misses it.
-mut Span.clip(o: f32, d: f32, axis: i32): bool {
+inline mut Span.clip(o: f32, d: f32, axis: i32): bool {
     if d == 0.0 { return o >= -1.0 && o <= 1.0 }
     t0: f32 = (-1.0 - o) / d
     t1: f32 = (1.0 - o) / d
@@ -110,7 +110,7 @@ mut Span.clip(o: f32, d: f32, axis: i32): bool {
 // Where a ray from camera-space origin o along d first enters the cube: the
 // distance t and the face, or face -1 on a miss. Origins inside the cube do
 // not occur, so the ray counts only when it enters ahead of it.
-hit(spin: Spin, o: Vec, d: Vec): (f32, i32) {
+inline hit(spin: Spin, o: Vec, d: Vec): (f32, i32) {
     lo: Vec = spin.to_cube(Vec { x = o.x, y = o.y, z = o.z - DISTANCE })
     ld: Vec = spin.to_cube(d)
     span: Span = Span {}
@@ -122,7 +122,7 @@ hit(spin: Spin, o: Vec, d: Vec): (f32, i32) {
 }
 
 // The outward normal of a face in the cube's frame.
-normal(face: i32): Vec {
+inline normal(face: i32): Vec {
     s: f32 = -1.0
     if (face & 1) == 1 { s = 1.0 }
     if face < 2 { return Vec { x = s } }
@@ -132,7 +132,7 @@ normal(face: i32): Vec {
 
 // A base color scaled by Lambert light: AMBIENT plus the rest times the
 // cosine to the light, which a shadow removes.
-shade(rgb: u32, cosine: f32): sdl.Color {
+inline shade(rgb: u32, cosine: f32): sdl.Color {
     base: sdl.Color = sdl.Color::hex(rgb)
     k: f32 = AMBIENT
     if cosine > 0.0 { k += (1.0 - AMBIENT) * cosine }

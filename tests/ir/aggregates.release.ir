@@ -39,36 +39,43 @@ b0:
 main(): i64 {
 b0:
     %0 = slot ptr 16, 8
-    %1 = const i64 1
-    %2 = const f64 0.5
-    %3 = const i64 2
-    %4 = call {2} shift(%1, %2, %3)
-    %5 = proj i64 %4, 0
-    %6 = proj f64 %4, 1
-    store [%0], %5
-    store [%0 + 8], %6
+    %1 = const f64 0.5
+    %2 = const i64 3
+    store [%0], %2
+    store [%0 + 8], %1
+    %5 = load i64 [%0]
+    %6 = const i64 1
+    %7 = add i64 %5, %6
+    store [%0], %7
     %9 = load i64 [%0]
     %10 = const i64 1
     %11 = add i64 %9, %10
-    store [%0], %11
-    %13 = load i64 [%0]
-    %14 = load f64 [%0 + 8]
-    %15 = const i64 1
-    %16 = call {2} shift(%13, %14, %15)
-    %17 = proj i64 %16, 0
-    %18 = proj f64 %16, 1
-    %19 = call {2} check(%17)
-    %20 = proj i64 %19, 0
-    %21 = proj u64 %19, 1
-    %22 = const u64 0
-    %23 = ne bool %21, %22
-    br %23, b1, b2
-b1: ; preds b0
-    %25 = cast i32 %21
-    %26 = cast i64 %25
-    ret %26
+    %12 = const i64 0
+    %13 = lt bool %11, %12
+    br %13, b2, b3
+b1: ; preds b2, b3
+    %15 = phi i64 [%20, b2], [%11, b3]
+    %16 = phi u64 [%25, b2], [%27, b3]
+    %17 = const u64 0
+    %18 = ne bool %16, %17
+    br %18, b4, b5
 b2: ; preds b0
-    %28 = sub i64 %20, %5
-    ret %28
+    %20 = const i64 0
+    %21 = const u64 4294967296
+    %22 = cast i32 %11
+    %23 = cast u32 %22
+    %24 = cast u64 %23
+    %25 = or u64 %21, %24
+    jmp b1
+b3: ; preds b0
+    %27 = const u64 0
+    jmp b1
+b4: ; preds b1
+    %29 = cast i32 %16
+    %30 = cast i64 %29
+    ret %30
+b5: ; preds b1
+    %32 = sub i64 %15, %2
+    ret %32
 }
 

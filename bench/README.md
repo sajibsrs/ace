@@ -12,7 +12,7 @@ reference where one exists.
 | Section | Measures | Runners |
 |---|---|---|
 | `compiler/` | the compiler's own speed and output size | `run-compile.sh` |
-| `core/` | generated code for language features | `run-calls.sh`, `run-cpu.sh`, `run-hotloop.sh` |
+| `core/` | generated code for language features | `run-calls.sh`, `run-cpu.sh`, `run-hotloop.sh`, `run-raytrace.sh` |
 | `std/` | standard-library operations | `run-string.sh`, `run-collections.sh`, `run-math.sh`, `run-memory.sh` |
 | `package/` | first-party packages, built as packages | `run-regex.sh`, `run-json.sh` |
 
@@ -762,6 +762,36 @@ renderer, vsync off; Metal paces presents to the display regardless), the math
 mattered at `3a8a125` from about 10,000 cubes, where it was 40% of a frame.
 
 ## Standard library
+
+### Raytrace
+
+```sh
+./bench/core/run-raytrace.sh
+```
+
+A headless copy of `demo/sdl3-cube-raytrace`'s trace loop, with a C twin: 200
+frames at 640x640, one ray per 2x2 block, each block's color written as four
+vertices. It stresses small struct values (`Vec`, `Color`) passed and returned
+through short helpers. The runner verifies that every executable produces the
+same checksum.
+
+#### Initial baseline
+
+Median of five runs on the reference Apple-arm64 machine, 20,480,000 rays,
+checksum `885323395`:
+
+| build | time |
+|---|---|
+| Ace debug | 0.843 s |
+| Ace release | 0.836 s |
+| Ace release, helpers marked `inline` | 0.602 s |
+| C `-O0` | 2.456 s |
+| C `-O2 -fno-inline` | 0.511 s |
+| C `-O2` | 0.302 s |
+
+The helpers exceed the 24-node auto-inline limit or call each other, so release
+keeps them as calls unless marked. Even fully expanded, release trails C `-O2`
+by 2x, which points at code generation within the expanded body.
 
 ### Strings and byte operations
 

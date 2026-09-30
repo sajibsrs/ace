@@ -1,0 +1,177 @@
+// Headless copy of demo/sdl3-cube-raytrace's trace loop, shared with
+// raytrace.c: FRAMES frames at SIZE x SIZE, one ray per CELL x CELL block,
+// each block's color written as four vertices, with no window or SDL.
+import fmt
+import math
+import mem
+import time
+
+FACE_COLORS: const [6]u32 = [0xF44336, 0x4CAF50, 0x00BCD4, 0x9C27B0, 0x2196F3, 0xFFA000]
+BACKGROUND: const u32 = 0x101018
+FLOOR_COLOR: const u32 = 0x546E7A
+DISTANCE: const f32 = 4.0
+FLOOR_Y: const f32 = -2.0
+AMBIENT: const f32 = 0.25
+CELL: const i32 = 2
+EPSILON: const f32 = 0.001
+FAR: const f32 = 1.0e30
+SIZE: const i32 = 640
+FRAMES: const i32 = 200
+
+Color: struct { r: f32 = 0.0, g: f32 = 0.0, b: f32 = 0.0, a: f32 = 1.0 }
+Point: struct { x: f32 = 0.0, y: f32 = 0.0 }
+Vertex: struct { position: Point, color: Color, uv: Point = Point {} }
+
+Color::hex(rgb: u32): Color {
+    return Color {
+        r = f32((rgb >> 16) & 0xFF) / 255.0,
+        g = f32((rgb >> 8) & 0xFF) / 255.0,
+        b = f32(rgb & 0xFF) / 255.0,
+    }
+}
+
+Vec: struct { x: f32 = 0.0, y: f32 = 0.0, z: f32 = 0.0 }
+
+Vec.dot(other: Vec): f32 {
+    return self.x * other.x + self.y * other.y + self.z * other.z
+}
+
+Spin: struct { sa: f32, ca: f32, sb: f32, cb: f32 }
+
+Spin.to_camera(v: Vec): Vec {
+    z: f32 = v.z * self.ca - v.x * self.sa
+    return Vec {
+        x = v.x * self.ca + v.z * self.sa,
+        y = v.y * self.cb - z * self.sb,
+        z = v.y * self.sb + z * self.cb,
+    }
+}
+
+Spin.to_cube(v: Vec): Vec {
+    z: f32 = v.z * self.cb - v.y * self.sb
+    return Vec {
+        x = v.x * self.ca - z * self.sa,
+        y = v.y * self.cb + v.z * self.sb,
+        z = v.x * self.sa + z * self.ca,
+    }
+}
+
+Span: struct { near: f32 = 0.0, far: f32 = FAR, face: i32 = -1 }
+
+mut Span.clip(o: f32, d: f32, axis: i32): bool {
+    if d == 0.0 { return o >= -1.0 && o <= 1.0 }
+    t0: f32 = (-1.0 - o) / d
+    t1: f32 = (1.0 - o) / d
+    side: i32 = 0
+    if t0 > t1 {
+        t: f32 = t0
+        t0 = t1
+        t1 = t
+        side = 1
+    }
+    if t0 > self.near {
+        self.near = t0
+        self.face = axis * 2 + side
+    }
+    if t1 < self.far { self.far = t1 }
+    return self.near <= self.far
+}
+
+hit(spin: Spin, o: Vec, d: Vec): (f32, i32) {
+    lo: Vec = spin.to_cube(Vec { x = o.x, y = o.y, z = o.z - DISTANCE })
+    ld: Vec = spin.to_cube(d)
+    span: Span = Span {}
+    if !mut span.clip(lo.x, ld.x, 0) { return 0.0, -1 }
+    if !mut span.clip(lo.y, ld.y, 1) { return 0.0, -1 }
+    if !mut span.clip(lo.z, ld.z, 2) { return 0.0, -1 }
+    if span.face < 0 || span.near < EPSILON { return 0.0, -1 }
+    return span.near, span.face
+}
+
+normal(face: i32): Vec {
+    s: f32 = -1.0
+    if (face & 1) == 1 { s = 1.0 }
+    if face < 2 { return Vec { x = s } }
+    if face < 4 { return Vec { y = s } }
+    return Vec { z = s }
+}
+
+shade(rgb: u32, cosine: f32): Color {
+    base: Color = Color::hex(rgb)
+    k: f32 = AMBIENT
+    if cosine > 0.0 { k += (1.0 - AMBIENT) * cosine }
+    return Color { r = base.r * k, g = base.g * k, b = base.b * k }
+}
+
+trace(spin: Spin, light: Vec, d: Vec): Color {
+    origin: Vec = Vec {}
+    _, face: i32 = hit(spin, origin, d)
+    if face >= 0 {
+        n: Vec = spin.to_camera(normal(face))
+        return shade(FACE_COLORS[face], n.dot(light))
+    }
+    if d.y >= 0.0 { return Color::hex(BACKGROUND) }
+    t: f32 = FLOOR_Y / d.y
+    p: Vec = Vec { x = d.x * t, y = FLOOR_Y, z = d.z * t }
+    _, shadow: i32 = hit(spin, p, light)
+    if shadow >= 0 { return shade(FLOOR_COLOR, 0.0) }
+    return shade(FLOOR_COLOR, light.y)
+}
+
+main(): int {
+    lx: f32 = -0.5
+    ly: f32 = 1.0
+    lz: f32 = -0.6
+    ll: f32 = math.sqrt(lx * lx + ly * ly + lz * lz)
+    light: Vec = Vec { x = lx / ll, y = ly / ll, z = lz / ll }
+
+    w: i32 = SIZE
+    h: i32 = SIZE
+    cx: f32 = f32(w) * 0.5
+    cy: f32 = f32(h) * 0.5
+    scale: f32 = cx * 1.1
+    columns: i32 = (w + CELL - 1) / CELL
+    rows: i32 = (h + CELL - 1) / CELL
+    cells: usize = usize(columns) * usize(rows)
+    vertices: mut []Vertex, ok: bool = mem.grow[Vertex](null, cells * 4)
+    defer mem.release[Vertex](mut vertices)
+    if !ok { return 1 }
+
+    checksum: u64 = 0
+    started: u64 = time.awake()
+    for frame: i32 in 0 .. FRAMES {
+        seconds: f32 = f32(frame) / 60.0
+        spin: Spin = Spin {
+            sa = math.sin(seconds * 0.9),
+            ca = math.cos(seconds * 0.9),
+            sb = math.sin(seconds * 0.6),
+            cb = math.cos(seconds * 0.6),
+        }
+        nv: usize = 0
+        for row: i32 in 0 .. rows {
+            y0: f32 = f32(row * CELL)
+            y1: f32 = f32(row * CELL + CELL)
+            if y1 > f32(h) { y1 = f32(h) }
+            dy: f32 = (cy - (y0 + y1) * 0.5) / scale
+            for column: i32 in 0 .. columns {
+                x0: f32 = f32(column * CELL)
+                x1: f32 = f32(column * CELL + CELL)
+                if x1 > f32(w) { x1 = f32(w) }
+                dx: f32 = ((x0 + x1) * 0.5 - cx) / scale
+                color: Color = trace(spin, light, Vec { x = dx, y = dy, z = 1.0 })
+                vertices[nv] = Vertex { position = Point { x = x0, y = y0 }, color = color }
+                vertices[nv + 1] = Vertex { position = Point { x = x1, y = y0 }, color = color }
+                vertices[nv + 2] = Vertex { position = Point { x = x1, y = y1 }, color = color }
+                vertices[nv + 3] = Vertex { position = Point { x = x0, y = y1 }, color = color }
+                nv += 4
+            }
+        }
+        // One sample per frame keeps the stores live without timing a scan.
+        c: Color = vertices[(usize(frame) * 4099) % nv].color
+        checksum += u64(c.r * 255.0) + u64(c.g * 255.0) * 256 + u64(c.b * 255.0) * 65536
+    }
+    elapsed: u64 = time.awake() - started
+
+    fmt.printf("rays: %u\nelapsed ns: %u\nchecksum: %u\n", cells * usize(FRAMES), usize(elapsed), usize(checksum))
+    return 0
+}

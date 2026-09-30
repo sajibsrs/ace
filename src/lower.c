@@ -49,7 +49,8 @@ typedef struct { // an inline call being expanded
     Node*  f;    // the callee
     SType* rt;   // its result type, or NULL
     int    join; // the block after the expansion, where each return goes
-    int    res;  // the variable holding the result, or -1
+    int    res;  // the variable holding the result, an aggregate's first leaf's, or -1
+    int    dst;  // an aggregate of over 16 leaves: the address it is stored at, else -1
 } Expansion;
 
 typedef struct { // a captured `defer`: its call over snapshot variables
@@ -1638,8 +1639,6 @@ static int auto_inline(Lw* l, Sym* s) {
              !(!(f->flags & (F_METHOD | F_ASSOC)) && f->len == 4 && memcmp(f->str, "main", 4) == 0);
     for (int i = 0; ok && i < f->nkids; i++)
         if (f->kids[i]->flags & F_NOALIAS) ok = 0;
-    SType* rt = s->type && s->type->kind == SK_FUNC ? s->type->ret : NULL;
-    if (ok && rt && is_agg(rt)) ok = 0;
     if (ok && auto_inline_size(f->b, 0) > AUTO_INLINE_NODES) ok = 0;
     ptrmap_put(&auto_inline_seen, f, ok ? 1 : 2);
     return ok;
@@ -1740,7 +1739,7 @@ static void inline_copy(Node* f, SType** targs, int ntargs, Node** bind, Node** 
     ptrmap_free(&seen);
 }
 
-static int inline_call(Lw* l, Node* call);
+static int inline_call(Lw* l, Node* call, Agg* out, int dst);
 
 // Whether x is the layout builtin name(...), which sema resolved to no symbol.
 static int is_layout_builtin(Node* x, const char* name) {
@@ -1948,7 +1947,7 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
         if (v != -2) return v;
     }
     if ((d->kind == N_FUNC && d->ival) || (d->flags & F_INTRINSIC)) unsupported(l, "compiler-backed call");
-    if ((d->flags & F_INLINE) || auto_inline(l, s)) return inline_call(l, x);
+    if ((d->flags & F_INLINE) || auto_inline(l, s)) return inline_call(l, x, res, dst);
     int first_var = call_args(l, x, s, &g);
     SType* ft = node_ty(callee);
     if (!ft || ft->kind != SK_FUNC) ft = s->type;
@@ -3233,7 +3232,13 @@ static void inline_return(Lw* l, Node* s) {
     // indexes l->inl fresh at each step: expr() may recurse into another
     // inline_call and grow (realloc) l->inl out from under a cached pointer
     int i = l->ninl - 1;
-    if (s->a && l->inl[i].res >= 0) {
+    if (s->a && l->inl[i].dst >= 0) store_value(l, s->a, l->inl[i].rt, l->inl[i].dst, 0);
+    else if (s->a && l->inl[i].res >= 0 && is_agg(l->inl[i].rt)) {
+        Agg a;
+        value(l, s->a, l->inl[i].rt, &a);
+        i = l->ninl - 1;
+        for (int k = 0; k < a.n; k++) write_var(l, l->inl[i].res + k, l->cur, a.v[k]);
+    } else if (s->a && l->inl[i].res >= 0) {
         int v = expr(l, s->a, need_type(l, l->inl[i].rt));
         write_var(l, l->inl[i].res, l->cur, v);
     }
@@ -3243,8 +3248,10 @@ static void inline_return(Lw* l, Node* s) {
 // A call to an inline function: its body copied in place. Each argument is
 // evaluated in order and bound to its parameter, a mut parameter or receiver
 // to the argument's own storage and any other to a copy. Each return jumps to
-// a join block, where the result is a variable read.
-static int inline_call(Lw* l, Node* call) {
+// a join block, where the result is a variable read: an aggregate's leaves
+// into res, or one of over 16 leaves stored at dst (a new stack object when
+// dst < 0), as a call's.
+static int inline_call(Lw* l, Node* call, Agg* out, int dst) {
     SType** targs;
     int ntargs;
     Node* f = inline_target(l, call, &targs, &ntargs);
@@ -3260,7 +3267,6 @@ static int inline_call(Lw* l, Node* call) {
     for (int i = 0; i < call->nkids; i++) args[n++] = call->kids[i];
     SType* rt = f->a ? node_ty(call) : NULL; // the call of a generic method with no result is not typed void
     if (rt && unwrap(rt)->kind == SK_VOID) rt = NULL;
-    if (is_agg(rt)) unsupported(l, "inline aggregate result");
 
     Node* bind[MAX_PARAMS];
     Node* body;
@@ -3278,18 +3284,42 @@ static int inline_call(Lw* l, Node* call) {
         init_var(l, var_of(l, ps), ps, a);
     }
     int join = new_block(l);
-    int res = rt ? var_new(l, NULL, need_type(l, rt), -1) : -1;
+    int res = -1, nres = 0;
+    IrLeaf lv[IR_MAX_LEAVES];
+    if (is_big(rt)) {
+        covered(l, rt);
+        if (dst < 0) dst = new_slot(l, rt);
+    } else if (is_agg(rt)) {
+        dst = -1;
+        nres = leaves(l, rt, lv);
+        for (int k = 0; k < nres; k++) {
+            int v = var_new(l, NULL, (IrType)lv[k].type, -1);
+            if (!k) res = v;
+        }
+    } else {
+        dst = -1;
+        if (rt) {
+            res = var_new(l, NULL, need_type(l, rt), -1);
+            nres = 1;
+        }
+    }
     l->inl = (Expansion*)grow(l->inl, &l->cinl, l->ninl + 1, sizeof(Expansion));
-    l->inl[l->ninl++] = (Expansion){ f, rt, join, res };
+    l->inl[l->ninl++] = (Expansion){ f, rt, join, res, dst };
     block(l, body);
     if (l->cur >= 0) { // falling off the end: zero
-        if (res >= 0) write_var(l, res, l->cur, konst(l, l->vtype[res], 0));
+        for (int k = 0; k < nres; k++) write_var(l, res + k, l->cur, konst(l, l->vtype[res + k], 0));
         jump(l, join);
     }
     l->ninl--;
     seal(l, join);
     enter(l, join);
-    return l->cur >= 0 && res >= 0 ? read_var(l, res, join) : -1;
+    if (l->cur < 0 || res < 0) return -1;
+    if (!is_agg(rt)) return read_var(l, res, join);
+    if (out) {
+        out->n = nres;
+        for (int k = 0; k < nres; k++) out->v[k] = read_var(l, res + k, join);
+    }
+    return -1;
 }
 
 // The body of a loop; continue reaches the returned block, current on

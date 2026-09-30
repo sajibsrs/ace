@@ -6964,12 +6964,7 @@ SType* sema_stamp_body(Node* f, SType** args, int nargs) {
 // none, or one value the emitter keeps in a single register
 static int inline_result_ok(SType* t) {
     while (t && t->kind == SK_DISTINCT) t = t->base;
-    if (!t || t->kind == SK_VOID || t->kind == SK_ERR) return 1;
-    switch (t->kind) {
-    case SK_PRIM: return t->prim != P_STRING;
-    case SK_PTR: case SK_FUNC: case SK_ENUM: case SK_BITS: case SK_ERROR: return 1;
-    default: return 0;
-    }
+    return !t || t->kind != SK_TYPEPARAM;
 }
 
 // the first defer or asm statement in n, or NULL
@@ -7008,9 +7003,8 @@ static void check_inline_decl(Ck* k, Node* f, Sym* s) {
             ck_err(k, f->kids[i], "inline function '%.*s' cannot take a noalias parameter", nl, f->str);
     SType* ret = s && s->type && s->type->kind == SK_FUNC ? s->type->ret : NULL;
     if (!inline_result_ok(ret))
-        ck_err(k, f->a ? f->a : f, "inline function '%.*s' must return nothing or one scalar value, not %s",
-               nl, f->str, ret->kind == SK_TYPEPARAM ? "a type parameter"
-                           : ret->kind == SK_TUPLE ? "multiple values" : type_name(ret));
+        ck_err(k, f->a ? f->a : f, "inline function '%.*s' cannot return a type parameter",
+               nl, f->str);
     Node* bad = inline_body_bad(f->b);
     if (bad)
         ck_err(k, bad, "inline function '%.*s' cannot contain %s", nl, f->str,

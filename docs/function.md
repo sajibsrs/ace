@@ -380,9 +380,9 @@ call site's line in debug information.
 The function still has an ordinary symbol, so it can be used as a function
 value, and a `defer` of it calls that symbol at exit. Generic templates,
 methods, associated functions, and specializations may be `inline`; each
-specialization carries its own marker. An inline function must return nothing
-or one scalar value (not a type parameter), must not take a `noalias`
-parameter, and must not contain `defer` or inline assembly. `intrinsic`
+specialization carries its own marker. An inline function may return any type,
+structs and tuples included, except a type parameter; it must not take a
+`noalias` parameter, and must not contain `defer` or inline assembly. `intrinsic`
 declarations, bodiless `specialized` templates, and `main` cannot be `inline`,
 and a chain of inline functions that calls back into itself is rejected.
 Release builds also expand small leaf functions on their own: a body of at
@@ -550,7 +550,12 @@ Why the rules in `spec/compiler.md` are shaped as they are.
   at the module boundary that callers compile against the body; release builds
   additionally expand only small leaf functions (Compiler #6), so unmarked code
   pays no call for a trivial helper while larger expansion stays the author's
-  choice (PHILOSOPHY Considerations #1).
+  choice (PHILOSOPHY Considerations #1). Any result type but a type parameter
+  expands, because lowering already splits every aggregate into scalar leaves:
+  a struct or tuple result joins as several SSA values at no extra cost, and
+  value-type helpers (vector math, color constructors) are exactly the small
+  functions worth expanding. Aggregate results cut `bench/core/raytrace` from
+  0.842 s to 0.602 s (1.4x) with its helpers marked `inline`.
 - Errors #12 (`_`): multiple returns make dropping an unwanted value common
   (`value, ok`, `value, err`). A dedicated discard binds nothing, so repeated
   uses never collide and nothing unread lingers in scope. The bare, untyped

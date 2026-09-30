@@ -1,0 +1,82 @@
+/* inline expansion with aggregate results: a struct joined from several
+ * returns, a tuple, a string, a struct holding an array, one of over 16
+ * leaves (through memory), a method result, a nested expansion, and a result
+ * stored straight into a struct that lives in memory.
+ */
+
+// expect-exit: 0
+// expect-output: 3 -1 3 | 7 true | ace | 6 | 190 | 9 12 | 6 | 11 19
+
+import fmt
+
+Vec: struct { x: f32 = 0.0, y: f32 = 0.0, z: f32 = 0.0 }
+
+inline pick(k: int): Vec {
+    if k < 0 { return Vec { x = -1.0 } }
+    if k == 0 { return Vec {} }
+    return Vec { x = f32(k), y = -1.0, z = f32(k + 1) }
+}
+
+inline pair(a: int): (int, bool) {
+    return a + 4, a > 0
+}
+
+inline name(long: bool): string {
+    if long { return "ace language" }
+    return "ace"
+}
+
+Quad: struct { v: [4]i32, tag: i32 }
+
+inline quad(base: i32): Quad {
+    return Quad { v = [base, base + 1, base + 2, base + 3], tag = base }
+}
+
+Wide: struct {
+    a0: i32, a1: i32, a2: i32, a3: i32, a4: i32, a5: i32, a6: i32, a7: i32, a8: i32, a9: i32,
+    b0: i32, b1: i32, b2: i32, b3: i32, b4: i32, b5: i32, b6: i32, b7: i32, b8: i32, b9: i32,
+}
+
+inline wide(k: i32): Wide {
+    return Wide {
+        a0 = k, a1 = k + 1, a2 = k + 2, a3 = k + 3, a4 = k + 4, a5 = k + 5, a6 = k + 6, a7 = k + 7,
+        a8 = k + 8, a9 = k + 9, b0 = k + 10, b1 = k + 11, b2 = k + 12, b3 = k + 13, b4 = k + 14,
+        b5 = k + 15, b6 = k + 16, b7 = k + 17, b8 = k + 18, b9 = k + 19,
+    }
+}
+
+Spin: struct { s: i32, c: i32 }
+
+inline Spin.turn(v: Vec): Vec {
+    return Vec { x = v.x * f32(self.c), y = v.y + f32(self.s), z = v.z }
+}
+
+inline twice(v: Vec): Vec {
+    w: Vec = pick(int(v.x))
+    return Vec { x = w.x + v.x, y = w.y, z = w.z + v.z }
+}
+
+Box: struct { cells: [2]i32 = [0, 0], inner: Vec = Vec {} }
+
+main(): int {
+    v: Vec = pick(3)
+    fmt.printf("%d %d %d | ", int(v.x), int(v.y), int(v.z + pick(-2).x))
+    n: int, ok: bool = pair(3)
+    if ok { fmt.printf("%d true | ", n) }
+    fmt.printf("%s | ", name(false))
+    q: Quad = quad(0)
+    fmt.printf("%d | ", int(q.v[0] + q.v[1] + q.v[2] + q.v[3] + q.tag))
+    w: Wide = wide(0)
+    fmt.printf("%d | ", int(w.a0 + w.a1 + w.a2 + w.a3 + w.a4 + w.a5 + w.a6 + w.a7 + w.a8 + w.a9 + w.b0 + w.b1 +
+                            w.b2 + w.b3 + w.b4 + w.b5 + w.b6 + w.b7 + w.b8 + w.b9))
+    spin: Spin = Spin { s = 2, c = 3 }
+    t: Vec = spin.turn(pick(3))
+    fmt.printf("%d %d | ", int(t.x), int(t.z * 3.0))
+    u: Vec = twice(Vec { x = 2.0, z = 1.0 })
+    fmt.printf("%d | ", int(u.x + u.z - u.y) - 3)
+    box: Box = Box {}
+    box.cells[1] = 11
+    box.inner = pick(9)
+    fmt.printf("%d %d\n", int(box.cells[1]), int(box.inner.x + box.inner.z))
+    return 0
+}
