@@ -1113,6 +1113,30 @@ static void st_width(X64* a, IrType t, int r, int base, int32_t off) {
     }
 }
 
+// Words w0..w1 of an aggregate's leaves lv[0..n), whose values are vals[k],
+// to [base + at + 8w]: each word built whole in rax (rcx scratch) and stored
+// once, so the 8-byte load that reads it back forwards from one store.
+static void pack_words(X64* a, const IrLeaf* lv, const int* vals, int n, int words, int base, int32_t at) {
+    for (int w = 0; w < words; w++) {
+        int any = 0;
+        for (int k = 0; k < n; k++) {
+            if (lv[k].off / 8 != (uint32_t)w) continue;
+            IrType t = (IrType)ins_of(a, vals[k])->type;
+            int r = any ? RCX : RAX;
+            load_val(a, r, vals[k]);
+            int bits = t == IT_BOOL ? 8 : ir_type_bits(t);
+            if (bits == 8) normalize(a, IT_U8, r);
+            else if (bits == 16) normalize(a, IT_U16, r);
+            else if (bits == 32) normalize(a, IT_U32, r);
+            if (lv[k].off % 8) rr(a, 1, (const uint8_t[]){ 0xC1 }, 1, 4, r), put(a, (uint8_t)(lv[k].off % 8 * 8)); // shl r, imm8
+            if (any) rr(a, 1, (const uint8_t[]){ 0x09 }, 1, RCX, RAX);                            // or rax, rcx
+            any = 1;
+        }
+        if (!any) mov_imm(a, RAX, 0);
+        st64(a, RAX, base, at + 8 * w);
+    }
+}
+
 // [base + off] = imm at type t's width (mov m, imm; a 64-bit store sign-extends it)
 static void st_imm(X64* a, IrType t, int32_t k, int base, int32_t off) {
     switch (t == IT_BOOL ? 8 : ir_type_bits(t)) {
@@ -1392,6 +1416,10 @@ static void call(X64* a, IrBlock* bb, int i) {
             at = img;
             img += 16;
         }
+        if (ps->reg[0] >= 0) {
+            pack_words(a, lv, x->args + first, pt.n, ps->words, RSP, (int32_t)at);
+            continue;
+        }
         for (int k = 0; k < pt.n; k++) {
             IrType t = (IrType)ins_of(a, x->args[first + k])->type;
             load_val(a, RAX, x->args[first + k]);
@@ -1627,18 +1655,20 @@ static void terminator(X64* a, int b, int v) {
                 base = RCX;
                 at = 0;
             }
-            for (int k = 0; k < x->nargs; k++) {
-                load_val(a, RAX, x->args[k]);
-                st_width(a, (IrType)ins_of(a, x->args[k])->type, RAX, base, at + (int32_t)lv[k].off);
-            }
             if (!a->sret) {
                 Cc c = { 0, 0, 0 };
                 Pass r;
                 pass_part(&c, sig->ret, (IrType)lv[0].type, lv, &r);
+                pack_words(a, lv, x->args, x->nargs, r.words, base, at);
                 for (int w = 0; w < r.words; w++) {
                     int rg = ret_reg(r.reg[w]);
                     if (rg >= SSE) xld(a, rg - SSE, RBP, a->scratch + 8 * w);
                     else ld64(a, rg, RBP, a->scratch + 8 * w);
+                }
+            } else {
+                for (int k = 0; k < x->nargs; k++) {
+                    load_val(a, RAX, x->args[k]);
+                    st_width(a, (IrType)ins_of(a, x->args[k])->type, RAX, base, at + (int32_t)lv[k].off);
                 }
             }
         } else if (x->nargs && ir_type_float((IrType)ins_of(a, x->args[0])->type)) {
