@@ -24,8 +24,9 @@ falls back to the linker's own search. An app whose SDL3 lives somewhere
 else gives the same record with its own `path` in its `ace.pkg`; the app's
 path overrides the hint, and a missing file there is a manifest error.
 
-See [`demo/sdl3-window`](../demo/sdl3-window) and
-[`demo/sdl3-cube-rotation`](../demo/sdl3-cube-rotation) for consuming examples.
+See [`demo/sdl3-window`](../demo/sdl3-window),
+[`demo/sdl3-cube-rotation`](../demo/sdl3-cube-rotation), and
+[`demo/sdl3-cube-raytrace`](../demo/sdl3-cube-raytrace) for consuming examples.
 
 ## Window and renderer
 

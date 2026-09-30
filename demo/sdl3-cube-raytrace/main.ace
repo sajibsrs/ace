@@ -1,0 +1,331 @@
+/* The sdl3-cube-rotation scene, raytraced on the CPU with pkg/sdl: one ray
+ * per CELL x CELL block of pixels, inverse-rotated into the cube's frame for
+ * a slab ray-box test, Lambert shading under one directional light, and a
+ * floor that casts a shadow ray back at the cube. Each block draws as one
+ * solid quad through Renderer.geometry, and the top-left corner shows frame
+ * statistics. The single-threaded float loop doubles as a codegen stress test.
+ *
+ * Build and run from this directory (Homebrew SDL3 on Apple arm64):
+ *   ace pkg run
+ *
+ * Closing the window or pressing Escape quits.
+ */
+
+import fmt
+import math
+import mem
+import sdl
+import str
+
+// One 0xRRGGBB per face, as in sdl3-cube-rotation: face 2 * axis + side,
+// where axis 0, 1, 2 is x, y, z and side 1 is the positive face.
+FACE_COLORS: const [6]u32 = [
+    0xF44336, 0x4CAF50, // x = -1 red, x = 1 green
+    0x00BCD4, 0x9C27B0, // y = -1 cyan, y = 1 purple
+    0x2196F3, 0xFFA000, // z = -1 blue, z = 1 amber 700
+]
+
+BACKGROUND: const u32 = 0x101018
+FLOOR_COLOR: const u32 = 0x546E7A
+
+// The camera sits at the origin looking down +z; the cube's center is
+// DISTANCE units ahead, and the floor lies below it at y = FLOOR_Y, clear of
+// the cube's corners at any rotation (sqrt(3) from the center).
+DISTANCE: const f32 = 4.0
+FLOOR_Y: const f32 = -2.0
+
+// Light arrives from above, left, and behind the camera; the ambient share
+// keeps faces turned from it and shadowed floor visible.
+AMBIENT: const f32 = 0.25
+
+// One ray per CELL x CELL block of output pixels.
+CELL: const i32 = 2
+
+// A ray nearer than this starts on the surface it left.
+EPSILON: const f32 = 0.001
+FAR: const f32 = 1.0e30
+
+// Statistics average over this many milliseconds between refreshes.
+STATS_PERIOD: const u64 = 500
+
+// Debug text draws at this scale, so the 8x8 font stays readable.
+TEXT_SCALE: const f32 = 2.0
+
+Vec: struct { x: f32 = 0.0, y: f32 = 0.0, z: f32 = 0.0 }
+
+Vec.dot(other: Vec): f32 {
+    return self.x * other.x + self.y * other.y + self.z * other.z
+}
+
+// The cube's orientation: angle a about the y axis, then angle b about the
+// x axis, as sines and cosines.
+Spin: struct { sa: f32, ca: f32, sb: f32, cb: f32 }
+
+// A direction in the cube's frame, turned into the camera's.
+Spin.to_camera(v: Vec): Vec {
+    z: f32 = v.z * self.ca - v.x * self.sa
+    return Vec {
+        x = v.x * self.ca + v.z * self.sa,
+        y = v.y * self.cb - z * self.sb,
+        z = v.y * self.sb + z * self.cb,
+    }
+}
+
+// A direction in the camera's frame, turned into the cube's: to_camera's
+// rotations undone in reverse order.
+Spin.to_cube(v: Vec): Vec {
+    z: f32 = v.z * self.cb - v.y * self.sb
+    return Vec {
+        x = v.x * self.ca - z * self.sa,
+        y = v.y * self.cb + v.z * self.sb,
+        z = v.x * self.sa + z * self.ca,
+    }
+}
+
+// A ray's span inside the cube, narrowed one slab at a time, and the face it
+// enters through.
+Span: struct { near: f32 = 0.0, far: f32 = FAR, face: i32 = -1 }
+
+// Narrow the span to the slab -1 <= o + t * d <= 1 of one axis; false when
+// the ray misses it.
+mut Span.clip(o: f32, d: f32, axis: i32): bool {
+    if d == 0.0 { return o >= -1.0 && o <= 1.0 }
+    t0: f32 = (-1.0 - o) / d
+    t1: f32 = (1.0 - o) / d
+    side: i32 = 0
+    if t0 > t1 {
+        t: f32 = t0
+        t0 = t1
+        t1 = t
+        side = 1
+    }
+    if t0 > self.near {
+        self.near = t0
+        self.face = axis * 2 + side
+    }
+    if t1 < self.far { self.far = t1 }
+    return self.near <= self.far
+}
+
+// Where a ray from camera-space origin o along d first enters the cube: the
+// distance t and the face, or face -1 on a miss. Origins inside the cube do
+// not occur, so the ray counts only when it enters ahead of it.
+hit(spin: Spin, o: Vec, d: Vec): (f32, i32) {
+    lo: Vec = spin.to_cube(Vec { x = o.x, y = o.y, z = o.z - DISTANCE })
+    ld: Vec = spin.to_cube(d)
+    span: Span = Span {}
+    if !mut span.clip(lo.x, ld.x, 0) { return 0.0, -1 }
+    if !mut span.clip(lo.y, ld.y, 1) { return 0.0, -1 }
+    if !mut span.clip(lo.z, ld.z, 2) { return 0.0, -1 }
+    if span.face < 0 || span.near < EPSILON { return 0.0, -1 }
+    return span.near, span.face
+}
+
+// The outward normal of a face in the cube's frame.
+normal(face: i32): Vec {
+    s: f32 = -1.0
+    if (face & 1) == 1 { s = 1.0 }
+    if face < 2 { return Vec { x = s } }
+    if face < 4 { return Vec { y = s } }
+    return Vec { z = s }
+}
+
+// A base color scaled by Lambert light: AMBIENT plus the rest times the
+// cosine to the light, which a shadow removes.
+shade(rgb: u32, cosine: f32): sdl.Color {
+    base: sdl.Color = sdl.Color::hex(rgb)
+    k: f32 = AMBIENT
+    if cosine > 0.0 { k += (1.0 - AMBIENT) * cosine }
+    return sdl.Color { r = base.r * k, g = base.g * k, b = base.b * k }
+}
+
+// The color seen along direction d from the camera.
+trace(spin: Spin, light: Vec, d: Vec): sdl.Color {
+    origin: Vec = Vec {}
+    _: f32, face: i32 = hit(spin, origin, d)
+    if face >= 0 {
+        n: Vec = spin.to_camera(normal(face))
+        return shade(FACE_COLORS[face], n.dot(light))
+    }
+    if d.y >= 0.0 { return sdl.Color::hex(BACKGROUND) }
+
+    // The floor faces straight up, so its cosine is the light's y; a ray
+    // from the floor point toward the light that meets the cube shadows it.
+    t: f32 = FLOOR_Y / d.y
+    p: Vec = Vec { x = d.x * t, y = FLOOR_Y, z = d.z * t }
+    shadow: i32 = -1
+    _, shadow = hit(spin, p, light)
+    if shadow >= 0 { return shade(FLOOR_COLOR, 0.0) }
+    return shade(FLOOR_COLOR, light.y)
+}
+
+fail(context: string): int {
+    fmt.printf("%s: %s\n", context, sdl.error())
+    return 1
+}
+
+main(): int {
+    if !sdl.init(sdl.InitFlags { video = 1 }) { return fail("SDL_Init") }
+    defer sdl.quit()
+
+    window: sdl.Window = sdl.Window::new("Ace + SDL3 raytraced cube", 640, 640, sdl.WindowFlags { resizable = 1 })
+    defer mut window.wipe()
+    if !window.ok() { return fail("SDL_CreateWindow") }
+
+    renderer: sdl.Renderer = sdl.Renderer::new(window)
+    defer mut renderer.wipe()
+    if !renderer.ok() { return fail("SDL_CreateRenderer") }
+    vsync: bool = renderer.vsync(1)
+
+    lx: f32 = -0.5
+    ly: f32 = 1.0
+    lz: f32 = -0.6
+    ll: f32 = math.sqrt(lx * lx + ly * ly + lz * lz)
+    light: Vec = Vec { x = lx / ll, y = ly / ll, z = lz / ll }
+
+    // Four vertices and six indices per cell, grown with the output size;
+    // a cell's indices never change, so only new ones are written.
+    vertices: mut []sdl.Vertex = null
+    defer mem.release[sdl.Vertex](mut vertices)
+    indices: mut []i32 = null
+    defer mem.release[i32](mut indices)
+    indexed: usize = 0
+
+    // Frames and their time since the last statistics refresh, and the
+    // figures shown until the next one.
+    period_start: u64 = sdl.ticks()
+    period_frames: u64 = 0
+    fps: int = 0
+    frame_us: int = 0
+    // CPU time spent tracing rays into the vertex buffer.
+    period_draw_ns: u64 = 0
+    period_drawn: u64 = 0
+    draw_us: int = 0
+
+    running: bool = true
+    for running {
+        event: sdl.Event
+        for mut event.poll() {
+            if event.kind == sdl.EventType.quit || event.kind == sdl.EventType.window_close_requested {
+                running = false
+            } else if event.kind == sdl.EventType.key_down && event.keyboard.key == sdl.Keycode.escape {
+                running = false
+            }
+        }
+
+        w: i32, h: i32, sized: bool = renderer.size()
+        if !sized { return fail("SDL_GetCurrentRenderOutputSize") }
+        cx: f32 = f32(w) * 0.5
+        cy: f32 = f32(h) * 0.5
+        scale: f32 = cx
+        if cy < scale { scale = cy }
+        scale *= 1.1
+
+        columns: i32 = (w + CELL - 1) / CELL
+        rows: i32 = (h + CELL - 1) / CELL
+        cells: usize = usize(columns) * usize(rows)
+        grown_vertices: mut []sdl.Vertex, vertices_ok: bool = mem.grow[sdl.Vertex](vertices, cells * 4)
+        if !vertices_ok { return fail("vertex allocation") }
+        vertices = grown_vertices
+        grown_indices: mut []i32, indices_ok: bool = mem.grow[i32](indices, cells * 6)
+        if !indices_ok { return fail("index allocation") }
+        indices = grown_indices
+        for indexed < cells {
+            base: i32 = i32(indexed * 4)
+            at: usize = indexed * 6
+            indices[at] = base
+            indices[at + 1] = base + 1
+            indices[at + 2] = base + 2
+            indices[at + 3] = base
+            indices[at + 4] = base + 2
+            indices[at + 5] = base + 3
+            indexed += 1
+        }
+
+        seconds: f32 = f32(sdl.ticks()) / 1000.0
+        spin: Spin = Spin {
+            sa = math.sin(seconds * 0.9),
+            ca = math.cos(seconds * 0.9),
+            sb = math.sin(seconds * 0.6),
+            cb = math.cos(seconds * 0.6),
+        }
+
+        // Each cell's ray passes through its center pixel.
+        trace_start: u64 = sdl.ticks_ns()
+        nv: usize = 0
+        for row: i32 in 0 .. rows {
+            y0: f32 = f32(row * CELL)
+            y1: f32 = f32(row * CELL + CELL)
+            if y1 > f32(h) { y1 = f32(h) }
+            dy: f32 = (cy - (y0 + y1) * 0.5) / scale
+            for column: i32 in 0 .. columns {
+                x0: f32 = f32(column * CELL)
+                x1: f32 = f32(column * CELL + CELL)
+                if x1 > f32(w) { x1 = f32(w) }
+                dx: f32 = ((x0 + x1) * 0.5 - cx) / scale
+                color: sdl.Color = trace(spin, light, Vec { x = dx, y = dy, z = 1.0 })
+                vertices[nv] = sdl.Vertex { position = sdl.Point { x = x0, y = y0 }, color = color }
+                vertices[nv + 1] = sdl.Vertex { position = sdl.Point { x = x1, y = y0 }, color = color }
+                vertices[nv + 2] = sdl.Vertex { position = sdl.Point { x = x1, y = y1 }, color = color }
+                vertices[nv + 3] = sdl.Vertex { position = sdl.Point { x = x0, y = y1 }, color = color }
+                nv += 4
+            }
+        }
+
+        period_draw_ns += sdl.ticks_ns() - trace_start
+        period_drawn += 1
+
+        renderer.color(sdl.Color::hex(BACKGROUND))
+        renderer.clear()
+        renderer.geometry(vertices[..nv], indices[..cells * 6])
+
+        period_frames += 1
+        now: u64 = sdl.ticks()
+        if now - period_start >= STATS_PERIOD {
+            elapsed: u64 = now - period_start
+            fps = int(period_frames * 1000 / elapsed)
+            frame_us = int(elapsed * 1000 / period_frames)
+            if period_drawn > 0 { draw_us = int(period_draw_ns / period_drawn / 1000) }
+            period_start = now
+            period_frames = 0
+            period_draw_ns = 0
+            period_drawn = 0
+        }
+
+        renderer.scale(TEXT_SCALE, TEXT_SCALE)
+        renderer.color(sdl.Color::hex(0xE0E0E0))
+        step: f32 = sdl.DEBUG_TEXT_SIZE + 4.0
+        y: f32 = 6.0
+
+        // A line that does not fit is skipped, as the overlay is only
+        // informational.
+        line: [64]u8 = [0 : 64]
+        n: usize, fit: bool = str.format(mut line[..], "FPS %d", fps)
+        if fit { renderer.debug_text(6.0, y, string(line[..n])) }
+        y += step
+        n, fit = str.format(mut line[..], "frame %d.%02d ms", frame_us / 1000, frame_us % 1000 / 10)
+        if fit { renderer.debug_text(6.0, y, string(line[..n])) }
+        y += step
+        n, fit = str.format(mut line[..], "trace %d us (CPU)", draw_us)
+        if fit { renderer.debug_text(6.0, y, string(line[..n])) }
+        y += step
+        n, fit = str.format(mut line[..], "rays %u, one per %dx%d", cells, int(CELL), int(CELL))
+        if fit { renderer.debug_text(6.0, y, string(line[..n])) }
+        y += step
+        n, fit = str.format(mut line[..], "output %d x %d", int(w), int(h))
+        if fit { renderer.debug_text(6.0, y, string(line[..n])) }
+        y += step
+
+        if vsync {
+            renderer.debug_text(6.0, y, "vsync on")
+        } else {
+            renderer.debug_text(6.0, y, "vsync off")
+        }
+        renderer.scale(1.0, 1.0)
+
+        renderer.present()
+        // Without vsync, the delay keeps the loop from spinning flat out.
+        if !vsync { sdl.delay(16) }
+    }
+    return 0
+}
