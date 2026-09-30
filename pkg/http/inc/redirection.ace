@@ -28,7 +28,7 @@ pub resolve(current: string, location: string, destination: mut []u8): (usize, b
     absolute: bool = (location.len >= 7 && mem.equal(location[..7], "http://")) ||
         (location.len >= 8 && mem.equal(location[..8], "https://"))
     if absolute {
-        _: Url, err: Error = parsing.Url::parse(location)
+        _, err: Error = parsing.Url::parse(location)
         if err != null || destination.len < location.len { return 0, false }
 
         mem.copy(destination[..location.len], location)
@@ -92,7 +92,7 @@ pub resolve(current: string, location: string, destination: mut []u8): (usize, b
         }
     }
 
-    _: Url, result_err: Error = parsing.Url::parse(destination[..at])
+    _, result_err: Error = parsing.Url::parse(destination[..at])
     if result_err != null { return 0, false }
 
     return at, true

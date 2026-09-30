@@ -1,0 +1,6 @@
+/* err: dropping an untyped literal does nothing. */
+
+main(): int {
+    n: int, _ = 1, 2
+    return n
+}

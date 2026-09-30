@@ -1,0 +1,5 @@
+/* err: `_` cannot name a parameter. */
+
+f(_: int): int { return 0 }
+
+main(): int { return f(1) }

@@ -1,0 +1,7 @@
+/* err: `_` takes only a plain '=' assignment. */
+
+main(): int {
+    n: int = 1
+    _ += n
+    return n
+}

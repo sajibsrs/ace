@@ -3051,9 +3051,15 @@ static void member_put(Lw* l, Node* x, const Agg* m) {
     place_put(l, p, m, 0);
 }
 
+// `_` as a target: the value is dropped.
+static int is_discard(const Node* n) {
+    return n->kind == N_IDENT && n->len == 1 && n->str[0] == '_';
+}
+
 // Tuple destructuring (Errors #12): the right side once, then each member
-// into a new binder (N_PARAM) or an existing place, in order. A tuple of over
-// 16 leaves is stored whole first, then its members copied out.
+// into a new binder (N_PARAM) or an existing place, in order; a `_` member is
+// dropped. A tuple of over 16 leaves is stored whole first, then its members
+// copied out.
 static void destructure(Lw* l, Node** kids, int n, Node* rhs) {
     SType* tt = node_ty(rhs);
     SType* u = unwrap(tt);
@@ -3064,11 +3070,13 @@ static void destructure(Lw* l, Node** kids, int n, Node* rhs) {
         Agg* m = (Agg*)arena_alloc((size_t)n * sizeof(Agg));
         for (int i = 0; i < n; i++) {
             Sym* bs = kids[i]->kind == N_PARAM ? node_sym(kids[i]) : NULL;
-            SType* kt = kids[i]->kind == N_PARAM ? (bs ? bs->type : NULL) : node_ty(kids[i]);
+            SType* kt = kids[i]->kind == N_PARAM ? (bs ? bs->type : NULL) :
+                        is_discard(kids[i]) ? node_ty(rhs->kids[i]) : node_ty(kids[i]);
             if (!kt || by_parts(kt)) unsupported(l, "destructuring");
             value(l, rhs->kids[i], kt, &m[i]);
         }
         for (int i = 0; i < n; i++) {
+            if (is_discard(kids[i])) continue;
             if (kids[i]->kind == N_PARAM) {
                 Sym* bs = node_sym(kids[i]);
                 set_leaves(l, var_of(l, bs), bs->type, &m[i]);
@@ -3083,6 +3091,7 @@ static void destructure(Lw* l, Node** kids, int n, Node* rhs) {
         int slot = new_slot(l, tt);
         store_value(l, rhs, tt, slot, 0);
         for (int i = 0; i < n; i++) {
+            if (is_discard(kids[i])) continue;
             Place src = { -1, slot, (int32_t)field_off(u, i), 0, u->fields[i].t };
             SType* bits;
             if (bits_field(kids[i], &bits)) {
@@ -3101,6 +3110,7 @@ static void destructure(Lw* l, Node** kids, int n, Node* rhs) {
         m.n = leaf_count(l, u->fields[i].t);
         for (int k = 0; k < m.n; k++) m.v[k] = all.v[at + k];
         Node* kid = kids[i];
+        if (is_discard(kid)) continue;
         if (kid->kind == N_PARAM) {
             Sym* bs = node_sym(kid);
             if (!bs) unsupported(l, "unresolved binder");
@@ -3129,7 +3139,18 @@ static void push_target(Lw* l, Node* s, int brk, int cont, int restart) {
     l->tgt[l->ntgt++] = (Target){ s->str, s->len, brk, cont, restart };
 }
 
+// e evaluated for its effects, its value dropped.
+static void drop(Lw* l, Node* e) {
+    SType* t = node_ty(e);
+    if (is_agg(t)) { Agg discard; value(l, e, t, &discard); } // expr() returns one scalar id; an aggregate result needs value()'s leaves, here discarded
+    else expr(l, e, -1);
+}
+
 static void assign(Lw* l, Node* s) {
+    if (is_discard(s->kids[0]) && s->nkids == 1) { // `_ = f()`: evaluated, dropped
+        drop(l, s->a);
+        return;
+    }
     if (s->nkids > 1) {
         if (s->op != T_ASSIGN || (s->flags & F_VOLATILE)) unsupported(l, "assignment target");
         destructure(l, s->kids, s->nkids, s->a);
@@ -3770,12 +3791,9 @@ static void stmt(Lw* l, Node* s) {
     case N_ASSIGN:
         assign(l, s);
         return;
-    case N_EXPRSTMT: {
-        SType* t = node_ty(s->a);
-        if (is_agg(t)) { Agg discard; value(l, s->a, t, &discard); } // expr() returns one scalar id; an aggregate result needs value()'s leaves, here discarded
-        else expr(l, s->a, -1);
+    case N_EXPRSTMT:
+        drop(l, s->a);
         return;
-    }
     case N_IF: {
         int t = new_block(l), join = new_block(l);
         int f = s->c ? new_block(l) : join;

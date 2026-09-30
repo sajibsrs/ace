@@ -142,7 +142,7 @@ shade(rgb: u32, cosine: f32): sdl.Color {
 // The color seen along direction d from the camera.
 trace(spin: Spin, light: Vec, d: Vec): sdl.Color {
     origin: Vec = Vec {}
-    _: f32, face: i32 = hit(spin, origin, d)
+    _, face: i32 = hit(spin, origin, d)
     if face >= 0 {
         n: Vec = spin.to_camera(normal(face))
         return shade(FACE_COLORS[face], n.dot(light))
@@ -153,8 +153,7 @@ trace(spin: Spin, light: Vec, d: Vec): sdl.Color {
     // from the floor point toward the light that meets the cube shadows it.
     t: f32 = FLOOR_Y / d.y
     p: Vec = Vec { x = d.x * t, y = FLOOR_Y, z = d.z * t }
-    shadow: i32 = -1
-    _, shadow = hit(spin, p, light)
+    _, shadow: i32 = hit(spin, p, light)
     if shadow >= 0 { return shade(FLOOR_COLOR, 0.0) }
     return shade(FLOOR_COLOR, light.y)
 }

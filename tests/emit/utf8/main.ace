@@ -59,7 +59,7 @@ main(): int {
     bad: usize = 0
 
     for at < mixed.len {
-        _: u32, width: usize, fine: bool = utf8.decode(mixed, at)
+        _, width: usize, fine: bool = utf8.decode(mixed, at)
 
         if fine {
             good += 1

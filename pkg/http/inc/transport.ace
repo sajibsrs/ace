@@ -117,7 +117,7 @@ pub exchange[C](
     }
     if format_err != null { return Response {}, format_err }
 
-    _: usize, send_err: Error = send(connection, storage.output[..output_count])
+    _, send_err: Error = send(connection, storage.output[..output_count])
     if send_err != null { return Response {}, send_err }
 
     occupied: usize = 0

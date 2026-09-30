@@ -394,6 +394,13 @@ static int is_reserved_builtin(const char* name, uint32_t len) {
     return is_panic_name(name, len) || is_assert_name(name, len) || is_static_assert_name(name, len) ||
            is_bitcast_name(name, len);
 }
+// `_` in an assignment or declaration list: the value is dropped, nothing binds.
+static int is_discard(const Node* n) {
+    return n->kind == N_IDENT && n->len == 1 && n->str[0] == '_';
+}
+static int is_discard_name(const char* name, uint32_t len) {
+    return len == 1 && name[0] == '_';
+}
 static int is_staticmap_name(const char* name, uint32_t len) {
     return len == 9 && memcmp(name, "StaticMap", 9) == 0;
 }
@@ -529,6 +536,10 @@ static Sym* lookup_type(Ck* k, const char* name, uint32_t len) {
 }
 
 static Sym* declare_val(Ck* k, Node* at, uint8_t kind, const char* name, uint32_t len) {
+    if (is_discard_name(name, len)) {
+        ck_err(k, at, "'_' discards a value and declares nothing");
+        return NULL;
+    }
     if (is_reserved_builtin(name, len)) {
         ck_err(k, at, "'%.*s' is a reserved builtin name — no declaration may take it", (int)len, name);
         return NULL;
@@ -549,6 +560,10 @@ static Sym* declare_type(Ck* k, Node* at, const char* name, uint32_t len) {
     }
     if (is_reserved_builtin(name, len)) {
         ck_err(k, at, "'%.*s' is a reserved builtin name — no declaration may take it", (int)len, name);
+        return NULL;
+    }
+    if (is_discard_name(name, len)) {
+        ck_err(k, at, "'_' discards a value and cannot name a type");
         return NULL;
     }
     Sym* old = scope_find(k->scope, 1, name, len);
@@ -2128,6 +2143,10 @@ static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
                 ck_err(k, e, "'%.*s' is a builtin call, not a value", (int)e->len, e->str);
                 return T_ERR;
             }
+            if (is_discard(e)) {
+                ck_err(k, e, "'_' discards a value and cannot be read");
+                return T_ERR;
+            }
             ck_err(k, e, "unknown name '%.*s'", (int)e->len, e->str);
             return T_ERR;
         }
@@ -2406,6 +2425,10 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         if (!s) {
             if (is_reserved_builtin(e->str, e->len)) {
                 ck_err(k, e, "'%.*s' is a builtin call, not a value", (int)e->len, e->str);
+                return T_ERR;
+            }
+            if (is_discard(e)) {
+                ck_err(k, e, "'_' discards a value and cannot be read");
                 return T_ERR;
             }
             ck_err(k, e, "unknown name '%.*s'", (int)e->len, e->str);
@@ -4989,6 +5012,28 @@ static void check_asm_insn(Ck* k, Node* s) {
     if (i >= n || p[i] < '0' || p[i] > '9') ck_err(k, s, "svc/brk need an immediate");
 }
 
+// The type of value i of rhs (typed rt), which a '_' target drops. A value
+// with no type of its own (an untyped literal or null) is an error: dropping
+// it does nothing.
+static SType* discard_type(Ck* k, Node* rhs, SType* rt, int i) {
+    if (rt->kind == SK_ERR) return T_ERR;
+    SType* t = rt;
+    Node* at = rhs;
+    if (rhs->kind == N_TUPLE_E) {
+        if (i >= rhs->nkids) return T_ERR;
+        at = rhs->kids[i];
+        t = expr_type(k, at);
+    } else if (rt->kind == SK_TUPLE) {
+        if (i >= rt->nfields) return T_ERR;
+        t = rt->fields[i].t;
+    }
+    if (t->kind == SK_UT) {
+        ck_err(k, at, "'_' drops only a typed value; this %s has no effect", type_name(t));
+        return T_ERR;
+    }
+    return t;
+}
+
 static void check_stmt(Ck* k, Node* s) {
     switch (s->kind) {
     case N_VAR: {
@@ -5000,6 +5045,11 @@ static void check_stmt(Ck* k, Node* s) {
             Sym** old = (Sym**)arena_alloc((size_t)(s->nkids ? s->nkids : 1) * sizeof(Sym*));
             for (int i = 0; i < s->nkids; i++) {
                 Node* binder = s->kids[i];
+                if (is_discard(binder)) {
+                    old[i] = NULL;
+                    wants[i] = discard_type(k, s->b, rt, i);
+                    continue;
+                }
                 old[i] = lookup_val(k, binder->str, binder->len);
                 if (binder->kind == N_PARAM) {
                     wants[i] = build_type(k, binder->a);
@@ -5131,7 +5181,8 @@ static void check_stmt(Ck* k, Node* s) {
                 /* The right side may still be a deferred (pending) call that
                  * resolves at end of file. Key the targets now so the emitter
                  * finds their storage whichever way resolution lands. */
-                for (int i = 0; i < s->nkids; i++) (void)check_lvalue(k, s->kids[i], 1);
+                for (int i = 0; i < s->nkids; i++)
+                    if (!is_discard(s->kids[i])) (void)check_lvalue(k, s->kids[i], 1);
                 return;
             }
             if (rt->kind != SK_TUPLE || rt->nfields != s->nkids) {
@@ -5141,11 +5192,16 @@ static void check_stmt(Ck* k, Node* s) {
             }
             if (s->a->kind == N_TUPLE_E) { // explicit tuple: coerce element-wise
                 for (int i = 0; i < s->nkids; i++) {
+                    if (is_discard(s->kids[i])) {
+                        (void)discard_type(k, s->a, rt, i);
+                        continue;
+                    }
                     SType* t = check_lvalue(k, s->kids[i], 1);
                     coerce(k, s->a->kids[i], t);
                 }
             } else { // multi-return call: targets must equal return types
                 for (int i = 0; i < s->nkids; i++) {
+                    if (is_discard(s->kids[i])) continue;
                     SType* t = check_lvalue(k, s->kids[i], 1);
                     if (!same_type(rt->fields[i].t, t))
                         ck_err(k, s->kids[i],
@@ -5153,6 +5209,12 @@ static void check_stmt(Ck* k, Node* s) {
                                i + 1, type_name(rt->fields[i].t), type_name(t));
                 }
             }
+            return;
+        }
+        if (is_discard(s->kids[0])) {
+            if (compound || (s->flags & F_VOLATILE))
+                ck_err(k, s, "'_' takes only a plain '=' assignment");
+            else (void)discard_type(k, s->a, expr_type(k, s->a), 0);
             return;
         }
         SType* t = check_lvalue(k, s->kids[0], 1);
@@ -6175,7 +6237,7 @@ static int init_stmt(InitCk* k, Node* s) {
             init_expr(k, s->b);
             for (int i = 0; i < s->nkids; i++) {
                 if ((s->flags & F_MIXED) && s->kids[i]->kind != N_PARAM) {
-                    init_mark_path(k, s->kids[i]);
+                    if (!is_discard(s->kids[i])) init_mark_path(k, s->kids[i]);
                 } else {
                     InitVar* v = init_var(k, node_sym(s->kids[i]), 1);
                     if (v) {
@@ -6190,6 +6252,7 @@ static int init_stmt(InitCk* k, Node* s) {
     case N_ASSIGN:
         init_expr(k, s->a);
         for (int i = 0; i < s->nkids; i++) {
+            if (is_discard(s->kids[i])) continue;
             SType* base = s->kids[i]->kind == N_FIELD_E ? init_shape(node_ty(s->kids[i]->a)) : NULL;
             if (base && base->kind == SK_BITS)
                 init_expr(k, s->kids[i]->a); // preserving RMW reads the whole unit

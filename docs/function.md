@@ -82,6 +82,22 @@ The match is exact: forwarding `(int, bool)` into `(i32, bool)`, or into a
 different number of values, is rejected. Destructure and return the values
 explicitly to convert them.
 
+A bare `_` in a destructuring list drops that value. It takes no type, since
+the call's signature already fixes it, binds no name, may appear more than
+once, and can never be read. `_ = f()` drops a single result. The call still
+runs; only its value is dropped:
+
+```ace
+_, remainder: int = divide(13, 5)
+quotient: int, _ = divide(13, 5)
+_, remainder = divide(20, 6)
+```
+
+`_` must drop a typed value: `n: int, _ = 1, 2` is rejected because dropping
+a literal does nothing. It takes only plain `=`, and no declaration, parameter,
+or type may be named `_`. Bit-field padding (`_: 5` inside `bits`) is a
+separate use.
+
 ## Parameter-list layout
 
 A parameter list stays on one line when the complete declaration fits within
@@ -535,3 +551,8 @@ Why the rules in `spec/compiler.md` are shaped as they are.
   additionally expand only small leaf functions (Compiler #6), so unmarked code
   pays no call for a trivial helper while larger expansion stays the author's
   choice (PHILOSOPHY Considerations #1).
+- Errors #12 (`_`): multiple returns make dropping an unwanted value common
+  (`value, ok`, `value, err`). A dedicated discard binds nothing, so repeated
+  uses never collide and nothing unread lingers in scope. The bare, untyped
+  spelling follows Go's blank identifier: the callee's signature already fixes
+  the type, so an annotation checks nothing.

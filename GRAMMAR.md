@@ -73,7 +73,8 @@ top_body      := var_decl | const_decl | func_decl | struct_decl
                | error_domain_decl | method_func_decl | assoc_func_decl | signing_decl | extern_block
 
 binding       := ident ":" type
-eq_name       := ident [":" type]                       // typed declares; bare reassigns — Note #28
+eq_name       := ident [":" type]                       // typed declares; bare reassigns — Note #28;
+                                                          // bare `_` drops its value (Errors #12)
 var_decl      := binding ["=" expr]                       // global or local typed binding
 static_map_decl := ident ":" static_map_type "=" static_map_lit // module-level only
 multi_decl    := eq_name ("," eq_name)+ "=" expr_list      // local per-name declare/assign; one line

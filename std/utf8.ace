@@ -110,7 +110,7 @@ pub valid(text: string): bool {
     at: usize = 0
 
     for at < text.len {
-        _: u32, n: usize, ok: bool = decode(text, at)
+        _, n: usize, ok: bool = decode(text, at)
         if !ok { return false }
 
         at += n

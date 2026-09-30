@@ -1,0 +1,26 @@
+// expect-exit: 9
+// `_` drops values in declaration and assignment lists; the calls still run.
+
+Big: struct { a: int = 0, b: int = 0, c: int = 0 }
+
+calls: int = 0
+
+pair(): (int, bool) {
+    calls += 1
+    return 7, true
+}
+triple(): (int, Big, bool) { return 1, Big { a = 2 }, false }
+
+main(): int {
+    _, ok: bool = pair()
+    n: int, _ = pair()
+    _, ok = pair()
+    _, _ = pair()
+    _, big: Big, _ = triple()
+    _ = pair()
+    _ = n
+    m: int, _ = n, ok
+    if !ok { return 1 }
+    if calls != 5 { return 2 }
+    return m + big.a
+}

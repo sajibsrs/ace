@@ -1,0 +1,9 @@
+/* err: `_` binds nothing, so it takes no type. */
+
+pair(): (int, bool) { return 7, true }
+
+main(): int {
+    _: int, ok: bool = pair()
+    if ok { return 0 }
+    return 1
+}

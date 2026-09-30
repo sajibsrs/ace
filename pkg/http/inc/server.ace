@@ -174,7 +174,7 @@ respond_close(conn: tcp.Conn, response: Response, mut context: Context) {
  * writes `router`'s response, and closes it. An accept failure just returns.
  */
 serve_one(listener: tcp.Listener, router: Router, mut context: Context) {
-    conn: tcp.Conn, _: net.Addr4, accept_err: Error = tcp.accept(listener)
+    conn: tcp.Conn, _, accept_err: Error = tcp.accept(listener)
     defer tcp.close(mut conn)
     if accept_err != null { return }
 
