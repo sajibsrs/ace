@@ -1,4 +1,4 @@
-// arm64.c — the AArch64 target of the IR backend (SPEC.md Compiler #2,
+// arm64.c — the AArch64 target of the IR backend (spec/compiler.md Compiler #2,
 // passes 7-10): instruction selection, leaving
 // SSA, linear-scan register allocation, the frame, and encoding into the
 // shared Obj, under the platform ABI (emit.c header).

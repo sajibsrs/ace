@@ -1,5 +1,5 @@
 // vector_ir.c — the IR's internal vector types through the host's target,
-// AArch64 or x64 on Linux (SPEC.md Compiler #6, auto-vectorization), before
+// AArch64 or x64 on Linux (spec/compiler.md Compiler #6, auto-vectorization), before
 // any pass creates them.
 //
 // Built twice by tests/run.sh: with -DEMIT and the compiler's sources, it

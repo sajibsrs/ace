@@ -4936,7 +4936,7 @@ static void check_union_switch(Ck* k, Node* s, SType* u) {
     }
 }
 
-// `default` is optional and, when present, the last case (SPEC Conditions #2);
+// `default` is optional and, when present, the last case (spec Conditions #2);
 // a second `default` is likewise a case after the first.
 static void check_default_last(Ck* k, Node* s) {
     for (int i = 0; i + 1 < s->nkids; i++) {

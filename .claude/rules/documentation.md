@@ -2,13 +2,13 @@
 paths:
   - "docs/**/*"
   - "editors/vscode/**/*"
-  - "SPEC.md"
+  - "spec/**/*"
   - "GRAMMAR.md"
 ---
 
 # Documentation and editor support
 
-- Keep `docs/` consistent with `SPEC.md`. Compiler-visible changes should update
+- Keep `docs/` consistent with `spec/`. Compiler-visible changes should update
   the relevant page and, when practical, add a checked example under
   `tests/sema/docs/` or an executable fixture.
 - Update `editors/vscode/` for syntax or editor-visible changes when practical;

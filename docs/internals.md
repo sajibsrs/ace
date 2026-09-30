@@ -1,6 +1,6 @@
 # Compiler internals
 
-The compiler runs a fixed, in-order sequence of passes (`SPEC.md` Compiler #2),
+The compiler runs a fixed, in-order sequence of passes (`spec/compiler.md` Compiler #2),
 each working on one file, one merged unit, or one function at a time, with no
 whole-program or cross-function analysis. This page maps that sequence onto
 `src/`.
@@ -28,7 +28,7 @@ source → lex → parse → merge → check → lower → optimize → select/a
 ## IR backend
 
 Every function compiles through a shared per-function SSA IR before any
-target-specific code generation (`SPEC.md` Compiler #4): emitting straight
+target-specific code generation (`spec/compiler.md` Compiler #4): emitting straight
 from the AST would need every optimization written once per source shape and
 repeated in each additional backend.
 
@@ -106,13 +106,13 @@ repeated in each additional backend.
 - **`main.c`** — wires the stages together (lex → parse → sema → emit →
   link) and handles the CLI flags described in `docs/compiler.md`.
 - **`package.c`** — `ace.pkg` manifest parsing and dependency-graph
-  resolution (`SPEC.md` Package System). No codegen or IR involvement.
+  resolution (`spec/modules-packages.md` Package System). No codegen or IR involvement.
 - **`ace.h`** — shared definitions used across the compiler.
 - **`sema.h`** — sema's public surface, consumed by `lower.c` and `emit.c`.
 
 ## See also
 
-- `SPEC.md` Compiler #2 and #4 — the normative pass list and codegen
+- `spec/compiler.md` Compiler #2 and #4 — the normative pass list and codegen
   rationale.
 - `docs/compiler.md` — user-facing CLI usage (`--ir`, `--ast`, `-c`, `-o`,
   build modes).

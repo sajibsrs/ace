@@ -11,7 +11,7 @@
 //     (0x0f = N_SECT|N_EXT), then undefs (0x01 = N_EXT); strtab starts with
 //     the empty string (index 0)
 //   - MH flags = 0 — no SUBSECTIONS_VIA_SYMBOLS: internal bl's are patched
-//     in-place, never relocated (SPEC.md Compiler #5)
+//     in-place, never relocated (spec/compiler.md Compiler #5)
 //   - one LC_BUILD_VERSION (platform 1 = macOS, minos 11.0), LC_SYMTAB,
 //     LC_DYSYMTAB
 //

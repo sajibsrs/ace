@@ -1,21 +1,25 @@
 # AGENTS.md
 
 Rules for AI agents working on Ace, a systems language and bootstrap C11
-compiler. `SPEC.md` is normative; `CHANGELOG.md` is the sole implementation
+compiler. `spec/` is normative; `CHANGELOG.md` is the sole implementation
 history.
 
 ## Before working
 
 - Read this file first, then only the relevant source sections.
-- Design or carving: read `PHILOSOPHY.md`, `SPEC.md`, and the active Decision
-  Queue.
-- Compiler work: read `SPEC.md` and `GRAMMAR.md`, then search `CHANGELOG.md` and
-  the implementation by topic.
-- Standard-library work: inspect the relevant `std/` modules and normative
-  `SPEC.md` surface. Reuse existing operations; do not duplicate parsing,
+- Read `spec/README.md`, then only the chapters the task touches; its table
+  maps each section (and references such as "Memory #15") to a file. Never
+  read every chapter.
+- Design or carving: read `PHILOSOPHY.md`, `spec/queue.md`, and the chapters
+  the decision affects.
+- Compiler work: read `spec/compiler.md`, the chapters for the language
+  feature involved, and `GRAMMAR.md`, then search `CHANGELOG.md` and the
+  implementation by topic.
+- Standard-library work: inspect the relevant `std/` modules and their
+  `spec/std/` chapter (`spec/std/README.md` holds the shared rules). Reuse existing operations; do not duplicate parsing,
   memory, text, or platform utilities. Prefer explicit generics, type-owned
   methods, or overloads over free helpers when ownership is clearer.
-- Planning: read the active Decision Queue and the relevant GitHub issues
+- Planning: read `spec/queue.md` and the relevant GitHub issues
   (`gh issue list -m <milestone>`, `-l <label>`; see `TODO.md`).
 - `docs/` describes implemented behavior; do not use it as design authority.
 
@@ -56,11 +60,11 @@ history.
   estimate) and state it when presenting the change. If the gain is
   negligible, drop the change: the return on investment is low, and every
   added line is more surface for bugs and more to extend and maintain.
-- Record current rules and rationale in `SPEC.md`, keeping only active decisions
-  in its queue. Record implemented behavior and its essential approach once,
-  briefly, in `CHANGELOG.md`. Keep `SPEC.md`, `CHANGELOG.md`, `GRAMMAR.md`, and
+- Record current rules and rationale in the `spec/` chapter they belong to,
+  keeping only active decisions in `spec/queue.md`. Record implemented behavior and its essential approach once,
+  briefly, in `CHANGELOG.md`. Keep `spec/`, `CHANGELOG.md`, `GRAMMAR.md`, and
   issue bodies minimal but sufficient; full detail belongs only in
-  `docs/`. `SPEC.md` entries and issues state current rules and open
+  `docs/`. `spec/` entries and issues state current rules and open
   questions only; what was removed, replaced, or how something got here is
   `CHANGELOG.md`'s history alone, not restated elsewhere.
 - Issues are non-normative. Promote one through the Decision Queue and update
@@ -69,7 +73,7 @@ history.
   when dropped). Label every issue with one kind (`bug`, `feature`, `task`),
   one area, a status label from `TODO.md` when one applies, a target label
   when platform-specific, and a milestone.
-- Update `SPEC.md`, `CHANGELOG.md`, and `docs/` in the same commit as the
+- Update `spec/`, `CHANGELOG.md`, and `docs/` in the same commit as the
   change they describe, not a follow-up, and open, edit, or close the
   affected issues when that commit lands.
 - Split work likely to exceed 200k tokens into owner-approved steps; each step

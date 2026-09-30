@@ -224,10 +224,10 @@ static void obj_path(char* out, size_t cap, const char* src) {
 }
 
 // --- `ace pkg` subcommand group (Package System v1, real CLI) ---------------
-// SPEC.md Decision Queue, "Package system v1 (local-path)", step 3. Every
+// spec/queue.md Decision Queue, "Package system v1 (local-path)", step 3. Every
 // manifest-aware operation is grouped under `ace pkg`; build/run/check find
 // the nearest enclosing ace.pkg by walking up from the working directory
-// (SPEC.md Package System #11) rather than taking a directory argument.
+// (spec/modules-packages.md Package System #11) rather than taking a directory argument.
 
 static void package_usage(void) {
     fprintf(stderr, "usage: ace pkg init <exe|lib> [DIR]\n"
@@ -252,7 +252,7 @@ static void package_usage(void) {
 }
 
 // Walk up from the working directory looking for ace.pkg, mirroring how a
-// nested manifest starts an independent package (SPEC.md Package System
+// nested manifest starts an independent package (spec/modules-packages.md Package System
 // #11). Returns arena storage, or NULL if no ace.pkg is found up to '/'.
 static const char* find_package_root(void) {
     char dir[4096];
@@ -309,7 +309,7 @@ static int package_write_file(const char* path, const char* data, size_t len) {
 // for a caller (pkg build) that still needs the parsed file for codegen;
 // `ace pkg check` discards them. report may be NULL.
 // out_order/out_norder are optional (pass NULL/NULL to skip): when given,
-// the caller receives package_resolve's dependency-first array (SPEC.md
+// the caller receives package_resolve's dependency-first array (spec/modules-packages.md
 // Package System #14's native-link-input collection order) and owns freeing
 // it; otherwise it is freed here.
 static int package_load_and_check(const char* dir, const char* argv0, const char* target,
@@ -356,7 +356,7 @@ static int package_load_and_check(const char* dir, const char* argv0, const char
 }
 
 // Reads the manifest's current bytes so a failed add/remove can restore them
-// (SPEC.md Decision Queue, "Package system v1": "the manifest file is left
+// (spec/queue.md Decision Queue, "Package system v1": "the manifest file is left
 // byte-for-byte unchanged" on any validation failure).
 static int package_manifest_backup(const char* manifest_path, char** out_buf, size_t* out_len) {
     Source s;
@@ -510,7 +510,7 @@ static int package_cmd_check(int argc, char** argv, const char* argv0) {
 
 // Shared by `pkg build` and `pkg run`: resolve + check the enclosing
 // package, then for an exe compile and link it into build/<package-name>
-// (SPEC.md Package System #15). A lib only checks and ensures build/
+// (spec/modules-packages.md Package System #15). A lib only checks and ensures build/
 // exists, since v1 ships libraries as source with no reusable archive.
 // require_exe rejects a lib package outright (used by `run`). On success
 // for an exe, out_bin receives the linked executable's path.

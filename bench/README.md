@@ -88,7 +88,7 @@ exist before:
 the last commit before any IR code existed (pure AST-emitter backend); every
 checksum matched between the two compilers on every corpus size, confirming
 the migration changed no observable behavior. This is the tradeoff
-`SPEC.md`'s priority stack (performance > simplicity > modularity > compile
+`spec/`'s priority stack (performance > simplicity > modularity > compile
 time > safety) explicitly ranks compile time below: see the Core and Hot
 loops sections below for the runtime and code-size side of the same
 comparison.

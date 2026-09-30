@@ -10,7 +10,7 @@
     X(EOF, "eof")                                                              \
     X(NL, "newline")                                                           \
     X(IDENT, "ident")                                                          \
-    /* keywords (v1 inventory, SPEC.md Pre-Implementation Checklist #2) */     \
+    /* keywords (v1 inventory) */                                              \
     X(IMPORT, "import") X(PUB, "pub") X(MUT, "mut")                            \
     X(CONST, "const")                                                          \
     X(NOALIAS, "noalias") X(IF, "if") X(ELSE, "else") X(FOR, "for")            \
@@ -91,7 +91,7 @@ void        path_dir(char* out, size_t cap, const char* path);
 const char* join_path(const char* dir, const char* rel);
 const char* canonicalize(const char* path); // arena storage, or NULL
 int         path_beneath(const char* path, const char* dir);
-// Build-relative source paths (SPEC.md Errors #16): set both roots before
+// Build-relative source paths (spec/safety-errors.md Errors #16): set both roots before
 // parsing, then map any source path for @file and assert diagnostics.
 void        build_roots(const char* compiler_path, const char* root_dir);
 const char* build_path(const char* path);
@@ -315,7 +315,7 @@ const char* asm_register_name(int r);
 // fmt.printf and str.format lower to; NULL until it loads.
 extern const char* rendering_prefix;
 
-// --- Packages (ace.pkg manifests, SPEC.md Package System) --------------------
+// --- Packages (ace.pkg manifests, spec/modules-packages.md Package System) --------------------
 // A package is a directory holding one ace.pkg and one root .ace file;
 // dependencies are name: version entries, each found as the nearest pkg/NAME
 // from the root package's directory and resolved recursively.
@@ -328,7 +328,7 @@ struct PackageDep {
 };
 
 // Native link inputs declared through a repeatable [[link]] manifest section
-// (SPEC.md Package System #14, GRAMMAR.md §7) — the same four kinds the
+// (spec/modules-packages.md Package System #14, GRAMMAR.md §7) — the same four kinds the
 // direct compiler driver accepts on its command line.
 typedef struct PackageLink PackageLink;
 // LINK_PATH is a record attribute (the directory of the record's library),
@@ -368,7 +368,7 @@ Package* package_resolve(const char* package_dir, Diag* d, const char* compiler_
 
 // Collects every package's declared [[link]] inputs across order
 // (dependency-first, from package_resolve) into direct-driver flag form —
-// SPEC.md Package System #14: object path positional, "-L"/dir, "-l"/name,
+// spec/modules-packages.md Package System #14: object path positional, "-L"/dir, "-l"/name,
 // "-framework"/name — de-duplicating exact kind+value matches and
 // diagnosing a same-identity/different-value conflict as an error anchored
 // at each declaration's own manifest:line. Returns the argv-style array
@@ -377,14 +377,14 @@ Package* package_resolve(const char* package_dir, Diag* d, const char* compiler_
 char** package_collect_links(Package** order, int norder, Diag* d, int* nargs);
 
 // True iff canonical path canon is package_dir or beneath it, outside its
-// reserved pkg/ directory (SPEC.md Package System #6).
+// reserved pkg/ directory (spec/modules-packages.md Package System #6).
 int package_contains(const char* package_dir, const char* canon);
 
 // True iff s is a nonempty lowercase Ace identifier, the shape a package name
 // must have. Shared by manifest validation and `ace pkg init`'s derived name.
 int package_valid_name(const char* s, size_t len);
 
-// Textual-only manifest edits for `ace pkg add`/`remove` (SPEC.md Decision
+// Textual-only manifest edits for `ace pkg add`/`remove` (spec/queue.md Decision
 // Queue, "Package system v1"): no grammar or graph validation happens here —
 // the caller re-resolves the graph afterward and restores the manifest's
 // original bytes on failure. Both return 0 on a successful rewrite, 1 if the

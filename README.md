@@ -117,7 +117,7 @@ be built or installed.
 ## Learn more
 
 - [`docs/`](docs/README.md): the guide, starting from primitives and types
-- [`SPEC.md`](SPEC.md): the language rules
+- [`spec/`](spec/README.md): the language rules
 - [`PHILOSOPHY.md`](PHILOSOPHY.md): why the rules are what they are
 - [`GRAMMAR.md`](GRAMMAR.md): the formal grammar
 - [`CHANGELOG.md`](CHANGELOG.md): implementation history

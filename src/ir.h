@@ -1,5 +1,5 @@
 // ir.h — the per-function SSA IR between the checker and the targets
-// (SPEC.md Compiler #2 and #4). lower.c builds it
+// (spec/compiler.md Compiler #2 and #4). lower.c builds it
 // from a checked function; the passes and each target consume it.
 #ifndef IR_H
 #define IR_H

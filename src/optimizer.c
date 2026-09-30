@@ -1,6 +1,6 @@
 // optimizer.c — pass 6, the release-only optimizer, over one function's IR
-// (SPEC.md Compiler #2). Each pass runs
-// once, in the order the SPEC gives: sparse conditional constant propagation,
+// (spec/compiler.md Compiler #2). Each pass runs
+// once, in the order spec/compiler.md gives: sparse conditional constant propagation,
 // global value numbering, loop strength reduction, dead-code and control-flow
 // cleanup, then auto-vectorization over the cleaned loops (and cleanup again
 // after it rewrites any).
@@ -700,7 +700,7 @@ static void lsr(IrFunc* fn) {
 
 // --- auto-vectorization -----------------------------------------------------------------
 //
-// SPEC.md Compiler #6. An innermost counted loop (a header holding only
+// spec/compiler.md Compiler #6. An innermost counted loop (a header holding only
 // i = phi [0, pre], [i + 1, body], lt i, n, and its branch, for a u64 or i64
 // i indexing directly or through its cast to u64, or, under a constant n that
 // fits, through i32 lane value t = cast i32 i and its cast to u64; a body of

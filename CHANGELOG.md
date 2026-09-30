@@ -3208,8 +3208,12 @@ current normative rules, and Git preserves patch-level detail.
   status, area, and target labels, the priority bands as milestones, and the
   measured-gaps table as issue #72. `TODO.md` now explains the labels and how
   to query them.
+- Split `SPEC.md` into chapter files under `spec/`, moving every line
+  unchanged: `spec/README.md` maps each section to its file, the Decision Queue
+  is `spec/queue.md`, and the Stdlib items keep one numbering across
+  `spec/std/` and `spec/pkg/http.md`. References now name the chapter file.
 
 The checked-build queue is complete. Additive networking, concurrency, fuller
 math/SIMD, and a second
-backend remain open; their status belongs in the `SPEC.md` Decision Queue and
+backend remain open; their status belongs in the `spec/queue.md` Decision Queue and
 GitHub issues, not in this history.

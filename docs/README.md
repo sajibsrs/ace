@@ -4,7 +4,7 @@ This guide documents the language behavior implemented by the current Ace
 compiler. It contains working syntax, examples, rules, and current limitations;
 it is not a roadmap.
 
-The normative language definition remains [`../SPEC.md`](../SPEC.md). Where a
+The normative language definition remains [`../spec/`](../spec/README.md). Where a
 guide page and the specification disagree, the specification wins and the guide
 must be corrected.
 

@@ -1,5 +1,5 @@
 // package.c — ace.pkg manifest parsing and dependency-graph resolution
-// (SPEC.md Package System). A manifest is a small line-based key: value
+// (spec/modules-packages.md Package System). A manifest is a small line-based key: value
 // format, plus one [dependencies] section of name: version entries. Every
 // dependency name in a graph, direct or transitive, is found from the root
 // package's directory as the nearest <dir>/pkg/<name> (Package System #5);
@@ -758,7 +758,7 @@ char** package_collect_links(Package** order, int norder, Diag* d, int* nargs) {
     return args;
 }
 
-// --- `ace pkg add`/`remove` manifest rewriting (SPEC.md Decision Queue,
+// --- `ace pkg add`/`remove` manifest rewriting (spec/queue.md Decision Queue,
 // "Package system v1") -------------------------------------------------------
 // Both functions are line-oriented text surgery only, mirroring
 // parse_manifest's own comment/section/key scan so they agree with it on

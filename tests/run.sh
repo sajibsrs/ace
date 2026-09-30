@@ -80,7 +80,7 @@ for f in $(find tests/sema -name '*_err.ace' | sort); do
 done
 
 # inline declarations: each placement and declaration rule reports its own
-# diagnostic (SPEC Functions & ABI #8)
+# diagnostic (spec Functions & ABI #8)
 while IFS='|' read -r f want; do
     if ! "$ACE" "$f" 2>&1 | grep -qF "$want"; then
         echo "FAIL: $f should report: $want"
@@ -105,7 +105,7 @@ tests/sema/inline/recursion_err.ace|inline function 'count' reaches itself throu
 tests/sema/inline/mutual_err.ace|inline function 'even' reaches itself through inline calls
 INLINE_RULES
 
-# generic function values name their type arguments (SPEC Generics #6), and
+# generic function values name their type arguments (spec Generics #6), and
 # diagnostics render composite types in full
 while IFS='|' read -r f want; do
     if ! "$ACE" "$f" 2>&1 | grep -qF "$want"; then
@@ -126,7 +126,7 @@ tests/sema/types/composite_name_err.ace|(i32, bool) given where (i64, bool) expe
 tests/sema/types/composite_name_err.ace|*Point given where *i32 expected
 GENERIC_VALUE_RULES
 
-# tuple literal members meet their declared member types (SPEC Syntax #11)
+# tuple literal members meet their declared member types (spec Syntax #11)
 tuple_member_errors=$("$ACE" tests/sema/types/tuple_literal_member_type_err.ace 2>&1)
 for want in \
     "6:21: error: type mismatch: i64 given where i32 expected" \
@@ -2155,7 +2155,7 @@ fi
 # added dependency actually builds/links; `// expect-add-err: NAME VERSION
 # substring` and `// expect-remove-err: NAME substring` run `pkg add`/`pkg
 # remove` expecting failure with that diagnostic substring and an unchanged
-# manifest (SPEC.md Decision Queue, "Package system v1": failure leaves the
+# manifest (spec/queue.md Decision Queue, "Package system v1": failure leaves the
 # manifest byte-for-byte unchanged); `// expect-remove-ok: NAME` runs `pkg
 # remove NAME` expecting success and the entry gone from ace.pkg; `//
 # expect-list-has: substring` (repeatable) runs `pkg list` expecting success

@@ -1,6 +1,6 @@
 # Philosophy
 
-The why and the principles. Concrete language rules, syntax, and the decision/carving queue live in SPEC.md.
+The why and the principles. Concrete language rules, syntax, and the decision/carving queue live in spec/.
 
 ## Why Ace (Motivation)
 C is the gold standard — the goal is not to beat C at its own game, but to keep its machine-true performance model while fixing what surrounds it:
@@ -45,7 +45,7 @@ When goals conflict, resolve in this order:
    outside this generated-program rule.
 
 ## Principles
-Distilled from the closed philosophy decisions; operative rules live in SPEC.md.
+Distilled from the closed philosophy decisions; operative rules live in spec/.
 1. Memory is manual and explicit. Ace permits only small, local compile-time safety rules with zero runtime cost; broader diagnostics belong in debug builds, never in ownership or lifetime machinery.
 2. No hidden control flow, no hidden costs: no exceptions, no propagation sugar, no COW, no inference, no implicit instantiation.
 3. Mutation is visible — in signatures and at call sites; an unmarked call changes nothing you passed.

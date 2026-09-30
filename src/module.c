@@ -143,7 +143,7 @@ int path_beneath(const char* path, const char* dir) {
     return strncmp(path, dir, n) == 0 && path[n] == '/';
 }
 
-// Build-relative source paths for @file and assert diagnostics (SPEC.md
+// Build-relative source paths for @file and assert diagnostics (spec/safety-errors.md
 // Errors #16): std files as "std/...", everything else relative to the build
 // root, climbing with ".." when outside it. Never absolute.
 static const char* build_root_dir;
@@ -603,7 +603,7 @@ static const char* resolve_module_path(Loader* L, Node* imp, const char* root,
 // bare/alias/quoted-relative path may name a nested module two or more
 // `/`-separated segments deep — every non-leaf segment must itself be a
 // directory module (`mod.ace`), and only the leaf segment's name becomes the
-// bound qualifier (SPEC.md rule 1). On return, *target_package names the
+// bound qualifier (spec/modules-packages.md rule 1). On return, *target_package names the
 // package owning the resolved file (the matched dependency, the importer's
 // own package for a same-package relative path, or NULL for
 // std/std-internal/non-package targets).

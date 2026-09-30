@@ -1,4 +1,4 @@
-// regalloc.h — the target-neutral half of register allocation (SPEC.md
+// regalloc.h — the target-neutral half of register allocation (spec/compiler.md
 // Compiler #2, pass 8), shared by the backends: block order, use counts,
 // liveness intervals, phi and cast location sharing, and a linear scan over
 // register classes a target describes (RaTarget).

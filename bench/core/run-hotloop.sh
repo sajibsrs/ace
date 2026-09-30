@@ -10,7 +10,7 @@ make ace
 
 ./ace --release --report -o "$bench_tmp/hotloop-ace" bench/core/hotloop.ace
 # Scalar C is the Ace/C column; C's auto-vectorized build is the reference
-# for Ace's own auto-vectorizer (SPEC Compiler #6). clang and gcc spell the
+# for Ace's own auto-vectorizer (spec Compiler #6). clang and gcc spell the
 # vectorizers' switches differently.
 if cc -dM -E -x c /dev/null | grep -q __clang__; then
     scalar="-fno-vectorize -fno-slp-vectorize"

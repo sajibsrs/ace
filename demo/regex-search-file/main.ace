@@ -1,6 +1,7 @@
-/* Lists every `Decision:` line of the repository's SPEC.md with pkg/regex.
+/* Lists every `Decision:` line of the repository's spec/types.md with
+ * pkg/regex.
  *
- * SPEC.md is opened relative to the current working directory, not to this
+ * The file is opened relative to the current working directory, not to this
  * source file, so run from this directory:
  *   ace pkg run
  */
@@ -10,7 +11,7 @@ import fmt
 import mem
 import regex
 
-PATH: string = "../../SPEC.md"
+PATH: string = "../../spec/types.md"
 
 main(): int {
     data: mut []u8, err: Error = file.read(PATH)

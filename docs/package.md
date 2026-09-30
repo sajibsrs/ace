@@ -4,7 +4,7 @@ Plain `ace file.ace` compiles one root source with no manifest. An optional
 `ace.pkg` at a directory root groups a package's files under a declared
 `name`, exact `version`, `ace` language version, `type` (`exe` or `lib`), and
 `root` source file, with `[dependencies]` entries naming each dependency and
-its exact version (`json: 0.1.0`; see `SPEC.md`'s Package System section for
+its exact version (`json: 0.1.0`; see `spec/modules-packages.md`'s Package System section for
 the manifest format and dependency rules). Optional `description`, `author`, `license`, and `repository` fields
 hold free-form single-line metadata with no effect on identity, resolution, or
 compilation; any of them may be left empty. Every manifest-aware operation is

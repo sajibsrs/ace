@@ -1,5 +1,5 @@
 // emit.c — stage four's object driver: compiles each function through the IR
-// backend (lower.c, optimizer.c, arm64.c; SPEC.md Compiler #2) into one
+// backend (lower.c, optimizer.c, arm64.c; spec/compiler.md Compiler #2) into one
 // Mach-O arm64 object, and emits what no function body holds: global and
 // constant data, static maps, vtables and their embed thunks, the runtime
 // failure and allocator routines, and the shared byte routines. It also owns

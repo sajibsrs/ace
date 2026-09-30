@@ -1,6 +1,6 @@
 // lexer.c — single-pass lexer for Ace.
 //
-// Newline handling (SPEC.md "newline terminates statements", GRAMMAR.md §6.1):
+// Newline handling (spec/syntax.md "newline terminates statements", GRAMMAR.md §6.1):
 // a newline token is emitted only when the previous token can end an
 // expression — ident/literal/null/true/false, ')', ']', '}', '?', or the
 // keywords return/break/continue — and the next token is not ';'. Consequence:

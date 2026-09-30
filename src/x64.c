@@ -1,4 +1,4 @@
-// x64.c — the x64 target of the IR backend for linux-x64 (SPEC.md
+// x64.c — the x64 target of the IR backend for linux-x64 (spec/compiler.md
 // Compiler #2, passes 7-10): instruction selection, leaving SSA, the frame,
 // and encoding into the shared Obj under the System V AMD64 ABI, plus the
 // runtime routines emit.c's arm64 ones mirror (x64_runtime): failures, the
@@ -2195,7 +2195,7 @@ static void emit_mem_compare(X64* a, Obj* o) {
 }
 
 /*
- * The debug allocator's registry (SPEC Manual Memory): a list of live
+ * The debug allocator's registry (spec Memory): a list of live
  * allocations whose nodes are malloc'd ptr, size, align, next, headed at
  * __ace$registry_head. find and remove fail unless ptr and size match a
  * record; leaks fails while any record remains. Standard System V calls.

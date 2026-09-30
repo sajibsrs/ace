@@ -2,7 +2,7 @@
 
 Open work is tracked as GitHub issues on `sajibsrs/ace`, not in this file.
 Issues are non-normative: no issue is a decision. Anything promoted to work is
-carved through the Decision Queue in `SPEC.md`, then implemented and logged in
+carved through the Decision Queue in `spec/`, then implemented and logged in
 `CHANGELOG.md`.
 
 ```sh
@@ -20,10 +20,10 @@ Labels:
 
 - Kind: `bug` (implemented behavior is incorrect), `feature` (new
   capability), `task` (performance, measurement, cleanup, tooling).
-- Status: `queued` (listed for later work in `SPEC.md`), `open-decision` (open
+- Status: `queued` (listed for later work in `spec/`), `open-decision` (open
   in the Decision Queue or normative spec), `additive` (deferred as an additive
   extension by a carved decision), `unspecified` (neither decided nor rejected
-  in `SPEC.md`). An issue without one was observed first there.
+  in `spec/`). An issue without one was observed first there.
 - Area: `lang`, `compiler`, `std`, `pkg`, `tooling`, `docs`.
 - Target: `linux-x64`, `darwin-arm64`, only when platform-specific.
 

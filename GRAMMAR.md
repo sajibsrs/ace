@@ -1,6 +1,6 @@
 # Ace — Grammar
 
-EBNF for the carved language surface (v1) and the separate `ace.pkg` package-manifest format (§7). Semantics live in `SPEC.md`; `[P]` marks productions whose *spelling* is provisional (semantics are final). Nothing here may contradict `SPEC.md` — where they disagree, `SPEC.md` wins and this file gets fixed.
+EBNF for the carved language surface (v1) and the separate `ace.pkg` package-manifest format (§7). Semantics live in `spec/`; `[P]` marks productions whose *spelling* is provisional (semantics are final). Nothing here may contradict `spec/` — where they disagree, `spec/` wins and this file gets fixed.
 
 ## 1. Lexical
 
@@ -66,7 +66,7 @@ module_path   := ident ("/" ident)*             // net/tcp; only the leaf binds
 import_path   := string_lit                     // "./util.ace" or "../A/B" (no .ace = nested)
 internal_import := "@" ident                              // compiler-reserved std implementation
 
-top_decl      := ["pub"] ["inline"] top_body                 // "inline": function forms only (SPEC Functions & ABI #8)
+top_decl      := ["pub"] ["inline"] top_body                 // "inline": function forms only (spec Functions & ABI #8)
 top_body      := var_decl | const_decl | func_decl | struct_decl
                | static_map_decl
                | bits_decl | contract_decl | enum_decl | union_decl | alias_decl | distinct_decl
@@ -262,7 +262,7 @@ ret_types     := type | "(" type ("," type)+ ")"
 
 ## 6. Parser notes
 
-Semantics and restrictions belong in `SPEC.md`; these notes record only parsing
+Semantics and restrictions belong in `spec/`; these notes record only parsing
 choices that are not evident from the productions.
 
 1. Newlines terminate statements using lexer insertion after tokens that can end
@@ -310,7 +310,7 @@ choices that are not evident from the productions.
 ## 7. Package manifest (ace.pkg)
 
 A separate small line-based format for `ace.pkg`, parsed independently of the
-Ace language grammar above (`src/package.c`). Semantics live in `SPEC.md`'s
+Ace language grammar above (`src/package.c`). Semantics live in `spec/modules-packages.md`'s
 Package System section.
 
 ```ebnf

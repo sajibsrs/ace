@@ -1,6 +1,6 @@
 ---
 paths:
-  - "SPEC.md"
+  - "spec/**/*"
   - "GRAMMAR.md"
   - "PHILOSOPHY.md"
   - "src/**/*"
@@ -13,7 +13,7 @@ paths:
 
 # Fixed design boundaries
 
-Follow `SPEC.md` for exact rules; do not propose or assume away these decisions:
+Follow `spec/` for exact rules; do not propose or assume away these decisions:
 
 - Manual memory uses one process-wide strategy exposed by `mem`; no allocator
   values, GC, borrow checking, ownership, or hidden allocation.
@@ -29,9 +29,9 @@ Follow `SPEC.md` for exact rules; do not propose or assume away these decisions:
 - Composition and explicit contract values replace inheritance.
 - Declarations use `name: type`; functions are keywordless with trailing
   returns; function values use signature types.
-- The compiler uses recursive descent, the fixed in-order passes of `SPEC.md`
+- The compiler uses recursive descent, the fixed in-order passes of `spec/compiler.md`
   Compiler #2, and direct machine-code emission from a per-function IR;
   no whole-program or cross-function analysis.
 - Safety is cheap local checking plus removable debug-build diagnostics.
 - There is no `goto`; use labeled blocks and loops. Iteration, switch, and
-  `fallthrough` follow `SPEC.md` exactly.
+  `fallthrough` follow `spec/` exactly.
