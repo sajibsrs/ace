@@ -869,17 +869,17 @@ for f in array_negative array_equal aggregate_array_equal array_slice_upper arra
     fi
 done
 if command -v nm >/dev/null 2>&1; then
-    if nm /tmp/ace_checked_bounds/default.o 2>/dev/null | grep -qF '__ace$bounds_fail'; then
+    if nm /tmp/ace_checked_bounds/default.o 2>/dev/null | grep -qF '_ace$bounds_fail'; then
         echo "FAIL: default emission retains debug bounds machinery"
         fail=1
     fi
     if nm /tmp/ace_checked_bounds/release.o 2>/dev/null |
-         grep -Eq '__ace\$bounds|[[:space:]]U (_abort|_write)$'; then
+         grep -Eq '_ace\$bounds|[[:space:]]U _?(abort|write)$'; then
         echo "FAIL: release object retains debug failure machinery"
         fail=1
     fi
     if nm /tmp/ace_checked_bounds/proven_iteration.o 2>/dev/null |
-         grep -qF '__ace$bounds_fail'; then
+         grep -qF '_ace$bounds_fail'; then
         echo "FAIL: proven access or direct iteration retained a bounds guard"
         fail=1
     fi
@@ -1019,23 +1019,23 @@ if "$ACE" tests/assert/false_err.ace >/dev/null 2>/tmp/ace_test_errs ||
     echo "FAIL: compile-time false assert diagnostic"
     fail=1
 fi
-if ! "$ACE" --release -c -o /tmp/ace_checked_features/release.o \
+if ! "$ACE" --release -c -o /tmp/ace_checked_features/release \
      tests/checked_arithmetic/signed_add.ace; then
     echo "FAIL: release checked-feature object"
     fail=1
 elif command -v nm >/dev/null 2>&1 &&
      nm /tmp/ace_checked_features/release.o 2>/dev/null |
-       grep -Eq '__ace\$(arithmetic|contract|null|registry)|[[:space:]]U (_abort|_write)$'; then
+       grep -Eq '_ace\$(arithmetic|contract|null|registry)|[[:space:]]U _?(abort|write)$'; then
     echo "FAIL: release object retains debug machinery"
     fail=1
 fi
-if ! "$ACE" --release -c -o /tmp/ace_checked_features/pointer_release.o \
+if ! "$ACE" --release -c -o /tmp/ace_checked_features/pointer_release \
      tests/emit/pointers/arithmetic.ace; then
     echo "FAIL: release pointer-arithmetic object"
     fail=1
 elif command -v nm >/dev/null 2>&1 &&
      nm /tmp/ace_checked_features/pointer_release.o 2>/dev/null |
-       grep -Eq '__ace\$(arithmetic|null)|[[:space:]]U (_abort|_write)$'; then
+       grep -Eq '_ace\$(arithmetic|null)|[[:space:]]U _?(abort|write)$'; then
     echo "FAIL: release pointer arithmetic retains debug machinery"
     fail=1
 fi
@@ -1229,7 +1229,7 @@ if [ -d tests/emit ]; then
             fail=1
         fi
         if nm /tmp/ace_emit/printf/main.o 2>/dev/null |
-           grep -qF '__ace$fn$fmt$printf$prstring$'; then
+           grep -qF '_ace$fn$fmt$printf$prstring$'; then
             echo "FAIL: checked fmt.printf calls must not emit a runtime printf body"
             fail=1
         fi
