@@ -1045,6 +1045,22 @@ if command -v strings >/dev/null 2>&1 &&
     echo "FAIL: release pointer arithmetic retains diagnostic metadata"
     fail=1
 fi
+if ! "$ACE" --release -o /tmp/ace_checked_features/far_offset \
+     tests/emit/pointers/far_offset.ace ||
+   { /tmp/ace_checked_features/far_offset; [ $? -ne 42 ]; }; then
+    echo "FAIL: release far stack-object offset did not exit 42"
+    fail=1
+fi
+if [ "$(uname -m)" = x86_64 ] && command -v objdump >/dev/null 2>&1; then
+    if ! "$ACE" --release -c -o /tmp/ace_checked_features/far_offset \
+         tests/emit/pointers/far_offset.ace ||
+       ! objdump -d -M intel /tmp/ace_checked_features/far_offset.o >/tmp/ace_test_dis ||
+       grep -qF '[rbp+0x7fff' /tmp/ace_test_dis ||
+       ! grep -qF 'lea    rax,[rbp-' /tmp/ace_test_dis; then
+        echo "FAIL: x64 far stack-object access wrapped its rbp displacement"
+        fail=1
+    fi
+fi
 
 for f in null overflow alignment reinterpret_alignment; do
     if ! "$ACE" --debug -o "/tmp/ace_checked_features/pointer_construct_$f" \

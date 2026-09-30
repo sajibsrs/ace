@@ -1123,6 +1123,19 @@ static void st_imm(X64* a, IrType t, int32_t k, int base, int32_t off) {
     }
 }
 
+// The base of an access at off into stack object s: rbp with off moved to
+// s's rbp offset, or, when that sum overflows int32 (fold_address runs before
+// the frame is laid out), s's address in rax with off as it is.
+static int slot_base(X64* a, int s, int32_t* off) {
+    int64_t at = (int64_t)*off + a->home[s];
+    if (at == (int32_t)at) {
+        *off = (int32_t)at;
+        return RBP;
+    }
+    lea(a, RAX, RBP, a->home[s]);
+    return RAX;
+}
+
 // A load or store of type t at [base + off]: base the pointer's register (a
 // stack object's is rbp and its offset), or the address it folds (fuse): a
 // global rip-relative, an unchecked pointer offset's constant in off or its
@@ -1135,8 +1148,7 @@ static void access(X64* a, int v) {
     IrType t = (IrType)(load ? x->type : ins_of(a, x->args[1])->type);
     int32_t off = x->aux, k;
     if (px->op == IR_SLOT) { // never null
-        base = RBP;
-        off += a->home[p];
+        base = slot_base(a, p, &off);
     } else if (a->ra.fused[p] && px->op == IR_GLOBAL) {
         a->fold = (Fold){ -1, -1, 0, 0, px->name };
         base = AFOLD;
@@ -1144,12 +1156,7 @@ static void access(X64* a, int v) {
         int b = px->args[0], n = px->args[1], index = -1;
         if (imm32_of(a, n, &k)) off += (int32_t)(px->op == IR_PSUB ? -(int64_t)k * (int64_t)px->imm : (int64_t)k * (int64_t)px->imm);
         else index = gp_in(a, n, RDX);
-        if (ins_of(a, b)->op == IR_SLOT) {
-            base = RBP;
-            off += a->home[b];
-        } else {
-            base = gp_in(a, b, RAX);
-        }
+        base = ins_of(a, b)->op == IR_SLOT ? slot_base(a, b, &off) : gp_in(a, b, RAX);
         if (index >= 0) {
             a->fold = (Fold){ base, index, __builtin_ctzll(px->imm), 0, NULL };
             base = AFOLD;

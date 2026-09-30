@@ -1,0 +1,28 @@
+/* expect-exit: 42 */
+
+// Constant offsets whose sum with the stack object's rbp offset crosses
+// INT32_MIN: the access must address the object through rax, not a wrapped
+// displacement. Built on the branch not taken, never run.
+
+Pair: struct { first: int, second: int }
+
+far(values: mut *Pair, take: bool): int {
+    local: [4]Pair
+    local[1].first = 40
+    local[2].second = 2
+    pointer: mut *Pair = mut &local[0]
+    if take {
+        (pointer - 134217727).second = 7
+        return (pointer - 134217726).first
+    }
+    values.first = (pointer + 1).first
+    (pointer + 3).second = 5
+    return (pointer + 1).first + (pointer + 2).second
+}
+
+main(): int {
+    pair: Pair = { first = 0, second = 0 }
+    result: int = far(mut &pair, false)
+    if pair.first != 40 { return 1 }
+    return result
+}

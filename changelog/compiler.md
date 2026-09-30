@@ -13,3 +13,7 @@
   constant into the displacement, a register index as `[base + index*scale]`
   (scale 1, 2, 4, or 8). `bench/core` hotloop on x64: dot-f64 1.36x,
   cube-transform 1.26-1.35x; the rest unchanged.
+- Guarded an x64 stack-object access whose displacement, the object's rbp
+  offset plus a folded constant, overflows int32: the object's address is
+  materialized in rax by `lea` and the access keeps the constant alone,
+  where it had wrapped to a wrong address.
