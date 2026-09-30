@@ -861,6 +861,10 @@ current normative rules, and Git preserves patch-level detail.
   Mach-O's extra leading underscore), so the required OS boundaries (errno as
   `__error` or `__errno_location`) and the forbidden runtime dependencies are
   checked on Linux too, rather than failing or passing vacuously.
+- Made the `@when` fixtures host-neutral: `tests/modules/when` binds its `os`
+  alias to a darwin-arm64 or linux-x64 file and fails to resolve on any other
+  target, and the duplicate-declaration fixture matches with an always-true
+  `target !=` comparison.
 
 ## Core language
 

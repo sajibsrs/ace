@@ -6,12 +6,15 @@ import os: "./missing.ace"
 @when(target == "darwin-arm64")
 import os: "./darwin.ace"
 
-@when(target != "darwin-arm64")
+@when(target == "linux-x64")
+import os: "./linux.ace"
+
+@when(not (target == "darwin-arm64" or target == "linux-x64"))
 selected(): int {
     return missing_name
 }
 
-@when(target == "darwin-arm64")
+@when(target == "darwin-arm64" or target == "linux-x64")
 selected(): int {
     return os.value()
 }

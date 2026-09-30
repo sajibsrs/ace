@@ -717,7 +717,7 @@ fi
 # @when filters declarations before import loading, binding collisions, and
 # semantic checking, while inactive source still has to parse correctly.
 if ! "$ACE" --debug -o /tmp/ace_when tests/modules/when/main.ace || ! /tmp/ace_when; then
-    echo "FAIL: @when should select exactly the Darwin import and declaration"
+    echo "FAIL: @when should select exactly the host's import and declaration"
     fail=1
 fi
 unsupported_target=$("$ACE" --target=linux-arm64 tests/parser/when/main_ok.ace 2>&1)

@@ -3,7 +3,7 @@ same(): int {
     return 1
 }
 
-@when(target == "darwin-arm64")
+@when(target != "never-supported")
 same(): int {
     return 2
 }
