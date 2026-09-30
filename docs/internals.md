@@ -67,18 +67,22 @@ repeated in each additional backend.
   copies, with coalescing), linear-scan register allocation, block layout,
   and encoding.
 - **`x64.c`** (passes 7-10, the `linux-x64` target) — a sibling of `arm64.c`
-  reusing passes 1-6 unchanged. Every value lives in its own frame slot and
-  each instruction works through `rax`, `rcx`, and `rdx`; there is no
-  register allocation yet. Calls follow System V: an argument, parameter, or
-  result of up to 16 bytes travels in one register per eightbyte, and a
-  larger aggregate on the stack as a copy, with a result's address in `rdi`.
-  Floats pass in `xmm0`-`xmm7` and SSE eightbytes, and compute through
-  `xmm0`-`xmm2` in scalar SSE, with the target's float conversions matching
+  reusing passes 1-6 unchanged and `regalloc.c`'s linear scan, which hands
+  out `rbx`, `r12`-`r15`, `r10`, `r9`, `r8`, `rsi`, `rdi`, and
+  `xmm3`-`xmm15`; `rax`, `rcx`, `rdx`, `r11`, and `xmm0`-`xmm2` stay
+  selection scratch. Each instruction reads its operands from their
+  registers and computes in its result's in two-operand form, a fitting
+  constant as an immediate and a stack object as an `rbp` offset; a compare
+  whose only use is a branch or check in its block is fused into it as
+  `cmp`/`test` or `ucomis` and `jcc`. Calls follow System V: an argument,
+  parameter, or result of up to 16 bytes travels in one register per
+  eightbyte, and a larger aggregate on the stack as a copy, with a result's
+  address in `rdi`. Floats pass in `xmm0`-`xmm7` and SSE eightbytes and
+  compute in scalar SSE, with the target's float conversions matching
   arm64's saturation bit for bit. Integers, floats, pointers, aggregates of
-  them, the byte routines, the debug allocator registry, and the
-  vectorizer's lanes (SSE on 16-byte slots, matching arm64's NEON lane for
-  lane) are covered; a function using `asm` is a compile error naming what it
-  lacks.
+  them, `asm`, the byte routines, the debug allocator registry, and the
+  vectorizer's lanes (SSE, matching arm64's NEON lane for lane) are covered;
+  a stack object aligned beyond 16 bytes is a compile error.
   The target requires an x86-64-v3 CPU (FMA3 for `math.fma`).
   An Ace `main` stores its entry `rdi` and `rsi` (glibc's argc and argv) in
   the local `.bss` words `__ace$argc` and `__ace$argv`, which `lower.c` loads
