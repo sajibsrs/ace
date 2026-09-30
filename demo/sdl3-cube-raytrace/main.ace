@@ -140,7 +140,7 @@ inline shade(rgb: u32, cosine: f32): sdl.Color {
 }
 
 // The color seen along direction d from the camera.
-trace(spin: Spin, light: Vec, d: Vec): sdl.Color {
+inline trace(spin: Spin, light: Vec, d: Vec): sdl.Color {
     origin: Vec = Vec {}
     _, face: i32 = hit(spin, origin, d)
     if face >= 0 {
