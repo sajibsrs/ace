@@ -8,3 +8,8 @@
   its block: `cmp`/`test` or `ucomis` sets the flags `jcc` reads, a float's
   parity qualifying eq and ne. `bench/core` hotloop on x64: 1.10-1.21x on
   saxpy, dot, and particle; cube-transform and length-vec3 unchanged.
+- Folded an x64 load's or store's address when that is its only use in its
+  block: a global in the object rip-relative, an unchecked pointer offset's
+  constant into the displacement, a register index as `[base + index*scale]`
+  (scale 1, 2, 4, or 8). `bench/core` hotloop on x64: dot-f64 1.36x,
+  cube-transform 1.26-1.35x; the rest unchanged.

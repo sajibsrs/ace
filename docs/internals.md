@@ -74,7 +74,9 @@ repeated in each additional backend.
   registers and computes in its result's in two-operand form, a fitting
   constant as an immediate and a stack object as an `rbp` offset; a compare
   whose only use is a branch or check in its block is fused into it as
-  `cmp`/`test` or `ucomis` and `jcc`. Calls follow System V: an argument,
+  `cmp`/`test` or `ucomis` and `jcc`, and an address whose only use is a
+  load or store in its block is folded into it (`[rip + global]`,
+  `[base + disp]`, `[base + index*scale + disp]`). Calls follow System V: an argument,
   parameter, or result of up to 16 bytes travels in one register per
   eightbyte, and a larger aggregate on the stack as a copy, with a result's
   address in `rdi`. Floats pass in `xmm0`-`xmm7` and SSE eightbytes and

@@ -72,6 +72,12 @@ static const int ARG_REG[6] = { RDI, RSI, RDX, RCX, R8, R9 };
 
 typedef struct { uint32_t site; int target; } Jump;
 
+// The address a load or store folds, which rm reaches as base AFOLD:
+// [base + index * (1 << scale) + disp], or [rip + sym + disp] with imm bytes
+// of immediate following the displacement.
+enum { AFOLD = 32 };
+typedef struct { int base, index, scale, imm; const char* sym; } Fold;
+
 typedef struct {
     Obj*     o;
     IrFunc*  fn;
@@ -94,6 +100,7 @@ typedef struct {
     Node*    last_at;
     int      failed;
     int      main;     // the C entry main: store argc and argv (process_words)
+    Fold     fold;
 } X64;
 
 static void* xcalloc(size_t n, size_t size) {
@@ -133,8 +140,27 @@ static void rr(X64* a, int w, const uint8_t* op, int nop, int reg, int rm) {
     put(a, (uint8_t)(0xC0 | (reg & 7) << 3 | (rm & 7)));
 }
 
-// op reg, [base + disp] (disp32; a SIB byte for rsp and r12)
+static void reloc_at(X64* a, const char* name, uint32_t type, int32_t addend);
+
+// op reg, [base + disp] (disp32; a SIB byte for rsp and r12), or a->fold's address
 static void rm(X64* a, int w, const uint8_t* op, int nop, int reg, int base, int32_t disp, int force) {
+    Fold* f = &a->fold;
+    if (base == AFOLD && f->sym) {
+        rex(a, w, reg, 0, force);
+        for (int i = 0; i < nop; i++) put(a, op[i]);
+        put(a, (uint8_t)(0x05 | (reg & 7) << 3));
+        reloc_at(a, f->sym, R_PC32, disp - 4 - f->imm);
+        return;
+    }
+    if (base == AFOLD) {
+        uint8_t r = (uint8_t)(0x40 | (w ? 8 : 0) | ((reg >> 3) & 1) << 2 | ((f->index >> 3) & 1) << 1 | ((f->base >> 3) & 1));
+        if (r != 0x40 || force) put(a, r);
+        for (int i = 0; i < nop; i++) put(a, op[i]);
+        put(a, (uint8_t)(0x84 | (reg & 7) << 3));
+        put(a, (uint8_t)(f->scale << 6 | (f->index & 7) << 3 | (f->base & 7)));
+        put32(a, (uint32_t)disp);
+        return;
+    }
     rex(a, w, reg, base, force);
     for (int i = 0; i < nop; i++) put(a, op[i]);
     put(a, (uint8_t)(0x80 | (reg & 7) << 3 | (base & 7)));
@@ -208,11 +234,13 @@ static void jump_add(X64* a, int cc, int target) {
     put32(a, 0);
 }
 
-static void reloc32(X64* a, const char* name, uint32_t type) {
+static void reloc_at(X64* a, const char* name, uint32_t type, int32_t addend) {
     Sec* t = &a->o->secs[SEC_TEXT];
     reloc_add(t, here(a), sym_intern(&a->o->syms, name, (uint32_t)strlen(name)), 1, 2, 1, type);
-    put32(a, (uint32_t)-4);
+    put32(a, (uint32_t)addend);
 }
+
+static void reloc32(X64* a, const char* name, uint32_t type) { reloc_at(a, name, type, -4); }
 
 static void call_sym(X64* a, const char* name) {
     put(a, 0xE8);
@@ -1096,16 +1124,36 @@ static void st_imm(X64* a, IrType t, int32_t k, int base, int32_t off) {
 }
 
 // A load or store of type t at [base + off]: base the pointer's register (a
-// stack object's is rbp and its offset), the value in place in its register,
-// general or xmm (movss, movq, movdqu), or a store's constant as an immediate.
+// stack object's is rbp and its offset), or the address it folds (fuse): a
+// global rip-relative, an unchecked pointer offset's constant in off or its
+// register index scaled; the value in place in its register, general or xmm
+// (movss, movq, movdqu), or a store's constant as an immediate.
 static void access(X64* a, int v) {
     IrIns* x = ins_of(a, v);
     int load = x->op == IR_LOAD, p = x->args[0], base;
+    IrIns* px = ins_of(a, p);
     IrType t = (IrType)(load ? x->type : ins_of(a, x->args[1])->type);
     int32_t off = x->aux, k;
-    if (ins_of(a, p)->op == IR_SLOT) { // never null
+    if (px->op == IR_SLOT) { // never null
         base = RBP;
         off += a->home[p];
+    } else if (a->ra.fused[p] && px->op == IR_GLOBAL) {
+        a->fold = (Fold){ -1, -1, 0, 0, px->name };
+        base = AFOLD;
+    } else if (a->ra.fused[p]) {
+        int b = px->args[0], n = px->args[1], index = -1;
+        if (imm32_of(a, n, &k)) off += (int32_t)(px->op == IR_PSUB ? -(int64_t)k * (int64_t)px->imm : (int64_t)k * (int64_t)px->imm);
+        else index = gp_in(a, n, RDX);
+        if (ins_of(a, b)->op == IR_SLOT) {
+            base = RBP;
+            off += a->home[b];
+        } else {
+            base = gp_in(a, b, RAX);
+        }
+        if (index >= 0) {
+            a->fold = (Fold){ base, index, __builtin_ctzll(px->imm), 0, NULL };
+            base = AFOLD;
+        }
     } else {
         base = gp_in(a, p, RAX);
         if (x->flags & IRF_CHECKED) {
@@ -1128,6 +1176,8 @@ static void access(X64* a, int v) {
         ld_width(a, t, d, base, off);
         gp_done(a, v, d);
     } else if (imm32_of(a, u, &k)) {
+        int w = t == IT_BOOL ? 8 : ir_type_bits(t);
+        a->fold.imm = w == 8 ? 1 : w == 16 ? 2 : 4; // what follows a rip-relative displacement
         st_imm(a, t, k, base, off);
     } else {
         st_width(a, t, gp_in(a, u, RCX), base, off);
@@ -1791,17 +1841,40 @@ static void hints(X64* a) {
     free(ps);
 }
 
-// The compares their only user emits (ra.fused): one a branch or check in
-// its own block tests.
+// Whether load or store u computes its address itself (access): from a
+// global in this object, rip-relative, or from an unchecked pointer offset
+// (a constant folded into the displacement, or a register index scaled by
+// 1, 2, 4, or 8).
+static int fold_address(X64* a, int u) {
+    IrIns* x = ins_of(a, u);
+    int p = x->args[0];
+    IrIns* px = ins_of(a, p);
+    if (a->ra.nuse[p] != 1 || px->block != x->block || (x->flags & IRF_CHECKED)) return 0;
+    if (px->op == IR_GLOBAL) return !(px->sym && px->sym->is_extern);
+    if ((px->op != IR_PADD && px->op != IR_PSUB) || (px->flags & IRF_CHECKED)) return 0;
+    int32_t k;
+    int64_t d;
+    if (imm32_of(a, px->args[1], &k))
+        return !__builtin_mul_overflow((int64_t)k, (int64_t)px->imm, &d) && d == (int32_t)d && d != INT32_MIN &&
+               (int64_t)x->aux + d == (int32_t)((int64_t)x->aux + d) && (int64_t)x->aux - d == (int32_t)((int64_t)x->aux - d);
+    return px->op == IR_PADD && (px->imm == 1 || px->imm == 2 || px->imm == 4 || px->imm == 8);
+}
+
+// The values their only user emits (ra.fused): a compare its branch or
+// check in its own block tests, and an address its load or store folds.
 static void fuse(X64* a) {
     IrFunc* fn = a->fn;
     for (int b = 0; b < fn->nblocks; b++)
         for (int i = 0; i < fn->blocks[b].nins; i++) {
-            IrIns* x = &fn->ins[fn->blocks[b].ins[i]];
-            if (x->op != IR_BR && x->op != IR_CHECK) continue;
-            int c = x->args[0];
-            IrIns* cx = &fn->ins[c];
-            if (cx->op >= IR_EQ && cx->op <= IR_GE && a->ra.nuse[c] == 1 && cx->block == b) a->ra.fused[c] = 1;
+            int u = fn->blocks[b].ins[i];
+            IrIns* x = &fn->ins[u];
+            if (x->op == IR_BR || x->op == IR_CHECK) {
+                int c = x->args[0];
+                IrIns* cx = &fn->ins[c];
+                if (cx->op >= IR_EQ && cx->op <= IR_GE && a->ra.nuse[c] == 1 && cx->block == b) a->ra.fused[c] = 1;
+            } else if ((x->op == IR_LOAD || x->op == IR_STORE) && fold_address(a, u)) {
+                a->ra.fused[x->args[0]] = 1;
+            }
         }
 }
 
