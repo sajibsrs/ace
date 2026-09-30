@@ -878,6 +878,10 @@ current normative rules, and Git preserves patch-level detail.
   writes an ELF object with `x64_func` (the shared IR names drop Mach-O's
   leading underscore as symbols) and clobbers every xmm register across the
   call, so the lane-for-lane comparison with C covers x64's SSE lowering.
+- Made `bench/core/run-hotloop.sh` build and run on Linux: `hotloop.c` times
+  with `CLOCK_MONOTONIC_RAW` there (the clock `time.awake` reads) and keeps
+  `CLOCK_UPTIME_RAW` on Darwin, and the scalar C build disables
+  vectorization with the switches of whichever compiler `cc` is.
 
 ## Core language
 

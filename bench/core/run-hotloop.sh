@@ -10,9 +10,14 @@ make ace
 
 ./ace --release --report -o "$bench_tmp/hotloop-ace" bench/core/hotloop.ace
 # Scalar C is the Ace/C column; C's auto-vectorized build is the reference
-# for Ace's own auto-vectorizer (SPEC Compiler #6).
-cc -std=c11 -O2 -fno-vectorize -fno-slp-vectorize \
-    -o "$bench_tmp/hotloop-c" bench/core/hotloop.c
+# for Ace's own auto-vectorizer (SPEC Compiler #6). clang and gcc spell the
+# vectorizers' switches differently.
+if cc -dM -E -x c /dev/null | grep -q __clang__; then
+    scalar="-fno-vectorize -fno-slp-vectorize"
+else
+    scalar=-fno-tree-vectorize
+fi
+cc -std=c11 -O2 $scalar -o "$bench_tmp/hotloop-c" bench/core/hotloop.c
 cc -std=c11 -O2 -o "$bench_tmp/hotloop-c-vector" bench/core/hotloop.c
 
 # Discard one run of each binary: see bench/README.md on first-run cost.

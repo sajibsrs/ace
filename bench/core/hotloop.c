@@ -5,6 +5,10 @@
  * so every checksum must match bit for bit.
  */
 
+#ifdef __linux__
+#define _DEFAULT_SOURCE /* CLOCK_MONOTONIC_RAW */
+#endif
+
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -49,8 +53,15 @@ static float sines[ANGLES], cosines[ANGLES];
 static Vertex vertices[CUBES * 24];
 static int indices[CUBES * 36];
 
+/* The clock Ace's time.awake reads on each target. */
 static uint64_t now(void) {
+#ifdef __APPLE__
     return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+#else
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &t);
+    return (uint64_t)t.tv_sec * 1000000000u + (uint64_t)t.tv_nsec;
+#endif
 }
 
 static void report(const char* name, uint64_t elapsed, uint64_t operations,

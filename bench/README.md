@@ -659,8 +659,9 @@ Rotations come from a 64-entry sine table built by an exact recurrence, since
 C kernel sets `#pragma STDC FP_CONTRACT OFF`: clang otherwise fuses `a*b + c`
 into one `fmadd` rounding, which Ace never does, and the checksums diverge.
 
-Ace leaves vectorization to explicit `simd`, so scalar C `-O2`
-(`-fno-vectorize -fno-slp-vectorize`) is the comparison target. The
+Ace leaves vectorization to explicit `simd`, so scalar C `-O2` (clang's
+`-fno-vectorize -fno-slp-vectorize`, gcc's `-fno-tree-vectorize`) is the
+comparison target. The
 auto-vectorized `-O2` column is a reference, not a goal. Neither compiler
 vectorizes `dot-f64`'s reduction, because clang will not reassociate floating
 point without `-ffast-math`.
