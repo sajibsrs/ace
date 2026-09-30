@@ -865,6 +865,11 @@ current normative rules, and Git preserves patch-level detail.
   alias to a darwin-arm64 or linux-x64 file and fails to resolve on any other
   target, and the duplicate-declaration fixture matches with an always-true
   `target !=` comparison.
+- Made the `sys/ioctl` and `printf/float` emit fixtures run on linux-x64:
+  each selects its target's constants with `@when` (BIOC requests or
+  `FIOCLEX`/`FIONREAD`; `FE_DOWNWARD`), and a `// expect-link: ARGS` fixture
+  line appends linker arguments, giving `printf/float` the `-lm` that glibc's
+  `fesetround` needs.
 
 ## Core language
 

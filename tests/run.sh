@@ -1060,7 +1060,8 @@ for f in null overflow alignment reinterpret_alignment; do
 done
 
 # emit fixtures: compile to an object, link with the system cc, run, and
-# check the exit code. The expected code rides in a `// expect-exit: N` line.
+# check the exit code. The expected code rides in a `// expect-exit: N` line;
+# a `// expect-link: ARGS` line appends linker arguments (e.g. `-lm`).
 if ! cc -target arm64-apple-macos tests/darwin_bpf_layout.c \
         -o /tmp/ace_darwin_bpf_layout 2>/tmp/ace_test_errs; then
     echo "FAIL: Darwin SDK BPF declarations do not match the verified sys layout"
@@ -1128,10 +1129,11 @@ if [ -d tests/emit ]; then
             fail=1
             continue
         fi
+        link=$(sed -n 's/^.*expect-link:[[:space:]]*//p' "$f")
         mkdir -p "/tmp/ace_emit/$(dirname "$rel")"
         cp "$f" "/tmp/ace_emit/$rel"
         rm -f /tmp/ace_test_run
-        out=$(cd /tmp/ace_emit && { "$ACE" --debug -c "$rel" && cc "$name.o" -o "$name" && "./$name"; } 2>/tmp/ace_test_run)
+        out=$(cd /tmp/ace_emit && { "$ACE" --debug -c "$rel" && cc "$name.o" -o "$name" $link && "./$name"; } 2>/tmp/ace_test_run)
         got=$?
         if [ "$got" -ne "$exp" ]; then
             echo "FAIL: $f exited $got, want $exp"

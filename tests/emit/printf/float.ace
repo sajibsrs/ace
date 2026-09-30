@@ -1,9 +1,16 @@
 /* Printf float fixture. */
 
 /* expect-exit: 0 */
+// expect-link: -lm
 // expect-output: 2 4 -0 -0.00 1.12 1.38 -0.000000 nan inf -inf 1.25
 
 import fmt
+
+@when(target == "darwin-arm64")
+FE_DOWNWARD: const i32 = 0x00800000
+
+@when(target == "linux-x64")
+FE_DOWNWARD: const i32 = 0x400
 
 extern "c" {
     fegetround(): i32
@@ -21,7 +28,7 @@ main(): int {
     tiny_negative: f64 = zero - 0.001
     literal_negative_zero: f64 = zero / negative_one
     original_rounding: i32 = fegetround()
-    fesetround(i32(0x00800000)) // Darwin arm64 FE_DOWNWARD
+    fesetround(FE_DOWNWARD)
     written: int = fmt.printf(
         "%.0f %.0f %.0f %.2f %.2f %.2f %f %f %f %f %.2f",
         2.5,
