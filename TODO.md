@@ -104,7 +104,21 @@ the remaining proof points explicit:
   semantic analysis or `std/fmt` coupling. The future VS Code formatter and LSP
   should consume this toolchain formatter rather than implement Ace parsing.
 - **x86-64 backend and OS layer** [open] — the second target; facade selection
-  already uses `@when`.
+  already uses `@when`. Remaining on linux-x64, in order:
+  - Selection on allocated registers, as arm64's: operands used in place
+    (two-operand forms), a compare fused into its branch or check (`cmp` +
+    `jcc`), `[base + index*scale + disp]` address folding, and immediate
+    operands. Every value still moves through rax/rcx/rdx or xmm0-xmm2;
+    `bench/core` hotloop runs 1.3x (saxpy-f32) to 3.7x (cube-transform)
+    scalar C, particle-vec3 on par.
+  - x64 counterparts, through `objdump`, of the codegen checks in
+    `tests/run.sh` that need `otool` and are skipped on Linux (function and
+    loop-head alignment, local slots, register operands and locals, loop
+    registers, range limits, logical values, frame fields).
+  - Stack objects aligned beyond 16 bytes, which x64 refuses.
+  - The `bench/` C references other than `core/hotloop.c` read Darwin's
+    `clock_gettime_nsec_np(CLOCK_UPTIME_RAW)`, and `std/run-collections.sh`
+    and `std/run-math.sh` pass clang-only vectorizer flags.
 - **x64 asm operand syntax** [open] — Intel or AT&T operand order, decided with
   the first x64 asm instruction that takes operands; v1's take none.
 - **Target-independent linking and cross-compilation** [new] — `-o` runs the
