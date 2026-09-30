@@ -41,7 +41,8 @@ main(): int {
   stack buffer of the target's `PATH_MAX` (1024 bytes on Darwin, 4096 on
   Linux) and NUL-terminated; longer paths fail with
   `ENAMETOOLONG` through the normal error path, exactly as the kernel would
-  reject them.
+  reject them. A path holding a NUL byte fails with `EINVAL` rather than
+  opening the shorter path C would read.
 - `read(fd: Fd, buf: mut []u8): (int, Error)` fills the caller's buffer and
   returns the byte count; `0` with a null error is end of file.
 - `write(fd: Fd, data: []u8): (int, Error)` accepts `string`/`[]char` by shared
@@ -235,6 +236,10 @@ and Ethernet/IPv4 decoding for TCP, UDP, and ICMP.
 ## Design rationale
 
 Why the rules in `spec/std/sys.md` are shaped as they are.
+
+- `sys` imports nothing, and keeps its own NUL-terminating path copy rather
+  than using `str.cstring`: importing `str` made a `sys`-only program compile
+  15 files instead of 3 (about 1.9 ms to 11.7 ms) for a six-line loop.
 
 - Stdlib: `sys` and `time` #10: distinct-typed handles prevent silent integer
   misuse where the OS cannot diagnose it; flags and POSIX permission bits stay

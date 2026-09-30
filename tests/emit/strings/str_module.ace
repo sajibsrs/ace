@@ -135,5 +135,16 @@ main(): int {
        !mem.equal(str.trim("plain"), "plain") {
         return 30
     }
+    c_buffer: [4]u8 = [7 : 4]
+
+    if !str.cstring("abc", mut c_buffer[..]) { return 104 }
+    if !mem.equal(c_buffer[..3], "abc") || c_buffer[3] != 0 { return 105 }
+    tight: [3]u8 = [7 : 3]
+
+    if str.cstring("abc", mut tight[..]) { return 106 }
+    if str.cstring("a\0c", mut c_buffer[..]) { return 107 }
+    empty: [1]u8 = [7 : 1]
+
+    if !str.cstring("", mut empty[..]) || empty[0] != 0 { return 108 }
     return 0
 }

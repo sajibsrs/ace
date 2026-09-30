@@ -55,7 +55,6 @@ pub has(text: string, needle: char): bool {
  */
 pub has(text: string, part: string, suffix: bool): bool {
     if part.len > text.len { return false }
-
     if !suffix { return mem.equal(text[..part.len], part) }
     return mem.equal(text[text.len - part.len..], part)
 }
@@ -74,9 +73,7 @@ pub compare(a: string, b: string): int {
             return 1
         }
     }
-
     if a.len < b.len { return -1 }
-
     if a.len > b.len { return 1 }
     return 0
 }
@@ -86,8 +83,22 @@ pub compare(a: string, b: string): int {
  */
 pub copy(text: string, noalias destination: mut []char): bool {
     if text.len > destination.len { return false }
-
     for i: usize in 0 .. text.len { destination[i] = text[i] }
+    return true
+}
+
+/* Copies text into destination followed by a NUL byte, for C functions that
+ * read text up to its NUL. Fails when text.len + 1 exceeds destination.len or
+ * text holds a NUL byte, which C would read as its end; the destination's
+ * contents are then unspecified. The unused suffix is untouched.
+ */
+pub cstring(text: string, noalias destination: mut []char): bool {
+    if text.len >= destination.len { return false }
+    for i: usize in 0 .. text.len {
+        if text[i] == 0 { return false }
+        destination[i] = text[i]
+    }
+    destination[text.len] = 0
     return true
 }
 

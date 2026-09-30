@@ -36,6 +36,7 @@ declaration-group = preserve
 nested-first-body = never
 after-closing-brace = only-before-next-body
 inside-if-chain = never
+after-single-line-block = never
 result-group = adjacent
 after-result-group = always
 

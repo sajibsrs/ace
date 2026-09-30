@@ -50,6 +50,10 @@ Caller storage and views:
   unchanged and fails, and the unused suffix is untouched. Empty text succeeds
   without writing. Unlike `mem.copy`, the ranges need not be equal — only the
   source and the written range must not overlap.
+- `cstring(text: string, noalias destination: mut []char): bool` — copies the
+  text and a trailing NUL for a C function, then passes `&destination[0]`. It
+  fails when the text and its NUL do not fit or the text holds a NUL byte,
+  which C would read as its end.
 - `concat(parts: []string, destination: mut []char): (usize, bool)` — writes all
   parts in order and returns the complete byte count and whether it fit. A short
   destination returns `(0, false)` and its contents are unspecified; empty

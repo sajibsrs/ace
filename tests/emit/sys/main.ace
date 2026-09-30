@@ -69,6 +69,15 @@ check_long_path(): int {
     return 0
 }
 
+// A NUL byte inside the path would end it early for C, so it fails with
+// EINVAL (22) instead of opening the shorter path.
+check_nul_path(): int {
+    fd: sys.Fd, err: Error = sys.open("/etc/hosts\0.bak", sys.O_RDONLY)
+
+    if err == null || err.domain != typeid(sys.OpenErr) || err.code != 22 { return 1 }
+    return 0
+}
+
 main(): int {
     code: int = check_missing()
 
@@ -79,5 +88,8 @@ main(): int {
     code = check_long_path()
 
     if code != 0 { return 200 + code }
+    code = check_nul_path()
+
+    if code != 0 { return 300 + code }
     return 42
 }

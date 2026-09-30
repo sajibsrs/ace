@@ -304,12 +304,22 @@ errno_set(value: i32) {
     *slot = value
 }
 
+/* Copies path into buf with a trailing NUL; false, with errno set, when it is
+ * too long (ENAMETOOLONG) or holds a NUL byte (EINVAL), which C would read as
+ * its end.
+ */
 path_copy(path: string, buf: mut []u8): bool {
     if path.len > PATH_MAX - 1 {
         errno_set(36)
         return false
     }
-    for i: usize in 0 .. path.len { buf[i] = path[i] }
+    for i: usize in 0 .. path.len {
+        if path[i] == 0 {
+            errno_set(22)
+            return false
+        }
+        buf[i] = path[i]
+    }
     buf[path.len] = 0
     return true
 }
@@ -440,12 +450,13 @@ pub open(path: string, flags: i32): (Fd, Error) {
 
 /* The path is copied into a fixed PATH_MAX stack buffer and NUL-terminated;
  * the kernel rejects longer paths itself, so the buffer never rejects a
- * legitimate one. Overlong paths fail with ENAMETOOLONG via errno().
+ * legitimate one. Overlong paths fail with ENAMETOOLONG and paths holding a
+ * NUL byte with EINVAL, via errno().
  */
 pub open(path: string, flags: i32, mode: u32): (Fd, Error) {
     buf: [4096]u8
 
-    if !path_copy(path, mut buf[0..4096]) { return Fd(-1), OpenErr.name_too_long }
+    if !path_copy(path, mut buf[0..4096]) { return Fd(-1), OpenErr(errno()) }
     fd: i32 = c_open(&buf[0], flags, mode)
     if fd == -1 { return Fd(-1), OpenErr(errno()) }
 
@@ -459,7 +470,7 @@ pub stat(path: string): (FileInfo, Error) {
         file_type = FileType.unknown,
     }
 
-    if !path_copy(path, mut path_buf[0..4096]) { return zero, StatErr.name_too_long }
+    if !path_copy(path, mut path_buf[0..4096]) { return zero, StatErr(errno()) }
     raw: LinuxStat = blank(LinuxStat)
     if c_stat(&path_buf[0], mut &raw) == -1 { return zero, StatErr(errno()) }
     info: FileInfo = FileInfo {
@@ -471,7 +482,7 @@ pub stat(path: string): (FileInfo, Error) {
 
 pub mkdir(path: string, mode: u32): Error {
     path_buf: [4096]u8
-    if !path_copy(path, mut path_buf[0..4096]) { return MkdirErr.name_too_long }
+    if !path_copy(path, mut path_buf[0..4096]) { return MkdirErr(errno()) }
     if c_mkdir(&path_buf[0], mode) == -1 { return MkdirErr(errno()) }
     return null
 }
@@ -486,22 +497,22 @@ pub mkdir(path: string): Error {
 pub rename(old_path: string, new_path: string): Error {
     from_buf: [4096]u8
     to_buf: [4096]u8
-    if !path_copy(old_path, mut from_buf[0..4096]) { return RenameErr.name_too_long }
-    if !path_copy(new_path, mut to_buf[0..4096]) { return RenameErr.name_too_long }
+    if !path_copy(old_path, mut from_buf[0..4096]) { return RenameErr(errno()) }
+    if !path_copy(new_path, mut to_buf[0..4096]) { return RenameErr(errno()) }
     if c_rename(&from_buf[0], &to_buf[0]) == -1 { return RenameErr(errno()) }
     return null
 }
 
 pub unlink(path: string): Error {
     path_buf: [4096]u8
-    if !path_copy(path, mut path_buf[0..4096]) { return UnlinkErr.name_too_long }
+    if !path_copy(path, mut path_buf[0..4096]) { return UnlinkErr(errno()) }
     if c_unlink(&path_buf[0]) == -1 { return UnlinkErr(errno()) }
     return null
 }
 
 pub opendir(path: string): (Dir, Error) {
     path_buf: [4096]u8
-    if !path_copy(path, mut path_buf[0..4096]) { return blank(Dir), OpendirErr.name_too_long }
+    if !path_copy(path, mut path_buf[0..4096]) { return blank(Dir), OpendirErr(errno()) }
     fd: i32 = c_open(&path_buf[0], O_RDONLY | O_DIRECTORY, u32(0))
     if fd == -1 { return blank(Dir), OpendirErr(errno()) }
 
