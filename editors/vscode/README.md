@@ -7,7 +7,8 @@ The extension currently provides:
 - `.ace` file recognition
 - `ace.pkg` manifest highlighting (headers, known keys, dependency aliases,
   versions, `exe`/`lib`) per `GRAMMAR.md` §7
-- file icons for `.ace` and `ace.pkg`, shown when the active file
+- `.acefmt` formatting-rules highlighting (sections, keys, numbers, values)
+- file icons for `.ace`, `ace.pkg`, and `.acefmt`, shown when the active file
   icon theme has no icon of its own for them
 - theme-compatible TextMate syntax scopes
 - comment and bracket configuration

@@ -1,7 +1,9 @@
 {
   "name": "ace-language",
   "displayName": "Ace",
+  "publisher": "sajibsrs",
   "description": "Ace language and package-manifest syntax highlighting, file icons, and editor configuration.",
+  "author": "Sajidur Rahman",
   "version": "0.0.1",
   "private": true,
   "license": "MIT",
@@ -39,8 +41,22 @@
         ],
         "configuration": "./pkg-language-configuration.json",
         "icon": {
-          "light": "./icons/ace-framed.svg",
-          "dark": "./icons/ace-framed.svg"
+          "light": "./icons/ace-pkg.svg",
+          "dark": "./icons/ace-pkg.svg"
+        }
+      },
+      {
+        "id": "acefmt",
+        "aliases": [
+          "Ace Format Rules"
+        ],
+        "filenames": [
+          ".acefmt"
+        ],
+        "configuration": "./acefmt-language-configuration.json",
+        "icon": {
+          "light": "./icons/acefmt.svg",
+          "dark": "./icons/acefmt.svg"
         }
       }
     ],
@@ -54,6 +70,11 @@
         "language": "ace-pkg",
         "scopeName": "source.ace-pkg",
         "path": "./syntaxes/ace-pkg.tmLanguage.json"
+      },
+      {
+        "language": "acefmt",
+        "scopeName": "source.acefmt",
+        "path": "./syntaxes/acefmt.tmLanguage.json"
       }
     ]
   }

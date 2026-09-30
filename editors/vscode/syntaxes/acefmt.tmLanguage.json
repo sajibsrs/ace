@@ -1,0 +1,37 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Ace Format Rules",
+  "scopeName": "source.acefmt",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#header" },
+    { "include": "#field" }
+  ],
+  "repository": {
+    "comment": {
+      "match": "^\\s*(#).*$",
+      "name": "comment.line.number-sign.acefmt",
+      "captures": {
+        "1": { "name": "punctuation.definition.comment.acefmt" }
+      }
+    },
+    "header": {
+      "match": "^\\s*(\\[)\\s*([A-Za-z][A-Za-z0-9-]*)\\s*(\\])\\s*$",
+      "name": "meta.section-header.acefmt",
+      "captures": {
+        "1": { "name": "punctuation.definition.table.acefmt" },
+        "2": { "name": "entity.name.section.acefmt" },
+        "3": { "name": "punctuation.definition.table.acefmt" }
+      }
+    },
+    "field": {
+      "match": "^\\s*([A-Za-z][A-Za-z0-9-]*)\\s*(=)\\s*(?:(\\d+)|(\\S.*?))\\s*$",
+      "captures": {
+        "1": { "name": "keyword.other.key.acefmt" },
+        "2": { "name": "punctuation.separator.key-value.acefmt" },
+        "3": { "name": "constant.numeric.acefmt" },
+        "4": { "name": "constant.language.acefmt" }
+      }
+    }
+  }
+}

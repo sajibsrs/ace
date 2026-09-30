@@ -7,3 +7,6 @@
 - Moved the rationale of implemented rules out of `spec/` (14 chapters, 20 KB)
   verbatim into a "Design rationale" section of the matching `docs/` page;
   `spec/` keeps rationale only for open decisions.
+- VS Code extension: `.acefmt` gets a `{ ♠ }` icon, a section/key/value
+  grammar, and `#` comments; `ace-framed.svg` is renamed `ace-pkg.svg`; the
+  manifest names its publisher and author.
