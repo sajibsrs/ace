@@ -1493,6 +1493,50 @@ static void asm_select(X64* a, IrBlock* bb, int i) {
     free(m);
 }
 
+// A branch condition: cc after the flags, which parity may qualify (an
+// unordered float compare sets PF): with NP, cc holds only when PF is clear;
+// with P, cc also holds when PF is set.
+typedef struct { int cc, par; } Cond;
+enum { PAR_NONE, PAR_NP, PAR_P };
+
+static Cond invert(Cond k) { return (Cond){ k.cc ^ 1, k.par == PAR_NP ? PAR_P : k.par == PAR_P ? PAR_NP : PAR_NONE }; }
+
+// The flags a branch or check on c tests: a fused compare's own, as compare
+// and fcompare set them, or c's register tested for nonzero.
+static Cond flags(X64* a, int c) {
+    IrIns* x = ins_of(a, c);
+    if (!a->ra.fused[c]) {
+        test_rr(a, gp_in(a, c, RAX));
+        return (Cond){ CC_NE, PAR_NONE };
+    }
+    int l = x->args[0], r = x->args[1], op = x->op;
+    IrType t = type_of(a, l);
+    if (!ir_type_float(t)) {
+        cmp_vals(a, l, r);
+        return (Cond){ cc_of(op, t), PAR_NONE };
+    }
+    if (op == IR_LT || op == IR_LE) {
+        int s = l; l = r; r = s;
+        op = op == IR_LT ? IR_GT : IR_GE;
+    }
+    int xl = x_in(a, l, XMM0);
+    ucomis(a, t, xl, x_in(a, r, XMM1));
+    if (op == IR_EQ) return (Cond){ CC_E, PAR_NP };
+    if (op == IR_NE) return (Cond){ CC_NE, PAR_P };
+    return (Cond){ op == IR_GT ? CC_A : CC_AE, PAR_NONE };
+}
+
+static void jump_if(X64* a, Cond k, int target) {
+    if (k.par == PAR_NP) {
+        uint32_t skip = jmp8(a, CC_P);
+        jump_add(a, k.cc, target);
+        land8(a, skip);
+        return;
+    }
+    if (k.par == PAR_P) jump_add(a, CC_P, target);
+    jump_add(a, k.cc, target);
+}
+
 static void terminator(X64* a, int b, int v) {
     IrFunc* fn = a->fn;
     IrIns* x = ins_of(a, v);
@@ -1541,14 +1585,14 @@ static void terminator(X64* a, int b, int v) {
         put(a, 0xC3); // ret
         return;
     }
-    test_rr(a, gp_in(a, x->args[0], RAX));
+    Cond k = flags(a, x->args[0]);
     int t = bb->succ[0], f = bb->succ[1];
     if (f == next) {
-        jump_add(a, CC_NE, t);
+        jump_if(a, k, t);
     } else if (t == next) {
-        jump_add(a, CC_E, f);
+        jump_if(a, invert(k), f);
     } else {
-        jump_add(a, CC_NE, t);
+        jump_if(a, k, t);
         jump_add(a, -1, f);
     }
 }
@@ -1556,9 +1600,9 @@ static void terminator(X64* a, int b, int v) {
 // A debug check: a branch to its site's stub when its condition is false.
 static void check(X64* a, int v) {
     IrIns* x = ins_of(a, v);
-    test_rr(a, gp_in(a, x->args[0], RAX));
+    Cond t = invert(flags(a, x->args[0]));
     if (!x->name) {
-        fail_if(a, CC_E, CFAIL);
+        jump_if(a, t, fail_target(a, CFAIL));
         return;
     }
     int k = 0;
@@ -1571,7 +1615,7 @@ static void check(X64* a, int v) {
         }
         a->stub[a->nstub++] = x;
     }
-    jump_add(a, CC_E, LFAIL - k);
+    jump_if(a, t, LFAIL - k);
 }
 
 static void emit_block(X64* a, int b) {
@@ -1581,6 +1625,7 @@ static void emit_block(X64* a, int b) {
         int v = bb->ins[i];
         IrIns* x = &fn->ins[v];
         if (x->op != IR_CHECK) line_row(a, x->at);
+        if (a->ra.fused[v]) continue;
         IrType t = (IrType)x->type;
         if (ir_type_vector(t) && x->op != IR_LOAD && x->op != IR_PHI) {
             vector(a, v);
@@ -1736,6 +1781,20 @@ static void hints(X64* a) {
     free(ps);
 }
 
+// The compares their only user emits (ra.fused): one a branch or check in
+// its own block tests.
+static void fuse(X64* a) {
+    IrFunc* fn = a->fn;
+    for (int b = 0; b < fn->nblocks; b++)
+        for (int i = 0; i < fn->blocks[b].nins; i++) {
+            IrIns* x = &fn->ins[fn->blocks[b].ins[i]];
+            if (x->op != IR_BR && x->op != IR_CHECK) continue;
+            int c = x->args[0];
+            IrIns* cx = &fn->ins[c];
+            if (cx->op >= IR_EQ && cx->op <= IR_GE && a->ra.nuse[c] == 1 && cx->block == b) a->ra.fused[c] = 1;
+        }
+}
+
 // Allocate, then lay out the frame below rbp: the callee-saved registers the
 // function uses, the spill slots, 16 scratch bytes, 16 bytes per aggregate
 // parameter arriving in registers, the saved result address, and the stack
@@ -1746,6 +1805,7 @@ static uint32_t layout(X64* a) {
     ra_split_critical_edges(fn);
     ra_layout(&a->ra);
     ra_count_uses(&a->ra);
+    fuse(a);
     ra_liveness(&a->ra);
     ra_positions(&a->ra);
     hints(a);
