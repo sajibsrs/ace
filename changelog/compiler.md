@@ -22,3 +22,7 @@
   leaf, and one of over 16 leaves is stored in memory, as a call's result is.
   Release auto-inlining takes aggregate results too. `bench/core/raytrace`
   (new, with a C twin) with its helpers inline: 0.842 s to 0.602 s.
+- Bound an inline expansion's receiver or `mut` parameter to the argument's
+  own SSA variables when it is a local or a field of one, keeping the local in
+  registers unless `&`, an unexpanded call, or the inline body needs its
+  address. `bench/core/raytrace` release: 0.643 s to 0.390 s; calls/method 2.2x.

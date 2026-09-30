@@ -22,7 +22,7 @@ Color: struct { r: f32 = 0.0, g: f32 = 0.0, b: f32 = 0.0, a: f32 = 1.0 }
 Point: struct { x: f32 = 0.0, y: f32 = 0.0 }
 Vertex: struct { position: Point, color: Color, uv: Point = Point {} }
 
-Color::hex(rgb: u32): Color {
+inline Color::hex(rgb: u32): Color {
     return Color {
         r = f32((rgb >> 16) & 0xFF) / 255.0,
         g = f32((rgb >> 8) & 0xFF) / 255.0,
@@ -32,13 +32,13 @@ Color::hex(rgb: u32): Color {
 
 Vec: struct { x: f32 = 0.0, y: f32 = 0.0, z: f32 = 0.0 }
 
-Vec.dot(other: Vec): f32 {
+inline Vec.dot(other: Vec): f32 {
     return self.x * other.x + self.y * other.y + self.z * other.z
 }
 
 Spin: struct { sa: f32, ca: f32, sb: f32, cb: f32 }
 
-Spin.to_camera(v: Vec): Vec {
+inline Spin.to_camera(v: Vec): Vec {
     z: f32 = v.z * self.ca - v.x * self.sa
     return Vec {
         x = v.x * self.ca + v.z * self.sa,
@@ -47,7 +47,7 @@ Spin.to_camera(v: Vec): Vec {
     }
 }
 
-Spin.to_cube(v: Vec): Vec {
+inline Spin.to_cube(v: Vec): Vec {
     z: f32 = v.z * self.cb - v.y * self.sb
     return Vec {
         x = v.x * self.ca - z * self.sa,
@@ -58,7 +58,7 @@ Spin.to_cube(v: Vec): Vec {
 
 Span: struct { near: f32 = 0.0, far: f32 = FAR, face: i32 = -1 }
 
-mut Span.clip(o: f32, d: f32, axis: i32): bool {
+inline mut Span.clip(o: f32, d: f32, axis: i32): bool {
     if d == 0.0 { return o >= -1.0 && o <= 1.0 }
     t0: f32 = (-1.0 - o) / d
     t1: f32 = (1.0 - o) / d
@@ -88,7 +88,7 @@ hit(spin: Spin, o: Vec, d: Vec): (f32, i32) {
     return span.near, span.face
 }
 
-normal(face: i32): Vec {
+inline normal(face: i32): Vec {
     s: f32 = -1.0
     if (face & 1) == 1 { s = 1.0 }
     if face < 2 { return Vec { x = s } }
@@ -96,14 +96,14 @@ normal(face: i32): Vec {
     return Vec { z = s }
 }
 
-shade(rgb: u32, cosine: f32): Color {
+inline shade(rgb: u32, cosine: f32): Color {
     base: Color = Color::hex(rgb)
     k: f32 = AMBIENT
     if cosine > 0.0 { k += (1.0 - AMBIENT) * cosine }
     return Color { r = base.r * k, g = base.g * k, b = base.b * k }
 }
 
-trace(spin: Spin, light: Vec, d: Vec): Color {
+inline trace(spin: Spin, light: Vec, d: Vec): Color {
     origin: Vec = Vec {}
     _, face: i32 = hit(spin, origin, d)
     if face >= 0 {

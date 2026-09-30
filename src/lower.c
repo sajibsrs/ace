@@ -69,6 +69,9 @@ typedef struct {
     Node*       at;        // statement being lowered
     PtrMap      var_ix;    // binder Sym -> variable index + 1
     PtrMap      stored;    // Syms whose storage something needs: they live in a slot
+    PtrMap      escapes;   // inline declaration -> its parameters' escape mask (scan_escapes)
+    int         scan_auto; // scan_storage: release auto-inline calls expand (no self tail loop can stop them)
+    int         in_defer;  // scan_storage: under a defer, whose call is never expanded
     IrType*     vtype;
     int*        home;      // variable -> the address value it lives at, or -1 (SSA)
     int         chome;
@@ -507,28 +510,107 @@ static Sym* root_local(Node* x) {
     return s && s->kind == SYM_VAR && !s->is_global ? s : NULL;
 }
 
-static void need_storage(Lw* l, Node* x) {
+// A storage scan: marks each local whose storage the body needs, or, with want
+// set, only records whether want's is needed.
+typedef struct {
+    Sym* want;
+    int  hit;
+} Scan;
+
+static void need_storage(Lw* l, Scan* sc, Node* x) {
     Sym* s = root_local(x);
-    if (s) ptrmap_put(&l->stored, s, 1);
+    if (!s) return;
+    if (!sc->want) ptrmap_put(&l->stored, s, 1);
+    else if (s == sc->want) sc->hit = 1;
+}
+
+static Node* inline_target(Lw* l, Node* call, SType*** targs, int* ntargs);
+static uint64_t scan_escapes(Lw* l, Node* f);
+
+// The inline declaration a call expands, as lowering will decide, or NULL.
+static Node* scan_target(Lw* l, Node* call) {
+    if (l->in_defer) return NULL;
+    SType** targs;
+    int ntargs;
+    Node* f = inline_target(l, call, &targs, &ntargs);
+    if (!f || !f->b || (!(f->flags & F_INLINE) && !l->scan_auto)) return NULL;
+    return f;
+}
+
+static void scan_walk(Lw* l, Scan* sc, Node* n) {
+    if (!n || n->kind == N_FUNC) return;
+    if (n->kind == N_UNARY && (n->op == T_AMP || n->op == T_VOLATILE)) need_storage(l, sc, n->a);
+    if (n->kind == N_ASSIGN && (n->flags & F_VOLATILE))
+        for (int i = 0; i < n->nkids; i++) need_storage(l, sc, n->kids[i]);
+    if (n->kind == N_PARAM && !sc->want && node_sym(n) && in_memory(node_sym(n)->type)) // a binder in memory
+        ptrmap_put(&l->stored, node_sym(n), 1);
+    if (n->kind == N_DEFER) {
+        int was = l->in_defer;
+        l->in_defer = 1;
+        scan_walk(l, sc, n->a);
+        scan_walk(l, sc, n->b);
+        scan_walk(l, sc, n->c);
+        for (int i = 0; i < n->nkids; i++) scan_walk(l, sc, n->kids[i]);
+        l->in_defer = was;
+        return;
+    }
+    if (n->kind == N_CALL) { // a receiver or mut argument: storage unless an expansion binds it in place
+        Node* f = scan_target(l, n);
+        uint64_t esc = f ? scan_escapes(l, f) : ~(uint64_t)0;
+        int recv = n->a && n->a->kind == N_FIELD_E && !(n->flags & (F_METHOD | F_ASSOC));
+        if (recv && (esc & 1)) need_storage(l, sc, n->a->a);
+        for (int i = 0; i < n->nkids; i++) {
+            int p = recv + i;
+            if (n->kids[i]->kind == N_MUTARG && (esc >> (p < 63 ? p : 63) & 1)) need_storage(l, sc, n->kids[i]->a);
+        }
+        scan_walk(l, sc, n->a);
+        scan_walk(l, sc, n->b);
+        scan_walk(l, sc, n->c);
+        for (int i = 0; i < n->nkids; i++) // a mut argument's place: its call decided above
+            scan_walk(l, sc, n->kids[i]->kind == N_MUTARG ? n->kids[i]->a : n->kids[i]);
+        return;
+    }
+    if (n->kind == N_MUTARG) need_storage(l, sc, n->a);
+    scan_walk(l, sc, n->a);
+    scan_walk(l, sc, n->b);
+    scan_walk(l, sc, n->c);
+    if (n->kind == N_FOR && (n->flags & F_FORGEN)) scan_walk(l, sc, n->d);
+    for (int i = 0; i < n->nkids; i++) scan_walk(l, sc, n->kids[i]);
 }
 
 // Mark every local whose storage the body needs, before any is read. Follows
 // a/b/c/kids, and d only as a general for's body (sema's d links form cycles).
 static void scan_storage(Lw* l, Node* n) {
-    if (!n || n->kind == N_FUNC) return;
-    if ((n->kind == N_UNARY && (n->op == T_AMP || n->op == T_VOLATILE)) || n->kind == N_MUTARG)
-        need_storage(l, n->a);
-    if (n->kind == N_ASSIGN && (n->flags & F_VOLATILE))
-        for (int i = 0; i < n->nkids; i++) need_storage(l, n->kids[i]);
-    if (n->kind == N_CALL && n->a && n->a->kind == N_FIELD_E && !(n->flags & (F_METHOD | F_ASSOC)))
-        need_storage(l, n->a->a); // a method receiver travels by address
-    if (n->kind == N_PARAM && node_sym(n) && in_memory(node_sym(n)->type)) // a binder in memory
-        ptrmap_put(&l->stored, node_sym(n), 1);
-    scan_storage(l, n->a);
-    scan_storage(l, n->b);
-    scan_storage(l, n->c);
-    if (n->kind == N_FOR && (n->flags & F_FORGEN)) scan_storage(l, n->d);
-    for (int i = 0; i < n->nkids; i++) scan_storage(l, n->kids[i]);
+    Scan sc = { NULL, 0 };
+    scan_walk(l, &sc, n);
+}
+
+// Which parameters of inline declaration f need the storage their argument
+// names (bit i for parameter i): an expansion binds the others to the
+// argument's own variables. A generic body, whose calls resolve only once
+// stamped, and a cycle count as needing it; bit 63 stands for parameter 63
+// onward and is always set, so a mask is never 0 (ptrmap's absent).
+#define ESC_REST ((uint64_t)1 << 63)
+
+static uint64_t scan_escapes(Lw* l, Node* f) {
+    uint64_t seen = (uint64_t)ptrmap_get(&l->escapes, f);
+    if (seen) return seen;
+    uint64_t all = ~(uint64_t)0;
+    ptrmap_put(&l->escapes, f, (uintptr_t)all); // a cycle meets all
+    Sym* fs = node_sym(f);
+    if (f->c || (fs && (fs->is_generic || fs->spec_args))) return all;
+    uint64_t esc = ESC_REST;
+    int was = l->in_defer;
+    l->in_defer = 0;
+    for (int i = 0; i < f->nkids && i < 63; i++) {
+        Scan sc = { node_sym(f->kids[i]), 0 };
+        if (!sc.want) continue;
+        scan_walk(l, &sc, f->b);
+        if (sc.hit) esc |= (uint64_t)1 << i;
+    }
+    l->in_defer = was;
+    ptrmap_put(&l->escapes, f, (uintptr_t)esc);
+    return esc;
 }
 
 static int load(Lw* l, IrType t, int addr, int32_t off, int flags) {
@@ -3278,7 +3360,12 @@ static int inline_call(Lw* l, Node* call, Agg* out, int dst) {
         Node* a = args[i];
         if (a->kind == N_MUTARG) a = a->a;
         if (by_address(f, i)) {
-            var_new(l, ps, IT_VOID, place_address(l, place(l, a)));
+            Place p = place(l, a);
+            if (p.var >= 0 && unwrap(p.t) == unwrap(ps->type)) { // the argument's own variables
+                ptrmap_put(&l->var_ix, ps, (uintptr_t)p.var + 1);
+                continue;
+            }
+            var_new(l, ps, IT_VOID, place_address(l, p));
             continue;
         }
         init_var(l, var_of(l, ps), ps, a);
@@ -4061,6 +4148,7 @@ IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, 
         ir_free(l.fn);
         ptrmap_free(&l.var_ix);
         ptrmap_free(&l.stored);
+        ptrmap_free(&l.escapes);
         free(l.defers); free(l.vtype); free(l.home); free(l.defs.key); free(l.defs.val); free(l.inc); free(l.inc_head); free(l.repl); free(l.tgt); free(l.inl);
         return NULL;
     }
@@ -4086,6 +4174,9 @@ IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, 
     for (int i = 0; i < f->nkids; i++) // in this frame's memory: no self tail recursion
         if (node_sym(f->kids[i]) && !by_address(f, i) && in_memory(node_sym(f->kids[i])->type))
             ptrmap_put(&l.stored, node_sym(f->kids[i]), 1);
+    // an auto-inline call expands unless a self tail loop turns auto-inlining off
+    l.scan_auto = mode == EMIT_RELEASE &&
+                  (l.is_main || (f->flags & (F_INLCALLS | F_EXPO)) || !has_self_tail(&l, f->b));
     scan_storage(&l, f->b);
     for (int i = 0; i < f->nkids; i++) {
         Node* p = f->kids[i];
@@ -4152,6 +4243,7 @@ IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, 
     if (mode == EMIT_RELEASE) ir_optimize(fn);
     ptrmap_free(&l.var_ix);
     ptrmap_free(&l.stored);
+    ptrmap_free(&l.escapes);
     free(l.defers); free(l.vtype); free(l.home); free(l.defs.key); free(l.defs.val); free(l.inc); free(l.inc_head); free(l.repl); free(l.tgt); free(l.inl);
     return fn;
 }

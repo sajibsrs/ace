@@ -391,6 +391,13 @@ operations, within the limits above, and not generic, `main`, or recursive.
 Debug builds keep those calls, so backtraces show them. Mark a larger or
 non-leaf helper `inline` to expand it.
 
+An expansion binds a receiver or `mut` parameter to the argument itself when
+that is a local, or a field of one, so a struct or scalar local passed to
+inline methods stays in registers. It lives in memory for the whole function
+once anything needs its address: `&`, a `mut` or receiver argument to a call
+that is not expanded (a deferred call, a helper too large to auto-inline), or
+an inline body that passes its parameter on by address.
+
 ## Self tail recursion
 
 A function whose `return` is a call to itself does no work after that call:

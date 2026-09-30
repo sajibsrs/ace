@@ -78,57 +78,52 @@ b3: ; preds b2
 run(ptr, i64): i64 {
 b0:
     %0 = slot ptr 24, 8
-    %1 = slot ptr 8, 8
-    %2 = param ptr 0
-    %3 = param i64 1
-    %4 = const i64 0
-    store [%1], %4
-    %6 = const i64 4
-    store [%0], %6
-    %8 = const i64 5
-    store [%0 + 8], %8
-    %10 = const i64 6
-    store [%0 + 16], %10
-    %12 = load i64 [%2]
-    %13 = add.chk i64 %12, %3
-    store [%2], %13
+    %1 = param ptr 0
+    %2 = param i64 1
+    %3 = const i64 0
+    %4 = const i64 4
+    store [%0], %4
+    %6 = const i64 5
+    store [%0 + 8], %6
+    %8 = const i64 6
+    store [%0 + 16], %8
+    %10 = load i64 [%1]
+    %11 = add.chk i64 %10, %2
+    store [%1], %11
     jmp b1
 b1: ; preds b0
-    %16 = load i64 [%1]
-    %17 = add.chk i64 %16, %3
-    store [%1], %17
+    %14 = add.chk i64 %3, %2
     jmp b2
 b2: ; preds b1
-    %20 = const i64 100
-    %21 = gt bool %3, %20
-    br %21, b5, b6
+    %16 = const i64 100
+    %17 = gt bool %2, %16
+    br %17, b5, b6
 b3: ; preds b4
-    %23 = load i64 [%1]
-    %24 = add.chk i64 %31, %23
-    %25 = const u64 3
-    %26 = const i64 3
-    %27 = gt bool %3, %26
-    br %27, b8, b9
+    %19 = add.chk i64 %26, %14
+    %20 = const u64 3
+    %21 = const i64 3
+    %22 = gt bool %2, %21
+    br %22, b8, b9
 b4: ; preds b5, b6
-    %29 = phi i64 [%20, b5], [%3, b6]
-    %30 = const i64 2
-    %31 = mul.chk i64 %29, %30
+    %24 = phi i64 [%16, b5], [%2, b6]
+    %25 = const i64 2
+    %26 = mul.chk i64 %24, %25
     jmp b3
 b5: ; preds b2
     jmp b4
 b6: ; preds b2
     jmp b4
 b7: ; preds b8, b9
-    %35 = phi u64 [%39, b8], [%42, b9]
-    %36 = cast i64 %35
-    %37 = add.chk i64 %24, %36
-    ret %37
+    %30 = phi u64 [%34, b8], [%37, b9]
+    %31 = cast i64 %30
+    %32 = add.chk i64 %19, %31
+    ret %32
 b8: ; preds b3
-    %39 = const u64 0
+    %34 = const u64 0
     jmp b7
 b9: ; preds b3
-    %41 = const u64 1
-    %42 = sub.chk u64 %25, %41
+    %36 = const u64 1
+    %37 = sub.chk u64 %20, %36
     jmp b7
 }
 

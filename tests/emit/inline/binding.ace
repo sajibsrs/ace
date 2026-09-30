@@ -1,0 +1,100 @@
+/* inline expansion binding a receiver or mut parameter to the argument's own
+ * variables: a mut method on a struct local, a scalar mut parameter, a field
+ * path, a nested expansion, the same local bound twice, and locals that still
+ * need storage (a callee taking &self, a callee passing self on to an
+ * out-of-line call, a deferred call, an address taken in the caller).
+ */
+
+// expect-exit: 0
+// expect-output: 3 1 4 | 10 | 5 7 | 12 | 6 6 | 9 | 11 | 10 | 21
+
+import fmt
+
+Span: struct { lo: int = 0, hi: int = 0, face: int = -1 }
+
+inline mut Span.clip(v: int, axis: int): bool {
+    if v > self.lo {
+        self.lo = v
+        self.face = axis
+    }
+    if v + 1 > self.hi { self.hi = v + 1 }
+    return self.lo <= self.hi
+}
+
+inline bump(mut n: int, by: int) {
+    n += by
+}
+
+inline mut Span.widen(by: int) {
+    bump(mut self.hi, by) // nested: bound through two expansions
+}
+
+Pair: struct { a: Span = Span {}, b: Span = Span {} }
+
+inline swap_add(mut x: int, mut y: int) {
+    x += y
+    y += x
+}
+
+inline mut Span.leak(): mut *Span {
+    return mut &self // needs the caller's storage
+}
+
+touch(mut s: Span) {
+    s.lo += 1
+}
+
+inline mut Span.handoff() {
+    touch(mut self) // out of line: needs the caller's storage
+}
+
+inline mut Span.report() {
+    self.hi += 2
+    fmt.printf("%d | ", self.hi)
+}
+
+deferred() {
+    d: Span = Span { hi = 7 }
+    defer mut d.report() // a deferred call is never expanded: d needs storage
+    d.hi += 1
+}
+
+main(): int {
+    s: Span = Span {}
+    ok: bool = mut s.clip(3, 1)
+    ok = ok && mut s.clip(2, 2)
+    fmt.printf("%d %d %d | ", s.lo, s.face, s.hi)
+
+    n: int = 4
+    bump(mut n, 6)
+    fmt.printf("%d | ", n)
+
+    p: Pair = Pair {}
+    _ = mut p.b.clip(5, 7)
+    fmt.printf("%d %d | ", p.b.lo, p.b.face)
+
+    w: Span = Span { hi = 2 }
+    mut w.widen(10)
+    fmt.printf("%d | ", w.hi)
+
+    k: int = 3
+    swap_add(mut k, mut k) // both bind k: 3+3, then 6+6... as one storage
+    fmt.printf("%d %d | ", k / 2, k / 2)
+
+    q: Span = Span {}
+    ptr: mut *Span = mut q.leak()
+    ptr.lo = 9
+    fmt.printf("%d | ", q.lo)
+
+    r: Span = Span { lo = 10 }
+    mut r.handoff()
+    fmt.printf("%d | ", r.lo)
+
+    deferred()
+
+    a: Span = Span {}
+    pa: *Span = &a
+    _ = mut a.clip(20, 0)
+    fmt.printf("%d\n", pa.hi)
+    return 0
+}
