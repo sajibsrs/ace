@@ -3,7 +3,6 @@ paths:
   - "SPEC.md"
   - "GRAMMAR.md"
   - "PHILOSOPHY.md"
-  - "TODO.md"
   - "src/**/*"
   - "std/**/*"
   - "tests/**/*"

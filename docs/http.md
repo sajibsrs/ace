@@ -17,7 +17,7 @@ the bare `import http` in source stays the same either way. See
 examples.
 
 HTTPS/TLS support was removed pending a full redesign; see the TLS client
-transport item in `TODO.md`. `Url::parse` still accepts an `https://` scheme
+transport issue (#65). `Url::parse` still accepts an `https://` scheme
 for syntax purposes, but every client entry point rejects it with
 `UrlErr.invalid`.
 
@@ -151,7 +151,7 @@ A caller-driven, nonblocking `ServerContext`/`Event` core existed here at one
 point but was implemented directly, without going through the Decision Queue
 carve process. It has been removed; a fresh carve of how much server
 mechanism belongs in the language versus a framework built on top is tracked
-in `TODO.md` before anything like it returns.
+in issue #67 before anything like it returns.
 
 ## Simple HTTP server demo
 

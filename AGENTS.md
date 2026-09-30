@@ -15,7 +15,8 @@ history.
   `SPEC.md` surface. Reuse existing operations; do not duplicate parsing,
   memory, text, or platform utilities. Prefer explicit generics, type-owned
   methods, or overloads over free helpers when ownership is clearer.
-- Planning: read the active Decision Queue and relevant `TODO.md` entries.
+- Planning: read the active Decision Queue and the relevant GitHub issues
+  (`gh issue list -m <milestone>`, `-l <label>`; see `TODO.md`).
 - `docs/` describes implemented behavior; do not use it as design authority.
 
 ## Process
@@ -25,8 +26,8 @@ history.
   directly in the working tree on `master`, never in a throwaway prototype, and
   leave it uncommitted. Implement, test, and measure there against `HEAD`, then
   present the result with viable alternatives for the owner's review. This
-  holds even when the change is already agreed in principle (e.g. noted in
-  `TODO.md`). Propose language-design decisions (semantics, syntax) before
+  holds even when the change is already agreed in principle (e.g. an open
+  issue). Propose language-design decisions (semantics, syntax) before
   implementing them.
 - In a cloud session, whose container is discarded, work only on the topic
   branch the owner names (e.g. `linux`), never on `master`, the session's
@@ -58,15 +59,19 @@ history.
 - Record current rules and rationale in `SPEC.md`, keeping only active decisions
   in its queue. Record implemented behavior and its essential approach once,
   briefly, in `CHANGELOG.md`. Keep `SPEC.md`, `CHANGELOG.md`, `GRAMMAR.md`, and
-  `TODO.md` entries minimal but sufficient; full detail belongs only in
-  `docs/`. `SPEC.md` and `TODO.md` entries state current rules and open
+  issue bodies minimal but sufficient; full detail belongs only in
+  `docs/`. `SPEC.md` entries and issues state current rules and open
   questions only; what was removed, replaced, or how something got here is
   `CHANGELOG.md`'s history alone, not restated elsewhere.
-- `TODO.md` is non-normative. Promote entries through the Decision Queue and
-  update the survey in the same edit. It reflects present state only; remove
-  resolved entries outright, no resolution notes.
-- Update `SPEC.md`, `CHANGELOG.md`, `TODO.md`, and `docs/` in the same commit
-  as the change they describe, not a follow-up.
+- Issues are non-normative. Promote one through the Decision Queue and update
+  it in the same change. An issue reflects present state only: edit its body
+  rather than appending history, and close it when resolved (`not planned`
+  when dropped). Label every issue with one kind (`bug`, `feature`, `task`),
+  one area, a status label from `TODO.md` when one applies, a target label
+  when platform-specific, and a milestone.
+- Update `SPEC.md`, `CHANGELOG.md`, and `docs/` in the same commit as the
+  change they describe, not a follow-up, and open, edit, or close the
+  affected issues when that commit lands.
 - Split work likely to exceed 200k tokens into owner-approved steps; each step
   must stay under 200k tokens, compile, and pass relevant tests.
 - Commit only after the owner has reviewed the change and explicitly

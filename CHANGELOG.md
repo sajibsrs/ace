@@ -3204,8 +3204,12 @@ current normative rules, and Git preserves patch-level detail.
   back-edge check, so ordinary `if` joins (e.g. in `mem.grow`) read out of
   bounds and `demo/http-simple-server` crashed. The walk now rejects a
   candidate at any block that leaves through a return.
+- Moved the `TODO.md` survey to GitHub issues: one issue per entry with kind,
+  status, area, and target labels, the priority bands as milestones, and the
+  measured-gaps table as issue #72. `TODO.md` now explains the labels and how
+  to query them.
 
 The checked-build queue is complete. Additive networking, concurrency, fuller
 math/SIMD, and a second
 backend remain open; their status belongs in the `SPEC.md` Decision Queue and
-`TODO.md`, not in this history.
+GitHub issues, not in this history.

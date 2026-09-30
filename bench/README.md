@@ -691,7 +691,7 @@ four rows) is within 0.01 ns of `bf3fc42` on every row. Spreads were under
 0.01 ns within each build. `dot-f64` is the one kernel where
 neither compiler can vectorize and both are bound by the accumulator's
 dependency chain; Ace leads it. The `saxpy` pair reproduces the ad-hoc figures
-`TODO.md` records for this gap. `particle-vec3` is the widest: binding
+issue #27 records for this gap. `particle-vec3` is the widest: binding
 `velocities[i]` to a local `Vec3` once, instead of indexing it three times,
 measured 2.551 ns against 2.744, so about 7% of that row is repeated address
 computation and the rest is elsewhere.
@@ -724,8 +724,8 @@ better register allocation. Disassembly at this commit shows `saxpy`'s
 `adrp`/`add` pair for each global array is still rebuilt every loop
 iteration, including twice for `ys64` (once for the read, once for the
 write) since nothing currently common-subexpression-eliminates repeated
-`global` address materialization; this is the open half of `TODO.md`'s
-"Hot-loop codegen gap" entry.
+`global` address materialization; this is the open half of issue #27,
+"Hot-loop codegen gap".
 
 #### GVN-numbered globals and the power-of-two preheader hoist
 
@@ -960,7 +960,7 @@ instrumentation counted 27,500 SWAR chunks and 120,000 scalar steps over 20,000
 long-cohort calls; all calls reached SWAR, and the chunks covered 64.7% of the
 digit bytes counted by those paths.
 
-Further parser optimization is intentionally deferred. `TODO.md` records the
+Further parser optimization is intentionally deferred. Issue #34 records the
 measurement-ordered backlog; the canonical 6.8x result above remains the
 baseline until another carve lands.
 
@@ -1112,7 +1112,7 @@ uncommitted `pkg/regex`, medians in ns per byte:
 Ace spreads were under 4 ns on every row. The same C source at `-O0` measured
 53.42, 99.80, 103.60, and 261.08 ns in row order, so Ace release sits just
 ahead of unoptimized C here, as it does in the CPU baseline; the Ace/C gap is
-the general optimization gap `TODO.md` tracks, not a regex-specific cost. C at
+the general optimization gap issue #72 tracks, not a regex-specific cost. C at
 `-O1` is within 15% of the `-O2` column. PCRE2 wins every linear workload by
 skipping ahead to candidate positions, which the Pike VM, seeding a thread at
 every byte, does not do; `pathological` is where its backtracking costs 48x

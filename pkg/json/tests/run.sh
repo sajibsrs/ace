@@ -1,6 +1,6 @@
 #!/bin/sh
 # Behavioral tests owned by the pkg/json package, not the compiler core.
-# Decoupled from tests/run.sh/`make test` on purpose (see TODO.md/CHANGELOG.md):
+# Decoupled from tests/run.sh/`make test` on purpose (see CHANGELOG.md):
 # these exercise json's own parsing/value-model logic, not compiler
 # correctness, and shouldn't gate core compiler iteration. Run via
 # `make test-packages` or directly as `pkg/json/tests/run.sh`.
