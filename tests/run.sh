@@ -1189,9 +1189,18 @@ if [ -d tests/emit ]; then
         fail=1
     fi
     if command -v nm >/dev/null 2>&1; then
-        printf_undef=$(nm -u /tmp/ace_emit/printf/main.o 2>/dev/null)
+        # undef OBJ lists OBJ's undefined symbols by C name: GNU nm prints
+        # "U name", and Mach-O names carry one more leading underscore.
+        if [ "$(uname -s)" = Darwin ]; then
+            c_prefix=_ errno_symbol=__error
+            process_boundary="_NSGetArgc _NSGetArgv _NSGetEnviron"
+        else
+            c_prefix= errno_symbol=__errno_location process_boundary=environ
+        fi
+        undef() { nm -u "$1" 2>/dev/null | sed -e 's/^ *U //' -e "s/^$c_prefix//"; }
+        printf_undef=$(undef /tmp/ace_emit/printf/main.o)
         if printf '%s\n' "$printf_undef" |
-           grep -Eq '_(printf|snprintf|vprintf|malloc|calloc|realloc|free)$'; then
+           grep -Eq '^(printf|snprintf|vprintf|malloc|calloc|realloc|free)$'; then
             echo "FAIL: fmt.printf must not depend on C formatting, variadics, or allocation"
             fail=1
         fi
@@ -1200,75 +1209,65 @@ if [ -d tests/emit ]; then
             echo "FAIL: checked fmt.printf calls must not emit a runtime printf body"
             fail=1
         fi
-        net_undef=$(nm -u /tmp/ace_emit/net/main.o 2>/dev/null)
+        net_undef=$(undef /tmp/ace_emit/net/main.o)
         if printf '%s\n' "$net_undef" |
-           grep -Eq '_(malloc|calloc|realloc|free|printf|snprintf)$'; then
+           grep -Eq '^(malloc|calloc|realloc|free|printf|snprintf)$'; then
             echo "FAIL: net must not call a general-purpose allocator or C formatting"
             fail=1
         fi
-        for symbol in _socket _setsockopt _fcntl _bind _listen _accept \
-                      _connect _getsockname _recv _send _getaddrinfo \
-                      _freeaddrinfo _fork _waitpid _pipe _close ___error; do
-            if ! printf '%s\n' "$net_undef" | grep -q "^$symbol$"; then
-                echo "FAIL: net object is missing Darwin boundary '$symbol'"
+        for symbol in socket setsockopt fcntl bind listen accept connect \
+                      getsockname recv send getaddrinfo freeaddrinfo fork \
+                      waitpid pipe close "$errno_symbol"; do
+            if ! printf '%s\n' "$net_undef" | grep -qx "$symbol"; then
+                echo "FAIL: net object is missing OS boundary '$symbol'"
                 fail=1
             fi
         done
-        process_undef=$(nm -u /tmp/ace_emit/sys/process.o 2>/dev/null)
-        process_boundary="__NSGetArgc __NSGetArgv __NSGetEnviron"
-        [ "$(uname -s)-$(uname -m)" = Linux-x86_64 ] && process_boundary=environ
+        process_undef=$(undef /tmp/ace_emit/sys/process.o)
         for symbol in $process_boundary; do
-            if ! printf '%s\n' "$process_undef" | grep -Eq "(^| )$symbol$"; then
+            if ! printf '%s\n' "$process_undef" | grep -qx "$symbol"; then
                 echo "FAIL: sys process object is missing OS boundary '$symbol'"
                 fail=1
             fi
         done
-        if printf '%s\n' "$process_undef" | grep -q '^_strlen$'; then
+        if printf '%s\n' "$process_undef" | grep -qx strlen; then
             echo "FAIL: sys process access must scan entry bytes directly"
             fail=1
         fi
-        byte_equal_undef=$(nm -u /tmp/ace_emit/strings/byte_equality.o 2>/dev/null)
-        if printf '%s\n' "$byte_equal_undef" | grep -q '^_memcmp$'; then
+        if printf '%s\n' "$process_undef" | grep -Eq '^(malloc|calloc|realloc|free)$'; then
+            echo "FAIL: sys process access must not allocate"
+            fail=1
+        fi
+        if undef /tmp/ace_emit/strings/byte_equality.o | grep -qx memcmp; then
             echo "FAIL: byte comparison must be emitted directly"
             fail=1
         fi
-        byte_write_undef=$(nm -u /tmp/ace_emit/mut_string/main.o 2>/dev/null)
-        if printf '%s\n' "$byte_write_undef" | grep -q '^_memset$'; then
+        if undef /tmp/ace_emit/mut_string/main.o | grep -qx memset; then
             echo "FAIL: byte fill and zero must be emitted directly"
             fail=1
         fi
-        byte_move_undef=$(nm -u /tmp/ace_emit/memory/copy_move.o 2>/dev/null)
-        if printf '%s\n' "$byte_move_undef" | grep -Eq '^_(memcpy|memmove)$'; then
+        if undef /tmp/ace_emit/memory/copy_move.o | grep -Eq '^(memcpy|memmove)$'; then
             echo "FAIL: byte copy and move must be emitted directly"
             fail=1
         fi
-        zeroed_undef=$(nm -u /tmp/ace_emit/allocation/zeroed.o 2>/dev/null)
-        if ! printf '%s\n' "$zeroed_undef" | grep -q '^_calloc$'; then
+        if ! undef /tmp/ace_emit/allocation/zeroed.o | grep -qx calloc; then
             echo "FAIL: mem.zalloc must lower to the platform zero-filling allocator"
             fail=1
         fi
-        bits_undef=$(nm -u /tmp/ace_emit/internal/float_bits.o 2>/dev/null)
-        integer_bits_undef=$(nm -u /tmp/ace_emit/internal/integer_bits.o 2>/dev/null)
-        if printf '%s\n%s\n' "$bits_undef" "$integer_bits_undef" |
-           grep -Eq '_(memcpy|memmove|ecvt|strtod|strtof|popcount|clz|ctz|bswap|rotl|rotr)[0-9_]*$'; then
+        if { undef /tmp/ace_emit/internal/float_bits.o
+             undef /tmp/ace_emit/internal/integer_bits.o; } |
+           grep -Eq '(^|_)(memcpy|memmove|ecvt|strtod|strtof|popcount|clz|ctz|bswap|rotl|rotr)[0-9_]*$'; then
             echo "FAIL: bits operations must have no runtime dependency"
             fail=1
         fi
-        float_fmt_undef=$(nm -u /tmp/ace_emit/fmt/float.o 2>/dev/null)
-        fixed_fmt_undef=$(nm -u /tmp/ace_emit/printf/precision.o 2>/dev/null)
-        if printf '%s\n%s\n' "$float_fmt_undef" "$fixed_fmt_undef" |
-           grep -Eq '^_(ecvt|fcvt|strtod|strtof|floor|fegetround|fesetround|memcpy|memmove)$'; then
+        if { undef /tmp/ace_emit/fmt/float.o
+             undef /tmp/ace_emit/printf/precision.o; } |
+           grep -Eq '^(ecvt|fcvt|strtod|strtof|floor|fegetround|fesetround|memcpy|memmove)$'; then
             echo "FAIL: float formatting must use the native exact engine"
             fail=1
         fi
-        float_parse_undef=$(nm -u /tmp/ace_emit/internal/native_float_parse.o 2>/dev/null)
-        if printf '%s\n' "$float_parse_undef" | grep -Eq '^_(strtod|strtof)$'; then
+        if undef /tmp/ace_emit/internal/native_float_parse.o | grep -Eq '^(strtod|strtof)$'; then
             echo "FAIL: float parsing must use the native exact engine"
-            fail=1
-        fi
-        if printf '%s\n' "$process_undef" |
-           grep -Eq '_(malloc|calloc|realloc|free)$'; then
-            echo "FAIL: sys process access must not allocate"
             fail=1
         fi
     fi

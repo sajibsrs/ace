@@ -856,6 +856,11 @@ current normative rules, and Git preserves patch-level detail.
   `Aborted` job line into the redirected stderr), and the latter reads
   `objdump` where `otool` is absent and matches x64's `call` and ELF's
   single-underscore name.
+- Made the `nm` symbol checks in `tests/run.sh` host-aware: one helper lists
+  an object's undefined symbols by C name (dropping GNU nm's `U` column and
+  Mach-O's extra leading underscore), so the required OS boundaries (errno as
+  `__error` or `__errno_location`) and the forbidden runtime dependencies are
+  checked on Linux too, rather than failing or passing vacuously.
 
 ## Core language
 
