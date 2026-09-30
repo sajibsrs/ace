@@ -26,3 +26,6 @@
   own SSA variables when it is a local or a field of one, keeping the local in
   registers unless `&`, an unexpanded call, or the inline body needs its
   address. `bench/core/raytrace` release: 0.643 s to 0.390 s (0.336 s with `hit` and `trace` inline); calls/method 2.2x.
+- Import cycle diagnostics list only the loop, in import order
+  (`a -> b -> c -> a`): the loading stack is innermost-first, so it is cut at
+  the repeated module and printed reversed, dropping the importers before it.

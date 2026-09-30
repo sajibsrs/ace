@@ -1,6 +1,6 @@
 /* Companion module for the Cycle fixture. */
 
-import a: "./a.ace"
+import c: "./c.ace"
 
 pub fb(): int {
     return 2

@@ -1,0 +1,7 @@
+/* Companion module for the Cycle fixture. */
+
+import a: "./a.ace"
+
+pub fc(): int {
+    return 3
+}

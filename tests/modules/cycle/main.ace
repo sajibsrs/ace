@@ -1,4 +1,6 @@
-/* Import cycles are compile errors; the diagnostic shows the chain. */
+/* Import cycles are compile errors; the diagnostic shows only the loop, in
+ * import order (a -> b -> c -> a), without main.
+ */
 
 import a: "./a.ace"
 

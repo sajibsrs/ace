@@ -1786,6 +1786,12 @@ if [ -d tests/modules ]; then
             fail=1
         fi
     done
+    cycle=$("$ACE" tests/modules/cycle/main.ace 2>&1)
+    if ! printf '%s\n' "$cycle" | grep -Eq 'import cycle: [^ ]*/a\.ace -> [^ ]*/b\.ace -> [^ ]*/c\.ace -> [^ ]*/a\.ace$'; then
+        echo "FAIL: import cycle should list only the loop, in import order"
+        printf '%s\n' "$cycle"
+        fail=1
+    fi
     # multi-file DWARF across a local module, a stdlib module, and the root
     if command -v dwarfdump >/dev/null 2>&1; then
         moddwarf=$(dwarfdump --debug-line /tmp/ace_modules/diamond.o 2>/tmp/ace_test_errs)

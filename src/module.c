@@ -502,13 +502,23 @@ static int module_on_stack(Loader* L, const char* canon) {
     return 0;
 }
 
+// Prints only the loop, in import order: the loading stack is innermost-first,
+// so the modules from canon's own entry up to the top are listed in reverse.
 static void report_cycle(Loader* L, Node* at, const char* canon) {
-    size_t cap = strlen(canon) + 64;
-    for (Module* m = L->loading; m; m = m->next) cap += strlen(m->canon) + 4;
+    size_t cap = 2 * strlen(canon) + 64;
+    int depth = 0;
+    Module* m = L->loading;
+    for (; m && strcmp(m->canon, canon) != 0; m = m->next) {
+        cap += strlen(m->canon) + 4;
+        depth++;
+    }
+    const char** loop = (const char**)arena_alloc((size_t)(depth ? depth : 1) * sizeof *loop);
+    m = L->loading;
+    for (int i = depth - 1; i >= 0; i--, m = m->next) loop[i] = m->canon;
     char* chain = arena_alloc(cap);
-    size_t off = 0;
-    off += (size_t)snprintf(chain + off, cap - off, "%s", canon);
-    for (Module* m = L->loading; m; m = m->next) off += (size_t)snprintf(chain + off, cap - off, " -> %s", m->canon);
+    size_t off = (size_t)snprintf(chain, cap, "%s", canon);
+    for (int i = 0; i < depth; i++) off += (size_t)snprintf(chain + off, cap - off, " -> %s", loop[i]);
+    snprintf(chain + off, cap - off, " -> %s", canon);
     import_err(L->d, at, "import cycle: %s", chain);
 }
 
