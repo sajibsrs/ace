@@ -874,6 +874,10 @@ current normative rules, and Git preserves patch-level detail.
   layout verifier, the driver's `-framework` link, and the
   `package_cli/link_framework` case, which a new `// expect-host: OS` manifest
   comment skips unless `uname -s` prints OS.
+- Made `tests/vector_ir.c` emit through the host's target: on linux-x64 it
+  writes an ELF object with `x64_func` (the shared IR names drop Mach-O's
+  leading underscore as symbols) and clobbers every xmm register across the
+  call, so the lane-for-lane comparison with C covers x64's SSE lowering.
 
 ## Core language
 

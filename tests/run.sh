@@ -1074,8 +1074,8 @@ if [ "$(uname -s)" = Darwin ]; then
 fi
 
 # vector IR (tests/vector_ir.c): hand-built functions verify, print as
-# tests/vector_ir.ir, and match C lane for lane through the AArch64 target
-if ! cc -std=c11 -O1 -DEMIT -o /tmp/ace_vector_emit tests/vector_ir.c $(ls src/*.c | grep -v src/main.c) \
+# tests/vector_ir.ir, and match C lane for lane through the host's target
+if ! cc -std=c11 -D_DEFAULT_SOURCE -O1 -DEMIT -o /tmp/ace_vector_emit tests/vector_ir.c $(ls src/*.c | grep -v src/main.c) \
         2>/tmp/ace_test_errs; then
     echo "FAIL: vector IR emitter did not build"
     cat /tmp/ace_test_errs

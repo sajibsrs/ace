@@ -1,10 +1,12 @@
-// vector_ir.c — the IR's internal vector types through the AArch64 target
-// (SPEC.md Compiler #6, auto-vectorization), before any pass creates them.
+// vector_ir.c — the IR's internal vector types through the host's target,
+// AArch64 or x64 on Linux (SPEC.md Compiler #6, auto-vectorization), before
+// any pass creates them.
 //
 // Built twice by tests/run.sh: with -DEMIT and the compiler's sources, it
 // builds each function's IR by hand, verifies and prints it, and writes an
 // object (argv[1]); without, it links that object and checks every lane
-// against the scalar operation in C, bit for bit.
+// against the scalar operation in C, bit for bit. The IR names are Mach-O
+// symbols; the ELF object drops their leading underscore.
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -63,7 +65,13 @@ static void finish(Obj* o, int b) {
     op1(b, IR_RET, IT_VOID, -1);
     if (!ir_verify(F)) exit(1);
     ir_print(F, stdout);
+#if defined(__linux__) && defined(__x86_64__)
+    for (int v = 0; v < F->nins; v++)
+        if (F->ins[v].op == IR_CALL) F->ins[v].name++;
+    x64_func(o, F, F->decl->str + 1, F->decl->len - 1, 1);
+#else
     arm64_func(o, F, F->decl->str, F->decl->len, 1);
+#endif
 }
 
 static const IrType P3[] = { IT_PTR, IT_PTR, IT_PTR };
@@ -222,7 +230,11 @@ int main(int argc, char** argv) {
     ESym* anchor = sym_intern(&o.syms, "__ace$text", 10);
     obj_debug_info(&o, anchor);
     obj_debug_line(&o, anchor);
+#if defined(__linux__) && defined(__x86_64__)
+    elf_write(&o, argv[1]);
+#else
     obj_write(&o, argv[1]);
+#endif
     return d.errors != 0;
 }
 
@@ -241,6 +253,19 @@ void v_loop(const V*, uint64_t, V*);
 void v_pressure(const V*, V*);
 void v_call(const V*, V*);
 
+#if defined(__linux__) && defined(__x86_64__)
+// Every xmm register changes: the SysV ABI saves none across a call.
+void clobber(void) {
+    __asm__ volatile("pcmpeqd %%xmm0, %%xmm0\n pcmpeqd %%xmm1, %%xmm1\n pcmpeqd %%xmm2, %%xmm2\n"
+                     "pcmpeqd %%xmm3, %%xmm3\n pcmpeqd %%xmm4, %%xmm4\n pcmpeqd %%xmm5, %%xmm5\n"
+                     "pcmpeqd %%xmm6, %%xmm6\n pcmpeqd %%xmm7, %%xmm7\n pcmpeqd %%xmm8, %%xmm8\n"
+                     "pcmpeqd %%xmm9, %%xmm9\n pcmpeqd %%xmm10, %%xmm10\n pcmpeqd %%xmm11, %%xmm11\n"
+                     "pcmpeqd %%xmm12, %%xmm12\n pcmpeqd %%xmm13, %%xmm13\n pcmpeqd %%xmm14, %%xmm14\n"
+                     "pcmpeqd %%xmm15, %%xmm15\n"
+                     ::: "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7", "xmm8",
+                         "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15");
+}
+#else
 // Every v register changes except the callee-saved low halves of v8-v15.
 void clobber(void) {
     __asm__ volatile("movi v0.16b, #0x55\n movi v1.16b, #0x55\n movi v2.16b, #0x55\n movi v3.16b, #0x55\n"
@@ -254,6 +279,7 @@ void clobber(void) {
                      ::: "v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v16", "v17", "v18", "v19", "v20",
                          "v21", "v22", "v23", "v24", "v25", "v26", "v27", "v28", "v29", "v30", "v31");
 }
+#endif
 
 static int fails;
 
