@@ -4,7 +4,7 @@
  */
 
 import bits
-import table: @float_parse_tables
+import table: @eisel_lemire_table
 
 // Powers of ten exactly representable at each width: 5^22 < 2^53, 5^10 < 2^24.
 EXACT_POWERS64: const [23]f64 = [

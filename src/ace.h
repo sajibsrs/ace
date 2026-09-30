@@ -311,9 +311,9 @@ extern const char* ace_target;
 // never rsp or rbp), or -1; and a number's name.
 int asm_register(const char* s, uint32_t len);
 const char* asm_register_name(int r);
-// The name prefix of std's internal rendering module, whose piece writers
+// The name prefix of std's internal formatting module, whose piece writers
 // fmt.printf and str.format lower to; NULL until it loads.
-extern const char* rendering_prefix;
+extern const char* formatting_prefix;
 
 // --- Packages (ace.pkg manifests, spec/modules-packages.md Package System) --------------------
 // A package is a directory holding one ace.pkg and one root .ace file;

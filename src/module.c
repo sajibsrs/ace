@@ -353,10 +353,10 @@ static int is_std_internal_named_module(Loader* L, const char* canon, const char
     return expected && strcmp(expected, canon) == 0;
 }
 
-const char* rendering_prefix;
+const char* formatting_prefix;
 
-static void mark_internal_rendering(Loader* L, Module* m) {
-    if (is_std_internal_named_module(L, m->canon, "rendering")) rendering_prefix = m->prefix;
+static void mark_internal_formatting(Loader* L, Module* m) {
+    if (is_std_internal_named_module(L, m->canon, "formatting")) formatting_prefix = m->prefix;
 }
 
 static void mark_internal_load_intrinsic(Loader* L, Module* m) {
@@ -851,7 +851,7 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
     mark_bits_intrinsics(L, m);
     mark_math_intrinsics(L, m);
     mark_internal_load_intrinsic(L, m);
-    mark_internal_rendering(L, m);
+    mark_internal_formatting(L, m);
     m->next = L->loading; // push
     L->loading = m;
     resolve_file(L, file, canon, 0);

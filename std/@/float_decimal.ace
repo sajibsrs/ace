@@ -4,7 +4,7 @@
  */
 
 import big: @bigint
-import ryu: @float_shortest
+import ryu: @ryu
 
 pub Type: enum { finite, zero, infinity, nan }
 

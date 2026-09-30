@@ -13,8 +13,8 @@ import bits
 import mem
 
 import decimal: @float_decimal
-import rendering: @rendering
-import float_parse: @float_parse
+import formatting: @formatting
+import float_parsing: @float_parsing
 import load: @byte_load
 
 /* Word-at-a-time search constants. For a word x, ~(((x & LOW7) + LOW7) | x |
@@ -467,18 +467,18 @@ pub format(destination: mut []char, format: string): (usize, bool) {
 
 /* The formatted-write sink: the destination is its storage, and its drain
  * refuses, so a piece that does not fit fails the call. The compiler writes
- * each format piece through the shared rendering.piece* writers between
+ * each format piece through the shared formatting.piece* writers between
  * put_open and put_close, which returns the byte count or -1.
  */
 refuse(bytes: []u8): int {
     return -1
 }
 
-put_open(mut sink: rendering.Sink, destination: mut []char) {
-    sink = rendering.Sink::init(destination, refuse)
+put_open(mut sink: formatting.Sink, destination: mut []char) {
+    sink = formatting.Sink::init(destination, refuse)
 }
 
-put_close(mut sink: rendering.Sink): int {
+put_close(mut sink: formatting.Sink): int {
     if sink.failed { return -1 }
 
     return int(sink.used)
@@ -651,12 +651,12 @@ pub parse[usize](text: string): (usize, bool) {
 }
 
 pub parse[f64](text: string): (f64, bool) {
-    value: f64, ok: bool = float_parse.binary64(text)
+    value: f64, ok: bool = float_parsing.binary64(text)
     return value, ok
 }
 
 pub parse[f32](text: string): (f32, bool) {
-    value: f32, ok: bool = float_parse.binary32(text)
+    value: f32, ok: bool = float_parsing.binary32(text)
     return value, ok
 }
 

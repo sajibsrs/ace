@@ -95,7 +95,7 @@ from a static literal. The compiler parses it, checks the argument count and
 exact types, and emits direct typed formatting calls. It opens a sink over
 1024 bytes of the calling function's frame, writes each piece into it, and
 closes it. The piece writers are exact-type specializations of the
-per-shape generics in the internal `std/@/rendering.ace` — `piece[T]` for
+per-shape generics in the internal `std/@/formatting.ace` — `piece[T]` for
 text, bytes, and decimal integers, `piece_precision[T]` for fixed floats,
 and `piece_radix[T]` for binary, octal, and hexadecimal, each taking the
 sink, the value, the conversion's extras, its width, and its zero flag —

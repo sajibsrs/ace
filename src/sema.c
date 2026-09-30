@@ -3549,7 +3549,7 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn, SType* elem,
 
 /*
  * The checked format lowering writes each plan part through a piece writer
- * of std's internal rendering module, resolved by exact-type specialization
+ * of std's internal formatting module, resolved by exact-type specialization
  * lookup (Generics #10): the writer shapes are 'specialized' generics —
  * piece[T], piece_radix[T], and piece_precision[T], each taking the sink,
  * the value, its conversion's extras, width, and zero flag — and the format
@@ -3832,14 +3832,14 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
                expected_count + 1);
 
     uint32_t own_len = fn->len - 6; // the module prefix before "printf" or "format"
-    uint32_t rendering_len = rendering_prefix ? (uint32_t)strlen(rendering_prefix) : 0;
+    uint32_t rendering_len = formatting_prefix ? (uint32_t)strlen(formatting_prefix) : 0;
     plan->open = printf_helper(k, fn->name, own_len, who, fc->open, NULL, 0, call);
     plan->close = printf_helper(k, fn->name, own_len, who, fc->close, NULL, 0, call);
     SType* counted_arg[1];
     counted_arg[0] = st_prim(P_STRING);
-    Sym* text_helper = printf_helper(k, rendering_prefix, rendering_len, who, "piece", counted_arg, 1, call);
+    Sym* text_helper = printf_helper(k, formatting_prefix, rendering_len, who, "piece", counted_arg, 1, call);
     counted_arg[0] = st_prim(P_U8);
-    Sym* byte_helper = printf_helper(k, rendering_prefix, rendering_len, who, "piece", counted_arg, 1, call);
+    Sym* byte_helper = printf_helper(k, formatting_prefix, rendering_len, who, "piece", counted_arg, 1, call);
     for (int i = 0; i < plan->nparts; i++) {
         PrintfPart* part = &plan->parts[i];
         if (part->kind == PF_TEXT) { part->helper = text_helper; continue; }
@@ -3872,7 +3872,7 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
             break;
         default: break;
         }
-        part->helper = printf_helper(k, rendering_prefix, rendering_len, who, generic, helper_arg, 1, call);
+        part->helper = printf_helper(k, formatting_prefix, rendering_len, who, generic, helper_arg, 1, call);
     }
     for (int i = fi + expected_count + 1; i < call->nkids; i++) {
         Node* arg = call->kids[i]->kind == N_MUTARG ? call->kids[i]->a : call->kids[i];

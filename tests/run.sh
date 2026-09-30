@@ -1701,7 +1701,7 @@ if [ -d tests/emit ]; then
         fail=1
     fi
     if ! printf '%s\n' "$report" | grep -q 'source files:.*9$'; then
-        echo "FAIL: --report should count root + fmt/target + decimal/bigint/shortest/table/rendering/mem sources"
+        echo "FAIL: --report should count root + fmt/target + decimal/bigint/ryu/table/formatting/mem sources"
         fail=1
     fi
     for label in 'source bytes:' 'tokens:' 'machine code:' 'object file:' 'compile time:'; do

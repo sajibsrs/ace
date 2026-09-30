@@ -6,7 +6,7 @@
 import bits
 import big: @bigint
 import load: @byte_load
-import fast: @float_parse_fast
+import fast: @eisel_lemire
 
 FastDecimal: struct {
     coefficient: u64,

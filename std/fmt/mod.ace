@@ -7,7 +7,7 @@ import os: "./os/darwin-arm64.ace"
 import os: "./os/linux-x64.ace"
 
 import decimal: @float_decimal
-import rendering: @rendering
+import formatting: @formatting
 
 pub print(text: string): int {
     if text.len == 0 { return 0 }
@@ -293,15 +293,15 @@ pub print(value: f32): int {
 /*
  * The compiler's checked printf lowering opens a sink over fixed storage in
  * the caller's frame, writes each format piece into it through the shared
- * rendering.piece* writers, and closes it: normally one write per call.
+ * formatting.piece* writers, and closes it: normally one write per call.
  * Complete success returns the total byte count; a failed write stops the
  * call and its non-positive result is returned unchanged.
  */
-print_open(mut sink: rendering.Sink, storage: mut []u8) {
-    sink = rendering.Sink::init(storage, write_bytes)
+print_open(mut sink: formatting.Sink, storage: mut []u8) {
+    sink = formatting.Sink::init(storage, write_bytes)
 }
 
-print_close(mut sink: rendering.Sink): int {
+print_close(mut sink: formatting.Sink): int {
     mut sink.flush()
     if sink.failed { return sink.status }
 
