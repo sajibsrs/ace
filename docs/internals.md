@@ -116,6 +116,6 @@ repeated in each additional backend.
   rationale.
 - `docs/compiler.md` — user-facing CLI usage (`--ir`, `--ast`, `-c`, `-o`,
   build modes).
-- `CHANGELOG.md` — the IR migration's history, in the entries recording each
+- `changelog/` — the IR migration's history, in the entries recording each
   step that moved a function shape off the old AST emitter and onto passes
   5-10.

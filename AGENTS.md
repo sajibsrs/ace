@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Rules for AI agents working on Ace, a systems language and bootstrap C11
-compiler. `spec/` is normative; `CHANGELOG.md` is the sole implementation
+compiler. `spec/` is normative; `changelog/` is the sole implementation
 history.
 
 ## Before working
@@ -13,7 +13,7 @@ history.
 - Design or carving: read `PHILOSOPHY.md`, `spec/queue.md`, and the chapters
   the decision affects.
 - Compiler work: read `spec/compiler.md`, the chapters for the language
-  feature involved, and `GRAMMAR.md`, then search `CHANGELOG.md` and the
+  feature involved, and `GRAMMAR.md`, then grep `changelog/` and the
   implementation by topic.
 - Standard-library work: inspect the relevant `std/` modules and their
   `spec/std/` chapter (`spec/std/README.md` holds the shared rules). Reuse existing operations; do not duplicate parsing,
@@ -62,18 +62,18 @@ history.
   added line is more surface for bugs and more to extend and maintain.
 - Record current rules and rationale in the `spec/` chapter they belong to,
   keeping only active decisions in `spec/queue.md`. Record implemented behavior and its essential approach once,
-  briefly, in `CHANGELOG.md`. Keep `spec/`, `CHANGELOG.md`, `GRAMMAR.md`, and
-  issue bodies minimal but sufficient; full detail belongs only in
+  briefly, as a 2–4 line entry in `changelog/`. Keep `spec/`, `changelog/`,
+  `GRAMMAR.md`, and issue bodies minimal but sufficient; full detail belongs only in
   `docs/`. `spec/` entries and issues state current rules and open
   questions only; what was removed, replaced, or how something got here is
-  `CHANGELOG.md`'s history alone, not restated elsewhere.
+  `changelog/`'s history alone, not restated elsewhere.
 - Issues are non-normative. Promote one through the Decision Queue and update
   it in the same change. An issue reflects present state only: edit its body
   rather than appending history, and close it when resolved (`not planned`
   when dropped). Label every issue with one kind (`bug`, `feature`, `task`),
   one area, a status label from `TODO.md` when one applies, a target label
   when platform-specific, and a milestone.
-- Update `spec/`, `CHANGELOG.md`, and `docs/` in the same commit as the
+- Update `spec/`, `changelog/`, and `docs/` in the same commit as the
   change they describe, not a follow-up, and open, edit, or close the
   affected issues when that commit lands.
 - Split work likely to exceed 200k tokens into owner-approved steps; each step
@@ -84,7 +84,7 @@ history.
   Every commit message is exactly one
   imperative subject line, full stop — no body paragraph, no rationale, no
   bullet list, no `Co-Authored-By` trailer, even when the change feels like it
-  needs explaining. That explanation belongs in `CHANGELOG.md`, not the commit.
+  needs explaining. That explanation belongs in `changelog/`, not the commit.
 
 ## Conventions
 

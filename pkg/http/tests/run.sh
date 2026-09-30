@@ -1,6 +1,6 @@
 #!/bin/sh
 # Behavioral tests owned by the pkg/http package, not the compiler core.
-# Decoupled from tests/run.sh/`make test` on purpose (see CHANGELOG.md):
+# Decoupled from tests/run.sh/`make test` on purpose (see changelog/):
 # these exercise http's own protocol/framing/redirect logic, not compiler
 # correctness, and shouldn't gate core compiler iteration. Run via
 # `make test-packages` or directly as `pkg/http/tests/run.sh`.

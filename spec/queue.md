@@ -1,7 +1,7 @@
 ## Decision Queue
 
 Only active or trigger-gated decisions live here. Implemented history is recorded
-once in `CHANGELOG.md`; uncommitted candidates are tracked as GitHub issues.
+once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
 
 ### Active
 

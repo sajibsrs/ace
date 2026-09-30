@@ -4,7 +4,7 @@ Concrete rules and syntax, split into chapters by topic. The why behind every
 rule lives in PHILOSOPHY.md (closed). The formal grammar for this surface lives
 in GRAMMAR.md. These files are carved topic by topic and are the single ledger
 of language rules and decision records (rule + rationale); implementation
-history lives in CHANGELOG.md.
+history lives in changelog/.
 
 A reference such as "Memory #15" names item 15 of the Memory section; the table
 gives each section's file. Stdlib items keep one numbering across their files.

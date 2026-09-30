@@ -54,4 +54,4 @@ must be corrected.
 
 Repository implementation status is summarized in
 [`../AGENTS.md`](../AGENTS.md), with chunk-by-chunk history in
-[`../CHANGELOG.md`](../CHANGELOG.md), outside this guide.
+[`../changelog/`](../changelog/README.md), outside this guide.

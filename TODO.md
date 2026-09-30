@@ -3,7 +3,7 @@
 Open work is tracked as GitHub issues on `sajibsrs/ace`, not in this file.
 Issues are non-normative: no issue is a decision. Anything promoted to work is
 carved through the Decision Queue in `spec/`, then implemented and logged in
-`CHANGELOG.md`.
+`changelog/`.
 
 ```sh
 gh issue list -m "2. Compiler and backend completion"   # one priority band
