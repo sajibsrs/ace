@@ -17,7 +17,8 @@
 // scratch. Register numbers 0-31 name x registers and V + n names vn, in one
 // linear scan; a value takes a register of its type's class.
 //
-// Allocation (Poletto & Sarkar): each value has one interval, the hull of the
+// Allocation (regalloc.c, Poletto & Sarkar; this file supplies the register
+// sets, hints, and fused values): each value has one interval, the hull of the
 // positions where it is live in block layout order (a reverse postorder),
 // found by walking up from each use to the definition. Constants take no
 // register: each use materializes them. An interval that crosses a call takes
@@ -31,6 +32,7 @@
 // immediate, else a literal load from the function's pool after its code.
 #include "backend.h"
 #include "ir.h"
+#include "regalloc.h"
 
 #include <stdio.h>
 
@@ -56,40 +58,15 @@ typedef struct {
     IrFunc*   fn;
     Buf*      t;
     int       far;
-    // layout
-    int*      order;   // blocks in reverse postorder (analysis: liveness, allocation)
-    int*      lix;     // block -> reverse-postorder index
-    int*      layout;  // blocks in emission order (a loop rotated after its body)
-    int*      eix;     // block -> emission-order index
-    int*      bfirst;  // block -> index of its first instruction
-    int*      blast;   // block -> index of its terminator
-    int*      idx;     // value -> instruction index
-    // analysis
-    int*      nuse;
-    uint8_t*  fused;   // emitted by its only user
+    Ra        ra;      // layout, liveness, and allocation (regalloc.h)
     uint8_t*  madd;    // ADD/SUB fused with a MUL operand: 1 + its index
-    int*      start, *end;
-    int*      ufirst;  // value -> its first use in uses; a remat value has none
-    struct Use* uses;  // by value
-    int*      hint, *phi_of;
-    int*      with;    // value -> the phi it shares a location with, or -1
-    int*      calls;   // call use positions, ascending
-    int       ncalls;
-    int*      rtcalls; // byte routine call positions, ascending
-    int       nrtcalls;
-    int*      asm_pos;  // asm instruction positions, ascending
-    uint32_t* asm_mask; // that instruction's asmb->reserved, parallel to asm_pos
-    int       nasms;
-    uint32_t  asm_all;  // every asm statement's reserved registers
     uint32_t  out;     // outgoing bytes at [sp]: stack arguments, then call memory
     struct Loc* pin;   // where each parameter leaf arrives
     struct Loc* rin;   // where each result leaf leaves
     uint32_t  nsave, save_at; // the save area for incoming words and addresses
     uint32_t* obj;     // SLOT value -> its object's offset from sp
     // allocation
-    int8_t*   reg;
-    int*      slot;
-    int       nslots, ncs;
+    int       ncs;
     int8_t    cs[18];  // callee-saved registers used, ascending: x19-x28, then d8-d15
     uint32_t  frame, slot_base;
     int       has_frame;
@@ -118,7 +95,6 @@ static int is64(IrType t) { return ir_type_bits(t) == 64; }
 static uint32_t sfb(IrType t) { return is64(t) ? 0x80000000u : 0; }
 static int is_const(A64* a, int v) { return ins_of(a, v)->op == IR_CONST; }
 // a value no register holds: rebuilt at each use (a constant, sp + a stack object's offset)
-static int is_remat(IrOp op) { return op == IR_CONST || op == IR_SLOT; }
 static int narrow(IrType t) { return t != IT_BOOL && ir_type_bits(t) < 32; }
 static int is_fp(IrType t) { return ir_type_float(t); }
 static int fp_reg(int r) { return r >= V && r < SLOT; }
@@ -379,25 +355,25 @@ static int opnd(A64* a, int v, int scratch) {
         add_imm(a, scratch, 31, a->obj[v]);
         return scratch;
     }
-    if (a->reg[v] >= 0) return a->reg[v];
-    if (vec_val(a, v)) ld_slotq(a, scratch, a->slot[v]);
-    else ld_slot(a, scratch, a->slot[v]);
+    if (a->ra.reg[v] >= 0) return a->ra.reg[v];
+    if (vec_val(a, v)) ld_slotq(a, scratch, a->ra.slot[v]);
+    else ld_slot(a, scratch, a->ra.slot[v]);
     return scratch;
 }
 
 // The register v's result is computed into; dst_done stores a spilled one.
-static int dst(A64* a, int v) { return a->reg[v] >= 0 ? a->reg[v] : fp_val(a, v) ? FS0 : S0; }
+static int dst(A64* a, int v) { return a->ra.reg[v] >= 0 ? a->ra.reg[v] : fp_val(a, v) ? FS0 : S0; }
 
 static void dst_done(A64* a, int v, int r) {
-    if (a->reg[v] < 0 && a->slot[v] >= 0) {
-        if (vec_val(a, v)) st_slotq(a, r, a->slot[v]);
-        else st_slot(a, r, a->slot[v]);
+    if (a->ra.reg[v] < 0 && a->ra.slot[v] >= 0) {
+        if (vec_val(a, v)) st_slotq(a, r, a->ra.slot[v]);
+        else st_slot(a, r, a->ra.slot[v]);
     }
 }
 
 static int loc(A64* a, int v) { // a move location, or NOREG for an unused value
-    if (a->reg[v] >= 0) return a->reg[v];
-    return a->slot[v] >= 0 ? SLOT + a->slot[v] : NOREG;
+    if (a->ra.reg[v] >= 0) return a->ra.reg[v];
+    return a->ra.slot[v] >= 0 ? SLOT + a->ra.slot[v] : NOREG;
 }
 
 // A constant into a v register is a float; into a slot, any constant is its bits.
@@ -675,142 +651,6 @@ static int is_call(int op) { return op == IR_CALL || op == IR_CALLI; }
 
 // --- layout, liveness, allocation --------------------------------------------------------
 
-// Split each edge from a two-way branch into a block with phis.
-static void split_critical_edges(IrFunc* fn) {
-    int n = fn->nblocks;
-    for (int b = 0; b < n; b++) {
-        for (int k = 0; k < 2; k++) {
-            IrBlock* bb = &fn->blocks[b];
-            int s = bb->succ[k];
-            if (s < 0 || bb->succ[1 - k] < 0) continue;
-            IrBlock* sb = &fn->blocks[s];
-            if (sb->npreds < 2 || fn->ins[sb->ins[0]].op != IR_PHI) continue;
-            Node* at = fn->ins[bb->ins[bb->nins - 1]].at;
-            int mid = ir_block_new(fn);
-            int j = ir_ins_new(fn, mid, IR_JMP, IT_VOID);
-            fn->ins[j].at = at;
-            IrBlock* mb = &fn->blocks[mid];
-            mb->succ[0] = s;
-            mb->preds = malloc(sizeof(int));
-            if (!mb->preds) oom();
-            mb->preds[0] = b;
-            mb->npreds = mb->cpreds = 1;
-            fn->blocks[b].succ[k] = mid;
-            sb = &fn->blocks[s];
-            for (int p = 0; p < sb->npreds; p++) // one edge: the first entry still from b
-                if (sb->preds[p] == b) { sb->preds[p] = mid; break; }
-        }
-    }
-}
-
-// A loop whose header only tests (a two-way branch with one successor in the
-// loop, one outside) and whose one back edge is a plain jump: cloning the
-// reverse postorder and moving such a header after its latch, so an iteration
-// ends in the test's own conditional branch to the body instead of a jump to
-// the test, then a jump to the body once at entry. This only reorders the
-// blocks emission walks (a->layout); analysis (a->order, a->bfirst, a->idx,
-// liveness, allocation, coalescing) keeps every value's position as if
-// nothing moved, so none of their ordering assumptions change.
-static void emission_order(A64* a) {
-    IrFunc* fn = a->fn;
-    int n = fn->nblocks;
-    a->layout = xcalloc((size_t)n, sizeof(int));
-    a->eix = xcalloc((size_t)n, sizeof(int));
-    memcpy(a->layout, a->order, (size_t)n * sizeof(int));
-    int* pos = xcalloc((size_t)n, sizeof(int));
-    int* after = xcalloc((size_t)n, sizeof(int)); // latch -> its deferred header, or -1
-    uint8_t* deferred = xcalloc((size_t)n, 1);
-    uint8_t* in = xcalloc((size_t)n, 1);
-    int* stack = xcalloc((size_t)n, sizeof(int));
-    int moved = 0;
-    for (int b = 0; b < n; b++) after[b] = -1;
-    for (int i = 0; i < n; i++) pos[a->layout[i]] = i;
-    for (int i = 1; i < n; i++) { // the entry stays first
-        int h = a->layout[i];
-        IrBlock* hb = &fn->blocks[h];
-        if (hb->succ[1] < 0) continue;
-        int latch = -1, back = 0;
-        for (int p = 0; p < hb->npreds; p++)
-            if (pos[hb->preds[p]] >= i) { latch = hb->preds[p]; back++; }
-        if (back != 1 || fn->blocks[latch].succ[1] >= 0 || fn->blocks[latch].succ[0] != h || after[latch] >= 0)
-            continue;
-        memset(in, 0, (size_t)n); // the natural loop: what reaches the latch without passing h
-        int sp = 0;
-        in[h] = 1;
-        in[latch] = 1;
-        stack[sp++] = latch;
-        while (sp) {
-            IrBlock* bb = &fn->blocks[stack[--sp]];
-            for (int p = 0; p < bb->npreds; p++)
-                if (!in[bb->preds[p]]) {
-                    in[bb->preds[p]] = 1;
-                    stack[sp++] = bb->preds[p];
-                }
-        }
-        int s0 = hb->succ[0], s1 = hb->succ[1];
-        if ((in[s0] && s0 != h) == (in[s1] && s1 != h)) continue;
-        after[latch] = h;
-        deferred[h] = 1;
-        moved++;
-    }
-    if (moved) {
-        int* old = xcalloc((size_t)n, sizeof(int));
-        memcpy(old, a->layout, (size_t)n * sizeof(int));
-        int k = 0;
-        for (int i = 0; i < n; i++) {
-            int b = old[i];
-            if (deferred[b]) continue;
-            a->layout[k++] = b;
-            if (after[b] >= 0) a->layout[k++] = after[b];
-        }
-        free(old);
-    }
-    for (int i = 0; i < n; i++) a->eix[a->layout[i]] = i;
-    free(pos); free(after); free(deferred); free(in); free(stack);
-}
-
-// Reverse postorder, visiting the second successor first so that the first
-// (a branch's true side, a loop's body) follows its block.
-static void layout(A64* a) {
-    IrFunc* fn = a->fn;
-    int n = fn->nblocks, npost = 0, sp = 0;
-    int* stack = xcalloc((size_t)n * 2, sizeof(int));
-    uint8_t* seen = xcalloc((size_t)n, 1);
-    a->order = xcalloc((size_t)n, sizeof(int));
-    a->lix = xcalloc((size_t)n, sizeof(int));
-    stack[sp++] = 0; stack[sp++] = 0;
-    seen[0] = 1;
-    while (sp) {
-        int b = stack[sp - 2], k = stack[sp - 1];
-        if (k < 2) {
-            stack[sp - 1] = k + 1;
-            int s = fn->blocks[b].succ[1 - k];
-            if (s >= 0 && !seen[s]) {
-                seen[s] = 1;
-                stack[sp++] = s; stack[sp++] = 0;
-            }
-            continue;
-        }
-        a->order[n - 1 - npost++] = b;
-        sp -= 2;
-    }
-    free(stack);
-    free(seen);
-    a->bfirst = xcalloc((size_t)n, sizeof(int));
-    a->blast = xcalloc((size_t)n, sizeof(int));
-    a->idx = xcalloc((size_t)fn->nins, sizeof(int));
-    int k = 0;
-    for (int i = 0; i < n; i++) {
-        int b = a->order[i];
-        IrBlock* bb = &fn->blocks[b];
-        a->lix[b] = i;
-        a->bfirst[b] = k;
-        for (int j = 0; j < bb->nins; j++) a->idx[bb->ins[j]] = k++;
-        a->blast[b] = k - 1;
-    }
-    emission_order(a);
-}
-
 static int is_compare(int op) { return op >= IR_EQ && op <= IR_GE; }
 
 static int access_bytes(A64* a, IrIns* x) {
@@ -825,45 +665,41 @@ static int fold_address(A64* a, int u) {
     IrIns* x = ins_of(a, u);
     int p = x->args[0];
     IrIns* px = ins_of(a, p);
-    if (a->nuse[p] != 1 || px->block != x->block || (x->flags & IRF_CHECKED)) return 0;
+    if (a->ra.nuse[p] != 1 || px->block != x->block || (x->flags & IRF_CHECKED)) return 0;
     if (px->op == IR_GLOBAL) return x->aux == 0;
     if ((px->op != IR_PADD && px->op != IR_PSUB) || (px->flags & IRF_CHECKED)) return 0;
     int n = px->args[1];
     uint64_t d;
     if (is_const(a, n)) return !__builtin_mul_overflow(ins_of(a, n)->imm, px->imm, &d) && d <= INT32_MAX;
-    return px->op == IR_PADD && x->aux == 0 && !is_remat((IrOp)ins_of(a, px->args[0])->op) &&
+    return px->op == IR_PADD && x->aux == 0 && !ra_remat((IrOp)ins_of(a, px->args[0])->op) &&
            (px->imm == 1 || px->imm == (uint64_t)access_bytes(a, x));
 }
 
-static void count_uses(A64* a) {
+// The values their only user emits (ra.fused): a compare its branch or
+// check tests, an address its load or store folds, and a multiply its add
+// or subtract fuses.
+static void fuse(A64* a) {
     IrFunc* fn = a->fn;
-    a->nuse = xcalloc((size_t)fn->nins, sizeof(int));
-    a->fused = xcalloc((size_t)fn->nins, 1);
     a->madd = xcalloc((size_t)fn->nins, 1);
-    for (int b = 0; b < fn->nblocks; b++)
-        for (int i = 0; i < fn->blocks[b].nins; i++) {
-            IrIns* x = &fn->ins[fn->blocks[b].ins[i]];
-            for (int k = 0; k < x->nargs; k++) a->nuse[x->args[k]]++;
-        }
     for (int b = 0; b < fn->nblocks; b++)
         for (int i = 0; i < fn->blocks[b].nins; i++) {
             int u = fn->blocks[b].ins[i];
             IrIns* x = &fn->ins[u];
             if (x->op == IR_BR || x->op == IR_CHECK) {
                 int c = x->args[0];
-                if (is_compare(fn->ins[c].op) && a->nuse[c] == 1 && fn->ins[c].block == b) a->fused[c] = 1;
+                if (is_compare(fn->ins[c].op) && a->ra.nuse[c] == 1 && fn->ins[c].block == b) a->ra.fused[c] = 1;
             } else if (x->op == IR_LOAD || x->op == IR_STORE) {
-                if (fold_address(a, u)) a->fused[x->args[0]] = 1;
+                if (fold_address(a, u)) a->ra.fused[x->args[0]] = 1;
             } else if ((x->op == IR_ADD || x->op == IR_SUB) && !(x->flags & IRF_CHECKED) &&
                        !is_fp((IrType)x->type) && !is_vec((IrType)x->type)) { // a float multiply-add is never contracted
                 for (int k = x->op == IR_ADD ? 0 : 1; k < 2; k++) { // multiply-add, multiply-subtract
                     int m = x->args[k];
                     IrIns* mx = &fn->ins[m];
                     // a constant addend would need a register: mul + add #imm is no longer
-                    if (mx->op != IR_MUL || (mx->flags & IRF_CHECKED) || a->nuse[m] != 1 || mx->block != b ||
+                    if (mx->op != IR_MUL || (mx->flags & IRF_CHECKED) || a->ra.nuse[m] != 1 || mx->block != b ||
                         fn->ins[x->args[1 - k]].op == IR_CONST)
                         continue;
-                    a->fused[m] = 1;
+                    a->ra.fused[m] = 1;
                     a->madd[u] = (uint8_t)(1 + k);
                     break;
                 }
@@ -871,241 +707,38 @@ static void count_uses(A64* a) {
         }
 }
 
-typedef struct Use { int v, block, pos; } Use;
-
-// Stamp tag on each block where v is live in (never its own block), walking
-// up from each use to the definition; returns the furthest position, in
-// layout order, where v is used or live out of a block.
-static int live_in(A64* a, int v, int* stamp, int* stack, int tag) {
-    IrFunc* fn = a->fn;
-    int d = fn->ins[v].block, e = a->start[v];
-    for (int i = a->ufirst[v]; i < a->ufirst[v + 1]; i++) {
-        Use* u = &a->uses[i];
-        if (u->pos > e) e = u->pos;
-        int b = u->block;
-        if (b == d || stamp[b] == tag) continue;
-        int sp = 0;
-        stamp[b] = tag;
-        stack[sp++] = b;
-        while (sp) { // live in at b: live out of each predecessor
-            IrBlock* bb = &fn->blocks[stack[--sp]];
-            for (int p = 0; p < bb->npreds; p++) {
-                int q = bb->preds[p];
-                if (2 * a->blast[q] + 1 > e) e = 2 * a->blast[q] + 1;
-                if (q != d && stamp[q] != tag) {
-                    stamp[q] = tag;
-                    stack[sp++] = q;
-                }
-            }
-        }
-    }
-    return e;
-}
-
-// The end of each value's interval: the furthest position, in layout order,
-// where it is used or live out of a block.
-static void liveness(A64* a) {
-    IrFunc* fn = a->fn;
-    int nv = fn->nins;
-    a->start = xcalloc((size_t)nv, sizeof(int));
-    a->end = xcalloc((size_t)nv, sizeof(int));
-    for (int b = 0; b < fn->nblocks; b++)
-        for (int i = 0; i < fn->blocks[b].nins; i++) {
-            int v = fn->blocks[b].ins[i];
-            IrIns* x = &fn->ins[v];
-            // a proj's value arrives at its call
-            a->start[v] = x->op == IR_PHI ? 2 * a->bfirst[b] : x->op == IR_PROJ ? 2 * a->idx[x->args[0]] + 1 : 2 * a->idx[v] + 1;
-            a->end[v] = a->start[v];
-        }
-    // uses by value (counting sort), a fused value's operands used at its user
-    int nu = 0;
-    Use* uses = NULL;
-    int cu = 0;
-    for (int b = 0; b < fn->nblocks; b++) {
-        IrBlock* bb = &fn->blocks[b];
-        for (int i = 0; i < bb->nins; i++) {
-            int u = bb->ins[i];
-            IrIns* x = &fn->ins[u];
-            if (a->fused[u]) continue;
-            for (int k = 0; k < x->nargs; k++) {
-                int v = x->args[k];
-                int ub = x->op == IR_PHI ? bb->preds[k] : b;
-                int pos = x->op == IR_PHI ? 2 * a->blast[ub] : 2 * a->idx[u];
-                IrIns* vx = &fn->ins[v];
-                int nsub = a->fused[v] ? vx->nargs : 1;
-                for (int s = 0; s < nsub; s++) {
-                    int w = a->fused[v] ? vx->args[s] : v;
-                    if (is_remat((IrOp)fn->ins[w].op)) continue;
-                    if (nu == cu) {
-                        cu = cu ? cu * 2 : 256;
-                        uses = realloc(uses, (size_t)cu * sizeof(Use));
-                        if (!uses) oom();
-                    }
-                    uses[nu++] = (Use){ w, ub, pos };
-                }
-            }
-        }
-    }
-    int* first = xcalloc((size_t)nv + 1, sizeof(int));
-    for (int i = 0; i < nu; i++) first[uses[i].v + 1]++;
-    for (int v = 0; v < nv; v++) first[v + 1] += first[v];
-    Use* by = xcalloc((size_t)nu, sizeof(Use));
-    int* fill = xcalloc((size_t)nv, sizeof(int));
-    for (int i = 0; i < nu; i++) by[first[uses[i].v] + fill[uses[i].v]++] = uses[i];
-    free(uses);
-    free(fill);
-    a->ufirst = first;
-    a->uses = by;
-    int* stamp = xcalloc((size_t)fn->nblocks, sizeof(int));
-    int* stack = xcalloc((size_t)fn->nblocks, sizeof(int));
-    for (int v = 0; v < nv; v++) a->end[v] = live_in(a, v, stamp, stack, v + 1);
-    free(stamp); free(stack);
-}
-
-// Does v's interval contain one of the call positions at[0..n) it must survive?
-static int crosses(A64* a, int v, const int* at, int n) {
-    int lo = 0, hi = n; // first call after v's start
-    while (lo < hi) {
-        int mid = (lo + hi) / 2;
-        if (at[mid] > a->start[v]) hi = mid;
-        else lo = mid + 1;
-    }
-    return lo < n && a->end[v] > at[lo] + 1;
-}
-
-static int crosses_call(A64* a, int v) { return crosses(a, v, a->calls, a->ncalls); }
-
-// The registers a byte routine disturbs that allocation hands out: x8 and v24-v28.
-static int rtcall_clobbers(int r) { return r == 8 || (r >= V + 24 && r <= V + 28); }
-
-// The union of every asm statement's reserved x registers (Inline Assembly
-// #2-3) whose position falls inside v's interval: none of them may hold v.
-static uint32_t asm_reserved(A64* a, int v) {
-    uint32_t m = 0;
-    for (int i = 0; i < a->nasms; i++) {
-        int at = a->asm_pos[i];
-        if (at > a->start[v] && a->end[v] > at + 1) m |= a->asm_mask[i];
-    }
-    return m;
-}
-
-// az bounds-checks before shifting: asm never reserves a v register.
-static int asm_clobbers(uint32_t az, int r) { return r < 32 && (az & (1u << r)) != 0; }
-
-static int allocatable(A64* a, int v) {
-    IrIns* x = ins_of(a, v);
-    return x->type != IT_VOID && !is_remat((IrOp)x->op) && !a->fused[v] && a->nuse[v] > 0;
-}
-
+// Registers a value would like: where a parameter arrives, a call's argument
+// goes or its result arrives, and a returned value leaves.
 static void hints(A64* a) {
     IrFunc* fn = a->fn;
-    a->hint = xcalloc((size_t)fn->nins, sizeof(int));
-    a->phi_of = xcalloc((size_t)fn->nins, sizeof(int));
-    for (int v = 0; v < fn->nins; v++) a->hint[v] = a->phi_of[v] = -1;
-    a->calls = xcalloc((size_t)fn->nins, sizeof(int));
-    a->rtcalls = xcalloc((size_t)fn->nins, sizeof(int));
-    a->asm_pos = xcalloc((size_t)fn->nins, sizeof(int));
-    a->asm_mask = xcalloc((size_t)fn->nins, sizeof(uint32_t));
     for (int i = 0; i < fn->nblocks; i++) {
-        IrBlock* bb = &fn->blocks[a->order[i]];
+        IrBlock* bb = &fn->blocks[a->ra.order[i]];
         for (int j = 0; j < bb->nins; j++) {
             int u = bb->ins[j];
             IrIns* x = &fn->ins[u];
-            if (x->op == IR_PHI) {
-                for (int k = 0; k < x->nargs; k++)
-                    if (a->phi_of[x->args[k]] < 0) a->phi_of[x->args[k]] = u;
-            } else if (x->op == IR_PARAM) {
-                if (a->pin[x->imm].kind == L_REG) a->hint[u] = a->pin[x->imm].reg;
+            if (x->op == IR_PARAM) {
+                if (a->pin[x->imm].kind == L_REG) a->ra.hint[u] = a->pin[x->imm].reg;
             } else if (x->op == IR_RESULT) {
-                a->hint[u] = 8;
-            } else if (x->op == IR_RTCALL) {
-                a->rtcalls[a->nrtcalls++] = 2 * a->idx[u];
-            } else if (x->op == IR_ASM) {
-                a->asm_pos[a->nasms] = 2 * a->idx[u];
-                a->asm_mask[a->nasms] = x->asmb->reserved;
-                a->nasms++;
-                a->asm_all |= x->asmb->reserved;
+                a->ra.hint[u] = 8;
             } else if (is_call(x->op)) {
-                a->calls[a->ncalls++] = 2 * a->idx[u];
-                if ((x->flags & IRF_SRET) && a->hint[x->args[x->nargs - 1]] < 0) a->hint[x->args[x->nargs - 1]] = 8;
+                if ((x->flags & IRF_SRET) && a->ra.hint[x->args[x->nargs - 1]] < 0) a->ra.hint[x->args[x->nargs - 1]] = 8;
                 Plan p;
                 plan_call(fn, x, &p);
                 for (int k = 0; k < p.n; k++)
-                    if (p.arg[k].kind == L_REG && a->hint[x->args[p.k0 + k]] < 0) a->hint[x->args[p.k0 + k]] = p.arg[k].reg;
-                if (p.nres && p.res[0].kind == L_REG) a->hint[u] = p.res[0].reg;
+                    if (p.arg[k].kind == L_REG && a->ra.hint[x->args[p.k0 + k]] < 0) a->ra.hint[x->args[p.k0 + k]] = p.arg[k].reg;
+                if (p.nres && p.res[0].kind == L_REG) a->ra.hint[u] = p.res[0].reg;
                 for (int i = j + 1; i < bb->nins && fn->ins[bb->ins[i]].op == IR_PROJ; i++) {
                     Loc r = p.res[fn->ins[bb->ins[i]].imm];
-                    if (r.kind == L_REG) a->hint[bb->ins[i]] = r.reg;
+                    if (r.kind == L_REG) a->ra.hint[bb->ins[i]] = r.reg;
                 }
                 if (p.bytes > a->out) a->out = p.bytes;
                 plan_free(&p);
             } else if (x->op == IR_RET) {
                 for (int k = 0; k < x->nargs; k++)
-                    if (a->rin[k].kind == L_REG && a->hint[x->args[k]] < 0) a->hint[x->args[k]] = a->rin[k].reg;
+                    if (a->rin[k].kind == L_REG && a->ra.hint[x->args[k]] < 0) a->ra.hint[x->args[k]] = a->rin[k].reg;
             }
         }
     }
-}
-
-// Share a phi's location with an operand defined after it, typically the
-// value a loop carries around its back edge, when their intervals overlap only
-// as hulls: the phi is dead from the operand's definition on (neither used
-// after it in its block nor live out of it) and the operand is not live into
-// the phi's block. The pair is allocated as the phi, over both intervals, so
-// the operand is computed where the phi lives and its phi move vanishes.
-static void coalesce(A64* a) {
-    IrFunc* fn = a->fn;
-    a->with = xcalloc((size_t)fn->nins, sizeof(int));
-    for (int v = 0; v < fn->nins; v++) a->with[v] = -1;
-    int* stamp = xcalloc((size_t)fn->nblocks, sizeof(int));
-    int* stack = xcalloc((size_t)fn->nblocks, sizeof(int));
-    int tag = 0;
-    for (int b = 0; b < fn->nblocks; b++) {
-        IrBlock* bb = &fn->blocks[b];
-        for (int i = 0; i < bb->nins && fn->ins[bb->ins[i]].op == IR_PHI; i++) {
-            int p = bb->ins[i];
-            if (!allocatable(a, p)) continue;
-            int shared = 0;
-            for (int k = 0; k < fn->ins[p].nargs && !shared; k++) {
-                int v = fn->ins[p].args[k];
-                if (!allocatable(a, v) || fn->ins[v].op == IR_PHI || a->with[v] >= 0 ||
-                    a->start[v] <= a->start[p] || a->start[v] > a->end[p]) // disjoint: a hint suffices
-                    continue;
-                int bv = fn->ins[v].block, live = 0;
-                live_in(a, v, stamp, stack, ++tag);
-                if (stamp[b] == tag) continue;
-                live_in(a, p, stamp, stack, ++tag);
-                for (int j = a->ufirst[p]; j < a->ufirst[p + 1] && !live; j++)
-                    live = a->uses[j].block == bv && a->uses[j].pos > a->start[v];
-                for (int s = 0; s < 2 && !live; s++)
-                    live = fn->blocks[bv].succ[s] >= 0 && stamp[fn->blocks[bv].succ[s]] == tag;
-                if (live) continue;
-                a->with[v] = p;
-                if (a->end[v] > a->end[p]) a->end[p] = a->end[v];
-                shared = 1;
-            }
-        }
-    }
-    free(stamp); free(stack);
-    // A cast its operand's register form already holds shares the operand's
-    // location when its interval lies within the operand's, which only the
-    // operand's definition writes then: the operand leads no sharing pair of
-    // its own (a phi's moves come at its predecessors' ends, where in SSA the
-    // cast is not live), and no value computed into it is defined in the
-    // cast's interval.
-    int* partner = xcalloc((size_t)fn->nins, sizeof(int)); // a phi -> the one value computed into it + 1
-    for (int v = 0; v < fn->nins; v++) if (a->with[v] >= 0) partner[a->with[v]] = v + 1;
-    for (int v = 0; v < fn->nins; v++) {
-        IrIns* x = &fn->ins[v];
-        if (x->op != IR_CAST || x->block < 0 || !allocatable(a, v) || a->with[v] >= 0) continue;
-        int s = x->args[0];
-        if (!allocatable(a, s) || a->with[s] >= 0 || a->end[v] > a->end[s] ||
-            !cast_in_place((IrType)x->type, (IrType)fn->ins[s].type))
-            continue;
-        int w = partner[s] - 1;
-        if (w < 0 || a->start[w] <= a->start[v] || a->start[w] > a->end[v]) a->with[v] = s;
-    }
-    free(partner);
 }
 
 static const int8_t caller_regs[] = { 9, 10, 11, 12, 13, 14, 8, 7, 6, 5, 4, 3, 2, 1, 0 };
@@ -1118,137 +751,27 @@ static const int8_t fcallee_regs[] = { V + 8, V + 9, V + 10, V + 11, V + 12, V +
 
 static int callee_saved(int r) { return (r >= 19 && r <= 28) || (r >= V + 8 && r <= V + 15); }
 
-typedef struct { int end, slot; } SlotUse;
-
-static void heap_push(SlotUse* h, int* n, SlotUse x) {
-    int i = (*n)++;
-    while (i && h[(i - 1) / 2].end > x.end) { h[i] = h[(i - 1) / 2]; i = (i - 1) / 2; }
-    h[i] = x;
-}
-
-static SlotUse heap_pop(SlotUse* h, int* n) {
-    SlotUse top = h[0], x = h[--*n];
-    int i = 0;
-    for (;;) {
-        int c = 2 * i + 1;
-        if (c >= *n) break;
-        if (c + 1 < *n && h[c + 1].end < h[c].end) c++;
-        if (h[c].end >= x.end) break;
-        h[i] = h[c];
-        i = c;
-    }
-    if (*n) h[i] = x;
-    return top;
-}
+// Allocation hands out x0-x14, x19-x28, and v0-v28. A byte routine disturbs
+// x8 and v24-v28; a callee preserves only a v register's low half, so a
+// vector live across a call spills.
+static const RaTarget ARM64 = {
+    V,
+    { caller_regs, fcaller_regs }, { (int)sizeof caller_regs, (int)sizeof fcaller_regs },
+    { callee_regs, fcallee_regs }, { (int)sizeof callee_regs, (int)sizeof fcallee_regs },
+    UINT64_C(0x1FF80000) | UINT64_C(0xFF) << (V + 8),
+    UINT64_C(1) << 8 | UINT64_C(0x1F) << (V + 24),
+    1,
+    cast_in_place,
+};
 
 static void allocate(A64* a) {
-    IrFunc* fn = a->fn;
-    int nv = fn->nins;
-    a->reg = xcalloc((size_t)nv, 1);
-    a->slot = xcalloc((size_t)nv, sizeof(int));
-    int* seq = xcalloc((size_t)nv, sizeof(int)); // allocated values in start order
-    int nseq = 0;
-    for (int v = 0; v < nv; v++) { a->reg[v] = -1; a->slot[v] = -1; }
-    for (int i = 0; i < fn->nblocks; i++) {
-        IrBlock* bb = &fn->blocks[a->order[i]];
-        for (int j = 0; j < bb->nins; j++)
-            if (allocatable(a, bb->ins[j]) && a->with[bb->ins[j]] < 0) seq[nseq++] = bb->ins[j];
-    }
-    int owner[SLOT], active[SLOT], nactive = 0;
-    uint8_t* spilled = xcalloc((size_t)nv, 1);
-    for (int r = 0; r < SLOT; r++) owner[r] = -1;
-    for (int i = 0; i < nseq; i++) {
-        int v = seq[i];
-        for (int k = 0; k < nactive;) { // expire
-            int w = active[k];
-            if (a->end[w] < a->start[v]) {
-                owner[a->reg[w]] = -1;
-                active[k] = active[--nactive];
-            } else {
-                k++;
-            }
-        }
-        int cross = crosses_call(a, v), r = -1, fp = fp_val(a, v);
-        if (cross && vec_val(a, v)) { // a callee preserves a v register's low half only
-            spilled[v] = 1;
-            continue;
-        }
-        int rt = crosses(a, v, a->rtcalls, a->nrtcalls); // not in a register a byte routine disturbs
-        uint32_t az = asm_reserved(a, v); // not in a register an asm statement reserves
-        const int8_t* caller = fp ? fcaller_regs : caller_regs;
-        const int8_t* callee = fp ? fcallee_regs : callee_regs;
-        size_t ncaller = fp ? sizeof fcaller_regs : sizeof caller_regs;
-        size_t ncallee = fp ? sizeof fcallee_regs : sizeof callee_regs;
-        int want[8], nwant = 0; // preferred registers, best first
-        IrIns* x = ins_of(a, v);
-        if (x->op == IR_PHI)
-            for (int k = 0; k < x->nargs && nwant < 6; k++)
-                if (a->reg[x->args[k]] >= 0) want[nwant++] = a->reg[x->args[k]];
-        if (a->phi_of[v] >= 0 && a->reg[a->phi_of[v]] >= 0) want[nwant++] = a->reg[a->phi_of[v]];
-        if (a->hint[v] >= 0) want[nwant++] = a->hint[v];
-        for (int k = 0; k < nwant && r < 0; k++)
-            if (owner[want[k]] < 0 && fp_reg(want[k]) == fp && (!cross || callee_saved(want[k])) &&
-                !(rt && rtcall_clobbers(want[k])) && !asm_clobbers(az, want[k]))
-                r = want[k];
-        if (!cross)
-            for (size_t k = 0; k < ncaller && r < 0; k++)
-                if (owner[caller[k]] < 0 && !(rt && rtcall_clobbers(caller[k])) && !asm_clobbers(az, caller[k]))
-                    r = caller[k];
-        for (size_t k = 0; k < ncallee && r < 0; k++)
-            if (owner[callee[k]] < 0 && !asm_clobbers(az, callee[k])) r = callee[k];
-        if (r < 0) { // spill whichever interval of the class ends last
-            int far = -1;
-            for (int k = 0; k < nactive; k++) {
-                int w = active[k];
-                if (fp_reg(a->reg[w]) != fp || (cross && !callee_saved(a->reg[w])) ||
-                    (rt && rtcall_clobbers(a->reg[w])) || asm_clobbers(az, a->reg[w]))
-                    continue;
-                if (far < 0 || a->end[w] > a->end[active[far]]) far = k;
-            }
-            if (far >= 0 && a->end[active[far]] > a->end[v]) {
-                int w = active[far];
-                r = a->reg[w];
-                a->reg[w] = -1;
-                spilled[w] = 1;
-                active[far] = active[--nactive];
-            } else {
-                spilled[v] = 1;
-                continue;
-            }
-        }
-        a->reg[v] = (int8_t)r;
-        owner[r] = v;
-        active[nactive++] = v;
-    }
-    // stack slots, reused once their interval ends
-    SlotUse* heap = xcalloc((size_t)nseq, sizeof(SlotUse));
-    int* free_slots = xcalloc((size_t)nseq, sizeof(int));
-    int nheap = 0, nfree = 0;
-    for (int i = 0; i < nseq; i++) {
-        int v = seq[i];
-        if (!spilled[v]) continue;
-        if (vec_val(a, v)) { // a pair of its own
-            a->slot[v] = a->nslots;
-            a->nslots += 2;
-            continue;
-        }
-        while (nheap && heap[0].end < a->start[v]) free_slots[nfree++] = heap_pop(heap, &nheap).slot;
-        int s = nfree ? free_slots[--nfree] : a->nslots++;
-        a->slot[v] = s;
-        heap_push(heap, &nheap, (SlotUse){ a->end[v], s });
-    }
-    for (int v = 0; v < nv; v++)
-        if (a->with[v] >= 0) {
-            a->reg[v] = a->reg[a->with[v]];
-            a->slot[v] = a->slot[a->with[v]];
-        }
+    ra_allocate(&a->ra, &ARM64);
     uint64_t used = 0;
-    for (int i = 0; i < nseq; i++)
-        if (a->reg[seq[i]] >= 0) used |= UINT64_C(1) << a->reg[seq[i]];
-    used |= a->asm_all; // a reserved x19-x28 is the caller's, whatever asm does to it
+    for (int v = 0; v < a->fn->nins; v++)
+        if (a->ra.reg[v] >= 0) used |= UINT64_C(1) << a->ra.reg[v];
+    used |= a->ra.asm_all; // a reserved x19-x28 is the caller's, whatever asm does to it
     for (int r = 0; r < SLOT; r++)
         if (callee_saved(r) && (used & (UINT64_C(1) << r))) a->cs[a->ncs++] = (int8_t)r;
-    free(seq); free(spilled); free(heap); free(free_slots);
 }
 
 // --- frame ------------------------------------------------------------------------------
@@ -1324,7 +847,7 @@ static void epilogue(A64* a) {
 static uint32_t place_objects(A64* a) {
     IrFunc* fn = a->fn;
     a->obj = xcalloc((size_t)fn->nins, sizeof(uint32_t));
-    uint32_t at = a->slot_base + 8u * (uint32_t)a->nslots;
+    uint32_t at = a->slot_base + 8u * (uint32_t)a->ra.nslots;
     if (a->nsave) {
         a->save_at = at;
         at += a->nsave;
@@ -1961,10 +1484,10 @@ static void access(A64* a, int v) {
     if (px->op == IR_SLOT) {
         rn = 31;
         off += a->obj[p];
-    } else if (a->fused[p] && px->op == IR_GLOBAL) {
+    } else if (a->ra.fused[p] && px->op == IR_GLOBAL) {
         page_ref(a, S0, px->name, op | (S0 << 5) | R(rt));
         goto done;
-    } else if (a->fused[p]) { // an unchecked pointer offset
+    } else if (a->ra.fused[p]) { // an unchecked pointer offset
         int n = px->args[1], base = px->args[0];
         if (is_const(a, n)) {
             int64_t d = (int64_t)(ins_of(a, n)->imm * px->imm);
@@ -2255,8 +1778,8 @@ static void line_row(A64* a, Node* at) {
 }
 
 static int next_block(A64* a, int b) {
-    int i = a->eix[b] + 1;
-    return i < a->fn->nblocks ? a->layout[i] : -1;
+    int i = a->ra.eix[b] + 1;
+    return i < a->fn->nblocks ? a->ra.layout[i] : -1;
 }
 
 static void jump(A64* a, int from, int to) {
@@ -2310,7 +1833,7 @@ static void terminator(A64* a, int b, int v) {
         return;
     }
     int c = x->args[0];
-    Cond k = a->fused[c] ? compare(a, c, 1) : (Cond){ 1, 0, (uint8_t)opnd(a, c, S0), 0, 1 };
+    Cond k = a->ra.fused[c] ? compare(a, c, 1) : (Cond){ 1, 0, (uint8_t)opnd(a, c, S0), 0, 1 };
     int t = bb->succ[0], f = bb->succ[1], next = next_block(a, b);
     if (f == next) {
         branch_if(a, k, t);
@@ -2326,7 +1849,7 @@ static void terminator(A64* a, int b, int v) {
 static void check(A64* a, int v) {
     IrIns* x = ins_of(a, v);
     int c = x->args[0];
-    Cond t = a->fused[c] ? compare(a, c, 1) : (Cond){ 1, 0, (uint8_t)opnd(a, c, S0), 0, 1 };
+    Cond t = a->ra.fused[c] ? compare(a, c, 1) : (Cond){ 1, 0, (uint8_t)opnd(a, c, S0), 0, 1 };
     if (!x->name) { // the call contract failure, which reports no site
         branch_if(a, invert(t), CFAIL);
         return;
@@ -2352,7 +1875,7 @@ static void emit_block(A64* a, int b) {
         int v = bb->ins[i];
         IrIns* x = &fn->ins[v];
         if (x->op != IR_CHECK) line_row(a, x->at); // its at is the site its stub reports
-        if (a->fused[v]) continue;
+        if (a->ra.fused[v]) continue;
         if (is_vec((IrType)x->type) && x->op != IR_LOAD && x->op != IR_PHI) {
             vector(a, v);
             continue;
@@ -2481,7 +2004,7 @@ static void params(A64* a) {
 static int is_loop_head(A64* a, int b) {
     IrBlock* bb = &a->fn->blocks[b];
     for (int p = 0; p < bb->npreds; p++)
-        if (a->eix[bb->preds[p]] >= a->eix[b]) return 1;
+        if (a->ra.eix[bb->preds[p]] >= a->ra.eix[b]) return 1;
     return 0;
 }
 
@@ -2496,7 +2019,7 @@ static int emit_body(A64* a) {
     prologue(a);
     params(a);
     for (int i = 0; i < fn->nblocks; i++) {
-        int b = a->layout[i];
+        int b = a->ra.layout[i];
         if (i && is_loop_head(a, b))
             while (here(a) % LOOP_ALIGN) put(a, 0xD503201Fu);
         a->label[b] = here(a);
@@ -2565,17 +2088,20 @@ void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int global) 
     assign_leaves(&c, fn->params, fn->nparams, fn->sig, -1, a.pin);
     assign_result(&c, fn->rets, fn->nrets, fn->sig ? fn->sig->ret.agg : NULL, a.rin);
     a.nsave = c.area;
-    split_critical_edges(fn);
-    layout(&a);
-    count_uses(&a);
-    liveness(&a);
+    a.ra.fn = fn;
+    ra_split_critical_edges(fn);
+    ra_layout(&a.ra);
+    ra_count_uses(&a.ra);
+    fuse(&a);
+    ra_liveness(&a.ra);
+    ra_positions(&a.ra);
     hints(&a);
-    coalesce(&a);
+    ra_coalesce(&a.ra, &ARM64);
     allocate(&a);
     a.slot_base = a.out + 16u + 8u * (uint32_t)a.ncs;
     // a byte routine's bl needs x30 saved; an asm statement naming x29 or x30
     // needs the return address protected regardless of its own leaf status
-    a.has_frame = a.ncalls || a.nrtcalls || a.nslots || a.ncs || a.nsave || (a.asm_all & (3u << 29)); // an asm reserving x29 or x30 keeps the frame
+    a.has_frame = a.ra.ncalls || a.ra.nrtcalls || a.ra.nslots || a.ncs || a.nsave || (a.ra.asm_all & (3u << 29)); // an asm reserving x29 or x30 keeps the frame
     a.frame = place_objects(&a);
     if (!a.has_frame) a.frame = 0;
     a.label = xcalloc((size_t)fn->nblocks, sizeof(uint32_t));
@@ -2598,9 +2124,8 @@ void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int global) 
     }
     obj_debug_fn(o, start, here(&a) - start, fn->decl->str, fn->decl->len);
 
-    free(a.order); free(a.lix); free(a.bfirst); free(a.blast); free(a.idx);
-    free(a.nuse); free(a.fused); free(a.madd); free(a.start); free(a.end);
-    free(a.ufirst); free(a.uses); free(a.hint); free(a.phi_of); free(a.with); free(a.calls); free(a.reg); free(a.slot);
+    ra_free(&a.ra);
+    free(a.madd);
     free(a.label); free(a.br); free(a.pin); free(a.rin); free(a.obj); free(a.pool); free(a.psite);
     free(a.stub); free(a.stub_at);
 }

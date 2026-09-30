@@ -33,7 +33,7 @@ paths:
   A sema or IR fixture's `// target: NAME` line checks it for that target
   rather than the host's (asm names the target's registers).
   Every checked `tests/emit` root must also lower and verify in both modes.
-- A change to the IR, lowering, or `arm64.c` also runs
+- A change to the IR, lowering, `regalloc.c`, or `arm64.c` also runs
   `tests/ir-diff.sh <baseline-ace> ./ace [count] [seed]`: random scalar
   programs must print the same results and exit the same way under both
   compilers in debug and release. It is not part of `make test`.

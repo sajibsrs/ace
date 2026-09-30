@@ -894,6 +894,16 @@ current normative rules, and Git preserves patch-level detail.
   `// target: NAME` line checks it for that target; the asm emit fixtures
   select per-target functions with `@when`, and `tests/ir-diff.sh` binds a
   host register.
+- Moved the target-neutral half of register allocation out of `arm64.c` into
+  `src/regalloc.c` (`regalloc.h`): critical-edge splitting, block and
+  emission order, use counts, liveness intervals, call/byte-routine/asm
+  positions, phi and cast location sharing, and the linear scan. A target
+  describes its classes in an `RaTarget` (caller- and callee-saved registers
+  by class in preference order, what byte routines disturb, whether a vector
+  spills across a call, which casts stay in place) and marks the values their
+  user fuses; arm64 keeps its hints, fusion, and callee-saved save list. Every
+  darwin-arm64 object of the emit, module, checked, bench, and demo roots is
+  byte-identical in debug and release.
 
 ## Core language
 
