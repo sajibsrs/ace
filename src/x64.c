@@ -4,20 +4,23 @@
 // runtime routines emit.c's arm64 ones mirror (x64_runtime): failures, the
 // byte routines, and the debug allocator registry.
 //
-// Values: every value that is not a constant or a stack object lives in its
-// own 8-byte frame slot, held in canonical form: a narrow integer sign- or
-// zero-extended to 64 bits by its type, a bool 0 or 1, a float its bits (an
-// f32's zero-extended), a vector (ir.h) whole in its own 16-byte aligned slot.
-// Each instruction loads its operands into rax, rcx, and rdx (a float's on
-// through rax to xmm0-xmm2, a vector's straight to them), computes, restores
-// the canonical form, and stores its result. Constants and stack objects are rebuilt at each use.
-// There is no register allocation yet.
+// Values: every value that is not a constant or a stack object lives where
+// allocation (regalloc.c; "allocation and frame" below) put it: a general
+// register, an xmm register (a float or a vector), or a spill slot, held in
+// canonical form: a narrow integer sign- or zero-extended to 64 bits by its
+// type, a bool 0 or 1, a float its bits (an f32's zero-extended), a vector
+// whole. Each instruction moves its operands into the scratch registers rax,
+// rcx, and rdx (a float's into xmm0-xmm2, a vector's too), computes, restores
+// the canonical form, and moves its result to its location. Constants and
+// stack objects are rebuilt at each use. Phi moves, call and byte routine
+// arguments, parameters at entry, and asm bindings move in parallel.
 //
-// Frame: push rbp; mov rbp, rsp; sub rsp, N. Value slots, a phi staging
-// area, 16 scratch bytes, and a saved result address sit below rbp, then the
-// stack objects, then the outgoing area at [rsp]: stack arguments, register
-// words of aggregate arguments, and a result buffer. N keeps rsp 16-byte
-// aligned at every call.
+// Frame: push rbp; mov rbp, rsp; sub rsp, N. The callee-saved registers the
+// function uses, the spill slots, 16 scratch bytes, the words of aggregate
+// parameters arriving in registers, and a saved result address sit below
+// rbp, then the stack objects, then the outgoing area at [rsp]: stack
+// arguments, register words of aggregate arguments, and a result buffer. N
+// keeps rsp 16-byte aligned at every call.
 //
 // Calls (System V): integer scalars in rdi, rsi, rdx, rcx, r8, r9, floats in
 // xmm0-xmm7, then 8-byte stack slots; an aggregate of up to 16 bytes in one
@@ -31,12 +34,12 @@
 // the address of an extern symbol loads from the GOT, an internal one is
 // rip-relative. Byte routines take their own convention (x64_runtime).
 //
-// Asm (Inline Assembly #1-3): each "in" value loads into its register, the
-// instruction is encoded (nop, syscall, int3), and each "out" register is
-// stored to its projection's slot. No value lives in a register between
-// instructions, so a reserved register holds nothing live; a reserved rbx or
-// r12-r15 is the caller's, saved below the frame's rbp at entry and restored
-// before leave.
+// Asm (Inline Assembly #1-3): the "in" values move to their registers, the
+// instruction is encoded (nop, syscall, int3), and the "out" registers move
+// to their projections' locations. Allocation keeps a value live across the
+// statement out of its reserved registers; a reserved rbx or r12-r15 is the
+// caller's, saved at entry and restored before leave with those allocation
+// uses.
 //
 // The target requires x86-64-v3: floats use SSE (roundsd for floor and ceil)
 // and vfmadd (FMA3) for fma, vectors SSE up to SSE4.1 (pmulld, blendvps).
@@ -47,6 +50,7 @@
 // shared failure routines.
 #include "backend.h"
 #include "ir.h"
+#include "regalloc.h"
 
 #include <stdio.h>
 
@@ -69,11 +73,13 @@ typedef struct {
     IrFunc*  fn;
     Buf*     t;
     int32_t* home;    // value -> rbp offset of its slot (negative), 0 for none
-    int32_t  stage;   // rbp offset of the phi staging area (its 16-aligned base)
     int32_t  scratch; // rbp offset of 16 bytes where register words meet leaves
     int32_t  sret;    // rbp offset of the saved result address, 0 for a result in registers
-    int32_t  saved;   // rbp offset of the callee-saved registers asm reserves (keep), ascending
+    int32_t  saved;   // rbp offset of the callee-saved registers the function uses (keep), ascending
     uint32_t keep;    // those registers, a mask by encoding
+    int32_t  spill;   // rbp offset of spill slot 0; slot k is at spill - 8k
+    int32_t  aggs;    // rbp offset of 16 bytes per aggregate parameter arriving in registers
+    Ra       ra;      // layout, liveness, and allocation (regalloc.h)
     uint32_t out;     // outgoing stack argument bytes
     uint32_t frame_at; // text offset of the sub rsp imm32
     uint32_t* label;  // block -> text offset
@@ -218,16 +224,153 @@ static void addr_of(X64* a, int r, const char* name, int ext) {
 }
 
 // --- operands ---------------------------------------------------------------------------
+//
+// A value's location: its register (xmm k numbered X + k), its spill slot's
+// memory (a location from LMEM, any rbp offset), or NOLOC for a constant, a
+// stack object, or an unused value.
 
+enum { X = 16, NOLOC = -1, LMEM = 64 };
+enum { XMM0, XMM1, XMM2 };
+
+static int mem_loc(int32_t disp) { return LMEM + (1 << 28) + disp; }
+static int32_t loc_disp(int l) { return (int32_t)(l - LMEM - (1 << 28)); }
+static IrType type_of(X64* a, int v) { return (IrType)ins_of(a, v)->type; }
+
+// Spill slot k is 8 bytes at spill - 8k; a vector's pair k, k + 1 is 16
+// bytes from k + 1's.
+static int loc(X64* a, int v) {
+    if (a->ra.reg[v] >= 0) return a->ra.reg[v];
+    int s = a->ra.slot[v];
+    if (s < 0) return NOLOC;
+    return mem_loc(a->spill - 8 * (s + ir_type_vector(type_of(a, v))));
+}
+
+static void xop(X64* a, int pfx, int w, uint8_t op, int reg, int r);
+static void xmm_from(X64* a, int x, int r);
+static void xmm_to(X64* a, IrType t, int r, int x);
+static void xld(X64* a, int x, int base, int32_t disp);
+static void xst(X64* a, int x, int base, int32_t disp);
+static void xmove(X64* a, int load, int aligned, int x, int base, int32_t disp);
+
+// Copy the bits of a value of type t from location s to d. A float in an
+// xmm register is its low lane: an f32 leaves it zero-extended (movd), as its
+// canonical form in a general register or memory is; a vector moves whole.
+// Memory to memory goes through r11, or xmm1 for a vector.
+static void move1(X64* a, int d, int s, IrType t) {
+    if (d == s) return;
+    int vec = ir_type_vector(t);
+    if (d >= LMEM && s >= LMEM) {
+        if (vec) {
+            xmove(a, 1, 0, XMM1, RBP, loc_disp(s));
+            xmove(a, 0, 0, XMM1, RBP, loc_disp(d));
+        } else {
+            ld64(a, R11, RBP, loc_disp(s));
+            st64(a, R11, RBP, loc_disp(d));
+        }
+    } else if (d >= LMEM) {
+        int32_t o = loc_disp(d);
+        if (s < X) st64(a, s, RBP, o);
+        else if (vec) xmove(a, 0, 0, s - X, RBP, o);
+        else if (t == IT_F32) { // movss, then the upper half zeroed
+            put(a, 0xF3);
+            rm(a, 0, (const uint8_t[]){ 0x0F, 0x11 }, 2, s - X, RBP, o, 0);
+            rm(a, 0, (const uint8_t[]){ 0xC7 }, 1, 0, RBP, o + 4, 0);
+            put32(a, 0);
+        }
+        else xst(a, s - X, RBP, o);
+    } else if (s >= LMEM) {
+        int32_t o = loc_disp(s);
+        if (d < X) ld64(a, d, RBP, o);
+        else if (vec) xmove(a, 1, 0, d - X, RBP, o);
+        else xld(a, d - X, RBP, o);
+    } else if (d < X && s < X) {
+        mov_rr(a, d, s);
+    } else if (d < X) {
+        xmm_to(a, t, d, s - X);
+    } else if (s < X) {
+        xmm_from(a, d - X, s);
+    } else {
+        xop(a, 0, 0, 0x28, d - X, s - X); // movaps
+    }
+}
+
+// r = v's canonical bits: a constant or a stack object's address rebuilt.
 static void load_val(X64* a, int r, int v) {
     IrIns* x = ins_of(a, v);
     if (x->op == IR_CONST) mov_imm(a, r, canon((IrType)x->type, x->imm));
     else if (x->op == IR_SLOT) lea(a, r, RBP, a->home[v]);
-    else ld64(a, r, RBP, a->home[v]);
+    else move1(a, r, loc(a, v), (IrType)x->type);
 }
 
 static void store_val(X64* a, int v, int r) {
-    if (a->home[v]) st64(a, r, RBP, a->home[v]);
+    int l = loc(a, v);
+    if (l != NOLOC) move1(a, l, r, type_of(a, v));
+}
+
+// A move of a parallel set: the value v from location src to dst, or, when
+// src is NOLOC, v rebuilt (a constant or a stack object's address).
+typedef struct { int dst, src, v; IrType t; } Move;
+
+static Move move_of(X64* a, int dst, int v) {
+    IrOp op = (IrOp)ins_of(a, v)->op;
+    return (Move){ dst, ra_remat(op) ? NOLOC : loc(a, v), v, type_of(a, v) };
+}
+
+static void move_emit(X64* a, Move m) {
+    if (m.src != NOLOC) {
+        move1(a, m.dst, m.src, m.t);
+    } else if (m.dst < X) {
+        load_val(a, m.dst, m.v);
+    } else { // through rax: r11 may hold an indirect call's target, and no xmm or memory move is asm's
+        load_val(a, RAX, m.v);
+        move1(a, m.dst, RAX, m.t);
+    }
+}
+
+// Perform moves as if every source were read before any destination is
+// written. A cycle of general registers is broken by xchg; any other by
+// parking the blocked destination's value in the 16 scratch bytes.
+static void parallel_move(X64* a, Move* m, int n) {
+    int left = 0;
+    for (int i = 0; i < n; i++) {
+        if (m[i].dst == m[i].src) m[i].dst = NOLOC;
+        if (m[i].dst != NOLOC) left++;
+    }
+    while (left) {
+        int progress = 0;
+        for (int i = 0; i < n; i++) {
+            if (m[i].dst == NOLOC) continue;
+            int blocked = 0;
+            for (int j = 0; j < n && !blocked; j++)
+                blocked = j != i && m[j].dst != NOLOC && m[j].src == m[i].dst;
+            if (blocked) continue;
+            move_emit(a, m[i]);
+            m[i].dst = NOLOC;
+            left--;
+            progress = 1;
+        }
+        if (progress) continue;
+        for (int i = 0; i < n; i++) { // every pending move is on a cycle
+            if (m[i].dst == NOLOC) continue;
+            int d = m[i].dst, s = m[i].src;
+            if (d < X && s >= 0 && s < X) { // d = s, s = d: readers of either follow the swap
+                rr(a, 1, (const uint8_t[]){ 0x87 }, 1, s, d);
+                m[i].dst = NOLOC;
+                left--;
+                for (int j = 0; j < n; j++)
+                    if (m[j].dst != NOLOC) m[j].src = m[j].src == d ? s : m[j].src == s ? d : m[j].src;
+                break;
+            }
+            IrType t = m[i].t;
+            for (int j = 0; j < n; j++)
+                if (m[j].dst != NOLOC && m[j].src == d) t = m[j].t;
+            int park = mem_loc(a->scratch);
+            move1(a, park, d, t);
+            for (int j = 0; j < n; j++)
+                if (m[j].dst != NOLOC && m[j].src == d) m[j].src = park;
+            break;
+        }
+    }
 }
 
 static int fail_target(X64* a, int target) {
@@ -381,6 +524,7 @@ static void compare(X64* a, int v) {
 
 static void cast(X64* a, int v) {
     IrIns* x = ins_of(a, v);
+    if (a->ra.with[v] == x->args[0]) return; // in place: the operand's location already holds it
     load_val(a, RAX, x->args[0]);
     if (x->type == IT_BOOL) { // nonzero is true
         test_rr(a, RAX);
@@ -444,7 +588,6 @@ static void bitop(X64* a, int v) {
 // leaves take the integer paths. Each operation moves its operands through
 // rax into xmm0-xmm2 and its result back; xmm10-xmm15 stay the byte
 // routines' own.
-enum { XMM0, XMM1, XMM2 };
 
 // op reg, rm after the mandatory prefix pfx (0 for none); w sets REX.W
 static void xop(X64* a, int pfx, int w, uint8_t op, int reg, int r) {
@@ -459,14 +602,19 @@ static void xmm_from(X64* a, int x, int r) { xop(a, 0x66, 1, 0x6E, x, r); } // m
 // r = the bits of xmm x at type t: movq, or movd zero-extending an f32
 static void xmm_to(X64* a, IrType t, int r, int x) { xop(a, 0x66, t == IT_F64, 0x7E, x, r); }
 
+// xmm x = v's bits: from its location, or a constant through rax.
 static void fload(X64* a, int x, int v) {
-    load_val(a, RAX, v);
-    xmm_from(a, x, RAX);
+    if (ra_remat((IrOp)ins_of(a, v)->op)) {
+        load_val(a, RAX, v);
+        xmm_from(a, x, RAX);
+    } else {
+        move1(a, X + x, loc(a, v), type_of(a, v));
+    }
 }
 
 static void fstore(X64* a, int v, IrType t, int x) {
-    xmm_to(a, t, RAX, x);
-    store_val(a, v, RAX);
+    int l = loc(a, v);
+    if (l != NOLOC) move1(a, l, X + x, t);
 }
 
 static void xorps(X64* a, int x) { xop(a, 0, 0, 0x57, x, x); }
@@ -653,10 +801,11 @@ static void xmove(X64* a, int load, int aligned, int x, int base, int32_t disp) 
     rm(a, 0, (const uint8_t[]){ 0x0F, load ? 0x6F : 0x7F }, 2, x, base, disp, 0);
 }
 
-static void vload(X64* a, int x, int v) { xmove(a, 1, 1, x, RBP, a->home[v]); }
+static void vload(X64* a, int x, int v) { move1(a, X + x, loc(a, v), type_of(a, v)); }
 
 static void vstore(X64* a, int v, int x) {
-    if (a->home[v]) xmove(a, 0, 1, x, RBP, a->home[v]);
+    int l = loc(a, v);
+    if (l != NOLOC) move1(a, l, X + x, type_of(a, v));
 }
 
 // op x, y after the prefix pfx (0 for none): 0F op, or 0F 38 op for op38
@@ -683,11 +832,13 @@ static void vones(X64* a, int x) { vop(a, 0x66, 0, 0x76, x, x); }
 static void vector(X64* a, int v) {
     IrIns* x = ins_of(a, v);
     IrType t = (IrType)x->type;
-    if (x->op == IR_LANES) { // <0, 1, 2, 3> as two words
+    if (x->op == IR_LANES) { // <0, 1, 2, 3> as two words, joined by punpcklqdq
         mov_imm(a, RAX, 1ull << 32);
-        st64(a, RAX, RBP, a->home[v]);
+        xmm_from(a, XMM0, RAX);
         mov_imm(a, RAX, 3ull << 32 | 2);
-        st64(a, RAX, RBP, a->home[v] + 8);
+        xmm_from(a, XMM1, RAX);
+        vop(a, 0x66, 0, 0x6C, XMM0, XMM1);
+        vstore(a, v, XMM0);
         return;
     }
     if (x->op == IR_SPLAT) { // the scalar's bits in lane 0, copied by pshufd
@@ -835,14 +986,6 @@ static void pointer_offset(X64* a, int v) {
 
 static uint32_t align_up(uint32_t v, uint32_t a) { return (v + a - 1) & ~(a - 1); }
 
-// The staging offset of the next phi of type t, from the area's 16-aligned
-// base: 8 bytes, or 16 aligned for a vector; advances *off past it.
-static uint32_t stage_next(IrType t, uint32_t* off) {
-    uint32_t n = ir_type_vector(t) ? 16 : 8, at = align_up(*off, n);
-    *off = at + n;
-    return at;
-}
-
 // --- calling convention -------------------------------------------------------------
 
 // Where one part of an argument, parameter, or result travels (System V
@@ -971,11 +1114,13 @@ static void call(X64* a, IrBlock* bb, int i) {
             }
             continue;
         }
-        if (pt.addr) { // copy the aggregate at the address: rep movsb
+        if (pt.addr) { // copy the aggregate at the address: rep movsb, keeping rsi and rdi
+            put(a, 0x56); put(a, 0x57); // push rsi, rdi
             load_val(a, RSI, x->args[first]);
-            lea(a, RDI, RSP, (int32_t)ps->soff);
+            lea(a, RDI, RSP, (int32_t)ps->soff + 16);
             mov_imm(a, RCX, ps->size);
             put(a, 0xF3); put(a, 0xA4);
+            put(a, 0x5F); put(a, 0x5E); // pop rdi, rsi
             continue;
         }
         uint32_t at = ps->soff;
@@ -996,17 +1141,24 @@ static void call(X64* a, IrBlock* bb, int i) {
             fail_if(a, CC_E, NFAIL);
         }
     }
+    // scalar arguments to their registers in parallel, then the aggregates'
+    // words, whose registers no scalar move reads any more
+    Move* m = xcalloc((size_t)p.np + 1, sizeof(Move));
+    int nm = 0;
+    for (int q = 0; q < p.np; q++) {
+        IrPart pt = part_of(sig, q);
+        Pass* ps = &p.pass[q];
+        if (ps->reg[0] < 0 || pt.agg) continue;
+        m[nm++] = move_of(a, ps->reg[0] >= SSE ? X + ps->reg[0] - SSE : ps->reg[0], x->args[p.k0 + pt.first]);
+    }
+    if (p.sret) m[nm++] = move_of(a, RDI, x->args[x->nargs - 1]);
+    parallel_move(a, m, nm);
+    free(m);
     img = p.img;
     for (int q = 0; q < p.np; q++) {
         IrPart pt = part_of(sig, q);
         Pass* ps = &p.pass[q];
-        if (ps->reg[0] < 0) continue;
-        if (!pt.agg) { // an SSE one through rax, which no argument holds
-            int arg = x->args[p.k0 + pt.first];
-            if (ps->reg[0] >= SSE) fload(a, ps->reg[0] - SSE, arg);
-            else load_val(a, ps->reg[0], arg);
-            continue;
-        }
+        if (ps->reg[0] < 0 || !pt.agg) continue;
         for (int w = 0; w < ps->words; w++) {
             int32_t at = (int32_t)(img + 8 * (uint32_t)w);
             if (ps->reg[w] >= SSE) xld(a, ps->reg[w] - SSE, RSP, at);
@@ -1014,8 +1166,7 @@ static void call(X64* a, IrBlock* bb, int i) {
         }
         img += 16;
     }
-    if (p.sret) load_val(a, RDI, x->args[x->nargs - 1]);
-    else if (p.mem_ret) lea(a, RDI, RSP, (int32_t)p.buf);
+    if (p.mem_ret && !p.sret) lea(a, RDI, RSP, (int32_t)p.buf);
     if (x->flags & IRF_VARARGS) mov_imm(a, RAX, (uint64_t)p.nsse); // al: the vector registers used
     if (x->op == IR_CALLI) {
         put(a, 0x41); put(a, 0xFF); put(a, 0xD3); // call r11
@@ -1069,9 +1220,8 @@ static void call(X64* a, IrBlock* bb, int i) {
 // operands in rdi, rsi, rdx; mem_compare's result in rax.
 static void rtcall(X64* a, int v) {
     IrIns* x = ins_of(a, v);
-    load_val(a, RDI, x->args[0]);
-    load_val(a, RSI, x->args[1]);
-    load_val(a, RDX, x->args[2]);
+    Move m[3] = { move_of(a, RDI, x->args[0]), move_of(a, RSI, x->args[1]), move_of(a, RDX, x->args[2]) };
+    parallel_move(a, m, 3);
     call_sym(a, x->name);
     if (strcmp(x->name, "__ace$mem_fill") == 0) a->o->mem_fill_used = 1;
     else if (strcmp(x->name, "__ace$mem_compare") == 0) a->o->mem_compare_used = 1;
@@ -1087,6 +1237,7 @@ static void line_row(X64* a, Node* at) {
     obj_line(a->o, here(a), at->line, at->col, at->path ? at->path : a->o->d->path);
 }
 
+// Each phi of b's successor takes its operand from b, in parallel.
 static void phi_moves(X64* a, int b) {
     IrFunc* fn = a->fn;
     int s = fn->blocks[b].succ[0];
@@ -1095,30 +1246,15 @@ static void phi_moves(X64* a, int b) {
     while (sb->preds[p] != b) p++;
     int n = 0;
     while (n < sb->nins && fn->ins[sb->ins[n]].op == IR_PHI) n++;
-    uint32_t off = 0;
-    for (int i = 0; i < n; i++) { // stage every source first: the moves are parallel
-        int ph = sb->ins[i], src = fn->ins[ph].args[p];
-        int32_t at = a->stage + (int32_t)stage_next((IrType)fn->ins[ph].type, &off);
-        if (ir_type_vector((IrType)fn->ins[ph].type)) {
-            vload(a, XMM0, src);
-            xmove(a, 0, 1, XMM0, RBP, at);
-        } else {
-            load_val(a, RAX, src);
-            st64(a, RAX, RBP, at);
-        }
-    }
-    off = 0;
+    if (!n) return;
+    Move* m = xcalloc((size_t)n, sizeof(Move));
+    int k = 0;
     for (int i = 0; i < n; i++) {
-        int ph = sb->ins[i];
-        int32_t at = a->stage + (int32_t)stage_next((IrType)fn->ins[ph].type, &off);
-        if (ir_type_vector((IrType)fn->ins[ph].type)) {
-            xmove(a, 1, 1, XMM0, RBP, at);
-            vstore(a, ph, XMM0);
-        } else {
-            ld64(a, RAX, RBP, at);
-            store_val(a, ph, RAX);
-        }
+        int ph = sb->ins[i], d = loc(a, ph);
+        if (d != NOLOC) m[k++] = move_of(a, d, fn->ins[ph].args[p]);
     }
+    parallel_move(a, m, k);
+    free(m);
 }
 
 // Save (at entry) or restore (before leave) the callee-saved registers the
@@ -1140,27 +1276,34 @@ static void callee_saved(X64* a, int save) {
 static void asm_select(X64* a, IrBlock* bb, int i) {
     int v = bb->ins[i];
     IrIns* x = ins_of(a, v);
-    for (int k = 0; k < x->nargs; k++) load_val(a, x->asmb->reg[k], x->args[k]);
+    Move* m = xcalloc((size_t)(x->nargs + x->asmb->nout), sizeof(Move));
+    for (int k = 0; k < x->nargs; k++) m[k] = move_of(a, x->asmb->reg[k], x->args[k]);
+    parallel_move(a, m, x->nargs);
     const char* p = x->name;
     while (*p == ' ' || *p == '\t') p++;
     if (p[0] == 's') { put(a, 0x0F); put(a, 0x05); } // syscall
     else if (p[0] == 'i') put(a, 0xCC);            // int3
     else put(a, 0x90);                             // nop
+    int n = 0;
     for (int j = i + 1; j < bb->nins && ins_of(a, bb->ins[j])->op == IR_PROJ; j++) {
-        int u = bb->ins[j];
+        int u = bb->ins[j], l = loc(a, u);
+        if (l == NOLOC) continue;
         int r = x->asmb->out[ins_of(a, u)->imm];
-        normalize(a, (IrType)ins_of(a, u)->type, r);
-        store_val(a, u, r);
+        normalize(a, type_of(a, u), r);
+        m[n++] = (Move){ l, r, u, type_of(a, u) };
     }
+    parallel_move(a, m, n);
+    free(m);
 }
 
 static void terminator(X64* a, int b, int v) {
     IrFunc* fn = a->fn;
     IrIns* x = ins_of(a, v);
     IrBlock* bb = &fn->blocks[b];
+    int next = a->ra.eix[b] + 1 < fn->nblocks ? a->ra.layout[a->ra.eix[b] + 1] : -1;
     if (x->op == IR_JMP) {
         phi_moves(a, b);
-        if (bb->succ[0] != b + 1) jump_add(a, -1, bb->succ[0]);
+        if (bb->succ[0] != next) jump_add(a, -1, bb->succ[0]);
         return;
     }
     if (x->op == IR_RET) {
@@ -1203,9 +1346,9 @@ static void terminator(X64* a, int b, int v) {
     load_val(a, RAX, x->args[0]);
     test_rr(a, RAX);
     int t = bb->succ[0], f = bb->succ[1];
-    if (f == b + 1) {
+    if (f == next) {
         jump_add(a, CC_NE, t);
-    } else if (t == b + 1) {
+    } else if (t == next) {
         jump_add(a, CC_E, f);
     } else {
         jump_add(a, CC_NE, t);
@@ -1318,71 +1461,124 @@ static void emit_block(X64* a, int b) {
     }
 }
 
-// Split each edge from a two-way branch into a block with phis, so phi moves
-// happen only at the end of a jump's block.
-static void split_critical_edges(IrFunc* fn) {
-    int n = fn->nblocks;
-    for (int b = 0; b < n; b++) {
-        for (int k = 0; k < 2; k++) {
-            IrBlock* bb = &fn->blocks[b];
-            int s = bb->succ[k];
-            if (s < 0 || bb->succ[1 - k] < 0) continue;
-            IrBlock* sb = &fn->blocks[s];
-            if (!sb->nins || fn->ins[sb->ins[0]].op != IR_PHI) continue;
-            Node* at = fn->ins[bb->ins[bb->nins - 1]].at;
-            int mid = ir_block_new(fn);
-            int j = ir_ins_new(fn, mid, IR_JMP, IT_VOID);
-            fn->ins[j].at = at;
-            IrBlock* mb = &fn->blocks[mid];
-            mb->succ[0] = s;
-            mb->preds = malloc(sizeof(int));
-            if (!mb->preds) oom();
-            mb->preds[0] = b;
-            mb->npreds = mb->cpreds = 1;
-            fn->blocks[b].succ[k] = mid;
-            sb = &fn->blocks[s];
-            for (int p = 0; p < sb->npreds; p++)
-                if (sb->preds[p] == b) { sb->preds[p] = mid; break; }
-        }
-    }
+// --- allocation and frame ---------------------------------------------------------------
+//
+// Allocation (regalloc.c) hands out rbx and r12-r15 (callee-saved), r10, r9,
+// r8, rsi, and rdi, and xmm3-xmm15, none of which a callee preserves; rax,
+// rcx, rdx, and r11, and xmm0-xmm2, stay the selection's scratch. A byte
+// routine disturbs rsi, rdi, and xmm10-xmm15.
+
+static const int8_t GP_CALLER[] = { R10, R9, R8, RSI, RDI };
+static const int8_t GP_CALLEE[] = { RBX, R12, R13, R14, R15 };
+static const int8_t XMM_CALLER[] = { X + 8, X + 9, X + 10, X + 11, X + 12, X + 13, X + 14, X + 15,
+                                     X + 7, X + 6, X + 5, X + 4, X + 3 };
+
+// A cast whose operand's canonical form already is its own: to 64 bits, or
+// wider with an extension the operand's signedness gives, or from a bool.
+static int cast_in_place(IrType to, IrType from) {
+    if (ir_type_float(to) || ir_type_float(from) || ir_type_vector(to) || ir_type_vector(from) || to == IT_BOOL)
+        return 0;
+    int bt = ir_type_bits(to), bf = ir_type_bits(from);
+    if (bt >= 64 || from == IT_BOOL) return 1;
+    if (bt > bf) return !ir_type_signed(from) || ir_type_signed(to);
+    return bt == bf && ir_type_signed(to) == ir_type_signed(from);
 }
 
-// Slots, the phi staging area, and stack objects below rbp; the frame size.
-static uint32_t layout(X64* a) {
+static const RaTarget X64T = {
+    X,
+    { GP_CALLER, XMM_CALLER }, { (int)sizeof GP_CALLER, (int)sizeof XMM_CALLER },
+    { GP_CALLEE, NULL }, { (int)sizeof GP_CALLEE, 0 },
+    CALLEE_SAVED,
+    1u << RSI | 1u << RDI | UINT64_C(0x3F) << (X + 10),
+    0,
+    cast_in_place,
+};
+
+// r, when allocation hands it out, as v's preference
+static void hint(X64* a, int v, int r) {
+    int ok = r >= X + 3 && r < X + 16;
+    for (size_t k = 0; k < sizeof GP_CALLER && !ok; k++) ok = GP_CALLER[k] == r;
+    if (ok && a->ra.hint[v] < 0) a->ra.hint[v] = r;
+}
+
+// Registers a value would like: where a parameter or a result address
+// arrives, and where a call's argument goes.
+static void hints(X64* a) {
     IrFunc* fn = a->fn;
-    a->home = xcalloc((size_t)fn->nins, sizeof(int32_t));
-    uint32_t down = 0, maxstage = 0;
-    for (int b = 0; b < fn->nblocks; b++) {
-        IrBlock* bb = &fn->blocks[b];
-        uint32_t staged = 0; // bytes
-        for (int i = 0; i < bb->nins; i++) {
-            int v = bb->ins[i];
-            IrIns* x = &fn->ins[v];
-            if (x->op == IR_PHI) stage_next((IrType)x->type, &staged);
-            if (x->op == IR_ASM) a->keep |= x->asmb->reserved & CALLEE_SAVED;
-            if (x->op == IR_CALL || x->op == IR_CALLI) {
+    Cc c = { 0, 0, 0 };
+    if (fn->ret_mem || ret_in_memory(fn->sig)) c.ni = 1;
+    int np = fn->sig ? fn->sig->nparts : fn->nparams;
+    Pass* ps = xcalloc((size_t)(np ? np : 1), sizeof(Pass));
+    IrLeaf lv[IR_MAX_LEAVES];
+    for (int q = 0; q < np; q++) pass_part(&c, part_of(fn->sig, q), fn->params[part_of(fn->sig, q).first], lv, &ps[q]);
+    for (int i = 0; i < fn->nblocks; i++) {
+        IrBlock* bb = &fn->blocks[a->ra.order[i]];
+        for (int j = 0; j < bb->nins; j++) {
+            int u = bb->ins[j];
+            IrIns* x = &fn->ins[u];
+            if (x->op == IR_PARAM) {
+                for (int q = 0; q < np; q++) {
+                    IrPart pt = part_of(fn->sig, q);
+                    if (!pt.agg && !pt.addr && pt.first == (int)x->imm && ps[q].reg[0] >= 0)
+                        hint(a, u, ps[q].reg[0] >= SSE ? X + ps[q].reg[0] - SSE : ps[q].reg[0]);
+                }
+            } else if (x->op == IR_RESULT) {
+                hint(a, u, RDI);
+            } else if (x->op == IR_CALL || x->op == IR_CALLI) {
                 Plan p;
                 plan_call(a, x, &p);
-                if (p.bytes > a->out) a->out = p.bytes;
+                for (int q = 0; q < p.np; q++) {
+                    IrPart pt = part_of(x->sig, q);
+                    int r = p.pass[q].reg[0];
+                    if (!pt.agg && r >= 0) hint(a, x->args[p.k0 + pt.first], r >= SSE ? X + r - SSE : r);
+                }
+                if (p.sret) hint(a, x->args[x->nargs - 1], RDI);
                 plan_free(&p);
             }
-            if (x->type == IT_VOID || x->op == IR_CONST || x->op == IR_SLOT) continue;
-            down = ir_type_vector((IrType)x->type) ? align_up(down + 16, 16) : down + 8; // rbp is 16-aligned
-            a->home[v] = -(int32_t)down;
         }
-        if (staged > maxstage) maxstage = staged;
     }
-    down = align_up(down + maxstage, 16);
-    a->stage = -(int32_t)down;
-    down += 16;
+    free(ps);
+}
+
+// Allocate, then lay out the frame below rbp: the callee-saved registers the
+// function uses, the spill slots, 16 scratch bytes, 16 bytes per aggregate
+// parameter arriving in registers, the saved result address, and the stack
+// objects; then the outgoing area at [rsp]. Returns the frame size.
+static uint32_t layout(X64* a) {
+    IrFunc* fn = a->fn;
+    a->ra.fn = fn;
+    ra_split_critical_edges(fn);
+    ra_layout(&a->ra);
+    ra_count_uses(&a->ra);
+    ra_liveness(&a->ra);
+    ra_positions(&a->ra);
+    hints(a);
+    ra_coalesce(&a->ra, &X64T);
+    ra_allocate(&a->ra, &X64T);
+    a->keep = a->ra.asm_all & CALLEE_SAVED;
+    for (int v = 0; v < fn->nins; v++)
+        if (a->ra.reg[v] >= 0 && a->ra.reg[v] < X) a->keep |= (1u << a->ra.reg[v]) & CALLEE_SAVED;
+    a->home = xcalloc((size_t)fn->nins, sizeof(int32_t));
+    for (int b = 0; b < fn->nblocks; b++)
+        for (int i = 0; i < fn->blocks[b].nins; i++) {
+            IrIns* x = &fn->ins[fn->blocks[b].ins[i]];
+            if (x->op != IR_CALL && x->op != IR_CALLI) continue;
+            Plan p;
+            plan_call(a, x, &p);
+            if (p.bytes > a->out) a->out = p.bytes;
+            plan_free(&p);
+        }
+    uint32_t down = 8 * (uint32_t)__builtin_popcount(a->keep);
+    a->saved = -(int32_t)down;
+    a->spill = -(int32_t)down - 8;
+    down = align_up(down + 8 * (uint32_t)a->ra.nslots, 16) + 16;
     a->scratch = -(int32_t)down;
+    int np = fn->sig ? fn->sig->nparts : fn->nparams;
+    down += 16 * (uint32_t)np;
+    a->aggs = -(int32_t)down;
     if (fn->ret_mem || ret_in_memory(fn->sig)) {
         down += 8;
         a->sret = -(int32_t)down;
-    }
-    if (a->keep) {
-        down += 8 * (uint32_t)__builtin_popcount(a->keep);
-        a->saved = -(int32_t)down;
     }
     for (int b = 0; b < fn->nblocks; b++) {
         IrBlock* bb = &fn->blocks[b];
@@ -1400,63 +1596,75 @@ static uint32_t layout(X64* a) {
     return align_up(down + a->out, 16);
 }
 
-// Entry: each parameter's leaves to their slots in canonical form (a C
-// caller may leave a narrow argument's upper bits unspecified): from their
-// registers, the ones the caller stacked at rbp + 16, or, for an aggregate in
-// registers, the words stored to the scratch area. A parameter passed by
-// value at its address is the address of the caller's stack copy. A result
-// through memory takes rdi first, whose address is saved.
+// Entry: each parameter's leaves to their locations in canonical form (a C
+// caller may leave a narrow argument's upper bits unspecified). Scalars in
+// registers are normalized in place and moved in parallel with a result
+// address arriving in rdi; then, with no arrival register still to read,
+// the stacked scalars (at rbp + 16), each aggregate's leaves from its words
+// (stored to its own 16 bytes at entry when in registers), and the address
+// of a caller's stack copy for a parameter passed at its address.
 static void params(X64* a) {
     IrFunc* fn = a->fn;
     IrBlock* bb = &fn->blocks[0];
     int* pv = xcalloc((size_t)(fn->nparams ? fn->nparams : 1), sizeof(int));
+    int np = fn->sig ? fn->sig->nparts : fn->nparams;
+    Move* m = xcalloc((size_t)np + 1, sizeof(Move));
+    int nm = 0;
     for (int i = 0; i < bb->nins; i++) {
         int v = bb->ins[i];
         IrIns* x = ins_of(a, v);
-        if (x->op == IR_PARAM && a->home[v]) pv[x->imm] = v + 1;
-        if (x->op == IR_RESULT) store_val(a, v, RDI);
+        if (x->op == IR_PARAM && loc(a, v) != NOLOC) pv[x->imm] = v + 1;
+        if (x->op == IR_RESULT && loc(a, v) != NOLOC) m[nm++] = (Move){ loc(a, v), RDI, v, IT_PTR };
     }
     Cc c = { 0, 0, 0 };
     if (a->sret) {
         st64(a, RDI, RBP, a->sret);
         c.ni = 1;
     }
-    int np = fn->sig ? fn->sig->nparts : fn->nparams;
-    IrLeaf lv[IR_MAX_LEAVES];
+    Pass* ps = xcalloc((size_t)(np ? np : 1), sizeof(Pass));
+    IrLeaf* lv = xcalloc((size_t)(np ? np : 1) * IR_MAX_LEAVES, sizeof(IrLeaf));
+    for (int q = 0; q < np; q++) {
+        IrPart pt = part_of(fn->sig, q);
+        IrLeaf* ql = lv + q * IR_MAX_LEAVES;
+        pass_part(&c, pt, fn->params[pt.first], ql, &ps[q]);
+        if (pt.agg && !pt.addr && ps[q].reg[0] >= 0) {
+            for (int w = 0; w < ps[q].words; w++) {
+                int32_t at = a->aggs + 16 * q + 8 * w;
+                if (ps[q].reg[w] >= SSE) xst(a, ps[q].reg[w] - SSE, RBP, at);
+                else st64(a, ps[q].reg[w], RBP, at);
+            }
+        }
+        if (pt.agg || pt.addr || ps[q].reg[0] < 0 || !pv[pt.first]) continue;
+        IrType t = fn->params[pt.first];
+        int r = ps[q].reg[0];
+        if (r >= SSE) r = X + r - SSE;
+        else normalize(a, t, r);
+        m[nm++] = (Move){ loc(a, pv[pt.first] - 1), r, pv[pt.first] - 1, t };
+    }
+    parallel_move(a, m, nm);
     for (int q = 0; q < np && !a->failed; q++) {
         IrPart pt = part_of(fn->sig, q);
-        Pass ps;
-        pass_part(&c, pt, fn->params[pt.first], lv, &ps);
-        int32_t stacked = 16 + (int32_t)ps.soff;
+        int32_t stacked = 16 + (int32_t)ps[q].soff;
         if (pt.addr) {
             if (!pv[pt.first]) continue;
             lea(a, RAX, RBP, stacked);
             store_val(a, pv[pt.first] - 1, RAX);
         } else if (!pt.agg) {
-            if (!pv[pt.first]) continue;
-            int r = ps.reg[0] >= 0 && ps.reg[0] < SSE ? ps.reg[0] : RAX;
-            if (ps.reg[0] >= SSE) xmm_to(a, IT_F64, RAX, ps.reg[0] - SSE);
-            else if (ps.reg[0] < 0) ld64(a, RAX, RBP, stacked);
-            normalize(a, fn->params[pt.first], r);
-            store_val(a, pv[pt.first] - 1, r);
+            if (!pv[pt.first] || ps[q].reg[0] >= 0) continue;
+            ld64(a, RAX, RBP, stacked);
+            normalize(a, fn->params[pt.first], RAX);
+            store_val(a, pv[pt.first] - 1, RAX);
         } else {
-            int32_t at = stacked;
-            if (ps.reg[0] >= 0) {
-                for (int w = 0; w < ps.words; w++) {
-                    if (ps.reg[w] >= SSE) xst(a, ps.reg[w] - SSE, RBP, a->scratch + 8 * w);
-                    else st64(a, ps.reg[w], RBP, a->scratch + 8 * w);
-                }
-                at = a->scratch;
-            }
+            int32_t at = ps[q].reg[0] >= 0 ? a->aggs + 16 * q : stacked;
             for (int k = 0; k < pt.n; k++) {
                 int v = pv[pt.first + k];
                 if (!v) continue;
-                ld_width(a, fn->params[pt.first + k], RAX, RBP, at + (int32_t)lv[k].off);
+                ld_width(a, fn->params[pt.first + k], RAX, RBP, at + (int32_t)lv[q * IR_MAX_LEAVES + k].off);
                 store_val(a, v - 1, RAX);
             }
         }
     }
-    free(pv);
+    free(pv); free(m); free(ps); free(lv);
 }
 
 static void rip_op(X64* a, uint8_t op, int r, const char* name);
@@ -1475,7 +1683,8 @@ static void emit_body(X64* a) {
         rip_op(a, 0x89, RSI, "__ace$argv");
     }
     params(a);
-    for (int b = 0; b < fn->nblocks && !a->failed; b++) {
+    for (int i = 0; i < fn->nblocks && !a->failed; i++) { // in the allocator's emission order
+        int b = a->ra.layout[i];
         a->label[b] = here(a);
         emit_block(a, b);
     }
@@ -1515,7 +1724,6 @@ void x64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int global) {
     a.o = o;
     a.fn = fn;
     a.t = obj_text(o);
-    split_critical_edges(fn);
     uint32_t frame = layout(&a);
     a.label = xcalloc((size_t)fn->nblocks, sizeof(uint32_t));
     a.main = len == 5 && memcmp(name, "_main", 5) == 0;
@@ -1525,6 +1733,7 @@ void x64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int global) {
     emit_body(&a);
     buf_patch32(a.t, a.frame_at, frame);
     obj_debug_fn(o, start, here(&a) - start, fn->decl->str, fn->decl->len);
+    ra_free(&a.ra);
     free(a.home); free(a.label); free(a.jmp); free(a.stub);
 }
 

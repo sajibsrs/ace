@@ -3,7 +3,9 @@
 // (Poletto & Sarkar) over the classes a target describes. Each value has one
 // interval, the hull of the positions where it is live in block layout order
 // (a reverse postorder), found by walking up from each use to the definition.
-// Constants and stack objects take no register: each use rebuilds them. An
+// Constants and stack objects take no register: each use rebuilds them. A
+// parameter or result address is live from entry, where both targets move
+// them, and is allocated before any other value. An
 // interval that crosses a call takes a callee-saved register or a stack slot;
 // hints steer a phi and its operands to one register.
 #include "regalloc.h"
@@ -193,6 +195,9 @@ static int live_in(Ra* a, int v, int* stamp, int* stack, int tag) {
 
 // The end of each value's interval: the furthest position, in layout order,
 // where it is used or live out of a block.
+// A parameter or a result address arrives at entry, wherever lowering placed it.
+static int entry_value(IrOp op) { return op == IR_PARAM || op == IR_RESULT; }
+
 void ra_liveness(Ra* a) {
     IrFunc* fn = a->fn;
     int nv = fn->nins;
@@ -202,8 +207,9 @@ void ra_liveness(Ra* a) {
         for (int i = 0; i < fn->blocks[b].nins; i++) {
             int v = fn->blocks[b].ins[i];
             IrIns* x = &fn->ins[v];
-            // a proj's value arrives at its call
-            a->start[v] = x->op == IR_PHI ? 2 * a->bfirst[b] : x->op == IR_PROJ ? 2 * a->idx[x->args[0]] + 1 : 2 * a->idx[v] + 1;
+            // a proj's value arrives at its call; a parameter or result address, at entry
+            a->start[v] = x->op == IR_PHI ? 2 * a->bfirst[b] : x->op == IR_PROJ ? 2 * a->idx[x->args[0]] + 1
+                        : entry_value(x->op) ? 1 : 2 * a->idx[v] + 1;
             a->end[v] = a->start[v];
         }
     // uses by value (counting sort), a fused value's operands used at its user
@@ -407,11 +413,14 @@ void ra_allocate(Ra* a, const RaTarget* t) {
     int* seq = xcalloc((size_t)nv, sizeof(int)); // allocated values in start order
     int nseq = 0;
     for (int v = 0; v < nv; v++) { a->reg[v] = -1; a->slot[v] = -1; }
-    for (int i = 0; i < fn->nblocks; i++) {
-        IrBlock* bb = &fn->blocks[a->order[i]];
-        for (int j = 0; j < bb->nins; j++)
-            if (allocatable(a, bb->ins[j]) && a->with[bb->ins[j]] < 0) seq[nseq++] = bb->ins[j];
-    }
+    for (int pass = 0; pass < 2; pass++) // the values arriving at entry first
+        for (int i = 0; i < fn->nblocks; i++) {
+            IrBlock* bb = &fn->blocks[a->order[i]];
+            for (int j = 0; j < bb->nins; j++) {
+                int v = bb->ins[j];
+                if (allocatable(a, v) && a->with[v] < 0 && entry_value((IrOp)fn->ins[v].op) == !pass) seq[nseq++] = v;
+            }
+        }
     int owner[RA_NREGS], active[RA_NREGS], nactive = 0;
     uint8_t* spilled = xcalloc((size_t)nv, 1);
     for (int r = 0; r < RA_NREGS; r++) owner[r] = -1;

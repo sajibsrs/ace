@@ -904,6 +904,20 @@ current normative rules, and Git preserves patch-level detail.
   user fuses; arm64 keeps its hints, fusion, and callee-saved save list. Every
   darwin-arm64 object of the emit, module, checked, bench, and demo roots is
   byte-identical in debug and release.
+- Gave the x64 backend register allocation through `regalloc.c`: rbx and
+  r12-r15 (saved when used), r10, r9, r8, rsi, and rdi, and xmm3-xmm15 are
+  allocated; rax, rcx, rdx, r11, and xmm0-xmm2 stay selection scratch, and
+  rbp the frame base. Selection is unchanged in shape: operands move from
+  their locations into scratch and results back. Phi moves, call and byte
+  routine arguments, parameters at entry, and asm bindings are parallel
+  moves (a general-register cycle broken by `xchg`, any other through the
+  frame's 16 scratch bytes), replacing the phi staging area; an aggregate
+  argument copied with `rep movsb` keeps rsi and rdi across it; blocks are
+  emitted in the allocator's order, loop headers rotated. The allocator now
+  starts a parameter's or result address's interval at entry, where both
+  targets move them (no darwin-arm64 object changes). `bench/core` hotloop
+  on x64: 1.28-1.73x faster per workload (cube-transform 236.7 to 171.0
+  ns), machine code about 40% smaller, compile time 4-18% higher.
 
 ## Core language
 
