@@ -1059,17 +1059,18 @@ for f in null overflow alignment reinterpret_alignment; do
     fi
 done
 
-# emit fixtures: compile to an object, link with the system cc, run, and
-# check the exit code. The expected code rides in a `// expect-exit: N` line;
-# a `// expect-link: ARGS` line appends linker arguments (e.g. `-lm`).
-if ! cc -target arm64-apple-macos tests/darwin_bpf_layout.c \
-        -o /tmp/ace_darwin_bpf_layout 2>/tmp/ace_test_errs; then
-    echo "FAIL: Darwin SDK BPF declarations do not match the verified sys layout"
-    cat /tmp/ace_test_errs
-    fail=1
-elif ! /tmp/ace_darwin_bpf_layout; then
-    echo "FAIL: Darwin SDK BPF layout verifier failed"
-    fail=1
+# Darwin SDK BPF declarations (tests/darwin_bpf_layout.c) match the verified
+# darwin-arm64 sys layout, on a Darwin host only
+if [ "$(uname -s)" = Darwin ]; then
+    if ! cc -target arm64-apple-macos tests/darwin_bpf_layout.c \
+            -o /tmp/ace_darwin_bpf_layout 2>/tmp/ace_test_errs; then
+        echo "FAIL: Darwin SDK BPF declarations do not match the verified sys layout"
+        cat /tmp/ace_test_errs
+        fail=1
+    elif ! /tmp/ace_darwin_bpf_layout; then
+        echo "FAIL: Darwin SDK BPF layout verifier failed"
+        fail=1
+    fi
 fi
 
 # vector IR (tests/vector_ir.c): hand-built functions verify, print as
@@ -1117,6 +1118,9 @@ if [ "$(uname -s)-$(uname -m)" = Linux-x86_64 ]; then
     fi
 fi
 
+# emit fixtures: compile to an object, link with the system cc, run, and
+# check the exit code. The expected code rides in a `// expect-exit: N` line;
+# a `// expect-link: ARGS` line appends linker arguments (e.g. `-lm`).
 if [ -d tests/emit ]; then
     rm -rf /tmp/ace_emit
     mkdir -p /tmp/ace_emit
@@ -1805,12 +1809,15 @@ if [ -d tests/driver ]; then
         echo "FAIL: -L/-l archive link exited $got, want 7"
         fail=1
     fi
-    out=$("$ACE" --debug -o /tmp/ace_driver/app_fw tests/driver/main_fw.ace \
-          -framework CoreFoundation && /tmp/ace_driver/app_fw)
-    got=$?
-    if [ "$got" -ne 0 ]; then
-        echo "FAIL: -framework link exited $got, want 0"
-        fail=1
+    # Apple frameworks exist on a Darwin host only
+    if [ "$(uname -s)" = Darwin ]; then
+        out=$("$ACE" --debug -o /tmp/ace_driver/app_fw tests/driver/main_fw.ace \
+              -framework CoreFoundation && /tmp/ace_driver/app_fw)
+        got=$?
+        if [ "$got" -ne 0 ]; then
+            echo "FAIL: -framework link exited $got, want 0"
+            fail=1
+        fi
     fi
     # spaces and shell metacharacters must travel as plain argument bytes
     out=$("$ACE" --debug -o "/tmp/ace_driver/space dir/my app" tests/driver/main_obj.ace \
@@ -2150,7 +2157,8 @@ fi
 # manifest byte-for-byte unchanged); `// expect-remove-ok: NAME` runs `pkg
 # remove NAME` expecting success and the entry gone from ace.pkg; `//
 # expect-list-has: substring` (repeatable) runs `pkg list` expecting success
-# and every listed substring present in its output.
+# and every listed substring present in its output. `// expect-host: OS`
+# skips the case unless `uname -s` prints OS (e.g. Darwin for a framework).
 if [ -d tests/package_cli ]; then
     for case_dir in tests/package_cli/*/; do
         if [ -f "${case_dir}ace.pkg" ]; then dir=${case_dir%/}
@@ -2158,6 +2166,8 @@ if [ -d tests/package_cli ]; then
         else continue
         fi
         f="$dir/ace.pkg"
+        host=$(sed -n 's/^\/\/ *expect-host:[[:space:]]*//p' "$f")
+        [ -n "$host" ] && [ "$host" != "$(uname -s)" ] && continue
         name=$(sed -n 's/^name: *//p' "$f")
         build_exit=$(sed -n 's/^\/\/ *expect-build-exit:[[:space:]]*//p' "$f")
         build_ok=$(sed -n 's/^\/\/ *expect-build-ok[[:space:]]*.*/yes/p' "$f")

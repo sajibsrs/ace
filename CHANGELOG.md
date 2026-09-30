@@ -870,6 +870,10 @@ current normative rules, and Git preserves patch-level detail.
   `FIOCLEX`/`FIONREAD`; `FE_DOWNWARD`), and a `// expect-link: ARGS` fixture
   line appends linker arguments, giving `printf/float` the `-lm` that glibc's
   `fesetround` needs.
+- Gated the Darwin-only checks in `tests/run.sh` to a Darwin host: the SDK BPF
+  layout verifier, the driver's `-framework` link, and the
+  `package_cli/link_framework` case, which a new `// expect-host: OS` manifest
+  comment skips unless `uname -s` prints OS.
 
 ## Core language
 

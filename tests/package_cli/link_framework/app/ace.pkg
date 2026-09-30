@@ -1,5 +1,6 @@
 // The app declares no [[link]] of its own; the framework it needs to link
 // comes transitively from its lib dependency (Package System #14).
+// expect-host: Darwin
 // expect-build-exit: 9
 
 name: link_framework
