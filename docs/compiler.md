@@ -168,6 +168,14 @@ Manifest-aware building (`ace.pkg`, dependencies, native link inputs, and the
 
 Why the rules in `spec/compiler.md` are shaped as they are.
 
+- Compiler #2, reachable functions only: code generation was over half of
+  compile time, most of it for imported functions a program never calls.
+  Following the references compiled code already makes finds every use —
+  calls, function values, vtables, `defer`, compiler-selected writers —
+  without a separate list of roots, and costs no linker support. Release
+  `bench/core` and `bench/std` compile 1.3–1.9x faster with 1.7–6.7x less
+  machine code; the `json` and `regex` packages link 31–37% smaller.
+
 - Compiler #4 (PHILOSOPHY.md Cautions #1): emission straight from the AST needs
   every optimization written once per source shape and repeats each in a second
   backend; the compile-time cost ranks below performance, simplicity, and

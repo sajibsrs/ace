@@ -29,3 +29,8 @@
 - Import cycle diagnostics list only the loop, in import order
   (`a -> b -> c -> a`): the loading stack is innermost-first, so it is cut at
   the repeated module and printed reversed, dropping the importers before it.
+
+- Compile only reachable functions: `main` and the C exports are compiled
+  first, then each still-undefined link symbol naming an Ace function, until
+  none is left; an object without `main` compiles all. Release `bench/core`
+  and `bench/std`: compile 1.3–1.9x faster, machine code 1.7–6.7x smaller.

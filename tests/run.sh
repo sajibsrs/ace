@@ -1239,7 +1239,7 @@ if [ -d tests/emit ]; then
         fi
         for symbol in socket setsockopt fcntl bind listen accept connect \
                       getsockname recv send getaddrinfo freeaddrinfo fork \
-                      waitpid pipe close "$errno_symbol"; do
+                      waitpid close "$errno_symbol"; do
             if ! printf '%s\n' "$net_undef" | grep -qx "$symbol"; then
                 echo "FAIL: net object is missing OS boundary '$symbol'"
                 fail=1
@@ -1442,11 +1442,11 @@ if [ -d tests/emit ]; then
             fail=1
         fi
         # A global integer const with a compile-time initializer is an
-        # immediate: masked(), the only function before main, is one `and` with
-        # a bitmask immediate and reads no memory for MASK (its object's first
-        # label is the section, not its name).
+        # immediate: masked() is one `and` with a bitmask immediate and reads
+        # no memory for MASK.
         if ! otool -tv /tmp/ace_emit/basics/const_immediate.o | awk '
-            /^_main:/ { exit }
+            /^[^0-9].*:$/ { fn = $0; next }
+            fn !~ /^__ace\$fn\$masked\$/ { next }
             $2 == "adrp" { bad = 1 }
             $2 == "and" && $NF == "#0x7fffffff" { saw = 1 }
             END { exit bad || !saw }'; then
@@ -1456,10 +1456,8 @@ if [ -d tests/emit ]; then
         # A struct literal or tuple returned in registers computes each leaf
         # straight into its result register: no frame-temp address (`sub x0,
         # x29, ...`) is formed to reload from, and the second and third leaves
-        # end in x1 / d2. The first function's label is the section, so bump()
-        # is left unasserted.
+        # end in x1 / d2.
         if ! otool -tv /tmp/ace_emit/basics/return_registers.o | awk '
-            /^_main:/ { exit }
             /^[^0-9].*:$/ { fn = $0; next }
             fn ~ /^__ace\$fn\$(small_step|pair_step|vec_add|vec2_scale|divmod)\$/ &&
                 $2 == "sub" && $3 == "x0," && $4 == "x29," { bad = 1 }
@@ -1475,8 +1473,7 @@ if [ -d tests/emit ]; then
         # A register-returned call assigned to a local or bound to typed
         # binders reaches its destination without a staged temp: after the
         # call no frame address is formed and no result register is reloaded
-        # from the frame. The first function's label is the section, so
-        # first() is a dummy.
+        # from the frame.
         if ! otool -tv /tmp/ace_emit/basics/call_result_sink.o | awk '
             /^_main:/ { exit }
             /^[^0-9].*:$/ { fn = $0; after = 0; next }
@@ -1493,10 +1490,8 @@ if [ -d tests/emit ]; then
         fi
         # A by-value aggregate argument that is a local goes straight to its
         # argument registers: before the call no frame address is formed for
-        # a staged copy. The first function's label is the section, so
-        # first() is a dummy.
+        # a staged copy.
         if ! otool -tv /tmp/ace_emit/basics/call_frame_args.o | awk '
-            /^_main:/ { exit }
             /^[^0-9].*:$/ { fn = $0; done = 0; next }
             fn ~ /^__ace\$fn\$use_(pair|vec)\$/ && !done {
                 if ($2 == "bl" && $3 !~ /fail/) {

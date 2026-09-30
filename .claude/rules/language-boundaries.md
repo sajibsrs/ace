@@ -31,7 +31,8 @@ Follow `spec/` for exact rules; do not propose or assume away these decisions:
   returns; function values use signature types.
 - The compiler uses recursive descent, the fixed in-order passes of `spec/compiler.md`
   Compiler #2, and direct machine-code emission from a per-function IR;
-  no whole-program or cross-function analysis.
+  no whole-program or cross-function analysis beyond `inline` and compiling
+  only reachable functions.
 - Safety is cheap local checking plus removable debug-build diagnostics.
 - There is no `goto`; use labeled blocks and loops. Iteration, switch, and
   `fallthrough` follow `spec/` exactly.

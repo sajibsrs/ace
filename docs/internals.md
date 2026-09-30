@@ -94,7 +94,8 @@ repeated in each additional backend.
 ## Object emission
 
 - **`emit.c`** — stage four's object driver: runs passes 5-10 for every
-  function body, then emits what no function body holds — global and
+  reachable function body — from `main` and the C exports, each function a
+  compiled one references by link symbol — then emits what no function body holds — global and
   constant data, static maps, vtables and their embed thunks, the runtime
   failure and allocator routines, and the shared byte routines. Also owns
   symbol mangling and the constant folding global initializers need. Until

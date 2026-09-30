@@ -2040,12 +2040,36 @@ static int compile_ir(Em* e, Node* n, IrFunc* ir, const char* why, const char* n
     return 1;
 }
 
+// One compilable function: a declaration, or one instantiation of a generic
+// template, with the link symbol it defines.
+typedef struct {
+    Node*    n;
+    SType**  targs; // the instantiation's arguments, or NULL
+    int      ntargs, global, done;
+    const char* name;
+} EmitFn;
+
+static void compile_fn(Em* e, Node* file, EmitMode mode, EmitFn* f, int is_main) {
+    const char* why;
+    IrFunc* ir = ir_lower(file, f->n, mode, f->targs, f->ntargs, &why); // stamps n's body for this instantiation either way
+    f->done = 1;
+    if (compile_ir(e, f->n, ir, why, f->name, f->global) && is_main) emit_has_main = 1;
+}
+
 int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report, EmitMode mode) {
     Em e;
     memset(&e, 0, sizeof e);
     obj_init(&e.o, d, mode);
     e.file = file;
 
+    // Collect every compilable function under its link symbol, then compile
+    // only those reachable from main and the C exports: a referenced symbol
+    // that is still undefined names the next function to compile. An object
+    // without main may be called from anywhere, so it compiles every one.
+    EmitFn* fns = NULL;
+    int nfns = 0, cfns = 0, main_at = -1;
+    SymTab by_name;
+    memset(&by_name, 0, sizeof by_name);
     for (int i = 0; i < file->nkids; i++) {
         Node* n = file->kids[i];
         switch (n->kind) {
@@ -2063,30 +2087,38 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
                 (n->ival >= BI_SYS_ARGC && n->ival <= BI_SYS_ENV))
                 break; // compiler-backed calls lower directly; no symbol
             Sym* decl_sym = node_sym(n);
-            if (n->c && !(decl_sym && decl_sym->spec_args)) {
-                // generic template: one function per instantiation memo entry
-                int nt = n->c->nkids;
-                for (STypeInst* inst = sema_insts(n); inst; inst = inst->next) {
-                    const char* why;
-                    IrFunc* ir = ir_lower(file, n, mode, inst->args, nt, &why); // stamps n's body for this instantiation either way
-                    char mn[512];
+            int generic = n->c && !(decl_sym && decl_sym->spec_args);
+            STypeInst* inst = generic ? sema_insts(n) : NULL;
+            if (generic && !inst) break;
+            do {
+                char mn[512];
+                EmitFn f = { n, NULL, 0, 0, 0, NULL };
+                if (generic) {
+                    // generic template: one function per instantiation memo entry
+                    f.targs = inst->args;
+                    f.ntargs = n->c->nkids;
                     snprintf(mn, sizeof mn, "%s", fn_mangle(decl_sym ? decl_sym->name : n->str,
                                                decl_sym ? decl_sym->len : n->len, inst->result,
-                                               decl_sym ? decl_sym->decl : n, inst->args, nt, 0));
-                    compile_ir(&e, n, ir, why, mn, 0);
+                                               decl_sym ? decl_sym->decl : n, inst->args, f.ntargs, 0));
+                } else {
+                    int is_main = !(n->flags & (F_METHOD | F_ASSOC)) && n->len == 4 && memcmp(n->str, "main", 4) == 0;
+                    int export_c = (n->flags & F_EXPO) != 0;
+                    if (is_main) snprintf(mn, sizeof mn, "_main");
+                    else if (export_c) snprintf(mn, sizeof mn, "_%s", n->cname ? n->cname : n->str);
+                    else snprintf(mn, sizeof mn, "%s", fn_mangle(decl_sym->name, decl_sym->len, decl_sym->type, n, decl_sym->spec_args,
+                                                             decl_sym->spec_args ? decl_sym->spec_nargs : 0, decl_sym->spec_args != NULL));
+                    f.global = is_main || export_c;
+                    if (is_main) main_at = nfns;
                 }
-                break;
-            }
-            int is_main = !(n->flags & (F_METHOD | F_ASSOC)) && n->len == 4 && memcmp(n->str, "main", 4) == 0;
-            int export_c = (n->flags & F_EXPO) != 0;
-            const char* why;
-            IrFunc* ir = ir_lower(file, n, mode, NULL, 0, &why);
-            char mn[512];
-            if (is_main) snprintf(mn, sizeof mn, "_main");
-            else if (export_c) snprintf(mn, sizeof mn, "_%s", n->cname ? n->cname : n->str);
-            else snprintf(mn, sizeof mn, "%s", fn_mangle(decl_sym->name, decl_sym->len, decl_sym->type, n, decl_sym->spec_args,
-                                                     decl_sym->spec_args ? decl_sym->spec_nargs : 0, decl_sym->spec_args != NULL));
-            if (compile_ir(&e, n, ir, why, mn, is_main || export_c) && is_main) emit_has_main = 1;
+                f.name = arena_string(mn);
+                if (nfns == cfns) {
+                    cfns = cfns ? cfns * 2 : 256;
+                    fns = realloc(fns, (size_t)cfns * sizeof *fns);
+                    if (!fns) exit(1);
+                }
+                sym_intern(&by_name, f.name, (uint32_t)strlen(f.name))->value = (uint64_t)nfns + 1;
+                fns[nfns++] = f;
+            } while (generic && (inst = inst->next));
             break;
         }
         case N_VAR:
@@ -2099,6 +2131,15 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
             break; // types/imports/externs: no code
         }
     }
+    for (int i = 0; i < nfns; i++)
+        if (main_at < 0 || fns[i].global) compile_fn(&e, file, mode, &fns[i], i == main_at);
+    for (size_t k = 0; k < e.o.syms.n; k++) {
+        ESym* s = e.o.syms.v[k];
+        if (s->type) continue;
+        ESym* hit = sym_intern(&by_name, s->name, s->len);
+        if (hit->value && !fns[hit->value - 1].done) compile_fn(&e, file, mode, &fns[hit->value - 1], 0);
+    }
+    free(fns);
     int x64 = strcmp(ace_target, "linux-x64") == 0;
     if (x64) {
         x64_runtime(&e.o);
