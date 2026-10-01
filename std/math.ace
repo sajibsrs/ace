@@ -11,6 +11,7 @@
  * after a two-word reduction; the f32 exp and log round the f64 result.
  */
 
+import bits
 import table: @math_tables
 
 pub sqrt(value: f64): f64 intrinsic
@@ -40,6 +41,7 @@ PIO2_3: const f64 = 2.02226624871116645580e-21
 PIO2_3T: const f64 = 8.47842766036889956997e-32
 PIO2_A: const f64 = 1.5707963267948966
 PIO2_B: const f64 = 6.123233995736766e-17
+MANTISSA_53: const u64 = 0x001FFFFFFFFFFFFF
 
 SIN_S1: const f64 = -1.66666666666666324348e-01
 SIN_S2: const f64 = 8.33333333332248946124e-03
@@ -451,9 +453,19 @@ exponent_field(x: f64): int {
 
 /* Cody-Waite reduction for 0 < x < 2^20 * pi/2: x = n * pi/2 + (y0 + y1). */
 
-inline bit_at(limbs: []u64, k: int): u64 {
-    if k < 0 || k >= 320 { return 0 }
-    return (limbs[usize(k / 32)] >> u64(k % 32)) & 1
+/* The 32-bit limb at index i of a 320-bit little-endian sum, zero outside it. */
+inline limb_at(limbs: []u64, i: int): u64 {
+    if i < 0 || i >= 10 { return 0 }
+    return limbs[usize(i)]
+}
+
+/* The 64 bits of the sum at and above bit k, zero below bit 0 or past 319. */
+inline window(limbs: []u64, k: int): u64 {
+    w: int = k >> 5
+    shift: u64 = u64(k & 31)
+    pair: u64 = limb_at(limbs, w) | (limb_at(limbs, w + 1) << 32)
+    if shift == 0 { return pair }
+    return (pair >> shift) | (limb_at(limbs, w + 2) << (64 - shift))
 }
 
 /* Payne-Hanek reduction for x >= 2^20 * pi/2. With x = m * 2^e (m a 53-bit
@@ -489,8 +501,8 @@ reduce_large(x: f64): (f64, f64, int) {
     // The product is an integer of weight 2^-fraction_bits; its bits at and
     // above fraction_bits hold the quotient (only the low two matter).
     fraction_bits: int = 256 + 32 * first - e
-    quotient: int = int(bit_at(limbs[..], fraction_bits) + 2 * bit_at(limbs[..], fraction_bits + 1))
-    negative: bool = bit_at(limbs[..], fraction_bits - 1) == 1
+    quotient: int = int(window(limbs[..], fraction_bits) & 3)
+    negative: bool = (window(limbs[..], fraction_bits - 1) & 1) == 1
     if negative {
         // Fraction >= 1/2: round the quotient up and use 1 - fraction instead.
         quotient = quotient + 1
@@ -501,16 +513,18 @@ reduce_large(x: f64): (f64, f64, int) {
             carry = sum >> 32
         }
     }
-    top: int = fraction_bits - 1
-    for top >= 0 && bit_at(limbs[..], top) == 0 { top = top - 1 }
-    if top < 0 { return 0.0, 0.0, quotient & 3 }
-    // The fraction as two exact 53-bit pieces, most significant first.
-    high_bits: u64 = 0
-    low_bits: u64 = 0
-    for t: int in 0 .. 53 {
-        high_bits = high_bits * 2 + bit_at(limbs[..], top - t)
-        low_bits = low_bits * 2 + bit_at(limbs[..], top - 53 - t)
+    // The highest set bit below fraction_bits, a limb at a time.
+    w: int = (fraction_bits - 1) >> 5
+    word: u64 = limb_at(limbs[..], w) & ((u64(2) << u64((fraction_bits - 1) & 31)) - 1)
+    for word == 0 && w > 0 {
+        w = w - 1
+        word = limbs[usize(w)]
     }
+    if word == 0 { return 0.0, 0.0, quotient & 3 }
+    top: int = 32 * w + 31 - int(bits.clz(u32(word)))
+    // The fraction as two exact 53-bit pieces, most significant first.
+    high_bits: u64 = window(limbs[..], top - 52) & MANTISSA_53
+    low_bits: u64 = window(limbs[..], top - 105) & MANTISSA_53
     fh: f64 = f64(high_bits) * bitcast(f64, u64(1023 + top - 52 - fraction_bits) << 52)
     fl: f64 = f64(low_bits) * bitcast(f64, u64(1023 + top - 105 - fraction_bits) << 52)
     // (fh + fl) * pi/2 as a double-double, using pi/2 = A + B + (C, negligible).
