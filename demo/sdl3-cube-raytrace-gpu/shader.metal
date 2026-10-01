@@ -86,7 +86,7 @@ static float3 shade(float3 base, float cosine) {
 }
 
 // SDL binds a fragment shader's uniform slot 0 at buffer 0.
-fragment float4 main0(Fragment in, constant Scene& scene [[buffer(0)]]) {
+fragment float4 main0(Fragment in [[stage_in]], constant Scene& scene [[buffer(0)]]) {
     float3 d = float3((in.position.x - scene.view.x) / scene.view.z,
                       (scene.view.y - in.position.y) / scene.view.z,
                       1.0);

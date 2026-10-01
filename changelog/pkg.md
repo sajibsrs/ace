@@ -8,3 +8,5 @@
   `Renderer::new(window, driver)`, `Renderer.shader_formats`, `Shader`, and
   `RenderState` over SDL 3.4's GPU render state. `demo/sdl3-cube-raytrace-gpu`
   traces the raytrace scene per pixel with it, in SPIR-V or MSL.
+- `demo/sdl3-cube-raytrace-gpu`'s Metal shader marks its fragment input
+  `[[stage_in]]`, without which Metal rejected it and the demo failed on macOS.
