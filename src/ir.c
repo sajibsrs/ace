@@ -379,14 +379,14 @@ static int vector_ok(IrFunc* fn, int id) {
 }
 
 int ir_verify(IrFunc* fn) {
-    if (fn->nblocks == 0) return bad(fn, "no blocks%s", 0, 0);
-    if (fn->blocks[0].npreds) return bad(fn, "entry block b0 has %d predecessors%s", fn->blocks[0].npreds, 0);
+    if (fn->nblocks == 0) return bad(fn, "no blocks", 0, 0);
+    if (fn->blocks[0].npreds) return bad(fn, "entry block b0 has %d predecessors", fn->blocks[0].npreds, 0);
     int* pos = malloc((size_t)(fn->nins ? fn->nins : 1) * sizeof(int)); // index within its block
     if (!pos) oom();
     int ok = 1;
     for (int b = 0; b < fn->nblocks && ok; b++) {
         IrBlock* bb = &fn->blocks[b];
-        if (!bb->nins) { ok = bad(fn, "block b%d is empty%s", b, 0); break; }
+        if (!bb->nins) { ok = bad(fn, "block b%d is empty", b, 0); break; }
         int phis = 1;
         for (int i = 0; i < bb->nins; i++) {
             int id = bb->ins[i];
@@ -417,7 +417,7 @@ int ir_verify(IrFunc* fn) {
     }
     int* rpo = NULL, nrpo = 0;
     int* idom = ok ? ir_dominators(fn, &rpo, &nrpo) : NULL;
-    if (ok && nrpo != fn->nblocks) ok = bad(fn, "%d blocks unreachable from the entry%s", fn->nblocks - nrpo, 0);
+    if (ok && nrpo != fn->nblocks) ok = bad(fn, "%d blocks unreachable from the entry", fn->nblocks - nrpo, 0);
     for (int b = 0; b < fn->nblocks && ok; b++) {
         IrBlock* bb = &fn->blocks[b];
         for (int i = 0; i < bb->nins && ok; i++) {
@@ -451,7 +451,7 @@ int ir_verify(IrFunc* fn) {
                 int dom = db == ub ? (v->op == IR_PHI || pos[u] < i) : ir_dominates(idom, db, ub);
                 if (!dom) { ok = bad(fn, "%%%d uses %%%d where its definition does not dominate", id, u); break; }
             }
-            if (ok && !vector_ok(fn, id)) ok = bad(fn, "%%%d misuses a vector type%s", id, 0);
+            if (ok && !vector_ok(fn, id)) ok = bad(fn, "%%%d misuses a vector type", id, 0);
         }
     }
     free(pos); free(rpo); free(idom);
