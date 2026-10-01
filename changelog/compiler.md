@@ -34,3 +34,7 @@
   first, then each still-undefined link symbol naming an Ace function, until
   none is left; an object without `main` compiles all. Release `bench/core`
   and `bench/std`: compile 1.3–1.9x faster, machine code 1.7–6.7x smaller.
+- Lowered x64 division by a constant as arm64 does, through the shared
+  `div_magic`: shifts and masks for a power of two, else a multiply-high by
+  the reciprocal. `bench/core/cpu` on x64: 1.42x faster; `bench/std/string`
+  format-f64 2.0x, parse-int and parse-hex 1.3x.

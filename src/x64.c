@@ -549,11 +549,110 @@ static void arith(X64* a, int v) {
     gp_done(a, v, d);
 }
 
+// shl (4), shr (5), or sar (7) r, k
+static void shift_imm(X64* a, int ext, int r, int k) {
+    if (!k) return;
+    rr(a, 1, (const uint8_t[]){ 0xC1 }, 1, ext, r);
+    put(a, (uint8_t)k);
+}
+
+// Constant division (emit.c div_magic, as arm64.c const_divide): rax = n / c
+// or n % c for n canonical at t, through rcx and rdx. A type up to 32 bits
+// divides at width 32, where the product of two 32-bit values is exact in 64
+// bits; a 64-bit type takes the high half of mul or imul. 0 when c needs the
+// hardware divide (zero, or signed -1 with its overflow).
+static int const_divide(X64* a, int op, int n, uint64_t c, IrType t) {
+    int w = ir_type_bits(t) > 32 ? 64 : 32, sig = ir_type_signed(t);
+    uint64_t mask = w == 64 ? UINT64_MAX : UINT32_MAX;
+    int64_t sd = (int64_t)c;
+    uint64_t d = (sig && sd < 0 ? (uint64_t)0 - c : c) & mask;
+    if (d == 0 || (sig && sd == -1)) return 0;
+    load_val(a, RCX, n);
+    if (d == 1) {
+        if (op == IR_DIV) mov_rr(a, RAX, RCX);
+        else mov_imm(a, RAX, 0);
+        return 1;
+    }
+    if ((d & (d - 1)) == 0) {
+        int k = __builtin_ctzll(d);
+        mov_rr(a, RAX, RCX);
+        if (!sig) {
+            if (op == IR_DIV) {
+                shift_imm(a, 5, RAX, k);
+            } else if (d - 1 <= INT32_MAX) {
+                alu_imm(a, 4, RAX, (int32_t)(d - 1));
+            } else {
+                mov_imm(a, RDX, d - 1);
+                rr(a, 1, (const uint8_t[]){ 0x21 }, 1, RDX, RAX); // and rax, rdx
+            }
+            return 1;
+        }
+        shift_imm(a, 7, RAX, 63);     // round toward zero:
+        shift_imm(a, 5, RAX, 64 - k); // bias a negative n by d - 1
+        rr(a, 1, (const uint8_t[]){ 0x01 }, 1, RCX, RAX); // add rax, rcx
+        shift_imm(a, 7, RAX, k);
+        if (sd < 0) rr(a, 1, (const uint8_t[]){ 0xF7 }, 1, 3, RAX); // neg rax
+    } else if (!sig) {
+        DivMagic m = div_magic(d, w, 0, 0);
+        mov_imm(a, RAX, m.magic);
+        if (w == 32) {
+            rr(a, 1, (const uint8_t[]){ 0x0F, 0xAF }, 2, RAX, RCX); // imul rax, rcx
+            shift_imm(a, 5, RAX, 32 + (m.add ? 0 : m.shift));
+        } else {
+            rr(a, 1, (const uint8_t[]){ 0xF7 }, 1, 4, RCX); // mul rcx
+            mov_rr(a, RAX, RDX);
+            if (!m.add) shift_imm(a, 5, RAX, m.shift);
+        }
+        if (m.add) { // t + ((n - t) >> 1)
+            mov_rr(a, RDX, RCX);
+            rr(a, 1, (const uint8_t[]){ 0x29 }, 1, RAX, RDX); // sub rdx, rax
+            shift_imm(a, 5, RDX, 1);
+            rr(a, 1, (const uint8_t[]){ 0x01 }, 1, RDX, RAX); // add rax, rdx
+            shift_imm(a, 5, RAX, m.shift);
+        }
+    } else {
+        DivMagic m = div_magic(d, w, 1, sd < 0);
+        if (w == 32) {
+            mov_imm(a, RAX, (uint64_t)(int64_t)(int32_t)(uint32_t)m.magic);
+            rr(a, 1, (const uint8_t[]){ 0x0F, 0xAF }, 2, RAX, RCX); // imul rax, rcx
+            shift_imm(a, 7, RAX, 32 + (m.add ? 0 : m.shift));
+        } else {
+            mov_imm(a, RAX, m.magic);
+            rr(a, 1, (const uint8_t[]){ 0xF7 }, 1, 5, RCX); // imul rcx
+            mov_rr(a, RAX, RDX);
+            if (!m.add) shift_imm(a, 7, RAX, m.shift);
+        }
+        if (m.add) {
+            rr(a, 1, (const uint8_t[]){ m.neg ? 0x29 : 0x01 }, 1, RCX, RAX); // t -= n or t += n
+            shift_imm(a, 7, RAX, m.shift);
+        }
+        mov_rr(a, RDX, RAX); // q += q < 0
+        shift_imm(a, 5, RDX, 63);
+        rr(a, 1, (const uint8_t[]){ 0x01 }, 1, RDX, RAX);
+    }
+    if (op == IR_REM) { // r = n - q * c
+        if (sd == (int32_t)sd) {
+            imul_imm(a, RAX, RAX, (int32_t)sd);
+        } else {
+            mov_imm(a, RDX, c);
+            rr(a, 1, (const uint8_t[]){ 0x0F, 0xAF }, 2, RAX, RDX); // imul rax, rdx
+        }
+        rr(a, 1, (const uint8_t[]){ 0xF7 }, 1, 3, RAX); // neg rax
+        rr(a, 1, (const uint8_t[]){ 0x01 }, 1, RCX, RAX); // add rax, rcx
+    }
+    return 1;
+}
+
 static void div_rem(X64* a, int v) {
     IrIns* x = ins_of(a, v);
     IrType t = (IrType)x->type;
     int sg = ir_type_signed(t), chk = x->flags & IRF_CHECKED, rem = x->op == IR_REM;
     int bits = ir_type_bits(t);
+    IrIns* y = ins_of(a, x->args[1]);
+    if (y->op == IR_CONST && const_divide(a, x->op, x->args[0], canon(t, y->imm), t)) {
+        store_val(a, v, RAX); // a quotient or remainder of canonical values is canonical
+        return;
+    }
     load_val(a, RAX, x->args[0]);
     load_val(a, RCX, x->args[1]);
     uint32_t zero = 0, minus = 0, done_at[2] = { 0, 0 };
