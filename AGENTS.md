@@ -33,10 +33,11 @@ history.
   holds even when the change is already agreed in principle (e.g. an open
   issue). Propose language-design decisions (semantics, syntax) before
   implementing them.
-- In a cloud session, whose container is discarded, work only on the topic
-  branch the owner names (e.g. `linux`), never on `master`, the session's
-  generated branch, or a branch of your own, and push each approved commit
-  there, since that is the only way work reaches the owner. Author every commit
+- In a cloud session, whose container is discarded, work only on a topic
+  branch named for the issue or feature it is about (e.g. `linux`,
+  `failure-position`), or the one the owner names, never on `master`, the
+  session's generated branch, or an invented name, and push each approved
+  commit there, since that is the only way work reaches the owner. Author every commit
   as the owner, `Sajidur Rahman <sajibsrs@gmail.com>`, setting `user.name` and
   `user.email` before the first one. Deliver reports and measurements in the
   session reply, never as a repository file or a branch.
