@@ -1,5 +1,8 @@
 # Standard library
 
+- `utf8.valid` checks each sequence's width with a private `span` instead of
+  decoding it, and `decode` assembles its code point from that width:
+  `bench/std` utf8-valid 3.3x to 1.4x of C.
 - Renamed the internal `std/@` modules after their contents: `rendering` to
   `formatting` (the compiler finds the printf piece writers by that name),
   `float_parse` to `float_parsing`, `float_parse_fast[_tables]` to
