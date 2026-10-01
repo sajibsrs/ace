@@ -47,3 +47,6 @@
   `div_magic`: shifts and masks for a power of two, else a multiply-high by
   the reciprocal. `bench/core/cpu` on x64: 1.42x faster; `bench/std/string`
   format-f64 2.0x, parse-int and parse-hex 1.3x.
+- Five IR-verifier messages no longer end in a `%s` fed the helper's spare
+  `int` argument: `fprintf` ignores excess arguments, so the directive only
+  read `0` as a string and printed `(null)`.
