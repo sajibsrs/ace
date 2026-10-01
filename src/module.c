@@ -582,13 +582,8 @@ static const char* resolve_module_path(Loader* L, Node* imp, const char* root,
     for (int i = 0; i < nsegs - 1; i++) {
         int dot = segs[i].len == 1 && segs[i].str[0] == '.';
         int dotdot = segs[i].len == 2 && segs[i].str[0] == '.' && segs[i].str[1] == '.';
-        char next[4096];
-        if (dot) {
-            continue;
-        } else if (dotdot) {
-            snprintf(next, sizeof next, "%s/..", cur);
-            snprintf(cur, sizeof cur, "%s", next);
-        } else {
+        if (dot) continue;
+        if (!dotdot) {
             char probe[4608];
             snprintf(probe, sizeof probe, "%s/%.*s/mod.ace", cur, (int)segs[i].len, segs[i].str);
             if (!canonicalize(probe)) {
@@ -598,9 +593,13 @@ static const char* resolve_module_path(Loader* L, Node* imp, const char* root,
                            (int)segs[i].len, segs[i].str, full);
                 return NULL;
             }
-            snprintf(next, sizeof next, "%s/%.*s", cur, (int)segs[i].len, segs[i].str);
-            snprintf(cur, sizeof cur, "%s", next);
         }
+        char next[4096];
+        if ((size_t)snprintf(next, sizeof next, "%s/%.*s", cur, (int)segs[i].len, segs[i].str) >= sizeof next) {
+            import_err(L->d, imp, "module path is too long");
+            return NULL;
+        }
+        snprintf(cur, sizeof cur, "%s", next);
     }
     return resolve_leaf(L, imp, cur, kind, segs[nsegs - 1]);
 }
