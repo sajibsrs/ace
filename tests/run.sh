@@ -92,7 +92,6 @@ tests/parser/inline/mut_order_err.ace|'inline' must come before 'mut'
 tests/parser/inline/duplicate_err.ace|duplicate 'inline' modifier
 tests/parser/inline/not_function_err.ace|1:8: error: 'inline' applies only to function declarations
 tests/parser/inline/extern_err.ace|'extern' blocks take no pub/export/inline
-tests/sema/inline/type_param_result_err.ace|inline function 'same' cannot return a type parameter
 tests/sema/inline/noalias_err.ace|inline function 'sum' cannot take a noalias parameter
 tests/sema/inline/defer_err.ace|4:5: error: inline function 'guarded' cannot contain 'defer'
 tests/sema/inline/asm_err.ace|inline function 'spin' cannot contain inline assembly

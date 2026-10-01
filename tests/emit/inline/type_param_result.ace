@@ -1,0 +1,45 @@
+/* inline expansion with a type-parameter result, stamped per instantiation:
+ * a scalar, a float, a string, a struct, one of over 16 leaves (through
+ * memory), a generic type's method, and a nested expansion.
+ */
+
+// expect-exit: 0
+// expect-output: 7 2.5 ace 3 4 | 210 | 9 | 14
+
+import array
+import fmt
+
+Pt: struct { x: int = 0, y: int = 0 }
+
+Wide: struct {
+    a0: i32 = 0, a1: i32 = 0, a2: i32 = 0, a3: i32 = 0, a4: i32 = 0, a5: i32 = 0, a6: i32 = 0, a7: i32 = 0, a8: i32 = 0, a9: i32 = 0,
+    b0: i32 = 0, b1: i32 = 0, b2: i32 = 0, b3: i32 = 0, b4: i32 = 0, b5: i32 = 0, b6: i32 = 0, b7: i32 = 0, b8: i32 = 0, b9: i32 = 0,
+}
+
+inline pick[T](first: bool, a: T, b: T): T {
+    if first { return a }
+    return b
+}
+
+inline twice[T](first: bool, a: T, b: T): T {
+    return pick[T](!first, b, a)
+}
+
+main(): int {
+    p: Pt = pick[Pt](false, Pt {}, Pt { x = 3, y = 4 })
+    fmt.printf("%d %.1f %s %d %d | ", pick[int](true, 7, 8), pick[f64](false, 1.0, 2.5),
+               pick[string](true, "ace", "c"), p.x, p.y)
+    w: Wide = Wide { a0 = 10, b9 = 200 }
+    v: Wide = pick[Wide](true, w, Wide {})
+    fmt.printf("%d | ", int(v.a0 + v.b9))
+    items: array.Array[Pt] = array.Array[Pt] {}
+    for i: int in 0 .. 3 {
+        err: Error = mut items.push(Pt { x = i, y = i * 2 })
+        if err != null { return 1 }
+    }
+    q: Pt = items.get(2)
+    fmt.printf("%d | ", q.x + q.y + items.get(1).x + items.get(1).y)
+    fmt.printf("%d\n", twice[int](true, 14, 5))
+    mut items.wipe()
+    return 0
+}

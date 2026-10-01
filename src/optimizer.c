@@ -1258,6 +1258,7 @@ typedef struct {
     IrFunc*  fn;
     uint8_t* dead; // per block: removed, awaiting compaction
     int*     repl; // per value: the value replacing it, or -1
+    int      nrepl;
 } Clean;
 
 static int chase(const Clean* c, int v) {
@@ -1336,7 +1337,13 @@ static int fold_branches(Clean* c) {
         if (t->op != IR_BR) continue;
         IrIns* cond = &fn->ins[t->args[0]];
         int keep = -1;
+        uint64_t r;
         if (cond->op == IR_CONST) keep = cond->imm ? 0 : 1;
+        else if (cond->nargs == 2 && fn->ins[cond->args[0]].op == IR_CONST && fn->ins[cond->args[1]].op == IR_CONST &&
+                 is_int((IrType)fn->ins[cond->args[0]].type) &&
+                 fold((IrOp)cond->op, (IrType)cond->type, (IrType)fn->ins[cond->args[0]].type,
+                      fn->ins[cond->args[0]].imm, fn->ins[cond->args[1]].imm, &r))
+            keep = r ? 0 : 1; // a comparison a threaded jump left constant
         else if (bb->succ[0] == bb->succ[1]) {
             IrBlock* sb = &fn->blocks[bb->succ[0]];
             int same = 1, i0 = -1, i1 = -1;
@@ -1479,6 +1486,127 @@ static int thread_jumps(Clean* c) {
     return changed;
 }
 
+// The block owning a use: an instruction's own, or for a phi operand the
+// predecessor it arrives from.
+static int use_owner(const IrFunc* fn, const IrIns* x, int a) {
+    return x->op == IR_PHI ? fn->blocks[x->block].preds[a] : x->block;
+}
+
+// Whether every use of j's phi v outside j is owned by s.
+static int phi_uses_in(const IrFunc* fn, int v, int j, int s) {
+    for (int b = 0; b < fn->nblocks; b++)
+        for (int i = 0; i < fn->blocks[b].nins; i++) {
+            const IrIns* x = &fn->ins[fn->blocks[b].ins[i]];
+            for (int a = 0; a < x->nargs; a++) {
+                if (x->args[a] != v) continue;
+                int o = use_owner(fn, x, a);
+                if (o != j && o != s) return 0;
+            }
+        }
+    return 1;
+}
+
+// operand a of j's branch condition as it arrives from predecessor i: a
+// constant's value, or 0 when it is not constant there
+static int branch_operand(const IrFunc* fn, int j, int i, int a, uint64_t* out) {
+    const IrIns* x = &fn->ins[a];
+    if (x->op == IR_PHI && x->block == j) x = &fn->ins[x->args[i]];
+    if (x->op != IR_CONST || !is_int((IrType)x->type)) return 0;
+    *out = x->imm;
+    return 1;
+}
+
+// A jump from p into block j whose branch condition is constant along that
+// edge goes straight to the successor it selects, s. j holds only phis,
+// constants, and the condition, a phi or an integer operation over its phis
+// and constants, nothing of which but the phis is used outside j, and j heads
+// no loop, so the edge enters no loop sideways. s has j as its only
+// predecessor and no phis; a phi of j used in s gets a phi in s joining it
+// with its operand from p.
+static int thread_branches(Clean* c) {
+    IrFunc* fn = c->fn;
+    int changed = 0;
+    int* idom = NULL;
+    int* rpo = NULL;
+    int nrpo = 0;
+    for (int j = 1; j < fn->nblocks; j++) {
+        if (c->dead[j]) continue;
+        IrBlock* jb = &fn->blocks[j];
+        IrIns* t = &fn->ins[jb->ins[jb->nins - 1]];
+        if (t->op != IR_BR) continue;
+        int cond = t->args[0], ok = 1, k = 0;
+        while (k < jb->nins && fn->ins[jb->ins[k]].op == IR_PHI) k++;
+        for (int i = k; i < jb->nins - 1 && ok; i++) {
+            int v = jb->ins[i];
+            ok = fn->ins[v].op == IR_CONST || v == cond;
+        }
+        IrIns* cx = &fn->ins[cond];
+        if (!ok || (cx->block == j && cx->op != IR_PHI && cx->op != IR_CONST &&
+                    (cx->nargs != 2 || !is_int((IrType)fn->ins[cx->args[0]].type))))
+            continue;
+        if (cx->block != j) continue;
+        for (int b = 0; b < fn->nblocks && ok; b++) { // j's non-phi values stay in j
+            if (b == j) continue;
+            for (int i = 0; i < fn->blocks[b].nins && ok; i++) {
+                const IrIns* x = &fn->ins[fn->blocks[b].ins[i]];
+                for (int a = 0; a < x->nargs && ok; a++)
+                    ok = fn->ins[x->args[a]].block != j || fn->ins[x->args[a]].op == IR_PHI;
+            }
+        }
+        if (!ok) continue;
+        for (int i = 0; i < jb->npreds; i++) {
+            int p = jb->preds[i];
+            if (fn->blocks[p].succ[1] >= 0 || fn->ins[fn->blocks[p].ins[fn->blocks[p].nins - 1]].op != IR_JMP) continue;
+            uint64_t x, y = 0, r;
+            if (!branch_operand(fn, j, i, cx->op == IR_PHI || cx->op == IR_CONST ? cond : cx->args[0], &x)) continue;
+            if (cx->op == IR_PHI || cx->op == IR_CONST) r = x != 0;
+            else if (!branch_operand(fn, j, i, cx->args[1], &y) ||
+                     !fold((IrOp)cx->op, (IrType)cx->type, (IrType)fn->ins[cx->args[0]].type, x, y, &r))
+                continue;
+            int s = jb->succ[r ? 0 : 1];
+            IrBlock* sb = &fn->blocks[s];
+            if (s == j || sb->npreds != 1 || (sb->nins && fn->ins[sb->ins[0]].op == IR_PHI)) continue;
+            int fine = 1;
+            for (int q = 0; q < k && fine; q++) fine = phi_uses_in(fn, jb->ins[q], j, s);
+            if (!fine) continue;
+            if (!idom) idom = ir_dominators(fn, &rpo, &nrpo);
+            int header = 0;
+            for (int q = 0; q < jb->npreds && !header; q++) header = idom[jb->preds[q]] >= 0 && ir_dominates(idom, j, jb->preds[q]);
+            if (header) break;
+            for (int q = 0; q < k; q++) { // s's phi for each of j's it uses
+                int v = fn->blocks[j].ins[q], w = -1;
+                for (int b = 0; b < fn->nblocks; b++)
+                    for (int u = 0; u < fn->blocks[b].nins; u++) {
+                        int id = fn->blocks[b].ins[u];
+                        for (int a = 0; a < fn->ins[id].nargs; a++) {
+                            if (fn->ins[id].args[a] != v || id == w || use_owner(fn, &fn->ins[id], a) != s) continue;
+                            if (w < 0) {
+                                w = ir_phi_new(fn, s, (IrType)fn->ins[v].type);
+                                ir_arg_add(fn, w, v);
+                                ir_arg_add(fn, w, fn->ins[v].args[i]);
+                                c->repl = xgrow(c->repl, &c->nrepl, fn->nins, sizeof(int));
+                                c->repl[w] = -1;
+                            }
+                            fn->ins[id].args[a] = w;
+                        }
+                    }
+            }
+            sb = &fn->blocks[s];
+            sb->preds = xgrow(sb->preds, &sb->cpreds, sb->npreds + 1, sizeof(int));
+            sb->preds[sb->npreds++] = p;
+            fn->blocks[p].succ[0] = s;
+            drop_pred(fn, j, p);
+            free(idom); free(rpo);
+            idom = rpo = NULL;
+            changed = 1;
+            jb = &fn->blocks[j];
+            i--; // preds shifted down
+        }
+    }
+    free(idom); free(rpo);
+    return changed;
+}
+
 static int has_effect(const IrIns* x) {
     switch (x->op) {
     case IR_STORE: case IR_CALL: case IR_CALLI: case IR_RTCALL: case IR_CHECK: case IR_PROJ: case IR_ASM:
@@ -1550,6 +1678,7 @@ static void cleanup(IrFunc* fn) {
     c.fn = fn;
     c.dead = xalloc((size_t)fn->nblocks, 1);
     c.repl = xalloc((size_t)fn->nins, sizeof(int));
+    c.nrepl = fn->nins;
     for (int v = 0; v < fn->nins; v++) c.repl[v] = -1;
     for (int changed = 1; changed;) {
         changed = fold_branches(&c);
@@ -1557,6 +1686,7 @@ static void cleanup(IrFunc* fn) {
         changed |= trivial_phis(&c);
         changed |= merge_blocks(&c);
         changed |= thread_jumps(&c);
+        changed |= thread_branches(&c);
         changed |= dce(&c);
         compact(&c);
     }

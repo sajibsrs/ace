@@ -546,27 +546,27 @@ b83: ; preds b42
     %300 = shr u64 %297, %299
     %301 = eq bool %300, %298
     br %301, b81, b82
-b84: ; preds b87, b92
+b84: ; preds b87, b91
     %303 = const i64 4
     ret %303
-b85: ; preds b92
+b85: ; preds b91, b86
     %305 = const i64 5
     %306 = str ptr "big"
     %307 = const u64 3
     %308 = call i64 guard(%305, %306, %307)
     %309 = const i64 5
     %310 = ne bool %308, %309
-    br %310, b97, b98
-b86: ; preds b87
+    br %310, b95, b96
+b86: ; preds b87, b89
     %312 = const i64 1
     %313 = call u64 make(%312)
     %314 = const u64 32
     %315 = shr u64 %313, %314
     %316 = const u64 1
     %317 = eq bool %315, %316
-    br %317, b93, b94
-b87: ; preds b88, b90, b91
-    %319 = phi i64 [%323, b88], [%328, b90], [%330, b91]
+    br %317, b85, b92
+b87: ; preds b88, b90
+    %319 = phi i64 [%323, b88], [%328, b90]
     %320 = const i64 2
     %321 = ne bool %319, %320
     br %321, b84, b86
@@ -576,36 +576,30 @@ b88: ; preds b82
 b89: ; preds b82
     %325 = const u64 2
     %326 = eq bool %292, %325
-    br %326, b90, b91
+    br %326, b86, b90
 b90: ; preds b89
-    %328 = const i64 2
+    %328 = const i64 0
     jmp b87
-b91: ; preds b89
-    %330 = const i64 0
-    jmp b87
-b92: ; preds b93, b95, b96
-    %332 = phi i64 [%336, b93], [%341, b95], [%343, b96]
-    %333 = const i64 1
-    %334 = ne bool %332, %333
-    br %334, b84, b85
-b93: ; preds b86
-    %336 = const i64 1
-    jmp b92
-b94: ; preds b86
-    %338 = const u64 2
-    %339 = eq bool %315, %338
-    br %339, b95, b96
-b95: ; preds b94
-    %341 = const i64 2
-    jmp b92
-b96: ; preds b94
+b91: ; preds b93, b94
+    %330 = phi i64 [%337, b93], [%339, b94]
+    %331 = const i64 1
+    %332 = ne bool %330, %331
+    br %332, b84, b85
+b92: ; preds b86
+    %334 = const u64 2
+    %335 = eq bool %315, %334
+    br %335, b93, b94
+b93: ; preds b92
+    %337 = const i64 2
+    jmp b91
+b94: ; preds b92
+    %339 = const i64 0
+    jmp b91
+b95: ; preds b85
+    %341 = const i64 5
+    ret %341
+b96: ; preds b85
     %343 = const i64 0
-    jmp b92
-b97: ; preds b85
-    %345 = const i64 5
-    ret %345
-b98: ; preds b85
-    %347 = const i64 0
-    ret %347
+    ret %343
 }
 

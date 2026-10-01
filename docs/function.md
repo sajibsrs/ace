@@ -381,7 +381,7 @@ The function still has an ordinary symbol, so it can be used as a function
 value, and a `defer` of it calls that symbol at exit. Generic templates,
 methods, associated functions, and specializations may be `inline`; each
 specialization carries its own marker. An inline function may return any type,
-structs and tuples included, except a type parameter; it must not take a
+structs, tuples, and type parameters included; it must not take a
 `noalias` parameter, and must not contain `defer` or inline assembly. `intrinsic`
 declarations, bodiless `specialized` templates, and `main` cannot be `inline`,
 and a chain of inline functions that calls back into itself is rejected.
@@ -557,8 +557,9 @@ Why the rules in `spec/compiler.md` are shaped as they are.
   at the module boundary that callers compile against the body; release builds
   additionally expand only small leaf functions (Compiler #6), so unmarked code
   pays no call for a trivial helper while larger expansion stays the author's
-  choice (PHILOSOPHY Considerations #1). Any result type but a type parameter
-  expands, because lowering already splits every aggregate into scalar leaves:
+  choice (PHILOSOPHY Considerations #1). Any result type expands, because
+  lowering already splits every aggregate into scalar leaves, and a type
+  parameter result is a concrete type once the body is stamped for its call:
   a struct or tuple result joins as several SSA values at no extra cost, and
   value-type helpers (vector math, color constructors) are exactly the small
   functions worth expanding. Aggregate results cut `bench/core/raytrace` from

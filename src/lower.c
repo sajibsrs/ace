@@ -53,6 +53,12 @@ typedef struct { // an inline call being expanded
     int    dst;  // an aggregate of over 16 leaves: the address it is stored at, else -1
 } Expansion;
 
+typedef struct GenEscape { // a generic inline declaration's escape mask under one instantiation
+    Node*     f;
+    SType**   targs;
+    uint64_t  esc;
+} GenEscape;
+
 typedef struct { // a captured `defer`: its call over snapshot variables
     Node* call;
     Node* at;    // the defer statement, whose line the exit-time call carries
@@ -70,6 +76,8 @@ typedef struct {
     PtrMap      var_ix;    // binder Sym -> variable index + 1
     PtrMap      stored;    // Syms whose storage something needs: they live in a slot
     PtrMap      escapes;   // inline declaration -> its parameters' escape mask (scan_escapes)
+    struct GenEscape* gesc; // the same for a generic one, per instantiation
+    int         ngesc, cgesc;
     int         scan_auto; // scan_storage: release auto-inline calls expand (no self tail loop can stop them)
     int         in_defer;  // scan_storage: under a defer, whose call is never expanded
     IrType*     vtype;
@@ -525,14 +533,13 @@ static void need_storage(Lw* l, Scan* sc, Node* x) {
 }
 
 static Node* inline_target(Lw* l, Node* call, SType*** targs, int* ntargs);
-static uint64_t scan_escapes(Lw* l, Node* f);
+static uint64_t scan_escapes(Lw* l, Node* f, SType** targs, int ntargs);
 
-// The inline declaration a call expands, as lowering will decide, or NULL.
-static Node* scan_target(Lw* l, Node* call) {
+// The inline declaration a call expands, as lowering will decide, with the
+// type arguments its body is stamped under, or NULL.
+static Node* scan_target(Lw* l, Node* call, SType*** targs, int* ntargs) {
     if (l->in_defer) return NULL;
-    SType** targs;
-    int ntargs;
-    Node* f = inline_target(l, call, &targs, &ntargs);
+    Node* f = inline_target(l, call, targs, ntargs);
     if (!f || !f->b || (!(f->flags & F_INLINE) && !l->scan_auto)) return NULL;
     return f;
 }
@@ -555,8 +562,10 @@ static void scan_walk(Lw* l, Scan* sc, Node* n) {
         return;
     }
     if (n->kind == N_CALL) { // a receiver or mut argument: storage unless an expansion binds it in place
-        Node* f = scan_target(l, n);
-        uint64_t esc = f ? scan_escapes(l, f) : ~(uint64_t)0;
+        SType** targs;
+        int ntargs;
+        Node* f = scan_target(l, n, &targs, &ntargs);
+        uint64_t esc = f ? scan_escapes(l, f, targs, ntargs) : ~(uint64_t)0;
         int recv = n->a && n->a->kind == N_FIELD_E && !(n->flags & (F_METHOD | F_ASSOC));
         if (recv && (esc & 1)) need_storage(l, sc, n->a->a);
         for (int i = 0; i < n->nkids; i++) {
@@ -588,17 +597,31 @@ static void scan_storage(Lw* l, Node* n) {
 // Which parameters of inline declaration f need the storage their argument
 // names (bit i for parameter i): an expansion binds the others to the
 // argument's own variables. A generic body, whose calls resolve only once
-// stamped, and a cycle count as needing it; bit 63 stands for parameter 63
-// onward and is always set, so a mask is never 0 (ptrmap's absent).
+// stamped, is stamped under targs and scanned per instantiation; a
+// specialization and a cycle count as needing it; bit 63 stands for
+// parameter 63 onward and is always set, so a mask is never 0 (ptrmap's
+// absent).
 #define ESC_REST ((uint64_t)1 << 63)
 
-static uint64_t scan_escapes(Lw* l, Node* f) {
-    uint64_t seen = (uint64_t)ptrmap_get(&l->escapes, f);
-    if (seen) return seen;
+static uint64_t scan_escapes(Lw* l, Node* f, SType** targs, int ntargs) {
     uint64_t all = ~(uint64_t)0;
-    ptrmap_put(&l->escapes, f, (uintptr_t)all); // a cycle meets all
     Sym* fs = node_sym(f);
-    if (f->c || (fs && (fs->is_generic || fs->spec_args))) return all;
+    if (fs && fs->spec_args) return all;
+    int gen = -1; // f's entry in l->gesc, when generic
+    if (f->c) {
+        if (!targs || f->c->nkids != ntargs) return all;
+        for (int i = 0; i < l->ngesc; i++)
+            if (l->gesc[i].f == f && l->gesc[i].targs == targs) return l->gesc[i].esc;
+        l->gesc = (GenEscape*)grow(l->gesc, &l->cgesc, l->ngesc + 1, sizeof(GenEscape));
+        gen = l->ngesc++;
+        l->gesc[gen] = (GenEscape){ f, targs, all }; // a cycle meets all
+        sema_stamp_body(f, targs, ntargs); // inline_copy stamps it again before each expansion
+    } else {
+        uint64_t seen = (uint64_t)ptrmap_get(&l->escapes, f);
+        if (seen) return seen;
+        ptrmap_put(&l->escapes, f, (uintptr_t)all); // a cycle meets all
+        if (fs && fs->is_generic) return all;
+    }
     uint64_t esc = ESC_REST;
     int was = l->in_defer;
     l->in_defer = 0;
@@ -609,7 +632,8 @@ static uint64_t scan_escapes(Lw* l, Node* f) {
         if (sc.hit) esc |= (uint64_t)1 << i;
     }
     l->in_defer = was;
-    ptrmap_put(&l->escapes, f, (uintptr_t)esc);
+    if (gen >= 0) l->gesc[gen].esc = esc;
+    else ptrmap_put(&l->escapes, f, (uintptr_t)esc);
     return esc;
 }
 
@@ -4149,6 +4173,7 @@ IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, 
         ptrmap_free(&l.var_ix);
         ptrmap_free(&l.stored);
         ptrmap_free(&l.escapes);
+        free(l.gesc);
         free(l.defers); free(l.vtype); free(l.home); free(l.defs.key); free(l.defs.val); free(l.inc); free(l.inc_head); free(l.repl); free(l.tgt); free(l.inl);
         return NULL;
     }
@@ -4244,6 +4269,7 @@ IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, 
     ptrmap_free(&l.var_ix);
     ptrmap_free(&l.stored);
     ptrmap_free(&l.escapes);
+    free(l.gesc);
     free(l.defers); free(l.vtype); free(l.home); free(l.defs.key); free(l.defs.val); free(l.inc); free(l.inc_head); free(l.repl); free(l.tgt); free(l.inl);
     return fn;
 }

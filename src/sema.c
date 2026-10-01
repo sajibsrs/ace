@@ -6961,12 +6961,6 @@ SType* sema_stamp_body(Node* f, SType** args, int nargs) {
 
 // --- inline functions (Functions & ABI #8) -------------------------------------
 
-// none, or one value the emitter keeps in a single register
-static int inline_result_ok(SType* t) {
-    while (t && t->kind == SK_DISTINCT) t = t->base;
-    return !t || t->kind != SK_TYPEPARAM;
-}
-
 // the first defer or asm statement in n, or NULL
 static Node* inline_body_bad(Node* n) {
     if (!n) return NULL;
@@ -6983,7 +6977,7 @@ static Node* inline_body_bad(Node* n) {
     return NULL;
 }
 
-static void check_inline_decl(Ck* k, Node* f, Sym* s) {
+static void check_inline_decl(Ck* k, Node* f) {
     if (!(f->flags & F_INLINE)) return;
     int nl = (int)f->len;
     if (f->flags & F_INTRINSIC) {
@@ -7001,10 +6995,6 @@ static void check_inline_decl(Ck* k, Node* f, Sym* s) {
     for (int i = 0; i < f->nkids; i++)
         if (f->kids[i]->flags & F_NOALIAS)
             ck_err(k, f->kids[i], "inline function '%.*s' cannot take a noalias parameter", nl, f->str);
-    SType* ret = s && s->type && s->type->kind == SK_FUNC ? s->type->ret : NULL;
-    if (!inline_result_ok(ret))
-        ck_err(k, f->a ? f->a : f, "inline function '%.*s' cannot return a type parameter",
-               nl, f->str);
     Node* bad = inline_body_bad(f->b);
     if (bad)
         ck_err(k, bad, "inline function '%.*s' cannot contain %s", nl, f->str,
@@ -7152,7 +7142,7 @@ int sema_check(Node* file, Diag* d) {
             }
             Sym* s = declare_func(&k, n, 0);
             if (!s) break;
-            check_inline_decl(&k, n, s);
+            check_inline_decl(&k, n);
             if (s->is_generic) s->decl_scope = is_root_node(d, n) ? &import_scope : &file_scope;
             if (!(n->flags & (F_METHOD | F_ASSOC)) && n->len == 4 && memcmp(n->str, "main", 4) == 0) {
                 int spells_int = n->a && n->a->kind == N_NAMED && n->a->len == 3 && memcmp(n->a->str, "int", 3) == 0;

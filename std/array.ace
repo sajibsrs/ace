@@ -34,8 +34,10 @@ pub Array[T]::new(capacity: usize): (Array[T], Error) {
 }
 
 /* Releases the array's storage and leaves it empty. */
-pub mut Array[T].wipe() {
-    mem.release[T](mut self.items)
+pub inline mut Array[T].wipe() {
+    items: mut []T = self.items
+    mem.release[T](mut items)
+    self.items = null
     self.len = 0
 }
 
@@ -46,7 +48,7 @@ pub Array[T].view(): []T {
     return self.items[..self.len]
 }
 
-pub Array[T].get(index: usize): T {
+pub inline Array[T].get(index: usize): T {
     return self.items[..self.len][index]
 }
 
@@ -57,12 +59,14 @@ pub inline mut Array[T].set(index: usize, value: T) {
 
 /* Appends `value`, growing storage when full. */
 pub inline mut Array[T].push(value: T): Error {
-    if self.len == self.items.len {
-        err: Error = mut self.reserve(self.len + 1)
-        if err != null { return err }
+    len: usize = self.len
+    if len == self.items.len {
+        grown: mut []T, ok: bool = mem.grow[T](self.items, len + 1)
+        if !ok { return ArrayErr.allocation }
+        self.items = grown
     }
-    self.items[self.len] = value
-    self.len += 1
+    self.items[len] = value
+    self.len = len + 1
     return null
 }
 

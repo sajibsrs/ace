@@ -1,5 +1,14 @@
 # Compiler
 
+- Let an inline function return a type parameter, its result typed by the
+  stamp each expansion already makes, and scanned a generic inline body for
+  the receiver and `mut` parameters needing storage once per instantiation
+  rather than counting it as needing all; `std/array` `get` is now inline
+  and its locals stay in registers. `bench/std` array-get 2.4x to 1.0x of C.
+- Release cleanup threads a jump into a branch whose condition is constant
+  along that edge (an inline call's `null` error, a switch's dispatch) to the
+  arm it selects, giving that arm a phi for each of the branch block's phis
+  it uses. `bench/std` array-push 1.5x to 1.1x of C on x64.
 - Selected x64 instructions on operands in place: each reads its operands
   from their registers and computes in its result's in two-operand form, a
   fitting constant as an immediate, a stack object as an rbp offset, floats
