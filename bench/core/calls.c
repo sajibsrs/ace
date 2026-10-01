@@ -3,9 +3,9 @@
  * call and cannot specialise it on constant arguments. Defining ALLOW_INLINE
  * gives the inlined reference, which Ace has no way to match.
  */
+#include "../awake.h"
 #include <stdint.h>
 #include <stdio.h>
-#include <time.h>
 
 #ifdef ALLOW_INLINE
 #define NOINLINE
@@ -92,91 +92,89 @@ static void report(const char* name, uint64_t elapsed, usize operations,
            (unsigned long long)operations, (unsigned long long)checksum);
 }
 
-static uint64_t now(void) { return clock_gettime_nsec_np(CLOCK_UPTIME_RAW); }
-
 int main(void) {
     usize state = 1;
-    uint64_t started = now();
+    uint64_t started = awake();
     for (usize i = 0; i < ITERATIONS; i++) state = call1(state + i);
-    report("call-1", now() - started, ITERATIONS, state);
+    report("call-1", awake() - started, ITERATIONS, state);
 
     state = 1;
-    started = now();
+    started = awake();
     for (usize i = 0; i < ITERATIONS; i++) state = call4(state, i, state >> 3, 1);
-    report("call-4", now() - started, ITERATIONS, state);
+    report("call-4", awake() - started, ITERATIONS, state);
 
     state = 1;
-    started = now();
+    started = awake();
     for (usize i = 0; i < ITERATIONS; i++)
         state = call8(state, i, 1, 2, 3, 4, 5, 6);
-    report("call-8", now() - started, ITERATIONS, state);
+    report("call-8", awake() - started, ITERATIONS, state);
 
-    started = now();
+    started = awake();
     state = fib(FIB_INPUT);
-    report("fib-recursive", now() - started, FIB_CALLS, state);
+    report("fib-recursive", awake() - started, FIB_CALLS, state);
 
     state = 1;
-    started = now();
+    started = awake();
     for (usize i = 0; i < TAIL_ROUNDS; i++) state = sum_tail(TAIL_DEPTH, state);
-    report("tail-recursive", now() - started, TAIL_ROUNDS * TAIL_DEPTH, state);
+    report("tail-recursive", awake() - started, TAIL_ROUNDS * TAIL_DEPTH, state);
 
     Small small = {1};
-    started = now();
+    started = awake();
     for (usize i = 0; i < ITERATIONS; i++) small = small_step(small);
-    report("struct-8", now() - started, ITERATIONS, small.v);
+    report("struct-8", awake() - started, ITERATIONS, small.v);
 
     Pair pair = {1, 1};
-    started = now();
+    started = awake();
     for (usize i = 0; i < ITERATIONS; i++) pair = pair_step(pair);
-    report("struct-16", now() - started, ITERATIONS, (pair.a + pair.b) & MASK);
+    report("struct-16", awake() - started, ITERATIONS, (pair.a + pair.b) & MASK);
 
     Triple triple = {1, 1, 1};
-    started = now();
+    started = awake();
     for (usize i = 0; i < ITERATIONS; i++) triple = triple_step(triple);
-    report("struct-24", now() - started, ITERATIONS,
+    report("struct-24", awake() - started, ITERATIONS,
            (triple.a + triple.b + triple.c) & MASK);
 
     Octet octet = {1, 1, 1, 1, 1, 1, 1, 1};
-    started = now();
+    started = awake();
     for (usize i = 0; i < ITERATIONS; i++) octet = octet_step(octet);
-    report("struct-64", now() - started, ITERATIONS,
+    report("struct-64", awake() - started, ITERATIONS,
            (octet.a + octet.b + octet.c + octet.d + octet.e + octet.f + octet.g +
             octet.h) & MASK);
 
     Vec3 acc = {0.0, 0.0, 0.0};
     Vec3 step = {1.0, 2.0, 3.0};
-    started = now();
+    started = awake();
     for (usize i = 0; i < ITERATIONS; i++) acc = vec_add(acc, step);
-    report("struct-hfa", now() - started, ITERATIONS,
+    report("struct-hfa", awake() - started, ITERATIONS,
            (usize)(acc.x + acc.y + acc.z));
 
     double total = 0.0;
     Vec3 probe = {0.0, 2.0, 3.0};
     Vec3 weights = {4.0, 5.0, 6.0};
-    started = now();
+    started = awake();
     for (usize i = 0; i < ITERATIONS; i++) {
         probe.x = (double)(i & 15);
         total = total + dot3(probe, weights);
     }
-    report("float-acc", now() - started, ITERATIONS, (usize)total);
+    report("float-acc", awake() - started, ITERATIONS, (usize)total);
 
     state = 1;
-    started = now();
+    started = awake();
     for (usize i = 0; i < ITERATIONS; i++) {
         Divmod result = divmod(state + i + 1, 97);
         state = (result.first * 3 + result.second) & MASK;
     }
-    report("tuple-return", now() - started, ITERATIONS, state);
+    report("tuple-return", awake() - started, ITERATIONS, state);
 
     Counter counter = {1};
-    started = now();
+    started = awake();
     for (usize i = 0; i < ITERATIONS; i++) counter_add(&counter, i);
-    report("method", now() - started, ITERATIONS, counter.value);
+    report("method", awake() - started, ITERATIONS, counter.value);
 
     usize (*callback)(usize) = callback_slot;
     state = 1;
-    started = now();
+    started = awake();
     for (usize i = 0; i < ITERATIONS; i++) state = callback(state + i);
-    report("function-value", now() - started, ITERATIONS, state);
+    report("function-value", awake() - started, ITERATIONS, state);
     return 0;
 }

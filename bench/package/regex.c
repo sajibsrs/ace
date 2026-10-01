@@ -5,12 +5,12 @@
  * measures code generation, not algorithm.
  */
 
+#include "../awake.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #define SIZE 1048576
 #define CALLS 10000
@@ -57,10 +57,6 @@ typedef struct {
     size_t *best;
     size_t slots;
 } Matcher;
-
-static uint64_t now_ns(void) {
-    return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-}
 
 static void report(const char *name, uint64_t elapsed, uint64_t operations,
                    uint64_t checksum) {
@@ -285,7 +281,7 @@ static void find_all(const char *name, const Program *code, const uint8_t *text,
     matcher_init(&m, code);
     uint64_t checksum = 0;
     size_t at = 0;
-    uint64_t started = now_ns();
+    uint64_t started = awake();
 
     while (at <= len) {
         if (!run(&m, code, text, len, at)) break;
@@ -294,7 +290,7 @@ static void find_all(const char *name, const Program *code, const uint8_t *text,
         at = end;
         if (end == start) at += 1;
     }
-    report(name, now_ns() - started, len, checksum);
+    report(name, awake() - started, len, checksum);
     matcher_free(&m);
 }
 
@@ -305,14 +301,14 @@ static void captures(const uint8_t *text, size_t len) {
     matcher_init(&m, &code);
     uint64_t checksum = 0;
     size_t at = 0;
-    uint64_t started = now_ns();
+    uint64_t started = awake();
 
     while (at <= len) {
         if (!run(&m, &code, text, len, at)) break;
         checksum += 1 + m.best[2] + m.best[5];
         at = m.best[1];
     }
-    report("captures", now_ns() - started, len, checksum);
+    report("captures", awake() - started, len, checksum);
     matcher_free(&m);
 }
 
@@ -324,12 +320,12 @@ static void pathological(void) {
     Matcher m;
     matcher_init(&m, &code);
     uint64_t checksum = 0;
-    uint64_t started = now_ns();
+    uint64_t started = awake();
 
     for (size_t i = 0; i < CALLS; i++) {
         if (run(&m, &code, text, len, 0)) checksum += 1 + m.best[0] + m.best[1];
     }
-    report("pathological", now_ns() - started, CALLS * len, checksum);
+    report("pathological", awake() - started, CALLS * len, checksum);
     matcher_free(&m);
 }
 

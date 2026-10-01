@@ -8,6 +8,12 @@ trap 'rm -rf "$bench_tmp"' EXIT HUP INT TERM
 cd "$repo_dir"
 make ace
 
+# Process statistics: BSD time spells them -l, GNU time -v.
+case $(uname -s) in
+    Darwin) time_flag=-l ;;
+    *) time_flag=-v ;;
+esac
+
 for mode in debug release; do
     echo "Ace $mode compiler report"
     echo "--------------------------"
@@ -19,7 +25,7 @@ for mode in debug release; do
     # Validate correctness independently: some restricted macOS environments
     # deny a sysctl used by /usr/bin/time -l and make time itself return nonzero.
     "$bench_tmp/memory-$mode" >/dev/null
-    if ! /usr/bin/time -l "$bench_tmp/memory-$mode"; then
+    if ! /usr/bin/time "$time_flag" "$bench_tmp/memory-$mode"; then
         echo "warning: process statistics were unavailable; program validation passed" >&2
     fi
     echo

@@ -3,15 +3,11 @@
  * over the same malloc/realloc/calloc/free the Ace allocator lowers to.
  */
 
+#include "../awake.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
-
-static uint64_t now_ns(void) {
-    return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-}
 
 static void report(const char *name, uint64_t elapsed, uint64_t operations, uint64_t checksum) {
     printf("%s %llu %llu %llu\n", name, (unsigned long long)elapsed, (unsigned long long)operations,
@@ -148,17 +144,17 @@ int main(void) {
     uint64_t push_time = 0, set_time = 0, get_time = 0, checksum = 0;
 
     for (size_t round = 0; round < rounds; round++) {
-        uint64_t started = now_ns();
+        uint64_t started = awake();
         for (size_t i = 0; i < count; i++)
             if (!array_push(&items, i)) return 1;
-        push_time += now_ns() - started;
-        started = now_ns();
+        push_time += awake() - started;
+        started = awake();
         for (size_t i = 0; i < count; i++) items.items[i] = i * 3 + round;
-        set_time += now_ns() - started;
-        started = now_ns();
+        set_time += awake() - started;
+        started = awake();
         uint64_t sum = 0;
         for (size_t i = 0; i < count; i++) sum += items.items[i];
-        get_time += now_ns() - started;
+        get_time += awake() - started;
         checksum += sum % 1000003 + items.len;
         array_wipe(&items);
     }
@@ -172,26 +168,26 @@ int main(void) {
 
     for (size_t round = 0; round < map_rounds; round++) {
         Map table = { 0 };
-        uint64_t started = now_ns();
+        uint64_t started = awake();
         for (size_t i = 0; i < keys; i++)
             if (!map_set(&table, (int64_t)(i * 7), (int64_t)(i + round))) return 2;
-        set_time += now_ns() - started;
-        started = now_ns();
+        set_time += awake() - started;
+        started = awake();
         for (size_t i = 0; i < keys; i++) {
             int64_t value;
             if (map_get(&table, (int64_t)(i * 7), &value)) checksum += (uint64_t)value;
         }
-        get_time += now_ns() - started;
-        started = now_ns();
+        get_time += awake() - started;
+        started = awake();
         for (size_t i = 0; i < keys; i++) {
             int64_t value;
             if (!map_get(&table, (int64_t)(i * 7 + 3), &value)) checksum += 1;
         }
-        miss_time += now_ns() - started;
-        started = now_ns();
+        miss_time += awake() - started;
+        started = awake();
         for (size_t i = 0; i < keys; i++)
             if (map_unset(&table, (int64_t)(i * 7))) checksum += 2;
-        unset_time += now_ns() - started;
+        unset_time += awake() - started;
         checksum += table.len;
         map_wipe(&table);
     }

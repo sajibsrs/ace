@@ -7,22 +7,18 @@
 
 #define PCRE2_CODE_UNIT_WIDTH 8
 
+#include "../awake.h"
 #include <pcre2.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #define SIZE 1048576
 #define CALLS 10000
 
 static bool jit;
-
-static uint64_t now_ns(void) {
-    return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-}
 
 static void report(const char *name, uint64_t elapsed, uint64_t operations,
                    uint64_t checksum) {
@@ -71,7 +67,7 @@ static void find_all(const char *name, const char *pattern, const uint8_t *text,
     pcre2_match_data *data = pcre2_match_data_create_from_pattern(code, NULL);
     uint64_t checksum = 0;
     size_t at = 0;
-    uint64_t started = now_ns();
+    uint64_t started = awake();
 
     while (at <= len) {
         int rc = pcre2_match(code, text, len, at, 0, data, NULL);
@@ -87,7 +83,7 @@ static void find_all(const char *name, const char *pattern, const uint8_t *text,
             if (v[1] == v[0]) at += 1;
         }
     }
-    report(name, now_ns() - started, len, checksum);
+    report(name, awake() - started, len, checksum);
     pcre2_match_data_free(data);
     pcre2_code_free(code);
 }
@@ -98,7 +94,7 @@ static void pathological(void) {
     const uint8_t *text = (const uint8_t *)"aaaaaaaaaaaaaabc";
     size_t len = strlen((const char *)text);
     uint64_t checksum = 0;
-    uint64_t started = now_ns();
+    uint64_t started = awake();
 
     for (size_t i = 0; i < CALLS; i++) {
         if (pcre2_match(code, text, len, 0, 0, data, NULL) >= 0) {
@@ -106,7 +102,7 @@ static void pathological(void) {
             checksum += 1 + v[0] + v[1];
         }
     }
-    report("pathological", now_ns() - started, CALLS * len, checksum);
+    report("pathological", awake() - started, CALLS * len, checksum);
     pcre2_match_data_free(data);
     pcre2_code_free(code);
 }

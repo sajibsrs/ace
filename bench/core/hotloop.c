@@ -5,15 +5,11 @@
  * so every checksum must match bit for bit.
  */
 
-#ifdef __linux__
-#define _DEFAULT_SOURCE /* CLOCK_MONOTONIC_RAW */
-#endif
-
+#include "../awake.h"
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
 
 #define N 4096
 #define REPEATS 20000
@@ -52,17 +48,6 @@ static const unsigned FACE_COLORS[6] = {0xF44336, 0x4CAF50, 0x00BCD4, 0x9C27B0, 
 static float sines[ANGLES], cosines[ANGLES];
 static Vertex vertices[CUBES * 24];
 static int indices[CUBES * 36];
-
-/* The clock Ace's time.awake reads on each target. */
-static uint64_t now(void) {
-#ifdef __APPLE__
-    return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-#else
-    struct timespec t;
-    clock_gettime(CLOCK_MONOTONIC_RAW, &t);
-    return (uint64_t)t.tv_sec * 1000000000u + (uint64_t)t.tv_nsec;
-#endif
-}
 
 static void report(const char* name, uint64_t elapsed, uint64_t operations,
                    uint64_t checksum) {
@@ -207,47 +192,47 @@ int main(void) {
         velocities[i].z = (float)(i % 9) * 0.25f;
     }
 
-    started = now();
+    started = awake();
     for (uint64_t r = 0; r < REPEATS; r++)
         for (int i = 0; i < N; i++)
             ys64[i] = 0.5 * xs64[i] + ys64[i];
-    report("saxpy-f64", now() - started, saxpy_ops, sum64(ys64));
+    report("saxpy-f64", awake() - started, saxpy_ops, sum64(ys64));
 
-    started = now();
+    started = awake();
     for (uint64_t r = 0; r < REPEATS; r++)
         for (int i = 0; i < N; i++)
             ys32[i] = 0.5f * xs32[i] + ys32[i];
-    report("saxpy-f32", now() - started, saxpy_ops, sum32(ys32));
+    report("saxpy-f32", awake() - started, saxpy_ops, sum32(ys32));
 
     double acc = 0.0;
-    started = now();
+    started = awake();
     for (uint64_t r = 0; r < REPEATS; r++)
         for (int i = 0; i < N; i++)
             acc += xs64[i] * ys64[i];
-    report("dot-f64", now() - started, saxpy_ops, bits64(acc));
+    report("dot-f64", awake() - started, saxpy_ops, bits64(acc));
 
-    started = now();
+    started = awake();
     for (uint64_t r = 0; r < PARTICLE_REPEATS; r++)
         for (int i = 0; i < N; i++) {
             positions[i].x += velocities[i].x * 0.5f;
             positions[i].y += velocities[i].y * 0.5f;
             positions[i].z += velocities[i].z * 0.5f;
         }
-    report("particle-vec3", now() - started, particle_ops, sum_particles());
+    report("particle-vec3", awake() - started, particle_ops, sum_particles());
 
     double length = 0.0;
-    started = now();
+    started = awake();
     for (uint64_t r = 0; r < PARTICLE_REPEATS; r++)
         for (int i = 0; i < N; i++)
             length += (double)sqrtf(velocities[i].x * velocities[i].x +
                                     velocities[i].y * velocities[i].y +
                                     velocities[i].z * velocities[i].z);
-    report("length-vec3", now() - started, particle_ops, bits64(length));
+    report("length-vec3", awake() - started, particle_ops, bits64(length));
 
     angles();
     size_t count = 0;
-    started = now();
+    started = awake();
     for (size_t frame = 0; frame < FRAMES; frame++) count = cubes(frame);
-    report("cube-transform", now() - started, (uint64_t)CUBES * FRAMES, sum_vertices(count));
+    report("cube-transform", awake() - started, (uint64_t)CUBES * FRAMES, sum_vertices(count));
     return 0;
 }

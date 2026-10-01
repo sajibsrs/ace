@@ -1,13 +1,9 @@
+#include "../awake.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <time.h>
-
-static uint64_t now_ns(void) {
-    return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-}
 
 static void report(const char *name, uint64_t elapsed, uint64_t operations,
                    uint64_t checksum) {
@@ -116,41 +112,41 @@ int main(void) {
     small_b[63] = 'b';
     large_b[4095] = 'b';
     uint64_t checksum = 0;
-    uint64_t started = now_ns();
+    uint64_t started = awake();
 
     for (uint64_t i = 0; i < iterations; i++)
         checksum += (compare_call(small_a, small_b, 64) < 0 ? 0 : 2) + i % 2;
-    report("compare-64", now_ns() - started, iterations, checksum);
+    report("compare-64", awake() - started, iterations, checksum);
     checksum = 0;
-    started = now_ns();
+    started = awake();
     for (uint64_t i = 0; i < iterations / 16; i++)
         checksum += (compare_call(large_a, large_b, 4096) < 0 ? 0 : 2) + i % 2;
-    report("compare-4096", now_ns() - started, iterations / 16, checksum);
+    report("compare-4096", awake() - started, iterations / 16, checksum);
 
     unsigned char copy_small[64], copy_large[4096];
     checksum = 0;
-    started = now_ns();
+    started = awake();
     for (uint64_t i = 0; i < iterations; i++) {
         copy_call(copy_small, small_a, 64);
         checksum += copy_small[i % 64];
     }
-    report("copy-64", now_ns() - started, iterations, checksum);
+    report("copy-64", awake() - started, iterations, checksum);
     checksum = 0;
-    started = now_ns();
+    started = awake();
     for (uint64_t i = 0; i < iterations / 16; i++) {
         copy_call(copy_large, large_a, 4096);
         checksum += copy_large[i % 4096];
     }
-    report("copy-4096", now_ns() - started, iterations / 16, checksum);
+    report("copy-4096", awake() - started, iterations / 16, checksum);
 
     large_a[4093] = 'x'; large_a[4094] = 'y'; large_a[4095] = 'z';
     checksum = 0;
-    started = now_ns();
+    started = awake();
     for (uint64_t i = 0; i < iterations / 32; i++) {
         const char *found = find_call((const char *)large_a, "xyz");
         if (found) checksum += (uint64_t)(found - (const char *)large_a) + i % 2;
     }
-    report("find-4096", now_ns() - started, iterations / 32, checksum);
+    report("find-4096", awake() - started, iterations / 32, checksum);
 
     static const char *inputs[8] = {
         "0.1", "1.5", "3.141592653589793", "1e-308",
@@ -158,14 +154,14 @@ int main(void) {
     };
     const uint64_t float_iterations = 20000;
     uint64_t raw_sum = 0;
-    started = now_ns();
+    started = awake();
     for (uint64_t i = 0; i < float_iterations; i++) {
         double value = parse_call(inputs[i % 8]);
         uint64_t raw;
         memcpy(&raw, &value, sizeof raw);
         raw_sum ^= raw + i;
     }
-    report("parse-f64-short", now_ns() - started, float_iterations, raw_sum);
+    report("parse-f64-short", awake() - started, float_iterations, raw_sum);
 
     static const char *long_inputs[8] = {
         "1234567890123456", "1234567890123456789",
@@ -174,14 +170,14 @@ int main(void) {
         "0.000000000000000123456789012345", "3141592653589793238"
     };
     raw_sum = 0;
-    started = now_ns();
+    started = awake();
     for (uint64_t i = 0; i < float_iterations; i++) {
         double value = parse_call(long_inputs[i % 8]);
         uint64_t raw;
         memcpy(&raw, &value, sizeof raw);
         raw_sum ^= raw + i;
     }
-    report("parse-f64-long", now_ns() - started, float_iterations, raw_sum);
+    report("parse-f64-long", awake() - started, float_iterations, raw_sum);
 
     /* Canonical workload assumption: 80% common/short, 20% long/scientific. */
     const char *blended_inputs[40] = {
@@ -197,14 +193,14 @@ int main(void) {
         long_inputs[4], long_inputs[5], long_inputs[6], long_inputs[7]
     };
     raw_sum = 0;
-    started = now_ns();
+    started = awake();
     for (uint64_t i = 0; i < float_iterations; i++) {
         double value = parse_call(blended_inputs[i % 40]);
         uint64_t raw;
         memcpy(&raw, &value, sizeof raw);
         raw_sum ^= raw + i;
     }
-    report("parse-f64", now_ns() - started, float_iterations, raw_sum);
+    report("parse-f64", awake() - started, float_iterations, raw_sum);
 
     static const double values[8] = {
         0.1, 1.5, 3.141592653589793, 1e-308,
@@ -212,30 +208,30 @@ int main(void) {
     };
     char out[64];
     checksum = 0;
-    started = now_ns();
+    started = awake();
     for (uint64_t i = 0; i < iterations / 10; i++) {
         int count = format_call(out, sizeof out, values[i % 8]);
         checksum += (uint64_t)count + (unsigned char)out[0];
     }
-    report("format-f64-17g", now_ns() - started, iterations / 10, checksum);
+    report("format-f64-17g", awake() - started, iterations / 10, checksum);
 
     static const char *decimal_ints[8] = {
         "0", "7", "42", "-1234", "65535", "-2147483648", "9223372036854775807", "123456789012"
     };
     raw_sum = 0;
-    started = now_ns();
+    started = awake();
     for (uint64_t i = 0; i < iterations; i++)
         raw_sum += (uint64_t)parse_int_call(decimal_ints[i % 8]);
-    report("parse-int", now_ns() - started, iterations, raw_sum);
+    report("parse-int", awake() - started, iterations, raw_sum);
 
     static const char *hex_ints[8] = {
         "ff", "DEADbeef", "7fffffffffffffff", "10", "0", "abc123", "FFFFFFFFFFFFFFFF", "1234abcd"
     };
     raw_sum = 0;
-    started = now_ns();
+    started = awake();
     for (uint64_t i = 0; i < iterations; i++)
         raw_sum += (uint64_t)parse_hex_call(hex_ints[i % 8]);
-    report("parse-hex", now_ns() - started, iterations, raw_sum);
+    report("parse-hex", awake() - started, iterations, raw_sum);
 
     static const char *padded[4] = {
         "   hello, world   ", "\t\r\nkey: value\n", "no-padding-at-all", "        \t  indented line"
@@ -243,10 +239,10 @@ int main(void) {
     size_t padded_len[4];
     for (int k = 0; k < 4; k++) padded_len[k] = strlen(padded[k]);
     checksum = 0;
-    started = now_ns();
+    started = awake();
     for (uint64_t i = 0; i < iterations; i++)
         checksum += trim_call(padded[i % 4], padded_len[i % 4]);
-    report("trim", now_ns() - started, iterations, checksum);
+    report("trim", awake() - started, iterations, checksum);
 
     static const char *header = "Content-Type: Application/JSON; Charset=UTF-8; X-Request-Id: A7f";
     static const char *headers[2] = {
@@ -254,10 +250,10 @@ int main(void) {
         "content-type: application/json; charset=utf-8; x-request-id: a7G",
     };
     checksum = 0;
-    started = now_ns();
+    started = awake();
     for (uint64_t i = 0; i < iterations; i++)
         if (fold_call(header, headers[i % 2], 64) == 0) checksum += 1 + i % 3;
-    report("ascii-fold-64", now_ns() - started, iterations, checksum);
+    report("ascii-fold-64", awake() - started, iterations, checksum);
 
     static const char *texts[2] = {
         "Gr\xC3\xBC\xC3\x9F" "e, \xE4\xB8\x96\xE7\x95\x8C! \xCE\xA9mega \xE2\x86\x92 \xF0\x9D\x84\x9E na\xC3\xAF"
@@ -267,9 +263,9 @@ int main(void) {
     };
     size_t text_len[2] = { strlen(texts[0]), strlen(texts[1]) };
     checksum = 0;
-    started = now_ns();
+    started = awake();
     for (uint64_t i = 0; i < iterations; i++)
         if (utf8_call((const unsigned char *)texts[i % 2], text_len[i % 2])) checksum += text_len[i % 2] + i % 3;
-    report("utf8-valid", now_ns() - started, iterations, checksum);
+    report("utf8-valid", awake() - started, iterations, checksum);
     return 0;
 }

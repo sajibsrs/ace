@@ -10,7 +10,7 @@ make ace
 
 ./ace --release --report -o "$bench_tmp/math-ace" bench/std/math.ace
 # Scalar C, as bench/core/run-hotloop.sh: Ace leaves vectorization to `simd`.
-cc -std=c11 -O2 -fno-vectorize -fno-slp-vectorize -o "$bench_tmp/math-c" bench/std/math.c
+cc -std=c11 -O2 -fno-tree-vectorize -fno-tree-slp-vectorize -o "$bench_tmp/math-c" bench/std/math.c -lm
 
 # Discard one run of each binary: see bench/README.md on first-run cost.
 "$bench_tmp/math-ace" > /dev/null

@@ -1,13 +1,9 @@
 // C twin of raytrace.ace.
-#ifdef __linux__
-#define _DEFAULT_SOURCE /* CLOCK_MONOTONIC_RAW */
-#endif
-
+#include "../awake.h"
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
 
 static const uint32_t FACE_COLORS[6] = {0xF44336, 0x4CAF50, 0x00BCD4, 0x9C27B0, 0x2196F3, 0xFFA000};
 #define BACKGROUND 0x101018u
@@ -93,17 +89,6 @@ static Color trace(Spin spin, Vec light, Vec d) {
     float u;
     if (hit(spin, p, light, &u) >= 0) return shade(FLOOR_COLOR, 0.0f);
     return shade(FLOOR_COLOR, light.y);
-}
-
-/* The clock Ace's time.awake reads on each target. */
-static uint64_t awake(void) {
-#ifdef __APPLE__
-    return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-#else
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
-    return (uint64_t)ts.tv_sec * 1000000000u + (uint64_t)ts.tv_nsec;
-#endif
 }
 
 int main(void) {

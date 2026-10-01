@@ -35,8 +35,13 @@ ace_code_bytes() {
     "$ace" "$@" --report 2>&1 | awk '/machine code:/ { gsub(",", "", $3); print $3 }'
 }
 
+# Machine code of a C object: Mach-O's __text, or ELF's .text sections
+# (.text.startup holds main at -O2).
 c_text_bytes() {
-    size -m "$1" | awk '/Section \(__TEXT, __text\)/ { print $NF }'
+    case $(uname -s) in
+        Darwin) size -m "$1" | awk '/Section \(__TEXT, __text\)/ { print $NF }' ;;
+        *) size -A "$1" | awk '/^\.text/ { n += $2 } END { print n }' ;;
+    esac
 }
 
 # Growth of a time against the previous size's time, blank for the first size.
@@ -54,7 +59,7 @@ for n in 100 1000 5000 20000; do
     dir=$bench_tmp/n$n
     ./bench/compiler/compile-corpus.sh "$n" "$dir"
     lines=$(wc -l < "$dir/corpus.ace" | tr -d ' ')
-    ace_debug=$(cd "$dir" && median_ms "$ace" -c corpus.ace)
+    ace_debug=$(cd "$dir" && median_ms "$ace" --debug -c corpus.ace)
     ace_release=$(cd "$dir" && median_ms "$ace" --release -c corpus.ace)
     cc_o0=$(cd "$dir" && median_ms cc -std=c11 -O0 -c corpus.c -o corpus-o0.o)
     cc_o2=$(cd "$dir" && median_ms cc -std=c11 -O2 -c corpus.c -o corpus-o2.o)
@@ -77,7 +82,7 @@ for shape in long types; do
         dir=$bench_tmp/$shape$n
         ./bench/compiler/scaling-corpus.sh "$shape" "$n" "$dir"
         lines=$(wc -l < "$dir/corpus.ace" | tr -d ' ')
-        ace_debug=$(cd "$dir" && median_ms "$ace" -c corpus.ace)
+        ace_debug=$(cd "$dir" && median_ms "$ace" --debug -c corpus.ace)
         cc_o0=$(cd "$dir" && median_ms cc -std=c11 -O0 -c corpus.c -o corpus-o0.o)
         # clang -O2 crashes on the largest 'long' corpus; say so, not 0.00
         cc_o2=$(cd "$dir" && median_ms cc -std=c11 -O2 -c corpus.c -o corpus-o2.o)
@@ -91,7 +96,7 @@ done
 echo
 echo "Generated corpus code size, bytes of machine code (5000 functions)"
 dir=$bench_tmp/n5000
-ace_bytes=$(cd "$dir" && ace_code_bytes -c corpus.ace)
+ace_bytes=$(cd "$dir" && ace_code_bytes --debug -c corpus.ace)
 release_bytes=$(cd "$dir" && ace_code_bytes --release -c corpus.ace)
 printf '%-14s %10s\n' "Ace debug" "$ace_bytes" "Ace release" "$release_bytes" \
     "cc -O0" "$(c_text_bytes "$dir/corpus-o0.o")" "cc -O2" "$(c_text_bytes "$dir/corpus-o2.o")"
@@ -102,7 +107,7 @@ printf '%-34s %8s %10s\n' "program" "lines" "ms"
 for f in bench/core/cpu.ace bench/core/calls.ace bench/std/string.ace bench/std/memory.ace; do
     lines=$(wc -l < "$f" | tr -d ' ')
     cp "$f" "$bench_tmp/prog.ace"
-    ms=$(cd "$bench_tmp" && median_ms "$ace" -c prog.ace)
+    ms=$(cd "$bench_tmp" && median_ms "$ace" --debug -c prog.ace)
     printf '%-34s %8s %10s\n' "$f" "$lines" "$ms"
 done
 lines=$(cat demo/http-simple-server/main.ace pkg/http/mod.ace pkg/http/inc/*.ace \

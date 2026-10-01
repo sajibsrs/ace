@@ -10,3 +10,7 @@
 - VS Code extension: `.acefmt` gets a `{ ♠ }` icon, a section/key/value
   grammar, and `#` comments; `ace-framed.svg` is renamed `ace-pkg.svg`; the
   manifest names its publisher and author.
+- Benchmarks run on both targets: the C twins read Ace's `time.awake` clock
+  through one `bench/awake.h`, runners use vectorizer flags clang and gcc both
+  accept and pick `size`/`time` flags by host, and the compile-time runner
+  passes `--debug` where it reports debug now that release is the default.

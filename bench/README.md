@@ -37,7 +37,7 @@ at controlled offsets on byte-identical instructions.
 
 ### Compile time
 
-Run the compile-time benchmark on Apple arm64:
+Run the compile-time benchmark:
 
 ```sh
 ./bench/compiler/run-compile.sh
@@ -501,7 +501,7 @@ comparison point for later changes.
 
 ### Calls
 
-Run the call-overhead benchmark on Apple arm64:
+Run the call-overhead benchmark:
 
 ```sh
 ./bench/core/run-calls.sh
@@ -659,9 +659,9 @@ Rotations come from a 64-entry sine table built by an exact recurrence, since
 C kernel sets `#pragma STDC FP_CONTRACT OFF`: clang otherwise fuses `a*b + c`
 into one `fmadd` rounding, which Ace never does, and the checksums diverge.
 
-Ace leaves vectorization to explicit `simd`, so scalar C `-O2` (clang's
-`-fno-vectorize -fno-slp-vectorize`, gcc's `-fno-tree-vectorize`) is the
-comparison target. The
+Ace leaves vectorization to explicit `simd`, so scalar C `-O2`
+(`-fno-tree-vectorize -fno-tree-slp-vectorize`, which clang and gcc both
+accept) is the comparison target. The
 auto-vectorized `-O2` column is a reference, not a goal. Neither compiler
 vectorizes `dot-f64`'s reduction, because clang will not reassociate floating
 point without `-ffast-math`.
@@ -1066,14 +1066,14 @@ smallest to largest Ace/C). Every checksum agreed with Apple's libm.
 
 ### Memory
 
-Run the v1 raw-memory benchmark on Apple arm64:
+Run the v1 raw-memory benchmark:
 
 ```sh
 ./bench/std/run-memory.sh
 ```
 
 The runner builds `bench/std/memory.ace` in debug and release modes with compiler
-reports enabled, then runs each under macOS `/usr/bin/time -l`. The Ace program checks allocation,
+reports enabled, then runs each under `/usr/bin/time` (`-l` on macOS, `-v` with GNU time). The Ace program checks allocation,
 reallocation payload preservation, and release nulling. It reports operation
 counts, nanoseconds per operation, requested live bytes, allocator-usable live
 bytes from `mem.usable`, allocator overhead, a checksum, and failures.
@@ -1084,7 +1084,7 @@ release results measure the stripped runtime path. Timing and RSS vary by
 machine and system load, so this is a manual v1 acceptance benchmark rather
 than a performance threshold in `tests/run.sh`. The only pass/fail condition is
 memory-operation correctness; the program exits nonzero on failure. The runner
-validates that separately before invoking `/usr/bin/time -l`, because restricted
+validates that separately before invoking `/usr/bin/time`, because restricted
 macOS environments may deny the process-statistics query even when the program
 runs successfully.
 

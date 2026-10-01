@@ -11,7 +11,7 @@ make ace
 ./ace --release --report -o "$bench_tmp/collections-ace" bench/std/collections.ace
 # Ace does not vectorize; keep C scalar too so the ratio measures the
 # containers rather than SIMD, as bench/core/run-hotloop.sh does.
-cc -std=c11 -O2 -fno-vectorize -fno-slp-vectorize -o "$bench_tmp/collections-c" bench/std/collections.c
+cc -std=c11 -O2 -fno-tree-vectorize -fno-tree-slp-vectorize -o "$bench_tmp/collections-c" bench/std/collections.c
 
 # Discard one run of each binary: see bench/README.md on first-run cost.
 "$bench_tmp/collections-ace" > /dev/null
