@@ -109,26 +109,28 @@ pub mut Parser.reset() {
 /* Parses the complete text as one JSON value. Trailing non-whitespace bytes
  * after the value are rejected, matching a whole-document parse rather than
  * a stream that tolerates more input after one value. A failed parse needs
- * no cleanup: whatever it allocated stays owned by the parser.
+ * no cleanup: whatever it allocated stays owned by the parser. On failure the
+ * returned offset is the byte at which the error was found, except that an
+ * unterminated string reports its opening quote; on success it is 0.
  */
-pub mut Parser.parse(text: string): (Value, Error) {
+pub mut Parser.parse(text: string): (Value, Error, usize) {
     self.text = text
     self.at = 0
     mut self.stack.clear()
     mut self.pstack.clear()
     mut self.skip_ws()
 
-    if self.at == self.text.len { return Value.none, ParseErr.empty_input }
+    if self.at == self.text.len { return Value.none, ParseErr.empty_input, self.at }
     rerr: Error = mut self.reserve()
-    if rerr != null { return Value.none, rerr }
+    if rerr != null { return Value.none, rerr, self.at }
 
     result: Value, err: Error = mut self.parse_value(0)
-    if err != null { return Value.none, err }
+    if err != null { return Value.none, err, self.at }
 
     mut self.skip_ws()
 
-    if self.at != self.text.len { return Value.none, ParseErr.trailing_data }
-    return result, null
+    if self.at != self.text.len { return Value.none, ParseErr.trailing_data, self.at }
+    return result, null, 0
 }
 
 /* Takes this parse's block, reusing a kept one that is large enough, and
@@ -276,7 +278,10 @@ mut Parser.parse_string(): (string, Error) {
     self.at += 1
     start: usize = self.at
     end: usize, closed: bool = find_string_end(self.text, start)
-    if !closed { return "", ParseErr.unterminated_string }
+    if !closed {
+        self.at = start - 1
+        return "", ParseErr.unterminated_string
+    }
 
     upper: usize = end - start
 

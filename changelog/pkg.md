@@ -10,3 +10,7 @@
   traces the raytrace scene per pixel with it, in SPIR-V or MSL.
 - `demo/sdl3-cube-raytrace-gpu`'s Metal shader marks its fragment input
   `[[stage_in]]`, without which Metal rejected it and the demo failed on macOS.
+- Text parsers report a failure position beside `Error` (#1):
+  `json.Parser.parse` returns `(Value, Error, usize)` and `Json.parse`
+  `(Error, usize)`, the byte offset of the failure (an unterminated string
+  reports its opening quote), 0 on success, matching `regex.Syntax::parse`.

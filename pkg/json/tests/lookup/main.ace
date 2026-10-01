@@ -5,7 +5,7 @@ import mem
 lookup(): int {
     doc: json.Json = json.Json::new()
     defer mut doc.wipe()
-    err: Error = mut doc.parse("{\"a\": {\"b/c\": [10, true, \"x\"], \"m~n\": 1, \"\": 2}, \"d\": 1, \"d\": 2}")
+    err: Error, err_at: usize = mut doc.parse("{\"a\": {\"b/c\": [10, true, \"x\"], \"m~n\": 1, \"\": 2}, \"d\": 1, \"d\": 2}")
     if err != null { return 30 }
 
     if doc.number("/a/b~1c/0") != 10.0 || !doc.bool("/a/b~1c/1") { return 31 }
