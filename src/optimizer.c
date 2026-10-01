@@ -1600,6 +1600,7 @@ static int thread_branches(Clean* c) {
             idom = rpo = NULL;
             changed = 1;
             jb = &fn->blocks[j];
+            cx = &fn->ins[cond]; // ir_phi_new may have moved fn->ins
             i--; // preds shifted down
         }
     }
