@@ -14,7 +14,8 @@ ace --target=darwin-arm64 program.ace
 ```
 
 The default mode performs parsing, import resolution, and semantic checking
-without emitting code. `-c` writes a Mach-O arm64 object beside the root source.
+without emitting code. `-c` writes the target's object beside the root source: Mach-O for
+`darwin-arm64`, ELF for `linux-x64`.
 `-o NAME` emits an intermediate object and invokes the system C compiler driver
 to link `NAME`. When `NAME` ends in `.ace`, it names the root source itself:
 that file is compiled and the executable and intermediate object are named after
@@ -146,9 +147,9 @@ compile time:    2.14 ms
 
 Source files, bytes, and tokens include the root and every uniquely loaded
 import. The token count excludes the end-of-file marker and includes significant
-newline tokens. Machine code is the emitted `__text` section, while object file
-is the complete Mach-O object including data, symbols, relocations, and debug
-sections.
+newline tokens. Machine code is the emitted text section (Mach-O `__text`, ELF
+`.text`), while object file is the complete object including data, symbols,
+relocations, and debug sections.
 
 Compile time covers source loading through object emission. It excludes the
 external linker invoked by `-o`, keeping the measurement about Ace itself. The
