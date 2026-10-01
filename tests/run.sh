@@ -12,6 +12,14 @@ ACE_BIN=${ACE_BIN:-./ace}
 ACE_DIR=$(dirname "$ACE_BIN")
 ACE=$(cd "$ACE_DIR" && pwd)/$(basename "$ACE_BIN")
 target_of() { sed -n 's/^\/\/ target: *\(.*\)/--target=\1/p' "$1"; }
+# libdwarf installs a `dwarfdump` too, with different flags and output.
+DWARFDUMP=
+for tool in llvm-dwarfdump dwarfdump; do
+    if "$tool" --version 2>/dev/null | grep -q LLVM; then
+        DWARFDUMP=$tool
+        break
+    fi
+done
 
 for f in $(find tests/lexer tests/parser -name '*_ok.ace' | sort); do
     if ! "$ACE" --ast "$f" >/dev/null 2>/tmp/ace_test_errs; then
@@ -1714,8 +1722,8 @@ if [ -d tests/emit ]; then
     fi
     # Darwin's DWARF reader must see both the source rows and the minimal
     # compile-unit/function metadata used to preserve them through linking.
-    if command -v dwarfdump >/dev/null 2>&1; then
-        dwarf=$(dwarfdump --debug-info --debug-line /tmp/ace_emit/basics/main.o 2>/tmp/ace_test_errs)
+    if [ -n "$DWARFDUMP" ]; then
+        dwarf=$("$DWARFDUMP" --debug-info --debug-line /tmp/ace_emit/basics/main.o 2>/tmp/ace_test_errs)
         if [ $? -ne 0 ]; then
             echo "FAIL: dwarfdump rejected emitter debug info"
             cat /tmp/ace_test_errs
@@ -1730,7 +1738,7 @@ if [ -d tests/emit ]; then
             echo "FAIL: DWARF should map return to basics/main.ace:6:5"
             fail=1
         fi
-        multidwarf=$(dwarfdump --debug-line /tmp/ace_emit/basics/welcome.o 2>/tmp/ace_test_errs)
+        multidwarf=$("$DWARFDUMP" --debug-line /tmp/ace_emit/basics/welcome.o 2>/tmp/ace_test_errs)
         if [ $? -ne 0 ] ||
            ! printf '%s\n' "$multidwarf" | grep -q '/std/fmt/mod.ace' ||
            ! printf '%s\n' "$multidwarf" | grep -q '/welcome.ace'; then
@@ -1787,8 +1795,8 @@ if [ -d tests/modules ]; then
         fail=1
     fi
     # multi-file DWARF across a local module, a stdlib module, and the root
-    if command -v dwarfdump >/dev/null 2>&1; then
-        moddwarf=$(dwarfdump --debug-line /tmp/ace_modules/diamond.o 2>/tmp/ace_test_errs)
+    if [ -n "$DWARFDUMP" ]; then
+        moddwarf=$("$DWARFDUMP" --debug-line /tmp/ace_modules/diamond.o 2>/tmp/ace_test_errs)
         if [ $? -ne 0 ] ||
            ! printf '%s\n' "$moddwarf" | grep -q '/shared.ace' ||
            ! printf '%s\n' "$moddwarf" | grep -q '/main.ace'; then
