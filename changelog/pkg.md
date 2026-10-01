@@ -4,3 +4,7 @@
   thread, one ray per 2x2 cell, inverse-rotated into the cube frame for a slab
   test, Lambert-shaded, over a floor with shadow rays; cells draw as solid
   quads through `Renderer.geometry`.
+- `pkg/sdl` fills geometry with a fragment shader on SDL's GPU render driver:
+  `Renderer::new(window, driver)`, `Renderer.shader_formats`, `Shader`, and
+  `RenderState` over SDL 3.4's GPU render state. `demo/sdl3-cube-raytrace-gpu`
+  traces the raytrace scene per pixel with it, in SPIR-V or MSL.

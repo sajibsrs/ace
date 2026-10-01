@@ -4,9 +4,9 @@
 
 `sdl` is a minimal binding to the host's [SDL3](https://libsdl.org): a
 window, a renderer with a draw color, colored triangle geometry, debug text,
-and vsync, and the keyboard and quit events of a classic `SDL_PollEvent`
-loop. It covers only what its demo needs and grows
-with its users.
+and vsync, fragment shaders on SDL's GPU render driver, and the keyboard and
+quit events of a classic `SDL_PollEvent` loop. It covers only what its demos
+need and grows with its users.
 
 `sdl` is a standalone package at [`pkg/sdl`](../pkg/sdl), not a `std`
 module. A consumer lists it under `[dependencies]` in its own `ace.pkg` as
@@ -25,8 +25,10 @@ else gives the same record with its own `path` in its `ace.pkg`; the app's
 path overrides the hint, and a missing file there is a manifest error.
 
 See [`demo/sdl3-window`](../demo/sdl3-window),
-[`demo/sdl3-cube-rotation`](../demo/sdl3-cube-rotation), and
-[`demo/sdl3-cube-raytrace`](../demo/sdl3-cube-raytrace) for consuming examples.
+[`demo/sdl3-cube-rotation`](../demo/sdl3-cube-rotation),
+[`demo/sdl3-cube-raytrace`](../demo/sdl3-cube-raytrace), and
+[`demo/sdl3-cube-raytrace-gpu`](../demo/sdl3-cube-raytrace-gpu) for consuming
+examples.
 
 ## Window and renderer
 
@@ -107,6 +109,51 @@ renderer.color(sdl.Color { r = 224, g = 224, b = 224, a = 255 })
 renderer.debug_text(6.0, 6.0, "vsync on")
 renderer.scale(1.0, 1.0)
 ```
+
+## Shaders
+
+`Renderer::new(window, driver)` creates the renderer on a named SDL render
+driver. `sdl.GPU_DRIVER` draws through SDL's GPU API, and its renderers can
+fill geometry with a fragment shader of your own:
+
+```ace
+renderer: sdl.Renderer = sdl.Renderer::new(window, sdl.GPU_DRIVER)
+defer mut renderer.wipe()
+if !renderer.ok() { return 1 }
+
+program: sdl.Shader = sdl.Shader::new(renderer, sdl.ShaderFormats { spirv = 1 }, code[..], 1)
+defer mut program.wipe()
+if !program.ok() { return 1 }
+
+state: sdl.RenderState = sdl.RenderState::new(renderer, program)
+defer mut state.wipe()
+if !state.ok() { return 1 }
+
+state.uniforms(0, scene[..])
+renderer.state(state)
+renderer.geometry(quad[..], corners[..])
+renderer.state(blank(sdl.RenderState))
+```
+
+`Renderer.shader_formats()` returns the `ShaderFormats` the renderer accepts,
+which depend on the GPU API beneath it: `spirv` on Vulkan, `msl` on Metal. A
+program that runs on both carries its shader in both and passes the one the
+renderer names. `Shader::new(renderer, format, code, uniform_buffers)` takes
+the code as bytes in the one format set in `format`, and the number of uniform
+buffers the shader reads. The shader's entry point is `main`, or `main0` in
+MSL. Uniform buffer `n` is `layout(set = 3, binding = n)` in SPIR-V and
+`[[buffer(n)]]` in MSL, and the only input untextured geometry passes on is
+its vertex color, at location 0.
+
+`RenderState::new(renderer, shader)` wraps the shader for drawing, and the
+shader must outlive it; with `defer` in the order above, it does.
+`RenderState.uniforms(slot, values)` sets one uniform buffer from `f32`
+values, which later draws read until it is set again. `Renderer.state(state)`
+makes later geometry use the state, and `blank(sdl.RenderState)` restores the
+renderer's own shaders, as debug text needs.
+
+On a renderer of any other driver, `shader_formats()` is empty and
+`Shader::new` fails. These calls need SDL 3.4.
 
 ## Events
 

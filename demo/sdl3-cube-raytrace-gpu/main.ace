@@ -1,0 +1,176 @@
+/* The sdl3-cube-raytrace scene traced on the GPU with pkg/sdl: one ray per
+ * pixel, in a fragment shader that fills one output-sized quad drawn through
+ * Renderer.geometry on SDL's GPU render driver. The shader repeats that
+ * demo's slab ray-box test, Lambert shading, and floor shadow ray; this file
+ * only hands it the cube's orientation, the light, and the output size each
+ * frame, and the top-left corner shows frame statistics.
+ *
+ * shader.frag is the shader for Vulkan and shader.metal the same one for
+ * Metal; shader.sh embeds both in shader.ace, and the renderer says which it
+ * takes.
+ *
+ * Build and run from this directory (SDL 3.4 or later):
+ *   ace pkg run
+ *
+ * Closing the window or pressing Escape quits.
+ */
+
+import fmt
+import math
+import sdl
+import shader: "./shader.ace"
+import str
+
+// The two triangles of the quad that covers the output.
+QUAD: const [6]i32 = [0, 1, 2, 0, 2, 3]
+
+// Statistics average over this many milliseconds between refreshes.
+STATS_PERIOD: const u64 = 500
+
+// Debug text draws at this scale, so the 8x8 font stays readable.
+TEXT_SCALE: const f32 = 2.0
+
+fail(context: string): int {
+    fmt.printf("%s: %s\n", context, sdl.error())
+    return 1
+}
+
+main(): int {
+    if !sdl.init(sdl.InitFlags { video = 1 }) { return fail("SDL_Init") }
+    defer sdl.quit()
+
+    window: sdl.Window = sdl.Window::new("Ace + SDL3 GPU raytraced cube", 640, 640, sdl.WindowFlags { resizable = 1 })
+    defer mut window.wipe()
+    if !window.ok() { return fail("SDL_CreateWindow") }
+
+    renderer: sdl.Renderer = sdl.Renderer::new(window, sdl.GPU_DRIVER)
+    defer mut renderer.wipe()
+    if !renderer.ok() { return fail("SDL_CreateRenderer") }
+    vsync: bool = renderer.vsync(1)
+
+    // The GPU API beneath the renderer decides which copy of the shader it
+    // takes: SPIR-V on Vulkan, MSL on Metal.
+    formats: sdl.ShaderFormats = renderer.shader_formats()
+    format: sdl.ShaderFormats = sdl.ShaderFormats { spirv = 1 }
+    format_name: string = "SPIR-V"
+    code: []u8 = shader.SPIRV[..]
+    if formats.spirv == 0 {
+        if formats.msl == 0 {
+            fmt.print("the GPU renderer takes neither SPIR-V nor MSL shaders\n")
+            return 1
+        }
+        format = sdl.ShaderFormats { msl = 1 }
+        format_name = "MSL"
+        code = shader.MSL[..]
+    }
+    program: sdl.Shader = sdl.Shader::new(renderer, format, code, 1)
+    defer mut program.wipe()
+    if !program.ok() { return fail("SDL_CreateGPUShader") }
+
+    state: sdl.RenderState = sdl.RenderState::new(renderer, program)
+    defer mut state.wipe()
+    if !state.ok() { return fail("SDL_CreateGPURenderState") }
+
+    // Light arrives from above, left, and behind the camera.
+    lx: f32 = -0.5
+    ly: f32 = 1.0
+    lz: f32 = -0.6
+    ll: f32 = math.sqrt(lx * lx + ly * ly + lz * lz)
+
+    // Frames and their time since the last statistics refresh, and the
+    // figures shown until the next one.
+    period_start: u64 = sdl.ticks()
+    period_frames: u64 = 0
+    fps: int = 0
+    frame_us: int = 0
+
+    running: bool = true
+    for running {
+        event: sdl.Event
+        for mut event.poll() {
+            if event.kind == sdl.EventType.quit || event.kind == sdl.EventType.window_close_requested {
+                running = false
+            } else if event.kind == sdl.EventType.key_down && event.keyboard.key == sdl.Keycode.escape {
+                running = false
+            }
+        }
+
+        w: i32, h: i32, sized: bool = renderer.size()
+        if !sized { return fail("SDL_GetCurrentRenderOutputSize") }
+        right: f32 = f32(w)
+        bottom: f32 = f32(h)
+        cx: f32 = right * 0.5
+        cy: f32 = bottom * 0.5
+        scale: f32 = cx
+        if cy < scale { scale = cy }
+        scale *= 1.1
+
+        // The shader's Scene block: the cube's turn about the y axis, then
+        // the x axis, as sines and cosines; the light; and the view.
+        seconds: f32 = f32(sdl.ticks()) / 1000.0
+        scene: [12]f32 = [
+            math.sin(seconds * 0.9), math.cos(seconds * 0.9), math.sin(seconds * 0.6), math.cos(seconds * 0.6),
+            lx / ll, ly / ll, lz / ll, 0.0,
+            cx, cy, scale, 0.0,
+        ]
+        if !state.uniforms(0, scene[..]) { return fail("SDL_SetGPURenderStateFragmentUniforms") }
+
+        // The shader colors every pixel of the quad, so its vertex colors go
+        // unused and nothing needs clearing first.
+        quad: [4]sdl.Vertex = [
+            sdl.Vertex { position = sdl.Point { x = 0.0, y = 0.0 } },
+            sdl.Vertex { position = sdl.Point { x = right, y = 0.0 } },
+            sdl.Vertex { position = sdl.Point { x = right, y = bottom } },
+            sdl.Vertex { position = sdl.Point { x = 0.0, y = bottom } },
+        ]
+        renderer.state(state)
+        renderer.geometry(quad[..], QUAD[..])
+        renderer.state(blank(sdl.RenderState))
+
+        period_frames += 1
+        now: u64 = sdl.ticks()
+        if now - period_start >= STATS_PERIOD {
+            elapsed: u64 = now - period_start
+            fps = int(period_frames * 1000 / elapsed)
+            frame_us = int(elapsed * 1000 / period_frames)
+            period_start = now
+            period_frames = 0
+        }
+
+        renderer.scale(TEXT_SCALE, TEXT_SCALE)
+        renderer.color(sdl.Color::hex(0xE0E0E0))
+        step: f32 = sdl.DEBUG_TEXT_SIZE + 4.0
+        y: f32 = 6.0
+
+        // A line that does not fit is skipped, as the overlay is only
+        // informational.
+        line: [64]u8 = [0 : 64]
+        n: usize, fit: bool = str.format(mut line[..], "FPS %d", fps)
+        if fit { renderer.debug_text(6.0, y, string(line[..n])) }
+        y += step
+        n, fit = str.format(mut line[..], "frame %d.%02d ms", frame_us / 1000, frame_us % 1000 / 10)
+        if fit { renderer.debug_text(6.0, y, string(line[..n])) }
+        y += step
+        n, fit = str.format(mut line[..], "rays %u, one per pixel (GPU)", usize(w) * usize(h))
+        if fit { renderer.debug_text(6.0, y, string(line[..n])) }
+        y += step
+        n, fit = str.format(mut line[..], "output %d x %d", int(w), int(h))
+        if fit { renderer.debug_text(6.0, y, string(line[..n])) }
+        y += step
+        n, fit = str.format(mut line[..], "shader %s", format_name)
+        if fit { renderer.debug_text(6.0, y, string(line[..n])) }
+        y += step
+
+        if vsync {
+            renderer.debug_text(6.0, y, "vsync on")
+        } else {
+            renderer.debug_text(6.0, y, "vsync off")
+        }
+        renderer.scale(1.0, 1.0)
+
+        renderer.present()
+        // Without vsync, the delay keeps the loop from spinning flat out.
+        if !vsync { sdl.delay(16) }
+    }
+    return 0
+}
