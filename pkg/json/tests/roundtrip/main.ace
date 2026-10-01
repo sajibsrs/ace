@@ -5,7 +5,7 @@ import mem
 round_trip(): int {
     doc: json.Json = json.Json::new()
     defer mut doc.wipe()
-    err: Error = mut doc.parse(" {\"name\": \"ace\", \"tags\": [1, 2.5, true, null]} ")
+    err: Error, err_at: usize = mut doc.parse(" {\"name\": \"ace\", \"tags\": [1, 2.5, true, null]} ")
     if err != null { return 1 }
 
     switch doc.root {
@@ -37,7 +37,7 @@ round_trip(): int {
 failure(): int {
     doc: json.Json = json.Json::new()
     defer mut doc.wipe()
-    err: Error = mut doc.parse("[1, 2")
+    err: Error, err_at: usize = mut doc.parse("[1, 2")
     if err != json.ParseErr.unexpected_token { return 10 }
 
     switch doc.root {
@@ -53,7 +53,7 @@ failure(): int {
 assigned(): int {
     doc: json.Json = json.Json::new()
     defer mut doc.wipe()
-    err: Error = mut doc.parse("0")
+    err: Error, err_at: usize = mut doc.parse("0")
     if err != null { return 20 }
 
     doc.root = json.Value.string("a\"b")
@@ -107,7 +107,7 @@ reuse(): int {
     want: [4]string = ["a", "bb", null, "c"]
 
     for i: usize in 0 .. texts.len {
-        err: Error = mut doc.parse(texts[i])
+        err: Error, err_at: usize = mut doc.parse(texts[i])
         if (err == null) != (want[i] != null) { return 40 + int(i) }
 
         if want[i] != null && !mem.equal(doc.string("/id"), want[i]) { return 44 + int(i) }

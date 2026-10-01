@@ -59,7 +59,7 @@ import json
 main(): int {
     doc: json.Json = json.Json::new()
     defer mut doc.wipe()
-    err: Error = mut doc.parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
+    err: Error, at: usize = mut doc.parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
     if err != null { return 1 }
 
     fmt.println(doc.string("/name"))  // ace
@@ -69,14 +69,15 @@ main(): int {
 ```
 
 `json.Json::new(): Json` makes an empty `Json`, and `mut doc.parse(text:
-string): Error` parses `text` as one value into `doc.root`. On failure `root`
-is `Value.none` and the error is a `json.ParseErr`. Each `parse` reuses the
+string): (Error, usize)` parses `text` as one value into `doc.root`. On failure
+`root` is `Value.none`, the error is a `json.ParseErr`, and the offset is the
+byte at which it was found, as for `Parser.parse`. Each `parse` reuses the
 storage of the one before, so the previous `root` and every string read from
 it are invalid afterwards. Parse many documents with one `Json`:
 
 ```ace
 for i: usize in 0 .. texts.len {
-    err: Error = mut doc.parse(texts[i])
+    err: Error, at: usize = mut doc.parse(texts[i])
     if err != null { continue }
 
     fmt.println(doc.string("/id"))
@@ -143,10 +144,11 @@ The text is borrowed from the `Json` and valid until `reset` or `wipe`.
 ## Parsing
 
 `json.Parser::new(): Parser` makes a parser and `mut parser.wipe()`
-releases it. `mut parser.parse(text: string): (Value, Error)` parses `text` as
+releases it. `mut parser.parse(text: string): (Value, Error, usize)` parses `text` as
 exactly one value. Surrounding space, tab, line feed, and carriage return are
-skipped. On error it returns `Value.none` and an error from the `json.ParseErr`
-domain:
+skipped. On error it returns `Value.none`, an error from the `json.ParseErr`
+domain, and the byte offset at which the error was found (an unterminated
+string reports its opening quote); on success the offset is 0:
 
 | Error | Meaning |
 | --- | --- |
@@ -179,7 +181,7 @@ import json
 main(): int {
     parser: json.Parser = json.Parser::new()
     defer mut parser.wipe()
-    root: json.Value, err: Error = mut parser.parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
+    root: json.Value, err: Error, at: usize = mut parser.parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
 
     if err != null {
         fmt.printf("parse failed: %d\n", int(err.code))

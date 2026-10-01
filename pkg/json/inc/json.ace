@@ -32,13 +32,14 @@ pub Json::new(): Json {
 /* Parses `text` as one JSON value into `root`, reusing the storage of the
  * previous parse, so the previous `root` and every string read from it are
  * invalid afterwards. On failure `root` is `Value.none` and the error is a
- * `ParseErr`; the storage stays owned until `wipe`.
+ * `ParseErr` with the byte offset at which it was found (0 on success); the
+ * storage stays owned until `wipe`.
  */
-pub mut Json.parse(text: string): Error {
+pub mut Json.parse(text: string): (Error, usize) {
     mut self.parser.reset()
-    root: Value, err: Error = mut self.parser.parse(text)
+    root: Value, err: Error, at: usize = mut self.parser.parse(text)
     self.root = root
-    return err
+    return err, at
 }
 
 pub mut Json.wipe() {

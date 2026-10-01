@@ -65,7 +65,7 @@ tree(): int {
     text: string = "{\"a\":[1,2.5,true,null],\"b\":{\"c\":\"d\"},\"e\":[]}"
     p: json.Parser = json.Parser::new()
     defer mut p.wipe()
-    root: json.Value, perr: Error = mut p.parse(text)
+    root: json.Value, perr: Error, perr_at: usize = mut p.parse(text)
     if perr != null { return 31 }
 
     f: json.Formatter = json.Formatter::new()
@@ -170,7 +170,7 @@ growth(): int {
 
     p: json.Parser = json.Parser::new()
     defer mut p.wipe()
-    root: json.Value, perr: Error = mut p.parse(text)
+    root: json.Value, perr: Error, perr_at: usize = mut p.parse(text)
     if perr != null { return 72 }
 
     switch root {

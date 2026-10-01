@@ -66,7 +66,7 @@ main(): int {
     started = now()
 
     for i: usize in 0 .. iterations {
-        perr: Error = mut reader.parse(document)
+        perr: Error, at: usize = mut reader.parse(document)
         if perr != null { return 3 }
     }
     report("parse", now() - started, iterations, document.len * iterations, document.len)

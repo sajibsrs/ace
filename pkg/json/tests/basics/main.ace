@@ -4,14 +4,14 @@ import mem
 scalars(): int {
     p: json.Parser = json.Parser::new()
     defer mut p.wipe()
-    v: json.Value, err: Error = mut p.parse("null")
+    v: json.Value, err: Error, err_at: usize = mut p.parse("null")
     if err != null { return 1 }
 
     switch v {
         json.Value.none {}
         default { return 2 }
     }
-    v, err = mut p.parse("true")
+    v, err, err_at = mut p.parse("true")
 
     switch v {
         json.Value.bool(b: bool) {
@@ -19,7 +19,7 @@ scalars(): int {
         }
         default { return 4 }
     }
-    v, err = mut p.parse("false")
+    v, err, err_at = mut p.parse("false")
 
     switch v {
         json.Value.bool(b: bool) {
@@ -27,7 +27,7 @@ scalars(): int {
         }
         default { return 6 }
     }
-    v, err = mut p.parse("  42  ")
+    v, err, err_at = mut p.parse("  42  ")
 
     switch v {
         json.Value.number(n: f64) {
@@ -35,7 +35,7 @@ scalars(): int {
         }
         default { return 8 }
     }
-    v, err = mut p.parse("-3.5e2")
+    v, err, err_at = mut p.parse("-3.5e2")
     expected: f64 = 0.0 - 350.0
 
     switch v {
@@ -50,7 +50,7 @@ scalars(): int {
 string_case(): int {
     p: json.Parser = json.Parser::new()
     defer mut p.wipe()
-    v: json.Value, err: Error = mut p.parse("\"a\\u00e9\\n\\\"\"")
+    v: json.Value, err: Error, err_at: usize = mut p.parse("\"a\\u00e9\\n\\\"\"")
     if err != null { return 11 }
 
     switch v {
@@ -72,7 +72,7 @@ containers(): int {
 array_case(): int {
     p: json.Parser = json.Parser::new()
     defer mut p.wipe()
-    v: json.Value, err: Error = mut p.parse("[1, 2, [3, 4], \"x\"]")
+    v: json.Value, err: Error, err_at: usize = mut p.parse("[1, 2, [3, 4], \"x\"]")
     if err != null { return 20 }
 
     switch v {
@@ -94,7 +94,7 @@ array_case(): int {
 object_case(): int {
     p: json.Parser = json.Parser::new()
     defer mut p.wipe()
-    v: json.Value, err: Error = mut p.parse("{\"a\": 1, \"b\": {\"c\": true}, \"d\": []}")
+    v: json.Value, err: Error, err_at: usize = mut p.parse("{\"a\": 1, \"b\": {\"c\": true}, \"d\": []}")
     if err != null { return 25 }
 
     switch v {
@@ -125,23 +125,29 @@ object_case(): int {
 failures(): int {
     p: json.Parser = json.Parser::new()
     defer mut p.wipe()
-    v: json.Value, err: Error = mut p.parse("")
+    v: json.Value, err: Error, at: usize = mut p.parse("")
     if err != json.ParseErr.empty_input { return 40 }
+    if at != 0 { return 50 }
 
-    v, err = mut p.parse("{")
+    v, err, at = mut p.parse("{")
     if err != json.ParseErr.unexpected_token { return 41 }
+    if at != 1 { return 51 }
 
-    v, err = mut p.parse("\"unterminated")
+    v, err, at = mut p.parse("\"unterminated")
     if err != json.ParseErr.unterminated_string { return 42 }
+    if at != 0 { return 52 }
 
-    v, err = mut p.parse("01")
+    v, err, at = mut p.parse("01")
     if err != json.ParseErr.invalid_number { return 43 }
+    if at != 1 { return 53 }
 
-    v, err = mut p.parse("true false")
+    v, err, at = mut p.parse("true false")
     if err != json.ParseErr.trailing_data { return 44 }
+    if at != 5 { return 54 }
 
-    v, err = mut p.parse("{\"a\": 1,}")
+    v, err, at = mut p.parse("{\"a\": 1,}")
     if err != json.ParseErr.unexpected_token { return 45 }
+    if at != 8 { return 55 }
 
     return 0
 }
@@ -164,14 +170,14 @@ depth_limit(): int {
     defer mem.release[u8](mut text)
     if terr != null { return 50 }
 
-    v: json.Value, err: Error = mut p.parse(text)
+    v: json.Value, err: Error, err_at: usize = mut p.parse(text)
     if err != null { return 51 }
 
     deeper: mut []u8, derr: Error = nested(513)
     defer mem.release[u8](mut deeper)
     if derr != null { return 52 }
 
-    w: json.Value, werr: Error = mut p.parse(deeper)
+    w: json.Value, werr: Error, werr_at: usize = mut p.parse(deeper)
     if werr != json.ParseErr.depth { return 53 }
 
     return 0
@@ -183,9 +189,9 @@ depth_limit(): int {
 accumulate(): int {
     p: json.Parser = json.Parser::new()
     defer mut p.wipe()
-    a: json.Value, aerr: Error = mut p.parse("[1, \"x\", {\"k\": [true]}]")
-    bad: json.Value, berr: Error = mut p.parse("[1, 2")
-    b: json.Value, cerr: Error = mut p.parse("{\"y\": \"z\"}")
+    a: json.Value, aerr: Error, aerr_at: usize = mut p.parse("[1, \"x\", {\"k\": [true]}]")
+    bad: json.Value, berr: Error, berr_at: usize = mut p.parse("[1, 2")
+    b: json.Value, cerr: Error, cerr_at: usize = mut p.parse("{\"y\": \"z\"}")
 
     if aerr != null { return 60 }
     if berr != json.ParseErr.unexpected_token { return 61 }
@@ -222,7 +228,7 @@ reuse(): int {
     defer mut p.wipe()
 
     for i: int in 0 .. 3 {
-        v: json.Value, err: Error = mut p.parse("[1, {\"k\": \"v\"}, [true, null]]")
+        v: json.Value, err: Error, err_at: usize = mut p.parse("[1, {\"k\": \"v\"}, [true, null]]")
         if err != null { return 70 }
 
         switch v {
@@ -233,7 +239,7 @@ reuse(): int {
         }
         mut p.reset()
     }
-    big: json.Value, berr: Error = mut p.parse("[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]")
+    big: json.Value, berr: Error, berr_at: usize = mut p.parse("[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]")
     if berr != null { return 73 }
 
     switch big {
