@@ -1518,7 +1518,7 @@ static Node* parse_stmt(P* p) {
             p->i++; // ident; ':' consumed inside
             return parse_decl_stmt(p, name);
         }
-        // fall through: expression / assignment statement
+        return parse_expr_stmt(p, 0);
     default:
         return parse_expr_stmt(p, 0);
     }

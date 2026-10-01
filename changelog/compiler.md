@@ -50,3 +50,7 @@
 - Five IR-verifier messages no longer end in a `%s` fed the helper's spare
   `int` argument: `fprintf` ignores excess arguments, so the directive only
   read `0` as a string and printed `(null)`.
+- A module path or `pkg build` output path past its 4096-byte buffer is now
+  an error (`module path is too long`, `build path ... is too long`) rather
+  than a silent truncation, and `parse_stmt`'s identifier case returns instead
+  of falling into `default`; gcc builds warning-free.

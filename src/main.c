@@ -577,8 +577,12 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
         return 0;
     }
     char obj[4096];
-    snprintf(obj, sizeof obj, "%s/%s.o", build_dir, root_package->name);
-    if (out_bin_cap) snprintf(out_bin, out_bin_cap, "%s/%s", build_dir, root_package->name);
+    if ((size_t)snprintf(obj, sizeof obj, "%s/%s.o", build_dir, root_package->name) >= sizeof obj ||
+        (size_t)snprintf(out_bin, out_bin_cap, "%s/%s", build_dir, root_package->name) >= out_bin_cap) {
+        fprintf(stderr, "ace: build path '%s/%s' is too long\n", build_dir, root_package->name);
+        free(order);
+        return 1;
+    }
     if (emit_object(file, &d, obj, show_report ? &report : NULL, emit_mode) != 0 || d.errors > 0) {
         free(order);
         return 1;
