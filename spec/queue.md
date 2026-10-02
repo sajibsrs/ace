@@ -41,6 +41,12 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
 - A second target remains trigger-gated until its backend and OS implementations
   are genuinely supported; directory-module facades already select target files
   consistently through `@when`.
+- Freestanding targets (kernels, drivers, bootloaders, no-libSystem programs)
+  are in scope but need a separately carved runtime contract (entry, failure
+  without an OS, memory source, linking without C runtime objects) and target
+  contract (naming, `@when` selection, available `std` modules). Hosted
+  user-space access such as Darwin BPF does not establish either. Resume when
+  selected, independent of other topics.
 - IPv6, UDP, address queries, half-close,
   extra TCP options, and other explicitly additive networking work are carved
   only after the nonblocking proof identifies the required order.
