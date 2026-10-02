@@ -16,7 +16,9 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
   each get the same computation, every field stored, runs as the flat array
   of its fields. The original loop runs the remainder. Struct fields computed
   differently (interleaved `ld3`/`st3`) are parked: on AArch64 they measured
-  1.28x over scalar C, below the bar, and no bench kernel needs them. Acceptance:
+  1.28x over scalar C, below the bar, and no bench kernel needs them; so is an
+  `f64` reduction over interleaved `f32` records (`length-vec3`), lane-gathered
+  with in-order lane sums, at 1.10x. Acceptance:
   `bench/core/run-hotloop.sh` `cube-transform`, `saxpy-f32`, `saxpy-f64`, and
   `particle-vec3` against C `-O2` with vectorization on.
 
