@@ -1,5 +1,9 @@
 # Standard library
 
+- `math` Payne-Hanek reduction reads 2/pi from bit e-1, so the quotient
+  lands at a fixed position of a three-word product held in registers,
+  replacing the ten-limb sum in memory; results are bit-identical.
+  `bench/std` sin-large 63 to 22 ns on Apple arm64 (8.1x to 2.9x of libm).
 - `utf8.valid` checks each sequence's width with a private `span` instead of
   decoding it, and `decode` assembles its code point from that width:
   `bench/std` utf8-valid 3.3x to 1.4x of C.

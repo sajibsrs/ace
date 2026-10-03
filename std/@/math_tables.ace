@@ -216,10 +216,12 @@ pub two_tail: const [128]f64 = [
     4.5784915277060095e-17,  -5.241934575393899e-17,  2.0414278897578303e-17,  4.124842848606488e-18,
 ]
 
-/* 2/pi as 32-bit limbs of its binary fraction, most significant first: 1280 bits,
- * enough for any finite f64 argument in the Payne-Hanek reduction below.
+/* 2/pi as 32-bit limbs of its binary fraction, most significant first, after two
+ * zero limbs that let the Payne-Hanek reduction read from below bit 1: 1280 bits,
+ * enough for any finite f64 argument.
  */
-pub two_over_pi: const [40]u32 = [
+pub two_over_pi: const [42]u32 = [
+    0x00000000, 0x00000000,
     0xA2F9836E, 0x4E441529, 0xFC2757D1, 0xF534DDC0, 0xDB629599, 0x3C439041, 0xFE5163AB, 0xDEBBC561, 0xB7246E3A,
     0x424DD2E0, 0x06492EEA, 0x09D1921C, 0xFE1DEB1C, 0xB129A73E, 0xE88235F5, 0x2EBB4484, 0xE99C7026, 0xB45F7E41,
     0x3991D639, 0x835339F4, 0x9C845F8B, 0xBDF9283B, 0x1FF897FF, 0xDE05980F, 0xEF2F118B, 0x5A0A6D1F, 0x6D367ECF,

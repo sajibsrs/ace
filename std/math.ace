@@ -41,7 +41,6 @@ PIO2_3: const f64 = 2.02226624871116645580e-21
 PIO2_3T: const f64 = 8.47842766036889956997e-32
 PIO2_A: const f64 = 1.5707963267948966
 PIO2_B: const f64 = 6.123233995736766e-17
-MANTISSA_53: const u64 = 0x001FFFFFFFFFFFFF
 
 SIN_S1: const f64 = -1.66666666666666324348e-01
 SIN_S2: const f64 = 8.33333333332248946124e-03
@@ -453,80 +452,67 @@ exponent_field(x: f64): int {
 
 /* Cody-Waite reduction for 0 < x < 2^20 * pi/2: x = n * pi/2 + (y0 + y1). */
 
-/* The 32-bit limb at index i of a 320-bit little-endian sum, zero outside it. */
-inline limb_at(limbs: []u64, i: int): u64 {
-    if i < 0 || i >= 10 { return 0 }
-    return limbs[usize(i)]
+/* The high 64 bits of the 128-bit product a * b, for a below 2^53. */
+inline mul_high(a: u64, b: u64): u64 {
+    al: u64 = a & u64(0xFFFFFFFF)
+    ah: u64 = a >> 32
+    bl: u64 = b & u64(0xFFFFFFFF)
+    bh: u64 = b >> 32
+    ll: u64 = al * bl
+    lh: u64 = al * bh
+    hl: u64 = ah * bl
+    middle: u64 = (ll >> 32) + (lh & u64(0xFFFFFFFF)) + (hl & u64(0xFFFFFFFF))
+    return ah * bh + (lh >> 32) + (hl >> 32) + (middle >> 32)
 }
 
-/* The 64 bits of the sum at and above bit k, zero below bit 0 or past 319. */
-inline window(limbs: []u64, k: int): u64 {
-    w: int = k >> 5
+/* The 64 bits of 2/pi from bit k + 1 on (bit 1 weighs 1/2), for k >= -64. */
+inline two_over_pi_bits(k: int): u64 {
+    i: usize = usize((k + 64) >> 5)
     shift: u64 = u64(k & 31)
-    pair: u64 = limb_at(limbs, w) | (limb_at(limbs, w + 1) << 32)
-    if shift == 0 { return pair }
-    return (pair >> shift) | (limb_at(limbs, w + 2) << (64 - shift))
+    pair: u64 = (u64(table.two_over_pi[i]) << 32) | u64(table.two_over_pi[i + 1])
+    return (pair << shift) | (u64(table.two_over_pi[i + 2]) >> (32 - shift))
 }
 
 /* Payne-Hanek reduction for x >= 2^20 * pi/2. With x = m * 2^e (m a 53-bit
- * integer), x * 2/pi mod 4 needs only the limbs of 2/pi whose weight can reach
- * the fraction or the two quotient bits; eight limbs give a 256-bit fixed-point
- * sum whose truncation error, 2^-170 of the product, leaves over 100 good bits
- * even when the fraction cancels to 2^-62 (the worst case for an f64).
+ * integer), a bit of 2/pi at weight 2^-k adds m * 2^(e-k) to x * 2/pi, a
+ * multiple of 4 once k <= e - 2, so only the 192 bits from k = e - 1 matter.
+ * Their product with m, taken mod 2^192, puts the quotient in its top two bits
+ * at a fixed position; dropping 2/pi past those 192 bits costs under 2^-137,
+ * against a fraction no f64 brings below 2^-62.
  */
 reduce_large(x: f64): (f64, f64, int) {
     raw: u64 = bitcast(u64, x)
     e: int = exponent_field(x) - 1075
     m: u64 = (raw & u64(0x000FFFFFFFFFFFFF)) | u64(0x0010000000000000)
-    ml: u64 = m & u64(0xFFFFFFFF)
-    mh: u64 = m >> 32
-    first: int = 0
-    if e >= 2 { first = (e - 2) / 32 }
-    limbs: [10]u64 = [0 : 10]
-    for j: int in 0 .. 8 {
-        limb: u64 = u64(table.two_over_pi[usize(first + j)])
-        low: u64 = limb * ml
-        high: u64 = limb * mh
-        position: int = 7 - j
-        limbs[usize(position)] += low & u64(0xFFFFFFFF)
-        limbs[usize(position + 1)] += (low >> 32) + (high & u64(0xFFFFFFFF))
-        limbs[usize(position + 2)] += high >> 32
-    }
-    carry: u64 = 0
-    for j: int in 0 .. 10 {
-        sum: u64 = limbs[usize(j)] + carry
-        limbs[usize(j)] = sum & u64(0xFFFFFFFF)
-        carry = sum >> 32
-    }
-    // The product is an integer of weight 2^-fraction_bits; its bits at and
-    // above fraction_bits hold the quotient (only the low two matter).
-    fraction_bits: int = 256 + 32 * first - e
-    quotient: int = int(window(limbs[..], fraction_bits) & 3)
-    negative: bool = (window(limbs[..], fraction_bits - 1) & 1) == 1
+    w0: u64 = two_over_pi_bits(e - 2)
+    w1: u64 = two_over_pi_bits(e + 62)
+    w2: u64 = two_over_pi_bits(e + 126)
+    // m * (w0 * 2^128 + w1 * 2^64 + w2) mod 2^192, most significant word first.
+    p0: u64 = bits.wrmul(m, w2)
+    low1: u64 = bits.wrmul(m, w1)
+    p1: u64 = bits.wradd(mul_high(m, w2), low1)
+    p2: u64 = bits.wradd(mul_high(m, w1), bits.wrmul(m, w0))
+    if p1 < low1 { p2 = bits.wradd(p2, u64(1)) }
+    quotient: int = int(p2 >> 62)
+    // The fraction as a signed 192-bit number with its sign at 1/2: one at or
+    // above 1/2 rounds the quotient up and becomes its (ones') complement.
+    f2: u64 = (p2 << 2) | (p1 >> 62)
+    f1: u64 = (p1 << 2) | (p0 >> 62)
+    f0: u64 = p0 << 2
+    negative: bool = (f2 >> 63) == 1
     if negative {
-        // Fraction >= 1/2: round the quotient up and use 1 - fraction instead.
         quotient = quotient + 1
-        carry = 1
-        for j: int in 0 .. 10 {
-            sum: u64 = (~limbs[usize(j)] & u64(0xFFFFFFFF)) + carry
-            limbs[usize(j)] = sum & u64(0xFFFFFFFF)
-            carry = sum >> 32
-        }
+        f2 = ~f2
+        f1 = ~f1
+        f0 = ~f0
     }
-    // The highest set bit below fraction_bits, a limb at a time.
-    w: int = (fraction_bits - 1) >> 5
-    word: u64 = limb_at(limbs[..], w) & ((u64(2) << u64((fraction_bits - 1) & 31)) - 1)
-    for word == 0 && w > 0 {
-        w = w - 1
-        word = limbs[usize(w)]
-    }
-    if word == 0 { return 0.0, 0.0, quotient & 3 }
-    top: int = 32 * w + 31 - int(bits.clz(u32(word)))
+    // The fraction is at least 2^-62, so its leading bit is in f2.
+    shift: u64 = u64(bits.clz(f2))
+    top: u64 = (f2 << shift) | ((f1 >> 1) >> (63 - shift))
+    next: u64 = (f1 << shift) | ((f0 >> 1) >> (63 - shift))
     // The fraction as two exact 53-bit pieces, most significant first.
-    high_bits: u64 = window(limbs[..], top - 52) & MANTISSA_53
-    low_bits: u64 = window(limbs[..], top - 105) & MANTISSA_53
-    fh: f64 = f64(high_bits) * bitcast(f64, u64(1023 + top - 52 - fraction_bits) << 52)
-    fl: f64 = f64(low_bits) * bitcast(f64, u64(1023 + top - 105 - fraction_bits) << 52)
+    fh: f64 = f64(top >> 11) * bitcast(f64, u64(1023 - 53 - int(shift)) << 52)
+    fl: f64 = f64(((top & u64(0x7FF)) << 42) | (next >> 22)) * bitcast(f64, u64(1023 - 106 - int(shift)) << 52)
     // (fh + fl) * pi/2 as a double-double, using pi/2 = A + B + (C, negligible).
     p: f64 = fh * PIO2_A
     t: f64 = fma(fh, PIO2_A, -p) + (fh * PIO2_B + fl * PIO2_A)
