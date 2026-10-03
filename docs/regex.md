@@ -93,6 +93,15 @@ later, and one pass over the text yields the leftmost-first match. When a
 thread reaches `match`, every lower-priority thread is dropped. `Regex.match`
 instead stops at the first match any thread reaches.
 
+While no thread is live, seeding a thread that cannot get past its first
+consuming instruction is wasted work, so the search skips to the next byte that
+can begin a match. `Matcher::new` collects those bytes once, following every
+path from instruction 0 that consumes nothing; assertions pass through, since
+they only reject, and a reachable `match` (the pattern matches empty) turns
+skipping off. A single such byte is found with `str.find`, eight bytes at a
+time; a set is tested byte by byte. `zqxj` over the benchmark text runs 11x
+faster, `(\d+)-(\d+)` 1.9x.
+
 ## Parsing
 
 ```ace

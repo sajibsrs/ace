@@ -1,5 +1,9 @@
 # Packages
 
+- `pkg/regex` skips, while no thread is live, to the next byte that can begin
+  a match, collected once per program from the entry's non-consuming paths
+  (`str.find` for a single byte): `literal` 11.4x faster, `captures` 1.94x.
+  `bench/package/regex.c` mirrors it.
 - Added `demo/sdl3-cube-raytrace`: the cube-rotation scene traced on one
   thread, one ray per 2x2 cell, inverse-rotated into the cube frame for a slab
   test, Lambert-shaded, over a floor with shadow rays; cells draw as solid

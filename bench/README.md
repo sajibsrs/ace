@@ -1179,8 +1179,8 @@ measures code generation rather than algorithm. The runner fails if Ace and C
 disagree on any checksum. `bench/package/regex-pcre2.c` runs the same workloads
 through PCRE2, interpreted and JIT-compiled, when `pcre2-config` is on the
 path. PCRE2 is also leftmost-first, so its checksums must agree too, but it is
-a reference, not a target: it is a backtracker with literal and first-byte
-prefilters the Pike VM does not have.
+a reference, not a target: it is a backtracker with a literal prefilter, where
+the Pike VM skips only to a byte that can begin a match.
 
 #### Initial regex baseline
 
@@ -1383,6 +1383,23 @@ Two alternatives measured worse on `captures`, the workload `add` dominates:
 marking `add` `inline` (58.0 ns, but `pathological` 151.6 and 2.8% more
 instructions) and passing the queue as one `mut Queue` parameter (62.6 ns at
 2.12 billion instructions, with `literal` 25.4).
+
+#### Regex search prefilter
+
+Three runs at `9b245c3` with both VMs skipping, while no thread is live, to the
+next byte that can begin a match (`str`'s word-at-a-time search for a single
+byte, in C a copy of it), medians in ns per byte:
+
+| workload | Ace | C | Ace/C | PCRE2 | PCRE2 JIT | Ace at `9b245c3` |
+|---|---|---|---|---|---|---|
+| `literal` | 1.73 | 1.20 | 1.44x | 1.47 | 0.06 | 19.67 |
+| `word-ing` | 33.0 | 25.3 | 1.30x | 49.9 | 5.42 | 35.30 |
+| `captures` | 19.65 | 15.5 | 1.27x | 12.35 | 3.58 | 38.08 |
+| `pathological` | 96.8 | 69.4 | 1.39x | 11688.81 | 950.81 | 93.06 |
+
+`literal` gains 11.4x and `captures` 1.94x, with every checksum unchanged;
+`word-ing`'s `[a-z]` covers most of the text, and `pathological` is one short
+string. `literal` is now within 1.2x of interpreted PCRE2.
 
 ### JSON
 

@@ -56,6 +56,10 @@ typedef struct {
     size_t *work;
     size_t *best;
     size_t slots;
+    Class first;
+    bool skip;
+    bool single;
+    uint8_t byte;
 } Matcher;
 
 static void report(const char *name, uint64_t elapsed, uint64_t operations,
@@ -102,6 +106,31 @@ static void queue_insert(Queue *q, uint32_t pc) {
     q->count += 1;
 }
 
+/* str's word-at-a-time byte search (std/str.ace index_byte_from). */
+static bool find_byte(const uint8_t *text, size_t len, uint8_t byte, size_t *at) {
+    const uint64_t ones = 0x0101010101010101ull, low7 = 0x7F7F7F7F7F7F7F7Full;
+    uint64_t pattern = (uint64_t)byte * ones;
+    size_t i = *at;
+
+    for (; i + 8 <= len; i += 8) {
+        uint64_t x;
+        memcpy(&x, text + i, 8);
+        x ^= pattern;
+        uint64_t hit = ~(((x & low7) + low7) | x | low7);
+        if (hit != 0) {
+            *at = i + (size_t)__builtin_ctzll(hit) / 8;
+            return true;
+        }
+    }
+    for (; i < len; i++) {
+        if (text[i] == byte) {
+            *at = i;
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool is_word(uint8_t byte) {
     return (byte >= '0' && byte <= '9') || (byte >= 'A' && byte <= 'Z') ||
            (byte >= 'a' && byte <= 'z') || byte == '_';
@@ -113,6 +142,57 @@ static bool is_boundary(const uint8_t *text, size_t len, size_t at) {
     return before != after;
 }
 
+static void scan_first(Matcher *m, const Program *code) {
+    Queue *q = &m->current;
+    q->count = 0;
+    memset(&m->first, 0, sizeof m->first);
+    m->skip = true;
+    size_t top = 1;
+    m->stack[0] = (Frame){0, NIL, 0};
+
+    while (top > 0) {
+        uint32_t pc = m->stack[--top].pc;
+
+        for (;;) {
+            if (queue_has(q, pc)) break;
+            queue_insert(q, pc);
+            const Inst inst = code->insts[pc];
+
+            if (inst.op == JMP) {
+                pc = inst.x;
+                continue;
+            }
+            if (inst.op == SPLIT) {
+                m->stack[top++] = (Frame){inst.y, NIL, 0};
+                pc = inst.x;
+                continue;
+            }
+            if (inst.op == BYTE) {
+                m->first.bits[inst.x >> 6] |= 1ull << (inst.x & 63);
+            } else if (inst.op == ANY) {
+                for (int w = 0; w < 4; w++) m->first.bits[w] = UINT64_MAX;
+            } else if (inst.op == CLASS) {
+                for (int w = 0; w < 4; w++) m->first.bits[w] |= code->classes[inst.x].bits[w];
+            } else if (inst.op == MATCH) {
+                m->skip = false;
+            } else {
+                pc += 1;
+                continue;
+            }
+            break;
+        }
+    }
+    q->count = 0;
+    unsigned members = 0;
+    for (unsigned b = 0; b < 256; b++) {
+        if (class_has(&m->first, (uint8_t)b)) {
+            members += 1;
+            m->byte = (uint8_t)b;
+        }
+    }
+    m->single = members == 1;
+}
+
 static void matcher_init(Matcher *m, const Program *code) {
     queue_init(&m->current, code->count, code->slots);
     queue_init(&m->next, code->count, code->slots);
@@ -120,6 +200,7 @@ static void matcher_init(Matcher *m, const Program *code) {
     m->work = malloc(code->slots * sizeof(size_t));
     m->best = malloc(code->slots * sizeof(size_t));
     m->slots = code->slots;
+    scan_first(m, code);
 }
 
 static void matcher_free(Matcher *m) {
@@ -203,6 +284,14 @@ static bool run(Matcher *m, const Program *code, const uint8_t *text,
 
     for (;;) {
         if (!matched) {
+            if (m->skip && m->current.count == 0) {
+                if (m->single) {
+                    if (!find_byte(text, len, m->byte, &at)) break;
+                } else {
+                    while (at < len && !class_has(&m->first, text[at])) at += 1;
+                    if (at == len) break;
+                }
+            }
             for (size_t i = 0; i < m->slots; i++) m->work[i] = UNSET;
             add(m, insts, false, 0, text, len, at);
         }

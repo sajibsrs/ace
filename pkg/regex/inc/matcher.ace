@@ -7,13 +7,16 @@
  * testing, and clearing are all constant time, and no instruction is queued
  * twice in one step. A new thread is seeded at every position at the lowest
  * priority until a match is found, so an earlier start outranks a later one
- * and one pass yields the leftmost-first match.
+ * and one pass yields the leftmost-first match. While no thread is live, the
+ * search skips to the next byte that can begin a match: by `str`'s
+ * word-at-a-time search when only one byte can, by the byte set otherwise.
  *
  * Every buffer is sized from the program when the Matcher is created, so a
  * run never allocates and cannot fail.
  */
 
 import mem
+import str
 import program: "./program.ace"
 import syntax: "./syntax.ace"
 
@@ -61,6 +64,10 @@ pub Matcher: struct {
     work: mut []usize = null,
     best: mut []usize = null,
     slots: usize,
+    first: Class,
+    skip: bool,
+    single: bool,
+    byte: u8,
 }
 
 Queue::new(size: usize, slots: usize): (Queue, bool) {
@@ -122,13 +129,88 @@ pub Matcher::new(code: Program): (Matcher, Error) {
         work = mem.alloc[usize](slots),
         best = mem.alloc[usize](slots),
         slots = slots,
+        first = blank(Class),
+        skip = false,
+        single = false,
+        byte = 0,
     }
 
     if !ok || !next_ok || m.stack == null || m.work == null || m.best == null {
         mut m.wipe()
         return blank(Matcher), CompileErr.allocation
     }
+    mut m.scan_first(code)
     return m, null
+}
+
+/* Collects in `first` every byte a match can begin with, following the
+ * instructions that consume nothing from the entry. Assertions are passed
+ * through, so `first` may over-approximate; a reachable `match` (an empty
+ * match) disables skipping. `single` marks a set of exactly one byte.
+ */
+mut Matcher.scan_first(code: Program) {
+    insts: []Inst = code.insts.view()
+    classes: []Class = code.classes.view()
+    self.current.count = 0
+    self.skip = true
+    top: usize = 1
+    self.stack[0] = Frame {
+        pc = 0,
+        slot = NIL,
+        value = 0,
+    }
+
+    for top > 0 {
+        top -= 1
+        pc: u32 = self.stack[top].pc
+
+        explore: {
+            if self.current.has(pc) { break explore }
+            mut self.current.insert(pc)
+
+            switch insts[usize(pc)] {
+                Inst.byte(byte: u8) {
+                    self.first.bits[usize(byte >> 6)] |= u64(1) << u64(byte & 63)
+                }
+                Inst.any {
+                    for w: usize in 0 .. 4 { self.first.bits[w] = 0xFFFFFFFFFFFFFFFF }
+                }
+                Inst.class(index: u32) {
+                    for w: usize in 0 .. 4 { self.first.bits[w] |= classes[usize(index)].bits[w] }
+                }
+                Inst.match {
+                    self.skip = false
+                }
+                Inst.jmp(target: u32) {
+                    pc = target
+                    continue explore
+                }
+                Inst.split(targets: Fork) {
+                    self.stack[top] = Frame {
+                        pc = targets.y,
+                        slot = NIL,
+                        value = 0,
+                    }
+                    top += 1
+                    pc = targets.x
+                    continue explore
+                }
+                default {
+                    pc += 1
+                    continue explore
+                }
+            }
+        }
+    }
+    self.current.count = 0
+    members: u32 = 0
+    for b: usize in 0 .. 256 {
+        if self.first.has(u8(b)) {
+            members += 1
+            self.byte = u8(b)
+        }
+    }
+    self.single = members == 1
 }
 
 pub mut Matcher.wipe() {
@@ -328,6 +410,16 @@ pub mut Matcher.run(code: Program, text: string, from: usize, earliest: bool): b
 
     for {
         if !matched {
+            if self.skip && self.current.count == 0 {
+                if self.single {
+                    found: usize, ok: bool = str.find(text[at..], self.byte)
+                    if !ok { break }
+                    at += found
+                } else {
+                    for at < text.len && !self.first.has(text[at]) { at += 1 }
+                    if at == text.len { break }
+                }
+            }
             for i: usize in 0 .. self.slots { self.work[i] = UNSET }
             mut self.add_current(insts, 0, text, at)
         }

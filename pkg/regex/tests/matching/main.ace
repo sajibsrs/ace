@@ -157,6 +157,9 @@ anchors(): int {
     bad += found("a", "aXa", 1, "2-3")
     bad += found("a", "aXa", 3, "none")
     bad += found("a", "aXa", 4, "none")
+    bad += found("cat|dog", "xxdog", 0, "2-5")
+    bad += found("ab", "aaab", 0, "2-4")
+    bad += found("ab", "abxab", 1, "3-5")
     return bad
 }
 
