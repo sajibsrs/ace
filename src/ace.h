@@ -140,7 +140,7 @@ void      ptrmap_free(PtrMap* m);
     X(N_ALIAS, "alias") X(N_DISTINCT, "distinct") X(N_ERROR_DOMAIN, "error")  \
     X(N_SIGNING, "signing")                                                   \
     X(N_CONFORMANCE, "conformance") X(N_EXTERN, "extern")                      \
-    X(N_EXTERNFN, "externfn")                                                  \
+    X(N_EXTERNFN, "externfn") X(N_EXTERNVAR, "externvar")                      \
     /* statements */                                                           \
     X(N_BLOCK, "block") X(N_EXPRSTMT, "exprstmt") X(N_ASSIGN, "assign")        \
     X(N_IF, "if") X(N_FOR, "for") X(N_RANGE, "range") X(N_SWITCH, "switch")    \

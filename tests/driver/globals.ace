@@ -1,0 +1,40 @@
+/* C global variables (C Interop #6) bound from a companion C file, linked
+ * both as an object and as a shared library, where only the GOT reaches them.
+ */
+
+Point: struct { x: i32, y: f32 }
+
+extern "c" {
+    mut c_counter: i32
+    c_limit: i32
+    mut c_table: [4]i32
+    mut c_point: Point
+    c_name: *u8
+    c_hook: extern "c" (i32): i32
+    mut counter_alias: i32 = "c_counter"
+    c_read_counter(): i32
+    c_bump_counter()
+    c_table_sum(): i32
+}
+
+main(): int {
+    if c_counter != 5 || c_limit != 40 { return 1 }
+    c_counter = 9
+    if c_read_counter() != 9 { return 2 }
+    c_bump_counter()
+    if c_counter != 10 { return 3 }
+    c_table[1] = 20
+    if c_table[2] != 3 || c_table_sum() != 28 { return 4 }
+    c_point.x += 4
+    if c_point.x != 7 || c_point.y != 1.5 { return 5 }
+    limit: *i32 = &c_limit
+    if *limit != 40 { return 6 }
+    counter: mut *i32 = mut &c_counter
+    *counter = 1
+    if counter_alias != 1 || c_read_counter() != 1 { return 7 }
+    counter_alias = 12
+    if c_counter != 12 { return 8 }
+    if c_hook(4) != 8 { return 9 }
+    if *c_name != 'a' { return 10 }
+    return 0
+}

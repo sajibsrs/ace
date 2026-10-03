@@ -1617,6 +1617,27 @@ static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
 }
 
 /*
+ * A C global variable (C Interop #6): C's storage under an Ace name, typed at
+ * struct-field position, read-only unless `mut`. It is a global that is never
+ * a constant, so nothing folds or caches its value.
+ */
+static void declare_extern_var(Ck* k, Node* f) {
+    SType* t = build_type(k, f->a);
+    SType* stack[512];
+    if (t->kind != SK_ERR && !is_c_abi_type(t, CABI_FIELD, stack, 0))
+        ck_err(k, f->a, "C global '%.*s' has type %s, which is not C-ABI compatible",
+               (int)f->len, f->str, type_name(t));
+    Sym* s = declare_val(k, f, SYM_VAR, f->str, f->len);
+    if (!s) return;
+    s->type = t;
+    s->is_mut = (f->flags & F_MUT) != 0;
+    s->is_global = 1;
+    s->is_extern = 1;
+    s->decl = f;
+    f->sym = s;
+}
+
+/*
  * "f[int, string]" for diagnostics — bounded ring like type_name.
  */
 static const char* spec_tuple_name(SType** args, int nargs) {
@@ -2157,6 +2178,9 @@ static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
         }
         if (write) {
             if (s->is_const) ck_err(k, e, "cannot assign to const '%.*s'", (int)e->len, e->str);
+            else if (s->is_extern && !s->is_mut)
+                ck_err(k, e, "C global '%.*s' is read-only — mark it 'mut' in the extern block",
+                       (int)e->len, e->str);
             else if (s->is_param && !s->is_mut)
                 ck_err(k, e, "parameter '%.*s' is read-only — mark it 'mut' in the signature",
                        (int)e->len, e->str);
@@ -7162,6 +7186,10 @@ int sema_check(Node* file, Diag* d) {
         case N_EXTERN: {
             for (int j = 0; j < n->nkids; j++) {
                 Node* f = n->kids[j];
+                if (f->kind == N_EXTERNVAR) {
+                    declare_extern_var(&k, f);
+                    continue;
+                }
                 Sym* s = declare_func(&k, f, 1);
                 if (!s) continue;
             }

@@ -667,8 +667,8 @@ static const char* arena_name(const char* s) {
     return p;
 }
 
-// The link symbol of a function: an extern's or export's C name, else the
-// mangled Ace name.
+// The link symbol of a function or C global: an extern's or export's C name,
+// else the mangled Ace name.
 static const char* link_name(Sym* s, SType* ft) {
     char buf[512];
     if (s->is_extern || (s->decl && (s->decl->flags & F_EXPO))) {
@@ -691,7 +691,7 @@ static int global_addr(Lw* l, Sym* s) {
     int id = emit(l, IR_GLOBAL, IT_PTR);
     IrIns* x = &l->fn->ins[id];
     x->sym = s;
-    if (s->kind == SYM_FUNC) {
+    if (s->kind == SYM_FUNC || s->is_extern) { // a C global binds its C name
         x->name = link_name(s, s->type);
     } else {
         char buf[512];

@@ -43,3 +43,21 @@ export combine(pointer: mut *u8, value: u32): int {
 zero: extern "c" () = no_result
 many: extern "c" (mut *u8, u32): int = combine
 missing: extern "c" (mut *u8): mut *u8 = null
+
+Pair: struct { a: i32, b: f32 }
+
+extern "c" {
+    c_limit: i32
+    mut c_table: [4]i32
+    mut c_pair: Pair
+    c_hook: extern "c" (i32): i32
+    mut c_alias: i32 = "c_counter"
+}
+
+globals(): i32 {
+    c_table[0] = c_limit
+    c_pair.a += 1
+    limit: *i32 = &c_limit
+    alias: mut *i32 = mut &c_alias
+    return c_hook(*limit) + *alias
+}

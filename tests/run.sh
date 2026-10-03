@@ -332,6 +332,30 @@ for want in \
     fi
 done
 
+c_global_errors=$("$ACE" tests/sema/c_abi/globals_err.ace 2>&1)
+for want in \
+    "13:5: error: C global 'limit' is read-only — mark it 'mut' in the extern block" \
+    "14:30: error: C global 'limit' is read-only" \
+    "15:27: error: C global 'names' is read-only" \
+    "16:5: error: C global 'names' is read-only" \
+    "C global 'bad_text' has type string, which is not C-ABI compatible" \
+    "C global 'bad_bytes' has type []u8, which is not C-ABI compatible"; do
+    if ! printf '%s\n' "$c_global_errors" | grep -qF "$want"; then
+        echo "FAIL: missing C global diagnostic '$want'"
+        fail=1
+    fi
+done
+for case in export mut_function; do
+    case $case in
+        export)       want="'export' applies to C functions only, not C globals" ;;
+        mut_function) want="'mut' marks an extern variable: expected ':' after its name" ;;
+    esac
+    if ! "$ACE" --ast "tests/parser/extern_var/${case}_err.ace" 2>&1 | grep -qF "$want"; then
+        echo "FAIL: extern variable $case diagnostic"
+        fail=1
+    fi
+done
+
 overlap_errors=$("$ACE" tests/sema/overlap/main_err.ace 2>&1)
 if [ "$(printf '%s\n' "$overlap_errors" | grep -c 'error:')" -ne 7 ]; then
     echo "FAIL: overlapping struct diagnostics"
@@ -1890,6 +1914,33 @@ if [ -d tests/driver ]; then
             fail=1
         fi
     fi
+
+    # C global variables (C Interop #6): from an object, and from a shared
+    # library, which only the GOT reaches; debug and release
+    mkdir -p /tmp/ace_driver/globals
+    cc -c tests/driver/globals.c -o /tmp/ace_driver/globals_c.o
+    cc -shared -fPIC tests/driver/globals.c -o /tmp/ace_driver/globals/libglobals.so
+    cp /tmp/ace_driver/globals/libglobals.so /tmp/ace_driver/globals/libglobals.dylib
+    for mode in --debug --release; do
+        for input in object shared; do
+            if [ "$input" = object ]; then set -- /tmp/ace_driver/globals_c.o
+            else set -- -L /tmp/ace_driver/globals -l globals; fi
+            if ! "$ACE" $mode -o /tmp/ace_driver/app_globals tests/driver/globals.ace "$@" \
+                    >/dev/null 2>/tmp/ace_test_errs; then
+                echo "FAIL: C globals ($input, $mode) did not compile/link"
+                cat /tmp/ace_test_errs
+                fail=1
+                continue
+            fi
+            LD_LIBRARY_PATH=/tmp/ace_driver/globals DYLD_LIBRARY_PATH=/tmp/ace_driver/globals \
+                /tmp/ace_driver/app_globals
+            got=$?
+            if [ "$got" -ne 0 ]; then
+                echo "FAIL: C globals ($input, $mode) exited $got, want 0"
+                fail=1
+            fi
+        done
+    done
 
     driver_diag() {
         want=$1; shift

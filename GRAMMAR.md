@@ -128,8 +128,10 @@ signing_decl  := owner_type "signs" (type_list | "(" type_list [","] ")")
                                                           // bare = one line; parens = multiline
 
 extern_block  := "extern" string_lit "{" extern_decl* "}"
-extern_decl   := ["export"] ident "(" [extern_params] ")" [ret_clause]
+extern_decl   := extern_func | extern_var
+extern_func   := ["export"] ident "(" [extern_params] ")" [ret_clause]
                  ["=" string_lit]                        // nonempty, NUL-free link name; v1 max 510 bytes
+extern_var    := ["mut"] ident ":" type ["=" string_lit]  // C global; read-only unless mut (C Interop #6)
 extern_params := extern_param ("," extern_param)* ["," ["..."]]
 extern_param  := ident ":" type
 ```

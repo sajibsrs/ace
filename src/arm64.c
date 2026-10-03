@@ -658,6 +658,10 @@ static int access_bytes(A64* a, IrIns* x) {
     return ir_type_bits(t) / 8;
 }
 
+// Whether global x is a C global, whose storage another image may own, so its
+// address comes from the GOT rather than a direct page reference.
+static int got_data(IrIns* x) { return x->sym && x->sym->kind == SYM_VAR && x->sym->is_extern; }
+
 // Whether load or store u computes its address itself: from a global (adrp
 // and a page offset), or from an unchecked pointer offset (a folded constant,
 // or a register index scaled by the access size).
@@ -666,7 +670,7 @@ static int fold_address(A64* a, int u) {
     int p = x->args[0];
     IrIns* px = ins_of(a, p);
     if (a->ra.nuse[p] != 1 || px->block != x->block || (x->flags & IRF_CHECKED)) return 0;
-    if (px->op == IR_GLOBAL) return x->aux == 0;
+    if (px->op == IR_GLOBAL) return x->aux == 0 && !got_data(px);
     if ((px->op != IR_PADD && px->op != IR_PSUB) || (px->flags & IRF_CHECKED)) return 0;
     int n = px->args[1];
     uint64_t d;
@@ -1514,9 +1518,21 @@ done:
     if (load) dst_done(a, v, rt);
 }
 
+// rd = the address of a C global (C Interop #6) from its GOT slot, which the
+// dynamic linker fills: adrp rd, name@GOTPAGE; ldr rd, [rd, name@GOTPAGEOFF].
+static void got_ref(A64* a, int rd, const char* name) {
+    ESym* s = sym_intern(&a->o->syms, name, (uint32_t)strlen(name));
+    Sec* t = &a->o->secs[SEC_TEXT];
+    reloc_add(t, here(a), s, 1, 2, 1, RM_GOT_LOAD_PAGE21);
+    put(a, 0x90000000u | (uint32_t)rd);
+    reloc_add(t, here(a), s, 0, 2, 1, RM_GOT_LOAD_PAGEOFF12);
+    put(a, 0xF9400000u | ((uint32_t)rd << 5) | (uint32_t)rd);
+}
+
 static void global(A64* a, int v) {
     int rd = dst(a, v);
-    page_ref(a, rd, ins_of(a, v)->name, 0x91000000u | ((uint32_t)rd << 5) | (uint32_t)rd);
+    if (got_data(ins_of(a, v))) got_ref(a, rd, ins_of(a, v)->name);
+    else page_ref(a, rd, ins_of(a, v)->name, 0x91000000u | ((uint32_t)rd << 5) | (uint32_t)rd);
     dst_done(a, v, rd);
 }
 

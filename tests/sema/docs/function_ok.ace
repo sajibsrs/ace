@@ -108,3 +108,17 @@ check_c_variadic(): i32 {
     value: i32 = 11
     return c_variadic(0, i32(9), f32(1.25), &value)
 }
+
+extern "c" {
+    c_limit: i32
+    mut c_counter: i32
+    mut c_table: [4]i32
+    c_bump()
+}
+
+check_c_globals(): i32 {
+    c_counter = c_limit
+    c_bump()
+    c_table[0] = c_counter
+    return c_table[0]
+}

@@ -1,0 +1,5 @@
+/* export applies to C functions only. */
+
+extern "c" {
+    export count: i32
+}

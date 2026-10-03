@@ -1,0 +1,8 @@
+/* C global variables in an extern block (C Interop #6). */
+
+extern "c" {
+    environ: **u8
+    mut opterr: i32
+    c_out: *u8 = "__stdoutp"
+    getpid(): i32
+}

@@ -65,3 +65,14 @@ Decision: explicit extern/export boundary; Ace internals stay free.
    pointer is: parameters, returns, struct fields, and pointees. There is no address sigil,
    closure, captured context, lifetime management, generic callback, calling-
    convention inference, or arbitrary foreign ABI.
+6. An `extern "c"` block may declare a C global variable as `name: type`,
+   with an optional link name as for functions (`c_out: *File = "__stdoutp"`).
+   It binds C's storage; it defines, allocates, and initializes nothing. It is
+   read-only unless marked `mut` (`mut opterr: i32`), as with `*T` and
+   `mut *T`, since C `const` data may sit in read-only memory. The type passes
+   the C-ABI whitelist (#3) at struct-field position, so a fixed array is
+   allowed. A use reads or writes the C storage in place, and `&name` is `*T`,
+   or `mut *T` when `mut`. A read is never assumed unchanged across a call or
+   asm. Thread-local C variables are not supported; C libraries reach them
+   through accessor functions, which an extern block already binds. `export`
+   applies to functions only.

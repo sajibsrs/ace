@@ -35,8 +35,9 @@
 //   N_DISTINCT  str = name; a = base type; F_PUB
 //   N_SIGNING     a = concrete type; c = owner N_TPARAMS; kids = N_CONFORMANCE
 //   N_CONFORMANCE a = signed contract type; kids = resolved methods after sema
-//   N_EXTERN    str = abi string; kids = N_EXTERNFN
+//   N_EXTERN    str = abi string; kids = N_EXTERNFN / N_EXTERNVAR
 //   N_EXTERNFN  str = name; kids = params; a = ret; F_EXPO/F_VARARGS
+//   N_EXTERNVAR str = name; a = type; F_MUT when writable (C Interop #6)
 //   N_BLOCK     kids = statements
 //   N_EXPRSTMT  a = expr
 //   N_ASSIGN    kids = targets; a = rhs; op = T_ASSIGN or compound token;
@@ -2053,32 +2054,40 @@ static Node* parse_extern(P* p) {
         if (at(p, T_EOF)) perr(p, "unexpected end of file in extern block");
         Node* f = nd(p, N_EXTERNFN);
         if (ate(p, T_EXPORT)) f->flags |= F_EXPO;
-        Token* name = expect(p, T_IDENT, "function name in extern block");
+        else if (ate(p, T_MUT)) f->flags |= F_MUT;
+        Token* name = expect(p, T_IDENT, "name in extern block");
         f->str = name->str;
         f->len = name->len;
-        expect(p, T_LPAREN, "'(' after extern function name");
-        if (!at(p, T_RPAREN)) {
-            NV params = {0};
-            for (;;) {
-                Node* pa = nd(p, N_PARAM);
-                Token* pname = expect(p, T_IDENT, "parameter name");
-                pa->str = pname->str;
-                pa->len = pname->len;
-                expect(p, T_COLON, "':' after parameter name");
-                pa->a = parse_type(p);
-                nv_push(p, &params, pa);
-                if (!ate(p, T_COMMA)) break;
-                if (at(p, T_DOTDOTDOT)) {
-                    p->i++;
-                    f->flags |= F_VARARGS;
-                    break;
+        if (!(f->flags & F_EXPO) && ate(p, T_COLON)) { // a C global variable (C Interop #6)
+            f->kind = N_EXTERNVAR;
+            f->a = parse_type(p);
+        } else {
+            if (f->flags & F_MUT) perr(p, "'mut' marks an extern variable: expected ':' after its name");
+            if (at(p, T_COLON)) perr(p, "'export' applies to C functions only, not C globals");
+            expect(p, T_LPAREN, "'(' after extern function name");
+            if (!at(p, T_RPAREN)) {
+                NV params = {0};
+                for (;;) {
+                    Node* pa = nd(p, N_PARAM);
+                    Token* pname = expect(p, T_IDENT, "parameter name");
+                    pa->str = pname->str;
+                    pa->len = pname->len;
+                    expect(p, T_COLON, "':' after parameter name");
+                    pa->a = parse_type(p);
+                    nv_push(p, &params, pa);
+                    if (!ate(p, T_COMMA)) break;
+                    if (at(p, T_DOTDOTDOT)) {
+                        p->i++;
+                        f->flags |= F_VARARGS;
+                        break;
+                    }
+                    if (at(p, T_RPAREN)) break; // trailing comma
                 }
-                if (at(p, T_RPAREN)) break; // trailing comma
+                set_kids(f, &params);
             }
-            set_kids(f, &params);
+            expect(p, T_RPAREN, "')' to close extern parameters");
+            f->a = parse_ret(p);
         }
-        expect(p, T_RPAREN, "')' to close extern parameters");
-        f->a = parse_ret(p);
         if (ate(p, T_ASSIGN)) { // optional link name: Ace binding != C symbol
             Token* link = expect(p, T_STR, "link name string after '='");
             if (link->len == 0) perr(p, "extern link name cannot be empty");

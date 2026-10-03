@@ -77,6 +77,8 @@ enum { // arm64 relocation types
     RM_BRANCH26  = 2,
     RM_PAGE21    = 3,
     RM_PAGEOFF12 = 4,
+    RM_GOT_LOAD_PAGE21    = 5,
+    RM_GOT_LOAD_PAGEOFF12 = 6,
 };
 
 enum { // n_type bits

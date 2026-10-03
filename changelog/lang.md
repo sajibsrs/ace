@@ -1,5 +1,10 @@
 # Language
 
+- `extern "c"` blocks bind C global variables (C Interop #6): `name: type`,
+  read-only unless `mut`, typed at struct-field position, accessed in place;
+  Apple arm64 reaches them through `GOT_LOAD` relocations, x64 through
+  `GOTPCREL`. `tests/driver/globals.ace` links them from an object and a
+  shared library.
 - Added the `_` discard to destructuring declarations and assignments: a bare
   `_` drops its value, binds nothing, may repeat, and is never read; `_ = f()`
   drops one result. `_` can no longer name a declaration, so `_: T` binders in

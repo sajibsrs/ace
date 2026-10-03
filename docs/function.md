@@ -533,6 +533,31 @@ value: i32 = 11
 result: i32 = c_variadic(0, i32(9), f32(1.25), &value)
 ```
 
+An extern block also binds C global variables, written `name: type` and
+optionally link-named like a function. The name reads and writes C's storage in
+place; Ace allocates and initializes nothing. A C global is read-only unless
+marked `mut`, and `&name` is `*T`, or `mut *T` when it is `mut`. Its type
+follows the struct-field rules above, so a fixed array is allowed. A read is
+never cached across a call, since C may change the value. Thread-local C
+variables such as `errno` are reached through the accessor functions C
+libraries provide for them.
+
+```ace
+extern "c" {
+    c_limit: i32
+    mut c_counter: i32
+    mut c_table: [4]i32
+    c_bump()
+}
+
+check_c_globals(): i32 {
+    c_counter = c_limit
+    c_bump()
+    c_table[0] = c_counter
+    return c_table[0]
+}
+```
+
 ## Current limits
 
 - Ace-defined functions are not variadic. Pass a slice instead; only imported
@@ -551,7 +576,15 @@ The examples are covered by `tests/sema/docs/function_ok.ace`.
 
 ## Design rationale
 
-Why the rules in `spec/compiler.md` are shaped as they are.
+Why the rules in `spec/compiler.md` and C Interop (`spec/modules-packages.md`) are shaped as they are.
+
+- C Interop #6: binding C data uses the storage form Ace already has rather
+  than accessor shims, as Zig (`extern var`/`extern const`) and Rust
+  (`static`/`static mut`) do. Whether C storage may be written is stated at the
+  declaration, read-only by default like `*T` and unmarked parameters, because
+  writing a C `const` global faults. Data in a shared library is reached
+  through the GOT, which the dynamic linker fills (`GOT_LOAD` on Apple arm64,
+  `GOTPCREL` on x64).
 
 - Functions & ABI #8: the marker keeps expansion visible in source and declares
   at the module boundary that callers compile against the body; release builds
