@@ -5,22 +5,7 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
 
 ### Active
 
-- Auto-vectorization (Compiler #6) — semantics decided; the IR represents
-  vectors as internal value types (`v4f32`, `v4i32`, `v2f64`) the target emits
-  lane-wise. Accepted so far: an innermost counted loop of lane-wise
-  `f32`/`i32` arithmetic, or of `f64` arithmetic alone (two lanes, no
-  compare), over elements `base[i]`, with no call after inline
-  expansion, whose stores provably touch no other access's element; a branch
-  whose arms neither load nor store becomes a lane select, and `i32(i)` under
-  a constant count is a lane value. A struct array whose same-typed fields
-  each get the same computation, every field stored, runs as the flat array
-  of its fields. The original loop runs the remainder. Struct fields computed
-  differently (interleaved `ld3`/`st3`) are parked: on AArch64 they measured
-  1.28x over scalar C, below the bar, and no bench kernel needs them; so is an
-  `f64` reduction over interleaved `f32` records (`length-vec3`), lane-gathered
-  with in-order lane sums, at 1.10x. Acceptance:
-  `bench/core/run-hotloop.sh` `cube-transform`, `saxpy-f32`, `saxpy-f64`, and
-  `particle-vec3` against C `-O2` with vectorization on.
+- None.
 
 ### Trigger-gated
 
