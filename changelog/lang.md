@@ -1,5 +1,9 @@
 # Language
 
+- `extern "c"` defines C globals in Ace: an initialized global in the block,
+  or `extern "c" [mut] name: T = value`, is an ordinary constant-initialized
+  global under its unmangled C name, external, read-only (in `__DATA_CONST`
+  or `.rodata`) unless `mut`.
 - One `extern "c"` boundary in both directions: inside a block, a function
   with a body is defined in Ace and C-visible; `extern "c" f(…) { … }` is the
   single form. `export` is no longer a keyword, and link names are spelled

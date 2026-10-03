@@ -691,7 +691,7 @@ static int global_addr(Lw* l, Sym* s) {
     int id = emit(l, IR_GLOBAL, IT_PTR);
     IrIns* x = &l->fn->ins[id];
     x->sym = s;
-    if (s->kind == SYM_FUNC || s->is_extern) { // a C global binds its C name
+    if (s->kind == SYM_FUNC || s->is_extern || (s->decl && (s->decl->flags & F_EXPO))) { // a C global binds its C name
         x->name = link_name(s, s->type);
     } else {
         char buf[512];

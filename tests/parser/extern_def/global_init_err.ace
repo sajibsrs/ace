@@ -1,0 +1,3 @@
+/* The single-declaration form defines, so a C global there needs an initializer. */
+
+extern "c" mut count: i32

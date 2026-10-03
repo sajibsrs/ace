@@ -129,8 +129,10 @@ signing_decl  := owner_type "signs" (type_list | "(" type_list [","] ")")
                                                           // bare = one line; parens = multiline
 
 extern_block  := "extern" string_lit "{" extern_decl* "}"
-extern_decl   := extern_func | extern_var | func_decl     // func_decl: body = defined in Ace, C-visible
-extern_def    := "extern" string_lit func_decl            // single definition (C Interop #2)
+extern_decl   := extern_func | extern_var | extern_global | func_decl
+                                                          // func_decl: body = defined in Ace, C-visible
+extern_def    := "extern" string_lit (func_decl | extern_global) // single definition (C Interop #2, #6)
+extern_global := ["mut"] ident ":" type "=" expr          // C global defined in Ace; read-only unless mut
 extern_func   := ident "(" [extern_params] ")" [ret_clause] [link_name]
 extern_var    := ["mut"] ident ":" type [link_name]       // C global; read-only unless mut (C Interop #6)
 link_name     := contextual_as string_lit                 // nonempty, NUL-free; v1 max 510 bytes

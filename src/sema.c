@@ -2178,7 +2178,7 @@ static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
         }
         if (write) {
             if (s->is_const) ck_err(k, e, "cannot assign to const '%.*s'", (int)e->len, e->str);
-            else if (s->is_extern && !s->is_mut)
+            else if ((s->is_extern || (s->decl && (s->decl->flags & F_EXPO))) && !s->is_mut)
                 ck_err(k, e, "C global '%.*s' is read-only — mark it 'mut' in the extern block",
                        (int)e->len, e->str);
             else if (s->is_param && !s->is_mut)
@@ -7200,11 +7200,18 @@ int sema_check(Node* file, Diag* d) {
             SType* t = build_type(&k, binder->a);
             if (t && t->kind == SK_ERROR_DOMAIN)
                 ck_err(&k, binder, "error-domain names are identities, not value types; use Error");
+            if (n->flags & F_EXPO) { // an exported C global (C Interop #6)
+                SType* stack[512];
+                if (t->kind != SK_ERR && !is_c_abi_type(t, CABI_FIELD, stack, 0))
+                    ck_err(&k, binder->a, "C global '%.*s' has type %s, which is not C-ABI compatible",
+                           (int)binder->len, binder->str, type_name(t));
+            }
             Sym* s = declare_val(&k, n, SYM_VAR, binder->str, binder->len);
             if (s) {
                 s->type = t;
                 s->is_const = (n->flags & F_CONST) != 0 || t->kind == SK_STATICMAP;
                 s->is_pub = (n->flags & F_PUB) != 0;
+                s->is_mut = (n->flags & F_MUT) != 0;
                 s->is_global = 1;
                 s->decl = binder;
                 s->init = n->b;

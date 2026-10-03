@@ -518,8 +518,23 @@ extern "c" increment(value: mut *i32): i32 {
 ```
 
 `as "name"` binds an Ace-side name to a different C symbol. A variadic function
-can be imported but not defined, and defining a C global (an initializer inside
-the block) or giving a definition a link name is not supported yet.
+can be imported but not defined, and a definition cannot take a link name yet.
+
+Globals follow the same rule: one without an initializer binds C storage, and
+one with an initializer is defined in Ace and visible to C. It is read-only
+unless `mut`, and a read-only one is placed in read-only data:
+
+```ace
+extern "c" {
+    mut opterr: i32                 // C's storage
+    mut ace_counter: i32 = 0        // defined here; C reads and writes it
+    ace_version: u32 = 3            // defined here; read-only
+}
+
+pub extern "c" ace_scale: f64 = 2.5
+```
+
+The initializer must be a compile-time constant, as for every global.
 
 Boundary parameters cannot use Ace's `mut parameter` convention. Pass an
 explicit `mut *T` when C receives writable storage. An explicitly backed enum
@@ -598,7 +613,7 @@ Why the rules in `spec/compiler.md` and C Interop (`spec/modules-packages.md`) a
   position. `export` stays free: it would otherwise read as the partner of
   `import`, while module visibility is `pub`. Link names use `as "name"` so
   that `=` keeps its one meaning, an initializer, which an exported C global
-  will need.
+  needs.
 - C Interop #6: binding C data uses the storage form Ace already has rather
   than accessor shims, as Zig (`extern var`/`extern const`) and Rust
   (`static`/`static mut`) do. Whether C storage may be written is stated at the

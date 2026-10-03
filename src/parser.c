@@ -2067,6 +2067,24 @@ static Node* parse_extern_def(P* p, size_t start, int pub) {
     return parse_func_rest(p, name, try_tparams(p), pub, 1); // sema rejects generics
 }
 
+// An exported C global after `[mut] name: T` and `=`: an ordinary global with
+// C linkage, read-only unless mut (C Interop #6).
+static Node* parse_extern_global(P* p, Token* name, Node* type, int mut, int pub) {
+    Node* n = nd_tok(p, N_VAR, name);
+    Node* binder = nd_tok(p, N_PARAM, name);
+    binder->str = name->str;
+    binder->len = name->len;
+    binder->a = type;
+    NV binders = {0};
+    nv_push(p, &binders, binder);
+    set_kids(n, &binders);
+    n->flags |= F_EXPO | (mut ? F_MUT : 0) | (pub ? F_PUB : 0);
+    binder->flags |= F_EXPO | (mut ? F_MUT : 0);
+    expect(p, T_ASSIGN, "'=' and an initializer: a C global defined in Ace");
+    n->b = expr_list(p, 0);
+    return n;
+}
+
 static Node* parse_extern(P* p) {
     Node* n = nd(p, N_EXTERN);
     expect(p, T_EXTERN, "'extern'");
@@ -2090,7 +2108,13 @@ static Node* parse_extern(P* p) {
             f->kind = N_EXTERNVAR;
             f->a = parse_type(p);
             f->cname = parse_link_name(p, name);
-            if (at(p, T_ASSIGN)) perr(p, "exporting C globals is not supported yet");
+            if (at(p, T_ASSIGN)) {
+                if (f->cname) perr(p, "link names on exported definitions are not supported yet");
+                nv_push(p, &p->exports, parse_extern_global(p, name, f->a, (f->flags & F_MUT) != 0, 0));
+                if (!ate(p, T_NL) && !at(p, T_RBRACE)) perr(p, "expected newline or '}' after extern declaration");
+                skipnl(p);
+                continue;
+            }
         } else {
             if (f->flags & F_MUT) perr(p, "'mut' marks an extern variable: expected ':' after its name");
             if (at(p, T_LBRACK)) def = 1; // generic: reparsed as a definition for sema to reject
@@ -2126,7 +2150,7 @@ static Node* parse_extern(P* p) {
                 def = at(p, T_LBRACE);
             }
             if (def) {
-                if (f->cname) perr(p, "link names on exported functions are not supported yet");
+                if (f->cname) perr(p, "link names on exported definitions are not supported yet");
                 if (f->flags & F_VARARGS) perr(p, "variadic functions cannot be defined in Ace");
                 nv_push(p, &p->exports, parse_extern_def(p, start, 0));
                 if (!ate(p, T_NL) && !at(p, T_RBRACE)) perr(p, "expected newline or '}' after extern declaration");
@@ -2366,13 +2390,21 @@ static Node* parse_top(P* p) {
         else break;
     }
     if (at(p, T_EXTERN) && p->i + 2 < p->n && p->toks[p->i + 1].kind == T_STR &&
-        p->toks[p->i + 2].kind == T_IDENT) { // `extern "c" name(...) { body }`
+        (p->toks[p->i + 2].kind == T_IDENT || p->toks[p->i + 2].kind == T_MUT)) {
+        // `extern "c" name(...) { body }` or `extern "c" [mut] name: T = value`
         if (mut) perr(p, "'mut' before a top-level declaration requires a method owner");
         p->i += 2;
+        int gmut = ate(p, T_MUT);
+        if (gmut || (p->i + 1 < p->n && p->toks[p->i + 1].kind == T_COLON)) {
+            if (inl) perr(p, "'inline' applies only to function declarations");
+            Token* name = expect(p, T_IDENT, "C global name");
+            expect(p, T_COLON, "':' after C global name");
+            Node* type = parse_type(p);
+            if (ident_at(p, "as")) perr(p, "link names on exported definitions are not supported yet");
+            return parse_extern_global(p, name, type, gmut, pub);
+        }
         if (p->i + 1 < p->n && (p->toks[p->i + 1].kind == T_DOT || p->toks[p->i + 1].kind == T_COLONCOLON))
             perr(p, "methods and associated functions cannot use the C ABI");
-        if (p->i + 1 < p->n && p->toks[p->i + 1].kind == T_COLON)
-            perr(p, "exporting C globals is not supported yet");
         Node* f = parse_extern_def(p, p->i, pub);
         if (inl) f->flags |= F_INLINE;
         return f;

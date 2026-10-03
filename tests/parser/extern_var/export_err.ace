@@ -1,5 +1,5 @@
-/* Exporting C globals is reserved: an initializer inside an extern block is rejected. */
+/* An exported C global keeps its own name; a link name on it is not supported yet. */
 
 extern "c" {
-    mut count: i32 = 0
+    mut count: i32 as "Count" = 0
 }

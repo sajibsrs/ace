@@ -257,3 +257,21 @@ int32_t c_run_ace(void) {
         return 22;
     return 0;
 }
+
+extern int32_t ace_counter;
+extern const uint32_t ace_version;
+extern int32_t ace_table[3];
+extern int64_t ace_ticks;
+extern const double ace_scale;
+
+int32_t c_exported_globals(void) {
+    if (ace_counter != 7) return 1;
+    if (ace_version != 3) return 2;
+    if (ace_table[0] != 5 || ace_table[2] != 5) return 3;
+    if (ace_ticks != -5) return 4;
+    if (ace_scale != 2.5) return 5;
+    ace_counter = 11;
+    ace_table[1] = 9;
+    ace_ticks = 6;
+    return 0;
+}

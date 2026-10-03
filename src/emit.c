@@ -1357,7 +1357,9 @@ static void emit_global(Em* e, Node* n) {
     }
     uint32_t size = ty_size(t), align = ty_align(t);
     char nm[512];
-    snprintf(nm, sizeof nm, "__ace$g$%.*s", (int)binder->len, binder->str);
+    int export_c = (n->flags & F_EXPO) != 0; // a C global defined in Ace: its C name, external
+    if (export_c) snprintf(nm, sizeof nm, "_%s", n->cname ? n->cname : binder->str);
+    else snprintf(nm, sizeof nm, "__ace$g$%.*s", (int)binder->len, binder->str);
     if (!n->b) { // no initializer: zero-fill storage
         Sec* b = &e->o.secs[SEC_BSS];
         b->size = align_up(b->size, align);
@@ -1382,9 +1384,10 @@ static void emit_global(Em* e, Node* n) {
         free(rels.v);
         return;
     }
-    Sec* d = (n->flags & F_CONST) ? &e->o.secs[SEC_CONST] : &e->o.secs[SEC_DATA];
+    int readonly = (n->flags & F_CONST) || (export_c && !(n->flags & F_MUT));
+    Sec* d = readonly ? &e->o.secs[SEC_CONST] : &e->o.secs[SEC_DATA];
     while (d->data.len % align) buf_put8(&d->data, 0);
-    ESym* g = sym_define(&e->o.syms, e->o.secs, nm, (uint32_t)strlen(nm), 0, d);
+    ESym* g = sym_define(&e->o.syms, e->o.secs, nm, (uint32_t)strlen(nm), export_c, d);
     uint32_t start = (uint32_t)d->data.len;
     buf_write(&d->data, bytes.d, bytes.len);
     for (int i = 0; i < rels.n; i++) reloc_add(d, start + rels.v[i].off, rels.v[i].sym, 0, 3, 1, RM_UNSIGNED);

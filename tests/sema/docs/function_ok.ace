@@ -126,3 +126,11 @@ check_c_globals(): i32 {
     c_table[0] = c_counter
     return c_table[0]
 }
+
+extern "c" {
+    mut opterr: i32
+    mut ace_counter: i32 = 0
+    ace_version: u32 = 3
+}
+
+pub extern "c" ace_scale: f64 = 2.5

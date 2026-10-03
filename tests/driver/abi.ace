@@ -54,6 +54,10 @@ extern "c" {
     c_get_hook(): Hook
     c_set_callback(out: mut *extern "c" (i32): i32)
     c_run_ace(): i32
+    c_exported_globals(): i32
+    mut ace_counter: i32 = 7
+    ace_version: u32 = 3
+    mut ace_table: [3]i32 = [5 : 3]
     c_call_thread_entry(entry: extern "c" (mut *u8): mut *u8, argument: mut *u8): mut *u8
     c_get_thread_entry(): extern "c" (mut *u8): mut *u8
 }
@@ -194,6 +198,10 @@ extern "c" ace_stack_align(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i6
 extern "c" ace_fp_align(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: f64, narrow: f32, wide: f64): f64 {
     return a + b + c + d + e + f + g + h + f64(narrow) + wide
 }
+
+extern "c" mut ace_ticks: i64 = -5
+
+pub extern "c" ace_scale: f64 = 2.5
 
 main(): int {
     if c_scalars(-1, 2, 3, 4, 5, 6, 7, 8, 9) != 43 { return 1 }
@@ -336,6 +344,10 @@ main(): int {
     c_set_callback(mut &slot)
     if slot(9) != 10 { return 76 }
     from_c: i32 = c_run_ace()
+    exported: i32 = c_exported_globals()
+    if exported != 0 { return int(80 + exported) }
+    if ace_counter != 11 || ace_table[1] != 9 || ace_ticks != 6 { return 79 }
+    if ace_version != 3 || ace_scale != 2.5 { return 78 }
 
     if from_c != 0 { return int(20 + from_c) }
     callback_value: u8 = 31

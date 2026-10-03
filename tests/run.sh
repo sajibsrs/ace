@@ -100,7 +100,8 @@ tests/parser/inline/mut_order_err.ace|'inline' must come before 'mut'
 tests/parser/inline/duplicate_err.ace|duplicate 'inline' modifier
 tests/parser/inline/not_function_err.ace|1:8: error: 'inline' applies only to function declarations
 tests/parser/inline/extern_err.ace|'extern' blocks take no pub/inline/mut
-tests/parser/extern_def/link_name_err.ace|link names on exported functions are not supported yet
+tests/parser/extern_def/link_name_err.ace|link names on exported definitions are not supported yet
+tests/parser/extern_def/global_init_err.ace|expected '=' and an initializer
 tests/parser/extern_def/variadic_err.ace|variadic functions cannot be defined in Ace
 tests/parser/extern_def/bodiless_err.ace|expected '{'
 tests/parser/associated/export_err.ace|methods and associated functions cannot use the C ABI
@@ -336,6 +337,17 @@ for want in \
     fi
 done
 
+exported_global_errors=$("$ACE" tests/sema/c_abi/exported_globals_err.ace 2>&1)
+for want in \
+    "5:11: error: C global 'text' has type string, which is not C-ABI compatible" \
+    "8:21: error: C global 'bytes' has type []u8, which is not C-ABI compatible" \
+    "11:5: error: C global 'limit' is read-only" \
+    "12:30: error: C global 'limit' is read-only"; do
+    if ! printf '%s\n' "$exported_global_errors" | grep -qF "$want"; then
+        echo "FAIL: missing exported C global diagnostic '$want'"
+        fail=1
+    fi
+done
 c_global_errors=$("$ACE" tests/sema/c_abi/globals_err.ace 2>&1)
 for want in \
     "13:5: error: C global 'limit' is read-only — mark it 'mut' in the extern block" \
@@ -351,7 +363,7 @@ for want in \
 done
 for case in export mut_function; do
     case $case in
-        export)       want="exporting C globals is not supported yet" ;;
+        export)       want="link names on exported definitions are not supported yet" ;;
         mut_function) want="'mut' marks an extern variable: expected ':' after its name" ;;
     esac
     if ! "$ACE" --ast "tests/parser/extern_var/${case}_err.ace" 2>&1 | grep -qF "$want"; then
