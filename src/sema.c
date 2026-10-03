@@ -2179,7 +2179,7 @@ static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
         if (write) {
             if (s->is_const) ck_err(k, e, "cannot assign to const '%.*s'", (int)e->len, e->str);
             else if ((s->is_extern || (s->decl && (s->decl->flags & F_EXPO))) && !s->is_mut)
-                ck_err(k, e, "C global '%.*s' is read-only — mark it 'mut' in the extern block",
+                ck_err(k, e, "C global '%.*s' is read-only — mark its declaration 'mut'",
                        (int)e->len, e->str);
             else if (s->is_param && !s->is_mut)
                 ck_err(k, e, "parameter '%.*s' is read-only — mark it 'mut' in the signature",

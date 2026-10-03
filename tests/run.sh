@@ -350,7 +350,7 @@ for want in \
 done
 c_global_errors=$("$ACE" tests/sema/c_abi/globals_err.ace 2>&1)
 for want in \
-    "13:5: error: C global 'limit' is read-only — mark it 'mut' in the extern block" \
+    "13:5: error: C global 'limit' is read-only — mark its declaration 'mut'" \
     "14:30: error: C global 'limit' is read-only" \
     "15:27: error: C global 'names' is read-only" \
     "16:5: error: C global 'names' is read-only" \
