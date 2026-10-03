@@ -30,9 +30,9 @@ Decision: packaging is an optional, explicit layer above file modules; one `ace`
 15. Conventional output paths keep the manifest small: an exe defaults to `build/<package-name>`, library build state stays under `build/`, and an explicit command-line output path may override an exe build. Exact package command flags remain [open].
 
 ## C Interop
-Decision: explicit extern/export boundary; Ace internals stay free.
+Decision: one explicit `extern "c"` boundary in both directions; Ace internals stay free.
 1. Ace-internal symbols may be mangled (multi-return, mut params, modules) — mangling is private to the compiler.
-2. `extern "c" { … }` blocks import C declarations — the ABI stated once per block; variadics (`…`) are legal only inside extern blocks (Functions & ABI #7). Export: an `export` modifier on the declaration produces a C-ABI function with an unmangled name. An extern declaration may carry a link name — `c_open(path: *u8, flags: i32, mode: u32): i32 = "open"` — binding an Ace-side name distinct from the linker symbol, which lets a module wrap a C function under the name it wants to own (first customer: `sys`). The linker spelling is always the declared (or link-named) symbol with the platform's underscore convention applied by the compiler. Link names must be nonempty, contain no NUL byte, and in the v1 emitter are limited to 510 decoded bytes; other bytes are accepted because platform symbols need not be C or Ace identifiers. [spellings provisional]
+2. `extern "c" { … }` blocks state the ABI once for their declarations. A declaration without a definition imports a C symbol; a function with a body is defined in Ace and visible to C under its unmangled name. `extern "c" name(…) { … }` is the single-definition form, which may be `pub` or `inline`. Variadics (`…`) are legal only in imported declarations (Functions & ABI #7). A global with an initializer inside the block (an exported C global) and a link name on a definition are reserved and rejected for now. An imported declaration may carry a link name — `c_open(path: *u8, flags: i32, mode: u32): i32 as "open"` (`as` is contextual) — binding an Ace-side name distinct from the linker symbol, which lets a module wrap a C function under the name it wants to own (first customer: `sys`). The linker spelling is always the declared (or link-named) symbol with the platform's underscore convention applied by the compiler. Link names must be nonempty, contain no NUL byte, and in the v1 emitter are limited to 510 decoded bytes; other bytes are accepted because platform symbols need not be C or Ace identifiers. [spellings provisional]
    Implementation note (Apple arm64): C variadic functions receive their unnamed arguments in 8-byte caller-stack slots, not in the remaining argument registers — libSystem's `open` itself reads mode from the first stack-argument slot. The emitter implements that convention, including the ordinary f32-to-f64 and `bool`-to-`int` default promotions. The initially verified unnamed-argument set is C-compatible integer, `bool`, floating, distinct-scalar, and pointer values; aggregate and Ace-specific shapes are rejected until their variadic ABI is separately verified. A fixed-surface wrapper may still bind a fixed-arity export such as `__open` rather than expose variadics it does not need.
 3. C-facing signatures are checked by a positive, position-aware C-ABI compatibility predicate (chunk 1B decision). Allowed: the fixed-width integers `i8 i16 i32 i64` and `u8 u16 u32 u64`, the platform words `int`/`uint`, `usize`, `f32`, `f64`, `bool` (C `_Bool`, Type System #12); explicitly backed enums, represented exactly as their fixed-width backing integer; plain and writable pointers (`*T`, `mut *T`) whose pointee shapes are recursively compatible; distinct types whose bases are allowed in the same position; structs whose fields are recursively compatible; arrays whose elements are recursively compatible only when nested inside a compatible aggregate or behind a pointer; and explicitly `extern "c"` function values in every position. A no-value (void) shape is allowed only as a function return. Direct array parameters and returns are rejected. Rejected: default enums without an external width promise, `string`, slices, contracts, tagged unions, `Error`, error domains, `typeid`, every tuple shape, ordinary Ace function values, type parameters, generic declarations, and generic instantiations. `mut` parameters stay internal-only — writable storage crosses the boundary as an explicit `mut *T` (the former `mut p` → `T*` export mapping under Functions & ABI #6 is struck). The recursive check carries a cycle guard so C-compatible self-referential structs through pointers terminate correctly. Every rejected category is additive later, each only after an exact C representation is separately approved.
 4. Ace programs never depend on another programming language or its utility
@@ -57,7 +57,7 @@ Decision: explicit extern/export boundary; Ace internals stay free.
    types are rejected. The value is one pointer-sized word with canonical zero
    `null`; equality with `null` is ordinary function-value equality. A debug
    build diagnoses calling null and a release build assumes the callee is
-   nonnull. An `export` function or an imported `extern "c"` declaration with
+   nonnull. An `extern "c"` definition or imported declaration with
    the exact signature is referenced by its bare name under an explicitly typed
    destination; an ordinary Ace function never converts to this type. Calls use
    the platform C convention in both directions. C function values are
@@ -66,7 +66,7 @@ Decision: explicit extern/export boundary; Ace internals stay free.
    closure, captured context, lifetime management, generic callback, calling-
    convention inference, or arbitrary foreign ABI.
 6. An `extern "c"` block may declare a C global variable as `name: type`,
-   with an optional link name as for functions (`c_out: *File = "__stdoutp"`).
+   with an optional link name as for functions (`c_out: *File as "__stdoutp"`).
    It binds C's storage; it defines, allocates, and initializes nothing. It is
    read-only unless marked `mut` (`mut opterr: i32`), as with `*T` and
    `mut *T`, since C `const` data may sit in read-only memory. The type passes
@@ -74,5 +74,4 @@ Decision: explicit extern/export boundary; Ace internals stay free.
    allowed. A use reads or writes the C storage in place, and `&name` is `*T`,
    or `mut *T` when `mut`. A read is never assumed unchanged across a call or
    asm. Thread-local C variables are not supported; C libraries reach them
-   through accessor functions, which an extern block already binds. `export`
-   applies to functions only.
+   through accessor functions, which an extern block already binds.

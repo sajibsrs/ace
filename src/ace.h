@@ -16,7 +16,7 @@
     X(NOALIAS, "noalias") X(IF, "if") X(ELSE, "else") X(FOR, "for")            \
     X(IN, "in") X(SWITCH, "switch") X(DEFAULT, "default") X(RETURN, "return") X(BREAK, "break")      \
     X(CONTINUE, "continue") X(DEFER, "defer") X(ASM, "asm") X(EXTERN, "extern")\
-    X(EXPORT, "export") X(CONTRACT, "contract") X(STRUCT, "struct")           \
+    X(CONTRACT, "contract") X(STRUCT, "struct")           \
     X(EMBED, "embed")                                                         \
     X(SIGNS, "signs") X(DISTINCT, "distinct") X(TYPE, "type")                \
     X(ENUM, "enum") X(UNION, "union") X(SPECIALIZED, "specialized")            \

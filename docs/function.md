@@ -208,7 +208,7 @@ through one could never validate `mut` agreement against the real callee.
 C-callable function values state their convention in the type:
 
 ```ace
-export thread_entry(argument: mut *u8): mut *u8 {
+extern "c" thread_entry(argument: mut *u8): mut *u8 {
     return argument
 }
 
@@ -217,8 +217,8 @@ empty: extern "c" () = null
 ```
 
 Use `extern "c" (): R` for a zero-parameter function returning `R`, and omit
-the return clause for a function returning no value. Only an exact `export`
-function or imported `extern "c"` declaration can initialize a non-null value
+the return clause for a function returning no value. Only an exact `extern "c"`
+definition or imported declaration can initialize a non-null value
 of this type; an ordinary Ace function has a distinct convention. Parameters
 and returns must be C-ABI-compatible. C function values are one word, may be
 `null`, and may be compared with `null`. They may also be fields of
@@ -479,7 +479,7 @@ AArch64 target, its `int` result travels in `x0`; the process observes the low
 
 ## C-compatible functions
 
-`extern "c"` declarations and `export` definitions use the platform C ABI. The
+`extern "c"` declarations and definitions use the platform C ABI. The
 spelling identifies a calling convention; it does not make C part of Ace's
 runtime foundation. Ace implements its own language and standard-library
 behavior. Target layers reach OS facilities through the OS's stable public
@@ -496,18 +496,30 @@ direct parameters or returns. Packed and explicitly aligned structs are
 initially C-compatible only behind pointers; their direct parameter and return
 classification remains rejected pending target ABI verification.
 
+A declaration without a body imports a C symbol. A declaration with a body is
+defined in Ace and visible to C under its own unmangled name. Both may share
+one block, and a single definition may carry the prefix itself:
+
 ```ace
 Point: struct { x: f32, y: f32 }
 
 extern "c" {
     translate(point: Point, dx: f32, dy: f32): Point
+    c_abs(value: i32): i32 as "abs"
+    scale(point: Point, factor: f32): Point {
+        return Point { x = point.x * factor, y = point.y * factor }
+    }
 }
 
-export increment(value: mut *i32): i32 {
+extern "c" increment(value: mut *i32): i32 {
     *value += 1
     return *value
 }
 ```
+
+`as "name"` binds an Ace-side name to a different C symbol. A variadic function
+can be imported but not defined, and defining a C global (an initializer inside
+the block) or giving a definition a link name is not supported yet.
 
 Boundary parameters cannot use Ace's `mut parameter` convention. Pass an
 explicit `mut *T` when C receives writable storage. An explicitly backed enum
@@ -567,7 +579,7 @@ check_c_globals(): i32 {
   receiver counts, so a method declares at most 63 more; so does a contract
   method, whose receiver is implicit. The variadic arguments of a C variadic
   call are not counted.
-- C-boundary `extern` and `export` functions cannot overload because their
+- C-boundary `extern "c"` functions cannot overload because their
   external names are unmangled.
 - Exceptions and hidden error propagation do not exist; functions return error
   values explicitly.
@@ -578,6 +590,15 @@ The examples are covered by `tests/sema/docs/function_ok.ace`.
 
 Why the rules in `spec/compiler.md` and C Interop (`spec/modules-packages.md`) are shaped as they are.
 
+- C Interop #2: one keyword names the C boundary in both directions, as C and
+  C++ do (`extern "C" int f(void);` declares, `extern "C" int f(void) { … }`
+  defines) and Rust does (`extern "C" { fn f(); }`, `extern "C" fn f() {}`).
+  The ABI is stated once, and the same `extern "c"` prefix already spells a C
+  function-pointer type, so it means "C convention, unmangled" in every
+  position. `export` stays free: it would otherwise read as the partner of
+  `import`, while module visibility is `pub`. Link names use `as "name"` so
+  that `=` keeps its one meaning, an initializer, which an exported C global
+  will need.
 - C Interop #6: binding C data uses the storage form Ace already has rather
   than accessor shims, as Zig (`extern var`/`extern const`) and Rust
   (`static`/`static mut`) do. Whether C storage may be written is stated at the

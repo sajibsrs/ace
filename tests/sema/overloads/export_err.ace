@@ -1,6 +1,6 @@
 /* Overload export fixture. */
 
-export consume(value: int): int {
+extern "c" consume(value: int): int {
     return value
 }
 

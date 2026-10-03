@@ -322,14 +322,14 @@
     "function-declarations": {
       "patterns": [
         {
-          "match": "^\\s*(?:(pub|export)\\s+)*([A-Za-z_][A-Za-z0-9_]*)(?:\\s*\\[[^\\n]+\\])?\\s*(?=\\([^\\n]*\\)(?:\\s*:\\s*[^{}\\n]+)?\\s*\\{)",
+          "match": "^\\s*(?:(?:pub|inline)\\s+)*(?:(extern)\\s+\"[^\"]*\"\\s+)?([A-Za-z_][A-Za-z0-9_]*)(?:\\s*\\[[^\\n]+\\])?\\s*(?=\\([^\\n]*\\)(?:\\s*:\\s*[^{}\\n]+)?\\s*\\{)",
           "captures": {
             "1": { "name": "keyword.control.ace" },
             "2": { "name": "entity.name.function.ace" }
           }
         },
         {
-          "match": "^\\s*(?:(export)\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\([^\\n]*\\)(?:\\s*:\\s*[^=\\n]+)?(?:\\s*=\\s*\"[^\"]+\")?\\s*$)",
+          "match": "^\\s*()([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\([^\\n]*\\)(?:\\s*:\\s*[^\\n]+?)?(?:\\s+as\\s+\"[^\"]+\")?\\s*$)",
           "captures": {
             "1": { "name": "keyword.control.ace" },
             "2": { "name": "entity.name.function.ace" }
@@ -369,7 +369,7 @@
         },
         {
           "name": "keyword.control.ace",
-          "match": "\\b(?:import|pub|mut|const|noalias|if|else|for|in|switch|default|return|break|continue|defer|asm|extern|export|contract|struct|embed|union|signs|specialized|intrinsic|inline|distinct|type|enum|volatile)\\b"
+          "match": "\\b(?:import|pub|mut|const|noalias|if|else|for|in|switch|default|return|break|continue|defer|asm|extern|contract|struct|embed|union|signs|specialized|intrinsic|inline|distinct|type|enum|volatile)\\b"
         }
       ]
     },

@@ -7,5 +7,5 @@ extern "c" {
         fd: i32,
         data: *u8,
         count: usize,
-    ): int = "write"
+    ): int as "write"
 }

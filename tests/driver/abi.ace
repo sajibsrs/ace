@@ -58,62 +58,62 @@ extern "c" {
     c_get_thread_entry(): extern "c" (mut *u8): mut *u8
 }
 
-export ace_thread_entry(argument: mut *u8): mut *u8 {
+extern "c" ace_thread_entry(argument: mut *u8): mut *u8 {
     return argument
 }
 
-export ace_twice(value: i32): i32 {
+extern "c" ace_twice(value: i32): i32 {
     return value * 2
 }
 
-export ace_not(value: bool): bool {
+extern "c" ace_not(value: bool): bool {
     return !value
 }
 
-export ace_key(value: Key): Key {
+extern "c" ace_key(value: Key): Key {
     return Key { code = value.code + 1, down = !value.down, repeat = value.repeat }
 }
 
-export ace_scalars(a: i8, b: i16, c: i32, d: i64, e: u8, f: u16, g: u32, h: u64, i: usize): i64 {
+extern "c" ace_scalars(a: i8, b: i16, c: i32, d: i64, e: u8, f: u16, g: u32, h: u64, i: usize): i64 {
     return i64(a) + i64(b) + i64(c) + d + i64(e) + i64(f) + i64(g) + i64(h) + i64(i)
 }
 
-export ace_floats(a: f32, b: f64): f64 {
+extern "c" ace_floats(a: f32, b: f64): f64 {
     return f64(a) + b
 }
 
-export ace_f32(value: f32): f32 {
+extern "c" ace_f32(value: f32): f32 {
     return value + 0.75
 }
 
-export ace_bump(value: mut *i32) {
+extern "c" ace_bump(value: mut *i32) {
     *value = *value + 7
 }
 
-export ace_code(value: Code): Code {
+extern "c" ace_code(value: Code): Code {
     return Code(i32(value) + 1)
 }
 
-export ace_wire(value: Wire): Wire {
+extern "c" ace_wire(value: Wire): Wire {
     if value == Wire.request { return Wire.response }
     return Wire.none
 }
 
-export ace_mixed(value: Mixed): Mixed {
+extern "c" ace_mixed(value: Mixed): Mixed {
     return Mixed {
         a = value.a + 2,
         b = value.b + 3.0,
     }
 }
 
-export ace_pair(value: Pair): Pair {
+extern "c" ace_pair(value: Pair): Pair {
     return Pair {
         a = value.a + 3,
         b = value.b + 4,
     }
 }
 
-export ace_hfa3(value: Hfa3): Hfa3 {
+extern "c" ace_hfa3(value: Hfa3): Hfa3 {
     return Hfa3 {
         a = value.a + 1.0,
         b = value.b + 2.0,
@@ -121,7 +121,7 @@ export ace_hfa3(value: Hfa3): Hfa3 {
     }
 }
 
-export ace_hfa4(value: Hfa4): Hfa4 {
+extern "c" ace_hfa4(value: Hfa4): Hfa4 {
     return Hfa4 {
         a = value.a + 1.0,
         b = value.b + 2.0,
@@ -130,12 +130,12 @@ export ace_hfa4(value: Hfa4): Hfa4 {
     }
 }
 
-export ace_arr3(value: Arr3): Arr3 {
+extern "c" ace_arr3(value: Arr3): Arr3 {
     out: [3]f32 = [value.v[0] + 2.0, value.v[1] + 3.0, value.v[2] + 4.0]
     return Arr3 { v = out }
 }
 
-export ace_large(value: Large): Large {
+extern "c" ace_large(value: Large): Large {
     return Large {
         a = value.a + 4,
         b = value.b + 5,
@@ -143,7 +143,7 @@ export ace_large(value: Large): Large {
     }
 }
 
-export ace_nested(value: Nested): Nested {
+extern "c" ace_nested(value: Nested): Nested {
     return Nested {
         pair = Pair {
             a = value.pair.a + 1,
@@ -153,14 +153,14 @@ export ace_nested(value: Nested): Nested {
     }
 }
 
-export ace_wrapped(value: Wrapped): Wrapped {
+extern "c" ace_wrapped(value: Wrapped): Wrapped {
     return Wrapped {
         inner = IntPair { v = [value.inner.v[0] + 1, value.inner.v[1] + 2] },
         tag = value.tag + 3,
     }
 }
 
-export ace_envelope(value: Envelope): Envelope {
+extern "c" ace_envelope(value: Envelope): Envelope {
     return Envelope { h = Hfa3 {
         a = value.h.a + 1.0,
         b = value.h.b + 2.0,
@@ -168,7 +168,7 @@ export ace_envelope(value: Envelope): Envelope {
     } }
 }
 
-export ace_wrapped_hfa(value: WrappedHfa): WrappedHfa {
+extern "c" ace_wrapped_hfa(value: WrappedHfa): WrappedHfa {
     return WrappedHfa {
         h = Hfa3 {
             a = value.h.a + 1.0,
@@ -179,19 +179,19 @@ export ace_wrapped_hfa(value: WrappedHfa): WrappedHfa {
     }
 }
 
-export ace_stack(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, pair: Pair, tail: i32): i64 {
+extern "c" ace_stack(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, pair: Pair, tail: i32): i64 {
     return a + b + c + d + e + f + g + pair.a + i64(pair.b) + i64(tail)
 }
 
-export ace_fpstack(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: Hfa3, tail: f64): f64 {
+extern "c" ace_fpstack(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: Hfa3, tail: f64): f64 {
     return a + b + c + d + e + f + g + f64(h.a) + f64(h.b) + f64(h.c) + tail
 }
 
-export ace_stack_align(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, narrow: i32, wide: i64): i64 {
+extern "c" ace_stack_align(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, narrow: i32, wide: i64): i64 {
     return a + b + c + d + e + f + g + h + i64(narrow) + wide
 }
 
-export ace_fp_align(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: f64, narrow: f32, wide: f64): f64 {
+extern "c" ace_fp_align(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: f64, narrow: f32, wide: f64): f64 {
     return a + b + c + d + e + f + g + h + f64(narrow) + wide
 }
 

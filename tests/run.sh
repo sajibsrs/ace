@@ -99,7 +99,11 @@ tests/parser/inline/visibility_order_err.ace|visibility must come before 'inline
 tests/parser/inline/mut_order_err.ace|'inline' must come before 'mut'
 tests/parser/inline/duplicate_err.ace|duplicate 'inline' modifier
 tests/parser/inline/not_function_err.ace|1:8: error: 'inline' applies only to function declarations
-tests/parser/inline/extern_err.ace|'extern' blocks take no pub/export/inline
+tests/parser/inline/extern_err.ace|'extern' blocks take no pub/inline/mut
+tests/parser/extern_def/link_name_err.ace|link names on exported functions are not supported yet
+tests/parser/extern_def/variadic_err.ace|variadic functions cannot be defined in Ace
+tests/parser/extern_def/bodiless_err.ace|expected '{'
+tests/parser/associated/export_err.ace|methods and associated functions cannot use the C ABI
 tests/sema/inline/noalias_err.ace|inline function 'sum' cannot take a noalias parameter
 tests/sema/inline/defer_err.ace|4:5: error: inline function 'guarded' cannot contain 'defer'
 tests/sema/inline/asm_err.ace|inline function 'spin' cannot contain inline assembly
@@ -347,7 +351,7 @@ for want in \
 done
 for case in export mut_function; do
     case $case in
-        export)       want="'export' applies to C functions only, not C globals" ;;
+        export)       want="exporting C globals is not supported yet" ;;
         mut_function) want="'mut' marks an extern variable: expected ':' after its name" ;;
     esac
     if ! "$ACE" --ast "tests/parser/extern_var/${case}_err.ace" 2>&1 | grep -qF "$want"; then

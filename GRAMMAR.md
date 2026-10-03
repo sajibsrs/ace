@@ -12,7 +12,7 @@ newline       := significant — terminates statements (see §6 Notes)
 
 keyword       := "import" | "pub" | "mut" | "const" | "noalias" | "if" | "else"
                 | "for" | "in" | "switch" | "default" | "return" | "break" | "continue" | "defer"
-                | "asm" | "extern" | "export" | "contract" | "struct" | "embed" | "signs"
+                | "asm" | "extern" | "contract" | "struct" | "embed" | "signs"
                 | "specialized" | "intrinsic" | "inline" | "distinct" | "type" | "enum" | "union" | "null" | "true" | "false"
                 | "volatile"
 
@@ -71,6 +71,7 @@ top_body      := var_decl | const_decl | func_decl | struct_decl
                | static_map_decl
                | bits_decl | contract_decl | enum_decl | union_decl | alias_decl | distinct_decl
                | error_domain_decl | method_func_decl | assoc_func_decl | signing_decl | extern_block
+               | extern_def
 
 binding       := ident ":" type
 eq_name       := ident [":" type]                       // typed declares; bare reassigns — Note #28;
@@ -128,10 +129,12 @@ signing_decl  := owner_type "signs" (type_list | "(" type_list [","] ")")
                                                           // bare = one line; parens = multiline
 
 extern_block  := "extern" string_lit "{" extern_decl* "}"
-extern_decl   := extern_func | extern_var
-extern_func   := ["export"] ident "(" [extern_params] ")" [ret_clause]
-                 ["=" string_lit]                        // nonempty, NUL-free link name; v1 max 510 bytes
-extern_var    := ["mut"] ident ":" type ["=" string_lit]  // C global; read-only unless mut (C Interop #6)
+extern_decl   := extern_func | extern_var | func_decl     // func_decl: body = defined in Ace, C-visible
+extern_def    := "extern" string_lit func_decl            // single definition (C Interop #2)
+extern_func   := ident "(" [extern_params] ")" [ret_clause] [link_name]
+extern_var    := ["mut"] ident ":" type [link_name]       // C global; read-only unless mut (C Interop #6)
+link_name     := contextual_as string_lit                 // nonempty, NUL-free; v1 max 510 bytes
+contextual_as := ident                                    // exact text "as"; not reserved
 extern_params := extern_param ("," extern_param)* ["," ["..."]]
 extern_param  := ident ":" type
 ```

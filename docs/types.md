@@ -716,7 +716,7 @@ Result[T]: union { empty, value: T }
 result: Result[int] = Result[int].value(42)
 ```
 
-Tagged unions are not currently permitted in `extern` or `export` signatures.
+Tagged unions are not currently permitted in `extern "c"` signatures.
 
 ## Generic types
 

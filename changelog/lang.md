@@ -1,5 +1,9 @@
 # Language
 
+- One `extern "c"` boundary in both directions: inside a block, a function
+  with a body is defined in Ace and C-visible; `extern "c" f(…) { … }` is the
+  single form. `export` is no longer a keyword, and link names are spelled
+  `as "name"`, freeing `=` for a future exported-global initializer.
 - `extern "c"` blocks bind C global variables (C Interop #6): `name: type`,
   read-only unless `mut`, typed at struct-field position, accessed in place;
   Apple arm64 reaches them through `GOT_LOAD` relocations, x64 through

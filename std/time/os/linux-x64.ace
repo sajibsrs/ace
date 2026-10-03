@@ -6,7 +6,7 @@ Timespec: struct {
 }
 
 extern "c" {
-    c_clock_gettime(clk_id: i32, time: mut *Timespec): i32 = "clock_gettime"
+    c_clock_gettime(clk_id: i32, time: mut *Timespec): i32 as "clock_gettime"
 }
 
 /* Monotonic time. Linux clock ids from <linux/time.h>: CLOCK_BOOTTIME keeps

@@ -1,0 +1,7 @@
+/* A link name on an exported function is not supported yet. */
+
+extern "c" {
+    twice(value: i32): i32 as "Twice" {
+        return value * 2
+    }
+}

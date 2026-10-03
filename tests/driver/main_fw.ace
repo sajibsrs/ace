@@ -6,7 +6,7 @@
 // expect-exit: 0
 
 extern "c" {
-    cf_null_type_id(): u64 = "CFNullGetTypeID"
+    cf_null_type_id(): u64 as "CFNullGetTypeID"
 }
 
 main(): int {

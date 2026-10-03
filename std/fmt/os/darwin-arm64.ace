@@ -1,7 +1,7 @@
 /* Darwin fmt primitives consumed by ../mod.ace. */
 
 extern "c" {
-    c_write(fd: i32, data: *u8, size: usize): int = "write"
+    c_write(fd: i32, data: *u8, size: usize): int as "write"
 }
 
 pub write(data: *u8, size: usize): int {

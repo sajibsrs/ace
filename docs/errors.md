@@ -97,7 +97,7 @@ one declaration and one domain identity.
 
 ## Boundaries and context
 
-`Error`, error domains, and `typeid` are rejected in `extern` and `export`
+`Error`, error domains, and `typeid` are rejected in `extern "c"`
 signatures. C-facing wrappers translate explicitly to stable C-compatible
 values. The standard `sys`, `net`, and `poll` wrappers capture errno immediately
 after a failing OS call and place it in `error.code`; operations with direct

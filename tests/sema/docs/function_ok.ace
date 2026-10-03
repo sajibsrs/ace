@@ -96,10 +96,14 @@ Point: struct { x: f32, y: f32 }
 
 extern "c" {
     translate(point: Point, dx: f32, dy: f32): Point
+    c_abs(value: i32): i32 as "abs"
+    scale(point: Point, factor: f32): Point {
+        return Point { x = point.x * factor, y = point.y * factor }
+    }
     c_variadic(tag: i32, ...): i32
 }
 
-export increment_c(value: mut *i32): i32 {
+extern "c" increment_c(value: mut *i32): i32 {
     *value += 1
     return *value
 }

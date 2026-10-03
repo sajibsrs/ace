@@ -2,6 +2,6 @@
 
 Router: struct { count: int }
 
-export Router::new(): Router {
+extern "c" Router::new(): Router {
     return Router { count = 0 }
 }

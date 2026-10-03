@@ -10,10 +10,10 @@ import sdl
 SDL_Surface: struct {}
 
 extern "c" {
-    set_hint(name: *u8, value: *u8): bool = "SDL_SetHint"
-    read_pixels(renderer: *u8, rect: *u8): *SDL_Surface = "SDL_RenderReadPixels"
-    read_pixel(surface: *SDL_Surface, x: i32, y: i32, r: mut *u8, g: mut *u8, b: mut *u8, a: mut *u8): bool = "SDL_ReadSurfacePixel"
-    destroy_surface(surface: *SDL_Surface) = "SDL_DestroySurface"
+    set_hint(name: *u8, value: *u8): bool as "SDL_SetHint"
+    read_pixels(renderer: *u8, rect: *u8): *SDL_Surface as "SDL_RenderReadPixels"
+    read_pixel(surface: *SDL_Surface, x: i32, y: i32, r: mut *u8, g: mut *u8, b: mut *u8, a: mut *u8): bool as "SDL_ReadSurfacePixel"
+    destroy_surface(surface: *SDL_Surface) as "SDL_DestroySurface"
 }
 
 SIZE: const i32 = 16

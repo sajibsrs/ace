@@ -24,10 +24,10 @@ extern "c" {
     bad_stamp(value: Box[i32])
 }
 
-export bad_mut(mut value: i32) {
+extern "c" bad_mut(mut value: i32) {
 }
 
-export bad_generic[T](value: T) {
+extern "c" bad_generic[T](value: T) {
 }
 
 plain(value: mut *u8): mut *u8 {

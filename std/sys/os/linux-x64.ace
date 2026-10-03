@@ -224,24 +224,24 @@ extern "c" {
     /* open is variadic; System V x86-64 passes the mode in a register either
      * way, and the call sets al to zero vector registers.
      */
-    c_open(path: *u8, flags: i32, ...): i32 = "open"
-    c_close(fd: i32): i32 = "close"
-    c_read(fd: i32, buf: mut *u8, size: usize): i64 = "read"
-    c_write(fd: i32, buf: *u8, size: usize): i64 = "write"
+    c_open(path: *u8, flags: i32, ...): i32 as "open"
+    c_close(fd: i32): i32 as "close"
+    c_read(fd: i32, buf: mut *u8, size: usize): i64 as "read"
+    c_write(fd: i32, buf: *u8, size: usize): i64 as "write"
     // glibc 2.33 and later export stat itself, not only __xstat.
-    c_stat(path: *u8, info: mut *LinuxStat): i32 = "stat"
-    c_mkdir(path: *u8, mode: u32): i32 = "mkdir"
-    c_rename(old_path: *u8, new_path: *u8): i32 = "rename"
-    c_unlink(path: *u8): i32 = "unlink"
-    c_getdents64(fd: i32, buf: mut *u8, size: usize): i64 = "getdents64"
-    c_errno(): mut *i32 = "__errno_location"
-    c_getentropy(buffer: mut *u8, size: usize): i32 = "getentropy"
-    c_exit(status: i32) = "_exit"
-    c_fork(): i32 = "fork"
-    c_waitpid(pid: i32, status: mut *i32, options: i32): i32 = "waitpid"
-    c_pipe(fds: mut *i32): i32 = "pipe"
+    c_stat(path: *u8, info: mut *LinuxStat): i32 as "stat"
+    c_mkdir(path: *u8, mode: u32): i32 as "mkdir"
+    c_rename(old_path: *u8, new_path: *u8): i32 as "rename"
+    c_unlink(path: *u8): i32 as "unlink"
+    c_getdents64(fd: i32, buf: mut *u8, size: usize): i64 as "getdents64"
+    c_errno(): mut *i32 as "__errno_location"
+    c_getentropy(buffer: mut *u8, size: usize): i32 as "getentropy"
+    c_exit(status: i32) as "_exit"
+    c_fork(): i32 as "fork"
+    c_waitpid(pid: i32, status: mut *i32, options: i32): i32 as "waitpid"
+    c_pipe(fds: mut *i32): i32 as "pipe"
     // glibc declares ioctl(int, unsigned long, ...).
-    c_ioctl(fd: i32, request: uint, ...): i32 = "ioctl"
+    c_ioctl(fd: i32, request: uint, ...): i32 as "ioctl"
 }
 
 // open(2) flags: Linux x86-64 values and spellings, composed with `|`.

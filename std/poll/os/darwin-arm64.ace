@@ -66,7 +66,7 @@ NSEC_PER_SEC: const u64 = 1000000000
 MAX_WAIT_EVENTS: const usize = 64
 
 extern "c" {
-    c_kqueue(): i32 = "kqueue"
+    c_kqueue(): i32 as "kqueue"
     c_kevent(
         queue: i32,
         changes: *DarwinKevent,
@@ -74,8 +74,8 @@ extern "c" {
         events: mut *DarwinKevent,
         event_count: i32,
         timeout: *DarwinTimespec,
-    ): i32 = "kevent"
-    c_errno(): mut *i32 = "__error"
+    ): i32 as "kevent"
+    c_errno(): mut *i32 as "__error"
 }
 
 errno_set(value: i32) {

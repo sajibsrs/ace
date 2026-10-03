@@ -1,0 +1,6 @@
+/* Ace cannot define a C variadic function. */
+
+extern "c" {
+    log(format: *u8, ...) {
+    }
+}

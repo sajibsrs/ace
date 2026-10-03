@@ -1051,7 +1051,7 @@ static void rename_decls(Module* m, Renames* rs) {
             n->kind != N_ERROR_DOMAIN && n->kind != N_UNION)
             continue;
         if (n->kind == N_ERROR_DOMAIN && !n->cname) n->cname = arena_stringn(named->str, named->len);
-        if ((n->flags & F_EXPO) && !n->cname) // `export` keeps its C name
+        if ((n->flags & F_EXPO) && !n->cname) // an `extern "c"` definition keeps its C name
             n->cname = arena_stringn(named->str, named->len);
         renames_add(rs, named->str, named->len, prefixed(m, named->str, named->len));
         named->str = rs->v[rs->n - 1].to;

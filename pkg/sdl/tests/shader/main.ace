@@ -7,7 +7,7 @@
 import sdl
 
 extern "c" {
-    set_hint(name: *u8, value: *u8): bool = "SDL_SetHint"
+    set_hint(name: *u8, value: *u8): bool as "SDL_SetHint"
 }
 
 main(): int {

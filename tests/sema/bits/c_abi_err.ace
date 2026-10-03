@@ -5,6 +5,6 @@ extern "C" {
     give(): Flags
 }
 
-export expose(value: Flags): Flags {
+extern "c" expose(value: Flags): Flags {
     return value
 }

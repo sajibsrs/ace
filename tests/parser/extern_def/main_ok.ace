@@ -1,0 +1,17 @@
+/* C-ABI definitions: a body inside an extern block, and the single-declaration form. */
+
+extern "c" {
+    c_abs(value: i32): i32 as "abs"
+    twice(value: i32): i32 {
+        return value * 2
+    }
+    mut opterr: i32
+}
+
+pub extern "c" negate(value: i32): i32 {
+    return -value
+}
+
+export(value: i32): i32 {
+    return twice(c_abs(value)) + negate(value) + opterr
+}

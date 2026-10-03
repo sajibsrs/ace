@@ -41,9 +41,8 @@ pub mut Circle.scale(k: f64) {
 
 extern "c" {
     printf(format: string, ...): int
-    export abs(x: i32): i32
-    c_sin(x: f64): f64 = "sin"
-    c_none(): i32 = "atexit"
+    c_sin(x: f64): f64 as "sin"
+    c_none(): i32 as "atexit"
 }
 
 read(): (int, Error) {

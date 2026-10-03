@@ -1,0 +1,3 @@
+/* The single-declaration form defines; declarations belong in an extern block. */
+
+extern "c" twice(value: i32): i32

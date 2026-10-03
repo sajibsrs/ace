@@ -5,7 +5,7 @@
 import sdl
 
 extern "c" {
-    push_event(event: mut *sdl.Event): bool = "SDL_PushEvent"
+    push_event(event: mut *sdl.Event): bool as "SDL_PushEvent"
 }
 
 SCANCODE_ESCAPE: const u32 = 41

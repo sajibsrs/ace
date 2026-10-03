@@ -70,10 +70,10 @@ MAX_TIMEOUT_MS: const u64 = 0x7fffffff
 MAX_WAIT_EVENTS: const usize = 64
 
 extern "c" {
-    c_epoll_create1(flags: i32): i32 = "epoll_create1"
-    c_epoll_ctl(queue: i32, operation: i32, fd: i32, event: mut *LinuxEpollEvent): i32 = "epoll_ctl"
-    c_epoll_wait(queue: i32, events: mut *LinuxEpollEvent, event_count: i32, timeout_ms: i32): i32 = "epoll_wait"
-    c_errno(): mut *i32 = "__errno_location"
+    c_epoll_create1(flags: i32): i32 as "epoll_create1"
+    c_epoll_ctl(queue: i32, operation: i32, fd: i32, event: mut *LinuxEpollEvent): i32 as "epoll_ctl"
+    c_epoll_wait(queue: i32, events: mut *LinuxEpollEvent, event_count: i32, timeout_ms: i32): i32 as "epoll_wait"
+    c_errno(): mut *i32 as "__errno_location"
 }
 
 errno_set(value: i32) {

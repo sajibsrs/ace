@@ -11,7 +11,7 @@ extern "c" {
     mut c_point: Point
     c_name: *u8
     c_hook: extern "c" (i32): i32
-    mut counter_alias: i32 = "c_counter"
+    mut counter_alias: i32 as "c_counter"
     c_read_counter(): i32
     c_bump_counter()
     c_table_sum(): i32

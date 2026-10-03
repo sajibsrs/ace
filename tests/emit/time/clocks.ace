@@ -9,7 +9,7 @@ import awake from time
  * while this process sits idle. usleep is not part of the tested surface.
  */
 extern "c" {
-    c_usleep(micros: u32): i32 = "usleep"
+    c_usleep(micros: u32): i32 as "usleep"
 }
 
 wait_us(micros: u32) {

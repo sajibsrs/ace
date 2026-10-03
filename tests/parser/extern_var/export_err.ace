@@ -1,5 +1,5 @@
-/* export applies to C functions only. */
+/* Exporting C globals is reserved: an initializer inside an extern block is rejected. */
 
 extern "c" {
-    export count: i32
+    mut count: i32 = 0
 }

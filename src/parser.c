@@ -94,10 +94,16 @@
 #define CTX_NOSLIT 1 // no struct literal at this expression level
 
 typedef struct {
+    Node** v;
+    int n, cap;
+} NV;
+
+typedef struct {
     Token* toks;
     size_t n, i;
     Diag*  d;
     const char* target;
+    NV exports; // functions defined inside the extern block just parsed
     jmp_buf jb;
 } P;
 
@@ -203,11 +209,6 @@ static Node* ident_node(P* p, Token* t) {
     x->len = t->len;
     return x;
 }
-
-typedef struct {
-    Node** v;
-    int n, cap;
-} NV;
 
 static void nv_push(P* p, NV* w, Node* x) {
     (void)p;
@@ -2041,6 +2042,31 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
     }
 }
 
+// `as "name"` after a C-boundary signature or type: the linker symbol when it
+// differs from the Ace-side name. `as` is contextual, like `from`.
+static const char* parse_link_name(P* p, Token* name) {
+    if (!ident_at(p, "as")) {
+        if (name->len > 510) perr(p, "extern link name cannot exceed 510 bytes");
+        return NULL;
+    }
+    p->i++;
+    Token* link = expect(p, T_STR, "link name string after 'as'");
+    if (link->len == 0) perr(p, "extern link name cannot be empty");
+    if (memchr(link->str, 0, link->len)) perr(p, "extern link name cannot contain NUL");
+    // emit.c prefixes the Mach-O underscore in a 512-byte buffer.
+    if (link->len > 510) perr(p, "extern link name cannot exceed 510 bytes");
+    return link->str; // STR tokens are NUL-terminated arena copies
+}
+
+// A C-ABI definition: `name(params): R { body }`. The body is what makes it
+// an export rather than an import (C Interop #2).
+static Node* parse_extern_def(P* p, size_t start, int pub) {
+    p->i = start;
+    Token* name = tk(p);
+    p->i++;
+    return parse_func_rest(p, name, try_tparams(p), pub, 1); // sema rejects generics
+}
+
 static Node* parse_extern(P* p) {
     Node* n = nd(p, N_EXTERN);
     expect(p, T_EXTERN, "'extern'");
@@ -2049,26 +2075,34 @@ static Node* parse_extern(P* p) {
     n->len = abi->len;
     expect(p, T_LBRACE, "'{' to open extern block");
     NV fns = {0};
+    p->exports = (NV){0};
     skipnl(p);
     while (!at(p, T_RBRACE)) {
         if (at(p, T_EOF)) perr(p, "unexpected end of file in extern block");
         Node* f = nd(p, N_EXTERNFN);
-        if (ate(p, T_EXPORT)) f->flags |= F_EXPO;
-        else if (ate(p, T_MUT)) f->flags |= F_MUT;
+        size_t start = p->i;
+        int def = 0; // a body follows: an Ace definition with C linkage
+        if (ate(p, T_MUT)) f->flags |= F_MUT;
         Token* name = expect(p, T_IDENT, "name in extern block");
         f->str = name->str;
         f->len = name->len;
-        if (!(f->flags & F_EXPO) && ate(p, T_COLON)) { // a C global variable (C Interop #6)
+        if (ate(p, T_COLON)) { // a C global variable (C Interop #6)
             f->kind = N_EXTERNVAR;
             f->a = parse_type(p);
+            f->cname = parse_link_name(p, name);
+            if (at(p, T_ASSIGN)) perr(p, "exporting C globals is not supported yet");
         } else {
             if (f->flags & F_MUT) perr(p, "'mut' marks an extern variable: expected ':' after its name");
-            if (at(p, T_COLON)) perr(p, "'export' applies to C functions only, not C globals");
-            expect(p, T_LPAREN, "'(' after extern function name");
-            if (!at(p, T_RPAREN)) {
+            if (at(p, T_LBRACK)) def = 1; // generic: reparsed as a definition for sema to reject
+            else expect(p, T_LPAREN, "'(' after extern function name");
+            if (!def && !at(p, T_RPAREN)) {
                 NV params = {0};
                 for (;;) {
                     Node* pa = nd(p, N_PARAM);
+                    if (at(p, T_MUT)) { // only a definition can say this; reparsed below
+                        def = 1;
+                        break;
+                    }
                     Token* pname = expect(p, T_IDENT, "parameter name");
                     pa->str = pname->str;
                     pa->len = pname->len;
@@ -2085,17 +2119,21 @@ static Node* parse_extern(P* p) {
                 }
                 set_kids(f, &params);
             }
-            expect(p, T_RPAREN, "')' to close extern parameters");
-            f->a = parse_ret(p);
+            if (!def) {
+                expect(p, T_RPAREN, "')' to close extern parameters");
+                f->a = parse_ret(p);
+                f->cname = parse_link_name(p, name);
+                def = at(p, T_LBRACE);
+            }
+            if (def) {
+                if (f->cname) perr(p, "link names on exported functions are not supported yet");
+                if (f->flags & F_VARARGS) perr(p, "variadic functions cannot be defined in Ace");
+                nv_push(p, &p->exports, parse_extern_def(p, start, 0));
+                if (!ate(p, T_NL) && !at(p, T_RBRACE)) perr(p, "expected newline or '}' after extern declaration");
+                skipnl(p);
+                continue;
+            }
         }
-        if (ate(p, T_ASSIGN)) { // optional link name: Ace binding != C symbol
-            Token* link = expect(p, T_STR, "link name string after '='");
-            if (link->len == 0) perr(p, "extern link name cannot be empty");
-            if (memchr(link->str, 0, link->len)) perr(p, "extern link name cannot contain NUL");
-            // emit.c prefixes the Mach-O underscore in a 512-byte buffer.
-            if (link->len > 510) perr(p, "extern link name cannot exceed 510 bytes");
-            f->cname = link->str; // STR tokens are NUL-terminated arena copies
-        } else if (name->len > 510) perr(p, "extern link name cannot exceed 510 bytes");
         nv_push(p, &fns, f);
         if (!ate(p, T_NL) && !at(p, T_RBRACE)) perr(p, "expected newline or '}' after extern declaration");
         skipnl(p);
@@ -2304,21 +2342,17 @@ static void parse_layout_attrs(P* p, int* packed, Node** align) {
     }
 }
 
-static Node* parse_top_named(P* p, int pub, int expo, int mut);
+static Node* parse_top_named(P* p, int pub, int mut);
 
 static Node* parse_top(P* p) {
     if (at(p, T_IMPORT)) perr(p, "imports must precede declarations");
-    int pub = 0, expo = 0, mut = 0, inl = 0;
+    int pub = 0, mut = 0, inl = 0;
     for (;;) {
         if (at(p, T_PUB)) {
             if (inl) perr(p, "visibility must come before 'inline'");
             if (mut) perr(p, "visibility must come before 'mut'");
             if (pub) perr(p, "duplicate 'pub' modifier");
             p->i++; pub = 1;
-        }
-        else if (at(p, T_EXPORT)) {
-            if (expo) perr(p, "duplicate 'export' modifier");
-            p->i++; expo = 1;
         }
         else if (at(p, T_INLINE)) {
             if (mut) perr(p, "'inline' must come before 'mut'");
@@ -2331,13 +2365,25 @@ static Node* parse_top(P* p) {
         }
         else break;
     }
+    if (at(p, T_EXTERN) && p->i + 2 < p->n && p->toks[p->i + 1].kind == T_STR &&
+        p->toks[p->i + 2].kind == T_IDENT) { // `extern "c" name(...) { body }`
+        if (mut) perr(p, "'mut' before a top-level declaration requires a method owner");
+        p->i += 2;
+        if (p->i + 1 < p->n && (p->toks[p->i + 1].kind == T_DOT || p->toks[p->i + 1].kind == T_COLONCOLON))
+            perr(p, "methods and associated functions cannot use the C ABI");
+        if (p->i + 1 < p->n && p->toks[p->i + 1].kind == T_COLON)
+            perr(p, "exporting C globals is not supported yet");
+        Node* f = parse_extern_def(p, p->i, pub);
+        if (inl) f->flags |= F_INLINE;
+        return f;
+    }
     if (at(p, T_EXTERN)) {
-        if (pub || expo || inl) perr(p, "'extern' blocks take no pub/export/inline");
+        if (pub || inl || mut) perr(p, "'extern' blocks take no pub/inline/mut");
         return parse_extern(p);
     }
     if (!at(p, T_IDENT)) perr(p, "expected declaration, got %s", gdesc(p));
     size_t start = p->i;
-    Node* d = parse_top_named(p, pub, expo, mut);
+    Node* d = parse_top_named(p, pub, mut);
     if (inl) {
         if (d->kind != N_FUNC) {
             p->i = start; // report at the declaration's name
@@ -2348,7 +2394,7 @@ static Node* parse_top(P* p) {
     return d;
 }
 
-static Node* parse_top_named(P* p, int pub, int expo, int mut) {
+static Node* parse_top_named(P* p, int pub, int mut) {
     Token* name = tk(p);
     p->i++;
     if (name->len == 13 && memcmp(name->str, "static_assert", 13) == 0 && at(p, T_LPAREN)) {
@@ -2359,20 +2405,18 @@ static Node* parse_top_named(P* p, int pub, int expo, int mut) {
     }
     Node* tp = try_tparams(p);
     if (at(p, T_SIGNS)) {
-        if (expo || mut) perr(p, "signings accept only the optional leading 'pub'");
+        if (mut) perr(p, "signings accept only the optional leading 'pub'");
         return parse_signing(p, name, tp, pub);
     }
     if (at(p, T_DOT)) {
-        if (expo) perr(p, "methods cannot be exported at the C boundary");
         return parse_method_rest(p, name, tp, pub, mut);
     }
     if (at(p, T_COLONCOLON)) {
-        if (expo) perr(p, "associated functions cannot be exported at the C boundary");
         if (mut) perr(p, "'mut' marks a mutating receiver; associated functions have none — mark individual 'mut' parameters instead");
         return parse_assoc_rest(p, name, tp, pub);
     }
     if (mut) perr(p, "'mut' before a top-level declaration requires a method owner");
-    if (at(p, T_LPAREN)) return parse_func_rest(p, name, tp, pub, expo);
+    if (at(p, T_LPAREN)) return parse_func_rest(p, name, tp, pub, 0);
     if (at(p, T_COLON)) return parse_colon_decl(p, name, tp, pub);
     perr(p, "expected '(' or ':' after top-level name '%.*s'", (int)name->len, name->str);
     return NULL;
@@ -2417,8 +2461,11 @@ Node* parse(Token* toks, size_t ntok, Diag* d, const char* target) {
             if (!ate(&p, T_NL) && !at(&p, T_EOF)) perr(&p, "expected newline after declaration, got %s", gdesc(&p));
             if (active) {
                 nv_push(&p, &decls, decl);
+                if (decl->kind == N_EXTERN)
+                    for (int j = 0; j < p.exports.n; j++) nv_push(&p, &decls, p.exports.v[j]);
                 saw_declaration = 1;
             }
+            p.exports = (NV){0};
         }
         skipnl(&p);
     }
@@ -2439,7 +2486,7 @@ const char* node_kind_name(NKind k) {
 
 static void pflags(Node* x) {
     if (x->flags & F_PUB) printf(" pub");
-    if (x->flags & F_EXPO) printf(" export");
+    if (x->flags & F_EXPO) printf(" extern-c");
     if (x->flags & F_MUT) printf(" mut");
     if (x->flags & F_NOALIAS) printf(" noalias");
     if (x->flags & F_CONST) printf(" const");

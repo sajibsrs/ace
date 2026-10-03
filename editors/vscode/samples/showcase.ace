@@ -84,7 +84,7 @@ Result[T]: union {
 }
 
 extern "c" {
-    c_abs(value: i32): i32 = "abs"
+    c_abs(value: i32): i32 as "abs"
     c_log(format: *u8, ...)
 }
 
@@ -125,7 +125,7 @@ increment(mut value: int) {
     value += 1
 }
 
-export ace_showcase_identity(value: i32): i32 {
+extern "c" ace_showcase_identity(value: i32): i32 {
     return value
 }
 

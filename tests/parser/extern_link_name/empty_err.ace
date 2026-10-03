@@ -1,5 +1,5 @@
 /* Extern link name empty fixture. */
 
 extern "c" {
-    bad(): i32 = ""
+    bad(): i32 as ""
 }

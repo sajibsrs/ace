@@ -51,7 +51,7 @@ Carved (explicit struct layout):
   whole, so any member write initializes it. Its zero is all zero bytes.
 - Packed, explicitly aligned, and explicitly offset structs may be C-compatible behind pointers
   when all recursive rules hold and the layout matches the external definition.
-  They are rejected as direct `extern`/`export` parameters and returns pending
+  They are rejected as direct `extern "c"` parameters and returns pending
   by-value ABI verification. Layout attributes do not determine byte order, bit
   fields, observability, or synchronization.
 
@@ -133,8 +133,8 @@ Decision: nominal, exact-width bit layouts lower:
    exact nominal bits type.
 7. Bits values are ordinary fixed-size values in aggregates, packed structs,
    arrays, parameters, and returns. Whole-value volatile access transfers
-   exactly the backing width. Bits types are not C-ABI-compatible in `extern` or
-   `export` signatures; interop uses the backing integer and explicit conversion.
+   exactly the backing width. Bits types are not C-ABI-compatible in `extern "c"`
+   signatures; interop uses the backing integer and explicit conversion.
    No C bit-field ABI equivalence, atomic field operation, volatile field RMW,
    reflection, wider backing unit, or cross-statement fusion is implied.
 
@@ -170,7 +170,7 @@ Decision: closed inline sums with explicit construction and exhaustive inspectio
 8. A union switch must cover every variant once or contain `default` (the last case, per Conditions #2). Duplicate variants, the wrong union, a missing/extra binder, and a mismatched binder type are compile errors. One union variant appears per case in the initial surface; cases do not fall through.
 9. `==` and `!=` compare discriminants first and only the active payload when tags match. Equality exists only when every payload type supports equality under the ordinary rules; inactive bytes and padding are never compared. Numeric tags are not exposed and tagged unions are not bit flags.
 10. Generic unions stamp only through explicit type arguments like generic structs. Type identity is nominal plus exact type arguments; aliases share identity and `distinct` remains distinct.
-11. Public unions and their qualified variants follow normal module visibility. Tagged unions are initially rejected in `extern` and `export` signatures; no C representation is implied.
+11. Public unions and their qualified variants follow normal module visibility. Tagged unions are initially rejected in `extern "c"` signatures; no C representation is implied.
 12. Tagged unions are closed data alternatives, distinct from contracts: contracts provide open-ended behavior through explicit vtable/data values. Ace has no universal `any` type.
 
 ## Generics
