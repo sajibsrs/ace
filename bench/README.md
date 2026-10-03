@@ -61,18 +61,22 @@ The small-size comparison against `cc` flatters Ace: `cc` pays process startup
 and header parsing that a 100-function corpus barely amortizes, so the growth
 column, not the ratio at small sizes, is the real signal.
 
-Function-count corpus, medians in ms, at `af1aeae` (the finished IR migration):
+Function-count corpus, medians in ms, at `bfe7091` (`af1aeae`, the finished IR
+migration, in parentheses for Ace):
 
 | functions | lines | Ace debug | Ace release | `cc -O0` | `cc -O2` |
 |---|---|---|---|---|---|
-| 100 | 1,053 | 14.6 | 15.1 | 57.6 | 204.7 |
-| 1,000 | 10,353 | 37.7 | 41.0 | 219.9 | 1,589.6 |
-| 5,000 | 51,684 | 147.4 | 161.6 | 941.1 | 7,659.4 |
-| 20,000 | 206,684 | 551.8 | 605.9 | 3,649.1 | 31,087.6 |
+| 100 | 1,053 | 12.0 (14.6) | 12.4 (15.1) | 57.7 | 210.6 |
+| 1,000 | 10,353 | 36.3 (37.7) | 42.8 (41.0) | 221.4 | 1,608.7 |
+| 5,000 | 51,684 | 143.2 (147.4) | 174.0 (161.6) | 942.5 | 7,769.7 |
+| 20,000 | 206,684 | 570.8 (551.8) | 670.2 (605.9) | 3,650.4 | 31,480.9 |
 
-Growth is 3.9x for 5x the code and 3.7x for 4x, so this shape is still linear.
-Ace remains far faster to compile-to-object than `cc` at every size (0.17x
-`-O0`, 0.02x `-O2` at 20,000), but against Ace's own pre-migration self, five
+Growth is 3.9x for 5x the code and 4.0x for 4x, so this shape is still linear.
+Ace remains far faster to compile-to-object than `cc` at every size (0.18x
+`-O0`, 0.02x `-O2` at 20,000). Since `af1aeae`, release at 5,000 to 20,000
+functions has grown 8-11% (the auto-vectorizer and wider inlining) and debug
+at most 3%; the small sizes are within a run's noise. Against Ace's own
+pre-migration self, five
 paired median-of-5 runs on the same corpus files show the migration cost real
 compile time, worst in release since that mode now runs a pass that did not
 exist before:
@@ -108,12 +112,12 @@ Other shapes in ms, Ace debug linear on both:
 
 | shape | compiler | 1,000 | 5,000 | 20,000 | growth for 5x code | for 4x code |
 |---|---|---|---|---|---|---|
-| `types` | Ace debug | 21 | 70 | 261 | 3.3x | 3.7x |
-| `types` | `cc -O0` | 141 | 574 | 2,194 | 4.1x | 3.8x |
-| `types` | `cc -O2` | 394 | 1,874 | 7,617 | 4.8x | 4.1x |
-| `long` | Ace debug | 12 | 27 | 87 | 2.2x | 3.2x |
-| `long` | `cc -O0` | 106 | 1,584 | 20,154 | 15x | 13x |
-| `long` | `cc -O2` | 229 | 1,101 | crash ¹ | 4.8x | |
+| `types` | Ace debug | 25 | 100 | 375 | 3.9x | 3.8x |
+| `types` | `cc -O0` | 145 | 575 | 2,230 | 4.0x | 3.9x |
+| `types` | `cc -O2` | 394 | 1,921 | 7,721 | 4.9x | 4.0x |
+| `long` | Ace debug | 14 | 31 | 97 | 2.3x | 3.2x |
+| `long` | `cc -O0` | 109 | 1,548 | 20,024 | 14x | 13x |
+| `long` | `cc -O2` | 232 | 1,106 | crash ¹ | 4.8x | |
 | `long`, before | Ace debug | 20 | 161 | 2,347 | | |
 
 ¹ Apple clang 21 aborts with "Illegal instruction: 4"; the runner prints
@@ -125,12 +129,12 @@ per-function lists, and stays linear now that register promotion ranks its
 candidates once and searches each register's sorted intervals. It had reached
 1.60 s at 20,000 when live-interval sharing let most of those locals hold
 registers.
-Machine code for 5,000 functions, at `af1aeae`:
+Machine code for 5,000 functions, at `bfe7091` (`af1aeae` in parentheses):
 
 | build | machine code | was (`fef1651`) |
 |---|---|---|
-| Ace release | 0.66 MB | 0.93 MB |
-| Ace debug | 0.82 MB | 1.35 MB |
+| Ace release | 0.64 MB (0.66) | 0.93 MB |
+| Ace debug | 0.80 MB (0.82) | 1.35 MB |
 | `cc -O0` | 0.98 MB | 0.98 MB |
 | `cc -O2` | 1.10 MB | 1.10 MB |
 
@@ -143,8 +147,8 @@ Real programs:
 
 | program | lines | compile time |
 |---|---|---|
-| benchmarks | 19 to 194 | 9 to 16 ms ¹ |
-| HTTP server demo | 2,124 | 118 ms ² |
+| benchmarks | 16 to 247 | 10 to 21 ms ¹ |
+| HTTP server demo | 2,069 | 119 ms ² |
 
 ¹ mostly process start and standard-library loading.
 ² including its link step.
@@ -521,28 +525,34 @@ the same C with inlining allowed: a reference Ace cannot match without an
 inliner, not the comparison target. The C function-value slot is `volatile` so
 the indirect call survives.
 
-Ace release against noinline C `-O2` in ns/op, after constant, parameter, and
-float-accumulator promotion, register returns, small struct locals in
-registers, and float parameter leaves read in their argument registers:
+Ace release against noinline C `-O2` in ns/op, medians of three runs at
+`bfe7091`; the last column is the earlier checkpoint (after constant,
+parameter, and float-accumulator promotion, register returns, small struct
+locals in registers, and float parameter leaves read in their argument
+registers):
 
-| workload | Ace | C noinline | Ace/C | Ace before promotion |
-|---|---|---|---|---|
-| `call-1` | 2.90 | 2.90 | 1.00x | 5.72 |
-| `call-4` | 3.67 | 3.42 | 1.07x | 5.61 |
-| `call-8` | 4.19 | 4.35 | 0.96x | 4.93 |
-| `fib-recursive` | 2.05 | 1.16 | 1.76x | |
-| `tail-recursive` | 0.96 | 0.96 | 1.00x | |
-| `struct-8` | 2.91 | 2.41 | 1.21x | |
-| `struct-16` | 2.62 | 2.40 | 1.09x | |
-| `struct-24` | 6.47 | 10.74 | 0.60x | |
-| `struct-64` | 15.50 | 14.36 | 1.08x | |
-| `struct-hfa` | 3.39 | 1.44 | 2.35x | |
-| `float-acc` | 1.93 | 1.44 | 1.34x | |
-| `tuple-return` | 11.58 | 7.23 | 1.60x | |
-| `method` | 1.44 | 3.87 | 0.37x | |
-| `function-value` | 3.38 | 2.89 | 1.17x | |
+| workload | Ace | C noinline | Ace/C | C inlined | earlier Ace |
+|---|---|---|---|---|---|
+| `call-1` | 2.90 | 2.89 | 1.00x | 2.90 | 2.90 |
+| `call-4` | 3.40 | 3.42 | 0.99x | 2.93 | 3.67 |
+| `call-8` | 4.10 | 4.36 | 0.94x | 0.96 | 4.19 |
+| `fib-recursive` | 1.74 | 1.22 | 1.43x | 1.31 | 2.05 |
+| `tail-recursive` | 0.96 | 0.97 | 0.99x | 0.96 | 0.96 |
+| `struct-8` | 2.41 | 2.41 | 1.00x | 2.41 | 2.91 |
+| `struct-16` | 2.41 | 2.41 | 1.00x | 1.93 | 2.62 |
+| `struct-24` | 4.74 | 10.83 | 0.44x | 1.93 | 6.47 |
+| `struct-64` | 8.55 | 14.44 | 0.59x | 1.93 | 15.50 |
+| `struct-hfa` | 1.45 | 1.45 | 1.00x | 1.07 | 3.39 |
+| `float-acc` | 1.45 | 1.45 | 1.00x | 1.15 | 1.93 |
+| `tuple-return` | 7.46 | 7.24 | 1.03x | 6.76 | 11.58 |
+| `method` | 0.96 | 3.86 | 0.25x | 0.97 | 1.44 |
+| `function-value` | 2.89 | 2.90 | 1.00x | 2.89 | 3.38 |
 
-The largest remaining gaps are the float aggregate, recursive `fib`, the float
+Ace now matches noinline C on every workload except recursive `fib` (1.43x),
+and the method and the 24- and 64-byte structs beat it. The paragraphs below
+describe the earlier checkpoint.
+
+At that checkpoint the largest remaining gaps were the float aggregate, recursive `fib`, the float
 accumulator, and the tuple return; the method and the 24-byte struct beat
 noinline C. With `pair` and `acc` in registers, the `struct-8`, `struct-16`,
 and `struct-hfa` callers pass and take their fields by register moves alone
@@ -659,12 +669,12 @@ Rotations come from a 64-entry sine table built by an exact recurrence, since
 C kernel sets `#pragma STDC FP_CONTRACT OFF`: clang otherwise fuses `a*b + c`
 into one `fmadd` rounding, which Ace never does, and the checksums diverge.
 
-Ace leaves vectorization to explicit `simd`, so scalar C `-O2`
-(`-fno-tree-vectorize -fno-tree-slp-vectorize`, which clang and gcc both
-accept) is the comparison target. The
-auto-vectorized `-O2` column is a reference, not a goal. Neither compiler
-vectorizes `dot-f64`'s reduction, because clang will not reassociate floating
-point without `-ffast-math`.
+Scalar C `-O2` (`-fno-tree-vectorize -fno-tree-slp-vectorize`, which clang and
+gcc both accept) is the `Ace/C` comparison target; the auto-vectorized `-O2`
+column is the reference for Ace's own release-build auto-vectorizer (spec
+Compiler #6). Neither compiler vectorizes `dot-f64`'s reduction, because clang
+will not reassociate floating point without `-ffast-math`. The checkpoints
+below run oldest first; the last one is current.
 
 #### Current hot-loop baseline
 
@@ -752,6 +762,29 @@ it (0.79x to 0.75x) since it reads the same two globals in its own loop.
 `particle-vec3` and `length-vec3` are unaffected, as expected — their stride
 is not a power of two, so they were already on the pointer-phi path.
 
+#### Auto-vectorization
+
+Five runs at `bfe7091` (release builds, auto-vectorizer on), medians in ns per
+element, ns per cube for `cube-transform`; C medians from the same runs.
+`Ace/vector` is against auto-vectorized C:
+
+| workload | Ace | C scalar | Ace/C | C vector | Ace/vector | `55e1435` |
+|---|---|---|---|---|---|---|
+| `saxpy-f64` | 0.249 | 0.485 | 0.51x | 0.182 | 1.37x | 0.508 |
+| `saxpy-f32` | 0.126 | 0.486 | 0.26x | 0.092 | 1.37x | 0.507 |
+| `dot-f64` | 1.241 | 1.651 | 0.75x | 1.073 | 1.16x | 1.240 |
+| `particle-vec3` | 0.281 | 0.737 | 0.38x | 0.273 | 1.03x | 1.117 |
+| `length-vec3` | 1.467 | 1.654 | 0.89x | 1.104 | 1.33x | 1.465 |
+| `cube-transform` | 41.821 | 53.004 | 0.79x | 31.453 | 1.33x | |
+
+The `saxpy` pair runs four (`f32`) and two (`f64`) lanes wide, `particle-vec3`
+runs as the flat array of its fields, and `cube-transform`'s corner loop runs
+four lanes wide. `dot-f64` and `length-vec3` are scalar: a reduction needs
+reassociation (`dot-f64`), and the interleaved `f32` records of `length-vec3`
+vectorized at only 1.10x over scalar, below the bar, so that is parked.
+Spreads were under 0.01 ns per element within each build, except the scalar
+`cube-transform` C median, whose fifth run (54.8) was an outlier.
+
 #### Cube transform
 
 Three runs at `890c823`, ns per cube: Ace 41.5, scalar C 52.9 (0.78x),
@@ -792,6 +825,28 @@ checksum `885323395`:
 The helpers exceed the 24-node auto-inline limit or call each other, so release
 keeps them as calls unless marked. Even fully expanded, release trails C `-O2`
 by 2x, which points at code generation within the expanded body.
+
+#### Current baseline
+
+Median of five runs at `bfe7091`, 20,480,000 rays, same checksum. The helpers
+`trace` and `hit` are now marked `inline` in the benchmark, so release is the
+expanded row of the initial baseline; the runner no longer builds a separate
+`-fno-inline` C variant:
+
+| build | time | initial baseline |
+|---|---|---|
+| Ace debug | 0.360 s | 0.843 s |
+| Ace release | 0.336 s | 0.602 s ¹ |
+| C `-O0` | 2.461 s | 2.456 s |
+| C `-O2` | 0.303 s | 0.302 s |
+
+¹ The helpers-marked-`inline` row; unmarked release was 0.836 s.
+
+Release is 1.11x C `-O2`, down from 1.99x. Debug moved too (2.3x) because
+inline expansion binds receivers and `mut` parameters to the argument's own
+variables and inline functions return aggregates, so the `Vec` and `Color`
+temporaries no longer round-trip through memory in either mode. C `-O0` and
+`-O2` did not move, so the comparison is unchanged.
 
 ### Strings and byte operations
 
