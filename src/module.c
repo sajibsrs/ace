@@ -12,9 +12,10 @@
 // references in the importing file are rewritten to prefixed names after a
 // `pub` check, and extern
 // declarations keep their C-boundary name in Node.cname for the linker.
-// The merged unit is ordered dependencies-first, so the in-order checker
-// and emitter still see every name declared before use. Separate per-module
-// objects and incremental rebuilds are deliberately deferred.
+// The merged unit is ordered dependencies-first; top-level names are
+// order-independent (Compiler #5), so the order fixes only the layout of
+// globals. Separate per-module objects and incremental rebuilds are
+// deliberately deferred.
 #include "ace.h"
 
 #include <stdarg.h>
@@ -866,10 +867,7 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
     resolve_file(L, file, canon, 0);
     L->loading = m->next; // pop
     m->next = L->mods;    // completed: dependencies are already in L->mods
-    L->mods = m;
-    // completion order must be dependencies-first; prepend breaks that, so
-    // instead append in reverse by walking — simplest: collect and reverse
-    // once before the merge (see resolve_imports).
+    L->mods = m;          // newest first; resolve_imports reverses it once
     return m;
 }
 

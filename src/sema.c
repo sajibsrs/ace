@@ -6451,7 +6451,6 @@ static void check_func_body(Ck* k, Node* f) {
         if (s) {
             s->type = build_type(k, pa->a);
             s->is_mut = (pa->flags & F_MUT) != 0;
-            s->is_noalias = (pa->flags & F_NOALIAS) != 0;
             s->is_param = 1;
             if (s->type && s->type->kind == SK_CONTRACT && !s->is_mut)
                 s->is_const_backed = 1; // a read-only contract param may wrap const
