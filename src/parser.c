@@ -157,15 +157,25 @@ static const char* gdesc(P* p) {
     }
 }
 
-static void perr(P* p, const char* fmt, ...) {
-    va_list ap;
-    fprintf(stderr, "%s:%d:%d: error: ", p->d->path, tk(p)->line, tk(p)->col);
-    va_start(ap, fmt);
+static void vperr_at(P* p, Token* t, const char* fmt, va_list ap) {
+    fprintf(stderr, "%s:%d:%d: error: ", p->d->path, t->line, t->col);
     vfprintf(stderr, fmt, ap);
-    va_end(ap);
     fputc('\n', stderr);
     p->d->errors++;
     longjmp(p->jb, 1);
+}
+
+// Reports at t, for a check made only after the construct it names is parsed.
+static void perr_at(P* p, Token* t, const char* fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    vperr_at(p, t, fmt, ap);
+}
+
+static void perr(P* p, const char* fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    vperr_at(p, tk(p), fmt, ap);
 }
 
 static void bare_list_line(P* p, int line) {
@@ -1508,9 +1518,10 @@ static Node* parse_stmt(P* p) {
     case T_DEFER: {
         Node* n = nd(p, N_DEFER);
         p->i++;
+        Token* mut = tk(p);
         if (ate(p, T_MUT)) { // `defer mut c.scale(2.0)` — receiver-marked call
             Node* e = expr(p, CTX_NOSLIT);
-            if (e->kind != N_CALL) perr(p, "'mut' after 'defer' marks a call receiver");
+            if (e->kind != N_CALL) perr_at(p, mut, "'mut' after 'defer' marks a call receiver");
             e->flags |= F_MUT;
             n->a = e;
         } else {
@@ -1519,10 +1530,11 @@ static Node* parse_stmt(P* p) {
         return n;
     }
     case T_MUT: { // `mut c.scale(2.0)` — receiver-marked call statement
-        Node* n = nd(p, N_EXPRSTMT);
+        Token* mut = tk(p);
+        Node* n = nd_tok(p, N_EXPRSTMT, mut);
         p->i++;
         Node* e = expr(p, CTX_NOSLIT);
-        if (e->kind != N_CALL) perr(p, "'mut' at statement level marks a call receiver");
+        if (e->kind != N_CALL) perr_at(p, mut, "'mut' at statement level marks a call receiver");
         e->flags |= F_MUT;
         n->a = e;
         return n;

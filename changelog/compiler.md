@@ -1,5 +1,8 @@
 # Compiler
 
+- A parser check made after the construct it names is parsed reports at a
+  saved token (`perr_at`); a `mut` that heads no call, at statement level or
+  after `defer`, names its `mut`, not the token after the expression.
 - A `mut` argument, an expression statement, and a range are positioned at
   their `mut`, first token, and `..`; like binary expressions, they took the
   token after their contents.
