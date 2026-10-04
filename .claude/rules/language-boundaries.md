@@ -29,8 +29,9 @@ Follow `spec/` for exact rules; do not propose or assume away these decisions:
 - Composition and explicit contract values replace inheritance.
 - Declarations use `name: type`; functions are keywordless with trailing
   returns; function values use signature types.
-- The compiler uses recursive descent, the fixed in-order passes of `spec/compiler.md`
-  Compiler #2, and direct machine-code emission from a per-function IR;
+- The compiler uses recursive descent, the passes of `spec/compiler.md`
+  Compiler #2 (a per-file top-level declaration pass, then in-order checking),
+  and direct machine-code emission from a per-function IR;
   no whole-program or cross-function analysis beyond `inline` and compiling
   only reachable functions.
 - Safety is cheap local checking plus removable debug-build diagnostics.

@@ -5,7 +5,14 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
 
 ### Active
 
-- None.
+- Order-independent top-level declarations (#85). Decided: every top-level
+  name, imports included, is visible throughout its file; names declared in a
+  function body stay declaration-before-use. Check enters every top-level name
+  first, then resolves signatures, types, aliases, and `const` initializers on
+  demand; a declaration reaching itself during resolution is a cycle error.
+  This replaces Compiler #5's forward-call and forward-type fixups and
+  changes Compiler #2, Type System #8, Generics #12, Abstraction #7, and
+  Names & Scoping #2 when implemented.
 
 ### Trigger-gated
 

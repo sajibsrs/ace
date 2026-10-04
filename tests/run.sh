@@ -352,23 +352,20 @@ for want in \
         fail=1
     fi
 done
-inline_forward_errors=$("$ACE" tests/sema/types/inline_forward_err.ace 2>&1)
-for name in B D F H; do
-    if ! printf '%s\n' "$inline_forward_errors" | grep -qF "unknown type '$name'"; then
-        echo "FAIL: inline forward type $name should be rejected"
+cycle_errors=$("$ACE" tests/sema/types/declaration_cycle_err.ace 2>&1)
+for want in \
+    "error: 'A' depends on itself: 'A' -> 'B' -> 'C' -> 'A'" \
+    "error: 'P' depends on itself: 'P' -> 'Q' -> 'P'" \
+    "error: type 'S' depends on its own layout" \
+    "error: type 'M' has a recursive value layout"; do
+    if ! printf '%s\n' "$cycle_errors" | grep -qF "$want"; then
+        echo "FAIL: missing declaration-cycle diagnostic: $want"
         fail=1
     fi
 done
-unresolved_forward_error=$("$ACE" tests/sema/types/unresolved_forward_err.ace 2>&1)
-if ! printf '%s\n' "$unresolved_forward_error" | grep -qF \
-    "forward-referenced type 'Missing' was never declared in this module"; then
-    echo "FAIL: missing unresolved forward-type diagnostic"
-    fail=1
-fi
-premature_member_error=$("$ACE" tests/sema/types/premature_forward_member_err.ace 2>&1)
-if ! printf '%s\n' "$premature_member_error" | grep -qF \
-    "type 'B' is not declared yet; member access requires its declaration"; then
-    echo "FAIL: missing premature forward-type member diagnostic"
+if [ "$(printf '%s\n' "$cycle_errors" | grep -c 'error:')" -ne 4 ]; then
+    echo "FAIL: each declaration cycle should be reported exactly once"
+    printf '%s\n' "$cycle_errors"
     fail=1
 fi
 

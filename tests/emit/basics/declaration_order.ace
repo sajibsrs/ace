@@ -1,0 +1,94 @@
+/* Top-level declarations are order-independent within a file: types,
+ * aliases, distinct types, enums, unions, constants, globals, and a signing
+ * may name declarations written after them, inline or through a pointer, and
+ * layouts come out as if declared in order.
+ */
+// expect-exit: 0
+
+import mem
+
+Circle signs Shape
+
+main(): int {
+    a: A = A { b = null, arr = [null : 1], pa = null, inl = B { value = 4 } }
+    a.b = &a.inl
+    if read(&a) != 4 { return 1 }
+    if sizeof(A) != 32 { return 2 }
+    p: Pair = Pair { key = "k", value = Json.none }
+    if p.key.len != 1 || sizeof(Pair) != 40 || sizeof(Json) != 24 { return 3 }
+    pairs: mut []Pair = mem.alloc[Pair](2)
+    defer mem.release[Pair](mut pairs)
+    if pairs.len != 2 { return 9 }
+    n: Node = Node { next = null, v = LIMIT, buf = [0 : WIDTH] }
+    if n.v != 7 || n.buf.len != 6 { return 4 }
+    box: Alias = Box { items = [Id(9) : COUNT] }
+    if sizeof(Box) != 24 || u64(box.items[2]) != 9 { return 5 }
+    if int(Kind.b) != 1 { return 6 }
+    c: Circle = Circle { r = 3 }
+    s: Shape = Shape(&c)
+    if s.area() != 3 { return 7 }
+    if counter != 5 { return 8 }
+    return 0
+}
+
+read(a: *A): int {
+    return a.b.value
+}
+
+A: struct {
+    b: *B,
+    arr: [1]*B,
+    pa: *[1]B,
+    inl: B,
+}
+
+B: struct {
+    value: int,
+}
+
+Json: union {
+    none,
+    object: []Pair,
+}
+
+Pair: struct {
+    key: string,
+    value: Json,
+}
+
+Node: struct {
+    next: *Node,
+    v: int,
+    buf: [WIDTH]u8,
+}
+
+Alias: type = Box
+
+Box: struct {
+    items: [COUNT]Id,
+}
+
+Id: distinct u64
+
+COUNT: const usize = WIDTH / 2
+WIDTH: const usize = 6
+LIMIT: const int = 7
+
+Kind: enum {
+    a,
+    b,
+}
+
+Shape: contract {
+    area(): int
+}
+
+Circle: struct {
+    r: int,
+}
+
+Circle.area(): int {
+    return self.r
+}
+
+counter: int = 5

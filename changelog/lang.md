@@ -1,5 +1,10 @@
 # Language
 
+- Top-level types, aliases, globals, constants, C globals, and imports are
+  order-independent within a file, replacing the pointer- and root-slice-only
+  forward types: check enters every name first and resolves a declaration on
+  first lookup; a constant, alias, or layout query reaching itself is an error.
+
 - A parameter's function-value type selects an overloaded function passed by
   bare name, as a declared local's type does: `run(twice)`,
   `apply[int, int](3, twice)`. The name gives overload selection no type, so

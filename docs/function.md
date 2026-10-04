@@ -550,9 +550,11 @@ any build, is written as a loop.
 
 ## Declaration order and forward calls
 
-Names normally follow declaration-before-use. Top-level function calls are the
-exception: calls to functions, and method calls on a struct, declared later are
-recorded and resolved at the end of the file. This supports forward and mutual
+Top-level types, globals, and constants may be declared in any order
+([Declaration order](types.md#declaration-order)). Functions and locals follow
+declaration-before-use, with one exception: calls to functions, and method
+calls on a struct, declared later are recorded and resolved at the end of the
+file. This supports forward and mutual
 calls without prototypes. A call whose untyped argument needs the complete
 overload set, such as `f(5)` against a single `f(a: u64)`, is resolved the same
 way. Every function body that made such a call is then checked once more, with

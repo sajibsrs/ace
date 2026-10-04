@@ -162,7 +162,7 @@ static const char* type_name(SType* t) {
     case SK_VOID: return "no value";
     case SK_UT: return t == T_UT_INT ? "integer literal" :
                     t == T_UT_FLOAT ? "float literal" : "null";
-    case SK_FORWARD: return t->name ? t->name : "forward type";
+    case SK_TEMPLATE: return t->name ? t->name : "generic alias";
     default: return "?";
     }
 }
@@ -171,10 +171,22 @@ static const char* type_name(SType* t) {
 
 static uint32_t align_to(uint32_t v, uint32_t a) { return a ? (v + a - 1) / a * a : v; }
 
+/* Why the last failed layout failed: it reached a type whose fields are
+ * still being built (blocked: not yet computable, not a cycle), or a type
+ * whose recursive layout was already reported (poisoned). */
+static int g_layout_blocked, g_layout_poisoned;
+
 static int layout(SType* t) {
-    if (t->invalid_layout) return 0;
+    if (t->invalid_layout) {
+        g_layout_poisoned = 1;
+        return 0;
+    }
     if (t->size) return 1;
-    if (t->calc || t->building || t->kind == SK_FORWARD) return 0;
+    if (t->building) {
+        g_layout_blocked = 1;
+        return 0;
+    }
+    if (t->calc || t->kind == SK_TEMPLATE) return 0;
     switch (t->kind) {
     case SK_PRIM:
         switch (t->prim) {
@@ -314,13 +326,7 @@ typedef struct Pending {
     struct Pending* next;
 } Pending;
 
-typedef struct TypeFix TypeFix;
-struct TypeFix {
-    Sym* sym;
-    SType** slot;
-    Node* ref;
-    TypeFix* next;
-};
+enum { DECL_DONE, DECL_ENTERED, DECL_RESOLVING };
 
 typedef struct {
     Diag*   d;
@@ -330,8 +336,6 @@ typedef struct {
     // generic substitution environment (names -> types)
     const char** tnames; SType** ttypes; int nsub;
     Pending* pending;
-    TypeFix* typefix;
-    int type_build_depth;
     Scope*  fnscope; // scope the current function body is checked in
     uint32_t fn_seq; // last declaration visible when that check began
     int     final;   // every declaration is known: calls resolve, never pend
@@ -540,10 +544,18 @@ static int args_view(Ck* k) {
     return saved;
 }
 
+static void resolve_top(Ck* k, Sym* s);
+
+// A top-level declaration is resolved by the first lookup that reaches it.
+static Sym* resolved(Ck* k, Sym* s) {
+    if (s->decl_state != DECL_DONE) resolve_top(k, s);
+    return s;
+}
+
 static Sym* lookup_val(Ck* k, const char* name, uint32_t len) {
     for (Scope* s = k->scope; s; s = s->parent) {
         Sym* v = scope_find(s, 0, name, len);
-        if (v && visible(k, v)) return v;
+        if (v && visible(k, v)) return resolved(k, v);
     }
     return NULL;
 }
@@ -564,7 +576,7 @@ static Sym* lookup_pending(Pending* pd, const char* name, uint32_t len) {
 static Sym* lookup_type(Ck* k, const char* name, uint32_t len) {
     for (Scope* s = k->scope; s; s = s->parent) {
         Sym* v = scope_find(s, 1, name, len);
-        if (v && visible(k, v)) return v;
+        if (v && visible(k, v)) return resolved(k, v);
     }
     return NULL;
 }
@@ -603,14 +615,6 @@ static Sym* declare_type(Ck* k, Node* at, const char* name, uint32_t len) {
         return NULL;
     }
     Sym* old = scope_find(k->scope, 1, name, len);
-    if (old && old->is_forward) {
-        if (old->decl && old->decl->path && at->path && strcmp(old->decl->path, at->path) != 0) {
-            ck_err(k, at, "forward type '%.*s' must be declared in the same module", (int)len, name);
-            return NULL;
-        }
-        old->is_forward = 0;
-        return old;
-    }
     if (old) {
         ck_err(k, at, "duplicate type '%.*s'", (int)len, name);
         return NULL;
@@ -620,59 +624,13 @@ static Sym* declare_type(Ck* k, Node* at, const char* name, uint32_t len) {
     return s;
 }
 
-static Scope* file_scope(Ck* k) {
-    Scope* s = k->scope;
-    while (s && s->parent) s = s->parent;
-    return s;
-}
-
-static Sym* forward_type(Ck* k, Node* ref) {
-    Scope* fs = file_scope(k);
-    Sym* s = scope_find(fs, 1, ref->str, ref->len);
-    if (s) return s;
-    s = sym_new(SYM_TYPE, ref->str, ref->len);
-    s->is_forward = 1;
-    s->decl = ref; // first use: unresolved EOF diagnostic and module identity
-    s->type = st_new(SK_FORWARD);
-    s->type->name = ref->str;
-    s->type->decl = ref;
-    scope_insert(fs, 1, s);
-    return s;
-}
-
-static void record_type_fix(Ck* k, Sym* s, SType** slot, Node* ref) {
-    TypeFix* f = (TypeFix*)arena_alloc(sizeof(TypeFix));
-    f->sym = s;
-    f->slot = slot;
-    f->ref = ref;
-    f->next = k->typefix;
-    k->typefix = f;
-}
-
-static void resolve_type_fixes(Ck* k, Sym* s, SType* actual, Node* decl) {
-    s->type = actual;
-    s->decl = decl;
-    for (TypeFix* f = k->typefix; f; f = f->next) {
-        if (f->sym != s) continue;
-        int nargs = f->ref ? f->ref->nkids : 0;
-        if (!s->is_generic) {
-            if (nargs)
-                ck_err(k, f->ref, "type '%.*s' is not generic",
-                       (int)s->len, s->name);
-            *f->slot = actual;
-            continue;
-        }
-        if (!nargs) {
-            ck_err(k, f->ref,
-                   "generic type '%.*s' needs explicit type arguments",
-                   (int)s->len, s->name);
-            *f->slot = T_ERR;
-            continue;
-        }
-        SType** args = (SType**)arena_alloc((size_t)nargs * sizeof(SType*));
-        for (int i = 0; i < nargs; i++) args[i] = build_type_or_void(k, f->ref->kids[i]);
-        *f->slot = instantiate_generic_type(k, decl, args, nargs);
-    }
+/* A layout query on a type still being built (its own field's array length
+ * or @align reaching it) has no answer; a type whose layout already failed
+ * has been reported where it is declared. */
+static int layout_or_cycle(Ck* k, Node* at, SType* t) {
+    if (layout(t)) return 1;
+    if (!t->invalid_layout) ck_err(k, at, "type '%s' depends on its own layout", type_name(t));
+    return 0;
 }
 
 // --- same_type / castable ----------------------------------------------------------
@@ -1314,7 +1272,6 @@ static void check_param_count(Ck* k, Node* at, int n, int receiver) {
         ck_err(k, at, "too many parameters: %d%s (max %d)", n, receiver ? ", the receiver included" : "", MAX_PARAMS);
 }
 
-static SType* build_type_ctx(Ck* k, Node* t, int path);
 enum { CABI_DIRECT, CABI_FIELD, CABI_POINTEE, CABI_POINTEE_FIELD };
 static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack);
 
@@ -1359,7 +1316,7 @@ static SType* build_type_or_void(Ck* k, Node* t) {
             if ((uint32_t)strlen(k->tnames[i]) == t->len && memcmp(k->tnames[i], t->str, t->len) == 0 &&
                 k->ttypes[i]->kind == SK_VOID)
                 return T_VOID;
-    return build_type_ctx(k, t, 0);
+    return build_type(k, t);
 }
 
 // A return position: 'void' there is no value (NULL), as an omitted clause.
@@ -1369,7 +1326,7 @@ static SType* build_return_type(Ck* k, Node* t) {
     return r->kind == SK_VOID ? NULL : r;
 }
 
-static SType* build_named_ctx(Ck* k, Node* t, int path) {
+static SType* build_named(Ck* k, Node* t) {
     if (t->flags & F_MUT) { // `mut string` — the only mut-qualified named type
         if (t->a || t->nkids || !(t->len == 6 && memcmp(t->str, "string", 6) == 0)) {
             ck_err(k, t,
@@ -1397,18 +1354,7 @@ static SType* build_named_ctx(Ck* k, Node* t, int path) {
     if (p) return p;
     Sym* s = lookup_type(k, t->str, t->len);
     if (!s || !s->type) {
-        if (path == 1) {
-            s = forward_type(k, t);
-            return s->type;
-        }
         ck_err(k, t, "unknown type '%.*s'", (int)t->len, t->str);
-        return T_ERR;
-    }
-    if (s->is_forward) {
-        if (path == 1) return s->type;
-        ck_err(k, t,
-               "type '%.*s' is not declared yet; only a pointer chain or a root-level slice field reference may be fixed up",
-               (int)t->len, t->str);
         return T_ERR;
     }
     if (t->nkids > 0) { // generic instantiation in type position: Vec[int]
@@ -1423,11 +1369,9 @@ static SType* build_named_ctx(Ck* k, Node* t, int path) {
     return s->type;
 }
 
-/* path: 0 = ordinary/layout-dependent, 2 = aggregate field root,
- * 1 = every edge from that root so far is a pointer. */
-static SType* build_type_ctx(Ck* k, Node* t, int path) {
+static SType* build_type(Ck* k, Node* t) {
     switch (t->kind) {
-    case N_NAMED: return build_named_ctx(k, t, path);
+    case N_NAMED: return build_named(k, t);
     case N_IDENT: { // typed struct-literal bases and call type arguments
         if (k->nsub) { // expression-position type name: substitute like N_NAMED
             for (int i = 0; i < k->nsub; i++)
@@ -1443,18 +1387,7 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
         if (p) return p;
         Sym* s = lookup_type(k, t->str, t->len);
         if (!s || !s->type) {
-            if (path == 1) {
-                s = forward_type(k, t);
-                return s->type;
-            }
             ck_err(k, t, "unknown type '%.*s'", (int)t->len, t->str);
-            return T_ERR;
-        }
-        if (s->is_forward) {
-            if (path == 1) return s->type;
-            ck_err(k, t,
-                   "type '%.*s' is not declared yet; only a pointer chain or a root-level slice field reference may be fixed up",
-                   (int)t->len, t->str);
             return T_ERR;
         }
         if (s->is_generic) {
@@ -1484,33 +1417,19 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
     case N_PTR: {
         SType* p = st_new(SK_PTR);
         p->is_mut = (t->flags & F_MUT) != 0;
-        int child_path = (path == 1 || path == 2) ? 1 : 0;
-        p->base = build_type_ctx(k, t->a, child_path);
-        if (p->base && p->base->kind == SK_FORWARD) {
-            Sym* s = lookup_type(k, p->base->name, (uint32_t)strlen(p->base->name));
-            if (s && s->is_forward) record_type_fix(k, s, &p->base, t->a);
-        }
+        p->base = build_type(k, t->a);
         return p;
     }
     case N_SLICE_T: {
         SType* s = st_new(SK_SLICE);
         s->is_mut = (t->flags & F_MUT) != 0; // mut []T — writable elements
-        // A slice's own representation (pointer + count) doesn't depend on
-        // its element's size, exactly like a pointer's — so a bare slice at
-        // the aggregate field/variant root may also forward-reference a
-        // type declared later in the module. Narrower than the pointer
-        // case on purpose: only the direct root ([]Later), not a slice
-        // reached through a preceding pointer or nested further.
-        int child_path = (path == 2) ? 1 : 0;
-        s->base = build_type_ctx(k, t->a, child_path);
-        if (s->base && s->base->kind == SK_FORWARD) {
-            Sym* sym = lookup_type(k, s->base->name, (uint32_t)strlen(s->base->name));
-            if (sym && sym->is_forward) record_type_fix(k, sym, &s->base, t->a);
-        }
+        s->base = build_type(k, t->a);
         return s;
     }
     case N_ARRAY_T: {
+        int errors = k->d->errors + k->quiet_errors;
         coerce(k, t->b, st_prim(P_USIZE));
+        if (k->d->errors + k->quiet_errors != errors) return T_ERR; // already reported
         int64_t len;
         if (!ut_const(t->b, &len)) {
             ck_err(k, t->b, "array length must be a compile-time usize expression");
@@ -1522,16 +1441,16 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
         }
         SType* a = st_new(SK_ARRAY);
         a->count = (uint64_t)len;
-        a->base = build_type_ctx(k, t->a, 0);
+        a->base = build_type(k, t->a);
         return a;
     }
     case N_STATICMAP_T: {
         SType* m = st_new(SK_STATICMAP);
-        m->base = build_type_ctx(k, t->a, 0);
-        m->ret = build_type_ctx(k, t->b, 0);
+        m->base = build_type(k, t->a);
+        m->ret = build_type(k, t->b);
         return m;
     }
-    case N_CONST_T: return build_type_ctx(k, t->a, 0);
+    case N_CONST_T: return build_type(k, t->a);
     case N_TUPLE_T: {
         SType* tu = st_new(SK_TUPLE);
         tu->nfields = t->nkids;
@@ -1539,7 +1458,7 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
         memset(tu->fields, 0, (size_t)(t->nkids ? t->nkids : 1) * sizeof(SField));
         for (int i = 0; i < t->nkids; i++) {
             tu->fields[i].name = NULL;
-            tu->fields[i].t = build_type_ctx(k, t->kids[i], 0);
+            tu->fields[i].t = build_type(k, t->kids[i]);
         }
         return tu;
     }
@@ -1549,7 +1468,7 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
         f->is_c_abi = (t->flags & F_CABI) != 0;
         f->nparams = t->nkids;
         f->params = (SType**)arena_alloc((size_t)(t->nkids ? t->nkids : 1) * sizeof(SType*));
-        for (int i = 0; i < t->nkids; i++) f->params[i] = build_type_ctx(k, t->kids[i], 0);
+        for (int i = 0; i < t->nkids; i++) f->params[i] = build_type(k, t->kids[i]);
         f->ret = build_return_type(k, t->a);
         if (f->is_c_abi) {
             SType* stack[512];
@@ -1573,7 +1492,6 @@ static SType* build_type_ctx(Ck* k, Node* t, int path) {
     }
 }
 
-static SType* build_type(Ck* k, Node* t) { return build_type_ctx(k, t, 0); }
 
 // Build a function signature. Generic declarations use canonical type-parameter
 // placeholders when args is NULL, making alpha-equivalent declarations such as
@@ -1697,22 +1615,6 @@ static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
  * struct-field position, read-only unless `mut`. It is a global that is never
  * a constant, so nothing folds or caches its value.
  */
-static void declare_extern_var(Ck* k, Node* f) {
-    SType* t = build_type(k, f->a);
-    SType* stack[512];
-    if (t->kind != SK_ERR && !is_c_abi_type(t, CABI_FIELD, stack, 0))
-        ck_err(k, f->a, "C global '%.*s' has type %s, which is not C-ABI compatible",
-               (int)f->len, f->str, type_name(t));
-    Sym* s = declare_val(k, f, SYM_VAR, f->str, f->len);
-    if (!s) return;
-    s->type = t;
-    s->is_mut = (f->flags & F_MUT) != 0;
-    s->is_global = 1;
-    s->is_extern = 1;
-    s->decl = f;
-    f->sym = s;
-}
-
 /*
  * "f[int, string]" for diagnostics — bounded ring like type_name.
  */
@@ -2293,10 +2195,6 @@ static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
             b = b->base;
         }
         if (b->kind == SK_ERR) return T_ERR;
-        if (b->kind == SK_FORWARD) {
-            ck_err(k, e, "type '%s' is not declared yet; member access requires its declaration", type_name(b));
-            return T_ERR;
-        }
         if (b->kind == SK_ERROR) {
             if (write) ck_err(k, e, "Error fields are read-only");
             if (e->len == 6 && memcmp(e->str, "domain", 6) == 0) return st_prim(P_TYPEID);
@@ -2387,10 +2285,6 @@ static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
                 return T_ERR;
             }
             if (write && !p->is_mut) ck_err(k, e, "write through read-only pointer — use 'mut *T' and 'mut &value'");
-            if (p->base->kind == SK_FORWARD) {
-                ck_err(k, e, "type '%s' is not declared yet; dereference requires its declaration", type_name(p->base));
-                return T_ERR;
-            }
             return p->base;
         }
         break;
@@ -2894,10 +2788,6 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             return st_prim(P_USIZE);
         }
         while (b->kind == SK_PTR) b = b->base; // p.x auto-derefs
-        if (b->kind == SK_FORWARD) {
-            ck_err(k, e, "type '%s' is not declared yet; member access requires its declaration", type_name(b));
-            return T_ERR;
-        }
         if (b->kind == SK_ERROR) {
             if (e->len == 6 && memcmp(e->str, "domain", 6) == 0) return st_prim(P_TYPEID);
             if (e->len == 4 && memcmp(e->str, "code", 4) == 0) return st_prim(P_I32);
@@ -4427,15 +4317,11 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 }
                 SType* t = build_type(k, call->kids[0]);
                 if (!t || t->kind == SK_ERR) return T_ERR;
-                if (t->kind == SK_FORWARD) {
-                    ck_err(k, call->kids[0], "type '%s' is not declared yet; blank requires its layout", type_name(t));
-                    return T_ERR;
-                }
                 if (t->kind == SK_ERROR_DOMAIN) {
                     ck_err(k, call->kids[0], "error-domain names have no value layout; use Error");
                     return T_ERR;
                 }
-                if (!layout(t)) return T_ERR;
+                if (!layout_or_cycle(k, call->kids[0], t)) return T_ERR;
                 return t;
             }
             if (callee->len == 6 && memcmp(callee->str, "sizeof", 6) == 0) {
@@ -4452,16 +4338,12 @@ static SType* check_call_raw(Ck* k, Node* call) {
                         t = build_type(k, arg);
                         if (t->kind == SK_ERR) return T_ERR;
                     }
-                    if (t && t->kind == SK_FORWARD) {
-                        ck_err(k, arg, "type '%s' is not declared yet; sizeof requires its layout", type_name(t));
-                        return T_ERR;
-                    }
                     if (t && t->kind == SK_ERROR_DOMAIN) {
                         ck_err(k, arg, "error-domain names have no value layout; use Error");
                         return T_ERR;
                     }
                     if (t && t->kind != SK_ERR) {
-                        if (!layout(t)) return T_ERR;
+                        if (!layout_or_cycle(k, arg, t)) return T_ERR;
                         call->ival = t->size; // constant for the emitter
                         return st_prim(P_USIZE);
                     }
@@ -4483,16 +4365,12 @@ static SType* check_call_raw(Ck* k, Node* call) {
                         t = build_type(k, arg);
                         if (t->kind == SK_ERR) return T_ERR;
                     }
-                    if (t && t->kind == SK_FORWARD) {
-                        ck_err(k, arg, "type '%s' is not declared yet; alignof requires its layout", type_name(t));
-                        return T_ERR;
-                    }
                     if (t && t->kind == SK_ERROR_DOMAIN) {
                         ck_err(k, arg, "error-domain names have no value layout; use Error");
                         return T_ERR;
                     }
                     if (t && t->kind != SK_ERR) {
-                        if (!layout(t)) return T_ERR;
+                        if (!layout_or_cycle(k, arg, t)) return T_ERR;
                         call->ival = t->align; // constant for the emitter
                         return st_prim(P_USIZE);
                     }
@@ -4507,10 +4385,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 }
                 SType* t = build_type(k, call->kids[0]);
                 if (!t || t->kind == SK_ERR) return T_ERR;
-                if (t->kind == SK_FORWARD) {
-                    ck_err(k, call->kids[0], "offsetof requires a complete struct type");
-                    return T_ERR;
-                }
+                if (!layout_or_cycle(k, call->kids[0], t)) return T_ERR;
                 Node* parts[64]; int np = 0;
                 Node* path = call->kids[1];
                 while (path && path->kind == N_FIELD_E && np < 64) {
@@ -4969,11 +4844,6 @@ static SType* check_call_raw(Ck* k, Node* call) {
         // p.m() auto-derefs like p.x: the receiver becomes the ordinary
         // explicit dereference (*p).m(), once per pointer level
         while (!qualified && b->kind == SK_PTR) {
-            if (b->base->kind == SK_FORWARD) {
-                ck_err(k, call, "type '%s' is not declared yet; a method call requires its declaration",
-                       type_name(b->base));
-                return T_ERR;
-            }
             Node* d = (Node*)arena_alloc(sizeof(Node));
             memset(d, 0, sizeof *d);
             d->kind = N_UNARY;
@@ -6669,8 +6539,76 @@ static void check_struct_offsets(Ck* k, Node* decl, SType* t) {
     }
 }
 
+/*
+ * The layout-dependent checks of a struct, union, or distinct type whose
+ * fields are built. A layout blocked by a type further out that is still
+ * being built (it named this one through a pointer or slice) is not a cycle,
+ * only not yet computable: the checks wait until every type is built. A
+ * recursive layout is reported once, at the type whose own layout closes
+ * it, never at one that merely contains an already reported type.
+ */
+typedef struct Deferred {
+    Node* decl;
+    SType* t;
+    struct Deferred* next;
+} Deferred;
+static Deferred* g_deferred;
+
+static void finish_layout(Ck* k, Node* decl, SType* t, int may_defer) {
+    g_layout_blocked = g_layout_poisoned = 0;
+    int ready = 1;
+    if (t->kind == SK_DISTINCT) ready = layout(t->base);
+    else
+        for (int i = 0; i < t->nfields && ready; i++)
+            if (t->fields[i].t && t->fields[i].t->kind != SK_ERR) ready = layout(t->fields[i].t);
+    if (!ready && g_layout_blocked && may_defer) {
+        Deferred* d = (Deferred*)arena_alloc(sizeof(Deferred));
+        d->decl = decl;
+        d->t = t;
+        d->next = g_deferred;
+        g_deferred = d;
+        return;
+    }
+    if (t->kind == SK_STRUCT) {
+        uint32_t base_align = 1;
+        for (int i = 0; i < t->nfields; i++) {
+            SField* f = &t->fields[i];
+            if (f->requested_align && !t->is_packed && layout(f->t) && f->requested_align < f->t->align) {
+                ck_err(k, decl->kids[i]->b,
+                       "field @align(%u) cannot reduce natural alignment %u outside a packed struct",
+                       f->requested_align, f->t->align);
+                f->requested_align = f->t->align;
+            }
+            uint32_t a = t->is_packed ? 1 : sema_align(f->t);
+            if (f->requested_align) a = f->requested_align;
+            if (base_align < a) base_align = a;
+        }
+        if (t->requested_align && t->requested_align < base_align) {
+            ck_err(k, decl->b, "struct @align(%u) cannot reduce computed alignment %u", t->requested_align, base_align);
+            t->requested_align = base_align;
+        }
+    }
+    g_layout_blocked = g_layout_poisoned = 0;
+    if (layout(t)) {
+        if (t->kind == SK_STRUCT) check_struct_offsets(k, decl, t);
+        return;
+    }
+    if (!g_layout_blocked && !g_layout_poisoned)
+        ck_err(k, decl, "type '%s' has a recursive value layout; use a pointer to break the cycle", decl->str);
+    t->invalid_layout = 1;
+    t->size = t->align = 1; // poison recovery after the required diagnostic
+    t->calc = 0;
+}
+
+static void finish_deferred_layouts(Ck* k) {
+    while (g_deferred) {
+        Deferred* d = g_deferred;
+        g_deferred = d->next;
+        finish_layout(k, d->decl, d->t, 0);
+    }
+}
+
 static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
-    k->type_build_depth++;
     t->kind = SK_STRUCT;
     t->name = decl->str;
     t->decl = decl;
@@ -6686,20 +6624,12 @@ static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
     memset(t->fields, 0, (size_t)(decl->nkids ? decl->nkids : 1) * sizeof(SField));
     for (int i = 0; i < decl->nkids; i++) {
         t->fields[i].name = decl->kids[i]->str;
-        t->fields[i].t = build_type_ctx(k, decl->kids[i]->a, 2);
+        t->fields[i].t = build_type(k, decl->kids[i]->a);
         t->fields[i].default_value = decl->kids[i]->c;
         t->fields[i].requested_align = checked_layout_align(k, decl->kids[i]->b, "field");
         if (decl->kids[i]->d) {
             t->fields[i].has_offset = 1;
             t->fields[i].requested_offset = checked_layout_offset(k, decl->kids[i]->d);
-        }
-        if (t->fields[i].requested_align && !t->is_packed &&
-            layout(t->fields[i].t) &&
-            t->fields[i].requested_align < t->fields[i].t->align) {
-            ck_err(k, decl->kids[i]->b,
-                   "field @align(%u) cannot reduce natural alignment %u outside a packed struct",
-                   t->fields[i].requested_align, t->fields[i].t->align);
-            t->fields[i].requested_align = t->fields[i].t->align;
         }
         if ((decl->kids[i]->flags & F_EMBED) &&
             t->fields[i].t->kind != SK_STRUCT &&
@@ -6724,28 +6654,9 @@ static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
             if (strcmp(t->fields[i].name, t->fields[j].name) == 0)
                 ck_err(k, decl, "duplicate field '%s' in struct %s",
                        t->fields[i].name, decl->str);
-    uint32_t base_align = 1;
-    for (int i = 0; i < t->nfields; i++) {
-        uint32_t a = t->is_packed ? 1 : sema_align(t->fields[i].t);
-        if (t->fields[i].requested_align) a = t->fields[i].requested_align;
-        if (base_align < a) base_align = a;
-    }
     t->requested_align = checked_layout_align(k, decl->b, "struct");
-    if (t->requested_align && t->requested_align < base_align) {
-        ck_err(k, decl->b, "struct @align(%u) cannot reduce computed alignment %u", t->requested_align, base_align);
-        t->requested_align = base_align;
-    }
     t->building = 0;
-    if (!layout(t)) {
-        if (k->type_build_depth == 1)
-            ck_err(k, decl,
-                   "type '%s' has a recursive value layout; use a pointer to break the cycle",
-                   decl->str);
-        t->invalid_layout = 1;
-        t->size = t->align = 1; // poison recovery after the required diagnostic
-        t->calc = 0;
-    } else check_struct_offsets(k, decl, t);
-    k->type_build_depth--;
+    finish_layout(k, decl, t, 1);
     return t;
 }
 
@@ -6784,7 +6695,6 @@ static SType* fill_bits_type(Ck* k, Node* decl, SType* t) {
 }
 
 static SType* fill_union_type(Ck* k, Node* decl, SType* t) {
-    k->type_build_depth++;
     if (decl->nkids == 0) ck_err(k, decl, "a union needs at least one variant");
     t->kind = SK_UNION;
     t->name = decl->str;
@@ -6798,7 +6708,7 @@ static SType* fill_union_type(Ck* k, Node* decl, SType* t) {
     memset(t->fields, 0, (size_t)(decl->nkids ? decl->nkids : 1) * sizeof(SField));
     for (int i = 0; i < decl->nkids; i++) {
         t->fields[i].name = decl->kids[i]->str;
-        t->fields[i].t = decl->kids[i]->a ? build_type_ctx(k, decl->kids[i]->a, 2) : NULL;
+        t->fields[i].t = decl->kids[i]->a ? build_type(k, decl->kids[i]->a) : NULL;
     }
     for (int i = 0; i < t->nfields; i++)
         for (int j = i + 1; j < t->nfields; j++)
@@ -6806,16 +6716,7 @@ static SType* fill_union_type(Ck* k, Node* decl, SType* t) {
                 ck_err(k, decl, "duplicate variant '%s' in union %s",
                        t->fields[i].name, decl->str);
     t->building = 0;
-    if (!layout(t)) {
-        if (k->type_build_depth == 1)
-            ck_err(k, decl,
-                   "type '%s' has a recursive value layout; use a pointer to break the cycle",
-                   decl->str);
-        t->invalid_layout = 1;
-        t->size = t->align = 1;
-        t->calc = 0;
-    }
-    k->type_build_depth--;
+    finish_layout(k, decl, t, 1);
     return t;
 }
 
@@ -7261,6 +7162,254 @@ static void install_predeclared_error_types(Scope* file_scope) {
     scope_insert(file_scope, 1, error);
 }
 
+/*
+ * Top-level declarations are order-independent within a file (Compiler #5):
+ * every name is entered first, then each declaration is resolved in order, or
+ * earlier by the first lookup that reaches it. A type needed while its own
+ * fields are being built yields its unfinished nominal type, which a pointer
+ * or slice may hold; layout() rejects an inline cycle. An alias, global, or
+ * constant reached while it is resolving depends on itself.
+ */
+enum { MAX_RESOLVING = 256 };
+static Sym* g_resolving[MAX_RESOLVING];
+static int g_nresolving;
+static Scope* g_import_scope;
+
+static Node* resolve_site(Sym* s) { return s->top->kind == N_VAR ? s->decl : s->top; }
+
+static void report_cycle(Ck* k, Sym* s) {
+    if (s->in_cycle) return;
+    s->in_cycle = 1;
+    char chain[512];
+    size_t o = 0;
+    int from = g_nresolving - 1;
+    while (from > 0 && g_resolving[from] != s) from--;
+    for (int i = from; i < g_nresolving && o < sizeof chain; i++)
+        o += (size_t)snprintf(chain + o, sizeof chain - o, "'%.*s' -> ",
+                              (int)g_resolving[i]->len, g_resolving[i]->name);
+    if (o < sizeof chain) snprintf(chain + o, sizeof chain - o, "'%.*s'", (int)s->len, s->name);
+    ck_err(k, resolve_site(s), "'%.*s' depends on itself: %s", (int)s->len, s->name, chain);
+}
+
+static void resolve_global(Ck* k, Sym* s, Node* n) {
+    Node* binder = n->kids[0];
+    s->type = T_ERR; // a reference while its type is built is a cycle
+    SType* t = build_type(k, binder->a);
+    if (t && t->kind == SK_ERROR_DOMAIN)
+        ck_err(k, binder, "error-domain names are identities, not value types; use Error");
+    if (n->flags & F_EXPO) { // an exported C global (C Interop #6)
+        SType* stack[512];
+        if (t->kind != SK_ERR && !is_c_abi_type(t, CABI_FIELD, stack, 0))
+            ck_err(k, binder->a, "C global '%.*s' has type %s, which is not C-ABI compatible",
+                   (int)binder->len, binder->str, type_name(t));
+    }
+    s->type = t;
+    s->is_const = (n->flags & F_CONST) != 0 || t->kind == SK_STATICMAP;
+    if (n->b) {
+        if (t->kind == SK_STATICMAP) {
+            if (n->flags & F_CONST) ck_err(k, n, "const is not permitted on a StaticMap declaration");
+            check_staticmap(k, n->b, t);
+        } else if (n->b->kind == N_STRUCTLIT && !n->b->a && (t->kind == SK_STRUCT || t->kind == SK_BITS))
+            check_structlit(k, n->b, t);
+        else if (n->b->kind == N_ARRAYLIT && t->kind == SK_ARRAY) check_arraylit(k, n->b, t);
+        else coerce(k, n->b, t);
+        if (t->kind == SK_CONTRACT && (n->b->flags & F_CONST)) s->is_const_backed = 1;
+        if (t->kind == SK_PRIM && t->prim == P_STRING &&
+            !t->is_mut && n->b->kind == N_STR)
+            s->is_literal_backed = 1;
+    } else if (t->kind == SK_STATICMAP) {
+        if (n->flags & F_CONST) ck_err(k, n, "const is not permitted on a StaticMap declaration");
+        ck_err(k, n, "StaticMap declaration requires a brace initializer");
+    } else if (n->flags & F_CONST) {
+        ck_err(k, n, "const declaration requires an initializer");
+    }
+}
+
+// A distinct type's layout is its base's; its own cycle is reported like a struct's.
+static void resolve_distinct(Ck* k, Node* n, SType* t) {
+    t->building = 1;
+    t->base = build_type(k, n->a);
+    t->building = 0;
+    finish_layout(k, n, t, 1);
+}
+
+static void resolve_top(Ck* k, Sym* s) {
+    Node* n = s->top;
+    if (s->decl_state == DECL_RESOLVING) {
+        if (n->kind == N_ALIAS || n->kind == N_VAR || n->kind == N_EXTERNVAR) report_cycle(k, s);
+        return;
+    }
+    if (g_nresolving == MAX_RESOLVING) {
+        ck_err(k, resolve_site(s), "declarations nest too deeply to resolve '%.*s'", (int)s->len, s->name);
+        return;
+    }
+    s->decl_state = DECL_RESOLVING;
+    g_resolving[g_nresolving++] = s;
+    // resolve in the declaration's own top-level context, whatever reached it
+    Ck top = {0};
+    top.d = k->d;
+    top.pending = k->pending;
+    top.scope = n->kind == N_VAR && is_root_node(k->d, n) ? g_import_scope : g_file_scope;
+    SType* t = s->type;
+    switch (n->kind) {
+    case N_VAR:
+        resolve_global(&top, s, n);
+        break;
+    case N_EXTERNVAR: {
+        s->type = T_ERR;
+        SType* et = build_type(&top, n->a);
+        SType* stack[512];
+        if (et->kind != SK_ERR && !is_c_abi_type(et, CABI_FIELD, stack, 0))
+            ck_err(&top, n->a, "C global '%.*s' has type %s, which is not C-ABI compatible",
+                   (int)n->len, n->str, type_name(et));
+        s->type = et;
+        break;
+    }
+    case N_STRUCT:
+        if (!s->is_generic) fill_struct_type(&top, n, t);
+        break;
+    case N_BITS:
+        fill_bits_type(&top, n, t);
+        break;
+    case N_UNION:
+        if (!s->is_generic) fill_union_type(&top, n, t);
+        break;
+    case N_ENUM:
+        check_enum_decl(&top, n, t);
+        break;
+    case N_CONTRACT:
+        // A contract method dispatches through a vtable slot, the same
+        // "callable value" shape as a function-value type (see
+        // has_mut_param) — a mut parameter has no way to be validated
+        // against the implementing method at the call site.
+        for (int mi = 0; mi < n->nkids; mi++) {
+            Node* m = n->kids[mi];
+            check_param_count(&top, m, m->nkids + 1, 1); // the receiver the slot passes
+            for (int pi = 0; pi < m->nkids; pi++)
+                if (m->kids[pi]->flags & F_MUT)
+                    ck_err(&top, m->kids[pi], "contract method parameter cannot be mut");
+        }
+        break;
+    case N_ALIAS: {
+        s->type = T_ERR; // the alias is not visible in its own expansion
+        SType* actual = build_type(&top, n->a);
+        if (!s->in_cycle) s->type = actual;
+        break;
+    }
+    case N_DISTINCT:
+        resolve_distinct(&top, n, t);
+        break;
+    case N_ERROR_DOMAIN:
+        check_error_domain_decl(&top, n);
+        break;
+    default:
+        break;
+    }
+    k->pending = top.pending;
+    g_nresolving--;
+    s->decl_state = DECL_DONE;
+}
+
+/* Enter every top-level name of the unit before any is resolved: imports,
+ * types (nominal ones with their unfinished type, so a pointer may name them
+ * at once), globals, and C globals. Function names are only noted, so that a
+ * global colliding with an earlier function is reported where it is written. */
+static void enter_top_level(Ck* k, Node* file, Scope* fs, Scope* is) {
+    static Scope fn_names;
+    memset(&fn_names, 0, sizeof fn_names);
+    for (int i = 0; i < file->nkids; i++) {
+        Node* n = file->kids[i];
+        switch (n->kind) {
+        case N_IMPORT:
+            k->scope = is;
+            declare_val(k, n, SYM_MODULE, n->str, n->len);
+            k->scope = fs;
+            break;
+        case N_FUNC:
+            if (!(n->flags & (F_METHOD | F_ASSOC)) && !scope_find(&fn_names, 0, n->str, n->len))
+                scope_insert(&fn_names, 0, sym_new(SYM_FUNC, n->str, n->len));
+            break;
+        case N_EXTERN:
+            for (int j = 0; j < n->nkids; j++) {
+                Node* f = n->kids[j];
+                if (f->kind != N_EXTERNVAR) {
+                    if (!scope_find(&fn_names, 0, f->str, f->len))
+                        scope_insert(&fn_names, 0, sym_new(SYM_FUNC, f->str, f->len));
+                    continue;
+                }
+                if (scope_find(&fn_names, 0, f->str, f->len)) {
+                    ck_err(k, f, "duplicate name '%.*s' in this scope", (int)f->len, f->str);
+                    continue;
+                }
+                Sym* s = declare_val(k, f, SYM_VAR, f->str, f->len);
+                if (!s) continue;
+                s->is_mut = (f->flags & F_MUT) != 0;
+                s->is_global = 1;
+                s->is_extern = 1;
+                s->decl = f;
+                s->top = f;
+                s->decl_state = DECL_ENTERED;
+                f->sym = s;
+            }
+            break;
+        case N_VAR: {
+            Node* binder = n->kids[0];
+            if (scope_find(&fn_names, 0, binder->str, binder->len)) {
+                ck_err(k, n, "duplicate name '%.*s' in this scope", (int)binder->len, binder->str);
+                break;
+            }
+            Sym* s = declare_val(k, n, SYM_VAR, binder->str, binder->len);
+            if (!s) break;
+            s->is_const = (n->flags & F_CONST) != 0;
+            s->is_pub = (n->flags & F_PUB) != 0;
+            s->is_mut = (n->flags & F_MUT) != 0;
+            s->is_global = 1;
+            s->decl = binder;
+            s->init = n->b;
+            s->top = n;
+            s->decl_state = DECL_ENTERED;
+            binder->sym = s; // emitter: global storage key
+            break;
+        }
+        case N_STRUCT: case N_BITS: case N_CONTRACT: case N_ENUM: case N_UNION:
+        case N_DISTINCT: case N_ERROR_DOMAIN: case N_ALIAS: {
+            Sym* s = declare_type(k, n, n->str, n->len);
+            if (!s) break;
+            s->decl = n;
+            s->top = n;
+            s->is_generic = n->c != NULL;
+            s->decl_state = DECL_ENTERED;
+            if (n->kind == N_ALIAS) {
+                if (s->is_generic) { // stamped at each use; nothing to resolve
+                    SType* marker = st_new(SK_TEMPLATE);
+                    marker->name = n->str;
+                    marker->decl = n;
+                    s->type = marker;
+                    s->decl_state = DECL_DONE;
+                }
+                break;
+            }
+            SType* t = st_new(n->kind == N_STRUCT ? SK_STRUCT :
+                              n->kind == N_BITS ? SK_BITS :
+                              n->kind == N_ENUM ? SK_ENUM :
+                              n->kind == N_UNION ? SK_UNION :
+                              n->kind == N_DISTINCT ? SK_DISTINCT :
+                              n->kind == N_ERROR_DOMAIN ? SK_ERROR_DOMAIN : SK_CONTRACT);
+            t->name = n->str;
+            t->decl = n;
+            if (n->kind == N_ERROR_DOMAIN) {
+                n->sym = s;
+                t->size = t->align = 8;
+            }
+            s->type = t;
+            break;
+        }
+        default:
+            break;
+        }
+    }
+}
+
 int sema_check(Node* file, Diag* d) {
     static Scope file_scope; // static: outlives the call for stamp re-checks
     static Scope import_scope; // likewise: root generics stamp under it
@@ -7282,9 +7431,23 @@ int sema_check(Node* file, Diag* d) {
     install_predeclared_error_types(&file_scope);
     // import_scope: root's own aliased imports; see is_root_node
     import_scope.parent = &file_scope;
+    g_import_scope = &import_scope;
     Ck k = {0};
     k.d = d;
     k.scope = &file_scope;
+    enter_top_level(&k, file, &file_scope, &import_scope);
+    // every type is complete before any function or global is checked
+    for (int i = 0; i < file->nkids; i++) {
+        Node* n = file->kids[i];
+        switch (n->kind) {
+        case N_STRUCT: case N_BITS: case N_CONTRACT: case N_ENUM: case N_UNION:
+        case N_DISTINCT: case N_ERROR_DOMAIN: case N_ALIAS: break;
+        default: continue;
+        }
+        Sym* s = scope_find(&file_scope, 1, n->str, n->len);
+        if (s && s->top == n) resolved(&k, s);
+    }
+    finish_deferred_layouts(&k);
     for (int i = 0; i < file->nkids; i++) {
         Node* n = file->kids[i];
         switch (n->kind) {
@@ -7293,13 +7456,6 @@ int sema_check(Node* file, Diag* d) {
             if (root) k.scope = &import_scope;
             check_stmt(&k, n);
             if (root) k.scope = &file_scope;
-            break;
-        }
-        case N_IMPORT: {
-            k.scope = &import_scope;
-            Sym* m = declare_val(&k, n, SYM_MODULE, n->str, n->len);
-            (void)m;
-            k.scope = &file_scope;
             break;
         }
         case N_FUNC: {
@@ -7355,7 +7511,7 @@ int sema_check(Node* file, Diag* d) {
             for (int j = 0; j < n->nkids; j++) {
                 Node* f = n->kids[j];
                 if (f->kind == N_EXTERNVAR) {
-                    declare_extern_var(&k, f);
+                    if (f->sym) resolved(&k, node_sym(f));
                     continue;
                 }
                 Sym* s = declare_func(&k, f, 1);
@@ -7363,136 +7519,9 @@ int sema_check(Node* file, Diag* d) {
             }
             break;
         }
-        case N_VAR: {
-            Node* binder = n->kids[0];
-            SType* t = build_type(&k, binder->a);
-            if (t && t->kind == SK_ERROR_DOMAIN)
-                ck_err(&k, binder, "error-domain names are identities, not value types; use Error");
-            if (n->flags & F_EXPO) { // an exported C global (C Interop #6)
-                SType* stack[512];
-                if (t->kind != SK_ERR && !is_c_abi_type(t, CABI_FIELD, stack, 0))
-                    ck_err(&k, binder->a, "C global '%.*s' has type %s, which is not C-ABI compatible",
-                           (int)binder->len, binder->str, type_name(t));
-            }
-            Sym* s = declare_val(&k, n, SYM_VAR, binder->str, binder->len);
-            if (s) {
-                s->type = t;
-                s->is_const = (n->flags & F_CONST) != 0 || t->kind == SK_STATICMAP;
-                s->is_pub = (n->flags & F_PUB) != 0;
-                s->is_mut = (n->flags & F_MUT) != 0;
-                s->is_global = 1;
-                s->decl = binder;
-                s->init = n->b;
-                binder->sym = s; // emitter: global storage key
-            }
-            if (n->b) {
-                int root = is_root_node(d, n);
-                if (root) k.scope = &import_scope;
-                if (t->kind == SK_STATICMAP) {
-                    if (n->flags & F_CONST) ck_err(&k, n, "const is not permitted on a StaticMap declaration");
-                    check_staticmap(&k, n->b, t);
-                } else if (n->b->kind == N_STRUCTLIT && !n->b->a && (t->kind == SK_STRUCT || t->kind == SK_BITS))
-                    check_structlit(&k, n->b, t);
-                else if (n->b->kind == N_ARRAYLIT && t->kind == SK_ARRAY) check_arraylit(&k, n->b, t);
-                else coerce(&k, n->b, t);
-                if (root) k.scope = &file_scope;
-                if (s && t->kind == SK_CONTRACT && (n->b->flags & F_CONST)) s->is_const_backed = 1;
-                if (s && t->kind == SK_PRIM && t->prim == P_STRING &&
-                    !t->is_mut && n->b->kind == N_STR)
-                    s->is_literal_backed = 1;
-            } else if (t->kind == SK_STATICMAP) {
-                if (n->flags & F_CONST) ck_err(&k, n, "const is not permitted on a StaticMap declaration");
-                ck_err(&k, n, "StaticMap declaration requires a brace initializer");
-            } else if (n->flags & F_CONST) {
-                ck_err(&k, n, "const declaration requires an initializer");
-            }
+        case N_VAR:
+            if (n->kids[0]->sym) resolved(&k, node_sym(n->kids[0]));
             break;
-        }
-        case N_STRUCT: case N_BITS: case N_CONTRACT: case N_ENUM: case N_UNION: {
-            Sym* s = declare_type(&k, n, n->str, n->len);
-            if (!s) break;
-            SType* t = st_new(n->kind == N_STRUCT ? SK_STRUCT :
-                              n->kind == N_BITS ? SK_BITS :
-                              n->kind == N_ENUM ? SK_ENUM :
-                              n->kind == N_UNION ? SK_UNION : SK_CONTRACT);
-            t->name = n->str;
-            t->decl = n;
-            s->is_generic = n->c != NULL;
-            resolve_type_fixes(&k, s, t, n);
-            if (!s->is_generic && n->kind == N_STRUCT) {
-                // register first (self-reference via pointer), then build fields
-                fill_struct_type(&k, n, t);
-            } else if (n->kind == N_BITS) {
-                fill_bits_type(&k, n, t);
-            } else if (!s->is_generic && n->kind == N_UNION) {
-                fill_union_type(&k, n, t);
-            } else if (n->kind == N_ENUM) {
-                check_enum_decl(&k, n, t);
-            } else if (n->kind == N_CONTRACT) {
-                // A contract method dispatches through a vtable slot, the same
-                // "callable value" shape as a function-value type (see
-                // has_mut_param) — a mut parameter has no way to be validated
-                // against the implementing method at the call site.
-                for (int mi = 0; mi < n->nkids; mi++) {
-                    Node* m = n->kids[mi];
-                    check_param_count(&k, m, m->nkids + 1, 1); // the receiver the slot passes
-                    for (int pi = 0; pi < m->nkids; pi++)
-                        if (m->kids[pi]->flags & F_MUT)
-                            ck_err(&k, m->kids[pi],
-                                   "contract method parameter cannot be mut");
-                }
-            }
-            break;
-        }
-        case N_ALIAS: {
-            Sym* s = declare_type(&k, n, n->str, n->len);
-            if (!s) break;
-            int was_forward = s->type && s->type->kind == SK_FORWARD;
-            Node* forward_ref = was_forward ? s->decl : NULL;
-            s->is_generic = n->c != NULL;
-            if (s->is_generic) {
-                if (was_forward)
-                    ck_err(&k, forward_ref,
-                           "forward generic type '%.*s' must be declared before use with explicit arguments",
-                           (int)forward_ref->len, forward_ref->str);
-                SType* marker = st_new(SK_FORWARD);
-                marker->name = n->str;
-                marker->decl = n;
-                resolve_type_fixes(&k, s, marker, n);
-            } else {
-                s->type = NULL; // the alias name is not visible in its own expansion
-                SType* actual = build_type(&k, n->a);
-                resolve_type_fixes(&k, s, actual, n);
-            }
-            break;
-        }
-        case N_DISTINCT: {
-            Sym* s = declare_type(&k, n, n->str, n->len);
-            if (!s) break;
-            SType* t = st_new(SK_DISTINCT);
-            t->name = n->str;
-            t->decl = n;
-            resolve_type_fixes(&k, s, t, n);
-            t->base = build_type(&k, n->a);
-            if (!layout(t)) {
-                ck_err(&k, n, "type '%s' has a recursive value layout; use a pointer to break the cycle", n->str);
-                t->size = t->align = 1;
-                t->calc = 0;
-            }
-            break;
-        }
-        case N_ERROR_DOMAIN: {
-            Sym* s = declare_type(&k, n, n->str, n->len);
-            if (!s) break;
-            n->sym = s;
-            SType* t = st_new(SK_ERROR_DOMAIN);
-            t->name = n->str;
-            t->decl = n;
-            t->size = t->align = 8;
-            resolve_type_fixes(&k, s, t, n);
-            check_error_domain_decl(&k, n);
-            break;
-        }
         case N_SIGNING:
             register_signing(&k, n);
             break;
@@ -7500,6 +7529,8 @@ int sema_check(Node* file, Diag* d) {
             break;
         }
     }
+
+    finish_deferred_layouts(&k); // types first built while checking bodies
 
     // Generics #13: a 'specialized' template with zero specializations in the
     // compiled program is a declaration error.
@@ -7513,11 +7544,6 @@ int sema_check(Node* file, Diag* d) {
                    (int)n->len, n->str);
     }
 
-    for (Sym* s = file_scope.types; s; s = s->next)
-        if (s->is_forward)
-            ck_err(&k, s->decl,
-                   "forward-referenced type '%.*s' was never declared in this module",
-                   (int)s->len, s->name);
 
     // Contracts precede their methods; validate their complete method sets now.
     k.scope = &file_scope;

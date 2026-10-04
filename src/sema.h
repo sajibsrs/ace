@@ -11,7 +11,7 @@ enum {
     SK_PRIM, SK_PTR, SK_SLICE, SK_ARRAY, SK_TUPLE, SK_FUNC,
     SK_STRUCT, SK_ENUM, SK_CONTRACT, SK_DISTINCT, SK_ERROR_DOMAIN,
     SK_TYPEPARAM, SK_ERROR,
-    SK_UNION, SK_BITS, SK_STATICMAP, SK_VOID, SK_UT, SK_FORWARD, SK_ERR
+    SK_UNION, SK_BITS, SK_STATICMAP, SK_VOID, SK_UT, SK_TEMPLATE, SK_ERR
 };
 
 enum {
@@ -71,12 +71,16 @@ struct Sym {
     const char* name; uint32_t len;
     uint8_t     kind;
     uint8_t     is_const, is_mut, is_pub, is_noalias, is_generic, is_extern;
-    uint8_t     is_param, is_const_backed, is_global, is_forward;
+    uint8_t     is_param, is_const_backed, is_global;
+    // top-level declarations are entered before any is resolved; a lookup
+    // resolves one still DECL_ENTERED on demand (Compiler #5)
+    uint8_t     decl_state, in_cycle;
     uint8_t     is_literal_backed; // string binding initialized from a literal
     uint32_t    seq;    // declaration order across the unit
     SType*      type;
     Node*       decl;   // binder/declaration node (slot key for the emitter)
     Node*       init;   // top-level initializer (static Error validation/emission)
+    Node*       top;    // top-level declaration resolved on demand
     Sym*        next;
     Sym*        overload; // same-scope function overloads; not part of scope chain
     // generic specialization (Generics #9–14): a template chains the

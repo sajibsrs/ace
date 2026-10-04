@@ -1,0 +1,27 @@
+/* A top-level declaration whose resolution reaches itself is an error,
+ * reported once per cycle: constants, aliases (even through a pointer), a
+ * layout query inside the type's own fields, and a mutual inline layout.
+ */
+
+A: const int = B + 1
+B: const int = C * 2
+C: const int = A
+
+P: type = Q
+Q: type = *P
+
+S: struct {
+    x: [sizeof(S)]u8,
+}
+
+M: struct {
+    n: N,
+}
+
+N: struct {
+    m: M,
+}
+
+main(): int {
+    return 0
+}

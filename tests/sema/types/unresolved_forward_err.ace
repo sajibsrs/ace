@@ -1,9 +1,0 @@
-/* Unresolved forward type fixture. */
-
-A: struct {
-    missing: **Missing,
-}
-
-main(): int {
-    return 0
-}

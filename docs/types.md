@@ -198,20 +198,10 @@ Right: struct {
 }
 ```
 
-The later name in a same-module field is permitted only when every type edge
-from the field is a pointer (`*Later`, `**Later`); the same rule applies to a
-tagged-union payload type. The declaration must appear later in the file.
-Arrays, tuples, aliases, and distinct wrappers do not extend the pointer-only
-path, so `[1]*Later` and `*[1]Later` still require `Later` to be declared first.
-Before the declaration, member access, dereference, `sizeof`, and other
-operations requiring the exact layout are rejected. An unresolved forward-
-referenced name is diagnosed at the end of the file.
-
-A bare slice exactly at the field or variant root (`[]Later`) is also
-permitted, for the same reason a pointer is: its pointer-plus-count
-representation doesn't depend on the element's size either. This lets two
-nominal types reference each other through a runtime-sized collection without
-boxing every element behind a pointer:
+A slice breaks a cycle for the same reason a pointer does: its
+pointer-plus-count representation doesn't depend on the element's size. Two
+nominal types can therefore reference each other through a runtime-sized
+collection without boxing every element behind a pointer:
 
 ```ace
 Json: union {
@@ -225,10 +215,6 @@ Pair: struct {
 }
 ```
 
-The allowance stops at the slice: `*[]Later` (a pointer reached first) still
-requires `Later` to be declared first, while `[]*Later` (a pointer reached
-after a root slice) forwards on the ordinary pointer rule above.
-
 Direct or indirect inline recursion is rejected instead of receiving a
 placeholder size:
 
@@ -237,6 +223,47 @@ Invalid: struct {
     nested: Invalid // recursive value layout
 }
 ```
+
+## Declaration order
+
+Top-level types, aliases, globals, constants, and imports may be declared in
+any order within a file: a field, array length, alias, or initializer may name
+a declaration written after it, inline or through a pointer. Each declaration
+is resolved when it is first needed, so its layout is the same as if it had
+been written first. Locals inside a function body still follow
+declaration-before-use, and function calls follow the rules in
+[Declaration order and forward calls](function.md#declaration-order-and-forward-calls).
+
+```ace
+buffer: [SIZE]u8
+
+SIZE: const usize = 2 * LINE
+LINE: const usize = 64
+```
+
+A declaration that needs itself to be resolved is an error naming the cycle:
+
+```ace
+A: const int = B + 1 // 'A' depends on itself: 'A' -> 'B' -> 'A'
+B: const int = A
+
+P: type = *P // an alias expands to itself, even through a pointer
+
+S: struct {
+    x: [sizeof(S)]u8, // type 'S' depends on its own layout
+}
+```
+
+### Design rationale
+
+Go, Zig, Rust, Swift, Java, C#, D, and Odin all make top-level declarations
+order-independent; only C and C++ require prototypes or ordering. One rule at
+every position replaces the former pointer-only and root-slice forward-type
+exceptions, whose boundaries (`[1]*Later` rejected, `[]*Later` accepted) had
+to be memorized. The compile-time cost is one loop that enters every name
+before checking, measured at about 1% of a check-only run on a 20,000-function
+file; resolution itself happens once per declaration, only in a different
+order.
 
 ## Writable views
 

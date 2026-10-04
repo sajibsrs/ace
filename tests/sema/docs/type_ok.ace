@@ -26,6 +26,11 @@ Right: struct { left: *Left }
 Json: union { none, object: []Pair }
 Pair: struct { key: string, value: Json }
 
+order_buffer: [ORDER_SIZE]u8
+
+ORDER_SIZE: const usize = 2 * ORDER_LINE
+ORDER_LINE: const usize = 64
+
 add(a: int, b: int): int {
     return a + b
 }
