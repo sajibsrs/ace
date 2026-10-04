@@ -1,0 +1,30 @@
+/* A forward call is exempt from declaration-before-use; its arguments are not.
+ * Each use of 'one' before its declaration is reported once, wherever the
+ * callee is declared. */
+
+Box: struct { v: int }
+
+run(f: (int): int): int {
+    return f(7)
+}
+
+main(): int {
+    b: Box = Box { v = 1 }
+    return run(one) + later(one) + b.after(one) + Box::made(one).v
+}
+
+later(f: (int): int): int {
+    return f(7)
+}
+
+Box.after(f: (int): int): int {
+    return f(self.v)
+}
+
+Box::made(f: (int): int): Box {
+    return Box { v = f(1) }
+}
+
+one(x: int): int {
+    return x * 2
+}

@@ -177,6 +177,7 @@ enum {
     F_INLINE = 1048576, // a function expanded at every direct call
     F_INLCALLS = 2097152, // a function body with a direct call to an inline function
     F_COLD = 4194304, // @cold: a function whose calls are rare
+    F_REPORTED = 8388608, // an expression whose error is already reported
 };
 
 // Compiler-backed standard-module functions. These markers live only on the

@@ -560,6 +560,10 @@ the same declarations in view as before except that the deferred calls see the
 whole file, so each use of their results is checked at its real type:
 `y: u8 = later()` is an error when `later` returns `u64`.
 
+Only the callee is exempt. A deferred call's arguments see what any expression
+at that position sees, so `later(one)` is an error when `one` is declared after
+the call, as it is wherever `later` is declared.
+
 A local shadows a same-named function or global from its declarator to the end
 of its block, its own initializer included. `get: usize = get(a)` is therefore
 an error (`'get' is not callable`); name the local differently. A call written

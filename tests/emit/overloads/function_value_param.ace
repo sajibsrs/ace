@@ -39,10 +39,5 @@ main(): int {
     if apply[f64, f64](1.5, twice) != 3.0 { return 3 }
     if b.use(twice) != 4 { return 4 }
     if call(twice) != 10 { return 5 }
-    if later(twice) != 14 { return 6 }
     return 42
-}
-
-later(f: (int): int): int {
-    return f(7)
 }

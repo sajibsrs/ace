@@ -189,6 +189,16 @@ for want in \
     fi
 done
 
+# A forward call's arguments keep declaration-before-use, wherever the callee
+# is declared, and each error is reported once.
+forward_value_errors=$("$ACE" tests/sema/functions/forward_value_arg_err.ace 2>&1)
+for want in 13:16 13:29 13:44 13:61 "4 errors"; do
+    if ! printf '%s\n' "$forward_value_errors" | grep -qF "$want"; then
+        echo "FAIL: forward_value_arg_err.ace should report: $want"
+        fail=1
+    fi
+done
+
 # A call resolved at end of file is checked where its value lands, not
 # accepted for its poison type.
 for f in pending_result_decl pending_result_return forward_result_decl; do

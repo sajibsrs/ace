@@ -339,6 +339,7 @@ typedef struct {
     // fresh_seq on, are visible, unless see_all (a call that was pending)
     uint32_t seen_seq, fresh_seq;
     int     see_all;
+    uint32_t call_seq; // end-of-file resolution: last declaration the call saw
     int     quiet;   // trying an overload candidate: count errors, print none
     int     quiet_errors;
 } Ck;
@@ -522,10 +523,21 @@ static void scope_insert(Scope* sc, int types, Sym* s) {
  * The end-of-file re-check sees exactly the declarations the body's first
  * check saw, so name lookup, builtin shadowing, and overload selection land
  * as they did; only a call that was pending resolves against every
- * declaration, as it did at end of file.
+ * declaration, as it did at end of file. Its arguments see what the call
+ * saw (args_view): declaration-before-use exempts the call, not its
+ * arguments.
  */
 static int visible(Ck* k, Sym* s) {
-    return !k->final || k->see_all || s->seq <= k->seen_seq || s->seq >= k->fresh_seq;
+    if (k->see_all) return 1;
+    if (k->call_seq) return s->seq <= k->call_seq;
+    return !k->final || s->seq <= k->seen_seq || s->seq >= k->fresh_seq;
+}
+
+// Enter a call's arguments: a pending call's wider view ends at its callee.
+static int args_view(Ck* k) {
+    int saved = k->see_all;
+    k->see_all = 0;
+    return saved;
 }
 
 static Sym* lookup_val(Ck* k, const char* name, uint32_t len) {
@@ -2448,6 +2460,7 @@ static void check_args(Ck* k, Node* call, SType* ft, int is_variadic) {
                got, want, is_variadic ? " (plus variadics)" : "");
         return;
     }
+    int saved = args_view(k);
     for (int i = 0; i < got; i++) {
         Node* arg = call->kids[i];
         int am = arg->kind == N_MUTARG;
@@ -2469,10 +2482,12 @@ static void check_args(Ck* k, Node* call, SType* ft, int is_variadic) {
             if (am) ck_err(k, arg, "'mut' marks declared parameters, not variadics");
         }
     }
+    k->see_all = saved;
 }
 
 static void check_mut_args(Ck* k, Node* call, Node* fndecl) {
     if (!fndecl) return;
+    int saved = args_view(k);
     for (int i = 0; i < call->nkids && i < fndecl->nkids; i++) {
         int am = call->kids[i]->kind == N_MUTARG;
         int pm = (fndecl->kids[i]->flags & F_MUT) != 0;
@@ -2489,6 +2504,7 @@ static void check_mut_args(Ck* k, Node* call, Node* fndecl) {
             }
         }
     }
+    k->see_all = saved;
 }
 
 // Indirect and contract-method calls never target a mut parameter — a
@@ -3032,6 +3048,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
 // Wrapper: every expression's computed type is annotated onto its node for
 // the emitter (single pass — types land where they are checked).
 static SType* expr_type(Ck* k, Node* e) {
+    if (e->flags & F_REPORTED) return e->ty = T_ERR;
     SType* t = expr_type_raw(k, e);
     e->ty = t;
     return t;
@@ -3072,8 +3089,11 @@ static SType* instantiate_generic_func_args(Ck* k, Sym* gs, SType** args, int na
         return ft;
     }
     Scope* saved_scope = k->scope;
+    uint32_t saved_call_seq = k->call_seq;
     if (gs->decl_scope) k->scope = gs->decl_scope;
+    k->call_seq = 0; // a stamp sees its template's declarations, not a call's arguments' view
     check_func_body(k, f); // stamping: body checked once per instantiation
+    k->call_seq = saved_call_seq;
     k->scope = saved_scope;
     k->tnames = sn; k->ttypes = st; k->nsub = ns;
     return ft;
@@ -3198,9 +3218,15 @@ static SType* overload_arg_type(Ck* k, Node* arg) {
     Node* raw = arg->kind == N_MUTARG ? arg->a : arg;
     if (raw->kind == N_ARRAYLIT) return NULL; // candidate parameter supplies its type
     if (raw->kind == N_STRUCTLIT && !raw->a) return NULL; // bare literal: parameter supplies its type
+    int saved = args_view(k);
     // matches no candidate exactly: only a sole candidate's parameter selects it
-    if (overloaded_func_name(k, raw)) return NULL;
-    SType* t = expr_type(k, raw);
+    int overloaded = overloaded_func_name(k, raw);
+    int errors = k->d->errors;
+    SType* t = overloaded ? NULL : expr_type(k, raw);
+    // the chosen candidate checks the argument again; report its error once
+    if (!k->quiet && k->d->errors != errors) raw->flags |= F_REPORTED;
+    k->see_all = saved;
+    if (overloaded) return NULL;
     if (t == T_UT_INT) {
         /* A character literal is a one-byte constant, so its overload-call
          * default is the byte type (Stdlib #15), not int. */
@@ -4114,6 +4140,7 @@ static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified, int 
         int rmut = (found->decl->flags & F_MUT) != 0;
         Node* recv = qualified ? (call->kids[0]->kind == N_MUTARG ? call->kids[0]->a : call->kids[0])
             : callee->a;
+        int saved = args_view(k);
         if (rmut) check_lvalue(k, recv, 1);
         else coerce(k, recv, b);
         int start = qualified ? 1 : 0;
@@ -4122,6 +4149,7 @@ static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified, int 
             int pi = i + (qualified ? 0 : 1);
             coerce(k, arg->kind == N_MUTARG ? arg->a : arg, method_ft->params[pi]);
         }
+        k->see_all = saved;
         if (found->decl->path && call->path &&
             strcmp(found->decl->path, call->path) != 0 && !found->is_pub)
             ck_err(k, call, "method '%.*s' is private", (int)callee->len, callee->str);
@@ -4173,10 +4201,12 @@ static SType* check_generic_assoc_call(Ck* k, Node* call, SType* owner, Sym* hea
             ? instantiate_generic_func_args(k, found, owner->args, owner->nargs, call)
             : found->type;
         if (found_ft->kind == SK_ERR) return T_ERR;
+        int saved = args_view(k);
         for (int i = 0; i < call->nkids; i++) {
             Node* arg = call->kids[i];
             coerce(k, arg->kind == N_MUTARG ? arg->a : arg, found_ft->params[i]);
         }
+        k->see_all = saved;
         if (found->decl->path && call->path &&
             strcmp(found->decl->path, call->path) != 0 && !found->is_pub)
             ck_err(k, call, "associated function '%.*s' is private", (int)callee->len, callee->str);
@@ -7499,6 +7529,9 @@ int sema_check(Node* file, Diag* d) {
         Node* call = pd->call;
         Node* callee = call->a;
         k.scope = pd->scope;
+        // the callee sees every declaration, its arguments only the call's
+        k.see_all = 1;
+        k.call_seq = pd->call_seq;
         if (pd->method) {
             SType* r = check_method_call(&k, call, pd->recv, pd->qualified, 1);
             call->ty = r;
@@ -7527,6 +7560,8 @@ int sema_check(Node* file, Diag* d) {
             }
         }
     }
+    k.see_all = 0;
+    k.call_seq = 0;
     /* Whatever consumed a pending call's value was checked against its poison
      * type. With every call resolved, re-check each function body that made
      * one (once per generic stamp) so those uses meet real types. */

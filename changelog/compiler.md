@@ -1,5 +1,9 @@
 # Compiler
 
+- A forward call's arguments keep declaration-before-use: resolving the call
+  at end of file widens only its callee's view, so a function value declared
+  after the call is an error wherever the callee is declared. An argument
+  whose check fails during overload selection is reported once, not twice.
 - Laid out the arm of a direct call to a `@cold` function, with the blocks
   reached only from it, after the function's other blocks, so the common path
   falls through; and let a phi share a loop phi's location when it is that
