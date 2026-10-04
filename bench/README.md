@@ -61,18 +61,18 @@ The small-size comparison against `cc` flatters Ace: `cc` pays process startup
 and header parsing that a 100-function corpus barely amortizes, so the growth
 column, not the ratio at small sizes, is the real signal.
 
-Function-count corpus, medians in ms, at `bfe7091` (`af1aeae`, the finished IR
+Function-count corpus, medians in ms, at `e9d9d4c` (`af1aeae`, the finished IR
 migration, in parentheses for Ace):
 
 | functions | lines | Ace debug | Ace release | `cc -O0` | `cc -O2` |
 |---|---|---|---|---|---|
-| 100 | 1,053 | 12.0 (14.6) | 12.4 (15.1) | 57.7 | 210.6 |
-| 1,000 | 10,353 | 36.3 (37.7) | 42.8 (41.0) | 221.4 | 1,608.7 |
-| 5,000 | 51,684 | 143.2 (147.4) | 174.0 (161.6) | 942.5 | 7,769.7 |
-| 20,000 | 206,684 | 570.8 (551.8) | 670.2 (605.9) | 3,650.4 | 31,480.9 |
+| 100 | 1,053 | 12.2 (14.6) | 13.1 (15.1) | 56.9 | 210.3 |
+| 1,000 | 10,353 | 35.8 (37.7) | 43.3 (41.0) | 224.4 | 1,568.3 |
+| 5,000 | 51,684 | 149.1 (147.4) | 176.7 (161.6) | 933.0 | 7,675.6 |
+| 20,000 | 206,684 | 585.2 (551.8) | 692.1 (605.9) | 3,621.5 | 30,891.4 |
 
-Growth is 3.9x for 5x the code and 4.0x for 4x, so this shape is still linear.
-Ace remains far faster to compile-to-object than `cc` at every size (0.18x
+Growth is 4.2x for 5x the code and 3.9x for 4x, so this shape is still linear.
+Ace remains far faster to compile-to-object than `cc` at every size (0.16x
 `-O0`, 0.02x `-O2` at 20,000). Since `af1aeae`, release at 5,000 to 20,000
 functions has grown 8-11% (the auto-vectorizer and wider inlining) and debug
 at most 3%; the small sizes are within a run's noise. Against Ace's own
@@ -108,16 +108,22 @@ A profile then put about 78% in `find_in`, `lookup_val`, and `declare_func`,
 and emit's symbol interning scanned every symbol per call. Scopes past 32 names
 now use a hash index and emit interns through a hash table.
 
+Order-independent top-level declarations (`9466b45`, `90651d1`) declare every
+top-level name before resolving any. Paired runs of `bfe7091` and `e9d9d4c` on
+the same files put that pass at +4.0% on 20,000 `types` (383.7 to 399.2 ms,
+median of 9 pairs, slower in every pair) and within noise (-1% to +2%) on the
+function-count corpus.
+
 Other shapes in ms, Ace debug linear on both:
 
 | shape | compiler | 1,000 | 5,000 | 20,000 | growth for 5x code | for 4x code |
 |---|---|---|---|---|---|---|
-| `types` | Ace debug | 25 | 100 | 375 | 3.9x | 3.8x |
-| `types` | `cc -O0` | 145 | 575 | 2,230 | 4.0x | 3.9x |
-| `types` | `cc -O2` | 394 | 1,921 | 7,721 | 4.9x | 4.0x |
-| `long` | Ace debug | 14 | 31 | 97 | 2.3x | 3.2x |
-| `long` | `cc -O0` | 109 | 1,548 | 20,024 | 14x | 13x |
-| `long` | `cc -O2` | 232 | 1,106 | crash ¹ | 4.8x | |
+| `types` | Ace debug | 25 | 104 | 393 | 4.2x | 3.8x |
+| `types` | `cc -O0` | 144 | 567 | 2,200 | 3.9x | 3.9x |
+| `types` | `cc -O2` | 396 | 1,878 | 7,632 | 4.7x | 4.1x |
+| `long` | Ace debug | 13 | 30 | 96 | 2.2x | 3.2x |
+| `long` | `cc -O0` | 106 | 1,540 | 19,248 | 14x | 13x |
+| `long` | `cc -O2` | 233 | 1,090 | crash ¹ | 4.7x | |
 | `long`, before | Ace debug | 20 | 161 | 2,347 | | |
 
 ¹ Apple clang 21 aborts with "Illegal instruction: 4"; the runner prints
