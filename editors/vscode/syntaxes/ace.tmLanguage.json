@@ -322,10 +322,12 @@
     "function-declarations": {
       "patterns": [
         {
-          "match": "^\\s*(?:(?:pub|inline)\\s+)*(?:(extern)\\s+\"[^\"]*\"\\s+)?([A-Za-z_][A-Za-z0-9_]*)(?:\\s*\\[[^\\n]+\\])?\\s*(?=\\([^\\n]*\\)(?:\\s*:\\s*[^{}\\n]+)?\\s*\\{)",
+          "match": "^\\s*(?:(pub)\\s+)?(?:(inline)\\s+)?(?:(extern)\\s+\"[^\"]*\"\\s+)?([A-Za-z_][A-Za-z0-9_]*)(?:\\s*\\[[^\\n]+\\])?\\s*(?=\\([^\\n]*\\)(?:\\s*:\\s*[^{}\\n]+)?\\s*\\{)",
           "captures": {
             "1": { "name": "keyword.control.ace" },
-            "2": { "name": "entity.name.function.ace" }
+            "2": { "name": "keyword.control.ace" },
+            "3": { "name": "keyword.control.ace" },
+            "4": { "name": "entity.name.function.ace" }
           }
         },
         {
