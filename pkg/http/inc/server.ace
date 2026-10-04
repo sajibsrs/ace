@@ -10,7 +10,7 @@ import parsing: "./parsing.ace"
 import routing: "./router.ace"
 
 ServerErr: error {
-    1: capacity = "malformed or unresolvable endpoint"
+    1: capacity = "malformed or unresolvable endpoint",
 }
 
 Header: type = message.Header

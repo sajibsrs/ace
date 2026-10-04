@@ -1,5 +1,8 @@
 # Language
 
+- Error domain entries are comma-separated with an optional trailing comma,
+  like every other brace-delimited list (`E: error { 1: a = "a" }`), replacing
+  the newline-terminated entry form.
 - Functions, methods, associated functions, generics, specializations, and
   signings join the order-independent top level, replacing forward-call
   fixups and their re-check: check enters each overload set and resolves every

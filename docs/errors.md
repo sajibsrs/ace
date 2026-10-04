@@ -35,12 +35,13 @@ A domain may declare named codes and static descriptions:
 
 ```ace
 pub FileError: error {
-    0: unknown = "unknown file failure"
-    2: not_found = "file not found"
+    0: unknown = "unknown file failure",
+    2: not_found = "file not found",
 }
 ```
 
-Entries are line-oriented and take no commas. Codes must be exact `i32`
+Entries are comma-separated like `enum` members; a trailing comma is optional
+and written whenever the domain spans several lines. Codes must be exact `i32`
 compile-time integers; zero, negative values, and both `i32` limits are valid.
 Names and codes are unique within one domain, and messages are string literals.
 The domain's visibility also controls its entries.

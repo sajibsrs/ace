@@ -99,7 +99,7 @@ ret_clause    := ":" type                                  // omitted for no val
 block         := "{" stmt* "}"
 
 struct_decl   := ident [type_params] ":" "struct" "{" field_list "}"
-field_list    := field ("," field)*
+field_list    := field ("," field)* [","]
 field         := [offset_attr] [align_attr] ["embed"] ident ":" type ["=" expr]
 
 bits_decl     := ident ":" contextual_bits bits_backing "{" bits_fields "}"
@@ -122,8 +122,8 @@ union_variant := ident [":" type]                    // zero or one payload
 
 alias_decl    := ident [type_params] ":" "type" "=" type
 distinct_decl := ident ":" "distinct" type
-error_domain_decl := ident ":" contextual_error ["{" newline* error_entry* "}"]
-error_entry   := signed_int_lit ":" ident "=" string_lit newline+
+error_domain_decl := ident ":" contextual_error ["{" [error_entry ("," error_entry)* [","]] "}"]
+error_entry   := signed_int_lit ":" ident "=" string_lit
 signed_int_lit := ["-"] int_lit
 contextual_error := ident                                    // exact text "error"; not reserved
 

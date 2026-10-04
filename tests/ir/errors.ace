@@ -3,12 +3,12 @@
  * type's identity word. panic writes its message to stderr and aborts. */
 
 OpenErr: error {
-    2: missing = "no such file"
-    13: denied = "permission denied"
+    2: missing = "no such file",
+    13: denied = "permission denied",
 }
 
 ReadErr: error {
-    5: io = "input/output error"
+    5: io = "input/output error",
 }
 
 Bare: error

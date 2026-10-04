@@ -37,141 +37,141 @@ pub exit(code: int) {
  */
 
 pub OpenErr: error {
-    2: not_found = "path does not exist"
-    4: interrupted = "open was interrupted"
-    9: descriptor = "invalid directory descriptor"
-    13: access = "permission denied"
-    17: exists = "path already exists"
-    20: not_directory = "path component is not a directory"
-    21: directory = "path refers to a directory"
-    23: system_limit = "system descriptor limit reached"
-    24: process_limit = "process descriptor limit reached"
-    28: no_space = "device has no space available"
-    30: read_only = "file system is read-only"
-    35: would_block = "open would block"
-    62: loop = "too many symbolic links"
-    63: name_too_long = "path is too long"
+    2: not_found = "path does not exist",
+    4: interrupted = "open was interrupted",
+    9: descriptor = "invalid directory descriptor",
+    13: access = "permission denied",
+    17: exists = "path already exists",
+    20: not_directory = "path component is not a directory",
+    21: directory = "path refers to a directory",
+    23: system_limit = "system descriptor limit reached",
+    24: process_limit = "process descriptor limit reached",
+    28: no_space = "device has no space available",
+    30: read_only = "file system is read-only",
+    35: would_block = "open would block",
+    62: loop = "too many symbolic links",
+    63: name_too_long = "path is too long",
 }
 
 pub ReadErr: error {
-    4: interrupted = "read was interrupted"
-    9: descriptor = "invalid descriptor"
-    14: address = "invalid read buffer address"
-    21: directory = "descriptor refers to a directory"
-    22: invalid = "invalid read request"
-    35: would_block = "read would block"
+    4: interrupted = "read was interrupted",
+    9: descriptor = "invalid descriptor",
+    14: address = "invalid read buffer address",
+    21: directory = "descriptor refers to a directory",
+    22: invalid = "invalid read request",
+    35: would_block = "read would block",
 }
 
 pub WriteErr: error {
-    4: interrupted = "write was interrupted"
-    9: descriptor = "invalid descriptor"
-    13: access = "permission denied"
-    14: address = "invalid write buffer address"
-    22: invalid = "invalid write request"
-    27: too_large = "file is too large"
-    28: no_space = "device has no space available"
-    32: broken_pipe = "pipe or connection is closed"
-    35: would_block = "write would block"
+    4: interrupted = "write was interrupted",
+    9: descriptor = "invalid descriptor",
+    13: access = "permission denied",
+    14: address = "invalid write buffer address",
+    22: invalid = "invalid write request",
+    27: too_large = "file is too large",
+    28: no_space = "device has no space available",
+    32: broken_pipe = "pipe or connection is closed",
+    35: would_block = "write would block",
 }
 
 pub CloseErr: error {
-    4: interrupted = "close was interrupted"
-    9: descriptor = "invalid descriptor"
+    4: interrupted = "close was interrupted",
+    9: descriptor = "invalid descriptor",
 }
 
 pub StatErr: error {
-    2: not_found = "path does not exist"
-    13: access = "permission denied"
-    14: address = "invalid file-information storage"
-    20: not_directory = "path component is not a directory"
-    62: loop = "too many symbolic links"
-    63: name_too_long = "path is too long"
+    2: not_found = "path does not exist",
+    13: access = "permission denied",
+    14: address = "invalid file-information storage",
+    20: not_directory = "path component is not a directory",
+    62: loop = "too many symbolic links",
+    63: name_too_long = "path is too long",
 }
 
 pub MkdirErr: error {
-    13: access = "permission denied"
-    17: exists = "path already exists"
-    20: not_directory = "path component is not a directory"
-    28: no_space = "device has no space available"
-    30: read_only = "file system is read-only"
-    62: loop = "too many symbolic links"
-    63: name_too_long = "path is too long"
+    13: access = "permission denied",
+    17: exists = "path already exists",
+    20: not_directory = "path component is not a directory",
+    28: no_space = "device has no space available",
+    30: read_only = "file system is read-only",
+    62: loop = "too many symbolic links",
+    63: name_too_long = "path is too long",
 }
 
 pub RenameErr: error {
-    2: not_found = "source or destination parent does not exist"
-    13: access = "permission denied"
-    16: busy = "source or destination is busy"
-    17: exists = "destination already exists"
-    18: cross_device = "paths are on different file systems"
-    20: not_directory = "path component is not a directory"
-    21: directory = "file and directory types do not match"
-    22: invalid = "invalid rename operation"
-    28: no_space = "device has no space available"
-    30: read_only = "file system is read-only"
-    62: loop = "too many symbolic links"
-    63: name_too_long = "path is too long"
-    66: not_empty = "destination directory is not empty"
+    2: not_found = "source or destination parent does not exist",
+    13: access = "permission denied",
+    16: busy = "source or destination is busy",
+    17: exists = "destination already exists",
+    18: cross_device = "paths are on different file systems",
+    20: not_directory = "path component is not a directory",
+    21: directory = "file and directory types do not match",
+    22: invalid = "invalid rename operation",
+    28: no_space = "device has no space available",
+    30: read_only = "file system is read-only",
+    62: loop = "too many symbolic links",
+    63: name_too_long = "path is too long",
+    66: not_empty = "destination directory is not empty",
 }
 
 pub UnlinkErr: error {
-    2: not_found = "path does not exist"
-    13: access = "permission denied"
-    16: busy = "path is busy"
-    20: not_directory = "path component is not a directory"
-    21: directory = "path refers to a directory"
-    30: read_only = "file system is read-only"
-    62: loop = "too many symbolic links"
-    63: name_too_long = "path is too long"
+    2: not_found = "path does not exist",
+    13: access = "permission denied",
+    16: busy = "path is busy",
+    20: not_directory = "path component is not a directory",
+    21: directory = "path refers to a directory",
+    30: read_only = "file system is read-only",
+    62: loop = "too many symbolic links",
+    63: name_too_long = "path is too long",
 }
 
 pub OpendirErr: error {
-    2: not_found = "directory does not exist"
-    13: access = "permission denied"
-    20: not_directory = "path is not a directory"
-    23: system_limit = "system descriptor limit reached"
-    24: process_limit = "process descriptor limit reached"
-    62: loop = "too many symbolic links"
-    63: name_too_long = "path is too long"
+    2: not_found = "directory does not exist",
+    13: access = "permission denied",
+    20: not_directory = "path is not a directory",
+    23: system_limit = "system descriptor limit reached",
+    24: process_limit = "process descriptor limit reached",
+    62: loop = "too many symbolic links",
+    63: name_too_long = "path is too long",
 }
 
 pub ReaddirErr: error {
-    5: malformed = "operating-system directory data is malformed"
-    9: inactive = "directory is not active"
-    34: capacity = "name storage is too small"
+    5: malformed = "operating-system directory data is malformed",
+    9: inactive = "directory is not active",
+    34: capacity = "name storage is too small",
 }
 
 pub ClosedirErr: error {
-    9: inactive = "directory is not active"
+    9: inactive = "directory is not active",
 }
 
 pub RandomErr: error {
-    5: input_output = "secure random source failed"
-    14: address = "secure random destination is invalid"
-    22: invalid = "secure random request is invalid"
+    5: input_output = "secure random source failed",
+    14: address = "secure random destination is invalid",
+    22: invalid = "secure random request is invalid",
 }
 pub ForkErr: error {
-    12: memory = "insufficient memory to create process"
-    35: retry = "temporary process resource limit reached"
-    67: process_limit = "process limit reached"
+    12: memory = "insufficient memory to create process",
+    35: retry = "temporary process resource limit reached",
+    67: process_limit = "process limit reached",
 }
 
 pub WaitErr: error {
-    4: interrupted = "process wait was interrupted"
-    10: no_child = "process is not a child of this process"
-    22: invalid = "process handle must be positive"
+    4: interrupted = "process wait was interrupted",
+    10: no_child = "process is not a child of this process",
+    22: invalid = "process handle must be positive",
 }
 
 pub PipeErr: error {
-    23: system_limit = "system descriptor limit reached"
-    24: process_limit = "process descriptor limit reached"
+    23: system_limit = "system descriptor limit reached",
+    24: process_limit = "process descriptor limit reached",
 }
 
 pub IoctlErr: error {
-    9: descriptor = "invalid descriptor"
-    14: address = "invalid device-control data address"
-    22: empty = "device-control data storage must not be empty"
-    25: inappropriate = "device does not support the requested control"
+    9: descriptor = "invalid descriptor",
+    14: address = "invalid device-control data address",
+    22: empty = "device-control data storage must not be empty",
+    25: inappropriate = "device does not support the requested control",
 }
 
 pub FileType: enum { unknown, regular, directory, symlink, other }

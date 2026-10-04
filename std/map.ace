@@ -19,7 +19,7 @@ import bits
 import mem
 
 pub MapErr: error {
-    1: allocation = "map storage allocation failed"
+    1: allocation = "map storage allocation failed",
 }
 
 pub Slot[K, V]: struct {

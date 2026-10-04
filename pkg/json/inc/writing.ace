@@ -12,10 +12,10 @@ Value: type = value.Value
 Pair: type = value.Pair
 
 pub FormatErr: error {
-    1: allocation = "allocation failed"
-    2: depth = "nesting depth exceeded"
-    3: number = "number is not finite"
-    4: structure = "calls do not form exactly one JSON value"
+    1: allocation = "allocation failed",
+    2: depth = "nesting depth exceeded",
+    3: number = "number is not finite",
+    4: structure = "calls do not form exactly one JSON value",
 }
 
 /* The most containers that may be open at once, matching the parser. */

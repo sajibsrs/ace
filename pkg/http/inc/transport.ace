@@ -22,10 +22,10 @@ pub UrlErr: type = parsing.UrlErr
 FormatErr: type = message.FormatErr
 
 pub ClientErr: error {
-    1: address = "no usable address was resolved"
-    2: target_capacity = "request-target storage is too small"
-    3: response = "response parsing or storage failed"
-    4: allocation = "memory allocation failed"
+    1: address = "no usable address was resolved",
+    2: target_capacity = "request-target storage is too small",
+    3: response = "response parsing or storage failed",
+    4: allocation = "memory allocation failed",
 }
 
 pub Storage: struct {

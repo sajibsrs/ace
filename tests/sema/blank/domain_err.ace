@@ -1,7 +1,7 @@
 /* err: an error domain has no value layout; blank(Error) is the zero Error. */
 
 Boom: error {
-    1: failed = "boom"
+    1: failed = "boom",
 }
 
 main(): int {

@@ -4,14 +4,14 @@ import mem
 import str
 
 pub FormatErr: error {
-    1: capacity = "output storage is too small"
-    2: method = "invalid request method"
-    3: target = "invalid request target"
-    4: header_name = "invalid header name"
-    5: header_value = "invalid header value"
-    6: version = "invalid HTTP version"
-    7: status = "invalid HTTP status"
-    8: reason = "invalid HTTP reason phrase"
+    1: capacity = "output storage is too small",
+    2: method = "invalid request method",
+    3: target = "invalid request target",
+    4: header_name = "invalid header name",
+    5: header_value = "invalid header value",
+    6: version = "invalid HTTP version",
+    7: status = "invalid HTTP status",
+    8: reason = "invalid HTTP reason phrase",
 }
 
 pub CONNECT: const string = "CONNECT"

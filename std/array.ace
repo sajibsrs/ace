@@ -13,8 +13,8 @@
 import mem
 
 pub ArrayErr: error {
-    1: allocation = "array storage allocation failed"
-    2: empty = "array is empty"
+    1: allocation = "array storage allocation failed",
+    2: empty = "array is empty",
 }
 
 pub Array[T]: struct {

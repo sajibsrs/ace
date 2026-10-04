@@ -2038,12 +2038,8 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
             n->str = name->str;
             n->len = name->len;
             if (pub) n->flags |= F_PUB;
-            if (at(p, T_LBRACE)) {
-                int brace_line = tk(p)->line;
-                p->i++;
+            if (ate(p, T_LBRACE)) {
                 NV entries = {0};
-                if (!at(p, T_RBRACE) && tk(p)->line == brace_line)
-                    perr(p, "expected newline after '{' in error domain");
                 skipnl(p);
                 while (!at(p, T_RBRACE)) {
                     if (at(p, T_EOF)) perr(p, "unexpected end of file in error domain");
@@ -2056,7 +2052,11 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
                     expect(p, T_ASSIGN, "'=' after error entry name");
                     entry->b = expr(p, 0);
                     nv_push(p, &entries, entry);
-                    if (!ate(p, T_NL)) perr(p, "expected newline after error entry");
+                    skipnl(p);
+                    if (!ate(p, T_COMMA)) {
+                        if (!at(p, T_RBRACE)) perr(p, "expected ',' after error entry");
+                        break;
+                    }
                     skipnl(p);
                 }
                 p->i++;

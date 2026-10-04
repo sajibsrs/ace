@@ -13,7 +13,7 @@ pub Url: struct {
 }
 
 pub UrlErr: error {
-    1: invalid = "invalid URL or scheme for HTTP operation"
+    1: invalid = "invalid URL or scheme for HTTP operation",
 }
 
 pub Header: type = message.Header

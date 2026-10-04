@@ -1,8 +1,8 @@
 import fmt
 
 FileError: error {
-    0: unknown = "unknown file failure"
-    2: not_found = "file not found"
+    0: unknown = "unknown file failure",
+    2: not_found = "file not found",
 }
 Alias: type = FileError
 fs_read(path: string): ([]u8, Error) {

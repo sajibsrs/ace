@@ -7,8 +7,8 @@ import sys
 
 /* Failures `read` adds to those of `sys.open`, `sys.stat`, and `sys.read`. */
 pub FileErr: error {
-    1: allocation = "allocation failed"
-    2: truncated = "file shrank while being read"
+    1: allocation = "allocation failed",
+    2: truncated = "file shrank while being read",
 }
 
 /* The whole file at `path` in one allocation the caller releases with

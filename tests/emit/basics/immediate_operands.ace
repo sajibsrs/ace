@@ -7,7 +7,7 @@
 // expect-exit: 42
 
 PingErr: error {
-    5: late = "late"
+    5: late = "late",
 }
 
 // first in the file, so each function below keeps its own symbol

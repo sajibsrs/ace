@@ -35,11 +35,11 @@ pub Event: union {
 }
 
 pub ReceiveAllErr: error {
-    0: incomplete = "connection closed before the requested bytes were received"
+    0: incomplete = "connection closed before the requested bytes were received",
 }
 
 pub SendAllErr: error {
-    0: stalled = "connection made no progress while sending"
+    0: stalled = "connection made no progress while sending",
 }
 
 connection(sock: net.Socket, interest: Interest): Conn {

@@ -26,8 +26,8 @@ Syntax: type = syntax.Syntax
 UNBOUNDED: const u32 = syntax.UNBOUNDED
 
 pub CompileErr: error {
-    1: too_large = "program exceeds the instruction limit"
-    2: allocation = "allocation failed"
+    1: too_large = "program exceeds the instruction limit",
+    2: allocation = "allocation failed",
 }
 
 /* The most instructions a program may hold. Counted repetitions multiply

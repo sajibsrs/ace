@@ -1,17 +1,17 @@
 // expect-exit: 0
 
 ClientErr: error {
-    0: unknown = "unknown client failure"
-    1: address = "name resolution failed"
-    -1: negative = "negative"
-    -2147483648: minimum = "minimum"
-    2147483647: maximum = "maximum"
+    0: unknown = "unknown client failure",
+    1: address = "name resolution failed",
+    -1: negative = "negative",
+    -2147483648: minimum = "minimum",
+    2147483647: maximum = "maximum",
 }
 
 ClientAlias: type = ClientErr
 
 ServerErr: error {
-    1: address = "server address"
+    1: address = "server address",
 }
 
 global_named: const Error = ClientErr.address

@@ -16,14 +16,14 @@ Value: type = value.Value
 Pair: type = value.Pair
 
 pub ParseErr: error {
-    1: unexpected_token = "unexpected token"
-    2: unterminated_string = "unterminated string literal"
-    3: invalid_escape = "invalid string escape"
-    4: invalid_number = "invalid number literal"
-    5: depth = "nesting depth exceeded"
-    6: trailing_data = "unexpected trailing data after value"
-    7: empty_input = "empty input"
-    8: allocation = "allocation failed"
+    1: unexpected_token = "unexpected token",
+    2: unterminated_string = "unterminated string literal",
+    3: invalid_escape = "invalid string escape",
+    4: invalid_number = "invalid number literal",
+    5: depth = "nesting depth exceeded",
+    6: trailing_data = "unexpected trailing data after value",
+    7: empty_input = "empty input",
+    8: allocation = "allocation failed",
 }
 
 /* Recursion guard: the most containers that may nest, bounding stack depth on

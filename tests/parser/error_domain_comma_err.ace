@@ -1,3 +1,4 @@
 Bad: error {
-    1: nope = "nope",
+    1: first = "first"
+    2: second = "second",
 }

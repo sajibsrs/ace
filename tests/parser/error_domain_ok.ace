@@ -1,0 +1,8 @@
+Inline: error { 1: only = "only" }
+Multi: error {
+    1: first = "first",
+    2: second = "second",
+}
+Bare: error {
+    1: last = "last"
+}

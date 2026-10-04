@@ -11,7 +11,7 @@ pub Url: type = parsing.Url
 pub UrlErr: type = parsing.UrlErr
 
 pub RedirectErr: error {
-    1: limit = "HTTP redirect limit was exceeded"
+    1: limit = "HTTP redirect limit was exceeded",
 }
 
 pub RedirectPolicy: struct {

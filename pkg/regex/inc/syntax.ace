@@ -15,15 +15,15 @@ import str
 import output: "./output.ace"
 
 pub ParseErr: error {
-    1: missing_paren = "missing closing parenthesis"
-    2: unexpected_paren = "unexpected closing parenthesis"
-    3: missing_operand = "repetition operator has no operand"
-    4: invalid_repeat = "invalid repetition count"
-    5: invalid_range = "invalid character class range"
-    6: unterminated_class = "unterminated character class"
-    7: invalid_escape = "invalid escape sequence"
-    8: depth = "nesting depth exceeded"
-    9: allocation = "allocation failed"
+    1: missing_paren = "missing closing parenthesis",
+    2: unexpected_paren = "unexpected closing parenthesis",
+    3: missing_operand = "repetition operator has no operand",
+    4: invalid_repeat = "invalid repetition count",
+    5: invalid_range = "invalid character class range",
+    6: unterminated_class = "unterminated character class",
+    7: invalid_escape = "invalid escape sequence",
+    8: depth = "nesting depth exceeded",
+    9: allocation = "allocation failed",
 }
 
 /* Recursion guard: the most groups that may nest, bounding stack depth on
