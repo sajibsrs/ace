@@ -100,7 +100,7 @@ tests/parser/inline/mut_order_err.ace|'inline' must come before 'mut'
 tests/parser/inline/duplicate_err.ace|duplicate 'inline' modifier
 tests/parser/inline/not_function_err.ace|1:8: error: 'inline' applies only to function declarations
 tests/parser/inline/extern_err.ace|'extern' blocks take no pub/inline/mut
-tests/parser/extern_def/link_name_err.ace|link names on exported definitions are not supported yet
+tests/parser/extern_def/link_name_err.ace|extern link name cannot be empty
 tests/parser/extern_def/global_init_err.ace|expected '=' and an initializer
 tests/parser/extern_def/variadic_err.ace|variadic functions cannot be defined in Ace
 tests/parser/extern_def/bodiless_err.ace|expected '{'
@@ -363,7 +363,7 @@ for want in \
 done
 for case in export mut_function; do
     case $case in
-        export)       want="link names on exported definitions are not supported yet" ;;
+        export)       want="extern link name cannot be empty" ;;
         mut_function) want="'mut' marks an extern variable: expected ':' after its name" ;;
     esac
     if ! "$ACE" --ast "tests/parser/extern_var/${case}_err.ace" 2>&1 | grep -qF "$want"; then

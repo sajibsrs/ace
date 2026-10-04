@@ -1,5 +1,5 @@
-/* An exported C global keeps its own name; a link name on it is not supported yet. */
+/* A link name on an exported C global obeys the same rules as an import's. */
 
 extern "c" {
-    mut count: i32 as "Count" = 0
+    mut count: i32 as "" = 0
 }

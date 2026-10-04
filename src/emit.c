@@ -1387,6 +1387,8 @@ static void emit_global(Em* e, Node* n) {
     int readonly = (n->flags & F_CONST) || (export_c && !(n->flags & F_MUT));
     Sec* d = readonly ? &e->o.secs[SEC_CONST] : &e->o.secs[SEC_DATA];
     while (d->data.len % align) buf_put8(&d->data, 0);
+    if (export_c && sym_intern(&e->o.syms, nm, (uint32_t)strlen(nm))->type)
+        em_err(e, n, "C symbol '%s' is already defined", nm + 1);
     ESym* g = sym_define(&e->o.syms, e->o.secs, nm, (uint32_t)strlen(nm), export_c, d);
     uint32_t start = (uint32_t)d->data.len;
     buf_write(&d->data, bytes.d, bytes.len);
@@ -2119,7 +2121,10 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
                     fns = realloc(fns, (size_t)cfns * sizeof *fns);
                     if (!fns) exit(1);
                 }
-                sym_intern(&by_name, f.name, (uint32_t)strlen(f.name))->value = (uint64_t)nfns + 1;
+                ESym* taken = sym_intern(&by_name, f.name, (uint32_t)strlen(f.name));
+                if (f.global && taken->value)
+                    em_err(&e, n, "C symbol '%s' is already defined", f.name + 1);
+                taken->value = (uint64_t)nfns + 1;
                 fns[nfns++] = f;
             } while (generic && (inst = inst->next));
             break;

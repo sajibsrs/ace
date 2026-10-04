@@ -55,6 +55,7 @@ extern "c" {
     c_set_callback(out: mut *extern "c" (i32): i32)
     c_run_ace(): i32
     c_exported_globals(): i32
+    c_linked(): i32
     mut ace_counter: i32 = 7
     ace_version: u32 = 3
     mut ace_table: [3]i32 = [5 : 3]
@@ -203,6 +204,13 @@ extern "c" mut ace_ticks: i64 = -5
 
 pub extern "c" ace_scale: f64 = 2.5
 
+// Exported under a C name that differs from the Ace name.
+extern "c" triple(value: i32): i32 as "ace_linked_triple" {
+    return value * 3
+}
+
+extern "c" mut total: i32 as "ace_linked_total" = 4
+
 main(): int {
     if c_scalars(-1, 2, 3, 4, 5, 6, 7, 8, 9) != 43 { return 1 }
 
@@ -348,6 +356,7 @@ main(): int {
     if exported != 0 { return int(80 + exported) }
     if ace_counter != 11 || ace_table[1] != 9 || ace_ticks != 6 { return 79 }
     if ace_version != 3 || ace_scale != 2.5 { return 78 }
+    if c_linked() != 0 || total != 10 || triple(2) != 6 { return 77 }
 
     if from_c != 0 { return int(20 + from_c) }
     callback_value: u8 = 31

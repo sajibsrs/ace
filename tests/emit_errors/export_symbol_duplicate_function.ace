@@ -1,0 +1,10 @@
+/* Two definitions cannot export one C symbol.
+ * error: C symbol 'same' is already defined
+ */
+
+extern "c" {
+    first(): i32 as "same" { return 1 }
+    second(): i32 as "same" { return 2 }
+}
+
+main(): int { return 0 }

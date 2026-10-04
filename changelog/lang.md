@@ -1,5 +1,8 @@
 # Language
 
+- Link names on definitions: `extern "c" f(…): R as "sym" { … }` and
+  `extern "c" [mut] g: T as "sym" = value` export under `sym` while Ace keeps
+  the Ace name. Two Ace definitions exporting one C symbol are an emit error.
 - `extern "c"` defines C globals in Ace: an initialized global in the block,
   or `extern "c" [mut] name: T = value`, is an ordinary constant-initialized
   global under its unmangled C name, external, read-only (in `__DATA_CONST`

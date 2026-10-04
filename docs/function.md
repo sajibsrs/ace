@@ -517,8 +517,19 @@ extern "c" increment(value: mut *i32): i32 {
 }
 ```
 
-`as "name"` binds an Ace-side name to a different C symbol. A variadic function
-can be imported but not defined, and a definition cannot take a link name yet.
+`as "name"` binds an Ace-side name to a different C symbol. On an import it
+names the C symbol to call; on a definition it names the symbol C sees, so a
+module can keep a short Ace name and export `ace_increment`. Two definitions
+cannot export one symbol. A variadic function can be imported but not defined.
+
+```ace
+extern "c" increment(value: mut *i32): i32 as "ace_increment" {
+    *value += 1
+    return *value
+}
+
+extern "c" mut total: i32 as "ace_total" = 0
+```
 
 Globals follow the same rule: one without an initializer binds C storage, and
 one with an initializer is defined in Ace and visible to C. It is read-only

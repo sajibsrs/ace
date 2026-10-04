@@ -275,3 +275,13 @@ int32_t c_exported_globals(void) {
     ace_ticks = 6;
     return 0;
 }
+
+extern int32_t ace_linked_total;
+extern int32_t ace_linked_triple(int32_t);
+
+int32_t c_linked(void) {
+    if (ace_linked_total != 4) return 1;
+    if (ace_linked_triple(5) != 15) return 2;
+    ace_linked_total = 10;
+    return 0;
+}

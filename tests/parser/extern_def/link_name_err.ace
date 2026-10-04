@@ -1,7 +1,7 @@
-/* A link name on an exported function is not supported yet. */
+/* A link name on an exported function obeys the same rules as an import's. */
 
 extern "c" {
-    twice(value: i32): i32 as "Twice" {
+    twice(value: i32): i32 as "" {
         return value * 2
     }
 }
