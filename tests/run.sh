@@ -115,6 +115,22 @@ tests/sema/inline/recursion_err.ace|inline function 'count' reaches itself throu
 tests/sema/inline/mutual_err.ace|inline function 'even' reaches itself through inline calls
 INLINE_RULES
 
+# @cold declarations (spec Functions & ABI #10)
+while IFS='|' read -r f want; do
+    if ! "$ACE" "$f" 2>&1 | grep -qF "$want"; then
+        echo "FAIL: $f should report: $want"
+        fail=1
+    fi
+done <<'COLD_RULES'
+tests/parser/cold/duplicate_err.ace|a declaration accepts at most one @cold attribute
+tests/parser/cold/same_line_err.ace|@cold must occupy its own line before a declaration
+tests/parser/cold/not_function_err.ace|2:1: error: @cold applies only to Ace function declarations
+tests/parser/cold/extern_err.ace|@cold applies only to Ace function declarations
+tests/sema/cold/inline_err.ace|inline function 'rare' cannot be @cold
+tests/sema/cold/specialized_err.ace|@cold needs a body; 'weight' has none
+tests/sema/cold/main_err.ace|the entry function cannot be @cold
+COLD_RULES
+
 # generic function values name their type arguments (spec Generics #6), and
 # diagnostics render composite types in full
 while IFS='|' read -r f want; do

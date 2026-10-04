@@ -1,0 +1,5 @@
+@cold
+@cold
+rare(): int {
+    return 0
+}

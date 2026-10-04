@@ -108,6 +108,7 @@ enum {
     // call, calli: the result, of over IR_MAX_LEAVES leaves, goes to the
     // memory whose address is the last argument (AAPCS64 passes it in x8)
     IRF_SRET = 8,
+    IRF_COLD = 16, // call: the callee is @cold, so its block is laid out last
 };
 
 // Aggregates are never IR values: lowering splits every struct, tuple, and

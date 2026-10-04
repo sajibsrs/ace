@@ -7025,6 +7025,19 @@ static void check_inline_decl(Ck* k, Node* f) {
                bad->kind == N_DEFER ? "'defer'" : "inline assembly");
 }
 
+// @cold marks the calls of a function with a body as rare; inline expansion
+// would remove the call that carries the mark.
+static void check_cold_decl(Ck* k, Node* f) {
+    if (!(f->flags & F_COLD)) return;
+    int nl = (int)f->len;
+    if (f->flags & F_INLINE)
+        ck_err(k, f, "inline function '%.*s' cannot be @cold", nl, f->str);
+    else if (f->flags & (F_INTRINSIC | F_SPECIALIZED))
+        ck_err(k, f, "@cold needs a body; '%.*s' has none", nl, f->str);
+    else if (!(f->flags & (F_METHOD | F_ASSOC)) && f->len == 4 && memcmp(f->str, "main", 4) == 0)
+        ck_err(k, f, "the entry function cannot be @cold");
+}
+
 // the inline function a direct call names, or NULL
 static Node* inline_callee(Node* call) {
     Sym* s = call->a && call->a->kind == N_INDEX && call->a->sym ? (Sym*)call->a->sym : (Sym*)call->sym;
@@ -7167,6 +7180,7 @@ int sema_check(Node* file, Diag* d) {
             Sym* s = declare_func(&k, n, 0);
             if (!s) break;
             check_inline_decl(&k, n);
+            check_cold_decl(&k, n);
             if (s->is_generic) s->decl_scope = is_root_node(d, n) ? &import_scope : &file_scope;
             if (!(n->flags & (F_METHOD | F_ASSOC)) && n->len == 4 && memcmp(n->str, "main", 4) == 0) {
                 int spells_int = n->a && n->a->kind == N_NAMED && n->a->len == 3 && memcmp(n->a->str, "int", 3) == 0;

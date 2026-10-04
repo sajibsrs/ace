@@ -2017,10 +2017,11 @@ static void params(A64* a) {
     }
 }
 
+// A block a later one branches back to, other than a cold arm rejoining.
 static int is_loop_head(A64* a, int b) {
     IrBlock* bb = &a->fn->blocks[b];
     for (int p = 0; p < bb->npreds; p++)
-        if (a->ra.eix[bb->preds[p]] >= a->ra.eix[b]) return 1;
+        if (a->ra.eix[bb->preds[p]] >= a->ra.eix[b] && !a->ra.cold[bb->preds[p]]) return 1;
     return 0;
 }
 

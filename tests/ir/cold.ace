@@ -1,0 +1,20 @@
+// A direct call to a @cold function is marked cold; one through a function
+// value is not.
+
+@cold
+grow(capacity: int): int {
+    return capacity * 2 + 1
+}
+
+fill(count: int): int {
+    capacity: int = 0
+    for i: int in 0 .. count {
+        if i == capacity { capacity = grow(capacity) }
+    }
+    f: (int): int = grow
+    return f(capacity)
+}
+
+main(): int {
+    return fill(10) & 1
+}

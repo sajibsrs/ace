@@ -1,5 +1,8 @@
 # Language
 
+- `@cold` marks a function with a body as rarely called; it changes only
+  layout. It excludes `inline`, `main`, `extern "c"` definitions, and
+  bodiless declarations, and a cold function is never auto-inlined.
 - Link names on definitions: `extern "c" f(…): R as "sym" { … }` and
   `extern "c" [mut] g: T as "sym" = value` export under `sym` while Ace keeps
   the Ace name. Two Ace definitions exporting one C symbol are an emit error.

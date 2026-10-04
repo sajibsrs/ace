@@ -1,5 +1,7 @@
 # Standard library
 
+- Marked `mem.grow` `@cold`, keeping `Array.push` growth out of its callers'
+  loops.
 - `math` Payne-Hanek reduction reads 2/pi from bit e-1, so the quotient
   lands at a fixed position of a three-word product held in registers,
   replacing the ten-limb sum in memory; results are bit-identical.

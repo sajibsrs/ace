@@ -20,6 +20,7 @@ typedef struct {
     int*      lix;     // block -> reverse-postorder index
     int*      layout;  // blocks in emission order (a loop rotated after its body)
     int*      eix;     // block -> emission-order index
+    uint8_t*  cold;    // block -> laid out last, as a @cold call's arm
     int*      bfirst;  // block -> index of its first instruction
     int*      blast;   // block -> index of its terminator
     int*      idx;     // value -> instruction index
@@ -64,7 +65,7 @@ typedef struct {
 static inline int ra_remat(IrOp op) { return op == IR_CONST || op == IR_SLOT; }
 
 void ra_split_critical_edges(IrFunc* fn);
-void ra_layout(Ra* r);       // order, lix, bfirst, blast, idx, layout, eix
+void ra_layout(Ra* r);       // order, lix, bfirst, blast, idx, layout, eix, cold
 void ra_count_uses(Ra* r);   // nuse; fused all clear
 void ra_liveness(Ra* r);     // start, end, ufirst, uses, honoring fused
 void ra_positions(Ra* r);    // phi_of, calls, rtcalls, asm; hint all -1

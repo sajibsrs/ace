@@ -1,5 +1,10 @@
 # Compiler
 
+- Laid out the arm of a direct call to a `@cold` function, with the blocks
+  reached only from it, after the function's other blocks, so the common path
+  falls through; and let a phi share a loop phi's location when it is that
+  phi's operand, removing an `if` join's copies from a loop's hot edge.
+  `bench/std` array-push 1.35x to 1.0x of C.
 - Let an inline function return a type parameter, its result typed by the
   stamp each expansion already makes, and scanned a generic inline body for
   the receiver and `mut` parameters needing storage once per instantiation

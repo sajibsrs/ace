@@ -176,6 +176,7 @@ enum {
     F_PENDING = 524288, // a call deferred to end of file
     F_INLINE = 1048576, // a function expanded at every direct call
     F_INLCALLS = 2097152, // a function body with a direct call to an inline function
+    F_COLD = 4194304, // @cold: a function whose calls are rare
 };
 
 // Compiler-backed standard-module functions. These markers live only on the

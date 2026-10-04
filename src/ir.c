@@ -548,6 +548,7 @@ void ir_print(IrFunc* fn, FILE* out) {
             if (v->flags & IRF_CHECKED) fputs(".chk", out);
             if (v->flags & IRF_VOLATILE) fputs(".vol", out);
             if (v->flags & IRF_SRET) fputs(".mem", out);
+            if (v->flags & IRF_COLD) fputs(".cold", out);
             if (v->type != IT_VOID) fprintf(out, " %s", type_name((IrType)v->type));
             if (agg) fprintf(out, " {%d}", v->sig ? v->sig->ret.n : v->asmb->nout);
             switch (v->op) {

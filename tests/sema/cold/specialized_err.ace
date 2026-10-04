@@ -1,0 +1,2 @@
+@cold
+weight[K](key: K): u64 specialized

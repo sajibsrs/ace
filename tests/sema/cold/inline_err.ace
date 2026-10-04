@@ -1,0 +1,4 @@
+@cold
+inline rare(): int {
+    return 0
+}

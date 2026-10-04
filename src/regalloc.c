@@ -107,6 +107,31 @@ static void emission_order(Ra* a) {
         }
         free(old);
     }
+    // A cold arm: a block making a call to a @cold function whose one
+    // predecessor is a two-way branch, with each block reached only from cold
+    // blocks, follows every other block in its emission order, so the common
+    // path falls through its branch.
+    uint8_t* cold = a->cold = xcalloc((size_t)n, 1);
+    int ncold = 0;
+    for (int i = 1; i < n; i++) { // the entry stays first
+        int b = a->layout[i];
+        IrBlock* bb = &fn->blocks[b];
+        int c = bb->npreds > 0;
+        for (int p = 0; p < bb->npreds && c; p++) c = cold[bb->preds[p]];
+        if (!c && bb->npreds == 1 && fn->blocks[bb->preds[0]].succ[1] >= 0)
+            for (int j = 0; j < bb->nins && !c; j++)
+                c = fn->ins[bb->ins[j]].op == IR_CALL && (fn->ins[bb->ins[j]].flags & IRF_COLD);
+        cold[b] = (uint8_t)c;
+        ncold += c;
+    }
+    if (ncold) {
+        int* old = xcalloc((size_t)n, sizeof(int));
+        memcpy(old, a->layout, (size_t)n * sizeof(int));
+        int k = 0;
+        for (int i = 0; i < n; i++) if (!cold[old[i]]) a->layout[k++] = old[i];
+        for (int i = 0; i < n; i++) if (cold[old[i]]) a->layout[k++] = old[i];
+        free(old);
+    }
     for (int i = 0; i < n; i++) a->eix[a->layout[i]] = i;
     free(pos); free(after); free(deferred); free(in); free(stack);
 }
@@ -311,10 +336,16 @@ void ra_positions(Ra* a) {
 // after it in its block nor live out of it) and the operand is not live into
 // the phi's block. The pair is allocated as the phi, over both intervals, so
 // the operand is computed where the phi lives and its phi move vanishes.
+// The operand may itself be a phi, as where an `if` inside a loop joins: it is
+// written by its moves at its predecessors' ends, so the phi must also be
+// unread there except as that operand's own argument, whose move then vanishes
+// too. A value shares with one phi and leads no pair of its own, so no chain
+// forms.
 void ra_coalesce(Ra* a, const RaTarget* t) {
     IrFunc* fn = a->fn;
     a->with = xcalloc((size_t)fn->nins, sizeof(int));
     for (int v = 0; v < fn->nins; v++) a->with[v] = -1;
+    uint8_t* leads = xcalloc((size_t)fn->nins, 1);
     int* stamp = xcalloc((size_t)fn->nblocks, sizeof(int));
     int* stack = xcalloc((size_t)fn->nblocks, sizeof(int));
     int tag = 0;
@@ -322,16 +353,23 @@ void ra_coalesce(Ra* a, const RaTarget* t) {
         IrBlock* bb = &fn->blocks[b];
         for (int i = 0; i < bb->nins && fn->ins[bb->ins[i]].op == IR_PHI; i++) {
             int p = bb->ins[i];
-            if (!allocatable(a, p)) continue;
+            if (!allocatable(a, p) || a->with[p] >= 0) continue;
             int shared = 0;
             for (int k = 0; k < fn->ins[p].nargs && !shared; k++) {
                 int v = fn->ins[p].args[k];
-                if (!allocatable(a, v) || fn->ins[v].op == IR_PHI || a->with[v] >= 0 ||
+                if (!allocatable(a, v) || a->with[v] >= 0 || leads[v] ||
                     a->start[v] <= a->start[p] || a->start[v] > a->end[p]) // disjoint: a hint suffices
                     continue;
                 int bv = fn->ins[v].block, live = 0;
                 live_in(a, v, stamp, stack, ++tag);
                 if (stamp[b] == tag) continue;
+                if (fn->ins[v].op == IR_PHI) { // read by a sibling phi's move into bv
+                    IrBlock* vb = &fn->blocks[bv];
+                    for (int j = 0; j < vb->nins && fn->ins[vb->ins[j]].op == IR_PHI && !live; j++) {
+                        IrIns* w = &fn->ins[vb->ins[j]];
+                        for (int q = 0; q < w->nargs && !live && vb->ins[j] != v; q++) live = w->args[q] == p;
+                    }
+                }
                 live_in(a, p, stamp, stack, ++tag);
                 for (int j = a->ufirst[p]; j < a->ufirst[p + 1] && !live; j++)
                     live = a->uses[j].block == bv && a->uses[j].pos > a->start[v];
@@ -339,12 +377,13 @@ void ra_coalesce(Ra* a, const RaTarget* t) {
                     live = fn->blocks[bv].succ[s] >= 0 && stamp[fn->blocks[bv].succ[s]] == tag;
                 if (live) continue;
                 a->with[v] = p;
+                leads[p] = 1;
                 if (a->end[v] > a->end[p]) a->end[p] = a->end[v];
                 shared = 1;
             }
         }
     }
-    free(stamp); free(stack);
+    free(stamp); free(stack); free(leads);
     // A cast its operand's register form already holds shares the operand's
     // location when its interval lies within the operand's, which only the
     // operand's definition writes then: the operand leads no sharing pair of
@@ -513,7 +552,7 @@ void ra_allocate(Ra* a, const RaTarget* t) {
 }
 
 void ra_free(Ra* a) {
-    free(a->order); free(a->lix); free(a->layout); free(a->eix); free(a->bfirst); free(a->blast); free(a->idx);
+    free(a->order); free(a->lix); free(a->layout); free(a->eix); free(a->cold); free(a->bfirst); free(a->blast); free(a->idx);
     free(a->nuse); free(a->fused); free(a->start); free(a->end); free(a->ufirst); free(a->uses);
     free(a->hint); free(a->phi_of); free(a->with); free(a->calls); free(a->rtcalls);
     free(a->asm_pos); free(a->asm_mask); free(a->reg); free(a->slot);

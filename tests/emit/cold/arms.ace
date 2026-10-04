@@ -1,0 +1,88 @@
+/* @cold arms laid out after the hot blocks: a growth arm whose join carries
+ * loop values through phis, an arm that leaves the function, an else arm, an
+ * arm with a loop of its own, an arm that ends its enclosing loop's body, and
+ * nested cold arms.
+ */
+
+// expect-exit: 0
+// expect-output: 8 499500 | 7 | -1 | 45 | 15 | 30 | 13
+
+import fmt
+
+@cold
+grow(capacity: int): int {
+    if capacity == 0 { return 1 }
+    return capacity * 2
+}
+
+@cold
+fail(code: int): int {
+    return -code
+}
+
+@cold
+total(n: int): int {
+    sum: int = 0
+    for i: int in 0 .. n { sum += i }
+    return sum
+}
+
+/* Capacity doubles whenever the count reaches it; both are loop-carried. */
+fill(count: int): int {
+    capacity: int = 0
+    sum: int = 0
+    for i: int in 0 .. count {
+        if i == capacity { capacity = grow(capacity) }
+        sum += i
+    }
+    fmt.printf("%d %d", capacity / 128, sum)
+    return capacity
+}
+
+find(xs: []int, want: int): int {
+    for i: usize in 0 .. xs.len {
+        if xs[i] == want { return int(i) }
+    }
+    return fail(1)
+}
+
+pick(flag: bool, n: int): int {
+    if flag {
+        return n
+    } else {
+        return total(n)
+    }
+}
+
+/* The cold arm is the last thing in the loop body. */
+tail(n: int): int {
+    hits: int = 0
+    for i: int in 0 .. n {
+        hits += 1
+        if i % 4 == 3 { hits += total(2) }
+    }
+    return hits
+}
+
+nested(n: int): int {
+    acc: int = 0
+    for i: int in 0 .. n {
+        if i > 2 {
+            acc += grow(1)
+            if i > 7 { acc += fail(-1) }
+        }
+    }
+    return acc
+}
+
+main(): int {
+    xs: [9]int = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    if fill(1000) != 1024 { return 1 }
+    fmt.printf(" | %d", find(xs[..], 8))
+    fmt.printf(" | %d", find(xs[..], 0))
+    fmt.printf(" | %d", pick(false, 10))
+    fmt.printf(" | %d", pick(true, 15))
+    fmt.printf(" | %d", tail(24))
+    fmt.printf(" | %d\n", nested(9))
+    return 0
+}

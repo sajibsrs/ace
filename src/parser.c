@@ -18,7 +18,8 @@
 //               F_PUB/F_EXPO/F_METHOD/F_MUT/F_ASSOC (F_ASSOC: no implicit
 //               self, owner-qualified call only, e.g. `Type::new(...)`);
 //               F_SPECIALIZED/F_INTRINSIC mark bodyless declarations;
-//               F_INLINE marks a function expanded at its direct calls
+//               F_INLINE marks a function expanded at its direct calls;
+//               F_COLD marks one whose calls are rare (@cold)
 //   N_PARAM     str = name; a = type; F_MUT/F_NOALIAS (also used as var binder)
 //   N_STRUCT    str = name; kids = N_FIELD; b = optional @align expression;
 //               c = N_TPARAMS; F_PUB/F_PACKED
@@ -2344,8 +2345,17 @@ static int parse_when(P* p) {
     return active;
 }
 
-static void parse_layout_attrs(P* p, int* packed, Node** align) {
+static void parse_layout_attrs(P* p, int* packed, Node** align, int* cold) {
     while (at(p, T_AT)) {
+        if (named_attr_at(p, "cold")) {
+            if (*cold) perr(p, "a declaration accepts at most one @cold attribute");
+            p->i += 2;
+            int line = p->toks[p->i - 1].line;
+            skipnl(p);
+            if (tk(p)->line == line) perr(p, "@cold must occupy its own line before a declaration");
+            *cold = 1;
+            continue;
+        }
         if (named_attr_at(p, "packed")) {
             if (*packed) perr(p, "a declaration accepts at most one @packed attribute");
             if (*align) perr(p, "@packed must precede @align");
@@ -2471,19 +2481,28 @@ Node* parse(Token* toks, size_t ntok, Diag* d, const char* target) {
     skipnl(&p);
     int saw_declaration = 0;
     while (!at(&p, T_EOF)) {
-        int active = 1, packed = 0;
+        int active = 1, packed = 0, cold = 0;
         Node* explicit_align = NULL;
         if (named_attr_at(&p, "when")) active = parse_when(&p);
-        parse_layout_attrs(&p, &packed, &explicit_align);
+        parse_layout_attrs(&p, &packed, &explicit_align, &cold);
         if (at(&p, T_IMPORT)) {
             if (packed || explicit_align) perr(&p, "layout attributes do not apply to imports");
+            if (cold) perr(&p, "@cold applies only to function declarations");
             Node* imp = parse_import(&p);
             if (active) {
                 if (saw_declaration) perr(&p, "imports must precede declarations");
                 nv_push(&p, &decls, imp);
             }
         } else {
+            size_t start = p.i;
             Node* decl = parse_top(&p);
+            if (cold) {
+                if (decl->kind != N_FUNC || (decl->flags & F_EXPO)) {
+                    p.i = start;
+                    perr(&p, "@cold applies only to Ace function declarations");
+                }
+                decl->flags |= F_COLD;
+            }
             if ((packed || explicit_align) && decl->kind != N_STRUCT)
                 perr(&p, "layout attributes apply only to struct declarations");
             if (decl->kind == N_STRUCT) {
@@ -2531,6 +2550,7 @@ static void pflags(Node* x) {
     if (x->flags & F_SPECIALIZED) printf(" specialized");
     if (x->flags & F_INTRINSIC) printf(" intrinsic");
     if (x->flags & F_INLINE) printf(" inline");
+    if (x->flags & F_COLD) printf(" cold");
     if (x->flags & F_PACKED) printf(" packed");
     if (x->flags & F_VOLATILE) printf(" volatile");
     if (x->flags & F_CABI) printf(" c_abi");

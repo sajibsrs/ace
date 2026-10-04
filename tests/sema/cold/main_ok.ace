@@ -1,0 +1,44 @@
+// Every declaration form @cold accepts, called directly and as a function
+// value.
+
+@cold
+rare(value: u64): u64 {
+    return value * 3
+}
+
+@cold
+first[T](xs: []T): usize {
+    return 0
+}
+
+weight[K](key: K): u64 specialized
+
+@cold
+weight[int](key: int): u64 {
+    return u64(key)
+}
+
+Counter: struct { n: int }
+
+@cold
+mut Counter.bump(by: int) {
+    self.n += by
+}
+
+@cold
+Counter::zero(): int {
+    return 0
+}
+
+@cold
+pub shared(x: f64): f64 {
+    return x * 0.5
+}
+
+main(): int {
+    c: Counter = Counter{ n = Counter::zero() }
+    f: (u64): u64 = rare
+    xs: [2]int = [1, 2]
+    if c.n > 0 { mut c.bump(1) }
+    return int(rare(1) + f(2) + weight[int](3) + u64(first[int](xs[..]))) + int(shared(2.0))
+}

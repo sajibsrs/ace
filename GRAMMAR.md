@@ -28,7 +28,7 @@ char_lit      := "'" (byte – "'" | '\' escape) "'"       // exactly one byte
 
 ```ebnf
 file          := attributed_decl*
-attributed_decl := [when_attr] layout_attr* (import_decl | top_decl)
+attributed_decl := [when_attr] (layout_attr | cold_attr)* (import_decl | top_decl)
 
 when_attr     := "@" contextual_when "(" when_expr ")" newline*
 contextual_when := ident                              // exact text "when"
@@ -47,9 +47,11 @@ layout_attr   := packed_attr | align_attr
 packed_attr   := "@" contextual_packed newline*
 align_attr    := "@" contextual_align "(" expr ")" newline*
 offset_attr   := "@" contextual_offset "(" expr ")" newline*
+cold_attr     := "@" contextual_cold newline*           // function forms only (spec Functions & ABI #10)
 contextual_packed := ident                            // exact text "packed"
 contextual_align := ident                             // exact text "align"
 contextual_offset := ident                            // exact text "offset"
+contextual_cold := ident                              // exact text "cold"
 
 import_decl   := module_import | selective_import
 module_import := "import" module_path

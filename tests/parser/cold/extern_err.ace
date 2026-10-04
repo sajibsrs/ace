@@ -1,0 +1,4 @@
+@cold
+extern "c" rare(): int {
+    return 0
+}

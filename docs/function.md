@@ -387,7 +387,8 @@ declarations, bodiless `specialized` templates, and `main` cannot be `inline`,
 and a chain of inline functions that calls back into itself is rejected.
 Release builds also expand small leaf functions on their own: a body of at
 most 24 syntax nodes that calls nothing but conversions and compiler-provided
-operations, within the limits above, and not generic, `main`, or recursive.
+operations, within the limits above, and not generic, `@cold`, `main`, or
+recursive.
 Debug builds keep those calls, so backtraces show them. Mark a larger or
 non-leaf helper `inline` to expand it.
 
@@ -397,6 +398,41 @@ inline methods stays in registers. It lives in memory for the whole function
 once anything needs its address: `&`, a `mut` or receiver argument to a call
 that is not expanded (a deferred call, a helper too large to auto-inline), or
 an inline body that passes its parameter on by address.
+
+## Cold functions
+
+`@cold` on its own line before a function says its calls are rare, typically
+a growth, error, or setup path:
+
+```ace
+@cold
+grow(capacity: usize): usize {
+    if capacity == 0 { return 8 }
+    return capacity * 2
+}
+
+fill(count: usize): usize {
+    capacity: usize = 0
+    for i: usize in 0 .. count {
+        if i == capacity { capacity = grow(capacity) }
+    }
+    return capacity
+}
+```
+
+It changes no result, only layout. The branch arm that calls `grow` is placed
+after the rest of `fill`, so the common iteration falls straight through its
+test with one taken branch, the loop's own, instead of jumping over the arm.
+Blocks reached only from that arm move with it. Only a direct call counts: a
+call through a function value or a contract is not marked.
+
+Functions, methods, associated functions, generic templates, and
+specializations with a body may be `@cold`; each specialization marks itself.
+A cold function is never expanded, since the call is what marks the arm, so
+`inline` and `@cold` together are an error and release builds do not expand
+it as a small leaf. `main`, `extern "c"` definitions, and bodiless
+declarations cannot be `@cold`. In the standard library, `mem.grow` is cold,
+so `Array.push` keeps its growth out of the loop that calls it.
 
 ## Self tail recursion
 
@@ -644,6 +680,16 @@ Why the rules in `spec/compiler.md` and C Interop (`spec/modules-packages.md`) a
   value-type helpers (vector math, color constructors) are exactly the small
   functions worth expanding. Aggregate results cut `bench/core/raytrace` from
   0.842 s to 0.602 s (1.4x) with its helpers marked `inline`.
+- Functions & ABI #10: Ace has no profile feedback and lays out each function
+  alone, so the rare side of a branch must be stated. A guess from the code
+  misfires: treating any arm with a call as rare moved `Map.set`'s common
+  probe out of line and slowed `map-get` by 20%. Marking the callee, as GCC's
+  `__attribute__((cold))` and Rust's `#[cold]` do, states the fact once where
+  it is known and covers every caller, without an annotation per branch (C++
+  `[[unlikely]]`, Zig `@branchHint`). As a layout hint with no effect on
+  results it is an `@` attribute like `@align` rather than a keyword like
+  `inline`. With `mem.grow` cold, `bench/std` array-push went from 1.35x to
+  1.0x of C.
 - Errors #12 (`_`): multiple returns make dropping an unwanted value common
   (`value, ok`, `value, err`). A dedicated discard binds nothing, so repeated
   uses never collide and nothing unread lingers in scope. The bare, untyped

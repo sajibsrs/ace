@@ -1741,7 +1741,7 @@ static int auto_inline(Lw* l, Sym* s) {
     uintptr_t seen = ptrmap_get(&auto_inline_seen, f);
     if (seen) return seen == 1;
     int ok = f->kind == N_FUNC && f->b && !f->c && !s->is_extern && !s->is_generic && !s->spec_args &&
-             !(f->flags & (F_INTRINSIC | F_SPECIALIZED)) && f->nkids <= MAX_PARAMS &&
+             !(f->flags & (F_INTRINSIC | F_SPECIALIZED | F_COLD)) && f->nkids <= MAX_PARAMS &&
              !(!(f->flags & (F_METHOD | F_ASSOC)) && f->len == 4 && memcmp(f->str, "main", 4) == 0);
     for (int i = 0; ok && i < f->nkids; i++)
         if (f->kids[i]->flags & F_NOALIAS) ok = 0;
@@ -2065,6 +2065,7 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
     const char* mn = inst ? fn_value_mangle(s, callee) : link ? NULL : fn_call_mangle(s, x);
     if (inst && !mn) unsupported(l, "generic call");
     c->name = link ? link_name(s, ft) : arena_name(mn);
+    if (d->flags & F_COLD) c->flags |= IRF_COLD;
     if (s->is_extern && (d->flags & F_VARARGS) && first_var >= 0) {
         c->flags |= IRF_VARARGS;
         c->aux = first_var;

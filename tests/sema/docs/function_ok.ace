@@ -134,3 +134,17 @@ extern "c" {
 }
 
 pub extern "c" ace_scale: f64 = 2.5
+
+@cold
+grow(capacity: usize): usize {
+    if capacity == 0 { return 8 }
+    return capacity * 2
+}
+
+fill(count: usize): usize {
+    capacity: usize = 0
+    for i: usize in 0 .. count {
+        if i == capacity { capacity = grow(capacity) }
+    }
+    return capacity
+}
