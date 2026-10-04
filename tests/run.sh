@@ -11,6 +11,9 @@ tab=$(printf '\t')
 ACE_BIN=${ACE_BIN:-./ace}
 ACE_DIR=$(dirname "$ACE_BIN")
 ACE=$(cd "$ACE_DIR" && pwd)/$(basename "$ACE_BIN")
+rm -rf /tmp/ace_sections
+mkdir -p /tmp/ace_sections
+JOBS=${ACE_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}
 target_of() { sed -n 's/^\/\/ target: *\(.*\)/--target=\1/p' "$1"; }
 # libdwarf installs a `dwarfdump` too, with different flags and output.
 DWARFDUMP=
@@ -898,6 +901,11 @@ if ! "$ACE" --release -o /tmp/ace_vectorize/release tests/vectorize/lanes.ace ||
     echo "FAIL: vectorized loops should compute what scalar loops do"
     fail=1
 fi
+# Runs in the background with its own scratch files; its log is
+# printed at the end in section order.
+(
+T=/tmp/ace_sections/checked
+mkdir -p "$T"
 mkdir -p /tmp/ace_checked_bounds
 cp tests/checked_bounds/*.ace /tmp/ace_checked_bounds/
 if ! "$ACE" --debug tests/sema/sequences/main_ok.ace ||
@@ -922,21 +930,21 @@ if ! "$ACE" --ast tests/parser/full_ok.ace >/tmp/ace_mode_plain ||
     fail=1
 fi
 for flags in "--debug --release" "--release --debug"; do
-    if "$ACE" $flags tests/sema/sequences/main_ok.ace >/dev/null 2>/tmp/ace_test_errs ||
-       ! grep -qF -- "--debug and --release are mutually exclusive" /tmp/ace_test_errs; then
+    if "$ACE" $flags tests/sema/sequences/main_ok.ace >/dev/null 2>$T/errs ||
+       ! grep -qF -- "--debug and --release are mutually exclusive" $T/errs; then
         echo "FAIL: mode mutual exclusion for $flags"
         fail=1
     fi
 done
 for bad in --debug=yes --release=yes; do
-    if "$ACE" "$bad" tests/sema/sequences/main_ok.ace >/dev/null 2>/tmp/ace_test_errs ||
-       ! grep -qF "unknown option '$bad'" /tmp/ace_test_errs; then
+    if "$ACE" "$bad" tests/sema/sequences/main_ok.ace >/dev/null 2>$T/errs ||
+       ! grep -qF "unknown option '$bad'" $T/errs; then
         echo "FAIL: invalid mode spelling $bad"
         fail=1
     fi
 done
 for mode in --debug --release; do
-    if "$ACE" "$mode" >/dev/null 2>/tmp/ace_test_errs; then
+    if "$ACE" "$mode" >/dev/null 2>$T/errs; then
         echo "FAIL: $mode without a source should show usage"
         fail=1
     fi
@@ -972,17 +980,17 @@ for f in array_negative array_equal aggregate_array_equal array_slice_upper arra
          mut_string_greater slice_lower slice_upper slice_order \
          slice_source_length; do
     if ! "$ACE" --debug -o "/tmp/ace_checked_bounds/$f" \
-         "/tmp/ace_checked_bounds/$f.ace" >/dev/null 2>/tmp/ace_test_errs; then
+         "/tmp/ace_checked_bounds/$f.ace" >/dev/null 2>$T/errs; then
         echo "FAIL: checked bounds fixture did not compile: $f"
-        cat /tmp/ace_test_errs
+        cat $T/errs
         fail=1
-    elif "/tmp/ace_checked_bounds/$f" >/dev/null 2>/tmp/ace_test_errs; then
+    elif "/tmp/ace_checked_bounds/$f" >/dev/null 2>$T/errs; then
         echo "FAIL: checked bounds fixture did not abort: $f"
         fail=1
     elif ! grep -qxF "/tmp/ace_checked_bounds/$f.ace:$(sed -n 's|^// expect-bounds: *||p' "tests/checked_bounds/$f.ace"): bounds violation" \
-         /tmp/ace_test_errs; then # dash also writes its "Aborted" job line here
+         $T/errs; then # dash also writes its "Aborted" job line here
         echo "FAIL: checked bounds fixture lacked its located diagnostic: $f"
-        cat /tmp/ace_test_errs
+        cat $T/errs
         fail=1
     fi
 done
@@ -1027,9 +1035,9 @@ for f in signed_add unsigned_mul narrow_mul div_zero neg_min shift_count compoun
          imm_signed_add imm_unsigned_sub imm_narrow_add \
          pointer_null pointer_scale pointer_add pointer_sub; do
     if ! "$ACE" --debug -o "/tmp/ace_checked_features/arithmetic_$f" \
-         "tests/checked_arithmetic/$f.ace" >/dev/null 2>/tmp/ace_test_errs ||
-       "/tmp/ace_checked_features/arithmetic_$f" >/dev/null 2>/tmp/ace_test_errs ||
-       ! grep -qF "ace: arithmetic violation" /tmp/ace_test_errs; then
+         "tests/checked_arithmetic/$f.ace" >/dev/null 2>$T/errs ||
+       "/tmp/ace_checked_features/arithmetic_$f" >/dev/null 2>$T/errs ||
+       ! grep -qF "ace: arithmetic violation" $T/errs; then
         echo "FAIL: checked arithmetic fixture $f"
         fail=1
     fi
@@ -1046,9 +1054,9 @@ for f in imm_signed_add imm_unsigned_sub imm_narrow_add narrow_release; do
 done
 for f in noalias copy_length copy_overlap; do
     if ! "$ACE" --debug -o "/tmp/ace_checked_features/contract_$f" \
-         "tests/checked_contracts/$f.ace" >/dev/null 2>/tmp/ace_test_errs ||
-       "/tmp/ace_checked_features/contract_$f" >/dev/null 2>/tmp/ace_test_errs ||
-       ! grep -qF "ace: call contract violation" /tmp/ace_test_errs; then
+         "tests/checked_contracts/$f.ace" >/dev/null 2>$T/errs ||
+       "/tmp/ace_checked_features/contract_$f" >/dev/null 2>$T/errs ||
+       ! grep -qF "ace: call contract violation" $T/errs; then
         echo "FAIL: checked call-contract fixture $f"
         fail=1
     fi
@@ -1070,10 +1078,10 @@ fi
 # the step's position.
 for f in zero_step negative_step narrow_step empty_step; do
     if ! "$ACE" --debug -o "/tmp/ace_checked_features/range_$f" \
-         "tests/checked_ranges/$f.ace" >/dev/null 2>/tmp/ace_test_errs ||
-       "/tmp/ace_checked_features/range_$f" >/dev/null 2>/tmp/ace_test_errs ||
-       ! grep -qF "tests/checked_ranges/$f.ace:5:" /tmp/ace_test_errs ||
-       ! grep -qF ": range step violation" /tmp/ace_test_errs; then
+         "tests/checked_ranges/$f.ace" >/dev/null 2>$T/errs ||
+       "/tmp/ace_checked_features/range_$f" >/dev/null 2>$T/errs ||
+       ! grep -qF "tests/checked_ranges/$f.ace:5:" $T/errs ||
+       ! grep -qF ": range step violation" $T/errs; then
         echo "FAIL: checked range-step fixture $f"
         fail=1
     fi
@@ -1094,9 +1102,9 @@ for mode in --debug --release; do
 done
 for f in pointer function c_function; do
     if ! "$ACE" --debug -o "/tmp/ace_checked_features/null_$f" \
-         "tests/checked_null/$f.ace" >/dev/null 2>/tmp/ace_test_errs ||
-       "/tmp/ace_checked_features/null_$f" >/dev/null 2>/tmp/ace_test_errs ||
-       ! grep -qF "ace: null use violation" /tmp/ace_test_errs; then
+         "tests/checked_null/$f.ace" >/dev/null 2>$T/errs ||
+       "/tmp/ace_checked_features/null_$f" >/dev/null 2>$T/errs ||
+       ! grep -qF "ace: null use violation" $T/errs; then
         echo "FAIL: checked null-use fixture $f"
         fail=1
     fi
@@ -1109,17 +1117,17 @@ if ! "$ACE" --debug -o /tmp/ace_checked_features/allocator_valid \
 fi
 for f in double_release truncated_release leak; do
     if ! "$ACE" --debug -o "/tmp/ace_checked_features/allocator_$f" \
-         "tests/checked_allocator/$f.ace" >/dev/null 2>/tmp/ace_test_errs ||
-       "/tmp/ace_checked_features/allocator_$f" >/dev/null 2>/tmp/ace_test_errs ||
-       ! grep -qF "ace: allocator violation" /tmp/ace_test_errs; then
+         "tests/checked_allocator/$f.ace" >/dev/null 2>$T/errs ||
+       "/tmp/ace_checked_features/allocator_$f" >/dev/null 2>$T/errs ||
+       ! grep -qF "ace: allocator violation" $T/errs; then
         echo "FAIL: checked allocator fixture $f"
         fail=1
     fi
 done
 if ! "$ACE" --debug -o /tmp/ace_checked_features/assert_false \
      tests/assert/checked_false.ace ||
-   /tmp/ace_checked_features/assert_false >/dev/null 2>/tmp/ace_test_errs ||
-   ! grep -qx "checked_false.ace:6:11: assertion failed" /tmp/ace_test_errs; then
+   /tmp/ace_checked_features/assert_false >/dev/null 2>$T/errs ||
+   ! grep -qx "checked_false.ace:6:11: assertion failed" $T/errs; then
     echo "FAIL: debug assert failure"
     fail=1
 fi
@@ -1132,8 +1140,8 @@ if ! "$ACE" --release -o /tmp/ace_checked_features/assert_release \
     echo "FAIL: assert true/release stripping"
     fail=1
 fi
-if "$ACE" tests/assert/false_err.ace >/dev/null 2>/tmp/ace_test_errs ||
-   ! grep -qF "assert condition is always false" /tmp/ace_test_errs; then
+if "$ACE" tests/assert/false_err.ace >/dev/null 2>$T/errs ||
+   ! grep -qF "assert condition is always false" $T/errs; then
     echo "FAIL: compile-time false assert diagnostic"
     fail=1
 fi
@@ -1172,9 +1180,9 @@ fi
 if [ "$(uname -m)" = x86_64 ] && command -v objdump >/dev/null 2>&1; then
     if ! "$ACE" --release -c -o /tmp/ace_checked_features/far_offset \
          tests/emit/pointers/far_offset.ace ||
-       ! objdump -d -M intel /tmp/ace_checked_features/far_offset.o >/tmp/ace_test_dis ||
-       grep -qF '[rbp+0x7fff' /tmp/ace_test_dis ||
-       ! grep -qF 'lea    rax,[rbp-' /tmp/ace_test_dis; then
+       ! objdump -d -M intel /tmp/ace_checked_features/far_offset.o >$T/dis ||
+       grep -qF '[rbp+0x7fff' $T/dis ||
+       ! grep -qF 'lea    rax,[rbp-' $T/dis; then
         echo "FAIL: x64 far stack-object access wrapped its rbp displacement"
         fail=1
     fi
@@ -1182,18 +1190,20 @@ fi
 
 for f in null overflow alignment reinterpret_alignment; do
     if ! "$ACE" --debug -o "/tmp/ace_checked_features/pointer_construct_$f" \
-         "tests/checked_pointer_construct/$f.ace" >/dev/null 2>/tmp/ace_test_errs; then
+         "tests/checked_pointer_construct/$f.ace" >/dev/null 2>$T/errs; then
         echo "FAIL: checked pointer/slice construction fixture did not compile: $f"
         fail=1
     elif "/tmp/ace_checked_features/pointer_construct_$f" \
-         >/dev/null 2>/tmp/ace_test_errs; then
+         >/dev/null 2>$T/errs; then
         echo "FAIL: checked pointer/slice construction did not abort: $f"
         fail=1
-    elif ! grep -Eq 'ace: (arithmetic violation|null use violation)' /tmp/ace_test_errs; then
+    elif ! grep -Eq 'ace: (arithmetic violation|null use violation)' $T/errs; then
         echo "FAIL: checked pointer/slice construction lacked diagnostic: $f"
         fail=1
     fi
 done
+echo "$fail" >"$T/fail"
+) >/tmp/ace_sections/checked.log 2>&1 &
 
 # Darwin SDK BPF declarations (tests/darwin_bpf_layout.c) match the verified
 # darwin-arm64 sys layout, on a Darwin host only
@@ -1260,31 +1270,38 @@ fi
 if [ -d tests/emit ]; then
     rm -rf /tmp/ace_emit
     mkdir -p /tmp/ace_emit
-    for f in $(find tests/emit -name '*.ace' | sort); do
+    # Fixtures run in parallel (ACE_JOBS, default: CPU count); each writes
+    # its failure report to its own file, printed afterward in sorted order.
+    rm -rf /tmp/ace_emit_fail
+    mkdir -p /tmp/ace_emit_fail
+    find tests/emit -name '*.ace' | sort |
+    ACE="$ACE" xargs -P "$JOBS" -n 1 sh -c '
+        f=$1
         rel=${f#tests/emit/}
         name=${rel%.ace}
-        exp=$(sed -n 's/^.*expect-exit:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$f")
+        report=/tmp/ace_emit_fail/$(printf "%s" "$rel" | tr / _)
+        exp=$(sed -n "s/^.*expect-exit:[[:space:]]*\([0-9][0-9]*\).*/\1/p" "$f")
         if [ -z "$exp" ]; then
-            echo "FAIL: $f has no '// expect-exit: N' line"
-            fail=1
-            continue
+            echo "FAIL: $f has no '"'"'// expect-exit: N'"'"' line" >"$report"
+            exit 0
         fi
-        link=$(sed -n 's/^.*expect-link:[[:space:]]*//p' "$f")
+        link=$(sed -n "s/^.*expect-link:[[:space:]]*//p" "$f")
         mkdir -p "/tmp/ace_emit/$(dirname "$rel")"
         cp "$f" "/tmp/ace_emit/$rel"
-        rm -f /tmp/ace_test_run
-        out=$(cd /tmp/ace_emit && { "$ACE" --debug -c "$rel" && cc "$name.o" -o "$name" $link && "./$name"; } 2>/tmp/ace_test_run)
+        out=$(cd /tmp/ace_emit && { "$ACE" --debug -c "$rel" && cc "$name.o" -o "$name" $link && "./$name"; } 2>"/tmp/ace_emit/$name.err")
         got=$?
         if [ "$got" -ne "$exp" ]; then
-            echo "FAIL: $f exited $got, want $exp"
-            cat /tmp/ace_test_run
-            fail=1
+            { echo "FAIL: $f exited $got, want $exp"; cat "/tmp/ace_emit/$name.err"; } >>"$report"
         fi
-        expout=$(sed -n 's/^.*expect-output:[[:space:]]*//p' "$f")
+        expout=$(sed -n "s/^.*expect-output:[[:space:]]*//p" "$f")
         if [ -n "$expout" ] && [ "$out" != "$expout" ]; then
-            echo "FAIL: $f output '$out', want '$expout'"
-            fail=1
+            echo "FAIL: $f output '"'"'$out'"'"', want '"'"'$expout'"'"'" >>"$report"
         fi
+    ' sh
+    for report in /tmp/ace_emit_fail/*; do
+        [ -f "$report" ] || continue
+        cat "$report"
+        fail=1
     done
     precision_out=$(/tmp/ace_emit/printf/precision)
     if [ "${#precision_out}" -ne 326 ] ||
@@ -1875,6 +1892,11 @@ fi
 # module fixtures: one directory per case with a main.ace. A `// expect-exit:
 # N` line compiles + links + runs in place (companion modules stay beside it
 # so relative imports resolve); without one the case must fail to compile.
+# Runs in the background with its own scratch files; its log is
+# printed at the end in section order.
+(
+T=/tmp/ace_sections/modules
+mkdir -p "$T"
 if [ -d tests/modules ]; then
     mkdir -p /tmp/ace_modules
     for f in tests/modules/*/main.ace; do
@@ -1887,12 +1909,12 @@ if [ -d tests/modules ]; then
             fi
             continue
         fi
-        rm -f /tmp/ace_test_run
-        out=$({ "$ACE" --debug -o "/tmp/ace_modules/$name" "$f" && "/tmp/ace_modules/$name"; } 2>/tmp/ace_test_run)
+        rm -f $T/run
+        out=$({ "$ACE" --debug -o "/tmp/ace_modules/$name" "$f" && "/tmp/ace_modules/$name"; } 2>$T/run)
         got=$?
         if [ "$got" -ne "$exp" ]; then
             echo "FAIL: $f exited $got, want $exp"
-            cat /tmp/ace_test_run
+            cat $T/run
             fail=1
         fi
         expout=$(sed -n 's/^.*expect-output:[[:space:]]*//p' "$f")
@@ -1909,21 +1931,28 @@ if [ -d tests/modules ]; then
     fi
     # multi-file DWARF across a local module, a stdlib module, and the root
     if [ -n "$DWARFDUMP" ]; then
-        moddwarf=$("$DWARFDUMP" --debug-line /tmp/ace_modules/diamond.o 2>/tmp/ace_test_errs)
+        moddwarf=$("$DWARFDUMP" --debug-line /tmp/ace_modules/diamond.o 2>$T/errs)
         if [ $? -ne 0 ] ||
            ! printf '%s\n' "$moddwarf" | grep -q '/shared.ace' ||
            ! printf '%s\n' "$moddwarf" | grep -q '/main.ace'; then
             echo "FAIL: module and root sources should both appear in DWARF"
-            cat /tmp/ace_test_errs
+            cat $T/errs
             fail=1
         fi
     fi
 fi
+echo "$fail" >"$T/fail"
+) >/tmp/ace_sections/modules.log 2>&1 &
 
 # driver fixtures: external link inputs and options through the -o pipeline.
 # The cc launch is an argument vector with no shell, so paths with spaces and
 # shell metacharacters link exactly as written; -L/-l and -framework cover
 # archives and Apple frameworks; validation and linker failures are checked.
+# Runs in the background with its own scratch files; its log is
+# printed at the end in section order.
+(
+T=/tmp/ace_sections/driver
+mkdir -p "$T"
 if [ -d tests/driver ]; then
     mkdir -p "/tmp/ace_driver/lib dir" "/tmp/ace_driver/space dir"
     cc -c tests/driver/helper.c -o /tmp/ace_driver/helper_raw.o
@@ -1973,9 +2002,9 @@ if [ -d tests/driver ]; then
     fi
     # -o FILE.ace compiles that file in place: executable and object take the stem
     printf 'main(): int {\n    return 5\n}\n' > /tmp/ace_driver/stem_test.ace
-    if ! "$ACE" --debug -o /tmp/ace_driver/stem_test.ace >/dev/null 2>/tmp/ace_test_errs; then
+    if ! "$ACE" --debug -o /tmp/ace_driver/stem_test.ace >/dev/null 2>$T/errs; then
         echo "FAIL: -o FILE.ace in-place compile failed"
-        cat /tmp/ace_test_errs
+        cat $T/errs
         fail=1
     elif ! [ -x /tmp/ace_driver/stem_test ] || ! [ -f /tmp/ace_driver/stem_test.o ]; then
         echo "FAIL: -o FILE.ace did not produce the stem executable and object"
@@ -1991,9 +2020,9 @@ if [ -d tests/driver ]; then
     # Bidirectional C ABI oracle: clang owns the foreign half and calls Ace
     # exports; Ace calls the same C object through extern declarations.
     if ! "$ACE" --debug -o /tmp/ace_driver/app_abi tests/driver/abi.ace \
-         /tmp/ace_driver/abi_c.o >/dev/null 2>/tmp/ace_test_errs; then
+         /tmp/ace_driver/abi_c.o >/dev/null 2>$T/errs; then
         echo "FAIL: C ABI oracle did not compile/link"
-        cat /tmp/ace_test_errs
+        cat $T/errs
         fail=1
     else
         /tmp/ace_driver/app_abi
@@ -2015,9 +2044,9 @@ if [ -d tests/driver ]; then
             if [ "$input" = object ]; then set -- /tmp/ace_driver/globals_c.o
             else set -- -L /tmp/ace_driver/globals -l globals; fi
             if ! "$ACE" $mode -o /tmp/ace_driver/app_globals tests/driver/globals.ace "$@" \
-                    >/dev/null 2>/tmp/ace_test_errs; then
+                    >/dev/null 2>$T/errs; then
                 echo "FAIL: C globals ($input, $mode) did not compile/link"
-                cat /tmp/ace_test_errs
+                cat $T/errs
                 fail=1
                 continue
             fi
@@ -2033,12 +2062,12 @@ if [ -d tests/driver ]; then
 
     driver_diag() {
         want=$1; shift
-        if "$ACE" "$@" >/dev/null 2>/tmp/ace_test_errs; then
+        if "$ACE" "$@" >/dev/null 2>$T/errs; then
             echo "FAIL: expected driver rejection: $*"
             fail=1
-        elif ! grep -qF "$want" /tmp/ace_test_errs; then
+        elif ! grep -qF "$want" $T/errs; then
             echo "FAIL: expected diagnostic '$want' from: $*"
-            cat /tmp/ace_test_errs
+            cat $T/errs
             fail=1
         fi
     }
@@ -2103,15 +2132,17 @@ if [ -d tests/driver ]; then
     fi
     # cc's own diagnostics pass through; ace reports the exit status and fails
     if "$ACE" --debug -o /tmp/ace_driver/app_bad tests/driver/main_obj.ace \
-       -l ace_missing_lib_zz >/dev/null 2>/tmp/ace_test_errs; then
+       -l ace_missing_lib_zz >/dev/null 2>$T/errs; then
         echo "FAIL: missing library should fail to link"
         fail=1
-    elif ! grep -qF "ace: linker exited with status" /tmp/ace_test_errs; then
+    elif ! grep -qF "ace: linker exited with status" $T/errs; then
         echo "FAIL: linker failure should report the exit status"
-        cat /tmp/ace_test_errs
+        cat $T/errs
         fail=1
     fi
 fi
+echo "$fail" >"$T/fail"
+) >/tmp/ace_sections/driver.log 2>&1 &
 
 # lexer spot-checks
 if ! "$ACE" --tokens tests/lexer/hello_ok.ace | grep -q "^3:1${tab}import$"; then
@@ -2522,6 +2553,12 @@ for f in $(find tests/emit -name '*.ace' | sort); do
         echo "FAIL: --release --ir $f: $(head -1 /tmp/ace_test_errs)"
         fail=1
     fi
+done
+
+wait
+for name in checked modules driver; do
+    cat "/tmp/ace_sections/$name.log"
+    [ "$(cat "/tmp/ace_sections/$name/fail" 2>/dev/null)" = 0 ] || fail=1
 done
 
 if [ $fail -eq 0 ]; then

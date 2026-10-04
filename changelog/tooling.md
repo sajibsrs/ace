@@ -17,3 +17,7 @@
 - `tests/run.sh` picks its DWARF reader once: `llvm-dwarfdump`, else
   `dwarfdump`, whichever reports itself as LLVM, so libdwarf's same-named tool
   on Linux no longer fails the DWARF checks; with neither, they are skipped.
+- `tests/run.sh` runs emit fixtures `ACE_JOBS` at a time (default: CPU count)
+  and the checked, module, and driver sections in the background with their
+  own scratch files, printing reports afterward in a fixed order; the suite
+  drops from 2:37 to about 43 s on a 10-core Mac.
