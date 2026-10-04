@@ -1,5 +1,9 @@
 # Compiler
 
+- A generic stamp-time error is followed by a note per instantiation that led
+  to it (`in 'outer[string]' instantiated here`), innermost first, from a
+  chain of stamp frames on the checker; a `void` type argument is spelled
+  `void`, not "no value".
 - A parser check made after the construct it names is parsed reports at a
   saved token (`perr_at`); a `mut` that heads no call, at statement level or
   after `defer`, names its `mut`, not the token after the expression.

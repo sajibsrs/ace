@@ -1,0 +1,31 @@
+/* A stamp-time error names every instantiation that led to it, innermost first. */
+
+inner[T](): T {
+    y: T = 1
+    return y
+}
+
+outer[T](): T {
+    return inner[T]()
+}
+
+Box[T]: struct { value: T }
+
+Box[T].get(): T {
+    y: T = 1
+    return y
+}
+
+Box[T]::make(): T {
+    y: T = 1
+    return y
+}
+
+main(): int {
+    a: int = outer[int]()
+    s: string = outer[string]()
+    b: Box[string] = Box[string]{ value = "x" }
+    t: string = b.get()
+    u: string = Box[string]::make()
+    return 0
+}

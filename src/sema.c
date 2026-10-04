@@ -76,6 +76,7 @@ static int is_volatile_scalar(SType* t) {
 }
 
 static const char* type_name(SType* t);
+static const char* spec_tuple_name(SType** args, int nargs);
 
 /* Append a type list, `(a, b)`, to a composite name being built. */
 static void type_list_name(char* out, size_t cap, SType** types, SField* fields, int n) {
@@ -308,6 +309,15 @@ typedef struct Scope {
 
 enum { DECL_DONE, DECL_ENTERED, DECL_RESOLVING };
 
+// one generic stamp in progress: an error inside it names this site (Generics #7)
+typedef struct Inst {
+    struct Inst* outer;
+    Node*        at;   // the written instantiation
+    Node*        decl; // the generic declaration stamped
+    SType**      args;
+    int          nargs;
+} Inst;
+
 typedef struct {
     Diag*   d;
     Scope*  scope;
@@ -318,11 +328,12 @@ typedef struct {
     int     in_module; // checking an imported file's code: root top-levels are unseen
     int     quiet;   // trying an overload candidate: count errors, print none
     int     quiet_errors;
+    Inst*   inst;    // innermost generic stamp being checked
 } Ck;
 
 static SType* build_type(Ck* k, Node* t);
 static SType* generic_func_value(Ck* k, Node* e, SType* want);
-static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int nargs);
+static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int nargs, Node* at);
 static SType* build_type_or_void(Ck* k, Node* t);
 static SType* build_func_type(Ck* k, Node* f, SType** args, int nargs);
 
@@ -351,6 +362,17 @@ static void ck_err(Ck* k, Node* n, const char* fmt, ...) {
     vfprintf(stderr, fmt, ap);
     va_end(ap);
     fputc('\n', stderr);
+    for (Inst* in = k->inst; in; in = in->outer) {
+        Node* g = in->decl;
+        fprintf(stderr, "%s:%d:%d: note: in '", in->at->path ? in->at->path : k->d->path, in->at->line, in->at->col);
+        // a method or associated function takes its owner's type arguments
+        if (g->kind == N_FUNC && (g->flags & (F_METHOD | F_ASSOC)) && g->d)
+            fprintf(stderr, "%.*s%s%s%.*s", (int)g->d->len, g->d->str, spec_tuple_name(in->args, in->nargs),
+                    g->flags & F_METHOD ? "." : "::", (int)g->len, g->str);
+        else
+            fprintf(stderr, "%.*s%s", (int)g->len, g->str, spec_tuple_name(in->args, in->nargs));
+        fputs("' instantiated here\n", stderr);
+    }
     k->d->errors++;
 }
 
@@ -1227,7 +1249,7 @@ static SType* prim_by_name(const char* s, uint32_t len) {
     return NULL;
 }
 
-static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int nargs);
+static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int nargs, Node* at);
 static SType* indexed_named_type(Ck* k, Node* ix);
 
 static int is_void_name(Node* t) {
@@ -1296,7 +1318,7 @@ static SType* build_named(Ck* k, Node* t) {
     if (t->nkids > 0) { // generic instantiation in type position: Vec[int]
         SType** args = (SType**)arena_alloc((size_t)t->nkids * sizeof(SType*));
         for (int i = 0; i < t->nkids; i++) args[i] = build_type_or_void(k, t->kids[i]);
-        return instantiate_generic_type(k, s->type->decl, args, t->nkids);
+        return instantiate_generic_type(k, s->type->decl, args, t->nkids, t);
     }
     if (s->is_generic) {
         ck_err(k, t, "generic type '%.*s' needs explicit type arguments", (int)t->len, t->str);
@@ -1566,7 +1588,7 @@ static const char* spec_tuple_name(SType** args, int nargs) {
             b[o++] = ',';
             b[o++] = ' ';
         }
-        const char* tn = type_name(args[i]);
+        const char* tn = args[i]->kind == SK_VOID ? "void" : type_name(args[i]); // written as a type argument
         size_t n = strlen(tn);
         if (o + n + 2 >= sizeof bufs[0] - 1) {
             b[o++] = '.';
@@ -3004,6 +3026,10 @@ static SType* instantiate_generic_func_args(Ck* k, Sym* gs, SType** args, int na
     k->nsub = nargs;
     for (int i = 0; i < nargs; i++) k->tnames[i] = tp->kids[i]->str;
     int errors = k->d->errors + k->quiet_errors;
+    // positioned at the generic's written name
+    Node* site = (at->kind == N_INDEX || at->kind == N_CALL) && at->a ? at->a : at;
+    Inst frame = { k->inst, site, f, args, nargs };
+    k->inst = &frame;
     SType* ft = build_func_type(k, f, args, nargs);
     STypeInst* inst = (STypeInst*)arena_alloc(sizeof(STypeInst));
     inst->args = args;
@@ -3015,6 +3041,7 @@ static SType* instantiate_generic_func_args(Ck* k, Sym* gs, SType** args, int na
     if ((f->flags & F_SPECIALIZED) || k->d->errors + k->quiet_errors != errors) {
         // no default body: the no-default call-site check has already fired
         k->tnames = sn; k->ttypes = st; k->nsub = ns;
+        k->inst = frame.outer;
         return ft;
     }
     Scope* saved_scope = k->scope;
@@ -3022,6 +3049,7 @@ static SType* instantiate_generic_func_args(Ck* k, Sym* gs, SType** args, int na
     check_func_body(k, f); // stamping: body checked once per instantiation
     k->scope = saved_scope;
     k->tnames = sn; k->ttypes = st; k->nsub = ns;
+    k->inst = frame.outer;
     return ft;
 }
 
@@ -3329,7 +3357,7 @@ static SType* indexed_named_type(Ck* k, Node* ix) {
     int n = ix->b ? 1 : ix->nkids;
     SType** args = (SType**)arena_alloc((size_t)(n ? n : 1) * sizeof(SType*));
     for (int i = 0; i < n; i++) args[i] = build_type_or_void(k, ix->b ? ix->b : ix->kids[i]);
-    return instantiate_generic_type(k, ts->type->decl, args, n);
+    return instantiate_generic_type(k, ts->type->decl, args, n, ix);
 }
 
 static uint32_t type_identity(SType* t) {
@@ -6723,7 +6751,7 @@ static void forget_inst(STypeInst** head, STypeInst* inst) {
         }
 }
 
-static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int nargs) {
+static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int nargs, Node* at) {
     if (!decl || !decl->c) return T_ERR;
     Node* tp = decl->c;
     if (tp->nkids != nargs) {
@@ -6761,7 +6789,10 @@ static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int narg
         k->nsub = nargs;
         for (int i = 0; i < nargs; i++) k->tnames[i] = tp->kids[i]->str;
         int quiet_errors = k->quiet_errors;
+        Inst frame = { k->inst, at, decl, args, nargs };
+        k->inst = &frame;
         inst->result = build_type(k, decl->a);
+        k->inst = frame.outer;
         k->tnames = sn; k->ttypes = st; k->nsub = ns;
         SType* result = inst->result;
         if (k->quiet && k->quiet_errors != quiet_errors) forget_inst(head, inst);
@@ -6787,6 +6818,8 @@ static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int narg
     k->nsub = nargs;
     for (int i = 0; i < nargs; i++) k->tnames[i] = tp->kids[i]->str;
     int quiet_errors = k->quiet_errors;
+    Inst frame = { k->inst, at, decl, args, nargs };
+    k->inst = &frame;
     if (decl->kind == N_STRUCT) {
         fill_struct_type(k, decl, t);
     } else if (decl->kind == N_CONTRACT) {
@@ -6796,6 +6829,7 @@ static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int narg
     } else {
         t = T_ERR;
     }
+    k->inst = frame.outer;
     k->tnames = sn; k->ttypes = st; k->nsub = ns;
     if (k->quiet && k->quiet_errors != quiet_errors) forget_inst(head, inst);
     return t;

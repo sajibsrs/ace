@@ -134,6 +134,12 @@ tests/sema/functions/void_value_mismatch_err.ace|(i64): void given where (i64): 
 tests/sema/functions/void_type_argument_err.ace|3:16: error: 'void' (as T) is allowed only as a function type's return or a type argument
 tests/sema/generics/void_field_err.ace|3:25: error: 'void' (as T) is allowed only
 tests/sema/generics/void_local_err.ace|4:13: error: 'void' (as R) is allowed only
+tests/sema/generics/void_local_err.ace|12:5: note: in 'keep[void]' instantiated here
+tests/sema/generics/void_field_err.ace|6:11: note: in 'Box[void]' instantiated here
+tests/sema/generics/instantiation_site_err.ace|9:12: note: in 'inner[string]' instantiated here
+tests/sema/generics/instantiation_site_err.ace|26:17: note: in 'outer[string]' instantiated here
+tests/sema/generics/instantiation_site_err.ace|28:19: note: in 'Box[string].get' instantiated here
+tests/sema/generics/instantiation_site_err.ace|29:30: note: in 'Box[string]::make' instantiated here
 tests/sema/generics/void_memory_err.ace|'void' names no value and cannot be a memory element type
 tests/sema/functions/return_no_value_err.ace|7:16: error: type mismatch: no value given where i64 expected
 tests/sema/types/predeclared_name_err.ace|3:1: error: 'bool' is a predeclared type name and cannot be redeclared

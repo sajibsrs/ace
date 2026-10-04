@@ -289,6 +289,20 @@ Generic functions may be overloaded. The written type arguments are substituted
 first, followed by the same exact argument matching used for ordinary overloads.
 Each used type tuple emits a specialized function body.
 
+Each stamp is checked for its own type arguments. An error inside the body
+names its line there, followed by a note for each instantiation that led to
+it, innermost first; a method or associated function is named through its
+owner (`Box[string].get`, `Box[string]::make`):
+
+```text
+main.ace:4:12: error: type mismatch: integer literal given where string expected (casts are explicit)
+main.ace:9:12: note: in 'inner[string]' instantiated here
+main.ace:26:17: note: in 'outer[string]' instantiated here
+```
+
+A type tuple is checked once, so its error is reported at the first
+instantiation that stamps it.
+
 A generic function becomes a function value once its type arguments are
 written. The declared function-value type never supplies them, so a bare
 `choose` is an error:
@@ -735,6 +749,10 @@ Why the rules in `spec/compiler.md` and C Interop (`spec/modules-packages.md`) a
   through the GOT, which the dynamic linker fills (`GOT_LOAD` on Apple arm64,
   `GOTPCREL` on x64).
 
+- Generics #7: a stamp-time error keeps its line in the generic body, where
+  the fix usually is, and adds a note per instantiation site, as Clang and GCC
+  ("required from here"), Rust, and Zig ("called from here") do; reporting at
+  the call alone would hide which body line fails.
 - Functions & ABI #8: the marker keeps expansion visible in source and declares
   at the module boundary that callers compile against the body; release builds
   additionally expand only small leaf functions (Compiler #6), so unmarked code

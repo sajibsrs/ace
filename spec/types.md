@@ -183,7 +183,7 @@ Decision: explicit monomorphization.
 4. Type parameters ride brackets: `max[T](a: T, b: T): T`; generic types likewise: `Vec[T]: struct { items: []T, cap: int }`.
 5. Instantiation always names its types — `max[int](3, 9)`, `sort[Point](pts)` — no deduction from arguments, ever; the no-inference rule (Type System #1) covers type arguments too.
 6. Instantiated function values type cleanly: `cmp: (int, int): int = max[int]`.
-7. No constraint syntax exists — T is unbounded. Checking happens per instantiation: the body must typecheck for the stated types; errors surface at the instantiation site.
+7. No constraint syntax exists — T is unbounded. Checking happens per instantiation: the body must typecheck for the stated types; an error names its line in the body and each instantiation site that led to it.
 8. Each distinct type-argument tuple stamps a separate plain function/type — stamping is bounded by written instantiations.
 9. Generic specialization: a generic function declaration may have same-name specializations, anywhere in its file, whose brackets name concrete type arguments — `parse[int](text: string): (int, bool) { … }`. Each specialization is an ordinary, independently checked function, not a template instance.
 10. Selection is exact: an instantiation resolves to the specialization whose type-argument tuple equals the written arguments; with no match, the template stamps as usual (rules 1–8). A specialization's parameters, `mut` positions, and returns must equal the substituted generic signature — checked at declaration against the expected signature, never discovered at a call. Duplicate specializations for one exact tuple on one generic overload are a declaration error.
