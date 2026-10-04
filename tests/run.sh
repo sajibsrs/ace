@@ -245,6 +245,19 @@ for want in \
     fi
 done
 
+# a mut argument, an expression statement, and a range are positioned at
+# their own first token or operator
+node_position=$("$ACE" tests/sema/operators/node_position_err.ace 2>&1)
+for want in \
+    "9:18: error: 'mut' marks mut parameters; mem.equal parameter 1 is read-only" \
+    "10:5: error: untyped literal expression has no effect" \
+    "14:22: error: range bounds must be one integer type, got i32 and i64"; do
+    if ! printf '%s\n' "$node_position" | grep -qF "$want"; then
+        echo "FAIL: node position should report: $want"
+        fail=1
+    fi
+done
+
 compound_operand=$("$ACE" tests/sema/operators/compound_operand_err.ace 2>&1)
 for want in \
     "7:11: error: '%=' needs an integer target, got f64" \

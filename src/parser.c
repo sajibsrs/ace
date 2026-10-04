@@ -833,6 +833,7 @@ static Node* expr_postfix_base(P* p, int ctx, Node* base) {
                     // mut call argument. `mut &value` could not be a valid mut
                     // argument anyway because an address expression is not an lvalue.
                     if (at(p, T_MUT) && kth(p, 1) != T_AMP) {
+                        Token* mut = tk(p);
                         p->i++;
                         Node* value = expr(p, 0);
                         if (value->kind == N_SLICE_E) {
@@ -846,7 +847,7 @@ static Node* expr_postfix_base(P* p, int ctx, Node* base) {
                             value->flags |= F_MUT;
                             nv_push(p, &args, value);
                         } else {
-                            Node* ma = nd(p, N_MUTARG);
+                            Node* ma = nd_tok(p, N_MUTARG, mut);
                             ma->a = value;
                             nv_push(p, &args, ma);
                         }
@@ -1177,8 +1178,8 @@ static Node* parse_for_head(P* p, Node* n) {
             !(it->flags & F_MUT))
             it->flags |= F_MUT; // `in mut xs[lo..hi]` — establish, then alias
         if (at(p, T_DOTDOT)) {
+            Node* r = nd(p, N_RANGE); // positioned at '..', like N_BINARY
             p->i++;
-            Node* r = nd(p, N_RANGE);
             r->a = it;
             r->b = expr(p, CTX_NOSLIT);
             if (ident_at(p, "step")) {
@@ -1518,11 +1519,11 @@ static Node* parse_stmt(P* p) {
         return n;
     }
     case T_MUT: { // `mut c.scale(2.0)` — receiver-marked call statement
+        Node* n = nd(p, N_EXPRSTMT);
         p->i++;
         Node* e = expr(p, CTX_NOSLIT);
         if (e->kind != N_CALL) perr(p, "'mut' at statement level marks a call receiver");
         e->flags |= F_MUT;
-        Node* n = nd(p, N_EXPRSTMT);
         n->a = e;
         return n;
     }
@@ -1559,7 +1560,8 @@ static Node* parse_stmt(P* p) {
 // caller's struct-literal suppression — a for-head clause is followed by the
 // body's '{', so head clauses parse with CTX_NOSLIT (grammar Note #9).
 static Node* parse_expr_stmt(P* p, int ctx) {
-    int line = tk(p)->line;
+    Token* start = tk(p);
+    int line = start->line;
     Node* e = expr(p, ctx);
     if (at(p, T_COMMA)) { // destructuring assignment, possibly mixed under `=`
         Node* a = nd(p, N_ASSIGN);
@@ -1610,7 +1612,7 @@ static Node* parse_expr_stmt(P* p, int ctx) {
         a->a = expr(p, ctx);
         return a;
     }
-    Node* n = nd(p, N_EXPRSTMT);
+    Node* n = nd_tok(p, N_EXPRSTMT, start);
     n->a = e;
     return n;
 }

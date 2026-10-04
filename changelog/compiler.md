@@ -1,5 +1,8 @@
 # Compiler
 
+- A `mut` argument, an expression statement, and a range are positioned at
+  their `mut`, first token, and `..`; like binary expressions, they took the
+  token after their contents.
 - A binary expression is positioned at its operator, like unary, assignment,
   and comparison-chain nodes; it took the token after its right operand, so
   its diagnostics named the next line or a closing brace.

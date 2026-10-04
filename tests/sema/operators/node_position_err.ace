@@ -1,0 +1,16 @@
+/* A 'mut' argument, an expression statement, and a range are positioned at
+ * their own first token or operator, not at the token after their contents. */
+
+import mem
+
+main(): int {
+    a: [4]u8 = [1, 2, 3, 4]
+    b: [4]u8 = [1, 2, 3, 4]
+    if mem.equal(mut a, b) { return 1 }
+    1 + 2
+
+    lo: i32 = 0
+    hi: i64 = 4
+    for i: i64 in lo .. hi {}
+    return 0
+}
