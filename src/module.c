@@ -326,32 +326,20 @@ static Member* find_member(Module* m, const char* name, uint32_t len, int is_typ
     return NULL;
 }
 
+// canon is already a realpath, so std identity is a string compare under std_root
+static int is_std_path(Loader* L, const char* canon, const char* a, const char* b, const char* c) {
+    if (!L->std_root) return 0;
+    size_t n = strlen(L->std_root), na = strlen(a), nb = strlen(b);
+    return strncmp(canon, L->std_root, n) == 0 && strncmp(canon + n, a, na) == 0 &&
+           strncmp(canon + n + na, b, nb) == 0 && strcmp(canon + n + na + nb, c) == 0;
+}
+
 static int is_std_named_module(Loader* L, const char* canon, const char* name) {
-    char dir[4096];
-    compiler_dir(dir, sizeof dir, L->compiler_path);
-    char flat[4608];
-    char directory[4608];
-    if (strcmp(dir, ".") == 0) {
-        snprintf(flat, sizeof flat, "std/%s.ace", name);
-        snprintf(directory, sizeof directory, "std/%s/mod.ace", name);
-    } else {
-        snprintf(flat, sizeof flat, "%s/std/%s.ace", dir, name);
-        snprintf(directory, sizeof directory, "%s/std/%s/mod.ace", dir, name);
-    }
-    const char* expected = canonicalize(flat);
-    if (expected && strcmp(expected, canon) == 0) return 1;
-    expected = canonicalize(directory);
-    return expected && strcmp(expected, canon) == 0;
+    return is_std_path(L, canon, "/", name, ".ace") || is_std_path(L, canon, "/", name, "/mod.ace");
 }
 
 static int is_std_internal_named_module(Loader* L, const char* canon, const char* name) {
-    char dir[4096];
-    compiler_dir(dir, sizeof dir, L->compiler_path);
-    char path[4608];
-    if (strcmp(dir, ".") == 0) snprintf(path, sizeof path, "std/@/%s.ace", name);
-    else snprintf(path, sizeof path, "%s/std/@/%s.ace", dir, name);
-    const char* expected = canonicalize(path);
-    return expected && strcmp(expected, canon) == 0;
+    return is_std_path(L, canon, "/@/", name, ".ace");
 }
 
 const char* formatting_prefix;

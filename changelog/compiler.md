@@ -1,5 +1,9 @@
 # Compiler
 
+- Front end roughly halved (`bench/std/string` check 119.6M → 61.9M
+  instructions): built-in std modules are recognized by comparing the
+  module's resolved path under the std root, not by `realpath` on candidate
+  paths, and the lexer compares a keyword's first byte before its length.
 - A generic stamp-time error is followed by a note per instantiation that led
   to it (`in 'outer[string]' instantiated here`), innermost first, from a
   chain of stamp frames on the checker; a `void` type argument is spelled

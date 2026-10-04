@@ -267,7 +267,7 @@ static void scan_ident(Lex* L) {
     const char* text = L->s->buf + L->toff;
     TokKind k = T_IDENT;
     for (size_t i = 0; i < sizeof(KEYWORDS) / sizeof(KEYWORDS[0]); i++) {
-        if (strlen(KEYWORDS[i].s) == n && memcmp(KEYWORDS[i].s, text, n) == 0) {
+        if (KEYWORDS[i].s[0] == text[0] && strlen(KEYWORDS[i].s) == n && memcmp(KEYWORDS[i].s, text, n) == 0) {
             k = KEYWORDS[i].k;
             break;
         }
