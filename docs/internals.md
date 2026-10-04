@@ -21,9 +21,9 @@ source → lex → parse → merge → check → lower → optimize → select/a
   loads every imported file the same way, renames through one scoped
   reference walk, and merges in dependency order. A module is one file or a
   directory rooted at `mod.ace` (`docs/module.md`).
-- **`sema.c`** (pass 4) — one in-order walk of the merged unit: types, names,
-  expression typing, generics, forward-call fixups (declaration before use),
-  and the definite-initialization walk. The largest file in the compiler.
+- **`sema.c`** (pass 4) — enters every top-level declaration of the merged
+  unit, resolves each on demand, then checks bodies in order: types, names,
+  expression typing, generics, and the definite-initialization walk. The largest file in the compiler.
 
 ## IR backend
 

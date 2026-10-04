@@ -1,0 +1,11 @@
+/* A call whose untyped argument settles on the sole overload is checked
+ * where its value lands. */
+
+f(a: u64): u64 {
+    return a
+}
+
+main(): int {
+    y: u8 = f(300)
+    return int(y)
+}

@@ -361,9 +361,10 @@ main(): int {
 ```
 
 Specialization brackets hold bare named types only, supplied positionally — all
-of them, with no partial specialization. A specialization must appear after its
-generic: brackets naming existing types with no preceding generic of that name
-are a compile error, never a silent new generic. Each generic overload of a
+of them, with no partial specialization. Brackets any of whose names is a type
+make the declaration a specialization, wherever it stands relative to its
+generic; one whose name has no generic in the file is a compile error, never a
+silent new generic. Each generic overload of a
 name specializes independently.
 
 The declaration is checked against the generic at declaration time: the
@@ -548,29 +549,21 @@ afterwards (`return n * factorial(n - 1)`).
 This is an optimization, not a guarantee: recursion that must not overflow, in
 any build, is written as a loop.
 
-## Declaration order and forward calls
+## Declaration order
 
-Top-level types, globals, and constants may be declared in any order
-([Declaration order](types.md#declaration-order)). Functions and locals follow
-declaration-before-use, with one exception: calls to functions, and method
-calls on a struct, declared later are recorded and resolved at the end of the
-file. This supports forward and mutual
-calls without prototypes. A call whose untyped argument needs the complete
-overload set, such as `f(5)` against a single `f(a: u64)`, is resolved the same
-way. Every function body that made such a call is then checked once more, with
-the same declarations in view as before except that the deferred calls see the
-whole file, so each use of their results is checked at its real type:
-`y: u8 = later()` is an error when `later` returns `u64`.
-
-Only the callee is exempt. A deferred call's arguments see what any expression
-at that position sees, so `later(one)` is an error when `one` is declared after
-the call, as it is wherever `later` is declared.
+Functions, methods, associated functions, generics, specializations, and
+signings are top-level declarations, visible throughout their file wherever
+they are written ([Declaration order](types.md#declaration-order)). Forward and
+mutual calls need no prototypes, a function value may name a function declared
+later, a specialization may precede its generic, and a signing may follow its
+methods. Every call sees its callee's complete overload set, so `f(5)` against
+a single `f(a: u64)` selects it wherever `f` is declared, and
+`y: u8 = f(5)` is an error.
 
 A local shadows a same-named function or global from its declarator to the end
 of its block, its own initializer included. `get: usize = get(a)` is therefore
 an error (`'get' is not callable`); name the local differently. A call written
-before the local still reaches the function, even when it is resolved at the
-end of the file.
+before the local still reaches the function.
 
 ## Entry point
 

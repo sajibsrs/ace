@@ -1,0 +1,28 @@
+/* The root file's top-level names are visible throughout the root file only:
+ * an imported module's locals and builtins are untouched by root functions
+ * named 'found' (a local in str.find) and 'blank' (a builtin in Array.pop),
+ * wherever they are declared.
+ */
+// expect-exit: 0
+
+import array
+import str
+
+main(): int {
+    at: usize, ok: bool = str.find("abc", "c")
+    if at != 2 || !ok || found() != 1 { return 1 }
+    a: array.Array[int], err: Error = array.Array[int]::new(1)
+    if err != null { return 2 }
+    defer mut a.wipe()
+    v: int, empty: Error = mut a.pop()
+    if v != 0 || empty == null { return 3 }
+    return 0
+}
+
+found(): int {
+    return 1
+}
+
+blank(): int {
+    return 7
+}

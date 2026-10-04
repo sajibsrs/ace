@@ -1,4 +1,4 @@
-/* A call that resolves at end of file is still checked against the
+/* A call that settles on the sole overload is checked against the
  * function's return type. */
 
 f(a: u64): u64 {

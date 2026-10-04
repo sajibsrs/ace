@@ -1,0 +1,29 @@
+/* A call checked before its specialization's declaration resolves to the
+ * specialization, as one checked after it does. */
+
+// expect-exit: 42
+
+g[T](v: T): T {
+    return v
+}
+
+call_first(): int {
+    return g[int](1)
+}
+
+g[int](v: int): int {
+    return 100
+}
+
+main(): int {
+    if call_first() != 100 {
+        return 1
+    }
+    if g[int](2) != 100 {
+        return 2
+    }
+    if g[u8](3) != 3 {
+        return 3
+    }
+    return 42
+}

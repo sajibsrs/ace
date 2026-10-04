@@ -226,13 +226,14 @@ Invalid: struct {
 
 ## Declaration order
 
-Top-level types, aliases, globals, constants, and imports may be declared in
-any order within a file: a field, array length, alias, or initializer may name
+Top-level declarations (types, aliases, globals, constants, imports,
+functions, specializations, and signings) may be declared in any order within
+a file: a field, array length, alias, initializer, signature, or body may name
 a declaration written after it, inline or through a pointer. Each declaration
 is resolved when it is first needed, so its layout is the same as if it had
-been written first. Locals inside a function body still follow
-declaration-before-use, and function calls follow the rules in
-[Declaration order and forward calls](function.md#declaration-order-and-forward-calls).
+been written first; every function signature and signing is resolved before
+any body is checked. Locals inside a function body still follow
+declaration-before-use ([Declaration order](function.md#declaration-order)).
 
 ```ace
 buffer: [SIZE]u8
@@ -241,7 +242,8 @@ SIZE: const usize = 2 * LINE
 LINE: const usize = 64
 ```
 
-A declaration that needs itself to be resolved is an error naming the cycle:
+A declaration that needs itself to be resolved, a function signature
+included, is an error naming the cycle:
 
 ```ace
 A: const int = B + 1 // 'A' depends on itself: 'A' -> 'B' -> 'A'
@@ -260,10 +262,12 @@ Go, Zig, Rust, Swift, Java, C#, D, and Odin all make top-level declarations
 order-independent; only C and C++ require prototypes or ordering. One rule at
 every position replaces the former pointer-only and root-slice forward-type
 exceptions, whose boundaries (`[1]*Later` rejected, `[]*Later` accepted) had
-to be memorized. The compile-time cost is one loop that enters every name
-before checking, measured at about 1% of a check-only run on a 20,000-function
-file; resolution itself happens once per declaration, only in a different
-order.
+to be memorized, and the forward-call fixups, which exempted a later callee
+but not its arguments and checked the calling body a second time. The
+compile-time cost is two loops that enter every name before checking,
+measured at about 2% of a check-only run on a 20,000-function file;
+resolution itself happens once per declaration, only in a different order,
+and every body is checked once.
 
 ## Writable views
 

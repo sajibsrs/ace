@@ -1,5 +1,9 @@
 # Language
 
+- Functions, methods, associated functions, generics, specializations, and
+  signings join the order-independent top level, replacing forward-call
+  fixups and their re-check: check enters each overload set and resolves every
+  signature and signing before any body; root names stay unseen from imports.
 - Top-level types, aliases, globals, constants, C globals, and imports are
   order-independent within a file, replacing the pointer- and root-slice-only
   forward types: check enters every name first and resolves a declaration on

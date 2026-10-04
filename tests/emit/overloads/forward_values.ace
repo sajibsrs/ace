@@ -1,7 +1,6 @@
-/* Values of calls that resolve at end of file: forward calls, and calls whose
- * untyped argument waits for the complete overload set. Casts, nested
- * operators, and generic bodies use them at their resolved types, and the
- * end-of-file re-check sees only the declarations the first check saw. */
+/* Values of forward calls, and of calls whose untyped argument settles on
+ * the complete overload set: casts, nested operators, and generic bodies use
+ * them at their resolved types. */
 
 // expect-exit: 42
 
@@ -18,13 +17,11 @@ narrow(): int {
     return int(g(5)) + int(g(1) + 1) * 2
 }
 
-// typed names under '=' are new against what was declared before
 use_pair(): int {
     tree: u64, n: int = pair(5)
     return int(tree) + n
 }
 
-// blank(T) stays the builtin although a function named blank follows
 zero(): int {
     z: int = blank(int)
     return z + int(later() + 1)
@@ -46,14 +43,6 @@ get[T](b: Box[T]): int {
     return int(later()) + int(g(5))
 }
 
-tree(): int {
-    return 100
-}
-
-blank(): int {
-    return 0
-}
-
 later(): u64 {
     return 7
 }
@@ -69,6 +58,6 @@ main(): int {
     if zero() != 8 { return 3 }
     if pick() != 6 { return 4 }
     if get[int](b) != 12 { return 5 }
-    if f(5) + 1 == 7 && tree() == 100 { return 42 }
+    if f(5) + 1 == 7 { return 42 }
     return 6
 }

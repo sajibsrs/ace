@@ -1,5 +1,5 @@
-/* Brackets naming existing types with no preceding generic are an error —
- * never a silent fresh type-parameter list (Generics #12). */
+/* Brackets naming existing types with no generic of that name in the file
+ * are an error — never a silent fresh type-parameter list (Generics #12). */
 
 main(): int {
     return 0

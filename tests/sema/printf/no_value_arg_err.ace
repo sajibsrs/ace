@@ -1,0 +1,8 @@
+/* An argument with no value cannot select a printf helper. */
+
+import fmt
+
+main(): int {
+    fmt.printf("%u\n", panic("stop"))
+    return 0
+}

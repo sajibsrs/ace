@@ -1,6 +1,8 @@
 /* A top-level declaration whose resolution reaches itself is an error,
  * reported once per cycle: constants, aliases (even through a pointer), a
- * layout query inside the type's own fields, and a mutual inline layout.
+ * layout query inside the type's own fields, a mutual inline layout, a
+ * constant naming a function whose signature needs it, and a cyclic constant
+ * used as an array length.
  */
 
 A: const int = B + 1
@@ -20,6 +22,19 @@ M: struct {
 
 N: struct {
     m: M,
+}
+
+Z: const usize = f
+
+f(a: [Z]int): int {
+    return 0
+}
+
+D: const usize = E
+E: const usize = D
+
+h(a: [D]int): int {
+    return 0
 }
 
 main(): int {

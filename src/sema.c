@@ -1,11 +1,7 @@
 // sema.c — semantic checking (stage three): types, names, expression typing.
-// Walks the AST in declaration order — in-order semantics: declaration
-// before use; forward top-level calls are deferred (like emitter fixups), and
-// aggregate fields admit a second narrow fixup for uninterrupted pointer
-// paths to a later same-module type, or a bare slice at the field/variant
-// root ([]Later — its ptr+count representation is equally pointee-size-
-// independent, but the allowance doesn't extend through or past it). Both
-// are verified at end of file.
+// Enters every top-level declaration of the unit first and resolves each on
+// demand, so top-level names are visible throughout the file (Compiler #5);
+// bodies are then checked in order, where locals keep declaration before use.
 //
 // Type model (machine truth: size/align computed for every type):
 //   prims    bool i8..i64 u8..u64 f32 f64 string usize typeid
@@ -310,22 +306,6 @@ typedef struct Scope {
     int           is_fnbody; // the function's outermost body block
 } Scope;
 
-typedef struct Pending {
-    Node* call;
-    Scope* scope;
-    SType* recv;   // method/associated calls: struct owner type
-    int qualified; // method calls: Type.method(recv, ...) spelling
-    int method;    // method call awaiting its declaration
-    int assoc;     // associated-function call awaiting its declaration
-    // the function body that made the call, re-checked once it resolves
-    Node* fn;
-    Scope* fnscope;
-    uint32_t seq;  // last declaration that body's check could see
-    uint32_t call_seq; // last declaration visible at the call itself
-    const char** tnames; SType** ttypes; int nsub;
-    struct Pending* next;
-} Pending;
-
 enum { DECL_DONE, DECL_ENTERED, DECL_RESOLVING };
 
 typedef struct {
@@ -335,37 +315,10 @@ typedef struct {
     Node*   curfn;
     // generic substitution environment (names -> types)
     const char** tnames; SType** ttypes; int nsub;
-    Pending* pending;
-    Scope*  fnscope; // scope the current function body is checked in
-    uint32_t fn_seq; // last declaration visible when that check began
-    int     final;   // every declaration is known: calls resolve, never pend
-    // final re-check: only declarations up to seen_seq, or made from
-    // fresh_seq on, are visible, unless see_all (a call that was pending)
-    uint32_t seen_seq, fresh_seq;
-    int     see_all;
-    uint32_t call_seq; // end-of-file resolution: last declaration the call saw
+    int     in_module; // checking an imported file's code: root top-levels are unseen
     int     quiet;   // trying an overload candidate: count errors, print none
     int     quiet_errors;
 } Ck;
-
-static uint32_t g_sym_seq;
-
-// Arena memory is not zeroed; every Pending field must start defined.
-static Pending* new_pending(Ck* k, Node* call) {
-    Pending* pd = (Pending*)arena_alloc(sizeof(Pending));
-    memset(pd, 0, sizeof *pd);
-    pd->call = call;
-    call->flags |= F_PENDING; // not a compile-time expression, whatever it resolves to
-    pd->scope = k->scope;
-    pd->fn = k->curfn;
-    pd->fnscope = k->fnscope;
-    pd->seq = k->fn_seq;
-    pd->call_seq = g_sym_seq;
-    pd->tnames = k->tnames; pd->ttypes = k->ttypes; pd->nsub = k->nsub;
-    pd->next = k->pending;
-    k->pending = pd;
-    return pd;
-}
 
 static SType* build_type(Ck* k, Node* t);
 static SType* generic_func_value(Ck* k, Node* e, SType* want);
@@ -454,7 +407,6 @@ static void ensure_memory_types(void) {
 static Sym* sym_new(uint8_t kind, const char* name, uint32_t len) {
     Sym* s = (Sym*)arena_alloc(sizeof(Sym));
     memset(s, 0, sizeof *s);
-    s->seq = ++g_sym_seq;
     s->kind = kind;
     s->name = name;
     s->len = len;
@@ -523,28 +475,15 @@ static void scope_insert(Scope* sc, int types, Sym* s) {
     for (Sym* it = *list; it; it = it->next) index_put(ix, it);
 }
 
-/*
- * The end-of-file re-check sees exactly the declarations the body's first
- * check saw, so name lookup, builtin shadowing, and overload selection land
- * as they did; only a call that was pending resolves against every
- * declaration, as it did at end of file. Its arguments see what the call
- * saw (args_view): declaration-before-use exempts the call, not its
- * arguments.
- */
-static int visible(Ck* k, Sym* s) {
-    if (k->see_all) return 1;
-    if (k->call_seq) return s->seq <= k->call_seq;
-    return !k->final || s->seq <= k->seen_seq || s->seq >= k->fresh_seq;
-}
-
-// Enter a call's arguments: a pending call's wider view ends at its callee.
-static int args_view(Ck* k) {
-    int saved = k->see_all;
-    k->see_all = 0;
-    return saved;
-}
-
 static void resolve_top(Ck* k, Sym* s);
+
+/* Only the root file's top-level names are unprefixed in the merged unit; an
+ * imported file's own are module-prefixed (module.c). Each file sees only its
+ * own top level, so root names are unseen from an imported file's code. */
+static const char* g_root_path;
+static int in_imported(Node* n) {
+    return n && n->path && g_root_path && strcmp(n->path, g_root_path) != 0;
+}
 
 // A top-level declaration is resolved by the first lookup that reaches it.
 static Sym* resolved(Ck* k, Sym* s) {
@@ -555,20 +494,7 @@ static Sym* resolved(Ck* k, Sym* s) {
 static Sym* lookup_val(Ck* k, const char* name, uint32_t len) {
     for (Scope* s = k->scope; s; s = s->parent) {
         Sym* v = scope_find(s, 0, name, len);
-        if (v && visible(k, v)) return resolved(k, v);
-    }
-    return NULL;
-}
-
-/* A pending call sees every declaration from its function's enclosing scope
- * outward, but in the function's own scopes only the locals declared before
- * it: the scopes it saved have since gained the rest of their block. */
-static Sym* lookup_pending(Pending* pd, const char* name, uint32_t len) {
-    int local = pd->fnscope != NULL;
-    for (Scope* s = pd->scope; s; s = s->parent) {
-        if (s == pd->fnscope) local = 0;
-        Sym* v = scope_find(s, 0, name, len);
-        if (v && (!local || v->seq <= pd->call_seq)) return v;
+        if (v && !(v->is_root && k->in_module)) return resolved(k, v);
     }
     return NULL;
 }
@@ -576,7 +502,7 @@ static Sym* lookup_pending(Pending* pd, const char* name, uint32_t len) {
 static Sym* lookup_type(Ck* k, const char* name, uint32_t len) {
     for (Scope* s = k->scope; s; s = s->parent) {
         Sym* v = scope_find(s, 1, name, len);
-        if (v && visible(k, v)) return resolved(k, v);
+        if (v && !(v->is_root && k->in_module)) return resolved(k, v);
     }
     return NULL;
 }
@@ -722,9 +648,9 @@ static int same_param_signature(SType* a, Node* ad, SType* b, Node* bd) {
     return 1;
 }
 
-static int overload_count(Ck* k, Sym* head) {
+static int overload_count(Sym* head) {
     int n = 0;
-    for (Sym* s = head; s && visible(k, s); s = s->overload) n++;
+    for (Sym* s = head; s; s = s->overload) n++;
     return n;
 }
 
@@ -969,12 +895,22 @@ static void coerce_payload(Ck* k, Node* arg, SType* pt) {
 
 // --- untyped int constant evaluation ----------------------------------------------
 
+// An expression naming a declaration of a reported cycle has no value.
+static int names_cycle(Node* e) {
+    if (!e) return 0;
+    Sym* s = (e->kind == N_IDENT || e->kind == N_FIELD_E) ? node_sym(e) : NULL;
+    if (s && s->in_cycle) return 1;
+    if (names_cycle(e->a) || names_cycle(e->b)) return 1;
+    for (int i = 0; i < e->nkids; i++) if (names_cycle(e->kids[i])) return 1;
+    return 0;
+}
+
 static int ut_const(Node* e, int64_t* out) {
     switch (e->kind) {
     case N_INT: case N_CHAR: *out = (int64_t)e->ival; return 1;
     case N_IDENT: {
         Sym* s = node_sym(e);
-        return s && s->is_const && s->init ? ut_const(s->init, out) : 0;
+        return s && s->is_const && s->init && !s->in_cycle ? ut_const(s->init, out) : 0;
     }
     case N_CALL:
         if (e->a && e->a->kind == N_IDENT && !e->sym &&
@@ -992,7 +928,7 @@ static int ut_const(Node* e, int64_t* out) {
             if (e->a->kind == N_STR) { *out = (int64_t)e->a->len; return 1; }
         }
         Sym* s = node_sym(e);
-        return s && s->is_const && s->init ? ut_const(s->init, out) : 0;
+        return s && s->is_const && s->init && !s->in_cycle ? ut_const(s->init, out) : 0;
     }
     case N_UNARY:
         if (e->op == T_MINUS) {
@@ -1150,7 +1086,7 @@ static int compile_time_expr(Node* e) {
         for (int i = 0; i < e->nkids; i++) if (!compile_time_expr(e->kids[i]->a)) return 0;
         return 1;
     case N_CALL:
-        if (e->sym || (e->flags & F_PENDING)) return 0; // an ordinary function call
+        if (e->sym) return 0; // an ordinary function call
         if (e->a && e->a->kind == N_IDENT && e->a->len == 6 && memcmp(e->a->str, "typeid", 6) == 0 && e->ival) return 1;
         for (int i = 0; i < e->nkids; i++) if (!compile_time_expr(e->kids[i])) return 0;
         return 1; // type cast, layout/type builtin, or union construction
@@ -1432,7 +1368,7 @@ static SType* build_type(Ck* k, Node* t) {
         if (k->d->errors + k->quiet_errors != errors) return T_ERR; // already reported
         int64_t len;
         if (!ut_const(t->b, &len)) {
-            ck_err(k, t->b, "array length must be a compile-time usize expression");
+            if (!names_cycle(t->b)) ck_err(k, t->b, "array length must be a compile-time usize expression");
             return T_ERR;
         }
         if (len <= 0) {
@@ -1658,18 +1594,20 @@ static int spec_conforms(SType* sub, Node* gdecl, SType* ft, Node* fdecl) {
 }
 
 /*
- * Specialization registration (Generics #9–12). The name already declares a
- * generic, so these brackets are specialization type arguments: bare named
- * types, supplied positionally. The specialization is an ordinary, indepen-
- * dently checked function binding to exactly one generic overload by substi-
- * tuted-signature conformance; duplicates for one exact tuple on one overload
- * are errors.
+ * Specialization binding (Generics #9–12). The brackets name types, so they
+ * are specialization type arguments: bare named types, supplied positionally.
+ * The specialization is an ordinary, independently checked function binding
+ * to exactly one generic overload of its set by substituted-signature
+ * conformance; duplicates for one exact tuple on one overload are errors.
  */
-static Sym* declare_specialization(Ck* k, Node* f, Sym* head) {
-    if (f->flags & F_SPECIALIZED) {
-        ck_err(k, f, "a specialization provides its own body — 'specialized' marks only a generic template");
-        return NULL;
-    }
+static Scope* g_file_scope; // survives sema_check for stamping and type building
+static Scope* g_import_scope;
+static int is_root_node(Diag* d, Node* n);
+static void check_inline_decl(Ck* k, Node* f);
+static void check_cold_decl(Ck* k, Node* f);
+
+static Sym* bind_specialization(Ck* k, Sym* s, Sym* head) {
+    Node* f = s->decl;
     int nargs = f->c->nkids;
     SType** targs = (SType**)arena_alloc((size_t)(nargs ? nargs : 1) * sizeof(SType*));
     for (int i = 0; i < nargs; i++) targs[i] = build_type_or_void(k, f->c->kids[i]);
@@ -1710,29 +1648,85 @@ static Sym* declare_specialization(Ck* k, Node* f, Sym* head) {
             return NULL;
         }
     }
-    Sym* s = sym_new(SYM_FUNC, f->str, f->len);
-    s->decl = f;
     s->type = ft;
-    s->is_pub = (f->flags & F_PUB) != 0;
     s->spec_args = targs;
     s->spec_nargs = nargs;
     s->spec_next = bind->specs;
     bind->specs = s;
     f->sym = s;
+    s->overload = NULL;
     Sym* tail = head;
     while (tail->overload) tail = tail->overload;
     tail->overload = s;
     return s;
 }
 
-static Sym* declare_func(Ck* k, Node* f, int is_extern) {
-    uint32_t key_len = f->len;
-    const char* key = f->str;
-    if (f->flags & (F_METHOD | F_ASSOC)) key = method_key(f->d, f->str, f->len, &key_len);
-    else if (is_reserved_builtin(f->str, f->len)) {
+static const char* func_key(Node* f, uint32_t* key_len) {
+    if (f->flags & (F_METHOD | F_ASSOC)) return method_key(f->d, f->str, f->len, key_len);
+    *key_len = f->len;
+    return f->str;
+}
+
+/*
+ * Bracket interpretation (Generics #12): brackets any of whose identifiers
+ * name a primitive, void, or a type of the unit are specialization type
+ * arguments; otherwise they are a fresh type-parameter list (a generic
+ * overload). Type-owned methods, associated functions, and C-boundary
+ * functions keep their brackets as type parameters.
+ */
+static Node* spec_bracket_ident(Scope* fs, Node* f, int is_extern) {
+    if (is_extern || (f->flags & (F_EXPO | F_METHOD | F_ASSOC)) || !f->c) return NULL;
+    for (int i = 0; i < f->c->nkids; i++) {
+        Node* id = f->c->kids[i];
+        if (prim_by_name(id->str, id->len) || is_void_name(id) || scope_find(fs, 1, id->str, id->len)) return id;
+    }
+    return NULL;
+}
+
+/*
+ * A method's or associated function's owner, checked from its entered
+ * declaration alone: resolving the struct here would fix its layout before
+ * every type is entered.
+ */
+static int check_func_owner(Ck* k, Scope* fs, Node* n) {
+    const char* kindname = (n->flags & F_ASSOC) ? "associated-function" : "method";
+    Sym* owner = scope_find(fs, 1, n->d->str, n->d->len);
+    Node* od = owner && owner->top && owner->top->kind == N_STRUCT ? owner->top : NULL;
+    if (!od) {
+        ck_err(k, n->d, "%s owner '%.*s' is not a declared struct", kindname, (int)n->d->len, n->d->str);
+        return 0;
+    }
+    if (od->path && n->path && strcmp(od->path, n->path) != 0) {
+        ck_err(k, n, "%ss must be declared in the struct's defining module", kindname);
+        return 0;
+    }
+    int want = od->c ? od->c->nkids : 0;
+    int got = n->c ? n->c->nkids : 0;
+    if (want != got) {
+        ck_err(k, n, "%s owner must repeat the struct's %d type parameters", kindname, want);
+        return 0;
+    }
+    for (int ti = 0; ti < want; ti++)
+        if (od->c->kids[ti]->len != n->c->kids[ti]->len ||
+            memcmp(od->c->kids[ti]->str, n->c->kids[ti]->str, n->c->kids[ti]->len) != 0) {
+            ck_err(k, n, "%s owner must repeat the struct's type parameter names", kindname);
+            return 0;
+        }
+    return 1;
+}
+
+/*
+ * Enter a function into its overload set, in source order, with the checks
+ * its syntax alone decides; resolve_func builds its signature on demand.
+ */
+static Sym* enter_func(Ck* k, Node* f, int is_extern) {
+    if ((f->flags & (F_METHOD | F_ASSOC)) && !check_func_owner(k, k->scope, f)) return NULL;
+    if (!(f->flags & (F_METHOD | F_ASSOC)) && is_reserved_builtin(f->str, f->len)) {
         ck_err(k, f, "'%.*s' is a reserved builtin name — no declaration may take it", (int)f->len, f->str);
         return NULL;
     }
+    uint32_t key_len;
+    const char* key = func_key(f, &key_len);
     Sym* head = scope_find(k->scope, 0, key, key_len);
     if (head && head->kind != SYM_FUNC) {
         ck_err(k, f, "duplicate name '%.*s' in this scope", (int)f->len, f->str);
@@ -1759,32 +1753,6 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
         ck_err(k, f, "C-boundary function '%.*s' cannot be overloaded", (int)f->len, f->str);
         return NULL;
     }
-    /*
-     * Ordered bracket interpretation (Generics #12): brackets whose iden-
-     * tifiers name existing types are specialization type arguments and must
-     * follow a generic declaration of this name; identifiers naming no
-     * existing type start a fresh type-parameter list (a further generic
-     * overload). Existing-type names with no preceding generic are a compile
-     * error — never a silent new generic. Type-owned methods and associated
-     * functions keep their owner-parameter shape and never specialize here.
-     */
-    if (!is_extern && !(f->flags & (F_EXPO | F_METHOD | F_ASSOC)) && f->c) {
-        Node* typed_ident = NULL;
-        for (int i = 0; i < f->c->nkids && !typed_ident; i++) {
-            Node* id = f->c->kids[i];
-            if (prim_by_name(id->str, id->len) || is_void_name(id) || lookup_type(k, id->str, id->len)) typed_ident = id;
-        }
-        if (typed_ident) {
-            int has_generic = 0;
-            for (Sym* old = head; old; old = old->overload) if (old->is_generic) { has_generic = 1; break; }
-            if (has_generic) return declare_specialization(k, f, head);
-            ck_err(k, f,
-                   "brackets after '%.*s' name the existing type '%.*s' — a specialization must follow a generic declaration of '%.*s'",
-                   (int)f->len, f->str, (int)typed_ident->len, typed_ident->str,
-                   (int)f->len, f->str);
-            return NULL;
-        }
-    }
     if ((f->flags & F_SPECIALIZED) && !f->c) {
         ck_err(k, f, "'specialized' marks a generic template; '%.*s' declares no type parameters", (int)f->len, f->str);
         return NULL;
@@ -1799,6 +1767,61 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
                    (int)f->len, f->str);
         if (f->c) ck_err(k, f, "intrinsic declaration '%.*s' cannot be generic or specialized", (int)f->len, f->str);
     }
+    Sym* s = sym_new(SYM_FUNC, key, key_len);
+    s->decl = f;
+    s->top = f;
+    s->is_generic = f->c != NULL;
+    s->is_extern = is_extern;
+    s->is_pub = (f->flags & F_PUB) != 0;
+    s->decl_state = DECL_ENTERED;
+    f->sym = s;
+    if (!head) {
+        scope_insert(k->scope, 0, s);
+    } else {
+        Sym* tail = head;
+        while (tail->overload) tail = tail->overload;
+        tail->overload = s;
+    }
+    check_inline_decl(k, f);
+    check_cold_decl(k, f);
+    return s;
+}
+
+// A specialization joins its set's entered_specs; resolve_func_set binds it.
+static void enter_specialization(Ck* k, Node* f) {
+    if (is_reserved_builtin(f->str, f->len)) {
+        ck_err(k, f, "'%.*s' is a reserved builtin name — no declaration may take it", (int)f->len, f->str);
+        return;
+    }
+    Sym* head = scope_find(k->scope, 0, f->str, f->len);
+    if (head && head->kind != SYM_FUNC) {
+        ck_err(k, f, "duplicate name '%.*s' in this scope", (int)f->len, f->str);
+        return;
+    }
+    int has_generic = 0;
+    for (Sym* old = head; old && !has_generic; old = old->overload) has_generic = old->is_generic;
+    if (!has_generic) {
+        ck_err(k, f, "no generic declaration of '%.*s' in this file", (int)f->len, f->str);
+        return;
+    }
+    if (f->flags & F_SPECIALIZED) {
+        ck_err(k, f, "a specialization provides its own body — 'specialized' marks only a generic template");
+        return;
+    }
+    Sym* s = sym_new(SYM_FUNC, f->str, f->len);
+    s->decl = f;
+    s->is_pub = (f->flags & F_PUB) != 0;
+    Sym** tail = &head->entered_specs;
+    while (*tail) tail = &(*tail)->overload;
+    *tail = s;
+    check_inline_decl(k, f);
+    check_cold_decl(k, f);
+}
+
+// One member's signature; 0 when it duplicates an earlier member's.
+static int resolve_func(Ck* k, Sym* s, Sym* head) {
+    Node* f = s->decl;
+    int is_extern = s->is_extern;
     check_param_count(k, f, f->nkids, (f->flags & F_METHOD) != 0);
     SType* ft = build_func_type(k, f, NULL, 0);
     ft->is_c_abi = is_extern || (f->flags & F_EXPO);
@@ -1869,31 +1892,51 @@ static Sym* declare_func(Ck* k, Node* f, int is_extern) {
             }
         }
     }
-    for (Sym* old = head; old; old = old->overload) {
+    s->type = ft;
+    for (Sym* old = head; old != s; old = old->overload) {
         int old_nt = old->decl && old->decl->c ? old->decl->c->nkids : 0;
         int new_nt = f->c ? f->c->nkids : 0;
         if (old_nt == new_nt && same_param_signature(old->type, old->decl, ft, f)) {
             ck_err(k, f,
                    "duplicate overload '%.*s': parameter signatures must differ (return type is not considered)",
                    (int)f->len, f->str);
-            return NULL;
+            return 0;
         }
     }
-    Sym* s = sym_new(SYM_FUNC, key, key_len);
-    s->decl = f;
-    s->type = ft;
-    s->is_generic = f->c != NULL;
-    s->is_extern = is_extern;
-    s->is_pub = (f->flags & F_PUB) != 0;
-    f->sym = s;
-    if (!head) {
-        scope_insert(k->scope, 0, s);
-    } else {
-        Sym* tail = head;
-        while (tail->overload) tail = tail->overload;
-        tail->overload = s;
+    if (s->is_generic) s->decl_scope = is_root_node(k->d, f) ? g_import_scope : g_file_scope;
+    return 1;
+}
+
+/*
+ * Resolve a whole overload set when a lookup first reaches its head: each
+ * member's signature in source order (a duplicate is unlinked; the head,
+ * first, never is), then its specializations, bound by conformance and
+ * appended after the members.
+ */
+static void resolve_func_set(Ck* k, Sym* head) {
+    for (Sym* s = head; s; s = s->overload) s->type = T_ERR; // a use while building is a cycle
+    for (Sym* s = head, *prev = NULL; s; s = s->overload) {
+        if (resolve_func(k, s, head)) {
+            prev = s;
+            continue;
+        }
+        prev->overload = s->overload;
+        s->decl->sym = NULL;
+        s->decl_state = DECL_DONE;
     }
-    return s;
+    for (Sym* s = head; s; s = s->overload) {
+        Node* f = s->decl;
+        if ((f->flags & (F_METHOD | F_ASSOC)) || f->len != 4 || memcmp(f->str, "main", 4) != 0) continue;
+        int spells_int = f->a && f->a->kind == N_NAMED && f->a->len == 3 && memcmp(f->a->str, "int", 3) == 0;
+        if (s->is_generic || f->nkids != 0 || !spells_int || overload_count(head) != 1)
+            ck_err(k, f, "entry function must be main(): int");
+    }
+    for (Sym* sp = head->entered_specs, *next; sp; sp = next) {
+        next = sp->overload;
+        bind_specialization(k, sp, head);
+    }
+    head->entered_specs = NULL;
+    for (Sym* s = head; s; s = s->overload) s->decl_state = DECL_DONE;
 }
 
 // --- literal fit -------------------------------------------------------------------
@@ -2041,9 +2084,9 @@ static int coerce(Ck* k, Node* e, SType* want) {
     }
     if (e->kind == N_IDENT && want && want->kind == SK_FUNC) {
         Sym* head = lookup_val(k, e->str, e->len);
-        if (head && head->kind == SYM_FUNC && overload_count(k, head) > 1) {
+        if (head && head->kind == SYM_FUNC && overload_count(head) > 1) {
             Sym* found = NULL;
-            for (Sym* s = head; s && visible(k, s); s = s->overload) {
+            for (Sym* s = head; s; s = s->overload) {
                 if (s->is_generic || !same_type(s->type, want)) continue;
                 if (found) {
                     ck_err(k, e, "ambiguous overloaded function value '%.*s'",
@@ -2354,7 +2397,6 @@ static void check_args(Ck* k, Node* call, SType* ft, int is_variadic) {
                got, want, is_variadic ? " (plus variadics)" : "");
         return;
     }
-    int saved = args_view(k);
     for (int i = 0; i < got; i++) {
         Node* arg = call->kids[i];
         int am = arg->kind == N_MUTARG;
@@ -2376,12 +2418,10 @@ static void check_args(Ck* k, Node* call, SType* ft, int is_variadic) {
             if (am) ck_err(k, arg, "'mut' marks declared parameters, not variadics");
         }
     }
-    k->see_all = saved;
 }
 
 static void check_mut_args(Ck* k, Node* call, Node* fndecl) {
     if (!fndecl) return;
-    int saved = args_view(k);
     for (int i = 0; i < call->nkids && i < fndecl->nkids; i++) {
         int am = call->kids[i]->kind == N_MUTARG;
         int pm = (fndecl->kids[i]->flags & F_MUT) != 0;
@@ -2398,7 +2438,6 @@ static void check_mut_args(Ck* k, Node* call, Node* fndecl) {
             }
         }
     }
-    k->see_all = saved;
 }
 
 // Indirect and contract-method calls never target a mut parameter — a
@@ -2445,7 +2484,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             ck_err(k, e, "'%.*s' is a type or generic — used bare here", (int)e->len, e->str);
             return T_ERR;
         }
-        if (s->kind == SYM_FUNC && overload_count(k, s) > 1) {
+        if (s->kind == SYM_FUNC && overload_count(s) > 1) {
             ck_err(k, e,
                    "overloaded function '%.*s' needs a call or an explicit function-value type",
                    (int)e->len, e->str);
@@ -2901,7 +2940,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         }
         SType* lo = e->b ? expr_type(k, e->b) : NULL;
         SType* hi = e->c ? expr_type(k, e->c) : NULL;
-        if ((lo && lo->kind == SK_ERR) || (hi && hi->kind == SK_ERR)) return T_ERR; // a pending call's poison
+        if ((lo && lo->kind == SK_ERR) || (hi && hi->kind == SK_ERR)) return T_ERR; // already reported
         if (lo && !is_int(lo) && lo != T_UT_INT) ck_err(k, e->b, "slice bound must be an integer");
         if (hi && !is_int(hi) && hi != T_UT_INT) ck_err(k, e->c, "slice bound must be an integer");
         check_slice_bounds(k, e, e->a, b);
@@ -2979,11 +3018,8 @@ static SType* instantiate_generic_func_args(Ck* k, Sym* gs, SType** args, int na
         return ft;
     }
     Scope* saved_scope = k->scope;
-    uint32_t saved_call_seq = k->call_seq;
     if (gs->decl_scope) k->scope = gs->decl_scope;
-    k->call_seq = 0; // a stamp sees its template's declarations, not a call's arguments' view
     check_func_body(k, f); // stamping: body checked once per instantiation
-    k->call_seq = saved_call_seq;
     k->scope = saved_scope;
     k->tnames = sn; k->ttypes = st; k->nsub = ns;
     return ft;
@@ -2996,9 +3032,9 @@ static SType* instantiate_generic_func(Ck* k, Sym* gs, Node* index_node) {
     return instantiate_generic_func_args(k, gs, args, nargs, index_node);
 }
 
-// whether any visible overload of a function name takes type arguments
-static int has_generic_form(Ck* k, Sym* head) {
-    for (Sym* s = head; s && visible(k, s); s = s->overload)
+// whether any overload of a function name takes type arguments
+static int has_generic_form(Sym* head) {
+    for (Sym* s = head; s; s = s->overload)
         if (s->is_generic || s->spec_args) return 1;
     return 0;
 }
@@ -3016,7 +3052,7 @@ static SType* generic_func_value(Ck* k, Node* e, SType* want) {
     if (!e->a || e->a->kind != N_IDENT) return NULL;
     Sym* head = lookup_val(k, e->a->str, e->a->len);
     if (!head || head->kind != SYM_FUNC) return NULL;
-    if (!has_generic_form(k, head)) {
+    if (!has_generic_form(head)) {
         ck_err(k, e, "'%.*s' is not generic; name it without type arguments", (int)e->a->len, e->a->str);
         return T_ERR;
     }
@@ -3027,7 +3063,7 @@ static SType* generic_func_value(Ck* k, Node* e, SType* want) {
         if (targs[i]->kind == SK_ERR) return T_ERR;
     }
     Sym* chosen = NULL;
-    for (Sym* s = head; s && visible(k, s); s = s->overload) {
+    for (Sym* s = head; s; s = s->overload) {
         if (!s->spec_args || s->spec_nargs != nargs) continue;
         int same = 1;
         for (int i = 0; i < nargs && same; i++) same = same_type(s->spec_args[i], targs[i]);
@@ -3049,7 +3085,7 @@ static SType* generic_func_value(Ck* k, Node* e, SType* want) {
     }
     Sym* sole = NULL;
     int eligible = 0;
-    for (Sym* s = head; s && visible(k, s); s = s->overload) {
+    for (Sym* s = head; s; s = s->overload) {
         if (!s->is_generic || s->spec_args || !s->decl->c || s->decl->c->nkids != nargs) continue;
         eligible++;
         sole = s;
@@ -3101,21 +3137,19 @@ static SType* generic_func_value(Ck* k, Node* e, SType* want) {
 static int overloaded_func_name(Ck* k, Node* e) {
     if (e->kind != N_IDENT) return 0;
     Sym* s = lookup_val(k, e->str, e->len);
-    return s && s->kind == SYM_FUNC && overload_count(k, s) > 1;
+    return s && s->kind == SYM_FUNC && overload_count(s) > 1;
 }
 
 static SType* overload_arg_type(Ck* k, Node* arg) {
     Node* raw = arg->kind == N_MUTARG ? arg->a : arg;
     if (raw->kind == N_ARRAYLIT) return NULL; // candidate parameter supplies its type
     if (raw->kind == N_STRUCTLIT && !raw->a) return NULL; // bare literal: parameter supplies its type
-    int saved = args_view(k);
     // matches no candidate exactly: only a sole candidate's parameter selects it
     int overloaded = overloaded_func_name(k, raw);
     int errors = k->d->errors;
     SType* t = overloaded ? NULL : expr_type(k, raw);
     // the chosen candidate checks the argument again; report its error once
     if (!k->quiet && k->d->errors != errors) raw->flags |= F_REPORTED;
-    k->see_all = saved;
     if (overloaded) return NULL;
     if (t == T_UT_INT) {
         /* A character literal is a one-byte constant, so its overload-call
@@ -3132,7 +3166,7 @@ static SType* overload_arg_type(Ck* k, Node* arg) {
  * only a sole candidate's parameter type selects one of its overloads.
  */
 static int overloaded_arg_err(Ck* k, Node* call, Sym* head, const char* name, uint32_t len) {
-    if (overload_count(k, head) < 2) return 0;
+    if (overload_count(head) < 2) return 0;
     for (int i = 0; i < call->nkids; i++) {
         Node* raw = call->kids[i]->kind == N_MUTARG ? call->kids[i]->a : call->kids[i];
         if (!overloaded_func_name(k, raw)) continue;
@@ -3186,11 +3220,10 @@ static int call_exact_match(Node* call, Sym* s, SType** actual) {
     return s && !s->is_generic && !s->is_extern && call_exact_ft(call, s->decl, s->type, actual);
 }
 
-// Select a non-generic direct-call overload. During the source walk, no match
-// is deferred because a later declaration may add the matching overload.
-// At EOF, a sole declaration retains Ace's ordinary expected-literal typing;
-// a real overload set uses exact types and int/f64 literal defaults.
-static Sym* select_call_overload(Ck* k, Node* call, Sym* head, int final, int* ambiguous) {
+// Select a non-generic direct-call overload: a sole declaration retains Ace's
+// ordinary expected-literal typing; a real overload set uses exact types and
+// int/f64 literal defaults.
+static Sym* select_call_overload(Ck* k, Node* call, Sym* head, int* ambiguous) {
     *ambiguous = 0;
     if (!head || head->kind != SYM_FUNC) return NULL;
     int nactual = call->nkids;
@@ -3199,7 +3232,7 @@ static Sym* select_call_overload(Ck* k, Node* call, Sym* head, int final, int* a
 
     Sym* found = NULL;
     int nongeneric = 0;
-    for (Sym* s = head; s && visible(k, s); s = s->overload) {
+    for (Sym* s = head; s; s = s->overload) {
         if (s->is_generic) continue;
         nongeneric++;
         if (!call_exact_match(call, s, actual)) continue;
@@ -3210,7 +3243,7 @@ static Sym* select_call_overload(Ck* k, Node* call, Sym* head, int final, int* a
         found = s;
     }
     if (!found) { // no exact match: one shrink-compatible overload may win
-        for (Sym* s = head; s && visible(k, s); s = s->overload) {
+        for (Sym* s = head; s; s = s->overload) {
             if (s->is_generic) continue;
             if (!call_shrink_ft(call, s->decl, s->type, actual)) continue;
             if (found) {
@@ -3220,8 +3253,8 @@ static Sym* select_call_overload(Ck* k, Node* call, Sym* head, int final, int* a
             found = s;
         }
     }
-    if (!found && final && nongeneric == 1) {
-        for (Sym* s = head; s && visible(k, s); s = s->overload) if (!s->is_generic) return s;
+    if (!found && nongeneric == 1) {
+        for (Sym* s = head; s; s = s->overload) if (!s->is_generic) return s;
     }
     return found;
 }
@@ -3602,7 +3635,7 @@ static Sym* printf_helper(Ck* k, const char* prefix, uint32_t prefix_len, const 
     if (!prefix) return NULL;
     char name[512];
     snprintf(name, sizeof name, "%.*s%s", (int)prefix_len, prefix, generic);
-    for (Sym* s = lookup_val(k, name, (uint32_t)strlen(name)); s && visible(k, s); s = s->overload) {
+    for (Sym* s = lookup_val(k, name, (uint32_t)strlen(name)); s; s = s->overload) {
         if (!nargs && !s->spec_args) return s;
         if (!s->spec_args || s->spec_nargs != nargs) continue;
         int same = 1;
@@ -3622,10 +3655,10 @@ static void printf_add_part(PrintfPlan* plan, int* cap, PrintfPart part) {
 static int printf_expected_type(Ck* k, Node* arg, int kind, SType** out, const char** expected, const char* who) {
     int errors = k->d->errors;
     SType* t = expr_type(k, arg);
-    // A call deferred to end of file is still poison here; picking a helper
-    // from it would match any specialization.
+    // A value-less argument (a panic call) is poison without an error of its
+    // own; picking a helper from it would match any specialization.
     if (t && t->kind == SK_ERR && k->d->errors == errors) {
-        ck_err(k, arg, "%s argument type is not yet known; give the call typed arguments or assign its result first", who);
+        ck_err(k, arg, "%s argument has no value", who);
         return -1;
     }
     SType* want = NULL;
@@ -3923,19 +3956,15 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
     return fn->type->ret;
 }
 
-/*
- * Resolve a method call on struct receiver type b. With final == 0 a miss
- * returns NULL so the caller can defer the call to end of file, when every
- * method is declared; with final == 1 a miss is the "no method" error.
- */
-static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified, int final) {
+// Resolve a method call on struct receiver type b.
+static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified) {
     Node* callee = call->a;
     uint32_t key_len;
     const char* key = method_key(b->decl, callee->str, callee->len, &key_len);
     Sym* head = lookup_val(k, key, key_len);
     int supplied = call->nkids + (qualified ? 0 : 1);
     Sym* found = NULL;
-    for (Sym* f = head; f && visible(k, f); f = f->overload) {
+    for (Sym* f = head; f; f = f->overload) {
         SType* ft = f->is_generic && b->nargs
             ? build_func_type(k, f->decl, b->args, b->nargs)
             : f->type;
@@ -3956,7 +3985,7 @@ static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified, int 
             else if (!exact_arg_type(arg, at, ft->params[i]) &&
                      !shrink_ok(at, ft->params[i])) exact = 0;
         }
-        if (!exact && overload_count(k, head) > 1) continue;
+        if (!exact && overload_count(head) > 1) continue;
         if (found) {
             ck_err(k, call, "ambiguous method call '%.*s'", (int)callee->len, callee->str);
             return T_ERR;
@@ -3977,7 +4006,7 @@ static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified, int 
             uint32_t ekey_len;
             const char* ekey = method_key(eb->decl, callee->str, callee->len, &ekey_len);
             Sym* ehead = lookup_val(k, ekey, ekey_len);
-            for (Sym* f = ehead; f && visible(k, f); f = f->overload) {
+            for (Sym* f = ehead; f; f = f->overload) {
                 SType* ft = f->is_generic && eb->nargs
                     ? build_func_type(k, f->decl, eb->args, eb->nargs)
                     : f->type;
@@ -3998,7 +4027,7 @@ static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified, int 
                              !shrink_ok(at, ft->params[i]))
                         exact = 0;
                 }
-                if (!exact && overload_count(k, ehead) > 1) continue;
+                if (!exact && overload_count(ehead) > 1) continue;
                 if (promoted) {
                     ck_err(k, call, "ambiguous promoted method call '%.*s'",
                            (int)callee->len, callee->str);
@@ -4030,7 +4059,6 @@ static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified, int 
         int rmut = (found->decl->flags & F_MUT) != 0;
         Node* recv = qualified ? (call->kids[0]->kind == N_MUTARG ? call->kids[0]->a : call->kids[0])
             : callee->a;
-        int saved = args_view(k);
         if (rmut) check_lvalue(k, recv, 1);
         else coerce(k, recv, b);
         int start = qualified ? 1 : 0;
@@ -4039,7 +4067,6 @@ static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified, int 
             int pi = i + (qualified ? 0 : 1);
             coerce(k, arg->kind == N_MUTARG ? arg->a : arg, method_ft->params[pi]);
         }
-        k->see_all = saved;
         if (found->decl->path && call->path &&
             strcmp(found->decl->path, call->path) != 0 && !found->is_pub)
             ck_err(k, call, "method '%.*s' is private", (int)callee->len, callee->str);
@@ -4048,7 +4075,6 @@ static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified, int 
         if (qualified) call->flags |= F_METHOD; // emitter: receiver is argument zero
         return method_ft->ret;
     }
-    if (!final) return NULL; // a later declaration may add the method
     if (overloaded_arg_err(k, call, head, callee->str, callee->len)) return T_ERR;
     ck_err(k, call, "no method '%.*s' for %s", (int)callee->len, callee->str, type_name(b));
     return T_ERR;
@@ -4061,10 +4087,10 @@ static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified, int 
  * receiver-shaped logic (rmut/cmut, embedding promotion) that doesn't apply
  * to a receiverless call.
  */
-static SType* check_generic_assoc_call(Ck* k, Node* call, SType* owner, Sym* head, int final) {
+static SType* check_generic_assoc_call(Ck* k, Node* call, SType* owner, Sym* head) {
     Node* callee = call->a;
     Sym* found = NULL;
-    for (Sym* f = head; f && visible(k, f); f = f->overload) {
+    for (Sym* f = head; f; f = f->overload) {
         SType* ft = f->is_generic ? build_func_type(k, f->decl, owner->args, owner->nargs) : f->type;
         if (!ft || ft->nparams != call->nkids) continue;
         int exact = 1;
@@ -4076,7 +4102,7 @@ static SType* check_generic_assoc_call(Ck* k, Node* call, SType* owner, Sym* hea
             if (am != pm) exact = 0;
             else if (!exact_arg_type(arg, at, ft->params[i]) && !shrink_ok(at, ft->params[i])) exact = 0;
         }
-        if (!exact && overload_count(k, head) > 1) continue;
+        if (!exact && overload_count(head) > 1) continue;
         if (found) {
             ck_err(k, call, "ambiguous associated-function call '%.*s'", (int)callee->len, callee->str);
             return T_ERR;
@@ -4091,12 +4117,10 @@ static SType* check_generic_assoc_call(Ck* k, Node* call, SType* owner, Sym* hea
             ? instantiate_generic_func_args(k, found, owner->args, owner->nargs, call)
             : found->type;
         if (found_ft->kind == SK_ERR) return T_ERR;
-        int saved = args_view(k);
         for (int i = 0; i < call->nkids; i++) {
             Node* arg = call->kids[i];
             coerce(k, arg->kind == N_MUTARG ? arg->a : arg, found_ft->params[i]);
         }
-        k->see_all = saved;
         if (found->decl->path && call->path &&
             strcmp(found->decl->path, call->path) != 0 && !found->is_pub)
             ck_err(k, call, "associated function '%.*s' is private", (int)callee->len, callee->str);
@@ -4105,7 +4129,6 @@ static SType* check_generic_assoc_call(Ck* k, Node* call, SType* owner, Sym* hea
         call->flags |= F_ASSOC;
         return found_ft->ret;
     }
-    if (!final) return NULL;
     if (overloaded_arg_err(k, call, head, callee->str, callee->len)) return T_ERR;
     ck_err(k, call, "no associated function '%.*s' for %s", (int)callee->len, callee->str, type_name(owner));
     return T_ERR;
@@ -4115,18 +4138,18 @@ static SType* check_generic_assoc_call(Ck* k, Node* call, SType* owner, Sym* hea
  * Associated-function calls (Type::name(...)) have no receiver. A non-generic
  * owner resolves exactly like an ordinary direct call once found under the
  * owner-namespaced key — select_call_overload/finish_direct_call already
- * handle overload selection, literal defaulting, and the final-pass retry
- * without any receiver-shaped logic to strip out. A generic owner needs
+ * handle overload selection and literal defaulting without any
+ * receiver-shaped logic to strip out. A generic owner needs
  * per-candidate signature substitution instead (check_generic_assoc_call).
  */
-static SType* check_assoc_call(Ck* k, Node* call, SType* owner, int final) {
+static SType* check_assoc_call(Ck* k, Node* call, SType* owner) {
     Node* callee = call->a;
     uint32_t key_len;
     const char* key = method_key(owner->decl, callee->str, callee->len, &key_len);
     Sym* head = lookup_val(k, key, key_len);
-    if (owner->nargs) return check_generic_assoc_call(k, call, owner, head, final);
+    if (owner->nargs) return check_generic_assoc_call(k, call, owner, head);
     int ambiguous = 0;
-    Sym* found = select_call_overload(k, call, head, final, &ambiguous);
+    Sym* found = select_call_overload(k, call, head, &ambiguous);
     if (ambiguous) {
         ck_err(k, call, "ambiguous associated-function call '%.*s'", (int)callee->len, callee->str);
         return T_ERR;
@@ -4139,7 +4162,6 @@ static SType* check_assoc_call(Ck* k, Node* call, SType* owner, int final) {
         call->flags |= F_ASSOC; // emitter: no receiver to prepend, unlike an unqualified method call
         return found->type->ret;
     }
-    if (!final) return NULL; // a later declaration may add it
     if (overloaded_arg_err(k, call, head, callee->str, callee->len)) return T_ERR;
     ck_err(k, call, "no associated function '%.*s' for %s", (int)callee->len, callee->str, type_name(owner));
     return T_ERR;
@@ -4147,13 +4169,8 @@ static SType* check_assoc_call(Ck* k, Node* call, SType* owner, int final) {
 
 static SType* check_call_raw(Ck* k, Node* call);
 
-// A call that was pending resolves against every declaration, as it did at
-// end of file; see visible().
 static SType* check_call(Ck* k, Node* call) {
-    int saved = k->see_all;
-    if (k->final && (call->flags & F_PENDING)) k->see_all = 1;
     SType* t = check_call_raw(k, call);
-    k->see_all = saved;
     if (k->curfn && inline_callee(call)) k->curfn->flags |= F_INLCALLS; // the emitter plans only these
     return t;
 }
@@ -4246,7 +4263,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
         callee->ty = want;
         return want;
     }
-    // direct name: call, cast, or forward (pending) call
+    // direct name: call or cast
     if (callee->kind == N_IDENT) {
         Sym* s = lookup_val(k, callee->str, callee->len);
         if (!s) {
@@ -4496,19 +4513,14 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 call->ival = 1; // emitter: sema-approved panic call marker
                 return T_ERR;   // never returns; poison keeps enclosing uses quiet
             }
-            if (k->final) {
-                ck_err(k, call, "unknown function '%.*s'", (int)callee->len, callee->str);
-                return T_ERR;
-            }
-            // forward top-level call — deferred like an emitter fixup
-            new_pending(k, call);
-            return T_ERR; // poison; existence + args verified at end of file
+            ck_err(k, call, "unknown function '%.*s'", (int)callee->len, callee->str);
+            return T_ERR;
         }
         if (s->kind == SYM_FUNC) {
             // raw byte-form intrinsics only; typed forms need [T] and are
             // checked in the generic-instantiation path below
             Sym* mi = NULL;
-            for (Sym* it = s; it && visible(k, it); it = it->overload)
+            for (Sym* it = s; it; it = it->overload)
                 if (it->decl &&
                     ((it->decl->ival >= BI_MEM_ALLOC &&
                       it->decl->ival <= BI_MEM_COMPARE) ||
@@ -4523,7 +4535,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
             return check_format_call(k, call, s, &PRINTF_CALL);
         if (s->kind == SYM_FUNC && call->nkids >= 2) { // str.format(destination, "format", ...)
             Sym* sf = NULL;
-            for (Sym* it = s; it && visible(k, it); it = it->overload)
+            for (Sym* it = s; it; it = it->overload)
                 if (it->decl && it->decl->ival == BI_STR_FORMAT) { sf = it; break; }
             if (sf) {
                 Node* second = call->kids[1]->kind == N_MUTARG ? call->kids[1]->a : call->kids[1];
@@ -4545,18 +4557,18 @@ static SType* check_call_raw(Ck* k, Node* call) {
             return T_ERR;
         }
         int has_plain = 0;
-        for (Sym* it = s; it && visible(k, it); it = it->overload) has_plain |= !it->is_generic;
+        for (Sym* it = s; it; it = it->overload) has_plain |= !it->is_generic;
         if (!has_plain) {
             ck_err(k, call, "generic function '%.*s' needs type arguments: %.*s[T](...)",
                    (int)callee->len, callee->str, (int)callee->len, callee->str);
             return T_ERR;
         }
-        if (s->is_extern && !(s->overload && visible(k, s->overload))) {
+        if (s->is_extern && !s->overload) {
             finish_direct_call(k, call, s);
             return s->type->ret;
         }
         int ambiguous = 0;
-        Sym* chosen = select_call_overload(k, call, s, k->final, &ambiguous);
+        Sym* chosen = select_call_overload(k, call, s, &ambiguous);
         if (ambiguous) {
             ck_err(k, call, "ambiguous call to overloaded function '%.*s'", (int)callee->len, callee->str);
             return T_ERR;
@@ -4565,14 +4577,10 @@ static SType* check_call_raw(Ck* k, Node* call) {
             finish_direct_call(k, call, chosen);
             return chosen->type->ret;
         }
-        if (k->final) {
-            if (overloaded_arg_err(k, call, s, callee->str, callee->len)) return T_ERR;
-            ck_err(k, call, "no matching overload '%.*s' for these argument types",
-                   (int)callee->len, callee->str);
-            return T_ERR;
-        }
-        new_pending(k, call);
-        return T_ERR; // a matching overload may be declared later
+        if (overloaded_arg_err(k, call, s, callee->str, callee->len)) return T_ERR;
+        ck_err(k, call, "no matching overload '%.*s' for these argument types",
+               (int)callee->len, callee->str);
+        return T_ERR;
     }
     // Slice-shaped identity cast or explicit pointer-plus-count construction.
     if (callee->kind == N_SLICE_T) {
@@ -4654,7 +4662,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
             return check_contract_construct(k, call, named);
         }
         Sym* head = lookup_val(k, callee->a->str, callee->a->len);
-        if (head && head->kind == SYM_FUNC && !has_generic_form(k, head)) {
+        if (head && head->kind == SYM_FUNC && !has_generic_form(head)) {
             ck_err(k, callee, "'%.*s' is not generic; call it without type arguments",
                    (int)callee->a->len, callee->a->str);
             return T_ERR;
@@ -4671,7 +4679,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
             Sym* spec = NULL;
             Sym* sole_spec = NULL;
             int nspec = 0;
-            for (Sym* s = head; s && visible(k, s); s = s->overload) {
+            for (Sym* s = head; s; s = s->overload) {
                 if (!s->spec_args || s->spec_nargs != nargs) continue;
                 int same = 1;
                 for (int i = 0; i < nargs && same; i++)
@@ -4698,7 +4706,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
             Sym* chosen = NULL;
             Sym* sole = NULL;
             int eligible = 0;
-            for (Sym* s = head; s && visible(k, s); s = s->overload) {
+            for (Sym* s = head; s; s = s->overload) {
                 if (!s->is_generic || !s->decl->c || s->decl->c->nkids != nargs)
                     continue;
                 eligible++;
@@ -4781,12 +4789,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
         // stashed for the emitter: a generic owner has no receiver parameter
         // to read its type arguments back from, unlike a method call
         callee->a->ty = owner;
-        SType* r = check_assoc_call(k, call, owner, k->final);
-        if (r) return r;
-        Pending* pd = new_pending(k, call);
-        pd->recv = owner;
-        pd->assoc = 1;
-        return T_ERR; // an associated function may be declared later
+        return check_assoc_call(k, call, owner);
     }
     // method / contract dispatch
     if (callee->kind == N_FIELD_E) {
@@ -4885,13 +4888,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
             ck_err(k, call, "no method '%.*s' for %s", (int)callee->len, callee->str, type_name(b));
             return T_ERR;
         }
-        SType* r = check_method_call(k, call, b, qualified, k->final);
-        if (r || call->sym) return r; // a resolved void method returns NULL
-        Pending* pd = new_pending(k, call);
-        pd->recv = b;
-        pd->qualified = qualified;
-        pd->method = 1;
-        return T_ERR; // a method may be declared later
+        return check_method_call(k, call, b, qualified);
     }
     ck_err(k, call, "unsupported callee");
     return T_ERR;
@@ -5209,9 +5206,8 @@ static void check_stmt(Ck* k, Node* s) {
             if (compound) { ck_err(k, s, "compound assignment takes one target"); return; }
             SType* rt = expr_type(k, s->a);
             if (rt->kind == SK_ERR) {
-                /* The right side may still be a deferred (pending) call that
-                 * resolves at end of file. Key the targets now so the emitter
-                 * finds their storage whichever way resolution lands. */
+                /* The right side's error is already reported. Key the
+                 * targets anyway so each is still checked as an lvalue. */
                 for (int i = 0; i < s->nkids; i++)
                     if (!is_discard(s->kids[i])) (void)check_lvalue(k, s->kids[i], 1);
                 return;
@@ -6445,10 +6441,8 @@ static Node* static_string_expr(Ck* k, Node* e) {
 static void check_func_body(Ck* k, Node* f) {
     SType* saved_ret = k->ret; // nested checks (generic stamping) must not clobber
     Node* saved_fn = k->curfn;
-    Scope* saved_fnscope = k->fnscope;
-    uint32_t saved_seq = k->fn_seq;
-    k->fnscope = k->scope;
-    k->fn_seq = g_sym_seq;
+    int saved_in_module = k->in_module;
+    k->in_module = in_imported(f);
     scope_push(k);
     k->scope->is_fnbody = 1; // `defer` is legal only as a direct statement here
     for (int i = 0; i < f->nkids; i++) {
@@ -6471,8 +6465,7 @@ static void check_func_body(Ck* k, Node* f) {
     scope_pop(k);
     k->ret = saved_ret;
     k->curfn = saved_fn;
-    k->fnscope = saved_fnscope;
-    k->fn_seq = saved_seq;
+    k->in_module = saved_in_module;
 }
 
 static uint32_t checked_layout_align(Ck* k, Node* expr, const char* subject) {
@@ -6809,8 +6802,8 @@ static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int narg
     return t;
 }
 
-// A concrete type owns one canonical signing. Its methods may follow, so the
-// signing is registered during the source walk and validated at EOF.
+// A concrete type owns one canonical signing, registered before any body is
+// checked and validated once every body is.
 static void register_signing(Ck* k, Node* signing) {
     Sym* cs = lookup_type(k, signing->a->str, signing->a->len);
     if (!cs || !cs->type || cs->type->kind != SK_STRUCT) {
@@ -6826,13 +6819,6 @@ static void register_signing(Ck* k, Node* signing) {
         ck_err(k, signing, "signing for %s was already declared once", type_name(cs->type));
         return;
     }
-    for (Sym* v = k->scope->values; v; v = v->next)
-        for (Sym* f = v; f && visible(k, f); f = f->overload)
-            if (f->kind == SYM_FUNC && f->decl && (f->decl->flags & F_METHOD) &&
-                f->decl->d && f->decl->d->len == signing->a->len &&
-                memcmp(f->decl->d->str, signing->a->str, signing->a->len) == 0)
-                ck_err(k, signing, "signing for %s must appear before its methods",
-                       type_name(cs->type));
     int want = decl->c ? decl->c->nkids : 0;
     int got = signing->c ? signing->c->nkids : 0;
     if (want != got) ck_err(k, signing, "signing owner must repeat the struct's %d type parameters", want);
@@ -6847,7 +6833,7 @@ static void register_signing(Ck* k, Node* signing) {
         Node* it = signing->kids[i]->a;
         Sym* is = lookup_type(k, it->str, it->len);
         if (!is || !is->type || is->type->kind != SK_CONTRACT)
-            ck_err(k, it, "signed contract '%.*s' must be declared first",
+            ck_err(k, it, "signed contract '%.*s' must be a declared contract",
                    (int)it->len, it->str);
     }
     decl->d = signing;
@@ -6902,7 +6888,7 @@ static void check_signing(Ck* k, Node* signing) {
             Sym* found = NULL;
             Node* embedded_field = NULL;
             int promoted_ambiguous = 0;
-            for (Sym* fn = head; fn && visible(k, fn); fn = fn->overload) {
+            for (Sym* fn = head; fn; fn = fn->overload) {
                 SType* ft = fn->is_generic
                     ? build_func_type(k, fn->decl, k->ttypes, k->nsub)
                     : fn->type;
@@ -6941,7 +6927,7 @@ static void check_signing(Ck* k, Node* signing) {
                     if (!base_signs) continue;
                     uint32_t eklen;
                     const char* ekey = method_key(eb->decl, m->str, m->len, &eklen);
-                    for (Sym* fn = lookup_val(k, ekey, eklen); fn && visible(k, fn); fn = fn->overload) {
+                    for (Sym* fn = lookup_val(k, ekey, eklen); fn; fn = fn->overload) {
                         SType* ft = fn->type;
                         if (!ft || ft->nparams != m->nkids + 1 ||
                             !same_type(ft->params[0], eb)) continue;
@@ -6994,7 +6980,6 @@ static void check_signing(Ck* k, Node* signing) {
 
 // --- emitter support ---------------------------------------------------------------
 
-static Scope* g_file_scope; // survives sema_check for stamping and type building
 static Diag g_dummy_diag = {"(stamp)", 0}; // re-stamps are pre-checked: silent
 
 uint32_t sema_size(SType* t) { layout(t); return t->size; }
@@ -7027,7 +7012,6 @@ SType* sema_stamp_body(Node* f, SType** args, int nargs) {
     if (f->flags & F_SPECIALIZED) return NULL; // no default body: nothing to stamp
     Ck k = {0};
     k.d = &g_dummy_diag;
-    k.final = 1; // after sema_check: every declaration is known
     Sym* gs = (Sym*)f->sym;
     k.scope = gs && gs->decl_scope ? gs->decl_scope : g_file_scope;
     k.tnames = (const char**)arena_alloc((size_t)nargs * sizeof(char*));
@@ -7173,22 +7157,32 @@ static void install_predeclared_error_types(Scope* file_scope) {
 enum { MAX_RESOLVING = 256 };
 static Sym* g_resolving[MAX_RESOLVING];
 static int g_nresolving;
-static Scope* g_import_scope;
 
 static Node* resolve_site(Sym* s) { return s->top->kind == N_VAR ? s->decl : s->top; }
+
+// A declaration's name as written: a method's key Owner$m reads Owner.m.
+static size_t put_decl_name(char* out, size_t cap, Sym* s) {
+    size_t o = 0;
+    for (uint32_t i = 0; i < s->len && o + 1 < cap; i++) out[o++] = s->name[i] == '$' ? '.' : s->name[i];
+    out[o] = 0;
+    return o;
+}
 
 static void report_cycle(Ck* k, Sym* s) {
     if (s->in_cycle) return;
     s->in_cycle = 1;
-    char chain[512];
+    char chain[512], name[256];
     size_t o = 0;
     int from = g_nresolving - 1;
     while (from > 0 && g_resolving[from] != s) from--;
-    for (int i = from; i < g_nresolving && o < sizeof chain; i++)
-        o += (size_t)snprintf(chain + o, sizeof chain - o, "'%.*s' -> ",
-                              (int)g_resolving[i]->len, g_resolving[i]->name);
-    if (o < sizeof chain) snprintf(chain + o, sizeof chain - o, "'%.*s'", (int)s->len, s->name);
-    ck_err(k, resolve_site(s), "'%.*s' depends on itself: %s", (int)s->len, s->name, chain);
+    for (int i = from; i < g_nresolving; i++) g_resolving[i]->in_cycle = 1; // reported once
+    for (int i = from; i < g_nresolving && o < sizeof chain; i++) {
+        put_decl_name(name, sizeof name, g_resolving[i]);
+        o += (size_t)snprintf(chain + o, sizeof chain - o, "'%s' -> ", name);
+    }
+    put_decl_name(name, sizeof name, s);
+    if (o < sizeof chain) snprintf(chain + o, sizeof chain - o, "'%s'", name);
+    ck_err(k, resolve_site(s), "'%s' depends on itself: %s", name, chain);
 }
 
 static void resolve_global(Ck* k, Sym* s, Node* n) {
@@ -7236,7 +7230,9 @@ static void resolve_distinct(Ck* k, Node* n, SType* t) {
 static void resolve_top(Ck* k, Sym* s) {
     Node* n = s->top;
     if (s->decl_state == DECL_RESOLVING) {
-        if (n->kind == N_ALIAS || n->kind == N_VAR || n->kind == N_EXTERNVAR) report_cycle(k, s);
+        if (n->kind == N_ALIAS || n->kind == N_VAR || n->kind == N_EXTERNVAR || n->kind == N_FUNC ||
+            n->kind == N_EXTERNFN)
+            report_cycle(k, s);
         return;
     }
     if (g_nresolving == MAX_RESOLVING) {
@@ -7248,7 +7244,7 @@ static void resolve_top(Ck* k, Sym* s) {
     // resolve in the declaration's own top-level context, whatever reached it
     Ck top = {0};
     top.d = k->d;
-    top.pending = k->pending;
+    top.in_module = in_imported(n);
     top.scope = n->kind == N_VAR && is_root_node(k->d, n) ? g_import_scope : g_file_scope;
     SType* t = s->type;
     switch (n->kind) {
@@ -7302,18 +7298,22 @@ static void resolve_top(Ck* k, Sym* s) {
     case N_ERROR_DOMAIN:
         check_error_domain_decl(&top, n);
         break;
+    case N_FUNC: case N_EXTERNFN:
+        resolve_func_set(&top, s);
+        break;
     default:
         break;
     }
-    k->pending = top.pending;
     g_nresolving--;
     s->decl_state = DECL_DONE;
 }
 
 /* Enter every top-level name of the unit before any is resolved: imports,
  * types (nominal ones with their unfinished type, so a pointer may name them
- * at once), globals, and C globals. Function names are only noted, so that a
- * global colliding with an earlier function is reported where it is written. */
+ * at once), globals, and C globals; then functions, once every type name is
+ * known to classify specialization brackets. Function names are noted in the
+ * first walk, so that a global colliding with an earlier function is
+ * reported where it is written. */
 static void enter_top_level(Ck* k, Node* file, Scope* fs, Scope* is) {
     static Scope fn_names;
     memset(&fn_names, 0, sizeof fn_names);
@@ -7408,6 +7408,22 @@ static void enter_top_level(Ck* k, Node* file, Scope* fs, Scope* is) {
             break;
         }
     }
+    // functions in source order; specializations once each set is complete
+    for (int i = 0; i < file->nkids; i++) {
+        Node* n = file->kids[i];
+        if (n->kind == N_FUNC) {
+            if (!spec_bracket_ident(fs, n, 0)) enter_func(k, n, 0);
+        } else if (n->kind == N_EXTERN) {
+            for (int j = 0; j < n->nkids; j++)
+                if (n->kids[j]->kind != N_EXTERNVAR) enter_func(k, n->kids[j], 1);
+        }
+    }
+    for (int i = 0; i < file->nkids; i++) {
+        Node* n = file->kids[i];
+        if (n->kind == N_FUNC && spec_bracket_ident(fs, n, 0)) enter_specialization(k, n);
+    }
+    for (Sym* s = fs->values; s; s = s->next) s->is_root = s->top && !in_imported(s->top);
+    for (Sym* s = fs->types; s; s = s->next) s->is_root = s->top && !in_imported(s->top);
 }
 
 int sema_check(Node* file, Diag* d) {
@@ -7416,6 +7432,7 @@ int sema_check(Node* file, Diag* d) {
     memset(&file_scope, 0, sizeof file_scope);
     memset(&import_scope, 0, sizeof import_scope);
     g_file_scope = &file_scope;
+    g_root_path = d->path;
     if (!PRIMS[0]) {
         T_ERR = st_new(SK_ERR);
         T_UT_INT = st_new(SK_UT);
@@ -7448,82 +7465,52 @@ int sema_check(Node* file, Diag* d) {
         if (s && s->top == n) resolved(&k, s);
     }
     finish_deferred_layouts(&k);
+    // every signature and signing is known before any body is checked
+    for (int i = 0; i < file->nkids; i++) {
+        Node* n = file->kids[i];
+        if (n->kind == N_SIGNING) {
+            k.in_module = in_imported(n);
+            register_signing(&k, n);
+            k.in_module = 0;
+            continue;
+        }
+        int nf = n->kind == N_EXTERN ? n->nkids : n->kind == N_FUNC;
+        for (int j = 0; j < nf; j++) {
+            Node* f = n->kind == N_EXTERN ? n->kids[j] : n;
+            Sym* s = node_sym(f);
+            if (!s || f->kind == N_EXTERNVAR || s->decl_state == DECL_DONE) continue;
+            uint32_t key_len;
+            const char* key = func_key(f, &key_len);
+            resolved(&k, scope_find(&file_scope, 0, key, key_len));
+        }
+    }
     for (int i = 0; i < file->nkids; i++) {
         Node* n = file->kids[i];
         switch (n->kind) {
         case N_EXPRSTMT: {
             int root = is_root_node(d, n);
             if (root) k.scope = &import_scope;
+            k.in_module = in_imported(n);
             check_stmt(&k, n);
+            k.in_module = 0;
             if (root) k.scope = &file_scope;
             break;
         }
         case N_FUNC: {
-            if (n->flags & (F_METHOD | F_ASSOC)) {
-                const char* kindname = (n->flags & F_ASSOC) ? "associated-function" : "method";
-                Sym* owner = lookup_type(&k, n->d->str, n->d->len);
-                if (!owner || !owner->type || owner->type->kind != SK_STRUCT) {
-                    ck_err(&k, n->d, "%s owner '%.*s' is not a declared struct", kindname, (int)n->d->len, n->d->str);
-                    break;
-                }
-                if (owner->type->decl->path && n->path && strcmp(owner->type->decl->path, n->path) != 0) {
-                    ck_err(&k, n, "%ss must be declared in the struct's defining module", kindname);
-                    break;
-                }
-                int want = owner->type->decl->c ? owner->type->decl->c->nkids : 0;
-                int got = n->c ? n->c->nkids : 0;
-                if (want != got) {
-                    ck_err(&k, n, "%s owner must repeat the struct's %d type parameters", kindname, want);
-                    break;
-                }
-                int mismatch = 0;
-                for (int ti = 0; ti < want; ti++)
-                    if (owner->type->decl->c->kids[ti]->len != n->c->kids[ti]->len ||
-                        memcmp(owner->type->decl->c->kids[ti]->str,
-                               n->c->kids[ti]->str, n->c->kids[ti]->len) != 0)
-                        mismatch = 1;
-                if (mismatch) {
-                    ck_err(&k, n, "%s owner must repeat the struct's type parameter names", kindname);
-                    break;
-                }
-            }
-            Sym* s = declare_func(&k, n, 0);
-            if (!s) break;
-            check_inline_decl(&k, n);
-            check_cold_decl(&k, n);
-            if (s->is_generic) s->decl_scope = is_root_node(d, n) ? &import_scope : &file_scope;
-            if (!(n->flags & (F_METHOD | F_ASSOC)) && n->len == 4 && memcmp(n->str, "main", 4) == 0) {
-                int spells_int = n->a && n->a->kind == N_NAMED && n->a->len == 3 && memcmp(n->a->str, "int", 3) == 0;
-                Sym* head = scope_find(k.scope, 0, n->str, n->len);
-                if (s->is_generic || n->nkids != 0 || !spells_int ||
-                    overload_count(&k, head) != 1)
-                    ck_err(&k, n, "entry function must be main(): int");
-            }
-            if (!s->is_generic && !(n->flags & F_INTRINSIC)) {
-                int root = is_root_node(d, n);
-                if (root) k.scope = &import_scope;
-                check_func_body(&k, n); // single pass: check now, in order
-                if (root) k.scope = &file_scope;
-            }
+            Sym* s = node_sym(n);
+            if (!s || s->is_generic || (n->flags & F_INTRINSIC)) break;
+            int root = is_root_node(d, n);
+            if (root) k.scope = &import_scope;
+            check_func_body(&k, n);
+            if (root) k.scope = &file_scope;
             break;
         }
-        case N_EXTERN: {
-            for (int j = 0; j < n->nkids; j++) {
-                Node* f = n->kids[j];
-                if (f->kind == N_EXTERNVAR) {
-                    if (f->sym) resolved(&k, node_sym(f));
-                    continue;
-                }
-                Sym* s = declare_func(&k, f, 1);
-                if (!s) continue;
-            }
+        case N_EXTERN:
+            for (int j = 0; j < n->nkids; j++)
+                if (n->kids[j]->kind == N_EXTERNVAR && n->kids[j]->sym) resolved(&k, node_sym(n->kids[j]));
             break;
-        }
         case N_VAR:
             if (n->kids[0]->sym) resolved(&k, node_sym(n->kids[0]));
-            break;
-        case N_SIGNING:
-            register_signing(&k, n);
             break;
         default:
             break;
@@ -7545,69 +7532,15 @@ int sema_check(Node* file, Diag* d) {
     }
 
 
-    // Contracts precede their methods; validate their complete method sets now.
+    // Every method is declared; validate each signing's method set now.
     k.scope = &file_scope;
-    for (int i = 0; i < file->nkids; i++) if (file->kids[i]->kind == N_SIGNING) check_signing(&k, file->kids[i]);
+    for (int i = 0; i < file->nkids; i++) {
+        if (file->kids[i]->kind != N_SIGNING) continue;
+        k.in_module = in_imported(file->kids[i]);
+        check_signing(&k, file->kids[i]);
+    }
+    k.in_module = 0;
 
-    // forward top-level calls: verify existence and argument types
-    k.scope = &file_scope;
-    for (Pending* pd = k.pending; pd; pd = pd->next) {
-        Node* call = pd->call;
-        Node* callee = call->a;
-        k.scope = pd->scope;
-        // the callee sees every declaration, its arguments only the call's
-        k.see_all = 1;
-        k.call_seq = pd->call_seq;
-        if (pd->method) {
-            SType* r = check_method_call(&k, call, pd->recv, pd->qualified, 1);
-            call->ty = r;
-            continue;
-        }
-        if (pd->assoc) {
-            SType* r = check_assoc_call(&k, call, pd->recv, 1);
-            call->ty = r;
-            continue;
-        }
-        Sym* head = lookup_pending(pd, callee->str, callee->len);
-        if (!head || head->kind != SYM_FUNC) {
-            ck_err(&k, call, "unknown function '%.*s'", (int)callee->len, callee->str);
-        } else {
-            int ambiguous = 0;
-            Sym* chosen = select_call_overload(&k, call, head, 1, &ambiguous);
-            if (ambiguous) {
-                ck_err(&k, call, "ambiguous call to overloaded function '%.*s'",
-                       (int)callee->len, callee->str);
-            } else if (!chosen) {
-                if (!overloaded_arg_err(&k, call, head, callee->str, callee->len))
-                    ck_err(&k, call, "no matching overload '%.*s' for these argument types",
-                           (int)callee->len, callee->str);
-            } else {
-                finish_direct_call(&k, call, chosen);
-            }
-        }
-    }
-    k.see_all = 0;
-    k.call_seq = 0;
-    /* Whatever consumed a pending call's value was checked against its poison
-     * type. With every call resolved, re-check each function body that made
-     * one (once per generic stamp) so those uses meet real types. */
-    if (d->errors == 0) {
-        k.final = 1;
-        k.fresh_seq = g_sym_seq + 1;
-        for (Pending* pd = k.pending; pd; pd = pd->next) {
-            if (!pd->fn) continue;
-            int seen = 0;
-            for (Pending* q = k.pending; q != pd && !seen; q = q->next)
-                seen = q->fn == pd->fn && q->ttypes == pd->ttypes;
-            if (seen) continue;
-            k.scope = pd->fnscope;
-            k.seen_seq = pd->seq;
-            k.tnames = pd->tnames; k.ttypes = pd->ttypes; k.nsub = pd->nsub;
-            check_func_body(&k, pd->fn);
-        }
-        k.tnames = NULL; k.ttypes = NULL; k.nsub = 0;
-        k.final = 0;
-    }
     k.scope = &file_scope;
     if (d->errors == 0) { // every call now names its target
         InlineWalk walk = {0};

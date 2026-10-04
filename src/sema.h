@@ -76,7 +76,7 @@ struct Sym {
     // resolves one still DECL_ENTERED on demand (Compiler #5)
     uint8_t     decl_state, in_cycle;
     uint8_t     is_literal_backed; // string binding initialized from a literal
-    uint32_t    seq;    // declaration order across the unit
+    uint8_t     is_root; // top-level in the root file: unseen from imported files
     SType*      type;
     Node*       decl;   // binder/declaration node (slot key for the emitter)
     Node*       init;   // top-level initializer (static Error validation/emission)
@@ -87,6 +87,8 @@ struct Sym {
     // specializations bound to it; a specialization records its exact
     // type-argument tuple (spec_args != NULL marks a specialization)
     Sym*        specs;     // template: head of its bound specializations
+    // set head: specializations entered but not yet bound (Compiler #5)
+    Sym*        entered_specs;
     Sym*        spec_next; // specialization: next bound to the same template
     SType**     spec_args; // specialization: exact type-argument tuple
     int         spec_nargs;

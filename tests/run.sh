@@ -189,22 +189,12 @@ for want in \
     fi
 done
 
-# A forward call's arguments keep declaration-before-use, wherever the callee
-# is declared, and each error is reported once.
-forward_value_errors=$("$ACE" tests/sema/functions/forward_value_arg_err.ace 2>&1)
-for want in 13:16 13:29 13:44 13:61 "4 errors"; do
-    if ! printf '%s\n' "$forward_value_errors" | grep -qF "$want"; then
-        echo "FAIL: forward_value_arg_err.ace should report: $want"
-        fail=1
-    fi
-done
-
-# A call resolved at end of file is checked where its value lands, not
-# accepted for its poison type.
-for f in pending_result_decl pending_result_return forward_result_decl; do
+# A call that settles on its sole overload, declared before or after it, is
+# checked where its value lands.
+for f in sole_overload_result_decl sole_overload_result_return forward_result_decl; do
     if ! "$ACE" "tests/sema/functions/${f}_err.ace" 2>&1 |
          grep -qF "type mismatch: u64 given where"; then
-        echo "FAIL: a pending call's result must meet its consumer's type: $f"
+        echo "FAIL: a sole overload's result must meet its consumer's type: $f"
         fail=1
     fi
 done
@@ -357,13 +347,15 @@ for want in \
     "error: 'A' depends on itself: 'A' -> 'B' -> 'C' -> 'A'" \
     "error: 'P' depends on itself: 'P' -> 'Q' -> 'P'" \
     "error: type 'S' depends on its own layout" \
-    "error: type 'M' has a recursive value layout"; do
+    "error: type 'M' has a recursive value layout" \
+    "error: 'f' depends on itself: 'f' -> 'Z' -> 'f'" \
+    "error: 'D' depends on itself: 'D' -> 'E' -> 'D'"; do
     if ! printf '%s\n' "$cycle_errors" | grep -qF "$want"; then
         echo "FAIL: missing declaration-cycle diagnostic: $want"
         fail=1
     fi
 done
-if [ "$(printf '%s\n' "$cycle_errors" | grep -c 'error:')" -ne 4 ]; then
+if [ "$(printf '%s\n' "$cycle_errors" | grep -c 'error:')" -ne 6 ]; then
     echo "FAIL: each declaration cycle should be reported exactly once"
     printf '%s\n' "$cycle_errors"
     fail=1
@@ -487,10 +479,9 @@ for want in \
     fi
 done
 
-printf_deferred_error=$("$ACE" tests/sema/printf/deferred_arg_err.ace 2>&1)
-if ! printf '%s\n' "$printf_deferred_error" | grep -qF \
-    "fmt.printf argument type is not yet known"; then
-    echo "FAIL: missing printf deferred-argument diagnostic"
+if ! "$ACE" tests/sema/printf/no_value_arg_err.ace 2>&1 | grep -qF \
+    "6:29: error: fmt.printf argument has no value"; then
+    echo "FAIL: missing printf no-value-argument diagnostic"
     fail=1
 fi
 
@@ -594,7 +585,7 @@ if ! printf '%s\n' "$duplicate_spec_error" | grep -qF \
 fi
 missing_generic_error=$("$ACE" tests/sema/specialization/missing_generic_err.ace 2>&1)
 if ! printf '%s\n' "$missing_generic_error" | grep -qF \
-    "a specialization must follow a generic declaration of 'pick'"; then
+    "no generic declaration of 'pick' in this file"; then
     echo "FAIL: missing missing-generic diagnostic"
     fail=1
 fi

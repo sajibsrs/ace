@@ -151,10 +151,8 @@ uses fixed stack storage and never allocates. `fmt.printf` is direct-call
 only and cannot be stored as a function value because its checked argument
 shape depends on the static format.
 
-An argument whose type is still unresolved when the format is checked, such as a
-call deferred to end of file (`g(41)` with a `usize` parameter), is a
-compile-time error; type the call's arguments (`g(usize(41))`) or assign its
-result to a typed variable first.
+An argument with no value, such as a `panic(...)` call, is a compile-time
+error.
 
 ## Design rationale
 
