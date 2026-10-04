@@ -1,0 +1,9 @@
+/* A function with no return value is not a function value returning one. */
+
+hit(value: int) {
+}
+
+main(): int {
+    f: (int): int = hit
+    return 0
+}

@@ -1,0 +1,5 @@
+/* Parentheses around one type are neither a tuple nor a function type. */
+
+one(): (int) {
+    return 1
+}

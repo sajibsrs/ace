@@ -1,5 +1,11 @@
 # Language
 
+- Function types state their return, `void` for no value: `(int): void`,
+  `extern "c" (): void`; declarations still omit the clause. `void` is also a
+  type argument, standing only where a return stands (`apply[int, void]`), and
+  a no-value function may `return f()` of a no-value call. `(T)` and `()`
+  alone are no longer types; built-in type names can no longer be redeclared;
+  function types are type arguments in expressions too (`same[(int): void]`).
 - `@cold` marks a function with a body as rarely called; it changes only
   layout. It excludes `inline`, `main`, `extern "c"` definitions, and
   bodiless declarations, and a cold function is never auto-inlined.

@@ -1,0 +1,41 @@
+/* Function types as type arguments in expression position: a '(…): R' or
+ * 'extern "c"' bracket argument is a type, never an index. */
+
+// expect-exit: 33
+
+total: int = 0
+
+add(value: int) {
+    total += value
+}
+
+double(value: int): int {
+    return value * 2
+}
+
+extern "c" next(value: i32): i32 {
+    return value + 1
+}
+
+same[T](value: T): T {
+    return value
+}
+
+first[A, B](a: A, b: B): A {
+    return a
+}
+
+Box[T]: struct { value: T }
+
+main(): int {
+    visit: (int): void = same[(int): void](add)
+    visit(3)
+    scale: (int): int = first[(int): int, (int): void](double, add)
+    box: Box[(int): void] = Box[(int): void]{ value = add }
+    later: (int): void = box.value
+    later(4)
+    step: extern "c" (i32): i32 = same[extern "c" (i32): i32](next)
+    values: [3]int = [1, 2, 3]
+    at: usize = 1
+    return total + scale(10) + int(step(1)) + values[(at + 1)] + 1
+}

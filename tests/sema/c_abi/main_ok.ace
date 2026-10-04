@@ -40,7 +40,7 @@ extern "c" combine(pointer: mut *u8, value: u32): int {
     return int(value)
 }
 
-zero: extern "c" () = no_result
+zero: extern "c" (): void = no_result
 many: extern "c" (mut *u8, u32): int = combine
 missing: extern "c" (mut *u8): mut *u8 = null
 

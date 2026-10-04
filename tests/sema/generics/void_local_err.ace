@@ -1,0 +1,14 @@
+/* A body storing a 'void'-bound parameter's value is rejected for that stamp. */
+
+keep[R](f: (): R): R {
+    result: R = f()
+    return result
+}
+
+tick() {
+}
+
+main(): int {
+    keep[void](tick)
+    return 0
+}

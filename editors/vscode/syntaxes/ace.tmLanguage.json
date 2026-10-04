@@ -375,7 +375,7 @@
     },
     "primitive-types": {
       "name": "entity.name.type.ace support.type.builtin.ace",
-      "match": "\\b(?:bool|i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|float|string|char|usize|typeid|int|uint|Error|StaticMap|c_char|c_schar|c_uchar|c_short|c_ushort|c_int|c_uint|c_long|c_ulong|c_longlong|c_ulonglong)\\b"
+      "match": "\\b(?:bool|i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|float|string|char|usize|typeid|void|int|uint|Error|StaticMap|c_char|c_schar|c_uchar|c_short|c_ushort|c_int|c_uint|c_long|c_ulong|c_longlong|c_ulonglong)\\b"
     },
     "builtins": {
       "name": "entity.name.function.ace support.function.builtin.ace",

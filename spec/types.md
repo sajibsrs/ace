@@ -3,6 +3,8 @@ Decision: fully explicit types; no inference.
 Predeclared types: `bool`, `i8`/`i16`/`i32`/`i64`,
 `u8`/`u16`/`u32`/`u64`, `f32`/`f64`, `float`, `string`, `usize`,
 `typeid`, and the platform words `int`/`uint` (i64/u64 on Apple arm64).
+These names, `char`, `StaticMap`, `Error`, and `void` (Syntax & Parsing #5)
+cannot be redeclared as types.
 `float` is a transparent alias of `f64`: the spellings have the same type
 identity, representation, conversions, ABI behavior, generic identity, and
 overload signature. Consequently, overloads cannot distinguish `float` from
@@ -189,3 +191,4 @@ Decision: explicit monomorphization.
 12. Bracket interpretation is ordered, not inferred, and brackets hold bare named types only (v1): brackets after a name that already declares a generic are specialization type arguments; brackets after a name without one are a fresh type-parameter list. A specialization must therefore follow its generic; brackets whose identifiers name existing types with no preceding generic are a compile error, never a silent new generic. Compound type arguments (`[]u8`, `*Node`, `Pair[int, string]`) are an additive relaxation.
 13. `specialized` after the return clause marks a template with no default body [P: spelling]. Calling it with an unmatched type tuple is a call-site error naming the missing type and the declaration; a `specialized` generic with zero specializations in the compiled program is a declaration error.
 14. Scope: specializations live in the generic's module (v1); struct generics (`Box[T]`) are untouched, and type-owned generic methods specialize additively later.
+15. `void` is a type argument (`apply[int, void]`, `Task[void]`). A type parameter bound to it stands only where a return stands — a function type's return or the generic's own — and means no value there; anywhere else (a parameter, local, field, pointee, element, `sizeof`, `typeid`) that instantiation is an error. Overload candidates whose signature would place it elsewhere do not match.

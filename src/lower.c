@@ -3348,6 +3348,9 @@ static void inline_return(Lw* l, Node* s) {
     } else if (s->a && l->inl[i].res >= 0) {
         int v = expr(l, s->a, need_type(l, l->inl[i].rt));
         write_var(l, l->inl[i].res, l->cur, v);
+    } else if (s->a) { // `return f()` of a call with no value
+        drop(l, s->a);
+        i = l->ninl - 1;
     }
     jump(l, l->inl[i].join);
 }
@@ -4002,6 +4005,11 @@ static void stmt(Lw* l, Node* s) {
                 for (int j = 0; j < n; j++) write_var(l, var + j, l->cur, g.v[k++]);
             }
             jump(l, l->self_head);
+            return;
+        }
+        if (!l->rtype || unwrap(l->rtype)->kind == SK_VOID) { // `return f()` of a call with no value
+            drop(l, s->a);
+            ret(l, NULL);
             return;
         }
         if (l->result >= 0) { // into the caller's memory

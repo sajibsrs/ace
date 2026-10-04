@@ -1,0 +1,4 @@
+/* A declaration with no return value omits its return clause. */
+
+run(): void {
+}

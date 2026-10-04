@@ -95,7 +95,7 @@ type_params   := "[" ident ("," ident)* "]"               // max[T] — type dec
 params        := param ("," param)* [","]
 param         := param_mod* ident ":" type
 param_mod     := "mut" | "noalias"
-ret_clause    := ":" type | ":" "(" type ("," type)+ ")"
+ret_clause    := ":" type                                  // omitted for no value
 block         := "{" stmt* "}"
 
 struct_decl   := ident [type_params] ":" "struct" "{" field_list "}"
@@ -227,7 +227,7 @@ postfix_part  := "(" [arg_list] ")"                       // call; ["mut"] expr 
                | "[" [expr] ".." [expr] "]"               [P] slice expression
                | "." ident                                // field or built-in sequence .len
                | "::" ident                               // associated-function reference (owner must be a type)
-               | "[" type_list "]"                        // generic instantiation — see Notes
+               | "[" type_args "]"                        // generic instantiation — see Notes
 
 arg_list      := arg ("," arg)*
 arg           := ["mut"] expr                             // call-site mutation mark
@@ -257,17 +257,19 @@ slice_type    := ["mut"] "[]" type_expr                   // []u8, mut []u8
 string_type   := ["mut"] "string"                         // string, mut string
 array_type    := "[" expr "]" type_expr                   // [16][8]u8; N is a compile-time constant expression
 tuple_type    := "(" type ("," type)+ ")"
-func_type     := "(" [type_list] ")" ":" ret_types         // (int, int): int
-c_func_type   := "extern" string_lit "(" [type_list] ")" [":" ret_types]
+func_type     := "(" [type_list] ")" ":" func_ret          // (int, int): int, (int): void
+c_func_type   := "extern" string_lit "(" [type_list] ")" ":" func_ret
                                                           // semantic ABI string: exactly "c"
-named_type    := ident ("." ident)* ["[" type_list "]"]   // Vec[int], math.Vec
+named_type    := ident ("." ident)* ["[" type_args "]"]   // Vec[int], math.Vec
 static_map_type := "StaticMap" "[" type "]" type           // StaticMap[K]V
 prim_type     := "bool" | "i8" | "i16" | "i32" | "i64"
                | "u8" | "u16" | "u32" | "u64"
                | "f32" | "f64" | "float" | "char" | "usize" | "typeid"
 
 type_list     := type ("," type)*
-ret_types     := type | "(" type ("," type)+ ")"
+type_args     := type_arg ("," type_arg)*
+type_arg      := type | "void"                             // Task[void]
+func_ret      := type | "void"                             // void: no value
 ```
 
 ## 6. Parser notes
@@ -287,7 +289,8 @@ choices that are not evident from the productions.
    comma. Signing and selective-import parentheses are the multiline form only.
 4. Indexing and generic instantiation share brackets. Resolve them from the
    symbol namespace; when parsing cannot decide, parse an expression and let
-   semantic analysis reclassify/check it.
+   semantic analysis reclassify/check it. A bracket item that begins `(...):`
+   or `extern` is a function type, never an index: `same[(int): void](add)`.
 5. In type position, `(...):` is a function type; otherwise a multi-element
    parenthesized type is a tuple.
 6. Comparison chains form one node and evaluate each operand once.

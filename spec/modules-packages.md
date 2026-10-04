@@ -51,9 +51,10 @@ Decision: one explicit `extern "c"` boundary in both directions; Ace internals s
    and its ordinary C implementation facilities are a build-time choice, not
    part of Ace program semantics or the generated runtime model.
 5. A callable C function-pointer type is spelled `extern "c" (P1, P2): R`;
-   zero parameters use `extern "c" (): R`, and the return clause is omitted for
-   no value (`extern "c" ()`). Its parameters and return independently satisfy
-   the positive C-ABI whitelist, and variadic, generic, and non-`c` function
+   zero parameters use `extern "c" (): R`, and no value is `: void`
+   (`extern "c" (): void`), as for every function type (Syntax & Parsing #5).
+   Its parameters and return independently satisfy the positive C-ABI
+   whitelist, and variadic, generic, and non-`c` function
    types are rejected. The value is one pointer-sized word with canonical zero
    `null`; equality with `null` is ordinary function-value equality. A debug
    build diagnoses calling null and a release build assumes the callee is

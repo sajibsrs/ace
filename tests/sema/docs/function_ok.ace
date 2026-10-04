@@ -7,6 +7,23 @@ add(a: int, b: int): int {
 log_ready() {
 }
 
+each(count: int, visit: (int): void) {
+    for i: int = 0; i < count; i += 1 {
+        visit(i)
+    }
+}
+
+skip(value: int) {
+}
+
+apply[T, R](value: T, f: (T): R): R {
+    return f(value)
+}
+
+square(value: int): int {
+    return value * value
+}
+
 increment(mut value: int) {
     value += 1
 }
@@ -81,6 +98,11 @@ main(): int {
     increment(mut count)
     quotient: int, remainder: int = divide(count, 5)
     operation: (int): int = twice
+    ready: (): void = choose[(): void](log_ready, log_ready)
+    ready()
+    each(3, skip)
+    apply[int, void](3, skip)
+    nine: int = apply[int, int](3, square)
     chosen: (int, int): int = choose[int]
     counted: int = count_of[int](0) + count_of[f64](0.5)
     return add(render("ace"), render(13)) + quotient + remainder +

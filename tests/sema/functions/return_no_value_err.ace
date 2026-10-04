@@ -1,0 +1,8 @@
+/* A call with no value cannot be a function's result. */
+
+tick() {
+}
+
+count(): int {
+    return tick()
+}

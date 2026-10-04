@@ -1,0 +1,5 @@
+/* Built-in type names, 'void' included, cannot be redeclared. */
+
+bool: struct { value: int }
+
+void: enum { none }

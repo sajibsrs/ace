@@ -1,0 +1,63 @@
+/* 'void' as a type argument: a type parameter bound to it stands where a
+ * return stands, and a function with no value may return a call with none. */
+
+// expect-exit: 62
+
+total: int = 0
+
+add(value: int) {
+    total += value
+}
+
+tick() {
+    total += 10
+}
+
+double(value: int): int {
+    return value * 2
+}
+
+seven(): int {
+    return 7
+}
+
+apply[T, R](value: T, f: (T): R): R {
+    return f(value)
+}
+
+inline call[R](f: (): R): R {
+    return f()
+}
+
+Task[R]: struct { run: (): R }
+
+Task[R].go(): R {
+    run: (): R = self.run
+    return run()
+}
+
+pick[T](f: (): T): T {
+    return f()
+}
+
+pick[void](f: (): void) {
+    total += 1
+    return f()
+}
+
+scaled() {
+    defer tick()
+    return add(5)
+}
+
+main(): int {
+    apply[int, void](3, add)
+    task: Task[void] = Task[void]{ run = tick }
+    task.go()
+    call[void](tick)
+    pick[void](tick)
+    later: (int, (int): void): void = apply[int, void]
+    later(2, add)
+    scaled()
+    return total + apply[int, int](2, double) + call[int](seven)
+}

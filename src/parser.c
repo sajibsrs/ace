@@ -237,6 +237,29 @@ static int spells_staticmap(Node* t) {
     return t && t->kind == N_STATICMAP_T;
 }
 
+static int at_void(P* p) {
+    return at(p, T_IDENT) && tk(p)->len == 4 && memcmp(tk(p)->str, "void", 4) == 0 && kth(p, 1) != T_DOT;
+}
+
+// A function type's return after its ':' — a type, or 'void' for no value (NULL).
+static Node* func_type_ret(P* p) {
+    if (at_void(p)) {
+        p->i++;
+        return NULL;
+    }
+    return parse_type(p);
+}
+
+// A type argument: a type, or 'void' (no value; checked where it is substituted).
+static Node* type_arg(P* p) {
+    if (!at_void(p)) return parse_type(p);
+    Node* v = nd_tok(p, N_NAMED, tk(p));
+    v->str = tk(p)->str;
+    v->len = tk(p)->len;
+    p->i++;
+    return v;
+}
+
 static Node* type_atom(P* p) {
     Node* t;
     if (at(p, T_CONST)) {
@@ -314,22 +337,8 @@ static Node* type_atom(P* p) {
         }
         expect(p, T_RPAREN, "')' to close function parameter types");
         set_kids(f, &w);
-        if (ate(p, T_COLON)) {
-            if (at(p, T_LPAREN)) {
-                p->i++;
-                Node* r = nd(p, N_TUPLE_T);
-                NV rw = {0};
-                for (;;) {
-                    nv_push(p, &rw, parse_type(p));
-                    if (!ate(p, T_COMMA)) break;
-                    if (at(p, T_RPAREN)) break;
-                }
-                expect(p, T_RPAREN, "')' to close return list");
-                f->a = rw.n == 1 ? rw.v[0] : (set_kids(r, &rw), r);
-            } else {
-                f->a = parse_type(p);
-            }
-        }
+        expect(p, T_COLON, "':' and a return type or 'void' after C function parameter types");
+        f->a = func_type_ret(p);
         return f;
     }
     if (at(p, T_LPAREN)) { // tuple or function type
@@ -344,27 +353,17 @@ static Node* type_atom(P* p) {
             }
         }
         expect(p, T_RPAREN, "')' to close type list");
-        if (at(p, T_COLON)) { // (params): ret — function value type
-            p->i++;
+        if (ate(p, T_COLON)) { // (params): ret — function value type
             Node* f = nd(p, N_FUNC_T);
             set_kids(f, &w);
-            if (at(p, T_LPAREN)) {
-                p->i++;
-                Node* r = nd(p, N_TUPLE_T);
-                NV rw = {0};
-                for (;;) {
-                    nv_push(p, &rw, parse_type(p));
-                    if (!ate(p, T_COMMA)) break;
-                    if (at(p, T_RPAREN)) break;
-                }
-                expect(p, T_RPAREN, "')' to close return list");
-                f->a = rw.n == 1 ? rw.v[0] : (set_kids(r, &rw), r);
-            } else {
-                f->a = parse_type(p);
-            }
+            f->a = func_type_ret(p);
             return f;
         }
-        if (w.n == 1) return w.v[0]; // (T) ≡ T
+        if (w.n < 2) { // a tuple has two or more members; a function type needs its return
+            perr(p, "'(%s)' is not a type: a tuple has two or more members, and a function type needs ': R' or ': void'",
+                 w.n ? "T" : "");
+            return NULL;
+        }
         set_kids(t, &w);
         return t;
     }
@@ -377,6 +376,10 @@ static Node* type_atom(P* p) {
             expect(p, T_RBRACK, "']' after StaticMap key type");
             map->b = parse_type(p);
             return map;
+        }
+        if (at_void(p)) {
+            perr(p, "'void' is allowed only as a function type's return or a type argument");
+            return NULL;
         }
         t = ident_node(p, tk(p));
         p->i++;
@@ -398,7 +401,7 @@ static Node* type_atom(P* p) {
             p->i++;
             NV w = {0};
             for (;;) {
-                nv_push(p, &w, parse_type(p));
+                nv_push(p, &w, type_arg(p));
                 if (!ate(p, T_COMMA)) break;
                 if (at(p, T_RBRACK)) break;
             }
@@ -505,6 +508,23 @@ static int scan_type(P* p, size_t* at_i) {
     }
     *at_i = i;
     return 1;
+}
+
+/* A bracketed argument in expression position: a function type ('(…): R' or
+   'extern "c" (…): R') can only be a type argument, never an index. */
+static Node* bracket_arg(P* p) {
+    if (at(p, T_EXTERN)) return parse_type(p);
+    if (at(p, T_LPAREN)) {
+        size_t i = p->i;
+        int depth = 0;
+        for (; i < p->n; i++) {
+            TokKind k = p->toks[i].kind;
+            if (k == T_LPAREN) depth++;
+            else if (k == T_RPAREN && --depth == 0) break;
+        }
+        if (i + 1 < p->n && p->toks[i + 1].kind == T_COLON) return parse_type(p);
+    }
+    return expr(p, 0);
 }
 
 static int is_assign_op(TokKind k) {
@@ -847,7 +867,7 @@ static Node* expr_postfix_base(P* p, int ctx, Node* base) {
                 p->i++;
                 if (!at(p, T_RBRACK)) hi = expr(p, 0);
             } else {
-                lo = expr(p, 0);
+                lo = bracket_arg(p);
                 if (at(p, T_DOTDOT)) {
                     is_slice = 1;
                     p->i++;
@@ -857,7 +877,7 @@ static Node* expr_postfix_base(P* p, int ctx, Node* base) {
                     nv_push(p, &w, lo);
                     while (ate(p, T_COMMA)) {
                         if (at(p, T_RBRACK)) break;
-                        nv_push(p, &w, expr(p, 0));
+                        nv_push(p, &w, bracket_arg(p));
                     }
                     expect(p, T_RBRACK, "']' after index/type arguments");
                     set_kids(ix, &w);
@@ -1635,19 +1655,9 @@ static Node* parse_params(P* p, const char* closer) {
 
 static Node* parse_ret(P* p) {
     if (!ate(p, T_COLON)) return NULL;
-    if (at(p, T_LPAREN)) {
-        p->i++;
-        Node* t = nd(p, N_TUPLE_T);
-        NV w = {0};
-        for (;;) {
-            nv_push(p, &w, parse_type(p));
-            if (!ate(p, T_COMMA)) break;
-            if (at(p, T_RPAREN)) break;
-        }
-        expect(p, T_RPAREN, "')' to close return types");
-        if (w.n == 1) return w.v[0];
-        set_kids(t, &w);
-        return t;
+    if (at_void(p)) {
+        perr(p, "a function with no return value omits its return clause; 'void' is only a function type's return");
+        return NULL;
     }
     return parse_type(p);
 }

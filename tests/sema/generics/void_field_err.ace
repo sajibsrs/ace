@@ -1,0 +1,8 @@
+/* A struct storing its type parameter cannot take 'void'. */
+
+Box[T]: struct { value: T }
+
+main(): int {
+    box: *Box[void] = null
+    return 0
+}

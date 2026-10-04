@@ -1,0 +1,6 @@
+/* 'void' is not a value type. */
+
+main(): int {
+    p: *void = null
+    return 0
+}

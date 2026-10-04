@@ -1,0 +1,35 @@
+/* Function values with no return value: passed, stored, returned, and null-checked. */
+
+// expect-exit: 115
+
+total: int = 0
+
+add(value: int) {
+    total += value
+}
+
+bump() {
+    total += 100
+}
+
+each(n: int, f: (int): void) {
+    for i: int = 1; i <= n; i += 1 {
+        f(i)
+    }
+}
+
+pick(): (): void {
+    return bump
+}
+
+main(): int {
+    each(4, add)
+    run: (): void = pick()
+    run()
+    later: (int): void = null
+    if later == null {
+        later = add
+    }
+    later(5)
+    return total
+}

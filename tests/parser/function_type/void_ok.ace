@@ -1,0 +1,8 @@
+/* Function types: 'void' marks no return value; returns of function type need no parentheses. */
+
+each: (int): void
+run: (): void
+pick: (): (int): int
+pair: (int): (int, bool)
+hook: extern "c" (i32): void
+table: [2](i32): void

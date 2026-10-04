@@ -1,6 +1,6 @@
 /* Panic reserved func fixture. */
 
-panic(message: string): void {
+panic(message: string) {
 }
 
 main(): int {

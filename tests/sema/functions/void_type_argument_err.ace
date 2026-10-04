@@ -1,0 +1,10 @@
+/* 'void' is a type argument, but a parameter bound to it names no value. */
+
+same[T](value: T): T {
+    return value
+}
+
+main(): int {
+    same[void](0)
+    return 0
+}

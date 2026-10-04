@@ -115,6 +115,28 @@ tests/sema/inline/recursion_err.ace|inline function 'count' reaches itself throu
 tests/sema/inline/mutual_err.ace|inline function 'even' reaches itself through inline calls
 INLINE_RULES
 
+# function types: 'void' marks no return value and binds type parameters (spec Syntax & Parsing #5)
+while IFS='|' read -r f want; do
+    if ! "$ACE" "$f" 2>&1 | grep -qF "$want"; then
+        echo "FAIL: $f should report: $want"
+        fail=1
+    fi
+done <<'FUNCTION_TYPE_RULES'
+tests/parser/function_type/void_declaration_err.ace|3:8: error: a function with no return value omits its return clause
+tests/parser/function_type/void_value_err.ace|4:9: error: 'void' is allowed only as a function type's return
+tests/parser/function_type/single_type_err.ace|'(T)' is not a type
+tests/parser/function_type/empty_type_err.ace|'()' is not a type
+tests/parser/function_type/c_return_err.ace|expected ':' and a return type or 'void'
+tests/sema/functions/void_value_mismatch_err.ace|(i64): void given where (i64): i64 expected
+tests/sema/functions/void_type_argument_err.ace|3:16: error: 'void' (as T) is allowed only as a function type's return or a type argument
+tests/sema/generics/void_field_err.ace|3:25: error: 'void' (as T) is allowed only
+tests/sema/generics/void_local_err.ace|4:13: error: 'void' (as R) is allowed only
+tests/sema/generics/void_memory_err.ace|'void' names no value and cannot be a memory element type
+tests/sema/functions/return_no_value_err.ace|7:16: error: type mismatch: no value given where i64 expected
+tests/sema/types/predeclared_name_err.ace|3:1: error: 'bool' is a predeclared type name and cannot be redeclared
+tests/sema/types/predeclared_name_err.ace|5:1: error: 'void' is a predeclared type name and cannot be redeclared
+FUNCTION_TYPE_RULES
+
 # @cold declarations (spec Functions & ABI #10)
 while IFS='|' read -r f want; do
     if ! "$ACE" "$f" 2>&1 | grep -qF "$want"; then

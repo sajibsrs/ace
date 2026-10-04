@@ -201,6 +201,29 @@ main(): int {
 A bare overloaded function name without an explicit function-value type is an
 error.
 
+A function type always states its return. `void` marks a function that returns
+no value, and is valid only there:
+
+```ace
+each(count: int, visit: (int): void) {
+    for i: int = 0; i < count; i += 1 {
+        visit(i)
+    }
+}
+
+log_ready() {
+}
+
+ready: (): void = log_ready
+```
+
+A declaration with no return value still omits its return clause, so
+`log_ready(): void` is an error, as are `void` as a value type or a tuple
+member. Parentheses in a type enclose a parameter list or
+a tuple of two or more members, so `(int)` and `()` alone are not types. A
+function returning a function writes the type without extra parentheses:
+`pick(): (int): int`.
+
 A function with a `mut` parameter cannot become a function value: a
 function-value type has no syntax for a parameter's mutability, so a call
 through one could never validate `mut` agreement against the real callee.
@@ -213,11 +236,11 @@ extern "c" thread_entry(argument: mut *u8): mut *u8 {
 }
 
 entry: extern "c" (mut *u8): mut *u8 = thread_entry
-empty: extern "c" () = null
+empty: extern "c" (): void = null
 ```
 
-Use `extern "c" (): R` for a zero-parameter function returning `R`, and omit
-the return clause for a function returning no value. Only an exact `extern "c"`
+Use `extern "c" (): R` for a zero-parameter function returning `R`, and
+`: void` for a function returning no value. Only an exact `extern "c"`
 definition or imported declaration can initialize a non-null value
 of this type; an ordinary Ace function has a distinct convention. Parameters
 and returns must be C-ABI-compatible. C function values are one word, may be
@@ -257,6 +280,35 @@ written. The declared function-value type never supplies them, so a bare
 
 ```ace
 pick: (int, int): int = choose[int]
+```
+
+`void` is also a type argument. A type parameter bound to it stands only
+where a return stands, so one generic serves callbacks with and without a
+result:
+
+```ace
+apply[T, R](value: T, f: (T): R): R {
+    return f(value)
+}
+
+square(value: int): int {
+    return value * value
+}
+
+apply[int, void](3, skip)
+nine: int = apply[int, int](3, square)
+```
+
+A `void`-bound parameter anywhere else (a parameter, local, field, or
+`sizeof`) makes that instantiation an error: `Box[void]` is rejected when
+`Box` stores its `T`, while `Task[void]` is accepted when `T` appears only as
+`(): T`. A function with no return value may `return` a call that has none,
+which is what lets `apply`'s body serve both.
+
+A function type is an ordinary type argument, in a call as in a declaration:
+
+```ace
+ready: (): void = choose[(): void](log_ready, log_ready)
 ```
 
 The value is the stamp for that type tuple, or the written specialization when
@@ -690,6 +742,20 @@ Why the rules in `spec/compiler.md` and C Interop (`spec/modules-packages.md`) a
   results it is an `@` attribute like `@align` rather than a keyword like
   `inline`. With `mem.grow` cold, `bench/std` array-push went from 1.35x to
   1.0x of C.
+- Syntax & Parsing #5 (`void`): a function type needs a written return because
+  `(int, int)` is already a tuple type, so `(int)` cannot also mean a function
+  with no result. `void` names the absence directly, as C, Zig, Java, and
+  TypeScript do; an empty list `()` would read as a zero-member tuple, and Ace
+  has no tuples below two members. A declaration needs none because its body
+  ends the signature.
+- Generics #15 (`void` arguments): one generic can then serve callbacks with
+  and without a result, as C++ templates allow (`template <class R> R
+  apply(F f) { return f(); }` with `R = void`). `void` stays a return-only
+  meaning, checked per instantiation, rather than a zero-size value type as in
+  Zig: it needs no size, layout, ABI, or `typeid`, and `*void` cannot read as
+  C's untyped pointer. Returning a call with no value is what lets one body
+  serve both, as in C++ and Zig. A zero-size `void` remains an additive
+  extension.
 - Errors #12 (`_`): multiple returns make dropping an unwanted value common
   (`value, ok`, `value, err`). A dedicated discard binds nothing, so repeated
   uses never collide and nothing unread lingers in scope. The bare, untyped

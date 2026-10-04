@@ -1,0 +1,6 @@
+/* '()' without a return is not a type. */
+
+main(): int {
+    f: () = null
+    return 0
+}
