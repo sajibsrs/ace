@@ -46,6 +46,9 @@ history.
 - Confirm each step before proceeding. Implement only what was explicitly
   asked; do not add unrequested options, flags, or behavior (e.g. CLI-argument
   parsing nobody asked for).
+- Prioritize correctness > performance > convenience, in code and in
+  resolving issues alike: never trade a correct result for speed, nor speed
+  for convenience.
 - Order decisions as philosophy, semantics, syntax, then implementation. For
   contested design, cite `PHILOSOPHY.md` and prioritize
   performance > simplicity > modularity > compile time > safety.
@@ -61,6 +64,9 @@ history.
   estimate) and state it when presenting the change. If the gain is
   negligible, drop the change: the return on investment is low, and every
   added line is more surface for bugs and more to extend and maintain.
+- Judge a change by whether it is genuinely needed, not by whether existing
+  code or tests reach it: a new feature or fix has no callers yet. Keep a
+  needed change and add the test that covers it.
 - Record current rules in the `spec/` chapter they belong to, keeping only
   active decisions in `spec/queue.md`. Rationale stays in `spec/` only while a
   decision is open; an implemented rule's rationale goes in the "Design
