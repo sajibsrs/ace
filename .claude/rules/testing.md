@@ -11,6 +11,10 @@ paths:
 
 - Run the smallest relevant checks first; run the full suites only after
   the owner approves and reviews the change (see `AGENTS.md` Process).
+- `tests/run.sh` runs emit fixtures `ACE_JOBS` at a time (default: CPU
+  count); `ACE_JOBS=1` runs them serially when debugging a failure. The
+  checked, module, and driver sections run in the background, so their
+  failures print just before the summary.
 - Tests are grouped under `tests/`: lexer/parser tests parse; sema tests check
   diagnostics; emit and module tests compile/link/run; stdlib-module tests use a
   synthetic std tree; emit-errors fail during `-c`; driver tests exercise
