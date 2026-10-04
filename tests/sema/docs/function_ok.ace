@@ -45,6 +45,10 @@ render(value: int): int {
     return value
 }
 
+run(f: (int): int): int {
+    return f(5)
+}
+
 twice(value: int): int {
     return value * 2
 }
@@ -98,6 +102,8 @@ main(): int {
     increment(mut count)
     quotient: int, remainder: int = divide(count, 5)
     operation: (int): int = twice
+    ten: int = run(twice)
+    six: int = apply[int, int](3, twice)
     ready: (): void = choose[(): void](log_ready, log_ready)
     ready()
     each(3, skip)
@@ -107,7 +113,8 @@ main(): int {
     counted: int = count_of[int](0) + count_of[f64](0.5)
     return add(render("ace"), render(13)) + quotient + remainder +
         operation(5) + chosen(1, 2) + pick[int](3, 4) +
-        int(pick[string]("a", "b")[0] - 'a') + later(1) - 29 + counted - 12
+        int(pick[string]("a", "b")[0] - 'a') + later(1) - 29 + counted - 12 +
+        ten + six - 16
 }
 
 later(value: int): int {

@@ -153,8 +153,9 @@ tests/sema/cold/specialized_err.ace|@cold needs a body; 'weight' has none
 tests/sema/cold/main_err.ace|the entry function cannot be @cold
 COLD_RULES
 
-# generic function values name their type arguments (spec Generics #6), and
-# diagnostics render composite types in full
+# generic function values name their type arguments (spec Generics #6), a
+# parameter's type selects an overloaded function value (Names & Scoping #8),
+# and diagnostics render composite types in full
 while IFS='|' read -r f want; do
     if ! "$ACE" "$f" 2>&1 | grep -qF "$want"; then
         echo "FAIL: $f should report: $want"
@@ -172,6 +173,8 @@ tests/sema/generics/not_generic_call_err.ace|'plain' is not generic; call it wit
 tests/sema/types/composite_name_err.ace|(i32, i32): i32 given where (i64): i64 expected
 tests/sema/types/composite_name_err.ace|(i32, bool) given where (i64, bool) expected
 tests/sema/types/composite_name_err.ace|*Point given where *i32 expected
+tests/sema/overloads/value_param_callee_err.ace|overloaded function 'twice' needs an explicit function-value type: 'run' is overloaded
+tests/sema/overloads/value_param_mismatch_err.ace|no overload of 'twice' has the required function type
 GENERIC_VALUE_RULES
 
 # tuple literal members meet their declared member types (spec Syntax #11)

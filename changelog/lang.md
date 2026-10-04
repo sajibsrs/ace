@@ -1,5 +1,9 @@
 # Language
 
+- A parameter's function-value type selects an overloaded function passed by
+  bare name, as a declared local's type does: `run(twice)`,
+  `apply[int, int](3, twice)`. The name gives overload selection no type, so
+  the sole candidate's parameter chooses it; an overloaded callee is an error.
 - Function types state their return, `void` for no value: `(int): void`,
   `extern "c" (): void`; declarations still omit the clause. `void` is also a
   type argument, standing only where a return stands (`apply[int, void]`), and

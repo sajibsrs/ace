@@ -1,0 +1,48 @@
+/* A parameter's declared function-value type selects one overload of a bare
+ * function name, as a declared local's type does, once the callee is chosen:
+ * a sole function, a generic with written type arguments, a method, an
+ * associated function, or a function value. */
+
+// expect-exit: 42
+
+Box: struct { v: int }
+
+Box.use(f: (int): int): int {
+    return f(self.v)
+}
+
+Box::make(f: (int): int): Box {
+    return Box { v = f(1) }
+}
+
+run(f: (int): int): int {
+    return f(5)
+}
+
+apply[T, R](value: T, f: (T): R): R {
+    return f(value)
+}
+
+twice(x: int): int {
+    return x * 2
+}
+
+twice(x: f64): f64 {
+    return x * 2.0
+}
+
+main(): int {
+    b: Box = Box::make(twice)
+    call: ((int): int): int = run
+    if run(twice) != 10 { return 1 }
+    if apply[int, int](3, twice) != 6 { return 2 }
+    if apply[f64, f64](1.5, twice) != 3.0 { return 3 }
+    if b.use(twice) != 4 { return 4 }
+    if call(twice) != 10 { return 5 }
+    if later(twice) != 14 { return 6 }
+    return 42
+}
+
+later(f: (int): int): int {
+    return f(7)
+}

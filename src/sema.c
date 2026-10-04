@@ -3187,10 +3187,19 @@ static SType* generic_func_value(Ck* k, Node* e, SType* want) {
     return ft;
 }
 
+// A bare name of an overloaded function, which has no type of its own.
+static int overloaded_func_name(Ck* k, Node* e) {
+    if (e->kind != N_IDENT) return 0;
+    Sym* s = lookup_val(k, e->str, e->len);
+    return s && s->kind == SYM_FUNC && overload_count(k, s) > 1;
+}
+
 static SType* overload_arg_type(Ck* k, Node* arg) {
     Node* raw = arg->kind == N_MUTARG ? arg->a : arg;
     if (raw->kind == N_ARRAYLIT) return NULL; // candidate parameter supplies its type
     if (raw->kind == N_STRUCTLIT && !raw->a) return NULL; // bare literal: parameter supplies its type
+    // matches no candidate exactly: only a sole candidate's parameter selects it
+    if (overloaded_func_name(k, raw)) return NULL;
     SType* t = expr_type(k, raw);
     if (t == T_UT_INT) {
         /* A character literal is a one-byte constant, so its overload-call
@@ -3200,6 +3209,22 @@ static SType* overload_arg_type(Ck* k, Node* arg) {
     }
     if (t == T_UT_FLOAT) return st_prim(P_F64); // float-literal default: f64
     return t;
+}
+
+/*
+ * A failed overloaded call caused by an overloaded function name argument:
+ * only a sole candidate's parameter type selects one of its overloads.
+ */
+static int overloaded_arg_err(Ck* k, Node* call, Sym* head, const char* name, uint32_t len) {
+    if (overload_count(k, head) < 2) return 0;
+    for (int i = 0; i < call->nkids; i++) {
+        Node* raw = call->kids[i]->kind == N_MUTARG ? call->kids[i]->a : call->kids[i];
+        if (!overloaded_func_name(k, raw)) continue;
+        ck_err(k, raw, "overloaded function '%.*s' needs an explicit function-value type: '%.*s' is overloaded",
+               (int)raw->len, raw->str, (int)len, name);
+        return 1;
+    }
+    return 0;
 }
 
 static int exact_arg_type(Node* arg, SType* actual, SType* param) {
@@ -4106,6 +4131,7 @@ static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified, int 
         return method_ft->ret;
     }
     if (!final) return NULL; // a later declaration may add the method
+    if (overloaded_arg_err(k, call, head, callee->str, callee->len)) return T_ERR;
     ck_err(k, call, "no method '%.*s' for %s", (int)callee->len, callee->str, type_name(b));
     return T_ERR;
 }
@@ -4160,6 +4186,7 @@ static SType* check_generic_assoc_call(Ck* k, Node* call, SType* owner, Sym* hea
         return found_ft->ret;
     }
     if (!final) return NULL;
+    if (overloaded_arg_err(k, call, head, callee->str, callee->len)) return T_ERR;
     ck_err(k, call, "no associated function '%.*s' for %s", (int)callee->len, callee->str, type_name(owner));
     return T_ERR;
 }
@@ -4193,6 +4220,7 @@ static SType* check_assoc_call(Ck* k, Node* call, SType* owner, int final) {
         return found->type->ret;
     }
     if (!final) return NULL; // a later declaration may add it
+    if (overloaded_arg_err(k, call, head, callee->str, callee->len)) return T_ERR;
     ck_err(k, call, "no associated function '%.*s' for %s", (int)callee->len, callee->str, type_name(owner));
     return T_ERR;
 }
@@ -4633,6 +4661,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
             return chosen->type->ret;
         }
         if (k->final) {
+            if (overloaded_arg_err(k, call, s, callee->str, callee->len)) return T_ERR;
             ck_err(k, call, "no matching overload '%.*s' for these argument types",
                    (int)callee->len, callee->str);
             return T_ERR;
@@ -4780,6 +4809,9 @@ static SType* check_call_raw(Ck* k, Node* call) {
             }
             if (!chosen && eligible == 1) chosen = sole;
             if (!chosen) {
+                if (eligible > 1 &&
+                    overloaded_arg_err(k, call, head, callee->a->str, callee->a->len))
+                    return T_ERR;
                 ck_err(k, call, "no matching generic overload '%.*s' for these arguments",
                        (int)callee->a->len, callee->a->str);
                 return T_ERR;
@@ -7487,8 +7519,9 @@ int sema_check(Node* file, Diag* d) {
                 ck_err(&k, call, "ambiguous call to overloaded function '%.*s'",
                        (int)callee->len, callee->str);
             } else if (!chosen) {
-                ck_err(&k, call, "no matching overload '%.*s' for these argument types",
-                       (int)callee->len, callee->str);
+                if (!overloaded_arg_err(&k, call, head, callee->str, callee->len))
+                    ck_err(&k, call, "no matching overload '%.*s' for these argument types",
+                           (int)callee->len, callee->str);
             } else {
                 finish_direct_call(&k, call, chosen);
             }

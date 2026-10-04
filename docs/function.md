@@ -198,6 +198,21 @@ main(): int {
 }
 ```
 
+A parameter's type is such a target type, so the same name can be passed
+directly. In a generic call, the written type arguments are substituted first:
+
+```ace
+run(f: (int): int): int {
+    return f(5)
+}
+
+ten: int = run(twice)
+six: int = apply[int, int](3, twice)
+```
+
+The callee is chosen first, from its other arguments or because it is the only
+one, and only then does its parameter select the overload. When the callee is
+itself overloaded, a bare overloaded name is an error and needs a typed local.
 A bare overloaded function name without an explicit function-value type is an
 error.
 
@@ -742,6 +757,13 @@ Why the rules in `spec/compiler.md` and C Interop (`spec/modules-packages.md`) a
   results it is an `@` attribute like `@align` rather than a keyword like
   `inline`. With `mem.grow` cold, `bench/std` array-push went from 1.35x to
   1.0x of C.
+- Names & Scoping #8 (parameter selection): a parameter states the expected
+  function type as explicitly as a typed local does, and it already types an
+  untyped constant or `null`, so it selects an overload the same way, as C++
+  does for an overloaded function passed to a function-pointer parameter.
+  Resolving the callee and the argument together is left out: the name then
+  gives the callee's selection no type, so an overloaded callee is an error,
+  which a later rule can relax without breaking code.
 - Syntax & Parsing #5 (`void`): a function type needs a written return because
   `(int, int)` is already a tuple type, so `(int)` cannot also mean a function
   with no result. `void` names the absence directly, as C, Zig, Java, and

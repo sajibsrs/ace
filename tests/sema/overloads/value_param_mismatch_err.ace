@@ -1,0 +1,8 @@
+twice(x: int): int { return x * 2 }
+twice(x: f64): f64 { return x * 2.0 }
+
+run(f: (i32): i32): int { return 0 }
+
+main(): int {
+    return run(twice)
+}
