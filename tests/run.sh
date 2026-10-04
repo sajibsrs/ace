@@ -225,11 +225,22 @@ fi
 
 float_remainder=$("$ACE" tests/sema/operators/float_remainder_err.ace 2>&1)
 for want in \
-    "4:43: error: '%' needs integer operands of one type, got f64 and f64" \
-    "6:46: error: '%' needs integer operands of one type, got f32 and f32" \
-    "8:35: error: '%' needs integer operands of one type, got float literal and float literal"; do
+    "4:39: error: '%' needs integer operands of one type, got f64 and f64" \
+    "6:40: error: '%' needs integer operands of one type, got f32 and f32" \
+    "8:29: error: '%' needs integer operands of one type, got float literal and float literal"; do
     if ! printf '%s\n' "$float_remainder" | grep -qF "$want"; then
         echo "FAIL: float remainder should report: $want"
+        fail=1
+    fi
+done
+
+# a binary expression is positioned at its operator
+binary_position=$("$ACE" tests/sema/operators/binary_position_err.ace 2>&1)
+for want in \
+    "5:26: error: type mismatch: i32 given where i64 expected" \
+    "10:16: error: type mismatch: i32 + i64"; do
+    if ! printf '%s\n' "$binary_position" | grep -qF "$want"; then
+        echo "FAIL: binary expression should report: $want"
         fail=1
     fi
 done

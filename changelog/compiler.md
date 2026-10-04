@@ -1,5 +1,8 @@
 # Compiler
 
+- A binary expression is positioned at its operator, like unary, assignment,
+  and comparison-chain nodes; it took the token after its right operand, so
+  its diagnostics named the next line or a closing brace.
 - A forward call's arguments keep declaration-before-use: resolving the call
   at end of file widens only its callee's view, so a function value declared
   after the call is an error wherever the callee is declared. An argument

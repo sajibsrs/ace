@@ -1,0 +1,11 @@
+/* A binary expression's diagnostic points at its operator, not at the token
+ * after its right operand (here the next declaration or the closing brace). */
+
+LIMIT: const i32 = 21
+COUNT: const int = LIMIT - 21
+
+f(): i32 { return 1 }
+
+main(): int {
+    return f() + COUNT
+}

@@ -420,9 +420,10 @@ static Node* parse_type(P* p) { return type_atom(p); }
 
 static Node* expr(P* p, int ctx);
 
-static Node* mkbin(P* p, TokKind op, Node* l, Node* r) {
-    Node* b = nd(p, N_BINARY);
-    b->op = (uint8_t)op;
+// Positioned at the operator, like N_UNARY, N_ASSIGN, and N_CMPCHAIN.
+static Node* mkbin(P* p, Token* op, Node* l, Node* r) {
+    Node* b = nd_tok(p, N_BINARY, op);
+    b->op = (uint8_t)op->kind;
     b->a = l;
     b->b = r;
     return b;
@@ -552,8 +553,9 @@ static Node* expr(P* p, int ctx) { return expr_orlvl(p, ctx); }
 static Node* expr_orlvl(P* p, int ctx) {
     Node* l = expr_and(p, ctx);
     while (at(p, T_OROR)) {
+        Token* op = tk(p);
         p->i++;
-        l = mkbin(p, T_OROR, l, expr_and(p, ctx));
+        l = mkbin(p, op, l, expr_and(p, ctx));
     }
     return l;
 }
@@ -561,8 +563,9 @@ static Node* expr_orlvl(P* p, int ctx) {
 static Node* expr_and(P* p, int ctx) {
     Node* l = expr_bitor(p, ctx);
     while (at(p, T_ANDAND)) {
+        Token* op = tk(p);
         p->i++;
-        l = mkbin(p, T_ANDAND, l, expr_bitor(p, ctx));
+        l = mkbin(p, op, l, expr_bitor(p, ctx));
     }
     return l;
 }
@@ -570,8 +573,9 @@ static Node* expr_and(P* p, int ctx) {
 static Node* expr_bitor(P* p, int ctx) {
     Node* l = expr_bitxor(p, ctx);
     while (at(p, T_PIPE)) {
+        Token* op = tk(p);
         p->i++;
-        l = mkbin(p, T_PIPE, l, expr_bitxor(p, ctx));
+        l = mkbin(p, op, l, expr_bitxor(p, ctx));
     }
     return l;
 }
@@ -579,8 +583,9 @@ static Node* expr_bitor(P* p, int ctx) {
 static Node* expr_bitxor(P* p, int ctx) {
     Node* l = expr_bitand(p, ctx);
     while (at(p, T_CARET)) {
+        Token* op = tk(p);
         p->i++;
-        l = mkbin(p, T_CARET, l, expr_bitand(p, ctx));
+        l = mkbin(p, op, l, expr_bitand(p, ctx));
     }
     return l;
 }
@@ -588,8 +593,9 @@ static Node* expr_bitxor(P* p, int ctx) {
 static Node* expr_bitand(P* p, int ctx) {
     Node* l = expr_eq(p, ctx);
     while (at(p, T_AMP)) {
+        Token* op = tk(p);
         p->i++;
-        l = mkbin(p, T_AMP, l, expr_eq(p, ctx));
+        l = mkbin(p, op, l, expr_eq(p, ctx));
     }
     return l;
 }
@@ -597,7 +603,7 @@ static Node* expr_bitand(P* p, int ctx) {
 static Node* expr_eq(P* p, int ctx) {
     Node* l = expr_cmp(p, ctx);
     while (at(p, T_EQEQ) || at(p, T_BANGEQ)) {
-        TokKind op = tk(p)->kind;
+        Token* op = tk(p);
         p->i++;
         l = mkbin(p, op, l, expr_cmp(p, ctx));
     }
@@ -626,7 +632,7 @@ static Node* expr_cmp(P* p, int ctx) {
 static Node* expr_shift(P* p, int ctx) {
     Node* l = expr_add(p, ctx);
     while (at(p, T_SHL) || at(p, T_SHR)) {
-        TokKind op = tk(p)->kind;
+        Token* op = tk(p);
         p->i++;
         l = mkbin(p, op, l, expr_add(p, ctx));
     }
@@ -636,7 +642,7 @@ static Node* expr_shift(P* p, int ctx) {
 static Node* expr_add(P* p, int ctx) {
     Node* l = expr_mul(p, ctx);
     while (at(p, T_PLUS) || at(p, T_MINUS)) {
-        TokKind op = tk(p)->kind;
+        Token* op = tk(p);
         p->i++;
         l = mkbin(p, op, l, expr_mul(p, ctx));
     }
@@ -646,7 +652,7 @@ static Node* expr_add(P* p, int ctx) {
 static Node* expr_mul(P* p, int ctx) {
     Node* l = expr_unary(p, ctx);
     while (at(p, T_STAR) || at(p, T_SLASH) || at(p, T_PERCENT)) {
-        TokKind op = tk(p)->kind;
+        Token* op = tk(p);
         p->i++;
         l = mkbin(p, op, l, expr_unary(p, ctx));
     }
