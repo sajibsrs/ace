@@ -19,7 +19,7 @@ main(): int {
     if !sdl.init(sdl.InitFlags { video = 1 }) { return fail("SDL_Init") }
     defer sdl.quit()
 
-    window: sdl.Window = sdl.Window.new("Ace + SDL3\0", 640, 480, sdl.WindowFlags { resizable = 1 })
+    window: sdl.Window = sdl.Window.new("Ace + SDL3", 640, 480, sdl.WindowFlags { resizable = 1 })
     defer mut window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
 
