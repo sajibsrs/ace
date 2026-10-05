@@ -1,7 +1,5 @@
 # Standard library
 
-- `net.socket` drops its non-`tcp` branch: a `SocketType` value is always a
-  member, so the branch could not run.
 - Marked `mem.grow` `@cold`, keeping `Array.push` growth out of its callers'
   loops.
 - `math` Payne-Hanek reduction reads 2/pi from bit e-1, so the quotient
@@ -30,3 +28,5 @@
   exact output for every `f32`/`f64`: `float_decimal`'s exact rounder gains a
   significant-digit mode, and `piece_scientific[T]`/`piece_general[T]` render
   its digits, `%g` reusing the fixed renderer before trimming zeroes.
+- `net.socket` drops its non-`tcp` branch: a `SocketType` value is always a
+  member, so the branch could not run.

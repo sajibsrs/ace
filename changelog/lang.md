@@ -1,14 +1,5 @@
 # Language
 
-- Enum-indexed arrays `[E]T` over a dense enum: indexed only by `E` with no
-  bounds check (sema marks the index proven), filled by a keyed literal
-  `[E.a = x, ...]` that sema checks names every member once; keyed entries
-  store at the member's slot in written order. Conversions to an enum must
-  give a member: constants at compile time, runtime values by a debug check.
-- A switch case's value list may span lines inside parentheses
-  (`(K.a,` … `K.b) {`), per Syntax #7; the parser treats a case's `(` whose
-  match holds a top-level comma as the list. Sema now rejects switching on a
-  type without `==` (tuple, string, …), which previously failed in lowering.
 - A type parameter before `.` calls its bound type's associated function
   (`T.make()`), resolved per instantiation through the stamping substitution;
   a non-struct binding is an error. Selective-import lowering lets a type
@@ -72,6 +63,15 @@
   `_` drops its value, binds nothing, may repeat, and is never read; `_ = f()`
   drops one result. `_` can no longer name a declaration, so `_: T` binders in
   `std/utf8`, `pkg/http`, and tests became bare `_`.
+- A switch case's value list may span lines inside parentheses
+  (`(K.a,` … `K.b) {`), per Syntax #7; the parser treats a case's `(` whose
+  match holds a top-level comma as the list. Sema now rejects switching on a
+  type without `==` (tuple, string, …), which previously failed in lowering.
+- Enum-indexed arrays `[E]T` over a dense enum: indexed only by `E` with no
+  bounds check (sema marks the index proven), filled by a keyed literal
+  `[E.a = x, ...]` that sema checks names every member once; keyed entries
+  store at the member's slot in written order. Conversions to an enum must
+  give a member: constants at compile time, runtime values by a debug check.
 - An untyped constant taking an enum type implicitly (`k: K = 7`, a `K`
   argument) must name a member, as `K(7)` already must; the constant is checked
   whole and its operands fold at the backing integer type.
