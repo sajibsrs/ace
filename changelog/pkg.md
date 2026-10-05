@@ -1,5 +1,7 @@
 # Packages
 
+- `sdl`: `Event.keyboard()` is now `Event.key()`, since a method may no longer
+  share its name with the `keyboard` field.
 - `pkg/regex` skips, while no thread is live, to the next byte that can begin
   a match, collected once per program from the entry's non-consuming paths
   (`str.find` for a single byte): `literal` 11.4x faster, `captures` 1.94x.

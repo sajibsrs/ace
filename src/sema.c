@@ -1734,7 +1734,39 @@ static int check_func_owner(Ck* k, Scope* fs, Node* n) {
             ck_err(k, n, "%s owner must repeat the struct's type parameter names", kindname);
             return 0;
         }
+    // fields and methods share one namespace (Names & Scoping #11)
+    if (n->flags & F_METHOD)
+        for (int i = 0; i < od->nkids; i++)
+            if (od->kids[i]->len == n->len && memcmp(od->kids[i]->str, n->str, n->len) == 0) {
+                ck_err(k, n, "method '%.*s' collides with a field of %.*s",
+                       (int)n->len, n->str, (int)od->len, od->str);
+                return 0;
+            }
     return 1;
+}
+
+/* A field sharing a method name promoted from an embedded struct is an
+ * error, like any field/method collision (Abstraction #3). Only methods the
+ * struct's module can call are promoted, so only those collide. */
+static void check_promoted_collisions(Ck* k, Scope* fs, SType* t) {
+    if (!t || t->kind != SK_STRUCT || !t->decl) return;
+    for (int ei = 0; ei < t->nfields; ei++) {
+        SType* eb = t->fields[ei].t;
+        if (!(t->decl->kids[ei]->flags & F_EMBED) || !eb || eb->kind != SK_STRUCT || !eb->decl) continue;
+        for (int fi = 0; fi < t->nfields; fi++) {
+            Node* fd = t->decl->kids[fi];
+            uint32_t key_len;
+            const char* key = method_key(eb->decl, fd->str, fd->len, &key_len);
+            for (Sym* m = scope_find(fs, 0, key, key_len); m; m = m->overload) {
+                if (m->kind != SYM_FUNC || !m->decl || !(m->decl->flags & F_METHOD)) continue;
+                if (!m->is_pub && m->decl->path && t->decl->path && strcmp(m->decl->path, t->decl->path) != 0)
+                    continue;
+                ck_err(k, fd, "field '%.*s' collides with a method promoted from embedded '%.*s'",
+                       (int)fd->len, fd->str, (int)t->decl->kids[ei]->len, t->decl->kids[ei]->str);
+                break;
+            }
+        }
+    }
 }
 
 /*
@@ -4885,6 +4917,34 @@ static SType* check_call_raw(Ck* k, Node* call) {
             callee->a = d;
             b = b->base;
         }
+        // x.f(args) on a field calls the stored function value: fields and
+        // methods share one namespace, so a field never competes with a method
+        if (!qualified && b->kind == SK_STRUCT) {
+            for (int fi = 0; fi < b->nfields; fi++) {
+                if ((uint32_t)strlen(b->fields[fi].name) != callee->len ||
+                    memcmp(b->fields[fi].name, callee->str, callee->len) != 0) continue;
+                SType* ft = b->fields[fi].t;
+                callee->ty = ft;
+                if (!ft || ft->kind == SK_ERR) return T_ERR;
+                if (ft->kind != SK_FUNC) {
+                    ck_err(k, call, "field '%.*s' of type %s is not callable",
+                           (int)callee->len, callee->str, type_name(ft));
+                    return T_ERR;
+                }
+                if (call->flags & F_MUT)
+                    ck_err(k, call, "'mut' marks mutating methods; field '%.*s' holds a function value",
+                           (int)callee->len, callee->str);
+                check_args(k, call, ft, 0);
+                check_no_mut_args(k, call);
+                call->flags |= F_FIELDCALL; // emitter: indirect call, no receiver
+                return ft->ret;
+            }
+        }
+        if (callee->flags & F_GROUPED) {
+            ck_err(k, call, "'%.*s' is not a field of %s; methods are not values",
+                   (int)callee->len, callee->str, type_name(b));
+            return T_ERR;
+        }
         if (b->kind == SK_CONTRACT) {
             Node* m = contract_method(b, callee->str, callee->len);
             if (!m) {
@@ -7498,6 +7558,12 @@ int sema_check(Node* file, Diag* d) {
         if (s && s->top == n) resolved(&k, s);
     }
     finish_deferred_layouts(&k);
+    for (int i = 0; i < file->nkids; i++) {
+        Node* n = file->kids[i];
+        if (n->kind != N_STRUCT) continue;
+        Sym* s = scope_find(&file_scope, 1, n->str, n->len);
+        if (s && s->top == n) check_promoted_collisions(&k, &file_scope, s->type);
+    }
     // every signature and signing is known before any body is checked
     for (int i = 0; i < file->nkids; i++) {
         Node* n = file->kids[i];

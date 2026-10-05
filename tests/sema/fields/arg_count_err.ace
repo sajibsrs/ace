@@ -1,0 +1,8 @@
+Button: struct {
+    on_click: (i64): i64,
+}
+
+main(): int {
+    b: Button = Button{on_click = null}
+    return int(b.on_click(1, 2))
+}

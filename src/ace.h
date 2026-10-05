@@ -177,6 +177,8 @@ enum {
     F_INLCALLS = 2097152, // a function body with a direct call to an inline function
     F_COLD = 4194304, // @cold: a function whose calls are rare
     F_REPORTED = 8388608, // an expression whose error is already reported
+    F_FIELDCALL = 16777216, // a call through a function value stored in a struct field
+    F_GROUPED = 33554432, // a field expression written in parentheses: (x.f)
 };
 
 // Compiler-backed standard-module functions. These markers live only on the

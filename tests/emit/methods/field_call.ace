@@ -1,0 +1,44 @@
+// expect-exit: 42
+
+/* x.f(args) calls a function value stored in field f, with no receiver;
+ * (x.f)(args) is the same, and the field is reached as any field access is:
+ * through pointers, chains, and indexing. */
+
+Button: struct {
+    on_click: (i64): i64,
+    clicks: i64,
+}
+
+Panel: struct {
+    button: Button,
+    combine: (i64, i64): i64,
+}
+
+double(n: i64): i64 {
+    return n * 2
+}
+
+add(a: i64, b: i64): i64 {
+    return a + b
+}
+
+Button.press(): i64 {
+    return self.on_click(self.clicks) // a method reads its own field value
+}
+
+main(): int {
+    b: Button = Button{on_click = double, clicks = 3}
+    total: i64 = b.on_click(1)                         // 2
+    total += (b.on_click)(2)                           // 6
+    p: *Button = &b
+    total += p.on_click(3)                             // 12
+    panel: Panel = Panel{button = b, combine = add}
+    total += panel.button.on_click(4)                  // 20
+    total = panel.combine(total, 1)                    // 21
+    row: [2]Button = [b, Button{on_click = double, clicks = 5}]
+    total += row[1].on_click(2)                        // 25
+    pp: *Panel = &panel
+    total += (pp.button.on_click)(1) + b.press()       // 33
+    total = pp.combine(total, row[1].press() - 1)      // 42
+    return int(total)
+}

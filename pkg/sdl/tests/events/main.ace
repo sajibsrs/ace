@@ -34,12 +34,12 @@ main(): int {
     quit: sdl.Event
     quit.padding = [0 : 128]
     quit.kind = sdl.EventType.quit
-    quit_key: sdl.KeyboardEvent, quit_is_key: bool = quit.keyboard()
+    quit_key: sdl.KeyboardEvent, quit_is_key: bool = quit.key()
     if quit_is_key { return 8 }
 
     got: sdl.Event
     for mut got.poll() {
-        key: sdl.KeyboardEvent, is_key: bool = got.keyboard()
+        key: sdl.KeyboardEvent, is_key: bool = got.key()
         if !is_key { continue }
         if key.key != sdl.Keycode.escape || key.scancode != SCANCODE_ESCAPE { return 3 }
         if key.window_id != 7 || key.mod != KMOD_LCTRL { return 4 }

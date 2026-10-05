@@ -1018,7 +1018,10 @@ static Node* expr_primary(P* p, int ctx) {
             nv_push(p, &w, expr(p, 0));
         }
         expect(p, T_RPAREN, "')' to close expression");
-        if (w.n == 1) return w.v[0];
+        if (w.n == 1) {
+            if (w.v[0]->kind == N_FIELD_E) w.v[0]->flags |= F_GROUPED; // (x.m) is not a method call
+            return w.v[0];
+        }
         Node* tu = nd_tok(p, N_TUPLE_E, t); // at '(', not the token after ')
         set_kids(tu, &w);
         return tu;

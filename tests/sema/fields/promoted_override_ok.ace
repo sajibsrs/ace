@@ -1,0 +1,16 @@
+Base: struct {
+    x: i64,
+}
+
+Base.area(): i64 {
+    return self.x
+}
+
+Shape: struct {
+    embed base: Base,
+    scale: (i64): i64,
+}
+
+Shape.area(): i64 { // an owned method still overrides a promoted one
+    return self.scale(self.base.x)
+}

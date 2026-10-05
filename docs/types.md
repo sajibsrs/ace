@@ -627,6 +627,25 @@ pair = (21, 23.0)
 narrow: (i32, u8) = (-1, 'z')
 ```
 
+A struct field of function type is called in place. `x.f(args)` calls the
+stored value with exactly `args`, no receiver, and needs only read access to
+`x`; `(x.f)(args)` is the same call. The field is reached as any field access
+is, through pointers, chains, and indexing:
+
+```ace
+Button: struct { on_click: (int): int }
+
+button: Button = Button{ on_click = twice }
+clicked: int = button.on_click(3)
+held: *Button = &button
+again: int = (held.on_click)(4)
+```
+
+A struct's fields and its own methods share one namespace: a method named like
+a field is an error whatever its signature, so a field never joins a method
+overload set. Calling a field that does not hold a function is "not callable",
+and `(x.m)` naming a method is an error, because methods are not values.
+
 ## Structs, enums, and tagged unions
 
 Struct fields retain declaration order and natural alignment. Struct values have
@@ -843,22 +862,23 @@ An `embed` field is ordinary named inline composition whose methods are promoted
 one level:
 
 ```ace
-Named: struct { name: string }
+Named: struct { text: string }
 
 Named.name(): string {
-    return self.name
+    return self.text
 }
 
 Human: struct {
     embed named: Named,
 }
 
-human: Human = Human { named = Named { name = "Ada" } }
+human: Human = Human { named = Named { text = "Ada" } }
 name: string = human.name()       // same method as human.named.name()
 ```
 
-Fields are not promoted: the stored name remains `human.named.name`. A method
-owned directly by `Human` takes precedence over a promoted method; two matching
+Fields are not promoted: the stored text remains `human.named.text`. A method
+owned directly by `Human` takes precedence over a promoted method; a field of
+`Human` named like a promoted method is an error; two matching
 methods from separate embedded fields are an ambiguity error. Promotion does
 not recurse through another embedded field.
 
@@ -897,6 +917,13 @@ Why the rules in `spec/syntax.md`, `spec/types.md` are shaped as they are.
   and safe as a literal, so a literal-only grammar bought no safety — only
   friction for named sizes shared across declarations (`INPUT_SIZE: const usize
   = 8192` backing `input: [INPUT_SIZE]u8`).
+- Names & Scoping #11, Abstraction #3: one namespace for fields and methods
+  makes `x.f(...)` mean one thing from the declaration alone, as in Go, where a
+  field and method may not share a name. Letting a field join the overload set
+  would have the argument types silently pick between a stored value and a
+  method; rejecting the collision keeps every call site's meaning local, costs
+  only a rename, and the call itself is the plain indirect call a local
+  function value already compiles to.
 - Type System #3: the destination only settles how a value with no type of its
   own is stored, or picks among existing declarations; it never creates an
   instantiation, so every stamp is spelled at its use. Type-argument deduction

@@ -1,5 +1,9 @@
 # Language
 
+- `x.f(args)` and `(x.f)(args)` call a function value stored in field `f`
+  with no receiver, through auto-deref, chains, and indexing; sema marks the
+  call and lowering emits an indirect call on the loaded field. Fields and a
+  struct's own or promoted methods share one namespace, so a collision errors.
 - Error domain entries are comma-separated with an optional trailing comma,
   like every other brace-delimited list (`E: error { 1: a = "a" }`), replacing
   the newline-terminated entry form.

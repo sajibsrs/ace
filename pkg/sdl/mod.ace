@@ -256,7 +256,7 @@ pub mut Event.poll(): bool { return c_poll_event(mut &self) }
 
 // The keyboard member, and whether kind says it holds one; false for every
 // other kind, whose bytes the member would misread.
-pub Event.keyboard(): (KeyboardEvent, bool) {
+pub Event.key(): (KeyboardEvent, bool) {
     return self.keyboard, self.kind == EventType.key_down || self.kind == EventType.key_up
 }
 

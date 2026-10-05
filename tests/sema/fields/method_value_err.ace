@@ -1,0 +1,12 @@
+Counter: struct {
+    value: i64,
+}
+
+Counter.get(): i64 {
+    return self.value
+}
+
+main(): int {
+    c: Counter = Counter{value = 1}
+    return int((c.get)())
+}

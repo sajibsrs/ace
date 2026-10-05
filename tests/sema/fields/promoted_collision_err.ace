@@ -1,0 +1,12 @@
+Base: struct {
+    x: i64,
+}
+
+Base.area(): i64 {
+    return self.x
+}
+
+Shape: struct {
+    embed base: Base,
+    area: (i64): i64,
+}

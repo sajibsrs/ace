@@ -174,11 +174,11 @@ for mut event.poll() {
 
 `event.keyboard` is a `KeyboardEvent` (`key`, `scancode`, `mod`, `down`,
 `repeat`, …) and `event.quit` a `QuitEvent`; read the member that `kind`
-names. `event.keyboard(): (KeyboardEvent, bool)` does that check for you,
+names. `event.key(): (KeyboardEvent, bool)` does that check for you,
 returning false unless `kind` is `key_down` or `key_up`:
 
 ```ace
-key: sdl.KeyboardEvent, is_key: bool = event.keyboard()
+key: sdl.KeyboardEvent, is_key: bool = event.key()
 if is_key && key.key == sdl.Keycode.space { ... }
 ```
 

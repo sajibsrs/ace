@@ -31,6 +31,12 @@ order_buffer: [ORDER_SIZE]u8
 ORDER_SIZE: const usize = 2 * ORDER_LINE
 ORDER_LINE: const usize = 64
 
+Button: struct { on_click: (int): int }
+
+twice(n: int): int {
+    return n * 2
+}
+
 add(a: int, b: int): int {
     return a + b
 }
@@ -67,10 +73,10 @@ Number.get(): int {
     return self.value
 }
 
-Named: struct { name: string }
+Named: struct { text: string }
 
 Named.name(): string {
-    return self.name
+    return self.text
 }
 
 Human: struct {
@@ -100,6 +106,10 @@ main(): int {
     members: (int, f64) = (20, 22.0)
     members = (21, 23.0)
     narrow: (i32, u8) = (-1, 'z')
+    button: Button = Button{ on_click = twice }
+    clicked: int = button.on_click(3)
+    held: *Button = &button
+    again: int = (held.on_click)(4)
 
     count: Count = 13
     distance: Meters = Meters(12.5)
@@ -160,7 +170,7 @@ main(): int {
     partial.y = 2
     number_object: Number = Number { value = 13 }
     value: Value = Value(&number_object)
-    human: Human = Human { named = Named { name = "Ada" } }
+    human: Human = Human { named = Named { text = "Ada" } }
     promoted_name: string = human.name()
     ok_bytes: [3]u8 = [u8('o'), u8('k'), u8('!')]
     view: string = ok_bytes[0..3]

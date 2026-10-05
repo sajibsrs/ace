@@ -566,7 +566,7 @@ static void scan_walk(Lw* l, Scan* sc, Node* n) {
         int ntargs;
         Node* f = scan_target(l, n, &targs, &ntargs);
         uint64_t esc = f ? scan_escapes(l, f, targs, ntargs) : ~(uint64_t)0;
-        int recv = n->a && n->a->kind == N_FIELD_E && !(n->flags & (F_METHOD | F_ASSOC));
+        int recv = n->a && n->a->kind == N_FIELD_E && !(n->flags & (F_METHOD | F_ASSOC | F_FIELDCALL));
         if (recv && (esc & 1)) need_storage(l, sc, n->a->a);
         for (int i = 0; i < n->nkids; i++) {
             int p = recv + i;
@@ -2034,8 +2034,8 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
             return call_finish(l, id, &g, rt, res, dst);
         }
     }
-    if (s && s->kind == SYM_VAR) { // through a function value
-        SType* ft = unwrap(s->type);
+    if ((s && s->kind == SYM_VAR) || (x->flags & F_FIELDCALL)) { // through a function value
+        SType* ft = unwrap(s ? s->type : node_ty(callee));
         if (!ft || ft->kind != SK_FUNC || x->nkids != ft->nparams) unsupported(l, "indirect call");
         int f = expr(l, callee, IT_PTR);
         for (int i = 0; i < x->nkids; i++) // sema: no function-value parameter is mut

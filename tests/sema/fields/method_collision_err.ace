@@ -1,0 +1,7 @@
+Button: struct {
+    on_click: (i64): i64,
+}
+
+Button.on_click(n: i64, m: i64): i64 {
+    return n + m
+}

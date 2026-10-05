@@ -130,6 +130,11 @@ tests/parser/function_type/void_value_err.ace|4:9: error: 'void' is allowed only
 tests/parser/function_type/single_type_err.ace|'(T)' is not a type
 tests/parser/function_type/empty_type_err.ace|'()' is not a type
 tests/parser/function_type/c_return_err.ace|expected ':' and a return type or 'void'
+tests/sema/fields/method_collision_err.ace|5:8: error: method 'on_click' collides with a field of Button
+tests/sema/fields/promoted_collision_err.ace|11:5: error: field 'area' collides with a method promoted from embedded 'base'
+tests/sema/fields/not_callable_err.ace|7:23: error: field 'value' of type i64 is not callable
+tests/sema/fields/method_value_err.ace|11:23: error: 'get' is not a field of Counter; methods are not values
+tests/sema/fields/arg_count_err.ace|7:26: error: wrong number of arguments: 2 given, 1 expected
 tests/sema/functions/void_value_mismatch_err.ace|(i64): void given where (i64): i64 expected
 tests/sema/functions/void_type_argument_err.ace|3:16: error: 'void' (as T) is allowed only as a function type's return or a type argument
 tests/sema/generics/void_field_err.ace|3:25: error: 'void' (as T) is allowed only
