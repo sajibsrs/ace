@@ -1,0 +1,10 @@
+/* A switch value needs `==`; a string has none. */
+
+main(): int {
+    s: string = "x"
+    switch s {
+        "x" { return 1 }
+        default {}
+    }
+    return 0
+}

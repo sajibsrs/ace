@@ -43,6 +43,21 @@ switch value {
 }
 ```
 
+The switched value is a tagged union or a type with `==`; tuples, strings,
+arrays, slices, and structs are rejected. A case lists its values on one line,
+or, when they do not fit, inside parentheses across lines (Syntax #7):
+
+```ace
+switch kind {
+    (TokKind.ident, TokKind.int, TokKind.float,
+     TokKind.rparen, TokKind.rbrack) { return true }
+    default {}
+}
+```
+
+A parenthesized list on one line is rejected, so each layout has one
+spelling; `(1 + 2)` alone stays grouping.
+
 `fallthrough` takes no target or condition and must be the case's final
 statement. It is rejected in the final case. The spelling remains an ordinary
 identifier outside this exact statement position.

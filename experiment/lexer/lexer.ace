@@ -165,11 +165,11 @@ Lexer.make(self, kind: TokKind): Token {
 /* Can a token of this kind end an expression? (the newline rule) */
 ends_expr(k: TokKind): bool {
     switch k {
-        TokKind.ident, TokKind.int, TokKind.float, TokKind.string, TokKind.char { return true }
-        TokKind.kw_null, TokKind.kw_true, TokKind.kw_false, TokKind.kw_self { return true }
-        TokKind.rparen, TokKind.rbrack, TokKind.rbrace { return true }
-        TokKind.kw_return, TokKind.kw_break, TokKind.kw_continue { return true }
-        TokKind.kw_specialized, TokKind.kw_intrinsic { return true }
+        (TokKind.ident, TokKind.int, TokKind.float, TokKind.string, TokKind.char,
+         TokKind.kw_null, TokKind.kw_true, TokKind.kw_false, TokKind.kw_self,
+         TokKind.rparen, TokKind.rbrack, TokKind.rbrace,
+         TokKind.kw_return, TokKind.kw_break, TokKind.kw_continue,
+         TokKind.kw_specialized, TokKind.kw_intrinsic) { return true }
         default {}
     }
     return false

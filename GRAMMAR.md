@@ -177,7 +177,9 @@ contextual_step := ident                                  // exact text "step"; 
 switch_stmt   := "switch" expr "{" switch_case* [default_case] "}"
 switch_case   := case_pat block
 default_case  := "default" block                          [P]
-case_pat      := union_pattern | expr ("," expr)*
+case_pat      := case_value ("," case_value)*                 // one line
+               | "(" case_value ("," case_value)* [","] ")" // multiline only
+case_value    := union_pattern | expr
 union_pattern := named_type "." ident
                | named_type "." ident "(" ident ":" type ")"
 return_stmt   := "return" [expr_list]

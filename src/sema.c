@@ -5162,6 +5162,22 @@ static void check_default_last(Ck* k, Node* s) {
     }
 }
 
+/* A switch compares its value with each case by `==` (Conditions #2), so the
+ * value's type is one that has it: tuples, strings, arrays, slices, and
+ * structs are rejected. Unions are checked by check_union_switch. */
+static int switch_value_type(SType* t) {
+    while (t && t->kind == SK_DISTINCT) t = t->base;
+    if (!t) return 0;
+    switch (t->kind) {
+    case SK_UT: return t == T_UT_INT || t == T_UT_FLOAT;
+    case SK_PRIM: return t->prim != P_STRING;
+    case SK_PTR: case SK_FUNC: case SK_ENUM: case SK_BITS:
+    case SK_CONTRACT: case SK_ERROR:
+        return 1;
+    default: return 0;
+    }
+}
+
 static void check_switch_fallthrough(Ck* k, Node* s, SType* t) {
     for (int i = 0; i < s->nkids; i++) {
         Node* b = s->kids[i]->b;
@@ -5606,9 +5622,11 @@ static void check_stmt(Ck* k, Node* s) {
             check_union_switch(k, s, t);
             return;
         }
+        int ok = t->kind == SK_ERR || switch_value_type(t);
+        if (!ok) ck_err(k, s->a, "cannot switch on %s: the type has no ==", type_name(t));
         for (int i = 0; i < s->nkids; i++) {
             Node* c = s->kids[i];
-            if (!(c->flags & F_DEFAULT) && t->kind != SK_ERR) {
+            if (!(c->flags & F_DEFAULT) && ok && t->kind != SK_ERR) {
                 for (int j = 0; j < c->nkids; j++) coerce(k, c->kids[j], t);
             }
             scope_push(k);

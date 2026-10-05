@@ -1,0 +1,11 @@
+/* A switch value needs `==`; a tuple has none. */
+
+main(): int {
+    a: (int, int) = 1, 2
+    switch a {
+        (1,
+         2) { return 1 }
+        default {}
+    }
+    return 0
+}

@@ -1,5 +1,9 @@
 # Language
 
+- A switch case's value list may span lines inside parentheses
+  (`(K.a,` … `K.b) {`), per Syntax #7; the parser treats a case's `(` whose
+  match holds a top-level comma as the list. Sema now rejects switching on a
+  type without `==` (tuple, string, …), which previously failed in lowering.
 - A type parameter before `.` calls its bound type's associated function
   (`T.make()`), resolved per instantiation through the stamping substitution;
   a non-struct binding is an error. Selective-import lowering lets a type

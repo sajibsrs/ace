@@ -1319,6 +1319,22 @@ static Node* parse_variant_pattern(P* p, size_t lparen) {
     return vp;
 }
 
+/* A case opening with `(` whose matching `)` encloses a top-level comma is a
+ * parenthesized case list, never a tuple: no switch value is a tuple. */
+static int case_list_at(P* p) {
+    if (!at(p, T_LPAREN)) return 0;
+    int depth = 0;
+    for (size_t j = p->i; j < p->n; j++) {
+        TokKind k = p->toks[j].kind;
+        if (k == T_LPAREN || k == T_LBRACK || k == T_LBRACE) depth++;
+        else if (k == T_RPAREN || k == T_RBRACK || k == T_RBRACE) {
+            if (--depth == 0) return 0;
+        } else if (k == T_COMMA && depth == 1) return 1;
+        else if (k == T_EOF) return 0;
+    }
+    return 0;
+}
+
 static Node* parse_switch(P* p) {
     Node* n = nd(p, N_SWITCH);
     expect(p, T_SWITCH, "'switch'");
@@ -1337,6 +1353,8 @@ static Node* parse_switch(P* p) {
         } else {
             NV pats = {0};
             int line = tk(p)->line;
+            int multi = case_list_at(p); // `(` patterns across lines `)`
+            if (multi) p->i++;
             for (;;) {
                 size_t dot = variant_binder_at(p);
                 if (dot) {
@@ -1345,9 +1363,14 @@ static Node* parse_switch(P* p) {
                     nv_push(p, &pats, expr(p, CTX_NOSLIT));
                 }
                 if (!at(p, T_COMMA)) break;
-                bare_list_line(p, line);
+                if (!multi) bare_list_line(p, line);
                 p->i++;
-                bare_list_line(p, line);
+                if (multi && at(p, T_RPAREN)) break;
+                if (!multi) bare_list_line(p, line);
+            }
+            if (multi) {
+                if (tk(p)->line == line) perr(p, "parentheses around case values are only for multiline lists");
+                expect(p, T_RPAREN, "')' to close case values");
             }
             set_kids(c, &pats);
         }

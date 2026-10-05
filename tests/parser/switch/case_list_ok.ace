@@ -1,0 +1,13 @@
+/* Case lists: bare on one line, parenthesized across lines; `(1 + 2)` stays grouping. */
+
+main(): int {
+    switch 3 {
+        (1 + 2), 4 { return 1 }
+        5, 6 { return 2 }
+        (7,
+         8,
+        ) { return 3 }
+        default {}
+    }
+    return 0
+}

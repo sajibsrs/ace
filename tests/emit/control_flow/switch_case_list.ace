@@ -1,0 +1,20 @@
+/* Multiline parenthesized case-list fixture. */
+
+// expect-exit: 123
+
+Kind: enum { a, b, c, d, e }
+
+group(k: Kind): int {
+    switch k {
+        (Kind.a,
+         Kind.b,
+        ) { return 1 }
+        (Kind.c,
+         Kind.d) { return 2 }
+        default { return 3 }
+    }
+}
+
+main(): int {
+    return group(Kind.b) * 100 + group(Kind.c) * 10 + group(Kind.e)
+}

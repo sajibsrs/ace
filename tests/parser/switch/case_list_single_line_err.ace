@@ -1,0 +1,9 @@
+/* A parenthesized case list is the multiline form only. */
+
+main(): int {
+    switch 1 {
+        (1, 2) { return 1 }
+        default {}
+    }
+    return 0
+}
