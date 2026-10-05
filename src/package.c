@@ -41,7 +41,6 @@ struct NameEntry { const char* name; const char* dir; NameEntry* next; };
 
 typedef struct {
     Diag*       d;
-    const char* compiler_path;
     Package*    loading; // in-progress stack (cycle detection)
     Package*    loaded;  // completed, newest-first
     NameEntry*  names;   // declared package name -> its canonical directory
@@ -360,9 +359,9 @@ static void report_cycle(PackageLoader* L, const char* manifest, int line, const
     free(chain);
 }
 
-static int is_std_module_name(const char* compiler_path, const char* name) {
+static int is_std_module_name(const char* name) {
     char dir[4096];
-    compiler_dir(dir, sizeof dir, compiler_path);
+    compiler_dir(dir, sizeof dir);
     char flat[4608], directory[4608];
     if (strcmp(dir, ".") == 0) {
         snprintf(flat, sizeof flat, "std/%s.ace", name);
@@ -468,7 +467,7 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
             ok = 0;
         }
     }
-    if (ok && is_std_module_name(L->compiler_path, rm.name)) {
+    if (ok && is_std_module_name(rm.name)) {
         package_err(L, manifest, rm.name_line,
                 "package name '%s' collides with a standard-library module name", rm.name);
         ok = 0;
@@ -625,10 +624,9 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
     return package;
 }
 
-Package* package_resolve(const char* package_dir, Diag* d, const char* compiler_path, Package*** order, int* norder) {
+Package* package_resolve(const char* package_dir, Diag* d, Package*** order, int* norder) {
     PackageLoader L = {0};
     L.d = d;
-    L.compiler_path = compiler_path;
     Package* root = package_load(&L, package_dir, 1, NULL, 0);
     if (!root || d->errors > 0) {
         *order = NULL;

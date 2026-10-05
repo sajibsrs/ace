@@ -22,6 +22,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
+#include <unistd.h>
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 
 // --- loader state -----------------------------------------------------------------
 
@@ -66,7 +71,6 @@ struct Module {
 
 typedef struct {
     Diag*       d;
-    const char* compiler_path;
     const char* std_root; // canonical compiler-shipped std directory
     const char* target;
     CompileReport* report;
@@ -96,17 +100,33 @@ int text_is(const char* s, uint32_t len, const char* t) {
     return len == (uint32_t)strlen(t) && memcmp(s, t, len) == 0;
 }
 
-void compiler_dir(char* out, size_t cap, const char* argv0) {
-    const char* slash = strrchr(argv0, '/');
-    if (!slash) {
-        snprintf(out, cap, ".");
-        return;
+// Directory of the running executable, symlinks resolved, asked of the OS
+// once. std/ sits beside the real binary, never beside argv[0], which a shell
+// or launcher may pass as a bare PATH name, a symlink, or a relative path; an
+// OS that cannot say is an error rather than a guess.
+void compiler_dir(char* out, size_t cap) {
+    static char dir[PATH_MAX];
+    if (!dir[0]) {
+        char raw[PATH_MAX];
+        int ok;
+#if defined(__APPLE__)
+        uint32_t n = sizeof raw;
+        ok = _NSGetExecutablePath(raw, &n) == 0;
+#elif defined(__linux__)
+        ssize_t n = readlink("/proc/self/exe", raw, sizeof raw - 1);
+        ok = n > 0;
+        if (ok) raw[n] = 0;
+#else
+        ok = 0;
+#endif
+        if (!ok || !realpath(raw, dir)) {
+            fprintf(stderr, "ace: cannot locate the ace executable to find std/\n");
+            exit(1);
+        }
+        *strrchr(dir, '/') = 0; // a realpath always contains a slash
+        if (!dir[0]) dir[0] = '/', dir[1] = 0;
     }
-    size_t n = (size_t)(slash - argv0);
-    if (n == 0) n = 1;
-    if (n >= cap) n = cap - 1;
-    memcpy(out, argv0, n);
-    out[n] = 0;
+    snprintf(out, cap, "%s", dir);
 }
 
 // Directory part of a source path ("dir/file.ace" → "dir", "file.ace" → ".").
@@ -150,9 +170,9 @@ int path_beneath(const char* path, const char* dir) {
 static const char* build_root_dir;
 static const char* build_std_dir;
 
-void build_roots(const char* compiler_path, const char* root_dir) {
+void build_roots(const char* root_dir) {
     char compiler[4096];
-    compiler_dir(compiler, sizeof compiler, compiler_path);
+    compiler_dir(compiler, sizeof compiler);
     build_std_dir = canonicalize(join_path(compiler, "std"));
     build_root_dir = canonicalize(root_dir);
 }
@@ -611,7 +631,7 @@ static const char* import_target(Loader* L, Node* imp, const char* src_path, Pac
         *target_package = NULL; // compiler-reserved, never package-owned
         Node* p = imp->a;
         char dir[4096];
-        compiler_dir(dir, sizeof dir, L->compiler_path);
+        compiler_dir(dir, sizeof dir);
         size_t need = strlen(dir) + p->len + 12;
         char* path = arena_alloc(need);
         if (strcmp(dir, ".") == 0) snprintf(path, need, "std/@/%.*s.ace", (int)p->len, p->str);
@@ -708,7 +728,7 @@ static const char* import_target(Loader* L, Node* imp, const char* src_path, Pac
     }
     *target_package = NULL; // falling through to std: never package-owned
     char dir[4096];
-    compiler_dir(dir, sizeof dir, L->compiler_path);
+    compiler_dir(dir, sizeof dir);
     char std_root[4104];
     if (strcmp(dir, ".") == 0) snprintf(std_root, sizeof std_root, "std");
     else snprintf(std_root, sizeof std_root, "%s/std", dir);
@@ -1521,14 +1541,13 @@ static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root
 
 // --- entry -------------------------------------------------------------------------------
 
-int resolve_imports(Node* file, Diag* d, const char* compiler_path,
+int resolve_imports(Node* file, Diag* d,
                     const char* target,
                     CompileReport* report, Package* root_package) {
     Loader L = {0};
     L.d = d;
-    L.compiler_path = compiler_path;
     char compiler[4096];
-    compiler_dir(compiler, sizeof compiler, compiler_path);
+    compiler_dir(compiler, sizeof compiler);
     char std_path[4608];
     if (strcmp(compiler, ".") == 0) snprintf(std_path, sizeof std_path, "std");
     else snprintf(std_path, sizeof std_path, "%s/std", compiler);

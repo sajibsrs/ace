@@ -85,14 +85,14 @@ int source_load(Source* s, const char* path);
 // --- Shared path/string helpers (implemented in module.c) --------------------
 const char* arena_string(const char* s);
 int         text_is(const char* s, uint32_t len, const char* t);
-void        compiler_dir(char* out, size_t cap, const char* argv0);
+void        compiler_dir(char* out, size_t cap);
 void        path_dir(char* out, size_t cap, const char* path);
 const char* join_path(const char* dir, const char* rel);
 const char* canonicalize(const char* path); // arena storage, or NULL
 int         path_beneath(const char* path, const char* dir);
 // Build-relative source paths (spec/safety-errors.md Errors #16): set both roots before
 // parsing, then map any source path for @file and assert diagnostics.
-void        build_roots(const char* compiler_path, const char* root_dir);
+void        build_roots(const char* root_dir);
 const char* build_path(const char* path);
 
 // Lex the whole source; returns a malloc'd token array terminated by T_EOF.
@@ -295,7 +295,7 @@ int sema_check(Node* file, Diag* d);
 // owning `file` (Package System v1), or NULL for a plain manifest-free
 // compile; it gates dependency-alias bare imports and same-package relative
 // import containment.
-int resolve_imports(Node* file, Diag* d, const char* compiler_path,
+int resolve_imports(Node* file, Diag* d,
                     const char* target,
                     CompileReport* report, Package* root_package);
 
@@ -366,7 +366,7 @@ struct Package {
 // d. On success, *order receives every loaded package (including the root)
 // in dependency-first order and *norder its count; the caller owns the
 // returned array (free) but not the Package storage (arena, stable).
-Package* package_resolve(const char* package_dir, Diag* d, const char* compiler_path, Package*** order, int* norder);
+Package* package_resolve(const char* package_dir, Diag* d, Package*** order, int* norder);
 
 // Collects every package's declared [[link]] inputs across order
 // (dependency-first, from package_resolve) into direct-driver flag form —

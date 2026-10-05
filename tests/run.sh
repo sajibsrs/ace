@@ -1962,6 +1962,18 @@ fi
 echo "$fail" >"$T/fail"
 ) >/tmp/ace_sections/modules.log 2>&1 &
 
+# std/ is found beside the real compiler binary, not beside argv[0]: run the
+# compiler by bare name through a PATH symlink from an unrelated directory.
+rm -rf /tmp/ace_std_lookup
+mkdir -p /tmp/ace_std_lookup/bin /tmp/ace_std_lookup/work
+ln -s "$ACE" /tmp/ace_std_lookup/bin/ace
+printf 'import fmt\n\nmain(): int {\n    fmt.print("std found\\n")\n    return 0\n}\n' >/tmp/ace_std_lookup/work/main.ace
+std_out=$(cd /tmp/ace_std_lookup/work && PATH="/tmp/ace_std_lookup/bin:$PATH" ace -o main main.ace 2>&1 && ./main 2>&1)
+if [ "$std_out" != "std found" ]; then
+    echo "FAIL: std lookup through a PATH symlink: $std_out"
+    fail=1
+fi
+
 # driver fixtures: external link inputs and options through the -o pipeline.
 # The cc launch is an argument vector with no shell, so paths with spaces and
 # shell metacharacters link exactly as written; -L/-l and -framework cover

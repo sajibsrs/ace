@@ -313,14 +313,14 @@ static int package_write_file(const char* path, const char* data, size_t len) {
 // the caller receives package_resolve's dependency-first array (spec/modules-packages.md
 // Package System #14's native-link-input collection order) and owns freeing
 // it; otherwise it is freed here.
-static int package_load_and_check(const char* dir, const char* argv0, const char* target,
+static int package_load_and_check(const char* dir, const char* target,
                                   CompileReport* report, Package** out_package,
                                   Node** out_file, Diag* out_diag,
                                   Package*** out_order, int* out_norder) {
     Diag pd = {dir, 0};
     Package** order = NULL;
     int norder = 0;
-    Package* root_package = package_resolve(dir, &pd, argv0, &order, &norder);
+    Package* root_package = package_resolve(dir, &pd, &order, &norder);
     if (!root_package || pd.errors > 0) {
         fprintf(stderr, "%s: %d error%s\n", dir, pd.errors, pd.errors == 1 ? "" : "s");
         return 1;
@@ -339,10 +339,10 @@ static int package_load_and_check(const char* dir, const char* argv0, const char
     if (report && ntok) report->tokens = ntok - 1; // exclude EOF
     Node* rfile = NULL;
     if (rd.errors == 0) {
-        build_roots(argv0, root_package->dir);
+        build_roots(root_package->dir);
         rfile = parse(toks, ntok, &rd, target);
         if (rd.errors == 0) {
-            resolve_imports(rfile, &rd, argv0, target, report, root_package);
+            resolve_imports(rfile, &rd, target, report, root_package);
             if (rd.errors == 0) sema_check(rfile, &rd);
         }
     }
@@ -385,14 +385,14 @@ static int package_manifest_restore(const char* manifest_path, const char* buf, 
 // Shared by add/remove: re-resolve dir's graph after a manifest edit, and on
 // any error restore the manifest to backup/backup_len and report failure.
 // Frees backup either way.
-static int package_revalidate_or_restore(const char* dir, const char* argv0,
+static int package_revalidate_or_restore(const char* dir,
                                          const char* manifest_path, char* backup,
                                          size_t backup_len, const char* verb,
                                          const char* name) {
     Diag pd = {dir, 0};
     Package** order = NULL;
     int norder = 0;
-    Package* root = package_resolve(dir, &pd, argv0, &order, &norder);
+    Package* root = package_resolve(dir, &pd, &order, &norder);
     free(order);
     if (!root || pd.errors > 0) {
         package_manifest_restore(manifest_path, backup, backup_len);
@@ -404,7 +404,7 @@ static int package_revalidate_or_restore(const char* dir, const char* argv0,
     return 0;
 }
 
-static int package_cmd_add(int argc, char** argv, const char* argv0) {
+static int package_cmd_add(int argc, char** argv) {
     if (argc != 2) package_usage();
     const char* name = argv[0];
     const char* version = argv[1];
@@ -427,10 +427,10 @@ static int package_cmd_add(int argc, char** argv, const char* argv0) {
         free(backup);
         return 1;
     }
-    return package_revalidate_or_restore(dir, argv0, manifest_path, backup, backup_len, "added", name);
+    return package_revalidate_or_restore(dir, manifest_path, backup, backup_len, "added", name);
 }
 
-static int package_cmd_remove(int argc, char** argv, const char* argv0) {
+static int package_cmd_remove(int argc, char** argv) {
     if (argc != 1) package_usage();
     const char* name = argv[0];
     const char* dir = find_package_root();
@@ -454,10 +454,10 @@ static int package_cmd_remove(int argc, char** argv, const char* argv0) {
         fprintf(stderr, "ace: '%s' is not a dependency of '%s'\n", name, dir);
         return 1;
     }
-    return package_revalidate_or_restore(dir, argv0, manifest_path, backup, backup_len, "removed", name);
+    return package_revalidate_or_restore(dir, manifest_path, backup, backup_len, "removed", name);
 }
 
-static int package_cmd_list(int argc, char** argv, const char* argv0) {
+static int package_cmd_list(int argc, char** argv) {
     (void)argv;
     if (argc != 0) {
         fprintf(stderr, "ace: pkg list takes no arguments\n");
@@ -471,7 +471,7 @@ static int package_cmd_list(int argc, char** argv, const char* argv0) {
     Diag pd = {dir, 0};
     Package** order = NULL;
     int norder = 0;
-    Package* root = package_resolve(dir, &pd, argv0, &order, &norder);
+    Package* root = package_resolve(dir, &pd, &order, &norder);
     if (!root || pd.errors > 0) {
         fprintf(stderr, "%s: %d error%s\n", dir, pd.errors, pd.errors == 1 ? "" : "s");
         free(order);
@@ -490,7 +490,7 @@ static int package_cmd_list(int argc, char** argv, const char* argv0) {
     return 0;
 }
 
-static int package_cmd_check(int argc, char** argv, const char* argv0) {
+static int package_cmd_check(int argc, char** argv) {
     (void)argv;
     if (argc != 0) {
         fprintf(stderr, "ace: pkg check takes no arguments\n");
@@ -506,7 +506,7 @@ static int package_cmd_check(int argc, char** argv, const char* argv0) {
     Package* root_package;
     Node* file;
     Diag d;
-    return package_load_and_check(dir, argv0, target, NULL, &root_package, &file, &d, NULL, NULL);
+    return package_load_and_check(dir, target, NULL, &root_package, &file, &d, NULL, NULL);
 }
 
 // Shared by `pkg build` and `pkg run`: resolve + check the enclosing
@@ -515,7 +515,7 @@ static int package_cmd_check(int argc, char** argv, const char* argv0) {
 // exists, since v1 ships libraries as source with no reusable archive.
 // require_exe rejects a lib package outright (used by `run`). On success
 // for an exe, out_bin receives the linked executable's path.
-static int package_build_or_run(int argc, char** argv, const char* argv0, int require_exe,
+static int package_build_or_run(int argc, char** argv, int require_exe,
                                 char* out_bin, size_t out_bin_cap) {
     int mode_seen = 0, show_report = 0;
     EmitMode emit_mode = EMIT_RELEASE;
@@ -555,7 +555,7 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
     Diag d;
     Package** order;
     int norder;
-    int rc = package_load_and_check(dir, argv0, target, show_report ? &report : NULL,
+    int rc = package_load_and_check(dir, target, show_report ? &report : NULL,
                                 &root_package, &file, &d, &order, &norder);
     if (rc != 0) return rc;
 
@@ -616,19 +616,19 @@ static int package_build_or_run(int argc, char** argv, const char* argv0, int re
     return 0;
 }
 
-static int package_cmd_build(int argc, char** argv, const char* argv0) {
+static int package_cmd_build(int argc, char** argv) {
     char bin[4096];
-    return package_build_or_run(argc, argv, argv0, 0, bin, sizeof bin);
+    return package_build_or_run(argc, argv, 0, bin, sizeof bin);
 }
 
-static int package_cmd_run(int argc, char** argv, const char* argv0) {
+static int package_cmd_run(int argc, char** argv) {
     // Everything after the first "--" is the program's own argv, passed through untouched.
     int nflags = 0;
     while (nflags < argc && strcmp(argv[nflags], "--") != 0) nflags++;
     int nprog = nflags < argc ? argc - nflags - 1 : 0;
 
     char bin[4096];
-    int rc = package_build_or_run(nflags, argv, argv0, 1, bin, sizeof bin);
+    int rc = package_build_or_run(nflags, argv, 1, bin, sizeof bin);
     if (rc != 0) return rc;
 
     char** args = malloc(sizeof(char*) * (size_t)(nprog + 2));
@@ -737,22 +737,22 @@ static int package_cmd_init(int argc, char** argv) {
     return 0;
 }
 
-static int package_main(int argc, char** argv, const char* argv0) {
+static int package_main(int argc, char** argv) {
     if (argc < 1) package_usage();
     if (strcmp(argv[0], "init") == 0) return package_cmd_init(argc - 1, argv + 1);
-    if (strcmp(argv[0], "build") == 0) return package_cmd_build(argc - 1, argv + 1, argv0);
-    if (strcmp(argv[0], "run") == 0) return package_cmd_run(argc - 1, argv + 1, argv0);
-    if (strcmp(argv[0], "check") == 0) return package_cmd_check(argc - 1, argv + 1, argv0);
-    if (strcmp(argv[0], "add") == 0) return package_cmd_add(argc - 1, argv + 1, argv0);
-    if (strcmp(argv[0], "remove") == 0) return package_cmd_remove(argc - 1, argv + 1, argv0);
-    if (strcmp(argv[0], "list") == 0) return package_cmd_list(argc - 1, argv + 1, argv0);
+    if (strcmp(argv[0], "build") == 0) return package_cmd_build(argc - 1, argv + 1);
+    if (strcmp(argv[0], "run") == 0) return package_cmd_run(argc - 1, argv + 1);
+    if (strcmp(argv[0], "check") == 0) return package_cmd_check(argc - 1, argv + 1);
+    if (strcmp(argv[0], "add") == 0) return package_cmd_add(argc - 1, argv + 1);
+    if (strcmp(argv[0], "remove") == 0) return package_cmd_remove(argc - 1, argv + 1);
+    if (strcmp(argv[0], "list") == 0) return package_cmd_list(argc - 1, argv + 1);
     fprintf(stderr, "ace: unknown pkg subcommand '%s'\n", argv[0]);
     package_usage();
     return 2; // unreachable
 }
 
 int main(int argc, char** argv) {
-    if (argc >= 2 && strcmp(argv[1], "pkg") == 0) return package_main(argc - 2, argv + 2, argv[0]);
+    if (argc >= 2 && strcmp(argv[1], "pkg") == 0) return package_main(argc - 2, argv + 2);
     int dump_tok = 0, dump_ast = 0, dump_ir = 0, show_report = 0, opt_c = 0, opt_link = 0;
     int mode_seen = 0;
     EmitMode emit_mode = EMIT_RELEASE;
@@ -837,7 +837,7 @@ int main(int argc, char** argv) {
         Diag pd = {package_graph_dir, 0};
         Package** order = NULL;
         int norder = 0;
-        Package* root = package_resolve(package_graph_dir, &pd, argv[0], &order, &norder);
+        Package* root = package_resolve(package_graph_dir, &pd, &order, &norder);
         if (!root || pd.errors > 0) {
             fprintf(stderr, "%s: %d error%s\n", package_graph_dir, pd.errors, pd.errors == 1 ? "" : "s");
             return 1;
@@ -853,7 +853,7 @@ int main(int argc, char** argv) {
         Package* root_package;
         Node* file;
         Diag d;
-        return package_load_and_check(package_check_dir, argv[0], target, NULL, &root_package, &file, &d, NULL, NULL);
+        return package_load_and_check(package_check_dir, target, NULL, &root_package, &file, &d, NULL, NULL);
     }
     // `-o <file>.ace` compiles that file in place: the executable is the stem.
     if (out_name && has_suffix(out_name, ".ace")) {
@@ -903,7 +903,7 @@ int main(int argc, char** argv) {
     {
         char root_dir[4096];
         path_dir(root_dir, sizeof root_dir, path);
-        build_roots(argv[0], root_dir);
+        build_roots(root_dir);
         Node* file = parse(toks, ntok, &d, target);
         if (d.errors > 0) goto done;
         if (dump_ast) { // --ast: through the parser only
@@ -915,7 +915,7 @@ int main(int argc, char** argv) {
             }
             return 0;
         }
-        resolve_imports(file, &d, argv[0], target, show_report ? &report : NULL, NULL);
+        resolve_imports(file, &d, target, show_report ? &report : NULL, NULL);
         if (d.errors > 0) goto done;
         sema_check(file, &d); // default mode: full semantic check
         if (d.errors > 0) goto done;

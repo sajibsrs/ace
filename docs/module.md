@@ -245,7 +245,10 @@ every function to the file it was written in.
 - Relative import paths must name a file or nested module directly; wildcard
   imports and package lists do not exist.
 - Standard-library modules live beside the compiler binary (`std/` next to
-  `ace`); there is no user-configurable search path yet.
+  `ace`), located from the real executable path the OS reports with symlinks
+  resolved, so `ace` run by bare name from `PATH`, through a symlink, or by a
+  relative path finds the same `std/`; there is no user-configurable search
+  path yet.
 - `bits`, `fmt`, `mem`, and the minimal `math` exist in the standard library today — see
   [Standard library](std/index.md).
 
