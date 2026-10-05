@@ -147,7 +147,7 @@ respond_close(conn: tcp.Conn, response: Response, mut context: Context) {
 
         context.headers = grown
     }
-    for i: usize in 0 .. response.headers.len { context.headers[i] = response.headers[i] }
+    mem.copy[Header](context.headers[0 .. response.headers.len], response.headers)
     context.headers[response.headers.len] = Header {
         name = "Connection",
         value = "close",

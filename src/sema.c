@@ -3750,6 +3750,8 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn, SType* elem,
     const char* what = intrinsic == BI_MEM_ALLOC_T ? "mem.alloc[T]" :
                        intrinsic == BI_MEM_ZALLOC_T ? "mem.zalloc[T]" :
                        intrinsic == BI_MEM_REALLOC_T ? "mem.realloc[T]" :
+                       intrinsic == BI_MEM_COPY_T ? "mem.copy[T]" :
+                       intrinsic == BI_MEM_MOVE_T ? "mem.move[T]" :
                                                        "mem.release[T]";
     if (!elem || elem->kind == SK_ERR) return T_ERR;
     if (elem->kind == SK_TYPEPARAM) {
@@ -3766,6 +3768,26 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn, SType* elem,
     layout(mut_slice);
     callee->ty = intrinsic == BI_MEM_RELEASE_T ? slice : mut_slice;
     // The emitter derives sizeof(T)/alignof(T) from the result slice.
+
+    if (intrinsic == BI_MEM_COPY_T || intrinsic == BI_MEM_MOVE_T) {
+        if (call->nkids != 2) {
+            ck_err(k, call, "%s takes exactly 2 arguments", what);
+            return T_ERR;
+        }
+        for (int i = 0; i < 2; i++) {
+            Node* arg = call->kids[i];
+            // As for the byte forms (Memory #15): type-position `mut` only.
+            if (arg->kind == N_MUTARG) {
+                if (i == 0)
+                    ck_err(k, arg, "%s's destination is a writable view — pass 'mut []%s'; no call-site 'mut'",
+                           what, type_name(elem));
+                else ck_err(k, arg, "'mut' marks mut parameters; %s parameter 2 is read-only", what);
+                arg = arg->a;
+            }
+            coerce(k, arg, i == 0 ? mut_slice : slice);
+        }
+        return T_VOID;
+    }
 
     if (intrinsic == BI_MEM_ALLOC_T || intrinsic == BI_MEM_ZALLOC_T) {
         if (call->nkids != 1) {
@@ -5006,7 +5028,9 @@ static SType* check_call_raw(Ck* k, Node* call) {
             if (chosen->decl->ival == BI_MEM_ALLOC_T ||
                 chosen->decl->ival == BI_MEM_ZALLOC_T ||
                 chosen->decl->ival == BI_MEM_REALLOC_T ||
-                chosen->decl->ival == BI_MEM_RELEASE_T)
+                chosen->decl->ival == BI_MEM_RELEASE_T ||
+                chosen->decl->ival == BI_MEM_COPY_T ||
+                chosen->decl->ival == BI_MEM_MOVE_T)
                 return check_memory_generic_call(k, call, chosen, targs[0],
                                                  (int)chosen->decl->ival);
             SType* ft = instantiate_generic_func(k, chosen, callee);

@@ -420,8 +420,8 @@ static void mark_mem_intrinsics(Loader* L, Module* m) {
         else if (text_is(n->str, n->len, "realloc")) n->ival = n->c ? BI_MEM_REALLOC_T : BI_MEM_REALLOC;
         else if (text_is(n->str, n->len, "release")) n->ival = n->c ? BI_MEM_RELEASE_T : BI_MEM_RELEASE;
         else if (text_is(n->str, n->len, "zalloc") && n->c) n->ival = BI_MEM_ZALLOC_T;
-        else if (text_is(n->str, n->len, "copy")) n->ival = BI_MEM_COPY;
-        else if (text_is(n->str, n->len, "move")) n->ival = BI_MEM_MOVE;
+        else if (text_is(n->str, n->len, "copy")) n->ival = n->c ? BI_MEM_COPY_T : BI_MEM_COPY;
+        else if (text_is(n->str, n->len, "move")) n->ival = n->c ? BI_MEM_MOVE_T : BI_MEM_MOVE;
         else if (text_is(n->str, n->len, "fill")) n->ival = BI_MEM_FILL;
         else if (text_is(n->str, n->len, "zero")) n->ival = BI_MEM_ZERO;
         else if (text_is(n->str, n->len, "compare")) n->ival = BI_MEM_COMPARE;

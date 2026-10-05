@@ -1110,7 +1110,7 @@ for f in imm_signed_add imm_unsigned_sub imm_narrow_add narrow_release; do
         fail=1
     fi
 done
-for f in noalias copy_length copy_overlap; do
+for f in noalias copy_length copy_overlap copy_typed_length copy_typed_overlap; do
     if ! "$ACE" --debug -o "/tmp/ace_checked_features/contract_$f" \
          "tests/checked_contracts/$f.ace" >/dev/null 2>$T/errs ||
        "/tmp/ace_checked_features/contract_$f" >/dev/null 2>$T/errs ||

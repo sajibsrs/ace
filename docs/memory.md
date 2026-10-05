@@ -414,7 +414,17 @@ mem.equal(a, b): bool
 ```
 
 `copy` and `move` require equal slice lengths and copy exactly the complete
-source view. They do not resize or otherwise change either slice descriptor.
+source view. Their typed overloads take any element type, compare element
+counts, and copy `len * sizeof(T)` bytes through the same routines and debug
+checks:
+
+```ace
+mem.copy[T](noalias dst: mut []T, src: []T)
+mem.move[T](dst: mut []T, src: []T)
+```
+
+Like `release[T]`, they state `T` explicitly; `mem.copy(a, b)` on `[]u32`
+views is a type error, since `[]u32` does not convert to `[]u8`. They do not resize or otherwise change either slice descriptor.
 `equal` accepts every pair of `[N]u8`, `[]u8`, and `string` values, compares
 length and exact bytes, and allocates nothing. It is the explicit content test;
 sequential values do not support `==` or `!=` against one another.

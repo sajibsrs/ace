@@ -1,0 +1,17 @@
+/* Mem typed copy and move fixture. */
+
+import mem
+
+main(): int {
+    a: mut []u32 = mem.alloc[u32](2)
+    b: []u32 = a
+    c: mut []u8 = mem.alloc(2, 1)
+    mem.copy[u32](a, c)
+    mem.copy[u16](a, b)
+    mem.copy[u32](mut a, b)
+    mem.move[u32](a, mut b)
+    mem.copy[u32](b, a)
+    mem.move[u32](a)
+    mem.move[void](a, b)
+    return 0
+}

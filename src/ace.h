@@ -220,6 +220,8 @@ enum {
     BI_MEM_ZALLOC_T = 36,   // mem.zalloc[T](count: usize): mut []T, zero-filled
     BI_STR_FORMAT = 37,     // str.format(destination, "format", ...): checked like fmt.printf
     BI_FMT_PRINTF_FD = 38,  // fmt.printf(fd, "format", ...): fmt.printf to a descriptor
+    BI_MEM_COPY_T = 39,     // mem.copy[T](noalias dst: mut []T, src: []T)
+    BI_MEM_MOVE_T = 40,     // mem.move[T](dst: mut []T, src: []T)
 };
 
 enum {

@@ -65,6 +65,13 @@ pub copy(noalias dst: mut []u8, src: []u8) {}
 
 pub move(dst: mut []u8, src: []u8) {}
 
+/* Typed forms of `copy` and `move`: equal element counts, copying
+ * `len * sizeof(T)` bytes under the same rules as the byte forms.
+ */
+pub copy[T](noalias dst: mut []T, src: []T) {}
+
+pub move[T](dst: mut []T, src: []T) {}
+
 pub fill(data: mut []u8, value: u8) {}
 
 pub zero(data: mut []u8) {}

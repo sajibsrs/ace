@@ -2155,7 +2155,8 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
                 n->ival == BI_MEM_EQUAL || n->ival == BI_MEM_ALLOC_SIZE ||
                 n->ival == BI_MEM_ALLOC_T || n->ival == BI_MEM_ZALLOC_T ||
                 n->ival == BI_MEM_REALLOC_T ||
-                n->ival == BI_MEM_RELEASE_T)
+                n->ival == BI_MEM_RELEASE_T || n->ival == BI_MEM_COPY_T ||
+                n->ival == BI_MEM_MOVE_T)
                 break; // compiler-backed std/mem declarations have no body symbol
             if (n->ival == BI_FMT_PRINTF || n->ival == BI_FMT_PRINTF_FD || n->ival == BI_STR_FORMAT ||
                 (n->ival >= BI_SYS_ARGC && n->ival <= BI_SYS_ENV))

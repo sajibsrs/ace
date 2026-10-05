@@ -1423,8 +1423,14 @@ static int rtcall(Lw* l, const char* name, int a, int b, int n) {
 
 // mem.copy, mem.move, mem.fill, mem.zero (Values & Passing: byte operations):
 // debug checks equal lengths, and for copy that nonempty ranges neither wrap
-// nor overlap (noalias), before the routine.
+// nor overlap (noalias), before the routine. The typed copy and move compare
+// element counts, then work on count * sizeof(T) bytes.
 static int mem_write(Lw* l, Node* x, int bi) {
+    uint64_t esz = 1;
+    if (bi == BI_MEM_COPY_T || bi == BI_MEM_MOVE_T) {
+        esz = sema_size(unwrap(x->a->ty)->base);
+        bi = bi == BI_MEM_COPY_T ? BI_MEM_COPY : BI_MEM_MOVE;
+    }
     int dst, dlen;
     view_parts(l, x->kids[0]->kind == N_MUTARG ? x->kids[0]->a : x->kids[0], &dst, &dlen);
     if (bi == BI_MEM_FILL || bi == BI_MEM_ZERO) {
@@ -1434,8 +1440,10 @@ static int mem_write(Lw* l, Node* x, int bi) {
     }
     int src, slen;
     view_parts(l, x->kids[1], &src, &slen);
+    int count = slen;
+    if (esz != 1) slen = emit2(l, IR_MUL, IT_U64, slen, konst(l, IT_U64, esz));
     if (l->mode == EMIT_DEBUG) {
-        contract_check(l, cmp(l, IR_EQ, slen, dlen));
+        contract_check(l, cmp(l, IR_EQ, count, dlen));
         if (bi == BI_MEM_COPY) {
             int some = guard(l, cmp(l, IR_NE, slen, konst(l, IT_U64, 0)));
             int dend = emit2(l, IR_PADD, IT_PTR, dst, slen), send = emit2(l, IR_PADD, IT_PTR, src, slen);
@@ -1652,6 +1660,7 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
     }
     case BI_MEM_ALLOC: case BI_MEM_REALLOC: case BI_MEM_RELEASE: case BI_MEM_ALLOC_T: case BI_MEM_ZALLOC_T:
     case BI_MEM_REALLOC_T: case BI_MEM_RELEASE_T: case BI_MEM_ALLOC_SIZE: case BI_MEM_COPY: case BI_MEM_MOVE:
+    case BI_MEM_COPY_T: case BI_MEM_MOVE_T:
     case BI_MEM_FILL: case BI_MEM_ZERO: case BI_MEM_COMPARE: case BI_MEM_EQUAL: case BI_FMT_PRINTF:
     case BI_FMT_PRINTF_FD: case BI_STR_FORMAT:
         if (x->ival != (uint64_t)bi) return -2; // sema checked it as the builtin
@@ -1669,7 +1678,8 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
         case BI_FMT_PRINTF: return x->aux ? format_call(l, x, 0, 0, res) : -2;
         case BI_FMT_PRINTF_FD: return x->aux ? format_call(l, x, 1, 1, res) : -2;
         case BI_STR_FORMAT: return x->aux ? format_call(l, x, 1, 0, res) : -2;
-        case BI_MEM_COPY: case BI_MEM_MOVE: case BI_MEM_FILL: case BI_MEM_ZERO: return mem_write(l, x, bi);
+        case BI_MEM_COPY: case BI_MEM_MOVE: case BI_MEM_COPY_T: case BI_MEM_MOVE_T:
+        case BI_MEM_FILL: case BI_MEM_ZERO: return mem_write(l, x, bi);
         default: return mem_alloc_typed(l, x, bi, res);
         }
     case BI_SYS_ARGC: // an int, then (below) char** arrays: see process_word

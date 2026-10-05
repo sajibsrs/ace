@@ -98,6 +98,8 @@ main(): int {
   failure contract; the result is the only authoritative slice.
 - `release(mut data: []u8)` and `release[T](mut data: []T)` — free the complete
   authoritative allocation and null only the passed variable; null is a no-op.
+- `copy[T](noalias dst: mut []T, src: []T)` and `move[T](dst: mut []T, src: []T)` —
+  the byte forms' rules over equal element counts, copying `len * sizeof(T)` bytes.
 - `equal(a, b): bool` — exact, allocation-free content equality for every
   pairing of `[N]u8`, `[]u8`, and `string`; sequential `==`/`!=` is unavailable.
 

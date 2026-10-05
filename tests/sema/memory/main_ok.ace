@@ -9,6 +9,7 @@ Pair[T]: struct { first: T, second: T }
 /* A generic wrapper states its own T; the typed allocation instantiates it. */
 clone[T](values: []T): []T {
     copy_values: mut []T = mem.alloc[T](values.len)
+    if copy_values != null { mem.copy[T](copy_values, values) }
     return copy_values
 }
 
