@@ -1,5 +1,8 @@
 # Packages
 
+- `http`'s internal `exchange` takes a `tcp.Conn` and calls `tcp.send_all` and
+  `net.receive` directly, replacing the single-instantiation `exchange[C]` and
+  its function-value send/receive parameters.
 - `sdl`: `Event.keyboard()` is now `Event.key()`, since a method may no longer
   share its name with the `keyboard` field.
 - `pkg/regex` skips, while no thread is live, to the next byte that can begin

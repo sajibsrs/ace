@@ -67,8 +67,8 @@ fails with `RedirectErr.limit`. Missing or invalid locations return the original
 3xx response. The canonical zero policy performs one request.
 
 `get` shares URL parsing, address iteration, request construction,
-formatting, response parsing, error mapping, and TCP cleanup through one typed
-transport exchange.
+formatting, response parsing, error mapping, and TCP cleanup through one
+exchange over the TCP connection.
 
 `Request.format(output): (usize, Error)` and
 `Response.format(output): (usize, Error)` write one complete HTTP message or

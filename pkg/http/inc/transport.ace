@@ -66,15 +66,8 @@ pub connect(parsed: Url, mut storage: Storage, resize: bool): (tcp.Conn, Error) 
     return conn, null
 }
 
-tcp_receive(connection: tcp.Conn, destination: mut []u8): (int, Error) {
-    count: int, err: Error = net.receive(connection.socket, destination)
-    return count, err
-}
-
-pub exchange[C](
-    connection: C,
-    send: (C, []u8): (usize, Error),
-    receive: (C, mut []u8): (int, Error),
+pub exchange(
+    connection: tcp.Conn,
     parsed: Url,
     mut storage: Storage,
     resize: bool,
@@ -117,7 +110,7 @@ pub exchange[C](
     }
     if format_err != null { return Response {}, format_err }
 
-    _, send_err: Error = send(connection, storage.output[..output_count])
+    _, send_err: Error = tcp.send_all(connection, storage.output[..output_count])
     if send_err != null { return Response {}, send_err }
 
     occupied: usize = 0
@@ -147,7 +140,7 @@ pub exchange[C](
             }
 
             received: int
-            received, recv_err: Error = receive(connection, mut storage.input[occupied..])
+            received, recv_err: Error = net.receive(connection.socket, mut storage.input[occupied..])
             if recv_err != null { return Response {}, recv_err }
 
             occupied += usize(received)
@@ -209,10 +202,8 @@ pub get(url: string, mut storage: Storage, resize: bool): (Response, Error) {
     defer tcp.close(mut connection)
     if connect_err != null { return Response {}, connect_err }
 
-    response: Response, err: Error = exchange[tcp.Conn](
+    response: Response, err: Error = exchange(
         connection,
-        tcp.send_all,
-        tcp_receive,
         parsed,
         mut storage,
         resize,
