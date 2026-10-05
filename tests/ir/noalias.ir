@@ -11,14 +11,14 @@ b1: ; preds b0, b4
     %7 = lt bool %6, %1
     br %7, b2, b3
 b2: ; preds b1
-    %9 = lt bool %6, %1
-    check %9, 10:13 bounds violation
-    %11 = padd ptr %0, %6 * 1
-    %12 = lt bool %6, %3
-    check %12, 10:22 bounds violation
-    %14 = padd ptr %2, %6 * 1
-    %15 = load u8 [%14]
-    store [%11], %15
+    %9 = lt bool %6, %3
+    check %9, 10:22 bounds violation
+    %11 = padd ptr %2, %6 * 1
+    %12 = load u8 [%11]
+    %13 = lt bool %6, %1
+    check %13, 10:13 bounds violation
+    %15 = padd ptr %0, %6 * 1
+    store [%15], %12
     jmp b4
 b3: ; preds b1
     ret
@@ -89,12 +89,12 @@ b1: ; preds b0, b4
     br %11, b2, b3
 b2: ; preds b1
     %13 = cast u64 %10
-    %14 = const u64 16
-    %15 = lt bool %13, %14
-    check %15, 24:35 bounds violation
-    %17 = padd ptr %2, %13 * 1
-    %18 = cast u8 %13
-    store [%17], %18
+    %14 = cast u8 %13
+    %15 = const u64 16
+    %16 = lt bool %13, %15
+    check %16, 24:35 bounds violation
+    %18 = padd ptr %2, %13 * 1
+    store [%18], %14
     jmp b4
 b3: ; preds b1
     %21 = const u64 16

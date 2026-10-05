@@ -3165,19 +3165,27 @@ static Place binder_place(Lw* l, Node* b) {
 // Bits field x assigned, or with a compound op, the value of rhs, or v when
 // rhs is NULL: one read-modify-write of the whole backing value (#3), read
 // before rhs is evaluated.
+// Whether x contains a call, which could change storage the rest reads.
+static int has_call(Node* x) {
+    if (!x) return 0;
+    if (x->kind == N_CALL) return 1;
+    if (has_call(x->a) || has_call(x->b) || has_call(x->c)) return 1;
+    for (int i = 0; i < x->nkids; i++)
+        if (has_call(x->kids[i])) return 1;
+    return 0;
+}
+
 static void bits_assign(Lw* l, Node* x, int op, Node* rhs, int v) {
     SType* bits;
     SField* bf = bits_field(x, &bits);
+    IrType ft = need_type(l, bf->t);
+    if (rhs) v = expr(l, rhs, ft); // the right side before the target (Memory #9)
     Place p = field_base(l, x, &bits);
     int w = place_read(l, p, 0);
-    IrType ft = need_type(l, bf->t);
     if (op != T_ASSIGN) {
         int bop = binop_of((TokKind)op);
         if (bop < 0) unsupported(l, "compound assignment");
-        int old = bits_get(l, bits, bf, w);
-        v = arith(l, bop, ft, old, expr(l, rhs, ft));
-    } else if (rhs) {
-        v = expr(l, rhs, ft);
+        v = arith(l, bop, ft, bits_get(l, bits, bf, w), v);
     }
     place_write(l, p, bits_set(l, bits, bf, w, v, 1), 0);
 }
@@ -3304,39 +3312,56 @@ static void assign(Lw* l, Node* s) {
         bits_assign(l, s->kids[0], s->op, s->a, -1);
         return;
     }
+    // the right side whole, then the target (Memory #9): a right side that
+    // moves the target's storage cannot leave its address stale
     int vol = s->flags & F_VOLATILE ? IRF_VOLATILE : 0;
-    Place p = place(l, s->kids[0]);
-    if (vol && p.var >= 0) unsupported(l, "volatile access"); // scan_storage missed it
-    if (is_agg(p.t)) {
+    Node* x = s->kids[0];
+    SType* xt = node_ty(x);
+    if (x->kind == N_IDENT && node_sym(x)) xt = node_sym(x)->type;
+    if (is_agg(xt)) {
         if (s->op != T_ASSIGN) unsupported(l, "compound assignment");
-        if (p.var < 0 && !vol && (is_big(p.t) || (has_array(p.t) && is_place(s->a)))) {
-            int src = -1;
-            if (!is_place(s->a)) { // whole, before any byte is written
-                covered(l, p.t);
-                src = new_slot(l, p.t);
-                store_value(l, s->a, p.t, src, 0);
+        int direct = !vol && (is_big(xt) || (has_array(xt) && is_place(s->a)));
+        if (direct && is_place(s->a) && (x->kind == N_IDENT || !has_call(x))) {
+            // a place's bytes: equal or disjoint, and finding the target
+            // cannot change them
+            Place p = place(l, x);
+            if (p.var < 0) {
+                store_value(l, s->a, p.t, p.addr, p.off);
+                return;
             }
-            if (src < 0) store_value(l, s->a, p.t, p.addr, p.off); // a place's bytes: equal or disjoint
-            else copy_mem(l, p.addr, p.off, src, 0, 0, sema_size(p.t));
+            Agg a;
+            value(l, s->a, p.t, &a);
+            place_put(l, p, &a, vol);
+            return;
+        }
+        if (direct && is_big(xt)) { // whole, before any byte is written
+            covered(l, xt);
+            int src = new_slot(l, xt);
+            store_value(l, s->a, xt, src, 0);
+            Place p = place(l, x);
+            if (p.var < 0) copy_mem(l, p.addr, p.off, src, 0, 0, sema_size(xt));
+            else move_place(l, p, (Place){ -1, src, 0, 0, xt });
             return;
         }
         Agg a;
-        value(l, s->a, p.t, &a); // whole, before any leaf is written
+        value(l, s->a, xt, &a); // whole, before any leaf is written
+        Place p = place(l, x);
+        if (vol && p.var >= 0) unsupported(l, "volatile access");
         place_put(l, p, &a, vol);
         return;
     }
-    IrType t = need_type(l, p.t);
-    int v;
-    if (s->op == T_ASSIGN) {
-        v = expr(l, s->a, t);
-    } else {
+    IrType t = need_type(l, xt);
+    int v = s->op == T_ASSIGN || t != IT_PTR ? expr(l, s->a, t) : expr(l, s->a, IT_U64);
+    Place p = place(l, x);
+    if (vol && p.var >= 0) unsupported(l, "volatile access"); // scan_storage missed it
+    if (s->op != T_ASSIGN) {
         int op = binop_of((TokKind)s->op);
         if (op < 0) unsupported(l, "compound assignment");
         int old = place_read(l, p, vol);
         if (t == IT_PTR && (op == IR_ADD || op == IR_SUB)) // p += n, p -= n
-            v = pointer_offset(l, op == IR_ADD ? IR_PADD : IR_PSUB, p.t, old, expr(l, s->a, IT_U64));
+            v = pointer_offset(l, op == IR_ADD ? IR_PADD : IR_PSUB, p.t, old, v);
         else
-            v = arith(l, op, t, old, expr(l, s->a, t));
+            v = arith(l, op, t, old, v);
     }
     place_write(l, p, v, vol);
 }

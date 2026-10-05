@@ -64,6 +64,13 @@ writes any target:
 number, message = 2, "new"
 ```
 
+A single assignment also evaluates its right side first, then its target, so
+a call that grows the slice being assigned into writes to the new storage:
+
+```ace
+s.xs[0] = mut s.add() // add may move s.xs; the store goes to where it is now
+```
+
 All-typed and all-bare lists remain valid. A typed name that already exists is
 a redeclaration error, while a bare missing name is an undeclared-name error.
 Names are checked against the scope before the statement, so one item cannot
@@ -984,6 +991,12 @@ Why the rules in `spec/syntax.md`, `spec/types.md` are shaped as they are.
   naming kinds after keywords (`Kind.if`) then needs no rename or escape;
   JavaScript property names and Swift member access work the same way, while
   Rust (`r#type`) and Zig (`@"type"`) pay with escape syntax.
+- Memory #9 (assignment order): evaluating the right side before the target
+  is the one order under which a call that reallocates or rewrites the target
+  cannot leave its address stale, and it matches multi-assignment. C++17
+  (P0145) and Rust order `=` this way; C leaves it unsequenced, and Java, C#,
+  and Go compute the target's array first, so they store into the old one. A
+  scalar value waits in a register, so it costs nothing.
 - Syntax & Parsing #9: one declaration rule works uniformly for literals,
   aggregates, null values, and single- or multi-return expressions while making
   the programmer's expected type locally visible and independently checkable

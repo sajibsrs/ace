@@ -24,16 +24,16 @@ b0:
     %0 = param ptr 0
     %1 = param u64 1
     %2 = param u64 2
-    %3 = padd ptr %0, %2 * 1
-    %4 = load u8 [%3]
-    %5 = const u8 1
-    %6 = add u8 %4, %5
-    store [%3], %6
-    %8 = const u64 1
-    %9 = add u64 %2, %8
-    %10 = padd ptr %0, %9 * 1
-    %11 = load u8 [%3]
-    store [%10], %11
+    %3 = const u8 1
+    %4 = padd ptr %0, %2 * 1
+    %5 = load u8 [%4]
+    %6 = add u8 %5, %3
+    store [%4], %6
+    %8 = load u8 [%4]
+    %9 = const u64 1
+    %10 = add u64 %2, %9
+    %11 = padd ptr %0, %10 * 1
+    store [%11], %8
     ret
 }
 

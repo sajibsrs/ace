@@ -414,8 +414,7 @@ pub Parser.parse_type(mut self): u32 {
     if self.at(Token.const) {
         t: u32 = mut self.nd(Kind.const_t)
         self.i += 1
-        a: u32 = mut self.parse_type()
-        self.nodes[t].a = a
+        self.nodes[t].a = mut self.parse_type()
         return t
     }
     if self.at(Token.mut) { // type-position mut marks writable content
@@ -424,8 +423,7 @@ pub Parser.parse_type(mut self): u32 {
             t: u32 = mut self.nd(Kind.ptr)
             self.nodes[t].flags |= F_MUT
             self.i += 1
-            a: u32 = mut self.parse_type()
-            self.nodes[t].a = a
+            self.nodes[t].a = mut self.parse_type()
             return t
         }
         if self.at(Token.lbrack) { // mut []T
@@ -436,8 +434,7 @@ pub Parser.parse_type(mut self): u32 {
             t: u32 = mut self.nd(Kind.slice_t)
             self.nodes[t].flags |= F_MUT
             self.i += 2
-            a: u32 = mut self.parse_type()
-            self.nodes[t].a = a
+            self.nodes[t].a = mut self.parse_type()
             return t
         }
         if self.ident_at(0, "string") && self.kth(1) != Token.dot { // mut string
@@ -452,24 +449,20 @@ pub Parser.parse_type(mut self): u32 {
     if self.at(Token.star) {
         t: u32 = mut self.nd(Kind.ptr)
         self.i += 1
-        a: u32 = mut self.parse_type()
-        self.nodes[t].a = a
+        self.nodes[t].a = mut self.parse_type()
         return t
     }
     if self.at(Token.lbrack) {
         self.i += 1
         if mut self.ate(Token.rbrack) { // []T
             t: u32 = mut self.nd(Kind.slice_t)
-            a: u32 = mut self.parse_type()
-            self.nodes[t].a = a
+            self.nodes[t].a = mut self.parse_type()
             return t
         }
         t: u32 = mut self.nd(Kind.array_t) // [N]T
-        b: u32 = mut self.expr(0)
-        self.nodes[t].b = b
+        self.nodes[t].b = mut self.expr(0)
         mut self.expect(Token.rbrack, "']' after array length")
-        a: u32 = mut self.parse_type()
-        self.nodes[t].a = a
+        self.nodes[t].a = mut self.parse_type()
         return t
     }
     if self.at(Token.extern) { // extern "c" (params): ret
@@ -484,8 +477,7 @@ pub Parser.parse_type(mut self): u32 {
         mut self.expect(Token.rparen, "')' to close function parameter types")
         mut self.close(f, mark)
         mut self.expect(Token.colon, "':' and a return type or 'void' after C function parameter types")
-        a: u32 = mut self.func_type_ret()
-        self.nodes[f].a = a
+        self.nodes[f].a = mut self.func_type_ret()
         return f
     }
     if self.at(Token.lparen) { // tuple or function type
@@ -497,8 +489,7 @@ pub Parser.parse_type(mut self): u32 {
         if mut self.ate(Token.colon) { // (params): ret
             f: u32 = mut self.nd(Kind.func_t)
             mut self.close(f, mark)
-            a: u32 = mut self.func_type_ret()
-            self.nodes[f].a = a
+            self.nodes[f].a = mut self.func_type_ret()
             return f
         }
         count: usize = self.nstack - mark
@@ -518,12 +509,10 @@ pub Parser.parse_type(mut self): u32 {
         if self.ident_at(0, "StaticMap") && self.kth(1) == Token.lbrack {
             m: u32 = mut self.nd(Kind.staticmap_t)
             self.i += 2
-            a: u32 = mut self.parse_type()
-            self.nodes[m].a = a
+            self.nodes[m].a = mut self.parse_type()
             if mut self.ate(Token.comma) { mut self.fail("StaticMap type is spelled StaticMap[K]V, not StaticMap[K, V]") }
             mut self.expect(Token.rbrack, "']' after StaticMap key type")
-            b: u32 = mut self.parse_type()
-            self.nodes[m].b = b
+            self.nodes[m].b = mut self.parse_type()
             return m
         }
         if self.at_void() {
@@ -644,8 +633,7 @@ Parser.prefix(mut self, op: Token, flags: u32, skip: usize, ctx: int): u32 {
     self.nodes[u].op = op
     self.nodes[u].flags |= flags
     self.i += skip
-    a: u32 = mut self.unary(ctx)
-    self.nodes[u].a = a
+    self.nodes[u].a = mut self.unary(ctx)
     return u
 }
 
@@ -765,8 +753,7 @@ Parser.unary(mut self, ctx: int): u32 {
         self.i += 1
         u: u32 = mut self.nd(Kind.unary)
         self.nodes[u].op = Token.star
-        a: u32 = mut self.unary(ctx)
-        self.nodes[u].a = a
+        self.nodes[u].a = mut self.unary(ctx)
         return u
     }
     if k == Token.amp { return mut self.prefix(Token.amp, 0, 1, ctx) }
@@ -789,8 +776,7 @@ Parser.structlit(mut self, base: u32): u32 {
                 mut self.named(fi, self.toks[self.i].text)
                 self.i += 2
             }
-            a: u32 = mut self.expr(0)
-            self.nodes[fi].a = a
+            self.nodes[fi].a = mut self.expr(0)
             mut self.push(fi)
             if !mut self.ate(Token.comma) || self.at(Token.rbrace) { break }
         }
@@ -806,11 +792,9 @@ pub Parser.staticmaplit(mut self): u32 {
     mark: usize = self.nstack
     for !self.at(Token.rbrace) {
         entry: u32 = mut self.nd(Kind.mapentry)
-        a: u32 = mut self.expr(0)
-        self.nodes[entry].a = a
+        self.nodes[entry].a = mut self.expr(0)
         mut self.expect(Token.colon, "':' between StaticMap key and value")
-        b: u32 = mut self.expr(0)
-        self.nodes[entry].b = b
+        self.nodes[entry].b = mut self.expr(0)
         mut self.push(entry)
         if !mut self.ate(Token.comma) || self.at(Token.rbrace) { break }
     }
@@ -1038,8 +1022,7 @@ Parser.primary(mut self, ctx: int): u32 {
             if self.at(Token.rbrack) && slice_type_start(self.kth(1)) {
                 ty: u32 = mut self.nd(Kind.slice_t)
                 self.i += 1
-                a: u32 = mut self.parse_type()
-                self.nodes[ty].a = a
+                self.nodes[ty].a = mut self.parse_type()
                 return ty
             }
             al: u32 = mut self.nd(Kind.arraylit)
@@ -1048,8 +1031,7 @@ Parser.primary(mut self, ctx: int): u32 {
                 first: u32 = mut self.expr(0)
                 if mut self.ate(Token.colon) {
                     self.nodes[al].a = first
-                    b: u32 = mut self.expr(0) // repetition count
-                    self.nodes[al].b = b
+                    self.nodes[al].b = mut self.expr(0) // repetition count
                 } else {
                     keyed: bool = self.at(Token.assign) // [E.a = x, E.b = y]
                     el: u32 = first
@@ -1058,8 +1040,7 @@ Parser.primary(mut self, ctx: int): u32 {
                             en: u32 = mut self.nd(Kind.mapentry)
                             self.nodes[en].a = el
                             mut self.expect(Token.assign, "'=' after a keyed array literal's member")
-                            b: u32 = mut self.expr(0)
-                            self.nodes[en].b = b
+                            self.nodes[en].b = mut self.expr(0)
                             el = en
                         } else if self.at(Token.assign) {
                             mut self.fail("a keyed array literal keys every element, the first included")
@@ -1141,8 +1122,7 @@ Parser.parse_if(mut self): u32 {
     mut self.expect(Token.if, "'if'")
     a: u32 = mut self.expr(NOSLIT)
     self.nodes[n].a = a
-    b: u32 = mut self.block()
-    self.nodes[n].b = b
+    self.nodes[n].b = mut self.block()
     if self.at(Token.else) { // must be on the '}' line (the lexer emits a newline otherwise)
         self.i += 1
         c: u32 = 0
@@ -1187,17 +1167,14 @@ Parser.for_semi(mut self, hline: u32, what: string) {
 /* The three-clause tail after the init: [cond] ';' [post] block. */
 Parser.for_tail(mut self, n: u32, hline: u32) {
     if !self.at(Token.semi) && !self.at(Token.lbrace) {
-        b: u32 = mut self.expr(NOSLIT)
-        self.nodes[n].b = b
+        self.nodes[n].b = mut self.expr(NOSLIT)
     }
     mut self.for_semi(hline, "';' after the for-head condition")
     if !self.at(Token.lbrace) {
-        c: u32 = mut self.expr_stmt(NOSLIT)
-        self.nodes[n].c = c
+        self.nodes[n].c = mut self.expr_stmt(NOSLIT)
     }
     if self.line() != hline { mut self.fail("for-head clauses must stay on one physical line") }
-    d: u32 = mut self.block()
-    self.nodes[n].d = d
+    self.nodes[n].d = mut self.block()
 }
 
 /* The head after `for`, told apart by bounded lookahead: `{` infinite, `;`
@@ -1208,8 +1185,7 @@ Parser.for_head(mut self, n: u32): u32 {
     hline: u32 = self.line()
     if self.at(Token.lbrace) { // infinite: exits only via break/return
         self.nodes[n].flags |= F_FORGEN
-        d: u32 = mut self.block()
-        self.nodes[n].d = d
+        self.nodes[n].d = mut self.block()
         return n
     }
     if self.at(Token.semi) { // three-clause with an empty init
@@ -1225,8 +1201,7 @@ Parser.for_head(mut self, n: u32): u32 {
             v: usize = mut self.expect(Token.ident, "loop variable name")
             binder: u32 = mut self.ident_node(Kind.param, v)
             mut self.expect(Token.colon, "':' after loop variable")
-            a: u32 = mut self.parse_type()
-            self.nodes[binder].a = a
+            self.nodes[binder].a = mut self.parse_type()
             mut self.push(binder)
             if !self.at(Token.comma) { break }
             mut self.bare_list_line(line)
@@ -1246,34 +1221,29 @@ Parser.for_head(mut self, n: u32): u32 {
             r: u32 = mut self.nd(Kind.range) // at '..', like a binary node
             self.i += 1
             self.nodes[r].a = it
-            b: u32 = mut self.expr(NOSLIT)
-            self.nodes[r].b = b
+            self.nodes[r].b = mut self.expr(NOSLIT)
             if self.ident_at(0, "step") {
                 self.i += 1
-                c: u32 = mut self.expr(NOSLIT)
-                self.nodes[r].c = c
+                self.nodes[r].c = mut self.expr(NOSLIT)
             }
             it = r
         }
         self.nodes[n].b = it
-        c: u32 = mut self.block()
-        self.nodes[n].c = c
+        self.nodes[n].c = mut self.block()
         return n
     }
     self.nodes[n].flags |= F_FORGEN
     if self.at(Token.ident) && self.kth(1) == Token.colon { // declaration init
         name: usize = self.i
         self.i += 1 // ident; decl_stmt consumes ':'
-        a: u32 = mut self.decl_stmt(name)
-        self.nodes[n].a = a
+        self.nodes[n].a = mut self.decl_stmt(name)
     } else {
         a: u32 = mut self.expr_stmt(NOSLIT)
         self.nodes[n].a = a
         if self.at(Token.lbrace) { // condition only: the expression is the condition
             self.nodes[n].b = self.nodes[a].a
             self.nodes[n].a = 0
-            d: u32 = mut self.block()
-            self.nodes[n].d = d
+            self.nodes[n].d = mut self.block()
             return n
         }
     }
@@ -1362,8 +1332,7 @@ Parser.variant_pattern(mut self): u32 {
     bname: usize = mut self.expect(Token.ident, "binder name")
     binder: u32 = mut self.ident_node(Kind.param, bname)
     if mut self.ate(Token.colon) { // `Variant(k)` is a typeless binder; sema diagnoses it
-        a: u32 = mut self.parse_type()
-        self.nodes[binder].a = a
+        self.nodes[binder].a = mut self.parse_type()
     }
     self.nodes[vp].b = binder
     mut self.expect(Token.rparen, "')' to close variant pattern")
@@ -1531,8 +1500,7 @@ Parser.decl_stmt(mut self, first: usize): u32 {
                 self.i += 1
             }
             binder: u32 = mut self.ident_node(Kind.param, name)
-            a: u32 = mut self.parse_type()
-            self.nodes[binder].a = a
+            self.nodes[binder].a = mut self.parse_type()
             mut self.push(binder)
         } else {
             mut self.push(mut self.ident_node(Kind.ident, name))
@@ -1587,8 +1555,7 @@ Parser.stmt(mut self): u32 {
         Token.return {
             n: u32 = mut self.leaf(Kind.return)
             if !self.at(Token.newline) && !self.at(Token.rbrace) && !self.at(Token.eof) {
-                a: u32 = mut self.expr_list(0)
-                self.nodes[n].a = a
+                self.nodes[n].a = mut self.expr_list(0)
             }
             return n
         }
@@ -1606,8 +1573,7 @@ Parser.stmt(mut self): u32 {
                 self.nodes[e].flags |= F_MUT
                 self.nodes[n].a = e
             } else {
-                a: u32 = mut self.expr(NOSLIT)
-                self.nodes[n].a = a
+                self.nodes[n].a = mut self.expr(NOSLIT)
             }
             return n
         }
@@ -1628,8 +1594,7 @@ Parser.stmt(mut self): u32 {
             if self.kth(2) == Token.lbrace { // labeled block
                 n: u32 = mut self.ident_node(Kind.label, self.i)
                 self.i += 2
-                a: u32 = mut self.block()
-                self.nodes[n].a = a
+                self.nodes[n].a = mut self.block()
                 return n
             }
             if self.kth(2) == Token.for { // labeled for: block-label namespace
@@ -1674,8 +1639,7 @@ Parser.expr_stmt(mut self, ctx: int): u32 {
             if self.at(Token.ident) && self.kth(1) == Token.colon {
                 binder: u32 = mut self.ident_node(Kind.param, self.i)
                 self.i += 2
-                t: u32 = mut self.parse_type()
-                self.nodes[binder].a = t
+                self.nodes[binder].a = mut self.parse_type()
                 mut self.push(binder)
                 self.nodes[a].flags |= F_MIXED
             } else {
@@ -1714,8 +1678,7 @@ Parser.expr_stmt(mut self, ctx: int): u32 {
         mark: usize = self.nstack
         mut self.push(e)
         mut self.close(a, mark)
-        r: u32 = mut self.expr(ctx)
-        self.nodes[a].a = r
+        self.nodes[a].a = mut self.expr(ctx)
         return a
     }
     n: u32 = mut self.make(Kind.exprstmt, start)

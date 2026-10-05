@@ -31,23 +31,23 @@ b0:
     %0 = param ptr 0
     %1 = param u64 1
     %2 = param u64 2
-    %3 = lt bool %2, %1
-    check %3, 22:7 bounds violation
-    %5 = padd ptr %0, %2 * 1
-    %6 = load u8 [%5]
-    %7 = const u8 1
-    %8 = add.chk u8 %6, %7
-    store [%5], %8
-    %10 = const u64 1
-    %11 = add.chk u64 %2, %10
-    %12 = lt bool %11, %1
-    check %12, 23:7 bounds violation
-    %14 = padd ptr %0, %11 * 1
-    %15 = lt bool %2, %1
-    check %15, 23:18 bounds violation
-    %17 = padd ptr %0, %2 * 1
-    %18 = load u8 [%17]
-    store [%14], %18
+    %3 = const u8 1
+    %4 = lt bool %2, %1
+    check %4, 22:7 bounds violation
+    %6 = padd ptr %0, %2 * 1
+    %7 = load u8 [%6]
+    %8 = add.chk u8 %7, %3
+    store [%6], %8
+    %10 = lt bool %2, %1
+    check %10, 23:18 bounds violation
+    %12 = padd ptr %0, %2 * 1
+    %13 = load u8 [%12]
+    %14 = const u64 1
+    %15 = add.chk u64 %2, %14
+    %16 = lt bool %15, %1
+    check %16, 23:7 bounds violation
+    %18 = padd ptr %0, %15 * 1
+    store [%18], %13
     ret
 }
 

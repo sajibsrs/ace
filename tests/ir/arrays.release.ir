@@ -17,9 +17,9 @@ b0:
     %2 = param u8 2
     %3 = padd ptr %0, %1 * 1
     store [%3 + 4], %2
-    %5 = load u8 [%0 + 4]
-    %6 = const u8 1
-    %7 = add u8 %5, %6
+    %5 = const u8 1
+    %6 = load u8 [%0 + 4]
+    %7 = add u8 %6, %5
     store [%0 + 4], %7
     ret
 }
@@ -103,9 +103,9 @@ b0:
     %24 = const u8 7
     %25 = padd ptr %6, %23 * 1
     store [%25 + 4], %24
-    %27 = load u8 [%6 + 4]
-    %28 = const u8 1
-    %29 = add u8 %27, %28
+    %27 = const u8 1
+    %28 = load u8 [%6 + 4]
+    %29 = add u8 %28, %27
     store [%6 + 4], %29
     %31 = const u64 72340172838076673
     store [%5], %31

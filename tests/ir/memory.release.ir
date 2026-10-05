@@ -46,9 +46,9 @@ bump(ptr, ptr): void {
 b0:
     %0 = param ptr 0
     %1 = param ptr 1
-    %2 = load i64 [%0]
-    %3 = const i64 1
-    %4 = add i64 %2, %3
+    %2 = const i64 1
+    %3 = load i64 [%0]
+    %4 = add i64 %3, %2
     store [%0], %4
     %6 = const u64 1
     %7 = padd ptr %1, %6 * 4
@@ -143,9 +143,9 @@ b0:
     store [%1], %2
     %4 = const i64 1
     store [%0], %4
-    %6 = load i64 [%0]
-    %7 = const i64 1
-    %8 = add i64 %6, %7
+    %6 = const i64 1
+    %7 = load i64 [%0]
+    %8 = add i64 %7, %6
     store [%0], %8
     %10 = const u64 1
     %11 = padd ptr %1, %10 * 4
@@ -153,14 +153,14 @@ b0:
     %13 = const i32 2
     %14 = sub i32 %12, %13
     store [%1], %14
-    %16 = global ptr TOTAL
-    %17 = global ptr twice
-    %18 = load i64 [%0]
-    %19 = call i64 apply(%17, %18)
-    store [%16], %19
-    %21 = load i64 [%0]
-    %22 = load i64 [%16]
-    %23 = add i64 %21, %22
+    %16 = global ptr twice
+    %17 = load i64 [%0]
+    %18 = call i64 apply(%16, %17)
+    %19 = global ptr TOTAL
+    store [%19], %18
+    %21 = load i64 [%19]
+    %22 = load i64 [%0]
+    %23 = add i64 %22, %21
     store [%0], %23
     %25 = load i64 [%0]
     %26 = const i64 1

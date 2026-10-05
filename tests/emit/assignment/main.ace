@@ -1,0 +1,71 @@
+// expect-exit: 0
+// A single assignment evaluates its right side whole, then its target
+// (Memory #9): a right side that moves or writes the target's storage
+// leaves no stale address or old value behind.
+import mem
+
+Flags: bits u32 { low: 4, high: 4, _: 24 }
+Big: struct { w: [8]int = [0 : 8] }
+S: struct {
+    xs: mut []int = null,
+    bs: mut []Big = null,
+    n: int = 0,
+    f: Flags = Flags {},
+}
+
+total: int = 0
+
+S.grow(mut self): int {
+    g: mut []int, ok: bool = mem.grow[int](self.xs, 1 << 20)
+    g[0] = 100
+    self.xs = g
+    return 7
+}
+
+S.grow_big(mut self): Big {
+    g: mut []Big, ok: bool = mem.grow[Big](self.bs, 1 << 16)
+    self.bs = g
+    b: Big = Big {}
+    b.w[3] = 9
+    return b
+}
+
+S.bump(mut self): int {
+    self.n = 50
+    self.f.high = 3
+    return 1
+}
+
+S.at(mut self): usize {
+    self.bs[0].w[5] = 4
+    return 0
+}
+
+add_total(): int {
+    total = 30
+    return 2
+}
+
+main(): int {
+    s: S = S {}
+    s.xs = mem.alloc[int](1)
+    s.bs = mem.alloc[Big](1)
+    defer mem.release[int](mut s.xs)
+    defer mem.release[Big](mut s.bs)
+    s.xs[0] = mut s.grow()
+    if s.xs[0] != 7 { return 1 }
+    s.xs[0] += mut s.grow()
+    if s.xs[0] != 107 { return 2 }
+    s.bs[0] = mut s.grow_big()
+    if s.bs[0].w[3] != 9 { return 3 }
+    s.n += mut s.bump()
+    if s.n != 51 { return 4 }
+    s.f.low = u32(mut s.bump())
+    if s.f.high != 3 || s.f.low != 1 { return 5 }
+    total += add_total()
+    if total != 32 { return 6 }
+    // the target's call runs after the right side is read, so its write is overwritten
+    s.bs[mut s.at()] = s.bs[0]
+    if s.bs[0].w[5] != 0 { return 7 }
+    return 0
+}

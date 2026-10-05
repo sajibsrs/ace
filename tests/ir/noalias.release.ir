@@ -11,10 +11,10 @@ b1: ; preds b0, b2
     %7 = lt bool %6, %1
     br %7, b2, b3
 b2: ; preds b1
-    %9 = padd ptr %0, %6 * 1
-    %10 = padd ptr %2, %6 * 1
-    %11 = load u8 [%10]
-    store [%9], %11
+    %9 = padd ptr %2, %6 * 1
+    %10 = load u8 [%9]
+    %11 = padd ptr %0, %6 * 1
+    store [%11], %10
     %13 = const u64 1
     %14 = add u64 %6, %13
     jmp b1
@@ -66,9 +66,9 @@ b1: ; preds b0, b2
     br %10, b2, b3
 b2: ; preds b1
     %12 = cast u64 %9
-    %13 = padd ptr %2, %12 * 1
-    %14 = cast u8 %12
-    store [%13], %14
+    %13 = cast u8 %12
+    %14 = padd ptr %2, %12 * 1
+    store [%14], %13
     %16 = const i64 1
     %17 = add i64 %9, %16
     jmp b1

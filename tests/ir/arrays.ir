@@ -26,9 +26,9 @@ b0:
     check %4, 18:13 bounds violation
     %6 = padd ptr %0, %1 * 1
     store [%6 + 4], %2
-    %8 = load u8 [%0 + 4]
-    %9 = const u8 1
-    %10 = add.chk u8 %8, %9
+    %8 = const u8 1
+    %9 = load u8 [%0 + 4]
+    %10 = add.chk u8 %9, %8
     store [%0 + 4], %10
     ret
 }

@@ -740,22 +740,22 @@ b35: ; preds b33, b37
     ret %331
 b36: ; preds b37
     %334 = const i64 1
-    %335 = const i64 0
-    %336 = ge bool %334, %335
-    check %336, 117:7 bounds violation
-    %338 = cast u64 %334
-    %339 = const u64 2
-    %340 = lt bool %338, %339
-    check %340, 117:7 bounds violation
-    %342 = padd ptr %4, %338 * 24
-    %343 = const i64 1
-    call.mem make(%343, %1)
+    %335 = const i64 1
+    call.mem make(%335, %1)
+    %337 = const i64 0
+    %338 = ge bool %334, %337
+    check %338, 117:7 bounds violation
+    %340 = cast u64 %334
+    %341 = const u64 2
+    %342 = lt bool %340, %341
+    check %342, 117:7 bounds violation
+    %344 = padd ptr %4, %340 * 24
     %345 = load u64 [%1]
-    store [%342], %345
+    store [%344], %345
     %347 = load u64 [%1 + 8]
-    store [%342 + 8], %347
+    store [%344 + 8], %347
     %349 = load u64 [%1 + 16]
-    store [%342 + 16], %349
+    store [%344 + 16], %349
     %351 = const i64 0
     %352 = ge bool %334, %351
     check %352, 118:15 bounds violation

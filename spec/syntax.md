@@ -40,8 +40,9 @@
     positional tuple layout, performs no allocation, and introduces no new
     runtime machinery.
 12. `if`, `switch`, and `for` are statements, not expressions, and their
-    conditions require `bool`. Compound assignments are pure sugar with the
-    left operand evaluated once; `++` and `--` do not exist.
+    conditions require `bool`. Compound assignments `x op= e` follow Memory #9:
+    `e` first, then `x` evaluated once and its old value read; `++` and `--`
+    do not exist.
 13. A struct field may opt into a compile-time default with `name: Type =
     expression`. A named-field struct literal supplies a field value with
     `name = expression`; `:` is reserved there for declarations and type

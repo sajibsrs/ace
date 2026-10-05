@@ -80,3 +80,7 @@
   accepts any keyword token where it declares a member or reads one after `.`,
   and the lexer ends a line after such a keyword as after an identifier;
   bindings stay reserved.
+- An assignment evaluates its right side before its target (Memory #9): `x = e`
+  and `x op= e` lower `e` first, then the target's place, then the old value,
+  so a right side that grows the target's slice stores into the new storage; an
+  aggregate copied from a place is snapshotted only when the target has a call.

@@ -21,9 +21,9 @@ b2: ; preds b0
 bump(ptr): void {
 b0:
     %0 = param ptr 0
-    %1 = load i64 [%0]
-    %2 = const i64 1
-    %3 = add.chk i64 %1, %2
+    %1 = const i64 1
+    %2 = load i64 [%0]
+    %3 = add.chk i64 %2, %1
     store [%0], %3
     ret
 }
