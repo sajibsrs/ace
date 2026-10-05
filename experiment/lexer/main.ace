@@ -9,7 +9,6 @@ import sys
 import lexer: "./lexer.ace"
 
 Token: type = lexer.Token
-TokKind: type = lexer.TokKind
 
 /* Buffered standard output. */
 Out: struct {
@@ -111,47 +110,48 @@ main(): int {
     for {
         t: Token, err: Error = mut lx.next()
         if err != null {
-            line: u32, col: u32 = lx.where()
-            fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", path, int(line), int(col), err.message)
+            eline: u32, ecol: u32 = lx.where()
+            fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", path, int(eline), int(ecol), err.message)
             errors += 1
         }
-        mut out.num(u64(t.line))
+        line: u32, col: u32 = lx.pos()
+        mut out.num(u64(line))
         mut out.byte(':')
-        mut out.num(u64(t.col))
+        mut out.num(u64(col))
         mut out.byte('\t')
-        mut out.put(lexer.disp(t.kind))
-        switch t.kind {
-            TokKind.ident {
+        mut out.put(lexer.disp(t))
+        switch t {
+            Token.ident {
                 mut out.byte('\t')
-                mut out.put(t.text)
+                mut out.put(lx.lit())
             }
-            TokKind.int {
+            Token.int {
                 mut out.byte('\t')
-                mut out.num(t.ival)
+                mut out.num(lx.int())
             }
-            TokKind.float {
+            Token.float {
                 mut out.byte('\t')
-                mut out.general(t.fval)
+                mut out.general(lx.float())
             }
-            TokKind.string {
+            Token.string {
                 mut out.put("\t\"")
-                mut out.quoted(t.text)
+                mut out.quoted(lx.lit())
                 mut out.byte('"')
             }
-            TokKind.char {
+            Token.char {
                 mut out.byte('\t')
-                if t.ival >= 33 && t.ival <= 126 {
+                if lx.int() >= 33 && lx.int() <= 126 {
                     mut out.byte('\'')
-                    mut out.byte(u8(t.ival))
+                    mut out.byte(u8(lx.int()))
                     mut out.byte('\'')
                 } else {
-                    mut out.num(t.ival)
+                    mut out.num(lx.int())
                 }
             }
             default {}
         }
         mut out.byte('\n')
-        if t.kind == TokKind.eof { break }
+        if t == Token.eof { break }
     }
     mut out.flush()
     if errors > 0 { return 1 }

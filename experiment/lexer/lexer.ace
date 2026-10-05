@@ -1,14 +1,15 @@
 /* lexer — the Ace lexer written in Ace, mirroring src/lexer.c token for token.
  *
- * `Lexer.next` streams one token per call. Identifier text is a view into the
- * source; a string literal's decoded bytes live in the lexer's scratch buffer
- * and stay valid only until the next call.
+ * `Lexer.next` streams one token per call; the lexer holds that token's
+ * position and value (`pos`, `lit`, `int`, `float`) until the next call.
+ * Identifier text is a view into the source; a string literal's decoded bytes
+ * live in the lexer's scratch buffer.
  */
 
 import mem
 import str
 
-pub TokKind: enum u8 {
+pub Token: enum u8 {
     eof, newline, ident,
     kw_import, kw_pub, kw_mut, kw_const, kw_noalias, kw_if, kw_else, kw_for,
     kw_in, kw_switch, kw_default, kw_return, kw_break, kw_continue, kw_defer,
@@ -24,95 +25,95 @@ pub TokKind: enum u8 {
     dot, dot_dot, dot_dot_dot,
 }
 
-/* Display names: one per TokKind, checked complete by the compiler. */
-DISP: [TokKind]string = [
-    TokKind.eof = "eof",
-    TokKind.newline = "newline",
-    TokKind.ident = "ident",
-    TokKind.kw_import = "import",
-    TokKind.kw_pub = "pub",
-    TokKind.kw_mut = "mut",
-    TokKind.kw_const = "const",
-    TokKind.kw_noalias = "noalias",
-    TokKind.kw_if = "if",
-    TokKind.kw_else = "else",
-    TokKind.kw_for = "for",
-    TokKind.kw_in = "in",
-    TokKind.kw_switch = "switch",
-    TokKind.kw_default = "default",
-    TokKind.kw_return = "return",
-    TokKind.kw_break = "break",
-    TokKind.kw_continue = "continue",
-    TokKind.kw_defer = "defer",
-    TokKind.kw_asm = "asm",
-    TokKind.kw_extern = "extern",
-    TokKind.kw_contract = "contract",
-    TokKind.kw_struct = "struct",
-    TokKind.kw_embed = "embed",
-    TokKind.kw_signs = "signs",
-    TokKind.kw_distinct = "distinct",
-    TokKind.kw_type = "type",
-    TokKind.kw_enum = "enum",
-    TokKind.kw_union = "union",
-    TokKind.kw_specialized = "specialized",
-    TokKind.kw_intrinsic = "intrinsic",
-    TokKind.kw_inline = "inline",
-    TokKind.kw_volatile = "volatile",
-    TokKind.kw_self = "self",
-    TokKind.kw_null = "null",
-    TokKind.kw_true = "true",
-    TokKind.kw_false = "false",
-    TokKind.int = "int",
-    TokKind.float = "float",
-    TokKind.string = "string",
-    TokKind.char = "char",
-    TokKind.assign = "=",
-    TokKind.add_eq = "+=",
-    TokKind.sub_eq = "-=",
-    TokKind.mul_eq = "*=",
-    TokKind.div_eq = "/=",
-    TokKind.mod_eq = "%=",
-    TokKind.and_eq = "&=",
-    TokKind.or_eq = "|=",
-    TokKind.xor_eq = "^=",
-    TokKind.shl_eq = "<<=",
-    TokKind.shr_eq = ">>=",
-    TokKind.plus = "+",
-    TokKind.minus = "-",
-    TokKind.star = "*",
-    TokKind.slash = "/",
-    TokKind.percent = "%",
-    TokKind.eq_eq = "==",
-    TokKind.bang_eq = "!=",
-    TokKind.lt = "<",
-    TokKind.le = "<=",
-    TokKind.gt = ">",
-    TokKind.ge = ">=",
-    TokKind.and_and = "&&",
-    TokKind.or_or = "||",
-    TokKind.amp = "&",
-    TokKind.pipe = "|",
-    TokKind.caret = "^",
-    TokKind.shl = "<<",
-    TokKind.shr = ">>",
-    TokKind.tilde = "~",
-    TokKind.bang = "!",
-    TokKind.lparen = "(",
-    TokKind.rparen = ")",
-    TokKind.lbrack = "[",
-    TokKind.rbrack = "]",
-    TokKind.lbrace = "{",
-    TokKind.rbrace = "}",
-    TokKind.comma = ",",
-    TokKind.colon = ":",
-    TokKind.semi = ";",
-    TokKind.at = "@",
-    TokKind.dot = ".",
-    TokKind.dot_dot = "..",
-    TokKind.dot_dot_dot = "...",
+/* Display names: one per Token, checked complete by the compiler. */
+DISP: [Token]string = [
+    Token.eof = "eof",
+    Token.newline = "newline",
+    Token.ident = "ident",
+    Token.kw_import = "import",
+    Token.kw_pub = "pub",
+    Token.kw_mut = "mut",
+    Token.kw_const = "const",
+    Token.kw_noalias = "noalias",
+    Token.kw_if = "if",
+    Token.kw_else = "else",
+    Token.kw_for = "for",
+    Token.kw_in = "in",
+    Token.kw_switch = "switch",
+    Token.kw_default = "default",
+    Token.kw_return = "return",
+    Token.kw_break = "break",
+    Token.kw_continue = "continue",
+    Token.kw_defer = "defer",
+    Token.kw_asm = "asm",
+    Token.kw_extern = "extern",
+    Token.kw_contract = "contract",
+    Token.kw_struct = "struct",
+    Token.kw_embed = "embed",
+    Token.kw_signs = "signs",
+    Token.kw_distinct = "distinct",
+    Token.kw_type = "type",
+    Token.kw_enum = "enum",
+    Token.kw_union = "union",
+    Token.kw_specialized = "specialized",
+    Token.kw_intrinsic = "intrinsic",
+    Token.kw_inline = "inline",
+    Token.kw_volatile = "volatile",
+    Token.kw_self = "self",
+    Token.kw_null = "null",
+    Token.kw_true = "true",
+    Token.kw_false = "false",
+    Token.int = "int",
+    Token.float = "float",
+    Token.string = "string",
+    Token.char = "char",
+    Token.assign = "=",
+    Token.add_eq = "+=",
+    Token.sub_eq = "-=",
+    Token.mul_eq = "*=",
+    Token.div_eq = "/=",
+    Token.mod_eq = "%=",
+    Token.and_eq = "&=",
+    Token.or_eq = "|=",
+    Token.xor_eq = "^=",
+    Token.shl_eq = "<<=",
+    Token.shr_eq = ">>=",
+    Token.plus = "+",
+    Token.minus = "-",
+    Token.star = "*",
+    Token.slash = "/",
+    Token.percent = "%",
+    Token.eq_eq = "==",
+    Token.bang_eq = "!=",
+    Token.lt = "<",
+    Token.le = "<=",
+    Token.gt = ">",
+    Token.ge = ">=",
+    Token.and_and = "&&",
+    Token.or_or = "||",
+    Token.amp = "&",
+    Token.pipe = "|",
+    Token.caret = "^",
+    Token.shl = "<<",
+    Token.shr = ">>",
+    Token.tilde = "~",
+    Token.bang = "!",
+    Token.lparen = "(",
+    Token.rparen = ")",
+    Token.lbrack = "[",
+    Token.rbrack = "]",
+    Token.lbrace = "{",
+    Token.rbrace = "}",
+    Token.comma = ",",
+    Token.colon = ":",
+    Token.semi = ";",
+    Token.at = "@",
+    Token.dot = ".",
+    Token.dot_dot = "..",
+    Token.dot_dot_dot = "...",
 ]
 
-pub disp(kind: TokKind): string {
+pub disp(kind: Token): string {
     return DISP[kind]
 }
 
@@ -137,26 +138,20 @@ pub LexErr: error {
     18: comment = "unterminated block comment",
 }
 
-pub Token: struct {
-    kind: TokKind,
-    line: u32,
-    col: u32,
-    text: string,  // ident: source view; string: decoded bytes (scratch)
-    ival: u64,     // int value, char byte
-    fval: f64,     // float value
-}
-
 pub Lexer: struct {
     src: string,
-    pos: usize,
+    off: usize,
     line: u32,
     col: u32,
     tline: u32,     // start of the token being scanned
     tcol: u32,
-    prev: TokKind,  // last returned kind; newline = none or already emitted
+    prev: Token,    // last returned token; newline = none or already emitted
     count: usize,   // tokens returned so far
     scratch: mut []u8 = null,
     used: usize,
+    text: string,   // ident: source view; string: decoded bytes (scratch)
+    ival: u64,      // int value, char byte
+    fval: f64,      // float value
     err: Error,     // first error of the current token
     eline: u32,
     ecol: u32,
@@ -165,12 +160,12 @@ pub Lexer: struct {
 /* A lexer over `src`, which must outlive it. Call `wipe` when done. */
 pub Lexer.new(src: string): Lexer {
     lx: Lexer = Lexer {
-        src = src, pos = 0, line = 1, col = 1, tline = 1, tcol = 1,
-        prev = TokKind.newline, count = 0, used = 0,
+        src = src, off = 0, line = 1, col = 1, tline = 1, tcol = 1,
+        prev = Token.newline, count = 0, used = 0, text = "", ival = 0, fval = 0.0,
         err = null, eline = 0, ecol = 0,
     }
     if src.len >= 3 && src[0] == 0xEF && src[1] == 0xBB && src[2] == 0xBF {
-        lx.pos = 3 // UTF-8 BOM
+        lx.off = 3 // UTF-8 BOM
     }
     return lx
 }
@@ -180,26 +175,48 @@ pub Lexer.wipe(mut self) {
     self.used = 0
 }
 
+/* The current token's position. */
+pub Lexer.pos(self): (u32, u32) {
+    return self.tline, self.tcol
+}
+
+/* The current token's text: an ident's source view, or a string literal's
+ * decoded bytes (valid until the next `next`).
+ */
+pub Lexer.lit(self): string {
+    return self.text
+}
+
+/* The current int token's value, or a char token's byte. */
+pub Lexer.int(self): u64 {
+    return self.ival
+}
+
+/* The current float token's value. */
+pub Lexer.float(self): f64 {
+    return self.fval
+}
+
 /* The current error's position (valid when `next` returned an error). */
 pub Lexer.where(self): (u32, u32) {
     return self.eline, self.ecol
 }
 
 inline Lexer.cur(self): u8 {
-    if self.pos < self.src.len { return self.src[self.pos] }
+    if self.off < self.src.len { return self.src[self.off] }
     return 0
 }
 
 inline Lexer.peek(self, k: usize): u8 {
-    p: usize = self.pos + k
+    p: usize = self.off + k
     if p < self.src.len { return self.src[p] }
     return 0
 }
 
 inline Lexer.adv(mut self): u8 {
-    if self.pos >= self.src.len { return 0 }
-    c: u8 = self.src[self.pos]
-    self.pos += 1
+    if self.off >= self.src.len { return 0 }
+    c: u8 = self.src[self.off]
+    self.off += 1
     if c == '\n' {
         self.line += 1
         self.col = 1
@@ -229,18 +246,14 @@ Lexer.push(mut self, c: u8) {
     self.used += 1
 }
 
-Lexer.make(self, kind: TokKind): Token {
-    return Token { kind = kind, line = self.tline, col = self.tcol, text = "", ival = 0, fval = 0.0 }
-}
-
 /* Can a token of this kind end an expression? (the newline rule) */
-ends_expr(k: TokKind): bool {
+ends_expr(k: Token): bool {
     switch k {
-        (TokKind.ident, TokKind.int, TokKind.float, TokKind.string, TokKind.char,
-         TokKind.kw_null, TokKind.kw_true, TokKind.kw_false, TokKind.kw_self,
-         TokKind.rparen, TokKind.rbrack, TokKind.rbrace,
-         TokKind.kw_return, TokKind.kw_break, TokKind.kw_continue,
-         TokKind.kw_specialized, TokKind.kw_intrinsic) { return true }
+        (Token.ident, Token.int, Token.float, Token.string, Token.char,
+         Token.kw_null, Token.kw_true, Token.kw_false, Token.kw_self,
+         Token.rparen, Token.rbrack, Token.rbrace,
+         Token.kw_return, Token.kw_break, Token.kw_continue,
+         Token.kw_specialized, Token.kw_intrinsic) { return true }
         default {}
     }
     return false
@@ -278,108 +291,107 @@ seps_ok(p: []char, base: int): bool {
     return true
 }
 
-keyword(t: []char): TokKind {
-    k: TokKind = TokKind.ident
+keyword(t: []char): Token {
+    k: Token = Token.ident
     switch t[0] {
-        'a' { if mem.equal(t, "asm") { k = TokKind.kw_asm } }
-        'b' { if mem.equal(t, "break") { k = TokKind.kw_break } }
+        'a' { if mem.equal(t, "asm") { k = Token.kw_asm } }
+        'b' { if mem.equal(t, "break") { k = Token.kw_break } }
         'c' {
-              if mem.equal(t, "const") {
-                  k = TokKind.kw_const
-              } else if mem.equal(t, "continue") {
-                  k = TokKind.kw_continue
-              } else if mem.equal(t, "contract") {
-                  k = TokKind.kw_contract
-              }
+            if mem.equal(t, "const") {
+                k = Token.kw_const
+            } else if mem.equal(t, "continue") {
+                k = Token.kw_continue
+            } else if mem.equal(t, "contract") {
+                k = Token.kw_contract
             }
+        }
         'd' {
-              if mem.equal(t, "default") {
-                  k = TokKind.kw_default
-              } else if mem.equal(t, "defer") {
-                  k = TokKind.kw_defer
-              } else if mem.equal(t, "distinct") {
-                  k = TokKind.kw_distinct
-              }
+            if mem.equal(t, "default") {
+                k = Token.kw_default
+            } else if mem.equal(t, "defer") {
+                k = Token.kw_defer
+            } else if mem.equal(t, "distinct") {
+                k = Token.kw_distinct
             }
+        }
         'e' {
             if mem.equal(t, "else") {
-                k = TokKind.kw_else
+                k = Token.kw_else
             } else if mem.equal(t, "extern") {
-                k = TokKind.kw_extern
+                k = Token.kw_extern
             } else if mem.equal(t, "embed") {
-                k = TokKind.kw_embed
+                k = Token.kw_embed
             } else if mem.equal(t, "enum") {
-                k = TokKind.kw_enum
+                k = Token.kw_enum
             }
         }
         'f' {
             if mem.equal(t, "for") {
-                k = TokKind.kw_for
+                k = Token.kw_for
             } else if mem.equal(t, "false") {
-                k = TokKind.kw_false
+                k = Token.kw_false
             }
         }
         'i' {
             if mem.equal(t, "if") {
-                k = TokKind.kw_if
+                k = Token.kw_if
             } else if mem.equal(t, "in") {
-                k = TokKind.kw_in
+                k = Token.kw_in
             } else if mem.equal(t, "import") {
-                k = TokKind.kw_import
+                k = Token.kw_import
             } else if mem.equal(t, "intrinsic") {
-                k = TokKind.kw_intrinsic
+                k = Token.kw_intrinsic
             } else if mem.equal(t, "inline") {
-                k = TokKind.kw_inline
+                k = Token.kw_inline
             }
         }
-        'm' { if mem.equal(t, "mut") { k = TokKind.kw_mut } }
+        'm' { if mem.equal(t, "mut") { k = Token.kw_mut } }
         'n' {
             if mem.equal(t, "noalias") {
-                k = TokKind.kw_noalias
+                k = Token.kw_noalias
             } else if mem.equal(t, "null") {
-                k = TokKind.kw_null
+                k = Token.kw_null
             }
         }
-        'p' { if mem.equal(t, "pub") { k = TokKind.kw_pub } }
-        'r' { if mem.equal(t, "return") { k = TokKind.kw_return } }
+        'p' { if mem.equal(t, "pub") { k = Token.kw_pub } }
+        'r' { if mem.equal(t, "return") { k = Token.kw_return } }
         's' {
             if mem.equal(t, "switch") {
-                k = TokKind.kw_switch
+                k = Token.kw_switch
             } else if mem.equal(t, "struct") {
-                k = TokKind.kw_struct
+                k = Token.kw_struct
             } else if mem.equal(t, "signs") {
-                k = TokKind.kw_signs
+                k = Token.kw_signs
             } else if mem.equal(t, "specialized") {
-                k = TokKind.kw_specialized
+                k = Token.kw_specialized
             } else if mem.equal(t, "self") {
-                k = TokKind.kw_self
+                k = Token.kw_self
             }
         }
         't' {
             if mem.equal(t, "type") {
-                k = TokKind.kw_type
+                k = Token.kw_type
             } else if mem.equal(t, "true") {
-                k = TokKind.kw_true
+                k = Token.kw_true
             }
         }
-        'u' { if mem.equal(t, "union") { k = TokKind.kw_union } }
-        'v' { if mem.equal(t, "volatile") { k = TokKind.kw_volatile } }
+        'u' { if mem.equal(t, "union") { k = Token.kw_union } }
+        'v' { if mem.equal(t, "volatile") { k = Token.kw_volatile } }
         default {}
     }
     return k
 }
 
 Lexer.scan_ident(mut self): Token {
-    start: usize = self.pos
+    start: usize = self.off
     for ident_char(self.cur()) { mut self.adv() }
-    text: string = self.src[start..self.pos]
-    t: Token = self.make(keyword(text))
-    t.text = text
-    return t
+    text: string = self.src[start..self.off]
+    self.text = text
+    return keyword(text)
 }
 
 Lexer.scan_number(mut self): Token {
-    start: usize = self.pos
+    start: usize = self.off
     base: int = 10
     if self.cur() == '0' && (self.peek(1) == 'x' || self.peek(1) == 'X') {
         mut self.adv()
@@ -391,9 +403,9 @@ Lexer.scan_number(mut self): Token {
         base = 2
     }
 
-    dstart: usize = self.pos
+    dstart: usize = self.off
     for self.cur() == '_' || digval(self.cur(), base) >= 0 { mut self.adv() }
-    dend: usize = self.pos
+    dend: usize = self.off
 
     is_float: bool = false
     if base == 10 && self.cur() == '.' && digval(self.peek(1), 10) >= 0 {
@@ -414,7 +426,7 @@ Lexer.scan_number(mut self): Token {
         }
     }
 
-    if !seps_ok(self.src[dstart..self.pos], base) { mut self.fail(LexErr.separator) }
+    if !seps_ok(self.src[dstart..self.off], base) { mut self.fail(LexErr.separator) }
     if dend == dstart {
         mut self.fail(LexErr.digits)
     } else if base == 2 && digval(self.cur(), 10) >= 0 {
@@ -423,13 +435,12 @@ Lexer.scan_number(mut self): Token {
 
     if is_float {
         self.used = 0
-        for i: usize in start .. self.pos {
+        for i: usize in start .. self.off {
             if self.src[i] != '_' { mut self.push(self.src[i]) }
         }
-        t: Token = self.make(TokKind.float)
         v: f64, ok: bool = str.parse[f64](self.scratch[..self.used])
-        t.fval = v
-        return t
+        self.fval = v
+        return Token.float
     }
 
     v: u64 = 0
@@ -445,10 +456,9 @@ Lexer.scan_number(mut self): Token {
         }
         v = v * b + dv
     }
-    t: Token = self.make(TokKind.int)
-    t.ival = v // on overflow, the digits read so far (as the C lexer keeps them)
+    self.ival = v // on overflow, the digits read so far (as the C lexer keeps them)
     if over { mut self.fail(LexErr.range) }
-    return t
+    return Token.int
 }
 
 /* Called with the backslash already consumed. */
@@ -507,9 +517,8 @@ Lexer.scan_string(mut self): Token {
             mut self.push(mut self.adv()) // UTF-8 bytes pass through
         }
     }
-    t: Token = self.make(TokKind.string)
-    t.text = self.scratch[..self.used]
-    return t
+    self.text = self.scratch[..self.used]
+    return Token.string
 }
 
 Lexer.scan_char(mut self): Token {
@@ -538,13 +547,12 @@ Lexer.scan_char(mut self): Token {
             mut self.adv()
         }
     }
-    t: Token = self.make(TokKind.char)
-    t.ival = u64(val)
-    return t
+    self.ival = u64(val)
+    return Token.char
 }
 
 /* `plain`, or `with_eq` when an '=' follows (consumed). */
-Lexer.eq(mut self, plain: TokKind, with_eq: TokKind): TokKind {
+Lexer.eq(mut self, plain: Token, with_eq: Token): Token {
     if self.cur() == '=' {
         mut self.adv()
         return with_eq
@@ -553,75 +561,75 @@ Lexer.eq(mut self, plain: TokKind, with_eq: TokKind): TokKind {
 }
 
 /* A punctuation token, or false after an unexpected byte (reported). */
-Lexer.scan_punct(mut self, c: u8): (TokKind, bool) {
+Lexer.scan_punct(mut self, c: u8): (Token, bool) {
     mut self.adv()
-    k: TokKind = TokKind.eof
+    k: Token = Token.eof
     switch c {
-        '(' { k = TokKind.lparen }
-        ')' { k = TokKind.rparen }
-        '[' { k = TokKind.lbrack }
-        ']' { k = TokKind.rbrack }
-        '{' { k = TokKind.lbrace }
-        '}' { k = TokKind.rbrace }
-        ',' { k = TokKind.comma }
+        '(' { k = Token.lparen }
+        ')' { k = Token.rparen }
+        '[' { k = Token.lbrack }
+        ']' { k = Token.rbrack }
+        '{' { k = Token.lbrace }
+        '}' { k = Token.rbrace }
+        ',' { k = Token.comma }
         ':' {
-              if self.cur() == ':' { mut self.fail(LexErr.colons) }
-              k = TokKind.colon
-            }
-        '~' { k = TokKind.tilde }
-        '+' { k = mut self.eq(TokKind.plus, TokKind.add_eq) }
-        '-' { k = mut self.eq(TokKind.minus, TokKind.sub_eq) }
-        '*' { k = mut self.eq(TokKind.star, TokKind.mul_eq) }
-        '%' { k = mut self.eq(TokKind.percent, TokKind.mod_eq) }
-        '^' { k = mut self.eq(TokKind.caret, TokKind.xor_eq) }
-        '=' { k = mut self.eq(TokKind.assign, TokKind.eq_eq) }
-        '!' { k = mut self.eq(TokKind.bang, TokKind.bang_eq) }
-        '/' { k = mut self.eq(TokKind.slash, TokKind.div_eq) }
+            if self.cur() == ':' { mut self.fail(LexErr.colons) }
+            k = Token.colon
+        }
+        '~' { k = Token.tilde }
+        '+' { k = mut self.eq(Token.plus, Token.add_eq) }
+        '-' { k = mut self.eq(Token.minus, Token.sub_eq) }
+        '*' { k = mut self.eq(Token.star, Token.mul_eq) }
+        '%' { k = mut self.eq(Token.percent, Token.mod_eq) }
+        '^' { k = mut self.eq(Token.caret, Token.xor_eq) }
+        '=' { k = mut self.eq(Token.assign, Token.eq_eq) }
+        '!' { k = mut self.eq(Token.bang, Token.bang_eq) }
+        '/' { k = mut self.eq(Token.slash, Token.div_eq) }
         '&' {
             if self.cur() == '&' {
                 mut self.adv()
-                k = TokKind.and_and
+                k = Token.and_and
             } else {
-                k = mut self.eq(TokKind.amp, TokKind.and_eq)
+                k = mut self.eq(Token.amp, Token.and_eq)
             }
         }
         '|' {
             if self.cur() == '|' {
                 mut self.adv()
-                k = TokKind.or_or
+                k = Token.or_or
             } else {
-                k = mut self.eq(TokKind.pipe, TokKind.or_eq)
+                k = mut self.eq(Token.pipe, Token.or_eq)
             }
         }
         '<' {
             if self.cur() == '<' {
                 mut self.adv()
-                k = mut self.eq(TokKind.shl, TokKind.shl_eq)
+                k = mut self.eq(Token.shl, Token.shl_eq)
             } else {
-                k = mut self.eq(TokKind.lt, TokKind.le)
+                k = mut self.eq(Token.lt, Token.le)
             }
         }
         '>' {
             if self.cur() == '>' {
                 mut self.adv()
-                k = mut self.eq(TokKind.shr, TokKind.shr_eq)
+                k = mut self.eq(Token.shr, Token.shr_eq)
             } else {
-                k = mut self.eq(TokKind.gt, TokKind.ge)
+                k = mut self.eq(Token.gt, Token.ge)
             }
         }
         '.' {
-            k = TokKind.dot
+            k = Token.dot
             if self.cur() == '.' {
                 mut self.adv()
-                k = TokKind.dot_dot
+                k = Token.dot_dot
                 if self.cur() == '.' {
                     mut self.adv()
-                    k = TokKind.dot_dot_dot
+                    k = Token.dot_dot_dot
                 }
             }
         }
-        ';' { k = TokKind.semi }
-        '@' { k = TokKind.at }
+        ';' { k = Token.semi }
+        '@' { k = Token.at }
         default {
             if c >= 0x80 {
                 mut self.fail(LexErr.non_ascii)
@@ -676,7 +684,7 @@ Lexer.trivia(mut self): bool {
 }
 
 Lexer.emit(mut self, t: Token): (Token, Error) {
-    self.prev = t.kind
+    self.prev = t
     self.count += 1
     e: Error = self.err
     self.err = null
@@ -693,22 +701,22 @@ pub Lexer.next(mut self): (Token, Error) {
         self.tcol = self.col
 
         if self.cur() == 0 {
-            if self.count > 0 && self.prev != TokKind.newline && self.prev != TokKind.eof {
-                return mut self.emit(self.make(TokKind.newline))
+            if self.count > 0 && self.prev != Token.newline && self.prev != Token.eof {
+                return mut self.emit(Token.newline)
             }
-            return mut self.emit(self.make(TokKind.eof))
+            return mut self.emit(Token.eof)
         }
 
         // No newline before ';' (for-head clauses stay joined).
-        if nl && ends_expr(self.prev) && self.cur() != ';' { return mut self.emit(self.make(TokKind.newline)) }
+        if nl && ends_expr(self.prev) && self.cur() != ';' { return mut self.emit(Token.newline) }
 
         c: u8 = self.cur()
         if ident_start(c) { return mut self.emit(mut self.scan_ident()) }
         if c >= '0' && c <= '9' { return mut self.emit(mut self.scan_number()) }
         if c == '"' { return mut self.emit(mut self.scan_string()) }
         if c == '\'' { return mut self.emit(mut self.scan_char()) }
-        k: TokKind, ok: bool = mut self.scan_punct(c)
-        if ok { return mut self.emit(self.make(k)) }
+        k: Token, ok: bool = mut self.scan_punct(c)
+        if ok { return mut self.emit(k) }
         // An unexpected byte yields no token; its error rides on the next one.
     }
 }
