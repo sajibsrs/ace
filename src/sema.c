@@ -1283,6 +1283,14 @@ static int is_void_name(Node* t) {
            t->len == 4 && memcmp(t->str, "void", 4) == 0;
 }
 
+/* Stamping substitutes a type parameter ahead of any declared type: the
+   index of the parameter a name binds under the current instantiation, or -1. */
+static int type_param_index(Ck* k, const char* name, uint32_t len) {
+    for (int i = 0; i < k->nsub; i++)
+        if ((uint32_t)strlen(k->tnames[i]) == len && memcmp(k->tnames[i], name, len) == 0) return i;
+    return -1;
+}
+
 /* A type parameter bound to 'void' names no value: it stands only where the
    generic's own return or a function type's return stands. */
 static SType* substituted_value_type(Ck* k, Node* t, int i) {
@@ -1295,11 +1303,10 @@ static SType* substituted_value_type(Ck* k, Node* t, int i) {
    type parameter — is admitted as T_VOID. */
 static SType* build_type_or_void(Ck* k, Node* t) {
     if (is_void_name(t)) return T_VOID;
-    if ((t->kind == N_NAMED || t->kind == N_IDENT) && !t->a && !t->nkids)
-        for (int i = 0; i < k->nsub; i++)
-            if ((uint32_t)strlen(k->tnames[i]) == t->len && memcmp(k->tnames[i], t->str, t->len) == 0 &&
-                k->ttypes[i]->kind == SK_VOID)
-                return T_VOID;
+    if ((t->kind == N_NAMED || t->kind == N_IDENT) && !t->a && !t->nkids) {
+        int i = type_param_index(k, t->str, t->len);
+        if (i >= 0 && k->ttypes[i]->kind == SK_VOID) return T_VOID;
+    }
     return build_type(k, t);
 }
 
@@ -1324,12 +1331,8 @@ static SType* build_named(Ck* k, Node* t) {
         ck_err(k, t, "module-qualified types need the stdlib (not yet linked)");
         return T_ERR;
     }
-    if (k->nsub) { // type-parameter substitution first (stamping)
-        for (int i = 0; i < k->nsub; i++)
-            if ((uint32_t)strlen(k->tnames[i]) == t->len &&
-                memcmp(k->tnames[i], t->str, t->len) == 0)
-                return substituted_value_type(k, t, i);
-    }
+    int ti = type_param_index(k, t->str, t->len); // stamping substitutes first
+    if (ti >= 0) return substituted_value_type(k, t, ti);
     if (is_void_name(t)) {
         ck_err(k, t, "'void' is allowed only as a function type's return or a type argument");
         return T_ERR;
@@ -1357,12 +1360,8 @@ static SType* build_type(Ck* k, Node* t) {
     switch (t->kind) {
     case N_NAMED: return build_named(k, t);
     case N_IDENT: { // typed struct-literal bases and call type arguments
-        if (k->nsub) { // expression-position type name: substitute like N_NAMED
-            for (int i = 0; i < k->nsub; i++)
-                if ((uint32_t)strlen(k->tnames[i]) == t->len &&
-                    memcmp(k->tnames[i], t->str, t->len) == 0)
-                    return substituted_value_type(k, t, i);
-        }
+        int ti = type_param_index(k, t->str, t->len); // substitute like N_NAMED
+        if (ti >= 0) return substituted_value_type(k, t, ti);
         if (is_void_name(t)) {
             ck_err(k, t, "'void' is allowed only as a function type's return or a type argument");
             return T_ERR;
@@ -4240,11 +4239,8 @@ static int struct_type_base(Ck* k, Node* base) {
  * type, substituted ahead of any declared type as build_named does. */
 static SType* bound_type_param(Ck* k, Node* base) {
     if (base->kind != N_IDENT) return NULL;
-    for (int i = 0; i < k->nsub; i++)
-        if ((uint32_t)strlen(k->tnames[i]) == base->len &&
-            memcmp(k->tnames[i], base->str, base->len) == 0)
-            return substituted_value_type(k, base, i);
-    return NULL;
+    int i = type_param_index(k, base->str, base->len);
+    return i >= 0 ? substituted_value_type(k, base, i) : NULL;
 }
 
 static SType* check_assoc_call(Ck* k, Node* call, SType* owner) {
