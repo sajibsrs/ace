@@ -41,8 +41,8 @@ main(): int {
     shape: Shape = Shape(&circle)
     metric: Metric = Metric(&circle)
     mut shape.scale(2)
-    Circle.scale(mut circle, 1)
-    direct: int = Circle.value(circle, 36)
+    mut circle.scale(1)
+    direct: int = circle.value(36)
     measured: int = metric.value(36)
     floating: f64 = circle.value(1.0)
 

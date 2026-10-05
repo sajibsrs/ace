@@ -1,5 +1,9 @@
 # Language
 
+- Type-qualified method calls (`Counter.get(c)`) are rejected: methods are
+  called only as `x.m(...)`, and an ambiguous promoted method is reached
+  through its named embedded field. Lowering drops the receiver-as-argument-zero
+  call path.
 - `x.f(args)` and `(x.f)(args)` call a function value stored in field `f`
   with no receiver, through auto-deref, chains, and indexing; sema marks the
   call and lowering emits an indirect call on the loaded field. Fields and a

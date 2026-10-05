@@ -566,7 +566,7 @@ static void scan_walk(Lw* l, Scan* sc, Node* n) {
         int ntargs;
         Node* f = scan_target(l, n, &targs, &ntargs);
         uint64_t esc = f ? scan_escapes(l, f, targs, ntargs) : ~(uint64_t)0;
-        int recv = n->a && n->a->kind == N_FIELD_E && !(n->flags & (F_METHOD | F_ASSOC | F_FIELDCALL));
+        int recv = n->a && n->a->kind == N_FIELD_E && !(n->flags & (F_ASSOC | F_FIELDCALL));
         if (recv && (esc & 1)) need_storage(l, sc, n->a->a);
         for (int i = 0; i < n->nkids; i++) {
             int p = recv + i;
@@ -1008,7 +1008,7 @@ static int call_args(Lw* l, Node* call, Sym* s, Args* g) {
     Node* d = s->decl;
     SType* ft = node_ty(callee);
     if (!ft || ft->kind != SK_FUNC) ft = s->type;
-    int recv = callee->kind == N_FIELD_E && !s->is_extern && !(call->flags & (F_METHOD | F_ASSOC));
+    int recv = callee->kind == N_FIELD_E && !s->is_extern && !(call->flags & F_ASSOC);
     int n = recv + call->nkids;
     int named = ft ? ft->nparams : n;
     int varargs = s->is_extern && d && (d->flags & F_VARARGS);
@@ -3372,7 +3372,7 @@ static int inline_call(Lw* l, Node* call, Agg* out, int dst) {
     Node* callee = call->a;
     Node* args[MAX_PARAMS]; // the receiver included
     int n = 0;
-    if (callee->kind == N_FIELD_E && !(call->flags & (F_METHOD | F_ASSOC))) args[n++] = callee->a; // receiver
+    if (callee->kind == N_FIELD_E && !(call->flags & F_ASSOC)) args[n++] = callee->a; // receiver
     if (n + call->nkids != f->nkids || f->nkids > MAX_PARAMS) unsupported(l, "inline call");
     for (int i = 0; i < call->nkids; i++) args[n++] = call->kids[i];
     SType* rt = f->a ? node_ty(call) : NULL; // the call of a generic method with no result is not typed void
@@ -3803,7 +3803,7 @@ static void defer_capture(Lw* l, Node* s) {
     Node* callee = call->a;
     Sym* tgt = call->sym ? node_sym(call) : NULL;
     int instance = callee->kind == N_FIELD_E && tgt && tgt->kind == SYM_FUNC && !tgt->is_extern &&
-                   !(call->flags & (F_METHOD | F_ASSOC));
+                   !(call->flags & F_ASSOC);
     SType* ct = callee->kind == N_FIELD_E ? node_ty(callee->a) : NULL;
     int contract = callee->kind == N_FIELD_E && !tgt && ct && ct->kind == SK_CONTRACT;
     Node* sc = (Node*)arena_alloc(sizeof(Node));

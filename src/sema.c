@@ -4017,12 +4017,12 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
 }
 
 // Resolve a method call on struct receiver type b.
-static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified) {
+static SType* check_method_call(Ck* k, Node* call, SType* b) {
     Node* callee = call->a;
     uint32_t key_len;
     const char* key = method_key(b->decl, callee->str, callee->len, &key_len);
     Sym* head = lookup_val(k, key, key_len);
-    int supplied = call->nkids + (qualified ? 0 : 1);
+    int supplied = call->nkids + 1;
     Sym* found = NULL;
     for (Sym* f = head; f; f = f->overload) {
         SType* ft = f->is_generic && b->nargs
@@ -4031,13 +4031,11 @@ static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified) {
         if (!ft || (f->is_generic && !b->nargs) || ft->nparams != supplied ||
             !same_type(ft->params[0], b)) continue;
         int rmut = (f->decl->flags & F_MUT) != 0;
-        int cmut = qualified
-            ? (call->nkids > 0 && call->kids[0]->kind == N_MUTARG)
-            : ((call->flags & F_MUT) != 0);
+        int cmut = (call->flags & F_MUT) != 0;
         if (rmut != cmut) continue;
         int exact = 1;
         for (int i = 1; i < ft->nparams; i++) {
-            Node* arg = call->kids[qualified ? i : i - 1];
+            Node* arg = call->kids[i - 1];
             SType* at = overload_arg_type(k, arg);
             int am = arg->kind == N_MUTARG;
             int pm = (f->decl->kids[i]->flags & F_MUT) != 0;
@@ -4055,7 +4053,7 @@ static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified) {
     /* A directly owned method wins. Otherwise, one explicitly embedded
      * field may promote an exact method by rewriting the receiver to the
      * ordinary field expression that codegen already understands. */
-    if (!found && !qualified && b->decl) {
+    if (!found && b->decl) {
         Sym* promoted = NULL;
         SType* promoted_ft = NULL;
         Node* promoted_field = NULL;
@@ -4117,22 +4115,18 @@ static SType* check_method_call(Ck* k, Node* call, SType* b, int qualified) {
         SType* method_ft = found->is_generic ? instantiate_generic_func_args(k, found, b->args, b->nargs, call)
             : found->type;
         int rmut = (found->decl->flags & F_MUT) != 0;
-        Node* recv = qualified ? (call->kids[0]->kind == N_MUTARG ? call->kids[0]->a : call->kids[0])
-            : callee->a;
+        Node* recv = callee->a;
         if (rmut) check_lvalue(k, recv, 1);
         else coerce(k, recv, b);
-        int start = qualified ? 1 : 0;
-        for (int i = start; i < call->nkids; i++) {
+        for (int i = 0; i < call->nkids; i++) {
             Node* arg = call->kids[i];
-            int pi = i + (qualified ? 0 : 1);
-            coerce(k, arg->kind == N_MUTARG ? arg->a : arg, method_ft->params[pi]);
+            coerce(k, arg->kind == N_MUTARG ? arg->a : arg, method_ft->params[i + 1]);
         }
         if (found->decl->path && call->path &&
             strcmp(found->decl->path, call->path) != 0 && !found->is_pub)
             ck_err(k, call, "method '%.*s' is private", (int)callee->len, callee->str);
         call->sym = found;
         callee->ty = method_ft;
-        if (qualified) call->flags |= F_METHOD; // emitter: receiver is argument zero
         return method_ft->ret;
     }
     if (overloaded_arg_err(k, call, head, callee->str, callee->len)) return T_ERR;
@@ -4893,20 +4887,20 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 return T_ERR;
             }
         }
-        int qualified = 0;
-        SType* b = NULL;
         if (callee->a->kind == N_IDENT && !lookup_val(k, callee->a->str, callee->a->len)) {
             Sym* ts = lookup_type(k, callee->a->str, callee->a->len);
             if (ts && ts->type && ts->type->kind == SK_STRUCT) {
-                b = ts->type;
-                qualified = 1;
+                ck_err(k, call, "methods are called on a value: x.%.*s(...), not %.*s.%.*s(...)",
+                       (int)callee->len, callee->str, (int)callee->a->len, callee->a->str,
+                       (int)callee->len, callee->str);
+                return T_ERR;
             }
         }
-        if (!b) b = expr_type(k, callee->a);
+        SType* b = expr_type(k, callee->a);
         if (b->kind == SK_ERR) return T_ERR;
         // p.m() auto-derefs like p.x: the receiver becomes the ordinary
         // explicit dereference (*p).m(), once per pointer level
-        while (!qualified && b->kind == SK_PTR) {
+        while (b->kind == SK_PTR) {
             Node* d = (Node*)arena_alloc(sizeof(Node));
             memset(d, 0, sizeof *d);
             d->kind = N_UNARY;
@@ -4919,7 +4913,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
         }
         // x.f(args) on a field calls the stored function value: fields and
         // methods share one namespace, so a field never competes with a method
-        if (!qualified && b->kind == SK_STRUCT) {
+        if (b->kind == SK_STRUCT) {
             for (int fi = 0; fi < b->nfields; fi++) {
                 if ((uint32_t)strlen(b->fields[fi].name) != callee->len ||
                     memcmp(b->fields[fi].name, callee->str, callee->len) != 0) continue;
@@ -4976,7 +4970,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
             ck_err(k, call, "no method '%.*s' for %s", (int)callee->len, callee->str, type_name(b));
             return T_ERR;
         }
-        return check_method_call(k, call, b, qualified);
+        return check_method_call(k, call, b);
     }
     ck_err(k, call, "unsupported callee");
     return T_ERR;

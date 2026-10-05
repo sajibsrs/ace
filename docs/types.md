@@ -844,8 +844,8 @@ Single-line contract lists omit the parentheses, giving each layout one
 canonical spelling.
 A second `Number signs` declaration is an error. Contract calls dispatch through
 the generated const vtable; concrete method overloads remain compile-time direct
-calls. `Type.method(...)` is available for a disambiguated direct call, but a
-bare `Type.method` is not a function value.
+calls. Methods are called only on a value (`x.m(...)`); `Type.m(x, ...)` is an
+error and a bare `Type.method` is not a function value.
 
 A contract method's own parameters may not be `mut` — dispatch has no way to
 validate mut agreement against the implementing method (the receiver's own
