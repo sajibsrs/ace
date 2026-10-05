@@ -142,7 +142,7 @@ pub Lexer: struct {
     src: string,
     off: usize,
     line: u32,
-    col: u32,
+    lstart: usize,  // offset of the current line's first byte (columns count from it)
     tline: u32,     // start of the token being scanned
     tcol: u32,
     prev: Token,    // last returned token; newline = none or already emitted
@@ -160,12 +160,13 @@ pub Lexer: struct {
 /* A lexer over `src`, which must outlive it. Call `wipe` when done. */
 pub Lexer.new(src: string): Lexer {
     lx: Lexer = Lexer {
-        src = src, off = 0, line = 1, col = 1, tline = 1, tcol = 1,
+        src = src, off = 0, line = 1, lstart = 0, tline = 1, tcol = 1,
         prev = Token.newline, count = 0, used = 0, text = "", ival = 0, fval = 0.0,
         err = null, eline = 0, ecol = 0,
     }
     if src.len >= 3 && src[0] == 0xEF && src[1] == 0xBB && src[2] == 0xBF {
         lx.off = 3 // UTF-8 BOM
+        lx.lstart = 3
     }
     return lx
 }
@@ -219,11 +220,15 @@ inline Lexer.adv(mut self): u8 {
     self.off += 1
     if c == '\n' {
         self.line += 1
-        self.col = 1
-    } else {
-        self.col += 1
+        self.lstart = self.off
     }
     return c
+}
+
+/* Starts a token (or block comment) at the current byte. */
+inline Lexer.mark(mut self) {
+    self.tline = self.line
+    self.tcol = u32(self.off - self.lstart + 1)
 }
 
 Lexer.fail(mut self, e: Error) {
@@ -384,10 +389,19 @@ keyword(t: []char): Token {
 
 Lexer.scan_ident(mut self): Token {
     start: usize = self.off
-    for ident_char(self.cur()) { mut self.adv() }
+    i: usize = self.off
+    for i < self.src.len && ident_char(self.src[i]) { i += 1 }
+    self.off = i
     text: string = self.src[start..self.off]
     self.text = text
     return keyword(text)
+}
+
+/* Skips a run of digits in `base` and '_' separators (no newlines). */
+inline Lexer.digits(mut self, base: int) {
+    i: usize = self.off
+    for i < self.src.len && (self.src[i] == '_' || digval(self.src[i], base) >= 0) { i += 1 }
+    self.off = i
 }
 
 Lexer.scan_number(mut self): Token {
@@ -404,19 +418,19 @@ Lexer.scan_number(mut self): Token {
     }
 
     dstart: usize = self.off
-    for self.cur() == '_' || digval(self.cur(), base) >= 0 { mut self.adv() }
+    mut self.digits(base)
     dend: usize = self.off
 
     is_float: bool = false
     if base == 10 && self.cur() == '.' && digval(self.peek(1), 10) >= 0 {
         is_float = true
         mut self.adv()
-        for self.cur() == '_' || digval(self.cur(), 10) >= 0 { mut self.adv() }
+        mut self.digits(10)
         if self.cur() == 'e' || self.cur() == 'E' {
             mut self.adv()
             if self.cur() == '+' || self.cur() == '-' { mut self.adv() }
             if digval(self.cur(), 10) < 0 { mut self.fail(LexErr.exponent) }
-            for self.cur() == '_' || digval(self.cur(), 10) >= 0 { mut self.adv() }
+            mut self.digits(10)
         }
     } else if base == 10 && (self.cur() == 'e' || self.cur() == 'E') {
         n1: u8 = self.peek(1)
@@ -644,42 +658,55 @@ Lexer.scan_punct(mut self, c: u8): (Token, bool) {
 
 /* Skips whitespace and comments; true when a newline was crossed. */
 Lexer.trivia(mut self): bool {
+    src: string = self.src
+    i: usize = self.off
     nl: bool = false
-    for {
-        c: u8 = self.cur()
+    for i < src.len {
+        c: u8 = src[i]
         if c == ' ' || c == '\t' || c == 0x0B || c == 0x0C {
-            mut self.adv()
+            i += 1
         } else if c == '\n' {
-            mut self.adv()
+            i += 1
+            self.line += 1
+            self.lstart = i
             nl = true
         } else if c == '\r' { // CRLF and lone CR both count once
-            mut self.adv()
-            if self.cur() == '\n' { mut self.adv() }
+            i += 1
+            if i < src.len && src[i] == '\n' {
+                i += 1
+                self.line += 1
+                self.lstart = i
+            }
             nl = true
-        } else if c == '/' && self.peek(1) == '/' {
-            for self.cur() != 0 && self.cur() != '\n' { mut self.adv() }
-        } else if c == '/' && self.peek(1) == '*' {
-            self.tline = self.line
-            self.tcol = self.col
-            mut self.adv()
-            mut self.adv()
+        } else if c == '/' && i + 1 < src.len && src[i + 1] == '/' {
+            i += 2
+            for i < src.len && src[i] != 0 && src[i] != '\n' { i += 1 }
+        } else if c == '/' && i + 1 < src.len && src[i + 1] == '*' {
+            self.off = i
+            mut self.mark()
+            i += 2
             for {
-                if self.cur() == 0 {
+                if i >= src.len || src[i] == 0 {
                     mut self.fail(LexErr.comment)
                     break
                 }
-                if self.cur() == '*' && self.peek(1) == '/' {
-                    mut self.adv()
-                    mut self.adv()
+                b: u8 = src[i]
+                if b == '*' && i + 1 < src.len && src[i + 1] == '/' {
+                    i += 2
                     break
                 }
-                if self.cur() == '\n' { nl = true }
-                mut self.adv()
+                i += 1
+                if b == '\n' {
+                    self.line += 1
+                    self.lstart = i
+                    nl = true
+                }
             }
         } else {
             break
         }
     }
+    self.off = i
     return nl
 }
 
@@ -697,8 +724,7 @@ Lexer.emit(mut self, t: Token): (Token, Error) {
 pub Lexer.next(mut self): (Token, Error) {
     for {
         nl: bool = mut self.trivia()
-        self.tline = self.line
-        self.tcol = self.col
+        mut self.mark()
 
         if self.cur() == 0 {
             if self.count > 0 && self.prev != Token.newline && self.prev != Token.eof {
