@@ -363,7 +363,7 @@ static void scan_number(Lex* L) {
         }
         if (of) err(L, "integer literal out of range");
         Token t = mktok(L, T_INT);
-        t.ival = v; // 0 on overflow; the error above fails the build
+        t.ival = v; // on overflow, the digits read so far; the error above fails the build
         push(L, t);
     }
 }
