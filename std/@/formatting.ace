@@ -42,7 +42,7 @@ pub radix(value: u64, radix: u8, uppercase: bool, out: mut []u8): (usize, bool) 
 }
 
 /* Signed decimal digits of value, with '-' before a negative value. */
-pub signed(value: int, out: mut []u8): (usize, bool) {
+signed(value: int, out: mut []u8): (usize, bool) {
     if value >= 0 {
         n: usize, ok: bool = radix(u64(value), 10, false, out)
         return n, ok
@@ -237,7 +237,7 @@ pub Sink.fill(mut self, byte: u8, count: usize) {
  * "nan" and "inf" (the only texts starting with 'n' or 'i' after the sign)
  * still take spaces.
  */
-pub Sink.padded(mut self, text: []u8, width: usize, zero: bool) {
+Sink.padded(mut self, text: []u8, width: usize, zero: bool) {
     if text.len >= width {
         mut self.put(text)
         return

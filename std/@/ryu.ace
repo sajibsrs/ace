@@ -32,7 +32,7 @@ inline pow5_bits(exponent: i32): i32 {
     return i32((u32(exponent) * 1217359) >> 19) + 1
 }
 
-pub multiply_wide(a: u64, b: u64): Wide {
+multiply_wide(a: u64, b: u64): Wide {
     a_low: u32 = u32(a)
     a_high: u32 = u32(a >> 32)
     b_low: u32 = u32(b)
