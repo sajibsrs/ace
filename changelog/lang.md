@@ -1,5 +1,10 @@
 # Language
 
+- Enum-indexed arrays `[E]T` over a dense enum: indexed only by `E` with no
+  bounds check (sema marks the index proven), filled by a keyed literal
+  `[E.a = x, ...]` that sema checks names every member once; keyed entries
+  store at the member's slot in written order. Conversions to an enum must
+  give a member: constants at compile time, runtime values by a debug check.
 - A switch case's value list may span lines inside parentheses
   (`(K.a,` … `K.b) {`), per Syntax #7; the parser treats a case's `(` whose
   match holds a top-level comma as the list. Sema now rejects switching on a

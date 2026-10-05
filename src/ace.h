@@ -277,6 +277,11 @@ struct Node {
     void*       aux; // feature-specific checked metadata (currently PrintfPlan*)
 };
 
+// An array literal's element i: a keyed entry `E.m = v` (N_MAPENTRY, slot set
+// by sema to the member's discriminant) or a positional value at slot i.
+static inline Node* lit_elem(Node* kid) { return kid->kind == N_MAPENTRY ? kid->b : kid; }
+static inline uint64_t lit_slot(Node* kid, int i) { return kid->kind == N_MAPENTRY ? kid->ival : (uint64_t)i; }
+
 // Parse a token stream into an N_FILE node. Aborts at the first syntax error
 // (reported via d). Always returns a node (possibly partial).
 Node* parse(Token* toks, size_t ntok, Diag* d, const char* target);

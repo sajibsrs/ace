@@ -75,6 +75,19 @@ Carved (explicit struct layout):
 12. `bool` is one byte with alignment one; `false` is `0` and `true` is `1`,
     and no other byte value is a valid `bool`. It maps to C's `_Bool`/`bool`
     and is C-ABI-compatible in every position an integer is (C Interop #3).
+13. Enum-indexed arrays. `[E]T`, with `E` a dense enum (its
+    discriminants are exactly `0 .. n-1`, whatever their declaration order),
+    is an array of `n` `T`s with `[n]T`'s layout (Memory #21) but its own type
+    identity: no conversion to or from `[n]T`. A sparse enum is rejected. The
+    bracket names a type, so it is `[E]` by namespace (Grammar notes #4).
+    Indexing takes exactly `E` — an integer, or another enum, is a type error —
+    and needs no bounds check in either mode, because an `E` value is always a
+    member (Safety #2). `.len` is `n` as `usize`; `for v: T in a` iterates in
+    discriminant order, and the two-binder form binds the index as `E`
+    (Iterations #7). Slicing `a[lo..hi]` takes `E` bounds and yields `[]T`.
+    The literal form is Syntax & Parsing #16; repetition `[v : n]` applies
+    with `n` equal to the member count. A type parameter as `E` is not admitted
+    yet.
 
 Carved (compile-time static lookup maps):
 

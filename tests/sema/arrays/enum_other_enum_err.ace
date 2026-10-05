@@ -1,0 +1,7 @@
+/* An [E]T index is exactly E, not another enum. */
+
+Color: enum { red, green, blue }
+Size: enum { small, large }
+T: [Color]int
+
+main(): int { return T[Size.small] }

@@ -121,7 +121,8 @@ static const char* type_name(SType* t) {
     }
     case SK_ARRAY: {
         char* out = bufs[bi = (bi + 1) & 15];
-        snprintf(out, sizeof bufs[0], "[%llu]%s", (unsigned long long)t->count, t->base ? type_name(t->base) : "?");
+        if (t->key) snprintf(out, sizeof bufs[0], "[%s]%s", type_name(t->key), t->base ? type_name(t->base) : "?");
+        else snprintf(out, sizeof bufs[0], "[%llu]%s", (unsigned long long)t->count, t->base ? type_name(t->base) : "?");
         return out;
     }
     case SK_STATICMAP: {
@@ -633,7 +634,8 @@ static int same_type(SType* a, SType* b) {
     case SK_PTR: return a->is_mut == b->is_mut && same_type(a->base, b->base);
     case SK_SLICE:
         return a->is_mut == b->is_mut && same_type(a->base, b->base);
-    case SK_ARRAY: return a->count == b->count && same_type(a->base, b->base);
+    case SK_ARRAY:
+        return a->count == b->count && a->key == b->key && same_type(a->base, b->base);
     case SK_STATICMAP:
         return same_type(a->base, b->base) && same_type(a->ret, b->ret);
     case SK_TUPLE:
@@ -1128,7 +1130,7 @@ static int compile_time_expr(Node* e) {
         return 1;
     case N_ARRAYLIT:
         if (e->a) return compile_time_expr(e->a);
-        for (int i = 0; i < e->nkids; i++) if (!compile_time_expr(e->kids[i])) return 0;
+        for (int i = 0; i < e->nkids; i++) if (!compile_time_expr(lit_elem(e->kids[i]))) return 0;
         return 1;
     case N_STRUCTLIT:
         for (int i = 0; i < e->nkids; i++) if (!compile_time_expr(e->kids[i]->a)) return 0;
@@ -1356,6 +1358,50 @@ static SType* build_named(Ck* k, Node* t) {
     return s->type;
 }
 
+static int enum_member_value(SType* e, int64_t v) {
+    for (int i = 0; e->decl && i < e->decl->nkids; i++)
+        if ((int64_t)e->decl->kids[i]->ival == v) return 1;
+    return 0;
+}
+
+/* Type System #13: `[E]T` over a dense enum E (discriminants exactly 0..n-1),
+ * laid out as [n]T but its own type, indexed only by E. */
+static SType* enum_array_type(Ck* k, Node* t) {
+    SType* e = build_type(k, t->b);
+    if (e->kind == SK_ERR) return T_ERR;
+    if (e->kind != SK_ENUM) {
+        ck_err(k, t->b, "an array's bracket holds a length or an enum, not %s", type_name(e));
+        return T_ERR;
+    }
+    int n = e->decl ? e->decl->nkids : 0;
+    for (int i = 0; i < n; i++) {
+        int64_t v = e->decl->kids[i]->ival;
+        if (v < 0 || v >= n) {
+            ck_err(k, t->b, "enum %s is not dense: '%.*s' is %lld, outside 0..%d", type_name(e),
+                   (int)e->decl->kids[i]->len, e->decl->kids[i]->str, (long long)v, n - 1);
+            return T_ERR;
+        }
+    }
+    SType* a = st_new(SK_ARRAY);
+    a->count = (uint64_t)n;
+    a->key = e;
+    a->base = build_type(k, t->a);
+    return a;
+}
+
+/* An [E]T index is exactly E and needs no bounds check: an E value is always a
+ * member (Safety #2). Any other array takes an integer. */
+static void check_index_type(Ck* k, Node* e, SType* b, SType* ix) {
+    if (ix->kind == SK_ERR || b->kind == SK_ERR) return;
+    if (b->kind == SK_ARRAY && b->key) {
+        if (!same_type(ix, b->key))
+            ck_err(k, e->b, "index of %s must be %s, not %s", type_name(b), type_name(b->key), type_name(ix));
+        else e->flags |= F_BOUNDS_PROVEN;
+        return;
+    }
+    if (!is_int(ix) && ix != T_UT_INT) ck_err(k, e->b, "index must be an integer, not %s", type_name(ix));
+}
+
 static SType* build_type(Ck* k, Node* t) {
     switch (t->kind) {
     case N_NAMED: return build_named(k, t);
@@ -1410,6 +1456,9 @@ static SType* build_type(Ck* k, Node* t) {
         return s;
     }
     case N_ARRAY_T: {
+        if (t->b->kind == N_IDENT && type_param_index(k, t->b->str, t->b->len) < 0 &&
+            (prim_by_name(t->b->str, t->b->len) || lookup_type(k, t->b->str, t->b->len)))
+            return enum_array_type(k, t); // [E]T: the bracket names a type
         int errors = k->d->errors + k->quiet_errors;
         coerce(k, t->b, st_prim(P_USIZE));
         if (k->d->errors + k->quiet_errors != errors) return T_ERR; // already reported
@@ -2390,8 +2439,7 @@ static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
             b = check_lvalue(k, e->a, 1);
         }
         SType* ix = expr_type(k, e->b);
-        if (ix->kind != SK_ERR && !is_int(ix) && ix != T_UT_INT)
-            ck_err(k, e->b, "index must be an integer, not %s", type_name(ix));
+        check_index_type(k, e, b, ix);
         if (b->kind == SK_ERR) return T_ERR;
         if (b->kind == SK_PRIM && b->prim == P_STRING)
         {
@@ -2970,7 +3018,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         }
         SType* ix = expr_type(k, e->b);
         if (b->kind == SK_ERR || ix->kind == SK_ERR) return T_ERR;
-        if (!is_int(ix) && ix != T_UT_INT) ck_err(k, e->b, "index must be an integer, not %s", type_name(ix));
+        check_index_type(k, e, b, ix);
         if (b->kind == SK_PRIM && b->prim == P_STRING) {
             check_index_bounds(k, e, e->a, b, 0);
             return st_prim(P_U8);
@@ -3027,9 +3075,16 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         SType* lo = e->b ? expr_type(k, e->b) : NULL;
         SType* hi = e->c ? expr_type(k, e->c) : NULL;
         if ((lo && lo->kind == SK_ERR) || (hi && hi->kind == SK_ERR)) return T_ERR; // already reported
-        if (lo && !is_int(lo) && lo != T_UT_INT) ck_err(k, e->b, "slice bound must be an integer");
-        if (hi && !is_int(hi) && hi != T_UT_INT) ck_err(k, e->c, "slice bound must be an integer");
-        check_slice_bounds(k, e, e->a, b);
+        if (b->kind == SK_ARRAY && b->key) { // [E]T: E bounds, in range by type
+            if (lo && !same_type(lo, b->key))
+                ck_err(k, e->b, "slice bound of %s must be %s", type_name(b), type_name(b->key));
+            if (hi && !same_type(hi, b->key))
+                ck_err(k, e->c, "slice bound of %s must be %s", type_name(b), type_name(b->key));
+        } else {
+            if (lo && !is_int(lo) && lo != T_UT_INT) ck_err(k, e->b, "slice bound must be an integer");
+            if (hi && !is_int(hi) && hi != T_UT_INT) ck_err(k, e->c, "slice bound must be an integer");
+            check_slice_bounds(k, e, e->a, b);
+        }
         if (is_string) return b->is_mut || establish ? T_MUT_STRING : st_prim(P_STRING);
         SType* s = st_new(SK_SLICE);
         s->is_mut = b->kind == SK_ARRAY ? establish : (b->is_mut || establish);
@@ -4450,6 +4505,12 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 if (from == T_UT_INT &&
                     !ut_fits(k, call->kids[0], want->kind == SK_ENUM ? want : want->kind == SK_DISTINCT ? (is_int(want->base) ? want->base : st_prim(P_I64)) : want))
                     return T_ERR;
+                int64_t cv;
+                if (want->kind == SK_ENUM && ut_const(call->kids[0], &cv) && !enum_member_value(want, cv)) {
+                    // Safety #2, #4: an enum value is always a member
+                    ck_err(k, call, "%lld is not a member of %s", (long long)cv, type_name(want));
+                    return T_ERR;
+                }
                 return want;
             }
             if (callee->len == 5 && memcmp(callee->str, "blank", 5) == 0) {
@@ -5568,9 +5629,10 @@ static void check_stmt(Ck* k, Node* s) {
             } else if (it->kind == SK_SLICE || it->kind == SK_ARRAY || (it->kind == SK_PRIM && it->prim == P_STRING)) {
                 SType* elem = it->kind == SK_PRIM ? st_prim(P_U8) : it->base;
                 int value = s->nkids == 2 ? 1 : 0;
-                if (s->nkids == 2 && !same_type(binds[0], st_prim(P_USIZE)))
-                    ck_err(k, s->kids[0], "sequence index binder must be usize, not %s",
-                           type_name(binds[0]));
+                SType* want = it->kind == SK_ARRAY && it->key ? it->key : st_prim(P_USIZE);
+                if (s->nkids == 2 && !same_type(binds[0], want))
+                    ck_err(k, s->kids[0], "sequence index binder must be %s, not %s",
+                           type_name(want), type_name(binds[0]));
                 if (s->nkids > 0 && !same_type(elem, binds[value]))
                     ck_err(k, s->kids[value], "loop value binder is %s but elements are %s",
                            type_name(binds[value]), type_name(elem));
@@ -5877,6 +5939,50 @@ static void check_structlit(Ck* k, Node* lit, SType* want) {
     }
 }
 
+/* Syntax & Parsing #16: each key is a member of E written in full, and every
+ * member appears exactly once. An entry's slot is its member's discriminant. */
+static void check_keyed_arraylit(Ck* k, Node* lit, SType* want) {
+    if (!want->key) {
+        ck_err(k, lit, "keys apply only to an enum-indexed array, not %s", type_name(want));
+        return;
+    }
+    Node** seen = (Node**)arena_alloc((size_t)want->count * sizeof(Node*));
+    memset(seen, 0, (size_t)want->count * sizeof(Node*));
+    int ok = 1;
+    for (int i = 0; i < lit->nkids; i++) {
+        Node* en = lit->kids[i];
+        uint64_t slot;
+        SType* kt = expr_type(k, en->a);
+        if (kt->kind == SK_ERR) { ok = 0; continue; }
+        if (!same_type(kt, want->key) || en->a->kind != N_FIELD_E || !static_key_int(en->a, &slot)) {
+            if (same_type(kt, want->key))
+                ck_err(k, en->a, "a key of %s is a member written in full (%s.name), not a runtime value",
+                       type_name(want), type_name(want->key));
+            else
+                ck_err(k, en->a, "a key of %s is a %s member, not %s",
+                       type_name(want), type_name(want->key), type_name(kt));
+            ok = 0;
+            continue;
+        }
+        if (seen[slot]) {
+            ck_err(k, en->a, "member %s.%.*s is keyed twice", type_name(want->key), (int)en->a->len, en->a->str);
+            ok = 0;
+            continue;
+        }
+        seen[slot] = en;
+        en->ival = slot;
+        coerce(k, en->b, want->base);
+    }
+    if (!ok) return;
+    Node* decl = want->key->decl;
+    for (int i = 0; decl && i < decl->nkids; i++) {
+        Node* m = decl->kids[i];
+        if (!seen[m->ival])
+            ck_err(k, lit, "keyed literal of %s is missing member %s.%.*s", type_name(want),
+                   type_name(want->key), (int)m->len, m->str);
+    }
+}
+
 static void check_arraylit(Ck* k, Node* lit, SType* want) {
     lit->ty = want; // emitter: context-typed literal carries its type
     if (want->kind != SK_ARRAY) {
@@ -5897,6 +6003,16 @@ static void check_arraylit(Ck* k, Node* lit, SType* want) {
             return;
         }
         coerce(k, lit->a, want->base);
+        return;
+    }
+    int keyed = lit->nkids > 0 && lit->kids[0]->kind == N_MAPENTRY;
+    if (keyed) {
+        check_keyed_arraylit(k, lit, want);
+        return;
+    }
+    if (want->key) {
+        ck_err(k, lit, "%s takes a keyed literal ([%s.member = value, ...]), not a positional one",
+               type_name(want), type_name(want->key));
         return;
     }
     if ((uint64_t)lit->nkids != want->count) {
@@ -6175,6 +6291,7 @@ static int init_field_index(SType* t, Node* e) {
 
 static int init_const_index(Node* e, uint64_t* out) {
     int64_t v;
+    if (e->kind == N_FIELD_E) return static_key_int(e, out); // [E]T: a member
     if (!ut_const(e, &v) || v < 0) return 0;
     *out = (uint64_t)v;
     return 1;
@@ -6379,7 +6496,7 @@ static void init_expr(InitCk* k, Node* e) {
         return;
     case N_ARRAYLIT:
         if (e->a) init_expr(k, e->a);
-        else for (int i = 0; i < e->nkids; i++) init_expr(k, e->kids[i]);
+        else for (int i = 0; i < e->nkids; i++) init_expr(k, lit_elem(e->kids[i]));
         return;
     case N_STRUCTLIT:
         for (int i = 0; i < e->nkids; i++) init_expr(k, e->kids[i]->a);

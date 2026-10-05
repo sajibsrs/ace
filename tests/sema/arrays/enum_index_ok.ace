@@ -1,0 +1,15 @@
+/* Enum-indexed arrays: [E]T, E index, E loop binder, E slice bounds. */
+
+Color: enum { red, green, blue }
+Size: enum { small, large }
+T: [Color]int
+
+main(): int {
+    T[Color.green] = 2
+    local: [Color]int = [0 : 3]
+    for c: Color, v: int in T {
+        local[c] = v
+    }
+    part: []int = T[Color.red..Color.blue]
+    return local[Color.green] + int(part.len) + int(T.len)
+}

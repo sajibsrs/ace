@@ -1,0 +1,10 @@
+/* [E]T slice bounds are E. */
+
+Color: enum { red, green, blue }
+Size: enum { small, large }
+T: [Color]int
+
+main(): int {
+    part: []int = T[0..2]
+    return int(part.len)
+}

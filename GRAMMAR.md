@@ -236,7 +236,9 @@ arg           := ["mut"] expr                             // call-site mutation 
 primary       := literal | ident | location | "(" expr_list ")" | array_lit | struct_lit
                | ptr_type | slice_type
 location      := "@" ident                                // exact text "file" or "line"
-array_lit     := "[" [expr_list | array_repeat] "]"
+array_lit     := "[" [expr_list | array_repeat | keyed_list] "]"
+keyed_list    := keyed_elem ("," keyed_elem)* [","]      // [E.a = x, E.b = y]
+keyed_elem    := named_type "." ident "=" expr
 array_repeat  := expr ":" expr                          // [0 : 12]; exact contextual array length
 struct_lit    := "{" [field_init ("," field_init)*] "}"   [P]
 field_init    := ident "=" expr
@@ -257,6 +259,7 @@ ptr_type      := ["mut"] "*" type_expr                    // *Node, mut *Node
 slice_type    := ["mut"] "[]" type_expr                   // []u8, mut []u8
 string_type   := ["mut"] "string"                         // string, mut string
 array_type    := "[" expr "]" type_expr                   // [16][8]u8; N is a compile-time constant expression
+               | "[" named_type "]" type_expr             // [TokKind]string; a dense enum, by namespace
 tuple_type    := "(" type ("," type)+ ")"
 func_type     := "(" [type_list] ")" ":" func_ret          // (int, int): int, (int): void
 c_func_type   := "extern" string_lit "(" [type_list] ")" ":" func_ret

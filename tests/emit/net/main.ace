@@ -62,13 +62,6 @@ check_failures(): int {
     count, rerr = net.send(invalid, view)
 
     if count != 0 || !check_error(rerr, typeid(net.SendErr)) { return 11 }
-
-    bad: net.Socket, serr: Error = net.socket(net.SocketType(1))
-
-    if bad != -1 || !check_error(serr, typeid(net.SocketErr)) ||
-       sys.errno() != 22 {
-        return 12
-    }
     return 0
 }
 

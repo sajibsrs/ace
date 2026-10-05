@@ -1,0 +1,9 @@
+/* Debug: a dense enum conversion traps on a value past the last member. */
+K: enum u8 { a, b, c }
+pick(n: u8): K {
+    return K(n)
+}
+main(): int {
+    k: K = pick(3)
+    return int(u8(k))
+}

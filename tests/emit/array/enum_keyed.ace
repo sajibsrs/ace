@@ -1,0 +1,26 @@
+/* Keyed [E]T literal fixture: static and local, slot placement, written-order evaluation. */
+
+// expect-exit: 192
+
+Color: enum u8 { red, green, blue }
+
+NAME: [Color]string = [
+    Color.blue = "blue",
+    Color.red = "red",
+    Color.green = "green",
+]
+
+CODE: [Color]int = [Color.green = 2, Color.red = 1, Color.blue = 3]
+
+count: int = 0
+
+next(): int {
+    count += 1
+    return count
+}
+
+main(): int {
+    // values run in written order: blue = 1, red = 2, green = 3
+    local: [Color]int = [Color.blue = next(), Color.red = next(), Color.green = next()]
+    return int(NAME[Color.green].len) * 1000 + CODE[Color.blue] * 100 + local[Color.blue] * 10 + local[Color.red]
+}

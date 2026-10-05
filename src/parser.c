@@ -78,7 +78,8 @@
 //   N_INDEX     a = base; b = index
 //   N_SLICE_E   a = base; b = lo (nullable); c = hi (nullable)
 //   N_FIELD_E   a = base; str = field
-//   N_ARRAYLIT  kids = elements; repetition: a = value, b = count expression
+//   N_ARRAYLIT  kids = elements, or N_MAPENTRY (a = key, b = value) when keyed;
+//               repetition: a = value, b = count expression
 //   N_STRUCTLIT a = type expr or NULL (bare literal); kids = N_FIELDINIT (str or NULL; a = value)
 //   N_STATICMAP_T a = key type; b = value type
 //   N_STATICMAPLIT kids = N_MAPENTRY (a = key, b = value)
@@ -1034,10 +1035,20 @@ static Node* expr_primary(P* p, int ctx) {
                 al->a = first;
                 al->b = expr(p, 0); // repetition count: a compile-time constant expression
             } else {
-                nv_push(p, &w, first);
-                while (ate(p, T_COMMA)) {
-                    if (at(p, T_RBRACK)) break;
-                    nv_push(p, &w, expr(p, 0));
+                int keyed = at(p, T_ASSIGN); // [E.a = x, E.b = y]
+                for (Node* el = first;;) {
+                    if (keyed) {
+                        Node* en = nd(p, N_MAPENTRY);
+                        en->a = el;
+                        expect(p, T_ASSIGN, "'=' after a keyed array literal's member");
+                        en->b = expr(p, 0);
+                        el = en;
+                    } else if (at(p, T_ASSIGN)) {
+                        perr(p, "a keyed array literal keys every element, the first included");
+                    }
+                    nv_push(p, &w, el);
+                    if (!ate(p, T_COMMA) || at(p, T_RBRACK)) break;
+                    el = expr(p, 0);
                 }
             }
         }

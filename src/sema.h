@@ -47,6 +47,7 @@ struct SType {
     const char* name;
     SType*      base;
     uint64_t    count;
+    SType*      key;     // SK_ARRAY: the dense enum of an enum-indexed [E]T, else NULL
     SField*     fields; int nfields; // struct/tuple fields or union variants
     SType**     params; int nparams; // function params
     SType**     args; int nargs;     // nominal generic instantiation arguments

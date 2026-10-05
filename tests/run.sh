@@ -1112,6 +1112,18 @@ else
         fail=1
     fi
 fi
+# A conversion to an enum must give a member (Safety #2): debug builds test
+# the value before narrowing, dense or sparse, and name the conversion.
+for f in dense sparse negative wide; do
+    if ! "$ACE" --debug -o "/tmp/ace_checked_features/enum_$f" \
+         "tests/checked_enums/$f.ace" >/dev/null 2>$T/errs ||
+       "/tmp/ace_checked_features/enum_$f" >/dev/null 2>$T/errs ||
+       ! grep -qF "tests/checked_enums/$f.ace:4:" $T/errs ||
+       ! grep -qF ": enum value is not a member" $T/errs; then
+        echo "FAIL: checked enum-conversion fixture $f"
+        fail=1
+    fi
+done
 # A runtime range step must be positive: debug builds test it once at loop
 # entry, at the step's own width and even over an empty interval, and name
 # the step's position.

@@ -1,0 +1,5 @@
+/* A keyed literal names each member once. */
+
+Color: enum { red, green, blue }
+Size: enum { small, large }
+T: [Color]int = [Color.red = 1, Color.green = 2, Color.red = 4, Color.blue = 3]

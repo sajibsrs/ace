@@ -64,6 +64,13 @@
     reduce is a compile-time error. An array literal's repetition count
     (Syntax & Parsing #8) uses the identical surface and must match the
     destination array type's length exactly.
+16. A keyed array literal `[E.a = x, E.b = y, ...]` initializes an
+    enum-indexed array `[E]T` (Type System #13). Each key is a member of `E`
+    written in full; every member appears exactly once, in any order, so a
+    missing, duplicate, or foreign key is a compile error naming it. Values are
+    evaluated in written order and stored at their key. A positional literal
+    does not initialize `[E]T`, and keys do not apply to `[N]T`. Multiline
+    keyed literals follow #7.
 
 ## Names & Scoping
 1. Qualification is the primary namespacing mechanism — modules provide what C fakes with prefixes: `parser.init()` instead of `ace_parser_init`; import aliasing resolves module-name collisions. Selective import is the explicit opt-in for bringing particular public spellings into their ordinary namespaces.

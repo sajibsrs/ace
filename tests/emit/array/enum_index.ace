@@ -1,0 +1,24 @@
+/* Enum-indexed array fixture: E index, E loop binder, E slice, member writes. */
+
+// expect-exit: 124
+
+Color: enum u8 { red, green, blue }
+
+TABLE: [Color]int
+
+main(): int {
+    TABLE[Color.red] = 1
+    TABLE[Color.green] = 2
+    TABLE[Color.blue] = 3
+    local: [Color]int
+    local[Color.red] = 10
+    local[Color.green] = 20
+    local[Color.blue] = 30
+    copy: [Color]int = local
+    sum: int = 0
+    for c: Color, v: int in TABLE {
+        if c == Color.blue { sum += v * copy[c] } else { sum += v }
+    }
+    tail: []int = copy[Color.green..]
+    return sum + int(tail.len) * 2 + int(TABLE.len) * 9
+}

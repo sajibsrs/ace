@@ -551,6 +551,7 @@ static void mangle_type(Buf* b, SType* t) {
         char tmp[32];
         snprintf(tmp, sizeof tmp, "a%llu_", (unsigned long long)t->count);
         buf_write(b, tmp, strlen(tmp));
+        if (t->key) { buf_put8(b, 'k'); mangle_type(b, t->key); } // [E]T
         mangle_type(b, t->base);
         return;
     }
@@ -1102,6 +1103,26 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels) {
             return 1;
         }
         uint32_t cursor = 0;
+        if (v->kind == N_ARRAYLIT && v->nkids > 0 && v->kids[0]->kind == N_MAPENTRY) {
+            // keyed [E]T: each value at its member's slot, in any written order
+            uint32_t es = ty_size(t->base);
+            for (uint32_t i = 0; i < ty_size(t); i++) buf_put8(out, 0);
+            for (int i = 0; i < v->nkids; i++) {
+                Buf elem = {0};
+                ConstRels elem_rels = {0};
+                if (!eval_const(e, lit_elem(v->kids[i]), t->base, &elem, &elem_rels) || elem.len != es) {
+                    free(elem.d); free(elem_rels.v);
+                    out->len = start; return 0;
+                }
+                uint32_t at = (uint32_t)(start + lit_slot(v->kids[i], i) * es);
+                memcpy(out->d + at, elem.d, elem.len);
+                for (int j = 0; j < elem_rels.n; j++)
+                    const_reloc_add(rels, at + elem_rels.v[j].off, elem_rels.v[j].sym);
+                free(elem.d);
+                free(elem_rels.v);
+            }
+            return 1;
+        }
         if (v->kind == N_ARRAYLIT && v->a) {
             for (uint64_t i = 0; i < t->count; i++) {
                 if (!eval_const(e, v->a, t->base, out, rels)) return 0;

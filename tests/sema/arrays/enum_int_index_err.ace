@@ -1,0 +1,7 @@
+/* An [E]T index is exactly E, not an integer. */
+
+Color: enum { red, green, blue }
+Size: enum { small, large }
+T: [Color]int
+
+main(): int { return T[1] }

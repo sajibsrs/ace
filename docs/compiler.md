@@ -24,8 +24,8 @@ the file without the suffix, so `-o program.ace` links `program` and leaves
 
 Emitted programs default to `--release`; `ace pkg build` and `ace pkg run`
 follow the same default. `--debug` output dynamically validates
-sequence bounds, integer arithmetic, call-boundary slice contracts, null use,
-and allocator discipline; a violation writes a concise diagnostic to standard
+sequence bounds, integer arithmetic, conversions to enums, call-boundary slice
+contracts, null use, and allocator discipline; a violation writes a concise diagnostic to standard
 error and aborts. It also enables `assert`. `--release` removes those guards,
 failure paths, tracking, assertion evaluation, and diagnostic data. The flags are mutually
 exclusive. Check-only, `--tokens`, and `--ast` runs accept either flag, but the

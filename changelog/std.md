@@ -1,5 +1,7 @@
 # Standard library
 
+- `net.socket` drops its non-`tcp` branch: a `SocketType` value is always a
+  member, so the branch could not run.
 - Marked `mem.grow` `@cold`, keeping `Array.push` growth out of its callers'
   loops.
 - `math` Payne-Hanek reduction reads 2/pi from bit e-1, so the quotient

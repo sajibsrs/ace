@@ -1,0 +1,9 @@
+/* Debug: a negative value is never a dense enum member. */
+K: enum { a, b }
+pick(n: i64): K {
+    return K(n)
+}
+main(): int {
+    k: K = pick(-1)
+    return int(i32(k))
+}

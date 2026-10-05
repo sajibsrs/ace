@@ -1,0 +1,5 @@
+/* A type in an array bracket must be an enum. */
+
+Color: enum { red, green, blue }
+Size: enum { small, large }
+T: [u8]int

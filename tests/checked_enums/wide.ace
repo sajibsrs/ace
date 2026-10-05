@@ -1,0 +1,9 @@
+/* Debug: the check precedes narrowing, so 258 does not wrap to member 2. */
+K: enum u8 { a, b, c }
+pick(n: u16): K {
+    return K(n)
+}
+main(): int {
+    k: K = pick(258)
+    return int(u8(k))
+}

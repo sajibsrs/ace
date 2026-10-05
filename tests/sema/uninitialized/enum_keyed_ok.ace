@@ -1,0 +1,9 @@
+/* A keyed literal initializes every element of [E]T. */
+
+Color: enum { red, green, blue }
+
+main(): int {
+    a: [Color]int = [Color.red = 1, Color.green = 2, Color.blue = 3]
+    b: [Color]int = a
+    return b[Color.blue]
+}

@@ -221,11 +221,7 @@ from_darwin(address: DarwinAddr4): Addr4 {
 }
 
 pub socket(socket_type: SocketType): (Socket, Error) {
-    // tcp is the only initial type; its enum zero maps to SOCK_STREAM.
-    if socket_type != SocketType.tcp {
-        errno_set(EINVAL)
-        return Socket(-1), SocketErr.invalid
-    }
+    // tcp is the only initial type, so socket_type maps to SOCK_STREAM.
     raw: i32 = c_socket(AF_INET, SOCK_STREAM, 0)
     if raw == -1 { return Socket(-1), SocketErr(sys.errno()) }
 

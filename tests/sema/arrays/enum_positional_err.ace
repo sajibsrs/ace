@@ -1,0 +1,5 @@
+/* [E]T takes a keyed literal, not a positional one. */
+
+Color: enum { red, green, blue }
+Size: enum { small, large }
+T: [Color]int = [1, 2, 3]

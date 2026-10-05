@@ -1,0 +1,10 @@
+/* The two-binder loop over [E]T binds the index as E. */
+
+Color: enum { red, green, blue }
+Size: enum { small, large }
+T: [Color]int
+
+main(): int {
+    for i: usize, v: int in T {}
+    return 0
+}

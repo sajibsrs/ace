@@ -1,0 +1,6 @@
+/* Only a dense enum (0..n-1) indexes an array. */
+
+Color: enum { red, green, blue }
+Size: enum { small, large }
+Sparse: enum { a, b = 4 }
+T: [Sparse]int

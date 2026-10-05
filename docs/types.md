@@ -580,6 +580,39 @@ writable view) and `mem.copy` into an established writable view of the array.
 `string`, `[]char`, and `[]u8` need no bridge because they share identity. A
 fixed byte array reaches that view type only through slicing first.
 
+### Enum-indexed arrays
+
+`[E]T` is an array with one `T` per member of `E`, indexed by `E` itself. `E`
+must be dense: its members are exactly `0 .. n-1`, in any declaration order.
+The layout is `[n]T`'s, but the type is distinct from `[n]T` and neither
+converts to the other.
+
+```ace
+Color: enum { red, green, blue }
+
+NAME: [Color]string = [
+    Color.red = "red",
+    Color.green = "green",
+    Color.blue = "blue",
+]
+
+name(c: Color): string {
+    return NAME[c]
+}
+```
+
+The keyed literal names every member exactly once, in any order; a missing,
+repeated, or foreign key is a compile error naming it, so the table cannot fall
+out of step with the enum. Values are evaluated in written order. A positional
+literal is rejected; `[v : n]` still repeats one value.
+
+An index is exactly `E`: an integer or another enum is a type error. No bounds
+check is emitted in either mode, because a debug build already checks every
+conversion into `E`. `.len` is the member count; `for c: Color, s: string in
+NAME` binds the index as `Color`; a slice `NAME[Color.green..]` takes `E` bounds
+and yields `[]string`. Writing every member by its constant index initializes
+the array, as for constant integer indexes.
+
 ## Compile-time static lookup maps
 
 `StaticMap[K]V` declares an immutable module-level lookup table:
@@ -696,6 +729,9 @@ Opcode: enum u8 {
 The backing type must be a fixed-width integer type. Values must fit it and may
 not be duplicated. Size, alignment, fields, arrays, parameters, and returns use
 that exact representation; conversions to and from integers remain explicit.
+An enum value is always a member: `State(7)` with a constant is a compile-time
+error, and `--debug` traps a runtime conversion that names no member, testing
+the value before it narrows to the backing type.
 
 A tagged union is a closed set of named alternatives stored inline. Variants
 may carry no data or one explicitly typed payload:
@@ -922,6 +958,17 @@ The examples are covered by `tests/sema/docs/type_ok.ace`.
 ## Design rationale
 
 Why the rules in `spec/syntax.md`, `spec/types.md` are shaped as they are.
+
+- Type System #13, Syntax & Parsing #16: a table parallel to an enum (display
+  names, precedence, dispatch) stays in step by construction, where a
+  positional `[N]T` shifts silently when a member is added. Indexing by `E`
+  costs one load with no cast (Pascal `array[E] of T`; Odin `[E]T`, which also
+  admits integer indexes and so loses the guarantee). Keys use `=` as struct
+  literals do; `:` would collide with repetition `[x : n]`.
+- Safety #2 (enum conversions): checking `E(n)` catches a bad value where it is
+  made rather than where it is used, covers `switch` and every table as well,
+  and runs less often than indexing (Zig checks `@enumFromInt` likewise). A
+  dense enum costs one unsigned compare.
 
 - Syntax & Parsing #9: one declaration rule works uniformly for literals,
   aggregates, null values, and single- or multi-return expressions while making

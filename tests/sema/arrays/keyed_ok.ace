@@ -1,0 +1,15 @@
+/* Keyed literals: any order, multiline, global and local, assignment. */
+
+Color: enum { red, green, blue }
+Size: enum { small, large }
+NAME: [Color]string = [
+    Color.blue = "blue",
+    Color.red = "red",
+    Color.green = "green",
+]
+
+main(): int {
+    t: [Color]int = [Color.green = 2, Color.red = 1, Color.blue = 3]
+    t = [Color.red = 4, Color.green = 5, Color.blue = 6]
+    return t[Color.red] + int(NAME[Color.red].len)
+}

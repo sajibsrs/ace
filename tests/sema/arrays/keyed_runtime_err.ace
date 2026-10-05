@@ -1,0 +1,9 @@
+/* A key is a member written in full, not a runtime value. */
+
+Color: enum { red, green, blue }
+Size: enum { small, large }
+main(): int {
+    c: Color = Color.red
+    t: [Color]int = [c = 1, Color.green = 2, Color.blue = 3]
+    return t[Color.green]
+}

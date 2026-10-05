@@ -1,0 +1,9 @@
+/* Debug: a sparse enum conversion traps on a gap between members. */
+S: enum i8 { none, read = 4, write }
+pick(n: i32): S {
+    return S(n)
+}
+main(): int {
+    s: S = pick(3)
+    return int(i8(s))
+}

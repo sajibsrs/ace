@@ -1,0 +1,11 @@
+/* [E]T and [n]T are different types. */
+
+Color: enum { red, green, blue }
+Size: enum { small, large }
+T: [Color]int
+U: [3]int
+
+main(): int {
+    U = T
+    return 0
+}

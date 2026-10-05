@@ -1,0 +1,5 @@
+/* Every element of a keyed literal is keyed. */
+
+Color: enum { red, green, blue }
+
+T: [Color]int = [Color.red = 1, 2, 3]

@@ -832,6 +832,7 @@ static int place_address(Lw* l, Place p) {
 // --- expressions ------------------------------------------------------------------
 
 static int expr(Lw* l, Node* x, int want);
+static void enum_check(Lw* l, int v, IrType from, SType* e, Node* site);
 static void cond(Lw* l, Node* x, int t, int f);
 
 // The IR type of x, taking an untyped constant's type from its context.
@@ -2019,6 +2020,8 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
         IrType from = need_type(l, node_ty(a));
         if (to == IT_BOOL && from != IT_BOOL) unsupported(l, "conversion to bool");
         int v = expr(l, a, from);
+        SType* et = unwrap(node_ty(x));
+        if (l->mode == EMIT_DEBUG && et && et->kind == SK_ENUM) enum_check(l, v, from, et, x);
         if (from == to) return v;
         return emit2(l, IR_CAST, to, v, -1);
     }
@@ -2342,10 +2345,11 @@ static void literal_array(Lw* l, Node* x, SType* t, Agg* out) {
         return;
     }
     if ((uint64_t)x->nkids != u->count) unsupported(l, "array literal");
-    for (int i = 0; i < x->nkids; i++) {
+    for (int i = 0; i < x->nkids; i++) { // written order; a keyed entry at its member's slot
         Agg e;
-        value(l, x->kids[i], u->base, &e);
-        for (int k = 0; k < nb; k++) out->v[i * nb + k] = e.v[k];
+        value(l, lit_elem(x->kids[i]), u->base, &e);
+        uint64_t s = lit_slot(x->kids[i], i);
+        for (int k = 0; k < nb; k++) out->v[s * nb + k] = e.v[k];
     }
 }
 
@@ -2621,7 +2625,8 @@ static void store_value(Lw* l, Node* x, SType* t, int dst, int32_t off) {
     if (x->kind == N_ARRAYLIT && u && u->kind == SK_ARRAY) {
         uint32_t es = sema_size(u->base);
         if (!x->a) {
-            for (int i = 0; i < x->nkids; i++) store_value(l, x->kids[i], u->base, dst, off + (int32_t)(i * es));
+            for (int i = 0; i < x->nkids; i++) // written order; a keyed entry at its member's slot
+                store_value(l, lit_elem(x->kids[i]), u->base, dst, off + (int32_t)(lit_slot(x->kids[i], i) * es));
             return;
         }
         if (!u->count) return;
@@ -2733,6 +2738,26 @@ static void view_parts(Lw* l, Node* x, int* ptr, int* len) {
 static void bounds_check(Lw* l, int c, Node* site) {
     int id = emit2(l, IR_CHECK, IT_VOID, c, -1);
     l->fn->ins[id].name = "bounds violation";
+    l->fn->ins[id].at = site;
+}
+
+// Debug (Safety #2): E(v) traps unless v is a member's discriminant, checked
+// before narrowing to E's backing type. A dense enum (0..n-1) needs one
+// unsigned compare; a sparse one compares each member.
+static void enum_check(Lw* l, int v, IrType from, SType* e, Node* site) {
+    int w = from == IT_U64 ? v : emit2(l, IR_CAST, IT_U64, v, -1); // sign- or zero-extended
+    int n = e->decl ? e->decl->nkids : 0, dense = 1;
+    for (int i = 0; i < n; i++) if (e->decl->kids[i]->ival >= (uint64_t)n) dense = 0;
+    int c;
+    if (dense) {
+        c = emit2(l, IR_LT, IT_BOOL, w, konst(l, IT_U64, (uint64_t)n));
+    } else {
+        c = konst(l, IT_BOOL, 0);
+        for (int i = 0; i < n; i++)
+            c = emit2(l, IR_OR, IT_BOOL, c, emit2(l, IR_EQ, IT_BOOL, w, konst(l, IT_U64, e->decl->kids[i]->ival)));
+    }
+    int id = emit2(l, IR_CHECK, IT_VOID, c, -1);
+    l->fn->ins[id].name = "enum value is not a member";
     l->fn->ins[id].at = site;
 }
 
@@ -3619,6 +3644,8 @@ static void seq_loop(Lw* l, Node* s) {
         Agg g;
         g.n = 1;
         g.v[0] = read_var(l, ix, l->cur);
+        IrType bt = need_type(l, is->type); // an [E]T index binds as E
+        if (bt != IT_U64) g.v[0] = emit2(l, IR_CAST, bt, g.v[0], -1);
         set_leaves(l, var_of(l, is), is->type, &g);
     }
     loop_body(l, s, exit, s->c);

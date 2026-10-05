@@ -1,0 +1,7 @@
+/* A constant conversion to an enum must name a member (Safety #4). */
+
+K: enum { a, b }
+
+main(): int {
+    return int(i32(K(7)))
+}
