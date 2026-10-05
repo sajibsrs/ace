@@ -15,8 +15,9 @@
 //               under mixed `=`); b = init (or N_TUPLE_E); F_CONST/F_MIXED
 //   N_FUNC      str = name; kids = params; a = ret; b = body; c = N_TPARAMS;
 //               d = owner type for methods and associated functions;
-//               F_PUB/F_EXPO/F_METHOD/F_MUT/F_ASSOC (F_ASSOC: no implicit
-//               self, owner-qualified call only, e.g. `Type::new(...)`);
+//               F_PUB/F_EXPO/F_METHOD/F_MUT/F_ASSOC (F_METHOD: first
+//               param is the receiver `self`; F_ASSOC: no receiver, called
+//               only through the type, e.g. `Type.new(...)`);
 //               F_SPECIALIZED/F_INTRINSIC mark bodyless declarations;
 //               F_INLINE marks a function expanded at its direct calls;
 //               F_COLD marks one whose calls are rare (@cold)
@@ -927,17 +928,6 @@ static Node* expr_postfix_base(P* p, int ctx, Node* base) {
             base = fa;
             continue;
         }
-        case T_COLONCOLON: { // associated-function reference (Type::name)
-            p->i++;
-            Token* f = expect(p, T_IDENT, "associated-function name after '::'");
-            Node* fa = nd_tok(p, N_FIELD_E, f);
-            fa->a = base;
-            fa->str = f->str;
-            fa->len = f->len;
-            fa->flags |= F_ASSOC;
-            base = fa;
-            continue;
-        }
         case T_LBRACE: // typed struct literal (suppressed at statement/if/for heads)
             if (ctx & CTX_NOSLIT) return base;
             base = parse_structlit(p, base);
@@ -1004,7 +994,8 @@ static Node* expr_primary(P* p, int ctx) {
         p->i++;
         return x;
     }
-    case T_IDENT: {
+    case T_IDENT:
+    case T_SELF: { // the receiver reads as an ordinary local
         Node* x = ident_node(p, t);
         p->i++;
         return x;
@@ -1650,7 +1641,9 @@ static Node* parse_block(P* p) {
 
 // --- declarations ---------------------------------------------------------------
 
-static Node* parse_params(P* p, const char* closer) {
+/* An explicit receiver `self` / `mut self` parses as an untyped first
+ * parameter (a == NULL); only a method or contract method accepts one. */
+static Node* parse_params(P* p, const char* closer, int self_ok) {
     NV params = {0};
     if (!at(p, T_RPAREN)) {
         for (;;) {
@@ -1659,6 +1652,19 @@ static Node* parse_params(P* p, const char* closer) {
                 if (ate(p, T_MUT)) pa->flags |= F_MUT;
                 else if (ate(p, T_NOALIAS)) pa->flags |= F_NOALIAS;
                 else break;
+            }
+            if (at(p, T_SELF)) {
+                if (!self_ok) perr(p, "'self' is only the receiver of a method declaration");
+                if (params.n) perr(p, "'self' must be the first parameter");
+                if (pa->flags & F_NOALIAS) perr(p, "'noalias' does not apply to the receiver 'self'");
+                p->i++;
+                if (at(p, T_COLON)) perr(p, "'self' takes no type; its type is the method's owner");
+                pa->str = "self";
+                pa->len = 4;
+                nv_push(p, &params, pa);
+                if (!ate(p, T_COMMA)) break;
+                if (at(p, T_RPAREN)) break;
+                continue;
             }
             Token* name = expect(p, T_IDENT, "parameter name");
             pa->str = name->str;
@@ -1753,7 +1759,7 @@ static const char* parse_link_name(P* p, Token* name) {
     return link->str; // STR tokens are NUL-terminated arena copies
 }
 
-static Node* parse_func_rest(P* p, Token* name, Node* tp, int pub, int expo) {
+static Node* parse_func_rest(P* p, Token* name, Node* tp, int pub, int expo, int self_ok) {
     Node* f = nd_tok(p, N_FUNC, name);
     f->str = name->str;
     f->len = name->len;
@@ -1761,7 +1767,7 @@ static Node* parse_func_rest(P* p, Token* name, Node* tp, int pub, int expo) {
     if (expo) f->flags |= F_EXPO;
     f->c = tp;
     expect(p, T_LPAREN, "'(' after function name");
-    Node* ph = parse_params(p, "')' to close parameters");
+    Node* ph = parse_params(p, "')' to close parameters", self_ok);
     f->kids = ph->kids;
     f->nkids = ph->nkids;
     f->a = parse_ret(p);
@@ -1795,33 +1801,20 @@ static Node* owner_type(P* p, Token* name, Node* tp) {
     return t;
 }
 
-static Node* parse_assoc_rest(P* p, Token* owner, Node* tp, int pub) {
-    expect(p, T_COLONCOLON, "'::' after associated-function owner");
-    Token* name = expect(p, T_IDENT, "associated-function name after '::'");
-    Node* f = parse_func_rest(p, name, tp, pub, 0);
-    f->flags |= F_ASSOC;
+/* Type.name(...): a method when its first parameter is the receiver `self`
+ * (typed here as the owner), otherwise an associated function. */
+static Node* parse_type_func_rest(P* p, Token* owner, Node* tp, int pub) {
+    expect(p, T_DOT, "'.' after function owner");
+    Token* name = expect(p, T_IDENT, "function name after '.'");
+    Node* f = parse_func_rest(p, name, tp, pub, 0, 1);
     f->d = owner_type(p, owner, tp);
-    return f;
-}
-
-static Node* parse_method_rest(P* p, Token* owner, Node* tp, int pub, int mut) {
-    expect(p, T_DOT, "'.' after method owner");
-    Token* name = expect(p, T_IDENT, "method name after '.'");
-    Node* f = parse_func_rest(p, name, tp, pub, 0);
-    f->flags |= F_METHOD;
-    if (mut) f->flags |= F_MUT;
-    f->d = owner_type(p, owner, tp);
-
-    Node* self = nd_tok(p, N_PARAM, owner);
-    self->str = "self";
-    self->len = 4;
-    if (mut) self->flags |= F_MUT;
-    self->a = f->d;
-    Node** params = (Node**)arena_alloc((size_t)(f->nkids + 1) * sizeof(Node*));
-    params[0] = self;
-    for (int i = 0; i < f->nkids; i++) params[i + 1] = f->kids[i];
-    f->kids = params;
-    f->nkids++;
+    if (f->nkids && !f->kids[0]->a) {
+        f->flags |= F_METHOD;
+        if (f->kids[0]->flags & F_MUT) f->flags |= F_MUT;
+        f->kids[0]->a = f->d;
+    } else {
+        f->flags |= F_ASSOC;
+    }
     return f;
 }
 
@@ -1949,14 +1942,18 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
         while (!at(p, T_RBRACE)) {
             if (at(p, T_EOF)) perr(p, "unexpected end of file in contract");
             Node* m = nd(p, N_METHOD);
-            if (ate(p, T_MUT)) m->flags |= F_MUT;
+            if (at(p, T_MUT)) perr(p, "a contract method takes no leading 'mut'; a mutating receiver is written 'mut self'");
             Token* mname = expect(p, T_IDENT, "method name");
             m->str = mname->str;
             m->len = mname->len;
             expect(p, T_LPAREN, "'(' after method name");
-            Node* ph = parse_params(p, "')' to close method parameters");
-            m->kids = ph->kids;
-            m->nkids = ph->nkids;
+            Node* ph = parse_params(p, "')' to close method parameters", 1);
+            if (!ph->nkids || ph->kids[0]->a)
+                perr_at(p, mname, "a contract method's first parameter is its receiver 'self' or 'mut self'");
+            // the receiver stays implied in the contract's method node
+            if (ph->kids[0]->flags & F_MUT) m->flags |= F_MUT;
+            m->kids = ph->kids + 1;
+            m->nkids = ph->nkids - 1;
             m->a = parse_ret(p);
             nv_push(p, &methods, m);
             if (!ate(p, T_NL) && !at(p, T_RBRACE)) perr(p, "expected newline or '}' after method");
@@ -2099,7 +2096,7 @@ static Node* parse_extern_def(P* p, size_t start, int pub) {
     p->i = start;
     Token* name = tk(p);
     p->i++;
-    return parse_func_rest(p, name, try_tparams(p), pub, 1); // sema rejects generics
+    return parse_func_rest(p, name, try_tparams(p), pub, 1, 0); // sema rejects generics
 }
 
 // An exported C global after `[mut] name: T` and `=`: an ordinary global with
@@ -2409,33 +2406,29 @@ static void parse_layout_attrs(P* p, int* packed, Node** align, int* cold) {
     }
 }
 
-static Node* parse_top_named(P* p, int pub, int mut);
+static Node* parse_top_named(P* p, int pub);
 
 static Node* parse_top(P* p) {
     if (at(p, T_IMPORT)) perr(p, "imports must precede declarations");
-    int pub = 0, mut = 0, inl = 0;
+    int pub = 0, inl = 0;
     for (;;) {
         if (at(p, T_PUB)) {
             if (inl) perr(p, "visibility must come before 'inline'");
-            if (mut) perr(p, "visibility must come before 'mut'");
             if (pub) perr(p, "duplicate 'pub' modifier");
             p->i++; pub = 1;
         }
         else if (at(p, T_INLINE)) {
-            if (mut) perr(p, "'inline' must come before 'mut'");
             if (inl) perr(p, "duplicate 'inline' modifier");
             p->i++; inl = 1;
         }
         else if (at(p, T_MUT)) {
-            if (mut) perr(p, "duplicate 'mut' modifier");
-            p->i++; mut = 1;
+            perr(p, "a top-level declaration takes no leading 'mut'; a mutating receiver is written 'mut self'");
         }
         else break;
     }
     if (at(p, T_EXTERN) && p->i + 2 < p->n && p->toks[p->i + 1].kind == T_STR &&
         (p->toks[p->i + 2].kind == T_IDENT || p->toks[p->i + 2].kind == T_MUT)) {
         // `extern "c" name(...) { body }` or `extern "c" [mut] name: T = value`
-        if (mut) perr(p, "'mut' before a top-level declaration requires a method owner");
         p->i += 2;
         int gmut = ate(p, T_MUT);
         if (gmut || (p->i + 1 < p->n && p->toks[p->i + 1].kind == T_COLON)) {
@@ -2446,19 +2439,19 @@ static Node* parse_top(P* p) {
             const char* cname = parse_link_name(p, name);
             return parse_extern_global(p, name, type, cname, gmut, pub);
         }
-        if (p->i + 1 < p->n && (p->toks[p->i + 1].kind == T_DOT || p->toks[p->i + 1].kind == T_COLONCOLON))
+        if (p->i + 1 < p->n && p->toks[p->i + 1].kind == T_DOT)
             perr(p, "methods and associated functions cannot use the C ABI");
         Node* f = parse_extern_def(p, p->i, pub);
         if (inl) f->flags |= F_INLINE;
         return f;
     }
     if (at(p, T_EXTERN)) {
-        if (pub || inl || mut) perr(p, "'extern' blocks take no pub/inline/mut");
+        if (pub || inl) perr(p, "'extern' blocks take no pub/inline");
         return parse_extern(p);
     }
     if (!at(p, T_IDENT)) perr(p, "expected declaration, got %s", gdesc(p));
     size_t start = p->i;
-    Node* d = parse_top_named(p, pub, mut);
+    Node* d = parse_top_named(p, pub);
     if (inl) {
         if (d->kind != N_FUNC) {
             p->i = start; // report at the declaration's name
@@ -2469,7 +2462,7 @@ static Node* parse_top(P* p) {
     return d;
 }
 
-static Node* parse_top_named(P* p, int pub, int mut) {
+static Node* parse_top_named(P* p, int pub) {
     Token* name = tk(p);
     p->i++;
     if (name->len == 13 && memcmp(name->str, "static_assert", 13) == 0 && at(p, T_LPAREN)) {
@@ -2480,18 +2473,10 @@ static Node* parse_top_named(P* p, int pub, int mut) {
     }
     Node* tp = try_tparams(p);
     if (at(p, T_SIGNS)) {
-        if (mut) perr(p, "signings accept only the optional leading 'pub'");
         return parse_signing(p, name, tp, pub);
     }
-    if (at(p, T_DOT)) {
-        return parse_method_rest(p, name, tp, pub, mut);
-    }
-    if (at(p, T_COLONCOLON)) {
-        if (mut) perr(p, "'mut' marks a mutating receiver; associated functions have none — mark individual 'mut' parameters instead");
-        return parse_assoc_rest(p, name, tp, pub);
-    }
-    if (mut) perr(p, "'mut' before a top-level declaration requires a method owner");
-    if (at(p, T_LPAREN)) return parse_func_rest(p, name, tp, pub, 0);
+    if (at(p, T_DOT)) return parse_type_func_rest(p, name, tp, pub);
+    if (at(p, T_LPAREN)) return parse_func_rest(p, name, tp, pub, 0, 0);
     if (at(p, T_COLON)) return parse_colon_decl(p, name, tp, pub);
     perr(p, "expected '(' or ':' after top-level name '%.*s'", (int)name->len, name->str);
     return NULL;

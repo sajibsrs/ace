@@ -57,7 +57,7 @@ import fmt
 import json
 
 main(): int {
-    doc: json.Json = json.Json::new()
+    doc: json.Json = json.Json.new()
     defer mut doc.wipe()
     err: Error, at: usize = mut doc.parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
     if err != null { return 1 }
@@ -68,7 +68,7 @@ main(): int {
 }
 ```
 
-`json.Json::new(): Json` makes an empty `Json`, and `mut doc.parse(text:
+`json.Json.new(): Json` makes an empty `Json`, and `mut doc.parse(text:
 string): (Error, usize)` parses `text` as one value into `doc.root`. On failure
 `root` is `Value.none`, the error is a `json.ParseErr`, and the offset is the
 byte at which it was found, as for `Parser.parse`. Each `parse` reuses the
@@ -110,7 +110,7 @@ The pointer walk is the core function `json.get(tree: Value, path: string):
 import json
 
 main(): int {
-    doc: json.Json = json.Json::new()
+    doc: json.Json = json.Json.new()
     defer mut doc.wipe()
     mut doc.object()
     mut doc.field("name", "ace")
@@ -143,7 +143,7 @@ The text is borrowed from the `Json` and valid until `reset` or `wipe`.
 
 ## Parsing
 
-`json.Parser::new(): Parser` makes a parser and `mut parser.wipe()`
+`json.Parser.new(): Parser` makes a parser and `mut parser.wipe()`
 releases it. `mut parser.parse(text: string): (Value, Error, usize)` parses `text` as
 exactly one value. Surrounding space, tab, line feed, and carriage return are
 skipped. On error it returns `Value.none`, an error from the `json.ParseErr`
@@ -172,14 +172,14 @@ parser allocated for that call. A `Value` is valid until `reset` or
 `wipe`; using one afterwards is invalid. Trees from repeated `parse`
 calls accumulate and stay valid side by side until then, and a failed parse
 leaves nothing to clean up. An empty string, array, or object holds no
-storage. Release the parser with `defer` right after `Parser::new`:
+storage. Release the parser with `defer` right after `Parser.new`:
 
 ```ace
 import fmt
 import json
 
 main(): int {
-    parser: json.Parser = json.Parser::new()
+    parser: json.Parser = json.Parser.new()
     defer mut parser.wipe()
     root: json.Value, err: Error, at: usize = mut parser.parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
 
@@ -209,7 +209,7 @@ document on 139-byte documents. Without `reset`, trees accumulate until
 
 ## Writing
 
-`json.Formatter::new(): Formatter` makes a formatter and
+`json.Formatter.new(): Formatter` makes a formatter and
 `mut formatter.wipe()` releases it. A formatter writes compact
 JSON one call at a time into a buffer it owns and grows. It needs no `Value`
 tree, so records are written straight from runtime data of any shape or size,
@@ -237,7 +237,7 @@ main(): int {
     readings: [2]Reading
     readings[0] = Reading{sensor = "north", celsius = 21.5, ok = true}
     readings[1] = Reading{sensor = "south", celsius = 19.0, ok = false}
-    f: json.Formatter = json.Formatter::new()
+    f: json.Formatter = json.Formatter.new()
     defer mut f.wipe()
     mut f.array()
 

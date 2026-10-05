@@ -8,7 +8,7 @@ same(text: string, err: Error, expected: string): bool {
 }
 
 fields(): int {
-    f: json.Formatter = json.Formatter::new()
+    f: json.Formatter = json.Formatter.new()
     defer mut f.wipe()
     count: usize = 128
     mut f.object()
@@ -30,7 +30,7 @@ fields(): int {
 }
 
 nesting(): int {
-    f: json.Formatter = json.Formatter::new()
+    f: json.Formatter = json.Formatter.new()
     defer mut f.wipe()
     mut f.object()
     mut f.key("tags")
@@ -51,7 +51,7 @@ nesting(): int {
 }
 
 scalar_root(): int {
-    f: json.Formatter = json.Formatter::new()
+    f: json.Formatter = json.Formatter.new()
     defer mut f.wipe()
     mut f.value(1.0e21)
     text: string, err: Error = f.finish()
@@ -63,12 +63,12 @@ scalar_root(): int {
 /* A parsed tree written back through the formatter reproduces its text. */
 tree(): int {
     text: string = "{\"a\":[1,2.5,true,null],\"b\":{\"c\":\"d\"},\"e\":[]}"
-    p: json.Parser = json.Parser::new()
+    p: json.Parser = json.Parser.new()
     defer mut p.wipe()
     root: json.Value, perr: Error, perr_at: usize = mut p.parse(text)
     if perr != null { return 31 }
 
-    f: json.Formatter = json.Formatter::new()
+    f: json.Formatter = json.Formatter.new()
     defer mut f.wipe()
     mut f.value(root)
     out: string, err: Error = f.finish()
@@ -78,7 +78,7 @@ tree(): int {
 }
 
 escapes(): int {
-    f: json.Formatter = json.Formatter::new()
+    f: json.Formatter = json.Formatter.new()
     defer mut f.wipe()
     mut f.value("q\"b\\n\nt\tc\x01é")
     text: string, err: Error = f.finish()
@@ -92,7 +92,7 @@ failures(): int {
     err: Error
     text: string
 
-    f: json.Formatter = json.Formatter::new()
+    f: json.Formatter = json.Formatter.new()
     defer mut f.wipe()
     mut f.value(nan)
     text, err = f.finish()
@@ -154,7 +154,7 @@ failures(): int {
 
 /* Output far past the first allocation, checked by parsing it back. */
 growth(): int {
-    f: json.Formatter = json.Formatter::new()
+    f: json.Formatter = json.Formatter.new()
     defer mut f.wipe()
     mut f.array()
 
@@ -168,7 +168,7 @@ growth(): int {
     text: string, err: Error = f.finish()
     if err != null || text.len < 100000 { return 71 }
 
-    p: json.Parser = json.Parser::new()
+    p: json.Parser = json.Parser.new()
     defer mut p.wipe()
     root: json.Value, perr: Error, perr_at: usize = mut p.parse(text)
     if perr != null { return 72 }
@@ -198,7 +198,7 @@ growth(): int {
  * and a second document without one is rejected.
  */
 reuse(): int {
-    f: json.Formatter = json.Formatter::new()
+    f: json.Formatter = json.Formatter.new()
     defer mut f.wipe()
     text: string
     err: Error
@@ -225,7 +225,7 @@ reuse(): int {
 
 /* Runtime-shaped data: the number of records and their values are computed. */
 runtime(): int {
-    f: json.Formatter = json.Formatter::new()
+    f: json.Formatter = json.Formatter.new()
     defer mut f.wipe()
     count: int = 4
     mut f.array()

@@ -22,7 +22,7 @@ add(a: i64, b: i64): i64 {
     return a + b
 }
 
-Button.press(): i64 {
+Button.press(self): i64 {
     return self.on_click(self.clicks) // a method reads its own field value
 }
 

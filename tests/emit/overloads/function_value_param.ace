@@ -7,11 +7,11 @@
 
 Box: struct { v: int }
 
-Box.use(f: (int): int): int {
+Box.use(self, f: (int): int): int {
     return f(self.v)
 }
 
-Box::make(f: (int): int): Box {
+Box.make(f: (int): int): Box {
     return Box { v = f(1) }
 }
 
@@ -32,7 +32,7 @@ twice(x: f64): f64 {
 }
 
 main(): int {
-    b: Box = Box::make(twice)
+    b: Box = Box.make(twice)
     call: ((int): int): int = run
     if run(twice) != 10 { return 1 }
     if apply[int, int](3, twice) != 6 { return 2 }

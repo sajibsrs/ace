@@ -55,7 +55,7 @@ fill(text: mut []u8) {
 }
 
 compile(pattern: string): regex.Regex {
-    re: regex.Regex, err: Error = regex.Regex::new(pattern)
+    re: regex.Regex, err: Error = regex.Regex.new(pattern)
     if err != null { fmt.println(err.message) }
 
     return re

@@ -31,7 +31,7 @@ inline call[R](f: (): R): R {
 
 Task[R]: struct { run: (): R }
 
-Task[R].go(): R {
+Task[R].go(self): R {
     run: (): R = self.run
     return run()
 }

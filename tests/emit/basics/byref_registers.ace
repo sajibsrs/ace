@@ -18,20 +18,20 @@ note(x: int) {
 }
 
 // the loop reads the receiver's fields straight through its register
-mut Counter.run(n: int) {
+Counter.run(mut self, n: int) {
     for i: int in 0 .. n {
         self.value = self.value + i
         self.steps = self.steps + 1
     }
 }
 
-mut Counter.add(amount: int): int {
+Counter.add(mut self, amount: int): int {
     self.value = self.value + amount
     return self.value
 }
 
 // the receiver is live across each call, and is passed on as mut
-mut Counter.relay(n: int): int {
+Counter.relay(mut self, n: int): int {
     for i: int in 0 .. n {
         note(self.value)
         bump(mut self, 1)

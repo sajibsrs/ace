@@ -11,12 +11,12 @@ outer[T](): T {
 
 Box[T]: struct { value: T }
 
-Box[T].get(): T {
+Box[T].get(self): T {
     y: T = 1
     return y
 }
 
-Box[T]::make(): T {
+Box[T].make(): T {
     y: T = 1
     return y
 }
@@ -26,6 +26,6 @@ main(): int {
     s: string = outer[string]()
     b: Box[string] = Box[string]{ value = "x" }
     t: string = b.get()
-    u: string = Box[string]::make()
+    u: string = Box[string].make()
     return 0
 }

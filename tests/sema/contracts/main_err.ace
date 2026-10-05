@@ -1,9 +1,9 @@
 /* Contract without signing fixture. */
 
 Thing: struct { value: int }
-Readable: contract { read(): int }
+Readable: contract { read(self): int }
 
-Thing.read(): int {
+Thing.read(self): int {
     return self.value
 }
 

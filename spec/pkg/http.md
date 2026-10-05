@@ -70,8 +70,8 @@ shared rules are in `spec/std/README.md`.
       supplied headers exactly and synthesizes neither `Host` nor framing
       fields; `FormatErr` distinguishes output capacity and invalid start-line
       or header fields. The incremental parser surface is
-      `mut RequestParser.parse(input, headers, body, eof): RequestResult` and
-      `mut ResponseParser.parse(input, headers, body, eof, no_body):
+      `RequestParser.parse(mut self, input, headers, body, eof): RequestResult` and
+      `ResponseParser.parse(mut self, input, headers, body, eof, no_body):
       ResponseResult`, with public phase, framing, capacity, and cumulative
       progress support types for each parser. Each call resumes from saved
       phase, line-scan, framing, header, and body progress; already-consumed
@@ -117,7 +117,7 @@ shared rules are in `spec/std/README.md`.
       remains the internal neutral workspace for one HTTP exchange.
       `ClientContext: struct { storage: mut []Storage, redirects: RedirectPolicy }`
       owns and grows the plaintext workspace through `mem` and carries HTTP
-      policy. `ClientContext::new` constructs it and `wipe` releases it. The
+      policy. `ClientContext.new` constructs it and `wipe` releases it. The
       exact public overload is
       `get(url: string, mut context: ClientContext): (Response, Error)`, which
       accepts only plaintext HTTP. Allocation failure is explicit.

@@ -18,25 +18,25 @@ main(): int {
 
     if !sdl.init(sdl.InitFlags { video = 1 }) { return 2 }
     defer sdl.quit()
-    window: sdl.Window = sdl.Window::new("shader", 16, 16, sdl.WindowFlags {})
+    window: sdl.Window = sdl.Window.new("shader", 16, 16, sdl.WindowFlags {})
     defer mut window.wipe()
     if !window.ok() { return 3 }
 
-    missing: sdl.Renderer = sdl.Renderer::new(window, "no-such-driver")
+    missing: sdl.Renderer = sdl.Renderer.new(window, "no-such-driver")
     defer mut missing.wipe()
     if missing.ok() { return 4 }
 
-    renderer: sdl.Renderer = sdl.Renderer::new(window, "software")
+    renderer: sdl.Renderer = sdl.Renderer.new(window, "software")
     defer mut renderer.wipe()
     if !renderer.ok() { return 5 }
     if renderer.shader_formats() != blank(sdl.ShaderFormats) { return 6 }
 
     code: [4]u8 = [0x03, 0x02, 0x23, 0x07]
-    program: sdl.Shader = sdl.Shader::new(renderer, sdl.ShaderFormats { spirv = 1 }, code[..], 1)
+    program: sdl.Shader = sdl.Shader.new(renderer, sdl.ShaderFormats { spirv = 1 }, code[..], 1)
     defer mut program.wipe()
     if program.ok() { return 7 }
 
-    state: sdl.RenderState = sdl.RenderState::new(renderer, program)
+    state: sdl.RenderState = sdl.RenderState.new(renderer, program)
     defer mut state.wipe()
     if state.ok() { return 8 }
 

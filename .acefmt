@@ -60,4 +60,3 @@ slice-range = tight
 paren-bracket-inner = tight
 array-repeat = spaced
 declaration-elision = spaced
-assoc-function-ref = tight

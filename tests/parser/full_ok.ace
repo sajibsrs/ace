@@ -25,17 +25,17 @@ StringList: type = []string
 Meters: distinct f64
 
 Shape: contract {
-    area(): f32
-    mut scale(k: f64)
+    area(self): f32
+    scale(mut self, k: f64)
 }
 
 Circle signs Shape
 
-Circle.area(): f32 {
+Circle.area(self): f32 {
     return 0.0
 }
 
-pub mut Circle.scale(k: f64) {
+pub Circle.scale(mut self, k: f64) {
     self.r = self.r * f32(k)
 }
 

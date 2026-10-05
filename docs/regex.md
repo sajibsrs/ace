@@ -23,7 +23,7 @@ example.
 ## Matching
 
 ```ace
-re: regex.Regex, err: Error = regex.Regex::new("(\\d+)-(\\d+)")
+re: regex.Regex, err: Error = regex.Regex.new("(\\d+)-(\\d+)")
 defer mut re.wipe()
 if err != null { return 1 }   // a regex.ParseErr or a regex.CompileErr
 
@@ -37,9 +37,9 @@ for mut re.next(text, mut at) {
 }
 ```
 
-`Regex::new` parses and compiles the pattern and sizes every buffer a search
+`Regex.new` parses and compiles the pattern and sizes every buffer a search
 needs, so it is the only call that allocates or fails. When it fails with a
-`ParseErr`, `Syntax::parse` on the same pattern reports the byte offset. A
+`ParseErr`, `Syntax.parse` on the same pattern reports the byte offset. A
 search reuses that scratch state, which is why each search method takes
 `mut self`; none of them allocates or can fail.
 
@@ -95,7 +95,7 @@ instead stops at the first match any thread reaches.
 
 While no thread is live, seeding a thread that cannot get past its first
 consuming instruction is wasted work, so the search skips to the next byte that
-can begin a match. `Matcher::new` collects those bytes once, following every
+can begin a match. `Matcher.new` collects those bytes once, following every
 path from instruction 0 that consumes nothing; assertions pass through, since
 they only reject, and a reachable `match` (the pattern matches empty) turns
 skipping off. A single such byte is found with `str.find`, eight bytes at a
@@ -105,7 +105,7 @@ faster, `(\d+)-(\d+)` 1.9x.
 ## Parsing
 
 ```ace
-s: regex.Syntax, err: Error, at: usize = regex.Syntax::parse("a(b|c)*")
+s: regex.Syntax, err: Error, at: usize = regex.Syntax.parse("a(b|c)*")
 defer mut s.wipe()
 
 if err != null {
@@ -113,7 +113,7 @@ if err != null {
 }
 ```
 
-`Syntax::parse` reads the complete pattern. On success the offset is zero. On
+`Syntax.parse` reads the complete pattern. On success the offset is zero. On
 failure the returned `Syntax` holds no storage and the offset names the byte at
 which the error was found, with three exceptions that point at something more
 useful than the end of the pattern: an unclosed group reports its `(`, an
@@ -196,11 +196,11 @@ a{2,5}     rep{2,5 lit{a}}
 ## Program
 
 ```ace
-p: regex.Program, err: Error = regex.Program::compile(s)
+p: regex.Program, err: Error = regex.Program.compile(s)
 defer mut p.wipe()
 ```
 
-`Program::compile` lowers a syntax tree to a flat instruction array. The
+`Program.compile` lowers a syntax tree to a flat instruction array. The
 program copies the tree's classes, so the `Syntax` may be wiped as soon as
 compilation returns. A failed compilation holds no storage.
 
@@ -260,7 +260,7 @@ a{2,4}   0 save 0
 ## Matcher
 
 ```ace
-m: regex.Matcher, err: Error = regex.Matcher::new(p)
+m: regex.Matcher, err: Error = regex.Matcher.new(p)
 defer mut m.wipe()
 
 if mut m.run(p, text, 0, false) {
@@ -268,7 +268,7 @@ if mut m.run(p, text, 0, false) {
 }
 ```
 
-`Matcher::new` sizes every buffer the VM needs from a program, so
+`Matcher.new` sizes every buffer the VM needs from a program, so
 `run(code, text, from, earliest)` never allocates or fails. It searches from
 `from` and returns whether a match was found; `earliest` stops at the first
 match any thread reaches instead of the leftmost-first one. After a

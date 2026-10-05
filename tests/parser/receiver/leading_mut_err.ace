@@ -1,0 +1,2 @@
+P: struct { x: i64 }
+mut P.f(mut self) { }

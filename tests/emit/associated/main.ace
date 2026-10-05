@@ -2,24 +2,24 @@
 
 Router: struct { count: int }
 
-pub Router::new(start: int): Router {
+pub Router.new(start: int): Router {
     return Router { count = start }
 }
 
-pub mut Router.bump(k: int) {
+pub Router.bump(mut self, k: int) {
     self.count = self.count + k
 }
 
-pub Router::reset(mut r: Router): Router {
+pub Router.reset(mut r: Router): Router {
     r.count = 0
     return r
 }
 
 main(): int {
-    r: Router = Router::new(10)
+    r: Router = Router.new(10)
     mut r.bump(5)
     if r.count != 15 { return 1 }
-    r = Router::reset(mut r)
+    r = Router.reset(mut r)
     if r.count != 0 { return 2 }
     return 15
 }

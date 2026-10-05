@@ -462,9 +462,9 @@ int ir_verify(IrFunc* fn) {
 
 static void print_value(FILE* out, const int* num, int v) { fprintf(out, "%%%d", num[v]); }
 
-static void print_sym(FILE* out, Sym* s) { // owner::name, as the source spells it
+static void print_sym(FILE* out, Sym* s) { // owner.name, as the source spells it
     Node* d = s->decl;
-    if (d && d->d) fprintf(out, "%.*s::", (int)d->d->len, d->d->str);
+    if (d && d->d) fprintf(out, "%.*s.", (int)d->d->len, d->d->str);
     fprintf(out, "%.*s", (int)s->len, s->name);
 }
 
@@ -517,7 +517,7 @@ void ir_print(IrFunc* fn, FILE* out) {
     for (int b = 0; b < fn->nblocks; b++)
         for (int i = 0; i < fn->blocks[b].nins; i++) num[fn->blocks[b].ins[i]] = next++;
     Node* d = fn->decl;
-    if (d->d) fprintf(out, "%.*s::", (int)d->d->len, d->d->str);
+    if (d->d) fprintf(out, "%.*s.", (int)d->d->len, d->d->str);
     fprintf(out, "%.*s(", (int)d->len, d->str);
     print_types(out, fn->params, fn->nparams, fn->sig ? fn->sig->parts : NULL, fn->sig ? fn->sig->nparts : 0);
     fputs("): ", out);

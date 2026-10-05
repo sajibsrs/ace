@@ -34,7 +34,7 @@ main(): int {
     if op(1) != 1 || gen[int](3) != 3 { return 10 }
     if pick[int](1, 2) != 2 || pick[u8](5, 6) != 5 { return 11 }
     cell: Cell = Cell { v = 1 }
-    if run(one) + twice(one) + cell.after(one) + Cell::made(one).v != 32 { return 12 }
+    if run(one) + twice(one) + cell.after(one) + Cell.made(one).v != 32 { return 12 }
     sq: Square = Square { side = 2 }
     t: Shape = Shape(&sq)
     if t.area() != 4 { return 13 }
@@ -70,11 +70,11 @@ Cell: struct {
     v: int,
 }
 
-Cell.after(f: (int): int): int {
+Cell.after(self, f: (int): int): int {
     return f(self.v)
 }
 
-Cell::made(f: (int): int): Cell {
+Cell.made(f: (int): int): Cell {
     return Cell { v = f(1) }
 }
 
@@ -86,7 +86,7 @@ Square: struct {
     side: int,
 }
 
-Square.area(): int {
+Square.area(self): int {
     return self.side * self.side
 }
 
@@ -145,14 +145,14 @@ Kind: enum {
 }
 
 Shape: contract {
-    area(): int
+    area(self): int
 }
 
 Circle: struct {
     r: int,
 }
 
-Circle.area(): int {
+Circle.area(self): int {
     return self.r
 }
 

@@ -14,7 +14,7 @@ keyword       := "import" | "pub" | "mut" | "const" | "noalias" | "if" | "else"
                 | "for" | "in" | "switch" | "default" | "return" | "break" | "continue" | "defer"
                 | "asm" | "extern" | "contract" | "struct" | "embed" | "signs"
                 | "specialized" | "intrinsic" | "inline" | "distinct" | "type" | "enum" | "union" | "null" | "true" | "false"
-                | "volatile"
+                | "volatile" | "self"
 
 ident         := letter ("letter" | digit | "_")*        [P: exact ident charset]
 literal       := int_lit | float_lit | string_lit | char_lit | "null" | "true" | "false"
@@ -72,7 +72,7 @@ top_decl      := ["pub"] ["inline"] top_body                 // "inline": functi
 top_body      := var_decl | const_decl | func_decl | struct_decl
                | static_map_decl
                | bits_decl | contract_decl | enum_decl | union_decl | alias_decl | distinct_decl
-               | error_domain_decl | method_func_decl | assoc_func_decl | signing_decl | extern_block
+               | error_domain_decl | type_func_decl | signing_decl | extern_block
                | extern_def
 
 binding       := ident ":" type
@@ -86,10 +86,10 @@ const_decl    := ident ":" "const" type "=" expr
 func_decl     := ident [bracket_args] "(" [params] ")" [ret_clause]
                  (block | "specialized" | "intrinsic")
                                                           // brackets = type params or specialization args — Notes #23
-method_func_decl := ["mut"] owner_type "." ident "(" [params] ")" [ret_clause] block
-assoc_func_decl := owner_type "::" ident "(" [params] ")" [ret_clause] block
-                                                          // no implicit self; no leading "mut" —
-                                                          // called only as Type::name(...), never through a value
+type_func_decl := owner_type "." ident "(" [receiver ["," params] | params] ")" [ret_clause] block
+                                                          // with receiver: method, called as x.name(...);
+                                                          // without: associated function, called as Type.name(...)
+receiver      := ["mut"] "self"                            // untyped; first parameter only
 owner_type    := ident [type_params]                        // declares owner T names
 type_params   := "[" ident ("," ident)* "]"               // max[T] — type declarations always declare params
 params        := param ("," param)* [","]
@@ -110,7 +110,7 @@ bits_field    := ident ":" [contextual_signed] int_lit // `_` is anonymous
 contextual_signed := ident                              // exact text "signed"; not reserved
 
 contract_decl := ident [type_params] ":" "contract" "{" method_decl* "}"
-method_decl   := ["mut"] ident "(" [params] ")" [ret_clause]  // receiver implied
+method_decl   := ident "(" receiver ["," params] ")" [ret_clause]
 
 enum_decl     := ident ":" "enum" [enum_backing] "{" enum_members "}"
 enum_backing  := type                                  // sema: fixed-width integer or alias
@@ -226,7 +226,6 @@ postfix_part  := "(" [arg_list] ")"                       // call; ["mut"] expr 
                | "[" expr "]"                             // index
                | "[" [expr] ".." [expr] "]"               [P] slice expression
                | "." ident                                // field or built-in sequence .len
-               | "::" ident                               // associated-function reference (owner must be a type)
                | "[" type_args "]"                        // generic instantiation — see Notes
 
 arg_list      := arg ("," arg)*

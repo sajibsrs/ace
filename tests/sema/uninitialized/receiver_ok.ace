@@ -4,7 +4,7 @@
 Pair: struct { x: int, y: int }
 Outer: struct { pair: Pair, tag: int }
 
-mut Pair.fill(): bool {
+Pair.fill(mut self): bool {
     self.x = 1
     self.y = 2
     return true

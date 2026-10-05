@@ -59,6 +59,6 @@ pub score(value: string): int {
     return int(value.len)
 }
 
-pub Record.doubled(): int {
+pub Record.doubled(self): int {
     return self.value + 1
 }

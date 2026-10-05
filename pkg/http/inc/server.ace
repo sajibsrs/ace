@@ -38,12 +38,12 @@ pub Context: struct {
     backlog: usize = 512,
 }
 
-pub Context::new(): Context {
+pub Context.new(): Context {
     return Context {}
 }
 
 /* Releases buffer storage. Call once the context is no longer served. */
-pub mut Context.wipe() {
+pub Context.wipe(mut self) {
     mem.release[u8](mut self.input)
     mem.release[Header](mut self.headers)
     mem.release[u8](mut self.body)

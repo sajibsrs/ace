@@ -4,14 +4,14 @@ inline plain(): int {
     return 0
 }
 
-pub inline Owner.read(): int {
+pub inline Owner.read(self): int {
     return self.n
 }
 
-pub inline mut Owner.write() {
+pub inline Owner.write(mut self) {
     self.n = 1
 }
 
-inline Owner::make(): Owner {
+inline Owner.make(): Owner {
     return Owner{ n = 0 }
 }

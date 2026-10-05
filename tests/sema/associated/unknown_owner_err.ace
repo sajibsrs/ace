@@ -1,4 +1,4 @@
 main(): int {
-    x: int = Ghost::new()
+    x: int = Ghost.new()
     return x
 }

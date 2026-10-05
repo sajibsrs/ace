@@ -2,7 +2,7 @@
 
 Counter: struct { value: int }
 
-mut Counter.bump() {
+Counter.bump(mut self) {
     self.value += 1
 }
 

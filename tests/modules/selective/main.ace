@@ -23,5 +23,5 @@ main(): int {
     }
     answer: int = score(p.x) + score(usize(p.y)) + keep(5) +
         int(Color.blue) + keep_type[int](0) + type_only.value + ValueOnly(0)
-    return Thing(answer + boxed.value - p.x)
+    return answer + boxed.value - p.x + 3
 }

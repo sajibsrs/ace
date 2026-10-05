@@ -8,9 +8,9 @@ its capacity. The canonical zero value and the empty literal `Array[T]{}` are
 valid empty arrays holding no storage, so no constructor is required and the
 first `push` allocates. Growth goes through `mem.grow`, which doubles storage.
 Type arguments are explicit, as everywhere: `array.Array[int]`,
-`array.Array[int]::new(8)`.
+`array.Array[int].new(8)`.
 
-- `Array[T]::new(capacity: usize): (Array[T], Error)` creates an empty array
+- `Array[T].new(capacity: usize): (Array[T], Error)` creates an empty array
   with room for `capacity` elements. Zero allocates nothing. Failure returns
   `ArrayErr.allocation`.
 - `wipe()` releases the storage and leaves the array empty.

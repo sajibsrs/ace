@@ -292,7 +292,7 @@ Each used type tuple emits a specialized function body.
 Each stamp is checked for its own type arguments. An error inside the body
 names its line there, followed by a note for each instantiation that led to
 it, innermost first; a method or associated function is named through its
-owner (`Box[string].get`, `Box[string]::make`):
+owner (`Box[string].get`, `Box[string].make`):
 
 ```text
 main.ace:4:12: error: type mismatch: integer literal given where string expected (casts are explicit)
@@ -429,7 +429,7 @@ is per-type specializations (see [str](std/str.md)).
 ## Inline functions
 
 The `inline` modifier asks for a function's body to be expanded at every
-direct call instead of called. It follows `pub` and precedes a receiver `mut`:
+direct call instead of called. It follows `pub`:
 
 ```ace
 inline mix(value: u64): u64 {
@@ -439,7 +439,7 @@ inline mix(value: u64): u64 {
 
 Buffer: struct { at: usize }
 
-pub inline mut Buffer.skip(n: usize) {
+pub inline Buffer.skip(mut self, n: usize) {
     self.at += n
 }
 
@@ -575,7 +575,9 @@ a single `f(a: u64)` selects it wherever `f` is declared, and
 `y: u8 = f(5)` is an error.
 
 A local shadows a same-named function or global from its declarator to the end
-of its block, its own initializer included. `get: usize = get(a)` is therefore
+of its block, its own initializer included. It may never take the name of a
+visible type, primitives included: a type and a value never share a name in
+overlapping scopes. `get: usize = get(a)` is therefore
 an error (`'get' is not callable`); name the local differently. A call written
 before the local still reaches the function.
 
@@ -718,8 +720,8 @@ check_c_globals(): i32 {
   C functions may declare `...`.
 - Default and named arguments are not implemented.
 - A declaration or function type takes at most 64 parameters. A method's
-  receiver counts, so a method declares at most 63 more; so does a contract
-  method, whose receiver is implicit. The variadic arguments of a C variadic
+  receiver `self` counts, so a method declares at most 63 more; so does a
+  contract method. The variadic arguments of a C variadic
   call are not counted.
 - C-boundary `extern "c"` functions cannot overload because their
   external names are unmangled.

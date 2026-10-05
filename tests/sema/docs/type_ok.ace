@@ -62,20 +62,28 @@ keep(text: string): string {
 }
 
 Value: contract {
-    get(): int
+    get(self): int
 }
 
 Number: struct { value: int }
 
 Number signs Value
 
-Number.get(): int {
+Number.get(self): int {
     return self.value
+}
+
+Number.set(mut self, value: int) {
+    self.value = value
+}
+
+Number.zero(): Number {
+    return Number{ value = 0 }
 }
 
 Named: struct { text: string }
 
-Named.name(): string {
+Named.name(self): string {
     return self.text
 }
 
@@ -169,6 +177,8 @@ main(): int {
     partial.x = 40
     partial.y = 2
     number_object: Number = Number { value = 13 }
+    zero_number: Number = Number.zero()
+    mut zero_number.set(21)
     value: Value = Value(&number_object)
     human: Human = Human { named = Named { text = "Ada" } }
     promoted_name: string = human.name()

@@ -13,7 +13,7 @@ check(
     output: mut []u8,
 ): int {
     address: net.Addr4, valid: bool = net.parse4("127.0.0.1:80")
-    url: http.Url, err: Error = http.Url::parse("http://example.com/?q=1")
+    url: http.Url, err: Error = http.Url.parse("http://example.com/?q=1")
     request_headers: [1]http.Header = [
         http.Header {
             name = "Host",
@@ -70,7 +70,7 @@ check(
 }
 
 main(): int {
-    context: http.ClientContext = http.ClientContext::new()
+    context: http.ClientContext = http.ClientContext.new()
     defer mut context.wipe()
     context.redirects = http.RedirectPolicy { limit = 10 }
     check_client(mut context)

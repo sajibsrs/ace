@@ -1,11 +1,11 @@
 /* Signing layout fixture. */
 
 Shape: contract {
-    area(): int
+    area(self): int
 }
 
 Color: contract {
-    color(): int
+    color(self): int
 }
 
 Circle: struct {

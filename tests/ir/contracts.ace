@@ -6,12 +6,12 @@ Circle: struct {
 }
 
 Shape: contract {
-    area(): i32
+    area(self): i32
 }
 
 Circle signs Shape
 
-Circle.area(): i32 {
+Circle.area(self): i32 {
     return self.radius
 }
 

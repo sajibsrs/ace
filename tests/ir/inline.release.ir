@@ -1,4 +1,4 @@
-Box::add(ptr, i64): void {
+Box.add(ptr, i64): void {
 b0:
     %0 = param ptr 0
     %1 = param i64 1

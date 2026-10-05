@@ -1,4 +1,4 @@
-Box::note(ptr): i64 {
+Box.note(ptr): i64 {
 b0:
     %0 = param ptr 0
     %1 = global ptr total
@@ -13,7 +13,7 @@ b0:
     ret %9
 }
 
-Box::add(ptr, i64): void {
+Box.add(ptr, i64): void {
 b0:
     %0 = param ptr 0
     %1 = param i64 1
@@ -131,7 +131,7 @@ b0:
     store [%0], %4
     %6 = const i64 9
     store [%1], %6
-    %8 = call i64 Box::Box$note(%0)
+    %8 = call i64 Box.Box$note(%0)
     ret
 }
 
@@ -144,9 +144,9 @@ b0:
     %4 = load i64 [%1]
     store [%0], %4
     %6 = load i64 [%1]
-    %7 = call i64 Box::Box$note(%0)
+    %7 = call i64 Box.Box$note(%0)
     %8 = const i64 4
-    call Box::Box$add(%1, %8)
+    call Box.Box$add(%1, %8)
     ret %6
 }
 

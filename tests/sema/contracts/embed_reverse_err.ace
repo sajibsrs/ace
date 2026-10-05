@@ -1,7 +1,7 @@
 /* An embedder's signing never flows back into its embedded base. */
 
 Value: contract {
-    value(): int
+    value(self): int
 }
 
 Base: struct {
@@ -14,7 +14,7 @@ Outer: struct {
 
 Outer signs Value
 
-Outer.value(): int {
+Outer.value(self): int {
     return self.base.n
 }
 

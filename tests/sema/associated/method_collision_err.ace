@@ -1,10 +1,10 @@
 Router: struct { count: int }
 
-pub Router::new(): Router {
+pub Router.new(): Router {
     return Router { count = 0 }
 }
 
-pub Router.new(): Router {
+pub Router.new(self): Router {
     return Router { count = 0 }
 }
 

@@ -1,10 +1,10 @@
 /* Contract missing method fixture. */
 
 Thing: struct { value: int }
-Readable: contract { read(): bool }
+Readable: contract { read(self): bool }
 
 Thing signs Readable
 
-Thing.read(): int {
+Thing.read(self): int {
     return self.value
 }

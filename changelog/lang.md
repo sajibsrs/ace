@@ -1,5 +1,10 @@
 # Language
 
+- Methods name their receiver explicitly (`Counter.get(self)`,
+  `Counter.add(mut self, k)`, contracts too); a `Type.f(...)` without `self`
+  is an associated function, so `::` and the leading `mut` are gone and `.`
+  reaches both. A type and a value may not share a name in overlapping scopes,
+  so a type base before `.` resolves with no value-first fallback.
 - Type-qualified method calls (`Counter.get(c)`) are rejected: methods are
   called only as `x.m(...)`, and an ambiguous promoted method is reached
   through its named embedded field. Lowering drops the receiver-as-argument-zero

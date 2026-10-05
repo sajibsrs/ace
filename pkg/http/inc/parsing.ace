@@ -178,7 +178,7 @@ is_host(host: string): bool {
  * under an explicitly forced scheme rather than autodetecting one from
  * `url`'s prefix. Returns `UrlErr` for unsupported or malformed input.
  */
-pub Url::parse(url: string, secure: bool): (Url, Error) {
+pub Url.parse(url: string, secure: bool): (Url, Error) {
     scheme: string = "http://"
     start: usize = 7
     default_port: u16 = 80
@@ -248,9 +248,9 @@ pub Url::parse(url: string, secure: bool): (Url, Error) {
  * `https://` from `url`'s prefix. Returns `UrlErr` for unsupported or
  * malformed input.
  */
-pub Url::parse(url: string): (Url, Error) {
+pub Url.parse(url: string): (Url, Error) {
     secure: bool = url.len >= 8 && mem.equal(url[..8], "https://")
-    parsed: Url, err: Error = Url::parse(url, secure)
+    parsed: Url, err: Error = Url.parse(url, secure)
     return parsed, err
 }
 
@@ -276,7 +276,7 @@ scan_line(input: string, scan_offset: usize): (usize, usize, usize, LineStatus) 
     return 0, 0, input.len, LineStatus.incomplete
 }
 
-mut RequestParser.prepare_line(input: string): LineStatus {
+RequestParser.prepare_line(mut self, input: string): LineStatus {
     if self.line_ready { return LineStatus.complete }
     stop: usize, next: usize, scan: usize, status: LineStatus =
         scan_line(input, self.scan_offset)
@@ -289,14 +289,14 @@ mut RequestParser.prepare_line(input: string): LineStatus {
     return status
 }
 
-mut RequestParser.consume_line() {
+RequestParser.consume_line(mut self) {
     self.input_offset = self.line_next
     self.line_start = self.line_next
     self.scan_offset = self.line_next
     self.line_ready = false
 }
 
-mut ResponseParser.prepare_line(input: string): LineStatus {
+ResponseParser.prepare_line(mut self, input: string): LineStatus {
     if self.line_ready { return LineStatus.complete }
     stop: usize, next: usize, scan: usize, status: LineStatus =
         scan_line(input, self.scan_offset)
@@ -309,7 +309,7 @@ mut ResponseParser.prepare_line(input: string): LineStatus {
     return status
 }
 
-mut ResponseParser.consume_line() {
+ResponseParser.consume_line(mut self) {
     self.input_offset = self.line_next
     self.line_start = self.line_next
     self.scan_offset = self.line_next
@@ -378,19 +378,19 @@ is_chunk_ext(text: string): bool {
     return true
 }
 
-RequestParser.progress(): RequestResult {
+RequestParser.progress(self): RequestResult {
     return RequestResult.progress(RequestProgress {
         consumed = self.input_offset,
         body_written = self.body_count,
     })
 }
 
-mut RequestParser.syntax_failure(): RequestResult {
+RequestParser.syntax_failure(mut self): RequestResult {
     self.phase = RequestPhase.failed
     return RequestResult.syntax
 }
 
-mut RequestParser.framing_failure(): RequestResult {
+RequestParser.framing_failure(mut self): RequestResult {
     self.phase = RequestPhase.failed
     return RequestResult.framing
 }
@@ -407,7 +407,7 @@ request_complete_result(method: string, target: string, headers: []Header, body:
 /* Resumes request parsing at the saved phase and scans only newly appended
  * input bytes.
  */
-pub mut RequestParser.parse(input: string, headers: mut []Header, body: mut []u8, eof: bool): RequestResult {
+pub RequestParser.parse(mut self, input: string, headers: mut []Header, body: mut []u8, eof: bool): RequestResult {
     if input.len < self.input_offset || input.len < self.scan_offset { return mut self.syntax_failure() }
     parse_loop: {
         if self.phase == RequestPhase.request {
@@ -648,7 +648,7 @@ pub mut RequestParser.parse(input: string, headers: mut []Header, body: mut []u8
     }
 }
 
-ResponseParser.progress(): ResponseResult {
+ResponseParser.progress(self): ResponseResult {
     return ResponseResult.progress(ResponseProgress {
         consumed = self.input_offset,
         body_written = self.body_count,
@@ -656,13 +656,13 @@ ResponseParser.progress(): ResponseResult {
 }
 
 /* Marks this parser failed and returns a syntax result. */
-mut ResponseParser.syntax_failure(): ResponseResult {
+ResponseParser.syntax_failure(mut self): ResponseResult {
     self.phase = ResponsePhase.failed
     return ResponseResult.syntax
 }
 
 /* Marks this parser failed and returns a framing result. */
-mut ResponseParser.framing_failure(): ResponseResult {
+ResponseParser.framing_failure(mut self): ResponseResult {
     self.phase = ResponsePhase.failed
     return ResponseResult.framing
 }
@@ -681,7 +681,8 @@ complete_result(version_minor: u8, status: u16, reason: string, headers: []Heade
 /* Resumes response parsing at the saved phase and scans only newly appended
  * input bytes.
  */
-pub mut ResponseParser.parse(
+pub ResponseParser.parse(
+    mut self,
     input: string,
     headers: mut []Header,
     body: mut []u8,

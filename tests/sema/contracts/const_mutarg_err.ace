@@ -1,11 +1,11 @@
 /* Contract const mutarg fixture. */
 
 Thing: struct { value: int }
-Writable: contract { mut write(value: int) }
+Writable: contract { write(mut self, value: int) }
 
 Thing signs Writable
 
-mut Thing.write(value: int) {
+Thing.write(mut self, value: int) {
     self.value = value
 }
 

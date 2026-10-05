@@ -3,8 +3,8 @@
 // expect-exit: 42
 
 Value: contract {
-    get(): int
-    mut add(amount: int)
+    get(self): int
+    add(mut self, amount: int)
 }
 
 Base: struct {
@@ -13,11 +13,11 @@ Base: struct {
 
 Base signs Value
 
-Base.get(): int {
+Base.get(self): int {
     return self.value
 }
 
-mut Base.add(amount: int) {
+Base.add(mut self, amount: int) {
     self.value = self.value + amount
 }
 

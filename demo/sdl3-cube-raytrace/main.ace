@@ -53,7 +53,7 @@ TEXT_SCALE: const f32 = 2.0
 
 Vec: struct { x: f32 = 0.0, y: f32 = 0.0, z: f32 = 0.0 }
 
-inline Vec.dot(other: Vec): f32 {
+inline Vec.dot(self, other: Vec): f32 {
     return self.x * other.x + self.y * other.y + self.z * other.z
 }
 
@@ -62,7 +62,7 @@ inline Vec.dot(other: Vec): f32 {
 Spin: struct { sa: f32, ca: f32, sb: f32, cb: f32 }
 
 // A direction in the cube's frame, turned into the camera's.
-inline Spin.to_camera(v: Vec): Vec {
+inline Spin.to_camera(self, v: Vec): Vec {
     z: f32 = v.z * self.ca - v.x * self.sa
     return Vec {
         x = v.x * self.ca + v.z * self.sa,
@@ -73,7 +73,7 @@ inline Spin.to_camera(v: Vec): Vec {
 
 // A direction in the camera's frame, turned into the cube's: to_camera's
 // rotations undone in reverse order.
-inline Spin.to_cube(v: Vec): Vec {
+inline Spin.to_cube(self, v: Vec): Vec {
     z: f32 = v.z * self.cb - v.y * self.sb
     return Vec {
         x = v.x * self.ca - z * self.sa,
@@ -88,7 +88,7 @@ Span: struct { near: f32 = 0.0, far: f32 = FAR, face: i32 = -1 }
 
 // Narrow the span to the slab -1 <= o + t * d <= 1 of one axis; false when
 // the ray misses it.
-inline mut Span.clip(o: f32, d: f32, axis: i32): bool {
+inline Span.clip(mut self, o: f32, d: f32, axis: i32): bool {
     if d == 0.0 { return o >= -1.0 && o <= 1.0 }
     t0: f32 = (-1.0 - o) / d
     t1: f32 = (1.0 - o) / d
@@ -133,7 +133,7 @@ inline normal(face: i32): Vec {
 // A base color scaled by Lambert light: AMBIENT plus the rest times the
 // cosine to the light, which a shadow removes.
 inline shade(rgb: u32, cosine: f32): sdl.Color {
-    base: sdl.Color = sdl.Color::hex(rgb)
+    base: sdl.Color = sdl.Color.hex(rgb)
     k: f32 = AMBIENT
     if cosine > 0.0 { k += (1.0 - AMBIENT) * cosine }
     return sdl.Color { r = base.r * k, g = base.g * k, b = base.b * k }
@@ -147,7 +147,7 @@ inline trace(spin: Spin, light: Vec, d: Vec): sdl.Color {
         n: Vec = spin.to_camera(normal(face))
         return shade(FACE_COLORS[face], n.dot(light))
     }
-    if d.y >= 0.0 { return sdl.Color::hex(BACKGROUND) }
+    if d.y >= 0.0 { return sdl.Color.hex(BACKGROUND) }
 
     // The floor faces straight up, so its cosine is the light's y; a ray
     // from the floor point toward the light that meets the cube shadows it.
@@ -167,11 +167,11 @@ main(): int {
     if !sdl.init(sdl.InitFlags { video = 1 }) { return fail("SDL_Init") }
     defer sdl.quit()
 
-    window: sdl.Window = sdl.Window::new("Ace + SDL3 raytraced cube", 640, 640, sdl.WindowFlags { resizable = 1 })
+    window: sdl.Window = sdl.Window.new("Ace + SDL3 raytraced cube", 640, 640, sdl.WindowFlags { resizable = 1 })
     defer mut window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
 
-    renderer: sdl.Renderer = sdl.Renderer::new(window)
+    renderer: sdl.Renderer = sdl.Renderer.new(window)
     defer mut renderer.wipe()
     if !renderer.ok() { return fail("SDL_CreateRenderer") }
     vsync: bool = renderer.vsync(1)
@@ -274,7 +274,7 @@ main(): int {
         period_draw_ns += sdl.ticks_ns() - trace_start
         period_drawn += 1
 
-        renderer.color(sdl.Color::hex(BACKGROUND))
+        renderer.color(sdl.Color.hex(BACKGROUND))
         renderer.clear()
         renderer.geometry(vertices[..nv], indices[..cells * 6])
 
@@ -292,7 +292,7 @@ main(): int {
         }
 
         renderer.scale(TEXT_SCALE, TEXT_SCALE)
-        renderer.color(sdl.Color::hex(0xE0E0E0))
+        renderer.color(sdl.Color.hex(0xE0E0E0))
         step: f32 = sdl.DEBUG_TEXT_SIZE + 4.0
         y: f32 = 6.0
 

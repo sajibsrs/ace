@@ -795,14 +795,14 @@ postconditions, assertions, or hidden runtime checking.
 
 ```ace
 Value: contract {
-    get(): int
+    get(self): int
 }
 
 Number: struct { value: int }
 
 Number signs Value
 
-Number.get(): int {
+Number.get(self): int {
     return self.value
 }
 
@@ -813,16 +813,33 @@ main(): int {
 }
 ```
 
-Methods are owned by their struct. `self` is read-only by default; a mutating
-method is declared and called with visible `mut`:
+Methods are owned by their struct. A method names its receiver as its first
+parameter, `self`, which takes no type: it is the owner. `self` is read-only;
+a mutating method takes `mut self` and is called with visible `mut`:
 
 ```ace
-mut Number.set(value: int) {
+Number.set(mut self, value: int) {
     self.value = value
 }
 
 mut number.set(21)
 ```
+
+A function declared on a type without `self` is an associated function, for
+constructors and other operations with no receiver. It is declared and called
+through the type with the same `.`; calling it through a value is an error:
+
+```ace
+Number.zero(): Number {
+    return Number{ value = 0 }
+}
+
+number: Number = Number.zero()
+```
+
+`self` is what tells the two kinds apart, so a method and an associated
+function may not share a name on the same type. A contract method names its
+receiver the same way: `get(self): int`, `set(mut self, value: int)`.
 
 One signing may list multiple contracts on one line:
 
@@ -849,10 +866,10 @@ error and a bare `Type.method` is not a function value.
 
 A contract method's own parameters may not be `mut` — dispatch has no way to
 validate mut agreement against the implementing method (the receiver's own
-`mut`, as in `mut Number.set`, is unaffected).
+`mut self` is unaffected).
 
 Signings and methods are private by default. Put visibility first:
-`pub Number signs Value` and `pub mut Number.set(value: int)`. A contract
+`pub Number signs Value` and `pub Number.set(mut self, value: int)`. A contract
 over const backing storage may be read, but mutating dispatch through it is a
 compile error.
 
@@ -864,7 +881,7 @@ one level:
 ```ace
 Named: struct { text: string }
 
-Named.name(): string {
+Named.name(self): string {
     return self.text
 }
 
@@ -924,6 +941,17 @@ Why the rules in `spec/syntax.md`, `spec/types.md` are shaped as they are.
   method; rejecting the collision keeps every call site's meaning local, costs
   only a rename, and the call itself is the plain indirect call a local
   function value already compiles to.
+- Abstraction #3, #9, #15: an explicit `self` makes the receiver visible in
+  every signature, as in Zig and Python, and lets one separator serve every
+  type-owned function: `.` after a type reaches the type (associated
+  functions, as enum members and union variants already did), `.` after a
+  value reaches the value. A separate `::` spelling existed only to tell the
+  two kinds apart, which `self` now does at the declaration.
+- Names & Scoping #2: forbidding a type and a value from sharing a name in
+  overlapping scopes gives `X.m` one lookup with no fallback. Java resolves
+  the same ambiguity by letting the value obscure the type (JLS 6.4.2), a rule
+  the reader has to remember at every use; rejecting the collision costs only
+  a rename where the names are declared.
 - Type System #3: the destination only settles how a value with no type of its
   own is stored, or picks among existing declarations; it never creates an
   instantiation, so every stamp is spelled at its use. Type-argument deduction

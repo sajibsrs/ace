@@ -19,19 +19,19 @@ pub Router: struct {
     routes: array.Array[Route],
 }
 
-pub Router::new(): Router {
+pub Router.new(): Router {
     return Router { routes = array.Array[Route] {} }
 }
 
 /* Releases route storage. Call once the router is no longer served. */
-pub mut Router.wipe() {
+pub Router.wipe(mut self) {
     mut self.routes.wipe()
 }
 
 /* Registers `handler` for exact `method` and path-segment prefix `path`.
  * Grows route storage as needed; fails only if that growth fails.
  */
-pub mut Router.handle(method: string, path: string, handler: (Request): Response): Error {
+pub Router.handle(mut self, method: string, path: string, handler: (Request): Response): Error {
     return mut self.routes.push(Route {
         method = method,
         path = path,
@@ -52,7 +52,7 @@ path_matches(prefix: string, target: string): bool {
  * 404 when nothing matches. Matching ignores any `?query` suffix on the
  * request target.
  */
-pub Router.dispatch(request: Request): Response {
+pub Router.dispatch(self, request: Request): Response {
     query_at: usize, has_query: bool = str.find(request.target, '?')
     path: string = request.target
     if has_query { path = request.target[..query_at] }

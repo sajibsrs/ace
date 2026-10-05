@@ -1,0 +1,7 @@
+import mem
+
+mem: struct { x: int }
+
+main(): int {
+    return 0
+}

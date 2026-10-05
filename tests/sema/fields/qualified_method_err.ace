@@ -2,7 +2,7 @@ Counter: struct {
     value: i64,
 }
 
-Counter.get(): i64 {
+Counter.get(self): i64 {
     return self.value
 }
 

@@ -1,7 +1,7 @@
 /* Recursive value layout fixture. */
 
 Direct: struct {
-    self: Direct,
+    inner: Direct,
 }
 
 ArrayCycle: struct {

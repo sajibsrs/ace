@@ -5,7 +5,7 @@
 
 Box: struct { v: i64 }
 
-inline mut Box.add(n: i64) {
+inline Box.add(mut self, n: i64) {
     self.v += n
 }
 

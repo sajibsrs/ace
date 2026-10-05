@@ -2,7 +2,7 @@
 
 Pair: struct { x: int, y: int }
 
-Pair.sum(): int { return self.x + self.y }
+Pair.sum(self): int { return self.x + self.y }
 
 main(): int {
     pair: Pair

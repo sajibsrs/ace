@@ -22,7 +22,7 @@ Point: struct {
     y: int,
 }
 
-Point.sum(): int {
+Point.sum(self): int {
     return self.x + self.y
 }
 

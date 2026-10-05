@@ -40,7 +40,7 @@ write_document(mut doc: json.Json, salt: int) {
 
 main(): int {
     iterations: usize = 20000
-    writer: json.Json = json.Json::new()
+    writer: json.Json = json.Json.new()
     defer mut writer.wipe()
     checksum: usize = 0
     bytes: usize = 0
@@ -60,7 +60,7 @@ main(): int {
     document: string, err: Error = writer.format()
     if err != null { return 2 }
 
-    reader: json.Json = json.Json::new()
+    reader: json.Json = json.Json.new()
     defer mut reader.wipe()
     checksum = 0
     started = now()

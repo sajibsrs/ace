@@ -7,12 +7,12 @@ Circle: struct {
 }
 
 Shape: contract {
-    area(): i32
-    mut scale(k: i32)
+    area(self): i32
+    scale(mut self, k: i32)
 }
 
 Metric: contract {
-    value(k: int): int
+    value(self, k: int): int
 }
 
 Circle signs (
@@ -20,19 +20,19 @@ Circle signs (
     Metric,
 )
 
-Circle.area(): i32 {
+Circle.area(self): i32 {
     return self.radius * self.radius * 3
 }
 
-mut Circle.scale(k: i32) {
+Circle.scale(mut self, k: i32) {
     self.radius = self.radius * k
 }
 
-Circle.value(k: int): int {
+Circle.value(self, k: int): int {
     return int(self.radius) + k
 }
 
-Circle.value(k: f64): f64 {
+Circle.value(self, k: f64): f64 {
     return k + 1.0
 }
 

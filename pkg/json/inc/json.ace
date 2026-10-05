@@ -21,11 +21,11 @@ pub Json: struct {
 }
 
 /* An empty `Json` to parse into or write with. */
-pub Json::new(): Json {
+pub Json.new(): Json {
     return Json {
         root = Value.none,
-        parser = Parser::new(),
-        formatter = Formatter::new(),
+        parser = Parser.new(),
+        formatter = Formatter.new(),
     }
 }
 
@@ -35,14 +35,14 @@ pub Json::new(): Json {
  * `ParseErr` with the byte offset at which it was found (0 on success); the
  * storage stays owned until `wipe`.
  */
-pub mut Json.parse(text: string): (Error, usize) {
+pub Json.parse(mut self, text: string): (Error, usize) {
     mut self.parser.reset()
     root: Value, err: Error, at: usize = mut self.parser.parse(text)
     self.root = root
     return err, at
 }
 
-pub mut Json.wipe() {
+pub Json.wipe(mut self) {
     mut self.parser.wipe()
     mut self.formatter.wipe()
     self.root = Value.none
@@ -52,7 +52,7 @@ pub mut Json.wipe() {
  * `FormatErr`. The text is borrowed from the document and is valid until
  * `reset` or `wipe`.
  */
-pub Json.format(): (string, Error) {
+pub Json.format(self): (string, Error) {
     text: string, err: Error = self.formatter.finish()
     return text, err
 }
@@ -60,94 +60,94 @@ pub Json.format(): (string, Error) {
 /* Discards the written text and its error, keeping the buffer; `root` is
  * unchanged.
  */
-pub mut Json.reset() {
+pub Json.reset(mut self) {
     mut self.formatter.reset()
 }
 
-pub mut Json.object() {
+pub Json.object(mut self) {
     mut self.formatter.object()
 }
 
-pub mut Json.array() {
+pub Json.array(mut self) {
     mut self.formatter.array()
 }
 
-pub mut Json.end() {
+pub Json.end(mut self) {
     mut self.formatter.end()
 }
 
-pub mut Json.key(name: string) {
+pub Json.key(mut self, name: string) {
     mut self.formatter.key(name)
 }
 
-pub mut Json.none() {
+pub Json.none(mut self) {
     mut self.formatter.none()
 }
 
-pub mut Json.value(flag: bool) {
+pub Json.value(mut self, flag: bool) {
     mut self.formatter.value(flag)
 }
 
-pub mut Json.value(number: int) {
+pub Json.value(mut self, number: int) {
     mut self.formatter.value(number)
 }
 
-pub mut Json.value(number: uint) {
+pub Json.value(mut self, number: uint) {
     mut self.formatter.value(number)
 }
 
-pub mut Json.value(number: usize) {
+pub Json.value(mut self, number: usize) {
     mut self.formatter.value(number)
 }
 
-pub mut Json.value(number: f64) {
+pub Json.value(mut self, number: f64) {
     mut self.formatter.value(number)
 }
 
-pub mut Json.value(text: string) {
+pub Json.value(mut self, text: string) {
     mut self.formatter.value(text)
 }
 
-pub mut Json.value(tree: Value) {
+pub Json.value(mut self, tree: Value) {
     mut self.formatter.value(tree)
 }
 
-pub mut Json.field(name: string, flag: bool) {
+pub Json.field(mut self, name: string, flag: bool) {
     mut self.formatter.field(name, flag)
 }
 
-pub mut Json.field(name: string, number: int) {
+pub Json.field(mut self, name: string, number: int) {
     mut self.formatter.field(name, number)
 }
 
-pub mut Json.field(name: string, number: uint) {
+pub Json.field(mut self, name: string, number: uint) {
     mut self.formatter.field(name, number)
 }
 
-pub mut Json.field(name: string, number: usize) {
+pub Json.field(mut self, name: string, number: usize) {
     mut self.formatter.field(name, number)
 }
 
-pub mut Json.field(name: string, number: f64) {
+pub Json.field(mut self, name: string, number: f64) {
     mut self.formatter.field(name, number)
 }
 
-pub mut Json.field(name: string, text: string) {
+pub Json.field(mut self, name: string, text: string) {
     mut self.formatter.field(name, text)
 }
 
-pub mut Json.field(name: string, tree: Value) {
+pub Json.field(mut self, name: string, tree: Value) {
     mut self.formatter.field(name, tree)
 }
 
 /* The value at JSON Pointer `path`, or `Value.none` and false when absent. */
-pub Json.get(path: string): (Value, bool) {
+pub Json.get(self, path: string): (Value, bool) {
     node: Value, ok: bool = pointer.get(self.root, path)
     return node, ok
 }
 
 /* The string at `path`, or null when it is absent or not a string. */
-pub Json.string(path: string): string {
+pub Json.string(self, path: string): string {
     node: Value, ok: bool = pointer.get(self.root, path)
     switch node {
         Value.string(text: string) { return text }
@@ -157,7 +157,7 @@ pub Json.string(path: string): string {
 }
 
 /* The number at `path`, or 0 when it is absent or not a number. */
-pub Json.number(path: string): f64 {
+pub Json.number(self, path: string): f64 {
     node: Value, ok: bool = pointer.get(self.root, path)
     switch node {
         Value.number(number: f64) { return number }
@@ -167,7 +167,7 @@ pub Json.number(path: string): f64 {
 }
 
 /* The boolean at `path`, or false when it is absent or not a boolean. */
-pub Json.bool(path: string): bool {
+pub Json.bool(self, path: string): bool {
     node: Value, ok: bool = pointer.get(self.root, path)
     switch node {
         Value.bool(flag: bool) { return flag }

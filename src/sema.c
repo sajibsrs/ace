@@ -367,8 +367,8 @@ static void ck_err(Ck* k, Node* n, const char* fmt, ...) {
         fprintf(stderr, "%s:%d:%d: note: in '", in->at->path ? in->at->path : k->d->path, in->at->line, in->at->col);
         // a method or associated function takes its owner's type arguments
         if (g->kind == N_FUNC && (g->flags & (F_METHOD | F_ASSOC)) && g->d)
-            fprintf(stderr, "%.*s%s%s%.*s", (int)g->d->len, g->d->str, spec_tuple_name(in->args, in->nargs),
-                    g->flags & F_METHOD ? "." : "::", (int)g->len, g->str);
+            fprintf(stderr, "%.*s%s.%.*s", (int)g->d->len, g->d->str, spec_tuple_name(in->args, in->nargs),
+                    (int)g->len, g->str);
         else
             fprintf(stderr, "%.*s%s", (int)g->len, g->str, spec_tuple_name(in->args, in->nargs));
         fputs("' instantiated here\n", stderr);
@@ -529,6 +529,27 @@ static Sym* lookup_type(Ck* k, const char* name, uint32_t len) {
     return NULL;
 }
 
+static SType* prim_by_name(const char* s, uint32_t len);
+
+/* Names & Scoping #2: a type and a value never share a name in overlapping
+ * scopes. Visibility matches lookup_val/lookup_type without resolving, so a
+ * declaration-time check cannot start a resolution cycle. */
+static Scope* g_import_scope;
+
+static int name_visible(Ck* k, int types, const char* name, uint32_t len) {
+    for (Scope* s = k->scope; s; s = s->parent) {
+        Sym* v = scope_find(s, types, name, len);
+        if (v && !(v->is_root && k->in_module)) return 1;
+    }
+    return 0;
+}
+
+static int value_names_type(Ck* k, Node* at, const char* name, uint32_t len) {
+    if (!name_visible(k, 1, name, len) && !prim_by_name(name, len)) return 0;
+    ck_err(k, at, "'%.*s' names a type; a value may not share its name", (int)len, name);
+    return 1;
+}
+
 static Sym* declare_val(Ck* k, Node* at, uint8_t kind, const char* name, uint32_t len) {
     if (is_discard_name(name, len)) {
         ck_err(k, at, "'_' discards a value and declares nothing");
@@ -542,12 +563,11 @@ static Sym* declare_val(Ck* k, Node* at, uint8_t kind, const char* name, uint32_
         ck_err(k, at, "duplicate name '%.*s' in this scope", (int)len, name);
         return NULL;
     }
+    if (value_names_type(k, at, name, len)) return NULL;
     Sym* s = sym_new(kind, name, len);
     scope_insert(k->scope, 0, s);
     return s;
 }
-
-static SType* prim_by_name(const char* s, uint32_t len);
 
 static Sym* declare_type(Ck* k, Node* at, const char* name, uint32_t len) {
     if (is_staticmap_name(name, len) || prim_by_name(name, len) || (len == 4 && memcmp(name, "void", 4) == 0)) {
@@ -565,6 +585,12 @@ static Sym* declare_type(Ck* k, Node* at, const char* name, uint32_t len) {
     Sym* old = scope_find(k->scope, 1, name, len);
     if (old) {
         ck_err(k, at, "duplicate type '%.*s'", (int)len, name);
+        return NULL;
+    }
+    // root imports live in a child of the file scope, out of the upward walk
+    if (name_visible(k, 0, name, len) ||
+        (!k->in_module && g_import_scope && scope_find(g_import_scope, 0, name, len))) {
+        ck_err(k, at, "'%.*s' names a value; a type may not share its name", (int)len, name);
         return NULL;
     }
     Sym* s = sym_new(SYM_TYPE, name, len);
@@ -1623,7 +1649,6 @@ static int spec_conforms(SType* sub, Node* gdecl, SType* ft, Node* fdecl) {
  * conformance; duplicates for one exact tuple on one overload are errors.
  */
 static Scope* g_file_scope; // survives sema_check for stamping and type building
-static Scope* g_import_scope;
 static int is_root_node(Diag* d, Node* n);
 static void check_inline_decl(Ck* k, Node* f);
 static void check_cold_decl(Ck* k, Node* f);
@@ -1787,7 +1812,7 @@ static Sym* enter_func(Ck* k, Node* f, int is_extern) {
         return NULL;
     }
     /* A method and an associated function can never share owner+name: their
-     * overload chains are resolved on separate tracks ('.' vs '::') and mixing
+     * overload chains are resolved on separate tracks (value vs type base) and mixing
      * them would put a receiverless signature where method resolution expects
      * a receiver in params[0]. Reject at declaration instead of leaving one
      * side silently unreachable through the other's call syntax. */
@@ -1821,6 +1846,7 @@ static Sym* enter_func(Ck* k, Node* f, int is_extern) {
                    (int)f->len, f->str);
         if (f->c) ck_err(k, f, "intrinsic declaration '%.*s' cannot be generic or specialized", (int)f->len, f->str);
     }
+    if (!head && !(f->flags & (F_METHOD | F_ASSOC)) && value_names_type(k, f, key, key_len)) return NULL;
     Sym* s = sym_new(SYM_FUNC, key, key_len);
     s->decl = f;
     s->top = f;
@@ -2799,7 +2825,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
     }
     case N_FIELD_E: {
         // enum member: Color.red
-        if (e->a->kind == N_IDENT && !lookup_val(k, e->a->str, e->a->len)) {
+        if (e->a->kind == N_IDENT) {
             Sym* ts = lookup_type(k, e->a->str, e->a->len);
             if (ts && ts->type && ts->type->kind == SK_ENUM) {
                 for (int i = 0; i < ts->type->decl->nkids; i++) {
@@ -4022,6 +4048,11 @@ static SType* check_method_call(Ck* k, Node* call, SType* b) {
     uint32_t key_len;
     const char* key = method_key(b->decl, callee->str, callee->len, &key_len);
     Sym* head = lookup_val(k, key, key_len);
+    if (head && (head->decl->flags & F_ASSOC)) {
+        ck_err(k, call, "'%.*s' is an associated function, called on the type: %s.%.*s(...)",
+               (int)callee->len, callee->str, type_name(b), (int)callee->len, callee->str);
+        return T_ERR;
+    }
     int supplied = call->nkids + 1;
     Sym* found = NULL;
     for (Sym* f = head; f; f = f->overload) {
@@ -4135,7 +4166,7 @@ static SType* check_method_call(Ck* k, Node* call, SType* b) {
 }
 
 /*
- * A generic owner (Map[K, V]::new(...)) needs each candidate's signature
+ * A generic owner (Map[K, V].new(...)) needs each candidate's signature
  * rebuilt under the owner's actual type arguments before matching, exactly
  * like check_method_call's generic branch — mirrored here without the
  * receiver-shaped logic (rmut/cmut, embedding promotion) that doesn't apply
@@ -4189,18 +4220,32 @@ static SType* check_generic_assoc_call(Ck* k, Node* call, SType* owner, Sym* hea
 }
 
 /*
- * Associated-function calls (Type::name(...)) have no receiver. A non-generic
+ * Associated-function calls (Type.name(...)) have no receiver. A non-generic
  * owner resolves exactly like an ordinary direct call once found under the
  * owner-namespaced key — select_call_overload/finish_direct_call already
  * handle overload selection and literal defaulting without any
  * receiver-shaped logic to strip out. A generic owner needs
  * per-candidate signature substitution instead (check_generic_assoc_call).
  */
+/* Does `base.name(...)` reach a struct type's functions rather than a value?
+ * Unions and enums keep their own `.` paths (variants, members). */
+static int struct_type_base(Ck* k, Node* base) {
+    Node* id = base->kind == N_INDEX ? base->a : base;
+    if (!id || id->kind != N_IDENT) return 0;
+    Sym* ts = lookup_type(k, id->str, id->len);
+    return ts && ts->type && ts->type->kind == SK_STRUCT;
+}
+
 static SType* check_assoc_call(Ck* k, Node* call, SType* owner) {
     Node* callee = call->a;
     uint32_t key_len;
     const char* key = method_key(owner->decl, callee->str, callee->len, &key_len);
     Sym* head = lookup_val(k, key, key_len);
+    if (head && (head->decl->flags & F_METHOD)) {
+        ck_err(k, call, "methods are called on a value: x.%.*s(...), not %s.%.*s(...)",
+               (int)callee->len, callee->str, type_name(owner), (int)callee->len, callee->str);
+        return T_ERR;
+    }
     if (owner->nargs) return check_generic_assoc_call(k, call, owner, head);
     int ambiguous = 0;
     Sym* found = select_call_overload(k, call, head, &ambiguous);
@@ -4813,11 +4858,11 @@ static SType* check_call_raw(Ck* k, Node* call) {
         ck_err(k, call, "'%.*s' is not a generic function", (int)callee->a->len, callee->a->str);
         return T_ERR;
     }
-    // associated-function dispatch (Type::name(...)) — owner is always a
-    // type, never a value; '::' does not share '.'s value/type ambiguity.
-    // The owner may itself be generic (Map[K, V]::new(...)) via the ordinary
-    // indexed-type-name resolution shared with typeid and union-variant use.
-    if (callee->kind == N_FIELD_E && (callee->flags & F_ASSOC)) {
+    // associated-function dispatch (Type.name(...)): a struct type before
+    // '.' reaches the type's functions. The owner may itself be generic
+    // (Map[K, V].new(...)) via the ordinary indexed-type-name resolution
+    // shared with typeid and union-variant use.
+    if (callee->kind == N_FIELD_E && struct_type_base(k, callee->a)) {
         SType* owner = NULL;
         if (callee->a->kind == N_IDENT) {
             Sym* ts = lookup_type(k, callee->a->str, callee->a->len);
@@ -4832,12 +4877,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
             if (owner && owner->kind == SK_ERR) return T_ERR; // already diagnosed
         }
         if (!owner || owner->kind != SK_STRUCT) {
-            if (callee->a->kind == N_IDENT && lookup_val(k, callee->a->str, callee->a->len))
-                ck_err(k, call, "'::' follows a type name, not a value — did you mean '.'?");
-            else if (callee->a->kind == N_IDENT)
-                ck_err(k, call, "'%.*s' is not a declared struct", (int)callee->a->len, callee->a->str);
-            else
-                ck_err(k, call, "'::' owner is not a declared generic struct");
+            ck_err(k, call, "'%.*s' is not a declared struct", (int)callee->a->len, callee->a->str);
             return T_ERR;
         }
         // stashed for the emitter: a generic owner has no receiver parameter
@@ -4848,9 +4888,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
     // method / contract dispatch
     if (callee->kind == N_FIELD_E) {
         // union variant construction: Event.key(42), Pair[int].ok(v)
-        if ((callee->a->kind == N_IDENT &&
-             !lookup_val(k, callee->a->str, callee->a->len)) ||
-            callee->a->kind == N_INDEX) {
+        if (callee->a->kind == N_IDENT || callee->a->kind == N_INDEX) {
             SType* ub = union_base_type(k, callee->a);
             if (ub == T_ERR) return T_ERR;
             if (ub) {
@@ -4884,15 +4922,6 @@ static SType* check_call_raw(Ck* k, Node* call) {
             if (ms && ms->kind == SYM_MODULE) {
                 ck_err(k, call, "module member '%.*s.%.*s' needs the stdlib (not yet linked)",
                        (int)callee->a->len, callee->a->str, (int)callee->len, callee->str);
-                return T_ERR;
-            }
-        }
-        if (callee->a->kind == N_IDENT && !lookup_val(k, callee->a->str, callee->a->len)) {
-            Sym* ts = lookup_type(k, callee->a->str, callee->a->len);
-            if (ts && ts->type && ts->type->kind == SK_STRUCT) {
-                ck_err(k, call, "methods are called on a value: x.%.*s(...), not %.*s.%.*s(...)",
-                       (int)callee->len, callee->str, (int)callee->a->len, callee->a->str,
-                       (int)callee->len, callee->str);
                 return T_ERR;
             }
         }

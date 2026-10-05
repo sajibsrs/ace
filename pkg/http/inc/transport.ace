@@ -202,7 +202,7 @@ pub exchange[C](
 }
 
 pub get(url: string, mut storage: Storage, resize: bool): (Response, Error) {
-    parsed: Url, url_err: Error = parsing.Url::parse(url, false)
+    parsed: Url, url_err: Error = parsing.Url.parse(url, false)
     if url_err != null { return Response {}, url_err }
 
     connection: tcp.Conn, connect_err: Error = connect(parsed, mut storage, resize)

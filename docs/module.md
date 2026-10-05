@@ -94,7 +94,8 @@ when names collide. Nested local bindings may shadow selected values normally.
 A local or parameter named like a whole-module binding shadows it the same way:
 in its scope, `shape.area` reads the local's field, and `shape.Kind.circle` is
 a field path too. A type position such as `shape.Box` or `shape.Box{...}` still
-names the module's type, since a value never shadows a type.
+names the module's type. A selected name is either a type or a value, never
+both, since a type and a value may not share a name in overlapping scopes.
 
 ## What can be imported
 

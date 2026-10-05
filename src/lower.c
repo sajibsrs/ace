@@ -4291,7 +4291,7 @@ void ir_dump_file(Node* file, EmitMode mode) {
         IrFunc* fn = ir_lower(file, n, mode, NULL, 0, &why);
         if (!fn) {
             printf("; ");
-            if (n->d) printf("%.*s::", (int)n->d->len, n->d->str);
+            if (n->d) printf("%.*s.", (int)n->d->len, n->d->str);
             printf("%.*s: not lowered (%s)\n\n", (int)n->len, n->str, why);
             continue;
         }

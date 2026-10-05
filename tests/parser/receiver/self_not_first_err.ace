@@ -1,0 +1,2 @@
+P: struct { x: i64 }
+P.f(k: i64, self): i64 { return k }

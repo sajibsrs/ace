@@ -25,14 +25,14 @@ inline twice(a: int): int {
 
 Counter: struct { n: int, hits: int }
 
-inline mut Counter.bump(by: int): bool {
+inline Counter.bump(mut self, by: int): bool {
     if by < 0 { return false }
     self.n += by
     self.hits += 1
     return true
 }
 
-inline Counter.big(): bool {
+inline Counter.big(self): bool {
     return self.n > 10
 }
 

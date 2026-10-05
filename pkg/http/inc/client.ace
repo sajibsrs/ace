@@ -20,7 +20,7 @@ pub Context: struct {
     redirects: RedirectPolicy,
 }
 
-pub Context::new(): Context {
+pub Context.new(): Context {
     storage: mut []Storage = mem.alloc[Storage](1)
     if storage == null {
         return Context {
@@ -44,7 +44,7 @@ pub Context::new(): Context {
     }
 }
 
-pub mut Context.wipe() {
+pub Context.wipe(mut self) {
     if self.storage == null { return }
     mem.release[net.Addr4](mut self.storage[0].addresses)
     mem.release[u8](mut self.storage[0].output)
@@ -138,7 +138,7 @@ get_redirecting(url: string, policy: RedirectPolicy, mut context: Context): (Res
 
 pub get(url: string, mut context: Context): (Response, Error) {
     if context.storage == null { return Response {}, ClientErr.allocation }
-    _, url_err: Error = parsing.Url::parse(url)
+    _, url_err: Error = parsing.Url.parse(url)
     if url_err != null { return Response {}, url_err }
 
     if context.redirects.limit == 0 {

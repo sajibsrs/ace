@@ -1,0 +1,8 @@
+P: struct { x: int }
+
+P.zero(): P { return P{} }
+
+main(): int {
+    p: P = P::zero()
+    return p.x
+}

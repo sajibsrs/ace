@@ -218,7 +218,7 @@ static void push(Lex* L, Token t) {
 static int ends_expr(TokKind k) {
     switch (k) {
     case T_IDENT: case T_INT: case T_FLOAT: case T_STR: case T_CHARLIT:
-    case T_NULL: case T_TRUE: case T_FALSE:
+    case T_NULL: case T_TRUE: case T_FALSE: case T_SELF:
     case T_RPAREN: case T_RBRACK: case T_RBRACE:
     case T_RETURN: case T_BREAK: case T_CONTINUE:
     case T_SPECIALIZED: // ends a bodyless function declaration
@@ -248,7 +248,7 @@ static const struct {
     {"specialized", T_SPECIALIZED},
     {"intrinsic", T_INTRINSIC},
     {"inline", T_INLINE},
-    {"volatile", T_VOLATILE},
+    {"volatile", T_VOLATILE}, {"self", T_SELF},
     {"null", T_NULL},
     {"true", T_TRUE},         {"false", T_FALSE},
 };
@@ -487,7 +487,8 @@ static void scan_punct(Lex* L, char c) {
     case ',': adv(L); k = T_COMMA; break;
     case ':':
         adv(L);
-        if (cur(L) == ':') { adv(L); k = T_COLONCOLON; } else k = T_COLON;
+        if (cur(L) == ':') err(L, "'::' is not an operator; a type's functions are reached with '.'");
+        k = T_COLON;
         break;
     case '~': adv(L); k = T_TILDE; break;
     case '+': adv(L); k = cur(L) == '=' ? (adv(L), T_ADDEQ) : T_PLUS; break;

@@ -1,0 +1,9 @@
+N: type = u8
+
+N(v: u8): i32 {
+    return i32(v)
+}
+
+main(): int {
+    return 0
+}

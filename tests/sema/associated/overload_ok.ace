@@ -1,15 +1,15 @@
 Router: struct { count: int }
 
-pub Router::new(): Router {
+pub Router.new(): Router {
     return Router { count = 0 }
 }
 
-pub Router::new(start: int): Router {
+pub Router.new(start: int): Router {
     return Router { count = start }
 }
 
 main(): int {
-    a: Router = Router::new()
-    b: Router = Router::new(7)
+    a: Router = Router.new()
+    b: Router = Router.new(7)
     return a.count + b.count
 }

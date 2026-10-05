@@ -23,7 +23,7 @@ submit_route(request: http.Request): http.Response {
 }
 
 main(): int {
-    router: http.Router = http.Router::new()
+    router: http.Router = http.Router.new()
     defer mut router.wipe()
 
     err: Error = mut router.handle(http.GET, "/home", home_route)

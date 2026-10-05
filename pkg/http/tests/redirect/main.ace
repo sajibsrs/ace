@@ -65,7 +65,7 @@ client(port: u16): int {
     url_count, ok = str.concat(parts[..], mut url_bytes[..])
     if !ok { return 2 }
 
-    context: http.ClientContext = http.ClientContext::new()
+    context: http.ClientContext = http.ClientContext.new()
     defer mut context.wipe()
     context.redirects = http.RedirectPolicy { limit = 10 }
     response: http.Response, err: Error = http.get(url_bytes[..url_count], mut context)

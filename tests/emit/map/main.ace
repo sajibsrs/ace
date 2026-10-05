@@ -87,7 +87,7 @@ main(): int {
     mut m.wipe()
     r += check(m.len == 0 && m.slots.len == 0, 18)
 
-    // reserve and Map::new size the table once
+    // reserve and Map.new size the table once
     err = mut m.reserve(100)
     r += check(err == null && m.slots.len >= 134 && m.len == 0, 19)
     capacity = m.slots.len
@@ -95,11 +95,11 @@ main(): int {
     r += check(m.slots.len == capacity && m.len == 100, 20)
     mut m.wipe()
     sized: map.Map[int, int]
-    sized, err = map.Map[int, int]::new(10)
+    sized, err = map.Map[int, int].new(10)
     r += check(err == null && sized.slots.len == 16 && sized.len == 0, 21)
     mut sized.wipe()
     empty: map.Map[int, int]
-    empty, err = map.Map[int, int]::new(0)
+    empty, err = map.Map[int, int].new(0)
     r += check(err == null && empty.slots.len == 0, 22)
 
     // string keys compare by content and values may be structs

@@ -95,7 +95,7 @@ fork(body: u32, out: u32, greedy: bool): Inst {
 /* Compiles `tree` into a program that owns its own copy of the classes, so
  * `tree` may be wiped afterward. A failed compilation holds no storage.
  */
-pub Program::compile(tree: Syntax): (Program, Error) {
+pub Program.compile(tree: Syntax): (Program, Error) {
     c: Compiler = Compiler {
         syntax = tree,
         insts = array.Array[Inst] {},
@@ -127,7 +127,7 @@ pub Program::compile(tree: Syntax): (Program, Error) {
 }
 
 /* Releases the program and leaves it empty. */
-pub mut Program.wipe() {
+pub Program.wipe(mut self) {
     mut self.insts.wipe()
     mut self.classes.wipe()
     self.slots = 0
@@ -139,8 +139,8 @@ pub mut Program.wipe() {
  * print as in `Syntax.format`. Returns the length written and true, or zero
  * and false when `destination` is too small.
  */
-pub Program.format(destination: mut []char): (usize, bool) {
-    out: output.Output = output.Output::new(destination)
+pub Program.format(self, destination: mut []char): (usize, bool) {
+    out: output.Output = output.Output.new(destination)
 
     for index: usize, inst: Inst in self.insts.view() {
         mut out.number(u32(index))
@@ -183,11 +183,11 @@ pub Program.format(destination: mut []char): (usize, bool) {
 }
 
 /* The index the next instruction will take. */
-Compiler.pc(): u32 {
+Compiler.pc(self): u32 {
     return u32(self.insts.len)
 }
 
-mut Compiler.emit(inst: Inst) {
+Compiler.emit(mut self, inst: Inst) {
     if self.err != null { return }
 
     if self.insts.len == MAX_INSTS {
@@ -198,12 +198,12 @@ mut Compiler.emit(inst: Inst) {
     if mut self.insts.push(inst) != null { self.err = CompileErr.allocation }
 }
 
-mut Compiler.patch(at: u32, inst: Inst) {
+Compiler.patch(mut self, at: u32, inst: Inst) {
     if self.err != null { return }
     mut self.insts.set(usize(at), inst)
 }
 
-mut Compiler.node(index: u32) {
+Compiler.node(mut self, index: u32) {
     if self.err != null { return }
     node: Node = self.syntax.nodes.get(usize(index))
 
@@ -236,7 +236,7 @@ mut Compiler.node(index: u32) {
 /* Each branch but the last is `split branch, next` · branch · `jmp end`; the
  * `jmp` placeholders form a list patched to the end once it is known.
  */
-mut Compiler.alt(list: List) {
+Compiler.alt(mut self, list: List) {
     pending: u32 = NIL
 
     for i: u32 in 0 .. list.count {
@@ -274,7 +274,7 @@ mut Compiler.alt(list: List) {
     }
 }
 
-mut Compiler.repeat(r: Repeat) {
+Compiler.repeat(mut self, r: Repeat) {
     if r.max == UNBOUNDED && r.min == 0 {
         // L: split body, out · body · jmp L · out:
         at: u32 = self.pc()
@@ -305,7 +305,7 @@ mut Compiler.repeat(r: Repeat) {
  * nothing every time, so the loop stops after the first empty copy rather
  * than spinning through nested counts like `(?:(?:){1000}){1000}`.
  */
-mut Compiler.copies(child: u32, count: u32) {
+Compiler.copies(mut self, child: u32, count: u32) {
     for i: u32 in 0 .. count {
         before: u32 = self.pc()
         mut self.node(child)
@@ -319,7 +319,7 @@ mut Compiler.copies(child: u32, count: u32) {
  * each copy by one path only. The skip targets are threaded as a list through
  * the placeholders' `y` fields until the end is known.
  */
-mut Compiler.optional(child: u32, count: u32, greedy: bool) {
+Compiler.optional(mut self, child: u32, count: u32, greedy: bool) {
     pending: u32 = NIL
 
     for i: u32 in 0 .. count {

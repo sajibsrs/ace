@@ -36,15 +36,15 @@ examples.
 if !sdl.init(sdl.InitFlags { video = 1 }) { return 1 }
 defer sdl.quit()
 
-window: sdl.Window = sdl.Window::new("Ace + SDL3", 640, 480, sdl.WindowFlags { resizable = 1 })
+window: sdl.Window = sdl.Window.new("Ace + SDL3", 640, 480, sdl.WindowFlags { resizable = 1 })
 defer mut window.wipe()
 if !window.ok() { return 1 }   // sdl.error() says why
 
-renderer: sdl.Renderer = sdl.Renderer::new(window)
+renderer: sdl.Renderer = sdl.Renderer.new(window)
 defer mut renderer.wipe()
 if !renderer.ok() { return 1 }
 
-renderer.color(sdl.Color::hex(0x204080))
+renderer.color(sdl.Color.hex(0x204080))
 renderer.clear()
 renderer.present()
 ```
@@ -54,10 +54,10 @@ fields you want and the rest stay zero. Only the flags this binding uses are
 named so far.
 
 `Window` and `Renderer` hold SDL's heap objects, so they follow the
-`::new`/`wipe` pair; `ok()` reports whether creation succeeded, and `wipe` on
+`.new`/`wipe` pair; `ok()` reports whether creation succeeded, and `wipe` on
 a failed handle is harmless. A title longer than `sdl.TEXT_MAX` (255) bytes
 fails creation. A `Color` has `f32` channels from 0 to 1, with `a`
-defaulting to 1 (opaque); `Color::hex(rgb)` builds an opaque one from a
+defaulting to 1 (opaque); `Color.hex(rgb)` builds an opaque one from a
 24-bit `0xRRGGBB` value such as `0xF44336`. `Renderer.color(): (Color, bool)` reads the draw
 color back; `color(c)` sets it. `sdl.error()` returns SDL's last error message
 as a string view into SDL's own buffer, valid until the next SDL call.
@@ -112,20 +112,20 @@ renderer.scale(1.0, 1.0)
 
 ## Shaders
 
-`Renderer::new(window, driver)` creates the renderer on a named SDL render
+`Renderer.new(window, driver)` creates the renderer on a named SDL render
 driver. `sdl.GPU_DRIVER` draws through SDL's GPU API, and its renderers can
 fill geometry with a fragment shader of your own:
 
 ```ace
-renderer: sdl.Renderer = sdl.Renderer::new(window, sdl.GPU_DRIVER)
+renderer: sdl.Renderer = sdl.Renderer.new(window, sdl.GPU_DRIVER)
 defer mut renderer.wipe()
 if !renderer.ok() { return 1 }
 
-program: sdl.Shader = sdl.Shader::new(renderer, sdl.ShaderFormats { spirv = 1 }, code[..], 1)
+program: sdl.Shader = sdl.Shader.new(renderer, sdl.ShaderFormats { spirv = 1 }, code[..], 1)
 defer mut program.wipe()
 if !program.ok() { return 1 }
 
-state: sdl.RenderState = sdl.RenderState::new(renderer, program)
+state: sdl.RenderState = sdl.RenderState.new(renderer, program)
 defer mut state.wipe()
 if !state.ok() { return 1 }
 
@@ -138,14 +138,14 @@ renderer.state(blank(sdl.RenderState))
 `Renderer.shader_formats()` returns the `ShaderFormats` the renderer accepts,
 which depend on the GPU API beneath it: `spirv` on Vulkan, `msl` on Metal. A
 program that runs on both carries its shader in both and passes the one the
-renderer names. `Shader::new(renderer, format, code, uniform_buffers)` takes
+renderer names. `Shader.new(renderer, format, code, uniform_buffers)` takes
 the code as bytes in the one format set in `format`, and the number of uniform
 buffers the shader reads. The shader's entry point is `main`, or `main0` in
 MSL. Uniform buffer `n` is `layout(set = 3, binding = n)` in SPIR-V and
 `[[buffer(n)]]` in MSL, and the only input untextured geometry passes on is
 its vertex color, at location 0.
 
-`RenderState::new(renderer, shader)` wraps the shader for drawing, and the
+`RenderState.new(renderer, shader)` wraps the shader for drawing, and the
 shader must outlive it; with `defer` in the order above, it does.
 `RenderState.uniforms(slot, values)` sets one uniform buffer from `f32`
 values, which later draws read until it is set again. `Renderer.state(state)`
@@ -153,7 +153,7 @@ makes later geometry use the state, and `blank(sdl.RenderState)` restores the
 renderer's own shaders, as debug text needs.
 
 On a renderer of any other driver, `shader_formats()` is empty and
-`Shader::new` fails. These calls need SDL 3.4.
+`Shader.new` fails. These calls need SDL 3.4.
 
 ## Events
 

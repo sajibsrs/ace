@@ -1,7 +1,7 @@
 /* C ABI rejected fixture. */
 
 Flag: enum { off, on }
-Shape: contract { area(): f64 }
+Shape: contract { area(self): f64 }
 Event: union { none, value: i32 }
 BadDistinct: distinct string
 BadField: struct { text: string }

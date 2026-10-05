@@ -90,7 +90,7 @@ pub VSYNC_ADAPTIVE: const i32 = -1
 // renderers take a Shader and a RenderState.
 pub GPU_DRIVER: const string = "gpu"
 
-// Longest text, in bytes, that Window::new, a render driver name, and
+// Longest text, in bytes, that Window.new, a render driver name, and
 // Renderer.debug_text accept.
 pub TEXT_MAX: const usize = 255
 
@@ -252,17 +252,17 @@ pub error(): string {
 }
 
 // Fill this event with the next pending one; false when none is left.
-pub mut Event.poll(): bool { return c_poll_event(mut &self) }
+pub Event.poll(mut self): bool { return c_poll_event(mut &self) }
 
 // The keyboard member, and whether kind says it holds one; false for every
 // other kind, whose bytes the member would misread.
-pub Event.key(): (KeyboardEvent, bool) {
+pub Event.key(self): (KeyboardEvent, bool) {
     return self.keyboard, self.kind == EventType.key_down || self.kind == EventType.key_up
 }
 
 // An opaque color from a 24-bit 0xRRGGBB value, e.g. 0xF44336, as written
 // in CSS and design tools.
-pub Color::hex(rgb: u32): Color {
+pub Color.hex(rgb: u32): Color {
     return Color {
         r = f32((rgb >> 16) & 0xFF) / 255.0,
         g = f32((rgb >> 8) & 0xFF) / 255.0,
@@ -271,51 +271,51 @@ pub Color::hex(rgb: u32): Color {
 }
 
 // A title longer than TEXT_MAX bytes or holding a NUL byte fails creation.
-pub Window::new(title: string, w: i32, h: i32, flags: WindowFlags): Window {
+pub Window.new(title: string, w: i32, h: i32, flags: WindowFlags): Window {
     buf: [TEXT_MAX + 1]u8
     if !str.cstring(title, mut buf[..]) { return Window { handle = null } }
     return Window { handle = c_create_window(&buf[0], w, h, u64(flags)) }
 }
 
-pub Window.ok(): bool { return self.handle != null }
-pub mut Window.wipe() {
+pub Window.ok(self): bool { return self.handle != null }
+pub Window.wipe(mut self) {
     c_destroy_window(self.handle)
     self.handle = null
 }
 
-pub Renderer::new(window: Window): Renderer {
+pub Renderer.new(window: Window): Renderer {
     return Renderer { handle = c_create_renderer(window.handle, null) }
 }
 
 // A renderer on the named SDL render driver, such as GPU_DRIVER. A name
 // longer than TEXT_MAX bytes or holding a NUL byte fails creation.
-pub Renderer::new(window: Window, driver: string): Renderer {
+pub Renderer.new(window: Window, driver: string): Renderer {
     buf: [TEXT_MAX + 1]u8
     if !str.cstring(driver, mut buf[..]) { return Renderer { handle = null } }
     return Renderer { handle = c_create_renderer(window.handle, &buf[0]) }
 }
 
-pub Renderer.ok(): bool { return self.handle != null }
-pub mut Renderer.wipe() {
+pub Renderer.ok(self): bool { return self.handle != null }
+pub Renderer.wipe(mut self) {
     c_destroy_renderer(self.handle)
     self.handle = null
 }
 
-pub Renderer.color(color: Color): bool {
+pub Renderer.color(self, color: Color): bool {
     return c_set_render_draw_color_float(self.handle, color.r, color.g, color.b, color.a)
 }
 
-pub Renderer.color(): (Color, bool) {
+pub Renderer.color(self): (Color, bool) {
     c: Color
     ok: bool = c_get_render_draw_color_float(self.handle, mut &c.r, mut &c.g, mut &c.b, mut &c.a)
     return c, ok
 }
 
-pub Renderer.clear(): bool { return c_render_clear(self.handle) }
-pub Renderer.present(): bool { return c_render_present(self.handle) }
+pub Renderer.clear(self): bool { return c_render_clear(self.handle) }
+pub Renderer.present(self): bool { return c_render_present(self.handle) }
 
 // The current output size in render pixels, which follows window resizes.
-pub Renderer.size(): (i32, i32, bool) {
+pub Renderer.size(self): (i32, i32, bool) {
     w: i32 = 0
     h: i32 = 0
     ok: bool = c_get_current_render_output_size(self.handle, mut &w, mut &h)
@@ -325,7 +325,7 @@ pub Renderer.size(): (i32, i32, bool) {
 // Untextured triangles: each three indices name one triangle's vertices,
 // whose colors SDL interpolates across it. Without indices, each three
 // consecutive vertices form one triangle. Indices without vertices fail.
-pub Renderer.geometry(vertices: []Vertex, indices: []i32): bool {
+pub Renderer.geometry(self, vertices: []Vertex, indices: []i32): bool {
     if vertices.len == 0 { return indices.len == 0 }
     if indices.len == 0 {
         return c_render_geometry(self.handle, null, &vertices[0], i32(vertices.len), null, 0)
@@ -336,18 +336,18 @@ pub Renderer.geometry(vertices: []Vertex, indices: []i32): bool {
 // Present in step with the display: 1 waits for every refresh, 2 for every
 // other one, VSYNC_ADAPTIVE tears only when late, and VSYNC_DISABLED never
 // waits.
-pub Renderer.vsync(interval: i32): bool {
+pub Renderer.vsync(self, interval: i32): bool {
     return c_set_render_vsync(self.handle, interval)
 }
 
 // Multiply every later drawing coordinate; 1, 1 is the identity.
-pub Renderer.scale(x: f32, y: f32): bool {
+pub Renderer.scale(self, x: f32, y: f32): bool {
     return c_set_render_scale(self.handle, x, y)
 }
 
 // Draw text in SDL's built-in 8x8 font with the draw color; text longer
 // than TEXT_MAX bytes or holding a NUL byte draws nothing and returns false.
-pub Renderer.debug_text(x: f32, y: f32, text: string): bool {
+pub Renderer.debug_text(self, x: f32, y: f32, text: string): bool {
     buf: [TEXT_MAX + 1]u8
     if !str.cstring(text, mut buf[..]) { return false }
     return c_render_debug_text(self.handle, x, y, &buf[0])
@@ -356,7 +356,7 @@ pub Renderer.debug_text(x: f32, y: f32, text: string): bool {
 // The shader code formats this renderer accepts: none unless it is on
 // GPU_DRIVER, then those of the GPU API beneath it (SPIR-V on Vulkan, MSL on
 // Metal).
-pub Renderer.shader_formats(): ShaderFormats {
+pub Renderer.shader_formats(self): ShaderFormats {
     device: *SDL_GPUDevice = c_get_gpu_renderer_device(self.handle)
     if device == null { return ShaderFormats {} }
     return ShaderFormats(c_get_gpu_shader_formats(device))
@@ -365,7 +365,7 @@ pub Renderer.shader_formats(): ShaderFormats {
 // A fragment shader for a GPU_DRIVER renderer, from code in the one format
 // set in `format`, reading `uniform_buffers` uniform buffers and nothing
 // else. Its entry point is the format's default: main, or main0 in MSL.
-pub Shader::new(renderer: Renderer, format: ShaderFormats, code: []u8, uniform_buffers: u32): Shader {
+pub Shader.new(renderer: Renderer, format: ShaderFormats, code: []u8, uniform_buffers: u32): Shader {
     device: *SDL_GPUDevice = c_get_gpu_renderer_device(renderer.handle)
     if device == null || code.len == 0 { return Shader { device = null, handle = null } }
     info: ShaderCreateInfo = blank(ShaderCreateInfo)
@@ -377,36 +377,36 @@ pub Shader::new(renderer: Renderer, format: ShaderFormats, code: []u8, uniform_b
     return Shader { device = device, handle = c_create_gpu_shader(device, &info) }
 }
 
-pub Shader.ok(): bool { return self.handle != null }
-pub mut Shader.wipe() {
+pub Shader.ok(self): bool { return self.handle != null }
+pub Shader.wipe(mut self) {
     if self.handle != null { c_release_gpu_shader(self.device, self.handle) }
     self.handle = null
 }
 
 // A render state that fills the renderer's geometry with `shader`, which
 // must outlive it.
-pub RenderState::new(renderer: Renderer, shader: Shader): RenderState {
+pub RenderState.new(renderer: Renderer, shader: Shader): RenderState {
     if shader.handle == null { return RenderState { handle = null } }
     info: RenderStateCreateInfo = blank(RenderStateCreateInfo)
     info.fragment_shader = shader.handle
     return RenderState { handle = c_create_gpu_render_state(renderer.handle, &info) }
 }
 
-pub RenderState.ok(): bool { return self.handle != null }
-pub mut RenderState.wipe() {
+pub RenderState.ok(self): bool { return self.handle != null }
+pub RenderState.wipe(mut self) {
     if self.handle != null { c_destroy_gpu_render_state(self.handle) }
     self.handle = null
 }
 
 // Set the contents of the shader's uniform buffer `slot`, which later draws
 // with this state read until it is set again.
-pub RenderState.uniforms(slot: u32, values: []f32): bool {
+pub RenderState.uniforms(self, slot: u32, values: []f32): bool {
     if self.handle == null || values.len == 0 { return false }
     return c_set_gpu_render_state_fragment_uniforms(self.handle, slot, &values[0], u32(values.len * sizeof(f32)))
 }
 
 // Draw later geometry with a render state; blank(RenderState) restores the
 // renderer's own shaders.
-pub Renderer.state(state: RenderState): bool {
+pub Renderer.state(self, state: RenderState): bool {
     return c_set_gpu_render_state(self.handle, state.handle)
 }

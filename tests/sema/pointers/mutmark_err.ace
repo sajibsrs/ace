@@ -3,17 +3,17 @@
 Point: struct { x: f32 }
 
 Shape: contract {
-    area(): f32
-    mut scale(k: f32)
+    area(self): f32
+    scale(mut self, k: f32)
 }
 
 Point signs Shape
 
-Point.area(): f32 {
+Point.area(self): f32 {
     return self.x
 }
 
-mut Point.scale(k: f32) {
+Point.scale(mut self, k: f32) {
     self.x = self.x * k
 }
 

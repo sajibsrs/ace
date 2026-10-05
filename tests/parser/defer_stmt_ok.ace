@@ -8,7 +8,7 @@ run(): int {
 
 Counter: struct { value: int }
 
-mut Counter.add(amount: int) {
+Counter.add(mut self, amount: int) {
     self.value = self.value + amount
 }
 

@@ -3,7 +3,7 @@ import mem
 
 /* JSON Pointer steps, escapes, and every way a lookup misses. */
 lookup(): int {
-    doc: json.Json = json.Json::new()
+    doc: json.Json = json.Json.new()
     defer mut doc.wipe()
     err: Error, err_at: usize = mut doc.parse("{\"a\": {\"b/c\": [10, true, \"x\"], \"m~n\": 1, \"\": 2}, \"d\": 1, \"d\": 2}")
     if err != null { return 30 }

@@ -11,7 +11,7 @@ import str
 main(): int {
     at: usize, ok: bool = str.find("abc", "c")
     if at != 2 || !ok || found() != 1 { return 1 }
-    a: array.Array[int], err: Error = array.Array[int]::new(1)
+    a: array.Array[int], err: Error = array.Array[int].new(1)
     if err != null { return 2 }
     defer mut a.wipe()
     v: int, empty: Error = mut a.pop()

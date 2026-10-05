@@ -20,7 +20,7 @@
     X(EMBED, "embed")                                                         \
     X(SIGNS, "signs") X(DISTINCT, "distinct") X(TYPE, "type")                \
     X(ENUM, "enum") X(UNION, "union") X(SPECIALIZED, "specialized")            \
-    X(INTRINSIC, "intrinsic") X(INLINE, "inline") X(VOLATILE, "volatile")   \
+    X(INTRINSIC, "intrinsic") X(INLINE, "inline") X(VOLATILE, "volatile") X(SELF, "self")\
     X(NULL, "null") X(TRUE, "true") X(FALSE, "false")                          \
     /* literals */                                                             \
     X(INT, "int") X(FLOAT, "float") X(STR, "string") X(CHARLIT, "char")        \
@@ -39,7 +39,6 @@
     /* punctuation */                                                          \
     X(LPAREN, "(") X(RPAREN, ")") X(LBRACK, "[") X(RBRACK, "]")                \
     X(LBRACE, "{") X(RBRACE, "}") X(COMMA, ",") X(COLON, ":")                  \
-    X(COLONCOLON, "::")                                                       \
     X(SEMI, ";") X(AT, "@")                                                  \
     X(DOT, ".") X(DOTDOT, "..") X(DOTDOTDOT, "...")
 

@@ -6,7 +6,7 @@ import regex
  * on a mismatch.
  */
 tree(pattern: string, want: string): int {
-    s: regex.Syntax, err: Error, at: usize = regex.Syntax::parse(pattern)
+    s: regex.Syntax, err: Error, at: usize = regex.Syntax.parse(pattern)
     defer mut s.wipe()
     if err != null {
         fmt.print("parse failed: ")
@@ -32,7 +32,7 @@ tree(pattern: string, want: string): int {
 
 /* Expects `pattern` to fail with `want` at byte offset `offset`. */
 fails(pattern: string, want: Error, offset: usize): int {
-    s: regex.Syntax, err: Error, at: usize = regex.Syntax::parse(pattern)
+    s: regex.Syntax, err: Error, at: usize = regex.Syntax.parse(pattern)
     defer mut s.wipe()
     if err != want || at != offset {
         fmt.print(pattern)
@@ -136,7 +136,7 @@ depth(): int {
         text[1024 - 1 - i] = ')'
     }
     bad: int = 0
-    s: regex.Syntax, err: Error, at: usize = regex.Syntax::parse(string(text[0..1024]))
+    s: regex.Syntax, err: Error, at: usize = regex.Syntax.parse(string(text[0..1024]))
     mut s.wipe()
 
     if err != null {

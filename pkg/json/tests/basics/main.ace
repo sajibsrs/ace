@@ -2,7 +2,7 @@ import json
 import mem
 
 scalars(): int {
-    p: json.Parser = json.Parser::new()
+    p: json.Parser = json.Parser.new()
     defer mut p.wipe()
     v: json.Value, err: Error, err_at: usize = mut p.parse("null")
     if err != null { return 1 }
@@ -48,7 +48,7 @@ scalars(): int {
 }
 
 string_case(): int {
-    p: json.Parser = json.Parser::new()
+    p: json.Parser = json.Parser.new()
     defer mut p.wipe()
     v: json.Value, err: Error, err_at: usize = mut p.parse("\"a\\u00e9\\n\\\"\"")
     if err != null { return 11 }
@@ -70,7 +70,7 @@ containers(): int {
 }
 
 array_case(): int {
-    p: json.Parser = json.Parser::new()
+    p: json.Parser = json.Parser.new()
     defer mut p.wipe()
     v: json.Value, err: Error, err_at: usize = mut p.parse("[1, 2, [3, 4], \"x\"]")
     if err != null { return 20 }
@@ -92,7 +92,7 @@ array_case(): int {
 }
 
 object_case(): int {
-    p: json.Parser = json.Parser::new()
+    p: json.Parser = json.Parser.new()
     defer mut p.wipe()
     v: json.Value, err: Error, err_at: usize = mut p.parse("{\"a\": 1, \"b\": {\"c\": true}, \"d\": []}")
     if err != null { return 25 }
@@ -123,7 +123,7 @@ object_case(): int {
 }
 
 failures(): int {
-    p: json.Parser = json.Parser::new()
+    p: json.Parser = json.Parser.new()
     defer mut p.wipe()
     v: json.Value, err: Error, at: usize = mut p.parse("")
     if err != json.ParseErr.empty_input { return 40 }
@@ -164,7 +164,7 @@ nested(depth: usize): (mut []u8, Error) {
 }
 
 depth_limit(): int {
-    p: json.Parser = json.Parser::new()
+    p: json.Parser = json.Parser.new()
     defer mut p.wipe()
     text: mut []u8, terr: Error = nested(512)
     defer mem.release[u8](mut text)
@@ -187,7 +187,7 @@ depth_limit(): int {
  * the parser usable.
  */
 accumulate(): int {
-    p: json.Parser = json.Parser::new()
+    p: json.Parser = json.Parser.new()
     defer mut p.wipe()
     a: json.Value, aerr: Error, aerr_at: usize = mut p.parse("[1, \"x\", {\"k\": [true]}]")
     bad: json.Value, berr: Error, berr_at: usize = mut p.parse("[1, 2")
@@ -224,7 +224,7 @@ accumulate(): int {
  * parses again, including a larger document than any before it.
  */
 reuse(): int {
-    p: json.Parser = json.Parser::new()
+    p: json.Parser = json.Parser.new()
     defer mut p.wipe()
 
     for i: int in 0 .. 3 {

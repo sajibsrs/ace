@@ -3,7 +3,7 @@
 // expect-exit: 42
 
 Value[T]: contract {
-    get(): T
+    get(self): T
 }
 
 Box[T]: struct {
@@ -12,7 +12,7 @@ Box[T]: struct {
 
 Box[T] signs Value[T]
 
-Box[T].get(): T {
+Box[T].get(self): T {
     return self.value
 }
 

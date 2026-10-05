@@ -298,7 +298,7 @@ pub print(value: f32): int {
  * call and its non-positive result is returned unchanged.
  */
 print_open(mut sink: formatting.Sink, storage: mut []u8) {
-    sink = formatting.Sink::init(storage, write_bytes)
+    sink = formatting.Sink.init(storage, write_bytes)
 }
 
 print_close(mut sink: formatting.Sink): int {

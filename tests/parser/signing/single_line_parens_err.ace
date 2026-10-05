@@ -1,7 +1,7 @@
 /* Signing single line parens fixture. */
 
 Shape: contract {
-    area(): int
+    area(self): int
 }
 
 Circle: struct {}

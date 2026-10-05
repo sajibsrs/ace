@@ -11,7 +11,7 @@ Wide: struct { pad: [5000]u8, small: u8, inner: Inner, tail: i32 }
 @packed
 Packed: struct { prefix: u8, word: u32, half: u16, big: u64 }
 
-Wide.sum(): i64 {
+Wide.sum(self): i64 {
     return i64(self.small) + i64(self.inner.c) + i64(self.inner.s) + i64(self.tail)
 }
 

@@ -28,17 +28,17 @@ bump(mut x: int, by: int) {
 
 Counter: struct { n: int }
 
-Counter.note(): int {
+Counter.note(self): int {
     gs = self.n
     return 0
 }
 
-mut Counter.note_mut(): int {
+Counter.note_mut(mut self): int {
     gm = self.n
     return 0
 }
 
-mut Counter.add(by: int) {
+Counter.add(mut self, by: int) {
     self.n = self.n + by
 }
 

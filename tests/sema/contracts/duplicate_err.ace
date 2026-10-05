@@ -1,16 +1,16 @@
 /* Contract duplicate fixture. */
 
 Thing: struct { value: int }
-Readable: contract { read(): int }
-Writable: contract { mut write(value: int) }
+Readable: contract { read(self): int }
+Writable: contract { write(mut self, value: int) }
 
 Thing signs Readable
 Thing signs Writable
 
-Thing.read(): int {
+Thing.read(self): int {
     return self.value
 }
 
-mut Thing.write(value: int) {
+Thing.write(mut self, value: int) {
     self.value = value
 }

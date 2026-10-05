@@ -2,7 +2,7 @@ Base: struct {
     x: i64,
 }
 
-Base.area(): i64 {
+Base.area(self): i64 {
     return self.x
 }
 

@@ -10,13 +10,13 @@ is required and the first `set` allocates. Entries live in open-addressed slots
 probed linearly from the key's hash. The table doubles and rehashes into fresh
 storage whenever an insertion would exceed three quarters full; the load factor
 is fixed. Type arguments are explicit, as everywhere: `map.Map[string, int]`,
-`map.Map[string, int]::new(64)`.
+`map.Map[string, int].new(64)`.
 
 The key type is one of the integer types (`int`, `uint`, and `char` included),
 `usize`, `bool`, or `string`. Any other key type is a compile-time error at the
 instantiation. `string` keys compare by content.
 
-- `Map[K, V]::new(capacity: usize): (Map[K, V], Error)` creates an empty map
+- `Map[K, V].new(capacity: usize): (Map[K, V], Error)` creates an empty map
   that holds `capacity` entries without growing. Zero allocates nothing.
   Failure returns `MapErr.allocation`.
 - `wipe()` releases the storage and leaves the map empty.

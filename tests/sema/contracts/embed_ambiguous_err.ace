@@ -3,11 +3,11 @@
 A: struct {}
 B: struct {}
 
-A.value(): int {
+A.value(self): int {
     return 1
 }
 
-B.value(): int {
+B.value(self): int {
     return 2
 }
 

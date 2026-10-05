@@ -486,7 +486,7 @@ refuse(bytes: []u8): int {
 }
 
 put_open(mut sink: formatting.Sink, destination: mut []char) {
-    sink = formatting.Sink::init(destination, refuse)
+    sink = formatting.Sink.init(destination, refuse)
 }
 
 put_close(mut sink: formatting.Sink): int {

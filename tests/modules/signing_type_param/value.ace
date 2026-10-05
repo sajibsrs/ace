@@ -3,7 +3,7 @@
 T: struct { unused: u8 }
 
 Value[T]: contract {
-    get(): T
+    get(self): T
 }
 
 Base[T]: struct {
@@ -12,7 +12,7 @@ Base[T]: struct {
 
 Base[T] signs Value[T]
 
-Base[T].get(): T {
+Base[T].get(self): T {
     return self.value
 }
 

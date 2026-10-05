@@ -63,7 +63,7 @@ pub Parser: struct {
     at: usize,
 }
 
-pub Parser::new(): Parser {
+pub Parser.new(): Parser {
     return Parser {
         kept = 0,
         count = 0,
@@ -77,7 +77,7 @@ pub Parser::new(): Parser {
 }
 
 /* Releases every tree the parser produced. Call once none is still in use. */
-pub mut Parser.wipe() {
+pub Parser.wipe(mut self) {
     for i: usize in 0 .. self.kept {
         mem.release[u8](mut self.blocks[i].bytes)
         mem.release[Value](mut self.blocks[i].items)
@@ -97,7 +97,7 @@ pub mut Parser.wipe() {
  * parses reuse the blocks that are large enough. Every `Value` from before is
  * invalid afterwards.
  */
-pub mut Parser.reset() {
+pub Parser.reset(mut self) {
     self.count = 0
     self.bytes = null
     self.items = null
@@ -113,7 +113,7 @@ pub mut Parser.reset() {
  * returned offset is the byte at which the error was found, except that an
  * unterminated string reports its opening quote; on success it is 0.
  */
-pub mut Parser.parse(text: string): (Value, Error, usize) {
+pub Parser.parse(mut self, text: string): (Value, Error, usize) {
     self.text = text
     self.at = 0
     mut self.stack.clear()
@@ -140,7 +140,7 @@ pub mut Parser.parse(text: string): (Value, Error, usize) {
  * key's two quotes, its `:`, and its trailing `,` or `}`, so text of n bytes
  * holds at most n / 2 elements and n / 4 members.
  */
-mut Parser.reserve(): Error {
+Parser.reserve(mut self): Error {
     items: usize = self.text.len / 2 + 1
     members: usize = self.text.len / 4 + 1
     at: usize = self.count
@@ -176,11 +176,11 @@ mut Parser.reserve(): Error {
     return null
 }
 
-inline mut Parser.skip_ws() {
+inline Parser.skip_ws(mut self) {
     for self.at < self.text.len && is_ws(self.text[self.at]) { self.at += 1 }
 }
 
-mut Parser.parse_value(depth: usize): (Value, Error) {
+Parser.parse_value(mut self, depth: usize): (Value, Error) {
     mut self.skip_ws()
 
     if self.at == self.text.len { return Value.none, ParseErr.unexpected_token }
@@ -225,7 +225,7 @@ mut Parser.parse_value(depth: usize): (Value, Error) {
     return Value.none, ParseErr.unexpected_token
 }
 
-mut Parser.consume_literal(literal: string): bool {
+Parser.consume_literal(mut self, literal: string): bool {
     remaining: usize = self.text.len - self.at
 
     if remaining < literal.len { return false }
@@ -235,7 +235,7 @@ mut Parser.consume_literal(literal: string): bool {
     return true
 }
 
-mut Parser.parse_number(): (Value, Error) {
+Parser.parse_number(mut self): (Value, Error) {
     start: usize = self.at
 
     if self.at < self.text.len && self.text[self.at] == '-' { self.at += 1 }
@@ -274,7 +274,7 @@ mut Parser.parse_number(): (Value, Error) {
     return Value.number(parsed), null
 }
 
-mut Parser.parse_string(): (string, Error) {
+Parser.parse_string(mut self): (string, Error) {
     self.at += 1
     start: usize = self.at
     end: usize, closed: bool = find_string_end(self.text, start)
@@ -298,7 +298,7 @@ mut Parser.parse_string(): (string, Error) {
     return string(self.bytes[base..base + used]), null
 }
 
-mut Parser.parse_array(depth: usize): (Value, Error) {
+Parser.parse_array(mut self, depth: usize): (Value, Error) {
     if depth >= MAX_DEPTH { return Value.none, ParseErr.depth }
     self.at += 1
     empty: mut []Value = null
@@ -343,7 +343,7 @@ mut Parser.parse_array(depth: usize): (Value, Error) {
     return Value.array(self.items[at..at + count]), null
 }
 
-mut Parser.parse_object(depth: usize): (Value, Error) {
+Parser.parse_object(mut self, depth: usize): (Value, Error) {
     if depth >= MAX_DEPTH { return Value.none, ParseErr.depth }
     self.at += 1
     empty: mut []Pair = null

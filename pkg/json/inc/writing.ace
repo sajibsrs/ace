@@ -49,7 +49,7 @@ pub Formatter: struct {
     err: Error,
 }
 
-pub Formatter::new(): Formatter {
+pub Formatter.new(): Formatter {
     return Formatter {
         at = 0,
         depth = 0,
@@ -62,7 +62,7 @@ pub Formatter::new(): Formatter {
 }
 
 /* Releases the buffer. Call once no text from `finish` is still in use. */
-pub mut Formatter.wipe() {
+pub Formatter.wipe(mut self) {
     mem.release[u8](mut self.buffer)
     self.at = 0
     self.depth = 0
@@ -75,7 +75,7 @@ pub mut Formatter.wipe() {
 /* Discards the current document and its error, keeping the buffer for the
  * next one. Text from `finish` is invalid afterwards.
  */
-pub mut Formatter.reset() {
+pub Formatter.reset(mut self) {
     self.at = 0
     self.depth = 0
     self.empty = false
@@ -87,23 +87,23 @@ pub mut Formatter.reset() {
 /* Returns the text of the one complete value written, or the first error. The
  * text is borrowed from the formatter.
  */
-pub Formatter.finish(): (string, Error) {
+pub Formatter.finish(self): (string, Error) {
     if self.err != null { return "", self.err }
 
     if self.depth != 0 || !self.done { return "", FormatErr.structure }
     return string(self.buffer[0..self.at]), null
 }
 
-pub mut Formatter.object() {
+pub Formatter.object(mut self) {
     mut self.open(true)
 }
 
-pub mut Formatter.array() {
+pub Formatter.array(mut self) {
     mut self.open(false)
 }
 
 /* Closes the innermost open container, whichever kind it is. */
-pub mut Formatter.end() {
+pub Formatter.end(mut self) {
     if self.err != null { return }
 
     if self.depth == 0 || self.keyed {
@@ -121,7 +121,7 @@ pub mut Formatter.end() {
     mut self.close_value()
 }
 
-pub mut Formatter.key(name: string) {
+pub Formatter.key(mut self, name: string) {
     if self.err != null { return }
 
     if self.depth == 0 || !self.inside_object() || self.keyed {
@@ -136,7 +136,7 @@ pub mut Formatter.key(name: string) {
     self.keyed = true
 }
 
-pub mut Formatter.none() {
+pub Formatter.none(mut self) {
     ok: bool = mut self.open_value()
     if !ok { return }
 
@@ -144,7 +144,7 @@ pub mut Formatter.none() {
     mut self.close_value()
 }
 
-pub mut Formatter.value(flag: bool) {
+pub Formatter.value(mut self, flag: bool) {
     ok: bool = mut self.open_value()
     if !ok { return }
 
@@ -156,7 +156,7 @@ pub mut Formatter.value(flag: bool) {
     mut self.close_value()
 }
 
-pub mut Formatter.value(number: int) {
+pub Formatter.value(mut self, number: int) {
     ok: bool = mut self.open_number()
     if !ok { return }
 
@@ -164,7 +164,7 @@ pub mut Formatter.value(number: int) {
     mut self.advance(n, fit)
 }
 
-pub mut Formatter.value(number: uint) {
+pub Formatter.value(mut self, number: uint) {
     ok: bool = mut self.open_number()
     if !ok { return }
 
@@ -172,7 +172,7 @@ pub mut Formatter.value(number: uint) {
     mut self.advance(n, fit)
 }
 
-pub mut Formatter.value(number: usize) {
+pub Formatter.value(mut self, number: usize) {
     ok: bool = mut self.open_number()
     if !ok { return }
 
@@ -181,7 +181,7 @@ pub mut Formatter.value(number: usize) {
 }
 
 /* NaN and the infinities have no JSON spelling and are rejected. */
-pub mut Formatter.value(number: f64) {
+pub Formatter.value(mut self, number: f64) {
     zero: f64 = 0.0
 
     if self.err == null && (number != number || number - number != zero) {
@@ -195,7 +195,7 @@ pub mut Formatter.value(number: f64) {
     mut self.advance(n, fit)
 }
 
-pub mut Formatter.value(text: string) {
+pub Formatter.value(mut self, text: string) {
     ok: bool = mut self.open_value()
     if !ok { return }
 
@@ -204,7 +204,7 @@ pub mut Formatter.value(text: string) {
 }
 
 /* Writes a whole value tree through the same rules as the scalar calls. */
-pub mut Formatter.value(tree: Value) {
+pub Formatter.value(mut self, tree: Value) {
     switch tree {
         Value.none {
             mut self.none()
@@ -240,52 +240,52 @@ pub mut Formatter.value(tree: Value) {
     }
 }
 
-pub mut Formatter.field(name: string, flag: bool) {
+pub Formatter.field(mut self, name: string, flag: bool) {
     mut self.key(name)
     mut self.value(flag)
 }
 
-pub mut Formatter.field(name: string, number: int) {
+pub Formatter.field(mut self, name: string, number: int) {
     mut self.key(name)
     mut self.value(number)
 }
 
-pub mut Formatter.field(name: string, number: uint) {
+pub Formatter.field(mut self, name: string, number: uint) {
     mut self.key(name)
     mut self.value(number)
 }
 
-pub mut Formatter.field(name: string, number: usize) {
+pub Formatter.field(mut self, name: string, number: usize) {
     mut self.key(name)
     mut self.value(number)
 }
 
-pub mut Formatter.field(name: string, number: f64) {
+pub Formatter.field(mut self, name: string, number: f64) {
     mut self.key(name)
     mut self.value(number)
 }
 
-pub mut Formatter.field(name: string, text: string) {
+pub Formatter.field(mut self, name: string, text: string) {
     mut self.key(name)
     mut self.value(text)
 }
 
-pub mut Formatter.field(name: string, tree: Value) {
+pub Formatter.field(mut self, name: string, tree: Value) {
     mut self.key(name)
     mut self.value(tree)
 }
 
-inline mut Formatter.fail(err: Error) {
+inline Formatter.fail(mut self, err: Error) {
     if self.err == null { self.err = err }
 }
 
-inline Formatter.inside_object(): bool {
+inline Formatter.inside_object(self): bool {
     level: usize = self.depth - 1
     mask: u8 = u8(1) << u8(level % 8)
     return (self.objects[level / 8] & mask) != 0
 }
 
-inline mut Formatter.open(object: bool) {
+inline Formatter.open(mut self, object: bool) {
     ok: bool = mut self.open_value()
     if !ok { return }
 
@@ -312,7 +312,7 @@ inline mut Formatter.open(object: bool) {
  * once at top level, after a key inside an object, or as the next element of
  * an array.
  */
-inline mut Formatter.open_value(): bool {
+inline Formatter.open_value(mut self): bool {
     if self.err != null { return false }
 
     if self.depth == 0 {
@@ -340,21 +340,21 @@ inline mut Formatter.open_value(): bool {
 /* Opens a value and guarantees room for the longest number, so `str.format`
  * can write it in place at the cursor.
  */
-inline mut Formatter.open_number(): bool {
+inline Formatter.open_number(mut self): bool {
     ok: bool = mut self.open_value()
     if !ok { return false }
 
     return mut self.reserve(NUMBER_MAX)
 }
 
-inline mut Formatter.close_value() {
+inline Formatter.close_value(mut self) {
     if self.depth == 0 { self.done = true }
 }
 
 /* Accounts for a number `str.format` wrote in place at the cursor. The
  * reserved room always fits it, so `fit` is a guard, not an expected path.
  */
-inline mut Formatter.advance(n: usize, fit: bool) {
+inline Formatter.advance(mut self, n: usize, fit: bool) {
     if !fit {
         mut self.fail(FormatErr.allocation)
         return
@@ -364,7 +364,7 @@ inline mut Formatter.advance(n: usize, fit: bool) {
 }
 
 /* Makes room for `extra` more bytes, growing the buffer geometrically. */
-inline mut Formatter.reserve(extra: usize): bool {
+inline Formatter.reserve(mut self, extra: usize): bool {
     need: usize = self.at + extra
 
     if need <= self.buffer.len { return true }
@@ -381,7 +381,7 @@ inline mut Formatter.reserve(extra: usize): bool {
 }
 
 /* Writes text as a quoted JSON string, copying unescaped runs whole. */
-mut Formatter.quote(text: string) {
+Formatter.quote(mut self, text: string) {
     mut self.put('"')
     spelling: [6]u8
     start: usize = 0
@@ -434,7 +434,7 @@ inline escape(byte: u8, spelling: mut []u8): usize {
     return 6
 }
 
-inline mut Formatter.put(byte: u8) {
+inline Formatter.put(mut self, byte: u8) {
     if self.err != null { return }
     ok: bool = mut self.reserve(1)
     if !ok { return }
@@ -443,7 +443,7 @@ inline mut Formatter.put(byte: u8) {
     self.at += 1
 }
 
-inline mut Formatter.put(text: string) {
+inline Formatter.put(mut self, text: string) {
     if self.err != null { return }
     ok: bool = mut self.reserve(text.len)
     if !ok { return }

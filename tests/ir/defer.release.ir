@@ -1,4 +1,4 @@
-Box::note(ptr): i64 {
+Box.note(ptr): i64 {
 b0:
     %0 = param ptr 0
     %1 = global ptr total
@@ -12,7 +12,7 @@ b0:
     ret %8
 }
 
-Box::add(ptr, i64): void {
+Box.add(ptr, i64): void {
 b0:
     %0 = param ptr 0
     %1 = param i64 1

@@ -1,4 +1,4 @@
-Circle::area(ptr): i32 {
+Circle.area(ptr): i32 {
 b0:
     %0 = param ptr 0
     %1 = load i32 [%0]

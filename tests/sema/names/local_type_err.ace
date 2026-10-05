@@ -1,0 +1,6 @@
+Point: struct { x: int }
+
+main(): int {
+    Point: int = 3
+    return Point
+}

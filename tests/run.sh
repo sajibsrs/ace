@@ -99,15 +99,22 @@ while IFS='|' read -r f want; do
     fi
 done <<'INLINE_RULES'
 tests/parser/inline/visibility_order_err.ace|visibility must come before 'inline'
-tests/parser/inline/mut_order_err.ace|'inline' must come before 'mut'
 tests/parser/inline/duplicate_err.ace|duplicate 'inline' modifier
 tests/parser/inline/not_function_err.ace|1:8: error: 'inline' applies only to function declarations
-tests/parser/inline/extern_err.ace|'extern' blocks take no pub/inline/mut
+tests/parser/inline/extern_err.ace|'extern' blocks take no pub/inline
 tests/parser/extern_def/link_name_err.ace|extern link name cannot be empty
 tests/parser/extern_def/global_init_err.ace|expected '=' and an initializer
 tests/parser/extern_def/variadic_err.ace|variadic functions cannot be defined in Ace
 tests/parser/extern_def/bodiless_err.ace|expected '{'
 tests/parser/associated/export_err.ace|methods and associated functions cannot use the C ABI
+tests/parser/receiver/self_not_first_err.ace|2:13: error: 'self' must be the first parameter
+tests/parser/receiver/self_typed_err.ace|2:9: error: 'self' takes no type; its type is the method's owner
+tests/parser/receiver/self_free_err.ace|1:3: error: 'self' is only the receiver of a method declaration
+tests/parser/receiver/leading_mut_err.ace|2:1: error: a top-level declaration takes no leading 'mut'; a mutating receiver is written 'mut self'
+tests/parser/receiver/contract_double_mut_err.ace|2:5: error: a contract method takes no leading 'mut'; a mutating receiver is written 'mut self'
+tests/parser/associated/coloncolon_err.ace|6:13: error: '::' is not an operator; a type's functions are reached with '.'
+tests/parser/receiver/contract_no_self_err.ace|4:5: error: a contract method's first parameter is its receiver 'self' or 'mut self'
+tests/sema/associated/value_receiver_err.ace|9:22: error: 'new' is an associated function, called on the type: Router.new(...)
 tests/sema/inline/noalias_err.ace|inline function 'sum' cannot take a noalias parameter
 tests/sema/inline/defer_err.ace|4:5: error: inline function 'guarded' cannot contain 'defer'
 tests/sema/inline/asm_err.ace|inline function 'spin' cannot contain inline assembly
@@ -132,6 +139,13 @@ tests/parser/function_type/empty_type_err.ace|'()' is not a type
 tests/parser/function_type/c_return_err.ace|expected ':' and a return type or 'void'
 tests/sema/fields/method_collision_err.ace|5:8: error: method 'on_click' collides with a field of Button
 tests/sema/fields/promoted_collision_err.ace|11:5: error: field 'area' collides with a method promoted from embedded 'base'
+tests/sema/names/function_type_err.ace|3:1: error: 'N' names a type; a value may not share its name
+tests/sema/names/global_type_err.ace|3:1: error: 'Point' names a type; a value may not share its name
+tests/sema/names/local_type_err.ace|4:5: error: 'Point' names a type; a value may not share its name
+tests/sema/names/param_type_err.ace|3:3: error: 'Point' names a type; a value may not share its name
+tests/sema/names/local_primitive_err.ace|2:5: error: 'u8' names a type; a value may not share its name
+tests/sema/names/import_type_err.ace|3:1: error: 'mem' names a value; a type may not share its name
+tests/sema/fields/qualified_method_err.ace|11:27: error: methods are called on a value: x.get(...), not Counter.get(...)
 tests/sema/fields/not_callable_err.ace|7:23: error: field 'value' of type i64 is not callable
 tests/sema/fields/method_value_err.ace|11:23: error: 'get' is not a field of Counter; methods are not values
 tests/sema/fields/arg_count_err.ace|7:26: error: wrong number of arguments: 2 given, 1 expected
@@ -144,7 +158,7 @@ tests/sema/generics/void_field_err.ace|6:11: note: in 'Box[void]' instantiated h
 tests/sema/generics/instantiation_site_err.ace|9:12: note: in 'inner[string]' instantiated here
 tests/sema/generics/instantiation_site_err.ace|26:17: note: in 'outer[string]' instantiated here
 tests/sema/generics/instantiation_site_err.ace|28:19: note: in 'Box[string].get' instantiated here
-tests/sema/generics/instantiation_site_err.ace|29:30: note: in 'Box[string]::make' instantiated here
+tests/sema/generics/instantiation_site_err.ace|29:29: note: in 'Box[string].make' instantiated here
 tests/sema/generics/void_memory_err.ace|'void' names no value and cannot be a memory element type
 tests/sema/functions/return_no_value_err.ace|7:16: error: type mismatch: no value given where i64 expected
 tests/sema/types/predeclared_name_err.ace|3:1: error: 'bool' is a predeclared type name and cannot be redeclared
@@ -650,18 +664,6 @@ if ! printf '%s\n' "$zero_spec_error" | grep -qF \
     fail=1
 fi
 
-constructor_wins_error=$("$ACE" tests/sema/consts/main_err.ace 2>&1)
-if ! printf '%s\n' "$constructor_wins_error" | grep -qF \
-    "type mismatch: i32 given where u8 expected (casts are explicit)"; then
-    echo "FAIL: missing same-named-function-wins diagnostic"
-    fail=1
-fi
-constructor_arity_error=$("$ACE" tests/sema/consts/arity_err.ace 2>&1)
-if ! printf '%s\n' "$constructor_arity_error" | grep -qF \
-    "wrong number of arguments: 1 given, 2 expected"; then
-    echo "FAIL: missing same-named-function arity diagnostic"
-    fail=1
-fi
 constructor_fit_error=$("$ACE" tests/sema/consts/fit_err.ace 2>&1)
 if ! printf '%s\n' "$constructor_fit_error" | grep -qF \
     "integer literal 300 out of range for u8"; then

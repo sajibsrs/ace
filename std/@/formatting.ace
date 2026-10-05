@@ -145,7 +145,7 @@ pub Sink: struct {
     drain: ([]u8): int,
 }
 
-pub Sink::init(storage: mut []u8, drain: ([]u8): int): Sink {
+pub Sink.init(storage: mut []u8, drain: ([]u8): int): Sink {
     return Sink {
         storage = storage,
         used = 0,
@@ -159,7 +159,7 @@ pub Sink::init(storage: mut []u8, drain: ([]u8): int): Sink {
 /* Hands bytes to drain, recording a failure. A failed sink drops its
  * storage, so every later write takes the slow path, which stops there.
  */
-mut Sink.emit(bytes: []u8) {
+Sink.emit(mut self, bytes: []u8) {
     drain: ([]u8): int = self.drain
     n: int = drain(bytes)
 
@@ -174,14 +174,14 @@ mut Sink.emit(bytes: []u8) {
 }
 
 /* Drains the buffered bytes, leaving the storage empty. */
-pub mut Sink.flush() {
+pub Sink.flush(mut self) {
     if self.failed || self.used == 0 { return }
     mut self.emit(self.storage[0..self.used])
     self.used = 0
 }
 
 /* The fast path, inlined into every piece writer: room left, copy. */
-pub inline mut Sink.put(bytes: []u8) {
+pub inline Sink.put(mut self, bytes: []u8) {
     if bytes.len > self.storage.len - self.used {
         mut self.overflow(bytes)
         return
@@ -193,7 +193,7 @@ pub inline mut Sink.put(bytes: []u8) {
 /* A piece that does not fit: drain the storage, then buffer the piece, or
  * hand it straight to drain when it is larger than the storage.
  */
-mut Sink.overflow(bytes: []u8) {
+Sink.overflow(mut self, bytes: []u8) {
     if self.failed { return }
 
     mut self.flush()
@@ -208,7 +208,7 @@ mut Sink.overflow(bytes: []u8) {
 }
 
 /* count copies of byte, streamed through the storage in pieces. */
-pub mut Sink.fill(byte: u8, count: usize) {
+pub Sink.fill(mut self, byte: u8, count: usize) {
     left: usize = count
 
     for round: usize in 0 .. count {
@@ -237,7 +237,7 @@ pub mut Sink.fill(byte: u8, count: usize) {
  * "nan" and "inf" (the only texts starting with 'n' or 'i' after the sign)
  * still take spaces.
  */
-pub mut Sink.padded(text: []u8, width: usize, zero: bool) {
+pub Sink.padded(mut self, text: []u8, width: usize, zero: bool) {
     if text.len >= width {
         mut self.put(text)
         return

@@ -45,7 +45,7 @@ touch(p: mut *Pair) {
     p.a += 1
 }
 
-Pair.sum(): usize {
+Pair.sum(self): usize {
     return self.a + self.b
 }
 

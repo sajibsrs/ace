@@ -1,7 +1,0 @@
-/* Leading 'mut' marks a mutating receiver; associated functions have none. */
-
-Router: struct { count: int }
-
-mut Router::new(): Router {
-    return Router { count = 0 }
-}

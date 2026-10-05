@@ -1,0 +1,9 @@
+Point: struct { x: int }
+
+f(Point: int): int {
+    return Point
+}
+
+main(): int {
+    return 0
+}

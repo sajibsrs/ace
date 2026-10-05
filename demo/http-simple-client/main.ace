@@ -12,7 +12,7 @@ import http
 main(): int {
     url: string = "http://example.com/"
 
-    context: http.ClientContext = http.ClientContext::new()
+    context: http.ClientContext = http.ClientContext.new()
     defer mut context.wipe()
 
     response: http.Response, err: Error = http.get(url, mut context)

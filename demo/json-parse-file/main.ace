@@ -20,7 +20,7 @@ main(): int {
         return 1
     }
 
-    doc: json.Json = json.Json::new()
+    doc: json.Json = json.Json.new()
     defer mut doc.wipe()
     perr: Error, at: usize = mut doc.parse(data)
     if perr != null {

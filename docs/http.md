@@ -17,13 +17,13 @@ the bare `import http` in source stays the same either way. See
 examples.
 
 HTTPS/TLS support was removed pending a full redesign; see the TLS client
-transport issue (#65). `Url::parse` still accepts an `https://` scheme
+transport issue (#65). `Url.parse` still accepts an `https://` scheme
 for syntax purposes, but every client entry point rejects it with
 `UrlErr.invalid`.
 
-`Url::parse(url): (Url, Error)` accepts absolute `http://` and `https://` URLs,
+`Url.parse(url): (Url, Error)` accepts absolute `http://` and `https://` URLs,
 autodetecting the scheme from `url`'s prefix. The overload
-`Url::parse(url, secure): (Url, Error)` forces the scheme instead of
+`Url.parse(url, secure): (Url, Error)` forces the scheme instead of
 autodetecting it. `Url { host, path, query, port }` contains byte views and a
 host-order port.
 The default port is 80 and the default path is the static `/` view. A query
@@ -35,7 +35,7 @@ port 80 and HTTPS to port 443. Path/query
 bytes and percent escapes are unchanged.
 
 `get(url, mut context)` accepts only `http://`. `ClientContext` owns reusable
-HTTP workspace and policy, is created with `ClientContext::new`, and is
+HTTP workspace and policy, is created with `ClientContext.new`, and is
 released with `wipe`.
 
 ```ace
@@ -43,7 +43,7 @@ import fmt
 import http
 
 main(): int {
-    context: http.ClientContext = http.ClientContext::new()
+    context: http.ClientContext = http.ClientContext.new()
     response: http.Response, err: Error = http.get("http://example.com/", mut context)
     if err != null {
         fmt.printf("request failed: %d\n", int(err.code))

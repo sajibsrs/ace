@@ -1,14 +1,14 @@
 /* Two embedded contract providers cannot choose a receiver adjustment. */
 
 Value: contract {
-    value(): int
+    value(self): int
 }
 
 A: struct {}
 
 A signs Value
 
-A.value(): int {
+A.value(self): int {
     return 1
 }
 
@@ -16,7 +16,7 @@ B: struct {}
 
 B signs Value
 
-B.value(): int {
+B.value(self): int {
     return 2
 }
 

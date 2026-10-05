@@ -21,7 +21,7 @@ main(): int {
         return 1
     }
 
-    re: regex.Regex, rerr: Error = regex.Regex::new("\nDecision: ([^\n]+)")
+    re: regex.Regex, rerr: Error = regex.Regex.new("\nDecision: ([^\n]+)")
     defer mut re.wipe()
     if rerr != null { return 1 }
 

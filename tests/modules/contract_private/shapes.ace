@@ -1,7 +1,7 @@
 /* Companion module for the Contract private fixture. */
 
 pub Shape: contract {
-    area(): int
+    area(self): int
 }
 
 pub Circle: struct {
@@ -10,6 +10,6 @@ pub Circle: struct {
 
 Circle signs Shape
 
-Circle.area(): int {
+Circle.area(self): int {
     return self.radius * self.radius
 }

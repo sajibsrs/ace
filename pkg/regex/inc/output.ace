@@ -11,7 +11,7 @@ pub Output: struct {
     ok: bool,
 }
 
-pub Output::new(destination: mut []char): Output {
+pub Output.new(destination: mut []char): Output {
     return Output {
         out = destination,
         at = 0,
@@ -19,7 +19,7 @@ pub Output::new(destination: mut []char): Output {
     }
 }
 
-pub mut Output.put(byte: u8) {
+pub Output.put(mut self, byte: u8) {
     if self.at == self.out.len {
         self.ok = false
         return
@@ -28,11 +28,11 @@ pub mut Output.put(byte: u8) {
     self.at += 1
 }
 
-pub mut Output.text(text: string) {
+pub Output.text(mut self, text: string) {
     for byte: u8 in text { mut self.put(byte) }
 }
 
-pub mut Output.number(value: u32) {
+pub Output.number(mut self, value: u32) {
     digits: [10]u8
     n: usize, ok: bool = str.format(mut digits[0..10], uint(value))
     mut self.text(string(digits[0..n]))
@@ -41,7 +41,7 @@ pub mut Output.number(value: u32) {
 /* One pattern byte: printable ASCII as itself, except `{`, `}`, `\`, and
  * `-`, which the dumps use as syntax; everything else as `\xHH`.
  */
-pub mut Output.byte(byte: u8) {
+pub Output.byte(mut self, byte: u8) {
     if '!' <= byte <= '~' && byte != '{' && byte != '}' && byte != '\\' && byte != '-' {
         mut self.put(byte)
         return
@@ -53,7 +53,7 @@ pub mut Output.byte(byte: u8) {
 }
 
 /* The dump's length and true, or zero and false when it did not fit. */
-pub Output.finish(): (usize, bool) {
+pub Output.finish(self): (usize, bool) {
     if !self.ok { return 0, false }
     return self.at, true
 }

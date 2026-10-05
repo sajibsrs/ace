@@ -2,7 +2,7 @@ Box: struct {
     n: int,
 }
 
-Box.get(): int {
+Box.get(self): int {
     return self.missing()
 }
 

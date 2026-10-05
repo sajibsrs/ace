@@ -3,7 +3,7 @@ import mem
 
 /* Parses a document, reads it, and formats it back. */
 round_trip(): int {
-    doc: json.Json = json.Json::new()
+    doc: json.Json = json.Json.new()
     defer mut doc.wipe()
     err: Error, err_at: usize = mut doc.parse(" {\"name\": \"ace\", \"tags\": [1, 2.5, true, null]} ")
     if err != null { return 1 }
@@ -35,7 +35,7 @@ round_trip(): int {
 
 /* A failed parse returns the parse error and leaves `root` as `none`. */
 failure(): int {
-    doc: json.Json = json.Json::new()
+    doc: json.Json = json.Json.new()
     defer mut doc.wipe()
     err: Error, err_at: usize = mut doc.parse("[1, 2")
     if err != json.ParseErr.unexpected_token { return 10 }
@@ -51,7 +51,7 @@ failure(): int {
 
 /* A root assigned by hand writes like a parsed one. */
 assigned(): int {
-    doc: json.Json = json.Json::new()
+    doc: json.Json = json.Json.new()
     defer mut doc.wipe()
     err: Error, err_at: usize = mut doc.parse("0")
     if err != null { return 20 }
@@ -65,7 +65,7 @@ assigned(): int {
 
 /* A new document writes through the forwarded calls, never its empty root. */
 written(): int {
-    doc: json.Json = json.Json::new()
+    doc: json.Json = json.Json.new()
     defer mut doc.wipe()
     empty: string, eerr: Error = doc.format()
     if eerr != json.FormatErr.structure { return 30 }
@@ -101,7 +101,7 @@ written(): int {
  * failure in between leaves the next parse unaffected.
  */
 reuse(): int {
-    doc: json.Json = json.Json::new()
+    doc: json.Json = json.Json.new()
     defer mut doc.wipe()
     texts: [4]string = ["{\"id\": \"a\"}", "{\"id\": \"bb\", \"pad\": [1, 2, 3, 4, 5, 6, 7, 8]}", "{\"id\"", "{\"id\": \"c\"}"]
     want: [4]string = ["a", "bb", null, "c"]

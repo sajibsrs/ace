@@ -39,11 +39,11 @@ main(): int {
     if !sdl.init(sdl.InitFlags { video = 1 }) { return fail("SDL_Init") }
     defer sdl.quit()
 
-    window: sdl.Window = sdl.Window::new("Ace + SDL3 GPU raytraced cube", 640, 640, sdl.WindowFlags { resizable = 1 })
+    window: sdl.Window = sdl.Window.new("Ace + SDL3 GPU raytraced cube", 640, 640, sdl.WindowFlags { resizable = 1 })
     defer mut window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
 
-    renderer: sdl.Renderer = sdl.Renderer::new(window, sdl.GPU_DRIVER)
+    renderer: sdl.Renderer = sdl.Renderer.new(window, sdl.GPU_DRIVER)
     defer mut renderer.wipe()
     if !renderer.ok() { return fail("SDL_CreateRenderer") }
     vsync: bool = renderer.vsync(1)
@@ -63,11 +63,11 @@ main(): int {
         format_name = "MSL"
         code = shader.MSL[..]
     }
-    program: sdl.Shader = sdl.Shader::new(renderer, format, code, 1)
+    program: sdl.Shader = sdl.Shader.new(renderer, format, code, 1)
     defer mut program.wipe()
     if !program.ok() { return fail("SDL_CreateGPUShader") }
 
-    state: sdl.RenderState = sdl.RenderState::new(renderer, program)
+    state: sdl.RenderState = sdl.RenderState.new(renderer, program)
     defer mut state.wipe()
     if !state.ok() { return fail("SDL_CreateGPURenderState") }
 
@@ -138,7 +138,7 @@ main(): int {
         }
 
         renderer.scale(TEXT_SCALE, TEXT_SCALE)
-        renderer.color(sdl.Color::hex(0xE0E0E0))
+        renderer.color(sdl.Color.hex(0xE0E0E0))
         step: f32 = sdl.DEBUG_TEXT_SIZE + 4.0
         y: f32 = 6.0
 

@@ -12,7 +12,7 @@ import fmt
 
 Span: struct { lo: int = 0, hi: int = 0, face: int = -1 }
 
-inline mut Span.clip(v: int, axis: int): bool {
+inline Span.clip(mut self, v: int, axis: int): bool {
     if v > self.lo {
         self.lo = v
         self.face = axis
@@ -25,7 +25,7 @@ inline bump(mut n: int, by: int) {
     n += by
 }
 
-inline mut Span.widen(by: int) {
+inline Span.widen(mut self, by: int) {
     bump(mut self.hi, by) // nested: bound through two expansions
 }
 
@@ -36,7 +36,7 @@ inline swap_add(mut x: int, mut y: int) {
     y += x
 }
 
-inline mut Span.leak(): mut *Span {
+inline Span.leak(mut self): mut *Span {
     return mut &self // needs the caller's storage
 }
 
@@ -44,11 +44,11 @@ touch(mut s: Span) {
     s.lo += 1
 }
 
-inline mut Span.handoff() {
+inline Span.handoff(mut self) {
     touch(mut self) // out of line: needs the caller's storage
 }
 
-inline mut Span.report() {
+inline Span.report(mut self) {
     self.hi += 2
     fmt.printf("%d | ", self.hi)
 }

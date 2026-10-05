@@ -1,0 +1,5 @@
+/* A contract method names its receiver; it has no implicit one. */
+
+C: contract {
+    f(): int
+}

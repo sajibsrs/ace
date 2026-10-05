@@ -10,12 +10,12 @@ total: i64
 
 Box: struct { v: i64 }
 
-Box.note(): i64 {
+Box.note(self): i64 {
     total = total * 10 + self.v
     return 0
 }
 
-mut Box.add(n: i64) {
+Box.add(mut self, n: i64) {
     self.v += n
 }
 

@@ -1,0 +1,32 @@
+/* Explicit receivers: `self` reads, `mut self` mutates, and contracts name
+   the receiver the same way. */
+
+// expect-exit: 0
+
+Counter: struct { value: i64 }
+
+Counter.get(self): i64 { return self.value }
+Counter.add(mut self, k: i64) { self.value += k }
+Counter.reset(mut self) { self.value = 0 }
+
+Sized: contract {
+    size(self): i64
+    grow(mut self, k: i64)
+}
+
+Counter signs Sized
+
+Counter.size(self): i64 { return self.value }
+Counter.grow(mut self, k: i64) { mut self.add(k) }
+
+main(): int {
+    c: Counter = Counter{value = 1}
+    mut c.add(2)
+    if c.get() != 3 { return 1 }
+    s: Sized = Sized(&c)
+    mut s.grow(4)
+    if s.size() != 7 { return 2 }
+    mut c.reset()
+    if c.get() != 0 { return 3 }
+    return 0
+}

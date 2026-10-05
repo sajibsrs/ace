@@ -8,7 +8,7 @@
 import http
 
 main(): int {
-    context: http.ClientContext = http.ClientContext::new()
+    context: http.ClientContext = http.ClientContext.new()
     defer mut context.wipe()
     mismatch: http.Response, mismatch_err: Error = http.get("https://example.com/", mut context)
     if mismatch_err == null || mismatch_err.domain != typeid(http.UrlErr) { return int(mismatch.status) + 1 }

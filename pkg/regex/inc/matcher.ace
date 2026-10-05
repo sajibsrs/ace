@@ -70,7 +70,7 @@ pub Matcher: struct {
     byte: u8,
 }
 
-Queue::new(size: usize, slots: usize): (Queue, bool) {
+Queue.new(size: usize, slots: usize): (Queue, bool) {
     q: Queue = Queue {
         dense = mem.alloc[u32](size),
         sparse = mem.zalloc[u32](size),
@@ -85,7 +85,7 @@ Queue::new(size: usize, slots: usize): (Queue, bool) {
     return q, true
 }
 
-mut Queue.wipe() {
+Queue.wipe(mut self) {
     mem.release[u32](mut self.dense)
     mem.release[u32](mut self.sparse)
     mem.release[usize](mut self.caps)
@@ -93,12 +93,12 @@ mut Queue.wipe() {
 }
 
 /* `sparse` may hold a stale index; it counts only when `dense` agrees. */
-inline Queue.has(pc: u32): bool {
+inline Queue.has(self, pc: u32): bool {
     at: u32 = self.sparse[usize(pc)]
     return usize(at) < self.count && self.dense[usize(at)] == pc
 }
 
-inline mut Queue.insert(pc: u32) {
+inline Queue.insert(mut self, pc: u32) {
     self.sparse[usize(pc)] = u32(self.count)
     self.dense[self.count] = pc
     self.count += 1
@@ -117,11 +117,11 @@ inline is_boundary(text: string, at: usize): bool {
     return before != after
 }
 
-pub Matcher::new(code: Program): (Matcher, Error) {
+pub Matcher.new(code: Program): (Matcher, Error) {
     size: usize = code.insts.len
     slots: usize = usize(code.slots)
-    current: Queue, ok: bool = Queue::new(size, slots)
-    next: Queue, next_ok: bool = Queue::new(size, slots)
+    current: Queue, ok: bool = Queue.new(size, slots)
+    next: Queue, next_ok: bool = Queue.new(size, slots)
     m: Matcher = Matcher {
         current = current,
         next = next,
@@ -148,7 +148,7 @@ pub Matcher::new(code: Program): (Matcher, Error) {
  * through, so `first` may over-approximate; a reachable `match` (an empty
  * match) disables skipping. `single` marks a set of exactly one byte.
  */
-mut Matcher.scan_first(code: Program) {
+Matcher.scan_first(mut self, code: Program) {
     insts: []Inst = code.insts.view()
     classes: []Class = code.classes.view()
     self.current.count = 0
@@ -213,7 +213,7 @@ mut Matcher.scan_first(code: Program) {
     self.single = members == 1
 }
 
-pub mut Matcher.wipe() {
+pub Matcher.wipe(mut self) {
     mut self.current.wipe()
     mut self.next.wipe()
     mem.release[Frame](mut self.stack)
@@ -230,7 +230,7 @@ pub mut Matcher.wipe() {
  * restoring `work` before a deferred sibling runs. A consuming instruction or
  * `match` takes a copy of `work` as its row.
  */
-mut Matcher.add_current(code: []Inst, start: u32, text: string, at: usize) {
+Matcher.add_current(mut self, code: []Inst, start: u32, text: string, at: usize) {
     top: usize = 1
     self.stack[0] = Frame {
         pc = start,
@@ -313,7 +313,7 @@ mut Matcher.add_current(code: []Inst, start: u32, text: string, at: usize) {
 }
 
 /* `add_current` into the next step's queue, `next`. */
-mut Matcher.add_next(code: []Inst, start: u32, text: string, at: usize) {
+Matcher.add_next(mut self, code: []Inst, start: u32, text: string, at: usize) {
     top: usize = 1
     self.stack[0] = Frame {
         pc = start,
@@ -400,7 +400,7 @@ mut Matcher.add_next(code: []Inst, start: u32, text: string, at: usize) {
  * at the first match any thread reaches, whose positions need not be
  * leftmost-first; that suffices when only existence matters.
  */
-pub mut Matcher.run(code: Program, text: string, from: usize, earliest: bool): bool {
+pub Matcher.run(mut self, code: Program, text: string, from: usize, earliest: bool): bool {
     if from > text.len { return false }
     insts: []Inst = code.insts.view()
     classes: []Class = code.classes.view()

@@ -121,7 +121,7 @@ Writer: struct {
  * is built by shifting all-ones right, since a 64-bit run would need the
  * out-of-range shift `1 << 64`.
  */
-mut Class.add_range(lo: u8, hi: u8) {
+Class.add_range(mut self, lo: u8, hi: u8) {
     for word: usize in usize(lo >> 6) .. usize(hi >> 6) + 1 {
         first: usize = 0
         last: usize = 63
@@ -134,16 +134,16 @@ mut Class.add_range(lo: u8, hi: u8) {
 }
 
 /* Adds every member of `other`. */
-mut Class.add(other: Class) {
+Class.add(mut self, other: Class) {
     for i: usize in 0 .. 4 { self.bits[i] |= other.bits[i] }
 }
 
 /* Replaces the set with every byte it did not hold. */
-mut Class.negate() {
+Class.negate(mut self) {
     for i: usize in 0 .. 4 { self.bits[i] = ~self.bits[i] }
 }
 
-pub inline Class.has(byte: u8): bool {
+pub inline Class.has(self, byte: u8): bool {
     return ((self.bits[usize(byte >> 6)] >> u64(byte & 63)) & 1) != 0
 }
 
@@ -187,7 +187,7 @@ is_quantifier(c: u8): bool {
  * its opening delimiter and an invalid repetition count its `{`. A failed
  * parse holds no storage.
  */
-pub Syntax::parse(pattern: string): (Syntax, Error, usize) {
+pub Syntax.parse(pattern: string): (Syntax, Error, usize) {
     p: Parser = Parser {
         nodes = array.Array[Node] {},
         children = array.Array[u32] {},
@@ -218,7 +218,7 @@ pub Syntax::parse(pattern: string): (Syntax, Error, usize) {
 }
 
 /* Releases the tree and leaves it empty. */
-pub mut Syntax.wipe() {
+pub Syntax.wipe(mut self) {
     mut self.nodes.wipe()
     mut self.children.wipe()
     mut self.classes.wipe()
@@ -234,10 +234,10 @@ pub mut Syntax.wipe() {
  * `\xHH`. Returns the length written and true, or zero and false when
  * `destination` is too small.
  */
-pub Syntax.format(destination: mut []char): (usize, bool) {
+pub Syntax.format(self, destination: mut []char): (usize, bool) {
     w: Writer = Writer {
         syntax = self,
-        out = output.Output::new(destination),
+        out = output.Output.new(destination),
     }
     mut w.node(self.root)
     n: usize, ok: bool = w.out.finish()
@@ -245,7 +245,7 @@ pub Syntax.format(destination: mut []char): (usize, bool) {
 }
 
 /* Appends one node and returns its index. */
-mut Parser.add(node: Node): (u32, Error) {
+Parser.add(mut self, node: Node): (u32, Error) {
     index: u32 = u32(self.nodes.len)
     err: Error = mut self.nodes.push(node)
     if err != null { return 0, ParseErr.allocation }
@@ -253,7 +253,7 @@ mut Parser.add(node: Node): (u32, Error) {
     return index, null
 }
 
-mut Parser.add_class(set: Class): (u32, Error) {
+Parser.add_class(mut self, set: Class): (u32, Error) {
     index: u32 = u32(self.classes.len)
     err: Error = mut self.classes.push(set)
     if err != null { return 0, ParseErr.allocation }
@@ -266,7 +266,7 @@ mut Parser.add_class(set: Class): (u32, Error) {
  * concatenation node. A single child stands for itself and none is the empty
  * node.
  */
-mut Parser.collect(base: usize, alternate: bool): (u32, Error) {
+Parser.collect(mut self, base: usize, alternate: bool): (u32, Error) {
     count: usize = self.stack.len - base
 
     if count == 0 {
@@ -300,7 +300,7 @@ mut Parser.collect(base: usize, alternate: bool): (u32, Error) {
 }
 
 /* alternation := concatenation ('|' concatenation)* */
-mut Parser.parse_alt(depth: usize): (u32, Error) {
+Parser.parse_alt(mut self, depth: usize): (u32, Error) {
     base: usize = self.stack.len
 
     for {
@@ -318,7 +318,7 @@ mut Parser.parse_alt(depth: usize): (u32, Error) {
 }
 
 /* concatenation := repetition*, ending before '|', ')', or the end */
-mut Parser.parse_concat(depth: usize): (u32, Error) {
+Parser.parse_concat(mut self, depth: usize): (u32, Error) {
     base: usize = self.stack.len
 
     for self.at < self.text.len && self.text[self.at] != '|' && self.text[self.at] != ')' {
@@ -335,7 +335,7 @@ mut Parser.parse_concat(depth: usize): (u32, Error) {
 /* repetition := atom [quantifier ['?']]. A second quantifier is rejected
  * rather than read as a repetition of a repetition.
  */
-mut Parser.parse_repeat(depth: usize): (u32, Error) {
+Parser.parse_repeat(mut self, depth: usize): (u32, Error) {
     if is_quantifier(self.text[self.at]) { return 0, ParseErr.missing_operand }
     atom: u32, err: Error = mut self.parse_atom(depth)
     if err != null { return 0, err }
@@ -362,7 +362,7 @@ mut Parser.parse_repeat(depth: usize): (u32, Error) {
 }
 
 /* quantifier := '*' | '+' | '?' | '{' count [',' [count]] '}' */
-mut Parser.parse_quantifier(): (u32, u32, Error) {
+Parser.parse_quantifier(mut self): (u32, u32, Error) {
     c: u8 = self.text[self.at]
     self.at += 1
 
@@ -392,7 +392,7 @@ mut Parser.parse_quantifier(): (u32, u32, Error) {
 }
 
 /* A decimal count of at most MAX_REPEAT. */
-mut Parser.parse_count(): (u32, bool) {
+Parser.parse_count(mut self): (u32, bool) {
     start: usize = self.at
 
     for self.at < self.text.len && '0' <= self.text[self.at] <= '9' { self.at += 1 }
@@ -403,7 +403,7 @@ mut Parser.parse_count(): (u32, bool) {
 }
 
 /* atom := group | class | '.' | '^' | '$' | escape | byte */
-mut Parser.parse_atom(depth: usize): (u32, Error) {
+Parser.parse_atom(mut self, depth: usize): (u32, Error) {
     c: u8 = self.text[self.at]
 
     switch c {
@@ -442,7 +442,7 @@ mut Parser.parse_atom(depth: usize): (u32, Error) {
 }
 
 /* group := '(' ['?:'] alternation ')' */
-mut Parser.parse_group(depth: usize): (u32, Error) {
+Parser.parse_group(mut self, depth: usize): (u32, Error) {
     if depth >= MAX_DEPTH { return 0, ParseErr.depth }
     open: usize = self.at
     self.at += 1
@@ -472,7 +472,7 @@ mut Parser.parse_group(depth: usize): (u32, Error) {
 /* An escape outside a class: `\b` and `\B` are word-boundary assertions and
  * every other escape is a class item.
  */
-mut Parser.parse_escape(): (u32, Error) {
+Parser.parse_escape(mut self): (u32, Error) {
     if self.at + 1 < self.text.len && self.text[self.at + 1] == 'b' {
         self.at += 2
         result: u32, err: Error = mut self.add(Node.word)
@@ -498,7 +498,7 @@ mut Parser.parse_escape(): (u32, Error) {
 /* class := '[' ['^'] (item ['-' item])* ']'. A '-' first or last is a
  * literal; `]` must be escaped.
  */
-mut Parser.parse_class(): (u32, Error) {
+Parser.parse_class(mut self): (u32, Error) {
     open: usize = self.at
     self.at += 1
     negated: bool = false
@@ -549,7 +549,7 @@ mut Parser.parse_class(): (u32, Error) {
 /* One byte or one Perl class, plain or escaped. Returns the byte, or the
  * class with true. An invalid escape reports the offset of its backslash.
  */
-mut Parser.parse_item(): (u8, Class, bool, Error) {
+Parser.parse_item(mut self): (u8, Class, bool, Error) {
     c: u8 = self.text[self.at]
     self.at += 1
 
@@ -588,7 +588,7 @@ mut Parser.parse_item(): (u8, Class, bool, Error) {
 }
 
 /* Members as maximal runs: `a`, or `a-c` for a run of two or more. */
-mut Writer.class(set: Class) {
+Writer.class(mut self, set: Class) {
     mut self.out.text("cc{")
     first: bool = true
     at: uint = 0
@@ -614,7 +614,7 @@ mut Writer.class(set: Class) {
     mut self.out.put('}')
 }
 
-mut Writer.list(name: string, list: List) {
+Writer.list(mut self, name: string, list: List) {
     mut self.out.text(name)
     mut self.out.put('{')
 
@@ -625,7 +625,7 @@ mut Writer.list(name: string, list: List) {
     mut self.out.put('}')
 }
 
-mut Writer.repeat(r: Repeat) {
+Writer.repeat(mut self, r: Repeat) {
     counted: bool = false
 
     if r.min == 0 && r.max == UNBOUNDED {
@@ -656,7 +656,7 @@ mut Writer.repeat(r: Repeat) {
     mut self.out.put('}')
 }
 
-mut Writer.node(index: u32) {
+Writer.node(mut self, index: u32) {
     node: Node = self.syntax.nodes.get(usize(index))
 
     switch node {

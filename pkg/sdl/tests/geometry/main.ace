@@ -38,13 +38,13 @@ main(): int {
 
     if !sdl.init(sdl.InitFlags { video = 1 }) { return 2 }
     defer sdl.quit()
-    window: sdl.Window = sdl.Window::new("geometry", SIZE, SIZE, sdl.WindowFlags {})
+    window: sdl.Window = sdl.Window.new("geometry", SIZE, SIZE, sdl.WindowFlags {})
     defer mut window.wipe()
     if !window.ok() {
         fmt.print(sdl.error())
         return 3
     }
-    renderer: sdl.Renderer = sdl.Renderer::new(window)
+    renderer: sdl.Renderer = sdl.Renderer.new(window)
     defer mut renderer.wipe()
     if !renderer.ok() { return 4 }
 
@@ -53,7 +53,7 @@ main(): int {
 
     // The top-left half of the target: its corner is inside, the opposite
     // corner outside.
-    red_color: sdl.Color = sdl.Color::hex(0xFF0000)
+    red_color: sdl.Color = sdl.Color.hex(0xFF0000)
     triangle: [3]sdl.Vertex = [
         sdl.Vertex { position = sdl.Point { x = 0.0, y = 0.0 }, color = red_color },
         sdl.Vertex { position = sdl.Point { x = 16.0, y = 0.0 }, color = red_color },

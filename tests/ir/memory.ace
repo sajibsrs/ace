@@ -17,7 +17,7 @@ extern "c" {
     printf(format: *u8, ...): i32
 }
 
-mut Counter.add(n: i64) {
+Counter.add(mut self, n: i64) {
     self.hits += n
     if n > 9 { self.mode = Mode.on }
 }

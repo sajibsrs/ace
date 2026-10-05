@@ -372,6 +372,10 @@
         {
           "name": "keyword.control.ace",
           "match": "\\b(?:import|pub|mut|const|noalias|if|else|for|in|switch|default|return|break|continue|defer|asm|extern|contract|struct|embed|union|signs|specialized|intrinsic|inline|distinct|type|enum|volatile)\\b"
+        },
+        {
+          "name": "variable.language.self.ace",
+          "match": "\\bself\\b"
         }
       ]
     },

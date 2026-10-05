@@ -86,7 +86,7 @@ inline mix(value: u64): u64 {
 
 Buffer: struct { at: usize }
 
-pub inline mut Buffer.skip(n: usize) {
+pub inline Buffer.skip(mut self, n: usize) {
     self.at += n
 }
 

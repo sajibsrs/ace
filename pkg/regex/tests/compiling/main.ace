@@ -4,11 +4,11 @@ import regex
 
 /* Parses and compiles `pattern`, returning the program or printing why not. */
 compile(pattern: string): (regex.Program, Error) {
-    s: regex.Syntax, err: Error, at: usize = regex.Syntax::parse(pattern)
+    s: regex.Syntax, err: Error, at: usize = regex.Syntax.parse(pattern)
     defer mut s.wipe()
     if err != null { return blank(regex.Program), err }
 
-    p: regex.Program, cerr: Error = regex.Program::compile(s)
+    p: regex.Program, cerr: Error = regex.Program.compile(s)
     return p, cerr
 }
 

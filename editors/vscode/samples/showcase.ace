@@ -64,8 +64,8 @@ StringList: type = []string
 Meters: distinct f64
 
 Shape: contract {
-    area(): f64
-    mut scale(factor: f64)
+    area(self): f64
+    scale(mut self, factor: f64)
 }
 
 Point signs (
@@ -88,11 +88,11 @@ extern "c" {
     c_log(format: *u8, ...)
 }
 
-Point.area(): f64 {
+Point.area(self): f64 {
     return self.x * self.y
 }
 
-mut Point.scale(factor: f64) {
+Point.scale(mut self, factor: f64) {
     self.x = self.x * factor
     self.y = self.y * factor
 }

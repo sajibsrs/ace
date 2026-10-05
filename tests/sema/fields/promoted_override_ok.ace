@@ -2,7 +2,7 @@ Base: struct {
     x: i64,
 }
 
-Base.area(): i64 {
+Base.area(self): i64 {
     return self.x
 }
 
@@ -11,6 +11,6 @@ Shape: struct {
     scale: (i64): i64,
 }
 
-Shape.area(): i64 { // an owned method still overrides a promoted one
+Shape.area(self): i64 { // an owned method still overrides a promoted one
     return self.scale(self.base.x)
 }

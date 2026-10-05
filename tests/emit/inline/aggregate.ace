@@ -47,7 +47,7 @@ inline wide(k: i32): Wide {
 
 Spin: struct { s: i32, c: i32 }
 
-inline Spin.turn(v: Vec): Vec {
+inline Spin.turn(self, v: Vec): Vec {
     return Vec { x = v.x * f32(self.c), y = v.y + f32(self.s), z = v.z }
 }
 

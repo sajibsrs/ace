@@ -1,0 +1,4 @@
+main(): int {
+    u8: int = 3
+    return u8
+}

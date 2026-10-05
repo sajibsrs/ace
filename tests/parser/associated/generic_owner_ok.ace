@@ -1,11 +1,11 @@
-/* '::' composes with generic owners through the ordinary bracket/index grammar. */
+/* An associated function composes with generic owners through the ordinary bracket/index grammar. */
 
 Map[K, V]: struct { len: int }
 
-pub Map[K, V]::new(capacity: int): Map[K, V] {
+pub Map[K, V].new(capacity: int): Map[K, V] {
     return Map[K, V] { len = 0 }
 }
 
 foo() {
-    m: Map[int, string] = Map[int, string]::new(4)
+    m: Map[int, string] = Map[int, string].new(4)
 }

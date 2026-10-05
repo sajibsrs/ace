@@ -3,7 +3,7 @@ import mem
 import net
 
 main(): int {
-    context: http.ClientContext = http.ClientContext::new()
+    context: http.ClientContext = http.ClientContext.new()
     if context.storage == null { return 98 }
 
     context.redirects = http.RedirectPolicy { limit = 4 }
@@ -55,32 +55,32 @@ main(): int {
     address, valid = net.parse4("1.2.3.4:80x")
     if valid { return 24 }
 
-    url: http.Url, err: Error = http.Url::parse("http://example.com:8080?x=%2f")
+    url: http.Url, err: Error = http.Url.parse("http://example.com:8080?x=%2f")
     if err != null || !mem.equal(url.host, "example.com") ||
         !mem.equal(url.path, "/") || !mem.equal(url.query, "?x=%2f") ||
         url.port != 8080 {
         return 3
     }
 
-    url, err = http.Url::parse("http://127.0.0.1/")
+    url, err = http.Url.parse("http://127.0.0.1/")
     if err != null || !mem.equal(url.path, "/") || url.query.len != 0 { return 31 }
 
-    url, err = http.Url::parse("https://example.com/")
+    url, err = http.Url.parse("https://example.com/")
     if err != null || !mem.equal(url.host, "example.com") ||
         !mem.equal(url.path, "/") || url.port != 443 {
         return 32
     }
 
-    url, err = http.Url::parse("http://user@example.com/")
+    url, err = http.Url.parse("http://user@example.com/")
     if err == null { return 33 }
 
-    url, err = http.Url::parse("http://example.com:65536/")
+    url, err = http.Url.parse("http://example.com:65536/")
     if err == null { return 34 }
 
-    url, err = http.Url::parse("http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com/")
+    url, err = http.Url.parse("http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com/")
     if err == null { return 35 }
 
-    url, err = http.Url::parse("http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com:65535/")
+    url, err = http.Url.parse("http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com:65535/")
     if err != null || url.port != 65535 { return 36 }
 
     header_storage: [2]http.Header = [

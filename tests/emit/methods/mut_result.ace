@@ -4,7 +4,7 @@ Counter: struct {
     value: int,
 }
 
-mut Counter.add(amount: int): int {
+Counter.add(mut self, amount: int): int {
     self.value += amount
     return self.value
 }

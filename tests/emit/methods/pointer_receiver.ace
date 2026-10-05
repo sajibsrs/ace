@@ -6,11 +6,11 @@ Counter: struct {
     value: int,
 }
 
-Counter.get(): int {
+Counter.get(self): int {
     return self.value
 }
 
-mut Counter.bump() {
+Counter.bump(mut self) {
     self.value += 1
 }
 

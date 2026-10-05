@@ -119,7 +119,7 @@ divmod(a: usize, b: usize): (usize, usize) {
     return a / b, a % b
 }
 
-mut Counter.add(amount: usize) {
+Counter.add(mut self, amount: usize) {
     self.value = (self.value + amount) & MASK
 }
 

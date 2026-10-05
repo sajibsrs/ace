@@ -6,7 +6,7 @@ State: enum { idle, running }
 Point: struct { x: int, y: int }
 
 Value: contract {
-    get(): int
+    get(self): int
 }
 
 number: int

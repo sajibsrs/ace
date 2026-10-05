@@ -21,12 +21,12 @@ weight[int](key: int): u64 {
 Counter: struct { n: int }
 
 @cold
-mut Counter.bump(by: int) {
+Counter.bump(mut self, by: int) {
     self.n += by
 }
 
 @cold
-Counter::zero(): int {
+Counter.zero(): int {
     return 0
 }
 
@@ -36,7 +36,7 @@ pub shared(x: f64): f64 {
 }
 
 main(): int {
-    c: Counter = Counter{ n = Counter::zero() }
+    c: Counter = Counter{ n = Counter.zero() }
     f: (u64): u64 = rare
     xs: [2]int = [1, 2]
     if c.n > 0 { mut c.bump(1) }

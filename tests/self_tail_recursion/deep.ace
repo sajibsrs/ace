@@ -36,7 +36,7 @@ span(n: usize, text: string, acc: usize): usize {
     return span(n - 1, text, acc + text.len)
 }
 
-mut Counter.count(n: usize): usize {
+Counter.count(mut self, n: usize): usize {
     if n == 0 { return self.value }
     self.value = self.value + 1
     return mut self.count(n - 1)

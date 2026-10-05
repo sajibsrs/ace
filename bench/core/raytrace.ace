@@ -22,7 +22,7 @@ Color: struct { r: f32 = 0.0, g: f32 = 0.0, b: f32 = 0.0, a: f32 = 1.0 }
 Point: struct { x: f32 = 0.0, y: f32 = 0.0 }
 Vertex: struct { position: Point, color: Color, uv: Point = Point {} }
 
-Color::hex(rgb: u32): Color {
+Color.hex(rgb: u32): Color {
     return Color {
         r = f32((rgb >> 16) & 0xFF) / 255.0,
         g = f32((rgb >> 8) & 0xFF) / 255.0,
@@ -32,13 +32,13 @@ Color::hex(rgb: u32): Color {
 
 Vec: struct { x: f32 = 0.0, y: f32 = 0.0, z: f32 = 0.0 }
 
-inline Vec.dot(other: Vec): f32 {
+inline Vec.dot(self, other: Vec): f32 {
     return self.x * other.x + self.y * other.y + self.z * other.z
 }
 
 Spin: struct { sa: f32, ca: f32, sb: f32, cb: f32 }
 
-inline Spin.to_camera(v: Vec): Vec {
+inline Spin.to_camera(self, v: Vec): Vec {
     z: f32 = v.z * self.ca - v.x * self.sa
     return Vec {
         x = v.x * self.ca + v.z * self.sa,
@@ -47,7 +47,7 @@ inline Spin.to_camera(v: Vec): Vec {
     }
 }
 
-inline Spin.to_cube(v: Vec): Vec {
+inline Spin.to_cube(self, v: Vec): Vec {
     z: f32 = v.z * self.cb - v.y * self.sb
     return Vec {
         x = v.x * self.ca - z * self.sa,
@@ -58,7 +58,7 @@ inline Spin.to_cube(v: Vec): Vec {
 
 Span: struct { near: f32 = 0.0, far: f32 = FAR, face: i32 = -1 }
 
-inline mut Span.clip(o: f32, d: f32, axis: i32): bool {
+inline Span.clip(mut self, o: f32, d: f32, axis: i32): bool {
     if d == 0.0 { return o >= -1.0 && o <= 1.0 }
     t0: f32 = (-1.0 - o) / d
     t1: f32 = (1.0 - o) / d
@@ -97,7 +97,7 @@ inline normal(face: i32): Vec {
 }
 
 inline shade(rgb: u32, cosine: f32): Color {
-    base: Color = Color::hex(rgb)
+    base: Color = Color.hex(rgb)
     k: f32 = AMBIENT
     if cosine > 0.0 { k += (1.0 - AMBIENT) * cosine }
     return Color { r = base.r * k, g = base.g * k, b = base.b * k }
@@ -110,7 +110,7 @@ inline trace(spin: Spin, light: Vec, d: Vec): Color {
         n: Vec = spin.to_camera(normal(face))
         return shade(FACE_COLORS[face], n.dot(light))
     }
-    if d.y >= 0.0 { return Color::hex(BACKGROUND) }
+    if d.y >= 0.0 { return Color.hex(BACKGROUND) }
     t: f32 = FLOOR_Y / d.y
     p: Vec = Vec { x = d.x * t, y = FLOOR_Y, z = d.z * t }
     _, shadow: i32 = hit(spin, p, light)

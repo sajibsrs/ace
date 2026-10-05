@@ -24,19 +24,7 @@ pub Thing: struct {
     value: int,
 }
 
-pub Thing(value: int): int {
-    return value + 3
-}
-
 pub TypeOnly: struct {
-    value: int,
-}
-
-TypeOnly(value: int): int {
-    return value
-}
-
-ValueOnly: struct {
     value: int,
 }
 
