@@ -7,44 +7,47 @@
  * Closing the window or pressing Escape quits.
  */
 
-import fmt
-import sdl
+import printf from fmt
+import (
+    init, quit, error, delay, Window, Renderer, Event,
+    InitFlags, WindowFlags, EventType, Keycode, Color,
+) from sdl
 
 fail(context: string): int {
-    fmt.printf("%s: %s\n", context, sdl.error())
+    printf("%s: %s\n", context, error())
     return 1
 }
 
 main(): int {
-    if !sdl.init(sdl.InitFlags { video = 1 }) { return fail("SDL_Init") }
-    defer sdl.quit()
+    if !init(InitFlags { video = 1 }) { return fail("SDL_Init") }
+    defer quit()
 
-    window: sdl.Window = sdl.Window.new("Ace + SDL3", 640, 480, sdl.WindowFlags { resizable = 1 })
+    window: Window = Window.new("Ace + SDL3", 640, 480, WindowFlags { resizable = 1 })
     defer mut window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
 
-    renderer: sdl.Renderer = sdl.Renderer.new(window)
+    renderer: Renderer = Renderer.new(window)
     defer mut renderer.wipe()
     if !renderer.ok() { return fail("SDL_CreateRenderer") }
 
     shade: f32 = 0.0
     running: bool = true
     for running {
-        event: sdl.Event
+        event: Event
         for mut event.poll() {
-            if event.kind == sdl.EventType.quit || event.kind == sdl.EventType.window_close_requested {
+            if event.kind == EventType.quit || event.kind == EventType.window_close_requested {
                 running = false
-            } else if event.kind == sdl.EventType.key_down && event.keyboard.key == sdl.Keycode.escape {
+            } else if event.kind == EventType.key_down && event.keyboard.key == Keycode.escape {
                 running = false
             }
         }
 
         shade += 1.0 / 255.0
         if shade > 1.0 { shade = 0.0 }
-        renderer.color(sdl.Color { r = shade, g = 0.25, b = 1.0 - shade })
+        renderer.color(Color { r = shade, g = 0.25, b = 1.0 - shade })
         renderer.clear()
         renderer.present()
-        sdl.delay(16)
+        delay(16)
     }
     return 0
 }
