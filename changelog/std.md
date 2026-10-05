@@ -24,3 +24,7 @@
   and result, as C's `dprintf`: the shared formatting sink passes a target to
   its drain. Neither `printf` form nor `str.format`'s formatted form can be
   taken as a function value through an explicit function type any more.
+- `fmt.printf` (both forms) and `str.format` take `%e` and `%g` with C's
+  exact output for every `f32`/`f64`: `float_decimal`'s exact rounder gains a
+  significant-digit mode, and `piece_scientific[T]`/`piece_general[T]` render
+  its digits, `%g` reusing the fixed renderer before trimming zeroes.

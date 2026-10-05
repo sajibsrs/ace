@@ -19,5 +19,8 @@ bad(): int {
     j: int = fmt.printf("%0d", 1)
     k: int = fmt.printf("%1000001d", 1)
     l: int = fmt.printf("%05s", "x")
-    return a + b + c + d + e + f + g + h + i + j + k + l
+    m: int = fmt.printf("%.325e", 1.0)
+    n: int = fmt.printf("%.325g", 1.0)
+    o: int = fmt.printf("%E", 1.0)
+    return a + b + c + d + e + f + g + h + i + j + k + l + m + n + o
 }

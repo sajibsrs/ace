@@ -96,7 +96,8 @@ exact types, and emits direct typed formatting calls. It opens a sink over
 1024 bytes of the calling function's frame, writes each piece into it, and
 closes it. The piece writers are exact-type specializations of the
 per-shape generics in the internal `std/@/formatting.ace` — `piece[T]` for
-text, bytes, and decimal integers, `piece_precision[T]` for fixed floats,
+text, bytes, and decimal integers, `piece_precision[T]`,
+`piece_scientific[T]`, and `piece_general[T]` for `%f`, `%e`, and `%g`,
 and `piece_radix[T]` for binary, octal, and hexadecimal, each taking the
 sink, the value, the conversion's extras, its width, and its zero flag —
 selected by the format interpreter's concrete argument type (see
@@ -119,6 +120,16 @@ The initial conversions are deliberately small:
   that mode is restored before `printf` returns. Negative zero and negative
   values rounded to zero keep their sign; special values are `nan`, `inf`,
   and `-inf`.
+- `%e` accepts `f32` or `f64` and writes scientific notation, `d.dddddde+XX`:
+  one digit before the point, six after by default (`%.Ne` writes `N`, and
+  `%.0e` no point), and an exponent of at least two digits. `%g` writes six
+  significant digits by default (`%.Ng` writes `N`; `%.0g` means one): as
+  `%e` when the decimal exponent is below -4 or at least the precision,
+  otherwise as `%f`, then drops trailing fraction zeroes and a bare point, so
+  `%g` prints `1234.5678` as `1234.57`, `0.00001` as `1e-05`, and the smallest
+  denormal as `4.94066e-324`. Both round the exact value as `%f` does, keep
+  the sign of negative zero, and spell non-finite values as `%f` does. Their
+  output is byte-identical to C's for every finite value.
 - `%s` accepts `string` and writes every byte exactly, including embedded NUL.
 - `%c` accepts `u8` and writes exactly one byte. Wider Unicode characters use
   their UTF-8 bytes through `%s`; a future character facility may add more.
@@ -129,15 +140,15 @@ integers must be converted explicitly. A literal receives the conversion's
 natural type: `int`, `uint`, `f64`, or `u8`; write `usize(...)` when that is
 the intended unsigned type.
 
-A literal width between `%` and the conversion (`%5d`, `%6.2f`, `%4s`) pads
+A literal width between `%` and the conversion (`%5d`, `%6.2f`, `%12e`, `%4s`) pads
 the piece with spaces on the left to at least that many bytes, from 1 through
 1000000. A `0` flag before the width (`%05d`, `%08x`, `%064b`, `%06.2f`) pads
 numeric conversions with zeroes after any sign instead: `-0042`. `nan` and
 `inf` still take spaces, and `%s`/`%c` reject the flag. A longer value is
 never truncated. Write a base prefix as literal text (`0x%08x`). Left
 alignment, sign and alternate-form flags, dynamic `*`, and positional
-arguments are not implemented; the precision on `%f` is the only other
-modifier.
+arguments are not implemented; the precision on `%f`, `%e`, and `%g` is the
+only other modifier, from 0 through 324.
 
 All runtime arguments are evaluated exactly once, in source order, before
 output begins. Output collects in the sink's storage and is written when the

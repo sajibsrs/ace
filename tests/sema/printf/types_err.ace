@@ -16,6 +16,8 @@ bad(): int {
     d: int = fmt.printf("%f", 1)
     e: int = fmt.printf("%s", u8(65))
     f: int = fmt.printf("%c", "A")
+    i: int = fmt.printf("%e", 1)
+    j: int = fmt.printf("%g", narrow_signed)
     value: (string): int = fmt.printf
-    return a + b + c + d + e + f + g + h
+    return a + b + c + d + e + f + g + h + i + j
 }

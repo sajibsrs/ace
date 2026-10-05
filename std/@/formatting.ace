@@ -129,6 +129,110 @@ pub fixed(value: decimal.Decimal, digits: []u8, precision: usize, out: mut []u8)
     return usize(at), true
 }
 
+/* Scientific notation d.ddde+XX with precision fraction digits (no point
+ * when it is zero) and at least two exponent digits, from a
+ * decimal.significant64/significant32 conversion to precision + 1 digits;
+ * trim drops trailing fraction zeroes and then a bare point, as %g does.
+ * Non-finite values are spelled as by fixed.
+ */
+pub scientific(value: decimal.Decimal, digits: []u8, precision: usize, trim: bool, out: mut []u8): (usize, bool) {
+    if value.number_type == decimal.Type.nan || value.number_type == decimal.Type.infinity {
+        n: usize, ok: bool = fixed(value, digits, 0, out)
+        return n, ok
+    }
+    zero: bool = value.number_type == decimal.Type.zero
+    count: int = value.count
+
+    if zero { count = 0 }
+    places: int = int(precision)
+
+    if trim {
+        for places > 0 {
+            if places < count && digits[places] != u8(48) { break }
+            places -= 1
+        }
+    }
+    exponent: int = 0
+
+    if !zero { exponent = int(value.point) - 1 }
+    magnitude: int = exponent
+
+    if magnitude < 0 { magnitude = -magnitude }
+    need: int = 5 // lead digit, 'e', sign, two exponent digits
+
+    if magnitude >= 100 { need += 1 }
+
+    if value.negative { need += 1 }
+
+    if places != 0 { need += 1 + places }
+
+    if usize(need) > out.len { return 0, false }
+    at: int = 0
+
+    if value.negative {
+        out[at] = u8(45)
+        at += 1
+    }
+
+    for i: int in 0 .. places + 1 {
+        if i < count {
+            out[at] = digits[i]
+        } else {
+            out[at] = u8(48)
+        }
+        at += 1
+
+        if i == 0 && places != 0 {
+            out[at] = u8(46)
+            at += 1
+        }
+    }
+    out[at] = u8(101)
+    out[at + 1] = u8(43)
+
+    if exponent < 0 { out[at + 1] = u8(45) }
+    at += 2
+
+    if magnitude >= 100 {
+        out[at] = u8(48 + magnitude / 100)
+        at += 1
+    }
+    out[at] = u8(48 + magnitude / 10 % 10)
+    out[at + 1] = u8(48 + magnitude % 10)
+    return usize(at + 2), true
+}
+
+/* General notation as C's %g with precision significant digits (zero means
+ * one), from a decimal.significant64/significant32 conversion to that many
+ * digits: scientific when the decimal exponent X is below -4 or at least
+ * the precision, otherwise fixed with precision - 1 - X fraction digits;
+ * trailing fraction zeroes and then a bare point are dropped either way.
+ */
+pub general(value: decimal.Decimal, digits: []u8, precision: usize, out: mut []u8): (usize, bool) {
+    significant: int = int(precision)
+
+    if significant == 0 { significant = 1 }
+    exponent: int = 0
+
+    if value.number_type == decimal.Type.finite { exponent = int(value.point) - 1 }
+
+    if exponent < -4 || exponent >= significant {
+        n: usize, ok: bool = scientific(value, digits, usize(significant - 1), true, out)
+        return n, ok
+    }
+    places: int = significant - 1 - exponent
+    n: usize, ok: bool = fixed(value, digits, usize(places), out)
+
+    if !ok || places == 0 || value.number_type == decimal.Type.nan || value.number_type == decimal.Type.infinity {
+        return n, ok
+    }
+
+    for out[n - 1] == u8(48) { n -= 1 }
+
+    if out[n - 1] == u8(46) { n -= 1 }
+    return n, true
+}
+
 /* Formatted output through caller storage, shared by fmt.printf and
  * str.format. Pieces append to storage[0..used]; a piece that does not fit
  * first hands the buffered bytes to drain, with the sink's target, which
@@ -274,6 +378,10 @@ pub piece_radix[T](mut sink: Sink, value: T, radix: u8, uppercase: bool, width: 
 
 pub piece_precision[T](mut sink: Sink, value: T, precision: usize, width: usize, zero: bool) specialized
 
+pub piece_scientific[T](mut sink: Sink, value: T, precision: usize, width: usize, zero: bool) specialized
+
+pub piece_general[T](mut sink: Sink, value: T, precision: usize, width: usize, zero: bool) specialized
+
 pub piece[string](mut sink: Sink, text: string, width: usize, zero: bool) {
     if width == 0 {
         mut sink.put(text)
@@ -335,4 +443,46 @@ pub piece_precision[f32](mut sink: Sink, value: f32, precision: usize, width: us
     view: mut []u8 = mut digits[0..640]
     converted: decimal.Decimal = decimal.fixed32(value, precision, view)
     piece_fixed(mut sink, converted, view, precision, width, zero)
+}
+
+pub piece_scientific[f64](mut sink: Sink, value: f64, precision: usize, width: usize, zero: bool) {
+    digits: [640]u8
+    view: mut []u8 = mut digits[0..640]
+    converted: decimal.Decimal = decimal.significant64(value, precision + 1, view)
+    storage: [640]u8
+    n: usize, ok: bool = scientific(converted, view, precision, false, mut storage[0..640])
+    mut sink.padded(storage[0..n], width, zero)
+}
+
+pub piece_scientific[f32](mut sink: Sink, value: f32, precision: usize, width: usize, zero: bool) {
+    digits: [640]u8
+    view: mut []u8 = mut digits[0..640]
+    converted: decimal.Decimal = decimal.significant32(value, precision + 1, view)
+    storage: [640]u8
+    n: usize, ok: bool = scientific(converted, view, precision, false, mut storage[0..640])
+    mut sink.padded(storage[0..n], width, zero)
+}
+
+pub piece_general[f64](mut sink: Sink, value: f64, precision: usize, width: usize, zero: bool) {
+    count: usize = precision
+
+    if count == 0 { count = 1 }
+    digits: [640]u8
+    view: mut []u8 = mut digits[0..640]
+    converted: decimal.Decimal = decimal.significant64(value, count, view)
+    storage: [640]u8
+    n: usize, ok: bool = general(converted, view, count, mut storage[0..640])
+    mut sink.padded(storage[0..n], width, zero)
+}
+
+pub piece_general[f32](mut sink: Sink, value: f32, precision: usize, width: usize, zero: bool) {
+    count: usize = precision
+
+    if count == 0 { count = 1 }
+    digits: [640]u8
+    view: mut []u8 = mut digits[0..640]
+    converted: decimal.Decimal = decimal.significant32(value, count, view)
+    storage: [640]u8
+    n: usize, ok: bool = general(converted, view, count, mut storage[0..640])
+    mut sink.padded(storage[0..n], width, zero)
 }

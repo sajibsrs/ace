@@ -508,8 +508,12 @@ for want in \
     "zero padding is supported only for numeric conversions" \
     "precision needs decimal digits" \
     "dynamic '*' precision is not supported" \
-    "precision is supported only for %f" \
+    "precision is supported only for %f, %e, and %g" \
     "precision 325 exceeds the fixed-buffer limit 324" \
+    "15:25: error: fmt.printf precision 325 exceeds the fixed-buffer limit 324" \
+    "22:25: error: fmt.printf precision 325 exceeds" \
+    "23:25: error: fmt.printf precision 325 exceeds" \
+    "unsupported fmt.printf conversion '%E'" \
     "format requires 1 value argument" \
     "extra fmt.printf argument 1"; do
     if ! printf '%s\n' "$printf_format_errors" | grep -qF "$want"; then
@@ -523,6 +527,8 @@ for want in \
     "requires uint or usize, got u16" \
     "requires uint or usize, got Meters" \
     "requires f32 or f64, got integer literal" \
+    "19:31: error: fmt.printf argument 1 for conversion at decoded byte 0 requires f32 or f64, got integer literal" \
+    "20:31: error: fmt.printf argument 1 for conversion at decoded byte 0 requires f32 or f64, got i32" \
     "requires string, got u8" \
     "requires u8, got string" \
     "fmt.printf is direct-call-only"; do

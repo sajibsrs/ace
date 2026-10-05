@@ -1580,7 +1580,7 @@ static int format_call(Lw* l, Node* x, int fi, int to_fd, Agg* res) {
             int base = part->kind == PF_BINARY ? 2 : part->kind == PF_OCTAL ? 8 : 16;
             arg_scalar(l, &g, konst(l, need_type(l, ft->params[p++]), (uint64_t)base));
             arg_scalar(l, &g, konst(l, need_type(l, ft->params[p++]), part->kind == PF_HEX_UPPER));
-        } else if (part->kind == PF_FIXED) {
+        } else if (part->kind == PF_FIXED || part->kind == PF_SCIENTIFIC || part->kind == PF_GENERAL) {
             arg_scalar(l, &g, konst(l, need_type(l, ft->params[p++]), part->precision));
         }
         arg_scalar(l, &g, konst(l, need_type(l, ft->params[p++]), part->width));

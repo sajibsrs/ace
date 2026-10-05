@@ -112,7 +112,10 @@ pub binary32(value: f32, out: mut []u8): Decimal {
     }
 }
 
-fixed(mantissa: u64, exponent2: i32, precision: int, negative: bool, out: mut []u8): Decimal {
+/* The exact value mantissa * 2^exponent2 rounded, half to even, to places
+ * fraction digits, or with significant to places significant digits.
+ */
+rounded(mantissa: u64, exponent2: i32, places: int, significant: bool, negative: bool, out: mut []u8): Decimal {
     exact_value: big.Big = big.from_u64(mantissa)
 
     if exponent2 >= 0 {
@@ -126,7 +129,9 @@ fixed(mantissa: u64, exponent2: i32, precision: int, negative: bool, out: mut []
     point: i32 = i32(exact_count)
 
     if exponent2 < 0 { point += exponent2 }
-    keep: int = int(point) + precision
+    keep: int = places
+
+    if !significant { keep += int(point) }
 
     if keep < 0 {
         return Decimal {
@@ -153,7 +158,7 @@ fixed(mantissa: u64, exponent2: i32, precision: int, negative: bool, out: mut []
             out[0] = u8(49)
             return Decimal {
                 count = 1,
-                point = i32(1 - precision),
+                point = i32(1 - places),
                 negative = negative,
                 number_type = Type.finite,
             }
@@ -217,7 +222,7 @@ fixed(mantissa: u64, exponent2: i32, precision: int, negative: bool, out: mut []
     }
 }
 
-pub fixed64(value: f64, precision: usize, out: mut []u8): Decimal {
+rounded64(value: f64, places: int, significant: bool, out: mut []u8): Decimal {
     raw: u64 = bitcast(u64, value)
     negative: bool = raw >> 63 != 0
     exponent: u64 = (raw >> 52) & u64(0x7FF)
@@ -255,10 +260,10 @@ pub fixed64(value: f64, precision: usize, out: mut []u8): Decimal {
         mantissa |= u64(0x10000000000000)
         exponent2 = i32(exponent) - 1023 - 52
     }
-    return fixed(mantissa, exponent2, int(precision), negative, out)
+    return rounded(mantissa, exponent2, places, significant, negative, out)
 }
 
-pub fixed32(value: f32, precision: usize, out: mut []u8): Decimal {
+rounded32(value: f32, places: int, significant: bool, out: mut []u8): Decimal {
     raw: u32 = bitcast(u32, value)
     negative: bool = raw >> 31 != 0
     exponent: u32 = (raw >> 23) & u32(0xFF)
@@ -296,5 +301,25 @@ pub fixed32(value: f32, precision: usize, out: mut []u8): Decimal {
         mantissa |= u64(0x800000)
         exponent2 = i32(exponent) - 127 - 23
     }
-    return fixed(mantissa, exponent2, int(precision), negative, out)
+    return rounded(mantissa, exponent2, places, significant, negative, out)
+}
+
+/* value rounded to precision fraction digits. */
+pub fixed64(value: f64, precision: usize, out: mut []u8): Decimal {
+    return rounded64(value, int(precision), false, out)
+}
+
+pub fixed32(value: f32, precision: usize, out: mut []u8): Decimal {
+    return rounded32(value, int(precision), false, out)
+}
+
+/* value rounded to count (at least one) significant digits; a carry out of
+ * the leading digit leaves count + 1 digits, the last a zero.
+ */
+pub significant64(value: f64, count: usize, out: mut []u8): Decimal {
+    return rounded64(value, int(count), true, out)
+}
+
+pub significant32(value: f32, count: usize, out: mut []u8): Decimal {
+    return rounded32(value, int(count), true, out)
 }

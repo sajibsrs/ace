@@ -3716,7 +3716,8 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn, SType* elem,
  * The checked format lowering writes each plan part through a piece writer
  * of std's internal formatting module, resolved by exact-type specialization
  * lookup (Generics #10): the writer shapes are 'specialized' generics —
- * piece[T], piece_radix[T], and piece_precision[T], each taking the sink,
+ * piece[T], piece_radix[T], and the float writers piece_precision[T]
+ * (%f), piece_scientific[T] (%e), and piece_general[T] (%g), each taking the sink,
  * the value, its conversion's extras, width, and zero flag — and the format
  * interpreter's concrete argument type selects the specialization whose
  * type-argument tuple equals it. With nargs == 0 it finds the plain function
@@ -3769,7 +3770,7 @@ static int printf_expected_type(Ck* k, Node* arg, int kind, SType** out, const c
         }
         *expected = "uint or usize";
         return 0;
-    case PF_FIXED:
+    case PF_FIXED: case PF_SCIENTIFIC: case PF_GENERAL:
         if (t == T_UT_FLOAT) {
             if (!ut_fits(k, arg, st_prim(P_F64))) return 0;
             arg->ty = t = st_prim(P_F64);
@@ -3954,6 +3955,8 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
         case 'x': kind = PF_HEX_LOWER; break;
         case 'X': kind = PF_HEX_UPPER; break;
         case 'f': kind = PF_FIXED; break;
+        case 'e': kind = PF_SCIENTIFIC; break;
+        case 'g': kind = PF_GENERAL; break;
         case 's': kind = PF_STRING; break;
         case 'c': kind = PF_BYTE; break;
         default:
@@ -3962,8 +3965,8 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
                    format->str[i], conv_off);
             return T_ERR;
         }
-        if (has_precision && kind != PF_FIXED) {
-            ck_err(k, format_arg, "%s precision is supported only for %%f (decoded byte %u)", who, conv_off);
+        if (has_precision && kind != PF_FIXED && kind != PF_SCIENTIFIC && kind != PF_GENERAL) {
+            ck_err(k, format_arg, "%s precision is supported only for %%f, %%e, and %%g (decoded byte %u)", who, conv_off);
             return T_ERR;
         }
         if (zero && (kind == PF_STRING || kind == PF_BYTE)) {
@@ -4038,6 +4041,12 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
             break;
         case PF_FIXED:
             generic = "piece_precision";
+            break;
+        case PF_SCIENTIFIC:
+            generic = "piece_scientific";
+            break;
+        case PF_GENERAL:
+            generic = "piece_general";
             break;
         default: break;
         }
