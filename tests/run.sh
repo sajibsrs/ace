@@ -2195,6 +2195,10 @@ if ! "$ACE" --tokens tests/lexer/numbers_ok.ace | grep -q "${tab}char${tab}'A'$"
     echo "FAIL: 'A' should lex as char 'A'"
     fail=1
 fi
+if ! "$ACE" --tokens tests/lexer/numbers_ok.ace | grep -qF "${tab}string${tab}"'"tab\there \"quoted\" backslash\\ hex\x7f nul\0"'; then
+    echo "FAIL: --tokens should print a string token escaped as its literal"
+    fail=1
+fi
 
 # parser spot-checks on the full-surface fixture
 ast() { "$ACE" --ast tests/parser/full_ok.ace; }

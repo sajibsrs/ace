@@ -31,6 +31,12 @@ failure paths, tracking, assertion evaluation, and diagnostic data. The flags ar
 exclusive. Check-only, `--tokens`, and `--ast` runs accept either flag, but the
 choice cannot change their result because they emit no program.
 
+`--tokens` prints one token per line as `line:col`, its kind, and for a
+literal or identifier its value; a string token is escaped as an Ace literal
+(`\\`, `\"`, `\n`, `\t`, `\r`, `\0`, other control bytes as `\xNN`) that
+lexes back to the same bytes, so an embedded newline or NUL cannot break or
+cut short the line.
+
 `--ir` checks the program and prints the IR of each function in the root file
 as the selected mode lowers it: debug marks the operations it checks with
 `.chk` (integer arithmetic, pointer arithmetic, and accesses and calls through

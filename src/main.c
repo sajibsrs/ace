@@ -200,8 +200,19 @@ static void dump_tokens(Token* toks, size_t n) {
         case T_FLOAT:
             printf("\t%g", t->fval);
             break;
-        case T_STR:
-            printf("\t\"%.*s\"", (int)t->len, t->str);
+        case T_STR: // escaped as an Ace literal that lexes back to the same bytes
+            fputs("\t\"", stdout);
+            for (uint32_t j = 0; j < t->len; j++) {
+                unsigned char c = (unsigned char)t->str[j];
+                if (c == '"' || c == '\\') printf("\\%c", c);
+                else if (c == '\n') fputs("\\n", stdout);
+                else if (c == '\t') fputs("\\t", stdout);
+                else if (c == '\r') fputs("\\r", stdout);
+                else if (c == 0) fputs("\\0", stdout);
+                else if (c < 0x20 || c == 0x7F) printf("\\x%02x", c);
+                else putchar(c);
+            }
+            putchar('"');
             break;
         case T_CHARLIT:
             if (t->ival >= 33 && t->ival <= 126) printf("\t'%c'", (char)t->ival);

@@ -21,3 +21,6 @@
   and the checked, module, and driver sections in the background with their
   own scratch files, printing reports afterward in a fixed order; the suite
   drops from 2:37 to about 43 s on a 10-core Mac.
+- `--tokens` prints a string token escaped as an Ace literal that lexes back
+  to the same bytes, instead of raw `%.*s`, which stopped at a NUL byte and
+  let an embedded newline split the line.
