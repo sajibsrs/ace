@@ -322,6 +322,10 @@ const char* asm_register_name(int r);
 // The name prefix of std's internal formatting module, whose piece writers
 // fmt.printf and str.format lower to; NULL until it loads.
 extern const char* formatting_prefix;
+// A module-prefixed name `prefix$rest` as written in source: `module.rest`,
+// where module is the directory module's name for any file in its tree, else
+// the file's stem. Names without a module prefix come back unchanged.
+const char* module_display(const char* name);
 
 // --- Packages (ace.pkg manifests, spec/modules-packages.md Package System) --------------------
 // A package is a directory holding one ace.pkg and one root .ace file;

@@ -123,6 +123,7 @@ tests/sema/inline/intrinsic_err.ace|'inline' cannot mark intrinsic declaration '
 tests/sema/inline/main_err.ace|the entry function cannot be 'inline'
 tests/sema/inline/recursion_err.ace|inline function 'count' reaches itself through inline calls
 tests/sema/inline/mutual_err.ace|inline function 'even' reaches itself through inline calls
+tests/sema/names/module_type_name_err.ace|6:32: error: type mismatch: net.SocketType given where i64 expected
 INLINE_RULES
 
 # function types: 'void' marks no return value and binds type parameters (spec Syntax & Parsing #5)

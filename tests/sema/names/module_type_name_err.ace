@@ -1,0 +1,8 @@
+/* A module type reads as written: net.SocketType, though its file is net/os/<target>.ace. */
+
+import net
+
+main(): int {
+    kind: int = net.SocketType.tcp
+    return kind
+}

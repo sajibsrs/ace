@@ -149,13 +149,13 @@ static const char* type_name(SType* t) {
         char* out = bufs[bi = (bi + 1) & 15];
         return memcpy(out, name, sizeof name);
     }
-    case SK_STRUCT: return t->name ? t->name : "struct";
-    case SK_ENUM: return t->name ? t->name : "enum";
-    case SK_CONTRACT: return t->name ? t->name : "contract";
-    case SK_UNION: return t->name ? t->name : "union";
-    case SK_BITS: return t->name ? t->name : "bits";
-    case SK_DISTINCT: return t->name ? t->name : "distinct";
-    case SK_ERROR_DOMAIN: return t->name ? t->name : "error domain";
+    case SK_STRUCT: return t->name ? module_display(t->name) : "struct";
+    case SK_ENUM: return t->name ? module_display(t->name) : "enum";
+    case SK_CONTRACT: return t->name ? module_display(t->name) : "contract";
+    case SK_UNION: return t->name ? module_display(t->name) : "union";
+    case SK_BITS: return t->name ? module_display(t->name) : "bits";
+    case SK_DISTINCT: return t->name ? module_display(t->name) : "distinct";
+    case SK_ERROR_DOMAIN: return t->name ? module_display(t->name) : "error domain";
     case SK_ERROR: return "Error";
     case SK_VOID: return "no value";
     case SK_UT: return t == T_UT_INT ? "integer literal" :

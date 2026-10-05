@@ -62,6 +62,8 @@ typedef struct Module Module;
 struct Module {
     const char* canon;  // canonical path = module identity
     const char* prefix; // unique `name$` prefix for private identities
+    const char* root;   // directory module root this file belongs to, or NULL
+    const char* display; // the module's name as written at an import
     Node*       file;   // parsed module (imports already resolved + dropped)
     Binding*    binds;  // this module's own import bindings
     Member*     members;
@@ -498,12 +500,66 @@ static const char* assign_prefix(Loader* L, const char* canon) {
     return out;
 }
 
+static struct { const char* prefix; const char* display; }* g_displays;
+static int g_ndisplays, g_cdisplays;
+
+const char* module_display(const char* name) {
+    const char* sep = name ? strchr(name, '$') : NULL;
+    if (!sep) return name;
+    size_t plen = (size_t)(sep + 1 - name);
+    for (int i = 0; i < g_ndisplays; i++) {
+        if (strlen(g_displays[i].prefix) != plen || memcmp(g_displays[i].prefix, name, plen) != 0) continue;
+        size_t dl = strlen(g_displays[i].display), rl = strlen(sep + 1);
+        char* out = arena_alloc(dl + 1 + rl + 1);
+        memcpy(out, g_displays[i].display, dl);
+        out[dl] = '.';
+        for (size_t j = 0; j <= rl; j++) out[dl + 1 + j] = sep[1 + j] == '$' ? '.' : sep[1 + j];
+        return out;
+    }
+    return name;
+}
+
+// A directory module (mod.ace) names itself and every file beneath it that it
+// imports, so an implementation file reads as the module users import.
+static void module_set_display(Loader* L, Module* m) {
+    const char* slash = strrchr(m->canon, '/');
+    const char* base = slash ? slash + 1 : m->canon;
+    Module* importer = L->loading;
+    if (strcmp(base, "mod.ace") == 0 && slash) {
+        size_t rl = (size_t)(slash - m->canon);
+        char* root = arena_alloc(rl + 1);
+        memcpy(root, m->canon, rl);
+        root[rl] = 0;
+        m->root = root;
+        const char* dir = strrchr(root, '/');
+        m->display = arena_string(dir ? dir + 1 : root);
+    } else if (importer && importer->root && path_beneath(m->canon, importer->root)) {
+        m->root = importer->root;
+        m->display = importer->display;
+    } else {
+        size_t bl = strlen(base);
+        if (bl > 4 && strcmp(base + bl - 4, ".ace") == 0) bl -= 4;
+        char* d = arena_alloc(bl + 1);
+        memcpy(d, base, bl);
+        d[bl] = 0;
+        m->display = d;
+    }
+    if (g_ndisplays == g_cdisplays) {
+        g_cdisplays = g_cdisplays ? g_cdisplays * 2 : 16;
+        g_displays = realloc(g_displays, (size_t)g_cdisplays * sizeof *g_displays);
+        if (!g_displays) exit(1);
+    }
+    g_displays[g_ndisplays].prefix = m->prefix;
+    g_displays[g_ndisplays++].display = m->display;
+}
+
 static Module* module_new(Loader* L, const char* canon, Node* file) {
     Module* m = (Module*)arena_alloc(sizeof(Module));
     memset(m, 0, sizeof *m);
     m->canon = canon;
     m->file = file;
     m->prefix = assign_prefix(L, canon);
+    module_set_display(L, m);
     return m;
 }
 

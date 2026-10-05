@@ -87,3 +87,7 @@
 - `std/` is found beside the real executable (`_NSGetExecutablePath`, or
   `/proc/self/exe`, then `realpath`) rather than `argv[0]`, so `ace` run by
   bare name from `PATH` or through a symlink finds it.
+- Diagnostics name a module type as written (`net.SocketType`, not
+  `darwin-arm64$SocketType`): the loader records each module prefix's display
+  name (a directory module's name for every file beneath it, else the stem)
+  and `type_name` maps prefixed names through it.
