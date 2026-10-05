@@ -1,0 +1,5 @@
+/* Companion: a public function to select. */
+
+pub make(): int {
+    return 1
+}

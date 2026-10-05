@@ -4863,22 +4863,23 @@ static SType* check_call_raw(Ck* k, Node* call) {
     // (Map[K, V].new(...)) via the ordinary indexed-type-name resolution
     // shared with typeid and union-variant use.
     if (callee->kind == N_FIELD_E && struct_type_base(k, callee->a)) {
-        SType* owner = NULL;
+        SType* owner;
         if (callee->a->kind == N_IDENT) {
             Sym* ts = lookup_type(k, callee->a->str, callee->a->len);
-            if (ts && ts->is_generic) {
+            if (ts->is_generic) {
                 ck_err(k, call, "generic type '%.*s' needs explicit type arguments",
                        (int)callee->a->len, callee->a->str);
                 return T_ERR;
             }
-            if (ts && ts->type && ts->type->kind == SK_STRUCT) owner = ts->type;
-        } else if (callee->a->kind == N_INDEX) {
+            owner = ts->type;
+        } else {
             owner = indexed_named_type(k, callee->a);
-            if (owner && owner->kind == SK_ERR) return T_ERR; // already diagnosed
-        }
-        if (!owner || owner->kind != SK_STRUCT) {
-            ck_err(k, call, "'%.*s' is not a declared struct", (int)callee->a->len, callee->a->str);
-            return T_ERR;
+            if (!owner) {
+                ck_err(k, call, "'%.*s' is not generic and takes no type arguments",
+                       (int)callee->a->a->len, callee->a->a->str);
+                return T_ERR;
+            }
+            if (owner->kind == SK_ERR) return T_ERR; // already diagnosed
         }
         // stashed for the emitter: a generic owner has no receiver parameter
         // to read its type arguments back from, unlike a method call

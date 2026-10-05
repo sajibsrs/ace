@@ -1,0 +1,11 @@
+/* A selected type and a same-named root function never coexist. */
+
+import Thing from "./util.ace"
+
+Thing(v: int): int {
+    return v
+}
+
+main(): int {
+    return 0
+}

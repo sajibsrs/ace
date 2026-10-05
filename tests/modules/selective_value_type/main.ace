@@ -1,0 +1,9 @@
+/* A selected value and a same-named root type never coexist. */
+
+import make from "./util.ace"
+
+make: struct { x: int }
+
+main(): int {
+    return make()
+}

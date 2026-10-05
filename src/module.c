@@ -47,8 +47,8 @@ typedef struct Select Select;
 struct Select {
     const char* name;
     uint32_t    len;
-    const char* value_name; // target module-private value identity, if any
-    const char* type_name;  // target module-private type identity, if any
+    const char* identity;   // target module-private identity
+    int         is_type;    // a type, else a value: never both (Names & Scoping #2)
     Node*       node;       // selected member node (diagnostics)
     Select*     next;
 };
@@ -724,7 +724,7 @@ static void bind(Loader* L, Node* imp, Module* mod, Binding** binds, Select* sel
         }
     }
     for (Select* s = sels; s; s = s->next) {
-        if (s->value_name && s->len == imp->len &&
+        if (s->len == imp->len &&
             memcmp(s->name, imp->str, imp->len) == 0) {
             import_err(L->d, imp, "duplicate import binding '%.*s'",
                        (int)imp->len, imp->str);
@@ -759,25 +759,17 @@ static void select_members(Loader* L, Node* imp, Module* mod, Binding* binds, Se
             import_err(L->d, name, "module has no public member '%.*s'", (int)name->len, name->str);
             continue;
         }
-        int value_public = vm && vm->pub;
-        int type_public = tm && tm->pub;
-        if (!value_public && !type_public) {
+        Member* m = vm ? vm : tm; // sema rejects a module declaring both
+        if (!m->pub) {
             import_err(L->d, name, "member '%.*s' is not public", (int)name->len, name->str);
             continue;
         }
-        if (!value_public) vm = NULL;
-        if (!type_public) tm = NULL;
-        int dup_value = 0, dup_type = 0;
-        for (Select* s = *sels; s; s = s->next) {
-            if (s->len != name->len || memcmp(s->name, name->str, name->len) != 0)
-                continue;
-            dup_value |= vm && s->value_name;
-            dup_type |= tm && s->type_name;
-        }
+        int dup = 0;
+        for (Select* s = *sels; s; s = s->next)
+            dup |= s->len == name->len && memcmp(s->name, name->str, name->len) == 0;
         for (Binding* b = binds; b; b = b->next)
-            if (vm && b->len == name->len &&
-                memcmp(b->name, name->str, name->len) == 0) dup_value = 1;
-        if (dup_value || dup_type) {
+            dup |= b->len == name->len && memcmp(b->name, name->str, name->len) == 0;
+        if (dup) {
             import_err(L->d, name, "duplicate import binding '%.*s'", (int)name->len, name->str);
             continue;
         }
@@ -785,8 +777,8 @@ static void select_members(Loader* L, Node* imp, Module* mod, Binding* binds, Se
         memset(s, 0, sizeof *s);
         s->name = name->str;
         s->len = name->len;
-        if (vm) s->value_name = member_identity(mod, name->str, name->len);
-        if (tm) s->type_name = member_identity(mod, name->str, name->len);
+        s->identity = member_identity(mod, name->str, name->len);
+        s->is_type = m == tm;
         s->node = name;
         s->next = *sels;
         *sels = s;
@@ -1112,7 +1104,7 @@ typedef struct {
 static Select* find_select(Select* sels, const char* name, uint32_t len, int is_type) {
     for (Select* s = sels; s; s = s->next)
         if (s->len == len && memcmp(s->name, name, len) == 0 &&
-            (is_type ? s->type_name != NULL : s->value_name != NULL))
+            (s->is_type || !is_type)) // a value position may name a selected type
             return s;
     return NULL;
 }
@@ -1124,10 +1116,18 @@ static int local_name(RefLower* c, const char* name, uint32_t len, int is_type) 
     return 0;
 }
 
-static void bind_local(RefLower* c, const char* name, uint32_t len, int is_type) {
+/* A local or type parameter may shadow a selected name of its own namespace,
+ * never one of the other: a type and a value never share a name (Names &
+ * Scoping #2). Sema cannot see this clash once the selection is renamed. */
+static void bind_local(RefLower* c, Node* at, int is_type) {
+    Select* s = find_select(c->sels, at->str, at->len, 0);
+    if (s && s->is_type != is_type)
+        import_err(c->L->d, at, is_type ? "'%.*s' names a value; a type may not share its name"
+                                        : "'%.*s' names a type; a value may not share its name",
+                   (int)at->len, at->str);
     LocalName* n = (LocalName*)arena_alloc(sizeof(LocalName));
-    n->name = name;
-    n->len = len;
+    n->name = at->str;
+    n->len = at->len;
     n->depth = c->depth;
     n->is_type = is_type;
     n->next = c->locals;
@@ -1153,10 +1153,9 @@ static void replace_name(Node* n, const char* name) {
  * selections are searched before the locals; the many declarations after. */
 static const char* lowered_name(RefLower* c, const char* name, uint32_t len, int is_type) {
     Select* s = find_select(c->sels, name, len, is_type);
-    if (!s && !is_type) s = find_select(c->sels, name, len, 1);
     if (!s && !c->renames) return NULL;
     if (local_name(c, name, len, is_type)) return NULL;
-    if (s) return !is_type && s->value_name ? s->value_name : s->type_name;
+    if (s) return s->identity;
     Rename* r = find_rename(c->renames, name, len);
     return r ? r->to : NULL;
 }
@@ -1226,14 +1225,13 @@ static void lower_refs_block(Node* b, RefLower* c) {
 static void lower_refs_func(Node* f, RefLower* c) {
     ref_scope_push(c);
     if (f->c) {
-        for (int i = 0; i < f->c->nkids; i++) bind_local(c, f->c->kids[i]->str, f->c->kids[i]->len, 1);
+        for (int i = 0; i < f->c->nkids; i++) bind_local(c, f->c->kids[i], 1);
     }
     if (f->d) lower_refs_type(f->d, c);
     for (int i = 0; i < f->nkids; i++) lower_refs_type(f->kids[i]->a, c);
     lower_refs_type(f->a, c);
     ref_scope_push(c);
-    if (f->flags & F_METHOD) bind_local(c, "self", 4, 0);
-    for (int i = 0; i < f->nkids; i++) bind_local(c, f->kids[i]->str, f->kids[i]->len, 0);
+    for (int i = 0; i < f->nkids; i++) bind_local(c, f->kids[i], 0);
     if (f->b) lower_refs_block(f->b, c);
     ref_scope_pop(c);
     ref_scope_pop(c);
@@ -1270,7 +1268,7 @@ static void lower_refs(Node* n, RefLower* c) {
             Node* binder = n->kids[i];
             if (binder->kind != N_PARAM) continue;
             lower_refs_type(binder->a, c);
-            bind_local(c, binder->str, binder->len, 0);
+            bind_local(c, binder, 0);
         }
         lower_refs(n->b, c);
         return;
@@ -1289,13 +1287,13 @@ static void lower_refs(Node* n, RefLower* c) {
         for (int i = 0; i < n->nkids; i++) lower_refs_type(n->kids[i]->a, c);
         lower_refs(n->b, c);
         ref_scope_push(c);
-        for (int i = 0; i < n->nkids; i++) bind_local(c, n->kids[i]->str, n->kids[i]->len, 0);
+        for (int i = 0; i < n->nkids; i++) bind_local(c, n->kids[i], 0);
         lower_refs(n->c, c);
         ref_scope_pop(c);
         return;
     case N_STRUCT: case N_BITS: case N_CONTRACT: case N_ALIAS: case N_UNION:
         ref_scope_push(c);
-        if (n->c) for (int i = 0; i < n->c->nkids; i++) bind_local(c, n->c->kids[i]->str, n->c->kids[i]->len, 1);
+        if (n->c) for (int i = 0; i < n->c->nkids; i++) bind_local(c, n->c->kids[i], 1);
         if (n->kind == N_ALIAS || n->kind == N_BITS) lower_refs_type(n->a, c);
         else if (n->kind == N_UNION) {
             for (int i = 0; i < n->nkids; i++)
@@ -1324,7 +1322,7 @@ static void lower_refs(Node* n, RefLower* c) {
         return; // member names themselves are declarations, not references
     case N_SIGNING:
         ref_scope_push(c);
-        if (n->c) for (int i = 0; i < n->c->nkids; i++) bind_local(c, n->c->kids[i]->str, n->c->kids[i]->len, 1);
+        if (n->c) for (int i = 0; i < n->c->nkids; i++) bind_local(c, n->c->kids[i], 1);
         lower_refs_type(n->a, c);
         for (int i = 0; i < n->nkids; i++) lower_refs_type(n->kids[i]->a, c);
         ref_scope_pop(c);
@@ -1350,7 +1348,7 @@ static void lower_refs(Node* n, RefLower* c) {
             }
             lower_refs(pat->a, c);
             lower_refs_type(pat->b->a, c);
-            bind_local(c, pat->b->str, pat->b->len, 0);
+            bind_local(c, pat->b, 0);
         }
         lower_refs(n->b, c);
         ref_scope_pop(c);
@@ -1392,30 +1390,26 @@ static void lower_refs(Node* n, RefLower* c) {
     for (int i = 0; i < n->nkids; i++) lower_refs(n->kids[i], c);
 }
 
-static int decl_namespace(Node* n) {
-    if (n->kind == N_FUNC && !(n->flags & (F_METHOD | F_ASSOC))) return 1;
-    if (n->kind == N_VAR || n->kind == N_EXTERN) return 1;
-    if (n->kind == N_STRUCT || n->kind == N_BITS || n->kind == N_CONTRACT || n->kind == N_ENUM ||
-        n->kind == N_ALIAS || n->kind == N_DISTINCT ||
-        n->kind == N_ERROR_DOMAIN || n->kind == N_UNION)
-        return 2;
-    return 0;
+// Does this top-level node bind an unqualified name (a type or a value)?
+static int binds_name(Node* n) {
+    if (n->kind == N_FUNC) return !(n->flags & (F_METHOD | F_ASSOC));
+    return n->kind == N_VAR || n->kind == N_EXTERN || n->kind == N_STRUCT || n->kind == N_BITS ||
+           n->kind == N_CONTRACT || n->kind == N_ENUM || n->kind == N_ALIAS || n->kind == N_DISTINCT ||
+           n->kind == N_ERROR_DOMAIN || n->kind == N_UNION;
 }
 
 static void check_select_collisions(Loader* L, Node* file, Binding* binds, Select* sels) {
     for (Select* s = sels; s; s = s->next) {
         for (Binding* b = binds; b; b = b->next)
-            if (s->value_name && b->len == s->len &&
+            if (b->len == s->len &&
                 memcmp(b->name, s->name, s->len) == 0)
                 import_err(L->d, s->node,
                            "import binding '%.*s' collides with another import",
                            (int)s->len, s->name);
         for (int i = 0; i < file->nkids; i++) {
             Node* n = file->kids[i];
-            int ns = decl_namespace(n);
-            if (!ns || n->kind == N_IMPORT) continue;
+            if (!binds_name(n)) continue;
             if (n->kind == N_EXTERN) {
-                if (!s->value_name) continue;
                 for (int j = 0; j < n->nkids; j++)
                     if (n->kids[j]->len == s->len &&
                         memcmp(n->kids[j]->str, s->name, s->len) == 0)
@@ -1425,8 +1419,8 @@ static void check_select_collisions(Loader* L, Node* file, Binding* binds, Selec
                 continue;
             }
             Node* named = n->kind == N_VAR ? n->kids[0] : n;
-            int conflicts = (ns == 1 && s->value_name) || (ns == 2 && s->type_name);
-            if (conflicts && named->len == s->len &&
+            // either namespace: a type and a value never share a name
+            if (named->len == s->len &&
                 memcmp(named->str, s->name, s->len) == 0)
                 import_err(L->d, s->node,
                            "imported name '%.*s' collides with a declaration",

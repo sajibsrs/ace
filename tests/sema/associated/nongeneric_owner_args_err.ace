@@ -1,0 +1,10 @@
+P: struct { x: int }
+
+P.zero(): P {
+    return P{ x = 0 }
+}
+
+main(): int {
+    p: P = P[int].zero()
+    return p.x
+}

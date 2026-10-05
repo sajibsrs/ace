@@ -1,0 +1,3 @@
+/* Companion: a public type to select. */
+
+pub Thing: struct { value: int }

@@ -1,0 +1,8 @@
+/* A local value may not take the name of a selected type. */
+
+import Thing from "./util.ace"
+
+main(): int {
+    Thing: int = 1
+    return Thing
+}
